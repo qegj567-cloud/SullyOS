@@ -30,6 +30,41 @@ export function resolveMinimaxUrl(proxyPath: string): string {
   return proxyPath;
 }
 
+const normalizeHeaders = (headers: Record<string, string> = {}): Record<string, string> => {
+  const normalized: Record<string, string> = {};
+  Object.entries(headers).forEach(([k, v]) => {
+    normalized[k.toLowerCase()] = v;
+  });
+  return normalized;
+};
+
+const buildUpstreamWebInit = (
+  init: { method?: string; headers?: Record<string, string>; body?: string },
+): { method?: string; headers?: Record<string, string>; body?: string } => {
+  const headers = normalizeHeaders(init.headers || {});
+  const groupId = (headers['x-minimax-group-id'] || '').trim();
+
+  // MiniMax upstream CORS doesn't allow x-minimax-api-key/x-minimax-group-id custom headers.
+  delete headers['x-minimax-api-key'];
+  delete headers['x-minimax-group-id'];
+
+  if (!groupId || !init.body) {
+    return { ...init, headers };
+  }
+
+  try {
+    const body = JSON.parse(init.body);
+    if (body && typeof body === 'object' && !body.group_id) {
+      body.group_id = groupId;
+      return { ...init, headers, body: JSON.stringify(body) };
+    }
+  } catch {
+    // Keep original body when it's not JSON.
+  }
+
+  return { ...init, headers };
+};
+
 /**
  * A fetch-like wrapper that uses CapacitorHttp on native platforms
  * to bypass CORS restrictions, and regular fetch on web.
@@ -47,7 +82,7 @@ export async function minimaxFetch(
     // Static deployments (e.g. GitHub Pages) don't support POST /api/* proxy.
     // If proxy endpoint is unavailable, retry against MiniMax upstream directly.
     if ((res.status === 404 || res.status === 405) && PROXY_MAP[proxyPath]) {
-      return fetch(PROXY_MAP[proxyPath], init);
+      return fetch(PROXY_MAP[proxyPath], buildUpstreamWebInit(init));
     }
     return res;
   }
