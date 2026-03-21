@@ -22,6 +22,7 @@ import {
 import { materializeStoryAttachments } from '../utils/lifeSimStoryAttachments';
 import { createLifeSimResetCardData } from '../utils/lifeSimChatCard';
 import { buildFallbackLifeSimSessionSummary, buildLifeSimSessionSummaryPrompt } from '../utils/lifeSimSessionSummary';
+import { getLifeSimToneEmoji } from '../utils/lifeSimTone';
 // Offline simulation removed — random events didn't match the theme
 import { extractJson, safeFetchJson } from '../utils/safeApi';
 import { DB } from '../utils/db';
@@ -663,7 +664,8 @@ const LifeSimApp: React.FC = () => {
     function buildCharActionDescription(charName: string, decision: CharDecision): string {
         const act = decision.action;
         const narr = decision.narrative;
-        const tone = narr?.emotionalTone ? `[${narr.emotionalTone}]` : '';
+        const toneEmoji = getLifeSimToneEmoji(narr?.emotionalTone);
+        const tone = toneEmoji ? ` ${toneEmoji}` : '';
         switch (act.type) {
             case 'ADD_NPC': return `${charName}${tone}往游戏里捏了个叫"${act.newNpcEmoji}${act.newNpcName}"的小人`;
             case 'TRIGGER_EVENT': return `${charName}${tone}在游戏里制造了${act.eventType}事件：${act.eventDescription || '…'}`;

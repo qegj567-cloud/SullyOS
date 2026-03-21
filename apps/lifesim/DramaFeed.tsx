@@ -8,6 +8,7 @@ import {
     Alien, BookOpen, ChatCircleDots, Globe, Lightning, Sparkle,
 } from '@phosphor-icons/react';
 import StoryAttachments from './StoryAttachments';
+import { formatLifeSimActionDescription } from '../../utils/lifeSimTone';
 
 const EVENT_ACCENTS: Record<string, string> = {
     fight: '#b85050',
@@ -73,6 +74,7 @@ const DramaEntry: React.FC<{ action: SimAction }> = ({ action }) => {
     const [expanded, setExpanded] = useState(false);
     const accent = getEventAccent(action);
     const narrative = action.narrative;
+    const displayDescription = formatLifeSimActionDescription(action.description);
     const hasDetails = !!(narrative?.innerThought || narrative?.dialogue || narrative?.commentOnWorld || action.reasoning || action.reactionToUser);
     const toneColor = narrative?.emotionalTone ? TONE_DOTS[narrative.emotionalTone] : undefined;
     const storyBadge = getStoryBadge(action);
@@ -143,7 +145,7 @@ const DramaEntry: React.FC<{ action: SimAction }> = ({ action }) => {
                 </p>
             )}
 
-            <p style={{ fontSize: 10, color: '#555', lineHeight: 1.4, marginTop: 3, overflowWrap: 'anywhere' }}>{action.description}</p>
+            <p style={{ fontSize: 10, color: '#555', lineHeight: 1.4, marginTop: 3, overflowWrap: 'anywhere' }}>{displayDescription}</p>
 
             {action.immediateResult && action.immediateResult !== action.description && (
                 <p style={{ fontSize: 9, color: '#888', marginTop: 2, overflowWrap: 'anywhere' }}>→ {action.immediateResult}</p>

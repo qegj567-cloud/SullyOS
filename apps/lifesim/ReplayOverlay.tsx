@@ -9,6 +9,7 @@ import {
     Alien, BookOpen, Lightning, Globe, ChatCircleDots, WarningCircle,
 } from '@phosphor-icons/react';
 import StoryAttachments from './StoryAttachments';
+import { formatLifeSimActionDescription } from '../../utils/lifeSimTone';
 
 const TONE_STYLES: Record<string, { accent: string; label: string }> = {
     vengeful: { accent: '#b85050', label: '复仇' },
@@ -29,6 +30,7 @@ const NarrativeReplayOverlay: React.FC<{
     if (!action) return null;
     const isLast = currentIndex >= actions.length - 1;
     const narrative = action.narrative;
+    const displayDescription = formatLifeSimActionDescription(action.description);
     const tone = narrative?.emotionalTone;
     const toneStyle = tone ? TONE_STYLES[tone] : null;
     const storyLabel = action.storyKind === 'main_plot'
@@ -153,7 +155,7 @@ const NarrativeReplayOverlay: React.FC<{
 
                     {/* Action description */}
                     <p style={{ fontSize: 11, color: '#333', lineHeight: 1.5, marginBottom: 8, fontWeight: 500 }}>
-                        {action.description}
+                        {displayDescription}
                     </p>
 
                     {/* Result */}
