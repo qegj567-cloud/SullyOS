@@ -187,6 +187,7 @@ export interface ActiveMsg2InboxMessage {
   messageSubtype?: string;
   taskId?: string | null;
   metadata?: Record<string, any>;
+  sentAt?: number;
   receivedAt: number;
 }
 

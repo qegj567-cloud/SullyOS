@@ -154,6 +154,9 @@ async function saveIncomingActiveMessage(payload: any) {
   const charName = payload?.contactName || payload?.metadata?.charName || '主动消息';
   const body = String(payload?.message || payload?.body || '').trim();
   const messageId = String(payload?.messageId || `${charId || 'unknown'}-${Date.now()}`);
+  const payloadTimestamp = payload?.timestamp;
+  const parsedSentAt = payloadTimestamp ? new Date(payloadTimestamp).getTime() : NaN;
+  const sentAt = Number.isFinite(parsedSentAt) ? parsedSentAt : Date.now();
 
   if (!charId || !body) return;
 
@@ -171,6 +174,7 @@ async function saveIncomingActiveMessage(payload: any) {
       messageSubtype: payload?.messageSubtype,
       taskId: payload?.taskId ?? null,
       metadata: payload?.metadata || {},
+      sentAt,
       receivedAt: Date.now(),
     });
     tx.oncomplete = () => resolve();
@@ -182,6 +186,8 @@ async function saveIncomingActiveMessage(payload: any) {
     charId,
     charName,
     body,
+    avatarUrl: payload?.avatarUrl,
+    sentAt,
   });
 }
 

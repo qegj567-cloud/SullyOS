@@ -1140,13 +1140,19 @@ const Chat: React.FC = () => {
                     const prevMessage = i > 0 ? displayMessages[i - 1] : null;
                     const nextMessage = i < displayMessages.length - 1 ? displayMessages[i + 1] : null;
                     const messageGroupGapMs = 30 * 60 * 1000;
+                    const isActiveMsg2Boundary =
+                        m.metadata?.source === 'active_msg_2' ||
+                        prevMessage?.metadata?.source === 'active_msg_2' ||
+                        nextMessage?.metadata?.source === 'active_msg_2';
                     const breaksWithPrevious =
                         !prevMessage ||
                         prevMessage.role !== m.role ||
+                        isActiveMsg2Boundary ||
                         Math.abs(m.timestamp - prevMessage.timestamp) > messageGroupGapMs;
                     const breaksWithNext =
                         !nextMessage ||
                         nextMessage.role !== m.role ||
+                        isActiveMsg2Boundary ||
                         Math.abs(nextMessage.timestamp - m.timestamp) > messageGroupGapMs;
                     return (
                         <MessageItem

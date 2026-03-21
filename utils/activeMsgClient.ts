@@ -219,6 +219,27 @@ const buildTimeGapHint = async (charId: string) => {
   };
 };
 
+const buildLegacyStyleProactiveHint = (
+  targetName: string,
+  currentTime: string,
+  timeSinceUser: string,
+) => {
+  const target = targetName || '对方';
+  const awayHint = timeSinceUser.includes('没有新的聊天记录')
+    ? `${target}最近没有主动来找你说话。`
+    : `${target}${timeSinceUser.replace(/^距离用户/, '已经')}`;
+
+  return [
+    '【1.0 风格主动消息提示】',
+    `现在是 ${currentTime}。`,
+    `${awayHint}`,
+    `这不是 ${target} 正在和你聊天，而是你突然想起了 ${target}，想主动发条消息给他/她。`,
+    `像真人随手发消息一样自然一点，可以是分享刚看到的东西、轻轻吐槽、问一句近况、突然想念，或者单纯想找 ${target} 聊两句。`,
+    '不要写成汇报近况，不要像在完成任务，也不要解释自己为什么会发这条消息。',
+    `正文尽量短，通常 1 到 2 句就够；如果 ${target} 很久没来找你，可以轻轻带一点想念、好奇或者小小抱怨。`,
+  ].join('\n');
+};
+
 const buildCompletePrompt = async (
   char: CharacterProfile,
   config: ActiveMsg2CharacterConfig,
@@ -227,6 +248,8 @@ const buildCompletePrompt = async (
   realtimeConfig: RealtimeConfig,
 ) => {
   const { recentMessages, timeSinceUser } = await buildTimeGapHint(char.id);
+  const currentTime = nowIsoLocal().replace('T', ' ');
+  const legacyHint = buildLegacyStyleProactiveHint(userProfile.name || '对方', currentTime, timeSinceUser);
   const emojis = await DB.getEmojis();
   const categories = await DB.getEmojiCategories();
   const systemPrompt = await ChatPrompts.buildSystemPrompt(
@@ -277,9 +300,10 @@ const buildCompletePrompt = async (
     '【重要规则】',
     '- 这不是回复用户刚刚发来的消息，而是角色主动来找用户聊天。',
     '- 输出只能是最终要发送的消息正文，不要解释，不要写分析，不要加引号。',
-    '- 像真实聊天一样简短自然，优先 1 到 3 句。',
+    '- 像真实聊天一样简短自然，优先 1 到 2 句，最多 3 句。',
     '- 可以用换行拆成多个聊天气泡，但不要写时间戳、名字前缀、系统提示。',
     '- 不要出现“作为AI”“系统提示”等元话语。',
+    '- 语气更像真人突然想起对方时发来的私聊，不要像在完成任务。',
     '',
     '【角色系统设定】',
     systemPrompt,
@@ -288,8 +312,10 @@ const buildCompletePrompt = async (
     recentTranscript || '（暂时没有最近聊天记录）',
     '',
     '【当前时刻补充】',
-    `当前本地时间：${nowIsoLocal().replace('T', ' ')}`,
+    `当前本地时间：${currentTime}`,
     timeSinceUser,
+    '',
+    legacyHint,
     '',
     '【本次任务】',
     modeInstruction,

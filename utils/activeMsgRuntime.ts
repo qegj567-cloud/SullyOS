@@ -6,11 +6,13 @@ let initialized = false;
 const flushInboxToChat = async () => {
   const pendingMessages = await ActiveMsgStore.consumeInboxMessages();
   for (const message of pendingMessages) {
+    const messageTimestamp = message.sentAt || message.receivedAt || Date.now();
     await DB.saveMessage({
       charId: message.charId,
       role: 'assistant',
       type: 'text',
       content: message.body,
+      timestamp: messageTimestamp,
       metadata: {
         source: 'active_msg_2',
         activeMsg2: {
@@ -18,6 +20,8 @@ const flushInboxToChat = async () => {
           taskId: message.taskId,
           messageType: message.messageType,
           messageSubtype: message.messageSubtype,
+          avatarUrl: message.avatarUrl,
+          sentAt: message.sentAt,
           receivedAt: message.receivedAt,
         },
         ...(message.metadata || {}),
@@ -29,6 +33,8 @@ const flushInboxToChat = async () => {
         charId: message.charId,
         charName: message.charName,
         body: message.body,
+        avatarUrl: message.avatarUrl,
+        sentAt: messageTimestamp,
       },
     }));
   }

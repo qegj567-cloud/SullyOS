@@ -110,7 +110,7 @@ export const ActiveMsgStore = {
       const request = tx.objectStore(STORE_INBOX).getAll();
       request.onsuccess = () => {
         const messages = (request.result || []) as ActiveMsg2InboxMessage[];
-        messages.sort((a, b) => a.receivedAt - b.receivedAt);
+        messages.sort((a, b) => (a.sentAt || a.receivedAt) - (b.sentAt || b.receivedAt));
         resolve(messages);
       };
       request.onerror = () => reject(request.error);
