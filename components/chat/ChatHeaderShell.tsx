@@ -35,7 +35,7 @@ interface ChatHeaderShellProps {
 
 const COLLAPSED_BUFF_MIN = 2;
 const COLLAPSED_BUFF_MAX = 3;
-const CHIP_GAP_PX = 4;
+const CHIP_GAP_PX = 2;
 
 const normalizeIntensity = (n: number | undefined | null): 1 | 2 | 3 => {
     const parsed = Number.isFinite(n) ? Math.round(Number(n)) : 2;
@@ -176,7 +176,6 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
     const isPixelHeader = headerStyle === 'pixel';
     const useCenteredLayout = headerAlign === 'center' || headerStyle === 'telegram' || headerStyle === 'minimal';
     const avatarRadiusClass = avatarShape === 'square' ? 'rounded-sm' : avatarShape === 'rounded' ? 'rounded-xl' : 'rounded-full';
-    const floatingPanelOffsetClass = !useCenteredLayout && buffs.length > 0 ? 'mt-9' : 'mt-1';
 
     const headerToneClass =
         headerStyle === 'gradient'
@@ -227,10 +226,10 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
     const renderBuffRow = (centered: boolean) => {
         if (buffs.length === 0) return null;
         return (
-            <div className={`absolute top-full z-[35] mt-1 w-full min-w-0 max-w-full ${centered ? 'left-1/2 -translate-x-1/2 flex justify-center' : 'left-0 right-0'} `}>
+            <div className={`relative w-full min-w-0 max-w-full ${centered ? 'flex justify-center' : ''}`}>
                 <div
                     ref={buffPreviewRef}
-                    className={`flex w-full min-w-0 max-w-full items-center gap-1 overflow-x-auto whitespace-nowrap pr-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${centered ? 'justify-center' : ''}`}
+                    className={`flex w-full min-w-0 max-w-full items-center gap-0.5 overflow-x-auto whitespace-nowrap pr-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${centered ? 'justify-center' : ''}`}
                 >
                     {visibleBuffs.map((buff) => (
                         <button
@@ -242,8 +241,9 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
                             onMouseDown={(e) => { if (e.button === 0) handleLongPressStart(buff); }}
                             onMouseUp={handleLongPressEnd}
                             onMouseLeave={handleLongPressEnd}
-                            className="shrink-0 text-[9px] px-1.5 py-0.5 rounded-md font-bold border cursor-pointer transition-colors select-none"
+                            className="shrink-0 max-w-[8.75rem] truncate text-[8px] leading-none px-1 py-[3px] rounded-[10px] font-bold border cursor-pointer transition-colors select-none"
                             style={{ color: buff.color || '#db2777', borderColor: `${buff.color || '#db2777'}40`, background: `${buff.color || '#db2777'}10` }}
+                            title={buff.label}
                         >
                             {buff.emoji ? `${buff.emoji} ` : ''}
                             {buff.label}
@@ -252,7 +252,7 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
                     {hiddenBuffCount > 0 && (
                         <button
                             onClick={(e) => { e.stopPropagation(); setIsBuffListExpanded((prev) => !prev); }}
-                            className="shrink-0 min-w-[24px] text-[9px] px-1.5 py-0.5 rounded-md font-bold border border-slate-300 text-slate-500 bg-slate-100/90 hover:bg-slate-200/80 transition-colors"
+                            className="shrink-0 min-w-[22px] text-[8px] leading-none px-1 py-[3px] rounded-[10px] font-bold border border-slate-300 text-slate-500 bg-slate-100/90 hover:bg-slate-200/80 transition-colors"
                             title="查看全部状态"
                         >
                             +{hiddenBuffCount}
@@ -261,12 +261,12 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
                 </div>
 
                 <div className="pointer-events-none absolute -z-10 h-0 overflow-hidden opacity-0" aria-hidden>
-                    <div className="flex items-center gap-1 whitespace-nowrap">
+                    <div className="flex items-center gap-0.5 whitespace-nowrap">
                         {buffs.slice(0, Math.min(COLLAPSED_BUFF_MAX, buffs.length)).map((buff, index) => (
                             <span
                                 key={`measure-${buff.id}`}
                                 ref={(node) => { measureChipRefs.current[index] = node; }}
-                                className="inline-flex shrink-0 text-[9px] px-1.5 py-0.5 rounded-md font-bold border"
+                                className="inline-flex shrink-0 max-w-[8.75rem] text-[8px] leading-none px-1 py-[3px] rounded-[10px] font-bold border"
                                 style={{ color: buff.color || '#db2777', borderColor: `${buff.color || '#db2777'}40`, background: `${buff.color || '#db2777'}10` }}
                             >
                                 {buff.emoji ? `${buff.emoji} ` : ''}
@@ -295,20 +295,22 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
     ) : null;
 
     const renderCenteredInfo = () => (
-        <div className="relative flex w-full min-w-0 max-w-full flex-col items-center text-center">
+        <div className="flex w-full min-w-0 max-w-full flex-col items-center text-center">
             <img src={activeCharacter.avatar} className={`w-10 h-10 object-cover shadow-sm ${avatarRadiusClass}`} alt="avatar" />
             <div className={`mt-1 font-bold ${primaryTextClass}`}>{activeCharacter.name}</div>
             <div className="mt-1 flex items-center justify-center gap-2 flex-wrap">
                 {onlineStatusNode}
             </div>
-            {renderBuffRow(true)}
+            <div className="mt-1 h-[18px] w-full">
+                {renderBuffRow(true)}
+            </div>
         </div>
     );
 
     const renderStandardInfo = () => (
         <>
             <img src={activeCharacter.avatar} className={`w-10 h-10 object-cover shadow-sm ${avatarRadiusClass}`} alt="avatar" />
-            <div className="relative flex-1 min-w-0 flex flex-col items-start text-left">
+            <div className="flex-1 min-w-0 flex flex-col items-start text-left">
                 <div className={`font-bold ${primaryTextClass}`}>{activeCharacter.name}</div>
                 <div className="flex items-center gap-2 flex-wrap">
                     {onlineStatusNode}
@@ -323,7 +325,9 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
                         </div>
                     )}
                 </div>
-                {renderBuffRow(false)}
+                <div className="mt-1 h-[18px] w-full">
+                    {renderBuffRow(false)}
+                </div>
             </div>
         </>
     );
@@ -372,7 +376,7 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
             )}
 
             {isBuffListExpanded && hiddenBuffCount > 0 && (
-                <div ref={buffPanelRef} className={`absolute top-full left-4 right-4 ${floatingPanelOffsetClass} bg-white rounded-xl shadow-lg border border-slate-200 p-3 z-40`}>
+                <div ref={buffPanelRef} className="absolute top-full left-4 right-4 mt-1 bg-white rounded-xl shadow-lg border border-slate-200 p-3 z-40">
                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">全部状态</div>
                     <div className="max-h-36 overflow-y-auto pr-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                         <div className="flex flex-wrap gap-1.5">
@@ -399,7 +403,7 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
             )}
 
             {openBuff && (
-                <div ref={cardRef} className={`absolute top-full left-4 right-4 ${floatingPanelOffsetClass} bg-white rounded-xl shadow-lg border border-slate-200 p-3 z-50`}>
+                <div ref={cardRef} className="absolute top-full left-4 right-4 mt-1 bg-white rounded-xl shadow-lg border border-slate-200 p-3 z-50">
                     <div className="flex items-center justify-between mb-1">
                         <div className="flex items-center gap-2">
                             <span className="text-sm font-bold" style={{ color: openBuff.color || '#db2777' }}>
