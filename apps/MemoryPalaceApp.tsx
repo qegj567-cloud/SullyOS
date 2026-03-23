@@ -9,12 +9,18 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useOS } from '../context/OSContext';
-import { MemoryNode, MemoryProcessBatch, EmbeddingApiConfig } from '../types';
+import { MemoryNode, MemoryProcessBatch, EmbeddingApiConfig, PersonalityCrystal, Tension, EmotionLayer, InnerMonologueEntry } from '../types';
 import { DB } from '../utils/db';
 import { processMemoryBatch } from '../utils/memoryExtractor';
 import { getMemoryStats } from '../utils/memoryRetrieval';
 import { getDefaultEmbeddingConfig } from '../utils/memoryEmbedding';
 import { safeResponseJson } from '../utils/safeApi';
+import { getCharacterEmotionVisualization } from '../utils/cognitivePipeline';
+import { getActiveCrystals, rejectCrystal, formatCrystalsForPrompt } from '../utils/personalityCrystallizer';
+import { getActiveTensions, getAllTensions } from '../utils/tensions';
+import { getActiveLinks } from '../utils/crossEventLinks';
+import { getMonologues } from '../utils/emotionStorage';
+import { getPrimaryLabel, getOntologyEntry } from '../utils/emotionOntology';
 
 const ROOM_META: Record<string, { label: string; icon: string; color: string; bg: string; gradient: string }> = {
     living_room: { label: '客厅', icon: '🛋️', color: 'text-blue-600', bg: 'bg-blue-50', gradient: 'from-blue-400 to-blue-600' },
@@ -34,7 +40,7 @@ const EMBEDDING_PRESETS = [
     { name: 'OpenAI small', url: 'https://api.openai.com/v1', model: 'text-embedding-3-small', dims: 1536, tag: '$0.02/M', tagColor: 'bg-slate-100 text-slate-500' },
 ];
 
-type Tab = 'palace' | 'memories' | 'logs' | 'config';
+type Tab = 'palace' | 'memories' | 'logs' | 'config' | 'emotions' | 'consciousness' | 'crystals' | 'timeline';
 
 const MemoryPalaceApp: React.FC = () => {
     const {
@@ -43,6 +49,7 @@ const MemoryPalaceApp: React.FC = () => {
     } = useOS();
 
     const char = characters.find(c => c.id === activeCharacterId) || characters[0];
+    const cogEnabled = char?.emotionConfig?.cognitiveArchEnabled ?? false;
 
     // Tab state
     const [activeTab, setActiveTab] = useState<Tab>('palace');
@@ -53,6 +60,16 @@ const MemoryPalaceApp: React.FC = () => {
     const [memories, setMemories] = useState<MemoryNode[]>([]);
     const [isProcessing, setIsProcessing] = useState(false);
     const [selectedRoom, setSelectedRoom] = useState<string | null>(null);
+
+    // Cognitive architecture data
+    const [emotionViz, setEmotionViz] = useState<{
+        surface: EmotionLayer[]; middle: EmotionLayer[]; deep: EmotionLayer[];
+        overallValence: number; overallArousal: number;
+    } | null>(null);
+    const [crystals, setCrystals] = useState<PersonalityCrystal[]>([]);
+    const [tensions, setTensions] = useState<Tension[]>([]);
+    const [monologues, setMonologues] = useState<InnerMonologueEntry[]>([]);
+    const [cogLinks, setCogLinks] = useState<{ pattern: string; level: string; observationCount: number; confidence: number }[]>([]);
 
     // Embedding config local state
     const [embUrl, setEmbUrl] = useState(embeddingConfig.baseUrl);
@@ -76,6 +93,32 @@ const MemoryPalaceApp: React.FC = () => {
         setStats(s);
         setBatches(b.sort((a, b) => b.processedAt - a.processedAt).slice(0, 20));
         setMemories(m.sort((a, b) => b.createdAt - a.createdAt));
+
+        // Load cognitive data if enabled
+        if (char.emotionConfig?.cognitiveArchEnabled) {
+            loadCognitiveData(char.id);
+        }
+    };
+
+    const loadCognitiveData = async (charId: string) => {
+        try {
+            const [viz, crys, tens, mono, links] = await Promise.all([
+                getCharacterEmotionVisualization(charId),
+                getActiveCrystals(charId),
+                getAllTensions(charId),
+                getMonologues(charId),
+                getActiveLinks(charId),
+            ]);
+            setEmotionViz(viz);
+            setCrystals(crys);
+            setTensions(tens);
+            setMonologues(mono.sort((a, b) => b.timestamp - a.timestamp).slice(0, 50));
+            setCogLinks(links.filter(l => l.level !== 'L1_observation').map(l => ({
+                pattern: l.pattern, level: l.level, observationCount: l.observationCount, confidence: l.confidence,
+            })));
+        } catch (e) {
+            console.warn('[MemoryPalace] Failed to load cognitive data:', e);
+        }
     };
 
     const handleProcess = async () => {
@@ -162,12 +205,21 @@ const MemoryPalaceApp: React.FC = () => {
         );
     }
 
-    const tabs: { id: Tab; label: string; icon: string }[] = [
+    const baseTabs: { id: Tab; label: string; icon: string }[] = [
         { id: 'palace', label: '宫殿', icon: '🏛️' },
         { id: 'memories', label: '记忆', icon: '💎' },
         { id: 'logs', label: '日志', icon: '📋' },
         { id: 'config', label: '向量化', icon: '⚙️' },
     ];
+
+    const cogTabs: { id: Tab; label: string; icon: string }[] = cogEnabled ? [
+        { id: 'emotions', label: '情绪', icon: '🌊' },
+        { id: 'consciousness', label: '意识', icon: '💭' },
+        { id: 'crystals', label: '人格', icon: '💎' },
+        { id: 'timeline', label: '认知', icon: '🔗' },
+    ] : [];
+
+    const tabs = [...baseTabs, ...cogTabs];
 
     return (
         <div className="h-full w-full bg-slate-50/30 font-light flex flex-col">
@@ -191,15 +243,15 @@ const MemoryPalaceApp: React.FC = () => {
                 </div>
 
                 {/* Tabs */}
-                <div className="flex gap-1.5 bg-white/60 rounded-2xl p-1 border border-white/50">
+                <div className="flex gap-1 bg-white/60 rounded-2xl p-1 border border-white/50 overflow-x-auto no-scrollbar">
                     {tabs.map(tab => (
                         <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                            className={`flex-1 py-2 rounded-xl text-[11px] font-bold transition-all ${
+                            className={`shrink-0 px-3 py-2 rounded-xl text-[11px] font-bold transition-all ${
                                 activeTab === tab.id
                                     ? 'bg-amber-500 text-white shadow-md shadow-amber-500/20'
                                     : 'text-slate-500 hover:bg-white/60'
                             }`}>
-                            <span className="mr-1">{tab.icon}</span>{tab.label}
+                            <span className="mr-0.5">{tab.icon}</span>{tab.label}
                         </button>
                     ))}
                 </div>
@@ -433,6 +485,246 @@ const MemoryPalaceApp: React.FC = () => {
                                 </button>
                             </div>
                         </div>
+                    </div>
+                )}
+
+                {/* ===== Emotion Weather Map ===== */}
+                {activeTab === 'emotions' && cogEnabled && (
+                    <div className="space-y-4 animate-fade-in">
+                        {emotionViz ? (
+                            <>
+                                {/* Overall Mood Indicator */}
+                                <div className="bg-white/70 backdrop-blur-sm rounded-2xl p-4 border border-white/50 shadow-sm text-center">
+                                    <div className="text-3xl mb-1">
+                                        {emotionViz.overallValence > 0.3 ? '☀️' :
+                                         emotionViz.overallValence > 0 ? '🌤️' :
+                                         emotionViz.overallValence > -0.3 ? '☁️' :
+                                         emotionViz.overallValence > -0.6 ? '🌧️' : '⛈️'}
+                                    </div>
+                                    <div className="text-sm text-slate-600 font-medium">
+                                        情绪气象 ·
+                                        <span className={emotionViz.overallValence > 0 ? 'text-emerald-600' : 'text-rose-600'}>
+                                            {' '}{emotionViz.overallValence > 0.3 ? '晴朗' :
+                                              emotionViz.overallValence > 0 ? '多云转晴' :
+                                              emotionViz.overallValence > -0.3 ? '阴' :
+                                              emotionViz.overallValence > -0.6 ? '小雨' : '暴风雨'}
+                                        </span>
+                                    </div>
+                                    <div className="flex justify-center gap-6 mt-3 text-[10px] text-slate-400">
+                                        <span>效价 {(emotionViz.overallValence * 100).toFixed(0)}%</span>
+                                        <span>激活度 {(emotionViz.overallArousal * 100).toFixed(0)}%</span>
+                                    </div>
+                                </div>
+
+                                {/* Three-layer Stack */}
+                                {[
+                                    { label: '深层底色', layers: emotionViz.deep, color: 'from-violet-500 to-purple-600', bgColor: 'bg-violet-50', textColor: 'text-violet-700' },
+                                    { label: '中层情绪', layers: emotionViz.middle, color: 'from-blue-400 to-indigo-500', bgColor: 'bg-blue-50', textColor: 'text-blue-700' },
+                                    { label: '表层感受', layers: emotionViz.surface, color: 'from-cyan-400 to-teal-500', bgColor: 'bg-cyan-50', textColor: 'text-cyan-700' },
+                                ].map(section => (
+                                    <div key={section.label} className="bg-white/70 backdrop-blur-sm rounded-2xl p-4 border border-white/50 shadow-sm">
+                                        <div className={`text-[10px] font-bold uppercase tracking-widest ${section.textColor} mb-3`}>{section.label}</div>
+                                        {section.layers.length === 0 ? (
+                                            <div className="text-xs text-slate-400 py-2">平静 — 无明显情绪</div>
+                                        ) : (
+                                            <div className="space-y-2">
+                                                {section.layers.map(layer => {
+                                                    const entry = getOntologyEntry(layer.ontologyId);
+                                                    return (
+                                                        <div key={layer.id} className="flex items-center gap-3">
+                                                            <div className="flex-1">
+                                                                <div className="flex items-center justify-between mb-1">
+                                                                    <span className={`text-sm font-medium ${section.textColor}`}>
+                                                                        {getPrimaryLabel(layer.ontologyId)}
+                                                                        {layer.nuance && <span className="text-slate-400 font-normal ml-1 text-xs">({layer.nuance})</span>}
+                                                                    </span>
+                                                                    <span className="text-[10px] text-slate-400">{Math.round(layer.intensity * 100)}%</span>
+                                                                </div>
+                                                                <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                                                                    <div className={`h-full rounded-full bg-gradient-to-r ${section.color} transition-all duration-500`}
+                                                                        style={{ width: `${Math.max(layer.intensity * 100, 3)}%` }} />
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </>
+                        ) : (
+                            <div className="text-center py-12 text-slate-400 text-xs">暂无情绪数据 — 开始对话后会自动生成</div>
+                        )}
+                    </div>
+                )}
+
+                {/* ===== Consciousness Stream ===== */}
+                {activeTab === 'consciousness' && cogEnabled && (
+                    <div className="space-y-3 animate-fade-in">
+                        <p className="text-[10px] text-slate-400 leading-relaxed mb-2">
+                            角色的内心独白 — 用户看不到的真实想法
+                        </p>
+                        {monologues.length === 0 ? (
+                            <div className="text-center py-12 text-slate-400 text-xs">暂无内心独白记录</div>
+                        ) : monologues.map(mono => {
+                            const typeLabel = mono.type === 'daily_review' ? '每日回顾' : mono.type === 'reflection' ? '自我反思' : '实时独白';
+                            const typeColor = mono.type === 'daily_review' ? 'bg-amber-100 text-amber-700' :
+                                              mono.type === 'reflection' ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-600';
+                            return (
+                                <div key={mono.id} className="bg-white/70 backdrop-blur-sm rounded-2xl p-4 border border-white/50 shadow-sm">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${typeColor}`}>{typeLabel}</span>
+                                        <span className="text-[9px] text-slate-400">{formatTime(mono.timestamp)}</span>
+                                    </div>
+                                    <p className="text-xs text-slate-600 leading-relaxed italic">"{mono.content}"</p>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+
+                {/* ===== Personality Crystals ===== */}
+                {activeTab === 'crystals' && cogEnabled && (
+                    <div className="space-y-4 animate-fade-in">
+                        <p className="text-[10px] text-slate-400 leading-relaxed">
+                            从长期互动中涌现的人格特质 — 不像 TA 的可以否决
+                        </p>
+
+                        {crystals.length === 0 ? (
+                            <div className="text-center py-12 text-slate-400 text-xs">暂无涌现特质 — 需要足够的互动积累</div>
+                        ) : crystals.map(crystal => {
+                            const isProvisional = crystal.status === 'provisional';
+                            return (
+                                <div key={crystal.id} className={`bg-white/70 backdrop-blur-sm rounded-2xl p-4 border shadow-sm ${
+                                    isProvisional ? 'border-dashed border-violet-200' : 'border-white/50'
+                                }`}>
+                                    <div className="flex items-start justify-between mb-2">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-base">{isProvisional ? '🔮' : '💎'}</span>
+                                            <div>
+                                                <span className="text-sm font-medium text-slate-700">{crystal.trait}</span>
+                                                {isProvisional && (
+                                                    <span className="ml-1.5 text-[9px] px-1.5 py-0.5 bg-violet-100 text-violet-600 rounded-full font-bold">试验中</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={async () => {
+                                                await rejectCrystal(char.id, crystal.id);
+                                                setCrystals(prev => prev.filter(c => c.id !== crystal.id));
+                                                addToast('已否决该特质', 'info');
+                                            }}
+                                            className="text-[10px] text-slate-400 hover:text-red-500 transition-colors px-2 py-1"
+                                        >
+                                            这不像 TA
+                                        </button>
+                                    </div>
+
+                                    {/* Strength bar */}
+                                    <div className="mb-2">
+                                        <div className="flex justify-between text-[9px] text-slate-400 mb-0.5">
+                                            <span>强度</span>
+                                            <span>{Math.round(crystal.strength * 100)}%</span>
+                                        </div>
+                                        <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                            <div className={`h-full rounded-full transition-all ${isProvisional ? 'bg-violet-400' : 'bg-gradient-to-r from-amber-400 to-orange-500'}`}
+                                                style={{ width: `${Math.max(crystal.strength * 100, 3)}%` }} />
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-3 text-[9px] text-slate-400">
+                                        <span>验证 {crystal.reinforcementCount} 次</span>
+                                        <span>存活 {crystal.periodsSurvived} 周期</span>
+                                    </div>
+
+                                    {crystal.evidence.length > 0 && (
+                                        <div className="mt-2 space-y-1">
+                                            {crystal.evidence.slice(-2).map((e, i) => (
+                                                <p key={i} className="text-[10px] text-slate-400 leading-relaxed pl-2 border-l-2 border-slate-200">
+                                                    {e}
+                                                </p>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+
+                {/* ===== Cognitive Timeline ===== */}
+                {activeTab === 'timeline' && cogEnabled && (
+                    <div className="space-y-4 animate-fade-in">
+                        {/* Cross-Event Patterns */}
+                        <div className="bg-white/70 backdrop-blur-sm rounded-2xl p-4 border border-white/50 shadow-sm">
+                            <div className="text-[10px] font-bold text-teal-700 uppercase tracking-widest mb-3">跨事件关联</div>
+                            {cogLinks.length === 0 ? (
+                                <div className="text-xs text-slate-400 py-2">暂未发现关联模式</div>
+                            ) : (
+                                <div className="space-y-2">
+                                    {cogLinks.map((link, i) => {
+                                        const levelLabel = link.level === 'L3_stable' ? '稳定' : '假说';
+                                        const levelColor = link.level === 'L3_stable' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700';
+                                        return (
+                                            <div key={i} className="flex items-start gap-2">
+                                                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0 mt-0.5 ${levelColor}`}>{levelLabel}</span>
+                                                <div className="flex-1">
+                                                    <p className="text-xs text-slate-600 leading-relaxed">{link.pattern}</p>
+                                                    <div className="flex gap-3 mt-1 text-[9px] text-slate-400">
+                                                        <span>验证 {link.observationCount} 次</span>
+                                                        <span>确信度 {Math.round(link.confidence * 100)}%</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Active Tensions */}
+                        <div className="bg-white/70 backdrop-blur-sm rounded-2xl p-4 border border-white/50 shadow-sm">
+                            <div className="text-[10px] font-bold text-amber-700 uppercase tracking-widest mb-3">未解决的困惑</div>
+                            {tensions.filter(t => t.status === 'active' || t.status === 'resolving').length === 0 ? (
+                                <div className="text-xs text-slate-400 py-2">角色内心暂无困惑</div>
+                            ) : (
+                                <div className="space-y-2">
+                                    {tensions.filter(t => t.status === 'active' || t.status === 'resolving').map(t => (
+                                        <div key={t.id} className="p-3 bg-amber-50/50 rounded-xl">
+                                            <div className="flex items-center justify-between mb-1">
+                                                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                                                    t.status === 'resolving' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'
+                                                }`}>
+                                                    {t.status === 'resolving' ? '正在理解' : '困惑中'}
+                                                </span>
+                                                <span className="text-[9px] text-slate-400">回想 {t.revisitCount} 次</span>
+                                            </div>
+                                            <p className="text-xs text-slate-600 leading-relaxed mt-1">{t.description}</p>
+                                            {/* Intensity bar */}
+                                            <div className="h-1 bg-amber-100 rounded-full mt-2 overflow-hidden">
+                                                <div className="h-full bg-amber-400 rounded-full" style={{ width: `${t.intensity * 100}%` }} />
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Resolved / Dormant */}
+                        {tensions.filter(t => t.status === 'resolved' || t.status === 'dormant').length > 0 && (
+                            <div className="bg-white/70 backdrop-blur-sm rounded-2xl p-4 border border-white/50 shadow-sm">
+                                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">已消解 / 休眠</div>
+                                <div className="space-y-1.5">
+                                    {tensions.filter(t => t.status === 'resolved' || t.status === 'dormant').map(t => (
+                                        <div key={t.id} className="flex items-center gap-2">
+                                            <span className="text-[9px]">{t.status === 'resolved' ? '✅' : '💤'}</span>
+                                            <p className="text-[11px] text-slate-400 line-through leading-relaxed">{t.description}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
             </div>
