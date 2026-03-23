@@ -37,6 +37,23 @@ const Settings: React.FC = () => {
   const [embStatus, setEmbStatus] = useState('');
   const [embUseSameApi, setEmbUseSameApi] = useState(!embeddingConfig.baseUrl);
 
+  // Embedding 动态预设
+  const EMBEDDING_PRESETS = [
+    { name: '硅基 bge-m3 (免费)', url: 'https://api.siliconflow.cn/v1', model: 'BAAI/bge-m3', dims: 1024, tag: '免费', tagColor: 'bg-emerald-100 text-emerald-600' },
+    { name: '硅基 Qwen3-0.6B', url: 'https://api.siliconflow.cn/v1', model: 'Qwen/Qwen3-Embedding-0.6B', dims: 1024, tag: '¥0.01/M', tagColor: 'bg-blue-100 text-blue-600' },
+    { name: '硅基 Qwen3-8B', url: 'https://api.siliconflow.cn/v1', model: 'Qwen/Qwen3-Embedding-8B', dims: 1024, tag: '最强', tagColor: 'bg-violet-100 text-violet-600' },
+    { name: '阿里百炼 v4', url: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'text-embedding-v4', dims: 1024, tag: '¥0.5/M', tagColor: 'bg-orange-100 text-orange-600' },
+    { name: '豆包', url: 'https://ark.cn-beijing.volces.com/api/v3', model: 'doubao-embedding', dims: 2560, tag: '¥0.5/M', tagColor: 'bg-sky-100 text-sky-600' },
+    { name: 'OpenAI small', url: 'https://api.openai.com/v1', model: 'text-embedding-3-small', dims: 1536, tag: '$0.02/M', tagColor: 'bg-slate-100 text-slate-500' },
+  ];
+
+  const applyEmbeddingPreset = (preset: typeof EMBEDDING_PRESETS[number]) => {
+    setEmbUrl(preset.url);
+    setEmbModel(preset.model);
+    setEmbDims(String(preset.dims));
+    setEmbUseSameApi(false);
+  };
+
   // UI States
   const [showModelModal, setShowModelModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false); // Used for completion now
@@ -535,9 +552,23 @@ const Settings: React.FC = () => {
                 <h2 className="text-sm font-semibold text-slate-600 tracking-wider">记忆宫殿 (Embedding)</h2>
             </div>
 
-            <p className="text-xs text-slate-500 mb-4 leading-relaxed">
-                记忆宫殿需要 Embedding API 来将记忆向量化。支持任何 OpenAI 兼容接口（硅基流动、阿里百炼等）。
+            <p className="text-xs text-slate-500 mb-3 leading-relaxed">
+                记忆宫殿需要 Embedding API 来将记忆向量化。支持任何 OpenAI 兼容接口。
             </p>
+
+            {/* 动态预设 */}
+            <div className="mb-4">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block pl-1">一键预设 (填入 URL + Model，Key 需自己填)</label>
+                <div className="flex gap-1.5 flex-wrap">
+                    {EMBEDDING_PRESETS.map(p => (
+                        <button key={p.model} onClick={() => applyEmbeddingPreset(p)}
+                            className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold border transition-all active:scale-95 ${embModel === p.model && embUrl === p.url ? 'bg-amber-500 text-white border-amber-500' : 'bg-white border-slate-200 text-slate-600 hover:border-amber-300'}`}>
+                            {p.name}
+                            <span className={`ml-1 px-1 py-0.5 rounded text-[8px] ${embModel === p.model && embUrl === p.url ? 'bg-white/20 text-white' : p.tagColor}`}>{p.tag}</span>
+                        </button>
+                    ))}
+                </div>
+            </div>
 
             <div className="flex items-center gap-3 mb-4 p-3 bg-amber-50/80 rounded-xl">
                 <label className="relative inline-flex items-center cursor-pointer">
@@ -569,7 +600,7 @@ const Settings: React.FC = () => {
             )}
 
             <p className="text-[10px] text-slate-400 mb-3 px-1 leading-relaxed">
-                推荐：<b>硅基流动 BAAI/bge-m3</b>（免费）或 <b>Qwen3-Embedding-0.6B</b>（$0.01/百万token）。所有国产API都兼容 OpenAI 接口。
+                硅基流动新用户送 14 元额度，bge-m3 免费无限用（有限速）。阿里百炼批量模式 5 折。
             </p>
 
             <div className="flex gap-2">

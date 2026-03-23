@@ -35,16 +35,28 @@ const DEFAULT_WEIGHTS: ScoringWeights = {
     importance: 0.2,
 };
 
-/** 时间衰减因子（每小时衰减 0.995^1） */
-const DECAY_FACTOR = 0.995;
+/** 时间衰减因子（每小时衰减 0.999^1 — 比原 0.995 慢很多） */
+const DECAY_FACTOR = 0.999;
 
 /**
  * 计算时间衰减分数
- * 基于 Stanford Generative Agents: score = decay^hours_since_last_access
+ * 改进：使用 0.999 衰减 → 1天后≈0.976，7天后≈0.845，30天后≈0.487，90天后≈0.115
+ * 比原来的 0.995（30天→0.03）慢很多，让老记忆有机会浮现
  */
 function recencyScore(lastAccessedAt: number, now: number): number {
     const hoursSince = (now - lastAccessedAt) / (1000 * 60 * 60);
     return Math.pow(DECAY_FACTOR, Math.max(0, hoursSince));
+}
+
+/**
+ * 重要性非线性映射
+ * 原来 importance/10 线性映射 → 5和9的差距太小（0.5 vs 0.9，差0.4×0.2=0.08）
+ * 改为指数映射 → 高重要性有显著更强的拉力
+ * 1→0.10, 3→0.22, 5→0.39, 7→0.59, 9→0.84, 10→1.0
+ */
+function importanceScore(importance: number): number {
+    const normalized = Math.min(10, Math.max(1, importance)) / 10;
+    return Math.pow(normalized, 0.7); // 0.7次幂 — 让高分更突出
 }
 
 /**
@@ -57,7 +69,7 @@ function computeScore(
     weights: ScoringWeights = DEFAULT_WEIGHTS
 ): number {
     const recency = recencyScore(memory.lastAccessedAt || memory.createdAt, now);
-    const importance = memory.importance / 10; // 归一化到 0-1
+    const importance = importanceScore(memory.importance);
     return (
         weights.similarity * similarity +
         weights.recency * recency +
@@ -129,6 +141,34 @@ export function searchMemories(
 
     // 按分数降序排列
     results.sort((a, b) => b.score - a.score);
+
+    // 房间多样性保证：如果结果≥3条，确保至少覆盖2个不同房间
+    // 策略：贪心选取，已有房间的第3+条记忆会被后面不同房间的记忆替换
+    if (!roomFilter && results.length > topK) {
+        const selected: SearchResult[] = [];
+        const roomCount: Record<string, number> = {};
+        const maxPerRoom = Math.max(2, Math.ceil(topK * 0.6)); // 单房间上限 60%
+
+        for (const r of results) {
+            if (selected.length >= topK) break;
+            const room = r.memory.room;
+            const count = roomCount[room] || 0;
+            if (count >= maxPerRoom) continue; // 跳过已满的房间
+            selected.push(r);
+            roomCount[room] = count + 1;
+        }
+
+        // 如果多样性筛选后不够 topK，回填分数最高的
+        if (selected.length < topK) {
+            const selectedIds = new Set(selected.map(s => s.memory.id));
+            for (const r of results) {
+                if (selected.length >= topK) break;
+                if (!selectedIds.has(r.memory.id)) selected.push(r);
+            }
+        }
+
+        return selected;
+    }
 
     return results.slice(0, topK);
 }
