@@ -38,6 +38,19 @@ export interface PromptRuntimeContext {
         notionNotesEnabled?: boolean;
         xhsEnabled?: boolean;
     };
+    /** 认知架构注入（Phase 2+） */
+    cognitiveContext?: {
+        /** 情绪动力学引擎的自然语言描述 */
+        emotionDynamicsDesc?: string;
+        /** 涌现人格特质列表 */
+        personalityCrystals?: string;
+        /** 用户认知模型摘要 */
+        userCognitiveModel?: string;
+        /** 活跃的未解决张力 */
+        unresolvedTensions?: string;
+        /** 跨事件关联模式 (L2+L3) */
+        crossEventPatterns?: string;
+    };
 }
 
 // ============ System Block Registry ============
@@ -198,7 +211,7 @@ const SYSTEM_BLOCKS: Record<SystemBlockId, { name: string; icon: string; color: 
         generate: (ctx) => ctx.memoryInjection || null,
     },
 
-    // ── 8. 情绪 Buff ──
+    // ── 8. 情绪 Buff（兼容旧系统 + 认知架构新系统）──
     emotion_buff: {
         name: '情绪底色',
         icon: '🎨',
@@ -206,8 +219,14 @@ const SYSTEM_BLOCKS: Record<SystemBlockId, { name: string; icon: string; color: 
         description: '情绪系统 Buff 注入（需角色开启情绪功能）',
         generate: (ctx) => {
             const { char } = ctx;
-            if (!char.emotionConfig?.enabled || !char.buffInjection) return null;
-            return char.buffInjection;
+            if (!char.emotionConfig?.enabled) return null;
+            // 优先使用认知架构的情绪动力学描述
+            if (ctx.cognitiveContext?.emotionDynamicsDesc) {
+                return ctx.cognitiveContext.emotionDynamicsDesc;
+            }
+            // Fallback: 旧的 buff injection 系统
+            if (char.buffInjection) return char.buffInjection;
+            return null;
         },
     },
 
@@ -375,6 +394,61 @@ const SYSTEM_BLOCKS: Record<SystemBlockId, { name: string; icon: string; color: 
                 return `[系统提示: 你刚刚和对方结束了一通电话，现在回到了文字聊天模式。请切换回打字聊天的风格——不要再用电话口吻说话，不要输出语音标签，回到正常的 IM 短句风格。你可以自然地提一下"刚才电话里说的……"之类的衔接，但不要继续以通话模式回复。]`;
             }
             return null;
+        },
+    },
+
+    // ── 17. 情绪动力学（认知架构）──
+    emotion_dynamics: {
+        name: '情绪动力学',
+        icon: '🧠',
+        color: 'bg-rose-100 text-rose-700',
+        description: '三层情绪栈的动态描述（认知架构）',
+        generate: (ctx) => {
+            return ctx.cognitiveContext?.emotionDynamicsDesc || null;
+        },
+    },
+
+    // ── 18. 涌现人格（认知架构）──
+    personality_crystals: {
+        name: '涌现人格',
+        icon: '💎',
+        color: 'bg-purple-100 text-purple-700',
+        description: '从长期互动中结晶的人格特质',
+        generate: (ctx) => {
+            return ctx.cognitiveContext?.personalityCrystals || null;
+        },
+    },
+
+    // ── 19. 用户认知模型（认知架构）──
+    user_cognitive_model: {
+        name: '用户认知',
+        icon: '👤',
+        color: 'bg-blue-100 text-blue-700',
+        description: '角色对用户的深层理解模型',
+        generate: (ctx) => {
+            return ctx.cognitiveContext?.userCognitiveModel || null;
+        },
+    },
+
+    // ── 20. 未解决张力（认知架构）──
+    unresolved_tensions: {
+        name: '未解决张力',
+        icon: '⚡',
+        color: 'bg-amber-100 text-amber-700',
+        description: '角色内心尚未理解或消解的困惑',
+        generate: (ctx) => {
+            return ctx.cognitiveContext?.unresolvedTensions || null;
+        },
+    },
+
+    // ── 21. 跨事件模式（认知架构）──
+    cross_event_patterns: {
+        name: '跨事件模式',
+        icon: '🔗',
+        color: 'bg-teal-100 text-teal-700',
+        description: '角色发现的用户行为关联模式',
+        generate: (ctx) => {
+            return ctx.cognitiveContext?.crossEventPatterns || null;
         },
     },
 };
