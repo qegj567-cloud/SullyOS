@@ -722,6 +722,51 @@ export async function assemblePrompt(
     return result;
 }
 
+/**
+ * 预览组装结果 — 返回每个 block 的标题 + 内容，用于 UI 可视化
+ * 与 assemblePrompt 相同的逻辑，但返回结构化数据而非纯文本
+ */
+export async function assemblePromptPreview(
+    preset: PromptPreset,
+    ctx: PromptRuntimeContext
+): Promise<{ blockId: string; name: string; icon: string; content: string; charCount: number }[]> {
+    const results: { blockId: string; name: string; icon: string; content: string; charCount: number }[] = [];
+
+    for (const block of preset.blocks) {
+        if (!block.enabled) continue;
+
+        let content: string | null = null;
+
+        if (block.type === 'system' && block.systemBlockId) {
+            const def = SYSTEM_BLOCKS[block.systemBlockId];
+            if (!def) continue;
+            if (block.content?.trim()) {
+                content = substituteTemplateVars(block.content, ctx);
+            } else {
+                try {
+                    content = await def.generate(ctx);
+                } catch {
+                    content = `[生成失败]`;
+                }
+            }
+        } else if (block.type === 'custom') {
+            content = block.content ? substituteTemplateVars(block.content, ctx) : null;
+        }
+
+        if (content?.trim()) {
+            results.push({
+                blockId: block.id,
+                name: block.name,
+                icon: block.icon || '📦',
+                content: content.trim(),
+                charCount: content.trim().length,
+            });
+        }
+    }
+
+    return results;
+}
+
 // ============ Convenience: Get System Block Metadata ============
 
 /** 获取所有系统 block 的元信息（用于 UI 展示） */

@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useOS } from '../context/OSContext';
 import { AppID, CharacterProfile, CharacterExportData, UserImpression, MemoryFragment } from '../types';
 import { SlidersHorizontal, SpeakerHigh, Books, BookOpen } from '@phosphor-icons/react';
-import { loadPresets, savePresets, getActivePresetId, setActivePresetId, createDefaultPreset, computeBlockActivity } from '../utils/promptEngine';
+import { loadPresets, savePresets, getActivePresetId, setActivePresetId, createDefaultPreset, computeBlockActivity, assemblePromptPreview, getActivePreset, PromptRuntimeContext } from '../utils/promptEngine';
 import { PromptPreset, PromptBlock } from '../types';
 import Modal from '../components/os/Modal';
 import { processImage } from '../utils/file';
@@ -106,6 +106,10 @@ const Character: React.FC = () => {
   const [editingPreset, setEditingPreset] = useState<PromptPreset | null>(null);
   const [editingBlockIdx, setEditingBlockIdx] = useState<number | null>(null);
   const [showPromptPresetModal, setShowPromptPresetModal] = useState(false);
+  const [showPromptPreview, setShowPromptPreview] = useState(false);
+  const [previewBlocks, setPreviewBlocks] = useState<{ blockId: string; name: string; icon: string; content: string; charCount: number }[]>([]);
+  const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+  const [expandedPreviewBlock, setExpandedPreviewBlock] = useState<string | null>(null);
 
   // Load presets when character changes
   useEffect(() => {
@@ -146,6 +150,31 @@ const Character: React.FC = () => {
       setPromptPresets(next);
       savePresets(next, editingId);
       if (activePresetId === id) switchPreset('default');
+  };
+
+  const generatePromptPreview = async () => {
+      if (!formData || isLoadingPreview) return;
+      setIsLoadingPreview(true);
+      setShowPromptPreview(true);
+      setExpandedPreviewBlock(null);
+      try {
+          const preset = getActivePreset(formData.id);
+          const ctx: PromptRuntimeContext = {
+              char: formData,
+              user: userProfile,
+              groups: [],
+              emojis: [],
+              emojiCategories: [],
+              currentMsgs: [],
+              realtimeConfig,
+              includeDetailedMemories: true,
+          };
+          const blocks = await assemblePromptPreview(preset, ctx);
+          setPreviewBlocks(blocks);
+      } catch (e: any) {
+          addToast(`预览生成失败: ${e.message?.slice(0, 60)}`, 'error');
+      }
+      setIsLoadingPreview(false);
   };
 
   const saveEditingPreset = () => {
@@ -1191,15 +1220,77 @@ ${isInitialGeneration ? `
 
                            {/* 当前预设 block 预览 */}
                            <div className="bg-white/60 rounded-2xl p-3 border border-white/50">
-                               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block">Block 列表预览</label>
+                               <div className="flex items-center justify-between mb-2">
+                                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Block 列表预览</label>
+                                   <button onClick={generatePromptPreview} disabled={isLoadingPreview}
+                                       className="px-2.5 py-1 bg-violet-50 text-violet-600 rounded-lg text-[10px] font-bold hover:bg-violet-100 transition-colors disabled:opacity-50">
+                                       {isLoadingPreview ? '生成中...' : '查看实际 Prompt'}
+                                   </button>
+                               </div>
                                <div className="flex flex-wrap gap-1">
-                                   {(promptPresets.find(p => p.id === activePresetId)?.blocks || []).map(b => (
-                                       <span key={b.id} className={`px-2 py-0.5 rounded-md text-[9px] font-bold ${b.enabled ? (b.color || 'bg-slate-100 text-slate-600') : 'bg-gray-100 text-gray-400 line-through'}`}>
-                                           {b.icon} {b.name}
-                                       </span>
-                                   ))}
+                                   {(promptPresets.find(p => p.id === activePresetId)?.blocks || []).map(b => {
+                                       const activity = formData ? computeBlockActivity(formData, realtimeConfig) : {};
+                                       const info = b.systemBlockId ? activity[b.systemBlockId] : undefined;
+                                       const inactive = b.enabled && info && !info.active;
+                                       return (
+                                           <span key={b.id} className={`px-2 py-0.5 rounded-md text-[9px] font-bold ${
+                                               !b.enabled ? 'bg-gray-100 text-gray-400 line-through' :
+                                               inactive ? 'bg-orange-50 text-orange-400 border border-orange-200 border-dashed' :
+                                               (b.color || 'bg-slate-100 text-slate-600')
+                                           }`} title={inactive ? info?.reason : undefined}>
+                                               {b.icon} {b.name}
+                                           </span>
+                                       );
+                                   })}
                                </div>
                            </div>
+
+                           {/* Prompt 实际内容预览 */}
+                           {showPromptPreview && (
+                               <div className="bg-white/60 rounded-2xl border border-white/50 overflow-hidden">
+                                   <div className="flex items-center justify-between px-3 py-2 bg-violet-50/50 border-b border-white/50">
+                                       <div className="flex items-center gap-2">
+                                           <span className="text-[10px] font-bold text-violet-600 uppercase tracking-widest">实际发送的 System Prompt</span>
+                                           {previewBlocks.length > 0 && (
+                                               <span className="text-[9px] text-slate-400">
+                                                   {previewBlocks.length} 块 · {previewBlocks.reduce((s, b) => s + b.charCount, 0).toLocaleString()} 字符
+                                               </span>
+                                           )}
+                                       </div>
+                                       <button onClick={() => setShowPromptPreview(false)} className="text-[10px] text-slate-400 hover:text-slate-600">收起</button>
+                                   </div>
+
+                                   {isLoadingPreview ? (
+                                       <div className="p-4 text-center text-xs text-slate-400">生成预览中...</div>
+                                   ) : previewBlocks.length === 0 ? (
+                                       <div className="p-4 text-center text-xs text-slate-400">无有效输出</div>
+                                   ) : (
+                                       <div className="divide-y divide-slate-100">
+                                           {previewBlocks.map(block => (
+                                               <div key={block.blockId}>
+                                                   <button onClick={() => setExpandedPreviewBlock(expandedPreviewBlock === block.blockId ? null : block.blockId)}
+                                                       className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50/50 transition-colors text-left">
+                                                       <span className="text-xs">{block.icon}</span>
+                                                       <span className="text-[11px] font-medium text-slate-600 flex-1">{block.name}</span>
+                                                       <span className="text-[9px] text-slate-400">{block.charCount.toLocaleString()} 字符</span>
+                                                       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"
+                                                           className={`w-3 h-3 text-slate-400 transition-transform ${expandedPreviewBlock === block.blockId ? 'rotate-180' : ''}`}>
+                                                           <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                                                       </svg>
+                                                   </button>
+                                                   {expandedPreviewBlock === block.blockId && (
+                                                       <div className="px-3 pb-3">
+                                                           <pre className="text-[10px] text-slate-500 leading-relaxed bg-slate-50 rounded-xl p-3 max-h-[40vh] overflow-y-auto whitespace-pre-wrap break-words font-mono border border-slate-100">
+                                                               {block.content}
+                                                           </pre>
+                                                       </div>
+                                                   )}
+                                               </div>
+                                           ))}
+                                       </div>
+                                   )}
+                               </div>
+                           )}
                        </div>
                    )}
                </div>
