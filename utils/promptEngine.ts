@@ -735,6 +735,44 @@ export function getSystemBlockMetas(): { id: SystemBlockId; name: string; icon: 
     }));
 }
 
+/**
+ * 计算每个 block 的"实际可用"状态
+ * 用于 UI 展示：即使用户在预设里开了开关，如果功能未配置，也标记为 inactive
+ * 返回 Record<SystemBlockId, { active: boolean; reason?: string }>
+ */
+export function computeBlockActivity(
+    char: CharacterProfile,
+    realtimeConfig?: RealtimeConfig,
+): Record<string, { active: boolean; reason?: string }> {
+    const rc = realtimeConfig || defaultRealtimeConfig;
+    const cogOn = char.emotionConfig?.cognitiveArchEnabled ?? false;
+    const emoOn = char.emotionConfig?.enabled ?? false;
+
+    return {
+        char_identity: { active: true },
+        worldview: { active: !!char.worldview?.trim(), reason: '未填写世界观' },
+        worldbooks: { active: (char.mountedWorldbooks?.length ?? 0) > 0, reason: '未挂载世界书' },
+        user_profile: { active: true },
+        impression: { active: true },
+        memory_bank: { active: true },
+        memory_palace: { active: true },
+        emotion_buff: { active: emoOn, reason: '未开启情绪系统' },
+        realtime_context: { active: rc.weatherEnabled || rc.newsEnabled, reason: '天气/新闻均未开启' },
+        group_context: { active: true },
+        notion_diaries: { active: !!(rc.notionEnabled && rc.notionApiKey && rc.notionDatabaseId), reason: 'Notion 未配置' },
+        feishu_diaries: { active: !!(rc.feishuEnabled && rc.feishuAppId && rc.feishuAppSecret), reason: '飞书未配置' },
+        user_notes: { active: !!(rc.notionEnabled && rc.notionApiKey && rc.notionNotesDatabaseId), reason: 'Notion 笔记未配置' },
+        chat_rules: { active: true },
+        voice_config: { active: true },
+        mode_switch: { active: true },
+        emotion_dynamics: { active: cogOn, reason: '未开启认知架构' },
+        personality_crystals: { active: cogOn, reason: '未开启认知架构' },
+        user_cognitive_model: { active: cogOn, reason: '未开启认知架构' },
+        unresolved_tensions: { active: cogOn, reason: '未开启认知架构' },
+        cross_event_patterns: { active: cogOn, reason: '未开启认知架构' },
+    };
+}
+
 // ============ Preset Storage (localStorage, per-character) ============
 
 const STORAGE_KEY = 'os_prompt_presets';           // legacy global key

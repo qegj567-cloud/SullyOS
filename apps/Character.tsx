@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useOS } from '../context/OSContext';
 import { AppID, CharacterProfile, CharacterExportData, UserImpression, MemoryFragment } from '../types';
 import { SlidersHorizontal, SpeakerHigh, Books, BookOpen } from '@phosphor-icons/react';
-import { loadPresets, savePresets, getActivePresetId, setActivePresetId, createDefaultPreset } from '../utils/promptEngine';
+import { loadPresets, savePresets, getActivePresetId, setActivePresetId, createDefaultPreset, computeBlockActivity } from '../utils/promptEngine';
 import { PromptPreset, PromptBlock } from '../types';
 import Modal from '../components/os/Modal';
 import { processImage } from '../utils/file';
@@ -56,7 +56,7 @@ const CharacterCard: React.FC<{
 );
 
 const Character: React.FC = () => {
-  const { closeApp, openApp, characters, activeCharacterId, setActiveCharacterId, addCharacter, updateCharacter, deleteCharacter, apiConfig, addToast, userProfile, customThemes, addCustomTheme, worldbooks } = useOS();
+  const { closeApp, openApp, characters, activeCharacterId, setActiveCharacterId, addCharacter, updateCharacter, deleteCharacter, apiConfig, addToast, userProfile, customThemes, addCustomTheme, worldbooks, realtimeConfig } = useOS();
   const [view, setView] = useState<'list' | 'detail'>('list');
   const [detailTab, setDetailTab] = useState<'identity' | 'memory' | 'impression' | 'preset'>('identity');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -1239,6 +1239,14 @@ ${isInitialGeneration ? `
                                        <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform ${block.enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
                                    </button>
                                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${block.color || 'bg-slate-100 text-slate-600'}`}>{block.icon} {block.name}</span>
+                                   {block.enabled && block.type === 'system' && block.systemBlockId && (() => {
+                                       const activity = computeBlockActivity(formData!, realtimeConfig);
+                                       const info = activity[block.systemBlockId!];
+                                       if (info && !info.active) return (
+                                           <span className="text-[8px] text-orange-500 bg-orange-50 px-1 py-0.5 rounded font-bold shrink-0" title={info.reason}>{info.reason || '未配置'}</span>
+                                       );
+                                       return null;
+                                   })()}
                                    <span className="text-[9px] text-slate-400 flex-1 truncate">{block.type === 'system' ? '系统' : '自定义'}</span>
                                    <button onClick={() => setEditingBlockIdx(editingBlockIdx === idx ? null : idx)} className="px-1.5 py-0.5 text-[9px] text-slate-400 hover:text-violet-500">{editingBlockIdx === idx ? '收起' : '编辑'}</button>
                                    {block.type === 'custom' && (
