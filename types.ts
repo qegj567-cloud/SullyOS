@@ -246,6 +246,74 @@ export interface MemoryFragment {
   mood?: string;
 }
 
+// ============ Memory Palace (记忆宫殿) ============
+
+/** 记忆房间类型 */
+export type MemoryRoom =
+  | 'living_room'   // 客厅 — 日常互动、闲聊
+  | 'bedroom'       // 卧室 — 亲密关系、情感
+  | 'study'         // 书房 — 工作、学习、成长
+  | 'user_room'     // TA的房间 — 关于用户的一切
+  | 'self_room'     // 自己的房间 — 角色的自我认知
+  | 'attic';        // 阁楼 — 杂项、低频、待归类
+
+/** 记忆节点 — 从聊天中提取的结构化记忆片段 */
+export interface MemoryNode {
+  id: string;
+  charId: string;
+
+  // 内容
+  content: string;          // 第三人称陈述句
+  source: 'chat' | 'reflection' | 'user_pin';
+  sourceMessageIds?: number[];
+
+  // 分类
+  room: MemoryRoom;
+  tags: string[];
+
+  // 权重三因子
+  importance: number;       // 1-10
+  lastAccessedAt: number;   // 上次被检索引用的时间戳
+  createdAt: number;
+
+  // 向量状态
+  embedded: boolean;
+  embeddingVersion: number; // 模型变了可以重新生成
+
+  // 元数据
+  mood?: string;
+  processBatch?: string;    // 哪次整理批次产生的
+  linkedMemoryIds?: string[]; // 关联的其他记忆（相似度 0.7-0.9）
+}
+
+/** 向量记录 — 与 MemoryNode 分开存储，避免大对象拖慢查询 */
+export interface MemoryVector {
+  memoryId: string;
+  charId: string;
+  vector: number[];         // Float32 序列化为普通数组（IndexedDB 不支持 TypedArray 作 key）
+  dimensions: number;
+  version: number;
+}
+
+/** Embedding API 配置 */
+export interface EmbeddingApiConfig {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  dimensions?: number;      // 可选降维（Matryoshka）
+}
+
+/** 记忆整理批次记录 */
+export interface MemoryProcessBatch {
+  id: string;
+  charId: string;
+  processedAt: number;
+  lastMessageId: number;    // 处理到哪条消息
+  extractedCount: number;   // 提取了多少条记忆
+  mergedCount: number;      // 合并了多少条
+  log: string[];            // 整理日志（用户可见）
+}
+
 export interface SpriteConfig {
   scale: number;
   x: number;

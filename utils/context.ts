@@ -2,6 +2,9 @@
 import { CharacterProfile, UserProfile } from '../types';
 import { normalizeUserImpression } from './impression';
 
+/** 记忆宫殿检索结果的注入占位符（由 memoryRetrieval.ts 生成，在对话时动态填充） */
+let _pendingMemoryInjection: string = '';
+
 /**
  * Memory Central
  * 负责统一构建所有 App 共用的基础角色上下文 (System Prompt)。
@@ -190,7 +193,13 @@ export const ContextBuilder = {
         }
         context += `${memoryContent}\n\n`;
 
-        // 6. 情绪底色 Buff (Emotion Buff Injection)
+        // 6. 记忆宫殿注入 (Memory Palace — 向量检索结果)
+        // 由 memoryRetrieval.retrieveRelevantMemories() 在对话前填充
+        if (_pendingMemoryInjection) {
+            context += _pendingMemoryInjection + '\n';
+        }
+
+        // 7. 情绪底色 Buff (Emotion Buff Injection)
         // 放在角色设定之后，使所有调用 ContextBuilder 的 App 都能感知情绪状态
         if (char.emotionConfig?.enabled && char.buffInjection) {
             context += `${char.buffInjection}\n\n`;
@@ -213,5 +222,18 @@ export const ContextBuilder = {
         }
 
         return context;
-    }
+    },
+
+    /**
+     * 设置记忆宫殿注入内容（在对话前由 memoryRetrieval 调用）
+     * 每次 buildCoreContext 后自动清空，避免重复注入
+     */
+    setMemoryInjection: (text: string) => {
+        _pendingMemoryInjection = text;
+    },
+
+    /** 清除记忆宫殿注入 */
+    clearMemoryInjection: () => {
+        _pendingMemoryInjection = '';
+    },
 };

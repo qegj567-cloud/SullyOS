@@ -6,11 +6,12 @@ import {
     Task, Anniversary, DiaryEntry, RoomTodo, RoomNote,
     GalleryImage, FullBackupData, GroupProfile, SocialPost, StudyCourse, GameSession, Worldbook, NovelBook, Emoji, EmojiCategory,
     BankTransaction, SavingsGoal, BankFullState, DollhouseState, XhsStockImage, XhsActivityRecord, SongSheet, QuizSession, GuidebookSession,
-    LifeSimState
+    LifeSimState,
+    MemoryNode, MemoryVector, MemoryProcessBatch
 } from '../types';
 
 const DB_NAME = 'AetherOS_Data';
-const DB_VERSION = 39; // Bumped for LifeSim (模拟人生)
+const DB_VERSION = 40; // Bumped for Memory Palace (记忆宫殿)
 
 const STORE_CHARACTERS = 'characters';
 const STORE_MESSAGES = 'messages';
@@ -41,6 +42,9 @@ const STORE_SONGS = 'songs';
 const STORE_QUIZZES = 'quizzes';
 const STORE_GUIDEBOOK = 'guidebook';
 const STORE_LIFE_SIM = 'life_sim';
+const STORE_MEMORY_NODES = 'memory_nodes';
+const STORE_MEMORY_VECTORS = 'memory_vectors';
+const STORE_MEMORY_BATCHES = 'memory_batches';
 
 export interface ScheduledMessage {
     id: string;
@@ -153,6 +157,22 @@ const openDB = (): Promise<IDBDatabase> => {
       createStore(STORE_QUIZZES, { keyPath: 'id' });
       createStore(STORE_GUIDEBOOK, { keyPath: 'id' });
       createStore(STORE_LIFE_SIM, { keyPath: 'id' });
+
+      // Memory Palace (记忆宫殿) stores
+      if (!db.objectStoreNames.contains(STORE_MEMORY_NODES)) {
+          const memStore = db.createObjectStore(STORE_MEMORY_NODES, { keyPath: 'id' });
+          memStore.createIndex('charId', 'charId', { unique: false });
+          memStore.createIndex('charId_room', ['charId', 'room'], { unique: false });
+          memStore.createIndex('charId_embedded', ['charId', 'embedded'], { unique: false });
+      }
+      if (!db.objectStoreNames.contains(STORE_MEMORY_VECTORS)) {
+          const vecStore = db.createObjectStore(STORE_MEMORY_VECTORS, { keyPath: 'memoryId' });
+          vecStore.createIndex('charId', 'charId', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(STORE_MEMORY_BATCHES)) {
+          const batchStore = db.createObjectStore(STORE_MEMORY_BATCHES, { keyPath: 'id' });
+          batchStore.createIndex('charId', 'charId', { unique: false });
+      }
     };
   });
 };
@@ -1202,6 +1222,144 @@ export const DB = {
       const db = await openDB();
       const transaction = db.transaction(STORE_LIFE_SIM, 'readwrite');
       transaction.objectStore(STORE_LIFE_SIM).clear();
+  },
+
+  // ============ Memory Palace (记忆宫殿) ============
+
+  getMemoryNodesByCharId: async (charId: string): Promise<MemoryNode[]> => {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_MEMORY_NODES, 'readonly');
+          const store = transaction.objectStore(STORE_MEMORY_NODES);
+          const index = store.index('charId');
+          const request = index.getAll(IDBKeyRange.only(charId));
+          request.onsuccess = () => resolve(request.result || []);
+          request.onerror = () => reject(request.error);
+      });
+  },
+
+  getMemoryNodesByRoom: async (charId: string, room: string): Promise<MemoryNode[]> => {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_MEMORY_NODES, 'readonly');
+          const store = transaction.objectStore(STORE_MEMORY_NODES);
+          const index = store.index('charId_room');
+          const request = index.getAll(IDBKeyRange.only([charId, room]));
+          request.onsuccess = () => resolve(request.result || []);
+          request.onerror = () => reject(request.error);
+      });
+  },
+
+  getUnembeddedMemories: async (charId: string): Promise<MemoryNode[]> => {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_MEMORY_NODES, 'readonly');
+          const store = transaction.objectStore(STORE_MEMORY_NODES);
+          const index = store.index('charId_embedded');
+          const request = index.getAll(IDBKeyRange.only([charId, 0])); // false stored as 0
+          request.onsuccess = () => resolve(request.result || []);
+          request.onerror = () => reject(request.error);
+      });
+  },
+
+  saveMemoryNode: async (node: MemoryNode): Promise<void> => {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_MEMORY_NODES, 'readwrite');
+          transaction.objectStore(STORE_MEMORY_NODES).put(node);
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error);
+      });
+  },
+
+  saveMemoryNodes: async (nodes: MemoryNode[]): Promise<void> => {
+      if (nodes.length === 0) return;
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_MEMORY_NODES, 'readwrite');
+          const store = transaction.objectStore(STORE_MEMORY_NODES);
+          nodes.forEach(n => store.put(n));
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error);
+      });
+  },
+
+  deleteMemoryNode: async (id: string): Promise<void> => {
+      const db = await openDB();
+      const transaction = db.transaction([STORE_MEMORY_NODES, STORE_MEMORY_VECTORS], 'readwrite');
+      transaction.objectStore(STORE_MEMORY_NODES).delete(id);
+      transaction.objectStore(STORE_MEMORY_VECTORS).delete(id);
+  },
+
+  clearMemoryNodes: async (charId: string): Promise<void> => {
+      const nodes = await DB.getMemoryNodesByCharId(charId);
+      if (nodes.length === 0) return;
+      const db = await openDB();
+      const transaction = db.transaction([STORE_MEMORY_NODES, STORE_MEMORY_VECTORS], 'readwrite');
+      const nodeStore = transaction.objectStore(STORE_MEMORY_NODES);
+      const vecStore = transaction.objectStore(STORE_MEMORY_VECTORS);
+      nodes.forEach(n => {
+          nodeStore.delete(n.id);
+          vecStore.delete(n.id);
+      });
+  },
+
+  // Vector operations
+  getMemoryVectorsByCharId: async (charId: string): Promise<MemoryVector[]> => {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_MEMORY_VECTORS, 'readonly');
+          const store = transaction.objectStore(STORE_MEMORY_VECTORS);
+          const index = store.index('charId');
+          const request = index.getAll(IDBKeyRange.only(charId));
+          request.onsuccess = () => resolve(request.result || []);
+          request.onerror = () => reject(request.error);
+      });
+  },
+
+  saveMemoryVector: async (vec: MemoryVector): Promise<void> => {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_MEMORY_VECTORS, 'readwrite');
+          transaction.objectStore(STORE_MEMORY_VECTORS).put(vec);
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error);
+      });
+  },
+
+  saveMemoryVectors: async (vecs: MemoryVector[]): Promise<void> => {
+      if (vecs.length === 0) return;
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_MEMORY_VECTORS, 'readwrite');
+          const store = transaction.objectStore(STORE_MEMORY_VECTORS);
+          vecs.forEach(v => store.put(v));
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error);
+      });
+  },
+
+  // Batch records
+  getMemoryBatches: async (charId: string): Promise<MemoryProcessBatch[]> => {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_MEMORY_BATCHES, 'readonly');
+          const store = transaction.objectStore(STORE_MEMORY_BATCHES);
+          const index = store.index('charId');
+          const request = index.getAll(IDBKeyRange.only(charId));
+          request.onsuccess = () => resolve(request.result || []);
+          request.onerror = () => reject(request.error);
+      });
+  },
+
+  saveMemoryBatch: async (batch: MemoryProcessBatch): Promise<void> => {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_MEMORY_BATCHES, 'readwrite');
+          transaction.objectStore(STORE_MEMORY_BATCHES).put(batch);
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error);
+      });
   },
 
   getRawStoreData: async (storeName: string): Promise<any[]> => {
