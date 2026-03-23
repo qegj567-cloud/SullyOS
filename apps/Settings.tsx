@@ -17,7 +17,8 @@ const Settings: React.FC = () => {
       exportSystem, importSystem, addToast, resetSystem,
       apiPresets, addApiPreset, removeApiPreset,
       sysOperation, // Get progress state
-      realtimeConfig, updateRealtimeConfig // 实时感知配置
+      realtimeConfig, updateRealtimeConfig, // 实时感知配置
+      embeddingConfig, updateEmbeddingConfig // Embedding API 配置
   } = useOS();
   
   const [localKey, setLocalKey] = useState(apiConfig.apiKey);
@@ -28,6 +29,14 @@ const Settings: React.FC = () => {
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [newPresetName, setNewPresetName] = useState('');
   
+  // Embedding API 本地状态
+  const [embUrl, setEmbUrl] = useState(embeddingConfig.baseUrl);
+  const [embKey, setEmbKey] = useState(embeddingConfig.apiKey);
+  const [embModel, setEmbModel] = useState(embeddingConfig.model);
+  const [embDims, setEmbDims] = useState(String(embeddingConfig.dimensions || 1024));
+  const [embStatus, setEmbStatus] = useState('');
+  const [embUseSameApi, setEmbUseSameApi] = useState(!embeddingConfig.baseUrl);
+
   // UI States
   const [showModelModal, setShowModelModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false); // Used for completion now
@@ -107,6 +116,38 @@ const Settings: React.FC = () => {
     });
     setStatusMsg('配置已保存');
     setTimeout(() => setStatusMsg(''), 2000);
+  };
+
+  const handleSaveEmbeddingConfig = () => {
+    if (embUseSameApi) {
+      updateEmbeddingConfig({ baseUrl: '', apiKey: '', model: 'text-embedding-3-small', dimensions: 1024 });
+      setEmbStatus('已设为使用主 API（自动回退）');
+    } else {
+      updateEmbeddingConfig({ baseUrl: embUrl, apiKey: embKey, model: embModel, dimensions: Number(embDims) || 1024 });
+      setEmbStatus('Embedding 配置已保存');
+    }
+    setTimeout(() => setEmbStatus(''), 2000);
+  };
+
+  const testEmbeddingApi = async () => {
+    const baseUrl = embUseSameApi ? apiConfig.baseUrl : embUrl;
+    const apiKey = embUseSameApi ? apiConfig.apiKey : embKey;
+    const model = embUseSameApi ? 'text-embedding-3-small' : embModel;
+    if (!baseUrl || !apiKey) { setEmbStatus('请先填写 URL 和 Key'); return; }
+    setEmbStatus('测试中...');
+    try {
+      const resp = await fetch(`${baseUrl.replace(/\/$/, '')}/embeddings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify({ model, input: ['测试向量化'], dimensions: Number(embDims) || 1024 }),
+      });
+      if (!resp.ok) { const d = await safeResponseJson(resp); throw new Error(d?.error?.message || `HTTP ${resp.status}`); }
+      const data = await safeResponseJson(resp);
+      const dim = data?.data?.[0]?.embedding?.length || 0;
+      setEmbStatus(`成功! 维度=${dim}`);
+    } catch (e: any) {
+      setEmbStatus(`失败: ${e.message?.slice(0, 60)}`);
+    }
   };
 
   const fetchModels = async () => {
@@ -479,6 +520,64 @@ const Settings: React.FC = () => {
                 
                 <button onClick={handleSaveApi} className="w-full py-3 rounded-2xl font-bold text-white shadow-lg shadow-primary/20 bg-primary active:scale-95 transition-all mt-2">
                     {statusMsg || '保存配置'}
+                </button>
+            </div>
+        </section>
+
+        {/* 记忆宫殿 Embedding API 配置 */}
+        <section className="bg-white/60 backdrop-blur-sm rounded-3xl p-5 shadow-sm border border-white/50">
+            <div className="flex items-center gap-2 mb-4">
+                <div className="p-2 bg-amber-100/60 rounded-xl text-amber-600">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25a2.25 2.25 0 0 1-2.25-2.25v-2.25Z" />
+                    </svg>
+                </div>
+                <h2 className="text-sm font-semibold text-slate-600 tracking-wider">记忆宫殿 (Embedding)</h2>
+            </div>
+
+            <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+                记忆宫殿需要 Embedding API 来将记忆向量化。支持任何 OpenAI 兼容接口（硅基流动、阿里百炼等）。
+            </p>
+
+            <div className="flex items-center gap-3 mb-4 p-3 bg-amber-50/80 rounded-xl">
+                <label className="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" checked={embUseSameApi} onChange={e => { setEmbUseSameApi(e.target.checked); }} className="sr-only peer" />
+                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
+                </label>
+                <span className="text-xs text-slate-600 font-medium">使用与主 API 相同的地址和 Key</span>
+            </div>
+
+            {!embUseSameApi && (
+                <div className="space-y-3 mb-4">
+                    <div>
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">Embedding URL</label>
+                        <input type="text" value={embUrl} onChange={e => setEmbUrl(e.target.value)} placeholder="https://api.siliconflow.cn/v1" className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all" />
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">Embedding Key</label>
+                        <input type="password" value={embKey} onChange={e => setEmbKey(e.target.value)} placeholder="sk-..." className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all" />
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">Embedding Model</label>
+                        <input type="text" value={embModel} onChange={e => setEmbModel(e.target.value)} placeholder="BAAI/bge-m3 (硅基免费)" className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all" />
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">维度 (Dimensions)</label>
+                        <input type="number" value={embDims} onChange={e => setEmbDims(e.target.value)} placeholder="1024" className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all" />
+                    </div>
+                </div>
+            )}
+
+            <p className="text-[10px] text-slate-400 mb-3 px-1 leading-relaxed">
+                推荐：<b>硅基流动 BAAI/bge-m3</b>（免费）或 <b>Qwen3-Embedding-0.6B</b>（$0.01/百万token）。所有国产API都兼容 OpenAI 接口。
+            </p>
+
+            <div className="flex gap-2">
+                <button onClick={testEmbeddingApi} className="flex-1 py-2.5 bg-amber-50 border border-amber-200 text-amber-700 rounded-xl text-xs font-bold active:scale-95 transition-transform">
+                    测试连接
+                </button>
+                <button onClick={handleSaveEmbeddingConfig} className="flex-1 py-2.5 bg-amber-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-amber-500/20 active:scale-95 transition-transform">
+                    {embStatus || '保存'}
                 </button>
             </div>
         </section>

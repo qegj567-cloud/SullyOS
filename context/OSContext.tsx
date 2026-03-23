@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
-import { APIConfig, AppID, OSTheme, VirtualTime, CharacterProfile, ChatTheme, Toast, FullBackupData, UserProfile, ApiPreset, GroupProfile, SystemLog, Worldbook, NovelBook, SongSheet, Message, RealtimeConfig, AppearancePreset } from '../types';
+import { APIConfig, AppID, OSTheme, VirtualTime, CharacterProfile, ChatTheme, Toast, FullBackupData, UserProfile, ApiPreset, GroupProfile, SystemLog, Worldbook, NovelBook, SongSheet, Message, RealtimeConfig, AppearancePreset, EmbeddingApiConfig } from '../types';
 import { DB } from '../utils/db';
 import { ProactiveChat } from '../utils/proactiveChat';
 import { ChatPrompts } from '../utils/chatPrompts';
@@ -148,6 +148,10 @@ interface OSContextType {
   // 实时配置 (天气、新闻、Notion等)
   realtimeConfig: RealtimeConfig;
   updateRealtimeConfig: (updates: Partial<RealtimeConfig>) => void;
+
+  // Embedding API 配置（记忆宫殿向量化）
+  embeddingConfig: EmbeddingApiConfig;
+  updateEmbeddingConfig: (updates: Partial<EmbeddingApiConfig>) => void;
 
   customThemes: ChatTheme[];
   addCustomTheme: (theme: ChatTheme) => void;
@@ -395,6 +399,9 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const [activeApp, setActiveApp] = useState<AppID>(AppID.Launcher);
   const [theme, setTheme] = useState<OSTheme>(defaultTheme);
   const [apiConfig, setApiConfig] = useState<APIConfig>(defaultApiConfig);
+  const [embeddingConfig, setEmbeddingConfig] = useState<EmbeddingApiConfig>(() => {
+    try { const saved = localStorage.getItem('os_embedding_config'); return saved ? JSON.parse(saved) : { baseUrl: '', apiKey: '', model: '', dimensions: 1024 }; } catch { return { baseUrl: '', apiKey: '', model: '', dimensions: 1024 }; }
+  });
   const [isLocked, setIsLocked] = useState(true);
   
   const getRealTime = (): VirtualTime => {
@@ -1293,6 +1300,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     localStorage.setItem('os_theme', JSON.stringify(lsTheme));
   };
   const updateApiConfig = (updates: Partial<APIConfig>) => { const newConfig = { ...apiConfig, ...updates }; setApiConfig(newConfig); localStorage.setItem('os_api_config', JSON.stringify(newConfig)); };
+  const updateEmbeddingConfig = (updates: Partial<EmbeddingApiConfig>) => { const newConfig = { ...embeddingConfig, ...updates }; setEmbeddingConfig(newConfig); localStorage.setItem('os_embedding_config', JSON.stringify(newConfig)); };
   const updateRealtimeConfig = (updates: Partial<RealtimeConfig>) => { const newConfig = { ...realtimeConfig, ...updates }; setRealtimeConfig(newConfig); localStorage.setItem('os_realtime_config', JSON.stringify(newConfig)); };
   const saveModels = (models: string[]) => { setAvailableModels(models); localStorage.setItem('os_available_models', JSON.stringify(models)); };
   const addApiPreset = (name: string, config: APIConfig) => { setApiPresets(prev => { const next = [...prev, { id: Date.now().toString(), name, config }]; localStorage.setItem('os_api_presets', JSON.stringify(next)); return next; }); };
@@ -2089,6 +2097,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     removeApiPreset,
     realtimeConfig,
     updateRealtimeConfig,
+    embeddingConfig,
+    updateEmbeddingConfig,
     customThemes,
     addCustomTheme,
     removeCustomTheme,

@@ -1,6 +1,6 @@
 
 import { useState, useRef } from 'react';
-import { CharacterProfile, UserProfile, Message, Emoji, EmojiCategory, GroupProfile, RealtimeConfig, CharacterBuff } from '../types';
+import { CharacterProfile, UserProfile, Message, Emoji, EmojiCategory, GroupProfile, RealtimeConfig, CharacterBuff, EmbeddingApiConfig } from '../types';
 import { DB } from '../utils/db';
 import { ChatPrompts } from '../utils/chatPrompts';
 import { ChatParser } from '../utils/chatParser';
@@ -10,6 +10,8 @@ import { safeFetchJson, safeResponseJson } from '../utils/safeApi';
 import { KeepAlive } from '../utils/keepAlive';
 import { ProactiveChat } from '../utils/proactiveChat';
 import { ContextBuilder } from '../utils/context';
+import { retrieveRelevantMemories } from '../utils/memoryRetrieval';
+import { getDefaultEmbeddingConfig } from '../utils/memoryEmbedding';
 
 // ─── 情绪评估（副API，fire & forget）───
 
@@ -339,6 +341,7 @@ interface UseChatAIProps {
     setMessages: (msgs: Message[]) => void; // Callback to update UI messages
     realtimeConfig?: RealtimeConfig; // 新增：实时配置
     translationConfig?: { enabled: boolean; sourceLang: string; targetLang: string };
+    embeddingConfig?: EmbeddingApiConfig; // 记忆宫殿 Embedding API
 }
 
 export const useChatAI = ({
@@ -351,7 +354,8 @@ export const useChatAI = ({
     addToast,
     setMessages,
     realtimeConfig,  // 新增
-    translationConfig
+    translationConfig,
+    embeddingConfig,  // 记忆宫殿
 }: UseChatAIProps) => {
     
     const [isTyping, setIsTyping] = useState(false);
@@ -360,6 +364,7 @@ export const useChatAI = ({
     const [diaryStatus, setDiaryStatus] = useState<string>('');
     const [xhsStatus, setXhsStatus] = useState<string>('');
     const [emotionStatus, setEmotionStatus] = useState<string>('');
+    const [memoryPalaceStatus, setMemoryPalaceStatus] = useState<string>('');
     const [lastTokenUsage, setLastTokenUsage] = useState<number | null>(null);
     const [tokenBreakdown, setTokenBreakdown] = useState<{ prompt: number; completion: number; total: number; msgCount: number; pass: string } | null>(null);
 
@@ -425,6 +430,30 @@ export const useChatAI = ({
 
             // 1. Build System Prompt (包含实时世界信息)
             let systemPrompt = await ChatPrompts.buildSystemPrompt(char, userProfile, groups, emojis, categories, currentMsgs, realtimeConfig);
+
+            // 1.1 Memory Palace — 向量检索相关记忆并注入
+            const effEmbConfig = (embeddingConfig?.baseUrl && embeddingConfig?.apiKey)
+                ? embeddingConfig
+                : (effectiveApi.baseUrl ? getDefaultEmbeddingConfig(effectiveApi.baseUrl, effectiveApi.apiKey) : null);
+
+            if (effEmbConfig && char.id) {
+                try {
+                    setMemoryPalaceStatus('检索记忆中...');
+                    const recentTexts = currentMsgs.slice(-5).map(m => typeof m.content === 'string' ? m.content : '').filter(Boolean);
+                    const { text: memoryText, results: memResults, tokenEstimate } = await retrieveRelevantMemories(
+                        char.id, recentTexts, effEmbConfig, { topK: 5, maxTokenBudget: 800 }
+                    );
+                    if (memoryText) {
+                        systemPrompt += `\n\n${memoryText}`;
+                        console.log(`🧠 [MemoryPalace] 检索到 ${memResults.length} 条记忆, ~${tokenEstimate} tokens`);
+                    }
+                    setMemoryPalaceStatus(memResults.length > 0 ? `唤醒了 ${memResults.length} 段记忆` : '');
+                } catch (err) {
+                    console.warn('[MemoryPalace] 检索失败 (不影响正常对话):', err);
+                    setMemoryPalaceStatus('');
+                }
+                setTimeout(() => setMemoryPalaceStatus(''), 3000);
+            }
 
             // 1.5 Inject bilingual output instruction when translation is enabled
             const bilingualActive = translationConfig?.enabled && translationConfig.sourceLang && translationConfig.targetLang;
@@ -2084,6 +2113,7 @@ export const useChatAI = ({
         diaryStatus,
         xhsStatus,
         emotionStatus,
+        memoryPalaceStatus,
         lastTokenUsage,
         tokenBreakdown,
         setLastTokenUsage, // Allow manual reset if needed
