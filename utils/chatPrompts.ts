@@ -86,8 +86,8 @@ export const ChatPrompts = {
             features: { searchEnabled, notionEnabled, feishuEnabled, notionNotesEnabled, xhsEnabled },
         };
 
-        // 通过引擎组装 prompt
-        const preset = getActivePreset();
+        // 通过引擎组装 prompt（按角色加载预设）
+        const preset = getActivePreset(char.id);
         let baseSystemPrompt = await assemblePrompt(preset, runtimeCtx);
 
         return baseSystemPrompt;

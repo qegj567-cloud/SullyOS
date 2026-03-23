@@ -661,17 +661,35 @@ export function getSystemBlockMetas(): { id: SystemBlockId; name: string; icon: 
     }));
 }
 
-// ============ Preset Storage (localStorage) ============
+// ============ Preset Storage (localStorage, per-character) ============
 
-const STORAGE_KEY = 'os_prompt_presets';
-const ACTIVE_PRESET_KEY = 'os_active_prompt_preset_id';
+const STORAGE_KEY = 'os_prompt_presets';           // legacy global key
+const ACTIVE_PRESET_KEY = 'os_active_prompt_preset_id'; // legacy global key
 
-/** 加载所有预设（包含默认预设） */
-export function loadPresets(): PromptPreset[] {
+function charStorageKey(charId: string) { return `os_prompt_presets_${charId}`; }
+function charActiveKey(charId: string) { return `os_active_preset_${charId}`; }
+
+/**
+ * 加载角色的预设列表（含默认预设）
+ * 向后兼容：如果角色无独立预设，回退读取全局预设并迁移
+ */
+export function loadPresets(charId?: string): PromptPreset[] {
     try {
-        const saved = localStorage.getItem(STORAGE_KEY);
+        let saved: string | null = null;
+        if (charId) {
+            saved = localStorage.getItem(charStorageKey(charId));
+            // 回退到全局预设（一次性迁移）
+            if (!saved) {
+                const globalSaved = localStorage.getItem(STORAGE_KEY);
+                if (globalSaved) {
+                    localStorage.setItem(charStorageKey(charId), globalSaved);
+                    saved = globalSaved;
+                }
+            }
+        } else {
+            saved = localStorage.getItem(STORAGE_KEY);
+        }
         const userPresets: PromptPreset[] = saved ? JSON.parse(saved) : [];
-        // 始终把默认预设放在最前面
         const defaultPreset = createDefaultPreset();
         return [defaultPreset, ...userPresets.filter(p => p.id !== 'default')];
     } catch {
@@ -679,25 +697,28 @@ export function loadPresets(): PromptPreset[] {
     }
 }
 
-/** 保存用户预设（不保存默认预设） */
-export function savePresets(presets: PromptPreset[]): void {
+/** 保存角色的用户预设（不保存默认预设） */
+export function savePresets(presets: PromptPreset[], charId?: string): void {
     const userPresets = presets.filter(p => p.id !== 'default');
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(userPresets));
+    const key = charId ? charStorageKey(charId) : STORAGE_KEY;
+    localStorage.setItem(key, JSON.stringify(userPresets));
 }
 
-/** 获取当前激活的预设 ID */
-export function getActivePresetId(): string {
-    return localStorage.getItem(ACTIVE_PRESET_KEY) || 'default';
+/** 获取角色当前激活的预设 ID */
+export function getActivePresetId(charId?: string): string {
+    const key = charId ? charActiveKey(charId) : ACTIVE_PRESET_KEY;
+    return localStorage.getItem(key) || 'default';
 }
 
-/** 设置当前激活的预设 ID */
-export function setActivePresetId(id: string): void {
-    localStorage.setItem(ACTIVE_PRESET_KEY, id);
+/** 设置角色当前激活的预设 ID */
+export function setActivePresetId(id: string, charId?: string): void {
+    const key = charId ? charActiveKey(charId) : ACTIVE_PRESET_KEY;
+    localStorage.setItem(key, id);
 }
 
-/** 获取当前激活的预设 */
-export function getActivePreset(): PromptPreset {
-    const presets = loadPresets();
-    const activeId = getActivePresetId();
+/** 获取角色当前激活的预设 */
+export function getActivePreset(charId?: string): PromptPreset {
+    const presets = loadPresets(charId);
+    const activeId = getActivePresetId(charId);
     return presets.find(p => p.id === activeId) || presets[0];
 }

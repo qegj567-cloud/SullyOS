@@ -31,6 +31,7 @@ export enum AppID {
   VoiceDesigner = 'voice_designer', // 捏声音 — MiniMax 音色设计器
   Guidebook = 'guidebook', // 攻略本 — 角色攻略用户小游戏
   LifeSim = 'lifesim', // 模拟人生 — 与角色共同经营的小世界
+  MemoryPalace = 'memory_palace', // 记忆宫殿 — 记忆管理 + 向量化配置
 }
 
 export interface SystemLog {
