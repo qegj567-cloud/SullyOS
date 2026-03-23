@@ -1040,6 +1040,8 @@ export interface CharacterProfile {
   buffInjection?: string;   // 注入到systemPrompt的叙事型情绪底色描述
   emotionConfig?: {
     enabled: boolean;
+    /** 认知架构开关 — 开启后使用三层情绪栈 + 杏仁核 + 海马体 + 人格结晶 */
+    cognitiveArchEnabled?: boolean;
     api?: {
       baseUrl: string;
       apiKey: string;

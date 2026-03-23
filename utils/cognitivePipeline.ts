@@ -21,7 +21,7 @@ import type { CharacterProfile, Message, EmotionalTag, EmotionState } from '../t
 
 export interface CognitivePipelineResult {
     /** 走了哪条路径 */
-    path: 'fast' | 'full';
+    path: 'skip' | 'fast' | 'full';
     /** 触发原因（完整管线时有值） */
     triggerReasons: string[];
     /** 情绪动力学的自然语言描述（注入 prompt 用） */
@@ -92,11 +92,26 @@ function extractLocalEmotionTags(messageText: string): EmotionalTag[] {
 
 // ── Main Pipeline ──
 
+/** 空结果 — 认知架构未开启时返回 */
+const SKIP_RESULT: CognitivePipelineResult = {
+    path: 'skip',
+    triggerReasons: [],
+    emotionDynamicsDesc: '',
+    reunionTriggered: false,
+    cognitiveInjections: {
+        crossEventPatterns: null,
+        unresolvedTensions: null,
+        userCognitiveModel: null,
+    },
+};
+
 /**
  * 运行认知管线
  *
  * 在每条用户消息发送后、主 API 调用前执行
  * 返回结果注入到 PromptRuntimeContext.cognitiveContext
+ *
+ * 如果角色未开启 cognitiveArchEnabled，直接返回空结果，零成本
  */
 export async function runCognitivePipeline(
     char: CharacterProfile,
@@ -104,6 +119,11 @@ export async function runCognitivePipeline(
     recentMessages: Message[],
     config: CognitivePipelineConfig
 ): Promise<CognitivePipelineResult> {
+    // Guard: 未开启认知架构则跳过
+    if (!char.emotionConfig?.cognitiveArchEnabled) {
+        return SKIP_RESULT;
+    }
+
     const now = Date.now();
 
     // 1. Build perception packet

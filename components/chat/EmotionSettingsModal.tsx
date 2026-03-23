@@ -29,6 +29,7 @@ const EmotionSettingsModal: React.FC<EmotionSettingsModalProps> = ({
     isOpen, onClose, char, apiPresets, addApiPreset, onSave, onClearBuffs
 }) => {
     const [enabled, setEnabled] = useState(false);
+    const [cognitiveArchEnabled, setCognitiveArchEnabled] = useState(false);
     const [url, setUrl] = useState('');
     const [key, setKey] = useState('');
     const [model, setModel] = useState('');
@@ -40,6 +41,7 @@ const EmotionSettingsModal: React.FC<EmotionSettingsModalProps> = ({
         if (!isOpen) return;
         const s = char.emotionConfig;
         setEnabled(s?.enabled ?? false);
+        setCognitiveArchEnabled(s?.cognitiveArchEnabled ?? false);
         setUrl(s?.api?.baseUrl ?? '');
         setKey(s?.api?.apiKey ?? '');
         setModel(s?.api?.model ?? '');
@@ -62,7 +64,7 @@ const EmotionSettingsModal: React.FC<EmotionSettingsModalProps> = ({
 
     const handleSave = () => {
         const api = url ? { baseUrl: url, apiKey: key, model } : undefined;
-        onSave({ enabled, api });
+        onSave({ enabled, cognitiveArchEnabled, api });
         onClose();
     };
 
@@ -210,6 +212,25 @@ const EmotionSettingsModal: React.FC<EmotionSettingsModalProps> = ({
                                 暂无情绪状态 — 发几条消息后会自动生成
                             </div>
                         )}
+
+                        {/* Cognitive Architecture Toggle */}
+                        <div className="border-t border-slate-100 pt-4 space-y-2">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <span className="text-sm font-bold text-slate-700">认知架构</span>
+                                    <span className="ml-1.5 text-[10px] px-1.5 py-0.5 bg-violet-100 text-violet-600 rounded-full font-bold">Beta</span>
+                                </div>
+                                <button
+                                    onClick={() => setCognitiveArchEnabled(!cognitiveArchEnabled)}
+                                    className={`w-12 h-7 rounded-full transition-colors relative ${cognitiveArchEnabled ? 'bg-violet-500' : 'bg-slate-200'}`}
+                                >
+                                    <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow transition-all duration-200 ${cognitiveArchEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
+                                </button>
+                            </div>
+                            <p className="text-[11px] text-slate-400 leading-relaxed">
+                                开启后替代旧情绪系统，启用三层情绪栈、跨事件关联、用户认知模型、人格结晶等深度认知能力。复用上方的副 API 配置。额外消耗 1-3 次副 API 调用/消息。
+                            </p>
+                        </div>
                     </>
                 )}
             </div>
