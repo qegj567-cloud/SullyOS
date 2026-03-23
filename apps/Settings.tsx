@@ -10,6 +10,8 @@ import ActiveMsgGlobalSettingsModal from '../components/settings/ActiveMsgGlobal
 import { NotionManager, FeishuManager } from '../utils/realtimeContext';
 import { XhsMcpClient } from '../utils/xhsMcpClient';
 import { Sun, Newspaper, NotePencil, Notebook, Book } from '@phosphor-icons/react';
+import { loadPresets, savePresets, getActivePresetId, setActivePresetId, createDefaultPreset, getSystemBlockMetas } from '../utils/promptEngine';
+import { PromptPreset, PromptBlock } from '../types';
 
 const Settings: React.FC = () => {
   const {
@@ -52,6 +54,75 @@ const Settings: React.FC = () => {
     setEmbModel(preset.model);
     setEmbDims(String(preset.dims));
     setEmbUseSameApi(false);
+  };
+
+  // Prompt 预设状态
+  const [promptPresets, setPromptPresets] = useState<PromptPreset[]>(() => loadPresets());
+  const [activePresetId, setActivePresetIdLocal] = useState(() => getActivePresetId());
+  const [editingPreset, setEditingPreset] = useState<PromptPreset | null>(null);
+  const [editingBlockIdx, setEditingBlockIdx] = useState<number | null>(null);
+  const [showPromptPresetModal, setShowPromptPresetModal] = useState(false);
+
+  const switchPreset = (id: string) => {
+    setActivePresetIdLocal(id);
+    setActivePresetId(id);
+    addToast?.(`已切换预设: ${promptPresets.find(p => p.id === id)?.name || id}`);
+  };
+
+  const duplicatePreset = (source: PromptPreset) => {
+    const now = Date.now();
+    const newPreset: PromptPreset = {
+      ...JSON.parse(JSON.stringify(source)),
+      id: `custom_${now}`,
+      name: `${source.name} (副本)`,
+      isDefault: false,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const next = [...promptPresets, newPreset];
+    setPromptPresets(next);
+    savePresets(next);
+    setEditingPreset(newPreset);
+    setShowPromptPresetModal(true);
+  };
+
+  const deletePreset = (id: string) => {
+    if (id === 'default') return;
+    const next = promptPresets.filter(p => p.id !== id);
+    setPromptPresets(next);
+    savePresets(next);
+    if (activePresetId === id) switchPreset('default');
+  };
+
+  const saveEditingPreset = () => {
+    if (!editingPreset) return;
+    editingPreset.updatedAt = Date.now();
+    const next = promptPresets.map(p => p.id === editingPreset.id ? editingPreset : p);
+    setPromptPresets(next);
+    savePresets(next);
+    setEditingBlockIdx(null);
+  };
+
+  const moveBlock = (fromIdx: number, toIdx: number) => {
+    if (!editingPreset) return;
+    const blocks = [...editingPreset.blocks];
+    const [moved] = blocks.splice(fromIdx, 1);
+    blocks.splice(toIdx, 0, moved);
+    setEditingPreset({ ...editingPreset, blocks });
+  };
+
+  const addCustomBlock = () => {
+    if (!editingPreset) return;
+    const newBlock: PromptBlock = {
+      id: `custom_${Date.now()}`,
+      type: 'custom',
+      name: '自定义文本',
+      enabled: true,
+      content: '在这里写自定义 prompt 文本...\n支持 {{char}} 和 {{user}} 模板变量。',
+      icon: '✏️',
+      color: 'bg-yellow-100 text-yellow-700',
+    };
+    setEditingPreset({ ...editingPreset, blocks: [...editingPreset.blocks, newBlock] });
   };
 
   // UI States
@@ -540,6 +611,195 @@ const Settings: React.FC = () => {
                 </button>
             </div>
         </section>
+
+        {/* ====== Prompt 动态预设 ====== */}
+        <section className="bg-white/60 backdrop-blur-sm rounded-3xl p-5 shadow-sm border border-white/50">
+            <div className="flex items-center gap-2 mb-4">
+                <div className="p-2 bg-violet-100/60 rounded-xl text-violet-600">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                    </svg>
+                </div>
+                <h2 className="text-sm font-semibold text-slate-600 tracking-wider">Prompt 预设</h2>
+            </div>
+
+            <p className="text-xs text-slate-500 mb-3 leading-relaxed">
+                控制发送给 AI 的 System Prompt 结构。选择预设模板，或复制后自定义编辑。
+            </p>
+
+            {/* 预设选择 */}
+            <div className="flex gap-2 flex-wrap mb-3">
+                {promptPresets.map(p => (
+                    <button key={p.id} onClick={() => switchPreset(p.id)}
+                        className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all active:scale-95 ${
+                            activePresetId === p.id
+                                ? 'bg-violet-500 text-white border-violet-500 shadow-md'
+                                : 'bg-white border-slate-200 text-slate-600 hover:border-violet-300'
+                        }`}>
+                        {p.name}
+                        {p.isDefault && <span className="ml-1 text-[8px] opacity-60">(内置)</span>}
+                    </button>
+                ))}
+            </div>
+
+            {/* 操作按钮 */}
+            <div className="flex gap-2 mb-3">
+                <button onClick={() => {
+                    const active = promptPresets.find(p => p.id === activePresetId);
+                    if (active) duplicatePreset(active);
+                }} className="px-3 py-1.5 bg-violet-50 text-violet-600 rounded-lg text-[10px] font-bold hover:bg-violet-100 transition-colors">
+                    复制当前预设
+                </button>
+                <button onClick={() => {
+                    const active = promptPresets.find(p => p.id === activePresetId);
+                    if (active) { setEditingPreset(JSON.parse(JSON.stringify(active))); setShowPromptPresetModal(true); }
+                }} className="px-3 py-1.5 bg-slate-50 text-slate-600 rounded-lg text-[10px] font-bold hover:bg-slate-100 transition-colors">
+                    编辑预设
+                </button>
+                {activePresetId !== 'default' && (
+                    <button onClick={() => { if (confirm('确定删除该预设？')) deletePreset(activePresetId); }}
+                        className="px-3 py-1.5 bg-red-50 text-red-500 rounded-lg text-[10px] font-bold hover:bg-red-100 transition-colors">
+                        删除
+                    </button>
+                )}
+            </div>
+
+            {/* 当前预设的 block 预览 */}
+            <div className="bg-slate-50/60 rounded-xl p-3">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block">Block 列表预览</label>
+                <div className="flex flex-wrap gap-1">
+                    {(promptPresets.find(p => p.id === activePresetId)?.blocks || []).map(b => (
+                        <span key={b.id} className={`px-2 py-0.5 rounded-md text-[9px] font-bold ${b.enabled ? (b.color || 'bg-slate-100 text-slate-600') : 'bg-gray-100 text-gray-400 line-through'}`}>
+                            {b.icon} {b.name}
+                        </span>
+                    ))}
+                </div>
+            </div>
+        </section>
+
+        {/* ====== Prompt 预设编辑 Modal ====== */}
+        {showPromptPresetModal && editingPreset && (
+            <Modal title={`编辑预设: ${editingPreset.name}`} onClose={() => { saveEditingPreset(); setShowPromptPresetModal(false); setEditingPreset(null); }} size="large">
+                <div className="space-y-3">
+                    {/* 预设名称 */}
+                    <div>
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">预设名称</label>
+                        <input value={editingPreset.name} onChange={e => setEditingPreset({ ...editingPreset, name: e.target.value })}
+                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm" />
+                    </div>
+
+                    {/* Block 列表（可拖拽排序） */}
+                    <div>
+                        <div className="flex items-center justify-between mb-2">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Block 列表 (拖拽排序)</label>
+                            <button onClick={addCustomBlock}
+                                className="px-2 py-1 bg-yellow-50 text-yellow-700 rounded-lg text-[10px] font-bold hover:bg-yellow-100">
+                                + 自定义 Block
+                            </button>
+                        </div>
+
+                        <div className="space-y-1.5 max-h-[50vh] overflow-y-auto">
+                            {editingPreset.blocks.map((block, idx) => (
+                                <div key={block.id}
+                                    draggable
+                                    onDragStart={e => e.dataTransfer.setData('blockIdx', String(idx))}
+                                    onDragOver={e => e.preventDefault()}
+                                    onDrop={e => { const from = parseInt(e.dataTransfer.getData('blockIdx')); moveBlock(from, idx); }}
+                                    className={`flex items-center gap-2 p-2.5 rounded-xl border transition-all cursor-grab active:cursor-grabbing ${
+                                        editingBlockIdx === idx ? 'border-violet-400 bg-violet-50/50' : 'border-slate-200 bg-white hover:border-slate-300'
+                                    } ${!block.enabled ? 'opacity-40' : ''}`}>
+
+                                    {/* 拖拽手柄 */}
+                                    <span className="text-slate-300 text-xs select-none">⋮⋮</span>
+
+                                    {/* 开关 */}
+                                    <button onClick={() => {
+                                        const blocks = [...editingPreset.blocks];
+                                        blocks[idx] = { ...blocks[idx], enabled: !blocks[idx].enabled };
+                                        setEditingPreset({ ...editingPreset, blocks });
+                                    }} className={`w-8 h-4 rounded-full transition-colors relative flex-shrink-0 ${block.enabled ? 'bg-violet-500' : 'bg-slate-300'}`}>
+                                        <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform ${block.enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                                    </button>
+
+                                    {/* 名称 + badge */}
+                                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${block.color || 'bg-slate-100 text-slate-600'}`}>
+                                        {block.icon} {block.name}
+                                    </span>
+                                    <span className="text-[9px] text-slate-400 flex-1 truncate">{block.type === 'system' ? '系统' : '自定义'}</span>
+
+                                    {/* 编辑按钮（system block 可 override, custom block 可编辑） */}
+                                    <button onClick={() => setEditingBlockIdx(editingBlockIdx === idx ? null : idx)}
+                                        className="px-1.5 py-0.5 text-[9px] text-slate-400 hover:text-violet-500">
+                                        {editingBlockIdx === idx ? '收起' : '编辑'}
+                                    </button>
+
+                                    {/* 删除（仅 custom block） */}
+                                    {block.type === 'custom' && (
+                                        <button onClick={() => {
+                                            const blocks = editingPreset.blocks.filter((_, i) => i !== idx);
+                                            setEditingPreset({ ...editingPreset, blocks });
+                                            if (editingBlockIdx === idx) setEditingBlockIdx(null);
+                                        }} className="px-1.5 py-0.5 text-[9px] text-red-400 hover:text-red-600">
+                                            删除
+                                        </button>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* 展开的编辑区 */}
+                        {editingBlockIdx !== null && editingPreset.blocks[editingBlockIdx] && (
+                            <div className="mt-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                                <div className="flex items-center justify-between mb-2">
+                                    <label className="text-xs font-bold text-slate-600">
+                                        {editingPreset.blocks[editingBlockIdx].icon} {editingPreset.blocks[editingBlockIdx].name}
+                                        {editingPreset.blocks[editingBlockIdx].type === 'system' && (
+                                            <span className="text-[9px] text-slate-400 font-normal ml-2">
+                                                (留空 = 使用系统默认生成逻辑，填写内容 = 覆盖默认)
+                                            </span>
+                                        )}
+                                    </label>
+                                </div>
+                                {editingPreset.blocks[editingBlockIdx].type === 'custom' && (
+                                    <input value={editingPreset.blocks[editingBlockIdx].name}
+                                        onChange={e => {
+                                            const blocks = [...editingPreset.blocks];
+                                            blocks[editingBlockIdx!] = { ...blocks[editingBlockIdx!], name: e.target.value };
+                                            setEditingPreset({ ...editingPreset, blocks });
+                                        }}
+                                        className="w-full px-2 py-1 mb-2 bg-white border border-slate-200 rounded-lg text-xs"
+                                        placeholder="Block 名称" />
+                                )}
+                                <textarea
+                                    value={editingPreset.blocks[editingBlockIdx].content || ''}
+                                    onChange={e => {
+                                        const blocks = [...editingPreset.blocks];
+                                        blocks[editingBlockIdx!] = { ...blocks[editingBlockIdx!], content: e.target.value };
+                                        setEditingPreset({ ...editingPreset, blocks });
+                                    }}
+                                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono min-h-[120px] resize-y"
+                                    placeholder={editingPreset.blocks[editingBlockIdx].type === 'system'
+                                        ? '留空 = 使用系统默认生成。填入内容将覆盖默认。\n支持: {{char}} {{user}} 模板变量'
+                                        : '输入自定义 prompt 文本...\n支持: {{char}} {{user}} 模板变量'
+                                    }
+                                />
+                            </div>
+                        )}
+                    </div>
+
+                    {/* 保存 */}
+                    <div className="flex justify-end gap-2 pt-2">
+                        <button onClick={() => { setShowPromptPresetModal(false); setEditingPreset(null); setEditingBlockIdx(null); }}
+                            className="px-4 py-2 text-xs text-slate-500 hover:text-slate-700">取消</button>
+                        <button onClick={() => { saveEditingPreset(); setShowPromptPresetModal(false); setEditingPreset(null); }}
+                            className="px-4 py-2 bg-violet-500 text-white text-xs font-bold rounded-xl hover:bg-violet-600 transition-colors">
+                            保存预设
+                        </button>
+                    </div>
+                </div>
+            </Modal>
+        )}
 
         {/* 记忆宫殿 Embedding API 配置 */}
         <section className="bg-white/60 backdrop-blur-sm rounded-3xl p-5 shadow-sm border border-white/50">

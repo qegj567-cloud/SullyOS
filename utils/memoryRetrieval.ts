@@ -64,11 +64,12 @@ export async function retrieveRelevantMemories(
         return { text: '', results: [], tokenEstimate: 0 };
     }
 
-    // 4. 向量检索
+    // 4. 向量检索（传入 queryText 用于关键词匹配加分）
     const results = searchMemories(queryVector, memories, vectors, {
         topK,
         roomFilter: options?.roomFilter,
         minSimilarity: 0.3,
+        queryText,
     });
 
     if (results.length === 0) {

@@ -246,6 +246,53 @@ export interface MemoryFragment {
   mood?: string;
 }
 
+// ============ Dynamic Prompt System (动态预设) ============
+
+/** Prompt 块的系统类型 ID — 内置块，引擎知道如何生成内容 */
+export type SystemBlockId =
+    | 'char_identity'       // 角色身份（名字、systemPrompt）
+    | 'worldview'           // 世界观
+    | 'worldbooks'          // 世界书
+    | 'user_profile'        // 用户画像
+    | 'impression'          // 私密印象
+    | 'memory_bank'         // 记忆库（月度总结 + 详细日志）
+    | 'memory_palace'       // 记忆宫殿（向量检索注入）
+    | 'emotion_buff'        // 情绪 Buff
+    | 'realtime_context'    // 实时信息（天气/新闻/时间）
+    | 'group_context'       // 群聊上下文
+    | 'notion_diaries'      // Notion 日记
+    | 'feishu_diaries'      // 飞书日记
+    | 'user_notes'          // 用户笔记
+    | 'chat_rules'          // 聊天行为规范
+    | 'voice_config'        // 语音消息配置
+    | 'mode_switch';        // 模式切换提示
+
+/** 单个 Prompt Block */
+export interface PromptBlock {
+    id: string;                        // 唯一标识 (系统块 = SystemBlockId, 自定义块 = uuid)
+    type: 'system' | 'custom';         // system = 内置自动生成, custom = 用户自定义文本
+    name: string;                      // 显示名称
+    enabled: boolean;                  // 是否启用
+    content?: string;                  // custom 块的用户自定义内容（支持 {{char}} {{user}} 模板变量）
+    systemBlockId?: SystemBlockId;     // system 块的类型 ID
+    // UI hints
+    icon?: string;                     // 显示图标
+    color?: string;                    // 标签颜色 (tailwind class)
+    description?: string;              // 鼠标悬停说明
+    locked?: boolean;                  // 是否锁定不可删除（系统块默认 true）
+}
+
+/** Prompt 预设 — 全局模板，可挂载到任意角色 */
+export interface PromptPreset {
+    id: string;
+    name: string;
+    description?: string;
+    blocks: PromptBlock[];             // 按顺序排列的块列表
+    isDefault?: boolean;               // 是否为默认预设（不可删除）
+    createdAt: number;
+    updatedAt: number;
+}
+
 // ============ Memory Palace (记忆宫殿) ============
 
 /** 记忆房间类型 */

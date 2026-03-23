@@ -60,20 +60,42 @@ function importanceScore(importance: number): number {
 }
 
 /**
+ * 关键词匹配加分
+ * 如果查询文本命中了记忆的 tags 或 content 中的关键片段，给予额外加分
+ * 不需要分词 — 直接用 tags 做子串匹配，简单高效
+ * 返回 0~1 的加分值
+ */
+const KEYWORD_BOOST = 0.08; // 每命中一个 tag 的加分
+const MAX_KEYWORD_BOOST = 0.2; // 关键词加分上限
+
+function keywordBoost(queryText: string, memory: MemoryNode): number {
+    if (!queryText || !memory.tags || memory.tags.length === 0) return 0;
+    const q = queryText.toLowerCase();
+    let hits = 0;
+    for (const tag of memory.tags) {
+        if (tag && q.includes(tag.toLowerCase())) hits++;
+    }
+    return Math.min(hits * KEYWORD_BOOST, MAX_KEYWORD_BOOST);
+}
+
+/**
  * 计算记忆的综合检索分数
  */
 function computeScore(
     similarity: number,
     memory: MemoryNode,
     now: number,
-    weights: ScoringWeights = DEFAULT_WEIGHTS
+    weights: ScoringWeights = DEFAULT_WEIGHTS,
+    queryText?: string
 ): number {
     const recency = recencyScore(memory.lastAccessedAt || memory.createdAt, now);
     const importance = importanceScore(memory.importance);
+    const kwBoost = queryText ? keywordBoost(queryText, memory) : 0;
     return (
         weights.similarity * similarity +
         weights.recency * recency +
-        weights.importance * importance
+        weights.importance * importance +
+        kwBoost
     );
 }
 
@@ -90,6 +112,7 @@ export interface SearchOptions {
     weights?: ScoringWeights;         // 自定义权重
     roomFilter?: string;              // 只搜索特定房间
     minSimilarity?: number;           // 最低相似度阈值（默认 0.3）
+    queryText?: string;               // 原始查询文本（用于关键词匹配加分）
 }
 
 /**
@@ -111,6 +134,7 @@ export function searchMemories(
         weights = DEFAULT_WEIGHTS,
         roomFilter,
         minSimilarity = 0.3,
+        queryText,
     } = options;
 
     const now = Date.now();
@@ -135,7 +159,7 @@ export function searchMemories(
         const similarity = cosineSimilarity(queryVector, vec);
         if (similarity < minSimilarity) continue;
 
-        const score = computeScore(similarity, memory, now, weights);
+        const score = computeScore(similarity, memory, now, weights, queryText);
         results.push({ memory, similarity, score });
     }
 
