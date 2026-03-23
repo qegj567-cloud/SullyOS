@@ -266,7 +266,13 @@ export type SystemBlockId =
     | 'user_notes'          // 用户笔记
     | 'chat_rules'          // 聊天行为规范
     | 'voice_config'        // 语音消息配置
-    | 'mode_switch';        // 模式切换提示
+    | 'mode_switch'         // 模式切换提示
+    // ── Cognitive Architecture Blocks ──
+    | 'emotion_dynamics'         // 情绪动力学（替代 emotion_buff）
+    | 'personality_crystals'     // 涌现人格
+    | 'user_cognitive_model'     // 用户认知模型
+    | 'unresolved_tensions'      // 未解决张力
+    | 'cross_event_patterns';    // 跨事件模式
 
 /** 单个 Prompt Block */
 export interface PromptBlock {
@@ -360,6 +366,140 @@ export interface MemoryProcessBatch {
   extractedCount: number;   // 提取了多少条记忆
   mergedCount: number;      // 合并了多少条
   log: string[];            // 整理日志（用户可见）
+}
+
+// ============ Cognitive Architecture (认知架构) ============
+
+/** 情绪层 — 三层栈中的单个情绪 */
+export interface EmotionLayer {
+    id: string;
+    ontologyId: string;           // 映射到 EmotionOntology 的 ID
+    depth: 'surface' | 'middle' | 'deep';
+    intensity: number;            // 0-1
+    nuance?: string;              // 修饰语，如 "隐隐的"
+    sourceTimestamp: number;      // 产生时间
+    sourceContext?: string;       // 来源上下文描述
+}
+
+/** 情绪状态 — 三层栈的完整快照 */
+export interface EmotionState {
+    layers: EmotionLayer[];
+    lastUpdatedAt: number;
+}
+
+/** 情绪标签 — 杏仁核或规则引擎输出，用于喂给 EmotionDynamicsEngine */
+export interface EmotionalTag {
+    ontologyId: string;
+    depth: 'surface' | 'middle' | 'deep';
+    intensity: number;            // 0-1
+    nuance?: string;
+    sourceContext?: string;
+}
+
+/** 感知数据包 — 感官输入层的输出 */
+export interface PerceptionPacket {
+    timestamp: number;
+    timeOfDay: 'early_morning' | 'morning' | 'afternoon' | 'evening' | 'night' | 'late_night';
+    timeSinceLastMessage: number;     // ms
+    isFirstMessageToday: boolean;
+    gapFromLastSessionHours: number;  // 距离上次 session 的小时数
+
+    messageText: string;
+    messageLength: number;
+    messageLengthDelta: number;       // 相对于用户平均消息长度的偏差比
+
+    punctuation: {
+        ellipsisCount: number;
+        exclamationCount: number;
+        questionCount: number;
+        hasMultiplePunctuation: boolean;
+    };
+    emotionKeywordHits: string[];     // 命中的 ontologyId 列表
+    emotionKeywordCount: number;
+    isRapidFire: boolean;             // 连续短间隔消息检测
+}
+
+/** 情绪历史快照 — 用于时间线可视化 */
+export interface EmotionHistorySnapshot {
+    id: string;
+    charId: string;
+    timestamp: number;
+    state: EmotionState;
+    trigger?: string;                 // 什么事件触发的快照
+}
+
+/** 跨事件关联 — 三级升级系统 */
+export interface CrossEventLink {
+    id: string;
+    charId: string;
+    memoryA: string;                  // 记忆 A 的 ID 或描述
+    memoryB: string;                  // 记忆 B 的 ID 或描述
+    pattern: string;                  // 发现的关联模式描述
+    confidence: number;               // 0-1
+    level: 'L1_observation' | 'L2_hypothesis' | 'L3_stable';
+    observationCount: number;
+    firstSeen: number;
+    lastSeen: number;
+    promotedAt?: number;
+}
+
+/** 未解决张力 */
+export interface Tension {
+    id: string;
+    charId: string;
+    description: string;
+    relatedMemories: string[];
+    intensity: number;                // 0-1
+    createdAt: number;
+    lastRevisited: number;
+    revisitCount: number;
+    status: 'active' | 'resolving' | 'resolved' | 'dormant';
+    resolutionAttempts: string[];
+}
+
+/** 人格结晶 */
+export interface PersonalityCrystal {
+    id: string;
+    charId: string;
+    trait: string;                    // 涌现特质描述
+    evidence: string[];               // 支撑证据
+    strength: number;                 // 0-1
+    reinforcementCount: number;
+    status: 'provisional' | 'active' | 'rejected';
+    createdAt: number;
+    lastReinforcedAt: number;
+    periodsSurvived: number;
+}
+
+/** 内心独白日志 */
+export interface InnerMonologueEntry {
+    id: string;
+    charId: string;
+    timestamp: number;
+    content: string;
+    type: 'realtime' | 'daily_review' | 'reflection';
+    relatedMessageIds?: number[];
+}
+
+/** 用户认知模型 — UserRoom 中对用户的理解 */
+export interface UserCognitiveModel {
+    charId: string;
+    personality: {
+        traits: { trait: string; confidence: number; evidence: string[]; lastUpdated: number }[];
+        attachmentStyle?: { style: string; confidence: number; evidence: string[] };
+    };
+    relationships: {
+        people: { name: string; relation: string; sentimentToward: number; mentions: number }[];
+    };
+    triggers: {
+        topics: { topic: string; reaction: string; intensity: number; evidence: string[] }[];
+    };
+    communicationPatterns: {
+        patterns: { pattern: string; confidence: number; examples: string[] }[];
+        averageMessageLength: number;
+        activeHours: { hour: number; frequency: number }[];
+    };
+    lastUpdatedAt: number;
 }
 
 export interface SpriteConfig {
