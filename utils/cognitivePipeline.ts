@@ -2,17 +2,19 @@
  * 认知管线编排器 (Cognitive Pipeline)
  *
  * 连接所有认知架构组件：
- * - 感知层 → 管线判断 → 杏仁核 → 情绪引擎 → prompt 注入
+ * - 感知层 → 管线判断 → (杏仁核 ∥ 记忆检索) → 海马体 → 情绪引擎 → prompt 注入
  *
  * 提供统一接口给 chatPrompts.ts 调用
  */
 
-import { buildPerceptionPacket, type BuildPerceptionOptions } from './perceptionBuilder';
-import { decidePipelinePath, type TriggerConfig, DEFAULT_TRIGGER_CONFIG } from './pipelineTrigger';
+import { buildPerceptionPacket } from './perceptionBuilder';
+import { decidePipelinePath, type TriggerConfig } from './pipelineTrigger';
 import { EmotionDynamicsEngine, createEmptyState, restoreEngine } from './emotionDynamics';
-import { runAmygdala, generateReunionEmotion, type AmygdalaConfig } from './amygdala';
+import { runAmygdala, generateReunionEmotion, type AmygdalaConfig, type AmygdalaResponse } from './amygdala';
+import { runHippocampus, getExistingCognitiveData, type HippocampusConfig } from './hippocampus';
 import { loadEmotionState, saveEmotionState, saveEmotionSnapshot } from './emotionStorage';
-import { scanEmotionKeywords, mapToOntology } from './emotionOntology';
+import { scanEmotionKeywords } from './emotionOntology';
+import { updateMessageStats } from './userCognitiveModel';
 import type { CharacterProfile, Message, EmotionalTag, EmotionState } from '../types';
 
 // ── Types ──
@@ -26,19 +28,30 @@ export interface CognitivePipelineResult {
     emotionDynamicsDesc: string;
     /** 是否触发了重逢缓冲 */
     reunionTriggered: boolean;
-    /** 完整管线额外数据 */
+    /** 认知数据（注入 prompt 用） */
+    cognitiveInjections: {
+        crossEventPatterns: string | null;
+        unresolvedTensions: string | null;
+        userCognitiveModel: string | null;
+    };
+    /** debug 数据 */
     amygdalaRaw?: string;
+    hippocampusRaw?: string;
 }
 
 export interface CognitivePipelineConfig {
     /** 杏仁核 API 配置（复用角色的 emotionConfig.api） */
     amygdalaApi?: AmygdalaConfig;
+    /** 海马体 API 配置（可复用同一 API 或用不同模型） */
+    hippocampusApi?: HippocampusConfig;
     /** 管线触发配置 */
     triggerConfig?: TriggerConfig;
     /** 用户平均消息长度（用于偏差计算） */
     userAverageMessageLength?: number;
     /** 上次 session 的时间戳 */
     lastSessionTimestamp?: number;
+    /** 记忆宫殿检索结果（由外部传入） */
+    retrievedMemories?: string;
 }
 
 // ── Per-character engine cache ──
@@ -49,7 +62,6 @@ async function getEngine(charId: string): Promise<EmotionDynamicsEngine> {
     let engine = _engineCache.get(charId);
     if (engine) return engine;
 
-    // Try loading from IndexedDB
     const saved = await loadEmotionState(charId);
     if (saved) {
         engine = restoreEngine(saved);
@@ -73,7 +85,7 @@ function extractLocalEmotionTags(messageText: string): EmotionalTag[] {
     return hits.map(h => ({
         ontologyId: h.ontologyId,
         depth: 'surface' as const,
-        intensity: 0.25, // low intensity for keyword-only detection
+        intensity: 0.25,
         sourceContext: `关键词检测: ${h.keyword}`,
     }));
 }
@@ -84,7 +96,7 @@ function extractLocalEmotionTags(messageText: string): EmotionalTag[] {
  * 运行认知管线
  *
  * 在每条用户消息发送后、主 API 调用前执行
- * 返回的 emotionDynamicsDesc 注入到 PromptRuntimeContext.cognitiveContext
+ * 返回结果注入到 PromptRuntimeContext.cognitiveContext
  */
 export async function runCognitivePipeline(
     char: CharacterProfile,
@@ -112,6 +124,15 @@ export async function runCognitivePipeline(
 
     let reunionTriggered = false;
     let amygdalaRaw: string | undefined;
+    let hippocampusRaw: string | undefined;
+    let cognitiveInjections = {
+        crossEventPatterns: null as string | null,
+        unresolvedTensions: null as string | null,
+        userCognitiveModel: null as string | null,
+    };
+
+    // Update message stats (fire-and-forget)
+    updateMessageStats(char.id, message.length, new Date(now).getHours()).catch(() => {});
 
     if (trigger.path === 'full' && config.amygdalaApi) {
         // ── Full Pipeline ──
@@ -126,37 +147,47 @@ export async function runCognitivePipeline(
                 config.amygdalaApi
             );
             if (reunionTags.length > 0) {
-                engine.update(reunionTags, now - 1000); // slightly before current message
+                engine.update(reunionTags, now - 1000);
                 reunionTriggered = true;
             }
         }
 
-        // 3b. Run amygdala (emotion analysis of current message)
+        // 3b. Run amygdala (can run in parallel with memory retrieval)
         console.log(`[CogPipeline] Full pipeline triggered: ${trigger.reasons.join(', ')}`);
         const amygdalaResult = await runAmygdala(
             perception,
             char,
             engine.getState(),
-            '', // recentMemorySummary — will be populated when memory system is integrated (Phase 3)
+            config.retrievedMemories || '',
             config.amygdalaApi
         );
-
         amygdalaRaw = amygdalaResult.rawOutput;
 
         // 3c. Feed amygdala results into emotion dynamics engine
         if (amygdalaResult.emotionalTags.length > 0) {
             engine.update(amygdalaResult.emotionalTags, now);
         }
+
+        // 3d. Run hippocampus (depends on amygdala result)
+        if (config.hippocampusApi) {
+            const hippoResult = await runHippocampus(
+                perception,
+                amygdalaResult,
+                engine.getState(),
+                config.retrievedMemories || '',
+                char,
+                config.hippocampusApi
+            );
+            hippocampusRaw = hippoResult.rawOutput;
+            cognitiveInjections = hippoResult.promptInjections;
+        }
     } else {
         // ── Fast Path ──
-        // Only use local keyword-based emotion detection
         const localTags = extractLocalEmotionTags(message);
-        if (localTags.length > 0) {
-            engine.update(localTags, now);
-        } else {
-            // Still apply decay even with no new emotions
-            engine.update([], now);
-        }
+        engine.update(localTags.length > 0 ? localTags : [], now);
+
+        // Still load existing cognitive data for prompt injection (no API cost)
+        cognitiveInjections = await getExistingCognitiveData(char.id);
     }
 
     // 4. Generate description for prompt injection
@@ -167,7 +198,7 @@ export async function runCognitivePipeline(
         console.warn('[CogPipeline] Failed to persist emotion state:', e)
     );
 
-    // 5b. Save snapshot if significant change (fire-and-forget)
+    // 5b. Save snapshot if significant change
     const maxIntensity = engine.getMaxIntensity();
     if (maxIntensity > 0.3 || trigger.path === 'full') {
         saveEmotionSnapshot({
@@ -184,7 +215,9 @@ export async function runCognitivePipeline(
         triggerReasons: trigger.reasons,
         emotionDynamicsDesc,
         reunionTriggered,
+        cognitiveInjections,
         amygdalaRaw,
+        hippocampusRaw,
     };
 }
 
