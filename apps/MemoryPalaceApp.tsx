@@ -44,9 +44,11 @@ type Tab = 'palace' | 'memories' | 'logs' | 'config' | 'emotions' | 'consciousne
 
 const MemoryPalaceApp: React.FC = () => {
     const {
-        closeApp, characters, activeCharacterId,
+        closeApp, characters, activeCharacterId, setActiveCharacterId,
         apiConfig, embeddingConfig, updateEmbeddingConfig, addToast, userProfile,
     } = useOS();
+
+    const [showCharPicker, setShowCharPicker] = useState(false);
 
     const char = characters.find(c => c.id === activeCharacterId) || characters[0];
     const cogEnabled = char?.emotionConfig?.cognitiveArchEnabled ?? false;
@@ -232,7 +234,16 @@ const MemoryPalaceApp: React.FC = () => {
                         </div>
                         <div>
                             <h1 className="text-xl font-light text-slate-800 tracking-tight">记忆宫殿</h1>
-                            <p className="text-[10px] text-slate-400">{char.name} 的记忆空间</p>
+                            {/* Character Switcher */}
+                            <button onClick={() => setShowCharPicker(!showCharPicker)}
+                                className="text-[10px] text-slate-400 hover:text-amber-600 transition-colors flex items-center gap-1">
+                                {char.name} 的记忆空间
+                                {characters.length > 1 && (
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d={showCharPicker ? "M4.5 15.75l7.5-7.5 7.5 7.5" : "M19.5 8.25l-7.5 7.5-7.5-7.5"} />
+                                    </svg>
+                                )}
+                            </button>
                         </div>
                     </div>
                     <button onClick={closeApp} className="p-2 rounded-full bg-white/40 hover:bg-white/80 transition-colors">
@@ -241,6 +252,33 @@ const MemoryPalaceApp: React.FC = () => {
                         </svg>
                     </button>
                 </div>
+
+                {/* Character Picker Dropdown */}
+                {showCharPicker && characters.length > 1 && (
+                    <div className="mb-3 bg-white/80 backdrop-blur-sm rounded-2xl border border-white/50 shadow-lg overflow-hidden animate-fade-in">
+                        {characters.map(c => (
+                            <button key={c.id}
+                                onClick={() => { setActiveCharacterId(c.id); setShowCharPicker(false); }}
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 transition-colors ${
+                                    c.id === activeCharacterId
+                                        ? 'bg-amber-50 text-amber-700'
+                                        : 'text-slate-600 hover:bg-slate-50'
+                                }`}>
+                                {c.avatar ? (
+                                    <img src={c.avatar} className="w-7 h-7 rounded-full object-cover" alt="" />
+                                ) : (
+                                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-slate-300 to-slate-400 flex items-center justify-center text-white text-xs font-bold">
+                                        {c.name.charAt(0)}
+                                    </div>
+                                )}
+                                <span className="text-xs font-medium">{c.name}</span>
+                                {c.id === activeCharacterId && (
+                                    <span className="ml-auto text-amber-500 text-[10px] font-bold">当前</span>
+                                )}
+                            </button>
+                        ))}
+                    </div>
+                )}
 
                 {/* Tabs */}
                 <div className="flex gap-1 bg-white/60 rounded-2xl p-1 border border-white/50 overflow-x-auto no-scrollbar">
