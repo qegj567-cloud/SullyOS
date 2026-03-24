@@ -767,6 +767,54 @@ export async function assemblePromptPreview(
     return results;
 }
 
+/**
+ * 同步版本 assemblePrompt — 跳过 async block（实时上下文、群聊、Notion/飞书日记等）
+ * 用于 ContextBuilder 等需要同步返回的场景
+ */
+export function assemblePromptSync(
+    preset: PromptPreset,
+    ctx: PromptRuntimeContext
+): string {
+    let result = `[System: Roleplay Configuration]\n\n`;
+    const parts: string[] = [];
+
+    for (const block of preset.blocks) {
+        if (!block.enabled) continue;
+
+        let content: string | null = null;
+
+        if (block.type === 'system' && block.systemBlockId) {
+            const def = SYSTEM_BLOCKS[block.systemBlockId];
+            if (!def) continue;
+            if (block.content?.trim()) {
+                content = substituteTemplateVars(block.content, ctx);
+            } else {
+                // 调用 generate，如果返回 Promise 则跳过（async block）
+                const raw = def.generate(ctx);
+                if (raw instanceof Promise) {
+                    // async block — 在同步模式下跳过
+                    continue;
+                }
+                content = raw;
+            }
+        } else if (block.type === 'custom') {
+            content = block.content ? substituteTemplateVars(block.content, ctx) : null;
+        }
+
+        if (content?.trim()) {
+            parts.push(content.trim());
+        }
+    }
+
+    result += parts.join('\n\n');
+
+    const enabledBlocks = preset.blocks.filter(b => b.enabled).map(b => b.name);
+    const charCount = result.length;
+    console.log(`📋 [PromptEngine/Sync] Assembled ${enabledBlocks.length} blocks (${charCount} chars) using preset "${preset.name}": [${enabledBlocks.join(', ')}]`);
+
+    return result;
+}
+
 // ============ Convenience: Get System Block Metadata ============
 
 /** 获取所有系统 block 的元信息（用于 UI 展示） */
