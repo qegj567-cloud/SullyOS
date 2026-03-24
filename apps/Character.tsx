@@ -1177,6 +1177,11 @@ ${isInitialGeneration ? `
 
                    {detailTab === 'preset' && (
                        <div className="space-y-4 animate-fade-in">
+                           <div className="bg-amber-50/80 rounded-xl px-3 py-2.5 border border-amber-200/60">
+                               <p className="text-[11px] text-amber-700 leading-relaxed">
+                                   <span className="font-bold">看不懂？不用碰。</span>糯米鸡已经帮你配好了，默认就能用。
+                               </p>
+                           </div>
                            <p className="text-xs text-slate-500 leading-relaxed">
                                控制发送给 AI 的 System Prompt 结构。每个角色可以独立配置自己的预设模板。
                            </p>
