@@ -2,6 +2,7 @@
 import React from 'react';
 import { OSProvider } from './context/OSContext';
 import PhoneShell from './components/PhoneShell';
+import EmergencyNetlifyPopup from './components/os/EmergencyNetlifyPopup';
 import { isIOSStandaloneWebApp } from './utils/iosStandalone';
 
 const App: React.FC = () => {
@@ -24,6 +25,7 @@ const App: React.FC = () => {
       >
         <OSProvider>
           <PhoneShell />
+          <EmergencyNetlifyPopup />
         </OSProvider>
       </div>
     </div>
