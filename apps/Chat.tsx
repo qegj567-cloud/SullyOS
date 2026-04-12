@@ -15,13 +15,14 @@ import Modal from '../components/os/Modal';
 import ProactiveSettingsModal from '../components/chat/ProactiveSettingsModal';
 import EmotionSettingsModal from '../components/chat/EmotionSettingsModal';
 import ActiveMsg2SettingsModal from '../components/chat/ActiveMsg2SettingsModal';
+import MemoryPalaceModal from '../components/chat/MemoryPalaceModal';
 import { useChatAI } from '../hooks/useChatAI';
 import { synthesizeSpeech, cleanTextForTts } from '../utils/minimaxTts';
 
 const VOICE_LANG_LABELS: Record<string, string> = { en: 'English', ja: '日本語', ko: '한국어', fr: 'Français', es: 'Español' };
 
 const Chat: React.FC = () => {
-    const { characters, activeCharacterId, setActiveCharacterId, updateCharacter, apiConfig, apiPresets, addApiPreset, closeApp, customThemes, removeCustomTheme, addToast, userProfile, lastMsgTimestamp, groups, clearUnread, realtimeConfig, theme: osTheme } = useOS();
+    const { characters, activeCharacterId, setActiveCharacterId, updateCharacter, apiConfig, apiPresets, addApiPreset, closeApp, customThemes, removeCustomTheme, addToast, userProfile, lastMsgTimestamp, groups, clearUnread, realtimeConfig, embeddingConfig, theme: osTheme } = useOS();
     const [messages, setMessages] = useState<Message[]>([]);
     const [totalMsgCount, setTotalMsgCount] = useState(0);
     const [visibleCount, setVisibleCount] = useState(30);
@@ -59,6 +60,7 @@ const Chat: React.FC = () => {
     const [showProactiveModal, setShowProactiveModal] = useState(false);
     const [showActiveMsg2Modal, setShowActiveMsg2Modal] = useState(false);
     const [showEmotionModal, setShowEmotionModal] = useState(false);
+    const [showMemoryPalaceModal, setShowMemoryPalaceModal] = useState(false);
 
     // Archive Prompts State
     const [archivePrompts, setArchivePrompts] = useState<{id: string, name: string, content: string}[]>(DEFAULT_ARCHIVE_PROMPTS);
@@ -104,7 +106,7 @@ const Chat: React.FC = () => {
 
 
     // --- Initialize Hook ---
-    const { isTyping, recallStatus, searchStatus, diaryStatus, emotionStatus, lastTokenUsage, tokenBreakdown, setLastTokenUsage, triggerAI, startProactiveChat, stopProactiveChat, isProactiveActive } = useChatAI({
+    const { isTyping, recallStatus, searchStatus, diaryStatus, emotionStatus, memoryPalaceStatus, lastTokenUsage, tokenBreakdown, setLastTokenUsage, triggerAI, startProactiveChat, stopProactiveChat, isProactiveActive } = useChatAI({
         char,
         userProfile,
         apiConfig,
@@ -116,7 +118,8 @@ const Chat: React.FC = () => {
         realtimeConfig,
         translationConfig: translationEnabled
             ? { enabled: true, sourceLang: translateSourceLang, targetLang: translateTargetLang }
-            : undefined
+            : undefined,
+        embeddingConfig,
     });
 
     // --- Voice TTS for chat messages ---
@@ -562,6 +565,7 @@ const Chat: React.FC = () => {
             case 'proactive': setShowProactiveModal(true); break;
             case 'proactive2': setShowActiveMsg2Modal(true); break;
             case 'emotion': setShowEmotionModal(true); break;
+            case 'memory-palace': setShowMemoryPalaceModal(true); break;
         }
     };
 
@@ -1179,14 +1183,19 @@ const Chat: React.FC = () => {
                     );
                 })}
                 
-                {(isTyping || recallStatus || searchStatus || diaryStatus) && !selectionMode && (
+                {(isTyping || recallStatus || searchStatus || diaryStatus || memoryPalaceStatus) && !selectionMode && (
                     <div className="flex items-end gap-3 px-3 mb-6 animate-fade-in">
                         <img src={char.avatar} className={`${osTheme.chatAvatarSize === 'small' ? 'w-7 h-7' : osTheme.chatAvatarSize === 'large' ? 'w-12 h-12' : 'w-9 h-9'} ${osTheme.chatAvatarShape === 'square' ? 'rounded-sm' : osTheme.chatAvatarShape === 'rounded' ? 'rounded-xl' : 'rounded-[10px]'} object-cover`} />
                         <div className="bg-white px-4 py-3 rounded-2xl shadow-sm">
-                            {searchStatus ? (
+                            {memoryPalaceStatus ? (
+                                <div className="flex items-center gap-2 text-xs text-amber-600 font-medium">
+                                    <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                    {memoryPalaceStatus}
+                                </div>
+                            ) : searchStatus ? (
                                 <div className="flex items-center gap-2 text-xs text-emerald-500 font-medium">
                                     <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                                    🔍 {searchStatus}
+                                    {searchStatus}
                                 </div>
                             ) : recallStatus ? (
                                 <div className="flex items-center gap-2 text-xs text-indigo-500 font-medium">
@@ -1302,6 +1311,19 @@ const Chat: React.FC = () => {
                         updateCharacter(char.id, { activeBuffs: [], buffInjection: '' });
                         addToast('情绪状态已清除', 'info');
                     }}
+                />
+            )}
+
+            {/* Memory Palace Modal */}
+            {char && (
+                <MemoryPalaceModal
+                    isOpen={showMemoryPalaceModal}
+                    onClose={() => setShowMemoryPalaceModal(false)}
+                    char={char}
+                    apiConfig={apiConfig}
+                    embeddingConfig={embeddingConfig}
+                    userName={userProfile.name || '用户'}
+                    addToast={addToast}
                 />
             )}
 

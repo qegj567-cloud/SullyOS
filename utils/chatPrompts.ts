@@ -4,6 +4,7 @@ import { ContextBuilder } from './context';
 import { DB } from './db';
 import { formatLifeSimResetCardForContext } from './lifeSimChatCard';
 import { RealtimeContextManager, NotionManager, FeishuManager, defaultRealtimeConfig } from './realtimeContext';
+import { assemblePrompt, getActivePreset, PromptRuntimeContext } from './promptEngine';
 
 export const ChatPrompts = {
     // 格式化时间戳
@@ -51,7 +52,7 @@ export const ChatPrompts = {
         }).join('; ');
     },
 
-    // 构建 System Prompt
+    // 构建 System Prompt（通过动态预设引擎）
     buildSystemPrompt: async (
         char: CharacterProfile,
         userProfile: UserProfile,
@@ -59,36 +60,44 @@ export const ChatPrompts = {
         emojis: Emoji[],
         categories: EmojiCategory[],
         currentMsgs: Message[],
-        realtimeConfig?: RealtimeConfig  // 新增：实时配置
+        realtimeConfig?: RealtimeConfig
     ) => {
-        let baseSystemPrompt = ContextBuilder.buildCoreContext(char, userProfile);
+        const config = realtimeConfig || defaultRealtimeConfig;
+        const searchEnabled = !!(config.newsEnabled && config.newsApiKey);
+        const notionEnabled = !!(config.notionEnabled && config.notionApiKey && config.notionDatabaseId);
+        const feishuEnabled = !!(config.feishuEnabled && config.feishuAppId && config.feishuAppSecret && config.feishuBaseId && config.feishuTableId);
+        const notionNotesEnabled = !!(config.notionEnabled && config.notionApiKey && config.notionNotesDatabaseId);
+        const mcpXhsAvailable = !!(config.xhsMcpConfig?.enabled && config.xhsMcpConfig?.serverUrl);
+        const xhsEnabled = char.xhsEnabled !== undefined
+            ? !!(char.xhsEnabled && mcpXhsAvailable)
+            : !!(config.xhsEnabled && mcpXhsAvailable);
 
-        // 情绪底色（buffInjection）已移入 ContextBuilder.buildCoreContext()，所有 App 统一注入
+        // 构建运行时上下文
+        const runtimeCtx: PromptRuntimeContext = {
+            char,
+            user: userProfile,
+            groups,
+            emojis,
+            emojiCategories: categories,
+            currentMsgs,
+            realtimeConfig: config,
+            includeDetailedMemories: true,
+            emojiContextStr: ChatPrompts.buildEmojiContext(emojis, categories),
+            features: { searchEnabled, notionEnabled, feishuEnabled, notionNotesEnabled, xhsEnabled },
+        };
 
-        // 注入实时世界信息（天气、新闻、时间等）
-        try {
-            const config = realtimeConfig || defaultRealtimeConfig;
-            // 只有当有任何实时功能启用时才注入
-            if (config.weatherEnabled || config.newsEnabled) {
-                const realtimeContext = await RealtimeContextManager.buildFullContext(config);
-                baseSystemPrompt += `\n${realtimeContext}\n`;
-            } else {
-                // 即使没有API配置，也注入基本的时间信息
-                const time = RealtimeContextManager.getTimeContext();
-                const specialDates = RealtimeContextManager.checkSpecialDates();
-                baseSystemPrompt += `\n### 【当前时间】\n`;
-                baseSystemPrompt += `${time.dateStr} ${time.dayOfWeek} ${time.timeOfDay} ${time.timeStr}\n`;
-                if (specialDates.length > 0) {
-                    baseSystemPrompt += `今日特殊: ${specialDates.join('、')}\n`;
-                }
-            }
-        } catch (e) {
-            console.error('Failed to inject realtime context:', e);
-        }
+        // 通过引擎组装 prompt（按角色加载预设）
+        const preset = getActivePreset(char.id);
+        let baseSystemPrompt = await assemblePrompt(preset, runtimeCtx);
 
-        // Group Context Injection
-        try {
-            const memberGroups = groups.filter(g => g.members.includes(char.id));
+        return baseSystemPrompt;
+
+        // ──────────────────────────────────────────────────
+        // 以下为旧版硬编码逻辑，已迁移到 promptEngine.ts
+        // 保留注释作为参考，不再执行
+        // ──────────────────────────────────────────────────
+        /* LEGACY — Group Context Injection
+        const memberGroups = groups.filter(g => g.members.includes(char.id));
             if (memberGroups.length > 0) {
                 let allGroupMsgs: (Message & { groupName: string })[] = [];
                 for (const g of memberGroups) {
@@ -555,7 +564,8 @@ ${xhsEnabled ? `${[notionEnabled, feishuEnabled, notionNotesEnabled].filter(Bool
             baseSystemPrompt += `\n\n[系统提示: 语音消息功能当前未开启。严禁使用 <语音>...</语音> 标签。所有回复必须是纯文字消息。]`;
         }
 
-        return baseSystemPrompt;
+        // return baseSystemPrompt; // (legacy)
+        LEGACY END */
     },
 
     // 格式化消息历史

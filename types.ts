@@ -31,6 +31,7 @@ export enum AppID {
   VoiceDesigner = 'voice_designer', // 捏声音 — MiniMax 音色设计器
   Guidebook = 'guidebook', // 攻略本 — 角色攻略用户小游戏
   LifeSim = 'lifesim', // 模拟人生 — 与角色共同经营的小世界
+  MemoryPalace = 'memory_palace', // 记忆宫殿 — 记忆管理 + 向量化配置
 }
 
 export interface SystemLog {
@@ -244,6 +245,261 @@ export interface MemoryFragment {
   date: string;
   summary: string;
   mood?: string;
+}
+
+// ============ Dynamic Prompt System (动态预设) ============
+
+/** Prompt 块的系统类型 ID — 内置块，引擎知道如何生成内容 */
+export type SystemBlockId =
+    | 'char_identity'       // 角色身份（名字、systemPrompt）
+    | 'worldview'           // 世界观
+    | 'worldbooks'          // 世界书
+    | 'user_profile'        // 用户画像
+    | 'impression'          // 私密印象
+    | 'memory_bank'         // 记忆库（月度总结 + 详细日志）
+    | 'memory_palace'       // 记忆宫殿（向量检索注入）
+    | 'emotion_buff'        // 情绪 Buff
+    | 'realtime_context'    // 实时信息（天气/新闻/时间）
+    | 'group_context'       // 群聊上下文
+    | 'notion_diaries'      // Notion 日记
+    | 'feishu_diaries'      // 飞书日记
+    | 'user_notes'          // 用户笔记
+    | 'chat_rules'          // 聊天行为规范
+    | 'voice_config'        // 语音消息配置
+    | 'mode_switch'         // 模式切换提示
+    // ── Cognitive Architecture Blocks ──
+    | 'emotion_dynamics'         // 情绪动力学（替代 emotion_buff）
+    | 'personality_crystals'     // 涌现人格
+    | 'user_cognitive_model'     // 用户认知模型
+    | 'unresolved_tensions'      // 未解决张力
+    | 'cross_event_patterns';    // 跨事件模式
+
+/** 单个 Prompt Block */
+export interface PromptBlock {
+    id: string;                        // 唯一标识 (系统块 = SystemBlockId, 自定义块 = uuid)
+    type: 'system' | 'custom';         // system = 内置自动生成, custom = 用户自定义文本
+    name: string;                      // 显示名称
+    enabled: boolean;                  // 是否启用
+    content?: string;                  // custom 块的用户自定义内容（支持 {{char}} {{user}} 模板变量）
+    systemBlockId?: SystemBlockId;     // system 块的类型 ID
+    // UI hints
+    icon?: string;                     // 显示图标
+    color?: string;                    // 标签颜色 (tailwind class)
+    description?: string;              // 鼠标悬停说明
+    locked?: boolean;                  // 是否锁定不可删除（系统块默认 true）
+}
+
+/** Prompt 预设 — 全局模板，可挂载到任意角色 */
+export interface PromptPreset {
+    id: string;
+    name: string;
+    description?: string;
+    blocks: PromptBlock[];             // 按顺序排列的块列表
+    isDefault?: boolean;               // 是否为默认预设（不可删除）
+    createdAt: number;
+    updatedAt: number;
+}
+
+// ============ Memory Palace (记忆宫殿) ============
+
+/** 记忆房间类型 */
+export type MemoryRoom =
+  | 'living_room'   // 客厅 — 日常互动、闲聊
+  | 'bedroom'       // 卧室 — 亲密关系、情感
+  | 'study'         // 书房 — 工作、学习、成长
+  | 'user_room'     // TA的房间 — 关于用户的一切
+  | 'self_room'     // 自己的房间 — 角色的自我认知
+  | 'attic';        // 阁楼 — 杂项、低频、待归类
+
+/** 记忆节点 — 从聊天中提取的结构化记忆片段 */
+export interface MemoryNode {
+  id: string;
+  charId: string;
+
+  // 内容
+  content: string;          // 第三人称陈述句
+  source: 'chat' | 'reflection' | 'user_pin';
+  sourceMessageIds?: number[];
+
+  // 分类
+  room: MemoryRoom;
+  tags: string[];
+
+  // 权重三因子
+  importance: number;       // 1-10
+  lastAccessedAt: number;   // 上次被检索引用的时间戳
+  createdAt: number;
+
+  // 向量状态
+  embedded: boolean;
+  embeddingVersion: number; // 模型变了可以重新生成
+
+  // 元数据
+  mood?: string;
+  processBatch?: string;    // 哪次整理批次产生的
+  linkedMemoryIds?: string[]; // 关联的其他记忆（相似度 0.7-0.9）
+}
+
+/** 向量记录 — 与 MemoryNode 分开存储，避免大对象拖慢查询 */
+export interface MemoryVector {
+  memoryId: string;
+  charId: string;
+  vector: number[];         // Float32 序列化为普通数组（IndexedDB 不支持 TypedArray 作 key）
+  dimensions: number;
+  version: number;
+}
+
+/** Embedding API 配置 */
+export interface EmbeddingApiConfig {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  dimensions?: number;      // 可选降维（Matryoshka）
+}
+
+/** 记忆整理批次记录 */
+export interface MemoryProcessBatch {
+  id: string;
+  charId: string;
+  processedAt: number;
+  lastMessageId: number;    // 处理到哪条消息
+  extractedCount: number;   // 提取了多少条记忆
+  mergedCount: number;      // 合并了多少条
+  log: string[];            // 整理日志（用户可见）
+}
+
+// ============ Cognitive Architecture (认知架构) ============
+
+/** 情绪层 — 三层栈中的单个情绪 */
+export interface EmotionLayer {
+    id: string;
+    ontologyId: string;           // 映射到 EmotionOntology 的 ID
+    depth: 'surface' | 'middle' | 'deep';
+    intensity: number;            // 0-1
+    nuance?: string;              // 修饰语，如 "隐隐的"
+    sourceTimestamp: number;      // 产生时间
+    sourceContext?: string;       // 来源上下文描述
+}
+
+/** 情绪状态 — 三层栈的完整快照 */
+export interface EmotionState {
+    layers: EmotionLayer[];
+    lastUpdatedAt: number;
+}
+
+/** 情绪标签 — 杏仁核或规则引擎输出，用于喂给 EmotionDynamicsEngine */
+export interface EmotionalTag {
+    ontologyId: string;
+    depth: 'surface' | 'middle' | 'deep';
+    intensity: number;            // 0-1
+    nuance?: string;
+    sourceContext?: string;
+}
+
+/** 感知数据包 — 感官输入层的输出 */
+export interface PerceptionPacket {
+    timestamp: number;
+    timeOfDay: 'early_morning' | 'morning' | 'afternoon' | 'evening' | 'night' | 'late_night';
+    timeSinceLastMessage: number;     // ms
+    isFirstMessageToday: boolean;
+    gapFromLastSessionHours: number;  // 距离上次 session 的小时数
+
+    messageText: string;
+    messageLength: number;
+    messageLengthDelta: number;       // 相对于用户平均消息长度的偏差比
+
+    punctuation: {
+        ellipsisCount: number;
+        exclamationCount: number;
+        questionCount: number;
+        hasMultiplePunctuation: boolean;
+    };
+    emotionKeywordHits: string[];     // 命中的 ontologyId 列表
+    emotionKeywordCount: number;
+    isRapidFire: boolean;             // 连续短间隔消息检测
+}
+
+/** 情绪历史快照 — 用于时间线可视化 */
+export interface EmotionHistorySnapshot {
+    id: string;
+    charId: string;
+    timestamp: number;
+    state: EmotionState;
+    trigger?: string;                 // 什么事件触发的快照
+}
+
+/** 跨事件关联 — 三级升级系统 */
+export interface CrossEventLink {
+    id: string;
+    charId: string;
+    memoryA: string;                  // 记忆 A 的 ID 或描述
+    memoryB: string;                  // 记忆 B 的 ID 或描述
+    pattern: string;                  // 发现的关联模式描述
+    confidence: number;               // 0-1
+    level: 'L1_observation' | 'L2_hypothesis' | 'L3_stable';
+    observationCount: number;
+    firstSeen: number;
+    lastSeen: number;
+    promotedAt?: number;
+}
+
+/** 未解决张力 */
+export interface Tension {
+    id: string;
+    charId: string;
+    description: string;
+    relatedMemories: string[];
+    intensity: number;                // 0-1
+    createdAt: number;
+    lastRevisited: number;
+    revisitCount: number;
+    status: 'active' | 'resolving' | 'resolved' | 'dormant';
+    resolutionAttempts: string[];
+}
+
+/** 人格结晶 */
+export interface PersonalityCrystal {
+    id: string;
+    charId: string;
+    trait: string;                    // 涌现特质描述
+    evidence: string[];               // 支撑证据
+    strength: number;                 // 0-1
+    reinforcementCount: number;
+    status: 'provisional' | 'active' | 'rejected';
+    createdAt: number;
+    lastReinforcedAt: number;
+    periodsSurvived: number;
+}
+
+/** 内心独白日志 */
+export interface InnerMonologueEntry {
+    id: string;
+    charId: string;
+    timestamp: number;
+    content: string;
+    type: 'realtime' | 'daily_review' | 'reflection';
+    relatedMessageIds?: number[];
+}
+
+/** 用户认知模型 — UserRoom 中对用户的理解 */
+export interface UserCognitiveModel {
+    charId: string;
+    personality: {
+        traits: { trait: string; confidence: number; evidence: string[]; lastUpdated: number }[];
+        attachmentStyle?: { style: string; confidence: number; evidence: string[] };
+    };
+    relationships: {
+        people: { name: string; relation: string; sentimentToward: number; mentions: number }[];
+    };
+    triggers: {
+        topics: { topic: string; reaction: string; intensity: number; evidence: string[] }[];
+    };
+    communicationPatterns: {
+        patterns: { pattern: string; confidence: number; examples: string[] }[];
+        averageMessageLength: number;
+        activeHours: { hour: number; frequency: number }[];
+    };
+    lastUpdatedAt: number;
 }
 
 export interface SpriteConfig {
@@ -784,6 +1040,8 @@ export interface CharacterProfile {
   buffInjection?: string;   // 注入到systemPrompt的叙事型情绪底色描述
   emotionConfig?: {
     enabled: boolean;
+    /** 认知架构开关 — 开启后使用三层情绪栈 + 杏仁核 + 海马体 + 人格结晶 */
+    cognitiveArchEnabled?: boolean;
     api?: {
       baseUrl: string;
       apiKey: string;

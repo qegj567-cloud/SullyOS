@@ -3,6 +3,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useOS } from '../context/OSContext';
 import { AppID, CharacterProfile, CharacterExportData, UserImpression, MemoryFragment } from '../types';
 import { SlidersHorizontal, SpeakerHigh, Books, BookOpen } from '@phosphor-icons/react';
+import { loadPresets, savePresets, getActivePresetId, setActivePresetId, createDefaultPreset, computeBlockActivity, assemblePromptPreview, getActivePreset, PromptRuntimeContext } from '../utils/promptEngine';
+import { PromptPreset, PromptBlock } from '../types';
 import Modal from '../components/os/Modal';
 import { processImage } from '../utils/file';
 import { Capacitor } from '@capacitor/core';
@@ -54,9 +56,9 @@ const CharacterCard: React.FC<{
 );
 
 const Character: React.FC = () => {
-  const { closeApp, openApp, characters, activeCharacterId, setActiveCharacterId, addCharacter, updateCharacter, deleteCharacter, apiConfig, addToast, userProfile, customThemes, addCustomTheme, worldbooks } = useOS();
+  const { closeApp, openApp, characters, activeCharacterId, setActiveCharacterId, addCharacter, updateCharacter, deleteCharacter, apiConfig, addToast, userProfile, customThemes, addCustomTheme, worldbooks, realtimeConfig } = useOS();
   const [view, setView] = useState<'list' | 'detail'>('list');
-  const [detailTab, setDetailTab] = useState<'identity' | 'memory' | 'impression'>('identity');
+  const [detailTab, setDetailTab] = useState<'identity' | 'memory' | 'impression' | 'preset'>('identity');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<CharacterProfile | null>(null);
   const [isCompressing, setIsCompressing] = useState(false);
@@ -97,6 +99,114 @@ const Character: React.FC = () => {
       voice_cloning: [],
       voice_generation: [],
   });
+
+  // Prompt Preset State (per-character)
+  const [promptPresets, setPromptPresets] = useState<PromptPreset[]>([]);
+  const [activePresetId, setActivePresetIdLocal] = useState('default');
+  const [editingPreset, setEditingPreset] = useState<PromptPreset | null>(null);
+  const [editingBlockIdx, setEditingBlockIdx] = useState<number | null>(null);
+  const [showPromptPresetModal, setShowPromptPresetModal] = useState(false);
+  const [showPromptPreview, setShowPromptPreview] = useState(false);
+  const [previewBlocks, setPreviewBlocks] = useState<{ blockId: string; name: string; icon: string; content: string; charCount: number }[]>([]);
+  const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+  const [expandedPreviewBlock, setExpandedPreviewBlock] = useState<string | null>(null);
+
+  // Load presets when character changes
+  useEffect(() => {
+      if (editingId) {
+          setPromptPresets(loadPresets(editingId));
+          setActivePresetIdLocal(getActivePresetId(editingId));
+      }
+  }, [editingId]);
+
+  const switchPreset = (id: string) => {
+      if (!editingId) return;
+      setActivePresetIdLocal(id);
+      setActivePresetId(id, editingId);
+      addToast(`已切换预设: ${promptPresets.find(p => p.id === id)?.name || id}`);
+  };
+
+  const duplicatePreset = (source: PromptPreset) => {
+      if (!editingId) return;
+      const now = Date.now();
+      const newPreset: PromptPreset = {
+          ...JSON.parse(JSON.stringify(source)),
+          id: `custom_${now}`,
+          name: `${source.name} (副本)`,
+          isDefault: false,
+          createdAt: now,
+          updatedAt: now,
+      };
+      const next = [...promptPresets, newPreset];
+      setPromptPresets(next);
+      savePresets(next, editingId);
+      setEditingPreset(newPreset);
+      setShowPromptPresetModal(true);
+  };
+
+  const deletePreset = (id: string) => {
+      if (!editingId || id === 'default') return;
+      const next = promptPresets.filter(p => p.id !== id);
+      setPromptPresets(next);
+      savePresets(next, editingId);
+      if (activePresetId === id) switchPreset('default');
+  };
+
+  const generatePromptPreview = async () => {
+      if (!formData || isLoadingPreview) return;
+      setIsLoadingPreview(true);
+      setShowPromptPreview(true);
+      setExpandedPreviewBlock(null);
+      try {
+          const preset = getActivePreset(formData.id);
+          const ctx: PromptRuntimeContext = {
+              char: formData,
+              user: userProfile,
+              groups: [],
+              emojis: [],
+              emojiCategories: [],
+              currentMsgs: [],
+              realtimeConfig,
+              includeDetailedMemories: true,
+          };
+          const blocks = await assemblePromptPreview(preset, ctx);
+          setPreviewBlocks(blocks);
+      } catch (e: any) {
+          addToast(`预览生成失败: ${e.message?.slice(0, 60)}`, 'error');
+      }
+      setIsLoadingPreview(false);
+  };
+
+  const saveEditingPreset = () => {
+      if (!editingPreset || !editingId) return;
+      editingPreset.updatedAt = Date.now();
+      const next = promptPresets.map(p => p.id === editingPreset.id ? editingPreset : p);
+      setPromptPresets(next);
+      savePresets(next, editingId);
+      setEditingBlockIdx(null);
+  };
+
+  const moveBlock = (fromIdx: number, toIdx: number) => {
+      if (!editingPreset) return;
+      const blocks = [...editingPreset.blocks];
+      const [moved] = blocks.splice(fromIdx, 1);
+      blocks.splice(toIdx, 0, moved);
+      setEditingPreset({ ...editingPreset, blocks });
+  };
+
+  const addCustomBlock = () => {
+      if (!editingPreset) return;
+      const newBlock: PromptBlock = {
+          id: `custom_${Date.now()}`,
+          type: 'custom',
+          name: '自定义文本',
+          enabled: true,
+          content: '在这里写自定义 prompt 文本...\n支持 {{char}} 和 {{user}} 模板变量。',
+          icon: '✏️',
+          color: 'bg-yellow-100 text-yellow-700',
+      };
+      setEditingPreset({ ...editingPreset, blocks: [...editingPreset.blocks, newBlock] });
+  };
 
   const handleLoadMiniMaxVoices = async () => {
       const minimaxApiKey = resolveMiniMaxApiKey(apiConfig);
@@ -875,6 +985,7 @@ ${isInitialGeneration ? `
                        <button onClick={() => setDetailTab('identity')} className={`pb-2 transition-colors relative ${detailTab === 'identity' ? 'text-slate-800' : ''}`}>设定{detailTab === 'identity' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-primary rounded-full"></div>}</button>
                        <button onClick={() => setDetailTab('memory')} className={`pb-2 transition-colors relative ${detailTab === 'memory' ? 'text-slate-800' : ''}`}>记忆 ({(formData.memories || []).length}){detailTab === 'memory' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-primary rounded-full"></div>}</button>
                        <button onClick={() => setDetailTab('impression')} className={`pb-2 transition-colors relative ${detailTab === 'impression' ? 'text-slate-800' : ''}`}>印象{detailTab === 'impression' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-primary rounded-full"></div>}</button>
+                       <button onClick={() => setDetailTab('preset')} className={`pb-2 transition-colors relative ${detailTab === 'preset' ? 'text-slate-800' : ''}`}>预设{detailTab === 'preset' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-primary rounded-full"></div>}</button>
                    </div>
                </div>
                <div className="flex-1 overflow-y-auto p-5 no-scrollbar pb-10">
@@ -1063,10 +1174,232 @@ ${isInitialGeneration ? `
                            onDelete={() => handleChange('impression', undefined)}
                        />
                    )}
+
+                   {detailTab === 'preset' && (
+                       <div className="space-y-4 animate-fade-in">
+                           <div className="bg-amber-50/80 rounded-xl px-3 py-2.5 border border-amber-200/60">
+                               <p className="text-[11px] text-amber-700 leading-relaxed">
+                                   <span className="font-bold">看不懂？不用碰。</span>糯米鸡已经帮你配好了，默认就能用。
+                               </p>
+                           </div>
+                           <p className="text-xs text-slate-500 leading-relaxed">
+                               控制发送给 AI 的 System Prompt 结构。每个角色可以独立配置自己的预设模板。
+                           </p>
+
+                           {/* 预设选择 */}
+                           <div className="flex gap-2 flex-wrap">
+                               {promptPresets.map(p => (
+                                   <button key={p.id} onClick={() => switchPreset(p.id)}
+                                       className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all active:scale-95 ${
+                                           activePresetId === p.id
+                                               ? 'bg-violet-500 text-white border-violet-500 shadow-md'
+                                               : 'bg-white border-slate-200 text-slate-600 hover:border-violet-300'
+                                       }`}>
+                                       {p.name}
+                                       {p.isDefault && <span className="ml-1 text-[8px] opacity-60">(内置)</span>}
+                                   </button>
+                               ))}
+                           </div>
+
+                           {/* 操作按钮 */}
+                           <div className="flex gap-2">
+                               <button onClick={() => {
+                                   const active = promptPresets.find(p => p.id === activePresetId);
+                                   if (active) duplicatePreset(active);
+                               }} className="px-3 py-1.5 bg-violet-50 text-violet-600 rounded-lg text-[10px] font-bold hover:bg-violet-100 transition-colors">
+                                   复制当前预设
+                               </button>
+                               <button onClick={() => {
+                                   const active = promptPresets.find(p => p.id === activePresetId);
+                                   if (active) { setEditingPreset(JSON.parse(JSON.stringify(active))); setShowPromptPresetModal(true); }
+                               }} className="px-3 py-1.5 bg-slate-50 text-slate-600 rounded-lg text-[10px] font-bold hover:bg-slate-100 transition-colors">
+                                   编辑预设
+                               </button>
+                               {activePresetId !== 'default' && (
+                                   <button onClick={() => { if (confirm('确定删除该预设？')) deletePreset(activePresetId); }}
+                                       className="px-3 py-1.5 bg-red-50 text-red-500 rounded-lg text-[10px] font-bold hover:bg-red-100 transition-colors">
+                                       删除
+                                   </button>
+                               )}
+                           </div>
+
+                           {/* 当前预设 block 预览 */}
+                           <div className="bg-white/60 rounded-2xl p-3 border border-white/50">
+                               <div className="flex items-center justify-between mb-2">
+                                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Block 列表预览</label>
+                                   <button onClick={generatePromptPreview} disabled={isLoadingPreview}
+                                       className="px-2.5 py-1 bg-violet-50 text-violet-600 rounded-lg text-[10px] font-bold hover:bg-violet-100 transition-colors disabled:opacity-50">
+                                       {isLoadingPreview ? '生成中...' : '查看实际 Prompt'}
+                                   </button>
+                               </div>
+                               <div className="flex flex-wrap gap-1">
+                                   {(promptPresets.find(p => p.id === activePresetId)?.blocks || []).map(b => {
+                                       const activity = formData ? computeBlockActivity(formData, realtimeConfig) : {};
+                                       const info = b.systemBlockId ? activity[b.systemBlockId] : undefined;
+                                       const inactive = b.enabled && info && !info.active;
+                                       return (
+                                           <span key={b.id} className={`px-2 py-0.5 rounded-md text-[9px] font-bold ${
+                                               !b.enabled ? 'bg-gray-100 text-gray-400 line-through' :
+                                               inactive ? 'bg-orange-50 text-orange-400 border border-orange-200 border-dashed' :
+                                               (b.color || 'bg-slate-100 text-slate-600')
+                                           }`} title={inactive ? info?.reason : undefined}>
+                                               {b.icon} {b.name}
+                                           </span>
+                                       );
+                                   })}
+                               </div>
+                           </div>
+
+                           {/* Prompt 实际内容预览 */}
+                           {showPromptPreview && (
+                               <div className="bg-white/60 rounded-2xl border border-white/50 overflow-hidden">
+                                   <div className="flex items-center justify-between px-3 py-2 bg-violet-50/50 border-b border-white/50">
+                                       <div className="flex items-center gap-2">
+                                           <span className="text-[10px] font-bold text-violet-600 uppercase tracking-widest">实际发送的 System Prompt</span>
+                                           {previewBlocks.length > 0 && (
+                                               <span className="text-[9px] text-slate-400">
+                                                   {previewBlocks.length} 块 · {previewBlocks.reduce((s, b) => s + b.charCount, 0).toLocaleString()} 字符
+                                               </span>
+                                           )}
+                                       </div>
+                                       <button onClick={() => setShowPromptPreview(false)} className="text-[10px] text-slate-400 hover:text-slate-600">收起</button>
+                                   </div>
+
+                                   {isLoadingPreview ? (
+                                       <div className="p-4 text-center text-xs text-slate-400">生成预览中...</div>
+                                   ) : previewBlocks.length === 0 ? (
+                                       <div className="p-4 text-center text-xs text-slate-400">无有效输出</div>
+                                   ) : (
+                                       <div className="divide-y divide-slate-100">
+                                           {previewBlocks.map(block => (
+                                               <div key={block.blockId}>
+                                                   <button onClick={() => setExpandedPreviewBlock(expandedPreviewBlock === block.blockId ? null : block.blockId)}
+                                                       className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50/50 transition-colors text-left">
+                                                       <span className="text-xs">{block.icon}</span>
+                                                       <span className="text-[11px] font-medium text-slate-600 flex-1">{block.name}</span>
+                                                       <span className="text-[9px] text-slate-400">{block.charCount.toLocaleString()} 字符</span>
+                                                       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"
+                                                           className={`w-3 h-3 text-slate-400 transition-transform ${expandedPreviewBlock === block.blockId ? 'rotate-180' : ''}`}>
+                                                           <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                                                       </svg>
+                                                   </button>
+                                                   {expandedPreviewBlock === block.blockId && (
+                                                       <div className="px-3 pb-3">
+                                                           <pre className="text-[10px] text-slate-500 leading-relaxed bg-slate-50 rounded-xl p-3 max-h-[40vh] overflow-y-auto whitespace-pre-wrap break-words font-mono border border-slate-100">
+                                                               {block.content}
+                                                           </pre>
+                                                       </div>
+                                                   )}
+                                               </div>
+                                           ))}
+                                       </div>
+                                   )}
+                               </div>
+                           )}
+                       </div>
+                   )}
                </div>
            </div>
        )}
-       
+
+       {/* Prompt 预设编辑 Modal */}
+       {showPromptPresetModal && editingPreset && (
+           <Modal isOpen={showPromptPresetModal} title={`编辑预设: ${editingPreset.name}`} onClose={() => { saveEditingPreset(); setShowPromptPresetModal(false); setEditingPreset(null); }}>
+               <div className="space-y-3">
+                   <div>
+                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">预设名称</label>
+                       <input value={editingPreset.name} onChange={e => setEditingPreset({ ...editingPreset, name: e.target.value })}
+                           className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm" />
+                   </div>
+                   <div>
+                       <div className="flex items-center justify-between mb-2">
+                           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Block 列表 (拖拽排序)</label>
+                           <button onClick={addCustomBlock} className="px-2 py-1 bg-yellow-50 text-yellow-700 rounded-lg text-[10px] font-bold hover:bg-yellow-100">+ 自定义 Block</button>
+                       </div>
+                       <div className="space-y-1.5 max-h-[50vh] overflow-y-auto">
+                           {editingPreset.blocks.map((block, idx) => (
+                               <div key={block.id}
+                                   draggable
+                                   onDragStart={e => e.dataTransfer.setData('blockIdx', String(idx))}
+                                   onDragOver={e => e.preventDefault()}
+                                   onDrop={e => { const from = parseInt(e.dataTransfer.getData('blockIdx')); moveBlock(from, idx); }}
+                                   className={`flex items-center gap-2 p-2.5 rounded-xl border transition-all cursor-grab active:cursor-grabbing ${
+                                       editingBlockIdx === idx ? 'border-violet-400 bg-violet-50/50' : 'border-slate-200 bg-white hover:border-slate-300'
+                                   } ${!block.enabled ? 'opacity-40' : ''}`}>
+                                   <span className="text-slate-300 text-xs select-none">⋮⋮</span>
+                                   <button onClick={() => {
+                                       const blocks = [...editingPreset.blocks];
+                                       blocks[idx] = { ...blocks[idx], enabled: !blocks[idx].enabled };
+                                       setEditingPreset({ ...editingPreset, blocks });
+                                   }} className={`w-8 h-4 rounded-full transition-colors relative flex-shrink-0 ${block.enabled ? 'bg-violet-500' : 'bg-slate-300'}`}>
+                                       <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform ${block.enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                                   </button>
+                                   <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${block.color || 'bg-slate-100 text-slate-600'}`}>{block.icon} {block.name}</span>
+                                   {block.enabled && block.type === 'system' && block.systemBlockId && (() => {
+                                       const activity = computeBlockActivity(formData!, realtimeConfig);
+                                       const info = activity[block.systemBlockId!];
+                                       if (info && !info.active) return (
+                                           <span className="text-[8px] text-orange-500 bg-orange-50 px-1 py-0.5 rounded font-bold shrink-0" title={info.reason}>{info.reason || '未配置'}</span>
+                                       );
+                                       return null;
+                                   })()}
+                                   <span className="text-[9px] text-slate-400 flex-1 truncate">{block.type === 'system' ? '系统' : '自定义'}</span>
+                                   <button onClick={() => setEditingBlockIdx(editingBlockIdx === idx ? null : idx)} className="px-1.5 py-0.5 text-[9px] text-slate-400 hover:text-violet-500">{editingBlockIdx === idx ? '收起' : '编辑'}</button>
+                                   {block.type === 'custom' && (
+                                       <button onClick={() => {
+                                           const blocks = editingPreset.blocks.filter((_, i) => i !== idx);
+                                           setEditingPreset({ ...editingPreset, blocks });
+                                           if (editingBlockIdx === idx) setEditingBlockIdx(null);
+                                       }} className="px-1.5 py-0.5 text-[9px] text-red-400 hover:text-red-600">删除</button>
+                                   )}
+                               </div>
+                           ))}
+                       </div>
+                       {editingBlockIdx !== null && editingPreset.blocks[editingBlockIdx] && (
+                           <div className="mt-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                               <label className="text-xs font-bold text-slate-600 mb-2 block">
+                                   {editingPreset.blocks[editingBlockIdx].icon} {editingPreset.blocks[editingBlockIdx].name}
+                                   {editingPreset.blocks[editingBlockIdx].type === 'system' && (
+                                       <span className="text-[9px] text-slate-400 font-normal ml-2">(留空 = 使用系统默认，填写内容 = 覆盖)</span>
+                                   )}
+                               </label>
+                               {editingPreset.blocks[editingBlockIdx].type === 'custom' && (
+                                   <input value={editingPreset.blocks[editingBlockIdx].name}
+                                       onChange={e => {
+                                           const blocks = [...editingPreset.blocks];
+                                           blocks[editingBlockIdx!] = { ...blocks[editingBlockIdx!], name: e.target.value };
+                                           setEditingPreset({ ...editingPreset, blocks });
+                                       }}
+                                       className="w-full px-2 py-1 mb-2 bg-white border border-slate-200 rounded-lg text-xs" placeholder="Block 名称" />
+                               )}
+                               <textarea
+                                   value={editingPreset.blocks[editingBlockIdx].content || ''}
+                                   onChange={e => {
+                                       const blocks = [...editingPreset.blocks];
+                                       blocks[editingBlockIdx!] = { ...blocks[editingBlockIdx!], content: e.target.value };
+                                       setEditingPreset({ ...editingPreset, blocks });
+                                   }}
+                                   className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono min-h-[120px] resize-y"
+                                   placeholder={editingPreset.blocks[editingBlockIdx].type === 'system'
+                                       ? '留空 = 使用系统默认。填入内容将覆盖默认。\n支持: {{char}} {{user}} 模板变量'
+                                       : '输入自定义 prompt 文本...\n支持: {{char}} {{user}} 模板变量'
+                                   }
+                               />
+                           </div>
+                       )}
+                   </div>
+                   <div className="flex justify-end gap-2 pt-2">
+                       <button onClick={() => { setShowPromptPresetModal(false); setEditingPreset(null); setEditingBlockIdx(null); }}
+                           className="px-4 py-2 text-xs text-slate-500 hover:text-slate-700">取消</button>
+                       <button onClick={() => { saveEditingPreset(); setShowPromptPresetModal(false); setEditingPreset(null); }}
+                           className="px-4 py-2 bg-violet-500 text-white text-xs font-bold rounded-xl hover:bg-violet-600 transition-colors">
+                           保存预设
+                       </button>
+                   </div>
+               </div>
+           </Modal>
+       )}
+
        {/* Modals ... */}
        <Modal isOpen={showImportModal} title="记忆导入/清洗" onClose={() => setShowImportModal(false)} footer={<><button onClick={() => setShowImportModal(false)} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl">取消</button><button onClick={handleImportMemories} disabled={isProcessingMemory} className="flex-1 py-3 bg-primary text-white font-bold rounded-2xl shadow-lg shadow-primary/30 flex items-center justify-center gap-2">{isProcessingMemory && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>}{isProcessingMemory ? '处理中...' : '开始执行'}</button></>}>
            <div className="space-y-3"><div className="text-xs text-slate-400 leading-relaxed bg-slate-50 p-3 rounded-xl border border-slate-100">AI 将自动整理乱序文本为记忆档案。</div>{importStatus && <div className="text-xs text-primary font-medium">{importStatus}</div>}<textarea value={importText} onChange={e => setImportText(e.target.value)} placeholder="在此粘贴文本..." className="w-full h-32 bg-slate-100 border-none rounded-2xl px-4 py-3 text-sm text-slate-700 resize-none focus:ring-2 focus:ring-primary/20 transition-all"/></div>

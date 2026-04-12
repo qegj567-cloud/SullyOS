@@ -29,6 +29,7 @@ import {
   PhoneCall,
   Crosshair,
   Smiley,
+  Brain,
 } from '@phosphor-icons/react';
 
 // SVG 图标库 - Phosphor Icons
@@ -61,6 +62,7 @@ export const Icons: Record<string, React.FC<{ className?: string }>> = {
   Call: ({ className }) => <PhoneCall className={className} weight="bold" />,
   Guidebook: ({ className }) => <Crosshair className={className} weight="bold" />,
   LifeSim: ({ className }) => <Smiley className={className} weight="bold" />,
+  MemoryPalace: ({ className }) => <Brain className={className} weight="bold" />,
 };
 
 export const INSTALLED_APPS: AppConfig[] = [
@@ -88,6 +90,7 @@ export const INSTALLED_APPS: AppConfig[] = [
   { id: AppID.XhsStock, name: '小红书图库', icon: 'XhsStock', color: 'red' },
   { id: AppID.ThemeMaker, name: '气泡工坊', icon: 'ThemeMaker', color: 'purple' },
   { id: AppID.Appearance, name: '外观', icon: 'Appearance', color: 'slate' },
+  { id: AppID.MemoryPalace, name: '记忆宫殿', icon: 'MemoryPalace', color: 'amber' },
   { id: AppID.Settings, name: '设置', icon: 'Settings', color: 'slate' },
   { id: AppID.Guidebook, name: '攻略本', icon: 'Guidebook', color: 'slate' },
   { id: AppID.LifeSim, name: '都市人生', icon: 'LifeSim', color: 'purple' },

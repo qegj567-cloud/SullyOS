@@ -17,7 +17,7 @@ const Settings: React.FC = () => {
       exportSystem, importSystem, addToast, resetSystem,
       apiPresets, addApiPreset, removeApiPreset,
       sysOperation, // Get progress state
-      realtimeConfig, updateRealtimeConfig // 实时感知配置
+      realtimeConfig, updateRealtimeConfig, // 实时感知配置
   } = useOS();
   
   const [localKey, setLocalKey] = useState(apiConfig.apiKey);
@@ -28,6 +28,7 @@ const Settings: React.FC = () => {
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [newPresetName, setNewPresetName] = useState('');
   
+
   // UI States
   const [showModelModal, setShowModelModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false); // Used for completion now
