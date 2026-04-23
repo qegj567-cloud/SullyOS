@@ -20,12 +20,17 @@ import type { RelatedMemoryRef } from './extraction';
 import { getEmbeddings } from './embedding';
 import { vectorSearch, isRemoteSearchBroken } from './vectorSearch';
 
-/** 从 localStorage 读取远程向量配置，判断本次是走远程还是本地路径 */
+/** 从 localStorage 读取远程向量配置，判断本次是走远程还是本地路径。
+ *  关键：enabled=false 或未完成 initialized 时必须视为"没有远程配置"，
+ *  否则用户在 UI 里关掉 Supabase 之后，这条路径还会把旧配置喂给 vectorSearch，
+ *  继续尝试连远程 → 报连不上。其他模块（pipeline / digestion / db /
+ *  eventBoxCompression）都是这个写法，这里是历史漏检。 */
 function getLocalRemoteConfig(): RemoteVectorConfig | undefined {
     try {
         const raw = localStorage.getItem('os_remote_vector_config');
         if (!raw) return undefined;
-        return JSON.parse(raw) as RemoteVectorConfig;
+        const config = JSON.parse(raw) as RemoteVectorConfig;
+        return (config.enabled && config.initialized) ? config : undefined;
     } catch { return undefined; }
 }
 
