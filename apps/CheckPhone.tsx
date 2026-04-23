@@ -6,7 +6,7 @@ import { ContextBuilder } from '../utils/context';
 import Modal from '../components/os/Modal';
 import { safeResponseJson } from '../utils/safeApi';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
-import { User, Phone, ChatCircleDots, ShoppingBag, Hamburger, CircleNotch, Wrench, Compass, GearSix, Tray } from '@phosphor-icons/react';
+import { User, Phone, ChatCircleDots, ShoppingBag, Hamburger, CircleNotch, Wrench, Compass, GearSix, Tray, Plus, SignOut } from '@phosphor-icons/react';
 
 const TwemojiImg: React.FC<{ code: string; alt?: string; className?: string }> = ({ code, alt, className = 'w-4 h-4 inline-block' }) => (
   <img src={`https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/${code}.png`} alt={alt || ''} className={className} draggable={false} />
@@ -582,91 +582,131 @@ Format:
         );
     };
 
-    const AppIcon = ({ icon, color, label, onClick, onDelete }: { icon: React.ReactNode, color: string, label: string, onClick: () => void, onDelete?: () => void }) => (
-        <div className="flex flex-col items-center gap-1.5 relative group">
-            <button 
+    const ZenTile: React.FC<{
+        children: React.ReactNode;
+        label: string;
+        onClick: () => void;
+        onDelete?: () => void;
+        muted?: boolean;
+        tintColor?: string;
+    }> = ({ children, label, onClick, onDelete, muted, tintColor }) => (
+        <div className="flex flex-col items-center gap-2.5 relative group">
+            <button
                 onClick={onClick}
-                className="w-[3.8rem] h-[3.8rem] rounded-[1.2rem] flex items-center justify-center text-2xl shadow-lg border border-white/10 active:scale-95 transition-transform relative overflow-hidden"
-                style={{ background: color }}
+                className={`w-14 h-14 rounded-xl flex items-center justify-center backdrop-blur-xl border transition-all active:scale-95 duration-300 relative overflow-hidden ${
+                    muted
+                        ? 'bg-[#191a1a]/50 border-[#484848]/20 hover:bg-[#252626]/50 text-[#acabaa]'
+                        : 'bg-[#252626]/50 border-[#484848]/25 hover:bg-[#2c2c2c]/70 text-[#e7e5e4]'
+                }`}
+                style={tintColor ? { boxShadow: `inset 0 0 18px 0 ${tintColor}33` } : undefined}
             >
-                <div className="absolute inset-0 bg-gradient-to-tr from-black/10 to-transparent"></div>
-                <div className="relative z-10 drop-shadow-md text-white">{icon}</div>
+                <span className="relative z-10 drop-shadow-sm">{children}</span>
             </button>
-            <span className="text-[10px] font-medium text-white/90 drop-shadow-md tracking-wide px-1 py-0.5 rounded bg-black/10 backdrop-blur-[2px]">{label}</span>
+            <span className="text-[9px] uppercase tracking-[0.18em] text-[#acabaa] font-medium leading-none">{label}</span>
             {onDelete && (
-                <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="absolute -top-1 -right-1 w-5 h-5 bg-slate-400 text-white rounded-full flex items-center justify-center text-[10px] shadow-sm opacity-0 group-hover:opacity-100 transition-opacity z-20 hover:bg-red-500">×</button>
+                <button
+                    onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                    className="absolute -top-1 -right-1 w-4 h-4 bg-[#484848] text-[#e7e5e4] rounded-full flex items-center justify-center text-[10px] leading-none opacity-0 group-hover:opacity-100 transition-opacity z-20 hover:bg-[#bb5551]"
+                >×</button>
             )}
         </div>
     );
 
     const renderDesktop = () => {
-        const bgStyle = targetChar?.dateBackground 
-            ? { backgroundImage: `url(${targetChar.dateBackground})` }
-            : { background: 'linear-gradient(to bottom, #1e293b, #0f172a)' };
+        const hasBg = !!targetChar?.dateBackground;
+        const charName = targetChar?.name || 'Digital Monolith';
 
         return (
-            <div className="absolute inset-0 flex flex-col z-0" style={{ ...bgStyle, backgroundSize: 'cover', backgroundPosition: 'center' }}>
-                <div className="absolute inset-0 bg-black/20 backdrop-blur-[2px]"></div>
-                
-                <div className="h-8 flex justify-between px-5 items-center text-white/80 text-[10px] font-bold z-20 relative">
-                    <span>12:00</span>
+            <div className="absolute inset-0 flex flex-col z-0 overflow-hidden bg-[#0e0e0e]">
+                {/* Zen mesh background */}
+                <div
+                    className="absolute inset-0 pointer-events-none"
+                    style={{ background: 'radial-gradient(circle at 50% 40%, #1f2020 0%, #0e0e0e 75%)' }}
+                />
+                {hasBg && (
+                    <div
+                        className="absolute inset-0 opacity-15 grayscale pointer-events-none"
+                        style={{ backgroundImage: `url(${targetChar!.dateBackground})`, backgroundSize: 'cover', backgroundPosition: 'center' }}
+                    />
+                )}
+                <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/50 pointer-events-none" />
+                <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-white/10 to-transparent pointer-events-none z-20" />
+
+                {/* Status bar */}
+                <div className="h-8 flex justify-between px-6 items-center z-20 relative pt-3 text-[#c8c6c5]">
+                    <span className="text-[11px] font-semibold tracking-tight">9:41</span>
                     <div className="flex gap-1.5 items-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3"><path d="M2 22h3V10H2v12zm6 0h3V6H8v16zm6 0h3V2h-3v20zm6 0h3v-8h-3v8z"/></svg>
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3"><path fillRule="evenodd" d="M1.371 8.143c5.858-5.857 15.356-5.857 21.213 0a.75.75 0 0 1 0 1.061l-.53.53a.75.75 0 0 1-1.06 0c-4.98-4.979-13.053-4.979-18.032 0a.75.75 0 0 1-1.06 0l-.53-.53a.75.75 0 0 1 0-1.06Zm3.182 3.182c4.1-4.1 10.749-4.1 14.85 0a.75.75 0 0 1 0 1.061l-.53.53a.75.75 0 0 1-1.062 0 8.25 8.25 0 0 0-11.667 0 .75.75 0 0 1-1.06 0l-.53-.53a.75.75 0 0 1 0-1.06Zm3.204 3.182a6 6 0 0 1 8.486 0 .75.75 0 0 1 0 1.061l-.53.53a.75.75 0 0 1-1.061 0 3.75 3.75 0 0 0-5.304 0 .75.75 0 0 1-1.06 0l-.53-.53a.75.75 0 0 1 0-1.06Zm3.182 3.182a1.5 1.5 0 0 1 2.122 0 .75.75 0 0 1 0 1.061l-.53.53a.75.75 0 0 1-1.061 0l-.53-.53a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" /></svg>
                         <div className="w-4 h-2 border border-current rounded-[2px] relative"><div className="absolute left-0 top-0 bottom-0 bg-current w-3/4"></div></div>
                     </div>
                 </div>
 
-                <div className="flex-1 p-5 z-10 overflow-y-auto no-scrollbar overscroll-none">
+                {/* Content */}
+                <div className="flex-1 px-6 pt-6 pb-28 z-10 overflow-y-auto no-scrollbar overscroll-none">
+                    {/* Header */}
+                    <div className="mb-8">
+                        <h1 className="text-lg font-bold tracking-tighter text-[#c8c6c5] leading-tight truncate">{charName}</h1>
+                        <p className="text-[10px] tracking-[0.25em] uppercase text-[#acabaa] mt-1">The Space Between</p>
+                    </div>
+
+                    {/* Apps grid */}
                     <div className="grid grid-cols-4 gap-y-6 gap-x-2 place-items-center content-start">
-                        <AppIcon icon={<ChatCircleDots size={28} />} color="linear-gradient(135deg, #10b981, #059669)" label="Message" onClick={() => setActiveAppId('chat')} />
-                        <AppIcon icon={<ShoppingBag size={28} />} color="linear-gradient(135deg, #f97316, #ea580c)" label="Taobao" onClick={() => setActiveAppId('taobao')} />
-                        <AppIcon icon={<Hamburger size={28} />} color="linear-gradient(135deg, #eab308, #ca8a04)" label="Food" onClick={() => setActiveAppId('waimai')} />
-                        <AppIcon icon={<CircleNotch size={28} />} color="linear-gradient(135deg, #6366f1, #4f46e5)" label="Moments" onClick={() => setActiveAppId('social')} />
-                        
+                        <ZenTile label="Message" onClick={() => setActiveAppId('chat')}>
+                            <ChatCircleDots size={24} weight="light" />
+                        </ZenTile>
+                        <ZenTile label="Taobao" onClick={() => setActiveAppId('taobao')}>
+                            <ShoppingBag size={24} weight="light" />
+                        </ZenTile>
+                        <ZenTile label="Food" onClick={() => setActiveAppId('waimai')}>
+                            <Hamburger size={24} weight="light" />
+                        </ZenTile>
+                        <ZenTile label="Moments" onClick={() => setActiveAppId('social')}>
+                            <CircleNotch size={24} weight="light" />
+                        </ZenTile>
+
                         {customApps.map(app => (
-                            <AppIcon 
-                                key={app.id} 
-                                icon={app.icon} 
-                                color={app.color} 
-                                label={app.name} 
-                                onClick={() => setActiveAppId(app.id)} 
+                            <ZenTile
+                                key={app.id}
+                                label={app.name}
+                                onClick={() => setActiveAppId(app.id)}
                                 onDelete={() => handleDeleteApp(app.id)}
-                            />
+                                tintColor={app.color}
+                            >
+                                <span className="text-xl grayscale-0">{app.icon}</span>
+                            </ZenTile>
                         ))}
 
-                        <button onClick={() => setShowCreateModal(true)} className="flex flex-col items-center gap-1.5 group">
-                            <div className="w-[3.8rem] h-[3.8rem] rounded-[1.2rem] bg-white/20 backdrop-blur-md border border-white/30 flex items-center justify-center text-2xl text-white shadow-lg active:scale-95 transition-transform hover:bg-white/30">
-                                +
-                            </div>
-                            <span className="text-[10px] font-medium text-white/90 drop-shadow-md">Add App</span>
-                        </button>
+                        <ZenTile label="Add App" onClick={() => setShowCreateModal(true)} muted>
+                            <Plus size={22} weight="light" />
+                        </ZenTile>
 
-                        <button onClick={handleExitPhone} className="flex flex-col items-center gap-1.5 group">
-                            <div className="w-[3.8rem] h-[3.8rem] rounded-[1.2rem] bg-red-500/20 backdrop-blur-md border border-red-400/50 flex items-center justify-center shadow-lg active:scale-95 transition-transform hover:bg-red-500/40">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-8 h-8 text-white"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15M12 9l-3 3m0 0 3 3m-3-3h12.75" /></svg>
-                            </div>
-                            <span className="text-[10px] font-medium text-white/90 drop-shadow-md">断开连接</span>
-                        </button>
-
-                        {/* Debug Toggle */}
-                        <button onClick={() => setShowDebug(!showDebug)} className="flex flex-col items-center gap-1.5 group opacity-50 hover:opacity-100 transition-opacity">
-                            <div className="w-[3.8rem] h-[3.8rem] rounded-[1.2rem] bg-black/20 backdrop-blur-md border border-white/10 flex items-center justify-center shadow-lg active:scale-95 transition-transform">
-                                <Wrench size={24} className="text-white" />
-                            </div>
-                            <span className="text-[10px] font-medium text-white/90 drop-shadow-md">Debug UI</span>
-                        </button>
-
+                        <ZenTile label="Debug" onClick={() => setShowDebug(!showDebug)} muted>
+                            <Wrench size={22} weight="light" />
+                        </ZenTile>
                     </div>
                 </div>
 
-                <div className="p-4 z-20">
-                    <div className="bg-white/20 backdrop-blur-xl rounded-[2rem] p-3 flex justify-around items-center border border-white/10 shadow-lg">
-                        <button onClick={() => {}} className="p-2 rounded-xl active:bg-white/20 transition-colors"><div className="w-12 h-12 bg-green-500 rounded-xl flex items-center justify-center shadow-sm"><Phone size={26} className="text-white" /></div></button>
-                        <button onClick={() => setActiveAppId('chat')} className="p-2 rounded-xl active:bg-white/20 transition-colors"><div className="w-12 h-12 bg-blue-500 rounded-xl flex items-center justify-center shadow-sm"><ChatCircleDots size={26} className="text-white" /></div></button>
-                        <button onClick={() => {}} className="p-2 rounded-xl active:bg-white/20 transition-colors"><div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center shadow-sm"><Compass size={26} className="text-slate-700" /></div></button>
-                        <button onClick={() => {}} className="p-2 rounded-xl active:bg-white/20 transition-colors"><div className="w-12 h-12 bg-slate-800 rounded-xl flex items-center justify-center shadow-sm"><GearSix size={26} className="text-white" /></div></button>
+                {/* Floating glass nav */}
+                <nav className="absolute bottom-4 left-1/2 -translate-x-1/2 w-[90%] z-40">
+                    <div className="bg-[#252626]/70 backdrop-blur-xl rounded-2xl border border-[#484848]/30 shadow-[0_0_64px_rgba(0,0,0,0.25)] flex justify-around items-center px-4 py-3">
+                        <button onClick={() => {}} className="flex items-center justify-center text-[#acabaa] p-2.5 hover:bg-[#1f2020] rounded-xl transition-all active:scale-90 duration-200">
+                            <Phone size={22} weight="light" />
+                        </button>
+                        <button onClick={() => setActiveAppId('chat')} className="flex items-center justify-center text-[#acabaa] p-2.5 hover:bg-[#1f2020] rounded-xl transition-all active:scale-90 duration-200">
+                            <ChatCircleDots size={22} weight="light" />
+                        </button>
+                        <button onClick={handleExitPhone} className="flex items-center justify-center bg-[#474646] text-[#f0fded] rounded-xl p-2.5 active:scale-90 duration-200" aria-label="断开连接">
+                            <SignOut size={22} weight="light" />
+                        </button>
+                        <button onClick={() => {}} className="flex items-center justify-center text-[#acabaa] p-2.5 hover:bg-[#1f2020] rounded-xl transition-all active:scale-90 duration-200">
+                            <Compass size={22} weight="light" />
+                        </button>
+                        <button onClick={() => {}} className="flex items-center justify-center text-[#acabaa] p-2.5 hover:bg-[#1f2020] rounded-xl transition-all active:scale-90 duration-200">
+                            <GearSix size={22} weight="light" />
+                        </button>
                     </div>
-                </div>
+                </nav>
             </div>
         );
     };
