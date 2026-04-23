@@ -571,10 +571,20 @@ const Chat: React.FC = () => {
         if (!char) return;
         const style = (char as any).personalityStyle;
         const rumination = (char as any).ruminationTendency;
-        const rescuedKey = `mp_personality_rescued_v1_${char.id}`;
+        // v2：旧 silent rescue（4fec4d0）已经把 v1 设到一堆虽然仍是 emotional/0.3 的角色上了。
+        // 换 key 让所有用户都获得一次新的抢救机会，不再被历史标记卡死。
+        const rescuedKey = `mp_personality_rescued_v2_${char.id}`;
         const alreadyRescued = !!localStorage.getItem(rescuedKey);
-        const mpLLM = memoryPalaceConfig?.lightLLM;
-        const hasLLM = !!(mpLLM?.baseUrl && mpLLM?.apiKey);
+
+        // 副 API 没配时 fallback 到主 apiConfig —— 跟 useChatAI.ts 里 mpLLM 的 fallback 策略对齐，
+        // 否则没配过记忆宫殿 lightLLM 的用户会整个抢救流程静默 pass，体感上就是"什么都没触发"。
+        const mpLLMConfigured = memoryPalaceConfig?.lightLLM;
+        const llmForRescue = (mpLLMConfigured?.baseUrl && mpLLMConfigured?.apiKey)
+            ? mpLLMConfigured
+            : (apiConfig?.baseUrl && apiConfig?.apiKey
+                ? { baseUrl: apiConfig.baseUrl, apiKey: apiConfig.apiKey, model: apiConfig.model }
+                : null);
+        const llmSource = (mpLLMConfigured?.baseUrl && mpLLMConfigured?.apiKey) ? 'lightLLM' : (llmForRescue ? 'apiConfig-fallback' : 'none');
 
         // "UI 显示 情感型 0.3"的所有情况：
         // - 完整命中 emotional + 0.3
@@ -584,12 +594,12 @@ const Chat: React.FC = () => {
         const rumSuspect = rumination === 0.3 || rumination == null;
         const isSuspectDefault = styleSuspect && rumSuspect;
 
-        console.log(`🛟 [PersonalityRescue] 检查 ${char.name}: personalityStyle=${JSON.stringify(style)} ruminationTendency=${JSON.stringify(rumination)} suspectDefault=${isSuspectDefault} alreadyRescued=${alreadyRescued} hasLLM=${hasLLM}`);
+        console.log(`🛟 [PersonalityRescue] 检查 ${char.name}: personalityStyle=${JSON.stringify(style)} ruminationTendency=${JSON.stringify(rumination)} suspectDefault=${isSuspectDefault} alreadyRescued=${alreadyRescued} llmSource=${llmSource}`);
 
         if (!isSuspectDefault) return;
         if (alreadyRescued) return;
-        if (!hasLLM) {
-            console.warn(`🛟 [PersonalityRescue] ${char.name} 命中可疑默认值，但未配置副 API，跳过抢救`);
+        if (!llmForRescue) {
+            console.warn(`🛟 [PersonalityRescue] ${char.name} 命中可疑默认值，但既没配副 API 也没配主 API，跳过抢救`);
             return;
         }
 
@@ -602,12 +612,12 @@ const Chat: React.FC = () => {
         const persona = [char.systemPrompt || '', char.worldview || ''].filter(Boolean).join('\n');
 
         setPersonalityRescue({ open: true, charId: rescueCharId, charName: rescueCharName, phase: 'rescuing' });
-        console.log(`🛟 [PersonalityRescue] ${rescueCharName} 命中可疑默认值（情感型 0.3 或 undefined），弹窗抢救中...`);
+        console.log(`🛟 [PersonalityRescue] ${rescueCharName} 命中可疑默认值（情感型 0.3 或 undefined），使用 ${llmSource} 弹窗抢救中...`);
 
         (async () => {
             try {
                 const { detectPersonalityStyle } = await import('../utils/memoryPalace/digestion');
-                const result = await detectPersonalityStyle(rescueCharId, rescueCharName, persona, mpLLM);
+                const result = await detectPersonalityStyle(rescueCharId, rescueCharName, persona, llmForRescue);
                 if (cancelled) return;
                 try { localStorage.setItem(rescuedKey, '1'); } catch {}
                 updateCharacter(rescueCharId, {
@@ -625,7 +635,7 @@ const Chat: React.FC = () => {
 
         return () => { cancelled = true; };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [char?.id, (char as any)?.personalityStyle, (char as any)?.ruminationTendency, memoryPalaceConfig?.lightLLM?.baseUrl, memoryPalaceConfig?.lightLLM?.apiKey]);
+    }, [char?.id, (char as any)?.personalityStyle, (char as any)?.ruminationTendency, memoryPalaceConfig?.lightLLM?.baseUrl, memoryPalaceConfig?.lightLLM?.apiKey, apiConfig?.baseUrl, apiConfig?.apiKey]);
 
     const handleInputChange = (val: string) => {
         setInput(val);
