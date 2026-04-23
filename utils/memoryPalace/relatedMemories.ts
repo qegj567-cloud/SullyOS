@@ -20,12 +20,17 @@ import type { RelatedMemoryRef } from './extraction';
 import { getEmbeddings } from './embedding';
 import { vectorSearch, isRemoteSearchBroken } from './vectorSearch';
 
-/** 从 localStorage 读取远程向量配置，判断本次是走远程还是本地路径 */
+/** 从 localStorage 读取远程向量配置，判断本次是走远程还是本地路径
+ *
+ * 和 pipeline.ts / digestion.ts / db.ts / eventBoxCompression.ts 里的同名 helper
+ * 对齐：enabled/initialized 任一为假就当没配置，避免后续调用方忘记手动 gate
+ * 时把 enabled:false 的旧配置继续喂给 vectorSearch。 */
 function getLocalRemoteConfig(): RemoteVectorConfig | undefined {
     try {
         const raw = localStorage.getItem('os_remote_vector_config');
         if (!raw) return undefined;
-        return JSON.parse(raw) as RemoteVectorConfig;
+        const config = JSON.parse(raw) as RemoteVectorConfig;
+        return (config.enabled && config.initialized) ? config : undefined;
     } catch { return undefined; }
 }
 
