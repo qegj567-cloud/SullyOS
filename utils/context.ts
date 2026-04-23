@@ -384,16 +384,6 @@ export const ContextBuilder = {
                 if (hitPl) {
                     lines.push(`（这首歌也在你的歌单《${hitPl.title}》里）`);
                 }
-
-                // 歌单总览 — 让 char 自己知道有哪些歌单，能为 add 操作选对位置
-                if (profile.playlists.length > 0) {
-                    lines.push(`你自己有这些歌单（用于"加入歌单"操作）:`);
-                    for (const pl of profile.playlists) {
-                        const desc = pl.description ? ` — ${pl.description}` : '';
-                        const moodTag = pl.mood ? ` [${pl.mood}]` : '';
-                        lines.push(`  · 《${pl.title}》(${pl.songs.length} 首)${moodTag}${desc}`);
-                    }
-                }
             }
             lines.push(`（你只是自然地知道 ${userName || '对方'} 此刻在听这首——像共处一室时隐约听见的背景音。不用每次都评论歌名、歌词或风格，多数时候安静地陪着就好；只有真的被某句打动、或对方主动聊起时，再自然地接上。）`);
             lines.push('');
@@ -429,6 +419,37 @@ export const ContextBuilder = {
             lines.push('');
         }
 
+        // —— 块 3: char 自己的歌单清单（独立于 user 听歌状态）——
+        // 之前这段塞在块 1 里，只有 user 在听歌时 char 才"记得"自己有什么歌单 ——
+        // 但 char 平时聊天里也可能被问到 / 主动提起自己的歌单，这份自我认知应该是常驻的。
+        // 只要 char 已初始化音乐人格就注入；内容保持克制（标题 + 数量 + mood + 一句描述）。
+        const profile = char.musicProfile;
+        if (profile && profile.playlists.length > 0) {
+            lines.push(`### 【你的歌单】`);
+            for (const pl of profile.playlists) {
+                const desc = pl.description ? ` — ${pl.description}` : '';
+                const moodTag = pl.mood ? ` [${pl.mood}]` : '';
+                lines.push(`  · 《${pl.title}》(${pl.songs.length} 首)${moodTag}${desc}`);
+            }
+            // 列出每个歌单里最近收进的几首用户来源歌，让 LLM 聊起歌单时有料可讲
+            const userSongsPerPl: string[] = [];
+            for (const pl of profile.playlists) {
+                const fromUser = pl.songs
+                    .filter(s => s.source === 'user')
+                    .sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0))
+                    .slice(0, 3);
+                if (fromUser.length > 0) {
+                    const titles = fromUser.map(s => `《${s.name}》`).join('、');
+                    userSongsPerPl.push(`  · 《${pl.title}》里从 ${userName || '对方'} 那儿收的：${titles}`);
+                }
+            }
+            if (userSongsPerPl.length > 0) {
+                lines.push(`（从 ${userName || '对方'} 那儿收进来的歌 — 聊起这些歌时你会自然想到 ta）:`);
+                for (const l of userSongsPerPl) lines.push(l);
+            }
+            lines.push('');
+        }
+
         return lines.join('\n');
     },
 
@@ -443,7 +464,7 @@ export const ContextBuilder = {
         // 把"加入歌单"那段说明抽出来 — 两种状态都用同一份
         const addUsage = `**加入歌单的语法**（如果用 \`add\` 系列）：
   - \`[[MUSIC_ACTION:add]]\` — 默认放进你的第一个歌单
-  - \`[[MUSIC_ACTION:add|歌单标题]]\` — 放进你已经有的某个歌单（用上面"歌单总览"里的标题）
+  - \`[[MUSIC_ACTION:add|歌单标题]]\` — 放进你已经有的某个歌单（用"【你的歌单】"块里列出的标题）
   - \`[[MUSIC_ACTION:add_new|新歌单标题|描述]]\` — 现场新建一个歌单，把这首作为第一首（描述可省）
   请优先选**最贴合这首歌气质**的现有歌单；如果都不合适、又确实想收，再考虑新建。
   收进来的歌会被打上"从对方那里听到"的标签 —— 以后你单独听到这首时，会自然想起 ta。`;
