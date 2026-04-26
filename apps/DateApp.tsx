@@ -49,7 +49,9 @@ const DateApp: React.FC = () => {
     // --- Data Loading ---
     const loadDateMessages = async () => {
         if (char) {
-            const msgs = await DB.getMessagesByCharId(char.id);
+            // includeProcessed=true：见面记录有自己的 source 维度，
+            // 不能被聊天侧的 memoryPalace 高水位静默吃掉
+            const msgs = await DB.getMessagesByCharId(char.id, true);
             // 只筛选 source='date' 的消息用于小说模式显示
             const filtered = msgs.filter(m => m.metadata?.source === 'date').sort((a,b) => a.timestamp - b.timestamp);
             setDateMessages(filtered);
@@ -160,9 +162,9 @@ const DateApp: React.FC = () => {
         setHasSavedOpening(false); 
 
         try {
-            const msgs = await DB.getMessagesByCharId(c.id);
-            const limit = c.contextLimit || 500; 
-            const peekLimit = Math.min(limit, 50); 
+            const msgs = await DB.getMessagesByCharId(c.id, true);
+            const limit = c.contextLimit || 500;
+            const peekLimit = Math.min(limit, 50);
             const lastMsg = msgs[msgs.length - 1];
             const gapHint = getTimeGapHint(lastMsg?.timestamp);
 
@@ -228,9 +230,9 @@ const DateApp: React.FC = () => {
         await DB.saveMessage({ charId: char.id, role: 'user', type: 'text', content: text, metadata: { source: 'date' } });
         
         // 2. Prepare Context
-        // Re-fetch messages. Since we saved the opening in handleEnterSession, 
+        // Re-fetch messages. Since we saved the opening in handleEnterSession,
         // 'allMsgs' will now correctly contain: [History..., Opening, UserMsg]
-        const allMsgs = await DB.getMessagesByCharId(char.id);
+        const allMsgs = await DB.getMessagesByCharId(char.id, true);
         
         // Update local state for display
         const dateFiltered = allMsgs.filter(m => m.metadata?.source === 'date').sort((a,b) => a.timestamp - b.timestamp);
@@ -311,9 +313,9 @@ const DateApp: React.FC = () => {
 
         // 3. Save AI Response
         await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'text', content: content, metadata: { source: 'date' } });
-        
+
         // Refresh local state
-        const freshMsgs = await DB.getMessagesByCharId(char.id);
+        const freshMsgs = await DB.getMessagesByCharId(char.id, true);
         setDateMessages(freshMsgs.filter(m => m.metadata?.source === 'date').sort((a,b) => a.timestamp - b.timestamp));
 
         return content;
@@ -329,7 +331,7 @@ const DateApp: React.FC = () => {
         await DB.deleteMessage(lastMsg.id);
         
         // 2. Find the user input that triggered it
-        const allMsgs = await DB.getMessagesByCharId(char.id);
+        const allMsgs = await DB.getMessagesByCharId(char.id, true);
         const validMsgs = allMsgs.filter(m => m.id !== lastMsg.id);
         const lastUserMsg = validMsgs[validMsgs.length - 1];
         
@@ -378,9 +380,9 @@ const DateApp: React.FC = () => {
         const content = data.choices[0].message.content;
 
         await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'text', content: content, metadata: { source: 'date' } });
-        
+
         // Sync
-        const freshMsgs = await DB.getMessagesByCharId(char.id);
+        const freshMsgs = await DB.getMessagesByCharId(char.id, true);
         setDateMessages(freshMsgs.filter(m => m.metadata?.source === 'date').sort((a,b) => a.timestamp - b.timestamp));
 
         return content;
@@ -464,7 +466,9 @@ const DateApp: React.FC = () => {
 
     const openHistory = async (c: CharacterProfile) => {
         setActiveCharacterId(c.id);
-        const msgs = await DB.getMessagesByCharId(c.id);
+        // includeProcessed=true：见面历史完全独立于聊天侧高水位，
+        // 否则用户开了向量记忆后老的见面记录会全部"消失"
+        const msgs = await DB.getMessagesByCharId(c.id, true);
         // dateMsgs sorted DESCENDING (newest first)
         const dateMsgs = msgs.filter(m => m.metadata?.source === 'date').sort((a, b) => b.timestamp - a.timestamp);
         
