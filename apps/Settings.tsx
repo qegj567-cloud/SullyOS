@@ -16,6 +16,30 @@ import { InstantPushSettingsModal } from '../components/settings/InstantPushSett
 import { PushVapidSettingsModal } from '../components/settings/PushVapidSettingsModal';
 import { isPushVapidReady } from '../utils/pushVapid';
 
+// hot_news（orz.ai）可选热榜平台。key 必须与 API 的 ?platform= 完全一致。
+const HOTNEWS_PLATFORM_OPTIONS: { key: string; label: string }[] = [
+    { key: 'weibo', label: '微博' },
+    { key: 'zhihu', label: '知乎' },
+    { key: 'baidu', label: '百度' },
+    { key: 'bilibili', label: 'B站' },
+    { key: 'douyin', label: '抖音' },
+    { key: 'jinritoutiao', label: '今日头条' },
+    { key: 'tieba', label: '贴吧' },
+    { key: 'hupu', label: '虎扑' },
+    { key: 'douban', label: '豆瓣' },
+    { key: 'tskr', label: '36氪' },
+    { key: 'juejin', label: '掘金' },
+    { key: 'sspai', label: '少数派' },
+    { key: 'vtex', label: 'V2EX' },
+    { key: 'github', label: 'GitHub' },
+    { key: 'hackernews', label: 'Hacker News' },
+    { key: 'sina_finance', label: '新浪财经' },
+    { key: 'eastmoney', label: '东方财富' },
+    { key: 'xueqiu', label: '雪球' },
+    { key: 'cls', label: '财联社' },
+    { key: 'tenxunwang', label: '腾讯网' },
+];
+
 const DiagRow: React.FC<{ label: string; value: string; bad?: boolean }> = ({ label, value, bad }) => (
     <div className="flex items-start justify-between gap-3">
         <span className="text-slate-500 shrink-0">{label}</span>
@@ -90,6 +114,7 @@ const Settings: React.FC = () => {
   const [rtWeatherCity, setRtWeatherCity] = useState(realtimeConfig.weatherCity);
   const [rtNewsEnabled, setRtNewsEnabled] = useState(realtimeConfig.newsEnabled);
   const [rtNewsApiKey, setRtNewsApiKey] = useState(realtimeConfig.newsApiKey || '');
+  const [rtNewsPlatforms, setRtNewsPlatforms] = useState<string[]>(realtimeConfig.newsPlatforms || ['weibo', 'zhihu', 'baidu', 'bilibili', 'douyin']);
   const [rtNotionEnabled, setRtNotionEnabled] = useState(realtimeConfig.notionEnabled);
   const [rtNotionKey, setRtNotionKey] = useState(realtimeConfig.notionApiKey);
   const [rtNotionDbId, setRtNotionDbId] = useState(realtimeConfig.notionDatabaseId);
@@ -551,6 +576,7 @@ const Settings: React.FC = () => {
           weatherCity: rtWeatherCity,
           newsEnabled: rtNewsEnabled,
           newsApiKey: rtNewsApiKey,
+          newsPlatforms: rtNewsPlatforms,
           notionEnabled: rtNotionEnabled,
           notionApiKey: rtNotionKey,
           notionDatabaseId: rtNotionDbId,
@@ -1906,15 +1932,39 @@ const Settings: React.FC = () => {
                   </div>
                   {rtNewsEnabled && (
                       <div className="space-y-2">
-                          <p className="text-xs text-blue-600/70">默认使用 Hacker News（英文科技新闻）。配置 Brave API 可获取中文新闻。</p>
-                          <div>
-                              <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Brave Search API Key (推荐)</label>
-                              <input type="password" value={rtNewsApiKey} onChange={e => setRtNewsApiKey(e.target.value)} className="w-full bg-white/80 border border-blue-200 rounded-xl px-3 py-2 text-sm font-mono" placeholder="获取: brave.com/search/api" />
+                          <p className="text-xs text-blue-600/70">默认主源：中文多平台热榜（免鉴权，聊天时角色会自动捕捉热点）。选择要关注的平台：</p>
+                          <div className="flex flex-wrap gap-1.5">
+                              {HOTNEWS_PLATFORM_OPTIONS.map(p => {
+                                  const active = rtNewsPlatforms.includes(p.key);
+                                  return (
+                                      <button
+                                          key={p.key}
+                                          type="button"
+                                          onClick={() => setRtNewsPlatforms(prev => prev.includes(p.key) ? prev.filter(k => k !== p.key) : [...prev, p.key])}
+                                          className={`text-[11px] px-2.5 py-1 rounded-full font-bold transition-colors active:scale-95 ${active ? 'bg-blue-500 text-white shadow-sm' : 'bg-white/80 text-slate-500 border border-blue-200'}`}
+                                      >
+                                          {p.label}
+                                      </button>
+                                  );
+                              })}
                           </div>
-                          <p className="text-[10px] text-blue-500/70">
-                              免费2000次/月，支持中文新闻。<br/>
-                              不配置则用 Hacker News（英文科技新闻）。
-                          </p>
+                          {rtNewsPlatforms.length === 0 && (
+                              <p className="text-[10px] text-rose-500/80">未选任何平台时会回落到 Brave / Hacker News。</p>
+                          )}
+                          <details className="border-t border-blue-200/50 pt-2 mt-1 group">
+                              <summary className="text-[10px] font-bold text-slate-400 uppercase cursor-pointer select-none list-none flex items-center gap-1.5">
+                                  <span className="transition-transform group-open:rotate-90">›</span>
+                                  Brave Search（回落源 · <span className="text-rose-400">不建议配置</span>）
+                              </summary>
+                              <div className="mt-2 space-y-1.5">
+                                  <p className="text-[10px] text-slate-400/90 leading-relaxed">
+                                      上面的中文热榜在国内场景比 Brave 好用一万倍，<b className="text-slate-500">基本不需要配这个</b>。
+                                      它只是热榜彻底拉不到时的英文回落，配了反而可能盖掉中文热点。除非你清楚自己在做什么，否则留空即可。
+                                  </p>
+                                  <input type="password" value={rtNewsApiKey} onChange={e => setRtNewsApiKey(e.target.value)} className="w-full bg-white/60 border border-slate-200 rounded-xl px-3 py-2 text-sm font-mono text-slate-500" placeholder="（不建议）brave.com/search/api" />
+                                  <p className="text-[10px] text-slate-400/70">仅当中文热榜拉取失败时才启用；都不可用时再兜底 Hacker News（英文）。</p>
+                              </div>
+                          </details>
                       </div>
                   )}
               </div>

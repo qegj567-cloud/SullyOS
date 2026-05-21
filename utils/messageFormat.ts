@@ -52,6 +52,15 @@ export function normalizeMessageContent(
                 ).join('；') || '';
                 return `[白色情人节默契测验] ${userName}完成了${charName}出的白色情人节测验，答对${card.score}/${card.total}题，${passedStr}。${questionsText}${card.finalDialogue ? `。${charName}最终评价：${card.finalDialogue}` : ''}`;
             }
+            if (card?.type === 'like520_card') {
+                // 520 特别活动：那个"小小的下午"+ char 给 user 的信。信的内容是这次活动的母题落点，
+                // 归档 / 月度总结 / 向量召回都应该读到它，否则只是一个"[系统卡片]"占位会让前后文断层。
+                const letter = (typeof card.letter === 'string' && card.letter.trim()) ? card.letter.trim() : '';
+                const titlePart = card.title ? `结局「${card.title}」。` : '';
+                const descPart = card.description ? `${card.description} ` : '';
+                const letterPart = letter ? ` ${charName}写给${userName}的信原文：${letter}` : '';
+                return `[520 特别活动] ${charName}和${userName}一起度过了"小小的下午"——${charName}"变小了"的版本被${userName}照顾着，最后${charName}对${userName}说了真心话，并写了一封信。${titlePart}${descPart}${letterPart}`;
+            }
             // 其它结算卡类型（songwriting/study/lifesim 日常 等）：如果有 summary/content 字段优先用
             if (typeof card?.summary === 'string' && card.summary.trim()) return `[系统卡片] ${card.summary.trim()}`;
             return '[系统卡片]';

@@ -47,11 +47,11 @@
       align-items: stretch;
     }
     .app > header {
-      position: absolute; top: 12px; left: 0; right: 0;
+      position: absolute; top: 6px; left: 0; right: 0;
       pointer-events: none;
     }
     .app > .stage {
-      flex: 1; padding-top: 60px;
+      flex: 1; padding-top: 44px;
     }
     .app > .action-row {
       position: absolute; bottom: 20px; left: 24px;
@@ -68,29 +68,32 @@
     }
   }
 
-  header { flex-shrink: 0; padding: 12px 20px 4px; text-align: center; }
+  header { flex-shrink: 0; padding: 4px 16px 0; text-align: center; }
   .title-cn {
-    font-size: 17px; font-weight: 600; letter-spacing: 2px; color: var(--rose-dark);
-    display: flex; align-items: center; justify-content: center; gap: 8px;
+    font-size: 12px; font-weight: 600; letter-spacing: 1px; color: var(--rose-dark);
+    display: flex; align-items: center; justify-content: center; gap: 5px;
   }
   .title-cn::before, .title-cn::after {
-    content: ""; width: 24px; height: 1px;
+    content: ""; width: 14px; height: 1px;
     background: linear-gradient(90deg, transparent, var(--rose-deep), transparent);
   }
-  .title-en { font-size: 9px; letter-spacing: 4px; color: var(--text-soft); margin-top: 2px; }
+  .title-en { font-size: 7px; letter-spacing: 2px; color: var(--text-soft); margin-top: 1px; }
 
   .stage {
-    flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center;
-    padding: 6px 16px; position: relative;
+    flex: 0 0 auto; min-height: 0; display: flex; align-items: center; justify-content: center;
+    padding: 2px 10px; position: relative;
   }
   .character-frame {
-    width: 100%; max-width: 380px;
-    aspect-ratio: 1 / 1.05;
+    width: 100%; max-width: 220px;
+    aspect-ratio: 1 / 1;
     background: radial-gradient(ellipse at 50% 35%, #FFFFFF 0%, #FFF8F1 60%, #FCEDD9 100%);
-    border-radius: 32px;
+    border-radius: 18px;
     border: 2px solid rgba(255, 255, 255, 0.9);
-    box-shadow: 0 12px 32px rgba(199, 97, 130, 0.15), inset 0 0 0 1px rgba(212, 165, 116, 0.2);
+    box-shadow: 0 6px 16px rgba(199, 97, 130, 0.15), inset 0 0 0 1px rgba(212, 165, 116, 0.2);
     position: relative; overflow: hidden;
+  }
+  @media (min-width: 600px) {
+    .character-frame { max-width: 280px; }
   }
   .character-frame::before {
     content: ""; position: absolute; inset: 8px;
@@ -236,15 +239,18 @@
   .eye-side-tabs {
     display: inline-flex; background: var(--cream-deep); border-radius: 12px; padding: 2px;
     margin-left: 10px;
+    border: 1px solid rgba(199, 97, 130, 0.15);
   }
   .eye-side-tabs button {
     background: transparent; border: none; color: var(--text-soft);
-    padding: 3px 10px; font-size: 10.5px; border-radius: 10px;
+    padding: 4px 12px; font-size: 11px; border-radius: 10px;
     cursor: pointer; transition: all 0.2s;
+    font-weight: 500;
   }
   .eye-side-tabs button.active {
-    background: white; color: var(--rose-dark); font-weight: 600;
-    box-shadow: 0 1px 3px rgba(199, 97, 130, 0.15);
+    background: var(--rose-deep); color: white; font-weight: 700;
+    box-shadow: 0 2px 6px rgba(199, 97, 130, 0.4), inset 0 1px 0 rgba(255,255,255,0.2);
+    transform: scale(1.02);
   }
 
   .options {
@@ -534,12 +540,62 @@
     <img class="modal-img" id="modalImg" alt="你的形象">
     <div class="modal-actions">
       <button class="pill-btn" onclick="closeModal()">关闭</button>
+      <button class="pill-btn" id="btnSavePng" style="display:none">📥 保存 PNG</button>
       <button class="pill-btn primary" id="btnDownload">下载 PNG</button>
     </div>
   </div>
 </div>
 
 <script>
+/* === 520 活动 iframe 协议 ===
+   parent → iframe: { type: 'like520_init', payload: { mode, charName, presets } }
+   iframe → parent: { type: 'like520_ready' }
+   iframe → parent: { type: 'like520_result', payload: { mode, dataUrl, frameDataUrl, transparentDataUrl, state } }
+   iframe → parent: { type: 'like520_cancel' }
+*/
+const IS_EMBEDDED = window.parent !== window;
+let LIKE520_MODE = 'char';
+let LIKE520_CHAR_NAME = '';
+let LIKE520_IS_SULLY = false;
+
+function applyLike520Init(init) {
+  if (!init) return;
+  LIKE520_MODE = init.mode || 'char';
+  LIKE520_CHAR_NAME = init.charName || '';
+  LIKE520_IS_SULLY = !!init.isSully;
+  const titleCn = document.querySelector('.title-cn');
+  if (titleCn) {
+    titleCn.textContent = init.mode === 'user'
+      ? '诶？连你也……'
+      : `如果 ${LIKE520_CHAR_NAME || 'ta'} 变得小小的，那ta会是——`;
+  }
+  // 先看有没有上次的草稿；有就恢复，没就走 presets
+  const draftLoaded = tryLoadDraft();
+  if (!draftLoaded && init.presets && typeof init.presets === 'object') {
+    Object.entries(init.presets).forEach(([key, itemId]) => {
+      if (state.selected.hasOwnProperty(key)) {
+        if (Array.isArray(state.selected[key])) {
+          state.selected[key] = Array.isArray(itemId) ? itemId : [itemId];
+        } else {
+          state.selected[key] = itemId;
+        }
+      }
+    });
+  }
+  // 任何 init 都强制重渲（isSully 变化会影响 special 项过滤）
+  if (typeof renderPanel === 'function') renderPanel();
+  if (typeof renderCharacter === 'function') renderCharacter();
+  if (draftLoaded) toast('已恢复上次的草稿 ✦');
+}
+
+if (IS_EMBEDDED) {
+  window.addEventListener('message', (e) => {
+    if (e.data && e.data.type === 'like520_init') {
+      applyLike520Init(e.data.payload);
+    }
+  });
+}
+
 /* === 素材配置（由 build_full.py 生成） === */
 const PARTS = [
   {
@@ -1244,6 +1300,8 @@ function renderPanel() {
   const focusedId = isMulti ? state.activeItemFocus[part.key] : null;
 
   part.items.forEach(item => {
+    // 非 Sully 角色：隐藏 special 项（fronthair_99 / eyes_99 是 Sully 专属）
+    if (item.special && !LIKE520_IS_SULLY) return;
     const btn = document.createElement("button");
     const selected = isSelected(part.key, item.id);
     const isFocus = isMulti && selected && item.id === focusedId;
@@ -1302,6 +1360,10 @@ function renderPanel() {
         } else {
           state.tintColor.eyes.linked = false;
         }
+        // 重新 toggle active class（手动同步避免重 render 全 panel）
+        eyeSideTabs.querySelectorAll("button").forEach(b2 => {
+          b2.classList.toggle("active", b2.dataset.side === state.eyeSide);
+        });
         renderColorPicker(part.key);
       };
     });
@@ -1864,16 +1926,34 @@ document.getElementById("btnReset").onclick = () => {
   });
   state.flipped = {};
   state.activeItemFocus = {};
+  clearDraft();
   renderPanel();
   renderCharacter();
-  toast("已清空，重新开始 ♥");
+  toast("已清空，草稿也清掉 ♥");
 };
 
 document.getElementById("btnSave").onclick = async () => {
   const any = Object.values(state.selected).some(v => Array.isArray(v) ? v.length > 0 : v !== null);
   if (!any) { toast("先选几个配件再保存哦~"); return; }
-  try { await captureAndShow(); }
-  catch (err) { toast("保存失败，再试一次?"); console.error(err); }
+  const btn = document.getElementById("btnSave");
+  const origText = btn.innerHTML;
+  // 立即反馈 loading（手机上 html2canvas 比较慢，不给反馈 user 会以为没响应）
+  btn.disabled = true;
+  btn.style.opacity = '0.7';
+  btn.style.cursor = 'wait';
+  btn.innerHTML = '⏳ 出件中…';
+  toast("正在出件…");
+  try {
+    await captureAndShow();
+  } catch (err) {
+    toast("保存失败，再试一次?");
+    console.error(err);
+  } finally {
+    btn.disabled = false;
+    btn.style.opacity = '';
+    btn.style.cursor = '';
+    btn.innerHTML = origText;
+  }
 };
 
 /* 存两种渲染结果的 dataUrl，切换不重新截图 */
@@ -1925,19 +2005,110 @@ function setExportMode(mode) {
   /* 透明模式用棋盘格背景预览 */
   img.classList.toggle("transparent-preview", mode === "transparent");
 
-  document.getElementById("btnDownload").onclick = () => {
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = mode === "transparent"
-      ? `大头贴_无背景_${Date.now()}.png`
-      : `大头贴_520_${Date.now()}.png`;
-    a.click();
-  };
+  const btnDownload = document.getElementById("btnDownload");
+  const btnSavePng = document.getElementById("btnSavePng");
+  if (IS_EMBEDDED) {
+    btnDownload.textContent = "确认 ✓";
+    btnDownload.onclick = () => {
+      window.parent.postMessage({
+        type: 'like520_result',
+        payload: {
+          mode: LIKE520_MODE,
+          dataUrl: exportData[mode],
+          frameDataUrl: exportData.frame,
+          transparentDataUrl: exportData.transparent,
+          state: JSON.parse(JSON.stringify(state)),
+        }
+      }, '*');
+    };
+    // 嵌入态：额外提供一个"保存 PNG"按钮，让 user 先存到相册再确认进入下一步
+    btnSavePng.style.display = '';
+    btnSavePng.onclick = () => {
+      const a = document.createElement("a");
+      a.href = url;
+      const who = LIKE520_MODE === 'user' ? '我' : '大头贴';
+      a.download = mode === "transparent"
+        ? `${who}_无背景_${Date.now()}.png`
+        : `${who}_520_${Date.now()}.png`;
+      a.click();
+      toast("已保存 ♥");
+    };
+  } else {
+    btnDownload.textContent = "下载 PNG";
+    btnDownload.onclick = () => {
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = mode === "transparent"
+        ? `大头贴_无背景_${Date.now()}.png`
+        : `大头贴_520_${Date.now()}.png`;
+      a.click();
+    };
+    btnSavePng.style.display = 'none';
+  }
 }
 
 function closeModal() {
   document.getElementById("modal").classList.remove("show");
 }
+
+/* === 草稿自动保存 / 复用 ===
+   key: mode + charName，让每个角色 + 是否是 user 各自存一份
+   存的只是 state（小 JSON），不存图片 PNG */
+function getDraftKey() {
+  return `like520_cc_draft_${LIKE520_MODE}_${LIKE520_CHAR_NAME || 'default'}`;
+}
+let saveDraftTimer = null;
+function saveDraft() {
+  if (!IS_EMBEDDED) return;
+  if (saveDraftTimer) clearTimeout(saveDraftTimer);
+  saveDraftTimer = setTimeout(() => {
+    try {
+      const payload = {
+        selected: state.selected,
+        tintColor: state.tintColor,
+        itemColor: state.itemColor,
+        flipped: state.flipped,
+        eyeSide: state.eyeSide,
+        hairLinked: state.hairLinked,
+        activeItemFocus: state.activeItemFocus,
+        preserveLineart: state.preserveLineart,
+      };
+      localStorage.setItem(getDraftKey(), JSON.stringify(payload));
+    } catch (e) { console.warn('[520][cc] save draft failed', e); }
+  }, 600);
+}
+function tryLoadDraft() {
+  if (!IS_EMBEDDED) return false;
+  try {
+    const raw = localStorage.getItem(getDraftKey());
+    if (!raw) return false;
+    const d = JSON.parse(raw);
+    if (!d || typeof d !== 'object') return false;
+    if (d.selected) state.selected = d.selected;
+    if (d.tintColor) state.tintColor = d.tintColor;
+    if (d.itemColor) state.itemColor = d.itemColor;
+    if (d.flipped) state.flipped = d.flipped;
+    if (d.eyeSide) state.eyeSide = d.eyeSide;
+    if (d.hairLinked) state.hairLinked = d.hairLinked;
+    if (d.activeItemFocus) state.activeItemFocus = d.activeItemFocus;
+    if (typeof d.preserveLineart === 'number') state.preserveLineart = d.preserveLineart;
+    console.log('[520][cc] 恢复上次草稿');
+    return true;
+  } catch (e) {
+    console.warn('[520][cc] load draft failed', e);
+    return false;
+  }
+}
+function clearDraft() {
+  try { localStorage.removeItem(getDraftKey()); } catch {}
+}
+/* 把所有会改 state 的入口都钩一下：renderPanel / renderColorPicker / renderFlipButton 后的 onclick 改完 state 后调 saveDraft */
+/* 简化策略：把 renderCharacter 当作"state 已稳定"的信号，每次重渲都顺手存一次 */
+const _origRenderCharacter = renderCharacter;
+renderCharacter = function() {
+  _origRenderCharacter.apply(this, arguments);
+  saveDraft();
+};
 
 renderTabs();
 renderPanel();
@@ -1947,6 +2118,11 @@ renderCharacter();
 preloadAllAssets().then(() => {
   console.log('所有素材预加载完成');
 });
+
+/* 通知父框架 iframe 已就绪、可以接收 like520_init 消息 */
+if (IS_EMBEDDED) {
+  window.parent.postMessage({ type: 'like520_ready' }, '*');
+}
 </script>
 </body>
 </html>

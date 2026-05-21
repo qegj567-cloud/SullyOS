@@ -10,7 +10,7 @@
  * - 降级入口：桌面第三页 "特别时光" app
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
 import { ContextBuilder } from '../utils/context';
@@ -20,6 +20,7 @@ import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 import { WhiteDaySession, isWhiteDayEventAvailable, WHITEDAY_RECORD_KEY } from './WhiteDayEvent';
+import { Like520Session, isLike520EventAvailable, isLike520Past, LIKE520_RECORD_KEY } from './Like520Event';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 
 // ============================================================
@@ -1152,6 +1153,165 @@ export const ValentineController: React.FC<ValentineControllerProps> = ({ onClos
 };
 
 // ============================================================
+// 共享：单个特别活动卡片（统一布局 + 性能优化）
+// ============================================================
+
+interface EventCardTheme {
+    /** 当期渐变（active）—— 不带透明度 */
+    activeGradient: string;
+    /** 往期渐变（past）—— 通常加 /70 透明度 */
+    pastGradient: string;
+    /** 当期阴影颜色 className（如 shadow-pink-200） */
+    activeShadow: string;
+    /** 文案副色调（如 text-pink-100） */
+    subColor: string;
+    /** hint 颜色（如 text-pink-200/60） */
+    hintColor: string;
+    /** 长按提示颜色 */
+    helpColor: string;
+    /** 头像边框 */
+    avatarRing: string;
+    /** 当期 hasRecord 小圆点 */
+    dotColor: string;
+}
+
+interface EventCardProps {
+    theme: EventCardTheme;
+    icon: string;
+    eyebrow?: string;
+    title: string;
+    subtitleActive: string;
+    subtitlePast: string;
+    hintActive: string;
+    hintPast: string;
+    isPast: boolean;
+    characters: CharacterProfile[];
+    recordKey: string;
+    onPick: (charId: string) => void;
+    onLongPressDelete: (charId: string) => void;
+    /** 选中要删的角色 id（用于显示 ring） */
+    pendingDeleteId?: string | null;
+}
+
+const SpecialEventCardImpl: React.FC<EventCardProps> = ({
+    theme, icon, eyebrow, title, subtitleActive, subtitlePast,
+    hintActive, hintPast, isPast, characters, recordKey,
+    onPick, onLongPressDelete, pendingDeleteId,
+}) => {
+    const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const startLP = useCallback((id: string) => {
+        longPressTimer.current = setTimeout(() => onLongPressDelete(id), 600);
+    }, [onLongPressDelete]);
+    const endLP = useCallback(() => {
+        if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+    }, []);
+
+    return (
+        <div className="mb-6" style={{ contain: 'layout paint' }}>
+            <div
+                className={`rounded-3xl p-6 text-white relative overflow-hidden ${isPast ? `${theme.pastGradient} shadow-lg` : `${theme.activeGradient} shadow-xl ${theme.activeShadow}`}`}
+            >
+                {/* 装饰圆 —— 用 pointer-events-none 避免拦截 */}
+                <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-bl-full pointer-events-none" />
+                <div className="absolute bottom-0 left-0 w-20 h-20 bg-white/5 rounded-tr-full pointer-events-none" />
+
+                {isPast && (
+                    <div className="absolute top-4 right-4 bg-white/20 text-white/85 text-[10px] font-bold px-2 py-0.5 rounded-full border border-white/20">
+                        往期活动
+                    </div>
+                )}
+
+                <div className="relative">
+                    <div className="text-3xl mb-2">{icon}</div>
+                    {eyebrow && <div className="text-[10px] tracking-[6px] mb-1 opacity-80">{eyebrow}</div>}
+                    <h2 className="text-xl font-bold mb-1">{title}</h2>
+                    <p className={`${theme.subColor} text-xs mb-4`}>
+                        {isPast ? subtitlePast : subtitleActive}
+                    </p>
+                    <div className={`text-[10px] ${theme.hintColor} mb-4`}>
+                        {isPast ? hintPast : hintActive}
+                    </div>
+
+                    {characters.length === 0 ? (
+                        <div className="text-center text-xs text-white/70 py-3">还没有角色</div>
+                    ) : (
+                        <div className="max-h-64 overflow-y-auto -mx-1 px-1">
+                            <div className="grid grid-cols-3 gap-3">
+                                {characters.map(c => {
+                                    const hasRecord = !!c.specialMomentRecords?.[recordKey];
+                                    const isPending = pendingDeleteId === c.id;
+                                    return (
+                                        <button
+                                            key={c.id}
+                                            onClick={() => { if (isPending) { return; } onPick(c.id); }}
+                                            onTouchStart={() => hasRecord && startLP(c.id)}
+                                            onTouchEnd={endLP}
+                                            onTouchCancel={endLP}
+                                            onMouseDown={() => hasRecord && startLP(c.id)}
+                                            onMouseUp={endLP}
+                                            onMouseLeave={endLP}
+                                            onContextMenu={(e) => { e.preventDefault(); if (hasRecord) onLongPressDelete(c.id); }}
+                                            className={`flex flex-col items-center gap-2 p-3 bg-white/15 rounded-2xl border ${isPending ? 'border-white/80 ring-2 ring-white/60' : 'border-white/20'} active:scale-95 transition-transform relative`}
+                                        >
+                                            {c.avatar?.startsWith('http') || c.avatar?.startsWith('data:') ? (
+                                                <img src={c.avatar} loading="lazy" decoding="async" alt="" className={`w-12 h-12 rounded-full object-cover border-2 ${theme.avatarRing}`} />
+                                            ) : (
+                                                <span className={`w-12 h-12 rounded-full flex items-center justify-center text-2xl bg-white/10 border-2 ${theme.avatarRing}`}>{c.avatar || '🌸'}</span>
+                                            )}
+                                            <span className="text-[11px] font-bold truncate w-full text-center">{c.name}</span>
+                                            {hasRecord && <span className={`absolute top-1.5 right-1.5 w-2 h-2 rounded-full ${theme.dotColor}`} />}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+                    {characters.length > 0 && (
+                        <p className={`text-[10px] ${theme.helpColor} mt-3 text-center`}>长按角色可删除记录</p>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const SpecialEventCard = React.memo(SpecialEventCardImpl);
+
+// 三个活动主题
+const THEME_LIKE520: EventCardTheme = {
+    activeGradient: 'bg-gradient-to-br from-pink-400 via-rose-400 to-amber-300',
+    pastGradient: 'bg-gradient-to-br from-pink-300/70 via-rose-300/70 to-amber-200/70',
+    activeShadow: 'shadow-rose-200',
+    subColor: 'text-rose-50/90',
+    hintColor: 'text-rose-100/60',
+    helpColor: 'text-rose-100/40',
+    avatarRing: 'border-white/30',
+    dotColor: 'bg-white/70',
+};
+
+const THEME_WHITEDAY: EventCardTheme = {
+    activeGradient: 'bg-gradient-to-br from-amber-500 via-orange-400 to-yellow-400',
+    pastGradient: 'bg-gradient-to-br from-amber-400/70 via-orange-300/70 to-yellow-300/70',
+    activeShadow: 'shadow-amber-200',
+    subColor: 'text-amber-100',
+    hintColor: 'text-amber-200/60',
+    helpColor: 'text-amber-200/40',
+    avatarRing: 'border-white/30',
+    dotColor: 'bg-white/70',
+};
+
+const THEME_VALENTINE: EventCardTheme = {
+    activeGradient: 'bg-gradient-to-br from-pink-500 via-rose-500 to-red-400',
+    pastGradient: 'bg-gradient-to-br from-pink-400/70 via-rose-400/70 to-red-300/70',
+    activeShadow: 'shadow-pink-200',
+    subColor: 'text-pink-100',
+    hintColor: 'text-pink-200/60',
+    helpColor: 'text-pink-200/40',
+    avatarRing: 'border-white/30',
+    dotColor: 'bg-white/60',
+};
+
+// ============================================================
 // 特别时光 App（桌面第三页降级入口）
 // ============================================================
 export const SpecialMomentsApp: React.FC = () => {
@@ -1159,20 +1319,50 @@ export const SpecialMomentsApp: React.FC = () => {
     const [showSession, setShowSession] = useState(false);
     const [selectedCharId, setSelectedCharId] = useState<string>('');
     const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
-    const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // White Day
     const [showWhiteDaySession, setShowWhiteDaySession] = useState(false);
     const [whiteDayCharId, setWhiteDayCharId] = useState<string>('');
     const [wdDeleteTargetId, setWdDeleteTargetId] = useState<string | null>(null);
-    const wdLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    const handleWdLongPressStart = (cId: string) => {
-        wdLongPressTimer.current = setTimeout(() => setWdDeleteTargetId(cId), 600);
+    // 520
+    const [show520Session, setShow520Session] = useState(false);
+    const [like520CharId, setLike520CharId] = useState<string>('');
+    const [l520DeleteTargetId, setL520DeleteTargetId] = useState<string | null>(null);
+
+    // 一次性算好可见性 / 往期态（避免每帧调日期函数）
+    const visibility = useMemo(() => {
+        const n = new Date();
+        const wdPast = n.getFullYear() > 2026 || (n.getFullYear() === 2026 && n.getMonth() > 2);
+        return {
+            like520: { show: isLike520EventAvailable() || isLike520Past(), past: isLike520Past() },
+            whiteday: { show: isWhiteDayEventAvailable() || wdPast, past: wdPast },
+            valentine: { show: isValentineEventAvailable() || isValentinePast(), past: isValentinePast() },
+        };
+    }, []);
+
+    const handleL520DeleteRecord = async (cId: string) => {
+        try {
+            const targetChar = characters.find(c => c.id === cId);
+            if (targetChar) {
+                const updated = { ...(targetChar.specialMomentRecords || {}) };
+                delete updated[LIKE520_RECORD_KEY];
+                updateCharacter(cId, { specialMomentRecords: updated });
+            }
+            const msgs = await DB.getMessagesByCharId(cId);
+            const l520Ids = msgs
+                .filter(m => m.metadata?.like520Event)
+                .map(m => m.id)
+                .filter((id): id is number => id !== undefined);
+            if (l520Ids.length > 0) await DB.deleteMessages(l520Ids);
+            addToast(`已删除 ${targetChar?.name || ''} 的 520 记录`, 'success');
+        } catch {
+            addToast('删除失败', 'error');
+        } finally {
+            setL520DeleteTargetId(null);
+        }
     };
-    const handleWdLongPressEnd = () => {
-        if (wdLongPressTimer.current) { clearTimeout(wdLongPressTimer.current); wdLongPressTimer.current = null; }
-    };
+
     const handleWdDeleteRecord = async (cId: string) => {
         try {
             const targetChar = characters.find(c => c.id === cId);
@@ -1189,17 +1379,6 @@ export const SpecialMomentsApp: React.FC = () => {
         }
     };
 
-    const handleLongPressStart = (cId: string) => {
-        longPressTimer.current = setTimeout(() => {
-            setDeleteTargetId(cId);
-        }, 600);
-    };
-    const handleLongPressEnd = () => {
-        if (longPressTimer.current) {
-            clearTimeout(longPressTimer.current);
-            longPressTimer.current = null;
-        }
-    };
     const handleDeleteRecord = async (cId: string) => {
         try {
             const targetChar = characters.find(c => c.id === cId);
@@ -1243,6 +1422,15 @@ export const SpecialMomentsApp: React.FC = () => {
         );
     }
 
+    if (show520Session && like520CharId) {
+        return (
+            <Like520Session
+                charId={like520CharId}
+                onClose={() => { setShow520Session(false); setLike520CharId(''); }}
+            />
+        );
+    }
+
     return (
         <div className="h-full w-full bg-gradient-to-b from-pink-50 via-white to-rose-50 flex flex-col font-light">
             {/* Header */}
@@ -1256,166 +1444,125 @@ export const SpecialMomentsApp: React.FC = () => {
 
             {/* Content */}
             <div className="flex-1 overflow-y-auto p-6">
-                {/* 白色情人节卡片（活动期间或往期均显示） */}
-                {(isWhiteDayEventAvailable() || (() => { const n = new Date(); return n.getFullYear() > 2026 || (n.getFullYear() === 2026 && n.getMonth() > 2); })()) && (() => {
-                    const n = new Date();
-                    const isPast = n.getFullYear() > 2026 || (n.getFullYear() === 2026 && n.getMonth() > 2);
-                    return (
-                        <div className="mb-6">
-                            <div className={`rounded-3xl p-6 text-white relative overflow-hidden ${isPast ? 'bg-gradient-to-br from-amber-400/70 via-orange-300/70 to-yellow-300/70 shadow-lg' : 'bg-gradient-to-br from-amber-500 via-orange-400 to-yellow-400 shadow-xl shadow-amber-200'}`}>
-                                <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-bl-full pointer-events-none" />
-                                <div className="absolute bottom-0 left-0 w-20 h-20 bg-white/5 rounded-tr-full pointer-events-none" />
+                {/* 520 */}
+                {visibility.like520.show && (
+                    <SpecialEventCard
+                        theme={THEME_LIKE520}
+                        icon="🌸"
+                        eyebrow="5 · 2 · 0"
+                        title="如果 ta 变得小小的"
+                        subtitleActive="2026.5.20 — 和 ta 一起度过一个小小的下午"
+                        subtitlePast="2026.5.20 — 重温那个小小的下午"
+                        hintActive="选择一位角色开始"
+                        hintPast="点击角色重温记录"
+                        isPast={visibility.like520.past}
+                        characters={characters}
+                        recordKey={LIKE520_RECORD_KEY}
+                        onPick={(id) => { setLike520CharId(id); setShow520Session(true); }}
+                        onLongPressDelete={(id) => setL520DeleteTargetId(id)}
+                        pendingDeleteId={l520DeleteTargetId}
+                    />
+                )}
 
-                                {isPast && (
-                                    <div className="absolute top-4 right-4 bg-white/20 backdrop-blur-sm text-white/80 text-[10px] font-bold px-2 py-0.5 rounded-full border border-white/20">
-                                        往期活动
-                                    </div>
-                                )}
+                {/* 白色情人节 */}
+                {visibility.whiteday.show && (
+                    <SpecialEventCard
+                        theme={THEME_WHITEDAY}
+                        icon="🍫"
+                        title="白色情人节特别活动"
+                        subtitleActive="2026 White Day — 和 ta 一起 DIY 一块专属巧克力"
+                        subtitlePast="2026.3.14 — 重温你们的专属巧克力"
+                        hintActive="选择一位角色开始"
+                        hintPast="点击角色查看记录或重新制作"
+                        isPast={visibility.whiteday.past}
+                        characters={characters}
+                        recordKey={WHITEDAY_RECORD_KEY}
+                        onPick={(id) => { setWhiteDayCharId(id); setShowWhiteDaySession(true); }}
+                        onLongPressDelete={(id) => setWdDeleteTargetId(id)}
+                        pendingDeleteId={wdDeleteTargetId}
+                    />
+                )}
 
-                                <div className="relative">
-                                    <div className="text-3xl mb-2">🍫</div>
-                                    <h2 className="text-xl font-bold mb-1">白色情人节特别活动</h2>
-                                    <p className="text-amber-100 text-xs mb-4">
-                                        {isPast ? '2026.3.14 — 重温你们的专属巧克力' : '2026 White Day — 和 TA 一起 DIY 一块专属巧克力'}
-                                    </p>
-                                    <div className="text-[10px] text-amber-200/60 mb-4">
-                                        {isPast ? '点击角色查看记录或重新制作' : '选择一位角色开始'}
-                                    </div>
-                                    <div className="max-h-64 overflow-y-auto -mx-1 px-1">
-                                        <div className="grid grid-cols-3 gap-3">
-                                            {characters.map(c => {
-                                                const hasRecord = !!c.specialMomentRecords?.[WHITEDAY_RECORD_KEY];
-                                                return (
-                                                    <button
-                                                        key={c.id}
-                                                        onClick={() => { setWhiteDayCharId(c.id); setShowWhiteDaySession(true); }}
-                                                        onTouchStart={() => handleWdLongPressStart(c.id)}
-                                                        onTouchEnd={handleWdLongPressEnd}
-                                                        onTouchCancel={handleWdLongPressEnd}
-                                                        onContextMenu={(e) => { e.preventDefault(); setWdDeleteTargetId(c.id); }}
-                                                        className="flex flex-col items-center gap-2 p-3 bg-white/15 backdrop-blur-sm rounded-2xl border border-white/20 active:scale-95 transition-transform hover:bg-white/25 relative"
-                                                    >
-                                                        <img src={c.avatar} className="w-12 h-12 rounded-full object-cover border-2 border-white/30" alt={c.name} />
-                                                        <span className="text-[11px] font-bold truncate w-full text-center">{c.name}</span>
-                                                        {hasRecord && <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-white/70" />}
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                    <p className="text-[10px] text-amber-200/40 mt-3 text-center">长按角色可删除记录</p>
-                                </div>
-                            </div>
-                        </div>
-                    );
-                })()}
-
-                {/* 情人节卡片（活动期间或往期均显示） */}
-                {(isValentineEventAvailable() || isValentinePast()) && (() => {
-                    const isPast = isValentinePast();
-                    return (
-                        <div className="mb-6">
-                            <div className={`rounded-3xl p-6 text-white relative overflow-hidden ${isPast ? 'bg-gradient-to-br from-pink-400/70 via-rose-400/70 to-red-300/70 shadow-lg' : 'bg-gradient-to-br from-pink-500 via-rose-500 to-red-400 shadow-xl shadow-pink-200'}`}>
-                                <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-bl-full pointer-events-none" />
-                                <div className="absolute bottom-0 left-0 w-20 h-20 bg-white/5 rounded-tr-full pointer-events-none" />
-
-                                {/* 往期标签 */}
-                                {isPast && (
-                                    <div className="absolute top-4 right-4 bg-white/20 backdrop-blur-sm text-white/80 text-[10px] font-bold px-2 py-0.5 rounded-full border border-white/20">
-                                        往期活动
-                                    </div>
-                                )}
-
-                                <div className="relative">
-                                    <div className="text-3xl mb-2">💝</div>
-                                    <h2 className="text-xl font-bold mb-1">情人节特别推送</h2>
-                                    <p className="text-pink-100 text-xs mb-4">
-                                        {isPast ? '2026.2.14 — 重温那天TA说的话' : '2026 Valentine\'s Day — 听听TA想对你说什么'}
-                                    </p>
-
-                                    <div className="text-[10px] text-pink-200/60 mb-4">
-                                        {isPast ? '点击角色重播或重新生成' : '选择一位角色开始'}
-                                    </div>
-
-                                    <div className="max-h-64 overflow-y-auto -mx-1 px-1">
-                                        <div className="grid grid-cols-3 gap-3">
-                                            {characters.map(c => {
-                                                const hasRecord = !!c.specialMomentRecords?.[VALENTINE_RECORD_KEY];
-                                                return (
-                                                    <button
-                                                        key={c.id}
-                                                        onClick={() => { setSelectedCharId(c.id); setShowSession(true); }}
-                                                        onTouchStart={() => handleLongPressStart(c.id)}
-                                                        onTouchEnd={handleLongPressEnd}
-                                                        onTouchCancel={handleLongPressEnd}
-                                                        onContextMenu={(e) => { e.preventDefault(); setDeleteTargetId(c.id); }}
-                                                        className="flex flex-col items-center gap-2 p-3 bg-white/15 backdrop-blur-sm rounded-2xl border border-white/20 active:scale-95 transition-transform hover:bg-white/25 relative"
-                                                    >
-                                                        <img src={c.avatar} className="w-12 h-12 rounded-full object-cover border-2 border-white/30" alt={c.name} />
-                                                        <span className="text-[11px] font-bold truncate w-full text-center">{c.name}</span>
-                                                        {hasRecord && <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-white/60" />}
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                    <p className="text-[10px] text-pink-200/40 mt-3 text-center">长按角色可删除记录</p>
-                                </div>
-                            </div>
-                        </div>
-                    );
-                })()}
+                {/* 情人节 */}
+                {visibility.valentine.show && (
+                    <SpecialEventCard
+                        theme={THEME_VALENTINE}
+                        icon="💝"
+                        title="情人节特别推送"
+                        subtitleActive="2026 Valentine's Day — 听听 ta 想对你说什么"
+                        subtitlePast="2026.2.14 — 重温那天 ta 说的话"
+                        hintActive="选择一位角色开始"
+                        hintPast="点击角色重播或重新生成"
+                        isPast={visibility.valentine.past}
+                        characters={characters}
+                        recordKey={VALENTINE_RECORD_KEY}
+                        onPick={(id) => { setSelectedCharId(id); setShowSession(true); }}
+                        onLongPressDelete={(id) => setDeleteTargetId(id)}
+                        pendingDeleteId={deleteTargetId}
+                    />
+                )}
             </div>
+
+            {/* 520 删除确认弹窗 */}
+            {l520DeleteTargetId && (
+                <ConfirmDeleteModal
+                    title="删除 520 记录"
+                    charName={characters.find(c => c.id === l520DeleteTargetId)?.name || ''}
+                    note="将删除该角色的 520 记录，包括所有相关的聊天消息。此操作不可撤销。"
+                    onCancel={() => setL520DeleteTargetId(null)}
+                    onConfirm={() => handleL520DeleteRecord(l520DeleteTargetId)}
+                />
+            )}
 
             {/* 白色情人节删除确认弹窗 */}
             {wdDeleteTargetId && (
-                <div className="fixed inset-0 z-[9999] flex items-center justify-center p-6 animate-fade-in">
-                    <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setWdDeleteTargetId(null)} />
-                    <div className="relative bg-white rounded-3xl p-6 max-w-xs w-full shadow-2xl">
-                        <div className="text-center mb-4">
-                            <div className="text-3xl mb-2">🗑️</div>
-                            <h3 className="font-bold text-slate-700 text-base">删除白色情人节记录</h3>
-                            <p className="text-xs text-slate-400 mt-2 leading-relaxed">
-                                将删除 <span className="font-bold text-slate-600">{characters.find(c => c.id === wdDeleteTargetId)?.name}</span> 的白色情人节记录。此操作不可撤销。
-                            </p>
-                        </div>
-                        <div className="flex gap-3">
-                            <button onClick={() => setWdDeleteTargetId(null)} className="flex-1 py-2.5 bg-slate-100 text-slate-500 font-bold rounded-xl active:scale-95 transition-transform text-sm">取消</button>
-                            <button onClick={() => handleWdDeleteRecord(wdDeleteTargetId)} className="flex-1 py-2.5 bg-red-500 text-white font-bold rounded-xl active:scale-95 transition-transform text-sm">确认删除</button>
-                        </div>
-                    </div>
-                </div>
+                <ConfirmDeleteModal
+                    title="删除白色情人节记录"
+                    charName={characters.find(c => c.id === wdDeleteTargetId)?.name || ''}
+                    note="将删除该角色的白色情人节记录。此操作不可撤销。"
+                    onCancel={() => setWdDeleteTargetId(null)}
+                    onConfirm={() => handleWdDeleteRecord(wdDeleteTargetId)}
+                />
             )}
 
-            {/* 删除确认弹窗 */}
+            {/* 情人节删除确认弹窗 */}
             {deleteTargetId && (
-                <div className="fixed inset-0 z-[9999] flex items-center justify-center p-6 animate-fade-in">
-                    <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setDeleteTargetId(null)} />
-                    <div className="relative bg-white rounded-3xl p-6 max-w-xs w-full shadow-2xl">
-                        <div className="text-center mb-4">
-                            <div className="text-3xl mb-2">🗑️</div>
-                            <h3 className="font-bold text-slate-700 text-base">删除情人节记录</h3>
-                            <p className="text-xs text-slate-400 mt-2 leading-relaxed">
-                                将删除 <span className="font-bold text-slate-600">{characters.find(c => c.id === deleteTargetId)?.name}</span> 的情人节记录，包括存储的回忆和对应的聊天消息。此操作不可撤销。
-                            </p>
-                        </div>
-                        <div className="flex gap-3">
-                            <button
-                                onClick={() => setDeleteTargetId(null)}
-                                className="flex-1 py-2.5 bg-slate-100 text-slate-500 font-bold rounded-xl active:scale-95 transition-transform text-sm"
-                            >
-                                取消
-                            </button>
-                            <button
-                                onClick={() => handleDeleteRecord(deleteTargetId)}
-                                className="flex-1 py-2.5 bg-red-500 text-white font-bold rounded-xl active:scale-95 transition-transform text-sm"
-                            >
-                                确认删除
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                <ConfirmDeleteModal
+                    title="删除情人节记录"
+                    charName={characters.find(c => c.id === deleteTargetId)?.name || ''}
+                    note="将删除该角色的情人节记录，包括存储的回忆和对应的聊天消息。此操作不可撤销。"
+                    onCancel={() => setDeleteTargetId(null)}
+                    onConfirm={() => handleDeleteRecord(deleteTargetId)}
+                />
             )}
         </div>
     );
 };
+
+// ============================================================
+// 共享：删除确认弹窗
+// ============================================================
+const ConfirmDeleteModal: React.FC<{
+    title: string;
+    charName: string;
+    note: string;
+    onCancel: () => void;
+    onConfirm: () => void;
+}> = ({ title, charName, note, onCancel, onConfirm }) => (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-6 animate-fade-in">
+        <div className="absolute inset-0 bg-black/50" onClick={onCancel} />
+        <div className="relative bg-white rounded-3xl p-6 max-w-xs w-full shadow-2xl">
+            <div className="text-center mb-4">
+                <div className="text-3xl mb-2">🗑️</div>
+                <h3 className="font-bold text-slate-700 text-base">{title}</h3>
+                <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+                    将删除 <span className="font-bold text-slate-600">{charName}</span> 的记录。{note}
+                </p>
+            </div>
+            <div className="flex gap-3">
+                <button onClick={onCancel} className="flex-1 py-2.5 bg-slate-100 text-slate-500 font-bold rounded-xl active:scale-95 transition-transform text-sm">取消</button>
+                <button onClick={onConfirm} className="flex-1 py-2.5 bg-red-500 text-white font-bold rounded-xl active:scale-95 transition-transform text-sm">确认删除</button>
+            </div>
+        </div>
+    </div>
+);

@@ -6,11 +6,11 @@ import {
     Task, Anniversary, DiaryEntry, RoomTodo, RoomNote, DailySchedule,
     GalleryImage, FullBackupData, GroupProfile, SocialPost, StudyCourse, GameSession, Worldbook, NovelBook, Emoji, EmojiCategory,
     BankTransaction, SavingsGoal, BankFullState, DollhouseState, XhsStockImage, XhsActivityRecord, SongSheet, QuizSession, GuidebookSession,
-    LifeSimState, HandbookEntry, Tracker, TrackerEntry
+    LifeSimState, HandbookEntry, Tracker, TrackerEntry, HotNewsSnapshot
 } from '../types';
 
 const DB_NAME = 'AetherOS_Data';
-const DB_VERSION = 50; // Bumped: v50 add 'trackers' + 'tracker_entries' stores (手账 tracker 引擎)
+const DB_VERSION = 51; // Bumped: v51 add 'hotnews_snapshots' store (分时段热点快照)
 
 const STORE_CHARACTERS = 'characters';
 const STORE_MESSAGES = 'messages';
@@ -45,6 +45,7 @@ const STORE_DAILY_SCHEDULE = 'daily_schedule';
 const STORE_HANDBOOK = 'handbook'; // 跨角色聚合手账，每天一条 entry，id = 'YYYY-MM-DD'
 const STORE_TRACKERS = 'trackers';                // 手账打卡 tracker 定义
 const STORE_TRACKER_ENTRIES = 'tracker_entries';  // tracker 每日打卡数据
+const STORE_HOTNEWS = 'hotnews_snapshots';        // 分时段热点快照（全角色共享，key=日期#时段）
 
 export interface ScheduledMessage {
     id: string;
@@ -166,6 +167,8 @@ export const openDB = (): Promise<IDBDatabase> => {
           teStore.createIndex('trackerId', 'trackerId', { unique: false });
           teStore.createIndex('date', 'date', { unique: false });
       }
+
+      createStore(STORE_HOTNEWS, { keyPath: 'id' });
 
       // ─── Memory Palace (记忆宫殿) stores ───
       if (!db.objectStoreNames.contains('memory_nodes')) {
@@ -1101,6 +1104,59 @@ export const DB = {
       const db = await openDB();
       const transaction = db.transaction(STORE_DAILY_SCHEDULE, 'readwrite');
       transaction.objectStore(STORE_DAILY_SCHEDULE).put(schedule);
+  },
+
+  // ─── 热点快照 (分时段，全角色共享) ───
+  getHotNewsSnapshot: async (id: string): Promise<HotNewsSnapshot | null> => {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          if (!db.objectStoreNames.contains(STORE_HOTNEWS)) { resolve(null); return; }
+          const transaction = db.transaction(STORE_HOTNEWS, 'readonly');
+          const req = transaction.objectStore(STORE_HOTNEWS).get(id);
+          req.onsuccess = () => resolve(req.result || null);
+          req.onerror = () => reject(req.error);
+      });
+  },
+
+  saveHotNewsSnapshot: async (snapshot: HotNewsSnapshot): Promise<void> => {
+      const db = await openDB();
+      const transaction = db.transaction(STORE_HOTNEWS, 'readwrite');
+      transaction.objectStore(STORE_HOTNEWS).put(snapshot);
+  },
+
+  // 拿最近一次快照（按 fetchedAt 倒序），失败兜底与 App 展示用
+  getLatestHotNewsSnapshot: async (): Promise<HotNewsSnapshot | null> => {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          if (!db.objectStoreNames.contains(STORE_HOTNEWS)) { resolve(null); return; }
+          const transaction = db.transaction(STORE_HOTNEWS, 'readonly');
+          const req = transaction.objectStore(STORE_HOTNEWS).getAll();
+          req.onsuccess = () => {
+              const all = (req.result || []) as HotNewsSnapshot[];
+              if (all.length === 0) { resolve(null); return; }
+              all.sort((a, b) => b.fetchedAt - a.fetchedAt);
+              resolve(all[0]);
+          };
+          req.onerror = () => reject(req.error);
+      });
+  },
+
+  // 清理过期快照（保留最近 N 条），避免无限堆积
+  pruneHotNewsSnapshots: async (keep = 12): Promise<void> => {
+      const db = await openDB();
+      return new Promise((resolve) => {
+          if (!db.objectStoreNames.contains(STORE_HOTNEWS)) { resolve(); return; }
+          const transaction = db.transaction(STORE_HOTNEWS, 'readwrite');
+          const store = transaction.objectStore(STORE_HOTNEWS);
+          const req = store.getAll();
+          req.onsuccess = () => {
+              const all = (req.result || []) as HotNewsSnapshot[];
+              all.sort((a, b) => b.fetchedAt - a.fetchedAt);
+              all.slice(keep).forEach(s => store.delete(s.id));
+              resolve();
+          };
+          req.onerror = () => resolve();
+      });
   },
 
   getScheduleCoverImage: async (charId: string): Promise<string | null> => {

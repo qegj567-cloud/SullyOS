@@ -157,6 +157,48 @@ export const ChatParser = {
             content = content.replace(MUSIC_TAG_GLOBAL_RE, '').trim();
         }
 
+        // NEWS_CARD — char 主动把某条热点当作新闻卡片分享（来源 + 标题）
+        //   [[NEWS_CARD: 来源|标题]]    （来源可省略 → [[NEWS_CARD: 标题]]）
+        const NEWS_CARD_RE = /\[\[NEWS_CARD:\s*([^\]]*?)\s*\]\]/;
+        const NEWS_CARD_GLOBAL_RE = /\[\[NEWS_CARD:[^\]]*\]\]/g;
+        const newsCardMatch = content.match(NEWS_CARD_RE);
+        if (newsCardMatch) {
+            const raw = (newsCardMatch[1] || '').trim();
+            if (raw) {
+                const segs = raw.split('|').map(s => s.trim());
+                let source = '';
+                let title = raw;
+                if (segs.length >= 2) {
+                    source = segs[0];
+                    title = segs.slice(1).join('|').trim();
+                }
+                // char 不知道链接，尝试从最近一次热点快照里按标题补 url / 来源 / 简介
+                let url: string | undefined;
+                let desc: string | undefined;
+                try {
+                    const snap = await DB.getLatestHotNewsSnapshot();
+                    const hit = snap?.items?.find(it => it.title === title)
+                        || snap?.items?.find(it => !!title && (it.title.includes(title) || title.includes(it.title)));
+                    if (hit) {
+                        url = hit.url;
+                        desc = hit.desc;
+                        if (!source && hit.source) source = hit.source;
+                    }
+                } catch { /* 补不到就算了 */ }
+                if (title) {
+                    await DB.saveMessage({
+                        charId,
+                        role: 'assistant',
+                        type: 'news_card',
+                        content: `[你分享了一个热点：「${title}」${source ? `（来源：${source}）` : ''}${desc ? `——${desc}` : ''}]`,
+                        metadata: { source, title, url, desc },
+                    });
+                    addToast(`${charName} 分享了一条热点`, 'info');
+                }
+            }
+            content = content.replace(NEWS_CARD_GLOBAL_RE, '').trim();
+        }
+
         // ADD_EVENT
         const eventMatch = content.match(/\[\[ACTION:ADD_EVENT\s*\|\s*(.*?)\s*\|\s*(.*?)\]\]/);
         if (eventMatch) {

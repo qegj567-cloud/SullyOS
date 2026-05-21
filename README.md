@@ -192,6 +192,37 @@ A: 就是我也不知道什么意思。系统正在哈我。
 
 所有数据都是 **local-first**，没有后端服务器这个概念（除了那个可选的云端备份）。
 
+### 右下角的 build badge 怎么关
+
+跑非 `main` / `master` 分支时，右下角会堆三行小字标记构建版本：
+
+```
+sw@<service-worker 版本>
+<分支>@<commit hash>
+开发中内容，不代表最终效果
+```
+
+这玩意叫 `BuildBadge`（`components/BuildBadge.tsx`），用来一眼区分线上版和 fork / 开发版，免得拿半成品截图当正式版到处发。可见性在 **构建时** 决定：
+
+| 情况 | 显示？ |
+|------|--------|
+| 在 `main` / `master` 上构建 | ❌ 默认隐藏（视为正式发布）|
+| 其他分支上构建 | ✅ 默认显示 |
+| `VITE_HIDE_BUILD_BADGE=1` | ❌ 强制隐藏（覆盖默认）|
+| `VITE_SHOW_BUILD_BADGE=1` | ✅ 强制显示（在 release 分支本地调试用）|
+
+CI detached HEAD 状态会按 `GITHUB_REF_NAME` → `VERCEL_GIT_COMMIT_REF` → `CF_PAGES_BRANCH` 顺序识别分支，所以 Vercel / Cloudflare Pages / GitHub Actions 部署 release 分支会自动隐藏，不用手动配。
+
+**注意**：这是 Vite `define` 注入的**编译时常量**，不是运行时 env——`npm run build` 之后再设环境变量没用，esbuild 那时候已经把 `__BUILD_BADGE_VISIBLE__` 直接干成 `true` / `false` 常量、把整个组件树摇掉了。要在构建命令前面加：
+
+```bash
+VITE_HIDE_BUILD_BADGE=1 npm run build
+```
+
+或者在 Vercel / Cloudflare Pages 的环境变量面板挂一条 `VITE_HIDE_BUILD_BADGE=1`，省得每次记。
+
+> 叮叮叮！把 badge 藏了不会让你的 fork 变正式版本，但截图会干净点。
+
 ### Instant Push 走独立 Worker
 
 Instant Push 是基于 `@rei-standard/amsg-instant 0.2.0` 的 LLM-driven Web Push 通道
@@ -230,6 +261,9 @@ Instant Push → 配置。
 
 **音乐**  
 对接了 [NeteaseCloudMusicApi Enhanced](https://github.com/NeteaseCloudMusicApiEnhanced/api-enhanced)，让你能在系统里搜歌、听歌、看歌词。自备网易云会员 Cookie 即可解锁 VIP 音质。原项目 [Binaryify/NeteaseCloudMusicApi](https://github.com/Binaryify/NeteaseCloudMusicApi) 被迫归档后，Enhanced 版本一直在跟进网易云的协议变化，感谢维护者们的坚持。
+
+**热点**  
+对接了 [hot_news](https://github.com/orz-ai/hot_news)（by orz-ai，MIT License），提供微博、知乎、百度、B站、抖音等多平台中文热榜 API。角色聊天时能"刷到"真实热点当背景认知，分时段缓存，偶尔还会发张新闻卡片找你唠两句。
 
 ---
 

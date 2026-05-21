@@ -227,6 +227,56 @@ export function extractContent(data: any): string {
  * Returns parsed object on success, null on total failure.
  */
 /**
+ * Walk through a JSON-ish string and re-escape `"` characters that appear inside
+ * string values but weren't escaped by the LLM.
+ *
+ * Common with Claude when the content quotes a phrase ("还不够好" / "我爱你"等)
+ * inside a string value — the inner quotes break JSON.parse because they look
+ * like closing delimiters.
+ *
+ * Heuristic for distinguishing "real closing quote" vs "unescaped inner quote":
+ *   A `"` is treated as closing iff the next non-whitespace char is one of
+ *   , } ] : end-of-input. Otherwise it's an inner quote and gets \-escaped.
+ */
+function escapeUnescapedInnerQuotes(text: string): string {
+    let result = '';
+    let inString = false;
+    let escaped = false;
+
+    for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+
+        if (escaped) { result += ch; escaped = false; continue; }
+        if (ch === '\\' && inString) { result += ch; escaped = true; continue; }
+
+        if (ch === '"') {
+            if (!inString) {
+                inString = true;
+                result += ch;
+                continue;
+            }
+            // We're inside a string. Look ahead to decide: closing or inner?
+            let j = i + 1;
+            while (j < text.length && /[ \t\r\n]/.test(text[j])) j++;
+            const next = j < text.length ? text[j] : '';
+            // Closing iff next meaningful char is one of , } ] : or EOF
+            if (next === '' || next === ',' || next === '}' || next === ']' || next === ':') {
+                inString = false;
+                result += ch;
+            } else {
+                // Inner unescaped quote → escape it
+                result += '\\"';
+            }
+            continue;
+        }
+
+        result += ch;
+    }
+
+    return result;
+}
+
+/**
  * Attempt to repair truncated JSON by closing open strings, arrays, and objects.
  * Handles the common case where LLM output is cut off mid-string.
  */
@@ -327,7 +377,20 @@ export function extractJson(raw: string): any | null {
 
     try { return JSON.parse(fixed); } catch {}
 
-    // 6. Try to repair truncated JSON (LLM hit max_tokens)
+    // 6. Try to repair unescaped inner quotes (LLM writes naked " inside a string value).
+    // Common with Claude when the content quotes a phrase like 「埋一句"我爱你"」
+    // — the inner " breaks JSON parsing because they're not \-escaped.
+    const innerQuoteFixed = escapeUnescapedInnerQuotes(jsonStr);
+    if (innerQuoteFixed && innerQuoteFixed !== jsonStr) {
+        try { return JSON.parse(innerQuoteFixed); } catch {}
+        try {
+            return JSON.parse(innerQuoteFixed
+                .replace(/,\s*([}\]])/g, '$1')
+                .replace(/([{,]\s*)([a-zA-Z_]\w*)\s*:/g, '$1"$2":'));
+        } catch {}
+    }
+
+    // 7. Try to repair truncated JSON (LLM hit max_tokens)
     // Find the first { and attempt to close any open strings/brackets
     const firstBrace = text.indexOf('{');
     if (firstBrace >= 0) {
@@ -341,10 +404,15 @@ export function extractJson(raw: string): any | null {
                     .replace(/,\s*([}\]])/g, '$1')
                     .replace(/([{,]\s*)([a-zA-Z_]\w*)\s*:/g, '$1"$2":'));
             } catch {}
+            // Also try escaping inner quotes on the truncated-repaired version
+            const repairedInnerFixed = escapeUnescapedInnerQuotes(repaired);
+            if (repairedInnerFixed !== repaired) {
+                try { return JSON.parse(repairedInnerFixed); } catch {}
+            }
         }
     }
 
-    // 7. Last resort: try to extract individual JSON objects if there are multiple
+    // 8. Last resort: try to extract individual JSON objects if there are multiple
     // (AI sometimes outputs two JSON blocks, take the larger one)
     const allObjects = [...text.matchAll(/\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g)];
     if (allObjects.length > 0) {
@@ -354,10 +422,14 @@ export function extractJson(raw: string): any | null {
             try {
                 return JSON.parse(m[0].replace(/,\s*([}\]])/g, '$1'));
             } catch {}
+            try {
+                const fixedInner = escapeUnescapedInnerQuotes(m[0]);
+                return JSON.parse(fixedInner.replace(/,\s*([}\]])/g, '$1'));
+            } catch {}
         }
     }
 
-    // 8. AI sometimes wraps the expected JSON in a wrapper object like {"result": {...}}
+    // 9. AI sometimes wraps the expected JSON in a wrapper object like {"result": {...}}
     // Try to find the first nested object value and return it
     for (const m of allObjects) {
         try {

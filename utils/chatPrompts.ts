@@ -779,7 +779,10 @@ ${xhsEnabled ? `${[notionEnabled, feishuEnabled, notionNotesEnabled].filter(Bool
                         ? meta.htmlTextPreview
                         : (typeof m.content === 'string' ? m.content.replace(/^\[HTML卡片\]\s*/, '') : '');
                     const sender = m.role === 'user' ? '用户' : '你';
-                    content = `${timeStr} [${sender}发送了一张 HTML 卡片] ${preview || '(纯视觉卡片)'}`;
+                    // 注意：这行是「系统对已渲染卡片的占位描述」，刻意包成括注 + 系统记录口吻，
+                    // 避免 LLM 把它当成"发卡片的正确写法"照抄（会导致它输出字面占位句 + 纯文字正文，
+                    // 而不是真正的 [html]...[/html] 块）。配合 htmlPrompt 里的禁止照抄规则一起生效。
+                    content = `${timeStr}（系统记录：${sender}先前发送过一张 HTML 卡片，已在界面渲染；卡片文字摘要——${preview || '纯视觉卡片'}。这只是历史占位，请勿复述本行；要再发卡片必须用 [html]...[/html] 包裹真正的 HTML。）`;
                 }
                 else if ((m.type as string) === 'mcd_card') {
                     const meta: any = m.metadata || {};
