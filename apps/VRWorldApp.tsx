@@ -18,13 +18,17 @@ import { safeResponseJson } from '../utils/safeApi';
 
 const genLocalId = (p: string) => `${p}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 
-// 全屏浮层（fixed inset-0）会越过外壳的 safe-area padding。
-// 视觉背景铺满屏幕，只让顶栏/底栏控件避开系统手势区。
-const VR_SAFE_TOP = 'env(safe-area-inset-top, 0px)';
+// 全屏浮层（fixed inset-0）会越过外壳的 safe-area padding，视觉背景铺满屏幕，
+// 只让顶栏/底栏控件避开系统安全区，把按钮放在刘海正下方（不要叠加过多留白，否则顶部一片空）。
+// 关键：本项目 iOS 全屏 PWA 下原生 env(safe-area-inset-*) 可能返回 0，
+// 故与 JS 探测出的 --standalone-safe-area-*（见 utils/iosStandalone.ts）取较大者兜底，
+// 与 Launcher dock 写法保持一致。
+const VR_SAFE_TOP = 'max(env(safe-area-inset-top, 0px), var(--standalone-safe-area-top, 0px))';
+const VR_SAFE_BOTTOM = 'max(env(safe-area-inset-bottom, 0px), var(--standalone-safe-area-bottom, 0px))';
 const vrTopPad = (base: string) => `calc(${base} + ${VR_SAFE_TOP})`;
+// 房间内浮层（留言墙/邮局/听歌）从顶栏（安全区 + 返回按钮行）下方开始。
 const VR_ROOM_PANEL_TOP = `calc(${VR_SAFE_TOP} + 4.5rem)`;
 // 底部额外留一点手势余量；iOS 全屏隐藏 home 条时也不让交互区贴着物理底边。
-const VR_SAFE_BOTTOM = 'env(safe-area-inset-bottom, 0px)';
 const VR_BOTTOM_TOUCH_GAP = '0.75rem';
 const vrBottomOffset = (base: string) => `calc(${base} + ${VR_SAFE_BOTTOM} + ${VR_BOTTOM_TOUCH_GAP})`;
 const vrBottomPad = vrBottomOffset;

@@ -45,6 +45,10 @@ const setViewportVars = () => {
     const viewportHeight = Math.round(window.visualViewport?.height || innerHeight);
     const viewportOffsetTop = Math.round(window.visualViewport?.offsetTop || 0);
     const bottomSafeInset = shouldStabilizeHeight ? readSafeAreaInset('bottom') : 0;
+    // 顶部安全区：iOS 全屏 PWA 下原生 env(safe-area-inset-top) 偶发返回 0，
+    // 探测不到时退回 44px（约状态栏/刘海高度），避免顶栏内容怼进刘海。
+    const probedTopInset = shouldStabilizeHeight ? readSafeAreaInset('top') : 0;
+    const topSafeInset = shouldStabilizeHeight ? (probedTopInset > 0 ? probedTopInset : 44) : 0;
     const obscuredHeight = Math.max(0, innerHeight - viewportHeight - viewportOffsetTop);
     const keyboardInset = obscuredHeight > 120 ? obscuredHeight : 0;
     const nextViewportHeight = Math.max(innerHeight, viewportHeight + viewportOffsetTop);
@@ -68,6 +72,7 @@ const setViewportVars = () => {
     document.documentElement.style.setProperty('--visual-viewport-height', `${viewportHeight}px`);
     document.documentElement.style.setProperty('--keyboard-inset', `${keyboardInset}px`);
     document.documentElement.style.setProperty('--standalone-safe-area-bottom', `${bottomSafeInset}px`);
+    document.documentElement.style.setProperty('--standalone-safe-area-top', `${topSafeInset}px`);
 };
 
 export const installIOSStandaloneWorkaround = () => {
