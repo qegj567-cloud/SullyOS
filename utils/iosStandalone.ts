@@ -1,22 +1,26 @@
 let hasInstalledIOSStandaloneWorkaround = false;
 let stableStandaloneHeight = 0;
 
-const readSafeAreaInset = (edge: 'top' | 'right' | 'bottom' | 'left'): number => {
-    if (typeof document === 'undefined') return 0;
+// 用一个隐藏探针同时读取上下安全区：单次插入 + 单次 getComputedStyle（一次 reflow）。
+// env() 在本项目 iOS 全屏 PWA 下偶发返回 0，故需 JS 探测兜底。
+const readSafeAreaInsets = (): { top: number; bottom: number } => {
+    if (typeof document === 'undefined') return { top: 0, bottom: 0 };
 
     const probe = document.createElement('div');
     probe.style.position = 'fixed';
     probe.style.visibility = 'hidden';
     probe.style.pointerEvents = 'none';
     probe.style.opacity = '0';
-    probe.style.setProperty(`padding-${edge}`, `env(safe-area-inset-${edge})`);
+    probe.style.paddingTop = 'env(safe-area-inset-top)';
+    probe.style.paddingBottom = 'env(safe-area-inset-bottom)';
     document.body.appendChild(probe);
 
     const computed = window.getComputedStyle(probe);
-    const inset = parseFloat(computed.getPropertyValue(`padding-${edge}`)) || 0;
+    const top = Math.round(parseFloat(computed.paddingTop) || 0);
+    const bottom = Math.round(parseFloat(computed.paddingBottom) || 0);
 
     document.body.removeChild(probe);
-    return Math.round(inset);
+    return { top, bottom };
 };
 
 export const isIOSDevice = (): boolean => {
@@ -44,11 +48,10 @@ const setViewportVars = () => {
     const innerHeight = Math.round(window.innerHeight);
     const viewportHeight = Math.round(window.visualViewport?.height || innerHeight);
     const viewportOffsetTop = Math.round(window.visualViewport?.offsetTop || 0);
-    const bottomSafeInset = shouldStabilizeHeight ? readSafeAreaInset('bottom') : 0;
-    // 顶部安全区：iOS 全屏 PWA 下原生 env(safe-area-inset-top) 偶发返回 0，
-    // 探测不到时退回 44px（约状态栏/刘海高度），避免顶栏内容怼进刘海。
-    const probedTopInset = shouldStabilizeHeight ? readSafeAreaInset('top') : 0;
-    const topSafeInset = shouldStabilizeHeight ? (probedTopInset > 0 ? probedTopInset : 44) : 0;
+    // 单次探针读取上下安全区。顶部 env 偶发返回 0，探测不到时退回 44px（约状态栏/刘海高度），避免顶栏内容怼进刘海。
+    const safeInsets = shouldStabilizeHeight ? readSafeAreaInsets() : { top: 0, bottom: 0 };
+    const bottomSafeInset = safeInsets.bottom;
+    const topSafeInset = shouldStabilizeHeight ? (safeInsets.top > 0 ? safeInsets.top : 44) : 0;
     const obscuredHeight = Math.max(0, innerHeight - viewportHeight - viewportOffsetTop);
     const keyboardInset = obscuredHeight > 120 ? obscuredHeight : 0;
     const nextViewportHeight = Math.max(innerHeight, viewportHeight + viewportOffsetTop);

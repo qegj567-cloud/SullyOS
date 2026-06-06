@@ -109,7 +109,6 @@
         --primary-hue: 245; 
         --primary-sat: 25%;
         --primary-lightness: 65%;
-        --safe-area-bottom: env(safe-area-inset-bottom);
         /* 安全区单一来源：原生 env 与 JS 探测值 --standalone-safe-area-*（见 utils/iosStandalone.ts）取大，
            iOS 全屏 PWA 下原生 env 偶发返回 0 时由探测值兜底。新增 App 一律引用这三个变量。 */
         --safe-top: max(env(safe-area-inset-top, 0px), var(--standalone-safe-area-top, 0px));
@@ -192,9 +191,6 @@
       /* Utility for Safe Area —— 统一引用单一来源变量 */
       .pb-safe {
         padding-bottom: var(--safe-bottom);
-      }
-      .pt-safe {
-        padding-top: var(--safe-top);
       }
     </style>
   <script type="importmap">

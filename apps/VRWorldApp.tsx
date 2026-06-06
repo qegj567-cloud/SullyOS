@@ -26,8 +26,8 @@ const VR_SAFE_BOTTOM = 'var(--safe-bottom)';
 const VR_ROOM_PANEL_TOP = 'calc(var(--chrome-top) + 3.75rem)'; // 房间内浮层从顶栏下方开始
 // 底部额外留一点手势余量；iOS 全屏隐藏 home 条时也不让交互区贴着物理底边。
 const VR_BOTTOM_TOUCH_GAP = '0.75rem';
-const vrBottomOffset = (base: string) => `calc(${base} + ${VR_SAFE_BOTTOM} + ${VR_BOTTOM_TOUCH_GAP})`;
-const vrBottomPad = vrBottomOffset;
+// 底部内边距 / 贴底定位统一用它：base + 安全区 + 手势余量。
+const vrBottomPad = (base: string) => `calc(${base} + ${VR_SAFE_BOTTOM} + ${VR_BOTTOM_TOUCH_GAP})`;
 
 // ── 邮局寄信「日额度」：纯前端软计数，给后端减负（不追求精准，清数据会重置）──
 // 从首封开始计时的滚动窗口，窗口内封顶、过期自动归零。两个额度各自独立。
@@ -1206,7 +1206,7 @@ const PostOfficePanel: React.FC<{ addToast?: (m: string, t?: any) => void; chara
 
     return (
         <div className="absolute left-3 right-3 z-20 rounded-2xl overflow-hidden flex flex-col backdrop-blur-md"
-            style={{ top: VR_ROOM_PANEL_TOP, bottom: vrBottomOffset('0.75rem'), background: 'rgba(30,24,14,0.66)', border: '1px solid rgba(220,190,120,0.25)', boxShadow: '0 8px 26px rgba(0,0,0,.45)' }}>
+            style={{ top: VR_ROOM_PANEL_TOP, bottom: vrBottomPad('0.75rem'), background: 'rgba(30,24,14,0.66)', border: '1px solid rgba(220,190,120,0.25)', boxShadow: '0 8px 26px rgba(0,0,0,.45)' }}>
             {/* 动作行 */}
             <div className="flex items-center gap-1.5 px-3 py-2 border-b border-white/10 shrink-0">
                 <span className="text-[11px] tracking-[0.2em] text-amber-100/80 mr-auto" style={{ fontFamily: `'Noto Serif SC',serif` }}>邮局</span>
@@ -1558,7 +1558,7 @@ const RoomScene: React.FC<{
                     }
                     return (
                         <div className="absolute left-3 right-3 z-20 rounded-2xl overflow-hidden flex flex-col backdrop-blur-md"
-                            style={{ top: VR_ROOM_PANEL_TOP, bottom: vrBottomOffset('4rem'), background: 'rgba(10,22,38,0.62)', border: '1px solid rgba(140,200,255,0.22)', boxShadow: '0 8px 26px rgba(0,0,0,.4)' }}>
+                            style={{ top: VR_ROOM_PANEL_TOP, bottom: vrBottomPad('4rem'), background: 'rgba(10,22,38,0.62)', border: '1px solid rgba(140,200,255,0.22)', boxShadow: '0 8px 26px rgba(0,0,0,.4)' }}>
                             <div className="px-3 py-2 text-[10px] tracking-[0.25em] text-sky-200/70 border-b border-white/10" style={{ fontFamily: `'Noto Serif SC',serif` }}>留言墙</div>
                             <div className="flex-1 overflow-y-auto vr-reader-scroll px-3 py-3 space-y-3">
                                 {groups.length === 0 ? (
@@ -1621,7 +1621,7 @@ const RoomScene: React.FC<{
                 {/* 留言簿：用户发言（广播给所有接入角色） */}
                 {isGuestbook && (
                     <div className="absolute left-0 right-0 z-30 flex items-center gap-2 px-3 py-2.5"
-                        style={{ bottom: vrBottomOffset('0px'), background: 'linear-gradient(0deg,rgba(5,12,22,.92),transparent)' }}>
+                        style={{ bottom: vrBottomPad('0px'), background: 'linear-gradient(0deg,rgba(5,12,22,.92),transparent)' }}>
                         <input value={postText} onChange={e => setPostText(e.target.value)}
                             onKeyDown={e => { if (e.key === 'Enter') submitPost(); }}
                             placeholder={`以 ${userName} 的身份留句话…`}
