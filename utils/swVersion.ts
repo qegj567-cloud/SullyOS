@@ -21,9 +21,14 @@ export async function querySwVersion(): Promise<string> {
 
     let channel: MessageChannel | undefined;
     let timer: number | undefined;
+    // hasTimedOut：保护「ready 永远 pending → timeout 赢 → finally 已跑」之后 ready 才
+    // 终于 resolve 的场景。channel = new MessageChannel() 在 await 之后才发生，
+    // 此时 finally 已经过去、再也不会 close()——形成"延迟泄漏"。
+    let hasTimedOut = false;
 
     const query = (async (): Promise<string> => {
         const reg = await navigator.serviceWorker.ready;
+        if (hasTimedOut) return '?';
         const target = reg.active || reg.waiting || reg.installing;
         if (!target) return '?';
         channel = new MessageChannel();
@@ -34,7 +39,10 @@ export async function querySwVersion(): Promise<string> {
     })();
 
     const timeout = new Promise<string>((resolve) => {
-        timer = window.setTimeout(() => resolve('?'), SW_QUERY_TIMEOUT_MS);
+        timer = window.setTimeout(() => {
+            hasTimedOut = true;
+            resolve('?');
+        }, SW_QUERY_TIMEOUT_MS);
     });
 
     try {

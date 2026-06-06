@@ -204,18 +204,24 @@ const DevDebugPanel: React.FC = () => {
             + (flags.captureEnabled && flags.captureLogs.length > 0 && flags.exposeLogDetail ? 1 : 0),
         [flags],
     );
-    // 所有 setFlags 都走 functional update：避免「闭包里的 flags 还是上一次 render 的版本」+
-    // subscribeDevDebugFlags 异步同步两边覆盖（双标签页 storage 事件就会触发）。
+    // 用 read-write-set 三步：从 localStorage 读 source of truth → 写回 → 同步 React state。
+    // 不在 setFlags(updater) 里做副作用——updater 必须是纯函数（StrictMode / concurrent
+    // 会让 updater 重跑），副作用塞进去会重复 dispatch / 重复写盘。这套写法同时绕开了 React
+    // 闭包的 stale-flags 问题（双标签页 storage 事件 + 用户点击 race），因为 read 拿的是
+    // localStorage 当前值。
     const updateFlag = <K extends keyof DevDebugFlags,>(key: K, value: DevDebugFlags[K]) => {
-        setFlags((prev) => writeDevDebugFlags({ ...prev, [key]: value }));
+        const next = { ...readDevDebugFlags(), [key]: value };
+        setFlags(writeDevDebugFlags(next));
     };
     const toggleCapture = (category: DevDebugCaptureCategory, checked: boolean) => {
-        setFlags((prev) => writeDevDebugFlags({
-            ...prev,
+        const current = readDevDebugFlags();
+        const next = {
+            ...current,
             captureLogs: checked
-                ? [...prev.captureLogs, category]
-                : prev.captureLogs.filter((item) => item !== category),
-        }));
+                ? [...current.captureLogs, category]
+                : current.captureLogs.filter((item) => item !== category),
+        };
+        setFlags(writeDevDebugFlags(next));
     };
     const resetFlags = () => {
         // 重置 = 回默认（总开关关 + 清空勾选）+ 清空所有日志，比「全不勾」更彻底。
