@@ -82,11 +82,10 @@ export const DEFAULT_DEV_DEBUG_FLAGS: DevDebugFlags = {
 
 const MAX_LOG_ENTRIES = 100;
 const MAX_LOG_STORAGE_CHARS = 1_000_000;
-// 折叠时长字符串只保留前 N 个字符，后面接 "..."。
-const LOG_COLLAPSE_HEAD = 10;
-// 折叠 messages（聊天历史）数组：只保留前 N 项，其余换成一条计数提示，避免刷屏。
-// 只折 messages 这一个 key——别的返回数组原样保留，免得误折叠丢调试信息。
-const LOG_COLLAPSE_MESSAGES_HEAD = 1;
+// 只折 messages 这一个 key——别的字段（url、error.reason、response 任意键值等）一律原样保留，
+// 免得 reason / outcome / status 这种关键短字符串也被截掉。
+// messages 数组本身整个换成 ["…共 N 项（已折叠）"]，一条都不留——首条 system prompt 体积通常很大，
+// 留着没省到多少空间，要看就开「记录完整内容」。
 const SECRET_KEY_PATTERN = /(api[-_]?key|authorization|bearer|token|secret|endpoint|p256dh|auth)$/i;
 let memoryLog: DevDebugLogEntry[] | null = null;
 
@@ -291,26 +290,23 @@ function parseRequestBody(body: unknown): unknown {
     }
 }
 
-// 递归把长字符串折叠成「前 N 字 + ...」；数字 / 布尔 / 短字符串原样保留，只动 value 不动 key。
-// 折叠 messages（聊天历史）数组：只留前 N 项，其余换一条计数提示。短数组照常逐项折。
-function collapseMessages(arr: unknown[]): unknown {
-    if (arr.length <= LOG_COLLAPSE_MESSAGES_HEAD + 1) return arr.map(collapseLongStrings);
-    return [
-        ...arr.slice(0, LOG_COLLAPSE_MESSAGES_HEAD).map(collapseLongStrings),
-        `…还有 ${arr.length - LOG_COLLAPSE_MESSAGES_HEAD} 项（共 ${arr.length}）`,
-    ];
+// 折叠 messages（聊天历史）数组：整组替换成单句 metadata，一条都不留。
+function collapseMessagesArray(arr: unknown[]): unknown[] {
+    if (arr.length === 0) return arr;
+    return [`…共 ${arr.length} 项（已折叠）`];
 }
 
-function collapseLongStrings(value: unknown): unknown {
-    if (typeof value === 'string') {
-        return value.length > LOG_COLLAPSE_HEAD ? `${value.slice(0, LOG_COLLAPSE_HEAD)}...` : value;
-    }
-    if (Array.isArray(value)) return value.map(collapseLongStrings);
+// 递归遍历对象 / 数组，**只对** key === 'messages' 且值为数组的字段折叠。
+// 其它字段（字符串、数字、布尔、其它数组、其它对象）一律原样保留——
+// 折太多反而看不到 error.reason / response.outcome 这类关键字段。
+function collapseMessagesInData(value: unknown): unknown {
+    if (Array.isArray(value)) return value.map(collapseMessagesInData);
     if (value && typeof value === 'object') {
         const out: Record<string, unknown> = {};
         for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-            // 只对 messages 这个 key 折数组（聊天历史会刷屏）；别的数组原样逐项折，不丢结构。
-            out[key] = (key === 'messages' && Array.isArray(item)) ? collapseMessages(item) : collapseLongStrings(item);
+            out[key] = (key === 'messages' && Array.isArray(item))
+                ? collapseMessagesArray(item)
+                : collapseMessagesInData(item);
         }
         return out;
     }
@@ -378,8 +374,8 @@ export function clearDevDebugLog(categories?: DevDebugCaptureCategory[]): void {
 /**
  * 通用捕获入口：所有分类日志都走这里。
  * 自带门禁（该类没勾就空操作）、脱敏、折叠、限容、双写（内存 + localStorage）、广播，调用方不用操心。
- * 默认折叠长文本后再落库（省 localStorage 体积 / 隐私），只有开了 exposeLogDetail 才整段存——
- * 所以"要完整内容"得先开 expose 再复现，已抓的折叠版无法事后还原。
+ * 默认只折 messages 数组（聊天历史几十条会刷屏，留首条 + 计数提示）；其它字段（reason / outcome /
+ * url / status / 任意 response 值）原样保留。开了 exposeLogDetail 后连 messages 也整段存。
  */
 export function appendDevDebugLog(category: DevDebugCaptureCategory, input: { label?: string; data: unknown }): void {
     try {
@@ -393,7 +389,7 @@ export function appendDevDebugLog(category: DevDebugCaptureCategory, input: { la
             category,
             label: input.label,
             collapsed: !exposed,
-            data: exposed ? safeData : collapseLongStrings(safeData),
+            data: exposed ? safeData : collapseMessagesInData(safeData),
         };
 
         const next = [...readPersistedLog(), entry].slice(-MAX_LOG_ENTRIES);
@@ -464,7 +460,7 @@ export function formatDevDebugLog(category?: DevDebugCaptureCategory): string {
             commit: typeof __BUILD_COMMIT__ !== 'undefined' ? __BUILD_COMMIT__ : 'unknown',
         },
         ...(hasCollapsed
-            ? { note: `部分条目抓取时已折叠长文本（前 ${LOG_COLLAPSE_HEAD} 字 + "..."）；想要完整内容请先在面板开「导出完整内容」再复现。` }
+            ? { note: '部分条目抓取时已折叠 messages 聊天历史（整组替换成一句计数）；想要完整内容请先在面板开「记录完整内容」再复现。' }
             : {}),
         entries,
     }, null, 2);
