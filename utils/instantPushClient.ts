@@ -1,7 +1,7 @@
 import { InstantPushConfig, APIConfig, type InstantOversizeTransport } from '../types';
 import { loadPushVapid, isPushVapidReady } from './pushVapid';
 import { ActiveMsgStore } from './activeMsgStore';
-import { appendDevDebugInstantPushLog } from './devDebug';
+import { appendDevDebugInstantPushLog, appendDevDebugLog } from './devDebug';
 import {
   SUBSCRIBE_SETTLE_MS,
   bytesToB64u,
@@ -759,6 +759,9 @@ function instantTrace(
     const next = Array.isArray(list) ? [...list, entry].slice(-INSTANT_TRACE_LOG_LIMIT) : [entry];
     localStorage.setItem(INSTANT_TRACE_LOG_KEY, JSON.stringify(next));
   } catch { /* ignore */ }
+  // 也挂进 devDebug 的 instant-push 类目：勾了 IP 后，trace 跟 LLM 交换日志一起被
+  // 复制 / 下载导出。gate 由 isCaptureEnabled('instant-push') 自动管，未勾时零成本。
+  appendDevDebugLog('instant-push', { label: `trace:${event}`, data: entry });
 }
 
 // /instant 与 /continue 都把预分配的 sessionId 作为 SW 投递的 requestId; 优先取

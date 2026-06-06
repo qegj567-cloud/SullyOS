@@ -12,7 +12,7 @@ import { applyEmotionEvalRaw } from './emotionApply';
 import { processNewMessages } from './memoryPalace/pipeline';
 import { loadMusicHooks } from '../context/MusicContext';
 import type { XhsNote } from './realtimeContext';
-import { appendDevDebugInstantPushLog, isCaptureEnabled } from './devDebug';
+import { appendDevDebugInstantPushLog, appendDevDebugLog, isCaptureEnabled } from './devDebug';
 
 let initialized = false;
 const INSTANT_TRACE_LOG_KEY = 'instant_push_trace_log_v1';
@@ -36,6 +36,9 @@ function activeMsgTrace(event: string, details: Record<string, unknown> = {}): v
     const next = Array.isArray(list) ? [...list, entry].slice(-INSTANT_TRACE_LOG_LIMIT) : [entry];
     localStorage.setItem(INSTANT_TRACE_LOG_KEY, JSON.stringify(next));
   } catch { /* ignore */ }
+  // 也挂进 devDebug 的 instant-push 类目：勾了 IP 后，trace 跟 LLM 交换日志一起被
+  // 复制 / 下载导出。gate 由 isCaptureEnabled('instant-push') 自动管，未勾时零成本。
+  appendDevDebugLog('instant-push', { label: `trace:${event}`, data: entry });
 }
 
 // ─── push 路径模块级 XHS 共享状态 ─────────────────────────────────────────────
