@@ -447,6 +447,7 @@ export function appendDevDebugInstantPushLog(input: DevDebugHttpLogInput): void 
 export interface DevDebugLogger {
     log(event: string, ...details: unknown[]): void;
     info(event: string, ...details: unknown[]): void;
+    debug(event: string, ...details: unknown[]): void;
     warn(event: string, ...details: unknown[]): void;
     error(event: string, ...details: unknown[]): void;
 }
@@ -463,7 +464,7 @@ export interface DevDebugLogger {
  * 调用旁边手抄一行 appendDevDebugLog 容易漏。
  */
 export function makeDebugLogger(category: DevDebugCaptureCategory, tagPrefix: string): DevDebugLogger {
-    const make = (level: 'log' | 'info' | 'warn' | 'error') =>
+    const make = (level: 'log' | 'info' | 'debug' | 'warn' | 'error') =>
         (event: string, ...details: unknown[]): void => {
             try {
                 // eslint-disable-next-line no-console -- 故意保留 F12 输出
@@ -477,6 +478,7 @@ export function makeDebugLogger(category: DevDebugCaptureCategory, tagPrefix: st
     return {
         log: make('log'),
         info: make('info'),
+        debug: make('debug'),
         warn: make('warn'),
         error: make('error'),
     };

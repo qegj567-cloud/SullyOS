@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowsClockwise, Check, ClipboardText, DownloadSimple, Power, Wrench, X } from '@phosphor-icons/react';
+import { ArrowsClockwise, Check, ClipboardText, DownloadSimple, Power, Trash, Wrench, X } from '@phosphor-icons/react';
 import {
     clearDevDebugLog,
     closeDevDebug,
@@ -423,6 +423,13 @@ const DevDebugPanel: React.FC = () => {
                                         disabled={logCount === 0}
                                         icon={<DownloadSimple size={13} weight="bold" />}
                                         label="下载"
+                                    />
+                                    {/* 「清空」只清日志，不动开关 / 勾选；区别于「重置」（连开关一起回默认）和关掉总开关（清完后类型 UI 也收起）。 */}
+                                    <LogActionButton
+                                        onClick={() => clearDevDebugLog()}
+                                        disabled={logCount === 0}
+                                        icon={<Trash size={13} weight="bold" />}
+                                        label="清空"
                                     />
                                 </div>
                                 <div className="h-px bg-white/10" />

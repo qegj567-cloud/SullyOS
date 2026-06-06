@@ -263,6 +263,7 @@ appendDevDebugMcpLog({ tool, args, result });   // 没勾 mcp 时是空操作，
 
 - **复制**：写进剪贴板，丢给别人 debug。
 - **下载**：存成 `devdebug-log-<分支>-<时间>.json` 文件，适合日志大、或要存档对比的场景。
+- **清空**：只清掉已抓的日志，**不动**总开关 / 类型勾选 / 完整内容。跟「关掉总开关」（清完之后类型 UI 也收起）和「重置」（连开关一起回默认）是三件事，挑最小动作做。
 
 导出的 JSON 顶层带 `exportedAt` + `build.{branch,commit}`，方便定位"到底是哪个版本、什么时候抓的"。
 
@@ -284,8 +285,54 @@ LLM 日志里的聊天历史动辄几十条，整段塞进 localStorage 很快�
 - **改了开关行为，记得同步改面板 / category 的 `detail` 文案**，否则别人按文案理解会和实际不符。
 - **总开关 `captureEnabled` 是录制总闸**：光勾类型不会录，得把总开关打开；关掉总开关 = 一次「录制周期」结束 —— **立即清空已抓日志**（清空动作落在 `writeDevDebugFlags` 数据层，任何路径改 `captureEnabled` true → false 都触发，不只 UI handler）、把「类型 / 记录完整内容 / 复制 / 下载」整段 UI 收起；勾选的类型 + `exposeLogDetail` 作为下次的**配置**保留。
 - **取消勾选某个捕获类 = 只停此后抓取，不清已有日志**（勾选是纯选择）。想清日志走面板「重置」——它会一并把总开关关掉、清空全部勾选和日志，比"全不勾"更彻底。
-- **容量是全局共享的**（100 条 / 1 MB，各类混算）：某一类刷得很猛会把别的类挤掉，排查时注意。
+- **容量是全局共享的**（100 条 / 1 MB，各类混算）：某一类刷得很猛会把别的类挤掉，排查时注意。删了字符串截短之后每条 response 完整保留，单条体积变大（典型 5–10 KB），1 MB 大约 100 条上下——跟 MAX_LOG_ENTRIES 同档，先到先丢的保护仍然成立。
 - **`exposeLogDetail`（记录完整内容）必须复现前开**：它管的是"抓取时存不存完整"，不是导出时才展开。中途打开只对**之后**抓的生效，已经抓下来的折叠版还原不了（原文没存过）。这是用空间换的，符合"大多数时候不需要那堆历史"的设计取舍。
 - **存储按分支隔离**：切到别的分支构建，之前的开关状态 / 日志不会带过来，是预期行为。
 - **master 上看不到面板是正常的**，要么切开发分支，要么 `VITE_SHOW_BUILD_BADGE=1`。
 - **行为开关默认值一律 `false`、捕获类默认不勾**：dev 开关是"出问题时手动打开来隔离变量"的，默认不能改变正常行为。
+
+---
+
+## 十一、TODO：还没接入 devDebug 的日志支线
+
+`makeDebugLogger` 已经把 P1 等价的错误支线接进来了（safeApi 重试、InstantPush HTTP failure / fetch threw / saveOutboundSession、ActiveMsg post-processing / saveMessage / requeue lost / flushInboxToChat、amsg multipart expired）。下面这些还没接，价值递减或工程量大，**单点踩坑时再换成 `log.warn(...)` 即可**（每条改 1 行）：
+
+### P2 — 价值递减的前端支线
+
+| 文件 | 行 | 标签 | 干嘛 |
+|------|----|------|------|
+| `utils/instantPushClient.ts` | — | （已无遗漏） | — |
+| `utils/activeMsgRuntime.ts` | 166 | `[ActiveMsg] claimReasoning failed` | reasoning 兜底失败 |
+| `utils/activeMsgRuntime.ts` | 183 | `[ActiveMsg] restore xhs session notes failed` | xhs note 恢复失败 |
+| `utils/activeMsgRuntime.ts` | 237 | `[push:toast]` | 通知文案 |
+| `utils/activeMsgRuntime.ts` | 346 | `[DevDebug] instant-push LLM log failed` | **自身的元错误，别接！会绕死或加重 bug** |
+| `utils/activeMsgRuntime.ts` | 385 / 387 / 390 | `[push:memory-palace]` 几条 | 记忆宫殿 stage / 异常 |
+| `utils/activeMsgRuntime.ts` | 445 | `[flush:emotion_update] apply failed` | 情绪更新落库失败 |
+| `utils/activeMsgRuntime.ts` | 569 | `[instant-push] runPendingToolCalls failed` | 工具调用待办失败 |
+| `utils/activeMsgRuntime.ts` | 604 | `[ActiveMsg] backfill reasoning failed` | reasoning 回填失败 |
+
+> 接的姿势就是：模块顶 `const log = makeDebugLogger('instant-push', '<Tag>')`（已有就复用），然后 `console.warn('[Tag] event', ...x)` 换成 `log.warn('event', ...x)`。
+
+### SW 端（Service Worker context，工程量大）
+
+SW 跑在自己的 context，没法直接访问 page 的 `localStorage` / `appendDevDebugLog`。要接 devDebug 得走一条新通道：
+
+1. SW 端攒一份 trace ring buffer（已有 `[InstantTrace:SW]` 在 `worker/sw-keep-alive.ts`）
+2. page 端解锁面板时，向所有 SW client `postMessage({ type: 'GET_DEBUG_TRACE' })` 拉一份
+3. page 端收到 SW 回包 → 写进 devDebug 的 `instant-push` 类目
+
+涉及范围（grep 出来的 SW 端日志，先列着）：
+
+| 文件 | 行 | 标签 |
+|------|----|------|
+| `worker/sw-keep-alive.ts` | 107 | `[InstantTrace:SW]` |
+| `worker/sw-keep-alive.ts` | 486 | `[amsg] clearReasoningBuffer before tool_request failed` |
+| `worker/sw-keep-alive.ts` | 531 | `[amsg] tool_request notification failed` |
+| `worker/sw-keep-alive.ts` | 579 / 589 | `[amsg] blob fetch ...` |
+| `worker/sw-keep-alive.ts` | 632 | `[amsg] error push` |
+| `worker/sw-keep-alive.ts` | 642 | `[amsg] unknown messageKind, falling back to content` |
+| `public/sw-keep-alive.js` | 234 / 240 / 436 / 449 / 509 / 539 / 551 | `[rei-standard-amsg-sw] ...` 系列 |
+| `public/sw-keep-alive.js` | 689 / 739 / 854 / 881 / 891 | `RESTORE ERROR` |
+| `public/sw-keep-alive.js` | 1308 | `[InstantTrace:SW]`（构建产物里也叫这名） |
+
+> **建议路径**：等真的有 SW 端 bug 需要远端排障时再做（开发本地 SW 在 DevTools 单独面板就能看，价值不大）。做的时候在 `utils/swVersion.ts` 旁边新增 `utils/swTrace.ts` 包通信协议。

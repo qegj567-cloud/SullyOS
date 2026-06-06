@@ -23,6 +23,8 @@ let initialized = false;
 const INSTANT_TRACE_LOG_KEY = 'instant_push_trace_log_v1';
 const INSTANT_TRACE_LOG_LIMIT = 200;
 
+// 三写：console.info + 无条件 localStorage ring + 用户勾控的 devDebug。
+// 参见 instantPushClient.instantTrace 的注释，两边设计一致。
 function activeMsgTrace(event: string, details: Record<string, unknown> = {}): void {
   const entry = {
     ts: new Date().toISOString(),

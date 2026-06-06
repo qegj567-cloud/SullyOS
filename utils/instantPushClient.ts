@@ -2,8 +2,6 @@ import { InstantPushConfig, APIConfig, type InstantOversizeTransport } from '../
 import { loadPushVapid, isPushVapidReady } from './pushVapid';
 import { ActiveMsgStore } from './activeMsgStore';
 import { appendDevDebugInstantPushLog, appendDevDebugLog, makeDebugLogger } from './devDebug';
-
-const log = makeDebugLogger('instant-push', 'InstantPush');
 import {
   SUBSCRIBE_SETTLE_MS,
   bytesToB64u,
@@ -12,6 +10,8 @@ import {
 } from './pushSubscribeShared';
 import { ReiClient } from '@rei-standard/amsg-client';
 import { INSTANT_WORKER_VERSION } from './instantWorkerVersion';
+
+const log = makeDebugLogger('instant-push', 'InstantPush');
 
 export const INSTANT_PUSH_CONFIG_KEY = 'instant_push_config_v1';
 
@@ -739,6 +739,12 @@ const SSE_FLUSH_GRACE_MS = 8_000;
 const INSTANT_TRACE_LOG_KEY = 'instant_push_trace_log_v1';
 const INSTANT_TRACE_LOG_LIMIT = 200;
 
+// 三写说明（故意不用 makeDebugLogger，因为 trace 跟普通 logger 的语义不一样）：
+//   1) console.info → F12 看实时通道事件
+//   2) localStorage ring buffer (instant_push_trace_log_v1, 200 条上限)
+//      → 无条件抓的"通道自带 debug ring"，开发者随时可 localStorage.getItem 查
+//   3) appendDevDebugLog → 用户勾了 IP 才录的"可控录制"，进复制 / 下载导出
+// ring 跟 devDebug 的区别就是「无条件 vs 用户可控」，两套并存是有意的。
 function instantTrace(
   sessionId: string,
   event: string,
@@ -761,8 +767,7 @@ function instantTrace(
     const next = Array.isArray(list) ? [...list, entry].slice(-INSTANT_TRACE_LOG_LIMIT) : [entry];
     localStorage.setItem(INSTANT_TRACE_LOG_KEY, JSON.stringify(next));
   } catch { /* ignore */ }
-  // 也挂进 devDebug 的 instant-push 类目：勾了 IP 后，trace 跟 LLM 交换日志一起被
-  // 复制 / 下载导出。gate 由 isCaptureEnabled('instant-push') 自动管，未勾时零成本。
+  // gate 由 isCaptureEnabled('instant-push') 在 appendDevDebugLog 内部自动管，未勾时零成本。
   appendDevDebugLog('instant-push', { label: `trace:${event}`, data: entry });
 }
 
