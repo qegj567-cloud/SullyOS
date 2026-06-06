@@ -21,6 +21,11 @@ const genLocalId = (p: string) => `${p}_${Date.now().toString(36)}_${Math.random
 // 顶部安全区避让：全屏浮层（fixed inset-0）会越过外壳的 safe-area padding 直达屏幕顶端，
 // 需自行避开刘海 + 状态栏（系统时间/电量条约 2rem 高），否则退出键会和 iOS 顶部打架。
 const VR_OVERLAY_TOP = 'calc(env(safe-area-inset-top) + 2rem)';
+// 底部 home indicator 避让：同理，全屏浮层（fixed inset-0）越过外壳的 pb-safe 直达屏幕物理底边，
+// 底部需自行让出安全区，否则按钮/输入框/正文会落到 iOS 全屏 PWA 底部的小黑条后面。
+const VR_SAFE_BOTTOM = 'env(safe-area-inset-bottom)';
+// 底部 sheet（rounded-t 贴底）：内容内边距叠加安全区，把操作区从小黑条上顶起来（遮罩层仍铺满）。
+const vrSheetPad = (base: string) => `calc(${base} + ${VR_SAFE_BOTTOM})`;
 
 // ── 邮局寄信「日额度」：纯前端软计数，给后端减负（不追求精准，清数据会重置）──
 // 从首封开始计时的滚动窗口，窗口内封顶、过期自动归零。两个额度各自独立。
@@ -548,7 +553,7 @@ const ActionSheet: React.FC<{
     if (!open) return null;
     return (
         <div className="fixed inset-0 z-[300] flex items-end justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
-            <div className="w-full max-w-md p-3" onClick={e => e.stopPropagation()}>
+            <div className="w-full max-w-md p-3" style={{ paddingBottom: vrSheetPad('0.75rem') }} onClick={e => e.stopPropagation()}>
                 <div className="rounded-2xl overflow-hidden" style={{ background: 'linear-gradient(180deg,#1b1830,#120f22)', border: '1px solid rgba(255,255,255,.12)' }}>
                     {title && <div className="px-4 py-2.5 text-[11px] text-white/45 text-center border-b border-white/8 whitespace-pre-wrap leading-snug">{title}</div>}
                     {actions.map((a, i) => (
@@ -721,7 +726,7 @@ const HelpModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         </div>
     );
     return (
-        <div className="fixed inset-0 z-[80] flex flex-col" style={{ background: 'linear-gradient(180deg,#0c0a1c 0%,#080612 100%)', paddingTop: VR_OVERLAY_TOP }}>
+        <div className="fixed inset-0 z-[80] flex flex-col" style={{ background: 'linear-gradient(180deg,#0c0a1c 0%,#080612 100%)', paddingTop: VR_OVERLAY_TOP, paddingBottom: VR_SAFE_BOTTOM }}>
             <div className="flex items-center gap-2.5 px-5 pt-4 pb-3 shrink-0 border-b border-white/8">
                 <span className="text-[15px] tracking-[0.2em] text-white/95" style={{ fontFamily: `'Noto Serif SC',serif` }}>彼方 · 玩法说明</span>
                 <button onClick={onClose} className="ml-auto p-1.5 rounded-full text-white/60 active:bg-white/10"><X size={19} /></button>
@@ -1480,7 +1485,7 @@ const RoomScene: React.FC<{
     }, []);
 
     return (
-        <div className="fixed inset-0 z-50 flex flex-col" style={{ paddingTop: VR_OVERLAY_TOP, background: '#05060d' }}>
+        <div className="fixed inset-0 z-50 flex flex-col" style={{ paddingTop: VR_OVERLAY_TOP, paddingBottom: VR_SAFE_BOTTOM, background: '#05060d' }}>
             <VRStyleTag />
             <div className="relative flex-1 overflow-hidden">
                 <RoomBackground roomId={roomId} />
@@ -1631,7 +1636,7 @@ const RoomScene: React.FC<{
             {/* 角色活动详情 —— 盖在 chibi 之上（zIndex 高于任何 chibi） */}
             {detail && (
                 <div className="absolute inset-0 flex items-end bg-black/45" style={{ zIndex: 200 }} onClick={() => setDetail(null)}>
-                    <div className="w-full rounded-t-2xl p-4 text-white" style={{ background: 'linear-gradient(180deg,#1a2236 0%,#0d1119 100%)' }} onClick={e => e.stopPropagation()}>
+                    <div className="w-full rounded-t-2xl p-4 text-white" style={{ background: 'linear-gradient(180deg,#1a2236 0%,#0d1119 100%)', paddingBottom: vrSheetPad('1rem') }} onClick={e => e.stopPropagation()}>
                         <div className="flex items-center gap-2 mb-2">
                             {detail.avatar ? <img src={detail.avatar} className="h-9 w-9 rounded-full object-cover" alt="" /> : <div className="h-9 w-9 rounded-full bg-indigo-400/40" />}
                             <span className="font-bold">{detail.name}</span>
@@ -1844,7 +1849,7 @@ const ReaderModal: React.FC<{ novel: VRWorldNovel; characters: CharacterProfile[
         : novel.segments.slice(winStart, winEnd);
 
     return (
-        <div className="fixed inset-0 z-50 flex flex-col" style={{ background: theme.bg, paddingTop: VR_OVERLAY_TOP }}>
+        <div className="fixed inset-0 z-50 flex flex-col" style={{ background: theme.bg, paddingTop: VR_OVERLAY_TOP, paddingBottom: VR_SAFE_BOTTOM }}>
             {/* 顶栏 */}
             <div className="flex items-center gap-2 px-4 pt-3 pb-2 shrink-0" style={{ borderBottom: `1px solid ${theme.accent}22` }}>
                 <button onClick={onClose} className="p-1.5 -ml-1.5 rounded-full active:bg-black/5" style={{ color: theme.text }}><X size={20} weight="bold" /></button>
@@ -2007,7 +2012,7 @@ const UploadModal: React.FC<{
 
     return (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={busy ? undefined : onClose}>
-            <div className="w-full max-w-md rounded-t-2xl p-4 max-h-[88vh] overflow-y-auto vr-reader-scroll" style={{ background: 'linear-gradient(180deg,#161c2e 0%,#0c1019 100%)' }} onClick={e => e.stopPropagation()}>
+            <div className="w-full max-w-md rounded-t-2xl p-4 max-h-[88vh] overflow-y-auto vr-reader-scroll" style={{ background: 'linear-gradient(180deg,#161c2e 0%,#0c1019 100%)', paddingBottom: vrSheetPad('1rem') }} onClick={e => e.stopPropagation()}>
                 <div className="flex items-center mb-3">
                     <span className="text-[15px] font-bold text-white">上传小说</span>
                     {!busy && <button onClick={onClose} className="ml-auto p-1 text-indigo-300/60"><X size={18} /></button>}
@@ -2097,7 +2102,7 @@ const ChibiEditor: React.FC<{
 
     if (creating) {
         return (
-            <div className="fixed inset-0 z-[60] flex flex-col bg-black" style={{ paddingTop: VR_OVERLAY_TOP }}>
+            <div className="fixed inset-0 z-[60] flex flex-col bg-black" style={{ paddingTop: VR_OVERLAY_TOP, paddingBottom: VR_SAFE_BOTTOM }}>
                 <div className="flex items-center gap-2 px-4 py-2 shrink-0 text-white" style={{ background: 'linear-gradient(180deg,#161c2e 0%,#0c1019 100%)' }}>
                     <button onClick={() => existing?.img ? setCreating(false) : onClose()} className="p-1.5 -ml-1.5 rounded-full active:bg-white/10"><CaretLeft size={20} weight="bold" /></button>
                     <span className="text-[14px] font-bold">捏 {char.name} 的小人</span>
@@ -2114,7 +2119,7 @@ const ChibiEditor: React.FC<{
     return (
         <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/55" onClick={onClose}>
             <VRStyleTag />
-            <div className="w-full max-w-md rounded-t-2xl p-4" style={{ background: 'linear-gradient(180deg,#161c2e 0%,#0c1019 100%)' }} onClick={e => e.stopPropagation()}>
+            <div className="w-full max-w-md rounded-t-2xl p-4" style={{ background: 'linear-gradient(180deg,#161c2e 0%,#0c1019 100%)', paddingBottom: vrSheetPad('1rem') }} onClick={e => e.stopPropagation()}>
                 <div className="flex items-center mb-1">
                     <span className="text-[15px] font-bold text-white">{char.name} 的彼方形象</span>
                     <button onClick={onClose} className="ml-auto p-1 text-indigo-300/60"><X size={18} /></button>
