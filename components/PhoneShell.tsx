@@ -573,6 +573,11 @@ const PhoneShell: React.FC = () => {
     }
   };
 
+  // 安全区策略（方案 B）：彼方/聊天/群聊/桌面这几个 App 已全屏铺底、自己给控件让位，外壳不再加 padding；
+  // 其余尚未迁移、靠外壳兜底的 App，仍由外壳用单一来源变量 --safe-* 统一让出安全区，避免顶栏怼进状态栏。
+  // TODO(safe-area-A): 把下列「未迁移」App 逐个改为自理安全区后，移除外壳这层兜底，实现全屏无色条。
+  const shellHandlesSafeArea = ![AppID.Launcher, AppID.VRWorld, AppID.Chat, AppID.GroupChat].includes(activeApp);
+
   return (
     <div className="relative w-full h-full overflow-hidden bg-gradient-to-br from-pink-200 via-purple-200 to-indigo-200 text-slate-900 font-sans select-none overscroll-none">
        {/* Optimized Background Layer */}
@@ -590,9 +595,12 @@ const PhoneShell: React.FC = () => {
        
        <div className={`absolute inset-0 transition-all duration-500 ${activeApp === AppID.Launcher ? 'bg-transparent' : 'bg-white/50 backdrop-blur-3xl'}`} />
        
-       {/* Full-screen apps render into the physical viewport; individual app chrome handles safe-area spacing.
-          Keeping safe-area padding here exposes the shell backdrop as hard top/bottom bars. */}
-      <div className="absolute inset-0 z-10 w-full h-full overflow-hidden bg-transparent overscroll-none flex flex-col">
+       {/* 外壳安全区：自理安全区的 App 全屏铺底、自己让位，外壳不加 padding（否则双重留白或露出外壳底色成硬色条）；
+          未迁移 App 暂由外壳用单一来源变量 --safe-* 兜底，保证内容不被状态栏/home 条裁切。 */}
+      <div
+        className="absolute inset-0 z-10 w-full h-full overflow-hidden bg-transparent overscroll-none flex flex-col"
+        style={shellHandlesSafeArea ? { paddingTop: 'var(--safe-top)', paddingBottom: 'var(--safe-bottom)' } : undefined}
+      >
           {/* App Container */}
           <div className="flex-1 relative overflow-hidden" style={{ contain: useIOSStandaloneLayout ? undefined : 'layout style paint' }}>
             <AppErrorBoundary onCloseApp={closeApp} resetKey={`${activeApp}:${activeCharacterId || 'none'}`}>

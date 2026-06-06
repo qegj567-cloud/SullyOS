@@ -1,13 +1,21 @@
 let hasInstalledIOSStandaloneWorkaround = false;
 let stableStandaloneHeight = 0;
 // 安全区只在旋转 / 窗口尺寸变化时才变，缓存探测结果，避免 visualViewport 滚动、聚焦时反复同步重排。
-let cachedSafeInsets: { top: number; bottom: number } | null = null;
+// 上下各自独立缓存：某边读到非 0 才锁定；iOS 启动早期某边可能瞬时为 0，此时该边不锁、下次继续探测，
+// 避免「一边真值、一边瞬时 0」被整体锁死（否则 home 条避让会失效，直到旋转/尺寸变化才恢复）。
+let cachedTopInset: number | null = null;
+let cachedBottomInset: number | null = null;
 
 // 用一个隐藏探针同时读取上下安全区：单次插入 + 单次 getComputedStyle（一次 reflow）。
 // env() 在本项目 iOS 全屏 PWA 下偶发返回 0，故需 JS 探测兜底。
 const readSafeAreaInsets = (): { top: number; bottom: number } => {
-    if (typeof document === 'undefined' || !document.body) return { top: 0, bottom: 0 };
-    if (cachedSafeInsets) return cachedSafeInsets;
+    if (typeof document === 'undefined' || !document.body) {
+        return { top: cachedTopInset ?? 0, bottom: cachedBottomInset ?? 0 };
+    }
+    // 两边都已锁定有效值，直接用缓存，不再插探针重排。
+    if (cachedTopInset !== null && cachedBottomInset !== null) {
+        return { top: cachedTopInset, bottom: cachedBottomInset };
+    }
 
     const probe = document.createElement('div');
     probe.style.position = 'fixed';
@@ -24,11 +32,11 @@ const readSafeAreaInsets = (): { top: number; bottom: number } => {
 
     document.body.removeChild(probe);
 
-    const insets = { top, bottom };
-    // 只缓存有效（非全 0）读数：iOS 启动早期 env 可能瞬时为 0，缓存它会把安全区锁死成 0，
-    // 反而把刚修好的「底部贴 home 条」带回来；此时不缓存，下次事件继续探测，读到真值再锁定。
-    if (top > 0 || bottom > 0) cachedSafeInsets = insets;
-    return insets;
+    // 各边只在读到非 0 时锁定；仍为 0 的边保持未缓存，下次事件继续探测，读到真值再锁。
+    if (cachedTopInset === null && top > 0) cachedTopInset = top;
+    if (cachedBottomInset === null && bottom > 0) cachedBottomInset = bottom;
+
+    return { top: cachedTopInset ?? top, bottom: cachedBottomInset ?? bottom };
 };
 
 export const isIOSDevice = (): boolean => {
@@ -103,7 +111,8 @@ export const installIOSStandaloneWorkaround = () => {
 
     // 只有旋转 / 窗口尺寸变化才真的改变安全区：让缓存失效后重新探测（滚动、聚焦走缓存，不再重排）。
     const handleSafeAreaChange = () => {
-        cachedSafeInsets = null;
+        cachedTopInset = null;
+        cachedBottomInset = null;
         setViewportVars();
     };
 
