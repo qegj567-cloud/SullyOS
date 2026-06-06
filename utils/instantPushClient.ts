@@ -1,7 +1,9 @@
 import { InstantPushConfig, APIConfig, type InstantOversizeTransport } from '../types';
 import { loadPushVapid, isPushVapidReady } from './pushVapid';
 import { ActiveMsgStore } from './activeMsgStore';
-import { appendDevDebugInstantPushLog, appendDevDebugLog } from './devDebug';
+import { appendDevDebugInstantPushLog, appendDevDebugLog, makeDebugLogger } from './devDebug';
+
+const log = makeDebugLogger('instant-push', 'InstantPush');
 import {
   SUBSCRIBE_SETTLE_MS,
   bytesToB64u,
@@ -657,7 +659,7 @@ export async function sendInstantPush(
       const cfRay = res.headers.get('cf-ray') || undefined;
       const errMsg = parsed?.error?.message ?? `HTTP ${res.status}${res.statusText ? ' ' + res.statusText : ''}`;
       // 完整 URL 等敏感字段不进弹窗, 但写到 console 给本地开发者
-      console.error('[InstantPush] HTTP failure', { url, status: res.status, statusText: res.statusText, body: rawText });
+      log.error('HTTP failure', { url, status: res.status, statusText: res.statusText, body: rawText });
       return {
         ok: false,
         error: errMsg,
@@ -692,7 +694,7 @@ export async function sendInstantPush(
     };
   } catch (e) {
     const err = e as { name?: string; message?: string } | null;
-    console.error('[InstantPush] fetch threw', { url, err });
+    log.error('fetch threw', { url, err });
     return {
       ok: false,
       error: err?.message ?? String(e),
@@ -951,7 +953,7 @@ export async function sendInstantPushAndAwaitReply(
     });
   } catch (e) {
     // outbound 写入失败不阻塞 push 主路径; Round 2 worker 升级前这条数据没人读
-    console.warn('[InstantPush] saveOutboundSession failed (non-fatal)', sessionId, e);
+    log.warn('saveOutboundSession failed (non-fatal)', { sessionId, error: e });
   }
 
   const sendStartedAt = Date.now();

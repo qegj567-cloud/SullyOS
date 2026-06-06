@@ -12,7 +12,12 @@ import { applyEmotionEvalRaw } from './emotionApply';
 import { processNewMessages } from './memoryPalace/pipeline';
 import { loadMusicHooks } from '../context/MusicContext';
 import type { XhsNote } from './realtimeContext';
-import { appendDevDebugInstantPushLog, appendDevDebugLog, isCaptureEnabled } from './devDebug';
+import { appendDevDebugInstantPushLog, appendDevDebugLog, isCaptureEnabled, makeDebugLogger } from './devDebug';
+
+// 同一个 category，两个 tag——保持 console 里现有的 [ActiveMsg] / [amsg] 标签，
+// 方便用户 / 文档里 grep 历史报错信息。两条 tag 都归 instant-push 一类。
+const log = makeDebugLogger('instant-push', 'ActiveMsg');
+const logAmsg = makeDebugLogger('instant-push', 'amsg');
 
 let initialized = false;
 const INSTANT_TRACE_LOG_KEY = 'instant_push_trace_log_v1';
@@ -478,7 +483,7 @@ const flushInboxToChatImpl = async () => {
         await processInboxMessageWithPostProcessing(message);
         routed = true;
       } catch (postErr) {
-        console.warn('[ActiveMsg] post-processing failed, falling back to raw save', message.messageId, postErr);
+        log.warn('post-processing failed, falling back to raw save', { messageId: message.messageId, error: postErr });
         // 落库失败: 有可能 post-processing 中途已经写了部分 chunk 进 DB, 这里再 raw save 一遍
         // 会重复; 但中途失败时通常是初始化阶段就挂了 (char 找不到 / DB 故障), 部分写入概率低。
         // 为了不丢消息, 仍尝试 raw save; 若它也失败, 会进下面的 catch 把消息 requeue。
@@ -510,12 +515,12 @@ const flushInboxToChatImpl = async () => {
           },
         });
       } catch (e) {
-        console.warn('[ActiveMsg] saveMessage failed, requeue to inbox', message.messageId, e);
+        log.warn('saveMessage failed, requeue to inbox', { messageId: message.messageId, error: e });
         try {
           await ActiveMsgStore.saveInboxMessage(message);
         } catch (reputErr) {
           // re-put 也挂了 (大概率同一根因, 比如 quota / DB 关停), 没救了, 至少留个日志
-          console.error('[ActiveMsg] requeue failed, message lost', message.messageId, reputErr);
+          log.error('requeue failed, message lost', { messageId: message.messageId, error: reputErr });
         }
         // requeue 后跳过这条消息的 dispatchEvent —— UI 不该误以为收到了
         continue;
@@ -554,7 +559,7 @@ const flushInboxToChat = (): Promise<void> => {
     try {
       await flushInboxToChatImpl();
     } catch (e) {
-      console.warn('[ActiveMsg] flushInboxToChat failed', e);
+      log.warn('flushInboxToChat failed', { error: e });
     }
   });
   flushChain = next;
@@ -653,7 +658,7 @@ export const ActiveMsgRuntime = {
           const payload = event.data?.payload;
 
           if (subEvent === 'rei-amsg-multipart-expired') {
-            console.warn('[amsg] multipart expired', payload);
+            logAmsg.warn('multipart expired', payload);
             window.dispatchEvent(new CustomEvent('active-msg-error', {
               detail: { message: '消息接收不完整，部分内容可能丢失' }
             }));

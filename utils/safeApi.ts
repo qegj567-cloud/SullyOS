@@ -6,7 +6,9 @@
  * instead of JSON responses.
  */
 
-import { appendDevDebugApiLog } from './devDebug';
+import { appendDevDebugApiLog, makeDebugLogger } from './devDebug';
+
+const log = makeDebugLogger('api', 'SafeAPI');
 
 function isChatCompletionUrl(url: string): boolean {
     return url.includes('/chat/completions');
@@ -163,7 +165,7 @@ export async function safeFetchJson(
                 // For retryable status codes, retry before giving up
                 if (retryableStatuses.has(response.status) && attempt < maxRetries) {
                     const delay = Math.pow(2, attempt) * 1000; // 1s, 2s
-                    console.warn(`[SafeAPI] HTTP ${response.status}, retry ${attempt + 1}/${maxRetries} in ${delay}ms...`);
+                    log.warn('HTTP retry', { status: response.status, attempt: attempt + 1, maxRetries, delay });
                     await new Promise(r => setTimeout(r, delay));
                     continue;
                 }
@@ -195,7 +197,7 @@ export async function safeFetchJson(
             // Network errors (fetch itself failed) are retryable
             if ((e.name === 'TypeError' || isAbort) && attempt < maxRetries) {
                 const delay = Math.pow(2, attempt) * 1000;
-                console.warn(`[SafeAPI] ${isAbort ? 'Timeout/Abort' : 'Network error'}, retry ${attempt + 1}/${maxRetries} in ${delay}ms:`, e.message);
+                log.warn(isAbort ? 'Timeout/Abort retry' : 'Network error retry', { attempt: attempt + 1, maxRetries, delay, message: e.message });
                 await new Promise(r => setTimeout(r, delay));
                 continue;
             }
@@ -203,7 +205,7 @@ export async function safeFetchJson(
             // For HTML/parse errors on non-ok responses during retry, continue
             if (attempt < maxRetries && e.message?.includes('API返回了HTML')) {
                 const delay = Math.pow(2, attempt) * 1000;
-                console.warn(`[SafeAPI] HTML response, retry ${attempt + 1}/${maxRetries} in ${delay}ms`);
+                log.warn('HTML response retry', { attempt: attempt + 1, maxRetries, delay });
                 await new Promise(r => setTimeout(r, delay));
                 continue;
             }

@@ -444,6 +444,44 @@ export function appendDevDebugInstantPushLog(input: DevDebugHttpLogInput): void 
     appendDevDebugHttpLog('instant-push', input);
 }
 
+export interface DevDebugLogger {
+    log(event: string, ...details: unknown[]): void;
+    info(event: string, ...details: unknown[]): void;
+    warn(event: string, ...details: unknown[]): void;
+    error(event: string, ...details: unknown[]): void;
+}
+
+/**
+ * 模块级 logger 工厂：把一个模块跟 (category, tagPrefix) 绑定，业务代码用 `log.warn(event, ...)`
+ * 替代 `console.warn('[Tag] event', ...)`。内部双写：
+ *   1) `console[level]('[tagPrefix] event', ...details)`——F12 看到的跟以前完全一样
+ *   2) `appendDevDebugLog(category, { label: 'level:Tag event', data: details })`——勾了对应类
+ *      就被复制 / 下载导出。
+ *
+ * gate 由 isCaptureEnabled 自动管，未勾时 step 2 是空操作、零成本。每文件顶部建一次即可，
+ * 业务代码新增日志只用一行 `log.warn(...)`，自动既上 F12 又进 devDebug——免得每条 console
+ * 调用旁边手抄一行 appendDevDebugLog 容易漏。
+ */
+export function makeDebugLogger(category: DevDebugCaptureCategory, tagPrefix: string): DevDebugLogger {
+    const make = (level: 'log' | 'info' | 'warn' | 'error') =>
+        (event: string, ...details: unknown[]): void => {
+            try {
+                // eslint-disable-next-line no-console -- 故意保留 F12 输出
+                console[level](`[${tagPrefix}] ${event}`, ...details);
+            } catch { /* console 不可用就放过 */ }
+            appendDevDebugLog(category, {
+                label: `${level}:${tagPrefix} ${event}`,
+                data: details.length === 0 ? undefined : details.length === 1 ? details[0] : details,
+            });
+        };
+    return {
+        log: make('log'),
+        info: make('info'),
+        warn: make('warn'),
+        error: make('error'),
+    };
+}
+
 /**
  * 把捕获日志格式化成可复制 / 可下载的 JSON 文本；传 category 只导该类，无日志返回空串。
  * 折叠在写入层就做完了，这里直接吐存的内容；带 `collapsed` 的条目即抓取时没开 exposeLogDetail。
