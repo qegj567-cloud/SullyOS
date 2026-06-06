@@ -23,7 +23,9 @@ const genLocalId = (p: string) => `${p}_${Date.now().toString(36)}_${Math.random
 // 关键：本项目 iOS 全屏 PWA 下原生 env(safe-area-inset-*) 可能返回 0，
 // 故与 JS 探测出的 --standalone-safe-area-*（见 utils/iosStandalone.ts）取较大者兜底，
 // 与 Launcher dock 写法保持一致。
-const VR_SAFE_TOP = 'max(env(safe-area-inset-top, 0px), var(--standalone-safe-area-top, 0px))';
+// 顶部再叠一个 44px 静态兜底：DevTools/桌面/非 standalone 下 env 与探测值都为 0 时，
+// 仍让返回按钮落在状态栏下方（与 MemoryPalaceApp 的 max(40px, …) 同思路）。
+const VR_SAFE_TOP = 'max(env(safe-area-inset-top, 0px), var(--standalone-safe-area-top, 0px), 44px)';
 const VR_SAFE_BOTTOM = 'max(env(safe-area-inset-bottom, 0px), var(--standalone-safe-area-bottom, 0px))';
 const vrTopPad = (base: string) => `calc(${base} + ${VR_SAFE_TOP})`;
 // 房间内浮层（留言墙/邮局/听歌）从顶栏（安全区 + 返回按钮行）下方开始。
