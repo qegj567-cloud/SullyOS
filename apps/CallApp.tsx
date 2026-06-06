@@ -694,7 +694,7 @@ const CallApp: React.FC = () => {
         temperature: 0.85,
         stream: false,
       }),
-    });
+    }, 2, 0, { appName: '电话', charId: selectedChar?.id, charName: selectedChar?.name, purpose: '语音通话' });
     const assistantText = chatData?.choices?.[0]?.message?.content?.trim() || '';
     if (!assistantText) throw new Error('文本接口返回为空');
     return assistantText;

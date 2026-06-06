@@ -1850,15 +1850,25 @@ export interface GameActionOption {
 export interface GameLog {
     id: string;
     role: 'gm' | 'player' | 'character' | 'system';
-    speakerName?: string; 
+    speakerName?: string;
     content: string;
     timestamp: number;
     diceRoll?: {
         result: number;
         max: number;
-        check?: string; 
+        check?: string;
         success?: boolean;
     };
+    // 自动总结后，被归档折叠的日志会标记为 archived（不删除，UI 灰显折叠）
+    archived?: boolean;
+}
+
+// 自动总结产出的「前情提要」存档，像写小说一样记录起因经过结果与人物关系变化
+export interface GameSummary {
+    id: string;
+    content: string;       // 小说式总结（起因/经过/结果 + 人物关系变化）
+    logCount: number;      // 本段总结覆盖了多少条日志
+    createdAt: number;
 }
 
 export interface GameSession {
@@ -1877,6 +1887,7 @@ export interface GameSession {
     };
     sanityLocked?: boolean;
     suggestedActions?: GameActionOption[];
+    summaries?: GameSummary[];   // 自动总结归档的前情提要
     createdAt: number;
     lastPlayedAt: number;
 }

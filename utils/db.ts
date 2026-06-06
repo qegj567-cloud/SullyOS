@@ -12,7 +12,7 @@ import {
 import { exportPostOfficeLocal, importPostOfficeLocal } from './vrWorld/postOffice';
 
 const DB_NAME = 'AetherOS_Data';
-const DB_VERSION = 57; // Bumped: v57 add 'vr_settings' store (彼方独立 API + 调用记录)
+const DB_VERSION = 58; // Bumped: v58 add 'api_call_log' store (全局 API 调用记录, 保留近 5 天)
 
 const STORE_CHARACTERS = 'characters';
 const STORE_MESSAGES = 'messages';
@@ -55,6 +55,11 @@ const STORE_VR_MUSIC = 'vr_music';                // 听歌房共享状态（单
 const STORE_VR_GUESTBOOK = 'vr_guestbook';        // 留言簿共享版聊墙（单例 messages）
 const STORE_VR_LETTERS = 'vr_letters';            // 邮局信件（本地存档 + 待寄出/待回复队列）
 const STORE_VR_SETTINGS = 'vr_settings';          // 彼方设置单例：独立 API（id='api'）+ 调用记录（id='apilog'）
+const STORE_API_CALL_LOG = 'api_call_log';        // 全局 API 调用记录单例（id='log'，保留近 5 天）
+
+// API 调用记录：保留近 5 天，超期丢弃；再加一个硬上限防止异常情况撑爆
+const API_CALL_LOG_MAX_AGE_MS = 5 * 24 * 60 * 60 * 1000;
+const API_CALL_LOG_MAX_ENTRIES = 2000;
 
 export interface ScheduledMessage {
     id: string;
@@ -225,6 +230,7 @@ export const openDB = (): Promise<IDBDatabase> => {
           ltStore.createIndex('box', 'box', { unique: false });
       }
       createStore(STORE_VR_SETTINGS, { keyPath: 'id' });
+      createStore(STORE_API_CALL_LOG, { keyPath: 'id' });
 
       createStore(STORE_BANK_TX, { keyPath: 'id' });
       createStore(STORE_BANK_DATA, { keyPath: 'id' });
@@ -1713,6 +1719,49 @@ export const DB = {
       tx.objectStore(STORE_VR_SETTINGS).put({ id: 'apilog', entries: [] });
   },
 
+  // --- 全局 API 调用记录（api_call_log 单例 store，id='log'）---
+  // 只保留近 5 天的记录，超期在写入时丢弃。读出时再过滤一次兜底。
+  getApiCallLog: async (): Promise<any[]> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_API_CALL_LOG)) return [];
+      return new Promise((resolve) => {
+          const tx = db.transaction(STORE_API_CALL_LOG, 'readonly');
+          const req = tx.objectStore(STORE_API_CALL_LOG).get('log');
+          req.onsuccess = () => {
+              const entries: any[] = req.result?.entries ?? [];
+              const cutoff = Date.now() - API_CALL_LOG_MAX_AGE_MS;
+              resolve(entries.filter((e) => (e?.timestamp ?? 0) > cutoff));
+          };
+          req.onerror = () => resolve([]);
+      });
+  },
+
+  appendApiCallLog: async (entry: any): Promise<void> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_API_CALL_LOG)) return;
+      const read = (): Promise<any[]> => new Promise((resolve) => {
+          const tx = db.transaction(STORE_API_CALL_LOG, 'readonly');
+          const req = tx.objectStore(STORE_API_CALL_LOG).get('log');
+          req.onsuccess = () => resolve(req.result?.entries ?? []);
+          req.onerror = () => resolve([]);
+      });
+      const cur = await read();
+      cur.unshift(entry);
+      const cutoff = Date.now() - API_CALL_LOG_MAX_AGE_MS;
+      const pruned = cur
+          .filter((e) => (e?.timestamp ?? 0) > cutoff)
+          .slice(0, API_CALL_LOG_MAX_ENTRIES);
+      const tx = db.transaction(STORE_API_CALL_LOG, 'readwrite');
+      tx.objectStore(STORE_API_CALL_LOG).put({ id: 'log', entries: pruned });
+  },
+
+  clearApiCallLog: async (): Promise<void> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_API_CALL_LOG)) return;
+      const tx = db.transaction(STORE_API_CALL_LOG, 'readwrite');
+      tx.objectStore(STORE_API_CALL_LOG).put({ id: 'log', entries: [] });
+  },
+
   // 导入备份用：直接写回一条 vr_settings 原始记录（{id, ...}）。
   saveVRSettingRecord: async (record: any): Promise<void> => {
       if (!record || !record.id) return;
@@ -2011,7 +2060,7 @@ export const DB = {
           STORE_TRACKERS,
           STORE_TRACKER_ENTRIES,
           STORE_HOTNEWS,
-          STORE_VR_NOVELS, STORE_VR_ANNOTATIONS, STORE_CC_PARTS, STORE_VR_MUSIC, STORE_VR_GUESTBOOK, STORE_VR_LETTERS,
+          STORE_VR_NOVELS, STORE_VR_ANNOTATIONS, STORE_CC_PARTS, STORE_VR_MUSIC, STORE_VR_GUESTBOOK, STORE_VR_LETTERS, STORE_VR_SETTINGS,
           'memory_nodes', 'memory_vectors', 'memory_links', 'topic_boxes', 'anticipations', 'event_boxes',
           'memory_batches', 'pixel_home_assets', 'pixel_home_layouts'
       ].filter(name => db.objectStoreNames.contains(name));

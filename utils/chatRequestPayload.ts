@@ -217,6 +217,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
 - 多句话就输出多个<翻译>标签，一句一个
 - <翻译>标签外不要写任何文字
 - 表情包命令 [[SEND_EMOJI: ...]] 放在所有<翻译>标签外面
+- 引用命令 [[QUOTE: ...]] 也放在所有<翻译>标签外面；引用内容请原样照抄用户说过的原文（不要翻译、不要包<翻译>标签）
 
 示例（${translationConfig.sourceLang}→${translationConfig.targetLang}）：
 <翻译>

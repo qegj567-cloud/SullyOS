@@ -4,6 +4,8 @@
 
 这份文件只做一件事：**告诉你遇到某类问题该去翻哪份文档**，别在代码里瞎逛。
 
+> 包管理器统一用 **pnpm**：装依赖 `pnpm install`、跑测试 `pnpm vitest run`、跑脚本 `pnpm <script>`。别用 npm / yarn（仓库里是 `pnpm-lock.yaml`）。
+
 ## 文档地图
 
 | 主题 | 文档 | 什么时候看 |

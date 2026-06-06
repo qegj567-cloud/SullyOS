@@ -199,6 +199,21 @@ export const CreatorIframe: React.FC<CreatorIframeProps> = ({ mode, charName, pr
                     transparentDataUrl: e.data.payload.transparentDataUrl,
                     state: e.data.payload.state,
                 });
+            } else if (e.data.type === 'like520_save_custom_part' && e.data.payload?.part) {
+                // 捏人器界面内上传的自定义部件 → 落库（IndexedDB），刷新/换 app 都还在
+                const p = e.data.payload.part;
+                const part = {
+                    id: p.id, categoryKey: p.categoryKey, name: p.name,
+                    src: p.src, tintable: !!p.tintable, createdAt: Date.now(),
+                };
+                DB.saveCustomCreatorPart(part)
+                    .then(() => { extraItemsRef.current = [...extraItemsRef.current, { categoryKey: part.categoryKey, id: part.id, name: part.name, src: part.src, tintable: part.tintable }]; })
+                    .catch(() => { /* 落库失败：内存里仍可用，仅本次会话有效 */ });
+            } else if (e.data.type === 'like520_delete_custom_part' && e.data.payload?.id) {
+                const id = e.data.payload.id;
+                DB.deleteCustomCreatorPart(id)
+                    .then(() => { extraItemsRef.current = extraItemsRef.current.filter(x => x.id !== id); })
+                    .catch(() => {});
             }
         };
         window.addEventListener('message', handleMessage);

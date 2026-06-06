@@ -89,7 +89,8 @@ async function callCharAI(
                         temperature: 0.85, max_tokens: 8192, stream: false,
                         response_format: { type: 'json_object' },
                     }),
-                }
+                },
+                2, 0, { appName: '都市人生', purpose: '剧情生成' }
             );
             return data?.choices?.[0]?.message?.content?.trim() || '';
         } catch (e: any) {

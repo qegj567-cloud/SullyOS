@@ -17,6 +17,9 @@ import { BUILD_LABEL } from '../utils/buildInfo';
  * - pointer-events-none + select-none：不可点、不可选、不影响下层交互
  * - z-[2147483647]：保证盖在所有 modal / 动画 / 全屏覆盖层之上
  * - safe-area-inset：iOS PWA 底部 home indicator 区域避让
+ *
+ * 注：这是 dev / fork 专用的醒目角标。正式版（main/master）会被树摇掉，
+ * 但构建 / SW 版本仍通过 Settings 底部的 VersionInfo 低调展示，方便用户报障。
  */
 const BuildBadge: React.FC = () => {
     if (!__BUILD_BADGE_VISIBLE__) return null;

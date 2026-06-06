@@ -269,7 +269,8 @@ ${material.recentContext.map(n => `- (${n.room}, ${n.mood}): ${n.content}`).join
                     max_tokens: 8000,
                     stream: false,
                 }),
-            }
+            },
+            2, 0, { appName: '记忆宫殿', purpose: '记忆消化' }
         );
 
         const reply = data.choices?.[0]?.message?.content || '';
@@ -773,7 +774,8 @@ ${memoryContext}
                     max_tokens: 8000,
                     stream: false,
                 }),
-            }
+            },
+            2, 0, { appName: '记忆宫殿', charName, purpose: '人格审视' }
         );
 
         const reply = data.choices?.[0]?.message?.content || '';

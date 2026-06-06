@@ -180,6 +180,50 @@ export const VRScheduler = {
         handleVisibility();
     },
 
+    /**
+     * 以角色 vrState 为准重建调度。
+     *
+     * 调度表（vr_schedules / vr_last_fire）存 localStorage，**不随备份导出/导入迁移**，
+     * 而启用状态（vrState.enabled / intervalMinutes）存在角色对象里随 IndexedDB 备份走。
+     * 导入到新设备 / 新浏览器档案后，角色明明是 enabled 但调度表为空，resume() 直接
+     * 早退 → 角色永远不会自主登入。数据加载完成后调用本方法对账即可修复。
+     *
+     * - 启用但缺调度 → 补建（首火从现在起算，避免导入瞬间爆触发一堆 LLM 调用）
+     * - 间隔被改过 → 跟随最新设定
+     * - 已删除 / 已关闭的角色 → 清掉残留调度
+     */
+    reconcile(active: { charId: string; intervalMinutes: number }[]) {
+        const schedules = loadSchedules();
+        const activeIds = new Set(active.map(a => a.charId));
+        let changed = false;
+
+        for (const a of active) {
+            const clamped = Math.max(30, Math.round(a.intervalMinutes / 30) * 30);
+            const intervalMs = clamped * 60 * 1000;
+            const existing = schedules[a.charId];
+            if (!existing) {
+                schedules[a.charId] = { charId: a.charId, intervalMs };
+                if (getLastFire(a.charId) === 0) setLastFire(a.charId, Date.now());
+                changed = true;
+            } else if (existing.intervalMs !== intervalMs) {
+                existing.intervalMs = intervalMs;
+                changed = true;
+            }
+        }
+
+        for (const id of Object.keys(schedules)) {
+            if (!activeIds.has(id)) {
+                delete schedules[id];
+                removeLastFire(id);
+                changed = true;
+            }
+        }
+
+        if (changed) saveSchedules(schedules);
+        if (Object.keys(schedules).length > 0) attachListeners();
+        else detachListeners();
+    },
+
     isActiveFor(charId: string): boolean {
         return !!loadSchedules()[charId];
     },

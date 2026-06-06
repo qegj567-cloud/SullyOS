@@ -317,6 +317,7 @@ export async function callDiveLLM(
       }),
     },
     2, // 最多重试 2 次（覆盖瞬时 5xx / 网络抖动）
+    0, { appName: '记忆潜行', purpose: '探访生成' },
   );
 
   const content = extractContent(data);
@@ -861,7 +862,7 @@ export async function planRoomVisit(
         response_format: { type: 'json_object' },
       }),
     },
-    2,
+    2, 0, { appName: '记忆潜行', purpose: '剧本生成' },
   );
 
   const content = extractContent(data);
@@ -1017,7 +1018,7 @@ export async function emitDiveEmotion(params: EmitDiveEmotionParams): Promise<vo
           stream: false,
         }),
       },
-      2,
+      2, 0, { appName: '记忆潜行', purpose: '情绪结算' },
     );
 
     const raw = data?.choices?.[0]?.message?.content || '';

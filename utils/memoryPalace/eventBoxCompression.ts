@@ -191,7 +191,8 @@ async function callCompressionLLM(
                     max_tokens: 8000,
                     stream: false,
                 }),
-            }
+            },
+            2, 0, { appName: '记忆宫殿', purpose: '事件压缩' }
         );
 
         const reply = data.choices?.[0]?.message?.content || '';

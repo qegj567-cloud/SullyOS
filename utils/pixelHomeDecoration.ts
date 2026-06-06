@@ -110,6 +110,7 @@ ${JSON.stringify(layoutSummary, null, 2)}
           max_tokens: 800,
         }),
       },
+      2, 0, { appName: '小小窝', purpose: '房间布置' },
     );
 
     const reply = data.choices?.[0]?.message?.content || '';

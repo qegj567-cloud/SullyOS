@@ -5,8 +5,11 @@ import { DB } from '../utils/db';
 import { ProactiveChat } from '../utils/proactiveChat';
 import { VRScheduler } from '../utils/vrWorld/scheduler';
 import { runVRSession } from '../utils/vrWorld/runSession';
+import { VR_DEFAULT_INTERVAL_MIN } from '../utils/vrWorld/constants';
 import { ChatParser } from '../utils/chatParser';
 import { safeFetchJson } from '../utils/safeApi';
+import { recordApiCall, setApiCallAmbientContext } from '../utils/apiCallLog';
+import { INSTALLED_APPS } from '../constants';
 import { normalizeCharacterImpression, normalizeCharacterDefaults } from '../utils/impression';
 import { isScheduleFeatureOn } from '../utils/scheduleGenerator';
 import { evaluateEmotionBackground } from '../hooks/useChatAI';
@@ -705,6 +708,14 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       }
   };
 
+  // --- API 调用记录的环境兜底：当前在哪个 App、当前角色是谁 ---
+  // 裸 fetch 调用点无法传 meta，全局拦截器记录时用这份兜底标出 App / 角色。
+  useEffect(() => {
+      const appName = INSTALLED_APPS.find(a => a.id === activeApp)?.name;
+      const char = characters.find(c => c.id === activeCharacterId);
+      setApiCallAmbientContext({ appId: activeApp, appName, charId: char?.id, charName: char?.name });
+  }, [activeApp, activeCharacterId, characters]);
+
   // --- Global Error Interception ---
   useEffect(() => {
       if (interceptorsInitialized.current) return;
@@ -719,7 +730,29 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           
           try {
               const response = await originalFetch(...args);
-              
+
+              // 「API 调用记录」统一记录入口：所有 /chat/completions（裸 fetch + safeFetchJson
+              // 内部 fetch 都会经过这里）都记一笔。meta 优先取调用方挂在 init 上的 __sullyMeta
+              // （safeFetchJson 传的精确信息），裸 fetch 没有就由 recordApiCall 用环境兜底。
+              if (urlStr.includes('/chat/completions')) {
+                  const meta = (config as any)?.__sullyMeta;
+                  const body = (config as any)?.body;
+                  const status = response.status;
+                  const ok = response.ok;
+                  // clone 出来异步读 usage，不阻塞调用方拿 response
+                  let usageClone: Response | null = null;
+                  try { usageClone = response.clone(); } catch { usageClone = null; }
+                  if (usageClone) {
+                      usageClone.text().then((t) => {
+                          let parsed: any = undefined;
+                          try { parsed = JSON.parse(t); } catch { /* 流式/非 JSON：无 usage，照样记 */ }
+                          recordApiCall({ url: urlStr, body, status, ok, response: parsed, meta });
+                      }).catch(() => recordApiCall({ url: urlStr, body, status, ok, meta }));
+                  } else {
+                      recordApiCall({ url: urlStr, body, status, ok, meta });
+                  }
+              }
+
               if (!response.ok) {
                   // Only log if it's likely an API call (contains chat/completions or models)
                   if (urlStr.includes('/chat/completions') || urlStr.includes('/models')) {
@@ -749,6 +782,9 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               return response;
           } catch (err: any) {
               // Network Failure
+              if (urlStr.includes('/chat/completions')) {
+                  recordApiCall({ url: urlStr, body: (config as any)?.body, ok: false, meta: (config as any)?.__sullyMeta });
+              }
               setSystemLogs(prev => [{
                   id: `log-${Date.now()}`,
                   timestamp: Date.now(),
@@ -1466,7 +1502,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               const data = await safeFetchJson(`${baseUrl}/chat/completions`, {
                   method: 'POST', headers,
                   body: JSON.stringify(reqBody)
-              });
+              }, 2, 0, { appName: '消息', charId, charName: char.name, purpose: '主动消息' });
 
               // 5. Process & save response
               let aiContent = data.choices?.[0]?.message?.content || '';
@@ -1740,6 +1776,14 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           }
       };
       VRScheduler.onTrigger((charId: string, room?: string, letterId?: string) => { void runVR(charId, room, letterId); });
+
+      // 以角色 vrState 为准对账调度表：调度表存 localStorage、不随备份迁移，
+      // 导入备份后角色虽 enabled 但调度表为空，这里补建/清理使其按时触发。
+      VRScheduler.reconcile(
+          charactersRef.current
+              .filter(c => c.vrState?.enabled)
+              .map(c => ({ charId: c.id, intervalMinutes: c.vrState?.intervalMinutes || VR_DEFAULT_INTERVAL_MIN }))
+      );
 
       return () => {
           // Cleanup: detach proactive listeners when OSContext unmounts (unlikely but safe)
@@ -2426,7 +2470,9 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               'handbook', 'trackers', 'tracker_entries', 'hotnews_snapshots',
               'memory_nodes', 'memory_vectors', 'memory_links', 'topic_boxes', 'anticipations', 'event_boxes',
               'daily_schedule', 'memory_batches',
-              'pixel_home_assets', 'pixel_home_layouts'
+              'pixel_home_assets', 'pixel_home_layouts',
+              // 「彼方」虚拟世界各房间 store —— 早期导出清单漏了，导致备份不含房间数据
+              'vr_novels', 'vr_annotations', 'cc_custom_parts', 'vr_music', 'vr_guestbook', 'vr_letters', 'vr_settings'
           ];
 
           if (mode === 'full') {
@@ -2436,7 +2482,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           } else if (mode === 'media_only') {
               // media_only now includes themes/assets for complete media backup
               storesToProcess = ['gallery', 'emojis', 'emoji_categories', 'journal_stickers', 'user_profile', 'characters', 'messages', 'themes', 'assets', 'bank_data',
-                  'pixel_home_assets', 'pixel_home_layouts', 'daily_schedule'];
+                  'pixel_home_assets', 'pixel_home_layouts', 'daily_schedule', 'cc_custom_parts'];
           }
 
           // Fetch Social App & Room Assets (Optional, depends on mode)
@@ -2781,6 +2827,15 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   case 'memory_batches': backupData.memoryBatches = processedData; break;
                   case 'pixel_home_assets': backupData.pixelHomeAssets = processedData; break;
                   case 'pixel_home_layouts': backupData.pixelHomeLayouts = processedData; break;
+                  // 「彼方」虚拟世界 —— 键名须与 importFullData 读取的字段对齐
+                  case 'vr_novels': backupData.vrNovels = processedData; break;
+                  case 'vr_annotations': backupData.vrAnnotations = processedData; break;
+                  case 'cc_custom_parts': backupData.customCreatorParts = processedData; break;
+                  case 'vr_letters': backupData.vrLetters = processedData; break;
+                  case 'vr_settings': backupData.vrSettings = processedData; break;
+                  // 单例 store：导入端期望单个对象（取首条），非数组
+                  case 'vr_music': backupData.vrMusicRoom = Array.isArray(processedData) ? (processedData[0] || undefined) : (processedData || undefined); break;
+                  case 'vr_guestbook': backupData.vrGuestbook = Array.isArray(processedData) ? (processedData[0] || undefined) : (processedData || undefined); break;
               }
 
               await new Promise(resolve => setTimeout(resolve, 10));

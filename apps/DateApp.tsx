@@ -5,7 +5,7 @@ import { DB } from '../utils/db';
 import { CharacterProfile, Message, DateState } from '../types';
 import { ContextBuilder } from '../utils/context';
 import { ChatPrompts } from '../utils/chatPrompts';
-import { injectMemoryPalace, processNewMessages, mergePalaceFragmentsIntoMemories } from '../utils/memoryPalace/pipeline';
+import { injectMemoryPalace, processNewMessages, mergePalaceFragmentsIntoMemories, getMemoryPalaceHighWaterMark } from '../utils/memoryPalace/pipeline';
 import type { PipelineResult } from '../utils/memoryPalace/pipeline';
 import { incrementDigestRound, runCognitiveDigestion } from '../utils/memoryPalace';
 import { safeResponseJson } from '../utils/safeApi';
@@ -273,16 +273,25 @@ const DateApp: React.FC = () => {
                 setMemoryPalaceResult(pipelineResult);
             }
 
-            if (pipelineResult?.autoArchive && (liveAfter as any).autoArchiveEnabled) {
+            if ((liveAfter as any).autoArchiveEnabled) {
                 try {
-                    const mergedMemories = mergePalaceFragmentsIntoMemories(
-                        liveAfter.memories || [],
-                        pipelineResult.autoArchive.fragments,
-                    );
-                    updateCharacter(charForHook.id, {
-                        memories: mergedMemories,
-                        hideBeforeMessageId: pipelineResult.autoArchive.hideBeforeMessageId,
-                    } as any);
+                    const patch: any = {};
+                    if (pipelineResult?.autoArchive) {
+                        patch.memories = mergePalaceFragmentsIntoMemories(
+                            liveAfter.memories || [],
+                            pipelineResult.autoArchive.fragments,
+                        );
+                    }
+                    // 隐藏线追平到向量高水位：覆盖「关闭期推进了 hwm 但 hide 被冻结」的历史空档。
+                    // 只要全自动记忆开着，每次自动总结都把 hide 追平到 hwm，无需用户手动操作。
+                    const hwm = getMemoryPalaceHighWaterMark(charForHook.id);
+                    const curHide = ((liveAfter as any).hideBeforeMessageId as number) || 0;
+                    if (hwm > curHide) {
+                        patch.hideBeforeMessageId = hwm;
+                    }
+                    if (Object.keys(patch).length > 0) {
+                        updateCharacter(charForHook.id, patch);
+                    }
                 } catch (e: any) {
                     console.warn(`📚 [DateApp AutoArchive] 失败: ${e?.message || e}`);
                 }

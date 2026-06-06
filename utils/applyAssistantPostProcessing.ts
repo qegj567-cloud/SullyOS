@@ -350,6 +350,9 @@ export async function applyAssistantPostProcessing(
         commentParentIdCache: commentParentIdCacheRef,
     } = xhsCaches;
 
+    // API 调用记录用 meta：二轮重生 / 调阅 / 日记 / 小红书等都归在「消息」App 下，purpose 见各分支。
+    const apiLogMeta = { appName: '消息', charId: char.id, charName: char.name };
+
     // Phase 1: skipSecondPassLLM=true (instant push 路径) 时, 跳过所有需要回连 LLM 的
     // 二轮分支 (RECALL / SEARCH / READ_DIARY / FS_READ_DIARY / READ_NOTE / XHS_*)。
     // 这些 tag 留在原文里, 由后面 Step 6 的 ChatParser.sanitize 兜底剥掉 (chatParser.ts:225
@@ -452,20 +455,40 @@ export async function applyAssistantPostProcessing(
             return merged;
         };
 
+        // 把 [[QUOTE: ...]] / [回复 "..."] 的引用文本解析成"被回复的那条用户消息"。
+        // 开了翻译的外语/粤语角色，引用文本往往是外语、或被 <原文>/<译文> 翻译标签包裹，
+        // 跟库里中文用户消息逐字 includes 匹配会失败 → 之前表现为丢引用 / 空引用气泡。
+        // 这里先剥掉翻译标签再逐字/前缀精确定位；匹配不到就兜底到「最近一条用户文字消息」
+        // （[[QUOTE]] 基本放在回复开头、指代最近一句话，兜底足够稳），杜绝外语角色空引用。
+        const resolveQuoteTarget = (quotedTextRaw: string): { id: number, content: string, name: string } | undefined => {
+            const raw = (quotedTextRaw || '').trim();
+            // 引用文本可能被翻译标签包裹：<原文>(外语) 与 <译文>(本地语) 都可能命中库里的中文用户消息。
+            // 不能直接剥标签——那样会把原文+译文拼成一串(如「你好Hello」)导致 includes 永远匹配不上。
+            // 这里把两边内容各自当候选逐个匹配；没有成对标签时再退化成「剥掉零散标签」的兜底候选。
+            const candidates: string[] = [];
+            const pushCand = (s?: string) => { const t = (s || '').trim(); if (t && !candidates.includes(t)) candidates.push(t); };
+            pushCand(raw.match(/<原文>([\s\S]*?)<\/原文>/)?.[1]);
+            pushCand(raw.match(/<译文>([\s\S]*?)<\/译文>/)?.[1]);
+            pushCand(raw.replace(/<\/?翻译>|<\/?原文>|<\/?译文>/g, '').replace(/%%BILINGUAL%%/gi, ''));
+            const users = contextMsgs.filter((m: Message) => m.role === 'user' && typeof m.content === 'string' && !!m.content.trim());
+            const reversedUsers = users.slice().reverse();
+            let targetMsg: Message | undefined;
+            for (const q of candidates) {
+                targetMsg = reversedUsers.find((m: Message) => m.content.includes(q))
+                    || (q.length > 10 ? reversedUsers.find((m: Message) => m.content.includes(q.slice(0, 10))) : undefined);
+                if (targetMsg) break;
+            }
+            // 兜底：精确匹配失败但角色明确想引用 → 取最近一条用户文字消息，避免空引用
+            if (!targetMsg) targetMsg = users.filter((m: Message) => m.type === 'text' || !m.type).slice(-1)[0] || users.slice(-1)[0];
+            if (!targetMsg) return undefined;
+            const truncated = targetMsg.content.length > 10 ? targetMsg.content.slice(0, 10) + '...' : targetMsg.content;
+            return { id: targetMsg.id, content: truncated, name: userProfile.name };
+        };
+
         // Quote/Reply 目标 (双语路径用)
         let aiReplyTarget: { id: number, content: string, name: string } | undefined;
         const firstQuoteMatch = rawContent.match(QUOTE_RE_DOUBLE) || rawContent.match(QUOTE_RE_SINGLE) || rawContent.match(REPLY_RE_CN);
-        if (firstQuoteMatch) {
-            const quotedText = firstQuoteMatch[1].trim();
-            if (quotedText) {
-                const targetMsg = contextMsgs.slice().reverse().find((m: Message) => m.role === 'user' && m.content.includes(quotedText))
-                    || (quotedText.length > 10 ? contextMsgs.slice().reverse().find((m: Message) => m.role === 'user' && m.content.includes(quotedText.slice(0, 10))) : undefined);
-                if (targetMsg) {
-                    const truncated = targetMsg.content.length > 10 ? targetMsg.content.slice(0, 10) + '...' : targetMsg.content;
-                    aiReplyTarget = { id: targetMsg.id, content: truncated, name: userProfile.name };
-                }
-            }
-        }
+        if (firstQuoteMatch) aiReplyTarget = resolveQuoteTarget(firstQuoteMatch[1]);
 
         let content = ChatParser.sanitize(rawContent, { keepCitations: true });
         content = content.replace(/\[\[INNER_STATE:\s*[\s\S]*?\]\]/g, '').trim();
@@ -574,15 +597,7 @@ export async function applyAssistantPostProcessing(
                         let chunkReplyTarget: { id: number, content: string, name: string } | undefined;
                         const chunkQuoteMatch = chunk.match(QUOTE_RE_DOUBLE) || chunk.match(QUOTE_RE_SINGLE) || chunk.match(REPLY_RE_CN);
                         if (chunkQuoteMatch) {
-                            const quotedText = chunkQuoteMatch[1].trim();
-                            if (quotedText) {
-                                const targetMsg = contextMsgs.slice().reverse().find((m: Message) => m.role === 'user' && m.content.includes(quotedText))
-                                    || (quotedText.length > 10 ? contextMsgs.slice().reverse().find((m: Message) => m.role === 'user' && m.content.includes(quotedText.slice(0, 10))) : undefined);
-                                if (targetMsg) {
-                                    const truncated = targetMsg.content.length > 10 ? targetMsg.content.slice(0, 10) + '...' : targetMsg.content;
-                                    chunkReplyTarget = { id: targetMsg.id, content: truncated, name: userProfile.name };
-                                }
-                            }
+                            chunkReplyTarget = resolveQuoteTarget(chunkQuoteMatch[1]);
                             chunk = chunk.replace(QUOTE_CLEAN_DOUBLE, '').replace(QUOTE_CLEAN_SINGLE, '').replace(REPLY_CLEAN_CN, '').trim();
                         }
 
@@ -658,7 +673,7 @@ export async function applyAssistantPostProcessing(
                 data = await safeFetchJson(`${baseUrl}/chat/completions`, {
                     method: 'POST', headers,
                     body: JSON.stringify({ model: effectiveApi.model, messages: recallMessages, temperature: 0.8, max_tokens: 8000, stream: false })
-                });
+                }, 2, 0, { ...apiLogMeta, purpose: '调阅记忆' });
                 updateTokenUsage(data, historyMsgCount, 'recall');
                 aiContent = data.choices?.[0]?.message?.content || '';
                 aiContent = normalizeAiContent(aiContent);
@@ -697,7 +712,7 @@ export async function applyAssistantPostProcessing(
                 data = await safeFetchJson(`${baseUrl}/chat/completions`, {
                     method: 'POST', headers,
                     body: JSON.stringify({ model: effectiveApi.model, messages: searchMessages, temperature: 0.8, max_tokens: 8000, stream: false })
-                });
+                }, 2, 0, { ...apiLogMeta, purpose: '联网搜索' });
                 updateTokenUsage(data, historyMsgCount, 'search');
                 aiContent = data.choices?.[0]?.message?.content || '';
                 console.log('🔍 [Search] AI基于搜索结果生成的新回复:', aiContent.slice(0, 100) + '...');
@@ -824,7 +839,7 @@ export async function applyAssistantPostProcessing(
             data = await safeFetchJson(`${baseUrl}/chat/completions`, {
                 method: 'POST', headers,
                 body: JSON.stringify({ model: effectiveApi.model, messages: msgs, temperature: 0.8, max_tokens: 8000, stream: false })
-            });
+            }, 2, 0, { ...apiLogMeta, purpose: '写日记' });
             updateTokenUsage(data, historyMsgCount, 'diary-fallback');
             aiContent = data.choices?.[0]?.message?.content || '';
             aiContent = normalizeAiContent(aiContent);
@@ -877,7 +892,7 @@ export async function applyAssistantPostProcessing(
                         data = await safeFetchJson(`${baseUrl}/chat/completions`, {
                             method: 'POST', headers,
                             body: JSON.stringify({ model: effectiveApi.model, messages: diaryMessages, temperature: 0.8, max_tokens: 8000, stream: false })
-                        });
+                        }, 2, 0, { ...apiLogMeta, purpose: '翻阅日记' });
                         updateTokenUsage(data, historyMsgCount, 'read-diary-notion');
                         aiContent = data.choices?.[0]?.message?.content || '';
                         aiContent = normalizeAiContent(aiContent);
@@ -899,7 +914,7 @@ export async function applyAssistantPostProcessing(
                         data = await safeFetchJson(`${baseUrl}/chat/completions`, {
                             method: 'POST', headers,
                             body: JSON.stringify({ model: effectiveApi.model, messages: nodiaryMessages, temperature: 0.8, max_tokens: 8000, stream: false })
-                        });
+                        }, 2, 0, { ...apiLogMeta, purpose: '翻阅日记' });
                         updateTokenUsage(data, historyMsgCount, 'no-diary-notion');
                         aiContent = data.choices?.[0]?.message?.content || '';
                         aiContent = normalizeAiContent(aiContent);
@@ -1034,7 +1049,7 @@ export async function applyAssistantPostProcessing(
                         data = await safeFetchJson(`${baseUrl}/chat/completions`, {
                             method: 'POST', headers,
                             body: JSON.stringify({ model: effectiveApi.model, messages: diaryMessages, temperature: 0.8, max_tokens: 8000, stream: false })
-                        });
+                        }, 2, 0, { ...apiLogMeta, purpose: '翻阅日记' });
                         updateTokenUsage(data, historyMsgCount, 'read-diary-feishu');
                         aiContent = data.choices?.[0]?.message?.content || '';
                         aiContent = normalizeAiContent(aiContent);
@@ -1055,7 +1070,7 @@ export async function applyAssistantPostProcessing(
                         data = await safeFetchJson(`${baseUrl}/chat/completions`, {
                             method: 'POST', headers,
                             body: JSON.stringify({ model: effectiveApi.model, messages: nodiaryMessages, temperature: 0.8, max_tokens: 8000, stream: false })
-                        });
+                        }, 2, 0, { ...apiLogMeta, purpose: '翻阅日记' });
                         updateTokenUsage(data, historyMsgCount, 'no-diary-feishu');
                         aiContent = data.choices?.[0]?.message?.content || '';
                         aiContent = normalizeAiContent(aiContent);
@@ -1105,7 +1120,7 @@ export async function applyAssistantPostProcessing(
                     data = await safeFetchJson(`${baseUrl}/chat/completions`, {
                         method: 'POST', headers,
                         body: JSON.stringify({ model: effectiveApi.model, messages: noteMessages, temperature: 0.8, max_tokens: 8000, stream: false })
-                    });
+                    }, 2, 0, { ...apiLogMeta, purpose: '翻阅笔记' });
                     updateTokenUsage(data, historyMsgCount, 'read-note');
                     aiContent = data.choices?.[0]?.message?.content || '';
                     aiContent = normalizeAiContent(aiContent);
@@ -1127,7 +1142,7 @@ export async function applyAssistantPostProcessing(
                     data = await safeFetchJson(`${baseUrl}/chat/completions`, {
                         method: 'POST', headers,
                         body: JSON.stringify({ model: effectiveApi.model, messages: nonoteMessages, temperature: 0.8, max_tokens: 8000, stream: false })
-                    });
+                    }, 2, 0, { ...apiLogMeta, purpose: '翻阅笔记' });
                     updateTokenUsage(data, historyMsgCount, 'read-note-empty');
                     aiContent = data.choices?.[0]?.message?.content || '';
                     aiContent = normalizeAiContent(aiContent);
@@ -1169,7 +1184,7 @@ export async function applyAssistantPostProcessing(
                 data = await safeFetchJson(`${baseUrl}/chat/completions`, {
                     method: 'POST', headers,
                     body: JSON.stringify({ model: effectiveApi.model, messages: xhsMessages, temperature: 0.8, max_tokens: 8000, stream: false })
-                });
+                }, 2, 0, { ...apiLogMeta, purpose: '小红书搜索' });
                 updateTokenUsage(data, historyMsgCount, 'xhs-search');
                 aiContent = data.choices?.[0]?.message?.content || '';
                 aiContent = normalizeAiContent(aiContent);
@@ -1215,7 +1230,7 @@ export async function applyAssistantPostProcessing(
                 data = await safeFetchJson(`${baseUrl}/chat/completions`, {
                     method: 'POST', headers,
                     body: JSON.stringify({ model: effectiveApi.model, messages: xhsMessages, temperature: 0.8, max_tokens: 8000, stream: false })
-                });
+                }, 2, 0, { ...apiLogMeta, purpose: '小红书浏览' });
                 updateTokenUsage(data, historyMsgCount, 'xhs-browse');
                 aiContent = data.choices?.[0]?.message?.content || '';
                 aiContent = normalizeAiContent(aiContent);
@@ -1457,7 +1472,7 @@ export async function applyAssistantPostProcessing(
                 data = await safeFetchJson(`${baseUrl}/chat/completions`, {
                     method: 'POST', headers,
                     body: JSON.stringify({ model: effectiveApi.model, messages: xhsMessages, temperature: 0.8, max_tokens: 8000, stream: false })
-                });
+                }, 2, 0, { ...apiLogMeta, purpose: '小红书主页' });
                 updateTokenUsage(data, historyMsgCount, 'xhs-profile');
                 aiContent = data.choices?.[0]?.message?.content || '';
                 aiContent = normalizeAiContent(aiContent);
@@ -1475,7 +1490,7 @@ export async function applyAssistantPostProcessing(
                 data = await safeFetchJson(`${baseUrl}/chat/completions`, {
                     method: 'POST', headers,
                     body: JSON.stringify({ model: effectiveApi.model, messages: xhsMessages, temperature: 0.8, max_tokens: 8000, stream: false })
-                });
+                }, 2, 0, { ...apiLogMeta, purpose: '小红书主页' });
                 updateTokenUsage(data, historyMsgCount, 'xhs-profile');
                 aiContent = data.choices?.[0]?.message?.content || '';
                 aiContent = normalizeAiContent(aiContent);
@@ -1521,7 +1536,7 @@ export async function applyAssistantPostProcessing(
             data = await safeFetchJson(`${baseUrl}/chat/completions`, {
                 method: 'POST', headers,
                 body: JSON.stringify({ model: effectiveApi.model, messages: xhsMessages, temperature: 0.8, max_tokens: 8000, stream: false })
-            });
+            }, 2, 0, { ...apiLogMeta, purpose: '小红书详情' });
             updateTokenUsage(data, historyMsgCount, 'xhs-detail');
             aiContent = data.choices?.[0]?.message?.content || '';
             aiContent = normalizeAiContent(aiContent);

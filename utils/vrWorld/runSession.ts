@@ -250,7 +250,7 @@ export async function runVRSession(deps: VRSessionDeps): Promise<VRSessionResult
                     messages: [{ role: 'system', content: systemPrompt }, ...payload.cleanedApiMessages, { role: 'user', content: roomTurn }],
                     temperature: 0.9, stream: false,
                 }),
-            });
+            }, 2, 0, { appName: '彼方', charId: char.id, charName: char.name, purpose: '自由活动' });
             logVRApiCall({ ts: callStart, charName: char.name, room: room.id, model: vrApi.model, baseUrl, ok: true, ms: Date.now() - callStart });
         } catch (e: any) {
             logVRApiCall({ ts: callStart, charName: char.name, room: room.id, model: vrApi.model, baseUrl, ok: false, ms: Date.now() - callStart, error: (e?.message || String(e)).slice(0, 160) });

@@ -137,7 +137,7 @@
   }
 
   .action-row {
-    flex-shrink: 0; display: flex; gap: 8px;
+    flex-shrink: 0; display: flex; flex-wrap: wrap; gap: 8px;
     padding: 4px 16px 8px; justify-content: center;
   }
   .pill-btn {
@@ -440,6 +440,42 @@
     background:
       conic-gradient(#F8F8F8 0% 25%, #E8E8E8 25% 50%, #F8F8F8 50% 75%, #E8E8E8 75%) 0 0 / 16px 16px;
   }
+
+  /* === 自定义部件面板 === */
+  .cc-modal { max-width: 360px; text-align: left; max-height: 86vh; display: flex; flex-direction: column; }
+  .cc-modal h3 { text-align: center; }
+  .cc-scroll { overflow-y: auto; -webkit-overflow-scrolling: touch; padding-right: 2px; }
+  .cc-hint { font-size: 11px; color: var(--text-soft); line-height: 1.6;
+    background: var(--cream-deep); border-radius: 12px; padding: 9px 11px; margin-bottom: 10px; }
+  .cc-hint b { color: var(--rose-dark); }
+  .cc-field-label { font-size: 11px; color: var(--text-soft); margin: 10px 0 5px; font-weight: 600; }
+  .cc-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .cc-chip { font-size: 11px; border: none; border-radius: 999px; padding: 5px 11px;
+    cursor: pointer; background: var(--cream-deep); color: var(--text-soft); }
+  .cc-chip.active { background: var(--rose-dark); color: #fff; font-weight: 600; }
+  .cc-drop { width: 100%; border: 1.5px dashed var(--cream-deep); border-radius: 14px; padding: 16px;
+    display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer;
+    background: rgba(0,0,0,0.015); }
+  .cc-drop img { max-height: 96px; object-fit: contain;
+    background: conic-gradient(#F8F8F8 0% 25%, #E8E8E8 25% 50%, #F8F8F8 50% 75%, #E8E8E8 75%) 0 0 / 14px 14px; }
+  .cc-drop span { font-size: 11px; color: var(--text-soft); }
+  .cc-input { width: 100%; border: 1px solid var(--cream-deep); border-radius: 10px; padding: 8px 10px;
+    font-size: 13px; color: var(--text); outline: none; box-sizing: border-box; }
+  .cc-check { display: flex; align-items: flex-start; gap: 7px; font-size: 11px; color: var(--text-soft);
+    margin-top: 9px; line-height: 1.45; }
+  .cc-check input { width: 15px; height: 15px; margin-top: 1px; accent-color: var(--rose-dark); flex-shrink: 0; }
+  .cc-list { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-top: 5px; }
+  .cc-cell { position: relative; aspect-ratio: 1; border-radius: 10px; overflow: hidden;
+    border: 1px solid var(--cream-deep); display: flex; align-items: center; justify-content: center;
+    background: conic-gradient(#F8F8F8 0% 25%, #E8E8E8 25% 50%, #F8F8F8 50% 75%, #E8E8E8 75%) 0 0 / 12px 12px; }
+  .cc-cell img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .cc-cell .cc-name { position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.55);
+    color: #fff; font-size: 8.5px; padding: 2px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cc-cell .cc-del { position: absolute; top: 3px; right: 3px; width: 18px; height: 18px; border: none;
+    border-radius: 50%; background: rgba(220,70,90,0.92); color: #fff; font-size: 12px; line-height: 1;
+    cursor: pointer; padding: 0; display: flex; align-items: center; justify-content: center; }
+  .cc-cat-group { margin-top: 9px; }
+  .cc-cat-title { font-size: 10.5px; color: var(--text-soft); font-weight: 600; margin-bottom: 4px; }
 </style>
 </head>
 <body>
@@ -482,6 +518,7 @@
   <div class="action-row">
     <button class="pill-btn" id="btnRandom">🎲 随机</button>
     <button class="pill-btn" id="btnReset">↺ 重置</button>
+    <button class="pill-btn" id="btnCustom">➕ 自定义</button>
     <button class="pill-btn primary" id="btnSave">📸 出件</button>
   </div>
 
@@ -546,6 +583,42 @@
   </div>
 </div>
 
+<div class="modal-backdrop" id="customModal">
+  <div class="modal cc-modal">
+    <h3>➕ 自定义部件</h3>
+    <div class="cc-scroll">
+      <div class="cc-hint">
+        部件须是<b>透明背景 PNG</b>，与画布<b>同尺寸、同位置</b>叠层。
+        建议先<b>导出描线模板</b>，在它上面画好你的部件再传回来，就不会错位。
+      </div>
+
+      <button class="pill-btn" id="btnTemplate" type="button" style="width:100%;">🩻 导出描线模板（半透明 body）</button>
+
+      <div class="cc-field-label">类目</div>
+      <div class="cc-chips" id="ccChips"></div>
+
+      <div class="cc-field-label">部件图（透明 PNG）</div>
+      <input type="file" id="ccFile" accept="image/png,image/webp,image/*" style="display:none">
+      <button class="cc-drop" id="ccDrop" type="button"><span>点此选择透明 PNG</span></button>
+      <input class="cc-input" id="ccUrl" placeholder="或粘贴图片直链 URL（已传图床的，省本地空间）" style="margin-top:8px">
+
+      <div class="cc-field-label">名称</div>
+      <input class="cc-input" id="ccName" placeholder="可留空，默认「自定义xx」">
+
+      <label class="cc-check">
+        <input type="checkbox" id="ccTintable">
+        <span>可换色 —— 仅当这张是单色线稿/可着色层时勾选；成品彩图请<b>别勾</b></span>
+      </label>
+
+      <div id="ccListWrap"></div>
+    </div>
+    <div class="modal-actions" style="margin-top:14px;">
+      <button class="pill-btn" type="button" onclick="closeCustomModal()">关闭</button>
+      <button class="pill-btn primary" id="ccSave" type="button">加入捏人器</button>
+    </div>
+  </div>
+</div>
+
 <script>
 /* === 520 活动 iframe 协议 ===
    parent → iframe: { type: 'like520_init', payload: { mode, charName, presets } }
@@ -554,6 +627,8 @@
    iframe → parent: { type: 'like520_cancel' }
 */
 const IS_EMBEDDED = window.parent !== window;
+/* 记录哪些 item 是自定义部件（用于界面内列表/删除）。所有经 mergeExtraItems 进来的都是。 */
+const customPartIds = new Set();
 let LIKE520_MODE = 'char';
 let LIKE520_CHAR_NAME = '';
 let LIKE520_IS_SULLY = false;
@@ -611,6 +686,7 @@ function mergeExtraItems(items) {
     if (!cat || !Array.isArray(cat.items)) return;
     if (cat.items.some(x => x.id === it.id)) return;
     cat.items.push({ id: it.id, name: it.name || it.id, src: it.src, tintable: !!it.tintable });
+    customPartIds.add(it.id);
     added++;
   });
   if (added > 0) {
@@ -2085,6 +2161,208 @@ function setExportMode(mode) {
 function closeModal() {
   document.getElementById("modal").classList.remove("show");
 }
+
+/* ===== 自定义部件：界面内上传 / 管理 / 导描线模板 =====
+   iframe 写不了宿主 IndexedDB，所以上传后①立刻注入内存 PARTS（当场可用）
+   ②postMessage 回父组件落库；删除同理。父组件处理见 CreatorIframe。 */
+const CC_CATS = [
+  ['skin','肤色'],['eyes','眼睛'],['mouth','嘴'],['fronthair','前发'],['earhair','耳发'],
+  ['back1','后发1'],['back2','后发2'],['outfit','衣服'],['outer','外套'],['facemark','面纹'],['decor','配饰'],
+];
+const ccLabelOf = k => (CC_CATS.find(c => c[0] === k) || [k, k])[1];
+let ccPendingSrc = '';
+let ccCategory = 'fronthair';
+
+function openCustomModal() {
+  renderCcChips(); renderCcList();
+  document.getElementById('customModal').classList.add('show');
+}
+function closeCustomModal() { document.getElementById('customModal').classList.remove('show'); }
+
+/* 预览区显示一张图（文件 base64 或远端 URL 通用） */
+function ccShowPreview(src) {
+  const drop = document.getElementById('ccDrop');
+  drop.innerHTML = '';
+  const img = document.createElement('img'); img.src = src;
+  drop.appendChild(img);
+}
+function ccResetPreview() {
+  document.getElementById('ccDrop').innerHTML = '<span>点此选择透明 PNG</span>';
+}
+
+function renderCcChips() {
+  const wrap = document.getElementById('ccChips');
+  wrap.innerHTML = '';
+  CC_CATS.forEach(([key, label]) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'cc-chip' + (key === ccCategory ? ' active' : '');
+    b.textContent = label;
+    b.onclick = () => { ccCategory = key; renderCcChips(); };
+    wrap.appendChild(b);
+  });
+}
+
+function renderCcList() {
+  const wrap = document.getElementById('ccListWrap');
+  wrap.innerHTML = '';
+  const groups = {};
+  PARTS.forEach(part => part.items.forEach(it => {
+    if (customPartIds.has(it.id)) (groups[part.key] = groups[part.key] || []).push(it);
+  }));
+  const keys = Object.keys(groups);
+  if (!keys.length) {
+    const p = document.createElement('div');
+    p.className = 'cc-cat-title'; p.style.marginTop = '12px';
+    p.textContent = '还没有自定义部件。';
+    wrap.appendChild(p);
+    return;
+  }
+  const title = document.createElement('div');
+  title.className = 'cc-field-label'; title.textContent = '已添加';
+  wrap.appendChild(title);
+  keys.forEach(key => {
+    const g = document.createElement('div'); g.className = 'cc-cat-group';
+    const t = document.createElement('div'); t.className = 'cc-cat-title';
+    t.textContent = ccLabelOf(key) + ' · ' + groups[key].length;
+    g.appendChild(t);
+    const grid = document.createElement('div'); grid.className = 'cc-list';
+    groups[key].forEach(it => {
+      const cell = document.createElement('div'); cell.className = 'cc-cell';
+      const img = document.createElement('img'); img.src = it.src; img.alt = it.name; cell.appendChild(img);
+      const nm = document.createElement('span'); nm.className = 'cc-name';
+      nm.textContent = it.name + (it.tintable ? ' ·色' : ''); cell.appendChild(nm);
+      const del = document.createElement('button');
+      del.className = 'cc-del'; del.type = 'button'; del.textContent = '×';
+      del.onclick = () => deleteCustomPart(key, it.id);
+      cell.appendChild(del);
+      grid.appendChild(cell);
+    });
+    g.appendChild(grid);
+    wrap.appendChild(g);
+  });
+}
+
+function ccOnFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    ccPendingSrc = String(reader.result || '');
+    document.getElementById('ccUrl').value = '';   // 文件与 URL 二选一
+    ccShowPreview(ccPendingSrc);
+  };
+  reader.readAsDataURL(file);
+}
+
+/* 粘贴图片直链（跟表情包一样，src 直接存远端 URL，省本地空间）*/
+function ccOnUrl() {
+  const url = document.getElementById('ccUrl').value.trim();
+  if (url) {
+    ccPendingSrc = '';                             // 用 URL 就清掉文件
+    document.getElementById('ccFile').value = '';
+    ccShowPreview(url);
+  } else {
+    ccResetPreview();
+  }
+}
+
+function resetCcForm() {
+  ccPendingSrc = '';
+  document.getElementById('ccName').value = '';
+  document.getElementById('ccUrl').value = '';
+  document.getElementById('ccTintable').checked = false;
+  document.getElementById('ccFile').value = '';
+  ccResetPreview();
+}
+
+function saveCustomPart() {
+  // URL 优先（存远端直链）；否则用上传的文件 base64
+  const url = document.getElementById('ccUrl').value.trim();
+  const finalSrc = url || ccPendingSrc;
+  if (!finalSrc) { toast('先选一张透明 PNG，或粘贴图片 URL'); return; }
+  const name = (document.getElementById('ccName').value || '').trim();
+  const part = {
+    id: ccCategory + '_cc_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6),
+    categoryKey: ccCategory,
+    name: name || ('自定义' + ccLabelOf(ccCategory)),
+    src: finalSrc,
+    tintable: document.getElementById('ccTintable').checked,
+  };
+  customPartIds.add(part.id);
+  mergeExtraItems([part]);                 // 当场可用
+  if (IS_EMBEDDED) {                        // 落库（父组件存 IndexedDB）
+    window.parent.postMessage({ type: 'like520_save_custom_part', payload: { part } }, '*');
+  }
+  resetCcForm();
+  renderCcList();
+  toast('已加入「' + ccLabelOf(part.categoryKey) + '」♥');
+}
+
+function deleteCustomPart(categoryKey, id) {
+  const cat = PARTS.find(p => p.key === categoryKey);
+  if (cat) {
+    const idx = cat.items.findIndex(x => x.id === id);
+    if (idx >= 0) cat.items.splice(idx, 1);
+  }
+  customPartIds.delete(id);
+  const sel = state.selected[categoryKey];   // 若正被选中则取消
+  if (Array.isArray(sel)) {
+    const i = sel.indexOf(id);
+    if (i >= 0) sel.splice(i, 1);
+    if (state.activeItemFocus[categoryKey] === id) delete state.activeItemFocus[categoryKey];
+  } else if (sel === id) {
+    state.selected[categoryKey] = null;
+  }
+  if (IS_EMBEDDED) {
+    window.parent.postMessage({ type: 'like520_delete_custom_part', payload: { id } }, '*');
+  }
+  renderTabs(); renderPanel(); renderCharacter();
+  renderCcList();
+  toast('已删除');
+}
+
+/* 导出半透明 body 当描线模板：取当前/默认 skin 层，按原生分辨率降透明度导出 */
+function exportTracingTemplate() {
+  const skin = PARTS.find(p => p.key === 'skin');
+  let src = null;
+  const sel = skin && state.selected.skin;
+  if (sel && skin) { const it = skin.items.find(x => x.id === sel); if (it) src = it.src; }
+  if (!src && skin && skin.items[0]) src = skin.items[0].src;
+  if (!src) { toast('暂无 body 素材可用'); return; }
+  const img = new Image();
+  img.onload = () => {
+    const c = document.createElement('canvas');
+    c.width = img.naturalWidth || 600;
+    c.height = img.naturalHeight || 600;
+    const ctx = c.getContext('2d');
+    ctx.globalAlpha = 0.35;
+    ctx.drawImage(img, 0, 0, c.width, c.height);
+    const a = document.createElement('a');
+    a.href = c.toDataURL('image/png');
+    a.download = '描线模板_body_' + Date.now() + '.png';
+    a.click();
+    toast('模板已导出 ♥ 在上面画你的部件');
+  };
+  img.onerror = () => toast('导出失败');
+  img.src = src;
+}
+
+(function wireCustomUI() {
+  const btnCustom = document.getElementById('btnCustom');
+  if (btnCustom) btnCustom.onclick = openCustomModal;
+  const drop = document.getElementById('ccDrop');
+  const file = document.getElementById('ccFile');
+  if (drop && file) {
+    drop.onclick = () => file.click();
+    file.onchange = e => ccOnFile(e.target.files && e.target.files[0]);
+  }
+  const save = document.getElementById('ccSave');
+  if (save) save.onclick = saveCustomPart;
+  const tpl = document.getElementById('btnTemplate');
+  if (tpl) tpl.onclick = exportTracingTemplate;
+  const urlInput = document.getElementById('ccUrl');
+  if (urlInput) urlInput.oninput = ccOnUrl;
+})();
 
 /* === 草稿自动保存 / 复用 ===
    key: mode + charName，让每个角色 + 是否是 user 各自存一份

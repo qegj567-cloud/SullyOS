@@ -1,8 +1,48 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { chunkNovelText, chunkNovelTextAsync, getReadingWindow, buildNovel } from './novel';
 import { parseVROutput, parseMusicOutput, parseGuestbookOutput, parseGymOutput, parsePostOfficeOutput, parsePostOfficeReadOutput } from './prompts';
 import { maskPen } from './postOffice';
 import { decodeBytes } from './decodeText';
+import { VRScheduler } from './scheduler';
+
+// scheduler 的 attachListeners 会访问 document/window（node 环境下没有），补最简 stub。
+const g = globalThis as any;
+if (typeof g.document === 'undefined') g.document = { visibilityState: 'hidden', addEventListener() {}, removeEventListener() {} };
+if (typeof g.window === 'undefined') g.window = { addEventListener() {}, removeEventListener() {} };
+
+describe('VRScheduler.reconcile', () => {
+    beforeEach(() => {
+        localStorage.removeItem('vr_schedules');
+        localStorage.removeItem('vr_last_fire');
+    });
+
+    it('补建 enabled 但缺调度的角色（导入备份后的核心场景）', () => {
+        // 模拟导入后：角色在 IndexedDB 里 enabled，但 localStorage 调度表为空
+        VRScheduler.reconcile([{ charId: 'c1', intervalMinutes: 120 }]);
+        expect(VRScheduler.isActiveFor('c1')).toBe(true);
+        expect(VRScheduler.getIntervalMinutes('c1')).toBe(120);
+        // 首火时间从现在起算，不会立刻触发
+        const lastFire = JSON.parse(localStorage.getItem('vr_last_fire')!).c1;
+        expect(Date.now() - lastFire).toBeLessThan(2000);
+    });
+
+    it('清掉已删除/已关闭角色的残留调度', () => {
+        VRScheduler.start('c1', 120);
+        VRScheduler.start('c2', 60);
+        VRScheduler.reconcile([{ charId: 'c1', intervalMinutes: 120 }]); // c2 不再 enabled
+        expect(VRScheduler.isActiveFor('c1')).toBe(true);
+        expect(VRScheduler.isActiveFor('c2')).toBe(false);
+        expect(JSON.parse(localStorage.getItem('vr_last_fire')!).c2).toBeUndefined();
+    });
+
+    it('间隔被改过 → 跟随最新设定，且不重置已有首火时间', () => {
+        VRScheduler.start('c1', 120);
+        const fireBefore = JSON.parse(localStorage.getItem('vr_last_fire')!).c1;
+        VRScheduler.reconcile([{ charId: 'c1', intervalMinutes: 240 }]);
+        expect(VRScheduler.getIntervalMinutes('c1')).toBe(240);
+        expect(JSON.parse(localStorage.getItem('vr_last_fire')!).c1).toBe(fireBefore);
+    });
+});
 
 describe('parsePostOfficeReadOutput', () => {
     it('parses reaction + activity', () => {

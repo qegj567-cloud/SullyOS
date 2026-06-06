@@ -432,7 +432,8 @@ pinDays 仅在需要置顶时才写，大多数记忆不需要。
                     max_tokens: 12000,
                     stream: false,
                 }),
-            }
+            },
+            2, 0, { appName: '记忆宫殿', purpose: '记忆提取' }
         );
 
         const reply = data.choices?.[0]?.message?.content || '';

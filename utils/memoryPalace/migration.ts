@@ -158,8 +158,9 @@ date 字段填记忆对应的大概日期。`;
                 }),
             },
             1,         // 失败只再试 1 次（整体 3 次 × 5min = 15min 太久）
-            5 * 60_000 // 单次 5 分钟硬超时：第一批 142s 就过了，若超过 5min 基本是 provider 卡死，
+            5 * 60_000, // 单次 5 分钟硬超时：第一批 142s 就过了，若超过 5min 基本是 provider 卡死，
                        // 继续等只会让用户误以为整页冻住（实际主线程闲着等 fetch），主动 abort 切下一批。
+            { appName: '记忆宫殿', purpose: '记忆迁移' }
         );
 
         const reply = data.choices?.[0]?.message?.content || '';
