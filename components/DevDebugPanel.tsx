@@ -1,24 +1,26 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowsClockwise, ClipboardText, DownloadSimple, Wrench, X } from '@phosphor-icons/react';
+import { ArrowsClockwise, Check, ClipboardText, DownloadSimple, Power, Wrench, X } from '@phosphor-icons/react';
 import {
+    clearDevDebugLog,
+    closeDevDebug,
     DEFAULT_DEV_DEBUG_FLAGS,
     DEV_DEBUG_CAPTURE_CATEGORIES,
     formatDevDebugLog,
     isDevDebugAvailable,
     readDevDebugFlags,
     readDevDebugLog,
-    readDevDebugPosition,
+    subscribeDevDebugAvailability,
     subscribeDevDebugLog,
     subscribeDevDebugFlags,
     writeDevDebugFlags,
-    writeDevDebugPosition,
 } from '../utils/devDebug';
+import { BUILD_LABEL } from '../utils/buildInfo';
 import type { DevDebugCaptureCategory, DevDebugFlags, DevDebugFloatingPosition } from '../utils/devDebug';
 
 const FLOATING_BUTTON_SIZE = 44;
 const FLOATING_SAFE_MARGIN = 16;
 const PANEL_WIDTH = 342;
-const PANEL_ESTIMATED_HEIGHT = 368;
+const PANEL_ESTIMATED_HEIGHT = 392;
 const DRAG_THRESHOLD_PX = 4;
 
 function getViewportSize() {
@@ -49,10 +51,6 @@ function getDefaultFloatingPosition(): DevDebugFloatingPosition {
     });
 }
 
-function getInitialFloatingPosition(): DevDebugFloatingPosition {
-    return clampFloatingPosition(readDevDebugPosition() ?? getDefaultFloatingPosition());
-}
-
 function getPanelPosition(position: DevDebugFloatingPosition): DevDebugFloatingPosition {
     const viewport = getViewportSize();
     const panelWidth = Math.min(PANEL_WIDTH, viewport.width - FLOATING_SAFE_MARGIN * 2);
@@ -65,14 +63,14 @@ function getPanelPosition(position: DevDebugFloatingPosition): DevDebugFloatingP
 
 const ToggleRow: React.FC<{
     title: string;
-    detail: string;
+    detail?: string;
     checked: boolean;
     onChange: (checked: boolean) => void;
 }> = ({ title, detail, checked, onChange }) => (
     <div className="flex items-center justify-between gap-4 py-3">
         <div className="min-w-0">
             <div className="text-[13px] font-bold text-white">{title}</div>
-            <div className="mt-1 text-[11px] leading-relaxed text-white/55">{detail}</div>
+            {detail && <div className="mt-1 text-[11px] leading-relaxed text-white/55">{detail}</div>}
         </div>
         <button
             type="button"
@@ -94,12 +92,62 @@ const ToggleRow: React.FC<{
     </div>
 );
 
+// 类别用紧凑 checkbox「并排」摆（无说明，看不懂就别用），跟总开关那种 switch 区分开。
+const CheckboxChip: React.FC<{
+    label: string;
+    checked: boolean;
+    onChange: (checked: boolean) => void;
+}> = ({ label, checked, onChange }) => (
+    <button
+        type="button"
+        role="checkbox"
+        aria-checked={checked}
+        onClick={() => onChange(!checked)}
+        className="flex items-center gap-2"
+    >
+        <span
+            className={`flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] border transition-colors ${
+                checked
+                    ? 'border-amber-300/70 bg-amber-300/80 text-black'
+                    : 'border-white/25 bg-white/5 text-transparent'
+            }`}
+        >
+            <Check size={12} weight="bold" />
+        </span>
+        <span className="text-[13px] font-bold text-white">{label}</span>
+    </button>
+);
+
+// 复制 / 下载 / 未来其它日志动作共享同一种胶囊按钮——抽出来免得两套 className 28 行各自跑偏。
+const LogActionButton: React.FC<{
+    onClick: () => void;
+    disabled: boolean;
+    icon: React.ReactNode;
+    label: React.ReactNode;
+}> = ({ onClick, disabled, icon, label }) => (
+    <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        className={`flex h-8 flex-1 items-center justify-center gap-1.5 rounded-full px-3 text-[11px] font-bold transition-colors ${
+            disabled
+                ? 'bg-white/5 text-white/25'
+                : 'bg-white/10 text-white/75 active:scale-95'
+        }`}
+    >
+        {icon}
+        {label}
+    </button>
+);
+
 const DevDebugPanel: React.FC = () => {
     const [open, setOpen] = useState(false);
+    const [available, setAvailable] = useState(() => isDevDebugAvailable());
     const [flags, setFlags] = useState<DevDebugFlags>(() => readDevDebugFlags());
     const [logCount, setLogCount] = useState(() => readDevDebugLog().length);
     const [copied, setCopied] = useState(false);
-    const [floatingPosition, setFloatingPosition] = useState<DevDebugFloatingPosition>(getInitialFloatingPosition);
+    // 位置不持久化：每次出现都回默认角，拖动只在本次会话内有效（prod 刷新=失效=类似关闭，没必要存）。
+    const [floatingPosition, setFloatingPosition] = useState<DevDebugFloatingPosition>(getDefaultFloatingPosition);
     const dragStateRef = useRef<{
         pointerId: number;
         startX: number;
@@ -110,39 +158,77 @@ const DevDebugPanel: React.FC = () => {
     const suppressClickRef = useRef(false);
 
     useEffect(() => subscribeDevDebugFlags(setFlags), []);
-    useEffect(() => subscribeDevDebugLog((entries) => setLogCount(entries.length)), []);
+    // 解锁时（false→true）从 storage 重读 flags：mount 时 isDevDebugAvailable() 为 false 的话
+    // useState 拿到的是 DEFAULT_DEV_DEBUG_FLAGS（canUseDevDebugStorage gate 不放行），
+    // 后续 unlock 不刷新就会用户改一个开关 → writeDevDebugFlags({...DEFAULT, [k]:v}) 覆盖掉
+    // localStorage 里其他配置。这里在变可用时再读一次兜底。
+    useEffect(() => subscribeDevDebugAvailability((next) => {
+        setAvailable(next);
+        if (next) setFlags(readDevDebugFlags());
+    }), []);
+    // logCount 只在面板展开时才用得到（复制 (N) 按钮），收起 / 不可用都不订阅——
+    // 避免 instant-push 高频 append 时每条都触发整个 panel re-render。
     useEffect(() => {
-        const clampAndPersist = () => {
-            setFloatingPosition((current) => clampFloatingPosition(current));
+        if (!open) return;
+        setLogCount(readDevDebugLog().length); // open 时拉一次最新值
+        return subscribeDevDebugLog((entries) => setLogCount(entries.length));
+    }, [open]);
+    // 视口 resize / scroll 只在面板可见时跟随——!available 阶段不挂监听器，避免 mobile
+    // 地址栏伸缩高频触发 setState 把整个 panel re-render（即使它返回 null）。
+    useEffect(() => {
+        if (!available) return;
+        const clampToViewport = () => {
+            setFloatingPosition((current) => {
+                const next = clampFloatingPosition(current);
+                // 同样的 {x,y} 还要返回原对象，免得 React 因为 Object.is 失败而每次 commit。
+                return (next.x === current.x && next.y === current.y) ? current : next;
+            });
         };
-        window.addEventListener('resize', clampAndPersist);
-        window.visualViewport?.addEventListener('resize', clampAndPersist);
-        window.visualViewport?.addEventListener('scroll', clampAndPersist);
+        window.addEventListener('resize', clampToViewport);
+        window.visualViewport?.addEventListener('resize', clampToViewport);
+        window.visualViewport?.addEventListener('scroll', clampToViewport);
         return () => {
-            window.removeEventListener('resize', clampAndPersist);
-            window.visualViewport?.removeEventListener('resize', clampAndPersist);
-            window.visualViewport?.removeEventListener('scroll', clampAndPersist);
+            window.removeEventListener('resize', clampToViewport);
+            window.visualViewport?.removeEventListener('resize', clampToViewport);
+            window.visualViewport?.removeEventListener('scroll', clampToViewport);
         };
-    }, []);
+    }, [available]);
 
     const activeCount = useMemo(
         () => (flags.skipPromptBuild ? 1 : 0)
             + (flags.skipEmotionEval ? 1 : 0)
-            + flags.captureLogs.length
-            + (flags.exposeLogDetail ? 1 : 0),
+            // 「在录」= 总开关开 且 至少勾了一类——否则浮球红点会骗人「在录」其实 isCaptureEnabled
+            // 任何类别都返 false。
+            + (flags.captureEnabled && flags.captureLogs.length > 0 ? 1 : 0)
+            // exposeLogDetail 只在录制实际生效时才计（同上）。
+            + (flags.captureEnabled && flags.captureLogs.length > 0 && flags.exposeLogDetail ? 1 : 0),
         [flags],
     );
+    // 所有 setFlags 都走 functional update：避免「闭包里的 flags 还是上一次 render 的版本」+
+    // subscribeDevDebugFlags 异步同步两边覆盖（双标签页 storage 事件就会触发）。
     const updateFlag = <K extends keyof DevDebugFlags,>(key: K, value: DevDebugFlags[K]) => {
-        setFlags(writeDevDebugFlags({ ...flags, [key]: value }));
+        setFlags((prev) => writeDevDebugFlags({ ...prev, [key]: value }));
     };
     const toggleCapture = (category: DevDebugCaptureCategory, checked: boolean) => {
-        const captureLogs = checked
-            ? [...flags.captureLogs, category]
-            : flags.captureLogs.filter((item) => item !== category);
-        setFlags(writeDevDebugFlags({ ...flags, captureLogs }));
+        setFlags((prev) => writeDevDebugFlags({
+            ...prev,
+            captureLogs: checked
+                ? [...prev.captureLogs, category]
+                : prev.captureLogs.filter((item) => item !== category),
+        }));
     };
     const resetFlags = () => {
+        // 重置 = 回默认（总开关关 + 清空勾选）+ 清空所有日志，比「全不勾」更彻底。
+        // 注：writeDevDebugFlags 内部检测到 captureEnabled true→false 也会清日志，这里显式 clear
+        // 是为了「即便上次就是 false」时也保证清干净（重置语义包含清理日志）。
         setFlags(writeDevDebugFlags(DEFAULT_DEV_DEBUG_FLAGS));
+        clearDevDebugLog();
+    };
+    const handleForceClose = () => {
+        // 「关闭」= 收起 + 位置回默认（纯内存）+ 强制关掉；任意分支生效，里面的开关另存不动。
+        setOpen(false);
+        setFloatingPosition(getDefaultFloatingPosition());
+        closeDevDebug();
     };
     const copyLog = async () => {
         const text = formatDevDebugLog();
@@ -210,7 +296,6 @@ const DevDebugPanel: React.FC = () => {
         if (drag.moved) {
             event.preventDefault();
             setFloatingPosition(next);
-            writeDevDebugPosition(next);
             window.setTimeout(() => { suppressClickRef.current = false; }, 0);
         }
 
@@ -228,9 +313,11 @@ const DevDebugPanel: React.FC = () => {
         setOpen(true);
     };
 
-    if (!isDevDebugAvailable()) return null;
+    if (!available) return null;
 
     const panelPosition = getPanelPosition(floatingPosition);
+    // 面板最大高度按「实际可视高度」算（visualViewport，避开手机动态工具栏），跟定位口径一致，超出部分中间滚动。
+    const panelMaxHeight = getViewportSize().height - FLOATING_SAFE_MARGIN * 2;
 
     return (
         <div
@@ -263,10 +350,11 @@ const DevDebugPanel: React.FC = () => {
 
             {open && (
                 <section
-                    className="max-h-[calc(100vh-32px)] w-[min(342px,calc(100vw-32px))] overflow-y-auto rounded-2xl border border-white/12 bg-zinc-950/90 text-white shadow-2xl backdrop-blur-xl"
+                    className="flex w-[min(342px,calc(100vw-32px))] flex-col overflow-hidden rounded-2xl border border-white/12 bg-zinc-950/90 text-white shadow-2xl backdrop-blur-xl"
+                    style={{ maxHeight: panelMaxHeight }}
                     aria-label="开发调试面板"
                 >
-                    <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
+                    <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
                         <div className="flex min-w-0 items-center gap-2">
                             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-amber-200">
                                 <Wrench size={17} weight="bold" />
@@ -274,7 +362,7 @@ const DevDebugPanel: React.FC = () => {
                             <div className="min-w-0">
                                 <div className="text-sm font-black leading-tight">Dev Debug</div>
                                 <div className="truncate font-mono text-[10px] text-white/40">
-                                    {__BUILD_BRANCH__}@{__BUILD_COMMIT__}
+                                    {BUILD_LABEL}
                                 </div>
                             </div>
                         </div>
@@ -288,7 +376,7 @@ const DevDebugPanel: React.FC = () => {
                         </button>
                     </div>
 
-                    <div className="px-4">
+                    <div className="flex-1 overflow-y-auto px-4">
                         <ToggleRow
                             title="跳过 Prompt Build"
                             detail="只发送聊天历史。"
@@ -302,58 +390,61 @@ const DevDebugPanel: React.FC = () => {
                             checked={flags.skipEmotionEval}
                             onChange={(checked) => updateFlag('skipEmotionEval', checked)}
                         />
-                        {DEV_DEBUG_CAPTURE_CATEGORIES.map((category) => (
-                            <React.Fragment key={category.key}>
+                        <div className="h-px bg-white/10" />
+
+                        {/* 记录日志：总开关；打开后才露出 类型 / 记录完整 / 复制 / 下载 一整套 —— 关掉时整段收起。
+                            true→false 时清空日志这一步在 writeDevDebugFlags 数据层做，这里走通用 updateFlag。 */}
+                        <ToggleRow
+                            title="记录日志"
+                            checked={flags.captureEnabled}
+                            onChange={(checked) => updateFlag('captureEnabled', checked)}
+                        />
+                        {flags.captureEnabled && (
+                            <>
+                                <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pb-3 pl-0.5">
+                                    {DEV_DEBUG_CAPTURE_CATEGORIES.map((category) => (
+                                        <CheckboxChip
+                                            key={category.key}
+                                            label={category.title}
+                                            checked={flags.captureLogs.includes(category.key)}
+                                            onChange={(checked) => toggleCapture(category.key, checked)}
+                                        />
+                                    ))}
+                                </div>
+                                <div className="mt-1 mb-3 flex gap-2">
+                                    <LogActionButton
+                                        onClick={copyLog}
+                                        disabled={logCount === 0}
+                                        icon={<ClipboardText size={13} weight="bold" />}
+                                        label={copied ? '已复制' : logCount > 0 ? `复制 (${logCount})` : '暂无日志'}
+                                    />
+                                    <LogActionButton
+                                        onClick={downloadLog}
+                                        disabled={logCount === 0}
+                                        icon={<DownloadSimple size={13} weight="bold" />}
+                                        label="下载"
+                                    />
+                                </div>
                                 <div className="h-px bg-white/10" />
                                 <ToggleRow
-                                    title={category.title}
-                                    detail={category.detail}
-                                    checked={flags.captureLogs.includes(category.key)}
-                                    onChange={(checked) => toggleCapture(category.key, checked)}
+                                    title="记录完整内容"
+                                    detail="只对新条目生效"
+                                    checked={flags.exposeLogDetail}
+                                    onChange={(checked) => updateFlag('exposeLogDetail', checked)}
                                 />
-                            </React.Fragment>
-                        ))}
-                        <div className="h-px bg-white/10" />
-                        <ToggleRow
-                            title="记录完整内容"
-                            detail="默认只存折叠的长文本（省空间 / 隐私）。需要原文就在复现前打开，之后抓的才存完整。"
-                            checked={flags.exposeLogDetail}
-                            onChange={(checked) => updateFlag('exposeLogDetail', checked)}
-                        />
-                        <div className="mb-3 mt-1 flex gap-2">
-                            <button
-                                type="button"
-                                onClick={copyLog}
-                                disabled={logCount === 0}
-                                className={`flex h-8 flex-1 items-center justify-center gap-1.5 rounded-full px-3 text-[11px] font-bold transition-colors ${
-                                    logCount > 0
-                                        ? 'bg-white/10 text-white/75 active:scale-95'
-                                        : 'bg-white/5 text-white/25'
-                                }`}
-                            >
-                                <ClipboardText size={13} weight="bold" />
-                                {copied ? '已复制' : logCount > 0 ? `复制 (${logCount})` : '暂无日志'}
-                            </button>
-                            <button
-                                type="button"
-                                onClick={downloadLog}
-                                disabled={logCount === 0}
-                                className={`flex h-8 flex-1 items-center justify-center gap-1.5 rounded-full px-3 text-[11px] font-bold transition-colors ${
-                                    logCount > 0
-                                        ? 'bg-white/10 text-white/75 active:scale-95'
-                                        : 'bg-white/5 text-white/25'
-                                }`}
-                            >
-                                <DownloadSimple size={13} weight="bold" />
-                                下载
-                            </button>
-                        </div>
+                            </>
+                        )}
                     </div>
 
-                    <div className="flex items-center justify-between gap-3 border-t border-white/10 px-4 py-3">
-                        <span className="text-[10px] text-white/35">
-                            仅开发分支显示，正式分支会自动收起。
-                        </span>
+                    <div className="flex shrink-0 items-center justify-end gap-2 border-t border-white/10 px-4 py-3">
+                        <button
+                            type="button"
+                            onClick={handleForceClose}
+                            className="flex h-8 shrink-0 items-center gap-1 rounded-full bg-white/10 px-3 text-[11px] font-bold text-white/70 active:scale-95"
+                        >
+                            <Power size={13} weight="bold" />
+                            关闭
+                        </button>
                         <button
                             type="button"
                             onClick={resetFlags}

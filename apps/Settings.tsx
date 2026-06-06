@@ -14,6 +14,7 @@ import { loadPushConfig, savePushConfig, registerScheduleOnWorker, startHeartbea
 import { ProactiveChat } from '../utils/proactiveChat';
 import { InstantPushSettingsModal } from '../components/settings/InstantPushSettingsModal';
 import { PushVapidSettingsModal } from '../components/settings/PushVapidSettingsModal';
+import VersionInfo from '../components/settings/VersionInfo';
 import { isPushVapidReady } from '../utils/pushVapid';
 
 // hot_news（orz.ai）可选热榜平台。key 必须与 API 的 ?platform= 完全一致。
@@ -1546,9 +1547,7 @@ const Settings: React.FC = () => {
             </p>
         </section>
 
-        <div className="text-center text-[10px] text-slate-300 pb-8 font-mono tracking-widest uppercase">
-            v2.2 (Realtime Awareness)
-        </div>
+        <VersionInfo />
       </div>
 
       {/* 主动消息 Push 加速 · 启用前确认 */}

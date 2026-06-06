@@ -1,4 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { querySwVersion } from '../utils/swVersion';
+import { BUILD_LABEL } from '../utils/buildInfo';
 
 /**
  * 构建版本指示器：右下角阶梯式堆三行
@@ -10,36 +12,16 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
  *   分支名长度可变，所以行宽顺序不固定，需要 useLayoutEffect 在 paint 前测量。
  * - 仅当 vite.config 注入的 __BUILD_BADGE_VISIBLE__ 为 true 时挂载
  *   （VITE_HIDE_BUILD_BADGE=1 时构建会把它编译成 false → 树摇掉）
- * - SW 版本通过 MessageChannel postMessage GET_SW_VERSION 查询；SW 未注册 /
+ * - SW 版本通过 utils/swVersion 的 GET_SW_VERSION 协议查询；SW 未注册 /
  *   不响应时显示 sw@?
  * - pointer-events-none + select-none：不可点、不可选、不影响下层交互
  * - z-[2147483647]：保证盖在所有 modal / 动画 / 全屏覆盖层之上
  * - safe-area-inset：iOS PWA 底部 home indicator 区域避让
  */
-async function querySwVersion(): Promise<string> {
-    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return '?';
-    try {
-        const reg = await navigator.serviceWorker.ready;
-        const target = reg.active || reg.waiting || reg.installing;
-        if (!target) return '?';
-        return await new Promise<string>((resolve) => {
-            const channel = new MessageChannel();
-            const timer = setTimeout(() => resolve('?'), 1500);
-            channel.port1.onmessage = (e) => {
-                clearTimeout(timer);
-                resolve(e.data?.version ?? '?');
-            };
-            target.postMessage({ type: 'GET_SW_VERSION' }, [channel.port2]);
-        });
-    } catch {
-        return '?';
-    }
-}
-
 const BuildBadge: React.FC = () => {
     if (!__BUILD_BADGE_VISIBLE__) return null;
 
-    const buildLabel = `${__BUILD_BRANCH__}@${__BUILD_COMMIT__}`;
+    const buildLabel = BUILD_LABEL;
     const [swVersion, setSwVersion] = useState<string>('…');
     const lineRefs = useRef<Array<HTMLSpanElement | null>>([]);
     const [widths, setWidths] = useState<number[] | null>(null);

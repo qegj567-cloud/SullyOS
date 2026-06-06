@@ -12,7 +12,7 @@ import { applyEmotionEvalRaw } from './emotionApply';
 import { processNewMessages } from './memoryPalace/pipeline';
 import { loadMusicHooks } from '../context/MusicContext';
 import type { XhsNote } from './realtimeContext';
-import { appendDevDebugLlmLog, isLlmLogCaptureEnabled } from './devDebug';
+import { appendDevDebugInstantPushLog, isCaptureEnabled } from './devDebug';
 
 let initialized = false;
 const INSTANT_TRACE_LOG_KEY = 'instant_push_trace_log_v1';
@@ -306,14 +306,14 @@ function toChatCompletionsUrl(baseUrl?: string): string {
 }
 
 async function logInstantPushLlmExchange(message: ActiveMsg2InboxMessage): Promise<void> {
-  if (!isLlmLogCaptureEnabled()) return;
+  if (!isCaptureEnabled('instant-push')) return;
 
   const sessionId = getInstantSessionId(message);
   if (!sessionId) return;
 
   try {
     const session = await ActiveMsgStore.getOutboundSession(sessionId);
-    appendDevDebugLlmLog({
+    appendDevDebugInstantPushLog({
       url: toChatCompletionsUrl(session?.apiCredentials?.baseUrl),
       method: 'POST',
       status: 200,

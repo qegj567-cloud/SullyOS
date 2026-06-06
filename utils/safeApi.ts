@@ -6,7 +6,7 @@
  * instead of JSON responses.
  */
 
-import { appendDevDebugLlmLog } from './devDebug';
+import { appendDevDebugApiLog } from './devDebug';
 
 function isChatCompletionUrl(url: string): boolean {
     return url.includes('/chat/completions');
@@ -176,7 +176,7 @@ export async function safeFetchJson(
 
             const data = await safeResponseJson(response);
             if (isChatCompletionUrl(urlStr)) {
-                appendDevDebugLlmLog({
+                appendDevDebugApiLog({
                     url: urlStr,
                     method: options.method,
                     status: response.status,
@@ -209,7 +209,7 @@ export async function safeFetchJson(
             }
 
             if (isChatCompletionUrl(urlStr)) {
-                appendDevDebugLlmLog({
+                appendDevDebugApiLog({
                     url: urlStr,
                     method: options.method,
                     status: lastStatus,

@@ -1,7 +1,7 @@
 import React, { useMemo, useEffect, useLayoutEffect, useState, useRef } from 'react';
 import { useOS } from '../context/OSContext';
 import { INSTALLED_APPS, DOCK_APPS } from '../constants';
-import { isDevDebugAvailable } from '../utils/devDebug';
+import { isDevDebugAvailable, subscribeDevDebugAvailability } from '../utils/devDebug';
 import AppIcon from '../components/os/AppIcon';
 import { DB } from '../utils/db';
 import { CharacterProfile, Anniversary, AppID, DailySchedule } from '../types';
@@ -385,14 +385,18 @@ const Launcher: React.FC = () => {
   const dragMoved = useRef(0);
 
   // Pagination Logic
+  // 跟随 DevDebug 可用性：prod 用户在设置页连点 5 下解锁后，CharCreatorDev 立刻出现；
+  // 点「关闭」/ 刷新（prod 自动失效）也立刻消失。useMemo deps 没列 devDebugVisible
+  // 会让它锁在 mount 时的初值。
+  const [devDebugVisible, setDevDebugVisible] = useState(() => isDevDebugAvailable());
+  useEffect(() => subscribeDevDebugAvailability(setDevDebugVisible), []);
   const gridApps = useMemo(() => {
-    const devOk = isDevDebugAvailable();
     return INSTALLED_APPS.filter(app =>
       !DOCK_APPS.includes(app.id)
-      // 「捏脸·开发」仅在开发模式（右下角开发徽标可见时）显示
-      && (app.id !== AppID.CharCreatorDev || devOk)
+      // 「捏脸·开发」仅在开发模式（右下角开发徽标可见或手动解锁时）显示
+      && (app.id !== AppID.CharCreatorDev || devDebugVisible)
     );
-  }, []);
+  }, [devDebugVisible]);
 
   const dockAppsConfig = useMemo(() => 
     DOCK_APPS.map(id => INSTALLED_APPS.find(app => app.id === id)).filter(Boolean) as typeof INSTALLED_APPS,

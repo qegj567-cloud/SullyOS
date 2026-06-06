@@ -1,7 +1,7 @@
 import { InstantPushConfig, APIConfig, type InstantOversizeTransport } from '../types';
 import { loadPushVapid, isPushVapidReady } from './pushVapid';
 import { ActiveMsgStore } from './activeMsgStore';
-import { appendDevDebugLlmLog } from './devDebug';
+import { appendDevDebugInstantPushLog } from './devDebug';
 import {
   SUBSCRIBE_SETTLE_MS,
   bytesToB64u,
@@ -1028,7 +1028,7 @@ export async function sendInstantPushAndAwaitReply(
     if (result === 'timeout') {
       abortController.abort();
       instantTrace(sessionId, 'timeout', { waitedMs: Date.now() - sendStartedAt });
-      appendDevDebugLlmLog({
+      appendDevDebugInstantPushLog({
         url: cfg.workerUrl,
         method: 'POST',
         status: 200,
@@ -1077,7 +1077,7 @@ export async function sendInstantPushAndAwaitReply(
         abortController.abort();
         const waitedMs = Date.now() - sendStartedAt;
         instantTrace(sessionId, 'flush-not-confirmed', { waitedMs });
-        appendDevDebugLlmLog({
+        appendDevDebugInstantPushLog({
           url: cfg.workerUrl,
           method: 'POST',
           status: 200,
@@ -1116,7 +1116,7 @@ export async function sendInstantPushAndAwaitReply(
       }
     }
 
-    appendDevDebugLlmLog({
+    appendDevDebugInstantPushLog({
       url: cfg.workerUrl,
       method: 'POST',
       status: 200,
@@ -1142,7 +1142,7 @@ export async function sendInstantPushAndAwaitReply(
       message: err?.message || String(err),
       waitedMs: Date.now() - sendStartedAt,
     });
-    appendDevDebugLlmLog({
+    appendDevDebugInstantPushLog({
       url: cfg.workerUrl,
       method: 'POST',
       status: 500,

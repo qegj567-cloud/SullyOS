@@ -1,6 +1,6 @@
 # Dev Debug 调试子系统
 
-开发分支专用的"工具箱"：一个悬浮按钮 + 面板，放一堆**只在开发分支显示**的调试开关，外加一套可选的「分类捕获」日志（勾哪类抓哪类，目前有 LLM 请求/响应）。正式分支（main / master）默认整个隐藏，用户看不到也不会误触。
+开发分支专用的"工具箱"：一个悬浮按钮 + 面板，放一堆**只在开发分支显示**的调试开关，外加一套可选的「分类捕获」日志——打开**总开关**「记录日志」后会露出并排的类型 checkbox（目前 `api` 普通聊天 / `instant-push` 即 IP 通道事件），勾哪类抓哪类。面板走极简：类型并排、无逐条说明（看不懂就别用）。正式分支（main / master）默认整个隐藏，用户看不到也不会误触。
 
 这份文档讲清楚它怎么运作，以及**怎么往里加新开关 / 加一类捕获日志**——照着步骤抄就行。
 
@@ -12,7 +12,7 @@
 
 ```ts
 isDevDebugAvailable()  // utils/devDebug.ts
-  → 读 __BUILD_BADGE_VISIBLE__（vite 构建时注入的常量）
+  → !forceClosed && (__BUILD_BADGE_VISIBLE__（vite 构建注入）|| manualUnlock（连点解锁·会话级）)
 ```
 
 `__BUILD_BADGE_VISIBLE__` 在 `vite.config.ts` 里算出来，规则如下：
@@ -23,10 +23,21 @@ isDevDebugAvailable()  // utils/devDebug.ts
 | 在其他分支构建 | ✅ 显示 |
 | 设了 `VITE_HIDE_BUILD_BADGE=1` | ❌ 强制隐藏（覆盖默认） |
 | 设了 `VITE_SHOW_BUILD_BADGE=1` | ✅ 强制显示（在 master 本地调试用） |
+| 设置页底部连点「构建版本」5 下 | ✅ 显示（**手动解锁**，会话级、刷新即关，正式版临时排障用） |
 
 > 分支名的来源：CI 优先读 `GITHUB_REF_NAME` / `VERCEL_GIT_COMMIT_REF` / `CF_PAGES_BRANCH` / `BRANCH`，本地退化成 `git rev-parse --abbrev-ref HEAD`，非 git 环境是 `'unknown'`（`'unknown'` 不在发布分支集合里，所以会显示）。
 
 **关键含义**：在 master 上本地想调试，跑 `VITE_SHOW_BUILD_BADGE=1 pnpm dev` 即可，不用改代码。
+
+**正式版排障（手动解锁）**：设置页底部连点 `VersionInfo`（构建版本那栏）5 下 → `unlockDevDebug()` **会话级**解锁（**不落 localStorage**），`isDevDebugAvailable()` 放行、`<DevDebugPanel />` 经 `subscribeDevDebugAvailability` 即时弹出。
+
+**怎么关掉**：
+- **刷新页面**：`manualUnlock` 清零 → prod 回到隐藏；非 prod 因 `__BUILD_BADGE_VISIBLE__` 默认可见，刷新后照常显示（即「非 prod 一直开」）。
+- **面板底部「关闭」按钮**：`closeDevDebug()` 置 `forceClosed`，**任意分支**强制关掉；会话级，**刷新后非 prod 自动恢复**。顺手把浮球位置收回默认、面板收起；**`isCaptureEnabled` 也会一并返 false**（避免面板看着关了但业务代码继续往 localStorage 写日志的隐私债），但**里面的捕获 / 行为开关存档不动**——刷新恢复后可见性回来，里面勾的还是原样。
+
+> 可用性 = `!forceClosed && (__BUILD_BADGE_VISIBLE__ || manualUnlock)`，三个量里只有 `__BUILD_BADGE_VISIBLE__` 是构建期常量，另两个是会话级内存标志（刷新归零）。
+
+> **面板自身状态全是纯内存、不落盘**：浮球位置、展开与否每次出现都回默认（位置默认角、收起）；prod 刷新 = 解锁失效 ≈ 手动关闭，所以位置没必要持久化。里面的捕获 / 行为开关是另一套 localStorage，跟这些无关。
 
 ---
 
@@ -36,6 +47,8 @@ isDevDebugAvailable()  // utils/devDebug.ts
 |------|------|
 | `utils/devDebug.ts` | 核心：类型、存储读写、事件、分类捕获、便捷 getter。**所有逻辑都在这** |
 | `components/DevDebugPanel.tsx` | 悬浮按钮 + 面板 UI（拖拽、开关行、复制 / 下载日志、重置） |
+| `components/settings/VersionInfo.tsx` | 设置页底部版本脚注（APP_VERSION + build hash + sw 版本）；连点 5 下手动解锁面板 |
+| `utils/swVersion.ts` | `querySwVersion()`：向 SW 查版本号（BuildBadge / VersionInfo 共用） |
 | `App.tsx` | 挂载 `<DevDebugPanel />`（无脑挂，组件内部自己判断要不要渲染） |
 | `vite.config.ts` | 注入 `__BUILD_BRANCH__` / `__BUILD_COMMIT__` / `__BUILD_BADGE_VISIBLE__` |
 | `vite-env.d.ts` | 上面三个常量的 TS 声明 |
@@ -46,7 +59,9 @@ isDevDebugAvailable()  // utils/devDebug.ts
 |------|--------|
 | `skipPromptBuild` | `utils/chatRequestPayload.ts:158` |
 | `skipEmotionEval` | `context/OSContext.tsx:1436`、`hooks/useChatAI.ts:439 / 685` |
-| 捕获类 `llm` | `utils/safeApi.ts`、`utils/activeMsgRuntime.ts`、`utils/instantPushClient.ts`（调 `appendDevDebugLlmLog`） |
+| 捕获类 `api` | `utils/safeApi.ts`（调 `appendDevDebugApiLog`，仅普通聊天直发模型） |
+| 捕获类 `instant-push` | `utils/activeMsgRuntime.ts`、`utils/instantPushClient.ts`（调 `appendDevDebugInstantPushLog`） |
+| 总开关 `captureEnabled` | `utils/devDebug.ts` 的 `isCaptureEnabled()` 闸门——关掉时所有捕获类都不抓 |
 
 ---
 
@@ -57,7 +72,11 @@ isDevDebugAvailable()  // utils/devDebug.ts
 | 类型 | 例子 | 数据形态 | 加新的成本 |
 |------|------|---------|-----------|
 | **行为开关（skip 型）** | `skipPromptBuild` / `skipEmotionEval` | `DevDebugFlags` 里一个 `boolean` | 改 flag 结构（见指南 A） |
-| **捕获类（checkbox）** | `llm`（未来 `xxx` / `yyy`…） | 进 `captureLogs: Category[]` 数组 | 加一行 category + 一个薄封装，flag 结构不动（见指南 B） |
+| **捕获类（checkbox）** | `api` / `instant-push`（未来 `mcp`…） | 进 `captureLogs: Category[]` 数组 | 加一行 category + 一个薄封装，flag 结构不动（见指南 B） |
+
+> 还有个**总开关** `captureEnabled`（本质也是个 boolean 行为开关）：勾选只是「选类型」，真正抓不抓 = `captureEnabled && captureLogs.includes(category)`。面板上**总开关用 switch、类型用并排 checkbox**，且**总开关打开后才露出类型 checkbox**（无逐条说明）。
+
+> **面板文案约定（用就默认看得懂）**：标题写清"是什么"；说明（`detail`）只留**非显而易见的坑**，能省则省、不写教程。能从标题猜到的（总开关、类型 checkbox）干脆不写说明。例：「记录完整内容」说明只留一句「只对新条目生效」——为什么折叠、怎么导出这些写在 doc（第六、第九节），不挤进面板。新增开关 / 类别时照此办，详尽解释放 doc、面板只留必要提示。
 
 捕获类共用同一套底座（存储、脱敏、限容、复制 / 下载），所以加新类很便宜——这也是为什么日志系统设计成"分类"而不是给每种日志单独开一个 boolean。
 
@@ -71,10 +90,11 @@ DevDebugPanel (UI)
    ▼
 writeDevDebugFlags(flags)
    │  写 localStorage（按分支隔离的 key）
-   │  取消勾选的捕获类 → 清掉它那一类的日志
    │  派发 DEV_DEBUG_EVENT 自定义事件
+   │  ⚠️ 取消勾选「不」清日志（勾选是纯选择）；清日志只在「重置」时做
    ▼
-业务代码调 isXxxSkipped() / isCaptureEnabled('llm')
+业务代码调 isXxxSkipped() / isCaptureEnabled('api' | 'instant-push')
+   │  闸门 = captureEnabled（总开关）&& 该类已勾
    │  每次都现读 localStorage，拿到最新值
    ▼
 按 flag 改变行为（跳过某步 / 抓日志）
@@ -95,8 +115,9 @@ writeDevDebugFlags(flags)
 ```
 sullyos.devDebug.flags.v1.<branch>      ← 开关状态（含 captureLogs 数组）
 sullyos.devDebug.log.v1.<branch>        ← 分类捕获日志（各类混存，每条带 category 字段）
-sullyos.devDebug.position.v1.<branch>   ← 悬浮按钮位置
 ```
+
+> 浮球位置 / 展开与否**不落 localStorage**（纯内存，刷新即回默认）；可用性（解锁 / 强制关闭）也是会话级内存标志。只有上面这两个 key 真正持久化。
 
 `<branch>` 由 `__BUILD_BRANCH__` 归一化而来（非字母数字 `._-` 的字符替换成 `_`）。
 
@@ -108,7 +129,9 @@ sullyos.devDebug.position.v1.<branch>   ← 悬浮按钮位置
 |------|------|------|--------|
 | `skipPromptBuild` | 行为 | 只发聊天历史，不注入 system prompt | 双语 / MCD / HTML / thinking 等增强全部关掉 |
 | `skipEmotionEval` | 行为 | 主回复照常，但不跑本地 / Instant Push 的 emotion eval | 关掉后情绪不更新 |
-| `llm` | 捕获 | 抓 chat completions 的请求 + raw response（含 Instant Push 通道） | **取消勾选时清空 `llm` 这一类日志**（不影响其它类） |
+| `captureEnabled`<br>（记录日志·总开关） | 行为 | 日志录制总闸：关掉时所有捕获类都不抓 | 默认关；关掉只是停录，**不清**已抓日志 |
+| 捕获类 `api` | 捕获 | 抓普通聊天直发模型的 chat completions 请求 + 响应（`safeApi`） | 取消勾选只停此后抓取，**不清**已有日志 |
+| 捕获类 `instant-push` | 捕获 | 抓 instant push 通道：经 worker 的 LLM 交换 + SSE 投递结果（超时/收到/失败） | 同上，取消勾选不清日志 |
 | `exposeLogDetail`<br>（记录完整内容） | 抓取 | 关（默认）：写入时把长文本折叠成前 10 字 + `...` 再落库；开：整段存 | 影响**抓取 / 存储**；要完整须复现前打开，已抓的折叠版不可还原 |
 
 捕获日志：各类**混存在一个数组**里、每条带 `category`，全局最多留 **100 条 / 1 MB**（先到先淘汰）。因为长文本在写入时就折叠了（见第九节），实际存的是瘦身版、很省空间，1 MB 基本撑不爆、轻松存满 100 条；导出（复制 / 下载）默认导全部、自动带上当前分支 + commit，并对密钥字段脱敏。
@@ -189,19 +212,20 @@ if (isMemoryRecallSkipped()) {
 ### 1. `utils/devDebug.ts` —— 加 category + 元信息
 
 ```ts
-export type DevDebugCaptureCategory = 'llm' | 'mcp';   // ← 加一个字面量
+export type DevDebugCaptureCategory = 'api' | 'instant-push' | 'mcp';   // ← 加一个字面量
 
 export const DEV_DEBUG_CAPTURE_CATEGORIES: DevDebugCaptureCategoryMeta[] = [
-    { key: 'llm', title: '记录 LLM 日志', detail: '...' },
+    { key: 'api', title: 'API（普通聊天请求）', detail: '...' },
+    { key: 'instant-push', title: 'Instant Push（通道事件）', detail: '...' },
     { key: 'mcp', title: '记录 MCP 调用', detail: '抓 MCP 工具的入参和返回。' },  // ← 加一行
 ];
 ```
 
-> 面板靠遍历 `DEV_DEBUG_CAPTURE_CATEGORIES` 渲染开关，加了这一行，面板就自动多一个 `mcp` 开关，**不用动 Panel 代码**。
+> 面板靠遍历 `DEV_DEBUG_CAPTURE_CATEGORIES` 渲染并排 checkbox，加了这一行就自动多一个，**不用动 Panel 代码**。注意：面板只用 `title` 当短标签，`detail` 现在不渲染（仅作源码文档）。
 
 ### 2.（可选）写一个语义化薄封装
 
-底层 `appendDevDebugLog(category, { label, data })` 已经够用，但给每类包一层薄封装调用更顺手、字段更整齐（参考文件末尾的 `appendDevDebugLlmLog`）：
+底层 `appendDevDebugLog(category, { label, data })` 已经够用，但给每类包一层薄封装调用更顺手、字段更整齐（参考文件末尾的 `appendDevDebugApiLog` / `appendDevDebugInstantPushLog`，HTTP 形状的可直接复用 `appendDevDebugHttpLog`）：
 
 ```ts
 export function appendDevDebugMcpLog(input: { tool: string; args: unknown; result?: unknown }): void {
@@ -244,21 +268,22 @@ appendDevDebugMcpLog({ tool, args, result });   // 没勾 mcp 时是空操作，
 
 ### 长文本折叠（`exposeLogDetail`）
 
-LLM 日志里的上下文（system prompt、聊天历史、回复正文）又长又可能含隐私，整段塞进 localStorage 很快就把 1 MB 吃满、存不了几条。所以**默认在写入时就折叠**：递归把超过 10 字的字符串截成「前 10 字 + `...`」再落库。
+LLM 日志里的上下文（system prompt、聊天历史、回复正文）又长又可能含隐私，整段塞进 localStorage 很快就把 1 MB 吃满、存不了几条。所以**默认在写入时就折叠**：递归把超过 10 字的字符串截成「前 10 字 + `...`」再落库。**对象里 key 名等于 `messages` 且值是数组时也一起折**（任意嵌套深度，不限顶层）：留头一项，其余换成 `…还有 N 项（共 M）` 一条提示，免得几十条刷屏。其它返回数组**原样保留**（怕误折叠丢调试信息）。
 
 - 折叠发生在**写入层 `appendDevDebugLog()`**——`localStorage` 里存的就是瘦身版，容量限制作用在瘦身后的数据上，1 MB 撑不爆、轻松存满 100 条。大多数排查只要 url / status / error / response 摘要，瘦身版就够。
 - **代价**：要完整内容得**在复现之前**先开「记录完整内容」（`exposeLogDetail`），之后抓的才整段存；**已抓的折叠版无法事后还原**（原文压根没存过）。这是用空间换的——存储不再背着整段历史。
 - 折叠只动每条的 `data`；`label`（含完整 url，便于定位）和 `id` / `timestamp` / `category` 保留。每条带 `collapsed` 标记记录抓时折没折（expose 中途切换会让一份日志混着两种）。
 - 导出 JSON 只要有折叠条目，顶层就带一句 `note` 提示，拿到日志的人一眼知道有内容被截过、别当完整看。
 
-> 折叠是**通用**的——对所有捕获类的 `data` 一视同仁，未来加的捕获类自动享受，不用各自处理。改截断长度只动 `LOG_COLLAPSE_HEAD` 一个常量。
+> 折叠是**通用**的——对所有捕获类的 `data` 一视同仁，未来加的捕获类自动享受，不用各自处理。改字符串截断长度动 `LOG_COLLAPSE_HEAD`、改 messages 保留项数动 `LOG_COLLAPSE_MESSAGES_HEAD`（注意数组折叠只认 `messages` 这个 key）。
 
 ---
 
 ## 十、容易踩的坑
 
 - **改了开关行为，记得同步改面板 / category 的 `detail` 文案**，否则别人按文案理解会和实际不符。
-- **取消勾选某个捕获类 = 清掉它那一类日志**（见 `writeDevDebugFlags` 里对 `removed` 的处理）。想留日志就先导出再关。
+- **总开关 `captureEnabled` 是录制总闸**：光勾类型不会录，得把总开关打开；关掉总开关 = 一次「录制周期」结束 —— **立即清空已抓日志**（清空动作落在 `writeDevDebugFlags` 数据层，任何路径改 `captureEnabled` true → false 都触发，不只 UI handler）、把「类型 / 记录完整内容 / 复制 / 下载」整段 UI 收起；勾选的类型 + `exposeLogDetail` 作为下次的**配置**保留。
+- **取消勾选某个捕获类 = 只停此后抓取，不清已有日志**（勾选是纯选择）。想清日志走面板「重置」——它会一并把总开关关掉、清空全部勾选和日志，比"全不勾"更彻底。
 - **容量是全局共享的**（100 条 / 1 MB，各类混算）：某一类刷得很猛会把别的类挤掉，排查时注意。
 - **`exposeLogDetail`（记录完整内容）必须复现前开**：它管的是"抓取时存不存完整"，不是导出时才展开。中途打开只对**之后**抓的生效，已经抓下来的折叠版还原不了（原文没存过）。这是用空间换的，符合"大多数时候不需要那堆历史"的设计取舍。
 - **存储按分支隔离**：切到别的分支构建，之前的开关状态 / 日志不会带过来，是预期行为。

@@ -2,21 +2,29 @@
 // 加新类只动这里：
 //   1. 在 DevDebugCaptureCategory 加一个字面量
 //   2. 在 DEV_DEBUG_CAPTURE_CATEGORIES 加一行（面板会自动多出一个开关）
-//   3. 写一个语义化的 appendDevDebugXxxLog 薄封装（见文件末尾 appendDevDebugLlmLog）
+//   3. 写一个语义化的 appendDevDebugXxxLog 薄封装（见文件末尾 appendDevDebugApiLog / appendDevDebugInstantPushLog）
 // 其余存储 / 脱敏 / 限容 / 导出逻辑全部通用，不用改。
-export type DevDebugCaptureCategory = 'llm';
+// 分类按「来源通道」切：api = 普通聊天直发模型；instant-push = 经 worker 的通道事件。
+export type DevDebugCaptureCategory = 'api' | 'instant-push';
 
 export interface DevDebugCaptureCategoryMeta {
     key: DevDebugCaptureCategory;
+    /** 面板 checkbox 上显示的短标签（如 'API' / 'Instant Push'）。 */
     title: string;
+    /** 这一类抓什么的说明；面板不再渲染（看不懂就别用），仅作源码内文档。 */
     detail: string;
 }
 
 export const DEV_DEBUG_CAPTURE_CATEGORIES: DevDebugCaptureCategoryMeta[] = [
     {
-        key: 'llm',
-        title: '记录 LLM 日志',
-        detail: '抓 chat completions 的请求和 raw response，取消勾选后清空该类日志。',
+        key: 'api',
+        title: 'API',
+        detail: '普通聊天直发模型的 chat completions 请求与响应。',
+    },
+    {
+        key: 'instant-push',
+        title: 'IP',
+        detail: 'Instant Push 通道：经 worker 的 LLM 交换 + SSE 投递结果（超时 / 收到 / 失败）。',
     },
 ];
 
@@ -25,7 +33,12 @@ const CAPTURE_CATEGORY_KEYS: DevDebugCaptureCategory[] = DEV_DEBUG_CAPTURE_CATEG
 export interface DevDebugFlags {
     skipPromptBuild: boolean;
     skipEmotionEval: boolean;
-    /** 勾选了哪些捕获类别，就抓哪几类。取代旧的扁平 captureLlmLog 开关。 */
+    /**
+     * 日志总开关：关掉时无论勾了哪些类别都不抓，默认关。
+     * 跟 captureLogs 配合——是否抓 = captureEnabled && captureLogs.includes(category)。
+     */
+    captureEnabled: boolean;
+    /** 勾选了哪些捕获类别（纯选择）。取消勾选只影响此后抓取，不清已有日志。 */
     captureLogs: DevDebugCaptureCategory[];
     /**
      * 导出（复制 / 下载）时是否输出完整内容。
@@ -56,11 +69,13 @@ export const DEV_DEBUG_STORAGE_KEY = 'sullyos.devDebug.flags.v1';
 export const DEV_DEBUG_EVENT = 'sullyos-dev-debug-change';
 export const DEV_DEBUG_LOG_STORAGE_KEY = 'sullyos.devDebug.log.v1';
 export const DEV_DEBUG_LOG_EVENT = 'sullyos-dev-debug-log-change';
-export const DEV_DEBUG_POSITION_STORAGE_KEY = 'sullyos.devDebug.position.v1';
+// 内部事件名，只通过 subscribeDevDebugAvailability 暴露——不 export 出去，免得固化成公共契约。
+const DEV_DEBUG_AVAILABILITY_EVENT = 'sullyos-dev-debug-availability';
 
 export const DEFAULT_DEV_DEBUG_FLAGS: DevDebugFlags = {
     skipPromptBuild: false,
     skipEmotionEval: false,
+    captureEnabled: false,
     captureLogs: [],
     exposeLogDetail: false,
 };
@@ -69,6 +84,9 @@ const MAX_LOG_ENTRIES = 100;
 const MAX_LOG_STORAGE_CHARS = 1_000_000;
 // 折叠时长字符串只保留前 N 个字符，后面接 "..."。
 const LOG_COLLAPSE_HEAD = 10;
+// 折叠 messages（聊天历史）数组：只保留前 N 项，其余换成一条计数提示，避免刷屏。
+// 只折 messages 这一个 key——别的返回数组原样保留，免得误折叠丢调试信息。
+const LOG_COLLAPSE_MESSAGES_HEAD = 1;
 const SECRET_KEY_PATTERN = /(api[-_]?key|authorization|bearer|token|secret|endpoint|p256dh|auth)$/i;
 let memoryLog: DevDebugLogEntry[] | null = null;
 
@@ -92,8 +110,10 @@ function normalizeCaptureLogs(value: unknown): DevDebugCaptureCategory[] {
     if (!Array.isArray(value)) return [];
     const seen = new Set<DevDebugCaptureCategory>();
     for (const item of value) {
-        if (CAPTURE_CATEGORY_KEYS.includes(item as DevDebugCaptureCategory)) {
-            seen.add(item as DevDebugCaptureCategory);
+        // 旧版本只有 'llm' 一类，迁移成 'api'，老用户存档不丢勾选。
+        const migrated = item === 'llm' ? 'api' : item;
+        if (CAPTURE_CATEGORY_KEYS.includes(migrated as DevDebugCaptureCategory)) {
+            seen.add(migrated as DevDebugCaptureCategory);
         }
     }
     return [...seen];
@@ -101,25 +121,63 @@ function normalizeCaptureLogs(value: unknown): DevDebugCaptureCategory[] {
 
 function normalizeFlags(value: unknown): DevDebugFlags {
     const source = (value && typeof value === 'object') ? value as Partial<DevDebugFlags> : {};
+    const captureLogs = normalizeCaptureLogs(source.captureLogs);
+    // 平滑迁移：老存档没 captureEnabled 字段（旧 schema 只有 captureLogs，勾了就抓），
+    // 直接推 false 会让老用户升级后类型还勾着、其实静默停录。所以「字段缺 + 有勾选」时推 true。
+    const legacyHasCapture = !('captureEnabled' in source) && captureLogs.length > 0;
     return {
         skipPromptBuild: source.skipPromptBuild === true,
         skipEmotionEval: source.skipEmotionEval === true,
-        captureLogs: normalizeCaptureLogs(source.captureLogs),
+        captureEnabled: source.captureEnabled === true || legacyHasCapture,
+        captureLogs,
         exposeLogDetail: source.exposeLogDetail === true,
     };
 }
 
-function normalizePosition(value: unknown): DevDebugFloatingPosition | null {
-    const source = (value && typeof value === 'object') ? value as Partial<DevDebugFloatingPosition> : null;
-    if (!source || !Number.isFinite(source.x) || !Number.isFinite(source.y)) return null;
-    return {
-        x: Math.round(Number(source.x)),
-        y: Math.round(Number(source.y)),
-    };
-}
+// 会话级开关（都不落 localStorage → 刷新即重置）：
+//   manualUnlock：prod 上连点构建版本 5 下临时解锁，刷新即关。
+//   forceClosed：面板「关闭」按钮，任意分支强制关掉；刷新后失效 → 非 prod 自动回来。
+let devDebugManualUnlock = false;
+let devDebugForceClosed = false;
 
 export function isDevDebugAvailable(): boolean {
-    return typeof __BUILD_BADGE_VISIBLE__ !== 'undefined' && __BUILD_BADGE_VISIBLE__;
+    if (devDebugForceClosed) return false;
+    const badgeVisible = typeof __BUILD_BADGE_VISIBLE__ !== 'undefined' && __BUILD_BADGE_VISIBLE__;
+    // 非 prod（badge 可见）默认一直开；prod 默认关，靠 manualUnlock 临时调出。
+    return badgeVisible || devDebugManualUnlock;
+}
+
+function emitDevDebugAvailability(): void {
+    if (typeof window === 'undefined') return;
+    window.dispatchEvent(new CustomEvent<boolean>(DEV_DEBUG_AVAILABILITY_EVENT, { detail: isDevDebugAvailable() }));
+}
+
+/** 连点构建版本 5 下：会话级解锁面板（刷新即关），并解除强制关闭。 */
+export function unlockDevDebug(): void {
+    devDebugManualUnlock = true;
+    devDebugForceClosed = false;
+    // 失效内存缓存：prod 初始 mount 时 canUseDevDebugStorage()=false 会把 memoryLog 锁成 []，
+    // 解锁后如果不重读，上一会话存在 localStorage 里的日志会被遮蔽，下一次 append 还会覆盖掉。
+    memoryLog = null;
+    emitDevDebugAvailability();
+}
+
+/** 面板「关闭」按钮：任意分支强制关掉（会话级；刷新后非 prod 会自动恢复）。 */
+export function closeDevDebug(): void {
+    devDebugForceClosed = true;
+    devDebugManualUnlock = false;
+    emitDevDebugAvailability();
+}
+
+/** 订阅「面板是否可用」变化（解锁 / 关闭）。会话级，无跨标签页同步。 */
+export function subscribeDevDebugAvailability(listener: (available: boolean) => void): () => void {
+    if (typeof window === 'undefined') return () => {};
+    const onChange = (event: Event) => {
+        const detail = (event as CustomEvent<boolean>).detail;
+        listener(typeof detail === 'boolean' ? detail : isDevDebugAvailable());
+    };
+    window.addEventListener(DEV_DEBUG_AVAILABILITY_EVENT, onChange);
+    return () => window.removeEventListener(DEV_DEBUG_AVAILABILITY_EVENT, onChange);
 }
 
 export function readDevDebugFlags(): DevDebugFlags {
@@ -145,39 +203,17 @@ export function writeDevDebugFlags(flags: DevDebugFlags): DevDebugFlags {
         // localStorage can be blocked in private / embedded contexts; the UI still keeps local state.
     }
 
-    // 被取消勾选的类别：清掉它已经抓到的日志，不动其它类别。
-    const removed = prev.captureLogs.filter((category) => !next.captureLogs.includes(category));
-    if (removed.length > 0) {
-        clearDevDebugLog(removed);
+    // 取消勾选某类别「不」清它的日志——勾选是纯选择，只影响此后抓取。
+    // 要清日志走「重置」（面板 resetFlags → clearDevDebugLog）。
+    // 例外：总开关 captureEnabled 由 true → false 时清空日志——一次「录制周期」结束。
+    // 放在数据层而不是 UI handler 里，是为了让任何路径改 captureEnabled 都享受同一行为，
+    // 不会因为换个调用点（测试 helper、未来设置镜像）漏掉。
+    if (prev.captureEnabled && !next.captureEnabled) {
+        clearDevDebugLog();
     }
 
     window.dispatchEvent(new CustomEvent<DevDebugFlags>(DEV_DEBUG_EVENT, { detail: next }));
     return next;
-}
-
-export function readDevDebugPosition(): DevDebugFloatingPosition | null {
-    if (!canUseDevDebugStorage()) return null;
-
-    try {
-        const raw = window.localStorage.getItem(getScopedStorageKey(DEV_DEBUG_POSITION_STORAGE_KEY));
-        if (!raw) return null;
-        return normalizePosition(JSON.parse(raw));
-    } catch {
-        return null;
-    }
-}
-
-export function writeDevDebugPosition(position: DevDebugFloatingPosition): void {
-    if (!canUseDevDebugStorage()) return;
-
-    const next = normalizePosition(position);
-    if (!next) return;
-
-    try {
-        window.localStorage.setItem(getScopedStorageKey(DEV_DEBUG_POSITION_STORAGE_KEY), JSON.stringify(next));
-    } catch {
-        // localStorage can be blocked in private / embedded contexts; dragging still works in memory.
-    }
 }
 
 export function updateDevDebugFlags(updater: (flags: DevDebugFlags) => DevDebugFlags): DevDebugFlags {
@@ -213,12 +249,12 @@ export function isEmotionEvalSkipped(): boolean {
 }
 
 export function isCaptureEnabled(category: DevDebugCaptureCategory): boolean {
-    return readDevDebugFlags().captureLogs.includes(category);
-}
-
-/** 语义别名：等价于 isCaptureEnabled('llm')，给现有 LLM 消费点用。 */
-export function isLlmLogCaptureEnabled(): boolean {
-    return isCaptureEnabled('llm');
+    // 「关闭」按钮 = 强制下线整个调试系统（任意分支）。这里也必须挡住捕获，
+    // 否则面板已收起，业务代码却还往 localStorage 里写带 url/status 的日志条目（隐私债）。
+    if (devDebugForceClosed) return false;
+    const flags = readDevDebugFlags();
+    // 总开关关掉时一律不抓，哪怕该类别勾着。
+    return flags.captureEnabled && flags.captureLogs.includes(category);
 }
 
 function redactSecrets(value: unknown): unknown {
@@ -256,6 +292,15 @@ function parseRequestBody(body: unknown): unknown {
 }
 
 // 递归把长字符串折叠成「前 N 字 + ...」；数字 / 布尔 / 短字符串原样保留，只动 value 不动 key。
+// 折叠 messages（聊天历史）数组：只留前 N 项，其余换一条计数提示。短数组照常逐项折。
+function collapseMessages(arr: unknown[]): unknown {
+    if (arr.length <= LOG_COLLAPSE_MESSAGES_HEAD + 1) return arr.map(collapseLongStrings);
+    return [
+        ...arr.slice(0, LOG_COLLAPSE_MESSAGES_HEAD).map(collapseLongStrings),
+        `…还有 ${arr.length - LOG_COLLAPSE_MESSAGES_HEAD} 项（共 ${arr.length}）`,
+    ];
+}
+
 function collapseLongStrings(value: unknown): unknown {
     if (typeof value === 'string') {
         return value.length > LOG_COLLAPSE_HEAD ? `${value.slice(0, LOG_COLLAPSE_HEAD)}...` : value;
@@ -264,7 +309,8 @@ function collapseLongStrings(value: unknown): unknown {
     if (value && typeof value === 'object') {
         const out: Record<string, unknown> = {};
         for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-            out[key] = collapseLongStrings(item);
+            // 只对 messages 这个 key 折数组（聊天历史会刷屏）；别的数组原样逐项折，不丢结构。
+            out[key] = (key === 'messages' && Array.isArray(item)) ? collapseMessages(item) : collapseLongStrings(item);
         }
         return out;
     }
@@ -360,17 +406,22 @@ export function appendDevDebugLog(category: DevDebugCaptureCategory, input: { la
     }
 }
 
-/** LLM 类的语义化薄封装，保持现有消费点（safeApi / activeMsgRuntime / instantPushClient）调用不变。 */
-export function appendDevDebugLlmLog(input: {
+/** HTTP 类日志的统一形状：api（普通聊天）和 instant-push（通道事件）共用。 */
+export interface DevDebugHttpLogInput {
     url: string;
     method?: string;
     status?: number;
     requestBody?: unknown;
     response?: unknown;
     error?: unknown;
-}): void {
-    appendDevDebugLog('llm', {
-        label: `${input.method ?? 'POST'} ${input.url}`,
+}
+
+/** 通用 HTTP 日志薄封装；按 category 落到对应类别，请求体 / 错误统一整形。 */
+function appendDevDebugHttpLog(category: DevDebugCaptureCategory, input: DevDebugHttpLogInput): void {
+    // label 前缀加分类——activeMsgRuntime 的 instant-push 交换 url 跟 safeApi 的 api 直发一字不差
+    // （两边都是 baseUrl + /chat/completions），不带前缀的话导出 JSON 里两类条目肉眼分不清。
+    appendDevDebugLog(category, {
+        label: `[${category}] ${input.method ?? 'POST'} ${input.url}`,
         data: {
             url: input.url,
             method: input.method,
@@ -385,6 +436,16 @@ export function appendDevDebugLlmLog(input: {
                 : undefined,
         },
     });
+}
+
+/** api 类：普通聊天直发模型的 chat completions（消费点 safeApi）。 */
+export function appendDevDebugApiLog(input: DevDebugHttpLogInput): void {
+    appendDevDebugHttpLog('api', input);
+}
+
+/** instant-push 类：经 worker 的通道事件（消费点 activeMsgRuntime / instantPushClient）。 */
+export function appendDevDebugInstantPushLog(input: DevDebugHttpLogInput): void {
+    appendDevDebugHttpLog('instant-push', input);
 }
 
 /**
