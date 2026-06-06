@@ -590,25 +590,15 @@ const PhoneShell: React.FC = () => {
        
        <div className={`absolute inset-0 transition-all duration-500 ${activeApp === AppID.Launcher ? 'bg-transparent' : 'bg-white/50 backdrop-blur-3xl'}`} />
        
-       {/* 
-          CRITICAL FIX: 
-          Using 'absolute inset-0' prevents layout collapse.
-          REMOVED 'flex flex-col' to fix layout issues in CheckPhone (gap) and SocialApp (jumping).
-          Now it acts as a pure container for full-screen apps.
-       */}
-      <div 
-  className="absolute inset-0 z-10 w-full h-full overflow-hidden bg-transparent overscroll-none flex flex-col"
-  style={{ 
-      paddingTop: activeApp !== AppID.Launcher ? 'env(safe-area-inset-top)' : 0,
-      paddingBottom: activeApp !== AppID.Launcher ? 'env(safe-area-inset-bottom)' : 0
-  }}
-> 
+       {/* Full-screen apps render into the physical viewport; individual app chrome handles safe-area spacing.
+          Keeping safe-area padding here exposes the shell backdrop as hard top/bottom bars. */}
+      <div className="absolute inset-0 z-10 w-full h-full overflow-hidden bg-transparent overscroll-none flex flex-col">
           {/* App Container */}
-         <div className="flex-1 relative overflow-hidden" style={{ contain: useIOSStandaloneLayout ? undefined : 'layout style paint' }}>
-    <AppErrorBoundary onCloseApp={closeApp} resetKey={`${activeApp}:${activeCharacterId || 'none'}`}>
-        {renderApp()}
-    </AppErrorBoundary>
-</div>
+          <div className="flex-1 relative overflow-hidden" style={{ contain: useIOSStandaloneLayout ? undefined : 'layout style paint' }}>
+            <AppErrorBoundary onCloseApp={closeApp} resetKey={`${activeApp}:${activeCharacterId || 'none'}`}>
+              {renderApp()}
+            </AppErrorBoundary>
+          </div>
 
           {/* Overlays: Status Bar (Top) */}
           {!theme.hideStatusBar && <StatusBar />}
