@@ -1093,7 +1093,7 @@ ${attachedImagesNote}
         return (
             <div className="h-full w-full bg-slate-50 flex flex-col font-light">
                 <div className="bg-white/70 backdrop-blur-md flex items-end pb-3 px-4 border-b border-white/40 shrink-0 z-10 sticky top-0"
-                    style={{ height: 'calc(5rem + env(safe-area-inset-top, 0px))' }}>
+                    style={{ height: 'calc(5rem + var(--safe-top))' }}>
                     <button onClick={closeApp} className="p-2 -ml-2 rounded-full hover:bg-black/5 active:scale-90 transition-transform">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-slate-600"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
                     </button>
@@ -1194,7 +1194,7 @@ ${attachedImagesNote}
 
             {/* Header */}
             <div className="bg-white/80 backdrop-blur-xl px-5 flex items-end pb-4 border-b border-slate-200/60 shrink-0 z-30 sticky top-0 shadow-sm transition-all"
-                style={{ height: 'calc(6rem + env(safe-area-inset-top, 0px))' }}>
+                style={{ height: 'calc(6rem + var(--safe-top))' }}>
                 {selectionMode ? (
                     <div className="flex items-center justify-between w-full">
                         <button onClick={() => { setSelectionMode(false); setSelectedMsgIds(new Set()); }} className="text-sm font-bold text-slate-500 px-2 py-1">取消</button>

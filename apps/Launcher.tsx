@@ -543,7 +543,7 @@ const Launcher: React.FC = () => {
   };
 
   const contentColor = theme.contentColor || '#ffffff';
-  const launcherBottomInset = 'calc(max(env(safe-area-inset-bottom, 0px), var(--standalone-safe-area-bottom, 0px)) + 1.25rem)';
+  const launcherBottomInset = 'calc(var(--safe-bottom) + 1.25rem)';
   
   const totalUnread = Object.values(unreadMessages).reduce((a, b) => a + b, 0);
   const widgetUnread = widgetChar && unreadMessages[widgetChar.id] ? unreadMessages[widgetChar.id] : 0;

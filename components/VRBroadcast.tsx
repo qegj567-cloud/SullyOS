@@ -46,7 +46,7 @@ const VRBroadcast: React.FC = () => {
 
     return (
         <div className="fixed left-1/2 -translate-x-1/2 z-[999] pointer-events-none"
-            style={{ top: 'calc(max(env(safe-area-inset-top, 0px), var(--standalone-safe-area-top, 0px)) + 6px)' }}>
+            style={{ top: 'calc(var(--safe-top) + 6px)' }}>
             <style>{`@keyframes vrbcin{from{opacity:0;transform:translateY(-14px) scale(.96)}to{opacity:1;transform:translateY(0) scale(1)}}
                      @keyframes vrbcshimmer{0%{background-position:-120% 0}100%{background-position:220% 0}}
                      @keyframes vrbctwinkle{0%,100%{opacity:.35;transform:scale(.85)}50%{opacity:1;transform:scale(1.1)}}`}</style>

@@ -18,18 +18,12 @@ import { safeResponseJson } from '../utils/safeApi';
 
 const genLocalId = (p: string) => `${p}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 
-// 全屏浮层（fixed inset-0）会越过外壳的 safe-area padding，视觉背景铺满屏幕，
-// 只让顶栏/底栏控件避开系统安全区，把按钮放在刘海正下方（不要叠加过多留白，否则顶部一片空）。
-// 关键：本项目 iOS 全屏 PWA 下原生 env(safe-area-inset-*) 可能返回 0，
-// 故与 JS 探测出的 --standalone-safe-area-*（见 utils/iosStandalone.ts）取较大者兜底，
-// 与 Launcher dock 写法保持一致。
-// 顶部再叠一个 44px 静态兜底：DevTools/桌面/非 standalone 下 env 与探测值都为 0 时，
-// 仍让返回按钮落在状态栏下方（与 MemoryPalaceApp 的 max(40px, …) 同思路）。
-const VR_SAFE_TOP = 'max(env(safe-area-inset-top, 0px), var(--standalone-safe-area-top, 0px), 44px)';
-const VR_SAFE_BOTTOM = 'max(env(safe-area-inset-bottom, 0px), var(--standalone-safe-area-bottom, 0px))';
-const vrTopPad = (base: string) => `calc(${base} + ${VR_SAFE_TOP})`;
-// 房间内浮层（留言墙/邮局/听歌）从顶栏（安全区 + 返回按钮行）下方开始。
-const VR_ROOM_PANEL_TOP = `calc(${VR_SAFE_TOP} + 4.5rem)`;
+// 安全区单一来源：index.html :root 定义 --safe-top/--safe-bottom/--chrome-top，
+// 由 utils/iosStandalone.ts 喂入 JS 探测值（iOS 全屏 PWA 下原生 env 偶发返回 0 时兜底）。
+// 全屏浮层背景铺满屏幕，只用这些变量给顶/底「控件」让位。
+const VR_TOP = 'var(--chrome-top)';                            // 安全区 + SullyOS 状态栏：全屏面板顶栏统一用它
+const VR_SAFE_BOTTOM = 'var(--safe-bottom)';
+const VR_ROOM_PANEL_TOP = 'calc(var(--chrome-top) + 3.75rem)'; // 房间内浮层从顶栏下方开始
 // 底部额外留一点手势余量；iOS 全屏隐藏 home 条时也不让交互区贴着物理底边。
 const VR_BOTTOM_TOUCH_GAP = '0.75rem';
 const vrBottomOffset = (base: string) => `calc(${base} + ${VR_SAFE_BOTTOM} + ${VR_BOTTOM_TOUCH_GAP})`;
@@ -289,8 +283,9 @@ const VRWorldApp: React.FC = () => {
             <div className="pointer-events-none absolute inset-0"
                 style={{ backgroundImage: 'radial-gradient(1px 1px at 18% 28%, rgba(255,255,255,.7), transparent), radial-gradient(1px 1px at 68% 18%, rgba(200,215,255,.6), transparent), radial-gradient(1px 1px at 82% 58%, rgba(230,220,255,.5), transparent), radial-gradient(1px 1px at 38% 72%, rgba(210,225,255,.5), transparent), radial-gradient(1.5px 1.5px at 52% 42%, rgba(255,255,255,.55), transparent)', animation: 'vrtwinkle 7s ease-in-out infinite' }} />
 
-            {/* 顶栏 —— pt-8 让退出键避开顶部状态栏（时间/电量），不再打架 */}
-            <div className="relative flex items-center gap-2.5 px-5 pt-8 pb-2.5 shrink-0 z-10">
+            {/* 顶栏 —— 外壳不再统一加 safe-area padding，这里用 --chrome-top 让开
+                安全区 + SullyOS 状态栏（时间/电量），退出键落在其下方，不再怼到时钟上面。 */}
+            <div className="relative flex items-center gap-2.5 px-5 pb-2.5 shrink-0 z-10" style={{ paddingTop: VR_TOP }}>
                 <button onClick={closeApp} className="p-1.5 -ml-1.5 rounded-full text-white/65 active:bg-white/10"><ArrowLeft size={21} weight="regular" /></button>
                 <div className="flex items-center gap-2">
                     <Planet size={17} weight="light" className="text-indigo-100/90" style={{ filter: 'drop-shadow(0 0 7px rgba(165,185,255,.7))' }} />
@@ -735,7 +730,7 @@ const HelpModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     );
     return (
         <div className="fixed inset-0 z-[80] flex flex-col" style={{ background: 'linear-gradient(180deg,#0c0a1c 0%,#080612 100%)' }}>
-            <div className="flex items-center gap-2.5 px-5 pb-3 shrink-0 border-b border-white/8" style={{ paddingTop: vrTopPad('1rem') }}>
+            <div className="flex items-center gap-2.5 px-5 pb-3 shrink-0 border-b border-white/8" style={{ paddingTop: VR_TOP }}>
                 <span className="text-[15px] tracking-[0.2em] text-white/95" style={{ fontFamily: `'Noto Serif SC',serif` }}>彼方 · 玩法说明</span>
                 <button onClick={onClose} className="ml-auto p-1.5 rounded-full text-white/60 active:bg-white/10"><X size={19} /></button>
             </div>
@@ -1502,7 +1497,7 @@ const RoomScene: React.FC<{
                 <div className="pointer-events-none absolute inset-0" style={{ background: 'radial-gradient(120% 90% at 50% 30%, transparent 55%, rgba(5,6,14,.45) 100%)' }} />
                 {/* 顶栏 */}
                 <div className="absolute top-0 left-0 right-0 flex items-center gap-2.5 px-4 pb-3 z-[120]"
-                    style={{ background: 'linear-gradient(180deg,rgba(5,6,14,.55),transparent)', paddingTop: vrTopPad('0.875rem') }}>
+                    style={{ background: 'linear-gradient(180deg,rgba(5,6,14,.55),transparent)', paddingTop: VR_TOP }}>
                     <button onClick={onClose} className="h-10 w-10 -ml-2 rounded-full bg-white/10 backdrop-blur-md active:bg-white/20 text-white/90 border border-white/10 flex items-center justify-center"><CaretLeft size={20} weight="regular" /></button>
                     <span className="text-[16px] text-white drop-shadow flex items-center gap-1.5 tracking-[0.14em]" style={{ fontFamily: `'Noto Serif SC',serif`, fontWeight: 500 }}>{room.name}</span>
                     <div className="ml-auto flex items-center gap-2">
@@ -1859,7 +1854,7 @@ const ReaderModal: React.FC<{ novel: VRWorldNovel; characters: CharacterProfile[
     return (
         <div className="fixed inset-0 z-50 flex flex-col" style={{ background: theme.bg }}>
             {/* 顶栏 */}
-            <div className="flex items-center gap-2 px-4 pb-2 shrink-0" style={{ borderBottom: `1px solid ${theme.accent}22`, paddingTop: vrTopPad('0.75rem') }}>
+            <div className="flex items-center gap-2 px-4 pb-2 shrink-0" style={{ borderBottom: `1px solid ${theme.accent}22`, paddingTop: VR_TOP }}>
                 <button onClick={onClose} className="p-1.5 -ml-1.5 rounded-full active:bg-black/5" style={{ color: theme.text }}><X size={20} weight="bold" /></button>
                 <div className="min-w-0 flex-1">
                     <div className="text-[14px] font-bold truncate" style={{ color: theme.text }}>{novel.title}</div>
@@ -2111,7 +2106,7 @@ const ChibiEditor: React.FC<{
     if (creating) {
         return (
             <div className="fixed inset-0 z-[60] flex flex-col bg-black">
-                <div className="flex items-center gap-2 px-4 pb-2 shrink-0 text-white" style={{ background: 'linear-gradient(180deg,#161c2e 0%,#0c1019 100%)', paddingTop: vrTopPad('0.5rem') }}>
+                <div className="flex items-center gap-2 px-4 pb-2 shrink-0 text-white" style={{ background: 'linear-gradient(180deg,#161c2e 0%,#0c1019 100%)', paddingTop: VR_TOP }}>
                     <button onClick={() => existing?.img ? setCreating(false) : onClose()} className="p-1.5 -ml-1.5 rounded-full active:bg-white/10"><CaretLeft size={20} weight="bold" /></button>
                     <span className="text-[14px] font-bold">捏 {char.name} 的小人</span>
                 </div>

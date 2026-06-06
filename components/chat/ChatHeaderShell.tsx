@@ -206,8 +206,8 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
         ? (headerDensity === 'compact' ? 'px-4 py-2' : headerDensity === 'airy' ? 'px-6 py-4' : 'px-5 py-3')
         : (headerDensity === 'compact' ? 'px-4 pb-3' : headerDensity === 'airy' ? 'px-6 pb-5' : 'px-5 pb-4');
     const headerSafeStyle: React.CSSProperties = useCenteredLayout
-        ? { minHeight: `calc(${headerBaseHeight} + env(safe-area-inset-top, 0px))`, paddingTop: `calc(env(safe-area-inset-top, 0px) + ${headerDensity === 'compact' ? '0.5rem' : headerDensity === 'airy' ? '1rem' : '0.75rem'})` }
-        : { height: `calc(${headerBaseHeight} + env(safe-area-inset-top, 0px))` };
+        ? { minHeight: `calc(${headerBaseHeight} + var(--safe-top))`, paddingTop: `calc(var(--safe-top) + ${headerDensity === 'compact' ? '0.5rem' : headerDensity === 'airy' ? '1rem' : '0.75rem'})` }
+        : { height: `calc(${headerBaseHeight} + var(--safe-top))` };
     const primaryTextClass = isDarkHeader ? 'text-white' : isPixelHeader ? 'text-[#fff7ed]' : 'text-slate-800';
     const secondaryTextClass = isDarkHeader ? 'text-slate-400' : isPixelHeader ? 'text-[#f3ddc7]' : 'text-slate-400';
     const iconButtonClass = isDarkHeader
