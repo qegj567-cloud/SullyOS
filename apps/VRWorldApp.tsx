@@ -18,15 +18,16 @@ import { safeResponseJson } from '../utils/safeApi';
 
 const genLocalId = (p: string) => `${p}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 
-// 顶部操作区避让：全屏浮层（fixed inset-0）会越过外壳的 safe-area padding。
-// 视觉背景要铺满屏幕，只让顶栏按钮避开刘海 + SullyOS 状态栏（约 2rem）。
-const VR_OVERLAY_TOP = 'calc(env(safe-area-inset-top, 0px) + 2rem)';
-const vrTopPad = (base: string) => `calc(${base} + ${VR_OVERLAY_TOP})`;
-const VR_ROOM_PANEL_TOP = `calc(${VR_OVERLAY_TOP} + 3.75rem)`;
-// 底部 home indicator 避让：视觉背景仍要铺满，只把贴底的交互区/滚动内容顶上来。
-// 不要直接加到全屏根节点上，否则会把内容区整体缩短，底部露出一条黑色空带。
+// 全屏浮层（fixed inset-0）会越过外壳的 safe-area padding。
+// 视觉背景铺满屏幕，只让顶栏/底栏控件避开系统手势区。
+const VR_SAFE_TOP = 'env(safe-area-inset-top, 0px)';
+const vrTopPad = (base: string) => `calc(${base} + ${VR_SAFE_TOP})`;
+const VR_ROOM_PANEL_TOP = `calc(${VR_SAFE_TOP} + 4.5rem)`;
+// 底部额外留一点手势余量；iOS 全屏隐藏 home 条时也不让交互区贴着物理底边。
 const VR_SAFE_BOTTOM = 'env(safe-area-inset-bottom, 0px)';
-const vrBottomPad = (base: string) => `calc(${base} + ${VR_SAFE_BOTTOM})`;
+const VR_BOTTOM_TOUCH_GAP = '0.75rem';
+const vrBottomOffset = (base: string) => `calc(${base} + ${VR_SAFE_BOTTOM} + ${VR_BOTTOM_TOUCH_GAP})`;
+const vrBottomPad = vrBottomOffset;
 
 // ── 邮局寄信「日额度」：纯前端软计数，给后端减负（不追求精准，清数据会重置）──
 // 从首封开始计时的滚动窗口，窗口内封顶、过期自动归零。两个额度各自独立。
@@ -1204,7 +1205,7 @@ const PostOfficePanel: React.FC<{ addToast?: (m: string, t?: any) => void; chara
 
     return (
         <div className="absolute left-3 right-3 z-20 rounded-2xl overflow-hidden flex flex-col backdrop-blur-md"
-            style={{ top: VR_ROOM_PANEL_TOP, bottom: `calc(0.75rem + ${VR_SAFE_BOTTOM})`, background: 'rgba(30,24,14,0.66)', border: '1px solid rgba(220,190,120,0.25)', boxShadow: '0 8px 26px rgba(0,0,0,.45)' }}>
+            style={{ top: VR_ROOM_PANEL_TOP, bottom: vrBottomOffset('0.75rem'), background: 'rgba(30,24,14,0.66)', border: '1px solid rgba(220,190,120,0.25)', boxShadow: '0 8px 26px rgba(0,0,0,.45)' }}>
             {/* 动作行 */}
             <div className="flex items-center gap-1.5 px-3 py-2 border-b border-white/10 shrink-0">
                 <span className="text-[11px] tracking-[0.2em] text-amber-100/80 mr-auto" style={{ fontFamily: `'Noto Serif SC',serif` }}>邮局</span>
@@ -1556,7 +1557,7 @@ const RoomScene: React.FC<{
                     }
                     return (
                         <div className="absolute left-3 right-3 z-20 rounded-2xl overflow-hidden flex flex-col backdrop-blur-md"
-                            style={{ top: VR_ROOM_PANEL_TOP, bottom: `calc(4rem + ${VR_SAFE_BOTTOM})`, background: 'rgba(10,22,38,0.62)', border: '1px solid rgba(140,200,255,0.22)', boxShadow: '0 8px 26px rgba(0,0,0,.4)' }}>
+                            style={{ top: VR_ROOM_PANEL_TOP, bottom: vrBottomOffset('4rem'), background: 'rgba(10,22,38,0.62)', border: '1px solid rgba(140,200,255,0.22)', boxShadow: '0 8px 26px rgba(0,0,0,.4)' }}>
                             <div className="px-3 py-2 text-[10px] tracking-[0.25em] text-sky-200/70 border-b border-white/10" style={{ fontFamily: `'Noto Serif SC',serif` }}>留言墙</div>
                             <div className="flex-1 overflow-y-auto vr-reader-scroll px-3 py-3 space-y-3">
                                 {groups.length === 0 ? (
@@ -1619,7 +1620,7 @@ const RoomScene: React.FC<{
                 {/* 留言簿：用户发言（广播给所有接入角色） */}
                 {isGuestbook && (
                     <div className="absolute left-0 right-0 z-30 flex items-center gap-2 px-3 py-2.5"
-                        style={{ bottom: VR_SAFE_BOTTOM, background: 'linear-gradient(0deg,rgba(5,12,22,.92),transparent)' }}>
+                        style={{ bottom: vrBottomOffset('0px'), background: 'linear-gradient(0deg,rgba(5,12,22,.92),transparent)' }}>
                         <input value={postText} onChange={e => setPostText(e.target.value)}
                             onKeyDown={e => { if (e.key === 'Enter') submitPost(); }}
                             placeholder={`以 ${userName} 的身份留句话…`}
