@@ -1,10 +1,13 @@
 let hasInstalledIOSStandaloneWorkaround = false;
 let stableStandaloneHeight = 0;
+// 安全区只在旋转 / 窗口尺寸变化时才变，缓存探测结果，避免 visualViewport 滚动、聚焦时反复同步重排。
+let cachedSafeInsets: { top: number; bottom: number } | null = null;
 
 // 用一个隐藏探针同时读取上下安全区：单次插入 + 单次 getComputedStyle（一次 reflow）。
 // env() 在本项目 iOS 全屏 PWA 下偶发返回 0，故需 JS 探测兜底。
 const readSafeAreaInsets = (): { top: number; bottom: number } => {
-    if (typeof document === 'undefined') return { top: 0, bottom: 0 };
+    if (typeof document === 'undefined' || !document.body) return { top: 0, bottom: 0 };
+    if (cachedSafeInsets) return cachedSafeInsets;
 
     const probe = document.createElement('div');
     probe.style.position = 'fixed';
@@ -20,7 +23,12 @@ const readSafeAreaInsets = (): { top: number; bottom: number } => {
     const bottom = Math.round(parseFloat(computed.paddingBottom) || 0);
 
     document.body.removeChild(probe);
-    return { top, bottom };
+
+    const insets = { top, bottom };
+    // 只缓存有效（非全 0）读数：iOS 启动早期 env 可能瞬时为 0，缓存它会把安全区锁死成 0，
+    // 反而把刚修好的「底部贴 home 条」带回来；此时不缓存，下次事件继续探测，读到真值再锁定。
+    if (top > 0 || bottom > 0) cachedSafeInsets = insets;
+    return insets;
 };
 
 export const isIOSDevice = (): boolean => {
@@ -93,6 +101,12 @@ export const installIOSStandaloneWorkaround = () => {
         setViewportVars();
     };
 
+    // 只有旋转 / 窗口尺寸变化才真的改变安全区：让缓存失效后重新探测（滚动、聚焦走缓存，不再重排）。
+    const handleSafeAreaChange = () => {
+        cachedSafeInsets = null;
+        setViewportVars();
+    };
+
     const handleFocusIn = (event: FocusEvent) => {
         if (!isTextEntryElement(event.target)) return;
         document.body.classList.add('ios-keyboard-open');
@@ -120,7 +134,8 @@ export const installIOSStandaloneWorkaround = () => {
         }, 180);
     };
 
-    window.addEventListener('resize', handleViewportChange);
+    window.addEventListener('resize', handleSafeAreaChange);
+    window.addEventListener('orientationchange', handleSafeAreaChange);
     window.visualViewport?.addEventListener('resize', handleViewportChange);
     window.visualViewport?.addEventListener('scroll', handleViewportChange);
     if (useStandaloneFixes) {
