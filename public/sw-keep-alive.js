@@ -1276,7 +1276,7 @@ async function removeQueuedRequest(id) {
 }
 
 // worker/sw-keep-alive.ts
-var SW_VERSION = "1.15.0";
+var SW_VERSION = "1.15.1";
 var PING_INTERVAL = 15e3;
 var MAX_MANUAL_ALIVE_MS = 5 * 6e4;
 var ACTIVE_MSG_DB_NAME = "ActiveMsg";
@@ -1291,12 +1291,44 @@ var manualKeepAliveStartedAt = 0;
 var proactiveSchedules = /* @__PURE__ */ new Map();
 var proactiveTimers = /* @__PURE__ */ new Map();
 var sw = self;
+function summarizeAmsgPayload(payload) {
+  return {
+    messageKind: payload?.messageKind ?? "content",
+    messageType: payload?.messageType,
+    messageId: payload?.messageId,
+    sessionId: payload?.sessionId,
+    charId: payload?.metadata?.charId,
+    chunk: payload?.messageIndex,
+    total: payload?.totalMessages,
+    hasBlob: payload?._blob === true
+  };
+}
+function traceSw(event, payload, extra = {}) {
+  try {
+    console.log("[InstantTrace:SW]", {
+      ts: (/* @__PURE__ */ new Date()).toISOString(),
+      event,
+      ...payload !== void 0 ? summarizeAmsgPayload(payload) : {},
+      ...extra
+    });
+  } catch {
+  }
+}
 installReiSW(sw, {
   defaultIcon: "./icons/icon-192.png",
   defaultBadge: "./icons/icon-192.png",
   multipart: { enabled: true },
   onBusinessPayload: async (payload) => {
-    await saveIncomingActiveMessage(payload);
+    traceSw("business-payload-start", payload);
+    try {
+      await saveIncomingActiveMessage(payload);
+      traceSw("business-payload-done", payload);
+    } catch (e) {
+      traceSw("business-payload-error", payload, {
+        error: e instanceof Error ? e.message : String(e)
+      });
+      throw e;
+    }
   }
 });
 function hasActiveProactiveSchedules() {
@@ -1341,6 +1373,12 @@ function stopKeepAlive() {
 }
 async function notifyClients(data) {
   const clients = await sw.clients.matchAll({ type: "window", includeUncontrolled: true });
+  traceSw("notify-clients", void 0, {
+    type: data.type,
+    charId: data.charId,
+    sessionId: data.sessionId,
+    count: clients.length
+  });
   for (const client of clients) {
     client.postMessage(data);
   }
@@ -1471,7 +1509,10 @@ async function saveContentToInbox(payload) {
   const payloadTimestamp = payload?.timestamp;
   const parsedSentAt = payloadTimestamp ? new Date(payloadTimestamp).getTime() : NaN;
   const sentAt = Number.isFinite(parsedSentAt) ? parsedSentAt : Date.now();
-  if (!charId) return;
+  if (!charId) {
+    traceSw("content-drop-no-char", payload);
+    return;
+  }
   await withInboxTx(ACTIVE_MSG_INBOX_STORE, "readwrite", (store) => {
     store.put({
       messageId,
@@ -1496,6 +1537,7 @@ async function saveContentToInbox(payload) {
       receivedAt: Date.now()
     });
   });
+  traceSw("inbox-content-saved", payload, { bodyChars: body.length });
   await notifyClients({
     type: "active-msg-received",
     charId,
@@ -1509,7 +1551,14 @@ async function saveReasoningToBuffer(payload) {
   const sessionId = payload?.sessionId;
   const charId = payload?.metadata?.charId;
   const reasoningContent = String(payload?.reasoningContent ?? "");
-  if (!sessionId || !charId || !reasoningContent) return;
+  if (!sessionId || !charId || !reasoningContent) {
+    traceSw("reasoning-drop-incomplete", payload, {
+      hasSessionId: !!sessionId,
+      hasCharId: !!charId,
+      chars: reasoningContent.length
+    });
+    return;
+  }
   await withInboxTx(ACTIVE_MSG_REASONING_BUFFER_STORE, "readwrite", (store) => {
     store.put({
       sessionId,
@@ -1518,6 +1567,7 @@ async function saveReasoningToBuffer(payload) {
       receivedAt: Date.now()
     });
   });
+  traceSw("reasoning-buffer-saved", payload, { chars: reasoningContent.length });
   await notifyClients({ type: "active-msg-reasoning", sessionId, charId });
 }
 async function clearReasoningBuffer(sessionId) {
@@ -1574,7 +1624,10 @@ async function notifyVisibleClientForToolRequest(payload) {
 async function saveEmotionUpdateToInbox(payload) {
   const charId = payload?.metadata?.charId;
   const emotionRaw = payload?.metadata?.emotionRaw || "";
-  if (!charId) return;
+  if (!charId) {
+    traceSw("emotion-drop-no-char", payload);
+    return;
+  }
   const messageId = String(payload?.messageId || `${charId}-emotion-${Date.now()}`);
   await withInboxTx(ACTIVE_MSG_INBOX_STORE, "readwrite", (store) => {
     store.put({
@@ -1588,19 +1641,27 @@ async function saveEmotionUpdateToInbox(payload) {
       receivedAt: Date.now()
     });
   });
+  traceSw("inbox-emotion-saved", payload, { emotionChars: String(emotionRaw).length });
   await notifyClients({ type: "active-msg-received", charId, charName: payload?.contactName || "", body: "", emotionUpdate: true });
 }
 async function fetchBlobEnvelope(payload) {
   const url = payload?.url;
   if (typeof url !== "string" || !url) return null;
+  traceSw("blob-fetch-start", payload);
   try {
     const res = await fetch(url);
     if (!res.ok) {
+      traceSw("blob-fetch-http-failed", payload, { status: res.status });
       console.warn("[amsg] blob fetch returned", res.status, url);
       return null;
     }
-    return await res.json();
+    const real = await res.json();
+    traceSw("blob-fetch-ok", real);
+    return real;
   } catch (e) {
+    traceSw("blob-fetch-error", payload, {
+      error: e instanceof Error ? e.message : String(e)
+    });
     console.warn("[amsg] blob fetch failed", url, e);
     return null;
   }
@@ -1612,6 +1673,7 @@ async function saveIncomingActiveMessage(payload) {
     return saveIncomingActiveMessage(real);
   }
   const messageKind = payload?.messageKind ?? "content";
+  traceSw("route-payload", payload, { route: messageKind });
   switch (messageKind) {
     case "content":
       await saveContentToInbox(payload);

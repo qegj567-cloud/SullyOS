@@ -94,6 +94,31 @@ const ERROR_EVENT_TYPES = new Set([
   'multipart_too_many_chunks',
 ]);
 
+const TRACE_EVENT_TYPES = new Set([
+  'sse_stream_aborted',
+  'sse_stream_canceled',
+  'sse_payload_enqueued',
+  'sse_payload_enqueue_failed',
+  'backup_push_scheduled',
+  'backup_push_sent',
+  'backup_push_failed',
+  'fallback_push_sent',
+  'fallback_push_failed',
+  'sse_error_fallback_failed',
+  'wait_until_rejected',
+  'wait_until_failed',
+]);
+
+function traceAmsgEvent(e: { type: string; [k: string]: unknown }): void {
+  if (ERROR_EVENT_TYPES.has(e.type)) {
+    console.error('[instant-push]', e);
+    return;
+  }
+  if (TRACE_EVENT_TYPES.has(e.type)) {
+    console.log('[instant-push:trace]', e);
+  }
+}
+
 function parseBooleanFlag(value: string | undefined): boolean | null {
   if (value == null) return null;
   const normalized = value.trim().toLowerCase();
@@ -319,9 +344,7 @@ function buildAmsgOptions(env: Env) {
     blobStore: createBlobStore(env),
     multipart: MULTIPART_TRANSPORT,
     onEvent: (e: { type: string; [k: string]: unknown }) => {
-      if (ERROR_EVENT_TYPES.has(e.type)) {
-        console.error('[instant-push]', e);
-      }
+      traceAmsgEvent(e);
     },
   };
 }

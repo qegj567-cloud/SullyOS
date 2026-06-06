@@ -734,6 +734,32 @@ const DEFAULT_INSTANT_TIMEOUT_MS = 90_000;
 // 流跑完 (stream_done) 只代表 payload 都交给了 SW, 不代表已落库; 真正的成功信号是
 // active-msg-received。这一跳正常 <1s, 给 8s 容错 (含 applyAssistantPostProcessing)。
 const SSE_FLUSH_GRACE_MS = 8_000;
+const INSTANT_TRACE_LOG_KEY = 'instant_push_trace_log_v1';
+const INSTANT_TRACE_LOG_LIMIT = 200;
+
+function instantTrace(
+  sessionId: string,
+  event: string,
+  details: Record<string, unknown> = {},
+): void {
+  const entry = {
+    ts: new Date().toISOString(),
+    sessionId,
+    event,
+    visibility: typeof document !== 'undefined' ? document.visibilityState : 'n/a',
+    online: typeof navigator !== 'undefined' ? navigator.onLine : undefined,
+    ...details,
+  };
+  try {
+    console.info('[InstantTrace]', entry);
+  } catch { /* ignore */ }
+  try {
+    const raw = localStorage.getItem(INSTANT_TRACE_LOG_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    const next = Array.isArray(list) ? [...list, entry].slice(-INSTANT_TRACE_LOG_LIMIT) : [entry];
+    localStorage.setItem(INSTANT_TRACE_LOG_KEY, JSON.stringify(next));
+  } catch { /* ignore */ }
+}
 
 // /instant 与 /continue 都把预分配的 sessionId 作为 SW 投递的 requestId; 优先取
 // payload 自带的 instantTraceId (老格式兼容), 否则回落 sessionId / messageId。
@@ -841,9 +867,17 @@ export async function sendInstantPushAndAwaitReply(
     : `sess-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   const env = await collectEnvSnapshot();
   const context = buildContextDiag(business);
+  instantTrace(sessionId, 'send-start', {
+    charId,
+    contactName: business.contactName,
+    model: business.primaryModel,
+    msgCount: context?.msgCount,
+    msgBytes: context?.msgBytes,
+  });
 
   const cfg = loadInstantConfig();
   if (!isInstantConfigReady(cfg)) {
+    instantTrace(sessionId, 'config-missing');
     return {
       ok: false,
       outcome: 'config-missing',
@@ -861,6 +895,7 @@ export async function sendInstantPushAndAwaitReply(
 
   const { sub, reason } = await getOrCreateInstantSubscription();
   if (!sub) {
+    instantTrace(sessionId, 'subscription-failed', { reason });
     let swRegistered: boolean | undefined;
     if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
       try { swRegistered = !!(await navigator.serviceWorker.getRegistration()); } catch { /* ignore */ }
@@ -887,6 +922,11 @@ export async function sendInstantPushAndAwaitReply(
     const detail = (e as CustomEvent).detail;
     if (detail?.charId === charId) {
       receivedPushDetail = detail;
+      instantTrace(sessionId, 'active-msg-received', {
+        detailCharId: detail?.charId,
+        bodyChars: typeof detail?.body === 'string' ? detail.body.length : undefined,
+        emotionUpdate: !!detail?.emotionUpdate,
+      });
       pushResolver();
     }
   };
@@ -914,10 +954,15 @@ export async function sendInstantPushAndAwaitReply(
   const sendStartedAt = Date.now();
   const abortController = new AbortController();
   const abortOnPageHide = (event: PageTransitionEvent) => {
+    instantTrace(sessionId, 'pagehide', { persisted: !!event.persisted });
     if (event.persisted) return;
     abortController.abort();
   };
+  const traceVisibilityChange = () => {
+    instantTrace(sessionId, 'visibilitychange');
+  };
   let pageHideListenerAttached = false;
+  let visibilityListenerAttached = false;
   try {
     const wirePayload: InstantPushPayload = {
       ...business,
@@ -928,6 +973,8 @@ export async function sendInstantPushAndAwaitReply(
 
     window.addEventListener('pagehide', abortOnPageHide, { once: true });
     pageHideListenerAttached = true;
+    document.addEventListener('visibilitychange', traceVisibilityChange);
+    visibilityListenerAttached = true;
 
     const reiClient = new ReiClient({
       baseUrl: normalizeWorkerUrl(cfg.workerUrl || ''),
@@ -942,27 +989,45 @@ export async function sendInstantPushAndAwaitReply(
     let sseDeliveredOk = false;
     let sseDeliveryFailed = false;
     let sseBusinessError: string | undefined;
+    instantTrace(sessionId, 'sse-start', {
+      oversizeTransport: wirePayload.oversizeTransport,
+    });
     const streamPromise = reiClient.consumeInstantStream(wirePayload, '/instant', {
       signal: abortController.signal,
       onPayload: async (p: any) => {
+        instantTrace(sessionId, 'sse-payload', {
+          messageKind: p?.messageKind,
+          messageId: p?.messageId,
+          payloadSessionId: p?.sessionId,
+          chunk: p?.messageIndex,
+          total: p?.totalMessages,
+          hasBlob: p?._blob === true,
+        });
         const ack = await postSsePayloadToServiceWorker(p);
         if (ack.ok) sseDeliveredOk = true;
         else sseDeliveryFailed = true;
         if (ack.businessError) sseBusinessError = ack.businessError;
+        instantTrace(sessionId, 'sse-payload-ack', {
+          ok: ack.ok,
+          businessError: ack.businessError,
+        });
       },
     });
     // `consumeInstantStream()` calls fetch() synchronously before its first await,
     // so the request is now queued in the browser network stack.
     onPosted?.();
+    instantTrace(sessionId, 'sse-dispatched');
 
     const result = await Promise.race([
       pushArrived.then(() => 'arrived' as const),
       streamPromise.then(() => 'stream_done' as const),
       new Promise<'timeout'>((r) => setTimeout(() => r('timeout'), timeoutMs)),
     ]);
+    instantTrace(sessionId, 'race-result', { result });
 
     if (result === 'timeout') {
       abortController.abort();
+      instantTrace(sessionId, 'timeout', { waitedMs: Date.now() - sendStartedAt });
       appendDevDebugLlmLog({
         url: cfg.workerUrl,
         method: 'POST',
@@ -1002,9 +1067,16 @@ export async function sendInstantPushAndAwaitReply(
         pushArrived.then(() => true),
         new Promise<boolean>((r) => setTimeout(() => r(false), SSE_FLUSH_GRACE_MS)),
       ]);
+      instantTrace(sessionId, 'stream-done-grace', {
+        flushed,
+        sseDeliveredOk,
+        sseDeliveryFailed,
+        sseBusinessError,
+      });
       if (!flushed) {
         abortController.abort();
         const waitedMs = Date.now() - sendStartedAt;
+        instantTrace(sessionId, 'flush-not-confirmed', { waitedMs });
         appendDevDebugLlmLog({
           url: cfg.workerUrl,
           method: 'POST',
@@ -1059,8 +1131,17 @@ export async function sendInstantPushAndAwaitReply(
         push: receivedPushDetail,
       },
     });
+    instantTrace(sessionId, 'received', {
+      waitedMs: Date.now() - sendStartedAt,
+      push: !!receivedPushDetail,
+    });
     return { ok: true, outcome: 'received' };
   } catch (err: any) {
+    instantTrace(sessionId, 'sse-catch', {
+      name: err?.name,
+      message: err?.message || String(err),
+      waitedMs: Date.now() - sendStartedAt,
+    });
     appendDevDebugLlmLog({
       url: cfg.workerUrl,
       method: 'POST',
@@ -1089,7 +1170,11 @@ export async function sendInstantPushAndAwaitReply(
     if (pageHideListenerAttached) {
       try { window.removeEventListener('pagehide', abortOnPageHide); } catch { /* ignore */ }
     }
+    if (visibilityListenerAttached) {
+      try { document.removeEventListener('visibilitychange', traceVisibilityChange); } catch { /* ignore */ }
+    }
     window.removeEventListener('active-msg-received', pushHandler);
+    instantTrace(sessionId, 'cleanup');
   }
 }
 

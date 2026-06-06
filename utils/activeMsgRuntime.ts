@@ -15,6 +15,28 @@ import type { XhsNote } from './realtimeContext';
 import { appendDevDebugLlmLog, isLlmLogCaptureEnabled } from './devDebug';
 
 let initialized = false;
+const INSTANT_TRACE_LOG_KEY = 'instant_push_trace_log_v1';
+const INSTANT_TRACE_LOG_LIMIT = 200;
+
+function activeMsgTrace(event: string, details: Record<string, unknown> = {}): void {
+  const entry = {
+    ts: new Date().toISOString(),
+    sessionId: typeof details.sessionId === 'string' ? details.sessionId : undefined,
+    event,
+    visibility: typeof document !== 'undefined' ? document.visibilityState : 'n/a',
+    online: typeof navigator !== 'undefined' ? navigator.onLine : undefined,
+    ...details,
+  };
+  try {
+    console.info('[InstantTrace]', entry);
+  } catch { /* ignore */ }
+  try {
+    const raw = localStorage.getItem(INSTANT_TRACE_LOG_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    const next = Array.isArray(list) ? [...list, entry].slice(-INSTANT_TRACE_LOG_LIMIT) : [entry];
+    localStorage.setItem(INSTANT_TRACE_LOG_KEY, JSON.stringify(next));
+  } catch { /* ignore */ }
+}
 
 // ─── push 路径模块级 XHS 共享状态 ─────────────────────────────────────────────
 //
@@ -380,6 +402,7 @@ async function runPushTailPipeline(
 
 const flushInboxToChatImpl = async () => {
   const pendingMessages = await ActiveMsgStore.consumeInboxMessages();
+  activeMsgTrace('runtime-flush-start', { count: pendingMessages.length });
   // consumeInboxMessages 是 "先 ack 后处理" 语义 —— inbox 已经原子地清空。
   // 这里 per-message try/catch: 单条处理抛错 (quota / DB 故障 / postprocess 异常) 不连累
   // 后续条目。Phase 1 改成: 先尝试走 applyAssistantPostProcessing (与本地 fetch 路径
@@ -388,6 +411,13 @@ const flushInboxToChatImpl = async () => {
   // 保证 toast / 未读 / 通知 / sendInstantPush resolver 语义不变。
   for (const message of pendingMessages) {
     const messageTimestamp = message.sentAt || message.receivedAt || Date.now();
+    activeMsgTrace('runtime-inbox-message', {
+      sessionId: (message as any).sessionId || (message.metadata as any)?.sessionId,
+      messageId: message.messageId,
+      charId: message.charId,
+      messageType: message.messageType,
+      bodyChars: typeof message.body === 'string' ? message.body.length : undefined,
+    });
 
     // emotion_update: worker 跑完副 API 情绪评估后推回的 buff 结果. 不渲染成聊天消息, 直接落 buff +
     // 广播 innerState (useChatAI 监听 'emotion-innerstate-updated' → setEvolvedNarrative 喂下一轮).
@@ -416,6 +446,11 @@ const flushInboxToChatImpl = async () => {
       try {
         window.dispatchEvent(new CustomEvent('instant-emotion-done', { detail: { charId: message.charId } }));
       } catch { /* SSR-safe */ }
+      activeMsgTrace('runtime-emotion-done', {
+        sessionId: (message as any).sessionId || (message.metadata as any)?.sessionId,
+        messageId: message.messageId,
+        charId: message.charId,
+      });
       continue;
     }
 
@@ -495,6 +530,11 @@ const flushInboxToChatImpl = async () => {
         sentAt: messageTimestamp,
       },
     }));
+    activeMsgTrace('runtime-active-msg-received-dispatched', {
+      sessionId: (message as any).sessionId || (message.metadata as any)?.sessionId,
+      messageId: message.messageId,
+      charId: message.charId,
+    });
   }
 };
 
@@ -585,6 +625,13 @@ export const ActiveMsgRuntime = {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.addEventListener('message', (event) => {
         const type = event.data?.type;
+        if (type) {
+          activeMsgTrace('runtime-sw-message', {
+            type,
+            sessionId: event.data?.sessionId,
+            charId: event.data?.charId,
+          });
+        }
         if (type === 'active-msg-received') {
           void flushInboxToChat();
           return;

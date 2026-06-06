@@ -62,8 +62,10 @@ import { installReiSW } from '@rei-standard/amsg-sw';
  *           4) 升级 amsg-sw 2.2.0 → 2.3.0：包侧 dedupe/queue/multipart 连接补 onclose + 事务级
  *              InvalidStateError 重开兜底；DELIVER ack 新增 businessError，落库失败 ok:true 仍带
  *              错误，前台据此把超时文案精确化。
+ *  - 1.15.1: 临时加 instant push trace，定位 iOS PWA 后台导致的 SSE Load failed / backup push
+ *            / SW inbox 落库时序。
  */
-const SW_VERSION = '1.15.0';
+const SW_VERSION = '1.15.1';
 
 const PING_INTERVAL = 15_000;
 const MAX_MANUAL_ALIVE_MS = 5 * 60_000;
@@ -87,12 +89,45 @@ const proactiveTimers = new Map<string, number>();
 
 const sw = self as unknown as ServiceWorkerGlobalScope;
 
+function summarizeAmsgPayload(payload: any): Record<string, any> {
+  return {
+    messageKind: payload?.messageKind ?? 'content',
+    messageType: payload?.messageType,
+    messageId: payload?.messageId,
+    sessionId: payload?.sessionId,
+    charId: payload?.metadata?.charId,
+    chunk: payload?.messageIndex,
+    total: payload?.totalMessages,
+    hasBlob: payload?._blob === true,
+  };
+}
+
+function traceSw(event: string, payload?: any, extra: Record<string, any> = {}) {
+  try {
+    console.log('[InstantTrace:SW]', {
+      ts: new Date().toISOString(),
+      event,
+      ...(payload !== undefined ? summarizeAmsgPayload(payload) : {}),
+      ...extra,
+    });
+  } catch { /* ignore */ }
+}
+
 installReiSW(sw, {
   defaultIcon: './icons/icon-192.png',
   defaultBadge: './icons/icon-192.png',
   multipart: { enabled: true },
   onBusinessPayload: async (payload: any) => {
-    await saveIncomingActiveMessage(payload);
+    traceSw('business-payload-start', payload);
+    try {
+      await saveIncomingActiveMessage(payload);
+      traceSw('business-payload-done', payload);
+    } catch (e) {
+      traceSw('business-payload-error', payload, {
+        error: e instanceof Error ? e.message : String(e),
+      });
+      throw e;
+    }
   },
 });
 
@@ -148,6 +183,12 @@ function stopKeepAlive() {
 
 async function notifyClients(data: Record<string, any>) {
   const clients = await sw.clients.matchAll({ type: 'window', includeUncontrolled: true });
+  traceSw('notify-clients', undefined, {
+    type: data.type,
+    charId: data.charId,
+    sessionId: data.sessionId,
+    count: clients.length,
+  });
   for (const client of clients) {
     client.postMessage(data);
   }
@@ -346,7 +387,10 @@ async function saveContentToInbox(payload: any) {
   //   - body 空 + directives 非空 = directive-only push (LLM 只输 [[ACTION:POKE]] 等)
   //   - body 空 + directives 空 = worker bug 推白条 → 写一条空 entry, flushInbox 跑空管线无害,
   //     最多让 OSContext 弹一句默认 toast. 这种 case 应该在 worker 端修, SW 不二次验证契约.
-  if (!charId) return;
+  if (!charId) {
+    traceSw('content-drop-no-char', payload);
+    return;
+  }
 
   await withInboxTx(ACTIVE_MSG_INBOX_STORE, 'readwrite', (store) => {
     store.put({
@@ -372,6 +416,7 @@ async function saveContentToInbox(payload: any) {
       receivedAt: Date.now(),
     });
   });
+  traceSw('inbox-content-saved', payload, { bodyChars: body.length });
 
   await notifyClients({
     type: 'active-msg-received',
@@ -389,7 +434,14 @@ async function saveReasoningToBuffer(payload: any) {
   const sessionId: string | undefined = payload?.sessionId;
   const charId: string | undefined = payload?.metadata?.charId;
   const reasoningContent: string = String(payload?.reasoningContent ?? '');
-  if (!sessionId || !charId || !reasoningContent) return;
+  if (!sessionId || !charId || !reasoningContent) {
+    traceSw('reasoning-drop-incomplete', payload, {
+      hasSessionId: !!sessionId,
+      hasCharId: !!charId,
+      chars: reasoningContent.length,
+    });
+    return;
+  }
 
   await withInboxTx(ACTIVE_MSG_REASONING_BUFFER_STORE, 'readwrite', (store) => {
     store.put({
@@ -399,6 +451,7 @@ async function saveReasoningToBuffer(payload: any) {
       receivedAt: Date.now(),
     });
   });
+  traceSw('reasoning-buffer-saved', payload, { chars: reasoningContent.length });
 
   // reasoning push 与 content push 是两条独立 Web Push, 到达/处理顺序不保证. 主线程只在处理
   // "首条 content" 时 claimReasoning, 若 content 抢先落库, reasoning 会变孤儿、思维链丢失.
@@ -488,7 +541,10 @@ async function saveEmotionUpdateToInbox(payload: any) {
   // emotionRaw 允许为空: worker 评估失败/返回空时也会推一条 "done" 信号 (emotionRaw=''),
   // 仍需写 inbox + notify, 让客户端 flush 时 fire 'instant-emotion-done' 熄灭 "情绪分析中" 徽章.
   const emotionRaw = payload?.metadata?.emotionRaw || '';
-  if (!charId) return;
+  if (!charId) {
+    traceSw('emotion-drop-no-char', payload);
+    return;
+  }
   const messageId = String(payload?.messageId || `${charId}-emotion-${Date.now()}`);
 
   await withInboxTx(ACTIVE_MSG_INBOX_STORE, 'readwrite', (store) => {
@@ -503,6 +559,7 @@ async function saveEmotionUpdateToInbox(payload: any) {
       receivedAt: Date.now(),
     });
   });
+  traceSw('inbox-emotion-saved', payload, { emotionChars: String(emotionRaw).length });
 
   // 触发客户端 flush (不带真实内容, 客户端 flush 时按 messageType 静默处理). 不 showNotification.
   await notifyClients({ type: 'active-msg-received', charId, charName: payload?.contactName || '', body: '', emotionUpdate: true });
@@ -514,14 +571,21 @@ async function saveEmotionUpdateToInbox(payload: any) {
 async function fetchBlobEnvelope(payload: any): Promise<any | null> {
   const url = payload?.url;
   if (typeof url !== 'string' || !url) return null;
+  traceSw('blob-fetch-start', payload);
   try {
     const res = await fetch(url);
     if (!res.ok) {
+      traceSw('blob-fetch-http-failed', payload, { status: res.status });
       console.warn('[amsg] blob fetch returned', res.status, url);
       return null;
     }
-    return await res.json();
+    const real = await res.json();
+    traceSw('blob-fetch-ok', real);
+    return real;
   } catch (e) {
+    traceSw('blob-fetch-error', payload, {
+      error: e instanceof Error ? e.message : String(e),
+    });
     console.warn('[amsg] blob fetch failed', url, e);
     return null;
   }
@@ -540,6 +604,7 @@ async function saveIncomingActiveMessage(payload: any) {
 
   // 2. 按 messageKind 分轨; 兜底: 老 worker (0.6.x) 推过来的没 messageKind 字段, 当 content 处理.
   const messageKind: string = payload?.messageKind ?? 'content';
+  traceSw('route-payload', payload, { route: messageKind });
 
   switch (messageKind) {
     case 'content':
