@@ -1,0 +1,35 @@
+name: 合并后清理机器人分支
+
+# claude/ 或 codex/ 开头的分支，PR 合进 master 之后就把远端分支删掉，
+# 分支列表里不会一直堆着已经合完的临时分支。
+# 只管本仓库自己的分支，fork 过来的 PR 不碰。
+on:
+  pull_request_target:
+    types: [closed]
+    branches: [master]
+
+permissions:
+  contents: write
+
+jobs:
+  delete-head-branch:
+    name: 删除已合并的 head 分支
+    if: >-
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (startsWith(github.event.pull_request.head.ref, 'claude/')
+      || startsWith(github.event.pull_request.head.ref, 'codex/'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: 删除远端分支
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+          REPO: ${{ github.repository }}
+        run: |
+          if gh api -X DELETE "repos/$REPO/git/refs/heads/$BRANCH" --silent; then
+            echo "已删除分支：$BRANCH"
+          else
+            # 分支可能已被手动删掉，或者受保护规则拦着，这里不算失败
+            echo "没能删掉 $BRANCH（可能已经不存在，或者有分支保护），跳过"
+          fi
