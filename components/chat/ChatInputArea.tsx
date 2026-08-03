@@ -47,6 +47,10 @@ interface ChatInputAreaProps {
     // 瑞幸 MCP
     luckinConfigured?: boolean;
     luckinActivated?: boolean;
+    // 微信读书 MCP
+    wereadConfigured?: boolean;
+    wereadActivated?: boolean;
+    onOpenWereadMiniApp?: () => void;
     // HTML 模块模式
     htmlModeEnabled?: boolean;
     // 思考过程展示（会话级）
@@ -74,6 +78,9 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     mcdActivated = false,
     luckinConfigured = false,
     luckinActivated = false,
+    wereadConfigured = false,
+    wereadActivated = false,
+    onOpenWereadMiniApp,
     htmlModeEnabled = false,
     showThinkingChain = false,
     inputStyle = 'default',
@@ -764,6 +771,28 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                                   {luckinActivated && <span className={`absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 ${isDiscordStyle ? 'bg-[#C6A15B] border-slate-900' : 'bg-[#C6A15B] border-white'}`} />}
                               </div>
                               <span className="text-xs font-bold">{luckinActivated ? '结束瑞一杯' : '瑞一杯'}</span>
+                            </button>
+
+                            {/* 微信读书 MCP: 点击 = 激活/结束读书搭子 (附带打开小程序) */}
+                            <button
+                              onClick={() => {
+                                if (!wereadConfigured) { onPanelAction('weread-not-configured'); return; }
+                                // 单击直接调面板 action，weread 按钮打开小程序 + 激活
+                                if (wereadActivated) onPanelAction('weread-end');
+                                else onPanelAction('weread-request');
+                              }}
+                              onContextMenu={(e) => { e.preventDefault(); if (onOpenWereadMiniApp) onOpenWereadMiniApp(); }}
+                              className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${acnh ? 'text-[#725d42]' : isDiscordStyle ? 'text-slate-200' : 'text-slate-600'} ${!wereadConfigured ? 'opacity-50' : ''}`}
+                            >
+                              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border relative ${
+                                  wereadActivated
+                                    ? (isDiscordStyle ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40' : 'bg-emerald-100 text-emerald-700 border-emerald-200')
+                                    : (isDiscordStyle ? 'bg-slate-800 text-sky-300 border-sky-400/20' : 'bg-sky-50 text-sky-700 border-sky-100')
+                              }`}>
+                                  <BookOpenText className="w-6 h-6" weight="bold" />
+                                  {wereadActivated && <span className={`absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 ${isDiscordStyle ? 'bg-emerald-400 border-slate-900' : 'bg-emerald-500 border-white'}`} />}
+                              </div>
+                              <span className="text-xs font-bold">{wereadActivated ? '结束读书搭子' : '读书搭子'}</span>
                             </button>
 
                             {/* HTML 模块模式：tap = 切换开关 (注入提示词); 长按打开自定义提示词设置 */}

@@ -67,6 +67,14 @@ export interface RealtimeConfig {
         userXsecToken?: string; // 从 feed 列表自动获取，用于 getUserProfile 等
     };
 
+    // 微信读书配置 (weread skill)
+    // 注意：详细的鉴权 (API Key / Cookie / CookieCloud 三选一) 存在 localStorage，
+    // 由 wereadMcpClient.ts 管理；RealtimeConfig 里只留一个"是否启用"的总开关，
+    // 以便备份/导入导出系统与其他模块保持一致。
+    wereadEnabled?: boolean;
+    wereadMode?: 'apikey' | 'cookie';
+    wereadServerUrl?: string;   // 留空走默认 worker：https://weread.mcp.xxai-ai.top/wechat-reading
+
     // 缓存配置
     cacheMinutes: number;   // 缓存时长（分钟）
 }
@@ -92,6 +100,9 @@ export const defaultRealtimeConfig: RealtimeConfig = {
         loggedInUserId: undefined,
         userXsecToken: undefined,
     },
+    wereadEnabled: false,
+    wereadMode: 'apikey',
+    wereadServerUrl: undefined,
     cacheMinutes: 30
 };
 

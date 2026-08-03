@@ -21,6 +21,8 @@ import { buildMcdMiniAppContextBlock } from './mcdToolBridge';
 import type { McdMiniAppSnapshot } from './mcdToolBridge';
 import { buildLuckinMiniAppContextBlock, buildLuckinChatSystemBlock } from './luckinToolBridge';
 import type { LuckinMiniAppSnapshot, LuckinChatState } from './luckinToolBridge';
+import { buildWereadChatSystemBlock, WEREAD_TAIL_REMINDER } from './wereadToolBridge';
+import type { WereadSnapshot, WereadSessionState } from './wereadToolBridge';
 import { isMcpChatAvailable } from './mcpClient';
 import { buildMcpSystemBlock, MCP_TAIL_REMINDER } from './mcpToolBridge';
 import type { MusicCfg, Song, LyricLine, MusicPlaybackSnapshot, RecentTrackChange } from '../context/MusicContext';
@@ -79,6 +81,10 @@ export interface BuildChatPayloadInput {
     luckinMiniSnap?: LuckinMiniAppSnapshot;
     /** 瑞幸聊天点单模式 (点"瑞一杯"激活, 角色直接调真实工具) */
     luckinChat?: LuckinChatState;
+    /** 微信读书搭子 (用户发"读书搭子"激活, 或设置里全局开启 + 有有效鉴权) */
+    wereadActive?: boolean;
+    wereadSnapshot?: WereadSnapshot;
+    wereadSessionState?: WereadSessionState;
     /**
      * 把历史里的多模态图片消息（content 数组 + image_url）压平成纯文本占位。
      * 彼方/小小窝等复用聊天历史、但配了独立 API 的场景必须开：目标模型可能不支持
@@ -101,6 +107,7 @@ export interface BuildChatPayloadResult {
         mcdActive: boolean;
         luckinActive: boolean;
         luckinChatActive: boolean;
+        wereadActive: boolean;
         mcpChatActive: boolean;
         htmlActive: boolean;
         thinkingActive: boolean;
@@ -225,6 +232,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         char, userProfile, groups, historyMsgs, contextLimit,
         realtimeConfig, innerState,
         translationConfig, htmlMode, thinkingChain, mcdMiniSnap, luckinMiniSnap, luckinChat,
+        wereadActive: wereadActiveInput, wereadSnapshot, wereadSessionState,
     } = input;
     // 角色可见性必须在统一载荷层再次收口。UI 聊天、1.0 本地主动消息、2.0 推送、
     // 彼方/小小窝等调用方各自维护筛选很容易漏掉一条路径；一旦把全量表情传进来，
@@ -250,6 +258,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
                 mcdActive: false,
                 luckinActive: false,
                 luckinChatActive: false,
+                wereadActive: false,
                 mcpChatActive: false,
                 htmlActive: false,
                 thinkingActive: false,
@@ -392,6 +401,21 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         }
     }
 
+    // ── 9e. 微信读书搭子 (用户开 wereadEnabled + 有有效配置, 或会话里手动激活) ──
+    // 详细的 system prompt 放易变尾段，因为 snapshot/sessionState 每轮可能变。
+    const wereadActive = !!wereadActiveInput && (!!wereadSnapshot || !!wereadSessionState || true);
+    if (wereadActive) {
+        const block = buildWereadChatSystemBlock({
+            active: true,
+            snapshot: wereadSnapshot,
+            sessionState: wereadSessionState,
+            userName: userProfile?.name || '用户',
+        });
+        if (block) {
+            volatileTail += block;
+        }
+    }
+
     // ── 10. recency 钢印归位 + 组装 fullMessages ─────────
     // 「关于对方的表达」+「回到你自己」必须是易变尾段的最后内容：修复旧版把双语/HTML/
     // 思考链/点单块拼在钢印之后、模型开口前最后读到的是格式说明书的问题。
@@ -416,6 +440,9 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
     if (mcpChatActive) {
         fullMessages.push({ role: 'system', content: MCP_TAIL_REMINDER });
     }
+    if (wereadActive) {
+        fullMessages.push({ role: 'system', content: WEREAD_TAIL_REMINDER });
+    }
 
     // Dev 开关：多条 system 合并成开头一条，A/B 对照中转适配层对多 system 的计量行为。
     let finalMessages = fullMessages;
@@ -430,6 +457,6 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         systemPrompt: systemPrompt + volatileTail,
         cleanedApiMessages: messagesWithWorldbookDepth,
         fullMessages: finalMessages,
-        flags: { bilingualActive, mcdActive, luckinActive, luckinChatActive, mcpChatActive, htmlActive, thinkingActive, promptBuildSkipped: false },
+        flags: { bilingualActive, mcdActive, luckinActive, luckinChatActive, wereadActive, mcpChatActive, htmlActive, thinkingActive, promptBuildSkipped: false },
     };
 }

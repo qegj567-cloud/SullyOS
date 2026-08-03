@@ -11,6 +11,7 @@ import McdCard from './McdCard';
 import HtmlCard from './HtmlCard';
 import LuckinCard from './LuckinCard';
 import LuckinCheckoutCard from './LuckinCheckoutCard';
+import WereadCard from './WereadCard';
 
 // 思考链卡片支持的 12 种风格预设 — 同时被 MessageItem 与 ThinkingChainSettingsModal 复用
 export type ThinkingChainStyleId = 'echo' | 'whisper' | 'minimal' | 'ink' | 'neon' | 'terminal' | 'stellar' | 'tama' | 'pixel' | 'muji' | 'ins' | 'custom';
@@ -2402,6 +2403,13 @@ const MessageItem = React.memo(({
                 cartItems={meta.luckinCartItems}
                 candidateItem={meta.luckinCandidate}
             />
+        );
+    }
+
+    if (m.type === 'weread_card') {
+        const meta: any = m.metadata || {};
+        return commonLayout(
+            <WereadCard metadata={meta} />,
         );
     }
 

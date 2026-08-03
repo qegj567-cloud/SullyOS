@@ -25,9 +25,12 @@ import { isMcdConfigured } from '../utils/mcdMcpClient';
 import { isMcdActivatedInMessages, MCD_ACTIVATE_TRIGGER, MCD_DEACTIVATE_TRIGGER } from '../utils/mcdToolBridge';
 import { isLuckinConfigured } from '../utils/luckinMcpClient';
 import { isLuckinActivatedInMessages, LUCKIN_ACTIVATE_TRIGGER, LUCKIN_DEACTIVATE_TRIGGER } from '../utils/luckinToolBridge';
+import { isWereadConfigured } from '../utils/wereadMcpClient';
+import { isWereadActivatedInMessages, WEREAD_ACTIVATE_TRIGGER, WEREAD_DEACTIVATE_TRIGGER } from '../utils/wereadToolBridge';
 import MessageItem, { ThinkingChainBlock } from '../components/chat/MessageItem';
 import McdMiniApp from '../components/mcd/McdMiniApp';
 import LuckinMiniApp from '../components/luckin/LuckinMiniApp';
+import WereadMiniApp from '../components/weread/WereadMiniApp';
 import LuckinLocationModal from '../components/luckin/LuckinLocationModal';
 import LuckinHelpModal from '../components/luckin/LuckinHelpModal';
 import { PRESET_THEMES, DEFAULT_ARCHIVE_PROMPTS } from '../components/chat/ChatConstants';
@@ -1290,6 +1293,22 @@ const Chat: React.FC = () => {
             case 'luckin-end':
                 deactivateLuckin();
                 break;
+            case 'weread-not-configured':
+                addToast('请先到「微信读书搭子」小程序里完成配置', 'info');
+                setWereadAppOpen(true);
+                break;
+            case 'weread-request':
+                if (!isWereadConfigured()) { addToast('请先在「微信读书搭子」里配置好鉴权', 'info'); setWereadAppOpen(true); break; }
+                if (!wereadActivated) {
+                    // 发送"读书搭子"触发词 → useChatAI 自动把 wereadActive=true 注入 LLM
+                    await handleSendText(WEREAD_ACTIVATE_TRIGGER, 'text', { wereadActivate: true });
+                }
+                // 无论激活态还是配置好，都打开小程序方便查看数据
+                setWereadAppOpen(true);
+                break;
+            case 'weread-end':
+                if (wereadActivated) await handleSendText(WEREAD_DEACTIVATE_TRIGGER, 'text', { wereadDeactivate: true });
+                break;
             case 'html-mode-toggle': {
                 if (!char) break;
                 const next = !((char as any).htmlModeEnabled);
@@ -1328,6 +1347,11 @@ const Chat: React.FC = () => {
     const luckinActivated = luckinMode;
     const [luckinAppOpen, setLuckinAppOpen] = useState(false); // 旧小程序壳, 现已不主动开
     const luckinConfiguredFlag = useMemo(() => isLuckinConfigured(), [showPanel, luckinActivated]);
+
+    // 微信读书: weread 小程序面板
+    const [wereadAppOpen, setWereadAppOpen] = useState(false);
+    const wereadActivated = useMemo(() => isWereadActivatedInMessages(messages), [messages]);
+    const wereadConfiguredFlag = useMemo(() => isWereadConfigured(), [showPanel, wereadActivated]);
 
     const activateLuckin = useCallback(() => {
         if (!isLuckinConfigured()) { addToast('请先到设置 → 瑞幸 启用并填入 MCP Token', 'info'); return; }
@@ -3416,6 +3440,9 @@ const Chat: React.FC = () => {
                     mcdActivated={mcdActivated}
                     luckinConfigured={luckinConfiguredFlag}
                     luckinActivated={luckinActivated}
+                    wereadConfigured={wereadConfiguredFlag}
+                    wereadActivated={wereadActivated}
+                    onOpenWereadMiniApp={() => setWereadAppOpen(true)}
                     htmlModeEnabled={!!(char as any).htmlModeEnabled}
                     showThinkingChain={!!(char as any).showThinkingChain}
                     inputStyle={osTheme.chatInputStyle}
@@ -3670,6 +3697,19 @@ const Chat: React.FC = () => {
                 onStateChange={handleLuckinMiniAppStateChange}
                 onConfirmOrder={handleLuckinAppConfirm}
             />
+
+            {/* 📚 微信读书小程序 */}
+            {(() => {
+                // 用内置 Modal 包一下 WereadMiniApp
+                if (!wereadAppOpen) return null;
+                return (
+                    <Modal isOpen={wereadAppOpen} title="" onClose={() => setWereadAppOpen(false)} hideHeader={true} maxWidth="max-w-[min(92vw,420px)]">
+                        <div className="h-[80vh] max-h-[720px] rounded-2xl overflow-hidden">
+                            <WereadMiniApp />
+                        </div>
+                    </Modal>
+                );
+            })()}
 
             {/* 🦌 瑞一杯定位选择 */}
             <LuckinLocationModal

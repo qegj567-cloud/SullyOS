@@ -23,6 +23,17 @@ import { MCD_PROPOSE_TOOL, autoFixProposalCodesByName } from '../utils/mcdToolBr
 // 瑞幸: 与麦当劳同构, 只读 LuckinMiniApp 快照注入 + propose_cart_items UI 钩子工具
 import { LUCKIN_PROPOSE_TOOL, autoFixProposalCodesByName as autoFixLuckinProposalCodesByName, fetchOpenAIToolsForLuckin, inferCardKind as inferLuckinCardKind } from '../utils/luckinToolBridge';
 import { callLuckinTool } from '../utils/luckinMcpClient';
+// 微信读书 (weread skill): 与瑞幸聊天模式同构, 配置走 localStorage, 调工具把结果落 weread_card
+import { fetchOpenAIToolsForWeread, inferCardKind as inferWereadCardKind, isWereadActivatedInMessages, extractWereadSessionState, normalizeWereadArgs, buildWereadSnapshotBlock } from '../utils/wereadToolBridge';
+import type { WereadSnapshot, WereadSessionState } from '../utils/wereadToolBridge';
+import {
+    isWereadEnabled,
+    isWereadConfigured,
+    getWereadSnapshot,
+    callWereadTool,
+    WEREAD_ACTIVATE_TRIGGER,
+    WEREAD_DEACTIVATE_TRIGGER,
+} from '../utils/wereadMcpClient';
 import { callMcpTool, getMcpUseNativeTools } from '../utils/mcpClient';
 import { buildMcpOpenAITools, buildMcpRejectedToolsFallbackBody, buildMcpTextFallbackBody, extractTextFakedMcpCalls, formatMcpToolResult, sanitizeMcpLeadInText, shouldRetryMcpWithoutTools, stripTextFakedMcpCalls, type FakedMcpCall } from '../utils/mcpToolBridge';
 import { buildToolResultMessage, normalizeToolCallsForCompat } from '../utils/toolCallCompat';
@@ -755,6 +766,29 @@ export const useChatAI = ({
             const luckinMiniSnap = luckinMiniAppRef?.current;
             const luckinMiniOpen = !!luckinMiniSnap?.open;
 
+            // ── 微信读书搭子: 激活态判定 ──
+            // 满足其一就开：
+            //  1) 全局 realtimeConfig.wereadEnabled + localStorage 有有效鉴权 → 被动快照模式
+            //  2) 历史消息里出现过 "读书搭子" (WEREAD_ACTIVATE_TRIGGER)，且没被 "结束读书搭子" 关掉 → 工具全开模式
+            const wereadGloballyOn = !!(realtimeConfig.wereadEnabled && isWereadEnabled() && isWereadConfigured());
+            const wereadMsgActivated = isWereadActivatedInMessages(currentMsgs);
+            const wereadActive = wereadGloballyOn || wereadMsgActivated;
+
+            // 本轮快照：仅在 wereadActive 时异步拉一次 (超时 3s 就跳过，不耽误主聊天)
+            let wereadSnapshot: WereadSnapshot | undefined;
+            let wereadSessionState: WereadSessionState | undefined;
+            if (wereadActive) {
+                wereadSessionState = extractWereadSessionState(currentMsgs);
+                try {
+                    wereadSnapshot = await Promise.race([
+                        getWereadSnapshot(),
+                        new Promise<undefined>((r) => setTimeout(() => r(undefined), 3000)),
+                    ]) || undefined;
+                } catch (e) {
+                    console.warn('[WeRead] 快照拉取失败，跳过注入:', e);
+                }
+            }
+
             const payload = await stageT('payload', buildChatRequestPayload({
                 char: charForGen, userProfile, groups, emojis, categories,
                 historyMsgs: contextMsgs,
@@ -796,6 +830,9 @@ export const useChatAI = ({
                 mcdMiniSnap: mcdMiniOpen ? mcdMiniSnap : undefined,
                 luckinMiniSnap: luckinMiniOpen ? luckinMiniSnap : undefined,
                 luckinChat: luckinChatRef?.current?.active ? luckinChatRef.current : undefined,
+                wereadActive,
+                wereadSnapshot,
+                wereadSessionState,
             }));
             const systemPrompt = payload.systemPrompt;
             const cleanedApiMessages = payload.cleanedApiMessages;
@@ -806,6 +843,15 @@ export const useChatAI = ({
             }
             if (payload.flags.luckinActive) {
                 console.log(`☕ [Luckin-MiniApp] 注入协同点单上下文 step=${luckinMiniSnap?.step} cartItems=${luckinMiniSnap?.cart?.length || 0} menuItems=${luckinMiniSnap?.menuItems ? Object.keys(luckinMiniSnap.menuItems).length : 0}`);
+            }
+            if (payload.flags.wereadActive) {
+                const snapDesc = wereadSnapshot
+                    ? `books=${wereadSnapshot.readingNow?.length || 0} weeklyMin=${wereadSnapshot.weeklyMinutes ?? '?'} hl=${wereadSnapshot.recentHighlights?.length || 0}`
+                    : '无快照';
+                const sessDesc = wereadSessionState
+                    ? `books=${wereadSessionState.recentBooks.length} hlSeen=${wereadSessionState.totalHighlightsSeen}`
+                    : '无session';
+                console.log(`📚 [WeRead] 注入读书搭子上下文 (msg=${wereadMsgActivated?'on':'off'} global=${wereadGloballyOn?'on':'off'}) · ${snapDesc} · ${sessDesc}`);
             }
             const bilingualActive = payload.flags.bilingualActive;
 
@@ -917,7 +963,7 @@ export const useChatAI = ({
             // ⚠️ 工具模式(瑞幸点单/麦当劳)下绝不带 thinking/reasoning 参数: "thinking + tools" 同发
             //    Gemini 等会直接 400 INVALID_ARGUMENT —— 表现就是"开了思考链的角色一点单就报错,
             //    换个没开思考链的角色就好"。工具循环优先, 思考链这一轮让步。
-            const toolModeActive = payload.flags.luckinChatActive || payload.flags.mcdActive || payload.flags.luckinActive || payload.flags.mcpChatActive;
+            const toolModeActive = payload.flags.luckinChatActive || payload.flags.mcdActive || payload.flags.luckinActive || payload.flags.wereadActive || payload.flags.mcpChatActive;
             if (payload.flags.thinkingActive && !toolModeActive) {
                 const m: string = baseReqBody.model || '';
                 if (/^claude-/i.test(m) && !/-thinking$/i.test(m)) {
@@ -953,6 +999,16 @@ export const useChatAI = ({
                     baseReqBody.tool_choice = 'auto';
                 }
             }
+            // 微信读书搭子: 注入 weread 工具（书架/最近在读/阅读统计/划线/书评 等 6~8 个
+            // 跟 mcp 是两类不同来源，可共存
+            if (payload.flags.wereadActive) {
+                const wereadTools = await fetchOpenAIToolsForWeread();
+                if (wereadTools && wereadTools.length) {
+                    baseReqBody.tools = [...(baseReqBody.tools || []), ...wereadTools];
+                    if (!baseReqBody.tool_choice) baseReqBody.tool_choice = 'auto';
+                    console.log(`📚 [WeRead] 注入 ${wereadTools.length} 个 function calling 工具：${wereadTools.map(t=>t.function.name).join(',')}`);
+                }
+            }
             // 通用 MCP: 用户自配服务器的已发现工具, 追加而不覆盖(可与瑞幸/麦当劳共存)。
             // 工具清单读的是设置里持久化的发现结果, 不发网络请求。
             let mcpToolResolve: ReturnType<typeof buildMcpOpenAITools>['resolve'] | null = null;
@@ -960,7 +1016,7 @@ export const useChatAI = ({
                 const { tools: mcpTools, resolve } = buildMcpOpenAITools(char.id);
                 if (mcpTools.length) {
                     mcpToolResolve = resolve;
-                    const mcpOnly = !payload.flags.luckinChatActive && !payload.flags.mcdActive && !payload.flags.luckinActive;
+                    const mcpOnly = !payload.flags.luckinChatActive && !payload.flags.mcdActive && !payload.flags.luckinActive && !payload.flags.wereadActive;
                     if (!getMcpUseNativeTools() && mcpOnly) {
                         // 用户已明确判断当前模型/中转不支持 tools：首轮直接走正文兼容模式。
                         const compatibilityBody = buildMcpRejectedToolsFallbackBody({
@@ -984,7 +1040,7 @@ export const useChatAI = ({
             // 瑞幸聊天点单 / 麦当劳 / 瑞幸小程序 这些"客户端工具循环"模式必须走本地 fetch:
             // instant push 会把请求交给 worker 并在这里提前 return, 工具循环(callLuckinTool 等)根本跑不到,
             // 表现就是"选了城市也没用 / 角色不下单"。这些模式下跳过 instant push, 用本地 fetch 跑工具循环。
-            if (isInstantConfigReady() && !payload.flags.luckinChatActive && !payload.flags.mcdActive && !payload.flags.luckinActive && !payload.flags.mcpChatActive) {
+            if (isInstantConfigReady() && !payload.flags.luckinChatActive && !payload.flags.mcdActive && !payload.flags.luckinActive && !payload.flags.wereadActive && !payload.flags.mcpChatActive) {
                 const instantResult = await sendInstantPushAndAwaitReply({
                     contactName: char.name,
                     messages: fullMessages as InstantPushPayload['messages'],
@@ -1095,7 +1151,7 @@ export const useChatAI = ({
                 // 会对携带 tools 的请求直接回 4xx，而不是忽略参数；去掉 tools 后让
                 // 现有正文假调用容错接手。真实鉴权失败会在这次重试中再次抛出原样错误。
                 const mcpOnly = payload.flags.mcpChatActive
-                    && !payload.flags.luckinChatActive && !payload.flags.mcdActive && !payload.flags.luckinActive;
+                    && !payload.flags.luckinChatActive && !payload.flags.mcdActive && !payload.flags.luckinActive && !payload.flags.wereadActive;
                 if (!mcpOnly || !baseReqBody.tools?.length || !shouldRetryMcpWithoutTools(e)) throw e;
                 console.warn('🔌 [MCP] 当前中转拒绝 tools 请求，降级为正文工具调用兼容模式');
                 const fallbackBody = buildMcpRejectedToolsFallbackBody(baseReqBody);
@@ -1434,6 +1490,74 @@ export const useChatAI = ({
                 if (mcpToolResolve) setSearchStatus('');
             }
 
+            // 3.6a 微信读书搭子工具循环: 书架 / 最近阅读 / 进度 / 划线 / 阅读统计 / 搜索 → weread_card
+            if (payload.flags.wereadActive && data.choices?.[0]?.message?.tool_calls?.length) {
+                const MAX_LOOPS = 6;
+                let loopMessages = [...fullMessages];
+                for (let it = 0; it < MAX_LOOPS; it++) {
+                    const toolCalls = normalizeToolCallsForCompat(
+                        data.choices?.[0]?.message?.tool_calls,
+                        `weread_${it}`,
+                    );
+                    if (!toolCalls || !toolCalls.length) break;
+                    loopMessages.push({
+                        role: 'assistant',
+                        content: data.choices[0].message.content || '(读取书架中...)',
+                        tool_calls: toolCalls,
+                    } as any);
+                    for (const tc of toolCalls) {
+                        const fname: string = tc.function?.name || '';
+                        let args: any = {};
+                        try {
+                            const raw = tc.function?.arguments ?? tc.arguments;
+                            args = typeof raw === 'string' ? (raw ? JSON.parse(raw) : {}) : (raw || {});
+                        } catch (e) {
+                            console.warn('📚 [WeRead] 工具参数解析失败:', e);
+                        }
+                        // 修模型常犯的小错: days/limit 传字符串 / 日期斜杠 / bookId 其实是书名
+                        args = normalizeWereadArgs(fname, args);
+                        setSearchStatus(`正在查询微信读书：${fname}...`);
+                        const t0 = performance.now();
+                        let result: any;
+                        try { result = await callWereadTool(fname, args); }
+                        catch (e: any) { result = { success: false, error: e?.message || String(e) }; }
+                        const dt = Math.round(performance.now() - t0);
+                        console.log(`📚 [WeRead] ${fname} (${dt}ms) → ${result.success ? 'success' : 'fail: ' + (result.error||'')}`);
+                        // 落 weread_card, 让 UI 渲染卡片 (书架卡片 / 划线笔记 / 阅读统计卡 ...)
+                        try {
+                            await DB.saveMessage({
+                                charId: char.id,
+                                role: 'assistant',
+                                type: 'weread_card',
+                                content: fname,
+                                metadata: {
+                                    wereadToolName: fname,
+                                    wereadToolArgs: args,
+                                    wereadToolResult: result.success ? result.data : undefined,
+                                    wereadToolError: result.success ? undefined : result.error,
+                                    wereadToolRawText: result.rawText,
+                                    wereadCardKind: inferWereadCardKind(fname),
+                                },
+                            } as any);
+                            setMessages(await DB.getRecentMessagesByCharId(char.id, 200));
+                        } catch (e) { console.warn('📚 [WeRead] 存卡片失败:', e); }
+                        // 回填循环消息的 tool_result
+                        const toolMsg = result.success
+                            ? `工具 ${fname} 成功。结果(截断): ${(() => { try { return JSON.stringify(result.data).slice(0, 2000); } catch { return String(result.data).slice(0, 1000); } })()}`
+                            : `工具 ${fname} 失败: ${result.error || '未知错误'}`;
+                        loopMessages.push(buildToolResultMessage(tc, toolMsg) as any);
+                    }
+                    setSearchStatus('正在整理阅读结果...');
+                    const followBody = { ...baseReqBody, messages: loopMessages };
+                    data = await safeFetchJson(`${baseUrl}/chat/completions`, {
+                        method: 'POST', headers,
+                        body: JSON.stringify(followBody)
+                    });
+                    updateTokenUsage(data, historyMsgCount, `weread-${it + 1}`);
+                }
+                setSearchStatus('');
+            }
+
             // 3.6b MCP 掉格式容错（第二层, 对标见面观测协议的两层容错）:
             //     不支持 function calling 的模型会把工具调用写成正文文字, 如
             //     ask_question("SullyOS") / ask_question: SullyOS。这里检测出来
@@ -1589,6 +1713,11 @@ export const useChatAI = ({
                 await DB.saveMessage({
                     charId: char.id, role: 'system', type: 'text',
                     content: `[瑞一杯失败] ${errMsg}\n\n大概率是你当前聊天用的「模型/中转」不支持函数调用(function calling / tools)——瑞一杯靠角色自己调工具点单, 模型不支持就会直接报 400。\n解决: 换一个支持 tools 的模型/中转 (如官方 OpenAI / Claude / 多数主流中转)。\n另外确认: APK 是全新存储, 你的聊天 API 配置(密钥/地址/模型)在 APK 里填好了吗?`,
+                });
+            } else if (payload?.flags?.wereadActive && /\b400\b|tool|function[_\s-]?call/i.test(errMsg)) {
+                await DB.saveMessage({
+                    charId: char.id, role: 'system', type: 'text',
+                    content: `[读书搭子失败] ${errMsg}\n\n大概率是你当前聊天用的「模型/中转」不支持函数调用(function calling / tools)——读书搭子靠角色自己调工具翻书架/查划线, 模型不支持 tools 就会直接报 400。\n解决: 换一个支持 tools 的模型/中转 (如官方 OpenAI / Claude / 多数主流中转)。\n如果不想换模型, 可以只开「全局被动快照」模式 (把 weread 工具关掉、但保持 wereadEnabled + 有鉴权), 这样即使不调工具, 角色也能在 system prompt 里看到你最近在读啥 + 本周阅读时长 + 划线摘要。`,
                 });
             } else {
                 await DB.saveMessage({ charId: char.id, role: 'system', type: 'text', content: `[回复处理失败: ${errMsg}]` });

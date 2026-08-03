@@ -15,6 +15,7 @@ import { exportPostOfficeLocal, importPostOfficeLocal } from './vrWorld/postOffi
 import { exportSignalLocal, importSignalLocal } from './vrWorld/signal';
 import { exportLuckinLocal, importLuckinLocal } from './luckinMcpClient';
 import { exportMcdLocal, importMcdLocal } from './mcdMcpClient';
+import { exportWereadLocal, importWereadLocal } from './wereadMcpClient';
 import { exportMcpLocal, importMcpLocal } from './mcpClient';
 import { exportWorldHomeLocal, importWorldHomeLocal } from './worldHome/localBackup';
 import { exportDesktopSkinLocal, importDesktopSkinLocal } from './desktopSkinBackup';
@@ -2680,6 +2681,7 @@ export const DB = {
           worldHomeLocal: exportWorldHomeLocal(), // 家园本机配置：全局 API + 文风收藏（存 localStorage）
           luckinLocal: exportLuckinLocal(),       // 瑞幸 token + 启用状态（存 localStorage）
           mcdLocal: exportMcdLocal(),             // 麦当劳 token + 启用状态（存 localStorage）
+          wereadLocal: exportWereadLocal(),       // 微信读书鉴权 + 启用状态（存 localStorage）
           mcpLocal: exportMcpLocal(),             // 通用 MCP 服务器配置（存 localStorage）
           desktopSkinLocal: await exportDesktopSkinLocal(), // 桌面皮肤：界面配色 + 看板 banner（看板图令牌解析为 data URL）
       };
@@ -2820,6 +2822,8 @@ export const DB = {
           (data as any).worldHomeLocal !== undefined,
           (data as any).luckinLocal !== undefined,
           (data as any).mcdLocal !== undefined,
+          (data as any).wereadLocal !== undefined,
+          (data as any).mcpLocal !== undefined,
           data.pixelHomeAssets !== undefined,
           data.pixelHomeLayouts !== undefined,
           data.userProfile !== undefined,
@@ -3125,6 +3129,10 @@ export const DB = {
       await runSection('麦当劳配置', (data as any).mcdLocal !== undefined, async () => {
           importMcdLocal((data as any).mcdLocal); // token + 启用状态
           (data as any).mcdLocal = undefined;
+      }, 1);
+      await runSection('微信读书配置', (data as any).wereadLocal !== undefined, async () => {
+          importWereadLocal((data as any).wereadLocal); // 鉴权 + 启用状态
+          (data as any).wereadLocal = undefined;
       }, 1);
       await runSection('MCP 服务器配置', (data as any).mcpLocal !== undefined, async () => {
           importMcpLocal((data as any).mcpLocal); // 用户自配的 MCP 服务器列表

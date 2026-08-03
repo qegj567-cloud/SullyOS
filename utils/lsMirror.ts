@@ -43,6 +43,13 @@ export const MIRRORED_KEYS: readonly string[] = [
     'character_refine_prompts',
     'character_active_refine_prompt_id',
     'os_last_active_char_id',
+    // 微信读书 (weread skill) 配置
+    'weread_enabled',
+    'weread_mode',
+    'weread_apikey',
+    'weread_cookie',
+    'weread_cookie_cloud',
+    'weread_server_url',
 ];
 
 const MIRROR_ASSET_ID = 'ls_mirror_v1';
