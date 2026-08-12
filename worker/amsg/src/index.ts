@@ -27,10 +27,13 @@
 import { DurableObject } from 'cloudflare:workers';
 import {
   createSingleUserCloudflareWorker,
+  createD1Adapter,
   createWebCryptoWebPush,
   decryptFromStorage,
   deriveUserEncryptionKey,
+  encryptForStorage,
   measurePushPayload,
+  runScheduledTick,
 } from '@rei-standard/amsg-server/cloudflare';
 import { stripReasoningTags } from '@rei-standard/amsg-shared';
 import { AMSG_BUNDLE_VERSION } from '../../../utils/amsgBundleVersion';
@@ -168,6 +171,23 @@ interface Env extends NativeFcmEnv {
    */
   INSTANT_TICK?: InstantTickNamespace;
 }
+
+type D1RunResult = { success?: boolean; meta?: { changes?: number } };
+type D1BoundStatement = {
+  run?(): Promise<D1RunResult>;
+  first<T = unknown>(): Promise<T | null>;
+  all<T = unknown>(): Promise<{ results?: T[] }>;
+};
+type D1Statement = D1BoundStatement & {
+  bind(...values: unknown[]): D1BoundStatement;
+};
+type D1AuditLike = {
+  prepare(sql: string): D1Statement;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  !!value && typeof value === 'object' && !Array.isArray(value)
+);
 
 // ─── 满血 fire-time hooks（amsg-server 2.6.0-next.4+：含 ctx.scratch / 存储层大值分块） ───
 //
@@ -414,10 +434,367 @@ interface FireStash {
    * 标记。收尾时（amsgFireSettled）据此把迟到的结果写进旁路存储，客户端轮询补落。
    */
   emotionLatePending: boolean;
+  /** 本次 fire 的云端 prompt 审计。完整 prompt 在 onBeforeFire 生成，结局在收尾时补齐落库。 */
+  promptAudit: AmsgPromptAuditDraft | null;
 }
 
 const getFireStash = (scratch: Record<string, unknown> | undefined): FireStash | undefined =>
   scratch?.fire as FireStash | undefined;
+
+interface AmsgPromptAuditModule {
+  key: string;
+  label: string;
+  enabled: boolean;
+  included: boolean;
+  note?: string;
+}
+
+interface AmsgPromptAuditRound {
+  iteration: number;
+  decision: string;
+  model: string | null;
+  usage: {
+    totalTokens: number | null;
+    promptTokens: number | null;
+    completionTokens: number | null;
+  };
+  toolCalls: string[];
+  outputText: string;
+}
+
+interface AmsgPromptAuditDraft {
+  id: string;
+  createdAt: number;
+  expiresAt: number;
+  charId: string;
+  charName: string;
+  taskUuid: string | null;
+  taskRowId: string | null;
+  clientTaskId: string;
+  occurrenceMs: number;
+  status: string;
+  prompt: string;
+  promptControls: Record<string, unknown>;
+  promptModules: AmsgPromptAuditModule[];
+  rounds: AmsgPromptAuditRound[];
+  outputText: string;
+  error: string | null;
+}
+
+const PROMPT_AUDIT_TABLE = 'prompt_audit_log';
+const PROMPT_AUDIT_RETENTION_MS = 5 * 24 * 60 * 60 * 1000;
+const PROMPT_AUDIT_MAX_LIMIT = 50;
+const PROMPT_AUDIT_DEFAULT_LIMIT = 20;
+
+const getAuditD1 = (env: Pick<Env, 'DB'>): D1AuditLike => {
+  const db = env.DB as D1AuditLike | undefined;
+  if (typeof db?.prepare !== 'function') {
+    throw new Error('AMSG2_PROMPT_AUDIT_DB_MISSING');
+  }
+  return db;
+};
+
+const runD1 = async (statement: D1BoundStatement): Promise<D1RunResult> => {
+  if (typeof statement.run === 'function') return statement.run();
+  await statement.first();
+  return { success: true, meta: { changes: 0 } };
+};
+
+const toFiniteNumber = (value: unknown): number | null => (
+  typeof value === 'number' && Number.isFinite(value) ? value : null
+);
+
+const readLlmModel = (llmResponse: unknown): string | null => {
+  const model = (llmResponse as { model?: unknown })?.model;
+  return typeof model === 'string' && model.trim() ? model.trim() : null;
+};
+
+const readLlmUsage = (llmResponse: unknown) => {
+  const usage = (llmResponse as { usage?: Record<string, unknown> })?.usage ?? {};
+  return {
+    totalTokens: toFiniteNumber(usage.total_tokens ?? usage.totalTokens),
+    promptTokens: toFiniteNumber(usage.prompt_tokens ?? usage.promptTokens),
+    completionTokens: toFiniteNumber(usage.completion_tokens ?? usage.completionTokens),
+  };
+};
+
+const buildPromptAuditModules = (
+  promptControls: AmsgToolConfig['promptControls'],
+  runtime: {
+    mcpEnabled: boolean;
+    realtimeStateEnabled: boolean;
+    timeAwarenessEnabled: boolean;
+  },
+) => {
+  const controls = promptControls && typeof promptControls === 'object' ? promptControls : {};
+  return Object.entries(controls).map(([key, value]) => {
+    const enabled = value !== false;
+    const included = key === 'mcpTools'
+      ? runtime.mcpEnabled
+      : key === 'realtimeState'
+        ? runtime.realtimeStateEnabled
+        : key === 'timeAwareness'
+          ? runtime.timeAwarenessEnabled
+          : enabled;
+    return {
+      key,
+      label: key,
+      enabled,
+      included,
+      note: included ? undefined : '已关闭',
+    };
+  });
+};
+
+const createPromptAuditDraft = (
+  ctx: FireCtx,
+  prompt: string,
+  promptControls: AmsgToolConfig['promptControls'],
+  runtime: {
+    mcpEnabled: boolean;
+    realtimeStateEnabled: boolean;
+    timeAwarenessEnabled: boolean;
+  },
+): AmsgPromptAuditDraft => {
+  const createdAt = Date.now();
+  const taskUuid = typeof ctx.task.uuid === 'string' ? ctx.task.uuid : null;
+  const taskRowId = ctx.task.id != null ? String(ctx.task.id) : null;
+  const clientTaskId = typeof ctx.task.metadata?.amsgClientTaskId === 'string'
+    ? ctx.task.metadata.amsgClientTaskId
+    : '';
+  return {
+    id: `${ctx.task.metadata?.charId || 'char'}:${taskUuid || taskRowId || 'task'}:${ctx.task.nextSendAt || ctx.now.getTime()}`,
+    createdAt,
+    expiresAt: createdAt + PROMPT_AUDIT_RETENTION_MS,
+    charId: typeof ctx.task.metadata?.charId === 'string' ? ctx.task.metadata.charId : 'unknown',
+    charName: typeof ctx.task.contactName === 'string' && ctx.task.contactName.trim() ? ctx.task.contactName.trim() : 'unknown',
+    taskUuid,
+    taskRowId,
+    clientTaskId,
+    occurrenceMs: ctx.now.getTime(),
+    status: 'pending',
+    prompt,
+    promptControls: { ...(promptControls || {}) },
+    promptModules: buildPromptAuditModules(promptControls, runtime),
+    rounds: [],
+    outputText: '',
+    error: null,
+  };
+};
+
+const appendPromptAuditRound = (
+  draft: AmsgPromptAuditDraft,
+  ctx: SessionCtx,
+  outputText: string,
+  decision: { decision: string; toolCalls?: Array<{ function?: { name?: string } }> },
+) => {
+  draft.rounds.push({
+    iteration: typeof ctx.iteration === 'number' ? ctx.iteration : draft.rounds.length,
+    decision: decision.decision,
+    model: readLlmModel(ctx.llmResponse),
+    usage: readLlmUsage(ctx.llmResponse),
+    toolCalls: (decision.toolCalls ?? [])
+      .map((tool) => (typeof tool?.function?.name === 'string' ? tool.function.name : ''))
+      .filter(Boolean),
+    outputText,
+  });
+  draft.outputText = outputText;
+};
+
+const sumPromptAuditUsage = (rounds: AmsgPromptAuditRound[]) => {
+  const sum = (key: keyof AmsgPromptAuditRound['usage']) => {
+    let total = 0;
+    let seen = false;
+    for (const round of rounds) {
+      const value = round.usage[key];
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        total += value;
+        seen = true;
+      }
+    }
+    return seen ? total : null;
+  };
+  return {
+    totalTokens: sum('totalTokens'),
+    promptTokens: sum('promptTokens'),
+    completionTokens: sum('completionTokens'),
+  };
+};
+
+const parseAuditJson = <T,>(value: unknown, fallback: T): T => {
+  if (typeof value !== 'string' || !value.trim()) return fallback;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+};
+
+export const ensurePromptAuditSchema = async (env: Pick<Env, 'DB'>): Promise<void> => {
+  const db = getAuditD1(env);
+  await runD1(db.prepare(`
+    CREATE TABLE IF NOT EXISTS ${PROMPT_AUDIT_TABLE} (
+      id TEXT PRIMARY KEY,
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL,
+      char_id TEXT,
+      char_name TEXT,
+      task_uuid TEXT,
+      task_row_id TEXT,
+      client_task_id TEXT,
+      occurrence_ms INTEGER,
+      status TEXT NOT NULL,
+      model TEXT,
+      prompt TEXT NOT NULL,
+      prompt_controls_json TEXT NOT NULL,
+      prompt_modules_json TEXT NOT NULL,
+      rounds_json TEXT NOT NULL,
+      usage_json TEXT NOT NULL,
+      output_text TEXT NOT NULL,
+      error TEXT
+    )
+  `));
+  await runD1(db.prepare(`CREATE INDEX IF NOT EXISTS idx_prompt_audit_expires ON ${PROMPT_AUDIT_TABLE} (expires_at)`));
+  await runD1(db.prepare(`CREATE INDEX IF NOT EXISTS idx_prompt_audit_created ON ${PROMPT_AUDIT_TABLE} (created_at DESC)`));
+};
+
+const deleteExpiredPromptAudits = async (
+  env: Pick<Env, 'DB'>,
+  cutoff = Date.now(),
+): Promise<number> => {
+  await ensurePromptAuditSchema(env);
+  const result = await runD1(
+    getAuditD1(env)
+      .prepare(`DELETE FROM ${PROMPT_AUDIT_TABLE} WHERE expires_at <= ?`)
+      .bind(cutoff),
+  );
+  return Number(result.meta?.changes ?? 0);
+};
+
+export const recordPromptAudit = async (
+  env: Pick<Env, 'DB'>,
+  entry: AmsgPromptAuditDraft,
+): Promise<void> => {
+  await ensurePromptAuditSchema(env);
+  await deleteExpiredPromptAudits(env);
+  const model = [...entry.rounds].reverse().find((round) => round.model)?.model ?? null;
+  await runD1(
+    getAuditD1(env)
+      .prepare(`
+        INSERT INTO ${PROMPT_AUDIT_TABLE} (
+          id, created_at, expires_at, char_id, char_name, task_uuid, task_row_id,
+          client_task_id, occurrence_ms, status, model, prompt, prompt_controls_json,
+          prompt_modules_json, rounds_json, usage_json, output_text, error
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          created_at = excluded.created_at,
+          expires_at = excluded.expires_at,
+          char_id = excluded.char_id,
+          char_name = excluded.char_name,
+          task_uuid = excluded.task_uuid,
+          task_row_id = excluded.task_row_id,
+          client_task_id = excluded.client_task_id,
+          occurrence_ms = excluded.occurrence_ms,
+          status = excluded.status,
+          model = excluded.model,
+          prompt = excluded.prompt,
+          prompt_controls_json = excluded.prompt_controls_json,
+          prompt_modules_json = excluded.prompt_modules_json,
+          rounds_json = excluded.rounds_json,
+          usage_json = excluded.usage_json,
+          output_text = excluded.output_text,
+          error = excluded.error
+      `)
+      .bind(
+        entry.id,
+        entry.createdAt,
+        entry.expiresAt,
+        entry.charId,
+        entry.charName,
+        entry.taskUuid,
+        entry.taskRowId,
+        entry.clientTaskId,
+        entry.occurrenceMs,
+        entry.status,
+        model,
+        entry.prompt,
+        JSON.stringify(entry.promptControls),
+        JSON.stringify(entry.promptModules),
+        JSON.stringify(entry.rounds),
+        JSON.stringify(sumPromptAuditUsage(entry.rounds)),
+        entry.outputText,
+        entry.error,
+      ),
+  );
+};
+
+type PromptAuditRow = {
+  id?: unknown;
+  created_at?: unknown;
+  expires_at?: unknown;
+  char_id?: unknown;
+  char_name?: unknown;
+  task_uuid?: unknown;
+  task_row_id?: unknown;
+  client_task_id?: unknown;
+  occurrence_ms?: unknown;
+  status?: unknown;
+  model?: unknown;
+  prompt?: unknown;
+  prompt_controls_json?: unknown;
+  prompt_modules_json?: unknown;
+  rounds_json?: unknown;
+  usage_json?: unknown;
+  output_text?: unknown;
+  error?: unknown;
+};
+
+const auditRowToEntry = (row: PromptAuditRow) => ({
+  id: typeof row.id === 'string' ? row.id : String(row.id ?? ''),
+  createdAt: Number(row.created_at ?? 0),
+  expiresAt: Number(row.expires_at ?? 0),
+  charId: typeof row.char_id === 'string' ? row.char_id : null,
+  charName: typeof row.char_name === 'string' ? row.char_name : null,
+  taskUuid: typeof row.task_uuid === 'string' ? row.task_uuid : null,
+  taskRowId: typeof row.task_row_id === 'string' ? row.task_row_id : null,
+  clientTaskId: typeof row.client_task_id === 'string' ? row.client_task_id : null,
+  occurrenceMs: typeof row.occurrence_ms === 'number' ? row.occurrence_ms : Number(row.occurrence_ms ?? 0) || null,
+  status: typeof row.status === 'string' ? row.status : 'unknown',
+  model: typeof row.model === 'string' && row.model ? row.model : null,
+  prompt: typeof row.prompt === 'string' ? row.prompt : '',
+  promptControls: parseAuditJson<Record<string, unknown>>(row.prompt_controls_json, {}),
+  promptModules: parseAuditJson<AmsgPromptAuditModule[]>(row.prompt_modules_json, []),
+  rounds: parseAuditJson<AmsgPromptAuditRound[]>(row.rounds_json, []),
+  usage: parseAuditJson<Record<string, unknown>>(row.usage_json, {}),
+  outputText: typeof row.output_text === 'string' ? row.output_text : '',
+  error: typeof row.error === 'string' ? row.error : null,
+});
+
+export const listPromptAudit = async (
+  env: Pick<Env, 'DB'>,
+  limit = PROMPT_AUDIT_DEFAULT_LIMIT,
+) => {
+  const safeLimit = Math.max(1, Math.min(PROMPT_AUDIT_MAX_LIMIT, Math.floor(limit) || PROMPT_AUDIT_DEFAULT_LIMIT));
+  await deleteExpiredPromptAudits(env);
+  const rows = await getAuditD1(env)
+    .prepare(`
+      SELECT id, created_at, expires_at, char_id, char_name, task_uuid, task_row_id,
+             client_task_id, occurrence_ms, status, model, prompt, prompt_controls_json,
+             prompt_modules_json, rounds_json, usage_json, output_text, error
+        FROM ${PROMPT_AUDIT_TABLE}
+       ORDER BY created_at DESC
+       LIMIT ?
+    `)
+    .bind(safeLimit)
+    .all<PromptAuditRow>();
+  return (rows.results ?? []).map(auditRowToEntry);
+};
+
+export const clearPromptAudit = async (env: Pick<Env, 'DB'>): Promise<{ deleted: number }> => {
+  await ensurePromptAuditSchema(env);
+  const result = await runD1(getAuditD1(env).prepare(`DELETE FROM ${PROMPT_AUDIT_TABLE}`));
+  return { deleted: Number(result.meta?.changes ?? 0) };
+};
 
 /** 两个时间戳取较新的那个；两个都没有为 null。 */
 const laterOf = (a: number | null, b: number | null): number | null =>
@@ -833,6 +1210,7 @@ export const amsgFireSettled = async (
     error?: unknown;
     scratch: Record<string, unknown>;
     writeState: WriteState;
+    env?: Pick<Env, 'DB'>;
   },
 ): Promise<void> => {
   const stash = getFireStash(info.scratch);
@@ -911,6 +1289,29 @@ export const amsgFireSettled = async (
   const texts = stash.selfLogTexts;
   stash.selfLogTexts = null;   // 认领掉，重复调用不会记两遍
   const sentCount = info.sentCount ?? 0;
+  const audit = stash.promptAudit;
+  if (audit) {
+    audit.status = info.status || (sentCount > 0 ? 'sent' : 'settled');
+    if (info.error) {
+      audit.error = info.error instanceof Error ? info.error.message : String(info.error);
+    }
+    const deliveredText = texts
+      ?.slice(0, sentCount)
+      .filter((message) => message.trim())
+      .join('\n')
+      .trim();
+    if (deliveredText) audit.outputText = deliveredText;
+    stash.promptAudit = null;
+    if (!info.env) {
+      console.warn('[amsg:prompt-audit] missing env, audit not recorded');
+    } else {
+      try {
+        await recordPromptAudit(info.env, audit);
+      } catch (error) {
+        console.warn('[amsg:prompt-audit] write failed', error);
+      }
+    }
+  }
   if (texts && sentCount > 0) {
     // 多段消息在用户那边是连着的几条气泡，对角色而言是一次「我说了这些」，合成一条记。
     // 只取前 sentCount 段：部分失败时没送出去的正文绝不能进日志。
@@ -1643,7 +2044,11 @@ export const amsgHooks = {
     // 不存在「教了角色用、凭据却没到」的窗口。charIds 过滤与前台同语义。
     // mcpUseNativeTools=false = 用户的中转拒 tools（前台兼容模式同款开关），
     // 请求不带 tools 参数、提示词块教正文协议，识别走 processLLMRound 第二层。
-    const mcpServers = filterMcpServersForChar(toolConfig.mcpServers, charId);
+    const promptControls = toolConfig.promptControls;
+    const mcpEnabled = promptControls?.mcpTools !== false;
+    const realtimeStateEnabled = promptControls?.realtimeState !== false;
+    const timeAwarenessEnabled = toolPack.timeAwarenessEnabled && promptControls?.timeAwareness !== false;
+    const mcpServers = mcpEnabled ? filterMcpServersForChar(toolConfig.mcpServers, charId) : [];
     // 暴露名后面要拼 MCP_FIRE_NAME_PREFIX，长度预算得先把前缀那几个字符扣掉。
     const mcpResolve = mcpServers.length
       ? buildMcpNameMap(mcpServers, { maxNameLen: MCP_FIRE_NAME_BUDGET })
@@ -1738,6 +2143,7 @@ export const amsgHooks = {
       // 下面即时对话那一支起跑（要等请求消息拼完才知道给评估喂什么）。
       emotionEvalPromise: null,
       emotionLatePending: false,
+      promptAudit: null,
     };
     ctx.scratch.fire = stash;
 
@@ -1769,15 +2175,17 @@ export const amsgHooks = {
 
     // 「外面的世界此刻什么样」：今日节日 + 实时天气 + 热搜，到点现拉现填。
     // 拉不到 / 超时都只是返回空串，那一段整个消失，这次触发照常往下走。
-    const realtimeWorldBlock = await buildRealtimeWorldBlock({
-      toolConfig,
-      timeAwarenessEnabled: toolPack.timeAwarenessEnabled,
-      tzId: pack.tzId,
-      nowMs: ctx.now.getTime(),
-      globalRows,
-      globalNamespace: AMSG_GLOBAL_NAMESPACE,
-      writeState: ctx.writeState,
-    });
+    const realtimeWorldBlock = realtimeStateEnabled
+      ? await buildRealtimeWorldBlock({
+        toolConfig,
+        timeAwarenessEnabled,
+        tzId: pack.tzId,
+        nowMs: ctx.now.getTime(),
+        globalRows,
+        globalNamespace: AMSG_GLOBAL_NAMESPACE,
+        writeState: ctx.writeState,
+      })
+      : '';
 
     // MCP 说明块 / 「给自己排下一条」说明块：两条路都要，只是挂的位置不同
     // （主动消息接在渲染好的 prompt 后面，即时对话拼进末尾追加的那个 system 块）。
@@ -1822,7 +2230,7 @@ export const amsgHooks = {
         tz,
         userTzId: pack.userTzId,
         targetName: pack.targetName,
-        timeAwarenessEnabled: toolPack.timeAwarenessEnabled,
+        timeAwarenessEnabled,
         blocks: [
           realtimeWorldBlock,
           renderSelfLogBlock(selfLog, ctx.now.getTime(), tz, maxUnansweredSends),
@@ -1891,6 +2299,11 @@ export const amsgHooks = {
       taskListBlock,
       realtimeWorldBlock,
     }) + mcpBlock + scheduleBlock;
+    stash.promptAudit = createPromptAuditDraft(ctx, prompt, promptControls, {
+      mcpEnabled,
+      realtimeStateEnabled,
+      timeAwarenessEnabled,
+    });
     return {
       messages: [{ role: 'user' as const, content: prompt }],
       ...common,
@@ -1995,6 +2408,19 @@ export const amsgHooks = {
     typeof ctx.scheduleTask === 'function' ? { nativeToolCalls: nativeCalls.manage } : null,
     // 最后一轮不再放行工具请求，改成用手上的内容收尾（见 agentic.ts 的 MAX_TOOL_ITERATIONS）。
     ctx.iteration);
+
+    if (stash.promptAudit) {
+      appendPromptAuditRound(stash.promptAudit, ctx, content, decision);
+      stash.promptAudit.status = decision.decision;
+      if (decision.decision === 'finish') {
+        const generatedText = decision.pushPayloads
+          .map((payload) => (typeof payload.message === 'string' ? payload.message : ''))
+          .filter((message) => message.trim())
+          .join('\n')
+          .trim();
+        if (generatedText) stash.promptAudit.outputText = generatedText;
+      }
+    }
 
     if (decision.decision === 'tool-request') {
       console.log('[amsg:agentic]', {
@@ -2295,6 +2721,8 @@ export const buildWorkerConfig = (env: Env) => {
   configureInstantErrorPush(env.DB && env.AMSG_MASTER_KEY
     ? { webpush, db: env.DB as unknown as InstantErrorPushDeps['db'], masterKey: env.AMSG_MASTER_KEY }
     : null);
+  const onFireSettled = (info: Parameters<typeof amsgFireSettled>[0]) =>
+    amsgFireSettled({ ...info, env: { DB: env.DB } });
   return {
     // db 缺省时 factory 自动用 createD1Adapter(env.DB)
     masterKey: env.AMSG_MASTER_KEY,
@@ -2317,7 +2745,7 @@ export const buildWorkerConfig = (env: Env) => {
     //   在这里统一落盘（见 amsgFireSettled）。不用 onAfterSend——它只在真发出去那条路
     //   触发，角色自排任务碰上「只做了副作用没说话」就会漏账变成幽灵任务。
     // onStaleSkip: 过期不补发时给面板留一句「为什么没响」（见 amsgStaleSkip）。
-    onFireSettled: amsgFireSettled,
+    onFireSettled,
     onStaleSkip: amsgStaleSkip,
     // 同一个角色的多条任务不并发跑：两条撞在一起时用户会收到两条互不知情的消息，
     // 而且 self_log 是读-改-写整份，后写的会盖掉先写的那条「我说过什么」。分组键取
@@ -2419,7 +2847,7 @@ const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
   'Access-Control-Allow-Headers':
-    'Content-Type, X-User-Id, X-Payload-Encrypted, X-Encryption-Version, X-Response-Encrypted, X-Client-Token',
+    'Authorization, Content-Type, X-User-Id, X-Payload-Encrypted, X-Encryption-Version, X-Response-Encrypted, X-Client-Token',
   'Access-Control-Max-Age': '86400',
 };
 
@@ -2428,6 +2856,227 @@ const jsonWithCors = (status: number, body: unknown): Response =>
     status,
     headers: { 'Content-Type': 'application/json; charset=utf-8', ...CORS_HEADERS },
   });
+
+type WakeNowProfile = {
+  apiUrl: string;
+  apiKey: string;
+  primaryModel: string;
+  maxTokens?: number | null;
+  temperature?: number | null;
+};
+
+type ParsedWakeNowRequest = {
+  wakeId: string;
+  userId: string;
+  charId: string;
+  firstSendTime: string;
+  taskPayload: Record<string, unknown>;
+};
+
+const randomWakeId = (): string => `heartbeat-${crypto.randomUUID()}`;
+
+const requiredWakeText = (value: unknown, name: string, maxLength: number): string => {
+  if (typeof value !== 'string' || !value.trim() || value.trim() !== value) {
+    throw new Error(`WAKE_NOW_INVALID_${name.toUpperCase()}`);
+  }
+  if (value.length > maxLength) throw new Error(`WAKE_NOW_${name.toUpperCase()}_TOO_LONG`);
+  return value;
+};
+
+export const isWakeNowAuthorized = (headers: Headers, expectedToken: string | undefined): boolean => {
+  const expected = expectedToken?.trim();
+  if (!expected) return false;
+  const bearer = headers.get('Authorization')?.trim();
+  const clientToken = headers.get('X-Client-Token')?.trim();
+  return bearer === `Bearer ${expected}` || clientToken === expected;
+};
+
+export const parseWakeNowRequest = async (request: Request): Promise<ParsedWakeNowRequest> => {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    throw new Error('WAKE_NOW_INVALID_JSON');
+  }
+  if (!isRecord(body) || body.version !== 1 || body.type !== 'heartbeat') {
+    throw new Error('WAKE_NOW_INVALID_TYPE');
+  }
+
+  const userId = requiredWakeText(body.userId, 'user_id', 255);
+  const charId = requiredWakeText(body.charId, 'char_id', 255);
+  const instruction = requiredWakeText(
+    body.instruction
+      ?? '这是一次自主心跳。请先查看年轮空间，再决定今天要做什么；可以写成长记录、整理记忆、调用其它 MCP，也可以保持安静。',
+    'instruction',
+    8_000,
+  );
+  if (!isRecord(body.profile)) throw new Error('WAKE_NOW_PROFILE_REQUIRED');
+  const profile = body.profile as Record<string, unknown>;
+  const wakeProfile: WakeNowProfile = {
+    apiUrl: requiredWakeText(profile.apiUrl, 'api_url', 2_048),
+    apiKey: requiredWakeText(profile.apiKey, 'api_key', 8_000),
+    primaryModel: requiredWakeText(profile.primaryModel, 'primary_model', 255),
+    ...(typeof profile.maxTokens === 'number' ? { maxTokens: profile.maxTokens } : {}),
+    ...(typeof profile.temperature === 'number' ? { temperature: profile.temperature } : {}),
+  };
+  const wakeId = typeof body.wakeId === 'string' && body.wakeId.trim()
+    ? requiredWakeText(body.wakeId, 'wake_id', 160)
+    : randomWakeId();
+  const firstSendTime = new Date().toISOString();
+
+  return {
+    wakeId,
+    userId,
+    charId,
+    firstSendTime,
+    taskPayload: {
+      contactName: typeof body.contactName === 'string' && body.contactName.trim()
+        ? body.contactName.trim()
+        : charId,
+      avatarUrl: null,
+      messageType: 'auto',
+      messageSubtype: 'chat',
+      userMessage: null,
+      firstSendTime,
+      recurrenceType: 'none',
+      tzId: 'UTC',
+      apiUrl: wakeProfile.apiUrl,
+      apiKey: wakeProfile.apiKey,
+      primaryModel: wakeProfile.primaryModel,
+      completePrompt: null,
+      messages: null,
+      maxTokens: wakeProfile.maxTokens ?? null,
+      temperature: wakeProfile.temperature ?? null,
+      splitPattern: null,
+      metadata: {
+        charId,
+        source: 'heartbeat',
+        amsgMode: 'heartbeat',
+        amsgExpirePolicy: 'keep',
+        amsgClientTaskId: wakeId,
+        amsgTaskInstruction: instruction,
+      },
+    },
+  };
+};
+
+const runDirectHeartbeatFire = async (env: Env, parsed: ParsedWakeNowRequest) => {
+  const db = createD1Adapter(env.DB as { prepare: (sql: string) => unknown });
+  const userKey = await deriveUserEncryptionKey(parsed.userId, env.AMSG_MASTER_KEY);
+  const encryptedPayload = await encryptForStorage(JSON.stringify(parsed.taskPayload), userKey);
+  const uuid = `amsg-${parsed.wakeId}`;
+  await db.createTask({
+    user_id: parsed.userId,
+    uuid,
+    encrypted_payload: encryptedPayload,
+    next_send_at: parsed.firstSendTime,
+    message_type: 'auto',
+  });
+  const task = await db.getTaskByUuidOnly(uuid);
+  if (!task) throw new Error('WAKE_NOW_TASK_NOT_FOUND_AFTER_CREATE');
+
+  if (typeof db.claimTask !== 'function') throw new Error('WAKE_NOW_CLAIM_UNSUPPORTED');
+  const directDb = {
+    getPendingTasks: async () => [task],
+    claimTask: db.claimTask.bind(db),
+    updateTaskById: db.updateTaskById.bind(db),
+    deleteTaskById: db.deleteTaskById.bind(db),
+    createTask: db.createTask.bind(db),
+  };
+  const config = buildWorkerConfig(env);
+  return runScheduledTick({ ...config, db: directDb, masterKey: env.AMSG_MASTER_KEY });
+};
+
+const handleWakeNowRequest = async (request: Request, env: Env): Promise<Response> => {
+  if (request.method.toUpperCase() === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: CORS_HEADERS });
+  }
+  if (!isWakeNowAuthorized(request.headers, env.AMSG_SERVER_TOKEN)) {
+    return jsonWithCors(401, {
+      success: false,
+      error: { code: 'WAKE_NOW_UNAUTHORIZED', message: 'Authorization is required for /wake-now.' },
+    });
+  }
+  const report = inspectWorkerEnv(env);
+  if (!report.ok) {
+    return jsonWithCors(503, {
+      success: false,
+      error: { code: 'WORKER_CONFIG_MISSING', message: report.message, missing: report.missing },
+    });
+  }
+  try {
+    const parsed = await parseWakeNowRequest(request);
+    const result = await runDirectHeartbeatFire(env, parsed);
+    return jsonWithCors(202, { accepted: true, wake_id: parsed.wakeId, result });
+  } catch (error) {
+    console.error('[amsg:wake-now] direct fire failed', error instanceof Error ? error.message : String(error));
+    return jsonWithCors(400, {
+      success: false,
+      error: { code: 'WAKE_NOW_FAILED', message: error instanceof Error ? error.message : String(error) },
+    });
+  }
+};
+
+const requirePromptAuditAuth = (request: Request, env: Env): Response | null => {
+  const expected = env.AMSG_SERVER_TOKEN?.trim();
+  if (!expected) {
+    return jsonWithCors(403, {
+      success: false,
+      error: {
+        code: 'PROMPT_AUDIT_TOKEN_REQUIRED',
+        message: 'Prompt audit requires AMSG_SERVER_TOKEN before full prompts can be viewed.',
+      },
+    });
+  }
+  const actual = request.headers.get('X-Client-Token')?.trim();
+  if (actual !== expected) {
+    return jsonWithCors(401, {
+      success: false,
+      error: { code: 'INVALID_CLIENT_TOKEN', message: 'X-Client-Token is missing or invalid.' },
+    });
+  }
+  return null;
+};
+
+const handlePromptAuditRequest = async (
+  request: Request,
+  env: Env,
+  method: string,
+): Promise<Response> => {
+  if (method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
+
+  const authError = requirePromptAuditAuth(request, env);
+  if (authError) return authError;
+
+  const report = inspectWorkerEnv(env);
+  if (!report.ok) {
+    return jsonWithCors(503, {
+      success: false,
+      error: { code: 'WORKER_CONFIG_MISSING', message: report.message, missing: report.missing },
+    });
+  }
+
+  if (method === 'GET') {
+    const url = new URL(request.url);
+    const limit = Number(url.searchParams.get('limit') ?? PROMPT_AUDIT_DEFAULT_LIMIT);
+    return jsonWithCors(200, {
+      success: true,
+      data: {
+        entries: await listPromptAudit(env, limit),
+        retentionDays: PROMPT_AUDIT_RETENTION_MS / 86400000,
+      },
+    });
+  }
+
+  if (method === 'DELETE') {
+    return jsonWithCors(200, { success: true, data: await clearPromptAudit(env) });
+  }
+
+  return jsonWithCors(405, {
+    success: false,
+    error: { code: 'METHOD_NOT_ALLOWED', message: 'Use GET or DELETE for prompt audit.' },
+  });
+};
 
 // cron 触发时 CF 传进来的事件，只往上游转手，没必要为它引 workers-types。
 type CfScheduledEvent = { scheduledTime: number; cron: string };
@@ -2776,6 +3425,10 @@ export default {
     const pathname = new URL(request.url).pathname.replace(/\/+$/, '') || '/';
     const method = request.method.toUpperCase();
 
+    if (pathname.endsWith('/wake-now')) {
+      return handleWakeNowRequest(request, env);
+    }
+
     if (pathname.endsWith('/config-check')) {
       if (method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
       // 刻意不校验 X-Client-Token：worker 配了口令而前端没填正是要诊断的情形之一，
@@ -2845,6 +3498,10 @@ export default {
       });
     }
 
+    if (pathname.endsWith('/prompt-audit')) {
+      return handlePromptAuditRequest(request, env, method);
+    }
+
     const report = inspectWorkerEnv(env);
     if (!report.ok) {
       // 预检也得放行：带自定义头的请求会先发 OPTIONS，这一步被挡住的话正式请求
@@ -2854,6 +3511,22 @@ export default {
         success: false,
         error: { code: 'WORKER_CONFIG_MISSING', message: report.message, missing: report.missing },
       });
+    }
+
+    if (pathname.endsWith('/init-tenant') && method === 'POST') {
+      const response = await upstream.fetch(request, env);
+      if (response.status >= 200 && response.status < 300) {
+        try {
+          await ensurePromptAuditSchema(env);
+        } catch (error) {
+          console.warn('[amsg:prompt-audit] schema init failed', error);
+          return jsonWithCors(500, {
+            success: false,
+            error: { code: 'PROMPT_AUDIT_SCHEMA_FAILED', message: 'Prompt audit table init failed.' },
+          });
+        }
+      }
+      return response;
     }
 
     // 即时对话：一个请求把「传云端状态 + 建任务」串完，回 202 之后立刻起一跳。

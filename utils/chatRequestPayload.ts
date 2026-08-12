@@ -30,6 +30,16 @@ import { injectWorldbookDepthEntries, resolveWorldbookEntries } from './worldboo
 import { normalizeTranslationLangLabel } from './translationLang';
 import { cleanApiMessages, flattenImageContentParts } from './promptMessageCleanup';
 import { materializeVisionDescriptions } from './visionApi';
+import { defaultRealtimeConfig } from './realtimeContext';
+import {
+    PROMPT_CONTROL_MODULES,
+    getCoreContextPromptControls,
+    isPromptControlModuleEnabled,
+    makePromptControlSnapshot,
+    readPromptControlConfig,
+    type PromptControlModuleKey,
+    type PromptControlSnapshot,
+} from './promptControl';
 
 export { cleanApiMessages, flattenImageContentParts } from './promptMessageCleanup';
 
@@ -118,6 +128,8 @@ export interface BuildChatPayloadResult {
         thinkingActive: boolean;
         promptBuildSkipped: boolean;
     };
+    /** 本轮主聊天 prompt 模块开关与实际注入状态。 */
+    promptControl: PromptControlSnapshot;
 }
 
 /**
@@ -175,6 +187,35 @@ export function deriveRecentTrackSwitchForChar(
     return { songName: record.previousSong.name, artists: record.previousSong.artists };
 }
 
+function withPromptModuleDisabledChar(char: CharacterProfile, disabled: Set<PromptControlModuleKey>): CharacterProfile {
+    if (disabled.size === 0) return char;
+    const next: CharacterProfile = { ...char };
+    if (disabled.has('memoryPalace')) {
+        (next as any).memoryPalaceEnabled = false;
+        (next as any).memoryPalaceInjection = '';
+        (next as any).roomPlatesInjection = '';
+    }
+    if (disabled.has('worldbook')) {
+        (next as any).mountedWorldbooks = [];
+    }
+    if (disabled.has('timeAwareness')) {
+        (next as any).timeAwarenessEnabled = false;
+    }
+    if (disabled.has('realtimeState')) {
+        (next as any).scheduleFeatureEnabled = false;
+        (next as any).emotionConfig = { ...((char as any).emotionConfig || {}), enabled: false };
+        (next as any).buffInjection = '';
+        (next as any).activeBuffs = [];
+    }
+    return next;
+}
+
+function keepCurrentUserTurn(messages: Message[]): Message[] {
+    const idx = [...messages].reverse().findIndex(m => m.role === 'user');
+    if (idx < 0) return messages.slice(-1);
+    return [messages[messages.length - 1 - idx]];
+}
+
 /**
  * 构造完整 chat 请求载荷。三段式结构（稳定前缀 / 历史 / 易变尾段）：
  *
@@ -200,6 +241,28 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         realtimeConfig, innerState,
         translationConfig, htmlMode, thinkingChain, mcdMiniSnap, luckinMiniSnap, luckinChat,
     } = input;
+    const promptControlConfig = readPromptControlConfig();
+    const moduleEnabled = (key: PromptControlModuleKey) => isPromptControlModuleEnabled(key, promptControlConfig);
+    const disabledModuleKeys = new Set<PromptControlModuleKey>(
+        PROMPT_CONTROL_MODULES
+            .filter(mod => !moduleEnabled(mod.key))
+            .map(mod => mod.key),
+    );
+    const moduleStates: Partial<Record<PromptControlModuleKey, { included: boolean; note?: string }>> = {};
+    const markModule = (key: PromptControlModuleKey, included: boolean, note?: string) => {
+        moduleStates[key] = { included, note };
+    };
+    const promptChar = withPromptModuleDisabledChar(char, disabledModuleKeys);
+    const historyForPrompt = moduleEnabled('chatHistory') ? historyMsgs : keepCurrentUserTurn(historyMsgs);
+    const recentMsgsForPrompt = moduleEnabled('chatHistory')
+        ? (input.recentMsgsHint ?? historyMsgs)
+        : keepCurrentUserTurn(input.recentMsgsHint ?? historyMsgs);
+    const effectiveContextLimit = moduleEnabled('chatHistory') ? contextLimit : Math.min(1, contextLimit);
+    const effectiveRealtimeConfig: RealtimeConfig | undefined = moduleEnabled('realtimeState')
+        ? realtimeConfig
+        : defaultRealtimeConfig;
+    const effectiveInnerState = moduleEnabled('realtimeState') ? innerState : undefined;
+    const coreContextControls = getCoreContextPromptControls(promptControlConfig);
     // 角色可见性必须在统一载荷层再次收口。UI 聊天、1.0 本地主动消息、2.0 推送、
     // 彼方/小小窝等调用方各自维护筛选很容易漏掉一条路径；一旦把全量表情传进来，
     // 模型既会看到其他角色的专属表情，历史里的同名表情也可能反查到错误 URL。
@@ -207,11 +270,11 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
     const { emojis, categories } = ChatPrompts.filterVisibleEmojis(
         input.emojis,
         input.categories,
-        char.id,
+        promptChar.id,
     );
-    const rawRecentMsgsHint = input.recentMsgsHint ?? historyMsgs;
+    const rawRecentMsgsHint = recentMsgsForPrompt;
     const useVisionDescriptions = input.visionApiConfig?.enabled === true;
-    let historyMsgsForPrompt = historyMsgs;
+    let historyMsgsForPrompt = historyForPrompt;
     let recentMsgsHint = rawRecentMsgsHint;
 
     if (useVisionDescriptions) {
@@ -232,8 +295,8 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
     if (isPromptBuildSkipped()) {
         const { apiMessages } = ChatPrompts.buildMessageHistory(
             historyMsgsForPrompt,
-            contextLimit,
-            char,
+            effectiveContextLimit,
+            promptChar,
             userProfile,
             emojis,
             undefined,
@@ -241,6 +304,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         );
         const cleanedApiMessages = cleanApiMessages(input.stripImages ? flattenImageContentParts(apiMessages) : apiMessages);
         console.warn('[DevDebug] Prompt Build skipped: sending chat history without system prompt injection.');
+        markModule('chatHistory', cleanedApiMessages.length > 0, moduleEnabled('chatHistory') ? undefined : '只保留当前用户消息');
         return {
             systemPrompt: '',
             cleanedApiMessages,
@@ -255,26 +319,45 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
                 thinkingActive: false,
                 promptBuildSkipped: true,
             },
+            promptControl: makePromptControlSnapshot(promptControlConfig, moduleStates),
         };
     }
 
     // ── 1. Memory Palace 向量召回 ─────────────────────────
-    await injectMemoryPalace(char, recentMsgsHint, input.recallQueryHint, userProfile?.name);
+    if (moduleEnabled('memoryPalace')) {
+        await injectMemoryPalace(promptChar, recentMsgsHint, input.recallQueryHint, userProfile?.name);
+    }
+    const hasMemoryPalaceInjection = !!((promptChar as any).memoryPalaceEnabled && (
+        ((promptChar as any).memoryPalaceInjection || '').trim()
+        || ((promptChar as any).roomPlatesInjection || '').trim()
+    ));
+    markModule(
+        'memoryPalace',
+        moduleEnabled('memoryPalace') && hasMemoryPalaceInjection,
+        moduleEnabled('memoryPalace') ? (hasMemoryPalaceInjection ? undefined : '本轮没有召回内容') : '已关闭并清理本轮残留注入',
+    );
 
     // ── 2. 解析音乐共听（如果 caller 没显式给，就从 snapshot 推） ──
-    let userListeningContext = input.userListeningContext;
-    let isListeningTogether = input.isListeningTogether;
-    let musicCfg = input.musicCfg;
-    let recentTrackChange = input.recentTrackChange;
-    if (userListeningContext === undefined && input.musicSnapshot !== undefined) {
-        const derived = deriveListeningFromSnapshot(input.musicSnapshot, char.id);
+    let userListeningContext = moduleEnabled('musicState') ? input.userListeningContext : null;
+    let isListeningTogether = moduleEnabled('musicState') ? input.isListeningTogether : false;
+    let musicCfg = moduleEnabled('musicState') ? input.musicCfg : undefined;
+    let recentTrackChange = moduleEnabled('musicState') ? input.recentTrackChange : null;
+    if (moduleEnabled('musicState') && userListeningContext === undefined && input.musicSnapshot !== undefined) {
+        const derived = deriveListeningFromSnapshot(input.musicSnapshot, promptChar.id);
         userListeningContext = derived.userListeningContext;
         isListeningTogether = derived.isListeningTogether;
         musicCfg = derived.musicCfg ?? musicCfg;
         if (recentTrackChange === undefined) recentTrackChange = input.musicSnapshot?.recentTrackChange ?? null;
     }
     // 换歌察觉：char 换歌那刻在一起听、还没重新加入 → 下一轮回复里注入"歌切了"的提示
-    const recentTrackSwitch = deriveRecentTrackSwitchForChar(recentTrackChange, char.id, !!isListeningTogether);
+    const recentTrackSwitch = moduleEnabled('musicState')
+        ? deriveRecentTrackSwitchForChar(recentTrackChange, promptChar.id, !!isListeningTogether)
+        : null;
+    markModule(
+        'musicState',
+        moduleEnabled('musicState') && !!(userListeningContext || recentTrackSwitch),
+        moduleEnabled('musicState') ? ((userListeningContext || recentTrackSwitch) ? undefined : '本轮没有共听状态') : '已关闭',
+    );
 
     // ── 3. buildSystemPromptParts 核心（三段式） ──────────
     // stable → 消息数组第一条 system（前缀稳定，吃 prompt cache）；
@@ -282,21 +365,77 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
     // recencyTail（总纲+「回到你自己」钢印）最后拼进 volatileTail 末尾，保证它是模型
     // 开口前读到的最后内容 —— 双语/HTML/思考链等格式块都只能拼在 stable 里、排它前面。
     const parts = await ChatPrompts.buildSystemPromptParts(
-        char, userProfile, groups, emojis, categories, recentMsgsHint,
-        realtimeConfig, innerState || undefined,
+        promptChar, userProfile, groups, emojis, categories, recentMsgsHint,
+        effectiveRealtimeConfig, effectiveInnerState || undefined,
         userListeningContext ?? null,
         !!isListeningTogether,
         musicCfg,
         recentTrackSwitch,
-        input.timelyByWorker ? { timelyByWorker: true } : undefined,
+        { ...(input.timelyByWorker ? { timelyByWorker: true } : {}), promptControls: coreContextControls },
     );
     let systemPrompt = parts.stable;
     let volatileTail = parts.volatileState;
 
+    markModule(
+        'coreIdentity',
+        moduleEnabled('coreIdentity') && !!(char.name || char.description || char.systemPrompt),
+        moduleEnabled('coreIdentity') ? undefined : '已关闭',
+    );
+    markModule(
+        'worldview',
+        moduleEnabled('worldview') && !!(char.worldview && char.worldview.trim()),
+        moduleEnabled('worldview') ? undefined : '已关闭',
+    );
+    markModule(
+        'userProfile',
+        moduleEnabled('userProfile') && !!(userProfile.name || userProfile.bio),
+        moduleEnabled('userProfile') ? undefined : '已关闭',
+    );
+    markModule(
+        'privateImpression',
+        moduleEnabled('privateImpression') && !!((promptChar as any).impression),
+        moduleEnabled('privateImpression') ? undefined : '已关闭',
+    );
+    const hasNativeMemorySummary = !!(promptChar.refinedMemories && Object.keys(promptChar.refinedMemories).length > 0);
+    markModule(
+        'nativeMemorySummary',
+        moduleEnabled('nativeMemorySummary') && hasNativeMemorySummary,
+        moduleEnabled('nativeMemorySummary') ? (hasNativeMemorySummary ? undefined : '角色没有长期摘要') : '已关闭',
+    );
+    const hasNativeActiveMemory = !!(promptChar.activeMemoryMonths && promptChar.activeMemoryMonths.length > 0 && promptChar.memories?.length);
+    markModule(
+        'nativeActiveMemory',
+        moduleEnabled('nativeActiveMemory') && hasNativeActiveMemory,
+        moduleEnabled('nativeActiveMemory') ? (hasNativeActiveMemory ? undefined : '没有已激活详细记忆') : '已关闭',
+    );
+    markModule(
+        'fixedBehaviorRules',
+        moduleEnabled('fixedBehaviorRules'),
+        moduleEnabled('fixedBehaviorRules') ? undefined : '已关闭',
+    );
+    markModule(
+        'voiceMessages',
+        moduleEnabled('voiceMessages') && !!promptChar.chatVoiceEnabled,
+        moduleEnabled('voiceMessages') ? (promptChar.chatVoiceEnabled ? undefined : '角色语音消息未开启') : '已关闭',
+    );
+    const hasMountedWorldbooks = !!(promptChar.mountedWorldbooks && promptChar.mountedWorldbooks.length > 0);
+    markModule('worldbook', hasMountedWorldbooks, moduleEnabled('worldbook') ? (hasMountedWorldbooks ? undefined : '未挂载世界书') : '已关闭');
+    const hasTimeAwarenessInjection = parts.stable.includes('### 当前时间 (Now)') || parts.volatileState.includes('### 当前时间 (Now)');
+    markModule(
+        'timeAwareness',
+        moduleEnabled('timeAwareness') && hasTimeAwarenessInjection,
+        moduleEnabled('timeAwareness') ? (hasTimeAwarenessInjection ? undefined : '本轮无时间感知内容') : '已关闭',
+    );
+    markModule(
+        'realtimeState',
+        moduleEnabled('realtimeState') && !!parts.volatileState.trim(),
+        moduleEnabled('realtimeState') ? (parts.volatileState.trim() ? undefined : '本轮无实时状态内容') : '已关闭',
+    );
+
     // ── 4. 双语指令注入 ───────────────────────────────────
     const sourceLang = normalizeTranslationLangLabel(translationConfig?.sourceLang);
     const targetLang = normalizeTranslationLangLabel(translationConfig?.targetLang);
-    const bilingualActive = !!(translationConfig?.enabled && sourceLang && targetLang);
+    const bilingualActive = !!(moduleEnabled('bilingualMode') && translationConfig?.enabled && sourceLang && targetLang);
     if (bilingualActive && translationConfig) {
         systemPrompt += `\n\n[CRITICAL: 双语输出模式 - 必须严格遵守]
 你的每句话都必须用以下XML标签格式输出双语内容：
@@ -322,15 +461,17 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
 <译文>今天做什么？</译文>
 </翻译>`;
     }
+    markModule('bilingualMode', bilingualActive, moduleEnabled('bilingualMode') ? (bilingualActive ? undefined : '翻译模式未开启') : '已关闭');
 
     // ── 5. HTML 卡片模式 ─────────────────────────────────
-    const htmlActive = !!htmlMode?.enabled;
+    const htmlActive = !!(moduleEnabled('htmlMode') && htmlMode?.enabled);
     if (htmlActive) {
         systemPrompt += `\n\n${buildHtmlPrompt(htmlMode?.customPrompt)}`;
     }
+    markModule('htmlMode', htmlActive, moduleEnabled('htmlMode') ? (htmlActive ? undefined : 'HTML 模式未开启') : '已关闭');
 
     // ── 6. 思考链提示词 ───────────────────────────────────
-    const thinkingActive = !!thinkingChain?.enabled;
+    const thinkingActive = !!(moduleEnabled('thinkingChain') && thinkingChain?.enabled);
     if (thinkingActive) {
         const userName = (userProfile?.name && userProfile.name.trim()) || '用户';
         systemPrompt += `\n\n${buildThinkingChainPrompt(char.name, userName)}`;
@@ -339,12 +480,13 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
             systemPrompt += `\n\n## 用户对内心独白的额外要求\n${extra}`;
         }
     }
+    markModule('thinkingChain', thinkingActive, moduleEnabled('thinkingChain') ? (thinkingActive ? undefined : '思考链未开启') : '已关闭');
 
     // ── 7. 历史消息构造 ───────────────────────────────────
     const { apiMessages } = ChatPrompts.buildMessageHistory(
         historyMsgsForPrompt,
-        contextLimit,
-        char,
+        effectiveContextLimit,
+        promptChar,
         userProfile,
         emojis,
         undefined,
@@ -353,19 +495,32 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
 
     // ── 8. 剥离历史里旧的双语标签（stripImages 时先压平 image_url → 纯文本占位） ──
     const cleanedApiMessages = cleanApiMessages(input.stripImages ? flattenImageContentParts(apiMessages) : apiMessages);
-    const resolvedWorldbookEntries = resolveWorldbookEntries(
-        char.mountedWorldbooks || [],
+    const resolvedWorldbookEntries = moduleEnabled('worldbook') ? resolveWorldbookEntries(
+        promptChar.mountedWorldbooks || [],
         cleanedApiMessages,
-        char.name,
+        promptChar.name,
         userProfile.name,
-    );
-    const messagesWithWorldbookDepth = injectWorldbookDepthEntries(
+    ) : [];
+    const messagesWithWorldbookDepth = moduleEnabled('worldbook') ? injectWorldbookDepthEntries(
         cleanedApiMessages,
         resolvedWorldbookEntries.filter(entry => entry.position === 4),
+    ) : cleanedApiMessages;
+    const hasInjectedWorldbookEntries = resolvedWorldbookEntries.length > 0;
+    markModule(
+        'worldbook',
+        moduleEnabled('worldbook') && hasInjectedWorldbookEntries,
+        moduleEnabled('worldbook')
+            ? (hasInjectedWorldbookEntries ? undefined : (hasMountedWorldbooks ? '本轮未触发世界书' : '未挂载世界书'))
+            : '已关闭',
+    );
+    markModule(
+        'chatHistory',
+        messagesWithWorldbookDepth.length > 0,
+        moduleEnabled('chatHistory') ? undefined : '只保留当前用户消息',
     );
 
     // ── 9. 麦当劳小程序上下文（购物车/菜单实时快照 → 易变尾段） ──
-    const mcdActive = !!mcdMiniSnap?.open;
+    const mcdActive = !!(moduleEnabled('miniAppContext') && mcdMiniSnap?.open);
     if (mcdActive) {
         const block = buildMcdMiniAppContextBlock(mcdMiniSnap, userProfile?.name || '用户');
         if (block) {
@@ -374,7 +529,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
     }
 
     // ── 9b. 瑞幸小程序上下文（同上，易变尾段） ──
-    const luckinActive = !!luckinMiniSnap?.open;
+    const luckinActive = !!(moduleEnabled('miniAppContext') && luckinMiniSnap?.open);
     if (luckinActive) {
         const block = buildLuckinMiniAppContextBlock(luckinMiniSnap, userProfile?.name || '用户');
         if (block) {
@@ -383,7 +538,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
     }
 
     // ── 9c. 瑞幸聊天点单模式 (角色直接调真实工具；含实时定位/会话状态 → 易变尾段) ──
-    const luckinChatActive = !!luckinChat?.active;
+    const luckinChatActive = !!(moduleEnabled('miniAppContext') && luckinChat?.active);
     if (luckinChatActive) {
         const block = buildLuckinChatSystemBlock(luckinChat, recentMsgsHint, userProfile?.name || '用户');
         if (block) {
@@ -397,18 +552,22 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
     // 即时对话路径：MCP 说明由 worker 的 buildMcpFireBlock 独家供给（与凭据同源同拍），
     // 前端这份不注入——两份工具说明两套工具名，模型会两种都写一遍。
     // mcpChatActive 的取值不受影响：它还要告诉上层「这一轮算不算 MCP 模式」。
-    const mcpChatActive = isMcpChatAvailable(char.id);
+    const mcpChatActive = !!(moduleEnabled('mcpTools') && isMcpChatAvailable(promptChar.id));
     if (mcpChatActive && !input.timelyByWorker) {
-        const block = buildMcpSystemBlock(userProfile?.name || '用户', char.id);
+        const block = buildMcpSystemBlock(userProfile?.name || '用户', promptChar.id);
         if (block) {
             systemPrompt += block;
         }
     }
+    markModule('miniAppContext', mcdActive || luckinActive || luckinChatActive, moduleEnabled('miniAppContext') ? ((mcdActive || luckinActive || luckinChatActive) ? undefined : '小程序上下文未打开') : '已关闭');
+    markModule('mcpTools', mcpChatActive, moduleEnabled('mcpTools') ? (mcpChatActive ? undefined : '没有可用 MCP 工具') : '已关闭');
 
     // ── 10. recency 钢印归位 + 组装 fullMessages ─────────
     // 「关于对方的表达」+「回到你自己」必须是易变尾段的最后内容：修复旧版把双语/HTML/
     // 思考链/点单块拼在钢印之后、模型开口前最后读到的是格式说明书的问题。
-    volatileTail += parts.recencyTail;
+    if (moduleEnabled('recencyTail')) {
+        volatileTail += parts.recencyTail;
+    }
 
     // 结构：[稳定 system] + [历史消息] + [易变状态 system] (+ 末尾 reminder)。
     // 稳定前缀不再包含分钟级时间戳等易变内容 → 支持前缀缓存的中转能跨轮命中；
@@ -418,8 +577,10 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
     const fullMessages: Array<{ role: string; content: any }> = [
         { role: 'system', content: systemPrompt },
         ...messagesWithWorldbookDepth,
-        { role: 'system', content: volatileTail },
     ];
+    if (volatileTail.trim()) {
+        fullMessages.push({ role: 'system', content: volatileTail });
+    }
     if (bilingualActive) {
         fullMessages.push({
             role: 'system',
@@ -429,6 +590,11 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
     if (mcpChatActive && !input.timelyByWorker) {
         fullMessages.push({ role: 'system', content: MCP_TAIL_REMINDER });
     }
+    markModule(
+        'recencyTail',
+        moduleEnabled('recencyTail') && !!parts.recencyTail.trim(),
+        moduleEnabled('recencyTail') ? (moduleEnabled('fixedBehaviorRules') ? undefined : '固定行为规则已关闭') : '已关闭',
+    );
 
     // Dev 开关：多条 system 合并成开头一条，A/B 对照中转适配层对多 system 的计量行为。
     let finalMessages = fullMessages;
@@ -444,5 +610,6 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         cleanedApiMessages: messagesWithWorldbookDepth,
         fullMessages: finalMessages,
         flags: { bilingualActive, mcdActive, luckinActive, luckinChatActive, mcpChatActive, htmlActive, thinkingActive, promptBuildSkipped: false },
+        promptControl: makePromptControlSnapshot(promptControlConfig, moduleStates),
     };
 }

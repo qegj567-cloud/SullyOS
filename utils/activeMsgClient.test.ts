@@ -275,6 +275,68 @@ describe('ActiveMsgClient.getRemoteTaskStatus', () => {
   });
 });
 
+describe('云端 Prompt 审计', () => {
+  const respondWith = (status: number, body: unknown) => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      status,
+      text: async () => JSON.stringify(body),
+      headers: new Headers({ 'content-type': 'application/json' }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  };
+
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it('读取云端 prompt 审计时走 /prompt-audit 并带共享密钥', async () => {
+    const fetchMock = respondWith(200, {
+      success: true,
+      data: {
+        entries: [
+          {
+            id: 'audit-1',
+            createdAt: 1,
+            expiresAt: 2,
+            charId: 'char-1',
+            charName: 'Nyah',
+            taskUuid: 'task-1',
+            taskRowId: '42',
+            clientTaskId: 'client-1',
+            occurrenceMs: 123,
+            status: 'sent',
+            model: 'model-1',
+            prompt: '完整 prompt',
+            promptControls: { timeAwareness: true },
+            promptModules: [{ key: 'timeAwareness', label: '时间感知', enabled: true, included: true }],
+            rounds: [],
+            usage: { totalTokens: 9 },
+            outputText: '发出去的话',
+            error: null,
+          },
+        ],
+      },
+    });
+
+    const entries = await ActiveMsgClient.listPromptAudits(5);
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ id: 'audit-1', charId: 'char-1', prompt: '完整 prompt' });
+    expect(fetchMock.mock.calls[0][0]).toBe('https://amsg.example.workers.dev/prompt-audit?limit=5');
+    expect((fetchMock.mock.calls[0][1] as RequestInit).headers).toBeDefined();
+  });
+
+  it('清空云端 prompt 审计时走 DELETE /prompt-audit', async () => {
+    const fetchMock = respondWith(200, {
+      success: true,
+      data: { deleted: 3 },
+    });
+
+    await expect(ActiveMsgClient.clearPromptAudits()).resolves.toEqual({ deleted: 3 });
+    expect(fetchMock.mock.calls[0][0]).toBe('https://amsg.example.workers.dev/prompt-audit');
+    expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe('DELETE');
+  });
+});
+
 // 回归守卫：连接失败的归类。使用统计只发这个代号，不发报错原文——
 // 「密钥对不上」「地址不对」「D1 没绑」在图上混成一格的话，看不出该修哪一段引导；
 // 而把 error.message 塞进上报又会带出 Worker 地址。两头都得钉住。

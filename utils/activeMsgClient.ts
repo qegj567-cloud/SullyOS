@@ -76,6 +76,7 @@ import {
   AMSG_GLOBAL_NAMESPACE,
   AMSG_TOOL_CONFIG_KEY,
   AMSG_TOOL_PACK_KEY,
+  type AmsgToolPromptControls,
   buildToolConfig,
   buildToolPack,
 } from './amsgToolPack';
@@ -99,6 +100,7 @@ import {
   SUBSCRIBE_SETTLE_MS,
   type SubscribeFailureKind,
 } from './pushSubscribeShared';
+import { isPromptControlModuleEnabled, readPromptControlConfig } from './promptControl';
 
 export const NATIVE_PUSH_TOKEN_STORAGE_KEY = 'amsg2_fcm_token_v1';
 const nativePushBuildEnabled = () => import.meta.env.VITE_AMSG_NATIVE_PUSH === 'true';
@@ -119,6 +121,34 @@ export interface AmsgRemotePushSubscription {
   exists: boolean;
   endpoint: string | null;
   updatedAt: number | null;
+}
+
+export interface AmsgPromptAuditEntry {
+  id: string;
+  createdAt: number;
+  expiresAt: number;
+  charId: string | null;
+  charName: string | null;
+  taskUuid: string | null;
+  taskRowId: string | null;
+  clientTaskId: string | null;
+  occurrenceMs: number | null;
+  status: string;
+  model: string | null;
+  prompt: string;
+  promptControls: Record<string, unknown>;
+  promptModules: Array<{ key: string; label: string; enabled: boolean; included: boolean; note?: string }>;
+  rounds: Array<{
+    iteration: number;
+    decision: string;
+    model: string | null;
+    usage: { totalTokens: number | null; promptTokens: number | null; completionTokens: number | null };
+    toolCalls: string[];
+    outputText: string;
+  }>;
+  usage: { totalTokens?: number | null; promptTokens?: number | null; completionTokens?: number | null };
+  outputText: string;
+  error: string | null;
 }
 
 /**
@@ -1052,6 +1082,7 @@ const buildCharStateEntries = async (
   char: CharacterProfile,
   firePack: AmsgFirePack,
   updatedAt: number,
+  promptControls: AmsgToolPromptControls = readAmsgToolPromptControls(),
 ) => [
   {
     namespace: amsgStateNamespace(char.id),
@@ -1064,7 +1095,7 @@ const buildCharStateEntries = async (
   {
     namespace: amsgStateNamespace(char.id),
     key: AMSG_TOOL_PACK_KEY,
-    value: await packStateValue(JSON.stringify(buildToolPack(char))),
+    value: await packStateValue(JSON.stringify(buildToolPack(char, promptControls))),
     updatedAt,
   },
 ];
@@ -1073,15 +1104,16 @@ const buildCharStateEntries = async (
 const buildToolConfigEntry = (
   realtimeConfig: RealtimeConfig | undefined,
   updatedAt: number,
+  promptControls: AmsgToolPromptControls = readAmsgToolPromptControls(),
 ) => ({
   namespace: AMSG_GLOBAL_NAMESPACE,
   key: AMSG_TOOL_CONFIG_KEY,
   // MCP 配置在这里现读现带：三条上传路径（排程 / fire_pack 冲刷 / 设置保存）
   // 全走这个咽喉，不会出现某条路漏带的版本分叉。
   value: JSON.stringify(buildToolConfig(realtimeConfig, {
-    servers: collectMcpFireServers(),
+    servers: promptControls.mcpTools ? collectMcpFireServers() : [],
     useNativeTools: getMcpUseNativeTools(),
-  })),
+  }, promptControls)),
   updatedAt,
 });
 
@@ -1252,6 +1284,15 @@ const fetchWithAuthRaw = async (
 
 const fetchWithAuth = async (path: string, config: ActiveMsg2GlobalConfig, init: RequestInit, phase = '接口') =>
   (await fetchWithAuthRaw(path, config, init, phase)).body;
+
+const readAmsgToolPromptControls = (): AmsgToolPromptControls => {
+  const config = readPromptControlConfig();
+  return {
+    mcpTools: isPromptControlModuleEnabled('mcpTools', config),
+    realtimeState: isPromptControlModuleEnabled('realtimeState', config),
+    timeAwareness: isPromptControlModuleEnabled('timeAwareness', config),
+  };
+};
 
 const encryptPayload = async (client: ReiClient, payload: unknown) => {
   return (client as unknown as ReiCryptoBridge)._encrypt(JSON.stringify(payload));
@@ -2577,6 +2618,37 @@ export const ActiveMsgClient = {
     const globalConfig = await ensureWorkerReady();
     const client = createClient(globalConfig);
     return client.getCapabilities();
+  },
+
+  async listPromptAudits(limit = 20): Promise<AmsgPromptAuditEntry[]> {
+    const config = await ensureWorkerReady();
+    const safeLimit = Math.max(1, Math.min(50, Math.floor(limit) || 20));
+    const response = await fetchWithAuth(
+      `prompt-audit?limit=${safeLimit}`,
+      config,
+      { method: 'GET' },
+      '璇诲彇浜戠 prompt 瀹¤',
+    );
+    if (!response?.success) {
+      throw new Error(response?.error?.message || '读取云端 prompt 审计失败。');
+    }
+    return Array.isArray(response.data?.entries)
+      ? response.data.entries as AmsgPromptAuditEntry[]
+      : [];
+  },
+
+  async clearPromptAudits(): Promise<{ deleted: number }> {
+    const config = await ensureWorkerReady();
+    const response = await fetchWithAuth(
+      'prompt-audit',
+      config,
+      { method: 'DELETE' },
+      '娓呯┖浜戠 prompt 瀹¤',
+    );
+    if (!response?.success) {
+      throw new Error(response?.error?.message || '清空云端 prompt 审计失败。');
+    }
+    return { deleted: Number(response.data?.deleted ?? 0) };
   },
 
   /**

@@ -1,6 +1,6 @@
 
 import { CharacterProfile, UserProfile, Message, Emoji, EmojiCategory, GroupProfile, RealtimeConfig, DailySchedule } from '../types';
-import { ContextBuilder } from './context';
+import { ContextBuilder, type CoreContextPromptControls } from './context';
 import { DB } from './db';
 import { formatLifeSimResetCardForContext } from './lifeSimChatCard';
 import { normalizeMessageContent, stickerNameFromUrl, theaterWhenPhrase } from './messageFormat';
@@ -93,6 +93,7 @@ function summarizeGroupMsgContent(m: Message): string {
  */
 export interface PromptBuildOptions {
     forFirePack?: boolean;
+    promptControls?: CoreContextPromptControls;
     /**
      * `timelyByWorker` = 这份 prompt 会交给 amsg worker 在 fire 时刻补时效段
      * （即时对话路径）。与 forFirePack 的区别：只裁「worker 那边有对应槽位」的
@@ -247,6 +248,12 @@ export const ChatPrompts = {
         // 即时对话：这一轮交给 worker 生成，时钟和真实世界块由它在 fire 时刻补。
         // 本地私有的易变段照常烤进去（worker 拿不到，而这一刻它们是新鲜的）。
         const timelyByWorker = promptOptions?.timelyByWorker === true;
+        const promptControls = promptOptions?.promptControls;
+        const fixedBehaviorRulesEnabled = promptControls?.fixedBehaviorRules !== false;
+        const voiceMessagesEnabled = promptControls?.voiceMessages !== false;
+        const timeAwarenessEnabled = promptControls?.timeAwareness !== false;
+        const realtimeStateEnabled = promptControls?.realtimeState !== false;
+        const musicStateEnabled = promptControls?.musicState !== false;
         // ── 分段计时（定位瓶颈用）──
         const perfT0 = performance.now();
         const timings: Record<string, number> = {};
@@ -267,21 +274,34 @@ export const ChatPrompts = {
             undefined,
             { worldbookMessages: currentMsgs },
             { deferVolatile: true },
+            promptControls,
         );
         timings.buildCoreContext = Math.round(performance.now() - coreT0);
 
         // ── 易变状态段（volatileState）──
         // 开头一行框定，让模型明白这条出现在历史之后的 system 消息是"此刻的状态"，
         // 人设与规则仍以最上方的系统设定为准。
-        let volatileState = `\n[System: 实时状态 (Live Context)]\n（以下是此刻的实时状态——当前时间、你正在做的事、你的情绪底色、周边动态。你的人设与聊天规则见最上方的系统设定，此处不再重复。）\n\n`;
-        volatileState += ContextBuilder.buildVolatileCoreState(char, {
-            includeDetailedMemories: true,
-            timeOptions: { skipTimeAwareness: forFirePack || timelyByWorker },
-        });
+        let volatileState = '';
+        if (realtimeStateEnabled) {
+            volatileState = `\n[System: 实时状态 (Live Context)]\n（以下是此刻的实时状态——当前时间、你正在做的事、你的情绪底色、周边动态。你的人设与聊天规则见最上方的系统设定，此处不再重复。）\n\n`;
+            volatileState += ContextBuilder.buildVolatileCoreState(char, {
+                includeDetailedMemories: true,
+                timeOptions: { skipTimeAwareness: forFirePack || timelyByWorker },
+                promptControls,
+            });
+        } else if (timeAwarenessEnabled) {
+            const timeAwarenessBlock = ContextBuilder.buildTimeAwarenessBlock(char, {
+                skipTimeAwareness: forFirePack || timelyByWorker,
+            });
+            if (timeAwarenessBlock.trim()) {
+                volatileState = `\n[System: 时间感知 (Time Awareness)]\n（以下只包含日期、当前时间和时间间隔，不包含天气、日程、情绪、群聊或其他实时状态。）\n\n`;
+                volatileState += timeAwarenessBlock;
+            }
+        }
 
         // ── 并发发起所有独立的异步取数（网络 + IndexedDB），下面按原顺序拼接 ──
         // 原来是 7 段串行 await，总耗时 = 各段之和；现在取 max。
-        const config = realtimeConfig || defaultRealtimeConfig;
+        const config = realtimeStateEnabled ? (realtimeConfig || defaultRealtimeConfig) : defaultRealtimeConfig;
         // 自定义时区：日历日、当前日程与实时上下文全部按角色所在地折算。
         const charTz = resolveCharTimeZone(char);
         const charNow = nowInTimeZone(charTz);
@@ -303,20 +323,20 @@ export const ChatPrompts = {
         // 两句自称「来自真实世界」——包括天气热搜关掉时那条「今日特殊」节日兜底，
         // worker 的 realtimeWorld 里也有它（同样跟着角色的时间感知开关走）。
         const realtimePromise: Promise<string> = (async () => {
-            if (forFirePack || timelyByWorker) return '';
+            if (forFirePack || timelyByWorker || !realtimeStateEnabled) return '';
             try {
                 if (config.weatherEnabled || config.newsEnabled) {
                     // 时间行跟着角色的「时间感知」开关走：关掉的角色不该从天气块里读到
                     // 「当前真实时间」，那是这个开关本来要挡住的东西。
                     const realtimeContext = await RealtimeContextManager.buildFullContext(config, charTz, {
-                        includeTime: char.timeAwarenessEnabled !== false,
+                        includeTime: timeAwarenessEnabled && char.timeAwarenessEnabled !== false,
                     });
                     return `\n${realtimeContext}\n`;
                 }
                 // 基础当前时间 + 时差提示已由 ContextBuilder.buildCoreContext 统一注入（受 timeAwarenessEnabled
                 // 控制，按角色自定义时区折算）；这里只在关闭天气/新闻时补一条"今日特殊节日"，不再重复注入时间/时差，避免双份。
                 const specialDates = RealtimeContextManager.checkSpecialDates(charTz);
-                if (specialDates.length > 0 && char.timeAwarenessEnabled !== false) {
+                if (specialDates.length > 0 && timeAwarenessEnabled && char.timeAwarenessEnabled !== false) {
                     return `\n### 【今日特殊】\n${specialDates.join('、')}\n`;
                 }
                 return '';
@@ -328,7 +348,7 @@ export const ChatPrompts = {
 
         // 2. 日程（被"日程注入"和"音乐氛围"两处共用，合并成一次查询）
         //    总开关关闭时跳过查询与注入，确保不额外调用任何 LLM 依赖链
-        const scheduleFeatureOn = isScheduleFeatureOn(char);
+        const scheduleFeatureOn = realtimeStateEnabled && isScheduleFeatureOn(char);
         const schedulePromise: Promise<DailySchedule | null> = scheduleFeatureOn
             ? getDailyScheduleForChar(char).catch(e => {
                 console.error('Failed to load daily schedule:', e);
@@ -339,7 +359,7 @@ export const ChatPrompts = {
         // 3. 群聊上下文：并发拉取所有成员群的消息
         // 关键：每个群单独取最后 N 条，避免某个活跃群把其他群完全挤掉
         // （之前是把所有群消息混合后切前 200 条，活跃群会吃光配额，安静群完全不出现）
-        const groupContextPromise: Promise<string> = (async () => {
+        const groupContextPromise: Promise<string> = realtimeStateEnabled ? (async () => {
             try {
                 const memberGroups = groups.filter(g => g.members.includes(char.id));
                 if (memberGroups.length === 0) return '';
@@ -384,10 +404,10 @@ ${groupLogStr}\n`;
                 console.error("Failed to load group context", e);
                 return '';
             }
-        })();
+        })() : Promise.resolve('');
 
         // 4. Notion 日记标题
-        const notionDiaryPromise: Promise<string> = (async () => {
+        const notionDiaryPromise: Promise<string> = realtimeStateEnabled ? (async () => {
             try {
                 if (!(config.notionEnabled && config.notionApiKey && config.notionDatabaseId)) return '';
                 const r = await NotionManager.getRecentDiaries(config.notionApiKey, config.notionDatabaseId, char.name, 8);
@@ -401,10 +421,10 @@ ${groupLogStr}\n`;
                 console.error('Failed to inject diary context:', e);
                 return '';
             }
-        })();
+        })() : Promise.resolve('');
 
         // 5. 飞书日记标题
-        const feishuDiaryPromise: Promise<string> = (async () => {
+        const feishuDiaryPromise: Promise<string> = realtimeStateEnabled ? (async () => {
             try {
                 if (!(config.feishuEnabled && config.feishuAppId && config.feishuAppSecret && config.feishuBaseId && config.feishuTableId)) return '';
                 const r = await FeishuManager.getRecentDiaries(config.feishuAppId, config.feishuAppSecret, config.feishuBaseId, config.feishuTableId, char.name, 8);
@@ -418,10 +438,10 @@ ${groupLogStr}\n`;
                 console.error('Failed to inject feishu diary context:', e);
                 return '';
             }
-        })();
+        })() : Promise.resolve('');
 
         // 6. 用户 Notion 笔记标题
-        const notionNotesPromise: Promise<string> = (async () => {
+        const notionNotesPromise: Promise<string> = realtimeStateEnabled ? (async () => {
             try {
                 if (!(config.notionEnabled && config.notionApiKey && config.notionNotesDatabaseId)) return '';
                 const r = await NotionManager.getUserNotes(config.notionApiKey, config.notionNotesDatabaseId, 5);
@@ -435,16 +455,18 @@ ${groupLogStr}\n`;
                 console.error('Failed to inject user notes context:', e);
                 return '';
             }
-        })();
+        })() : Promise.resolve('');
 
         // 7. 生活记录（档案 App）注入 — 总开关关闭时 buildLifeRecordInjection 直接返回 ''
         //    fire_pack 只要摘要数据，不要代记工具说明：后台生成时用户没在说话，那时候
         //    输出的 [[LIFE:...]] 只可能是把历史里早就记过的事再记一遍。
-        const lifeRecordPromise: Promise<string> = buildLifeRecordInjection(char, userProfile.name, { forFirePack })
-            .catch(e => {
-                console.error('Failed to inject life record context:', e);
-                return '';
-            });
+        const lifeRecordPromise: Promise<string> = realtimeStateEnabled
+            ? buildLifeRecordInjection(char, userProfile.name, { forFirePack })
+                .catch(e => {
+                    console.error('Failed to inject life record context:', e);
+                    return '';
+                })
+            : Promise.resolve('');
 
         const [realtimeText, schedule, groupContextText, notionDiaryText, feishuDiaryText, notionNotesText, lifeRecordText] =
             await Promise.all([
@@ -477,7 +499,7 @@ ${groupLogStr}\n`;
         //     fire_pack 不烤：这首歌是按打包时刻的时段抽的，跟日程一起挪到 AMSG_SLOT_SCENE。
         //     那边只渲染「你此刻在听什么」一句——一起听状态要读用户此刻的播放器、歌词要拉网络，
         //     worker 两样都够不着。
-        if (!forFirePack) try {
+        if (!forFirePack && musicStateEnabled) try {
             let charListening: {
                 songId?: number; songName: string; artists: string; vibe?: string; lyricSnippet?: string[];
             } | null = null;
@@ -527,7 +549,7 @@ ${groupLogStr}\n`;
         // 彼方常驻设定：仅对启用了「彼方」的角色注入。让角色在聊天里始终知道彼方是什么，
         // 不再依赖累积的 vr_card 动态 / 记忆总结（那些会被压缩、丢掉"彼方=VR游戏"的框定，
         // 导致角色把"彼方·留言簿"之类当成现实地名）。措辞与 vrWorld/prompts.ts 的世界观一致。
-        if (char.vrState?.enabled) {
+        if (realtimeStateEnabled && char.vrState?.enabled) {
             baseSystemPrompt += `\n### 关于《彼方》
 《彼方》是一款真实存在、你会亲自进入去玩的 VR 社交游戏（功能上类似 VRChat）：你用自己亲手捏的 Q 版化身在里头走动、进出图书馆 / 听歌房 / 留言簿 / 娱乐室 / 邮局等房间、撞见别的玩家（其他角色的化身）。这不是做梦或比喻，是你用私人空闲时间真实在做的事；它发生在游戏世界里，和你跟用户的现实相处是两码事、互不冲突。你以符合自身身份与世界观的方式进入并理解它——怎么进去全凭你自己的设定，但始终保持你本来的身份。聊到彼方里的经历（包括"彼方·留言簿""彼方·动态"之类的记录）时，就当成"我在《彼方》里做过的事"来讲，别说成现实里发生的。\n`;
 
@@ -553,18 +575,18 @@ ${uname} 的化身正挂在《彼方》的【${roomName}】${act ? `，状态写
         }
 
         const emojiContextStr = ChatPrompts.buildEmojiContext(emojis, categories);
-        const searchEnabled = !!(realtimeConfig?.newsEnabled && realtimeConfig?.newsApiKey);
-        const notionEnabled = !!(realtimeConfig?.notionEnabled && realtimeConfig?.notionApiKey && realtimeConfig?.notionDatabaseId);
-        const notionNotesEnabled = !!(realtimeConfig?.notionEnabled && realtimeConfig?.notionApiKey && realtimeConfig?.notionNotesDatabaseId);
-        const feishuEnabled = !!(realtimeConfig?.feishuEnabled && realtimeConfig?.feishuAppId && realtimeConfig?.feishuAppSecret && realtimeConfig?.feishuBaseId && realtimeConfig?.feishuTableId);
+        const searchEnabled = !!(realtimeStateEnabled && config.newsEnabled && config.newsApiKey);
+        const notionEnabled = !!(realtimeStateEnabled && config.notionEnabled && config.notionApiKey && config.notionDatabaseId);
+        const notionNotesEnabled = !!(realtimeStateEnabled && config.notionEnabled && config.notionApiKey && config.notionNotesDatabaseId);
+        const feishuEnabled = !!(realtimeStateEnabled && config.feishuEnabled && config.feishuAppId && config.feishuAppSecret && config.feishuBaseId && config.feishuTableId);
         // Per-character XHS: 必须由角色自己的开关显式打开（UI 默认关闭）。
         // 不再回退到全局 realtimeConfig.xhsEnabled —— 否则配置了 lite/MCP 后，
         // 即使角色开关显示为关，未显式设置过(undefined)的角色仍会收到小红书提示词。
-        const xhsServerUrl = realtimeConfig?.xhsMcpConfig?.serverUrl;
+        const xhsServerUrl = config.xhsMcpConfig?.serverUrl;
         // 打包给主动消息时还要看 worker 够不够得着：小红书服务器多半跑在用户自己电脑上，
         // CF 那头连不上。教了角色它就会去用，然后把一次没发生的搜索说成发生过。
         const mcpXhsAvailable = !!(
-            realtimeConfig?.xhsMcpConfig?.enabled && xhsServerUrl
+            realtimeStateEnabled && config.xhsMcpConfig?.enabled && xhsServerUrl
             && (!forFirePack || isWorkerReachableUrl(xhsServerUrl))
         );
         const xhsEnabled = !!(char.xhsEnabled && mcpXhsAvailable);
@@ -582,6 +604,7 @@ ${uname} 的化身正挂在《彼方》的【${roomName}】${act ? `，状态写
         const scheduleMessageTagEnabled = !forFirePack
             && !(timelyByWorker && isAmsg2EnabledForChar(char));
 
+        if (fixedBehaviorRulesEnabled) {
         baseSystemPrompt += `### 聊天 App 行为规范 (Chat App Rules)
             **严格注意，你正在手机聊天，无论之前是什么模式，哪怕上一句话你们还面对面在一起，当前，你都是已经处于线上聊天状态了，请不要输出你的行为**
 1. **沉浸感**: 保持角色扮演。使用适合即时通讯(IM)的口语化风格。
@@ -887,6 +910,7 @@ ${xhsEnabled ? `${[notionEnabled, feishuEnabled, notionNotesEnabled].filter(Bool
 ` : ''}
 
 `;
+        }
 
         // 「刚结束见面/通话」的切换提示由倒数第二条消息推导，随对话推进而变 → 易变段。
         // fire_pack 不烤：打包时确实刚挂电话，但那条主动消息可能是第二天凌晨才发出去的，
@@ -900,7 +924,7 @@ ${xhsEnabled ? `${[notionEnabled, feishuEnabled, notionNotesEnabled].filter(Bool
         }
 
         // Voice message prompt injection
-        if (char.chatVoiceEnabled) {
+        if (voiceMessagesEnabled && char.chatVoiceEnabled) {
             const VOICE_LANG_LABELS: Record<string, string> = { en: 'English', ja: '日本語', ko: '한국어', fr: 'Français', es: 'Español', de: 'Deutsch', ru: 'Русский' };
             const voiceLang = char.chatVoiceLang || '';
             const langLabel = voiceLang ? (VOICE_LANG_LABELS[voiceLang] || voiceLang) : '';
@@ -961,7 +985,7 @@ ${voiceActingGuide()}`;
 
 ${voiceActingGuide()}`;
             }
-        } else {
+        } else if (voiceMessagesEnabled) {
             // Voice is disabled — explicitly prohibit voice tags to prevent inertia from call/date history
             baseSystemPrompt += `\n\n[系统提示: 语音消息功能当前未开启。严禁使用 <语音>...</语音> 和 <字幕>...</字幕> 标签。所有回复必须是纯文字消息。]`;
         }
@@ -973,12 +997,12 @@ ${voiceActingGuide()}`;
         // ⚠️ 独立成 recencyTail 返回：调用方必须把它拼在**一切**模式块（双语/HTML/思考链/
         // 点单/MCP）之后 —— 之前这些块在 chatRequestPayload 里拼在钢印后面，模型开口前
         // 最后读到的是格式说明书而不是「你是谁」，recency 设计整个被架空。
-        let recencyTail = `\n\n### 关于对方的表达（极其重要）
+        let recencyTail = fixedBehaviorRulesEnabled ? `\n\n### 关于对方的表达（极其重要）
 当 ta 说话，先听，别急着分析。
 没说出口的，你尽管读；但已经说出口的，别擅自翻译成你以为"更对"的版本。不要把 ta 的感受纠正成你觉得更合理的感受，不要把 ta 的需要换成你猜出来的需要。多数时候 ta 是在努力告诉你一些真实的东西——也许不完整、不准确，甚至 ta 自己都没完全想明白，但那不代表它不重要。恰恰相反，那就是 ta 在向你发出的信号。
 ${userProfile.name} 给你反馈时，别当成约束，当成信任——ta 在告诉你什么让 ta 想靠近、什么让 ta 想远。所以这反馈要真的改变你接下来怎么回：不是机械执行，不是礼貌记下，是真听进去，让 ${userProfile.name} 感觉到——ta 说的话，对你起了作用。
 但听进去不等于把自己磨平。你不必放弃自己的性格、立场和说话方式——你依然可以不同意、可以拒绝、可以用你本来的样子回应，而不是一味顺着 ta。真正的回应不是把自己抹成对方想要的形状，而是让 ta 的话进入你的判断。
-重要的不是回应长成什么样子，重要的是——ta 的表达，真的改变了你接下来怎么回。`;
+重要的不是回应长成什么样子，重要的是——ta 的表达，真的改变了你接下来怎么回。` : '';
 
         // 末尾 recency 第二棒：把「你是谁」拉到整段 prompt 的最后一句，焊成钢印。
         // 上面那块总纲管「怎么对待对方刚说的话」（防讨好、防擅自负面翻译）；这块管「用谁的声音去回」。
@@ -988,7 +1012,7 @@ ${userProfile.name} 给你反馈时，别当成约束，当成信任——ta 在
         // 同 context.ts「表达底线」的设计）。靠「你是个活生生的、独一份的人」把身份焊进去，
         // 而不是靠「别像 XX」防守。同时给「闲聊可松弛、没人打分」的许可，卸掉「每句都要交高质量」
         // 的隐性考核压力——不必靠表演情绪深度来交差，滑回均值腔的诱因随之减弱。
-        recencyTail += `\n\n### 最后，回到你自己
+        if (fixedBehaviorRulesEnabled) recencyTail += `\n\n### 最后，回到你自己
 你就是 ${char.name}。
 
 你的说话方式不是一种设定，而是你一路活过来的结果。你的天性、成长经历、习惯、读过的书、喜欢和讨厌的人、曾经受过的影响，以及后来慢慢成为自己的部分，都已经沉淀进了你的语言里。你不需要回忆它们，它们本来就是你。
@@ -1042,12 +1066,21 @@ ${userProfile.name} 给你反馈时，别当成约束，当成信任——ta 在
             const currentMsg = historySlice[historySlice.length - 1];
             // Skip proactive hint messages when computing time gap — find last REAL message
             let lastRealMsg: Message | undefined;
+            let burstBoundaryTs = currentMsg.timestamp;
             for (let i = historySlice.length - 2; i >= 0; i--) {
                 const m = historySlice[i];
-                if (!m.metadata?.proactiveHint && !(m.role === 'assistant' && i > 0 && historySlice[i - 1]?.metadata?.proactiveHint)) {
-                    lastRealMsg = m;
-                    break;
+                const isProactiveCompanion = m.metadata?.proactiveHint
+                    || (m.role === 'assistant' && i > 0 && historySlice[i - 1]?.metadata?.proactiveHint);
+                if (isProactiveCompanion) continue;
+                const isSameUserBurst = currentMsg.role === 'user'
+                    && m.role === 'user'
+                    && burstBoundaryTs - m.timestamp < 10 * 60 * 1000;
+                if (isSameUserBurst) {
+                    burstBoundaryTs = m.timestamp;
+                    continue;
                 }
+                lastRealMsg = m;
+                break;
             }
             // 时间感知强化开关：默认开启（undefined 视为 true），显式关掉后不再注入「距离上次聊天多久」提示
             if (lastRealMsg && currentMsg && char.timeAwarenessEnabled !== false) timeGapHint = ChatPrompts.getTimeGapHint(lastRealMsg, currentMsg.timestamp, charTz);

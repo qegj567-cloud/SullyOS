@@ -68,6 +68,15 @@ describe('buildToolPack / parseToolPack', () => {
     const { timeAwarenessEnabled: _dropped, ...missing } = off;
     expect(parseToolPack(JSON.stringify(missing))).toBeNull();
   });
+
+  it('Prompt 控制关掉时间感知 → tool_pack 也跟着关，Worker 不能补回节日', () => {
+    const pack = buildToolPack(
+      { id: 'c4', name: '澪', timeAwarenessEnabled: true } as unknown as CharacterProfile,
+      { timeAwareness: false, realtimeState: true, mcpTools: true },
+    );
+    expect(pack.timeAwarenessEnabled).toBe(false);
+    expect(parseToolPack(JSON.stringify(pack))?.timeAwarenessEnabled).toBe(false);
+  });
 });
 
 describe('buildToolConfig / parseToolConfig', () => {
@@ -133,6 +142,21 @@ describe('buildToolConfig / parseToolConfig', () => {
     expect(parseToolConfig(JSON.stringify(dirty))?.mcpServers).toEqual(servers);
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
+  });
+
+  it('Prompt 控制状态随 tool_config 上云，Worker 到点按同一份开关裁剪工具块', () => {
+    const config = buildToolConfig(
+      undefined,
+      { servers: [{ id: 's1', name: '探针', url: 'https://probe.example.com', tools: [] }], useNativeTools: true },
+      { mcpTools: false, realtimeState: false, timeAwareness: false },
+    );
+    const parsed = parseToolConfig(JSON.stringify(config));
+
+    expect(parsed?.promptControls).toEqual({
+      mcpTools: false,
+      realtimeState: false,
+      timeAwareness: false,
+    });
   });
 
   it('整份清单都坏时两个字段一起消失, 并且留一条 warn', () => {

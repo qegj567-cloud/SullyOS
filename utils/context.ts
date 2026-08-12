@@ -11,6 +11,22 @@ import {
     type WorldbookScanMessage,
 } from './worldbook';
 
+export interface CoreContextPromptControls {
+    coreIdentity?: boolean;
+    worldview?: boolean;
+    userProfile?: boolean;
+    privateImpression?: boolean;
+    nativeMemorySummary?: boolean;
+    nativeActiveMemory?: boolean;
+    fixedBehaviorRules?: boolean;
+    voiceMessages?: boolean;
+    memoryPalace?: boolean;
+    worldbook?: boolean;
+    timeAwareness?: boolean;
+    realtimeState?: boolean;
+    musicState?: boolean;
+}
+
 /**
  * Memory Central
  * 负责统一构建所有 App 共用的基础角色上下文 (System Prompt)。
@@ -131,7 +147,9 @@ export const ContextBuilder = {
              */
             deferVolatile?: boolean;
         },
+        promptControls?: CoreContextPromptControls,
     ): string => {
+        const enabled = (key: keyof CoreContextPromptControls): boolean => promptControls?.[key] !== false;
         const skipBookIds = groupOptions?.skipWorldbookIds;
         const filteredBooks = (char.mountedWorldbooks || []).filter(wb => !skipBookIds || !skipBookIds.has(wb.id));
         const worldbookSections = splitWorldbookSections(resolveWorldbookEntries(
@@ -141,28 +159,32 @@ export const ContextBuilder = {
             user.name,
         ));
 
-        let context = formatWorldbookSection(worldbookSections.beforeCharacter, '世界书 · 角色设定前');
-        context += `${groupOptions?.headerOverride ?? '[System: Roleplay Configuration]'}\n\n`;
+        let context = enabled('worldbook') ? formatWorldbookSection(worldbookSections.beforeCharacter, '世界书 · 角色设定前') : '';
+        if (enabled('fixedBehaviorRules')) {
+            context += `${groupOptions?.headerOverride ?? '[System: Roleplay Configuration]'}\n\n`;
+        }
 
         // 1. 核心身份 (Identity)
-        context += `### 你的身份 (Character)\n`;
-        context += `- 名字: ${char.name}\n`;
-        // Change: Explicitly label description as User Note to avoid literal interpretation
-        context += `- 用户备注/爱称 (User Note/Nickname): ${char.description || '无'}\n`;
-        context += `  (注意: 这个备注是用户对你的称呼或印象，可能包含比喻。如果备注内容（如“快乐小狗”）与你的核心设定冲突，请以核心设定为准，不要真的扮演成动物，除非核心设定里写了你是动物。)\n`;
-        context += `- 核心性格/指令:\n${char.systemPrompt || '你是一个温柔、拟人化的AI伴侣。'}\n\n`;
+        if (enabled('coreIdentity')) {
+            context += `### 你的身份 (Character)\n`;
+            context += `- 名字: ${char.name}\n`;
+            // Change: Explicitly label description as User Note to avoid literal interpretation
+            context += `- 用户备注/爱称 (User Note/Nickname): ${char.description || '无'}\n`;
+            context += `  (注意: 这个备注是用户对你的称呼或印象，可能包含比喻。如果备注内容（如“快乐小狗”）与你的核心设定冲突，请以核心设定为准，不要真的扮演成动物，除非核心设定里写了你是动物。)\n`;
+            context += `- 核心性格/指令:\n${char.systemPrompt || '你是一个温柔、拟人化的AI伴侣。'}\n\n`;
+        }
 
         // 1a. 真实时间感知 (Time Awareness) — 跟随 timeAwarenessEnabled 设置，默认开启。
         // 统一在 buildCoreContext 注入，让所有调用方（私聊/查手机/人际关系/通话/约会…）都知道"现在"。
         // deferVolatile 时不在这里输出（时间精确到分钟、每轮都变，会打断 prompt 前缀缓存），
         // 改由调用方经 buildVolatileCoreState 放到消息数组末尾。
-        if (!layout?.deferVolatile) {
+        if (!layout?.deferVolatile && enabled('timeAwareness')) {
             context += ContextBuilder.buildTimeAwarenessBlock(char, timeOptions);
         }
 
         // 1b. 自我领悟词条 (Self Insights) — 消化过程中反刍产生的常驻自我认知
         // 像情绪底色一样影响角色的行为和感受，注入在角色设定紧下方
-        if (char.selfInsights && char.selfInsights.length > 0) {
+        if (enabled('coreIdentity') && char.selfInsights && char.selfInsights.length > 0) {
             context += `### 内在认知 (Self Insights)\n`;
             context += `以下是你在独处反思中逐渐想明白的事，它们已经成为你的一部分：\n`;
             char.selfInsights.forEach(insight => {
@@ -172,17 +194,19 @@ export const ContextBuilder = {
         }
 
         // 2. 世界观 (Worldview) - New Centralized Logic
-        if (char.worldview && char.worldview.trim() && !groupOptions?.skipWorldview) {
+        if (enabled('worldview') && char.worldview && char.worldview.trim() && !groupOptions?.skipWorldview) {
             context += `### 世界观与设定 (World Settings)\n${char.worldview}\n\n`;
         }
 
-        context += formatWorldbookSection(worldbookSections.afterCharacter, '扩展设定集 (Worldbooks)');
-        context += formatWorldbookSection(worldbookSections.beforeExamples, '世界书 · 示例消息前');
-        context += formatWorldbookSection(worldbookSections.afterExamples, '世界书 · 示例消息后');
+        if (enabled('worldbook')) {
+            context += formatWorldbookSection(worldbookSections.afterCharacter, '扩展设定集 (Worldbooks)');
+            context += formatWorldbookSection(worldbookSections.beforeExamples, '世界书 · 示例消息前');
+            context += formatWorldbookSection(worldbookSections.afterExamples, '世界书 · 示例消息后');
+        }
 
         // 3. 用户画像 (User Profile)
         // 群聊场景下：用户画像已在共享场景块顶部，这里跳过避免重复
-        if (!groupOptions?.skipUserProfile) {
+        if (enabled('userProfile') && !groupOptions?.skipUserProfile) {
             context += `### 互动对象 (User)\n`;
             context += `- 名字: ${user.name}\n`;
             context += `- 设定/备注: ${user.bio || '无'}\n\n`;
@@ -191,7 +215,7 @@ export const ContextBuilder = {
         // 4. [NEW] 印象档案 (Private Impression)
         // 这是角色对用户的私密看法，只有角色知道
         const imp = normalizeUserImpression(char.impression);
-        if (imp) {
+        if (enabled('privateImpression') && imp) {
             context += `### [私密档案: 我眼中的${user.name}] (Private Impression)\n`;
             context += `(注意：以下内容是你内心对TA的真实看法，不要直接告诉用户，但要基于这些看法来决定你的态度。)\n`;
             context += `- 核心评价: ${imp.personality_core.summary}\n`;
@@ -210,16 +234,15 @@ export const ContextBuilder = {
         // 与召回记忆不同：这是每轮都在的"你早已知道的背景"，不走相似度抽取。
         // 必须用 memoryPalaceEnabled 把关，理由同下方 5b：注入字段会被 saveCharacter
         // 持久化，宫殿关闭后 injectMemoryPalace 不再刷新它，不校验就会注入残留。
-        if (char.memoryPalaceEnabled && char.roomPlatesInjection && char.roomPlatesInjection.trim()) {
+        if (enabled('memoryPalace') && char.memoryPalaceEnabled && char.roomPlatesInjection && char.roomPlatesInjection.trim()) {
             context += `${char.roomPlatesInjection}\n`;
         }
 
         // 5. 记忆库 (Memory Bank)
-        context += `### 记忆系统 (Memory Bank)\n`;
         let memoryContent = "";
 
         // 5a. 长期核心记忆 (Refined Memories)
-        if (char.refinedMemories && Object.keys(char.refinedMemories).length > 0) {
+        if (enabled('nativeMemorySummary') && char.refinedMemories && Object.keys(char.refinedMemories).length > 0) {
             memoryContent += `**长期核心记忆 (Key Memories)**:\n`;
             Object.entries(char.refinedMemories).sort().forEach(([date, summary]) => { 
                 memoryContent += `- [${date}]: ${summary}\n`; 
@@ -227,7 +250,7 @@ export const ContextBuilder = {
         }
 
         // 5b. 激活的详细记忆 (Active Detailed Logs)
-        if (includeDetailedMemories && char.activeMemoryMonths && char.activeMemoryMonths.length > 0 && char.memories) {
+        if (enabled('nativeActiveMemory') && includeDetailedMemories && char.activeMemoryMonths && char.activeMemoryMonths.length > 0 && char.memories) {
             let details = "";
             char.activeMemoryMonths.forEach(monthKey => {
                 // monthKey format: YYYY-MM
@@ -263,10 +286,13 @@ export const ContextBuilder = {
             }
         }
 
-        if (!memoryContent) {
+        if (!memoryContent && (enabled('nativeMemorySummary') || enabled('nativeActiveMemory'))) {
             memoryContent = "(暂无特定记忆，请基于当前对话互动)";
         }
-        context += `${memoryContent}\n\n`;
+        if (memoryContent) {
+            context += `### 记忆系统 (Memory Bank)\n`;
+            context += `${memoryContent}\n\n`;
+        }
 
         // 5b. 记忆宫殿 (Memory Palace) — 向量检索结果
         // 仅在 includeDetailedMemories 时注入，与详细日志同级
@@ -276,7 +302,7 @@ export const ContextBuilder = {
         // 持久化。若此处不校验总开关，关闭后旧的召回结果仍会被注入进 system prompt，
         // 表现为"宫殿已关、后台无召回，角色却还在精准复述记忆"。与下方 Buff 注入同理。
         // deferVolatile：召回结果每轮都变 → 移交 buildVolatileCoreState。
-        if (!layout?.deferVolatile && includeDetailedMemories && char.memoryPalaceEnabled) {
+        if (!layout?.deferVolatile && enabled('memoryPalace') && includeDetailedMemories && char.memoryPalaceEnabled) {
             const mpContext = char.memoryPalaceInjection || memoryPalaceContext;
             if (mpContext && mpContext.trim()) {
                 context += `${mpContext}\n\n`;
@@ -287,21 +313,23 @@ export const ContextBuilder = {
         // 放在角色设定之后，使所有调用 ContextBuilder 的 App 都能感知情绪状态
         // 总开关关闭时完全跳过，防止残留 buff 继续污染 prompt
         // deferVolatile：buff 每轮情绪评估后都可能变 → 移交 buildVolatileCoreState。
-        if (!layout?.deferVolatile && isScheduleFeatureOn(char) && char.emotionConfig?.enabled && char.buffInjection) {
+        if (!layout?.deferVolatile && enabled('realtimeState') && isScheduleFeatureOn(char) && char.emotionConfig?.enabled && char.buffInjection) {
             context += `${char.buffInjection}\n\n`;
             console.log(`🎭 [Context] Buff injected for ${char.name}:\n`, char.buffInjection);
             console.log(`🎭 [Context] Active buffs:`, JSON.stringify(char.activeBuffs || [], null, 2));
         }
 
-        context += formatWorldbookSection(worldbookSections.authorsNoteTop, '世界书 · 作者注释顶部');
-        context += formatWorldbookSection(worldbookSections.authorsNoteBottom, '世界书 · 作者注释底部');
+        if (enabled('worldbook')) {
+            context += formatWorldbookSection(worldbookSections.authorsNoteTop, '世界书 · 作者注释顶部');
+            context += formatWorldbookSection(worldbookSections.authorsNoteBottom, '世界书 · 作者注释底部');
+        }
 
         // 7. 表达底线 (Anti-Filler) —— 全 App 通用的精简版防套话提示。
         // 模型八股（空泛感慨、万能句式）是"没话找话"时的填充物，这里只做正向引导
         // （去挖具体素材），不列任何禁语——把禁语写进提示词反而会激活它（粉色大象）。
         // 完整方法版在 datePrompts 的 DIG_DEEPER_BLOCK（见面模式专用，可按角色开关）。
         // 群聊流（groupOptions）跳过：多成员场景会重复注入 N 份，群聊侧暂不接入。
-        if (!groupOptions) {
+        if (enabled('fixedBehaviorRules') && !groupOptions) {
             context += `### 表达底线 (Anti-Filler)\n当你觉得"没什么可说"的时候，不要用空泛的感慨、万能句式或华丽排比去填充——那是没话找话，对方一眼就能看出来。素材永远比你以为的多：对方的用词、ta 怎么说的、ta 没说的部分、此刻的情境、你们的过去、你心里闪过的念头——挑一两条往深处走就够了。宁可一个具体的小细节，不要一句谁都能说的话。\n\n`;
         }
 
@@ -367,19 +395,24 @@ export const ContextBuilder = {
             includeDetailedMemories?: boolean;
             memoryPalaceContext?: string;
             timeOptions?: { lastInteractionTs?: number; skipTimeAwareness?: boolean };
+            promptControls?: CoreContextPromptControls;
         },
     ): string => {
-        let context = ContextBuilder.buildTimeAwarenessBlock(char, options?.timeOptions);
+        const promptControls = options?.promptControls;
+        const enabled = (key: keyof CoreContextPromptControls): boolean => promptControls?.[key] !== false;
+        let context = enabled('timeAwareness')
+            ? ContextBuilder.buildTimeAwarenessBlock(char, options?.timeOptions)
+            : '';
 
         const includeDetailedMemories = options?.includeDetailedMemories ?? true;
-        if (includeDetailedMemories && char.memoryPalaceEnabled) {
+        if (enabled('memoryPalace') && includeDetailedMemories && char.memoryPalaceEnabled) {
             const mpContext = char.memoryPalaceInjection || options?.memoryPalaceContext;
             if (mpContext && mpContext.trim()) {
                 context += `${mpContext}\n\n`;
             }
         }
 
-        if (isScheduleFeatureOn(char) && char.emotionConfig?.enabled && char.buffInjection) {
+        if (enabled('realtimeState') && isScheduleFeatureOn(char) && char.emotionConfig?.enabled && char.buffInjection) {
             context += `${char.buffInjection}\n\n`;
             console.log(`🎭 [Context] Buff injected for ${char.name}:\n`, char.buffInjection);
             console.log(`🎭 [Context] Active buffs:`, JSON.stringify(char.activeBuffs || [], null, 2));

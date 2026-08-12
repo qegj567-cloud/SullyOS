@@ -12,6 +12,7 @@ import worker, {
   buildWorkerConfig, configureInstantErrorPush, inspectWorkerEnv,
   offloadOversizedPush, resolveVapidEmail, runFireCancelTool, runFireRenewTool,
   inspectPushDelivery,
+  isWakeNowAuthorized, parseWakeNowRequest,
   runFireScheduleTool, runMcpFireTool, splitSchemaMissing, classifySchemaProbeError,
 } from './index';
 import * as workerEntry from './index';
@@ -106,6 +107,67 @@ const mcpToolConfigValue = (extra: Record<string, unknown> = {}) => JSON.stringi
 });
 
 /** 造一个 FireCtx；rows 是 readState 按 namespace 返回的内容。 */
+const makePromptAuditDb = (initialRows: any[] = []) => {
+  const auditRows = [...initialRows];
+  const exec = async (sql: string, values: unknown[] = []) => {
+    if (sql.includes('INSERT INTO prompt_audit_log')) {
+      const [
+        id, createdAt, expiresAt, charId, charName, taskUuid, taskRowId, clientTaskId,
+        occurrenceMs, status, model, prompt, promptControlsJson, promptModulesJson,
+        roundsJson, usageJson, outputText, error,
+      ] = values;
+      const row = {
+        id, created_at: createdAt, expires_at: expiresAt, char_id: charId,
+        char_name: charName, task_uuid: taskUuid, task_row_id: taskRowId,
+        client_task_id: clientTaskId, occurrence_ms: occurrenceMs, status, model,
+        prompt, prompt_controls_json: promptControlsJson, prompt_modules_json: promptModulesJson,
+        rounds_json: roundsJson, usage_json: usageJson, output_text: outputText, error,
+      };
+      const index = auditRows.findIndex((item) => item.id === id);
+      if (index >= 0) auditRows[index] = row;
+      else auditRows.push(row);
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (sql.includes('DELETE FROM prompt_audit_log')) {
+      const deleted = sql.includes('WHERE expires_at <= ?')
+        ? auditRows.filter((row) => Number(row.expires_at) <= Number(values[0])).length
+        : auditRows.length;
+      if (sql.includes('WHERE expires_at <= ?')) {
+        const cutoff = Number(values[0]);
+        for (let i = auditRows.length - 1; i >= 0; i -= 1) {
+          if (Number(auditRows[i].expires_at) <= cutoff) auditRows.splice(i, 1);
+        }
+      } else {
+        auditRows.length = 0;
+      }
+      return { success: true, meta: { changes: deleted } };
+    }
+    if (sql.includes('SELECT id, created_at')) {
+      const limit = Number(values[0]) || 20;
+      return { results: auditRows.slice(0, limit).map((row) => ({ ...row })) };
+    }
+    if (sql.includes('CREATE TABLE') || sql.includes('CREATE INDEX')) {
+      return { success: true, meta: { changes: 0 } };
+    }
+    throw new Error(`Unexpected SQL: ${sql}`);
+  };
+  return {
+    auditRows,
+    prepare(sql: string) {
+      return {
+        bind: (...values: unknown[]) => ({
+          first: async () => exec(sql, values),
+          all: async () => exec(sql, values),
+          run: async () => exec(sql, values),
+        }),
+        first: async () => exec(sql, []),
+        all: async () => exec(sql, []),
+        run: async () => exec(sql, []),
+      };
+    },
+  };
+};
+
 const makeCtx = (opts: {
   metadata?: Record<string, unknown>;
   charRows?: Array<{ key: string; value: string }>;
@@ -1679,8 +1741,65 @@ describe('self_log — 角色自述回写', () => {
       writeState,
       failWrites: () => { writeFails = true; },
       selfLog: () => parseSelfLog(rows.get(AMSG_SELF_LOG_KEY) ?? ''),
-    };
   };
+};
+
+const makePromptAuditDb = (initialRows: any[] = []) => {
+  const auditRows = [...initialRows];
+  const exec = async (sql: string, values: unknown[] = []) => {
+    if (sql.includes('INSERT INTO prompt_audit_log')) {
+      const [
+        id, createdAt, expiresAt, charId, charName, taskUuid, taskRowId, clientTaskId,
+        occurrenceMs, status, model, prompt, promptControlsJson, promptModulesJson,
+        roundsJson, usageJson, outputText, error,
+      ] = values;
+      const row = {
+        id, created_at: createdAt, expires_at: expiresAt, char_id: charId,
+        char_name: charName, task_uuid: taskUuid, task_row_id: taskRowId,
+        client_task_id: clientTaskId, occurrence_ms: occurrenceMs, status, model,
+        prompt, prompt_controls_json: promptControlsJson, prompt_modules_json: promptModulesJson,
+        rounds_json: roundsJson, usage_json: usageJson, output_text: outputText, error,
+      };
+      const index = auditRows.findIndex((item) => item.id === id);
+      if (index >= 0) auditRows[index] = row;
+      else auditRows.push(row);
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (sql.includes('DELETE FROM prompt_audit_log')) {
+      const deleted = sql.includes('WHERE expires_at <= ?')
+        ? auditRows.filter((row) => Number(row.expires_at) <= Number(values[0])).length
+        : auditRows.length;
+      if (sql.includes('WHERE expires_at <= ?')) {
+        const cutoff = Number(values[0]);
+        for (let i = auditRows.length - 1; i >= 0; i -= 1) {
+          if (Number(auditRows[i].expires_at) <= cutoff) auditRows.splice(i, 1);
+        }
+      } else {
+        auditRows.length = 0;
+      }
+      return { success: true, meta: { changes: deleted } };
+    }
+    if (sql.includes('SELECT id, created_at')) {
+      const limit = Number(values[0]) || 20;
+      return { results: auditRows.slice(0, limit).map((row) => ({ ...row })) };
+    }
+    if (sql.includes('CREATE TABLE') || sql.includes('CREATE INDEX')) {
+      return { success: true, meta: { changes: 0 } };
+    }
+    throw new Error(`Unexpected SQL: ${sql}`);
+  };
+  return {
+    auditRows,
+    prepare(sql: string) {
+      return {
+        bind: (...values: unknown[]) => ({ first: async () => exec(sql, values), all: async () => exec(sql, values), run: async () => exec(sql, values) }),
+        first: async () => exec(sql, []),
+        all: async () => exec(sql, []),
+        run: async () => exec(sql, []),
+      };
+    },
+  };
+};
 
   /**
    * 跑一次完整的 fire：组 prompt → 交一段 LLM 输出 → 走完 finish → 模拟库发完推送后
@@ -2833,16 +2952,57 @@ describe('stale 跳过留痕（onStaleSkip）', () => {
 });
 
 describe('worker 配置接线', () => {
-  it('onAfterSend / onStaleSkip 挂在 config 上（漏接任何一个，发送后回执/过期留痕都静默失效）', () => {
+  it('onFireSettled / onStaleSkip 挂在 config 上，且收尾能带 D1 写入 prompt 审计', async () => {
+    const auditDb = makePromptAuditDb();
     const cfg = buildWorkerConfig({
       AMSG_MASTER_KEY: 'k'.repeat(64),
       VAPID_EMAIL: 'mailto:a@b.c',
       VAPID_PUBLIC_KEY: 'pub',
       VAPID_PRIVATE_KEY: 'priv',
-      DB: {},
+      DB: auditDb,
     } as any);
-    expect(cfg.onFireSettled).toBe(amsgFireSettled);
+    expect(cfg.onFireSettled).not.toBe(amsgFireSettled);
     expect(cfg.onStaleSkip).toBe(amsgStaleSkip);
+
+    await cfg.onFireSettled({
+      status: 'sent',
+      sentCount: 1,
+      writeState: vi.fn(async () => ({ upserted: 0, skipped: 0, deleted: 0 })),
+      scratch: {
+        fire: {
+          instant: false,
+          emotionLatePending: false,
+          emotionEvalPromise: null,
+          selfLog: createSelfLog(PACK_BUILT_AT),
+          selfLogTexts: ['发出的内容'],
+          selfLogDirty: false,
+          promptAudit: {
+            id: 'config-hook-audit',
+            createdAt: Date.now(),
+            expiresAt: Date.now() + 60_000,
+            charId: CHAR_ID,
+            charName: 'Nyah',
+            taskUuid: TASK_UUID,
+            taskRowId: '42',
+            clientTaskId: 'client-task-1',
+            occurrenceMs: NOW.getTime(),
+            status: 'pending',
+            prompt: '完整 prompt',
+            promptControls: {},
+            promptModules: [],
+            rounds: [],
+            outputText: '',
+            error: null,
+          },
+        },
+      },
+    } as any);
+    expect(auditDb.auditRows).toHaveLength(1);
+    expect(auditDb.auditRows[0]).toMatchObject({
+      id: 'config-hook-audit',
+      status: 'sent',
+      output_text: '发出的内容',
+    });
 
     // 同角色的多条任务不并发跑，靠这个分组键。取不到 charId 时返回 null（= 不分组），
     // 别让一批「认不出属于谁」的任务挤成同一组互相堵。
@@ -3265,6 +3425,123 @@ describe('/debug — 只读诊断', () => {
     });
     expect(data.storage).toEqual({ reachable: false, error: 'D1Error' });
     expect(JSON.stringify(data)).not.toContain('syntax error');
+  });
+});
+
+describe('/prompt-audit — 云端 Prompt 审计接口', () => {
+  const envWith = (db: unknown) => ({
+    AMSG_MASTER_KEY: 'a'.repeat(64),
+    VAPID_EMAIL: 'mailto:a@b.c',
+    VAPID_PUBLIC_KEY: 'pub-key',
+    VAPID_PRIVATE_KEY: 'priv-key',
+    AMSG_SERVER_TOKEN: 'shared-secret',
+    DB: db,
+  } as any);
+  const authed = { headers: { 'X-Client-Token': 'shared-secret' } };
+
+  it('必须带共享密钥读取，不能把完整 prompt 公开到无鉴权端点', async () => {
+    const db = makePromptAuditDb();
+    const response = await (worker as any).fetch(new Request('https://w.example/prompt-audit'), envWith(db));
+    expect(response.status).toBe(401);
+    const body = await response.json();
+    expect(body.error.code).toBe('INVALID_CLIENT_TOKEN');
+  });
+
+  it('GET 返回最近审计，并在读取前清理超过 5 天的记录', async () => {
+    const db = makePromptAuditDb([
+      {
+        id: 'fresh',
+        created_at: Date.now(),
+        expires_at: Date.now() + 60_000,
+        char_id: CHAR_ID,
+        char_name: 'Nyah',
+        task_uuid: TASK_UUID,
+        task_row_id: '42',
+        client_task_id: 'client-task-1',
+        occurrence_ms: Date.parse('2026-07-25T12:00:00.000Z'),
+        status: 'sent',
+        model: 'deepseek-v4-flash',
+        prompt: '完整 prompt',
+        prompt_controls_json: JSON.stringify({ timeAwareness: false }),
+        prompt_modules_json: JSON.stringify([{ key: 'timeAwareness', label: '时间感知', enabled: false, included: false }]),
+        rounds_json: JSON.stringify([{ iteration: 0, decision: 'finish' }]),
+        usage_json: JSON.stringify({ totalTokens: 7, promptTokens: 5, completionTokens: 2 }),
+        output_text: '发出去的话',
+        error: null,
+      },
+      {
+        id: 'expired',
+        created_at: Date.now() - 10 * 24 * 60 * 60 * 1000,
+        expires_at: Date.now() - 1_000,
+        char_id: CHAR_ID,
+        prompt: '过期 prompt',
+        prompt_controls_json: '{}',
+        prompt_modules_json: '[]',
+        rounds_json: '[]',
+        usage_json: '{}',
+        output_text: '',
+        status: 'sent',
+      },
+    ]);
+
+    const response = await (worker as any).fetch(new Request('https://w.example/prompt-audit?limit=5', authed), envWith(db));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.data.entries).toHaveLength(1);
+    expect(body.data.entries[0]).toMatchObject({
+      id: 'fresh',
+      charId: CHAR_ID,
+      prompt: '完整 prompt',
+      outputText: '发出去的话',
+    });
+    expect(JSON.stringify(body)).not.toContain('过期 prompt');
+    expect(db.auditRows.map((r: any) => r.id)).toEqual(['fresh']);
+  });
+
+  it('DELETE 清空审计记录', async () => {
+    const db = makePromptAuditDb([
+      { id: 'a', created_at: 1, expires_at: Date.now() + 1, prompt: 'p', prompt_controls_json: '{}', prompt_modules_json: '[]', rounds_json: '[]', usage_json: '{}', output_text: '', status: 'sent' },
+    ]);
+    const response = await (worker as any).fetch(new Request('https://w.example/prompt-audit', { ...authed, method: 'DELETE' }), envWith(db));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.data.deleted).toBe(1);
+    expect(db.auditRows).toHaveLength(0);
+  });
+});
+
+describe('/wake-now - 专用心跳入口', () => {
+  it('只接受共享密钥，并且心跳任务标记为 heartbeat', async () => {
+    expect(isWakeNowAuthorized(new Headers({ Authorization: 'Bearer wake-secret' }), 'wake-secret')).toBe(true);
+    expect(isWakeNowAuthorized(new Headers({ Authorization: 'Bearer wrong' }), 'wake-secret')).toBe(false);
+
+    const request = new Request('https://w.example/wake-now', {
+      method: 'POST',
+      body: JSON.stringify({
+        version: 1,
+        type: 'heartbeat',
+        userId: 'user-1',
+        charId: CHAR_ID,
+        instruction: '自主醒来后先查看年轮。',
+        profile: {
+          apiUrl: 'https://llm.example/v1',
+          apiKey: 'secret-key',
+          primaryModel: 'model-1',
+        },
+      }),
+    });
+
+    const parsed = await parseWakeNowRequest(request);
+
+    expect(parsed.userId).toBe('user-1');
+    expect(parsed.charId).toBe(CHAR_ID);
+    expect(parsed.taskPayload.messageType).toBe('auto');
+    expect(parsed.taskPayload.metadata).toMatchObject({
+      charId: CHAR_ID,
+      source: 'heartbeat',
+      amsgExpirePolicy: 'keep',
+      amsgTaskInstruction: '自主醒来后先查看年轮。',
+    });
   });
 });
 

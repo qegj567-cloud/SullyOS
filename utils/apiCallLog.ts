@@ -17,6 +17,8 @@
  * 吞掉，绝不影响主请求链路。
  */
 
+import type { PromptControlSnapshot } from './promptControl';
+
 /** 调用方可补充的语义信息（哪个 App / 角色 / 用途）。能填多少填多少。 */
 export interface ApiCallMeta {
     /** AppID 字符串，如 'chat' / 'lifesim'，可空 */
@@ -29,6 +31,8 @@ export interface ApiCallMeta {
     charName?: string;
     /** 具体用途，如 '聊天回复' / '情绪评估' / '记忆提取'，可空 */
     purpose?: string;
+    /** 本轮 prompt 模块开关与实际注入快照，只存模块名和状态，不存 prompt 原文。 */
+    promptControl?: PromptControlSnapshot;
 }
 
 /** 落库的一条记录。 */
@@ -63,8 +67,10 @@ export interface ApiCallLogEntry extends ApiCallMeta {
      * 输入构成统计（每块的名字 + 字符数），回答「prompt_tokens 为什么这么大」。
      * 只存统计不存原文（原文一条就几十 KB，5 天日志会撑爆存储）；在响应回来后的
      * fire-and-forget 记录路径里扫一遍请求体算出，不占请求主链路。
-     */
+    */
     promptBreakdown?: PromptBlockStat[];
+    /** 本轮 prompt 模块开关与实际注入快照。 */
+    promptControl?: PromptControlSnapshot;
 }
 
 /** 输入构成里的一块：system prompt 的一个 ### 段落，或聚合后的聊天历史。 */
@@ -976,6 +982,7 @@ export function recordApiCall(input: {
             charId: meta.charId,
             charName: meta.charName,
             purpose: meta.purpose,
+            promptControl: meta.promptControl,
         };
         // 动态 import 避开 safeApi ↔ db 的潜在加载顺序问题；写库失败静默吞掉。
         import('./db')

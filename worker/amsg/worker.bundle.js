@@ -6412,6 +6412,11 @@ var getProxyWorkerUrl = () => {
 var AMSG_TOOL_PACK_KEY = "tool_pack";
 var AMSG_GLOBAL_NAMESPACE = "amsg:global";
 var AMSG_TOOL_CONFIG_KEY = "tool_config";
+var normalizeAmsgToolPromptControls = (value) => ({
+  mcpTools: value?.mcpTools !== false,
+  realtimeState: value?.realtimeState !== false,
+  timeAwareness: value?.timeAwareness !== false
+});
 var parseToolPack = (value) => {
   try {
     const parsed = JSON.parse(value);
@@ -6442,6 +6447,7 @@ var parseToolConfig = (value) => {
       delete parsed.mcpServers;
       delete parsed.mcpUseNativeTools;
     }
+    parsed.promptControls = normalizeAmsgToolPromptControls(parsed.promptControls);
     return parsed;
   } catch {
     return null;
@@ -10823,7 +10829,236 @@ var isFcmConfigured = (env) => Boolean(
 );
 
 // worker/amsg/src/index.ts
+var isRecord2 = (value) => !!value && typeof value === "object" && !Array.isArray(value);
 var getFireStash = (scratch) => scratch?.fire;
+var PROMPT_AUDIT_TABLE = "prompt_audit_log";
+var PROMPT_AUDIT_RETENTION_MS = 5 * 24 * 60 * 60 * 1e3;
+var PROMPT_AUDIT_MAX_LIMIT = 50;
+var PROMPT_AUDIT_DEFAULT_LIMIT = 20;
+var getAuditD1 = (env) => {
+  const db = env.DB;
+  if (typeof db?.prepare !== "function") {
+    throw new Error("AMSG2_PROMPT_AUDIT_DB_MISSING");
+  }
+  return db;
+};
+var runD1 = async (statement) => {
+  if (typeof statement.run === "function") return statement.run();
+  await statement.first();
+  return { success: true, meta: { changes: 0 } };
+};
+var toFiniteNumber = (value) => typeof value === "number" && Number.isFinite(value) ? value : null;
+var readLlmModel = (llmResponse) => {
+  const model = llmResponse?.model;
+  return typeof model === "string" && model.trim() ? model.trim() : null;
+};
+var readLlmUsage = (llmResponse) => {
+  const usage = llmResponse?.usage ?? {};
+  return {
+    totalTokens: toFiniteNumber(usage.total_tokens ?? usage.totalTokens),
+    promptTokens: toFiniteNumber(usage.prompt_tokens ?? usage.promptTokens),
+    completionTokens: toFiniteNumber(usage.completion_tokens ?? usage.completionTokens)
+  };
+};
+var buildPromptAuditModules = (promptControls, runtime) => {
+  const controls = promptControls && typeof promptControls === "object" ? promptControls : {};
+  return Object.entries(controls).map(([key, value]) => {
+    const enabled = value !== false;
+    const included = key === "mcpTools" ? runtime.mcpEnabled : key === "realtimeState" ? runtime.realtimeStateEnabled : key === "timeAwareness" ? runtime.timeAwarenessEnabled : enabled;
+    return {
+      key,
+      label: key,
+      enabled,
+      included,
+      note: included ? void 0 : "\u5DF2\u5173\u95ED"
+    };
+  });
+};
+var createPromptAuditDraft = (ctx, prompt, promptControls, runtime) => {
+  const createdAt = Date.now();
+  const taskUuid = typeof ctx.task.uuid === "string" ? ctx.task.uuid : null;
+  const taskRowId = ctx.task.id != null ? String(ctx.task.id) : null;
+  const clientTaskId = typeof ctx.task.metadata?.amsgClientTaskId === "string" ? ctx.task.metadata.amsgClientTaskId : "";
+  return {
+    id: `${ctx.task.metadata?.charId || "char"}:${taskUuid || taskRowId || "task"}:${ctx.task.nextSendAt || ctx.now.getTime()}`,
+    createdAt,
+    expiresAt: createdAt + PROMPT_AUDIT_RETENTION_MS,
+    charId: typeof ctx.task.metadata?.charId === "string" ? ctx.task.metadata.charId : "unknown",
+    charName: typeof ctx.task.contactName === "string" && ctx.task.contactName.trim() ? ctx.task.contactName.trim() : "unknown",
+    taskUuid,
+    taskRowId,
+    clientTaskId,
+    occurrenceMs: ctx.now.getTime(),
+    status: "pending",
+    prompt,
+    promptControls: { ...promptControls || {} },
+    promptModules: buildPromptAuditModules(promptControls, runtime),
+    rounds: [],
+    outputText: "",
+    error: null
+  };
+};
+var appendPromptAuditRound = (draft, ctx, outputText, decision) => {
+  draft.rounds.push({
+    iteration: typeof ctx.iteration === "number" ? ctx.iteration : draft.rounds.length,
+    decision: decision.decision,
+    model: readLlmModel(ctx.llmResponse),
+    usage: readLlmUsage(ctx.llmResponse),
+    toolCalls: (decision.toolCalls ?? []).map((tool) => typeof tool?.function?.name === "string" ? tool.function.name : "").filter(Boolean),
+    outputText
+  });
+  draft.outputText = outputText;
+};
+var sumPromptAuditUsage = (rounds) => {
+  const sum = (key) => {
+    let total = 0;
+    let seen = false;
+    for (const round of rounds) {
+      const value = round.usage[key];
+      if (typeof value === "number" && Number.isFinite(value)) {
+        total += value;
+        seen = true;
+      }
+    }
+    return seen ? total : null;
+  };
+  return {
+    totalTokens: sum("totalTokens"),
+    promptTokens: sum("promptTokens"),
+    completionTokens: sum("completionTokens")
+  };
+};
+var parseAuditJson = (value, fallback) => {
+  if (typeof value !== "string" || !value.trim()) return fallback;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+};
+var ensurePromptAuditSchema = async (env) => {
+  const db = getAuditD1(env);
+  await runD1(db.prepare(`
+    CREATE TABLE IF NOT EXISTS ${PROMPT_AUDIT_TABLE} (
+      id TEXT PRIMARY KEY,
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL,
+      char_id TEXT,
+      char_name TEXT,
+      task_uuid TEXT,
+      task_row_id TEXT,
+      client_task_id TEXT,
+      occurrence_ms INTEGER,
+      status TEXT NOT NULL,
+      model TEXT,
+      prompt TEXT NOT NULL,
+      prompt_controls_json TEXT NOT NULL,
+      prompt_modules_json TEXT NOT NULL,
+      rounds_json TEXT NOT NULL,
+      usage_json TEXT NOT NULL,
+      output_text TEXT NOT NULL,
+      error TEXT
+    )
+  `));
+  await runD1(db.prepare(`CREATE INDEX IF NOT EXISTS idx_prompt_audit_expires ON ${PROMPT_AUDIT_TABLE} (expires_at)`));
+  await runD1(db.prepare(`CREATE INDEX IF NOT EXISTS idx_prompt_audit_created ON ${PROMPT_AUDIT_TABLE} (created_at DESC)`));
+};
+var deleteExpiredPromptAudits = async (env, cutoff = Date.now()) => {
+  await ensurePromptAuditSchema(env);
+  const result = await runD1(
+    getAuditD1(env).prepare(`DELETE FROM ${PROMPT_AUDIT_TABLE} WHERE expires_at <= ?`).bind(cutoff)
+  );
+  return Number(result.meta?.changes ?? 0);
+};
+var recordPromptAudit = async (env, entry) => {
+  await ensurePromptAuditSchema(env);
+  await deleteExpiredPromptAudits(env);
+  const model = [...entry.rounds].reverse().find((round) => round.model)?.model ?? null;
+  await runD1(
+    getAuditD1(env).prepare(`
+        INSERT INTO ${PROMPT_AUDIT_TABLE} (
+          id, created_at, expires_at, char_id, char_name, task_uuid, task_row_id,
+          client_task_id, occurrence_ms, status, model, prompt, prompt_controls_json,
+          prompt_modules_json, rounds_json, usage_json, output_text, error
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          created_at = excluded.created_at,
+          expires_at = excluded.expires_at,
+          char_id = excluded.char_id,
+          char_name = excluded.char_name,
+          task_uuid = excluded.task_uuid,
+          task_row_id = excluded.task_row_id,
+          client_task_id = excluded.client_task_id,
+          occurrence_ms = excluded.occurrence_ms,
+          status = excluded.status,
+          model = excluded.model,
+          prompt = excluded.prompt,
+          prompt_controls_json = excluded.prompt_controls_json,
+          prompt_modules_json = excluded.prompt_modules_json,
+          rounds_json = excluded.rounds_json,
+          usage_json = excluded.usage_json,
+          output_text = excluded.output_text,
+          error = excluded.error
+      `).bind(
+      entry.id,
+      entry.createdAt,
+      entry.expiresAt,
+      entry.charId,
+      entry.charName,
+      entry.taskUuid,
+      entry.taskRowId,
+      entry.clientTaskId,
+      entry.occurrenceMs,
+      entry.status,
+      model,
+      entry.prompt,
+      JSON.stringify(entry.promptControls),
+      JSON.stringify(entry.promptModules),
+      JSON.stringify(entry.rounds),
+      JSON.stringify(sumPromptAuditUsage(entry.rounds)),
+      entry.outputText,
+      entry.error
+    )
+  );
+};
+var auditRowToEntry = (row) => ({
+  id: typeof row.id === "string" ? row.id : String(row.id ?? ""),
+  createdAt: Number(row.created_at ?? 0),
+  expiresAt: Number(row.expires_at ?? 0),
+  charId: typeof row.char_id === "string" ? row.char_id : null,
+  charName: typeof row.char_name === "string" ? row.char_name : null,
+  taskUuid: typeof row.task_uuid === "string" ? row.task_uuid : null,
+  taskRowId: typeof row.task_row_id === "string" ? row.task_row_id : null,
+  clientTaskId: typeof row.client_task_id === "string" ? row.client_task_id : null,
+  occurrenceMs: typeof row.occurrence_ms === "number" ? row.occurrence_ms : Number(row.occurrence_ms ?? 0) || null,
+  status: typeof row.status === "string" ? row.status : "unknown",
+  model: typeof row.model === "string" && row.model ? row.model : null,
+  prompt: typeof row.prompt === "string" ? row.prompt : "",
+  promptControls: parseAuditJson(row.prompt_controls_json, {}),
+  promptModules: parseAuditJson(row.prompt_modules_json, []),
+  rounds: parseAuditJson(row.rounds_json, []),
+  usage: parseAuditJson(row.usage_json, {}),
+  outputText: typeof row.output_text === "string" ? row.output_text : "",
+  error: typeof row.error === "string" ? row.error : null
+});
+var listPromptAudit = async (env, limit = PROMPT_AUDIT_DEFAULT_LIMIT) => {
+  const safeLimit = Math.max(1, Math.min(PROMPT_AUDIT_MAX_LIMIT, Math.floor(limit) || PROMPT_AUDIT_DEFAULT_LIMIT));
+  await deleteExpiredPromptAudits(env);
+  const rows = await getAuditD1(env).prepare(`
+      SELECT id, created_at, expires_at, char_id, char_name, task_uuid, task_row_id,
+             client_task_id, occurrence_ms, status, model, prompt, prompt_controls_json,
+             prompt_modules_json, rounds_json, usage_json, output_text, error
+        FROM ${PROMPT_AUDIT_TABLE}
+       ORDER BY created_at DESC
+       LIMIT ?
+    `).bind(safeLimit).all();
+  return (rows.results ?? []).map(auditRowToEntry);
+};
+var clearPromptAudit = async (env) => {
+  await ensurePromptAuditSchema(env);
+  const result = await runD1(getAuditD1(env).prepare(`DELETE FROM ${PROMPT_AUDIT_TABLE}`));
+  return { deleted: Number(result.meta?.changes ?? 0) };
+};
 var laterOf = (a, b) => a == null ? b : b == null ? a : Math.max(a, b);
 var buildToolCtx = (pack, config) => {
   const char = {
@@ -11064,6 +11299,25 @@ var amsgFireSettled = async (info) => {
   const texts = stash.selfLogTexts;
   stash.selfLogTexts = null;
   const sentCount = info.sentCount ?? 0;
+  const audit = stash.promptAudit;
+  if (audit) {
+    audit.status = info.status || (sentCount > 0 ? "sent" : "settled");
+    if (info.error) {
+      audit.error = info.error instanceof Error ? info.error.message : String(info.error);
+    }
+    const deliveredText = texts?.slice(0, sentCount).filter((message) => message.trim()).join("\n").trim();
+    if (deliveredText) audit.outputText = deliveredText;
+    stash.promptAudit = null;
+    if (!info.env) {
+      console.warn("[amsg:prompt-audit] missing env, audit not recorded");
+    } else {
+      try {
+        await recordPromptAudit(info.env, audit);
+      } catch (error) {
+        console.warn("[amsg:prompt-audit] write failed", error);
+      }
+    }
+  }
   if (texts && sentCount > 0) {
     const text = texts.slice(0, sentCount).filter((message) => message.trim()).join("\n");
     const next = appendSelfLogEntry(stash.selfLog, {
@@ -11471,7 +11725,11 @@ var amsgHooks = {
     if (!toolPack) throw fail2("tool_pack \u89E3\u6790\u5931\u8D25\uFF08\u683C\u5F0F\u4E0D\u5BF9\u6216\u6570\u636E\u635F\u574F\uFF09");
     const toolConfig = parseToolConfig(await unpackOrFail("tool_config", toolConfigRow.value));
     if (!toolConfig) throw fail2("tool_config \u89E3\u6790\u5931\u8D25\uFF08\u683C\u5F0F\u4E0D\u5BF9\u6216\u6570\u636E\u635F\u574F\uFF09");
-    const mcpServers = filterMcpServersForChar(toolConfig.mcpServers, charId);
+    const promptControls = toolConfig.promptControls;
+    const mcpEnabled = promptControls?.mcpTools !== false;
+    const realtimeStateEnabled = promptControls?.realtimeState !== false;
+    const timeAwarenessEnabled = toolPack.timeAwarenessEnabled && promptControls?.timeAwareness !== false;
+    const mcpServers = mcpEnabled ? filterMcpServersForChar(toolConfig.mcpServers, charId) : [];
     const mcpResolve = mcpServers.length ? buildMcpNameMap(mcpServers, { maxNameLen: MCP_FIRE_NAME_BUDGET }) : null;
     const mcpNative = toolConfig.mcpUseNativeTools !== false;
     const storedSelfLog = parseSelfLog(charRows.find((r) => r.key === AMSG_SELF_LOG_KEY)?.value ?? "");
@@ -11531,7 +11789,8 @@ var amsgHooks = {
       instant,
       // 下面即时对话那一支起跑（要等请求消息拼完才知道给评估喂什么）。
       emotionEvalPromise: null,
-      emotionLatePending: false
+      emotionLatePending: false,
+      promptAudit: null
     };
     ctx.scratch.fire = stash;
     const canManageTasks = canSelfSchedule && mcpNative && typeof ctx.cancelTask === "function" && typeof ctx.renewTask === "function";
@@ -11542,15 +11801,15 @@ var amsgHooks = {
     }) : "";
     const taskListBlock = baseTaskListBlock && canManageTasks ? `${baseTaskListBlock}
 \uFF08\u6E05\u5355\u91CC\u7684\u4EFB\u52A1\u5F52\u4F60\u7BA1\uFF1A\u60C5\u51B5\u53D8\u4E86\u4E0D\u8BE5\u54CD\u7684\u53EF\u4EE5\u7528 cancel_active_message \u53D6\u6D88\uFF0C\u53EA\u662F\u8981\u6362\u65F6\u95F4\u7684\u7528 renew_active_message \u6539\u671F\uFF0Ctask_id \u5C31\u662F\u6E05\u5355\u91CC\u7684\u77ED id\u3002\uFF09` : baseTaskListBlock;
-    const realtimeWorldBlock = await buildRealtimeWorldBlock({
+    const realtimeWorldBlock = realtimeStateEnabled ? await buildRealtimeWorldBlock({
       toolConfig,
-      timeAwarenessEnabled: toolPack.timeAwarenessEnabled,
+      timeAwarenessEnabled,
       tzId: pack.tzId,
       nowMs: ctx.now.getTime(),
       globalRows,
       globalNamespace: AMSG_GLOBAL_NAMESPACE,
       writeState: ctx.writeState
-    });
+    }) : "";
     const mcpBlock = mcpResolve ? buildMcpFireBlock(mcpResolve, { mode: mcpNative ? "native" : "text" }) : "";
     const scheduleBlock = canSelfSchedule ? buildFireScheduleBlock(mcpNative ? "native" : "text", { nowMs: ctx.now.getTime(), tz }) : "";
     const fireTools = [
@@ -11569,7 +11828,7 @@ var amsgHooks = {
         tz,
         userTzId: pack.userTzId,
         targetName: pack.targetName,
-        timeAwarenessEnabled: toolPack.timeAwarenessEnabled,
+        timeAwarenessEnabled,
         blocks: [
           realtimeWorldBlock,
           renderSelfLogBlock(selfLog, ctx.now.getTime(), tz, maxUnansweredSends),
@@ -11620,6 +11879,11 @@ var amsgHooks = {
       taskListBlock,
       realtimeWorldBlock
     }) + mcpBlock + scheduleBlock;
+    stash.promptAudit = createPromptAuditDraft(ctx, prompt, promptControls, {
+      mcpEnabled,
+      realtimeStateEnabled,
+      timeAwarenessEnabled
+    });
     return {
       messages: [{ role: "user", content: prompt }],
       ...common
@@ -11683,6 +11947,14 @@ var amsgHooks = {
       // 最后一轮不再放行工具请求，改成用手上的内容收尾（见 agentic.ts 的 MAX_TOOL_ITERATIONS）。
       ctx.iteration
     );
+    if (stash.promptAudit) {
+      appendPromptAuditRound(stash.promptAudit, ctx, content, decision);
+      stash.promptAudit.status = decision.decision;
+      if (decision.decision === "finish") {
+        const generatedText = decision.pushPayloads.map((payload) => typeof payload.message === "string" ? payload.message : "").filter((message) => message.trim()).join("\n").trim();
+        if (generatedText) stash.promptAudit.outputText = generatedText;
+      }
+    }
     if (decision.decision === "tool-request") {
       console.log("[amsg:agentic]", {
         type: "tool_request",
@@ -11859,6 +12131,7 @@ var buildWorkerConfig = (env) => {
   const effectiveVapid = nativeFcmReady && (!vapid.publicKey?.trim() || !vapid.privateKey?.trim()) ? { email: vapid.email, publicKey: "native-fcm", privateKey: "native-fcm" } : vapid;
   const webpush = createHybridPushTransport(env, createWebCryptoWebPush(effectiveVapid));
   configureInstantErrorPush(env.DB && env.AMSG_MASTER_KEY ? { webpush, db: env.DB, masterKey: env.AMSG_MASTER_KEY } : null);
+  const onFireSettled = (info) => amsgFireSettled({ ...info, env: { DB: env.DB } });
   return {
     // db 缺省时 factory 自动用 createD1Adapter(env.DB)
     masterKey: env.AMSG_MASTER_KEY,
@@ -11881,7 +12154,7 @@ var buildWorkerConfig = (env) => {
     //   在这里统一落盘（见 amsgFireSettled）。不用 onAfterSend——它只在真发出去那条路
     //   触发，角色自排任务碰上「只做了副作用没说话」就会漏账变成幽灵任务。
     // onStaleSkip: 过期不补发时给面板留一句「为什么没响」（见 amsgStaleSkip）。
-    onFireSettled: amsgFireSettled,
+    onFireSettled,
     onStaleSkip: amsgStaleSkip,
     // 同一个角色的多条任务不并发跑：两条撞在一起时用户会收到两条互不知情的消息，
     // 而且 self_log 是读-改-写整份，后写的会盖掉先写的那条「我说过什么」。分组键取
@@ -11944,13 +12217,193 @@ var inspectWorkerEnv = (env) => {
 var CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, X-User-Id, X-Payload-Encrypted, X-Encryption-Version, X-Response-Encrypted, X-Client-Token",
+  "Access-Control-Allow-Headers": "Authorization, Content-Type, X-User-Id, X-Payload-Encrypted, X-Encryption-Version, X-Response-Encrypted, X-Client-Token",
   "Access-Control-Max-Age": "86400"
 };
 var jsonWithCors = (status, body) => new Response(JSON.stringify(body), {
   status,
   headers: { "Content-Type": "application/json; charset=utf-8", ...CORS_HEADERS }
 });
+var randomWakeId = () => `heartbeat-${crypto.randomUUID()}`;
+var requiredWakeText = (value, name, maxLength) => {
+  if (typeof value !== "string" || !value.trim() || value.trim() !== value) {
+    throw new Error(`WAKE_NOW_INVALID_${name.toUpperCase()}`);
+  }
+  if (value.length > maxLength) throw new Error(`WAKE_NOW_${name.toUpperCase()}_TOO_LONG`);
+  return value;
+};
+var isWakeNowAuthorized = (headers, expectedToken) => {
+  const expected = expectedToken?.trim();
+  if (!expected) return false;
+  const bearer = headers.get("Authorization")?.trim();
+  const clientToken = headers.get("X-Client-Token")?.trim();
+  return bearer === `Bearer ${expected}` || clientToken === expected;
+};
+var parseWakeNowRequest = async (request) => {
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    throw new Error("WAKE_NOW_INVALID_JSON");
+  }
+  if (!isRecord2(body) || body.version !== 1 || body.type !== "heartbeat") {
+    throw new Error("WAKE_NOW_INVALID_TYPE");
+  }
+  const userId = requiredWakeText(body.userId, "user_id", 255);
+  const charId = requiredWakeText(body.charId, "char_id", 255);
+  const instruction = requiredWakeText(
+    body.instruction ?? "\u8FD9\u662F\u4E00\u6B21\u81EA\u4E3B\u5FC3\u8DF3\u3002\u8BF7\u5148\u67E5\u770B\u5E74\u8F6E\u7A7A\u95F4\uFF0C\u518D\u51B3\u5B9A\u4ECA\u5929\u8981\u505A\u4EC0\u4E48\uFF1B\u53EF\u4EE5\u5199\u6210\u957F\u8BB0\u5F55\u3001\u6574\u7406\u8BB0\u5FC6\u3001\u8C03\u7528\u5176\u5B83 MCP\uFF0C\u4E5F\u53EF\u4EE5\u4FDD\u6301\u5B89\u9759\u3002",
+    "instruction",
+    8e3
+  );
+  if (!isRecord2(body.profile)) throw new Error("WAKE_NOW_PROFILE_REQUIRED");
+  const profile = body.profile;
+  const wakeProfile = {
+    apiUrl: requiredWakeText(profile.apiUrl, "api_url", 2048),
+    apiKey: requiredWakeText(profile.apiKey, "api_key", 8e3),
+    primaryModel: requiredWakeText(profile.primaryModel, "primary_model", 255),
+    ...typeof profile.maxTokens === "number" ? { maxTokens: profile.maxTokens } : {},
+    ...typeof profile.temperature === "number" ? { temperature: profile.temperature } : {}
+  };
+  const wakeId = typeof body.wakeId === "string" && body.wakeId.trim() ? requiredWakeText(body.wakeId, "wake_id", 160) : randomWakeId();
+  const firstSendTime = (/* @__PURE__ */ new Date()).toISOString();
+  return {
+    wakeId,
+    userId,
+    charId,
+    firstSendTime,
+    taskPayload: {
+      contactName: typeof body.contactName === "string" && body.contactName.trim() ? body.contactName.trim() : charId,
+      avatarUrl: null,
+      messageType: "auto",
+      messageSubtype: "chat",
+      userMessage: null,
+      firstSendTime,
+      recurrenceType: "none",
+      tzId: "UTC",
+      apiUrl: wakeProfile.apiUrl,
+      apiKey: wakeProfile.apiKey,
+      primaryModel: wakeProfile.primaryModel,
+      completePrompt: null,
+      messages: null,
+      maxTokens: wakeProfile.maxTokens ?? null,
+      temperature: wakeProfile.temperature ?? null,
+      splitPattern: null,
+      metadata: {
+        charId,
+        source: "heartbeat",
+        amsgMode: "heartbeat",
+        amsgExpirePolicy: "keep",
+        amsgClientTaskId: wakeId,
+        amsgTaskInstruction: instruction
+      }
+    }
+  };
+};
+var runDirectHeartbeatFire = async (env, parsed) => {
+  const db = createD1Adapter(env.DB);
+  const userKey = await deriveUserEncryptionKey(parsed.userId, env.AMSG_MASTER_KEY);
+  const encryptedPayload = await encryptForStorage(JSON.stringify(parsed.taskPayload), userKey);
+  const uuid = `amsg-${parsed.wakeId}`;
+  await db.createTask({
+    user_id: parsed.userId,
+    uuid,
+    encrypted_payload: encryptedPayload,
+    next_send_at: parsed.firstSendTime,
+    message_type: "auto"
+  });
+  const task = await db.getTaskByUuidOnly(uuid);
+  if (!task) throw new Error("WAKE_NOW_TASK_NOT_FOUND_AFTER_CREATE");
+  if (typeof db.claimTask !== "function") throw new Error("WAKE_NOW_CLAIM_UNSUPPORTED");
+  const directDb = {
+    getPendingTasks: async () => [task],
+    claimTask: db.claimTask.bind(db),
+    updateTaskById: db.updateTaskById.bind(db),
+    deleteTaskById: db.deleteTaskById.bind(db),
+    createTask: db.createTask.bind(db)
+  };
+  const config = buildWorkerConfig(env);
+  return runScheduledTick({ ...config, db: directDb, masterKey: env.AMSG_MASTER_KEY });
+};
+var handleWakeNowRequest = async (request, env) => {
+  if (request.method.toUpperCase() === "OPTIONS") {
+    return new Response(null, { status: 204, headers: CORS_HEADERS });
+  }
+  if (!isWakeNowAuthorized(request.headers, env.AMSG_SERVER_TOKEN)) {
+    return jsonWithCors(401, {
+      success: false,
+      error: { code: "WAKE_NOW_UNAUTHORIZED", message: "Authorization is required for /wake-now." }
+    });
+  }
+  const report = inspectWorkerEnv(env);
+  if (!report.ok) {
+    return jsonWithCors(503, {
+      success: false,
+      error: { code: "WORKER_CONFIG_MISSING", message: report.message, missing: report.missing }
+    });
+  }
+  try {
+    const parsed = await parseWakeNowRequest(request);
+    const result = await runDirectHeartbeatFire(env, parsed);
+    return jsonWithCors(202, { accepted: true, wake_id: parsed.wakeId, result });
+  } catch (error) {
+    console.error("[amsg:wake-now] direct fire failed", error instanceof Error ? error.message : String(error));
+    return jsonWithCors(400, {
+      success: false,
+      error: { code: "WAKE_NOW_FAILED", message: error instanceof Error ? error.message : String(error) }
+    });
+  }
+};
+var requirePromptAuditAuth = (request, env) => {
+  const expected = env.AMSG_SERVER_TOKEN?.trim();
+  if (!expected) {
+    return jsonWithCors(403, {
+      success: false,
+      error: {
+        code: "PROMPT_AUDIT_TOKEN_REQUIRED",
+        message: "Prompt audit requires AMSG_SERVER_TOKEN before full prompts can be viewed."
+      }
+    });
+  }
+  const actual = request.headers.get("X-Client-Token")?.trim();
+  if (actual !== expected) {
+    return jsonWithCors(401, {
+      success: false,
+      error: { code: "INVALID_CLIENT_TOKEN", message: "X-Client-Token is missing or invalid." }
+    });
+  }
+  return null;
+};
+var handlePromptAuditRequest = async (request, env, method) => {
+  if (method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
+  const authError = requirePromptAuditAuth(request, env);
+  if (authError) return authError;
+  const report = inspectWorkerEnv(env);
+  if (!report.ok) {
+    return jsonWithCors(503, {
+      success: false,
+      error: { code: "WORKER_CONFIG_MISSING", message: report.message, missing: report.missing }
+    });
+  }
+  if (method === "GET") {
+    const url = new URL(request.url);
+    const limit = Number(url.searchParams.get("limit") ?? PROMPT_AUDIT_DEFAULT_LIMIT);
+    return jsonWithCors(200, {
+      success: true,
+      data: {
+        entries: await listPromptAudit(env, limit),
+        retentionDays: PROMPT_AUDIT_RETENTION_MS / 864e5
+      }
+    });
+  }
+  if (method === "DELETE") {
+    return jsonWithCors(200, { success: true, data: await clearPromptAudit(env) });
+  }
+  return jsonWithCors(405, {
+    success: false,
+    error: { code: "METHOD_NOT_ALLOWED", message: "Use GET or DELETE for prompt audit." }
+  });
+};
 var TICK_STALL_MINUTES = 5;
 var classifySchemaProbeError = (error) => {
   const message = error instanceof Error ? error.message : String(error ?? "");
@@ -12111,6 +12564,9 @@ var src_default = {
   async fetch(request, env) {
     const pathname = new URL(request.url).pathname.replace(/\/+$/, "") || "/";
     const method = request.method.toUpperCase();
+    if (pathname.endsWith("/wake-now")) {
+      return handleWakeNowRequest(request, env);
+    }
     if (pathname.endsWith("/config-check")) {
       if (method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
       return jsonWithCors(200, {
@@ -12155,6 +12611,9 @@ var src_default = {
         error: result.ok ? void 0 : { code: result.code, message: result.message }
       });
     }
+    if (pathname.endsWith("/prompt-audit")) {
+      return handlePromptAuditRequest(request, env, method);
+    }
     const report = inspectWorkerEnv(env);
     if (!report.ok) {
       if (method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
@@ -12162,6 +12621,21 @@ var src_default = {
         success: false,
         error: { code: "WORKER_CONFIG_MISSING", message: report.message, missing: report.missing }
       });
+    }
+    if (pathname.endsWith("/init-tenant") && method === "POST") {
+      const response = await upstream.fetch(request, env);
+      if (response.status >= 200 && response.status < 300) {
+        try {
+          await ensurePromptAuditSchema(env);
+        } catch (error) {
+          console.warn("[amsg:prompt-audit] schema init failed", error);
+          return jsonWithCors(500, {
+            success: false,
+            error: { code: "PROMPT_AUDIT_SCHEMA_FAILED", message: "Prompt audit table init failed." }
+          });
+        }
+      }
+      return response;
     }
     if (pathname.endsWith("/instant-chat")) {
       if (method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
@@ -12193,11 +12667,17 @@ export {
   attachScheduledTasks,
   buildWorkerConfig,
   classifySchemaProbeError,
+  clearPromptAudit,
   configureInstantErrorPush,
   src_default as default,
+  ensurePromptAuditSchema,
   inspectPushDelivery,
   inspectWorkerEnv,
+  isWakeNowAuthorized,
+  listPromptAudit,
   offloadOversizedPush,
+  parseWakeNowRequest,
+  recordPromptAudit,
   resolveVapidEmail,
   runFireCancelTool,
   runFireRenewTool,

@@ -25,11 +25,13 @@ import { InstantPushSettingsModal } from '../components/settings/InstantPushSett
 import { PushVapidSettingsModal } from '../components/settings/PushVapidSettingsModal';
 import PushSubscriptionPanel from '../components/settings/PushSubscriptionPanel';
 import ActiveMsgGlobalSettingsModal from '../components/settings/ActiveMsgGlobalSettingsModal';
+import ActiveMsgPromptAuditPanel from '../components/settings/ActiveMsgPromptAuditPanel';
 import { syncAmsgLlmCredentials, syncAmsgToolConfig, syncAmsgToolConfigAndPrompts } from '../utils/amsgStateSync';
 import { ActiveMsgClient } from '../utils/activeMsgClient';
 import VersionInfo from '../components/settings/VersionInfo';
 import { isPushVapidReady } from '../utils/pushVapid';
 import ApiCallLogModal from '../components/settings/ApiCallLogModal';
+import PromptControlSettings from '../components/settings/PromptControlSettings';
 import { DB } from '../utils/db';
 import { getBackupReminderState, setBackupReminderIntervalDays, daysSinceLastBackup, BACKUP_REMINDER_MIN_DAYS, BACKUP_REMINDER_MAX_DAYS } from '../utils/backupReminder';
 import {
@@ -519,6 +521,9 @@ const Settings: React.FC = () => {
   const [avatarModelInventory, setAvatarModelInventory] = useState<AvatarModelBackupInventory | null>(null);
   const [avatarModelBackupBusy, setAvatarModelBackupBusy] = useState(false);
   const [avatarModelBackupProgress, setAvatarModelBackupProgress] = useState<AvatarModelBackupProgress | null>(null);
+  const handlePromptControlChange = useCallback(() => {
+      syncAmsgToolConfigAndPrompts(realtimeConfig, { characters, userProfile, groups });
+  }, [realtimeConfig, characters, userProfile, groups]);
 
   // 「该备份啦」提醒频率（1~30 天）。改动即落 localStorage（backupReminder 模块自管持久化）。
   const [backupReminderDays, setBackupReminderDays] = useState<number>(() => getBackupReminderState().intervalDays);
@@ -2498,6 +2503,8 @@ const Settings: React.FC = () => {
         </SettingsSection>
 
         {/* API 调用记录入口 — 点开看最近 5 天各 App / 角色 / 用途的调用明细 */}
+        <PromptControlSettings onConfigChange={handlePromptControlChange} />
+
         <button
             type="button"
             onClick={() => setShowApiCallLog(true)}
@@ -3151,6 +3158,8 @@ const Settings: React.FC = () => {
 
         {/* 自定义网络代理 — 刻意低调的高级入口。默认折叠，不主动指引基本发现不了。
             普通用户无需配置：默认走作者部署的公共 Worker，所有功能开箱即用。 */}
+        <ActiveMsgPromptAuditPanel addToast={addToast} />
+
         {!showProxyConfig ? (
             <button
                 onClick={() => setShowProxyConfig(true)}
