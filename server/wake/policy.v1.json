@@ -1,0 +1,62 @@
+{
+  "policyVersion": "1.0-dev",
+  "description": "WakeActivationPolicy v1.0-dev 基线参数。这些值是开发校准起点，不是心理学常量。",
+  "state": {
+    "activationDrive": {
+      "initial": 0.50,
+      "mu": 0.50,
+      "bounds": [0.20, 0.80],
+      "comment": "短期激活驱动力。每次 Agent Run 后受轻微负向 kick，再均值回归到 mu。"
+    },
+    "latentActivityTone": {
+      "initial": 0.50,
+      "mu": 0.50,
+      "tau": "6h",
+      "sigma": 0.10,
+      "bounds": [0.25, 0.75],
+      "comment": "几小时尺度的活跃底色。tau 是半衰期，sigma 是长周期差异幅度。"
+    },
+    "stochasticDriftState": {
+      "initial": 0.00,
+      "tau": "25min",
+      "sigma": 0.18,
+      "bounds": [-0.40, 0.40],
+      "comment": "短期有惯性的随机漂移。tau 是惯性时间，sigma 是波动幅度。"
+    }
+  },
+  "runKick": {
+    "k_run": 0.10,
+    "comment": "每次真实 Agent Run 后对 activationDrive 的负向 kick。不是 cooldown，只是短期稍微安静一点。"
+  },
+  "lambda": {
+    "lambdaTheta": 1.50,
+    "unit": "/hour",
+    "betaD": 1.80,
+    "betaT": 1.60,
+    "betaX": 1.20,
+    "lambdaMin": 0.15,
+    "lambdaMax": 8.00,
+    "comment": "λ(t) = clamp(λθ · exp[βD(D-μD) + βT(T-μT) + βX·X] · Mmod, λmin, λmax)"
+  },
+  "modulation": {
+    "MmodDefault": 1.00,
+    "MmodClamp": [0.60, 3.00],
+    "comment": "外部/主观系统对 λ(t) 的调制。多个系统 log-space 聚合后 clamp。"
+  },
+  "threshold": {
+    "distribution": "Exp(1)",
+    "comment": "每个 spontaneousActivationCycle 开始时只抽一次 θ ~ Exp(1)。同一 Cycle 内 θ 固定。"
+  },
+  "baselineSimulation": {
+    "comment": "中性 Tone/Drift、刚完成一次 AgentRun 后的近似累计概率。校准参考，不是 SLA。",
+    "probabilities": {
+      "1min": "≈2%",
+      "5min": "≈10%",
+      "15min": "≈28%",
+      "30min": "≈50%",
+      "60min": "≈76%",
+      "90min": "≈89%",
+      "120min": "≈95%"
+    }
+  }
+}
