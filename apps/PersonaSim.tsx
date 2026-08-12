@@ -107,8 +107,18 @@ export async function generatePersonaScript(opts: {
     const data = await safeResponseJson(res);
     // 截断直接报错，不兜底：模型输出被 token 上限截断时 finish_reason 为 'length'
     if (data.choices?.[0]?.finish_reason === 'length') throw new Error('演出生成被截断');
-    const parsed = parseScript(data.choices[0].message.content);
-    if (!parsed || !parsed.beats?.length) throw new Error('parse');
+    const rawContent: string = data.choices?.[0]?.message?.content ?? '';
+    const parsed = parseScript(rawContent);
+    // 诊断友好：把失败原因和原文片段带进报错，方便从「系统调试终端」复制定位
+    if (!parsed) {
+        const head = rawContent.slice(0, 200).replace(/\s+/g, ' ');
+        const tail = rawContent.length > 400 ? ' … ' + rawContent.slice(-200).replace(/\s+/g, ' ') : '';
+        // 大括号能配上但解析仍失败 → 多半是字符串里有未转义引号；配不上 → 多半是被截断
+        const balanced = rawContent.lastIndexOf('}') > rawContent.indexOf('{') && rawContent.indexOf('{') !== -1;
+        const hint = !rawContent.trim() ? '模型返回为空' : balanced ? 'JSON 语法错误(疑似未转义引号)' : '输出不完整/疑似截断';
+        throw new Error(`演出解析失败: ${hint} · len=${rawContent.length} · ${head}${tail}`);
+    }
+    if (!parsed.beats?.length) throw new Error('演出解析失败: 无 beats');
     // 不兜底：结尾必须是模型自己收束好的 end，否则视为不完整/被截断，报错让用户重试
     if (parsed.beats[parsed.beats.length - 1].kind !== 'end') throw new Error('演出结尾不完整');
     return parsed;
@@ -160,7 +170,7 @@ const PersonaSim: React.FC<Props> = ({ targetChar, onExit, openLifeLog, sim, onS
         if (phase === 'idle' && sim.status === 'ready') {
             setMode(sim.mode); setTheme(sim.theme);
             // 重播：脚本来自生活记录已存档的快照，别再 persist 一遍（否则生活记录里出现重复）
-            setScript(sim.script); setIdx(0); savedRef.current = !!sim.replay; setMemorySent(false); setPhase('play');
+            setScript(normalizeScript(sim.script)); setIdx(0); savedRef.current = !!sim.replay; setMemorySent(false); setPhase('play');
             onConsumed();
         }
     }, [sim, phase, onConsumed]);
@@ -1267,6 +1277,22 @@ kind 取值与字段：
 请严格贴合上面的【本场变奏】，并把【下猛料】那段吃透：beats 给足 40~64 个、独白密集、细节具体、数字行为反复、高潮拉长、结尾收束落地。**务必保证 JSON 完整闭合、结尾收好**——若篇幅吃紧，宁可砍掉几个中段 beat，也要留足收尾、把括号全部闭合，绝不允许写到一半被截断。直接输出 JSON 对象。`;
 }
 
+// 归一化 LLM 输出：模型偶尔会漏掉 app beat 里的嵌套数组（如 view:'chat' 却没有 chat.lines），
+// 渲染到 .map 时会整页崩（Safari 报「undefined is not an object」）。这里统一兜底成数组。
+function normalizeScript(s: SimScript): SimScript {
+    if (!Array.isArray(s.beats)) return s;
+    for (const b of s.beats) {
+        const a = b?.app;
+        if (!a) continue;
+        if (a.chat && !Array.isArray(a.chat.lines)) a.chat.lines = [];
+        if (a.search && !Array.isArray(a.search.queries)) a.search.queries = [];
+        if (a.notes && !Array.isArray(a.notes.items)) a.notes.items = [];
+        if (a.browser && !Array.isArray(a.browser.tabs)) a.browser.tabs = [];
+        if (a.compose && !Array.isArray(a.compose.drafts)) a.compose.drafts = [];
+    }
+    return s;
+}
+
 function parseScript(raw: string): SimScript | null {
     if (!raw) return null;
     let s = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
@@ -1274,6 +1300,8 @@ function parseScript(raw: string): SimScript | null {
     const last = s.lastIndexOf('}');
     if (first === -1 || last === -1) return null;
     s = s.slice(first, last + 1);
+    // 状态机修复：① 把字符串内的裸控制字符转义；② 去掉 } / ] 前的尾随逗号（仅在字符串外）。
+    // 这两类是 LLM 输出 JSON 最常见的语法破坏。
     const repair = (str: string) => {
         let inStr = false, esc = false, out = '';
         for (let i = 0; i < str.length; i++) {
@@ -1281,15 +1309,24 @@ function parseScript(raw: string): SimScript | null {
             if (esc) { out += ch; esc = false; continue; }
             if (ch === '\\') { out += ch; esc = true; continue; }
             if (ch === '"') { inStr = !inStr; out += ch; continue; }
-            if (inStr && ch === '\n') { out += '\\n'; continue; }
-            if (inStr && ch === '\r') { out += '\\r'; continue; }
-            if (inStr && ch === '\t') { out += '\\t'; continue; }
+            if (inStr) {
+                if (ch === '\n') { out += '\\n'; continue; }
+                if (ch === '\r') { out += '\\r'; continue; }
+                if (ch === '\t') { out += '\\t'; continue; }
+                out += ch; continue;
+            }
+            // 字符串外：跳过 } 或 ] 前的尾随逗号
+            if (ch === ',') {
+                let j = i + 1;
+                while (j < str.length && /\s/.test(str[j])) j++;
+                if (str[j] === '}' || str[j] === ']') continue;
+            }
             out += ch;
         }
         return out;
     };
-    try { return JSON.parse(s); } catch { }
-    try { return JSON.parse(repair(s)); } catch (e) { console.warn('persona parse failed', e); return null; }
+    try { return normalizeScript(JSON.parse(s)); } catch { }
+    try { return normalizeScript(JSON.parse(repair(s))); } catch (e) { console.warn('persona parse failed', e); return null; }
 }
 
 export default PersonaSim;
