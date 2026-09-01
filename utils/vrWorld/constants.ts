@@ -90,6 +90,15 @@ export const VR_ROOMS: VRRoomDef[] = [
         hiddenFromGrid: true, // 走顶部「特殊活动」banner 入口，不作普通房间卡；也不进自主活动随机池
     },
     {
+        id: 'sar',
+        name: 'SAR 活动室',
+        blurb: '一间被两位异世界访客重新布置过的活动室，摆着人格推演机、模块柜台，以及通往水域的门。',
+        affordance: '你可以使用人格推演、购买临时模块，或去里面的水域钓鱼。',
+        emoji: '',
+        implemented: true,
+        accent: 'indigo',
+    },
+    {
         id: 'cafe',
         name: '糯米鸡研发中心',
         blurb: '蒸笼热气腾腾，据说很快就会端出点什么。',

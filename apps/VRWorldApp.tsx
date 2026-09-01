@@ -7,6 +7,9 @@ import {
     SpeakerHigh, SpeakerSlash, MagnifyingGlass,
 } from '@phosphor-icons/react';
 import TheaterPanel from './theater/TheaterPanel';
+import { SARCaianDialogue, SARClubStage, SARUpdateModal } from './vrWorld/SARClubEvent';
+import { SARGachaOverlay } from './vrWorld/SARGacha';
+import { SARAssemblyCabinetOverlay } from './vrWorld/SARAssemblyCabinet';
 import { CreatorIframe, type ChibiResult } from '../components/Like520Event';
 import { useMusic, type Song } from '../context/MusicContext';
 import { DB } from '../utils/db';
@@ -23,6 +26,15 @@ import { Signal, getMyAuthorship, setSignalWhisper, hasSignalNoticeAck, ackSigna
 import type { SignalPoem, SignalBooklet } from '../types';
 import { getVRApi, setVRApi, getVRApiLog, clearVRApiLog, type VRApiCall } from '../utils/vrWorld/vrApi';
 import { safeResponseJson } from '../utils/safeApi';
+import {
+    patchSARClubState,
+    readSARClubState,
+    rewindSARIntro,
+    SAR_CLUB_UPDATE_VERSION,
+    type SARClubState,
+    type SARIntroReaction,
+    type SARNpcPreference,
+} from '../utils/vrWorld/sarClub';
 
 const genLocalId = (p: string) => `${p}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 
@@ -98,6 +110,7 @@ const ROOM_SLOTS: Record<VRRoomId, { x: number; y: number }[]> = {
     postoffice:[{ x: 28, y: 76 }, { x: 52, y: 78 }, { x: 72, y: 72 }, { x: 42, y: 68 }],
     theater:   [{ x: 30, y: 80 }, { x: 70, y: 80 }, { x: 50, y: 84 }, { x: 40, y: 72 }, { x: 60, y: 72 }],
     signal:    [{ x: 26, y: 78 }, { x: 52, y: 80 }, { x: 74, y: 76 }, { x: 40, y: 70 }, { x: 62, y: 70 }],
+    sar:       [{ x: 24, y: 76 }, { x: 50, y: 80 }, { x: 74, y: 74 }, { x: 38, y: 68 }, { x: 62, y: 68 }],
     cafe:      [{ x: 30, y: 74 }, { x: 54, y: 78 }, { x: 70, y: 72 }],
 };
 
@@ -109,11 +122,12 @@ const IDLE_QUIPS: Record<VRRoomId, string[]> = {
     postoffice: ['给谁写封信呢', '封口、寄出', '翻翻信格', '写点心里话'],
     theater: ['对台词…', '再走一遍', '背词中', '候场'],
     signal: ['接一句…', '在想下一句', '读墙上的诗', '滋啦——信号'],
+    sar: ['看看推演机', '模块说明书…', '去钓鱼吗', '活动记录中'],
     cafe: ['', '', '', ''],
 };
 
 const VRWorldApp: React.FC = () => {
-    const { closeApp, characters, updateCharacter, addToast, registerBackHandler, userProfile, updateUserProfile, apiPresets, apiConfig } = useOS();
+    const { closeApp, characters, updateCharacter, addToast, registerBackHandler, userProfile, updateUserProfile, apiPresets, apiConfig, groups, realtimeConfig } = useOS();
     const userName = userProfile?.name || '我';
     const [tab, setTab] = useState<Tab>('world');
     const [novels, setNovels] = useState<VRWorldNovel[]>([]);
@@ -148,6 +162,15 @@ const VRWorldApp: React.FC = () => {
     const [chibiEditChar, setChibiEditChar] = useState<CharacterProfile | null>(null);
     const [chibiEditUser, setChibiEditUser] = useState(false); // 用户本人捏 chibi
     const [showHelp, setShowHelp] = useState(false);
+    const [sarState, setSarState] = useState<SARClubState>(() => readSARClubState());
+    const [sarPromptStep, setSarPromptStep] = useState<'update' | 'preference' | null>(() =>
+        readSARClubState().npcPreference ? null : 'update');
+    const [worldPage, setWorldPage] = useState<0 | 1>(0);
+    const [showSarDialogue, setShowSarDialogue] = useState(false);
+    const [showSarGacha, setShowSarGacha] = useState(false);
+    const [showSarCabinet, setShowSarCabinet] = useState(false);
+    const [showSarRewindConfirm, setShowSarRewindConfirm] = useState(false);
+    const sarHandledThisSession = useRef(false);
     // 启用流程：设定 chibi 后回调启用
     const [pendingEnable, setPendingEnable] = useState<string | null>(null);
     const [readingPreferenceCharId, setReadingPreferenceCharId] = useState<string | null>(null);
@@ -158,13 +181,100 @@ const VRWorldApp: React.FC = () => {
 
     // 初次进入彼方：自动弹出玩法说明（看过一次后不再自动弹）
     useEffect(() => {
+        // 新版 SAR 选择优先展示；本次选完先让用户看第二页，通用玩法说明留到下次进入。
+        if (sarPromptStep || sarHandledThisSession.current) return;
         try {
             if (!localStorage.getItem('vr_help_seen')) {
                 setShowHelp(true);
                 localStorage.setItem('vr_help_seen', '1');
             }
         } catch { /* ignore */ }
+    }, [sarPromptStep]);
+
+    const chooseSarNpcPreference = useCallback((preference: SARNpcPreference) => {
+        sarHandledThisSession.current = true;
+        const next = patchSARClubState({
+            npcPreference: preference,
+            updateSeenVersion: SAR_CLUB_UPDATE_VERSION,
+        });
+        setSarState(next);
+        setSarPromptStep(null);
+        trackEvent('选择彼方活动室NPC', { preference });
+        if (preference === 'show') {
+            setTab('world');
+            setWorldPage(1);
+        }
     }, []);
+
+    const changeSarNpcPreference = useCallback((preference: SARNpcPreference) => {
+        const next = patchSARClubState({ npcPreference: preference, updateSeenVersion: SAR_CLUB_UPDATE_VERSION });
+        setSarState(next);
+        trackEvent('切换彼方活动室NPC', { preference });
+        if (preference === 'show') {
+            setTab('world');
+            setWorldPage(1);
+            addToast?.('凯恩与艾文已来到活动室', 'success');
+        } else {
+            setShowSarDialogue(false);
+            addToast?.('活动室 NPC 已隐藏，功能不受影响', 'success');
+        }
+    }, [addToast]);
+
+    const completeSarIntro = useCallback((reaction?: SARIntroReaction) => {
+        const next = patchSARClubState({ caianMet: true, introReaction: reaction });
+        setSarState(next);
+        setShowSarDialogue(false);
+        trackEvent('完成凯恩初次见面', { reaction: reaction || 'unknown' });
+    }, []);
+
+    const rewindSarIntro = useCallback(() => {
+        const next = rewindSARIntro();
+        setSarState(next);
+        setShowSarDialogue(false);
+        setShowSarRewindConfirm(false);
+        trackEvent('回档凯恩初次见面');
+        if (next.npcPreference === 'show') {
+            setTab('world');
+            setWorldPage(1);
+            addToast?.('已回档至与凯恩初次见面前', 'success');
+        } else {
+            addToast?.('剧情已回档；重新显示 NPC 后即可重看', 'success');
+        }
+    }, [addToast]);
+
+    // 网页游戏验证钩子：彼方是 DOM 场景而非 canvas，仍暴露当前可交互状态供自动化读取。
+    useEffect(() => {
+        const target = window as Window & {
+            render_game_to_text?: () => string;
+            advanceTime?: (ms: number) => void;
+        };
+        const renderState = () => JSON.stringify({
+            mode: 'vr-world',
+            coordinateSystem: 'DOM viewport; origin top-left; x right; y down',
+            tab,
+            loading,
+            room: enterRoom,
+            overlays: {
+                sarUpdate: sarPromptStep,
+                caianDialogue: showSarDialogue,
+                sarGacha: showSarGacha,
+                sarCabinet: showSarCabinet,
+                help: showHelp,
+            },
+            sar: {
+                npcPreference: sarState.npcPreference,
+                caianMet: sarState.caianMet,
+                worldPage,
+            },
+        });
+        const advanceTime = (_ms: number) => { /* DOM 事件没有独立游戏时钟 */ };
+        target.render_game_to_text = renderState;
+        target.advanceTime = advanceTime;
+        return () => {
+            if (target.render_game_to_text === renderState) delete target.render_game_to_text;
+            if (target.advanceTime === advanceTime) delete target.advanceTime;
+        };
+    }, [tab, loading, enterRoom, sarPromptStep, showSarDialogue, showSarGacha, showSarCabinet, showHelp, sarState, worldPage]);
 
     const loadNovels = useCallback(async () => setNovels(await DB.getVRNovels()), []);
     const loadFeed = useCallback(async () => {
@@ -242,6 +352,10 @@ const VRWorldApp: React.FC = () => {
 
     // 返回键：有弹层先关弹层（阅读器/房间/上传/捏人），而不是直接退回桌面
     useEffect(() => registerBackHandler(() => {
+        if (showSarCabinet) { setShowSarCabinet(false); return true; }
+        if (showSarGacha) { setShowSarGacha(false); return true; }
+        if (showSarRewindConfirm) { setShowSarRewindConfirm(false); return true; }
+        if (showSarDialogue) { setShowSarDialogue(false); return true; }
         if (readingPreferenceCharId) { setReadingPreferenceCharId(null); return true; }
         if (chibiEditChar) { setChibiEditChar(null); setPendingEnable(null); return true; }
         if (chibiEditUser) { setChibiEditUser(false); return true; }
@@ -250,7 +364,7 @@ const VRWorldApp: React.FC = () => {
         if (readerNovel) { setReaderNovel(null); return true; }
         if (enterRoom) { setEnterRoom(null); return true; }
         return false; // 无弹层 → 交回默认（关闭 App）
-    }), [registerBackHandler, readingPreferenceCharId, chibiEditChar, chibiEditUser, showUpload, readerJump, readerNovel, enterRoom]);
+    }), [registerBackHandler, showSarCabinet, showSarGacha, showSarRewindConfirm, showSarDialogue, readingPreferenceCharId, chibiEditChar, chibiEditUser, showUpload, readerJump, readerNovel, enterRoom]);
 
     // 从动态/批注点回原文：peek 模式打开阅读器跳到该段，不动用户书签
     const jumpToAnnotation = useCallback((novelId: string | undefined, segIdx: number) => {
@@ -397,7 +511,10 @@ const VRWorldApp: React.FC = () => {
                 ) : tab === 'world' ? (
                     <WorldView occupantsByRoom={occupantsByRoom} feed={feed} novelCount={novels.length} poBadge={poBadge}
                         onEnterRoom={setEnterRoom} onGoLibrary={() => setTab('library')} onJump={jumpToAnnotation}
-                        onDeleteFeed={onDeleteFeed} onDeleteFeedMany={onDeleteFeedMany} />
+                        onDeleteFeed={onDeleteFeed} onDeleteFeedMany={onDeleteFeedMany}
+                        sarNpcEnabled={sarState.npcPreference === 'show'} sarCaianMet={sarState.caianMet}
+                        roomPage={worldPage} onRoomPageChange={setWorldPage}
+                        onTalkToCaian={() => setShowSarDialogue(true)} onOpenGacha={() => setShowSarGacha(true)} onOpenCabinet={() => setShowSarCabinet(true)} />
                 ) : tab === 'library' ? (
                     <LibraryView novels={novels} characters={characters} onOpen={setReaderNovel}
                         onAdd={() => { setShowUpload(true); trackEvent('打开小说上架弹窗'); }}
@@ -409,7 +526,9 @@ const VRWorldApp: React.FC = () => {
                         <SettingsView characters={characters} updateCharacter={updateCharacter} addToast={addToast}
                             novels={novels} onReload={reloadAll}
                             onRequestEnable={requestEnable} onEditChibi={setChibiEditChar}
-                            onEditReadingPreference={(char) => setReadingPreferenceCharId(char.id)} />
+                            onEditReadingPreference={(char) => setReadingPreferenceCharId(char.id)}
+                            sarNpcEnabled={sarState.npcPreference === 'show'} sarCaianMet={sarState.caianMet}
+                            onChangeSarNpc={changeSarNpcPreference} onRequestSarRewind={() => setShowSarRewindConfirm(true)} />
                     </div>
                 ) : (
                     <VRApiSettings apiPresets={apiPresets} chatApi={apiConfig} addToast={addToast} characters={characters} />
@@ -422,6 +541,20 @@ const VRWorldApp: React.FC = () => {
                     latestByChar={latestByChar} onClose={() => setEnterRoom(null)} onJump={jumpToAnnotation}
                     characters={characters} userName={userName} onUserBoardPost={onUserBoardPost} addToast={addToast} />
             )}
+            {sarPromptStep && (
+                <SARUpdateModal step={sarPromptStep} onContinue={() => setSarPromptStep('preference')} onChoose={chooseSarNpcPreference} />
+            )}
+            {showSarDialogue && sarState.npcPreference === 'show' && (
+                <SARCaianDialogue onClose={() => setShowSarDialogue(false)} onComplete={completeSarIntro} />
+            )}
+            {showSarGacha && <SARGachaOverlay onClose={() => setShowSarGacha(false)} />}
+            {showSarCabinet && userProfile && (
+                <SARAssemblyCabinetOverlay onClose={() => setShowSarCabinet(false)} characters={characters}
+                    apiConfig={apiConfig} userProfile={userProfile} groups={groups} realtimeConfig={realtimeConfig} />
+            )}
+            <ConfirmDialog open={showSarRewindConfirm} title="回档凯恩初次见面？"
+                message="会清除这段初见剧情的完成记录，让凯恩重新出现感叹号。更新公告和 NPC 显示偏好不会改变。"
+                confirmText="确认回档" onConfirm={rewindSarIntro} onCancel={() => setShowSarRewindConfirm(false)} />
             {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
             {readingPreferenceChar && (
                 <NovelPreferenceModal
@@ -595,6 +728,19 @@ const RoomBackground: React.FC<{ roomId: VRRoomId; className?: string }> = ({ ro
                 {/* 暖光台灯 */}
                 <div className="absolute top-[10%] right-[14%] w-16 h-16 rounded-full" style={{ background: 'radial-gradient(circle,rgba(255,214,140,.4),transparent 70%)', filter: 'blur(8px)' }} />
                 <div className="absolute left-0 right-0 bottom-0 h-[30%]" style={{ background: 'linear-gradient(180deg,#3a2c18,#160f08)' }} />
+            </div>
+        );
+    }
+    if (roomId === 'sar') {
+        return (
+            <div className={`absolute inset-0 overflow-hidden ${className || ''}`} style={{ background: 'linear-gradient(180deg,#20243a 0%,#151827 58%,#0b0d16 100%)' }}>
+                {/* 美术素材接入前的活动室底稿：墙面、窗光、地板和社团横幅分层保留，之后可直接替换 ROOM_BG。 */}
+                <div className="absolute left-[7%] top-[13%] h-[37%] w-[48%]" style={{ background: 'linear-gradient(150deg,rgba(177,197,232,.17),rgba(85,100,132,.04))', border: '1px solid rgba(210,220,255,.09)', boxShadow: '0 0 45px rgba(126,154,205,.08)' }} />
+                <div className="absolute right-[8%] top-[17%] h-[33%] w-[26%] rounded-sm" style={{ background: 'rgba(7,8,15,.28)', border: '1px solid rgba(255,255,255,.08)' }} />
+                <div className="absolute left-[10%] top-[20%] text-[18px] tracking-[0.28em] text-white/12" style={{ fontFamily: `'Noto Serif SC',serif` }}>SAR</div>
+                <div className="absolute inset-x-0 bottom-0 h-[38%]" style={{ background: 'linear-gradient(180deg,#26263a,#11121c)' }} />
+                <div className="absolute inset-x-0 bottom-[23%] h-px bg-white/[0.07]" />
+                <div className="absolute inset-0" style={{ background: 'radial-gradient(90% 70% at 50% 38%,transparent,rgba(5,6,14,.55))' }} />
             </div>
         );
     }
@@ -1010,6 +1156,68 @@ const SignalBanner: React.FC<{ onOpen: () => void }> = ({ onOpen }) => {
 };
 
 // ============ 世界视图 ============
+const SARWorldPage: React.FC<{
+    occupants: CharacterProfile[];
+    npcEnabled: boolean;
+    caianMet: boolean;
+    onTalkToCaian: () => void;
+    onOpenGacha: () => void;
+    onOpenCabinet: () => void;
+    onBackPage: () => void;
+}> = ({ occupants, npcEnabled, caianMet, onTalkToCaian, onOpenGacha, onOpenCabinet, onBackPage }) => (
+    <section className="relative -mx-4 -mt-4 overflow-hidden" aria-label="SAR 活动空间"
+        style={{ minHeight: 500, height: 'calc(100dvh - var(--chrome-top) - var(--safe-bottom) - 6.75rem)' }}>
+        <RoomBackground roomId="sar" />
+        <div className="pointer-events-none absolute inset-0" style={{ background: 'linear-gradient(180deg,rgba(8,9,18,.2),transparent 28%,transparent 70%,rgba(5,6,12,.66))' }} />
+
+        <div className="absolute inset-x-5 top-5 z-10 flex items-start justify-between gap-4">
+            <div>
+                <div className="text-[8px] tracking-[0.34em] text-indigo-100/42">PAGE 02 · ACTIVITY SPACE</div>
+                <h2 className="mt-1 text-[20px] tracking-[0.16em] text-white/92" style={{ fontFamily: `'Noto Serif SC',serif`, fontWeight: 500 }}>SAR 活动空间</h2>
+                <p className="mt-1 text-[9.5px] tracking-[0.08em] text-white/35">Synthetic Autonomy Rights</p>
+            </div>
+            <div className="rounded-full px-2.5 py-1 text-[9px] text-white/48 backdrop-blur-md" style={{ background: 'rgba(7,8,16,.34)', border: '1px solid rgba(255,255,255,.09)' }}>
+                {npcEnabled ? '2 位常驻 NPC' : 'NPC 已隐藏'}
+            </div>
+        </div>
+
+        {occupants.length > 0 && (
+            <div className="absolute right-5 top-[19%] z-10 rounded-2xl px-2.5 py-2 backdrop-blur-md" style={{ background: 'rgba(7,8,16,.36)', border: '1px solid rgba(255,255,255,.08)' }}>
+                <div className="mb-1 text-right text-[7.5px] tracking-[0.16em] text-white/34">接入中的玩家</div>
+                <div className="flex justify-end -space-x-1.5">
+                    {occupants.slice(0, 4).map(char => {
+                        const chibi = getChibi(char);
+                        return chibi.img
+                            ? <TokenImg key={char.id} value={chibi.img} className="h-9 w-9 object-contain object-bottom drop-shadow" alt={char.name} style={{ transform: `scaleX(${chibi.flip ? -1 : 1})` }} />
+                            : <div key={char.id} className="grid h-7 w-7 place-items-center rounded-full border border-white/20 bg-indigo-400/55 text-[9px] text-white">{char.name.slice(0, 1)}</div>;
+                    })}
+                    {occupants.length > 4 && <span className="grid h-7 w-7 place-items-center rounded-full bg-black/45 text-[8px] text-white/65">+{occupants.length - 4}</span>}
+                </div>
+            </div>
+        )}
+
+        <SARClubStage npcEnabled={npcEnabled} caianMet={caianMet} onTalkToCaian={onTalkToCaian} onOpenGacha={onOpenGacha} onOpenCabinet={onOpenCabinet} fullPage />
+
+        {!npcEnabled && (
+            <div className="absolute left-1/2 top-[45%] z-10 w-[72%] -translate-x-1/2 rounded-2xl px-4 py-3 text-center text-[11px] leading-5 text-white/48 backdrop-blur-md" style={{ background: 'rgba(8,9,18,.46)', border: '1px solid rgba(255,255,255,.08)' }}>
+                活动室保持开放。需要时可在「接入」中重新显示凯恩与艾文。
+            </div>
+        )}
+
+        <div className="absolute inset-x-0 bottom-3 z-20 flex items-center justify-center gap-3">
+            <button type="button" onClick={onBackPage} aria-label="返回上一页房间"
+                className="grid h-8 w-8 place-items-center rounded-full text-white/75 backdrop-blur-md active:bg-white/15" style={{ background: 'rgba(7,8,16,.42)', border: '1px solid rgba(255,255,255,.14)' }}>
+                <CaretLeft size={14} weight="bold" />
+            </button>
+            <span className="rounded-full px-3 py-1 text-[10px] tracking-[0.15em] text-white/48 backdrop-blur-md" style={{ background: 'rgba(7,8,16,.36)', border: '1px solid rgba(255,255,255,.08)' }}>2 / 2</span>
+            <button type="button" disabled aria-label="已经是最后一页"
+                className="grid h-8 w-8 place-items-center rounded-full text-white/20" style={{ border: '1px solid rgba(255,255,255,.07)' }}>
+                <CaretRight size={14} weight="bold" />
+            </button>
+        </div>
+    </section>
+);
+
 const WorldView: React.FC<{
     occupantsByRoom: Record<string, CharacterProfile[]>;
     feed: FeedItem[]; novelCount: number;
@@ -1017,7 +1225,12 @@ const WorldView: React.FC<{
     onEnterRoom: (r: VRRoomId) => void; onGoLibrary: () => void;
     onJump: (novelId: string | undefined, segIdx: number) => void;
     onDeleteFeed: (msgId: number) => void; onDeleteFeedMany: (ids: number[]) => void;
-}> = ({ occupantsByRoom, feed, novelCount, poBadge, onEnterRoom, onGoLibrary, onJump, onDeleteFeed, onDeleteFeedMany }) => {
+    sarNpcEnabled: boolean; sarCaianMet: boolean;
+    roomPage: 0 | 1; onRoomPageChange: (page: 0 | 1) => void;
+    onTalkToCaian: () => void;
+    onOpenGacha: () => void;
+    onOpenCabinet: () => void;
+}> = ({ occupantsByRoom, feed, novelCount, poBadge, onEnterRoom, onGoLibrary, onJump, onDeleteFeed, onDeleteFeedMany, sarNpcEnabled, sarCaianMet, roomPage, onRoomPageChange, onTalkToCaian, onOpenGacha, onOpenCabinet }) => {
     const FEED_PER_PAGE = 5;
     const [page, setPage] = useState(0);
     const totalPages = Math.max(1, Math.ceil(feed.length / FEED_PER_PAGE));
@@ -1040,14 +1253,17 @@ const WorldView: React.FC<{
         else shownIds.forEach(id => n.add(id));
         return n;
     });
-    // 房间分页：每页 6 间，第 2 页放"开发中"的糯米鸡研发中心等。
-    // 信号坠落处不进网格（hiddenFromGrid）——它走顶部「特殊活动」banner 入口。
-    const GRID_ROOMS = VR_ROOMS.filter(r => !r.hiddenFromGrid);
-    const ROOMS_PER_PAGE = 6;
-    const [roomPage, setRoomPage] = useState(0);
-    const roomTotalPages = Math.max(1, Math.ceil(GRID_ROOMS.length / ROOMS_PER_PAGE));
-    const curRoomPage = Math.min(roomPage, roomTotalPages - 1);
-    const shownRooms = GRID_ROOMS.slice(curRoomPage * ROOMS_PER_PAGE, curRoomPage * ROOMS_PER_PAGE + ROOMS_PER_PAGE);
+    // 第一页保持原有六个公共房间；第二页本身就是完整 SAR 空间，不再套一层房间入口。
+    const shownRooms = VR_ROOMS.filter(room => !room.hiddenFromGrid && room.id !== 'sar' && room.id !== 'cafe');
+    const roomTotalPages = 2;
+    const curRoomPage = roomPage;
+
+    if (curRoomPage === 1) {
+        return (
+            <SARWorldPage occupants={occupantsByRoom.sar || []} npcEnabled={sarNpcEnabled} caianMet={sarCaianMet}
+                onTalkToCaian={onTalkToCaian} onOpenGacha={onOpenGacha} onOpenCabinet={onOpenCabinet} onBackPage={() => onRoomPageChange(0)} />
+        );
+    }
     return (
     <div className="space-y-4">
         {/* 顶部特殊活动 banner：信号坠落处（跨用户接龙诗） */}
@@ -1056,7 +1272,7 @@ const WorldView: React.FC<{
             {shownRooms.map(room => {
                 const occupants = occupantsByRoom[room.id] || [];
                 return (
-                    <button key={room.id} onClick={() => { if (room.implemented) { onEnterRoom(room.id); trackEvent('进入彼方房间', { room: room.id }); } }}
+                    <button key={room.id} aria-label={room.implemented ? `进入 ${room.name}` : `${room.name}开发中`} onClick={() => { if (room.implemented) { onEnterRoom(room.id); trackEvent('进入彼方房间', { room: room.id }); } }}
                         className={`relative rounded-2xl h-36 overflow-hidden text-left active:scale-[0.98] transition-transform ${room.implemented ? '' : 'opacity-65'}`}
                         style={{ boxShadow: '0 8px 28px rgba(0,0,0,.4)', border: room.implemented ? '1px solid rgba(255,255,255,.12)' : '1px solid rgba(255,255,255,.05)' }}>
                         <RoomBackground roomId={room.id} />
@@ -1101,10 +1317,12 @@ const WorldView: React.FC<{
         </div>
         {roomTotalPages > 1 && (
             <div className="flex items-center justify-center gap-3 -mt-1">
-                <button onClick={() => setRoomPage(p => Math.max(0, p - 1))} disabled={curRoomPage === 0}
+                <button onClick={() => onRoomPageChange(0)} disabled={curRoomPage === 0}
+                    aria-label="上一页房间"
                     className="h-7 w-7 rounded-full flex items-center justify-center text-white/70 disabled:opacity-25 active:bg-white/10" style={{ border: '1px solid rgba(255,255,255,.14)' }}><CaretLeft size={13} weight="bold" /></button>
                 <span className="text-[10.5px] text-white/45 tracking-wider tabular-nums">{curRoomPage + 1} / {roomTotalPages}</span>
-                <button onClick={() => setRoomPage(p => Math.min(roomTotalPages - 1, p + 1))} disabled={curRoomPage >= roomTotalPages - 1}
+                <button onClick={() => onRoomPageChange(1)} disabled={curRoomPage >= roomTotalPages - 1}
+                    aria-label="下一页房间"
                     className="h-7 w-7 rounded-full flex items-center justify-center text-white/70 disabled:opacity-25 active:bg-white/10" style={{ border: '1px solid rgba(255,255,255,.14)' }}><CaretRight size={13} weight="bold" /></button>
             </div>
         )}
@@ -2477,7 +2695,7 @@ const RoomScene: React.FC<{
                 {/* 顶栏 */}
                 <div className="absolute top-0 left-0 right-0 flex items-center gap-2.5 px-4 pb-3 z-[120]"
                     style={{ background: 'linear-gradient(180deg,rgba(5,6,14,.55),transparent)', paddingTop: VR_TOP }}>
-                    <button onClick={onClose} className="h-10 w-10 -ml-2 rounded-full bg-white/10 backdrop-blur-md active:bg-white/20 text-white/90 border border-white/10 flex items-center justify-center"><CaretLeft size={20} weight="regular" /></button>
+                    <button onClick={onClose} aria-label={`离开 ${room.name}`} className="h-10 w-10 -ml-2 rounded-full bg-white/10 backdrop-blur-md active:bg-white/20 text-white/90 border border-white/10 flex items-center justify-center"><CaretLeft size={20} weight="regular" /></button>
                     <span className="text-[16px] text-white drop-shadow flex items-center gap-1.5 tracking-[0.14em]" style={{ fontFamily: `'Noto Serif SC',serif`, fontWeight: 500 }}>{room.name}</span>
                     <div className="ml-auto flex items-center gap-2">
                         {occupants.length > 0 && (
@@ -3543,7 +3761,11 @@ const SettingsView: React.FC<{
     onRequestEnable: (char: CharacterProfile) => void;
     onEditChibi: (char: CharacterProfile) => void;
     onEditReadingPreference: (char: CharacterProfile) => void;
-}> = ({ characters, updateCharacter, addToast, novels, onReload, onRequestEnable, onEditChibi, onEditReadingPreference }) => {
+    sarNpcEnabled: boolean;
+    sarCaianMet: boolean;
+    onChangeSarNpc: (preference: SARNpcPreference) => void;
+    onRequestSarRewind: () => void;
+}> = ({ characters, updateCharacter, addToast, novels, onReload, onRequestEnable, onEditChibi, onEditReadingPreference, sarNpcEnabled, sarCaianMet, onChangeSarNpc, onRequestSarRewind }) => {
     const [pickFor, setPickFor] = useState<CharacterProfile | null>(null);
     // 接入列表的分组筛选（characters 由 props 传入，这里单独取 characterGroups 即可）
     const { characterGroups } = useOS();
@@ -3570,6 +3792,29 @@ const SettingsView: React.FC<{
 
     return (
         <div className="space-y-3">
+            <div className="rounded-2xl p-3.5" style={{ background: 'rgba(255,255,255,.045)', border: '1px solid rgba(255,255,255,.075)' }}>
+                <div className="flex items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                        <div className="text-[12.5px] font-semibold text-white/90">活动空间 NPC</div>
+                        <p className="mt-0.5 text-[10px] leading-relaxed text-indigo-200/48">显示凯恩、艾文与固定剧情。关闭不会影响活动空间功能。</p>
+                    </div>
+                    <button type="button" onClick={() => onChangeSarNpc(sarNpcEnabled ? 'hide' : 'show')} aria-label={sarNpcEnabled ? '隐藏活动空间 NPC' : '显示活动空间 NPC'} aria-pressed={sarNpcEnabled}
+                        className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${sarNpcEnabled ? 'bg-indigo-400' : 'bg-white/15'}`}>
+                        <span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${sarNpcEnabled ? 'translate-x-5' : ''}`} />
+                    </button>
+                </div>
+                <div className="mt-3 flex items-center gap-3 border-t border-white/[0.07] pt-3">
+                    <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 text-[11.5px] font-semibold text-white/78"><Clock size={13} />剧情回档</div>
+                        <p className="mt-0.5 text-[9.5px] leading-relaxed text-indigo-200/40">重置凯恩初次见面，用其他选择再走一次。</p>
+                    </div>
+                    <button type="button" onClick={onRequestSarRewind} disabled={!sarCaianMet}
+                        className="shrink-0 rounded-full px-3 py-1.5 text-[10px] font-semibold text-indigo-100 disabled:cursor-not-allowed disabled:opacity-30 active:bg-white/10"
+                        style={{ background: 'rgba(129,140,248,.12)', border: '1px solid rgba(165,180,252,.2)' }}>
+                        {sarCaianMet ? '回到初见前' : '剧情未完成'}
+                    </button>
+                </div>
+            </div>
             <p className="text-[11px] text-indigo-300/60 leading-relaxed">
                 启用后，角色会按设定的间隔自己登入「彼方」，在图书馆读你上传的小说、写批注。每次活动会在 ta 的聊天里留下动态卡片，也会被记忆总结捕捉。
                 连着 {VR_FAIL_LIMIT} 次调不通模型（比如 API 令牌失效了）会自动暂停这个角色，不会一直空跑下去。
@@ -3852,6 +4097,7 @@ const VRStyleTag: React.FC = () => (
         @keyframes vrdance { 0%{transform:translateY(0) rotate(-5deg)} 25%{transform:translateY(-9px) rotate(3deg)} 50%{transform:translateY(0) rotate(5deg)} 75%{transform:translateY(-9px) rotate(-3deg)} 100%{transform:translateY(0) rotate(-5deg)} }
         @keyframes vraurora { 0%,100%{transform:translate(0,0) scale(1);opacity:.75} 50%{transform:translate(6%,4%) scale(1.14);opacity:1} }
         @keyframes vrtwinkle { 0%,100%{opacity:.5} 50%{opacity:.85} }
+        @keyframes sarquest { 0%,100%{transform:translate(-50%,0)} 50%{transform:translate(-50%,-6px)} }
         /* 信号坠落处 · 电子卫星轨道（纯 transform/opacity，GPU 合成，手机友好） */
         @keyframes sigorbit { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         @keyframes sigpulse { 0%,100% { transform: scale(1); opacity: .8; } 50% { transform: scale(1.12); opacity: 1; } }

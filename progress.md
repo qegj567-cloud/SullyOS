@@ -37,6 +37,88 @@ TODO
 - If local browser testing is possible, verify both `吃瓜 -> 角色剧情` and `吃瓜 -> 主线剧情` paths and inspect attachment modal behavior.
 - Install or provide `playwright` if automated screenshot-based UI validation is needed later.
 
+2026-08-31 — 彼方 SAR 活动室开场（进行中）
+- Current request: add the one-time `更新 · 彼方活动室` notice, let users explicitly show or hide the fixed NPCs Caian/Aiven, focus the second room page when welcomed, and implement the supplied first-meeting branching dialogue before building the three facilities.
+- Visual thesis: a restrained dark-violet in-world update event, followed by a sparse galgame dialogue surface; placeholder NPC silhouettes are deliberately isolated so later expression/portrait assets can replace them without rewriting the dialogue state machine.
+- Interaction thesis: two-step update consent, one-line-at-a-time dialogue, and a softly bouncing quest mark; unfinished dialogue remains replayable and only the final line clears the quest state.
+- Added a versioned local SAR state model and the complete supplied dialogue graph as fixed front-end data. NPC visibility and `Caian met` are persisted separately.
+- Added the SAR room to page two, a no-art placeholder scene, an NPC visibility control under `接入`, and front-end-only NPC rendering that does not enter prompts, dynamic cards, or memories.
+
+TODO — SAR opening
+- Completed the welcome path at 390×844: update notice → NPC choice → automatic page-two focus → SAR room → Caian quest mark → one-line dialogue → choices.
+- Verified that closing dialogue mid-way preserves the quest mark, completing the short branch clears it, hiding NPCs leaves the room usable, and re-enabling returns to page two without replaying the completed introduction.
+- Inspected update, preference, page-two, dialogue, and room screenshots. Removed duplicated placeholder wall/NPC layers found during visual QA. No new console errors; only the repository's existing Tailwind CDN warning appeared.
+- Focused SAR tests pass (3 tests). Vite production build passes with 6,169 modules transformed using an isolated temporary output directory.
+- Full `pnpm run build` remains blocked before Vite because the existing `public/instant-worker.bundle.js` cannot be overwritten in this environment; no worker source or bundle was changed for SAR.
+- Project-wide TypeScript reports the already-known unrelated errors in MemoryPalaceApp, MessageItem, CompanionHome, tests, apiCallLog, Qixi, camera emotion, worldbook, and Vite proxy typing; no SAR/VRWorld error was reported.
+- The official web-game client remains unavailable because its own install cannot resolve `playwright`; in-app browser DOM/screenshot validation was used as the fallback.
+
+TODO — next SAR slice
+- Replace the isolated `C` / `A` stand-ins with the user's layered portraits and expression map when supplied.
+- Implement only the next user-selected facility; the three current labels are non-interactive scene placeholders.
+
+2026-08-31 — SAR 第二页改为完整活动空间 + 剧情回档
+- Removed the nested SAR room-entry concept from the world grid. Page one now contains only the six existing public rooms; page two directly renders the full-height SAR activity space, so Caian, Aiven, the quest mark, and all three facility placeholders are immediately present without another room transition.
+- Removed the obsolete 糯米鸡研发中心 card from world pagination. The underlying legacy room id remains type-compatible for old data, but it is no longer exposed as a world page card.
+- Kept characters whose persisted/current room is `sar` visible in a compact “接入中的玩家” shelf on the SAR page.
+- Added a guarded “剧情回档” control under 接入 → 活动空间 NPC. It resets only `caianMet` and the recorded first reaction; update acknowledgement and the user's NPC visibility choice remain unchanged. With NPCs visible it returns directly to page two and restores Caian's quest mark.
+- Verified the full path at 390×844: update notice → welcome NPCs → automatic page-two focus → Caian short branch completion → quest mark cleared → settings rewind confirmation → automatic page-two return → quest mark restored. Also verified NPC hiding leaves the gacha/module/fishing areas visible.
+- Inspected SAR page screenshots at both 390×844 and 390×667; the full scene and pager remain visible without overflow. Browser console had no new errors, only the repository's existing Tailwind CDN warning.
+- Focused SAR tests pass (4 tests). Isolated Vite production build passes with 6,169 modules transformed. Project-wide TypeScript still reports only the previously recorded unrelated errors; no VRWorld/SAR error was added.
+- The official web-game client was attempted again but its own installation still cannot resolve `playwright`; in-app browser DOM/screenshot validation was used as the fallback.
+
+TODO — next SAR slice
+- Replace the isolated `C` / `A` stand-ins with the user's layered portraits and expression map when supplied.
+- Implement only the next user-selected facility; the three current labels are intentionally non-interactive.
+
+2026-09-01 — SAR 人格推演双卡池（进行中）
+- Current request: implement the first gacha slice before further detail work—two daily-free pools, a CSS-only machine/capsule/opening sequence, and a collection space. The 50-turn LLM simulation remains explicitly out of scope for this slice.
+- Visual thesis: an occult research terminal rather than a casino—near-black navy, etched hairline frames, muted mineral accents, restrained geometric sigils, and one strong machine action per screen.
+- Content plan: 25 `人格异格` modules define who the character became; 24 `剧情模板` modules define the world rule or incident. Relationship memory remains available to the future director layer while each module controls what the character acknowledges in-scene.
+- Interaction thesis: each pool owns one independent free draw per local day; claiming persists immediately, then the user watches a mechanical CSS draw, taps the capsule open, and files the result into a duplicate-stacking collection.
+- Added `utils/vrWorld/sarGacha.ts` with the complete 49-module catalog, safe versioned local state, independent daily counters, immediate draw history, and duplicate counts. Added focused state tests in `utils/sarGacha.test.ts`.
+- Added `apps/vrWorld/SARGacha.tsx` and connected the SAR-page gacha facility. The full-screen device, accelerating coordinate rings, falling capsule, user-triggered split-open sequence, eight muted card accents, etched borders, sigils, reveal screen, collection grid, and detail sheet are CSS-only; no temporary raster art was added.
+- Collection detail exposes the module rule and director-layer memory policy. The `启动推演` action is visibly reserved for the next slice, so this build never calls an LLM or begins the 50-interaction lifespan.
+- Verified the complete flow at 390×844 for both pools: enter device → draw → capsule → manual open → reveal → collection → detail. Verified the reveal and machine states again at 390×667; controls remain above the bottom safe area. Both same-day draws become unavailable independently. Browser console showed only the repository's existing Tailwind CDN warning.
+- Focused SAR tests pass (9 tests across intro and gacha state), and the isolated Vite production build succeeds with 6,171 modules transformed. The project-wide TypeScript check remains blocked by the previously recorded unrelated errors; none reference `VRWorldApp`, `SARClubEvent`, `SARGacha`, or `sarGacha`.
+- The required web-game Playwright client was attempted and remains unavailable because its own installation cannot resolve `playwright`; in-app browser DOM and screenshot validation was used as the fallback.
+
+TODO — next SAR slice
+- Review and refine the 49 module titles/descriptions, draw pacing, collection density, and whether each pool should retain one daily free draw before implementing character binding and 50-turn LLM simulation.
+
+2026-09-01 — SAR 异格陈列柜与推演初始化（进行中）
+- Diagnosed the reported history-import leak: SAR announcement, first-meeting, gacha, and future simulation state lived only in `localStorage`, while backup import replaced IndexedDB history without touching those keys. Added a versioned `sarLocalState` backup payload. New text/full backups carry all three states; importing an older main-history backup with no SAR payload clears the current device's SAR keys, while explicit `media_only` imports preserve them.
+- Added focused backup regressions covering old-history replacement, media-only preservation, and explicit SAR restore. All 14 focused SAR tests pass.
+- Visual thesis: the new cabinet is a quieter companion instrument beside the gacha machine—one selected character portrait held between two etched module sockets, with the assembly relationship more important than decoration.
+- Content plan: character rail → two module slots → single start action → generated IF dossier and opening scene; recent records remain secondary context.
+- Interaction thesis: selecting a portrait reorients the cabinet, each socket opens only its matching owned-module shelf, and starting the LLM runs a single scanning/locking motion before unfolding the generated dossier.
+- Added the simulation domain pipeline: character/world/relationship context is assembled through the same smart chat context path as 彼方, API priority remains character override → 彼方 API → chat API, and one structured LLM call generates a character-specific blueprint plus the scene-zero opening. Successful results persist as independent 0/50 IF records without modifying main-chat history.
+- Added `apps/vrWorld/SARAssemblyCabinet.tsx` and a new `异格陈列柜` facility beside the gacha machine. The SAR footer is now a 2×2 facility matrix; Caian/Aiven were moved upward so the extra row does not cover them.
+- The cabinet exposes every imported character in a horizontal portrait rail. It loads only owned modules into the matching `人格异格` / `剧情模板` sockets, never consumes the collection copy, and enables the LLM start action only after a character and both slots are selected. Existing combinations are saved as independent simulation dossiers and can be reopened from the cabinet archive.
+- The generated dossier includes the character-specific divergence, world-template translation, in-scene memory behavior, scene-zero prose, first character line, response hook, and explicit `0 / 50` lifespan. Online/offline interaction remains the next pipe; the dossier action labels that honestly instead of faking a chat.
+- Verified SAR page, character selection, both module pickers, locked two-slot state, and enabled start CTA at 390×844; repeated the ready-to-start layout at 390×667. No new browser errors appeared; only the repository's existing Tailwind CDN warning. The real start button was not fired during QA because that would transmit the user's character and relationship memory to their configured model.
+- Focused SAR tests pass (15 tests), including blueprint parsing, prompt memory rules, API priority, old-backup reset, media-only preservation, gacha quotas, and intro state. Isolated Vite production build passes with 6,174 modules transformed. The required external Playwright client remains blocked by its missing `playwright` package; in-app browser screenshots and DOM checks were used as the fallback.
+
+TODO — next SAR slice
+- Wire the active dossier into the actual 50-interaction online/offline simulation chat, then add emergency archive and the later module-shop restart/true-start items.
+
+2026-09-01 — SAR 异格身份卡与人格钢印
+- Current request: separate人格异格 from ordinary剧情模式. The first LLM call now forges a collectible character-specific identity card; only after that card exists can the user start one independent 0/50 simulation life.
+- Visual thesis: a restrained research-certificate card with a cold cyan identity frame and one warm, fingerprint-like steel-seal block as the dominant visual anchor. Long character material stays in a quiet vertical dossier instead of becoming a grid of decorative cards.
+- Content plan: character source + personality patch + simulation field → permanent identity card → optional 0/50 run. The card carries identity, life patch, relationship, memory stance, steel seal, unavoidable cost, stable behavioral shift, and scene-zero entry.
+- Interaction thesis: module sockets lock first; a staged scan forges the card; the card reveal makes the steel seal visually unmistakable; a separate `启动首次推演` action changes the entry from `DORMANT` to `0 / 50` without spending or duplicating the collectible card.
+- Upgraded SAR simulation storage from the legacy `records[]` model to version 2 `cards[] + runs[]`. Legacy blueprints are read compatibly and split into one migrated identity card plus their original run, preserving progress and timestamps.
+- Rewrote the LLM contract around人格编译 rather than plot generation. The personality module is now an人生/决策补丁母体; the former剧情模板 is presented as an `演算场` that supplies pressure, world rules, and initial position. The prompt requires a steel seal and patch cost and forbids prewriting later plot nodes or endings.
+- Added a reusable runtime prompt builder that injects the full identity card, steel seal, patch cost, behavioral shift, and current interaction count into every future turn. It explicitly allows conflict and wavering while forbidding sudden cures, patch cancellation, or unexplained reversion to the base character.
+- Rebuilt the cabinet result as a collectible identity card with a prominent steel-seal block, permanent collection count, full dossier sections, and a separate first-run action. Starting a card creates exactly one active 0/50 instance; repeat clicks return that instance instead of duplicating it.
+- Updated visible gacha/cabinet language from `人格异格 / 剧情模板` to `人格补丁 / 演算场` while retaining the existing `variant-* / story-*` IDs so old draws and backups remain compatible.
+- Verification: 18 focused SAR tests pass with cache disabled, covering structured-card parsing, steel-seal runtime injection, v1 migration, card/run separation, backup restore, card pools, and intro state. Isolated Vite production build succeeded with 6,174 modules transformed. Full TypeScript still reports only the previously recorded unrelated project errors; no SAR file is present in the error list.
+- Mobile QA at 390×844 exercised the real cabinet path, both owned-module pickers, ready-to-forge state, exact card component, dormant → 0/50 transition, and disabled next-round handoff. The card preview used fixed local test data, made no model request, and sent no character memory. No new browser error appeared; only the existing Tailwind CDN development warning was logged.
+
+TODO — next SAR slice
+- Implement the actual per-turn online/offline simulation chat using `buildSARIdentityRuntimePrompt`, increment the active run only for completed user interactions, and stop at 50.
+- Add emergency archive, then connect the later 凯恩 restart / true-start shop items without allowing a plain free rerun.
+
 2026-03-21
 - Added a new global chat appearance setting, [0mchatAvatarMode[0m, so users can choose between grouped avatars and showing an avatar on every message.
 - Rebuilt components/appearance/ChatAppearanceEditor.tsx into a clean modular version and updated the live preview so repeated-message avatar behavior is visible before applying.

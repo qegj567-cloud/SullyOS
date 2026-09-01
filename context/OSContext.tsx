@@ -39,6 +39,7 @@ import { collectAppearance, collectCharSettings, collectDataScale, collectFeatur
 import { normalizeApiConfig, normalizeApiPreset } from '../utils/apiConfigNormalize';
 import { getCheckPhoneApi, setCheckPhoneApi } from '../utils/checkPhoneApi';
 import { markBackupDone } from '../utils/backupReminder';
+import { collectSARLocalBackup, restoreSARLocalBackup } from '../utils/vrWorld/sarBackup';
 import { normalizeCharacterImpression, normalizeCharacterDefaults } from '../utils/impression';
 import { normalizeModelIds } from '../utils/modelList';
 import {
@@ -3975,6 +3976,9 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               cloudBackupConfig: (mode === 'text_only' || mode === 'full') ? (() => { try { const s = localStorage.getItem('os_cloud_backup_config'); return s ? JSON.parse(s) : undefined; } catch { return undefined; } })() : undefined,
               remoteVectorConfig: (mode === 'text_only' || mode === 'full') ? (() => { try { const s = localStorage.getItem('os_remote_vector_config'); return s ? JSON.parse(s) : undefined; } catch { return undefined; } })() : undefined,
 
+              // SAR 活动室：公告/初见、双卡池及人格推演记录必须跟用户历史一起迁移。
+              sarLocalState: (mode === 'text_only' || mode === 'full') ? collectSARLocalBackup() : undefined,
+
               // Instant Push
               instantPushConfig: (mode === 'text_only' || mode === 'full') ? (() => { try { const s = localStorage.getItem('instant_push_config_v1'); return s ? JSON.parse(s) : undefined; } catch { return undefined; } })() : undefined,
               pushVapid: (mode === 'text_only' || mode === 'full') ? (() => { try { const s = localStorage.getItem('push_vapid_v1'); return s ? JSON.parse(s) : undefined; } catch { return undefined; } })() : undefined,
@@ -4767,6 +4771,13 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           // 备份一旦命中特征就整包拒绝，不能出现“导入了一半才报错”的状态。
           assertSupportedSullyBackup(data);
 
+          // 在 importFullData 为释放内存逐项清空 data 字段前冻结“这是否是主历史替换”。
+          // 新版 media_only 明确不动 SAR；旧备份没有 mode 时，只要带 characters/messages
+          // 就按整档恢复处理，避免导入后继续沿用另一份历史的公告/卡池/推演记录。
+          const replacesPrimaryHistory = data.collaborationBackupMode !== 'media_only'
+              && (Object.prototype.hasOwnProperty.call(data, 'characters')
+                  || Object.prototype.hasOwnProperty.call(data, 'messages'));
+
           // 协同文件先完整读出并校验，再开始写任何主数据库。这样文件索引损坏或 ZIP
           // 缺项时会整包中止，不会出现主数据已恢复、协同文件只回来一半的状态。
           let collaborationAssetRecords: Array<{ id: string; blob: Blob; createdAt: number }> | undefined;
@@ -4959,6 +4970,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           }
           
           showImportProgress('settings', '正在恢复系统设置...', 92, { current: '系统设置', currentFile: '' });
+          restoreSARLocalBackup(data.sarLocalState, { replaceMissing: replacesPrimaryHistory });
           if (data.theme) {
               await restoreAssetsInPlace(data.theme, '系统主题');
               await updateTheme(data.theme);
