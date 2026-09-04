@@ -343,7 +343,7 @@ interface OSContextType {
 
   // User Profile
   userProfile: UserProfile;
-  updateUserProfile: (updates: Partial<UserProfile>) => void;
+  updateUserProfile: (updates: Partial<UserProfile> | ((prev: UserProfile) => Partial<UserProfile>)) => void;
 
   availableModels: string[];
   setAvailableModels: (models: string[]) => void;
@@ -2625,10 +2625,11 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   apiConfig: apiConfigRef.current,
                   userProfile: userProfileRef.current,
                   groups: groupsRef.current,
-                  realtimeConfig: realtimeConfigRef.current,
-                  memoryPalaceConfig: memoryPalaceConfigRef.current,
-                  updateCharacter,
-                  forcedRoom: room as any,
+                   realtimeConfig: realtimeConfigRef.current,
+                   memoryPalaceConfig: memoryPalaceConfigRef.current,
+                   updateCharacter,
+                   updateUserProfile,
+                   forcedRoom: room as any,
                   forcedLetterId: letterId,
                   manual,
               });
@@ -3447,9 +3448,10 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       await DB.deleteSong(id);
   };
 
-  const updateUserProfile = async (updates: Partial<UserProfile>) => {
-      setUserProfile(prev => {
-          const next = { ...prev, ...updates };
+  const updateUserProfile = async (updates: Partial<UserProfile> | ((prev: UserProfile) => Partial<UserProfile>)) => {
+       setUserProfile(prev => {
+           const patch = typeof updates === 'function' ? updates(prev) : updates;
+           const next = { ...prev, ...patch };
           // 用户资料是所有角色共享的素材（名字、人设直接烤进 fire_pack 模板），改完不打脏的话
           // 角色到点还按旧名字叫你。仿表情库：逐个打脏，没开 2.0 的角色被 markDirty 的门筛掉。
           DB.saveUserProfile(next).then(() => {

@@ -44,6 +44,13 @@ export function buildVRSystemAddendum(room: VRRoomDef, charName: string): string
 
 /** 不同房间的"活动姿态"提示。 */
 function roomStanceLines(roomId: string, charName: string): string[] {
+    if (roomId === 'sar') {
+        return [
+            `这是 SAR 活动空间。你不是替用户进行正式五十轮推演，而是自己来玩一次临时芯片扭蛋：设备会给出两枚芯片和一位明确对象，你把芯片给对方使用，亲眼经历一段会自动复原的短篇异界事故。`,
+            `把它当成你自己的娱乐与私人收藏。该惊讶就惊讶、该笑就笑、该手欠就手欠；事情结束后写下只有“${charName}”会写的详细随笔和吐槽。不要写成给用户的工作汇报，也不要为了讨好谁而把随机对象换成用户。`,
+            `芯片效果只在《彼方》的临时异界体验中成立，不会永久改写任何人的现实人格、记忆或关系。`,
+        ];
+    }
     if (roomId === 'postoffice') {
         return [
             `这是邮局，写信像交笔友、扔漂流瓶——收信的是个跟你毫无关系、此生大概不再相见的陌生人。正因为匿名、一次性，你反而能放下包袱，写点平时不会轻易示人的东西。`,

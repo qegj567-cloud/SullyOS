@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { applyAssistantPostProcessing, PostProcessCtx, XhsCaches } from './applyAssistantPostProcessing';
+import { applyAssistantPostProcessing, PostProcessCtx, splitSARChatSurfaceBubbles, XhsCaches } from './applyAssistantPostProcessing';
 import { DB } from './db';
 
 // 锁住 renderAndPersist normal path 的引用顺延修复:
@@ -224,6 +224,69 @@ describe('renderAndPersist 双语分支表情包顺序', () => {
 
         const msgs = (await DB.getRecentMessagesByCharId(charId, 50)).filter(m => m.role === 'assistant');
         expect(msgs.map(m => m.type)).toEqual(['text', 'emoji']);
+    }, 20000);
+});
+
+describe('SAR Chat 特殊格式气泡对齐', () => {
+    it('把内置翻译块还原成最终落库的一条双语气泡', () => {
+        const raw = [
+            '<翻译><原文>もう知らない。</原文><译文>不管你了。</译文></翻译>',
+            '<翻译><原文>勝手にして。</原文><译文>随你便。</译文></翻译>',
+        ].join('\n');
+        expect(splitSARChatSurfaceBubbles(raw)).toEqual([
+            'もう知らない。\n%%BILINGUAL%%\n不管你了。',
+            '勝手にして。\n%%BILINGUAL%%\n随你便。',
+        ]);
+    });
+
+    it('把语音与字幕保持为一个原子气泡，也不拆同泡括号翻译', () => {
+        const raw = [
+            '<语音 emotion="angry">Enough.\nDo not do that again.</语音><字幕>够了。别再这样。</字幕>',
+            'もう知らない。（不管你了。）',
+        ].join('\n');
+        const chunks = splitSARChatSurfaceBubbles(raw);
+        expect(chunks).toHaveLength(2);
+        expect(chunks[0]).toContain('<语音 emotion="angry">');
+        expect(chunks[0]).toContain('<字幕>够了。别再这样。</字幕>');
+        expect(chunks[1]).toBe('もう知らない。（不管你了。）');
+    });
+
+    it('双语 canonical 与双语 surface 按整泡写入 metadata，不按 XML 换行串位', async () => {
+        const charId = `c-sar-bi-${Date.now()}`;
+        const canonical = [
+            '<翻译><原文>I did not mean that.</原文><译文>我不是那个意思。</译文></翻译>',
+            '<翻译><原文>Stop laughing.</原文><译文>别笑了。</译文></翻译>',
+        ].join('\n');
+        const surface = [
+            '<翻译><原文>Pray, mistake me not.</原文><译文>还请阁下莫要误会。</译文></翻译>',
+            '<翻译><原文>Cease thy laughter.</原文><译文>休要再笑。</译文></翻译>',
+        ].join('\n');
+        const ctx = makeCtx(charId, []);
+        ctx.instantRender = true;
+        ctx.sarModuleSurface = {
+            version: 1,
+            runId: 'sar-test',
+            moduleId: 'court',
+            moduleTitle: '王庭贵族协议',
+            target: 'character',
+            phase: 'active',
+            surface,
+            canonicalField: 'content',
+            surfaceField: 'metadata.sarModuleSurface.surface',
+        };
+
+        await applyAssistantPostProcessing(canonical, ctx);
+
+        const texts = (await DB.getRecentMessagesByCharId(charId, 20))
+            .filter(message => message.role === 'assistant' && message.type === 'text');
+        expect(texts.map(message => message.content)).toEqual([
+            'I did not mean that.\n%%BILINGUAL%%\n我不是那个意思。',
+            'Stop laughing.\n%%BILINGUAL%%\n别笑了。',
+        ]);
+        expect(texts.map(message => message.metadata?.sarModuleSurface?.surface)).toEqual([
+            'Pray, mistake me not.\n%%BILINGUAL%%\n还请阁下莫要误会。',
+            'Cease thy laughter.\n%%BILINGUAL%%\n休要再笑。',
+        ]);
     }, 20000);
 });
 

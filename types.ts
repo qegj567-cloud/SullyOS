@@ -1249,6 +1249,27 @@ export interface VRNovelAnnotation {
 }
 
 /** 角色在虚拟世界里的个人状态（挂在 CharacterProfile.vrState）。 */
+export interface SARModuleRuntimeState {
+    version: 1;
+    /** 一次装载的稳定标识；消息 metadata 用它把同一轮外显串起来。 */
+    runId: string;
+    moduleId: string;
+    moduleTitle: string;
+    effectLabel: string;
+    description: string;
+    target: 'character' | 'user';
+    source: 'user' | 'character';
+    sourceCharacterId?: string;
+    sourceCharacterName?: string;
+    /** active 阶段还可影响多少次成功的前台交互。 */
+    remainingTurns: number;
+    totalTurns: number;
+    /** 模块结束后的反惯性提示；3 → 强提示，2/1 → 轻提醒。 */
+    afterglowTurns: number;
+    phase: 'active' | 'afterglow';
+    installedAt: number;
+}
+
 export interface VRWorldCharState {
     /** 是否启用该角色的自主登入（独立于主动发消息 proactiveConfig） */
     enabled: boolean;
@@ -1267,6 +1288,10 @@ export interface VRWorldCharState {
     currentRoom?: VRRoomId;
     /** 最近一次活动时间戳（UI / 调度展示用） */
     lastActiveAt?: number;
+    /** SAR 临时模块。真实人格不改，只改变前台对话的外显层。 */
+    sarModule?: SARModuleRuntimeState;
+    /** 最近一次 SAR 自由活动，供活动室和模块触发判断展示。 */
+    sarActivity?: 'cabinet' | 'module-shop';
     /** 该角色专属 API 覆盖（用户可单独为「彼方」活动配 api）；不设则回落全局 apiConfig。 */
     api?: { baseUrl: string; apiKey: string; model: string };
     /**
@@ -1288,6 +1313,24 @@ export interface VRWorldCharState {
 }
 
 /** 注入聊天的 vr_card 消息的 metadata 结构。 */
+export interface SARCharacterCabinetNoteMeta {
+    id: string;
+    actorId: string;
+    actorName: string;
+    targetId: string;
+    targetName: string;
+    targetKind: 'user' | 'character' | 'wanderer';
+    variantId: string;
+    variantTitle: string;
+    storyId: string;
+    storyTitle: string;
+    title: string;
+    story: string;
+    notes: string;
+    highlight: string;
+    createdAt: number;
+}
+
 export interface VRCardMeta {
     vrCard: true;
     room: VRRoomId;
@@ -1337,6 +1380,15 @@ export interface VRCardMeta {
     bookletTitle?: string;
     /** 用户参与时留给角色的耳语（不进诗，只随卡片进聊天/记忆） */
     signalWhisper?: string;
+    // --- SAR 活动空间：角色自主扭蛋随笔 ---
+    /** 角色自己抽取两枚芯片、给另一位玩家使用后留下的完整柜中随笔。 */
+    sarCabinetNote?: SARCharacterCabinetNoteMeta;
+    /** 角色自主逛模块商店时购买/装载的记录。 */
+    sarModuleShop?: {
+        moduleId: string;
+        moduleTitle: string;
+        usedOnUser: boolean;
+    };
 }
 
 // ============================================================
@@ -3193,6 +3245,10 @@ export interface UserVRState {
     activity?: string;
     /** 最近一次更新时间 */
     updatedAt?: number;
+    /** 默认关闭；开启后，在 SAR 中的角色才可以反向给用户装载模块。 */
+    allowCharacterModules?: boolean;
+    /** 角色装在用户身上的临时模块（5 次成功交互 + 3 次退场稳定）。 */
+    sarModule?: SARModuleRuntimeState;
     /** 用户在彼方里的 chibi 形象（同角色 chibi 结构，来自 mode="user" 的捏人器） */
     chibi?: {
         img: string;

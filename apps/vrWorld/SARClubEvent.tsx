@@ -81,14 +81,15 @@ export const SARClubStage: React.FC<{
     onTalkToCaian: () => void;
     onOpenGacha: () => void;
     onOpenCabinet: () => void;
+    onOpenModuleShop: () => void;
     fullPage?: boolean;
-}> = ({ npcEnabled, caianMet, onTalkToCaian, onOpenGacha, onOpenCabinet, fullPage = false }) => (
+}> = ({ npcEnabled, caianMet, onTalkToCaian, onOpenGacha, onOpenCabinet, onOpenModuleShop, fullPage = false }) => (
     <div className="absolute inset-0 overflow-hidden">
         <div className="absolute bottom-[8%] left-[8%] right-[8%] grid grid-cols-2 gap-2">
             {[
-                { label: '扭蛋机', en: 'DIVERGENCE', enabled: true, action: onOpenGacha },
-                { label: '异格陈列柜', en: 'ASSEMBLY', enabled: true, action: onOpenCabinet },
-                { label: '模块购买', en: 'MODULES', enabled: false, action: undefined },
+                { label: '异世界扭蛋', en: 'ISEKAI', enabled: true, action: onOpenGacha },
+                { label: '异界陈列柜', en: 'ASSEMBLY', enabled: true, action: onOpenCabinet },
+                { label: '模块购买', en: 'MODULES', enabled: true, action: onOpenModuleShop },
                 { label: '钓鱼区', en: 'FISHING', enabled: false, action: undefined },
             ].map(facility => (
                 <button type="button" key={facility.label} disabled={!facility.enabled} onClick={facility.action}

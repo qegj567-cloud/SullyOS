@@ -430,7 +430,7 @@ export const ThinkingChainBlock: React.FC<{
     const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const pointerIdRef = useRef<number | null>(null);
-    const pointerTypeRef = useRef<React.PointerEvent<HTMLDivElement>['pointerType']>('');
+    const pointerTypeRef = useRef<React.PointerEvent<HTMLDivElement>['pointerType'] | ''>('');
     const pointerStartRef = useRef({ x: 0, y: 0 });
     const longPressReadyRef = useRef(false);
     const suppressNextClickRef = useRef(false);
@@ -1500,6 +1500,7 @@ const MessageItem = React.memo(({
     // 无条件解析一次（hook 不能进条件分支）。挂件/头像挂件走 TokenImg，各自组件内解析。
     const bubbleBgUrl = useBlobRefUrl(styleConfig.backgroundImage);
     const [showVoiceText, setShowVoiceText] = useState(false);
+    const [showSarTruth, setShowSarTruth] = useState(false);
     const [openingCollaborationFile, setOpeningCollaborationFile] = useState(false);
     const [replyOffset, setReplyOffset] = useState(0);
     const [isReplyGestureActive, setIsReplyGestureActive] = useState(false);
@@ -2459,12 +2460,49 @@ const MessageItem = React.memo(({
     if (m.type === 'vr_card') {
         const md: any = m.metadata || {};
         const roomNameMap: Record<string, string> = {
-            library: '图书馆', music: '听歌房', guestbook: '留言簿', gym: '娱乐室', postoffice: '邮局',
+            library: '图书馆', music: '听歌房', guestbook: '留言簿', gym: '娱乐室', postoffice: '邮局', theater: '剧院', signal: '信号坠落处', sar: 'SAR 活动空间',
         };
         const roomInfo = { name: roomNameMap[md.room] || '彼方' };
         const activity: string = md.activity || '在彼方度过了一段时间。';
         const excerpts: string[] = Array.isArray(md.annotationExcerpts) ? md.annotationExcerpts : [];
         const timeStr = new Date(m.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+        const sarNote: any = md.sarCabinetNote;
+        if (sarNote?.id) {
+            const card = (
+                <div className="w-72 max-w-[82vw]">
+                    <div className="relative overflow-hidden border border-stone-400/65 shadow-[4px_6px_0_rgba(86,78,66,.18)]" style={{ background: '#f4eddf', color: '#3f4744' }}>
+                        <div className="absolute inset-y-0 left-0 w-1.5 bg-gradient-to-b from-teal-700/80 via-slate-500/60 to-rose-700/70" />
+                        <div className="px-4 pl-5 pt-3 pb-2.5 flex items-start gap-2 border-b border-stone-400/45">
+                            <span className="mt-0.5 text-[15px] text-teal-700">✦</span>
+                            <div className="min-w-0 flex-1">
+                                <div className="text-[8px] tracking-[0.22em] font-bold text-teal-800/65">彼方 · 角色柜中随笔</div>
+                                <div className="mt-1 text-[15px] leading-snug font-bold text-stone-800" style={{ fontFamily: "'Noto Serif SC',serif" }}>{sarNote.title || '一次芯片事故'}</div>
+                                <div className="mt-1 text-[9px] text-stone-500">{sarNote.actorName || charName || 'Ta'} 给 {sarNote.targetName || '另一位玩家'} 用了两枚芯片</div>
+                            </div>
+                            <span className="text-[8px] text-stone-400">{timeStr}</span>
+                        </div>
+                        <div className="px-4 pl-5 py-3">
+                            <div className="flex items-center gap-1.5 text-[9px] text-teal-800/75">
+                                <span className="px-1.5 py-1 border border-teal-800/20 bg-white/30">{sarNote.variantTitle}</span><i className="not-italic text-stone-400">×</i><span className="px-1.5 py-1 border border-teal-800/20 bg-white/30">{sarNote.storyTitle}</span>
+                            </div>
+                            <blockquote className="my-2.5 px-2.5 py-2 border-l-2 border-rose-700/45 bg-[#e8ddce] text-[11px] leading-relaxed text-stone-700" style={{ fontFamily: "'Noto Serif SC',serif" }}>“{sarNote.highlight}”</blockquote>
+                            <p className="text-[11px] leading-[1.65] text-stone-600">{activity}</p>
+                            <details className="group mt-2 border-t border-dashed border-stone-400/50 pt-2 [&_summary]:list-none [&::-webkit-details-marker]:hidden">
+                                <summary className="cursor-pointer select-none text-[9px] font-bold text-teal-800/70">展开完整事故与 TA 的随笔 <span className="inline-block transition-transform group-open:rotate-90">›</span></summary>
+                                <div className="mt-2 space-y-2.5">
+                                    <div><div className="text-[8px] tracking-[0.14em] text-stone-400">事情经过</div><p className="mt-1 whitespace-pre-wrap text-[11px] leading-[1.75] text-stone-600">{sarNote.story}</p></div>
+                                    <div className="border-t border-stone-300/70 pt-2"><div className="text-[8px] tracking-[0.14em] text-rose-800/55">柜中随笔</div><p className="mt-1 whitespace-pre-wrap text-[11px] leading-[1.75] text-stone-700" style={{ fontFamily: "'Noto Serif SC',serif" }}>{sarNote.notes}</p></div>
+                                </div>
+                            </details>
+                        </div>
+                        <div className="px-4 pl-5 py-1.5 border-t border-stone-400/40 flex items-center justify-between text-[8px] text-stone-500">
+                            <span>TA 自己玩过的一局</span><span className="font-bold text-rose-800/60">已收入角色柜子</span>
+                        </div>
+                    </div>
+                </div>
+            );
+            return commonLayout(card);
+        }
         const card = (
             <div className="w-64">
                 <div
@@ -3528,7 +3566,11 @@ const MessageItem = React.memo(({
         .replace(/\n{3,}/g, '\n\n')                  // collapse excess newlines
         .trim());   // ⚠️ 末尾再洗一遍鱼声情绪 cue（[excited]/[pause]/(laughs) 等），避免漏到气泡/翻译里
 
-    const rawContent = m.content;
+    const sarSurfaceText = typeof m.metadata?.sarModuleSurface?.surface === 'string'
+        ? m.metadata.sarModuleSurface.surface.trim()
+        : '';
+    const hasSarSurface = !!sarSurfaceText;
+    const rawContent = hasSarSurface && !showSarTruth ? sarSurfaceText : m.content;
 
     // 语音文字（转文字面板 / 语音条预览）显示前：先洗 MiniMax 标记，再洗鱼声情绪 cue，
     // 两家服务商的演出标记都不会漏给用户看。
@@ -3559,16 +3601,28 @@ const MessageItem = React.memo(({
     // Check if raw content has a <语音> tag (voice-only message that hasn't been TTS'd yet).
     // 未闭合的开标签也算 (历史坏数据: 语音块曾被 chunkText 切碎, 开标签落单) —
     // 当语音条渲染 + 转文字兜底, 而不是把原始标签漏给用户看。
-    const hasVoiceTag = !isUser && /<[语語]音[^>]*>/.test(m.content);
+    const voiceMarkupContent = hasSarSurface && !showSarTruth && /<[语語]音[^>]*>/.test(sarSurfaceText)
+        ? sarSurfaceText
+        : m.content;
+    const hasVoiceTag = !isUser && /<[语語]音[^>]*>/.test(voiceMarkupContent);
     // Spoken text inside the <语音> tag — lets the placeholder bar offer a 转文字 toggle
     // even when no audio was synthesized (e.g. character has no MiniMax voice configured),
     // so fake voice messages stay readable just like real ones.
     // 配对优先; 配不上 (未闭合) 就取开标签之后的全部内容。
     const voiceTagText = hasVoiceTag ? cleanVoiceText((
-        m.content.match(/<[语語]音[^>]*>([\s\S]*?)<\/\s*[语語]音\s*>/)?.[1]
-        ?? m.content.match(/<[语語]音[^>]*>([\s\S]*)$/)?.[1]
+        voiceMarkupContent.match(/<[语語]音[^>]*>([\s\S]*?)<\/\s*[语語]音\s*>/)?.[1]
+        ?? voiceMarkupContent.match(/<[语語]音[^>]*>([\s\S]*)$/)?.[1]
         ?? ''
     ).replace(/<字幕>[\s\S]*?<\/字幕>/g, '').trim()) : '';
+    const voiceSubtitleText = cleanVoiceText(
+        voiceMarkupContent.match(/<字幕>([\s\S]*?)<\/字幕>/)?.[1] || '',
+    );
+    const generatedVoiceText = showSarTruth && hasSarSurface && voiceTagText
+        ? voiceTagText
+        : cleanVoiceText(voiceData?.spokenText);
+    const generatedVoiceSubtitle = showSarTruth && hasSarSurface
+        ? voiceSubtitleText
+        : cleanVoiceText(voiceData?.originalText);
     const hasVoiceContent = voiceData?.url || voiceLoading || hasVoiceTag;
     // Don't render empty bubbles (e.g. messages that were just "---"), unless voice data exists or pending
     if (!displayContent && !hasVoiceContent) return null;
@@ -3634,6 +3688,19 @@ const MessageItem = React.memo(({
                     </div>
                 )}
             </div>
+            )}
+
+            {/* SAR 只借一个小光点提示外显层，不改用户自定义气泡的背景、边框或排版。 */}
+            {hasSarSurface && (displayContent || hasVoiceContent) && (
+                <button
+                    type="button"
+                    aria-label={showSarTruth ? '切回模块外显' : '恢复真言'}
+                    title={showSarTruth ? '点击切回模块外显' : `${m.metadata?.sarModuleSurface?.moduleTitle || '模块'}生效中 · 点击恢复真言`}
+                    onClick={(event) => { event.stopPropagation(); event.preventDefault(); setShowSarTruth(value => !value); }}
+                    className="absolute z-20 -right-1 -bottom-1 w-3.5 h-3.5 rounded-full border border-white/50 bg-teal-200/80 shadow-[0_0_8px_rgba(94,234,212,.72)] active:scale-90 transition-transform"
+                >
+                    <span className="sr-only">{showSarTruth ? '真言' : '外显'}</span>
+                </button>
             )}
 
             {/* Layer 5: 双语「翻译/原文」切换 —— 气泡内右下角，细分隔线压层级，小灰字克制易找 */}
@@ -3748,28 +3815,28 @@ const MessageItem = React.memo(({
                                         {/* When foreign lang voice: show spoken text first, then Chinese translation */}
                                         {voiceData.lang && voiceData.spokenText ? (
                                             <>
-                                                <div className="whitespace-pre-wrap">{cleanVoiceText(voiceData.spokenText)}</div>
-                                                {(cleanVoiceText(voiceData.originalText) || displayContent) && (
+                                                <div className="whitespace-pre-wrap">{generatedVoiceText}</div>
+                                                {(generatedVoiceSubtitle || displayContent) && (
                                                     <div
                                                         style={{ opacity: 0.65 }}
                                                         className="whitespace-pre-wrap text-[10px] mt-1 pt-1 border-t border-current/10"
                                                     >
-                                                        {cleanVoiceText(voiceData.originalText) || displayContent}
+                                                        {generatedVoiceSubtitle || displayContent}
                                                     </div>
                                                 )}
                                             </>
                                         ) : (
                                             <>
                                                 {/* Default: show original text */}
-                                                {(cleanVoiceText(voiceData.originalText) || displayContent) && (
-                                                    <div className="whitespace-pre-wrap">{cleanVoiceText(voiceData.originalText) || displayContent}</div>
+                                                {(generatedVoiceSubtitle || displayContent) && (
+                                                    <div className="whitespace-pre-wrap">{generatedVoiceSubtitle || displayContent}</div>
                                                 )}
-                                                {cleanVoiceText(voiceData.spokenText) && (
+                                                {generatedVoiceText && (
                                                     <div
-                                                        style={{ opacity: (cleanVoiceText(voiceData.originalText) || displayContent) ? 0.55 : 1 }}
-                                                        className={`whitespace-pre-wrap ${(cleanVoiceText(voiceData.originalText) || displayContent) ? 'text-[10px] mt-1 pt-1 border-t border-current/10' : ''}`}
+                                                        style={{ opacity: (generatedVoiceSubtitle || displayContent) ? 0.55 : 1 }}
+                                                        className={`whitespace-pre-wrap ${(generatedVoiceSubtitle || displayContent) ? 'text-[10px] mt-1 pt-1 border-t border-current/10' : ''}`}
                                                     >
-                                                        {cleanVoiceText(voiceData.spokenText)}
+                                                        {generatedVoiceText}
                                                     </div>
                                                 )}
                                             </>
@@ -3854,6 +3921,7 @@ const MessageItem = React.memo(({
            prev.msg.metadata?.reviewStatus === next.msg.metadata?.reviewStatus &&
            prev.msg.metadata?.status === next.msg.metadata?.status &&
            prev.msg.metadata?.receipt === next.msg.metadata?.receipt &&
+           prev.msg.metadata?.sarModuleSurface?.surface === next.msg.metadata?.sarModuleSurface?.surface &&
            prev.isFirstInGroup === next.isFirstInGroup &&
            prev.isLastInGroup === next.isLastInGroup &&
            prev.activeTheme === next.activeTheme &&

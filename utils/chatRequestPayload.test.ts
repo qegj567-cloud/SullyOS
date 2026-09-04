@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { buildChatRequestPayload } from './chatRequestPayload';
 import type { BuildChatPayloadInput } from './chatRequestPayload';
 import { RealtimeContextManager } from './realtimeContext';
+import { installSARModuleOnCharacter } from './vrWorld/sarModuleRuntime';
+import { SAR_MODULE_CATALOG } from './vrWorld/sarModuleShop';
 
 // 即时对话（这一轮交给用户自己的 amsg worker 生成）那份 prompt 里，凡是 worker 到点
 // 会自己补一遍的时效段，前端就不再烤进去：当前时间块、【真实世界感知系统】（节日 /
@@ -234,5 +236,36 @@ describe('timelyByWorker —— 时效段交给 worker，前端这份不重复�
         expect(joined).toContain('对方正在开启一件还没有讲完的事情');
         expect(joined).toContain('不要用“别想了”“回来就好”“一切都会过去”');
         expect(joined).not.toContain('### 此刻的交流深度');
+    });
+
+    it('SAR 与内置翻译同时开启时，以 SAR 为外层、翻译标签留在两个内容字段内', async () => {
+        const runtime = installSARModuleOnCharacter(SAR_MODULE_CATALOG[0], 1);
+        const payload = await buildChatRequestPayload({
+            ...baseInput(),
+            char: {
+                id: 'char-sar-bilingual',
+                name: '测试角色',
+                memoryPalaceEnabled: false,
+                vrState: { enabled: true, intervalMinutes: 120, sarModule: runtime },
+            } as any,
+            userProfile: { ...userProfile, vrState: { enabled: true } } as any,
+            historyMsgs: [{
+                id: 201,
+                charId: 'char-sar-bilingual',
+                role: 'user',
+                type: 'text',
+                content: '你怎么说话怪怪的？',
+                timestamp: Date.now(),
+            }] as any[],
+            recallEntryPoint: 'chat_app',
+            translationConfig: { enabled: true, sourceLang: '日语', targetLang: '中文' },
+        });
+        const joined = joinMessages(payload.fullMessages);
+
+        expect(payload.flags.sarModuleActive).toBe(true);
+        expect(payload.flags.bilingualActive).toBe(true);
+        expect(joined).toContain('最外层必须是 <SAR_MODULE_OUTPUT>');
+        expect(joined).toContain('CHAR_TRUE 和 CHAR_SURFACE 内的每个气泡');
+        expect(joined).toContain('原文/译文语义一致');
     });
 });

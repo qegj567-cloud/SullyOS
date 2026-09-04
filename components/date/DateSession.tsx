@@ -109,6 +109,11 @@ const parseDialogue = (fullText: string, initialEmotion: string = 'normal'): Dia
     return results;
 };
 
+const getSARSurface = (message: Message): string | undefined => {
+    const value = message.metadata?.sarModuleSurface?.surface;
+    return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+};
+
 interface DateSessionProps {
     char: CharacterProfile;
     userProfile: UserProfile;
@@ -226,6 +231,8 @@ const DateSession: React.FC<DateSessionProps> = ({
     const [showExitModal, setShowExitModal] = useState(false);
     // API 失败时本地记住本轮输入，不依赖父组件的 DB 刷新是否已经完成；用户可直接点重试。
     const [pendingRetryText, setPendingRetryText] = useState('');
+    const [sarTruthMessageIds, setSarTruthMessageIds] = useState<Set<number>>(new Set());
+    const [sarVisualTruthKey, setSarVisualTruthKey] = useState<string | null>(null);
 
     useEffect(() => {
         if (!getPendingReplyText(messages)) setPendingRetryText('');
@@ -577,6 +584,29 @@ const DateSession: React.FC<DateSessionProps> = ({
     }, [sessionMessages, novelVisibleCount]);
     const hiddenNovelMessageCount = Math.max(0, sessionMessages.length - visibleSessionMessages.length);
 
+    // 立绘模式只有“当前行”，没有消息 id。用外显/真实两套同序行反查当前行，点击文字时
+    // 只在这一行之间切换；屏幕其它位置仍保持原来的推进交互。
+    const currentSarPair = React.useMemo(() => {
+        for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
+            const message = messages[messageIndex];
+            if (message.role !== 'assistant') continue;
+            const surface = getSARSurface(message);
+            if (!surface) continue;
+            const surfaceItems = parseDialogue(surface, 'normal');
+            const canonicalItems = parseDialogue(message.content || '', 'normal');
+            const index = surfaceItems.findIndex(item => item.text === currentText);
+            if (index >= 0) {
+                return {
+                    key: `${message.id}:${index}`,
+                    surface: surfaceItems[index]?.text || currentText,
+                    canonical: canonicalItems[index]?.text || message.content || currentText,
+                    moduleTitle: message.metadata?.sarModuleSurface?.moduleTitle || '临时模块',
+                };
+            }
+        }
+        return null;
+    }, [currentText, messages]);
+
     useEffect(() => {
         setNovelVisibleCount(NOVEL_MESSAGE_WINDOW_SIZE);
     }, [char.id]);
@@ -688,7 +718,7 @@ const DateSession: React.FC<DateSessionProps> = ({
     // 位置），isTyping 时也跳过（新回复交给 handleSend / handleRerollClick 处理，避免重复解析）。
     const lastAssistantContent = React.useMemo(() => {
         for (let i = messages.length - 1; i >= 0; i--) {
-            if (messages[i]?.role === 'assistant') return messages[i].content || '';
+            if (messages[i]?.role === 'assistant') return getSARSurface(messages[i]) || messages[i].content || '';
         }
         return '';
     }, [messages]);
@@ -1150,9 +1180,18 @@ const DateSession: React.FC<DateSessionProps> = ({
                                             {selectedMsgIds.has(msg.id) && <span className="text-white text-[10px]">✓</span>}
                                         </div>
                                     )}
-                                    {msg.role === 'user' ? (
+                                    {msg.role === 'user' ? (() => {
+                                        const sarSurface = getSARSurface(msg);
+                                        const sarRevealed = sarTruthMessageIds.has(msg.id);
+                                        const shown = sarSurface && !sarRevealed ? sarSurface : msg.content;
+                                        return (
                                         <div className="flex min-w-0 items-start justify-end gap-3">
-                                            <p className={`min-w-0 flex-1 whitespace-pre-wrap font-serif text-[16px] text-right leading-loose tracking-wide italic pr-4 ${char.dateLightReading ? 'text-stone-400 border-r-2 border-stone-300/50' : 'text-slate-400 border-r-2 border-slate-600/50'}`}>{cleanTextForDisplay(msg.content)} <span className="text-[10px] uppercase font-sans not-italic ml-2 opacity-50">{userProfile.name}</span></p>
+                                            <p
+                                                className={`min-w-0 flex-1 whitespace-pre-wrap font-serif text-[16px] text-right leading-loose tracking-wide italic pr-4 ${char.dateLightReading ? 'text-stone-400 border-r-2 border-stone-300/50' : 'text-slate-400 border-r-2 border-slate-600/50'} ${sarSurface && !sarRevealed ? 'cursor-pointer' : ''}`}
+                                                style={sarSurface && !sarRevealed ? { textShadow: char.dateLightReading ? '0 0 10px rgba(101,159,164,.24)' : '0 0 12px rgba(134,226,218,.32)' } : undefined}
+                                                onClick={sarSurface ? (event) => { event.stopPropagation(); setSarTruthMessageIds(previous => { const next = new Set(previous); if (next.has(msg.id)) next.delete(msg.id); else next.add(msg.id); return next; }); } : undefined}
+                                                title={sarSurface ? (sarRevealed ? '点击查看模块外显' : '模块外显中 · 点击恢复真言') : undefined}
+                                            >{cleanTextForDisplay(shown)} <span className="text-[10px] uppercase font-sans not-italic ml-2 opacity-50">{userProfile.name}</span></p>
                                             {char.dateReadingShowAvatars && (
                                                 <ReadingAvatar
                                                     src={userProfile.perCharAvatars?.[char.id] || userProfile.avatar}
@@ -1161,9 +1200,12 @@ const DateSession: React.FC<DateSessionProps> = ({
                                                 />
                                             )}
                                         </div>
-                                    ) : (() => {
+                                        ); })() : (() => {
                                         // 观测协议：从这条回复里剥出观测块，正文上方渲染独立卡片，正文本身不显示块文本
-                                        const { observation: msgObs, rest: msgBody } = extractObservation(msg.content || '', { lenient: observeEnabled, custom: char.dateObserve?.custom });
+                                        const sarSurface = getSARSurface(msg);
+                                        const sarRevealed = sarTruthMessageIds.has(msg.id);
+                                        const shown = sarSurface && !sarRevealed ? sarSurface : msg.content;
+                                        const { observation: msgObs, rest: msgBody } = extractObservation(shown || '', { lenient: observeEnabled, custom: char.dateObserve?.custom });
                                         return (
                                         <div className="flex min-w-0 items-start gap-3">
                                             {char.dateReadingShowAvatars && (
@@ -1202,7 +1244,12 @@ const DateSession: React.FC<DateSessionProps> = ({
                                                         onMouseDown={voiceEnabled && lineIsDialogue && !isOpeningMsg ? (e) => e.stopPropagation() : undefined}
                                                         onContextMenu={voiceEnabled && lineIsDialogue && !isOpeningMsg ? (e) => { e.preventDefault(); e.stopPropagation(); void openDateVoiceFavorite(voiceTarget); } : undefined}
                                                     >
-                                                        <p className={`flex-1 whitespace-pre-wrap font-serif text-[18px] text-justify leading-loose tracking-wide pl-4 ${char.dateLightReading ? 'text-stone-700 border-l-2 border-stone-200' : 'text-slate-200 drop-shadow-md border-l-2 border-white/10'}`}>{cleanLine}</p>
+                                                        <p
+                                                            className={`flex-1 whitespace-pre-wrap font-serif text-[18px] text-justify leading-loose tracking-wide pl-4 ${char.dateLightReading ? 'text-stone-700 border-l-2 border-stone-200' : 'text-slate-200 drop-shadow-md border-l-2 border-white/10'} ${sarSurface ? 'cursor-pointer' : ''}`}
+                                                            style={sarSurface && !sarRevealed ? { textShadow: char.dateLightReading ? '0 0 10px rgba(101,159,164,.26)' : '0 0 13px rgba(134,226,218,.36)' } : undefined}
+                                                            onClick={sarSurface ? (event) => { event.stopPropagation(); setSarTruthMessageIds(previous => { const next = new Set(previous); if (next.has(msg.id)) next.delete(msg.id); else next.add(msg.id); return next; }); } : undefined}
+                                                            title={sarSurface ? (sarRevealed ? '点击查看模块外显' : '模块外显中 · 点击恢复真言') : undefined}
+                                                        >{cleanLine}</p>
                                                         {/* Voice button: only for dialogue lines, not opening */}
                                                         {voiceEnabled && lineIsDialogue && !isOpeningMsg && (
                                                             <button
@@ -1286,7 +1333,12 @@ const DateSession: React.FC<DateSessionProps> = ({
                                         </button>
                                     )}
                                 </div>
-                                <p className="text-white/90 text-[16px] leading-relaxed font-light tracking-wide drop-shadow-md mt-2">{displayedText}{isTextAnimating && <span className="inline-block w-2 h-4 bg-white/70 ml-1 animate-pulse align-middle"></span>}</p>
+                                <p
+                                    className={`text-white/90 text-[16px] leading-relaxed font-light tracking-wide drop-shadow-md mt-2 ${currentSarPair ? 'cursor-pointer' : ''}`}
+                                    style={currentSarPair && sarVisualTruthKey !== currentSarPair.key ? { textShadow: '0 0 13px rgba(134,226,218,.42)' } : undefined}
+                                    onClick={currentSarPair ? (event) => { event.stopPropagation(); setSarVisualTruthKey(previous => previous === currentSarPair.key ? null : currentSarPair.key); } : undefined}
+                                    title={currentSarPair ? (sarVisualTruthKey === currentSarPair.key ? '点击查看模块外显' : '模块外显中 · 点击恢复真言') : undefined}
+                                >{currentSarPair && sarVisualTruthKey === currentSarPair.key ? currentSarPair.canonical : displayedText}{isTextAnimating && sarVisualTruthKey !== currentSarPair?.key && <span className="inline-block w-2 h-4 bg-white/70 ml-1 animate-pulse align-middle"></span>}</p>
                                 {!isTextAnimating && dialogueQueue.length > 0 && <div className="absolute bottom-3 right-4 animate-bounce opacity-70"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 text-white"><path fillRule="evenodd" d="M12.53 16.28a.75.75 0 0 1-1.06 0l-7.5-7.5a.75.75 0 0 1 1.06-1.06L12 14.69l6.97-6.97a.75.75 0 1 1 1.06 1.06l-7.5 7.5Z" clipRule="evenodd" /></svg></div>}
                                 {!isTextAnimating && dialogueQueue.length === 0 && dialogueBatch.length > 0 && <div className="absolute bottom-3 right-4 opacity-50 text-[10px] text-white flex items-center gap-1 animate-pulse"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>Loop</div>}
                             </div>

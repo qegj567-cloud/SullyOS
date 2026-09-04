@@ -54,6 +54,7 @@ import { normalizeAssistantActionFormatting } from './assistantActionFormat';
 import { markAmsgStateDirty } from './amsgStateSync';
 import { announceScheduleChanges, applyAssistantScheduleChanges } from './scheduleChange';
 import { isBlobRef } from './blobRef';
+import { consumeSARChatSurfaceChunk, type SARModuleSurfaceMeta } from './vrWorld/sarModuleRuntime';
 
 // ─── 模块内辅助 ──────────────────────────────────────────────────────────────
 
@@ -88,6 +89,63 @@ const normalizeAiContent = (raw: string): string => {
     cleaned = cleaned.replace(/\s*\[(?:聊天|通话|约会)\]\s*/g, '\n');
     cleaned = cleaned.replace(/\[(?:你|User|用户|System)\s*发送了表情包[:：]\s*(.*?)\]/g, '[[SEND_EMOJI: $1]]');
     return cleaned;
+};
+
+/**
+ * 把 SAR 的 CHAR_SURFACE 按“最终会落库的 Chat 气泡”拆开。
+ *
+ * 这里不能只按换行切：内置翻译模式的一组 <原文>/<译文> 最终会合并成一条
+ * `原文\n%%BILINGUAL%%\n译文` 消息；语音块 + 字幕也必须保持一个原子气泡。
+ * 这份拆法刻意和 renderAndPersist 保持一致，surface 才不会在特殊模式里串到下一泡。
+ */
+export const splitSARChatSurfaceBubbles = (raw: string): string[] => {
+    let content = ChatParser.sanitize(raw || '', { keepCitations: true });
+    content = content.replace(/\[\[INNER_STATE:\s*[\s\S]*?\]\]/g, '').trim();
+    if (!content) return [];
+
+    const chunks: string[] = [];
+    const appendPlain = (segment: string) => {
+        for (const part of ChatParser.splitResponse(segment)) {
+            if (part.type !== 'text') continue;
+            const rawBlocks = part.content.split(/^\s*---\s*$/m).filter(block => block.trim());
+            const blocks = rawBlocks.length > 0 ? rawBlocks : [part.content];
+            for (const block of blocks) {
+                for (const chunk of ChatParser.chunkText(block.trim())) {
+                    const clean = ChatParser.sanitize(chunk);
+                    if (clean && ChatParser.hasDisplayContent(clean)) chunks.push(clean);
+                }
+            }
+        }
+    };
+
+    const tagPattern = /<翻译>\s*<原文>([\s\S]*?)<\/原文>\s*<译文>([\s\S]*?)<\/译文>\s*<\/翻译>/g;
+    if (!tagPattern.test(content)) {
+        appendPlain(content);
+        return chunks;
+    }
+
+    tagPattern.lastIndex = 0;
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = tagPattern.exec(content)) !== null) {
+        const textBefore = content.slice(lastIndex, match.index).trim();
+        if (textBefore) appendPlain(textBefore);
+
+        // 表情是独立消息，不参与文字 surface 的序号；与真正落库分支保持一致。
+        const stripEmoji = (value: string) => value.replace(/\[\[SEND_EMOJI:\s*.*?\]\]/g, '').trim();
+        const original = ChatParser.sanitize(stripEmoji(match[1]));
+        const translated = ChatParser.sanitize(stripEmoji(match[2]));
+        if (original || translated) {
+            chunks.push(original && translated
+                ? `${original}\n%%BILINGUAL%%\n${translated}`
+                : (original || translated));
+        }
+        lastIndex = match.index + match[0].length;
+    }
+
+    const textAfter = content.slice(lastIndex).trim();
+    if (textAfter) appendPlain(textAfter.replace(/<\/?翻译>|<\/?原文>|<\/?译文>/g, '').trim());
+    return chunks;
 };
 
 /**
@@ -511,6 +569,8 @@ export interface PostProcessCtx {
      * 在线送达 vs 离线补收的判定见 activeMsgRuntime.resolveInboxPersistTimestamp。
      */
     messageTimestamp?: number;
+    /** SAR 模块的纯展示层。canonical 正文仍走 rawAiContent 的完整后处理与落库。 */
+    sarModuleSurface?: SARModuleSurfaceMeta;
 }
 
 // ─── 主入口 ─────────────────────────────────────────────────────────────────
@@ -543,6 +603,7 @@ export async function applyAssistantPostProcessing(
         directives,
         reasoningContent: pushReasoningContent,
         messageTimestamp,
+        sarModuleSurface,
     } = ctx;
     const { baseUrl, headers, effectiveApi } = api;
     // 拟人打字延迟：流式预览已实时展示过气泡时（instantRender）跳过，避免二次慢放
@@ -727,10 +788,27 @@ export async function applyAssistantPostProcessing(
 
     // 把一段文本 (parseAndExecuteActions / HTML 之外的部分) 渲染成气泡并落库 —— 双语 / 表情 / 引用 / 分段
     // 与原 inline 末尾逻辑一致。抽出来是为了让"执行功能前的本轮正文 A"能在二轮前先展示, 二轮结果 B 复用同一套。
+    let sarSurfaceClaimed = false;
     const renderAndPersist = async (rawContent: string, firstThinkingChain: string | null): Promise<void> => {
         let firstMeta: any = firstThinkingChain ? { thinkingChain: firstThinkingChain } : null;
-        const takeMeta = (base: any): any => {
-            const merged = firstMeta ? { ...(base || {}), ...firstMeta } : base;
+        const surfaceChunks = !sarSurfaceClaimed && sarModuleSurface?.surface
+            ? splitSARChatSurfaceBubbles(sarModuleSurface.surface)
+            : [];
+        if (surfaceChunks.length > 0) sarSurfaceClaimed = true;
+        let surfaceIndex = 0;
+        const takeMeta = (base: any, canonicalChunk?: string): any => {
+            let surfaceChunk: string | undefined;
+            if (canonicalChunk !== undefined) {
+                const aligned = consumeSARChatSurfaceChunk(canonicalChunk, surfaceChunks, surfaceIndex);
+                surfaceChunk = aligned.surface;
+                surfaceIndex = aligned.nextIndex;
+            }
+            const sarMeta = surfaceChunk && sarModuleSurface
+                ? { sarModuleSurface: { ...sarModuleSurface, surface: surfaceChunk } }
+                : undefined;
+            const merged = firstMeta || sarMeta
+                ? { ...(base || {}), ...(sarMeta || {}), ...(firstMeta || {}) }
+                : base;
             firstMeta = null;
             return merged;
         };
@@ -813,7 +891,7 @@ export async function applyAssistantPostProcessing(
                         if (!chunk) continue;
                         const replyData = globalMsgIndex === 0 ? aiReplyTarget : undefined;
                         await typingPause(Math.min(Math.max(chunk.length * 50, 500), 2000));
-                        await persistMessage({ charId: char.id, role: 'assistant', type: 'text', content: chunk, replyTo: replyData, metadata: takeMeta(mcdInheritMeta) } as any);
+                        await persistMessage({ charId: char.id, role: 'assistant', type: 'text', content: chunk, replyTo: replyData, metadata: takeMeta(mcdInheritMeta, chunk) } as any);
                         setMessages(await DB.getRecentMessagesByCharId(char.id, 200));
                         globalMsgIndex++;
                     }
@@ -839,7 +917,7 @@ export async function applyAssistantPostProcessing(
                         : (originalText || translatedText);
                     const replyData = globalMsgIndex === 0 ? aiReplyTarget : undefined;
                     await typingPause(Math.min(Math.max(biContent.length * 30, 400), 2000));
-                    await persistMessage({ charId: char.id, role: 'assistant', type: 'text', content: biContent, replyTo: replyData, metadata: takeMeta(mcdInheritMeta) } as any);
+                    await persistMessage({ charId: char.id, role: 'assistant', type: 'text', content: biContent, replyTo: replyData, metadata: takeMeta(mcdInheritMeta, biContent) } as any);
                     setMessages(await DB.getRecentMessagesByCharId(char.id, 200));
                     globalMsgIndex++;
                 }
@@ -888,7 +966,7 @@ export async function applyAssistantPostProcessing(
                         if (ChatParser.hasDisplayContent(chunk)) {
                             const cleanChunk = ChatParser.sanitize(chunk);
                             if (cleanChunk) {
-                                await persistMessage({ charId: char.id, role: 'assistant', type: 'text', content: cleanChunk, replyTo: replyData, metadata: takeMeta(mcdInheritMeta) } as any);
+                                await persistMessage({ charId: char.id, role: 'assistant', type: 'text', content: cleanChunk, replyTo: replyData, metadata: takeMeta(mcdInheritMeta, cleanChunk) } as any);
                                 setMessages(await DB.getRecentMessagesByCharId(char.id, 200));
                                 globalMsgIndex++;
                                 chunkSaved = true;

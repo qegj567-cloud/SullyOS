@@ -337,6 +337,15 @@ export function normalizeMessageContent(
         return head;
     }
 
+    // SAR 模块的外显版本只用于界面，不进入任何上下文。这里给主聊天、归档与记忆宫殿
+    // 同一条极短的语义护栏：总结器即使只吃到模块中途的几轮，也知道 content 才是真意，
+    // 不会把临时古风/傲娇等外显归纳成永久人格或关系变化。
+    const sarSurface = msg.metadata?.sarModuleSurface;
+    if (sarSurface?.surface) {
+        const title = sarSurface.moduleTitle || '未知模块';
+        return `${msg.content || ''}\n[SAR临时外显注记：本条 content 是真实语义；「${title}」只改变了当时界面显示，不代表真实内心、事实、永久人格、长期偏好或关系变化。]`;
+    }
+
     // 默认：text / 未知类型 → 用 content
     return msg.content || '';
 }

@@ -93,7 +93,7 @@ export const VR_ROOMS: VRRoomDef[] = [
         id: 'sar',
         name: 'SAR 活动室',
         blurb: '一间被两位异世界访客重新布置过的活动室，摆着人格推演机、模块柜台，以及通往水域的门。',
-        affordance: '你可以使用人格推演、购买临时模块，或去里面的水域钓鱼。',
+        affordance: '你可以自己转一次扭蛋，拿两枚临时芯片给另一位玩家装上，看完整场异界事故，再把随笔与吐槽收进自己的柜子。',
         emoji: '',
         implemented: true,
         accent: 'indigo',

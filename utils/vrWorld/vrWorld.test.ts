@@ -215,6 +215,11 @@ describe('彼方手动指定房间', () => {
     it('手动点听歌房时，即使角色没有歌单且房间没在放歌也不会随机跳走', () => {
         expect(rollRoom({} as any, [], null, 'music')).toBe('music');
     });
+
+    it('SAR 活动空间可以手动选择，也进入角色自主活动随机池', () => {
+        expect(rollRoom({} as any, [], null, 'sar')).toBe('sar');
+        expect(rollRoom({} as any, [], null, undefined, () => 0.999)).toBe('sar');
+    });
 });
 
 describe('彼方图书馆自动选书', () => {

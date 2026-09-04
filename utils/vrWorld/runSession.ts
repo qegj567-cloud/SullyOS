@@ -40,6 +40,15 @@ import {
     buildTheaterRoomTurn, parseScriptOutput,
     buildSignalRoomTurn, parseSignalOutput,
 } from './prompts';
+import {
+    buildSARCharacterCabinetTurn,
+    createSARCharacterCabinetNote,
+    parseSARCharacterCabinetOutput,
+    rollSARCharacterCabinetScenario,
+    type SARCharacterCabinetScenario,
+} from './sarCharacterCabinet';
+import { SAR_MODULE_CATALOG, type SARModuleDefinition } from './sarModuleShop';
+import { installSARModuleOnUser } from './sarModuleRuntime';
 
 /** 记忆管线所需配置的最小形状（避免从 OSContext 反向 import 造成循环依赖）。 */
 interface MemoryConfigLike {
@@ -57,6 +66,8 @@ export interface VRSessionDeps {
     realtimeConfig?: RealtimeConfig;
     memoryPalaceConfig?: MemoryConfigLike;
     updateCharacter: (id: string, updates: Partial<CharacterProfile>) => Promise<void> | void;
+    /** 角色在 SAR 商店对用户装载模块时写回用户状态；旧调用方可省略。 */
+    updateUserProfile?: (updates: Partial<UserProfile> | ((prev: UserProfile) => Partial<UserProfile>)) => Promise<void> | void;
     /** 用户手动触发时指定的房间；省略 = 随机。不可用（如指定图书馆但无书）时自动回退随机。 */
     forcedRoom?: VRRoomId;
     /** 用户在邮局指定要让该角色回复的来信 id（forcedRoom 应为 postoffice）。 */
@@ -181,23 +192,49 @@ function nameLine(name: string, act: string): string {
     return t.startsWith(name) ? t : `${name}${act}`;
 }
 
-/** roll 一个房间：图书馆需有书；听歌房需有歌单或正在放歌；留言簿/娱乐室/邮局/剧院恒可去。 */
-export function rollRoom(char: CharacterProfile, novels: VRWorldNovel[], musicState: VRMusicRoomState | null, prefer?: VRRoomId): VRRoomId | null {
+function readTaggedValue(raw: string, tag: string): string {
+    const match = raw.match(new RegExp(`<${tag}>\\s*([\\s\\S]*?)\\s*</${tag}>`, 'i'));
+    return match?.[1]?.trim() || '';
+}
+
+function buildSARModuleShopTurn(charName: string, module: SARModuleDefinition, canUseOnUser: boolean, userName: string): string {
+    return `你这次在彼方的 SAR 活动空间逛模块商店，并选中了「${module.title}」。
+模块作用：${module.description}
+${canUseOnUser
+        ? `${userName} 此刻也在 SAR，且明确允许角色对自己使用模块。请根据 ${charName} 的性格与双方关系，决定是当场对 ${userName} 装载，还是只买下来研究。`
+        : '用户此刻不满足被装载条件，你只能购买、研究或吐槽，禁止声称已对用户装载。'}
+
+请写一段具体、符合角色的自由活动记录，不要泛泛概括。严格输出：
+<ACTIVITY>第三人称一句话概述，20~55字</ACTIVITY>
+<NOTE>角色自己的详细随笔/吐槽，60~180字</NOTE>
+<USE_ON_USER>${canUseOnUser ? 'YES 或 NO' : 'NO'}</USE_ON_USER>`;
+}
+
+/** roll 一个房间：图书馆需有书；听歌房需有歌单或正在放歌；其余常规房间与 SAR 恒可去。 */
+export function rollRoom(
+    char: CharacterProfile,
+    novels: VRWorldNovel[],
+    musicState: VRMusicRoomState | null,
+    prefer?: VRRoomId,
+    random: () => number = Math.random,
+): VRRoomId | null {
     // 信号坠落处【不进随机池】——它是用户自发参与的特殊活动，只在用户点「参与→指定角色」
     // 时以 forcedRoom='signal' 进入，角色不会自己随机逛过去。
     if (prefer === 'signal') return 'signal';
     // 用户手动点“听歌房”时必须尊重选择。即使当前没有歌，听歌房提示词也支持
     // 角色戴着耳机放空；不能因为没有歌单就悄悄随机跳去剧院等其他房间。
     if (prefer === 'music') return 'music';
-    const pool: VRRoomId[] = ['guestbook', 'gym', 'postoffice', 'theater'];
+    const pool: VRRoomId[] = ['guestbook', 'gym', 'postoffice', 'theater', 'sar'];
     if (novels.length > 0) pool.push('library');
     if (gatherCharSongs(char).length > 0 || musicState?.nowPlaying) pool.push('music');
     if (prefer && pool.includes(prefer)) return prefer; // 指定的房间可用则去，否则回退随机
-    return pool[Math.floor(Math.random() * pool.length)];
+    const rolled = Number(random());
+    const normalized = Number.isFinite(rolled) ? Math.max(0, Math.min(0.999999999, rolled)) : 0;
+    return pool[Math.floor(normalized * pool.length)];
 }
 
 export async function runVRSession(deps: VRSessionDeps): Promise<VRSessionResult> {
-    const { char, characters, apiConfig, userProfile, groups, realtimeConfig, memoryPalaceConfig, updateCharacter, forcedRoom, forcedLetterId, manual } = deps;
+    const { char, characters, apiConfig, userProfile, groups, realtimeConfig, memoryPalaceConfig, updateCharacter, updateUserProfile, forcedRoom, forcedLetterId, manual } = deps;
 
     if (running.has(char.id)) return { ok: false, reason: 'busy' };
 
@@ -277,6 +314,10 @@ export async function runVRSession(deps: VRSessionDeps): Promise<VRSessionResult
         let signalMode: 'append' | 'start' = 'append';
         let signalRolledLines = 0;
         let signalWhisper = '';
+        let sarScenario: SARCharacterCabinetScenario | null = null;
+        let sarMode: 'cabinet' | 'module-shop' | null = null;
+        let sarShopModule: SARModuleDefinition | null = null;
+        let sarCanUseOnUser = false;
         const recallNames = new Set<string>();
         const recallExtra: string[] = [];
 
@@ -380,6 +421,30 @@ export async function runVRSession(deps: VRSessionDeps): Promise<VRSessionResult
         } else if (room.id === 'theater') {
             occupantsOf('theater').forEach(n => recallNames.add(n));
             roomTurn = buildTheaterRoomTurn(occupantsOf('theater'), char.name);
+        } else if (room.id === 'sar') {
+            // SAR 是整页活动空间：角色会在陈列柜和模块商店之间自行选择活动。
+            sarMode = Math.random() < 0.42 ? 'module-shop' : 'cabinet';
+            if (sarMode === 'module-shop') {
+                const compatible = SAR_MODULE_CATALOG.filter(module => module.supportsUserTarget);
+                sarShopModule = compatible[Math.floor(Math.random() * compatible.length)] || SAR_MODULE_CATALOG[0] || null;
+                if (!sarShopModule) return { ok: false, room: 'sar', reason: 'no-module' };
+                const uv = userProfile.vrState;
+                sarCanUseOnUser = Boolean(
+                    updateUserProfile
+                    && uv?.allowCharacterModules === true
+                    && uv.enabled
+                    && uv.currentRoom === 'sar'
+                    && !uv.sarModule,
+                );
+                if (sarCanUseOnUser && userProfile.name) recallNames.add(userProfile.name);
+                recallExtra.push(`SAR 模块商店「${sarShopModule.title}」`);
+                roomTurn = buildSARModuleShopTurn(char.name, sarShopModule, sarCanUseOnUser, userProfile.name || '用户');
+            } else {
+                sarScenario = rollSARCharacterCabinetScenario(char, characters, userProfile);
+                if (sarScenario.target.kind !== 'wanderer') recallNames.add(sarScenario.target.name);
+                recallExtra.push(`SAR 临时芯片「${sarScenario.variant.title}」与「${sarScenario.story.title}」`);
+                roomTurn = buildSARCharacterCabinetTurn(char.name, sarScenario);
+            }
         } else if (room.id === 'signal') {
             // 写诗会话锁已在 if-chain 之前抢到，signalState（锁内最新全文）已就绪。
             if (!signalState) return { ok: false, room: 'signal', reason: 'signal-busy' };
@@ -627,6 +692,67 @@ export async function runVRSession(deps: VRSessionDeps): Promise<VRSessionResult
             cardLines = [`「彼方 · ${room.name}」`, nameLine(char.name, activity)];
             if (parsed.roles.length) cardLines.push(`登场：${parsed.roles.map(r => r.name).join('、')}`);
             meta = { vrCard: true, room: 'theater', activity };
+        } else if (room.id === 'sar' && sarMode === 'module-shop' && sarShopModule) {
+            const parsedActivity = readTaggedValue(aiContent, 'ACTIVITY');
+            const note = readTaggedValue(aiContent, 'NOTE');
+            const wantsUser = /^yes$/i.test(readTaggedValue(aiContent, 'USE_ON_USER'));
+            const usedOnUser = Boolean(sarCanUseOnUser && wantsUser && updateUserProfile);
+            await updateCharacter(char.id, {
+                vrState: {
+                    ...prevState,
+                    currentRoom: 'sar',
+                    sarActivity: 'module-shop',
+                    lastActiveAt: Date.now(),
+                },
+            });
+            if (usedOnUser && updateUserProfile) {
+                const runtime = installSARModuleOnUser(sarShopModule, char);
+                await updateUserProfile(previous => ({
+                    vrState: {
+                        ...(previous.vrState || { enabled: true }),
+                        sarModule: runtime,
+                    },
+                }));
+                try {
+                    window.dispatchEvent(new CustomEvent('sar-module-installed-on-user', {
+                        detail: { charId: char.id, charName: char.name, moduleId: sarShopModule.id, moduleTitle: sarShopModule.title },
+                    }));
+                } catch { /* SSR */ }
+            }
+            activity = parsedActivity || (usedOnUser
+                ? `在 SAR 模块商店挑中了「${sarShopModule.title}」，还趁你在场时装到了你身上。`
+                : `在 SAR 模块商店买下「${sarShopModule.title}」，研究了好一阵。`);
+            cardLines = [
+                '「彼方 · SAR 模块商店」',
+                nameLine(char.name, activity),
+                `模块：${sarShopModule.title} · ${sarShopModule.effectLabel}`,
+            ];
+            if (note) cardLines.push(`随笔：${note}`);
+            if (usedOnUser) cardLines.push(`装载：已对你生效 · 5 次成功互动`);
+            meta = {
+                vrCard: true,
+                room: 'sar',
+                activity,
+                behavior: note || undefined,
+                sarModuleShop: { moduleId: sarShopModule.id, moduleTitle: sarShopModule.title, usedOnUser },
+            };
+        } else if (room.id === 'sar' && sarScenario) {
+            const parsed = parseSARCharacterCabinetOutput(aiContent);
+            if (!parsed) return { ok: false, room: 'sar', reason: 'empty' };
+            const note = createSARCharacterCabinetNote(char, sarScenario, parsed);
+            await updateCharacter(char.id, { vrState: { ...prevState, currentRoom: 'sar', sarActivity: 'cabinet', lastActiveAt: Date.now() } });
+            activity = parsed.activity || `在 SAR 活动空间把「${sarScenario.variant.title}」和「${sarScenario.story.title}」用在了 ${sarScenario.target.name} 身上。`;
+            cardLines = [
+                '「彼方 · SAR 活动空间」',
+                nameLine(char.name, activity),
+                `对象：${sarScenario.target.name}`,
+                `芯片：${sarScenario.variant.title} × ${sarScenario.story.title}`,
+                `记录标题：${parsed.title}`,
+                `剧情：${parsed.story}`,
+                `随笔：${parsed.notes}`,
+                `高光：${parsed.highlight}`,
+            ];
+            meta = { vrCard: true, room: 'sar', activity, sarCabinetNote: note };
         } else if (room.id === 'signal') {
             // === 信号坠落处：解析 1~2 行 → 写回后端（起新篇 / 接龙）===
             const bk = signalState!.booklet;
