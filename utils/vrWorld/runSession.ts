@@ -32,7 +32,7 @@ import { PostOffice } from './postOffice';
 import { Signal, SignalState, recordMyLine, getMyRecentLines, takeSignalWhisper } from './signal';
 import { getReadingWindow, getBookmark, buildAnnotation } from './novel';
 import {
-    buildVRSystemAddendum, buildLibraryRoomTurn, parseVROutput,
+    buildVRSystemAddendum, rollSessionVibe, buildLibraryRoomTurn, parseVROutput,
     buildMusicRoomTurn, parseMusicOutput,
     buildGuestbookRoomTurn, parseGuestbookOutput,
     buildGymRoomTurn, parseGymOutput,
@@ -443,7 +443,7 @@ export async function runVRSession(deps: VRSessionDeps): Promise<VRSessionResult
             // 且纯文本情景里历史图片只是撑爆上下文的噪声 → 压平成文本占位
             stripImages: true,
         });
-        const systemPrompt = payload.systemPrompt + buildVRSystemAddendum(room, char.name);
+        const systemPrompt = payload.systemPrompt + buildVRSystemAddendum(room, char.name, rollSessionVibe());
 
         // 调 LLM（记录一次调用，供"调用记录"对账）
         const baseUrl = vrApi.baseUrl.replace(/\/+$/, '');
