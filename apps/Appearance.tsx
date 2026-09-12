@@ -304,29 +304,16 @@ interface PresetManagerProps {
     onRename: (id: string, name: string) => void;
     onExport: (id: string) => Promise<Blob>;
     onImport: (file: File) => Promise<void>;
-    onReset: () => Promise<void>;
     addToast: (msg: string, type?: Toast['type']) => void;
     currentTheme: OSTheme;
 }
 
-const PresetManager: React.FC<PresetManagerProps> = ({ presets, onSave, onApply, onDelete, onRename, onExport, onImport, onReset, addToast, currentTheme }) => {
+const PresetManager: React.FC<PresetManagerProps> = ({ presets, onSave, onApply, onDelete, onRename, onExport, onImport, addToast, currentTheme }) => {
     const [newName, setNewName] = useState('');
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editName, setEditName] = useState('');
     const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-    const [confirmReset, setConfirmReset] = useState(false);
-    const [resetting, setResetting] = useState(false);
     const importRef = useRef<HTMLInputElement>(null);
-
-    const handleReset = async () => {
-        setResetting(true);
-        try {
-            await onReset();
-        } finally {
-            setResetting(false);
-            setConfirmReset(false);
-        }
-    };
 
     const handleSave = () => {
         const name = newName.trim() || `预设 ${new Date().toLocaleDateString('zh-CN')}`;
@@ -373,35 +360,6 @@ const PresetManager: React.FC<PresetManagerProps> = ({ presets, onSave, onApply,
 
     return (
         <div className="space-y-5">
-            {/* One-click Reset */}
-            <section className="bg-gradient-to-br from-rose-50 to-orange-50 rounded-3xl p-5 shadow-sm border border-rose-100">
-                <div className="flex items-center gap-2 mb-2">
-                    <h2 className="text-sm font-bold text-rose-500 uppercase tracking-widest">一键还原外观</h2>
-                </div>
-                <p className="text-[10px] text-slate-500 mb-3 leading-relaxed">
-                    把主题色、壁纸、字体、应用图标、桌面小组件、装饰贴纸全部还原成最初始状态。在不同版本之间反复导入预设导致图标错乱时使用。<br/>
-                    <span className="text-slate-400">已保存的外观预设不会被删除，随时还能切回去。</span>
-                </p>
-                {!confirmReset ? (
-                    <button onClick={() => setConfirmReset(true)}
-                        className="w-full py-2.5 bg-white text-rose-500 font-bold text-xs rounded-xl border border-rose-200 active:scale-95 transition-transform flex items-center justify-center gap-2">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>
-                        还原为初始外观
-                    </button>
-                ) : (
-                    <div className="flex gap-2">
-                        <button onClick={handleReset} disabled={resetting}
-                            className="flex-1 py-2.5 bg-rose-500 text-white font-bold text-xs rounded-xl shadow-sm active:scale-95 transition-transform disabled:opacity-50">
-                            {resetting ? '正在还原...' : '确认还原'}
-                        </button>
-                        <button onClick={() => setConfirmReset(false)} disabled={resetting}
-                            className="flex-1 py-2.5 bg-white text-slate-500 font-bold text-xs rounded-xl border border-slate-200 active:scale-95 transition-transform disabled:opacity-50">
-                            取消
-                        </button>
-                    </div>
-                )}
-            </section>
-
             {/* Save Current */}
             <section className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
                 <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-3">保存当前外观</h2>
@@ -520,17 +478,7 @@ const PresetManager: React.FC<PresetManagerProps> = ({ presets, onSave, onApply,
 };
 
 const Appearance: React.FC = () => {
-  const { theme, updateTheme, closeApp, openApp, setCustomIcon, customIcons, addToast, appearancePresets, saveAppearancePreset, applyAppearancePreset, deleteAppearancePreset, renameAppearancePreset, exportAppearancePreset, importAppearancePreset, resetAppearance, characters, activeCharacterId, updateCharacter } = useOS();
-  // 一键还原全部「聊天白框自定义 CSS」：清掉全局 + 每个角色自带的。
-  // 兼作救援：单角色的坏 CSS 把聊天界面整崩、进不去该角色设置时，从这里一键全清即可恢复。
-  const resetAllChromeCss = () => {
-    let n = 0;
-    if (theme.chatChromeCustomCss) { updateTheme({ chatChromeCustomCss: '' }); n++; }
-    (characters || []).forEach((c: any) => {
-      if (c?.chromeCustomCss) { updateCharacter(c.id, { chromeCustomCss: '' } as any); n++; }
-    });
-    addToast(n ? `已还原 ${n} 处聊天白框美化` : '没有需要还原的白框美化', n ? 'success' : 'info');
-  };
+  const { theme, updateTheme, closeApp, openApp, setCustomIcon, customIcons, addToast, appearancePresets, saveAppearancePreset, applyAppearancePreset, deleteAppearancePreset, renameAppearancePreset, exportAppearancePreset, importAppearancePreset, characters, activeCharacterId, updateCharacter } = useOS();
   const [activeTab, setActiveTab] = useState<'theme' | 'icons' | 'presets' | 'chat'>('theme');
   const wallpaperInputRef = useRef<HTMLInputElement>(null);
   const [wallpaperUrl, setWallpaperUrl] = useState('');
@@ -1794,12 +1742,11 @@ const Appearance: React.FC = () => {
                 onRename={renameAppearancePreset}
                 onExport={exportAppearancePreset}
                 onImport={importAppearancePreset}
-                onReset={resetAppearance}
                 addToast={addToast}
                 currentTheme={theme}
             />
         ) : activeTab === 'chat' ? (
-            <ModularChatAppearanceEditor theme={theme} updateTheme={updateTheme} onResetAllChrome={resetAllChromeCss} onOpenApp={openApp} />
+            <ModularChatAppearanceEditor theme={theme} updateTheme={updateTheme} onOpenApp={openApp} />
         ) : null}
       </div>
     </div>

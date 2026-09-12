@@ -8,8 +8,6 @@ import { FadersHorizontal } from '@phosphor-icons/react';
 type Props = {
     theme: OSTheme;
     updateTheme: (updates: Partial<OSTheme>) => void;
-    /** 一键还原全部聊天白框 CSS（全局 + 每个角色），兼作坏 CSS 救援。 */
-    onResetAllChrome?: () => void;
     /** 「进阶装扮」区块的跳转（如一键去气泡工坊）。 */
     onOpenApp?: (appId: AppID) => void;
 };
@@ -393,7 +391,7 @@ const ChoiceGroup: React.FC<{
     </div>
 );
 
-export const ChatAppearanceEditor: React.FC<Props> = ({ theme, updateTheme, onResetAllChrome, onOpenApp }) => {
+export const ChatAppearanceEditor: React.FC<Props> = ({ theme, updateTheme, onOpenApp }) => {
     const avatarShape = theme.chatAvatarShape || defaults.chatAvatarShape;
     const avatarSize = theme.chatAvatarSize || defaults.chatAvatarSize;
     const avatarMode = theme.chatAvatarMode || defaults.chatAvatarMode;
@@ -857,14 +855,9 @@ export const ChatAppearanceEditor: React.FC<Props> = ({ theme, updateTheme, onRe
                     <h2 className="text-sm font-bold uppercase tracking-widest text-slate-400">白框自定义 (CSS)</h2>
                     <p className="mt-1 text-[10px] leading-relaxed text-slate-400">
                         聊天白框美化现在按「单个角色」管理：进该角色聊天 →「＋」菜单 →「白框」里设置、预览、存预设。
-                        如果某个角色的 CSS 写坏了导致聊天界面异常、连设置都打不开，点下面一键还原全部即可恢复。
+                        如果 CSS 写坏了导致界面异常，可以到系统设置顶部的「外观急救」还原聊天白框美化。
                     </p>
                 </div>
-                <button
-                    onClick={() => { if (window.confirm('确定还原全部聊天白框美化？将清空「全局」以及「每个角色」的自定义 CSS（其它聊天外观设置不受影响）。')) onResetAllChrome?.(); }}
-                    className="w-full rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-[12px] font-bold text-rose-600 transition-all hover:bg-rose-100 active:scale-[0.99]">
-                    一键还原全部聊天白框美化（救援）
-                </button>
             </section>
 
             <div className="px-2 pb-2 text-center text-[10px] leading-relaxed text-slate-400">
