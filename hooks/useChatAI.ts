@@ -500,9 +500,11 @@ export const useChatAI = ({
     // 同一挂载实例仍串行使用流式预览状态；跨页面重进则读取角色的后台占位。
     const isTyping = localTyping || characterTyping;
     // 流式预览气泡：stream 开启时，已完成行与安全尾句随增量以临时气泡上屏。
-    // 流结束后由 applyAssistantPostProcessing 正常落库渲染，预览随即清空 —— 只影响体感，不改持久化。
+    // 流结束后由 applyAssistantPostProcessing 正常落库，整轮完成才清预览 —— 只影响展示，不改持久化。
     const [streamingBubbles, setStreamingBubbles] = useState<string[]>([]);
     const [streamingThinking, setStreamingThinking] = useState('');
+    // 预览仍在场时，这些已落库消息暂不上屏；每轮单独记录，避免隐藏以前的回复。
+    const [streamingHandoverIds, setStreamingHandoverIds] = useState<number[]>([]);
     const [recallStatus, setRecallStatus] = useState<string>('');
     const [searchStatus, setSearchStatus] = useState<string>('');
     const [diaryStatus, setDiaryStatus] = useState<string>('');
@@ -761,6 +763,7 @@ export const useChatAI = ({
         setLocalTyping(true);
         setStreamingBubbles([]);
         setStreamingThinking('');
+        setStreamingHandoverIds([]);
         setRecallStatus('');
         // 全局横幅「xx 正在回应…」（ChatBroadcast）。Chat 卸载后，生成占位和这个异步
         // 闭包都会保留并继续落库——横幅靠 window 事件与组件生命周期
@@ -2036,10 +2039,8 @@ export const useChatAI = ({
             // 详见 utils/applyAssistantPostProcessing.ts。Phase 0 行为字节级不变;
             // Phase 1 会让 instant push 路径也调它 (skipSecondPassLLM=true);
             // Phase 2 会让 worker 端把识别的副作用打包成 directives 传过来重放。
-            // 预览气泡的无缝交棒：不提前清（提前清 = 气泡集体消失→再劈里啪啦重放，用户实报），
-            // 而是包装 setMessages——后处理第一条真实消息落库上屏的**同一帧**清预览。
-            // 交接前预览一直挂着，交接后 instantRender 秒速回填，视觉上是"预览定格成正式消息"。
-            let previewHandedOver = false;
+            // 后处理会逐条写库/刷新，第一条落库并不代表其余气泡已准备好。
+            // 整轮结束前保持预览，登记对应正式消息供 UI 暂时隐藏；全部落库后再一起交接。
             const previewHandoverIds = new Set<number>();
             const previewBaselineMaxId = contextMsgs.reduce(
                 (maxId, message) => Math.max(maxId, message.id),
@@ -2063,13 +2064,9 @@ export const useChatAI = ({
                     handoverIds.forEach(id => previewHandoverIds.add(id));
                     // ref 在 setMessages 触发渲染前同步更新，首帧就能关掉正式气泡的 fade-in。
                     onStreamPreviewHandover?.(char.id, [...handoverIds]);
+                    setStreamingHandoverIds([...previewHandoverIds]);
                 }
                 setMessages(msgs);
-                if (!previewHandedOver) {
-                    previewHandedOver = true;
-                    setStreamingBubbles([]);
-                    setStreamingThinking('');
-                }
             };
             const rawAiContent = data.choices?.[0]?.message?.content || '';
             const sarReply = parseSARModuleReply(rawAiContent, sarModulePlan);
@@ -2134,6 +2131,9 @@ export const useChatAI = ({
                 directives: [],
                 sarModuleSurface: assistantSurfaceMeta,
             });
+            // 最后一批正式消息已交给 setMessages；同一轮更新撤掉预览，不再逐条补弹。
+            setStreamingBubbles([]);
+            setStreamingThinking('');
 
             // 到这里说明正文已成功落库。失败 / 中断不会经过；重掷是替换旧回合，不重复扣寿命。
             if (!skipEmotionInjection) {
@@ -2196,6 +2196,7 @@ export const useChatAI = ({
             onInstantPosted?.();
             setStreamingBubbles([]);  // 错误/中断路径兜底清预览
             setStreamingThinking('');
+            setStreamingHandoverIds([]);
             setRecallStatus('');
             setSearchStatus('');
             setDiaryStatus('');
@@ -2312,6 +2313,7 @@ export const useChatAI = ({
         isTyping,
         streamingBubbles,
         streamingThinking,
+        streamingHandoverIds,
         recallStatus,
         searchStatus,
         diaryStatus,

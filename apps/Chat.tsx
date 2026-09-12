@@ -413,7 +413,7 @@ const Chat: React.FC = () => {
     }, [activeCharacterId]);
 
     // --- Initialize Hook ---
-    const { isTyping, streamingBubbles, streamingThinking, recallStatus, searchStatus, diaryStatus, emotionStatus, memoryPalaceStatus, memoryPalaceResult, setMemoryPalaceResult, lastDigestResult, setLastDigestResult, lastTokenUsage, tokenBreakdown, setLastTokenUsage, triggerAI, startProactiveChat, stopProactiveChat, isProactiveActive } = useChatAI({
+    const { isTyping, streamingBubbles, streamingThinking, streamingHandoverIds, recallStatus, searchStatus, diaryStatus, emotionStatus, memoryPalaceStatus, memoryPalaceResult, setMemoryPalaceResult, lastDigestResult, setLastDigestResult, lastTokenUsage, tokenBreakdown, setLastTokenUsage, triggerAI, startProactiveChat, stopProactiveChat, isProactiveActive } = useChatAI({
         char,
         userProfile,
         apiConfig,
@@ -3382,6 +3382,14 @@ const Chat: React.FC = () => {
         return chatDisplayMessages.slice(-visibleCount);
     }, [chatDisplayMessages, visibleCount, windowedFocusMsgId, historyWindowRange]);
 
+    // 预览整组交接前，不把同一批逐条落库的正式气泡再画一遍。
+    // 仅处理本轮已匹配的 ID；旧回复、未预览的卡片和二次回复仍正常显示。
+    const renderedMessages = useMemo(() => {
+        if (selectionMode || (!streamingBubbles.length && !streamingThinking)) return displayMessages;
+        const pending = new Set(streamingHandoverIds);
+        return displayMessages.filter(message => !pending.has(message.id));
+    }, [displayMessages, streamingBubbles, streamingThinking, streamingHandoverIds, selectionMode]);
+
     const collapsedCount = Math.max(0, totalMsgCount - displayMessages.length);
     const hasOlderHistoryWindow = windowedFocusMsgId !== null && !!historyWindowRange && historyWindowRange.start > 0;
     const hasNewerHistoryWindow = windowedFocusMsgId !== null && !!historyWindowRange && historyWindowRange.end < chatDisplayMessages.length;
@@ -4064,9 +4072,9 @@ const Chat: React.FC = () => {
                     </div>
                 )}
 
-                {displayMessages.map((m, i) => {
-                    const prevMessage = i > 0 ? displayMessages[i - 1] : null;
-                    const nextMessage = i < displayMessages.length - 1 ? displayMessages[i + 1] : null;
+                {renderedMessages.map((m, i) => {
+                    const prevMessage = i > 0 ? renderedMessages[i - 1] : null;
+                    const nextMessage = i < renderedMessages.length - 1 ? renderedMessages[i + 1] : null;
                     const messageGroupGapMs = 30 * 60 * 1000;
                     const breaksWithPrevious =
                         !prevMessage ||
@@ -4222,11 +4230,11 @@ const Chat: React.FC = () => {
 
                 {/* 流式预览直接复用正式 MessageItem：气泡变体、主题背景图/装饰、头像框、
                     grouped/every_message、消息间距、时间戳、Markdown 与所有自定义 CSS 天然一致。
-                    落库时 useChatAI 会登记接棒 id，正式消息首帧不再重播 fade-in。 */}
+                    整轮落库完成后一起交接，已登记接棒 id 的正式消息首帧不再重播 fade-in。 */}
                 {streamingBubbles.length > 0 && !selectionMode && (
                     <>
                         {streamingBubbles.map((bubble, i) => (
-                            <div key={`stream-preview-${i}`} className="transition-all duration-300">
+                            <div key={`stream-preview-${i}`} data-stream-preview={i} className="transition-all duration-300">
                                 <MessageItem
                                     msg={{
                                         id: -(i + 1),
