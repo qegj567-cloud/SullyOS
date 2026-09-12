@@ -1182,7 +1182,7 @@ const GuidebookApp: React.FC = () => {
 
                                             {/* Description line */}
                                             <div className="text-white/50 text-[10px] mt-0.5 leading-tight max-w-[85%] truncate">
-                                                {c.description ? c.description.slice(0, 25) : '等待攻略…'}
+                                                {c.description ? c.description.slice(0, 25) : '这次，轮到 ta 来攻略你。'}
                                             </div>
 
                                             {/* Session badge */}

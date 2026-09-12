@@ -543,7 +543,7 @@ const Appearance: React.FC = () => {
       if (!appearanceCharacter) return;
       const extension = file.name.split('.').pop()?.toLowerCase();
       if (!['png', 'gif'].includes(extension || '') || !['image/png', 'image/gif'].includes(file.type)) {
-          addToast('静态形象仅支持 PNG / GIF', 'error');
+          addToast('图片上传仅支持 PNG / GIF', 'error');
           return;
       }
       if (file.size > 20 * 1024 * 1024) {
@@ -569,9 +569,9 @@ const Appearance: React.FC = () => {
               await deleteBlobRef(previousRef);
           }
           trackEvent('导入桌面静态形象', { 格式: file.type === 'image/gif' ? 'GIF' : 'PNG' });
-          addToast(file.type === 'image/gif' ? 'GIF 已原样导入，动画会保留' : 'PNG 静态形象已导入', 'success');
+          addToast(file.type === 'image/gif' ? 'GIF 已原样导入，动画会保留' : 'PNG 形象已导入', 'success');
       } catch (error: any) {
-          addToast(error?.message || '静态形象导入失败', 'error');
+          addToast(error?.message || '图片形象导入失败', 'error');
       }
   };
 
@@ -1002,7 +1002,7 @@ const Appearance: React.FC = () => {
                             </div>
                             <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-2">
-                                    <h2 className="text-sm font-bold text-slate-700">静态形象</h2>
+                                    <h2 className="text-sm font-bold text-slate-700">陪伴形象</h2>
                                     <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[8px] font-bold tracking-wide text-violet-500">PNG / GIF</span>
                                 </div>
                                 <p className="mt-1 text-[10px] leading-relaxed text-slate-400">
@@ -1021,7 +1021,7 @@ const Appearance: React.FC = () => {
                         <div className="grid grid-cols-3 border-y border-slate-100 bg-slate-50/80 p-1.5">
                             {([
                                 ['model', '动态模型'],
-                                ['upload', '静态图片'],
+                                ['upload', '图片 / GIF'],
                                 ['date', '见面立绘'],
                             ] as const).map(([source, label]) => (
                                 <button

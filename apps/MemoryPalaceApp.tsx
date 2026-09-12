@@ -5353,7 +5353,7 @@ create table if not exists memory_vectors (
 
                 {sorted.length === 0 ? (
                     <div style={{ textAlign: 'center', color: '#9ca3af', padding: 40, fontSize: 13 }}>
-                        还没有任何记忆
+                        这里还没有整理好的记忆
                     </div>
                 ) : (
                     sorted.map((node: MemoryNode) => (

@@ -561,9 +561,9 @@ const VRWorldApp: React.FC = () => {
             </div>
 
             {/* Tab — 发丝下划线 */}
-            <div className="vr-tabs relative flex px-5 gap-5 shrink-0 z-10 pb-px">
-                {([['world', '世界'], ['sar', 'SAR'], ['library', '书库'], ['settings', '接入'], ['api', 'API']] as [Tab, string][]).map(([t, label]) => (
-                    <button key={t} aria-current={tab === t ? 'page' : undefined} onClick={() => { setTab(t); if (t === 'sar' && userProfile?.vrState?.enabled) updateUserProfile({vrState:{...userProfile.vrState,currentRoom:'sar',activity:userProfile.vrState.activity || '在 SAR 活动室闲逛',updatedAt:Date.now()}}); trackEvent('切换彼方顶部标签', { tab: t }); }} className="relative pb-2 text-[13.5px] tracking-[0.22em] transition-colors"
+            <div className="vr-tabs relative flex px-4 gap-3 sm:px-5 sm:gap-5 shrink-0 z-10 pb-px">
+                {([['world', '世界'], ['sar', 'SAR'], ['library', '书库'], ['settings', '角色接入'], ['api', 'API']] as [Tab, string][]).map(([t, label]) => (
+                    <button key={t} aria-current={tab === t ? 'page' : undefined} onClick={() => { setTab(t); if (t === 'sar' && userProfile?.vrState?.enabled) updateUserProfile({vrState:{...userProfile.vrState,currentRoom:'sar',activity:userProfile.vrState.activity || '在 SAR 活动室闲逛',updatedAt:Date.now()}}); trackEvent('切换彼方顶部标签', { tab: t }); }} className="relative shrink-0 whitespace-nowrap pb-2 text-[13.5px] tracking-[0.12em] sm:tracking-[0.22em] transition-colors"
                         style={{ fontFamily: `'Noto Serif SC',serif`, color: tab === t ? 'rgba(255,255,255,.95)' : 'rgba(255,255,255,.38)' }}>
                         {label}
                         {tab === t && <span className="absolute -bottom-px left-1/2 -translate-x-1/2 w-5 h-px"
@@ -1160,9 +1160,9 @@ const HelpModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                 </Block>
 
                 <Block title="怎么开始" tone="rgba(245,208,138,.95)">
-                    <Step n={1}>去 <b>「接入」</b> 标签：给角色捏个小人形象，打开开关。默认<b>仅手动活动</b>；想让 ta 自己逛，再选「自动活动」和间隔。</Step>
+                    <Step n={1}>去 <b>「角色接入」</b> 标签：给角色捏个小人形象，打开开关。默认<b>仅手动活动</b>；想让 ta 自己逛，再选「自动活动」和间隔。</Step>
                     <Step n={2}>想用图书馆，先去 <b>「书库」</b> 上传小说。可以按分类整理，并在「谁来读这些书」里让角色按分类轮换。</Step>
-                    <Step n={3}>不想等？在「接入」里点 <b>「让 ta 现在去逛一次」</b>，可以<b className="text-amber-200">指定房间或随机</b>，立刻看效果。</Step>
+                    <Step n={3}>不想等？在「角色接入」里点 <b>「让 ta 现在去逛一次」</b>，可以<b className="text-amber-200">指定房间或随机</b>，立刻看效果。</Step>
                 </Block>
 
                 <Block title="房间都能干嘛">
@@ -1471,7 +1471,7 @@ const WorldView: React.FC<{
                 )}
             </div>
             {feed.length === 0 ? (
-                <p className="text-[11px] text-white/40 py-5 text-center tracking-wide leading-relaxed">虚空尚无回响。<br />在「接入」里点亮角色，邀请 ta 来逛一次，也可以开启自动活动。</p>
+                <p className="text-[11px] text-white/40 py-5 text-center tracking-wide leading-relaxed">虚空尚无回响。<br />在「角色接入」里点亮角色，邀请 ta 来逛一次，也可以开启自动活动。</p>
             ) : (
                 <>
                     {/* 翻页移到动态上方：底下翻页要滚到最后才够得着，放上方更顺手 */}
@@ -1988,7 +1988,7 @@ const PostOfficePanel: React.FC<{ addToast?: (m: string, t?: any) => void; chara
             {/* 来信长按菜单：指定角色回 / 亲自回 / 删除 */}
             <ActionSheet open={!!inboxMenu} title={inboxMenu ? `回「${inboxMenu.pen}」的来信` : ''}
                 actions={[
-                    { label: '指定角色去回（用 AI）', onClick: () => { if (enabledChars.length === 0) { addToast?.('先在「接入」里启用角色', 'info'); setInboxMenu(null); return; } setAssignFor(inboxMenu); setInboxMenu(null); } },
+                    { label: '指定角色去回（用 AI）', onClick: () => { if (enabledChars.length === 0) { addToast?.('先在「角色接入」里启用角色', 'info'); setInboxMenu(null); return; } setAssignFor(inboxMenu); setInboxMenu(null); } },
                     { label: '我亲自回（不用 AI）', onClick: () => { setReplyFor(inboxMenu); setInboxMenu(null); } },
                     { label: '删除这封来信', danger: true, onClick: () => { setConfirmDel(inboxMenu); setInboxMenu(null); } },
                 ]} onClose={() => setInboxMenu(null)} />
@@ -2674,7 +2674,7 @@ const SignalPanel: React.FC<{ addToast?: (m: string, t?: any) => void; character
                     </div>
                     <div className="flex-1 overflow-y-auto vr-reader-scroll px-3 py-3 space-y-1.5" onClick={e => e.stopPropagation()}>
                         {(() => { const joined = characters.filter(c => c.vrState?.enabled); return joined.length === 0 ? (
-                            <p className="text-[11px] text-white/40 text-center py-8 leading-relaxed">还没有角色接入彼方。<br />先去「接入」页启用角色，仅手动活动也可以。</p>
+                            <p className="text-[11px] text-white/40 text-center py-8 leading-relaxed">选一位角色来彼方逛逛。<br />到「角色接入」开启后，就能手动安排活动；想让 ta 自己逛，再开启自动活动。</p>
                         ) : joined.map(c => (
                             <button key={c.id} onClick={() => participate(c)} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl active:bg-white/5" style={{ background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.06)' }}>
                                 {c.avatar ? <TokenImg value={c.avatar} className="h-8 w-8 rounded-full object-cover shrink-0" alt="" /> : <div className="h-8 w-8 rounded-full bg-indigo-400/40 shrink-0 flex items-center justify-center text-[12px] text-white/90">{c.name.slice(0, 1)}</div>}
@@ -2956,7 +2956,7 @@ const RoomScene: React.FC<{
                 })}
                 {occupants.length === 0 && !isMusic && !isGuestbook && !isPostOffice && !isTheater && (
                     <div className="absolute inset-0 flex items-center justify-center">
-                        <p className="text-white/70 text-[12px] bg-black/30 rounded-full px-4 py-2">这个房间还没有人。去「接入」启用角色吧。</p>
+                        <p className="text-white/70 text-[12px] bg-black/30 rounded-full px-4 py-2">这个房间还没有人。去「角色接入」启用角色吧。</p>
                     </div>
                 )}
 

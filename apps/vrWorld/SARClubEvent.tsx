@@ -46,7 +46,7 @@ export const SARUpdateModal: React.FC<{
                             <button type="button" onClick={() => onChoose('show')} className="w-full rounded-full py-3 text-[13px] font-semibold text-[#171326] active:scale-[0.985] transition-transform" style={{ background: 'linear-gradient(120deg,#eeeaff,#c9c2f6)' }}>我很欢迎</button>
                             <button type="button" onClick={() => onChoose('hide')} className="w-full rounded-full py-3 text-[13px] text-white active:bg-white/10" style={{ border: '1px solid rgba(255,255,255,.16)', background: 'rgba(255,255,255,.035)' }}>我不想要 NPC</button>
                         </div>
-                        <p className="mt-4 text-[10px] leading-5 text-white">不会影响活动室及其功能，只决定两名 NPC 和相关对白是否出现。之后可在「接入」中更改。</p>
+                        <p className="mt-4 text-[10px] leading-5 text-white">不会影响活动室及其功能，只决定两名 NPC 和相关对白是否出现。之后可在「角色接入」中更改。</p>
                     </>
                 )}
             </div>

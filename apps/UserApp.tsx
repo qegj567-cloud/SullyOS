@@ -40,6 +40,7 @@ const UserApp: React.FC = () => {
                     </button>
                     <h1 className="text-lg font-bold text-slate-700 tracking-wide">个人档案</h1>
                 </div>
+                <p className="px-4 pb-2 text-[10px] leading-relaxed text-slate-400">生理期、药盒、记账与锻炼，也可以让角色帮你记。</p>
                 {/* Tab：我的档案 / 生活记录 */}
                 <div className="flex gap-1.5 px-4 pb-2.5">
                     {([['profile', '我的档案'], ['life', '生活记录']] as const).map(([key, label]) => (

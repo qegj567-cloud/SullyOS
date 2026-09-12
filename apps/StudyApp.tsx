@@ -1636,7 +1636,8 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                             ) : (
                                 <>
                                     <span className="text-3xl">+</span>
-                                    <span className="text-xs font-bold">导入 PDF</span>
+                                    <span className="text-xs font-bold">导入学习资料</span>
+                                    <span className="px-3 text-center text-[10px] leading-relaxed">支持 PDF，让角色陪你讲解、练习</span>
                                 </>
                             )}
                         </button>
