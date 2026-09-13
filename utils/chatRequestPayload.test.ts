@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { buildChatRequestPayload } from './chatRequestPayload';
 import type { BuildChatPayloadInput } from './chatRequestPayload';
 import { RealtimeContextManager } from './realtimeContext';
-import { installSARModuleOnCharacter } from './vrWorld/sarModuleRuntime';
+import { installSARModuleOnCharacter, installSARModuleOnUser } from './vrWorld/sarModuleRuntime';
 import { SAR_MODULE_CATALOG } from './vrWorld/sarModuleShop';
 
 // 即时对话（这一轮交给用户自己的 amsg worker 生成）那份 prompt 里，凡是 worker 到点
@@ -302,4 +302,14 @@ describe('volatileTailIndex —— 想插在钢印之前的块按它定位', () 
         // 它前面一条是本轮用户消息（前缀缓存的断点在那儿，插入不影响命中）
         expect(payload.fullMessages[payload.volatileTailIndex - 1]?.role).toBe('user');
     });
+});
+
+it('ChatApp user modules explicitly identify the pending messages without changing other callers', async () => {
+    const input = baseInput();
+    input.userProfile = { ...input.userProfile, vrState: { enabled: true, sarModule: installSARModuleOnUser(SAR_MODULE_CATALOG[0], input.char, 1) } } as any;
+    const chat = await buildChatRequestPayload({ ...input, recallEntryPoint: 'chat_app' });
+    const request = chat.fullMessages.find(m => typeof m.content === 'string' && m.content.startsWith('USER_SURFACE 的聊天专用格式'));
+    expect(request?.content).toContain(JSON.stringify(input.historyMsgs.map(({ id, content }) => ({ id, content }))));
+    const other = await buildChatRequestPayload(input);
+    expect(joinMessages(other.fullMessages)).not.toContain('USER_SURFACE 的聊天专用格式');
 });

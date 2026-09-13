@@ -66,6 +66,7 @@ import {
     getSARModuleRuntimePlan,
     parseSARModuleReply,
 } from '../utils/vrWorld/sarModuleRuntime';
+import { parseSARUserSurfaces, selectSARUserSurfaceTargets } from '../utils/vrWorld/sarUserSurface';
 import { shouldRequestAmbient, buildAmbientEvalSection } from '../utils/roomAmbient';
 import { isEmotionEvalSkipped } from '../utils/devDebug';
 import {
@@ -2074,13 +2075,17 @@ export const useChatAI = ({
                 message.role === 'user' && message.type === 'text'
             ));
             const sarModuleEvents = createSARModuleEventMeta(sarModulePlan);
-            const userSurfaceMeta = sarModulePlan.user?.phase === 'active' && sarReply.userSurface
-                ? createSARModuleSurfaceMeta(sarModulePlan.user, sarReply.userSurface)
-                : undefined;
-            if (latestUserMessage?.id && (sarModuleEvents.length > 0 || userSurfaceMeta)) {
+            const userSurfaces = parseSARUserSurfaces(sarReply.userSurface,
+                selectSARUserSurfaceTargets(contextMsgs, char.id, sarModulePlan.user));
+            for (const [messageId, surface] of userSurfaces) {
+                const meta = createSARModuleSurfaceMeta(sarModulePlan.user!, surface);
+                if (meta) await DB.updateMessageMetadata(messageId, previous => ({
+                    ...(previous || {}), sarModuleSurface: meta,
+                }));
+            }
+            if (latestUserMessage?.id && sarModuleEvents.length > 0) {
                 await DB.updateMessageMetadata(latestUserMessage.id, previous => ({
                     ...(previous || {}),
-                    ...(userSurfaceMeta ? { sarModuleSurface: userSurfaceMeta } : {}),
                     ...(sarModuleEvents.length > 0 ? { sarModuleEvents } : {}),
                 }));
             }

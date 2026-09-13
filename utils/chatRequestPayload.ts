@@ -40,6 +40,7 @@ import { cleanApiMessages, flattenImageContentParts } from './promptMessageClean
 import { materializeVisionDescriptions } from './visionApi';
 import type { RecallEntryPoint, RecallTrace } from './memoryPalace/trace';
 import { loadCollaborationFileCabinetBlock } from '../features/collaboration/chatLibrary';
+import { buildSARUserSurfaceRequest, selectSARUserSurfaceTargets } from './vrWorld/sarUserSurface';
 import { getSARModuleRuntimePlan } from './vrWorld/sarModuleRuntime';
 
 export { cleanApiMessages, flattenImageContentParts } from './promptMessageCleanup';
@@ -514,6 +515,12 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
             role: 'system',
             content: '[SAR MODULE REMINDER: 模块是角色在彼方能感知、能记得的外来装置，不是幕后文风要求；CHAR_TRUE 必须包含角色对异常的当下反应，不能若无其事。生效时最终只输出 <SAR_MODULE_OUTPUT> 容器。聊天的 CHAR_TRUE / CHAR_SURFACE 必须逐气泡对齐；纯括号动作原位逐字复制，禁止删泡、合并或新增气泡。内置翻译要在两字段中分别保留完整翻译标签；语音要保留 <语音>/<字幕> 结构并同步改写口播与字幕；“日文（中文翻译）”一类同泡格式不可把括号译文误判成动作。真实语义写 CHAR_TRUE，临时外显写 CHAR_SURFACE，用户外显写 USER_SURFACE，不得把外显当作内心。]',
         });
+    }
+
+    if (sarModulePlan?.user?.phase === 'active') {
+        fullMessages.push({ role: 'system', content: buildSARUserSurfaceRequest(
+            selectSARUserSurfaceTargets(input.historyMsgs, char.id, sarModulePlan.user),
+        ) });
     }
 
     // Dev 开关：多条 system 合并成开头一条，A/B 对照中转适配层对多 system 的计量行为。

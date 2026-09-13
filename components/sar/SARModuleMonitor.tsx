@@ -98,13 +98,18 @@ export function SARModuleMonitor() {
                     setExpanded(value => !value);
                 }}>
                 <Cpu size={17} /><strong>模块</strong><span className="sar-module-monitor-count">{entries.length}</span>
-                {expanded && <small>拖动可挪位置</small>}<DotsSix size={14} aria-hidden="true"/>
+                <span className="sar-module-monitor-owners" title={entries.map(entry => entry.name).join('、')}>
+                    {entries.length === 1 ? entries[0].name : entries[0].name + '等 ' + entries.length + ' 人'}
+                </span><DotsSix size={14} aria-hidden="true"/>
                 {expanded ? <CaretUp size={13}/> : <CaretDown size={13}/>}
             </button>
             {expanded && <div className="sar-module-monitor-body">
                 <ul>{entries.map(entry => <li key={entry.runtime.runId} data-sar-target={entry.runtime.target}>
                     <div className="sar-module-monitor-person"><strong>{entry.name}</strong>
                         <span>{entry.runtime.phase === 'active' ? `剩 ${entry.runtime.remainingTurns} 轮` : '已解除'}</span></div>
+                    <div className="sar-module-monitor-source">装载者：{entry.runtime.source === 'user'
+                        ? (userProfile.name || '我')
+                        : (characters.find(char => char.id === entry.runtime.sourceCharacterId)?.name || entry.runtime.sourceCharacterName || '角色')}</div>
                     <div className="sar-module-monitor-detail"><span>{entry.runtime.moduleTitle}</span>
                         {entry.runtime.phase === 'active'
                             ? <button type="button" onClick={() => end(entry)} aria-label={`提前结束${entry.name}的模块`}>提前结束</button>

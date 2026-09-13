@@ -1,6 +1,9 @@
 .sar-module-monitor-layer{position:absolute;inset:0;pointer-events:none;z-index:56;overflow:hidden}
 .sar-module-monitor{position:absolute;top:max(142px,calc(var(--standalone-safe-area-top,0px) + 108px));left:12px;width:min(296px,calc(100% - 24px));max-height:calc(100% - 160px);display:flex;flex-direction:column;pointer-events:auto;color:#d9e9e5;background:#172c2c;border:1px solid #55746d;box-shadow:0 8px 22px #0003;border-radius:5px;overflow:hidden;font-family:system-ui,sans-serif}
-.sar-module-monitor[data-expanded=false]{width:auto}
+.sar-module-monitor[data-expanded=false]{width:auto;max-width:calc(100% - 24px)}
+.sar-module-monitor-owners{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;font-size:11px}
+.sar-module-monitor-handle>svg,.sar-module-monitor-handle>strong,.sar-module-monitor-count{flex-shrink:0}
+.sar-module-monitor-source{font-size:10px;line-height:1.5;margin-top:5px;color:#657469;overflow-wrap:anywhere}
 .sar-module-monitor button{color:inherit;font:inherit;cursor:pointer}
 .sar-module-monitor button:focus-visible{outline:2px solid #dcce9e;outline-offset:-3px}
 .sar-module-monitor-handle{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 12px;min-height:44px;background:transparent;border:0;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}

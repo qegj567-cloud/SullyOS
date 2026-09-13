@@ -210,3 +210,11 @@ pnpm test:run utils/sarGacha.test.ts utils/sarSimulation.test.ts utils/sarCharac
 设置的 full / text_only 备份保留完整 SAR 本地存档（club、迁移后的卡池/商店、推演、水产市场及其中花园/名册/剧情/收藏），并补充简易钓鱼、推演配色、花园引导三个本机偏好。full 对嵌套自定义图片执行资源提取、blob 旁路和还原；text_only 按原约定剥除自定义图片。media_only 不覆盖玩法状态。恢复旧主历史时清理缺失的 SAR 偏好，局部导入保留现有值。
 
 活动室、角色交谈/回顾、钓鱼/市场/花园、卡池/组装柜/推演/模块商店、仓库/收藏册/名册/设置入口通过 sarAnalytics 白名单接入 Umami。偏好在 analyticsSnapshot 按会话收集，不记角色或剧情内容。
+
+### Chat 用户模块逐条外显（2026-09-13）
+
+- 用户本轮连续发送的文字按消息 ID 分别生成、分别写入 metadata.sarModuleSurface；不会把整段 USER_SURFACE 塞进最后一个气泡。content 和原话切换保持不变。
+- Chat 专用 USER_SURFACE 使用 JSON 数组（id / surface），请求明确列出当前私聊未回复、装载后发送的文字；不追溯旧聊天、不处理别的角色或图片消息。见面协议不变。
+- 兼容旧模型的时间戳分段：只有段数与输入条数一致时才按顺序匹配并去掉记录头；多条合并、重复 ID、未知 ID 等无法可靠匹配的结果保留原话。用户自己输入的日期、换行、动作和翻译格式不被当成记录头删除。
+- 模块浮窗收起时显示受影响者，展开时同时显示装载者；多人时以姓名 + 人数提示，长名省略，移动端不溢出。
+- 回归：utils/sarUserSurface.test.ts；scripts/test-sar-user-module.mjs（实际 Chat 请求、气泡原话切换、旧格式兼容、320px 浮窗）。
