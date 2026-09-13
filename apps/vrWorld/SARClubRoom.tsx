@@ -10,6 +10,8 @@ import {normalizeKanataTitle} from '../../utils/vrWorld/kanataTitle';
 import './sar-club-room.css';
 import {sarRoomView,type SARRoomView} from '../../utils/vrWorld/sarClub';
 import {isSARActivityOccupant} from '../../utils/vrWorld/participation';
+import {acknowledgeSARUpdateNotice,hasReadSARUpdateNotice,type SARUpdateNotice} from '../../utils/vrWorld/sarUpdateNotices';
+import {SARUpdateDialogue} from './SARUpdateDialogue';
 const FacilityIcons={board:ClipboardText,modules:Cpu,cabinet:Stack,gacha:Gift,water:Fish,garden:PawPrint};
 
 interface Props {
@@ -23,6 +25,7 @@ interface Props {
 export default function SARClubRoom({onOpenGacha,onOpenCabinet,onOpenModuleShop,onOpenFishingMarket,occupants:providedOccupants=[],npcEnabled=false,caianMet=false,labelsHidden=false,roomView,onTalkToCaian,onTalkToAiven,onSelectCharacter}:Props){
     const occupants=useMemo(()=>providedOccupants.filter(char=>char.id==='user'||isSARActivityOccupant(char)),[providedOccupants]);
     const viewport=useRef<HTMLDivElement>(null),[size,setSize]=useState({width:0,height:0}),[roster,setRoster]=useState(false);
+    const [updateNotice,setUpdateNotice]=useState<SARUpdateNotice|null>(null),pendingNotice=useRef<SARUpdateNotice|null>(null);
     useEffect(()=>{
         if(!viewport.current)return;
         const observer=new ResizeObserver(([entry])=>{
@@ -39,11 +42,26 @@ export default function SARClubRoom({onOpenGacha,onOpenCabinet,onOpenModuleShop,
         if(npcEnabled)actors.unshift({id:'sar-npc-caian',name:'凯恩',zone:'common',anchor:{x:740,y:945}},{id:'sar-npc-aiven',name:'艾文',zone:'fishing',anchor:{x:880,y:1745}});
         return arrangeSARRoomActors(actors,size.width/SAR_ROOM_SIZE.width);
     },[occupants,npcEnabled,size.width]);
-    const open=(id:SARFacility)=>{
+    const enterFacility=(id:SARFacility)=>{
         if(id==='gacha')onOpenGacha();else if(id==='cabinet')onOpenCabinet();else if(id==='modules')onOpenModuleShop();else onOpenFishingMarket(id);
     };
+    const open=(id:SARFacility)=>{
+        if(pendingNotice.current)return;
+        if(npcEnabled&&(id==='cabinet'||id==='board')&&!hasReadSARUpdateNotice(id)){
+            pendingNotice.current=id;setUpdateNotice(id);return;
+        }
+        enterFacility(id);
+    };
+    const finishNotice=(read:boolean)=>{
+        const notice=pendingNotice.current;if(!notice)return;
+        pendingNotice.current=null;setUpdateNotice(null);
+        if(read)acknowledgeSARUpdateNotice(notice);
+        enterFacility(notice);
+    };
+    useEffect(()=>{if(!npcEnabled&&pendingNotice.current)finishNotice(false);},[npcEnabled]);
     const view=sarRoomView({roomView,labelsHidden});
     return <div className={`sar-club-room sar-room-view-${view}${view==='text-hidden'?' sar-room-ui-hidden':''}`} data-room-view={view}>
+        {updateNotice&&npcEnabled&&<SARUpdateDialogue key={updateNotice} notice={updateNotice} onComplete={()=>finishNotice(true)}/>}
         <div className="sar-room-viewport" ref={viewport}>
             <div className="sar-room-canvas" style={{width:size.width,height:size.height}} data-art-width={SAR_ROOM_SIZE.width} data-art-height={SAR_ROOM_SIZE.height}>
                 <img className="sar-room-background" src={roomArt} alt="SAR 活动室" draggable={false}/>
