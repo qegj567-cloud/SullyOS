@@ -17,27 +17,22 @@ const normalizeExerciseSummary = (raw: string): string => {
     return `[[LIFE:EXERCISE|${cleanArg(match[1])}|${cleanArg(match[2])}]]`;
 };
 
+/** Only sticker syntax is shared with group chat; never enable transfer/LIFE actions there. */
+export const normalizeAssistantEmojiFormatting = (raw: string): string => {
+    const closing: Record<string, string> = { '[[': ']]', '[': ']', '【': '】', '［［': '］］', '［': '］' };
+    // Quoted examples are explanatory text. Do not repair deliberately separated spellings.
+    return (raw || '').split(/(```[\s\S]*?```|`[^`\r\n]*`)/g).map((part, index) => index % 2 ? part : part.replace(
+        /(?<![\[【［])(\[\[|\[|【|［［|［)\s*(?:SEND_EMOJI|(?:[^\[\]【】［］\r\n:：]{1,40}?\s*)?发送了表情包|表情包|表情)\s*[:：]\s*([^\[\]【】［］\r\n]+?)\s*(\]\]|\]|】|］］|］)(?![\]】］])/gim,
+        (all, open: string, name: string, close: string) => closing[open] === close
+            ? '[[SEND_EMOJI: ' + name.trim() + ']]' : all,
+    )).join('');
+};
+
 /** 幂等：已经是 [[...]] 的规范标签不会再次包裹。 */
 export const normalizeAssistantActionFormatting = (raw: string): string => {
     let content = raw || '';
 
-    // 表情：先统一双括号里的全角冒号/大小写，再修单括号和历史摘要。
-    content = content.replace(
-        /\[\[\s*SEND_EMOJI\s*[:：]\s*([^\]\r\n]+?)\s*\]\]/gi,
-        (_all, name: string) => `[[SEND_EMOJI: ${name.trim()}]]`,
-    );
-    content = content.replace(
-        /(^|[^\[])\[(?:你|User|用户|System|[\w一-龥]+)\s*发送了表情包[:：]\s*([^\]\r\n]+?)\s*\](?!\])/gm,
-        (_all, prefix: string, name: string) => `${prefix}[[SEND_EMOJI: ${name.trim()}]]`,
-    );
-    content = content.replace(
-        /(^|[^\[])\[\s*SEND_EMOJI\s*[:：]\s*([^\]\r\n]+?)\s*\](?!\])/gim,
-        (_all, prefix: string, name: string) => `${prefix}[[SEND_EMOJI: ${name.trim()}]]`,
-    );
-    content = content.replace(
-        /(^|[^\[])\[\s*(?:表情|表情包)\s*[:：]\s*([^\]\r\n]+?)\s*\](?!\])/gm,
-        (_all, prefix: string, name: string) => `${prefix}[[SEND_EMOJI: ${name.trim()}]]`,
-    );
+    content = normalizeAssistantEmojiFormatting(content);
 
     // 转账：只修明确的 ACTION token；口语版 [转账 520] 仍由 transferFormat 的
     // 容错解析器负责，方向和金额安全校验也仍在那里完成。

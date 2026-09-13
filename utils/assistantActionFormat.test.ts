@@ -38,3 +38,21 @@ describe('normalizeAssistantActionFormatting', () => {
         expect(normalize('我看了[那本书]')).toBe('我看了[那本书]');
     });
 });
+
+describe('sticker history syntax recovery', () => {
+    it.each(['[[你 发送了表情包: 咬你]]', '[[你发送了表情包：咬你]]', '[[发送了表情包: 咬你]]', '【你发送了表情包：咬你】', '［［SEND_EMOJI：咬你］］', '[[表情包：咬你]]', '[Noir 发送了表情包: 咬你]'])('repairs %s without nesting brackets', raw => {
+        expect(normalize(raw)).toBe('[[SEND_EMOJI: 咬你]]');
+        expect(normalize(normalize(raw))).toBe('[[SEND_EMOJI: 咬你]]');
+    });
+    it.each(['`[[你发送了表情包: 咬你]]`', '```text\n[[你发送了表情包: 咬你]]\n```', '[[你_发_送_了_表_情_包: 咬你]]', '[[S_E_N_D _ E_M_O_J_I: 咬你]]', '我刚才发送了表情包：咬你', '[你发送了表情包: 咬你]]'])('does not turn an explanation or incomplete token into a sticker: %s', raw => {
+        expect(normalize(raw)).toBe(raw);
+    });
+    it('preserves multiple stickers, names with punctuation and neighboring text', () => {
+        expect(normalize('先说一句[[你发送了表情包: 猫: 抱 抱!]]\n[[发送了表情包: 猫: 抱 抱!]]再说一句'))
+            .toBe('先说一句[[SEND_EMOJI: 猫: 抱 抱!]]\n[[SEND_EMOJI: 猫: 抱 抱!]]再说一句');
+    });
+});
+
+it('repairs adjacent stickers without skipping the second token', () => {
+ expect(normalize('[[你发送了表情包: 甲]][[你发送了表情包: 乙]]')).toBe('[[SEND_EMOJI: 甲]][[SEND_EMOJI: 乙]]');
+});

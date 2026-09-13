@@ -830,3 +830,16 @@ describe('ctx.spokenAt — 日程改动按说出口那一刻判', () => {
     });
 });
 
+
+describe('double-bracket sticker history output', () => {
+    it.each(['[[你发送了表情包：开心]]', '【你发送了表情包: 开心】'])('persists %s as an image and preserves neighboring text', async raw => {
+        const charId = 'c-sticker-history-' + raw;
+        const ctx = makeCtx(charId, [], [{ id:'emoji-happy', name:'开心', url:'https://example.com/happy.png' }]);
+        ctx.instantRender = true;
+        await applyAssistantPostProcessing('前一句\n' + raw + '\n后一句', ctx);
+        const messages = await DB.getMessagesByCharId(charId, true);
+        expect(messages.map(m => [m.type, m.content])).toEqual([
+            ['text','前一句'], ['emoji','https://example.com/happy.png'], ['text','后一句'],
+        ]);
+    });
+});
