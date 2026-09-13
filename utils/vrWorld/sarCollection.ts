@@ -24,9 +24,10 @@ export const sarCollectionEntries = (input: FishingMarketState, actorId: string,
     for (const item of state.inventory.filter(item => item.ownerId === actorId)) ownedFish.set(item.speciesId, (ownedFish.get(item.speciesId) || 0) + 1);
     const rarityNames = { common: '常见', uncommon: '少见', rare: '稀有', epic: '珍稀', relic: '橡皮泥收藏' };
     const entries: SARCollectionEntry[] = [...FISH_CATALOG, ...STORY_CATCH_CATALOG].filter(s=>s.id!=='dinosaur-egg'||state.sarFamiliarity?.unlocks.includes('eggs')||fishRecords.has(s.id)||ownedFish.has(s.id)).map(species => ({
-        id: species.id, category: species.category === 'fish' ? 'fish' : 'dinosaur', title: species.name, description: species.blurb,
+        id: species.id, category: species.category === 'fish' ? 'fish' : 'dinosaur', title: species.name, description: species.id === 'aiven-chimera' && !fishRecords.has(species.id) && !ownedFish.has(species.id)
+            ? '形状有点奇怪。还不知道它究竟是什么。' : species.blurb,
         speciesId: species.id, tag: rarityNames[species.rarity], collected: fishRecords.has(species.id) || ownedFish.has(species.id), owned: ownedFish.get(species.id) || 0,
-        source: species.id==='aiven-chimera'?'艾文的三星回忆 · 只此一只。':species.id==='dinosaur-egg'?'艾文的三星话题赠送。':`彼方水域 · ${species.weathers.map(kind => WEATHER_LABELS[kind]).join('、')}时更常出现。也可通过实物交易或赠送获得。`,
+        source: species.id==='aiven-chimera'?(fishRecords.has(species.id)||ownedFish.has(species.id)?'艾文的三星回忆 · 只此一只。':'和艾文相处下去，也许会收到一份特别的礼物。'):species.id==='dinosaur-egg'?'艾文的三星话题赠送。':`彼方水域 · ${species.weathers.map(kind => WEATHER_LABELS[kind]).join('、')}时更常出现。也可通过实物交易或赠送获得。`,
     }));
     for (const chip of SAR_ALL_MODULES) {
         const owned = actorId === 'user' ? state.sarCommerce?.gacha.collection[chip.id] || 0 : 0;

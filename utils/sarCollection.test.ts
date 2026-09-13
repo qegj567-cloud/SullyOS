@@ -23,6 +23,19 @@ describe('SAR personal collection atlas', () => {
         expect(p.map(x => x.collected)).toEqual([0,0,2,1]);
         expect(sarCollectionProgress(sarCollectionEntries(s, actor.id)).every(x => x.collected === 0)).toBe(true);
     });
+    it('previews the chimera without revealing the reward, then reveals it only after collection', () => {
+        let s: M.FishingMarketState = init();
+        const locked = entry(s, 'user', 'aiven-chimera');
+        expect(locked).toMatchObject({ title: '？？？', collected: false, owned: 0 });
+        expect(locked.source).not.toContain('三星');
+        expect(locked.description).not.toContain('霸王龙');
+        expect(s.inventory).toHaveLength(0);
+        expect(sarCollectionEntries(s, 'user', false).some(item => item.id === 'aiven-chimera')).toBe(false);
+        s = M.addCatchToState(s, { id: 'chimera-gift', speciesId: 'aiven-chimera', ownerId: 'user', ownerName: '我', caughtAt: 1, weather: 'clear', weatherLabel: '晴', weatherSource: 'simulated', sizeCm: 12, quality: 1 });
+        expect(entry(s, 'user', 'aiven-chimera')).toMatchObject({ collected: true, owned: 1 });
+        expect(entry(s, 'user', 'aiven-chimera').source).toContain('三星');
+        expect(entry(s, 'user', 'aiven-chimera').description).toContain('霸王龙');
+    });
     it('opens the egg atlas at the authored unlock and preserves legacy egg/chimera ownership history',()=>{
         let s:M.FishingMarketState=init();
         expect(entry(s,'user','dinosaur-egg')).toBeUndefined();
