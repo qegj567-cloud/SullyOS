@@ -647,7 +647,7 @@ const VRWorldApp: React.FC = () => {
                 const {runVRSession}=await import('../utils/vrWorld/runSession');return runVRSession({char,characters,userProfile,groups,apiConfig,realtimeConfig,memoryPalaceConfig,updateCharacter,updateUserProfile,forcedRoom:'sar',forcedSARActivity:'garden',manual:true});
             }}/></React.Suspense>}
             {showFishingMarket && showFishingMarket!=='garden' && userProfile && (
-                <FishingMarketOverlay key={showFishingMarket} initialEntry={showFishingMarket} characters={characters} userProfile={userProfile} realtimeConfig={realtimeConfig}
+                <FishingMarketOverlay apiConfig={apiConfig} key={showFishingMarket} initialEntry={showFishingMarket} characters={characters} userProfile={userProfile} realtimeConfig={realtimeConfig}
                     addToast={addToast} onClose={() => setShowFishingMarket(null)} onOpenGarden={()=>setShowFishingMarket('garden')}
                     onCharacterTrip={async (char, mode) => {
                         const { runVRSession } = await import('../utils/vrWorld/runSession');

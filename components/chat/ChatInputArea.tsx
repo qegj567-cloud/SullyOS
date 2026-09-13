@@ -186,7 +186,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     };
 
     // --- Unified Touch/Long-Press Logic ---
-    
+
     const clearTimer = () => {
         if (longPressTimer.current) {
             clearTimeout(longPressTimer.current);
@@ -197,12 +197,12 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     const handleTouchStart = (item: any, type: 'emoji' | 'category', e: React.TouchEvent | React.MouseEvent) => {
         // 1. Always reset state first to ensure clean slate for any interaction
         // This fixes the bug where deleting a category leaves the flag true, blocking clicks on system categories
-        clearTimer(); 
+        clearTimer();
         isLongPressTriggered.current = false;
 
         // 2. Skip long-press for the default category (no options needed)
         if (type === 'category' && item.id === 'default') return;
-        
+
         // 3. Store coordinates and start timer for valid long-press candidates
         if ('touches' in e) {
             startPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
@@ -526,12 +526,12 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                         <Plus className="w-6 h-6" weight="bold" />
                     </button>
                     <div className={`sully-chat-input-wrap flex-1 min-w-0 flex items-center px-1 transition-all ${useIOSStandaloneInputFix ? 'overflow-visible' : 'overflow-hidden'} ${inputWrapClass} ${isPixelStyle ? 'focus-within:bg-[#fff7ed]' : isDiscordStyle ? 'focus-within:bg-slate-800 focus-within:border-white/20' : 'border border-transparent focus-within:bg-white focus-within:border-primary/30'}`}>
-                        <textarea 
+                        <textarea
                             ref={textareaRef}
-                            rows={1} 
-                            value={input} 
-                            onChange={(e) => setInput(e.target.value)} 
-                            onKeyDown={handleKeyDown} 
+                            rows={1}
+                            value={input}
+                            onChange={(e) => setInput(e.target.value)}
+                            onKeyDown={handleKeyDown}
                             onFocus={handleInputFocus}
                             onBlur={() => setIsInputFocused(false)}
                             onCompositionStart={() => setIsComposing(true)}
@@ -541,14 +541,14 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                             autoCorrect="on"
                             autoCapitalize="sentences"
                             className={`sully-chat-textarea flex-1 min-w-0 bg-transparent px-4 py-3 ${useIOSStandaloneInputFix ? 'text-[16px]' : 'text-[15px]'} resize-none max-h-24 no-scrollbar ${isDiscordStyle ? 'text-white placeholder:text-slate-500' : isPixelStyle ? 'text-[#6a4c35] placeholder:text-[#9b8677]' : ''}`}
-                            placeholder="Message..." 
-                            style={{ height: 'auto' }} 
+                            placeholder="Message..."
+                            style={{ height: 'auto' }}
                         />
                         <button onClick={() => setShowPanel(showPanel === 'emojis' ? 'none' : 'emojis')} className={`p-2 shrink-0 ${isDiscordStyle ? 'text-slate-400 hover:text-sky-300' : isPixelStyle ? 'text-[#8f674a] hover:text-[#a16207]' : 'text-slate-400 hover:text-primary'}`}>
                             <Smiley className="w-6 h-6" weight="regular" />
                         </button>
                     </div>
-                    <button 
+                    <button
                         ref={sendButtonRef}
                         type="button"
                         onPointerDown={e => {
@@ -580,7 +580,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                     className={`sully-chat-panel ${panelClass} overflow-hidden relative z-0 flex flex-col will-change-[max-height] transition-[max-height] duration-200 ease-out`}
                     style={{ maxHeight: showPanel !== 'none' ? '18rem' : '0px' }}
                 >
-                    
+
                     {/* Emojis Panel with Categories */}
                     {showPanel === 'emojis' && (
                         <>
@@ -613,15 +613,15 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                                     <button onClick={() => onPanelAction('add-category')} className={categoryAddButtonClass}>+</button>
                                 </div>
                                 {emojiSelectionMode ? (
-                                    <div 
+                                    <div
                                         className={`absolute inset-0 z-10 flex items-center justify-end px-3 ${
-                                            isPixelStyle ? 'bg-[#eadfce]/70 backdrop-blur-[2px]' : 
-                                            isDiscordStyle ? 'bg-slate-950/70 backdrop-blur-[2px]' : 
+                                            isPixelStyle ? 'bg-[#eadfce]/70 backdrop-blur-[2px]' :
+                                            isDiscordStyle ? 'bg-slate-950/70 backdrop-blur-[2px]' :
                                             'bg-white/60 backdrop-blur-[2px]'
                                         }`}
                                     >
-                                        <button 
-                                            onClick={(e) => { e.stopPropagation(); setEmojiSelectionMode(false); }} 
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); setEmojiSelectionMode(false); }}
                                             className={`w-6 h-6 rounded-full flex items-center justify-center transition-colors shadow-sm ${
                                                 isPixelStyle ? 'bg-[#c99872] text-[#fff7ed] hover:bg-[#b07d57]' :
                                                 isDiscordStyle ? 'bg-slate-700 text-slate-300 hover:bg-slate-600' :
@@ -656,12 +656,12 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                                     已用自定义 CSS（.sully-chat-panel button img 定宽 !important）的用户不受影响。 */}
                                 <div className="grid grid-cols-5 gap-2">
                                     {emojiSelectionMode ? (
-                                        <button 
+                                        <button
                                             onClick={() => {
                                                 if (selectedEmojis.length > 0) {
                                                     onPanelAction('delete-emoji-req', selectedEmojis);
                                                 }
-                                            }} 
+                                            }}
                                             disabled={selectedEmojis.length === 0}
                                             aria-label="删除选中的表情"
                                             className={`${emojiImportTileClass} !bg-red-50 !border-red-400 !text-red-500 ${selectedEmojis.length === 0 ? 'opacity-40 cursor-not-allowed' : 'active:scale-95'}`}
@@ -768,13 +768,13 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                                 </div>)}
                                 <span className="text-xs font-bold">转账</span>
                             </button>
-                            
+
                             <button onClick={() => onPanelAction('poke')} className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${acnh ? 'text-[#725d42]' : isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}>
                                 {acnh ? <AcnhActionTile kind="poke" /> : (
                                 <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border ${isDiscordStyle ? 'bg-slate-800 border-sky-400/20' : 'bg-sky-50 border-sky-100'}`}><img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f449.png" alt="poke" className="w-6 h-6" /></div>)}
                                 <span className="text-xs font-bold">戳一戳</span>
                             </button>
-                            
+
                             <button onClick={() => onPanelAction('archive')} className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${acnh ? 'text-[#725d42]' : isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}>
                                 {acnh ? <AcnhActionTile kind="archive" /> : (
                                 <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border ${isDiscordStyle ? 'bg-slate-800 text-indigo-300 border-indigo-400/20' : 'bg-indigo-50 text-indigo-400 border-indigo-100'}`}>
@@ -782,14 +782,14 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                                 </div>)}
                                 <span className="text-xs font-bold">{isSummarizing ? '归档中...' : '记忆归档'}</span>
                             </button>
-                            
+
                             <button onClick={() => onPanelAction('settings')} className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${acnh ? 'text-[#725d42]' : isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}>
                                 {acnh ? <AcnhActionTile kind="settings" /> : (
                                 <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border ${isDiscordStyle ? 'bg-slate-800 text-slate-300 border-white/10' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>
                                     <GearSix className="w-6 h-6" weight="bold" /></div>)}
                                 <span className="text-xs font-bold">设置</span>
                             </button>
-                            
+
                             {/* Regenerate Button */}
                             <button onClick={onReroll} disabled={!canReroll} className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${canReroll ? (isDiscordStyle ? 'text-slate-200' : 'text-slate-600') : 'text-slate-300 opacity-50'}`}>
                                 {acnh ? <AcnhActionTile kind="regenerate" /> : (
@@ -906,18 +906,9 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                               <span className="text-xs font-bold">{showThinkingChain ? '思考已开' : '展示思考'}</span>
                             </button>
 
-                            {/* 聊天装扮：打开该角色专属的「聊天细节微调」弹窗（跟随全局 / 单独定制，不用写 CSS） */}
-                            <button
-                              onClick={() => onPanelAction('fine-tune')}
-                              className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${acnh ? 'text-[#725d42]' : isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}
-                            >
-                              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border ${acnh ? 'bg-white/70 border-[#e6dab4] text-[#5fae6e]' : isDiscordStyle ? 'bg-slate-800 text-teal-300 border-teal-400/20' : 'bg-teal-50 text-teal-500 border-teal-100'}`}>
-                                  <FadersHorizontal className="w-6 h-6" weight="bold" />
-                              </div>
-                              <span className="text-xs font-bold">聊天装扮</span>
-                            </button>
+                            {/* 聊天装扮：统一布局、气泡、背景、声音、进阶与预设 */}
 
-                            {/* 白框：打开该角色专属的「白框自定义 CSS」弹窗 */}
+
                             <button
                               onClick={() => onPanelAction('chrome-css')}
                               className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${acnh ? 'text-[#725d42]' : isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}
@@ -925,7 +916,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                               <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border ${acnh ? 'bg-white/70 border-[#e6dab4] text-[#b77dee]' : isDiscordStyle ? 'bg-slate-800 text-pink-300 border-pink-400/20' : 'bg-pink-50 text-pink-500 border-pink-100'}`}>
                                   <PencilSimple className="w-6 h-6" weight="bold" />
                               </div>
-                              <span className="text-xs font-bold">白框</span>
+                              <span className="text-xs font-bold">聊天装扮</span>
                             </button>
 
                           </div>
@@ -941,18 +932,8 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                             </button>
                             <input type="file" ref={chatImageInputRef} className="hidden" accept="image/*" onChange={(e) => handleImageChange(e, 'chat')} />
 
-                            {/* 提示音：打开该角色专属的「白框提示音」弹窗（挨着白框，独立于白框可绑定/解绑） */}
-                            <button
-                              onClick={() => onPanelAction('chrome-sound')}
-                              className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${acnh ? 'text-[#725d42]' : isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}
-                            >
-                              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border ${acnh ? 'bg-white/70 border-[#e6dab4] text-[#e0994a]' : isDiscordStyle ? 'bg-slate-800 text-amber-300 border-amber-400/20' : 'bg-amber-50 text-amber-500 border-amber-100'}`}>
-                                  <BellSimpleRinging className="w-6 h-6" weight="bold" />
-                              </div>
-                              <span className="text-xs font-bold">提示音</span>
-                            </button>
 
-                            {/* 记忆链接与提示音同级：都是聊天工具入口，不单独占一整块。 */}
+                            {/* 记忆链接：聊天工具入口。 */}
                             <button
                               onClick={() => onPanelAction('memory-link')}
                               className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${acnh ? 'text-[#725d42]' : isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}

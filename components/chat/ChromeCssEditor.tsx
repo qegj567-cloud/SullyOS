@@ -309,7 +309,7 @@ const ChromeCssEditor: React.FC<{ value: string; onChange: (css: string) => void
     };
     const handleSavePreset = () => {
         if (!value.trim() || typeof window === 'undefined') return;
-        const name = window.prompt('给这套白框预设起个名字（所有角色通用）：', '我的预设')?.trim();
+        const name = window.prompt('给这套装扮 CSS 预设起个名字（所有角色通用）：', '我的预设')?.trim();
         if (!name) return;
         commitCustom([...custom.filter((p) => p.name !== name), { name, code: value }]);
     };

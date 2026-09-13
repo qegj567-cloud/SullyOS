@@ -1,0 +1,32 @@
+import {chromium} from 'playwright';
+import assert from 'node:assert/strict';
+import {readFileSync,mkdirSync} from 'node:fs';
+const out='output/chat-decoration';mkdirSync(out,{recursive:true});
+const browser=await chromium.launch({headless:true});const page=await browser.newPage({viewport:{width:390,height:844}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
+const preset={format:'sullyos-chat-decoration',version:1,name:'月光来信',parts:{layout:{chatHeaderStyle:'telegram',chatBubbleFontSize:17},bubbles:{name:'月光气泡',user:{textColor:'#fff',backgroundColor:'#a38eb6',borderRadius:18},ai:{textColor:'#463951',backgroundColor:'#f8f2ff',borderRadius:18}},background:{image:null,style:'paper'},sound:{src:'crystal',volume:.4},css:'.sully-chat-name { color: #956ab0; }'}};
+const upload=async(name,content,mimeType='text/plain')=>page.getByLabel('统一导入装扮').setInputFiles({name,mimeType,buffer:Buffer.from(content)});
+const state=()=>page.evaluate(()=>window.decorationQA);
+await page.addInitScript(()=>localStorage.setItem('sully-chat-decoration-announcement-v1:decoration','seen'));
+try{
+ await page.goto('http://127.0.0.1:5183/test/fixtures/chat-decoration.html');await page.getByRole('navigation',{name:'装扮分类'}).getByRole('button',{name:'预设',exact:true}).click();
+ await upload('月光来信.json',JSON.stringify(preset),'application/json');await page.getByRole('heading',{name:'月光来信',exact:true}).waitFor();assert.equal((await state()).char.bubbleStyle,'default');
+ await page.screenshot({path:out+'/import-review.png'});
+ await page.getByRole('group',{name:'正在设置'}).getByRole('button',{name:'全局默认',exact:true}).click();
+ await page.getByRole('checkbox',{name:/进阶 CSS/}).uncheck();await page.getByRole('button',{name:'确认应用',exact:true}).click();await page.getByRole('status').filter({hasText:'已应用到'}).waitFor();
+ assert.equal((await state()).theme.chatHeaderStyle,'telegram');assert.equal((await state()).theme.chatSound.src,'crystal');assert.equal((await state()).theme.chatChromeCustomCss||'','');assert.equal((await state()).char.bubbleStyle,'default');
+ await page.getByRole('group',{name:'正在设置'}).getByRole('button',{name:'Sully专属',exact:true}).click();
+ await upload('test.txt','.sully-chat-name { color: plum; }');await page.getByRole('button',{name:'取消',exact:true}).click();assert((await state()).char.chromeCustomCss.includes('letter-spacing'));
+ await upload('背景.png',readFileSync('public/icons/jellyfish-192.png'),'image/png');await page.getByRole('heading',{name:'这张图片用在哪里？'}).waitFor();assert.equal((await state()).char.chatBackground,undefined);await page.screenshot({path:out+'/image-choice.png'});
+ await page.getByRole('button',{name:'聊天背景',exact:true}).click();await page.getByRole('button',{name:'确认应用',exact:true}).click();await page.getByRole('status').filter({hasText:'已应用到'}).waitFor();assert((await state()).char.chatBackground.startsWith('blobref:'));
+ await page.getByRole('button',{name:'存为预设',exact:true}).click();await page.getByText('整套装扮已存入我的预设。',{exact:true}).waitFor();
+ const downloading=page.waitForEvent('download');await page.getByRole('button',{name:'导出分享',exact:true}).click();await page.getByRole('button',{name:'导出原格式',exact:true}).click();const download=await downloading;const file=await download.path();const exported=JSON.parse(readFileSync(file,'utf8'));assert.equal(Object.keys(exported.parts).length,5);assert(exported.parts.background.image.startsWith('data:image/'));assert(!JSON.stringify(exported).includes('blobref:'));
+ await page.reload();await page.getByRole('navigation',{name:'装扮分类'}).getByRole('button',{name:'预设',exact:true}).click();await page.getByRole('button',{name:/我的聊天装扮.*查看并应用/}).click();await page.getByRole('button',{name:'确认应用',exact:true}).click();await page.getByRole('status').filter({hasText:'已应用到'}).waitFor();assert.equal((await state()).char.chatAppearance.chatHeaderStyle,'telegram');
+ await upload('broken.json','{"format":"sullyos-chat-decoration","version":99,"parts":{}}','application/json');await page.getByRole('alert').waitFor();assert.equal((await state()).char.chatAppearance.chatHeaderStyle,'telegram');
+ await page.setViewportSize({width:320,height:568});const panel=page.locator('.chat-decoration');assert.equal(await panel.evaluate(el=>el.scrollWidth>el.clientWidth),false);await page.screenshot({path:out+'/presets-small.png'});
+ await page.goto('http://127.0.0.1:5183/test/fixtures/sar-user-module.html');await page.waitForFunction(()=>!!window.sarQA);
+ await page.evaluate(async()=>{const DB=window.sarQA.DB;await DB.saveCharacter({id:'preset-real',name:'预设测试',avatar:'',systemPrompt:'保留原人设',showThinkingChain:false});await DB.saveCharacter({id:'preset-other',name:'另一个角色',avatar:'',systemPrompt:'不要改动',bubbleStyle:'forest'});await DB.saveUserProfile({name:'小雨',avatar:'',bio:''});localStorage.setItem('os_last_active_char_id','preset-real');});
+ await page.reload();await page.locator('.sully-chat-name').filter({hasText:'预设测试'}).waitFor();await page.getByRole('button',{name:'聊天功能',exact:true}).click();await page.getByRole('button',{name:'第 2 页',exact:true}).click();await page.getByRole('button',{name:'聊天装扮',exact:true}).click();await page.getByRole('navigation',{name:'装扮分类'}).getByRole('button',{name:'预设',exact:true}).click();await upload('complete.json',JSON.stringify(preset),'application/json');await page.getByRole('button',{name:'确认应用',exact:true}).click();await page.getByRole('status').filter({hasText:'已应用到'}).waitFor();
+ const stored=await page.evaluate(()=>window.sarQA.DB.getCharacter('preset-real'));assert.equal(stored.systemPrompt,'保留原人设');assert.equal(stored.chatAppearance.chatHeaderStyle,'telegram');assert.equal(stored.chatSound.src,'crystal');assert(stored.bubbleStyle.startsWith('decoration-'));assert.equal((await page.evaluate(()=>window.sarQA.DB.getCharacter('preset-other'))).bubbleStyle,'forest');
+ await page.reload();await page.locator('.sully-chat-name').filter({hasText:'预设测试'}).waitFor();assert.equal(await page.locator('.sully-chat-name').evaluate(el=>getComputedStyle(el).color),'rgb(149, 106, 176)');
+ assert.deepEqual(errors,[]);console.log('PASS staged import, scope switch, selective parts, cancel, plain image routing, blob portability, export/reimport, saved presets, malformed version and 320px');
+}finally{await browser.close();}

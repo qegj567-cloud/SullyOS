@@ -17,8 +17,8 @@ import {
 // 你自己发消息 / 翻旧记录都不会响。
 //
 // 存储与分享：
-// - 默认「解绑」——提示音独立存在角色字段里，白框分享码保持轻量、纯 CSS。提示音可用下方「分享码」单独传。
-// - 打开「绑定到白框」——提示音会写进白框 CSS 的指令注释，跟白框一起分享出去（随时可解绑）。
+// - 默认「解绑」——提示音独立存在角色字段里，样式分享码保持轻量、纯 CSS。提示音可用下方「分享码」单独传。
+// - 打开「绑定到进阶样式」——提示音会写进白框 CSS 的指令注释，跟白框一起分享出去（随时可解绑）。
 // 本组件不关心存哪，只吐出 (sound, bound) 的变化，落地位置由 Chat.tsx 决定。
 
 // 上传音频转 data URI 的体积上限：绑定分享时会进分享码，太大会爆；提示音本就该短，200KB 足够。
@@ -45,7 +45,7 @@ const copyText = async (text: string): Promise<boolean> => {
 interface Props {
     sound: WhiteboxSound | null;
     onChangeSound: (sound: WhiteboxSound | null) => void;
-    /** 「绑定到白框」开关；全局默认提示音不涉及绑定，传 false 隐藏。默认显示。 */
+    /** 「绑定到进阶样式」开关；全局默认提示音不涉及绑定，传 false 隐藏。默认显示。 */
     showBind?: boolean;
     bound?: boolean;
     onChangeBound?: (bound: boolean) => void;
@@ -82,7 +82,7 @@ const WhiteboxSoundEditor: React.FC<Props> = ({ sound, onChangeSound, showBind =
         if (!file) return;
         if (!file.type.startsWith('audio/')) { window.alert('请选择音频文件（mp3 / wav / ogg 等）。'); return; }
         if (file.size > MAX_UPLOAD_BYTES) {
-            window.alert(`音频太大（${Math.round(file.size / 1024)}KB）。绑定到白框分享时会进分享码，请用 ≤ ${MAX_UPLOAD_BYTES / 1024}KB 的短提示音，或改用「音频 URL」。`);
+            window.alert(`音频太大（${Math.round(file.size / 1024)}KB）。绑定到进阶样式分享时会进分享码，请用 ≤ ${MAX_UPLOAD_BYTES / 1024}KB 的短提示音，或改用「音频 URL」。`);
             return;
         }
         setBusy(true);
@@ -114,7 +114,7 @@ const WhiteboxSoundEditor: React.FC<Props> = ({ sound, onChangeSound, showBind =
     const handleShareExport = async () => {
         if (!sound) return;
         const ok = await copyText(encodeSoundShare(sound));
-        window.alert(ok ? '已复制提示音分享码，发给别人粘贴导入即可（不含白框皮肤）。' : '复制失败，请重试。');
+        window.alert(ok ? '已复制提示音分享码，发给别人粘贴导入即可（不含界面样式）。' : '复制失败，请重试。');
     };
     const handleShareImport = () => {
         const code = window.prompt('粘贴提示音分享码（SULLYSND1:...）：', '')?.trim();
@@ -205,7 +205,7 @@ const WhiteboxSoundEditor: React.FC<Props> = ({ sound, onChangeSound, showBind =
                 </div>
             </div>
 
-            {/* 绑定到白框 开关（全局默认版不显示） */}
+            {/* 绑定到进阶样式 开关（全局默认版不显示） */}
             {showBind && (
                 <div className="rounded-2xl border border-slate-100 bg-slate-50/70 px-3.5 py-3">
                     <label className="flex cursor-pointer items-start gap-3">
@@ -216,11 +216,11 @@ const WhiteboxSoundEditor: React.FC<Props> = ({ sound, onChangeSound, showBind =
                             className="mt-0.5 h-4 w-4 shrink-0 accent-indigo-500"
                         />
                         <span className="min-w-0">
-                            <span className="block text-[12px] font-bold text-slate-700">绑定到白框一起分享</span>
+                            <span className="block text-[12px] font-bold text-slate-700">绑定到进阶样式一起分享</span>
                             <span className="block text-[10px] leading-snug text-slate-400">
                                 {bound
-                                    ? '已绑定：分享这套白框时会带上提示音（上传的音频会进分享码，可能变大）。'
-                                    : '未绑定：白框分享码保持轻量、只含皮肤；提示音用下方分享码单独传。'}
+                                    ? '已绑定：分享这套样式时会带上提示音（上传的音频会进分享码，可能变大）。'
+                                    : '未绑定：样式分享码保持轻量、只含皮肤；提示音用下方分享码单独传。'}
                             </span>
                         </span>
                     </label>

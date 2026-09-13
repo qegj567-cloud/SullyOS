@@ -3,7 +3,7 @@
  * suLy = ancillary, private, reserved bit clear, safe to copy.
  */
 export const SHARE_KINDS = {
-    character: '角色卡', worldbook: '世界书', 'chrome-css': '白框 CSS',
+    'chat-decoration': '聊天装扮', character: '角色卡', worldbook: '世界书', 'chrome-css': '白框 CSS',
     'chrome-presets': '白框预设集', 'journal-css': '日记 CSS', 'chat-theme': '气泡主题',
     appearance: '外观预设', story: '剧情预设', room: '小屋样板房',
     'pixel-home': '像素小屋', 'whitebox-sound': '白框提示音',
@@ -145,3 +145,6 @@ export async function readShareFile(file: File, expectedKind: ShareKind): Promis
 export async function readShareText(file: File, expectedKind: ShareKind): Promise<string> {
     return (await readShareFile(file, expectedKind)).text();
 }
+
+/** Distinguish a plain PNG from a share card; corrupt cards still fail validation. */
+export function pngHasShare(bytes:Uint8Array):boolean { return chunks(bytes).some(chunk=>chunk.type===CHUNK); }

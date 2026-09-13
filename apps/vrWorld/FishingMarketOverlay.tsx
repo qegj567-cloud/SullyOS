@@ -1,4 +1,5 @@
 import { sarNpcContentEnabled } from '../../utils/vrWorld/sarNpcPreference';
+import { runMarketNPCSession } from '../../utils/vrWorld/marketNPCSession';
 import { rollMarketVisitor } from '../../utils/vrWorld/marketRefresh';
 import { SARFacilityGuide } from './SARFacilityGuide';
 import { AivenFishSaleReceipt } from './AivenFishSaleReceipt';
@@ -6,12 +7,12 @@ import type { AivenFishSale } from '../../utils/vrWorld/fishingSale';
 import { remainingSARBuyback, SAR_DAILY_BUYBACK } from '../../utils/vrWorld/sarEconomy';
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, X, Fish, BookOpen, DotsThree, PencilSimple, CaretRight, ArrowsClockwise } from '@phosphor-icons/react';
-import type { CharacterProfile, RealtimeConfig, UserProfile } from '../../types';
+import type { APIConfig, CharacterProfile, RealtimeConfig, UserProfile } from '../../types';
 import {
     personalFishingCollection, pendingFishingTrip, FISH_CATALOG, WEATHER_LABELS, FISHING_MARKET_STORAGE_KEY, addCatchToState, availableCatches, buyListing, catchValue,
     commentOnPost, createFishingMarketState, createListing, createRequest, ensureActorAccounts, ensureMarketDay,
     fulfillRequest, handleCollection, hatchEgg, listMarketActors, marketActorName, marketCatchSnapshot, mutateFishingMarket, readFishingMarketState,
-    removeMarketPost, resolveFishingWeather, rollFishingCatch, refreshMarketNPCs, sellFishToAiven, speciesById,
+    removeMarketPost, resolveFishingWeather, rollFishingCatch, sellFishToAiven, speciesById,
     type FishingCatch, type FishingMarketState, type FishingWeather, type MarketCatchSnapshot, type MarketListing, type MarketRequest,
 } from '../../utils/vrWorld/fishingMarket';
 import { flushMarketReceipts } from '../../utils/vrWorld/fishingCharacter';
@@ -28,7 +29,8 @@ const rarityLabel: Record<string,string> = {common:'常见',uncommon:'少见',ra
 const statusLabel: Record<string,string> = {open:'展板中',sold:'已售出',fulfilled:'已完成',removed:'主动撤下',expired:'已到期'};
 const ownerId = (p:BoardPost) => 'sellerId' in p ? p.sellerId : p.authorId;
 const ownerName = (p:BoardPost) => p.alias || ('sellerName' in p ? p.sellerName : p.authorName);
-const postKind = (p:BoardPost) => 'price' in p ? '转让' : p.kind==='item' ? '求物' : p.kind==='favor' ? '求回应' : '收心意';
+const isFreeNote = (p:BoardPost) => 'kind' in p && p.kind==='favor' && p.offer===0;
+const postKind = (p:BoardPost) => 'price' in p ? '转让' : p.kind==='item' ? '求物' : p.kind==='favor' ? (isFreeNote(p)?'便笺':'求回应') : '收心意';
 const postAmount = (p:BoardPost) => 'price' in p ? p.price : p.offer;
 const amountLabel = (p:BoardPost) => 'price' in p ? '售价' : p.kind==='tip' ? '心意' : '酬谢';
 const specimenLabel = (c:MarketCatchSnapshot) => `${c.nickname?c.nickname+' · ':''}${speciesById(c.speciesId)?.name||'藏品'} · ${c.sizeCm} cm · ${c.quality} 星`;
@@ -37,13 +39,13 @@ const countdown = (deadline:number,now:number) => {
 };
 
 interface Props {
-    initialEntry?:'water'|'board'|'sell';
+    initialEntry?:'water'|'board'|'sell'; apiConfig?:APIConfig;
     characters:CharacterProfile[]; userProfile:UserProfile; realtimeConfig?:RealtimeConfig;
     addToast?:(message:string,type?:any)=>void; onClose:()=>void;
     onOpenGarden?:()=>void;
     onCharacterTrip:(char:CharacterProfile,mode:'fishing'|'market')=>Promise<{ok:boolean;reason?:string}>;
 }
-export const FishingMarketOverlay:React.FC<Props> = ({initialEntry='water',characters,userProfile,realtimeConfig,addToast,onClose,onOpenGarden,onCharacterTrip}) => {
+export const FishingMarketOverlay:React.FC<Props> = ({initialEntry='water',apiConfig,characters,userProfile,realtimeConfig,addToast,onClose,onOpenGarden,onCharacterTrip}) => {
     const actors=useMemo(()=>listMarketActors(userProfile,characters),[userProfile.name,characters]);
     const user=actors[0];
     const [state,setState]=useState<FishingMarketState>(()=>{try{return ensureMarketDay(readFishingMarketState());}catch{return createFishingMarketState();}});
@@ -111,11 +113,13 @@ export const FishingMarketOverlay:React.FC<Props> = ({initialEntry='water',chara
             setSelectedCatch(null);setSaleReceipt(receipt!);
         }catch(e){report(e);}finally{saleInFlight.current=false;setBusy(false);}
     };
+    const npcAbort=useRef<AbortController|null>(null);
+    useEffect(()=>()=>npcAbort.current?.abort(),[]);
     const refreshVisitors = async () => {
         if (refreshInFlight.current || busy || trip) return;
         refreshInFlight.current = true; setBusy(true); setError(''); setRefreshNotice('');
         try {
-            const visitor = rollMarketVisitor(characters);
+            const visitor = rollMarketVisitor(characters,Math.random,sarNpcContentEnabled());
             if (visitor) {
                 setRefreshNotice(visitor.name + '正在看看布告板…');
                 const result = await onCharacterTrip(visitor, 'market');
@@ -124,13 +128,16 @@ export const FishingMarketOverlay:React.FC<Props> = ({initialEntry='water',chara
                 refresh();
                 setRefreshNotice(visitor.name + '来过了，看看有没有留下新便笺或回复。');
             } else {
-                let names: string[] = [];
-                await commit(current => { const result = refreshMarketNPCs(current); names = result.visitors.map(visitor => visitor.name); return result.state; });
-                setRefreshNotice(names.join('、') + '来过了。');
+                setRefreshNotice('路人正在看看最近的便笺…');
+                const controller=new AbortController();npcAbort.current=controller;
+                const result=await runMarketNPCSession(apiConfig,controller.signal);
+                setState(result.state);
+                await flushMarketReceipts(characters);
+                setRefreshNotice(result.visitors.map(v=>v.name).join('、')+'来过了。'+(result.skipped.length?'有 '+result.skipped.length+' 项行动因便笺或余额变化未执行。':''));
             }
             setNow(Date.now());
         } catch (cause) { setRefreshNotice(''); report(cause); }
-        finally { refreshInFlight.current = false; setBusy(false); }
+        finally { npcAbort.current=null;refreshInFlight.current = false; setBusy(false); }
     };
     const onCaught=async(c:FishingCatch)=>{await commit(s=>addCatchToState(s,c));};
     const beginPost=(mode:Compose,catchId='')=>{
@@ -199,7 +206,7 @@ export const FishingMarketOverlay:React.FC<Props> = ({initialEntry='water',chara
         <div className="board-note-meta"><span>{ownerName(p)} · {postKind(p)}</span><span>{p.status==='open'?(p.comments.length?`${p.comments.length} 条回复`:''):statusLabel[p.status]}</span></div>
         <div className="board-note-title">{p.itemLabel}</div>
         <p className="board-note-excerpt">{('note' in p?p.note:(p as MarketRequest).body)||'点开看看这张便笺。'}</p>
-        <div className="board-note-foot"><span>{amountLabel(p)} {postAmount(p)} 鳞币</span><CaretRight size={15} aria-hidden/></div>
+        <div className="board-note-foot"><span>{isFreeNote(p)?'留句话':`${amountLabel(p)} ${postAmount(p)} 鳞币`}</span><CaretRight size={15} aria-hidden/></div>
     </button>;
     const boardTitle=tab==='more'?'更多':tab==='prices'?'当日行情':tab==='archive'?'往期便笺':tab==='visit'?'邀请角色':'布告板';
     return <div className={`fishing-shell ${tab==='water'?'fishing-water-shell':''} ${!atWater||compose?'fishing-board-shell':''} fixed inset-0 z-[380] flex flex-col overflow-hidden`} role="dialog" aria-modal="true" aria-label={atWater?'彼方水域':'彼方布告板'}>
@@ -247,7 +254,7 @@ export const FishingMarketOverlay:React.FC<Props> = ({initialEntry='water',chara
                 {tab==='more'&&<>
                     <div className="board-wallet"><span>我的鳞币</span><strong>{state.accounts.user||0}</strong></div>
                     <div className="board-links">{([['prices','当日行情','看看今天的鱼获收购价'],['archive','往期便笺','回看原文、回复与成交记录'],['visit','邀请角色','请一位朋友来逛逛']] as const).map(([id,title,description])=><button key={id} onClick={()=>goTo(id)}><span><strong>{title}</strong><small>{description}</small></span><CaretRight size={17}/></button>)}</div>
-                    <details className="board-about"><summary>关于布告板</summary><p>这里属于你和你的角色。各自的钱包从 1,000 鳞币开始，互不混用。</p><p>便笺保留 24 小时；成交、撤下或到期后收进作者的往期便笺。回复不扣钱。</p></details>
+                    <details className="board-about"><summary>关于布告板</summary><p>这里属于你和你的角色。各自的新钱包从 120 鳞币开始，互不混用。</p><p>便笺保留 24 小时；成交、撤下或到期后收进作者的往期便笺。回复不扣钱。</p></details>
                 </>}
                 {tab==='prices'&&<>
                     <div className="board-dateline">{new Date(now).toLocaleDateString('zh-CN',{month:'long',day:'numeric'})} · 参考收购价 / 鳞币</div>
@@ -256,7 +263,7 @@ export const FishingMarketOverlay:React.FC<Props> = ({initialEntry='water',chara
                 </>}
                 {tab==='visit'&&<>
                     {characterTripControls('market')}
-                    <section className="board-passersby"><h2>路过的朋友</h2><p className="fish-note">主页点「刷新」，随机来两三位 NPC，或一位正在彼方自由活动的角色。想让谁来，就点「指定角色」，沿用彼方的指定活动流程。</p><button type="button" className="fish-action mt-3" onClick={()=>goTo('board')}>去刷新布告板</button></section>
+                    <section className="board-passersby"><h2>路过的朋友</h2><p className="fish-note">主页点「刷新」，随机来两三位路人或一位自由活动中的角色。路人的发帖、接话和隔空喊话由一次模型调用共同生成，会接着最近的便笺聊；使用彼方 API，未单独配置时跟随聊天默认。想让谁来，就点「指定角色」。</p><button type="button" className="fish-action mt-3" onClick={()=>goTo('board')}>去刷新布告板</button></section>
                 </>}
                 {tab==='archive'&&<>
                     {viewPicker}
@@ -313,7 +320,7 @@ export const FishingMarketOverlay:React.FC<Props> = ({initialEntry='water',chara
             {'buyerName' in activePost&&activePost.buyerName&&<p className="fish-note mt-2">成交买家：{activePost.buyerName}</p>}
             {'fulfillerName' in activePost&&activePost.fulfillerName&&<p className="fish-note mt-2">{activePost.kind==='tip'?'打赏人':'交付人'}：{activePost.fulfillerName}</p>}
             <p className="mt-3 whitespace-pre-wrap break-words text-[13px] leading-7">{'price' in activePost?activePost.note:activePost.body}</p>
-            <div className="board-detail-price"><span>{amountLabel(activePost)}</span><strong>{postAmount(activePost)} <small>鳞币</small></strong></div>
+            <div className="board-detail-price">{isFreeNote(activePost)?<span>一张便笺，随意聊聊。</span>:<><span>{amountLabel(activePost)}</span><strong>{postAmount(activePost)} <small>鳞币</small></strong></>}</div>
             {'submission' in activePost&&activePost.submission&&<p className="fish-note mt-2">交付内容：{activePost.submission}</p>}
             {activePost.comments.length>0&&<div className="fish-divider mt-4 space-y-3 pt-3">{activePost.comments.map(c=><div key={c.id} className="text-[12px] leading-6"><span className="board-comment-author">{c.alias||c.authorName}</span>：<span className="whitespace-pre-wrap break-words">{c.content}</span></div>)}</div>}
             {activePost.status==='open'&&<><label className="block fish-note mt-5">{'kind' in activePost&&activePost.kind==='favor'?'写下你的回应':'留句话'}<textarea aria-label="回复或交付内容" className="fish-input mt-1" rows={3} value={postText} maxLength={240} placeholder="说点什么……" onChange={e=>setPostText(e.target.value)}/></label>
@@ -325,8 +332,8 @@ export const FishingMarketOverlay:React.FC<Props> = ({initialEntry='water',chara
                     <p className="fish-note mt-1">{fulfillmentCatches.length?'交付后，这件藏品归对方，你收到出价的鳞币。':'没有可交付的同种藏品；已挂板、孵化中或等待角色处理的藏品不能交付。'}</p>
                 </div>}
                 <div className="board-detail-actions">
-                {ownerId(activePost)!=='user'&&<button disabled={busy||!!needsSpecimen&&!fulfillmentCatches.some(c=>c.id===fulfillmentCatchId)} className="fish-action primary" onClick={()=>void act(s=>'price' in activePost?buyListing(s,activePost.id,user):fulfillRequest(s,activePost.id,user,postText,Date.now(),fulfillmentCatchId))}>{'price' in activePost?`支付 ${activePost.price} 鳞币，买下`:activePost.kind==='tip'?`赠予 ${activePost.offer} 鳞币`:activePost.kind==='favor'?`提交并领取 ${activePost.offer} 鳞币`:`交付并领取 ${activePost.offer} 鳞币`}</button>}
-                <div className="flex justify-between gap-3"><button disabled={busy||!postText.trim()} className="board-text-button" onClick={()=>void act(s=>commentOnPost(s,activePost.id,user,postText),()=>setPostText(''))}>仅回复</button>{ownerId(activePost)==='user'&&<button disabled={busy} className="board-text-button" onClick={()=>void act(s=>removeMarketPost(s,activePost.id,'user'))}>撤下并存档</button>}</div></div></>}
+                {ownerId(activePost)!=='user'&&<button disabled={busy||!!needsSpecimen&&!fulfillmentCatches.some(c=>c.id===fulfillmentCatchId)} className="fish-action primary" onClick={()=>void act(s=>'price' in activePost?buyListing(s,activePost.id,user):fulfillRequest(s,activePost.id,user,postText,Date.now(),fulfillmentCatchId))}>{'price' in activePost?`支付 ${activePost.price} 鳞币，买下`:activePost.kind==='tip'?`赠予 ${activePost.offer} 鳞币`:activePost.kind==='favor'?(isFreeNote(activePost)?'提交回应并完成':`提交并领取 ${activePost.offer} 鳞币`):`交付并领取 ${activePost.offer} 鳞币`}</button>}
+                <div className="flex justify-between gap-3"><button disabled={busy||!postText.trim()} className="board-text-button" onClick={()=>void act(s=>commentOnPost(s,activePost.id,user,postText),()=>setPostText(''))}>{isFreeNote(activePost)?'回复':'仅回复'}</button>{ownerId(activePost)==='user'&&<button disabled={busy} className="board-text-button" onClick={()=>void act(s=>removeMarketPost(s,activePost.id,'user'))}>撤下并存档</button>}</div></div></>}
             {error&&<p role="alert" className="mt-3 text-[12px] text-amber-100">{error}</p>}
             {activePost.alias&&ownerId(activePost)==='user'&&<p className="fish-note mt-3">你的匿名发帖；在这张便笺下回复会沿用「{activePost.alias}」。</p>}
         </BoardPage>}

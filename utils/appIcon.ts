@@ -21,7 +21,7 @@ import { toSquarePngDataUrl } from './iconRaster';
 
 export const PWA_ICON_APP_ID = '_pwa_';
 export const PWA_CLASSIC_ICON_VALUE = 'builtin:classic';
-export const PWA_DEFAULT_ICON_URL = import.meta.env.BASE_URL + 'icons/jellyfish-512.png';
+export const PWA_DEFAULT_ICON_URL = import.meta.env.BASE_URL + 'icons/jellyfish-512.png?v=38b1adde1d';
 export const PWA_CLASSIC_ICON_URL = import.meta.env.BASE_URL + 'icons/icon-512.png';
 let iconRevision = 0;
 

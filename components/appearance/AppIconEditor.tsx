@@ -240,28 +240,26 @@ const AppIconEditor: React.FC = () => {
 
       {/* 环境感知提示 */}
       {isStandalone ? (
-        <div className="rounded-xl border-2 border-red-300 bg-red-50 p-4 space-y-2">
-          <div className="text-sm font-bold text-red-600 text-center">
-            ⚠️ 删掉重装会丢数据 ⚠️
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-2">
+          <div className="text-sm font-bold text-slate-700">
+            主屏图标更新说明
           </div>
-          <div className="text-xs text-red-500 leading-relaxed space-y-1.5">
+          <div className="text-xs text-slate-500 leading-relaxed space-y-1.5">
             <p>
-              主屏图标只在「添加到主屏幕」那一刻读取一次，装完之后改不了。
-              要看到新图标，<strong>只能删掉 App 重新「添加到主屏幕」</strong>。
+              <strong>功能更新不需要重装。</strong>安卓 Chrome 安装的 PWA 默认图标通常会自动更新，但可能延迟；iPhone / iPad 主屏图标通常需重新添加。自定义上传或切换图标不保证同步到已安装的 App。
+            </p>
+            <p className="text-slate-600 font-medium">
+              卸载或重新添加可能影响本地数据，尤其是 iOS 的独立存储。不要为换图标直接删 App。
             </p>
             <p className="text-red-600 font-bold">
-              注意：装成 App 的 SullyOS，数据是单独的一份——跟浏览器里打开的不通，跟别的 PWA 也互相隔离。删掉 App，这一份数据就跟着没了。
-            </p>
-            <p className="text-red-600 font-bold">
-              删之前一定要先备份：设置 → 备份 → 导出，重装完再导入。
+              如需重新添加，请先到设置导出完整备份，确认文件已保存，再操作并导入。
             </p>
           </div>
         </div>
       ) : (
         <div className="rounded-xl bg-blue-50 border border-blue-200 p-3">
           <div className="text-xs text-blue-600 leading-relaxed">
-            ✨ 标签页图标已更新。下次「添加到主屏幕」时就会用新图标啦～
-            已经装好的 App 不受影响。
+            这里的选择会用于标签页及下次「添加到主屏幕」。已安装图标能否同步取决于系统；功能更新不需要重装。
           </div>
         </div>
       )}
