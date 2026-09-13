@@ -1,4 +1,5 @@
 import type { APIConfig, CharacterProfile, GroupProfile, Message, RealtimeConfig, UserProfile } from '../../types';
+import { findSARPendingReply, isSARDeletedReply, replaceSARSimulationReply, resolveSARReplyRetry } from './sarSimulationEdits';
 import { DB } from '../db';
 import { RoomPlateDB } from '../memoryPalace/db';
 import { formatRoomPlatesSection } from '../memoryPalace/roomPlates';
@@ -138,8 +139,10 @@ export const parseSARSimulationReply = (raw: string): SARSimulationReply | null 
     for (const candidate of parseJsonCandidates(raw)) {
         try {
             const parsed = JSON.parse(candidate);
-            const worldNarration = cleanText(parsed?.worldNarration ?? parsed?.world ?? parsed?.narrator ?? parsed?.gm ?? parsed?.director, 2400);
+            const narration = cleanText(parsed?.worldNarration ?? parsed?.world ?? parsed?.narrator ?? parsed?.gm ?? parsed?.director, 2400);
+            const worldNarration = narration === '必要旁白，或空字符串' ? '' : narration;
             const character = cleanText(parsed?.character ?? parsed?.char ?? parsed?.reply, 12000);
+            if (/^(?:本轮角色真正呈现给\s*User\s*的动作与台词|角色本轮的动作与台词)$/i.test(character)) return null;
             if (character) {
                 const directorState = normalizeSARDirectorState(parsed?.directorState);
                 return { worldNarration, character, ...(directorState ? { directorState } : {}) };
@@ -395,7 +398,7 @@ export const buildSARArchiveMarkdown = (
     const worldline = resolveSARWorldlineProfile(card);
     const userMask = resolveSARUserMaskProfile(card);
     const outcome = run.archiveReason === 'completed' ? '完成五十轮并返航' : '提前紧急封存';
-    const transcript = messages.map(message => {
+    const transcript = messages.filter(message => !isSARDeletedReply(message)).map(message => {
         const turn = archiveTurn(message);
         const mode = archiveMode(message);
         if (message.role === 'user') return `### ${turn}/50 · ${mode} · ${userName}\n\n${message.content}`;
@@ -461,7 +464,7 @@ export const buildSARCharacterShareText = (
 ) => {
     const worldline = resolveSARWorldlineProfile(card);
     const userMask = resolveSARUserMaskProfile(card);
-    const recent = messages.slice(-6).map(message => {
+    const recent = messages.filter(message => !isSARDeletedReply(message)).slice(-6).map(message => {
         const speaker = message.role === 'user' ? userName : card.charName;
         const worldNarration = message.role === 'assistant' ? cleanText(getSARWorldNarration(message), 600) : '';
         return `${worldNarration ? `世界意志：${worldNarration}\n` : ''}${speaker}：${cleanText(message.content, 1000)}`;
@@ -837,6 +840,7 @@ export type RunSARSimulationTurnInput = {
     apiConfig: APIConfig;
     userText: string;
     onDelta?: (fullText: string) => void;
+    retryReplyId?: number;
 };
 
 const extractSARAssistantRaw = (data: any) => {
@@ -849,22 +853,34 @@ const extractSARAssistantRaw = (data: any) => {
     return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim().slice(0, 16000);
 };
 
+const generatingRuns = new Set<string>();
 export async function runSARSimulationTurn(input: RunSARSimulationTurnInput) {
+    if (generatingRuns.has(input.run.id)) throw new Error('这一幕正在生成，请稍候');
+    generatingRuns.add(input.run.id);
+    try { return await generateSARSimulationTurn(input); }
+    finally { generatingRuns.delete(input.run.id); }
+}
+
+async function generateSARSimulationTurn(input: RunSARSimulationTurnInput) {
     const { card, run, char, userProfile, apiConfig, onDelta } = input;
-    const userText = input.userText.trim().slice(0, 4000);
+    const allMessages = await loadSARSimulationMessages(run.id);
+    const retry = input.retryReplyId !== undefined ? resolveSARReplyRetry(allMessages, input.retryReplyId) : undefined;
+    if (!retry && findSARPendingReply(allMessages)) throw new Error('请先重新生成已删除的回复');
+    const userText = (retry?.user.content || input.userText).trim().slice(0, 4000);
     if (!userText) throw new Error('先写下这一轮想说的话');
     if (card.id !== run.cardId || card.charId !== char.id) throw new Error('异格身份与推演实例不匹配');
-    if (run.status !== 'active') throw new Error('这段推演已经封存');
-    if (run.interactionsUsed >= SAR_SIMULATION_MAX_INTERACTIONS) throw new Error('这段推演已经完成五十次互动');
+    if (!retry && run.status !== 'active') throw new Error('这段推演已经封存');
+    if (!retry && run.interactionsUsed >= SAR_SIMULATION_MAX_INTERACTIONS) throw new Error('这段推演已经完成五十次互动');
 
     const persisted = readSARSimulationState().runs.find(item => item.id === run.id);
-    if (!persisted || persisted.status !== 'active') throw new Error('这段推演已经封存');
+    if (!persisted || (!retry && persisted.status !== 'active')) throw new Error('这段推演已经封存');
     if (persisted.interactionsUsed !== run.interactionsUsed) throw new Error('推演进度已变化，请重新进入');
 
-    const history = await loadSARSimulationMessages(run.id);
+    const history = retry ? retry.history : allMessages.filter(message => !isSARDeletedReply(message));
+    const promptRun = retry ? { ...run, interactionsUsed: retry.turn - 1 } : run;
     const threadId = getSARSimulationThreadId(run.id);
     const longTermContext = await prepareSARDoorplateContext(char, userProfile, false);
-    const systemPrompt = `${longTermContext}\n\n${buildSARSimulationTurnPrompt(card, run, latestSARDirectorState(history))}`;
+    const systemPrompt = `${longTermContext}\n\n${buildSARSimulationTurnPrompt(card, promptRun, latestSARDirectorState(history))}`;
 
     const vrGlobalApi = await getVRApi();
     const api = resolveSARSimulationApi(char, vrGlobalApi, apiConfig);
@@ -901,7 +917,7 @@ export async function runSARSimulationTurn(input: RunSARSimulationTurnInput) {
             appName: '彼方',
             charId: char.id,
             charName: char.name,
-            purpose: `SAR 正式推演 ${run.interactionsUsed + 1}/${run.maxInteractions}`,
+            purpose: `SAR 正式推演 ${promptRun.interactionsUsed + 1}/${run.maxInteractions}`,
         }, api.stream === true && onDelta ? {
             // 双层 JSON 在完整闭合前不直接显示，避免把半截引号/转义符泄露给玩家。
             onDelta: () => onDelta(''),
@@ -916,6 +932,10 @@ export async function runSARSimulationTurn(input: RunSARSimulationTurnInput) {
     if (!parsedReply?.character) throw new Error('模型没有返回可保存的推演正文，请重试');
     const reply = parsedReply.character;
 
+    if (retry) {
+        await replaceSARSimulationReply(run.id, retry.reply, { content: reply, worldNarration: parsedReply.worldNarration, directorState: parsedReply.directorState });
+        return { reply, run: persisted, messages: await loadSARSimulationMessages(run.id) };
+    }
     const turn = run.interactionsUsed + 1;
     let userMessageId: number | null = null;
     try {

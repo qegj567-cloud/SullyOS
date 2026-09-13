@@ -24,7 +24,7 @@ async function boot(){
     if(new URLSearchParams(location.search).get('open')==='story'){
         let step=0;
         const observer=new MutationObserver(()=>{
-            const button=document.querySelector<HTMLButtonElement>(step===0?'.sarc-keepsake':'.sarc-card-start button');
+            const button=document.querySelector<HTMLButtonElement>(step===0?'.sarc-library-book':'.sarc-card-start button');
             if(button){step++;if(step===2)observer.disconnect();button.click();}
         });
         observer.observe(document.getElementById('root')!,{childList:true,subtree:true});

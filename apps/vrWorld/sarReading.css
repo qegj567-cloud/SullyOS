@@ -97,3 +97,12 @@
 .sarc-card-start button { display:flex;align-items:center;justify-content:center;gap:10px;width:100%;max-width:560px;min-height:46px;margin:auto;background:#446650;color:#fffef9;border-radius:7px;font-size:14px; }
 .sarc-card-start small { font-size:11px;opacity:.75; }
 .sarc-reader-card button:focus-visible,.sarc-reader-card summary:focus-visible { outline:2px solid #446650;outline-offset:3px; }
+.sars-reply-menu{display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;border:0;background:transparent;color:inherit;margin:-12px -10px -12px 8px;flex-shrink:0}
+.sars-deleted-reply{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:12px;opacity:.75;padding:18px 0}
+.sars-deleted-reply button{min-height:44px;padding:0 12px;border:1px solid currentColor;border-radius:8px;color:inherit;background:transparent}
+.sars-action-status{display:block;font-size:12px;line-height:1.6;text-align:center;padding:4px 12px;opacity:.75}
+.sars-reply-actions{display:grid!important;grid-template-columns:1fr 1fr;gap:10px}
+.sars-confirm>section{max-height:85dvh;overflow-y:auto}
+.sars-edit-label{display:block;font-size:12px;margin:16px 0}
+.sars-edit-label textarea{display:block;width:100%;min-height:100px;max-height:35dvh;resize:vertical;margin-top:8px;padding:12px;border:1px solid currentColor;border-radius:8px;background:transparent;color:inherit;font:inherit;line-height:1.8}
+.sars-reply-submit{display:block;min-height:44px;width:100%;padding:10px 16px;border:1px solid currentColor;border-radius:8px;background:transparent;color:inherit;font-size:14px;margin-top:12px}

@@ -1625,9 +1625,9 @@ Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆
                     const renderLogs = (logs: GameLog[]) => (
                         <div className={`pl-3 border-l-2 ${theme.border} space-y-1.5 mt-2`}>
                             {logs.map((log, li) => (
-                                <div key={log.id || li} className="text-[11px] leading-snug">
+                                <div key={log.id || li} className="text-sm leading-relaxed break-words" data-game-archived-log={log.id}>
                                     <span className="font-bold opacity-70">{log.role === 'gm' ? 'GM' : (log.speakerName || 'System')}: </span>
-                                    <span className="opacity-70">{log.content.replace(/\n+/g, ' ').slice(0, 140)}{log.content.length > 140 ? '…' : ''}</span>
+                                    <GameMarkdown content={log.content} theme={theme} />
                                 </div>
                             ))}
                         </div>
@@ -1653,9 +1653,9 @@ Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆
                                                     className={`w-full text-left text-[10px] font-mono opacity-50 hover:opacity-90 transition-opacity flex items-center gap-1.5`}
                                                 >
                                                     <span>{open ? '▾' : '▸'}</span>
-                                                    <span>第 {g.index + 1} 段 · 原文 {g.logs.length} 条 {open ? '' : '(点击查看)'}</span>
+                                                    <span>第 {g.index + 1} 段 · 完整原文 {g.logs.length} 条 {open ? '' : '(点击展开)'}</span>
                                                 </button>
-                                                {open && <div className="opacity-50">{renderLogs(g.logs)}</div>}
+                                                {open && <div>{renderLogs(g.logs)}</div>}
                                                 {/* 原文下面就是这段的总结 */}
                                                 <div className={`p-4 rounded-lg border ${theme.border} ${theme.cardBg} text-xs italic leading-relaxed opacity-80`}>
                                                     <div className="text-[10px] font-bold uppercase tracking-widest mb-1 not-italic opacity-70">前情提要 · 第 {g.index + 1} 段</div>
