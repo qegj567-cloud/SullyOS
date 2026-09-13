@@ -148,7 +148,7 @@ const StatusBar: React.FC = () => {
           {hasIndexedDbBackingStoreError && (
               <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">
                   <div className="font-bold mb-1">检测到浏览器存储无法打开</div>
-                  <div>请先不要清除浏览器数据、格式化或重置 SullyOS。彻底关闭浏览器后重启设备，并确认仍从原来的网址进入；若恢复打开，请立即完整导出备份。此错误通常来自浏览器/WebView 的站点存储，而不是应用主动删除数据。</div>
+                  <div>请先不要清除浏览器数据、格式化或重置 SullyOS·糯米机。彻底关闭浏览器后重启设备，并确认仍从原来的网址进入；若恢复打开，请立即完整导出备份。此错误通常来自浏览器/WebView 的站点存储，而不是应用主动删除数据。</div>
               </div>
           )}
           {hasNetworkFailure && (

@@ -252,7 +252,7 @@ const Amsg2DebugPanel: React.FC = () => {
             const result = await shareOrDownloadBlob({
                 blob: new Blob([text], { type: 'application/json' }),
                 fileName: `sullyos_amsg2_trace_${new Date().toISOString().replace(/[:.]/g, '-')}.json`,
-                shareTitle: 'SullyOS amsg2 trace',
+                shareTitle: 'SullyOS·糯米机 amsg2 trace',
             });
             // 用户自己在分享面板上点了取消：既不算成功也不是错，按钮回到原样就行。
             if (result === 'cancelled') return;

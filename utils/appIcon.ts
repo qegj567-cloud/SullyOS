@@ -16,6 +16,7 @@
 //
 // 详见 docs/superpowers/specs/2026-08-09-pwa-custom-icon-design.md
 
+import appMetadata from '../metadata.json';
 import { getBlobForRef, isBlobRef, blobToDataUrl } from './blobRef';
 import { toSquarePngDataUrl } from './iconRaster';
 
@@ -186,6 +187,8 @@ async function replaceManifest(iconDataUrl: string, revision: number): Promise<v
     if (!resp.ok) throw new Error(`Fetch manifest failed: ${resp.status}`);
     const manifest = await resp.json();
 
+    manifest.name = appMetadata.name;
+    manifest.short_name = appMetadata.name;
     manifest.icons = [
       { src: iconDataUrl, sizes: '192x192', type: 'image/png' },
       { src: iconDataUrl, sizes: '512x512', type: 'image/png' },

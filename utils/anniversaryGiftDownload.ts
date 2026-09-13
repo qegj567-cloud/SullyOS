@@ -22,7 +22,7 @@ export async function createAnniversaryGiftArchive(): Promise<Blob> {
   const zip = new JSZip();
   for (const image of images) zip.file(image.fileName, image.bytes);
   zip.file('作者与使用说明.txt', [
-    'SullyOS 一周年赠礼',
+    'SullyOS·糯米机 一周年赠礼',
     `壁纸与头像框作者：${ANNIVERSARY_ARTIST}`,
     '',
     '内含两张壁纸与一枚透明 PNG 头像框，均为未经裁切、重绘或重新压缩的原图。',

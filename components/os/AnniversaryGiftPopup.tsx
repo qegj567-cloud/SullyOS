@@ -111,7 +111,7 @@ export default function AnniversaryGiftPopup({ onClose }: { onClose: () => void 
       const blob = await createAnniversaryGiftArchive();
       // Match the other event exports: native / Web Share first, download only as a fallback.
       const result = await shareOrDownloadBlob({
-        blob, fileName: ANNIVERSARY_DOWNLOAD_NAME, shareTitle: 'SullyOS 一周年赠礼',
+        blob, fileName: ANNIVERSARY_DOWNLOAD_NAME, shareTitle: 'SullyOS·糯米机 一周年赠礼',
       });
       trackAnniversaryDownload(result);
       if (result !== 'cancelled') {
@@ -142,7 +142,7 @@ export default function AnniversaryGiftPopup({ onClose }: { onClose: () => void 
         aria-labelledby="anniversary-title" aria-describedby="anniversary-description" tabIndex={-1}>
         <button className="anniversary-close" type="button" aria-label="关闭周年赠礼" disabled={busy} onClick={onClose}>×</button>
         <div className="anniversary-scroll">
-          <p className="anniversary-eyebrow">SULLYOS · 一周年纪念</p>
+          <p className="anniversary-eyebrow">SullyOS·糯米机 · 一周年纪念</p>
           <h2 id="anniversary-title">{choosing ? '把尊贵，安排上。' : 'Ta-da——周年大户！'}</h2>
           <p id="anniversary-description" className="anniversary-intro">
             九月，是开始做小手机的一周年。<br />

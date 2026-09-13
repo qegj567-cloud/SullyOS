@@ -337,7 +337,7 @@ const McpConnectionConsole: React.FC<{
                                                             <input type="password" className={`${inputClass} font-mono`} value={server.proxyKey || ''} onChange={event => update(server.id, { proxyKey: event.target.value.trim() })} placeholder="PROXY_KEY" />
                                                         </div>
                                                     )}
-                                                    <p className="text-[9px] leading-relaxed text-slate-400">用于解决浏览器 CORS 限制。代理由你自行部署，SullyOS 不强制经过中央服务器。</p>
+                                                    <p className="text-[9px] leading-relaxed text-slate-400">用于解决浏览器 CORS 限制。代理由你自行部署，SullyOS·糯米机 不强制经过中央服务器。</p>
                                                 </div>
                                             </details>
                                         </div>

@@ -14,7 +14,7 @@ try {
  await page.waitForTimeout(1500);assert.equal(await page.locator('.sully-boot').getAttribute('data-phase'),'enter');
  await page.evaluate(()=>window.dispatchEvent(new Event('boot-ready')));await page.getByText('已进入桌面').waitFor();
  await page.reload();assert.equal(await page.locator('.sully-boot').getAttribute('data-cinematic'),'false');
- await page.getByRole('button',{name:'SullyOS，轻触进入'}).focus();await page.keyboard.press('Enter');await page.getByText('已进入桌面').waitFor();
+ await page.getByRole('button',{name:'SullyOS·糯米机，轻触进入'}).focus();await page.keyboard.press('Enter');await page.getByText('已进入桌面').waitFor();
  await page.emulateMedia({reducedMotion:'reduce'});await page.evaluate(()=>sessionStorage.clear());await page.goto(url);
  assert.equal(await page.locator('.sully-boot').getAttribute('data-cinematic'),'false');
  assert.equal(await page.locator('.sully-boot-jelly').evaluate(el=>getComputedStyle(el).animationName),'none');
@@ -29,9 +29,9 @@ try {
  await classic.click(); await page.getByText('已保存',{exact:true}).waitFor(); await page.reload(); await classic.waitFor();
  assert.equal(await classic.getAttribute('aria-pressed'),'true');
  await page.getByRole('button',{name:'预览所选开场'}).click();
- await page.locator('[aria-label="SullyOS"]').waitFor();
+ await page.locator('[aria-label="SullyOS·糯米机"]').waitFor();
  assert.equal(await page.locator('.sully-boot').count(),0);
- await page.locator('[aria-label="SullyOS"]').click();await jelly.click();await page.getByText('已保存',{exact:true}).waitFor();await page.reload();await jelly.waitFor();
+ await page.locator('[aria-label="SullyOS·糯米机"]').click();await jelly.click();await page.getByText('已保存',{exact:true}).waitFor();await page.reload();await jelly.waitFor();
  assert.equal(await jelly.getAttribute('aria-pressed'),'true');
  await page.getByRole('button',{name:'预览所选开场'}).click();await page.locator('.sully-boot').waitFor();
  await page.screenshot({path:out+'/selected-jellyfish.png'});

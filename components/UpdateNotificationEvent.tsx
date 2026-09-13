@@ -533,7 +533,7 @@ const NetworkTransitNoticePopup: React.FC<UpdatePopupProps> = ({ onDone, onExit 
                     </p>
                     <div className="rounded-2xl bg-sky-50 px-3.5 py-3 text-[11px] leading-[1.7] text-sky-900 ring-1 ring-sky-100">
                         <p>
-                            这和你平时使用<b>联网搜索、第三方登录或在线音乐</b>时的接口请求相近：只有主动使用对应功能时，当次必要数据才会经过服务端，不会把 SullyOS 的聊天记录或本地资料整体上传。
+                            这和你平时使用<b>联网搜索、第三方登录或在线音乐</b>时的接口请求相近：只有主动使用对应功能时，当次必要数据才会经过服务端，不会把 SullyOS·糯米机 的聊天记录或本地资料整体上传。
                         </p>
                         <p className="mt-1.5">
                             如果你平时能够接受 API 中转站，可以把它作为参照：API 中转站能够接触完整的模型请求与聊天内容；这里的 Worker 只接触对应功能的当次请求，并在转发后不保留请求内容。

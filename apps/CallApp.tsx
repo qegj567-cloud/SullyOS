@@ -3515,7 +3515,7 @@ ${sentencePlan}`;
       {/* top channel bar */}
       <div className="relative shrink-0 px-5" style={{ paddingTop: 'max(2.25rem, var(--safe-top))' }}>
         <div className="absolute left-5 leading-tight" style={{ top: 'max(2.25rem, var(--safe-top))' }}>
-          <div className="text-[9px] tracking-[0.28em] text-white/45 font-semibold">{callMode === 'video' ? 'SULLYOS · VIDEO DATE' : 'PRIVATE CHANNEL'}</div>
+          <div className="text-[9px] tracking-[0.28em] text-white/45 font-semibold">{callMode === 'video' ? 'SullyOS·糯米机 · VIDEO DATE' : 'PRIVATE CHANNEL'}</div>
           <div className="mt-1.5 flex items-center gap-1.5 text-[8px] tracking-[0.22em] text-white/35">
             {callMode === 'video' ? 'CHARACTER LINK' : 'VOICE SYNC'}
             <span className="flex items-center gap-[2px] h-2">

@@ -119,7 +119,7 @@ const ClassicBootSequence: React.FC<Props> = ({ dataReady, wallpaper, onDone }) 
   return (
     <div
       onClick={skip}
-      aria-label="SullyOS"
+      aria-label="SullyOS·糯米机"
       className="fixed inset-0 z-[9999] overflow-hidden select-none cursor-pointer"
       style={{
         background: '#05060f',
@@ -224,6 +224,7 @@ const ClassicBootSequence: React.FC<Props> = ({ dataReady, wallpaper, onDone }) 
             animation: cinematic ? 'bootLogoIn 1400ms cubic-bezier(0.22,1,0.36,1) 250ms both' : 'bootLogoIn 600ms ease-out both',
           }}>
             Sully<span style={{ fontWeight: 500 }}>OS</span>
+            <small className="block text-center text-[14px] tracking-[0.25em] mt-2">· 糯米机</small>
           </div>
           <div className="mt-3 h-px w-28" style={{
             background: 'linear-gradient(90deg, transparent, rgba(200,190,255,0.85), transparent)',

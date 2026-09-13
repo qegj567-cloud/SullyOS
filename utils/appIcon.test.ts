@@ -318,6 +318,9 @@ describe('manifest 替换（standalone）', () => {
 
     expect(manifest.start_url).toBe(`${BASE}/`);
     expect(manifest.scope).toBe(`${BASE}/`);
+    // Even a cached manifest with the old name keeps the updated display name.
+    expect(manifest.name).toBe('SullyOS·糯米机');
+    expect(manifest.short_name).toBe('SullyOS·糯米机');
   });
 
   it('浏览器安装前也更新 manifest', async () => {

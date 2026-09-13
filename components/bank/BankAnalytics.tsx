@@ -80,7 +80,7 @@ const BankAnalytics: React.FC<Props> = ({ transactions, goals, currency, onDelet
             content: csv,
             fileName: `记账记录_${new Date().toISOString().split('T')[0]}.csv`,
             mimeType: 'text/csv;charset=utf-8',
-            shareTitle: 'SullyOS 记账记录',
+            shareTitle: 'SullyOS·糯米机 记账记录',
         });
     };
 

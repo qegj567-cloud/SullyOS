@@ -48,3 +48,9 @@ Worker。普通生产构建不会包含这个地址。
 - 没有本地 FCM token 时，`ActiveMsgClient` 完整沿用原 Web Push 登记路径。
 - Worker 对普通 `https://...` PushSubscription 完整委托原 Web Push 发送器。
 - 只有 endpoint 以 `fcm:` 开头才读取 FCM Secrets 并请求 Google FCM。
+
+## 应用显示名称
+
+应用统一显示为 `SullyOS·糯米机`。根目录 `capacitor.config.json` 的 `appName` 是原生打包名称；同步脚本会调用 `scripts/sync-native-app-name.mjs`，将外部 CHICK2 包装工程的 Capacitor `appName`、Android `app_name` 与 `title_activity_main` 一起更新。包名、appId 和 URL scheme 保持不变。此操作随下次 APK 构建生效，不会靠网页更新改写已安装 APK 的系统标签。
+
+网页标题与 Apple 主屏名称在 `index.html`；两套静态 PWA manifest 的 name / short_name 与 `metadata.json` 一致。自定义图标生成的动态 manifest 从 metadata 读取名称，避免旧清单缓存带回旧名字。start_url、scope 与 manifest 地址保持不变。

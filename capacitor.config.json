@@ -1,6 +1,6 @@
 {
   "appId": "com.aetheros.simulator",
-  "appName": "手抓糯米机",
+  "appName": "SullyOS·糯米机",
   "webDir": "dist",
   "server": {
     "androidScheme": "https",

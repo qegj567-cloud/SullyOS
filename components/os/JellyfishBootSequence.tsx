@@ -91,7 +91,7 @@ const JellyfishBootSequence: React.FC<Props> = ({ dataReady, onDone }) => {
       onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); skip(); } }}
       role="button"
       tabIndex={0}
-      aria-label="SullyOS，轻触进入"
+      aria-label="SullyOS·糯米机，轻触进入"
       style={{ opacity: exiting ? 0 : 1, transition: 'opacity ' + EXIT + 'ms ease-in' }}
     >
       <div className="sully-boot-scene">

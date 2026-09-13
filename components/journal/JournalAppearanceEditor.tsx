@@ -300,7 +300,7 @@ const JournalAppearanceButton: React.FC<JournalAppearanceButtonProps> = ({
                 content: css,
                 fileName,
                 mimeType: 'text/css;charset=utf-8',
-                shareTitle: 'SullyOS 交换日记样式',
+                shareTitle: 'SullyOS·糯米机 交换日记样式',
             });
             if (result === 'cancelled') return;
             addToast(result === 'shared' ? '已打开 CSS 分享面板' : '完整 CSS 已导出', 'success');

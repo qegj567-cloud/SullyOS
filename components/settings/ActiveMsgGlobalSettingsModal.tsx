@@ -1516,7 +1516,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
                   <p className="text-[11px] font-bold text-slate-600">给这台后端补一把更新用的钥匙</p>
                   <p className="text-[11px] leading-relaxed text-slate-500">
                     建一枚只勾 <strong>Account → Workers Scripts : Edit</strong> 的 Cloudflare API Token
-                    粘进来（<strong>Start Date 留空</strong>），SullyOS 会把它写进你这台 Worker。
+                    粘进来（<strong>Start Date 留空</strong>），SullyOS·糯米机 会把它写进你这台 Worker。
                     做完一次以后更新就都是点上面那个按钮了。
                   </p>
                   <a

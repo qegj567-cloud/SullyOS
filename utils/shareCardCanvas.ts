@@ -61,7 +61,7 @@ export function renderShareCard(design: CardDesign, image?: HTMLImageElement | n
         while (rows.length * size * 1.35 > maxHeight && size > 14) { size -= 1; rows = lines(value, size); }
         rows.forEach((row, i) => text(row, y + i * size * 1.35, size, color, weight));
     };
-    text('SULLYOS  /  SHARE COLLECTION', wide ? 88 : 86, 22, muted, 500);
+    text('SullyOS·糯米机  /  SHARE COLLECTION', wide ? 88 : 86, 22, muted, 500);
     const top = wide ? 256 : 930;
     text(SHARE_KINDS[design.kind], top, 25, poster ? '#d9c7fa' : '#77608e', 500);
     wrapped(design.title, top + 73, wide ? 56 : 64, 180, ink, 600);

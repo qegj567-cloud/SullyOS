@@ -34,7 +34,7 @@ export function SARUpdatePopup({ onDone, onVisit, onGuide }: {
     const turn = (index: number) => { setPage(index); root.current?.querySelector('.sar-release-scroll')?.scrollTo(0, 0); };
     return <div className="sar-release-overlay">
         <section ref={root} className="sar-release" role="dialog" aria-modal="true" aria-labelledby="sar-release-title" tabIndex={-1}>
-            <header className="sar-release-header"><span>SULLYOS <i>✦</i> VOL. 3.10</span><span>彼方来信 / 2026.09</span>
+            <header className="sar-release-header"><span>SullyOS·糯米机 <i>✦</i> VOL. 3.10</span><span>彼方来信 / 2026.09</span>
                 <button aria-label="关闭更新公告" onClick={() => dismiss.current()}><X size={19}/></button>
             </header>
             <div className="sar-release-scroll">
@@ -80,7 +80,7 @@ export function SARUpdatePopup({ onDone, onVisit, onGuide }: {
                         </div>
                         <div className="sar-release-share-art" aria-hidden="true">
                             <div className="sar-release-share-shadow"/>
-                            <div className="sar-release-share-card"><span>SULLYOS / SHARE COLLECTION</span><img src={roomArt} alt=""/><strong>把喜欢的世界<br/>送到你手里。</strong><small>一张图片 · 一份完整心意</small><b>PNG ↗</b></div>
+                            <div className="sar-release-share-card"><span>SullyOS·糯米机 / SHARE COLLECTION</span><img src={roomArt} alt=""/><strong>把喜欢的世界<br/>送到你手里。</strong><small>一张图片 · 一份完整心意</small><b>PNG ↗</b></div>
                         </div>
                         <p className="sar-release-share-note">发送 <strong>PNG 原文件</strong>，对方在对应入口导入。<br/>截图、压缩或转成其他格式，会丢掉里面的内容。<br/><span>原格式导出也保留着，照旧可用。</span></p>
                     </>}

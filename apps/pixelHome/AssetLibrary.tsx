@@ -178,7 +178,7 @@ const AssetLibrary: React.FC<Props> = ({ assets, onChanged, onSelectAsset, isSel
     const result = await shareOrDownloadBlob({
       blob: content,
       fileName: `pixel_assets_${Date.now()}.zip`,
-      shareTitle: 'SullyOS 像素素材包',
+      shareTitle: 'SullyOS·糯米机 像素素材包',
     });
     if (result === 'cancelled') return;
     trackEvent('导出像素素材包');

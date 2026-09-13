@@ -179,7 +179,7 @@ export async function importMemoryPalace(
     targetCharId: string,
 ): Promise<ImportResult> {
     if (!isMemoryPalaceExportFile(file)) {
-        throw new Error('文件格式不对：不是 SullyOS 记忆宫殿导出文件');
+        throw new Error('文件格式不对：不是 SullyOS·糯米机 记忆宫殿导出文件');
     }
 
     // 跨全部角色收集老 ID → 新 ID 映射（节点 / 事件盒）

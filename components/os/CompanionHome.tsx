@@ -3387,7 +3387,7 @@ const CompanionHome: React.FC = () => {
                 <div className="flex items-center gap-2 text-[13px] font-semibold tracking-[0.16em] text-white">
                   <Sparkle size={15} weight="fill" style={{ color: uiTint }} /> 功能星盘
                 </div>
-                <div className="mt-0.5 text-[8px] tracking-[0.18em] text-white/35">SULLYOS · 全部真实功能</div>
+                <div className="mt-0.5 text-[8px] tracking-[0.18em] text-white/35">SullyOS·糯米机 · 全部真实功能</div>
               </div>
               <button onClick={() => setAppStarOpen(false)} className="h-7 w-7 border border-white/15 text-[12px] text-white/60 active:scale-90">×</button>
             </div>

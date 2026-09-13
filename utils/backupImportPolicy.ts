@@ -14,12 +14,12 @@ const UNSUPPORTED_THIRD_PARTY_FIELDS = [
 export function assertSupportedSullyBackup(input: unknown): asserts input is Record<string, unknown> {
     if (!input || typeof input !== 'object' || Array.isArray(input)) {
         trackEvent('拒绝导入第三方备份', { reason: 'invalid_shape' });
-        throw new Error('备份内容无效：只支持 SullyOS 导出的 ZIP 或 JSON 备份。');
+        throw new Error('备份内容无效：只支持 SullyOS·糯米机 导出的 ZIP 或 JSON 备份。');
     }
 
     const record = input as Record<string, unknown>;
     if (UNSUPPORTED_THIRD_PARTY_FIELDS.some(field => Object.prototype.hasOwnProperty.call(record, field))) {
         trackEvent('拒绝导入第三方备份', { reason: 'third_party_field' });
-        throw new Error('不支持导入第三方系统备份，请选择由 SullyOS 导出的 ZIP 或 JSON 文件。');
+        throw new Error('不支持导入第三方系统备份，请选择由 SullyOS·糯米机 导出的 ZIP 或 JSON 文件。');
     }
 }

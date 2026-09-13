@@ -2149,7 +2149,7 @@ export default function MemoryPalaceApp() {
             const text = await fileObj.text();
             const data = JSON.parse(text);
             if (!isMemoryPalaceExportFile(data)) {
-                setImportResult('[err]这不是 SullyOS 记忆宫殿导出文件');
+                setImportResult('[err]这不是 SullyOS·糯米机 记忆宫殿导出文件');
                 return;
             }
             const totalNodes = data.characters.reduce((s, c) => s + (c.nodes?.length || 0), 0);
@@ -4763,7 +4763,7 @@ create table if not exists memory_vectors (
                     {/* 结构化导入：把本系统导出的 JSON 合并回当前角色（跨设备迁移 / 恢复） */}
                     <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid #dbeafe' }}>
                         <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 10, lineHeight: 1.6 }}>
-                            已经是 SullyOS 记忆宫殿 JSON 的文件无需清洗，可直接合并进 <b>{char.name}</b>（追加，不覆盖）。
+                            已经是 SullyOS·糯米机 记忆宫殿 JSON 的文件无需清洗，可直接合并进 <b>{char.name}</b>（追加，不覆盖）。
                         </div>
 
                         {importResult && (
@@ -4792,7 +4792,7 @@ create table if not exists memory_vectors (
                             {importing ? '导入中…' : (
                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                                     <Icon name="document" size={13} />
-                                    <span>从 SullyOS JSON 导入</span>
+                                    <span>从 SullyOS·糯米机 JSON 导入</span>
                                 </span>
                             )}
                         </button>

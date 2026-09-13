@@ -1,4 +1,4 @@
-/** Portable SullyOS files in a PNG ancillary chunk. No remote storage or image decoding needed.
+/** Portable SullyOS·糯米机 files in a PNG ancillary chunk. No remote storage or image decoding needed.
  * Chunk layout and CRC: https://www.w3.org/TR/png-3/#5Chunk-layout
  * suLy = ancillary, private, reserved bit clear, safe to copy.
  */
@@ -74,8 +74,8 @@ function chunks(bytes: Uint8Array): { type: string; start: number; end: number; 
 }
 function validateMetadata(value: unknown): asserts value is ShareCardMetadata {
     const m = value as ShareCardMetadata | null;
-    if (!m || m.format !== 'sullyos-share') throw new Error('不是 SullyOS 分享图片');
-    if (m.version !== 1) throw new Error('暂不支持此分享图片版本，请更新 SullyOS');
+    if (!m || m.format !== 'sullyos-share') throw new Error('不是 SullyOS·糯米机 分享图片');
+    if (m.version !== 1) throw new Error('暂不支持此分享图片版本，请更新 SullyOS·糯米机');
     if (!Object.prototype.hasOwnProperty.call(SHARE_KINDS, m.kind)) throw new Error('无法识别分享内容类型');
     for (const [key, max] of [['title', 60], ['author', 32], ['restrictions', 120], ['fileName', 240], ['mimeType', 120]] as const) {
         if (typeof m[key] !== 'string' || m[key].length > max) throw new Error('分享图片信息无效');
@@ -84,7 +84,7 @@ function validateMetadata(value: unknown): asserts value is ShareCardMetadata {
         || !['paper', 'poster', 'business'].includes(m.style)) throw new Error('分享图片信息无效');
 }
 export function safeShareFileName(name: string): string {
-    return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim().slice(0, 220) || 'SullyOS';
+    return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim().slice(0, 220) || 'SullyOS·糯米机';
 }
 export function embedShareInPng(png: Uint8Array, metadata: ShareCardMetadata, payload: Uint8Array): Uint8Array {
     validateMetadata(metadata);
@@ -118,7 +118,7 @@ export function embedShareInPng(png: Uint8Array, metadata: ShareCardMetadata, pa
 }
 export function extractShareFromPng(png: Uint8Array, expectedKind?: ShareKind): { metadata: ShareCardMetadata; payload: Uint8Array } {
     const found = chunks(png).filter(c => c.type === CHUNK);
-    if (!found.length) throw new Error('图片中没有可导入的 SullyOS 内容。请使用导出的 PNG 原文件，不要截图或压缩');
+    if (!found.length) throw new Error('图片中没有可导入的 SullyOS·糯米机 内容。请使用导出的 PNG 原文件，不要截图或压缩');
     if (found.length !== 1) throw new Error('分享图片含有重复数据，无法导入');
     const data = found[0].data;
     if (data.length < 12 || !MAGIC.every((b, i) => data[i] === b)) throw new Error('分享图片标识无效');

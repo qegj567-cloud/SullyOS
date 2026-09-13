@@ -107,7 +107,7 @@ const journalSelectorPrompt = JOURNAL_CUSTOM_CSS_SELECTOR_GROUPS
     .map(group => `${group.label}：\n${group.selectors.join('、')}`)
     .join('\n\n');
 
-export const JOURNAL_AI_CSS_PROMPT = `你是 CSS 设计师，请为 SullyOS 的「交换日记」App 写一段完整的自定义 CSS。
+export const JOURNAL_AI_CSS_PROMPT = `你是 CSS 设计师，请为 SullyOS·糯米机 的「交换日记」App 写一段完整的自定义 CSS。
 
 要求：
 1. 只能使用下列公开选择器；每条普通规则都必须以 .sully-journal-root 或 .sully-journal-* 开头。

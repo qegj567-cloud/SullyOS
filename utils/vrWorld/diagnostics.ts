@@ -181,7 +181,7 @@ export async function collectVRDiagnostics(memChars: CharacterProfile[], chatApi
         .map(c => `${tail(c.id)} 连续失败 ${VRScheduler.getFailStreak(c.id)} 次`);
 
     return [
-        '===== SullyOS 彼方排障快照 =====',
+        '===== SullyOS·糯米机 彼方排障快照 =====',
         `收集时间：${new Date().toLocaleString('zh-CN', { hour12: false })}`,
         `时区：${Intl.DateTimeFormat().resolvedOptions().timeZone}`,
         `独立窗口：${standalone}`,

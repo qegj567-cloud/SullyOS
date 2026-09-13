@@ -389,7 +389,7 @@ async function downloadCaptureTxt(capture: ApiRequestCapture, content: string): 
         content: `\uFEFF${content}`,
         fileName: `SullyOS-LLM本次发送统计-${stamp}.txt`,
         mimeType: 'text/plain;charset=utf-8',
-        shareTitle: 'SullyOS LLM 本次发送统计',
+        shareTitle: 'SullyOS·糯米机 LLM 本次发送统计',
     });
 }
 

@@ -142,7 +142,7 @@ function ShareCardDialog({ options, card, onDone }: Props) {
             else onDone('cancelled');
         }}>
         <header className="sully-share-header">
-            <div><span className="sully-share-eyebrow">SULLYOS / {SHARE_KINDS[card.kind]}</span><h2 id="sully-share-heading">制作分享图片</h2></div>
+            <div><span className="sully-share-eyebrow">SullyOS·糯米机 / {SHARE_KINDS[card.kind]}</span><h2 id="sully-share-heading">制作分享图片</h2></div>
             <button type="button" className="sully-share-close" aria-label="关闭分享编辑器" disabled={busy} onClick={() => onDone('cancelled')}>×</button>
         </header>
         <div className="sully-share-body">

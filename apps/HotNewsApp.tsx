@@ -104,7 +104,7 @@ const HotNewsApp: React.FC = () => {
             <div className="flex-1 overflow-y-auto no-scrollbar px-4 pb-24">
                 {/* 报头 */}
                 <div className="text-center pt-4 pb-3 border-b border-stone-400">
-                    <p className="text-[10px] tracking-[0.4em] text-stone-500 uppercase">SullyOS Daily</p>
+                    <p className="text-[10px] tracking-[0.4em] text-stone-500 uppercase">SullyOS·糯米机 Daily</p>
                     <h2 className="text-3xl font-black tracking-tight mt-1">今 日 热 点</h2>
                     {snapshot && (
                         <p className="text-[11px] text-stone-500 mt-1.5">

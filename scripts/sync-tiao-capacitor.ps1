@@ -45,6 +45,8 @@ if ($nativeBridgeCount -ne 1) {
 }
 
 Write-Host '[3/4] Syncing Capacitor Android plugins and assets...'
+& node (Join-Path $PSScriptRoot 'sync-native-app-name.mjs') $wrapperRoot
+if ($LASTEXITCODE -ne 0) { throw "App display name sync failed with exit code $LASTEXITCODE" }
 Push-Location $wrapperRoot
 try {
   & npx.cmd cap sync android

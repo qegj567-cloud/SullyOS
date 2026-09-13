@@ -62,7 +62,7 @@ const VRoidBetaWarning: React.FC<VRoidBetaWarningProps> = ({
           <div className="mt-5 border-y border-white/10 py-4 text-[13px] leading-6 text-white/70">
             {projectFile ? (
               <>
-                SullyOS 目前不能直接读取 <strong className="font-semibold text-white">.vroid 工程</strong>。请先在 VRoid Studio 中导出 VRM，再回来选择导出的文件。
+                SullyOS·糯米机 目前不能直接读取 <strong className="font-semibold text-white">.vroid 工程</strong>。请先在 VRoid Studio 中导出 VRM，再回来选择导出的文件。
               </>
             ) : (
               <>

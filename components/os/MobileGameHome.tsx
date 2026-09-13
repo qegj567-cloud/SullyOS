@@ -280,7 +280,7 @@ const MobileGameHome: React.FC = () => {
     const monthName = MONTHS[now.getMonth()];
     const dateNum = now.getDate();
 
-    const charName = widgetChar?.name || 'SullyOS';
+    const charName = widgetChar?.name || 'SullyOS·糯米机';
     const tagline = (widgetChar?.description || '不知名种草姬').slice(0, 36);
     const announcement = lastMessage || widgetChar?.description || '一切如常，等待新的故事发生。';
     const expPct = Math.min(100, Math.round((stats.exp / stats.expMax) * 100));
@@ -317,7 +317,7 @@ const MobileGameHome: React.FC = () => {
                 <div className="flex items-center justify-between animate-fade-in">
                     <div className="flex items-center gap-2">
                         <span className="text-[11px]" style={{ color: PAL.pink }}>✦</span>
-                        <span className="text-[11px] font-bold" style={{ color: PAL.grape, letterSpacing: '0.3em' }}>SULLYOS&nbsp;STATION</span>
+                        <span className="text-[11px] font-bold" style={{ color: PAL.grape, letterSpacing: '0.3em' }}>SullyOS·糯米机&nbsp;STATION</span>
                         <span className="text-[9px]" style={{ color: PAL.peri }}>✦</span>
                     </div>
                     <div className="flex items-center gap-3">
