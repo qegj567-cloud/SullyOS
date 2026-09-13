@@ -1,3 +1,4 @@
+import { toMountedWorldbook } from './worldbook';
 
 
 
@@ -2292,6 +2293,48 @@ export const DB = {
       const db = await openDB();
       const transaction = db.transaction(STORE_WORLDBOOKS, 'readwrite');
       transaction.objectStore(STORE_WORLDBOOKS).delete(id);
+  },
+
+  // Read current records and update the library + mounted caches atomically.
+  // Never loop updateWorldbook with a captured React character snapshot.
+  mutateWorldbooks: async (ids: string[], updates: Partial<Worldbook> | null): Promise<{ books: Worldbook[]; characters: CharacterProfile[] }> => {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          const tx = db.transaction([STORE_WORLDBOOKS, STORE_CHARACTERS], 'readwrite');
+          const library = tx.objectStore(STORE_WORLDBOOKS);
+          const charactersStore = tx.objectStore(STORE_CHARACTERS);
+          const targets = new Set(ids);
+          const books: Worldbook[] = [];
+          const changedCharacters: CharacterProfile[] = [];
+          const request = library.getAll();
+          request.onsuccess = () => {
+              for (const book of request.result as Worldbook[]) {
+                  if (!targets.has(book.id)) continue;
+                  if (updates === null) library.delete(book.id);
+                  else {
+                      const next = { ...book, ...updates, id: book.id, createdAt: book.createdAt, updatedAt: Date.now() };
+                      books.push(next);
+                      library.put(next);
+                  }
+              }
+              const replacements = new Map(books.map(book => [book.id, toMountedWorldbook(book)]));
+              const chars = charactersStore.getAll();
+              chars.onsuccess = () => {
+                  for (const char of chars.result as CharacterProfile[]) {
+                      const mounted = char.mountedWorldbooks || [];
+                      if (!mounted.some(book => updates === null ? targets.has(book.id) : replacements.has(book.id))) continue;
+                      const next = { ...char, mountedWorldbooks: updates === null
+                          ? mounted.filter(book => !targets.has(book.id))
+                          : mounted.map(book => replacements.get(book.id) || book) };
+                      changedCharacters.push(next);
+                      charactersStore.put(next);
+                  }
+              };
+          };
+          tx.oncomplete = () => resolve({ books, characters: changedCharacters });
+          tx.onerror = () => reject(tx.error || new Error('世界书保存失败'));
+          tx.onabort = () => reject(tx.error || new Error('世界书保存已撤销'));
+      });
   },
 
   // --- 见面 · 剧情剧场 ---

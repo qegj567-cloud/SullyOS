@@ -119,6 +119,7 @@ const Character: React.FC = () => {
   const [showChibiStudio, setShowChibiStudio] = useState(() => !!launchIntent?.openChibiStudio);
   const [editingId, setEditingId] = useState<string | null>(() => launchIntent?.charId || null);
   const [formData, setFormData] = useState<CharacterProfile | null>(null);
+  const [expandedMountedBookIds, setExpandedMountedBookIds] = useState<Set<string>>(new Set());
   const [isCompressing, setIsCompressing] = useState(false);
   // 头像 URL 输入的 draft, 不逐字 commit 到 formData.avatar —— 否则每输入一个字符,
   // 所有引用 char.avatar 的 <img> 都会拿到不完整字符串当相对路径请求根目录,
@@ -1711,17 +1712,30 @@ ${isInitialGeneration ? `
                                 </div>
                                 <div className="space-y-2">
                                    {formData.mountedWorldbooks && formData.mountedWorldbooks.length > 0 ? (
-                                       formData.mountedWorldbooks.map(wb => (
-                                           <div key={wb.id} className="flex items-center justify-between bg-white px-4 py-3 rounded-2xl border border-indigo-50 shadow-sm group">
-                                               <div className="flex items-center gap-2 min-w-0">
-                                                   <BookOpen size={20} className="shrink-0 text-indigo-400" />
-                                                   <div className="flex flex-col min-w-0">
-                                                       <span className="text-sm font-bold text-slate-700 truncate">{wb.title}</span>
-                                                       {wb.category && <span className="text-[9px] text-slate-400">{wb.category}</span>}
-                                                   </div>
+                                       [...formData.mountedWorldbooks.reduce((groups, book) => {
+                                           const category = book.category || '未分类设定 (General)';
+                                           groups.set(category, [...(groups.get(category) || []), book]);
+                                           return groups;
+                                       }, new Map<string, NonNullable<CharacterProfile['mountedWorldbooks']>>())].map(([category, books]) => (
+                                           <details key={category} className="rounded-2xl border border-indigo-50 bg-white overflow-hidden" data-mounted-worldbook-group={category}>
+                                               <summary className="cursor-pointer px-4 py-3 text-xs font-bold text-slate-700 break-words">{category} <span className="font-normal text-slate-400">· {books.length} 条</span></summary>
+                                               <div className="px-4 pb-3">
+                                                   <div className="mb-2 flex justify-end"><button type="button" onClick={() => {
+                                                       const ids = new Set(books.map(book => book.id));
+                                                       setFormData(prev => prev ? { ...prev, mountedWorldbooks: (prev.mountedWorldbooks || []).filter(book => !ids.has(book.id)) } : prev);
+                                                   }} className="py-1 text-[11px] text-rose-400">整组取消挂载</button></div>
+                                                   {books.map(wb => <div key={wb.id} className="flex items-start gap-2 border-t border-slate-100 py-2">
+                                                       <details className="min-w-0 flex-1" onToggle={event => {
+                                                           const open = event.currentTarget.open;
+                                                           setExpandedMountedBookIds(prev => { const next = new Set(prev); if (open) next.add(wb.id); else next.delete(wb.id); return next; });
+                                                       }}>
+                                                           <summary className="cursor-pointer text-xs text-slate-600 break-words">{wb.title}</summary>
+                                                           {expandedMountedBookIds.has(wb.id) && <p className="mt-2 whitespace-pre-wrap break-words text-[11px] leading-relaxed text-slate-500">{wb.content}</p>}
+                                                       </details>
+                                                       <button type="button" aria-label={'取消挂载 ' + wb.title} onClick={() => unmountWorldbook(wb.id)} className="shrink-0 px-2 text-slate-400">×</button>
+                                                   </div>)}
                                                </div>
-                                               <button onClick={() => unmountWorldbook(wb.id)} className="text-slate-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity p-1 ml-2">×</button>
-                                           </div>
+                                           </details>
                                        ))
                                    ) : (
                                        <div className="text-center py-4 bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-slate-400 text-xs">

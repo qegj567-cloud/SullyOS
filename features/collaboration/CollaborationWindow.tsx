@@ -32,7 +32,7 @@ import { bucketFewCount, trackEvent } from '../../utils/analytics';
 import { processImageToBlob } from '../../utils/file';
 import { shareOrDownloadBlob } from '../../utils/shareExport';
 import { describeImageWithVisionApi } from '../../utils/visionApi';
-import { loadCharacterContextRange } from '../../utils/chatContextRange';
+import { loadCollaborationChatHistory, selectCollaborationTransfer } from './chatBridge';
 import {
   collaborationProfileFromApi,
   collaborationProfileMatches,
@@ -797,7 +797,7 @@ const ApiSettingsPanel: React.FC<{
                 );
               })}
             </div>
-            <p className="mt-2 text-[10px] leading-relaxed text-slate-600">“用户设定范围”会直接读取 ChatApp 当前实际使用的上下文范围（含自适应范围和手动断点）。沉浸式会沿用 ChatApp 的完整角色上下文；中度协同只附加这些最新对话。修改后会从下一次生成开始生效，包括已有窗口。</p>
+            <p className="mt-2 text-[10px] leading-relaxed text-slate-600">“用户设定范围”会直接读取 ChatApp 当前实际使用的上下文范围（含自适应范围和手动断点）。最近 10／20 条也只在这个范围内选取，不会越过手动断点或记忆水位。沉浸式会沿用 ChatApp 的完整角色上下文；中度协同只附加这些最新对话。修改后会从下一次生成开始生效，包括已有窗口。</p>
           </section>
 
           <section>
@@ -1602,6 +1602,11 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
   const [settings, setSettings] = useState<CollaborationSettings>(() => cloneDefaultSettings());
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<CollaborationMessage[]>([]);
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [transferIds, setTransferIds] = useState<Set<string>>(new Set());
+  const [transferring, setTransferring] = useState(false);
+  const [chatReadReceipt, setChatReadReceipt] = useState<{ sessionId: string; count: number } | null>(null);
+  useEffect(() => { setTransferOpen(false); setTransferIds(new Set()); setChatReadReceipt(null); }, [activeSessionId, character.id]);
   const [showModePicker, setShowModePicker] = useState(false);
   const [showEntryChooser, setShowEntryChooser] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -2210,16 +2215,13 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
       let contextSnapshot = sessionAtStart.contextSnapshot || '';
       let liveChatContext: CollaborationContextMessage[] = [];
       const chatContextChoice = settings.recentChatContextCount ?? 'configured';
-      let liveRecentChatMessages = recentChatMessages;
-      let chatContextLimit: number = chatContextChoice === 'configured' ? 0 : chatContextChoice;
-      if (chatContextChoice === 'configured') {
-        const configuredRange = await loadCharacterContextRange(character);
-        liveRecentChatMessages = configuredRange.messages;
-        chatContextLimit = configuredRange.messages.length;
-      }
+      const liveHistory = await loadCollaborationChatHistory(character, chatContextChoice);
+      const liveRecentChatMessages = liveHistory.messages;
+      const chatContextLimit = liveRecentChatMessages.length;
+      setChatReadReceipt({ sessionId: sessionAtStart.id, count: chatContextLimit });
       if (sessionAtStart.mode === 'immersive') {
         const immersiveContext = await buildLiveCollaborationChatContext({
-          char: character,
+          char: liveHistory.character,
           user,
           groups,
           emojis,
@@ -2234,7 +2236,7 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
       } else {
         if (chatContextLimit > 0) {
           const focusedChatContext = await buildLiveCollaborationChatContext({
-            char: character,
+            char: liveHistory.character,
             user,
             groups,
             emojis,
@@ -2251,7 +2253,7 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
         }
         if (!contextSnapshot) {
           contextSnapshot = await buildCollaborationContextSnapshot({
-            char: character,
+            char: liveHistory.character,
             user,
             mode: sessionAtStart.mode,
             taskText,
@@ -2559,26 +2561,25 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
 
   const transferToChat = async () => {
     if (!activeSession) return;
-    const transferable: CollaborationTransferMessage[] = messages
-      .filter(message => message.role === 'user' || message.role === 'assistant')
-      .map(message => ({
-        role: message.role as 'user' | 'assistant',
-        type: 'text' as const,
-        content: [
-          message.content,
-          ...(message.attachments || []).map(attachment => `[文件：${attachment.name}]${attachment.extractedText ? `\n${attachment.extractedText}` : ''}`),
-        ].filter(Boolean).join('\n\n'),
-        timestamp: message.createdAt,
-      }));
+    if (transferring) return;
+    const transferable = selectCollaborationTransfer(messages, activeSession.id, transferIds);
     if (transferable.length === 0) {
       notify('这个窗口还没有可以发送的上下文', 'info');
       return;
     }
-    await onSendToChat(activeSession.title, transferable);
+    setTransferring(true);
+    try {
+      await onSendToChat(activeSession.title, transferable);
+      setTransferOpen(false);
+      setTransferIds(new Set());
+    } catch (error: any) {
+      notify(error?.message || '发送失败，请重试', 'error');
+      return;
+    } finally { setTransferring(false); }
     trackEvent('发送协同上下文到聊天', {
       模式: analyticsEnum(activeSession.mode, ['immersive', 'focused'], 'custom'),
     });
-    notify('这个窗口的上下文已经发给 ChatApp', 'success');
+    notify('已将选中的 ' + transferable.length + ' 条消息发给 ChatApp', 'success');
   };
 
   const backgroundStyle: React.CSSProperties = backgroundUrl
@@ -2631,11 +2632,11 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
               <span className="collab-session-title truncate text-[13px] font-semibold text-slate-800">{activeSession?.title || (showEntryChooser ? '协同工作' : '新的协同')}</span>
               {activeSession && <span className={`collab-session-dot h-1.5 w-1.5 shrink-0 rounded-full ${activeSession.mode === 'immersive' ? 'bg-indigo-500' : 'bg-slate-400'}`} />}
             </div>
-            <p className="collab-header-meta truncate text-[9px] text-slate-500">{activeSession ? `${character.name} · ${MODE_LABELS[activeSession.mode]} · ${chatContextLabel}${activeSession.makerKind ? ` · ${COLLABORATION_MAKER_MAP[activeSession.makerKind].shortLabel}` : ''}` : showEntryChooser ? '新建或继续一项协同' : '选择协同模式'}</p>
+            <p className="collab-header-meta truncate text-[9px] text-slate-500">{activeSession ? `${character.name} · ${MODE_LABELS[activeSession.mode]} · ${chatContextLabel}${chatReadReceipt?.sessionId === activeSession.id ? ` · 本次读取 ${chatReadReceipt.count} 条` : ''}${activeSession.makerKind ? ` · ${COLLABORATION_MAKER_MAP[activeSession.makerKind].shortLabel}` : ''}` : showEntryChooser ? '新建或继续一项协同' : '选择协同模式'}</p>
           </div>
         </div>
         <button type="button" onClick={() => void rerollLatestReply()} disabled={!activeSession || isGenerating || !messages.some(message => message.role === 'user')} className="grid h-10 w-10 place-items-center rounded-full text-slate-600 disabled:opacity-25 active:bg-slate-100/80" aria-label="重新生成上一条回复" title="重新生成上一条回复"><ArrowCounterClockwise size={20} /></button>
-        <button type="button" onClick={transferToChat} disabled={!activeSession || messages.length === 0} className="grid h-10 w-10 place-items-center rounded-full text-slate-600 disabled:opacity-25 active:bg-slate-100/80" aria-label="发送上下文到 ChatApp" title="发送上下文到 ChatApp"><PaperPlaneRight size={20} /></button>
+        <button type="button" onClick={() => { setTransferIds(new Set()); setTransferOpen(true); }} disabled={!activeSession || messages.length === 0} className="grid h-10 w-10 place-items-center rounded-full text-slate-600 disabled:opacity-25 active:bg-slate-100/80" aria-label="选择消息发送到 ChatApp" title="选择消息发送到 ChatApp"><PaperPlaneRight size={20} /></button>
         <button type="button" onClick={() => { setLibraryOpen(true); trackEvent('打开协同文件库'); }} className="grid h-10 w-10 place-items-center rounded-full text-slate-600 active:bg-slate-100/80" aria-label="协同文件库"><Folder size={20} /></button>
         <button type="button" onClick={() => setSettingsOpen(true)} className="grid h-10 w-10 place-items-center rounded-full text-slate-600 active:bg-slate-100/80" aria-label="协同设置"><GearSix size={20} /></button>
       </header>
@@ -2759,6 +2760,22 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
           </div>
         </>
       )}
+
+      {transferOpen && activeSession && <div className="absolute inset-0 z-[180] flex flex-col bg-slate-50" role="dialog" aria-modal="true" aria-label="选择发送到 ChatApp 的消息" style={{ paddingTop: 'var(--safe-top)', paddingBottom: 'var(--safe-bottom)' }}>
+        <header className="flex items-center justify-between gap-2 border-b border-slate-200 p-4">
+          <button disabled={transferring} onClick={() => setTransferOpen(false)} className="text-sm text-slate-500">取消</button>
+          <h2 className="text-sm font-semibold">选择消息</h2>
+          <button onClick={() => setTransferIds(new Set(messages.filter(message => message.sessionId === activeSession.id && (message.role === 'user' || message.role === 'assistant')).map(message => message.id)))} className="text-sm text-indigo-500">全选</button>
+        </header>
+        <p className="px-4 py-3 text-xs text-slate-500">只发送勾选的正文和附件文字，不包含思考过程。</p>
+        <div className="min-h-0 flex-1 overflow-y-auto px-4">
+          {messages.filter(message => message.sessionId === activeSession.id && (message.role === 'user' || message.role === 'assistant')).map(message => <label key={message.id} className="mb-3 flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-3">
+            <input type="checkbox" className="mt-1" checked={transferIds.has(message.id)} onChange={() => setTransferIds(prev => { const next = new Set(prev); if (next.has(message.id)) next.delete(message.id); else next.add(message.id); return next; })}/>
+            <span className="min-w-0 flex-1"><span className="block text-[10px] font-semibold text-slate-400">{message.role === 'user' ? user.name : character.name}</span><span className="mt-1 block whitespace-pre-wrap break-words text-xs leading-relaxed text-slate-700">{message.content || '附件消息'}</span>{message.attachments?.map(attachment => <span key={attachment.id} className="mt-2 block break-all text-[10px] text-indigo-500">文件：{attachment.name}</span>)}</span>
+          </label>)}
+        </div>
+        <footer className="flex items-center gap-3 border-t border-slate-200 p-4"><button onClick={() => setTransferIds(new Set())} className="text-xs text-slate-400">清空选择</button><button onClick={() => void transferToChat()} disabled={!transferIds.size || transferring} className="flex-1 rounded-xl bg-slate-900 py-3 text-sm text-white disabled:opacity-40">{transferring ? '发送中…' : '发送 ' + transferIds.size + ' 条到 ChatApp'}</button></footer>
+      </div>}
 
       <SessionDrawer
         open={drawerOpen}

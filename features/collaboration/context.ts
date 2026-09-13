@@ -240,7 +240,13 @@ export const buildLiveCollaborationChatContext = async ({
       COLLABORATION_PROTOCOL,
       collaborationRichOutputPrompt(char, emojis, categories),
     ].join(''),
-    chatContextSnapshot,
+    chatContextSnapshot: [
+      { role: 'system', content: history.length > 0
+        ? '### ChatApp 私聊记录开始\n以下是已读取的当前角色私聊记录，可以用于本次任务；它们不是本协同窗口的历史。只能引用实际提供的内容，范围以外的对话未提供。'
+        : '### ChatApp 私聊记录\n本次未带入私聊原文（用户关闭读取，或当前设定范围内无记录）。不要声称看到了未提供的对话。' },
+      ...chatContextSnapshot,
+      { role: 'system', content: '### ChatApp 私聊记录结束\n下方进入当前协同窗口；用户提及 ChatApp 时，请先查阅上方已提供的私聊记录，而不是仅凭窗口独立就判定不可见。' },
+    ],
   };
 };
 

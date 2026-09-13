@@ -77,7 +77,7 @@ import { Capacitor } from '@capacitor/core';
 import { formatBytes } from '../utils/format';
 import { isEmotionEvalSkipped } from '../utils/devDebug';
 import { isBenignApplicationConsoleMessage } from '../utils/applicationConsole';
-import { toMountedWorldbook } from '../utils/worldbook';
+
 import { initLocalStorageMirror } from '../utils/lsMirror';
 // 备份用：把存在 localStorage 的本机配置随导出一起带走（键名须与 importFullData 对齐）
 import { exportPostOfficeLocal } from '../utils/vrWorld/postOffice';
@@ -324,7 +324,9 @@ interface OSContextType {
   worldbooks: Worldbook[];
   addWorldbook: (wb: Worldbook) => void;
   updateWorldbook: (id: string, updates: Partial<Worldbook>) => Promise<void>;
-  deleteWorldbook: (id: string) => void;
+  deleteWorldbook: (id: string) => Promise<void>;
+  updateWorldbooks: (ids: string[], updates: Partial<Worldbook>) => Promise<void>;
+  deleteWorldbooks: (ids: string[]) => Promise<void>;
 
   // Novels (NEW)
   novels: NovelBook[];
@@ -3356,69 +3358,25 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       await DB.saveWorldbook(wb);
   };
 
-  const updateWorldbook = async (id: string, updates: Partial<Worldbook>) => {
-      // Compute the updated entity up-front. Relying on a closure side-effect
-      // inside a setState updater is unsafe — React calls updaters lazily
-      // during reconciliation, so the closure variable would still be
-      // undefined when the synchronous code below runs, silently skipping
-      // the DB persist + character cache sync (causing the saved content
-      // to revert on reload).
-      const existing = worldbooks.find(wb => wb.id === id);
-      if (!existing) return;
-      const fullUpdatedWb: Worldbook = { ...existing, ...updates, updatedAt: Date.now() };
-
-      // 1. Optimistic Update Local State
-      setWorldbooks(prev => prev.map(wb => (wb.id === id ? fullUpdatedWb : wb)));
-
-      // 2. Persist to DB
-      await DB.saveWorldbook(fullUpdatedWb);
-
-      // 3. AUTO-SYNC: Update Characters that have this book mounted
-      // This ensures data redundancy is kept fresh
-      const charsToSync = characters.filter(c => c.mountedWorldbooks?.some(m => m.id === id));
-
-      if (charsToSync.length > 0) {
-          const updatedChars = characters.map(char => {
-              if (char.mountedWorldbooks?.some(m => m.id === id)) {
-                  const newMounted = char.mountedWorldbooks.map(m =>
-                      m.id === id
-                          ? toMountedWorldbook(fullUpdatedWb)
-                          : m
-                  );
-                  const newChar = { ...char, mountedWorldbooks: newMounted };
-                  // 这条落库绕开了 updateCharacter，得自己打脏：世界书正文进 fire_pack 的系统
-                  // 提示词，不刷的话角色到点还照着改之前的设定说话。
-                  DB.saveCharacter(newChar).then(() => {
-                      markAmsgStateDirty({ char: newChar, userProfile, groups, realtimeConfig });
-                  });
-                  return newChar;
-              }
-              return char;
-          });
-          setCharacters(updatedChars);
-          addToast(`已同步更新 ${charsToSync.length} 个相关角色的缓存`, 'info');
-      }
+  const mutateWorldbooks = async (ids: string[], updates: Partial<Worldbook> | null) => {
+      const result = await DB.mutateWorldbooks(ids, updates);
+      const removed = new Set(ids);
+      const replacements = new Map(result.books.map(book => [book.id, book]));
+      setWorldbooks(prev => updates === null
+          ? prev.filter(book => !removed.has(book.id))
+          : prev.map(book => replacements.get(book.id) || book));
+      const mounted = new Map(result.characters.map(char => [char.id, char.mountedWorldbooks]));
+      setCharacters(prev => prev.map(char => mounted.has(char.id)
+          ? { ...char, mountedWorldbooks: mounted.get(char.id) }
+          : char));
+      result.characters.forEach(char => markAmsgStateDirty({ char, userProfile, groups, realtimeConfig }));
   };
 
+  const updateWorldbooks = (ids: string[], updates: Partial<Worldbook>) => mutateWorldbooks(ids, updates);
+  const deleteWorldbooks = (ids: string[]) => mutateWorldbooks(ids, null);
+  const updateWorldbook = (id: string, updates: Partial<Worldbook>) => updateWorldbooks([id], updates);
   const deleteWorldbook = async (id: string) => {
-      setWorldbooks(prev => prev.filter(wb => wb.id !== id));
-      await DB.deleteWorldbook(id);
-      
-      // Sync delete: Remove from characters
-      const updatedChars = characters.map(char => {
-          if (char.mountedWorldbooks?.some(m => m.id === id)) {
-              const newMounted = char.mountedWorldbooks.filter(m => m.id !== id);
-              const newChar = { ...char, mountedWorldbooks: newMounted };
-              // 同 updateWorldbook：绕开 updateCharacter 的落库要自己打脏，否则云端提示词
-              // 里还挂着这本已经删掉的世界书。
-              DB.saveCharacter(newChar).then(() => {
-                  markAmsgStateDirty({ char: newChar, userProfile, groups, realtimeConfig });
-              });
-              return newChar;
-          }
-          return char;
-      });
-      setCharacters(updatedChars);
+      await deleteWorldbooks([id]);
       addToast('世界书已删除 (同步移除角色挂载)', 'success');
   };
 
@@ -5303,6 +5261,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     addWorldbook,
     updateWorldbook,
     deleteWorldbook,
+    updateWorldbooks,
+    deleteWorldbooks,
     novels,
     addNovel,
     updateNovel,

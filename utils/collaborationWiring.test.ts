@@ -164,8 +164,8 @@ describe('collaboration sidecar wiring', () => {
     expect(context).toContain('selectRecentCollaborationChatMessages(recentChatMessages, chatContextLimit)');
     expect(chat).toContain('recentChatMessages={messages}');
     expect(windowSource).toContain("const chatContextChoice = settings.recentChatContextCount ?? 'configured'");
-    expect(windowSource).toContain('await loadCharacterContextRange(character)');
-    expect(windowSource).toContain('configuredRange.messages');
+    expect(windowSource).toContain('await loadCollaborationChatHistory(character, chatContextChoice)');
+    expect(read('features/collaboration/chatBridge.ts')).toContain('await loadCharacterContextRange(current)');
     expect(windowSource).toContain('chatContextSnapshot: liveChatContext');
     expect(windowSource).toContain('chatContextSnapshot: undefined');
     expect(windowSource).toContain('ChatApp 最近聊天');

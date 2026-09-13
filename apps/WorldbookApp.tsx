@@ -17,7 +17,7 @@ import { readShareFile } from '../utils/pngShare';
 import { trackEvent } from '../utils/analytics';
 
 const WorldbookApp: React.FC = () => {
-    const { closeApp, worldbooks, addWorldbook, updateWorldbook, deleteWorldbook, addToast } = useOS();
+    const { closeApp, worldbooks, addWorldbook, updateWorldbook, updateWorldbooks, deleteWorldbook, deleteWorldbooks, addToast } = useOS();
     
     // View State
     const [isEditing, setIsEditing] = useState(false);
@@ -29,6 +29,9 @@ const WorldbookApp: React.FC = () => {
     const [selectedBookIds, setSelectedBookIds] = useState<Set<string>>(new Set());
     const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
 
+    const [groupEditor, setGroupEditor] = useState<{ category: string; name: string; mode: 'keep' | 'constant' | 'keyword' } | null>(null);
+    const [savingGroup, setSavingGroup] = useState(false);
+    const [deletingBooks, setDeletingBooks] = useState(false);
     const PAGE_SIZE = 12;
 
     // Edit Form State
@@ -147,9 +150,9 @@ const WorldbookApp: React.FC = () => {
         const entryConfig = {
             disable: !tempEnabled,
             constant: tempConstant,
-            key: tempConstant ? [] : primaryKeywords,
-            keysecondary: tempConstant ? [] : secondaryKeywords,
-            selective: !tempConstant && secondaryKeywords.length > 0,
+            key: primaryKeywords,
+            keysecondary: secondaryKeywords,
+            selective: secondaryKeywords.length > 0,
             selectiveLogic: tempSelectiveLogic,
             position: tempPosition,
             depth: Math.max(0, Math.floor(tempDepth || 0)),
@@ -235,9 +238,9 @@ const WorldbookApp: React.FC = () => {
         setShowDeleteConfirm(true);
     };
 
-    const confirmDelete = () => {
+    const confirmDelete = async () => {
         if (editingBook) {
-            deleteWorldbook(editingBook.id);
+            await deleteWorldbook(editingBook.id);
             // Toast logic handled in Context
             setShowDeleteConfirm(false);
             setEditingBook(null);
@@ -265,13 +268,50 @@ const WorldbookApp: React.FC = () => {
             : new Set(worldbooks.map(book => book.id)));
     };
 
+    const closeBulkDelete = () => {
+        if (deletingBooks) return;
+        setShowBulkDeleteConfirm(false);
+        if (!isSelecting) setSelectedBookIds(new Set());
+    };
+
     const confirmBulkDelete = async () => {
         const ids = [...selectedBookIds];
         if (ids.length === 0) return;
-        for (const id of ids) await deleteWorldbook(id);
+        if (deletingBooks) return;
+        setDeletingBooks(true);
+        try {
+            await deleteWorldbooks(ids);
+        } catch (error: any) {
+            addToast(error?.message || '删除失败，未更改世界书', 'error');
+            return;
+        } finally { setDeletingBooks(false); }
         setShowBulkDeleteConfirm(false);
         leaveSelectionMode();
         addToast(`已删除 ${ids.length} 条世界书条目`, 'success');
+    };
+
+    const saveGroup = async () => {
+        if (!groupEditor || savingGroup) return;
+        const name = groupEditor.name.trim();
+        if (!name) { addToast('请填写分组名称', 'error'); return; }
+        if (name !== groupEditor.category && categoryNames.includes(name)) {
+            addToast('已有同名分组，请换一个名称，避免意外合并', 'error'); return;
+        }
+        const books = groupedBooks[groupEditor.category] || [];
+        if (groupEditor.mode === 'keyword' && books.some(book => !book.key?.length)) {
+            addToast('有条目尚未设置主要关键词，请先补齐；本次未修改', 'error'); return;
+        }
+        setSavingGroup(true);
+        try {
+            await updateWorldbooks(books.map(book => book.id), {
+                category: name,
+                ...(groupEditor.mode === 'keep' ? {} : { constant: groupEditor.mode === 'constant' }),
+            });
+            setExpandedCategory(name);
+            setGroupEditor(null);
+            addToast('整组已保存，原有角色挂载保持不变', 'success');
+        } catch (error: any) { addToast(error?.message || '整组保存失败', 'error'); }
+        finally { setSavingGroup(false); }
     };
 
     const toggleCategory = (cat: string) => {
@@ -388,7 +428,8 @@ const WorldbookApp: React.FC = () => {
                                         onChange={e => setTempConstant(!e.target.checked)}
                                         className="w-4 h-4 accent-indigo-500"
                                     />
-                                    <span className="text-sm font-semibold text-slate-700">启用关键词触发</span>
+                                    <span><span className="block text-sm font-semibold text-slate-700">启用关键词触发</span>
+                                    <span className="block mt-1 text-[10px] text-slate-400">关闭后改为常驻，已填关键词会保留。</span></span>
                                 </label>
                                 <p className={`text-[10px] leading-relaxed mt-1 pl-7 ${tempConstant ? 'text-slate-400' : 'text-indigo-500'}`}>
                                     {tempConstant
@@ -582,6 +623,7 @@ const WorldbookApp: React.FC = () => {
                                 <button
                                     onClick={() => {
                                         if (isSelecting) { leaveSelectionMode(); return; }
+                                        setSelectedBookIds(new Set());
                                         setIsSelecting(true);
                                         trackEvent('进入批量管理模式');
                                     }}
@@ -668,7 +710,7 @@ const WorldbookApp: React.FC = () => {
                             <div className={`transition-transform duration-300 ${expandedCategory === category ? 'rotate-90' : ''}`}>
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-slate-400 group-hover:text-indigo-500"><path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" /></svg>
                             </div>
-                            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider group-hover:text-indigo-600 transition-colors">{category}</h3>
+                            <h3 className="min-w-0 flex-1 break-words text-xs font-bold text-slate-500 uppercase tracking-wider group-hover:text-indigo-600 transition-colors">{category}</h3>
                             <span className="text-[9px] bg-white/50 px-1.5 rounded text-slate-400 border border-white/50">{books.length}</span>
                             <button
                                 onClick={(event) => handleExportGroup(event, category, books)}
@@ -678,6 +720,11 @@ const WorldbookApp: React.FC = () => {
                                 <DownloadSimple size={16} weight="bold" />
                             </button>
                         </div>
+
+                        {!isSelecting && <div className="flex justify-end gap-3 px-2 pb-1">
+                            <button type="button" className="text-[11px] text-indigo-500 py-1" onClick={() => setGroupEditor({ category, name: category, mode: 'keep' })}>编辑整组</button>
+                            <button type="button" className="text-[11px] text-slate-400 py-1" onClick={() => { setSelectedBookIds(new Set(books.map(book => book.id))); setShowBulkDeleteConfirm(true); }}>删除整组</button>
+                        </div>}
 
                         {/* Group Items */}
                         <div className={`space-y-3 pl-2 transition-all duration-300 ${expandedCategory === category ? 'opacity-100 mt-2' : 'max-h-0 opacity-0 overflow-hidden'}`}>
@@ -799,14 +846,25 @@ const WorldbookApp: React.FC = () => {
                 </div>
             </Modal>
 
+            <Modal isOpen={!!groupEditor} title="编辑整组世界书" onClose={() => { if (!savingGroup) setGroupEditor(null); }}
+                footer={<button disabled={savingGroup} onClick={saveGroup} className="w-full py-3 rounded-2xl bg-indigo-500 text-white font-bold disabled:opacity-50">{savingGroup ? '保存中…' : '保存整组'}</button>}>
+                {groupEditor && <div className="space-y-4 text-sm text-slate-600">
+                    <label className="block">分组名称<input aria-label="分组名称" value={groupEditor.name} onChange={event => setGroupEditor({ ...groupEditor, name: event.target.value })} className="mt-2 w-full rounded-xl border border-slate-200 p-3" /></label>
+                    <label className="block">整组触发方式<select aria-label="整组触发方式" value={groupEditor.mode} onChange={event => setGroupEditor({ ...groupEditor, mode: event.target.value as 'keep' | 'constant' | 'keyword' })} className="mt-2 w-full rounded-xl border border-slate-200 p-3">
+                        <option value="keep">保持各条目原设置</option><option value="constant">全部常驻</option><option value="keyword">全部关键词触发</option>
+                    </select></label>
+                    <p className="text-xs leading-relaxed text-slate-400">修改本组全部 {groupedBooks[groupEditor.category]?.length || 0} 条，并同步到已经挂载它们的角色。保留原有条目、关键词和挂载关系；不会给其他角色新增挂载。停用的条目仍保持停用。</p>
+                </div>}
+            </Modal>
+
             <Modal
                 isOpen={showBulkDeleteConfirm}
                 title="批量删除确认"
-                onClose={() => setShowBulkDeleteConfirm(false)}
+                onClose={closeBulkDelete}
                 footer={
                     <div className="flex gap-3 w-full">
-                        <button onClick={() => setShowBulkDeleteConfirm(false)} className="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-2xl active:scale-95 transition-transform">取消</button>
-                        <button onClick={confirmBulkDelete} className="flex-1 py-3 bg-red-500 text-white font-bold rounded-2xl shadow-lg shadow-red-200 active:scale-95 transition-transform">删除 {selectedBookIds.size} 条</button>
+                        <button onClick={closeBulkDelete} className="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-2xl active:scale-95 transition-transform">取消</button>
+                        <button onClick={confirmBulkDelete} disabled={deletingBooks} className="flex-1 py-3 bg-red-500 text-white font-bold rounded-2xl shadow-lg shadow-red-200 active:scale-95 transition-transform">删除 {selectedBookIds.size} 条</button>
                     </div>
                 }
             >
