@@ -2,7 +2,6 @@ import React, {useState} from 'react';
 import {createPortal} from 'react-dom';
 import type {CharacterProfile, ChatTheme, OSTheme} from '../../types';
 import ChatLayoutSettings from './ChatLayoutSettings';
-import ChatDecorationAnnouncement from './ChatDecorationAnnouncement';
 import ChromeCssEditor from './ChromeCssEditor';
 import WhiteboxSoundEditor from './WhiteboxSoundEditor';
 import {mergeChatFineTune,CHAT_FINE_TUNE_KEYS} from '../../utils/chatFineTuneCss';
@@ -49,7 +48,6 @@ export default function ChatDecorationPanel({character:char,theme,themes,updateC
  const activeBubble=themes.find(t=>t.id===((global?theme.chatDefaultBubbleStyle:char.bubbleStyle||theme.chatDefaultBubbleStyle)||'default'))||themes[0];
  const switchTab=(next:DecorationTab)=>setTab(next);
  return createPortal(<>
-  <ChatDecorationAnnouncement surface="decoration"/>
   {collapsed&&<button type="button" className="chat-decoration-return" onClick={()=>setCollapsed(false)}>返回装扮</button>}
   <aside className={`chat-decoration ${collapsed?'is-collapsed':''}`} aria-label="ChatApp 装扮" style={{backgroundColor:`rgba(250,249,252,${panelOpacity/100})`}}>
    <header className="chat-decoration-heading">

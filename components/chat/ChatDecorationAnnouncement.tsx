@@ -3,9 +3,10 @@ import {createPortal} from 'react-dom';
 import './ChatDecorationAnnouncement.css';
 const acknowledged = new Set<string>();
 const prefix = 'sully-chat-decoration-announcement-v1:';
-export default function ChatDecorationAnnouncement({surface}:{surface:'appearance'|'decoration'}) {
+export default function ChatDecorationAnnouncement({surface}:{surface:'appearance'|'chat'}) {
  const key=prefix+surface;
- const [visible,setVisible]=useState(()=>{try{return !acknowledged.has(key)&&localStorage.getItem(key)!=='seen';}catch{return !acknowledged.has(key);}});
+ const legacyKey=surface==='chat'?prefix+'decoration':key;
+ const [visible,setVisible]=useState(()=>{try{return !acknowledged.has(key)&&localStorage.getItem(key)!=='seen'&&localStorage.getItem(legacyKey)!=='seen';}catch{return !acknowledged.has(key);}});
  const dialog=useRef<HTMLDialogElement>(null);const title=useId();
  useEffect(()=>{if(visible&&!dialog.current?.open)dialog.current?.showModal();},[visible]);
  const dismiss=()=>{acknowledged.add(key);try{localStorage.setItem(key,'seen');}catch{/* Read-only storage: remember for this session. */}dialog.current?.close();setVisible(false);};

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdirSync} from 'node:fs';
 const out='output/chat-decoration';mkdirSync(out,{recursive:true});
 const browser=await chromium.launch({headless:true});const page=await browser.newPage({viewport:{width:390,height:844}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
-await page.addInitScript(()=>localStorage.setItem('sully-chat-decoration-announcement-v1:decoration','seen'));
+await page.addInitScript(()=>localStorage.setItem('sully-chat-decoration-announcement-v1:chat','seen'));
 try{
  await page.goto('http://127.0.0.1:5183/test/fixtures/chat-decoration.html');
  const panel=page.getByRole('complementary',{name:'ChatApp 装扮'});await panel.waitFor();

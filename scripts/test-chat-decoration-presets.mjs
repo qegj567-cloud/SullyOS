@@ -6,7 +6,7 @@ const browser=await chromium.launch({headless:true});const page=await browser.ne
 const preset={format:'sullyos-chat-decoration',version:1,name:'月光来信',parts:{layout:{chatHeaderStyle:'telegram',chatBubbleFontSize:17},bubbles:{name:'月光气泡',user:{textColor:'#fff',backgroundColor:'#a38eb6',borderRadius:18},ai:{textColor:'#463951',backgroundColor:'#f8f2ff',borderRadius:18}},background:{image:null,style:'paper'},sound:{src:'crystal',volume:.4},css:'.sully-chat-name { color: #956ab0; }'}};
 const upload=async(name,content,mimeType='text/plain')=>page.getByLabel('统一导入装扮').setInputFiles({name,mimeType,buffer:Buffer.from(content)});
 const state=()=>page.evaluate(()=>window.decorationQA);
-await page.addInitScript(()=>localStorage.setItem('sully-chat-decoration-announcement-v1:decoration','seen'));
+await page.addInitScript(()=>localStorage.setItem('sully-chat-decoration-announcement-v1:chat','seen'));
 try{
  await page.goto('http://127.0.0.1:5183/test/fixtures/chat-decoration.html');await page.getByRole('navigation',{name:'装扮分类'}).getByRole('button',{name:'预设',exact:true}).click();
  await upload('月光来信.json',JSON.stringify(preset),'application/json');await page.getByRole('heading',{name:'月光来信',exact:true}).waitFor();assert.equal((await state()).char.bubbleStyle,'default');
