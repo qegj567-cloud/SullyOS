@@ -6,6 +6,8 @@ const paths={
  hug:'<path d="M9 8C3 1 1 12 7 13m16-5c6-7 8 4 2 5M8 11q8-8 16 0v9q-8 9-16 0zM12 15h.1m8 0h.1m-7 5q3 3 6 0M10 26l-4 3m16-3 4 3"/>',
  fridge:'<rect x="7" y="3" width="18" height="26" rx="3"/><path d="M7 13h18M11 7v3m0 7v5"/>',
  stand:'<circle cx="16" cy="6" r="3"/><path d="M16 10v10m-7-7 7-3 7 3M16 20l-5 9m5-9 5 9"/>',
+ cook:'<path d="M6 12h20v12q-10 7-20 0zM3 13h3m20 0h3M5 9h22M13 6h6M10 3v2m12-2v2"/>',
+ wash:'<circle cx="15" cy="19" r="10"/><circle cx="15" cy="19" r="6"/><path d="M20 3h7v7m-5 3v3m5-3v3"/>',
  rest:'<path d="M7 13h16v11H7zm16 2c8-2 8 8 0 6M6 28h19M11 5v4m6-6v6"/>',
  jelly:'<path d="M4 19C1 2 29 2 28 19q-3 3-6 0-3 3-6 0-3 3-6 0-3 3-6 0ZM8 21q-4 7 1 7m7-7v8m8-8q4 7-1 7"/><path d="M11 13h.1m10 0h.1"/>',
  furniture:'<path d="M5 5h22v22H5zm6 0v22m10-22v22M3 29h26"/>',
@@ -17,4 +19,4 @@ const paths={
  quality:'<path d="m16 3 13 13-13 13L3 16z"/>',
 };
 export function interactionIcon(kind){return `<svg viewBox="0 0 32 32" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${paths[kind]||paths.jelly}</svg>`;}
-export function actionIcon(action){return interactionIcon({'chibi-bed':'bed','chibi-sit':'seat','chibi-water':'water','chibi-game':'game','chibi-hug':'hug','plush-put-back':'hug','fridge-toggle':'fridge','chibi-stand':'stand','chibi-game-stop':'rest'}[action]);}
+export function actionIcon(action,kind){if(action==='chibi-kitchen')return interactionIcon(kind==='coffee'?'rest':kind);return interactionIcon({'chibi-bed':'bed','chibi-sit':'seat','chibi-water':'water','chibi-game':'game','chibi-kitchen':'rest','chibi-hug':'hug','plush-put-back':'hug','fridge-toggle':'fridge','chibi-stand':'stand','chibi-game-stop':'rest'}[action]);}

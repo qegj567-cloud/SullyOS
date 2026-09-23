@@ -12,10 +12,22 @@ export function createRoomFinishes(){
   const key=[kind,style,color,trim].join('/');used.add(key);if(materials.has(key))return materials.get(key);
   // The floor is already above the shell. Depth bias here can pull it in front
   // of thin rugs; only wallpaper needs an offset from its supporting wall.
-  const m=new T.MeshStandardMaterial({color,roughness:.93,polygonOffset:kind==='wall',polygonOffsetFactor:-2,polygonOffsetUnits:-2});m.name=key;
+  const m=new T.MeshStandardMaterial({color,roughness:kind==='floor'&&style==='marble'?.52:.93,polygonOffset:kind==='wall',polygonOffsetFactor:-2,polygonOffsetUnits:-2});m.name=key;
   const formula=kind==='floor'?{
    wood:'vec2 q=vec2(vFinishUV.x/1.8+mod(floor(vFinishUV.y/.34),2.)*.5,vFinishUV.y/.34); vec2 f=fract(q); float d=min(min(f.x,1.-f.x),min(f.y,1.-f.y));float aa=max(fwidth(d),.001);float line=1.-smoothstep(.012-aa,.012+aa,d); shade=-line*.20+.035*sin(floor(q.y)*2.3);',
    tile:'vec2 f=fract(vFinishUV/.72);float d=min(min(f.x,1.-f.x),min(f.y,1.-f.y));float aa=max(fwidth(d),.001);float line=1.-smoothstep(.012-aa,.012+aa,d);shade=line*.23;',
+   marble:`vec2 q=vec2(vFinishUV.x+vFinishUV.y,vFinishUV.x-vFinishUV.y)*.70710678/1.05;
+    vec2 f=abs(fract(q)-.5);float edge=.5-max(f.x,f.y);float aa=max(fwidth(edge),.002);
+    float grout=1.-smoothstep(.006-aa,.006+aa,edge);
+    float corner=1.-smoothstep(.13-aa,.13+aa,1.-f.x-f.y);
+    float rim=min(${floorFinishBounds[2].toFixed(4)}-abs(vFinishUV.x),${floorFinishBounds[3].toFixed(4)}-abs(vFinishUV.y));
+    float raa=max(fwidth(rim),.002);float field=smoothstep(.47-raa,.47+raa,rim);
+    float border=1.-smoothstep(.055-raa,.055+raa,abs(rim-.25));
+    float pin=1.-smoothstep(.012-raa,.012+raa,abs(rim-.40));
+    float vein=pow(abs(sin(vFinishUV.x*3.1+vFinishUV.y*1.9+.7*sin(vFinishUV.y*3.)+.25*sin(vFinishUV.x*8.))),18.);
+    diffuseColor.rgb*=1.-.055*vein;
+    diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.42),grout*field*.35);
+    diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.025),max(corner*field,max(border,pin*.7)));`,
    checker:'shade=mod(floor(vFinishUV.x/.72)+floor(vFinishUV.y/.72),2.)*.25;',
    stone:'vec2 q=vec2(vFinishUV.x/1.1+mod(floor(vFinishUV.y/.55),2.)*.5,vFinishUV.y/.55);vec2 f=fract(q);float d=min(min(f.x,1.-f.x),min(f.y,1.-f.y));float aa=max(fwidth(d),.001);shade=(1.-smoothstep(.018-aa,.018+aa,d))*.24+.025*sin(floor(q.x)*2.1+floor(q.y)*3.7);',
    parquet:'vec2 q=vFinishUV/.96;vec2 f=fract(q);if(mod(floor(q.x)+floor(q.y),2.)>0.5)f=f.yx;float d=min(min(f.x,1.-f.x),min(fract(f.y*4.),1.-fract(f.y*4.))/4.);float aa=max(fwidth(d),.001);shade=-(1.-smoothstep(.01-aa,.01+aa,d))*.13+.025*sin(floor(q.x)*3.+floor(q.y));',

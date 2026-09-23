@@ -5383,7 +5383,19 @@
     "paintMaterials": [
       "kitchen-accent"
     ],
-    "collection": "kitchen"
+    "collection": "kitchen",
+    "colorParts": [
+      {
+        "material": "kitchen-cream",
+        "label": "浅色配件",
+        "color": "#ececed"
+      },
+      {
+        "material": "kitchen-metal",
+        "label": "金属把手",
+        "color": "#969b9f"
+      }
+    ]
   },
   {
     "id": "dining_table",
@@ -5765,7 +5777,39 @@
       "kitchen-accent"
     ],
     "collection": "kitchen",
-    "appliance": "fridge"
+    "appliance": "fridge",
+    "colorParts": [
+      {
+        "material": "kitchen-cream",
+        "label": "浅色配件",
+        "color": "#ececed"
+      },
+      {
+        "material": "kitchen-dark",
+        "label": "深色配件",
+        "color": "#202225"
+      },
+      {
+        "material": "kitchen-ceramic",
+        "label": "顶饰",
+        "color": "#f3f3f1"
+      },
+      {
+        "material": "kitchen-pink",
+        "label": "门贴",
+        "color": "#c6c8ca"
+      },
+      {
+        "material": "kitchen-fruit",
+        "label": "小装饰",
+        "color": "#a2a6aa"
+      },
+      {
+        "material": "kitchen-metal",
+        "label": "金属把手",
+        "color": "#969b9f"
+      }
+    ]
   },
   {
     "id": "kitchen_island",
@@ -7860,7 +7904,51 @@
     "paintMaterials": [
       "showroom-cream"
     ],
-    "revision": "showrooms-cushions-3"
+    "revision": "showrooms-cushions-3",
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "台面饰面",
+        "color": "#242629"
+      },
+      {
+        "material": "showroom-charcoal",
+        "label": "黑色面板",
+        "color": "#202225"
+      },
+      {
+        "material": "showroom-blue",
+        "label": "水槽",
+        "color": "#969ea4"
+      },
+      {
+        "material": "showroom-stone",
+        "label": "金属配件",
+        "color": "#858b91"
+      }
+    ],
+    "support": {
+      "shape": "rect",
+      "width": 1.65,
+      "depth": 0.78,
+      "height": 1.15,
+      "center": [
+        -1.5,
+        0
+      ],
+      "areas": [
+        {
+          "shape": "rect",
+          "width": 1.65,
+          "depth": 0.78,
+          "height": 1.15,
+          "center": [
+            1.5,
+            0
+          ]
+        }
+      ]
+    }
   },
   {
     "id": "show_kitchen_range",
@@ -7892,7 +7980,30 @@
     "paintMaterials": [
       "showroom-cream"
     ],
-    "revision": "showrooms-cushions-3"
+    "revision": "showrooms-cushions-3",
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "台面饰面",
+        "color": "#242629"
+      },
+      {
+        "material": "showroom-charcoal",
+        "label": "黑色面板",
+        "color": "#202225"
+      },
+      {
+        "material": "showroom-stone",
+        "label": "金属配件",
+        "color": "#858b91"
+      }
+    ],
+    "support": {
+      "shape": "rect",
+      "width": 1.63,
+      "depth": 0.84,
+      "height": 1.181
+    }
   },
   {
     "id": "show_kitchen_island",
@@ -7930,7 +8041,19 @@
       "width": 2.2800000953674315,
       "depth": 1.2525000023841857,
       "height": 1.149999964237213
-    }
+    },
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "台面饰面",
+        "color": "#242629"
+      },
+      {
+        "material": "showroom-charcoal",
+        "label": "黑色面板",
+        "color": "#202225"
+      }
+    ]
   },
   {
     "id": "show_kitchen_bench",
@@ -8360,13 +8483,25 @@
     "paintMaterials": [
       "showroom-cream"
     ],
-    "revision": "showrooms-cushions-3",
+    "revision": "dresser-solid-panels-1",
     "support": {
       "shape": "rect",
       "width": 2.679999952316284,
       "depth": 0.579999988079071,
       "height": 1.1799999475479126
-    }
+    },
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "台面饰面",
+        "color": "#242629"
+      },
+      {
+        "material": "showroom-charcoal",
+        "label": "黑色面板",
+        "color": "#202225"
+      }
+    ]
   },
   {
     "id": "show_bedroom_bench",
@@ -8986,5 +9121,535 @@
     "paintMaterials": [
       "woodLight"
     ]
+  },
+  {
+    "id": "kitchenware_pot",
+    "name": "黑白双耳汤锅",
+    "surface": "tabletop",
+    "collection": "kitchen",
+    "url": "kitchenware_pot.glb",
+    "size": [
+      0.6200000047683716,
+      0.3682233393192291,
+      0.48781725764274597
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.3100000023841858,
+        0,
+        -0.24390862882137299,
+        0.3100000023841858,
+        0.3682233393192291,
+        0.24390862882137299
+      ]
+    ],
+    "paintMaterials": [
+      "porcelain"
+    ],
+    "revision": "kitchenware-1"
+  },
+  {
+    "id": "kitchenware_board",
+    "name": "砧板与切片面包",
+    "surface": "tabletop",
+    "collection": "kitchen",
+    "url": "kitchenware_board.glb",
+    "size": [
+      0.5799999833106995,
+      0.2047058790922165,
+      0.6080968976020813
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.28999999165534973,
+        0,
+        -0.30404844880104065,
+        0.28999999165534973,
+        0.2047058790922165,
+        0.30404844880104065
+      ]
+    ],
+    "paintMaterials": [
+      "woodLight"
+    ],
+    "revision": "kitchenware-1"
+  },
+  {
+    "id": "kitchenware_tools",
+    "name": "黑陶厨具筒",
+    "surface": "tabletop",
+    "collection": "kitchen",
+    "url": "kitchenware_tools.glb",
+    "size": [
+      0.3199999928474426,
+      0.4420338571071625,
+      0.2793220281600952
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.1599999964237213,
+        0,
+        -0.1396610140800476,
+        0.1599999964237213,
+        0.4420338571071625,
+        0.1396610140800476
+      ]
+    ],
+    "paintMaterials": [
+      "charcoal"
+    ],
+    "revision": "kitchenware-1"
+  },
+  {
+    "id": "kitchenware_spices",
+    "name": "黑白调料罐组",
+    "surface": "tabletop",
+    "collection": "kitchen",
+    "url": "kitchenware_spices.glb",
+    "size": [
+      0.699999988079071,
+      0.23700787127017975,
+      0.19475063681602478
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.3499999940395355,
+        0,
+        -0.09737531840801239,
+        0.3499999940395355,
+        0.23700787127017975,
+        0.09737531840801239
+      ]
+    ],
+    "paintMaterials": [
+      "porcelain"
+    ],
+    "revision": "kitchenware-1"
+  },
+  {
+    "id": "kitchenware_plates",
+    "name": "白瓷叠盘",
+    "surface": "tabletop",
+    "collection": "kitchen",
+    "url": "kitchenware_plates.glb",
+    "size": [
+      0.41999998688697815,
+      0.26608696579933167,
+      0.417391300201416
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.20999999344348907,
+        0,
+        -0.208695650100708,
+        0.20999999344348907,
+        0.26608696579933167,
+        0.208695650100708
+      ]
+    ],
+    "paintMaterials": [
+      "porcelain"
+    ],
+    "revision": "kitchenware-1"
+  },
+  {
+    "id": "kitchenware_rail",
+    "name": "金属挂杆与锅铲",
+    "surface": "wall",
+    "collection": "kitchen",
+    "url": "kitchenware_rail.glb",
+    "size": [
+      1.0499999523162842,
+      0.679411768913269,
+      0.23058819770812988
+    ],
+    "default": [
+      0,
+      2,
+      0
+    ],
+    "boxes": [
+      [
+        -0.5249999761581421,
+        0,
+        -0.11529409885406494,
+        0.5249999761581421,
+        0.679411768913269,
+        0.11529409885406494
+      ]
+    ],
+    "paintMaterials": [
+      "charcoal"
+    ],
+    "revision": "kitchenware-1"
+  },
+  {
+    "id": "kitchenware_settings",
+    "name": "双人白瓷杯盘",
+    "surface": "tabletop",
+    "collection": "kitchen",
+    "url": "kitchenware_settings.glb",
+    "size": [
+      1.0199999809265137,
+      0.1872340440750122,
+      0.6176318228244781
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.5099999904632568,
+        0,
+        -0.3088159114122391,
+        0.5099999904632568,
+        0.1872340440750122,
+        0.3088159114122391
+      ]
+    ],
+    "paintMaterials": [
+      "porcelain"
+    ],
+    "revision": "kitchenware-1"
+  },
+  {
+    "id": "kitchenware_coffee",
+    "name": "咖啡机与杯碟",
+    "surface": "tabletop",
+    "collection": "kitchen",
+    "url": "kitchenware_coffee.glb",
+    "size": [
+      1.4300000071525574,
+      0.3824358880519867,
+      0.5091025829315186
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.7150000035762787,
+        0,
+        -0.2545512914657593,
+        0.7150000035762787,
+        0.3824358880519867,
+        0.2545512914657593
+      ]
+    ],
+    "paintMaterials": [
+      "porcelain"
+    ],
+    "revision": "kitchenware-1"
+  },
+  {
+    "id": "kitchen_ref_prep",
+    "name": "砧板厨具与沥水盘架",
+    "url": "kitchen_ref_prep.glb",
+    "collection": "kitchen",
+    "surface": "tabletop",
+    "size": [
+      1.5550000071525574,
+      0.42529872097074983,
+      0.5725951790809631
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.7775000035762787,
+        0,
+        -0.28629758954048157,
+        0.7775000035762787,
+        0.42529872097074983,
+        0.28629758954048157
+      ]
+    ],
+    "paintMaterials": [
+      "porcelain"
+    ],
+    "revision": "kitchen-reference-1"
+  },
+  {
+    "id": "kitchen_ref_hood",
+    "name": "黑色烟机与厨具挂杆",
+    "url": "kitchen_ref_hood.glb",
+    "collection": "kitchen",
+    "surface": "wall",
+    "size": [
+      3.0700000524520874,
+      2.065000057220459,
+      0.8710000216960907
+    ],
+    "default": [
+      0,
+      2,
+      0
+    ],
+    "boxes": [
+      [
+        -1.5350000262260437,
+        0,
+        -0.43550001084804535,
+        1.5350000262260437,
+        2.065000057220459,
+        0.43550001084804535
+      ]
+    ],
+    "paintMaterials": [
+      "charcoal"
+    ],
+    "revision": "kitchen-reference-1"
+  },
+  {
+    "id": "kitchen_ref_shelves",
+    "name": "双层绿植调料壁架",
+    "url": "kitchen_ref_shelves.glb",
+    "collection": "kitchen",
+    "surface": "wall",
+    "size": [
+      2.119999885559082,
+      1.9271461814641953,
+      0.5077583193778992
+    ],
+    "default": [
+      0,
+      2,
+      0
+    ],
+    "boxes": [
+      [
+        -1.059999942779541,
+        0,
+        -0.2538791596889496,
+        1.059999942779541,
+        1.9271461814641953,
+        0.2538791596889496
+      ]
+    ],
+    "paintMaterials": [
+      "porcelain"
+    ],
+    "revision": "kitchen-reference-1"
+  },
+  {
+    "id": "kitchen_ref_breakfast",
+    "name": "早餐花果与杯盘托盘",
+    "url": "kitchen_ref_breakfast.glb",
+    "collection": "kitchen",
+    "surface": "tabletop",
+    "size": [
+      1.7010831236839294,
+      0.560000002682209,
+      0.7023754715919495
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.8505415618419647,
+        0,
+        -0.35118773579597473,
+        0.8505415618419647,
+        0.560000002682209,
+        0.35118773579597473
+      ]
+    ],
+    "paintMaterials": [
+      "porcelain"
+    ],
+    "revision": "kitchen-reference-1"
+  },
+  {
+    "id": "kitchen_ref_window",
+    "name": "绿植罐饰黑框厨房窗",
+    "url": "kitchen_ref_window.glb",
+    "collection": "kitchen",
+    "surface": "wall",
+    "size": [
+      2.359999895095825,
+      1.5600000619888306,
+      0.4550977349281311
+    ],
+    "default": [
+      0,
+      2,
+      0
+    ],
+    "boxes": [
+      [
+        -1.1799999475479126,
+        0,
+        -0.22754886746406555,
+        1.1799999475479126,
+        1.5600000619888306,
+        0.22754886746406555
+      ]
+    ],
+    "paintMaterials": [
+      "ink"
+    ],
+    "revision": "kitchen-reference-1",
+    "daylight": true
+  },
+  {
+    "id": "kitchen_ref_rack",
+    "name": "黑框四层餐厨收纳架",
+    "url": "kitchen_ref_rack.glb",
+    "collection": "kitchen",
+    "surface": "floor",
+    "size": [
+      1.3200000524520874,
+      2.3738548994064335,
+      0.5899999737739563
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.6600000262260437,
+        0,
+        -0.29499998688697815,
+        0.6600000262260437,
+        2.3738548994064335,
+        0.29499998688697815
+      ]
+    ],
+    "paintMaterials": [
+      "porcelain"
+    ],
+    "revision": "kitchen-reference-1"
+  },
+  {
+    "id": "kitchen_ref_trolley",
+    "name": "三层备餐带轮推车",
+    "url": "kitchen_ref_trolley.glb",
+    "collection": "kitchen",
+    "surface": "floor",
+    "size": [
+      0.9549999833106995,
+      1.619450081139803,
+      0.6800000071525574
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.47749999165534973,
+        0,
+        -0.3400000035762787,
+        0.47749999165534973,
+        1.619450081139803,
+        0.3400000035762787
+      ]
+    ],
+    "paintMaterials": [
+      "porcelain"
+    ],
+    "revision": "kitchen-reference-1"
+  },
+  {
+    "id": "kitchen_ref_runner",
+    "name": "黑白格备餐长毯",
+    "url": "kitchen_ref_runner.glb",
+    "collection": "kitchen",
+    "surface": "rug",
+    "size": [
+      3.7,
+      0.026,
+      0.82
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -1.85,
+        0,
+        -0.41,
+        1.85,
+        0.026,
+        0.41
+      ]
+    ],
+    "paintMaterials": [
+      "charcoal"
+    ],
+    "rugPattern": "check",
+    "revision": "kitchen-storage-1"
+  },
+  {
+    "id": "kitchen_ref_mat",
+    "name": "猫咪迎宾小地毯",
+    "url": "kitchen_ref_mat.glb",
+    "collection": "kitchen",
+    "surface": "rug",
+    "size": [
+      1.7,
+      0.026,
+      0.9
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.85,
+        0,
+        -0.45,
+        0.85,
+        0.026,
+        0.45
+      ]
+    ],
+    "paintMaterials": [
+      "charcoal"
+    ],
+    "rugPattern": "cat",
+    "revision": "kitchen-storage-1"
   }
 ]

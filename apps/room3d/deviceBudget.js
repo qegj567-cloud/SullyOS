@@ -1,5 +1,5 @@
 import {ROOM_HALF,ROOM_STEP} from './dimensions.js';
-export const PHONE_BUDGET={rooms:5,furniture:15};
+export const PHONE_BUDGET={rooms:5,furniture:20};
 export function isPhoneBrowser({userAgent='',mobile=false,coarse=false,width=Infinity,height=Infinity}={}){
  return mobile||/iPhone|iPod|Android.*Mobile/i.test(userAgent)||coarse&&Math.min(width,height)<=600;
 }
@@ -19,6 +19,6 @@ export function furnishingCounts(home,catalog){
 export function phoneBudgetError(before,after,catalog){
  if(after.rooms.length>Math.max(PHONE_BUDGET.rooms,before?.rooms.length||0))return '手机端每个角色最多 5 块房间面积；拆墙合并也按原面积计数';
  const old=before?furnishingCounts(before,catalog):new Map(),next=furnishingCounts(after,catalog);
- for(const r of after.rooms)if(next.get(r.id)>Math.max(PHONE_BUDGET.furniture,old.get(r.id)||0))return `「${r.name}」这块房间面积最多摆 15 件家具，先收纳或移到其他区域；桌面摆件分别计数`;
+ for(const r of after.rooms)if(next.get(r.id)>Math.max(PHONE_BUDGET.furniture,old.get(r.id)||0))return `「${r.name}」这块房间面积最多摆 ${PHONE_BUDGET.furniture} 件家具，先收纳或移到其他区域；桌面摆件分别计数`;
  return '';
 }

@@ -1,0 +1,9 @@
+{
+  "sha256": "1F24F4715B4EBC96A83FF58A35B2E4AB2843D02C8B86C792EB410084811549A8",
+  "bytes": 3241324,
+  "source": "kitchenware 3d model.glb",
+  "images": 1,
+  "triangles": 7711,
+  "notes": "Removed image texture and UV before retaining source geometry. Original fridge and countertops not imported.",
+  "cleanSource": "geometry.glb"
+}

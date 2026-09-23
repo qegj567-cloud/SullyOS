@@ -140,3 +140,9 @@ for(const a of showroomParts){
 }
 await fs.writeFile('public/room3d/catalog.json',JSON.stringify(catalog,null,2)+'\n');await fs.writeFile('output/showrooms/assets-report.json',JSON.stringify(report,null,2));console.log(report);
 
+
+// Restore the coffee cabinet and kitchen accessories after a full rebuild.
+await import('./repair-dresser.mjs');
+await import('./kitchen-finish-parts.mjs');
+await import('./kitchenware-assets.mjs');
+await import('./kitchen-reference-assets.mjs');

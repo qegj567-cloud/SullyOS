@@ -348,7 +348,7 @@ export function buildBody(source: T.Group, parts: Parts, appearance: 'skin' | 'h
     const blankAnimate=rig?createBlankMotion(rig,body):undefined;
     const animate=(time:number,motion:Motion,posture:Posture='standing',activity?:ActivityPose)=>{
         if(blankAnimate){
-            blankAnimate(time,motion,posture);
+            blankAnimate(time,motion,posture,activity);
             front.map=motion==='sleep'?asleepMap:motion==='wave-cute'?cuteMap:awakeMap;
             return;
         }

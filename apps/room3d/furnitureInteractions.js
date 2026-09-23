@@ -1,11 +1,12 @@
 import {roomBeds,roomSeats} from './seating.js';
 import {roomPlants} from './watering.js';
 import {roomPlush} from './plush.js';
+import {kitchenActions} from './kitchenActivities.js';
 
 // Describe real, existing actions. No name-based guesses and no saved UI state.
 export function furnitureInteractions(room,catalog,itemId,{activities=[],seat=null,held=null,active=null,fridgeOpen=false}={}){
  const item=room.items.find(i=>i.id===itemId&&!i.stored),a=catalog.find(a=>a.id===item?.assetId);if(!a)return [];
- const result=[],add=(action,label,extra={},reason='')=>result.push({action,label,id:itemId,...extra,reason});
+ const result=kitchenActions(room,catalog,itemId),add=(action,label,extra={},reason='')=>result.push({action,label,id:itemId,...extra,reason});
  for(const b of roomBeds(room,catalog).filter(b=>b.itemId===itemId)){
   const label=a.beds.find(s=>s.id===b.seatId)?.label||'';
   add('chibi-bed',a.beds.length===1?'躺下':/左|右/.test(label)?'睡'+label.replace('床位','').replace('侧','边'):label+'躺下',{seat:b.seatId});

@@ -5,6 +5,7 @@ import {SHOWROOMS,addShowroom,applyShowroomStyle} from './showrooms.js';
 import {ROOM_CATEGORIES,USE_CATEGORIES,matchesFurniture,furnitureActions} from './furnitureCatalog.js';
 import {createFurnitureHalo} from './furnitureHalo.js';
 import {applyRetroFurniture} from './furnitureStyle.js';
+import {applyRugPattern} from './rugPattern.js';
 import {furniturePaintMaterials,validFurnitureColor} from './furniturePaint.js';
 import {roomPlush,plushPose} from './plush.js';
 import {furnitureGroup,isDockChair} from './furnitureDock.js';
@@ -17,6 +18,8 @@ import {ROOM_HALF,ROOM_SCALE,MAX_BUILDING_LENGTH} from './dimensions.js';
 import {gamingActivities,placeGamingPreset,GAMING_ACTIONS} from './gaming.js';
 import {diningActivities,placeDiningPreset,fridgeOpenError} from './dining.js';
 import {createKitchenEffects} from './kitchenEffects.js';
+import {planKitchenAction,kitchenFingerprint,kitchenHands} from './kitchenActivities.js';
+import {createKitchenWorkEffects} from './kitchenWorkEffects.js';
 import {createGamingEffects} from './gamingEffects.js';
 import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
@@ -100,11 +103,14 @@ export async function mountHomeEditor(host,{assetBase,initialState,onChange,onBa
   const pose=plushPose(a);heldMesh.scale.setScalar(pose.scale);heldMesh.position.fromArray(pose.position);
  }
  let visitor=null,visitorMotion='idle',visitorStart=0,visitorUntil=0,visitorSeat=null,visitorPlant=null,visitorActivity=null,headWidth=1.5;
- const gamingEffects=createGamingEffects(),kitchenEffects=createKitchenEffects(resident);
+ const gamingEffects=createGamingEffects(),kitchenEffects=createKitchenEffects(resident),kitchenWork=createKitchenWorkEffects(resident);
+ let kitchenTask=null;
+ function cancelKitchen(){if(kitchenTask){visitorMotion='idle';visitorUntil=0;resident.position.y=.18;}kitchenTask=null;kitchenWork.clear();}
  const activities=()=>[...gamingActivities(placementRoom(),catalog,{headWidth}),...diningActivities(placementRoom(),catalog,{headWidth})];
  const navMap=()=>walkingMap(state,current().level,catalog,{headWidth});
- function stopWalking(){walking=null;if(visitorMotion==='walk')visitorMotion='idle';}
+ function stopWalking(keepKitchen=false){walking=null;if(!keepKitchen)cancelKitchen();if(visitorMotion==='walk')visitorMotion='idle';}
  function walkTo(target){
+  cancelKitchen();
   if(!visitor||!resident.visible)return false;
   if(visitorSeat||visitorPlant||visitorActivity){visitorActivity=null;gamingEffects.clear();kitchenEffects.updateMeal(null,0);visitorSeat=null;visitorPlant=null;visitorLocation=null;placeVisitor();}
   const start=[resident.position.x+current().x*ROOM_STEP.x,resident.position.z+current().z*ROOM_STEP.z],path=findWalkPath(navMap(),start,target);
@@ -121,8 +127,35 @@ export async function mountHomeEditor(host,{assetBase,initialState,onChange,onBa
   }
   const locationRoom=state.rooms.find(r=>r.level===visitorLocation.level&&Math.abs(visitorLocation.x-r.x*ROOM_STEP.x)<ROOM_HALF.x&&Math.abs(visitorLocation.z-r.z*ROOM_STEP.z)<ROOM_HALF.z);if(roomScope==='room'&&locationRoom&&locationRoom.id!==current().id){activateRoom(locationRoom);persist();rebuild();renderUI();}else if(locationRoom&&!detailedRoomIds.has(locationRoom.id))rebuild();
   resident.position.set(visitorLocation.x-current().x*ROOM_STEP.x,.18,visitorLocation.z-current().z*ROOM_STEP.z);
-  if(walking.index>=walking.path.length){stopWalking();visitorUntil=elapsed+.1;message='到啦';renderUI();}
+  if(walking.index>=walking.path.length){const arrived=walking.arrived;stopWalking(true);visitorUntil=elapsed+.1;message='到啦';arrived?.();renderUI();}
   dirty=true;renderer.shadowMap.needsUpdate=true;
+ }
+ function kitchenLeg(task,station,stage){
+  const start=[resident.position.x+current().x*ROOM_STEP.x,resident.position.z+current().z*ROOM_STEP.z],path=findWalkPath(navMap(),start,station.target);
+  if(!path){cancelKitchen();visitorMotion='idle';notify('路线被挡住了，先把通道腾出来',true);return;}
+  task.stage=stage;task.phaseStart=elapsed;visitorMotion='walk';visitorStart=elapsed;
+  visitorLocation={x:start[0],z:start[1],level:current().level};
+  walking={path,index:1,last:elapsed,arrived:()=>{
+   if(kitchenTask!==task)return;
+   resident.rotation.y=station.rotation;task.stage=stage==='approach'?(task.kind==='wash'?'pickup':'work'):stage==='toSink'?'work':'putback';
+   task.phaseStart=elapsed;visitorStart=elapsed;visitorMotion=task.kind;visitorUntil=elapsed+15;message=task.stage==='pickup'?'拿好盘子':task.stage==='putback'?'把盘子放回去':({coffee:'咖啡萃取中',wash:'冲洗、擦擦盘子',cook:'慢慢搅拌，煮饭中'}[task.kind]);
+  }};dirty=true;wake();
+ }
+ function updateKitchen(){
+  const task=kitchenTask;if(!task)return;
+  const room=state.rooms.find(r=>r.id===task.roomId);
+  if(current().id!==task.roomId||edit||overview||kitchenFingerprint(room,room?.items.map(i=>i.id)||[])!==task.layoutFingerprint){stopWalking();visitorMotion='idle';message='厨房动作已停止';return;}
+  const time=elapsed-task.phaseStart;
+  if(task.stage==='pickup'&&time>=1.2){task.carrying=true;kitchenLeg(task,task.sink,'toSink');}
+  else if(task.stage==='work'&&time>=(task.kind==='wash'?7:task.kind==='coffee'?8:10)){
+   if(task.kind==='wash')kitchenLeg(task,task.source,'return');
+   else{message=task.kind==='coffee'?'咖啡做好啦':'饭煮好啦';cancelKitchen();visitorMotion='idle';visitorUntil=0;renderUI();}
+  }else if(task.stage==='putback'&&time>=1.2){message='盘子洗干净，放回原处啦';cancelKitchen();visitorMotion='idle';visitorUntil=0;renderUI();}
+ }
+ function kitchenHandPositions(hands){
+  resident.updateWorldMatrix(true,true);
+  if(visitor?.rig)return ['R_hand','L_hand'].map(name=>resident.worldToLocal(visitor.rig.bones[name].getWorldPosition(new THREE.Vector3())).toArray());
+  return hands.map(p=>p.map(v=>v*.7));
  }
  function updateDoors(){
   if(!state)return;
@@ -134,17 +167,26 @@ export async function mountHomeEditor(host,{assetBase,initialState,onChange,onBa
  const watering=createWateringEffect();resident.add(watering.root);
  const motions=[['idle','站好'],['wave-cute','可爱挥手'],['wave-calm','冷静挥手'],['sleep','睡觉'],['angry','生气'],['dance','晃一晃']];
  function animateVisitor(time){
-  updateWalk();updateDoors();
+  updateKitchen();updateWalk();updateDoors();
+  if(kitchenTask){
+   const working=['work','pickup','putback'].includes(kitchenTask.stage);
+   kitchenTask.lift=!visitor?.rig&&working?.58:0;
+   resident.position.y=.18+kitchenTask.lift;
+  }
   if(visitorPlant&&time>=4.4){visitorPlant=null;visitorMotion='idle';renderUI();}
   if(visitorActivity&&time>=12){message=visitorActivity.kind==='eat'?'吃好啦，坐着歇一会儿':'这一局结束啦';visitorActivity=null;visitorMotion='idle';visitorUntil=0;renderUI();}
   if(heldPlush&&visitorMotion!=='hug')putPlushBack();
   const heldAsset=heldPlush&&asset(current().items.find(i=>i.id===heldPlush.itemId)?.assetId),hug=heldAsset&&plushPose(heldAsset,time);
   if(hug&&heldMesh)heldMesh.position.fromArray(hug.position);
-  visitor?.animate(reducedMotion&&visitorMotion==='rhythm'?0:time,visitorMotion,visitorSeat?.bed?'lying':visitorSeat?'seated':'standing',hug?{kind:'hug',hands:hug.hands}:visitorActivity);
+  const workHands=kitchenTask?kitchenHands(kitchenTask.kind,elapsed-kitchenTask.phaseStart,kitchenTask.stage!=='work'):null;
+  const workPose=workHands&&kitchenTask.stage!=='approach'?{kind:kitchenTask.kind,hands:workHands,carrying:kitchenTask.stage!=='work'}:null;
+  visitor?.animate(reducedMotion&&visitorMotion==='rhythm'?0:time,visitorMotion,visitorSeat?.bed?'lying':visitorSeat?'seated':'standing',workPose||(hug?{kind:'hug',hands:hug.hands}:visitorActivity));
+  kitchenWork.update(kitchenTask,reducedMotion?1:elapsed-(kitchenTask?.phaseStart||0),workHands?kitchenHandPositions(workHands):[]);
   gamingEffects.update(objects,visitorActivity,time);kitchenEffects.updateMeal(visitorActivity,time);
   watering.update(time,visitorPlant?.spot);
  }
  function placeVisitor(){
+  if(kitchenTask){const room=state.rooms.find(r=>r.id===kitchenTask.roomId);if(current().id!==kitchenTask.roomId||edit||overview||kitchenFingerprint(room,room?.items.map(i=>i.id)||[])!==kitchenTask.layoutFingerprint)stopWalking();}
   resident.visible=!!visitor&&!overview;
   if(!visitor||!state)return;
   const focusItem=visitorActivity?.itemId||visitorSeat?.itemId||visitorPlant?.itemId,focusRoom=focusItem&&state.rooms.find(r=>r.items.some(i=>i.id===focusItem));
@@ -173,11 +215,11 @@ export async function mountHomeEditor(host,{assetBase,initialState,onChange,onBa
  function setVisitor(next,{preservePose=false}={}){
   preservePose=!!(preservePose&&visitor&&next);
   if(!preservePose){
-   closeInteraction();putPlushBack();
+   cancelKitchen();closeInteraction();putPlushBack();
    walking=null;visitorLocation=null;visitorActivity=null;gamingEffects.clear();kitchenEffects.updateMeal(null,0);
    visitorPlant=null;visitorSeat=null;visitorMotion='idle';visitorStart=elapsed;visitorUntil=0;
   }
-  visitor?.dispose();visitor=next;resident.clear();resident.add(watering.root,kitchenEffects.meal,plushRoot);
+  visitor?.dispose();visitor=next;resident.clear();resident.add(watering.root,kitchenEffects.meal,plushRoot,kitchenWork.root);
   if(visitor){resident.add(visitor.root);visitor.animate(0,'idle');visitor.root.updateWorldMatrix(true,true);const bounds=new THREE.Box3();visitor.root.traverse(o=>{if(o.isMesh&&o.name==='chibi-body')bounds.union(new THREE.Box3().setFromObject(o));});headWidth=bounds.isEmpty()?1.5:Math.max(1.5,bounds.getSize(new THREE.Vector3()).x+.08);}
   if(state){if(preservePose){animateVisitor(elapsed-visitorStart);if(residentFraming)focusResident();}else placeVisitor();dirty=true;wake();renderUI();}
  }
@@ -238,13 +280,13 @@ export async function mountHomeEditor(host,{assetBase,initialState,onChange,onBa
  }
  function applyColor(root,color,wall=false,id='',materialColors={}){
   root.traverse(o=>{if(!o.isMesh)return;const mats=Array.isArray(o.material)?o.material:[o.material];
-   o.castShadow=mats.every(m=>!m.transparent);o.receiveShadow=true;
+   o.castShadow=asset(id)?.surface!=='rug'&&mats.every(m=>!m.transparent);o.receiveShadow=true;
    o.material=mats.map(m=>{
     const primary=paintTargets.get(id)||[];
     const paint=wall?((m.name==='cream'&&o.userData.wallPart!=='floor')?color.wall:colors.has(m.name)?color.trim:color.floor&&['wood','woodLight','cream'].includes(m.name)&&o.userData.wallPart==='floor'?color.floor:''):materialColors[m.name]||(color&&primary.includes(m.name)?color:'');
     const retro=furnitureStyle==='retro'&&!wall&&!asset(id)?.building;
     const key=m.uuid+'/'+paint+'/'+retro;usedMaterials.add(key);let c=materialCache.get(key);
-    if(!c){c=m.clone();if(retro)applyRetroFurniture(c);if(paint)c.color.set(paint);if(id==='wooden_window'&&m.name==='window-blue'){c.emissive.set('#fff1ce');c.emissiveIntensity=.20;}if(c.transparent)c.depthWrite=false;materialCache.set(key,c)}
+    if(!c){c=m.clone();if(retro)applyRetroFurniture(c);if(paint)c.color.set(paint);if(asset(id)?.rugPattern)applyRugPattern(c,o.geometry,asset(id).rugPattern);if(id==='wooden_window'&&m.name==='window-blue'){c.emissive.set('#fff1ce');c.emissiveIntensity=.20;}if(c.transparent)c.depthWrite=false;materialCache.set(key,c)}
     return c});if(o.material.length===1)o.material=o.material[0];
   });
  }
@@ -363,7 +405,7 @@ export async function mountHomeEditor(host,{assetBase,initialState,onChange,onBa
   if(panel==='room-style')sheet+=`<p>原包风格 · 只更新配色和墙地面</p><div class="h3-actions">${Object.entries(SHOWROOMS).map(([key,t])=>`<button data-action="room-style-preset" data-value="${key}">${t.name}</button>`).join('')}</div><p>正在装扮哪间房</p><div class="h3-categories">${displayRooms(state,r).map(n=>`<button data-action="style-room" data-id="${n.id}" aria-pressed="${n.id===r.id}">${esc(n.name)}</button>`).join('')}</div><p>壁纸样式 · 只改这间房</p><div class="h3-categories">${Object.entries(WALL_STYLES).map(([id,label])=>`<button data-action="room-finish" data-part="wallStyle" data-value="${id}" aria-pressed="${(r.wallStyle||'solid')===id}">${label}</button>`).join('')}</div><p>地板样式</p><div class="h3-categories">${Object.entries(FLOOR_STYLES).map(([id,label])=>`<button data-action="room-finish" data-part="floorStyle" data-value="${id}" aria-pressed="${(r.floorStyle||'original')===id}">${label}</button>`).join('')}</div>`;
   if(panel==='room-style')sheet+=`<p>原包风格 · 只更新配色和墙地面</p><div class="h3-actions">${Object.entries(SHOWROOMS).map(([key,t])=>`<button data-action="room-style-preset" data-value="${key}">${t.name}</button>`).join('')}</div><p>房间配色（墙面、边框和地板）</p><div class="h3-actions">${['奶油紫','草莓奶','鼠尾草','云朵蓝'].map((label,i)=>`<button data-action="house-theme" data-value="${i}">${label}</button>`).join('')}</div>${[['trim','边框与底座'],['floor','地板']].map(([part,label])=>`<p>${label}</p><div class="h3-swatches">${PALETTE.map(c=>`<button aria-label="${label} ${c}" style="background:${c}" data-action="house-color" data-part="${part}" data-value="${c}"></button>`).join('')}</div>`).join('')}`;
   if(panel==='quality')sheet=`<header><h2>画质与耗电</h2><button data-action="close">×</button></header><p>家具风格</p><div class="h3-actions">${[['original','原始'],['retro','复古']].map(([id,label])=>`<button data-action="furniture-style" data-value="${id}" aria-pressed="${furnitureStyle===id}">${label}</button>`).join('')}</div><p>复古：清晰色块、简化明暗。只影响这台设备，自动记住选择。</p>${furnitureStyle==='retro'?`<div class="h3-actions"><button data-action="furniture-outline" aria-pressed="${furnitureOutlineEnabled}">家具描边：${furnitureOutlineEnabled?'开':'关'}</button></div><p>关闭描边更省电，保留家具配色与白色反光。</p>`:''}<div class="h3-actions">${Object.entries(qualities).map(([id,q])=>`<button data-action="quality" data-value="${id}" aria-pressed="${quality===id}">${q.label} · ${q.ratio}×</button>`).join('')}</div><p>${quality==='eco'?'低分辨率，关闭阴影与水母动画；静止时停止绘制。':quality==='balanced'?'标准分辨率，柔和阴影与轻微水母动画，最高 30 帧。':'高分辨率，保留阴影和动画，耗电相对较高。'}</p><p>当前绘制尺寸 ${Math.floor(size.w*renderer.getPixelRatio())} × ${Math.floor(size.h*renderer.getPixelRatio())}。所有档位在页面隐藏时停止绘制。</p>`;
-  if(panel==='chibi')sheet=`<header><h2>陪小人待一会儿</h2><button data-action="close">×</button></header><div class="h3-actions"><button data-action="chibi-view">蹲下看小人</button><button data-action="room-view">看全屋</button></div><div class="h3-actions" style="margin-top:10px">${motions.filter(([id])=>!visitorSeat?.bed||id==='sleep').map(([id,label])=>`<button data-action="chibi-motion" data-value="${id}" aria-pressed="${visitorMotion===id}">${visitorSeat&&id==='idle'?'坐好':visitorSeat?.bed&&id==='sleep'?'睡一会儿':visitorSeat&&id==='sleep'?'打瞌睡':label}</button>`).join('')}${visitorSeat?'<button data-action="chibi-stand">起身</button>':''}${visitorActivity?'<button data-action="chibi-game-stop">休息一下</button>':''}${heldPlush?'<button data-action="plush-put-back">放回原位</button>':''}</div><p>点床、座椅、绿植或设备，就能选择它的互动。</p><p>${resident.visible?'小手只轻轻挥，不会拉长。':'房间没有足够空地，请先收起一件落地家具。'}</p>`;
+  if(panel==='chibi')sheet=`<header><h2>陪小人待一会儿</h2><button data-action="close">×</button></header><div class="h3-actions"><button data-action="chibi-view">蹲下看小人</button><button data-action="room-view">看全屋</button></div><div class="h3-actions" style="margin-top:10px">${motions.filter(([id])=>!visitorSeat?.bed||id==='sleep').map(([id,label])=>`<button data-action="chibi-motion" data-value="${id}" aria-pressed="${visitorMotion===id}">${visitorSeat&&id==='idle'?'坐好':visitorSeat?.bed&&id==='sleep'?'睡一会儿':visitorSeat&&id==='sleep'?'打瞌睡':label}</button>`).join('')}${visitorSeat?'<button data-action="chibi-stand">起身</button>':''}${visitorActivity||kitchenTask?'<button data-action="chibi-game-stop">休息一下</button>':''}${heldPlush?'<button data-action="plush-put-back">放回原位</button>':''}</div><p>点床、座椅、绿植或设备，就能选择它的互动。</p><p>${resident.visible?'小手只轻轻挥，不会拉长。':'房间没有足够空地，请先收起一件落地家具。'}</p>`;
   if(panel==='furniture'&&catalogMode==='room'&&category==='kitchen')sheet=sheet.replace('<div class="h3-assets">','<div class="h3-actions"><button data-action="dining-preset">摆好餐桌和两张餐椅</button></div><div class="h3-assets">');
   if(panel==='furniture'&&catalogMode==='room'&&category==='gaming')sheet=sheet.replace('<div class="h3-assets">',`<p>摆好一套（每件仍能单独移动）</p><div class="h3-actions">${Object.entries(GAMING_ACTIONS).map(([id,label])=>`<button data-action="gaming-preset" data-kind="${id}">${label}套装</button>`).join('')}</div><div class="h3-assets">`);
   if(panel==='chibi')sheet+=`<p>点空地走过去；门会在靠近时打开。</p><div class="h3-actions">${doorLinks()}</div>`;
@@ -389,9 +431,16 @@ export async function mountHomeEditor(host,{assetBase,initialState,onChange,onBa
   if(d.action==='dining-preset'){commit(()=>{const items=placeDiningPreset(placementRoom(),catalog);if(current().items.length+items.length>100)throw Error('每间房最多保存 100 件家具');current().items.push(...items);panel=null;selected=null;message='餐桌椅摆好啦，点餐桌或餐椅就能吃饭';});return;}
   if(d.action==='fridge-toggle'){const i=d.id?placementRoom().items.find(i=>i.id===d.id):item(),obj=objects.find(o=>o.userData.itemId===i?.id);if(!obj||asset(i.assetId)?.appliance!=='fridge')return;const why=kitchenEffects.isOpen(i.id)?'':fridgeOpenError(i,placementRoom(),catalog,resident.visible?resident.position.toArray():null);if(why){notify(why,true);return;}kitchenEffects.toggle(obj);dirty=true;wake();renderUI();return;}
   if(d.action==='gaming-preset'){commit(()=>{const items=placeGamingPreset(d.kind,placementRoom(),catalog);if(current().items.length+items.length>100)throw Error('每间房最多保存 100 件家具');current().items.push(...items);panel=null;selected=null;message='设备和座位摆好啦，点设备就能开始玩啦';});return;}
+  if(d.action==='chibi-kitchen'&&visitor){
+   stopWalking();putPlushBack();visitorActivity=null;visitorPlant=null;visitorSeat=null;gamingEffects.clear();kitchenEffects.updateMeal(null,0);placeVisitor();
+   const start=[resident.position.x+current().x*ROOM_STEP.x,resident.position.z+current().z*ROOM_STEP.z];
+   const task=planKitchenAction(state,current(),catalog,d.id,start,headWidth);
+   if(task.reason){notify(task.reason,true);return;}
+   edit=false;overview=false;selected=null;panel=null;kitchenTask=task;kitchenLeg(task,task.source,'approach');message='这就去'+({coffee:'做咖啡',wash:'取盘子洗碗',cook:'煮饭'}[task.kind]);updateSelection();renderUI();return;
+  }
   if(d.action==='chibi-game'&&visitor){const next=activities().find(a=>a.itemId===d.id&&a.kind===d.kind&&(a.stationId||'')===(d.station||''));if(!next||next.reason){notify(next?.reason||'设备不在这里了',true);return;}stopWalking();visitorLocation=null;visitorPlant=null;visitorActivity=next;visitorSeat=next.seat;visitorMotion=next.kind;if(next.kind==='rhythm'&&camera.zoom>1.8){const offset=camera.position.clone().sub(controls.target);controls.target.fromArray(next.position).add(new THREE.Vector3(0,1.6,0));camera.position.copy(controls.target).add(offset);camera.zoom=1.8;camera.updateProjectionMatrix();controls.update();}visitorStart=elapsed;visitorUntil=elapsed+12;edit=false;overview=false;selected=null;panel=null;placeVisitor();animateVisitor(reducedMotion?1:0);message=next.label+'中 · 在小人面板可随时休息';dirty=true;wake();renderUI();return;}
-  if(d.action==='chibi-game-stop'){visitorActivity=null;gamingEffects.clear();kitchenEffects.updateMeal(null,0);visitorMotion='idle';visitorUntil=0;animateVisitor(0);dirty=true;wake();renderUI();return;}
-  if(['chibi-water','chibi-sit','chibi-stand','chibi-motion'].includes(d.action)){visitorActivity=null;gamingEffects.clear();kitchenEffects.updateMeal(null,0);}
+  if(d.action==='chibi-game-stop'){stopWalking();visitorActivity=null;gamingEffects.clear();kitchenEffects.updateMeal(null,0);visitorMotion='idle';visitorUntil=0;animateVisitor(0);dirty=true;wake();renderUI();return;}
+  if(['chibi-water','chibi-sit','chibi-stand','chibi-motion'].includes(d.action)){stopWalking();visitorActivity=null;gamingEffects.clear();kitchenEffects.updateMeal(null,0);}
   if(d.action==='wall-view'){wallView=d.value;try{localStorage.setItem('sully-home3d-wall-view',wallView)}catch{}rebuild();renderUI();return;}
   if(d.action==='boundary-edge'){boundaryEdge=d.value;renderUI();return;}
   if(d.action==='boundary-kind'){editBoundary({kind:d.value});return;}
@@ -412,7 +461,7 @@ export async function mountHomeEditor(host,{assetBase,initialState,onChange,onBa
    offset.y=0;if(offset.lengthSq()<.001)offset.set(0,0,1);offset.normalize().multiplyScalar(distance);
    // Look slightly down at held toys and sleeping faces instead of hiding them
    // behind a nearby table or the bed's footboard. Orbit remains freely movable.
-   offset.y=distance*(visitorSeat?.bed?.75:heldPlush?.55:.045);
+   offset.y=distance*(kitchenTask?.stage==='work'?.8:visitorSeat?.bed?.75:heldPlush?.55:.045);
    const jumping=visitorActivity?.kind==='rhythm';controls.target.copy(resident.position).add(new THREE.Vector3(0,jumping?1.6:.85,0));camera.position.copy(controls.target).add(offset);camera.zoom=jumping?1.8:2.4;
    camera.updateProjectionMatrix();controls.update();if(!jumping){focusResident();return;}panel=null;dirty=true;wake();renderUI();return;
   }
@@ -499,7 +548,7 @@ export async function mountHomeEditor(host,{assetBase,initialState,onChange,onBa
  actionOrbit.addEventListener('click',action,{signal:abort.signal});
  ui.addEventListener('change',e=>{const input=e.target;if(input.matches?.('[data-material-color]')){const i=item(),name=input.dataset.materialColor;if(i&&i.materialColors?.[name]!==input.value&&validFurnitureColor(input.value)&&asset(i.assetId).colorParts?.some(p=>p.material===name)){const color=input.value;commit(()=>{const target=selectedOwner().items.find(v=>v.id===selected);target.materialColors={...target.materialColors,[name]:color};});}return;}if(input.matches?.('[data-catalog-category]')){if(input.value==='all'||input.value in USE_CATEGORIES){category=input.value;renderUI();}return;}if(!input.matches?.('[data-furniture-color]')||!validFurnitureColor(input.value)||!item()||item().color===input.value)return;const color=input.value;commit(()=>{selectedOwner().items.find(i=>i.id===selected).color=color;});},{signal:abort.signal});
  function closeInteraction(){interaction=null;actionOrbit.hidden=true;actionOrbit.replaceChildren();}
- function interactionOptions(id){return furnitureInteractions(current(),catalog,id,{activities:activities(),seat:visitorSeat,held:heldPlush,active:visitorActivity,fridgeOpen:kitchenEffects.isOpen(id)});}
+ function interactionOptions(id){return furnitureInteractions(current(),catalog,id,{activities:activities(),seat:visitorSeat,held:heldPlush,active:visitorActivity||kitchenTask,fridgeOpen:kitchenEffects.isOpen(id)});}
  function openInteraction(id){
   if(interaction?.itemId===id){closeInteraction();return;}
   closeInteraction();const owner=state.rooms.find(r=>r.items.some(i=>i.id===id&&!i.stored));if(!owner)return;
@@ -542,7 +591,7 @@ export async function mountHomeEditor(host,{assetBase,initialState,onChange,onBa
   actionOrbit.hidden=false;actionOrbit.setAttribute('role','group');actionOrbit.setAttribute('aria-label',name+'的动作');
   const isBed=interaction.options.some(a=>a.action==='chibi-bed'),isSeat=interaction.options.some(a=>a.action==='chibi-sit');
   const heading=isBed?(interaction.options.filter(a=>a.action==='chibi-bed').length>1?'想睡在哪一边？':'躺下来休息吧'):isSeat?'在这里歇一会儿':'想和它做点什么？',hint=isBed?'选个舒服的位置，躺下来吧':isSeat?'挑个座位，慢慢待着':'点一个动作，让孩子来试试';
-  actionOrbit.innerHTML=`<div class="h3-interaction-glow"></div><svg class="h3-interaction-arc" aria-hidden="true"><path/></svg><button class="h3-interaction-close" data-action="interaction-close" aria-label="关闭家具动作">×</button><div class="h3-interaction-caption">${interactionIcon('jelly')}<strong>${heading}</strong><span>${hint}</span><small>${esc(name)}</small></div>${interaction.shown.map((a,j)=>`<button class="h3-interaction-choice" style="--order:${j}" data-action="${a.action}" data-id="${esc(a.id)}" ${a.seat?`data-seat="${esc(a.seat)}"`:''} ${a.kind?`data-kind="${a.kind}" data-station="${esc(a.station)}"`:''} ${a.reason?`aria-disabled="true" data-blocked="${esc(a.reason)}"`:''} title="${esc(a.reason||a.label)}" aria-label="${esc(a.label+(a.reason?'：'+a.reason:''))}">${actionIcon(a.action)}<span>${esc(a.label)}</span>${a.reason?'<small>查看条件</small>':''}<i aria-hidden="true">✦</i></button>`).join('')}${pages>1?`<button class="h3-interaction-more" data-action="interaction-more">更多行动 · ${interaction.page+1}/${pages}</button>`:''}`;
+  actionOrbit.innerHTML=`<div class="h3-interaction-glow"></div><svg class="h3-interaction-arc" aria-hidden="true"><path/></svg><button class="h3-interaction-close" data-action="interaction-close" aria-label="关闭家具动作">×</button><div class="h3-interaction-caption">${interactionIcon('jelly')}<strong>${heading}</strong><span>${hint}</span><small>${esc(name)}</small></div>${interaction.shown.map((a,j)=>`<button class="h3-interaction-choice" style="--order:${j}" data-action="${a.action}" data-id="${esc(a.id)}" ${a.seat?`data-seat="${esc(a.seat)}"`:''} ${a.kind?`data-kind="${a.kind}" data-station="${esc(a.station)}"`:''} ${a.reason?`aria-disabled="true" data-blocked="${esc(a.reason)}"`:''} title="${esc(a.reason||a.label)}" aria-label="${esc(a.label+(a.reason?'：'+a.reason:''))}">${actionIcon(a.action,a.kind)}<span>${esc(a.label)}</span>${a.reason?'<small>查看条件</small>':''}<i aria-hidden="true">✦</i></button>`).join('')}${pages>1?`<button class="h3-interaction-more" data-action="interaction-more">更多行动 · ${interaction.page+1}/${pages}</button>`:''}`;
 
   positionInteraction();
  }
@@ -584,7 +633,7 @@ export async function mountHomeEditor(host,{assetBase,initialState,onChange,onBa
  }
  function focusResident(){
   if(!visitor||!resident.visible||overview)return;
-  stopWalking();resident.updateWorldMatrix(true,true);
+  if(!kitchenTask)stopWalking();resident.updateWorldMatrix(true,true);
   const box=new THREE.Box3();resident.traverse(o=>{if(o.isMesh&&isVisible(o))box.union(new THREE.Box3().setFromObject(o));});if(box.isEmpty())return;
   const center=box.getCenter(new THREE.Vector3()),offset=camera.position.clone().sub(controls.target);
   controls.target.copy(center);camera.position.copy(center).add(offset);controls.update();camera.updateMatrixWorld(true);
@@ -666,14 +715,14 @@ export async function mountHomeEditor(host,{assetBase,initialState,onChange,onBa
    const applianceChanged=kitchenEffects.updateDoors(manual?0:dt,reducedMotion);if(applianceChanged){dirty=true;windowDaylight.invalidate();renderer.shadowMap.needsUpdate=true;}
    const breathing=animated.length&&!overview&&!reducedMotion&&qualities[quality].motion;
    if(breathing)for(const a of animated)a.o.position.y=a.y+Math.sin(elapsed*a.speed+a.phase)*a.amplitude;
-   const acting=visitor&&resident.visible&&!edit&&(!!walking||!reducedMotion&&(qualities[quality].motion||elapsed<visitorUntil));
+   const acting=visitor&&resident.visible&&!edit&&(!!walking||!!kitchenTask||!reducedMotion&&(qualities[quality].motion||elapsed<visitorUntil));
    if(acting)animateVisitor(elapsed-visitorStart);
    settling=controls.update();if(dirty||breathing||acting||drag){renderScene();renderedFrames++;dirty=false;lastDraw=now}
   }
-  inTick=false;if(settling||dirty||drag||kitchenEffects.moving||animated.length&&!overview&&!reducedMotion&&qualities[quality].motion||visitor&&resident.visible&&!edit&&(!!walking||!reducedMotion&&(qualities[quality].motion||elapsed<visitorUntil)))wake();
+  inTick=false;if(settling||dirty||drag||kitchenEffects.moving||animated.length&&!overview&&!reducedMotion&&qualities[quality].motion||visitor&&resident.visible&&!edit&&(!!walking||!!kitchenTask||!reducedMotion&&(qualities[quality].motion||elapsed<visitorUntil)))wake();
  }
  document.addEventListener('visibilitychange',()=>{if(document.hidden){cancelAnimationFrame(frame);frame=0}else{dirty=true;lastTick=performance.now();wake()}},{signal:abort.signal});
- function dispose(){if(destroyed&&!kit)return;gamingEffects.clear();visitor?.dispose();visitor=null;watering.dispose();kitchenEffects.dispose();finishes.dispose();windowDaylight.dispose();resident.clear();destroyed=true;abort.abort();observer.disconnect();cancelAnimationFrame(frame);controls.dispose();clearContent();for(const m of materialCache.values())m.dispose();materialCache.clear();kit?.scene.traverse(o=>{if(o.isMesh){o.geometry.dispose();for(const m of Array.isArray(o.material)?o.material:[o.material]){for(const value of Object.values(m))if(value?.isTexture)value.dispose();m.dispose()}}});distantGeometry.dispose();for(const m of distantMaterials.values())m.dispose();distantMaterials.clear();key.shadow.dispose();grid.geometry.dispose();grid.material.dispose();footprint.geometry.dispose();footprint.material.dispose();for(const material of outlineMaterials)material.dispose();ground.geometry.dispose();ground.material.dispose();selection.geometry.dispose();selection.material.dispose();furnitureHalo.dispose();renderer.dispose();host.innerHTML='';host.classList.remove('home3d');}
+ function dispose(){if(destroyed&&!kit)return;gamingEffects.clear();visitor?.dispose();visitor=null;watering.dispose();kitchenEffects.dispose();kitchenWork.dispose();finishes.dispose();windowDaylight.dispose();resident.clear();destroyed=true;abort.abort();observer.disconnect();cancelAnimationFrame(frame);controls.dispose();clearContent();for(const m of materialCache.values())m.dispose();materialCache.clear();kit?.scene.traverse(o=>{if(o.isMesh){o.geometry.dispose();for(const m of Array.isArray(o.material)?o.material:[o.material]){for(const value of Object.values(m))if(value?.isTexture)value.dispose();m.dispose()}}});distantGeometry.dispose();for(const m of distantMaterials.values())m.dispose();distantMaterials.clear();key.shadow.dispose();grid.geometry.dispose();grid.material.dispose();footprint.geometry.dispose();footprint.material.dispose();for(const material of outlineMaterials)material.dispose();ground.geometry.dispose();ground.material.dispose();selection.geometry.dispose();selection.material.dispose();furnitureHalo.dispose();renderer.dispose();host.innerHTML='';host.classList.remove('home3d');}
  signal?.addEventListener('abort',dispose,{once:true});
  try{
   [catalog,kit]=await Promise.all([fetch(new URL('catalog.json',assetBase),{signal:abort.signal,cache:'no-cache'}).then(r=>{if(!r.ok)throw Error('家具目录加载失败');return r.json()}),fetch(new URL('kit.glb',assetBase),{signal:abort.signal}).then(r=>{if(!r.ok)throw Error('家具模型加载失败');return r.arrayBuffer()}).then(data=>new GLTFLoader().parseAsync(data,assetBase))]);
@@ -684,7 +733,10 @@ export async function mountHomeEditor(host,{assetBase,initialState,onChange,onBa
    const data=await fetch(new URL(a.url+(a.revision?'?v='+encodeURIComponent(a.revision):''),assetBase),{signal:abort.signal}).then(r=>{if(!r.ok)throw Error('家具模型加载失败：'+a.name);return r.arrayBuffer()});
    const loaded=await new GLTFLoader().parseAsync(data,assetBase),root=new THREE.Group();root.userData.assetId=a.id;
    const model=loaded.scene,bounds=new THREE.Box3().setFromObject(model),scale=a.size[0]/bounds.getSize(new THREE.Vector3()).x;
-   model.scale.multiplyScalar(scale);bounds.setFromObject(model);const center=bounds.getCenter(new THREE.Vector3());model.position.sub(new THREE.Vector3(center.x,bounds.min.y,center.z));root.add(model);kit.scene.add(root);
+   model.scale.multiplyScalar(scale);bounds.setFromObject(model);const center=bounds.getCenter(new THREE.Vector3());model.position.sub(new THREE.Vector3(center.x,bounds.min.y,center.z));
+   // Flat rugs have no thickness: keep their single face above the floor finish.
+   if(a.surface==='rug'&&bounds.max.y-bounds.min.y<.001)model.position.y+=.026;
+   root.add(model);kit.scene.add(root);
   }));
   for(const result of externalLoads)if(result.status==='rejected')throw result.reason;
   if(destroyed){dispose();return {dispose}}
@@ -701,5 +753,5 @@ export async function mountHomeEditor(host,{assetBase,initialState,onChange,onBa
   for(const a of catalog.filter(a=>a.id!=='shell')){const obj=templates.get(a.id)?.clone(true);if(!obj)continue;ts.add(obj);const b=new THREE.Box3().setFromObject(obj),c=b.getCenter(new THREE.Vector3()),s=b.getSize(new THREE.Vector3());const h=Math.max(s.x,s.y,s.z)*1.3+.1;tc.left=-h*.64;tc.right=h*.64;tc.top=h/2;tc.bottom=-h/2;tc.position.copy(c).add(new THREE.Vector3(6,5,8));tc.lookAt(c);tc.updateProjectionMatrix();renderer.setRenderTarget(target);renderer.render(ts,tc);renderer.readRenderTargetPixels(target,0,0,128,100,pixels);const image=ctx.createImageData(128,100);for(let y=0;y<100;y++)image.data.set(pixels.subarray((99-y)*512,(100-y)*512),y*512);ctx.putImageData(image,0,0);thumbs.set(a.id,canvas.toDataURL());ts.remove(obj)}
   renderer.setRenderTarget(null);target.dispose();dirty=true;wake();renderUI();
  }catch(e){if(destroyed)return {dispose};dispose();host.innerHTML=`<div class="h3-loading"><span>${esc(e.message)}</span><button>重新加载</button></div>`;host.querySelector('button').onclick=()=>location.reload();throw e}
- return {dispose,setSuspended(value){suspended=value;if(value){cancelAnimationFrame(frame);frame=0;}else{dirty=true;lastTick=performance.now();wake();}},setVisitor,getState:()=>clone(state),inspect:()=>({ready:true,furnitureStyle,furnitureOutlineEnabled,furnitureOutline:furnitureHalo.inspect(),kitchen:kitchenEffects.inspect(),windowDaylight:windowDaylight.inspect(),lighting:{shadows:renderer.shadowMap.enabled,shadowSize:key.shadow.mapSize.x,ambient:hemi.intensity,key:key.intensity,fill:fill.intensity},phoneBudget:phone?PHONE_BUDGET:null,furnitureCounts:Object.fromEntries(furnishingCounts(state,catalog)),wallView,roomScope,visibleRoomIds:[...visibleRoomIds],roomGroups:roomGroups(state,catalog).map(rs=>rs.map(r=>r.id)),walking:!!walking,headWidth,visitorLocation,doorStates:doors.map(d=>({kind:d.userData.doorKind,rotation:d.userData.doorLeaf.rotation.y,x:d.userData.doorLeaf.position.x})),rotationPreview:rotationPreview?{...rotationPreview}:null,interaction:interaction?{itemId:interaction.itemId,page:interaction.page,actions:interaction.options.map(a=>({label:a.label,action:a.action,reason:a.reason}))}:null,chibiVisible:resident.visible,chibiMotion:visitorMotion,chibiPosture:visitorSeat?.bed?'lying':visitorSeat?'seated':'standing',chibiSeat:visitorSeat,chibiHeldPlush:heldPlush,chibiWatering:visitorPlant,chibiActivity:visitorActivity,wateringVisible:watering.root.visible,chibiRotation:resident.rotation.y,chibiPosition:resident.position.toArray(),outlineVisible:!!outlineGroup,gridVisible:grid.visible,footprintVisible:footprint.visible,placementValid:drag?.valid??null,quality,pixelRatio:renderer.getPixelRatio(),cameraPosition:camera.position.toArray(),cameraTarget:controls.target.toArray(),zoom:camera.zoom,undoCount:undo.length,redoCount:redo.length,orbitMode,overview,edit,selected,rooms:state.rooms,activeRoomId:state.activeRoomId,panel,message,saved,assets:catalog.map(a=>a.id),drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles,geometries:renderer.info.memory.geometries,textures:renderer.info.memory.textures,materials:materialCache.size,finishMaterials:finishes.count,renderedFrames,frameCap:1000/frameInterval,detailRooms:detailedRoomIds.size}),advanceTime:ms=>{manual=true;elapsed+=ms/1000;if(kitchenEffects.updateDoors(ms/1000,reducedMotion)){windowDaylight.invalidate();renderer.shadowMap.needsUpdate=true;}if(visitor&&resident.visible&&!edit)animateVisitor(reducedMotion?1:elapsed-visitorStart);for(const a of animated)a.o.position.y=a.y+Math.sin(elapsed*a.speed+a.phase)*a.amplitude;renderScene()},select,projectPoint:position=>{const p=new THREE.Vector3(...position).project(camera);return {x:(p.x+1)*size.w/2,y:(1-p.y)*size.h/2}},projectItem:id=>{const o=objects.find(o=>o.userData.itemId===id);if(!o)return null;const p=new THREE.Box3().setFromObject(o).getCenter(new THREE.Vector3()).project(camera);return {x:(p.x+1)*size.w/2,y:(1-p.y)*size.h/2}}};
+ return {dispose,setSuspended(value){suspended=value;if(value){cancelAnimationFrame(frame);frame=0;}else{dirty=true;lastTick=performance.now();wake();}},setVisitor,getState:()=>clone(state),inspect:()=>({ready:true,furnitureStyle,furnitureOutlineEnabled,furnitureOutline:furnitureHalo.inspect(),kitchen:kitchenEffects.inspect(),windowDaylight:windowDaylight.inspect(),lighting:{shadows:renderer.shadowMap.enabled,shadowSize:key.shadow.mapSize.x,ambient:hemi.intensity,key:key.intensity,fill:fill.intensity},phoneBudget:phone?PHONE_BUDGET:null,furnitureCounts:Object.fromEntries(furnishingCounts(state,catalog)),wallView,roomScope,visibleRoomIds:[...visibleRoomIds],roomGroups:roomGroups(state,catalog).map(rs=>rs.map(r=>r.id)),walking:!!walking,headWidth,visitorLocation,doorStates:doors.map(d=>({kind:d.userData.doorKind,rotation:d.userData.doorLeaf.rotation.y,x:d.userData.doorLeaf.position.x})),rotationPreview:rotationPreview?{...rotationPreview}:null,interaction:interaction?{itemId:interaction.itemId,page:interaction.page,actions:interaction.options.map(a=>({label:a.label,action:a.action,reason:a.reason}))}:null,chibiVisible:resident.visible,chibiMotion:visitorMotion,chibiPosture:visitorSeat?.bed?'lying':visitorSeat?'seated':'standing',chibiSeat:visitorSeat,chibiHeldPlush:heldPlush,chibiWatering:visitorPlant,chibiActivity:visitorActivity,kitchenTask:kitchenTask?{kind:kitchenTask.kind,stage:kitchenTask.stage,carrying:!!kitchenTask.carrying,itemId:kitchenTask.itemId,sinkId:kitchenTask.sink?.id}:null,kitchenPropsVisible:kitchenWork.root.visible,wateringVisible:watering.root.visible,chibiRotation:resident.rotation.y,chibiPosition:resident.position.toArray(),outlineVisible:!!outlineGroup,gridVisible:grid.visible,footprintVisible:footprint.visible,placementValid:drag?.valid??null,quality,pixelRatio:renderer.getPixelRatio(),cameraPosition:camera.position.toArray(),cameraTarget:controls.target.toArray(),zoom:camera.zoom,undoCount:undo.length,redoCount:redo.length,orbitMode,overview,edit,selected,rooms:state.rooms,activeRoomId:state.activeRoomId,panel,message,saved,assets:catalog.map(a=>a.id),drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles,geometries:renderer.info.memory.geometries,textures:renderer.info.memory.textures,materials:materialCache.size,finishMaterials:finishes.count,renderedFrames,frameCap:1000/frameInterval,detailRooms:detailedRoomIds.size}),advanceTime:ms=>{manual=true;elapsed+=ms/1000;if(kitchenEffects.updateDoors(ms/1000,reducedMotion)){windowDaylight.invalidate();renderer.shadowMap.needsUpdate=true;}if(visitor&&resident.visible&&!edit)animateVisitor(reducedMotion?1:elapsed-visitorStart);for(const a of animated)a.o.position.y=a.y+Math.sin(elapsed*a.speed+a.phase)*a.amplitude;renderScene()},select,projectPoint:position=>{const p=new THREE.Vector3(...position).project(camera);return {x:(p.x+1)*size.w/2,y:(1-p.y)*size.h/2}},projectItem:id=>{const o=objects.find(o=>o.userData.itemId===id);if(!o)return null;const p=new THREE.Box3().setFromObject(o).getCenter(new THREE.Vector3()).project(camera);return {x:(p.x+1)*size.w/2,y:(1-p.y)*size.h/2}}};
 }

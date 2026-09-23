@@ -1,7 +1,7 @@
 import * as T from 'three';
 import {BLANK_SCALE} from './blankBody';
 import type {bindBlankBody} from './blankRig';
-import type {Motion,Posture} from './types';
+import type {Motion,Posture,ActivityPose} from './types';
 
 // Small FK poses in the rig's bind axes. Bone lengths and mesh data never change.
 // Seat contact is normalized here, rather than adding offsets to every furniture.
@@ -10,7 +10,7 @@ export function createBlankMotion(rig:ReturnType<typeof bindBlankBody>,body:T.Gr
  const targetRotations=Object.values(targets),euler=new T.Euler(),position=new T.Vector3(),rotation=new T.Quaternion();
  let previous:number|undefined,previousMotion:Motion='idle',previousPosture:Posture='standing';
  const angle=(name:string,x=0,y=0,z=0)=>targets[name].setFromEuler(euler.set(x,y,z));
- return (time:number,motion:Motion,posture:Posture)=>{
+ return (time:number,motion:Motion,posture:Posture,activity?:ActivityPose)=>{
   time=Number.isFinite(time)?Math.max(0,time):0;
   const seated=posture==='seated'||motion==='sit',lying=posture==='lying';
   const wave=['wave','wave-calm','wave-cute'].includes(motion),cute=motion==='wave-cute';
@@ -45,6 +45,16 @@ export function createBlankMotion(rig:ReturnType<typeof bindBlankBody>,body:T.Gr
     angle(`${prefix}_foot`,-Math.max(0,-step)*.10);
     angle(`${prefix}_upperArm`,-step*.18,0,-side*1.25);
    }
+  }
+  if(activity&&['coffee','wash','cook'].includes(activity.kind)&&!lying){
+   const work=!activity.carrying,cycle=work?Math.sin(time*(activity.kind==='wash'?7:3)):0;
+   for(const [side,prefix]of [[1,'L'],[-1,'R']] as const){
+    angle(`${prefix}_upperArm`,-.18,-side*.48,-side*.74);
+    angle(`${prefix}_forearm`,0,-side*(1.55+(prefix==='L'?cycle*.13:0)),-side*.12);
+    angle(`${prefix}_hand`,work&&prefix==='L'?cycle*.10:0,0,side*.08);
+    rig.setHandCurl(prefix,.38,targets);
+   }
+   angle('head',.10,work?Math.sin(time)*.025:0);
   }
   if(seated)position.y=(-.38*rig.bodyHeight+.05)*BLANK_SCALE;
   if(wave&&!lying){

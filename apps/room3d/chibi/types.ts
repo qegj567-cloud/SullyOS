@@ -20,7 +20,7 @@ export function selectedHairAssets(state:unknown):Record<string,string>{
  return Object.fromEntries(['fronthair','earhair','back1','back2'].flatMap(key=>typeof selected?.[key]==='string'?[[key,selected[key] as string]]:[]));
 }
 export const defaultHairLayer:HairLayer={length:1,width:1,offsetY:0,distance:0,offsetX:0,offsetZ:0,puff:.16};
-export type Motion = 'idle' | 'sit' | 'wave' | 'wave-cute' | 'wave-calm' | 'sleep' | 'angry' | 'walk' | 'dance' | 'water' | 'computer' | 'stream' | 'race' | 'rhythm' | 'eat' | 'hug';
+export type Motion = 'idle' | 'sit' | 'wave' | 'wave-cute' | 'wave-calm' | 'sleep' | 'angry' | 'walk' | 'dance' | 'water' | 'computer' | 'stream' | 'race' | 'rhythm' | 'eat' | 'hug' | 'coffee' | 'wash' | 'cook';
 export type Posture = 'standing' | 'seated' | 'lying';
 
-export interface ActivityPose {hands:number[][];kind:string;rhythm?:{offset:number[];hands:number[][];keys:string[]}[]}
+export interface ActivityPose {hands:number[][];kind:string;carrying?:boolean;rhythm?:{offset:number[];hands:number[][];keys:string[]}[]}
