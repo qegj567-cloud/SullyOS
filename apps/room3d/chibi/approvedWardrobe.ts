@@ -10,6 +10,7 @@ export function cleanApprovedWardrobe(value:unknown):ApprovedWardrobe{
  return result;
 }
 export const approvedPresets:Record<string,{label:string;items:ApprovedWardrobe}>={
+ original:{label:'初始卫衣搭配',items:{top:'original-hoodie',socks:'original-socks',shoes:'original-shoes'}},
  sailor:{label:'长袖水手服',items:{top:'sailor-long',bottom:'sailor-shorts',socks:'school-socks',shoes:'school-loafers'}},
  summer:{label:'短袖水手服',items:{top:'sailor-short',bottom:'sailor-skirt',socks:'school-socks',shoes:'school-loafers'}},
  cardigan:{label:'开衫搭配',items:{outer:'slouch-cardigan',bottom:'lower-straight',shoes:'shoe-sneakers'}},

@@ -1,0 +1,26 @@
+アイダートモーション & 呼吸モーション
+
+使用ボーン
+ アイダート：左/右目
+ 呼吸：上半身、上半身2、首、左/右肩P、左/右腕
+
+このMikuMikuDance向けモーションデータは、クリエイティブコモンズ0 へ提供されています。
+あなたはこのデータを許可を得ずに、どのような目的にでも利用することができます。
+さらなる情報は以下のサイトを参照してください。
+https://creativecommons.org/publicdomain/zero/1.0/deed.ja
+
+
+Eyedart motion & Breath motion
+
+Bones used
+ Eyedart: eye L/R
+ Breath: upper body, upper body 2, neck, shoulder L/Rp, arm L/R
+
+This MikuMikuDance motion data is licensed under the CC0 1.0 Universal.
+That's mean you could use this pack like you want and no copyright needed.
+Get more information here: 
+https://creativecommons.org/publicdomain/zero/1.0/
+
+
+Ver1.1 - 2021/03/12　アイダートの左右目ボーン回転量を調整、呼吸モーションを作り直し
+Ver1.0 - 2020/07/10

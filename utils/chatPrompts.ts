@@ -1115,12 +1115,12 @@ ${userProfile.name} 给你反馈时，别当成约束，当成信任——ta 在
         userProfile: UserProfile,
         emojis: Emoji[],
         processedExcludeIds?: Set<number>,
-        options?: { useVisionDescriptions?: boolean },
+        options?: { useVisionDescriptions?: boolean; contextHighWaterMark?: number },
     ) => {
         // Filter Logic
         // 新版上下文范围由 chatContextRange 先按「自适应/拉杆最大范围」取窗；
         // 这里再次校验统一边界，兼容只提供内存快照的入口。
-        let effectiveHistory = selectCharacterContextMessages(messages, char);
+        let effectiveHistory = selectCharacterContextMessages(messages, char, options?.contextHighWaterMark);
         // Memory Palace: 过滤已被记忆宫殿处理过的消息（由向量记忆替代，节省 token）
         if (processedExcludeIds && processedExcludeIds.size > 0) {
             effectiveHistory = effectiveHistory.filter(m => !processedExcludeIds.has(m.id));

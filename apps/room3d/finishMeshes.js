@@ -3,6 +3,7 @@ import {RoundedBoxGeometry} from 'three/addons/geometries/RoundedBoxGeometry.js'
 import {ROOM_EDGES} from './building.js';
 import {wallVisible} from './topology.js';
 import {wallFinishPanels,floorFinishBounds} from './finishes.js';
+import {windowOpenings,subtractOpenings} from './windowOpenings.js';
 
 // Tiny mathematical patterns on shared standard materials: no image downloads,
 // textures, per-tile meshes, or animation. Coordinates are measured in room units.
@@ -48,7 +49,8 @@ export function createRoomFinishes(){
   materials.set(key,m);return m;
  }
  function mesh(g,mat,roomId){g.userData.owned=true;const m=new T.Mesh(g,mat);m.userData.roomId=roomId;m.receiveShadow=true;return m;}
- function panelGeometry(p){
+ function panelGeometry(p,holes=[]){
+  if(holes.length&&!p.arch)return new T.ShapeGeometry(subtractOpenings(p,holes).map(q=>{const s=new T.Shape();s.moveTo(q.lo,q.bottom);s.lineTo(q.hi,q.bottom);s.lineTo(q.hi,q.top);s.lineTo(q.lo,q.top);s.closePath();return s;}));
   const shape=new T.Shape();shape.moveTo(p.lo,p.top);shape.lineTo(p.lo,p.bottom);
   if(p.arch){const mid=(p.lo+p.hi)/2,w=(p.hi-p.lo)/2;for(let i=0;i<=24;i++){const a=Math.PI-i*Math.PI/24;shape.lineTo(mid+Math.cos(a)*w,p.bottom+Math.sin(a)*.24);}}
   else shape.lineTo(p.hi,p.bottom);
@@ -62,7 +64,8 @@ export function createRoomFinishes(){
    const floor=mesh(g,material('floor',room.floorStyle,room.floor||'#dfc7ad'),room.id);floor.rotation.x=-Math.PI/2;floor.position.y=.16;root.add(floor);
   }
   for(const p of wallFinishPanels(home,room,catalog)){
-   const e=ROOM_EDGES[p.edge],g=panelGeometry(p),pos=g.attributes.position,uv=g.attributes.uv;
+   const holes=windowOpenings(room,p.edge,catalog).map(o=>({...o,bottom:o.bottom-.15,top:o.top-.15}));
+   const e=ROOM_EDGES[p.edge],g=panelGeometry(p,holes),pos=g.attributes.position,uv=g.attributes.uv;
    const inward=-Math.sign(e.at),flip=e.axis==='z'?inward:-inward;
    // ShapeGeometry has physical XY UVs. Orient the plane inward; maintain the
    // same along-wall coordinates when flipped, so arch openings stay aligned.

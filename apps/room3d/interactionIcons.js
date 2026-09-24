@@ -1,4 +1,5 @@
 const paths={
+ mirror:'<ellipse cx="16" cy="12" rx="9" ry="10"/><path d="M16 22v6m-7 1h14M11 8l4-3m-4 9 8-8"/>',
  bed:'<path d="M4 18V7m24 11V7M4 14h24v11H4zm0 11v3m24-3v3M7 14V9h8v5m2 0V9h8v5"/>',
  seat:'<path d="M8 17V6q8-4 16 0v11M5 13v9h22v-9M8 22v6m16-6v6M8 17h16"/>',
  water:'<path d="M7 14h13v12H7zm13 2 6-4 3 3-9 8M7 16C0 11 1 22 7 22M11 14V9h8"/><path d="m25 23-1 3m5-4-1 3"/>',
@@ -19,4 +20,4 @@ const paths={
  quality:'<path d="m16 3 13 13-13 13L3 16z"/>',
 };
 export function interactionIcon(kind){return `<svg viewBox="0 0 32 32" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${paths[kind]||paths.jelly}</svg>`;}
-export function actionIcon(action,kind){if(action==='chibi-kitchen')return interactionIcon(kind==='coffee'?'rest':kind);return interactionIcon({'chibi-bed':'bed','chibi-sit':'seat','chibi-water':'water','chibi-game':'game','chibi-kitchen':'rest','chibi-hug':'hug','plush-put-back':'hug','fridge-toggle':'fridge','chibi-stand':'stand','chibi-game-stop':'rest'}[action]);}
+export function actionIcon(action,kind){if(action==='chibi-kitchen')return interactionIcon(kind==='coffee'?'rest':kind);return interactionIcon({'chibi-bath':'water','chibi-mirror':'mirror','chibi-bed':'bed','chibi-sit':'seat','chibi-water':'water','chibi-game':'game','chibi-kitchen':'rest','chibi-hug':'hug','plush-put-back':'hug','fridge-toggle':'fridge','chibi-stand':'stand','chibi-game-stop':'rest'}[action]);}

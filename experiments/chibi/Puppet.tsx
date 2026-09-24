@@ -1,18 +1,28 @@
-import React,{useEffect,useRef,useState} from 'react';
+import React,{useEffect,useMemo,useRef,useState} from 'react';
 import * as T from 'three';
 import {buildBody,loadBody} from './FbxBody';
-import {createWardrobePose,createWardrobeEntrance} from './wardrobePose';
-import {dressHoodie} from '../../apps/room3d/chibi/hoodieClothes';
-import {dressApprovedWardrobe} from '../../apps/room3d/chibi/approvedClothing';
+import {createWardrobePose} from './wardrobePose';
+import {prepareHoodie} from '../../apps/room3d/chibi/hoodieClothes';
+import {prepareApprovedWardrobe} from '../../apps/room3d/chibi/approvedClothing';
 import {BLANK_SCALE} from '../../apps/room3d/chibi/blankBody';
 import {NEW_BODY_HOME_PERCENT} from '../../apps/room3d/chibi/visitor';
 import type {HairSettings,Parts,Motion} from '../../apps/room3d/chibi/types';
+import type {LayeringReport} from '../../apps/room3d/chibi/garmentLayering';
 export type {Parts,Motion};
-export function Puppet({parts,yaw,motion,wire,playing,appearance='outfit',hair,focus='body',wardrobeStyle}:{focus?:'body'|'head';wardrobeStyle?:'cute'|'boy'|'normal';hair?:HairSettings;parts:Parts;yaw:number;motion:Motion;wire:boolean;playing:boolean;appearance?:'skin'|'hair'|'outfit'}){
+export function Puppet({parts,yaw,motion,wire,playing,appearance='outfit',hair,focus='body',wardrobeStyle,wardrobeReplay=0,onLayeringReport}:{onLayeringReport?:(report:LayeringReport|undefined)=>void;focus?:'body'|'head';wardrobeStyle?:HairSettings['wardrobeStyle'];wardrobeReplay?:number;hair?:HairSettings;parts:Parts;yaw:number;motion:Motion;wire:boolean;playing:boolean;appearance?:'skin'|'hair'|'outfit'}){
  const host=useRef<HTMLDivElement>(null),rig=useRef<ReturnType<typeof buildBody>>(),wake=useRef(()=>{});
+ type Outfit={attach():void;dispose():void;updatePose?():void;updateColors?:(value:HairSettings['wardrobeColors'])=>void;layeringReport?:LayeringReport};
+ const outfitRef=useRef<Outfit>();
+ const colorsRef=useRef(hair?.wardrobeColors);colorsRef.current=hair?.wardrobeColors;
+ const reportRef=useRef(onLayeringReport);reportRef.current=onLayeringReport;
+ // Body/hair resources and the animation clock survive every wardrobe edit.
+ const shapeKey=JSON.stringify(hair?{...hair,wardrobe:undefined,wardrobeFits:undefined,wardrobeColors:undefined,wardrobeLayering:undefined,wardrobeStyle:undefined,face:undefined}:null);
+ const shapeHair=useMemo(()=>hair?{...hair,wardrobe:undefined,wardrobeFits:undefined,wardrobeColors:undefined,wardrobeLayering:undefined,wardrobeStyle:undefined,face:undefined}:undefined,[shapeKey]);
+ const outfitKey=JSON.stringify([hair?.wardrobe,hair?.wardrobeFits,hair?.wardrobeLayering]);
+ const outfitSettings=useMemo(()=>({wardrobe:hair?.wardrobe,fits:hair?.wardrobeFits,layering:hair?.wardrobeLayering}),[outfitKey]);
  const controls=useRef({yaw,motion,wire,playing,focus});controls.current={yaw,motion,wire,playing,focus};
  const posing=useRef<{root:T.Group;sample:(t:number)=>void}>();
- const [source,setSource]=useState<T.Group>(),[error,setError]=useState(''),[dressing,setDressing]=useState(false);
+ const [source,setSource]=useState<T.Group>(),[body,setBody]=useState<ReturnType<typeof buildBody>>(),[error,setError]=useState(''),[dressing,setDressing]=useState(false);
  useEffect(()=>{let cancelled=false,loaded:T.Group|undefined;const release=()=>loaded?.traverse(o=>{if(o instanceof T.Mesh){o.geometry.dispose();for(const m of Array.isArray(o.material)?o.material:[o.material])m.dispose();}});loadBody().then(m=>{loaded=m;if(cancelled)release();else setSource(m);}).catch(e=>{if(!cancelled)setError(String(e));});return()=>{cancelled=true;release();};},[]);
  const scene=useRef<T.Scene>();
  useEffect(()=>{
@@ -32,7 +42,7 @@ export function Puppet({parts,yaw,motion,wire,playing,appearance='outfit',hair,f
   function draw(stamp:number){frame=0;if(disposed||document.hidden)return;const c=controls.current,r=rig.current,animate=c.playing&&!reduced.matches;
    const dt=previous?Math.min((stamp-previous)/1000,.05):0;previous=stamp;if(animate)time+=dt;
    if(dirty||stamp-lastDraw>=1000/30){
-    if(r){if(c.motion!==lastMotion){time=0;}if(posing.current?.root===r.root&&c.motion==='idle'){posing.current.sample(animate?time:2);}else if(r!==lastRig||c.motion!==lastMotion||animate){r.animate(time,c.motion);}r.root.rotation.y=c.yaw*Math.PI/180;r.root.traverse(o=>{if(o instanceof T.Mesh)for(const m of Array.isArray(o.material)?o.material:[o.material])m.wireframe=c.wire;});lastRig=r;lastMotion=c.motion;}
+    if(r){if(c.motion!==lastMotion){time=0;}if(posing.current?.root===r.root&&c.motion==='idle'){posing.current.sample(time);}else if(r!==lastRig||c.motion!==lastMotion||animate){r.animate(time,c.motion);}r.updateFace(time);r.root.rotation.y=c.yaw*Math.PI/180;outfitRef.current?.updatePose?.();r.root.traverse(o=>{if(o instanceof T.Mesh)for(const m of Array.isArray(o.material)?o.material:[o.material])m.wireframe=c.wire;});lastRig=r;lastMotion=c.motion;}
     const targetY=c.focus==='head'?(r?.rig? (r.root.updateMatrixWorld(true),r.rig.bones.head.getWorldPosition(new T.Vector3()).y+.25):1.9):1.18;
     const targetHalf=c.focus==='head'?Math.max(.61,.46/aspect):Math.max(1.48,1.22/aspect);
     const ease=reduced.matches?1:1-Math.exp(-Math.max(dt,1/60)*12);framing=T.MathUtils.lerp(framing,targetY,ease);viewHalf=T.MathUtils.lerp(viewHalf,targetHalf,ease);
@@ -46,18 +56,42 @@ export function Puppet({parts,yaw,motion,wire,playing,appearance='outfit',hair,f
   const visibility=()=>{previous=0;if(document.hidden){cancelAnimationFrame(frame);frame=0;}else schedule();};document.addEventListener('visibilitychange',visibility);
   return()=>{disposed=true;cancelAnimationFrame(frame);observer.disconnect();document.removeEventListener('visibilitychange',visibility);wake.current=()=>{};scene.current=undefined;floor.geometry.dispose();floor.material.dispose();renderer.dispose();renderer.domElement.remove();};
  },[]);
- useEffect(()=>{if(!source||!scene.current)return;let cancelled=false,next:ReturnType<typeof buildBody>|undefined,mixer:T.AnimationMixer|undefined;
+ useEffect(()=>{
+  if(!source||!scene.current)return;
+  let next:ReturnType<typeof buildBody>;
+  try{next=buildBody(source,parts,appearance,shapeHair);}catch(e){setError(String(e));return;}
+  if(next.rig)next.root.scale.setScalar(1.4/BLANK_SCALE*(NEW_BODY_HOME_PERCENT/100));
+  rig.current=next;setBody(next);scene.current.add(next.root);setError('');
+  // Expose identity alongside the existing frame counters for preview QA.
+  if(host.current)host.current.dataset.bodyId=next.root.uuid;
+  wake.current();
+  return()=>{outfitRef.current?.dispose();outfitRef.current=undefined;next.root.removeFromParent();next.resources.forEach(r=>r.dispose());if(rig.current===next)rig.current=undefined;};
+ },[source,parts,appearance,shapeHair]);
+ useEffect(()=>{
+  if(!body?.rig||!wardrobeStyle)return;
+  const clip=createWardrobePose(body.rig,wardrobeStyle),mixer=new T.AnimationMixer(body.root),loop=mixer.clipAction(clip);loop.play();loop.paused=true;
+  let started:number|undefined;
+  const pose={root:body.root,sample(t:number){started??=t;loop.time=(t-started)%clip.duration;mixer.update(0);}};posing.current=pose;wake.current();
+  return()=>{mixer.stopAllAction();mixer.uncacheRoot(body.root);if(posing.current===pose)posing.current=undefined;};
+ },[body,wardrobeStyle,wardrobeReplay]);
+ useEffect(()=>{
+  if(!body||rig.current!==body)return;
+  let cancelled=false;
+  if(!body.rig||appearance!=='outfit'){setDressing(false);reportRef.current?.(undefined);return;}
   setDressing(true);setError('');
-  (async()=>{if(cancelled)return;
-   next=buildBody(source,parts,appearance,hair);
-   if(next.rig){if(appearance==='outfit'){if(hair?.wardrobe!==undefined){const outfit=await dressApprovedWardrobe(next.rig,hair.wardrobe,hair.wardrobeFits);if(cancelled){outfit.dispose();next.resources.forEach(r=>r.dispose());return;}next.resources.push(outfit);}else{const outfit=dressHoodie(next.rig);next.resources.push(...outfit.resources);}}next.root.scale.setScalar(1.4/BLANK_SCALE*(NEW_BODY_HOME_PERCENT/100));
-    if(wardrobeStyle){const clip=createWardrobePose(next.rig,wardrobeStyle),entry=createWardrobeEntrance(next.rig,clip);mixer=new T.AnimationMixer(next.root);const loop=mixer.clipAction(clip),entrance=mixer.clipAction(entry);loop.play();entrance.play();loop.paused=entrance.paused=true;
-     posing.current={root:next.root,sample(t){entrance.enabled=t<entry.duration;loop.enabled=!entrance.enabled;entrance.time=Math.min(t,entry.duration);loop.time=Math.max(0,t-entry.duration)%clip.duration;mixer!.update(0);}};
-    }
-   }rig.current=next;scene.current!.add(next.root);setError('');setDressing(false);wake.current();
+  (async()=>{
+   const outfit:Outfit=outfitSettings.wardrobe===undefined?prepareHoodie(body.rig!):await prepareApprovedWardrobe(body.rig!,outfitSettings.wardrobe,outfitSettings.fits,undefined,outfitSettings.layering);
+   if(cancelled||rig.current!==body){outfit.dispose();return;}
+   outfit.updateColors?.(colorsRef.current);
+   // No frame can see a half-loaded outfit. Pending/failed loads leave the
+   // current clothes, skin mask, skeleton and footwear support in place.
+   outfitRef.current?.dispose();outfit.attach();outfitRef.current=outfit;
+   reportRef.current?.(outfit.layeringReport);setDressing(false);wake.current();
   })().catch(e=>{if(!cancelled){setError(String(e));setDressing(false);}});
-  return()=>{cancelled=true;mixer?.stopAllAction();if(next)mixer?.uncacheRoot(next.root);next?.root.removeFromParent();next?.resources.forEach(r=>r.dispose());if(rig.current===next)rig.current=undefined;if(posing.current?.root===next?.root)posing.current=undefined;};
- },[source,parts,appearance,hair,wardrobeStyle]);
+  return()=>{cancelled=true;};
+ },[body,appearance,outfitSettings]);
+ useEffect(()=>{if(!body)return;let cancelled=false;body.setFaceSettings(hair?.face).then(()=>{if(!cancelled)wake.current();}).catch(e=>{if(!cancelled)setError(`表情素材加载失败：${String(e)}`);});return()=>{cancelled=true;};},[body,hair?.face]);
+ useEffect(()=>{outfitRef.current?.updateColors?.(hair?.wardrobeColors);wake.current();},[hair?.wardrobeColors]);
  useEffect(()=>{wake.current();},[yaw,motion,wire,playing,focus]);
- return <div ref={host} className="puppet" aria-busy={dressing}>{error&&<p role="alert">{error}</p>}{!source&&!error&&<p>正在加载小人…</p>}{source&&dressing&&!error&&<p role="status">正在换装…</p>}</div>;
+ return <div ref={host} className="puppet" aria-busy={dressing}>{error&&<p role="alert">{error}</p>}{!source&&!error&&<p>正在加载小人…</p>}{source&&dressing&&!outfitRef.current&&!error&&<p role="status">正在换装…</p>}</div>;
 }

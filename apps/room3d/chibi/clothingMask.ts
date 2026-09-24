@@ -1,10 +1,12 @@
 import * as T from 'three';
 
-/** Refine only mask boundaries, leaving the approved body topology untouched.
+/** Refine only mask boundaries below preserveAboveY.
  * Skin weights interpolate as bone/weight pairs (never interpolate bone IDs).
+ * Shoulder layering can preserve whole original faces: interpolated rest
+ * positions and weights do not preserve the original posed triangle surface.
  * The original geometry remains available for exact undressing/restoration.
  */
-export function createClothingMask(source:T.BufferGeometry,covers:(p:T.Vector3)=>boolean){
+export function createClothingMask(source:T.BufferGeometry,covers:(p:T.Vector3)=>boolean,preserveAboveY=Infinity){
  const names=Object.keys(source.attributes),arrays=Object.fromEntries(names.map(name=>[name,Array.from(source.attributes[name].array)]));
  const originalCount=source.attributes.position.count,midpoints=new Map<string,number>(),point=new T.Vector3();
  const covered:boolean[]=Array.from({length:originalCount},(_,i)=>covers(point.fromBufferAttribute(source.attributes.position,i)));
@@ -24,6 +26,7 @@ export function createClothingMask(source:T.BufferGeometry,covers:(p:T.Vector3)=
   point.set((arrays.position[a*3]+arrays.position[b*3]+arrays.position[c*3])/3,(arrays.position[a*3+1]+arrays.position[b*3+1]+arrays.position[c*3+1])/3,(arrays.position[a*3+2]+arrays.position[b*3+2]+arrays.position[c*3+2])/3);
   const center=covers(point);
   if(states.every(Boolean)&&center)return;
+  if(Math.max(arrays.position[a*3+1],arrays.position[b*3+1],arrays.position[c*3+1])>=preserveAboveY){index.push(a,b,c);return;}
   if(states.every(v=>!v)&&!center){index.push(a,b,c);return;}
   if(depth===3){if(!center)index.push(a,b,c);return;}
   const ab=midpoint(a,b),bc=midpoint(b,c),ca=midpoint(c,a);emit(a,ab,ca,depth+1);emit(ab,b,bc,depth+1);emit(ca,bc,c,depth+1);emit(ab,bc,ca,depth+1);

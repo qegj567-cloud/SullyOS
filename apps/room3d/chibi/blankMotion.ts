@@ -1,7 +1,9 @@
 import * as T from 'three';
+import {bodyHeightY} from './bodyHeight';
 import {BLANK_SCALE} from './blankBody';
 import type {bindBlankBody} from './blankRig';
 import type {Motion,Posture,ActivityPose} from './types';
+import {mirrorFrame} from '../mirrorMotion.js';
 
 // Small FK poses in the rig's bind axes. Bone lengths and mesh data never change.
 // Seat contact is normalized here, rather than adding offsets to every furniture.
@@ -56,7 +58,7 @@ export function createBlankMotion(rig:ReturnType<typeof bindBlankBody>,body:T.Gr
    }
    angle('head',.10,work?Math.sin(time)*.025:0);
   }
-  if(seated)position.y=(-.38*rig.bodyHeight+.05)*BLANK_SCALE;
+  if(seated)position.y=-bodyHeightY(.38*BLANK_SCALE,rig.bodyHeight)+.05*BLANK_SCALE;
   if(wave&&!lying){
    // Raise a nearly straight arm outwards, in front of the head's silhouette.
    // The shallow diagonal leaves room for the large head instead of folding at the ear.
@@ -72,6 +74,19 @@ export function createBlankMotion(rig:ReturnType<typeof bindBlankBody>,body:T.Gr
   }
   if(motion==='angry'&&!lying){angle('head',.055,Math.sin(time*5)*.06);angle('chest',.04,0,Math.sin(time*5)*.018);}
   if(motion==='dance'&&!lying){angle('spine',0,0,Math.sin(time*3)*.045);angle('head',0,0,-Math.sin(time*3)*.045);}
+  if((motion==='mirror-admire'||motion==='mirror-outfit')&&!lying){
+   const pose=mirrorFrame(motion,time);angle('head',pose.nod,0,pose.tilt);angle('spine',0,pose.yaw,0);
+   if(motion==='mirror-admire'){
+    angle('L_upperArm',-.25,-.12,-.50);angle('L_forearm',-.20,-.1,-.70);angle('L_hand',0,Math.sin(time*3)*.10,.12);
+   }else for(const [side,prefix]of [[1,'L'],[-1,'R']] as const){
+    angle(`${prefix}_upperArm`,-.26,0,-side*1.05);angle(`${prefix}_forearm`,-.40,0,-side*.18);angle(`${prefix}_hand`,.08+Math.sin(time*2)*.06);
+   }
+  }
+  if(motion==='bath-shower'){
+   angle('head',.08,Math.sin(time*2)*.08);angle('L_upperArm',-.35,0,-.45);angle('L_forearm',-.35,0,-.85);angle('R_upperArm',-.35,0,.45);angle('R_forearm',-.35,0,.85);angle('spine',0,Math.sin(time*2)*.05);
+  }
+  if(motion==='bath-soak'){angle('head',-.08,Math.sin(time)*.06);angle('L_upperArm',-.12,0,-.85);angle('R_upperArm',-.12,0,.85);}
+  if(motion==='bath-laundry'){angle('head',Math.sin(time*2.5)*.08,Math.sin(time*1.8)*.16,Math.sin(time*2)*.08);angle('spine',0,0,Math.sin(time*2)*.04);}
   if(lying){
    // Existing bed anchor supplies the pillow clearance; lay the whole rig down.
    rotation.setFromEuler(euler.set(-Math.PI/2,0,0));position.set(0,0,0);

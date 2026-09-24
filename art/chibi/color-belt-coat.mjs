@@ -6,7 +6,7 @@ import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 import {splitParts,saveGlb} from '../jellyfish-home/asset-geometry.mjs';
 
 // Recolor the existing fitted coat, keeping its pattern and original skinning.
-// Only the fine collar piping and dark inset in the buckle are added geometry.
+// Only the small brass buttons, fine piping and buckle inset add geometry.
 const directory='output/cardigan-controller/clothing-0920b',file=`${directory}/belt-coat-rig.glb`;
 const bytes=await fs.readFile(file),root=(await new GLTFLoader().parseAsync(bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.length),'')).scene;
 const cloth=root.getObjectByName('Apparel_belt-coat_0'),details=root.getObjectByName('Apparel_belt-coat_1');
@@ -14,18 +14,23 @@ if(!cloth?.isSkinnedMesh||!details?.isSkinnedMesh)throw Error('Expected original
 const prior=[];root.traverse(o=>{if(o.name.startsWith('Apparel_belt-coat_color-'))prior.push(o);});prior.forEach(o=>o.removeFromParent());
 const hash=g=>{const h=crypto.createHash('sha256');for(const key of ['position','uv','skinIndex','skinWeight'])if(g.attributes[key])h.update(Buffer.from(g.attributes[key].array.buffer,g.attributes[key].array.byteOffset,g.attributes[key].array.byteLength));if(g.index)h.update(Buffer.from(g.index.array.buffer,g.index.array.byteOffset,g.index.array.byteLength));return h.digest('hex');};
 const originalHashes=[hash(cloth.geometry),hash(details.geometry)];
-const palette={body:'#1b1c1e',lapel:'#303033',belt:'#101113',antiqueGold:'#b19a78'};
+const palette={body:'#171e2b',lapel:'#171e2b',belt:'#0d1015',antiqueGold:'#bda05f'};
 const colors=Object.fromEntries(Object.entries(palette).map(([key,value])=>[key,new T.Color(value)]));
 const smooth=T.MathUtils.smoothstep,depthKnots=[[2.55,.48],[2.70,.445],[2.90,.378],[3.06,.299],[3.20,.222],[3.35,.025],[3.45,-.09]];
 function lapelDepth(y){for(let i=0;i<depthKnots.length-1;i++){const a=depthKnots[i],b=depthKnots[i+1];if(y<=b[0])return T.MathUtils.lerp(a[1],b[1],T.MathUtils.clamp((y-a[0])/(b[0]-a[0]),0,1));}return -.09;}
-const p=cloth.geometry.attributes.position,colorArray=[];
+const p=cloth.geometry.attributes.position,colorArray=[],lapelMask=[];
 for(let i=0;i<p.count;i++){
  const x=p.getX(i),y=p.getY(i),z=p.getZ(i),front=smooth(z,lapelDepth(y)-.007,lapelDepth(y)+.008)*smooth(y,2.545,2.59)*(1-smooth(Math.abs(x),.50,.59));
  const rear=smooth(y,3.26,3.34)*(1-smooth(Math.abs(x),.42,.52))*(1-smooth(z,-.03,.04));
- colorArray.push(...colors.body.clone().lerp(colors.lapel,Math.max(front,rear)).toArray());
+ lapelMask.push(Math.max(front,rear));
+ colorArray.push(...colors.body.toArray());
 }
 cloth.geometry.setAttribute('color',new T.Float32BufferAttribute(colorArray,3));
-cloth.material=new T.MeshStandardMaterial({name:'Charcoal coat with slightly lighter lapels',color:0xffffff,vertexColors:true,roughness:.91,metalness:0,side:T.DoubleSide});
+// Equal default colors still need distinct editable regions. Preserve the
+// authored lapel blend explicitly instead of guessing it from identical RGB.
+cloth.geometry.setAttribute('_lapel',new T.Float32BufferAttribute(lapelMask,1));
+cloth.material=new T.MeshStandardMaterial({name:'Near-black navy wool and matching lapels',color:0xffffff,vertexColors:true,roughness:.91,metalness:0,side:T.DoubleSide});
+cloth.material.userData.wardrobePaletteAttribute='_lapel';
 const parts=splitParts(details.geometry),dp=details.geometry.attributes.position,detailColors=new Float32Array(dp.count*3);
 if(parts.length!==6)throw Error(`Expected six buckle/belt components, found ${parts.length}`);
 for(const[partIndex,part]of parts.entries())for(const id of new Set(part.ids)){
@@ -33,7 +38,7 @@ for(const[partIndex,part]of parts.entries())for(const id of new Set(part.ids)){
  const color=metal?colors.antiqueGold:colors.belt;detailColors.set(color.toArray(),id*3);
 }
 details.geometry.setAttribute('color',new T.BufferAttribute(detailColors,3));
-details.material=new T.MeshStandardMaterial({name:'Black belt and antique-gold hardware',color:0xffffff,vertexColors:true,roughness:.64,metalness:.22,side:T.DoubleSide});
+details.material=new T.MeshStandardMaterial({name:'Black belt and brass hardware',color:0xffffff,vertexColors:true,roughness:.64,metalness:.22,side:T.DoubleSide});
 const index=cloth.geometry.attributes.skinIndex,weight=cloth.geometry.attributes.skinWeight,normal=cloth.geometry.attributes.normal;
 function trimPath(ids){
  const positions=[],normals=[],joints=[],weights=[],indices=[];
@@ -56,7 +61,22 @@ function attach(g,name,material){const m=new T.SkinnedMesh(g,material);m.name='A
 const tip=new T.BufferGeometry(),tipPositions=[],tipJoints=[],tipWeights=[],detailIndex=details.geometry.attributes.skinIndex,detailWeight=details.geometry.attributes.skinWeight;
 for(const [id,top]of [[93,false],[94,false],[94,true],[93,true]]){const v=new T.Vector3().fromBufferAttribute(dp,id);v.z+=.003;if(top){v.x-=.0025;v.y+=.027;v.z-=.0025;}tipPositions.push(...v.toArray());for(let k=0;k<4;k++){tipJoints.push(detailIndex.getComponent(id,k));tipWeights.push(detailWeight.getComponent(id,k));}}
 tip.setAttribute('position',new T.Float32BufferAttribute(tipPositions,3));tip.setAttribute('skinIndex',new T.Uint16BufferAttribute(tipJoints,4));tip.setAttribute('skinWeight',new T.Float32BufferAttribute(tipWeights,4));tip.setIndex([0,1,2,0,2,3]);tip.computeVertexNormals();
-attach(mergeGeometries([piping,tip],false),'fine-piping',new T.MeshStandardMaterial({name:'Antique-gold collar piping',color:palette.antiqueGold,roughness:.64,metalness:.32,side:T.DoubleSide}));
+// Small paired brass buttons follow the existing front panels. Their weights
+// come from the hit triangle; no torso/coat surface is rebuilt for decoration.
+const buttons=[],surface=new T.Mesh(cloth.geometry,new T.MeshBasicMaterial({side:T.DoubleSide})),caster=new T.Raycaster();
+for(const y of [2.26,2.03,1.80])for(const x of [-.17,.17]){
+ caster.set(new T.Vector3(x,y,3),new T.Vector3(0,0,-1));
+ const hit=caster.intersectObject(surface,false)[0];if(!hit||!hit.face)throw Error(`Missing button surface at ${x},${y}`);
+ const ids=[hit.face.a,hit.face.b,hit.face.c],ps=ids.map(id=>new T.Vector3().fromBufferAttribute(p,id));
+ const bary=new T.Triangle(...ps).getBarycoord(hit.point,new T.Vector3()),mix=new Map();
+ ids.forEach((id,j)=>{for(let k=0;k<4;k++){const bone=index.getComponent(id,k);mix.set(bone,(mix.get(bone)??0)+weight.getComponent(id,k)*bary.getComponent(j));}});
+ const influences=[...mix].sort((a,b)=>b[1]-a[1]).slice(0,4),sum=influences.reduce((s,b)=>s+b[1],0);
+ const g=new T.CylinderGeometry(.026,.026,.012,10,1).rotateX(Math.PI/2).translate(x,y,hit.point.z+.008);g.deleteAttribute('uv');g.clearGroups();
+ const joints=[],weights=[];for(let i=0;i<g.attributes.position.count;i++)for(let k=0;k<4;k++){joints.push(influences[k]?.[0]??0);weights.push((influences[k]?.[1]??0)/sum);}
+ g.setAttribute('skinIndex',new T.Uint16BufferAttribute(joints,4));g.setAttribute('skinWeight',new T.Float32BufferAttribute(weights,4));buttons.push(g);
+}
+surface.material.dispose();
+attach(mergeGeometries([piping,tip,...buttons],false),'fine-piping',new T.MeshStandardMaterial({name:'Brass buttons and fine collar piping',color:palette.antiqueGold,roughness:.5,metalness:.45,side:T.DoubleSide}));
 // The source buckle is a shallow solid plate. A black two-triangle centre
 // makes its existing bronze perimeter read as a buckle frame.
 const buckle=parts[2],cx=(buckle.box.min.x+buckle.box.max.x)/2,cy=(buckle.box.min.y+buckle.box.max.y)/2;
@@ -65,7 +85,7 @@ const inset=new T.BufferGeometry(),di=details.geometry.attributes.skinIndex,dw=d
 inset.setAttribute('position',new T.Float32BufferAttribute([cx-.084,cy-.050,buckle.box.max.z+.0015,cx+.084,cy-.050,buckle.box.max.z+.0015,cx+.084,cy+.050,buckle.box.max.z+.0015,cx-.084,cy+.050,buckle.box.max.z+.0015],3));inset.setIndex([0,1,2,0,2,3]);inset.computeVertexNormals();for(let v=0;v<4;v++)for(let k=0;k<4;k++){ii.push(di.getComponent(nearest,k));iw.push(dw.getComponent(nearest,k));}inset.setAttribute('skinIndex',new T.Uint16BufferAttribute(ii,4));inset.setAttribute('skinWeight',new T.Float32BufferAttribute(iw,4));attach(inset,'buckle-inset',new T.MeshStandardMaterial({color:palette.belt,roughness:.72,side:T.DoubleSide}));
 if(originalHashes[0]!==hash(cloth.geometry)||originalHashes[1]!==hash(details.geometry))throw Error('Original geometry or weights changed');
 const garments=[];root.traverse(o=>{if(o.isMesh&&o.name.startsWith('Apparel_belt-coat_'))garments.push(o);});
-const triangles=garments.reduce((s,m)=>s+m.geometry.index.count/3,0),meta={id:'belt-coat',label:'系带长外套',triangles,drawCalls:garments.length,palette,revision:'charcoal-brass-0921-1',originalGeometryPreserved:true,originalGeometryHashes:originalHashes,addedTriangles:triangles-2441};
+const triangles=garments.reduce((s,m)=>s+m.geometry.index.count/3,0),meta={id:'belt-coat',label:'系带长外套',triangles,drawCalls:garments.length,palette,revision:'navy-brass-0921-2',originalGeometryPreserved:true,originalGeometryHashes:originalHashes,addedTriangles:triangles-2441};
 root.userData.apparel={...root.userData.apparel,...meta};await saveGlb(root,file);
 const emittedBytes=await fs.readFile(file),emitted=(await new GLTFLoader().parseAsync(emittedBytes.buffer.slice(emittedBytes.byteOffset,emittedBytes.byteOffset+emittedBytes.length),'')).scene;
 let maxWeightRoundTripDifference=0;

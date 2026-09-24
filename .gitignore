@@ -57,6 +57,9 @@ xiaohongshu-skills/
 .claude/
 .pnpm-store/
 
+# Local research downloads, QA builds/screenshots and temporary worktrees.
+/.tmp/
+
 # TIAO-Capacitor local Android toolchain and caches (D: only, never committed)
 .android-sdk/
 .gradle-user-home/

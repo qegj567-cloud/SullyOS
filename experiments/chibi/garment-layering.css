@@ -1,0 +1,6 @@
+.garment-layering{padding:14px 0 5px;border-bottom:1px solid #eee7eb}
+.garment-layering>div{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.garment-layering strong{font-size:12px;font-weight:600;margin-right:auto}
+.hair-options .garment-layering button{font-size:11px;min-height:34px;padding:6px 9px}
+.garment-layering button:disabled{opacity:.45;cursor:default}
+.garment-layering p{margin:7px 0}

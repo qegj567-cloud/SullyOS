@@ -1,5 +1,7 @@
 # 捏人器 · PSD 整批导入 & 内置素材包
 
+> 3D 分层表情 `6_0_29201.psd` 使用独立发布流程，包含隐藏备选层及 A/B、C/D 对齐基准，见 [分层贴图表情](./chibi-face-textures.md)。不要直接套用下方普通素材的隐藏层过滤规则。
+
 > 覆盖 520 / 彼方共用的捏人器（`public/like520/character_creator.html`）、
 > 开发面板（`apps/CharCreatorDevApp.tsx`）、解析器（`utils/psdCreatorImport.ts`）、
 > Blob 存储桥（`utils/creatorPartsBlob.ts`）、内置素材包（`utils/builtinPartsPack.ts`）。

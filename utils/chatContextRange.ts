@@ -173,7 +173,7 @@ export const loadCharacterContextMessages = async (
 };
 
 /** 已有消息快照的入口也遵守同一边界，不能用残留的手动条数截断自适应范围。 */
-export const selectCharacterContextMessages = (messages: Message[], char: CharacterProfile): Message[] =>
+export const selectCharacterContextMessages = (messages: Message[], char: CharacterProfile, hwm = getMemoryPalaceHighWaterMarkForContext(char.id)): Message[] =>
     computeContextRangeSnapshot(messages, (char.contextRangePolicyVersion || 0) >= 1 ? char : {
         ...char, contextUserStartMessageId: char.contextUserStartMessageId ?? char.hideBeforeMessageId,
-    }, getMemoryPalaceHighWaterMarkForContext(char.id)).messages;
+    }, hwm).messages;

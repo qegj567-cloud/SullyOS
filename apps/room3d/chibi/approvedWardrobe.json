@@ -248,14 +248,14 @@
     "slot": "outer",
     "asset": "belt-coat-rig.glb",
     "prefix": "Apparel_",
-    "triangles": 2573,
+    "triangles": 2813,
     "drawCalls": 4,
     "status": "reference-colored",
     "head": false,
     "open": false,
     "sleeveless": false,
     "accessory": false,
-    "revision": "fd26c03a4458"
+    "revision": "867f62a9e353"
   },
   {
     "id": "ruffle-apron",
@@ -491,5 +491,33 @@
     "sleeveless": false,
     "source": "Meshy_AI_Blank_Chibi_Qipao_0920125742_texture.glb",
     "revision": "9717b9308cd8"
+  },
+  {
+    "id": "original-hoodie",
+    "label": "初始连帽卫衣",
+    "slot": "top",
+    "asset": "original-outfit.glb",
+    "prefix": "original-hoodie",
+    "triangles": 2615,
+    "revision": "72bc0a45e627"
+  },
+  {
+    "id": "original-socks",
+    "label": "初始长袜",
+    "slot": "socks",
+    "asset": "original-outfit.glb",
+    "prefix": "original-socks",
+    "triangles": 473,
+    "revision": "72bc0a45e627"
+  },
+  {
+    "id": "original-shoes",
+    "label": "初始便鞋",
+    "slot": "shoes",
+    "asset": "original-outfit.glb",
+    "prefix": "original-shoes",
+    "opening": 0.38665254237288144,
+    "triangles": 226,
+    "revision": "72bc0a45e627"
   }
 ]

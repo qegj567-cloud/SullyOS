@@ -1,0 +1,19 @@
+{
+  "sachi-idle": {"label":"轻轻待机","sourceName":"idle-01","provider":"Sachi VRMA","group":"轻柔候选"},
+  "sachi-speaking": {"label":"轻声交谈","sourceName":"speaking-01","provider":"Sachi VRMA","group":"轻柔候选"},
+  "fumi-pose": {"label":"转身小手势","sourceName":"pose-motion","provider":"rerofumi VRMA","group":"轻柔候选"},
+  "library-idle": {"label":"自然待机","sourceName":"Idle_A"},
+  "library-fold-arms": {"label":"抱臂站立","sourceName":"Idle_FoldArms"},
+  "library-relax": {"label":"放松抖肩","sourceName":"Idle_ShakeOff"},
+  "library-talk": {"label":"交谈手势","sourceName":"Idle_Talking"},
+  "library-phone": {"label":"打电话（空手）","sourceName":"Idle_TalkingPhone"},
+  "library-yes": {"label":"点头回应","sourceName":"Yes"},
+  "library-interact": {"label":"伸手互动","sourceName":"Interact"},
+  "library-dance": {"label":"轻快舞步","sourceName":"Dance_Simple"},
+  "mmd-breath": {"label":"MMD · 安静呼吸","sourceName":"Breath_1800F","provider":"DiSK MMD","group":"新候选 · 窄站姿","additive":true},
+  "narrow-idle": {"label":"自然待机 · 收腿版","sourceName":"Idle_A","provider":"Mesh2Motion","group":"新候选 · 窄站姿","motionId":"library-idle","stance":"narrow"},
+  "narrow-talk": {"label":"交谈手势 · 收腿版","sourceName":"Idle_Talking","provider":"Mesh2Motion","group":"新候选 · 窄站姿","motionId":"library-talk","stance":"narrow"},
+  "overte-nod": {"label":"轻轻点头","sourceName":"nod","provider":"Overte / Hanami","group":"新候选 · 窄站姿","stance":"narrow"},
+  "overte-relaxed": {"label":"侧头放松","sourceName":"relaxed","provider":"Overte / Hanami","group":"新候选 · 窄站姿","stance":"narrow"},
+  "overte-think": {"label":"转头看看","sourceName":"think","provider":"Overte / Hanami","group":"新候选 · 窄站姿","stance":"narrow"}
+}

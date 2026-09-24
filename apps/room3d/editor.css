@@ -67,3 +67,5 @@
 .h3-interaction.is-small .h3-interaction-caption span,.h3-interaction.is-small .h3-interaction-caption small{display:none}
 .h3-interaction.is-small .h3-interaction-choice i{font-size:8px;left:3px;top:7px}
 .h3-interaction.is-small .h3-interaction-close{width:26px;min-height:26px;font-size:17px}
+.h3-layout-text{display:block;width:100%;box-sizing:border-box;min-height:100px;max-height:180px;resize:vertical;padding:10px;border:1px solid #d9cedb;border-radius:10px;background:#fffcfa;color:#514a58;font:12px/1.5 monospace;margin:10px 0}
+.h3-layout-preview{padding:12px;border:1px solid #c7d0b9;border-radius:12px;background:#f3f5ed;margin-top:12px}

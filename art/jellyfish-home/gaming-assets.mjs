@@ -209,3 +209,5 @@ async function emit(id,name,r,width,surface,{yscale=1,...extra}={}){
  })};
 }
 await fs.writeFile('public/room3d/catalog.json',JSON.stringify(catalog,null,2)+'\n');await fs.mkdir('output/gaming-room',{recursive:true});await fs.writeFile('output/gaming-room/report.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));
+
+await import('./study-gaming-finishes.mjs');

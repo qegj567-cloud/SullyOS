@@ -107,6 +107,9 @@ importers:
       three:
         specifier: ^0.185.1
         version: 0.185.1
+      three-mesh-bvh:
+        specifier: 0.9.15
+        version: 0.9.15(three@0.185.1)
       untitled-pixi-live2d-engine:
         specifier: ^1.3.5
         version: 1.3.5(@pixi/sound@6.0.1(pixi.js@8.19.0))(pixi.js@8.19.0)
@@ -144,6 +147,9 @@ importers:
       jsdom:
         specifier: ^30.0.1
         version: 30.0.1
+      mmd-parser:
+        specifier: 1.0.4
+        version: 1.0.4
       typescript:
         specifier: ^5.3.3
         version: 5.9.3
@@ -1981,6 +1987,9 @@ packages:
     engines: {node: '>=10'}
     hasBin: true
 
+  mmd-parser@1.0.4:
+    resolution: {integrity: sha512-Qi0VCU46t2IwfGv5KF0+D/t9cizcDug7qnNoy9Ggk7aucp0tssV8IwTMkBlDbm+VqAf3cdQHTCARKSsuS2MYFg==}
+
   module-details-from-path@1.0.4:
     resolution: {integrity: sha512-EGWKgxALGMgzvxYF1UyGTy0HXX/2vHLkw6+NvDKW2jypWbHpjQuj4UMcqQWXHERJhVGKikolT06G3bcKe4fi7w==}
 
@@ -2386,6 +2395,11 @@ packages:
     resolution: {integrity: sha512-DZ4yORTwrbTj/7MZYq2w+/ZFdI6OZ/f9SFHR+71gIVUZhOQPHzVCLpvRnPgyaMpfWxxk/4ONva3GQSyNIKRv6A==}
     engines: {node: '>=10'}
     deprecated: Old versions of tar are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+
+  three-mesh-bvh@0.9.15:
+    resolution: {integrity: sha512-9xdEDkCzFoT8VPFH9DznwFSdbaIEjMvM106Iqq7TJurrIheUKDcdW4prfJTCxryih4XS/UxWs0H3K4MLMRFyOQ==}
+    peerDependencies:
+      three: '>= 0.159.0'
 
   three@0.185.1:
     resolution: {integrity: sha512-5aojFCXKwnjBRZvUnt3WFfEcvUJgkN5LlijRFN95hMy8WVkG4I0QNcJE+OuWvuJ0bOdStrbfXn0pkd6/QyiAlg==}
@@ -4405,6 +4419,8 @@ snapshots:
 
   mkdirp@1.0.4: {}
 
+  mmd-parser@1.0.4: {}
+
   module-details-from-path@1.0.4: {}
 
   ms@2.1.3: {}
@@ -4850,6 +4866,10 @@ snapshots:
       minizlib: 2.1.2
       mkdirp: 1.0.4
       yallist: 4.0.0
+
+  three-mesh-bvh@0.9.15(three@0.185.1):
+    dependencies:
+      three: 0.185.1
 
   three@0.185.1: {}
 

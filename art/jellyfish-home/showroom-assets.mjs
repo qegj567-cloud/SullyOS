@@ -139,6 +139,8 @@ for(const a of showroomParts){
  const bytes=await saveGlb(combined,'public/room3d/'+id+'.glb'),old=catalog.findIndex(v=>v.id===id);if(old<0)catalog.push(asset);else catalog[old]=asset;report.push({id,triangles,bytes,groups:groups.size,size:asset.size});
 }
 await fs.writeFile('public/room3d/catalog.json',JSON.stringify(catalog,null,2)+'\n');await fs.writeFile('output/showrooms/assets-report.json',JSON.stringify(report,null,2));console.log(report);
+// Apply the current study cabinet finish after legacy source reconstruction.
+await import('./study-cabinet-finishes.mjs');
 
 
 // Restore the coffee cabinet and kitchen accessories after a full rebuild.

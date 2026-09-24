@@ -6,7 +6,7 @@ import {gamingPreset,gamingActivities} from '../apps/room3d/gaming.js';
 import {diningPreset,diningActivities} from '../apps/room3d/dining.js';
 import {furnitureInteractions,interactionArcLayout} from '../apps/room3d/furnitureInteractions.js';
 import {roomPixelRatio} from '../apps/room3d/renderQuality.js';
-const bedroom=()=>{const r=createHome(catalog).rooms[0];r.items=[];furnishShowroom(r,'bedroom',catalog);return r;};
+const bedroom=()=>{const r=createHome(catalog).rooms[0];r.items=[];furnishShowroom(r,'bedroom',catalog,{compact:true});return r;};
 describe('furniture-local action menus',()=>{
  it('scales the wheel with its furniture and supersamples only desktop Clear at 1×',()=>{
   const view={x:600,y:400,width:1200,height:900,count:2};
@@ -22,9 +22,9 @@ describe('furniture-local action menus',()=>{
   expect(furnitureInteractions(r,catalog,bed.id,{seat:{itemId:'other'}})).toHaveLength(2);
   bed.stored=true;expect(furnitureInteractions(r,catalog,bed.id)).toEqual([]);
  });
- it('does not invent mirror interactions and distinguishes floor/tabletop plants',()=>{
+ it('offers the mirror actions and distinguishes floor/tabletop plants',()=>{
   const r=bedroom(),actions=(assetId:string)=>furnitureInteractions(r,catalog,r.items.find(i=>i.assetId===assetId)!.id);
-  expect(actions('suite_floor_mirror')).toEqual([]);expect(actions('suite_plant_small')).toEqual([]);
+  expect(actions('suite_floor_mirror').map(a=>a.kind)).toEqual(['mirror-admire','mirror-outfit']);expect(actions('suite_plant_small')).toEqual([]);
   expect(actions('suite_plant_large')).toMatchObject([{action:'chibi-water',reason:''}]);
   r.items.find(i=>i.assetId==='suite_plant_large')!.x=4.5;r.items.find(i=>i.assetId==='suite_plant_large')!.z=3.8;
   expect(actions('suite_plant_large')[0].reason).not.toBe('');

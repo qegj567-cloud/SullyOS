@@ -1,4 +1,4 @@
-import { selectCharacterContextMessages } from './chatContextRange';
+import { getMemoryPalaceHighWaterMarkForContext, selectCharacterContextMessages } from './chatContextRange';
 /**
  * 聊天请求载荷统一构造器
  *
@@ -66,6 +66,8 @@ export interface BuildChatPayloadInput {
      */
     recentMsgsHint?: Message[];
     contextLimit: number;
+    /** 本轮加载原文时的归档水位快照，避免异步构建期间再次读取变化中的水位。 */
+    contextHighWaterMark?: number;
     /**
      * 额外的记忆召回提示词（拼进向量/BM25 检索的 context query）。
      * 用途：彼方等场景下，把"此刻在场的其他玩家名字 / 房间上下文"塞进召回 query，
@@ -236,7 +238,8 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         char.id,
     );
     // 正文、召回、世界书扫描和识图共用可见范围；UI 近窗可能仍缓存着范围外旧消息。
-    const selectedHistory = selectCharacterContextMessages(historyMsgs, char);
+    const contextHighWaterMark = input.contextHighWaterMark ?? getMemoryPalaceHighWaterMarkForContext(char.id);
+    const selectedHistory = selectCharacterContextMessages(historyMsgs, char, contextHighWaterMark);
     const visibleIds = new Set(selectedHistory.map(message => message.id));
     const rawRecentMsgsHint = input.recentMsgsHint
         ? input.recentMsgsHint.filter(message => visibleIds.has(message.id))
@@ -268,7 +271,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
             userProfile,
             emojis,
             undefined,
-            { useVisionDescriptions },
+            { useVisionDescriptions, contextHighWaterMark },
         );
         const cleanedApiMessages = cleanApiMessages(input.stripImages ? flattenImageContentParts(apiMessages) : apiMessages);
         console.warn('[DevDebug] Prompt Build skipped: sending chat history without system prompt injection.');
@@ -403,7 +406,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         userProfile,
         emojis,
         undefined,
-        { useVisionDescriptions },
+        { useVisionDescriptions, contextHighWaterMark },
     );
 
     // ── 8. 剥离历史里旧的双语标签（stripImages 时先压平 image_url → 纯文本占位） ──

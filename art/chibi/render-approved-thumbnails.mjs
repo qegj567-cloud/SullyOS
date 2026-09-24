@@ -1,4 +1,4 @@
-import {chromium} from 'file:///C:/Users/tiaotiao/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs';
+const {chromium}=await import(process.env.PLAYWRIGHT_MODULE??'playwright');
 import fs from 'node:fs/promises';
 
 const requested=new Set(process.argv.slice(2));

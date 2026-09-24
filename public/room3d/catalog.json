@@ -1272,7 +1272,35 @@
           ]
         }
       ]
-    }
+    },
+    "colorParts": [
+      {
+        "material": "gaming-metal",
+        "label": "暖灰金属",
+        "color": "#96947f"
+      },
+      {
+        "material": "gaming-rubber",
+        "label": "深色软垫",
+        "color": "#363a31"
+      },
+      {
+        "material": "gaming-accent",
+        "label": "主题色",
+        "color": "#ab9dc9"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
+    ],
+    "paletteMaterials": [
+      "gaming-accent",
+      "gaming-metal",
+      "gaming-rubber",
+      "woodLight"
+    ]
   },
   {
     "id": "gaming_monitors",
@@ -1366,7 +1394,35 @@
         0,
         -0.38771187499999993
       ]
-    }
+    },
+    "colorParts": [
+      {
+        "material": "gaming-graphite",
+        "label": "暖炭黑框",
+        "color": "#45463c"
+      },
+      {
+        "material": "gaming-metal",
+        "label": "暖灰金属",
+        "color": "#96947f"
+      },
+      {
+        "material": "gaming-screen",
+        "label": "屏幕底色",
+        "color": "#4c6051"
+      },
+      {
+        "material": "gaming-accent",
+        "label": "主题色",
+        "color": "#ab9dc9"
+      }
+    ],
+    "paletteMaterials": [
+      "gaming-accent",
+      "gaming-metal",
+      "gaming-screen",
+      "gaming-graphite"
+    ]
   },
   {
     "id": "gaming_keyboard",
@@ -1396,7 +1452,35 @@
     "paintMaterials": [
       "gaming-accent"
     ],
-    "collection": "gaming"
+    "collection": "gaming",
+    "colorParts": [
+      {
+        "material": "gaming-shell",
+        "label": "奶油外壳",
+        "color": "#eee3cf"
+      },
+      {
+        "material": "gaming-graphite",
+        "label": "暖炭黑框",
+        "color": "#45463c"
+      },
+      {
+        "material": "gaming-mint",
+        "label": "浅绿细节",
+        "color": "#a3ad88"
+      },
+      {
+        "material": "gaming-accent",
+        "label": "主题色",
+        "color": "#ab9dc9"
+      }
+    ],
+    "paletteMaterials": [
+      "gaming-graphite",
+      "gaming-accent",
+      "gaming-shell",
+      "gaming-mint"
+    ]
   },
   {
     "id": "gaming_mouse",
@@ -1426,7 +1510,23 @@
     "paintMaterials": [
       "gaming-accent"
     ],
-    "collection": "gaming"
+    "collection": "gaming",
+    "colorParts": [
+      {
+        "material": "gaming-rubber",
+        "label": "深色软垫",
+        "color": "#363a31"
+      },
+      {
+        "material": "gaming-accent",
+        "label": "主题色",
+        "color": "#ab9dc9"
+      }
+    ],
+    "paletteMaterials": [
+      "gaming-accent",
+      "gaming-rubber"
+    ]
   },
   {
     "id": "gaming_speaker",
@@ -1456,7 +1556,23 @@
     "paintMaterials": [
       "gaming-shell"
     ],
-    "collection": "gaming"
+    "collection": "gaming",
+    "colorParts": [
+      {
+        "material": "gaming-shell",
+        "label": "奶油外壳",
+        "color": "#eee3cf"
+      },
+      {
+        "material": "gaming-rubber",
+        "label": "深色软垫",
+        "color": "#363a31"
+      }
+    ],
+    "paletteMaterials": [
+      "gaming-shell",
+      "gaming-rubber"
+    ]
   },
   {
     "id": "gaming_display",
@@ -1486,7 +1602,41 @@
     "paintMaterials": [
       "gaming-accent"
     ],
-    "collection": "gaming"
+    "collection": "gaming",
+    "colorParts": [
+      {
+        "material": "gaming-shell",
+        "label": "奶油外壳",
+        "color": "#eee3cf"
+      },
+      {
+        "material": "gaming-graphite",
+        "label": "暖炭黑框",
+        "color": "#45463c"
+      },
+      {
+        "material": "gaming-mint",
+        "label": "浅绿细节",
+        "color": "#a3ad88"
+      },
+      {
+        "material": "gaming-accent",
+        "label": "主题色",
+        "color": "#ab9dc9"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
+    ],
+    "paletteMaterials": [
+      "gaming-graphite",
+      "gaming-mint",
+      "gaming-accent",
+      "gaming-shell",
+      "woodLight"
+    ]
   },
   {
     "id": "gaming_drawers",
@@ -1522,7 +1672,35 @@
       "width": 0.98,
       "depth": 0.86,
       "height": 1.0905921852428
-    }
+    },
+    "colorParts": [
+      {
+        "material": "gaming-shell",
+        "label": "奶油外壳",
+        "color": "#eee3cf"
+      },
+      {
+        "material": "gaming-rubber",
+        "label": "深色软垫",
+        "color": "#363a31"
+      },
+      {
+        "material": "gaming-accent",
+        "label": "主题色",
+        "color": "#ab9dc9"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
+    ],
+    "paletteMaterials": [
+      "gaming-rubber",
+      "gaming-shell",
+      "gaming-accent",
+      "woodLight"
+    ]
   },
   {
     "id": "gaming_lamp",
@@ -1560,7 +1738,17 @@
         0.10300132596685083,
         -0.2876676243093923
       ]
-    }
+    },
+    "colorParts": [
+      {
+        "material": "gaming-accent",
+        "label": "主题色",
+        "color": "#ab9dc9"
+      }
+    ],
+    "paletteMaterials": [
+      "gaming-accent"
+    ]
   },
   {
     "id": "gaming_notepad",
@@ -1590,7 +1778,17 @@
     "paintMaterials": [
       "gaming-shell"
     ],
-    "collection": "gaming"
+    "collection": "gaming",
+    "colorParts": [
+      {
+        "material": "gaming-shell",
+        "label": "奶油外壳",
+        "color": "#eee3cf"
+      }
+    ],
+    "paletteMaterials": [
+      "gaming-shell"
+    ]
   },
   {
     "id": "gaming_phone_stand",
@@ -1620,7 +1818,17 @@
     "paintMaterials": [
       "gaming-accent"
     ],
-    "collection": "gaming"
+    "collection": "gaming",
+    "colorParts": [
+      {
+        "material": "gaming-accent",
+        "label": "主题色",
+        "color": "#ab9dc9"
+      }
+    ],
+    "paletteMaterials": [
+      "gaming-accent"
+    ]
   },
   {
     "id": "gaming_organizer",
@@ -1650,7 +1858,41 @@
     "paintMaterials": [
       "gaming-accent"
     ],
-    "collection": "gaming"
+    "collection": "gaming",
+    "colorParts": [
+      {
+        "material": "gaming-shell",
+        "label": "奶油外壳",
+        "color": "#eee3cf"
+      },
+      {
+        "material": "gaming-graphite",
+        "label": "暖炭黑框",
+        "color": "#45463c"
+      },
+      {
+        "material": "gaming-mint",
+        "label": "浅绿细节",
+        "color": "#a3ad88"
+      },
+      {
+        "material": "gaming-led",
+        "label": "柔和灯条",
+        "color": "#dfd8b3"
+      },
+      {
+        "material": "gaming-accent",
+        "label": "主题色",
+        "color": "#ab9dc9"
+      }
+    ],
+    "paletteMaterials": [
+      "gaming-shell",
+      "gaming-mint",
+      "gaming-accent",
+      "gaming-graphite",
+      "gaming-led"
+    ]
   },
   {
     "id": "gaming_racing",
@@ -2485,7 +2727,53 @@
           0.51556
         ]
       ]
-    }
+    },
+    "colorParts": [
+      {
+        "material": "gaming-shell",
+        "label": "奶油外壳",
+        "color": "#eee3cf"
+      },
+      {
+        "material": "gaming-graphite",
+        "label": "暖炭黑框",
+        "color": "#45463c"
+      },
+      {
+        "material": "gaming-metal",
+        "label": "暖灰金属",
+        "color": "#96947f"
+      },
+      {
+        "material": "gaming-rubber",
+        "label": "深色软垫",
+        "color": "#363a31"
+      },
+      {
+        "material": "gaming-screen",
+        "label": "屏幕底色",
+        "color": "#4c6051"
+      },
+      {
+        "material": "gaming-mint",
+        "label": "浅绿细节",
+        "color": "#a3ad88"
+      },
+      {
+        "material": "gaming-accent",
+        "label": "主题色",
+        "color": "#ab9dc9"
+      }
+    ],
+    "paletteMaterials": [
+      "gaming-rubber",
+      "gaming-accent",
+      "gaming-graphite",
+      "gaming-metal",
+      "gaming-screen",
+      "gaming-mint",
+      "gaming-shell"
+    ]
   },
   {
     "id": "gaming_microphone",
@@ -2715,7 +3003,23 @@
     "paintMaterials": [
       "gaming-accent"
     ],
-    "collection": "gaming"
+    "collection": "gaming",
+    "colorParts": [
+      {
+        "material": "gaming-graphite",
+        "label": "暖炭黑框",
+        "color": "#45463c"
+      },
+      {
+        "material": "gaming-accent",
+        "label": "主题色",
+        "color": "#ab9dc9"
+      }
+    ],
+    "paletteMaterials": [
+      "gaming-accent",
+      "gaming-graphite"
+    ]
   },
   {
     "id": "gaming_headphones",
@@ -2745,7 +3049,29 @@
     "paintMaterials": [
       "gaming-accent"
     ],
-    "collection": "gaming"
+    "collection": "gaming",
+    "colorParts": [
+      {
+        "material": "gaming-shell",
+        "label": "奶油外壳",
+        "color": "#eee3cf"
+      },
+      {
+        "material": "gaming-rubber",
+        "label": "深色软垫",
+        "color": "#363a31"
+      },
+      {
+        "material": "gaming-accent",
+        "label": "主题色",
+        "color": "#ab9dc9"
+      }
+    ],
+    "paletteMaterials": [
+      "gaming-shell",
+      "gaming-rubber",
+      "gaming-accent"
+    ]
   },
   {
     "id": "gaming_webcam",
@@ -2775,7 +3101,23 @@
     "paintMaterials": [
       "gaming-shell"
     ],
-    "collection": "gaming"
+    "collection": "gaming",
+    "colorParts": [
+      {
+        "material": "gaming-shell",
+        "label": "奶油外壳",
+        "color": "#eee3cf"
+      },
+      {
+        "material": "gaming-graphite",
+        "label": "暖炭黑框",
+        "color": "#45463c"
+      }
+    ],
+    "paletteMaterials": [
+      "gaming-graphite",
+      "gaming-shell"
+    ]
   },
   {
     "id": "gaming_controller_dock",
@@ -2805,7 +3147,29 @@
     "paintMaterials": [
       "gaming-accent"
     ],
-    "collection": "gaming"
+    "collection": "gaming",
+    "colorParts": [
+      {
+        "material": "gaming-shell",
+        "label": "奶油外壳",
+        "color": "#eee3cf"
+      },
+      {
+        "material": "gaming-graphite",
+        "label": "暖炭黑框",
+        "color": "#45463c"
+      },
+      {
+        "material": "gaming-accent",
+        "label": "主题色",
+        "color": "#ab9dc9"
+      }
+    ],
+    "paletteMaterials": [
+      "gaming-shell",
+      "gaming-accent",
+      "gaming-graphite"
+    ]
   },
   {
     "id": "gaming_pc",
@@ -2835,7 +3199,47 @@
     "paintMaterials": [
       "gaming-accent"
     ],
-    "collection": "gaming"
+    "collection": "gaming",
+    "colorParts": [
+      {
+        "material": "gaming-shell",
+        "label": "奶油外壳",
+        "color": "#eee3cf"
+      },
+      {
+        "material": "gaming-graphite",
+        "label": "暖炭黑框",
+        "color": "#45463c"
+      },
+      {
+        "material": "gaming-metal",
+        "label": "暖灰金属",
+        "color": "#96947f"
+      },
+      {
+        "material": "gaming-rubber",
+        "label": "深色软垫",
+        "color": "#363a31"
+      },
+      {
+        "material": "gaming-led",
+        "label": "柔和灯条",
+        "color": "#dfd8b3"
+      },
+      {
+        "material": "gaming-accent",
+        "label": "主题色",
+        "color": "#ab9dc9"
+      }
+    ],
+    "paletteMaterials": [
+      "gaming-shell",
+      "gaming-accent",
+      "gaming-led",
+      "gaming-graphite",
+      "gaming-metal",
+      "gaming-rubber"
+    ]
   },
   {
     "id": "gaming_light",
@@ -2865,7 +3269,29 @@
     "paintMaterials": [
       "gaming-accent"
     ],
-    "collection": "gaming"
+    "collection": "gaming",
+    "colorParts": [
+      {
+        "material": "gaming-graphite",
+        "label": "暖炭黑框",
+        "color": "#45463c"
+      },
+      {
+        "material": "gaming-led",
+        "label": "柔和灯条",
+        "color": "#dfd8b3"
+      },
+      {
+        "material": "gaming-accent",
+        "label": "主题色",
+        "color": "#ab9dc9"
+      }
+    ],
+    "paletteMaterials": [
+      "gaming-graphite",
+      "gaming-led",
+      "gaming-accent"
+    ]
   },
   {
     "id": "gaming_chair",
@@ -3283,6 +3709,40 @@
         ],
         "rotation": 0
       }
+    ],
+    "colorParts": [
+      {
+        "material": "gaming-shell",
+        "label": "奶油外壳",
+        "color": "#eee3cf"
+      },
+      {
+        "material": "gaming-graphite",
+        "label": "暖炭黑框",
+        "color": "#45463c"
+      },
+      {
+        "material": "gaming-metal",
+        "label": "暖灰金属",
+        "color": "#96947f"
+      },
+      {
+        "material": "gaming-rubber",
+        "label": "深色软垫",
+        "color": "#363a31"
+      },
+      {
+        "material": "gaming-accent",
+        "label": "主题色",
+        "color": "#ab9dc9"
+      }
+    ],
+    "paletteMaterials": [
+      "gaming-shell",
+      "gaming-accent",
+      "gaming-rubber",
+      "gaming-graphite",
+      "gaming-metal"
     ]
   },
   {
@@ -5322,7 +5782,47 @@
           ]
         }
       ]
-    }
+    },
+    "colorParts": [
+      {
+        "material": "gaming-shell",
+        "label": "奶油外壳",
+        "color": "#eee3cf"
+      },
+      {
+        "material": "gaming-graphite",
+        "label": "暖炭黑框",
+        "color": "#45463c"
+      },
+      {
+        "material": "gaming-screen",
+        "label": "屏幕底色",
+        "color": "#4c6051"
+      },
+      {
+        "material": "gaming-led",
+        "label": "柔和灯条",
+        "color": "#dfd8b3"
+      },
+      {
+        "material": "gaming-arcade-cyan",
+        "label": "灯光细节",
+        "color": "#8acfdc"
+      },
+      {
+        "material": "gaming-accent",
+        "label": "主题色",
+        "color": "#ab9dc9"
+      }
+    ],
+    "paletteMaterials": [
+      "gaming-shell",
+      "gaming-graphite",
+      "gaming-arcade-cyan",
+      "gaming-accent",
+      "gaming-screen",
+      "gaming-led"
+    ]
   },
   {
     "id": "pet_bowls",
@@ -5384,6 +5884,10 @@
       "kitchen-accent"
     ],
     "collection": "kitchen",
+    "paletteMaterials": [
+      "kitchen-accent",
+      "kitchen-cream"
+    ],
     "colorParts": [
       {
         "material": "kitchen-cream",
@@ -5394,6 +5898,11 @@
         "material": "kitchen-metal",
         "label": "金属把手",
         "color": "#969b9f"
+      },
+      {
+        "material": "kitchen-accent",
+        "label": "主题色",
+        "color": "#bdd0b4"
       }
     ]
   },
@@ -5635,7 +6144,41 @@
     "paintMaterials": [
       "kitchen-accent"
     ],
-    "collection": "kitchen"
+    "collection": "kitchen",
+    "paletteMaterials": [
+      "woodLight",
+      "kitchen-pink",
+      "kitchen-accent",
+      "kitchen-dark",
+      "kitchen-ceramic"
+    ],
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      },
+      {
+        "material": "kitchen-pink",
+        "label": "柔和点缀",
+        "color": "#e4bcc6"
+      },
+      {
+        "material": "kitchen-accent",
+        "label": "主题色",
+        "color": "#bdd0b4"
+      },
+      {
+        "material": "kitchen-dark",
+        "label": "深色框架",
+        "color": "#515864"
+      },
+      {
+        "material": "kitchen-ceramic",
+        "label": "主体",
+        "color": "#fff7e9"
+      }
+    ]
   },
   {
     "id": "kitchen_sink",
@@ -5665,7 +6208,35 @@
     "paintMaterials": [
       "kitchen-accent"
     ],
-    "collection": "kitchen"
+    "collection": "kitchen",
+    "paletteMaterials": [
+      "kitchen-ceramic",
+      "kitchen-accent",
+      "kitchen-cream",
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      },
+      {
+        "material": "kitchen-ceramic",
+        "label": "主体",
+        "color": "#fff7e9"
+      },
+      {
+        "material": "kitchen-accent",
+        "label": "主题色",
+        "color": "#bdd0b4"
+      },
+      {
+        "material": "kitchen-cream",
+        "label": "主体",
+        "color": "#f3eadb"
+      }
+    ]
   },
   {
     "id": "kitchen_spice_shelf",
@@ -5686,7 +6257,41 @@
     "paintMaterials": [
       "kitchen-accent"
     ],
-    "collection": "kitchen"
+    "collection": "kitchen",
+    "paletteMaterials": [
+      "kitchen-ceramic",
+      "kitchen-cream",
+      "kitchen-accent",
+      "kitchen-pink",
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      },
+      {
+        "material": "kitchen-ceramic",
+        "label": "主体",
+        "color": "#fff7e9"
+      },
+      {
+        "material": "kitchen-cream",
+        "label": "主体",
+        "color": "#f3eadb"
+      },
+      {
+        "material": "kitchen-accent",
+        "label": "主题色",
+        "color": "#bdd0b4"
+      },
+      {
+        "material": "kitchen-pink",
+        "label": "柔和点缀",
+        "color": "#e4bcc6"
+      }
+    ]
   },
   {
     "id": "kitchen_appliance_shelf",
@@ -5716,7 +6321,41 @@
     "paintMaterials": [
       "kitchen-accent"
     ],
-    "collection": "kitchen"
+    "collection": "kitchen",
+    "paletteMaterials": [
+      "kitchen-ceramic",
+      "kitchen-pink",
+      "kitchen-cream",
+      "kitchen-accent",
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      },
+      {
+        "material": "kitchen-ceramic",
+        "label": "主体",
+        "color": "#fff7e9"
+      },
+      {
+        "material": "kitchen-pink",
+        "label": "柔和点缀",
+        "color": "#e4bcc6"
+      },
+      {
+        "material": "kitchen-cream",
+        "label": "主体",
+        "color": "#f3eadb"
+      },
+      {
+        "material": "kitchen-accent",
+        "label": "主题色",
+        "color": "#bdd0b4"
+      }
+    ]
   },
   {
     "id": "kitchen_range",
@@ -5746,7 +6385,41 @@
     "paintMaterials": [
       "kitchen-accent"
     ],
-    "collection": "kitchen"
+    "collection": "kitchen",
+    "paletteMaterials": [
+      "kitchen-ceramic",
+      "kitchen-accent",
+      "kitchen-pink",
+      "kitchen-dark",
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      },
+      {
+        "material": "kitchen-ceramic",
+        "label": "主体",
+        "color": "#fff7e9"
+      },
+      {
+        "material": "kitchen-accent",
+        "label": "主题色",
+        "color": "#bdd0b4"
+      },
+      {
+        "material": "kitchen-pink",
+        "label": "柔和点缀",
+        "color": "#e4bcc6"
+      },
+      {
+        "material": "kitchen-dark",
+        "label": "深色框架",
+        "color": "#515864"
+      }
+    ]
   },
   {
     "id": "kitchen_fridge",
@@ -5778,6 +6451,13 @@
     ],
     "collection": "kitchen",
     "appliance": "fridge",
+    "paletteMaterials": [
+      "kitchen-cream",
+      "kitchen-accent",
+      "kitchen-dark",
+      "kitchen-ceramic",
+      "kitchen-pink"
+    ],
     "colorParts": [
       {
         "material": "kitchen-cream",
@@ -5808,6 +6488,11 @@
         "material": "kitchen-metal",
         "label": "金属把手",
         "color": "#969b9f"
+      },
+      {
+        "material": "kitchen-accent",
+        "label": "主题色",
+        "color": "#bdd0b4"
       }
     ]
   },
@@ -5845,7 +6530,41 @@
       "width": 2.01,
       "depth": 1.3242500400543213,
       "height": 1.22
-    }
+    },
+    "paletteMaterials": [
+      "kitchen-ceramic",
+      "kitchen-pink",
+      "kitchen-cream",
+      "kitchen-accent",
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      },
+      {
+        "material": "kitchen-ceramic",
+        "label": "主体",
+        "color": "#fff7e9"
+      },
+      {
+        "material": "kitchen-pink",
+        "label": "柔和点缀",
+        "color": "#e4bcc6"
+      },
+      {
+        "material": "kitchen-cream",
+        "label": "主体",
+        "color": "#f3eadb"
+      },
+      {
+        "material": "kitchen-accent",
+        "label": "主题色",
+        "color": "#bdd0b4"
+      }
+    ]
   },
   {
     "id": "kitchen_fruit_bowl",
@@ -5875,7 +6594,17 @@
     "paintMaterials": [
       "kitchen-ceramic"
     ],
-    "collection": "kitchen"
+    "collection": "kitchen",
+    "paletteMaterials": [
+      "kitchen-ceramic"
+    ],
+    "colorParts": [
+      {
+        "material": "kitchen-ceramic",
+        "label": "主体",
+        "color": "#fff7e9"
+      }
+    ]
   },
   {
     "id": "kitchen_cat_jar",
@@ -5905,7 +6634,17 @@
     "paintMaterials": [
       "kitchen-pink"
     ],
-    "collection": "kitchen"
+    "collection": "kitchen",
+    "paletteMaterials": [
+      "kitchen-pink"
+    ],
+    "colorParts": [
+      {
+        "material": "kitchen-pink",
+        "label": "柔和点缀",
+        "color": "#e4bcc6"
+      }
+    ]
   },
   {
     "id": "bath_vanity",
@@ -5913,6 +6652,7 @@
     "surface": "floor",
     "url": "bath_vanity.glb",
     "collection": "bathroom",
+    "revision": "bathroom-reference-3",
     "size": [
       1.8,
       3.35,
@@ -5935,6 +6675,28 @@
     ],
     "paintMaterials": [
       "bath-accent"
+    ],
+    "paletteMaterials": [
+      "bath-cream",
+      "bath-accent",
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "bath-accent",
+        "label": "主题色",
+        "color": "#81916b"
+      },
+      {
+        "material": "bath-cream",
+        "label": "主题色",
+        "color": "#f2f3ed"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
     ]
   },
   {
@@ -5943,6 +6705,7 @@
     "surface": "floor",
     "url": "bath_cart.glb",
     "collection": "bathroom",
+    "revision": "bathroom-reference-3",
     "size": [
       0.94,
       1.85,
@@ -5965,6 +6728,28 @@
     ],
     "paintMaterials": [
       "bath-accent"
+    ],
+    "paletteMaterials": [
+      "bath-cream",
+      "bath-accent",
+      "bath-towel"
+    ],
+    "colorParts": [
+      {
+        "material": "bath-accent",
+        "label": "主题色",
+        "color": "#81916b"
+      },
+      {
+        "material": "bath-towel",
+        "label": "主题色",
+        "color": "#e7ebe2"
+      },
+      {
+        "material": "bath-cream",
+        "label": "主题色",
+        "color": "#f2f3ed"
+      }
     ]
   },
   {
@@ -5973,6 +6758,7 @@
     "surface": "floor",
     "url": "bath_stool.glb",
     "collection": "bathroom",
+    "revision": "bathroom-reference-3",
     "size": [
       1.1,
       0.73,
@@ -6008,6 +6794,22 @@
         ],
         "rotation": 0
       }
+    ],
+    "paletteMaterials": [
+      "woodLight",
+      "bath-accent"
+    ],
+    "colorParts": [
+      {
+        "material": "bath-accent",
+        "label": "主题色",
+        "color": "#81916b"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
     ]
   },
   {
@@ -6016,6 +6818,7 @@
     "surface": "rug",
     "url": "bath_mat.glb",
     "collection": "bathroom",
+    "revision": "bathroom-reference-3",
     "size": [
       1.2999999999999998,
       0.035,
@@ -6038,6 +6841,16 @@
     ],
     "paintMaterials": [
       "bath-towel"
+    ],
+    "paletteMaterials": [
+      "bath-towel"
+    ],
+    "colorParts": [
+      {
+        "material": "bath-towel",
+        "label": "主题色",
+        "color": "#e7ebe2"
+      }
     ]
   },
   {
@@ -6046,6 +6859,7 @@
     "surface": "floor",
     "url": "bath_hamper.glb",
     "collection": "bathroom",
+    "revision": "bathroom-reference-3",
     "size": [
       0.88,
       1.42,
@@ -6068,6 +6882,34 @@
     ],
     "paintMaterials": [
       "bath-towel"
+    ],
+    "paletteMaterials": [
+      "bath-towel",
+      "bath-cream",
+      "bath-accent",
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "bath-towel",
+        "label": "主题色",
+        "color": "#e7ebe2"
+      },
+      {
+        "material": "bath-accent",
+        "label": "主题色",
+        "color": "#81916b"
+      },
+      {
+        "material": "bath-cream",
+        "label": "主题色",
+        "color": "#f2f3ed"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
     ]
   },
   {
@@ -6076,6 +6918,7 @@
     "surface": "floor",
     "url": "bath_shower.glb",
     "collection": "bathroom",
+    "revision": "bathroom-reference-3",
     "size": [
       1.8499999999999999,
       3.15,
@@ -6097,7 +6940,23 @@
       ]
     ],
     "paintMaterials": [
-      "bath-accent"
+      "bath-shell"
+    ],
+    "paletteMaterials": [
+      "bath-cream",
+      "bath-shell"
+    ],
+    "colorParts": [
+      {
+        "material": "bath-shell",
+        "label": "主体",
+        "color": "#343b36"
+      },
+      {
+        "material": "bath-cream",
+        "label": "主题色",
+        "color": "#f2f3ed"
+      }
     ]
   },
   {
@@ -6106,6 +6965,7 @@
     "surface": "floor",
     "url": "bath_towel_rack.glb",
     "collection": "bathroom",
+    "revision": "bathroom-reference-3",
     "size": [
       1.1,
       2.25,
@@ -6128,6 +6988,28 @@
     ],
     "paintMaterials": [
       "bath-towel"
+    ],
+    "paletteMaterials": [
+      "bath-towel",
+      "woodLight",
+      "bath-accent"
+    ],
+    "colorParts": [
+      {
+        "material": "bath-towel",
+        "label": "主题色",
+        "color": "#e7ebe2"
+      },
+      {
+        "material": "bath-accent",
+        "label": "主题色",
+        "color": "#81916b"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
     ]
   },
   {
@@ -6136,6 +7018,7 @@
     "surface": "floor",
     "url": "bath_linen_cabinet.glb",
     "collection": "bathroom",
+    "revision": "bathroom-reference-3",
     "size": [
       1.12,
       2.65,
@@ -6158,6 +7041,34 @@
     ],
     "paintMaterials": [
       "bath-accent"
+    ],
+    "paletteMaterials": [
+      "bath-accent",
+      "bath-cream",
+      "bath-towel",
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "bath-accent",
+        "label": "主题色",
+        "color": "#81916b"
+      },
+      {
+        "material": "bath-towel",
+        "label": "主题色",
+        "color": "#e7ebe2"
+      },
+      {
+        "material": "bath-cream",
+        "label": "主题色",
+        "color": "#f2f3ed"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
     ]
   },
   {
@@ -6166,6 +7077,7 @@
     "surface": "floor",
     "url": "bath_washer.glb",
     "collection": "bathroom",
+    "revision": "bathroom-reference-3",
     "size": [
       1.34,
       1.55,
@@ -6198,7 +7110,23 @@
         -8.816842956667523e-9,
         -0.07668021142812634
       ]
-    }
+    },
+    "paletteMaterials": [
+      "bath-accent",
+      "bath-cream"
+    ],
+    "colorParts": [
+      {
+        "material": "bath-accent",
+        "label": "主题色",
+        "color": "#81916b"
+      },
+      {
+        "material": "bath-cream",
+        "label": "主题色",
+        "color": "#f2f3ed"
+      }
+    ]
   },
   {
     "id": "bath_folded_towels",
@@ -6206,6 +7134,7 @@
     "surface": "tabletop",
     "url": "bath_folded_towels.glb",
     "collection": "bathroom",
+    "revision": "bathroom-reference-3",
     "size": [
       0.58,
       0.12868037901548415,
@@ -6228,6 +7157,16 @@
     ],
     "paintMaterials": [
       "bath-towel"
+    ],
+    "paletteMaterials": [
+      "bath-towel"
+    ],
+    "colorParts": [
+      {
+        "material": "bath-towel",
+        "label": "主题色",
+        "color": "#e7ebe2"
+      }
     ]
   },
   {
@@ -6236,6 +7175,7 @@
     "surface": "tabletop",
     "url": "bath_detergent.glb",
     "collection": "bathroom",
+    "revision": "bathroom-reference-3",
     "size": [
       0.2800000000000001,
       0.4264768683274022,
@@ -6258,6 +7198,16 @@
     ],
     "paintMaterials": [
       "bath-blue"
+    ],
+    "paletteMaterials": [
+      "bath-cream"
+    ],
+    "colorParts": [
+      {
+        "material": "bath-cream",
+        "label": "主题色",
+        "color": "#f2f3ed"
+      }
     ]
   },
   {
@@ -6266,6 +7216,7 @@
     "surface": "floor",
     "url": "bath_tub.glb",
     "collection": "bathroom",
+    "revision": "bathroom-reference-3",
     "size": [
       2.9,
       1.9427734374999999,
@@ -6442,7 +7393,23 @@
         -0.6119,
         0.046332031249999996
       ]
-    }
+    },
+    "paletteMaterials": [
+      "bath-accent",
+      "bath-cream"
+    ],
+    "colorParts": [
+      {
+        "material": "bath-accent",
+        "label": "主题色",
+        "color": "#81916b"
+      },
+      {
+        "material": "bath-cream",
+        "label": "主题色",
+        "color": "#f2f3ed"
+      }
+    ]
   },
   {
     "id": "bath_tray",
@@ -6450,6 +7417,7 @@
     "surface": "tabletop",
     "url": "bath_tray.glb",
     "collection": "bathroom",
+    "revision": "bathroom-reference-3",
     "size": [
       0.35,
       0.07754065040650406,
@@ -6482,7 +7450,17 @@
       "width": 0.33,
       "depth": 1.47,
       "height": 0.07754065040650406
-    }
+    },
+    "paletteMaterials": [
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
+    ]
   },
   {
     "id": "bath_soap",
@@ -6490,6 +7468,7 @@
     "surface": "tabletop",
     "url": "bath_soap.glb",
     "collection": "bathroom",
+    "revision": "bathroom-reference-3",
     "size": [
       0.3,
       0.2464285714285714,
@@ -6512,6 +7491,16 @@
     ],
     "paintMaterials": [
       "bath-soap"
+    ],
+    "paletteMaterials": [
+      "bath-towel"
+    ],
+    "colorParts": [
+      {
+        "material": "bath-towel",
+        "label": "主题色",
+        "color": "#e7ebe2"
+      }
     ]
   },
   {
@@ -6520,6 +7509,7 @@
     "surface": "floor",
     "url": "bath_toilet.glb",
     "collection": "bathroom",
+    "revision": "bathroom-reference-3",
     "size": [
       0.9499999999999998,
       1.65,
@@ -6542,6 +7532,16 @@
     ],
     "paintMaterials": [
       "bath-accent"
+    ],
+    "paletteMaterials": [
+      "bath-accent"
+    ],
+    "colorParts": [
+      {
+        "material": "bath-accent",
+        "label": "主题色",
+        "color": "#81916b"
+      }
     ]
   },
   {
@@ -6593,6 +7593,16 @@
         ],
         "rotation": 180
       }
+    ],
+    "paletteMaterials": [
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
     ]
   },
   {
@@ -6636,6 +7646,16 @@
         ],
         "rotation": 0
       }
+    ],
+    "paletteMaterials": [
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
     ]
   },
   {
@@ -6666,6 +7686,16 @@
     ],
     "paintMaterials": [
       "bed-accent"
+    ],
+    "paletteMaterials": [
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
     ]
   },
   {
@@ -6696,7 +7726,9 @@
     ],
     "paintMaterials": [
       "bed-towel"
-    ]
+    ],
+    "paletteMaterials": [],
+    "colorParts": []
   },
   {
     "id": "bedroom_brush_cup",
@@ -6726,7 +7758,9 @@
     ],
     "paintMaterials": [
       "bed-cream"
-    ]
+    ],
+    "paletteMaterials": [],
+    "colorParts": []
   },
   {
     "id": "bedroom_bench",
@@ -6778,6 +7812,16 @@
         ],
         "rotation": 0
       }
+    ],
+    "paletteMaterials": [
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
     ]
   },
   {
@@ -6808,6 +7852,16 @@
     ],
     "paintMaterials": [
       "bed-accent"
+    ],
+    "paletteMaterials": [
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
     ]
   },
   {
@@ -6841,7 +7895,9 @@
     "revision": "shark-blue-1",
     "paintMaterials": [
       "shark-blue"
-    ]
+    ],
+    "paletteMaterials": [],
+    "colorParts": []
   },
   {
     "id": "bedroom_jelly",
@@ -6873,7 +7929,9 @@
     "category": "plush",
     "paintMaterials": [
       "bed-accent"
-    ]
+    ],
+    "paletteMaterials": [],
+    "colorParts": []
   },
   {
     "id": "bedroom_turtle",
@@ -6905,7 +7963,9 @@
     "category": "plush",
     "paintMaterials": [
       "bed-blue"
-    ]
+    ],
+    "paletteMaterials": [],
+    "colorParts": []
   },
   {
     "id": "bedroom_wardrobe",
@@ -6935,6 +7995,16 @@
     ],
     "paintMaterials": [
       "bed-accent"
+    ],
+    "paletteMaterials": [
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
     ]
   },
   {
@@ -6986,6 +8056,16 @@
           0.004694323144104803
         ],
         "rotation": 90
+      }
+    ],
+    "paletteMaterials": [
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
       }
     ]
   },
@@ -7082,6 +8162,16 @@
         ],
         "rotation": 180
       }
+    ],
+    "paletteMaterials": [
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
     ]
   },
   {
@@ -7124,6 +8214,16 @@
         ],
         "rotation": 0
       }
+    ],
+    "paletteMaterials": [
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
     ]
   },
   {
@@ -7154,6 +8254,16 @@
     ],
     "paintMaterials": [
       "bed-accent"
+    ],
+    "paletteMaterials": [
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
     ]
   },
   {
@@ -7196,6 +8306,16 @@
         ],
         "rotation": 0
       }
+    ],
+    "paletteMaterials": [
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
     ]
   },
   {
@@ -7228,7 +8348,9 @@
     "category": "plush",
     "paintMaterials": [
       "bed-towel"
-    ]
+    ],
+    "paletteMaterials": [],
+    "colorParts": []
   },
   {
     "id": "bedroom_double_bed",
@@ -7280,6 +8402,16 @@
         ],
         "rotation": 0
       }
+    ],
+    "paletteMaterials": [
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
     ]
   },
   {
@@ -7320,7 +8452,17 @@
         -0.001567398119122257,
         0.04326018808777429
       ]
-    }
+    },
+    "paletteMaterials": [
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
+    ]
   },
   {
     "id": "bedroom_table_lamp",
@@ -7350,7 +8492,9 @@
     ],
     "paintMaterials": [
       "bed-accent"
-    ]
+    ],
+    "paletteMaterials": [],
+    "colorParts": []
   },
   {
     "id": "bedroom_alarm",
@@ -7380,7 +8524,9 @@
     ],
     "paintMaterials": [
       "bed-towel"
-    ]
+    ],
+    "paletteMaterials": [],
+    "colorParts": []
   },
   {
     "id": "bedroom_dresser",
@@ -7420,7 +8566,17 @@
         0,
         0.042
       ]
-    }
+    },
+    "paletteMaterials": [
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
+    ]
   },
   {
     "id": "bedroom_mirror",
@@ -7450,7 +8606,9 @@
     ],
     "paintMaterials": [
       "bed-cream"
-    ]
+    ],
+    "paletteMaterials": [],
+    "colorParts": []
   },
   {
     "id": "bedroom_jewelry_box",
@@ -7480,7 +8638,9 @@
     ],
     "paintMaterials": [
       "bed-accent"
-    ]
+    ],
+    "paletteMaterials": [],
+    "colorParts": []
   },
   {
     "id": "bedroom_scent",
@@ -7510,7 +8670,9 @@
     ],
     "paintMaterials": [
       "bed-towel"
-    ]
+    ],
+    "paletteMaterials": [],
+    "colorParts": []
   },
   {
     "id": "show_spa_pool",
@@ -7542,7 +8704,9 @@
     "paintMaterials": [
       "showroom-stone"
     ],
-    "revision": "showrooms-cushions-3"
+    "revision": "showrooms-cushions-3",
+    "paletteMaterials": [],
+    "colorParts": []
   },
   {
     "id": "show_spa_stool",
@@ -7586,6 +8750,16 @@
         ],
         "rotation": 0
       }
+    ],
+    "paletteMaterials": [
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
     ]
   },
   {
@@ -7618,7 +8792,17 @@
     "paintMaterials": [
       "woodLight"
     ],
-    "revision": "showrooms-cushions-3"
+    "revision": "showrooms-cushions-3",
+    "paletteMaterials": [
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
+    ]
   },
   {
     "id": "show_spa_chest",
@@ -7656,7 +8840,17 @@
       "width": 0.92,
       "depth": 0.7451613974571228,
       "height": 0.6200000047683716
-    }
+    },
+    "paletteMaterials": [
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
+    ]
   },
   {
     "id": "show_spa_lantern",
@@ -7688,7 +8882,23 @@
     "paintMaterials": [
       "showroom-walnut"
     ],
-    "revision": "showrooms-cushions-3"
+    "revision": "showrooms-cushions-3",
+    "paletteMaterials": [
+      "showroom-walnut",
+      "showroom-cream"
+    ],
+    "colorParts": [
+      {
+        "material": "showroom-cream",
+        "label": "主体",
+        "color": "#e9e0d2"
+      },
+      {
+        "material": "showroom-walnut",
+        "label": "木质边框",
+        "color": "#6c4638"
+      }
+    ]
   },
   {
     "id": "show_study_shelf",
@@ -7718,9 +8928,43 @@
       ]
     ],
     "paintMaterials": [
-      "woodLight"
+      "study-shell"
     ],
-    "revision": "showrooms-cushions-3"
+    "revision": "study-painted-1",
+    "colorParts": [
+      {
+        "material": "study-shelf",
+        "label": "层板与白色书脊",
+        "color": "#eadfc9"
+      },
+      {
+        "material": "study-green",
+        "label": "收纳盒与绿色书脊",
+        "color": "#858d67"
+      },
+      {
+        "material": "study-shell",
+        "label": "深色框架",
+        "color": "#45463c"
+      },
+      {
+        "material": "study-paper",
+        "label": "主体",
+        "color": "#e6dcc8"
+      }
+    ],
+    "support": {
+      "shape": "rect",
+      "width": 2.470000190734863,
+      "depth": 0.609999976158142,
+      "height": 1.100000023841858
+    },
+    "paletteMaterials": [
+      "study-shell",
+      "study-shelf",
+      "study-green",
+      "study-paper"
+    ]
   },
   {
     "id": "show_study_tower",
@@ -7750,9 +8994,43 @@
       ]
     ],
     "paintMaterials": [
-      "woodLight"
+      "study-shell"
     ],
-    "revision": "showrooms-cushions-3"
+    "revision": "study-painted-1",
+    "colorParts": [
+      {
+        "material": "study-shelf",
+        "label": "层板与白色书脊",
+        "color": "#eadfc9"
+      },
+      {
+        "material": "study-green",
+        "label": "收纳盒与绿色书脊",
+        "color": "#858d67"
+      },
+      {
+        "material": "study-shell",
+        "label": "深色框架",
+        "color": "#45463c"
+      },
+      {
+        "material": "study-paper",
+        "label": "主体",
+        "color": "#e6dcc8"
+      }
+    ],
+    "support": {
+      "shape": "rect",
+      "width": 1.17,
+      "depth": 0.659999988079071,
+      "height": 3.25
+    },
+    "paletteMaterials": [
+      "study-shell",
+      "study-shelf",
+      "study-green",
+      "study-paper"
+    ]
   },
   {
     "id": "show_study_desk",
@@ -7790,7 +9068,17 @@
       "width": 3.38,
       "depth": 1.279999976158142,
       "height": 1.1199999928474424
-    }
+    },
+    "paletteMaterials": [
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
+    ]
   },
   {
     "id": "show_study_tea_table",
@@ -7828,7 +9116,17 @@
       "width": 1.4799999046325683,
       "depth": 0.829999988079071,
       "height": 0.6799999952316282
-    }
+    },
+    "paletteMaterials": [
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
+    ]
   },
   {
     "id": "show_study_pouf",
@@ -7872,6 +9170,16 @@
         ],
         "rotation": 0
       }
+    ],
+    "paletteMaterials": [
+      "showroom-lavender"
+    ],
+    "colorParts": [
+      {
+        "material": "showroom-lavender",
+        "label": "主题色",
+        "color": "#a39cb6"
+      }
     ]
   },
   {
@@ -7905,16 +9213,26 @@
       "showroom-cream"
     ],
     "revision": "showrooms-cushions-3",
+    "paletteMaterials": [
+      "showroom-cream",
+      "woodLight",
+      "showroom-charcoal"
+    ],
     "colorParts": [
       {
-        "material": "woodLight",
-        "label": "台面饰面",
-        "color": "#242629"
+        "material": "showroom-cream",
+        "label": "主体",
+        "color": "#e9e0d2"
       },
       {
         "material": "showroom-charcoal",
         "label": "黑色面板",
         "color": "#202225"
+      },
+      {
+        "material": "woodLight",
+        "label": "台面饰面",
+        "color": "#242629"
       },
       {
         "material": "showroom-blue",
@@ -7981,16 +9299,26 @@
       "showroom-cream"
     ],
     "revision": "showrooms-cushions-3",
+    "paletteMaterials": [
+      "showroom-cream",
+      "woodLight",
+      "showroom-charcoal"
+    ],
     "colorParts": [
       {
-        "material": "woodLight",
-        "label": "台面饰面",
-        "color": "#242629"
+        "material": "showroom-cream",
+        "label": "主体",
+        "color": "#e9e0d2"
       },
       {
         "material": "showroom-charcoal",
         "label": "黑色面板",
         "color": "#202225"
+      },
+      {
+        "material": "woodLight",
+        "label": "台面饰面",
+        "color": "#242629"
       },
       {
         "material": "showroom-stone",
@@ -8042,16 +9370,26 @@
       "depth": 1.2525000023841857,
       "height": 1.149999964237213
     },
+    "paletteMaterials": [
+      "woodLight",
+      "showroom-cream",
+      "showroom-charcoal"
+    ],
     "colorParts": [
       {
-        "material": "woodLight",
-        "label": "台面饰面",
-        "color": "#242629"
+        "material": "showroom-cream",
+        "label": "主体",
+        "color": "#e9e0d2"
       },
       {
         "material": "showroom-charcoal",
         "label": "黑色面板",
         "color": "#202225"
+      },
+      {
+        "material": "woodLight",
+        "label": "台面饰面",
+        "color": "#242629"
       }
     ]
   },
@@ -8097,6 +9435,16 @@
         ],
         "rotation": 0
       }
+    ],
+    "paletteMaterials": [
+      "showroom-cream"
+    ],
+    "colorParts": [
+      {
+        "material": "showroom-cream",
+        "label": "主体",
+        "color": "#e9e0d2"
+      }
     ]
   },
   {
@@ -8140,6 +9488,11 @@
         "material": "pillow-right",
         "label": "右侧枕头",
         "color": "#d9c5b7"
+      },
+      {
+        "material": "showroom-cream",
+        "label": "主体",
+        "color": "#e9e0d2"
       }
     ],
     "seats": [
@@ -8163,6 +9516,11 @@
         ],
         "rotation": 0
       }
+    ],
+    "paletteMaterials": [
+      "pillow-left",
+      "showroom-cream",
+      "pillow-right"
     ]
   },
   {
@@ -8201,7 +9559,17 @@
       "width": 1.779999976158142,
       "depth": 0.9300000715255737,
       "height": 0.649999964237213
-    }
+    },
+    "paletteMaterials": [
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
+    ]
   },
   {
     "id": "show_living_console",
@@ -8239,7 +9607,17 @@
       "width": 3.2800000953674315,
       "depth": 0.5299999761581421,
       "height": 0.8600000143051147
-    }
+    },
+    "paletteMaterials": [
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
+    ]
   },
   {
     "id": "show_living_pouf",
@@ -8283,7 +9661,9 @@
         ],
         "rotation": 0
       }
-    ]
+    ],
+    "paletteMaterials": [],
+    "colorParts": []
   },
   {
     "id": "show_cat_tree",
@@ -8315,7 +9695,17 @@
     "paintMaterials": [
       "showroom-cream"
     ],
-    "revision": "showrooms-cushions-3"
+    "revision": "showrooms-cushions-3",
+    "paletteMaterials": [
+      "showroom-cream"
+    ],
+    "colorParts": [
+      {
+        "material": "showroom-cream",
+        "label": "主体",
+        "color": "#e9e0d2"
+      }
+    ]
   },
   {
     "id": "show_bed",
@@ -8358,6 +9748,16 @@
         "material": "pillow-right",
         "label": "右侧枕头",
         "color": "#d9c5b7"
+      },
+      {
+        "material": "showroom-sage",
+        "label": "主题色",
+        "color": "#82917d"
+      },
+      {
+        "material": "showroom-cream",
+        "label": "主体",
+        "color": "#e9e0d2"
       }
     ],
     "beds": [
@@ -8381,6 +9781,12 @@
         ],
         "rotation": 0
       }
+    ],
+    "paletteMaterials": [
+      "showroom-sage",
+      "pillow-left",
+      "showroom-cream",
+      "pillow-right"
     ]
   },
   {
@@ -8413,7 +9819,29 @@
     "paintMaterials": [
       "showroom-cream"
     ],
-    "revision": "showrooms-wardrobe-wide-1"
+    "revision": "showrooms-wardrobe-wide-1",
+    "paletteMaterials": [
+      "showroom-cream",
+      "woodLight",
+      "showroom-charcoal"
+    ],
+    "colorParts": [
+      {
+        "material": "showroom-cream",
+        "label": "主体",
+        "color": "#e9e0d2"
+      },
+      {
+        "material": "showroom-charcoal",
+        "label": "深色框架",
+        "color": "#34303a"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
+    ]
   },
   {
     "id": "show_bedroom_low_shelf",
@@ -8451,7 +9879,17 @@
       "width": 3.0800000476837157,
       "depth": 0.579999988079071,
       "height": 0.8199999928474426
-    }
+    },
+    "paletteMaterials": [
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
+    ]
   },
   {
     "id": "show_bedroom_dresser",
@@ -8490,16 +9928,26 @@
       "depth": 0.579999988079071,
       "height": 1.1799999475479126
     },
+    "paletteMaterials": [
+      "showroom-cream",
+      "woodLight",
+      "showroom-charcoal"
+    ],
     "colorParts": [
       {
-        "material": "woodLight",
-        "label": "台面饰面",
-        "color": "#242629"
+        "material": "showroom-cream",
+        "label": "主体",
+        "color": "#e9e0d2"
       },
       {
         "material": "showroom-charcoal",
         "label": "黑色面板",
         "color": "#202225"
+      },
+      {
+        "material": "woodLight",
+        "label": "台面饰面",
+        "color": "#242629"
       }
     ]
   },
@@ -8539,7 +9987,17 @@
       "width": 2.2799998569488524,
       "depth": 0.5299999761581421,
       "height": 0.5799999833106995
-    }
+    },
+    "paletteMaterials": [
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
+    ]
   },
   {
     "id": "show_bedroom_pouf",
@@ -8583,6 +10041,16 @@
         ],
         "rotation": 0
       }
+    ],
+    "paletteMaterials": [
+      "showroom-cream"
+    ],
+    "colorParts": [
+      {
+        "material": "showroom-cream",
+        "label": "主体",
+        "color": "#e9e0d2"
+      }
     ]
   },
   {
@@ -8615,7 +10083,23 @@
       "walnut"
     ],
     "revision": "showroom-decor-1",
-    "daylight": true
+    "daylight": true,
+    "paletteMaterials": [
+      "walnut",
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "walnut",
+        "label": "木质边框",
+        "color": "#624336"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
+    ]
   },
   {
     "id": "suite_window_study",
@@ -8647,7 +10131,23 @@
       "cream"
     ],
     "revision": "showroom-decor-1",
-    "daylight": true
+    "daylight": true,
+    "paletteMaterials": [
+      "woodLight",
+      "cream"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#e9e0d2"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
+    ]
   },
   {
     "id": "suite_window_kitchen",
@@ -8679,7 +10179,23 @@
       "ink"
     ],
     "revision": "showroom-decor-1",
-    "daylight": true
+    "daylight": true,
+    "paletteMaterials": [
+      "ink",
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "ink",
+        "label": "深色框架",
+        "color": "#393039"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
+    ]
   },
   {
     "id": "suite_window_living",
@@ -8711,7 +10227,29 @@
       "walnut"
     ],
     "revision": "showroom-decor-1",
-    "daylight": true
+    "daylight": true,
+    "paletteMaterials": [
+      "walnut",
+      "woodLight",
+      "cream"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#e9e0d2"
+      },
+      {
+        "material": "walnut",
+        "label": "木质边框",
+        "color": "#624336"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
+    ]
   },
   {
     "id": "suite_window_bedroom",
@@ -8743,7 +10281,23 @@
       "cream"
     ],
     "revision": "curtain-source-2",
-    "daylight": true
+    "daylight": true,
+    "paletteMaterials": [
+      "cream",
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#e9e0d2"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
+    ]
   },
   {
     "id": "suite_art_moon",
@@ -8774,7 +10328,35 @@
     "paintMaterials": [
       "walnut"
     ],
-    "revision": "showroom-decor-1"
+    "revision": "showroom-decor-1",
+    "paletteMaterials": [
+      "paper",
+      "walnut",
+      "gold",
+      "lavender"
+    ],
+    "colorParts": [
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#f4ecdf"
+      },
+      {
+        "material": "lavender",
+        "label": "主题色",
+        "color": "#a39cb6"
+      },
+      {
+        "material": "walnut",
+        "label": "木质边框",
+        "color": "#624336"
+      },
+      {
+        "material": "gold",
+        "label": "绳柱与金属",
+        "color": "#b79b6a"
+      }
+    ]
   },
   {
     "id": "suite_art_botanical",
@@ -8805,7 +10387,29 @@
     "paintMaterials": [
       "walnut"
     ],
-    "revision": "showroom-decor-1"
+    "revision": "showroom-decor-1",
+    "paletteMaterials": [
+      "paper",
+      "walnut",
+      "sage"
+    ],
+    "colorParts": [
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#f4ecdf"
+      },
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#82917d"
+      },
+      {
+        "material": "walnut",
+        "label": "木质边框",
+        "color": "#624336"
+      }
+    ]
   },
   {
     "id": "suite_art_abstract",
@@ -8836,7 +10440,35 @@
     "paintMaterials": [
       "walnut"
     ],
-    "revision": "showroom-decor-1"
+    "revision": "showroom-decor-1",
+    "paletteMaterials": [
+      "paper",
+      "walnut",
+      "lavender",
+      "sage"
+    ],
+    "colorParts": [
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#f4ecdf"
+      },
+      {
+        "material": "lavender",
+        "label": "主题色",
+        "color": "#a39cb6"
+      },
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#82917d"
+      },
+      {
+        "material": "walnut",
+        "label": "木质边框",
+        "color": "#624336"
+      }
+    ]
   },
   {
     "id": "suite_wall_shelf",
@@ -8867,7 +10499,41 @@
     "paintMaterials": [
       "cream"
     ],
-    "revision": "showroom-decor-1"
+    "revision": "showroom-decor-1",
+    "paletteMaterials": [
+      "woodLight",
+      "cream",
+      "sage",
+      "walnut",
+      "paper"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#e9e0d2"
+      },
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#82917d"
+      },
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#f4ecdf"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      },
+      {
+        "material": "walnut",
+        "label": "木质边框",
+        "color": "#624336"
+      }
+    ]
   },
   {
     "id": "suite_tea_tray",
@@ -8898,7 +10564,29 @@
     "paintMaterials": [
       "cream"
     ],
-    "revision": "showroom-decor-1"
+    "revision": "showroom-decor-1",
+    "paletteMaterials": [
+      "woodLight",
+      "cream",
+      "walnut"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#e9e0d2"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      },
+      {
+        "material": "walnut",
+        "label": "木质边框",
+        "color": "#624336"
+      }
+    ]
   },
   {
     "id": "suite_books_plant",
@@ -8929,7 +10617,29 @@
     "paintMaterials": [
       "lavender"
     ],
-    "revision": "showroom-decor-1"
+    "revision": "showroom-decor-1",
+    "paletteMaterials": [
+      "lavender",
+      "cream",
+      "sage"
+    ],
+    "colorParts": [
+      {
+        "material": "lavender",
+        "label": "主题色",
+        "color": "#a39cb6"
+      },
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#e9e0d2"
+      },
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#82917d"
+      }
+    ]
   },
   {
     "id": "suite_rug_grid",
@@ -8960,7 +10670,23 @@
     "paintMaterials": [
       "cream"
     ],
-    "revision": "showroom-decor-1"
+    "revision": "showroom-decor-1",
+    "paletteMaterials": [
+      "cream",
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#e9e0d2"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
+    ]
   },
   {
     "id": "suite_rug_border",
@@ -8991,7 +10717,23 @@
     "paintMaterials": [
       "cream"
     ],
-    "revision": "showroom-decor-1"
+    "revision": "showroom-decor-1",
+    "paletteMaterials": [
+      "cream",
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#e9e0d2"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
+    ]
   },
   {
     "id": "suite_plant_large",
@@ -9023,7 +10765,9 @@
     "paintMaterials": [
       "ceramic"
     ],
-    "waterable": true
+    "waterable": true,
+    "paletteMaterials": [],
+    "colorParts": []
   },
   {
     "id": "suite_plant_small",
@@ -9058,7 +10802,9 @@
     "contact": {
       "width": 0.2296,
       "depth": 0.2296
-    }
+    },
+    "paletteMaterials": [],
+    "colorParts": []
   },
   {
     "id": "suite_dressing_mirror",
@@ -9089,6 +10835,16 @@
     ],
     "paintMaterials": [
       "woodLight"
+    ],
+    "paletteMaterials": [
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
     ]
   },
   {
@@ -9120,6 +10876,3884 @@
     ],
     "paintMaterials": [
       "woodLight"
+    ],
+    "paletteMaterials": [
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
+    ]
+  },
+  {
+    "id": "bedroom_ref_sideboard",
+    "name": "暖木格栅书柜",
+    "surface": "floor",
+    "collection": "bedroom",
+    "url": "bedroom_ref_sideboard.glb",
+    "revision": "bedroom-reference-1",
+    "size": [
+      3.1500000953674316,
+      0.8825000524520874,
+      0.690500020980835
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -1.5750000476837158,
+        0,
+        -0.3452500104904175,
+        1.5750000476837158,
+        0.8825000524520874,
+        0.3452500104904175
+      ]
+    ],
+    "paintMaterials": [
+      "woodLight"
+    ],
+    "support": {
+      "shape": "rect",
+      "width": 3.03,
+      "depth": 0.57,
+      "height": 0.8824999982863665,
+      "center": [
+        0,
+        -0.0052499920129776
+      ]
+    },
+    "paletteMaterials": [
+      "woodLight",
+      "walnut",
+      "cream",
+      "gold",
+      "sage",
+      "paper"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eee5d5"
+      },
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#81916b"
+      },
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#faf2e4"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      },
+      {
+        "material": "walnut",
+        "label": "木质边框",
+        "color": "#795c46"
+      },
+      {
+        "material": "gold",
+        "label": "绳柱与金属",
+        "color": "#bea477"
+      }
+    ]
+  },
+  {
+    "id": "bedroom_ref_dresser",
+    "name": "奶油开放梳妆柜",
+    "surface": "floor",
+    "collection": "bedroom",
+    "url": "bedroom_ref_dresser.glb",
+    "revision": "bedroom-reference-1",
+    "size": [
+      2.8499999046325684,
+      0.9925000071525574,
+      0.699999988079071
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -1.4249999523162842,
+        0,
+        -0.3499999940395355,
+        1.4249999523162842,
+        0.9925000071525574,
+        0.3499999940395355
+      ]
+    ],
+    "paintMaterials": [
+      "cream"
+    ],
+    "support": {
+      "shape": "rect",
+      "width": 2.72,
+      "depth": 0.58,
+      "height": 0.9924999982863665,
+      "center": [
+        0,
+        0
+      ]
+    },
+    "paletteMaterials": [
+      "woodLight",
+      "cream",
+      "gold",
+      "sage",
+      "paper"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eee5d5"
+      },
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#81916b"
+      },
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#faf2e4"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      },
+      {
+        "material": "gold",
+        "label": "绳柱与金属",
+        "color": "#bea477"
+      }
+    ]
+  },
+  {
+    "id": "bedroom_ref_bench",
+    "name": "书本与收纳盒床尾凳",
+    "surface": "floor",
+    "collection": "bedroom",
+    "url": "bedroom_ref_bench.glb",
+    "revision": "bedroom-reference-1",
+    "size": [
+      2.450000047683716,
+      0.5325000286102295,
+      0.6800000071525574
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -1.225000023841858,
+        0,
+        -0.3400000035762787,
+        1.225000023841858,
+        0.5325000286102295,
+        0.3400000035762787
+      ]
+    ],
+    "paintMaterials": [
+      "woodLight"
+    ],
+    "support": {
+      "shape": "rect",
+      "width": 2.3,
+      "depth": 0.56,
+      "height": 0.5324999982863665,
+      "center": [
+        0,
+        0
+      ]
+    },
+    "paletteMaterials": [
+      "woodLight",
+      "cream",
+      "gold",
+      "sage",
+      "paper",
+      "pink"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eee5d5"
+      },
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#81916b"
+      },
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#faf2e4"
+      },
+      {
+        "material": "pink",
+        "label": "主题色",
+        "color": "#d8bcb1"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      },
+      {
+        "material": "gold",
+        "label": "绳柱与金属",
+        "color": "#bea477"
+      }
+    ]
+  },
+  {
+    "id": "bedroom_ref_wardrobe",
+    "name": "相片双门高衣柜",
+    "surface": "floor",
+    "collection": "bedroom",
+    "url": "bedroom_ref_wardrobe.glb",
+    "revision": "bedroom-reference-1",
+    "size": [
+      2.240000009536743,
+      2.904042959213257,
+      1.173011302947998
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -1.1200000047683716,
+        0,
+        -0.586505651473999,
+        1.1200000047683716,
+        2.904042959213257,
+        0.586505651473999
+      ]
+    ],
+    "paintMaterials": [
+      "cream"
+    ],
+    "support": {
+      "shape": "rect",
+      "width": 2.1,
+      "depth": 0.9,
+      "height": 2.8749999523162835,
+      "center": [
+        0,
+        -0.0765056312084198
+      ]
+    },
+    "paletteMaterials": [
+      "cream",
+      "woodLight",
+      "ink",
+      "paper",
+      "pink",
+      "sage",
+      "gold"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eee5d5"
+      },
+      {
+        "material": "ink",
+        "label": "深色框架",
+        "color": "#3c3739"
+      },
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#faf2e4"
+      },
+      {
+        "material": "pink",
+        "label": "主题色",
+        "color": "#d8bcb1"
+      },
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#81916b"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      },
+      {
+        "material": "gold",
+        "label": "绳柱与金属",
+        "color": "#bea477"
+      }
+    ]
+  },
+  {
+    "id": "bedroom_ref_wardrobe_top",
+    "name": "衣柜收纳盒与绿植",
+    "surface": "tabletop",
+    "collection": "bedroom",
+    "url": "bedroom_ref_wardrobe_top.glb",
+    "revision": "bedroom-reference-1",
+    "size": [
+      1.8507288694381714,
+      0.4155886769294739,
+      0.6449999809265137
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.9253644347190857,
+        0,
+        -0.32249999046325684,
+        0.9253644347190857,
+        0.4155886769294739,
+        0.32249999046325684
+      ]
+    ],
+    "paintMaterials": [
+      "sage"
+    ],
+    "contact": {
+      "width": 1.96,
+      "depth": 0.65
+    },
+    "paletteMaterials": [
+      "cream",
+      "gold",
+      "sage"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eee5d5"
+      },
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#81916b"
+      },
+      {
+        "material": "gold",
+        "label": "绳柱与金属",
+        "color": "#bea477"
+      }
+    ]
+  },
+  {
+    "id": "bedroom_ref_sideboard_top",
+    "name": "球灯绿植与书香摆件",
+    "surface": "tabletop",
+    "collection": "bedroom",
+    "url": "bedroom_ref_sideboard_top.glb",
+    "revision": "bedroom-reference-1",
+    "size": [
+      2.276850700378418,
+      0.6728578805923462,
+      0.34153079986572266
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -1.138425350189209,
+        0,
+        -0.17076539993286133,
+        1.138425350189209,
+        0.6728578805923462,
+        0.17076539993286133
+      ]
+    ],
+    "paintMaterials": [
+      "cream"
+    ],
+    "contact": {
+      "width": 2.75,
+      "depth": 0.48
+    },
+    "paletteMaterials": [
+      "walnut",
+      "gold",
+      "cream",
+      "sage",
+      "ink",
+      "pink",
+      "paper"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eee5d5"
+      },
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#81916b"
+      },
+      {
+        "material": "ink",
+        "label": "深色框架",
+        "color": "#3c3739"
+      },
+      {
+        "material": "pink",
+        "label": "主题色",
+        "color": "#d8bcb1"
+      },
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#faf2e4"
+      },
+      {
+        "material": "walnut",
+        "label": "木质边框",
+        "color": "#795c46"
+      },
+      {
+        "material": "gold",
+        "label": "绳柱与金属",
+        "color": "#bea477"
+      }
+    ]
+  },
+  {
+    "id": "bedroom_ref_dresser_top",
+    "name": "椭圆镜与梳妆小物",
+    "surface": "tabletop",
+    "collection": "bedroom",
+    "url": "bedroom_ref_dresser_top.glb",
+    "revision": "bedroom-reference-1",
+    "size": [
+      2.5993599891662598,
+      1.3035600185394287,
+      0.44999998807907104
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -1.2996799945831299,
+        0,
+        -0.22499999403953552,
+        1.2996799945831299,
+        1.3035600185394287,
+        0.22499999403953552
+      ]
+    ],
+    "paintMaterials": [
+      "woodLight"
+    ],
+    "contact": {
+      "width": 2.64,
+      "depth": 0.52
+    },
+    "paletteMaterials": [
+      "woodLight",
+      "walnut",
+      "paper",
+      "sage",
+      "gold",
+      "cream",
+      "lavender",
+      "ink",
+      "pink"
+    ],
+    "colorParts": [
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#faf2e4"
+      },
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#81916b"
+      },
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eee5d5"
+      },
+      {
+        "material": "lavender",
+        "label": "主题色",
+        "color": "#ad97bd"
+      },
+      {
+        "material": "ink",
+        "label": "深色框架",
+        "color": "#3c3739"
+      },
+      {
+        "material": "pink",
+        "label": "主题色",
+        "color": "#d8bcb1"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      },
+      {
+        "material": "walnut",
+        "label": "木质边框",
+        "color": "#795c46"
+      },
+      {
+        "material": "gold",
+        "label": "绳柱与金属",
+        "color": "#bea477"
+      }
+    ]
+  },
+  {
+    "id": "bedroom_ref_sleeping_cat",
+    "name": "蜷睡黑白猫摆件",
+    "surface": "tabletop",
+    "collection": "bedroom",
+    "url": "bedroom_ref_sleeping_cat.glb",
+    "revision": "bedroom-reference-1",
+    "size": [
+      0.7840868234634399,
+      0.41566744446754456,
+      0.4493483304977417
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.39204341173171997,
+        0,
+        -0.22467416524887085,
+        0.39204341173171997,
+        0.41566744446754456,
+        0.22467416524887085
+      ]
+    ],
+    "paintMaterials": [
+      "ink"
+    ],
+    "paletteMaterials": [
+      "ink",
+      "paper",
+      "pink"
+    ],
+    "colorParts": [
+      {
+        "material": "ink",
+        "label": "深色框架",
+        "color": "#3c3739"
+      },
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#faf2e4"
+      },
+      {
+        "material": "pink",
+        "label": "主题色",
+        "color": "#d8bcb1"
+      }
+    ]
+  },
+  {
+    "id": "bedroom_ref_flower_pouf",
+    "name": "鼠尾草花瓣坐墩",
+    "surface": "floor",
+    "collection": "bedroom",
+    "url": "bedroom_ref_flower_pouf.glb",
+    "revision": "bedroom-reference-1",
+    "size": [
+      1.1684346199035645,
+      0.4780000150203705,
+      1.1935704946517944
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.5842173099517822,
+        0,
+        -0.5967852473258972,
+        0.5842173099517822,
+        0.4780000150203705,
+        0.5967852473258972
+      ]
+    ],
+    "paintMaterials": [
+      "sage"
+    ],
+    "seats": [
+      {
+        "id": "center",
+        "label": "花心",
+        "position": [
+          0,
+          0.45,
+          0
+        ],
+        "rotation": 0
+      }
+    ],
+    "paletteMaterials": [
+      "sage",
+      "gold"
+    ],
+    "colorParts": [
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#81916b"
+      },
+      {
+        "material": "gold",
+        "label": "绳柱与金属",
+        "color": "#bea477"
+      }
+    ]
+  },
+  {
+    "id": "bedroom_ref_tea_table",
+    "name": "床边圆木小茶几",
+    "surface": "floor",
+    "collection": "bedroom",
+    "url": "bedroom_ref_tea_table.glb",
+    "revision": "bedroom-reference-1",
+    "size": [
+      0.8600000143051147,
+      0.6482706069946289,
+      0.8600000143051147
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.4300000071525574,
+        0,
+        -0.4300000071525574,
+        0.4300000071525574,
+        0.6482706069946289,
+        0.4300000071525574
+      ]
+    ],
+    "paintMaterials": [
+      "woodLight"
+    ],
+    "support": {
+      "shape": "circle",
+      "radius": 0.39,
+      "height": 0.6482706150412559,
+      "center": [
+        0,
+        0
+      ]
+    },
+    "paletteMaterials": [
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
+    ]
+  },
+  {
+    "id": "bedroom_ref_tea",
+    "name": "书本与一杯热茶",
+    "surface": "tabletop",
+    "collection": "bedroom",
+    "url": "bedroom_ref_tea.glb",
+    "revision": "bedroom-reference-1",
+    "size": [
+      0.38999998569488525,
+      0.21050000190734863,
+      0.27000001072883606
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.19499999284744263,
+        0,
+        -0.13500000536441803,
+        0.19499999284744263,
+        0.21050000190734863,
+        0.13500000536441803
+      ]
+    ],
+    "paintMaterials": [
+      "sage"
+    ],
+    "paletteMaterials": [
+      "sage",
+      "paper",
+      "cream"
+    ],
+    "colorParts": [
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#81916b"
+      },
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#faf2e4"
+      },
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eee5d5"
+      }
+    ]
+  },
+  {
+    "id": "bedroom_ref_nightstand",
+    "name": "两抽床头柜",
+    "surface": "floor",
+    "collection": "bedroom",
+    "url": "bedroom_ref_nightstand.glb",
+    "revision": "bedroom-reference-1",
+    "size": [
+      0.8100000023841858,
+      0.6924999952316284,
+      0.7599999904632568
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.4050000011920929,
+        0,
+        -0.3799999952316284,
+        0.4050000011920929,
+        0.6924999952316284,
+        0.3799999952316284
+      ]
+    ],
+    "paintMaterials": [
+      "woodLight"
+    ],
+    "support": {
+      "shape": "rect",
+      "width": 0.72,
+      "depth": 0.64,
+      "height": 0.6924999880790709,
+      "center": [
+        0,
+        -0.015000000596046448
+      ]
+    },
+    "paletteMaterials": [
+      "woodLight",
+      "gold"
+    ],
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      },
+      {
+        "material": "gold",
+        "label": "绳柱与金属",
+        "color": "#bea477"
+      }
+    ]
+  },
+  {
+    "id": "bedroom_ref_bedside_top",
+    "name": "暖光褶皱床头灯与香氛",
+    "surface": "tabletop",
+    "collection": "bedroom",
+    "url": "bedroom_ref_bedside_top.glb",
+    "revision": "bedroom-reference-1",
+    "size": [
+      0.6698507070541382,
+      0.5514000058174133,
+      0.5064560174942017
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.3349253535270691,
+        0,
+        -0.25322800874710083,
+        0.3349253535270691,
+        0.5514000058174133,
+        0.25322800874710083
+      ]
+    ],
+    "paintMaterials": [
+      "cream"
+    ],
+    "contact": {
+      "width": 0.65,
+      "depth": 0.48
+    },
+    "paletteMaterials": [
+      "walnut",
+      "gold",
+      "cream",
+      "sage",
+      "paper"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eee5d5"
+      },
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#81916b"
+      },
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#faf2e4"
+      },
+      {
+        "material": "walnut",
+        "label": "木质边框",
+        "color": "#795c46"
+      },
+      {
+        "material": "gold",
+        "label": "绳柱与金属",
+        "color": "#bea477"
+      }
+    ]
+  },
+  {
+    "id": "bedroom_ref_floor_lamp",
+    "name": "奶油褶皱落地灯",
+    "surface": "floor",
+    "collection": "bedroom",
+    "url": "bedroom_ref_floor_lamp.glb",
+    "revision": "bedroom-reference-1",
+    "size": [
+      0.5711885094642639,
+      2.3513998985290527,
+      0.5799999833106995
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.28559425473213196,
+        0,
+        -0.28999999165534973,
+        0.28559425473213196,
+        2.3513998985290527,
+        0.28999999165534973
+      ]
+    ],
+    "paintMaterials": [
+      "gold"
+    ],
+    "paletteMaterials": [
+      "gold",
+      "walnut",
+      "cream"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eee5d5"
+      },
+      {
+        "material": "gold",
+        "label": "绳柱与金属",
+        "color": "#bea477"
+      },
+      {
+        "material": "walnut",
+        "label": "木质边框",
+        "color": "#795c46"
+      }
+    ]
+  },
+  {
+    "id": "bedroom_ref_wall_rack",
+    "name": "书与黑猫的双层墙架",
+    "surface": "wall",
+    "collection": "bedroom",
+    "url": "bedroom_ref_wall_rack.glb",
+    "revision": "bedroom-reference-1",
+    "size": [
+      1.694612979888916,
+      1.778249979019165,
+      0.49686387181282043
+    ],
+    "default": [
+      0,
+      2,
+      0
+    ],
+    "boxes": [
+      [
+        -0.847306489944458,
+        0,
+        -0.24843193590641022,
+        0.847306489944458,
+        1.778249979019165,
+        0.24843193590641022
+      ]
+    ],
+    "paintMaterials": [
+      "woodLight"
+    ],
+    "paletteMaterials": [
+      "woodLight",
+      "cream",
+      "gold",
+      "sage",
+      "paper",
+      "pink",
+      "ink"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eee5d5"
+      },
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#81916b"
+      },
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#faf2e4"
+      },
+      {
+        "material": "pink",
+        "label": "主题色",
+        "color": "#d8bcb1"
+      },
+      {
+        "material": "ink",
+        "label": "深色框架",
+        "color": "#3c3739"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      },
+      {
+        "material": "gold",
+        "label": "绳柱与金属",
+        "color": "#bea477"
+      }
+    ]
+  },
+  {
+    "id": "bedroom_ref_moon_art",
+    "name": "月色云朵浮雕画",
+    "surface": "wall",
+    "collection": "bedroom",
+    "url": "bedroom_ref_moon_art.glb",
+    "revision": "bedroom-reference-1",
+    "size": [
+      1.0199999809265137,
+      1.2999999299645424,
+      0.08205951005220413
+    ],
+    "default": [
+      0,
+      2,
+      0
+    ],
+    "boxes": [
+      [
+        -0.5099999904632568,
+        0,
+        -0.041029755026102066,
+        0.5099999904632568,
+        1.2999999299645424,
+        0.041029755026102066
+      ]
+    ],
+    "paintMaterials": [
+      "woodLight"
+    ],
+    "paletteMaterials": [
+      "woodLight",
+      "gold",
+      "paper",
+      "pink"
+    ],
+    "colorParts": [
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#faf2e4"
+      },
+      {
+        "material": "pink",
+        "label": "主题色",
+        "color": "#d8bcb1"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      },
+      {
+        "material": "gold",
+        "label": "绳柱与金属",
+        "color": "#bea477"
+      }
+    ]
+  },
+  {
+    "id": "bedroom_ref_photo_string",
+    "name": "夹子相片小墙饰",
+    "surface": "wall",
+    "collection": "bedroom",
+    "url": "bedroom_ref_photo_string.glb",
+    "revision": "bedroom-reference-1",
+    "size": [
+      0.8700000047683716,
+      0.5450000166893005,
+      0.030000001192092896
+    ],
+    "default": [
+      0,
+      2,
+      0
+    ],
+    "boxes": [
+      [
+        -0.4350000023841858,
+        0,
+        -0.015000000596046448,
+        0.4350000023841858,
+        0.5450000166893005,
+        0.015000000596046448
+      ]
+    ],
+    "paintMaterials": [
+      "paper"
+    ],
+    "paletteMaterials": [
+      "paper",
+      "pink",
+      "sage",
+      "gold"
+    ],
+    "colorParts": [
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#faf2e4"
+      },
+      {
+        "material": "pink",
+        "label": "主题色",
+        "color": "#d8bcb1"
+      },
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#81916b"
+      },
+      {
+        "material": "gold",
+        "label": "绳柱与金属",
+        "color": "#bea477"
+      }
+    ]
+  },
+  {
+    "id": "bedroom_ref_window",
+    "name": "系带布帘与宽窗台",
+    "surface": "wall",
+    "collection": "bedroom",
+    "url": "bedroom_ref_window.glb",
+    "revision": "bedroom-reference-1",
+    "size": [
+      4.150000095367432,
+      2.203000068664551,
+      0.47999995946884155
+    ],
+    "default": [
+      0,
+      2,
+      0
+    ],
+    "boxes": [
+      [
+        -2.075000047683716,
+        0,
+        -0.23999997973442078,
+        2.075000047683716,
+        2.203000068664551,
+        0.23999997973442078
+      ]
+    ],
+    "paintMaterials": [
+      "cream"
+    ],
+    "daylight": true,
+    "daylightSettings": {
+      "reach": 4.8,
+      "intensity": 80
+    },
+    "support": {
+      "shape": "rect",
+      "width": 3.45,
+      "depth": 0.37,
+      "height": 0.09500000037252904,
+      "center": [
+        0,
+        -0.0299999937415123
+      ]
+    },
+    "paletteMaterials": [
+      "woodLight",
+      "gold",
+      "cream",
+      "sage"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eee5d5"
+      },
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#81916b"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      },
+      {
+        "material": "gold",
+        "label": "绳柱与金属",
+        "color": "#bea477"
+      }
+    ]
+  },
+  {
+    "id": "bedroom_ref_sill_garden",
+    "name": "窗台小猫与绿植",
+    "surface": "tabletop",
+    "collection": "bedroom",
+    "url": "bedroom_ref_sill_garden.glb",
+    "revision": "bedroom-reference-1",
+    "size": [
+      2.4365715980529785,
+      0.6230880618095398,
+      0.33234861493110657
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -1.2182857990264893,
+        0,
+        -0.16617430746555328,
+        1.2182857990264893,
+        0.6230880618095398,
+        0.16617430746555328
+      ]
+    ],
+    "paintMaterials": [
+      "cream"
+    ],
+    "contact": {
+      "width": 2.72,
+      "depth": 0.3
+    },
+    "paletteMaterials": [
+      "cream",
+      "gold",
+      "ink",
+      "pink",
+      "paper"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eee5d5"
+      },
+      {
+        "material": "ink",
+        "label": "深色框架",
+        "color": "#3c3739"
+      },
+      {
+        "material": "pink",
+        "label": "主题色",
+        "color": "#d8bcb1"
+      },
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#faf2e4"
+      },
+      {
+        "material": "gold",
+        "label": "绳柱与金属",
+        "color": "#bea477"
+      }
+    ]
+  },
+  {
+    "id": "bedroom_ref_rug",
+    "name": "暖白织边大地毯",
+    "surface": "rug",
+    "collection": "bedroom",
+    "url": "bedroom_ref_rug.glb",
+    "revision": "bedroom-reference-1",
+    "size": [
+      5.699999809265137,
+      0.039000000804662704,
+      5.539999961853027
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -2.8499999046325684,
+        0,
+        -2.7699999809265137,
+        2.8499999046325684,
+        0.039000000804662704,
+        2.7699999809265137
+      ]
+    ],
+    "paintMaterials": [
+      "cream"
+    ],
+    "paletteMaterials": [
+      "cream",
+      "woodLight",
+      "paper"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eee5d5"
+      },
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#faf2e4"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
+    ]
+  },
+  {
+    "id": "bedroom_ref_bin",
+    "name": "奶油圆纸篓",
+    "surface": "floor",
+    "collection": "bedroom",
+    "url": "bedroom_ref_bin.glb",
+    "revision": "bedroom-reference-1",
+    "size": [
+      0.3400000035762787,
+      0.4580000042915344,
+      0.3400000035762787
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.17000000178813934,
+        0,
+        -0.17000000178813934,
+        0.17000000178813934,
+        0.4580000042915344,
+        0.17000000178813934
+      ]
+    ],
+    "paintMaterials": [
+      "cream"
+    ],
+    "paletteMaterials": [
+      "cream"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eee5d5"
+      }
+    ]
+  },
+  {
+    "id": "bedroom_ref_entry_mat",
+    "name": "猫咪门垫与软拖鞋",
+    "surface": "rug",
+    "collection": "bedroom",
+    "url": "bedroom_ref_entry_mat.glb",
+    "revision": "bedroom-reference-1",
+    "size": [
+      1.3200000524520874,
+      0.13500000536441803,
+      0.7300000190734863
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.6600000262260437,
+        0,
+        -0.36500000953674316,
+        0.6600000262260437,
+        0.13500000536441803,
+        0.36500000953674316
+      ]
+    ],
+    "paintMaterials": [
+      "cream"
+    ],
+    "paletteMaterials": [
+      "cream",
+      "gold",
+      "pink",
+      "walnut",
+      "paper"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eee5d5"
+      },
+      {
+        "material": "pink",
+        "label": "主题色",
+        "color": "#d8bcb1"
+      },
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#faf2e4"
+      },
+      {
+        "material": "gold",
+        "label": "绳柱与金属",
+        "color": "#bea477"
+      },
+      {
+        "material": "walnut",
+        "label": "木质边框",
+        "color": "#795c46"
+      }
+    ]
+  },
+  {
+    "id": "bathroom_ref_towel_shelf",
+    "name": "原木毛巾双层壁架",
+    "surface": "wall",
+    "collection": "bathroom",
+    "url": "bathroom_ref_towel_shelf.glb",
+    "revision": "bathroom-reference-1",
+    "size": [
+      1.75,
+      1.075461506843567,
+      0.41999998688697815
+    ],
+    "default": [
+      0,
+      2,
+      0
+    ],
+    "boxes": [
+      [
+        -0.875,
+        0,
+        -0.20999999344348907,
+        0.875,
+        1.075461506843567,
+        0.20999999344348907
+      ]
+    ],
+    "paintMaterials": [
+      "woodLight"
+    ],
+    "paletteMaterials": [
+      "woodLight",
+      "sage",
+      "cream",
+      "ink",
+      "paper",
+      "walnut",
+      "gold"
+    ],
+    "colorParts": [
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#81916b"
+      },
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eee5d5"
+      },
+      {
+        "material": "ink",
+        "label": "深色框架",
+        "color": "#303b30"
+      },
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#faf2e4"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      },
+      {
+        "material": "walnut",
+        "label": "木质边框",
+        "color": "#795c46"
+      },
+      {
+        "material": "gold",
+        "label": "绳柱与金属",
+        "color": "#bea477"
+      }
+    ]
+  },
+  {
+    "id": "bathroom_ref_toilet_shelf",
+    "name": "如厕区洗护壁架",
+    "surface": "wall",
+    "collection": "bathroom",
+    "url": "bathroom_ref_toilet_shelf.glb",
+    "revision": "bathroom-reference-1",
+    "size": [
+      1.0499999523162842,
+      0.4857395589351654,
+      0.36000001430511475
+    ],
+    "default": [
+      0,
+      2,
+      0
+    ],
+    "boxes": [
+      [
+        -0.5249999761581421,
+        0,
+        -0.18000000715255737,
+        0.5249999761581421,
+        0.4857395589351654,
+        0.18000000715255737
+      ]
+    ],
+    "paintMaterials": [
+      "woodLight"
+    ],
+    "paletteMaterials": [
+      "woodLight",
+      "sage",
+      "ink",
+      "paper",
+      "cream"
+    ],
+    "colorParts": [
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#81916b"
+      },
+      {
+        "material": "ink",
+        "label": "深色框架",
+        "color": "#303b30"
+      },
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#faf2e4"
+      },
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eee5d5"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
+    ]
+  },
+  {
+    "id": "bathroom_ref_botanical",
+    "name": "鼠尾草植物装饰画",
+    "surface": "wall",
+    "collection": "bathroom",
+    "url": "bathroom_ref_botanical.glb",
+    "revision": "bathroom-reference-1",
+    "size": [
+      0.6499999761581421,
+      0.8600000143051147,
+      0.07988288998603821
+    ],
+    "default": [
+      0,
+      2,
+      0
+    ],
+    "boxes": [
+      [
+        -0.32499998807907104,
+        0,
+        -0.039941444993019104,
+        0.32499998807907104,
+        0.8600000143051147,
+        0.039941444993019104
+      ]
+    ],
+    "paintMaterials": [
+      "woodLight"
+    ],
+    "paletteMaterials": [
+      "woodLight",
+      "paper",
+      "sage",
+      "walnut"
+    ],
+    "colorParts": [
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#faf2e4"
+      },
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#81916b"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      },
+      {
+        "material": "walnut",
+        "label": "木质边框",
+        "color": "#795c46"
+      }
+    ]
+  },
+  {
+    "id": "bathroom_ref_window",
+    "name": "暖白横向采光窗",
+    "surface": "wall",
+    "collection": "bathroom",
+    "url": "bathroom_ref_window.glb",
+    "revision": "bathroom-reference-1",
+    "size": [
+      2.049999952316284,
+      0.7799999713897705,
+      0.3400000035762787
+    ],
+    "default": [
+      0,
+      2,
+      0
+    ],
+    "boxes": [
+      [
+        -1.024999976158142,
+        0,
+        -0.17000000178813934,
+        1.024999976158142,
+        0.7799999713897705,
+        0.17000000178813934
+      ]
+    ],
+    "paintMaterials": [
+      "cream"
+    ],
+    "daylight": true,
+    "paletteMaterials": [
+      "sage",
+      "cream",
+      "ink",
+      "paper"
+    ],
+    "colorParts": [
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#81916b"
+      },
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eee5d5"
+      },
+      {
+        "material": "ink",
+        "label": "深色框架",
+        "color": "#303b30"
+      },
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#faf2e4"
+      }
+    ]
+  },
+  {
+    "id": "bathroom_ref_hanging_plant",
+    "name": "角落垂吊绿萝",
+    "surface": "wall",
+    "collection": "bathroom",
+    "url": "bathroom_ref_hanging_plant.glb",
+    "revision": "bathroom-reference-1",
+    "size": [
+      0.5580013394355774,
+      1.7233527898788452,
+      0.4142303168773651
+    ],
+    "default": [
+      0,
+      2,
+      0
+    ],
+    "boxes": [
+      [
+        -0.2790006697177887,
+        0,
+        -0.20711515843868256,
+        0.2790006697177887,
+        1.7233527898788452,
+        0.20711515843868256
+      ]
+    ],
+    "paintMaterials": [
+      "cream"
+    ],
+    "paletteMaterials": [
+      "cream",
+      "ink"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eee5d5"
+      },
+      {
+        "material": "ink",
+        "label": "深色框架",
+        "color": "#303b30"
+      }
+    ]
+  },
+  {
+    "id": "bathroom_ref_trailing_plant",
+    "name": "柜边垂藤盆栽",
+    "surface": "wall",
+    "collection": "bathroom",
+    "url": "bathroom_ref_trailing_plant.glb",
+    "revision": "bathroom-reference-1",
+    "size": [
+      0.6350919604301453,
+      1.3501018285751343,
+      0.26896899938583374
+    ],
+    "default": [
+      0,
+      2,
+      0
+    ],
+    "boxes": [
+      [
+        -0.31754598021507263,
+        0,
+        -0.13448449969291687,
+        0.31754598021507263,
+        1.3501018285751343,
+        0.13448449969291687
+      ]
+    ],
+    "paintMaterials": [
+      "cream"
+    ],
+    "contact": {
+      "width": 0.3,
+      "depth": 0.3
+    },
+    "paletteMaterials": [
+      "cream"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eee5d5"
+      }
+    ]
+  },
+  {
+    "id": "bathroom_ref_towel_hooks",
+    "name": "沐浴毛巾挂钩",
+    "surface": "wall",
+    "collection": "bathroom",
+    "url": "bathroom_ref_towel_hooks.glb",
+    "revision": "bathroom-reference-1",
+    "size": [
+      0.9900000095367432,
+      0.6200000047683716,
+      0.20220433175563812
+    ],
+    "default": [
+      0,
+      2,
+      0
+    ],
+    "boxes": [
+      [
+        -0.4950000047683716,
+        0,
+        -0.10110216587781906,
+        0.4950000047683716,
+        0.6200000047683716,
+        0.10110216587781906
+      ]
+    ],
+    "paintMaterials": [
+      "cream"
+    ],
+    "paletteMaterials": [
+      "woodLight",
+      "ink",
+      "sage",
+      "cream"
+    ],
+    "colorParts": [
+      {
+        "material": "ink",
+        "label": "深色框架",
+        "color": "#303b30"
+      },
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#81916b"
+      },
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eee5d5"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
+    ]
+  },
+  {
+    "id": "bathroom_ref_robe",
+    "name": "暖白浴袍壁挂",
+    "surface": "wall",
+    "collection": "bathroom",
+    "url": "bathroom_ref_robe.glb",
+    "revision": "bathroom-reference-1",
+    "size": [
+      0.887499988079071,
+      1.631821520626545,
+      0.12000000476837158
+    ],
+    "default": [
+      0,
+      2,
+      0
+    ],
+    "boxes": [
+      [
+        -0.4437499940395355,
+        0,
+        -0.06000000238418579,
+        0.4437499940395355,
+        1.631821520626545,
+        0.06000000238418579
+      ]
+    ],
+    "paintMaterials": [
+      "cream"
+    ],
+    "paletteMaterials": [
+      "cream",
+      "woodLight",
+      "ink"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eee5d5"
+      },
+      {
+        "material": "ink",
+        "label": "深色框架",
+        "color": "#303b30"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
+    ]
+  },
+  {
+    "id": "bathroom_ref_shower_mat",
+    "name": "鼠尾草防滑条板垫",
+    "surface": "rug",
+    "collection": "bathroom",
+    "url": "bathroom_ref_shower_mat.glb",
+    "revision": "bathroom-reference-1",
+    "size": [
+      1.100000023841858,
+      0.06350000202655792,
+      0.7699999809265137
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.550000011920929,
+        0,
+        -0.38499999046325684,
+        0.550000011920929,
+        0.06350000202655792,
+        0.38499999046325684
+      ]
+    ],
+    "paintMaterials": [
+      "sage"
+    ],
+    "paletteMaterials": [
+      "sage"
+    ],
+    "colorParts": [
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#81916b"
+      }
+    ]
+  },
+  {
+    "id": "bathroom_ref_bath_mat",
+    "name": "奶油绿边长浴垫",
+    "surface": "rug",
+    "collection": "bathroom",
+    "url": "bathroom_ref_bath_mat.glb",
+    "revision": "bathroom-reference-1",
+    "size": [
+      1.7999999523162842,
+      0.05350000038743019,
+      0.8399999737739563
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.8999999761581421,
+        0,
+        -0.41999998688697815,
+        0.8999999761581421,
+        0.05350000038743019,
+        0.41999998688697815
+      ]
+    ],
+    "paintMaterials": [
+      "sage"
+    ],
+    "paletteMaterials": [
+      "sage",
+      "paper",
+      "cream"
+    ],
+    "colorParts": [
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#81916b"
+      },
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#faf2e4"
+      },
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eee5d5"
+      }
+    ]
+  },
+  {
+    "id": "bathroom_ref_flower_mat",
+    "name": "奶油花朵如厕地垫",
+    "surface": "rug",
+    "collection": "bathroom",
+    "url": "bathroom_ref_flower_mat.glb",
+    "revision": "bathroom-reference-1",
+    "size": [
+      1.2200000286102295,
+      0.06549999862909317,
+      1.1945494413375854
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.6100000143051147,
+        0,
+        -0.5972747206687927,
+        0.6100000143051147,
+        0.06549999862909317,
+        0.5972747206687927
+      ]
+    ],
+    "paintMaterials": [
+      "sage"
+    ],
+    "paletteMaterials": [
+      "sage",
+      "cream"
+    ],
+    "colorParts": [
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#81916b"
+      },
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eee5d5"
+      }
+    ]
+  },
+  {
+    "id": "bathroom_ref_slippers",
+    "name": "暖白浴室拖鞋",
+    "surface": "rug",
+    "collection": "bathroom",
+    "url": "bathroom_ref_slippers.glb",
+    "revision": "bathroom-reference-1",
+    "size": [
+      0.5760000348091125,
+      0.15700000524520874,
+      0.41846486926078796
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.2880000174045563,
+        0,
+        -0.20923243463039398,
+        0.2880000174045563,
+        0.15700000524520874,
+        0.20923243463039398
+      ]
+    ],
+    "paintMaterials": [
+      "cream"
+    ],
+    "paletteMaterials": [
+      "woodLight",
+      "cream"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eee5d5"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
+    ]
+  },
+  {
+    "id": "bathroom_ref_basket",
+    "name": "原木编织小篓",
+    "surface": "floor",
+    "collection": "bathroom",
+    "url": "bathroom_ref_basket.glb",
+    "revision": "bathroom-reference-1",
+    "size": [
+      0.5103266835212708,
+      0.6945000290870667,
+      0.5179204344749451
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.2551633417606354,
+        0,
+        -0.25896021723747253,
+        0.2551633417606354,
+        0.6945000290870667,
+        0.25896021723747253
+      ]
+    ],
+    "paintMaterials": [
+      "woodLight"
+    ],
+    "paletteMaterials": [
+      "woodLight",
+      "cream"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eee5d5"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
+    ]
+  },
+  {
+    "id": "bathroom_ref_laundry_top",
+    "name": "洗衣台洗护与盆栽",
+    "surface": "tabletop",
+    "collection": "bathroom",
+    "url": "bathroom_ref_laundry_top.glb",
+    "revision": "bathroom-reference-1",
+    "size": [
+      0.9268087148666382,
+      0.4752395451068878,
+      0.44999998807907104
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.4634043574333191,
+        0,
+        -0.22499999403953552,
+        0.4634043574333191,
+        0.4752395451068878,
+        0.22499999403953552
+      ]
+    ],
+    "paintMaterials": [
+      "sage"
+    ],
+    "contact": {
+      "width": 0.95,
+      "depth": 0.48
+    },
+    "paletteMaterials": [
+      "woodLight",
+      "sage",
+      "ink",
+      "paper",
+      "cream"
+    ],
+    "colorParts": [
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#81916b"
+      },
+      {
+        "material": "ink",
+        "label": "深色框架",
+        "color": "#303b30"
+      },
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#faf2e4"
+      },
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eee5d5"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
+    ]
+  },
+  {
+    "id": "bathroom_ref_cabinet_top",
+    "name": "柜顶洗浴瓶罐",
+    "surface": "tabletop",
+    "collection": "bathroom",
+    "url": "bathroom_ref_cabinet_top.glb",
+    "revision": "bathroom-reference-1",
+    "size": [
+      0.6641267538070679,
+      0.2162500023841858,
+      0.1237500011920929
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.33206337690353394,
+        0,
+        -0.06187500059604645,
+        0.33206337690353394,
+        0.2162500023841858,
+        0.06187500059604645
+      ]
+    ],
+    "paintMaterials": [
+      "sage"
+    ],
+    "paletteMaterials": [
+      "sage",
+      "ink",
+      "paper"
+    ],
+    "colorParts": [
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#81916b"
+      },
+      {
+        "material": "ink",
+        "label": "深色框架",
+        "color": "#303b30"
+      },
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#faf2e4"
+      }
+    ]
+  },
+  {
+    "id": "bathroom_ref_shower_plant",
+    "name": "淋浴顶角绿植",
+    "surface": "wall",
+    "collection": "bathroom",
+    "url": "bathroom_ref_shower_plant.glb",
+    "revision": "bathroom-reference-1",
+    "size": [
+      0.5400000214576721,
+      0.7567572593688965,
+      0.33553579449653625
+    ],
+    "default": [
+      0,
+      2,
+      0
+    ],
+    "boxes": [
+      [
+        -0.27000001072883606,
+        0,
+        -0.16776789724826813,
+        0.27000001072883606,
+        0.7567572593688965,
+        0.16776789724826813
+      ]
+    ],
+    "paintMaterials": [
+      "cream"
+    ],
+    "paletteMaterials": [
+      "woodLight",
+      "cream"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eee5d5"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
+    ]
+  },
+  {
+    "id": "study_ref_window",
+    "name": "书房绿植卷帘大窗",
+    "surface": "wall",
+    "collection": "gaming",
+    "url": "study_ref_window.glb",
+    "revision": "study-reference-1",
+    "size": [
+      2.880000114440918,
+      1.9550000429153442,
+      0.4030154049396515
+    ],
+    "default": [
+      0,
+      2,
+      0
+    ],
+    "boxes": [
+      [
+        -1.440000057220459,
+        0,
+        -0.20150770246982574,
+        1.440000057220459,
+        1.9550000429153442,
+        0.20150770246982574
+      ]
+    ],
+    "paintMaterials": [
+      "cream"
+    ],
+    "daylight": true,
+    "daylightSettings": {
+      "distance": 4.8,
+      "intensity": 65
+    },
+    "paletteMaterials": [
+      "woodLight",
+      "cream",
+      "paper"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eadfc9"
+      },
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#f4ead5"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
+    ]
+  },
+  {
+    "id": "study_ref_printer_set",
+    "name": "打印机与球灯绿植",
+    "surface": "tabletop",
+    "collection": "gaming",
+    "url": "study_ref_printer_set.glb",
+    "revision": "study-reference-1",
+    "size": [
+      1.7293999195098877,
+      0.5228164196014404,
+      0.6649999618530273
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.8646999597549438,
+        0,
+        -0.33249998092651367,
+        0.8646999597549438,
+        0.5228164196014404,
+        0.33249998092651367
+      ]
+    ],
+    "paintMaterials": [
+      "cream"
+    ],
+    "contact": {
+      "width": 1.65,
+      "depth": 0.55
+    },
+    "paletteMaterials": [
+      "paper",
+      "ink",
+      "cream",
+      "sage",
+      "walnut",
+      "gold"
+    ],
+    "colorParts": [
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#f4ead5"
+      },
+      {
+        "material": "ink",
+        "label": "深色框架",
+        "color": "#434638"
+      },
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eadfc9"
+      },
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#858d67"
+      },
+      {
+        "material": "walnut",
+        "label": "木质边框",
+        "color": "#795c46"
+      },
+      {
+        "material": "gold",
+        "label": "绳柱与金属",
+        "color": "#bea477"
+      }
+    ]
+  },
+  {
+    "id": "study_ref_cabinet_plants",
+    "name": "书柜顶部双盆绿植",
+    "surface": "tabletop",
+    "collection": "gaming",
+    "url": "study_ref_cabinet_plants.glb",
+    "revision": "study-reference-1",
+    "size": [
+      1.1706173419952393,
+      0.7297645807266235,
+      0.36317503452301025
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.5853086709976196,
+        0,
+        -0.18158751726150513,
+        0.5853086709976196,
+        0.7297645807266235,
+        0.18158751726150513
+      ]
+    ],
+    "paintMaterials": [
+      "cream"
+    ],
+    "paletteMaterials": [
+      "cream"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eadfc9"
+      }
+    ]
+  },
+  {
+    "id": "study_ref_memo",
+    "name": "绿植留言板与便笺",
+    "surface": "wall",
+    "collection": "gaming",
+    "url": "study_ref_memo.glb",
+    "revision": "study-reference-1",
+    "size": [
+      1.2775660753250122,
+      1.7901403903961182,
+      0.43243834376335144
+    ],
+    "default": [
+      0,
+      2,
+      0
+    ],
+    "boxes": [
+      [
+        -0.6387830376625061,
+        0,
+        -0.21621917188167572,
+        0.6387830376625061,
+        1.7901403903961182,
+        0.21621917188167572
+      ]
+    ],
+    "paintMaterials": [
+      "woodLight"
+    ],
+    "paletteMaterials": [
+      "woodLight",
+      "walnut",
+      "paper",
+      "pink",
+      "sage",
+      "gold",
+      "cream"
+    ],
+    "colorParts": [
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#f4ead5"
+      },
+      {
+        "material": "pink",
+        "label": "主题色",
+        "color": "#d8bcb1"
+      },
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#858d67"
+      },
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eadfc9"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      },
+      {
+        "material": "walnut",
+        "label": "木质边框",
+        "color": "#795c46"
+      },
+      {
+        "material": "gold",
+        "label": "绳柱与金属",
+        "color": "#bea477"
+      }
+    ]
+  },
+  {
+    "id": "study_ref_wall_shelves",
+    "name": "书房双层书本绿植壁架",
+    "surface": "wall",
+    "collection": "gaming",
+    "url": "study_ref_wall_shelves.glb",
+    "revision": "study-reference-1",
+    "size": [
+      1.5070130825042725,
+      1.199424386024475,
+      0.3658457398414612
+    ],
+    "default": [
+      0,
+      2,
+      0
+    ],
+    "boxes": [
+      [
+        -0.7535065412521362,
+        0,
+        -0.1829228699207306,
+        0.7535065412521362,
+        1.199424386024475,
+        0.1829228699207306
+      ]
+    ],
+    "paintMaterials": [
+      "woodLight"
+    ],
+    "paletteMaterials": [
+      "woodLight",
+      "cream",
+      "gold",
+      "sage",
+      "paper",
+      "walnut"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eadfc9"
+      },
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#858d67"
+      },
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#f4ead5"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      },
+      {
+        "material": "gold",
+        "label": "绳柱与金属",
+        "color": "#bea477"
+      },
+      {
+        "material": "walnut",
+        "label": "木质边框",
+        "color": "#795c46"
+      }
+    ]
+  },
+  {
+    "id": "study_ref_headphone_board",
+    "name": "耳机与相片挂板",
+    "surface": "wall",
+    "collection": "gaming",
+    "url": "study_ref_headphone_board.glb",
+    "revision": "study-reference-1",
+    "size": [
+      1.0499999523162842,
+      0.6000000238418579,
+      0.1875
+    ],
+    "default": [
+      0,
+      2,
+      0
+    ],
+    "boxes": [
+      [
+        -0.5249999761581421,
+        0,
+        -0.09375,
+        0.5249999761581421,
+        0.6000000238418579,
+        0.09375
+      ]
+    ],
+    "paintMaterials": [
+      "cream"
+    ],
+    "paletteMaterials": [
+      "cream",
+      "paper",
+      "pink",
+      "sage",
+      "gold",
+      "ink"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eadfc9"
+      },
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#f4ead5"
+      },
+      {
+        "material": "pink",
+        "label": "主题色",
+        "color": "#d8bcb1"
+      },
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#858d67"
+      },
+      {
+        "material": "ink",
+        "label": "深色框架",
+        "color": "#434638"
+      },
+      {
+        "material": "gold",
+        "label": "绳柱与金属",
+        "color": "#bea477"
+      }
+    ]
+  },
+  {
+    "id": "study_ref_floor_light",
+    "name": "书房暖白格栅落地灯",
+    "surface": "floor",
+    "collection": "gaming",
+    "url": "study_ref_floor_light.glb",
+    "revision": "study-reference-1",
+    "size": [
+      0.33000001311302185,
+      1.8174998760223389,
+      0.3199999928474426
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.16500000655651093,
+        0,
+        -0.1599999964237213,
+        0.16500000655651093,
+        1.8174998760223389,
+        0.1599999964237213
+      ]
+    ],
+    "paintMaterials": [
+      "ink"
+    ],
+    "paletteMaterials": [
+      "ink"
+    ],
+    "colorParts": [
+      {
+        "material": "ink",
+        "label": "深色框架",
+        "color": "#434638"
+      }
+    ]
+  },
+  {
+    "id": "study_ref_cart",
+    "name": "书房带轮文件收纳车",
+    "surface": "floor",
+    "collection": "gaming",
+    "url": "study_ref_cart.glb",
+    "revision": "study-reference-1",
+    "size": [
+      0.8100000023841858,
+      1.828896403312683,
+      0.5099999904632568
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.4050000011920929,
+        0,
+        -0.2549999952316284,
+        0.4050000011920929,
+        1.828896403312683,
+        0.2549999952316284
+      ]
+    ],
+    "paintMaterials": [
+      "ink"
+    ],
+    "paletteMaterials": [
+      "ink",
+      "sage",
+      "gold",
+      "cream"
+    ],
+    "colorParts": [
+      {
+        "material": "ink",
+        "label": "深色框架",
+        "color": "#434638"
+      },
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#858d67"
+      },
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eadfc9"
+      },
+      {
+        "material": "gold",
+        "label": "绳柱与金属",
+        "color": "#bea477"
+      }
+    ]
+  },
+  {
+    "id": "study_ref_rug",
+    "name": "书房奶油双边绿地毯",
+    "surface": "rug",
+    "collection": "gaming",
+    "url": "study_ref_rug.glb",
+    "revision": "study-reference-1",
+    "size": [
+      4.199999809265137,
+      0.03100000135600567,
+      3.25
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -2.0999999046325684,
+        0,
+        -1.625,
+        2.0999999046325684,
+        0.03100000135600567,
+        1.625
+      ]
+    ],
+    "paintMaterials": [
+      "sage"
+    ],
+    "paletteMaterials": [
+      "sage",
+      "paper"
+    ],
+    "colorParts": [
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#858d67"
+      },
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#f4ead5"
+      }
+    ]
+  },
+  {
+    "id": "study_ref_entry_mat",
+    "name": "书房奶油迎宾垫",
+    "surface": "rug",
+    "collection": "gaming",
+    "url": "study_ref_entry_mat.glb",
+    "revision": "study-reference-1",
+    "size": [
+      1.6200000047683716,
+      0.030500000342726707,
+      0.7200000286102295
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.8100000023841858,
+        0,
+        -0.36000001430511475,
+        0.8100000023841858,
+        0.030500000342726707,
+        0.36000001430511475
+      ]
+    ],
+    "paintMaterials": [
+      "cream"
+    ],
+    "paletteMaterials": [
+      "cream",
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eadfc9"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
+    ]
+  },
+  {
+    "id": "study_ref_task_lamp",
+    "name": "鼠尾草折臂工作灯",
+    "surface": "tabletop",
+    "collection": "gaming",
+    "url": "study_ref_task_lamp.glb",
+    "revision": "study-reference-1",
+    "size": [
+      0.2800000011920929,
+      0.7599999904632568,
+      0.3799999952316284
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.14000000059604645,
+        0,
+        -0.1899999976158142,
+        0.14000000059604645,
+        0.7599999904632568,
+        0.1899999976158142
+      ]
+    ],
+    "paintMaterials": [
+      "sage"
+    ],
+    "contact": {
+      "width": 0.24,
+      "depth": 0.24,
+      "center": [
+        0,
+        -0.06
+      ]
+    },
+    "paletteMaterials": [
+      "sage"
+    ],
+    "colorParts": [
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#858d67"
+      }
+    ]
+  },
+  {
+    "id": "living_ref_window",
+    "name": "鼠尾草双帘落地采光窗",
+    "surface": "wall",
+    "collection": "living",
+    "url": "living_ref_window.glb",
+    "revision": "living-reference-1",
+    "size": [
+      5.659999847412109,
+      3.990000009536743,
+      0.36500000953674316
+    ],
+    "default": [
+      0,
+      2,
+      0
+    ],
+    "boxes": [
+      [
+        -2.8299999237060547,
+        0,
+        -0.18250000476837158,
+        2.8299999237060547,
+        3.990000009536743,
+        0.18250000476837158
+      ]
+    ],
+    "paintMaterials": [
+      "sage"
+    ],
+    "wallOpening": {
+      "width": 5.46,
+      "bottom": 0.04,
+      "top": 3.87,
+      "inset": 0.16
+    },
+    "daylight": true,
+    "daylightSettings": {
+      "reach": 5.8,
+      "intensity": 75
+    },
+    "paletteMaterials": [
+      "walnut",
+      "woodLight",
+      "paper",
+      "sage",
+      "cream"
+    ],
+    "colorParts": [
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#f4ead5"
+      },
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#858d67"
+      },
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eadfc9"
+      },
+      {
+        "material": "walnut",
+        "label": "木质边框",
+        "color": "#795c46"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
+    ]
+  },
+  {
+    "id": "living_ref_console",
+    "name": "原木格栅电视柜",
+    "surface": "floor",
+    "collection": "living",
+    "url": "living_ref_console.glb",
+    "revision": "living-reference-1",
+    "size": [
+      3.4000000953674316,
+      0.8650000095367432,
+      0.7574999928474426
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -1.7000000476837158,
+        0,
+        -0.3787499964237213,
+        1.7000000476837158,
+        0.8650000095367432,
+        0.3787499964237213
+      ]
+    ],
+    "paintMaterials": [
+      "woodLight"
+    ],
+    "support": {
+      "shape": "rect",
+      "width": 3.28,
+      "depth": 0.6,
+      "height": 0.8649999986588954,
+      "center": [
+        0,
+        -0.02875000238418579
+      ]
+    },
+    "paletteMaterials": [
+      "woodLight",
+      "cream",
+      "walnut",
+      "gold",
+      "ink"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eadfc9"
+      },
+      {
+        "material": "ink",
+        "label": "深色框架",
+        "color": "#434638"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      },
+      {
+        "material": "walnut",
+        "label": "木质边框",
+        "color": "#795c46"
+      },
+      {
+        "material": "gold",
+        "label": "绳柱与金属",
+        "color": "#bea477"
+      }
+    ]
+  },
+  {
+    "id": "living_ref_bookcase",
+    "name": "原木矮书架",
+    "surface": "floor",
+    "collection": "living",
+    "url": "living_ref_bookcase.glb",
+    "revision": "living-reference-1",
+    "size": [
+      1.0499999523162842,
+      0.8349999785423279,
+      0.47999998927116394
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.5249999761581421,
+        0,
+        -0.23999999463558197,
+        0.5249999761581421,
+        0.8349999785423279,
+        0.23999999463558197
+      ]
+    ],
+    "paintMaterials": [
+      "woodLight"
+    ],
+    "support": {
+      "shape": "rect",
+      "width": 0.95,
+      "depth": 0.43,
+      "height": 0.8350000005960464,
+      "center": [
+        0,
+        0
+      ]
+    },
+    "paletteMaterials": [
+      "woodLight",
+      "cream",
+      "gold",
+      "sage",
+      "paper"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eadfc9"
+      },
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#858d67"
+      },
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#f4ead5"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      },
+      {
+        "material": "gold",
+        "label": "绳柱与金属",
+        "color": "#bea477"
+      }
+    ]
+  },
+  {
+    "id": "living_ref_record_cabinet",
+    "name": "原木唱片柜与唱机",
+    "surface": "floor",
+    "collection": "living",
+    "url": "living_ref_record_cabinet.glb",
+    "revision": "living-reference-1",
+    "size": [
+      1.0499999523162842,
+      1.1583682298660278,
+      0.47999998927116394
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.5249999761581421,
+        0,
+        -0.23999999463558197,
+        0.5249999761581421,
+        1.1583682298660278,
+        0.23999999463558197
+      ]
+    ],
+    "paintMaterials": [
+      "woodLight"
+    ],
+    "paletteMaterials": [
+      "woodLight",
+      "cream",
+      "gold",
+      "sage",
+      "paper",
+      "ink"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eadfc9"
+      },
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#858d67"
+      },
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#f4ead5"
+      },
+      {
+        "material": "ink",
+        "label": "深色框架",
+        "color": "#434638"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      },
+      {
+        "material": "gold",
+        "label": "绳柱与金属",
+        "color": "#bea477"
+      }
+    ]
+  },
+  {
+    "id": "living_ref_bookcase_top",
+    "name": "边柜相框与球灯",
+    "surface": "tabletop",
+    "collection": "living",
+    "url": "living_ref_bookcase_top.glb",
+    "revision": "living-reference-1",
+    "size": [
+      0.7098000049591064,
+      0.35359999537467957,
+      0.24959999322891235
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.3549000024795532,
+        0,
+        -0.12479999661445618,
+        0.3549000024795532,
+        0.35359999537467957,
+        0.12479999661445618
+      ]
+    ],
+    "paintMaterials": [
+      "woodLight"
+    ],
+    "contact": {
+      "width": 0.78,
+      "depth": 0.31
+    },
+    "paletteMaterials": [
+      "walnut",
+      "gold",
+      "woodLight",
+      "paper",
+      "sage"
+    ],
+    "colorParts": [
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#f4ead5"
+      },
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#858d67"
+      },
+      {
+        "material": "walnut",
+        "label": "木质边框",
+        "color": "#795c46"
+      },
+      {
+        "material": "gold",
+        "label": "绳柱与金属",
+        "color": "#bea477"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
+    ]
+  },
+  {
+    "id": "living_ref_console_plant",
+    "name": "电视柜小盆栽",
+    "surface": "tabletop",
+    "collection": "living",
+    "url": "living_ref_console_plant.glb",
+    "revision": "living-reference-1",
+    "size": [
+      0.30008664727211,
+      0.3812203109264374,
+      0.18038378655910492
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.150043323636055,
+        0,
+        -0.09019189327955246,
+        0.150043323636055,
+        0.3812203109264374,
+        0.09019189327955246
+      ]
+    ],
+    "paintMaterials": [
+      "cream"
+    ],
+    "paletteMaterials": [
+      "cream"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eadfc9"
+      }
+    ]
+  },
+  {
+    "id": "living_ref_wall_shelf",
+    "name": "原木双层相框绿植壁架",
+    "surface": "wall",
+    "collection": "living",
+    "url": "living_ref_wall_shelf.glb",
+    "revision": "living-reference-1",
+    "size": [
+      1.6205888986587524,
+      1.0663963556289673,
+      0.4332924485206604
+    ],
+    "default": [
+      0,
+      2,
+      0
+    ],
+    "boxes": [
+      [
+        -0.8102944493293762,
+        0,
+        -0.2166462242603302,
+        0.8102944493293762,
+        1.0663963556289673,
+        0.2166462242603302
+      ]
+    ],
+    "paintMaterials": [
+      "woodLight"
+    ],
+    "paletteMaterials": [
+      "woodLight",
+      "cream",
+      "gold",
+      "sage",
+      "paper",
+      "walnut"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eadfc9"
+      },
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#858d67"
+      },
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#f4ead5"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      },
+      {
+        "material": "gold",
+        "label": "绳柱与金属",
+        "color": "#bea477"
+      },
+      {
+        "material": "walnut",
+        "label": "木质边框",
+        "color": "#795c46"
+      }
+    ]
+  },
+  {
+    "id": "living_ref_clock",
+    "name": "暖木圆形挂钟",
+    "surface": "wall",
+    "collection": "living",
+    "url": "living_ref_clock.glb",
+    "revision": "living-reference-1",
+    "size": [
+      0.5400000214576721,
+      0.5400000214576721,
+      0.08699999749660492
+    ],
+    "default": [
+      0,
+      2,
+      0
+    ],
+    "boxes": [
+      [
+        -0.27000001072883606,
+        0,
+        -0.04349999874830246,
+        0.27000001072883606,
+        0.5400000214576721,
+        0.04349999874830246
+      ]
+    ],
+    "paintMaterials": [
+      "woodLight"
+    ],
+    "paletteMaterials": [
+      "woodLight",
+      "cream",
+      "ink",
+      "walnut"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eadfc9"
+      },
+      {
+        "material": "ink",
+        "label": "深色框架",
+        "color": "#434638"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      },
+      {
+        "material": "walnut",
+        "label": "木质边框",
+        "color": "#795c46"
+      }
+    ]
+  },
+  {
+    "id": "living_ref_tree",
+    "name": "奶油方盆枝叶树",
+    "surface": "floor",
+    "collection": "living",
+    "url": "living_ref_tree.glb",
+    "revision": "living-reference-1",
+    "size": [
+      1.116983413696289,
+      2.785696268081665,
+      0.8523851633071899
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.5584917068481445,
+        0,
+        -0.42619258165359497,
+        0.5584917068481445,
+        2.785696268081665,
+        0.42619258165359497
+      ]
+    ],
+    "paintMaterials": [
+      "cream"
+    ],
+    "waterable": true,
+    "paletteMaterials": [
+      "cream",
+      "walnut"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eadfc9"
+      },
+      {
+        "material": "walnut",
+        "label": "木质边框",
+        "color": "#795c46"
+      }
+    ]
+  },
+  {
+    "id": "living_ref_tea_tray",
+    "name": "茶几绿植双杯托盘",
+    "surface": "tabletop",
+    "collection": "living",
+    "url": "living_ref_tea_tray.glb",
+    "revision": "living-reference-1",
+    "size": [
+      1.2000000476837158,
+      0.5024643540382385,
+      0.5299999713897705
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.6000000238418579,
+        0,
+        -0.26499998569488525,
+        0.6000000238418579,
+        0.5024643540382385,
+        0.26499998569488525
+      ]
+    ],
+    "paintMaterials": [
+      "woodLight"
+    ],
+    "paletteMaterials": [
+      "woodLight",
+      "cream",
+      "paper",
+      "gold"
+    ],
+    "colorParts": [
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eadfc9"
+      },
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#f4ead5"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      },
+      {
+        "material": "gold",
+        "label": "绳柱与金属",
+        "color": "#bea477"
+      }
+    ]
+  },
+  {
+    "id": "living_ref_books",
+    "name": "茶几书本与香薰",
+    "surface": "tabletop",
+    "collection": "living",
+    "url": "living_ref_books.glb",
+    "revision": "living-reference-1",
+    "size": [
+      0.49000000953674316,
+      0.6112126708030701,
+      0.36000001430511475
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.24500000476837158,
+        0,
+        -0.18000000715255737,
+        0.24500000476837158,
+        0.6112126708030701,
+        0.18000000715255737
+      ]
+    ],
+    "paintMaterials": [
+      "sage"
+    ],
+    "paletteMaterials": [
+      "sage",
+      "paper",
+      "walnut",
+      "gold"
+    ],
+    "colorParts": [
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#858d67"
+      },
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#f4ead5"
+      },
+      {
+        "material": "walnut",
+        "label": "木质边框",
+        "color": "#795c46"
+      },
+      {
+        "material": "gold",
+        "label": "绳柱与金属",
+        "color": "#bea477"
+      }
+    ]
+  },
+  {
+    "id": "living_ref_rug",
+    "name": "奶油绿线大格地毯",
+    "surface": "rug",
+    "collection": "living",
+    "url": "living_ref_rug.glb",
+    "revision": "living-reference-1",
+    "size": [
+      5.599999904632568,
+      0.032499998807907104,
+      4.599999904632568
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -2.799999952316284,
+        0,
+        -2.299999952316284,
+        2.799999952316284,
+        0.032499998807907104,
+        2.299999952316284
+      ]
+    ],
+    "paintMaterials": [
+      "paper"
+    ],
+    "paletteMaterials": [
+      "paper",
+      "sage"
+    ],
+    "colorParts": [
+      {
+        "material": "paper",
+        "label": "主体",
+        "color": "#f4ead5"
+      },
+      {
+        "material": "sage",
+        "label": "主题色",
+        "color": "#858d67"
+      }
+    ]
+  },
+  {
+    "id": "living_ref_sofa",
+    "name": "奶油沙发与鼠尾草搭毯",
+    "surface": "floor",
+    "collection": "living",
+    "url": "living_ref_sofa.glb",
+    "revision": "living-reference-1",
+    "size": [
+      3.700000286102295,
+      1.2000000476837158,
+      1.350000023841858
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -1.8500001430511475,
+        0,
+        -0.675000011920929,
+        1.8500001430511475,
+        1.2000000476837158,
+        0.675000011920929
+      ]
+    ],
+    "paintMaterials": [
+      "showroom-cream"
+    ],
+    "seats": [
+      {
+        "id": "0",
+        "label": "左边",
+        "position": [
+          -0.94,
+          0.58,
+          0.55
+        ],
+        "rotation": 0
+      },
+      {
+        "id": "1",
+        "label": "右边",
+        "position": [
+          0.94,
+          0.58,
+          0.55
+        ],
+        "rotation": 0
+      }
+    ],
+    "colorParts": [
+      {
+        "material": "pillow-left",
+        "label": "左侧枕头",
+        "color": "#82917d"
+      },
+      {
+        "material": "pillow-right",
+        "label": "右侧枕头",
+        "color": "#d9c5b7"
+      },
+      {
+        "material": "sage",
+        "label": "扶手搭毯",
+        "color": "#858d67"
+      },
+      {
+        "material": "showroom-cream",
+        "label": "主体",
+        "color": "#e9e0d2"
+      }
+    ],
+    "paletteMaterials": [
+      "pillow-left",
+      "showroom-cream",
+      "pillow-right",
+      "sage"
+    ]
+  },
+  {
+    "id": "living_ref_television",
+    "name": "深灰窄边电视",
+    "surface": "tabletop",
+    "collection": "living",
+    "url": "living_ref_television.glb",
+    "revision": "living-reference-1",
+    "size": [
+      2.619999885559082,
+      1.624500036239624,
+      0.3400000035762787
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -1.309999942779541,
+        0,
+        -0.17000000178813934,
+        1.309999942779541,
+        1.624500036239624,
+        0.17000000178813934
+      ]
+    ],
+    "paintMaterials": [
+      "ink"
+    ],
+    "paletteMaterials": [],
+    "colorParts": []
+  },
+  {
+    "id": "living_ref_cat_tree",
+    "name": "鼠尾草软垫猫爬架",
+    "surface": "floor",
+    "collection": "living",
+    "url": "living_ref_cat_tree.glb",
+    "revision": "sage-cat-2",
+    "size": [
+      1.3385158777236938,
+      2.1500000953674316,
+      1.4930775165557861
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.6692579388618469,
+        0,
+        -0.7465387582778931,
+        0.6692579388618469,
+        2.1500000953674316,
+        0.7465387582778931
+      ]
+    ],
+    "paintMaterials": [
+      "cream"
+    ],
+    "colorParts": [
+      {
+        "material": "sage",
+        "label": "软垫",
+        "color": "#858d67"
+      },
+      {
+        "material": "rope",
+        "label": "绳柱",
+        "color": "#ccb697"
+      },
+      {
+        "material": "cream",
+        "label": "主体",
+        "color": "#eee3ce"
+      }
+    ],
+    "paletteMaterials": [
+      "cream",
+      "sage",
+      "rope"
     ]
   },
   {
@@ -9151,7 +14785,23 @@
     "paintMaterials": [
       "porcelain"
     ],
-    "revision": "kitchenware-1"
+    "revision": "kitchenware-1",
+    "paletteMaterials": [
+      "porcelain",
+      "charcoal"
+    ],
+    "colorParts": [
+      {
+        "material": "porcelain",
+        "label": "主体",
+        "color": "#eeeeec"
+      },
+      {
+        "material": "charcoal",
+        "label": "深色框架",
+        "color": "#292c30"
+      }
+    ]
   },
   {
     "id": "kitchenware_board",
@@ -9182,7 +14832,17 @@
     "paintMaterials": [
       "woodLight"
     ],
-    "revision": "kitchenware-1"
+    "revision": "kitchenware-1",
+    "paletteMaterials": [
+      "woodLight"
+    ],
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      }
+    ]
   },
   {
     "id": "kitchenware_tools",
@@ -9213,7 +14873,17 @@
     "paintMaterials": [
       "charcoal"
     ],
-    "revision": "kitchenware-1"
+    "revision": "kitchenware-1",
+    "paletteMaterials": [
+      "charcoal"
+    ],
+    "colorParts": [
+      {
+        "material": "charcoal",
+        "label": "深色框架",
+        "color": "#292c30"
+      }
+    ]
   },
   {
     "id": "kitchenware_spices",
@@ -9244,7 +14914,23 @@
     "paintMaterials": [
       "porcelain"
     ],
-    "revision": "kitchenware-1"
+    "revision": "kitchenware-1",
+    "paletteMaterials": [
+      "porcelain",
+      "charcoal"
+    ],
+    "colorParts": [
+      {
+        "material": "porcelain",
+        "label": "主体",
+        "color": "#eeeeec"
+      },
+      {
+        "material": "charcoal",
+        "label": "深色框架",
+        "color": "#292c30"
+      }
+    ]
   },
   {
     "id": "kitchenware_plates",
@@ -9275,7 +14961,17 @@
     "paintMaterials": [
       "porcelain"
     ],
-    "revision": "kitchenware-1"
+    "revision": "kitchenware-1",
+    "paletteMaterials": [
+      "porcelain"
+    ],
+    "colorParts": [
+      {
+        "material": "porcelain",
+        "label": "主体",
+        "color": "#eeeeec"
+      }
+    ]
   },
   {
     "id": "kitchenware_rail",
@@ -9306,7 +15002,17 @@
     "paintMaterials": [
       "charcoal"
     ],
-    "revision": "kitchenware-1"
+    "revision": "kitchenware-1",
+    "paletteMaterials": [
+      "charcoal"
+    ],
+    "colorParts": [
+      {
+        "material": "charcoal",
+        "label": "深色框架",
+        "color": "#292c30"
+      }
+    ]
   },
   {
     "id": "kitchenware_settings",
@@ -9337,7 +15043,23 @@
     "paintMaterials": [
       "porcelain"
     ],
-    "revision": "kitchenware-1"
+    "revision": "kitchenware-1",
+    "paletteMaterials": [
+      "porcelain",
+      "charcoal"
+    ],
+    "colorParts": [
+      {
+        "material": "porcelain",
+        "label": "主体",
+        "color": "#eeeeec"
+      },
+      {
+        "material": "charcoal",
+        "label": "深色框架",
+        "color": "#292c30"
+      }
+    ]
   },
   {
     "id": "kitchenware_coffee",
@@ -9368,7 +15090,23 @@
     "paintMaterials": [
       "porcelain"
     ],
-    "revision": "kitchenware-1"
+    "revision": "kitchenware-1",
+    "paletteMaterials": [
+      "porcelain",
+      "charcoal"
+    ],
+    "colorParts": [
+      {
+        "material": "porcelain",
+        "label": "主体",
+        "color": "#eeeeec"
+      },
+      {
+        "material": "charcoal",
+        "label": "深色框架",
+        "color": "#292c30"
+      }
+    ]
   },
   {
     "id": "kitchen_ref_prep",
@@ -9399,7 +15137,30 @@
     "paintMaterials": [
       "porcelain"
     ],
-    "revision": "kitchen-reference-1"
+    "revision": "kitchen-reference-1",
+    "paletteMaterials": [
+      "woodLight",
+      "charcoal",
+      "charcoal",
+      "porcelain"
+    ],
+    "colorParts": [
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      },
+      {
+        "material": "charcoal",
+        "label": "深色框架",
+        "color": "#292c30"
+      },
+      {
+        "material": "porcelain",
+        "label": "主体",
+        "color": "#efede6"
+      }
+    ]
   },
   {
     "id": "kitchen_ref_hood",
@@ -9430,7 +15191,18 @@
     "paintMaterials": [
       "charcoal"
     ],
-    "revision": "kitchen-reference-1"
+    "revision": "kitchen-reference-1",
+    "paletteMaterials": [
+      "charcoal",
+      "charcoal"
+    ],
+    "colorParts": [
+      {
+        "material": "charcoal",
+        "label": "深色框架",
+        "color": "#292b2e"
+      }
+    ]
   },
   {
     "id": "kitchen_ref_shelves",
@@ -9461,7 +15233,23 @@
     "paintMaterials": [
       "porcelain"
     ],
-    "revision": "kitchen-reference-1"
+    "revision": "kitchen-reference-1",
+    "paletteMaterials": [
+      "charcoal",
+      "porcelain"
+    ],
+    "colorParts": [
+      {
+        "material": "charcoal",
+        "label": "深色框架",
+        "color": "#292b2e"
+      },
+      {
+        "material": "porcelain",
+        "label": "主体",
+        "color": "#efede6"
+      }
+    ]
   },
   {
     "id": "kitchen_ref_breakfast",
@@ -9492,7 +15280,25 @@
     "paintMaterials": [
       "porcelain"
     ],
-    "revision": "kitchen-reference-1"
+    "revision": "kitchen-reference-1",
+    "paletteMaterials": [
+      "porcelain",
+      "charcoal",
+      "charcoal",
+      "porcelain"
+    ],
+    "colorParts": [
+      {
+        "material": "porcelain",
+        "label": "主体",
+        "color": "#eeeeec"
+      },
+      {
+        "material": "charcoal",
+        "label": "深色框架",
+        "color": "#292c30"
+      }
+    ]
   },
   {
     "id": "kitchen_ref_window",
@@ -9524,7 +15330,36 @@
       "ink"
     ],
     "revision": "kitchen-reference-1",
-    "daylight": true
+    "daylight": true,
+    "paletteMaterials": [
+      "ink",
+      "woodLight",
+      "woodLight",
+      "porcelain",
+      "charcoal"
+    ],
+    "colorParts": [
+      {
+        "material": "ink",
+        "label": "深色框架",
+        "color": "#393039"
+      },
+      {
+        "material": "woodLight",
+        "label": "木质主体",
+        "color": "#eacba8"
+      },
+      {
+        "material": "porcelain",
+        "label": "主体",
+        "color": "#efede6"
+      },
+      {
+        "material": "charcoal",
+        "label": "深色框架",
+        "color": "#292b2e"
+      }
+    ]
   },
   {
     "id": "kitchen_ref_rack",
@@ -9555,7 +15390,24 @@
     "paintMaterials": [
       "porcelain"
     ],
-    "revision": "kitchen-reference-1"
+    "revision": "kitchen-reference-1",
+    "paletteMaterials": [
+      "charcoal",
+      "porcelain",
+      "porcelain"
+    ],
+    "colorParts": [
+      {
+        "material": "charcoal",
+        "label": "深色框架",
+        "color": "#292b2e"
+      },
+      {
+        "material": "porcelain",
+        "label": "主体",
+        "color": "#efede6"
+      }
+    ]
   },
   {
     "id": "kitchen_ref_trolley",
@@ -9586,7 +15438,24 @@
     "paintMaterials": [
       "porcelain"
     ],
-    "revision": "kitchen-reference-1"
+    "revision": "kitchen-reference-1",
+    "paletteMaterials": [
+      "charcoal",
+      "porcelain",
+      "charcoal"
+    ],
+    "colorParts": [
+      {
+        "material": "charcoal",
+        "label": "深色框架",
+        "color": "#292b2e"
+      },
+      {
+        "material": "porcelain",
+        "label": "主体",
+        "color": "#efede6"
+      }
+    ]
   },
   {
     "id": "kitchen_ref_runner",
@@ -9618,7 +15487,17 @@
       "charcoal"
     ],
     "rugPattern": "check",
-    "revision": "kitchen-storage-1"
+    "revision": "kitchen-storage-1",
+    "paletteMaterials": [
+      "charcoal"
+    ],
+    "colorParts": [
+      {
+        "material": "charcoal",
+        "label": "主题色",
+        "color": "#292b2e"
+      }
+    ]
   },
   {
     "id": "kitchen_ref_mat",
@@ -9650,6 +15529,16 @@
       "charcoal"
     ],
     "rugPattern": "cat",
-    "revision": "kitchen-storage-1"
+    "revision": "kitchen-storage-1",
+    "paletteMaterials": [
+      "charcoal"
+    ],
+    "colorParts": [
+      {
+        "material": "charcoal",
+        "label": "主题色",
+        "color": "#292b2e"
+      }
+    ]
   }
 ]

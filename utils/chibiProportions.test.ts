@@ -6,8 +6,20 @@ import {bindBlankBody} from '../apps/room3d/chibi/blankRig';
 import {createBlankMotion} from '../apps/room3d/chibi/blankMotion';
 import {dressHoodie} from '../apps/room3d/chibi/hoodieClothes';
 import {bodyProportions} from '../apps/room3d/chibi/types';
+import {bodyHeightY,bodyBaseY} from '../apps/room3d/chibi/bodyHeight';
 
 describe('chibi proportions',()=>{
+ it('gives legs most of the added height while keeping feet fixed and reference space reversible',()=>{
+  const ankle=.049*BLANK_SCALE,hip=.38*BLANK_SCALE,neck=.65*BLANK_SCALE;
+  for(const h of [.8,1,1.25]){
+   for(let y=-.1;y<5;y+=.017)expect(bodyBaseY(bodyHeightY(y,h),h)).toBeCloseTo(y,9);
+   expect(bodyHeightY(ankle,h)).toBe(ankle);expect(bodyHeightY(.1,h)).toBe(.1);
+   expect(bodyHeightY(neck,h)).toBeCloseTo(neck*h,9);
+   const legs=(bodyHeightY(hip,h)-ankle)/(hip-ankle),torso=(bodyHeightY(neck,h)-bodyHeightY(hip,h))/(neck-hip);
+   if(h>1)expect(legs-1).toBeGreaterThan((torso-1)*3);
+   if(h<1)expect(legs).toBeLessThan(torso);
+  }
+ });
  it('defaults old saves and clamps invalid or extreme proportions',()=>{
   expect(bodyProportions()).toEqual({headSize:1.04,bodyHeight:1});
   expect(bodyProportions({headSize:NaN,bodyHeight:Infinity})).toEqual({headSize:1.04,bodyHeight:1});

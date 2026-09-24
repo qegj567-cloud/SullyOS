@@ -1,5 +1,6 @@
 import {bindBlankBody} from './blankRig';
 import {createBlankMotion} from './blankMotion';
+import {mirrorFrame} from '../mirrorMotion.js';
 import {createBlankBody,BLANK_HAIR_Y_SCALE,BLANK_HAIR_PIVOT,BLANK_HAIR_Z_SCALE,BLANK_HEAD_SCALE,fitBlankHeadY} from './blankBody';
 import {eatingHand} from '../diningMotion.js';
 import {rhythmFrame} from '../rhythm.js';
@@ -13,6 +14,7 @@ import referenceUrl from './reference.fbx?url';
 import {hairContours,createHairShell} from './hairShell';
 import {createHairSeam} from './hairSeam';
 import {createRearHairLiner,simplifyLinerContours} from './rearHairLiner';
+import {cleanFace,loadFaceImages,composeFace,type FaceSettings} from './faceAppearance';
 
 const contourCache=new WeakMap<HTMLImageElement,ReturnType<typeof hairContours>>();
 const hairColorCache=new WeakMap<HTMLImageElement,WeakMap<HTMLImageElement,(x:number,y:number)=>T.Color>>();
@@ -48,6 +50,8 @@ export function buildBody(source: T.Group, parts: Parts, appearance: 'skin' | 'h
     };
     const faceDecor=decorLayer(true),bodyDecor=decorLayer(false);
     const facePlacement={eyes:{x:0,y:blank?-16:0},mouth:{x:0,y:blank?-16:0}};
+    let faceSettings:FaceSettings|undefined,faceImages:Awaited<ReturnType<typeof loadFaceImages>>|undefined,faceVersion=0,disposed=false;
+    keep({dispose(){disposed=true;faceVersion++;}});
     const makeTexture=(keys:string[],fill?:string,eyes:'original'|'sleep'|'squeeze'='original',target?:T.Texture)=>{
         // Supersample only the facial atlas, preserving the original 472px
         // artwork coordinates. This avoids extra loss when positioning features.
@@ -56,8 +60,9 @@ export function buildBody(source: T.Group, parts: Parts, appearance: 'skin' | 'h
         const ctx=canvas.getContext('2d')!;
         ctx.scale(resolution,resolution);ctx.imageSmoothingQuality='high';
         if(fill){ctx.fillStyle=fill;ctx.fillRect(0,0,472,472);}
+        const splitFace=faceSettings?.enabled&&faceImages?composeFace(faceSettings,faceImages,eyes==='sleep'?'closed':eyes==='squeeze'?'happy':faceSettings.eyeState):undefined;
         keys.forEach(k=>{
-            const drawable=k==='faceDecor'?faceDecor:k==='outfit'?garment:parts[k];
+            const drawable=k==='faceDecor'?faceDecor:k==='outfit'?garment:k==='eyes'&&splitFace?splitFace.eyes:k==='mouth'&&splitFace?splitFace.mouth:parts[k];
             if(!drawable)return;
             ctx.save();
             if(k==='eyes'||k==='mouth')ctx.translate(facePlacement[k].x,-facePlacement[k].y);
@@ -68,13 +73,13 @@ export function buildBody(source: T.Group, parts: Parts, appearance: 'skin' | 'h
             // Lift the facial cluster by 8 creator pixels and gently compact it.
             // Garments/hair retain their original registration against the body.
             if(k==='eyes'||k==='mouth'||k==='facemark')ctx.transform(.97,0,0,.96,237*.03,268*.04-8);
-            if(k==='eyes'&&eyes==='squeeze'){
+            if(k==='eyes'&&!splitFace&&eyes==='squeeze'){
                 ctx.strokeStyle='#514747';ctx.lineWidth=7;ctx.lineCap='round';ctx.lineJoin='round';
                 // Draw > on the left and < on the right in the original eye area.
                 for(const [x,direction] of [[177,1],[297,-1]]){
                     ctx.beginPath();ctx.moveTo(x-direction*18,252);ctx.lineTo(x+direction*18,270);ctx.lineTo(x-direction*18,288);ctx.stroke();
                 }
-            }else if(k==='eyes'&&eyes==='sleep'){
+            }else if(k==='eyes'&&!splitFace&&eyes==='sleep'){
                 ctx.strokeStyle='#514747';ctx.lineWidth=6;ctx.lineCap='round';
                 for(const x of [177,297]){ctx.beginPath();ctx.moveTo(x-25,270);ctx.quadraticCurveTo(x,288,x+25,270);ctx.stroke();}
             }else ctx.drawImage(drawable,0,0,472,472);
@@ -104,6 +109,21 @@ export function buildBody(source: T.Group, parts: Parts, appearance: 'skin' | 'h
         makeTexture(faceKeys,skin,'original',awakeMap!);
         makeTexture(faceKeys,skin,'sleep',asleepMap);
         makeTexture(faceKeys,skin,'squeeze',cuteMap);
+    };
+    const setFaceSettings=async(value?:FaceSettings)=>{
+        const version=++faceVersion,next=value?cleanFace(value):undefined;
+        const loaded=next?.enabled?await loadFaceImages(next):undefined;
+        if(disposed||version!==faceVersion)return;
+        faceSettings=next;faceImages=loaded;
+        makeTexture(faceKeys,skin,'original',awakeMap!);
+        makeTexture(faceKeys,skin,'sleep',asleepMap);
+        makeTexture(faceKeys,skin,'squeeze',cuteMap);
+        front.map=awakeMap;front.needsUpdate=true;
+    };
+    const updateFace=(time:number)=>{
+        if(!faceSettings?.enabled||!faceImages)return;
+        const canBlink=faceSettings.blink&&(faceSettings.eyeState==='open'||faceSettings.eyeState==='half')&&faceSettings.upper!=='04';
+        front.map=canBlink&&time%4.3>4.12?asleepMap:awakeMap;
     };
     const back=keep(new T.MeshStandardMaterial({color:skin,roughness:1}));
     const backCloth=keep(new T.MeshStandardMaterial({map:appearance==='outfit'?garmentMap(true):makeTexture([],skin),roughness:1}));
@@ -221,7 +241,7 @@ export function buildBody(source: T.Group, parts: Parts, appearance: 'skin' | 'h
                     p.setXYZ(i,x*settings.width,2.2+(y-2.2)*settings.length+settings.offsetY,p.getZ(i)+(rear?-1:1)*(.58+settings.distance-.10*Math.min(1.5,Math.abs(x))));
                 }
                 geometry.computeVertexNormals();
-                const face=keep(new T.MeshStandardMaterial(solidRear?{color:rearShade,side:T.DoubleSide,roughness:1}:{map:makeTexture(keys),alphaTest:.2,side:T.DoubleSide,roughness:1}));
+                const face=keep(new T.MeshStandardMaterial({map:makeTexture(keys),alphaTest:.2,side:T.DoubleSide,roughness:1}));
                 const rim=keep(new T.MeshStandardMaterial({color:average(image),side:T.DoubleSide,roughness:1}));
                 const sheet=new T.Mesh(geometry,[face,rim]);sheet.name=rear?'rear-hair-sheet':'front-hair-sheet';sheet.userData.hairConstruction='paired-sheets';sheet.position.set(settings.offsetX??0,-.64,settings.offsetZ??0);hairPivot.add(sheet);
                 return;
@@ -245,11 +265,8 @@ export function buildBody(source: T.Group, parts: Parts, appearance: 'skin' | 'h
             }
             geometry.computeVertexNormals();
             const map=makeTexture(keys);
-            if(rearShade){
-                // Preserve the alpha silhouette while replacing only painted RGB.
-                const ctx=(map.image as HTMLCanvasElement).getContext('2d')!;
-                ctx.globalCompositeOperation='source-in';ctx.fillStyle=rearShade;ctx.fillRect(0,0,472,472);ctx.globalCompositeOperation='source-over';map.needsUpdate=true;
-            }
+            // Keep the new authored back-hair strands and shading. The inner
+            // liner still uses an average color to avoid mirrored texture seams.
             const material=keep(new T.MeshStandardMaterial({map,alphaTest:.2,side:T.DoubleSide,roughness:1}));
             const sheet=new T.Mesh(geometry,material);sheet.name=rear?'rear-hair-sheet':'front-hair-sheet';sheet.position.set(settings.offsetX??0,-.64,settings.offsetZ??0);hairPivot.add(sheet);
             if(solidRear&&!full){
@@ -349,10 +366,11 @@ export function buildBody(source: T.Group, parts: Parts, appearance: 'skin' | 'h
     const animate=(time:number,motion:Motion,posture:Posture='standing',activity?:ActivityPose)=>{
         if(blankAnimate){
             blankAnimate(time,motion,posture,activity);
-            front.map=motion==='sleep'?asleepMap:motion==='wave-cute'?cuteMap:awakeMap;
+            if(faceSettings?.enabled)updateFace(time);else front.map=motion==='sleep'?asleepMap:motion==='wave-cute'?cuteMap:awakeMap;
             return;
         }
         const cute=motion==='wave-cute',calm=motion==='wave-calm'||motion==='wave';
+        const mirror=motion==='mirror-admire'||motion==='mirror-outfit'?mirrorFrame(motion,time):null;
         const sleeping=motion==='sleep',angry=motion==='angry',sitting=posture==='seated'||motion==='sit';
         const floatingLimbs=sitting||!!activity||['wave','wave-cute','wave-calm','angry','dance','water'].includes(motion);
         const rhythm=motion==='rhythm'&&!sitting?rhythmFrame(activity,time):null;
@@ -371,7 +389,10 @@ export function buildBody(source: T.Group, parts: Parts, appearance: 'skin' | 'h
         const headNod=sitting&&sleeping?.10+Math.sin(time*1.6)*.025:motion==='stream'?.025*Math.sin(time*3):motion==='eat'?.018+.018*Math.sin(time*4):0;
         hairPivot.rotation.z=headTilt;
         hairPivot.rotation.x=headNod;
-        const faceMap=sleeping?asleepMap:cute?cuteMap:awakeMap;if(front.map!==faceMap){front.map=faceMap;front.needsUpdate=true;}
+        if(motion==='bath-laundry'){hairPivot.rotation.set(Math.sin(time*2.5)*.08,Math.sin(time*1.8)*.16,Math.sin(time*2)*.08);body.rotation.z=Math.sin(time*2)*.04;}
+        if(motion==='bath-shower'){hairPivot.rotation.x=.08;body.rotation.y=Math.sin(time*2)*.06;}
+        if(mirror){body.rotation.y=mirror.yaw;hairPivot.rotation.z=mirror.tilt;hairPivot.rotation.x=mirror.nod;}
+        if(faceSettings?.enabled)updateFace(time);else {const faceMap=sleeping?asleepMap:cute?cuteMap:awakeMap;if(front.map!==faceMap){front.map=faceMap;front.needsUpdate=true;}}
         for(const {mesh,side} of hands){
             mesh.visible=!floatingLimbs;
             const waving=(cute||calm)&&side>0;
@@ -381,7 +402,7 @@ export function buildBody(source: T.Group, parts: Parts, appearance: 'skin' | 'h
             if(sitting){mesh.rotation.x=-.55;mesh.rotation.z=side*.16;mesh.position.set(side*.39,.46,.11);}
             if(motion==='water'){mesh.rotation.x=-.45;mesh.rotation.z=side*.16;mesh.position.set(side*.30,.53,.26);}
             if(activity){
-                const target=(rhythm?.hands||activity.hands)[side<0?0:1];
+                const target=(mirror?.hands||rhythm?.hands||activity.hands)[side<0?0:1];
                 if(target){mesh.position.fromArray(target);mesh.rotation.x=-.5;
                     if(motion==='eat'){mesh.position.fromArray(eatingHand(target,time,side));}
                     if(motion==='computer'){mesh.position.y+=Math.max(0,Math.sin(time*9+side*1.5))*.032;}
@@ -429,5 +450,5 @@ export function buildBody(source: T.Group, parts: Parts, appearance: 'skin' | 'h
         }
     };
     animate(0,'idle');
-    return {root,resources,animate,rig,setFacePlacement};
+    return {root,resources,animate,rig,setFacePlacement,setFaceSettings,updateFace};
 }

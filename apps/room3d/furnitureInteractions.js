@@ -1,7 +1,9 @@
+import {bathroomActivities,isBathAction} from './bathroom.js';
 import {roomBeds,roomSeats} from './seating.js';
 import {roomPlants} from './watering.js';
 import {roomPlush} from './plush.js';
 import {kitchenActions} from './kitchenActivities.js';
+import {mirrorActivities,isMirrorAction} from './mirror.js';
 
 // Describe real, existing actions. No name-based guesses and no saved UI state.
 export function furnitureInteractions(room,catalog,itemId,{activities=[],seat=null,held=null,active=null,fridgeOpen=false}={}){
@@ -14,14 +16,15 @@ export function furnitureInteractions(room,catalog,itemId,{activities=[],seat=nu
  for(const s of roomSeats(room,catalog).filter(s=>s.itemId===itemId))add('chibi-sit',a.seats.length===1?'坐下':(a.seats.find(v=>v.id===s.seatId)?.label||'这里')+'坐下',{seat:s.seatId});
  const plant=roomPlants(room,catalog).find(p=>p.itemId===itemId);if(plant)add('chibi-water','浇水',{},plant.spot?'':'周围太挤啦，先留一点空位');
  if(roomPlush(room,catalog).some(p=>p.itemId===itemId))add(held?.itemId===itemId?'plush-put-back':'chibi-hug',held?.itemId===itemId?'放回原位':'抱抱');
- const matched=activities.filter(v=>v.itemId===itemId||v.seat?.itemId===itemId||v.dependencies?.includes(itemId));
+ const allActivities=[...activities,...[...mirrorActivities(room,catalog),...bathroomActivities(room,catalog)].filter(v=>!activities.some(a=>a.itemId===v.itemId&&a.kind===v.kind))];
+ const matched=allActivities.filter(v=>v.itemId===itemId||!isMirrorAction(v.kind)&&(v.seat?.itemId===itemId||v.dependencies?.includes(itemId)));
  for(const v of matched){
   const chair=room.items.find(i=>i.id===v.seat?.itemId),side={left:'左边',right:'右边',front:'前边',back:'后边'}[chair?.dockSlot];
   const label=v.kind==='eat'?(side?side+'吃饭':'吃饭 · '+(activities.filter(a=>a.kind==='eat'&&a.itemId===v.itemId).indexOf(v)+1)+'号位'):v.label;
-  add('chibi-game',label,{id:v.itemId,kind:v.kind,station:v.stationId||''},v.reason||'');
+  add(isBathAction(v.kind)?'chibi-bath':isMirrorAction(v.kind)?'chibi-mirror':'chibi-game',label,{id:v.itemId,kind:v.kind,station:v.stationId||''},v.reason||'');
  }
  if(a.appliance==='fridge')add('fridge-toggle',fridgeOpen?'关上冰箱':'打开冰箱');
- if(active&&(active.itemId===itemId||active.seat?.itemId===itemId||active.dependencies?.includes(itemId)))add('chibi-game-stop','休息一下');
+ if(active&&!isMirrorAction(active.kind)&&(active.itemId===itemId||active.seat?.itemId===itemId||active.dependencies?.includes(itemId)))add('chibi-game-stop',isBathAction(active.kind)?'结束':'休息一下');
  if(seat?.itemId===itemId)add('chibi-stand','起身');
  return result;
 }

@@ -6,7 +6,7 @@ page.on('pageerror',e=>errors.push(String(e)));page.on('console',m=>{if(m.type()
 await page.addInitScript(()=>localStorage.setItem('sully-home3d-quality','balanced'));
 const inspect=()=>page.evaluate(()=>window.__homeEditor.inspect());
 for(const [assetId,kind]of [['kitchenware_coffee','coffee'],['kitchen_ref_prep','wash'],['show_kitchen_range','cook']]){
- await page.goto('http://127.0.0.1:5174/test/fixtures/room3d-showrooms.html?room=kitchen&fresh=1'+(process.env.KITCHEN_BLANK?'&blank=1':''));await page.waitForFunction(()=>window.__homeEditor,undefined,{timeout:120000});
+ await page.goto((process.env.KITCHEN_URL||'http://127.0.0.1:5173/test/fixtures/room3d-showrooms.html?room=kitchen&fresh=1')+(process.env.KITCHEN_BLANK?'&blank=1':''),{waitUntil:'domcontentloaded',timeout:120000});await page.waitForFunction(()=>window.__homeEditor,undefined,{timeout:120000});
  await page.evaluate(()=>window.advanceTime(0));const before=await inspect(),id=before.rooms[0].items.find(i=>i.assetId===assetId).id;
  const at=await page.evaluate(id=>window.__homeEditor.projectItem(id),id);
  for(const [x,y]of [[0,0],[0,-10],[-10,0],[10,0],[0,10],[-20,-5],[20,-5],[0,-25]]){
@@ -33,7 +33,7 @@ for(const [assetId,kind]of [['kitchenware_coffee','coffee'],['kitchen_ref_prep',
 }
 // Cancellation is exercised through real UI while the dish is being carried.
 for(const interruption of ['rest','store']){
- await page.goto('http://127.0.0.1:5174/test/fixtures/room3d-showrooms.html?room=kitchen&fresh=1');await page.waitForFunction(()=>window.__homeEditor,undefined,{timeout:120000});await page.evaluate(()=>window.advanceTime(0));
+ await page.goto((process.env.KITCHEN_URL||'http://127.0.0.1:5173/test/fixtures/room3d-showrooms.html?room=kitchen&fresh=1'),{waitUntil:'domcontentloaded',timeout:120000});await page.waitForFunction(()=>window.__homeEditor,undefined,{timeout:120000});await page.evaluate(()=>window.advanceTime(0));
  const s=await inspect(),id=s.rooms[0].items.find(i=>i.assetId==='kitchen_ref_prep').id,at=await page.evaluate(id=>window.__homeEditor.projectItem(id),id);
  for(const [x,y]of [[0,0],[0,-10],[-10,0],[10,0],[0,10],[-20,-5],[20,-5]]){await page.mouse.click(at.x+x,at.y+y);if((await inspect()).interaction?.itemId===id)break;}
  await page.locator('[data-action="chibi-kitchen"]').click();

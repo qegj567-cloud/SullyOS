@@ -1,6 +1,7 @@
 import * as T from 'three';
 import data from './blankBody.json';
 import {bodyProportions,type BodyProportions} from './types';
+import {bodyHeightY,bodyHeightSlope} from './bodyHeight';
 
 // One connected reference body with rounded five-finger hands; offline refinement
 // is documented in art/chibi/refine-body.mjs.
@@ -11,7 +12,7 @@ export const BLANK_HEAD_BOTTOM=.15;
 // Target rest head: neck .15, bounds .4081 × .35 × .3382 (including ears).
 const bodyRatio=.65/.72;
 export const BLANK_HEAD_SCALE={x:.3327/.4081*bodyRatio,y:.28/.35*bodyRatio,z:.2836/.3382*bodyRatio};
-export const fitBlankHeadY=(y:number,options?:BodyProportions)=>{const p=bodyProportions(options);return .65*BLANK_SCALE*p.bodyHeight+(y-.65*BLANK_SCALE)*BLANK_HEAD_SCALE.y*p.headSize;};
+export const fitBlankHeadY=(y:number,options?:BodyProportions)=>{const p=bodyProportions(options);return bodyHeightY(.65*BLANK_SCALE,p.bodyHeight)+(y-.65*BLANK_SCALE)*BLANK_HEAD_SCALE.y*p.headSize;};
 // Keep Tiny T-Pose's torso and legs; only the head is fitted to the hoodie reference.
 const LEG_ANKLE=-.44,LEG_HIP=-.14,LEG_EXTENSION=0;
 const upperLift=(LEG_HIP-LEG_ANKLE)*LEG_EXTENSION;
@@ -28,14 +29,16 @@ export function createBlankBody(appearance:'skin'|'hair'|'outfit',options?:BodyP
   const [x,y,z]=data.positions.slice(i,i+3);
   const legLift=T.MathUtils.clamp(y-LEG_ANKLE,0,LEG_HIP-LEG_ANKLE)*LEG_EXTENSION;
   const head=T.MathUtils.smoothstep(y,.125,.16);
+  const bodyY=bodyHeightY((y+.5+legLift)*BLANK_SCALE,height),headY=fitBlankHeadY((y+.5)*BLANK_SCALE,options);
   positions.push(x*BLANK_SCALE*T.MathUtils.lerp(1,BLANK_HEAD_SCALE.x*headSize,head),
-   ((y+.5+legLift)*height+(y-.15)*(BLANK_HEAD_SCALE.y*headSize-height)*head)*BLANK_SCALE,
+   T.MathUtils.lerp(bodyY,headY,head),
    z*BLANK_SCALE*T.MathUtils.lerp(1,BLANK_HEAD_SCALE.z*headSize,head));
   // Retain reference normals after simplification. Use the inverse transpose of
   // the proportion deformation, including the smooth transition at the neck.
   const sx=T.MathUtils.lerp(1,BLANK_HEAD_SCALE.x*headSize,head),sz=T.MathUtils.lerp(1,BLANK_HEAD_SCALE.z*headSize,head),sy=BLANK_HEAD_SCALE.y*headSize;
   const t=T.MathUtils.clamp((y-.125)/.035,0,1),dh=6*t*(1-t)/.035;
-  const dy=height+(sy-height)*(head+(y-.15)*dh),dx=x*(BLANK_HEAD_SCALE.x*headSize-1)*dh,dz=z*(BLANK_HEAD_SCALE.z*headSize-1)*dh;
+  const slope=bodyHeightSlope((y+.5)*BLANK_SCALE,height);
+  const dy=slope+(sy-slope)*head+(headY-bodyY)/BLANK_SCALE*dh,dx=x*(BLANK_HEAD_SCALE.x*headSize-1)*dh,dz=z*(BLANK_HEAD_SCALE.z*headSize-1)*dh;
   const [nx,ny,nz]=data.normals.slice(i,i+3);
   normal.set(nx/sx,(ny-dx*nx/sx-dz*nz/sz)/dy,nz/sz).normalize();normals.push(normal.x,normal.y,normal.z);
   const faceY=.70+(y-ART_JAW)/(.5-ART_JAW)*1.30;

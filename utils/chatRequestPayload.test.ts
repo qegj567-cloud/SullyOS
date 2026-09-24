@@ -5,6 +5,7 @@ import type { BuildChatPayloadInput } from './chatRequestPayload';
 import { RealtimeContextManager } from './realtimeContext';
 import { installSARModuleOnCharacter, installSARModuleOnUser } from './vrWorld/sarModuleRuntime';
 import { SAR_MODULE_CATALOG } from './vrWorld/sarModuleShop';
+import { ChatPrompts } from './chatPrompts';
 
 // 即时对话（这一轮交给用户自己的 amsg worker 生成）那份 prompt 里，凡是 worker 到点
 // 会自己补一遍的时效段，前端就不再烤进去：当前时间块、【真实世界感知系统】（节日 /
@@ -35,6 +36,26 @@ const baseInput = (): BuildChatPayloadInput => ({
 
 const joinMessages = (messages: Array<{ content: any }>): string =>
     messages.map(m => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content))).join('\n');
+
+it('keeps this request history when the archive waterline advances during async prompt construction', async () => {
+    const input = baseInput();
+    input.char = { ...input.char, autoArchiveEnabled: true, contextRangeMode: 'adaptive' };
+    const key = `mp_lastMsgId_${input.char.id}`;
+    localStorage.setItem(key, '0');
+    const original = ChatPrompts.buildSystemPromptParts;
+    vi.spyOn(ChatPrompts, 'buildSystemPromptParts').mockImplementation(async (...args) => {
+        const result = await original(...args);
+        localStorage.setItem(key, '99999');
+        return result;
+    });
+    try {
+        const payload = await buildChatRequestPayload(input);
+        expect(payload.cleanedApiMessages.some(m => m.role === 'user' && String(m.content).includes('在吗'))).toBe(true);
+        // 新请求仍须遵守推进后的水位，不能把快照变成永久绕过。
+        const next = await buildChatRequestPayload(input);
+        expect(next.cleanedApiMessages).toEqual([]);
+    } finally { localStorage.removeItem(key); }
+});
 
 beforeEach(() => {
     // 天气/热搜真去联网太慢也不稳定，桩成固定内容；测的是「这一段进没进 prompt」。

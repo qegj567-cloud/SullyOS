@@ -1,6 +1,7 @@
 import * as T from 'three';
 import source from './blankBody.json';
 import {BLANK_SCALE} from './blankBody';
+import {bodyHeightY} from './bodyHeight';
 import {BLANK_FINGERS,fingerWeights,type HandSide} from './blankFingers';
 
 export type RigPose='bind'|'relaxed'|'reference'|'arm'|'knee'|'head';
@@ -9,7 +10,7 @@ const smooth=T.MathUtils.smoothstep;
 
 export function bindBlankBody(original:T.Mesh,hair:T.Group,forearmTwist=false){
  const bodyHeight=original.geometry.userData.bodyHeight??1;
- const at=(x:number,y:number,z=0)=>new T.Vector3(x*BLANK_SCALE,(y+.5)*BLANK_SCALE*bodyHeight,z*BLANK_SCALE);
+ const at=(x:number,y:number,z=0)=>new T.Vector3(x*BLANK_SCALE,bodyHeightY((y+.5)*BLANK_SCALE,bodyHeight),z*BLANK_SCALE);
  const bones:T.Bone[]=[],named:Record<string,T.Bone>={},indices:Record<string,number>={};
  const add=(name:string,parent:string|null,position:T.Vector3)=>{
   const bone=new T.Bone();bone.name=name;bone.position.copy(position);
@@ -121,5 +122,5 @@ export function bindBlankBody(original:T.Mesh,hair:T.Group,forearmTwist=false){
   mesh.updateWorldMatrix(true,true);skeleton.update();Object.assign(mesh,{boundingBox:null,boundingSphere:null});
  };
  const inspect=()=>({bones:bones.length,vertices:g.attributes.position.count,pose:current,skinned:mesh.isSkinnedMesh});
- return {mesh,skeleton,bones:named,setPose,setHandCurl,inspect,bodyHeight};
+ return {mesh,baseGeometry:g,skeleton,bones:named,setPose,setHandCurl,inspect,bodyHeight};
 }

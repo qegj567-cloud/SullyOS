@@ -121,6 +121,18 @@ const SULLY_PRESET_EMOJIS = [
 // 清掉缓存, 下次 openDB 自动重开 —— 一处改, 全部 ~165 个调用点受益。
 let dbPromise: Promise<IDBDatabase> | null = null;
 
+/** 和新消息同事务失效镜像，防止后台把刚清掉的旧水位重新恢复。 */
+function clearStaleMemoryMirror(transaction: IDBTransaction, charId: string, newId: number): void {
+    const assets = transaction.objectStore(STORE_ASSETS);
+    const key = `mp_hwm_v1_${charId}`;
+    const request = assets.get(key);
+    request.onsuccess = () => {
+        const mirror = request.result?.data;
+        const hwm = typeof mirror === 'number' ? mirror : Number(mirror?.msgId);
+        if (Number.isFinite(hwm) && hwm >= newId) assets.delete(key);
+    };
+}
+
 export const openDB = (): Promise<IDBDatabase> => {
   if (dbPromise) return dbPromise;
 
@@ -785,19 +797,19 @@ export const DB = {
   saveMessage: async (msg: Omit<Message, 'id' | 'timestamp'> & { timestamp?: number }): Promise<number> => {
     const db = await openDB();
     return new Promise((resolve, reject) => {
-        const transaction = db.transaction(STORE_MESSAGES, 'readwrite');
+        const transaction = db.transaction([STORE_MESSAGES, STORE_ASSETS], 'readwrite');
         const store = transaction.objectStore(STORE_MESSAGES);
         const timestamp = typeof msg.timestamp === 'number' ? msg.timestamp : Date.now();
         const { timestamp: _ignored, ...payload } = msg;
         const request = store.add({ ...payload, timestamp });
+        request.onsuccess = () => clearStaleMemoryMirror(transaction, msg.charId, request.result as number);
         // request 成功后事务仍可能回滚。主动消息通知和定时任务销账都必须等提交。
         transaction.oncomplete = () => {
             const newId = request.result as number;
             // 水位线自愈：新消息的自增 id 必然大于既有一切消息 id，也就必然大于水位线
-            // （水位线本身是某条旧消息的 id）。出现 newId ≤ 水位线，只有一种可能——
-            // IndexedDB 被浏览器清过、自增计数器归零，而 localStorage 里的记忆宫殿水位
-            // 是清库前残留的。不清掉它，该角色所有新消息都会被 hwm 过滤挡在 AI 上下文
-            // 之外（请求只剩 system → 上游 400）。此处直接移除失效水位。
+            // （水位线本身是某条旧消息的 id）。出现 newId ≤ 水位线，说明水位与消息
+            // ID 序列不一致（例如清库/恢复后的残留）。镜像已在同事务内清理，提交后
+            // 再清本地值，避免新消息从 AI 上下文消失（请求只剩 system → 上游 400）。
             try {
                 const staleKeys = [`mp_lastMsgId_${msg.charId}`];
                 if (msg.groupId) staleKeys.push(`mp_lastMsgId_group_${msg.groupId}`);
@@ -818,7 +830,7 @@ export const DB = {
   saveMessageOnce: async (deliveryId: string, msg: Omit<Message, 'id' | 'timestamp'> & { timestamp?: number }): Promise<number> => {
     const db = await openDB();
     return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_MESSAGES, 'readwrite');
+      const tx = db.transaction([STORE_MESSAGES, STORE_ASSETS], 'readwrite');
       const store = tx.objectStore(STORE_MESSAGES);
       let savedId = 0;
       let inserted = false;
@@ -830,7 +842,11 @@ export const DB = {
           cursor.continue(); return;
         }
         const request = store.add({ ...msg, timestamp: msg.timestamp ?? Date.now(), metadata: { ...msg.metadata, deliveryId } });
-        request.onsuccess = () => { savedId = request.result as number; inserted = true; };
+        request.onsuccess = () => {
+          savedId = request.result as number;
+          inserted = true;
+          clearStaleMemoryMirror(tx, msg.charId, savedId);
+        };
       };
       tx.oncomplete = () => {
         if (inserted) {

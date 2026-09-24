@@ -1,0 +1,24 @@
+.garment-dye{margin-top:20px;padding-top:16px;border-top:1px solid #eee7eb}
+.garment-dye-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px}
+.garment-dye-heading strong{font-size:13px;font-weight:600}
+.hair-options .garment-dye-heading button,.hair-options .garment-dye-editor>button{font-size:11px;padding:6px 9px;min-height:34px;white-space:nowrap}
+.garment-dye button:disabled{opacity:.4;cursor:default}
+.garment-dye-regions{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:15px}
+.hair-options .garment-dye-regions button{display:flex;align-items:center;gap:7px;font-size:11px;padding:7px 10px;transition:background .15s,border-color .15s}
+.garment-dye-regions i{display:block;width:13px;height:13px;border-radius:50%;box-shadow:inset 0 0 0 1px #00000015;flex-shrink:0}
+.garment-dye-editor{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.garment-dye-custom{display:flex;align-items:center;gap:7px;font-size:11px;cursor:pointer}
+.garment-dye-custom input{width:34px;height:34px;border:1px solid #e4dce0;border-radius:8px;padding:3px;background:#fffdfa;cursor:pointer}
+.garment-dye-custom input::-webkit-color-swatch-wrapper{padding:0}
+.garment-dye-custom input::-webkit-color-swatch{border:0;border-radius:4px}
+.garment-dye-hex{display:flex;align-items:center;gap:5px;font-size:10px;color:#8c7e87}
+.garment-dye-hex input{width:79px;padding:8px 5px;border:1px solid #e4dce0;border-radius:6px;background:#fffdfa;color:#625369;font:12px ui-monospace,monospace}
+.garment-dye-hex input[aria-invalid=true]{border-color:#b85d72}
+.garment-dye-editor>button{margin-left:auto}
+.garment-dye-swatches{display:grid;grid-template-columns:repeat(10,minmax(0,1fr));gap:1px;margin-top:12px}
+.hair-options .garment-dye-swatches button{display:grid;place-items:center;min-width:0;min-height:34px;padding:3px;border:0;background:transparent}
+.garment-dye-swatches i{width:22px;height:22px;background:var(--swatch);border-radius:50%;box-shadow:inset 0 0 0 1px #00000012;transition:transform .15s,box-shadow .15s}
+.garment-dye-swatches button[aria-pressed=true] i{box-shadow:0 0 0 2px #fffcf9,0 0 0 3.5px var(--creator-accent)}
+.garment-dye-swatches button:hover i{transform:scale(1.1)}
+.garment-dye :focus-visible{outline:2px solid var(--creator-accent);outline-offset:3px}
+@media(prefers-reduced-motion:reduce){.garment-dye *{transition:none!important}}

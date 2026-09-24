@@ -1,0 +1,352 @@
+{
+  "format": "sully-room-layout",
+  "version": 1,
+  "roomSizeVersion": 2,
+  "room": {
+    "name": "黑绿电竞书房",
+    "wall": "#f0e8dc",
+    "floor": "#c4b29a",
+    "trim": "#393e33",
+    "wallStyle": "solid",
+    "floorStyle": "wood",
+    "id": "shared-room",
+    "x": 0,
+    "z": 0,
+    "level": 0,
+    "items": [
+      {
+        "id": "item-1",
+        "assetId": "gaming_desk",
+        "x": 0.4,
+        "y": 0.15,
+        "z": -2.8200000000000003,
+        "rotation": 0,
+        "color": "#858d67",
+        "materialColors": {
+          "gaming-metal": "#96947f",
+          "gaming-rubber": "#363a31"
+        },
+        "stored": false
+      },
+      {
+        "id": "item-2",
+        "assetId": "gaming_chair",
+        "x": 0.3513779264214047,
+        "y": 0.15,
+        "z": -1.3458528428093646,
+        "rotation": 180,
+        "color": "#858d67",
+        "materialColors": {
+          "gaming-shell": "#eee3cf",
+          "gaming-graphite": "#45463c",
+          "gaming-metal": "#96947f",
+          "gaming-rubber": "#363a31"
+        },
+        "dockId": "item-1",
+        "dockSlot": "front",
+        "stored": false
+      },
+      {
+        "id": "item-3",
+        "assetId": "gaming_monitors",
+        "x": 0.4,
+        "y": 1.5648834374999998,
+        "z": -2.9,
+        "rotation": 0,
+        "color": "#858d67",
+        "materialColors": {
+          "gaming-graphite": "#45463c",
+          "gaming-metal": "#96947f",
+          "gaming-screen": "#4c6051"
+        },
+        "supportId": "item-1",
+        "stored": false
+      },
+      {
+        "id": "item-4",
+        "assetId": "gaming_keyboard",
+        "x": 0.4,
+        "y": 1.3699614375,
+        "z": -2.43,
+        "rotation": 0,
+        "color": "#858d67",
+        "materialColors": {
+          "gaming-shell": "#eee3cf",
+          "gaming-graphite": "#45463c",
+          "gaming-mint": "#a3ad88"
+        },
+        "supportId": "item-1",
+        "stored": false
+      },
+      {
+        "id": "item-5",
+        "assetId": "gaming_mouse",
+        "x": 1.25,
+        "y": 1.3699614375,
+        "z": -2.42,
+        "rotation": 0,
+        "color": "#858d67",
+        "materialColors": {
+          "gaming-rubber": "#363a31"
+        },
+        "supportId": "item-1",
+        "stored": false
+      },
+      {
+        "id": "item-6",
+        "assetId": "gaming_microphone",
+        "x": -0.525,
+        "y": 1.3699614375,
+        "z": -2.245,
+        "rotation": 0,
+        "color": "#858d67",
+        "materialColors": {
+          "gaming-graphite": "#45463c"
+        },
+        "supportId": "item-1",
+        "stored": false
+      },
+      {
+        "id": "item-7",
+        "assetId": "gaming_webcam",
+        "x": 1.3399999999999999,
+        "y": 1.5648834374999998,
+        "z": -3.29,
+        "rotation": 0,
+        "color": "#858d67",
+        "materialColors": {
+          "gaming-shell": "#eee3cf",
+          "gaming-graphite": "#45463c"
+        },
+        "supportId": "item-1",
+        "stored": false
+      },
+      {
+        "id": "item-8",
+        "assetId": "show_study_tower",
+        "x": -3.65,
+        "y": 0.15,
+        "z": -3.35,
+        "rotation": 0,
+        "color": null,
+        "stored": false
+      },
+      {
+        "id": "item-9",
+        "assetId": "show_study_shelf",
+        "x": -4.12,
+        "y": 0.15,
+        "z": -0.4,
+        "rotation": 90,
+        "color": null,
+        "stored": false
+      },
+      {
+        "id": "item-10",
+        "assetId": "study_ref_window",
+        "x": 0.4,
+        "y": 2.28,
+        "z": -3.6414922975301742,
+        "rotation": 0,
+        "color": "#eee3cf",
+        "stored": false
+      },
+      {
+        "id": "item-11",
+        "assetId": "suite_art_botanical",
+        "x": -4.461750001490117,
+        "y": 2.25,
+        "z": -1.6,
+        "rotation": 90,
+        "color": "#343b36",
+        "stored": false
+      },
+      {
+        "id": "item-12",
+        "assetId": "study_ref_rug",
+        "x": 0.4,
+        "y": 0.15,
+        "z": -0.35,
+        "rotation": 0,
+        "color": null,
+        "stored": false
+      },
+      {
+        "id": "item-13",
+        "assetId": "study_ref_printer_set",
+        "x": -4.12,
+        "y": 1.2500000238418578,
+        "z": -0.4,
+        "rotation": 90,
+        "color": null,
+        "supportId": "item-9",
+        "stored": false
+      },
+      {
+        "id": "item-14",
+        "assetId": "study_ref_cabinet_plants",
+        "x": -3.65,
+        "y": 3.4,
+        "z": -3.35,
+        "rotation": 0,
+        "color": null,
+        "supportId": "item-8",
+        "stored": false
+      },
+      {
+        "id": "item-15",
+        "assetId": "study_ref_memo",
+        "x": -4.301780828118325,
+        "y": 1.83,
+        "z": 0.58,
+        "rotation": 90,
+        "color": null,
+        "stored": false
+      },
+      {
+        "id": "item-16",
+        "assetId": "study_ref_wall_shelves",
+        "x": 3.15,
+        "y": 2.63,
+        "z": -3.6600771300792694,
+        "rotation": 0,
+        "color": null,
+        "stored": false
+      },
+      {
+        "id": "item-17",
+        "assetId": "study_ref_headphone_board",
+        "x": 3.2,
+        "y": 1.83,
+        "z": -3.74925,
+        "rotation": 0,
+        "color": null,
+        "stored": false
+      },
+      {
+        "id": "item-18",
+        "assetId": "bedroom_ref_photo_string",
+        "x": -4.502999999403954,
+        "y": 1.7,
+        "z": -2.5,
+        "rotation": 90,
+        "color": null,
+        "stored": false
+      },
+      {
+        "id": "item-19",
+        "assetId": "bedroom_ref_flower_pouf",
+        "x": -1.1,
+        "y": 0.15,
+        "z": 1.15,
+        "rotation": 0,
+        "color": "#eee3cf",
+        "stored": false
+      },
+      {
+        "id": "item-20",
+        "assetId": "study_ref_entry_mat",
+        "x": 0,
+        "y": 0.15,
+        "z": 3.4,
+        "rotation": 0,
+        "color": null,
+        "stored": false
+      },
+      {
+        "id": "item-21",
+        "assetId": "study_ref_task_lamp",
+        "x": -1.0299999999999998,
+        "y": 1.3699614375,
+        "z": -2.5600000000000005,
+        "rotation": 0,
+        "color": "#858d67",
+        "supportId": "item-1",
+        "stored": false
+      },
+      {
+        "id": "item-22",
+        "assetId": "gaming_organizer",
+        "x": 3.2,
+        "y": 0.15,
+        "z": -2.8000000000000003,
+        "rotation": 0,
+        "color": "#858d67",
+        "materialColors": {
+          "gaming-shell": "#eee3cf",
+          "gaming-graphite": "#45463c",
+          "gaming-mint": "#a3ad88",
+          "gaming-led": "#dfd8b3"
+        },
+        "stored": false
+      },
+      {
+        "id": "item-23",
+        "assetId": "gaming_pc",
+        "x": -1.6,
+        "y": 0.15,
+        "z": -3,
+        "rotation": 270,
+        "color": "#858d67",
+        "materialColors": {
+          "gaming-shell": "#eee3cf",
+          "gaming-graphite": "#45463c",
+          "gaming-metal": "#96947f",
+          "gaming-rubber": "#363a31",
+          "gaming-led": "#dfd8b3"
+        },
+        "stored": false
+      },
+      {
+        "id": "item-24",
+        "assetId": "study_ref_cart",
+        "x": -4,
+        "y": 0.15,
+        "z": 1.8,
+        "rotation": 270,
+        "color": null,
+        "stored": false
+      },
+      {
+        "id": "item-25",
+        "assetId": "study_ref_floor_light",
+        "x": -2.2,
+        "y": 0.15,
+        "z": -3.4000000000000004,
+        "rotation": 0,
+        "color": null,
+        "stored": false
+      },
+      {
+        "id": "item-26",
+        "assetId": "monstera",
+        "x": -4,
+        "y": 0.15,
+        "z": 3.2,
+        "rotation": 0,
+        "color": null,
+        "stored": false
+      },
+      {
+        "id": "item-27",
+        "assetId": "suite_plant_large",
+        "x": 3.6,
+        "y": 0.15,
+        "z": 3.2,
+        "rotation": 0,
+        "color": null,
+        "stored": false
+      }
+    ],
+    "boundaries": {
+      "front": {
+        "kind": "wall_high",
+        "door": {
+          "kind": "oak",
+          "at": 0,
+          "width": 2.2
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,30 @@
+[
+  {
+    "id": "original-hoodie",
+    "label": "初始连帽卫衣",
+    "slot": "top",
+    "asset": "original-outfit.glb",
+    "prefix": "original-hoodie",
+    "triangles": 2615,
+    "revision": "72bc0a45e627"
+  },
+  {
+    "id": "original-socks",
+    "label": "初始长袜",
+    "slot": "socks",
+    "asset": "original-outfit.glb",
+    "prefix": "original-socks",
+    "triangles": 473,
+    "revision": "72bc0a45e627"
+  },
+  {
+    "id": "original-shoes",
+    "label": "初始便鞋",
+    "slot": "shoes",
+    "asset": "original-outfit.glb",
+    "prefix": "original-shoes",
+    "opening": 0.38665254237288144,
+    "triangles": 226,
+    "revision": "72bc0a45e627"
+  }
+]

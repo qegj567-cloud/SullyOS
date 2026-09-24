@@ -24,7 +24,8 @@ export function wallFaces(room,catalog){
 export function mountOnFace(item,asset,face){
  const half=asset.size[0]/2,along=face.axis==='z'?'x':'z';
  if(face.hi-face.lo<asset.size[0]+.04||face.top-face.bottom<asset.size[1]+.04)return null;
- const at=face.at+face.normal*(asset.size[2]/2+.012);
+ const inset=asset.wallOpening&&!face.owner?Math.min(.20,asset.wallOpening.inset||0):0;
+ const at=face.at+face.normal*(asset.size[2]/2+.012-inset);
  const result={...item,[face.axis]:at,[along]:clamp(item[along],face.lo+half+.02,face.hi-half-.02),y:clamp(item.y,face.bottom+.02,face.top-asset.size[1]-.02),rotation:face.rotation};
  // Do not expose the outside-facing surface of an exterior wall.
  if(Math.abs(result.x)>ROOM_HALF.x-.09||Math.abs(result.z)>ROOM_HALF.z-.10)return null;

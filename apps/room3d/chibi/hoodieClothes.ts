@@ -1,13 +1,15 @@
 import * as T from 'three';
 import data from './hoodieClothes.json';
 import {BLANK_SCALE} from './blankBody';
+import {bodyHeightY,bodyBaseY} from './bodyHeight';
 import type {bindBlankBody} from './blankRig';
+import {closeFootwearSeams} from './closeFootwearSeams';
 
 /** Extracted Meshy garment, retargeted from its A-pose into the body's bind pose. */
-export function dressHoodie(rig:ReturnType<typeof bindBlankBody>){
- const body=rig.mesh.geometry,p=body.attributes.position,si=body.attributes.skinIndex,sw=body.attributes.skinWeight;
+export function prepareHoodie(rig:ReturnType<typeof bindBlankBody>){
+ const body=rig.baseGeometry.clone(),p=body.attributes.position,si=body.attributes.skinIndex,sw=body.attributes.skinWeight;
  const boneIndex=Object.fromEntries(rig.skeleton.bones.map((b,i)=>[b.name,i]));
- const resources:Array<{dispose():void}>=[],meshes:T.SkinnedMesh[]=[];
+ const resources:Array<{dispose():void}>=[body],meshes:T.SkinnedMesh[]=[];
  data.forEach((sourcePart,partIndex)=>{
   const part={positions:[...sourcePart.positions],indices:[...sourcePart.indices]};
   const legSides:number[]=[];
@@ -23,6 +25,7 @@ export function dressHoodie(rig:ReturnType<typeof bindBlankBody>){
     }
    }
   }
+  if(partIndex)closeFootwearSeams(part.positions,part.indices,legSides);
   const positions:number[]=[],skinIndex:number[]=[],skinWeight:number[]=[];
   for(let i=0;i<part.positions.length;i+=3){
    const [x,y,z]=part.positions.slice(i,i+3),side=Math.sign(x),ax=Math.abs(x);
@@ -36,7 +39,7 @@ export function dressHoodie(rig:ReturnType<typeof bindBlankBody>){
     ty+=.022*T.MathUtils.smoothstep(y,.015,.11);
     tx=T.MathUtils.lerp(tx,armX,blend);ty=T.MathUtils.lerp(ty,armY,blend);sleeve=blend;
    }else{tx=x*.94;ty=y;tz=z;}
-   const v=new T.Vector3(tx,(ty+.5)*rig.bodyHeight,tz).multiplyScalar(BLANK_SCALE);positions.push(v.x,v.y,v.z);
+   const v=new T.Vector3(tx*BLANK_SCALE,bodyHeightY((ty+.5)*BLANK_SCALE,rig.bodyHeight),tz*BLANK_SCALE);positions.push(v.x,v.y,v.z);
    if(partIndex===0){
     // Smooth shoulder influences in garment space. Nearest-body transfer made
     // adjacent loose-cloth vertices jump between chest/arm and even opposite arms.
@@ -65,7 +68,7 @@ export function dressHoodie(rig:ReturnType<typeof bindBlankBody>){
    for(let i=0;i<part.indices.length;i+=3){const ids=part.indices.slice(i,i+3),height=ids.reduce((sum,id)=>sum+part.positions[id*3+1],0)/3;(height<-.427?shoes:socks).push(...ids);}
    geometry.setIndex([...socks,...shoes]);geometry.addGroup(0,socks.length,0);geometry.addGroup(socks.length,shoes.length,1);
   }
-  const mesh=new T.SkinnedMesh(geometry,materials);mesh.name=partIndex?'hoodie-boots':'hoodie-top';mesh.frustumCulled=false;rig.mesh.parent!.add(mesh);mesh.bind(rig.skeleton,rig.mesh.bindMatrix);resources.push(geometry,material);meshes.push(mesh);
+  const mesh=new T.SkinnedMesh(geometry,materials);mesh.name=partIndex?'hoodie-boots':'hoodie-top';mesh.frustumCulled=false;mesh.bind(rig.skeleton,rig.mesh.bindMatrix);resources.push(geometry,material);meshes.push(mesh);
  });
  const original=body.index!.clone(),groups=body.groups.map(g=>({...g})),masked:number[]=[],maskedGroups:typeof body.groups=[];
  for(const group of groups){const start=masked.length;
@@ -73,11 +76,13 @@ export function dressHoodie(rig:ReturnType<typeof bindBlankBody>){
    // All corners must belong to ONE covered region. A long simplified triangle
    // may span from shirt to boot while its middle is exposed thigh.
    const regions=[(x:number,y:number)=>y<-.244,(x:number,y:number)=>y>-.126&&y<(x>.045?.151:.122)&&x<.298];
-   const covered=regions.some(region=>ids.every(id=>region(Math.abs(p.getX(id))/BLANK_SCALE,p.getY(id)/(BLANK_SCALE*rig.bodyHeight)-.5)));
+   const covered=regions.some(region=>ids.every(id=>region(Math.abs(p.getX(id))/BLANK_SCALE,bodyBaseY(p.getY(id),rig.bodyHeight)/BLANK_SCALE-.5)));
    if(!covered)masked.push(...ids);
   }maskedGroups.push({start,count:masked.length-start,materialIndex:group.materialIndex});
  }
- const setVisible=(visible:boolean)=>{meshes.forEach(m=>m.visible=visible);body.setIndex(visible?masked:original);body.clearGroups();for(const g of visible?maskedGroups:groups)body.addGroup(g.start,g.count,g.materialIndex);};
+ let attached=false,disposed=false;
+ const setVisible=(visible:boolean)=>{if(disposed)return;meshes.forEach(m=>m.visible=visible);body.setIndex(visible?masked:original);body.clearGroups();for(const g of visible?maskedGroups:groups)body.addGroup(g.start,g.count,g.materialIndex);};
  setVisible(true);
- return {meshes,resources,setVisible,triangles:data.reduce((sum,p)=>sum+p.indices.length/3,0)};
+ return {meshes,resources,setVisible,triangles:meshes.reduce((sum,m)=>sum+m.geometry.index!.count/3,0),attach(){if(attached||disposed)return;attached=true;meshes.forEach(m=>rig.mesh.parent!.add(m));rig.mesh.geometry=body;},dispose(){if(disposed)return;disposed=true;meshes.forEach(m=>m.removeFromParent());if(rig.mesh.geometry===body)rig.mesh.geometry=rig.baseGeometry;resources.forEach(r=>r.dispose());}};
 }
+export function dressHoodie(rig:ReturnType<typeof bindBlankBody>){const outfit=prepareHoodie(rig);outfit.attach();return outfit;}

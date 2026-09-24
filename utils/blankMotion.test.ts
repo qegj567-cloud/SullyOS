@@ -57,7 +57,7 @@ describe('new body home motion',()=>{
   const {rig,animate,dispose}=setup(),outfit=dressHoodie(rig);
   try{
    const meshes=[rig.mesh,...outfit.meshes],original=meshes.map(m=>Array.from(m.geometry.attributes.position.array)),v=new T.Vector3();
-   for(const [motion,posture] of [['idle','seated'],['wave-calm','seated'],['walk','standing'],['sleep','lying'],['idle','standing']] as const){
+   for(const [motion,posture] of [['idle','seated'],['wave-calm','seated'],['walk','standing'],['mirror-admire','standing'],['mirror-outfit','standing'],['bath-shower','standing'],['bath-soak','seated'],['bath-laundry','standing'],['bath-toilet','seated'],['sleep','lying'],['idle','standing']] as const){
     for(let i=0;i<20;i++)animate(i/30,motion,posture);
     for(const mesh of meshes){mesh.updateWorldMatrix(true,false);for(let i=0;i<mesh.geometry.attributes.position.count;i++){mesh.getVertexPosition(i,v);expect(Number.isFinite(v.lengthSq())).toBe(true)}}
    }

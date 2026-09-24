@@ -1,0 +1,87 @@
+{
+  "profiles": {
+    "sailor-shirt": {
+      "inner": "sailor",
+      "skin": "standard"
+    },
+    "loose-shirt": {
+      "inner": "loose-shirt",
+      "skin": "whole-surface"
+    },
+    "surface-top": {
+      "inner": "surface-shell",
+      "skin": "whole-surface"
+    },
+    "generic-top": {
+      "inner": "generic",
+      "skin": "standard"
+    },
+    "surface-onepiece": {
+      "inner": "generic",
+      "skin": "whole-surface"
+    },
+    "posed-outer": {
+      "outer": "posed",
+      "skin": "standard"
+    },
+    "surface-outer": {
+      "outer": "posed",
+      "skin": "whole-surface"
+    },
+    "generic-outer": {
+      "outer": "generic",
+      "skin": "standard"
+    },
+    "narrow-bottom": {
+      "lower": "narrow"
+    },
+    "wide-bottom": {
+      "lower": "wide"
+    },
+    "long-skirt": {
+      "lower": "long-skirt",
+      "preserveSkirtOutline": true
+    },
+    "separate": {}
+  },
+  "garments": {
+    "slouch-cardigan": "generic-outer",
+    "sailor-long": "sailor-shirt",
+    "sailor-shorts": "wide-bottom",
+    "sailor-short": "sailor-shirt",
+    "sailor-skirt": "wide-bottom",
+    "school-socks": "separate",
+    "school-loafers": "separate",
+    "lower-long-skirt": "long-skirt",
+    "lower-straight": "narrow-bottom",
+    "lower-cargo": "wide-bottom",
+    "lower-cropped": "narrow-bottom",
+    "shoe-geta": "separate",
+    "shoe-boots": "separate",
+    "lower-shorts": "wide-bottom",
+    "shoe-sneakers": "separate",
+    "lace-midboots": "separate",
+    "buckle-shoes": "separate",
+    "tall-boots": "separate",
+    "collar-shirt": "loose-shirt",
+    "belt-coat": "posed-outer",
+    "ruffle-apron": "separate",
+    "bow-headband": "separate",
+    "school-blazer": "surface-outer",
+    "stand-collar": "loose-shirt",
+    "hood-parka": "posed-outer",
+    "necktie": "separate",
+    "bow-tie": "separate",
+    "fitted-camisole": "surface-top",
+    "fitted-turtleneck": "surface-top",
+    "fitted-sweater": "surface-top",
+    "school-swimsuit": "surface-onepiece",
+    "basic-tee": "surface-top",
+    "swim-shorts": "narrow-bottom",
+    "maid-sleeves": "separate",
+    "qipao": "surface-onepiece",
+    "original-hoodie": "generic-top",
+    "original-socks": "separate",
+    "original-shoes": "separate"
+  }
+}
