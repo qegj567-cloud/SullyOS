@@ -4,7 +4,7 @@ import ConfirmDialog from '../os/ConfirmDialog';
 import type { CharacterProfile } from '../../types';
 import { ActiveMsgClient } from '../../utils/activeMsgClient';
 import {
-  CloudDataError, CLOUD_RESOURCE_LABELS, cloudResourceIdentity, describeCloudOperation, mergeCloudResourcePage,
+  CloudDataError, CLOUD_RESOURCE_LABELS, cloudResourceIdentity, describeCloudOperation, mergeCloudResourcePage, readCloudPageSummary,
   type CloudDataSession, type CloudResource, type CloudResourceType, type CloudDataGap,
   type CloudDataSummary, type CloudCleanupPlan, type CloudCleanupOperation, type CloudOwner, type CloudOwnerState,
 } from '../../utils/amsgCloudData';
@@ -61,13 +61,21 @@ const AmsgCloudDataModal: React.FC<Props> = ({ isOpen, onClose, characters, addT
   const executing = useRef(false);
   const requestId = useRef('');
 
-  const loadResources = async (current: CloudDataSession, options: { type?: CloudResourceType; owner?: CloudOwner; cursor?: string }, requestEpoch: number) => {
+  const loadResources = async (current: CloudDataSession, options: { type?: CloudResourceType; owner?: CloudOwner; cursor?: string }, requestEpoch: number, includeSummary = false) => {
     const page = await current.listResources({ ...options, limit: 50 });
     if (epoch.current !== requestEpoch) return;
     setResources(previous => options.cursor ? mergeCloudResourcePage(previous, page.resources) : page.resources);
     setCursor(page.nextCursor);
     setComplete(page.complete);
     setGaps(previous => options.cursor ? [...previous, ...page.gaps] : page.gaps);
+    if (includeSummary) {
+      try {
+        const pageSummary = await readCloudPageSummary(current, page);
+        if (epoch.current === requestEpoch) setSummary(pageSummary);
+      } catch (failure) {
+        if (epoch.current === requestEpoch) setGaps(previous => [...previous, { source: 'summary', code: 'READ_FAILED', message: errorText(failure) }]);
+      }
+    }
   };
 
   const open = async () => {
@@ -82,20 +90,18 @@ const AmsgCloudDataModal: React.FC<Props> = ({ isOpen, onClose, characters, addT
       try { setPendingRetirements(pendingCloudRetirements(current)); }
       catch { setError('本机的未确认请求记录无法读取，云端清单仍可查看和管理。'); }
       const results = await Promise.allSettled([
-        loadResources(current, {}, requestEpoch), current.summary(), current.listOperations(), current.listOwners(),
+        loadResources(current, {}, requestEpoch, true), current.listOperations(), current.listOwners(),
       ]);
       if (epoch.current !== requestEpoch) return;
       if (results[0].status === 'rejected') setError(errorText(results[0].reason));
-      if (results[1].status === 'fulfilled') setSummary(results[1].value);
-      else { const message = errorText(results[1].reason); setGaps(previous => [...previous, { source: 'summary', code: 'READ_FAILED', message }]); }
+      if (results[1].status === 'fulfilled') {
+        setOperations(results[1].value.operations);
+        if (!results[1].value.complete) setOperationError('最近清理记录未能完整读取，请刷新记录重试。');
+      } else setOperationError(errorText(results[1].reason));
       if (results[2].status === 'fulfilled') {
-        setOperations(results[2].value.operations);
-        if (!results[2].value.complete) setOperationError('最近清理记录未能完整读取，请刷新记录重试。');
-      } else setOperationError(errorText(results[2].reason));
-      if (results[3].status === 'fulfilled') {
-        const directory = results[3].value; setKnownOwners(directory.owners);
+        const directory = results[2].value; setKnownOwners(directory.owners);
         if (!directory.complete || directory.gaps.length) setGaps(previous => [...previous, { source: 'owners', code: 'INCOMPLETE', message: '角色目录尚未完整读取，已停用角色可能暂未列出。' }, ...directory.gaps]);
-      } else { const message = errorText(results[3].reason); setGaps(previous => [...previous, { source: 'owners', code: 'READ_FAILED', message }]); }
+      } else { const message = errorText(results[2].reason); setGaps(previous => [...previous, { source: 'owners', code: 'READ_FAILED', message }]); }
     } catch (failure) {
       if (epoch.current !== requestEpoch) return;
       setUnsupported(failure instanceof CloudDataError && failure.code === 'CLOUD_DATA_UNSUPPORTED');
@@ -136,7 +142,7 @@ const AmsgCloudDataModal: React.FC<Props> = ({ isOpen, onClose, characters, addT
     if (!nextCursor) { setResources([]); setCursor(null); setSelected(new Set()); }
     setFilter(nextFilter); setSelectedOwner(nextOwner); setOwnerState(null);
     try {
-      await loadResources(session, { ...(nextFilter ? { type: nextFilter } : {}), ...(nextOwner ? { owner: nextOwner } : {}), ...(nextCursor ? { cursor: nextCursor } : {}) }, requestEpoch);
+      await loadResources(session, { ...(nextFilter ? { type: nextFilter } : {}), ...(nextOwner ? { owner: nextOwner } : {}), ...(nextCursor ? { cursor: nextCursor } : {}) }, requestEpoch, !nextCursor);
       if (nextOwner) {
         const state = await session.getOwner(nextOwner);
         if (epoch.current === requestEpoch) setOwnerState(state);

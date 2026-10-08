@@ -8,6 +8,7 @@ import {
   readSelfUpdateState,
   recordManualSelfUpdate,
   runAutoUpdate,
+  runScheduledAfterUpdate,
 } from './autoUpdate';
 import type { TickReportDb } from './tickReport';
 
@@ -40,6 +41,25 @@ const createD1 = () => {
 
 const NOW = Date.parse('2026-09-25T08:00:00.000Z');
 const HOUR = 60 * 60_000;
+
+describe('定时任务的更新检查顺序', () => {
+  it('即使后续数据库维护失败，也已经尝试检查修复包', async () => {
+    let checked = false;
+    await expect(runScheduledAfterUpdate(async () => { checked = true; }, async () => {
+      expect(checked).toBe(true);
+      throw new Error('D1 daily read limit exceeded');
+    })).rejects.toThrow('D1 daily read limit exceeded');
+    expect(checked).toBe(true);
+  });
+
+  it('更新服务暂时失败时仍执行正常投递', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const result = await runScheduledAfterUpdate(async () => { throw new Error('update unavailable'); }, async () => 'delivered');
+      expect(result).toBe('delivered');
+    } finally { warning.mockRestore(); }
+  });
+});
 
 /** 一份看起来像成品包的假代码；改一个字指纹就变。 */
 const bundleWith = (marker: string) => `// src_default as default ${marker}\n${'x'.repeat(200 * 1024)}`;

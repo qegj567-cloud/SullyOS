@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createCloudDataSession, cloudResourceIdentity, describeCloudOperation, mergeCloudResourcePage } from './amsgCloudData';
+import { createCloudDataSession, cloudResourceIdentity, describeCloudOperation, mergeCloudResourcePage, readCloudPageSummary } from './amsgCloudData';
 
 const resource = (id: string, owner: any = null) => ({ id, type: 'state' as const, owner, kind: 'context', label: 'fire_pack', byteSize: 128, updatedAt: 1, status: null });
 const plan = { id: 'plan-1', mode: 'purge' as const, owner: null, resources: [resource('r1')], count: 1, expiresAt: Date.now() + 60_000, counts: [{ type: 'state' as const, count: 1 }], impacts: [], complete: true, gaps: [] };
@@ -11,6 +11,19 @@ const transport = () => ({
 });
 
 describe('服务端云端管理接入', () => {
+  it('新版清单直接复用同一份摘要，不额外请求全库清点', async () => {
+    const summary = { total: 1, counts: [], complete: true, gaps: [] };
+    const session = { summary: vi.fn(async () => { throw new Error('不应重新清点'); }) };
+    expect(await readCloudPageSummary(session as any, { summary } as any)).toEqual(summary);
+    expect(session.summary).not.toHaveBeenCalled();
+  });
+
+  it('旧 Worker 没有随页摘要时仍能按原接口显示摘要', async () => {
+    const summary = { total: 1, counts: [], complete: true, gaps: [] };
+    const session = { summary: vi.fn(async () => summary) };
+    expect(await readCloudPageSummary(session as any, { resources: [] } as any)).toEqual(summary);
+    expect(session.summary).toHaveBeenCalledTimes(1);
+  });
   it('不接收本地角色清单，保留服务端分页和缺口', async () => {
     const session = await createCloudDataSession(transport() as any, { workerUrl: 'https://old.example', userId: 'u1' });
     const result = await session.listResources();

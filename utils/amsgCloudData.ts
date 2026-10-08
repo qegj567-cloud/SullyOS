@@ -1,6 +1,7 @@
 import type {
   ReiClient, CloudResource, CloudResourceType, CloudDataResponse, CloudCleanupPlan,
   CloudCleanupOperation, CloudCleanupSelection, CloudOwner, CloudOwnerState,
+  CloudDataPage, CloudDataSummary,
 } from '@rei-standard/amsg-client';
 
 export type {
@@ -69,6 +70,11 @@ export async function createCloudDataSession(client: ReiClient, connection: { wo
 }
 
 export type CloudDataSession = Awaited<ReturnType<typeof createCloudDataSession>>;
+
+/** 新 Worker 随清单返回同一快照的摘要；旧部署仍使用原摘要接口。 */
+export async function readCloudPageSummary(session: Pick<CloudDataSession, 'summary'>, page: CloudDataPage): Promise<CloudDataSummary> {
+  return page.summary ?? session.summary();
+}
 
 /** 名字来自云端；本地只能补充识别，不能把“本机没有”改写为“已删除”。 */
 export function cloudResourceIdentity(resource: CloudResource, characters: ReadonlyArray<{ id: string; name: string }>) {

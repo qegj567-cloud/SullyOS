@@ -1083,7 +1083,7 @@ function reconcileStoppedReplies(log, rows) {
 // worker/amsg/src/index.ts
 import { DurableObject } from "cloudflare:workers";
 
-// node_modules/.pnpm/@rei-standard+amsg-server@2_d7c704a45b1f1eef1ebee4d207c56bbd/node_modules/@rei-standard/amsg-server/dist/chunk-GN44PST5.mjs
+// node_modules/.pnpm/@rei-standard+amsg-server@2.6.0-next.35_@neondatabase+serverless@1.1.0_pg@8.22.0/node_modules/@rei-standard/amsg-server/dist/chunk-GN44PST5.mjs
 var UPDATABLE_COLUMNS = /* @__PURE__ */ new Set([
   "user_id",
   "uuid",
@@ -2295,7 +2295,7 @@ function stringifyDecisionForError(value) {
   }
 }
 
-// node_modules/.pnpm/@rei-standard+amsg-server@2_d7c704a45b1f1eef1ebee4d207c56bbd/node_modules/@rei-standard/amsg-server/dist/chunk-BACG4KJQ.mjs
+// node_modules/.pnpm/@rei-standard+amsg-server@2.6.0-next.35_@neondatabase+serverless@1.1.0_pg@8.22.0/node_modules/@rei-standard/amsg-server/dist/chunk-INQD6LRY.mjs
 var DAY_MS = 24 * 60 * 60 * 1e3;
 var MAX_LISTED_SKIPPED_OCCURRENCES = 32;
 var MAX_ADJUST_STEPS = 32;
@@ -7241,6 +7241,66 @@ var CLOUD_DATA_TABLES_SQL = [
     lease_allowed INTEGER CONSTRAINT cloud_lease_guard CHECK (lease_allowed = 1)
   )`
 ];
+var CLOUD_DATA_WORK_TABLES_SQL = [
+  `CREATE TABLE IF NOT EXISTS cloud_data_work (
+    user_id TEXT NOT NULL, kind TEXT NOT NULL, id TEXT NOT NULL,
+    next_run_at INTEGER, expires_at INTEGER,
+    PRIMARY KEY (user_id, kind, id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS cloud_data_maintenance (
+    name TEXT PRIMARY KEY, cursor INTEGER NOT NULL, upper_bound INTEGER NOT NULL,
+    completed INTEGER NOT NULL DEFAULT 0
+  )`
+];
+CLOUD_DATA_TABLES_SQL.push(...CLOUD_DATA_WORK_TABLES_SQL);
+var CLOUD_DATA_WORK_INDEXES = [
+  {
+    name: "idx_cloud_work_due",
+    sql: `CREATE INDEX IF NOT EXISTS idx_cloud_work_due
+      ON cloud_data_work (kind, next_run_at) WHERE next_run_at IS NOT NULL`,
+    description: "Only due cleanup operations",
+    critical: true
+  },
+  {
+    name: "idx_cloud_work_expiry",
+    sql: `CREATE INDEX IF NOT EXISTS idx_cloud_work_expiry
+      ON cloud_data_work (expires_at) WHERE expires_at IS NOT NULL`,
+    description: "Only expired management records",
+    critical: true
+  }
+];
+SQLITE_ALL_INDEXES.push(...CLOUD_DATA_WORK_INDEXES);
+var chunkPrefixSql = "char(31)||'amsg-chunks'||char(31)";
+var logicalNamespaceSql = `CASE WHEN substr(OLD.namespace,1,13)=${chunkPrefixSql}
+  THEN substr(OLD.namespace,14) ELSE OLD.namespace END`;
+var logicalKeySql = `CASE WHEN substr(OLD.namespace,1,13)=${chunkPrefixSql} AND instr(OLD.key,char(31))>0
+  THEN substr(OLD.key,1,instr(OLD.key,char(31))-1) ELSE OLD.key END`;
+var CLOUD_DATA_DELETE_TRIGGERS = [
+  ...[
+    ["scheduled_messages", "task", "uuid"],
+    ["llm_credentials", "credential", "cred_id"],
+    ["message_outbox", "outbox", "message_id"],
+    ["push_subscriptions", "subscription", "user_id"]
+  ].map(([table, type, column]) => ({
+    name: `trg_cloud_metadata_${type}_delete`,
+    sql: `CREATE TRIGGER IF NOT EXISTS trg_cloud_metadata_${type}_delete AFTER DELETE ON ${table}
+        BEGIN DELETE FROM cloud_resource_metadata WHERE user_id=OLD.user_id
+          AND resource_key=json_array('${type}'${column ? ",OLD." + column : ""}); END`
+  })),
+  { name: "trg_cloud_metadata_state_delete", sql: `CREATE TRIGGER IF NOT EXISTS trg_cloud_metadata_state_delete
+      AFTER DELETE ON client_state BEGIN
+      DELETE FROM cloud_resource_metadata WHERE user_id=OLD.user_id
+        AND resource_key=json_array('state',${logicalNamespaceSql},${logicalKeySql})
+        AND NOT EXISTS (SELECT 1 FROM client_state r WHERE r.user_id=OLD.user_id
+          AND r.namespace=(${logicalNamespaceSql}) AND r.key=(${logicalKeySql}))
+        AND NOT EXISTS (SELECT 1 FROM client_state r WHERE r.user_id=OLD.user_id
+          AND r.namespace=${chunkPrefixSql}||(${logicalNamespaceSql})
+          AND r.key >= (${logicalKeySql})||char(31) AND r.key < (${logicalKeySql})||char(32)); END` },
+  { name: "trg_cloud_work_delete", sql: `CREATE TRIGGER IF NOT EXISTS trg_cloud_work_delete
+      AFTER DELETE ON cloud_data_records BEGIN
+      DELETE FROM cloud_data_work WHERE user_id=OLD.user_id AND kind=OLD.kind AND id=OLD.id;
+      DELETE FROM cloud_data_record_chunks WHERE user_id=OLD.user_id AND kind=OLD.kind AND id=OLD.id; END` }
+];
 function parseTableName(sql) {
   const match = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([A-Za-z_][A-Za-z0-9_]*)/i.exec(sql);
   return match ? match[1] : "";
@@ -7276,7 +7336,8 @@ var SQLITE_REQUIRED_SCHEMA = Object.freeze({
     describeTable(MESSAGE_OUTBOX_TABLE_SQL),
     ...CLOUD_DATA_TABLES_SQL.map(describeTable)
   ])),
-  indexes: Object.freeze(SQLITE_ALL_INDEXES.filter((index) => index.critical).map((index) => index.name))
+  indexes: Object.freeze(SQLITE_ALL_INDEXES.filter((index) => index.critical).map((index) => index.name)),
+  triggers: Object.freeze(CLOUD_DATA_DELETE_TRIGGERS.map((trigger) => trigger.name))
 });
 function prefixRangeEnd(prefix) {
   const points = Array.from(prefix);
@@ -7473,7 +7534,7 @@ var D1Adapter = class {
     }
     return { id: row.id, userId: row.user_id, kind: row.kind, data, updatedAt: row.updated_at };
   }
-  async putCloudDataRecord(userId, kind, id, data, { idempotencyKey = null, createOnly = false, leaseToken } = {}) {
+  async putCloudDataRecord(userId, kind, id, data, { idempotencyKey = null, createOnly = false, leaseToken, work } = {}) {
     const slices = [];
     if (data.length > 200 * 1024) for (let offset = 0; offset < data.length; offset += 200 * 1024) slices.push(data.slice(offset, offset + 200 * 1024));
     const rootValue = slices.length ? "amsg-record" + slices.length : data;
@@ -7500,6 +7561,12 @@ var D1Adapter = class {
         SELECT ?,?,?,?,?,? WHERE ${rootGate}`
       ).bind(userId, kind, id, index, slices[index], writeToken, userId, kind, id, writeToken));
     }
+    const schedule = work ?? (["inventory", "plan"].includes(kind) ? { nextRunAt: null, expiresAt: now + 36e5 } : null);
+    if (schedule) statements.push(this._db.prepare(
+      `INSERT INTO cloud_data_work (user_id,kind,id,next_run_at,expires_at)
+      SELECT ?,?,?,?,? WHERE ${rootGate}
+      ON CONFLICT (user_id,kind,id) DO UPDATE SET next_run_at=excluded.next_run_at,expires_at=excluded.expires_at`
+    ).bind(userId, kind, id, schedule.nextRunAt ?? null, schedule.expiresAt ?? null, userId, kind, id, writeToken));
     if (!this.cloudDataManagement) throw new Error("Cloud management requires transactional batches");
     const results = await this._db.batch(statements);
     if (leaseToken !== void 0 && !results[0].meta.changes) throw Object.assign(new Error("Cloud operation processing lease was lost"), { code: "CLOUD_LEASE_LOST" });
@@ -7577,23 +7644,85 @@ var D1Adapter = class {
     ]);
     return results[1].meta.changes || 0;
   }
-  /** Sidecars are indexes only. Remove them only while their backing row is absent. */
-  async cleanupCloudResourceMetadata(userId = null) {
+  async listDueCloudDataOperations(now = Date.now(), limit = 25) {
+    const result = await this._db.prepare(`SELECT r.* FROM cloud_data_work w JOIN cloud_data_records r
+      ON r.user_id=w.user_id AND r.kind=w.kind AND r.id=w.id
+      WHERE w.kind='operation' AND w.next_run_at IS NOT NULL AND w.next_run_at<=?
+        AND (r.lease_until IS NULL OR r.lease_until<=?)
+      ORDER BY w.next_run_at LIMIT ?`).bind(now, now, limit).all();
+    return Promise.all((result.results || []).map((row) => this._cloudRecordForList(row)));
+  }
+  async cleanupExpiredCloudDataRecords(now = Date.now(), limit = 100) {
+    const result = await this._db.prepare(`DELETE FROM cloud_data_records WHERE rowid IN (
+      SELECT r.rowid FROM cloud_data_work w JOIN cloud_data_records r
+      ON r.user_id=w.user_id AND r.kind=w.kind AND r.id=w.id
+      WHERE w.expires_at IS NOT NULL AND w.expires_at<=?
+        AND (r.lease_until IS NULL OR r.lease_until<=?) ORDER BY w.expires_at LIMIT ?
+    )`).bind(now, now, limit).run();
+    return result.meta.changes || 0;
+  }
+  async getCloudMaintenanceBatch(name, table, limit = 100) {
+    if (!["cloud_resource_metadata", "cloud_data_records"].includes(table)) throw new Error("Invalid maintenance source");
+    let marker = await this._db.prepare("SELECT * FROM cloud_data_maintenance WHERE name=?").bind(name).first();
+    if (!marker) {
+      await this._db.prepare(`INSERT INTO cloud_data_maintenance (name,cursor,upper_bound,completed)
+        SELECT ?,0,COALESCE(MAX(rowid),0),0 FROM ${table} WHERE 1 ON CONFLICT (name) DO NOTHING`).bind(name).run();
+      marker = await this._db.prepare("SELECT * FROM cloud_data_maintenance WHERE name=?").bind(name).first();
+    }
+    if (marker.completed) return { rows: [], completed: true };
+    const result = await this._db.prepare(`SELECT rowid AS maintenance_rowid,* FROM ${table}
+      WHERE rowid>? AND rowid<=? ORDER BY rowid LIMIT ?`).bind(marker.cursor, marker.upper_bound, limit).all();
+    return { rows: result.results || [], upperBound: marker.upper_bound, cursor: marker.cursor, completed: false };
+  }
+  async finishCloudMaintenanceBatch(name, cursor, completed) {
+    await this._db.prepare(`UPDATE cloud_data_maintenance SET cursor=MAX(cursor,?),completed=MAX(completed,?) WHERE name=?`).bind(cursor, completed ? 1 : 0, name).run();
+  }
+  async indexCloudDataRecordWork(userId, kind, id, work, expectedWriteToken = null) {
+    await this._db.prepare(`INSERT INTO cloud_data_work (user_id,kind,id,next_run_at,expires_at)
+      SELECT user_id,kind,id,?,? FROM cloud_data_records WHERE user_id=? AND kind=? AND id=? AND write_token IS ?
+      ON CONFLICT (user_id,kind,id) DO NOTHING`).bind(work.nextRunAt ?? null, work.expiresAt ?? null, userId, kind, id, expectedWriteToken).run();
+  }
+  async readCloudMaintenanceRecord(row) {
+    return this._cloudRecordForList(row);
+  }
+  async repairCloudResourceMetadata(limit = 100) {
+    const name = "metadata-sidecars-v1";
+    const batch = await this.getCloudMaintenanceBatch(name, "cloud_resource_metadata", limit);
+    if (batch.completed) return;
+    const cursor = batch.rows.at(-1)?.maintenance_rowid ?? batch.upperBound;
+    if (batch.rows.length) await this.cleanupCloudResourceMetadata(null, { after: batch.cursor, through: cursor });
+    await this.finishCloudMaintenanceBatch(name, cursor, batch.rows.length < limit || cursor >= batch.upperBound);
+  }
+  /** One explicit repair, or a bounded upgrade batch; never called as a recurring sweep. */
+  async cleanupCloudResourceMetadata(userId = null, range = null) {
     const targets = {
-      task: `SELECT 1 FROM scheduled_messages r WHERE r.user_id=m.user_id AND r.uuid=json_extract(m.resource_key,'$[1]')`,
-      state: `SELECT 1 FROM client_state r WHERE r.user_id=m.user_id AND
-        ((r.namespace=json_extract(m.resource_key,'$[1]') AND r.key=json_extract(m.resource_key,'$[2]')) OR
-        (r.namespace=char(31)||'amsg-chunks'||char(31)||json_extract(m.resource_key,'$[1]')
+      task: [`SELECT 1 FROM scheduled_messages r WHERE r.user_id=m.user_id AND r.uuid=json_extract(m.resource_key,'$[1]')`],
+      state: [
+        `SELECT 1 FROM client_state r WHERE r.user_id=m.user_id
+          AND r.namespace=json_extract(m.resource_key,'$[1]') AND r.key=json_extract(m.resource_key,'$[2]')`,
+        `SELECT 1 FROM client_state r WHERE r.user_id=m.user_id
+          AND r.namespace=char(31)||'amsg-chunks'||char(31)||json_extract(m.resource_key,'$[1]')
           AND r.key >= json_extract(m.resource_key,'$[2]')||char(31)
-          AND r.key < json_extract(m.resource_key,'$[2]')||char(32)))`,
-      credential: `SELECT 1 FROM llm_credentials r WHERE r.user_id=m.user_id AND r.cred_id=json_extract(m.resource_key,'$[1]')`,
-      outbox: `SELECT 1 FROM message_outbox r WHERE r.user_id=m.user_id AND r.message_id=json_extract(m.resource_key,'$[1]')`,
-      subscription: `SELECT 1 FROM push_subscriptions r WHERE r.user_id=m.user_id`
+          AND r.key < json_extract(m.resource_key,'$[2]')||char(32)`
+      ],
+      credential: [`SELECT 1 FROM llm_credentials r WHERE r.user_id=m.user_id AND r.cred_id=json_extract(m.resource_key,'$[1]')`],
+      outbox: [`SELECT 1 FROM message_outbox r WHERE r.user_id=m.user_id AND r.message_id=json_extract(m.resource_key,'$[1]')`],
+      subscription: [`SELECT 1 FROM push_subscriptions r WHERE r.user_id=m.user_id`]
     };
-    const statements = Object.entries(targets).map(([type, exists]) => this._db.prepare(
-      `DELETE FROM cloud_resource_metadata AS m WHERE (? IS NULL OR user_id=?) AND json_valid(resource_key)
-        AND json_extract(resource_key,'$[0]')=? AND NOT EXISTS (${exists})`
-    ).bind(userId, userId, type));
+    const statements = Object.entries(targets).map(([type, exists]) => {
+      const conditions = ["json_valid(resource_key)", "json_extract(resource_key,'$[0]')=?"];
+      const args = [type];
+      if (userId !== null) {
+        conditions.unshift("user_id=?");
+        args.unshift(userId);
+      }
+      if (range) {
+        conditions.unshift("m.rowid>? AND m.rowid<=?");
+        args.unshift(range.after, range.through);
+      }
+      return this._db.prepare(`DELETE FROM cloud_resource_metadata AS m WHERE ${conditions.join(" AND ")}
+        AND ${exists.map((sql) => `NOT EXISTS (${sql})`).join(" AND ")}`).bind(...args);
+    });
     const results = await this._cloudBatch(statements, userId);
     return results.reduce((sum, result) => sum + (result.meta.changes || 0), 0);
   }
@@ -7733,6 +7862,7 @@ var D1Adapter = class {
         indexResults.push({ name: index.name, status: "failed", description: index.description, critical: !!index.critical, error: error.message });
       }
     }
+    for (const trigger of CLOUD_DATA_DELETE_TRIGGERS) await this._db.prepare(trigger.sql).run();
     const criticalFailures = indexResults.filter((i) => i.critical && i.status === "failed");
     if (criticalFailures.length > 0) {
       const names = criticalFailures.map((i) => i.name).join(", ");
@@ -7756,7 +7886,7 @@ var D1Adapter = class {
    * 构变了而老部署没跑过 initSchema 时，cron 会每分钟静默挂在缺的那一列上，
    * 界面上一切正常——这个方法就是让宿主查得出来。
    *
-   * @returns {Promise<{ tables: Record<string, string[]>, indexes: string[] }>}
+   * @returns {Promise<{ tables: Record<string, string[]>, indexes: string[], triggers: string[] }>}
    */
   async describeSchema() {
     const tableRes = await this._db.prepare(
@@ -7773,7 +7903,8 @@ var D1Adapter = class {
     const indexRes = await this._db.prepare(
       `SELECT name FROM sqlite_master WHERE type = 'index' AND name IS NOT NULL`
     ).all();
-    return { tables, indexes: (indexRes.results || []).map((row) => row.name) };
+    const triggerRes = await this._db.prepare("SELECT name FROM sqlite_master WHERE type = 'trigger'").all();
+    return { tables, indexes: (indexRes.results || []).map((row) => row.name), triggers: (triggerRes.results || []).map((row) => row.name) };
   }
   async dropSchema() {
     await this._db.prepare("DROP TABLE IF EXISTS scheduled_messages").run();
@@ -7781,7 +7912,7 @@ var D1Adapter = class {
     await this._db.prepare("DROP TABLE IF EXISTS push_subscriptions").run();
     await this._db.prepare("DROP TABLE IF EXISTS llm_credentials").run();
     await this._db.prepare("DROP TABLE IF EXISTS message_outbox").run();
-    for (const table of ["cloud_data_record_chunks", "cloud_data_records", "cloud_data_owners", "cloud_resource_metadata", "cloud_guard_assertions"]) {
+    for (const table of ["cloud_data_work", "cloud_data_maintenance", "cloud_data_record_chunks", "cloud_data_records", "cloud_data_owners", "cloud_resource_metadata", "cloud_guard_assertions"]) {
       await this._db.prepare(`DROP TABLE IF EXISTS ${table}`).run();
     }
   }
@@ -8059,7 +8190,8 @@ var D1Adapter = class {
     const cutoff = new Date(Date.now() - safeDays * 24 * 60 * 60 * 1e3).toISOString();
     const res = await this._db.prepare(
       `DELETE FROM scheduled_messages
-       WHERE status IN ('sent', 'failed') AND updated_at < ?`
+       WHERE rowid IN (SELECT rowid FROM scheduled_messages
+         WHERE status IN ('sent', 'failed') AND updated_at < ? LIMIT 100)`
     ).bind(cutoff).run();
     return res.meta.changes || 0;
   }
@@ -8225,7 +8357,7 @@ var D1Adapter = class {
    */
   async cleanupClientState(targets = []) {
     if (!Array.isArray(targets) || targets.length === 0) return 0;
-    const SQL = "DELETE FROM client_state WHERE namespace = ? AND updated_at < ?";
+    const SQL = "DELETE FROM client_state WHERE rowid IN (SELECT rowid FROM client_state WHERE namespace = ? AND updated_at < ? LIMIT 100)";
     const statements = targets.map(
       (target) => this._db.prepare(SQL).bind(target.namespace, target.updatedBefore)
     );
@@ -8721,13 +8853,13 @@ var D1Adapter = class {
     let deleted = 0;
     if (Number.isFinite(ackedBeforeMs)) {
       const res = await this._db.prepare(
-        "DELETE FROM message_outbox WHERE acked_at IS NOT NULL AND acked_at < ?"
+        "DELETE FROM message_outbox WHERE rowid IN (SELECT rowid FROM message_outbox WHERE acked_at IS NOT NULL AND acked_at < ? LIMIT 100)"
       ).bind(ackedBeforeMs).run();
       deleted += res.meta.changes || 0;
     }
     if (Number.isFinite(allBeforeMs)) {
       const res = await this._db.prepare(
-        "DELETE FROM message_outbox WHERE created_at < ?"
+        "DELETE FROM message_outbox WHERE rowid IN (SELECT rowid FROM message_outbox WHERE created_at < ? LIMIT 100)"
       ).bind(allBeforeMs).run();
       deleted += res.meta.changes || 0;
     }
@@ -9034,7 +9166,7 @@ function createClientStateNamespacesHandler(ctx) {
   }
   return { GET };
 }
-var SERVER_VERSION = true ? "2.6.0-next.34" : "0.0.0-dev";
+var SERVER_VERSION = true ? "2.6.0-next.35" : "0.0.0-dev";
 var SERVER_FEATURES = Object.freeze([
   "client-state",
   "client-state-chunking",
@@ -9450,6 +9582,15 @@ async function cloudInventory(ctx, db, userId, userKey) {
     resolveOwner: ctx.cloudData?.resolveOwner
   });
 }
+function operationWork(operation) {
+  if (["pending", "running"].includes(operation.status)) {
+    return { nextRunAt: Number(operation.nextAttemptAt) || 0, expiresAt: null };
+  }
+  if (["completed", "failed"].includes(operation.status)) {
+    return { nextRunAt: null, expiresAt: Number(operation.updatedAt) + 30 * 864e5 };
+  }
+  return { nextRunAt: null, expiresAt: null };
+}
 async function save(db, userId, key, kind, value, options) {
   return db.putCloudDataRecord(
     userId,
@@ -9462,7 +9603,7 @@ async function save(db, userId, key, kind, value, options) {
       }),
       key
     ),
-    options
+    { ...options, ...kind === "operation" ? { work: operationWork(value) } : {} }
   );
 }
 async function readCloudRecord(db, userId, key, kind, id) {
@@ -9824,30 +9965,62 @@ async function advanceCleanup(ctx, db, userId, key, operation) {
   }
   return operation;
 }
+async function repairLegacyWorkIndex(ctx) {
+  const db = ctx.db;
+  if (typeof db.getCloudMaintenanceBatch !== "function") return;
+  const name = "management-work-v1";
+  const batch = await db.getCloudMaintenanceBatch(name, "cloud_data_records", 100);
+  if (batch.completed) return;
+  for (const row of batch.rows) {
+    let work;
+    if (["inventory", "plan"].includes(row.kind)) {
+      work = { nextRunAt: null, expiresAt: row.updated_at + 36e5 };
+    } else if (row.kind === "operation") {
+      try {
+        const record2 = await db.readCloudMaintenanceRecord(row);
+        const key = await deriveUserEncryptionKey(row.user_id, ctx.masterKey);
+        work = operationWork(JSON.parse(await decryptFromStorage(record2.data, key)));
+      } catch {
+        console.warn("[amsg] Legacy cleanup operation could not be indexed");
+        continue;
+      }
+    } else continue;
+    await db.indexCloudDataRecordWork(row.user_id, row.kind, row.id, work, row.write_token);
+  }
+  const cursor = batch.rows.at(-1)?.maintenance_rowid ?? batch.upperBound;
+  await db.finishCloudMaintenanceBatch(name, cursor, batch.rows.length < 100 || cursor >= batch.upperBound);
+}
 async function resumeCloudDataCleanups(ctx) {
   const db = ctx.db;
   if (!db?.cloudDataManagement) return;
-  const rows = await db.listCloudDataRecordsAcrossUsers("operation");
-  await db.cleanupCloudDataRecords("inventory", Date.now() - 36e5);
-  await db.cleanupCloudDataRecords("plan", Date.now() - 36e5);
-  await db.cleanupCloudResourceMetadata();
-  let processed = 0;
+  await repairLegacyWorkIndex(ctx);
+  if (typeof db.repairCloudResourceMetadata === "function") await db.repairCloudResourceMetadata(100);
+  if (typeof db.cleanupExpiredCloudDataRecords === "function") await db.cleanupExpiredCloudDataRecords(Date.now(), 100);
+  const rows = typeof db.listDueCloudDataOperations === "function" ? await db.listDueCloudDataOperations(Date.now(), 25) : await db.listCloudDataRecordsAcrossUsers("operation");
   for (const row of rows) {
     try {
       const key = await deriveUserEncryptionKey(row.userId, ctx.masterKey);
       const operation = JSON.parse(await decryptFromStorage(row.data, key));
-      if (["completed", "failed"].includes(operation.status) && operation.updatedAt < Date.now() - 30 * 864e5) {
-        await db.deleteCloudDataRecord(row.userId, "operation", operation.id);
-        continue;
-      }
       if (["pending", "running"].includes(operation.status)) {
         await advanceCleanup(ctx, db, row.userId, key, operation);
-        if (++processed >= 100) break;
       }
     } catch {
       console.warn("[amsg] A cloud cleanup operation could not be resumed");
     }
   }
+}
+function inventorySummary(inventory) {
+  const resources = inventory.entries.map((entry) => entry.resource);
+  return {
+    total: resources.length,
+    counts: CLOUD_RESOURCE_TYPES.map((type) => ({
+      type,
+      count: resources.filter((resource) => resource.type === type).length,
+      byteSize: resources.filter((resource) => resource.type === type).reduce((sum, resource) => sum + (resource.byteSize || 0), 0)
+    })),
+    complete: inventory.complete,
+    gaps: inventory.gaps
+  };
 }
 function createCloudDataHandler(ctx) {
   async function run(url, headers, body, method) {
@@ -9895,17 +10068,7 @@ function createCloudDataHandler(ctx) {
         const filter = { ownerType, ownerId, type };
         if (path.endsWith("/summary")) {
           const inventory = await cloudInventory(ctx, db, userId, key);
-          const resources = inventory.entries.map((e) => e.resource);
-          data = {
-            total: resources.length,
-            counts: CLOUD_RESOURCE_TYPES.map((type2) => ({
-              type: type2,
-              count: resources.filter((r) => r.type === type2).length,
-              byteSize: resources.filter((r) => r.type === type2).reduce((sum, r) => sum + (r.byteSize || 0), 0)
-            })),
-            complete: inventory.complete,
-            gaps: inventory.gaps
-          };
+          data = inventorySummary(inventory);
         } else {
           const limit = Number(params.get("limit") || 50);
           if (!Number.isInteger(limit) || limit < 1 || limit > 200)
@@ -9937,6 +10100,7 @@ function createCloudDataHandler(ctx) {
             snapshot = {
               id: crypto.randomUUID(),
               filter,
+              summary: inventorySummary(inventory),
               expiresAt: Date.now() + 15 * 60 * 1e3,
               resources: inventory.entries.map((e) => e.resource).filter(
                 (r) => (!type || r.type === type) && (!ownerId || r.owner?.type === ownerType && r.owner.id === ownerId)
@@ -9953,6 +10117,7 @@ function createCloudDataHandler(ctx) {
           }
           data = {
             resources: snapshot.resources.slice(offset, offset + limit),
+            ...snapshot.summary ? { summary: snapshot.summary } : {},
             nextCursor: offset + limit < snapshot.resources.length ? `${snapshot.id}:${offset + limit}` : null,
             complete: snapshot.complete,
             gaps: snapshot.gaps
@@ -10291,7 +10456,7 @@ function createSingleUserServer(config) {
     }
   };
 }
-var SCHEMA_VERSION = "2.6.0-cloud-data.1";
+var SCHEMA_VERSION = "2.6.0-cloud-data.2";
 function requireIntrospection(db) {
   if (!db || typeof db.describeSchema !== "function") {
     throw new Error(
@@ -10318,6 +10483,10 @@ async function getSchemaVersion(db) {
   }
   for (const index of SQLITE_REQUIRED_SCHEMA.indexes) {
     if (!liveIndexes.has(index)) missing.push(`index:${index}`);
+  }
+  const liveTriggers = new Set(live?.triggers || []);
+  for (const name of SQLITE_REQUIRED_SCHEMA.triggers) {
+    if (!liveTriggers.has(name)) missing.push(`trigger:${name}`);
   }
   const ok = missing.length === 0;
   return { current: ok ? SCHEMA_VERSION : null, required: SCHEMA_VERSION, ok, missing };
@@ -10616,7 +10785,7 @@ function createSingleUserCloudflareWorker(buildConfig, options = {}) {
 }
 
 // utils/amsgBundleVersion.ts
-var AMSG_BUNDLE_VERSION = "2026-10-07";
+var AMSG_BUNDLE_VERSION = "2026-10-08";
 
 // utils/amsgTaskKinds.ts
 var AMSG_TASK_KIND_KEY = "amsgKind";
@@ -12966,6 +13135,14 @@ var buildTickReport = async (db, options) => {
 // worker/amsg/src/autoUpdate.ts
 var AUTO_UPDATE_CRON_INTERVAL_MS = 6 * 60 * 6e4;
 var AUTO_UPDATE_CLIENT_INTERVAL_MS = 30 * 6e4;
+async function runScheduledAfterUpdate(update, tick) {
+  try {
+    await update();
+  } catch (error) {
+    console.warn("[amsg:auto-update] \u8FD9\u4E00\u8DF3\u7684\u81EA\u52A8\u66F4\u65B0\u68C0\u67E5\u6CA1\u8DD1\u5B8C", error);
+  }
+  return tick();
+}
 var SELF_UPDATE_KEY = "self_update";
 var SCHEMA_ENSURED_KEY = "schema_ensured";
 var SCHEMA_ENSURE_RETRY_MS = 60 * 6e4;
@@ -18854,17 +19031,17 @@ var src_default = {
       console.error(`[amsg] \u5B9A\u65F6\u4EFB\u52A1\u6574\u8F6E\u8DF3\u8FC7\uFF1A${report.message}`);
       return;
     }
-    await ensureSchemaOnce(env.DB, SCHEMA_VERSION, () => upstream.ensureSchema(env));
-    const outcome = await upstream.scheduled(event, env);
-    await recordTickOutcome(env.DB, outcome);
-    try {
-      await runAutoUpdate(env, env.DB, {
+    await runScheduledAfterUpdate(
+      () => runAutoUpdate(env, env.DB, {
         source: "cron",
         scriptName: env.CF_SCRIPT_NAME?.trim() || null
-      });
-    } catch (error) {
-      console.warn("[amsg:auto-update] \u8FD9\u4E00\u8DF3\u7684\u81EA\u52A8\u66F4\u65B0\u68C0\u67E5\u6CA1\u8DD1\u5B8C", error);
-    }
+      }),
+      async () => {
+        await ensureSchemaOnce(env.DB, SCHEMA_VERSION, () => upstream.ensureSchema(env));
+        const outcome = await upstream.scheduled(event, env);
+        await recordTickOutcome(env.DB, outcome);
+      }
+    );
   }
 };
 export {

@@ -45,6 +45,16 @@ export const AUTO_UPDATE_CRON_INTERVAL_MS = 6 * 60 * 60_000;
  */
 export const AUTO_UPDATE_CLIENT_INTERVAL_MS = 30 * 60_000;
 
+/** 先尝试更新，再进入维护和投递；维护失败不能阻止修复包的检查。 */
+export async function runScheduledAfterUpdate<T>(update: () => Promise<unknown>, tick: () => Promise<T>): Promise<T> {
+  try {
+    await update();
+  } catch (error) {
+    console.warn('[amsg:auto-update] 这一跳的自动更新检查没跑完', error);
+  }
+  return tick();
+}
+
 /** 诊断表里的两个键。 */
 const SELF_UPDATE_KEY = 'self_update';
 const SCHEMA_ENSURED_KEY = 'schema_ensured';
