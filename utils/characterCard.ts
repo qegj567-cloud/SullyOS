@@ -38,6 +38,7 @@ export const CARD_STRIPPED_FIELDS = [
   'thinkingChainCustomPrompt',
   'thinkingChainCustomCss',
   'chatCollaborationEnabled', // 用户在本机选择的日常聊天注意力模式
+  'chatShowRemark',          // 聊天顶栏显示备注还是名字，由接收方自己决定
 
   // 3) 语言 / 语音 / 组织类本地偏好
   'groupId',                 // 角色分组是发卡人自己的整理方式，指向的分组 id 在接收方本地也不存在
