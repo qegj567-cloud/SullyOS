@@ -116,6 +116,19 @@ export const installIOSStatusBarEdge = (): (() => void) => {
     if (!shouldInstallIOSStatusBarEdge(navigator.userAgent, isStandaloneDisplayMode(), Capacitor.isNativePlatform())) return noop;
     if (document.getElementById(EDGE_ID)) return noop;
 
+    // Manifest standalone has a larger layout viewport than the R1 web-clip lab.
+    // Its native background extension ignores the clipped strip and blurs content.
+    // Contain keeps web content below the native bar; install before measuring safe areas.
+    const viewport = document.querySelector<HTMLMetaElement>('meta[name="viewport"]');
+    const previousViewport = viewport?.content;
+    const contained = !!viewport && !!window.matchMedia?.('(display-mode: standalone)').matches;
+    if (contained) {
+        viewport.content = /viewport-fit\s*=\s*[^,]+/.test(viewport.content)
+            ? viewport.content.replace(/viewport-fit\s*=\s*[^,]+/, 'viewport-fit=contain')
+            : `${viewport.content}, viewport-fit=contain`;
+        document.documentElement.setAttribute('data-ios-status-bar-contained', '');
+    }
+
     const edge = createIOSStatusBarEdge();
     document.body.appendChild(edge);
     const imageColors = new Map<string, Promise<Color | null>>();
@@ -149,6 +162,9 @@ export const installIOSStatusBarEdge = (): (() => void) => {
         if (disposed || revision !== currentRevision) return;
         const color = blendStatusBarColors(layers);
         if (edge.style.backgroundColor !== color) edge.style.backgroundColor = color;
+        if (contained && document.documentElement.style.getPropertyValue('--ios-status-bar-color') !== color) {
+            document.documentElement.style.setProperty('--ios-status-bar-color', color);
+        }
     };
     const schedule = () => {
         revision++;
@@ -194,5 +210,10 @@ export const installIOSStatusBarEdge = (): (() => void) => {
         window.visualViewport?.removeEventListener('resize', schedule);
         imageColors.clear();
         edge.remove();
+        if (contained) {
+            viewport.content = previousViewport!;
+            document.documentElement.removeAttribute('data-ios-status-bar-contained');
+            document.documentElement.style.removeProperty('--ios-status-bar-color');
+        }
     };
 };

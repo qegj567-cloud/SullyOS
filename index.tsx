@@ -42,8 +42,8 @@ Promise.all([databaseReady, keepAliveReady]).then(() => {
   installWakeListener();
 }).catch(error => console.error('后台任务暂未启动：本地数据或保活服务未就绪', error));
 
-installIOSStandaloneWorkaround();
 const disposeIOSStatusBarEdge = installIOSStatusBarEdge();
+installIOSStandaloneWorkaround();
 if (import.meta.hot) import.meta.hot.dispose(disposeIOSStatusBarEdge);
 
 // 使用统计。构建时没配 VITE_UMAMI_* 就整个不生效，自部署实例默认如此。

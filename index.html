@@ -248,6 +248,12 @@
       .sully-chat-inputbar {
         transition: padding-bottom 0.18s ease-out;
       }
+      /* With contain, WebKit extends the shell backing into the native bar.
+         Match the visible header instead of extending the fallback pink gradient. */
+      html[data-ios-status-bar-contained] .sully-phone-shell {
+        background: var(--ios-status-bar-color, #0f1115);
+      }
+
       body.ios-keyboard-open .sully-shell-content {
         bottom: 0 !important;
       }

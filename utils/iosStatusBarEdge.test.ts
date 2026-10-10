@@ -42,6 +42,7 @@ describe('status bar edge lifecycle', () => {
     beforeEach(() => {
         vi.useFakeTimers();
         document.body.innerHTML = '<main id="root"><header style="background:rgb(24,44,64)"></header></main>';
+        document.head.innerHTML = '<meta name="viewport" content="width=device-width, viewport-fit=cover">';
         const header = document.querySelector('header')!;
         vi.spyOn(header, 'getBoundingClientRect').mockReturnValue({ top: 0, bottom: 90, width: 402, height: 90 } as DOMRect);
         Object.defineProperty(document, 'elementsFromPoint', { configurable: true, value: vi.fn(() => [header, document.body]) });
@@ -67,10 +68,25 @@ describe('status bar edge lifecycle', () => {
         expect(edge.parentElement).toBe(document.body);
         expect(edge.style.backgroundColor).toBe('rgb(24, 44, 64)');
         expect(document.documentElement.style.paddingTop).toBe('');
+        expect(document.querySelector('meta[name="viewport"]')!.getAttribute('content')).toContain('viewport-fit=cover');
+        expect(document.documentElement.hasAttribute('data-ios-status-bar-contained')).toBe(false);
 
         document.querySelector('header')!.style.background = 'rgb(240, 230, 220)';
         await vi.advanceTimersByTimeAsync(160);
         expect(edge.style.backgroundColor).toBe('rgb(240, 230, 220)');
+    });
+
+    it('contains manifest standalone before layout and restores the viewport on cleanup', async () => {
+        document.head.innerHTML = '<meta name="viewport" content="width=device-width, viewport-fit=cover">';
+        window.matchMedia = vi.fn().mockReturnValue({ matches: true });
+        cleanup = installIOSStatusBarEdge();
+        expect(document.querySelector('meta[name="viewport"]')!.getAttribute('content')).toBe('width=device-width, viewport-fit=contain');
+        expect(document.documentElement.hasAttribute('data-ios-status-bar-contained')).toBe(true);
+        await vi.advanceTimersByTimeAsync(160);
+        expect(document.documentElement.style.getPropertyValue('--ios-status-bar-color')).toBe('rgb(24, 44, 64)');
+        cleanup(); cleanup = undefined;
+        expect(document.querySelector('meta[name="viewport"]')!.getAttribute('content')).toBe('width=device-width, viewport-fit=cover');
+        expect(document.documentElement.hasAttribute('data-ios-status-bar-contained')).toBe(false);
     });
 
     it('does not install twice and removes its own element on cleanup', async () => {
