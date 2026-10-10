@@ -496,7 +496,7 @@ const ForwardCard: React.FC<{
                                 <div key={i} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
                                     <div className={`max-w-[80%] ${isUser ? 'items-end' : 'items-start'} flex flex-col`}>
                                         <div className="text-[10px] text-slate-400 mb-1 px-1">{senderName} {msg.timestamp ? formatTime(msg.timestamp) : ''}</div>
-                                        <div className={`px-4 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-all ${isUser ? 'bg-primary text-white rounded-br-sm' : 'bg-white text-slate-700 rounded-bl-sm shadow-sm border border-slate-100'}`}>
+                                        <div className={`px-4 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-normal [overflow-wrap:anywhere] ${isUser ? 'bg-primary text-white rounded-br-sm' : 'bg-white text-slate-700 rounded-bl-sm shadow-sm border border-slate-100'}`}>
                                             {msg.type === 'image' ? (msg.content ? <TokenImg value={msg.content} className="max-w-[200px] rounded-xl" /> : <span className="italic opacity-60">[图片已丢失]</span>) :
                                              msg.type === 'emoji' ? (msg.content ? <TokenImg value={msg.content} className="max-w-[100px]" /> : <span className="italic opacity-60">[表情已丢失]</span>) :
                                              msg.content}
@@ -3380,7 +3380,7 @@ const MessageItem = React.memo(({
             {/* Layer 4: Text Content — shown when there's visible text after stripping voice tags */}
             {/* 外语语音消息把双语文字交给下方语音条渲染，顶部不再重复正文 */}
             {displayContent && !isForeignVoiceMsg && (
-            <div className="relative z-10 text-[15px] leading-relaxed whitespace-pre-wrap break-all select-text" style={{ color: styleConfig.textColor }}>
+            <div className="relative z-10 text-[15px] leading-relaxed whitespace-pre-wrap break-normal [overflow-wrap:anywhere] select-text" style={{ color: styleConfig.textColor }}>
                 {renderContent(displayContent)}
                 {showExpandedTranslation && (
                     <div className="mt-2.5 pt-2 border-t border-current/15">

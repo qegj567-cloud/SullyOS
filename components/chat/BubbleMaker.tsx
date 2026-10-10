@@ -1170,7 +1170,7 @@ const ThemeMaker: React.FC<ThemeMakerProps> = ({embedded=false,initialTheme,onCl
                         ) : mock.kind === 'emoji' ? (
                             <div className="relative z-10 text-3xl leading-none">{mock.content}</div>
                         ) : (
-                            <div className="relative z-10 text-[15px] leading-relaxed whitespace-pre-wrap break-all" style={{ color: style.textColor }}>
+                            <div className="relative z-10 text-[15px] leading-relaxed whitespace-pre-wrap break-normal [overflow-wrap:anywhere]" style={{ color: style.textColor }}>
                                 {mock.content}
                             </div>
                         )}
