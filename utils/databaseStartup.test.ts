@@ -14,6 +14,7 @@ vi.mock('./vrWorld/scheduler', () => ({ VRScheduler: { resume: mocks.scheduler }
 vi.mock('./activeMsgRuntime', () => ({ ActiveMsgRuntime: { init: mocks.active } }));
 vi.mock('./translateCrashGuard', () => ({ installTranslateCrashGuard: vi.fn() }));
 vi.mock('./iosStandalone', () => ({ installIOSStandaloneWorkaround: vi.fn() }));
+vi.mock('./iosStatusBarEdge', () => ({ installIOSStatusBarEdge: vi.fn(() => () => {}) }));
 vi.mock('./proactivePushConfig', () => ({ installWakeListener: vi.fn() }));
 vi.mock('./analytics', () => ({ initAnalytics: vi.fn() }));
 
