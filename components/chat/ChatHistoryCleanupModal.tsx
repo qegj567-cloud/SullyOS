@@ -147,7 +147,7 @@ export default function ChatHistoryCleanupModal({ character, onClose, onDeleted 
                     </div>
                     {!loading && rows.map(message => <div key={message.id} className={`rounded-xl border p-3 space-y-2 ${start && end && message.id >= Math.min(start.id, end.id) && message.id <= Math.max(start.id, end.id) ? 'border-red-200 bg-red-50' : 'border-slate-200'}`}>
                         <div className='text-[10px] text-slate-400'>{message.role === 'user' ? '你' : message.role === 'assistant' ? character.name : '系统'} · {sourceLabel(message)} · {formatRangeTimestamp(message.timestamp)} · #{message.id}</div>
-                        {message.type === 'secret_note' ? <SecretNote text={message.content}/> : <p className='whitespace-pre-wrap break-all leading-relaxed'>{message.content}</p>}
+                        {message.type === 'secret_note' ? <SecretNote text={message.content}/> : <p className='whitespace-pre-wrap break-normal [overflow-wrap:anywhere] leading-relaxed'>{message.content}</p>}
                         <div className='flex gap-4 text-violet-700'>
                             <button type='button' disabled={preparing} onClick={() => setStart(message)}>{start?.id === message.id ? '已设为起点' : '设为起点'}</button>
                             <button type='button' disabled={preparing} onClick={() => setEnd(message)}>{end?.id === message.id ? '已设为终点' : '设为终点'}</button>
