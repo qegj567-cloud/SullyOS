@@ -151,6 +151,26 @@ const SETUP_WALKTHROUGH_URL = 'https://github.com/qegj567-cloud/SullyOS/blob/mas
 /** 一键部署要的那枚 API Token 在这里建。 */
 const CF_TOKEN_URL = 'https://dash.cloudflare.com/profile/api-tokens';
 
+// 浏览器的 SW ready 和存储读取都可能一直不返回，不能让配置入口跟着消失。
+const SETTINGS_CHECK_TIMEOUT_MS = 10_000;
+const waitForSettingsCheck = async <T,>(check: Promise<T>): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      check,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          const error = new Error('设置检查超时');
+          error.name = 'TimeoutError';
+          reject(error);
+        }, SETTINGS_CHECK_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 // 探测结果每次会话只报一次。refresh() 在开面板、连接成功、订阅成功后都会跑一遍，
 // 一个连不上、反复点「连接」的人否则能一个人刷出十几条同样的结果，把分布带歪。
 let workerCapsReported = false;
@@ -193,6 +213,9 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
   onOpenCloudData,
 }) => {
   const [config, setConfig] = useState<ActiveMsg2GlobalConfig | null>(null);
+  const [configLoadError, setConfigLoadError] = useState('');
+  const configRequestIdRef = useRef(0);
+  const pushRequestIdRef = useRef(0);
   const [loading, setLoading] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [deployOpen, setDeployOpen] = useState(false);
@@ -201,6 +224,8 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
   // Deno 门面：workers.dev 在国内连不上时才需要，默认收着。
   const [denoProxyOpen, setDenoProxyOpen] = useState(false);
   const [pushStatus, setPushStatus] = useState<ActiveMsg2PushStatus | null>(null);
+  const [checkingPush, setCheckingPush] = useState(false);
+  const [pushCheckError, setPushCheckError] = useState('');
   // 「生成 Master Key」只在本次打开期间展示，前端不落盘——它是 worker 侧密钥，粘进 CF env 即可。
   const [generatedMasterKey, setGeneratedMasterKey] = useState('');
   const [generatedServerToken, setGeneratedServerToken] = useState('');
@@ -344,23 +369,60 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
     });
   };
 
+  const refreshPushStatus = async (nextConfig: ActiveMsg2GlobalConfig) => {
+    const requestId = ++pushRequestIdRef.current;
+    setCheckingPush(true);
+    setPushCheckError('');
+    setPushStatus(null);
+    try {
+      const nextPushStatus = await waitForSettingsCheck(ActiveMsgClient.getPushStatus());
+      if (requestId !== pushRequestIdRef.current) return;
+      setPushStatus(nextPushStatus);
+      if (nextConfig.workerUrl?.trim()) {
+        void ActiveMsgClient.probeInstantChatSupport().then((supported) => {
+          if (requestId !== pushRequestIdRef.current) return;
+          setInstantChatSupported(supported);
+          reportInstantChatGate({
+            connected: Boolean(nextConfig.initializedAt),
+            pushSubscribed: Boolean(nextPushStatus.hasSubscription),
+            workerSupportsInstantChat: supported,
+          }, Boolean(nextConfig.instantChatEnabled));
+        }).catch(() => {
+          if (requestId === pushRequestIdRef.current) setInstantChatSupported(false);
+        });
+      }
+    } catch (error) {
+      if (requestId !== pushRequestIdRef.current) return;
+      setPushCheckError(error instanceof Error && error.name === 'TimeoutError'
+        ? '推送状态检查超时，可以重试；其他配置仍可正常修改。'
+        : '推送状态读取失败，可以重试；其他配置仍可正常修改。');
+    } finally {
+      if (requestId === pushRequestIdRef.current) setCheckingPush(false);
+    }
+  };
+
   const refresh = async () => {
-    const nextConfig = await ActiveMsgClient.getGlobalConfig();
-    const nextPushStatus = await ActiveMsgClient.getPushStatus();
+    const requestId = ++configRequestIdRef.current;
+    ++pushRequestIdRef.current;
+    setConfigLoadError('');
+    let nextConfig: ActiveMsg2GlobalConfig;
+    try {
+      nextConfig = await waitForSettingsCheck(ActiveMsgClient.getGlobalConfig());
+    } catch (error) {
+      if (requestId !== configRequestIdRef.current) return;
+      setConfigLoadError(error instanceof Error && error.name === 'TimeoutError'
+        ? '本地配置读取超时，请重试。'
+        : '本地配置读取失败，请重试。');
+      throw error;
+    }
+    if (requestId !== configRequestIdRef.current) return;
     savedWorkerUrlRef.current = nextConfig.workerUrl || '';
+    // 先交出表单，推送就绪与否只影响推送区域，不挡住整个面板。
     setConfig(nextConfig);
-    setPushStatus(nextPushStatus);
+    void refreshPushStatus(nextConfig);
     void probeWorkerCaps(Boolean(nextConfig.workerUrl?.trim()));
     if (nextConfig.workerUrl?.trim()) {
       void ActiveMsgClient.probeWorkerVersion().then(setWorkerVersion);
-      void ActiveMsgClient.probeInstantChatSupport().then((supported) => {
-        setInstantChatSupported(supported);
-        reportInstantChatGate({
-          connected: Boolean(nextConfig.initializedAt),
-          pushSubscribed: Boolean(nextPushStatus?.hasSubscription),
-          workerSupportsInstantChat: supported,
-        }, Boolean(nextConfig.instantChatEnabled));
-      });
       void runDiagnostics();
       // 已连接才问定时触发开没开：没连上的时候这事还轮不到操心。
       if (nextConfig.initializedAt) void ActiveMsgClient.getCronTriggerState().then(applyCronTriggerState);
@@ -376,6 +438,9 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
 
   useEffect(() => {
     if (!isOpen) return;
+    setConfig(null);
+    setPushStatus(null);
+    setInstantChatSupported(false);
     setAdvancedOpen(false);
     setDiagnosticsOpen(false);
     setDeployOpen(false);
@@ -396,7 +461,12 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
     setAttachAccounts(null);
     setAttachError('');
     setPauseConfirmOpen(false);
-    void refresh();
+    // refresh 已把读取错误放进面板；操作按钮仍可用它的 rejection 显示操作失败。
+    void refresh().catch(() => {});
+    return () => {
+      ++configRequestIdRef.current;
+      ++pushRequestIdRef.current;
+    };
   }, [isOpen]);
 
   /**
@@ -856,13 +926,32 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
     return revealAndCopy(token, setGeneratedServerToken, 'AMSG_SERVER_TOKEN');
   };
 
-  if (!config) return null;
+  if (!config) {
+    return (
+      <Modal isOpen={isOpen} title="主动消息 2.0" onClose={onClose}>
+        <div className="space-y-3 text-sm text-slate-600">
+          <p role={configLoadError ? 'alert' : 'status'}>
+            {configLoadError || '正在读取本地配置…'}
+          </p>
+          {configLoadError ? (
+            <button
+              type="button"
+              onClick={() => void refresh().catch(() => {})}
+              className="w-full py-3 bg-violet-500 text-white font-bold rounded-2xl active:scale-95 transition-transform"
+            >
+              重试读取配置
+            </button>
+          ) : null}
+        </div>
+      </Modal>
+    );
+  }
 
   const isConnected = Boolean(config.initializedAt);
 
   // 体检：探测结果 + 「这台设备订阅了没」这个只有前端知道的事实，红绿灯判定全在
   // amsgDiagnostics 那份纯函数里（那边有回归测试钉着）。
-  const diagnosticRows = diagnosticsProbe
+  const diagnosticRows = diagnosticsProbe && pushStatus
     ? buildAmsgDiagnosticRows({
       probe: diagnosticsProbe,
       localPushSubscribed: Boolean(pushStatus?.hasSubscription),
@@ -880,7 +969,11 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
     pushSubscribed: Boolean(pushStatus?.hasSubscription),
     workerSupportsInstantChat: instantChatSupported,
   });
-  const instantChatBlockedReason = instantChatBlocker ? INSTANT_CHAT_BLOCKER_HINTS[instantChatBlocker] : '';
+  const instantChatBlockedReason = isConnected && checkingPush
+    ? '正在检查推送状态…'
+    : isConnected && pushCheckError
+      ? '暂时无法确认推送状态，请先重试推送检查。'
+      : instantChatBlocker ? INSTANT_CHAT_BLOCKER_HINTS[instantChatBlocker] : '';
 
   return (
     <>
@@ -898,6 +991,14 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
       )}
     >
       <div className="space-y-4 text-sm text-slate-600">
+        {configLoadError ? (
+          <div role="alert" className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 text-xs text-amber-700 space-y-2">
+            <p>{configLoadError}</p>
+            <button type="button" onClick={() => void refresh().catch(() => {})} className="font-bold underline">
+              重试读取配置
+            </button>
+          </div>
+        ) : null}
         {/* 后台任务暂停着的时候常驻这一条：下面的按钮在折叠区里，不然一眼看不出角色为什么都不响。 */}
         {cronState?.kind === 'known' && !cronState.enabled ? (
           <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 text-xs leading-relaxed text-amber-700">
@@ -981,7 +1082,9 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
               </div>
             ) : (
               <p className="text-xs leading-relaxed text-slate-400">
-                {diagnosing ? '正在问 Worker…' : '还没有结果，点右上角检查一次。'}
+                {checkingPush ? '正在检查这台设备的推送状态…'
+                  : pushCheckError ? '推送状态暂时无法确认，请先重试推送检查。'
+                  : diagnosing ? '正在问 Worker…' : '还没有结果，点右上角检查一次。'}
               </p>
             )}
           </div>
@@ -1572,7 +1675,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
               {pushStatus?.transport === 'unified-push' ? 'UnifiedPush 通知' : '通知权限'}
             </span>
             <span className={`text-xs font-bold ${pushStatus?.hasSubscription ? 'text-emerald-600' : 'text-amber-600'}`}>
-              {pushStatus?.hasSubscription ? '已开启' : '未开启'}
+              {checkingPush ? '检查中…' : pushCheckError ? '暂时无法检查' : pushStatus?.hasSubscription ? '已开启' : '未开启'}
             </span>
           </div>
           <p className="text-xs leading-relaxed text-slate-500">
@@ -1601,6 +1704,14 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
           ) : null}
           {pushStatus?.detail ? (
             <p className="text-xs leading-relaxed text-amber-600">{pushStatus.detail}</p>
+          ) : null}
+          {pushCheckError ? (
+            <div role="alert" className="space-y-2 text-xs text-amber-600">
+              <p>{pushCheckError}</p>
+              <button type="button" onClick={() => void refreshPushStatus(config)} className="font-bold underline">
+                重试推送检查
+              </button>
+            </div>
           ) : null}
           <button
             onClick={handleCreateSubscription}
