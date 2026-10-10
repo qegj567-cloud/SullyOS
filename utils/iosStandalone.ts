@@ -15,8 +15,11 @@ export const readSafeAreaInsets = (): { top: number; bottom: number } => {
     if (typeof document === 'undefined' || !document.body) {
         return { top: cachedTopInset ?? 0, bottom: cachedBottomInset ?? 0 };
     }
-    // 两边都已锁定有效值，直接用缓存，不再插探针重排。
-    if (cachedTopInset !== null && cachedBottomInset !== null) {
+    const containedStatusBar = document.documentElement.hasAttribute('data-ios-status-bar-contained');
+    // contain starts with cover's old nonzero env values until WebKit relayouts.
+    // Only its settled 0/0 pair is cacheable; ordinary cover keeps the existing rule.
+    if (cachedTopInset !== null && cachedBottomInset !== null &&
+        (!containedStatusBar || (cachedTopInset === 0 && cachedBottomInset === 0))) {
         return { top: cachedTopInset, bottom: cachedBottomInset };
     }
 
@@ -36,8 +39,13 @@ export const readSafeAreaInsets = (): { top: number; bottom: number } => {
     document.body.removeChild(probe);
 
     // 各边只在读到非 0 时锁定；仍为 0 的边保持未缓存，下次事件继续探测，读到真值再锁。
-    if (cachedTopInset === null && top > 0) cachedTopInset = top;
-    if (cachedBottomInset === null && bottom > 0) cachedBottomInset = bottom;
+    if (containedStatusBar) {
+        cachedTopInset = top;
+        cachedBottomInset = bottom;
+    } else {
+        if (cachedTopInset === null && top > 0) cachedTopInset = top;
+        if (cachedBottomInset === null && bottom > 0) cachedBottomInset = bottom;
+    }
 
     return { top: cachedTopInset ?? top, bottom: cachedBottomInset ?? bottom };
 };
@@ -100,6 +108,13 @@ const setViewportVars = () => {
     const viewportHeight = Math.round(window.visualViewport?.height || innerHeight);
     const viewportOffsetTop = Math.round(window.visualViewport?.offsetTop || 0);
     const containedStatusBar = document.documentElement.hasAttribute('data-ios-status-bar-contained');
+    // iOS can settle viewport-fit with only a visualViewport resize, not window.resize.
+    // Discard cover's cached 62/34px insets before measuring the contained viewport.
+    if (containedStatusBar && stableStandaloneHeight && viewportHeight > 150 &&
+        viewportHeight !== stableStandaloneHeight && Math.abs(stableStandaloneHeight - viewportHeight) < 100) {
+        cachedTopInset = null;
+        cachedBottomInset = null;
+    }
     // 单次探针读取上下安全区。顶部 env 偶发返回 0，探测不到时退回 44px（约状态栏/刘海高度），避免顶栏内容怼进刘海。
     const safeInsets = shouldStabilizeHeight ? readSafeAreaInsets() : { top: 0, bottom: 0 };
     const bottomSafeInset = safeInsets.bottom;
@@ -247,7 +262,9 @@ export const installIOSStandaloneWorkaround = () => {
         const RETRY_DELAYS_MS = [120, 500, 1500, 3000];
         for (const delay of RETRY_DELAYS_MS) {
             window.setTimeout(() => {
-                if (cachedTopInset !== null && cachedBottomInset !== null) return; // 两边都已锁定，无需再试
+                const containedStatusBar = document.documentElement.hasAttribute('data-ios-status-bar-contained');
+                if (cachedTopInset !== null && cachedBottomInset !== null &&
+                    (!containedStatusBar || (cachedTopInset === 0 && cachedBottomInset === 0))) return;
                 setViewportVars();
             }, delay);
         }

@@ -129,6 +129,18 @@ describe('iOS 全屏 PWA 键盘态', () => {
         expect(appHeight()).toBe(`${SCREEN_H - 62}px`);
     });
 
+    it('contain 只触发 visualViewport resize 时也丢弃启动前读到的 cover 安全区', async () => {
+        document.documentElement.setAttribute('data-ios-status-bar-contained', '');
+        await install();
+        vi.mocked(window.getComputedStyle).mockReturnValue({ paddingTop: '0px', paddingBottom: '0px' } as CSSStyleDeclaration);
+        emitViewportResize(SCREEN_H);
+        expect(document.documentElement.style.getPropertyValue('--standalone-safe-area-top')).toBe('0px');
+        emitViewportResize(SCREEN_H - 62);
+        expect(document.documentElement.style.getPropertyValue('--standalone-safe-area-top')).toBe('0px');
+        expect(document.documentElement.style.getPropertyValue('--standalone-safe-area-bottom')).toBe('0px');
+        expect(appHeight()).toBe(`${SCREEN_H - 62}px`);
+    });
+
     // 回归守卫：输入框拿到焦点不等于键盘弹出来了。设备上键盘弹不出来时（外接键盘、输入法异常），
     // 旧实现照样挂标记，外壳铺到那 34px 溢出区、输入栏又收掉让位间隙，输入条整条沉出屏幕。
     it('焦点进来但可视区没变矮 → 不进键盘态，高度不动', async () => {
