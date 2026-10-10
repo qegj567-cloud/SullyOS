@@ -87,6 +87,7 @@ describe('iOS 全屏 PWA 键盘态', () => {
         document.body.className = '';
         document.body.innerHTML = '';
         document.documentElement.removeAttribute('style');
+        document.documentElement.removeAttribute('data-ios-status-bar-contained');
         setupIOSStandalone();
     });
 
@@ -110,6 +111,34 @@ describe('iOS 全屏 PWA 键盘态', () => {
         await install();
         expect(appHeight()).toBe(`${SCREEN_H + SAFE_BOTTOM}px`);
         expect(inKeyboardMode()).toBe(false);
+    });
+
+    it('contain 的零安全区不回退 44px，延迟缩小的视口重新建立高度基线', async () => {
+        document.documentElement.setAttribute('data-ios-status-bar-contained', '');
+        vi.mocked(window.getComputedStyle).mockReturnValue({ paddingTop: '0px', paddingBottom: '0px' } as CSSStyleDeclaration);
+        await install();
+        expect(document.documentElement.style.getPropertyValue('--standalone-safe-area-top')).toBe('0px');
+        emitViewportResize(SCREEN_H - 62);
+        expect(appHeight()).toBe(`${SCREEN_H - 62}px`);
+        expect(inKeyboardMode()).toBe(false);
+        emitViewportResize(SCREEN_H - 62 - KEYBOARD_H);
+        expect(inKeyboardMode()).toBe(true);
+        expect(appHeight()).toBe(`${SCREEN_H - 62 - KEYBOARD_H}px`);
+        emitViewportResize(SCREEN_H - 62);
+        expect(inKeyboardMode()).toBe(false);
+        expect(appHeight()).toBe(`${SCREEN_H - 62}px`);
+    });
+
+    it('contain 只触发 visualViewport resize 时也丢弃启动前读到的 cover 安全区', async () => {
+        document.documentElement.setAttribute('data-ios-status-bar-contained', '');
+        await install();
+        vi.mocked(window.getComputedStyle).mockReturnValue({ paddingTop: '0px', paddingBottom: '0px' } as CSSStyleDeclaration);
+        emitViewportResize(SCREEN_H);
+        expect(document.documentElement.style.getPropertyValue('--standalone-safe-area-top')).toBe('0px');
+        emitViewportResize(SCREEN_H - 62);
+        expect(document.documentElement.style.getPropertyValue('--standalone-safe-area-top')).toBe('0px');
+        expect(document.documentElement.style.getPropertyValue('--standalone-safe-area-bottom')).toBe('0px');
+        expect(appHeight()).toBe(`${SCREEN_H - 62}px`);
     });
 
     // 回归守卫：输入框拿到焦点不等于键盘弹出来了。设备上键盘弹不出来时（外接键盘、输入法异常），
