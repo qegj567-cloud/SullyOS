@@ -26,7 +26,12 @@ RETENTION_MONTHS=12
 
 # `< /dev/null` 不能省：docker compose exec 会读 stdin，脚本一旦经 `bash -s`
 # 之类的方式从标准输入喂进来，psql 会把后半截脚本当查询吞掉。
-Q() { docker compose -f "$COMPOSE" exec -T db psql -U umami -d umami -qtAX -c "$1" < /dev/null; }
+# 只约束审计连接，不修改业务库的全局参数。超时或 SQL 出错必须返回非零。
+Q() {
+  docker compose -f "$COMPOSE" exec -T \
+    -e PGOPTIONS='-c statement_timeout=120000 -c lock_timeout=10000' db \
+    psql -X -v ON_ERROR_STOP=1 -U umami -d umami -qtAX -c "$1" < /dev/null
+}
 
 NONCE="${1:-}"
 
@@ -181,16 +186,32 @@ printf 'CONFIG-SHA256 %s %s\n' umami-privacy-trigger.expected.txt \
 # ───────────────────────────────────────────────────────────────────
 if [[ -n "$NONCE" && -n "$probe_sids" ]]; then
   ev="ci_probe_${NONCE}"
-  Q "BEGIN;
-     DELETE FROM event_data WHERE website_event_id IN
-       (SELECT event_id FROM website_event WHERE event_name = '$ev');
-     DELETE FROM website_event WHERE event_name = '$ev';
-     DELETE FROM session_data WHERE session_id IN ($probe_sids);
-     DELETE FROM session WHERE session_id IN ($probe_sids)
-       AND NOT EXISTS (SELECT 1 FROM website_event we WHERE we.session_id = session.session_id);
-     COMMIT;" > /dev/null
-  left=$(Q "SELECT count(*) FROM website_event WHERE event_name = '$ev';")
-  check "探针数据已清理" "0" "$left"
+  echo
+  echo "### 清理探针 ${ev}（单条 SQL 最多 120 秒，锁等待最多 10 秒）###"
+  cleanup_started=$SECONDS
+  # 先把少量 UUID 取出来，再按现有索引删。不要合并回 IN (SELECT ...)：
+  # 线上曾因此扫描数百万行 event_data，再逐行查询 website_event，耗时数分钟。
+  if probe_eids=$(Q "SELECT string_agg(quote_literal(event_id), ',')
+                    FROM website_event WHERE event_name = '$ev';") && [[ -n "$probe_eids" ]]; then
+    if Q "BEGIN;
+       DELETE FROM event_data WHERE website_event_id IN ($probe_eids);
+       DELETE FROM website_event WHERE event_id IN ($probe_eids) AND event_name = '$ev';
+       DELETE FROM session_data WHERE session_id IN ($probe_sids);
+       DELETE FROM session WHERE session_id IN ($probe_sids)
+         AND NOT EXISTS (SELECT 1 FROM website_event we WHERE we.session_id = session.session_id);
+       COMMIT;" > /dev/null; then
+      if left=$(Q "SELECT count(*) FROM website_event WHERE event_name = '$ev';"); then
+        check "探针数据已清理" "0" "$left"
+      else
+        check "探针清理复核成功" "yes" "no（查询失败，见上方错误）"
+      fi
+    else
+      check "探针清理事务成功" "yes" "no（SQL 失败或超时，见上方错误）"
+    fi
+  else
+    check "取得待清理探针 ID" "yes" "no（查询失败或探针已不存在）"
+  fi
+  echo "     （清理耗时 $(( SECONDS - cleanup_started )) 秒）"
 fi
 
 echo
