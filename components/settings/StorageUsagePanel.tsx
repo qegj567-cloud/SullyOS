@@ -69,8 +69,12 @@ function describeOptimizeResult(r: OptimizeResult): string {
     if (r.vectorsCompacted > 0) {
         parts.push(`把 ${r.vectorsCompacted} 条记忆向量压成了紧凑格式`);
     }
+    if (r.linksCompacted > 0) {
+        parts.push(`已整理 ${r.linksCompacted} 条记忆连接的小数精度，连接全部保留`);
+    }
     const reloadNote = r.mergedDuplicates > 0 ? '页面即将刷新，让界面和备份都用上合并后的图片。' : '';
-    const vectorNote = r.vectorError ? `记忆向量这一步没做完：${r.vectorError}。再点一次可以接着压。` : '';
+    const vectorNote = (r.vectorError ? `记忆向量这一步没做完：${r.vectorError}。再点一次可以接着压。` : '')
+        + (r.linkError ? `记忆连接这一步没做完：${r.linkError}。再点一次可以继续。` : '');
     if (parts.length === 0) {
         if (r.failed > 0) return `有 ${r.failed} 张图片转换失败（已保留原样），其余没有需要优化的。${vectorNote}`;
         if (vectorNote) return `没有需要优化的图片。${vectorNote}`;

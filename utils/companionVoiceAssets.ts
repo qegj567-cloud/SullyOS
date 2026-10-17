@@ -64,8 +64,13 @@ export const deleteCompanionVoiceBlob = async (assetId: string): Promise<void> =
 
 /** 在导出读取 assets store 前，把所有旧版 blob_assets 陪伴语音搬进可备份资产表。 */
 export const ensureCompanionVoiceAssetsForBackup = async (characters: CharacterProfile[]): Promise<number> => {
+  return ensureCompanionVoiceAssetIdsForBackup(collectCharacterCompanionVoiceAssetIds(characters));
+};
+
+/** Cursor export retains only referenced IDs, not every full character object. */
+export const ensureCompanionVoiceAssetIdsForBackup = async (assetIds: Iterable<string>): Promise<number> => {
   let migrated = 0;
-  for (const assetId of collectCharacterCompanionVoiceAssetIds(characters)) {
+  for (const assetId of assetIds) {
     const current = await DB.getAssetRaw(assetId).catch(() => null) as CompanionVoiceAsset | Blob | null;
     if (current instanceof Blob || current?.blob instanceof Blob) continue;
     const legacy = await DB.getBlobAsset(assetId).catch(() => null);

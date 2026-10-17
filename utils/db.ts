@@ -1,4 +1,5 @@
 import { readLocalCursor } from './localRead';
+import { compactMemoryLink } from './memoryPalace/linkPrecision';
 import { reportDatabaseFailure } from './databaseHealth';
 import { associateDatabaseOpen, beginDatabaseOpen, recordDatabaseOpen } from './databaseOpenDiagnostics';
 import {migrateLegacyWhiteboxPresets} from './legacyWhiteboxPresets';
@@ -3896,7 +3897,7 @@ export const DB = {
               }
               await beforeWrite(chunk, label, restoreAssets);
               await withStore(storeName, store => {
-                  chunk.forEach(item => store.put(item));
+                  chunk.forEach(item => store.put(storeName === 'memory_links' ? compactMemoryLink(item) : item));
               });
               for (let j = i; j < end; j++) {
                   (items as any[])[j] = undefined;

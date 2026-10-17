@@ -3,6 +3,7 @@ import {
     VOICE_BACKUP_DIR,
     VOICE_BACKUP_MARKER,
     externalizeVoiceMessageBlobs,
+    externalizeVoiceMessageBlob,
     restoreVoiceMessageBlobs,
     shouldIncludeVoiceRelatedAssetInBackup,
 } from './voiceMessageBackup';
@@ -11,6 +12,20 @@ import {
     COMPANION_STARTUP_VOICE_ASSET_PREFIX,
     COMPANION_TOUCH_VOICE_ASSET_PREFIX,
 } from './companionVoiceAssets';
+
+it('逐条语音导出保留 Blob 到 ZIP 读取时，不提前展开完整音频', async () => {
+    const original = new Blob([new Uint8Array([1, 4, 9])], { type: 'audio/mpeg' });
+    original.arrayBuffer = async () => { throw new Error('eager audio allocation'); };
+    const row: any = { id: `${VOICE_FAVORITE_AUDIO_PREFIX}one`, data: { blob: original, title: '保留' } };
+    const files = new Map<string, Blob>();
+    externalizeVoiceMessageBlob(row, 7, (path, blob) => { files.set(path, blob); });
+    expect(row.data.title).toBe('保留');
+    expect(row.data.blob[VOICE_BACKUP_MARKER]).toBe(true);
+    expect(row.data.blob.size).toBe(3);
+    expect(files.get(row.data.blob.path)).toBe(original);
+    await restoreVoiceMessageBlobs([row], async path => new Uint8Array(await files.get(path)!.slice().arrayBuffer()));
+    expect([...new Uint8Array(await row.data.blob.arrayBuffer())]).toEqual([1, 4, 9]);
+});
 
 describe('chat voice backup binary lane', () => {
     it('round-trips per-message audio as a real Blob', async () => {

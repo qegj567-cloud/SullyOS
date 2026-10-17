@@ -1136,6 +1136,19 @@ describe('去重：同一张图只留一份 Blob', () => {
 });
 
 describe('记忆向量：压成紧凑形态', () => {
+    it('一键优化同时收敛旧连接小数，不删除边，第二次幂等', async () => {
+        const db = await openDB();
+        await new Promise<void>((resolve, reject) => {
+            const tx = db.transaction('memory_links', 'readwrite');
+            tx.objectStore('memory_links').clear();
+            tx.objectStore('memory_links').put({ id: 'old-link', sourceId: 'm1', targetId: 'm2', type: 'emotional', strength: 0.2789476291284245 });
+            tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error);
+        });
+        const result = await optimizeResourceStorage();
+        expect(result.linksCompacted).toBe(1);
+        expect(await DB.getRawStoreData('memory_links')).toEqual([{ id: 'old-link', sourceId: 'm1', targetId: 'm2', type: 'emotional', strength: 0.27895 }]);
+        expect((await optimizeResourceStorage()).linksCompacted).toBe(0);
+    });
     /** 直接塞一条旧 number[] 形态的向量（绕开 MemoryVectorDB.save，它会当场转成紧凑形态）。 */
     async function seedLegacyVector(memoryId: string, charId: string, dims: number): Promise<number[]> {
         const vector = Array.from({ length: dims }, (_, i) => (i % 7) / 7 - 0.5);
