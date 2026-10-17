@@ -57,9 +57,40 @@ afterEach(async () => {
     host.remove();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
 });
 
 describe('AppErrorBoundary resource recovery', () => {
+    it.each([
+        ['/', 'https://app.invalid/?openApp=chat', 'https://app.invalid/recover.html'],
+        ['./', 'https://app.invalid/SullyOS/?openApp=chat', 'https://app.invalid/SullyOS/recover.html'],
+        ['./', 'https://app.invalid/SullyOS/index.html', 'https://app.invalid/SullyOS/recover.html'],
+        ['/SullyOS/', 'https://app.invalid/SullyOS/', 'https://app.invalid/SullyOS/recover.html'],
+    ])('offers same-site recovery after a failed refresh (base %s, page %s)', async (base, page, expected) => {
+        vi.stubEnv('BASE_URL', base);
+        vi.spyOn(recovery, 'tryAutoReloadForChunkError').mockReturnValue('cooldown');
+        await renderFailure();
+
+        const link = host.querySelector<HTMLAnchorElement>('a');
+        expect(link?.textContent).toBe('检查更新并修复');
+        expect(new URL(link!.getAttribute('href')!, page).href).toBe(expected);
+        expect(link?.target).toBe('');
+        expect(host.textContent).toContain('刷新无效时');
+        expect(mocks.reload).not.toHaveBeenCalled();
+        button('刷新重试');
+        button('复制报错信息');
+        button('返回桌面');
+    });
+
+    it('does not offer a web worker recovery page in the native app', async () => {
+        vi.stubEnv('MODE', 'capacitor');
+        vi.spyOn(recovery, 'tryAutoReloadForChunkError').mockReturnValue('cooldown');
+        await renderFailure();
+        expect(host.querySelector('a')).toBeNull();
+        expect(host.textContent).not.toContain('检查更新并修复');
+        button('刷新重试');
+    });
+
     it('keeps offline recovery manual, preserves all recovery controls and uploads no exception or character data', async () => {
         network.onLine = false;
         const attempt = vi.spyOn(recovery, 'tryAutoReloadForChunkError');

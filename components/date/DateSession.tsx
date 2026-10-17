@@ -1,5 +1,5 @@
 import {meetingAppearance, MEETING_READING_CSS} from '../../utils/meetingAppearance';
-import React, { useState, useEffect, useLayoutEffect, useRef, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import { CharacterProfile, Message, DateState, DialogueItem, UserProfile, DateObservation } from '../../types';
 import Modal from '../../components/os/Modal';
 import { useOS } from '../../context/OSContext';
@@ -33,6 +33,7 @@ import { isElevenLabsV4Model } from '../../utils/elevenLabsModels';
 import { useStreamingVoice } from '../../hooks/useStreamingVoice';
 import StreamingVoiceBar from '../voice/StreamingVoiceBar';
 import type { StreamedVoice } from '../../utils/elevenLabsStream';
+import { useDateReadingScroll } from '../../utils/useDateReadingScroll';
 
 // 语音情绪标记 [v:xxx]：跟立绘情绪 [emotion] 分开的独立通道。立绘的 happy 是
 // 夸张的表情、语音的 happy 是音色情绪，两者强度/语义差异大，不能一概而论。
@@ -259,7 +260,6 @@ const DateSession: React.FC<DateSessionProps> = ({
     const [selectedMsgIds, setSelectedMsgIds] = useState<Set<number>>(new Set());
     const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const touchStartRef = useRef<{x: number, y: number} | null>(null);
-    const novelScrollRef = useRef<HTMLDivElement>(null);
 
     // Voice TTS — single shared cache keyed by dialogue text, used by both GAL & novel mode
     const [dateVoicePlaying, setDateVoicePlaying] = useState(false);
@@ -675,30 +675,16 @@ const DateSession: React.FC<DateSessionProps> = ({
         }
     }, [char, currentSpriteKey]);
 
-    // Novel Mode Scroll
-    const readingPosition = useRef({ first: 0, last: 0, height: 0, top: 0, nearBottom: true, active: false });
-    useLayoutEffect(() => {
-        const element = novelScrollRef.current;
-        const previous = readingPosition.current;
-        if (!isNovelMode || !element) { previous.active = false; return; }
-        const first = visibleSessionMessages[0]?.id || 0;
-        const last = visibleSessionMessages.at(-1)?.id || 0;
-        if (!previous.active || !previous.last) element.scrollTop = element.scrollHeight;
-        else if (first && first < previous.first) element.scrollTop = previous.top + element.scrollHeight - previous.height;
-        else if (previous.nearBottom) element.scrollTop = element.scrollHeight;
-        readingPosition.current = { first, last, height: element.scrollHeight, top: element.scrollTop,
-            nearBottom: element.scrollHeight - element.clientHeight - element.scrollTop < 100, active: true };
-    }, [visibleSessionMessages, isNovelMode, showInputBox]);
-    const onReadingScroll = () => {
-        const element = novelScrollRef.current;
-        if (!element) return;
-        const movingUp = element.scrollTop < readingPosition.current.top;
-        readingPosition.current.top = element.scrollTop;
-        readingPosition.current.height = element.scrollHeight;
-        readingPosition.current.nearBottom = element.scrollHeight - element.clientHeight - element.scrollTop < 100;
-        if (movingUp && element.scrollTop < 80 && !historyLoading && !historyReachedEnd && !historyError)
-            void onLoadMoreHistory?.();
-    };
+    // Deferred message layout changes the scroll height after mounting/switching modes.
+    // Follow the end or a visible message, including after those later size changes.
+    const { scrollRef: novelScrollRef, contentRef: novelContentRef, onScroll: onReadingScroll } = useDateReadingScroll({
+        active: isNovelMode,
+        messages: visibleSessionMessages,
+        layoutKey: showInputBox,
+        onLoadOlder: () => {
+            if (!historyLoading && !historyReachedEnd && !historyError) void onLoadMoreHistory?.();
+        },
+    });
 
     // Typewriter effect
     useEffect(() => {
@@ -1071,7 +1057,7 @@ const DateSession: React.FC<DateSessionProps> = ({
             {/* Novel Mode View */}
             {isNovelMode && (
                 <div ref={novelScrollRef} onScroll={onReadingScroll} style={{ overflowAnchor: 'none', paddingBottom: streamingVoice.state && streamingVoice.state.status !== 'done' ? '13rem' : undefined }} className={`meeting-reading-page absolute inset-0 z-20 overflow-y-auto no-scrollbar pt-24 pb-32 px-8 mask-image-gradient overscroll-contain ${lightReading ? 'bg-[#faf8f5]' : 'bg-black/90 backdrop-blur-sm'}`} onClick={(e) => { e.stopPropagation(); if (showMenu) { setShowMenu(false); setShowVoiceLangPicker(false); return; } setShowInputBox(true); }}>
-                    <div className="min-h-full flex flex-col justify-end">
+                    <div ref={novelContentRef} className="min-h-full flex flex-col justify-end">
                         {voiceEnabled && apiConfig.ttsProvider === 'elevenlabs' && <button className="self-center mb-4 rounded-full border border-emerald-300/40 bg-white/90 px-4 py-2 text-xs text-emerald-800" onClick={event => {
                             event.stopPropagation(); stopDateStream();
                             const chosen = messages.filter(message => message.role === 'assistant' && (!isBatchSelectMode || selectedMsgIds.has(message.id)));

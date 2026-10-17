@@ -21,8 +21,10 @@ async function fixture(buildId = 'one', storage = new MemoryCaches(), limits: { 
   // Every release rebuilds the entry chunk, so its hashed name is unique to the build.
   const main = `assets/build/main-${buildId}-abcdefgh.js`;
   const lazy = 'assets/build/lazy-ijklmnop.js';
+  const css = 'assets/build/ChatInputArea-DVfhoVgz.css';
   const bodies: Record<string, string> = {
     'index.html': `<html>${buildId}<script type="module" src="./${main}"></script></html>`, [main]: 'console.log(1)', [lazy]: 'lazy',
+    [css]: '.chat{display:flex}',
     'themes/a.webp': 'image', 'themes/b.webp': 'image b', 'themes/c.webp': 'image c',
   };
   const types: Record<string, string> = {};
@@ -55,7 +57,7 @@ async function fixture(buildId = 'one', storage = new MemoryCaches(), limits: { 
   });
   const settle = async () => { while (pending.length) await pending.shift(); };
   const text = async (path: string, init?: RequestInit) => (await engine.handle(new Request(BASE + path, init))!).text();
-  return { engine, storage, bodies, types, hooks, main, lazy, requests, requestModes, pending, settle, text, advance: (ms: number) => { time += ms; }, offline: () => { offline = true; } };
+  return { engine, storage, bodies, types, hooks, main, lazy, css, requests, requestModes, pending, settle, text, advance: (ms: number) => { time += ms; }, offline: () => { offline = true; } };
 }
 
 describe('static resource cache', () => {
@@ -261,10 +263,10 @@ describe('static resource cache', () => {
     await f.engine.install(); f.offline();
     expect(await f.text('')).toContain('analytics.js');
   });
-  it('goes back to the network for the page once the server no longer has this build', async () => {
+  it.each(['lazy', 'css'] as const)('goes back to the network for the page once the server no longer has its %s asset', async asset => {
     const f = await fixture(); await f.engine.install();
-    delete f.bodies[f.lazy]; f.bodies['index.html'] = '<html>two</html>';
-    expect((await f.engine.handle(new Request(BASE + f.lazy))!).status).toBe(404); await f.settle();
+    delete f.bodies[f[asset]]; f.bodies['index.html'] = '<html>two</html>';
+    expect((await f.engine.handle(new Request(BASE + f[asset]))!).status).toBe(404); await f.settle();
     expect(await f.text('')).toContain('two');
     // The decision survives a worker restart, and the old shell still starts the app offline.
     const restarted = await fixture('one', f.storage); restarted.bodies['index.html'] = '<html>two</html>';
@@ -314,17 +316,17 @@ describe('static resource cache', () => {
     const restarted = await fixture('one', f.storage); restarted.offline();
     expect(await restarted.text('')).toContain('one');
   });
-  it('treats a fallback page served under a hashed name as a replaced build', async () => {
+  it.each(['lazy', 'css'] as const)('treats a fallback page served under a hashed %s name as a replaced build', async asset => {
     const f = await fixture(); await f.engine.install();
-    f.bodies[f.lazy] = '<html>two</html>'; f.types[f.lazy] = 'text/html'; f.bodies['index.html'] = '<html>two</html>';
-    await f.text(f.lazy); await f.settle();
+    f.bodies[f[asset]] = '<html>two</html>'; f.types[f[asset]] = 'text/html'; f.bodies['index.html'] = '<html>two</html>';
+    await f.text(f[asset]); await f.settle();
     expect(await f.text('')).toContain('two');
   });
-  it('keeps the cached shell when only the browser HTTP cache held a fallback page', async () => {
+  it.each(['lazy', 'css'] as const)('keeps the cached shell when only the browser HTTP cache held a fallback page for %s', async asset => {
     const f = await fixture(); await f.engine.install();
-    f.hooks.respond = request => request.url.endsWith(f.lazy) && request.cache !== 'reload'
+    f.hooks.respond = request => request.url.endsWith(f[asset]) && request.cache !== 'reload'
       ? new Response('<html>fallback</html>', { headers: { 'Content-Type': 'text/html' } }) : undefined;
-    expect(await f.text(f.lazy)).toBe('lazy'); await f.settle();
+    expect(await f.text(f[asset])).toBe(f.bodies[f[asset]]); await f.settle();
     f.bodies['index.html'] = '<html>two</html>';
     expect(await f.text('')).toContain('one');
   });
