@@ -122,16 +122,17 @@ describe('collaboration sidecar wiring', () => {
 
   it('ships six collaboration-only interface skins without printing third-party brands', () => {
     const windowSource = read('features/collaboration/CollaborationWindow.tsx');
+    const appearanceSource = read('features/collaboration/appearance.ts');
     for (const id of ['sully', 'gpt', 'claude', 'gemini', 'kimi', 'deepseek']) {
-      expect(windowSource).toContain(`id: '${id}'`);
+      expect(appearanceSource).toContain(`id: '${id}'`);
       expect(windowSource).toContain(`collab-ui-${id}`);
     }
     expect(windowSource).toContain('只改变这个工作窗口，不影响 ChatApp 和角色数据');
     for (const brand of ['ChatGPT', 'Claude', 'Gemini', 'Kimi', 'DeepSeek']) {
       expect(windowSource).not.toContain(brand);
     }
-    expect(windowSource).toContain("label: '黑白助手'");
-    expect(windowSource).toContain("label: '渐光协作'");
+    expect(appearanceSource).toContain("label: '黑白助手'");
+    expect(appearanceSource).toContain("label: '渐光协作'");
     expect(windowSource).toContain('collab-message-bubble-assistant');
   });
 

@@ -1,0 +1,93 @@
+/* Theme tokens also drive the settings, history drawer, file library and dialogs. */
+.collab-ui-root:where(.collab-ui-charcoal) {
+  --collab-bg: #171c1b;
+  --collab-panel: #1c2320;
+  --collab-panel-solid: #232b28;
+  --collab-ink: #e5ece7;
+  --collab-muted: #a0b0a6;
+  --collab-line: #39483f;
+  --collab-accent: #9fc8b1;
+  --collab-user: #304b3d;
+  --collab-user-ink: #edf5ef;
+  --collab-accent-ink: #172a1f;
+}
+.collab-ui-root:where(.collab-ui-warm-night) {
+  --collab-bg: #221f1d;
+  --collab-panel: #282420;
+  --collab-panel-solid: #302b27;
+  --collab-ink: #eee6df;
+  --collab-muted: #b9aaa0;
+  --collab-line: #4c4139;
+  --collab-accent: #dcb38f;
+  --collab-user: #4d3c2f;
+  --collab-user-ink: #f6e9dd;
+  --collab-accent-ink: #302216;
+}
+.collab-ui-root:where(.collab-ui-midnight) {
+  --collab-bg: #171c2b;
+  --collab-panel: #1d2436;
+  --collab-panel-solid: #242d42;
+  --collab-ink: #e5e9f5;
+  --collab-muted: #a7b2cc;
+  --collab-line: #3b4763;
+  --collab-accent: #b5b9e9;
+  --collab-user: #353f67;
+  --collab-user-ink: #eff0ff;
+  --collab-accent-ink: #222646;
+}
+.collab-ui-root:where(.collab-ui-dark) { color-scheme: dark; }
+/* Existing components use light utility colors. Remap only within this window,
+   keeping the actual document/artwork previews inside their own iframe intact. */
+.collab-ui-root:where(.collab-ui-dark) :is([class~="bg-white"], [class*="bg-white/"], [class*="bg-[#f7f8fb]"], [class*="bg-[#f8f9fc]"]) {
+  background-color: var(--collab-panel-solid) !important;
+}
+.collab-ui-root:where(.collab-ui-dark) :is([class*="bg-slate-50"], [class*="bg-slate-100"], [class*="bg-slate-200"], [class*="bg-slate-900/"], [class*="bg-white/5"], [class*="bg-white/10"]) {
+  background-color: color-mix(in srgb, var(--collab-ink) 7%, var(--collab-panel-solid)) !important;
+}
+.collab-ui-root:where(.collab-ui-dark) :is([class*="text-slate-9"], [class*="text-slate-8"], [class*="text-slate-7"], [class*="text-slate-6"]) {
+  color: var(--collab-ink) !important;
+}
+.collab-ui-root:where(.collab-ui-dark) :is([class*="text-slate-5"], [class*="text-slate-4"], [class*="text-slate-3"]) {
+  color: var(--collab-muted) !important;
+}
+.collab-ui-root:where(.collab-ui-dark) :is([class*="border-slate-"], [class*="border-white/"], [class*="border-black/"], [class*="divide-slate-"]) {
+  border-color: var(--collab-line) !important;
+}
+.collab-ui-root:where(.collab-ui-dark) :is([class*="bg-indigo-"], [class*="bg-violet-"], [class*="bg-blue-"], [class*="bg-sky-"]) {
+  background-color: color-mix(in srgb, var(--collab-accent) 14%, var(--collab-panel-solid)) !important;
+}
+.collab-ui-root:where(.collab-ui-dark) :is([class*="text-indigo-"], [class*="text-violet-"], [class*="text-blue-"], [class*="text-sky-"]) {
+  color: var(--collab-accent) !important;
+}
+.collab-ui-root:where(.collab-ui-dark) :is([class*="bg-rose-50"], [class*="bg-rose-100"], [class*="bg-amber-50"], [class*="bg-emerald-50"]) {
+  background-color: var(--collab-panel-solid) !important;
+}
+.collab-ui-root:where(.collab-ui-dark) :is([class*="text-rose-"], [class*="text-red-"]) { color: #f5a5ae !important; }
+.collab-ui-root:where(.collab-ui-dark) [class*="text-amber-"] { color: #e8c18f !important; }
+.collab-ui-root:where(.collab-ui-dark) [class*="text-emerald-"] { color: #9fcfb5 !important; }
+.collab-ui-root:where(.collab-ui-dark) :is([class~="bg-slate-900"], [class~="bg-indigo-600"]) {
+  background-color: var(--collab-accent) !important;
+  color: var(--collab-accent-ink) !important;
+}
+.collab-ui-root:where(.collab-ui-dark) :where(.collab-ui-composer) .collab-primary-action {
+  background: var(--collab-accent) !important;
+  color: var(--collab-accent-ink) !important;
+}
+.collab-ui-root:where(.collab-ui-dark) :is(.collab-brand-mark, .collab-assistant-mark, .collab-empty-brand, .collab-mode-brand) {
+  color: var(--collab-accent-ink) !important;
+}
+.collab-ui-root:where(.collab-ui-dark) :is(.collab-action-dialog, .collab-settings-panel, .collab-file-library) {
+  background: var(--collab-panel) !important;
+}
+.collab-ui-root:where(.collab-ui-dark) :is(input, textarea, select) { caret-color: var(--collab-accent); }
+.collab-ui-root:where(.collab-ui-dark) :is(input, textarea)::placeholder { color: var(--collab-muted); opacity: .8; }
+.collab-ui-root:where(.collab-ui-dark) :is(button, input, textarea, select):focus-visible {
+  outline: 2px solid var(--collab-accent);
+  outline-offset: 2px;
+}
+.collab-ui-root:where(.collab-ui-dark) .collab-voice-track { background: var(--collab-line); }
+.collab-ui-root .collab-css-editor { tab-size: 2; }
+.collab-ui-root:where(.collab-ui-dark) button.collab-theme-selected {
+  border-color: var(--collab-accent) !important;
+  box-shadow: 0 0 0 1px var(--collab-accent);
+}
