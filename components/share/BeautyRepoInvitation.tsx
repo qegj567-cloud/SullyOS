@@ -45,7 +45,7 @@ export default function BeautyRepoInvitation({ ready, blocked }: { ready: boolea
     const check = async () => {
       const claim = () => {
         if (cancelled || document.visibilityState !== 'visible' || document.querySelector('dialog[open], [role="dialog"], .sully-repo-overlay')) return;
-        const item = dueBeautyRepo(readBeautyUsage(), Date.now(), ['appearance', 'appearance:schedule', 'appearance:journal', 'chat:global', ...characters.map(c => 'chat:' + c.id)]);
+        const item = dueBeautyRepo(readBeautyUsage(), Date.now(), ['collaboration', 'appearance', 'appearance:schedule', 'appearance:journal', 'chat:global', ...characters.map(c => 'chat:' + c.id)]);
         if (!item) return;
         try { markBeautyRepoPrompt(item.share.code); setShare(item.share); } catch { /* Without persistence, don't repeatedly prompt. */ }
       };

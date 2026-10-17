@@ -8,6 +8,7 @@ import type {
   CollaborationBackupSnapshot,
 } from './types';
 import { DEFAULT_COLLABORATION_SETTINGS } from './types';
+import { validateCollaborationAppearance, type CollaborationAppearance } from './appearance';
 
 const DB_NAME = 'SullyOS_Collaboration';
 const DB_VERSION = 1;
@@ -261,6 +262,18 @@ export const CollaborationStore = {
   },
 
   saveSettings: (settings: CollaborationSettings): Promise<void> => put(STORE_SETTINGS, settings),
+
+  /** Patch only appearance in one transaction; never overwrite the user's API settings. */
+  applyAppearance: async (value: CollaborationAppearance): Promise<void> => {
+    const appearance = validateCollaborationAppearance(value);
+    const db = await openCollaborationDatabase();
+    const transaction = db.transaction(STORE_SETTINGS, 'readwrite');
+    const committed = commitTransaction(transaction);
+    const store = transaction.objectStore(STORE_SETTINGS);
+    const request = store.get('main');
+    request.onsuccess = () => store.put({ ...DEFAULT_COLLABORATION_SETTINGS, ...request.result, ...appearance, id: 'main', updatedAt: Date.now() });
+    await committed;
+  },
 
   saveAsset: (asset: CollaborationAssetRecord): Promise<void> => put(STORE_ASSETS, asset),
 

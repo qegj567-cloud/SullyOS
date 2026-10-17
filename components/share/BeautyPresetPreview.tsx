@@ -145,6 +145,6 @@ export default memo(forwardRef<BeautyPreviewHandle, Props>(function BeautyPreset
     <div style={{ height: height * width / PREVIEW_WIDTH, width, margin: 'auto', overflow: 'hidden', borderRadius: 20 }}>
       <div ref={host} data-beauty-preview-source role={isChat&&!compact?'group':'img'} aria-label="美化预设搭配预览" style={{ width: PREVIEW_WIDTH, height, transform: `scale(${width / PREVIEW_WIDTH})`, transformOrigin: 'top left' }}/>
     </div>
-    {!compact && <p className="beauty-preview-caption">{isChat && (sceneId==='date-reading'||sceneId==='story-reading')?'阅读界面样式预览 · 仅使用虚构文字。':isChat && sceneId==='journal-app'?'交换日记样式预览 · 示例日记本，不读取真实内容。':isChat && sceneId==='schedule-card' ? '日程表样式预览 · 示例日程，不读取真实安排。' : isChat ? <>试着点击心象、转账卡或聊天加号 · 仅演示，不影响真实聊天。 <button type="button" onClick={()=>setInteraction(null)}>重置演示</button></> : desktopPages > 1 ? '桌面预览 · 示例角色与消息，未应用到本机。' : '特殊皮肤示意预览 · 不代表实际桌面布局。'}</p>}
+    {!compact && <p className="beauty-preview-caption">{isChat && sceneId==='collaboration'?'协同工作样式预览 · 仅使用示例任务与文件，不读取真实内容。':isChat && (sceneId==='date-reading'||sceneId==='story-reading')?'阅读界面样式预览 · 仅使用虚构文字。':isChat && sceneId==='journal-app'?'交换日记样式预览 · 示例日记本，不读取真实内容。':isChat && sceneId==='schedule-card' ? '日程表样式预览 · 示例日程，不读取真实安排。' : isChat ? <>试着点击心象、转账卡或聊天加号 · 仅演示，不影响真实聊天。 <button type="button" onClick={()=>setInteraction(null)}>重置演示</button></> : desktopPages > 1 ? '桌面预览 · 示例角色与消息，未应用到本机。' : '特殊皮肤示意预览 · 不代表实际桌面布局。'}</p>}
   </div>;
 }));

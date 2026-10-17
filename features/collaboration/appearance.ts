@@ -59,3 +59,24 @@ export function resolveCollaborationAppearance(settings: Partial<CollaborationSe
   const css = typeof settings.customCss === 'string' ? settings.customCss : '';
   return { uiTheme: spec.id, dark: !!spec.dark, customCss: validateCollaborationCss(css).isValid ? css : '' };
 }
+
+/** The share boundary is deliberately smaller than CollaborationSettings. */
+export interface CollaborationAppearance {
+  uiTheme: CollaborationUiTheme;
+  customCss: string;
+  avatarMode: CollaborationAvatarMode;
+  avatarStyle: NonNullable<CollaborationSettings['avatarStyle']>;
+}
+export function validateCollaborationAppearance(value: unknown): CollaborationAppearance {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error('协同工作美化格式无效');
+  const v = value as Record<string, unknown>;
+  const uiTheme = v.uiTheme ?? 'sully', avatarMode = v.avatarMode ?? 'theme', avatarStyle = v.avatarStyle ?? 'circle';
+  if (!COLLABORATION_UI_THEMES.some(item => item.id === uiTheme)
+    || !['theme','both','character','user','none'].includes(String(avatarMode))
+    || !['circle','rounded','portrait'].includes(String(avatarStyle))) throw Error('协同工作美化选项无效');
+  const customCss = v.customCss ?? '';
+  if (typeof customCss !== 'string' || customCss.length > 8 * 1024 * 1024) throw Error('协同工作 CSS 无效');
+  const check = validateCollaborationCss(customCss);
+  if (!check.isValid) throw Error(check.errors.slice(0, 3).join('；'));
+  return {uiTheme, customCss, avatarMode, avatarStyle} as CollaborationAppearance;
+}

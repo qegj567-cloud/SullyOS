@@ -5,7 +5,7 @@ export interface BeautyShareContent {key:string;label:string;required?:boolean}
 const soundDirective = /\/\*\s*@sully-sound\b[^{}]*\{[^{}]*\}\s*\*\//gi;
 const stripSound = (css: string) => css.replace(soundDirective, '');
 const block = (kind:string) => new RegExp(`/\\* sully-composer:${kind} \\*/[\\s\\S]*?/\\* end-sully-composer:${kind} \\*/`, 'g');
-const labels:Record<string,string>={css:'白框 / 自定义样式',layout:'聊天布局',bubbles:'气泡预设',avatar:'头像框',background:'聊天背景',psyche:'心象',sound:'聊天提示音',date:'见面界面',story:'剧情界面',schedule:'日程表',journal:'交换日记'};
+const labels:Record<string,string>={collaboration:'协同工作（主题、头像样式与 CSS）',css:'白框 / 自定义样式',layout:'聊天布局',bubbles:'气泡预设',avatar:'头像框',background:'聊天背景',psyche:'心象',sound:'聊天提示音',date:'见面界面',story:'剧情界面',schedule:'日程表',journal:'交换日记'};
 const appearanceParts:Record<string,string>={css:'chatChromeCustomCss',background:'chatBackground',psyche:'chatPsyche',sound:'chatSound',story:'storyAppearance',schedule:'scheduleCardAppearance',journal:'journalAppearance'};
 const specialChat=new Set([...Object.values(appearanceParts),'chatBackgroundStyle']);
 const isLayout=(key:string)=>(key.startsWith('chat')&&!specialChat.has(key))||key==='acnhChatSync';

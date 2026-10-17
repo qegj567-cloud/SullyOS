@@ -1,3 +1,4 @@
+import {renderCollaborationBeautySample} from '../../features/collaboration/CollaborationBeautySample';
 import {avatarFrameLayer,readAvatarFrameTarget} from '../../utils/avatarFrameTarget';
 import JournalThemeArtwork from '../journal/JournalThemeArtwork';
 import {meetingAppearance, MEETING_READING_CSS} from '../../utils/meetingAppearance';
@@ -33,6 +34,7 @@ const defaultBubble=PRESET_THEMES.default;
 /** Static rendering intentionally never mounts effects or binds actual message actions. */
 export function renderChatDecorationSample(value:unknown,sceneId:string,thumbnailPart?:DecorationThumbnailPart,state:DecorationPreviewState={}) {
  const p=validateDecoration(value).parts,l=p.layout||{};
+ if(p.collaboration)return renderCollaborationBeautySample(p.collaboration,!!thumbnailPart);
  if(p.date||p.story){
   const style=meetingAppearance(p.date||p.story);
   const markup=renderToStaticMarkup(<main className="meeting-reading" data-reading-preset={style.id}>

@@ -49,6 +49,17 @@ async function fixture(){
   return {db,env,files,pub,api,submit,approve,snapshot,fire,storage};
 }
 describe('公开装扮库：真实 SQL、审批和快照边界',()=>{
+  it('协同工作投稿通过审核后进入独立分类，分享码只带外观',async()=>{
+    const f=await fixture();
+    const collaboration={uiTheme:'midnight',customCss:'.collab-ui-root { --collab-accent: pink; }',avatarMode:'both',avatarStyle:'circle'};
+    const response=await f.api('/submissions','author',{metadata,package:{...pack,parts:{collaboration:{...collaboration,immersive:{apiKey:'PRIVATE'},messages:['PRIVATE']}}},catalogCover:cover});
+    expect(response.status).toBe(201);
+    await f.fire();expect(f.snapshot().entries).toHaveLength(0);
+    await f.approve(response.value.revision);await f.fire();
+    const entry=f.snapshot().entries[0];expect(entry.categories).toEqual(['collaboration']);
+    expect(JSON.parse(f.pub.get(entry.file)!.value as string).parts).toEqual({collaboration});
+    expect((await f.api('/shares/'+entry.code)).status).toBe(200);
+  });
   it('允许第 200 份作品，拒绝第 201 份，删除后释放作者名额',async()=>{
     const f=await fixture();
     const first=await f.submit();

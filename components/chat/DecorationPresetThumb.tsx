@@ -5,12 +5,12 @@ import type {WardrobeEntry} from '../appearance/BeautyWardrobe';
 import {validateDecoration,type DecorationPreset} from '../../utils/chatDecoration';
 import {PRESET_THEMES} from './ChatConstants';
 
-export type DecorationShelf='whitebox'|'bubbles'|'avatar'|'background'|'psyche'|'sound'|'schedule'|'journal'|'date'|'story';
+export type DecorationShelf='whitebox'|'bubbles'|'avatar'|'background'|'psyche'|'sound'|'schedule'|'journal'|'date'|'story'|'collaboration';
 
 /** Show the selected part using the same renderer as the main preview. */
 export function DecorationMiniPreview({preset,category}:{preset:DecorationPreset;category:DecorationShelf}){
  const sample=useMemo(()=>{
-  if(category==='whitebox')return preset;
+  if(category==='whitebox'||category==='collaboration')return preset;
   const parts:DecorationPreset['parts']=category==='date'?{date:preset.parts.date||{preset:'none'}}:category==='story'?{story:preset.parts.story||{preset:'none'}}:category==='journal'?{journal:preset.parts.journal||{preset:'original'}}:category==='schedule'?{schedule:preset.parts.schedule||{preset:'original'}}:category==='psyche'?{psyche:preset.parts.psyche||{styleId:'echo'}}:
    category==='avatar'?{bubbles:preset.parts.bubbles||PRESET_THEMES.default,css:preset.parts.css}:category==='bubbles'?{bubbles:preset.parts.bubbles||PRESET_THEMES.default}:
    category==='background'?{background:preset.parts.background||{image:null,style:'plain'},css:preset.parts.css}:{};
