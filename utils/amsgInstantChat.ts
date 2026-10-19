@@ -707,23 +707,6 @@ export const outboxPushToInbox = (
   };
 };
 
-/**
- * 补收的时效窗口：比这更早落账的条目不再往聊天流里放，直接销账。
- *
- * 两个理由。一是**噪音**：隔太久才补上来的「早上好」既尴尬又打断当下的对话，
- * 而这条路本来是为「推送刚刚丢了」准备的，正常补收都在几十秒到几分钟内完成。
- * 二是**接上账本这一刻的存量**：账本从建表起就在攒行，而客户端是这一版才开始销账的，
- * 头一次拉会把历史积压一次性倒出来——不掐时效的话，那些早就落过库的老消息会因为
- * 超出近史去重的查询窗口而重新上屏。
- *
- * 定在两天而不是一天：真实场景里用户是「周五晚上丢了一条，周日才想起来打开」，
- * 一天的窗口连隔夜加一个白天都盖不住，人还没意识到丢了消息，唯一的副本就已经在
- * 上一次开 App 时被销掉了。两天能盖住「隔一夜 + 第二天想起来」这个最常见的节奏。
- *
- * 超窗的那些不会无声无息地消失，见 OutboxDrainResult.staleDropped。
- */
-export const OUTBOX_BACKFILL_MAX_AGE_MS = 48 * 60 * 60 * 1000;
-
 export interface OutboxDrainResult {
   /** 写进收件箱、等着冲刷落库的条数。 */
   written: number;
@@ -735,126 +718,21 @@ export interface OutboxDrainResult {
    * 名单对一次，光看 written 会把被拦下的也算成补回来了。
    */
   writtenIds: string[];
-  /** 不走聊天流、当场就能销账的 messageId（太老的、不进聊天流的那几类）。 */
+  /** 已在本地持久化，或不进入聊天流、可以当场销账的 messageId。 */
   ackNow: string[];
   /** 这一趟从账本上读到的全部条目。调用方按轮次下结论时要看它。 */
   entries: AmsgOutboxEntry[];
-  /**
-   * 这一趟里**因为超出时效窗口**被销掉的聊天内容条数。
-   *
-   * 单独数出来，是因为这一档跟 ackNow 里其它几类的性质完全不同：思维链、工具请求
-   * 那些本来就不该进聊天流，销掉不损失任何东西；而这一档是**用户本该收到、现在
-   * 永久拿不回来的消息**。混在一起的话，「开一次 App 就把唯一的副本销掉了」这件事
-   * 从头到尾没有任何一处说得出口——用户后来去点「找回没收到的消息」，只会看到
-   * 一句「账本上没有漏收的消息，这条链路是通的」。
-   */
+  /** 保留调用方的返回结构；补收不再按年龄丢弃正文，恒为 0。 */
   staleDropped: number;
 }
 
-/**
- * 「这台设备已经接上服务端账本」的标记。
- *
- * 账本是服务端从建表那一刻起就在攒的，而销账是客户端这一版才有的能力。所以**第一次**
- * 拉账本时上面躺着的并不是「我丢了的消息」，而是这套机制生效之前积累下来的存量——
- * 当成补收放进聊天流的话，用户会被自己这段时间收过的消息重放一遍（定时问候、多段
- * 回复全部再来一次）。时效窗口挡不住这一档：存量的年龄本来就在窗口之内。
- *
- * 所以首次接管那一趟只做一件事：**存量整批销账，一条都不往聊天流里放**。销干净了才
- * 记这个标记，下一趟起才按正常补收处理。
- */
+/** 旧版的接管标记只保留作升级记录，不再决定消息是否补收。 */
 export const AMSG_OUTBOX_ADOPTED_LS_KEY = 'amsg2_outbox_adopted_v1';
-
-const hasAdoptedOutbox = (): boolean => {
-  try {
-    return !!localStorage.getItem(AMSG_OUTBOX_ADOPTED_LS_KEY);
-  } catch {
-    // 存储读不出来（隐私模式 / 存储关停）时按**已接管**处理：这一档下标记永远也写不
-    // 进去，当成未接管的话每一趟都会把当趟条目整批销掉，补收就永久失效了——推送真丢
-    // 的时候一条都补不回来，比偶尔多倒一次存量严重得多。
-    return true;
-  }
-};
 
 const markOutboxAdopted = (): void => {
   try {
     localStorage.setItem(AMSG_OUTBOX_ADOPTED_LS_KEY, JSON.stringify({ at: Date.now() }));
-  } catch { /* 写不进去就下次再接管一遍，反正存量已经销掉了 */ }
-};
-
-/**
- * 首次接管：账本上的存量整批销账、不进聊天流。
- *
- * 两类例外照常走补收：
- *   - 用户**此刻正等着的那几轮**（taskUuid 跟待收记录对得上）：那是刚刚发生的事，不是
- *     历史积压——否则第一次接管恰好赶上用户发消息时，那一轮的回复会被当存量销掉，用户
- *     等来的是一句「回复没能取回」。
- *   - **后台任务的结果**（`messageKind: 'result'`）：它们本来就是靠补收到达的（不弹通知
- *     的结果上游只落账本、不发推送），跟存量一起销掉的话，云端跑完的门牌整理会一声不响
- *     地蒸发。而且它们不进聊天流，没有「重放一遍」这回事——首次接管要防的是刷屏，不是
- *     数据落地。换设备 / 重装 PWA / 清过 localStorage 的用户走的正是这条路。
- *
- * 销账成功才记标记。没销干净就这一趟什么都不做、也不记标记：没销掉的条目下次还会
- * 拉回来，那时仍按接管处理。反过来（先记标记再销账）一旦销账失败，剩下的存量下一趟
- * 就会被当成补收倒进聊天流，正是这里要防的那件事。
- */
-const adoptOutboxBacklog = async (entries: AmsgOutboxEntry[]): Promise<OutboxDrainResult> => {
-  const awaitedUuids = new Set(listInstantChatPendings().map((pending) => pending.uuid));
-  const isAwaited = (entry: AmsgOutboxEntry) => !!entry.taskUuid && awaitedUuids.has(entry.taskUuid);
-  const isResult = (entry: AmsgOutboxEntry) => entry.push?.messageKind === 'result';
-  const keep = (entry: AmsgOutboxEntry) => isAwaited(entry) || isResult(entry);
-  const backlogIds = entries.filter((entry) => !keep(entry)).map((entry) => entry.messageId);
-
-  if (backlogIds.length > 0) {
-    try {
-      await ActiveMsgClient.ackOutboxMessages(backlogIds);
-    } catch (error) {
-      console.warn(`${HEADER} 账本存量没销干净，这一趟先不接管（下次重来）`, error);
-      return { written: 0, writtenIds: [], ackNow: [], entries, staleDropped: 0 };
-    }
-  }
-  markOutboxAdopted();
-  console.log(`${HEADER} 第一次接上云端账本：存量 ${backlogIds.length} 条直接销账，不往聊天流里放`);
-
-  // 上面整批销掉的存量走的是 ackOutboxMessages，不经过 backfillOutboxEntries，所以
-  // 不会计进 staleDropped——那批是「这台设备接上账本之前的历史」，不是「本该收到却
-  // 过期了」，报给用户只会让人以为刚丢了一堆消息。
-  return { ...await backfillOutboxEntries(entries.filter(keep)), entries };
-};
-
-/**
- * 这条账本行对应的消息，本地聊天记录里是不是已经有了。
- *
- * 判据跟冲刷那侧的落库去重是同一条：每条落库气泡都继承 `metadata.activeMsg2.messageId`
- * （见 activeMsgRuntime.flushInboxToChatImpl 里的 isAlreadyPersisted）。两处各留一份是
- * 因为这个模块不能反过来 import activeMsgRuntime（会成环，见文件头），改判据时两边一起改。
- *
- * 近史查询按角色缓存：一趟补收里同一个角色常常有好几条要核对。查不出来就按「本地没有」
- * 处理——这一档只决定要不要跟用户说「拿不回来了」，宁可多说一次也别把丢消息说成没事。
- */
-const isPushAlreadyInChat = async (
-  push: Record<string, any>,
-  cache: Map<string, Set<string>>,
-): Promise<boolean> => {
-  const charId = push?.metadata?.charId;
-  const messageId = push?.messageId;
-  if (typeof charId !== 'string' || !charId) return false;
-  if (typeof messageId !== 'string' || !messageId) return false;
-  let ids = cache.get(charId);
-  if (!ids) {
-    try {
-      const recent = await DB.getRecentMessagesByCharId(charId, 200);
-      ids = new Set(
-        recent
-          .map((m: any) => m?.metadata?.activeMsg2?.messageId)
-          .filter((id: unknown): id is string => typeof id === 'string' && !!id),
-      );
-    } catch (error) {
-      console.warn(`${HEADER} 核对本地聊天记录失败，这条按「本地没有」处理`, { charId, error });
-      ids = new Set<string>();
-    }
-    cache.set(charId, ids);
-  }
-  return ids.has(messageId);
+  } catch { /* 补收不依赖这份标记，localStorage 不可用也继续落库。 */ }
 };
 
 /**
@@ -876,9 +754,22 @@ const backfillOutboxEntries = async (
   const ackNow: string[] = [];
   const writtenIds: string[] = [];
   let written = 0;
-  let staleDropped = 0;
-  // 超龄行核对本地聊天记录时用的近史缓存，一趟补收内每个角色只查一次。
+  // 每个角色只扫一次完整历史，不受最近 200 条和记忆归档水位影响。
+  // 核对失败就让本次补收失败，不能把“读不到本地”当作“从未收到”而重放。
+  const candidatesByChar = new Map<string, string[]>();
+  for (const entry of entries) {
+    const push = entry.push || {};
+    if ((push.messageKind ?? 'content') !== 'content') continue;
+    const charId = push.metadata?.charId;
+    if (typeof charId !== 'string' || !charId) continue;
+    const candidates = candidatesByChar.get(charId) ?? [];
+    candidates.push(entry.messageId);
+    candidatesByChar.set(charId, candidates);
+  }
   const persistedIdsByChar = new Map<string, Set<string>>();
+  for (const [charId, ids] of candidatesByChar) {
+    persistedIdsByChar.set(charId, await DB.findPersistedActiveMessageIds(charId, ids));
+  }
   // 收件箱里已经躺着的那些，各自是什么时候到这台设备的。
   //
   // 补收拉回来的这批，跟 Service Worker 直送进收件箱的那批是同一批消息、同一个主键，
@@ -902,9 +793,7 @@ const backfillOutboxEntries = async (
     const push = entry.push || {};
     const kind = typeof push.messageKind === 'string' ? push.messageKind : 'content';
     if (kind === 'result') {
-      // 聊天那道两天的时效窗刻意不套在结果上：结果晚到本来就是常态（正是为此才上云的），
-      // 隔一天回来照样该落地，跟「隔一天才弹出来的报错」不是一回事。
-      // 但「多晚算太晚」得有人管——账本留 28 天，换设备 / 重装 PWA 的用户第一次接上账本
+      // 结果的有效期由对应处理器判断。账本留 28 天，换设备 / 重装 PWA 的用户第一次接上账本
       // 会把老结果一次性拉回来。这里不替各种产物定规矩，只把账本上记的时间原样交给认领
       // 它的那一方，由它按自己的语义判（门牌整理的上限见 PLATE_RESULT_MAX_AGE_MS）。
       if (await dispatchAmsgResult(push, { createdAt: entry.createdAt })) ackNow.push(entry.messageId);
@@ -914,17 +803,7 @@ const backfillOutboxEntries = async (
       ackNow.push(entry.messageId);
       continue;
     }
-    if (entry.createdAt > 0 && now - entry.createdAt > OUTBOX_BACKFILL_MAX_AGE_MS) {
-      // 超龄不等于用户没收到。账本行躺到超龄，最常见的成因恰恰是**消息早就送达了**，
-      // 只是收尾那笔销账是 fire-and-forget（锁屏 / 切后台就被掐断），账一直挂着没销。
-      // 所以先拿 messageId 去本地聊天记录里核对一遍：找得到就只是补一次销账，既不算
-      // 「拿不回来了」，也不该弹那句「已经拿不回来了」的红字——用户明明看过这条消息。
-      if (await isPushAlreadyInChat(push, persistedIdsByChar)) {
-        ackNow.push(entry.messageId);
-        continue;
-      }
-      // 数出来交给调用方说给用户听：这一销，这条消息就永久没了（见 staleDropped）。
-      staleDropped += 1;
+    if (kind === 'content' && persistedIdsByChar.get(push.metadata?.charId)?.has(entry.messageId)) {
       ackNow.push(entry.messageId);
       continue;
     }
@@ -951,10 +830,7 @@ const backfillOutboxEntries = async (
   }
 
   if (written > 0) console.log(`${HEADER} 从云端账本补收 ${written} 条（推送多半是丢了）`);
-  if (staleDropped > 0) {
-    console.warn(`${HEADER} 账本上有 ${staleDropped} 条超出补收窗口，只销账不上屏（这些消息拿不回来了）`);
-  }
-  return { written, writtenIds, ackNow, staleDropped };
+  return { written, writtenIds, ackNow, staleDropped: 0 };
 };
 
 /**
@@ -964,8 +840,8 @@ const backfillOutboxEntries = async (
  * 客户端不再需要拿最近几条聊天记录去反推。读失败照常抛——「没读成」和「读到了、
  * 里面确实没有」是两个结论，调用方要拿它下判决时只能认后者。
  *
- * 头一次拉走的是另一条路（见 adoptOutboxBacklog）：那一趟账本上装的是存量，不是
- * 「我丢了的消息」。
+ * 首次和后续补收走同一条路：已落库的按完整历史去重，未收到的继续保存；
+ * 服务端仍保留的正文不会因为首次接管或年龄被丢弃。
  *
  * 调用方拿到 written > 0 之后要自己 flush 一次收件箱（见文件头注：不在这里 flush
  * 是为了避免和 activeMsgRuntime 成环）。要跟用户报「补回了几条」的，还得拿 writtenIds
@@ -973,22 +849,14 @@ const backfillOutboxEntries = async (
  */
 export const drainOutbox = async (
   options?: {
-    /**
-     * 头一趟也把存量当「我丢了的消息」补收（默认 false = 走 adoptOutboxBacklog 整批销账）。
-     *
-     * 只给用户手点的那次补收用：自动路径分不清存量里哪些是真丢的、哪些是当时收到了只是
-     * 客户端还不会销账，倒出来就是重放；而用户是察觉到「消息没来」才去点那个按钮的，
-     * 这个判断他自己做得了。按补收处理之后照样记下接管标记，后面回到自动路径。
-     */
+    /** 兼容原调用方；首次补收如今默认恢复存量，此选项不再改变行为。 */
     treatBacklogAsMissed?: boolean;
   },
 ): Promise<OutboxDrainResult> => {
   const entries = await ActiveMsgClient.listOutboxEntries();
-  if (!hasAdoptedOutbox()) {
-    if (!options?.treatBacklogAsMissed) return await adoptOutboxBacklog(entries);
-    markOutboxAdopted();
-  }
-  return { ...await backfillOutboxEntries(entries), entries };
+  const result = await backfillOutboxEntries(entries);
+  markOutboxAdopted();
+  return { ...result, entries };
 };
 
 /**

@@ -132,6 +132,9 @@ function calling（例如携带 `tools` 就报 401），关闭它后首轮会直
   `buildMcpFireTools` 从 tool_config 现场生成——与凭据同源，不经过 fire_pack，
   没有陈旧窗口。amsg-server 带 `agentic-fire-tools` feature 的版本起，fire 循环
   透传 tools 请求参数。
+- **传输方式与执行许可分开**：`mcpUseNativeTools:false` 即使没有可用 MCP 服务器也保留，
+  Worker 不发送原生 `tools`。文字兼容模式仍可执行已获授权的能力；`allowedToolNames`
+  单独控制执行白名单，不依赖原生工具声明是否存在。排程能力另受用户的 2.0 开关约束。
 - **调用识别（与前台同构的两层）**：native tool_calls 优先；没有 native 时用
   前台「兼容模式」同一个解析器（`extractTextFakedMcpCalls`，`alsoMatchPrefix`
   选项认带前缀写法）从正文抠 `tool_name({...})`。统一 `mcp__` 前缀路由

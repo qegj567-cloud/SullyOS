@@ -532,7 +532,9 @@ export const extractFireScheduleTextCalls = (content: string): FireScheduleTextC
   if (!content) return [];
   const re = new RegExp(`(^|[^\\w./])${escapeRegExp(AMSG_FIRE_SCHEDULE_TOOL)}\\s*\\(([^)]*)\\)`, 'g');
   const calls: FireScheduleTextCall[] = [];
-  for (const m of content.matchAll(re)) {
+  // 文档示例和行内代码不是执行意图，保留原文给用户看。
+  const executable = content.replace(/```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`/g, match => ' '.repeat(match.length));
+  for (const m of executable.matchAll(re)) {
     const matched = m[0].slice(m[1].length);
     let args: Record<string, unknown> = {};
     try {

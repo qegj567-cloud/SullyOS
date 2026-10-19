@@ -1,3 +1,5 @@
+import { deriveUserEncryptionKey, decryptPayload, encryptPayload } from '@rei-standard/amsg-server/cloudflare';
+import { INSTANT_INPUT_NAMESPACE } from './instantInput';
 /**
  * 即时对话（instant chat）：把「用户按下发送」这一轮聊天当成一条立刻执行的任务。
  *
@@ -12,14 +14,16 @@
  * 上下文，角色会对着旧对话回话）。放在客户端串两个请求的话，中间断网就会留下一条
  * 注定答错的任务；放在这里，客户端只有一次「成了 / 没成」。
  *
- * 加密由客户端做完，这里只搬运：两个信封原样转发给上游，上游照常解密和鉴权，
- * 它仍然是权威。包装层不碰用户密钥，也解不开这两个信封。
+ * 客户端先加密，包装层用同一租户密钥解开并将输入绑定到唯一记录，再重新加密转发。
+ * 上游照常解密、鉴权和校验容量；凭据行仍走独立引用。
  *
  * 零浏览器依赖（这份代码会被打进 worker bundle）。
  */
 
 import {
   AMSG_FIRE_PACK_KEY,
+  parseFirePack,
+  unpackStateValue,
   amsgStateNamespace,
   buildUserClockHint,
   formatFireTimeFull,
@@ -202,6 +206,7 @@ export interface InstantTickNamespace {
 
 interface InstantChatEnv {
   AMSG_SERVER_TOKEN?: string;
+  AMSG_MASTER_KEY?: string;
   /** 没有它就没法起跳；老版本 Worker 上是 undefined，见 kickInstantTick。 */
   INSTANT_TICK?: InstantTickNamespace;
 }
@@ -402,7 +407,7 @@ export const handleInstantChat = async (args: {
   if (!userId) return fail(400, 'USER_ID_REQUIRED', '缺少用户标识符');
   if (!UUID_V4_RE.test(userId)) return fail(400, 'INVALID_USER_ID_FORMAT', 'X-User-Id 必须是 UUID v4 格式');
 
-  // ── 外壳是明文 JSON，里头两个信封是客户端加密好的，包装层只搬不看。
+  // ── 外壳是明文 JSON，里头两个信封是客户端加密好的。
   //    body 超阈值时客户端会先 gzip 再发（这条路上的正文是整轮聊天，最大的一份），
   //    所以读之前先过一道解压。
   let body: Record<string, unknown>;
@@ -422,6 +427,40 @@ export const handleInstantChat = async (args: {
   }
   if (body.credPayload !== undefined && !isEncryptedEnvelope(body.credPayload)) {
     return fail(400, 'INVALID_CRED_PAYLOAD', 'credPayload 必须是加密信封（iv / authTag / encryptedData）');
+  }
+
+  // 绑定不可变输入后再写任何共享状态。旧客户端也走这条转换，凭据仍独立热更新。
+  let inputKey = '';
+  try {
+    if (!env.AMSG_MASTER_KEY) throw new Error('Worker 缺少 AMSG_MASTER_KEY');
+    const key = await deriveUserEncryptionKey(userId, env.AMSG_MASTER_KEY);
+    const [state, task] = await Promise.all([
+      decryptPayload(body.statePayload as any, key), decryptPayload(body.taskPayload as any, key),
+    ]);
+    const charId = task?.metadata?.charId;
+    if (typeof charId !== 'string' || !charId || !Array.isArray(state?.entries)) throw new Error('缺少角色状态');
+    const inputEntry = state.entries.find((entry: any) => entry.namespace === amsgStateNamespace(charId) && entry.key === AMSG_FIRE_PACK_KEY);
+    const firePack = inputEntry && typeof inputEntry.value === 'string'
+      ? parseFirePack(await unpackStateValue(inputEntry.value)) : null;
+    if (!firePack?.chat) throw new Error('即时输入缺少有效 fire_pack.chat');
+    inputKey = crypto.randomUUID();
+    task.taskInput = {
+      firePackRef: { namespace: INSTANT_INPUT_NAMESPACE, key: inputKey },
+      firePackUpdatedAt: inputEntry.updatedAt,
+    };
+    // 完整输入仍走 5 MiB 大值分块，不塞进不到 1 MiB 的任务行。每次受理独立 key，
+    // 凭据或排任务失败只留下可过期清理的孤儿，不会改掉旧任务或旧客户端读的 shared chat。
+    state.entries = state.entries.filter((entry: any) => entry !== inputEntry);
+    state.entries.push({
+      ...inputEntry, namespace: INSTANT_INPUT_NAMESPACE, key: inputKey,
+      value: JSON.stringify({ v: 1, charId, packedFirePack: inputEntry.value }),
+      updatedAt: Date.now(),
+    });
+    [body.statePayload, body.taskPayload] = await Promise.all([
+      encryptPayload(state, key), encryptPayload(task, key),
+    ]);
+  } catch (error) {
+    return fail(400, 'INVALID_INSTANT_INPUT', error instanceof Error ? error.message : '即时输入无法解密');
   }
 
   // ── 内部转发：路径跟着本次请求的挂载点走（上游按后缀匹配，worker 可能挂在子路径下）。
@@ -481,8 +520,8 @@ export const handleInstantChat = async (args: {
     body: stateBody,
     cause: stateCause,
   } = await forwardIdempotentPut('/client-state', body.statePayload, '云端状态');
-  if (!stateResponse.ok) {
-    return json(stateResponse.status, {
+  if (!stateResponse.ok || (stateBody as { success?: unknown } | null)?.success === false) {
+    return json(stateResponse.ok ? 502 : stateResponse.status, {
       success: false,
       error: {
         code: 'INSTANT_CHAT_STATE_FAILED',
@@ -493,15 +532,18 @@ export const handleInstantChat = async (args: {
       },
     });
   }
-  // HTTP ok ≠ 都写进去了：上游按 updatedAt 做条件写（旧不盖新），被拦的条目在成功体的
-  // skippedEntries 里点名。fire_pack 被拦（典型成因：设备时钟在两次发送之间被回拨，
-  // 这次的 updatedAt 反而比云端存量旧）时绝不能落任务——到点的 fire 读到的是上一轮的
-  // chat 段，要么对旧消息答非所问、要么硬失败，用户却已经拿到 202 在等「正在输入」。
-  // 「状态没落地就不落任务」正是这条两步串行存在的意义，这里把它守完整。
+  const rejectedEntries = (stateBody as {
+    data?: { rejected?: Array<{ namespace?: unknown; key?: unknown }> };
+  } | null)?.data?.rejected;
+  if (Array.isArray(rejectedEntries) && rejectedEntries.some(entry =>
+    entry.namespace === INSTANT_INPUT_NAMESPACE && entry.key === inputKey)) {
+    return fail(409, 'INSTANT_CHAT_STATE_FAILED', '这一轮的输入未能保存，任务没有创建', { step: 'client-state', upstream: stateBody });
+  }
+  // 本轮输入必须落地。只有它自己的条件写被拒才拦下；其他共享状态仍以各自版本为准。
   const skippedEntries = (stateBody as {
     data?: { skippedEntries?: Array<{ namespace?: unknown; key?: unknown }> };
   } | null)?.data?.skippedEntries;
-  if (Array.isArray(skippedEntries) && skippedEntries.some((entry) => entry?.key === AMSG_FIRE_PACK_KEY)) {
+  if (Array.isArray(skippedEntries) && skippedEntries.some((entry) => entry?.namespace === INSTANT_INPUT_NAMESPACE && entry.key === inputKey)) {
     return json(409, {
       success: false,
       error: {

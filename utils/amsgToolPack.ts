@@ -163,7 +163,8 @@ export const buildToolConfig = (
           },
         }
       : {}),
-    ...(mcp?.servers.length ? { mcpServers: mcp.servers, mcpUseNativeTools: mcp.useNativeTools } : {}),
+    ...(mcp ? { mcpUseNativeTools: mcp.useNativeTools } : {}),
+    ...(mcp?.servers.length ? { mcpServers: mcp.servers } : {}),
   };
 };
 
@@ -213,9 +214,8 @@ export const parseToolConfig = (value: string): AmsgToolConfig | null => {
     if (cleaned?.length) {
       parsed.mcpServers = cleaned;
     } else {
-      // 两个字段同进同退（与 buildToolConfig 一致）：没有服务器时留个开关没有意义。
+      // 原生 tools 是整个模型请求的传输偏好，排程工具也需要它。
       delete parsed.mcpServers;
-      delete parsed.mcpUseNativeTools;
     }
     return parsed as AmsgToolConfig;
   } catch {

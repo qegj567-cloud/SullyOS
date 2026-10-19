@@ -4,6 +4,9 @@
 // 建了，到点那条 fire 会拿上一轮的上下文答这一轮的话——不报错、不重试，用户只会觉得
 // 角色突然听不懂人话。下面每条都对着一种具体的坏法。
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { createCipheriv, createHash } from 'node:crypto';
+import { decryptPayload } from '@rei-standard/amsg-server';
+import { FIRE_PACK_VERSION } from '../../../utils/amsgFirePack';
 
 import {
   applyInstantNotificationPolicy,
@@ -16,8 +19,36 @@ import { TIME_FRAMING_CONVERSATIONAL } from '../../../utils/timeFramingNote';
 const USER_ID = '3637dae1-1461-4444-a747-34e406f67acc';
 const TASK_UUID = '7a1f0b4c-2c9d-4a3e-8b21-9f0f3c5d7e11';
 
-/** 客户端预加密的信封（内容不重要，形状要对）。 */
-const envelope = (tag: string) => ({ iv: `iv-${tag}`, authTag: `tag-${tag}`, encryptedData: `data-${tag}` });
+const MASTER_KEY = 'b'.repeat(64);
+const USER_KEY = createHash('sha256').update(MASTER_KEY + USER_ID).digest('hex');
+const INPUT_PACK = {
+  v: FIRE_PACK_VERSION, template: '角色设定', builtAt: 1784980800000,
+  lastUserMessageAt: 1784980800000, tzId: 'Asia/Tokyo', userTzId: 'Asia/Tokyo', targetName: '用户',
+  pendingTasks: [], scene: null, selfScheduleEnabled: false,
+  chat: { builtAt: 1784980800000, messages: [{ role: 'user', content: '这一轮用户消息' }] },
+};
+/** 真正的 AES-GCM 信封；固定 IV 只用来让测试夹具可比较。 */
+const envelope = (tag: string, value?: unknown) => {
+  const payload = value ?? (tag === 'state' ? { entries: [
+    { namespace: 'amsg:char:c1', key: 'fire_pack', value: JSON.stringify(INPUT_PACK), updatedAt: INPUT_PACK.builtAt },
+    { namespace: 'amsg:char:c1', key: 'limits', value: '{}', updatedAt: INPUT_PACK.builtAt },
+  ] } : tag === 'task' ? { metadata: { charId: 'c1', amsgInstantChat: true }, immediate: true } : { credentials: [] });
+  const iv = createHash('sha256').update(tag).digest().subarray(0, 12);
+  const cipher = createCipheriv('aes-256-gcm', Buffer.from(USER_KEY, 'hex'), iv);
+  const encrypted = Buffer.concat([cipher.update(JSON.stringify(payload), 'utf8'), cipher.final()]);
+  return { iv: iv.toString('base64'), authTag: cipher.getAuthTag().toString('base64'), encryptedData: encrypted.toString('base64') };
+};
+const readForwarded = (call: { body: string }) => decryptPayload(JSON.parse(call.body), USER_KEY);
+const expectBoundInput = async (stateCall: { body: string }, taskCall: { body: string }) => {
+  const state = await readForwarded(stateCall);
+  const task = await readForwarded(taskCall);
+  expect(state.entries.some((entry: any) => entry.key === 'fire_pack')).toBe(false);
+  expect(task.taskInput.firePackRef).toEqual({ namespace: 'amsg:instant-input', key: expect.any(String) });
+  const input = state.entries.find((entry: any) => entry.namespace === task.taskInput.firePackRef.namespace
+    && entry.key === task.taskInput.firePackRef.key);
+  expect(JSON.parse(JSON.parse(input.value).packedFirePack)).toEqual(INPUT_PACK);
+  expect(task.taskInput.firePack).toBeUndefined();
+};
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), {
@@ -107,6 +138,7 @@ const run = (args: {
 }) => handleInstantChat({
   request: args.request,
   env: {
+    AMSG_MASTER_KEY: MASTER_KEY,
     ...(args.tick === null ? {} : { INSTANT_TICK: (args.tick ?? makeTick()).INSTANT_TICK }),
     ...(args.env ?? {}),
   } as any,
@@ -212,7 +244,7 @@ describe('POST /instant-chat — gzip 上行', () => {
       body,
     });
 
-  it('压过的请求体解得开，转发出去的还是原来那两个信封', async () => {
+  it('压过的请求体解得开，转发时把本轮输入绑定为独立引用', async () => {
     const { upstream, calls } = makeUpstream();
     const payload = JSON.stringify(validBody());
     const response = await run({
@@ -220,9 +252,7 @@ describe('POST /instant-chat — gzip 上行', () => {
       upstream,
     });
     expect(response.status).toBe(202);
-    // 信封原样搬到上游，一个字段都不能在解压途中掉（转发时信封本身就是整个 body）。
-    expect(JSON.parse(calls[0].body)).toEqual(envelope('state'));
-    expect(JSON.parse(calls[1].body)).toEqual(envelope('task'));
+    await expectBoundInput(calls[0], calls[1]);
   });
 
   // 最要命的一档：`Content-Encoding` 是标准头，链路上的边缘节点会替你把请求体解开
@@ -265,28 +295,25 @@ describe('POST /instant-chat — 严格顺序与失败传播', () => {
     expect(paths()).toEqual(['PUT /client-state']);
   });
 
-  // HTTP ok ≠ 都写进去了：上游按 updatedAt 条件写，被拦的条目在成功体 skippedEntries 里
-  // 点名。fire_pack 被拦（设备时钟回拨过）还落任务的话，fire 会拿旧 chat 段答话——用户
-  // 拿着 202 白等一轮甚至收到答非所问，且无任何报错。
-  it('client-state 200 但 fire_pack 被条件写拦下 → 409 INSTANT_CHAT_STATE_STALE，绝不建任务', async () => {
-    const { upstream, paths } = makeUpstream({
-      clientState: {
-        status: 200,
-        body: {
-          success: true,
-          data: { upserted: 2, skippedEntries: [{ namespace: 'amsg:char:c1', key: 'fire_pack' }] },
-        },
-      },
+  // 独立输入也必须拿到写入确认；即使 HTTP 成功，条件写拒绝仍不能继续建任务。
+  it('client-state 200 但不可变输入被条件写拦下 → 409，绝不建任务', async () => {
+    const { upstream, calls } = makeUpstream();
+    upstream.fetch.mockImplementationOnce(async (request: Request) => {
+      const state = await decryptPayload(await request.json() as any, USER_KEY);
+      const input = state.entries.find((entry: any) => entry.namespace === 'amsg:instant-input');
+      return json(200, { success: true, data: { upserted: 1,
+        skippedEntries: [{ namespace: input.namespace, key: input.key }],
+      } });
     });
     const response = await run({ request: post(validBody()), upstream });
     expect(response.status).toBe(409);
     const body = await response.json() as any;
     expect(body.error.code).toBe('INSTANT_CHAT_STATE_STALE');
     expect(body.error.step).toBe('client-state');
-    expect(paths()).toEqual(['PUT /client-state']);
+    expect(calls).toHaveLength(0);
   });
 
-  it('client-state 200、被拦的只是别的条目（非 fire_pack）→ 照常受理', async () => {
+  it('client-state 200、被拦的只是别的条目（非即时输入）→ 照常受理', async () => {
     const { upstream } = makeUpstream({
       clientState: {
         status: 200,
@@ -317,17 +344,15 @@ describe('POST /instant-chat — 严格顺序与失败传播', () => {
     expect((await response.json() as any).error.code).toBe('INSTANT_CHAT_TASK_UUID_MISSING');
   });
 
-  it('转发带全套加密头：上游照常解密 + 鉴权，包装层不碰用户密钥', async () => {
+  it('转发带全套加密头，重封装后上游照常解密并复验鉴权', async () => {
     const { upstream, calls } = makeUpstream();
     await run({ request: post(validBody()), upstream });
     const state = calls.find((c) => c.path.endsWith('/client-state'))!;
     expect(state.headers['x-user-id']).toBe(USER_ID);
     expect(state.headers['x-payload-encrypted']).toBe('true');
     expect(state.headers['x-encryption-version']).toBe('1');
-    // 信封原样搬运，不重新包一层
-    expect(JSON.parse(state.body)).toEqual(envelope('state'));
     const task = calls.find((c) => c.path.endsWith('/schedule-message'))!;
-    expect(JSON.parse(task.body)).toEqual(envelope('task'));
+    await expectBoundInput(state, task);
   });
 
   it('worker 挂在子路径下时，内部转发跟着挂载点走（上游按后缀匹配）', async () => {
@@ -790,4 +815,42 @@ describe('applyInstantNotificationPolicy', () => {
     const push = applyInstantNotificationPolicy({ message: 'hi', metadata: { directives: [1] } });
     expect(push).toEqual({ message: 'hi', metadata: { directives: [1] } });
   });
+});
+
+it('large chat input stays out of the task row and is preserved in its unique state record', async () => {
+  const { upstream, calls } = makeUpstream();
+  const content = 'x'.repeat(1_200_000);
+  const pack = { ...INPUT_PACK, chat: { builtAt: INPUT_PACK.builtAt, messages: [{ role: 'user', content }] } };
+  const response = await run({ request: post(validBody({ statePayload: envelope('state', { entries: [
+    { namespace: 'amsg:char:c1', key: 'fire_pack', value: JSON.stringify(pack), updatedAt: pack.builtAt },
+  ] }) })), upstream });
+  expect(response.status).toBe(202);
+  const task = await readForwarded(calls.find(call => call.path.endsWith('/schedule-message'))!);
+  expect(new TextEncoder().encode(JSON.stringify(task)).length).toBeLessThan(10_000);
+  const state = await readForwarded(calls.find(call => call.path.endsWith('/client-state'))!);
+  const ref = task.taskInput.firePackRef;
+  const row = state.entries.find((entry: any) => entry.namespace === ref.namespace && entry.key === ref.key);
+  expect(JSON.parse(JSON.parse(row.value).packedFirePack).chat.messages[0].content).toBe(content);
+});
+
+it('a 200 partial rejection of the immutable input never creates a task', async () => {
+  const { upstream, calls } = makeUpstream();
+  upstream.fetch.mockImplementationOnce(async (request: Request) => {
+    const payload = await decryptPayload(await request.json() as any, USER_KEY);
+    const input = payload.entries.find((entry: any) => entry.namespace === 'amsg:instant-input');
+    return json(200, { success: true, data: { upserted: 1, skipped: 0,
+      rejected: [{ namespace: input.namespace, key: input.key, reason: 'value_too_large' }],
+    } });
+  });
+  const response = await run({ request: post(validBody({ credPayload: envelope('creds') })), upstream });
+  expect(response.status).toBe(409);
+  expect((await response.json() as any).error.code).toBe('INSTANT_CHAT_STATE_FAILED');
+  expect(calls).toHaveLength(0);
+});
+
+it('a 200 failure body cannot advance to credentials or task creation', async () => {
+  const { upstream, calls } = makeUpstream({ clientState: { status: 200, body: { success: false, error: { message: 'write failed' } } } });
+  const response = await run({ request: post(validBody()), upstream });
+  expect(response.status).toBe(502);
+  expect(calls.map(call => call.path)).toEqual(['/client-state']);
 });

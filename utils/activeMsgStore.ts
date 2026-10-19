@@ -188,6 +188,15 @@ const generateUuidV4 = () => {
 };
 
 export const ActiveMsgStore = {
+  /** 纯动作可以没有聊天产物，需单独保留完成回执，防止补收/ACK 重试重放动作。 */
+  async hasAppliedActionResult(charId: string, messageId: string): Promise<boolean> {
+    return await getKv<boolean>(`action_result_applied:${JSON.stringify([charId, messageId])}`) === true;
+  },
+
+  async markActionResultApplied(charId: string, messageId: string): Promise<void> {
+    await setKv(`action_result_applied:${JSON.stringify([charId, messageId])}`, true);
+  },
+
   /**
    * 删掉整个 ActiveMsg 库。只给「重置全部数据」用。
    *

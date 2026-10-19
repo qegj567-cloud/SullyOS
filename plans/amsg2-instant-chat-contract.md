@@ -5,9 +5,10 @@
 
 ## 总体架构（定案）
 
-- **不改上游 npm 包** `@rei-standard/*`（路由/D1/cron/推送都住在
-  `node_modules/@rei-standard/amsg-server/dist/chunk-RRWCPPOY.mjs`，只读参考，不动）。
-  全部改动落在本仓库：`worker/amsg/src/`（包装层）、`utils/` 叶子模块、前端。
+- 业务实现放在本仓库的 `worker/amsg/src/`（包装层）、`utils/` 和前端。
+  2026-10-19 审计修复依赖上游通用能力：任务输入、任务查询、工具执行白名单、不可变附件和条件写结果。
+  当前精确依赖 `amsg-client@2.10.0-next.0` 与 `amsg-server@3.1.0-next.0` 已包含这些能力，
+  已移除先前的本地补丁；不要手改安装目录，升级包时须重跑真实 SDK 集成测试。
 - 防双跑复用上游 `claimTask` 的 `lease_until` 条件更新；每分钟 cron 是兜底捡漏者。
 - 任务行型：`message_type = 'auto'` + `messageSubtype: 'instant-chat'`
   + `metadata: { amsgMode: 'instant', amsgInstantChat: true, charId }`。
@@ -46,24 +47,25 @@
   落库即到期，不带 `firstSendTime`）；顶替上一条时带 `supersedesUuid`（上游在
   建新任务的同一事务里取消旧的，原子）。外壳不再有明文 supersedesUuid。
 
-- 处理步骤（严格顺序，任一步失败即向客户端返回明确错误，不落任务）：
-  1. 内部 `upstream.fetch` 转发 `PUT /client-state`（statePayload）→ 必须成功。
-     HTTP ok 还不够：上游按 updatedAt 条件写（旧不盖新），成功体 `data.skippedEntries`
-     里点名了 `fire_pack` 条目时同样打回——`409 INSTANT_CHAT_STATE_STALE`，绝不落任务
-     （否则 fire 拿旧 chat 段答话）。
-     客户端拿到这个码会自愈一次：读回云端那几行的 `updatedAt`、把本地水位抬过去
-     （`utils/amsgStateClock.ts`）、重新盖戳再发一次。设备时钟只要领先过真实时间，云端
-     那一行就带着一个还没到的时刻，本地墙钟从此跨不过去，那个角色发一句挂一句，把系统
-     时间调回来也没用；水位是这条路的唯一出路。对齐不动才是真被别人写了新的，那时不重发。
-  2. 带了 credPayload 时，内部转发 `PUT /llm-credentials` → 必须成功（5xx 与第 1 步
-     同一把重试梯子；200 包 `success:false` 也算失败），失败回
-     `INSTANT_CHAT_CREDENTIALS_FAILED`（step `llm-credentials`），不落任务。
-  3. 内部转发 `POST /schedule-message`（taskPayload）→ 必须成功，拿到 uuid
-     （顶替在上游事务内完成）。
-  4. 返回 `202 { status: 'accepted', uuid }`；覆盖过凭据行时多带
-     `credentialsSynced: true`，客户端见到它才把本地底账对齐。
-  5. `ctx.waitUntil(upstream.scheduled(合成 event, env))` 立即触发一次 tick，
-     捡起刚落的行（与真 cron 并发时由 claim/lease 天然互斥）。
+- 处理步骤（严格顺序，任一步失败即返回明确错误，不落新任务）：
+  1. 包装层用租户密钥解开 state/task 信封，校验本角色 `fire_pack.chat`，将原来的压缩值
+     写成独立输入：命名空间 `amsg:instant-input`、服务器生成的 UUID key，值为
+     `{v:1,charId,packedFirePack}`。任务只绑定
+     `taskInput:{firePackRef:{namespace,key},firePackUpdatedAt}`，不重复塞完整上下文。
+     同时从这次共享状态写入中移除原来的 `fire_pack`，两份信封重新加密后才内部转发。
+     旧客户端的信封也经过这个转换，因此失败的新请求不会覆盖旧任务要回复的那句话。
+  2. 内部转发 `PUT /client-state`。HTTP 失败、`success:false`、本轮输入出现在
+     `data.rejected` 或 `data.skippedEntries` 中，均不能继续建任务。其他共享状态仍按自身版本判定。
+  3. 带了 credPayload 时，转发 `PUT /llm-credentials`，失败回
+     `INSTANT_CHAT_CREDENTIALS_FAILED`。凭据仍在执行时按 credRefs 现取，不冻结在输入里。
+  4. 转发 `POST /schedule-message`，成功拿到 uuid 才返回
+     `202 {status:'accepted',uuid}`；顶替旧任务由上游事务完成。凭据成功覆盖时再带
+     `credentialsSynced:true`。之前落下但没有任务引用的输入由 TTL 清理。
+  5. 唤醒按租户分组的 `InstantTickDO`，alarm 点名执行已落库的 uuid；每分钟 cron 继续兜底。
+
+  独立输入保留 30 天，按角色归属参与云端清理。大值继续走 client_state 的 5 MiB 分块能力，
+  不受任务行约 996 KB 明文容量限制，现有 `chat.messages` 2 MiB 预算保持不变。
+  Worker 使用 `readState(namespace,{key})` 定点读取，不能扫描同命名空间下的全部历史输入。
 - `export default` 的 `fetch` / `scheduled` 签名补上第三个参数 `ctx`
   （上游签名只收两个参数，多传无害；`index.ts:1509-1510` 的注释要同步改）。
 - `/config-check` 的返回里加包装层能力标志（如 `instantChat: true`），设置页
@@ -112,6 +114,22 @@
   - `pack.chat` 缺失而 metadata 标了 instant → 按失败处理（防止拿主动消息模板
     错答聊天）。
 
+### 输入隔离与定时上下文
+
+新即时任务只使用自己的输入引用；引用缺失、损坏或角色不匹配时明确失败，不能偷偷改用共享
+`fire_pack.chat`。没有绑定输入的历史任务仍兼容共享 chat；共享快照损坏时，有效的绑定输入仍可执行。
+
+即时 fire 开始后，可以把绑定包里的定时模板发布到共享 `fire_pack`，但保留既有 legacy chat，
+并沿用输入原本的 `firePackUpdatedAt` 做条件写。较旧任务后执行，不能盖回较新的模板，也不能靠
+旧包重新打开最新 `limits` 已关闭的权限。定时任务优先读共享快照；首次离线自排的子任务另绑
+一份去掉 chat 的压缩输入引用。已有共享快照时不再读取这份兜底，输入 TTL 不限制长期循环任务寿命。
+
+### 定时提示词与聊天设置
+
+`buildFirePack` 每次从本地门牌库构建新的房间注入，不沿用角色对象上的旧缓存，也不要求配置
+Embedding API。双语、HTML 和内心独白提示词由 `chatOutputStylePrompt` 供聊天和定时模板共用。
+`thinkingChainEnabled` 明确标记模板已经包含内心独白协议；旧包缺省时不回传原始推理。
+
 ## push metadata 扩展字段
 
 即时对话往返用到的 metadata 键，一并记在这（发侧走加密信封，回程随 push 明文 metadata）：
@@ -120,14 +138,18 @@
   在 `onBeforeFire` 捕获后就地删除，喂给 push 构建前再剥一层——凭据绝不进任何 push/outbox）。
 - 回程（push metadata）：`amsgEmotionUpdate` / `amsgEmotionDone` / `amsgEmotionError`
   （评估结果 / 熄灯信号 / 脱敏后的失败原因）、`amsgReasoning`（思考链，只挂第一条 push、
-  只在即时对话轮）、`amsgToolTrace`（`[{name,count}]`，只数真跑过的调用、只挂末条 push、
+  即时对话或开启内心独白的定时轮）、`amsgToolTrace`（`[{name,count}]`，只数真跑过的调用、只挂末条 push、
   只在即时对话轮）、`amsgUsage`（`{promptTokens, completionTokens}`，同样只挂末条 push、
   只在即时对话轮）。
 - `amsgUsage` 的去处：客户端把它补进「设置 → API 调用记录」里那笔云端调用（发出时先落
   一笔 pending，收到末条推送时回填 Token）。它是**最后一次**模型调用的用量——带工具的
   一轮会连着调好几次模型，中间几次的数云端没留，所以跑过工具时那笔记录会标「只算末轮」。
-- 超限旁路：`amsgEmotionRef` / `amsgReasoningRef`（值挪进 client_state，键
-  `emotion_update:<clientTaskId>` / `reasoning:<clientTaskId>`）；SAR 的三个引用键见下一小节。
+- 超限旁路：新 Worker 用 `ctx.storeAttachment` 写入 `amsg:attachments`，metadata 携带
+  `amsgEmotionAttachment`、`amsgReasoningAttachment`、`xhsSessionAttachment` 等对象引用。
+  引用含 `version:1`、随机 key、`taskUuid`、`occurrenceMs`、`expiresAt`，写入时绑定角色 owner。
+  客户端用 `getAttachment` 定点读取并校验绑定；读取成功也不删除，重试和另一台设备仍能取到，
+  最长 30 天后回收。旧 `*Ref` 字符串仍可读；缺少 SDK 附件能力时，旧键增加
+  `@<occurrenceMs>`，避免同一个重复任务的下一次触发覆盖上一次。
 
 ### SAR 临时模块（信封）
 
@@ -149,14 +171,13 @@
 - 回程 `amsgSarUserSurface`：用户模块 active、模型给了 USER_SURFACE 时挂在末条 push，
   值是 USER_SURFACE 原文，worker 不做任何解析。
 
-一条 push 装不下时，这三样和别的大块数据一起旁路进 client_state，push 里只留引用键
-（客户端按引用键取回，用法同 `amsgReasoningRef`）：
+一条 push 装不下时，优先写不可变附件；旧 SDK 仍可走字符串旁路键：
 
-| 字段 | 引用键 | client_state 键 | 存的值 |
+| 字段 | 新附件字段 | 旧引用字段 | 旧 client_state 键 |
 |---|---|---|---|
-| `amsgSar` | `amsgSarRef` | `sar_snapshot:<clientTaskId>` | 快照 JSON |
-| `amsgSarUserSurface` | `amsgSarUserSurfaceRef` | `sar_user_surface:<clientTaskId>` | USER_SURFACE 原文 |
-| `amsgSarSurface` | `amsgSarSurfaceRef` | `sar_surface:<clientTaskId>:<段序号>` | 这一条的外显 meta JSON |
+| `amsgSar` | `amsgSarAttachment` | `amsgSarRef` | `sar_snapshot:<clientTaskId>@<occurrenceMs>` |
+| `amsgSarUserSurface` | `amsgSarUserSurfaceAttachment` | `amsgSarUserSurfaceRef` | `sar_user_surface:<clientTaskId>@<occurrenceMs>` |
+| `amsgSarSurface` | `amsgSarSurfaceAttachment` | `amsgSarSurfaceRef` | `sar_surface:<clientTaskId>@<occurrenceMs>:<段序号>` |
 
 段序号是这条 push 在本轮里的下标（0 起），同一轮几条 push 各存各的。挪的顺序：思考链 →
 情绪评估 → `amsgSar` → `amsgSarUserSurface` → 本条 `amsgSarSurface` → XHS 会话数据，
@@ -191,12 +212,13 @@ fire 时的处理规则：
     的本地状态——只在等回复时才拉的话，这类消息的推送丢了就永远没人去捞。
   - **等回复时的点名**（`runInstantChatStatusCheck`）：每 60s 一跳，下结论前必拉一次
     最新的，不受节流管（拿旧账本去判「回复取不回」会误杀还在路上的回复）。
-- 补收只上屏两天内的条目，更老的只销账（那个岁数的推送推送服务早就不投了）。超窗销掉
-  几条会数出来交给界面说一句——这一销消息就永久拿不回来了，不能一声不响。
-- 头一趟拉账本走「存量整批销账、一条不上屏」（`adoptOutboxBacklog`）：worker 先更新
-  建了表、前端还是老版本那段时间，账本会攒下一批「其实收到了、只是不会销账」的行，
-  当补收倒出来就是重放。用户在设置页手点的那次补收例外（`treatBacklogAsMissed`）——
-  他是察觉到消息没来才点的，这个判断他自己做得了。
+- 首次、自动和手动补收使用同一条落库流程；服务端仍保留的正文不按48小时时限丢弃，
+  也不根据旧的 localStorage 接管标记整批 ACK。
+- 补收前按角色扫描完整私聊历史，只收集本批 `messageId` 的匹配结果（包括已归档消息，
+  不限最近200条，也不把整段历史载入内存）。已落库的只补 ACK；未收到的先存入 inbox，
+  再经原有冲刷管线落库后 ACK。本地历史核对失败或 inbox 写入失败时保留云端记录。
+- `result` 仍由对应处理器决定是否过期，成功处理后才 ACK；其原始 `createdAt` 必须传递。
+  旧 `staleDropped` 返回字段保留为0，普通正文不会再因为年龄而被应用主动放弃。
 
 ### 已发送消息与生成前收件
 
@@ -229,15 +251,27 @@ fire 时的处理规则：
   失败 → worker 多半已不在（被删 / 密钥换了），明确收尾并提示去设置页重新连接
   验证；离线时的失败不计数。「不按时长宣判」只对云端还答得上话的等待成立。
 - worker 留痕 `chat_fail`（char namespace 的 client_state，认 uuid）：fire 收尾
-  失败、过期跳过（reason `stale`）、以及 skip-push（reason `empty-generation` /
-  `side-effects-only`——即时对话的一次性行会被上游当成功消费删掉，客户端只能看到
-  gone）三处都写。客户端 completed 与 gone 两个分支都点名读回翻成人话，别把
+  失败、过期跳过（reason `stale`）、以及没有可交付正文或动作的 skip-push（如
+  `empty-generation`）时写。只有动作的成功结果不写失败留痕。客户端 completed 与 gone 两个分支都点名读回翻成人话，别把
   「没生成出来」说成「回复没能取回」。
 - worker 侧若现有 hook（如 `onFireSettled`）拿得到失败结局且拿得到 push 发送
   能力 → 尽力补发一条 `messageKind: 'error'`（SW 已有该分轨）。拿不到就算了，
   别为此改上游。
 - POST `/instant-chat` 任何一步 await 失败 → 客户端收到明确错误 → 界面报
   发送失败可重试。**绝不静默转回本地生成**。
+
+## 只有动作的回复
+
+转账、戳一戳、日记或小红书操作等没有正文时，Worker 仍通过 `ctx.emitResult` 提交
+`resultKind:'assistant-actions'` 的可靠结果，携带 directives、必要的 XHS 会话和排程变更，
+`notification.show:false`，不发送空白聊天横幅。写结果失败就报错，不把动作当成已经完成。
+
+客户端 `amsgActionResult` 将结果转入本地收件箱，立即调用同一套后处理并确认落库，之后才 ACK。
+只含 result 的 outbox 批次也必须触发这一步；它不会增加普通正文的 `written` 计数。
+重复结果按持久化 messageId、独立 IDB 完成回执与收件箱处理记录去重；同一个结果的并发请求
+共用一次处理。完成回执在 ACK 之前落盘，无聊天产物的动作也有去重依据。外部动作已经执行、
+本地回执尚未写成功时仍存在重试窗口，这套回执不等于外部服务的 exactly-once 保证。成功的纯动作轮不写
+`last_skip` 或 `chat_fail`，收尾账目按已交付结果处理。
 
 ## 已拍板的行为语义
 

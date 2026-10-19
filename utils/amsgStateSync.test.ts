@@ -102,6 +102,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   localStorage.removeItem(AMSG2_PENDING_SYNC_LS_KEY);
   localStorage.removeItem(AMSG2_PENDING_TOOL_CONFIG_LS_KEY);
+  localStorage.removeItem('amsg2_pending_tool_config_version');
   localStorage.removeItem(AMSG2_PENDING_CRED_SYNC_LS_KEY);
   localStorage.removeItem(AMSG_INSTANT_CHAT_PENDING_LS_KEY);
   forgetAllCredIds();
@@ -494,7 +495,7 @@ describe('工具凭据（tool_config）的重试与底账', () => {
     await vi.advanceTimersByTimeAsync(1);
 
     expect(ActiveMsgClient.syncToolConfig).toHaveBeenCalledTimes(1);
-    expect(ActiveMsgClient.syncToolConfig).toHaveBeenCalledWith(config);
+    expect(ActiveMsgClient.syncToolConfig).toHaveBeenCalledWith(config, expect.objectContaining({ updatedAt: expect.any(Number) }));
     expect(readMark()).toBeNull();
   });
 
@@ -543,7 +544,7 @@ describe('工具凭据（tool_config）的重试与底账', () => {
     await vi.advanceTimersByTimeAsync(1);
 
     expect(ActiveMsgClient.syncToolConfig).toHaveBeenCalledTimes(1);
-    expect(ActiveMsgClient.syncToolConfig).toHaveBeenCalledWith(config);
+    expect(ActiveMsgClient.syncToolConfig).toHaveBeenCalledWith(config, expect.objectContaining({ updatedAt: expect.any(Number) }));
     expect(readMark()).toBeNull();
   });
 
@@ -559,10 +560,8 @@ describe('工具凭据（tool_config）的重试与底账', () => {
     release();
     await vi.advanceTimersByTimeAsync(1);
 
-    expect(readMark()).toBe('1');       // 新的那份还欠着
-    await flushAmsgState('test');
-    await vi.advanceTimersByTimeAsync(1);
-    expect(ActiveMsgClient.syncToolConfig).toHaveBeenLastCalledWith(newer);
+    expect(ActiveMsgClient.syncToolConfig).toHaveBeenCalledTimes(2);
+    expect(ActiveMsgClient.syncToolConfig).toHaveBeenLastCalledWith(newer, expect.objectContaining({ updatedAt: expect.any(Number) }));
     expect(readMark()).toBeNull();
   });
 });

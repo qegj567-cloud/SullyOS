@@ -64,6 +64,12 @@ const REQUIRED_WORKER_FEATURES = [
   'llm-credentials',
   // 即时对话通过正式策略关闭生成重试，收尾读取上游的 willRetry 决定。
   'max-generation-retries',
+  // 即时任务绑定独立输入；后台按 key 读取、核对实际任务并保存不可变附件。
+  'task-input',
+  'client-state-key',
+  'agentic-list-tasks',
+  'agentic-tool-allowlist',
+  'attachments',
 ];
 // features 之外还必须比版本：这波依赖的能力大多没发独立 flag，光查 features 分不出新旧。
 //   next.5 — GET /messages 投影（charId/clientTaskId）、onBeforeFire 的 { skip } 出口
@@ -140,10 +146,8 @@ const REQUIRED_WORKER_FEATURES = [
 //            定时消息靠它等那一轮结束再生成。
 // 不比版本的话，旧粘贴部署会被误判为最新，问题全在 worker 侧静默发生。
 //
-const REQUIRED_WORKER_VERSION = '2.6.0-next.33';
-// next.35 修复可选云端管理的 D1 维护开销，next.36 让云端清理出错时消息照常投递；
-// 协议门槛仍是 next.33，bundle 日期照常提示更新，旧 Worker 的清单摘要仍有兼容回退。
-const WORKER_VERSION_LAG_ACK = '2.6.0-next.36';
+// 3.1.0-next.0 正式发布任务输入、定点状态读取、工具白名单与附件；当前 bundle 已使用。
+const REQUIRED_WORKER_VERSION = '3.1.0-next.0';
 
 /** 装着打包好的 worker 代码的部署仓库：fork 它 → 在 Cloudflare 连上 → 以后点 Sync fork 更新。 */
 const WORKERS_REPO_URL = 'https://github.com/Tosd0/sullyos-workers';

@@ -80,11 +80,12 @@ describe('buildAmsg2TaskContextText', () => {
     expect(text).toContain('问问考试结果');
     expect(text).not.toContain('已作废');
   });
-  it('没发段包含三选一引导、时机约束、renew 与重建引导、不复述约束', () => {
+  it('没发段引导新建一次性任务，不再续期已销账任务', () => {
     const text = buildAmsg2TaskContextText([], [expired], Date.now(), undefined)!;
     expect(text).toContain('到点没发出去：');
-    expect(text).toContain('renew_active_message');
-    expect(text).toContain('cancel_active_message + schedule_active_message');
+    expect(text).toContain('schedule_active_message');
+    expect(text).not.toContain('renew_active_message');
+    expect(text).not.toContain('cancel_active_message + schedule_active_message');
     expect(text).toContain('强行转移');
     expect(text).toContain('不要向对方复述');
   });
@@ -110,7 +111,8 @@ describe('buildAmsg2TaskContextText', () => {
     const text = buildAmsg2NoticesText([expired, cancelled], undefined, '条条')!;
     expect(text).toContain('到点没发出去：');
     expect(text).toContain('已被手动取消');
-    expect(text).toContain('renew_active_message');
+    expect(text).toContain('schedule_active_message');
+    expect(text).not.toContain('renew_active_message');
     expect(text).not.toContain('你和条条的联系');   // 常驻简介不搭车
     expect(text).not.toContain('进行中：');
     expect(text.trimEnd().endsWith('不要向条条复述或提及这份排程信息本身的存在。')).toBe(true);

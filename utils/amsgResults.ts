@@ -107,6 +107,10 @@ const dispatchOne = async (payload: unknown, context?: AmsgResultContext): Promi
 
   try {
     switch (resultKind) {
+      case 'assistant-actions': {
+        const { applyAmsgActionResult } = await import('./amsgActionResult');
+        return await applyAmsgActionResult(payload);
+      }
       case PLATE_CONSOLIDATE_RESULT_KIND: {
         const { applyPlateConsolidateResult } = await import('./memoryPalace/roomPlateCloud');
         return await applyPlateConsolidateResult(payload, context);

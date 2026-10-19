@@ -2220,6 +2220,11 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           addToast(`${charName || '角色'}正在整理记忆${count ? `（${count} 条对话）` : ''}…`, 'info');
       };
 
+      const toolConfigConflictHandler = () => {
+          addToast('云端工具配置已有更新，本次修改尚未同步。请到实时感知或 MCP 设置核对后重新保存。', 'error');
+      };
+
+      window.addEventListener('amsg-tool-config-conflict', toolConfigConflictHandler);
       window.addEventListener('active-msg-received', handler);
       window.addEventListener('active-msg-process-failed', inboxFailHandler);
       window.addEventListener('active-msg-backfill-stale', backfillStaleHandler);
@@ -2240,6 +2245,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       return () => {
           window.removeEventListener('active-msg-received', handler);
           window.removeEventListener('active-msg-process-failed', inboxFailHandler);
+          window.removeEventListener('amsg-tool-config-conflict', toolConfigConflictHandler);
           window.removeEventListener('active-msg-backfill-stale', backfillStaleHandler);
           window.removeEventListener('active-msg-progress', progressHandler);
           window.removeEventListener('active-msg-open', openHandler);

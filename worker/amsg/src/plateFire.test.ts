@@ -362,7 +362,7 @@ describe('worker config', () => {
       VAPID_PRIVATE_KEY: '',
     } as any) as any;
 
-    expect(config.clientStateTtl).toEqual({ [AMSG_JOB_NAMESPACE]: 3 });
+    expect(config.clientStateTtl).toEqual({ [AMSG_JOB_NAMESPACE]: 3, 'amsg:instant-input': 30 });
     // 角色状态（fire_pack / tool_pack）绝不能配 TTL——配了就是定时把角色的云端状态抹掉
     expect(Object.keys(config.clientStateTtl)).not.toContain('amsg:char:');
   });

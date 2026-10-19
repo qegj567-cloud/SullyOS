@@ -64,3 +64,15 @@ it('只有旧上下文时仍可从工具资料恢复名字，不把正文当名�
   expect(await resolveSullyCloudOwnership({ type: 'state', namespace: 'amsg:char:only-state', key: 'tool_pack', value }))
     .toEqual({ owner: { type: 'character', id: 'only-state', label: '云端旧名字' }, kind: 'context' });
 });
+
+it('classifies generic attachment envelopes by their explicit character owner', async () => {
+  expect(await resolveSullyCloudOwnership({ type: 'state', namespace: 'amsg:attachments', key: 'random-attachment',
+    value: JSON.stringify({ version: 1, owner: { type: 'character', id: 'char-attachment' }, kind: 'sidechannel', value: 'private-card' }),
+  })).toEqual({ owner: { type: 'character', id: 'char-attachment' }, kind: 'sidechannel' });
+});
+
+it('immutable instant inputs retain character ownership even after the task is deleted', async () => {
+  expect(await resolveSullyCloudOwnership({ type: 'state', namespace: 'amsg:instant-input', key: 'unique-input',
+    value: JSON.stringify({ v: 1, charId: 'input-owner', packedFirePack: '{"chat":{}}' }),
+  })).toEqual({ owner: { type: 'character', id: 'input-owner' }, kind: 'instant-input' });
+});

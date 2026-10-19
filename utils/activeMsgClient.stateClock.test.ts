@@ -23,7 +23,9 @@ const { reiClient } = vi.hoisted(() => ({
     _encrypt: vi.fn(),
   },
 }));
-vi.mock('@rei-standard/amsg-client', () => ({ ReiClient: vi.fn(() => reiClient) }));
+vi.mock('@rei-standard/amsg-client', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@rei-standard/amsg-client')>(), ReiClient: vi.fn(() => reiClient),
+}));
 vi.mock('./keepAlive', () => ({
   KeepAlive: { init: vi.fn().mockResolvedValue(undefined), reregister: vi.fn().mockResolvedValue(undefined) },
 }));
@@ -91,7 +93,7 @@ beforeEach(() => {
   postResponses = [ACCEPTED];
   forgetAllCredIds();
   reiClient.init.mockReset().mockResolvedValue(undefined);
-  reiClient.putClientState.mockReset().mockResolvedValue({ success: true });
+  reiClient.putClientState.mockReset().mockImplementation(async (entries) => ({ success: true, data: { upserted: entries.length, skipped: 0, deleted: 0, rejected: [] } }));
   reiClient.getClientState.mockReset().mockResolvedValue({ success: true, data: { entries: [] } });
   reiClient.putLlmCredentials.mockReset().mockResolvedValue({ success: true, data: { upserted: 1 } });
   reiClient.deleteLlmCredentials.mockReset().mockResolvedValue({ success: true, data: { deleted: 0 } });
@@ -237,5 +239,30 @@ describe('常规批量同步撞上同一道闸', () => {
     await sync();
 
     expect(reiClient.getClientState).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('工具配置逐项写入回执', () => {
+  it('HTTP success但条目被跳过时校准水位并报冲突，不发第二次覆盖', async () => {
+    reiClient.putClientState.mockResolvedValue({ success: true, data: {
+      upserted: 0, skipped: 1, deleted: 0, rejected: [],
+      skippedEntries: [{ namespace: 'amsg:global', key: 'tool_config' }],
+    } });
+    reiClient.getClientState.mockResolvedValue({ success: true, data: { entries: [
+      { key: 'tool_config', value: '{"newsEnabled":true}', updatedAt: FUTURE },
+    ] } });
+    await expect(ActiveMsgClient.syncToolConfig({ newsEnabled: false } as any))
+      .rejects.toMatchObject({ code: 'TOOL_CONFIG_CONFLICT' });
+    expect(reiClient.putClientState).toHaveBeenCalledTimes(1);
+    expect(readStateClockWatermark()).toBeGreaterThanOrEqual(FUTURE);
+  });
+
+  it.each([
+    { success: true, data: { upserted: 0, skipped: 0, rejected: [{ index: 0, namespace: 'amsg:global', key: 'tool_config', message: 'too large' }] } },
+    { success: true, data: {} },
+  ])('拒绝或不完整回执不能当作同步完成', async (response) => {
+    reiClient.putClientState.mockResolvedValue(response);
+    await expect(ActiveMsgClient.syncToolConfig({} as any)).rejects.toThrow();
   });
 });

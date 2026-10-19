@@ -236,6 +236,7 @@ export type RoundDecision =
   | {
       decision: 'skip-push';
       reason: 'declined' | 'empty-generation' | 'side-effects-only';
+      sideEffects?: { directives: Directive[]; xhsSession?: XhsSessionPayload };
       /**
        * 这一轮被整条丢掉、但仍要送到客户端的日程改动（没有就没有这个字段）。
        * 别的副作用丢了就丢了，日程不行——理由见下面 skip-push 那处的注释。
@@ -508,6 +509,7 @@ export function processLLMRound(
     return {
       decision: 'skip-push',
       reason: declined ? 'declined' : finishMeta ? 'side-effects-only' : 'empty-generation',
+      ...(!declined && directives.some(d => d.type !== 'change_schedule') && finishMeta ? { sideEffects: finishMeta } : {}),
       ...(scheduleChanges.length > 0 ? { scheduleChanges } : {}),
     };
   }

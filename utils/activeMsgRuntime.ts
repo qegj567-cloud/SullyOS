@@ -197,6 +197,12 @@ const fetchOffloadedXhsSession = async (
   message: ActiveMsg2InboxMessage,
   cleanups: OffloadedCleanup[],
 ): Promise<any | null> => {
+  const attachment = (message.metadata as any)?.xhsSessionAttachment;
+  if (attachment && typeof attachment === 'object') {
+    const raw = await ActiveMsgClient.readAttachment(attachment);
+    if (raw == null) throw new Error('XHS attachment is unavailable or expired');
+    return JSON.parse(raw);
+  }
   const ref = (message.metadata as any)?.xhsSessionRef;
   if (typeof ref !== 'string' || !ref) return null;
 
@@ -235,6 +241,11 @@ const fetchOffloadedExtra = async (
   /** 取回成功时把「这份云端副本可以删了」登记进来，由调用方在处理成功后统一删。 */
   cleanups: OffloadedCleanup[],
 ): Promise<string | null> => {
+  const attachment = (message.metadata as any)?.[refField.replace(/Ref$/, 'Attachment')];
+  if (attachment && typeof attachment === 'object') {
+    try { return await ActiveMsgClient.readAttachment(attachment); }
+    catch (error) { log.warn(`取附件中的${labels.what}失败（${labels.whenMissing}）`, { error }); return null; }
+  }
   const ref = (message.metadata as any)?.[refField];
   if (typeof ref !== 'string' || !ref) return null;
 
@@ -578,8 +589,7 @@ const processInboxMessageWithPostProcessing = async (
   // 思考链挂在第一条 content push 的 metadata.amsgReasoning 上（太长时挪进 client_state、
   // 只留 amsgReasoningRef，见 worker/amsg/src/index.ts 的 offloadOversizedPush），
   // 只在第一条上取，渲染成第一条 assistant message 的 metadata.thinkingChain。
-  // 定时任务那条路 worker 刻意不带思考（prompt 里没有「心象」提示词，原始推理腔当卡片
-  // 是穿帮），所以这里也不会有值——收侧不用另设门。
+  // 定时任务由 worker 按 thinkingChainEnabled 决定是否携带；收侧复用同一套落库。
   let reasoningContent: string | undefined;
   if (messageIndex <= 1) {
     const inlineReasoning = (message.metadata as any)?.amsgReasoning;
@@ -868,7 +878,7 @@ async function adoptSelfScheduledTasks(message: ActiveMsg2InboxMessage): Promise
     await DB.saveCharacter({
       ...char,
       activeMsg2Config: {
-        ...(char.activeMsg2Config ?? { enabled: true }),
+        ...(char.activeMsg2Config ?? { enabled: false }),
         tasks: pruneStaleTasks([...existing, ...added], Date.now()),
       },
     });
@@ -925,7 +935,7 @@ async function applyRemoteTaskMutations(message: ActiveMsg2InboxMessage): Promis
 
     await DB.saveCharacter({
       ...char,
-      activeMsg2Config: { ...(char.activeMsg2Config ?? { enabled: true }), tasks: next },
+      activeMsg2Config: { ...(char.activeMsg2Config ?? { enabled: false }), tasks: next },
     });
     console.log('[ActiveMsg] 消账角色取消/改期的任务', { cancelled, renewed });
     // 与认领共用同一个事件：监听方（OSContext）做的是「重读角色」，增删改对它是一回事。
@@ -1477,6 +1487,7 @@ export type FlushTrigger =
   | '启动'            // App 冷启动时的兜底排空
   | '重试'            // 上一趟处理失败，定时重来
   | '等齐重看'        // 多段消息扣住后段，隔几秒回头看前段到了没
+  | '动作结果'        // 后台动作结果入箱后立即落库，成功才确认云端结果
   | '上线补收'        // 开 App 自动去云端账本捞后台期间漏掉的
   | '手动补收'        // 用户点「找回没收到的消息」
   | '轮询补收'        // 即时对话 60 秒点名顺手把账本上的捞回来
@@ -1600,7 +1611,9 @@ const flushInboxToChatImpl = async (trigger: FlushTrigger, charId?: string): Pro
       // 见上面 isAlreadyPersisted 的注释：这条已经在聊天记录里了（补收先到、真推送迟到，
       // 或重试重跑的重叠段），第二份原样丢弃。
       if (!(message.processAttempts && message.processAttempts > 0)
-        && await replyStep(async () => isAlreadyPersisted(message.charId, message.messageId))) {
+        && await replyStep(async () => ((message.metadata as any)?.amsgActionResult === true
+          && await ActiveMsgStore.hasAppliedActionResult(message.charId, message.messageId))
+          || await isAlreadyPersisted(message.charId, message.messageId))) {
         log.warn('这条消息已在聊天记录里（补收先到/重试重跑的第二份），丢弃', { messageId: message.messageId, charId: message.charId });
         activeMsgTrace('runtime-inbox-duplicate-dropped', { messageId: message.messageId, charId: message.charId });
         continue;
@@ -1802,6 +1815,10 @@ const flushInboxToChatImpl = async (trigger: FlushTrigger, charId?: string): Pro
 
       // 走到这里 = 这条真的落进聊天流了（主路径落库完 / 降级存了原稿）。上面每一个
       // continue 都是「没上屏」：跟已有的重了、等前面的分段、压回收件箱重试。
+      if ((message.metadata as any)?.amsgActionResult === true) {
+        // 回执在本地成功落盘后才进入本趟成功名单；写失败由外层重排，不能先 ACK。
+        await ActiveMsgStore.markActionResultApplied(message.charId, message.messageId);
+      }
       landedMessageIds.push(message.messageId);
 
       // 不管走 post-processing 还是 raw fallback, 单条 inbox message 触发一次 'active-msg-received',
@@ -2195,9 +2212,7 @@ const drainOutboxAndFlush = async (trigger: FlushTrigger): Promise<AmsgOutboxEnt
         log.warn('账本上跳过的条目销账失败（下次会再捞一遍）', { count: ackNow.length, error: e });
       });
     }
-    // 超窗销掉的那些必须说一声。这条路是**开 App 就自动跑**的，销掉之后账本上就干净了：
-    // 用户后来去点「找回没收到的消息」，看到的是一句「账本上没有漏收的消息，这条链路是
-    // 通的」——他刚丢了消息，界面却在告诉他一切正常。这一句是那件事唯一的出口。
+    // 保留旧调用接口的计数处理；正文补收已取消年龄丢弃，当前返回 0。
     if (staleDropped > 0) notifyOutboxStaleDropped(staleDropped);
     if (written > 0) await flushInboxToChat(trigger);
     return entries;
@@ -2247,18 +2262,9 @@ export const catchUpMissedPushes = async (
 };
 
 /**
- * 用户在设置面板上手动点的那次补收：「我这两天有消息没收到，去账本上找找」。
- *
- * 跟自动那条路的两处不同，都因为「用户自己知道自己丢了消息」这一点：
- *   1. 不受节流管——点了就该去问；
- *   2. 头一趟也把账本存量当补收处理（treatBacklogAsMissed），不走「整批销账、一条不上屏」。
- *      自动路径分不清存量里哪些是真丢的、哪些是当时收到了只是老版本客户端不会销账，
- *      倒出来就是把用户收过的消息重放一遍；这个判断只有用户自己做得了。
- *
- * 时效窗口照旧（超过 OUTBOX_BACKFILL_MAX_AGE_MS 的只销账不上屏），所以 written 会
- * 小于 scanned——UI 拿这三个数字如实告诉用户「翻了多少条、补回来几条、几条太旧了」。
- * `stale` 单独给一个数而不是让 UI 拿 scanned-written 去减：那个差里还混着思维链、
- * 工具请求这些本来就不进聊天流的条目，减出来会把「丢了 3 条」说成「丢了 11 条」。
+ * 用户在设置面板上手动点的补收，不受自动补收的节流限制。
+ * 首次与后续、手动与自动都恢复服务端仍保留的正文，并按完整本地历史去重。
+ * 返回的 stale 保留接口兼容，普通正文不再因48小时期限被丢弃。
  *
  * `written` 数的是**真的上了屏**的条数，不是写进收件箱的条数：中间还隔着一趟冲刷，
  * 落库去重、多段等齐都会把消息拦在上屏之前。按收件箱那个数报的话，界面会

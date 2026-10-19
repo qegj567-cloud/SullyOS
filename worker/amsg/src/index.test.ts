@@ -1724,14 +1724,14 @@ describe('云端思考链随首条 push 回客户端', () => {
       expect(decision.decision).toBe('finish');
       const payloads = decision.pushPayloads as Array<Record<string, any>>;
       const last = payloads[payloads.length - 1].metadata;
-      const key = `sar_user_surface:${CLIENT_TASK_ID}`;
+      const key = `sar_user_surface:${CLIENT_TASK_ID}@1784980800000`;
       expect(last.amsgSarUserSurfaceRef).toBe(key);
       expect(last.amsgSarUserSurface).toBeUndefined();
       expect(lastInstantStore?.rows.get(key)).toBe(longSurface);
       // 挪的顺序里快照排在用户外显前面：用户外显都得挪了，快照已经先挪走了。
-      expect(last.amsgSarRef).toBe(`sar_snapshot:${CLIENT_TASK_ID}`);
+      expect(last.amsgSarRef).toBe(`sar_snapshot:${CLIENT_TASK_ID}@1784980800000`);
       expect(last.amsgSar).toBeUndefined();
-      expect(JSON.parse(lastInstantStore!.rows.get(`sar_snapshot:${CLIENT_TASK_ID}`)!)).toEqual(SAR_SNAPSHOT);
+      expect(JSON.parse(lastInstantStore!.rows.get(`sar_snapshot:${CLIENT_TASK_ID}@1784980800000`)!)).toEqual(SAR_SNAPSHOT);
       for (const payload of payloads) {
         expect(new TextEncoder().encode(JSON.stringify(payload)).length)
           .toBeLessThanOrEqual(MAX_PUSH_PAYLOAD_BYTES);
@@ -1756,7 +1756,7 @@ describe('云端思考链随首条 push 回客户端', () => {
       expect(decision.decision).toBe('finish');
       const payloads = decision.pushPayloads as Array<Record<string, any>>;
       expect(payloads.map((p) => p.message)).toEqual([truthA, truthB]);
-      const keys = [0, 1].map((i) => `sar_surface:${CLIENT_TASK_ID}:${i}`);
+      const keys = [0, 1].map((i) => `sar_surface:${CLIENT_TASK_ID}@1784980800000:${i}`);
       payloads.forEach((payload, i) => {
         expect(payload.metadata.amsgSarSurface).toBeUndefined();
         expect(payload.metadata.amsgSarSurfaceRef).toBe(keys[i]);
@@ -3315,15 +3315,14 @@ describe('没发出去时写 last_skip', () => {
   });
 
   // 只做事不说话的那一轮：空正文 push 的 banner body 也是空的，用户锁屏会收到一条
-  // 只有标题的空横幅、未读 +1、点进去 0 气泡。整条不发，副作用一起放弃。
-  it('只有副作用标签没有正文 → skip-push 且写 last_skip（reason: side-effects-only）', async () => {
-    const { decision, writeState } = await runEmptyFire({ llmOutputText: '[[ACTION:POKE]]' });
+  // 只有标题的空横幅、未读 +1、点进去 0 气泡。动作走可靠结果，正文保持不推。
+  it('只有副作用标签没有正文 → 动作进入结果箱，不留下误导的跳过回执', async () => {
+    const emitResult = vi.fn(async (_payload: Record<string, unknown>) => ({ messageId: 'actions-only', pushed: false }));
+    const { decision, writeState } = await runEmptyFire({ llmOutputText: '[[ACTION:POKE]]', emitResult });
     expect(decision.decision).toBe('skip-push');
-
-    const call = writeState.mock.calls.find(([, entries]) =>
-      entries.some((e: { key: string }) => e.key === AMSG_LAST_SKIP_KEY));
-    expect(call, '应该写过 last_skip').toBeTruthy();
-    expect(JSON.parse(String(call![1][0].value)).reason).toBe('side-effects-only');
+    expect(emitResult.mock.calls[0]?.[0]).toMatchObject({ resultKind: 'assistant-actions', notification: { show: false } });
+    expect(writeState.mock.calls.some(([, entries]) =>
+      entries.some((e: { key: string }) => e.key === AMSG_LAST_SKIP_KEY))).toBe(false);
   });
 
   it('留痕写失败不影响 skip 本身（best-effort）', async () => {

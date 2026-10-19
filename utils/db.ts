@@ -733,6 +733,33 @@ export const DB = {
     });
   },
 
+  /** 补收去重覆盖完整私聊历史（含已归档部分），只收集本次需要核对的消息 ID。 */
+  findPersistedActiveMessageIds: async (charId: string, messageIds: string[]): Promise<Set<string>> => {
+    const remaining = new Set(messageIds.filter(Boolean));
+    const found = new Set<string>();
+    if (remaining.size === 0) return found;
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_MESSAGES, 'readonly');
+      const request = transaction.objectStore(STORE_MESSAGES).index('charId')
+        .openCursor(IDBKeyRange.only(charId), 'prev');
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) return;
+        const message = cursor.value as Message;
+        const messageId = message.metadata?.activeMsg2?.messageId;
+        if (!message.groupId && typeof messageId === 'string' && remaining.delete(messageId)) {
+          found.add(messageId);
+        }
+        if (remaining.size > 0) cursor.continue();
+      };
+      request.onerror = () => reject(request.error);
+      transaction.oncomplete = () => resolve(found);
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error || new Error('补收历史核对未能完成'));
+    });
+  },
+
   /**
    * 某个角色的聊天条数。走 charId 索引的 count()，**一条消息都不会被读出来**，
    * IndexedDB 只回一个数字。使用统计的规模档位用它，别拿 getMessagesByCharId

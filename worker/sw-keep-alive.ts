@@ -83,7 +83,8 @@ const staticManifest = typeof __STATIC_CACHE_MANIFEST__ === 'undefined' ? undefi
  *            _blob 信封、reasoning、tool_request 三条路线移除。
  */
 // 1.20.0: 静态资源缓存、离线启动、用户确认更新；保留原推送注册。
-const SW_VERSION = '1.20.0';
+// 1.22.0: amsg-sw next.8，修复并发冲刷回执与分片收尾失败的诊断。
+const SW_VERSION = '1.22.0';
 
 const PING_INTERVAL = 15_000;
 const MAX_MANUAL_ALIVE_MS = 5 * 60_000;

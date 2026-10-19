@@ -1,7 +1,8 @@
+import { buildChatOutputStylePrompt, readChatTranslationConfig } from './chatOutputStylePrompt';
 import { resolveDialogueApi } from './characterApi';
 import { stoppedReplyStateEntries } from './amsgStoppedReplyClient';
 import { loadCharacterContextMessages } from './chatContextRange';
-import { ReiClient } from '@rei-standard/amsg-client';
+import { ReiClient, classifyClientStateWrite } from '@rei-standard/amsg-client';
 import { createCloudDataSession } from './amsgCloudData';
 import { captureCloudOwnerGenerations, rememberCloudOwnerGeneration, stampCloudWrite, captureCloudWriteCheck, invalidateCloudOwnerWrites } from './amsgCloudOwnerGeneration';
 import {
@@ -745,6 +746,12 @@ export const buildFirePack = async (
   },
 ): Promise<AmsgFirePack> => {
   const templateStub = opts?.templateStub === true;
+  // 请求内副本：门牌常驻但内容会变，每次从本机重读，不能沿用 UI 挂着的旧注入。
+  char = { ...char, roomPlatesInjection: '' };
+  if (!templateStub && char.memoryPalaceEnabled) {
+    const { buildRoomPlatesInjection } = await import('./memoryPalace/roomPlates');
+    char.roomPlatesInjection = await buildRoomPlatesInjection(char.id, userProfile.name);
+  }
   const [{ lastUserMessageAt }, recentMessages, library, schedule] = await Promise.all([
     buildTimeGapHint(char.id),
     templateStub ? Promise.resolve([]) : loadCharacterContextMessages(char),
@@ -823,6 +830,13 @@ export const buildFirePack = async (
     // 具体拿掉哪些块、到点由谁补，见 ChatPrompts.PromptBuildOptions 上的表。
     { forFirePack: true },
   );
+  const outputStyle = buildChatOutputStylePrompt({
+    charName: char.name,
+    userName: userProfile.name,
+    translationConfig: readChatTranslationConfig(char.id),
+    htmlMode: { enabled: !!char.htmlModeEnabled, customPrompt: char.htmlModeCustomPrompt },
+    thinkingChain: { enabled: !!char.showThinkingChain, customPrompt: char.thinkingChainCustomPrompt },
+  });
   const recentTranscript = templateStub ? '' : ChatPrompts.buildMessageHistory(
     recentMessages,
     Math.max(1, recentMessages.length),
@@ -855,7 +869,7 @@ export const buildFirePack = async (
     ...(recallHint ? [recallHint] : []),
     '',
     '【角色系统设定】',
-    systemPrompt,
+    systemPrompt + outputStyle.prompt,
     `（注意：上面角色设定里的情绪、印象等状态是最近一次聊天时的快照。${timeAware ? '此刻的时间、你正在做什么' : '你此刻正在做什么'}，以下方「当前时刻补充」为准。）`,
     '',
     '【最近对话上下文】',
@@ -898,6 +912,7 @@ export const buildFirePack = async (
     // 已经在按新号校验，而这里还发着旧号，表现是每条任务到点都硬失败。
     v: FIRE_PACK_VERSION,
     template,
+    thinkingChainEnabled: outputStyle.thinkingActive,
     lastUserMessageAt,
     // 角色的时间参照系（见上面的 tzId / userTzId）：前者是角色自己的钟，后者是用户那边的，
     // worker 渲染时两者各管各的一行，绝不混用。
@@ -3145,13 +3160,26 @@ export const ActiveMsgClient = {
     await sweepSidechannelShells(client, items.filter(item => item.isCurrent?.() !== false).map(item => item.char.id));
   },
 
-  async syncToolConfig(realtimeConfig: RealtimeConfig | undefined): Promise<void> {
+  async syncToolConfig(
+    realtimeConfig: RealtimeConfig | undefined,
+    options?: { updatedAt: number },
+  ): Promise<void> {
     const globalConfig = await ensureWorkerReady();
     const client = await initializeClient(globalConfig);
-    const response = await putCloudClientState(client, [buildToolConfigEntry(realtimeConfig, stampStateUpdatedAt())]);
-    if (!response?.success) {
-      throw new Error(response?.error?.message || '上传工具凭据失败。');
+    const entry = buildToolConfigEntry(realtimeConfig, options?.updatedAt ?? stampStateUpdatedAt());
+    const response = await putCloudClientState(client, [entry]);
+    const [outcome] = classifyClientStateWrite([entry], response);
+    if (outcome?.status === 'applied') return;
+    if (outcome?.status === 'conflict') {
+      // 只为下一次明确保存校时；这份已被拒的快照不自动换一个更高版本覆盖远端。
+      await alignStateClockWithRemote(client, [entry.namespace]);
+      throw Object.assign(new Error('云端工具配置已有更新，本次修改尚未同步。请核对配置后重新保存。'), {
+        code: 'TOOL_CONFIG_CONFLICT',
+      });
     }
+    throw Object.assign(new Error(outcome?.error?.message || response?.error?.message || '工具配置写入未确认，稍后重试。'), {
+      code: 'TOOL_CONFIG_SYNC_UNCONFIRMED',
+    });
   },
 
   // worker 特性探测（amsg-server 2.6.0-next.4+ 的 GET /capabilities）。
@@ -3744,6 +3772,13 @@ export const ActiveMsgClient = {
    * 键不存在、或者内容已被取走清空，都返回 null 交调用方决定——不要在这里编一个空壳
    * 出来，那会让「数据还没取回」和「本来就没有」变成同一件事。
    */
+  /** SDK 校验任务/轮次绑定并定点读取；读取不删除，重试与别的设备仍能消费。 */
+  async readAttachment(ref: { version: 1; namespace: string; key: string; taskUuid: string; occurrenceMs: number; expiresAt: number }): Promise<string | null> {
+    const globalConfig = await ensureWorkerReady();
+    const client = await initializeClient(globalConfig);
+    return client.getAttachment(ref);
+  },
+
   async readClientStateValue(namespace: string, key: string): Promise<string | null> {
     const config = await ensureWorkerReady();
     const client = await initializeClient(config);

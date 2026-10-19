@@ -31,6 +31,7 @@
 import { APIConfig, CharacterProfile, GroupProfile, RealtimeConfig, UserProfile } from '../types';
 import { ActiveMsgClient, isLlmCredentialsReady, owesInstantChatReply } from './activeMsgClient';
 import { ActiveMsgStore } from './activeMsgStore';
+import { stampStateUpdatedAt } from './amsgStateClock';
 import { hasActiveAiTask } from './amsg2Tasks';
 import { AmsgChatPresence, CHAT_PRESENCE_HEARTBEAT_MS } from './amsgChatPresence';
 import {
@@ -358,8 +359,11 @@ export const resumePendingAmsgStateSync = (scope: {
 }) => {
   // 工具凭据的欠账也在这儿补。底账只记「欠着一次」，凭据本体不落 localStorage
   // （那等于把 token 又抄一份到别的地方），补传用启动时这份最新配置——它本来就是
-  // 云端此刻该有的那一份。
-  if (hasPersistedToolConfigMark()) syncAmsgToolConfig(scope.realtimeConfig);
+  // 云端此刻该有的那一份。重试沿用原保存版本，已冲突的版本等待用户核对后新保存。
+  if (hasPersistedToolConfigMark()) {
+    const saved = readToolConfigSyncVersion();
+    queueToolConfigSnapshot(scope.realtimeConfig, saved?.updatedAt ?? stampStateUpdatedAt(), saved?.conflict === true);
+  }
   // 每次启动对齐主 API，覆盖下线前留下的副 API；失败仍沿用欠账与退避重试。
   if (scope.apiConfig) syncAmsgLlmCredentials(scope.apiConfig);
 
@@ -431,19 +435,28 @@ export const syncAmsgToolConfigAndPrompts = (
 // 所以这里给它配上和 fire_pack 同款的退避重试 + localStorage 底账。
 
 export const AMSG2_PENDING_TOOL_CONFIG_LS_KEY = 'amsg2_pending_tool_config';
+const TOOL_CONFIG_SYNC_VERSION_KEY = 'amsg2_pending_tool_config_version';
 
 /** 待上传的那份配置。undefined 也是合法载荷（= 什么都没配），所以另用 flag 表示「欠着」。 */
 let pendingToolConfig: RealtimeConfig | undefined;
 let hasPendingToolConfig = false;
 let toolConfigSyncing = false;
+let pendingToolConfigVersion = 0;
+let toolConfigConflict = false;
 let toolConfigRetryCount = 0;
 let toolConfigRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
 const writeToolConfigMark = (pending: boolean) => {
   // 存储满 / 隐私模式写不进去就算了：底账只是给「重试没等到就被杀」兜底的。
   try {
-    if (pending) localStorage.setItem(AMSG2_PENDING_TOOL_CONFIG_LS_KEY, '1');
-    else localStorage.removeItem(AMSG2_PENDING_TOOL_CONFIG_LS_KEY);
+    if (pending) {
+      localStorage.setItem(AMSG2_PENDING_TOOL_CONFIG_LS_KEY, '1');
+      // 只存版本和冲突状态，凭据仍从原设置读取。
+      localStorage.setItem(TOOL_CONFIG_SYNC_VERSION_KEY, JSON.stringify({ updatedAt: pendingToolConfigVersion, conflict: toolConfigConflict }));
+    } else {
+      localStorage.removeItem(AMSG2_PENDING_TOOL_CONFIG_LS_KEY);
+      localStorage.removeItem(TOOL_CONFIG_SYNC_VERSION_KEY);
+    }
   } catch { /* 见上 */ }
 };
 
@@ -451,11 +464,19 @@ const hasPersistedToolConfigMark = (): boolean => {
   try { return localStorage.getItem(AMSG2_PENDING_TOOL_CONFIG_LS_KEY) === '1'; } catch { return false; }
 };
 
+const readToolConfigSyncVersion = (): { updatedAt: number; conflict: boolean } | null => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(TOOL_CONFIG_SYNC_VERSION_KEY) || 'null');
+    return Number.isSafeInteger(saved?.updatedAt) && saved.updatedAt > 0 ? saved : null;
+  } catch { return null; }
+};
+
 const runToolConfigSync = async (reason: string): Promise<void> => {
-  if (!hasPendingToolConfig || toolConfigSyncing) return;
+  if (!hasPendingToolConfig || toolConfigSyncing || toolConfigConflict) return;
   toolConfigSyncing = true;
   // 记下这次传的是哪一份：上传期间用户又改了配置的话，清账不能把新的那份一起清掉。
   const snapshot = pendingToolConfig;
+  const version = pendingToolConfigVersion;
   try {
     const globalConfig = await ActiveMsgStore.getGlobalConfig();
     if (!globalConfig.workerUrl?.trim()) {
@@ -465,20 +486,29 @@ const runToolConfigSync = async (reason: string): Promise<void> => {
       writeToolConfigMark(false);
       return;
     }
-    await ActiveMsgClient.syncToolConfig(snapshot);
-    if (pendingToolConfig === snapshot) {
+    await ActiveMsgClient.syncToolConfig(snapshot, { updatedAt: version });
+    if (pendingToolConfigVersion === version) {
       hasPendingToolConfig = false;
       pendingToolConfig = undefined;
       writeToolConfigMark(false);
     }
     toolConfigRetryCount = 0;
   } catch (error) {
+    if ((error as { code?: string })?.code === 'TOOL_CONFIG_CONFLICT') {
+      if (pendingToolConfigVersion === version) {
+        toolConfigConflict = true;
+        writeToolConfigMark(true);
+        console.warn(`${HEADER} 工具配置版本冲突，保留待同步状态，等待核对后重新保存。`);
+        try { window.dispatchEvent(new CustomEvent('amsg-tool-config-conflict')); } catch { /* 非浏览器环境 */ }
+      }
+      return;
+    }
     if (toolConfigRetryCount < MAX_RETRIES) {
       const delay = RETRY_BASE_MS * 2 ** toolConfigRetryCount;
       toolConfigRetryCount += 1;
       console.warn(`${HEADER} tool_config(${reason}) 上传失败，${Math.round(delay / 1000)}s 后重试（第 ${toolConfigRetryCount}/${MAX_RETRIES} 次）`, error);
       if (toolConfigRetryTimer != null) clearTimeout(toolConfigRetryTimer);
-      toolConfigRetryTimer = setTimeout(() => { void runToolConfigSync('retry'); }, delay);
+      toolConfigRetryTimer = setTimeout(() => { toolConfigRetryTimer = null; void runToolConfigSync('retry'); }, delay);
     } else {
       // 退避打光了（多半是离线）。底账留着：下次启动 / 下次冲刷继续补。
       console.error(`${HEADER} tool_config(${reason}) 连续 ${MAX_RETRIES} 次失败，云端仍是上一份工具配置（后台可能带着已被删掉的服务器或旧 token 调工具）`, error);
@@ -486,6 +516,11 @@ const runToolConfigSync = async (reason: string): Promise<void> => {
     }
   } finally {
     toolConfigSyncing = false;
+    if (hasPendingToolConfig && pendingToolConfigVersion !== version) {
+      if (toolConfigRetryTimer != null) { clearTimeout(toolConfigRetryTimer); toolConfigRetryTimer = null; }
+      toolConfigRetryCount = 0;
+      void runToolConfigSync('newer-config');
+    }
   }
 };
 
@@ -493,13 +528,23 @@ const runToolConfigSync = async (reason: string): Promise<void> => {
  * 工具凭据上云的唯一入口（实时感知保存、MCP 配置变更、代理地址改动都走它）。
  * 立即传一次，失败退避重试，并在 localStorage 留底账等启动 / 下次冲刷补传。
  */
-export const syncAmsgToolConfig = (realtimeConfig: RealtimeConfig | undefined): void => {
-  pendingToolConfig = realtimeConfig;
+const queueToolConfigSnapshot = (realtimeConfig: RealtimeConfig | undefined, updatedAt: number, conflict: boolean): void => {
+  // 保存独立快照，同一个设置对象被原地修改也不能改变正在发送的版本。
+  pendingToolConfig = realtimeConfig === undefined ? undefined : structuredClone(realtimeConfig);
+  pendingToolConfigVersion = updatedAt;
+  toolConfigConflict = conflict;
   hasPendingToolConfig = true;
   toolConfigRetryCount = 0;
   if (toolConfigRetryTimer != null) { clearTimeout(toolConfigRetryTimer); toolConfigRetryTimer = null; }
   writeToolConfigMark(true);
+  if (conflict) {
+    try { window.dispatchEvent(new CustomEvent('amsg-tool-config-conflict')); } catch { /* 非浏览器环境 */ }
+  }
   void runToolConfigSync('change');
+};
+
+export const syncAmsgToolConfig = (realtimeConfig: RealtimeConfig | undefined): void => {
+  queueToolConfigSnapshot(realtimeConfig, stampStateUpdatedAt(), false);
 };
 
 // ─── LLM 凭据行（credRefs）的重传 ───

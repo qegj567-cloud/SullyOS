@@ -3895,7 +3895,14 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
                 onDeleteEmoji={handleDeleteEmoji} onDeleteCategory={handleDeleteCategory} onRenameCategory={handleRenameCategory} onDownloadCategory={handleDownloadCategory}
                 allCharacters={characters} onSaveCategoryVisibility={handleSaveCategoryVisibility}
                 translationEnabled={translationEnabled}
-                onToggleTranslation={() => { const next = !translationEnabled; setTranslationEnabled(next); localStorage.setItem(`chat_translate_enabled_${activeCharacterId}`, JSON.stringify(next)); if (next) { trackEvent('开启聊天翻译', { targetLang: isTranslationLangPreset(translateTargetLang) ? translateTargetLang : 'custom' }); } if (!next) { setShowingTargetIds(new Set()); } }}
+                onToggleTranslation={() => {
+                    const next = !translationEnabled;
+                    setTranslationEnabled(next);
+                    localStorage.setItem(`chat_translate_enabled_${activeCharacterId}`, JSON.stringify(next));
+                    markAmsgStateDirty({ char, userProfile, groups, realtimeConfig });
+                    if (next) trackEvent('开启聊天翻译', { targetLang: isTranslationLangPreset(translateTargetLang) ? translateTargetLang : 'custom' });
+                    if (!next) setShowingTargetIds(new Set());
+                }}
                 translateSourceLang={translateSourceLang}
                 translateTargetLang={translateTargetLang}
                 translationExpanded={translationExpanded}
@@ -3906,8 +3913,22 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
                     setShowingTargetIds(new Set());
                     trackEvent('切换翻译展开模式', { enabled: next ? 'on' : 'off' });
                 }}
-                onSetTranslateSourceLang={(lang: string) => { const next = normalizeTranslationLangLabel(lang); if (!next) return; setTranslateSourceLang(next); localStorage.setItem(`chat_translate_source_lang_${activeCharacterId}`, next); setShowingTargetIds(new Set()); }}
-                onSetTranslateLang={(lang: string) => { const next = normalizeTranslationLangLabel(lang); if (!next) return; setTranslateTargetLang(next); localStorage.setItem(`chat_translate_lang_${activeCharacterId}`, next); setShowingTargetIds(new Set()); }}
+                onSetTranslateSourceLang={(lang: string) => {
+                    const next = normalizeTranslationLangLabel(lang);
+                    if (!next) return;
+                    setTranslateSourceLang(next);
+                    localStorage.setItem(`chat_translate_source_lang_${activeCharacterId}`, next);
+                    markAmsgStateDirty({ char, userProfile, groups, realtimeConfig });
+                    setShowingTargetIds(new Set());
+                }}
+                onSetTranslateLang={(lang: string) => {
+                    const next = normalizeTranslationLangLabel(lang);
+                    if (!next) return;
+                    setTranslateTargetLang(next);
+                    localStorage.setItem(`chat_translate_lang_${activeCharacterId}`, next);
+                    markAmsgStateDirty({ char, userProfile, groups, realtimeConfig });
+                    setShowingTargetIds(new Set());
+                }}
                 xhsEnabled={!!char.xhsEnabled}
                 onToggleXhs={() => updateCharacter(char.id, { xhsEnabled: !char.xhsEnabled })}
                 htmlModeEnabled={!!(char as any).htmlModeEnabled}

@@ -171,6 +171,8 @@ const DATA_TAGS: DataTagSpec[] = [
   },
 ];
 
+export const DATA_TOOL_NAMES = Object.freeze([...new Set(DATA_TAGS.map(spec => spec.toolName))]);
+
 // ── 副作用型 (finish + directives) ───────────────────────────────────────
 
 interface SideEffectSpec {

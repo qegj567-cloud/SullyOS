@@ -412,6 +412,8 @@ export interface AmsgFirePackChat {
 }
 
 export interface AmsgFirePack {
+  /** 模板是否含用户指定的内心独白协议；旧包缺省不回传原始推理。 */
+  thinkingChainEnabled?: boolean;
   v: typeof FIRE_PACK_VERSION;
   /** 完整 prompt 模板，时间性内容与本次任务指令留 AMSG_SLOT_* 槽位。 */
   template: string;
@@ -433,10 +435,9 @@ export interface AmsgFirePack {
   /** 用户称呼（userProfile.name || '对方'），awayHint 文案用。 */
   targetName: string;
   /**
-   * 这份模板打包的时刻（epoch ms），self_log 的 tasks 段拿它当对齐锚点：日志里记的
-   * basePackAt 和这个值不一样，说明客户端之后又传了一份新模板，自排任务已随
-   * pendingTasks 回来，tasks 段作废；连发记录（entries）不看它，只认用户有没有开口
-   * （见 reconcileSelfLogWithPack）。
+   * 这份模板打包的时刻（epoch ms）。basePackAt 记下当前快照版本，但换代本身
+   * 不能证明任务已被客户端认领；tasks 按 pendingTasks 里的 UUID 逐项去重。
+   * 连发记录只认用户有没有开口（见 reconcileSelfLogWithPack）。
    */
   builtAt: number;
   /**
@@ -652,8 +653,8 @@ export interface AmsgSelfLog {
    * 很容易把同一件事再排一遍。
    *
    * 客户端上线重放 directive 之后，这些任务会进它的本地清单，下次同步就随
-   * fire_pack.pendingTasks 一起上来——那时 tasks 段作废（basePackAt 对不上，
-   * 见 reconcileSelfLogWithPack），不会两边各记一份。
+   * fire_pack.pendingTasks 一起上来——只有已经出现的同 UUID 条目才从备账移除，
+   * 未认领的仍保留（见 reconcileSelfLogWithPack）。
    */
   tasks: ActiveMsg2TaskRecord[];
 }
@@ -697,8 +698,8 @@ export const countUnansweredSends = (log: AmsgSelfLog | null): number =>
  * - entries + unansweredSends（连发记录）只认「用户开口了」：lastUserMessageAt 比锚新
  *   就一起清零、锚前进。fire_pack 换代**不**清它们——换代多半只是客户端认领了角色自己
  *   发的推送（打脏重传），计数要是跟着清，连发提醒和上限在用户在线时就永远不会生效。
- * - tasks（自排任务备账）只认「fire_pack 换代」：客户端认领后这些任务已随
- *   pack.pendingTasks 回来，再留一份就会被记成两条。
+ * - tasks（自排任务备账）按 pack.pendingTasks 中的 UUID 逐项去重；单纯换代
+ *   不代表客户端已收下排程结果，不能清空尚未认领的任务。
  */
 export const reconcileSelfLogWithPack = (
   stored: AmsgSelfLog | null,
@@ -711,7 +712,9 @@ export const reconcileSelfLogWithPack = (
     log = { ...log, anchorUserMsgAt: lastUserMessageAt, entries: [], unansweredSends: 0, recurringSends: {} };
   }
   if (log.basePackAt !== pack.builtAt) {
-    log = { ...log, basePackAt: pack.builtAt, tasks: [] };
+    // 只有快照里明确带回的 uuid 才代表客户端已认领；打包时间本身不是回执。
+    const adopted = new Set(pack.pendingTasks.map(task => task.taskUuid));
+    log = { ...log, basePackAt: pack.builtAt, tasks: log.tasks.filter(task => !adopted.has(task.taskUuid)) };
   }
   return log;
 };
