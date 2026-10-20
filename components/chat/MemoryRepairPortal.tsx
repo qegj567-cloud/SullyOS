@@ -53,9 +53,9 @@ function readSkipAnimation(): boolean {
 }
 
 function nodeKindLabel(item: RepairNode): string {
-    if (item.kind === 'summary') return '盒摘要';
-    if (item.kind === 'archived') return '归档子节点';
-    if (item.kind === 'live') return '活跃子节点';
+    if (item.kind === 'summary') return '整合回忆';
+    if (item.kind === 'archived') return '旧细节（已合入总结）';
+    if (item.kind === 'live') return '近期片段';
     return '独立记忆';
 }
 
@@ -209,7 +209,7 @@ const MemoryRepairPortal: React.FC<MemoryRepairPortalProps> = ({
             remoteVectorConfig,
         );
         replaceNode(updated);
-        setNotice('已经写回原处，也重新生成了这条记忆的向量。');
+        setNotice('修改已保存，下次聊到相关话题时会按新内容回忆。');
     };
 
     const submitConcern = async () => {
@@ -541,8 +541,8 @@ const MemoryRepairPortal: React.FC<MemoryRepairPortalProps> = ({
                                             <span>{formatRepairMemoryDate(item.node.createdAt)}</span>
                                             <span>·</span>
                                             <span>{getRoomLabel(item.node.room, user.name)}</span>
-                                            {item.recalled && <span>本轮经过</span>}
-                                            {item.kind === 'archived' && <span>已归档 · 本轮未注入</span>}
+                                            {item.recalled && <span>刚才用到了这条</span>}
+                                            {item.kind === 'archived' && <span>已合入总结 · 刚才没直接读</span>}
                                         </div>
                                         <div className="memory-strip-copy">{item.node.content}</div>
                                     </button>
@@ -588,8 +588,8 @@ const MemoryRepairPortal: React.FC<MemoryRepairPortalProps> = ({
                                             <div className="memory-strip-kicker">
                                                 <span>事件盒</span><span>·</span>
                                                 <span>{boxDateLabel(group.nodes)}</span><span>·</span>
-                                                <span>本轮经过 {group.recalledNodeIds.length} 条</span><span>·</span>
-                                                <span>展开 {group.nodes.length} 个节点</span>
+                                                <span>刚才用到了其中 {group.recalledNodeIds.length} 条</span><span>·</span>
+                                                <span>共 {group.nodes.length} 条相关记录</span>
                                             </div>
                                             <div className="memory-strip-copy">「{group.box.name}」</div>
                                             {hitSuspects.length > 0 && (
@@ -636,7 +636,7 @@ const MemoryRepairPortal: React.FC<MemoryRepairPortalProps> = ({
                         <div className="flex items-start justify-between gap-4 mb-3">
                             <div>
                                 <div className="text-[11px] uppercase tracking-[.18em] text-violet-200/45 mb-2">
-                                    {editorTarget.id === '__dialogue__' ? 'memory diagnosis' : 'patch in place'}
+                                    {editorTarget.id === '__dialogue__' ? '核对记忆' : '直接修改'}
                                 </div>
                                 <h2 className="text-xl leading-tight">
                                     {editorTarget.id === '__dialogue__'
@@ -647,8 +647,8 @@ const MemoryRepairPortal: React.FC<MemoryRepairPortalProps> = ({
                                 </h2>
                                 {editorBox && (
                                     <p className="mt-2 text-xs leading-6 text-white/45">
-                                        已完整展开 {editorBox.nodes.length} 个节点；摘要在前，其余按日期排列。
-                                        活跃节点和归档节点都可修改，保存时会原地重建对应向量。
+                                        这里列出了这件事的总括和全部 {editorBox.nodes.length} 条前后经过（按日期排列）。
+                                        任意一条都可以直接修改，保存后立即生效。
                                     </p>
                                 )}
                             </div>
@@ -714,7 +714,7 @@ const MemoryRepairPortal: React.FC<MemoryRepairPortalProps> = ({
                                     </button>
                                 </div>
                                 <p className="mt-3 text-[11px] leading-5 text-white/35">
-                                    这里只用角色基础设定和上面这批召回现场进行判断，不会再次搜索向量记忆，也不会读取其它记忆上下文。
+                                    ？？？在这里只对照角色基础设定和上面列出的这几条记忆帮你排查，不会再去翻其它记忆或聊天记录。
                                 </p>
                             </div>
                         ) : editorNode ? (
@@ -785,9 +785,9 @@ const NodeEditor: React.FC<{
                     <span>{formatRepairMemoryDate(item.node.createdAt)}</span>
                     <span>·</span>
                     <span>{getRoomLabel(item.node.room)}</span>
-                    {item.recalled && <span className="text-violet-200/75">本轮经过</span>}
-                    {item.kind === 'archived' && <span className="text-white/35">已归档 · 本轮未注入</span>}
-                    {!item.recalled && item.kind !== 'archived' && <span className="text-white/35">同盒展开 · 本轮未直接注入</span>}
+                    {item.recalled && <span className="text-violet-200/75">刚才用到了这条</span>}
+                    {item.kind === 'archived' && <span className="text-white/35">已合入总结 · 刚才没直接读</span>}
+                    {!item.recalled && item.kind !== 'archived' && <span className="text-white/35">同事件顺带列出 · 刚才没直接读</span>}
                 </div>
                 {!editing && (
                     <button
@@ -816,7 +816,7 @@ const NodeEditor: React.FC<{
                             disabled={!dirty || saving || !content.trim()}
                         >
                             {saving ? <Sparkle size={15} className="animate-pulse" /> : <FloppyDisk size={15} />}
-                            {saving ? '正在写回…' : '保存补丁'}
+                            {saving ? '正在保存…' : '保存修改'}
                         </button>
                     </div>
                 </>

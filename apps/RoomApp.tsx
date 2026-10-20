@@ -2530,7 +2530,7 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
                                 {JSON.stringify(items, null, 2)}
                             </pre>
                         </div>
-                        <button onClick={() => { navigator.clipboard.writeText(JSON.stringify(items, null, 2)); addToast('Layout Copied', 'success'); }} className="w-full py-2 bg-slate-800 text-white text-xs font-bold rounded-xl">复制布局 JSON</button>
+                        <button onClick={() => { navigator.clipboard.writeText(JSON.stringify(items, null, 2)); addToast('布局已复制', 'success'); }} className="w-full py-2 bg-slate-800 text-white text-xs font-bold rounded-xl">复制布局 JSON</button>
                     </div>
 
                     <div>
@@ -2540,7 +2540,7 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
                                 {lastPrompt || "(暂无数据，请先尝试进入房间)"}
                             </pre>
                         </div>
-                        <button onClick={() => { if(lastPrompt) { navigator.clipboard.writeText(lastPrompt); addToast('Prompt Copied', 'success'); } else addToast('No prompt yet', 'error'); }} className="w-full py-2 bg-red-500 text-white text-xs font-bold rounded-xl">复制 Prompt 到剪贴板</button>
+                        <button onClick={() => { if(lastPrompt) { navigator.clipboard.writeText(lastPrompt); addToast('提示词已复制', 'success'); } else addToast('暂无提示词记录', 'error'); }} className="w-full py-2 bg-red-500 text-white text-xs font-bold rounded-xl">复制 Prompt 到剪贴板</button>
                         <p className="text-[9px] text-slate-400 mt-2 text-center">如果 AI 回复为空，请复制此 Prompt 检查是否有乱码/Base64 混入。</p>
                     </div>
                 </div>

@@ -74,19 +74,19 @@ export default function DialogueApiFields({ value, onChange, fetchModels, isLoad
                 <div className="pt-2">
                      <div className="flex justify-between items-center mb-1.5 pl-1">
                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Model</label>
-                        <button onClick={fetchModels} disabled={isLoadingModels} className="text-[10px] text-primary font-bold">{isLoadingModels ? 'Fetching...' : '刷新模型列表'}</button>
+                        <button onClick={fetchModels} disabled={isLoadingModels} className="text-[10px] text-primary font-bold">{isLoadingModels ? '正在拉取…' : '刷新模型列表'}</button>
                     </div>
                     
                     <button
                         onClick={openModelPicker}
-                        title={localModel || 'Select Model...'}
+                        title={localModel || '选择模型…'}
                         className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-3 text-sm text-slate-700 flex justify-between items-center gap-2 active:bg-white transition-all shadow-sm"
                     >
                         <span
                             className="font-mono overflow-hidden whitespace-nowrap min-w-0 flex-1 text-left"
                             style={{ direction: 'rtl', textOverflow: 'ellipsis' }}
                         >
-                            <bdi style={{ direction: 'ltr' }}>{localModel || 'Select Model...'}</bdi>
+                            <bdi style={{ direction: 'ltr' }}>{localModel || '选择模型…'}</bdi>
                         </span>
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-slate-400 flex-shrink-0"><path fillRule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" /></svg>
                     </button>

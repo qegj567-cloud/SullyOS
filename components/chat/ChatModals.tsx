@@ -779,7 +779,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                         if (palaceOn && autoOn) {
                             return (
                                 <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-[11px] text-emerald-800 leading-relaxed">
-                                    ✅ <b>自动归档已开启</b>。palace 处理后系统会按日期自动把聊天归档到"本月日度总结"。<br/>
+                                    ✅ <b>自动归档已开启</b>。记忆宫殿整理后，系统会按日期自动把聊天归档到"本月日度总结"。<br/>
                                     自动归档走的是 <b>记忆宫殿内置风格</b>（保证向量检索质量稳定），
                                     下方模板<b>只对这里的"开始归档"按钮生效</b>——你在这换风格不会影响自动归档。
                                 </div>

@@ -20,11 +20,11 @@ import { AMSG_INSTANT_CHAT_ROUTE_EVENT, type InstantChatRouteDetail } from '../.
 const NOTICES: Record<string, { title: string; hint: string }> = {
     'worker-outdated': {
         title: '这一轮在本地生成',
-        hint: '云端那台 Worker 跑不动这条路，去设置里更新一下',
+        hint: '云端 Worker 版本较旧，暂不支持即时对话，请去设置里更新一下',
     },
     'worker-unreachable': {
         title: '这一轮在本地生成',
-        hint: '一时连不上云端，网络恢复后会自己回去',
+        hint: '一时连不上云端，网络恢复后会自动恢复',
     },
     'sar-module-worker-outdated': {
         title: '这一轮在本地生成',
@@ -32,7 +32,7 @@ const NOTICES: Record<string, { title: string; hint: string }> = {
     },
     'sar-module-worker-unverified': {
         title: '这一轮在本地生成',
-        hint: 'SAR 模块生效中，还没问到云端 Worker 的版本，问到了会自己回去',
+        hint: 'SAR 模块生效中，正在确认云端 Worker 版本，确认后会自动恢复',
     },
 };
 

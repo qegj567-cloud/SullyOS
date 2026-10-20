@@ -197,8 +197,13 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
       const globalConfig = await ActiveMsgClient.getGlobalConfig();
       const pushStatus = await ActiveMsgClient.getPushStatus();
       setGlobalReady(Boolean(globalConfig.workerUrl));
+      const permLabel = pushStatus.permission === 'granted'
+        ? '已允许'
+        : pushStatus.permission === 'denied'
+          ? '已拒绝'
+          : '未授权';
       setPushSummary(pushStatus.supported
-        ? `权限：${pushStatus.permission} / 订阅：${pushStatus.hasSubscription ? '已就绪' : '未创建'}`
+        ? `权限：${permLabel} / 订阅：${pushStatus.hasSubscription ? '已就绪' : '未创建'}`
         : '当前环境不支持 Web Push');
     })();
 
@@ -717,7 +722,7 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
                           · {t.source === 'character' ? '角色创建' : '手动创建'}
                         </div>
                         {missingRemote ? (
-                          <div className="text-slate-400 mt-1 text-[11px]">⚠ 远端不存在（可能已发送或在别处取消）</div>
+                          <div className="text-slate-400 mt-1 text-[11px]">⚠ 云端已无此任务（可能已发送或在别处取消）</div>
                         ) : null}
                         {remoteErrorText ? (
                           <div className="text-amber-600 mt-1 text-[11px]">⚠ {remoteErrorText}</div>
@@ -853,7 +858,7 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
                 </div>
 
                 <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">maxTokens (可选)</label>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">单次回复长度上限 (可选)</label>
                   <input
                     type="number"
                     min={1}

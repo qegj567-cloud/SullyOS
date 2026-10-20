@@ -67,8 +67,8 @@ export default function StoryArchivePanel({entry,masks,onBack,onUpdated}:{entry:
    </section>
    {!boxes.length?<p className='text-sm leading-7 text-slate-500'>这条剧情还没有事件盒摘要。虚构剧场选择「事件盒」归档后，达到设置的归档条数才会生成；独立向量记忆请从剧情的向量入口查看。已有原文可在剧情页展开或导出。</p>:<>
     <label className='block text-xs font-semibold'>接收记忆的角色<select aria-label='接收记忆的角色' disabled={busy} value={charId} onChange={e=>{setCharId(e.target.value);setSelected([]);setError('');setStatus('');}} className='mt-2 w-full p-3 rounded-xl bg-white border border-slate-200'>{actors.map(actor=><option key={actor.id} value={actor.id}>{actor.name}</option>)}</select></label>
-    <p className='text-xs leading-6 text-slate-500'>{char?.memoryPalaceEnabled?'已开启记忆宫殿：LLM 整理并向量化后，写入宫殿，同时关联到神经链接。':'未开启记忆宫殿：LLM 整理后写入神经链接记忆。'}记忆会保留「剧情经历」的说明。请填写希望这段记忆归属的日期；跨多日的盒子暂统一归到所填日期。</p>
-    <p className='text-[11px] leading-5 text-slate-500'>转化不会改变剧情模式、原文时间或聊天水位线。每个事件盒对同一角色只转化一次；之前转化的记忆不会随删除剧情一起删除。</p>
+    <p className='text-xs leading-6 text-slate-500'>{char?.memoryPalaceEnabled?'已开启记忆宫殿：自动提炼整理后写入记忆宫殿，同时关联到神经链接。':'未开启记忆宫殿：自动提炼整理后写入神经链接记忆。'}记忆会保留「剧情经历」的说明。请填写希望这段记忆归属的日期；跨多日的盒子暂统一归到所填日期。</p>
+    <p className='text-[11px] leading-5 text-slate-500'>转化不会改变剧情模式、原文时间或聊天的记忆整理进度。每个事件盒对同一角色只转化一次；之前转化的记忆不会随删除剧情一起删除。</p>
     <div className='flex items-center justify-between gap-2'><span className='text-xs text-slate-500'>共 {boxes.length} 个 · 选中 {selected.length} 个</span><button disabled={busy} onClick={()=>setSelected(selected.length?[]:boxes.map(b=>b.id))} className='text-xs text-violet-700 disabled:opacity-30'>{selected.length?'取消全选':'全选'}</button><button disabled={busy||!available.length} onClick={()=>setSelected(available.map(b=>b.id))} className='text-xs text-violet-700 disabled:opacity-30'>选择未转化</button></div>
     <div className='divide-y divide-slate-200'>{boxes.map((box,index)=>{
      const receipt=box.memoryConversions?.[charId],checked=selected.includes(box.id);

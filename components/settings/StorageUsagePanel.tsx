@@ -61,19 +61,19 @@ type PersistAttempt = 'none' | 'granted' | 'denied';
 function describeOptimizeResult(r: OptimizeResult): string {
     const parts: string[] = [];
     if (r.converted > 0) {
-        parts.push(`已把 ${r.converted} 张图片转为二进制存储，释放约 ${formatBytes(Math.max(0, r.bytesBefore - r.bytesAfter))}`);
+        parts.push(`已将 ${r.converted} 张旧格式图片转为省空间格式，释放约 ${formatBytes(Math.max(0, r.bytesBefore - r.bytesAfter))}`);
     }
     if (r.mergedDuplicates > 0) {
         parts.push(`把 ${r.mergedDuplicates} 份重复的图片并成了一份，约 ${formatBytes(r.reclaimableBytes)} 会在下次清理时释放`);
     }
     if (r.vectorsCompacted > 0) {
-        parts.push(`把 ${r.vectorsCompacted} 条记忆向量压成了紧凑格式`);
+        parts.push(`已将 ${r.vectorsCompacted} 条记忆索引压成紧凑格式`);
     }
     if (r.linksCompacted > 0) {
         parts.push(`已整理 ${r.linksCompacted} 条记忆连接的小数精度，连接全部保留`);
     }
     const reloadNote = r.mergedDuplicates > 0 ? '页面即将刷新，让界面和备份都用上合并后的图片。' : '';
-    const vectorNote = (r.vectorError ? `记忆向量这一步没做完：${r.vectorError}。再点一次可以接着压。` : '')
+    const vectorNote = (r.vectorError ? `记忆数据压缩这一步没做完：${r.vectorError}。再点一次可以接着处理。` : '')
         + (r.linkError ? `记忆连接这一步没做完：${r.linkError}。再点一次可以继续。` : '');
     if (parts.length === 0) {
         if (r.failed > 0) return `有 ${r.failed} 张图片转换失败（已保留原样），其余没有需要优化的。${vectorNote}`;
@@ -84,7 +84,6 @@ function describeOptimizeResult(r: OptimizeResult): string {
     }
     let text = `${parts.join('；')}。`;
     if (r.failed > 0) text += `另有 ${r.failed} 张转换失败，已保留原样。`;
-    if (r.skippedGroups > 0) text += `有 ${r.skippedGroups} 组重复图片没有合并——它们被「换一张就会删掉旧图」的地方用着，并了会误删。`;
     if (r.scanUnavailable) text += '这次没能检查重复图片，换个环境再试试。';
     return text + vectorNote + reloadNote;
 }
@@ -283,7 +282,7 @@ const StorageUsagePanel: React.FC = () => {
                             ? optimizeError
                             : optimizeResult
                                 ? describeOptimizeResult(optimizeResult)
-                                : '把老数据里仍以 base64 存的图片一次性转成二进制，把重复存了好几份的同一张图并成一份，再把记忆向量压成紧凑格式。做过一次就干净；导入过旧备份后可以再点。'}
+                                : '把旧版格式的图片和记忆数据转成更省空间的格式，并合并重复存了多份的同一张图片（不影响画质与聊天记录）。做过一次就干净；导入过旧备份后可以再点。'}
                 </p>
                 {/* 合并动的是库里的引用，内存里的 theme / customIcons 还捏着合并前的令牌。
                     不刷新的话：界面照常显示，但导出的备份里 metadata 写的仍是旧令牌，
@@ -320,7 +319,7 @@ const StorageUsagePanel: React.FC = () => {
                             <span className="w-3 h-3 rounded-full border-2 border-slate-200 border-t-violet-400 animate-spin shrink-0" />
                             <span className="text-[10px] text-slate-400">
                                 {progress && progress.total > 0
-                                    ? `计算中… 已翻完 ${progress.done}/${progress.total} 张表`
+                                    ? `计算中…（${progress.done}/${progress.total}）`
                                     : '计算中…'}
                             </span>
                         </div>
@@ -361,7 +360,7 @@ const StorageUsagePanel: React.FC = () => {
                                         // 不折算的话细分加起来会超过上面的总量，看着像算错了。
                                         breakdown.calibrated ? '各项已按实际占用折算，比数据本身的大小小一些' : '',
                                         showOtherUsage ? '「网页缓存等」是离线缓存这类系统占用，删不掉也不用管' : '',
-                                        breakdown.failedStores.length > 0 ? `有 ${breakdown.failedStores.length} 张表没读出来` : '',
+                                        breakdown.failedStores.length > 0 ? `有 ${breakdown.failedStores.length} 项数据暂未读出` : '',
                                     ].filter(Boolean).join('；')}
                                 </p>
                                 <button type="button" onClick={() => void runBreakdown()} className="shrink-0 px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-[10px] font-bold text-slate-500 active:scale-95 transition-all">

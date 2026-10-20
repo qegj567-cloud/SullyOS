@@ -1264,7 +1264,7 @@ export default function MemoryPalaceApp() {
         if (!window.confirm(
             `重新整合「${box.name || '未命名事件'}」？\n\n`
             + `副 API 会重新读取盒内全部 ${sourceCount} 条原始记忆，不使用当前整合回忆；`
-            + `随后重新生成语义向量。成功后，本次参与整合的活节点会归档（保留原文），累计归档满 12 条会封盒；失败则保持原样。`,
+            + `随后重新生成记忆索引。成功后，本次参与整合的近期片段会合入总结（保留原文），累计合入满 12 条会封盒；失败则保持原样。`,
         )) return;
 
         setRegeneratingBoxId(box.id);
@@ -1310,9 +1310,9 @@ export default function MemoryPalaceApp() {
         const liveCount = box.liveMemoryIds.length;
         if (liveCount === 0) return;
         if (!confirm(
-            `把「${box.name || '未命名'}」里的 ${liveCount} 条活节点全部移出？\n\n`
-            + `这些记忆不会被删除，只是脱离当前事件盒、回到"地上"作为独立记忆。\n`
-            + `整合回忆（summary）和已归档节点保持不动。`
+            `把「${box.name || '未命名'}」里的 ${liveCount} 条近期片段全部移出？\n\n`
+            + `这些记忆不会被删除，只是脱离当前事件盒、变回普通独立记忆。\n`
+            + `整合回忆和已合入总结的旧片段保持不动。`
         )) return;
         try {
             await unbindAllLiveMemories(box.id);
@@ -1602,7 +1602,7 @@ export default function MemoryPalaceApp() {
                 contextRangeMode: 'manual',
                 contextRangePolicyVersion: CONTEXT_RANGE_POLICY_VERSION,
             } as any);
-            addToast('已关闭全自动记忆（palace 向量化仍在正常运行）', 'info');
+            addToast('已关闭全自动记忆（记忆宫殿仍在正常运行）', 'info');
             return;
         }
 
@@ -1748,7 +1748,7 @@ export default function MemoryPalaceApp() {
 
                 const newHwm = getMemoryPalaceHighWaterMark(charId);
                 if (newHwm <= curHwm) {
-                    addToast('追平中断：palace 处理失败，请检查副 API 配置', 'error');
+                    addToast('追平中断：记忆宫殿处理失败，请检查副 API 配置', 'error');
                     break;
                 }
                 totalProcessed += result?.processedMessages || 0;
@@ -4523,7 +4523,7 @@ create table if not exists memory_vectors (
 
                     <button
                         onClick={() => {
-                            if (confirm('确定清除所有已迁移的数据？（boxId 以 migrated_ 开头的记忆 + 向量 + 关联）')) {
+                            if (confirm('确定清除所有从旧版总结迁移过来的记忆吗？（平时聊天产生的记忆不受影响）')) {
                                 handleClearMigrated();
                             }
                         }}
@@ -5296,7 +5296,7 @@ create table if not exists memory_vectors (
                                 <div style={{ minWidth: 0, flex: 1 }}>
                                     <div style={{ lineHeight: 1.5, color: '#1f2937', whiteSpace: 'pre-wrap' }}>{ant.content}</div>
                                     <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>
-                                        {new Date(ant.createdAt).toLocaleDateString('zh-CN')} · {ant.status}
+                                        {new Date(ant.createdAt).toLocaleDateString('zh-CN')} · {{ active: '期盼中', anchor: '长期挂念', fulfilled: '已实现', disappointed: '已落空' }[ant.status] || ant.status}
                                     </div>
                                 </div>
                             </div>
@@ -5509,7 +5509,7 @@ create table if not exists memory_vectors (
                     <span>事件盒</span>
                 </div>
                 <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 14 }}>
-                    按同一事件自动聚合的记忆，点击展开可查看整合回忆、活节点与已归档节点
+                    按同一事件自动聚合的记忆，点击展开可查看整合回忆、近期片段与已合入总结的旧片段
                 </div>
 
                 {allBoxes.length === 0 ? (
@@ -5566,8 +5566,8 @@ create table if not exists memory_vectors (
                                         </div>
                                     )}
                                     <div style={{ fontSize: 10, color: '#6b7280', marginTop: 6, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                                        <span>活 {box.liveMemoryIds.length}</span>
-                                        <span>归档 {box.archivedMemoryIds.length}</span>
+                                        <span>近期 {box.liveMemoryIds.length}</span>
+                                        <span>已合入总结 {box.archivedMemoryIds.length}</span>
                                         {box.compressionCount > 0 && <span>压缩 {box.compressionCount} 次</span>}
                                         <span>更新 {new Date(box.updatedAt).toLocaleDateString('zh-CN')}</span>
                                     </div>
@@ -5686,7 +5686,7 @@ create table if not exists memory_vectors (
                                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, marginBottom: 4 }}>
                                                     <div style={{ fontSize: 10, fontWeight: 600, color: '#6366f1', display: 'flex', alignItems: 'center', gap: 4 }}>
                                                         <Icon name="box" size={11} />
-                                                        <span>活节点（{members.live.length}）</span>
+                                                        <span>近期片段（{members.live.length}）</span>
                                                         {members.live.length >= 15 && (
                                                             <span style={{ marginLeft: 4, fontSize: 9, color: '#b91c1c', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                                                                 <Icon name="warning" size={10} />
@@ -5701,9 +5701,9 @@ create table if not exists memory_vectors (
                                                             border: '1px solid #fecaca', background: '#fef2f2', color: '#b91c1c',
                                                             cursor: 'pointer',
                                                         }}
-                                                        title="把所有活节点移出盒子，变回独立记忆（记忆不删）"
+                                                        title="把这些近期片段移出盒子，变回独立记忆（记忆不删）"
                                                     >
-                                                        一键移出活节点
+                                                        一键移出近期片段
                                                     </button>
                                                 </div>
                                                 {members.live.map(n => (
@@ -5754,7 +5754,7 @@ create table if not exists memory_vectors (
                                                         </div>
                                                         <button
                                                             onClick={(e) => { e.stopPropagation(); handleReviveArchived(box, n); }}
-                                                            title="复活：把这条记忆单独拎出来，让它重新生效。"
+                                                            title="把这条已合入总结的旧记忆重新设为近期片段，让它单独生效。"
                                                             style={{
                                                                 position: 'absolute', top: 6, right: 6,
                                                                 fontSize: 10, padding: '3px 8px', borderRadius: 6,
@@ -5764,7 +5764,7 @@ create table if not exists memory_vectors (
                                                         >
                                                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                                                                 <Icon name="sparkle" size={10} />
-                                                                <span>复活</span>
+                                                                <span>恢复生效</span>
                                                             </span>
                                                         </button>
                                                     </div>
@@ -6157,7 +6157,7 @@ create table if not exists memory_vectors (
                                             <span style={{ color: '#6366f1', fontSize: 10 }}> 〈{currentBox.tags.slice(0, 4).join(' · ')}〉</span>
                                         )}
                                         <span style={{ color: '#6b7280', fontSize: 10 }}>
-                                            {' '}· 活 {currentBox.liveMemoryIds.length} 归档 {currentBox.archivedMemoryIds.length}
+                                            {' '}· 近期 {currentBox.liveMemoryIds.length} · 已合入总结 {currentBox.archivedMemoryIds.length}
                                             {currentBox.compressionCount > 0 && ` · 压缩过 ${currentBox.compressionCount} 次`}
                                         </span>
                                     </div>
@@ -6174,9 +6174,9 @@ create table if not exists memory_vectors (
                                         : isLegacy ? 'link'
                                         : 'box';
                                     const relationText = isSummary ? '整合回忆'
-                                        : isArchived ? '已归档'
-                                        : isLegacy ? '旧关联'
-                                        : '同盒活节点';
+                                        : isArchived ? '已合入总结'
+                                        : isLegacy ? '早期关联'
+                                        : '同盒近期片段';
                                     return (
                                         <div key={id} style={{
                                             padding: '10px 12px', borderRadius: 10, marginBottom: 6,
@@ -6201,14 +6201,14 @@ create table if not exists memory_vectors (
                                                 onClick={async () => {
                                                     if (isLegacy) {
                                                         // 遗留 causal link 删除
-                                                        if (confirm('解除这条旧关联？（不会删除记忆本身）')) {
+                                                        if (confirm('解除这条早期关联？（不会删除记忆本身）')) {
                                                             await MemoryLinkDB.delete(id);
                                                             setLinkedMemories(prev => prev.filter(l => l.id !== id));
                                                         }
                                                     } else if (isSummary) {
                                                         alert('整合回忆是事件盒的压缩产物，不能单独解除；若要重建请删除事件盒所有成员。');
                                                     } else {
-                                                        if (confirm('把这条记忆移出事件盒？（记忆本身不删，会回到"地上"作为独立记忆）')) {
+                                                        if (confirm('把这条记忆移出事件盒？（记忆本身不删，会变回普通独立记忆）')) {
                                                             await removeMemoryFromBox(linkedNode.id);
                                                             await loadLinkedMemories(selectedNode!.id);
                                                         }
@@ -6236,7 +6236,7 @@ create table if not exists memory_vectors (
                             {/* 删除按钮 */}
                             <button
                                 onClick={() => {
-                                    if (confirm('确定删除这条记忆？（包括对应的向量和关联）')) {
+                                    if (confirm('确定删除这条记忆？（删除后无法恢复）')) {
                                         handleDeleteSingle(selectedNode.id);
                                     }
                                 }}

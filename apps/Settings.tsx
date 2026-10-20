@@ -2309,7 +2309,7 @@ const Settings: React.FC = () => {
                 </p>
                 {avatarModelInventory && avatarModelInventory.missingCount > 0 && (
                     <p className="mt-2 text-[10px] leading-relaxed text-rose-500">
-                        有 {avatarModelInventory.missingCount} 个角色只剩模型索引，本地二进制已经丢失，无法导出。
+                        有 {avatarModelInventory.missingCount} 个角色的模型文件已丢失，需重新导入模型后才能导出。
                     </p>
                 )}
             </div>
@@ -2886,7 +2886,7 @@ const Settings: React.FC = () => {
                     </select>
                     <p className="text-[11px] text-slate-400 mt-1 pl-1">
                         {localFishModel === 's2.1-pro-free'
-                            ? '免费版：和 s2.1-pro 同一个模型、$0，但不保证 TTFA / DPA，适合自用测试。选了立即生效。'
+                            ? '免费版：和 s2.1-pro 同一个模型、$0，但首字延迟和并发稳定性不作保证，适合自用测试。选了立即生效。'
                             : '切换立即生效。角色也可在「角色 → 语音」单独覆盖模型（留空则用这里的全局默认）。'}
                     </p>
                 </div>

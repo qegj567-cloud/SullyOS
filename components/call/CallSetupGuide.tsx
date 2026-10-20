@@ -222,7 +222,7 @@ const CallSetupGuide: React.FC<CallSetupGuideProps> = ({
                 {avatarSource === 'model'
                   ? '导入 Live2D 后会自动进入动作与衣橱设置。衣橱动作强制仅手动；VRM 目前仍是测试功能。'
                   : avatarSource === 'date'
-                    ? '见面立绘使用静态表情管线，不会调用 Live2D 动作；服装仍由你手动选择。'
+                    ? '见面立绘会随通话情绪切换静态立绘，不会触发 Live2D 动作；服装仍由你手动选择。'
                     : '单张 PNG / GIF 不切换表情；需要情绪表情时可选择见面立绘。'}
               </p>
             </>

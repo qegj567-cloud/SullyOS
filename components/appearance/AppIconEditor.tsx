@@ -78,7 +78,7 @@ const AppIconEditor: React.FC = () => {
       if (!resp.ok) throw new Error(`服务器返回 ${resp.status}`);
       const contentType = resp.headers.get('content-type') || '';
       if (!contentType.startsWith('image/')) {
-        throw new Error('链接指向的不是图片（Content-Type: ' + contentType + '）');
+        throw new Error('该链接指向的不是图片文件，请填写图片直链');
       }
       const fetchedBlob = await resp.blob();
       // 通过 processImageToBlob 统一压缩到 512px

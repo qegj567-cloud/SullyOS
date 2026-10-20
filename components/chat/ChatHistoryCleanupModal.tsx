@@ -107,10 +107,10 @@ export default function ChatHistoryCleanupModal({ character, onClose, onDeleted 
 
     const summary = plan && <div className='rounded-2xl border border-red-200 bg-red-50 p-4 space-y-2 text-xs text-red-900'>
         <p className='font-bold text-sm'>角色：{character.name} · 永久删除 {plan.ids.length.toLocaleString()} 条</p>
-        <p>起点：{formatRangeTimestamp(plan.firstTimestamp)} · #{plan.ids[0]}</p>
-        <p>终点：{formatRangeTimestamp(plan.lastTimestamp)} · #{plan.ids.at(-1)}</p>
+        <p>起点：{formatRangeTimestamp(plan.firstTimestamp)}</p>
+        <p>终点：{formatRangeTimestamp(plan.lastTimestamp)}</p>
         <p>包含起点、终点及中间全部记录。搜索只用于定位，删除不限于搜索匹配项。</p>
-        {plan.afterWaterlineCount > 0 && <p className='font-bold'>其中 {plan.afterWaterlineCount.toLocaleString()} 条位于记忆水位线之后，可能尚未整理成记忆。</p>}
+        {plan.afterWaterlineCount > 0 && <p className='font-bold'>其中 {plan.afterWaterlineCount.toLocaleString()} 条位于记忆宫殿整理水位之后，可能尚未整理成记忆。</p>}
     </div>;
     const cancelButton = <button type='button' onClick={backToSelection} className='flex-1 rounded-2xl bg-slate-100 p-3 text-sm font-bold text-slate-600'>取消，返回选择</button>;
 
@@ -130,8 +130,8 @@ export default function ChatHistoryCleanupModal({ character, onClose, onDeleted 
                     <span className='block text-slate-500'>仅清理更早的记录。预览后新产生的消息也会保留。</span>
                 </label> : <>
                     <div className='rounded-xl border border-slate-200 p-3 space-y-2'>
-                        <p>起点：{start ? `${formatRangeTimestamp(start.timestamp)} · #${start.id}` : '未选择'}</p>
-                        <p>终点：{end ? `${formatRangeTimestamp(end.timestamp)} · #${end.id}` : '未选择'}</p>
+                        <p>起点：{start ? `${formatRangeTimestamp(start.timestamp)}` : '未选择'}</p>
+                        <p>终点：{end ? `${formatRangeTimestamp(end.timestamp)}` : '未选择'}</p>
                         <div className='flex flex-wrap gap-3 text-violet-700'>
                             <button type='button' disabled={preparing || loading} onClick={() => void selectEdge('start')}>从最早一条开始</button>
                             <button type='button' disabled={preparing || loading} onClick={() => void selectEdge('end')}>选到最新一条</button>
@@ -146,7 +146,7 @@ export default function ChatHistoryCleanupModal({ character, onClose, onDeleted 
                         <button type='button' disabled={preparing || loading || !hasNewer || !rows.length} onClick={() => setCursor({ afterId: rows.at(-1)!.id })} className='rounded-lg border px-3 py-2 disabled:opacity-30'>更新</button>
                     </div>
                     {!loading && rows.map(message => <div key={message.id} className={`rounded-xl border p-3 space-y-2 ${start && end && message.id >= Math.min(start.id, end.id) && message.id <= Math.max(start.id, end.id) ? 'border-red-200 bg-red-50' : 'border-slate-200'}`}>
-                        <div className='text-[10px] text-slate-400'>{message.role === 'user' ? '你' : message.role === 'assistant' ? character.name : '系统'} · {sourceLabel(message)} · {formatRangeTimestamp(message.timestamp)} · #{message.id}</div>
+                        <div className='text-[10px] text-slate-400'>{message.role === 'user' ? '你' : message.role === 'assistant' ? character.name : '系统'} · {sourceLabel(message)} · {formatRangeTimestamp(message.timestamp)}</div>
                         {message.type === 'secret_note' ? <SecretNote text={message.content}/> : <p className='whitespace-pre-wrap break-normal [overflow-wrap:anywhere] leading-relaxed'>{message.content}</p>}
                         <div className='flex gap-4 text-violet-700'>
                             <button type='button' disabled={preparing} onClick={() => setStart(message)}>{start?.id === message.id ? '已设为起点' : '设为起点'}</button>

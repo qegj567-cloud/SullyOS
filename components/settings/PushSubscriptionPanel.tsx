@@ -153,12 +153,12 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
         addToast(`有 ${stale} 条消息超过两天没能收到，已经拿不回来了。`, 'error');
       } else if (scanned > 0) {
         // 账本上有行，但没一条是该上屏的聊天内容（思维链、工具请求这些不进聊天流）。
-        addToast('账本上剩下的都不是聊天内容，没有可补的消息。', 'info');
+        addToast('云端暂存里没有未收到的聊天消息。', 'info');
       } else {
-        addToast('账本上没有漏收的消息——这条链路是通的。', 'info');
+        addToast('云端没有漏收的消息——当前推送连接正常。', 'info');
       }
     } catch (error: any) {
-      addToast(error?.message || '读云端账本失败，待会儿再试。', 'error');
+      addToast(error?.message || '读取云端暂存消息失败，请稍后再试。', 'error');
     } finally {
       setCatchingUp(false);
     }
