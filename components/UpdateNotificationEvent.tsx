@@ -623,7 +623,7 @@ const UPDATE_QUEUE: { key: string; render: (props: UpdatePopupProps) => React.Re
     { key: HOME_UPDATE_KEY, render: props => <HomeUpdateAnnouncement {...props} /> },
     { key: SMALL_UPDATES_KEY, render: props => <SmallUpdatesPopup onDone={props.onDone} /> },
     { key: HOLIDAY_NOTICE_KEY, render: props => <UserHolidayIntro {...props} /> },
-    { key: DECORATION_UPDATE_KEY, render: props => <DecorationUpdatePopup onClose={props.onExit}/> },
+    { key: DECORATION_UPDATE_KEY, render: props => <DecorationUpdatePopup onClose={props.onDone}/> },
     { key: SAR_UPDATE_KEY, render: (props) => <SARUpdateAnnouncement {...props} /> },
     { key: NETWORK_TRANSIT_NOTICE_KEY_2026_08, render: (props) => <NetworkTransitNoticePopup {...props} /> },
     { key: UPDATE_NOTIFICATION_KEY_2026_08_10, render: (props) => <Live2DUpdatePopup {...props} /> },

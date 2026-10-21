@@ -87,3 +87,46 @@ export async function setReliableMemoryPalaceHighWaterMark(charId: string, msgId
         // 与旧行为一致：持久化故障不抹掉已经成功写入的记忆。
     }
 }
+
+/**
+ * 启动自愈：扫描 IndexedDB assets 表里的 mp_hwm_v1_* 镜像，
+ * 把在 localStorage 中缺失的 mp_lastMsgId_* 水位线回填回去，
+ * 防止浏览器清除 localStorage 后角色首次回复把全量历史（几千条）读进上下文。
+ */
+export async function healAllMemoryPalaceHighWaterMarks(): Promise<string[]> {
+    try {
+        const db = await openDB();
+        if (!db.objectStoreNames.contains('assets')) return [];
+        return await new Promise<string[]>((resolve) => {
+            const tx = db.transaction('assets', 'readonly');
+            const store = tx.objectStore('assets');
+            const range = IDBKeyRange.bound('mp_hwm_v1_', 'mp_hwm_v1_\uffff');
+            const req = store.getAll(range);
+            const restored: string[] = [];
+            req.onsuccess = () => {
+                const rows = Array.isArray(req.result) ? req.result : [];
+                for (const row of rows) {
+                    const id = typeof row?.id === 'string' ? row.id : '';
+                    if (!id.startsWith('mp_hwm_v1_')) continue;
+                    const charId = id.slice('mp_hwm_v1_'.length);
+                    if (!charId) continue;
+                    const mirror = row?.data as Partial<HighWaterMarkMirror> | number | null;
+                    const mirroredValue = normalizeMessageId(typeof mirror === 'number' ? mirror : mirror?.msgId);
+                    if (mirroredValue <= 0) continue;
+                    const localKey = LOCAL_KEY(charId);
+                    try {
+                        if (localStorage.getItem(localKey) === null) {
+                            localStorage.setItem(localKey, String(mirroredValue));
+                            restored.push(localKey);
+                        }
+                    } catch { /* ignore */ }
+                }
+            };
+            tx.oncomplete = () => resolve(restored);
+            tx.onerror = () => resolve(restored);
+            tx.onabort = () => resolve(restored);
+        });
+    } catch {
+        return [];
+    }
+}

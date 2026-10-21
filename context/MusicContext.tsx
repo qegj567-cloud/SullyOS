@@ -192,7 +192,10 @@ const loadState = (): { queue: Song[]; idx: number } => {
 };
 
 const saveState = (queue: Song[], idx: number) => {
-  try { localStorage.setItem(LS_STATE_KEY, JSON.stringify({ queue, idx })); } catch {}
+  try {
+    if (queue.length === 0 && idx === -1 && !localStorage.getItem(LS_STATE_KEY)) return;
+    localStorage.setItem(LS_STATE_KEY, JSON.stringify({ queue, idx }));
+  } catch {}
 };
 
 export const parseLyric = (txt: string): LyricLine[] => {
@@ -459,6 +462,25 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // 队列持久化
   useEffect(() => { saveState(queue, idx); }, [queue, idx]);
+
+  // 响应 localStorage 镜像自愈（lsMirror 回填后派发 storage 事件）或跨标签页同步
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === null || e.key === LS_CFG_KEY) {
+        setCfgState(loadCfg());
+      }
+      if (e.key === null || e.key === LS_STATE_KEY) {
+        const nextState = loadState();
+        setQueueState(nextState.queue);
+        setIdx(nextState.idx);
+      }
+      if (e.key === null || e.key === LS_LOCAL_ALBUM_KEY) {
+        setLocalAlbumSongs(loadLocalAlbum());
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
 
   // 播放
   const audioRef = useRef<HTMLAudioElement | null>(null);

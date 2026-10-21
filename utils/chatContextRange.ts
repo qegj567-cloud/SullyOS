@@ -1,5 +1,6 @@
 import type { CharacterProfile, Message } from '../types';
 import { DB } from './db';
+import { getReliableMemoryPalaceHighWaterMark } from './memoryPalace/highWaterMark';
 
 export const CONTEXT_RANGE_POLICY_VERSION = 1;
 export const DEFAULT_MANUAL_CONTEXT_LIMIT = 500;
@@ -162,8 +163,11 @@ export const loadCharacterContextRange = async (
     await DB.ensureHomeContextMessages(char.id);
     onTiming?.("家园历史同步检查", Math.round(performance.now()-started));
     started = performance.now();
-    const hwm = getMemoryPalaceHighWaterMarkForContext(char.id);
     const mode = resolveContextRangeMode(char);
+    const localHwm = getMemoryPalaceHighWaterMarkForContext(char.id);
+    const hwm = mode === 'adaptive' && localHwm === 0
+        ? await getReliableMemoryPalaceHighWaterMark(char.id)
+        : localHwm;
     const sourceMessages = mode === 'adaptive'
         ? (await DB.getMessagesFromId(char.id, hwm + 1)).messages
         : await DB.getRecentMessagesByCharId(
@@ -192,8 +196,12 @@ export const loadCharacterContextMessages = async (
 
 /** 浏览界面只判断可见性，不加载聊天正文；沿用同一断点失效与范围规则。 */
 export const loadCharacterContextMessageIds = async (char: CharacterProfile, candidates: Pick<Message, 'id'>[]): Promise<Set<number>> => {
-    const hwm = getMemoryPalaceHighWaterMarkForContext(char.id);
-    if (resolveContextRangeMode(char) === 'adaptive') {
+    const mode = resolveContextRangeMode(char);
+    const localHwm = getMemoryPalaceHighWaterMarkForContext(char.id);
+    const hwm = mode === 'adaptive' && localHwm === 0
+        ? await getReliableMemoryPalaceHighWaterMark(char.id)
+        : localHwm;
+    if (mode === 'adaptive') {
         // 自适应没有条数窗口：只验证断点是否仍是该角色水位线后的私聊消息。
         // 不为几十条动态扫描几万条原文。
         const requested = positiveMessageId(char.contextUserStartMessageId);

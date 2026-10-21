@@ -99,7 +99,8 @@ import { formatBytes } from '../utils/format';
 import { isEmotionEvalSkipped } from '../utils/devDebug';
 import { isBenignApplicationConsoleMessage } from '../utils/applicationConsole';
 
-import { initLocalStorageMirror } from '../utils/lsMirror';
+import { initLocalStorageMirror, snapshotLocalStorageMirror } from '../utils/lsMirror';
+import { setReliableMemoryPalaceHighWaterMark } from '../utils/memoryPalace/highWaterMark';
 import { cleanupInstantPushLegacyData } from '../utils/instantPushLegacyCleanup';
 // 备份用：把存在 localStorage 的本机配置随导出一起带走（键名须与 importFullData 对齐）
 import { exportPostOfficeLocal } from '../utils/vrWorld/postOffice';
@@ -1523,6 +1524,34 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
             }
         }
 
+        // 回填后同步刷新最初在首帧 useState 惰性读取的 localStorage 配置：
+        // 首帧 useState 早于 useEffect 里的 initLocalStorageMirror()，若 localStorage 曾被系统清空，
+        // 首帧 state 会拿到默认空配置；这里在镜像回填完成后重新同步到 React state，防止后续保存或备份把回填值覆盖成空配置。
+        const savedMemoryPalaceConfig = localStorage.getItem('os_memory_palace_config');
+        if (savedMemoryPalaceConfig) {
+            try {
+                setMemoryPalaceConfig(normalizeMemoryPalaceConfig(JSON.parse(savedMemoryPalaceConfig)));
+            } catch (e) {
+                console.error('Failed to load memory palace config', e);
+            }
+        }
+        const savedRemoteVectorConfig = localStorage.getItem('os_remote_vector_config');
+        if (savedRemoteVectorConfig) {
+            try {
+                setRemoteVectorConfig({ ...defaultRemoteVectorConfig, ...JSON.parse(savedRemoteVectorConfig) });
+            } catch (e) {
+                console.error('Failed to load remote vector config', e);
+            }
+        }
+        const savedCloudBackupConfig = localStorage.getItem('os_cloud_backup_config');
+        if (savedCloudBackupConfig) {
+            try {
+                setCloudBackupConfig({ ...defaultCloudBackupConfig, ...JSON.parse(savedCloudBackupConfig) });
+            } catch (e) {
+                console.error('Failed to load cloud backup config', e);
+            }
+        }
+
         try {
             const assets = await DB.getAllAssets();
             const assetMap: Record<string, string> = {};
@@ -1638,6 +1667,12 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         const hadPriorFeedbackEvidence = hasPriorFeedbackInstallEvidence();
         if (healedKeys.length > 0) {
             console.warn('[lsMirror] localStorage 疑似被清除，已从 IndexedDB 镜像回填:', healedKeys);
+            if (healedKeys.includes('proactive_schedules')) {
+                ProactiveChat.resume();
+            }
+            if (healedKeys.includes('vr_schedules')) {
+                VRScheduler.resume();
+            }
             setTimeout(() => addToast(`检测到本地设置曾被浏览器清除，已自动恢复 ${healedKeys.length} 项（主题 / API 等）`, 'info'), 2500);
         }
 
@@ -5226,11 +5261,11 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           if (data.pushVapid) localStorage.setItem('push_vapid_v1', JSON.stringify(data.pushVapid));
 
 
-          // Restore Memory Palace 水位线
+          // Restore Memory Palace 水位线（同时落盘 localStorage 与 IndexedDB 镜像）
           if (data.memoryPalaceHighWaterMarks) {
               for (const [charId, hwm] of Object.entries(data.memoryPalaceHighWaterMarks)) {
                   if (typeof hwm === 'number' && hwm > 0) {
-                      localStorage.setItem(`mp_lastMsgId_${charId}`, String(hwm));
+                      await setReliableMemoryPalaceHighWaterMark(charId, hwm);
                   }
               }
           }
@@ -5429,6 +5464,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               console.warn('[amsg2] 导入后云端对账失败（本地数据已恢复，不受影响）', e);
           }
 
+          await snapshotLocalStorageMirror().catch(() => {});
           setSysOperation({ status: 'idle', message: '', progress: 100 });
           clearImportInProgress();
           addToast('恢复成功，系统即将重启...', 'success');

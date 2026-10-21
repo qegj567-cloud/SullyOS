@@ -565,6 +565,15 @@ const PhoneShell: React.FC = () => {
     }
   });
 
+  useEffect(() => {
+    if (!isDataLoaded) return;
+    try {
+      if (localStorage.getItem(DISCLAIMER_KEY)) {
+        setShowDisclaimer(false);
+      }
+    } catch { /* ignore */ }
+  }, [isDataLoaded]);
+
   const startupNoticesBlocked = deploymentNotice.blocked || showDisclaimer;
 
   const handleAcceptDisclaimer = () => {
