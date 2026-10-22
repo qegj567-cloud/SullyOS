@@ -454,6 +454,8 @@ export const handleInstantChat = async (args: {
     state.entries.push({
       ...inputEntry, namespace: INSTANT_INPUT_NAMESPACE, key: inputKey,
       value: JSON.stringify({ v: 1, charId, packedFirePack: inputEntry.value }),
+      owner: { type: 'character', id: charId },
+      kind: 'instant-input',
       updatedAt: Date.now(),
     });
     [body.statePayload, body.taskPayload] = await Promise.all([

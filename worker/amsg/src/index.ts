@@ -515,6 +515,12 @@ interface FireStash {
   /** 这条任务是不是即时对话（用户刚发完消息在等回复）；决定要不要写 outbox。 */
   instant: boolean;
   /**
+   * 一次性即时对话任务绑定的 `amsg:instant-input` 键（定时任务的兜底输入不在这里清）。
+   * 本轮即时对话落定（送达 / skip / 取消 / 终态失败）后即刻删掉，避免每轮聊天在 D1 里
+   * 留下一份 300KB~500KB 的分块历史快照等 30 天才过期，撑爆云端数据管理清单。
+   */
+  instantInputKey: string | null;
+  /**
    * 这一轮的情绪评估（副 API）。onBeforeFire 起跑、onLLMOutput 收尾时 await，
    * 结论挂上最后一条 push。没配评估 / 不是即时对话时是 null。
    *
@@ -1204,12 +1210,31 @@ export const amsgFireSettled = async (
     stash.selfLogDirty = false;
     stateWrites.push({ key: AMSG_SELF_LOG_KEY, value: JSON.stringify(stash.selfLog) });
   }
-  if (stateWrites.length === 0) return;   // 这次 fire 什么也没添，不必写库
+  if (stateWrites.length > 0) {
+    try {
+      await info.writeState(amsgStateNamespace(stash.charId), stateWrites);
+    } catch (error) {
+      console.warn('[amsg:self-log] 写入失败（这次照常发送，但下一次到点角色不会知道说过这句，每日计数也少记一次）', error);
+    }
+  }
 
-  try {
-    await info.writeState(amsgStateNamespace(stash.charId), stateWrites);
-  } catch (error) {
-    console.warn('[amsg:self-log] 写入失败（这次照常发送，但下一次到点角色不会知道说过这句，每日计数也少记一次）', error);
+  // 一次性即时对话的独立输入快照（amsg:instant-input）在本轮落定后不会再被任何任务读取：
+  // 共享 fire_pack 已在 onBeforeFire 条件回写完毕，角色若在本轮自排了未来任务也已另存独立 key。
+  // 立即删掉它，避免几十上百轮聊天后在 D1 攒下几十 MB 的分块大值撑爆 /cloud-data/resources。
+  const instantSettled = stash.instant && (
+    delivered
+    || info.status === 'skipped'
+    || cancelled
+    || (info.status === 'failed' && info.willRetry === false)
+  );
+  if (instantSettled && stash.instantInputKey) {
+    const inputKey = stash.instantInputKey;
+    stash.instantInputKey = null;
+    try {
+      await info.writeState(INSTANT_INPUT_NAMESPACE, [{ key: inputKey, value: null }]);
+    } catch (error) {
+      console.warn('[amsg:instant-chat] 清理已消费的 instant-input 失败（留待 TTL 过期）', error);
+    }
   }
 };
 
@@ -1837,6 +1862,7 @@ export const amsgHooks = {
     }
     // 提前到这儿算（下面那段注释仍在原位）：fail 的留痕副作用要用它。
     const instant = isInstantChatTask((ctx.task.metadata ?? {}) as Record<string, unknown>);
+    let instantInputKey: string | null = null;
 
     // 下面每道门的报错都带同一套定位信息，绑一次就好——逐处手抄 detail 的话，
     // 加一道门就要再抄一遍，漏了就是一条查不到是谁的错误日志。
@@ -1846,6 +1872,11 @@ export const amsgHooks = {
     // 不拦 throw；挂 stash 之后的失败会被收尾那份用最后一跳的原因覆盖，语义不变。
     const fail = (reason: string, extra?: Record<string, unknown>) => {
       ctx.throwIfCancelled?.();
+      if (instant && instantInputKey && typeof ctx.writeState === 'function') {
+        const keyToDelete = instantInputKey;
+        instantInputKey = null;
+        void ctx.writeState(INSTANT_INPUT_NAMESPACE, [{ key: keyToDelete, value: null }]).catch(() => {});
+      }
       if (instant && typeof ctx.task.uuid === 'string' && ctx.task.uuid) {
         // writeState 在老版本上游的 FireCtx 上可能不存在——那就退回没有留痕的老行为。
         if (typeof ctx.writeState === 'function') {
@@ -1986,6 +2017,7 @@ export const amsgHooks = {
         const inputRows = await ctx.readState(ref.namespace, { key: ref.key });
         const envelope = parseInstantInputEnvelope(inputRows.find(row => row.key === ref.key)?.value ?? '');
         if (!envelope || envelope.charId !== charId) throw fail('即时输入缺失或角色不匹配');
+        if (instant && ref.namespace === INSTANT_INPUT_NAMESPACE) instantInputKey = ref.key;
         boundJson = await unpackOrFail('instant-input', envelope.packedFirePack);
       }
     }
@@ -2115,6 +2147,11 @@ export const amsgHooks = {
     // 连发记录（entries）只在用户开口时清零；tasks 只按客户端明确带回的 UUID 去重。
     // 仅换了模板不能证明排程已经认领，见 reconcileSelfLogWithPack。
     if (instant && ctx.task.uuid && charRows.some(row => row.key === stoppedReplyKey(ctx.task.uuid!))) {
+      if (instantInputKey && typeof ctx.writeState === 'function') {
+        const keyToDelete = instantInputKey;
+        instantInputKey = null;
+        await ctx.writeState(INSTANT_INPUT_NAMESPACE, [{ key: keyToDelete, value: null }]).catch(() => {});
+      }
       return { skip: true } as const;
     }
     const storedSelfLog = reconcileStoppedReplies(parseSelfLog(charRows.find((r) => r.key === AMSG_SELF_LOG_KEY)?.value ?? ''), charRows);
@@ -2307,6 +2344,7 @@ export const amsgHooks = {
       // （resolveFireSceneSong 与 renderFireSceneBlock 共用判定），冻的必然是正文里那首。
       sceneSong: resolveFireSceneSong(pack.scene, ctx.now.getTime(), tz),
       instant,
+      instantInputKey,
       // 下面即时对话那一支起跑（要等请求消息拼完才知道给评估喂什么）。
       emotionEvalPromise: null,
       emotionLatePending: false,

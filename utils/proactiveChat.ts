@@ -29,46 +29,108 @@ export interface ProactiveSchedule {
   intervalMs: number; // must be multiple of 30 * 60 * 1000
 }
 
+export type ProactiveSessionOutcome = 'ok' | 'failed' | 'skipped';
+
+export const MIN_PROACTIVE_INTERVAL_MINUTES = 30;
+export const MIN_PROACTIVE_INTERVAL_MS = MIN_PROACTIVE_INTERVAL_MINUTES * 60 * 1000;
+/**
+ * 连续多次主动消息调用模型失败（如余额耗尽、Key 失效）时自动熔断并停止该角色的 1.0 主动消息调度，
+ * 避免后台定时器无休止重试刷爆上游 API。
+ */
+export const PROACTIVE_FAIL_LIMIT = 3;
+
 type ProactiveScheduleMap = Record<string, ProactiveSchedule>;
 type LastFireMap = Record<string, number>;
+type FailStreakMap = Record<string, number>;
 
 const STORAGE_KEY = 'proactive_schedules';
 const LAST_FIRE_KEY = 'proactive_last_fire_map';
+const FAIL_STREAK_KEY = 'proactive_fail_streak';
 const LEGACY_STORAGE_KEY = 'proactive_schedule';
 const LEGACY_LAST_FIRE_KEY = 'proactive_last_fire';
 
+// 内存镜像兜底：当 localStorage 配额写满（QuotaExceededError）时，保证停止调度、更新
+// lastFireTime 和熔断计数在当前会话内依然可靠生效，不会因写盘抛错而陷入每 20s 重复触发的死循环。
+let memorySchedules: ProactiveScheduleMap = {};
+let schedulesWriteFailed = false;
+let memoryLastFireTimes: LastFireMap = {};
+let lastFireWriteFailed = false;
+let memoryFailStreaks: FailStreakMap = {};
+let failStreakWriteFailed = false;
+
+function clampIntervalMs(intervalMs: number): number {
+  if (!Number.isFinite(intervalMs) || intervalMs <= 0) return MIN_PROACTIVE_INTERVAL_MS;
+  return Math.max(MIN_PROACTIVE_INTERVAL_MS, Math.round(intervalMs / MIN_PROACTIVE_INTERVAL_MS) * MIN_PROACTIVE_INTERVAL_MS);
+}
+
+function normalizeScheduleMap(rawMap: unknown): ProactiveScheduleMap {
+  if (!rawMap || typeof rawMap !== 'object') return {};
+  const result: ProactiveScheduleMap = {};
+  for (const [key, item] of Object.entries(rawMap as Record<string, any>)) {
+    const charId = typeof item?.charId === 'string' && item.charId ? item.charId : key;
+    const rawInterval = Number(item?.intervalMs);
+    if (!charId || !Number.isFinite(rawInterval) || rawInterval <= 0) continue;
+    result[charId] = {
+      charId,
+      intervalMs: clampIntervalMs(rawInterval),
+    };
+  }
+  return result;
+}
+
 function loadSchedules(): ProactiveScheduleMap {
+  if (schedulesWriteFailed) {
+    return { ...memorySchedules };
+  }
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
       const legacyRaw = localStorage.getItem(LEGACY_STORAGE_KEY);
-      if (!legacyRaw) return {};
+      if (!legacyRaw) {
+        memorySchedules = {};
+        return {};
+      }
 
       const legacySchedule = JSON.parse(legacyRaw) as ProactiveSchedule | null;
-      if (!legacySchedule?.charId || !legacySchedule.intervalMs) return {};
+      if (!legacySchedule?.charId || !legacySchedule.intervalMs) {
+        memorySchedules = {};
+        return {};
+      }
 
-      const migratedSchedules = { [legacySchedule.charId]: legacySchedule };
+      const migratedSchedules = normalizeScheduleMap({ [legacySchedule.charId]: legacySchedule });
       saveSchedules(migratedSchedules);
-      localStorage.removeItem(LEGACY_STORAGE_KEY);
-      return migratedSchedules;
+      try { localStorage.removeItem(LEGACY_STORAGE_KEY); } catch { /* ignore */ }
+      return { ...migratedSchedules };
     }
-    const parsed = JSON.parse(raw) as ProactiveScheduleMap;
-    return parsed && typeof parsed === 'object' ? parsed : {};
+    const parsed = normalizeScheduleMap(JSON.parse(raw));
+    memorySchedules = { ...parsed };
+    return parsed;
   } catch {
-    return {};
+    return { ...memorySchedules };
   }
 }
 
 function saveSchedules(schedules: ProactiveScheduleMap) {
-  const entries = Object.entries(schedules);
-  if (entries.length === 0) {
-    localStorage.removeItem(STORAGE_KEY);
-    return;
+  const normalized = normalizeScheduleMap(schedules);
+  memorySchedules = { ...normalized };
+  const entries = Object.entries(normalized);
+  try {
+    if (entries.length === 0) {
+      localStorage.removeItem(STORAGE_KEY);
+    } else {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
+    }
+    schedulesWriteFailed = false;
+  } catch (err) {
+    schedulesWriteFailed = true;
+    console.warn('[ProactiveChat] Failed to persist schedules to localStorage, using in-memory fallback', err);
   }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(schedules));
 }
 
 function loadLastFireTimes(): LastFireMap {
+  if (lastFireWriteFailed) {
+    return { ...memoryLastFireTimes };
+  }
   try {
     const raw = localStorage.getItem(LAST_FIRE_KEY);
     if (!raw) {
@@ -76,27 +138,75 @@ function loadLastFireTimes(): LastFireMap {
       const schedules = loadSchedules();
       const firstSchedule = Object.values(schedules)[0];
       const legacyTs = parseInt(legacyRaw || '0', 10);
-      if (!firstSchedule || !legacyTs) return {};
+      if (!firstSchedule || !legacyTs) {
+        memoryLastFireTimes = {};
+        return {};
+      }
 
       const migratedLastFire = { [firstSchedule.charId]: legacyTs };
       saveLastFireTimes(migratedLastFire);
-      localStorage.removeItem(LEGACY_LAST_FIRE_KEY);
-      return migratedLastFire;
+      try { localStorage.removeItem(LEGACY_LAST_FIRE_KEY); } catch { /* ignore */ }
+      return { ...migratedLastFire };
     }
     const parsed = JSON.parse(raw) as LastFireMap;
-    return parsed && typeof parsed === 'object' ? parsed : {};
+    const valid = parsed && typeof parsed === 'object' ? parsed : {};
+    memoryLastFireTimes = { ...valid };
+    return { ...valid };
   } catch {
-    return {};
+    return { ...memoryLastFireTimes };
   }
 }
 
 function saveLastFireTimes(lastFireMap: LastFireMap) {
+  memoryLastFireTimes = { ...lastFireMap };
   const entries = Object.entries(lastFireMap);
-  if (entries.length === 0) {
-    localStorage.removeItem(LAST_FIRE_KEY);
-    return;
+  try {
+    if (entries.length === 0) {
+      localStorage.removeItem(LAST_FIRE_KEY);
+    } else {
+      localStorage.setItem(LAST_FIRE_KEY, JSON.stringify(lastFireMap));
+    }
+    lastFireWriteFailed = false;
+  } catch (err) {
+    lastFireWriteFailed = true;
+    console.warn('[ProactiveChat] Failed to persist lastFireMap to localStorage, using in-memory fallback', err);
   }
-  localStorage.setItem(LAST_FIRE_KEY, JSON.stringify(lastFireMap));
+}
+
+function loadFailStreaks(): FailStreakMap {
+  if (failStreakWriteFailed) {
+    return { ...memoryFailStreaks };
+  }
+  try {
+    const raw = localStorage.getItem(FAIL_STREAK_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    const valid = parsed && typeof parsed === 'object' ? parsed : {};
+    memoryFailStreaks = { ...valid };
+    return { ...valid };
+  } catch {
+    return { ...memoryFailStreaks };
+  }
+}
+
+function saveFailStreaks(failStreakMap: FailStreakMap) {
+  memoryFailStreaks = { ...failStreakMap };
+  try {
+    if (Object.keys(failStreakMap).length === 0) {
+      localStorage.removeItem(FAIL_STREAK_KEY);
+    } else {
+      localStorage.setItem(FAIL_STREAK_KEY, JSON.stringify(failStreakMap));
+    }
+    failStreakWriteFailed = false;
+  } catch {
+    failStreakWriteFailed = true;
+  }
+}
+
+function removeFailStreak(charId: string) {
+  const m = loadFailStreaks();
+  if (m[charId] === undefined) return;
+  delete m[charId];
+  saveFailStreaks(m);
 }
 
 function getLastFireTime(charId: string): number {
@@ -177,9 +287,13 @@ function checkOverdueSchedules() {
 
   for (const schedule of schedules) {
     const lastFire = getLastFireTime(schedule.charId);
+    if (lastFire <= 0) {
+      setLastFireTime(schedule.charId, now);
+      continue;
+    }
     const elapsed = now - lastFire;
 
-    if (lastFire > 0 && elapsed >= schedule.intervalMs) {
+    if (elapsed >= schedule.intervalMs) {
       console.log(`[ProactiveChat] Main-thread trigger: ${schedule.charId}, ${Math.round(elapsed / 60000)}min elapsed`);
       setLastFireTime(schedule.charId, now);
       syncSchedulesToSW();
@@ -300,12 +414,13 @@ export const ProactiveChat = {
    * Start or update one character's proactive schedule.
    */
   start(charId: string, intervalMinutes: number) {
-    const clamped = Math.max(30, Math.round(intervalMinutes / 30) * 30);
+    const clamped = Math.max(MIN_PROACTIVE_INTERVAL_MINUTES, Math.round(intervalMinutes / 30) * 30);
     const intervalMs = clamped * 60 * 1000;
     const schedules = loadSchedules();
     schedules[charId] = { charId, intervalMs };
     saveSchedules(schedules);
     setLastFireTime(charId, Date.now());
+    removeFailStreak(charId);
     syncSchedulesToSW();
     attachListeners();
 
@@ -326,6 +441,7 @@ export const ProactiveChat = {
     delete schedules[charId];
     saveSchedules(schedules);
     removeLastFireTime(charId);
+    removeFailStreak(charId);
     syncSchedulesToSW();
 
     if (isPushConfigReady(loadPushConfig())) {
@@ -340,6 +456,77 @@ export const ProactiveChat = {
     }
 
     console.log(`[ProactiveChat] Stopped: ${charId}`);
+  },
+
+  /**
+   * 回报一轮 1.0 主动消息的执行结果，用于连续失败熔断（如余额耗尽、Key 失效）。
+   * 连续失败达到 PROACTIVE_FAIL_LIMIT 次时自动停掉该角色的本地定时调度并返回 `tripped: true`。
+   */
+  report(charId: string, outcome: ProactiveSessionOutcome): { tripped: boolean; streak: number } {
+    if (outcome === 'skipped') return { tripped: false, streak: loadFailStreaks()[charId] || 0 };
+    if (outcome === 'ok') {
+      removeFailStreak(charId);
+      return { tripped: false, streak: 0 };
+    }
+    const m = loadFailStreaks();
+    const streak = (m[charId] || 0) + 1;
+    m[charId] = streak;
+    saveFailStreaks(m);
+    if (streak < PROACTIVE_FAIL_LIMIT) return { tripped: false, streak };
+    ProactiveChat.stop(charId);
+    console.warn(`[ProactiveChat] 连续 ${streak} 次失败，已自动暂停主动消息: ${charId}`);
+    return { tripped: true, streak };
+  },
+
+  getFailStreak(charId: string): number {
+    return loadFailStreaks()[charId] || 0;
+  },
+
+  /**
+   * 以角色的 proactiveConfig 为准对账本地调度表（同 VRScheduler.reconcile）。
+   * - 已启用但缺调度 → 补建（首火从当前时刻起算）
+   * - 间隔变更 → 同步最新间隔
+   * - 已关闭或已删除角色 → 清除残留调度与 SW 定时器
+   */
+  reconcile(active: { charId: string; intervalMinutes: number }[]) {
+    const schedules = loadSchedules();
+    const activeIds = new Set(active.map(a => a.charId));
+    let changed = false;
+
+    for (const a of active) {
+      const clamped = Math.max(MIN_PROACTIVE_INTERVAL_MINUTES, Math.round(a.intervalMinutes / 30) * 30);
+      const intervalMs = clamped * 60 * 1000;
+      const existing = schedules[a.charId];
+      if (!existing) {
+        schedules[a.charId] = { charId: a.charId, intervalMs };
+        if (getLastFireTime(a.charId) === 0) setLastFireTime(a.charId, Date.now());
+        changed = true;
+      } else if (existing.intervalMs !== intervalMs) {
+        existing.intervalMs = intervalMs;
+        changed = true;
+      }
+    }
+
+    for (const id of Object.keys(schedules)) {
+      if (!activeIds.has(id)) {
+        delete schedules[id];
+        removeLastFireTime(id);
+        removeFailStreak(id);
+        if (isPushConfigReady(loadPushConfig())) {
+          void unregisterScheduleOnWorker(id);
+        }
+        changed = true;
+      }
+    }
+
+    if (changed) saveSchedules(schedules);
+    syncSchedulesToSW();
+    if (Object.keys(schedules).length > 0) {
+      attachListeners();
+    } else {
+      detachListeners();
+      stopHeartbeat();
+    }
   },
 
   /**

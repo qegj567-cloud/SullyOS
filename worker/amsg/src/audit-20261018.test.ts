@@ -383,4 +383,52 @@ describe('amsg2 audit regressions', () => {
     expect(first.metadata.xhsSessionRef).toBeTruthy();
     expect(JSON.parse(state.get(first.metadata.xhsSessionRef)!).notes[0].note.noteId).toBe('第一天-0');
   });
+
+  it('one-off instant-chat deletes its consumed amsg:instant-input key on terminal settlement', async () => {
+    const base = await start();
+    const inputKey = '22222222-2222-4222-8222-222222222222';
+    const envelopeValue = JSON.stringify({
+      v: 1,
+      charId,
+      packedFirePack: JSON.stringify(base.pack),
+    });
+    const readState = vi.fn(async (namespace: string) => {
+      if (namespace === 'amsg:instant-input') return [{ key: inputKey, value: envelopeValue }];
+      return base.ctx.readState(namespace);
+    });
+    const writeState = vi.fn(async () => ({ upserted: 1, skipped: 0, deleted: 1 }));
+    const ctx: any = {
+      ...base.ctx,
+      scratch: {},
+      readState,
+      writeState,
+      task: {
+        ...base.ctx.task,
+        taskInput: {
+          firePackRef: { namespace: 'amsg:instant-input', key: inputKey },
+          firePackUpdatedAt: now,
+        },
+      },
+    };
+    await amsgHooks.onBeforeFire(ctx);
+
+    // Non-terminal failure (willRetry: true) must NOT delete the input yet
+    await amsgFireSettled({
+      status: 'failed',
+      willRetry: true,
+      sentCount: 0,
+      scratch: ctx.scratch,
+      writeState,
+    } as any);
+    expect(writeState).not.toHaveBeenCalledWith('amsg:instant-input', [{ key: inputKey, value: null }]);
+
+    // Terminal settlement deletes the consumed instant-input key exactly once
+    await amsgFireSettled({
+      status: 'sent',
+      sentCount: 1,
+      scratch: ctx.scratch,
+      writeState,
+    } as any);
+    expect(writeState).toHaveBeenCalledWith('amsg:instant-input', [{ key: inputKey, value: null }]);
+  });
 });

@@ -392,16 +392,20 @@ function stopProactive(charId: string) {
   proactiveSchedules.delete(charId);
 }
 
+const MIN_PROACTIVE_INTERVAL_MS = 30 * 60 * 1000;
+
 function upsertProactive(config: { charId: string; intervalMs: number }) {
-  const prev = proactiveSchedules.get(config.charId);
-  const unchanged = prev && prev.intervalMs === config.intervalMs;
-  if (unchanged && proactiveTimers.has(config.charId)) return;
+  const safeIntervalMs = Math.max(MIN_PROACTIVE_INTERVAL_MS, Math.round(config.intervalMs));
+  const safeConfig = { charId: config.charId, intervalMs: safeIntervalMs };
+  const prev = proactiveSchedules.get(safeConfig.charId);
+  const unchanged = prev && prev.intervalMs === safeConfig.intervalMs;
+  if (unchanged && proactiveTimers.has(safeConfig.charId)) return;
 
-  stopProactive(config.charId);
-  proactiveSchedules.set(config.charId, config);
+  stopProactive(safeConfig.charId);
+  proactiveSchedules.set(safeConfig.charId, safeConfig);
 
-  const timer = setInterval(() => fireProactiveTrigger(config.charId), config.intervalMs) as unknown as number;
-  proactiveTimers.set(config.charId, timer);
+  const timer = setInterval(() => fireProactiveTrigger(safeConfig.charId), safeConfig.intervalMs) as unknown as number;
+  proactiveTimers.set(safeConfig.charId, timer);
 }
 
 function syncProactive(configs: Array<{ charId: string; intervalMs: number }>) {

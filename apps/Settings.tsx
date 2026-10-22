@@ -1109,9 +1109,15 @@ const Settings: React.FC = () => {
   // 删预设只是把这张「存档卡」扔掉：当前生效的配置是拷贝，不受影响。
   const deleteApiPreset = (id: string, name: string) => {
       cancelPresetDeleteHold();
+      const wasActive = activePresetId === id;
       removeApiPreset(id);
       setEditingPresetId(current => (current === id ? null : current));
-      addToast(`已删除预设: ${name}`, 'success');
+      addToast(
+          wasActive
+              ? `已删除预设: ${name}（当前生效配置未清空，如需停用请修改下方地址或密钥）`
+              : `已删除预设: ${name}`,
+          'success',
+      );
   };
 
   const beginPresetDeleteHold = (id: string, name: string) => {
@@ -1120,9 +1126,15 @@ const Settings: React.FC = () => {
       presetDeleteTimerRef.current = setTimeout(() => {
           presetDeleteTimerRef.current = null;
           setHoldingDeletePresetId(null);
+          const wasActive = activePresetId === id;
           removeApiPreset(id);
           setEditingPresetId(current => (current === id ? null : current));
-          addToast(`已删除预设: ${name}`, 'success');
+          addToast(
+              wasActive
+                  ? `已删除预设: ${name}（当前生效配置未清空，如需停用请修改下方地址或密钥）`
+                  : `已删除预设: ${name}`,
+              'success',
+          );
       }, 700);
   };
 

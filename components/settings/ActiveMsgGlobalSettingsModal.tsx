@@ -146,8 +146,8 @@ const REQUIRED_WORKER_FEATURES = [
 //            定时消息靠它等那一轮结束再生成。
 // 不比版本的话，旧粘贴部署会被误判为最新，问题全在 worker 侧静默发生。
 //
-// 3.1.0-next.0 正式发布任务输入、定点状态读取、工具白名单与附件；当前 bundle 已使用。
-const REQUIRED_WORKER_VERSION = '3.1.0-next.0';
+// 3.1.0-next.1 修复云端数据清单与清理在分块大值与海量收件箱下的内存/CPU 耗尽。
+const REQUIRED_WORKER_VERSION = '3.1.0-next.1';
 
 /** 装着打包好的 worker 代码的部署仓库：fork 它 → 在 Cloudflare 连上 → 以后点 Sync fork 更新。 */
 const WORKERS_REPO_URL = 'https://github.com/Tosd0/sullyos-workers';

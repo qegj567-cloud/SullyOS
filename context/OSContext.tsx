@@ -2364,14 +2364,14 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           const currentRealtimeConfig = realtimeConfigRef.current;
 
           const char = currentCharacters.find(c => c.id === charId);
-          if (!char) {
+          // 调度表里还排着队，但角色已删除或未开启主动消息（含 proactiveConfig 缺失）：
+          // 就地撤掉残留调度，避免后台一直空转或误调模型。
+          if (!char || !char.proactiveConfig?.enabled) {
+              ProactiveChat.stop?.(charId);
               drainQueuedProactive();
-              return;
-          }
-
-          if (char.proactiveConfig && !char.proactiveConfig.enabled) {
-              drainQueuedProactive();
-              console.log(`🔕 [Proactive/Global] Skipped for ${char.name}: disabled`);
+              if (char) {
+                  console.log(`🔕 [Proactive/Global] Skipped for ${char.name}: disabled (residual schedule stopped)`);
+              }
               return;
           }
 
@@ -2405,6 +2405,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           setProactiveComposingChars(prev => prev[charId] ? prev : { ...prev, [charId]: true });
           console.log(`🔔 [Proactive/Global] Trigger fired for ${char.name}`);
 
+          let hintMsgId: number | null = null;
           try {
               // 1. Calculate time gap
               const recentMsgs = await DB.getRecentMessagesByCharId(charId, 200);
@@ -2440,7 +2441,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                       ? `[系统提示（非${userName}发言）: 现在是 ${timeStr}。你和${userName}刚刚在线下见过面（如果上下文里有标着 [约会] 的内容，那就是你们见面时发生的事），现在你们暂时分开了，你拿起手机想给${userName}发条消息。请基于刚才的见面来发——可以回味见面里的某个细节、补一句当时没说出口的话、关心${userName}到家了没，或者就是刚分开就有点想念。绝对不要表现得好像很久没联系，更不要对刚才的见面毫不知情。一两句话就好。]`
                       : `[系统提示（非${userName}发言）: 现在是 ${timeStr}。${timeSinceUser ? `${userName}已经 ${timeSinceUser} 没有找你说话了。` : ''}这是系统给你的一次主动发消息机会——${userName}并没有在跟你说话，是你想主动找${userName}。像真人一样随意地发条消息吧，比如：随手拍了张照片想分享、刚看到个有趣的事想说、突然想到个冷知识、吐槽今天的天气/食物/见闻、或者就是单纯想找${userName}聊几句。不要刻意，不要像在"汇报近况"，就像你真的拿起手机随手发了条消息。一两句话就好。${timeSinceUser && parseInt(timeSinceUser) > 2 ? `（${userName}挺久没找你了，你也可以表达想念、好奇${userName}在干嘛、或者小小地抱怨一下。）` : ''}]`;
 
-              await DB.saveMessage({
+              hintMsgId = await DB.saveMessage({
                   charId,
                   role: 'user',
                   type: 'text',
@@ -2737,6 +2738,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               }
 
               if (offset > 0) {
+                  ProactiveChat.report?.(charId, 'ok');
                   const previewSource = savedPreviewChunks.join(' ').trim();
                   const preview = previewSource.replace(/\s+/g, ' ').trim().slice(0, 120)
                       || `${char.name} sent a proactive message`;
@@ -2745,9 +2747,23 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   window.dispatchEvent(new CustomEvent('proactive-message-sent', {
                       detail: { charId, charName: char.name, body: preview }
                   }));
+              } else if (hintMsgId != null) {
+                  await DB.deleteMessage(hintMsgId).catch(() => {});
               }
           } catch (err) {
               console.error(`[Proactive/Global] Error for ${char.name}:`, err);
+              if (hintMsgId != null) {
+                  await DB.deleteMessage(hintMsgId).catch(() => {});
+              }
+              if (charactersRef.current.find(c => c.id === charId)?.proactiveConfig?.enabled) {
+                  const reportResult = ProactiveChat.report?.(charId, 'failed');
+                  if (reportResult?.tripped) {
+                      void updateCharacter(charId, prev => ({
+                          proactiveConfig: { ...(prev.proactiveConfig || { intervalMinutes: 60 }), enabled: false },
+                      }));
+                      addToast(`${char.name} 连续 ${reportResult.streak} 次主动消息调用模型失败，已自动暂停其主动消息`, 'error');
+                  }
+              }
           } finally {
               proactiveRunningRef.current = false;
               setProactiveComposingChars(prev => {
@@ -2763,6 +2779,11 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       ProactiveChat.onTrigger((charId: string) => {
           void runProactive(charId);
       });
+      ProactiveChat.reconcile?.(
+          charactersRef.current
+              .filter(c => !!c.proactiveConfig?.enabled)
+              .map(c => ({ charId: c.id, intervalMinutes: c.proactiveConfig?.intervalMinutes || 60 }))
+      );
 
       // 「彼方」自主登入 —— 独立调度，复用同一批 refs 拿最新状态
       const runVR = async (charId: string, room?: string, letterId?: string, manual?: boolean, sarActivity?: VRSARActivity) => {
@@ -3481,6 +3502,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       })();
     }
 
+    ProactiveChat.stop?.(id);
+    VRScheduler.stop?.(id);
     setCharacters(prev => { const remaining = prev.filter(c => c.id !== id); if (remaining.length > 0 && activeCharacterId === id) { setActiveCharacterId(remaining[0].id); } return remaining; });
     await DB.deleteCharacter(id);
     // 表情分类不随角色级联删除会留下「幽灵专属包」：单聊面板被可见性过滤掉（删不掉），

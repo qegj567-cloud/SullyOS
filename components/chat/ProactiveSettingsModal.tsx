@@ -26,17 +26,17 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
     isOpen, onClose, char, isProactiveActive, onSave, onStop
 }) => {
     const saved = char.proactiveConfig;
-    const [enabled, setEnabled] = useState(saved?.enabled ?? false);
+    const [enabled, setEnabled] = useState(saved?.enabled ?? isProactiveActive);
     const [interval, setInterval_] = useState(saved?.intervalMinutes ?? 60);
 
     // Reset form when modal opens with new char data
     useEffect(() => {
         if (isOpen) {
             const s = char.proactiveConfig;
-            setEnabled(s?.enabled ?? false);
+            setEnabled(s?.enabled ?? isProactiveActive);
             setInterval_(s?.intervalMinutes ?? 60);
         }
-    }, [isOpen, char.id]);
+    }, [isOpen, char.id, char.proactiveConfig, isProactiveActive]);
 
     const handleSave = () => {
         onSave({
