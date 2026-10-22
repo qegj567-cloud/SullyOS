@@ -974,14 +974,11 @@ const Launcher: React.FC<{ staticPreview?: boolean }> = ({ staticPreview = false
       <style>{`
         .launcher-pages { min-height: 0; }
         .launcher-page {
-          overflow-y: auto;
-          overscroll-behavior-y: contain;
           padding-top: max(3rem, calc(var(--chrome-top, 24px) + 12px));
           padding-left: max(1.5rem, env(safe-area-inset-left));
           padding-right: max(1.5rem, env(safe-area-inset-right));
         }
-        .launcher-page > * { flex-shrink: 0; }
-        .launcher-pinwheel-content { flex: 0 0 auto; margin-block: auto; }
+        .launcher-pinwheel-content { flex: 1 1 0%; min-height: 0; justify-content: center; }
         .launcher-editing .launcher-page { padding-top: max(5rem, calc(var(--safe-top, 0px) + 4rem)); }
         .launcher-widget-remove {
           position: absolute; top: 0; right: 0; z-index: 30;
@@ -990,7 +987,12 @@ const Launcher: React.FC<{ staticPreview?: boolean }> = ({ staticPreview = false
           font-size: 12px; touch-action: manipulation;
         }
         @media (orientation: landscape) {
-          .launcher-page > * { width: 100%; max-width: 680px; margin-left: auto; margin-right: auto; }
+          .launcher-page {
+            overflow-y: auto;
+            overscroll-behavior-y: contain;
+          }
+          .launcher-page > * { flex-shrink: 0; width: 100%; max-width: 680px; margin-left: auto; margin-right: auto; }
+          .launcher-pinwheel-content { flex: 0 0 auto; min-height: auto; justify-content: flex-start; margin-block: auto; }
           .launcher-page > .launcher-pinwheel-content { max-width: 480px; }
         }
         @media (orientation: landscape) and (min-width: 1000px) {
