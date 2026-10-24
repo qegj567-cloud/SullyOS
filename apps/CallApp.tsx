@@ -15,7 +15,15 @@ import { resolveTtsProvider, getElevenLabsModel, getTtsProvider, getVoicePromptO
 import { getElevenLabsVoiceActingGuide, stripElevenLabsMarkupForDisplay } from '../utils/elevenLabsTts';
 import { canSynthesizeSpeech, stripTtsMarkupForDisplay, synthesizeSpeechDetailed as synthesizeSpeechRoutedDetailed } from '../utils/ttsRouter';
 import { CANTONESE_VOICE_SUPPORT_NOTE, VOICE_LANGUAGE_OPTIONS, voiceLanguageAnalyticsValue, voiceLanguagePromptLabel } from '../utils/voiceLanguage';
-import { startStt, isSttSupported, type SttSession } from '../utils/speechToText';
+import {
+  startStt,
+  isSttSupported,
+  resolveSttProvider,
+  isSttProviderConfigured,
+  getSttProviderLabel,
+  STT_PROVIDER_OPTIONS,
+  type SttSession,
+} from '../utils/speechToText';
 import { ContextBuilder } from '../utils/context';
 import { resolveCharTimeZone } from '../utils/timezone';
 import {
@@ -516,7 +524,7 @@ ${currentVoiceActingGuide()}
   return [coreContext, timeContext, callPrompt, voiceLangPrompt].filter(Boolean).join('\n\n');
 };
 const CallApp: React.FC = () => {
-  const { closeApp, openApp, characters, activeCharacterId, addToast, apiConfig, userProfile, customThemes, suspendCall, suspendedCall, clearSuspendedCall, updateCharacter, characterGroups, groups, realtimeConfig, memoryPalaceConfig } = useOS();
+  const { closeApp, openApp, characters, activeCharacterId, addToast, apiConfig, updateApiConfig, userProfile, customThemes, suspendCall, suspendedCall, clearSuspendedCall, updateCharacter, characterGroups, groups, realtimeConfig, memoryPalaceConfig } = useOS();
 
   const [viewMode, setViewMode] = useState<ViewMode>('role-select');
   useAppShortcut(ShortcutAppID.Call, intent => {
@@ -568,8 +576,10 @@ const CallApp: React.FC = () => {
   useEffect(() => () => { streamedCallAudio.current.clear(); streamedAutoPlayed.current.clear(); }, [selectedCharId, currentSessionId]);
   const [draftInput, setDraftInput] = useState('');
   const [isListening, setIsListening] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const sttSessionRef = useRef<SttSession | null>(null);
-  const sttSupported = useMemo(() => isSttSupported(), []);
+  const activeSttProvider = resolveSttProvider(apiConfig);
+  const sttSupported = useMemo(() => isSttSupported(apiConfig), [apiConfig]);
   const [audioUrl, setAudioUrl] = useState<string>('');
   const [traceId, setTraceId] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState('');
@@ -1477,19 +1487,43 @@ const CallApp: React.FC = () => {
   }, []);
   // Voice input: toggle speech-to-text into the draft input box.
   const toggleStt = async () => {
-    if (isListening) { sttSessionRef.current?.stop(); trackEvent('切换语音输入', { action: 'stop' }); return; }
-    if (!sttSupported) { addToast('当前环境不支持语音输入', 'info'); return; }
+    if (isTranscribing) {
+      addToast('正在转写刚才的语音，请稍候…', 'info');
+      return;
+    }
+    if (isListening) {
+      sttSessionRef.current?.stop();
+      trackEvent('切换语音输入', { action: 'stop' });
+      return;
+    }
+    if (!sttSupported) {
+      addToast('当前环境不支持语音输入，可在「设置 → 其他 API」配置 ElevenLabs / 鱼声 Fish / MiniMax Key', 'info');
+      return;
+    }
     try {
       setIsListening(true);
       trackEvent('切换语音输入', { action: 'start' });
-      sttSessionRef.current = await startStt('zh-CN', {
-        onPartial: (t) => setDraftInput(t),
-        onFinal: (t) => setDraftInput(t),
-        onError: (m) => { if (m) addToast(m, 'info'); },
-        onEnd: () => { setIsListening(false); sttSessionRef.current = null; },
-      });
+      const providerAtStart = resolveSttProvider(apiConfig);
+      sttSessionRef.current = await startStt(
+        voiceLang === 'yue' ? 'yue' : 'zh-CN',
+        {
+          onPartial: (t) => setDraftInput(t),
+          onFinal: (t) => {
+            if (providerAtStart === 'browser') {
+              setDraftInput(t);
+            } else {
+              setDraftInput(prev => (prev.trim() ? `${prev.trim()} ${t}` : t));
+            }
+          },
+          onTranscribing: (busy) => setIsTranscribing(busy),
+          onError: (m) => { if (m) addToast(m, 'info'); },
+          onEnd: () => { setIsListening(false); sttSessionRef.current = null; },
+        },
+        apiConfig,
+      );
     } catch (e: any) {
       setIsListening(false);
+      setIsTranscribing(false);
       sttSessionRef.current = null;
       addToast(e?.message || '无法启动语音输入', 'error');
     }
@@ -3160,6 +3194,16 @@ ${sentencePlan}`;
             incrementalVoice={activeTtsProvider === 'elevenlabs' ? incrementalVoice : undefined}
             onIncrementalChange={activeTtsProvider === 'elevenlabs' ? setIncrementalVoice : undefined}
             preferences={callPreferences}
+            apiConfig={apiConfig}
+            onSttProviderChange={provider => {
+              if (!isSttProviderConfigured(provider, apiConfig)) {
+                const opt = STT_PROVIDER_OPTIONS.find(o => o.id === provider);
+                addToast(`${opt?.keyHint || '请先填写对应 Key'}（可在「设置 → 其他 API」配置）`, 'info');
+                return;
+              }
+              updateApiConfig({ sttProvider: provider });
+              addToast(`语音转文字已切到 ${getSttProviderLabel(provider)}`, 'success');
+            }}
             accentColor={accentColor}
             lightTheme={lightTheme}
             onChange={next => {
@@ -3987,28 +4031,43 @@ ${sentencePlan}`;
       {showInputPanel && (
         <div className={`shrink-0 ${callMode === 'video' ? 'px-3 pb-1.5' : 'px-4 pb-2'}`}>
           <div className={`${callMode === 'video' ? 'rounded-[1.15rem] p-1.5' : 'rounded-2xl p-2'} border border-white/12 bg-black/30 backdrop-blur-md flex gap-2 items-center`} style={{ boxShadow: `inset 0 0 20px ${accentColor}1f` }}>
-            {sttSupported && (
-              <button
-                onClick={toggleStt}
-                disabled={sendingBusy}
-                title={isListening ? '结束语音输入' : '按一下开始说话'}
-                className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 transition active:scale-90 disabled:opacity-40"
-                style={isListening ? { background: '#f0569f', boxShadow: '0 0 14px #f0569f99' } : { background: 'rgba(255,255,255,0.08)' }}
-              >
-                <Microphone size={18} weight="fill" className={isListening ? 'text-white animate-pulse' : 'text-white/70'} />
-              </button>
-            )}
+            <button
+              onClick={toggleStt}
+              disabled={sendingBusy || isTranscribing}
+              title={isTranscribing ? '正在转写语音…' : isListening ? '结束语音输入' : `按一下开始说话（${getSttProviderLabel(activeSttProvider)}）`}
+              className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 transition active:scale-90 disabled:opacity-40"
+              style={
+                isListening
+                  ? { background: '#f0569f', boxShadow: '0 0 14px #f0569f99' }
+                  : isTranscribing
+                    ? { background: `${accentColor}55`, boxShadow: `0 0 12px ${accentColor}66` }
+                    : { background: 'rgba(255,255,255,0.08)' }
+              }
+            >
+              <Microphone size={18} weight="fill" className={isListening || isTranscribing ? 'text-white animate-pulse' : 'text-white/70'} />
+            </button>
             <input
               ref={draftInputRef}
               value={draftInput}
               onChange={(e) => setDraftInput(e.target.value)}
               className="flex-1 min-w-0 bg-transparent px-2 text-sm outline-none placeholder:text-white/35"
-              placeholder={isListening ? '在听你说……' : sendingBusy ? `${selectedChar?.name || '对方'}正在想……` : pendingCallRetryText ? '上次回复中断，可直接重试' : `想对${selectedChar?.name || '对方'}说什么？`}
+              placeholder={isTranscribing ? `正在转写语音（${getSttProviderLabel(activeSttProvider)}）……` : isListening ? '在听你说，说完再点一下麦克风……' : sendingBusy ? `${selectedChar?.name || '对方'}正在想……` : pendingCallRetryText ? '上次回复中断，可直接重试' : `想对${selectedChar?.name || '对方'}说什么？`}
             />
-            <button onClick={handleTurn} disabled={sendingBusy} className="keep-white shrink-0 px-4 py-2 rounded-xl text-sm font-medium text-white disabled:opacity-40 transition active:scale-95" style={{ backgroundColor: accentColor, boxShadow: `0 0 16px ${accentColor}66` }}>{sendingBusy ? '…' : '发送'}</button>
+            <button onClick={handleTurn} disabled={sendingBusy || isTranscribing} className="keep-white shrink-0 px-4 py-2 rounded-xl text-sm font-medium text-white disabled:opacity-40 transition active:scale-95" style={{ backgroundColor: accentColor, boxShadow: `0 0 16px ${accentColor}66` }}>{sendingBusy ? '…' : '发送'}</button>
           </div>
           {!sendingBusy && pendingCallRetryText && !draftInput.trim() && <div className="text-[10px] text-amber-200/70 mt-1 px-1">上一句话还没得到回复，点击重试即可继续</div>}
-          {isListening && <div className="text-[10px] text-white/40 mt-1 px-1 animate-pulse">正在聆听，点麦克风结束</div>}
+          {isListening && (
+            <div className="text-[10px] text-white/45 mt-1 px-1 animate-pulse">
+              {activeSttProvider === 'browser'
+                ? '正在聆听，点麦克风结束'
+                : `正在录音（${getSttProviderLabel(activeSttProvider)}），说完再点一下麦克风转成文字`}
+            </div>
+          )}
+          {!isListening && isTranscribing && (
+            <div className="text-[10px] text-white/45 mt-1 px-1 animate-pulse">
+              正在通过 {getSttProviderLabel(activeSttProvider)} 识别刚才那句话……
+            </div>
+          )}
         </div>
       )}
       <div className={`shrink-0 ${callMode === 'video' ? 'px-3 pb-2 pt-0.5' : 'px-7 pb-2 pt-1.5'}`} data-testid={callMode === 'video' ? 'video-call-compact-controls' : undefined}>

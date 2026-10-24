@@ -1,11 +1,15 @@
 import React from 'react';
-import { ChatCircleDots, Gear, Phone, SpeakerHigh, X } from '@phosphor-icons/react';
+import { ChatCircleDots, Gear, Microphone, Phone, SpeakerHigh, X } from '@phosphor-icons/react';
 import type { CallPreferences } from '../../utils/callPreferences';
+import type { APIConfig, SttProvider } from '../../types';
+import { STT_PROVIDER_OPTIONS, isSttProviderConfigured, resolveSttProvider } from '../../utils/speechToText';
 
 interface CallPreferencesSheetProps {
   incrementalVoice?: boolean;
   onIncrementalChange?: (enabled: boolean) => void;
   preferences: CallPreferences;
+  apiConfig?: Partial<APIConfig>;
+  onSttProviderChange?: (provider: SttProvider) => void;
   accentColor: string;
   lightTheme: boolean;
   onChange: (preferences: CallPreferences) => void;
@@ -17,12 +21,15 @@ const CallPreferencesSheet: React.FC<CallPreferencesSheetProps> = ({
   preferences,
   incrementalVoice,
   onIncrementalChange,
+  apiConfig,
+  onSttProviderChange,
   accentColor,
   lightTheme,
   onChange,
   onOpenSystemSettings,
   onClose,
 }) => {
+  const activeSttProvider = resolveSttProvider(apiConfig);
   return (
     <div
       className="absolute inset-0 z-[80] flex items-end bg-black/60 backdrop-blur-sm"
@@ -162,6 +169,52 @@ const CallPreferencesSheet: React.FC<CallPreferencesSheetProps> = ({
               />
             </button>
           </div>
+
+          {onSttProviderChange && (
+            <div className="py-3">
+              <div className="flex items-center gap-3">
+                <span
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border"
+                  style={{ color: accentColor, borderColor: `${accentColor}66`, background: `${accentColor}14` }}
+                >
+                  <Microphone size={17} weight="fill" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className={`block text-[13px] font-medium ${lightTheme ? 'text-[#262239]/90' : 'text-white/85'}`}>语音转文字（麦克风输入）</span>
+                  <span className={`mt-0.5 block text-[10px] leading-4 ${lightTheme ? 'text-[#262239]/55' : 'text-white/38'}`}>
+                    选择你开口说话时走哪家识别，可与角色发声平台分开选；已填 Key 的平台才能切换。
+                  </span>
+                </span>
+              </div>
+              <div className="ml-12 mt-3 grid grid-cols-2 gap-2" role="group" aria-label="语音转文字平台">
+                {STT_PROVIDER_OPTIONS.map(option => {
+                  const selected = activeSttProvider === option.id;
+                  const configured = isSttProviderConfigured(option.id, apiConfig);
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      aria-pressed={selected}
+                      onClick={() => onSttProviderChange(option.id)}
+                      className={`rounded-xl border px-2.5 py-2 text-xs font-medium transition active:scale-[.98] ${
+                        lightTheme ? 'text-[#262239]/75' : 'text-white/70'
+                      } ${!configured && !selected ? 'opacity-50' : ''}`}
+                      style={selected
+                        ? { color: accentColor, borderColor: `${accentColor}88`, background: `${accentColor}18`, boxShadow: `inset 0 0 12px ${accentColor}14` }
+                        : { borderColor: lightTheme ? 'rgba(38,34,57,.12)' : 'rgba(255,255,255,.1)', background: lightTheme ? 'rgba(38,34,57,.025)' : 'rgba(255,255,255,.025)' }}
+                    >
+                      <span className="block truncate">{option.shortLabel}</span>
+                      {!configured && (
+                        <span className={`mt-0.5 block text-[9px] font-normal ${lightTheme ? 'text-[#262239]/45' : 'text-white/35'}`}>
+                          未填 Key
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         <button

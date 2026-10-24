@@ -15,7 +15,7 @@
 
 ## 技术说明
 
-Eleven v4 是 TTS（文字合成声音），不是 STT。电话的语音输入目前仍用浏览器 SpeechRecognition / Capacitor 系统插件，没有接入 ElevenLabs Scribe。
+Eleven v4 是 TTS（文字合成声音）。电话的语音输入（STT）可独立选择 ElevenLabs Scribe（`scribe_v2`）、鱼声 Fish ASR（`transcribe-1-pro`）、MiniMax ASR（`asr-1.0`）或浏览器 / 系统自带语音识别，已填写对应官方 Key 的平台可直接切换。
 
 ## 配置与默认行为
 

@@ -264,6 +264,9 @@ export type MinimaxRegion = 'domestic' | 'overseas';
 // 语音合成（TTS）服务商。全局三选一：切换后聊天语音条 / 约会 / 电话统一用同一家。
 export type TtsProvider = 'minimax' | 'fishaudio' | 'elevenlabs';
 
+// 语音转文字（STT）服务商。电话麦克风收音可选任意已配置 Key 的平台（与 TTS 独立），或浏览器自带免费识别。
+export type SttProvider = 'minimax' | 'fishaudio' | 'elevenlabs' | 'browser';
+
 export interface VisionApiConfig {
   /** 开启后，聊天图片先由独立视觉模型转成文字，再交给主对话模型。 */
   enabled: boolean;
@@ -288,6 +291,8 @@ export interface APIConfig {
   minimaxRegion?: MinimaxRegion;
   // 语音服务商三选一。缺省 → 'minimax'。
   ttsProvider?: TtsProvider;
+  // 语音转文字（STT）服务商。可与 ttsProvider 不同（只允许选已填好 Key 的平台或 'browser'）。
+  sttProvider?: SttProvider;
   // 鱼声 Fish Audio API Key（https://fish.audio/）。仅 ttsProvider === 'fishaudio' 时使用。
   fishAudioApiKey?: string;
   // 鱼声默认模型（s2.1-pro / s2-pro / s1）。缺省 → 's2.1-pro'。

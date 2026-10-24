@@ -116,6 +116,13 @@ export default defineConfig({
         rewrite: () => '/v1/t2a_v2',
         configure: routeMinimaxByRegion,
       },
+      '/api/minimax/stt': {
+        target: 'https://api.minimaxi.com',
+        changeOrigin: true,
+        secure: true,
+        rewrite: () => '/v1/speech_to_text',
+        configure: routeMinimaxByRegion,
+      },
       '/api/minimax/get-voice': {
         target: 'https://api.minimaxi.com',
         changeOrigin: true,
@@ -137,6 +144,13 @@ export default defineConfig({
         secure: true,
         rewrite: () => '/v1/tts',
       },
+      // 鱼声 Fish Audio STT：转发到 https://api.fish.audio/v1/asr
+      '/api/fishaudio/stt': {
+        target: 'https://api.fish.audio',
+        changeOrigin: true,
+        secure: true,
+        rewrite: () => '/v1/asr',
+      },
       // ElevenLabs TTS：开发环境把同源查询参数改写到官方 voice_id 路径。
       '/api/elevenlabs/tts': {
         target: 'https://api.elevenlabs.io',
@@ -150,6 +164,13 @@ export default defineConfig({
           const timing = parsed.searchParams.get('timestamps') === '1' ? '/with-timestamps' : '';
           return `/v1/${endpoint}/stream${timing}?output_format=${encodeURIComponent(outputFormat)}`;
         },
+      },
+      // ElevenLabs STT (Scribe)：转发到 https://api.elevenlabs.io/v1/speech-to-text
+      '/api/elevenlabs/stt': {
+        target: 'https://api.elevenlabs.io',
+        changeOrigin: true,
+        secure: true,
+        rewrite: () => '/v1/speech-to-text',
       },
     }
   },

@@ -62,7 +62,13 @@ import {
 } from '../utils/avatarModelBackup';
 import { normalizeApiBaseUrl, normalizeApiCredential, normalizeApiModel } from '../utils/apiConfigNormalize';
 import { configFromPreset, findActivePresetId, presetDiffersFromConfig, type PresetSwitchPatch } from '../utils/apiPresetSwitch';
-import type { APIConfig, TtsProvider } from '../types';
+import type { APIConfig, TtsProvider, SttProvider } from '../types';
+import {
+    STT_PROVIDER_OPTIONS,
+    isSttProviderConfigured,
+    resolveSttProvider,
+    getSttProviderLabel,
+} from '../utils/speechToText';
 import { describeImageWithVisionApi, VISION_API_TEST_IMAGE_DATA_URL, visionApiConfigFromPreset } from '../utils/visionApi';
 import {
     FIRECRAWL_API_KEYS_URL,
@@ -521,6 +527,7 @@ const Settings: React.FC = () => {
       ? apiConfig.ttsProvider
       : 'minimax'
   );
+  const [localSttProvider, setLocalSttProvider] = useState<SttProvider | undefined>(apiConfig.sttProvider);
   const [localFishKey, setLocalFishKey] = useState(apiConfig.fishAudioApiKey || '');
   const [localFishModel, setLocalFishModel] = useState(apiConfig.fishAudioModel || 's2.1-pro');
   const [localElevenLabsKey, setLocalElevenLabsKey] = useState(apiConfig.elevenLabsApiKey || '');
@@ -998,6 +1005,7 @@ const Settings: React.FC = () => {
               ? apiConfig.ttsProvider
               : 'minimax'
       );
+      setLocalSttProvider(apiConfig.sttProvider);
       setLocalFishKey(apiConfig.fishAudioApiKey || '');
       setLocalFishModel(apiConfig.fishAudioModel || 's2.1-pro');
       setLocalElevenLabsKey(apiConfig.elevenLabsApiKey || '');
@@ -1012,7 +1020,7 @@ const Settings: React.FC = () => {
       setLocalVoicePromptDate(apiConfig.voicePrompts?.dateVoice || '');
   }, [
       apiConfig.minimaxApiKey, apiConfig.minimaxGroupId, apiConfig.minimaxRegion, apiConfig.aceStepApiKey,
-      apiConfig.ttsProvider, apiConfig.fishAudioApiKey, apiConfig.fishAudioModel,
+      apiConfig.ttsProvider, apiConfig.sttProvider, apiConfig.fishAudioApiKey, apiConfig.fishAudioModel,
       apiConfig.elevenLabsApiKey, apiConfig.elevenLabsModel, apiConfig.elevenLabsStability,
       apiConfig.elevenLabsSimilarityBoost, apiConfig.elevenLabsStyle, apiConfig.elevenLabsUseSpeakerBoost,
       apiConfig.voicePrompts?.minimax, apiConfig.voicePrompts?.fishaudio,
@@ -1327,6 +1335,7 @@ const Settings: React.FC = () => {
       minimaxRegion: localMiniMaxRegion,
       aceStepApiKey: localAceStepKey,
       ttsProvider: localTtsProvider,
+      sttProvider: localSttProvider,
       fishAudioApiKey: localFishKey,
       fishAudioModel: localFishModel,
       elevenLabsApiKey: localElevenLabsKey,
@@ -1344,6 +1353,17 @@ const Settings: React.FC = () => {
       ...overrides,
   });
 
+  const draftSttLookupConfig: Partial<APIConfig> = {
+      ...apiConfig,
+      baseUrl: localUrl,
+      apiKey: localKey,
+      minimaxApiKey: localMiniMaxKey,
+      fishAudioApiKey: localFishKey,
+      elevenLabsApiKey: localElevenLabsKey,
+      ttsProvider: localTtsProvider,
+      sttProvider: localSttProvider,
+  };
+
   const handleSaveOtherApis = () => {
     updateApiConfig(buildOtherApiConfig());
     setOtherStatusMsg('已保存');
@@ -1358,6 +1378,17 @@ const Settings: React.FC = () => {
     updateApiConfig(buildOtherApiConfig({ ttsProvider: provider }));
     const providerLabel = provider === 'fishaudio' ? '鱼声 Fish' : provider === 'elevenlabs' ? 'ElevenLabs' : 'MiniMax';
     addToast(`语音生成已切到 ${providerLabel}`, 'success');
+  };
+
+  const selectSttProvider = (provider: SttProvider) => {
+    if (!isSttProviderConfigured(provider, draftSttLookupConfig)) {
+      const opt = STT_PROVIDER_OPTIONS.find(o => o.id === provider);
+      addToast(opt?.keyHint || '请先在上方填写对应平台的 API Key', 'error');
+      return;
+    }
+    setLocalSttProvider(provider);
+    updateApiConfig(buildOtherApiConfig({ sttProvider: provider }));
+    addToast(`语音转文字已切到 ${getSttProviderLabel(provider)}`, 'success');
   };
 
   // 选鱼声模型：立即落库（同上，连带草稿一起提交，避免被同步 effect 冲掉）。
@@ -2976,7 +3007,7 @@ const Settings: React.FC = () => {
                 {/* 底部：当前语音引擎三选一 —— radio 样式（配置都在上面，这里只挑用哪家） */}
                 <div className="group rounded-2xl border border-slate-200/70 bg-slate-50/60 p-3">
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">当前语音引擎（三选一）</label>
-                    <p className="text-[11px] text-slate-400 mb-2.5">聊天语音条 / 约会 / 电话用哪一家。上面三家的配置都会保留，这里只切换当前生效的。</p>
+                    <p className="text-[11px] text-slate-400 mb-2.5">聊天语音条 / 约会 / 电话里角色开口用哪一家。上面三家的配置都会保留，这里只切换当前生效的。</p>
                     <div className="space-y-2">
                         {([
                             ['minimax', 'MiniMax', '国内可直连，默认推荐'],
@@ -2999,6 +3030,52 @@ const Settings: React.FC = () => {
                                         <span className="block text-[11px] text-slate-400 mt-0.5">{desc}</span>
                                     </span>
                                     {active && <span className="text-[10px] font-bold text-primary shrink-0">使用中</span>}
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                {/* 通话语音转文字（你开口说话 → 转文字）四选一 —— 可与角色发声平台自由搭配，填了 Key 才能选对应平台 */}
+                <div className="group rounded-2xl border border-slate-200/70 bg-slate-50/60 p-3">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">语音转文字 · 通话麦克风（四选一）</label>
+                    <p className="text-[11px] text-slate-400 mb-2.5">
+                        电话里点麦克风说话走哪条路转成文字。可与上方角色发声平台分开搭配（比如语音用 MiniMax、识别用 ElevenLabs 或鱼声）；填好对应官方 Key 后即可切换。
+                    </p>
+                    <div className="space-y-2">
+                        {STT_PROVIDER_OPTIONS.map((opt) => {
+                            const configured = isSttProviderConfigured(opt.id, draftSttLookupConfig);
+                            const resolvedCurrent = resolveSttProvider(draftSttLookupConfig);
+                            const active = resolvedCurrent === opt.id;
+                            return (
+                                <button
+                                    key={opt.id}
+                                    type="button"
+                                    onClick={() => selectSttProvider(opt.id)}
+                                    className={`w-full flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-all ${
+                                        active
+                                            ? 'border-primary bg-primary/5 shadow-sm'
+                                            : configured
+                                                ? 'border-slate-200 bg-white/70 active:bg-white'
+                                                : 'border-slate-200/60 bg-slate-100/60 opacity-65'
+                                    }`}
+                                >
+                                    <span className={`shrink-0 w-4 h-4 rounded-full border-2 flex items-center justify-center ${active ? 'border-primary' : 'border-slate-300'}`}>
+                                        {active && <span className="w-2 h-2 rounded-full bg-primary" />}
+                                    </span>
+                                    <span className="flex-1 min-w-0">
+                                        <span className={`text-sm font-semibold ${active ? 'text-primary' : configured ? 'text-slate-700' : 'text-slate-500'}`}>
+                                            {opt.label}
+                                        </span>
+                                        <span className="block text-[11px] text-slate-400 mt-0.5">
+                                            {configured ? opt.desc : `${opt.desc}（${opt.keyHint}）`}
+                                        </span>
+                                    </span>
+                                    {active ? (
+                                        <span className="text-[10px] font-bold text-primary shrink-0">使用中</span>
+                                    ) : !configured ? (
+                                        <span className="text-[10px] font-medium text-slate-400 shrink-0">未填 Key</span>
+                                    ) : null}
                                 </button>
                             );
                         })}
