@@ -1,6 +1,7 @@
 import { DB } from './db';
 
 const STOPPED_KEY = 'chat_stopped_reply_uuids_v1';
+export const MAX_STOPPED_REPLY_UUIDS = 200;
 const runs = new Set<ReplyRun>();
 type Display = { ids: Set<number>; previews: string[] };
 const displays = new Map<string, Display>();
@@ -18,10 +19,18 @@ export function isReplyStopped(uuid?: string | null): boolean {
 
 /** UUID tombstones survive reloads; late push and outbox delivery use the same check. */
 export function markReplyStopped(uuid: string): void {
+    stoppedInMemory.delete(uuid);
     stoppedInMemory.add(uuid);
+    while (stoppedInMemory.size > MAX_STOPPED_REPLY_UUIDS) {
+        const oldest = stoppedInMemory.values().next().value;
+        if (oldest === undefined) break;
+        stoppedInMemory.delete(oldest);
+    }
     try {
-        const stored = JSON.parse(localStorage.getItem(STOPPED_KEY) || '[]');
-        localStorage.setItem(STOPPED_KEY, JSON.stringify([...new Set([...stored, ...stoppedInMemory])]));
+        const parsed = JSON.parse(localStorage.getItem(STOPPED_KEY) || '[]');
+        const stored = Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [];
+        const merged = [...stored.filter(id => !stoppedInMemory.has(id)), ...stoppedInMemory].slice(-MAX_STOPPED_REPLY_UUIDS);
+        localStorage.setItem(STOPPED_KEY, JSON.stringify(merged));
     } catch { /* The current page still refuses this round if storage is unavailable. */ }
     for (const run of runs) if (run.uuid === uuid) run.stop();
 }

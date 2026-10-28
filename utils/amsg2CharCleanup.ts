@@ -17,6 +17,7 @@
 import { CharacterProfile } from '../types';
 import { ActiveMsgClient } from './activeMsgClient';
 import { ActiveMsgStore } from './activeMsgStore';
+import { clearStoppedReplyReceipts } from './amsgStoppedReplyClient';
 import {
   ALL_CREDENTIAL_PURPOSES,
   charCredId,
@@ -122,8 +123,21 @@ export const purgeCloudCharById = async (
 ): Promise<CharCloudStateCleanup> => {
   if (!charId) return { status: 'skipped' };
 
+  if (plan.clientState) {
+    clearStoppedReplyReceipts(charId);
+    if (typeof ActiveMsgStore.clearCharActionResults === 'function') {
+      await ActiveMsgStore.clearCharActionResults(charId).catch(() => {});
+    }
+  }
+
+  let globalConfig: Awaited<ReturnType<typeof ActiveMsgStore.getGlobalConfig>>;
   try {
-    const globalConfig = await ActiveMsgStore.getGlobalConfig();
+    globalConfig = await ActiveMsgStore.getGlobalConfig();
+    if (plan.clientState && Array.isArray(globalConfig.sidechannelShellsSweptCharIds) && globalConfig.sidechannelShellsSweptCharIds.includes(charId)) {
+      await ActiveMsgStore.saveGlobalConfig({
+        sidechannelShellsSweptCharIds: globalConfig.sidechannelShellsSweptCharIds.filter((id) => id !== charId),
+      }).catch(() => {});
+    }
     if (!globalConfig.workerUrl?.trim()) return { status: 'skipped' };
   } catch {
     // 连本地配置都读不到，等于无从判断有没有云端；按没有处理，别为它弹错误。

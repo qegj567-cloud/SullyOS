@@ -1,6 +1,6 @@
 import { buildChatOutputStylePrompt, readChatTranslationConfig } from './chatOutputStylePrompt';
 import { resolveDialogueApi } from './characterApi';
-import { stoppedReplyStateEntries } from './amsgStoppedReplyClient';
+import { ackStoppedReplyReceipts, stoppedReplyStateEntries } from './amsgStoppedReplyClient';
 import { loadCharacterContextMessages } from './chatContextRange';
 import { ReiClient, classifyClientStateWrite } from '@rei-standard/amsg-client';
 import { createCloudDataSession } from './amsgCloudData';
@@ -2575,6 +2575,7 @@ export const ActiveMsgClient = {
         ...(owesChat ? charEntries.filter((entry) => entry.key !== AMSG_FIRE_PACK_KEY) : charEntries),
         buildToolConfigEntry(realtimeConfig, now),
       ], '上传云端状态');
+      ackStoppedReplyReceipts(charEntries, char.id);
     }
 
     // 凭据行要先在云端存在：上游建任务前会挨个查引用，缺一个就 409 CREDENTIAL_NOT_FOUND。
@@ -3063,6 +3064,7 @@ export const ActiveMsgClient = {
     if (status !== 202 || typeof body?.uuid !== 'string' || !body.uuid) {
       throw new Error(describeInstantChatFailure(status, body));
     }
+    ackStoppedReplyReceipts(stateEntries, char.id);
     // worker 说凭据行已经照这一轮覆盖过了：底账跟着对齐，后台补传和排程那几条路才不会
     // 拿一份过期的「传过什么」去判断。旧 bundle 不回这个键，不记。
     if (body.credentialsSynced === true) rememberCredRows(credRows);
@@ -3125,36 +3127,43 @@ export const ActiveMsgClient = {
     const authorizedNamespaces = new Set(items.filter(item => item.isCurrent?.() !== false).map(item => amsgStateNamespace(item.char.id)));
     const authorizedEntries = entries.filter(entry => authorizedNamespaces.has(entry.namespace));
     if (!authorizedEntries.length) return;
-    const response = await putCloudClientState(client, authorizedEntries);
-    if (!response?.success) {
-      throw new Error(response?.error?.message || '上传云端状态失败。');
-    }
-    // amsg-server 2.6.0-next.4+ 局部失败语义：单个坏条目只拒自己，不连坐同批。
-    // 被拒的条目点名 warn 出来（该角色沿用上一份 fire_pack，其余角色不受影响）。
-    const rejected = (response as { data?: { rejected?: Array<{ namespace: string; key: string; message?: string }> } })
-      .data?.rejected;
-    if (rejected && rejected.length > 0) {
-      console.warn(
-        `${ACTIVE_MSG_RUNTIME_HEADER} 云端状态部分条目被拒（对应角色沿用上一份 fire_pack）`,
-        rejected.map((r) => `${r.namespace}/${r.key}: ${r.message || 'rejected'}`),
-      );
-    }
-    // amsg-server 2.6.0-next.15 起服务端按 updatedAt 做条件写（旧不盖新）。被拦有两种
-    // 成因，长得一模一样：云端确实有更新的一份（多设备 / 多标签页竞写），或者云端那行
-    // 的时间戳落在了未来（设备时钟被改过，见 amsgStateClock）。后者不管的话，这个角色
-    // 的云端上下文会一直停在旧版本、主动消息一直拿旧上下文说话，而这条路上除了这行 log
-    // 没有任何动静——比即时对话那条明着报 409 的还难发现。
-    //
-    // 对齐水位就够了，这一轮不重传：fire_pack 每轮聊天都是全量重建的，下一次打脏同步
-    // 带着更新的内容盖过去，比现在拿这份已经被判成「旧」的包硬挤进去更有道理。
-    const skipped = (response as { data?: { skippedEntries?: Array<{ namespace: string; key: string }> } })
-      .data?.skippedEntries;
-    if (skipped && skipped.length > 0) {
-      console.warn(
-        `${ACTIVE_MSG_RUNTIME_HEADER} 云端已有更新的一份，这批条目被条件写拦下`,
-        skipped.map((s) => `${s.namespace}/${s.key}`),
-      );
-      await alignStateClockWithRemote(client, [...new Set(skipped.map((s) => s.namespace))]);
+    for (const batch of chunkClientStateEntries(authorizedEntries)) {
+      const response = await putCloudClientState(client, batch);
+      if (!response?.success) {
+        throw new Error(response?.error?.message || '上传云端状态失败。');
+      }
+      // amsg-server 2.6.0-next.4+ 局部失败语义：单个坏条目只拒自己，不连坐同批。
+      // 被拒的条目点名 warn 出来（该角色沿用上一份 fire_pack，其余角色不受影响）。
+      const rejected = (response as { data?: { rejected?: Array<{ namespace: string; key: string; message?: string }> } })
+        .data?.rejected;
+      if (rejected && rejected.length > 0) {
+        console.warn(
+          `${ACTIVE_MSG_RUNTIME_HEADER} 云端状态部分条目被拒（对应角色沿用上一份 fire_pack）`,
+          rejected.map((r) => `${r.namespace}/${r.key}: ${r.message || 'rejected'}`),
+        );
+      }
+      // amsg-server 2.6.0-next.15 起服务端按 updatedAt 做条件写（旧不盖新）。被拦有两种
+      // 成因，长得一模一样：云端确实有更新的一份（多设备 / 多标签页竞写），或者云端那行
+      // 的时间戳落在了未来（设备时钟被改过，见 amsgStateClock）。后者不管的话，这个角色
+      // 的云端上下文会一直停在旧版本、主动消息一直拿旧上下文说话，而这条路上除了这行 log
+      // 没有任何动静——比即时对话那条明着报 409 的还难发现。
+      //
+      // 对齐水位就够了，这一轮不重传：fire_pack 每轮聊天都是全量重建的，下一次打脏同步
+      // 带着更新的内容盖过去，比现在拿这份已经被判成「旧」的包硬挤进去更有道理。
+      const skipped = (response as { data?: { skippedEntries?: Array<{ namespace: string; key: string }> } })
+        .data?.skippedEntries;
+      if (skipped && skipped.length > 0) {
+        console.warn(
+          `${ACTIVE_MSG_RUNTIME_HEADER} 云端已有更新的一份，这批条目被条件写拦下`,
+          skipped.map((s) => `${s.namespace}/${s.key}`),
+        );
+        await alignStateClockWithRemote(client, [...new Set(skipped.map((s) => s.namespace))]);
+      }
+      const notApplied = new Set([
+        ...(rejected ?? []).map(r => `${r.namespace}/${r.key}`),
+        ...(skipped ?? []).map(s => `${s.namespace}/${s.key}`),
+      ]);
+      ackStoppedReplyReceipts(batch.filter(e => !notApplied.has(`${e.namespace}/${e.key}`)));
     }
     // 同步已经落定，顺路把这几个角色的存量空壳清一遍（每角色一次，失败只 warn）。
     await sweepSidechannelShells(client, items.filter(item => item.isCurrent?.() !== false).map(item => item.char.id));

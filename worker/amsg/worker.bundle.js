@@ -1112,23 +1112,60 @@ async function resolveSullyCloudOwnership(input) {
 }
 
 // utils/amsgStoppedReply.ts
-var stoppedReplyKey = (uuid) => `chat_stop:${uuid}`;
+var STOPPED_REPLY_KEY_PREFIX = "chat_stop:";
+var stoppedReplyKey = (uuid) => `${STOPPED_REPLY_KEY_PREFIX}${uuid}`;
+var MAX_CLOUD_STOPPED_REPLY_KEYS = 8;
+var STOPPED_REPLY_CLOUD_TTL_MS = 24 * 60 * 60 * 1e3;
 function reconcileStoppedReplies(log, rows) {
   if (!log) return log;
   const kept = /* @__PURE__ */ new Map();
   for (const row of rows) {
-    if (!row.key.startsWith("chat_stop:")) continue;
+    if (!row.key.startsWith(STOPPED_REPLY_KEY_PREFIX)) continue;
     try {
       const value = JSON.parse(row.value);
-      if (typeof value.text === "string") kept.set(row.key.slice("chat_stop:".length), value.text);
+      if (typeof value.text === "string") kept.set(row.key.slice(STOPPED_REPLY_KEY_PREFIX.length), value.text);
     } catch {
     }
   }
-  return { ...log, entries: log.entries.flatMap((entry) => {
+  if (kept.size === 0) return log;
+  let changed = false;
+  const entries = log.entries.flatMap((entry) => {
     if (!entry.taskUuid || !kept.has(entry.taskUuid)) return [entry];
     const text2 = kept.get(entry.taskUuid);
-    return text2 ? [{ ...entry, text: text2 }] : [];
-  }) };
+    if (!text2) {
+      changed = true;
+      return [];
+    }
+    if (text2 !== entry.text) changed = true;
+    return [{ ...entry, text: text2 }];
+  });
+  return changed ? { ...log, entries } : log;
+}
+function pickStaleStoppedReplyKeys(rows, nowMs = Date.now(), protectKey) {
+  const stopRows = rows.map((row, index) => ({ key: row.key, updatedAt: row.updatedAt, index })).filter((row) => row.key.startsWith(STOPPED_REPLY_KEY_PREFIX) && row.key !== protectKey);
+  if (stopRows.length === 0) return [];
+  const cutoff = nowMs - STOPPED_REPLY_CLOUD_TTL_MS;
+  const stale = /* @__PURE__ */ new Set();
+  const fresh = [];
+  for (const row of stopRows) {
+    if (typeof row.updatedAt === "number" && row.updatedAt > 0 && row.updatedAt < cutoff) {
+      stale.add(row.key);
+    } else {
+      fresh.push(row);
+    }
+  }
+  if (fresh.length > MAX_CLOUD_STOPPED_REPLY_KEYS) {
+    fresh.sort((a, b) => {
+      const ta = typeof a.updatedAt === "number" ? a.updatedAt : 0;
+      const tb = typeof b.updatedAt === "number" ? b.updatedAt : 0;
+      return ta !== tb ? ta - tb : a.index - b.index;
+    });
+    const overflow = fresh.length - MAX_CLOUD_STOPPED_REPLY_KEYS;
+    for (let i = 0; i < overflow; i += 1) {
+      stale.add(fresh[i].key);
+    }
+  }
+  return [...stale];
 }
 
 // worker/amsg/src/index.ts
@@ -18193,6 +18230,14 @@ var amsgFireSettled = async (info) => {
     stash.selfLogDirty = false;
     stateWrites.push({ key: AMSG_SELF_LOG_KEY, value: JSON.stringify(stash.selfLog) });
   }
+  if (stash.staleStoppedKeys && stash.staleStoppedKeys.length > 0) {
+    const staleKeys = stash.staleStoppedKeys;
+    stash.staleStoppedKeys = [];
+    for (const key of staleKeys) {
+      if (stateWrites.length >= 190) break;
+      stateWrites.push({ key, value: null });
+    }
+  }
   if (stateWrites.length > 0) {
     try {
       await info.writeState(amsgStateNamespace(stash.charId), stateWrites);
@@ -18749,7 +18794,14 @@ var amsgHooks = {
       }
       return { skip: true };
     }
-    const storedSelfLog = reconcileStoppedReplies(parseSelfLog(charRows.find((r) => r.key === AMSG_SELF_LOG_KEY)?.value ?? ""), charRows);
+    const rawSelfLog = parseSelfLog(charRows.find((r) => r.key === AMSG_SELF_LOG_KEY)?.value ?? "");
+    const storedSelfLog = reconcileStoppedReplies(rawSelfLog, charRows);
+    const selfLogReconciled = storedSelfLog !== rawSelfLog;
+    const staleStoppedKeys = pickStaleStoppedReplyKeys(
+      charRows,
+      ctx.now.getTime(),
+      typeof ctx.task.uuid === "string" && ctx.task.uuid ? stoppedReplyKey(ctx.task.uuid) : null
+    );
     const selfLog = reconcileSelfLogWithPack(storedSelfLog, pack, lastUserMessageAt);
     const taskBrief = findTaskBrief([...pack.pendingTasks, ...selfLog.tasks], ctx.task.uuid);
     const clientTaskId = typeof taskMeta.amsgClientTaskId === "string" ? taskMeta.amsgClientTaskId : "";
@@ -18859,7 +18911,8 @@ var amsgHooks = {
       xhsCookie,
       occurrenceMs,
       selfLog,
-      selfLogDirty: false,
+      selfLogDirty: selfLogReconciled && staleStoppedKeys.length > 0,
+      staleStoppedKeys,
       mcpResolve,
       maxToolIterations,
       fireToolNames: /* @__PURE__ */ new Set(),
