@@ -24,7 +24,7 @@ import {
 import { getLastRealUserMessageAt } from './amsg2ExpireGuard';
 import { AMSG_BUNDLE_VERSION } from './amsgBundleVersion';
 import { describeD1LimitCode } from './amsgD1Limits';
-import { parseAmsgSelfUpdateState, type AmsgSelfUpdateReport } from './amsgSelfUpdateState';
+import { explainCfTokenRejection, parseAmsgSelfUpdateState, type AmsgSelfUpdateReport } from './amsgSelfUpdateState';
 import { buildTaskInstruction, resolveSendAtMs } from './amsgFireSchedule';
 import {
   getPendingTasks, isAmsg2EnabledForChar,
@@ -3658,7 +3658,7 @@ export const ActiveMsgClient = {
     return {
       ok: false,
       supported: true,
-      message: formatAmsgServerError(body, `更新没成功（HTTP ${status}）。`),
+      message: explainCfTokenRejection(formatAmsgServerError(body, `更新没成功（HTTP ${status}）。`)),
       code: typeof body?.error?.code === 'string' ? body.error.code : undefined,
     };
   },
@@ -3727,7 +3727,7 @@ export const ActiveMsgClient = {
     }
     return {
       ok: false,
-      message: formatAmsgServerError(body, `${enabled ? '恢复' : '暂停'}没成功（HTTP ${status}）。`),
+      message: explainCfTokenRejection(formatAmsgServerError(body, `${enabled ? '恢复' : '暂停'}没成功（HTTP ${status}）。`)),
       code: typeof body?.error?.code === 'string' ? body.error.code : undefined,
     };
   },

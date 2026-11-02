@@ -388,6 +388,15 @@ env.DB (sullyos-amsg)   D1 Database
 >
 > 也可以自己去 Cloudflare 面板加：Worker → **Settings** → **Variables and secrets** → **+ Add**，Type 选 `Secret`，名字填 `CF_API_TOKEN`，值粘贴那串，点 **Deploy**。效果一样。
 
+**钥匙失效时**：设置页的自动更新那一行会写「Cloudflare 不认这枚 CF_API_TOKEN」。按上面第 1～3 步新建一枚，到 Worker → **Settings** → **Variables and secrets** 替换 `CF_API_TOKEN` 的值，点 **Deploy**。
+
+**有多个 Cloudflare 账号时**：大多数人不用额外设置。后端会在 token 能看到的账号里逐个找同名的 Worker，用第一个找到的。下面两种情况可以加一条可选变量 `CF_ACCOUNT_ID`，直接指定账号：
+
+- 几个账号里有同名的 Worker，而且这枚 token 都能碰到
+- 用的是 `cfat_` 开头的账号令牌，它查不了账号列表
+
+在同一个地方点 **+ Add**，Type 选 `Text`，名字填 `CF_ACCOUNT_ID`，值填 Cloudflare 面板里显示的 Account ID，点 **Deploy**。
+
 **不想加钥匙的话**，按当初的装法手动更新也行：
 
 - 跟着六步装的：打开你 fork 的那个仓库，点 **Sync fork** → **Update branch**，Cloudflare 检测到新提交会自动重新部署
