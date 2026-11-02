@@ -18,6 +18,7 @@ import type {
 } from './amsgTickReport';
 import { CLOUD_CLEANUP_STAGE } from './amsgTickReport';
 import { describeTaskFailureCause } from './amsg2Tasks';
+import { describeD1LimitCode } from './amsgD1Limits';
 
 // ─── 失败归类（给使用统计分档用）───
 //
@@ -527,6 +528,8 @@ const describeTickStage = (stage: string): string => {
 
 /** 认得出来的整轮报错，顺带说一句该怎么办。认不出来的只给原文，不瞎猜。 */
 const describeTickFailureRemedy = (failure: AmsgTickFailureRecord): string => {
+  const limitText = describeD1LimitCode(failure.code);
+  if (limitText) return limitText;
   if (/no such (column|table)/i.test(failure.message)) {
     return '表结构跟现在的代码对不上，点上面的「重新连接并验证」补一次。';
   }

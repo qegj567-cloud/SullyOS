@@ -798,6 +798,10 @@ describe('buildAmsgDiagnosticRows — 定时任务的逐条细账', () => {
     expect(timeout?.text).toContain('给任务占位写库那一步');
     expect(timeout?.raw).toBe('Error: D1 query timed out (D1_TIMEOUT)');
 
+    const storageFull = failureRow({ message: 'D1_ERROR: Exceeded maximum DB size', code: 'D1_STORAGE_FULL' }).items?.[0];
+    expect(storageFull?.text).toContain('云端数据库满了');
+    expect(storageFull?.raw).toBe('Error: D1_ERROR: Exceeded maximum DB size (D1_STORAGE_FULL)');
+
     const cleanup = failureRow({ stage: 'post_send_cleanup_failed_advance' }).items?.[0];
     expect(cleanup?.text).toContain('发完之后写库那一步');
   });

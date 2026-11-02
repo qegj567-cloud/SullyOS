@@ -9,6 +9,8 @@ export type {
   CloudCleanupPlan, CloudCleanupOperation, CloudOwner, CloudOwnerState,
 } from '@rei-standard/amsg-client';
 
+import { describeD1LimitCode } from './amsgD1Limits';
+
 export const CLOUD_DATA_FEATURE = 'cloud-data-management';
 export const CLOUD_RESOURCE_LABELS: Record<CloudResourceType, string> = {
   task: '任务', state: '上下文与状态', credential: 'API 凭据', outbox: '消息与结果', subscription: '推送订阅',
@@ -51,7 +53,10 @@ function formatCloudErrorMessage(error: unknown): string {
   const causeHead = causeCode
     ? (causeMessage.startsWith(causeCode) ? '' : causeCode)
     : (causeName && causeName !== 'Error' ? causeName : '');
-  const causeText = [causeHead, causeMessage].filter(Boolean).join(': ');
+  const limitText = describeD1LimitCode(causeCode);
+  const causeText = limitText
+    ? `${limitText}（${causeCode}）`
+    : [causeHead, causeMessage].filter(Boolean).join(': ');
 
   let out = detailParts.length > 0 ? `${base}（${detailParts.join('；')}）` : base;
   if (causeText && !out.includes(causeText)) {

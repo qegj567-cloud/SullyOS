@@ -146,8 +146,9 @@ const REQUIRED_WORKER_FEATURES = [
 //            定时消息靠它等那一轮结束再生成。
 // 不比版本的话，旧粘贴部署会被误判为最新，问题全在 worker 侧静默发生。
 //
-// 3.1.0-next.1 修复云端数据清单与清理在分块大值与海量收件箱下的内存/CPU 耗尽。
-const REQUIRED_WORKER_VERSION = '3.1.0-next.1';
+// 3.1.0 修复云端数据清单与清理在分块大值与海量收件箱下的内存/CPU 耗尽；投递或某项清理出错时，
+// 其余库存清理照跑；D1 存储满与每日额度用完的报错带机读代码，界面能说清楚原因。
+const REQUIRED_WORKER_VERSION = '3.1.0';
 
 /** 装着打包好的 worker 代码的部署仓库：fork 它 → 在 Cloudflare 连上 → 以后点 Sync fork 更新。 */
 const WORKERS_REPO_URL = 'https://github.com/Tosd0/sullyos-workers';

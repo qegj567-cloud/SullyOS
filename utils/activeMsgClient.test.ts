@@ -2013,6 +2013,23 @@ describe('formatAmsgServerError — 通用后端错误细节透传', () => {
     expect(text).toBe('服务器内部错误：CLOUD_OWNER_RETIRED: 角色已停用，不能继续写入云端数据');
   });
 
+  it.each([
+    ['D1_STORAGE_FULL', '云端数据库满了'],
+    ['D1_DAILY_READ_LIMIT', '今天的数据库读取额度用完了'],
+    ['D1_DAILY_WRITE_LIMIT', '今天的数据库写入额度用完了'],
+  ])('%s 换成能照着做的说明，并留下代码方便排查', (code, expected) => {
+    const text = formatAmsgServerError({
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: '服务器内部错误',
+        cause: { code, message: 'raw D1 error' },
+      },
+    }, '操作失败');
+    expect(text).toContain(expected);
+    expect(text).toContain(`（${code}）`);
+    expect(text).not.toContain('raw D1 error');
+  });
+
   it('客户端体积预检无 message、只有 code 与 bytes/maxBytes 时也能拼出可读报错', () => {
     const text = formatAmsgServerError(
       { code: 'STATE_VALUE_TOO_LARGE', bytes: 6000000, maxBytes: 5242880 },
