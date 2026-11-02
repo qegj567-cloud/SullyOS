@@ -23,6 +23,7 @@ import {
 } from '../types';
 import { getLastRealUserMessageAt } from './amsg2ExpireGuard';
 import { AMSG_BUNDLE_VERSION } from './amsgBundleVersion';
+import { describeD1LimitCode } from './amsgD1Limits';
 import { parseAmsgSelfUpdateState, type AmsgSelfUpdateReport } from './amsgSelfUpdateState';
 import { buildTaskInstruction, resolveSendAtMs } from './amsgFireSchedule';
 import {
@@ -1195,6 +1196,8 @@ const formatAmsgErrorCause = (cause: unknown): string => {
   if (!cause || typeof cause !== 'object' || Array.isArray(cause)) return '';
   const c = cause as Record<string, unknown>;
   const code = typeof c.code === 'string' ? c.code.trim() : '';
+  const limitText = describeD1LimitCode(code);
+  if (limitText) return `${limitText}（${code}）`;
   const name = typeof c.name === 'string' ? c.name.trim() : '';
   const message = typeof c.message === 'string' ? c.message.trim() : '';
   const head = code

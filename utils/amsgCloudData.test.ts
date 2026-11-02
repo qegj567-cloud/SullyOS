@@ -72,6 +72,15 @@ describe('服务端云端管理接入', () => {
       },
     } as any);
     await expect(session.start(plan, 'request-1')).rejects.toThrow('服务器内部错误：D1_ERROR: no such table: cloud_cleanup_plans');
+    api.startCloudDataCleanup.mockResolvedValueOnce({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: '服务器内部错误',
+        cause: { code: 'D1_DAILY_READ_LIMIT', message: "Your account has exceeded D1's free tier daily row read limit." },
+      },
+    } as any);
+    await expect(session.start(plan, 'request-1')).rejects.toThrow('今天的数据库读取额度用完了');
   });
 });
 
