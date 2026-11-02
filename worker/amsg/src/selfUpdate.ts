@@ -21,6 +21,7 @@
  */
 
 import { constantTimeEqual } from './instantChat';
+import { cfTokenRejectedMessage, findCfTokenRejection } from '../../../utils/amsgSelfUpdateState';
 
 const CF_API = 'https://api.cloudflare.com/client/v4';
 
@@ -185,9 +186,12 @@ export async function locateScript(
   if (configured) {
     const settings = await cf(token, settingsPath(configured));
     if (!settings.ok) {
+      const rejected = findCfTokenRejection(settings.detail);
       return {
         ok: false,
-        message: `在 CF_ACCOUNT_ID 指定的账号里读不到这个 Worker 的配置（${settings.detail}）。`,
+        message: rejected
+          ? cfTokenRejectedMessage(rejected, true)
+          : `在 CF_ACCOUNT_ID 指定的账号里读不到这个 Worker 的配置（${settings.detail}）。`,
       };
     }
     return { ok: true, accountId: configured, settings: settings.result };
@@ -195,9 +199,12 @@ export async function locateScript(
 
   const listed = await cf(token, '/accounts');
   if (!listed.ok) {
+    const rejected = findCfTokenRejection(listed.detail);
     return {
       ok: false,
-      message: `问不到账号列表（${listed.detail}）。给 Worker 加一条 CF_ACCOUNT_ID 变量即可跳过这一步。`,
+      message: rejected
+        ? cfTokenRejectedMessage(rejected, false)
+        : `问不到账号列表（${listed.detail}）。给 Worker 加一条 CF_ACCOUNT_ID 变量即可跳过这一步。`,
     };
   }
   const accounts: any[] = Array.isArray(listed.result) ? listed.result : [];

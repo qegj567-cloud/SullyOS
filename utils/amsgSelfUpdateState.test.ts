@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { describeAmsgSelfUpdate, parseAmsgSelfUpdateState, type AmsgSelfUpdateState } from './amsgSelfUpdateState';
+import {
+  cfTokenRejectedMessage,
+  describeAmsgSelfUpdate,
+  explainCfTokenRejection,
+  parseAmsgSelfUpdateState,
+  type AmsgSelfUpdateState,
+} from './amsgSelfUpdateState';
 
 const NOW = Date.parse('2026-09-25T08:00:00.000Z');
 const HOUR = 60 * 60_000;
@@ -67,5 +73,36 @@ describe('describeAmsgSelfUpdate', () => {
     expect(text).toContain('UPLOAD_FAILED');
     expect(text).toContain('boom');
     expect(text).toContain('到点会再试');
+  });
+
+  it('旧 Worker 报 token 无效：换掉「加 CF_ACCOUNT_ID 即可」那句', () => {
+    const text = describeAmsgSelfUpdate({
+      supported: true,
+      state: state({
+        lastOutcome: 'failed',
+        lastError: {
+          code: 'SCRIPT_NOT_LOCATED',
+          message: '问不到账号列表（9109: Invalid access token）。给 Worker 加一条 CF_ACCOUNT_ID 变量即可跳过这一步。',
+        },
+      }),
+    }, NOW);
+    expect(text).toContain('Cloudflare 不认这枚 CF_API_TOKEN（9109: Invalid access token）');
+    expect(text).not.toContain('即可跳过');
+  });
+});
+
+describe('explainCfTokenRejection', () => {
+  it('新 Worker 的提示和其他报错都原样保留', () => {
+    const current = cfTokenRejectedMessage('9109: Invalid access token', false);
+    expect(explainCfTokenRejection(current)).toBe(current);
+    const denied = '问不到账号列表（9109: Unauthorized to access requested resource）。给 Worker 加一条 CF_ACCOUNT_ID 变量即可跳过这一步。';
+    expect(explainCfTokenRejection(denied)).toBe(denied);
+  });
+
+  it('已经配了 CF_ACCOUNT_ID 的不再建议加它', () => {
+    const text = explainCfTokenRejection('在 CF_ACCOUNT_ID 指定的账号里读不到这个 Worker 的配置（9109: Invalid access token）。');
+    expect(text).toContain('Cloudflare 不认这枚 CF_API_TOKEN');
+    expect(text).not.toContain('CF_ACCOUNT_ID 指定');
+    expect(text).not.toContain('加一条 CF_ACCOUNT_ID');
   });
 });

@@ -13410,6 +13410,27 @@ var handleInstantChat = async (args) => {
   });
 };
 
+// utils/amsgSelfUpdateState.ts
+var findCfTokenRejection = (text2) => /\d+: invalid (access|api) token/i.exec(text2)?.[0] ?? null;
+var cfTokenRejectedMessage = (detail, hasAccountId) => `Cloudflare \u4E0D\u8BA4\u8FD9\u679A CF_API_TOKEN\uFF08${detail}\uFF09\uFF0C\u591A\u534A\u5DF2\u7ECF\u8FC7\u671F\u6216\u88AB\u5220\u4E86\u3002\u53BB Cloudflare \u65B0\u5EFA\u4E00\u679A\uFF08\u53EA\u52FE Workers Scripts \u2192 Edit\uFF09\uFF0C\u66FF\u6362 Worker \u91CC\u7684 CF_API_TOKEN\u3002` + (hasAccountId ? "" : "\u5982\u679C\u5B83\u662F cfat_ \u5F00\u5934\u7684\u8D26\u53F7\u4EE4\u724C\uFF0C\u6362\u6210\u666E\u901A API Token\uFF0C\u6216\u8005\u7ED9 Worker \u52A0\u4E00\u6761 CF_ACCOUNT_ID\u3002");
+var OUTCOMES = /* @__PURE__ */ new Set(["updated", "up_to_date", "failed"]);
+var SOURCES = /* @__PURE__ */ new Set(["cron", "client", "manual"]);
+var parseAmsgSelfUpdateState = (raw) => {
+  const value = raw;
+  if (!value || typeof value !== "object") return null;
+  if (typeof value.lastCheckAt !== "string" || Number.isNaN(Date.parse(value.lastCheckAt))) return null;
+  if (typeof value.lastOutcome !== "string" || !OUTCOMES.has(value.lastOutcome)) return null;
+  const error = value.lastError;
+  return {
+    lastCheckAt: value.lastCheckAt,
+    lastSource: typeof value.lastSource === "string" && SOURCES.has(value.lastSource) ? value.lastSource : "cron",
+    lastOutcome: value.lastOutcome,
+    bundleHash: typeof value.bundleHash === "string" && value.bundleHash ? value.bundleHash : null,
+    lastUpdatedAt: typeof value.lastUpdatedAt === "string" ? value.lastUpdatedAt : null,
+    lastError: error && typeof error === "object" && typeof error.code === "string" ? { code: error.code, message: typeof error.message === "string" ? error.message : "" } : null
+  };
+};
+
 // worker/amsg/src/selfUpdate.ts
 var CF_API = "https://api.cloudflare.com/client/v4";
 var BUNDLE_URL = "https://raw.githubusercontent.com/Tosd0/sullyos-workers/main/amsg/worker.bundle.js";
@@ -13483,18 +13504,20 @@ async function locateScript(env, token, scriptName) {
   if (configured) {
     const settings = await cf(token, settingsPath(configured));
     if (!settings.ok) {
+      const rejected = findCfTokenRejection(settings.detail);
       return {
         ok: false,
-        message: `\u5728 CF_ACCOUNT_ID \u6307\u5B9A\u7684\u8D26\u53F7\u91CC\u8BFB\u4E0D\u5230\u8FD9\u4E2A Worker \u7684\u914D\u7F6E\uFF08${settings.detail}\uFF09\u3002`
+        message: rejected ? cfTokenRejectedMessage(rejected, true) : `\u5728 CF_ACCOUNT_ID \u6307\u5B9A\u7684\u8D26\u53F7\u91CC\u8BFB\u4E0D\u5230\u8FD9\u4E2A Worker \u7684\u914D\u7F6E\uFF08${settings.detail}\uFF09\u3002`
       };
     }
     return { ok: true, accountId: configured, settings: settings.result };
   }
   const listed = await cf(token, "/accounts");
   if (!listed.ok) {
+    const rejected = findCfTokenRejection(listed.detail);
     return {
       ok: false,
-      message: `\u95EE\u4E0D\u5230\u8D26\u53F7\u5217\u8868\uFF08${listed.detail}\uFF09\u3002\u7ED9 Worker \u52A0\u4E00\u6761 CF_ACCOUNT_ID \u53D8\u91CF\u5373\u53EF\u8DF3\u8FC7\u8FD9\u4E00\u6B65\u3002`
+      message: rejected ? cfTokenRejectedMessage(rejected, false) : `\u95EE\u4E0D\u5230\u8D26\u53F7\u5217\u8868\uFF08${listed.detail}\uFF09\u3002\u7ED9 Worker \u52A0\u4E00\u6761 CF_ACCOUNT_ID \u53D8\u91CF\u5373\u53EF\u8DF3\u8FC7\u8FD9\u4E00\u6B65\u3002`
     };
   }
   const accounts = Array.isArray(listed.result) ? listed.result : [];
@@ -13660,25 +13683,6 @@ async function handleSelfUpdate(request, env) {
   if (!fetched.ok) return fail("BUNDLE_INVALID", fetched.message);
   return performSelfUpdate(env, gate.token, scriptName, fetched.bundle);
 }
-
-// utils/amsgSelfUpdateState.ts
-var OUTCOMES = /* @__PURE__ */ new Set(["updated", "up_to_date", "failed"]);
-var SOURCES = /* @__PURE__ */ new Set(["cron", "client", "manual"]);
-var parseAmsgSelfUpdateState = (raw) => {
-  const value = raw;
-  if (!value || typeof value !== "object") return null;
-  if (typeof value.lastCheckAt !== "string" || Number.isNaN(Date.parse(value.lastCheckAt))) return null;
-  if (typeof value.lastOutcome !== "string" || !OUTCOMES.has(value.lastOutcome)) return null;
-  const error = value.lastError;
-  return {
-    lastCheckAt: value.lastCheckAt,
-    lastSource: typeof value.lastSource === "string" && SOURCES.has(value.lastSource) ? value.lastSource : "cron",
-    lastOutcome: value.lastOutcome,
-    bundleHash: typeof value.bundleHash === "string" && value.bundleHash ? value.bundleHash : null,
-    lastUpdatedAt: typeof value.lastUpdatedAt === "string" ? value.lastUpdatedAt : null,
-    lastError: error && typeof error === "object" && typeof error.code === "string" ? { code: error.code, message: typeof error.message === "string" ? error.message : "" } : null
-  };
-};
 
 // utils/amsgTickReport.ts
 var TICK_STALL_MS = 5 * 6e4;
