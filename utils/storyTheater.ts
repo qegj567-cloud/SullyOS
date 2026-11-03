@@ -15,6 +15,7 @@ import {
     type WorldbookScanMessage,
 } from './worldbook';
 import { shareOrDownloadFile } from './shareExport';
+import { hasReliableMessageTimestamp } from './storyTheaterTimeline';
 
 export type StoryApiRole = 'system' | 'user' | 'assistant';
 export function hasStoryTheaterParticipant(entry: StoryTheaterEntry, characters: CharacterProfile[]): boolean {
@@ -214,7 +215,7 @@ export const normalizeStoryTheater = (entry: StoryTheaterEntry): StoryTheaterEnt
         characterIds: Array.isArray(entry.characterIds) ? entry.characterIds.filter(Boolean) : [],
         writesToCharacterMemory: entry.writesToCharacterMemory === true,
         characterMemoryDates: entry.characterMemoryDates || {},
-        carryCharacterMemory: entry.writesToCharacterMemory ? true : entry.carryCharacterMemory !== false,
+        carryCharacterMemory: entry.writesToCharacterMemory ? true : entry.carryCharacterMemory === true,
         characterContextLimits: entry.characterContextLimits || {},
         archiveAfter,
         archiveKeepRecent,
@@ -420,7 +421,15 @@ const mergeNightScreeningBackstageAndDebts = (document: StoryTheaterPresetDocume
             if (prompt.id === 'nmj-v3-scene-header') return {
                 ...prompt,
                 content: replacePromptLine(
-                    prompt.content,
+                    replacePromptLine(
+                        replacePromptLine(
+                            prompt.content,
+                            '- 先从角色卡、世界资料、场景和聊天历史寻找已经成立的日期、星期与时刻；不得覆盖已有时间；',
+                            '- 先从当前剧情（前提、常驻事件盒、本剧情共享档案）、本剧场聊天历史（上一层剧场正文的 <scene_header><time>）及用户最新推进中寻找已经成立的本故事时间；角色资料中携带的既有记忆、日程或往期聊天日期仅作过往背景，不得当成当前剧场的基准时间；',
+                        ),
+                        '- 第一轮自行确定的时间从此成为故事事实。之后根据对话、移动、等待、睡眠与时间跳跃实际经过的时长推进，不得每轮重新随机日期；',
+                        '- 第一轮自行确定的时间从此成为故事事实。之后优先服从用户在本轮明确写出的时间推进或新日期锚点（如“推进剧情到X天后”“现在是X月X日”），未指定跳时则根据对话、移动、等待与睡眠实际经过的时长推进，不得被角色既有记忆中的现实日期拉回，也不得每轮重新随机日期；',
+                    ),
                     '正文结束后，依次输出',
                     '正文结束后，依次输出已启用的“幕后与余波”（幕后暗格后紧接镜头债）、世界线、小剧场、回复选项和多角色双向关系温度。',
                 ),
@@ -978,6 +987,7 @@ export const buildStoryIdentityGuard = (
         '- 生成回复的一方不属于故事人物。系统指令为方便表达而出现的“你”，只是执行语法，不能据此把生成端写进故事，也不能把故事里的“你”解释成生成端自己。',
         '- 用户最新输入仍按实际句法辨认说话人与受话人；但在最终输出的叙事旁白、场景条和关系面板中，未另行点名的“你／你的”只允许指用户侧剧情身份。',
         perspectiveRule,
+        '- 剧场时间线锚点：<scene_header><time> 只承接本剧场「当前剧情／常驻事件盒／上一层剧场正文」已确立的故事时间，并优先执行用户在本轮明确写出的时间推进或新日期设定（如“推进剧情到X天后”“现在是X月X日”）；角色资料与既有记忆里的日期只代表人物过去背景，不得覆盖本剧场的时间线。',
         '- 历史助手回复只是已经发生的旧剧情：继承事实，不继承它过去使用的第一、第二或第三人称。当前启用的人称模式是本轮唯一标准。',
     ].join('\n');
 };
@@ -1389,14 +1399,23 @@ export const formatActorRecentMessages = (
     messages: Message[],
     originalUserName?: string,
     currentIdentityName?: string,
+    options?: { includeTimestamps?: boolean },
 ): string => {
     if (messages.length === 0) return '';
     const originalUser = originalUserName?.trim() || '你';
     const currentIdentity = currentIdentityName?.trim() || originalUser;
+    const withTimestamps = options?.includeTimestamps === true && char.timeAwarenessEnabled !== false;
     const rows = messages.map(message => {
         const speaker = message.role === 'user' ? `记忆中的你（${originalUser}）` : message.role === 'assistant' ? char.name : '系统';
-        const clean = String(message.content || '').replace(/data:[^\s]+/gi, '[媒体]').slice(0, 4000);
-        return `- [${new Date(message.timestamp).toLocaleString()}] ${speaker}：${clean}`;
+        const clean = String(message.content || '')
+            .replace(/<scene_header\b[^>]*>[\s\S]*?<\/scene_header\s*>/gi, '')
+            .replace(/data:[^\s]+/gi, '[媒体]')
+            .trim()
+            .slice(0, 4000);
+        const prefix = withTimestamps && hasReliableMessageTimestamp(message)
+            ? `[${new Date(message.timestamp).toLocaleString()}] `
+            : '';
+        return `- ${prefix}${speaker}：${clean}`;
     });
     const identityReminder = currentIdentity === originalUser
         ? ''

@@ -596,4 +596,51 @@ describe('DatePrompts.buildPeekPayload', async () => {
         expect(messages.find(m => m.content === 'WB_D')?.role).toBe('system');
         expect(JSON.stringify(messages).split('WB_D')).toHaveLength(2);
     });
+
+    it('关闭线下时间感知时，感知与会话都不泄漏今日日程、神经链接记忆日期或记忆宫殿现实日期标注', async () => {
+        const char = makeChar({
+            dateTimeAwarenessEnabled: false,
+            scheduleConfig: { enabled: true, style: 'conscious' },
+            refinedMemories: { '2026-10': '一起在旧书店躲雨' },
+            activeMemoryMonths: ['2026-10'],
+            memories: [{ id: 'm1', date: '2026-10-14', summary: '借走了一本诗集', mood: 'warm' }],
+            memoryPalaceEnabled: true,
+            memoryPalaceInjection: [
+                '### 记忆宫殿 (Memory Palace)',
+                '📌 **便利贴（近期重要事项）**',
+                '- [2026年11月3日（今天）] 记得还书（对应日期：2026年11月4日）（剩余 5 天）',
+                '**[客厅 · 共同经历]** (2026年11月2日（昨天）, 重要性: 4)',
+                '在车站挥手告别（对应日期：2026年11月2日）',
+                '**[书房 · 重要事件]** 📦 **事件盒：雨夜**',
+                '_整合回忆_ (2026年10月30日（4天前）, 重要性 5, 已压缩 1 次)',
+                '两人在屋檐下聊到很晚',
+                '_新增片段_：',
+                '- [2026年11月1日（前天）] 约好下次去海边（对应日期：2026年11月1日）',
+            ].join('\n'),
+        });
+        const peek = await DatePrompts.buildPeekPayload({
+            char, userProfile: user, allMsgs: [makeMsg({ content: '推开书店的门。' })], emojis: [],
+        });
+        const session = await DatePrompts.buildSessionPayload({
+            char, userProfile: user, allMsgs: [makeMsg({ content: '推开书店的门。' })], emojis: [], userText: '推开书店的门。', variant: 'send',
+        });
+
+        for (const payload of [peek.messages, session.messages]) {
+            const text = payload.map(m => String(m.content)).join('\n');
+            expect(text).toContain('一起在旧书店躲雨');
+            expect(text).toContain('在车站挥手告别');
+            expect(text).toContain('两人在屋檐下聊到很晚');
+            expect(text).toContain('约好下次去海边');
+            expect(text).not.toContain('2026-10');
+            expect(text).not.toContain('2026-10-14');
+            expect(text).not.toContain('2026年11月');
+            expect(text).not.toContain('2026年10月');
+            expect(text).not.toContain('对应日期');
+            expect(text).not.toContain('剩余 5 天');
+            expect(text).not.toContain('你今天的完整日程');
+        }
+        expect(sysOf(session.messages)).toContain('借走了一本诗集');
+        expect(lastUserOf(peek.messages).content).not.toContain('如果刚聊完');
+        expect(lastUserOf(peek.messages).content).toContain('根据最近记录中的剧情进展');
+    });
 });

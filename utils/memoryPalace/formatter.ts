@@ -57,8 +57,10 @@ export async function expandAndFormat(
     userName?: string,
     /** 注入上限。rerank 启用时传 15 + topN，让 rerank 额外召回的不被切。 */
     maxOutputItems: number = DEFAULT_MAX_OUTPUT_ITEMS,
+    options?: { omitDates?: boolean },
 ): Promise<string> {
     const MAX_OUTPUT_ITEMS = maxOutputItems;
+    const omitDates = options?.omitDates === true;
     // 0. 加载便利贴置顶记忆（pinnedUntil > now，不占 15 条名额）
     const now = Date.now();
     const allCharNodes = await MemoryNodeDB.getByCharId(charId);
@@ -104,15 +106,15 @@ export async function expandAndFormat(
         const box = await EventBoxDB.getById(boxId);
         if (!box) {
             // box 丢失 → 退化为单条命中
-            renderItems.push(buildStandaloneItem(hit.sample, now));
+            renderItems.push(buildStandaloneItem(hit.sample, now, omitDates));
             continue;
         }
-        const item = await buildBoxItem(box, hit.topScore, localNodeMap, now, hit.guaranteed);
+        const item = await buildBoxItem(box, hit.topScore, localNodeMap, now, hit.guaranteed, omitDates);
         if (item) renderItems.push(item);
     }
 
     for (const r of standaloneItems) {
-        renderItems.push(buildStandaloneItem(r, now));
+        renderItems.push(buildStandaloneItem(r, now, omitDates));
     }
 
     // 3. 排序（finalScore 降序，同分时较新者优先）+ 截断到 MAX_OUTPUT_ITEMS
@@ -208,8 +210,12 @@ export async function expandAndFormat(
         // 早就配了同类措辞，这里补齐。
         output += `（这些是你这几天一直记着的事。记着不等于要一直说——话赶到那儿了顺口提一句就够了，没赶到就让它待在心里；同一件事不必每次聊天都追问进展，也不必替 ta 安排什么时候去做。）\n`;
         for (const node of pinnedNodes) {
-            const daysLeft = Math.ceil((node.pinnedUntil! - now) / (24 * 60 * 60 * 1000));
-            output += `- [${formatMemoryDateWithDistance(node.createdAt, now)}] ${memoryContentWithDates(node)}（剩余 ${daysLeft} 天）\n`;
+            if (omitDates) {
+                output += `- ${node.content}\n`;
+            } else {
+                const daysLeft = Math.ceil((node.pinnedUntil! - now) / (24 * 60 * 60 * 1000));
+                output += `- [${formatMemoryDateWithDistance(node.createdAt, now)}] ${memoryContentWithDates(node)}（剩余 ${daysLeft} 天）\n`;
+            }
         }
         output += `\n`;
         console.log(`📌 [MemoryPalace] 便利贴置顶 ${pinnedNodes.length} 条`);
@@ -253,10 +259,11 @@ export async function expandAndFormat(
 
 // ─── 子渲染：单条独立记忆 ──────────────────────────────
 
-function buildStandaloneItem(r: ScoredMemory, now: number): RenderItem {
+function buildStandaloneItem(r: ScoredMemory, now: number, omitDates = false): RenderItem {
     const node = r.node;
-    const date = formatMemoryDateWithDistance(node.createdAt, now);
-    const body = `(${date}, 重要性: ${node.importance})\n${memoryContentWithDates(node)}`;
+    const body = omitDates
+        ? `(重要性: ${node.importance})\n${node.content}`
+        : `(${formatMemoryDateWithDistance(node.createdAt, now)}, 重要性: ${node.importance})\n${memoryContentWithDates(node)}`;
     return {
         guaranteed: r.recallGuarantee === 'explicit_entity',
         score: r.finalScore,
@@ -277,6 +284,7 @@ async function buildBoxItem(
     localNodeMap: Map<string, MemoryNode>,
     now: number,
     guaranteed: boolean = false,
+    omitDates: boolean = false,
 ): Promise<RenderItem | null> {
     // 加载 summary（如有）
     let summary: MemoryNode | null = null;
@@ -309,16 +317,24 @@ async function buildBoxItem(
     body += '\n';
 
     if (summary) {
-        const sDate = formatMemoryDateWithDistance(summary.createdAt, now);
-        body += `_整合回忆_ (${sDate}, 重要性 ${summary.importance}, 已压缩 ${box.compressionCount} 次)\n`;
+        if (omitDates) {
+            body += `_整合回忆_ (重要性 ${summary.importance}, 已压缩 ${box.compressionCount} 次)\n`;
+        } else {
+            const sDate = formatMemoryDateWithDistance(summary.createdAt, now);
+            body += `_整合回忆_ (${sDate}, 重要性 ${summary.importance}, 已压缩 ${box.compressionCount} 次)\n`;
+        }
         body += `${summary.content}\n`;
     }
 
     if (liveToShow.length > 0) {
         body += summary ? `_新增片段_：\n` : '';
         for (const n of liveToShow) {
-            const d = formatMemoryDateWithDistance(n.createdAt, now);
-            body += `- [${d}] ${memoryContentWithDates(n)}\n`;
+            if (omitDates) {
+                body += `- ${n.content}\n`;
+            } else {
+                const d = formatMemoryDateWithDistance(n.createdAt, now);
+                body += `- [${d}] ${memoryContentWithDates(n)}\n`;
+            }
         }
         if (omitted > 0) body += `（另有 ${omitted} 条同盒活节点未展示）\n`;
     }

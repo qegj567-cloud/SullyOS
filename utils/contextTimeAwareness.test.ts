@@ -48,4 +48,24 @@ describe('时间块的分寸框定', () => {
         const block = ContextBuilder.buildTimeAwarenessBlock(charAt(undefined), { skipTimeAwareness: true, conversational: true });
         expect(block).toBe('');
     });
+
+    it('skipTimeAwareness 同时拦住今日实时日程注入', async () => {
+        const char = {
+            ...charAt(true),
+            scheduleConfig: { enabled: true, style: 'conscious' },
+        };
+        const scheduleBlock = await ContextBuilder.buildCurrentScheduleContext(
+            char,
+            false,
+            Promise.resolve({
+                id: 'char-time_2026-11-03',
+                charId: 'char-time',
+                date: '2026-11-03',
+                slots: [{ id: 's1', startTime: '08:00', activity: '晨跑', completed: false }],
+                createdAt: 1,
+            }),
+            { skipTimeAwareness: true },
+        );
+        expect(scheduleBlock).toBe('');
+    });
 });

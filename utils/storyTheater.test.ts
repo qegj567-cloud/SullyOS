@@ -107,15 +107,18 @@ describe('多人剧情记忆的人称与归属', () => {
 
     it('近期原文显式标出记忆中的你，不把 user 行伪装成当前面具', () => {
         const actor = { id: 'lin', name: '林星' } as CharacterProfile;
+        const ts = new Date('2026-11-03T11:22:33Z').getTime();
         const messages = [
-            { id: 1, charId: 'lin', role: 'user', type: 'text', content: '把伞递给他。', timestamp: 1 },
-            { id: 2, charId: 'lin', role: 'assistant', type: 'text', content: '我接住了。', timestamp: 2 },
+            { id: 1, charId: 'lin', role: 'user', type: 'text', content: '把伞递给他。', timestamp: ts },
+            { id: 2, charId: 'lin', role: 'assistant', type: 'text', content: '<scene_header><time>2026年3月14日 · 星期六 · 23:40</time></scene_header>我接住了。', timestamp: ts },
         ] as Message[];
 
         const result = formatActorRecentMessages(actor, messages, '条条', 'Noir');
         expect(result).toContain('林星 最近携带的专属原文上下文');
-        expect(result).toContain('记忆中的你（条条）：把伞递给他。');
-        expect(result).toContain('林星：我接住了。');
+        expect(result).toContain('- 记忆中的你（条条）：把伞递给他。');
+        expect(result).toContain('- 林星：我接住了。');
+        expect(result).not.toContain('2026');
+        expect(result).not.toContain('<scene_header>');
         expect(result).toContain('不得把下列“记忆中的你”重新解释成当前身份');
     });
 
@@ -395,6 +398,12 @@ describe('剧情沙盒辅助逻辑', () => {
         expect(normalized.omitSamplingParams).toBe(false);
         expect(normalized.mask).toEqual({ type: 'user' });
         expect(normalized.carryCharacterMemory).toBe(true);
+        const legacyFictional = normalizeStoryTheater({
+            ...createStoryTheaterDraft(1),
+            writesToCharacterMemory: false,
+            carryCharacterMemory: undefined as unknown as boolean,
+        });
+        expect(legacyFictional.carryCharacterMemory).toBe(false);
         expect(REAL_COMPANION_MEMORY_GUARD).toContain('不得捏造两人曾经发生过的经历');
         expect(REAL_COMPANION_MEMORY_GUARD).toContain('不得添油加醋');
     });
@@ -664,6 +673,9 @@ describe('本轮关系备注', () => {
         expect(guard).toContain('生成回复的一方不属于故事人物');
         expect(guard).toContain('旁白中的“你／你的”必须改掉');
         expect(guard).toContain('角色对白里对「条条」说“你”是正常称呼');
+        expect(guard).toContain('剧场时间线锚点');
+        expect(guard).toContain('推进剧情到X天后');
+        expect(guard).toContain('不得覆盖本剧场的时间线');
     });
 
     it('已察觉要求角色在当幕自然反应，未察觉只保留氛围', () => {

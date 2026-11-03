@@ -380,6 +380,8 @@ export interface RecallRetrievalOptions {
     recallPlan?: RecallPlan;
     /** 调用方专用的最终召回/格式化上限；默认聊天仍保持 15。 */
     formatterMaxOutputItems?: number;
+    /** 隐去召回结果上的现实日期与「今天/距今X天」标注（用于虚构剧场与关掉线下时间感知的见面）。 */
+    omitDates?: boolean;
 }
 
 export async function retrieveMemories(
@@ -1112,7 +1114,7 @@ export async function retrieveMemories(
         const anticipations = await tRetrieve('AnticipationDB.getByCharId', 'IDB', AnticipationDB.getByCharId(charId));
 
         // 10. 格式化
-        const formatted = await tRetrieve('expandAndFormat', 'IDB', expandAndFormat(results, charId, anticipations, userName, formatterCap));
+        const formatted = await tRetrieve('expandAndFormat', 'IDB', expandAndFormat(results, charId, anticipations, userName, formatterCap, { omitDates: recallOptions?.omitDates }));
 
         // ── 汇总打印 ──
         const perfTotal = Math.round(performance.now() - perfRetrieveT0);
@@ -1180,7 +1182,7 @@ export async function injectMemoryPalace(
     recentMessages?: Message[],
     queryHint?: string,
     userName?: string,
-    traceContext?: { entryPoint?: RecallEntryPoint; formatterMaxOutputItems?: number },
+    traceContext?: { entryPoint?: RecallEntryPoint; formatterMaxOutputItems?: number; omitDates?: boolean },
 ): Promise<RecallTrace> {
     const hadPreviousMemory = Boolean(char.memoryPalaceInjection);
     const hadPreviousRoomPlates = Boolean(char.roomPlatesInjection);
@@ -1406,7 +1408,7 @@ export async function injectMemoryPalace(
             getRemoteVectorConfig(),
             char.name,
             telemetry => { retrievalTelemetry = telemetry; },
-            { explicitEntityAnalysis, formatterMaxOutputItems: traceContext?.formatterMaxOutputItems },
+            { explicitEntityAnalysis, formatterMaxOutputItems: traceContext?.formatterMaxOutputItems, omitDates: traceContext?.omitDates },
         );
         if (context || !legacyCompatibilityMode) {
             char.memoryPalaceInjection = context || '';

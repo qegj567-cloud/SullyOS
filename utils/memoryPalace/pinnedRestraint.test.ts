@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Anticipation, MemoryNode } from './types';
-import { MemoryNodeDB } from './db';
+import { EventBoxDB, MemoryNodeDB } from './db';
 import { expandAndFormat } from './formatter';
 
 // 便利贴不占召回名额、每轮全量注入，置顶最长 30 天；窗台期盼里的 anchor 更是长期挂着。
@@ -64,5 +64,68 @@ describe('便利贴与窗台期盼的分寸措辞', () => {
     it('没有便利贴也没有期盼时，这两句都不该凭空出现', async () => {
         const out = await expandAndFormat([], 'char-empty-restraint', [], '小明');
         expect(out).toBe('');
+    });
+
+    it('omitDates=true 时隐去便利贴、独立记忆与事件盒的现实日期和剩余天数标注', async () => {
+        const noDateCharId = 'char-omit-dates';
+        const createdAt = new Date('2026-10-20T12:00:00Z').getTime();
+        await MemoryNodeDB.save({
+            ...pinnedNode('pin-nodate', '明天去车站接人'),
+            charId: noDateCharId,
+            createdAt,
+        });
+        const standalone: MemoryNode = {
+            ...pinnedNode('mem-standalone', '昨晚在天台吹风'),
+            charId: noDateCharId,
+            createdAt,
+            pinnedUntil: undefined,
+        };
+        const summaryNode: MemoryNode = {
+            ...standalone,
+            id: 'mem-box-summary',
+            content: '两人在雨夜车站初次相遇',
+            eventBoxId: 'box-nodate',
+        };
+        const liveNode: MemoryNode = {
+            ...standalone,
+            id: 'mem-box-live',
+            content: '今天把借来的伞还给了对方',
+            eventBoxId: 'box-nodate',
+        };
+        await MemoryNodeDB.save(standalone);
+        await MemoryNodeDB.save(summaryNode);
+        await MemoryNodeDB.save(liveNode);
+        await EventBoxDB.save({
+            id: 'box-nodate',
+            charId: noDateCharId,
+            name: '雨夜车站',
+            tags: ['雨夜'],
+            summaryNodeId: summaryNode.id,
+            liveMemoryIds: [liveNode.id],
+            archivedMemoryIds: [],
+            compressionCount: 1,
+            createdAt,
+            updatedAt: createdAt,
+        });
+
+        const out = await expandAndFormat(
+            [
+                { node: standalone, finalScore: 0.9, similarity: 0.9, bm25Score: 0, roomScore: 0.9 },
+                { node: liveNode, finalScore: 0.85, similarity: 0.85, bm25Score: 0, roomScore: 0.85 },
+            ],
+            noDateCharId,
+            [],
+            '小明',
+            15,
+            { omitDates: true },
+        );
+
+        expect(out).toContain('明天去车站接人');
+        expect(out).toContain('昨晚在天台吹风');
+        expect(out).toContain('两人在雨夜车站初次相遇');
+        expect(out).toContain('今天把借来的伞还给了对方');
+        expect(out).not.toContain('2026年');
+        expect(out).not.toContain('对应日期');
+        expect(out).not.toContain('剩余');
     });
 });
