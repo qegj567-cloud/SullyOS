@@ -59,6 +59,8 @@ describe('story archive regeneration', () => {
         });
         const result = await regenerate();
         const payload = JSON.parse(fetchMock.mock.calls[0][1].body);
+        expect(payload.messages[0].content).toContain('严格保留故事内已确立的时间线');
+        expect(payload.messages[0].content).toContain('当前场景的时间与地点落点');
         expect(payload.messages[1].content).toContain('阿泽答应陪小雨走回家');
         expect(payload.messages[1].content).not.toContain('先计划情节');
         expect(payload.messages[1].content).not.toContain('盒外');
