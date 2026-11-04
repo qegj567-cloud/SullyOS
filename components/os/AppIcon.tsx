@@ -6,6 +6,7 @@ import { isPaperWallpaper, useOS } from '../../context/OSContext';
 import { useBlobRefUrl } from '../../utils/blobRef';
 import { getAcnhIcon } from './acnhIcons';
 import { preloadApp } from './appPreload';
+import { isReducedBlurActive } from '../../utils/blurPolicy';
 
 interface AppIconProps {
   app: AppConfig;
@@ -25,6 +26,7 @@ const NOOK_TILE_COLORS: Record<string, string> = {
 
 const AppIcon: React.FC<AppIconProps> = React.memo(({ app, onClick, size = 'md', hideLabel = false, variant = 'default' }) => {
   const { customIcons, theme } = useOS();
+  const reducedBlur = isReducedBlurActive();
   const IconComponent = Icons[app.icon] || Icons.Settings;
   const customIconUrl = useBlobRefUrl(customIcons[app.id]);
   const isNook = theme.skin === 'animalcrossing';
@@ -107,7 +109,9 @@ const AppIcon: React.FC<AppIconProps> = React.memo(({ app, onClick, size = 'md',
             <div 
                 className={isPaperDesktop
                   ? 'w-[47%] h-[47%] opacity-80'
-                  : 'w-[50%] h-[50%] drop-shadow-[0_2px_5px_rgba(0,0,0,0.3)] opacity-90'}
+                  : reducedBlur
+                    ? 'w-[50%] h-[50%] opacity-90'
+                    : 'w-[50%] h-[50%] drop-shadow-[0_2px_5px_rgba(0,0,0,0.3)] opacity-90'}
                 style={{ color: contentColor }}
             >
                  <IconComponent className="w-full h-full" />

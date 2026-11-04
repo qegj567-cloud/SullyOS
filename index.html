@@ -274,7 +274,47 @@
         overflow: hidden;
         pointer-events: none;
       }
+      /* Gecko 渲染引擎与系统「减弱透明度」偏好下统一关闭实时背景采样模糊与滚动容器内的投影滤镜，
+         避免高分屏滚动时逐帧重算高斯模糊导致掉帧；各卡片与导航栏由组件同步提供高对比度半透纯色底。 */
+      html[data-reduced-blur] *,
+      html[data-reduced-blur] *::before,
+      html[data-reduced-blur] *::after {
+        -webkit-backdrop-filter: none !important;
+        backdrop-filter: none !important;
+      }
+      html[data-reduced-blur] .launcher-desktop [class*="drop-shadow"],
+      html[data-reduced-blur] .sully-chat-root [class*="drop-shadow"] {
+        filter: none !important;
+      }
+      @media (prefers-reduced-transparency: reduce) {
+        *, *::before, *::after {
+          -webkit-backdrop-filter: none !important;
+          backdrop-filter: none !important;
+        }
+        .launcher-desktop [class*="drop-shadow"],
+        .sully-chat-root [class*="drop-shadow"] {
+          filter: none !important;
+        }
+      }
+      @supports (-moz-appearance: none) {
+        *, *::before, *::after {
+          -webkit-backdrop-filter: none !important;
+          backdrop-filter: none !important;
+        }
+        .launcher-desktop [class*="drop-shadow"],
+        .sully-chat-root [class*="drop-shadow"] {
+          filter: none !important;
+        }
+      }
     </style>
+    <script>
+      (function () {
+        var ua = navigator.userAgent || '';
+        var gecko = /\bGecko\/\d/i.test(ua) && !/\blike Gecko\b/i.test(ua);
+        var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-transparency: reduce)').matches;
+        if (gecko || reduced) document.documentElement.setAttribute('data-reduced-blur', '');
+      })();
+    </script>
   <script type="importmap">
 {
   "imports": {

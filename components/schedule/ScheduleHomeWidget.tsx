@@ -7,6 +7,7 @@ import { resolveScheduleCardPalette } from '../../utils/scheduleAppearance';
 import ScheduleAppearanceButton, { ScheduleCustomCssStyle } from './ScheduleAppearanceButton';
 import TokenImg from '../os/TokenImg';
 import { useBlobRefUrl } from '../../utils/blobRef';
+import { resolveReducedGlassCardStyle, useReducedBlur } from '../../utils/blurPolicy';
 
 interface ScheduleSquareWidgetProps {
     schedule: DailySchedule | null;
@@ -185,6 +186,7 @@ export const ScheduleHomeWidget: React.FC<ScheduleHomeWidgetProps> = ({
         theme.hue ?? 260,
         inheritedContentColor,
     );
+    const reducedBlur = useReducedBlur();
     const effectivePaper = paper && palette.isOriginal;
     const effectiveAcnh = acnh && palette.isOriginal;
     const contentColor = palette.text;
@@ -305,6 +307,10 @@ export const ScheduleHomeWidget: React.FC<ScheduleHomeWidgetProps> = ({
                 border: `1px solid ${palette.line}`,
                 boxShadow: '0 8px 32px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.08)',
                 color: contentColor,
+            } : reducedBlur ? {
+                ...scheduleVars,
+                ...resolveReducedGlassCardStyle(contentColor),
+                color: contentColor,
             } : {
                 ...scheduleVars,
                 background: 'rgba(255,255,255,0.08)',
@@ -319,8 +325,8 @@ export const ScheduleHomeWidget: React.FC<ScheduleHomeWidgetProps> = ({
             <div className="absolute right-3 top-3 z-20">
                 <ScheduleAppearanceButton compact />
             </div>
-            {/* Blurred avatar glow（动森奶油底下省略，避免糊脏） */}
-            {!effectivePaper && palette.isOriginal && avatarUrl && (
+            {/* Blurred avatar glow（动森与无实时模糊模式下省略） */}
+            {!effectivePaper && !reducedBlur && palette.isOriginal && avatarUrl && (
                 <div
                     className="absolute inset-0 opacity-25 pointer-events-none"
                     style={{
@@ -503,6 +509,7 @@ export const ScheduleFullscreenViewer: React.FC<ScheduleFullscreenViewerProps> =
 
     // 这层全屏查看器不跟随卡片配色，固定用默认色相做强调色
     const accentHsl = 'hsl(260, 70%, 65%)';
+    const reducedBlur = useReducedBlur();
 
     if (!open) return null;
 
@@ -510,9 +517,9 @@ export const ScheduleFullscreenViewer: React.FC<ScheduleFullscreenViewerProps> =
         <div
             className="fixed inset-0 z-[200] flex flex-col animate-fade-in"
             style={{
-                background: 'rgba(6, 8, 16, 0.72)',
-                backdropFilter: 'blur(22px) saturate(1.2)',
-                WebkitBackdropFilter: 'blur(22px) saturate(1.2)',
+                background: reducedBlur ? 'rgba(6, 8, 16, 0.92)' : 'rgba(6, 8, 16, 0.72)',
+                backdropFilter: reducedBlur ? undefined : 'blur(22px) saturate(1.2)',
+                WebkitBackdropFilter: reducedBlur ? undefined : 'blur(22px) saturate(1.2)',
                 color: contentColor,
             }}
             onClick={onClose}
