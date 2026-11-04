@@ -88,6 +88,8 @@ export interface ScheduleCardAppearance {
   accentColor?: string;
   /** 仅允许 .sully-schedule-* 作用域的进阶美化。 */
   customCss?: string;
+  /** 非原版配色时，桌面小组件仍用毛玻璃透出壁纸、沿用桌面字色，只保留配色里的强调色。 */
+  desktopGlass?: boolean;
 }
 
 export type JournalAppearancePresetId =

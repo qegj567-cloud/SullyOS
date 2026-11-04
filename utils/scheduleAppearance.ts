@@ -128,6 +128,21 @@ export function resolveScheduleCardPalette(
     };
 }
 
+/** 桌面小组件用的配色：开了 desktopGlass 时按原版透底显示，只借用所选配色的强调色。 */
+export function resolveScheduleDesktopPalette(
+    appearance: ScheduleCardAppearance | undefined,
+    hue: number = 260,
+    fallbackText: string = '#ffffff',
+): ScheduleCardPalette {
+    const palette = resolveScheduleCardPalette(appearance, hue, fallbackText);
+    if (palette.isOriginal || !appearance?.desktopGlass) return palette;
+    return {
+        ...resolveScheduleCardPalette(undefined, hue, fallbackText),
+        accent: palette.accent,
+        accentSoft: palette.accentSoft,
+    };
+}
+
 export const SCHEDULE_CSS_SCOPE_REGEX = /^\.sully-schedule-[\w-]+\b/;
 
 export const SCHEDULE_CSS_SCOPE_HINT = '`.sully-schedule-*`';
@@ -169,6 +184,7 @@ export function validateScheduleAppearance(value:unknown):ScheduleCardAppearance
  const v=value as Record<string,unknown>;const out:ScheduleCardAppearance={preset:'original'};
  if(v.preset!==undefined){if(typeof v.preset!=='string'||!['custom',...SCHEDULE_CARD_PRESETS.map(p=>p.id)].includes(v.preset))throw Error('日程表配色无效');out.preset=v.preset as ScheduleCardPresetId;}
  for(const key of ['background','textColor','accentColor','customCss'] as const)if(v[key]!==undefined){if(typeof v[key]!=='string'||v[key].length>(key==='customCss'?1024*1024:500)||/<\/?(?:script|style|html|iframe)\b/i.test(v[key]))throw Error('日程表样式内容无效');out[key]=v[key];}
+ if(v.desktopGlass!==undefined){if(typeof v.desktopGlass!=='boolean')throw Error('日程表样式内容无效');out.desktopGlass=v.desktopGlass;}
  const check=validateScopedCss(out.customCss||'',SCHEDULE_CSS_SCOPE_REGEX,SCHEDULE_CSS_SCOPE_HINT);if(!check.isValid)throw Error(check.errors.join('\n'));
  return out;
 }
