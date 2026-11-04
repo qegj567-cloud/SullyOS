@@ -450,8 +450,8 @@ const DevDebugPanel: React.FC = () => {
                         </>}
                         {/* 只是入口：打开后由 Amsg2DebugPanel 自己在页面上挂小窗，本面板不渲染它的内容。 */}
                         <ToggleRow
-                            title="amsg2 任务观察窗"
-                            detail="右上角常驻小窗：任务倒计时、cron 实际触发时刻、通道 trace。"
+                            title="主动消息观察窗"
+                            detail="右上角常驻小窗：下一条主动消息的倒计时、通知通道状况，还能测试推送。"
                             checked={flags.amsg2Panel}
                             onChange={(checked) => updateFlag('amsg2Panel', checked)}
                         />

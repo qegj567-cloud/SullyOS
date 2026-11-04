@@ -78,14 +78,23 @@ export const clampPanelPosition = (
   };
 };
 
-/** 倒计时文案：未到点 T-4m12s，已过点 T+30s。 */
+/**
+ * 倒计时文案：「4 分 12 秒」「2 小时 3 分」「1 天 2 小时」，已过点前面加「已过」。
+ * 只留最大的两级单位：一小时以上还跳秒，读的人只会被晃眼；第二级是 0 时省掉。
+ */
 export const formatCountdown = (deltaMs: number): string => {
-  const sign = deltaMs < 0 ? 'T+' : 'T-';
   const total = Math.floor(Math.abs(deltaMs) / 1000);
-  const h = Math.floor(total / 3600);
+  const d = Math.floor(total / 86_400);
+  const h = Math.floor((total % 86_400) / 3600);
   const m = Math.floor((total % 3600) / 60);
   const s = total % 60;
-  return `${sign}${h ? `${h}h` : ''}${h || m ? `${m}m` : ''}${s}s`;
+  const parts: Array<[number, string]> = d ? [[d, '天'], [h, '小时']]
+    : h ? [[h, '小时'], [m, '分']]
+      : m ? [[m, '分'], [s, '秒']]
+        : [[s, '秒']];
+  const text = parts.filter(([value], index) => index === 0 || value > 0)
+    .map(([value, unit]) => `${value} ${unit}`).join(' ');
+  return deltaMs < 0 ? `已过 ${text}` : text;
 };
 
 const resolveState = (

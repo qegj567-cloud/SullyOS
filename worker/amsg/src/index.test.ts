@@ -3550,6 +3550,23 @@ describe('stale 跳过留痕（onStaleSkip）', () => {
     expect(written!.skip.staleAction).toBe('expired');
   });
 
+  it('诊断任务过期跳过时留一条 fire-settled，不写主动消息的 last_skip', async () => {
+    const writeState = makeWriteState();
+    const runId = '11111111-1111-4111-8111-111111111111';
+    await amsgStaleSkip(
+      { id: 103, uuid: runId },
+      {
+        reason: 'stale', action: 'expired',
+        metadata: { charId: 'amsg-diagnostic', amsgKind: 'diagnostic', amsgDiagnosticRunId: runId },
+        occurrenceMs: Date.now(), skippedCount: 1, nextSendAt: null, writeState,
+      },
+    );
+    expect(lastSkipOf(writeState)).toBeNull();
+    const call = writeState.mock.calls.find(([namespace]) => namespace === 'amsg:diagnostic');
+    expect(call, '应该写过诊断记录').toBeTruthy();
+    expect(JSON.parse(String(call![1][0].value))).toMatchObject({ runId, event: 'fire-settled', status: 'skipped', reason: 'stale' });
+  });
+
   it('过期没补发的那次也回一条「这次没发」的结果', async () => {
     const emitResult = vi.fn(async (_payload: Record<string, unknown>) => ({ messageId: 'm', pushed: false }));
     const occurrenceMs = Date.parse('2026-07-25T09:00:00.000Z');

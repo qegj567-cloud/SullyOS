@@ -1396,3 +1396,26 @@ it('停止待收轮立即解除占位；云端取消失败也只保留已显示�
     expect(write).toHaveBeenCalledWith(`amsg:char:${charId}`, `chat_stop:${uuid}`, JSON.stringify({ text: '已经显示' }));
   } finally { cancel.mockRestore(); write.mockRestore(); }
 });
+
+describe('AI 复现排程', () => {
+  it('使用本次 API 的加密任务、不登记或修复推送订阅，并保留延迟时间', async () => {
+    const runId = '55555555-5555-4555-8555-555555555555';
+    const calls: Array<{ url: string; init: RequestInit }> = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
+      calls.push({ url, init });
+      return new Response(JSON.stringify({ success: true, data: url.endsWith('/config-check') ? { diagnosticReproduction: 1 } : { uuid: runId } }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }));
+    const before = Date.now();
+    const result = await ActiveMsgClient.scheduleReproduction(runId, { ...API, apiKey: 'cheap-only', model: 'cheap-model' }, 120);
+    const request = calls.find(c => c.url.endsWith('/schedule-message'))!;
+    const task = JSON.parse(JSON.parse(String(request.init.body)).encryptedData);
+    expect(task).toMatchObject({ uuid: runId, apiKey: 'cheap-only', primaryModel: 'cheap-model', apiUrl: 'https://api.example.com/v1/chat/completions' });
+    expect(result.dueAt).toBeGreaterThanOrEqual(before + 120000);
+    expect(calls.some(c => /push-subscription|llm-credentials/.test(c.url))).toBe(false);
+  });
+  it('旧 Worker 不认识诊断协议时不创建任务、不烧模型额度', async () => {
+    const calls = mockInstantChatFetch(200, { success: true, data: { backgroundJobs: true } });
+    await expect(ActiveMsgClient.scheduleReproduction('55555555-5555-4555-8555-555555555555', API, 60)).rejects.toThrow('更新');
+    expect(calls.some(c => c.url.endsWith('/schedule-message'))).toBe(false);
+  });
+});

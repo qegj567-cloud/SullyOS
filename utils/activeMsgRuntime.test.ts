@@ -3126,3 +3126,25 @@ describe('停止的instant回程', () => {
     expect((await ActiveMsgStore.consumeInboxMessages()).filter(m => m.taskUuid === 'stopped-inbox-task')).toEqual([]);
   });
 });
+
+describe('诊断消息隔离（真收件箱）', () => {
+  it('补收带来的诊断消息不写聊天、不触发角色事件，成功保存后可销账', async () => {
+    const { saveDiagnosticRun, listDiagnosticRuns } = await import('./amsgReproductionStore');
+    const runId = '44444444-4444-4444-8444-444444444444';
+    await saveDiagnosticRun({ runId, createdAt: Date.now(), dueAt: Date.now(), api: { host: 'test', model: 'cheap' }, status: 'scheduled' });
+    const save = vi.spyOn(DB, 'saveMessage');
+    const events: Event[] = [];
+    const oldWindow = globalThis.window;
+    (globalThis as any).window = { dispatchEvent: (event: Event) => { events.push(event); return true; } };
+    const ack = vi.spyOn(ActiveMsgClient, 'ackOutboxMessages').mockResolvedValue(undefined as any);
+    try {
+      await ActiveMsgStore.consumeInboxMessages();
+      await ActiveMsgStore.saveInboxMessage({ messageId: 'diagnostic-m1', charId: 'amsg-diagnostic', charName: '复现', body: '测试消息 [[ACTION:POKE]]', receivedAt: Date.now(), metadata: { amsgDiagnosticRunId: runId, amsgOutboxBackfill: true, amsgEmotionUpdate: '不应执行' } });
+      expect(await flushInboxToChat('上线补收')).toEqual([]);
+      expect(save).not.toHaveBeenCalled();
+      expect(events.some(e => e.type === 'active-msg-received')).toBe(false);
+      expect((await listDiagnosticRuns()).find(r => r.runId === runId)?.messages?.[0].text).toContain('测试消息');
+      expect(ack).toHaveBeenCalledWith(['diagnostic-m1']);
+    } finally { (globalThis as any).window = oldWindow; save.mockRestore(); ack.mockRestore(); }
+  });
+});

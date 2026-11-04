@@ -43,6 +43,8 @@ import {
   summarizeErrorCause,
 } from '@rei-standard/amsg-server/cloudflare';
 import { stripReasoningTags } from '@rei-standard/amsg-shared';
+import { settleReproduction, traceDiagnosticTransport, writeDiagnosticStage } from './reproduction';
+import { DIAGNOSTIC_NAMESPACE, DIAGNOSTIC_RETENTION_DAYS, diagnosticRunId } from '../../../utils/amsgReproduction';
 import { AMSG_BUNDLE_VERSION } from '../../../utils/amsgBundleVersion';
 // 「上一次推送被判订阅失效」的形状，跟前端体检共用一个类型定义（那份是零依赖纯叶子；
 // 往里加任何浏览器依赖都会连累这个 bundle）。这里只产出事实，红绿灯和文案归前端。
@@ -1093,6 +1095,7 @@ export const amsgFireSettled = async (
     writeState: WriteState;
   },
 ): Promise<void> => {
+  if (await settleReproduction(info)) return;
   const stash = getFireStash(info.scratch);
   if (!stash) return;   // onBeforeFire 没走到挂 stash 那步（比如取 fire_pack 就失败了）
 
@@ -1296,6 +1299,11 @@ export const amsgStaleSkip = async (
     console.log('[amsg:stale-skip] 后台任务过期跳过，不写 last_skip', {
       taskId: task?.id ?? null, kind: taskKind, action: info.action,
     });
+    // 诊断任务过期跳过也要留一条收尾记录，否则报告只能说「证据不足」。
+    const diagnosticRun = diagnosticRunId(meta);
+    if (diagnosticRun) {
+      await writeDiagnosticStage(info.writeState, diagnosticRun, 'fire-settled', { status: 'skipped', reason: info.reason, staleAction: info.action });
+    }
     return;
   }
 
@@ -3085,7 +3093,7 @@ export const buildWorkerConfig = (env: Env) => {
       publicKey: nativeFcmReady ? 'native-fcm' : 'third-party-push',
       privateKey: nativeFcmReady ? 'native-fcm' : 'third-party-push',
     };
-  const webpush = createHybridPushTransport(env, createWebCryptoWebPush(vapid));
+  const webpush = traceDiagnosticTransport(createHybridPushTransport(env, createWebCryptoWebPush(vapid)), env);
   // 即时对话终态失败的直发通道拿同一份 transport（见 sendInstantErrorPush）。
   configureInstantErrorPush(env.DB && env.AMSG_MASTER_KEY
     ? { webpush, db: env.DB as unknown as InstantErrorPushDeps['db'], masterKey: env.AMSG_MASTER_KEY }
@@ -3107,7 +3115,7 @@ export const buildWorkerConfig = (env: Env) => {
     // 命名空间下超过天数没更新的条目清掉。角色状态那个命名空间（amsg:char:<id>，
     // 装 fire_pack / tool_pack）不配 TTL——那些是要长期留着的，配了就等于定时把
     // 角色的云端状态抹掉。判据是行本来就有的 updated_at 列，不加列、不动表结构。
-    clientStateTtl: { [INSTANT_INPUT_NAMESPACE]: INSTANT_INPUT_TTL_DAYS, [AMSG_JOB_NAMESPACE]: AMSG_JOB_TTL_DAYS },
+    clientStateTtl: { [INSTANT_INPUT_NAMESPACE]: INSTANT_INPUT_TTL_DAYS, [AMSG_JOB_NAMESPACE]: AMSG_JOB_TTL_DAYS, [DIAGNOSTIC_NAMESPACE]: DIAGNOSTIC_RETENTION_DAYS },
     cloudData: { resolveOwner: resolveSullyCloudOwnership },
     // 满血 fire-time hooks（onBeforeFire 现场填槽 + onLLMOutput 分类 +
     // executeToolCalls 服务端工具循环）；总超时用库默认 240s，轮数由 onBeforeFire 按
@@ -3117,7 +3125,7 @@ export const buildWorkerConfig = (env: Env) => {
     // 用户主动触发的即时对话：生成失败本轮就结束，由用户决定是否重发。
     // 策略由上游在 onBeforeFire 前解析，读取上下文失败也覆盖；整批入箱后仍可补推原文。
     maxGenerationRetries: (task: { metadata?: Record<string, unknown> | null }) =>
-      isInstantChatTask(task.metadata) ? 0 : undefined,
+      isInstantChatTask(task.metadata) || readTaskKind(task.metadata) === 'diagnostic' ? 0 : undefined,
     // 取消通过租约心跳通知执行中的 Worker；1 秒检测一次，TTL 仍由上游管理。
     // 收尾回执 + 过期跳过回执（config 级 hook）。
     // onFireSettled: 无论这次 fire 是发出去了、跳过了还是抛错了都会调一次，self_log
@@ -3674,6 +3682,7 @@ export default {
           // 旧代码执行，版本号对上了不代表新逻辑真的在跑。
           backgroundJobs: true,
           thirdPartyPush: true,
+          diagnosticReproduction: 1,
           workerVersion: AMSG_BUNDLE_VERSION,
           // 自动更新：有没有这个能力（配没配 CF_API_TOKEN，不回值）+ 最近一次检查的结果。
           // 读的是诊断表，D1 没绑上时读不到就是 null，不影响上面那些照常回答。
