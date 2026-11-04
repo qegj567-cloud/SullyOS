@@ -4195,7 +4195,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
                             visibleCountRef.current = nextVisibleCount;
                             setVisibleCount(nextVisibleCount);
                             await reloadMessages(nextVisibleCount);
-                        }} className="px-4 py-2 bg-white/50 backdrop-blur-sm rounded-full text-xs text-slate-500 shadow-sm border border-white hover:bg-white transition-colors">加载历史消息 ({collapsedCount})</button>
+                        }} className="px-4 py-2 bg-white/85 rounded-full text-xs text-slate-500 shadow-sm border border-white hover:bg-white transition-colors">加载历史消息 ({collapsedCount})</button>
                     </div>
                 )}
                 {windowedFocusMsgId !== null && (
@@ -4203,7 +4203,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
                         {hasOlderHistoryWindow ? (
                             <button
                                 onClick={() => extendHistoryWindow('older')}
-                                className="px-3 py-1.5 bg-white/60 backdrop-blur-sm rounded-full text-[11px] text-slate-500 shadow-sm border border-white hover:bg-white transition-colors"
+                                className="px-3 py-1.5 bg-white/85 rounded-full text-[11px] text-slate-500 shadow-sm border border-white hover:bg-white transition-colors"
                             >
                                 向上滑继续看更早消息
                             </button>
@@ -4298,7 +4298,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
                         {hasNewerHistoryWindow ? (
                             <button
                                 onClick={() => extendHistoryWindow('newer')}
-                                className="px-3 py-1.5 bg-white/60 backdrop-blur-sm rounded-full text-[11px] text-slate-500 shadow-sm border border-white hover:bg-white transition-colors"
+                                className="px-3 py-1.5 bg-white/85 rounded-full text-[11px] text-slate-500 shadow-sm border border-white hover:bg-white transition-colors"
                             >
                                 向下滑继续看较新消息
                             </button>
