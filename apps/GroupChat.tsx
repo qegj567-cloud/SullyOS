@@ -1892,7 +1892,7 @@ ${memberTimeline || '(暂无互动记录)'}
                             const { messages: moreMsgs, totalCount } = await DB.getRecentGroupMessagesWithCount(activeGroup.id, nextVisibleCount);
                             setMessages(moreMsgs);
                             setTotalMsgCount(totalCount);
-                        }} className="px-4 py-2 bg-white/85 rounded-full text-xs text-slate-500 shadow-sm border border-white hover:bg-white transition-colors">
+                        }} className="px-4 py-2 bg-white/60 rounded-full text-xs text-slate-500 shadow-sm border border-white hover:bg-white transition-colors">
                             加载历史消息 ({collapsedCount})
                         </button>
                     </div>

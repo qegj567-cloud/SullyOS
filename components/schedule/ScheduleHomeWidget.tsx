@@ -3,7 +3,7 @@ import { CharacterProfile, DailySchedule, ScheduleSlot } from '../../types';
 import ScheduleCard from './ScheduleCard';
 import { getCurrentScheduleSlotIndex, getScheduleWallClock } from '../../utils/scheduleTime';
 import { useOS } from '../../context/OSContext';
-import { resolveScheduleCardPalette } from '../../utils/scheduleAppearance';
+import { resolveScheduleCardPalette, resolveScheduleDesktopPalette } from '../../utils/scheduleAppearance';
 import ScheduleAppearanceButton, { ScheduleCustomCssStyle } from './ScheduleAppearanceButton';
 import TokenImg from '../os/TokenImg';
 import { useBlobRefUrl } from '../../utils/blobRef';
@@ -181,7 +181,7 @@ export const ScheduleHomeWidget: React.FC<ScheduleHomeWidgetProps> = ({
         ? schedule.slots[currentIdx + 1]
         : null;
 
-    const palette = resolveScheduleCardPalette(
+    const palette = resolveScheduleDesktopPalette(
         theme.scheduleCardAppearance,
         theme.hue ?? 260,
         inheritedContentColor,
@@ -478,8 +478,10 @@ interface ScheduleFullscreenViewerProps {
     onSwitchCharacter: (id: string) => void;
     schedule: DailySchedule | null;
     activeCharacter: CharacterProfile | null;
-    contentColor?: string;
 }
+
+// 查看器底色固定为深色遮罩，字色不能跟桌面字色走（桌面配深色字时会深底深字）
+const VIEWER_TEXT_COLOR = '#ffffff';
 
 export const ScheduleFullscreenViewer: React.FC<ScheduleFullscreenViewerProps> = ({
     open,
@@ -489,8 +491,8 @@ export const ScheduleFullscreenViewer: React.FC<ScheduleFullscreenViewerProps> =
     onSwitchCharacter,
     schedule,
     activeCharacter,
-    contentColor = '#ffffff',
 }) => {
+    const contentColor = VIEWER_TEXT_COLOR;
     // Lock scroll of background
     useEffect(() => {
         if (!open) return;

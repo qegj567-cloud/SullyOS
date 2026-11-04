@@ -85,6 +85,7 @@ function defaultDraft(current?: ScheduleCardAppearance): ScheduleCardAppearance 
         textColor: current?.textColor || '#f8f3ff',
         accentColor: current?.accentColor || '#c9a7ff',
         customCss: current?.customCss || '',
+        desktopGlass: current?.desktopGlass ?? false,
     };
 }
 
@@ -234,6 +235,23 @@ const ScheduleAppearanceButton: React.FC<{ compact?: boolean }> = ({ compact = f
                             </button>
                         </div>
                     </section>
+
+                    {(draft.preset || 'original') !== 'original' && (
+                        <label className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-4 cursor-pointer">
+                            <span>
+                                <span className="block text-sm font-bold">桌面上用毛玻璃底</span>
+                                <span className="block text-[11px] text-slate-400 mt-1">桌面小组件透出壁纸、文字跟随桌面字色；点开后和房间、聊天里仍用这套配色。</span>
+                            </span>
+                            <input
+                                type="checkbox"
+                                role="switch"
+                                checked={!!draft.desktopGlass}
+                                onChange={event => setDraft(current => ({ ...current, desktopGlass: event.target.checked }))}
+                                className="peer sr-only"
+                            />
+                            <span className="relative shrink-0 w-11 h-6 rounded-full bg-slate-200 transition-colors peer-checked:bg-violet-500 peer-focus-visible:ring-2 peer-focus-visible:ring-violet-300 after:absolute after:top-0.5 after:left-0.5 after:w-5 after:h-5 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:after:translate-x-5" />
+                        </label>
+                    )}
 
                     {draft.preset === 'custom' && (
                         <section className="rounded-2xl border border-slate-200 bg-white p-4">
