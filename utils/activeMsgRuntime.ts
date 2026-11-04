@@ -1,3 +1,5 @@
+import { diagnosticRunId } from './amsgReproduction';
+import { recordDiagnosticInbox } from './amsgReproductionStore';
 import { createReplyRun, isReplyStopped, withReplyCancellation, type ReplyRun } from './chatReplyCancellation';
 import { loadCharacterContextMessages } from './chatContextRange';
 import { ActiveMsg2InboxMessage, ActiveMsg2TaskRecord, APIConfig, RealtimeConfig, UserProfile } from '../types';
@@ -1569,6 +1571,15 @@ const flushInboxToChatImpl = async (trigger: FlushTrigger, charId?: string): Pro
   // 降级回原来的 "原文一次性 saveMessage" 防止消息丢失。dispatchEvent 始终 fire 一次,
   // 保证 toast / 未读 / 通知语义不变。
   for (const message of pendingMessages) {
+    // 包括重启后的补收与重复推送：任何诊断消息都不能进入角色业务。
+    if (diagnosticRunId(message.metadata)) {
+      try { await recordDiagnosticInbox(message, trigger); }
+      catch {
+        retainedInboxMessageIds.add(message.messageId);
+        try { await ActiveMsgStore.saveInboxMessage(message); } catch { /* 云端账不销，下次补收 */ }
+      }
+      continue;
+    }
     if (isReplyStopped(message.taskUuid)) {
       if (message.taskUuid && (message.metadata as any)?.amsgUsage) {
         settleInstantChatApiLog(message.taskUuid, message.metadata);

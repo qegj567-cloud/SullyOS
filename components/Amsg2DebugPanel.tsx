@@ -1,7 +1,9 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
+const AmsgReproductionPanel = lazy(() => import('./AmsgReproductionPanel'));
 import { createPortal } from 'react-dom';
 import { CornersIn, CornersOut, X } from '@phosphor-icons/react';
 import { useOS } from '../context/OSContext';
+import Modal from './os/Modal';
 import {
     buildAmsg2DebugTasks,
     clampPanelPosition,
@@ -34,87 +36,95 @@ import {
 const REDRAW_MS = 1_000;
 const TRACE_RELOAD_MS = 2_000;
 const TRACE_SHOWN = 5;
-/** 快到点了：倒计时转绿的阈值。 */
-const IMMINENT_MS = 60_000;
 
-// GitHub Dark 的配色，等宽字 + 深底——这面板是当调试终端看的，跟 app 本身的视觉分开。
-// 走内联 style 不走 Tailwind：这些是精确色值，项目的调色板里没有对应色阶。
-const C = {
-    fg: '#e6edf3',
-    dim: '#8b949e',
-    line: '#21262d',
-    border: '#2b3a55',
-    bg: 'rgba(10,12,20,.93)',
-    green: '#7ee787',
-    blue: '#58a6ff',
-    orange: '#f0883e',
-    red: '#f85149',
-    yellow: '#d29922',
-} as const;
-
-const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
-
+const hhmm = (ms: number): string => new Date(ms).toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' });
 const hhmmss = (ms: number): string => new Date(ms).toLocaleTimeString('zh-CN', { hour12: false });
+
+/** 列表里的时间：今天只写钟点，明天写「明天」，再远带上日期。看的是用户自己的钟。 */
+function whenLabel(ms: number, nowMs: number): string {
+    const dayStart = (value: number) => new Date(value).setHours(0, 0, 0, 0);
+    const days = Math.round((dayStart(ms) - dayStart(nowMs)) / 86_400_000);
+    if (days === 0) return hhmm(ms);
+    if (days === 1) return `明天 ${hhmm(ms)}`;
+    const date = new Date(ms);
+    return `${date.getMonth() + 1}月${date.getDate()}日 ${hhmm(ms)}`;
+}
 
 type TraceEntry = ReturnType<typeof readRecentInstantTraces>[number];
 
-// 送达相关的事件挑出来上色：作废 / 吞没 / 失败是橙的（消息没发出去），收到是绿的。
-function traceColor(event: string): string {
+// 技术记录里给送达相关的事件上色：作废 / 吞没 / 失败是橙的（消息没发出去），收到是绿的。
+function traceTone(event: string): string {
     // 防穿帮闸的「放行了」和「没跑」都是正常结局，名字里带 expire 但不该刷成告警色——
     // 一屏橙色的话，真正要找的那条（吞掉）反而不显眼了。这两条排在下面那行之前。
-    if (/expire-decision-pass|expire-gate-skipped/i.test(event)) return C.dim;
-    if (/expire|swallow|fail|error|timeout/i.test(event)) return C.orange;
-    if (/receiv|deliver|ok|success/i.test(event)) return C.green;
-    return C.dim;
+    if (/expire-decision-pass|expire-gate-skipped/i.test(event)) return 'text-slate-400';
+    if (/expire|swallow|fail|error|timeout/i.test(event)) return 'text-amber-600';
+    if (/receiv|deliver|ok|success/i.test(event)) return 'text-emerald-600';
+    return 'text-slate-400';
 }
 
-/** 一条任务的主色：正在发 > 快到点 > 还早；失效的一律沉成灰。 */
-function taskColor(view: Amsg2DebugTaskView, nowMs: number): string {
-    if (view.state === 'expired' || view.state === 'cancelled') return C.dim;
-    if (view.state === 'firing') return C.orange;
-    if (view.occurrenceMs != null && view.occurrenceMs - nowMs < IMMINENT_MS) return C.green;
-    return C.blue;
-}
+/** 倒计时里的数字放大、单位缩小，一眼先看到「几」。 */
+const Countdown: React.FC<{ text: string }> = ({ text }) => (
+    <span className="tabular-nums">
+        {text.split(/(\d+)/).filter(Boolean).map((part, index) => (/^\d+$/.test(part)
+            ? <span key={index} className="text-[34px] leading-none font-light tracking-tight">{part}</span>
+            : <span key={index} className="text-sm text-slate-400 mx-0.5">{part.trim()}</span>))}
+    </span>
+);
 
-const TaskRow: React.FC<{ view: Amsg2DebugTaskView; nowMs: number }> = ({ view, nowMs }) => {
+/** 最近要发的那一条，占面板的主视觉。 */
+const NextUp: React.FC<{ view: Amsg2DebugTaskView; nowMs: number }> = ({ view, nowMs }) => {
     const { task, state, occurrenceMs, cronTickMs } = view;
-    const dead = state === 'expired' || state === 'cancelled';
-    const color = taskColor(view, nowMs);
-
     return (
-        <div style={{ borderTop: `1px solid ${C.line}`, padding: '5px 0' }}>
+        <div className="px-1 pt-1 pb-3">
+            <div className="text-xs font-bold text-slate-500">{view.charName}的下一条</div>
             {occurrenceMs == null ? (
-                <div style={{ color: C.red }}>触发时间解析不了：{task.firstSendTime}</div>
-            ) : dead ? (
-                // 只说「已过点」，不说「未发」：这个面板是纯本地派生、不查远端，发没发它并不知道。
-                // 断言成「未发」会把排查带偏——实测就有过任务其实早被 worker 消费掉、面板却写着未发。
-                // 要分辨发没发，看设置面板里那条任务的进度（它会拿远端底账对账）。
-                <div style={{ color: C.dim }}>
-                    {view.charName} · {state === 'cancelled' ? '已取消' : '已过点'} · 原定 {hhmmss(occurrenceMs)}
+                <div className="mt-2 text-sm text-rose-500">时间读不出来：{task.firstSendTime}</div>
+            ) : state === 'firing' ? (
+                <div className="mt-1.5 flex items-center gap-2 text-primary">
+                    <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+                    <span className="text-2xl font-light">正在准备</span>
                 </div>
             ) : (
-                <>
-                    <div style={{ fontSize: 17, fontWeight: 700, color }}>
-                        {formatCountdown(occurrenceMs - nowMs)}
-                        {state === 'firing' && <span style={{ fontSize: 11 }}> 触发窗口内</span>}
-                    </div>
-                    {/* 「开跑」不是「送达」：cron 到点只负责把任务捞起来开始生成，
-                        消息还要等 LLM 出完内容才推出去。 */}
-                    <div style={{ color: C.dim }}>
-                        {view.charName} · {cronTickMs != null ? hhmmss(cronTickMs) : '—'} 开跑
-                        {!view.charEnabled && <span style={{ color: C.red }}> [已关]</span>}
-                    </div>
-                </>
+                <div className="mt-1 text-primary"><Countdown text={formatCountdown(occurrenceMs - nowMs)} /></div>
             )}
-
-            {/* 这条任务到底要干嘛：文案调 amsg2Tasks 的现成函数，跟角色上下文块、
-                list_active_messages 工具、设置面板说的是同一套词。 */}
-            <div style={{ color: C.dim }}>
-                {describeTaskMode(task)}·{describeRecurrence(task.recurrenceType)}·{describeExpirePolicy(task.expirePolicy)}
+            {/* 「开始写」不是「送达」：cron 到点只负责把任务捞起来开始生成，消息还要等 AI 写完才推出去。 */}
+            {occurrenceMs != null && (
+                <p className="mt-1.5 text-xs text-slate-500">
+                    {state === 'firing'
+                        ? `原定 ${hhmm(occurrenceMs)}，写好就推送`
+                        : `${whenLabel(cronTickMs ?? occurrenceMs, nowMs)} 开始写，写好就推送`}
+                </p>
+            )}
+            <div className="mt-2.5 flex flex-wrap gap-1.5 text-[11px]">
+                <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">{describeRecurrence(task.recurrenceType)}</span>
+                <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">{describeExpirePolicy(task.expirePolicy)}</span>
+                <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 max-w-full truncate">{describeTaskMode(task)}</span>
             </div>
-
-            {task.lastError && <div style={{ color: C.red }}>↳ {task.lastError}</div>}
+            {!view.charEnabled && <p className="mt-2 text-xs text-amber-600">这个角色的主动消息关着，到点也不会发。</p>}
+            {task.lastError && <p className="mt-2 text-xs text-rose-500 break-all">上次出错：{task.lastError}</p>}
         </div>
+    );
+};
+
+const TaskRow: React.FC<{ view: Amsg2DebugTaskView; nowMs: number }> = ({ view, nowMs }) => {
+    const { task, state, occurrenceMs } = view;
+    const dead = state === 'expired' || state === 'cancelled';
+    return (
+        <li className="py-2 flex items-baseline justify-between gap-3 text-[13px]">
+            <span className={`min-w-0 truncate ${dead ? 'text-slate-400' : 'text-slate-700'}`}>
+                {view.charName}
+                {!view.charEnabled && <span className="ml-1.5 text-[11px] text-amber-600">已关</span>}
+                {task.lastError && <span className="ml-1.5 text-[11px] text-rose-500">出过错</span>}
+            </span>
+            {/* 过点的只说「原定几点」，不说「没发」：这里纯本地推算、不查远端，发没发它并不知道。
+                要分辨发没发，看设置面板里那条任务的进度（它会拿远端底账对账）。 */}
+            <span className="shrink-0 tabular-nums text-slate-400">
+                {occurrenceMs == null ? '时间有误'
+                    : state === 'firing' ? <span className="text-primary">正在准备</span>
+                        : dead ? `${state === 'cancelled' ? '已取消' : '原定'} ${whenLabel(occurrenceMs, nowMs)}`
+                            : whenLabel(occurrenceMs, nowMs)}
+            </span>
+        </li>
     );
 };
 
@@ -129,11 +139,26 @@ const HeaderButton: React.FC<{
         onClick={onClick}
         // 标题栏整条是拖动把手，按钮得把 pointerdown 拦下来，否则点全屏 / 关闭会被当成开始拖。
         onPointerDown={(event) => event.stopPropagation()}
-        style={{ color: C.dim, cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+        className="w-7 h-7 rounded-full flex items-center justify-center text-slate-400 hover:bg-slate-100 active:bg-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
     >
         {children}
     </button>
 );
+
+/** 通知通道一句话体检。iOS 上「实时提醒没接上」几乎是常态：App 不在最前台时 SW 喊不到页面。 */
+const HealthLine: React.FC<{ health: SwChannelHealth | null }> = ({ health }) => {
+    const [dot, text] = health?.status === 'ok'
+        ? ['bg-emerald-500', '通知通道正常']
+        : health?.status === 'fallback-only'
+            ? ['bg-amber-500', '实时提醒没接上，消息会晚几秒到，不会丢']
+            : ['bg-slate-300', '还没收到过消息，暂时看不出通道状况'];
+    return (
+        <div className="flex items-start gap-2 px-1 text-xs text-slate-500">
+            <span className={`mt-[5px] w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} />
+            <span>{text}</span>
+        </div>
+    );
+};
 
 const getViewportSize = () => ({
     width: window.visualViewport?.width ?? window.innerWidth,
@@ -156,7 +181,8 @@ const getViewportSize = () => ({
  * 定位、位置飘掉（同 apps/Chat.tsx 的剧场浮层）。
  */
 const Amsg2DebugPanel: React.FC = () => {
-    const { characters } = useOS();
+    const { characters, apiConfig, apiPresets } = useOS();
+    const [showReproduction, setShowReproduction] = useState(false);
     const [available, setAvailable] = useState(() => isDevDebugAvailable());
     const [enabled, setEnabled] = useState(() => readDevDebugFlags().amsg2Panel);
     const [fullscreen, setFullscreen] = useState(false);
@@ -201,10 +227,8 @@ const Amsg2DebugPanel: React.FC = () => {
     // nowMs 每秒变一次，但任务表只在 characters 变了才需要重算——别把 nowMs 塞进依赖里
     // 让整张表每秒重算一遍。状态分界（到点、过宽限）本来就是分钟级的事，晚一拍无所谓。
     const views = useMemo(() => buildAmsg2DebugTasks(characters, Date.now()), [characters]);
-    const liveCount = useMemo(
-        () => views.filter((v) => v.state === 'pending' || v.state === 'firing').length,
-        [views],
-    );
+    const liveViews = useMemo(() => views.filter((v) => v.state === 'pending' || v.state === 'firing'), [views]);
+    const deadViews = useMemo(() => views.filter((v) => v.state === 'expired' || v.state === 'cancelled'), [views]);
 
     // 转屏 / 手机地址栏伸缩会把拖过的面板推到屏幕外，视口一变就拉回来。
     // 没拖过（position 为 null）时靠 right:8 自己贴边，不用管。
@@ -311,6 +335,19 @@ const Amsg2DebugPanel: React.FC = () => {
 
     if (!active) return null;
 
+    if (showReproduction) return createPortal(
+        <div style={{ position: 'fixed', inset: 0, zIndex: 2147483645 }}>
+            <Modal isOpen title="测试推送" onClose={() => setShowReproduction(false)}>
+                <Suspense fallback={<div className="text-xs text-slate-400">正在打开…</div>}>
+                    <AmsgReproductionPanel apiConfig={apiConfig} apiPresets={apiPresets} />
+                </Suspense>
+            </Modal>
+        </div>,
+        document.body,
+    );
+
+    const [next, ...later] = liveViews;
+
     return createPortal(
         <div
             ref={panelRef}
@@ -322,132 +359,108 @@ const Amsg2DebugPanel: React.FC = () => {
                     : { top: DEBUG_PANEL_MARGIN_PX, right: DEBUG_PANEL_MARGIN_PX }),
                 ...(fullscreen
                     ? { left: DEBUG_PANEL_MARGIN_PX, bottom: DEBUG_PANEL_MARGIN_PX }
-                    : { width: 'min(330px, calc(100vw - 16px))', maxHeight: '78vh' }),
+                    : { width: 'min(300px, calc(100vw - 16px))', maxHeight: '78vh' }),
                 zIndex: 2147483645,
-                display: 'flex',
-                flexDirection: 'column',
-                background: C.bg,
-                color: C.fg,
-                font: `12px/1.45 ${MONO}`,
-                border: `1px solid ${C.border}`,
-                borderRadius: 10,
-                padding: '10px 12px',
-                boxShadow: '0 6px 24px rgba(0,0,0,.45)',
-                backdropFilter: 'blur(4px)',
             }}
+            className="flex flex-col font-sans text-slate-800 bg-white/90 backdrop-blur-xl rounded-[28px] ring-1 ring-slate-900/5 shadow-[0_16px_40px_-12px_rgba(15,23,42,0.35)] p-3"
             role="dialog"
-            aria-label="amsg2 调试面板"
+            aria-label="主动消息观察窗"
         >
             {/* 标题栏固定，内容区自己滚——不然列表一长，切全屏 / 关闭的按钮就滚没了。
                 这一整条同时是拖动把手：touchAction none 让手机上按住横竖拖都归我们，不被页面滚动抢走。 */}
             <div
-                style={{
-                    flexShrink: 0,
-                    cursor: draggable ? 'grab' : 'default',
-                    touchAction: draggable ? 'none' : undefined,
-                }}
+                className="shrink-0 flex items-center justify-between pl-1 pb-1"
+                style={{ cursor: draggable ? 'grab' : 'default', touchAction: draggable ? 'none' : undefined }}
                 onPointerDown={handlePointerDown}
                 onPointerMove={handlePointerMove}
                 onPointerUp={handlePointerUp}
                 onPointerCancel={handlePointerUp}
             >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                    <b style={{ color: C.green }}>⏱ amsg2 debug</b>
-                    <span style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                        <HeaderButton
-                            onClick={() => setFullscreen((v) => !v)}
-                            label={fullscreen ? '缩回小窗' : '铺满全屏'}
-                        >
-                            {fullscreen ? <CornersIn size={13} weight="bold" /> : <CornersOut size={13} weight="bold" />}
-                        </HeaderButton>
-                        <HeaderButton onClick={close} label="关闭 amsg2 调试面板">
-                            <X size={13} weight="bold" />
-                        </HeaderButton>
-                    </span>
-                </div>
-                <div style={{ color: C.dim, marginBottom: 6 }}>
-                    now {hhmmss(nowMs)} · cron 每整分 · 待触发 {liveCount}/{views.length}
-                </div>
+                <span className="text-[13px] font-bold">
+                    主动消息
+                    {liveViews.length > 0 && <span className="ml-1.5 font-normal text-slate-400">{liveViews.length} 条待发</span>}
+                </span>
+                <span className="flex items-center">
+                    <HeaderButton onClick={() => setFullscreen((v) => !v)} label={fullscreen ? '缩回小窗' : '铺满全屏'}>
+                        {fullscreen ? <CornersIn size={14} weight="bold" /> : <CornersOut size={14} weight="bold" />}
+                    </HeaderButton>
+                    <HeaderButton onClick={close} label="关闭主动消息观察窗">
+                        <X size={14} weight="bold" />
+                    </HeaderButton>
+                </span>
             </div>
 
-            <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
-                {views.length === 0 ? (
-                    <div style={{ color: C.dim }}>（无 amsg2 任务）</div>
-                ) : (
-                    views.map((view) => (
-                        <TaskRow key={`${view.charId}:${view.task.taskUuid}`} view={view} nowMs={nowMs} />
-                    ))
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain no-scrollbar">
+                {next ? <NextUp view={next} nowMs={nowMs} /> : (
+                    <div className="px-1 pt-2 pb-4">
+                        <p className="text-sm text-slate-600">现在没有排好的主动消息</p>
+                        <p className="mt-1 text-xs text-slate-400">角色排了消息后，倒计时会出现在这里。</p>
+                    </div>
                 )}
 
-                <div
-                    style={{
-                        borderTop: `1px solid ${C.line}`,
-                        marginTop: 6,
-                        paddingTop: 5,
-                        color: C.yellow,
-                        display: 'flex',
-                        alignItems: 'baseline',
-                        justifyContent: 'space-between',
-                        gap: 8,
-                    }}
-                >
-                    <span>
-                        <b>trace</b>
-                        <span style={{ color: C.dim, fontSize: 11 }}> 最近 {TRACE_SHOWN} 条 · 无条件记录</span>
-                    </span>
-                    {/* 下面列表只显示得下几行，缓冲里其实攒着两百条。远端排障要的是「一小时前
-                        那会儿发生了什么」，全靠这个按钮把它们交出来。 */}
+                <HealthLine health={health} />
+
+                {(later.length > 0 || deadViews.length > 0) && (
+                    <div className="mt-3 pt-1 px-1 border-t border-slate-100">
+                        {later.length > 0 && (
+                            <ul className="divide-y divide-slate-100">
+                                {later.map((view) => <TaskRow key={`${view.charId}:${view.task.taskUuid}`} view={view} nowMs={nowMs} />)}
+                            </ul>
+                        )}
+                        {/* 失效的照样留着：排查「怎么没响」时，看得见那条死任务比它凭空消失有用。 */}
+                        {deadViews.length > 0 && (
+                            <details className="group text-[13px]">
+                                <summary className="py-2 cursor-pointer list-none text-slate-400 flex justify-between">
+                                    <span>已过点 {deadViews.length} 条</span>
+                                    <span className="inline-block group-open:rotate-90 transition-transform">›</span>
+                                </summary>
+                                <ul className="divide-y divide-slate-100">
+                                    {deadViews.map((view) => <TaskRow key={`${view.charId}:${view.task.taskUuid}`} view={view} nowMs={nowMs} />)}
+                                </ul>
+                            </details>
+                        )}
+                    </div>
+                )}
+
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                    <button
+                        type="button"
+                        onClick={() => setShowReproduction(true)}
+                        className="py-2.5 rounded-2xl bg-primary/15 text-primary text-xs font-bold active:scale-95 transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                    >
+                        测试推送
+                    </button>
+                    {/* 屏幕上只放得下几行，缓冲里其实攒着几百条。远端排障要的是「一小时前
+                        那会儿发生了什么」，全靠这个按钮把它们交出来；按钮上的数字就是交出去的全部条数。 */}
                     <button
                         type="button"
                         onClick={exportTraces}
                         disabled={traceTotal === 0}
-                        style={{
-                            color: traceExport === 'failed' ? C.red : C.dim,
-                            fontSize: 11,
-                            cursor: traceTotal === 0 ? 'default' : 'pointer',
-                            whiteSpace: 'nowrap',
-                            flexShrink: 0,
-                        }}
+                        className={`py-2.5 rounded-2xl bg-slate-100 text-xs font-bold active:scale-95 transition-transform disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${traceExport === 'failed' ? 'text-rose-500' : 'text-slate-600'}`}
                     >
                         {traceExport === 'done' ? '已导出'
                             : traceExport === 'failed' ? '导出失败'
-                                : traceTotal === 0 ? '暂无' : `导出全部 (${traceTotal})`}
+                                : traceTotal === 0 ? '暂无记录' : `导出记录 ${traceTotal}`}
                     </button>
                 </div>
-                {/* 实时通道的体检结论。放在最显眼处是因为这条腿断了之后功能表面上还是好的——
-                    消息照样到，只是慢那么几秒，用户多半当成「网络卡」而不会来报。
-                    iOS 上这条几乎必然是断的：App 不在最前台时 SW 拿到的页面名单就是空的。 */}
-                {health && health.status !== 'idle' && (
-                    <div
-                        style={{
-                            fontSize: 11,
-                            marginBottom: 3,
-                            color: health.status === 'ok' ? C.dim : C.red,
-                        }}
-                    >
-                        {health.status === 'ok'
-                            ? `实时通道正常 · 上次收到 SW 消息 ${hhmmss(new Date(health.lastSwMessageAt!).getTime())}`
-                            : '⚠ 没收到过 SW 实时通知，消息靠本地巡查自己捞（会慢几秒，不会丢）'}
-                        {health.flushByTrigger.length > 0 && (
-                            <span style={{ color: C.dim }}>
-                                {' · 冲刷来源 '}
-                                {health.flushByTrigger.map((item) => `${item.trigger}×${item.count}`).join(' ')}
-                            </span>
+
+                <details className="group mt-2 px-1">
+                    <summary className="py-1.5 cursor-pointer list-none text-[11px] text-slate-400 flex justify-between">
+                        <span>技术记录</span>
+                        <span className="inline-block group-open:rotate-90 transition-transform">›</span>
+                    </summary>
+                    <div className="pb-1 font-mono text-[10.5px] leading-relaxed">
+                        {health?.lastSwMessageAt && <div className="text-slate-400">上次收到 SW 消息 {hhmmss(new Date(health.lastSwMessageAt).getTime())}</div>}
+                        {health && health.flushByTrigger.length > 0 && (
+                            <div className="text-slate-400">冲刷来源 {health.flushByTrigger.map((item) => `${item.trigger}×${item.count}`).join(' ')}</div>
                         )}
+                        {traces.length === 0 ? <div className="text-slate-400">暂无</div> : traces.map((entry, index) => (
+                            <div key={`${entry.ts ?? 'no-ts'}-${index}`} className={`truncate ${traceTone(entry.event ?? '')}`}>
+                                {entry.ts ? hhmmss(new Date(entry.ts).getTime()) : '--:--:--'} {entry.event ?? '?'}
+                            </div>
+                        ))}
                     </div>
-                )}
-                {traces.length === 0 ? (
-                    <div style={{ color: C.dim, fontSize: 11 }}>（暂无）</div>
-                ) : (
-                    traces.map((entry, index) => (
-                        <div
-                            key={`${entry.ts ?? 'no-ts'}-${index}`}
-                            style={{ fontSize: 11, color: traceColor(entry.event ?? '') }}
-                        >
-                            {entry.ts ? hhmmss(new Date(entry.ts).getTime()) : '--:--:--'} {entry.event ?? '?'}
-                        </div>
-                    ))
-                )}
+                </details>
             </div>
         </div>,
         document.body,

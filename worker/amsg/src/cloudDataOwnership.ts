@@ -1,4 +1,5 @@
 import { INSTANT_INPUT_NAMESPACE, parseInstantInputEnvelope } from './instantInput';
+import { diagnosticRunId, DIAGNOSTIC_NAMESPACE } from '../../../utils/amsgReproduction';
 import { parseToolPack } from '../../../utils/amsgToolPack';
 import { parseCharCredId } from '../../../utils/amsgLlmCredentials';
 import { AMSG_STATE_NAMESPACE_PREFIX, unpackStateValue } from '../../../utils/amsgFirePack';
@@ -31,6 +32,10 @@ const character = (id: string, kind: string, label?: string): SullyCloudOwnershi
 
 /** 只按云端已有的结构化身份识别；不解析正文里的人名，也不读取浏览器资料。 */
 export async function resolveSullyCloudOwnership(input: SullyCloudResourceInput): Promise<SullyCloudOwnership | null> {
+  const diagnosticId = input.type === 'state' && input.namespace === DIAGNOSTIC_NAMESPACE
+    ? diagnosticRunId({ amsgDiagnosticRunId: input.key?.split(':')[0] })
+    : diagnosticRunId(record(record(input.payload).metadata)) ?? diagnosticRunId(record(record(input.task).metadata));
+  if (diagnosticId) return { owner: { type: 'diagnostic', id: diagnosticId, label: '主动消息复现' }, kind: 'diagnostic' };
   if (input.type === 'state') {
     if (input.namespace === INSTANT_INPUT_NAMESPACE && typeof input.value === 'string') {
       const envelope = parseInstantInputEnvelope(input.value);

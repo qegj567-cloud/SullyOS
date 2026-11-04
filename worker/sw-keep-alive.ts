@@ -1,5 +1,9 @@
 /// <reference lib="WebWorker" />
 
+import { diagnosticNotificationScope } from './diagnosticNotification';
+import { diagnosticRunId, safeDiagnosticError } from '../utils/amsgReproduction';
+import { appendDiagnosticEvent } from '../utils/amsgReproductionStore';
+
 import { installReiSW } from '@rei-standard/amsg-sw';
 import { createStaticCache, type StaticManifest } from './staticCache';
 
@@ -251,16 +255,27 @@ function traceSw(event: string, payload?: any, extra: Record<string, any> = {}) 
   void appendSwTrace(entry).catch(() => { /* trace 写不进去就算了 */ });
 }
 
-installReiSW(sw, {
+installReiSW(diagnosticNotificationScope(sw, appendDiagnosticEvent), {
   defaultIcon: './icons/icon-192.png',
   defaultBadge: './icons/icon-192.png',
   multipart: { enabled: true },
   onBusinessPayload: async (payload: any) => {
     traceSw('business-payload-start', payload);
+    const runId = diagnosticRunId(payload?.metadata);
+    const diagnosticTrace = async (event: string, fields: Record<string, unknown> = {}) => {
+      if (!runId) return;
+      try { await appendDiagnosticEvent({ runId, side: 'sw', event, ts: new Date().toISOString(), swVersion: SW_VERSION, messageId: payload?.messageId, chunk: payload?.messageIndex, total: payload?.totalMessages, ...fields }); } catch { /* 旁路 */ }
+    };
+    const receivedTrace = diagnosticTrace('sw-received', {
+      notificationShow: payload?.notification?.show ?? 'default',
+      notificationSilent: payload?.notification?.silent ?? false,
+    });
     try {
       await saveIncomingActiveMessage(payload);
       traceSw('business-payload-done', payload);
+      await Promise.all([receivedTrace, diagnosticTrace('inbox-content-saved')]);
     } catch (e) {
+      await Promise.all([receivedTrace, diagnosticTrace('inbox-error', safeDiagnosticError(e))]);
       traceSw('business-payload-error', payload, {
         error: e instanceof Error ? e.message : String(e),
       });
@@ -757,7 +772,8 @@ sw.addEventListener('pushsubscriptionchange', (event: Event) => {
 
 sw.addEventListener('notificationclick', (event: NotificationEvent) => {
   const payload = event.notification.data?.payload || event.notification.data || {};
-  const charId = payload?.metadata?.charId || payload?.charId || '';
+  const diagnostic = diagnosticRunId(payload?.metadata);
+  const charId = diagnostic ? '' : payload?.metadata?.charId || payload?.charId || '';
   event.notification.close();
 
   event.waitUntil((async () => {
@@ -765,12 +781,12 @@ sw.addEventListener('notificationclick', (event: NotificationEvent) => {
     if (clients.length > 0) {
       const client = clients[0];
       await client.focus();
-      client.postMessage({ type: 'active-msg-open', charId });
+      if (!diagnostic) client.postMessage({ type: 'active-msg-open', charId });
       return;
     }
 
     const openUrl = new URL(sw.registration.scope || sw.location.origin);
-    openUrl.searchParams.set('openApp', 'chat');
+    if (!diagnostic) openUrl.searchParams.set('openApp', 'chat');
     if (charId) openUrl.searchParams.set('activeMsgCharId', charId);
     await sw.clients.openWindow(openUrl.toString());
   })());

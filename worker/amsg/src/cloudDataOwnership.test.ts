@@ -65,6 +65,15 @@ it('只有旧上下文时仍可从工具资料恢复名字，不把正文当名�
     .toEqual({ owner: { type: 'character', id: 'only-state', label: '云端旧名字' }, kind: 'context' });
 });
 
+it('诊断任务和阶段日志归到诊断编号，不冒充真实角色', async () => {
+  const runId = '66666666-6666-4666-8666-666666666666';
+  const task = await resolveSullyCloudOwnership({ type: 'task', payload: { metadata: { charId: 'amsg-diagnostic', amsgKind: 'diagnostic', amsgDiagnosticRunId: runId } } });
+  const state = await resolveSullyCloudOwnership({ type: 'state', namespace: 'amsg:diagnostic', key: `${runId}:event` });
+  expect(task?.owner).toMatchObject({ type: 'diagnostic', id: runId });
+  expect(state?.owner).toEqual(task?.owner);
+});
+
+
 it('classifies generic attachment envelopes by their explicit character owner', async () => {
   expect(await resolveSullyCloudOwnership({ type: 'state', namespace: 'amsg:attachments', key: 'random-attachment',
     value: JSON.stringify({ version: 1, owner: { type: 'character', id: 'char-attachment' }, kind: 'sidechannel', value: 'private-card' }),

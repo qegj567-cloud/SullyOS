@@ -17,6 +17,7 @@
 import { readTaskKind } from '../../../utils/amsgTaskKinds';
 import { PLATE_CONSOLIDATE_KIND } from '../../../utils/amsgPlateJob';
 import { plateConsolidateHandler } from './plateFire';
+import { reproductionHandler } from './reproduction';
 
 /** client_state 的写入口（value 传 null 即删除该 key）。 */
 export type KindWriteState = (
@@ -70,8 +71,9 @@ export type KindFirePlan =
       totalTimeoutMs?: number;
     };
 
-/** LLM 回来这一步的结论。非聊天任务不发聊天正文，所以只用得上 skip-push。 */
-export type KindDecision = { decision: 'skip-push'; reason: string };
+/** LLM 回来这一步的结论；诊断消息用正式推送，其他后台产物通常走 emitResult。 */
+export type KindDecision = { decision: 'skip-push'; reason: string }
+  | { decision: 'finish'; pushPayloads: Array<Record<string, unknown>> };
 
 export interface FireKindHandler {
   /**
@@ -107,7 +109,7 @@ export interface FireKindHandler {
  */
 export const FIRE_KIND_HANDLERS: Record<string, FireKindHandler> = Object.assign(
   Object.create(null) as Record<string, FireKindHandler>,
-  { [PLATE_CONSOLIDATE_KIND]: plateConsolidateHandler },
+  { [PLATE_CONSOLIDATE_KIND]: plateConsolidateHandler, diagnostic: reproductionHandler },
 );
 
 /** 挂在 scratch 上跨 hook 传递的键。 */

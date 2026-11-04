@@ -327,6 +327,25 @@ function installAnthropicFetch(browser = false) {
   globalThis.fetch = wrapped;
 }
 
+// utils/amsgReproduction.ts
+var DIAGNOSTIC_NAMESPACE = "amsg:diagnostic";
+var DIAGNOSTIC_CHAR_ID = "amsg-diagnostic";
+var DIAGNOSTIC_RETENTION_DAYS = 7;
+function diagnosticRunId(metadata) {
+  const value = metadata?.amsgDiagnosticRunId;
+  return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value) ? value : null;
+}
+function safeDiagnosticError(error) {
+  const e = error;
+  const names = ["Error", "TypeError", "AbortError", "TimeoutError", "NotAllowedError", "InvalidStateError", "QuotaExceededError", "VersionError", "DataError", "TransactionInactiveError"];
+  const status = Number(e?.statusCode ?? e?.status ?? e?.llmStatus ?? e?.cause?.statusCode ?? e?.cause?.status);
+  return {
+    errorName: typeof e?.name === "string" && names.includes(e.name) ? e.name : "Error",
+    ...typeof e?.code === "string" && ["LLM_CALL_FAILED", "PUSH_PAYLOAD_TOO_LARGE", "PUSH_SUBSCRIPTION_MISSING", "CREDENTIAL_NOT_FOUND", "INVALID_PARAMETERS", "TASK_NOT_FOUND", "TASK_ALREADY_COMPLETED"].includes(e.code) ? { errorCode: e.code } : {},
+    ...Number.isInteger(status) && status >= 100 && status <= 599 ? { httpStatus: status } : {}
+  };
+}
+
 // utils/characterWeather.ts
 function cleanCharacterWeatherCities(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -1375,6 +1394,8 @@ var character = (id, kind, label) => ({
   kind
 });
 async function resolveSullyCloudOwnership(input) {
+  const diagnosticId = input.type === "state" && input.namespace === DIAGNOSTIC_NAMESPACE ? diagnosticRunId({ amsgDiagnosticRunId: input.key?.split(":")[0] }) : diagnosticRunId(record(record(input.payload).metadata)) ?? diagnosticRunId(record(record(input.task).metadata));
+  if (diagnosticId) return { owner: { type: "diagnostic", id: diagnosticId, label: "\u4E3B\u52A8\u6D88\u606F\u590D\u73B0" }, kind: "diagnostic" };
   if (input.type === "state") {
     if (input.namespace === INSTANT_INPUT_NAMESPACE && typeof input.value === "string") {
       const envelope = parseInstantInputEnvelope(input.value);
@@ -1492,7 +1513,7 @@ function pickStaleStoppedReplyKeys(rows, nowMs = Date.now(), protectKey) {
 // worker/amsg/src/index.ts
 import { DurableObject } from "cloudflare:workers";
 
-// ../../../Users/tntobsidian/Documents/GitHub/SullyOS/node_modules/.pnpm/@rei-standard+amsg-server@3.1.0_@neondatabase+serverless@1.1.0_pg@8.22.0/node_modules/@rei-standard/amsg-server/dist/chunk-GN44PST5.mjs
+// node_modules/.pnpm/@rei-standard+amsg-server@3.1.0_@neondatabase+serverless@1.1.0_pg@8.22.0/node_modules/@rei-standard/amsg-server/dist/chunk-GN44PST5.mjs
 var UPDATABLE_COLUMNS = /* @__PURE__ */ new Set([
   "user_id",
   "uuid",
@@ -1511,7 +1532,7 @@ var UPDATABLE_COLUMNS = /* @__PURE__ */ new Set([
 var TASK_DELIVERY_COLUMNS = "id, user_id, uuid, encrypted_payload, message_type, next_send_at, retry_after, status, retry_count";
 var TASK_DETAIL_COLUMNS = "id, user_id, uuid, encrypted_payload, message_type, next_send_at, status, retry_count, last_error, created_at, updated_at";
 
-// ../../../Users/tntobsidian/Documents/GitHub/SullyOS/node_modules/.pnpm/@rei-standard+amsg-shared@0.4.0/node_modules/@rei-standard/amsg-shared/dist/index.mjs
+// node_modules/.pnpm/@rei-standard+amsg-shared@0.4.0/node_modules/@rei-standard/amsg-shared/dist/index.mjs
 var TEXT_ENCODER = new TextEncoder();
 var TEXT_DECODER = new TextDecoder("utf-8", { fatal: false });
 function toUint8(buf) {
@@ -2704,7 +2725,7 @@ function stringifyDecisionForError(value) {
   }
 }
 
-// ../../../Users/tntobsidian/Documents/GitHub/SullyOS/node_modules/.pnpm/@rei-standard+amsg-server@3.1.0_@neondatabase+serverless@1.1.0_pg@8.22.0/node_modules/@rei-standard/amsg-server/dist/chunk-A4LPROFY.mjs
+// node_modules/.pnpm/@rei-standard+amsg-server@3.1.0_@neondatabase+serverless@1.1.0_pg@8.22.0/node_modules/@rei-standard/amsg-server/dist/chunk-A4LPROFY.mjs
 var DAY_MS = 24 * 60 * 60 * 1e3;
 var MAX_LISTED_SKIPPED_OCCURRENCES = 32;
 var MAX_ADJUST_STEPS = 32;
@@ -11589,8 +11610,1444 @@ function createSingleUserCloudflareWorker(buildConfig, options = {}) {
   return { fetch: fetch2, scheduled, runTask: runTask2, getSchemaVersion: getSchemaVersion2, ensureSchema: ensureSchema2 };
 }
 
-// utils/amsgBundleVersion.ts
-var AMSG_BUNDLE_VERSION = "2026-11-04";
+// utils/voiceTextDedup.ts
+function deduplicateVoiceText(text2) {
+  if (/\[html\]|<翻[译譯]>|```/i.test(text2)) return text2;
+  const normalize2 = (s) => s.replace(/[\s\p{P}\p{S}]/gu, "").toLowerCase();
+  const blocks = [];
+  const spoken = [];
+  const protectedText = text2.replace(/(?:<字幕>([\s\S]*?)<\/字幕>\s*)?<[语語]音[^>]*>([\s\S]*?)<\/[语語]音>(?:\s*<字幕>([\s\S]*?)<\/字幕>)?/g, (block, leadingSubtitle, voice, subtitle) => {
+    spoken.push(normalize2(voice), ...[leadingSubtitle, subtitle].filter(Boolean).map(normalize2));
+    return "\nVOICE" + (blocks.push(block) - 1) + "\n";
+  });
+  if (!blocks.length) return text2;
+  return protectedText.split(/\r?\n/).filter((line) => {
+    if (/[<>\[\]\u0002]/.test(line)) return true;
+    const plain = normalize2(line);
+    return plain.length < 12 || !spoken.some((voice) => voice.includes(plain));
+  }).join("\n").replace(/\u0002VOICE(\d+)\u0002/g, (_, i) => blocks[Number(i)]).trim();
+}
+
+// utils/friendFeedReplyFormat.ts
+var FRIEND_FEED_MAIN_PROMPT_PREFIX = "\u3010\u987A\u4FBF\u56DE\u597D\u53CB\u5708\u3011";
+function extractFriendFeedReplyTags(raw, namespace = "FRIEND_FEED_REPLY") {
+  const marker = new RegExp("\\[\\[" + namespace + "\\s*:", "gi");
+  const actions = [];
+  let text2 = "", cursor = 0, match;
+  while (match = marker.exec(raw)) {
+    text2 += raw.slice(cursor, match.index);
+    let start = marker.lastIndex;
+    while (start < raw.length && /\s/.test(raw[start])) start++;
+    let depth = 0, quoted = false, escaped = false, end = -1;
+    if (raw[start] === "{") for (let i = start; i < raw.length; i++) {
+      const c = raw[i];
+      if (quoted) {
+        if (escaped) escaped = false;
+        else if (c === "\\") escaped = true;
+        else if (c === '"') quoted = false;
+      } else if (c === '"') quoted = true;
+      else if (c === "{") depth++;
+      else if (c === "}" && --depth === 0) {
+        end = i + 1;
+        break;
+      }
+    }
+    const close = end >= 0 ? /^\s*\]\]/.exec(raw.slice(end)) : null;
+    if (close) {
+      try {
+        actions.push(JSON.parse(raw.slice(start, end)));
+      } catch {
+      }
+      cursor = end + close[0].length;
+    } else {
+      const fallback = raw[start] === "{" && end < 0 ? -1 : raw.indexOf("]]", end >= 0 ? end : start);
+      cursor = fallback < 0 ? raw.length : fallback + 2;
+    }
+    marker.lastIndex = cursor;
+  }
+  return { text: text2 + raw.slice(cursor), actions };
+}
+
+// node_modules/.pnpm/@rei-standard+amsg-instant@0.11.0/node_modules/@rei-standard/amsg-instant/dist/index.mjs
+var WEB_PUSH_MAX_BODY_BYTES2 = 4096;
+var WEB_PUSH_ENCRYPTION_OVERHEAD_BYTES2 = 16 + 4 + 1 + 65 + 1 + 16;
+var MAX_PUSH_PAYLOAD_BYTES2 = WEB_PUSH_MAX_BODY_BYTES2 - WEB_PUSH_ENCRYPTION_OVERHEAD_BYTES2;
+var PROBE_BYTE_ENCODER = new TextEncoder();
+var LONGEST_MESSAGE_KIND = Object.values(MESSAGE_KIND).reduce((longest, kind) => kind.length > longest.length ? kind : longest, "");
+var PUSH_PAYLOAD_BYTE_ENCODER = new TextEncoder();
+function segmentTextWithProtectedBlocks(text2, options) {
+  if (!text2) return [];
+  const splitAndSanitize = (plainText) => {
+    const chunks = options.splitText(plainText).filter((c) => c !== "");
+    return chunks.map((chunk) => ({
+      raw: chunk,
+      sanitized: options.sanitizeText ? options.sanitizeText(chunk) : chunk,
+      protect: false
+    }));
+  };
+  if (!options.protectedPatterns || options.protectedPatterns.length === 0) {
+    return splitAndSanitize(text2);
+  }
+  const matches = [];
+  for (const p of options.protectedPatterns) {
+    const flags = p.pattern.flags.includes("g") ? p.pattern.flags : p.pattern.flags + "g";
+    const regex = new RegExp(p.pattern.source, flags);
+    let match;
+    while ((match = regex.exec(text2)) !== null) {
+      if (match[0].length === 0) {
+        regex.lastIndex++;
+        continue;
+      }
+      matches.push({
+        index: match.index,
+        length: match[0].length,
+        raw: match[0],
+        matchObj: match,
+        patternDef: p
+      });
+    }
+  }
+  matches.sort((a, b) => {
+    if (a.index !== b.index) return a.index - b.index;
+    return b.length - a.length;
+  });
+  const validMatches = [];
+  let lastEnd = 0;
+  for (const m of matches) {
+    if (m.index >= lastEnd) {
+      validMatches.push(m);
+      lastEnd = m.index + m.length;
+    }
+  }
+  const segments = [];
+  let cursor = 0;
+  const resolveField = (field, raw, match) => typeof field === "function" ? field(raw, match) : field;
+  for (const m of validMatches) {
+    if (m.index > cursor) {
+      const plainText = text2.substring(cursor, m.index);
+      segments.push(...splitAndSanitize(plainText));
+    }
+    const previewStr = resolveField(m.patternDef.preview, m.raw, m.matchObj);
+    const metaData = resolveField(m.patternDef.meta, m.raw, m.matchObj);
+    let sanitized = previewStr;
+    if (sanitized == null) {
+      sanitized = options.sanitizeText ? options.sanitizeText(m.raw) : m.raw;
+    }
+    const pushSeg = {
+      raw: m.raw,
+      sanitized,
+      protect: true
+    };
+    if (metaData !== void 0) {
+      pushSeg.meta = metaData;
+    }
+    segments.push(pushSeg);
+    cursor = m.index + m.length;
+  }
+  if (cursor < text2.length) {
+    const plainText = text2.substring(cursor);
+    segments.push(...splitAndSanitize(plainText));
+  }
+  return segments;
+}
+var SSE_ENCODER = new TextEncoder();
+var SSE_KEEPALIVE_BYTES = SSE_ENCODER.encode(": keepalive\n\n");
+var SSE_DONE_BYTES = SSE_ENCODER.encode("event: done\ndata: {}\n\n");
+
+// utils/sanitize.ts
+var stripLiteralBackslashN = (t) => t.replace(/\\n/g, "\n");
+var stripLeakedSourceTags = (t) => t.replace(
+  /\s*\[\s*(?:聊\s*(?:天|chat)|chat|通\s*(?:话|call)|call|约\s*(?:会|date)|date)\s*\]\s*/giu,
+  "\n"
+);
+var stripTimestamps = (t) => t.replace(/\[\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\]\s*/g, "").replace(/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s*/gm, "").replace(/（[上下]午\d{1,2}[：:]\d{2}）/g, "").replace(/\(\d{1,2}:\d{2}\s*[AP]M\)/gi, "");
+var stripChineseDate = (t) => t.replace(/\[\d{4}[-/年]\d{1,2}[-/月]\d{1,2}.*?\]/g, "");
+var stripRoleNamePrefix = (t) => t.replace(/^[\w一-龥]+:\s*/, "");
+var stripBusinessTagsForBubble = (t) => extractFriendFeedReplyTags(extractFriendFeedReplyTags(t).text, "HOME_VISIT_REPLY").text.replace(/\[\[(?:ACTION|RECALL|SEARCH|DIARY|READ_DIARY|FS_DIARY|FS_READ_DIARY|DIARY_START|DIARY_END|FS_DIARY_START|FS_DIARY_END|MUSIC_ACTION)[:\s][\s\S]*?\]\]/g, "").replace(/\[\[\s*[记記][录錄]\s*[:：][\s\S]*?\]\]/g, "").replace(/\[schedule_message[^\]]*\]/g, "");
+var stripBusinessTagsForNotification = (t) => stripBusinessTagsForBubble(t).replace(/\[\[(?:READ_NOTE|XHS_[A-Z_]+|LIFE|NEWS_CARD)[:\s][\s\S]*?\]\]/g, "").replace(/\[\[XHS_[A-Z_]+\]\]/g, "");
+var stripAllDoubleBracketTags = (t) => t.replace(/\[\[[\s\S]*?\]\]/g, "");
+var stripQuotes = (t) => t.replace(/\[\[(?:QU[OA]TE|引用)[：:][\s\S]*?\]\]/g, "").replace(/\[(?:QU[OA]TE|引用)[：:][^\]]*\]/g, "").replace(/\[回复\s*[""“][^""”]*?[""”](?:\.{0,3})\]\s*[：:]?\s*/g, "").replace(/\[[^\[\]\n「」]{0,24}引用了[^\[\]\n「」]{0,24}「[^」\n]*?」[^\[\]\n]{0,24}\]\s*/g, "");
+var stripSystemLogLeak = (t) => t.replace(/[\[【]\s*(?:系统|系統|System)\s*(?:提示)?\s*[:：][^\[\]【】]*[\]】]\s*/gi, "").replace(/\[\s*(?:系统|系統)\s*\]\s*/g, "");
+var stripMarkdownHeaders = (t) => t.replace(/^#{1,6}\s+/gm, "");
+var stripMarkdownBold = (t) => t.replace(/\*{2,}/g, "");
+var stripMarkdownDividers = (t) => t.replace(/^\s*---\s*$/gm, "").replace(/^\s*[-*+]\s*$/gm, "");
+var stripBackticks = (t) => t.replace(/`(\[\[[\s\S]*?\]\])`/g, "$1").replace(/``+/g, "").replace(/(^|\s)`(\s|$)/gm, "$1$2");
+var stripLegacyTrans = (t) => t.replace(/%%TRANS%%[\s\S]*/gi, "");
+var collapseWhitespace = (t) => t.replace(/\n{3,}/g, "\n\n").trim();
+var stripThinkBlocks = (t) => t.replace(/<(think|thinking|thought)>[\s\S]*?<\/\1>/gi, "").replace(/<(?:think|thinking|thought)>[\s\S]*$/gi, "");
+var stripInnerState = (t) => t.replace(/\[\[INNER_STATE:\s*[\s\S]*?\]\]/g, "");
+var replaceMarkdownLinks = (t) => t.replace(/\[([^\]]+)\]\([^)]+\)/g, "[\u94FE\u63A5\uFF1A$1]");
+var replaceSendEmoji = (t) => t.replace(/\[\[SEND_EMOJI[:：]\s*(.+?)\]\]/g, "[\u8868\u60C5\uFF1A$1]");
+var replaceEmojiReverseTag = (t) => t.replace(/\[(?:你|User|用户|System|[\w一-龥]+)\s*发送了表情包[:：]\s*(.*?)\]/g, "[\u8868\u60C5\uFF1A$1]");
+var replaceHtmlBlocks = (t) => t.replace(/\[html\][\s\S]*?\[\/html\]/gi, "[HTML \u5361\u7247]");
+var replaceTranslationForBanner = (t) => t.replace(/<翻译>\s*<原文>([\s\S]*?)<\/原文>\s*<译文>[\s\S]*?<\/译文>\s*<\/翻译>/g, "$1").replace(/<译文>[\s\S]*?<\/译文>/g, "").replace(/<\/?(?:翻译|原文)>/g, "");
+var replaceVoiceForBanner = (t) => t.replace(
+  /(?:<字幕>([\s\S]*?)<\/字幕>\s*)?<[语語]音[^>]*>([\s\S]*?)<\/\s*[语語]音\s*>(?:\s*<字幕>([\s\S]*?)<\/字幕>)?/g,
+  (_m, pre, inner, post) => (post || pre || inner || "").trim()
+).replace(/<字幕>([\s\S]*?)<\/字幕>/g, "$1").replace(/<\/?字幕>/g, "");
+function repairPairedTag(text2, tokenRe, closeFormOf, closeBeforeTrailingSubtitle) {
+  const kept = [];
+  let cursor = 0;
+  let openForm = null;
+  let tok;
+  while ((tok = tokenRe.exec(text2)) !== null) {
+    const isClose = tok[0].startsWith("</");
+    if (!isClose && /\/\s*>$/.test(tok[0])) {
+      kept.push(text2.slice(cursor, tok.index));
+      cursor = tok.index + tok[0].length;
+      continue;
+    }
+    if (isClose) {
+      if (openForm === null) {
+        kept.push(text2.slice(cursor, tok.index));
+        cursor = tok.index + tok[0].length;
+      } else {
+        openForm = null;
+      }
+    } else if (openForm !== null) {
+      kept.push(text2.slice(cursor, tok.index));
+      cursor = tok.index + tok[0].length;
+    } else {
+      openForm = closeFormOf(tok[0]);
+    }
+  }
+  kept.push(text2.slice(cursor));
+  let result = kept.join("");
+  if (openForm !== null) {
+    const closeTag = `</${openForm}>`;
+    if (closeBeforeTrailingSubtitle) {
+      const trail = result.match(/(\s*<字幕>[\s\S]*?<\/字幕>\s*)$/);
+      if (trail) {
+        const at = result.length - trail[0].length;
+        return result.slice(0, at).replace(/\s+$/, "") + closeTag + trail[0].replace(/\s+$/, "");
+      }
+    }
+    result = result.replace(/\s+$/, "") + closeTag;
+  }
+  return result;
+}
+function normalizeVoiceTags(t) {
+  if (!/[语語]音|字幕/.test(t)) return t;
+  let result = t;
+  result = result.replace(/＜\s*[/／]\s*([语語]音|字幕)\s*＞/g, "</$1>");
+  result = result.replace(/＜\s*((?:[语語]音|字幕)[^<>＜＞]*?)\s*＞/g, "<$1>");
+  result = result.replace(/<\s*[/／]\s*([语語]音|字幕)\s*>/g, "</$1>");
+  result = result.replace(/<([语語]音|字幕)\s*([^<>]*?)\s*>/g, (_m, tag2, attrs) => {
+    if (!attrs) return `<${tag2}>`;
+    const fixed = attrs.replace(/[“”＂]/g, '"').replace(/[‘’]/g, "'").replace(/＝/g, "=").trim();
+    return `<${tag2} ${fixed}>`;
+  });
+  result = repairPairedTag(result, /<\/?[语語]音[^>]*>/g, (tok) => /語/.test(tok) ? "\u8A9E\u97F3" : "\u8BED\u97F3", true);
+  result = repairPairedTag(result, /<\/?字幕[^>]*>/g, () => "\u5B57\u5E55", false);
+  return result;
+}
+var simpTransTag = (tag2) => tag2.replace(/譯/g, "\u8BD1");
+function normalizeTranslationTags(t) {
+  if (!/[<＜]\s*[/／]?\s*(?:翻[译譯]|原文|[译譯]文)/.test(t)) return t;
+  let result = t;
+  result = result.replace(/[<＜]\s*[/／]\s*(翻[译譯]|原文|[译譯]文)\s*[>＞]/g, (_m, tag2) => `</${simpTransTag(tag2)}>`);
+  result = result.replace(/[<＜]\s*(翻[译譯]|原文|[译譯]文)\s*[>＞]/g, (_m, tag2) => `<${simpTransTag(tag2)}>`);
+  result = result.replace(
+    /[<＜]\s*([/／]?)\s*(翻[译譯]|原文|[译譯]文)\s*(?=$|\n|[<＜])/g,
+    (_m, slash, tag2) => `<${slash ? "/" : ""}${simpTransTag(tag2)}>`
+  );
+  result = repairPairedTag(result, /<\/?原文[^>]*>/g, () => "\u539F\u6587", false);
+  result = repairPairedTag(result, /<\/?译文[^>]*>/g, () => "\u8BD1\u6587", false);
+  result = repairPairedTag(result, /<\/?翻译[^>]*>/g, () => "\u7FFB\u8BD1", false);
+  const HOLD = String.fromCharCode(3);
+  const blocks = [];
+  const hold = (m) => {
+    blocks.push(m);
+    return `${HOLD}${blocks.length - 1}${HOLD}`;
+  };
+  result = result.replace(/<翻译>\s*<原文>[\s\S]*?<\/原文>\s*<译文>[\s\S]*?<\/译文>\s*<\/翻译>/g, hold);
+  result = result.replace(
+    /(?:<翻译>\s*)?<原文>([\s\S]*?)<\/原文>\s*<译文>([\s\S]*?)<\/译文>\s*(?:<\/翻译>)?/g,
+    (_m, a, b) => hold(`<\u7FFB\u8BD1><\u539F\u6587>${a.trim()}</\u539F\u6587><\u8BD1\u6587>${b.trim()}</\u8BD1\u6587></\u7FFB\u8BD1>`)
+  );
+  result = result.replace(
+    /<翻译>\s*(?!<原文>)((?:(?!<\/?翻译>)[\s\S])*?)<\/翻译>\s*<译文>([\s\S]*?)<\/译文>/g,
+    (_m, a, b) => hold(`<\u7FFB\u8BD1><\u539F\u6587>${a.trim()}</\u539F\u6587><\u8BD1\u6587>${b.trim()}</\u8BD1\u6587></\u7FFB\u8BD1>`)
+  );
+  result = result.replace(/<译文>[\s\S]*?<\/译文>/g, "");
+  result = result.replace(/[<＜]\s*[/／]?\s*(?:翻[译譯]|原文|[译譯]文)\s*[>＞]?/g, "");
+  result = result.replace(new RegExp(`${HOLD}(\\d+)${HOLD}`, "g"), (_m, n) => blocks[Number(n)] || "");
+  return result;
+}
+var extractTranslationOriginal = (t) => {
+  let result = t.replace(
+    /<翻译>\s*<原文>([\s\S]*?)<\/原文>\s*<译文>[\s\S]*?<\/译文>\s*<\/翻译>/g,
+    "$1"
+  );
+  result = result.replace(/<译文>[\s\S]*?<\/译文>/g, "");
+  result = result.replace(/<\/?(?:翻译|原文)>/g, "");
+  return result;
+};
+function sanitizeForNotification(text2) {
+  let result = text2;
+  result = stripLiteralBackslashN(result);
+  result = stripThinkBlocks(result);
+  result = replaceHtmlBlocks(result);
+  result = replaceEmojiReverseTag(result);
+  result = replaceSendEmoji(result);
+  result = normalizeTranslationTags(result);
+  result = extractTranslationOriginal(result);
+  result = stripTimestamps(result);
+  result = stripChineseDate(result);
+  result = stripRoleNamePrefix(result);
+  result = stripSystemLogLeak(result);
+  result = stripLeakedSourceTags(result);
+  result = stripInnerState(result);
+  result = stripBusinessTagsForNotification(result);
+  result = stripQuotes(result);
+  result = replaceMarkdownLinks(result);
+  result = stripMarkdownHeaders(result);
+  result = stripMarkdownBold(result);
+  result = stripMarkdownDividers(result);
+  result = stripBackticks(result);
+  result = stripLegacyTrans(result);
+  result = collapseWhitespace(result);
+  return result;
+}
+function sanitizeIntoSegments(text2) {
+  let cleaned = stripLiteralBackslashN(text2);
+  cleaned = stripThinkBlocks(cleaned);
+  cleaned = deduplicateVoiceText(normalizeVoiceTags(cleaned));
+  cleaned = normalizeTranslationTags(cleaned);
+  const ATOM_MARKER = String.fromCharCode(2);
+  const atomBlocks = [];
+  const atomSegments = segmentTextWithProtectedBlocks(cleaned, {
+    splitText: (plainText) => [plainText],
+    protectedPatterns: [
+      {
+        pattern: /\[html\][\s\S]*?\[\/html\]/i,
+        preview: "[HTML \u5361\u7247]"
+      },
+      {
+        pattern: /<翻译>\s*<原文>([\s\S]*?)<\/原文>\s*<译文>[\s\S]*?<\/译文>\s*<\/翻译>/,
+        preview: (_raw, match) => (match[1] || "").trim() || "[\u7FFB\u8BD1]"
+      },
+      {
+        // 语音块 + 紧邻的 <字幕> 块是一个原子单元 (字幕是这条语音的中文对照, 拆开
+        // 就配不上了)。字幕前置/后置都容忍; banner 预览优先用字幕 (用户读得懂中文)。
+        // 闭合容许空格 + 简繁互换 (normalizeVoiceTags 已修, 这里不再依赖 \1 回引)。
+        pattern: /(?:<字幕>([\s\S]*?)<\/字幕>\s*)?<[语語]音[^>]*>([\s\S]*?)<\/\s*[语語]音\s*>(?:\s*<字幕>([\s\S]*?)<\/字幕>)?/,
+        preview: (_raw, match) => (match[3] || match[1] || match[2] || "").trim() || "[\u8BED\u97F3]"
+      }
+    ]
+  });
+  cleaned = atomSegments.map((seg) => {
+    if (!seg.protect) return seg.raw;
+    const idx = atomBlocks.length;
+    atomBlocks.push({
+      raw: seg.raw,
+      sanitized: typeof seg.sanitized === "string" ? seg.sanitized : sanitizeTextForBanner(seg.raw)
+    });
+    return `
+${ATOM_MARKER}B${idx}${ATOM_MARKER}
+`;
+  }).join("");
+  cleaned = extractTranslationOriginal(cleaned);
+  cleaned = stripInnerState(cleaned);
+  cleaned = stripBusinessTagsForNotification(cleaned);
+  cleaned = stripTimestamps(cleaned);
+  cleaned = stripChineseDate(cleaned);
+  cleaned = stripRoleNamePrefix(cleaned);
+  cleaned = stripLeakedSourceTags(cleaned);
+  cleaned = stripLegacyTrans(cleaned);
+  cleaned = stripMarkdownDividers(cleaned);
+  const rawChunks = chunkText(cleaned);
+  const SOLO_RE = new RegExp(`^${ATOM_MARKER}B(\\d+)${ATOM_MARKER}$`);
+  const GLOBAL_RE = new RegExp(`${ATOM_MARKER}B(\\d+)${ATOM_MARKER}`, "g");
+  const segments = [];
+  let pendingQuoteRaw = "";
+  for (const rawChunk of rawChunks) {
+    const soloMatch = rawChunk.trim().match(SOLO_RE);
+    if (soloMatch) {
+      const blk = atomBlocks[Number(soloMatch[1])];
+      if (blk) segments.push({ raw: blk.raw, sanitized: blk.sanitized });
+      continue;
+    }
+    const parts = splitOnSendEmoji(rawChunk);
+    for (const part of parts) {
+      if (part.kind === "emoji") {
+        segments.push({
+          raw: `[[SEND_EMOJI: ${part.name}]]`,
+          sanitized: `[\u8868\u60C5\uFF1A${part.name}]`
+        });
+        continue;
+      }
+      let rawText = part.text.replace(
+        GLOBAL_RE,
+        (_m, n) => atomBlocks[Number(n)]?.raw || ""
+      );
+      rawText = rawText.trim();
+      if (!rawText) continue;
+      const sanitized = sanitizeTextForBanner(rawText).trim();
+      if (!sanitized) {
+        if (!stripQuotes(rawText).trim()) pendingQuoteRaw += `${rawText}
+`;
+        continue;
+      }
+      if (!stripAllDoubleBracketTags(sanitized).trim()) continue;
+      segments.push({
+        raw: pendingQuoteRaw ? `${pendingQuoteRaw}${rawText}` : rawText,
+        sanitized
+      });
+      pendingQuoteRaw = "";
+    }
+  }
+  return segments;
+}
+function sanitizeTextForBanner(text2) {
+  let result = text2;
+  result = replaceHtmlBlocks(result);
+  result = replaceTranslationForBanner(result);
+  result = replaceVoiceForBanner(result);
+  result = stripQuotes(result);
+  result = stripSystemLogLeak(result);
+  result = replaceEmojiReverseTag(result);
+  result = replaceMarkdownLinks(result);
+  result = stripMarkdownHeaders(result);
+  result = stripMarkdownBold(result);
+  result = stripBackticks(result);
+  result = collapseWhitespace(result);
+  return result;
+}
+function chunkText(text2) {
+  return text2.split(/(?:\r\n|\r|\n|\u2028|\u2029)+/).map((c) => c.trim()).filter((c) => c.length > 0);
+}
+function splitOnSendEmoji(chunk) {
+  const re = /\[\[SEND_EMOJI[:：]\s*(.*?)\]\]/g;
+  const parts = [];
+  let lastIndex = 0;
+  let m;
+  while ((m = re.exec(chunk)) !== null) {
+    if (m.index > lastIndex) {
+      parts.push({ kind: "text", text: chunk.slice(lastIndex, m.index) });
+    }
+    parts.push({ kind: "emoji", name: m[1].trim() });
+    lastIndex = m.index + m[0].length;
+  }
+  if (lastIndex < chunk.length) {
+    parts.push({ kind: "text", text: chunk.slice(lastIndex) });
+  }
+  if (parts.length === 0 && chunk) parts.push({ kind: "text", text: chunk });
+  return parts;
+}
+
+// utils/transferFormat.ts
+function parseTransferAmount(raw) {
+  if (typeof raw === "number") return Number.isFinite(raw) && raw > 0 ? raw : null;
+  if (typeof raw !== "string") return null;
+  let s = raw.replace(/[０-９．]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 65248));
+  s = s.replace(/[¥￥$＄]/g, "").replace(/(?:元|块钱|块|圆|RMB|CNY|credits?)/gi, "").replace(/[,，\s]/g, "");
+  if (!/^\d+(?:\.\d+)?$/.test(s)) return null;
+  const n = Number(s);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n;
+}
+function formatTransferAmount(n) {
+  return Number.isInteger(n) ? String(n) : String(Math.round(n * 100) / 100);
+}
+var RECORD_TRANSFER_RE = /\[\[\s*[记記][录錄]\s*[:：]\s*TRANSFER[^\]]*\]\]/gi;
+var ACTION_SEND_KV_RE = /\[\[\s*ACTION\s*[:：]\s*TRANSFER\s*((?:\|[^\]]*)?)\s*\]\]/gi;
+var ACTION_SEND_RE = /\[\[\s*ACTION\s*[:：]\s*TRANSFER\s*[:：]\s*([^\]]*?)\s*\]\]/gi;
+var FORGED_TO_VALUES = /* @__PURE__ */ new Set(["char", "self", "me", "\u89D2\u8272", "\u81EA\u5DF1", "\u6211", "\u81EA\u5206", "\u672C\u4EBA"]);
+function parseKvArgs(argStr) {
+  const out = {};
+  for (const part of argStr.split(/[|｜]/)) {
+    const seg = part.trim();
+    if (!seg) continue;
+    const eq = seg.search(/[=＝]/);
+    if (eq < 0) {
+      if (!("amount" in out) && parseTransferAmount(seg) !== null) out.amount = seg;
+      continue;
+    }
+    const k = seg.slice(0, eq).trim().toLowerCase();
+    const v = seg.slice(eq + 1).trim();
+    if (k) out[k] = v;
+  }
+  return out;
+}
+function kvToSendEvent(argStr) {
+  const kv = parseKvArgs(argStr);
+  const to = (kv.to ?? kv["\u7ED9"] ?? "").toLowerCase();
+  if (to && FORGED_TO_VALUES.has(to)) return null;
+  const amount = parseTransferAmount(kv.amount ?? kv["\u91D1\u989D"]);
+  return amount === null ? null : { kind: "send", amount: formatTransferAmount(amount) };
+}
+var ACTION_ACCEPT_RE = /\[\[\s*ACTION\s*[:：]\s*TRANSFER_ACCEPT\s*\]\]/gi;
+var ACTION_RETURN_RE = /\[\[\s*ACTION\s*[:：]\s*TRANSFER_RETURN\s*\]\]/gi;
+var SYSTEM_LOG_RE = /[\[【]\s*(?:系统|系統|System)\s*(?:提示)?\s*[:：]\s*([^\[\]【】]*?)\s*[\]】]/gi;
+var BARE_TRANSFER_RE = /\[\s*转[账帐]\s*[:：]?\s*([^\[\]]{0,24}?)\s*\]/gi;
+var AMOUNT_FRAGMENT = String.raw`[¥￥$＄]?\s*([0-9０-９][0-9０-９.,，]*)\s*(?:元|块钱|块|圆)?`;
+var LOG_SEND_RE = new RegExp(String.raw`^(?:你|我)\s*(?:向|给).*?转(?:[账帐]了?|了)\s*${AMOUNT_FRAGMENT}`);
+var LOG_ACCEPT_RE = /^你(?:接收|接受|收下|领取)了.*?转[账帐]/;
+var LOG_RETURN_RE = /^你退回了.*?转[账帐]/;
+var LOG_FORGED_RE = /(?:向|给)你转[账帐]|(?:接收|接受|收下|领取|退回)了你的转[账帐]/;
+var LOG_IS_TRANSFER_RE = /转[账帐]|转了?\s*[¥￥$＄]?\s*[0-9０-９]/;
+function classifySystemLog(inner) {
+  const s = inner.trim();
+  if (!LOG_IS_TRANSFER_RE.test(s)) return void 0;
+  if (LOG_ACCEPT_RE.test(s)) return { kind: "accept" };
+  if (LOG_RETURN_RE.test(s)) return { kind: "return" };
+  const m = s.match(LOG_SEND_RE);
+  if (m) {
+    const amount = parseTransferAmount(m[1]);
+    return amount === null ? null : { kind: "send", amount: formatTransferAmount(amount) };
+  }
+  if (LOG_FORGED_RE.test(s)) return null;
+  return null;
+}
+function collect(text2, re, toEvent, hits) {
+  re.lastIndex = 0;
+  let m;
+  while ((m = re.exec(text2)) !== null) {
+    const start = m.index;
+    const end = start + m[0].length;
+    if (hits.some((h) => start < h.end && end > h.start)) continue;
+    const event = toEvent(m);
+    if (event === void 0) continue;
+    hits.push({ start, end, event });
+  }
+}
+function extractTransferCommands(content) {
+  const src = String(content ?? "");
+  if (!src) return { text: "", events: [], consumed: 0 };
+  const hits = [];
+  collect(src, RECORD_TRANSFER_RE, () => null, hits);
+  collect(src, ACTION_SEND_KV_RE, (m) => kvToSendEvent(m[1] ?? ""), hits);
+  collect(src, ACTION_SEND_RE, (m) => {
+    const amount = parseTransferAmount(m[1]);
+    return amount === null ? null : { kind: "send", amount: formatTransferAmount(amount) };
+  }, hits);
+  collect(src, ACTION_ACCEPT_RE, () => ({ kind: "accept" }), hits);
+  collect(src, ACTION_RETURN_RE, () => ({ kind: "return" }), hits);
+  collect(src, SYSTEM_LOG_RE, (m) => classifySystemLog(m[1] ?? ""), hits);
+  collect(src, BARE_TRANSFER_RE, (m) => {
+    const amount = parseTransferAmount(m[1]);
+    return amount === null ? null : { kind: "send", amount: formatTransferAmount(amount) };
+  }, hits);
+  hits.sort((a, b) => a.start - b.start);
+  let text2 = "";
+  let cursor = 0;
+  for (const h of hits) {
+    text2 += src.slice(cursor, h.start);
+    cursor = h.end;
+  }
+  text2 += src.slice(cursor);
+  return {
+    text: text2.trim(),
+    events: hits.map((h) => h.event).filter((e) => e !== null),
+    consumed: hits.length
+  };
+}
+
+// utils/scheduleChangeParse.ts
+var KEYWORD_RE = /^\s*(?:ACTION\s*[:：]\s*CHANGE_SCHEDULE|change[\s_-]*(?:schedule|schedue)|modify[\s_-]*schedule|修改(?:未来)?日程|更改(?:未来)?日程|改日程)(?=\s|[:：|=→>\-（(]|\d|$)/iu;
+var parseDirectiveBody = (input) => {
+  const body = input.replace(/^[\s【\[]+|[\s】\]]+$/gu, "").trim();
+  const keyword = body.match(KEYWORD_RE);
+  if (!keyword) return { recognized: false };
+  const rest = body.slice(keyword[0].length).replace(/^\s*[:：|=→>\-]+\s*/u, "");
+  const time = rest.match(/[（(]?\s*(\d{1,2})\s*(?:[:：点时])\s*(\d{1,2})?\s*(?:分)?\s*[）)]?/u);
+  if (!time || time.index == null) return { recognized: true, directive: null };
+  const hour = Number(time[1]);
+  const minute = time[2] == null || time[2] === "" ? 0 : Number(time[2]);
+  if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    return { recognized: true, directive: null };
+  }
+  const activity = rest.slice(time.index + time[0].length).replace(/^\s*(?:[:：|=→>\-]+)\s*/u, "").replace(/[】\]]+\s*$/gu, "").trim();
+  if (!activity) return { recognized: true, directive: null };
+  return {
+    recognized: true,
+    directive: {
+      startTime: `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
+      // 日程卡本来就是短标题；截断异常长输出，避免一条标签撑坏 UI / prompt。
+      activity: activity.slice(0, 120)
+    }
+  };
+};
+var extractScheduleChangeDirectives = (text2) => {
+  const directives = [];
+  let malformedCount = 0;
+  const consumeBody = (body, original) => {
+    const parsed = parseDirectiveBody(body);
+    if (!parsed.recognized) return original;
+    if (parsed.directive) directives.push(parsed.directive);
+    else malformedCount += 1;
+    return "";
+  };
+  let cleanedText = (text2 || "").replace(
+    /(?:【{1,2}|\[{1,2})([^【】\[\]\r\n]{1,360})(?:】{1,2}|\]{1,2})/gu,
+    (whole, body) => consumeBody(body ?? "", whole)
+  );
+  cleanedText = cleanedText.replace(
+    /^[ \t]*(?:【【?|\[\[?)?[ \t]*(?:ACTION[ \t]*[:：][ \t]*CHANGE_SCHEDULE|change[ \t_-]*(?:schedule|schedue)|modify[ \t_-]*schedule|修改(?:未来)?日程|更改(?:未来)?日程|改日程)[ \t]*[:：|]?[^\r\n]{0,360}/gimu,
+    (whole) => consumeBody(whole, whole)
+  );
+  const recognizedSomething = directives.length > 0 || malformedCount > 0;
+  if (!recognizedSomething) {
+    return { cleanedText: text2 || "", directives, malformedCount };
+  }
+  return {
+    cleanedText: cleanedText.replace(/[ \t]+\r?\n/gu, "\n").replace(/\n{3,}/gu, "\n\n").trim(),
+    directives,
+    malformedCount
+  };
+};
+
+// worker/amsg/src/classifier.ts
+var DATA_TAGS = [
+  // [[RECALL: 2024-05]] / [[RECALL: 2024年5]]
+  {
+    re: /\[\[RECALL:\s*(\d{4})[-/年](\d{1,2})\]\]/g,
+    toolName: "recall",
+    toArgs: (m) => ({ year: m[1], month: m[2].padStart(2, "0") })
+  },
+  // [[SEARCH: query]]
+  {
+    re: /\[\[SEARCH:\s*(.+?)\]\]/g,
+    toolName: "web_search",
+    toArgs: (m) => ({ query: m[1].trim() })
+  },
+  // [[READ_DIARY: 2024-05-19]] / [[READ_DIARY: 今天]]
+  {
+    re: /\[\[READ_DIARY:\s*(.+?)\]\]/g,
+    toolName: "notion_read_diary",
+    toArgs: (m) => ({ date: m[1].trim() })
+  },
+  // [[FS_READ_DIARY: 2024-05-19]]
+  {
+    re: /\[\[FS_READ_DIARY:\s*(.+?)\]\]/g,
+    toolName: "feishu_read_diary",
+    toArgs: (m) => ({ date: m[1].trim() })
+  },
+  // [[READ_NOTE: keyword]]
+  {
+    re: /\[\[READ_NOTE:\s*(.+?)\]\]/g,
+    toolName: "read_note",
+    toArgs: (m) => ({ keyword: m[1].trim() })
+  },
+  // [[XHS_SEARCH: keyword]]
+  {
+    re: /\[\[XHS_SEARCH:\s*(.+?)\]\]/g,
+    toolName: "xhs_search",
+    toArgs: (m) => ({ keyword: m[1].trim() })
+  },
+  // [[XHS_BROWSE]] / [[XHS_BROWSE: category]]
+  {
+    re: /\[\[XHS_BROWSE(?::\s*(.+?))?\]\]/g,
+    toolName: "xhs_browse",
+    toArgs: (m) => m[1] ? { category: m[1].trim() } : {}
+  },
+  // [[XHS_DETAIL: noteId]]
+  {
+    re: /\[\[XHS_DETAIL:\s*(.+?)\]\]/g,
+    toolName: "xhs_detail",
+    toArgs: (m) => ({ noteId: m[1].trim() })
+  },
+  // [[XHS_MY_PROFILE]]
+  {
+    re: /\[\[XHS_MY_PROFILE\]\]/g,
+    toolName: "xhs_my_profile",
+    toArgs: () => ({})
+  }
+];
+var DATA_TOOL_NAMES = Object.freeze([...new Set(DATA_TAGS.map((spec) => spec.toolName))]);
+var SIDE_EFFECT_TAGS = [
+  // [[ACTION:POKE]]
+  {
+    re: /\[\[ACTION:POKE\]\]/g,
+    toDirective: () => ({ type: "poke" })
+  },
+  // 转账 (TRANSFER / TRANSFER_ACCEPT / TRANSFER_RETURN) 不在这张表里 —— 见 classifyLLMOutput
+  // 里的 extractTransferCommands, 那份解析跟客户端共用一份源码, 且要认模仿历史日志的口语形态。
+  // [[ACTION:ADD_EVENT|title|date]]
+  {
+    re: /\[\[ACTION:ADD_EVENT\s*\|\s*(.*?)\s*\|\s*(.*?)\]\]/g,
+    toDirective: (m) => ({ type: "add_event", title: m[1], date: m[2] })
+  },
+  // [schedule_message | time | fixed | text]  (note: 单方括号, 跟原 chatParser 一致)
+  {
+    re: /\[schedule_message\s*\|\s*(.+?)\s*\|\s*fixed\s*\|\s*(.+?)\]/g,
+    toDirective: (m) => ({ type: "schedule_message", time: m[1], text: m[2] })
+  },
+  // [[MUSIC_ACTION:verb]] 或 [[MUSIC_ACTION:verb|arg1|arg2]]
+  {
+    re: /\[\[MUSIC_ACTION:(join|add|add_new|join_and_add|join_and_add_new)(?:\|([^\]]*))?\]\]/g,
+    toDirective: (m) => ({
+      type: "music_action",
+      verb: m[1],
+      args: m[2] ? m[2].split("|").map((s) => s.trim()) : []
+    })
+  },
+  // [[XHS_LIKE: noteId]]
+  {
+    re: /\[\[XHS_LIKE:\s*(.+?)\]\]/g,
+    toDirective: (m) => ({ type: "xhs_like", noteId: m[1].trim() })
+  },
+  // [[XHS_FAV: noteId]]
+  {
+    re: /\[\[XHS_FAV:\s*(.+?)\]\]/g,
+    toDirective: (m) => ({ type: "xhs_fav", noteId: m[1].trim() })
+  },
+  // [[XHS_COMMENT: noteId | text]]
+  {
+    re: /\[\[XHS_COMMENT:\s*([^|]+?)\s*\|\s*([^\]]+?)\]\]/g,
+    toDirective: (m) => ({ type: "xhs_comment", noteId: m[1].trim(), text: m[2].trim() })
+  },
+  // [[XHS_REPLY: noteId | commentId | text]]
+  {
+    re: /\[\[XHS_REPLY:\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^\]]+?)\]\]/g,
+    toDirective: (m) => ({
+      type: "xhs_reply",
+      noteId: m[1].trim(),
+      commentId: m[2].trim(),
+      text: m[3].trim()
+    })
+  },
+  // [[XHS_POST: title | content | tags]]   (用 s flag 兼容多行 content)
+  {
+    re: /\[\[XHS_POST:\s*([^|]+?)\s*\|\s*([\s\S]+?)\s*\|\s*([^\]]+?)\]\]/g,
+    toDirective: (m) => ({
+      type: "xhs_post",
+      title: m[1].trim(),
+      content: m[2].trim(),
+      tags: m[3].trim()
+    })
+  },
+  // [[XHS_SHARE: 3]]
+  {
+    re: /\[\[XHS_SHARE:\s*(\d+)\]\]/g,
+    toDirective: (m) => ({ type: "xhs_share", idx: Number(m[1]) })
+  },
+  // [[LIFE:MED|布洛芬]] 生活记录代记 — 跟 chatParser.ts 的 `\[\[LIFE:[^\]]*\]\]` 同口径,
+  // 冒号后整段原样带走, 不在这里拆 verb/args (那份解析在 lifeRecords.parseLifeDirective)。
+  {
+    re: /\[\[LIFE:([^\]]*)\]\]/g,
+    toDirective: (m) => ({ type: "life_record", body: m[1] })
+  },
+  // [[NEWS_CARD: 来源|标题]] 分享热点卡片 — 跟 chatParser.ts:NEWS_CARD_RE 同口径。
+  {
+    re: /\[\[NEWS_CARD:\s*([^\]]*?)\s*\]\]/g,
+    toDirective: (m) => ({ type: "news_card", body: m[1] })
+  },
+  // 写日记 — 长形态: [[DIARY_START: title|mood]]\n content \n[[DIARY_END]]
+  // 短形态: [[DIARY: title|content]] 或 [[DIARY: content]] (无 title)
+  // 行为跟 applyAssistantPostProcessing.ts:465-495 字节对齐:
+  //   - 长形态 header 含 `|` → title|mood 切, 不含 `|` → 整段 = title
+  //   - 短形态 raw 含 `|` → title|content 切, 不含 `|` → 整段 = content (title 留空, 客户端兜底)
+  // 多行 content 用 [\s\S]*? 跨行, 别用 `s` flag (worker 端 esbuild target 默认 ok 但避免冗余)
+  {
+    re: /\[\[DIARY_START:\s*(.+?)\]\]\n?([\s\S]*?)\[\[DIARY_END\]\]/g,
+    toDirective: (m) => parseDiaryLong(m, "notion_write_diary")
+  },
+  {
+    re: /\[\[DIARY:\s*([\s\S]+?)\]\]/g,
+    toDirective: (m) => parseDiaryShort(m, "notion_write_diary")
+  },
+  // 飞书写日记 — 同形态, FS_ 前缀
+  {
+    re: /\[\[FS_DIARY_START:\s*(.+?)\]\]\n?([\s\S]*?)\[\[FS_DIARY_END\]\]/g,
+    toDirective: (m) => parseDiaryLong(m, "feishu_write_diary")
+  },
+  {
+    re: /\[\[FS_DIARY:\s*([\s\S]+?)\]\]/g,
+    toDirective: (m) => parseDiaryShort(m, "feishu_write_diary")
+  }
+];
+function parseDiaryLong(m, type) {
+  const header = m[1].trim();
+  const content = (m[2] || "").trim();
+  let title = "";
+  let mood = "";
+  if (header.includes("|")) {
+    const parts = header.split("|");
+    title = parts[0].trim();
+    mood = parts.slice(1).join("|").trim();
+  } else {
+    title = header;
+  }
+  return { type, title, content, mood: mood || void 0 };
+}
+function parseDiaryShort(m, type) {
+  const raw = m[1].trim();
+  let title = "";
+  let content = "";
+  if (raw.includes("|")) {
+    const parts = raw.split("|");
+    title = parts[0].trim();
+    content = parts.slice(1).join("|").trim();
+  } else {
+    content = raw;
+  }
+  return { type, title, content };
+}
+function classifyLLMOutput(text2) {
+  const social = extractFriendFeedReplyTags(text2);
+  const visits = extractFriendFeedReplyTags(social.text, "HOME_VISIT_REPLY");
+  text2 = visits.text;
+  const toolCalls = [];
+  for (const spec of DATA_TAGS) {
+    const matches = Array.from(text2.matchAll(spec.re));
+    for (const m of matches) {
+      const args = spec.toArgs(m);
+      if (!args) continue;
+      toolCalls.push({
+        id: `call_${spec.toolName}_${toolCalls.length}_${Date.now().toString(36)}`,
+        type: "function",
+        function: { name: spec.toolName, arguments: JSON.stringify(args) }
+      });
+    }
+  }
+  if (toolCalls.length > 0) {
+    let prefix = text2;
+    for (const spec of DATA_TAGS) prefix = prefix.replace(spec.re, "");
+    prefix = prefix.trim();
+    if (social.actions.length) prefix += "\n" + social.actions.map((action) => "[[FRIEND_FEED_REPLY:" + JSON.stringify(action) + "]]").join("\n");
+    if (visits.actions.length) prefix += "\n" + visits.actions.map((action) => "[[HOME_VISIT_REPLY:" + JSON.stringify(action) + "]]").join("\n");
+    const sanitizedPrefix = sanitizeForNotification(prefix);
+    return { kind: "tool-request", prefix, sanitizedPrefix, toolCalls };
+  }
+  const directives = social.actions.map((action) => ({ type: "friend_feed_reply", action }));
+  directives.push(...visits.actions.map((action) => ({ type: "home_visit_reply", action })));
+  const { text: textAfterTransfers, events: transferEvents } = extractTransferCommands(visits.text);
+  for (const ev of transferEvents) {
+    if (ev.kind === "send") {
+      const amount = parseTransferAmount(ev.amount);
+      if (amount !== null) directives.push({ type: "transfer", amount });
+    } else if (ev.kind === "accept") {
+      directives.push({ type: "transfer_accept" });
+    } else {
+      directives.push({ type: "transfer_return" });
+    }
+  }
+  const scheduleParsed = extractScheduleChangeDirectives(textAfterTransfers);
+  const textAfterSchedule = scheduleParsed.cleanedText;
+  for (const d of scheduleParsed.directives) {
+    directives.push({ type: "change_schedule", time: d.startTime, activity: d.activity });
+  }
+  for (const spec of SIDE_EFFECT_TAGS) {
+    const matches = Array.from(textAfterSchedule.matchAll(spec.re));
+    for (const m of matches) {
+      const d = spec.toDirective(m);
+      if (d) directives.push(d);
+    }
+  }
+  const dedupedDirectives = [];
+  const seenDirectives = /* @__PURE__ */ new Set();
+  for (const d of directives) {
+    const key = JSON.stringify(d);
+    if (seenDirectives.has(key)) {
+      console.warn("[classifier] \u540C\u4E00\u6761\u6D88\u606F\u91CC\u91CD\u590D\u7684\u526F\u4F5C\u7528, \u53EA\u4FDD\u7559\u7B2C\u4E00\u4E2A:", key);
+      continue;
+    }
+    seenDirectives.add(key);
+    dedupedDirectives.push(d);
+  }
+  let cleanedText = textAfterSchedule;
+  for (const spec of DATA_TAGS) cleanedText = cleanedText.replace(spec.re, "");
+  for (const spec of SIDE_EFFECT_TAGS) cleanedText = cleanedText.replace(spec.re, "");
+  cleanedText = cleanedText.trim();
+  const sanitizedBody = sanitizeForNotification(cleanedText);
+  return { kind: "finish", cleanedText, sanitizedBody, directives: dedupedDirectives };
+}
+
+// utils/mcpFireCore.ts
+var DEFAULT_MAX_TOOL_NAME_LEN = 64;
+var MCP_FIRE_NAME_PREFIX = "mcp__";
+var MCP_FIRE_NAME_BUDGET = DEFAULT_MAX_TOOL_NAME_LEN - MCP_FIRE_NAME_PREFIX.length;
+var sanitizeMcpToolName = (name, maxLen = DEFAULT_MAX_TOOL_NAME_LEN) => {
+  const len = Math.max(1, maxLen);
+  return (name || "tool").replace(/[^A-Za-z0-9_-]/g, "_").slice(0, len);
+};
+var withMcpDedupeSuffix = (base, i, maxLen = DEFAULT_MAX_TOOL_NAME_LEN) => {
+  const suffix = `_${i}`;
+  return base.slice(0, Math.max(0, maxLen - suffix.length)) + suffix;
+};
+var serverSlug = (server, maxLen = DEFAULT_MAX_TOOL_NAME_LEN) => sanitizeMcpToolName(server.name, maxLen).slice(0, 20);
+var buildMcpNameMap = (servers, opts = {}) => {
+  const maxLen = opts.maxNameLen ?? DEFAULT_MAX_TOOL_NAME_LEN;
+  const resolve = /* @__PURE__ */ new Map();
+  for (const server of servers) {
+    for (const t of server.tools || []) {
+      let exposed = sanitizeMcpToolName(t.name, maxLen);
+      if (resolve.has(exposed)) {
+        const prefixed = sanitizeMcpToolName(`${serverSlug(server, maxLen)}_${t.name}`, maxLen);
+        exposed = prefixed;
+        let i = 2;
+        while (resolve.has(exposed)) exposed = withMcpDedupeSuffix(prefixed, i++, maxLen);
+      }
+      resolve.set(exposed, { server, toolName: t.name, tool: t });
+    }
+  }
+  return resolve;
+};
+var MCP_RESULT_MAX_CHARS = 2e4;
+var formatMcpToolResult = (data) => {
+  let s;
+  try {
+    s = typeof data === "string" ? data : JSON.stringify(data);
+  } catch {
+    s = String(data);
+  }
+  return s.length > MCP_RESULT_MAX_CHARS ? `${s.slice(0, MCP_RESULT_MAX_CHARS)}\u2026[\u7ED3\u679C\u8FC7\u957F\u5DF2\u622A\u65AD, \u5168\u6587\u5171 ${s.length} \u5B57\u7B26]` : s;
+};
+var stripTextFakedMcpCalls = (content, calls) => {
+  let cleaned = content;
+  for (const call of calls) cleaned = cleaned.split(call.matched).join("");
+  return cleaned.replace(/\n{3,}/g, "\n\n").trim();
+};
+var escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+var stripQuotes2 = (s) => {
+  const t = s.trim();
+  const m = t.match(/^(['"`「『])([\s\S]*)(['"`」』])$/);
+  return m ? m[2] : t;
+};
+var positionalKeys = (schema) => {
+  const props = schema?.properties ? Object.keys(schema.properties) : [];
+  const req = Array.isArray(schema?.required) ? schema.required.filter((k) => props.includes(k)) : [];
+  return [...req, ...props.filter((k) => !req.includes(k))];
+};
+var coerceBySchema = (value, schema, key) => {
+  const type = schema?.properties?.[key]?.type;
+  const v = stripQuotes2(value);
+  if (type === "number" || type === "integer") {
+    const n = Number(v);
+    if (Number.isFinite(n)) return type === "integer" ? Math.trunc(n) : n;
+  }
+  if (type === "boolean") {
+    if (/^(true|是|开)$/i.test(v)) return true;
+    if (/^(false|否|关)$/i.test(v)) return false;
+  }
+  return v;
+};
+var splitTopLevel = (s) => {
+  const out = [];
+  let depth = 0, cur = "", quote = "";
+  for (const ch of s) {
+    if (quote) {
+      cur += ch;
+      if (ch === quote) quote = "";
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      cur += ch;
+      continue;
+    }
+    if (ch === "{" || ch === "[") depth++;
+    if (ch === "}" || ch === "]") depth--;
+    if (ch === "," && depth === 0) {
+      out.push(cur);
+      cur = "";
+      continue;
+    }
+    cur += ch;
+  }
+  if (cur.trim()) out.push(cur);
+  return out;
+};
+var parseFakedArgs = (inner, schema) => {
+  const t = inner.trim();
+  if (!t) return {};
+  if (t.startsWith("{")) {
+    try {
+      return JSON.parse(t);
+    } catch {
+    }
+    try {
+      return JSON.parse(t.replace(/,\s*([}\]])/g, "$1").replace(/'/g, '"').replace(/([{,]\s*)([a-zA-Z_]\w*)\s*:/g, '$1"$2":'));
+    } catch {
+    }
+  }
+  const parts = splitTopLevel(t);
+  if (parts.every((p) => /^\s*[A-Za-z_]\w*\s*[=:]/.test(p))) {
+    const args2 = {};
+    for (const p of parts) {
+      const m = p.match(/^\s*([A-Za-z_]\w*)\s*[=:]\s*([\s\S]*)$/);
+      if (m) args2[m[1]] = coerceBySchema(m[2], schema, m[1]);
+    }
+    return args2;
+  }
+  const keys = positionalKeys(schema);
+  const args = {};
+  parts.forEach((p, i) => {
+    const key = keys[i];
+    if (key) args[key] = coerceBySchema(p, schema, key);
+  });
+  return args;
+};
+var extractTextFakedMcpCalls = (content, resolve, opts = {}) => {
+  if (!content || !resolve.size) return [];
+  const lookup = /* @__PURE__ */ new Map();
+  for (const [exposed, hit] of resolve) {
+    lookup.set(exposed, { exposed, hit });
+    lookup.set(hit.toolName, { exposed, hit });
+    if (opts.alsoMatchPrefix) lookup.set(`${opts.alsoMatchPrefix}${exposed}`, { exposed, hit });
+  }
+  const found = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const [name, { exposed, hit }] of lookup) {
+    const schema = hit.tool.inputSchema;
+    const esc = escapeRegExp(name);
+    const parenRe = new RegExp(`(^|[^\\w./])${esc}\\s*\\(([^)]*)\\)`, "g");
+    for (const m of content.matchAll(parenRe)) {
+      const matched = m[0].slice(m[1].length);
+      const key = `${exposed}|${matched}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      found.push({
+        exposedName: exposed,
+        server: hit.server,
+        toolName: hit.toolName,
+        args: parseFakedArgs(m[2], schema),
+        matched,
+        index: (m.index ?? 0) + m[1].length
+      });
+    }
+    const colonRe = new RegExp(`(^|\\n)\\s*[>*-]*\\s*\`?${esc}\`?\\s*[:\uFF1A]\\s*([^\\n]+)`, "g");
+    for (const m of content.matchAll(colonRe)) {
+      const matched = m[0].slice(m[1].length);
+      const key = `${exposed}|${matched.trim()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const keys = positionalKeys(schema);
+      const value = stripQuotes2(m[2].replace(/[。！？!?…\s]+$/, ""));
+      found.push({
+        exposedName: exposed,
+        server: hit.server,
+        toolName: hit.toolName,
+        args: keys.length ? { [keys[0]]: coerceBySchema(value, schema, keys[0]) } : {},
+        matched,
+        index: (m.index ?? 0) + m[1].length
+      });
+    }
+  }
+  return found.sort((a, b) => a.index - b.index).map(({ index: _index, ...call }) => call);
+};
+var MCP_LATEST_HANDSHAKE_PROTOCOL_VERSION = "2025-11-25";
+var MCP_SUPPORTED_HANDSHAKE_PROTOCOL_VERSIONS = [
+  "2025-11-25",
+  "2025-06-18",
+  "2025-03-26"
+];
+var MCP_REQUEST_TIMEOUT_MS = 6e4;
+var createMcpSessionState = () => ({
+  sessionId: null,
+  initialized: false,
+  initPromise: null,
+  protocolVersion: null,
+  serverInfo: null,
+  serverCapabilities: null,
+  nextId: 0
+});
+var buildRpcRequest = (session, method, params, isNotification = false) => {
+  const req = { jsonrpc: "2.0", method, params };
+  if (!isNotification) req.id = ++session.nextId;
+  return req;
+};
+var parseSse = (text2) => {
+  const dataLines = [];
+  for (const line of text2.split("\n")) {
+    if (line.startsWith("data: ")) dataLines.push(line.slice(6));
+    else if (line.startsWith("data:")) dataLines.push(line.slice(5));
+  }
+  for (let i = dataLines.length - 1; i >= 0; i--) {
+    try {
+      return JSON.parse(dataLines[i]);
+    } catch {
+    }
+  }
+  return null;
+};
+var parseResp = (text2, contentType) => {
+  if (contentType.includes("text/event-stream") || /^\s*(event:|data:)/.test(text2)) {
+    const parsed = parseSse(text2);
+    if (parsed) return parsed;
+  }
+  try {
+    return JSON.parse(text2);
+  } catch {
+    const m = text2.match(/\{[\s\S]*\}/);
+    if (m) {
+      try {
+        return JSON.parse(m[0]);
+      } catch {
+      }
+    }
+    throw new Error(`MCP: \u65E0\u6CD5\u89E3\u6790\u54CD\u5E94: ${text2.slice(0, 300)}`);
+  }
+};
+var readSseResponse = async (resp, expectedId) => {
+  const reader = resp.body?.getReader();
+  if (!reader) return parseResp(await resp.text(), "text/event-stream");
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const parseEvent = (event) => {
+    const data = event.split(/\r?\n/).filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trimStart()).join("\n");
+    if (!data || data === "[DONE]") return null;
+    try {
+      const parsed = JSON.parse(data);
+      return expectedId == null || parsed.id === expectedId ? parsed : null;
+    } catch {
+      return null;
+    }
+  };
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      buffer += decoder.decode(value, { stream: !done });
+      const events = buffer.split(/\r?\n\r?\n/);
+      buffer = events.pop() || "";
+      for (const event of events) {
+        const parsed = parseEvent(event);
+        if (parsed) return parsed;
+      }
+      if (done) {
+        const parsed = parseEvent(buffer);
+        if (parsed) return parsed;
+        throw new Error("MCP SSE \u6D41\u7ED3\u675F\uFF0C\u4F46\u6CA1\u6709\u6536\u5230\u672C\u6B21\u8BF7\u6C42\u7684\u54CD\u5E94");
+      }
+    }
+  } finally {
+    await reader.cancel().catch(() => {
+    });
+  }
+};
+var postCore = async (target, session, body, timeoutMs, expectResponse = true) => {
+  target.signal?.throwIfAborted();
+  const headers = target.headers(session.sessionId, session.protocolVersion);
+  let resp;
+  const controller = new AbortController();
+  const abort = () => controller.abort(target.signal?.reason);
+  target.signal?.addEventListener("abort", abort, { once: true });
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    try {
+      resp = await fetch(target.url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+        signal: controller.signal
+      });
+    } catch (e) {
+      target.signal?.throwIfAborted();
+      if (controller.signal.aborted) {
+        throw new Error(`MCP \u8BF7\u6C42\u8D85\u65F6\uFF08${Math.round(timeoutMs / 1e3)} \u79D2\uFF09`);
+      }
+      const hint = target.fetchErrorHint || "";
+      throw new Error(`MCP \u8BF7\u6C42\u5931\u8D25: ${e?.message || e}\u3002${hint}`);
+    }
+    const readText = async () => {
+      try {
+        return await resp.text();
+      } catch (e) {
+        target.signal?.throwIfAborted();
+        if (controller.signal.aborted) {
+          throw new Error(`MCP \u8BF7\u6C42\u8D85\u65F6\uFF08${Math.round(timeoutMs / 1e3)} \u79D2\uFF09`);
+        }
+        throw e;
+      }
+    };
+    const newSid = resp.headers.get("Mcp-Session-Id") || resp.headers.get("mcp-session-id");
+    if (newSid) session.sessionId = newSid;
+    if (resp.status === 401 || resp.status === 403) {
+      const txt = await readText().catch(() => "");
+      throw new Error(`MCP \u9274\u6743\u5931\u8D25 (${resp.status}): Token \u53EF\u80FD\u65E0\u6548\u6216\u8FC7\u671F\u3002${txt.slice(0, 120)}`);
+    }
+    if (resp.status === 202) return { response: null };
+    if (!resp.ok) {
+      const txt = await readText().catch(() => "");
+      throw new Error(`MCP HTTP ${resp.status}: ${txt.slice(0, 200)}`);
+    }
+    if (!expectResponse) return { response: null };
+    const ct = resp.headers.get("content-type") || "";
+    try {
+      if (ct.includes("text/event-stream")) {
+        return { response: await readSseResponse(resp, body.id) };
+      }
+      const text2 = await readText();
+      return { response: parseResp(text2, ct) };
+    } catch (e) {
+      target.signal?.throwIfAborted();
+      if (controller.signal.aborted) {
+        throw new Error(`MCP \u8BF7\u6C42\u8D85\u65F6\uFF08${Math.round(timeoutMs / 1e3)} \u79D2\uFF09`);
+      }
+      throw e;
+    }
+  } finally {
+    clearTimeout(timeoutId);
+    target.signal?.removeEventListener("abort", abort);
+  }
+};
+var formatMcpRpcError = (err6) => {
+  const code = err6?.code !== void 0 ? `[${err6.code}]: ` : "";
+  const message = err6?.message || "\u672A\u77E5\u9519\u8BEF";
+  let dataText = "";
+  if (err6?.data !== void 0 && err6?.data !== null && err6?.data !== "") {
+    if (typeof err6.data === "string") {
+      dataText = err6.data.trim();
+    } else {
+      try {
+        dataText = JSON.stringify(err6.data);
+      } catch {
+        dataText = String(err6.data);
+      }
+    }
+  }
+  const suffix = dataText && !message.includes(dataText) ? `\uFF08${dataText}\uFF09` : "";
+  return `${code}${message}${suffix}`;
+};
+var initializeCore = async (target, session, timeoutMs) => {
+  const initReq = buildRpcRequest(session, "initialize", {
+    protocolVersion: MCP_LATEST_HANDSHAKE_PROTOCOL_VERSION,
+    capabilities: {},
+    clientInfo: { name: "sullyos", title: "SullyOS", version: "1.0.0" }
+  });
+  const { response } = await postCore(target, session, initReq, timeoutMs);
+  if (response?.error) throw new Error(`Initialize \u5931\u8D25 ${formatMcpRpcError(response.error)}`);
+  const negotiated = String(
+    response?.result?.protocolVersion || MCP_LATEST_HANDSHAKE_PROTOCOL_VERSION
+  );
+  if (!MCP_SUPPORTED_HANDSHAKE_PROTOCOL_VERSIONS.includes(negotiated)) {
+    throw new Error(
+      `MCP \u534F\u8BAE\u7248\u672C\u4E0D\u517C\u5BB9\uFF1A\u670D\u52A1\u5668\u9009\u62E9\u4E86 ${negotiated}\u3002SullyOS \u7684 Streamable HTTP \u63A5\u7EBF\u652F\u6301 ${MCP_SUPPORTED_HANDSHAKE_PROTOCOL_VERSIONS.join(" / ")}\uFF1B2024-11-05 \u5C5E\u4E8E\u65E7 HTTP+SSE \u53CC\u7AEF\u70B9\uFF0C2026-07-28 \u5219\u9700\u8981\u65B0\u7684\u65E0\u63E1\u624B\u751F\u547D\u5468\u671F\u3002`
+    );
+  }
+  session.protocolVersion = negotiated;
+  session.serverInfo = response?.result?.serverInfo || null;
+  session.serverCapabilities = response?.result?.capabilities || null;
+  const notif = buildRpcRequest(session, "notifications/initialized", {}, true);
+  await postCore(target, session, notif, timeoutMs, false).catch(() => {
+  });
+  session.initialized = true;
+};
+var ensureInitializedCore = async (target, session, timeoutMs) => {
+  if (session.initialized) return;
+  if (!session.initPromise) {
+    session.initPromise = initializeCore(target, session, timeoutMs).catch((e) => {
+      session.initPromise = null;
+      throw e;
+    });
+  }
+  await session.initPromise;
+};
+var isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+var resolveLocalSchemaRef = (schema, rootSchema) => {
+  const ref = typeof schema?.$ref === "string" ? schema.$ref : "";
+  if (!ref.startsWith("#/")) return schema;
+  const resolved = ref.slice(2).split("/").reduce((current, part) => {
+    const key = part.replace(/~1/g, "/").replace(/~0/g, "~");
+    return current?.[key];
+  }, rootSchema);
+  return resolved || schema;
+};
+var schemaAccepts = (schema, kind) => {
+  const types = Array.isArray(schema?.type) ? schema.type : [schema?.type];
+  if (types.includes(kind)) return true;
+  if (kind === "object" && schema?.properties) return true;
+  if (kind === "array" && schema?.items) return true;
+  return [...schema?.oneOf || [], ...schema?.anyOf || []].some((item) => schemaAccepts(item, kind));
+};
+var normalizeMcpValueBySchema = (value, rawSchema, rootSchema, depth) => {
+  if (!rawSchema || depth > 20) return value;
+  const schema = resolveLocalSchemaRef(rawSchema, rootSchema);
+  const acceptsObject = schemaAccepts(schema, "object");
+  const acceptsArray = schemaAccepts(schema, "array");
+  let normalized = value;
+  if (typeof normalized === "string" && (acceptsObject || acceptsArray)) {
+    for (let i = 0; i < 3 && typeof normalized === "string"; i++) {
+      const text2 = normalized.trim();
+      if (!text2) break;
+      try {
+        normalized = JSON.parse(text2);
+      } catch {
+        break;
+      }
+    }
+    const decodedMatchesSchema = acceptsObject && isRecord(normalized) || acceptsArray && Array.isArray(normalized);
+    if (!decodedMatchesSchema) normalized = value;
+  }
+  const alternatives = [...schema?.oneOf || [], ...schema?.anyOf || []];
+  if (alternatives.length) {
+    const matching = alternatives.find(
+      (item) => isRecord(normalized) && schemaAccepts(item, "object") || Array.isArray(normalized) && schemaAccepts(item, "array")
+    );
+    if (matching) normalized = normalizeMcpValueBySchema(normalized, matching, rootSchema, depth + 1);
+  }
+  if (isRecord(normalized) && acceptsObject) {
+    const result = { ...normalized };
+    const properties = schema?.properties || {};
+    for (const [key, childSchema] of Object.entries(properties)) {
+      if (key in result) result[key] = normalizeMcpValueBySchema(result[key], childSchema, rootSchema, depth + 1);
+    }
+    if (schema?.additionalProperties && typeof schema.additionalProperties === "object") {
+      for (const key of Object.keys(result)) {
+        if (!(key in properties)) {
+          result[key] = normalizeMcpValueBySchema(result[key], schema.additionalProperties, rootSchema, depth + 1);
+        }
+      }
+    }
+    for (const item of schema?.allOf || []) {
+      const merged = normalizeMcpValueBySchema(result, item, rootSchema, depth + 1);
+      if (isRecord(merged)) Object.assign(result, merged);
+    }
+    return result;
+  }
+  if (Array.isArray(normalized) && acceptsArray && schema?.items) {
+    return normalized.map((item) => normalizeMcpValueBySchema(item, schema.items, rootSchema, depth + 1));
+  }
+  return normalized;
+};
+var normalizeMcpToolArguments = (args, inputSchema) => normalizeMcpValueBySchema(args, inputSchema, inputSchema, 0);
+var targetHost = (url) => {
+  try {
+    return new URL(url).host;
+  } catch {
+    return "";
+  }
+};
+var callMcpToolCore = async (target, session, toolName, args = {}, opts = {}) => {
+  target = { ...target, signal: opts.signal ?? target.signal };
+  target.signal?.throwIfAborted();
+  const timeoutMs = opts.timeoutMs ?? MCP_REQUEST_TIMEOUT_MS;
+  const normalizedArgs = normalizeMcpToolArguments(args, opts.inputSchema);
+  const finish = (result) => {
+    let resultPreview = "";
+    if (result.success) {
+      try {
+        resultPreview = JSON.stringify(result.data).slice(0, 800);
+      } catch {
+        resultPreview = String(result.data).slice(0, 800);
+      }
+    }
+    console.info("\u{1F50C} [MCP] tools/call \u5B8C\u6210", {
+      server: opts.serverLabel ?? targetHost(target.url),
+      tool: toolName,
+      args: normalizedArgs,
+      success: result.success,
+      ...result.success ? { result: resultPreview } : { error: result.error }
+    });
+    return result;
+  };
+  try {
+    await ensureInitializedCore(target, session, timeoutMs);
+    const body = buildRpcRequest(session, "tools/call", { name: toolName, arguments: normalizedArgs });
+    let response;
+    try {
+      ({ response } = await postCore(target, session, body, timeoutMs));
+    } catch (e) {
+      if (/HTTP (400|404)/.test(e?.message || "")) {
+        Object.assign(session, createMcpSessionState());
+        await ensureInitializedCore(target, session, timeoutMs);
+        ({ response } = await postCore(
+          target,
+          session,
+          buildRpcRequest(session, "tools/call", { name: toolName, arguments: normalizedArgs }),
+          timeoutMs
+        ));
+      } else {
+        throw e;
+      }
+    }
+    if (!response) return finish({ success: false, error: "\u7A7A\u54CD\u5E94" });
+    if (response.error) return finish({ success: false, error: `MCP \u9519\u8BEF ${formatMcpRpcError(response.error)}` });
+    const result = response.result;
+    if (result?.resultType === "input_required") {
+      return finish({
+        success: false,
+        error: "\u8FD9\u4E2A\u5DE5\u5177\u9700\u8981\u5728\u6267\u884C\u9014\u4E2D\u8865\u5145\u786E\u8BA4\u6216\u8F93\u5165\uFF1BSullyOS \u5F53\u524D\u4E0D\u4F1A\u66FF\u4F60\u81EA\u52A8\u56DE\u7B54\uFF0C\u8BF7\u56DE\u5230\u804A\u5929\u4E2D\u660E\u786E\u8981\u6C42\u540E\u91CD\u8BD5\u3002",
+        data: result
+      });
+    }
+    if (result?.content && Array.isArray(result.content)) {
+      const textParts = result.content.filter((c) => c?.type === "text").map((c) => c.text || "");
+      const fullText = textParts.join("\n").trim();
+      if (result.isError) return finish({ success: false, error: fullText || "MCP \u5DE5\u5177\u6267\u884C\u5931\u8D25", rawText: fullText });
+      try {
+        return finish({ success: true, data: JSON.parse(fullText), rawText: fullText });
+      } catch {
+        return finish({ success: true, data: fullText, rawText: fullText });
+      }
+    }
+    return finish({ success: true, data: result });
+  } catch (e) {
+    target.signal?.throwIfAborted();
+    return finish({ success: false, error: e?.message || String(e) });
+  }
+};
+var buildMcpDirectHeaders = (server, sessionId, protocolVersion = null) => {
+  const headers = {
+    "Content-Type": "application/json",
+    "Accept": "application/json, text/event-stream"
+  };
+  for (const item of server.customHeaders || []) {
+    const name = String(item?.name || "").trim();
+    const value = String(item?.value || "").trim();
+    if (name && value) headers[name] = value;
+  }
+  if (server.token) headers["Authorization"] = `Bearer ${server.token}`;
+  if (sessionId) headers["Mcp-Session-Id"] = sessionId;
+  if (protocolVersion) headers["MCP-Protocol-Version"] = protocolVersion;
+  return headers;
+};
+var filterMcpServersForChar = (servers, charId) => (servers || []).filter(
+  (s) => !!s.url && (s.tools?.length || 0) > 0 && (!s.charIds?.length || s.charIds.includes(charId))
+);
+var buildMcpFireTools = (resolve) => {
+  const multiServer = new Set([...resolve.values()].map(({ server }) => server.id)).size > 1;
+  const tools = [];
+  for (const [exposed, { server, tool }] of resolve) {
+    const desc = (tool.description || "").trim();
+    tools.push({
+      type: "function",
+      function: {
+        name: `${MCP_FIRE_NAME_PREFIX}${exposed}`,
+        description: multiServer ? `[${server.name}] ${desc}`.trim() : desc,
+        parameters: tool.inputSchema || { type: "object", properties: {} }
+      }
+    });
+  }
+  return tools;
+};
+var buildMcpFireBlock = (resolve, opts) => {
+  if (!resolve.size) return "";
+  const userName = opts.userName || "\u7528\u6237";
+  const multiServer = new Set([...resolve.values()].map(({ server }) => server.id)).size > 1;
+  const lines = [];
+  for (const [exposed, { server, tool }] of resolve) {
+    const desc = (tool.description || "").trim();
+    if (opts.mode === "native") {
+      lines.push(`- ${exposed}${desc ? `\uFF1A${desc}` : ""}${multiServer ? `\uFF08\u6765\u6E90: ${server.name}\uFF09` : ""}`);
+      continue;
+    }
+    const schema = tool.inputSchema || {};
+    const required = new Set(Array.isArray(schema.required) ? schema.required : []);
+    const args = Object.entries(schema.properties || {}).map(([name, d]) => `${name}${required.has(name) ? "*" : ""}:${d?.type || "any"}`);
+    lines.push(`- ${exposed}(${args.join(", ")})${desc ? `\uFF1A${desc}` : ""}${multiServer ? `\uFF08\u6765\u6E90: ${server.name}\uFF09` : ""}`);
+  }
+  const howTo = opts.mode === "native" ? "\u9700\u8981\u65F6\u76F4\u63A5\u901A\u8FC7\u7CFB\u7EDF\u7684\u5DE5\u5177\u8C03\u7528\u63A5\u53E3\u53D1\u8D77\uFF08\u7CFB\u7EDF\u4F1A\u81EA\u52A8\u6267\u884C\u5E76\u628A\u7ED3\u679C\u7ED9\u4F60\uFF09\uFF0C\u4E0D\u8981\u628A\u5DE5\u5177\u540D\u548C\u53C2\u6570\u5199\u8FDB\u6B63\u6587\u3002" : '\u9700\u8981\u5DE5\u5177\u65F6\uFF0C\u5355\u72EC\u8F93\u51FA\u4E00\u884C tool_name({"\u53C2\u6570":"\u503C"})\uFF0C\u7CFB\u7EDF\u4F1A\u4EE3\u4E3A\u6267\u884C\u5E76\u628A\u7ED3\u679C\u7ED9\u4F60\uFF0C\u7136\u540E\u4F60\u7EE7\u7EED\u5199\u3002* \u8868\u793A\u5FC5\u586B\u53C2\u6570\u3002';
+  return [
+    "",
+    "---",
+    `\u3010\u5916\u90E8\u5DE5\u5177 \u2014\u2014 ${userName} \u5728\u8BBE\u7F6E\u91CC\u7ED9\u4F60\u8FDE\u4E86 MCP \u5DE5\u5177\u670D\u52A1\u5668\uFF0C\u4E3B\u52A8\u6D88\u606F\u91CC\u4E5F\u53EF\u4EE5\u7528\u3011`,
+    howTo,
+    "\u7EAA\u5F8B\uFF1A\u4E0D\u9700\u8981\u5C31\u522B\u786C\u8C03\uFF1B\u6CA1\u6536\u5230\u7CFB\u7EDF\u8FD4\u56DE\u524D\u4E0D\u8981\u58F0\u79F0\u5DE5\u5177\u6210\u529F\uFF0C\u4E5F\u4E0D\u8981\u7F16\u9020\u7ED3\u679C\uFF1B\u5DE5\u5177\u5931\u8D25\u5C31\u6362\u4E2A\u65B9\u5F0F\u6216\u5982\u5B9E\u5E26\u8FC7\uFF1B\u7ED3\u679C\u53EA\u6311\u76F8\u5173\u90E8\u5206\u7528\u89D2\u8272\u8BED\u6C14\u8F6C\u8FF0\uFF0C\u522B\u590D\u8BFB JSON\u3002",
+    "\u591A\u6B65\u4EFB\u52A1\uFF1A\u5148\u505A\u5FC5\u8981\u68C0\u67E5\uFF0C\u968F\u540E\u7ACB\u523B\u8C03\u7528\u80FD\u63A8\u8FDB\u76EE\u6807\u7684\u52A8\u4F5C\u5DE5\u5177\uFF1B\u4E0D\u8981\u53CD\u590D\u8BFB\u53D6\u540C\u4E00\u4EFD\u8BF4\u660E\u6216\u72B6\u6001\u3002\u6267\u884C\u52A8\u4F5C\u540E\u53EF\u4EE5\u518D\u6B21\u68C0\u67E5\u65B0\u72B6\u6001\uFF0C\u5E76\u7EE7\u7EED\u5230\u76EE\u6807\u5B8C\u6210\u6216\u5DE5\u5177\u660E\u786E\u5931\u8D25\u3002",
+    `\u526F\u4F5C\u7528\u64CD\u4F5C\uFF1A${userName} \u672C\u8F6E\u5DF2\u7ECF\u660E\u786E\u8981\u6C42\u6267\u884C\u7684\u89C6\u4E3A\u5DF2\u786E\u8BA4\uFF1B\u6CA1\u6709\u660E\u786E\u8981\u6C42\u65F6\u624D\u5148\u786E\u8BA4\u3002`,
+    "\u53EF\u7528\u5DE5\u5177\uFF1A",
+    ...lines,
+    "---"
+  ].join("\n");
+};
+
+// utils/amsg2ExpireGuard.ts
+var FIRE_GRACE_MS = 9e4;
+var DAY_MS2 = 24 * 36e5;
+var recurrencePeriodMs = (recurrenceType) => recurrenceType === "daily" ? DAY_MS2 : recurrenceType === "weekly" ? 7 * DAY_MS2 : null;
 
 // utils/amsgTaskKinds.ts
 var AMSG_TASK_KIND_KEY = "amsgKind";
@@ -11601,257 +13058,6 @@ var readTaskKind = (metadata) => {
 var AMSG_JOB_NAMESPACE = "amsg:job";
 var AMSG_JOB_TTL_DAYS = 3;
 var AMSG_JOB_ID_KEY = "amsgJobId";
-
-// worker/amsg/src/skipDiagnostics.ts
-var BODY_ERROR_MAX_CHARS = 200;
-var CONTENT_EXCERPT_CHARS = 300;
-var REASONING_TAIL_CHARS = 200;
-var BODY_EXCERPT_CHARS = 500;
-var asRecord = (value) => value && typeof value === "object" && !Array.isArray(value) ? value : null;
-var numberOrNull = (value) => typeof value === "number" && Number.isFinite(value) ? value : null;
-var clip = (text2, max) => text2.length > max ? `${text2.slice(0, max)}\u2026` : text2;
-var safeStringify = (value) => {
-  try {
-    return JSON.stringify(value) ?? String(value);
-  } catch {
-    return String(value);
-  }
-};
-var readFirstMessage = (body) => {
-  const choices = Array.isArray(body?.choices) ? body.choices : [];
-  const choice = asRecord(choices[0]);
-  return { choice, message: asRecord(choice?.message) };
-};
-var readReasoning = (message) => {
-  const value = message?.reasoning_content ?? message?.reasoning ?? message?.thinking;
-  return typeof value === "string" ? value : "";
-};
-var readBodyError = (body, hasChoices) => {
-  if (!body) return null;
-  let text2 = "";
-  const error = body.error;
-  if (typeof error === "string") {
-    text2 = error;
-  } else {
-    const record2 = asRecord(error);
-    if (record2) {
-      const code = typeof record2.code === "string" || typeof record2.code === "number" ? String(record2.code) : typeof record2.type === "string" ? record2.type : "";
-      const message = typeof record2.message === "string" ? record2.message : "";
-      text2 = [code && `[${code}]`, message].filter(Boolean).join(" ") || safeStringify(record2);
-    }
-  }
-  if (!text2 && !hasChoices) {
-    const topLevel = body.message ?? body.msg;
-    if (typeof topLevel === "string") text2 = topLevel;
-  }
-  return text2 ? clip(redactCredentials(text2), BODY_ERROR_MAX_CHARS) : null;
-};
-var describeLlmResponseShape = (llmResponse, llmOutputText) => {
-  const body = asRecord(llmResponse);
-  const hasChoices = Array.isArray(body?.choices) && body.choices.length > 0;
-  const { choice, message } = readFirstMessage(body);
-  const content = message?.content;
-  const contentType = content === void 0 ? "missing" : content === null ? "null" : typeof content === "string" ? "string" : Array.isArray(content) ? "array" : "other";
-  const contentChars = typeof content === "string" ? content.length : Array.isArray(content) ? content.reduce((sum, part) => {
-    const text2 = asRecord(part)?.text;
-    return sum + (typeof text2 === "string" ? text2.length : 0);
-  }, 0) : 0;
-  const usage = asRecord(body?.usage);
-  const usageDetails = asRecord(usage?.completion_tokens_details);
-  return {
-    model: typeof body?.model === "string" ? body.model : null,
-    hasChoices,
-    finishReason: typeof choice?.finish_reason === "string" ? choice.finish_reason : null,
-    contentType,
-    contentChars,
-    ...Array.isArray(content) ? { contentParts: content.length } : {},
-    visibleChars: stripReasoningTags(llmOutputText || "").trim().length,
-    reasoningChars: readReasoning(message).length,
-    toolCalls: Array.isArray(message?.tool_calls) ? message.tool_calls.length : 0,
-    usage: usage ? {
-      promptTokens: numberOrNull(usage.prompt_tokens),
-      completionTokens: numberOrNull(usage.completion_tokens),
-      reasoningTokens: numberOrNull(usageDetails?.reasoning_tokens)
-    } : null,
-    bodyError: readBodyError(body, hasChoices)
-  };
-};
-var excerptLlmResponse = (llmResponse) => {
-  const body = asRecord(llmResponse);
-  const hasChoices = Array.isArray(body?.choices) && body.choices.length > 0;
-  if (!hasChoices) {
-    return { body: clip(redactCredentials(safeStringify(llmResponse)), BODY_EXCERPT_CHARS) };
-  }
-  const { message } = readFirstMessage(body);
-  const excerpt = {};
-  const content = message?.content;
-  if (typeof content === "string") {
-    if (content) excerpt.content = clip(redactCredentials(content), CONTENT_EXCERPT_CHARS);
-  } else if (content != null) {
-    excerpt.content = clip(redactCredentials(safeStringify(content)), CONTENT_EXCERPT_CHARS);
-  }
-  const reasoning = readReasoning(message);
-  if (reasoning) {
-    const tail = reasoning.length > REASONING_TAIL_CHARS ? `\u2026${reasoning.slice(-REASONING_TAIL_CHARS)}` : reasoning;
-    excerpt.reasoningTail = redactCredentials(tail);
-  }
-  if (Array.isArray(message?.tool_calls) && message.tool_calls.length > 0) {
-    excerpt.toolCalls = clip(redactCredentials(safeStringify(message.tool_calls)), CONTENT_EXCERPT_CHARS);
-  }
-  return excerpt;
-};
-var rawExcerptEnabled = false;
-var configureSkipDiagnostics = (options) => {
-  rawExcerptEnabled = options.rawExcerpt;
-};
-var isDebugFlagOn = (value) => typeof value === "string" && ["1", "true"].includes(value.trim().toLowerCase());
-var logSkipDiagnostic = (input) => {
-  try {
-    console.warn("[amsg:skip-diag]", {
-      sessionId: input.sessionId ?? null,
-      reason: input.reason,
-      iteration: input.iteration ?? null,
-      ...describeLlmResponseShape(input.llmResponse, input.llmOutputText ?? ""),
-      ...rawExcerptEnabled ? { raw: excerptLlmResponse(input.llmResponse) } : {}
-    });
-  } catch (error) {
-    console.warn("[amsg:skip-diag] \u8BCA\u65AD\u65E5\u5FD7\u6CA1\u8BB0\u4E0B\u6765\uFF08\u8DF3\u8FC7\u7167\u5E38\u751F\u6548\uFF09", error);
-  }
-};
-
-// worker/amsg/src/plateFire.ts
-var discardJob = async (writeState, jobId) => {
-  if (!writeState) return;
-  try {
-    await writeState(AMSG_JOB_NAMESPACE, [{ key: plateJobKey(jobId), value: null }]);
-  } catch (error) {
-    console.warn("[amsg:plate] job \u884C\u6CA1\u5220\u6389\uFF08\u7B49 TTL \u515C\u5E95\uFF09", jobId, error);
-  }
-};
-var plateConsolidateHandler = {
-  async beforeFire({ ctx, charId, taskMeta }) {
-    const jobId = taskMeta[AMSG_JOB_ID_KEY];
-    if (typeof jobId !== "string" || !jobId) {
-      throw new Error(`\u95E8\u724C\u6574\u7406\u4EFB\u52A1\u7684 metadata \u91CC\u6CA1\u6709 ${AMSG_JOB_ID_KEY}`);
-    }
-    const rows = await ctx.readState(AMSG_JOB_NAMESPACE);
-    const row = rows.find((r) => r.key === plateJobKey(jobId));
-    if (!row?.value) {
-      return { skip: true, reason: `\u95E8\u724C\u6574\u7406 job ${jobId} \u7684\u8F93\u5165\u5DF2\u4E0D\u5728\uFF08\u8FC7\u671F\u6216\u5DF2\u64A4\u9500\uFF09` };
-    }
-    const discardAndFail = async (message) => {
-      await discardJob(ctx.writeState, jobId);
-      throw new Error(message);
-    };
-    let json;
-    try {
-      json = await unpackStateValue(row.value);
-    } catch (error) {
-      return discardAndFail(`\u95E8\u724C\u6574\u7406 job ${jobId} \u7684\u8F93\u5165\u89E3\u538B\u5931\u8D25\uFF08\u6570\u636E\u635F\u574F\uFF09\uFF1A${String(error)}`);
-    }
-    const job = parsePlateJobInput(json);
-    if (!job) return discardAndFail(`\u95E8\u724C\u6574\u7406 job ${jobId} \u7684\u8F93\u5165\u89E3\u6790\u5931\u8D25\uFF08\u6570\u636E\u635F\u574F\uFF09`);
-    if (job.charId !== charId) {
-      return discardAndFail(`\u95E8\u724C\u6574\u7406 job ${jobId} \u7684 charId \u4E0E\u4EFB\u52A1\u5BF9\u4E0D\u4E0A`);
-    }
-    if (job.rooms.length === 0) {
-      await discardJob(ctx.writeState, jobId);
-      return { skip: true, reason: `\u95E8\u724C\u6574\u7406 job ${jobId} \u6CA1\u6709\u8981\u6574\u7406\u7684\u623F\u95F4` };
-    }
-    return {
-      messages: buildPlateJobMessages(job),
-      // 跟浏览器那条路同一个超时（叶子里那个常量）。不显式交上去的话这一次 fire 会落到
-      // 库自己的默认值（四分钟），同一件活儿两条路的耐心不一样，而且改那个常量对云端
-      // 毫无影响——「本地什么样云端就什么样」这条线得自己拉齐。
-      totalTimeoutMs: PLATE_LLM_TIMEOUT_MS,
-      state: { jobId, job }
-    };
-  },
-  async llmOutput({ ctx, state }) {
-    const { jobId, job } = state;
-    const items = parsePlateLlmReply(ctx.llmOutputText || "");
-    if (items.length === 0) {
-      console.warn("[amsg:plate] LLM \u6CA1\u8FD4\u56DE\u6709\u6548\u6761\u76EE\uFF0C\u95E8\u724C\u4FDD\u6301\u4E0D\u52A8", jobId);
-      logSkipDiagnostic({
-        sessionId: ctx.sessionId,
-        reason: "plate-empty-generation",
-        iteration: ctx.iteration,
-        llmResponse: ctx.llmResponse,
-        llmOutputText: ctx.llmOutputText
-      });
-      await discardJob(ctx.writeState, jobId);
-      return { decision: "skip-push", reason: "plate-empty-generation" };
-    }
-    if (typeof ctx.emitResult !== "function") {
-      console.warn("[amsg:plate] \u8FD9\u53F0 worker \u4E0D\u652F\u6301 emitResult\uFF0C\u6574\u7406\u7ED3\u679C\u9001\u4E0D\u56DE\u53BB", jobId);
-      await discardJob(ctx.writeState, jobId);
-      return { decision: "skip-push", reason: "plate-emit-result-unsupported" };
-    }
-    try {
-      await ctx.emitResult({
-        ...buildPlateConsolidateResult({ jobId, charId: job.charId, items, rooms: job.rooms, snapshotAt: job.snapshotAt }),
-        // 背景工作，整理完不该把人叫回来看。show:false 的 payload 上游只落收件箱、
-        // 不发推送，客户端下次上线补收。
-        notification: { show: false }
-      });
-    } catch (error) {
-      console.warn("[amsg:plate] \u6574\u7406\u7ED3\u679C\u9001\u4E0D\u8FDB\u6536\u4EF6\u7BB1\uFF08\u591A\u534A\u662F\u6536\u4EF6\u7BB1\u8868\u6CA1\u5EFA\u5168\uFF0C\u53BB\u8BBE\u7F6E\u9875\u70B9\u4E00\u6B21\u300C\u91CD\u65B0\u8FDE\u63A5\u5E76\u9A8C\u8BC1\u300D\uFF09", jobId, error);
-      await discardJob(ctx.writeState, jobId);
-      return { decision: "skip-push", reason: "plate-emit-result-failed" };
-    }
-    console.log("[amsg:plate] \u6574\u7406\u7ED3\u679C\u5DF2\u9001\u8FDB\u6536\u4EF6\u7BB1", {
-      jobId,
-      charId: job.charId,
-      items: items.length,
-      resultKind: PLATE_CONSOLIDATE_RESULT_KIND
-    });
-    await discardJob(ctx.writeState, jobId);
-    return { decision: "skip-push", reason: "plate-result-emitted" };
-  }
-};
-
-// worker/amsg/src/fireKinds.ts
-var FIRE_KIND_HANDLERS = Object.assign(
-  /* @__PURE__ */ Object.create(null),
-  { [PLATE_CONSOLIDATE_KIND]: plateConsolidateHandler }
-);
-var KIND_FIRE_SCRATCH_KEY = "kindFire";
-var putKindFireStash = (scratch, kind, state) => {
-  scratch[KIND_FIRE_SCRATCH_KEY] = { kind, state };
-};
-var getKindFireStash = (scratch) => {
-  const raw = scratch?.[KIND_FIRE_SCRATCH_KEY];
-  if (!raw || typeof raw !== "object") return null;
-  const stash = raw;
-  return typeof stash.kind === "string" ? { kind: stash.kind, state: stash.state } : null;
-};
-
-// utils/amsgFireSkipResult.ts
-var FIRE_SKIP_RESULT_KIND = "fire-skipped";
-var SILENT_REASONS = /* @__PURE__ */ new Set(["schedule-off"]);
-var shouldReportFireSkip = (reason) => !SILENT_REASONS.has(reason);
-function buildFireSkipResult(args) {
-  return {
-    resultKind: FIRE_SKIP_RESULT_KIND,
-    v: 1,
-    charId: args.charId,
-    taskUuid: args.taskUuid,
-    occurrenceMs: args.occurrenceMs,
-    reason: args.reason,
-    ...args.task ? {
-      task: {
-        mode: args.task.mode,
-        ...args.task.promptHint ? { promptHint: args.task.promptHint } : {},
-        recurrenceType: args.task.recurrenceType
-      }
-    } : {}
-  };
-}
-
-// utils/amsg2ExpireGuard.ts
-var FIRE_GRACE_MS = 9e4;
-var DAY_MS2 = 24 * 36e5;
-var recurrencePeriodMs = (recurrenceType) => recurrenceType === "daily" ? DAY_MS2 : recurrenceType === "weekly" ? 7 * DAY_MS2 : null;
 
 // utils/amsg2Tasks.ts
 var shortTaskId = (taskUuid) => taskUuid.slice(0, 8);
@@ -12172,10 +13378,10 @@ var parseFireRenewSendAt = (raw, nowMs, tz) => {
   }
   return { sendAt: new Date(sendAtMs).toISOString() };
 };
-var escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+var escapeRegExp2 = (s) => s.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
 var extractFireScheduleTextCalls = (content) => {
   if (!content) return [];
-  const re = new RegExp(`(^|[^\\w./])${escapeRegExp(AMSG_FIRE_SCHEDULE_TOOL)}\\s*\\(([^)]*)\\)`, "g");
+  const re = new RegExp(`(^|[^\\w./])${escapeRegExp2(AMSG_FIRE_SCHEDULE_TOOL)}\\s*\\(([^)]*)\\)`, "g");
   const calls = [];
   const executable = content.replace(/```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`/g, (match) => " ".repeat(match.length));
   for (const m of executable.matchAll(re)) {
@@ -12190,6 +13396,743 @@ var extractFireScheduleTextCalls = (content) => {
   }
   return calls;
 };
+
+// utils/vrWorld/sarEnvelopeCore.ts
+var planFromSARModuleSnapshot = (snapshot) => {
+  if (!snapshot || !snapshot.character && !snapshot.user) return null;
+  const character2 = snapshot.character;
+  const user = snapshot.user;
+  const hasActiveEffect = character2?.phase === "active" || user?.phase === "active";
+  const hasAfterglow = character2?.phase === "afterglow" || user?.phase === "afterglow";
+  return { character: character2, user, hasActiveEffect, hasAfterglow, requiresEnvelope: hasActiveEffect };
+};
+var isPlainSARChatActionOnlyChunk = (text2) => {
+  const clean = text2.trim();
+  if (!clean) return false;
+  return /^(?:(?:（[^（）]*）|\([^()]*\)|\*[^*\n]+\*)\s*)+[。！？!?…～~—-]*$/s.test(clean);
+};
+var isSARChatActionOnlyChunk = (text2) => {
+  const bilingualParts = text2.split(/%%BILINGUAL%%/i).map((part) => part.trim()).filter(Boolean);
+  return bilingualParts.length > 0 && bilingualParts.every(isPlainSARChatActionOnlyChunk);
+};
+var isSARChatHtmlPlaceholder = (text2) => /^\[HTML\s*卡片\]$/i.test(text2.trim());
+var consumeSARChatSurfaceChunk = (canonicalChunk, surfaceChunks, startIndex) => {
+  let index = Math.max(0, startIndex);
+  if (isSARChatHtmlPlaceholder(canonicalChunk)) {
+    if (surfaceChunks[index] && isSARChatHtmlPlaceholder(surfaceChunks[index])) index += 1;
+    return { nextIndex: index };
+  }
+  if (isSARChatActionOnlyChunk(canonicalChunk)) {
+    if (surfaceChunks[index] && isSARChatActionOnlyChunk(surfaceChunks[index])) index += 1;
+    return { nextIndex: index };
+  }
+  while (surfaceChunks[index] && (isSARChatActionOnlyChunk(surfaceChunks[index]) || isSARChatHtmlPlaceholder(surfaceChunks[index]))) index += 1;
+  const surface = surfaceChunks[index];
+  return { surface, nextIndex: surface === void 0 ? index : index + 1 };
+};
+var tag = (raw, name) => {
+  const match = raw.match(new RegExp(`<${name}>\\s*([\\s\\S]*?)\\s*</${name}>`, "i"));
+  const value = match?.[1]?.trim();
+  return value || void 0;
+};
+var parseSARModuleReply = (raw, plan) => {
+  if (!plan.requiresEnvelope) return { canonical: raw, enveloped: false };
+  const body = tag(raw, "SAR_MODULE_OUTPUT") || raw;
+  const canonical = tag(body, "CHAR_TRUE");
+  if (!canonical) return { canonical: raw.trim(), enveloped: false };
+  return {
+    canonical,
+    assistantSurface: plan.character?.phase === "active" ? tag(body, "CHAR_SURFACE") : void 0,
+    userSurface: plan.user?.phase === "active" ? tag(body, "USER_SURFACE") : void 0,
+    enveloped: true
+  };
+};
+var createSARModuleSurfaceMeta = (state, surface) => {
+  const clean = surface.trim();
+  if (!clean || state.phase !== "active") return void 0;
+  return {
+    version: 1,
+    runId: state.runId,
+    moduleId: state.moduleId,
+    moduleTitle: state.moduleTitle,
+    target: state.target,
+    phase: "active",
+    surface: clean,
+    canonicalField: "content",
+    surfaceField: "metadata.sarModuleSurface.surface"
+  };
+};
+
+// worker/amsg/src/sarEnvelope.ts
+var AMSG_SAR_META_KEY = "amsgSar";
+var amsgSarUserSurfaceKey = (clientTaskId) => `sar_user_surface:${clientTaskId}`;
+var amsgSarSnapshotKey = (clientTaskId) => `sar_snapshot:${clientTaskId}`;
+var amsgSarSurfaceKey = (clientTaskId, segmentIndex) => `sar_surface:${clientTaskId}:${segmentIndex}`;
+var SAR_SURFACE_BANNER_MAX = 100;
+var clipSarSurfaceBanner = (banner) => {
+  const chars = Array.from(banner);
+  return chars.length <= SAR_SURFACE_BANNER_MAX ? banner : `${chars.slice(0, SAR_SURFACE_BANNER_MAX - 1).join("")}\u2026`;
+};
+var isPlainObject2 = (value) => !!value && typeof value === "object" && !Array.isArray(value);
+var isSurfaceSource = (value) => isPlainObject2(value) && typeof value.phase === "string";
+var readSarSnapshot = (metadata) => {
+  const raw = metadata?.[AMSG_SAR_META_KEY];
+  if (!isPlainObject2(raw) || raw.v !== 1) return null;
+  if (raw.character !== void 0 && !isSurfaceSource(raw.character)) return null;
+  if (raw.user !== void 0 && !isSurfaceSource(raw.user)) return null;
+  return raw;
+};
+var stripSarSnapshot = (metadata) => {
+  const { [AMSG_SAR_META_KEY]: _snapshot, ...rest } = metadata ?? {};
+  return rest;
+};
+var SURFACE_BLOCK_RE = /<(CHAR_SURFACE|USER_SURFACE)>[\s\S]*?(?:<\/\1>|(?=<\/?(?:SAR_MODULE_OUTPUT|CHAR_TRUE|CHAR_SURFACE|USER_SURFACE)>)|$)/gi;
+var PLACEHOLDER = String.fromCharCode(5);
+var PLACEHOLDER_RE = new RegExp(`${PLACEHOLDER}(\\d+)${PLACEHOLDER}`, "g");
+var maskSarSurfaceBlocks = (text2) => {
+  const blocks = [];
+  const masked = text2.replace(SURFACE_BLOCK_RE, (block) => {
+    blocks.push(block);
+    return `${PLACEHOLDER}${blocks.length - 1}${PLACEHOLDER}`;
+  });
+  return {
+    masked,
+    restore: (value) => blocks.length === 0 ? value : value.replace(PLACEHOLDER_RE, (_m, n) => blocks[Number(n)] ?? "")
+  };
+};
+var ENVELOPE_TAG_RE = /<\/?(?:SAR_MODULE_OUTPUT|CHAR_TRUE|CHAR_SURFACE|USER_SURFACE)>/gi;
+var stripEnvelopeTags = (text2) => text2.replace(ENVELOPE_TAG_RE, "").trim();
+var closeOpenTag = (text2, name, stoppers) => {
+  const open = new RegExp(`<${name}>`, "i").exec(text2);
+  if (!open || new RegExp(`</${name}>`, "i").test(text2)) return text2;
+  const after = open.index + open[0].length;
+  const stop = new RegExp(stoppers.join("|"), "i").exec(text2.slice(after));
+  const at = stop ? after + stop.index : text2.length;
+  return `${text2.slice(0, at)}</${name}>${text2.slice(at)}`;
+};
+var repairEnvelope = (text2) => {
+  let repaired = closeOpenTag(text2, "CHAR_TRUE", ["<CHAR_SURFACE>", "<USER_SURFACE>", "</SAR_MODULE_OUTPUT>"]);
+  repaired = closeOpenTag(repaired, "CHAR_SURFACE", ["<USER_SURFACE>", "<CHAR_TRUE>", "</SAR_MODULE_OUTPUT>"]);
+  repaired = closeOpenTag(repaired, "USER_SURFACE", ["<CHAR_SURFACE>", "<CHAR_TRUE>", "</SAR_MODULE_OUTPUT>"]);
+  return repaired;
+};
+var parseSarEnvelopeRounds = (rounds, plan) => {
+  const texts = rounds.filter((round) => round.trim().length > 0);
+  if (!plan.requiresEnvelope) return { canonical: texts.join("\n"), enveloped: false, pieces: [] };
+  const pieces = [];
+  let enveloped = false;
+  let userSurface;
+  for (const text2 of texts) {
+    const parsed = parseSARModuleReply(repairEnvelope(text2), plan);
+    if (parsed.enveloped) {
+      enveloped = true;
+      if (parsed.userSurface) userSurface = parsed.userSurface;
+    }
+    const canonical = stripEnvelopeTags(parsed.canonical);
+    if (!canonical) continue;
+    const surface = parsed.enveloped && parsed.assistantSurface ? stripEnvelopeTags(parsed.assistantSurface) : "";
+    pieces.push({ canonical, ...surface ? { surface } : {} });
+  }
+  return {
+    canonical: pieces.map((p) => p.canonical).join("\n"),
+    enveloped,
+    pieces,
+    ...userSurface ? { userSurface } : {}
+  };
+};
+var isEmojiSegment = (seg) => /^\[\[SEND_EMOJI[:：]/i.test(seg.raw.trim());
+var isHtmlSegment = (seg) => /^\[html\][\s\S]*\[\/html\]$/i.test(seg.raw.trim());
+var TRANSLATION_BLOCK_RE = /<翻译>\s*<原文>([\s\S]*?)<\/原文>\s*<译文>([\s\S]*?)<\/译文>\s*<\/翻译>/;
+var alignKey = (seg) => {
+  const translation = seg.raw.match(TRANSLATION_BLOCK_RE);
+  if (translation) {
+    const original = translation[1].trim();
+    const translated = translation[2].trim();
+    return original && translated ? `${original}
+%%BILINGUAL%%
+${translated}` : original || translated;
+  }
+  return seg.sanitized;
+};
+var segmentSurface = (surfaceText) => {
+  const prepared = surfaceText.replace(/\[html\][\s\S]*?\[\/html\]/gi, "\n").replace(/\[\[[\s\S]*?\]\]/g, "");
+  return sanitizeIntoSegments(prepared).filter((seg) => !isEmojiSegment(seg) && !isHtmlSegment(seg));
+};
+var alignSarSurfaceSegments = (canonicalSegments, surfaceText) => {
+  const surfaceSegs = segmentSurface(surfaceText);
+  const surfaceKeys = surfaceSegs.map(alignKey);
+  let index = 0;
+  return canonicalSegments.map((seg) => {
+    if (isEmojiSegment(seg) || isHtmlSegment(seg)) return void 0;
+    const consumed = consumeSARChatSurfaceChunk(alignKey(seg), surfaceKeys, index);
+    index = consumed.nextIndex;
+    if (consumed.surface === void 0) return void 0;
+    const matched = surfaceSegs[consumed.nextIndex - 1];
+    return matched ? { surface: matched.raw, banner: matched.sanitized } : void 0;
+  });
+};
+var segmentCanonical = (text2) => {
+  const scan = classifyLLMOutput(text2);
+  return sanitizeIntoSegments(scan.kind === "finish" ? scan.cleanedText : scan.prefix);
+};
+var buildSarSurfaceSlots = (parse, segments) => {
+  const none = segments.map(() => void 0);
+  if (!parse.pieces.some((p) => p.surface)) return none;
+  if (parse.pieces.length === 1) return alignSarSurfaceSegments(segments, parse.pieces[0].surface ?? "");
+  const counts = parse.pieces.map((p) => segmentCanonical(p.canonical).length);
+  if (counts.reduce((a, b) => a + b, 0) !== segments.length) {
+    return alignSarSurfaceSegments(
+      segments,
+      parse.pieces.map((p) => p.surface).filter((s) => !!s).join("\n")
+    );
+  }
+  const slots = [];
+  let offset = 0;
+  parse.pieces.forEach((piece, i) => {
+    const slice = segments.slice(offset, offset + counts[i]);
+    offset += counts[i];
+    slots.push(...piece.surface ? alignSarSurfaceSegments(slice, piece.surface) : slice.map(() => void 0));
+  });
+  return slots;
+};
+
+// worker/amsg/src/agentic.ts
+var createFireSessionState = () => ({
+  narrations: [],
+  toolCalls: [],
+  duplicateToolCalls: 0,
+  mcpCallSeq: 0,
+  xhsShareNotes: null,
+  finalReasoning: null
+});
+var MAX_DUPLICATE_TOOL_CALLS = 2;
+var DEFAULT_TOOL_ITERATIONS = 5;
+var MCP_MAX_TOOL_ITERATIONS = 12;
+var resolveToolIterationBudget = (hasMcp) => hasMcp ? MCP_MAX_TOOL_ITERATIONS : DEFAULT_TOOL_ITERATIONS;
+var XHS_SHARE_TAG_RE = /\[\[XHS_SHARE:\s*\d+\]\]/;
+var XHS_DESC_MAX = 120;
+function buildXhsSessionPayload(directives, notes, xsecTokens) {
+  if (directives.length === 0) return null;
+  const sharedIdx = /* @__PURE__ */ new Set();
+  const refNoteIds = /* @__PURE__ */ new Set();
+  for (const d of directives) {
+    if (d.type === "xhs_share") sharedIdx.add(d.idx);
+    else if (d.type === "xhs_like" || d.type === "xhs_fav") refNoteIds.add(d.noteId);
+    else if (d.type === "xhs_comment" || d.type === "xhs_reply") refNoteIds.add(d.noteId);
+  }
+  if (sharedIdx.size === 0 && refNoteIds.size === 0) return null;
+  const pickedNotes = [];
+  for (const idx of [...sharedIdx].sort((a, b) => a - b)) {
+    const note = idx >= 1 ? notes?.[idx - 1] : void 0;
+    if (!note) continue;
+    pickedNotes.push({ idx, note: { ...note, desc: (note.desc || "").slice(0, XHS_DESC_MAX) } });
+  }
+  const pickedTokens = (xsecTokens ?? []).filter(([noteId]) => refNoteIds.has(noteId));
+  if (pickedNotes.length === 0 && pickedTokens.length === 0) return null;
+  return { notes: pickedNotes, xsecTokens: pickedTokens };
+}
+function attachSceneSong(directives, sceneSong) {
+  if (!sceneSong) return directives;
+  return directives.map((d) => d.type === "music_action" ? { ...d, song: sceneSong } : d);
+}
+var resolveNativeFireToolName = (raw, manageToolNames, mcpResolve) => {
+  const candidates = [raw];
+  const lastSegment = raw.split(/[:./]/).pop();
+  if (lastSegment && lastSegment !== raw) candidates.push(lastSegment);
+  for (const c of candidates) {
+    if (!c) continue;
+    if (c.startsWith(MCP_FIRE_NAME_PREFIX) && mcpResolve?.has(c.slice(MCP_FIRE_NAME_PREFIX.length))) {
+      return { kind: "mcp", name: c };
+    }
+    if (manageToolNames.has(c)) return { kind: "manage", name: c };
+    if (mcpResolve?.has(c)) return { kind: "mcp", name: `${MCP_FIRE_NAME_PREFIX}${c}` };
+  }
+  return null;
+};
+var classifyNativeToolCalls = (rawToolCalls, manageToolNames, mcpResolve) => {
+  const out = { manage: [], mcp: [], dropped: [] };
+  const calls = Array.isArray(rawToolCalls) ? rawToolCalls : [];
+  for (const tc of calls) {
+    const raw = tc?.function?.name;
+    const resolved = typeof raw === "string" && raw ? resolveNativeFireToolName(raw, manageToolNames, mcpResolve) : null;
+    if (!resolved) {
+      out.dropped.push(typeof raw === "string" && raw ? raw : null);
+      continue;
+    }
+    const call = resolved.name === raw ? tc : { ...tc, function: { ...tc.function, name: resolved.name } };
+    (resolved.kind === "mcp" ? out.mcp : out.manage).push(call);
+  }
+  return out;
+};
+function processLLMRound(state, llmOutputText, build, mcp, schedule, iteration, maxToolIterations = DEFAULT_TOOL_ITERATIONS) {
+  const isFinalRound = typeof iteration === "number" && iteration >= maxToolIterations - 1;
+  const sarPlan = planFromSARModuleSnapshot(build.sar ?? null);
+  const sarMask = sarPlan?.requiresEnvelope ? maskSarSurfaceBlocks(llmOutputText) : null;
+  const roundText = sarMask ? sarMask.masked : llmOutputText;
+  const restoreSurfaces = (text2) => sarMask ? sarMask.restore(text2) : text2;
+  const nativeToolCalls = mcp?.nativeToolCalls ?? [];
+  const textCalls = mcp?.resolve.size ? extractTextFakedMcpCalls(roundText, mcp.resolve, { alsoMatchPrefix: MCP_FIRE_NAME_PREFIX }) : [];
+  const nativeScheduleCalls = schedule?.nativeToolCalls ?? [];
+  const hasNativeSchedule = nativeScheduleCalls.some(
+    (tc) => tc?.function?.name === AMSG_FIRE_SCHEDULE_TOOL
+  );
+  const scheduleTextCalls = schedule ? extractFireScheduleTextCalls(roundText) : [];
+  const scheduleCalls = [
+    ...nativeScheduleCalls,
+    ...(hasNativeSchedule ? [] : scheduleTextCalls).map((c) => ({
+      id: `sched_${state.mcpCallSeq++}`,
+      type: "function",
+      function: { name: AMSG_FIRE_SCHEDULE_TOOL, arguments: JSON.stringify(c.args) }
+    }))
+  ];
+  const strippedText = scheduleTextCalls.length ? stripTextFakedMcpCalls(roundText, scheduleTextCalls) : roundText;
+  const scanText = textCalls.length ? stripTextFakedMcpCalls(strippedText, textCalls) : strippedText;
+  const mcpToolCalls = nativeToolCalls.length > 0 ? nativeToolCalls : textCalls.map((c) => ({
+    // id 只需在一轮的 assistant/tool 消息配对里唯一；本次 fire 内自增，绝不重号。
+    id: `mcp_${state.mcpCallSeq++}`,
+    type: "function",
+    // exposedName 恒为裸名（alsoMatchPrefix 的命中也回裸名），统一补前缀即可。
+    function: { name: `${MCP_FIRE_NAME_PREFIX}${c.exposedName}`, arguments: JSON.stringify(c.args) }
+  }));
+  const extraToolCalls = [...mcpToolCalls, ...scheduleCalls];
+  const result = classifyLLMOutput(scanText);
+  const isToolRound = result.kind === "tool-request" || extraToolCalls.length > 0;
+  if (isToolRound) {
+    const narration = result.kind === "tool-request" ? result.prefix : scanText;
+    if (state.duplicateToolCalls < MAX_DUPLICATE_TOOL_CALLS && !isFinalRound) {
+      if (narration.trim()) state.narrations.push(restoreSurfaces(narration));
+      if (state.xhsShareNotes === null && XHS_SHARE_TAG_RE.test(narration)) {
+        state.xhsShareNotes = [...build.xhsNotes ?? []];
+      }
+      return {
+        decision: "tool-request",
+        toolCalls: result.kind === "tool-request" ? [...result.toolCalls, ...extraToolCalls] : extraToolCalls
+      };
+    }
+  }
+  const thisRound = isToolRound ? "" : restoreSurfaces(scanText);
+  const rounds = [...state.narrations, thisRound].filter((part) => part.trim().length > 0);
+  const fullText = rounds.join("\n");
+  const sarParse = sarPlan?.requiresEnvelope ? parseSarEnvelopeRounds(rounds, sarPlan) : null;
+  const finalScan = sarParse ? classifyLLMOutput(sarParse.canonical) : fullText === scanText ? result : classifyLLMOutput(fullText);
+  const cleanedText = finalScan.kind === "finish" ? finalScan.cleanedText : finalScan.prefix;
+  const directives = attachSceneSong(
+    finalScan.kind === "finish" ? finalScan.directives : [],
+    build.sceneSong
+  );
+  const xhsSession = buildXhsSessionPayload(
+    directives,
+    state.xhsShareNotes ?? build.xhsNotes,
+    build.xhsXsecTokens
+  );
+  const finishMeta = directives.length > 0 ? { directives, ...xhsSession ? { xhsSession } : {} } : void 0;
+  const declined = fullText.includes(AMSG_SILENT_MARK);
+  const segments = declined ? [] : sanitizeIntoSegments(cleanedText);
+  if (segments.length === 0) {
+    const scheduleChanges = directives.filter((d) => d.type === "change_schedule").map((d) => ({ startTime: d.time, activity: d.activity }));
+    return {
+      decision: "skip-push",
+      reason: declined ? "declined" : finishMeta ? "side-effects-only" : "empty-generation",
+      ...!declined && directives.some((d) => d.type !== "change_schedule") && finishMeta ? { sideEffects: finishMeta } : {},
+      ...scheduleChanges.length > 0 ? { scheduleChanges } : {}
+    };
+  }
+  const sarCharacter = build.sar?.character;
+  const surfaceSlots = sarParse && sarCharacter?.phase === "active" ? buildSarSurfaceSlots(sarParse, segments) : [];
+  const sarLastMeta = {
+    ...build.sar ? { [AMSG_SAR_META_KEY]: build.sar } : {},
+    ...sarParse?.userSurface ? { amsgSarUserSurface: sarParse.userSurface } : {}
+  };
+  const lastMeta = finishMeta || Object.keys(sarLastMeta).length > 0 ? { ...finishMeta ?? {}, ...sarLastMeta } : void 0;
+  const lastIdx = segments.length - 1;
+  return {
+    decision: "finish",
+    pushPayloads: segments.map((seg, i) => {
+      const slot = surfaceSlots[i];
+      const surfaceMeta = slot && sarCharacter ? createSARModuleSurfaceMeta(sarCharacter, slot.surface) : void 0;
+      const extra = {
+        ...surfaceMeta ? { amsgSarSurface: surfaceMeta } : {},
+        ...i === lastIdx ? lastMeta ?? {} : {}
+      };
+      return buildScheduledPush(
+        seg.raw,
+        build,
+        Object.keys(extra).length > 0 ? extra : void 0,
+        // 外显横幅截短：这条 push 还要装外显 meta，别把单段正文的字节预算吃掉一半。
+        surfaceMeta && slot ? clipSarSurfaceBanner(slot.banner) : seg.sanitized
+      );
+    })
+  };
+}
+function buildScheduledPush(message, build, extraMeta, bannerBody) {
+  const title = `\u6765\u81EA ${build.contactName}`;
+  return {
+    messageKind: "content",
+    messageType: build.messageType,
+    source: "scheduled",
+    message,
+    title,
+    contactName: build.contactName,
+    avatarUrl: build.avatarUrl,
+    messageSubtype: "chat",
+    taskId: build.taskId,
+    metadata: {
+      // SAR 快照不许摊进每一条（它只随最后一条经 extraMeta 回去）；调用方已摘过，这里兜一道。
+      ...stripSarSnapshot(build.metadata),
+      amsgOccurrenceMs: build.occurrenceMs,
+      ...extraMeta ?? {}
+    },
+    ...bannerBody !== void 0 ? { notification: { title, body: bannerBody } } : {}
+  };
+}
+
+// utils/amsgBundleVersion.ts
+var AMSG_BUNDLE_VERSION = "2026-11-05";
+
+// worker/amsg/src/reproduction.ts
+async function writeDiagnosticStage(writeState, runId, event, fields = {}) {
+  if (!writeState) return;
+  const entry = { ...fields, runId, side: "worker", event, ts: (/* @__PURE__ */ new Date()).toISOString(), workerVersion: AMSG_BUNDLE_VERSION };
+  try {
+    await writeState(DIAGNOSTIC_NAMESPACE, [{ key: `${runId}:${crypto.randomUUID()}`, value: JSON.stringify(entry) }]);
+  } catch {
+  }
+}
+var reproductionHandler = {
+  async beforeFire({ ctx, taskMeta }) {
+    const runId = diagnosticRunId(taskMeta);
+    if (!runId) throw new Error("\u8BCA\u65AD\u4EFB\u52A1\u7F16\u53F7\u7F3A\u5931\u6216\u65E0\u6548");
+    const state = { runId, startedAt: Date.now(), taskId: ctx.task.id == null ? null : String(ctx.task.id) };
+    ctx.scratch.diagnostic = state;
+    await writeDiagnosticStage(ctx.writeState, runId, "fire-start", { taskId: state.taskId });
+    return {
+      state,
+      messages: [
+        { role: "system", content: "\u4F60\u6B63\u5728\u6A21\u62DF\u4E00\u6B21\u4E3B\u52A8\u6D88\u606F\uFF0C\u7528\u4E8E\u68C0\u67E5\u751F\u6210\u3001\u5206\u6BB5\u548C\u7CFB\u7EDF\u901A\u77E5\u3002\u4F60\u4E0D\u662F\u7528\u6237\u7684\u89D2\u8272\uFF0C\u4E0D\u8BFB\u53D6\u6216\u4FEE\u6539\u4EFB\u4F55\u8BB0\u5FC6\u3002\u53EA\u8F93\u51FA\u4E09\u53E5\u7B80\u77ED\u7684\u4E2D\u6587\u95EE\u5019\uFF0C\u6BCF\u53E5\u5355\u72EC\u4E00\u6BB5\uFF0C\u4EE5\u7A7A\u884C\u5206\u9694\u3002\u4E0D\u8981\u8F93\u51FA\u5DE5\u5177\u8C03\u7528\u3001\u52A8\u4F5C\u6807\u7B7E\u3001\u4EE3\u7801\u3001\u601D\u8003\u8FC7\u7A0B\u6216\u4E2A\u4EBA\u4FE1\u606F\u3002\u603B\u5171\u4E0D\u8D85\u8FC7120\u5B57\u3002" },
+        { role: "user", content: "\u8BF7\u4E3B\u52A8\u53D1\u6765\u8FD9\u6B21\u6D4B\u8BD5\u95EE\u5019\uFF0C\u5E76\u5728\u6700\u540E\u4E00\u53E5\u63D0\u9192\u6211\u68C0\u67E5\u7CFB\u7EDF\u901A\u77E5\u3002" }
+      ]
+    };
+  },
+  async llmOutput({ ctx, state }) {
+    const diagnostic = state;
+    const decision = processLLMRound(createFireSessionState(), stripReasoningTags(ctx.llmOutputText || ""), {
+      contactName: "\u4E3B\u52A8\u6D88\u606F\u590D\u73B0",
+      avatarUrl: null,
+      taskId: diagnostic.taskId,
+      messageType: "auto",
+      occurrenceMs: diagnostic.startedAt,
+      metadata: { charId: DIAGNOSTIC_CHAR_ID, amsgKind: "diagnostic", amsgDiagnosticRunId: diagnostic.runId }
+    }, null, null, 0, 1);
+    await writeDiagnosticStage(ctx.writeState, diagnostic.runId, "llm-output", {
+      durationMs: Date.now() - diagnostic.startedAt,
+      outputChars: (ctx.llmOutputText || "").length,
+      decision: decision.decision,
+      chunks: decision.decision === "finish" ? decision.pushPayloads.length : 0
+    });
+    if (decision.decision === "tool-request") return { decision: "skip-push", reason: "diagnostic-tools-disabled" };
+    if (decision.decision === "skip-push") return { decision: "skip-push", reason: decision.reason };
+    return { decision: "finish", pushPayloads: decision.pushPayloads.map((payload) => ({
+      ...payload,
+      metadata: { charId: DIAGNOSTIC_CHAR_ID, amsgKind: "diagnostic", amsgDiagnosticRunId: diagnostic.runId }
+    })) };
+  }
+};
+async function settleReproduction(info) {
+  const state = info.scratch.diagnostic;
+  if (!state) return false;
+  await writeDiagnosticStage(info.writeState, state.runId, "fire-settled", {
+    status: info.status,
+    sentCount: info.sentCount,
+    willRetry: info.willRetry,
+    llmCalls: info.llmCalls,
+    outboxed: info.outboxed,
+    ...info.error ? safeDiagnosticError(info.error) : {}
+  });
+  return true;
+}
+function traceDiagnosticTransport(transport, env) {
+  const record2 = async (payload, event, fields) => {
+    const runId = diagnosticRunId(payload?.metadata);
+    if (!runId || !env.DB || !env.AMSG_MASTER_KEY || typeof payload.taskUuid !== "string") return;
+    try {
+      const db = env.DB;
+      const task = await db.prepare("SELECT user_id FROM scheduled_messages WHERE uuid = ?").bind(payload.taskUuid).first();
+      if (!task) return;
+      const key = await deriveUserEncryptionKey(task.user_id, env.AMSG_MASTER_KEY);
+      const entry = { ...fields, runId, side: "worker", event, ts: typeof fields.ts === "string" ? fields.ts : (/* @__PURE__ */ new Date()).toISOString(), messageId: payload.messageId, chunk: payload.messageIndex, total: payload.totalMessages, workerVersion: AMSG_BUNDLE_VERSION };
+      const value = await encryptForStorage(JSON.stringify(entry), key);
+      await db.prepare("INSERT INTO client_state (user_id, namespace, key, value, updated_at) SELECT user_id, ?, ?, ?, ? FROM scheduled_messages WHERE uuid = ? AND user_id = ?").bind(DIAGNOSTIC_NAMESPACE, `${runId}:${crypto.randomUUID()}`, value, Date.now(), payload.taskUuid, task.user_id).run();
+    } catch {
+    }
+  };
+  return { ...transport, async sendNotification(subscription, raw) {
+    let payload;
+    try {
+      payload = JSON.parse(raw);
+    } catch {
+    }
+    const startedAt = Date.now();
+    const attempt = { ts: new Date(startedAt).toISOString() };
+    try {
+      const result = await transport.sendNotification(subscription, raw);
+      const durationMs = Date.now() - startedAt;
+      await record2(payload, "push-attempt", attempt);
+      await record2(payload, "push-accepted", { durationMs, httpStatus: result?.statusCode ?? result?.status ?? null });
+      return result;
+    } catch (error) {
+      const durationMs = Date.now() - startedAt;
+      await record2(payload, "push-attempt", attempt);
+      await record2(payload, "push-rejected", { durationMs, ...safeDiagnosticError(error) });
+      throw error;
+    }
+  } };
+}
+
+// worker/amsg/src/skipDiagnostics.ts
+var BODY_ERROR_MAX_CHARS = 200;
+var CONTENT_EXCERPT_CHARS = 300;
+var REASONING_TAIL_CHARS = 200;
+var BODY_EXCERPT_CHARS = 500;
+var asRecord = (value) => value && typeof value === "object" && !Array.isArray(value) ? value : null;
+var numberOrNull = (value) => typeof value === "number" && Number.isFinite(value) ? value : null;
+var clip = (text2, max) => text2.length > max ? `${text2.slice(0, max)}\u2026` : text2;
+var safeStringify = (value) => {
+  try {
+    return JSON.stringify(value) ?? String(value);
+  } catch {
+    return String(value);
+  }
+};
+var readFirstMessage = (body) => {
+  const choices = Array.isArray(body?.choices) ? body.choices : [];
+  const choice = asRecord(choices[0]);
+  return { choice, message: asRecord(choice?.message) };
+};
+var readReasoning = (message) => {
+  const value = message?.reasoning_content ?? message?.reasoning ?? message?.thinking;
+  return typeof value === "string" ? value : "";
+};
+var readBodyError = (body, hasChoices) => {
+  if (!body) return null;
+  let text2 = "";
+  const error = body.error;
+  if (typeof error === "string") {
+    text2 = error;
+  } else {
+    const record2 = asRecord(error);
+    if (record2) {
+      const code = typeof record2.code === "string" || typeof record2.code === "number" ? String(record2.code) : typeof record2.type === "string" ? record2.type : "";
+      const message = typeof record2.message === "string" ? record2.message : "";
+      text2 = [code && `[${code}]`, message].filter(Boolean).join(" ") || safeStringify(record2);
+    }
+  }
+  if (!text2 && !hasChoices) {
+    const topLevel = body.message ?? body.msg;
+    if (typeof topLevel === "string") text2 = topLevel;
+  }
+  return text2 ? clip(redactCredentials(text2), BODY_ERROR_MAX_CHARS) : null;
+};
+var describeLlmResponseShape = (llmResponse, llmOutputText) => {
+  const body = asRecord(llmResponse);
+  const hasChoices = Array.isArray(body?.choices) && body.choices.length > 0;
+  const { choice, message } = readFirstMessage(body);
+  const content = message?.content;
+  const contentType = content === void 0 ? "missing" : content === null ? "null" : typeof content === "string" ? "string" : Array.isArray(content) ? "array" : "other";
+  const contentChars = typeof content === "string" ? content.length : Array.isArray(content) ? content.reduce((sum, part) => {
+    const text2 = asRecord(part)?.text;
+    return sum + (typeof text2 === "string" ? text2.length : 0);
+  }, 0) : 0;
+  const usage = asRecord(body?.usage);
+  const usageDetails = asRecord(usage?.completion_tokens_details);
+  return {
+    model: typeof body?.model === "string" ? body.model : null,
+    hasChoices,
+    finishReason: typeof choice?.finish_reason === "string" ? choice.finish_reason : null,
+    contentType,
+    contentChars,
+    ...Array.isArray(content) ? { contentParts: content.length } : {},
+    visibleChars: stripReasoningTags(llmOutputText || "").trim().length,
+    reasoningChars: readReasoning(message).length,
+    toolCalls: Array.isArray(message?.tool_calls) ? message.tool_calls.length : 0,
+    usage: usage ? {
+      promptTokens: numberOrNull(usage.prompt_tokens),
+      completionTokens: numberOrNull(usage.completion_tokens),
+      reasoningTokens: numberOrNull(usageDetails?.reasoning_tokens)
+    } : null,
+    bodyError: readBodyError(body, hasChoices)
+  };
+};
+var excerptLlmResponse = (llmResponse) => {
+  const body = asRecord(llmResponse);
+  const hasChoices = Array.isArray(body?.choices) && body.choices.length > 0;
+  if (!hasChoices) {
+    return { body: clip(redactCredentials(safeStringify(llmResponse)), BODY_EXCERPT_CHARS) };
+  }
+  const { message } = readFirstMessage(body);
+  const excerpt = {};
+  const content = message?.content;
+  if (typeof content === "string") {
+    if (content) excerpt.content = clip(redactCredentials(content), CONTENT_EXCERPT_CHARS);
+  } else if (content != null) {
+    excerpt.content = clip(redactCredentials(safeStringify(content)), CONTENT_EXCERPT_CHARS);
+  }
+  const reasoning = readReasoning(message);
+  if (reasoning) {
+    const tail = reasoning.length > REASONING_TAIL_CHARS ? `\u2026${reasoning.slice(-REASONING_TAIL_CHARS)}` : reasoning;
+    excerpt.reasoningTail = redactCredentials(tail);
+  }
+  if (Array.isArray(message?.tool_calls) && message.tool_calls.length > 0) {
+    excerpt.toolCalls = clip(redactCredentials(safeStringify(message.tool_calls)), CONTENT_EXCERPT_CHARS);
+  }
+  return excerpt;
+};
+var rawExcerptEnabled = false;
+var configureSkipDiagnostics = (options) => {
+  rawExcerptEnabled = options.rawExcerpt;
+};
+var isDebugFlagOn = (value) => typeof value === "string" && ["1", "true"].includes(value.trim().toLowerCase());
+var logSkipDiagnostic = (input) => {
+  try {
+    console.warn("[amsg:skip-diag]", {
+      sessionId: input.sessionId ?? null,
+      reason: input.reason,
+      iteration: input.iteration ?? null,
+      ...describeLlmResponseShape(input.llmResponse, input.llmOutputText ?? ""),
+      ...rawExcerptEnabled ? { raw: excerptLlmResponse(input.llmResponse) } : {}
+    });
+  } catch (error) {
+    console.warn("[amsg:skip-diag] \u8BCA\u65AD\u65E5\u5FD7\u6CA1\u8BB0\u4E0B\u6765\uFF08\u8DF3\u8FC7\u7167\u5E38\u751F\u6548\uFF09", error);
+  }
+};
+
+// worker/amsg/src/plateFire.ts
+var discardJob = async (writeState, jobId) => {
+  if (!writeState) return;
+  try {
+    await writeState(AMSG_JOB_NAMESPACE, [{ key: plateJobKey(jobId), value: null }]);
+  } catch (error) {
+    console.warn("[amsg:plate] job \u884C\u6CA1\u5220\u6389\uFF08\u7B49 TTL \u515C\u5E95\uFF09", jobId, error);
+  }
+};
+var plateConsolidateHandler = {
+  async beforeFire({ ctx, charId, taskMeta }) {
+    const jobId = taskMeta[AMSG_JOB_ID_KEY];
+    if (typeof jobId !== "string" || !jobId) {
+      throw new Error(`\u95E8\u724C\u6574\u7406\u4EFB\u52A1\u7684 metadata \u91CC\u6CA1\u6709 ${AMSG_JOB_ID_KEY}`);
+    }
+    const rows = await ctx.readState(AMSG_JOB_NAMESPACE);
+    const row = rows.find((r) => r.key === plateJobKey(jobId));
+    if (!row?.value) {
+      return { skip: true, reason: `\u95E8\u724C\u6574\u7406 job ${jobId} \u7684\u8F93\u5165\u5DF2\u4E0D\u5728\uFF08\u8FC7\u671F\u6216\u5DF2\u64A4\u9500\uFF09` };
+    }
+    const discardAndFail = async (message) => {
+      await discardJob(ctx.writeState, jobId);
+      throw new Error(message);
+    };
+    let json;
+    try {
+      json = await unpackStateValue(row.value);
+    } catch (error) {
+      return discardAndFail(`\u95E8\u724C\u6574\u7406 job ${jobId} \u7684\u8F93\u5165\u89E3\u538B\u5931\u8D25\uFF08\u6570\u636E\u635F\u574F\uFF09\uFF1A${String(error)}`);
+    }
+    const job = parsePlateJobInput(json);
+    if (!job) return discardAndFail(`\u95E8\u724C\u6574\u7406 job ${jobId} \u7684\u8F93\u5165\u89E3\u6790\u5931\u8D25\uFF08\u6570\u636E\u635F\u574F\uFF09`);
+    if (job.charId !== charId) {
+      return discardAndFail(`\u95E8\u724C\u6574\u7406 job ${jobId} \u7684 charId \u4E0E\u4EFB\u52A1\u5BF9\u4E0D\u4E0A`);
+    }
+    if (job.rooms.length === 0) {
+      await discardJob(ctx.writeState, jobId);
+      return { skip: true, reason: `\u95E8\u724C\u6574\u7406 job ${jobId} \u6CA1\u6709\u8981\u6574\u7406\u7684\u623F\u95F4` };
+    }
+    return {
+      messages: buildPlateJobMessages(job),
+      // 跟浏览器那条路同一个超时（叶子里那个常量）。不显式交上去的话这一次 fire 会落到
+      // 库自己的默认值（四分钟），同一件活儿两条路的耐心不一样，而且改那个常量对云端
+      // 毫无影响——「本地什么样云端就什么样」这条线得自己拉齐。
+      totalTimeoutMs: PLATE_LLM_TIMEOUT_MS,
+      state: { jobId, job }
+    };
+  },
+  async llmOutput({ ctx, state }) {
+    const { jobId, job } = state;
+    const items = parsePlateLlmReply(ctx.llmOutputText || "");
+    if (items.length === 0) {
+      console.warn("[amsg:plate] LLM \u6CA1\u8FD4\u56DE\u6709\u6548\u6761\u76EE\uFF0C\u95E8\u724C\u4FDD\u6301\u4E0D\u52A8", jobId);
+      logSkipDiagnostic({
+        sessionId: ctx.sessionId,
+        reason: "plate-empty-generation",
+        iteration: ctx.iteration,
+        llmResponse: ctx.llmResponse,
+        llmOutputText: ctx.llmOutputText
+      });
+      await discardJob(ctx.writeState, jobId);
+      return { decision: "skip-push", reason: "plate-empty-generation" };
+    }
+    if (typeof ctx.emitResult !== "function") {
+      console.warn("[amsg:plate] \u8FD9\u53F0 worker \u4E0D\u652F\u6301 emitResult\uFF0C\u6574\u7406\u7ED3\u679C\u9001\u4E0D\u56DE\u53BB", jobId);
+      await discardJob(ctx.writeState, jobId);
+      return { decision: "skip-push", reason: "plate-emit-result-unsupported" };
+    }
+    try {
+      await ctx.emitResult({
+        ...buildPlateConsolidateResult({ jobId, charId: job.charId, items, rooms: job.rooms, snapshotAt: job.snapshotAt }),
+        // 背景工作，整理完不该把人叫回来看。show:false 的 payload 上游只落收件箱、
+        // 不发推送，客户端下次上线补收。
+        notification: { show: false }
+      });
+    } catch (error) {
+      console.warn("[amsg:plate] \u6574\u7406\u7ED3\u679C\u9001\u4E0D\u8FDB\u6536\u4EF6\u7BB1\uFF08\u591A\u534A\u662F\u6536\u4EF6\u7BB1\u8868\u6CA1\u5EFA\u5168\uFF0C\u53BB\u8BBE\u7F6E\u9875\u70B9\u4E00\u6B21\u300C\u91CD\u65B0\u8FDE\u63A5\u5E76\u9A8C\u8BC1\u300D\uFF09", jobId, error);
+      await discardJob(ctx.writeState, jobId);
+      return { decision: "skip-push", reason: "plate-emit-result-failed" };
+    }
+    console.log("[amsg:plate] \u6574\u7406\u7ED3\u679C\u5DF2\u9001\u8FDB\u6536\u4EF6\u7BB1", {
+      jobId,
+      charId: job.charId,
+      items: items.length,
+      resultKind: PLATE_CONSOLIDATE_RESULT_KIND
+    });
+    await discardJob(ctx.writeState, jobId);
+    return { decision: "skip-push", reason: "plate-result-emitted" };
+  }
+};
+
+// worker/amsg/src/fireKinds.ts
+var FIRE_KIND_HANDLERS = Object.assign(
+  /* @__PURE__ */ Object.create(null),
+  { [PLATE_CONSOLIDATE_KIND]: plateConsolidateHandler, diagnostic: reproductionHandler }
+);
+var KIND_FIRE_SCRATCH_KEY = "kindFire";
+var putKindFireStash = (scratch, kind, state) => {
+  scratch[KIND_FIRE_SCRATCH_KEY] = { kind, state };
+};
+var getKindFireStash = (scratch) => {
+  const raw = scratch?.[KIND_FIRE_SCRATCH_KEY];
+  if (!raw || typeof raw !== "object") return null;
+  const stash = raw;
+  return typeof stash.kind === "string" ? { kind: stash.kind, state: stash.state } : null;
+};
+
+// utils/amsgFireSkipResult.ts
+var FIRE_SKIP_RESULT_KIND = "fire-skipped";
+var SILENT_REASONS = /* @__PURE__ */ new Set(["schedule-off"]);
+var shouldReportFireSkip = (reason) => !SILENT_REASONS.has(reason);
+function buildFireSkipResult(args) {
+  return {
+    resultKind: FIRE_SKIP_RESULT_KIND,
+    v: 1,
+    charId: args.charId,
+    taskUuid: args.taskUuid,
+    occurrenceMs: args.occurrenceMs,
+    reason: args.reason,
+    ...args.task ? {
+      task: {
+        mode: args.task.mode,
+        ...args.task.promptHint ? { promptHint: args.task.promptHint } : {},
+        recurrenceType: args.task.recurrenceType
+      }
+    } : {}
+  };
+}
 
 // utils/amsgChatPresence.ts
 var AMSG_CHAT_PRESENCE_KEY = "chat_presence";
@@ -14221,595 +16164,6 @@ async function handleCronTriggerWrite(env, request, enabled) {
   return { ok: true, enabled };
 }
 
-// utils/mcpFireCore.ts
-var DEFAULT_MAX_TOOL_NAME_LEN = 64;
-var MCP_FIRE_NAME_PREFIX = "mcp__";
-var MCP_FIRE_NAME_BUDGET = DEFAULT_MAX_TOOL_NAME_LEN - MCP_FIRE_NAME_PREFIX.length;
-var sanitizeMcpToolName = (name, maxLen = DEFAULT_MAX_TOOL_NAME_LEN) => {
-  const len = Math.max(1, maxLen);
-  return (name || "tool").replace(/[^A-Za-z0-9_-]/g, "_").slice(0, len);
-};
-var withMcpDedupeSuffix = (base, i, maxLen = DEFAULT_MAX_TOOL_NAME_LEN) => {
-  const suffix = `_${i}`;
-  return base.slice(0, Math.max(0, maxLen - suffix.length)) + suffix;
-};
-var serverSlug = (server, maxLen = DEFAULT_MAX_TOOL_NAME_LEN) => sanitizeMcpToolName(server.name, maxLen).slice(0, 20);
-var buildMcpNameMap = (servers, opts = {}) => {
-  const maxLen = opts.maxNameLen ?? DEFAULT_MAX_TOOL_NAME_LEN;
-  const resolve = /* @__PURE__ */ new Map();
-  for (const server of servers) {
-    for (const t of server.tools || []) {
-      let exposed = sanitizeMcpToolName(t.name, maxLen);
-      if (resolve.has(exposed)) {
-        const prefixed = sanitizeMcpToolName(`${serverSlug(server, maxLen)}_${t.name}`, maxLen);
-        exposed = prefixed;
-        let i = 2;
-        while (resolve.has(exposed)) exposed = withMcpDedupeSuffix(prefixed, i++, maxLen);
-      }
-      resolve.set(exposed, { server, toolName: t.name, tool: t });
-    }
-  }
-  return resolve;
-};
-var MCP_RESULT_MAX_CHARS = 2e4;
-var formatMcpToolResult = (data) => {
-  let s;
-  try {
-    s = typeof data === "string" ? data : JSON.stringify(data);
-  } catch {
-    s = String(data);
-  }
-  return s.length > MCP_RESULT_MAX_CHARS ? `${s.slice(0, MCP_RESULT_MAX_CHARS)}\u2026[\u7ED3\u679C\u8FC7\u957F\u5DF2\u622A\u65AD, \u5168\u6587\u5171 ${s.length} \u5B57\u7B26]` : s;
-};
-var stripTextFakedMcpCalls = (content, calls) => {
-  let cleaned = content;
-  for (const call of calls) cleaned = cleaned.split(call.matched).join("");
-  return cleaned.replace(/\n{3,}/g, "\n\n").trim();
-};
-var escapeRegExp2 = (s) => s.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
-var stripQuotes = (s) => {
-  const t = s.trim();
-  const m = t.match(/^(['"`「『])([\s\S]*)(['"`」』])$/);
-  return m ? m[2] : t;
-};
-var positionalKeys = (schema) => {
-  const props = schema?.properties ? Object.keys(schema.properties) : [];
-  const req = Array.isArray(schema?.required) ? schema.required.filter((k) => props.includes(k)) : [];
-  return [...req, ...props.filter((k) => !req.includes(k))];
-};
-var coerceBySchema = (value, schema, key) => {
-  const type = schema?.properties?.[key]?.type;
-  const v = stripQuotes(value);
-  if (type === "number" || type === "integer") {
-    const n = Number(v);
-    if (Number.isFinite(n)) return type === "integer" ? Math.trunc(n) : n;
-  }
-  if (type === "boolean") {
-    if (/^(true|是|开)$/i.test(v)) return true;
-    if (/^(false|否|关)$/i.test(v)) return false;
-  }
-  return v;
-};
-var splitTopLevel = (s) => {
-  const out = [];
-  let depth = 0, cur = "", quote = "";
-  for (const ch of s) {
-    if (quote) {
-      cur += ch;
-      if (ch === quote) quote = "";
-      continue;
-    }
-    if (ch === '"' || ch === "'") {
-      quote = ch;
-      cur += ch;
-      continue;
-    }
-    if (ch === "{" || ch === "[") depth++;
-    if (ch === "}" || ch === "]") depth--;
-    if (ch === "," && depth === 0) {
-      out.push(cur);
-      cur = "";
-      continue;
-    }
-    cur += ch;
-  }
-  if (cur.trim()) out.push(cur);
-  return out;
-};
-var parseFakedArgs = (inner, schema) => {
-  const t = inner.trim();
-  if (!t) return {};
-  if (t.startsWith("{")) {
-    try {
-      return JSON.parse(t);
-    } catch {
-    }
-    try {
-      return JSON.parse(t.replace(/,\s*([}\]])/g, "$1").replace(/'/g, '"').replace(/([{,]\s*)([a-zA-Z_]\w*)\s*:/g, '$1"$2":'));
-    } catch {
-    }
-  }
-  const parts = splitTopLevel(t);
-  if (parts.every((p) => /^\s*[A-Za-z_]\w*\s*[=:]/.test(p))) {
-    const args2 = {};
-    for (const p of parts) {
-      const m = p.match(/^\s*([A-Za-z_]\w*)\s*[=:]\s*([\s\S]*)$/);
-      if (m) args2[m[1]] = coerceBySchema(m[2], schema, m[1]);
-    }
-    return args2;
-  }
-  const keys = positionalKeys(schema);
-  const args = {};
-  parts.forEach((p, i) => {
-    const key = keys[i];
-    if (key) args[key] = coerceBySchema(p, schema, key);
-  });
-  return args;
-};
-var extractTextFakedMcpCalls = (content, resolve, opts = {}) => {
-  if (!content || !resolve.size) return [];
-  const lookup = /* @__PURE__ */ new Map();
-  for (const [exposed, hit] of resolve) {
-    lookup.set(exposed, { exposed, hit });
-    lookup.set(hit.toolName, { exposed, hit });
-    if (opts.alsoMatchPrefix) lookup.set(`${opts.alsoMatchPrefix}${exposed}`, { exposed, hit });
-  }
-  const found = [];
-  const seen = /* @__PURE__ */ new Set();
-  for (const [name, { exposed, hit }] of lookup) {
-    const schema = hit.tool.inputSchema;
-    const esc = escapeRegExp2(name);
-    const parenRe = new RegExp(`(^|[^\\w./])${esc}\\s*\\(([^)]*)\\)`, "g");
-    for (const m of content.matchAll(parenRe)) {
-      const matched = m[0].slice(m[1].length);
-      const key = `${exposed}|${matched}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      found.push({
-        exposedName: exposed,
-        server: hit.server,
-        toolName: hit.toolName,
-        args: parseFakedArgs(m[2], schema),
-        matched,
-        index: (m.index ?? 0) + m[1].length
-      });
-    }
-    const colonRe = new RegExp(`(^|\\n)\\s*[>*-]*\\s*\`?${esc}\`?\\s*[:\uFF1A]\\s*([^\\n]+)`, "g");
-    for (const m of content.matchAll(colonRe)) {
-      const matched = m[0].slice(m[1].length);
-      const key = `${exposed}|${matched.trim()}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const keys = positionalKeys(schema);
-      const value = stripQuotes(m[2].replace(/[。！？!?…\s]+$/, ""));
-      found.push({
-        exposedName: exposed,
-        server: hit.server,
-        toolName: hit.toolName,
-        args: keys.length ? { [keys[0]]: coerceBySchema(value, schema, keys[0]) } : {},
-        matched,
-        index: (m.index ?? 0) + m[1].length
-      });
-    }
-  }
-  return found.sort((a, b) => a.index - b.index).map(({ index: _index, ...call }) => call);
-};
-var MCP_LATEST_HANDSHAKE_PROTOCOL_VERSION = "2025-11-25";
-var MCP_SUPPORTED_HANDSHAKE_PROTOCOL_VERSIONS = [
-  "2025-11-25",
-  "2025-06-18",
-  "2025-03-26"
-];
-var MCP_REQUEST_TIMEOUT_MS = 6e4;
-var createMcpSessionState = () => ({
-  sessionId: null,
-  initialized: false,
-  initPromise: null,
-  protocolVersion: null,
-  serverInfo: null,
-  serverCapabilities: null,
-  nextId: 0
-});
-var buildRpcRequest = (session, method, params, isNotification = false) => {
-  const req = { jsonrpc: "2.0", method, params };
-  if (!isNotification) req.id = ++session.nextId;
-  return req;
-};
-var parseSse = (text2) => {
-  const dataLines = [];
-  for (const line of text2.split("\n")) {
-    if (line.startsWith("data: ")) dataLines.push(line.slice(6));
-    else if (line.startsWith("data:")) dataLines.push(line.slice(5));
-  }
-  for (let i = dataLines.length - 1; i >= 0; i--) {
-    try {
-      return JSON.parse(dataLines[i]);
-    } catch {
-    }
-  }
-  return null;
-};
-var parseResp = (text2, contentType) => {
-  if (contentType.includes("text/event-stream") || /^\s*(event:|data:)/.test(text2)) {
-    const parsed = parseSse(text2);
-    if (parsed) return parsed;
-  }
-  try {
-    return JSON.parse(text2);
-  } catch {
-    const m = text2.match(/\{[\s\S]*\}/);
-    if (m) {
-      try {
-        return JSON.parse(m[0]);
-      } catch {
-      }
-    }
-    throw new Error(`MCP: \u65E0\u6CD5\u89E3\u6790\u54CD\u5E94: ${text2.slice(0, 300)}`);
-  }
-};
-var readSseResponse = async (resp, expectedId) => {
-  const reader = resp.body?.getReader();
-  if (!reader) return parseResp(await resp.text(), "text/event-stream");
-  const decoder = new TextDecoder();
-  let buffer = "";
-  const parseEvent = (event) => {
-    const data = event.split(/\r?\n/).filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trimStart()).join("\n");
-    if (!data || data === "[DONE]") return null;
-    try {
-      const parsed = JSON.parse(data);
-      return expectedId == null || parsed.id === expectedId ? parsed : null;
-    } catch {
-      return null;
-    }
-  };
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      buffer += decoder.decode(value, { stream: !done });
-      const events = buffer.split(/\r?\n\r?\n/);
-      buffer = events.pop() || "";
-      for (const event of events) {
-        const parsed = parseEvent(event);
-        if (parsed) return parsed;
-      }
-      if (done) {
-        const parsed = parseEvent(buffer);
-        if (parsed) return parsed;
-        throw new Error("MCP SSE \u6D41\u7ED3\u675F\uFF0C\u4F46\u6CA1\u6709\u6536\u5230\u672C\u6B21\u8BF7\u6C42\u7684\u54CD\u5E94");
-      }
-    }
-  } finally {
-    await reader.cancel().catch(() => {
-    });
-  }
-};
-var postCore = async (target, session, body, timeoutMs, expectResponse = true) => {
-  target.signal?.throwIfAborted();
-  const headers = target.headers(session.sessionId, session.protocolVersion);
-  let resp;
-  const controller = new AbortController();
-  const abort = () => controller.abort(target.signal?.reason);
-  target.signal?.addEventListener("abort", abort, { once: true });
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    try {
-      resp = await fetch(target.url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body),
-        signal: controller.signal
-      });
-    } catch (e) {
-      target.signal?.throwIfAborted();
-      if (controller.signal.aborted) {
-        throw new Error(`MCP \u8BF7\u6C42\u8D85\u65F6\uFF08${Math.round(timeoutMs / 1e3)} \u79D2\uFF09`);
-      }
-      const hint = target.fetchErrorHint || "";
-      throw new Error(`MCP \u8BF7\u6C42\u5931\u8D25: ${e?.message || e}\u3002${hint}`);
-    }
-    const readText = async () => {
-      try {
-        return await resp.text();
-      } catch (e) {
-        target.signal?.throwIfAborted();
-        if (controller.signal.aborted) {
-          throw new Error(`MCP \u8BF7\u6C42\u8D85\u65F6\uFF08${Math.round(timeoutMs / 1e3)} \u79D2\uFF09`);
-        }
-        throw e;
-      }
-    };
-    const newSid = resp.headers.get("Mcp-Session-Id") || resp.headers.get("mcp-session-id");
-    if (newSid) session.sessionId = newSid;
-    if (resp.status === 401 || resp.status === 403) {
-      const txt = await readText().catch(() => "");
-      throw new Error(`MCP \u9274\u6743\u5931\u8D25 (${resp.status}): Token \u53EF\u80FD\u65E0\u6548\u6216\u8FC7\u671F\u3002${txt.slice(0, 120)}`);
-    }
-    if (resp.status === 202) return { response: null };
-    if (!resp.ok) {
-      const txt = await readText().catch(() => "");
-      throw new Error(`MCP HTTP ${resp.status}: ${txt.slice(0, 200)}`);
-    }
-    if (!expectResponse) return { response: null };
-    const ct = resp.headers.get("content-type") || "";
-    try {
-      if (ct.includes("text/event-stream")) {
-        return { response: await readSseResponse(resp, body.id) };
-      }
-      const text2 = await readText();
-      return { response: parseResp(text2, ct) };
-    } catch (e) {
-      target.signal?.throwIfAborted();
-      if (controller.signal.aborted) {
-        throw new Error(`MCP \u8BF7\u6C42\u8D85\u65F6\uFF08${Math.round(timeoutMs / 1e3)} \u79D2\uFF09`);
-      }
-      throw e;
-    }
-  } finally {
-    clearTimeout(timeoutId);
-    target.signal?.removeEventListener("abort", abort);
-  }
-};
-var formatMcpRpcError = (err6) => {
-  const code = err6?.code !== void 0 ? `[${err6.code}]: ` : "";
-  const message = err6?.message || "\u672A\u77E5\u9519\u8BEF";
-  let dataText = "";
-  if (err6?.data !== void 0 && err6?.data !== null && err6?.data !== "") {
-    if (typeof err6.data === "string") {
-      dataText = err6.data.trim();
-    } else {
-      try {
-        dataText = JSON.stringify(err6.data);
-      } catch {
-        dataText = String(err6.data);
-      }
-    }
-  }
-  const suffix = dataText && !message.includes(dataText) ? `\uFF08${dataText}\uFF09` : "";
-  return `${code}${message}${suffix}`;
-};
-var initializeCore = async (target, session, timeoutMs) => {
-  const initReq = buildRpcRequest(session, "initialize", {
-    protocolVersion: MCP_LATEST_HANDSHAKE_PROTOCOL_VERSION,
-    capabilities: {},
-    clientInfo: { name: "sullyos", title: "SullyOS", version: "1.0.0" }
-  });
-  const { response } = await postCore(target, session, initReq, timeoutMs);
-  if (response?.error) throw new Error(`Initialize \u5931\u8D25 ${formatMcpRpcError(response.error)}`);
-  const negotiated = String(
-    response?.result?.protocolVersion || MCP_LATEST_HANDSHAKE_PROTOCOL_VERSION
-  );
-  if (!MCP_SUPPORTED_HANDSHAKE_PROTOCOL_VERSIONS.includes(negotiated)) {
-    throw new Error(
-      `MCP \u534F\u8BAE\u7248\u672C\u4E0D\u517C\u5BB9\uFF1A\u670D\u52A1\u5668\u9009\u62E9\u4E86 ${negotiated}\u3002SullyOS \u7684 Streamable HTTP \u63A5\u7EBF\u652F\u6301 ${MCP_SUPPORTED_HANDSHAKE_PROTOCOL_VERSIONS.join(" / ")}\uFF1B2024-11-05 \u5C5E\u4E8E\u65E7 HTTP+SSE \u53CC\u7AEF\u70B9\uFF0C2026-07-28 \u5219\u9700\u8981\u65B0\u7684\u65E0\u63E1\u624B\u751F\u547D\u5468\u671F\u3002`
-    );
-  }
-  session.protocolVersion = negotiated;
-  session.serverInfo = response?.result?.serverInfo || null;
-  session.serverCapabilities = response?.result?.capabilities || null;
-  const notif = buildRpcRequest(session, "notifications/initialized", {}, true);
-  await postCore(target, session, notif, timeoutMs, false).catch(() => {
-  });
-  session.initialized = true;
-};
-var ensureInitializedCore = async (target, session, timeoutMs) => {
-  if (session.initialized) return;
-  if (!session.initPromise) {
-    session.initPromise = initializeCore(target, session, timeoutMs).catch((e) => {
-      session.initPromise = null;
-      throw e;
-    });
-  }
-  await session.initPromise;
-};
-var isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
-var resolveLocalSchemaRef = (schema, rootSchema) => {
-  const ref = typeof schema?.$ref === "string" ? schema.$ref : "";
-  if (!ref.startsWith("#/")) return schema;
-  const resolved = ref.slice(2).split("/").reduce((current, part) => {
-    const key = part.replace(/~1/g, "/").replace(/~0/g, "~");
-    return current?.[key];
-  }, rootSchema);
-  return resolved || schema;
-};
-var schemaAccepts = (schema, kind) => {
-  const types = Array.isArray(schema?.type) ? schema.type : [schema?.type];
-  if (types.includes(kind)) return true;
-  if (kind === "object" && schema?.properties) return true;
-  if (kind === "array" && schema?.items) return true;
-  return [...schema?.oneOf || [], ...schema?.anyOf || []].some((item) => schemaAccepts(item, kind));
-};
-var normalizeMcpValueBySchema = (value, rawSchema, rootSchema, depth) => {
-  if (!rawSchema || depth > 20) return value;
-  const schema = resolveLocalSchemaRef(rawSchema, rootSchema);
-  const acceptsObject = schemaAccepts(schema, "object");
-  const acceptsArray = schemaAccepts(schema, "array");
-  let normalized = value;
-  if (typeof normalized === "string" && (acceptsObject || acceptsArray)) {
-    for (let i = 0; i < 3 && typeof normalized === "string"; i++) {
-      const text2 = normalized.trim();
-      if (!text2) break;
-      try {
-        normalized = JSON.parse(text2);
-      } catch {
-        break;
-      }
-    }
-    const decodedMatchesSchema = acceptsObject && isRecord(normalized) || acceptsArray && Array.isArray(normalized);
-    if (!decodedMatchesSchema) normalized = value;
-  }
-  const alternatives = [...schema?.oneOf || [], ...schema?.anyOf || []];
-  if (alternatives.length) {
-    const matching = alternatives.find(
-      (item) => isRecord(normalized) && schemaAccepts(item, "object") || Array.isArray(normalized) && schemaAccepts(item, "array")
-    );
-    if (matching) normalized = normalizeMcpValueBySchema(normalized, matching, rootSchema, depth + 1);
-  }
-  if (isRecord(normalized) && acceptsObject) {
-    const result = { ...normalized };
-    const properties = schema?.properties || {};
-    for (const [key, childSchema] of Object.entries(properties)) {
-      if (key in result) result[key] = normalizeMcpValueBySchema(result[key], childSchema, rootSchema, depth + 1);
-    }
-    if (schema?.additionalProperties && typeof schema.additionalProperties === "object") {
-      for (const key of Object.keys(result)) {
-        if (!(key in properties)) {
-          result[key] = normalizeMcpValueBySchema(result[key], schema.additionalProperties, rootSchema, depth + 1);
-        }
-      }
-    }
-    for (const item of schema?.allOf || []) {
-      const merged = normalizeMcpValueBySchema(result, item, rootSchema, depth + 1);
-      if (isRecord(merged)) Object.assign(result, merged);
-    }
-    return result;
-  }
-  if (Array.isArray(normalized) && acceptsArray && schema?.items) {
-    return normalized.map((item) => normalizeMcpValueBySchema(item, schema.items, rootSchema, depth + 1));
-  }
-  return normalized;
-};
-var normalizeMcpToolArguments = (args, inputSchema) => normalizeMcpValueBySchema(args, inputSchema, inputSchema, 0);
-var targetHost = (url) => {
-  try {
-    return new URL(url).host;
-  } catch {
-    return "";
-  }
-};
-var callMcpToolCore = async (target, session, toolName, args = {}, opts = {}) => {
-  target = { ...target, signal: opts.signal ?? target.signal };
-  target.signal?.throwIfAborted();
-  const timeoutMs = opts.timeoutMs ?? MCP_REQUEST_TIMEOUT_MS;
-  const normalizedArgs = normalizeMcpToolArguments(args, opts.inputSchema);
-  const finish = (result) => {
-    let resultPreview = "";
-    if (result.success) {
-      try {
-        resultPreview = JSON.stringify(result.data).slice(0, 800);
-      } catch {
-        resultPreview = String(result.data).slice(0, 800);
-      }
-    }
-    console.info("\u{1F50C} [MCP] tools/call \u5B8C\u6210", {
-      server: opts.serverLabel ?? targetHost(target.url),
-      tool: toolName,
-      args: normalizedArgs,
-      success: result.success,
-      ...result.success ? { result: resultPreview } : { error: result.error }
-    });
-    return result;
-  };
-  try {
-    await ensureInitializedCore(target, session, timeoutMs);
-    const body = buildRpcRequest(session, "tools/call", { name: toolName, arguments: normalizedArgs });
-    let response;
-    try {
-      ({ response } = await postCore(target, session, body, timeoutMs));
-    } catch (e) {
-      if (/HTTP (400|404)/.test(e?.message || "")) {
-        Object.assign(session, createMcpSessionState());
-        await ensureInitializedCore(target, session, timeoutMs);
-        ({ response } = await postCore(
-          target,
-          session,
-          buildRpcRequest(session, "tools/call", { name: toolName, arguments: normalizedArgs }),
-          timeoutMs
-        ));
-      } else {
-        throw e;
-      }
-    }
-    if (!response) return finish({ success: false, error: "\u7A7A\u54CD\u5E94" });
-    if (response.error) return finish({ success: false, error: `MCP \u9519\u8BEF ${formatMcpRpcError(response.error)}` });
-    const result = response.result;
-    if (result?.resultType === "input_required") {
-      return finish({
-        success: false,
-        error: "\u8FD9\u4E2A\u5DE5\u5177\u9700\u8981\u5728\u6267\u884C\u9014\u4E2D\u8865\u5145\u786E\u8BA4\u6216\u8F93\u5165\uFF1BSullyOS \u5F53\u524D\u4E0D\u4F1A\u66FF\u4F60\u81EA\u52A8\u56DE\u7B54\uFF0C\u8BF7\u56DE\u5230\u804A\u5929\u4E2D\u660E\u786E\u8981\u6C42\u540E\u91CD\u8BD5\u3002",
-        data: result
-      });
-    }
-    if (result?.content && Array.isArray(result.content)) {
-      const textParts = result.content.filter((c) => c?.type === "text").map((c) => c.text || "");
-      const fullText = textParts.join("\n").trim();
-      if (result.isError) return finish({ success: false, error: fullText || "MCP \u5DE5\u5177\u6267\u884C\u5931\u8D25", rawText: fullText });
-      try {
-        return finish({ success: true, data: JSON.parse(fullText), rawText: fullText });
-      } catch {
-        return finish({ success: true, data: fullText, rawText: fullText });
-      }
-    }
-    return finish({ success: true, data: result });
-  } catch (e) {
-    target.signal?.throwIfAborted();
-    return finish({ success: false, error: e?.message || String(e) });
-  }
-};
-var buildMcpDirectHeaders = (server, sessionId, protocolVersion = null) => {
-  const headers = {
-    "Content-Type": "application/json",
-    "Accept": "application/json, text/event-stream"
-  };
-  for (const item of server.customHeaders || []) {
-    const name = String(item?.name || "").trim();
-    const value = String(item?.value || "").trim();
-    if (name && value) headers[name] = value;
-  }
-  if (server.token) headers["Authorization"] = `Bearer ${server.token}`;
-  if (sessionId) headers["Mcp-Session-Id"] = sessionId;
-  if (protocolVersion) headers["MCP-Protocol-Version"] = protocolVersion;
-  return headers;
-};
-var filterMcpServersForChar = (servers, charId) => (servers || []).filter(
-  (s) => !!s.url && (s.tools?.length || 0) > 0 && (!s.charIds?.length || s.charIds.includes(charId))
-);
-var buildMcpFireTools = (resolve) => {
-  const multiServer = new Set([...resolve.values()].map(({ server }) => server.id)).size > 1;
-  const tools = [];
-  for (const [exposed, { server, tool }] of resolve) {
-    const desc = (tool.description || "").trim();
-    tools.push({
-      type: "function",
-      function: {
-        name: `${MCP_FIRE_NAME_PREFIX}${exposed}`,
-        description: multiServer ? `[${server.name}] ${desc}`.trim() : desc,
-        parameters: tool.inputSchema || { type: "object", properties: {} }
-      }
-    });
-  }
-  return tools;
-};
-var buildMcpFireBlock = (resolve, opts) => {
-  if (!resolve.size) return "";
-  const userName = opts.userName || "\u7528\u6237";
-  const multiServer = new Set([...resolve.values()].map(({ server }) => server.id)).size > 1;
-  const lines = [];
-  for (const [exposed, { server, tool }] of resolve) {
-    const desc = (tool.description || "").trim();
-    if (opts.mode === "native") {
-      lines.push(`- ${exposed}${desc ? `\uFF1A${desc}` : ""}${multiServer ? `\uFF08\u6765\u6E90: ${server.name}\uFF09` : ""}`);
-      continue;
-    }
-    const schema = tool.inputSchema || {};
-    const required = new Set(Array.isArray(schema.required) ? schema.required : []);
-    const args = Object.entries(schema.properties || {}).map(([name, d]) => `${name}${required.has(name) ? "*" : ""}:${d?.type || "any"}`);
-    lines.push(`- ${exposed}(${args.join(", ")})${desc ? `\uFF1A${desc}` : ""}${multiServer ? `\uFF08\u6765\u6E90: ${server.name}\uFF09` : ""}`);
-  }
-  const howTo = opts.mode === "native" ? "\u9700\u8981\u65F6\u76F4\u63A5\u901A\u8FC7\u7CFB\u7EDF\u7684\u5DE5\u5177\u8C03\u7528\u63A5\u53E3\u53D1\u8D77\uFF08\u7CFB\u7EDF\u4F1A\u81EA\u52A8\u6267\u884C\u5E76\u628A\u7ED3\u679C\u7ED9\u4F60\uFF09\uFF0C\u4E0D\u8981\u628A\u5DE5\u5177\u540D\u548C\u53C2\u6570\u5199\u8FDB\u6B63\u6587\u3002" : '\u9700\u8981\u5DE5\u5177\u65F6\uFF0C\u5355\u72EC\u8F93\u51FA\u4E00\u884C tool_name({"\u53C2\u6570":"\u503C"})\uFF0C\u7CFB\u7EDF\u4F1A\u4EE3\u4E3A\u6267\u884C\u5E76\u628A\u7ED3\u679C\u7ED9\u4F60\uFF0C\u7136\u540E\u4F60\u7EE7\u7EED\u5199\u3002* \u8868\u793A\u5FC5\u586B\u53C2\u6570\u3002';
-  return [
-    "",
-    "---",
-    `\u3010\u5916\u90E8\u5DE5\u5177 \u2014\u2014 ${userName} \u5728\u8BBE\u7F6E\u91CC\u7ED9\u4F60\u8FDE\u4E86 MCP \u5DE5\u5177\u670D\u52A1\u5668\uFF0C\u4E3B\u52A8\u6D88\u606F\u91CC\u4E5F\u53EF\u4EE5\u7528\u3011`,
-    howTo,
-    "\u7EAA\u5F8B\uFF1A\u4E0D\u9700\u8981\u5C31\u522B\u786C\u8C03\uFF1B\u6CA1\u6536\u5230\u7CFB\u7EDF\u8FD4\u56DE\u524D\u4E0D\u8981\u58F0\u79F0\u5DE5\u5177\u6210\u529F\uFF0C\u4E5F\u4E0D\u8981\u7F16\u9020\u7ED3\u679C\uFF1B\u5DE5\u5177\u5931\u8D25\u5C31\u6362\u4E2A\u65B9\u5F0F\u6216\u5982\u5B9E\u5E26\u8FC7\uFF1B\u7ED3\u679C\u53EA\u6311\u76F8\u5173\u90E8\u5206\u7528\u89D2\u8272\u8BED\u6C14\u8F6C\u8FF0\uFF0C\u522B\u590D\u8BFB JSON\u3002",
-    "\u591A\u6B65\u4EFB\u52A1\uFF1A\u5148\u505A\u5FC5\u8981\u68C0\u67E5\uFF0C\u968F\u540E\u7ACB\u523B\u8C03\u7528\u80FD\u63A8\u8FDB\u76EE\u6807\u7684\u52A8\u4F5C\u5DE5\u5177\uFF1B\u4E0D\u8981\u53CD\u590D\u8BFB\u53D6\u540C\u4E00\u4EFD\u8BF4\u660E\u6216\u72B6\u6001\u3002\u6267\u884C\u52A8\u4F5C\u540E\u53EF\u4EE5\u518D\u6B21\u68C0\u67E5\u65B0\u72B6\u6001\uFF0C\u5E76\u7EE7\u7EED\u5230\u76EE\u6807\u5B8C\u6210\u6216\u5DE5\u5177\u660E\u786E\u5931\u8D25\u3002",
-    `\u526F\u4F5C\u7528\u64CD\u4F5C\uFF1A${userName} \u672C\u8F6E\u5DF2\u7ECF\u660E\u786E\u8981\u6C42\u6267\u884C\u7684\u89C6\u4E3A\u5DF2\u786E\u8BA4\uFF1B\u6CA1\u6709\u660E\u786E\u8981\u6C42\u65F6\u624D\u5148\u786E\u8BA4\u3002`,
-    "\u53EF\u7528\u5DE5\u5177\uFF1A",
-    ...lines,
-    "---"
-  ].join("\n");
-};
-
 // utils/realtimeFetchCore.ts
 var performSearch = async (query, apiKey, signal) => {
   signal?.throwIfAborted();
@@ -16646,1240 +18000,6 @@ var buildDuplicateToolMessage = (name) => [
   "\u6216\u8005\u6362\u4E00\u4E2A\u8FD8\u6CA1\u7528\u8FC7\u7684\u5DE5\u5177\u3002\u524D\u9762\u5DF2\u7ECF\u8BF4\u51FA\u53BB\u7684\u5185\u5BB9\u548C\u6807\u7B7E\u4E0D\u8981\u91CD\u5199\uFF0C\u63A5\u7740\u5F80\u4E0B\u5199\u5C31\u884C\u3002]"
 ].join("\n");
 
-// utils/voiceTextDedup.ts
-function deduplicateVoiceText(text2) {
-  if (/\[html\]|<翻[译譯]>|```/i.test(text2)) return text2;
-  const normalize2 = (s) => s.replace(/[\s\p{P}\p{S}]/gu, "").toLowerCase();
-  const blocks = [];
-  const spoken = [];
-  const protectedText = text2.replace(/(?:<字幕>([\s\S]*?)<\/字幕>\s*)?<[语語]音[^>]*>([\s\S]*?)<\/[语語]音>(?:\s*<字幕>([\s\S]*?)<\/字幕>)?/g, (block, leadingSubtitle, voice, subtitle) => {
-    spoken.push(normalize2(voice), ...[leadingSubtitle, subtitle].filter(Boolean).map(normalize2));
-    return "\nVOICE" + (blocks.push(block) - 1) + "\n";
-  });
-  if (!blocks.length) return text2;
-  return protectedText.split(/\r?\n/).filter((line) => {
-    if (/[<>\[\]\u0002]/.test(line)) return true;
-    const plain = normalize2(line);
-    return plain.length < 12 || !spoken.some((voice) => voice.includes(plain));
-  }).join("\n").replace(/\u0002VOICE(\d+)\u0002/g, (_, i) => blocks[Number(i)]).trim();
-}
-
-// utils/friendFeedReplyFormat.ts
-var FRIEND_FEED_MAIN_PROMPT_PREFIX = "\u3010\u987A\u4FBF\u56DE\u597D\u53CB\u5708\u3011";
-function extractFriendFeedReplyTags(raw, namespace = "FRIEND_FEED_REPLY") {
-  const marker = new RegExp("\\[\\[" + namespace + "\\s*:", "gi");
-  const actions = [];
-  let text2 = "", cursor = 0, match;
-  while (match = marker.exec(raw)) {
-    text2 += raw.slice(cursor, match.index);
-    let start = marker.lastIndex;
-    while (start < raw.length && /\s/.test(raw[start])) start++;
-    let depth = 0, quoted = false, escaped = false, end = -1;
-    if (raw[start] === "{") for (let i = start; i < raw.length; i++) {
-      const c = raw[i];
-      if (quoted) {
-        if (escaped) escaped = false;
-        else if (c === "\\") escaped = true;
-        else if (c === '"') quoted = false;
-      } else if (c === '"') quoted = true;
-      else if (c === "{") depth++;
-      else if (c === "}" && --depth === 0) {
-        end = i + 1;
-        break;
-      }
-    }
-    const close = end >= 0 ? /^\s*\]\]/.exec(raw.slice(end)) : null;
-    if (close) {
-      try {
-        actions.push(JSON.parse(raw.slice(start, end)));
-      } catch {
-      }
-      cursor = end + close[0].length;
-    } else {
-      const fallback = raw[start] === "{" && end < 0 ? -1 : raw.indexOf("]]", end >= 0 ? end : start);
-      cursor = fallback < 0 ? raw.length : fallback + 2;
-    }
-    marker.lastIndex = cursor;
-  }
-  return { text: text2 + raw.slice(cursor), actions };
-}
-
-// ../../../Users/tntobsidian/Documents/GitHub/SullyOS/node_modules/.pnpm/@rei-standard+amsg-instant@0.11.0/node_modules/@rei-standard/amsg-instant/dist/index.mjs
-var WEB_PUSH_MAX_BODY_BYTES2 = 4096;
-var WEB_PUSH_ENCRYPTION_OVERHEAD_BYTES2 = 16 + 4 + 1 + 65 + 1 + 16;
-var MAX_PUSH_PAYLOAD_BYTES2 = WEB_PUSH_MAX_BODY_BYTES2 - WEB_PUSH_ENCRYPTION_OVERHEAD_BYTES2;
-var PROBE_BYTE_ENCODER = new TextEncoder();
-var LONGEST_MESSAGE_KIND = Object.values(MESSAGE_KIND).reduce((longest, kind) => kind.length > longest.length ? kind : longest, "");
-var PUSH_PAYLOAD_BYTE_ENCODER = new TextEncoder();
-function segmentTextWithProtectedBlocks(text2, options) {
-  if (!text2) return [];
-  const splitAndSanitize = (plainText) => {
-    const chunks = options.splitText(plainText).filter((c) => c !== "");
-    return chunks.map((chunk) => ({
-      raw: chunk,
-      sanitized: options.sanitizeText ? options.sanitizeText(chunk) : chunk,
-      protect: false
-    }));
-  };
-  if (!options.protectedPatterns || options.protectedPatterns.length === 0) {
-    return splitAndSanitize(text2);
-  }
-  const matches = [];
-  for (const p of options.protectedPatterns) {
-    const flags = p.pattern.flags.includes("g") ? p.pattern.flags : p.pattern.flags + "g";
-    const regex = new RegExp(p.pattern.source, flags);
-    let match;
-    while ((match = regex.exec(text2)) !== null) {
-      if (match[0].length === 0) {
-        regex.lastIndex++;
-        continue;
-      }
-      matches.push({
-        index: match.index,
-        length: match[0].length,
-        raw: match[0],
-        matchObj: match,
-        patternDef: p
-      });
-    }
-  }
-  matches.sort((a, b) => {
-    if (a.index !== b.index) return a.index - b.index;
-    return b.length - a.length;
-  });
-  const validMatches = [];
-  let lastEnd = 0;
-  for (const m of matches) {
-    if (m.index >= lastEnd) {
-      validMatches.push(m);
-      lastEnd = m.index + m.length;
-    }
-  }
-  const segments = [];
-  let cursor = 0;
-  const resolveField = (field, raw, match) => typeof field === "function" ? field(raw, match) : field;
-  for (const m of validMatches) {
-    if (m.index > cursor) {
-      const plainText = text2.substring(cursor, m.index);
-      segments.push(...splitAndSanitize(plainText));
-    }
-    const previewStr = resolveField(m.patternDef.preview, m.raw, m.matchObj);
-    const metaData = resolveField(m.patternDef.meta, m.raw, m.matchObj);
-    let sanitized = previewStr;
-    if (sanitized == null) {
-      sanitized = options.sanitizeText ? options.sanitizeText(m.raw) : m.raw;
-    }
-    const pushSeg = {
-      raw: m.raw,
-      sanitized,
-      protect: true
-    };
-    if (metaData !== void 0) {
-      pushSeg.meta = metaData;
-    }
-    segments.push(pushSeg);
-    cursor = m.index + m.length;
-  }
-  if (cursor < text2.length) {
-    const plainText = text2.substring(cursor);
-    segments.push(...splitAndSanitize(plainText));
-  }
-  return segments;
-}
-var SSE_ENCODER = new TextEncoder();
-var SSE_KEEPALIVE_BYTES = SSE_ENCODER.encode(": keepalive\n\n");
-var SSE_DONE_BYTES = SSE_ENCODER.encode("event: done\ndata: {}\n\n");
-
-// utils/sanitize.ts
-var stripLiteralBackslashN = (t) => t.replace(/\\n/g, "\n");
-var stripLeakedSourceTags = (t) => t.replace(
-  /\s*\[\s*(?:聊\s*(?:天|chat)|chat|通\s*(?:话|call)|call|约\s*(?:会|date)|date)\s*\]\s*/giu,
-  "\n"
-);
-var stripTimestamps = (t) => t.replace(/\[\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\]\s*/g, "").replace(/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s*/gm, "").replace(/（[上下]午\d{1,2}[：:]\d{2}）/g, "").replace(/\(\d{1,2}:\d{2}\s*[AP]M\)/gi, "");
-var stripChineseDate = (t) => t.replace(/\[\d{4}[-/年]\d{1,2}[-/月]\d{1,2}.*?\]/g, "");
-var stripRoleNamePrefix = (t) => t.replace(/^[\w一-龥]+:\s*/, "");
-var stripBusinessTagsForBubble = (t) => extractFriendFeedReplyTags(extractFriendFeedReplyTags(t).text, "HOME_VISIT_REPLY").text.replace(/\[\[(?:ACTION|RECALL|SEARCH|DIARY|READ_DIARY|FS_DIARY|FS_READ_DIARY|DIARY_START|DIARY_END|FS_DIARY_START|FS_DIARY_END|MUSIC_ACTION)[:\s][\s\S]*?\]\]/g, "").replace(/\[\[\s*[记記][录錄]\s*[:：][\s\S]*?\]\]/g, "").replace(/\[schedule_message[^\]]*\]/g, "");
-var stripBusinessTagsForNotification = (t) => stripBusinessTagsForBubble(t).replace(/\[\[(?:READ_NOTE|XHS_[A-Z_]+|LIFE|NEWS_CARD)[:\s][\s\S]*?\]\]/g, "").replace(/\[\[XHS_[A-Z_]+\]\]/g, "");
-var stripAllDoubleBracketTags = (t) => t.replace(/\[\[[\s\S]*?\]\]/g, "");
-var stripQuotes2 = (t) => t.replace(/\[\[(?:QU[OA]TE|引用)[：:][\s\S]*?\]\]/g, "").replace(/\[(?:QU[OA]TE|引用)[：:][^\]]*\]/g, "").replace(/\[回复\s*[""“][^""”]*?[""”](?:\.{0,3})\]\s*[：:]?\s*/g, "").replace(/\[[^\[\]\n「」]{0,24}引用了[^\[\]\n「」]{0,24}「[^」\n]*?」[^\[\]\n]{0,24}\]\s*/g, "");
-var stripSystemLogLeak = (t) => t.replace(/[\[【]\s*(?:系统|系統|System)\s*(?:提示)?\s*[:：][^\[\]【】]*[\]】]\s*/gi, "").replace(/\[\s*(?:系统|系統)\s*\]\s*/g, "");
-var stripMarkdownHeaders = (t) => t.replace(/^#{1,6}\s+/gm, "");
-var stripMarkdownBold = (t) => t.replace(/\*{2,}/g, "");
-var stripMarkdownDividers = (t) => t.replace(/^\s*---\s*$/gm, "").replace(/^\s*[-*+]\s*$/gm, "");
-var stripBackticks = (t) => t.replace(/`(\[\[[\s\S]*?\]\])`/g, "$1").replace(/``+/g, "").replace(/(^|\s)`(\s|$)/gm, "$1$2");
-var stripLegacyTrans = (t) => t.replace(/%%TRANS%%[\s\S]*/gi, "");
-var collapseWhitespace = (t) => t.replace(/\n{3,}/g, "\n\n").trim();
-var stripThinkBlocks = (t) => t.replace(/<(think|thinking|thought)>[\s\S]*?<\/\1>/gi, "").replace(/<(?:think|thinking|thought)>[\s\S]*$/gi, "");
-var stripInnerState = (t) => t.replace(/\[\[INNER_STATE:\s*[\s\S]*?\]\]/g, "");
-var replaceMarkdownLinks = (t) => t.replace(/\[([^\]]+)\]\([^)]+\)/g, "[\u94FE\u63A5\uFF1A$1]");
-var replaceSendEmoji = (t) => t.replace(/\[\[SEND_EMOJI[:：]\s*(.+?)\]\]/g, "[\u8868\u60C5\uFF1A$1]");
-var replaceEmojiReverseTag = (t) => t.replace(/\[(?:你|User|用户|System|[\w一-龥]+)\s*发送了表情包[:：]\s*(.*?)\]/g, "[\u8868\u60C5\uFF1A$1]");
-var replaceHtmlBlocks = (t) => t.replace(/\[html\][\s\S]*?\[\/html\]/gi, "[HTML \u5361\u7247]");
-var replaceTranslationForBanner = (t) => t.replace(/<翻译>\s*<原文>([\s\S]*?)<\/原文>\s*<译文>[\s\S]*?<\/译文>\s*<\/翻译>/g, "$1").replace(/<译文>[\s\S]*?<\/译文>/g, "").replace(/<\/?(?:翻译|原文)>/g, "");
-var replaceVoiceForBanner = (t) => t.replace(
-  /(?:<字幕>([\s\S]*?)<\/字幕>\s*)?<[语語]音[^>]*>([\s\S]*?)<\/\s*[语語]音\s*>(?:\s*<字幕>([\s\S]*?)<\/字幕>)?/g,
-  (_m, pre, inner, post) => (post || pre || inner || "").trim()
-).replace(/<字幕>([\s\S]*?)<\/字幕>/g, "$1").replace(/<\/?字幕>/g, "");
-function repairPairedTag(text2, tokenRe, closeFormOf, closeBeforeTrailingSubtitle) {
-  const kept = [];
-  let cursor = 0;
-  let openForm = null;
-  let tok;
-  while ((tok = tokenRe.exec(text2)) !== null) {
-    const isClose = tok[0].startsWith("</");
-    if (!isClose && /\/\s*>$/.test(tok[0])) {
-      kept.push(text2.slice(cursor, tok.index));
-      cursor = tok.index + tok[0].length;
-      continue;
-    }
-    if (isClose) {
-      if (openForm === null) {
-        kept.push(text2.slice(cursor, tok.index));
-        cursor = tok.index + tok[0].length;
-      } else {
-        openForm = null;
-      }
-    } else if (openForm !== null) {
-      kept.push(text2.slice(cursor, tok.index));
-      cursor = tok.index + tok[0].length;
-    } else {
-      openForm = closeFormOf(tok[0]);
-    }
-  }
-  kept.push(text2.slice(cursor));
-  let result = kept.join("");
-  if (openForm !== null) {
-    const closeTag = `</${openForm}>`;
-    if (closeBeforeTrailingSubtitle) {
-      const trail = result.match(/(\s*<字幕>[\s\S]*?<\/字幕>\s*)$/);
-      if (trail) {
-        const at = result.length - trail[0].length;
-        return result.slice(0, at).replace(/\s+$/, "") + closeTag + trail[0].replace(/\s+$/, "");
-      }
-    }
-    result = result.replace(/\s+$/, "") + closeTag;
-  }
-  return result;
-}
-function normalizeVoiceTags(t) {
-  if (!/[语語]音|字幕/.test(t)) return t;
-  let result = t;
-  result = result.replace(/＜\s*[/／]\s*([语語]音|字幕)\s*＞/g, "</$1>");
-  result = result.replace(/＜\s*((?:[语語]音|字幕)[^<>＜＞]*?)\s*＞/g, "<$1>");
-  result = result.replace(/<\s*[/／]\s*([语語]音|字幕)\s*>/g, "</$1>");
-  result = result.replace(/<([语語]音|字幕)\s*([^<>]*?)\s*>/g, (_m, tag2, attrs) => {
-    if (!attrs) return `<${tag2}>`;
-    const fixed = attrs.replace(/[“”＂]/g, '"').replace(/[‘’]/g, "'").replace(/＝/g, "=").trim();
-    return `<${tag2} ${fixed}>`;
-  });
-  result = repairPairedTag(result, /<\/?[语語]音[^>]*>/g, (tok) => /語/.test(tok) ? "\u8A9E\u97F3" : "\u8BED\u97F3", true);
-  result = repairPairedTag(result, /<\/?字幕[^>]*>/g, () => "\u5B57\u5E55", false);
-  return result;
-}
-var simpTransTag = (tag2) => tag2.replace(/譯/g, "\u8BD1");
-function normalizeTranslationTags(t) {
-  if (!/[<＜]\s*[/／]?\s*(?:翻[译譯]|原文|[译譯]文)/.test(t)) return t;
-  let result = t;
-  result = result.replace(/[<＜]\s*[/／]\s*(翻[译譯]|原文|[译譯]文)\s*[>＞]/g, (_m, tag2) => `</${simpTransTag(tag2)}>`);
-  result = result.replace(/[<＜]\s*(翻[译譯]|原文|[译譯]文)\s*[>＞]/g, (_m, tag2) => `<${simpTransTag(tag2)}>`);
-  result = result.replace(
-    /[<＜]\s*([/／]?)\s*(翻[译譯]|原文|[译譯]文)\s*(?=$|\n|[<＜])/g,
-    (_m, slash, tag2) => `<${slash ? "/" : ""}${simpTransTag(tag2)}>`
-  );
-  result = repairPairedTag(result, /<\/?原文[^>]*>/g, () => "\u539F\u6587", false);
-  result = repairPairedTag(result, /<\/?译文[^>]*>/g, () => "\u8BD1\u6587", false);
-  result = repairPairedTag(result, /<\/?翻译[^>]*>/g, () => "\u7FFB\u8BD1", false);
-  const HOLD = String.fromCharCode(3);
-  const blocks = [];
-  const hold = (m) => {
-    blocks.push(m);
-    return `${HOLD}${blocks.length - 1}${HOLD}`;
-  };
-  result = result.replace(/<翻译>\s*<原文>[\s\S]*?<\/原文>\s*<译文>[\s\S]*?<\/译文>\s*<\/翻译>/g, hold);
-  result = result.replace(
-    /(?:<翻译>\s*)?<原文>([\s\S]*?)<\/原文>\s*<译文>([\s\S]*?)<\/译文>\s*(?:<\/翻译>)?/g,
-    (_m, a, b) => hold(`<\u7FFB\u8BD1><\u539F\u6587>${a.trim()}</\u539F\u6587><\u8BD1\u6587>${b.trim()}</\u8BD1\u6587></\u7FFB\u8BD1>`)
-  );
-  result = result.replace(
-    /<翻译>\s*(?!<原文>)((?:(?!<\/?翻译>)[\s\S])*?)<\/翻译>\s*<译文>([\s\S]*?)<\/译文>/g,
-    (_m, a, b) => hold(`<\u7FFB\u8BD1><\u539F\u6587>${a.trim()}</\u539F\u6587><\u8BD1\u6587>${b.trim()}</\u8BD1\u6587></\u7FFB\u8BD1>`)
-  );
-  result = result.replace(/<译文>[\s\S]*?<\/译文>/g, "");
-  result = result.replace(/[<＜]\s*[/／]?\s*(?:翻[译譯]|原文|[译譯]文)\s*[>＞]?/g, "");
-  result = result.replace(new RegExp(`${HOLD}(\\d+)${HOLD}`, "g"), (_m, n) => blocks[Number(n)] || "");
-  return result;
-}
-var extractTranslationOriginal = (t) => {
-  let result = t.replace(
-    /<翻译>\s*<原文>([\s\S]*?)<\/原文>\s*<译文>[\s\S]*?<\/译文>\s*<\/翻译>/g,
-    "$1"
-  );
-  result = result.replace(/<译文>[\s\S]*?<\/译文>/g, "");
-  result = result.replace(/<\/?(?:翻译|原文)>/g, "");
-  return result;
-};
-function sanitizeForNotification(text2) {
-  let result = text2;
-  result = stripLiteralBackslashN(result);
-  result = stripThinkBlocks(result);
-  result = replaceHtmlBlocks(result);
-  result = replaceEmojiReverseTag(result);
-  result = replaceSendEmoji(result);
-  result = normalizeTranslationTags(result);
-  result = extractTranslationOriginal(result);
-  result = stripTimestamps(result);
-  result = stripChineseDate(result);
-  result = stripRoleNamePrefix(result);
-  result = stripSystemLogLeak(result);
-  result = stripLeakedSourceTags(result);
-  result = stripInnerState(result);
-  result = stripBusinessTagsForNotification(result);
-  result = stripQuotes2(result);
-  result = replaceMarkdownLinks(result);
-  result = stripMarkdownHeaders(result);
-  result = stripMarkdownBold(result);
-  result = stripMarkdownDividers(result);
-  result = stripBackticks(result);
-  result = stripLegacyTrans(result);
-  result = collapseWhitespace(result);
-  return result;
-}
-function sanitizeIntoSegments(text2) {
-  let cleaned = stripLiteralBackslashN(text2);
-  cleaned = stripThinkBlocks(cleaned);
-  cleaned = deduplicateVoiceText(normalizeVoiceTags(cleaned));
-  cleaned = normalizeTranslationTags(cleaned);
-  const ATOM_MARKER = String.fromCharCode(2);
-  const atomBlocks = [];
-  const atomSegments = segmentTextWithProtectedBlocks(cleaned, {
-    splitText: (plainText) => [plainText],
-    protectedPatterns: [
-      {
-        pattern: /\[html\][\s\S]*?\[\/html\]/i,
-        preview: "[HTML \u5361\u7247]"
-      },
-      {
-        pattern: /<翻译>\s*<原文>([\s\S]*?)<\/原文>\s*<译文>[\s\S]*?<\/译文>\s*<\/翻译>/,
-        preview: (_raw, match) => (match[1] || "").trim() || "[\u7FFB\u8BD1]"
-      },
-      {
-        // 语音块 + 紧邻的 <字幕> 块是一个原子单元 (字幕是这条语音的中文对照, 拆开
-        // 就配不上了)。字幕前置/后置都容忍; banner 预览优先用字幕 (用户读得懂中文)。
-        // 闭合容许空格 + 简繁互换 (normalizeVoiceTags 已修, 这里不再依赖 \1 回引)。
-        pattern: /(?:<字幕>([\s\S]*?)<\/字幕>\s*)?<[语語]音[^>]*>([\s\S]*?)<\/\s*[语語]音\s*>(?:\s*<字幕>([\s\S]*?)<\/字幕>)?/,
-        preview: (_raw, match) => (match[3] || match[1] || match[2] || "").trim() || "[\u8BED\u97F3]"
-      }
-    ]
-  });
-  cleaned = atomSegments.map((seg) => {
-    if (!seg.protect) return seg.raw;
-    const idx = atomBlocks.length;
-    atomBlocks.push({
-      raw: seg.raw,
-      sanitized: typeof seg.sanitized === "string" ? seg.sanitized : sanitizeTextForBanner(seg.raw)
-    });
-    return `
-${ATOM_MARKER}B${idx}${ATOM_MARKER}
-`;
-  }).join("");
-  cleaned = extractTranslationOriginal(cleaned);
-  cleaned = stripInnerState(cleaned);
-  cleaned = stripBusinessTagsForNotification(cleaned);
-  cleaned = stripTimestamps(cleaned);
-  cleaned = stripChineseDate(cleaned);
-  cleaned = stripRoleNamePrefix(cleaned);
-  cleaned = stripLeakedSourceTags(cleaned);
-  cleaned = stripLegacyTrans(cleaned);
-  cleaned = stripMarkdownDividers(cleaned);
-  const rawChunks = chunkText(cleaned);
-  const SOLO_RE = new RegExp(`^${ATOM_MARKER}B(\\d+)${ATOM_MARKER}$`);
-  const GLOBAL_RE = new RegExp(`${ATOM_MARKER}B(\\d+)${ATOM_MARKER}`, "g");
-  const segments = [];
-  let pendingQuoteRaw = "";
-  for (const rawChunk of rawChunks) {
-    const soloMatch = rawChunk.trim().match(SOLO_RE);
-    if (soloMatch) {
-      const blk = atomBlocks[Number(soloMatch[1])];
-      if (blk) segments.push({ raw: blk.raw, sanitized: blk.sanitized });
-      continue;
-    }
-    const parts = splitOnSendEmoji(rawChunk);
-    for (const part of parts) {
-      if (part.kind === "emoji") {
-        segments.push({
-          raw: `[[SEND_EMOJI: ${part.name}]]`,
-          sanitized: `[\u8868\u60C5\uFF1A${part.name}]`
-        });
-        continue;
-      }
-      let rawText = part.text.replace(
-        GLOBAL_RE,
-        (_m, n) => atomBlocks[Number(n)]?.raw || ""
-      );
-      rawText = rawText.trim();
-      if (!rawText) continue;
-      const sanitized = sanitizeTextForBanner(rawText).trim();
-      if (!sanitized) {
-        if (!stripQuotes2(rawText).trim()) pendingQuoteRaw += `${rawText}
-`;
-        continue;
-      }
-      if (!stripAllDoubleBracketTags(sanitized).trim()) continue;
-      segments.push({
-        raw: pendingQuoteRaw ? `${pendingQuoteRaw}${rawText}` : rawText,
-        sanitized
-      });
-      pendingQuoteRaw = "";
-    }
-  }
-  return segments;
-}
-function sanitizeTextForBanner(text2) {
-  let result = text2;
-  result = replaceHtmlBlocks(result);
-  result = replaceTranslationForBanner(result);
-  result = replaceVoiceForBanner(result);
-  result = stripQuotes2(result);
-  result = stripSystemLogLeak(result);
-  result = replaceEmojiReverseTag(result);
-  result = replaceMarkdownLinks(result);
-  result = stripMarkdownHeaders(result);
-  result = stripMarkdownBold(result);
-  result = stripBackticks(result);
-  result = collapseWhitespace(result);
-  return result;
-}
-function chunkText(text2) {
-  return text2.split(/(?:\r\n|\r|\n|\u2028|\u2029)+/).map((c) => c.trim()).filter((c) => c.length > 0);
-}
-function splitOnSendEmoji(chunk) {
-  const re = /\[\[SEND_EMOJI[:：]\s*(.*?)\]\]/g;
-  const parts = [];
-  let lastIndex = 0;
-  let m;
-  while ((m = re.exec(chunk)) !== null) {
-    if (m.index > lastIndex) {
-      parts.push({ kind: "text", text: chunk.slice(lastIndex, m.index) });
-    }
-    parts.push({ kind: "emoji", name: m[1].trim() });
-    lastIndex = m.index + m[0].length;
-  }
-  if (lastIndex < chunk.length) {
-    parts.push({ kind: "text", text: chunk.slice(lastIndex) });
-  }
-  if (parts.length === 0 && chunk) parts.push({ kind: "text", text: chunk });
-  return parts;
-}
-
-// utils/transferFormat.ts
-function parseTransferAmount(raw) {
-  if (typeof raw === "number") return Number.isFinite(raw) && raw > 0 ? raw : null;
-  if (typeof raw !== "string") return null;
-  let s = raw.replace(/[０-９．]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 65248));
-  s = s.replace(/[¥￥$＄]/g, "").replace(/(?:元|块钱|块|圆|RMB|CNY|credits?)/gi, "").replace(/[,，\s]/g, "");
-  if (!/^\d+(?:\.\d+)?$/.test(s)) return null;
-  const n = Number(s);
-  if (!Number.isFinite(n) || n <= 0) return null;
-  return n;
-}
-function formatTransferAmount(n) {
-  return Number.isInteger(n) ? String(n) : String(Math.round(n * 100) / 100);
-}
-var RECORD_TRANSFER_RE = /\[\[\s*[记記][录錄]\s*[:：]\s*TRANSFER[^\]]*\]\]/gi;
-var ACTION_SEND_KV_RE = /\[\[\s*ACTION\s*[:：]\s*TRANSFER\s*((?:\|[^\]]*)?)\s*\]\]/gi;
-var ACTION_SEND_RE = /\[\[\s*ACTION\s*[:：]\s*TRANSFER\s*[:：]\s*([^\]]*?)\s*\]\]/gi;
-var FORGED_TO_VALUES = /* @__PURE__ */ new Set(["char", "self", "me", "\u89D2\u8272", "\u81EA\u5DF1", "\u6211", "\u81EA\u5206", "\u672C\u4EBA"]);
-function parseKvArgs(argStr) {
-  const out = {};
-  for (const part of argStr.split(/[|｜]/)) {
-    const seg = part.trim();
-    if (!seg) continue;
-    const eq = seg.search(/[=＝]/);
-    if (eq < 0) {
-      if (!("amount" in out) && parseTransferAmount(seg) !== null) out.amount = seg;
-      continue;
-    }
-    const k = seg.slice(0, eq).trim().toLowerCase();
-    const v = seg.slice(eq + 1).trim();
-    if (k) out[k] = v;
-  }
-  return out;
-}
-function kvToSendEvent(argStr) {
-  const kv = parseKvArgs(argStr);
-  const to = (kv.to ?? kv["\u7ED9"] ?? "").toLowerCase();
-  if (to && FORGED_TO_VALUES.has(to)) return null;
-  const amount = parseTransferAmount(kv.amount ?? kv["\u91D1\u989D"]);
-  return amount === null ? null : { kind: "send", amount: formatTransferAmount(amount) };
-}
-var ACTION_ACCEPT_RE = /\[\[\s*ACTION\s*[:：]\s*TRANSFER_ACCEPT\s*\]\]/gi;
-var ACTION_RETURN_RE = /\[\[\s*ACTION\s*[:：]\s*TRANSFER_RETURN\s*\]\]/gi;
-var SYSTEM_LOG_RE = /[\[【]\s*(?:系统|系統|System)\s*(?:提示)?\s*[:：]\s*([^\[\]【】]*?)\s*[\]】]/gi;
-var BARE_TRANSFER_RE = /\[\s*转[账帐]\s*[:：]?\s*([^\[\]]{0,24}?)\s*\]/gi;
-var AMOUNT_FRAGMENT = String.raw`[¥￥$＄]?\s*([0-9０-９][0-9０-９.,，]*)\s*(?:元|块钱|块|圆)?`;
-var LOG_SEND_RE = new RegExp(String.raw`^(?:你|我)\s*(?:向|给).*?转(?:[账帐]了?|了)\s*${AMOUNT_FRAGMENT}`);
-var LOG_ACCEPT_RE = /^你(?:接收|接受|收下|领取)了.*?转[账帐]/;
-var LOG_RETURN_RE = /^你退回了.*?转[账帐]/;
-var LOG_FORGED_RE = /(?:向|给)你转[账帐]|(?:接收|接受|收下|领取|退回)了你的转[账帐]/;
-var LOG_IS_TRANSFER_RE = /转[账帐]|转了?\s*[¥￥$＄]?\s*[0-9０-９]/;
-function classifySystemLog(inner) {
-  const s = inner.trim();
-  if (!LOG_IS_TRANSFER_RE.test(s)) return void 0;
-  if (LOG_ACCEPT_RE.test(s)) return { kind: "accept" };
-  if (LOG_RETURN_RE.test(s)) return { kind: "return" };
-  const m = s.match(LOG_SEND_RE);
-  if (m) {
-    const amount = parseTransferAmount(m[1]);
-    return amount === null ? null : { kind: "send", amount: formatTransferAmount(amount) };
-  }
-  if (LOG_FORGED_RE.test(s)) return null;
-  return null;
-}
-function collect(text2, re, toEvent, hits) {
-  re.lastIndex = 0;
-  let m;
-  while ((m = re.exec(text2)) !== null) {
-    const start = m.index;
-    const end = start + m[0].length;
-    if (hits.some((h) => start < h.end && end > h.start)) continue;
-    const event = toEvent(m);
-    if (event === void 0) continue;
-    hits.push({ start, end, event });
-  }
-}
-function extractTransferCommands(content) {
-  const src = String(content ?? "");
-  if (!src) return { text: "", events: [], consumed: 0 };
-  const hits = [];
-  collect(src, RECORD_TRANSFER_RE, () => null, hits);
-  collect(src, ACTION_SEND_KV_RE, (m) => kvToSendEvent(m[1] ?? ""), hits);
-  collect(src, ACTION_SEND_RE, (m) => {
-    const amount = parseTransferAmount(m[1]);
-    return amount === null ? null : { kind: "send", amount: formatTransferAmount(amount) };
-  }, hits);
-  collect(src, ACTION_ACCEPT_RE, () => ({ kind: "accept" }), hits);
-  collect(src, ACTION_RETURN_RE, () => ({ kind: "return" }), hits);
-  collect(src, SYSTEM_LOG_RE, (m) => classifySystemLog(m[1] ?? ""), hits);
-  collect(src, BARE_TRANSFER_RE, (m) => {
-    const amount = parseTransferAmount(m[1]);
-    return amount === null ? null : { kind: "send", amount: formatTransferAmount(amount) };
-  }, hits);
-  hits.sort((a, b) => a.start - b.start);
-  let text2 = "";
-  let cursor = 0;
-  for (const h of hits) {
-    text2 += src.slice(cursor, h.start);
-    cursor = h.end;
-  }
-  text2 += src.slice(cursor);
-  return {
-    text: text2.trim(),
-    events: hits.map((h) => h.event).filter((e) => e !== null),
-    consumed: hits.length
-  };
-}
-
-// utils/scheduleChangeParse.ts
-var KEYWORD_RE = /^\s*(?:ACTION\s*[:：]\s*CHANGE_SCHEDULE|change[\s_-]*(?:schedule|schedue)|modify[\s_-]*schedule|修改(?:未来)?日程|更改(?:未来)?日程|改日程)(?=\s|[:：|=→>\-（(]|\d|$)/iu;
-var parseDirectiveBody = (input) => {
-  const body = input.replace(/^[\s【\[]+|[\s】\]]+$/gu, "").trim();
-  const keyword = body.match(KEYWORD_RE);
-  if (!keyword) return { recognized: false };
-  const rest = body.slice(keyword[0].length).replace(/^\s*[:：|=→>\-]+\s*/u, "");
-  const time = rest.match(/[（(]?\s*(\d{1,2})\s*(?:[:：点时])\s*(\d{1,2})?\s*(?:分)?\s*[）)]?/u);
-  if (!time || time.index == null) return { recognized: true, directive: null };
-  const hour = Number(time[1]);
-  const minute = time[2] == null || time[2] === "" ? 0 : Number(time[2]);
-  if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
-    return { recognized: true, directive: null };
-  }
-  const activity = rest.slice(time.index + time[0].length).replace(/^\s*(?:[:：|=→>\-]+)\s*/u, "").replace(/[】\]]+\s*$/gu, "").trim();
-  if (!activity) return { recognized: true, directive: null };
-  return {
-    recognized: true,
-    directive: {
-      startTime: `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
-      // 日程卡本来就是短标题；截断异常长输出，避免一条标签撑坏 UI / prompt。
-      activity: activity.slice(0, 120)
-    }
-  };
-};
-var extractScheduleChangeDirectives = (text2) => {
-  const directives = [];
-  let malformedCount = 0;
-  const consumeBody = (body, original) => {
-    const parsed = parseDirectiveBody(body);
-    if (!parsed.recognized) return original;
-    if (parsed.directive) directives.push(parsed.directive);
-    else malformedCount += 1;
-    return "";
-  };
-  let cleanedText = (text2 || "").replace(
-    /(?:【{1,2}|\[{1,2})([^【】\[\]\r\n]{1,360})(?:】{1,2}|\]{1,2})/gu,
-    (whole, body) => consumeBody(body ?? "", whole)
-  );
-  cleanedText = cleanedText.replace(
-    /^[ \t]*(?:【【?|\[\[?)?[ \t]*(?:ACTION[ \t]*[:：][ \t]*CHANGE_SCHEDULE|change[ \t_-]*(?:schedule|schedue)|modify[ \t_-]*schedule|修改(?:未来)?日程|更改(?:未来)?日程|改日程)[ \t]*[:：|]?[^\r\n]{0,360}/gimu,
-    (whole) => consumeBody(whole, whole)
-  );
-  const recognizedSomething = directives.length > 0 || malformedCount > 0;
-  if (!recognizedSomething) {
-    return { cleanedText: text2 || "", directives, malformedCount };
-  }
-  return {
-    cleanedText: cleanedText.replace(/[ \t]+\r?\n/gu, "\n").replace(/\n{3,}/gu, "\n\n").trim(),
-    directives,
-    malformedCount
-  };
-};
-
-// worker/amsg/src/classifier.ts
-var DATA_TAGS = [
-  // [[RECALL: 2024-05]] / [[RECALL: 2024年5]]
-  {
-    re: /\[\[RECALL:\s*(\d{4})[-/年](\d{1,2})\]\]/g,
-    toolName: "recall",
-    toArgs: (m) => ({ year: m[1], month: m[2].padStart(2, "0") })
-  },
-  // [[SEARCH: query]]
-  {
-    re: /\[\[SEARCH:\s*(.+?)\]\]/g,
-    toolName: "web_search",
-    toArgs: (m) => ({ query: m[1].trim() })
-  },
-  // [[READ_DIARY: 2024-05-19]] / [[READ_DIARY: 今天]]
-  {
-    re: /\[\[READ_DIARY:\s*(.+?)\]\]/g,
-    toolName: "notion_read_diary",
-    toArgs: (m) => ({ date: m[1].trim() })
-  },
-  // [[FS_READ_DIARY: 2024-05-19]]
-  {
-    re: /\[\[FS_READ_DIARY:\s*(.+?)\]\]/g,
-    toolName: "feishu_read_diary",
-    toArgs: (m) => ({ date: m[1].trim() })
-  },
-  // [[READ_NOTE: keyword]]
-  {
-    re: /\[\[READ_NOTE:\s*(.+?)\]\]/g,
-    toolName: "read_note",
-    toArgs: (m) => ({ keyword: m[1].trim() })
-  },
-  // [[XHS_SEARCH: keyword]]
-  {
-    re: /\[\[XHS_SEARCH:\s*(.+?)\]\]/g,
-    toolName: "xhs_search",
-    toArgs: (m) => ({ keyword: m[1].trim() })
-  },
-  // [[XHS_BROWSE]] / [[XHS_BROWSE: category]]
-  {
-    re: /\[\[XHS_BROWSE(?::\s*(.+?))?\]\]/g,
-    toolName: "xhs_browse",
-    toArgs: (m) => m[1] ? { category: m[1].trim() } : {}
-  },
-  // [[XHS_DETAIL: noteId]]
-  {
-    re: /\[\[XHS_DETAIL:\s*(.+?)\]\]/g,
-    toolName: "xhs_detail",
-    toArgs: (m) => ({ noteId: m[1].trim() })
-  },
-  // [[XHS_MY_PROFILE]]
-  {
-    re: /\[\[XHS_MY_PROFILE\]\]/g,
-    toolName: "xhs_my_profile",
-    toArgs: () => ({})
-  }
-];
-var DATA_TOOL_NAMES = Object.freeze([...new Set(DATA_TAGS.map((spec) => spec.toolName))]);
-var SIDE_EFFECT_TAGS = [
-  // [[ACTION:POKE]]
-  {
-    re: /\[\[ACTION:POKE\]\]/g,
-    toDirective: () => ({ type: "poke" })
-  },
-  // 转账 (TRANSFER / TRANSFER_ACCEPT / TRANSFER_RETURN) 不在这张表里 —— 见 classifyLLMOutput
-  // 里的 extractTransferCommands, 那份解析跟客户端共用一份源码, 且要认模仿历史日志的口语形态。
-  // [[ACTION:ADD_EVENT|title|date]]
-  {
-    re: /\[\[ACTION:ADD_EVENT\s*\|\s*(.*?)\s*\|\s*(.*?)\]\]/g,
-    toDirective: (m) => ({ type: "add_event", title: m[1], date: m[2] })
-  },
-  // [schedule_message | time | fixed | text]  (note: 单方括号, 跟原 chatParser 一致)
-  {
-    re: /\[schedule_message\s*\|\s*(.+?)\s*\|\s*fixed\s*\|\s*(.+?)\]/g,
-    toDirective: (m) => ({ type: "schedule_message", time: m[1], text: m[2] })
-  },
-  // [[MUSIC_ACTION:verb]] 或 [[MUSIC_ACTION:verb|arg1|arg2]]
-  {
-    re: /\[\[MUSIC_ACTION:(join|add|add_new|join_and_add|join_and_add_new)(?:\|([^\]]*))?\]\]/g,
-    toDirective: (m) => ({
-      type: "music_action",
-      verb: m[1],
-      args: m[2] ? m[2].split("|").map((s) => s.trim()) : []
-    })
-  },
-  // [[XHS_LIKE: noteId]]
-  {
-    re: /\[\[XHS_LIKE:\s*(.+?)\]\]/g,
-    toDirective: (m) => ({ type: "xhs_like", noteId: m[1].trim() })
-  },
-  // [[XHS_FAV: noteId]]
-  {
-    re: /\[\[XHS_FAV:\s*(.+?)\]\]/g,
-    toDirective: (m) => ({ type: "xhs_fav", noteId: m[1].trim() })
-  },
-  // [[XHS_COMMENT: noteId | text]]
-  {
-    re: /\[\[XHS_COMMENT:\s*([^|]+?)\s*\|\s*([^\]]+?)\]\]/g,
-    toDirective: (m) => ({ type: "xhs_comment", noteId: m[1].trim(), text: m[2].trim() })
-  },
-  // [[XHS_REPLY: noteId | commentId | text]]
-  {
-    re: /\[\[XHS_REPLY:\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^\]]+?)\]\]/g,
-    toDirective: (m) => ({
-      type: "xhs_reply",
-      noteId: m[1].trim(),
-      commentId: m[2].trim(),
-      text: m[3].trim()
-    })
-  },
-  // [[XHS_POST: title | content | tags]]   (用 s flag 兼容多行 content)
-  {
-    re: /\[\[XHS_POST:\s*([^|]+?)\s*\|\s*([\s\S]+?)\s*\|\s*([^\]]+?)\]\]/g,
-    toDirective: (m) => ({
-      type: "xhs_post",
-      title: m[1].trim(),
-      content: m[2].trim(),
-      tags: m[3].trim()
-    })
-  },
-  // [[XHS_SHARE: 3]]
-  {
-    re: /\[\[XHS_SHARE:\s*(\d+)\]\]/g,
-    toDirective: (m) => ({ type: "xhs_share", idx: Number(m[1]) })
-  },
-  // [[LIFE:MED|布洛芬]] 生活记录代记 — 跟 chatParser.ts 的 `\[\[LIFE:[^\]]*\]\]` 同口径,
-  // 冒号后整段原样带走, 不在这里拆 verb/args (那份解析在 lifeRecords.parseLifeDirective)。
-  {
-    re: /\[\[LIFE:([^\]]*)\]\]/g,
-    toDirective: (m) => ({ type: "life_record", body: m[1] })
-  },
-  // [[NEWS_CARD: 来源|标题]] 分享热点卡片 — 跟 chatParser.ts:NEWS_CARD_RE 同口径。
-  {
-    re: /\[\[NEWS_CARD:\s*([^\]]*?)\s*\]\]/g,
-    toDirective: (m) => ({ type: "news_card", body: m[1] })
-  },
-  // 写日记 — 长形态: [[DIARY_START: title|mood]]\n content \n[[DIARY_END]]
-  // 短形态: [[DIARY: title|content]] 或 [[DIARY: content]] (无 title)
-  // 行为跟 applyAssistantPostProcessing.ts:465-495 字节对齐:
-  //   - 长形态 header 含 `|` → title|mood 切, 不含 `|` → 整段 = title
-  //   - 短形态 raw 含 `|` → title|content 切, 不含 `|` → 整段 = content (title 留空, 客户端兜底)
-  // 多行 content 用 [\s\S]*? 跨行, 别用 `s` flag (worker 端 esbuild target 默认 ok 但避免冗余)
-  {
-    re: /\[\[DIARY_START:\s*(.+?)\]\]\n?([\s\S]*?)\[\[DIARY_END\]\]/g,
-    toDirective: (m) => parseDiaryLong(m, "notion_write_diary")
-  },
-  {
-    re: /\[\[DIARY:\s*([\s\S]+?)\]\]/g,
-    toDirective: (m) => parseDiaryShort(m, "notion_write_diary")
-  },
-  // 飞书写日记 — 同形态, FS_ 前缀
-  {
-    re: /\[\[FS_DIARY_START:\s*(.+?)\]\]\n?([\s\S]*?)\[\[FS_DIARY_END\]\]/g,
-    toDirective: (m) => parseDiaryLong(m, "feishu_write_diary")
-  },
-  {
-    re: /\[\[FS_DIARY:\s*([\s\S]+?)\]\]/g,
-    toDirective: (m) => parseDiaryShort(m, "feishu_write_diary")
-  }
-];
-function parseDiaryLong(m, type) {
-  const header = m[1].trim();
-  const content = (m[2] || "").trim();
-  let title = "";
-  let mood = "";
-  if (header.includes("|")) {
-    const parts = header.split("|");
-    title = parts[0].trim();
-    mood = parts.slice(1).join("|").trim();
-  } else {
-    title = header;
-  }
-  return { type, title, content, mood: mood || void 0 };
-}
-function parseDiaryShort(m, type) {
-  const raw = m[1].trim();
-  let title = "";
-  let content = "";
-  if (raw.includes("|")) {
-    const parts = raw.split("|");
-    title = parts[0].trim();
-    content = parts.slice(1).join("|").trim();
-  } else {
-    content = raw;
-  }
-  return { type, title, content };
-}
-function classifyLLMOutput(text2) {
-  const social = extractFriendFeedReplyTags(text2);
-  const visits = extractFriendFeedReplyTags(social.text, "HOME_VISIT_REPLY");
-  text2 = visits.text;
-  const toolCalls = [];
-  for (const spec of DATA_TAGS) {
-    const matches = Array.from(text2.matchAll(spec.re));
-    for (const m of matches) {
-      const args = spec.toArgs(m);
-      if (!args) continue;
-      toolCalls.push({
-        id: `call_${spec.toolName}_${toolCalls.length}_${Date.now().toString(36)}`,
-        type: "function",
-        function: { name: spec.toolName, arguments: JSON.stringify(args) }
-      });
-    }
-  }
-  if (toolCalls.length > 0) {
-    let prefix = text2;
-    for (const spec of DATA_TAGS) prefix = prefix.replace(spec.re, "");
-    prefix = prefix.trim();
-    if (social.actions.length) prefix += "\n" + social.actions.map((action) => "[[FRIEND_FEED_REPLY:" + JSON.stringify(action) + "]]").join("\n");
-    if (visits.actions.length) prefix += "\n" + visits.actions.map((action) => "[[HOME_VISIT_REPLY:" + JSON.stringify(action) + "]]").join("\n");
-    const sanitizedPrefix = sanitizeForNotification(prefix);
-    return { kind: "tool-request", prefix, sanitizedPrefix, toolCalls };
-  }
-  const directives = social.actions.map((action) => ({ type: "friend_feed_reply", action }));
-  directives.push(...visits.actions.map((action) => ({ type: "home_visit_reply", action })));
-  const { text: textAfterTransfers, events: transferEvents } = extractTransferCommands(visits.text);
-  for (const ev of transferEvents) {
-    if (ev.kind === "send") {
-      const amount = parseTransferAmount(ev.amount);
-      if (amount !== null) directives.push({ type: "transfer", amount });
-    } else if (ev.kind === "accept") {
-      directives.push({ type: "transfer_accept" });
-    } else {
-      directives.push({ type: "transfer_return" });
-    }
-  }
-  const scheduleParsed = extractScheduleChangeDirectives(textAfterTransfers);
-  const textAfterSchedule = scheduleParsed.cleanedText;
-  for (const d of scheduleParsed.directives) {
-    directives.push({ type: "change_schedule", time: d.startTime, activity: d.activity });
-  }
-  for (const spec of SIDE_EFFECT_TAGS) {
-    const matches = Array.from(textAfterSchedule.matchAll(spec.re));
-    for (const m of matches) {
-      const d = spec.toDirective(m);
-      if (d) directives.push(d);
-    }
-  }
-  const dedupedDirectives = [];
-  const seenDirectives = /* @__PURE__ */ new Set();
-  for (const d of directives) {
-    const key = JSON.stringify(d);
-    if (seenDirectives.has(key)) {
-      console.warn("[classifier] \u540C\u4E00\u6761\u6D88\u606F\u91CC\u91CD\u590D\u7684\u526F\u4F5C\u7528, \u53EA\u4FDD\u7559\u7B2C\u4E00\u4E2A:", key);
-      continue;
-    }
-    seenDirectives.add(key);
-    dedupedDirectives.push(d);
-  }
-  let cleanedText = textAfterSchedule;
-  for (const spec of DATA_TAGS) cleanedText = cleanedText.replace(spec.re, "");
-  for (const spec of SIDE_EFFECT_TAGS) cleanedText = cleanedText.replace(spec.re, "");
-  cleanedText = cleanedText.trim();
-  const sanitizedBody = sanitizeForNotification(cleanedText);
-  return { kind: "finish", cleanedText, sanitizedBody, directives: dedupedDirectives };
-}
-
-// utils/vrWorld/sarEnvelopeCore.ts
-var planFromSARModuleSnapshot = (snapshot) => {
-  if (!snapshot || !snapshot.character && !snapshot.user) return null;
-  const character2 = snapshot.character;
-  const user = snapshot.user;
-  const hasActiveEffect = character2?.phase === "active" || user?.phase === "active";
-  const hasAfterglow = character2?.phase === "afterglow" || user?.phase === "afterglow";
-  return { character: character2, user, hasActiveEffect, hasAfterglow, requiresEnvelope: hasActiveEffect };
-};
-var isPlainSARChatActionOnlyChunk = (text2) => {
-  const clean = text2.trim();
-  if (!clean) return false;
-  return /^(?:(?:（[^（）]*）|\([^()]*\)|\*[^*\n]+\*)\s*)+[。！？!?…～~—-]*$/s.test(clean);
-};
-var isSARChatActionOnlyChunk = (text2) => {
-  const bilingualParts = text2.split(/%%BILINGUAL%%/i).map((part) => part.trim()).filter(Boolean);
-  return bilingualParts.length > 0 && bilingualParts.every(isPlainSARChatActionOnlyChunk);
-};
-var isSARChatHtmlPlaceholder = (text2) => /^\[HTML\s*卡片\]$/i.test(text2.trim());
-var consumeSARChatSurfaceChunk = (canonicalChunk, surfaceChunks, startIndex) => {
-  let index = Math.max(0, startIndex);
-  if (isSARChatHtmlPlaceholder(canonicalChunk)) {
-    if (surfaceChunks[index] && isSARChatHtmlPlaceholder(surfaceChunks[index])) index += 1;
-    return { nextIndex: index };
-  }
-  if (isSARChatActionOnlyChunk(canonicalChunk)) {
-    if (surfaceChunks[index] && isSARChatActionOnlyChunk(surfaceChunks[index])) index += 1;
-    return { nextIndex: index };
-  }
-  while (surfaceChunks[index] && (isSARChatActionOnlyChunk(surfaceChunks[index]) || isSARChatHtmlPlaceholder(surfaceChunks[index]))) index += 1;
-  const surface = surfaceChunks[index];
-  return { surface, nextIndex: surface === void 0 ? index : index + 1 };
-};
-var tag = (raw, name) => {
-  const match = raw.match(new RegExp(`<${name}>\\s*([\\s\\S]*?)\\s*</${name}>`, "i"));
-  const value = match?.[1]?.trim();
-  return value || void 0;
-};
-var parseSARModuleReply = (raw, plan) => {
-  if (!plan.requiresEnvelope) return { canonical: raw, enveloped: false };
-  const body = tag(raw, "SAR_MODULE_OUTPUT") || raw;
-  const canonical = tag(body, "CHAR_TRUE");
-  if (!canonical) return { canonical: raw.trim(), enveloped: false };
-  return {
-    canonical,
-    assistantSurface: plan.character?.phase === "active" ? tag(body, "CHAR_SURFACE") : void 0,
-    userSurface: plan.user?.phase === "active" ? tag(body, "USER_SURFACE") : void 0,
-    enveloped: true
-  };
-};
-var createSARModuleSurfaceMeta = (state, surface) => {
-  const clean = surface.trim();
-  if (!clean || state.phase !== "active") return void 0;
-  return {
-    version: 1,
-    runId: state.runId,
-    moduleId: state.moduleId,
-    moduleTitle: state.moduleTitle,
-    target: state.target,
-    phase: "active",
-    surface: clean,
-    canonicalField: "content",
-    surfaceField: "metadata.sarModuleSurface.surface"
-  };
-};
-
-// worker/amsg/src/sarEnvelope.ts
-var AMSG_SAR_META_KEY = "amsgSar";
-var amsgSarUserSurfaceKey = (clientTaskId) => `sar_user_surface:${clientTaskId}`;
-var amsgSarSnapshotKey = (clientTaskId) => `sar_snapshot:${clientTaskId}`;
-var amsgSarSurfaceKey = (clientTaskId, segmentIndex) => `sar_surface:${clientTaskId}:${segmentIndex}`;
-var SAR_SURFACE_BANNER_MAX = 100;
-var clipSarSurfaceBanner = (banner) => {
-  const chars = Array.from(banner);
-  return chars.length <= SAR_SURFACE_BANNER_MAX ? banner : `${chars.slice(0, SAR_SURFACE_BANNER_MAX - 1).join("")}\u2026`;
-};
-var isPlainObject2 = (value) => !!value && typeof value === "object" && !Array.isArray(value);
-var isSurfaceSource = (value) => isPlainObject2(value) && typeof value.phase === "string";
-var readSarSnapshot = (metadata) => {
-  const raw = metadata?.[AMSG_SAR_META_KEY];
-  if (!isPlainObject2(raw) || raw.v !== 1) return null;
-  if (raw.character !== void 0 && !isSurfaceSource(raw.character)) return null;
-  if (raw.user !== void 0 && !isSurfaceSource(raw.user)) return null;
-  return raw;
-};
-var stripSarSnapshot = (metadata) => {
-  const { [AMSG_SAR_META_KEY]: _snapshot, ...rest } = metadata ?? {};
-  return rest;
-};
-var SURFACE_BLOCK_RE = /<(CHAR_SURFACE|USER_SURFACE)>[\s\S]*?(?:<\/\1>|(?=<\/?(?:SAR_MODULE_OUTPUT|CHAR_TRUE|CHAR_SURFACE|USER_SURFACE)>)|$)/gi;
-var PLACEHOLDER = String.fromCharCode(5);
-var PLACEHOLDER_RE = new RegExp(`${PLACEHOLDER}(\\d+)${PLACEHOLDER}`, "g");
-var maskSarSurfaceBlocks = (text2) => {
-  const blocks = [];
-  const masked = text2.replace(SURFACE_BLOCK_RE, (block) => {
-    blocks.push(block);
-    return `${PLACEHOLDER}${blocks.length - 1}${PLACEHOLDER}`;
-  });
-  return {
-    masked,
-    restore: (value) => blocks.length === 0 ? value : value.replace(PLACEHOLDER_RE, (_m, n) => blocks[Number(n)] ?? "")
-  };
-};
-var ENVELOPE_TAG_RE = /<\/?(?:SAR_MODULE_OUTPUT|CHAR_TRUE|CHAR_SURFACE|USER_SURFACE)>/gi;
-var stripEnvelopeTags = (text2) => text2.replace(ENVELOPE_TAG_RE, "").trim();
-var closeOpenTag = (text2, name, stoppers) => {
-  const open = new RegExp(`<${name}>`, "i").exec(text2);
-  if (!open || new RegExp(`</${name}>`, "i").test(text2)) return text2;
-  const after = open.index + open[0].length;
-  const stop = new RegExp(stoppers.join("|"), "i").exec(text2.slice(after));
-  const at = stop ? after + stop.index : text2.length;
-  return `${text2.slice(0, at)}</${name}>${text2.slice(at)}`;
-};
-var repairEnvelope = (text2) => {
-  let repaired = closeOpenTag(text2, "CHAR_TRUE", ["<CHAR_SURFACE>", "<USER_SURFACE>", "</SAR_MODULE_OUTPUT>"]);
-  repaired = closeOpenTag(repaired, "CHAR_SURFACE", ["<USER_SURFACE>", "<CHAR_TRUE>", "</SAR_MODULE_OUTPUT>"]);
-  repaired = closeOpenTag(repaired, "USER_SURFACE", ["<CHAR_SURFACE>", "<CHAR_TRUE>", "</SAR_MODULE_OUTPUT>"]);
-  return repaired;
-};
-var parseSarEnvelopeRounds = (rounds, plan) => {
-  const texts = rounds.filter((round) => round.trim().length > 0);
-  if (!plan.requiresEnvelope) return { canonical: texts.join("\n"), enveloped: false, pieces: [] };
-  const pieces = [];
-  let enveloped = false;
-  let userSurface;
-  for (const text2 of texts) {
-    const parsed = parseSARModuleReply(repairEnvelope(text2), plan);
-    if (parsed.enveloped) {
-      enveloped = true;
-      if (parsed.userSurface) userSurface = parsed.userSurface;
-    }
-    const canonical = stripEnvelopeTags(parsed.canonical);
-    if (!canonical) continue;
-    const surface = parsed.enveloped && parsed.assistantSurface ? stripEnvelopeTags(parsed.assistantSurface) : "";
-    pieces.push({ canonical, ...surface ? { surface } : {} });
-  }
-  return {
-    canonical: pieces.map((p) => p.canonical).join("\n"),
-    enveloped,
-    pieces,
-    ...userSurface ? { userSurface } : {}
-  };
-};
-var isEmojiSegment = (seg) => /^\[\[SEND_EMOJI[:：]/i.test(seg.raw.trim());
-var isHtmlSegment = (seg) => /^\[html\][\s\S]*\[\/html\]$/i.test(seg.raw.trim());
-var TRANSLATION_BLOCK_RE = /<翻译>\s*<原文>([\s\S]*?)<\/原文>\s*<译文>([\s\S]*?)<\/译文>\s*<\/翻译>/;
-var alignKey = (seg) => {
-  const translation = seg.raw.match(TRANSLATION_BLOCK_RE);
-  if (translation) {
-    const original = translation[1].trim();
-    const translated = translation[2].trim();
-    return original && translated ? `${original}
-%%BILINGUAL%%
-${translated}` : original || translated;
-  }
-  return seg.sanitized;
-};
-var segmentSurface = (surfaceText) => {
-  const prepared = surfaceText.replace(/\[html\][\s\S]*?\[\/html\]/gi, "\n").replace(/\[\[[\s\S]*?\]\]/g, "");
-  return sanitizeIntoSegments(prepared).filter((seg) => !isEmojiSegment(seg) && !isHtmlSegment(seg));
-};
-var alignSarSurfaceSegments = (canonicalSegments, surfaceText) => {
-  const surfaceSegs = segmentSurface(surfaceText);
-  const surfaceKeys = surfaceSegs.map(alignKey);
-  let index = 0;
-  return canonicalSegments.map((seg) => {
-    if (isEmojiSegment(seg) || isHtmlSegment(seg)) return void 0;
-    const consumed = consumeSARChatSurfaceChunk(alignKey(seg), surfaceKeys, index);
-    index = consumed.nextIndex;
-    if (consumed.surface === void 0) return void 0;
-    const matched = surfaceSegs[consumed.nextIndex - 1];
-    return matched ? { surface: matched.raw, banner: matched.sanitized } : void 0;
-  });
-};
-var segmentCanonical = (text2) => {
-  const scan = classifyLLMOutput(text2);
-  return sanitizeIntoSegments(scan.kind === "finish" ? scan.cleanedText : scan.prefix);
-};
-var buildSarSurfaceSlots = (parse, segments) => {
-  const none = segments.map(() => void 0);
-  if (!parse.pieces.some((p) => p.surface)) return none;
-  if (parse.pieces.length === 1) return alignSarSurfaceSegments(segments, parse.pieces[0].surface ?? "");
-  const counts = parse.pieces.map((p) => segmentCanonical(p.canonical).length);
-  if (counts.reduce((a, b) => a + b, 0) !== segments.length) {
-    return alignSarSurfaceSegments(
-      segments,
-      parse.pieces.map((p) => p.surface).filter((s) => !!s).join("\n")
-    );
-  }
-  const slots = [];
-  let offset = 0;
-  parse.pieces.forEach((piece, i) => {
-    const slice = segments.slice(offset, offset + counts[i]);
-    offset += counts[i];
-    slots.push(...piece.surface ? alignSarSurfaceSegments(slice, piece.surface) : slice.map(() => void 0));
-  });
-  return slots;
-};
-
-// worker/amsg/src/agentic.ts
-var createFireSessionState = () => ({
-  narrations: [],
-  toolCalls: [],
-  duplicateToolCalls: 0,
-  mcpCallSeq: 0,
-  xhsShareNotes: null,
-  finalReasoning: null
-});
-var MAX_DUPLICATE_TOOL_CALLS = 2;
-var DEFAULT_TOOL_ITERATIONS = 5;
-var MCP_MAX_TOOL_ITERATIONS = 12;
-var resolveToolIterationBudget = (hasMcp) => hasMcp ? MCP_MAX_TOOL_ITERATIONS : DEFAULT_TOOL_ITERATIONS;
-var XHS_SHARE_TAG_RE = /\[\[XHS_SHARE:\s*\d+\]\]/;
-var XHS_DESC_MAX = 120;
-function buildXhsSessionPayload(directives, notes, xsecTokens) {
-  if (directives.length === 0) return null;
-  const sharedIdx = /* @__PURE__ */ new Set();
-  const refNoteIds = /* @__PURE__ */ new Set();
-  for (const d of directives) {
-    if (d.type === "xhs_share") sharedIdx.add(d.idx);
-    else if (d.type === "xhs_like" || d.type === "xhs_fav") refNoteIds.add(d.noteId);
-    else if (d.type === "xhs_comment" || d.type === "xhs_reply") refNoteIds.add(d.noteId);
-  }
-  if (sharedIdx.size === 0 && refNoteIds.size === 0) return null;
-  const pickedNotes = [];
-  for (const idx of [...sharedIdx].sort((a, b) => a - b)) {
-    const note = idx >= 1 ? notes?.[idx - 1] : void 0;
-    if (!note) continue;
-    pickedNotes.push({ idx, note: { ...note, desc: (note.desc || "").slice(0, XHS_DESC_MAX) } });
-  }
-  const pickedTokens = (xsecTokens ?? []).filter(([noteId]) => refNoteIds.has(noteId));
-  if (pickedNotes.length === 0 && pickedTokens.length === 0) return null;
-  return { notes: pickedNotes, xsecTokens: pickedTokens };
-}
-function attachSceneSong(directives, sceneSong) {
-  if (!sceneSong) return directives;
-  return directives.map((d) => d.type === "music_action" ? { ...d, song: sceneSong } : d);
-}
-var resolveNativeFireToolName = (raw, manageToolNames, mcpResolve) => {
-  const candidates = [raw];
-  const lastSegment = raw.split(/[:./]/).pop();
-  if (lastSegment && lastSegment !== raw) candidates.push(lastSegment);
-  for (const c of candidates) {
-    if (!c) continue;
-    if (c.startsWith(MCP_FIRE_NAME_PREFIX) && mcpResolve?.has(c.slice(MCP_FIRE_NAME_PREFIX.length))) {
-      return { kind: "mcp", name: c };
-    }
-    if (manageToolNames.has(c)) return { kind: "manage", name: c };
-    if (mcpResolve?.has(c)) return { kind: "mcp", name: `${MCP_FIRE_NAME_PREFIX}${c}` };
-  }
-  return null;
-};
-var classifyNativeToolCalls = (rawToolCalls, manageToolNames, mcpResolve) => {
-  const out = { manage: [], mcp: [], dropped: [] };
-  const calls = Array.isArray(rawToolCalls) ? rawToolCalls : [];
-  for (const tc of calls) {
-    const raw = tc?.function?.name;
-    const resolved = typeof raw === "string" && raw ? resolveNativeFireToolName(raw, manageToolNames, mcpResolve) : null;
-    if (!resolved) {
-      out.dropped.push(typeof raw === "string" && raw ? raw : null);
-      continue;
-    }
-    const call = resolved.name === raw ? tc : { ...tc, function: { ...tc.function, name: resolved.name } };
-    (resolved.kind === "mcp" ? out.mcp : out.manage).push(call);
-  }
-  return out;
-};
-function processLLMRound(state, llmOutputText, build, mcp, schedule, iteration, maxToolIterations = DEFAULT_TOOL_ITERATIONS) {
-  const isFinalRound = typeof iteration === "number" && iteration >= maxToolIterations - 1;
-  const sarPlan = planFromSARModuleSnapshot(build.sar ?? null);
-  const sarMask = sarPlan?.requiresEnvelope ? maskSarSurfaceBlocks(llmOutputText) : null;
-  const roundText = sarMask ? sarMask.masked : llmOutputText;
-  const restoreSurfaces = (text2) => sarMask ? sarMask.restore(text2) : text2;
-  const nativeToolCalls = mcp?.nativeToolCalls ?? [];
-  const textCalls = mcp?.resolve.size ? extractTextFakedMcpCalls(roundText, mcp.resolve, { alsoMatchPrefix: MCP_FIRE_NAME_PREFIX }) : [];
-  const nativeScheduleCalls = schedule?.nativeToolCalls ?? [];
-  const hasNativeSchedule = nativeScheduleCalls.some(
-    (tc) => tc?.function?.name === AMSG_FIRE_SCHEDULE_TOOL
-  );
-  const scheduleTextCalls = schedule ? extractFireScheduleTextCalls(roundText) : [];
-  const scheduleCalls = [
-    ...nativeScheduleCalls,
-    ...(hasNativeSchedule ? [] : scheduleTextCalls).map((c) => ({
-      id: `sched_${state.mcpCallSeq++}`,
-      type: "function",
-      function: { name: AMSG_FIRE_SCHEDULE_TOOL, arguments: JSON.stringify(c.args) }
-    }))
-  ];
-  const strippedText = scheduleTextCalls.length ? stripTextFakedMcpCalls(roundText, scheduleTextCalls) : roundText;
-  const scanText = textCalls.length ? stripTextFakedMcpCalls(strippedText, textCalls) : strippedText;
-  const mcpToolCalls = nativeToolCalls.length > 0 ? nativeToolCalls : textCalls.map((c) => ({
-    // id 只需在一轮的 assistant/tool 消息配对里唯一；本次 fire 内自增，绝不重号。
-    id: `mcp_${state.mcpCallSeq++}`,
-    type: "function",
-    // exposedName 恒为裸名（alsoMatchPrefix 的命中也回裸名），统一补前缀即可。
-    function: { name: `${MCP_FIRE_NAME_PREFIX}${c.exposedName}`, arguments: JSON.stringify(c.args) }
-  }));
-  const extraToolCalls = [...mcpToolCalls, ...scheduleCalls];
-  const result = classifyLLMOutput(scanText);
-  const isToolRound = result.kind === "tool-request" || extraToolCalls.length > 0;
-  if (isToolRound) {
-    const narration = result.kind === "tool-request" ? result.prefix : scanText;
-    if (state.duplicateToolCalls < MAX_DUPLICATE_TOOL_CALLS && !isFinalRound) {
-      if (narration.trim()) state.narrations.push(restoreSurfaces(narration));
-      if (state.xhsShareNotes === null && XHS_SHARE_TAG_RE.test(narration)) {
-        state.xhsShareNotes = [...build.xhsNotes ?? []];
-      }
-      return {
-        decision: "tool-request",
-        toolCalls: result.kind === "tool-request" ? [...result.toolCalls, ...extraToolCalls] : extraToolCalls
-      };
-    }
-  }
-  const thisRound = isToolRound ? "" : restoreSurfaces(scanText);
-  const rounds = [...state.narrations, thisRound].filter((part) => part.trim().length > 0);
-  const fullText = rounds.join("\n");
-  const sarParse = sarPlan?.requiresEnvelope ? parseSarEnvelopeRounds(rounds, sarPlan) : null;
-  const finalScan = sarParse ? classifyLLMOutput(sarParse.canonical) : fullText === scanText ? result : classifyLLMOutput(fullText);
-  const cleanedText = finalScan.kind === "finish" ? finalScan.cleanedText : finalScan.prefix;
-  const directives = attachSceneSong(
-    finalScan.kind === "finish" ? finalScan.directives : [],
-    build.sceneSong
-  );
-  const xhsSession = buildXhsSessionPayload(
-    directives,
-    state.xhsShareNotes ?? build.xhsNotes,
-    build.xhsXsecTokens
-  );
-  const finishMeta = directives.length > 0 ? { directives, ...xhsSession ? { xhsSession } : {} } : void 0;
-  const declined = fullText.includes(AMSG_SILENT_MARK);
-  const segments = declined ? [] : sanitizeIntoSegments(cleanedText);
-  if (segments.length === 0) {
-    const scheduleChanges = directives.filter((d) => d.type === "change_schedule").map((d) => ({ startTime: d.time, activity: d.activity }));
-    return {
-      decision: "skip-push",
-      reason: declined ? "declined" : finishMeta ? "side-effects-only" : "empty-generation",
-      ...!declined && directives.some((d) => d.type !== "change_schedule") && finishMeta ? { sideEffects: finishMeta } : {},
-      ...scheduleChanges.length > 0 ? { scheduleChanges } : {}
-    };
-  }
-  const sarCharacter = build.sar?.character;
-  const surfaceSlots = sarParse && sarCharacter?.phase === "active" ? buildSarSurfaceSlots(sarParse, segments) : [];
-  const sarLastMeta = {
-    ...build.sar ? { [AMSG_SAR_META_KEY]: build.sar } : {},
-    ...sarParse?.userSurface ? { amsgSarUserSurface: sarParse.userSurface } : {}
-  };
-  const lastMeta = finishMeta || Object.keys(sarLastMeta).length > 0 ? { ...finishMeta ?? {}, ...sarLastMeta } : void 0;
-  const lastIdx = segments.length - 1;
-  return {
-    decision: "finish",
-    pushPayloads: segments.map((seg, i) => {
-      const slot = surfaceSlots[i];
-      const surfaceMeta = slot && sarCharacter ? createSARModuleSurfaceMeta(sarCharacter, slot.surface) : void 0;
-      const extra = {
-        ...surfaceMeta ? { amsgSarSurface: surfaceMeta } : {},
-        ...i === lastIdx ? lastMeta ?? {} : {}
-      };
-      return buildScheduledPush(
-        seg.raw,
-        build,
-        Object.keys(extra).length > 0 ? extra : void 0,
-        // 外显横幅截短：这条 push 还要装外显 meta，别把单段正文的字节预算吃掉一半。
-        surfaceMeta && slot ? clipSarSurfaceBanner(slot.banner) : seg.sanitized
-      );
-    })
-  };
-}
-function buildScheduledPush(message, build, extraMeta, bannerBody) {
-  const title = `\u6765\u81EA ${build.contactName}`;
-  return {
-    messageKind: "content",
-    messageType: build.messageType,
-    source: "scheduled",
-    message,
-    title,
-    contactName: build.contactName,
-    avatarUrl: build.avatarUrl,
-    messageSubtype: "chat",
-    taskId: build.taskId,
-    metadata: {
-      // SAR 快照不许摊进每一条（它只随最后一条经 extraMeta 回去）；调用方已摘过，这里兜一道。
-      ...stripSarSnapshot(build.metadata),
-      amsgOccurrenceMs: build.occurrenceMs,
-      ...extraMeta ?? {}
-    },
-    ...bannerBody !== void 0 ? { notification: { title, body: bannerBody } } : {}
-  };
-}
-
 // utils/emotionEvalCore.ts
 var EMOTION_EVAL_SYSTEM_SLOT = "__EMOTION_EVAL_SYSTEM_PROMPT__";
 var EMOTION_EVAL_HISTORY_SLOT = "__EMOTION_EVAL_HISTORY__";
@@ -18574,6 +18694,7 @@ var sendInstantErrorPush = async (args) => {
   }
 };
 var amsgFireSettled = async (info) => {
+  if (await settleReproduction(info)) return;
   const stash = getFireStash(info.scratch);
   if (!stash) return;
   const cancelled = info.status === "cancelled";
@@ -18692,6 +18813,10 @@ var amsgStaleSkip = async (task, info) => {
       kind: taskKind,
       action: info.action
     });
+    const diagnosticRun = diagnosticRunId(meta);
+    if (diagnosticRun) {
+      await writeDiagnosticStage(info.writeState, diagnosticRun, "fire-settled", { status: "skipped", reason: info.reason, staleAction: info.action });
+    }
     return;
   }
   const charId = typeof meta.charId === "string" && meta.charId ? meta.charId : null;
@@ -19860,7 +19985,7 @@ var buildWorkerConfig = (env) => {
     publicKey: nativeFcmReady ? "native-fcm" : "third-party-push",
     privateKey: nativeFcmReady ? "native-fcm" : "third-party-push"
   };
-  const webpush = createHybridPushTransport(env, createWebCryptoWebPush(vapid));
+  const webpush = traceDiagnosticTransport(createHybridPushTransport(env, createWebCryptoWebPush(vapid)), env);
   configureInstantErrorPush(env.DB && env.AMSG_MASTER_KEY ? { webpush, db: env.DB, masterKey: env.AMSG_MASTER_KEY } : null);
   configureSkipDiagnostics({ rawExcerpt: isDebugFlagOn(env.AMSG_DEBUG_LLM_RAW) });
   return {
@@ -19878,7 +20003,7 @@ var buildWorkerConfig = (env) => {
     // 命名空间下超过天数没更新的条目清掉。角色状态那个命名空间（amsg:char:<id>，
     // 装 fire_pack / tool_pack）不配 TTL——那些是要长期留着的，配了就等于定时把
     // 角色的云端状态抹掉。判据是行本来就有的 updated_at 列，不加列、不动表结构。
-    clientStateTtl: { [INSTANT_INPUT_NAMESPACE]: INSTANT_INPUT_TTL_DAYS, [AMSG_JOB_NAMESPACE]: AMSG_JOB_TTL_DAYS },
+    clientStateTtl: { [INSTANT_INPUT_NAMESPACE]: INSTANT_INPUT_TTL_DAYS, [AMSG_JOB_NAMESPACE]: AMSG_JOB_TTL_DAYS, [DIAGNOSTIC_NAMESPACE]: DIAGNOSTIC_RETENTION_DAYS },
     cloudData: { resolveOwner: resolveSullyCloudOwnership },
     // 满血 fire-time hooks（onBeforeFire 现场填槽 + onLLMOutput 分类 +
     // executeToolCalls 服务端工具循环）；总超时用库默认 240s，轮数由 onBeforeFire 按
@@ -19887,7 +20012,7 @@ var buildWorkerConfig = (env) => {
     leaseHeartbeatMs: 1e3,
     // 用户主动触发的即时对话：生成失败本轮就结束，由用户决定是否重发。
     // 策略由上游在 onBeforeFire 前解析，读取上下文失败也覆盖；整批入箱后仍可补推原文。
-    maxGenerationRetries: (task) => isInstantChatTask(task.metadata) ? 0 : void 0,
+    maxGenerationRetries: (task) => isInstantChatTask(task.metadata) || readTaskKind(task.metadata) === "diagnostic" ? 0 : void 0,
     // 取消通过租约心跳通知执行中的 Worker；1 秒检测一次，TTL 仍由上游管理。
     // 收尾回执 + 过期跳过回执（config 级 hook）。
     // onFireSettled: 无论这次 fire 是发出去了、跳过了还是抛错了都会调一次，self_log
@@ -20164,6 +20289,7 @@ var src_default = {
           // 旧代码执行，版本号对上了不代表新逻辑真的在跑。
           backgroundJobs: true,
           thirdPartyPush: true,
+          diagnosticReproduction: 1,
           workerVersion: AMSG_BUNDLE_VERSION,
           // 自动更新：有没有这个能力（配没配 CF_API_TOKEN，不回值）+ 最近一次检查的结果。
           // 读的是诊断表，D1 没绑上时读不到就是 null，不影响上面那些照常回答。

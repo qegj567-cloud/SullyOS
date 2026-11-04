@@ -120,14 +120,16 @@ describe('currentOccurrenceMs', () => {
 });
 
 describe('formatCountdown', () => {
-  it('未到点显示 T-，已过点显示 T+', () => {
-    expect(formatCountdown(4 * MIN + 12_000)).toBe('T-4m12s');
-    expect(formatCountdown(-30_000)).toBe('T+30s');
+  it('未到点直接报剩余时间，已过点前面加「已过」', () => {
+    expect(formatCountdown(4 * MIN + 12_000)).toBe('4 分 12 秒');
+    expect(formatCountdown(-30_000)).toBe('已过 30 秒');
   });
 
-  it('不足一分钟不带 m，超过一小时带 h', () => {
-    expect(formatCountdown(12_000)).toBe('T-12s');
-    expect(formatCountdown(2 * H + 3 * MIN + 4_000)).toBe('T-2h3m4s');
+  it('只留最大的两级单位，第二级是 0 就省掉', () => {
+    expect(formatCountdown(12_000)).toBe('12 秒');
+    expect(formatCountdown(2 * H + 3 * MIN + 4_000)).toBe('2 小时 3 分');
+    expect(formatCountdown(5 * MIN)).toBe('5 分');
+    expect(formatCountdown(DAY + 2 * H + 59 * MIN)).toBe('1 天 2 小时');
   });
 });
 

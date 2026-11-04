@@ -1,4 +1,5 @@
 import { buildChatOutputStylePrompt, readChatTranslationConfig } from './chatOutputStylePrompt';
+import { buildReproductionTask, DIAGNOSTIC_NAMESPACE, diagnosticRunId, type DiagnosticEvent } from './amsgReproduction';
 import { resolveDialogueApi } from './characterApi';
 import { isAnthropicEndpoint } from './llmEndpoint';
 import { ackStoppedReplyReceipts, stoppedReplyStateEntries } from './amsgStoppedReplyClient';
@@ -1937,6 +1938,45 @@ const OUTBOX_MAX_PAGES = 20;
 const OUTBOX_ACK_BATCH_SIZE = 200;
 
 export const ActiveMsgClient = {
+  /** 独立测试配置只存在加密任务里；不重建订阅、不覆盖任何角色凭据。 */
+  async scheduleReproduction(runId: string, api: { baseUrl: string; apiKey: string; model: string; temperature?: number }, delaySeconds: number): Promise<{ uuid: string; dueAt: number }> {
+    const config = await ensureWorkerReady();
+    const probe = await fetchWithAuth('config-check', config, { method: 'GET', signal: AbortSignal.timeout(8000) }, '复现能力检查');
+    if (probe?.data?.diagnosticReproduction !== 1) throw new Error('请先在设置中更新主动消息 Worker，再开始复现。');
+    const client = await initializeClient(config);
+    const dueAt = Date.now() + Math.max(60, Math.min(300, delaySeconds)) * 1000;
+    const payload = buildReproductionTask(runId, { ...api, baseUrl: normalizeChatApiUrl(api.baseUrl.trim()) }, dueAt);
+    const encrypted = await encryptPayload(client, payload);
+    let response;
+    try {
+      response = await fetchWithAuth('schedule-message', config, {
+        method: 'POST', signal: AbortSignal.timeout(15000),
+        headers: { 'Content-Type': 'application/json', 'X-Payload-Encrypted': 'true', 'X-Encryption-Version': '1' },
+        body: JSON.stringify(encrypted),
+      }, '创建复现任务');
+    } catch (error) {
+      // 保留同一 UUID 供用户查询／取消，绝不自动另建一次付费调用。
+      if (error && typeof error === 'object') Object.assign(error, { diagnosticMayBeCreated: true, dueAt });
+      throw error;
+    }
+    if (!response?.success) throw new Error(formatAmsgServerError(response, '复现任务创建失败'));
+    return { uuid: response.data?.uuid || runId, dueAt };
+  },
+
+  async readReproductionEvents(runId: string): Promise<DiagnosticEvent[]> {
+    const client = await initializeClient(await ensureWorkerReady());
+    const response = await client.getClientState(DIAGNOSTIC_NAMESPACE);
+    if (!response?.success) throw new Error(formatAmsgServerError(response, '云端诊断记录未取得'));
+    const events: DiagnosticEvent[] = [];
+    for (const row of response.data?.entries ?? []) {
+      if (!row.key?.startsWith(`${runId}:`)) continue;
+      try {
+        const event = JSON.parse(row.value);
+        if (diagnosticRunId({ amsgDiagnosticRunId: event.runId }) === runId) events.push(event);
+      } catch { /* 单条损坏不丢整份报告 */ }
+    }
+    return events;
+  },
   async registerNativePushToken(token: string): Promise<void> {
     if (!nativePushBuildEnabled()) throw new Error('当前构建未开启 Capacitor 原生推送');
     const value = token.trim();
