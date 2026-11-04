@@ -80,8 +80,9 @@ it.each([{count:2,kind:'self'}, {count:5,kind:'self'}, {count:5,kind:'stranger'}
         expect(prompt).toContain(`本轮目标生成 ${count}`);
         // The larger homepage batch must not increase the ambient browsing quota.
         const ambient=(await prepareFriendFeedEmotionTask(a.id,()=>0))!;
-        expect(await landFriendFeedEmotionAction(a.id,{requestId:ambient.id,kind:'none',npcActions:
-            Array.from({length:4},(_,i)=>({kind:'post',name:`另路人${i}`,text:'不应出现'}))},'emotion')).toBe(false);
+        await landFriendFeedEmotionAction(a.id,{requestId:ambient.id,kind:'none',npcActions:
+            Array.from({length:4},(_,i)=>({kind:'post',name:`另路人${i}`,text:'环境浏览'}))},'emotion');
+        expect((await readFriendFeed()).posts.filter(p=>p.text==='环境浏览').length).toBeLessThanOrEqual(3);
     });
 it('keeps a homepage refresh to the author when fictional contacts are disabled',async()=>{
     await publicSettings({contentWeights:defaultFriendFeedSettings().contentWeights});
@@ -220,6 +221,27 @@ it('refreshes one post with one related character context, writes its comment ca
     expect((await DB.getMessagesByCharId(b.id,true)).at(-1)?.content).toContain('下次试试');
 });
 
+it('keeps NPC comments and skips the host comment when an NPC-only round gets both',async()=>{
+    await publicSettings({contentWeights:{self:0,related:100,stranger:0}});
+    const id=await publishFriendPost('public',user.name,'晒一下晚饭');
+    response({kind:'comment',accountId:'main',postId:id,comment:'我也想吃',npcActions:[{kind:'comment',name:'路过网友',postId:id,text:'看起来好香'}]});
+    const result=await refreshFriendFeed(user,api,undefined,undefined,()=>0,id);
+    expect(result.message).toBe('新评论已送达（1 条不符合本轮要求，已略过）');
+    expect((await readFriendFeed()).posts[0].comments).toMatchObject([{authorKind:'npc',authorName:'路过网友',text:'看起来好香'}]);
+    expect(await DB.getMessagesByCharId(a.id,true)).toHaveLength(0);
+});
+it.each(['related','stranger'] as const)('sends no private chat or memories in a %s NPC-only comment round',async kind=>{
+    await DB.saveCharacter({...a,memories:[{id:'m1',date:'2026-11-01',summary:'只在记忆里的私事',mood:'calm'}]} as CharacterProfile);
+    await publicSettings({contentWeights:{self:0,related:kind==='related'?100:0,stranger:kind==='stranger'?100:0}});
+    const id=await publishFriendPost('public',user.name,'今天下雨');
+    await DB.saveMessage({charId:a.id,role:'user',type:'text',content:'只在私聊说过的话',timestamp:Date.now()});
+    response({kind:'none',npcActions:[]});
+    await refreshFriendFeed(user,api,undefined,undefined,()=>0,id);
+    const sent=JSON.stringify(vi.mocked(safeFetchJson).mock.calls[0]);
+    expect(sent).toContain('今天下雨');
+    expect(sent).not.toContain('只在私聊说过的话');expect(sent).not.toContain('只在记忆里的私事');
+    expect(sent.includes('只有阿白的设定')).toBe(kind==='related');
+});
 it('refreshes related NPC comments with the host contacts, without autobiographical cards or new posts',async()=>{
     await DB.saveCharacter({...a,phoneState:{contacts:[{id:'npc-one',name:'小巷咖啡店员',kind:'npc',status:'friend',note:'不可公开的私事'}]}} as CharacterProfile);
     await publicSettings({contentWeights:{self:0,related:100,stranger:0}});
@@ -236,7 +258,7 @@ it('rejects off-target comments and new posts, and does not read real posts with
     response({kind:'comment',postId:other,comment:'不该串到这里'});
     await expect(refreshFriendFeed(user,api,undefined,undefined,()=>0,id)).rejects.toThrow('未发布');
     response({kind:'post',text:'不该新发动态'});
-    await expect(refreshFriendFeed(user,api,undefined,undefined,()=>0,id)).rejects.toThrow('未发布');
+    expect((await refreshFriendFeed(user,api,undefined,undefined,()=>0,id)).message).toBe('刷新完成，这次朋友们没有新回应（1 条不符合本轮要求，已略过）');
     expect((await readFriendFeed()).posts).toHaveLength(2);
     await mutateFriendFeed(f=>{f.posts[0].authorKind='external';f.posts[0].source={platform:'weibo',accountId:'123456',externalId:'111111',url:'https://weibo.com/123456/111111',author:'外部',text:'真实材料',fetchedAt:Date.now(),publishedAt:Date.now(),truncated:false};});
     vi.mocked(safeFetchJson).mockClear();await refreshFriendFeed(user,api,undefined,undefined,()=>0,id);expect(safeFetchJson).not.toHaveBeenCalled();

@@ -61,13 +61,25 @@ it('accepts emojis, long expert comments and same-batch NPC replies as one neste
     expect(threads[0].replies[1].localReply?.id).toBe(threads[0].replies[0].id);
     expect(await DB.getMessagesByCharId(a.id,true)).toHaveLength(0);
 });
-it.each([-1,1,2,.5,'0'])('rejects invalid same-batch reference %s without partial publication',async index=>{
+it.each([-1,1,2,.5,'0'])('skips only the reply with invalid same-batch reference %s',async index=>{
     const task=(await prepareFriendFeedEmotionTask(a.id,()=>0))!;
     expect(await landFriendFeedEmotionAction(a.id,{requestId:task.id,kind:'none',npcActions:[
         {kind:'comment',name:'一号',postId,text:'啊'},
         {kind:'comment',name:'二号',postId,text:'嗯',replyToNpcIndex:index},
-    ]})).toBe(false);
-    expect((await readFriendFeed()).posts[0].comments).toHaveLength(0);
+    ]})).toBe(true);
+    expect((await readFriendFeed()).posts[0].comments.map(c=>c.authorName)).toEqual(['一号']);
+});
+it('remaps same-batch replies after an earlier NPC is skipped, and skips replies to a skipped NPC',async()=>{
+    const task=(await prepareFriendFeedEmotionTask(a.id,()=>0))!;
+    expect(await landFriendFeedEmotionAction(a.id,{requestId:task.id,kind:'none',npcActions:[
+        {kind:'comment',name:'坏格式',postId},
+        {kind:'comment',name:'一号',postId,text:'啊'},
+        {kind:'comment',name:'接坏格式',postId,text:'？',replyToNpcIndex:0},
+        {kind:'comment',name:'接一号',postId,text:'嗯',replyToNpcIndex:1},
+    ]})).toBe(true);
+    const comments=(await readFriendFeed()).posts[0].comments;
+    expect(comments.map(c=>c.authorName)).toEqual(['一号','接一号']);
+    expect(comments[1].localReply?.id).toBe(comments[0].id);
 });
 it('delivers a reply receipt to the actual character commenter on someone else’s post',async()=>{
     await mutateFriendFeed(f=>{f.posts[0].comments.push({...comment('root'),authorId:b.id,authorName:b.name});});

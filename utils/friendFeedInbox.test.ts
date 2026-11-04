@@ -27,11 +27,15 @@ it('lands six NPC comments with six durable notices, no host action card and no 
     expect(claims.map(c=>c.length).sort()).toEqual([0,6]);
     expect(friendUserInbox(await readFriendFeed()).every(r=>!r.notice.read&&r.notice.announced)).toBe(true);
 });
-it('does not accept seven NPCs or turn the larger comment allowance into extra posts',async()=>{
+it('keeps only six NPCs and never turns the larger comment allowance into extra posts',async()=>{
     const task=(await prepareFriendFeedEmotionTask(char.id,()=>0))!;
-    expect(await landFriendFeedEmotionAction(char.id,{requestId:task.id,kind:'none',npcActions:npcs(7)})).toBe(false);
-    expect(await landFriendFeedEmotionAction(char.id,{requestId:task.id,kind:'none',npcActions:npcs(4).map(n=>({...n,kind:'post'}))})).toBe(false);
-    expect(friendUserInbox(await readFriendFeed())).toHaveLength(0);
+    let skipped=-1;
+    expect(await landFriendFeedEmotionAction(char.id,{requestId:task.id,kind:'none',npcActions:npcs(7)},undefined,undefined,r=>{skipped=r.skipped;})).toBe(true);
+    expect(skipped).toBe(1);
+    expect((await readFriendFeed()).posts[0].comments).toHaveLength(6);
+    const next=(await prepareFriendFeedEmotionTask(char.id,()=>0))!;
+    await landFriendFeedEmotionAction(char.id,{requestId:next.id,kind:'none',npcActions:npcs(4).map((n,i)=>({...n,name:`发帖网友${i}`,kind:'post'}))});
+    expect((await readFriendFeed()).posts.filter(p=>p.authorKind==='npc').length).toBeLessThanOrEqual(3);
 });
 it('rolls back the user notice with its comment when writing the character memory card fails',async()=>{
     const task=(await prepareFriendFeedEmotionTask(char.id,()=>0))!;

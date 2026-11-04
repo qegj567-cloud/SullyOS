@@ -89,7 +89,7 @@ it('rejects NPC impersonation, disabling NPCs while in flight, and publication a
     }
     const task = (await prepareFriendFeedEmotionTask(a.id, () => 0))!;
     await saveFriendFeedSettings({...defaultFriendFeedSettings(), npcEnabled: false});
-    expect(await landFriendFeedEmotionAction(a.id, {requestId: task.id, kind: 'none', npcActions: [{kind: 'post', name: '路人', text: '不应发出'}]})).toBe(false);
+    expect(await landFriendFeedEmotionAction(a.id, {requestId: task.id, kind: 'none', npcActions: [{kind: 'post', name: '路人', text: '不应发出'}]})).toBe(true);
     const next = (await prepareFriendFeedEmotionTask(a.id, () => 0))!;
     await saveFriendCircle({id: circleId, name: '客厅', description: '', memberIds: [b.id]});
     expect(await landFriendFeedEmotionAction(a.id, {requestId: next.id, kind: 'post', text: '迟到'})).toBe(false);
