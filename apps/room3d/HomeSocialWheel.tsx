@@ -6,8 +6,9 @@ import {HandWaving,ChatCircle,Heart,Flower,Smiley,Sparkle,CloudLightning,ArrowLe
 import type {HomeEditor} from './editor.js';
 import {selectedMotions} from './chibi/selectedMotions';
 import {socialWheelLayout} from './socialWheelLayout';
+import {isRomanticMotion} from './homeRomance';
 import './socialWheel.css';
-const categories=[['greet','招呼',HandWaving],['talk','聊天',ChatCircle],['care','关心',Flower],['close','亲密',Heart],['play','玩闹',Smiley],['self','小动作',Sparkle],['conflict','闹别扭',CloudLightning]] as const;
+const categories=[['greet','招呼',HandWaving],['talk','聊天',ChatCircle],['care','关心',Flower],['close','亲密',Heart],['play','玩闹',Smiley],['mischief','恶作剧',SmileyNervous],['self','小动作',Sparkle],['conflict','闹别扭',CloudLightning]] as const;
 function motionIcon(label:string,fallback:typeof Sparkle){
  if(/鼓掌|击掌/.test(label))return HandsClapping;
  if(/招手|挥手/.test(label))return HandWaving;
@@ -28,7 +29,7 @@ export function HomeSocialWheel({editor,actor,name,selfOnly=false,body,busy,stat
  useEffect(()=>{setCategory(null);setPage(0);},[postures[0],postures[1]]);
  useEffect(()=>{root.current?.querySelector<HTMLButtonElement>('button')?.focus();},[category,page]);
  const categoryInfo=categories.find(c=>c[0]===category),Icon=categoryInfo?.[2]??Sparkle;
- const motions=selectedMotions.filter(m=>(!['home-princess-carry','home-princess-carried'].includes(m.id)||body==='blank')&&(!selfOnly||m.participants===1)&&socialPostureAllowed(m.id,postures[0],postures[1],m.participants));
+ const motions=selectedMotions.filter(m=>(!isRomanticMotion(m.id)||editor.canPlaySocial?.(m.id,'user',actor)===true)&&(!['home-princess-carry','home-princess-carried'].includes(m.id)||body==='blank')&&(!selfOnly||m.participants===1)&&socialPostureAllowed(m.id,postures[0],postures[1],m.participants));
  const visibleCategories=categories.filter(([id])=>(selfOnly||id!=='self')&&motions.some(m=>m.category===id));
  const items=category?motions.filter(m=>m.category===category).map(m=>({id:m.id,label:m.label.replace(/\s*[AB]→[AB]/g,'').replace(/\s*·\s*双人/g,''),Icon:motionIcon(m.label,Icon),disabled:!available(m),run:()=>onPlay(m.id)})):visibleCategories.map(([id,label,Icon])=>({id,label,Icon,disabled:false,run:()=>{setCategory(id);setPage(0);}}));
  if(selfOnly&&!category&&postures[0]==='standing'&&editor.summonOwner)items.unshift({id:'summon',label:'把大家叫过来',Icon:HandWaving,disabled:false,run:()=>{(editor.summonAll??editor.summonOwner)?.();onClose();}});

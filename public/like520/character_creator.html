@@ -547,6 +547,7 @@
   <div class="action-row">
     <button class="pill-btn" id="btnRandom">🎲 随机</button>
     <button class="pill-btn" id="btnReset">↺ 重置</button>
+    <button class="pill-btn" id="btnRestoreSaved" style="display:none">↶ 已保存形象</button>
     <button class="pill-btn" id="btnCustom">➕ 自定义</button>
     <button class="pill-btn primary" id="btnSave">📸 出件</button>
   </div>
@@ -677,6 +678,7 @@ let LIKE520_MODE = 'char';
 let LIKE520_CHAR_NAME = '';
 let LIKE520_IS_SULLY = false;
 let LIKE520_DRAFT_KEY = ''; // 调用方可传唯一 draftKey 做草稿隔离（如彼方按 char.id）
+let LIKE520_SAVED_STATE = null;
 
 function applyLike520Init(init) {
   if (!init) return;
@@ -689,6 +691,8 @@ function applyLike520Init(init) {
   LIKE520_CHAR_NAME = init.charName || '';
   LIKE520_IS_SULLY = !!init.isSully;
   LIKE520_DRAFT_KEY = init.draftKey || '';
+  LIKE520_SAVED_STATE = init.savedState?.selected ? JSON.parse(JSON.stringify(init.savedState)) : null;
+  document.getElementById('btnRestoreSaved').style.display = LIKE520_SAVED_STATE ? '' : 'none';
   const titleCn = document.querySelector('.title-cn');
   if (titleCn) {
     if (init.title) {
@@ -2320,7 +2324,15 @@ document.getElementById("btnReset").onclick = () => {
   clearDraft();
   renderPanel();
   renderCharacter();
-  toast("已清空，草稿也清掉 ♥");
+  toast(LIKE520_SAVED_STATE ? "已清空草稿，可点「已保存形象」恢复 ♥" : "已清空草稿 ♥");
+};
+
+document.getElementById('btnRestoreSaved').onclick = () => {
+  if (!LIKE520_SAVED_STATE || !applyFullState(LIKE520_SAVED_STATE)) return;
+  clearDraft();
+  renderPanel();
+  renderCharacter();
+  toast('已恢复上次保存的形象，可继续修改 ✦');
 };
 
 document.getElementById("btnSave").onclick = async () => {
@@ -2751,6 +2763,8 @@ function tryLoadDraft() {
     const raw = localStorage.getItem(getDraftKey());
     if (!raw) return false;
     const d = JSON.parse(raw);
+    // 重置会触发渲染自动保存；空草稿不能遮住宿主的正式形象。
+    if (!d?.selected || !Object.values(d.selected).some(v => Array.isArray(v) ? v.length > 0 : typeof v === 'string' && v.length > 0)) return false;
     if (!applyFullState(d)) return false;
     console.log('[520][cc] 恢复上次草稿');
     return true;
@@ -2761,6 +2775,7 @@ function tryLoadDraft() {
   }
 }
 function clearDraft() {
+  if (saveDraftTimer) { clearTimeout(saveDraftTimer); saveDraftTimer = null; }
   try { localStorage.removeItem(getDraftKey()); } catch {}
 }
 /* 把所有会改 state 的入口都钩一下：renderPanel / renderColorPicker / renderFlipButton 后的 onclick 改完 state 后调 saveDraft */

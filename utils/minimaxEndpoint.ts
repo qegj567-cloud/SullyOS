@@ -32,6 +32,7 @@ const REGION_BASE_URLS: Record<MinimaxRegion, string> = {
 // Proxy path → upstream endpoint (concatenated with region base).
 const PROXY_ENDPOINTS: Record<string, string> = {
   '/api/minimax/t2a': '/v1/t2a_v2',
+  '/api/minimax/stt': '/v1/speech_to_text',
   '/api/minimax/get-voice': '/v1/get_voice',
   '/api/minimax/music': '/v1/music_generation',
 };

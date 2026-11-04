@@ -1,0 +1,19 @@
+.friend-feed .ff-compose-images{display:grid;gap:12px;margin:16px 0}
+.friend-feed .ff-compose-thumbnails{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.friend-feed .ff-compose-thumbnails>div{position:relative;aspect-ratio:1;overflow:hidden;border-radius:12px;background:var(--ff-paper,#f4f1e8)}
+.friend-feed .ff-compose-thumbnails img{width:100%;height:100%;object-fit:cover}
+.friend-feed .ff-compose-thumbnails button{position:absolute;top:5px;right:5px;display:grid;place-items:center;width:28px;height:28px;padding:0;border:0;border-radius:50%;background:#25251fe0;color:white}
+.friend-feed .ff-add-photos{position:relative;display:flex;align-items:center;gap:8px;width:fit-content;cursor:pointer;color:var(--ff-accent,#277e68);padding:10px 0;font-weight:600}
+.friend-feed .ff-add-photos input{position:absolute;inset:0;width:100%;opacity:0;cursor:pointer}
+.friend-feed .ff-add-photos:focus-within{outline:2px solid currentColor;outline-offset:4px}
+.friend-feed .ff-compose-images small{font-size:12px;line-height:1.6;opacity:.65}
+.friend-feed .ff-setup{padding:24px 20px;margin:0 0 20px;border-bottom:1px solid var(--ff-line,#dedfce);color:inherit}
+.friend-feed .ff-setup header{display:flex;gap:12px;align-items:center}.friend-feed .ff-setup header svg{flex:none}
+.friend-feed .ff-setup h2{font-size:19px;margin:4px 0 0}.friend-feed .ff-setup small{font-size:11px;opacity:.65}
+.friend-feed .ff-setup p{font-size:13px;line-height:1.8;margin:16px 0}
+.friend-feed .ff-setup ol{list-style:none;padding:0;margin:8px 0;counter-reset:setup}
+.friend-feed .ff-setup li{counter-increment:setup;display:flex;gap:10px;align-items:flex-start;padding:16px 0;border-top:1px solid var(--ff-line,#dedfce)}
+.friend-feed .ff-setup li:before{content:counter(setup,decimal-leading-zero);font-size:11px;opacity:.5;padding-top:3px}
+.friend-feed .ff-setup li div{flex:1;min-width:0}.friend-feed .ff-setup strong{font-size:14px}.friend-feed .ff-setup li span{display:block;font-size:12px;line-height:1.8;opacity:.7;margin-top:5px}
+.friend-feed .ff-setup li button{flex:none;background:none;border:0;color:var(--ff-accent,#277e68);font-size:12px;padding:3px 0;cursor:pointer}
+.friend-feed .ff-setup .ff-setup-note{font-size:11px;opacity:.65}.friend-feed .ff-setup>button{width:100%;padding:12px;border:0;border-radius:12px;cursor:pointer}.friend-feed .ff-setup>small{display:block;text-align:center;margin-top:10px}

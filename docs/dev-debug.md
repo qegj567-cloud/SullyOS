@@ -453,7 +453,7 @@ Resource Timing: responseStatus=429, transferSize=0 → 对方其实回了 HTTP 
 
 ### 私聊与家园请求准备耗时（2026-10-08）
 
-共享 `buildChatRequestPayload` 提供本地 `onPreparationStage`，将识图、记忆召回、提示词组装、协同文件柜、家园任务回执分别计时，保留原顺序和内容。家园进度区分「记忆召回」「组装提示词」，`Home timing` 的 API 日志记录对应毫秒数；ChatApp 原有 `[send→API]` 汇总增加 `payload.memory` / `payload.prompt` 等字段。`payload` 是总时间，其子阶段不得相加后再与它累加。此处只加阶段名与耗时，不加遥测、不记录正文；真实设备的额外等待需要同角色、同配置的日志对照，不能用隔离测试耗时替代。范围内已存在的家园输入不再额外整份读取角色；新输入仍读持久化记录核对范围，范围外重试继续拒绝。
+共享 `buildChatRequestPayload` 提供本地 `onPreparationStage`，将识图、记忆召回、提示词组装、协同文件柜、家园任务回执分别计时，保留原顺序和内容。家园进度区分「记忆召回」「组装提示词」，`Home timing` 的 API 日志记录对应毫秒数；ChatApp 原有 `[send→API]` 汇总增加 `payload.memory` / `payload.prompt` 等字段。计时从 `KeepAlive.start()` 前开始，`keepAlive` 单列 SW 准备等待，避免首次请求等待被漏算。`payload` 是总时间，其子阶段不得相加后再与它累加。此处只加阶段名与耗时，不加遥测、不记录正文；真实设备的额外等待需要同角色、同配置的日志对照，不能用隔离测试耗时替代。范围内已存在的家园输入不再额外整份读取角色；新输入仍读持久化记录核对范围，范围外重试继续拒绝。
 
 ### 3D 素材的正常取消
 

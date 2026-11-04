@@ -1,4 +1,5 @@
 import {createLocalId} from './localId.js';
+import {isSharedHomeRecord,sharedHomeEventKey} from './homeSharedEvents';
 import type {CharacterProfile, Message} from '../types';
 import {announceSecretNotesChanged, HOME_HISTORY_COMMITTED, type SecretNoteOrigin} from './secretNote';
 import type {HomeRecord} from '../apps/room3d/types';
@@ -218,7 +219,7 @@ export function waitForHomeSecretOrigin(charId: string, records: HomeRecord[], s
                 const tx = db.transaction('messages', 'readonly');
                 const index = tx.objectStore('messages').index('charId_homeTurn');
                 const rows = await Promise.all(records.map(record => new Promise<Message | undefined>((resolve, reject) => {
-                    const get = index.getAll([charId, record.contextSegmentId || record.id]);
+                    const get = index.getAll([charId, isSharedHomeRecord(record)?sharedHomeEventKey(record):record.contextSegmentId || record.id]);
                     get.onsuccess = () => resolve(get.result.find((m: Message) => !m.groupId && m.metadata?.source === 'home'
                         && m.metadata?.homeEvents?.some((e: HomeRecord) => e.id === record.id && e.text === record.text)));
                     get.onerror = () => reject(get.error);

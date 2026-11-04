@@ -13,6 +13,7 @@ export const DINO_CATALOG = [
   {id:'dinosaur-egg',name:'恐龙蛋',nickname:'咕噜',body:'#e5dcc5',accent:'#98ad8b',fact:'一个橡皮泥小蛋。“孵化”是箱庭的揭晓小游戏，里面也是橡皮泥模型。'},
   {id:'dinosaur-fossil',name:'恐龙骨架',nickname:'小骨',body:'#dfd2b4',accent:'#aa967b',fact:'这是一副用橡皮泥拼出的骨架模型。真实化石与橡皮泥的成分和来历都不一样。'},
   {id:'aiven-chimera',name:'？？？',nickname:'？？？',body:'#b784b5',accent:'#9ebdc9',fact:'霸王龙的身体、三角龙的角、剑龙的骨板、腕龙的脖子。发现于 SAR 活动室水域。艾文：「不知道是什么。」「所以不用纠正。」'},
+  {id:'halloween-dinosaur',name:'万圣小恐龙',nickname:'小恶魔',body:'#42364f',accent:'#9a83af',fact:'艾文在万圣夜送来的黑紫色小恐龙，背着一对小恶魔翅膀。看起来乖乖的。'},
 ] as const;
 export const dinoDefinition=(id:string)=>DINO_CATALOG.find(d=>d.id===id);
 export const defaultDinoPaint=(id:string):DinoPaint=>{const d=dinoDefinition(id)||DINO_CATALOG[0];return {body:d.body,accent:d.accent};};

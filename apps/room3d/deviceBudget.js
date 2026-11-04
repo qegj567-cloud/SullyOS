@@ -1,5 +1,5 @@
 import {ROOM_HALF,ROOM_STEP} from './dimensions.js';
-export const PHONE_BUDGET={rooms:5,furniture:20};
+export const PHONE_BUDGET={rooms:6,furniture:80};
 export function isPhoneBrowser({userAgent='',mobile=false,coarse=false,width=Infinity,height=Infinity}={}){
  return mobile||/iPhone|iPod|Android.*Mobile/i.test(userAgent)||coarse&&Math.min(width,height)<=600;
 }
@@ -17,8 +17,10 @@ export function furnishingCounts(home,catalog){
  return counts;
 }
 export function phoneBudgetError(before,after,catalog){
- if(after.rooms.length>Math.max(PHONE_BUDGET.rooms,before?.rooms.length||0))return '手机端每个角色最多 5 块房间面积；拆墙合并也按原面积计数';
+ // Reserve exactly one additional tile for the optional Halloween annex.
+ const ordinaryCount=home=>home?home.rooms.length-Math.min(1,home.rooms.filter(r=>r.activityRoom==='halloween').length):0;
+ if(ordinaryCount(after)>Math.max(PHONE_BUDGET.rooms,ordinaryCount(before)))return '手机端每个角色最多 6 块普通房间面积，另可追加 1 间万圣节活动别馆；拆墙合并也按原面积计数';
  const old=before?furnishingCounts(before,catalog):new Map(),next=furnishingCounts(after,catalog);
- for(const r of after.rooms)if(next.get(r.id)>Math.max(PHONE_BUDGET.furniture,old.get(r.id)||0))return `「${r.name}」这块房间面积最多摆 ${PHONE_BUDGET.furniture} 件家具，先收纳或移到其他区域；桌面摆件分别计数`;
+ for(const r of after.rooms)if(next.get(r.id)>Math.max(PHONE_BUDGET.furniture,old.get(r.id)||0))return `「${r.name}」已达到手机绘制保护上限（${PHONE_BUDGET.furniture} 件），请先收纳一些物件`;
  return '';
 }

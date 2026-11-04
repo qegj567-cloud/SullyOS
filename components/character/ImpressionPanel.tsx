@@ -109,7 +109,7 @@ const ImpressionPanel: React.FC<ImpressionPanelProps> = ({ impression, isGenerat
         <div className="space-y-6 animate-fade-in pb-10">
             <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
                 <div>
-                    <div className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">Version {safeImpression.version.toFixed(1)}</div>
+                    <div className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">版本 {safeImpression.version.toFixed(1)}</div>
                     <div className="text-xs text-slate-600">上次更新: {new Date(safeImpression.lastUpdated || Date.now()).toLocaleDateString()}</div>
                 </div>
                 <div className="flex gap-2">

@@ -1,0 +1,256 @@
+{
+  "items": [
+    {
+      "id": "halloween-witch-dress",
+      "meshes": 3,
+      "poses": [
+        "normal",
+        "library-idle",
+        "boy",
+        "cute"
+      ]
+    },
+    {
+      "id": "halloween-witch-hat",
+      "meshes": 1,
+      "poses": [
+        "normal",
+        "library-idle",
+        "boy",
+        "cute"
+      ]
+    },
+    {
+      "id": "halloween-witch-boots",
+      "meshes": 1,
+      "poses": [
+        "normal",
+        "library-idle",
+        "boy",
+        "cute"
+      ]
+    },
+    {
+      "id": "halloween-witch-socks",
+      "meshes": 2,
+      "poses": [
+        "normal",
+        "library-idle",
+        "boy",
+        "cute"
+      ]
+    },
+    {
+      "id": "halloween-count-tailcoat",
+      "meshes": 1,
+      "poses": [
+        "normal",
+        "library-idle",
+        "boy",
+        "cute"
+      ]
+    },
+    {
+      "id": "halloween-count-trousers",
+      "meshes": 2,
+      "poses": [
+        "normal",
+        "library-idle",
+        "boy",
+        "cute"
+      ]
+    },
+    {
+      "id": "halloween-count-boots",
+      "meshes": 1,
+      "poses": [
+        "normal",
+        "library-idle",
+        "boy",
+        "cute"
+      ]
+    },
+    {
+      "id": "halloween-count-waistcoat",
+      "meshes": 2,
+      "poses": [
+        "normal",
+        "library-idle",
+        "boy",
+        "cute"
+      ]
+    },
+    {
+      "id": "halloween-count-cravat",
+      "meshes": 1,
+      "poses": [
+        "normal",
+        "library-idle",
+        "boy",
+        "cute"
+      ]
+    },
+    {
+      "id": "halloween-apprentice-coat",
+      "meshes": 2,
+      "poses": [
+        "normal",
+        "library-idle",
+        "boy",
+        "cute"
+      ]
+    },
+    {
+      "id": "halloween-apprentice-apron",
+      "meshes": 1,
+      "poses": [
+        "normal",
+        "library-idle",
+        "boy",
+        "cute"
+      ]
+    },
+    {
+      "id": "halloween-apprentice-shorts",
+      "meshes": 2,
+      "poses": [
+        "normal",
+        "library-idle",
+        "boy",
+        "cute"
+      ]
+    },
+    {
+      "id": "halloween-apprentice-cap",
+      "meshes": 1,
+      "poses": [
+        "normal",
+        "library-idle",
+        "boy",
+        "cute"
+      ]
+    },
+    {
+      "id": "halloween-apprentice-boots",
+      "meshes": 1,
+      "poses": [
+        "normal",
+        "library-idle",
+        "boy",
+        "cute"
+      ]
+    },
+    {
+      "id": "halloween-apprentice-socks",
+      "meshes": 1,
+      "poses": [
+        "normal",
+        "library-idle",
+        "boy",
+        "cute"
+      ]
+    },
+    {
+      "id": "halloween-shorts-shorts",
+      "meshes": 1,
+      "poses": [
+        "normal",
+        "library-idle",
+        "boy",
+        "cute"
+      ]
+    },
+    {
+      "id": "halloween-ghost-hooded-top",
+      "meshes": 5,
+      "poses": [
+        "normal",
+        "library-idle",
+        "boy",
+        "cute"
+      ]
+    },
+    {
+      "id": "halloween-ghost-shorts",
+      "meshes": 1,
+      "poses": [
+        "normal",
+        "library-idle",
+        "boy",
+        "cute"
+      ]
+    },
+    {
+      "id": "halloween-ghost-shoes",
+      "meshes": 1,
+      "poses": [
+        "normal",
+        "library-idle",
+        "boy",
+        "cute"
+      ]
+    },
+    {
+      "id": "halloween-ghost-socks",
+      "meshes": 1,
+      "poses": [
+        "normal",
+        "library-idle",
+        "boy",
+        "cute"
+      ]
+    },
+    {
+      "id": "halloween-pumpkin-hat",
+      "meshes": 1,
+      "poses": [
+        "normal",
+        "library-idle",
+        "boy",
+        "cute"
+      ]
+    },
+    {
+      "id": "halloween-pumpkin-sleeves",
+      "meshes": 3,
+      "poses": [
+        "normal",
+        "library-idle",
+        "boy",
+        "cute"
+      ]
+    },
+    {
+      "id": "halloween-pumpkin-romper",
+      "meshes": 3,
+      "poses": [
+        "normal",
+        "library-idle",
+        "boy",
+        "cute"
+      ]
+    },
+    {
+      "id": "halloween-pumpkin-boots",
+      "meshes": 1,
+      "poses": [
+        "normal",
+        "library-idle",
+        "boy",
+        "cute"
+      ]
+    },
+    {
+      "id": "halloween-pumpkin-socks",
+      "meshes": 1,
+      "poses": [
+        "normal",
+        "library-idle",
+        "boy",
+        "cute"
+      ]
+    }
+  ],
+  "restored": true,
+  "errors": []
+}

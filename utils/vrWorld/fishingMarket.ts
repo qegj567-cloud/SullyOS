@@ -1,4 +1,6 @@
 import { validateFamiliarity } from './sarFamiliarity/storageTypes';
+import { validateHalloween, type KanataHalloweenState } from './kanataHalloween';
+import { isHalloweenFishDay } from './halloweenCalendar';
 import { sarNpcContentEnabled } from './sarNpcPreference';
 import { SAR_STARTING_BALANCE, SAR_WANDERER_BALANCE, SAR_DAILY_BUYBACK, SAR_ECONOMY_VERSION, sarEconomyDay, remainingSARBuyback, creditSARWallet, type SARBuybackBudget } from './sarEconomy';
 import type { CharacterProfile, RealtimeConfig, UserProfile } from '../../types';
@@ -19,6 +21,7 @@ export interface FishSpecies {
 }
 export interface MarketActor { id: string; name: string; kind: 'user' | 'character' | 'wanderer' }
 export interface FishingCatch {
+    halloweenHat?: boolean;
     origin?: DinoOrigin;
     id: string; speciesId: string; ownerId: string; ownerName: string; caughtAt: number;
     weather: FishingWeatherKind; weatherLabel: string; weatherSource: FishingWeather['source'];
@@ -34,7 +37,7 @@ export interface MarketPostBase {
     id: string; itemLabel: string; createdAt: number; expiresAt: number; closedAt?: number;
     status: 'open' | 'sold' | 'fulfilled' | 'removed' | 'expired'; comments: MarketComment[]; alias?: string;
 }
-export type MarketCatchSnapshot = Pick<FishingCatch, 'id' | 'speciesId' | 'sizeCm' | 'quality'> & { nickname?: string };
+export type MarketCatchSnapshot = Pick<FishingCatch, 'id' | 'speciesId' | 'sizeCm' | 'quality' | 'halloweenHat'> & { nickname?: string };
 export interface MarketListing extends MarketPostBase {
     sellerId: string; sellerName: string; catchId?: string; price: number; note?: string; buyerId?: string; buyerName?: string;
     catchSnapshot?: MarketCatchSnapshot;
@@ -67,6 +70,7 @@ export interface FishingTrip {
     sale?: AivenFishSale;
 }
 export interface FishingMarketState {
+    kanataHalloween?: KanataHalloweenState;
     sarFamiliarity?: import('./sarFamiliarity/storageTypes').FamiliarityState;
     sarCollection?: import('./sarCollectionJournal').SARCollectionJournal;
     economyVersion?: number;
@@ -109,7 +113,8 @@ export const FISH_CATALOG: FishSpecies[] = [
 ];
 
 
-export const STORY_CATCH_CATALOG: FishSpecies[] = [{ id: 'aiven-chimera', name: '？？？', icon: '？', category: 'time-relic', rarity: 'relic', basePrice: 80, difficulty: 1, weathers: [], blurb: '艾文从异常的物品堆里找出的专属混合恐龙：霸王龙的身体、三角龙的角、剑龙的背板和腕龙的长脖子。' }];
+export const STORY_CATCH_CATALOG: FishSpecies[] = [{ id: 'aiven-chimera', name: '？？？', icon: '？', category: 'time-relic', rarity: 'relic', basePrice: 80, difficulty: 1, weathers: [], blurb: '艾文从异常的物品堆里找出的专属混合恐龙：霸王龙的身体、三角龙的角、剑龙的背板和腕龙的长脖子。' },
+    { id: 'halloween-dinosaur', name: '万圣小恐龙', icon: '🦖', category: 'time-relic', rarity: 'relic', basePrice: 80, difficulty: 1, weathers: [], blurb: '万圣夜，艾文送来的黑紫色小恐龙。背着一对小恶魔翅膀，乖乖地等你带它回家。' }];
 export const speciesById = (id: string) => [...FISH_CATALOG, ...STORY_CATCH_CATALOG].find(species => species.id === id);
 export const marketId = (p: string) => p + '_' + (globalThis.crypto?.randomUUID?.() || Date.now().toString(36) + Math.random().toString(36).slice(2));
 const money = (n: number) => {
@@ -158,6 +163,7 @@ export const readFishingMarketState = (storage: Pick<Storage, 'getItem'> = local
     if (raw.fishingTrips?.some(t => (t.sale !== undefined && !validAivenFishSale(t.sale)) || (t.result?.disposition === 'sell' && !t.sale))
         || raw.ledger.some(e => e.aivenSale !== undefined && !validAivenFishSale(e.aivenSale))) throw new Error('售鱼回执无法读取；没有覆盖原存档');
     if (raw.sarFamiliarity !== undefined) validateFamiliarity(raw.sarFamiliarity);
+    if (raw.kanataHalloween !== undefined) validateHalloween(raw.kanataHalloween);
     if ([...raw.listings, ...raw.requests].some(p =>
         (p.npcPersona !== undefined && !validMarketPersona(p.npcPersona))
         || (p.encounter !== undefined && (!validMarketEncounter(p.encounter) || !validMarketPersona(p.npcPersona)))
@@ -250,7 +256,7 @@ export const rollFishingCatch = (owner: Pick<MarketActor, 'id' | 'name'>, weathe
     const entries = FISH_CATALOG.filter(f => f.id !== 'dinosaur-egg').map(f => ({ f, w: rarityWeight[f.rarity] * (f.weathers.includes(weather.kind) ? 3.3 : f.category === 'time-relic' ? .28 : .42) }));
     let cursor = Math.max(0, Math.min(.999999, random())) * entries.reduce((sum, e) => sum + e.w, 0);
     const f = entries.find(e => (cursor -= e.w) <= 0)?.f || entries[0].f; const q = random();
-    return { id: marketId('catch'), speciesId: f.id, ownerId: owner.id, ownerName: owner.name, caughtAt: now, origin:{kind:'fished',actorId:owner.id,actorName:owner.name,at:now},
+    return { id: marketId('catch'), speciesId: f.id, ownerId: owner.id, ownerName: owner.name, caughtAt: now, halloweenHat: f.category === 'fish' && isHalloweenFishDay(now), origin:{kind:'fished',actorId:owner.id,actorName:owner.name,at:now},
         weather: weather.kind, weatherLabel: weather.label, weatherSource: weather.source,
         sizeCm: Math.round((f.category === 'time-relic' ? 8 + random() * 14 : 18 + random() * 96) * 10) / 10, quality: q > .93 ? 3 : q > .65 ? 2 : 1 };
 };
@@ -267,7 +273,7 @@ export const availableCatches = (state: FishingMarketState, actorId: string, now
     state.inventory.filter(c => c.ownerId === actorId && !c.incubatingUntil && !state.fishingTrips?.some(t => t.catch.id === c.id && t.status === 'pending') && !state.listings.some(l => l.catchId === c.id && l.status === 'open' && l.expiresAt > now));
 /** Public specimen details omit its owner's identity and keep archives stable after later transfers. */
 export const marketCatchSnapshot = (state: FishingMarketState, c: FishingCatch): MarketCatchSnapshot => ({
-    id: c.id, speciesId: c.speciesId, sizeCm: c.sizeCm, quality: c.quality,
+    id: c.id, speciesId: c.speciesId, sizeCm: c.sizeCm, quality: c.quality, ...(c.halloweenHat ? { halloweenHat: true } : {}),
     ...(state.dinosaurGarden?.toys[c.id]?.name ? { nickname: state.dinosaurGarden.toys[c.id].name } : {}),
 });
 const requireCatch = (state: FishingMarketState, actor: MarketActor, id: string, now = Date.now()) => {

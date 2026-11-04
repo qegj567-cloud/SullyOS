@@ -47,7 +47,7 @@ export function collectBlobRefs(serialized: string, into: Set<string>): void {
  * 字符集不合法的「令牌」同样计入 missing：它写不进合法的 zip 路径，而 extractRefs
  * 收集来的令牌结构上不会命中这条，命中即调用方传了未经收集器的裸字符串。
  *
- * 内存峰值只有单个 Blob 的字节（arrayBuffer 一份），全程不经 base64。
+ * 支持 fileBlob 的写入器只排队 Blob 引用，压缩时才读字节；旧写入器仍使用字节旁路。
  */
 export async function writeBlobsToZip(
     zip: ZipFileWriter,
@@ -76,9 +76,9 @@ export async function writeBlobsToZip(
             missing.push(token);
             continue;
         }
-        const bytes = new Uint8Array(await blob.arrayBuffer());
-        zip.file(blobEntryPath(id), bytes, { compression: 'STORE' });
-        entries.push({ id, type: blob.type || '', size: bytes.byteLength });
+        if (zip.fileBlob) zip.fileBlob(blobEntryPath(id), blob, { compression: 'STORE' });
+        else zip.file(blobEntryPath(id), new Uint8Array(await blob.arrayBuffer()), { compression: 'STORE' });
+        entries.push({ id, type: blob.type || '', size: blob.size });
         opts.onProgress?.(done, list.length);
         if (opts.onYield) await opts.onYield();
     }

@@ -51,6 +51,7 @@ for(const garment of catalog){
  const bytes=fs.readFileSync(`public/room3d/wardrobe/${garment.asset}`);
  const gltf=JSON.parse(bytes.subarray(20,20+bytes.readUInt32LE(12)).toString());
  const materials=[...new Set(gltf.nodes.filter(n=>n.mesh!==undefined&&n.name.startsWith(garment.prefix)).flatMap(n=>gltf.meshes[n.mesh].primitives.map(p=>p.material)))];
+ if(garment.colorMode==='halloween'){output[garment.id]=['orange','purple','green','gold'].map((id,i)=>region(id,['主色','副色','装饰色','金属色'][i],['#ee7916','#522478','#99bc27','#d9b448'][i],materials.map(material=>target(material))));continue;}
  if(special[garment.id]){output[garment.id]=special[garment.id];continue;}
  if(labels[garment.id]?.length!==materials.length)throw Error(`Color regions need review: ${garment.id}`);
  output[garment.id]=materials.map((index,i)=>{

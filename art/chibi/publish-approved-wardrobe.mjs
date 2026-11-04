@@ -13,6 +13,8 @@ for(const i of items){if(['geta','boots','sneakers'].includes(i.id))i.id='shoe-'
 // The initial outfit is exported from prepareHoodie by publish-original-wardrobe.mjs.
 if(fs.existsSync('art/chibi/original-wardrobe.json'))for(const entry of JSON.parse(fs.readFileSync('art/chibi/original-wardrobe.json','utf8'))){const bytes=fs.readFileSync(path.join(dest,entry.asset));items.push({...entry,revision:createHash('sha256').update(bytes).digest('hex').slice(0,12)});}
 if(fs.existsSync('art/chibi/animal-accessories.json'))for(const entry of JSON.parse(fs.readFileSync('art/chibi/animal-accessories.json','utf8')))items.push(entry);
+// Release metadata stays with the published assets; private reference art is external.
+if(fs.existsSync('art/chibi/halloween-wardrobe.json'))for(const entry of JSON.parse(fs.readFileSync('art/chibi/halloween-wardrobe.json','utf8'))){const bytes=fs.readFileSync(path.join(dest,entry.asset));items.push({...entry,revision:createHash('sha256').update(bytes).digest('hex').slice(0,12)});}
 // New assets must explicitly choose a construction profile; never silently
 // inherit a guess from an ID prefix. The acceptance command checks slot/schema.
 const layering=JSON.parse(fs.readFileSync('apps/room3d/chibi/wardrobeLayering.json','utf8'));

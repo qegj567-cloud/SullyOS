@@ -219,7 +219,7 @@ export const PushVapidSettingsModal: React.FC<PushVapidSettingsModalProps> = ({ 
             </div>
           )}
           <p className="text-[10px] text-slate-400 leading-relaxed">
-            私钥常驻 localStorage 方便复制到 Worker env. 本机数据已经够多 secret, 多这一个不改变威胁模型.
+            私钥保存在当前浏览器中，方便部署或更新 Worker 时随时复制。
           </p>
         </div>
 

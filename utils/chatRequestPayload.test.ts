@@ -389,3 +389,40 @@ it('文本入口误传 history 时仍保留深度世界书，不丢弃移交后�
     );
     expect(result.split('TEXT_ONLY_DEPTH_BOOK')).toHaveLength(2);
 });
+
+
+describe('ChatApp 按月 RECALL 提示偏好', () => {
+    const recallRule = "- 调取记忆: `[[RECALL: YYYY-MM]]`，请注意，当用户提及具体某个月份时，或者当你想仔细想某个月份的事情时，欢迎你随时使该动作";
+    for (const timelyByWorker of [false, true]) {
+        it.each([undefined, true])('本地/云端模式 '+timelyByWorker+'：缺省或开启 %s 时隐藏指令教学', async hideMonthlyRecallPrompt => {
+            const input = baseInput();
+            const payload = await buildChatRequestPayload({ ...input, timelyByWorker,
+                char: { ...input.char, hideMonthlyRecallPrompt },
+            });
+            expect(payload.systemPrompt).not.toContain(recallRule);
+        });
+        it('本地/云端模式 '+timelyByWorker+'：关闭时仅恢复原来的那一行', async () => {
+            const input = baseInput();
+            const hidden = await buildChatRequestPayload({ ...input, timelyByWorker,
+                char: { ...input.char, hideMonthlyRecallPrompt: true },
+            });
+            const visible = await buildChatRequestPayload({ ...input, timelyByWorker,
+                char: { ...input.char, hideMonthlyRecallPrompt: false },
+            });
+            expect(visible.systemPrompt).toContain(recallRule);
+            expect(visible.systemPrompt.replace('   '+recallRule+'\n', '')).toBe(hidden.systemPrompt);
+        });
+    }
+    it('后台主动消息打包保留原教学，且不修改记忆或激活月份', async () => {
+        const input = baseInput();
+        const char = { ...input.char, hideMonthlyRecallPrompt: true,
+            activeMemoryMonths: ['2026-09'],
+            memories: [{ id: 'recall-pref-m1', date: '2026-09-01', mood: 'happy', summary: '已保存的经历' }],
+        } as any;
+        const before = JSON.stringify(char);
+        const result = await ChatPrompts.buildSystemPromptParts(char, input.userProfile, [], [], [], [],
+            undefined, undefined, undefined, undefined, undefined, undefined, { forFirePack: true });
+        expect(result.stable).toContain(recallRule);
+        expect(JSON.stringify(char)).toBe(before);
+    });
+});

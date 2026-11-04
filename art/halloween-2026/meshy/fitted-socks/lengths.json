@@ -1,0 +1,30 @@
+[
+  {
+    "id": "pumpkin",
+    "top": 1.43,
+    "bodyMaskTop": 1.3699999999999999,
+    "triangles": 1156,
+    "bones": 48
+  },
+  {
+    "id": "ghost",
+    "top": 1.55,
+    "bodyMaskTop": 1.49,
+    "triangles": 1156,
+    "bones": 48
+  },
+  {
+    "id": "apprentice",
+    "top": 1.32,
+    "bodyMaskTop": 1.26,
+    "triangles": 1156,
+    "bones": 48
+  },
+  {
+    "id": "witch",
+    "top": 1.42,
+    "bodyMaskTop": 1.3599999999999999,
+    "triangles": 1156,
+    "bones": 48
+  }
+]

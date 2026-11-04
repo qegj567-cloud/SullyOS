@@ -1,0 +1,40 @@
+[
+  {
+    "id": "ghost-shorts",
+    "file": "ghost-shorts-22000.glb",
+    "source": "art/halloween-2026/meshy/halloween-batch-08-texture/ghost-shorts-smooth.glb",
+    "sourceSha256": "6ca97a2c8b57de9c380b8704e1cec4f9f699f04c4f81507dd94179d3ca86fac8",
+    "target": 22000,
+    "triangles": 22000,
+    "originalTriangles": 51502,
+    "reductionPercent": 57.3,
+    "vertices": 21342,
+    "maxAttributeAwareError": 0.0008968997281044722,
+    "bytes": 8223360,
+    "originalBytes": 16078536,
+    "textureHashes": [
+      "6802eef28a490f48f65b128a05686e629552321da0ed02f5c5577a20aeb1f1f9"
+    ],
+    "positionsAndUVs": "retained source vertices; no texture resampling",
+    "status": "visual-comparison"
+  },
+  {
+    "id": "ghost-shoes",
+    "file": "ghost-shoes-22000.glb",
+    "source": "art/halloween-2026/meshy/halloween-batch-08-texture/ghost-shoes-smooth.glb",
+    "sourceSha256": "cbb7ea4b8c6afaae972fb54b77d2c546982d1f8797a66a36667f867a58dc51c5",
+    "target": 22000,
+    "triangles": 22000,
+    "originalTriangles": 51286,
+    "reductionPercent": 57.1,
+    "vertices": 25861,
+    "maxAttributeAwareError": 0.0015043163439258933,
+    "bytes": 8804672,
+    "originalBytes": 16777588,
+    "textureHashes": [
+      "777c61238deb2a608ed3fd39973f058e4e17cdad66d8c1cbbc82bf85e86d18c3"
+    ],
+    "positionsAndUVs": "retained source vertices; no texture resampling",
+    "status": "visual-comparison"
+  }
+]

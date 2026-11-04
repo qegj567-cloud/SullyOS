@@ -1,0 +1,58 @@
+{
+  "jobs": [
+    {
+      "id": "hamster",
+      "params": {
+        "ai_model": "meshy-6",
+        "should_remesh": true,
+        "target_polycount": 6000,
+        "should_texture": false,
+        "target_formats": [
+          "glb"
+        ]
+      },
+      "imageFile": "hamster-reference.png",
+      "imageSha256": "b93baab39321de5f8dfc18b8835195080fb7e66320e9b20a304ca9541a863603",
+      "status": "SUCCEEDED",
+      "taskId": "01a181ba-8503-7119-b76d-4e2369ebfea7",
+      "progress": 100,
+      "consumedCredits": 20,
+      "file": "hamster-source.glb",
+      "sha256": "836465da373ce167e2bce487c09e2c1bac36de625388e3bbef1ebbf4bfebc6e3",
+      "bytes": 208724
+    },
+    {
+      "id": "jellyfish",
+      "params": {
+        "ai_model": "meshy-6",
+        "should_remesh": true,
+        "target_polycount": 6000,
+        "should_texture": false,
+        "target_formats": [
+          "glb"
+        ]
+      },
+      "imageFile": "jellyfish-reference.png",
+      "imageSha256": "96c22f9c25b0c03cbb0e3f024ace4cc04611b7358940bde31ad42ece046e6170",
+      "status": "SUCCEEDED",
+      "taskId": "01a181ba-b5a0-73e2-81e5-06cc45b86d72",
+      "progress": 100,
+      "consumedCredits": 20,
+      "file": "jellyfish-source.glb",
+      "sha256": "813e8f7c16969b265a13fd5e906de712fb2367549dfa6157170fa3c0d0957b1a",
+      "bytes": 256360
+    }
+  ],
+  "balanceBefore": {
+    "balance": 696,
+    "monthly_credits": 455,
+    "permanent_credits": 241,
+    "monthly_resets_at": 1794576839000
+  },
+  "balanceAfter": {
+    "balance": 656,
+    "monthly_credits": 415,
+    "permanent_credits": 241,
+    "monthly_resets_at": 1794576839000
+  }
+}

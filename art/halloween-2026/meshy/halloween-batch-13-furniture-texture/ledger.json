@@ -1,0 +1,121 @@
+{
+  "batch": "halloween-batch-13-furniture-texture",
+  "jobs": [
+    {
+      "id": "haunted-fireplace-textured",
+      "image": "../furniture/05-haunted-fireplace.png",
+      "imageSha256": "3e8d4dd8f2d5a3b2d8dfff9e1df04c18084f11237bce233a7807642fec44d7e8",
+      "params": {
+        "ai_model": "meshy-7",
+        "texture_resolution": "2k",
+        "enable_original_uv": false,
+        "enable_pbr": true,
+        "target_formats": [
+          "glb"
+        ]
+      },
+      "estimatedCredits": 10,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-29T03:34:40.724Z",
+      "model": "furniture-texture-inputs/halloween_haunted_fireplace.glb",
+      "modelSha256": "787d2acb9a78694397295277c7c54653c2c72f6fe4c57a7c3ce596877a1a23bf",
+      "taskId": "01a185b9-597a-717a-9740-df4d2b35b47b",
+      "progress": 100,
+      "consumedCredits": 10,
+      "downloaded": true,
+      "file": "haunted-fireplace-textured.glb",
+      "bytes": 7423448,
+      "sha256": "fe8f672d8976d41be437ead896c2d17da51e4e6a8cd22e086b3a334b73b941a9"
+    },
+    {
+      "id": "ghost-floor-lamp-textured",
+      "image": "../furniture/06-ghost-floor-lamp.png",
+      "imageSha256": "4045aac05b10a3f2ab51df684d640255af4494d78815cae3ef5a144be4a0e485",
+      "params": {
+        "ai_model": "meshy-7",
+        "texture_resolution": "2k",
+        "enable_original_uv": false,
+        "enable_pbr": true,
+        "target_formats": [
+          "glb"
+        ]
+      },
+      "estimatedCredits": 10,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-29T03:35:05.309Z",
+      "model": "furniture-texture-inputs/halloween_ghost_floor_lamp.glb",
+      "modelSha256": "06c637d83ff02dfcdb2387d862edb4e2aba45ea528c3593c23ca13d1b76793a0",
+      "taskId": "01a185b9-b948-70c3-94a5-03370f497af0",
+      "progress": 100,
+      "consumedCredits": 10,
+      "downloaded": true,
+      "file": "ghost-floor-lamp-textured.glb",
+      "bytes": 5129256,
+      "sha256": "42c5b0a0ef004dba5ba95d3046414f1e03e92988afbcbe011b711efdc2dcf5e3"
+    },
+    {
+      "id": "gothic-curtain-window-textured",
+      "image": "../furniture/07-gothic-curtain-window.png",
+      "imageSha256": "0361afff976263d12ce53e8ba36cdf3d837ec7b7eb54d7b4289817c7033b895f",
+      "params": {
+        "ai_model": "meshy-7",
+        "texture_resolution": "2k",
+        "enable_original_uv": false,
+        "enable_pbr": true,
+        "target_formats": [
+          "glb"
+        ]
+      },
+      "estimatedCredits": 10,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-29T03:35:23.649Z",
+      "model": "furniture-texture-inputs/halloween_gothic_curtain_window.glb",
+      "modelSha256": "b8753685df200ac78277a21083d2827904889530a30d256a25845216fa7542f3",
+      "taskId": "01a185ba-00d5-7765-97ed-3b2c6ca0f69b",
+      "progress": 100,
+      "consumedCredits": 10,
+      "downloaded": true,
+      "file": "gothic-curtain-window-textured.glb",
+      "bytes": 8099688,
+      "sha256": "d39d6824ff77c3052db50685545d6d7c5649f25c97f8f1d0e87abdf61c071613"
+    },
+    {
+      "id": "bat-rug-textured",
+      "image": "../furniture/08-bat-rug.png",
+      "imageSha256": "83a71ae1c99810b20b06dae334bbac90fa8aa08fb889e8492290247a5455e909",
+      "params": {
+        "ai_model": "meshy-7",
+        "texture_resolution": "2k",
+        "enable_original_uv": false,
+        "enable_pbr": true,
+        "target_formats": [
+          "glb"
+        ]
+      },
+      "estimatedCredits": 10,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-29T03:35:53.375Z",
+      "model": "furniture-texture-inputs/halloween_bat_rug.glb",
+      "modelSha256": "bc97687021b39ce2bb706504d93685a5d5f29c39f33a94e4d459437556bd7f2a",
+      "taskId": "01a185ba-7424-722b-9319-e511178a29ba",
+      "progress": 100,
+      "consumedCredits": 10,
+      "downloaded": true,
+      "file": "bat-rug-textured.glb",
+      "bytes": 6474080,
+      "sha256": "03ad94f182670afbf955753cca0d81223fd17be751e8e88c2f9aba08f30ac410"
+    }
+  ],
+  "latestBalance": {
+    "balance": 516,
+    "monthly_credits": 275,
+    "permanent_credits": 241,
+    "monthly_resets_at": 1794576839000
+  },
+  "balanceBefore": {
+    "balance": 556,
+    "monthly_credits": 315,
+    "permanent_credits": 241,
+    "monthly_resets_at": 1794576839000
+  }
+}

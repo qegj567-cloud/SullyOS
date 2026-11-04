@@ -1,0 +1,117 @@
+{
+  "batch": "halloween-batch-11-furniture",
+  "jobs": [
+    {
+      "id": "cauldron-planter",
+      "image": "../furniture/10-cauldron-planter.png",
+      "imageSha256": "96d7fd153f3dc39388fcd35100f8b5627d39d13fc093cae3119678066035b054",
+      "params": {
+        "model_type": "smart-topology",
+        "ai_model": "meshy-t2.5",
+        "topology": "triangle",
+        "should_texture": false,
+        "target_formats": [
+          "glb"
+        ],
+        "target_polycount": 6000
+      },
+      "estimatedCredits": 5,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-28T09:49:54.639Z",
+      "taskId": "01a181ea-8e9b-73da-a9cf-6d70f053641e",
+      "progress": 100,
+      "consumedCredits": 5,
+      "downloaded": true,
+      "file": "cauldron-planter.glb",
+      "bytes": 108196,
+      "sha256": "39d05193d8e4ea968e734242d758e84d7d25c31406d28d5fcbcc1c28d73cdb75"
+    },
+    {
+      "id": "cat-mirror",
+      "image": "../furniture/11-cat-mirror.png",
+      "imageSha256": "23e6a1a1cd4b1f032efde431ee1a9e3a363230201000cfc030ff6a1893322817",
+      "params": {
+        "model_type": "smart-topology",
+        "ai_model": "meshy-t2.5",
+        "topology": "triangle",
+        "should_texture": false,
+        "target_formats": [
+          "glb"
+        ],
+        "target_polycount": 6000
+      },
+      "estimatedCredits": 5,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-28T09:50:09.783Z",
+      "taskId": "01a181ea-c99e-763b-9023-38aba09f90fc",
+      "progress": 100,
+      "consumedCredits": 5,
+      "downloaded": true,
+      "file": "cat-mirror.glb",
+      "bytes": 110296,
+      "sha256": "b9e2bf06bb49eb3744e671f14dda577d5eff60a19a726a54d855e5eb3c0bfec3"
+    },
+    {
+      "id": "pumpkin-bat-clock",
+      "image": "../furniture/12-pumpkin-bat-clock.png",
+      "imageSha256": "87b549c4a4679b505a8ee6c16f8c2cd7fd72b4de2dff8fe92986d2748e8d786d",
+      "params": {
+        "model_type": "smart-topology",
+        "ai_model": "meshy-t2.5",
+        "topology": "triangle",
+        "should_texture": false,
+        "target_formats": [
+          "glb"
+        ],
+        "target_polycount": 4000
+      },
+      "estimatedCredits": 5,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-28T09:50:23.895Z",
+      "taskId": "01a181eb-00aa-7444-90a4-a8b3d0a806a4",
+      "progress": 100,
+      "consumedCredits": 5,
+      "downloaded": true,
+      "file": "pumpkin-bat-clock.glb",
+      "bytes": 73332,
+      "sha256": "a01d59285abfdcb7e6ec5542b855557891c4805c7d53a267a9a321348bea5312"
+    },
+    {
+      "id": "fit-01-pumpkin-witch",
+      "image": "../outfits/01-pumpkin-witch.png",
+      "imageSha256": "5336da3eeaa30d515e2df34bc2e3d01dd21a31f3af5672999b7c7e8f1b347e30",
+      "params": {
+        "model_type": "smart-topology",
+        "ai_model": "meshy-t2.5",
+        "topology": "triangle",
+        "should_texture": false,
+        "target_formats": [
+          "glb"
+        ],
+        "target_polycount": 6000
+      },
+      "estimatedCredits": 5,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-28T09:50:39.796Z",
+      "taskId": "01a181eb-3e1b-70e8-a992-943d2f939850",
+      "progress": 100,
+      "consumedCredits": 5,
+      "downloaded": true,
+      "file": "fit-01-pumpkin-witch.glb",
+      "bytes": 113812,
+      "sha256": "942df55d85570a501afc102eaa9bdcfd9dfe6e538b64b9ba1b13f326e9537fd1"
+    }
+  ],
+  "latestBalance": {
+    "balance": 596,
+    "monthly_credits": 355,
+    "permanent_credits": 241,
+    "monthly_resets_at": 1794576839000
+  },
+  "balanceBefore": {
+    "balance": 616,
+    "monthly_credits": 375,
+    "permanent_credits": 241,
+    "monthly_resets_at": 1794576839000
+  }
+}

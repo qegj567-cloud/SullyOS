@@ -1,0 +1,177 @@
+[
+  {
+    "id": "05-ghost-hooded-top",
+    "width": 1254,
+    "height": 1254,
+    "transparentRatio": 0.7402589226437124,
+    "edge": 30
+  },
+  {
+    "id": "05-ghost-shorts",
+    "width": 1254,
+    "height": 1254,
+    "transparentRatio": 0.7896358447227246,
+    "edge": 26
+  },
+  {
+    "id": "05-ghost-socks",
+    "width": 1254,
+    "height": 1254,
+    "transparentRatio": 0.8108661533491551,
+    "edge": 29
+  },
+  {
+    "id": "05-ghost-shoes",
+    "width": 1254,
+    "height": 1254,
+    "transparentRatio": 0.8089075087312307,
+    "edge": 0
+  },
+  {
+    "id": "06-pumpkin-hat",
+    "width": 1254,
+    "height": 1254,
+    "transparentRatio": 0.7897484031958976,
+    "edge": 0
+  },
+  {
+    "id": "06-pumpkin-romper",
+    "width": 1254,
+    "height": 1254,
+    "transparentRatio": 0.7763011632314075,
+    "edge": 29
+  },
+  {
+    "id": "06-pumpkin-undershirt",
+    "width": 1240,
+    "height": 1269,
+    "transparentRatio": 0.7961399628867027,
+    "edge": 0
+  },
+  {
+    "id": "06-pumpkin-socks",
+    "width": 1246,
+    "height": 1263,
+    "transparentRatio": 0.8175450435852368,
+    "edge": 0
+  },
+  {
+    "id": "06-pumpkin-boots",
+    "width": 1254,
+    "height": 1254,
+    "transparentRatio": 0.8062627025734556,
+    "edge": 0
+  },
+  {
+    "id": "01-witch-hat",
+    "width": 1245,
+    "height": 1263,
+    "transparentRatio": 0.7996324172382324,
+    "edge": 17
+  },
+  {
+    "id": "01-witch-dress",
+    "width": 1254,
+    "height": 1254,
+    "transparentRatio": 0.7654097001238779,
+    "edge": 40
+  },
+  {
+    "id": "01-witch-socks",
+    "width": 1246,
+    "height": 1263,
+    "transparentRatio": 0.8083990702155052,
+    "edge": 0
+  },
+  {
+    "id": "01-witch-boots",
+    "width": 1254,
+    "height": 1254,
+    "transparentRatio": 0.8114594700467277,
+    "edge": 9
+  },
+  {
+    "id": "02-count-tailcoat",
+    "width": 1254,
+    "height": 1254,
+    "transparentRatio": 0.7797275194656207,
+    "edge": 47
+  },
+  {
+    "id": "02-count-waistcoat",
+    "width": 1254,
+    "height": 1254,
+    "transparentRatio": 0.8023492288790702,
+    "edge": 20
+  },
+  {
+    "id": "02-count-cravat",
+    "width": 1254,
+    "height": 1254,
+    "transparentRatio": 0.8107389686337054,
+    "edge": 36
+  },
+  {
+    "id": "02-count-trousers",
+    "width": 1254,
+    "height": 1254,
+    "transparentRatio": 0.8057139005262903,
+    "edge": 40
+  },
+  {
+    "id": "02-count-boots",
+    "width": 1254,
+    "height": 1254,
+    "transparentRatio": 0.8123554863670703,
+    "edge": 0
+  },
+  {
+    "id": "03-apprentice-cap",
+    "width": 1254,
+    "height": 1254,
+    "transparentRatio": 0.7903366325048521,
+    "edge": 0
+  },
+  {
+    "id": "03-apprentice-coat",
+    "width": 1254,
+    "height": 1254,
+    "transparentRatio": 0.7961680517082179,
+    "edge": 1
+  },
+  {
+    "id": "03-apprentice-apron",
+    "width": 1254,
+    "height": 1254,
+    "transparentRatio": 0.7956485021456061,
+    "edge": 12
+  },
+  {
+    "id": "03-apprentice-shorts",
+    "width": 1254,
+    "height": 1254,
+    "transparentRatio": 0.7950106707976262,
+    "edge": 25
+  },
+  {
+    "id": "03-apprentice-socks",
+    "width": 1246,
+    "height": 1263,
+    "transparentRatio": 0.8187492136356531,
+    "edge": 0
+  },
+  {
+    "id": "03-apprentice-boots",
+    "width": 1254,
+    "height": 1254,
+    "transparentRatio": 0.8175299965151388,
+    "edge": 0
+  },
+  {
+    "id": "04-halloween-shorts",
+    "width": 1254,
+    "height": 1254,
+    "transparentRatio": 0.8126734481556944,
+    "edge": 21
+  }
+]

@@ -13,6 +13,7 @@ import type {
 import { DIGEST_REPORT_KEEP, EVENT_BOX_SEAL_THRESHOLD } from './types';
 import { bm25Index } from './bm25Index';
 import { notifyMemoryNodesChanged } from './nodeChanges';
+import { compactMemoryLink } from './linkPrecision';
 import type { VectorIndexEntry as VectorBackupIndexEntry } from '../backupFormat';
 
 // ─── Store 名称常量 ────────────────────────────────────
@@ -544,7 +545,7 @@ export const MemoryVectorDB = {
 // ─── MemoryLink CRUD ──────────────────────────────────
 
 export const MemoryLinkDB = {
-    save: (link: MemoryLink) => put<MemoryLink>(STORE_MEMORY_LINKS, link),
+    save: (link: MemoryLink) => put<MemoryLink>(STORE_MEMORY_LINKS, compactMemoryLink(link)),
 
     delete: (id: string) => deleteByKey(STORE_MEMORY_LINKS, id),
 
@@ -579,11 +580,49 @@ export const MemoryLinkDB = {
             const tx = db.transaction(STORE_MEMORY_LINKS, 'readwrite');
             const store = tx.objectStore(STORE_MEMORY_LINKS);
             for (const link of links) {
-                store.put(link);
+                store.put(compactMemoryLink(link));
             }
             tx.oncomplete = () => resolve();
             tx.onerror = () => reject(tx.error);
         });
+    },
+
+    /** Only round weights, never prune edges. Each batch updates the live cursor
+     * value in one transaction, so concurrent strengthening is not overwritten
+     * by an older snapshot. A failed batch can safely be retried. */
+    compactStrengths: async (onProgress?: (changed: number, scanned: number) => void): Promise<number> => {
+        let lastKey: IDBValidKey | undefined;
+        let changed = 0;
+        let scanned = 0;
+        for (;;) {
+            const db = await openDB();
+            const batch = await new Promise<{ count: number; changed: number; lastKey?: IDBValidKey }>((resolve, reject) => {
+                const tx = db.transaction(STORE_MEMORY_LINKS, 'readwrite');
+                const req = tx.objectStore(STORE_MEMORY_LINKS).openCursor(
+                    lastKey === undefined ? undefined : IDBKeyRange.lowerBound(lastKey, true),
+                );
+                let count = 0;
+                let updated = 0;
+                let key = lastKey;
+                req.onsuccess = () => {
+                    const cursor = req.result;
+                    if (!cursor) return;
+                    const original = cursor.value;
+                    const compacted = compactMemoryLink(original);
+                    if (compacted !== original) { cursor.update(compacted); updated++; }
+                    key = cursor.primaryKey;
+                    if (++count < 500) cursor.continue();
+                };
+                tx.oncomplete = () => resolve({ count, changed: updated, lastKey: key });
+                tx.onerror = tx.onabort = () => reject(tx.error || new Error('记忆连接整理未完成'));
+            });
+            changed += batch.changed;
+            scanned += batch.count;
+            lastKey = batch.lastKey;
+            onProgress?.(changed, scanned);
+            if (batch.count < 500) return changed;
+            await new Promise(resolve => setTimeout(resolve, 0));
+        }
     },
 };
 

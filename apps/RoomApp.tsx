@@ -329,6 +329,7 @@ const RoomApp: React.FC = () => {
     const [homeTab, setHomeTab] = useState<'room' | 'home3D' | 'worldHome'>(() => launchIntent?.tab || 'room');
     // 家园「正式开始玩」（进世界/编辑）时全屏，隐去顶部三栏
     const [worldHomeFull, setWorldHomeFull] = useState(false);
+    const [worldShortcut, setWorldShortcut] = useState<{ id?: string; sequence: number }>(() => ({ id: launchIntent?.worldId, sequence: 0 }));
     // 选人页（拜访谁的房间）的分组筛选
     const [visitGroupId, setVisitGroupId] = useState<string>(GROUP_FILTER_ALL);
     // 编辑家具弹窗里「指定角色」多选的分组筛选（只影响显示哪些可选项，不动已勾选）
@@ -614,17 +615,30 @@ const RoomApp: React.FC = () => {
     // 这里只补做需要副作用的部分（设激活角色、载家具、开梦境），并清空意图。
     // 用 useLayoutEffect 在浏览器绘制前跑完，避免任何中间态闪现。
     useLayoutEffect(() => {
-        const intent = roomLaunch.consume();
-        if (!intent) return;
-        const c = intent.charId ? characters.find(x => x.id === intent.charId) : null;
-        if (!c) { if (intent.charId) setViewState('select'); return; }
-        setActiveCharacterId(c.id);
-        if (intent.tab === 'home3D') return; // 3D 拜访直接进入，不触发 2D 房间初始化
-        // 房间 / 梦境：载入家具（handleEnterRoom 会把 viewState 设成 room，已一致）
-        handleEnterRoom(c);
-        if (intent.openDream) setShowDream(true);
+        let initial = true;
+        const apply = () => {
+            const isInitial = initial; initial = false;
+            const intent = roomLaunch.consume();
+            if (!intent) return;
+            launchedFromDesktopRef.current = true;
+            const tab = intent.tab || 'room';
+            setHomeTab(tab); setShowDream(false); setWorldHomeFull(false);
+            if (tab === 'worldHome') {
+                setViewState('select');
+                setWorldShortcut(previous => isInitial ? previous : { id: intent.worldId, sequence: previous.sequence + 1 });
+                return;
+            }
+            const c = intent.charId ? characters.find(x => x.id === intent.charId) : null;
+            if (!c) { setViewState('select'); return; }
+            setActiveCharacterId(c.id);
+            if (tab === 'home3D') { setViewState('home3D'); return; }
+            handleEnterRoom(c);
+            if (intent.openDream) setShowDream(true);
+        };
+        apply();
+        return roomLaunch.subscribe(apply);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [characters]);
 
     // Fallback Initialization: Used when main generation fails due to Safety Block
     const initializeFallback = async (c: CharacterProfile) => {
@@ -1755,7 +1769,8 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
                 {homeTab === 'worldHome' ? (
                     /* 家园分区：直接内嵌大世界本体，保持顶部三栏（不再跳走/不再多一层封面） */
                     <div className={`relative z-10 flex-1 min-h-0 overflow-hidden ${worldHomeFull ? '' : 'mt-3'}`}>
-                        <WorldHomeApp embedded onFullscreen={setWorldHomeFull} />
+                        <WorldHomeApp key={worldShortcut.sequence} embedded launchWorldId={worldShortcut.id}
+                            onLaunchConsumed={() => setWorldShortcut(previous => ({ ...previous, id: undefined }))} onFullscreen={setWorldHomeFull} />
                     </div>
                 ) : (
                     <>
@@ -2515,7 +2530,7 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
                                 {JSON.stringify(items, null, 2)}
                             </pre>
                         </div>
-                        <button onClick={() => { navigator.clipboard.writeText(JSON.stringify(items, null, 2)); addToast('Layout Copied', 'success'); }} className="w-full py-2 bg-slate-800 text-white text-xs font-bold rounded-xl">复制布局 JSON</button>
+                        <button onClick={() => { navigator.clipboard.writeText(JSON.stringify(items, null, 2)); addToast('布局已复制', 'success'); }} className="w-full py-2 bg-slate-800 text-white text-xs font-bold rounded-xl">复制布局 JSON</button>
                     </div>
 
                     <div>
@@ -2525,7 +2540,7 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
                                 {lastPrompt || "(暂无数据，请先尝试进入房间)"}
                             </pre>
                         </div>
-                        <button onClick={() => { if(lastPrompt) { navigator.clipboard.writeText(lastPrompt); addToast('Prompt Copied', 'success'); } else addToast('No prompt yet', 'error'); }} className="w-full py-2 bg-red-500 text-white text-xs font-bold rounded-xl">复制 Prompt 到剪贴板</button>
+                        <button onClick={() => { if(lastPrompt) { navigator.clipboard.writeText(lastPrompt); addToast('提示词已复制', 'success'); } else addToast('暂无提示词记录', 'error'); }} className="w-full py-2 bg-red-500 text-white text-xs font-bold rounded-xl">复制 Prompt 到剪贴板</button>
                         <p className="text-[9px] text-slate-400 mt-2 text-center">如果 AI 回复为空，请复制此 Prompt 检查是否有乱码/Base64 混入。</p>
                     </div>
                 </div>

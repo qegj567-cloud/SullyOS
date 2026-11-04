@@ -1,0 +1,19 @@
+.friend-feed .ff-grouped-directory { min-width:0; scroll-margin-top:12px; }
+.friend-feed .ff-directory-filters { display:flex; gap:8px; margin:8px 0 16px; }
+.friend-feed .ff-directory-filters input { flex:1; min-width:0; width:0; padding:10px 12px; border:1px solid var(--ff-line); border-radius:8px; background:var(--ff-paper); color:var(--ff-ink); font:inherit; font-size:12px; }
+.friend-feed .ff-directory-filters select { flex:0 1 45%; min-width:0; max-width:45%; padding:8px; font-size:12px; }
+.friend-feed .ff-directory-group { margin:16px 0 4px; padding:5px 0; color:var(--ff-muted); font-size:11px; font-weight:500; }
+.friend-feed .ff-directory-pagination { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:14px 0 2px; font-size:11px; }
+.friend-feed .ff-directory-pagination button { min-height:40px; padding:8px 10px; border:1px solid var(--ff-line); border-radius:8px; font-size:11px; }
+.friend-feed .ff-directory-pagination span { color:var(--ff-muted); text-align:center; }
+.friend-feed .ff-directory-empty { font-size:12px; color:var(--ff-muted); text-align:center; padding:16px 0; }
+.friend-feed .ff-directory-person { display:flex; align-items:center; justify-content:space-between; width:100%; min-height:44px; padding:11px 0; border-bottom:1px solid var(--ff-line); text-align:left; font-size:13px; overflow-wrap:anywhere; }
+.friend-feed .ff-directory-person[aria-pressed=true] { color:var(--ff-control-accent); font-weight:650; }
+.friend-feed .ff-character-picker { border-block:1px solid var(--ff-line); padding:0 0 8px; }
+.friend-feed .ff-character-picker > summary { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:58px; list-style:none; cursor:pointer; font-size:11px; color:var(--ff-muted); }
+.friend-feed .ff-character-picker > summary::-webkit-details-marker { display:none; }
+.friend-feed .ff-character-picker > summary strong { display:block; margin-top:4px; font-size:14px; color:var(--ff-ink); overflow-wrap:anywhere; }
+.friend-feed .ff-character-picker[open] > summary > svg { transform:rotate(180deg); }
+.friend-feed .ff-character-picker[open] { padding-bottom:14px; }
+.friend-feed .ff-weight-list .ff-directory-filters input { width:0!important; text-align:left; }
+.friend-feed .ff-directory-rows > .ff-relation-item { padding:18px 0; border-bottom:1px solid var(--ff-line); }

@@ -1,6 +1,7 @@
-type Speaker = { role: string; metadata?: any };
+type Speaker = { role: string; id?: number; metadata?: any };
 
-const isSpeaker = (message: Speaker): boolean => message.role === 'user' || message.role === 'assistant';
+const isSpeaker = (message: Speaker): boolean =>
+    !message.metadata?.homeSceneRecord && (message.role === 'user' || message.role === 'assistant');
 
 const lastSpeakerRole = (messages: Speaker[]): string | undefined =>
     [...messages].reverse().find(isSpeaker)?.role;
@@ -15,7 +16,11 @@ const isScheduledProactive = (message: Speaker): boolean =>
  */
 export function hasUnansweredUserTurn(messagesAtSend: Speaker[], historyForRequest: Speaker[]): boolean {
     if (lastSpeakerRole(messagesAtSend) !== 'user') return false;
-    const speakers = historyForRequest.filter(isSpeaker);
+    const pendingUser = [...messagesAtSend].reverse().find(message => message.role === 'user');
+    const speakers = historyForRequest.filter(message => isSpeaker(message)
+        // 旧剧情的虚拟时间可能排在输入后；它早已落库，不是对当前输入的回复。
+        && !(message.metadata?.source === 'story_theater_memory' && message.id != null
+            && pendingUser?.id != null && message.id < pendingUser.id));
     const lastUserAt = speakers.map(message => message.role).lastIndexOf('user');
     const tail = speakers.slice(lastUserAt + 1);
     return lastUserAt >= 0 && tail.length > 0 && tail.every(isScheduledProactive);

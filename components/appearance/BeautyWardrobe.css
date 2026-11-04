@@ -42,3 +42,5 @@
 .wardrobe-character-context button{padding:9px 14px;background:#fff;border-radius:9px;color:#222}
 
 .wardrobe-card-actions{display:flex;flex-wrap:wrap;gap:0 10px;margin-top:5px;align-items:center}.wardrobe-card-actions button{font:inherit;font-size:11px;min-height:34px;padding:4px 0;border:0;background:transparent;color:#666}.wardrobe-card-actions .is-danger{color:#bf454c}.wardrobe-card-actions button:disabled{color:#bbb;cursor:not-allowed}.wardrobe-detail .wardrobe-card-actions{gap:18px}.wardrobe-detail .wardrobe-card-actions button{font-size:14px;min-height:44px}
+
+.wardrobe-tile .wardrobe-usage,.decoration-preset-tile .wardrobe-usage{display:inline-block;margin:6px 0 2px;padding:3px 7px;border-radius:6px;background:#e5eee8;color:#356548;font-size:11px;line-height:1.5;font-weight:600}

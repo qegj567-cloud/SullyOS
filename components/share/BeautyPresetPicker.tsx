@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useLocalBackHandler } from '../../hooks/useLocalBackHandler';
 import type { BeautyKind } from '../../utils/beautyShareContract';
 import { normalizeBeautyPackage, readBeautyPackage } from '../../utils/beautyShareClient';
 import BeautyPresetPreview from './BeautyPresetPreview';
@@ -19,6 +20,7 @@ export default function BeautyPresetPicker({ sources, source, file, kind, onSour
   const pageCount = Math.max(1, Math.ceil(matches.length / 12));
   const currentPage = Math.min(page, pageCount - 1);
   const close = () => { dialog.current?.close(); opener.current?.focus(); };
+  useLocalBackHandler(() => { if (!dialog.current?.open) return false; close(); return true; }, 60);
   const choose = (id: string) => { onSource(id); close(); };
   const [pack, setPack] = useState<unknown>(null);
   const [error, setError] = useState('');

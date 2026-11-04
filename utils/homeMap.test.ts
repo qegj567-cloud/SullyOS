@@ -13,6 +13,15 @@ it('escapes room names before putting them into map markup',()=>{
  expect(html).not.toContain('<img');expect(html).toContain('&lt;img src=x&gt;');
 });
 
+it('offers the optional annex before creation and switches to the existing room without duplicate entries',()=>{
+ const home={rooms:[{id:'a',name:'客厅',x:0,z:0,level:0,wall:'#ffffff'}],activeRoomId:'a'};
+ const before=JSON.stringify(home),html=homeMap(home);
+ expect(html).toContain('data-action="activity-room" data-value="halloween"');expect(JSON.stringify(home)).toBe(before);
+ const existing=homeMap({...home,rooms:[...home.rooms,{id:'annex',name:'万圣节魔法小屋',x:2,z:0,level:0,wall:'#663977',activityRoom:'halloween' as const}]});
+ expect(existing).not.toContain('data-action="activity-room"');expect(existing).toContain('data-action="room" data-id="annex"');
+ expect(existing.match(/🎃 活动别馆/g)).toHaveLength(1);
+});
+
 it('centers both upper floors of the existing six-room home without changing navigation cells',()=>{const rooms=[{x:0,z:0,level:0},{x:1,z:0,level:0},{x:2,z:0,level:0},{x:1,z:0,level:1},{x:2,z:0,level:1},{x:2,z:0,level:2}];expect(rooms.map(r=>homeDisplayX({rooms},r))).toEqual([0,1,2,.5,1.5,1]);expect(rooms.map(r=>r.x)).toEqual([0,1,2,1,2,2]);});
 
 it('collapses the map without losing its expand control',()=>{const home={rooms:[{id:'a',name:'客厅',x:0,z:0,level:0,wall:'#ffffff'}],activeRoomId:'a'};expect(homeMap(home,undefined,true)).toContain('aria-label="展开小屋平面图" aria-expanded="false"');expect(homeMap(home,undefined,true)).toContain('<div hidden');expect(homeMap(home)).toContain('aria-label="收起小屋平面图" aria-expanded="true"');});

@@ -4,12 +4,25 @@ import {createRequire} from 'node:module';
 import {resolve} from 'node:path';
 import {runInNewContext} from 'node:vm';
 import {createHash} from 'node:crypto';
-import {tintIrisPixels} from '../apps/room3d/chibi/faceTint';
+import {tintIrisPixels,tintIrisPairPixels} from '../apps/room3d/chibi/faceTint';
+import {HUE_PALETTE} from '../apps/room3d/chibi/creatorHairTint';
 import highlights from '../apps/room3d/chibi/faceHighlights.json';
 import {cleanFace,highlightStyles} from '../apps/room3d/chibi/faceAppearance';
 const require=createRequire(import.meta.url);
 const sharp=require(resolve('node_modules/.pnpm',readdirSync('node_modules/.pnpm').find(n=>n.startsWith('sharp@'))!,'node_modules/sharp'));
 describe('Original grayscale dye and white highlights',()=>{
+ it('matches every Chibi palette parameter, linework threshold and both eye halves without converting via HEX',()=>{
+  const html=readFileSync('public/like520/character_creator.html','utf8');
+  const section=(start:string,end:string)=>html.slice(html.indexOf(start),html.indexOf(end));
+  const code=section('const HUE_PALETTE =','const state =')+section('function hslToRgb(','/* 解析 tintColor')+section('function colorHsl(','/* ===== 取翻转状态')+section('function applyEyesTint(','function upscaleCanvas(');
+  for(let hueIdx=0;hueIdx<HUE_PALETTE.length;hueIdx++)for(const threshold of [0,25,55])for(const light of [-50,0,50]){
+   const L={hueIdx,sat:75,light},R={hueIdx:(hueIdx+7)%18,sat:25,light:-light};
+   const pixels=new Uint8ClampedArray(Array.from({length:257*3},(_,i)=>[i%256,i%256,i%256,i%5===0?0:i%3===0?127:255]).flat());
+   const actual=pixels.slice(),expected=pixels.slice(),ctx={getImageData:()=>({data:expected}),putImageData:()=>{}};
+   runInNewContext(code+';applyEyesTint(canvas,resolveTint(L),resolveTint(R))',{state:{preserveLineart:threshold},canvas:{width:257,height:3,getContext:()=>ctx},L,R});
+   tintIrisPairPixels(actual,257,{L,R},undefined,threshold);expect(actual).toEqual(expected);
+  }
+ });
  it('matches the legacy creator for every grayscale, including alpha and black/white preservation',()=>{
   const html=readFileSync('public/like520/character_creator.html','utf8');
   const hsl=html.slice(html.indexOf('function hslToRgb('),html.indexOf('/* 解析 tintColor'));

@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useOS } from '../../context/OSContext';
 import { DB } from '../../utils/db';
+import { isExpense, ledgerTotals, parseLedgerAmount } from '../../utils/bankLedger';
 import { BankTransaction, LifeRecord, LifeRecordModule, LifeRecordSettings, MedPlan } from '../../types';
 import {
     DEFAULT_CYCLE_LENGTH, DEFAULT_PERIOD_LENGTH, computePeriodStatus, getPeriodIntervals,
@@ -507,19 +508,21 @@ const LifeRecordPanel: React.FC = () => {
 
     // ─── 记账（银行同一本账） ───
     const [txAmount, setTxAmount] = useState('');
+    const [txType, setTxType] = useState<'expense' | 'income'>('expense');
     const [txNote, setTxNote] = useState('');
     const dayTxs = useMemo(() => txs.filter(t => t.dateStr === recordDate), [txs, recordDate]);
-    const dayTotal = useMemo(() => sumMoney(dayTxs.map(t => t.amount)), [dayTxs]);
+    const dayTotal = useMemo(() => ledgerTotals(dayTxs).expense, [dayTxs]);
+    const dayIncome = useMemo(() => ledgerTotals(dayTxs).income, [dayTxs]);
     const monthTotal = useMemo(() => {
         const monthKey = recordDate.slice(0, 7);
-        return sumMoney(txs.filter(t => (t.dateStr || '').startsWith(monthKey)).map(t => t.amount));
+        return ledgerTotals(txs.filter(t => (t.dateStr || '').startsWith(monthKey))).expense;
     }, [txs, recordDate]);
 
     const handleAddTx = async () => {
-        const amount = parseFloat(txAmount);
-        if (isNaN(amount) || amount <= 0 || !txNote.trim()) { addToast('请填写金额和用途哦', 'error'); return; }
+        const amount = parseLedgerAmount(txAmount);
+        if (amount === null || !txNote.trim()) { addToast('请填写正数金额（最多两位小数）和备注哦', 'error'); return; }
         await DB.saveTransaction({
-            id: newId('tx-life'), amount, category: 'general',
+            id: newId('tx-life'), amount, type: txType, category: 'general',
             note: txNote.trim(), timestamp: Date.now(), dateStr: recordDate,
         });
         setTxAmount(''); setTxNote('');
@@ -883,17 +886,18 @@ const LifeRecordPanel: React.FC = () => {
                             </div>
                             <span className="w-px mx-3" style={{ background: THEMES.expense.soft }} />
                             <div className="text-right flex flex-col justify-end pb-1">
-                                <div className="text-[9px] mb-0.5" style={{ color: FADE, letterSpacing: '0.16em' }}>{recordMonthLabel}</div>
+                                <div className="text-[9px] mb-0.5" style={{ color: FADE, letterSpacing: '0.16em' }}>{recordMonthLabel}支出</div>
                                 <div className="text-sm font-bold tabular-nums" style={{ fontFamily: SERIF, color: INK }}>{formatMoney(monthTotal)}</div>
                             </div>
                         </div>
                         <p className="text-[9px] italic mt-2 px-1" style={{ color: FAINT, fontFamily: SERIF }}>
-                            与银行 App 共用一本账
+                            当日收入 {formatMoney(dayIncome)} · 结余 {formatMoney(dayIncome - dayTotal)} · 与银行 App 共用一本账
                         </p>
+                        <label className="text-xs">类型 <select aria-label="生活记录收支类型" value={txType} onChange={e => setTxType(e.target.value as 'expense' | 'income')} className="bg-transparent p-2"><option value="expense">支出</option><option value="income">收入</option></select></label>
                         <div className="flex items-end gap-2.5 mt-3 pt-3" style={{ borderTop: `1px dashed ${THEMES.expense.soft}` }}>
                             <input value={txAmount} onChange={e => setTxAmount(e.target.value)} inputMode="decimal" placeholder="金额"
                                 className={`w-16 ${inkInputCls}`} style={inkInputStyle(THEMES.expense)} />
-                            <input value={txNote} onChange={e => setTxNote(e.target.value)} placeholder="用途（奶茶 / 午饭…）"
+                            <input value={txNote} onChange={e => setTxNote(e.target.value)} placeholder={txType === 'income' ? '来源（工资 / 奖金…）' : '用途（奶茶 / 午饭…）'}
                                 className={`flex-1 min-w-0 ${inkInputCls}`} style={inkInputStyle(THEMES.expense)} />
                             <button onClick={handleAddTx}
                                 className="shrink-0 px-4 py-1.5 rounded-full text-[11px] font-bold active:scale-95 transition-transform"
@@ -915,7 +919,7 @@ const LifeRecordPanel: React.FC = () => {
                                     <div key={t.id} className="flex items-center gap-2 py-2 text-[11px]"
                                         style={{ fontFamily: SERIF, borderBottom: `1px dashed ${THEMES.expense.soft}` }}>
                                         <span className="flex-1 truncate" style={{ color: INK }}>{t.note || '未备注'}</span>
-                                        <span className="font-bold tabular-nums" style={{ color: THEMES.expense.accent }}>{formatMoney(t.amount)}</span>
+                                        <span className="font-bold tabular-nums" style={{ color: isExpense(t) ? THEMES.expense.accent : '#388667' }}>{isExpense(t) ? '支出 −' : '收入 +'}{formatMoney(t.amount)}</span>
                                         <button
                                             onClick={async () => { await DB.deleteTransaction(t.id); await reload(); addToast('记录已删除', 'success'); }}
                                             className="px-1 text-slate-300 hover:text-rose-400"

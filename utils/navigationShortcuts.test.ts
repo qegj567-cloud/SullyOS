@@ -1,0 +1,51 @@
+import { afterEach, expect, it, vi } from 'vitest';
+import { AppID } from '../types';
+import { normalizeNavigationShortcut, matchesShortcutSearch } from './navigationShortcuts';
+import { launchNavigationShortcut } from './navigationShortcutLaunch';
+import { roomLaunch } from './roomLaunch';
+import { characterLaunch } from './characterLaunch';
+import { appShortcutLaunch } from './appShortcutLaunch';
+afterEach(() => { roomLaunch.consume(); characterLaunch.consume(); });
+it('accepts legacy app IDs, allows Settings, constrains targets to their app and searches case/width/words', () => {
+  expect(normalizeNavigationShortcut(AppID.Settings)).toEqual({ appId: AppID.Settings });
+  expect(normalizeNavigationShortcut({ appId: AppID.Room, roomTab: 'worldHome', worldId: 'w', characterId: 'c' })).toEqual({ appId: AppID.Room, roomTab: 'worldHome', worldId: 'w' });
+  expect(normalizeNavigationShortcut({ appId: AppID.Settings, characterId: 'c' })).toEqual({ appId: AppID.Settings });
+  expect(normalizeNavigationShortcut(AppID.CharCreatorDev)).toBeNull();
+  expect(matchesShortcutSearch('Message CHAT 聊天', '  ＣＨＡＴ  聊天 ')).toBe(true);
+  expect(matchesShortcutSearch('小小窝', '家园')).toBe(false);
+});
+it('routes room modes/character/world IDs without mixing 2D/3D or changing active character for worlds', () => {
+  const actions = { characters: [{ id: 'c', name: '角色' }], openApp: vi.fn(), setActiveCharacterId: vi.fn(), onMissingTarget: vi.fn() };
+  launchNavigationShortcut({ appId: AppID.Room, roomTab: 'home3D', characterId: 'c' }, actions);
+  expect(roomLaunch.consume()).toEqual({ tab: 'home3D', charId: 'c', worldId: undefined });
+  launchNavigationShortcut({ appId: AppID.Room, roomTab: 'worldHome', worldId: 'world' }, actions);
+  expect(roomLaunch.consume()).toEqual({ tab: 'worldHome', charId: undefined, worldId: 'world' });
+  expect(actions.setActiveCharacterId).not.toHaveBeenCalled();
+  launchNavigationShortcut({ appId: AppID.Chat, characterId: 'c' }, actions);
+  expect(actions.setActiveCharacterId).toHaveBeenCalledWith('c'); expect(actions.openApp).toHaveBeenLastCalledWith(AppID.Chat);
+  launchNavigationShortcut({ appId: AppID.Character, characterId: 'c' }, actions);
+  expect(characterLaunch.consume()).toEqual({ charId: 'c' });
+  actions.openApp.mockClear();
+  launchNavigationShortcut({ appId: AppID.Room, roomTab: 'room', characterId: 'deleted' }, actions);
+  expect(actions.onMissingTarget).toHaveBeenCalledOnce(); expect(actions.openApp).not.toHaveBeenCalled(); expect(roomLaunch.peek()).toBeNull();
+});
+it('delivers intents to an already mounted app and removes subscriptions on exit', () => {
+  const applied = vi.fn(() => roomLaunch.consume()), remove = roomLaunch.subscribe(applied);
+  roomLaunch.request({ tab: 'room', charId: 'a' }); roomLaunch.request({ tab: 'home3D', charId: 'b' });
+  expect(applied.mock.results.map(result => result.value)).toEqual([{ tab: 'room', charId: 'a' }, { tab: 'home3D', charId: 'b' }]);
+  remove(); roomLaunch.request({ tab: 'worldHome' }); expect(applied).toHaveBeenCalledTimes(2); expect(roomLaunch.peek()?.tab).toBe('worldHome');
+  const characterApplied = vi.fn(() => characterLaunch.consume()), removeCharacter = characterLaunch.subscribe(characterApplied);
+  characterLaunch.request({ charId: 'a' }); characterLaunch.request({ charId: 'b' });
+  expect(characterApplied.mock.results.map(result => result.value.charId)).toEqual(['a', 'b']); removeCharacter();
+});
+it('preserves valid nested entries and prevents mismatched or unsupported targets', () => {
+  expect(normalizeNavigationShortcut({ appId: AppID.CheckPhone, entryId: 'contacts', characterId: 'c', resourceId: 'wrong' })).toEqual({ appId: AppID.CheckPhone, entryId: 'contacts', characterId: 'c' });
+  expect(normalizeNavigationShortcut({ appId: AppID.MemoryPalace, entryId: 'globalSettings', characterId: 'wrong' })).toEqual({ appId: AppID.MemoryPalace, entryId: 'globalSettings' });
+  expect(normalizeNavigationShortcut({ appId: AppID.Novel, entryId: 'shelf', resourceId: 'book', characterId: 'wrong' })).toEqual({ appId: AppID.Novel, entryId: 'shelf', resourceId: 'book' });
+  const actions = { characters: [{ id: 'c', name: '角色' }], openApp: vi.fn(), setActiveCharacterId: vi.fn(), onMissingTarget: vi.fn() };
+  launchNavigationShortcut({ appId: AppID.Character, entryId: 'stats', characterId: 'c' }, actions);
+  expect(characterLaunch.consume()).toEqual({ charId: 'c', detailTab: 'stats' });
+  launchNavigationShortcut({ appId: AppID.CheckPhone, entryId: 'contacts', characterId: 'c' }, actions);
+  expect(appShortcutLaunch.consume(AppID.CheckPhone)).toEqual({ appId: AppID.CheckPhone, entryId: 'contacts', characterId: 'c' });
+  expect(actions.setActiveCharacterId).not.toHaveBeenCalled();
+});

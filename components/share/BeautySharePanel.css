@@ -63,3 +63,5 @@
 @media(prefers-reduced-motion:reduce){.beauty-submit-intro,.beauty-confirmed-work{animation:none}}
 
 .beauty-terms-editor fieldset{border:0;padding:0;min-width:0}.beauty-terms-editor label{display:flex;flex-direction:column;gap:8px;margin:14px 0}.beauty-terms-editor select,.beauty-terms-editor textarea{width:100%;font:inherit;padding:10px;border:1px solid #e3e3e3;border-radius:10px;background:#fff;color:#222}.beauty-terms-editor label.beauty-share-check{flex-direction:row;align-items:center}.beauty-terms-editor li{margin:8px 0;overflow-wrap:anywhere}
+
+.beauty-share-panel .beauty-share-contents{width:100%;flex-basis:100%;padding:14px;border-radius:12px;background:#edf1ed;box-sizing:border-box}.beauty-share-contents legend{font-weight:600}.beauty-share-contents p{font-size:12px}

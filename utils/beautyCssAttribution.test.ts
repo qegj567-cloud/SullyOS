@@ -2,6 +2,18 @@ import {describe,it,expect} from 'vitest';
 import {stampBeautyCss,readCssAttribution,cssImportPreset,isCssImportCandidate,readLegacyWhiteboxShare} from './beautyCssAttribution';
 import {canEditDecoration} from './decorationLibrary';
 describe('CSS public attribution',()=>{
+ it.each(['date','story'] as const)('preserves %s reading base, CSS and author terms in a CSS share',category=>{
+  const css='.meeting-reading { --meeting-paper:#112233; }';
+  const text=stampBeautyCss(css,{name:'夜读',credit:'作者',category,readingPreset:'night',allowRemix:false,allowRedistribute:false});
+  const imported=cssImportPreset(text,'文件名');
+  expect(imported.preset.parts).toEqual({[category]:{preset:'night',customCss:css}});
+  expect(imported.origin).toMatchObject({credit:'作者',allowRemix:false,allowRedistribute:false});
+  expect(cssImportPreset(css,'无署名',category).preset.parts[category]).toEqual({preset:'novel',customCss:css});
+  expect(cssImportPreset(css,'无署名',category).origin).toBeNull();
+  const old=stampBeautyCss(css,{name:'旧分享',credit:'作者',category});
+  expect(cssImportPreset(old,'旧分享').preset.parts[category]?.preset).toBe('novel');
+  expect(()=>stampBeautyCss(css,{name:'错误',credit:'作者',category,readingPreset:'bad' as any})).toThrow();
+ });
  it.each(['whitebox','bubbles','psyche','avatar','background'] as const)('round trips %s without claiming authorship',category=>{
   const css=category==='psyche'?'.sully-psyche-card { color: red; }':category==='bubbles'?'.sully-bubble-ai { color: red; }':category==='avatar'?'.sully-chat-avatar-wrap { color: red; }':'.sully-chat-root { color: red; }';
   const text=stampBeautyCss(css,{name:'作品',credit:'作者',category,allowRemix:false,allowRedistribute:false});

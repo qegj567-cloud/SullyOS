@@ -30,6 +30,8 @@ import { bulkSetArchived } from './supabaseVector';
 import { safeFetchJson, extractContent, extractJson } from '../safeApi';
 import { enforceSummaryLengthBudget } from './summaryLengthBudget';
 import { buildSARMemoryBoundaryInstruction } from '../messageFormat';
+import { hasSummaryReasoningLeak } from '../summaryReasoning';
+export { hasSummaryReasoningLeak } from '../summaryReasoning';
 
 const VALID_ROOMS: MemoryRoom[] = [
     'living_room', 'bedroom', 'study', 'user_room',
@@ -74,29 +76,6 @@ interface CompressionLLMResult {
     room: MemoryRoom;
     importance: number;
     mood: string;
-}
-
-/**
- * 检测模型把“怎么算字数 / 怎么压缩”的过程误塞进整合回忆正文。
- *
- * 只凭一个英文短语就拒绝会误伤真实对话，所以要求至少命中两种典型信号；
- * 显式 think 标签则可以直接判定。这个守卫主要兜 Gemini/推理中转把未标记
- * reasoning 混进 content 的情况，例如：Paragraph 1: 31 chars / Still too long。
- */
-export function hasSummaryReasoningLeak(content: string): boolean {
-    const text = content.trim();
-    if (!text) return false;
-    if (/<(?:think|thinking|thought)>/i.test(text)) return true;
-
-    const signals = [
-        /\bparagraph\s*\d+\s*:\s*\d+\s*(?:chars?|characters?)\b/i,
-        /\btotal\s*:\s*[\d\s+]+\s*(?:chars?|characters?)\b/i,
-        /\bstill\s+too\s+long\b/i,
-        /\bneed\s+to\s+get\s+under\s+\d+\b/i,
-        /\blet(?:'|’)s\s+(?:count|condense|compress|shorten)\b/i,
-        /(?:^|\n)\s*(?:analysis|reasoning)\s*:/i,
-    ];
-    return signals.reduce((count, pattern) => count + (pattern.test(text) ? 1 : 0), 0) >= 2;
 }
 
 /**
@@ -191,7 +170,7 @@ async function callCompressionLLM(
 
 **要求（严格遵守）**：
 1. **第一人称**（用「我」），从 ${charName} 的视角写。${userLabel} 用名字直接称呼。
-2. **字数目标 ${EVENT_BOX_SUMMARY_TARGET_MIN_CHARS}-${EVENT_BOX_SUMMARY_TARGET_MAX_CHARS} 字，绝对上限 ${EVENT_BOX_SUMMARY_HARD_MAX_CHARS} 字**。紧凑、务实、不口水。
+2. **字数目标 ${EVENT_BOX_SUMMARY_TARGET_MIN_CHARS}-${EVENT_BOX_SUMMARY_TARGET_MAX_CHARS} 字**。紧凑、务实、不口水；事实较多时允许超出，不能为了凑字数省略事实或截断句子。
 3. **只保留关键信息**：具体人物、动作、对象、场景、转折、情绪。**去掉所有语气填充、修辞铺陈、重复感慨**（如「真是的」、「怎么说呢」、「不过话说回来」等）。事实先行。
 4. **带时间点但不冗余**：每件事标一次日期就够（「3 月 20 日…4 月 5 日…」），不要每句都重复时间。
 5. **连贯但简洁**：不套「起因/经过/结果」模板，但要让读者能按顺序看懂事情怎么发展的。
@@ -241,6 +220,9 @@ ${sarMemoryBoundary ? `\n${sarMemoryBoundary}` : ''}
             2, 120_000, { appName: '记忆宫殿', purpose: '事件压缩' }
         );
 
+        if (['length', 'max_tokens', 'content_filter'].includes(data?.choices?.[0]?.finish_reason)) {
+            throw new Error('整合回忆输出未完成，原内容已保留');
+        }
         // 统一剥除 <think> 块并兼容分段 content / reasoning-only 中转。
         // 未标记的推理泄漏由 hasSummaryReasoningLeak 在手动重整路径继续拦截。
         const reply = extractContent(data);
@@ -263,11 +245,10 @@ ${sarMemoryBoundary ? `\n${sarMemoryBoundary}` : ''}
                 return null;
             }
         }
-        // 长度兜底：超过硬上限时，先让模型把这段二次压缩回目标区间（不丢信息），
-        // 压不动或二次压缩失败才退回硬截断保证有界。详见 enforceSummaryLengthBudget。
+        // 长度只是精简目标；二次压缩失败仍保存完整正文，不能机械截掉事实。
         let content = String(parsed.content);
         if (content.length > EVENT_BOX_SUMMARY_HARD_MAX_CHARS) {
-            console.warn(`🗜️ [Compression] LLM summary ${content.length} 字超过硬上限 ${EVENT_BOX_SUMMARY_HARD_MAX_CHARS}，尝试二次压缩`);
+            console.warn(`🗜️ [Compression] LLM summary ${content.length} 字，尝试精简一次；不达标时保留完整正文`);
             content = await enforceSummaryLengthBudget(
                 content,
                 (t) => recompressSummary(t, EVENT_BOX_SUMMARY_TARGET_MAX_CHARS, llmConfig, charName),
@@ -295,7 +276,7 @@ ${sarMemoryBoundary ? `\n${sarMemoryBoundary}` : ''}
     }
 }
 
-// ─── 整合回忆长度兜底：超限二次压缩，压不动才硬截断 ──────────
+// ─── 整合回忆精简：超长二次压缩，失败保留完整正文 ──────────
 
 /**
  * 让模型把过长的整合回忆压缩回 targetMaxChars 字内（纯文本输出，不走 JSON）。
@@ -332,10 +313,11 @@ async function recompressSummary(
             },
             2, 90_000, { appName: '记忆宫殿', purpose: '事件压缩-二次压缩' }
         );
-        const reply = (data.choices?.[0]?.message?.content || '').trim();
+        if (['length', 'max_tokens', 'content_filter'].includes(data?.choices?.[0]?.finish_reason)) return null;
+        const reply = extractContent(data).trim();
         // 模型偶尔仍会裹 ``` 代码块，剥掉常见包裹
         const cleaned = reply.replace(/^```[a-zA-Z]*\n?/, '').replace(/\n?```$/, '').trim();
-        return cleaned || null;
+        return cleaned && !hasSummaryReasoningLeak(cleaned) ? cleaned : null;
     } catch (err: any) {
         console.warn(`🗜️ [Compression] 二次压缩 LLM 调用失败: ${err?.message || err}`);
         return null;

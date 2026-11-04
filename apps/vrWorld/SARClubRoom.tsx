@@ -6,6 +6,7 @@ import type {CharacterProfile} from '../../types';
 import {getChibi} from '../../utils/vrWorld/chibi';
 import {arrangeSARRoomActors,SAR_ROOM_HOTSPOTS,SAR_ROOM_SIZE,type SARFacility,type SARRoomActor} from '../../utils/vrWorld/sarRoomLayout';
 import {SARNpcChibi} from './SARNpcArt';
+import {HalloweenChibi,HalloweenPumpkins} from './KanataHalloween';
 import {normalizeKanataTitle} from '../../utils/vrWorld/kanataTitle';
 import './sar-club-room.css';
 import {sarRoomView,type SARRoomView} from '../../utils/vrWorld/sarClub';
@@ -65,6 +66,7 @@ export default function SARClubRoom({onOpenGacha,onOpenCabinet,onOpenModuleShop,
         <div className="sar-room-viewport" ref={viewport}>
             <div className="sar-room-canvas" style={{width:size.width,height:size.height}} data-art-width={SAR_ROOM_SIZE.width} data-art-height={SAR_ROOM_SIZE.height}>
                 <img className="sar-room-background" src={roomArt} alt="SAR 活动室" draggable={false}/>
+                <HalloweenPumpkins/>
                 {size.width>0&&placed.map(actor=>{
                     const npc=actor.id==='sar-npc-caian'?'caian':actor.id==='sar-npc-aiven'?'aiven':null;
                     const char=npc?undefined:occupants.find(c=>c.id===actor.id),chibi=char?getChibi(char):null;
@@ -75,7 +77,7 @@ export default function SARClubRoom({onOpenGacha,onOpenCabinet,onOpenModuleShop,
                         onClick={()=>{if(npc==='caian')onTalkToCaian?.();else if(npc==='aiven')onTalkToAiven?.();else if(char&&char.id!=='user')onSelectCharacter?.(char);else setRoster(r=>!r);}}>
                         <span className="sar-room-person__shadow"/>
                         <span className={`sar-room-person__body ${chibi?.isFallback?'is-fallback':''}`}>
-                        {npc?<SARNpcChibi who={npc}/>:chibi?.img?<TokenImg value={chibi.img} alt={name} draggable={false}
+                        {npc?<SARNpcChibi who={npc}/>:chibi?.img?<HalloweenChibi actorId={actor.id} img={chibi.img} name={name}
                             className={`sar-room-person__visitor ${chibi.isFallback?'is-fallback':''}`} style={{transform:`scale(${Math.min(1.5,Math.max(.6,chibi.scale))}) scaleX(${chibi.flip?-1:1}) translateY(${chibi.offsetY*size.width/SAR_ROOM_SIZE.width}px)`}}/>
                             :<span className="sar-room-person__fallback">{name.slice(0,1)}</span>}
                         </span>

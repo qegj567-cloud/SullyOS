@@ -5,6 +5,7 @@ import {afterEach,it,expect,vi} from 'vitest';
 import {WardrobePicker} from '../experiments/chibi/WardrobePicker';
 import {approvedPresets} from '../apps/room3d/chibi/approvedWardrobe';
 import builtinOutfits from '../apps/room3d/chibi/builtinOutfits.json';
+vi.mock('../apps/room3d/ResourcePackPanel',async importOriginal=>({...await importOriginal<any>(),confirmResourcePack:vi.fn(async()=>true),useResourcePackInstalled:()=>true}));
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT=true;
 const host=document.createElement('div');document.body.appendChild(host);let root:ReturnType<typeof createRoot>;
 afterEach(()=>act(()=>root.unmount()));
@@ -14,14 +15,18 @@ it('adds animal accessories without stripping the legacy initial outfit',()=>{
  act(()=>host.querySelector<HTMLButtonElement>('[aria-label="猫耳"]')!.click());
  expect(change.mock.lastCall![0].wardrobe).toEqual({...approvedPresets.original.items,ears:'cat-ears'});
 });
-it('offers image tiles for every outfit and applies its complete items',()=>{
+it('offers image tiles for every outfit and applies its complete items',async()=>{
  const change=vi.fn();root=createRoot(host);act(()=>root.render(React.createElement(WardrobePicker,{hair:{layers:{},extras:[],bodyShape:'blank'},onChange:change})));
+ for(const seasonal of [false,true]){
+ act(()=>[...host.querySelectorAll<HTMLButtonElement>('nav button')].find(b=>b.textContent===(seasonal?'万圣节专属衣柜':'套装'))!.click());
  const grid=host.querySelector('[aria-label="套装款式"]')!;
- expect(grid.querySelectorAll('button')).toHaveLength(Object.keys(approvedPresets).length);
- for(const [id,p] of Object.entries(approvedPresets)){
+ const presets=Object.entries(approvedPresets).filter(([,p])=>(p.collection==='halloween')===seasonal);
+ expect(grid.querySelectorAll('button')).toHaveLength(presets.length);
+ for(const [id,p] of presets){
   const tile=grid.querySelector<HTMLButtonElement>(`[aria-label="${p.label}"]`)!;
   expect(tile.querySelector(`[aria-label="${p.label}整套穿着预览"]`)).not.toBeNull();
-  act(()=>tile.click());expect(change.mock.lastCall![0].wardrobe).toEqual(p.items);
+  await act(async()=>tile.click());expect(change.mock.lastCall![0].wardrobe).toEqual(p.items);
+ }
  }
 });
 it('keeps advanced clothing controls collapsed below the image choices',()=>{

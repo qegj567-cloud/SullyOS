@@ -24,6 +24,12 @@ const WorldbookApp: React.FC = () => {
     const [editingBook, setEditingBook] = useState<Worldbook | null>(null);
     const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
     const [previewBookId, setPreviewBookId] = useState<string | null>(null);
+    useAppShortcut(ShortcutAppID.Worldbook, intent => {
+        const target = worldbooks.find(book => book.id === intent.resourceId);
+        setIsEditing(false); setIsSelecting(false); setPreviewBookId(target?.id || null);
+        if (target) setExpandedCategory(target.category || '未分类设定 (General)');
+        if (intent.resourceId && !target) addToast('这条世界书已不存在，请重新设置槽位', 'error');
+    });
     const [categoryPages, setCategoryPages] = useState<Record<string, number>>({});
     const [isSelecting, setIsSelecting] = useState(false);
     const [selectedBookIds, setSelectedBookIds] = useState<Set<string>>(new Set());
@@ -906,3 +912,5 @@ const WorldbookApp: React.FC = () => {
 };
 
 export default WorldbookApp;
+import { useAppShortcut } from '../utils/appShortcutLaunch';
+import { AppID as ShortcutAppID } from '../types';

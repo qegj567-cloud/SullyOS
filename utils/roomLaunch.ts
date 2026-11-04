@@ -10,15 +10,18 @@
 export interface RoomLaunchIntent {
     charId?: string;
     tab?: 'room' | 'worldHome' | 'home3D';
+    worldId?: string;
     /** 进该角色房间后直接打开梦境演出 */
     openDream?: boolean;
 }
 
 let pending: RoomLaunchIntent | null = null;
+const listeners = new Set<() => void>();
 
 export const roomLaunch = {
     request(intent: RoomLaunchIntent): void {
         pending = intent;
+        listeners.forEach(listener => listener());
     },
     /** 只读，不清空——供 useState 惰性初始化把首帧就渲染成目标视图（避免闪一下 select）。 */
     peek(): RoomLaunchIntent | null {
@@ -29,5 +32,8 @@ export const roomLaunch = {
         const v = pending;
         pending = null;
         return v;
+    },
+    subscribe(listener: () => void): () => void {
+        listeners.add(listener); return () => { listeners.delete(listener); };
     },
 };

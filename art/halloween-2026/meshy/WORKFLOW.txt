@@ -1,0 +1,112 @@
+万圣节模型工作流 — 2026-10-27
+
+用户最新要求优先于历史通用规程：
+1. 用户指出低面数和手工分块染色不符合效果图，明确允许拉高面数。
+2. 用户明确允许使用 Meshy 染色/贴图。本批可保留 Meshy 按参考图生成的 UV 和贴图，不套用旧家具规程的全部去纹理规则。此例外仅针对本次万圣节工作。
+3. 袜子必须贴腿；复用已认可服装的版型/蒙皮/遮挡，不能将 AI 人腿切成粗筒袜。
+4. 每批 2–4 个生成任务。密钥只放临时环境变量，不写进文件。
+
+已完成的质量对照：
+batch-01/02：T2/T2.5 低面数试验，共 30 credits。fitted/ 为旧粗糙候选，不能发布。
+batch-03：Meshy 7.1 / Ultra 4K 几何；南瓜全套 82,764、幽灵上衣含人体 61,695、南瓜灯 20,767 三角面。
+三个未减面制作原模保存为 *-source.glb；工作网格另存。此处 4K 是生成精度，不是 4,000 面。
+batch-04-texture：用同一参考图对上述任务做 Retexture；Meshy 7 / 4K PBR。
+两批实际扣费 75+30=105 credits，本项目累计 135，最近余额 1,106。
+*-textured.glb 保留官方完整输出。*-smooth.glb 保留几何、UV 和颜色贴图，重新计算跨 UV 缝的平滑法线，降低金属/高光感，关闭生成法线贴图；不是重新建模。
+
+袜子：
+reuse-fitted-socks.mjs 读取 public/room3d/wardrobe/sailor-girl.glb 的 Sailor_socks。
+保留原 1,156 面拓扑及 48 骨系统，通过项目现有 fitSockSurface 适配当前身体并插值局部蒙皮权重。
+条纹是独立的两色程序纹理，不需要付费生成。viewer 复用现有袜子遮挡逻辑（袜口 0.96 下方 0.06 内侧开始隐藏），没有扩大到整腿。
+已验证条纹袜正侧背静态贴合；动作与新服装的组合验收尚未完成。
+
+当前交付状态：
+viewer.html 提供高精度白模、Meshy 原贴图、柔和材质版、贴腿袜以及旧版对照。
+capture-hd.mjs / --textured / --smooth 保存正侧背实渲染，未发现页面异常。
+衣服仍是生成源，含 Meshy 随附人体；不能把这些整体直接写入正式衣橱。
+尚待：保持 UV 的分件、去随附人体、按现有衣服母版适配当前 48 骨、动作/鞋袜/袖口验收、按视觉容差减面、家具尺寸与交互验收，再发布。
+未改 public/room3d 正式资源、家具目录和 approvedWardrobe.json。
+
+执行：
+pnpm node art/halloween-2026/meshy/meshy-workflow.mjs run art/halloween-2026/meshy/batch-03.json
+pnpm node art/halloween-2026/meshy/meshy-workflow.mjs run art/halloween-2026/meshy/batch-04-texture.json
+已有 ledger 的任务只查询/下载，不重复提交扣费。SUBMITTING 无 taskId 时必须核对，禁止盲目重试。
+pnpm node art/halloween-2026/meshy/smooth-textured.mjs
+pnpm exec esbuild art/halloween-2026/meshy/fit-sock-bridge.ts --bundle --platform=node --format=esm --packages=external --outfile=art/halloween-2026/meshy/fit-sock-bridge.mjs
+pnpm node art/halloween-2026/meshy/reuse-fitted-socks.mjs
+
+官方接口依据：
+https://docs.meshy.ai/en/api/image-to-3d
+https://docs.meshy.ai/en/api/retexture
+https://docs.meshy.ai/en/api/pricing
+
+2026-10-27 拆件与回装进展（替代上文“衣服仍未拆”的旧状态）：
+用户认可 reduced/selected.json 的轻量版，并授权拆件与组装。
+assembled/index.html 已接入当前 createBlankBody + 48 骨，可独立穿脱南瓜 5 组和幽灵上衣。
+保留源 UV 和颜色图；已验证内嵌 atlas 字节一致。重用已有肩部/袜子母版。
+各 6 姿势 × 正侧背截图，骨权重、左右鞋、脱衣恢复完整身体、脱靴恢复完整袜子检查通过。
+仍是适配候选：原始垂手与蓬松衣身相交，页内另有明确标注的宽松装站姿；
+肩部/领口接缝、极端动作及真实衣橱/发型/身高组合待正式验收。不能宣称全部动作无穿插。
+详细范围与限制见 assembled/README.txt；未新增 Meshy 扣费，未写正式衣橱目录。
+
+2026-10-27 六款统一对照（本节为最新状态）：
+batch-05：女巫、伯爵、药剂学徒、糖果短裤 4 个 image-to-3d，100 credits。
+batch-06-texture：上述 4 件按同一参考图 retexture，40 credits。
+batch-07：幽灵短裤、搭扣鞋 2 个 image-to-3d，50 credits。
+batch-08-texture：上述 2 件 retexture，20 credits。
+本轮新增 210 credits；项目累计 345；本轮最后查询余额 896。
+任务均完成，原始输出和 ledger 保留；临时 localhost 密钥服务已关闭，密钥未写入资源。
+
+全部六款已分件、去随附人体，并适配项目当前 48 骨；25 个逻辑穿脱分组。
+assembled/review.html 提供每款参考图与实际模型并排、正侧背、姿势和单件切换。
+详细修复、显示面数、验证和剩余差异见 assembled/README.txt。
+原贴图保留，不代表每个细节与参考一致；仍为正式衣橱发布前的视觉验收候选。
+新生成物的减面配置：reduce-batch-06.json、reduce-batch-08.json。
+新增本地适配：fit-remaining-outfits.mjs、fit-ghost-extras.mjs、refit-sock-lengths.mjs。
+
+2026-10-28：用户指出比例、远景串色、鞋袜及女巫领口问题，已继续修正。
+详见 assembled/README.txt 最新小节；关键结论：atlas mip bleed 与真正穿模必须分开诊断。
+本轮仅本地修复，未调用 Meshy，新消耗 0 credits。
+
+2026-10-28 正式衣橱接入：25 件单品按原分类注册，5 套服装 × 4 配色进入万圣节专属衣柜。糖果短裤仅为下装单品，不作为套装进入专属柜。
+单品配色面板提供三组染色与恢复原色；短裤午夜配色改为深灰装饰，降低暗部阈值以消除残留粉色线点。预览和正式衣橱共用染色控制器。
+19 项衣橱、染色、保存/分享、资产检查通过；5 套正式加载/脱下恢复身体通过，无浏览器异常。非全动作无穿模保证，家具制作尚未完成。
+
+2026-10-29 万圣节家具实装（本节为家具最新状态）：
+12 件：蝙蝠沙发、棺木茶几、南瓜椅、魔药书柜、壁炉、幽灵灯、月夜帘窗、蝙蝠地毯、蘑菇坩埚、猫耳镜、蝙蝠钟、南瓜灯。前 11 件来自 batch-09/10/11 Meshy image-to-3d；南瓜灯复用先前已生成母版。
+这一轮生成实扣 60 credits：11 件家具 55 credits；batch-11 清单误带 1 张旧服装图，额外 5 credits（未使用）。筛选已改为明确家具文件，误任务保留 ledger 以便审计。起始余额 656，最后余额 596，不与其他任务合并计费。未保存 API 密钥。
+本地修复：源图像贴图/UV/顶点色全部移除；几何材质手工分色。南瓜椅内衬沿曲面切色，镜面按原倾角补齐，幽灵眼洞补深色内片，帘窗补背板与月星，毯子改为平放、纠正比例和落地高度，清理沙发锯齿分色。小摆件降低面数，不为凑目标加面。
+最终 12 件合计 73,046 三角面，GLB 共 1,448,860 字节（约 1.38 MiB），单件 3,647–7,896 面。均可独立移动/收纳/染色；沙发 2 座、南瓜椅 1 座；茶几与壁炉支持摆放，南瓜灯随壁炉移动。
+正式入口：房间 → 追加一间样板房 → 万圣节魔法小屋；家具按座椅、收纳、灯具、装饰、绿植、地毯分类。只追加房间，不覆盖旧存档。万圣节条纹护墙可在房间装扮中切换。
+预览：/test/fixtures/room3d-showrooms.html?room=halloween&fresh=1&blank=1
+重建：pnpm node art/halloween-2026/meshy/build-furniture.mjs；pnpm node art/halloween-2026/meshy/build-lantern.mjs；pnpm node art/halloween-2026/meshy/publish-furniture.mjs。重建全站 catalog 后需要再次执行 publish-furniture.mjs。缩略图导出脚本 qa/export-thumbnails.mjs 只写 halloween_ 条目。
+验收：10 项资产/模板/大头角色通道与座位入口测试通过；真实编辑器 3 座实坐及起身、壁炉携带灯的拖动、撤销重做、染色保存重载、390px 手机布局通过，无浏览器错误；Vite 生产构建通过（既有 pdf.js eval 警告仍在）。qa/ 下保留脚本、截图和结果。
+限制：属于按参考修复的低面游戏资产，并非参考图逐像素重建；镜面是装饰材质，不实时反射；魔火、钟面、坩埚均为装饰，未虚构新交互。未进行全设备 FPS 基准，也未发布上线。
+
+2026-10-29 用户否定纯色版本，明确改用 Meshy 参考图贴图（本节覆盖上面的纯色约束）：
+- batches 12/13/14：每批 4 件、每件 10 credits；12 件均成功，本轮 120 credits，余额 596 → 476。使用修复后的低面 GLB data URI + 每件原始参考图，Meshy 7 Retexture 2k/PBR，重新生成 UV；没有重新生高面几何，也没有保存凭据。
+- 原始贴图模型保留各 batch 目录，纯色输入留在 furniture-texture-inputs/。prepare-furniture-textures.py 将 Meshy 居中归一化输出恢复实际家具尺寸/底部原点；帘窗实际厚度与旧目录有约 5% 差异，更新真实边界，未变更座位/承托点。
+- 正式版本：12 件 72,993 三角面，单件 3,644–7,893；GLB 共 10,703,472 字节。原始 2k 材质留作母版，运行时主色 1024、法线/金属粗糙度 512，估算无 mip 贴图约 72 MiB（非全场景显存基准）。保留 PBR/UV，白色材质基色，不再用紫色乘掉细节。
+- atlas minFilter=Linear，正式加载关闭 mip 生成，避免旧衣服同类远景串色。仅 textureSource=meshy-reference 的家具走此路径；materialStyle=pbr 跳过纯色卡通光照覆盖，其余家具保持原渲染。
+- 换色现在是贴图整体色调；不是之前按紫/橙/绿几何分组。原色白色乘数完整保留 Meshy 贴图，恢复原色可用；不修改旧房间布局和用户保存的自选颜色。
+- 重建：运行 prepare-furniture-textures.py（Pillow），再 pnpm node art/halloween-2026/meshy/publish-furniture.mjs。发布器优先完整 12 件 texture report，并检查 revision，避免重建时退回纯色。随后导出缩略图。
+- 10 项测试、实际编辑器 3 座实坐/起身、承托拖动、撤销重做、换色保存、手机布局通过；查看了正背、近景与整屋截图。少量 UV 接缝/生成图案仍是近似，未声明逐像素一致。参考：https://docs.meshy.ai/en/api/retexture
+
+2026-10-29 Wardrobe byte budget and window repair
+- SVG experiment stopped at the user's request; none of its output is in production.
+- 96,047,560-byte / 12-file Halloween wardrobe replaced by 25 independently loaded GLBs plus 8 shared, content-hashed 1024px JPEG atlases: 7,544,802 bytes total (92.14% smaller).
+- Most GLBs are 21–361 KB; the detailed witch dress is 840 KB and ghost hooded top 638 KB. These numbers exclude the shared atlases (192–517 KB each); first use downloads the relevant atlas once. No per-item duplicate 4K texture remains. Original masters remain under wardrobe-size-masters, outside public.
+- Compression keeps topology and weights; weld identical vertices, snap positions at 1/65536 world unit, quantize normals/UVs, meshopt encode. Runtime converts normalized/interleaved attributes before fitting/clipping. The geometry compression alone is not a reduction in GPU triangles.
+- Canonical rebuild: install pnpm --dir tmp/halloween-compress add @gltf-transform/core@4.5.1 @gltf-transform/extensions@4.5.1 @gltf-transform/functions@4.5.1 meshoptimizer@1.3.0; set HALLOWEEN_PYTHON to Python with Pillow; pnpm node art/halloween-2026/meshy/publish-wardrobe.mjs. Its final stages refresh masters, resize textures, split/compress individual garments, publish revisions, and remove obsolete bundle files. To recompress existing masters only: run compress-wardrobe-textures.py, compress-wardrobe-items.mjs, publish-compressed-wardrobe.mjs in that order.
+- Window: remove 131 coplanar fragments that overlaid the continuous panes, 7495 -> 7364 triangles. Run repair-window-overlap.mjs --publish AFTER prepare-furniture-textures.py and BEFORE publish-furniture.mjs. Original input saved in qa/window-before-repair.glb; texture palette/materials unchanged.
+- QA: 17 targeted tests pass; 25 individual garments x 4 animated poses load/render with finite posed bounds, no console errors, and body restored after removal. Five ensembles in original/midnight inspected through the production loader. Room support movement/undo/redo/color persistence/mobile checks pass; 12 thumbnails regenerated.
+- Full wardrobe:check generated 339 cross-wardrobe combinations; stopped after 25 completed because the extensive collision audit was disproportionate for asset compression. Do not describe that full suite as passing. Targeted real-browser motion report: qa/compressed-piece-motion.json.
+- Exact per-item geometry/atlas sizes: wardrobe-item-compression-report.json. Shared textures must accompany GLBs; they are not self-contained exports.
+- Vite production build passed (2m45s); temporary verification build removed. Existing pdf.js eval warning remains.
+
+2026-10-29 Furniture compression + complete window patch
+- 12 furniture GLBs: 10,703,472 -> 4,521,820 bytes (57.75% smaller), 248–583 KB each. Base-color atlases remain 1024px, normal/metal-roughness 512px; encode WebP quality 90 from original Meshy sources, use EXT_texture_webp plus lossless EXT_meshopt_compression. No additional Meshy calls/credits. GLBs remain self-contained.
+- Furniture GLTFLoader now supplies MeshoptDecoder; all atlas samplers retain LinearFilter/no mip bleeding. Collision sizes, seats, material names and tint controls unchanged.
+- Window overlap repair alone was incomplete: left-pane black diagonal was also baked into front UV islands. Reuse the clean corresponding back-pane UVs on the left front glass. Clip crossing triangles at the centerline rather than selecting by centroid; preserve the right moon pane. Final window 7378 triangles. Keep original backups outside public.
+- Rebuild/publish with HALLOWEEN_PYTHON set to Python with Pillow: pnpm node art/halloween-2026/meshy/rebuild-furniture-runtime.mjs. Executes prepare -> overlap repair -> left-pane UV repair -> compression -> publish; publisher refuses missing compression/repair markers. Offline dependencies are the same tmp/halloween-compress packages as wardrobe compression.
+- Verified: size/hash/extension/8k/repair marker tests, skill browser screenshot/state, front/side window inspection, room support drag/undo/redo/color-save/mobile, 12 regenerated thumbnails, Vite production build (2m40s). No browser console errors. Before/after view: qa/window-final-review.html and png.

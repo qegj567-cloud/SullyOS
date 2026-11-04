@@ -10,6 +10,27 @@ import type {ChibiVisitor} from '../apps/room3d/chibi/visitor';
 import {createSocialScene} from '../apps/room3d/chibi/selectedSocial';
 import {furniturePalm} from '../apps/room3d/chibi/furnitureMotion';
 import {BLANK_FINGERS} from '../apps/room3d/chibi/blankFingers';
+import {carryPhase} from '../apps/room3d/chibi/princessCarry';
+
+it('keeps captured carry contacts continuous, supports through landing and replays independently of seek order',async()=>{
+ vi.stubGlobal('fetch',vi.fn(async(url:string)=>({ok:true,json:async()=>JSON.parse(readFileSync('public/'+url.replace(/^\//,''),'utf8'))})));
+ try{for(const heights of [[1,1],[.8,1.25],[1.25,.8]])for(const action of ['home-princess-carry','home-princess-carried']){
+  const both=[actor(heights[0],-.45,0),actor(heights[1],.45,Math.PI)];
+  const runtime=createSocialScene(both.map((r,i)=>({id:String(i),visitor:r.visitor})));
+  await runtime.start(action,'0','1');const start=runtime.inspect().session!.duration-10.6;
+  const sample=(t:number)=>{runtime.seek(start+t);return both.flatMap(r=>Object.entries(r.visitor.rig!.bones).map(([name,b])=>({name,q:b.getWorldQuaternion(new T.Quaternion()),p:b.getWorldPosition(new T.Vector3())})));};
+  let previous=sample(0),max=0,where='';
+  for(let i=1;i<=300;i++){const current=sample(i/30);current.forEach((b,j)=>{const step=b.q.angleTo(previous[j].q);if(step>max){max=step;where=`${b.name} at ${i/30}`;}expect(b.p.toArray().every(Number.isFinite)).toBe(true);});previous=current;}
+  expect(max,`${action} ${heights}: ${where}`).toBeLessThan(.45);
+  const hold=sample(5);sample(1);const replay=sample(5);hold.forEach((b,i)=>{expect(b.q.angleTo(replay[i].q)).toBeLessThan(1e-6);expect(b.p.distanceTo(replay[i].p)).toBeLessThan(1e-6);});
+  const carrier=both[action==='home-princess-carry'?0:1].visitor,recipient=both[action==='home-princess-carry'?1:0].visitor;
+  expect(carrier.rig!.bones.R_hand.localToWorld(furniturePalm('R')).distanceTo(recipient.rig!.bones.R_shin.getWorldPosition(new T.Vector3()))).toBeLessThan(.18);
+  const moving=sample(5.6);expect(Math.max(...moving.map((b,i)=>b.p.distanceTo(hold[i].p)))).toBeGreaterThan(.005);
+  // Both actions share a clock: feet finish lowering before support releases.
+  expect(carryPhase(8.65).lift).toBe(0);expect(carryPhase(8.65).support).toBe(1);
+  runtime.cancel();both.forEach(r=>r.visitor.rig!.mesh.geometry.dispose());
+ }}finally{vi.unstubAllGlobals();}
+});
 
 function actor(height:number,z:number,angle:number){
  const root=new T.Group(),body=new T.Group(),hair=new T.Group();root.scale.setScalar(2.8/BLANK_SCALE);root.position.z=z;root.rotation.y=angle;root.add(body);
@@ -17,6 +38,7 @@ function actor(height:number,z:number,angle:number){
  const rig=bindBlankBody(mesh,hair,true),animate=createBlankMotion(rig,body);
  const visitor={root,rig,motionScale:1,animate:(time:number,motion:any='idle',posture:any='standing',activity:any=undefined)=>animate(time,motion,posture,activity),setActionExpression:vi.fn(),finishPose:()=>root.updateWorldMatrix(true,true),translatePose(delta:T.Vector3){const start=root.worldToLocal(new T.Vector3()),end=root.worldToLocal(delta.clone());body.position.add(end.sub(start));root.updateWorldMatrix(true,true);}} as unknown as ChibiVisitor;
  const reset=()=>{animate(0,'idle','standing');root.updateWorldMatrix(true,true);};reset();
+ visitor.applySelectedFrame=(frame,weight=1)=>{reset();for(const [name,q]of Object.entries(frame.rotations))rig.bones[name]?.quaternion.slerp(q,weight);root.updateWorldMatrix(true,true);};
  return {visitor,solver:contactSolver(visitor),body,reset};
 }
 it('paired intimacy preserves all 48 bones, grounds the carrier, lifts then releases the recipient across heights and headings',()=>{

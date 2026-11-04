@@ -263,8 +263,10 @@ export function createBlankMotion(rig:ReturnType<typeof bindBlankBody>,body:T.Gr
    // gently tucked instead of lifting the back/legs to clear the larger occiput.
    supportBedHead(activity?.bedMode,activity?.bedRecline??1);
    if(from){const mix=T.MathUtils.smootherstep(leisureTime,0,1.2);entries.forEach(([,b],i)=>b.quaternion.copy(from![i].slerp(b.quaternion,mix)));}
-   if((activity?.bedRecline??1)>0)bedSurface(.015*BLANK_SCALE,T.MathUtils.smootherstep(activity?.bedRecline??1,0,.3));
-   surfaceContact(.049*BLANK_SCALE);
+   const recline=activity?.bedRecline??1;
+   const settle=activity?.bedMode==='bed-side'?0:T.MathUtils.smootherstep(recline,.75,1)*(activity?.bedFrom==='bed-side'?T.MathUtils.smootherstep(leisureTime,0,1.2):1);
+   if(recline>0)bedSurface(.015*BLANK_SCALE,T.MathUtils.smootherstep(recline,0,.3),settle,activity?.bedFootSurface);
+   if(settle===0)surfaceContact(.049*BLANK_SCALE);
   }
   if(imported==='sit-alternate'&&activity?.seatHeight!==undefined)surfaceContact(-activity.seatHeight+.049*BLANK_SCALE);
   if(imported==='yoga'){

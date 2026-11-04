@@ -28,6 +28,7 @@ import {HomePresenceBubbles,type HomeInitiativeRequest} from './HomePresenceBubb
 import HomeLifePanel from './HomeLifePanel';
 import HomeQualityTip from './HomeQualityTip';
 import {useHomeCompanion} from './useHomeCompanion';
+import {useHomeSocialLife} from './useHomeSocialLife';
 import {HomeSpeechBubble} from './HomeSpeechBubble';
 
 export default function Home3DView({value,onChange,onBack,character,user,api,conversationContext,onDefinition,onFigures,parts:previewParts,hair:inputHair,suspended=false,residents=[],onEditor,presentation='home'}:{presentation?:'home'|'homely';value?:Home3DState;onChange:(value:Home3DState)=>void;onBack:()=>void;character?:CharacterProfile;user?:UserProfile;api?:APIConfig;conversationContext?:HomeConversationContext;onDefinition?:()=>void;onFigures?:()=>void;parts?:Parts;hair?:HairSettings;suspended?:boolean;residents?:HomeResidentOption[];onEditor?:(editor:HomeEditor)=>void}){
@@ -42,6 +43,7 @@ export default function Home3DView({value,onChange,onBack,character,user,api,con
  const [bodyOverride,setBodyOverride]=useState<'blank'|'classic'>(),[mainReady,setMainReady]=useState(false);
  const {away,currentSchedule}=useHomeSchedule(editor,character,mainReady,suspended);
  useHomeCompanion(editor,character,user,api,mainReady,suspended);
+ useHomeSocialLife(editor,character?.id,mainReady&&!suspended&&!homely,setResidentError);
  const [photoActive,setPhotoActive]=useState(false),[phoneOpen,setPhoneOpen]=useState(false),[phoneBusy,setPhoneBusy]=useState(false),[homeBusy,setHomeBusy]=useState(false);
  const [interactionTarget,setInteractionTarget]=useState<string>();
  const openLifePanel=(name:string|null,targetId?:string)=>{if(name&&name!==lifePanel)trackHomeFeature(name);setInteractionTarget(name==='interact'?targetId:undefined);setLifePanel(name);};
@@ -80,7 +82,7 @@ export default function Home3DView({value,onChange,onBack,character,user,api,con
    {editor&&!homely&&<HomeQualityTip editor={editor} active={!suspended&&!lifePanel&&!phoneOpen&&!photoActive}/>}
    {editor&&!suspended&&<>{(!homely||lifePanel!=='chat')&&<HomeSpeechBubble editor={editor}/>}<HomePresenceBubbles editor={editor} character={character} enabled={mainReady&&!lifePanel&&!phoneOpen} canInvite={!!api&&!!user} onInitiative={setInitiative}/></>}
    {away&&!editor?.getHomeScene().present&&<p className="home-away-note" role="status">{character?.name}现在不在家哦……</p>}
-   {editor&&!suspended&&!homely&&<><HomeSocialPanel targetId={interactionTarget} externalOpen={lifePanel==='interact'} onClose={()=>setLifePanel(null)} editor={editor} primary={{id:character?.id??'resident',label:character?.name??'小人'}} options={residents.filter(r=>r.id!==character?.id)} body={residentHair.bodyShape??'classic'} onBody={value=>{setMainReady(false);setBodyOverride(value);}} mainReady={mainReady} hair={residentHair}/></>}
+   {editor&&!suspended&&!homely&&<><HomeSocialPanel targetId={interactionTarget} initialSettings={lifePanel==='visits'} externalOpen={lifePanel==='interact'||lifePanel==='visits'} onClose={()=>setLifePanel(null)} editor={editor} primary={{id:character?.id??'resident',label:character?.name??'小人'}} options={residents.filter(r=>r.id!==character?.id)} body={residentHair.bodyShape??'classic'} onBody={value=>{setMainReady(false);setBodyOverride(value);}} mainReady={mainReady} hair={residentHair}/></>}
    {editor&&<HomeLifePanel presentation={homely?'homely':'home'} onBusyChange={setHomeBusy} active={!suspended&&!photoActive} initiative={initiative} editor={editor} character={character} user={user} api={api} conversationContext={conversationContext} panel={suspended||homely&&phoneOpen?null:lifePanel} onPanel={openLifePanel} onDefinition={onDefinition} onFigures={openFigures}/>}
    {editor&&character&&!suspended&&<HomePhone onPhotoChange={setPhotoActive} editor={editor} characterId={character.id} onBusyChange={setPhoneBusy} onOpenChange={setPhoneOpen}/>}
    {character&&<HomeSecretsReveal key={character.id} charId={character.id} active={!suspended} ready={mainReady&&!phoneOpen}/>}

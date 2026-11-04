@@ -1,0 +1,137 @@
+{
+  "generator": "VTracer 0.6.15; spline paths; editable region IDs",
+  "assets": [
+    {
+      "id": "halloween_bat_sofa",
+      "svg": "halloween_bat_sofa.svg",
+      "sourceSha256": "1eade15c8dda037dc03d73c20e1777e037fadef59bdb74248c8eb60fa608bf72",
+      "paths": 7635,
+      "bytes": 2978701,
+      "size": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "id": "halloween_pumpkin_armchair",
+      "svg": "halloween_pumpkin_armchair.svg",
+      "sourceSha256": "2446b417fe2801d4c214c92782bda5711be024099b952b0fb9efb63d44d6743e",
+      "paths": 5421,
+      "bytes": 2079662,
+      "size": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "id": "halloween_coffin_coffee_table",
+      "svg": "halloween_coffin_coffee_table.svg",
+      "sourceSha256": "6722c2323aea030b9a61f74a100b4678ccb49c921ccae9b03617be96788734a2",
+      "paths": 5434,
+      "bytes": 2358883,
+      "size": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "id": "halloween_potion_bookcase",
+      "svg": "halloween_potion_bookcase.svg",
+      "sourceSha256": "b6dd63cf721b6bfd30124cbea3e6f1b6f1a1a03e0a68b9cbd3c995b5462a91ea",
+      "paths": 10083,
+      "bytes": 3975581,
+      "size": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "id": "halloween_haunted_fireplace",
+      "svg": "halloween_haunted_fireplace.svg",
+      "sourceSha256": "b7e54235e18b174b4d8f31babdb09575ef403f135e705e44943be521f3f25639",
+      "paths": 14322,
+      "bytes": 5666726,
+      "size": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "id": "halloween_ghost_floor_lamp",
+      "svg": "halloween_ghost_floor_lamp.svg",
+      "sourceSha256": "f8acdbef13cebcd7c89e92907fdf7e1658079d33e6057f42132fcde59638e627",
+      "paths": 4473,
+      "bytes": 1547388,
+      "size": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "id": "halloween_gothic_curtain_window",
+      "svg": "halloween_gothic_curtain_window.svg",
+      "sourceSha256": "c90a6bb6b398a3175f00a2cb9938e31e7aae7e0ef1886d171e17373e8f0f4e8c",
+      "paths": 13675,
+      "bytes": 5624188,
+      "size": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "id": "halloween_bat_rug",
+      "svg": "halloween_bat_rug.svg",
+      "sourceSha256": "9d3c4840e9d0cc4fca05ac809446b85fbb4ce64d8c121059b396265087a6fdcf",
+      "paths": 5361,
+      "bytes": 2283545,
+      "size": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "id": "halloween_cauldron_planter",
+      "svg": "halloween_cauldron_planter.svg",
+      "sourceSha256": "187048dccda0440ef7a0e02c506a2fc7f4cc98b6f9ab261ba3bbb44857969411",
+      "paths": 7568,
+      "bytes": 2627030,
+      "size": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "id": "halloween_cat_ear_mirror",
+      "svg": "halloween_cat_ear_mirror.svg",
+      "sourceSha256": "a0b47093407cc077cfd81e13ec07fa106ceb72a43e12cb841317c667dd3b144b",
+      "paths": 4515,
+      "bytes": 1680423,
+      "size": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "id": "halloween_bat_pumpkin_clock",
+      "svg": "halloween_bat_pumpkin_clock.svg",
+      "sourceSha256": "2e2dfe969371e0db51e0d4fed50ef6ca250592a549d540787acf0ae73a024dd1",
+      "paths": 8280,
+      "bytes": 3257067,
+      "size": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "id": "halloween_pumpkin_lantern",
+      "svg": "halloween_pumpkin_lantern.svg",
+      "sourceSha256": "b0fa1513a7905567310f43b804f8fee8f34fc9cfeceb3598c4c71cc6f1f95634",
+      "paths": 5388,
+      "bytes": 2299503,
+      "size": [
+        1024,
+        1024
+      ]
+    }
+  ]
+}

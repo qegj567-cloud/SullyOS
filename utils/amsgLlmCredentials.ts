@@ -1,4 +1,5 @@
 import { resolveDialogueApi } from './characterApi';
+import { isAnthropicEndpoint, normalizeLlmBaseUrl, type LlmApiType } from './llmEndpoint';
 /**
  * 主动消息 2.0 的「LLM 凭据引用」（credRefs）：本地这一侧的命名、取值与变更侦测。
  *
@@ -53,14 +54,16 @@ export const supportsLlmCredentials = (features: string[] | null | undefined): b
  * 聊天补全的完整地址。任务行里存的是这个终点地址，不是用户填的 baseUrl。
  * 排程、即时对话、凭据行三处必须同一份算法，所以放在这里当唯一出处。
  */
-export const normalizeChatApiUrl = (baseUrl: string): string =>
-  `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
+export const normalizeChatApiUrl = (baseUrl: string, apiType?: LlmApiType): string => {
+  const normalized = normalizeLlmBaseUrl(baseUrl, apiType);
+  return isAnthropicEndpoint(normalized) ? normalized : `${normalized}/chat/completions`;
+};
 
 /**
  * 一个角色名下的凭据用途。配置变更时覆盖行，存量排程迁移时可调整 chat 引用。
  *
  *   chat     定时主动消息，使用角色默认对话 API；未设置则使用全局。
- *   instant  即时对话，使用当轮请求终值（包括 -thinking 模型后缀）。
+ *   instant  即时对话，使用当轮请求终值（OpenAI 兼容模式可包含 -thinking 后缀）。
  *            与 chat 分开，防止刷新配置时覆盖正在生成的这一轮请求。
  *   emotion  即时对话那一轮的情绪评估（副 API；没单独配就回落到全局聊天 API）
  *   memory   记忆宫殿的后台活儿（门牌整理这类）。用的是记忆宫殿副 API
@@ -95,11 +98,11 @@ export const isUsableCredentialValue = (
 
 /** 用户填的 { baseUrl, apiKey, model } → 凭据行的值。缺字段时返回 null，由调用方决定怎么办。 */
 export const toCredentialValue = (
-  api: { baseUrl?: string; apiKey?: string; model?: string } | null | undefined,
+  api: { baseUrl?: string; apiKey?: string; model?: string; apiType?: LlmApiType } | null | undefined,
 ): LlmCredentialValue | null => {
   if (!api?.baseUrl || !api.model) return null;
   const value = {
-    apiUrl: normalizeChatApiUrl(api.baseUrl),
+    apiUrl: normalizeChatApiUrl(api.baseUrl, api.apiType),
     apiKey: api.apiKey || '',
     primaryModel: api.model,
   };
@@ -118,7 +121,7 @@ export const buildCharChatCredRow = (
 
 /**
  * 即时对话那一行的值：调用方给的就是本地生成这一轮真正会发出去的那份
- * （baseUrl / apiKey 取 effectiveApi，model 取请求体终值——claude 系开思考时会带 -thinking 后缀）。
+ * （baseUrl / apiKey 取 effectiveApi，model 取请求体终值——原生 Claude 保留真实模型 ID）。
  */
 export const buildCharInstantCredRow = (
   charId: string,

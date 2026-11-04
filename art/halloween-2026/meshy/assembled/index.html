@@ -1,0 +1,58 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><link rel="icon" href="data:,"><title>万圣节 · 真实素体试穿</title>
+<style>body{margin:0;background:#24212d;color:#f7f0ff;font:14px system-ui}aside{position:fixed;top:20px;left:20px;width:250px;z-index:2;background:#24212ddd;padding:16px;border-radius:12px}h2{margin:0 0 12px}button,select{font:inherit;padding:7px;margin:3px;background:#443450;border:1px solid #74617e;color:inherit;border-radius:6px}label{display:block;margin:10px 0}small{color:#cbb9d4;line-height:1.6}canvas{display:block}#stats{white-space:pre-line;line-height:1.6}</style>
+<aside><h2>万圣节 · 拆件试穿</h2><small>当前项目 48 骨素体<br>保留原贴图，服装分别绑定与穿脱</small><div id="outfits"></div><div id="parts"></div>
+<label>预设配色 <select id="palette" aria-label="预设配色"></select></label><select id="pose"><option value="costume">宽松装站姿</option><option value="reference">垂手检查</option><option value="bind">T 姿势</option><option value="arm">抬手</option><option value="knee">抬腿</option><option value="head">转头</option></select>
+<div><button data-view="front">正面</button><button data-view="side">侧面</button><button data-view="back">背面</button><button data-view="cuffs">裤口细看</button></div>
+<label><input id="body" type="checkbox" checked> 显示我们的素体</label><label><input id="mask" type="checkbox" checked> 穿着遮挡</label><p id="stats"></p><small>适配工作台 · 尚未发布到正式衣橱</small></aside>
+<script type="module">
+import {presetsFor,installPresets} from './color-presets.js';
+import * as T from '/node_modules/three/build/three.module.js';
+import {GLTFLoader} from '/node_modules/three/examples/jsm/loaders/GLTFLoader.js';
+import {OrbitControls} from '/node_modules/three/examples/jsm/controls/OrbitControls.js';
+import {createBlankBody} from '/apps/room3d/chibi/blankBody.ts';
+import {bindBlankBody} from '/apps/room3d/chibi/blankRig.ts';
+import {createClothingMask} from '/apps/room3d/chibi/clothingMask.ts';
+const renderer=new T.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(1);renderer.setClearColor('#24212d');document.body.appendChild(renderer.domElement);
+const scene=new T.Scene(),group=new T.Group();scene.add(group,new T.HemisphereLight(0xffffff,0x888298,2.5));const light=new T.DirectionalLight(0xffffff,2.5);light.position.set(-3,5,6);scene.add(light);
+const camera=new T.PerspectiveCamera(32,innerWidth/innerHeight,.01,100),controls=new OrbitControls(camera,renderer.domElement);
+const body=new T.Mesh(createBlankBody('skin',{headSize:1,bodyHeight:1}),new T.MeshStandardMaterial({color:'#eed5c4',roughness:1})),hair=new T.Group();group.add(body,hair);const rig=bindBlankBody(body,hair,true);rig.mesh.material=body.material;rig.mesh.geometry.clearGroups();rig.mesh.geometry.addGroup(0,rig.mesh.geometry.index.count,0);const original=rig.mesh.geometry;
+const outfit=new URLSearchParams(location.search).get('outfit')||'pumpkin';const parts=new Map(),labels={'hooded-top':'幽灵连帽上衣',hat:'帽子',cap:'星星软帽',sleeves:'紫色内搭',romper:'南瓜连体衣',boots:'短靴',shoes:'搭扣鞋',socks:'贴腿袜',dress:'女巫连衣裙',tailcoat:'燕尾外套',waistcoat:'马甲',cravat:'领巾',coat:'药剂师上衣',apron:'药剂围裙',shorts:'短裤',trousers:'长裤'},loader=new GLTFLoader();
+if(new URLSearchParams(location.search).has('review'))document.querySelector('aside').style.display='none';
+for(const [id,name]of [['witch','南瓜女巫'],['count','蝙蝠伯爵'],['apprentice','药剂学徒'],['shorts','糖果短裤'],['ghost','幽灵装'],['pumpkin','南瓜装']]){const b=document.createElement('button');b.textContent=name;b.disabled=id===outfit;b.onclick=()=>location.search='?outfit='+id;document.querySelector('#outfits').append(b);}
+async function add(file,sock=false){const loaded=(await loader.loadAsync(file)).scene;loaded.traverse(o=>{if(!o.isSkinnedMesh||o.name==='CurrentBody')return;
+ const g=o.geometry.clone(),si=g.attributes.skinIndex;for(let i=0;i<si.count;i++)for(let k=0;k<4;k++){const name=o.skeleton.bones[si.getComponent(i,k)].name,index=rig.skeleton.bones.findIndex(b=>b.name===name);if(index<0)throw Error('Missing bone '+name);si.setComponent(i,k,index);}
+ const part=sock?'socks':o.userData.part,mesh=new T.SkinnedMesh(g,o.material);mesh.name=o.name;mesh.userData.part=part;mesh.userData.original=g;g.clearGroups();g.addGroup(0,g.index.count,0);group.add(mesh);mesh.bind(rig.skeleton,rig.mesh.bindMatrix);if(!parts.has(part))parts.set(part,[]);parts.get(part).push(mesh);
+ });}
+await add(outfit+'-wearables.glb?v=curved-collar-3');if(['pumpkin','ghost','witch','apprentice'].includes(outfit))await add('../fitted-socks/'+outfit+'-socks.glb',true);
+if(outfit==='ghost'){await add('ghost-shorts-wearables.glb');await add('ghost-shoes-wearables.glb');}
+for(const [id,meshes]of parts){const l=document.createElement('label'),c=document.createElement('input');c.type='checkbox';c.checked=true;c.dataset.part=id;c.onchange=()=>{meshes.forEach(m=>m.visible=c.checked);update();};l.append(c,document.createTextNode(' '+labels[id]));document.querySelector('#parts').append(l);}
+const applyPreset=installPresets(parts,outfit),paletteSelect=document.querySelector('#palette');
+for(const p of presetsFor(outfit)){const o=document.createElement('option');o.value=p.id;o.textContent=p.name;paletteSelect.append(o);}
+function setPalette(id){const selected=applyPreset(id);paletteSelect.value=selected;const url=new URL(location.href);url.searchParams.set('palette',selected);history.replaceState(null,'',url);render();return selected;}
+paletteSelect.onchange=()=>setPalette(paletteSelect.value);
+setPalette(new URLSearchParams(location.search).get('palette')||'original');
+function active(id){return parts.get(id)?.some(m=>m.visible);}
+function update(){const mask=document.querySelector('#mask').checked;
+ for(const mesh of parts.get('socks')||[]){if(mesh.geometry!==mesh.userData.original)mesh.geometry.dispose();mesh.geometry=mask&&active('boots')&&outfit==='pumpkin'?createClothingMask(mesh.userData.original,p=>p.y<.54,-Infinity):mesh.userData.original;}
+ if(rig.mesh.geometry!==original)rig.mesh.geometry.dispose();
+ rig.mesh.geometry=mask?createClothingMask(original,p=>{
+  if(outfit==='witch'&&active('dress')&&Math.abs(p.x)>.24&&Math.abs(p.x)<1.49&&p.y>2.76&&p.y<3.38)return true;
+  if(active('socks')&&p.y<({pumpkin:1.37,ghost:1.49,apprentice:1.26,witch:1.19}[outfit]||.90))return true;
+  if(active('boots')&&p.y<.54)return true;
+  if(active('hooded-top')&&Math.abs(p.x)<.46&&p.y>2.26&&p.y<3.04)return true;
+  if(active('hooded-top')&&Math.abs(p.x)>.37&&Math.abs(p.x)<1.49&&p.y>2.88&&p.y<3.30)return true;
+  if(active('romper')&&Math.abs(p.x)<.47&&p.y>1.90&&p.y<3.0)return true;
+  if((active('dress')||active('coat')||active('tailcoat'))&&Math.abs(p.x)<.44&&p.y>2.28&&p.y<3.03)return true;
+  if((active('dress')||active('coat')||active('tailcoat'))&&Math.abs(p.x)>.28&&Math.abs(p.x)<1.49&&p.y>2.76&&p.y<3.40)return true;
+  if(active('shorts')&&Math.abs(p.x)<.49&&p.y>1.64&&p.y<2.20)return true;
+  if(active('trousers')&&Math.abs(p.x)<.49&&p.y>.58&&p.y<2.20)return true;
+  return false;
+ },-Infinity):original;
+ rig.mesh.visible=document.querySelector('#body').checked;const pose=document.querySelector('#pose').value;rig.setPose(pose==='costume'?'reference':pose);if(pose==='costume'){for(const [sign,side]of [[1,'L'],[-1,'R']]){rig.bones[side+'_upperArm'].rotation.z=-sign*1.05;rig.bones[side+'_forearm'].rotation.z=-sign*.12;}}group.updateMatrixWorld(true);rig.skeleton.update();
+ let faces=0;for(const a of parts.values())for(const m of a){m.boundingBox=null;m.boundingSphere=null;if(m.visible)faces+=m.geometry.index.count/3;}
+ document.querySelector('#stats').textContent=`衣物 ${faces.toLocaleString()} 三角面\n${rig.skeleton.bones.length} 骨 · 逐件独立穿脱`;render();}
+function render(){renderer.render(scene,camera);}controls.addEventListener('change',render);
+function view(name){if(name==='cuffs'){camera.position.set(0,2.06,3.6);controls.target.set(0,1.99,0);}else{camera.position.set(name==='side'?11:0,2.65,name==='front'?11:name==='back'?-11:0);controls.target.set(0,2.65,0);}controls.update();render();}
+document.querySelector('#pose').onchange=update;document.querySelector('#body').onchange=update;document.querySelector('#mask').onchange=update;document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>view(b.dataset.view));
+window.fitting={parts,rig,group,scene,camera,controls,view,update,render,setPalette};view('front');update();window.ready=true;
+</script></html>

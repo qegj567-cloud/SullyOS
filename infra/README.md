@@ -56,6 +56,43 @@ CI 不会自己提交这个文件：master 要求走 PR，bot 直推会被分支
 而且红的原因会变成「推不上去」这种跟隐私毫无关系的东西。账本留在 artifact（90 天）
 和 Actions 历史里，目前够用。
 
+## 审计卡住或 SSH 断线
+
+探针清理先按事件名取出少量事件 UUID，再按 `website_event_id` / `event_id` 删除。
+不要改回 `DELETE ... WHERE website_event_id IN (SELECT ... WHERE event_name=...)`：
+线上 PostgreSQL 曾选择扫描数百万行 `event_data` 后逐行查询事件，清理一条探针也要数分钟。
+
+审计查询单独设置 120 秒语句超时、10 秒锁等待超时，并开启 `ON_ERROR_STOP`；清理事务失败
+必须计入审计失败，不能仅凭后续查询到零条就通过。这些限制不影响业务连接。
+
+CI 的 SSH 每 15 秒保活，连续 3 次无响应即断开，整个 SSH 步骤最多 10 分钟。
+退出码 124 表示整体超时，255 表示 SSH 连接错误；它们都不能作为隐私断言通过的证据。
+`privacy-audit-log` artifact 保留原始输出和退出码 90 天。即使没有收到 schema 起始标记，
+日志和 summary 也保留最后一行错误，不再无条件删尾行。
+
+## 审计查询与每日清理的性能
+
+探针「是否已落库」只需要存在性结果：先沿 `created_at` 索引查近一小时，找不到再查
+全部历史。时间条件只用于这一步的快速路径；旧探针仍能命中，后续 session 检查、
+历史属性全量扫描、清理和清理复核都保持原来的范围。
+
+`infra/prune.sh` 是 `/opt/umami/bin/prune.sh` 的维护副本，不在当前配置指纹清单中。
+它保持线上已有的策略：本机留最近 35 天明细，更早数据先按月归档并核对，归档留 12 个月；
+有月度快照和归档 manifest 才能删除。这次只将每天删除 `event_data` 的查询改为每批
+1000 个事件 UUID，通过现有索引删除属性。所有批次及后续事件 / session 删除仍在同一个
+事务里，失败整天回滚；不按属性日期替代事件日期，不改其他清理条件或定时安排。
+
+复验（需显式提供可访问 PostgreSQL 容器的 SSH 主机）：
+
+```bash
+PRIVACY_TEST_SSH=dmit pnpm vitest run scripts/privacy-maintenance.integration.test.ts --testTimeout 30000
+pnpm vitest run scripts/privacy-audit.test.ts scripts/audit-online-bundle.test.ts
+```
+
+集成测试只使用当前连接的临时表，`search_path` 限定为 `pg_temp`，不读写正式业务表。
+覆盖近期快速路径、旧探针回退、未落库、跨日期属性、会话引用保留、分批上限及失败回滚。
+没有设置 `PRIVACY_TEST_SSH` 时集成测试跳过，不能据此声称已完成数据库验证。
+
 ## 换服务器 / 换域名了
 
 重新生成 `known_hosts`：

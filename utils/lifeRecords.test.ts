@@ -232,6 +232,24 @@ describe('executeLifeDirectives 代记指令', () => {
         expect(txs.some(t => t.id === rec.bankTxId)).toBe(false);
     });
 
+    it('INCOME：收入独立于同额支出，重复指令去重且否决仅撤销收入', async () => {
+        const char = mkChar();
+        const note = `稿费-${char.id}`;
+        await executeLifeDirectives(`[[LIFE:EXPENSE|120|${note}]]`, char, noToast);
+        await executeLifeDirectives(`[[LIFE:INCOME|120|${note}]]`, char, noToast);
+        await executeLifeDirectives(`[[LIFE:INCOME|120|${note}]]`, char, noToast);
+        const records = (await DB.getAllLifeRecords()).filter(r => r.recordedBy === char.id);
+        expect(records.map(r => r.kind).sort()).toEqual(['expense','income']);
+        const txs = (await DB.getAllTransactions()).filter(t => t.note === note);
+        expect(txs.map(t => t.type).sort()).toEqual(['expense','income']);
+        const prompt = await buildLifeRecordInjection(char, '用户', {forFirePack:false});
+        expect(prompt).toContain('[[LIFE:INCOME|金额|来源]]');
+        expect(prompt).toContain(`收入 ${note} 120`);
+        const card = (await DB.getMessagesByCharId(char.id,true)).find(m => m.type === 'life_card' && m.metadata.kind === 'income' && !m.metadata.duplicate)!;
+        await resolveLifeRecordCard(card, 'rejected');
+        expect((await DB.getAllTransactions()).filter(t => t.note === note).map(t => t.type)).toEqual(['expense']);
+    });
+
     it('不在经期时收到 PERIOD_END：按"无需记录"处理，不写库', async () => {
         const char = mkChar();
         await executeLifeDirectives('[[LIFE:PERIOD_END]]', char, noToast);
@@ -420,7 +438,7 @@ describe('注入文本里的金额只到分位', () => {
             } as any);
         }
         const text = await buildLifeRecordInjection(char, '小明', { forFirePack: false });
-        expect(text).toContain('合计 49.86');
+        expect(text).toContain('支出 49.86');
         expect(text).not.toMatch(/\d+\.\d{3,}/);
     });
 });

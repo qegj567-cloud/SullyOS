@@ -1246,6 +1246,24 @@ describe('flushInboxToChat 落库时间戳（走真库）', () => {
       clearSpy.mockRestore();
     }, 20000);
 
+    it('不可变附件按引用取回心象，成功落库后仍保留云端副本', async () => {
+      const charId = 'char-reasoning-attachment';
+      await DB.saveCharacter({ id: charId, name: '心象角色', showThinkingChain: true } as any);
+      const ref = { version: 1 as const, namespace: 'amsg:attachments', key: 'unique-reasoning', taskUuid: 'task-attachment',
+        occurrenceMs: Date.now(), expiresAt: Date.now() + 86_400_000 };
+      const read = vi.spyOn(ActiveMsgClient, 'readAttachment').mockResolvedValue('这次慢慢说给你听。');
+      const clear = vi.spyOn(ActiveMsgClient, 'clearClientStateValue').mockResolvedValue(undefined as any);
+      await ActiveMsgStore.saveInboxMessage(inboxMsg({ messageId: 'reasoning-attachment-message', charId,
+        metadata: { charId, messageIndex: 1, amsgReasoningAttachment: ref },
+      }));
+      await flushInboxToChat('SW通知');
+      expect(await thinkingChainOf(charId)).toEqual(['这次慢慢说给你听。']);
+      expect(read).toHaveBeenCalledWith(ref);
+      expect(clear).not.toHaveBeenCalled();
+      read.mockRestore();
+      clear.mockRestore();
+    }, 20000);
+
     // 卡片只能挂第一条气泡。后面几段要是也认，同一段思考会在这轮对话里重复冒出来。
     it('后面几段 push 不认（哪怕 worker 出 bug 每条都挂）', async () => {
       const charId = 'char-reasoning-late';

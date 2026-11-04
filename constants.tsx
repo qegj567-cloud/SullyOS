@@ -1,4 +1,5 @@
 import React from 'react';
+import BibiIcon from './components/os/BibiIcon';
 import { AppConfig, AppID } from './types';
 import {
   UserCircle,
@@ -53,6 +54,7 @@ export const Icons: Record<string, React.FC<{ className?: string }>> = {
   Schedule: ({ className }) => <SealCheck className={className} weight="regular" />,
   Room: ({ className }) => <House className={className} weight="regular" />,
   CheckPhone: ({ className }) => <DeviceMobileCamera className={className} weight="regular" />,
+  FriendFeed: ({ className }) => <BibiIcon variant="line" className={className} />,
   Social: ({ className }) => <Fire className={className} weight="regular" />,
   Study: ({ className }) => <Books className={className} weight="regular" />,
   FAQ: ({ className }) => <Question className={className} weight="regular" />,
@@ -88,6 +90,7 @@ export const INSTALLED_APPS: AppConfig[] = [
   // 家园不再做独立桌面图标，改从「小小窝 · 像素家园」里进入（openApp(AppID.WorldHome) 仍可渲染）
   // { id: AppID.WorldHome, name: '家园', icon: 'WorldHome', color: 'emerald' },
   { id: AppID.CheckPhone, name: '查手机', icon: 'CheckPhone', color: 'slate' },
+  { id: AppID.FriendFeed, name: '哔哔', icon: 'FriendFeed', color: 'emerald' },
   // { id: AppID.Browser, name: '浏览器', icon: 'Browser', color: 'blue' }, // Hidden
   { id: AppID.Date, name: '见面', icon: 'Date', color: 'pink' },
   { id: AppID.User, name: '档案', icon: 'User', color: 'blue' },

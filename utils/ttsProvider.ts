@@ -8,6 +8,7 @@
  * （与 minimaxEndpoint 里的 region 单例同一套思路。）
  */
 import type { APIConfig, TtsProvider } from '../types';
+import { DEFAULT_ELEVENLABS_MODEL, normalizeElevenLabsModel } from './elevenLabsModels';
 
 export const normalizeTtsProvider = (raw: unknown): TtsProvider =>
   raw === 'fishaudio' ? 'fishaudio' : raw === 'elevenlabs' ? 'elevenlabs' : 'minimax';
@@ -22,14 +23,11 @@ export function getTtsProvider(): TtsProvider {
   return currentProvider;
 }
 
-const DEFAULT_ELEVENLABS_MODEL = 'eleven_flash_v2_5';
 let currentElevenLabsModel = DEFAULT_ELEVENLABS_MODEL;
 
 /** 同步当前 ElevenLabs 模型，供拿不到 apiConfig 的 prompt 构建器做模型感知。 */
 export function setElevenLabsModel(model: string | undefined | null): void {
-  currentElevenLabsModel = typeof model === 'string' && model.trim()
-    ? model.trim()
-    : DEFAULT_ELEVENLABS_MODEL;
+  currentElevenLabsModel = normalizeElevenLabsModel(model);
 }
 
 export function getElevenLabsModel(): string {

@@ -4,3 +4,9 @@
 .hair-options .garment-layering button{font-size:11px;min-height:34px;padding:6px 9px}
 .garment-layering button:disabled{opacity:.45;cursor:default}
 .garment-layering p{margin:7px 0}
+.halloween-palette{padding:12px 0;border-top:1px solid #eee7eb}
+.halloween-palette p,.halloween-palette-hint{font-size:12px;color:#756b73;margin:8px 0}
+.halloween-palette>div{display:flex;flex-wrap:wrap;gap:6px}
+.halloween-palette button{display:flex;align-items:center;gap:6px;font-size:11px;padding:8px 10px;border-radius:12px}
+.halloween-palette button>span{width:14px;height:14px;border-radius:50%;box-shadow:inset 0 0 0 1px #0001}
+.halloween-palette button[aria-pressed=true]{outline:2px solid #b68563;outline-offset:-2px}

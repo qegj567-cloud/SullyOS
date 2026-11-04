@@ -17,6 +17,7 @@ import { formatQixiEventCardForContext, tryParseQixiEventChatCard } from './qixi
 import { formatTransferRecord } from './transferFormat';
 import { formatStatCount } from './videoParser';
 import {secretNoteContext} from './secretNote';
+import {friendFeedShareContext} from './friendFeedShareContext';
 import { formatSARModuleEventsForContext } from './vrWorld/sarModuleRuntime';
 
 /**
@@ -115,6 +116,9 @@ export function normalizeMessageContent(
 ): string {
     const type = msg.type as string;
     if (type === 'secret_note') return secretNoteContext(msg.content);
+    if (type === 'friend_feed_share_card') return msg.metadata?.friendFeedShare
+        ? friendFeedShareContext(msg.metadata.friendFeedShare,msg.charId)+(msg.metadata.friendFeedShare.imagesEnabled&&typeof msg.metadata.visionDescription==='string'?'\n配图描述（仅材料）：'+msg.metadata.visionDescription:'')
+        : msg.content || '[分享的帖子内容不可用]';
 
     // 纯视觉类给占位；语音优先使用配套转写，避免把音频资源地址送进上下文。
     if (type === 'image') return '[图片]';
@@ -393,7 +397,9 @@ export function formatMessageForPrompt(
     charName: string,
     userName: string,
 ): string {
-    const sender = msg.role === 'user' ? userName
+    const sender = msg.metadata?.homeSharedOwnerId
+        ? (msg.metadata.homeContextKind === 'speech' ? msg.metadata.homeActorName || '角色' : '家园记录')
+        : msg.role === 'user' ? userName
         : msg.role === 'system' ? '[系统]'
         : charName;
     return `[${sender}]: ${normalizeMessageContent(msg, charName, userName)}`;
@@ -406,7 +412,9 @@ export function formatMessageWithTime(
     userName: string,
     timeFormatter: (ts: number) => string,
 ): string {
-    const sender = msg.role === 'user' ? userName
+    const sender = msg.metadata?.homeSharedOwnerId
+        ? (msg.metadata.homeContextKind === 'speech' ? msg.metadata.homeActorName || '角色' : '家园记录')
+        : msg.role === 'user' ? userName
         : msg.role === 'system' ? '[系统]'
         : charName;
     const time = msg.timestamp > 0 ? timeFormatter(msg.timestamp) : '';

@@ -1,0 +1,7 @@
+import {chromium} from 'file:///C:/Users/Administrator/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs';
+import fs from 'node:fs/promises';
+const browser=await chromium.launch({channel:'msedge',headless:true}),errors=[];
+try{const p=await browser.newPage({viewport:{width:1500,height:1000}});p.on('pageerror',e=>errors.push(e.message));await p.goto('http://127.0.0.1:5199/art/halloween-2026/meshy/assembled/review.html');
+for(const id of ['witch','count','apprentice','shorts','ghost','pumpkin']){await p.click('[data-outfit='+id+']');await p.waitForFunction(()=>window.ready,{},{timeout:60000});await p.waitForFunction(()=>document.querySelector('#reference').complete);await p.selectOption('#pose','bind');await p.screenshot({path:'art/halloween-2026/meshy/assembled/'+id+'-reference-compare.png'});await p.selectOption('#pose','costume');await p.screenshot({path:'art/halloween-2026/meshy/assembled/'+id+'-review-standing.png'});console.log(id,await p.locator('#stats').textContent());}
+const parts=await p.locator('#parts input').count();await p.locator('#parts input').first().uncheck();await p.locator('#parts input').first().check();await p.click('[data-view=back]');await p.click('#body');await p.click('#body');if(errors.length)throw Error(errors.join('\n'));await fs.writeFile('art/halloween-2026/meshy/assembled/review-checks.json',JSON.stringify({outfits:6,comparisons:12,partsControl:parts>0,pageErrors:errors},null,2));
+}finally{await browser.close();}

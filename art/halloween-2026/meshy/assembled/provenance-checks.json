@@ -1,0 +1,38 @@
+{
+  "pumpkin": {
+    "textureByteIdentical": true,
+    "meshNames": [
+      "Halloween_pumpkin_hat",
+      "Halloween_pumpkin_sleeves",
+      "Halloween_pumpkin_romper",
+      "Halloween_pumpkin_collar",
+      "Halloween_pumpkin_boots",
+      "Halloween_pumpkin_undershirt_torso"
+    ],
+    "skeletonJoints": [
+      48,
+      48,
+      48,
+      48,
+      48,
+      48
+    ]
+  },
+  "ghost": {
+    "textureByteIdentical": true,
+    "meshNames": [
+      "Halloween_ghost_hooded-top",
+      "Halloween_ghost_hood-lining",
+      "Halloween_ghost_hood-lining",
+      "Halloween_ghost_hood-lining",
+      "Halloween_ghost_hood-underlay"
+    ],
+    "skeletonJoints": [
+      48,
+      48,
+      48,
+      48,
+      48
+    ]
+  }
+}

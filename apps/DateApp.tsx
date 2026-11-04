@@ -24,6 +24,7 @@ import { trackEvent } from '../utils/analytics';
 import { markAmsgStateDirty } from '../utils/amsgStateSync';
 import StoryTheater from '../components/date/story/StoryTheater';
 import { dateLaunch } from '../utils/dateLaunch';
+import { getLocalDateKey } from '../utils/localDate';
 import { materializeVisionDescriptions } from '../utils/visionApi';
 import { shareOrDownloadFile } from '../utils/shareExport';
 import { buildInPersonContinueInstruction } from '../utils/meetingContinue';
@@ -75,6 +76,8 @@ const DateApp: React.FC = () => {
     // subscribe 则覆盖 DateApp 已经打开的情况；应用后立即消费，绝不污染下次普通打开。
     useEffect(() => {
         const applyLaunchIntent = (intent: { surface: 'companion' | 'story' }) => {
+            historyRequestRef.current++;
+            setHistoryBusy(false);
             setCameFromChat(false);
             setMode('select');
             setMeetSurface(intent.surface);
@@ -89,7 +92,6 @@ const DateApp: React.FC = () => {
     // 选择页分页（6 个角色一页，横向翻页）
     const SELECT_PAGE_SIZE = 6;
     const DATE_SESSION_MESSAGE_LIMIT = 50;
-    const DATE_HISTORY_MESSAGE_LIMIT = 500;
     const pagerRef = useRef<HTMLDivElement>(null);
     const [selectPage, setSelectPage] = useState(0);
     const [selectGroupId, setSelectGroupId] = useState(GROUP_FILTER_ALL); // 选择页的分组筛选
@@ -112,8 +114,11 @@ const DateApp: React.FC = () => {
     const [historyMessages, setHistoryMessages] = useState<Message[]>([]);
     const [historyView, setHistoryView] = useState<DateHistoryView>('encounter');
     const [historySortOrder, setHistorySortOrder] = useState<DateHistorySortOrder>('newest');
-    const [historyLoadLimit, setHistoryLoadLimit] = useState(DATE_HISTORY_MESSAGE_LIMIT);
-    const [historyReachedEnd, setHistoryReachedEnd] = useState(false);
+    const [historyMonth, setHistoryMonth] = useState('');
+    const [historyDay, setHistoryDay] = useState('');
+    const [expandedHistory, setExpandedHistory] = useState<Set<string>>(new Set());
+    const historyRequestRef = useRef(0);
+    useEffect(() => () => { historyRequestRef.current++; }, []);
     const [historyBusy, setHistoryBusy] = useState(false);
     // History long-press context menu
     const [historyMenuMsg, setHistoryMenuMsg] = useState<Message | null>(null);
@@ -153,6 +158,11 @@ const DateApp: React.FC = () => {
         () => buildDateHistoryGroups(historyMessages, historyView, historySortOrder),
         [historyMessages, historyView, historySortOrder],
     );
+    const historyMonths = useMemo(() => [...new Set(historyMessages.map(message => getLocalDateKey(new Date(message.timestamp)).slice(0, 7)))].sort().reverse(), [historyMessages]);
+    const visibleHistoryGroups = useMemo(() => historyGroups.filter(group => (!historyMonth && !historyDay) || group.messages.some(message => {
+        const day = getLocalDateKey(new Date(message.timestamp));
+        return (!historyMonth || day.startsWith(historyMonth)) && (!historyDay || day === historyDay);
+    })), [historyGroups, historyMonth, historyDay]);
 
     // 见面消息和普通聊天共用同一份历史，也就是主动消息 2.0 云端快照（fire_pack）的素材。
     // 每次落库 / 删改后打一次脏：中途杀 App 时这一场见面就不会在云端整个丢掉，删改过的
@@ -179,6 +189,8 @@ const DateApp: React.FC = () => {
             setMode('select');
             setPeekStatus('');
         } else if (mode === 'history') {
+            historyRequestRef.current++;
+            setHistoryBusy(false);
             setMode('select');
         } else closeApp();
     };
@@ -647,34 +659,41 @@ const DateApp: React.FC = () => {
     };
 
     const openHistory = async (c: CharacterProfile) => {
+        const request = ++historyRequestRef.current;
         setActiveCharacterId(c.id);
+        setMode('history'); setHistoryMessages([]); setHistoryBusy(true);
+        setHistoryMonth(''); setHistoryDay(''); setExpandedHistory(new Set());
+        try {
         // 见面历史按 source=date 独立读取，不受聊天侧记忆宫殿高水位影响。
-        const msgs = await DB.getRecentMessagesByCharIdAndSource(c.id, 'date', DATE_HISTORY_MESSAGE_LIMIT);
+        const msgs = await DB.getRecentMessagesByCharIdAndSource(c.id, 'date', Number.MAX_SAFE_INTEGER);
+        if (request !== historyRequestRef.current) return;
         setHistoryMessages(msgs);
         setHistoryView('encounter');
         setHistorySortOrder('newest');
-        setHistoryLoadLimit(DATE_HISTORY_MESSAGE_LIMIT);
-        setHistoryReachedEnd(msgs.length < DATE_HISTORY_MESSAGE_LIMIT);
         setMode('history');
         trackEvent('打开见面记录');
+        } catch { if (request === historyRequestRef.current) addToast('见面记录读取失败，请重试', 'error'); }
+        finally { if (request === historyRequestRef.current) setHistoryBusy(false); }
     };
 
-    const handleLoadMoreHistory = async () => {
-        if (!char || historyBusy || historyReachedEnd) return;
-        const nextLimit = historyLoadLimit + DATE_HISTORY_MESSAGE_LIMIT;
-        setHistoryBusy(true);
-        try {
-            const msgs = await DB.getRecentMessagesByCharIdAndSource(char.id, 'date', nextLimit);
-            setHistoryMessages(msgs);
-            setHistoryLoadLimit(nextLimit);
-            setHistoryReachedEnd(msgs.length < nextLimit);
-        } catch (error) {
-            console.error('Load Earlier Date History Error', error);
-            addToast('更早的见面记录加载失败', 'error');
-        } finally {
-            setHistoryBusy(false);
+    useAppShortcut(ShortcutAppID.Date, (intent, isCurrent) => {
+        historyRequestRef.current++;
+        setHistoryBusy(false);
+        setCameFromChat(false);
+        setMeetSurface(intent.entryId === 'story' ? 'story' : 'companion');
+        const target = characters.find(c => c.id === intent.characterId);
+        if (!target) { setMode('select'); return; }
+        setActiveCharacterId(target.id);
+        setPreviousMode('select');
+        if (intent.entryId === 'history') {
+            void openHistory(target);
+        } else if (intent.entryId === 'settings') setMode('settings');
+        else {
+            // Opening a shortcut must not discard savedDateState or generate an opening.
+            clearDateResumeAttempt(); encounterIdRef.current = crypto.randomUUID();
+            setDateMessages([]); setPeekStatus(''); setHasSavedOpening(false); setMode('entry');
         }
-    };
+    });
 
     const exportHistoryGroups = async (groups: DateHistoryGroup[], scope: string) => {
         if (!char || groups.length === 0 || historyBusy) return;
@@ -871,6 +890,8 @@ const DateApp: React.FC = () => {
     }
 
     if (mode === 'history') {
+        const months = historyMonths;
+        const visibleGroups = visibleHistoryGroups;
         return (
             <div className="h-full w-full bg-slate-50 flex flex-col font-light" onClick={() => historyMenuMsg && setHistoryMenuMsg(null)}>
                 <div className="border-b border-slate-200 bg-white sticky top-0 z-10" style={{ paddingTop: 'var(--safe-top)' }}>
@@ -908,12 +929,19 @@ const DateApp: React.FC = () => {
                         </button>
                     </div>
                 </div>
+                <div className="px-4 py-3 flex flex-wrap items-center gap-2 bg-white border-b border-slate-100">
+                    <label className="text-xs text-slate-500">年月 <select aria-label="见面记录年月" className="p-2 rounded-lg bg-slate-100" value={historyMonth} onChange={e => { setHistoryMonth(e.target.value); setHistoryDay(''); }}><option value="">全部年月</option>{months.map(month => <option key={month} value={month}>{month.replace('-', '年')}月</option>)}</select></label>
+                    <label className="text-xs text-slate-500">定位日期 <input aria-label="定位见面日期" type="date" className="p-2 rounded-lg bg-slate-100 max-w-40" value={historyDay} onChange={e => { setHistoryDay(e.target.value); setHistoryMonth(''); setHistoryView('date'); }}/></label>
+                    {(historyMonth || historyDay) && <button className="text-xs text-blue-500" onClick={() => {setHistoryMonth('');setHistoryDay('');}}>显示全部</button>}
+                    <span className="text-xs text-slate-400">{historyBusy ? '正在读取记录…' : `${visibleGroups.length} 组 · 点击日期展开正文`}</span>
+                </div>
                 <div className="flex-1 overflow-y-auto p-4 space-y-6 pb-20">
-                    {historyGroups.length === 0 ? <div className="flex flex-col items-center justify-center h-64 text-slate-400 gap-2"><BookOpen size={48} className="opacity-50" /><span className="text-xs">暂无见面记录</span></div> : historyGroups.map((group) => (
+                    {visibleGroups.length === 0 ? <div className="flex flex-col items-center justify-center h-64 text-slate-400 gap-2"><BookOpen size={48} className="opacity-50" /><span className="text-xs">{historyBusy ? '正在读取见面记录…' : '这个范围暂无见面记录'}</span></div> : visibleGroups.map((group) => (
                         <div key={group.id} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
                             <div className="bg-slate-50 px-4 py-3 border-b border-slate-100 flex gap-3 justify-between items-center">
-                                <div className="min-w-0">
+                                <button className="min-w-0 flex-1 text-left" aria-expanded={expandedHistory.has(group.id)} onClick={() => setExpandedHistory(old => { const next = new Set(old); next.has(group.id) ? next.delete(group.id) : next.add(group.id); return next; })}>
                                     <div className="text-xs font-bold text-slate-600 tracking-wide truncate">
+                                        {expandedHistory.has(group.id) ? '▾ ' : '▸ '}
                                         {historyView === 'encounter' ? formatDateHistoryTime(group.startAt, true) : formatDateHistoryDate(group.startAt)}
                                     </div>
                                     <div className="text-[10px] text-slate-400 mt-1">
@@ -922,7 +950,7 @@ const DateApp: React.FC = () => {
                                             : (group.encounterCount > 0 ? `${group.encounterCount} 次见面` : '旧记录')}
                                         {' · '}{group.messages.length} 句
                                     </div>
-                                </div>
+                                </button>
                                 <button
                                     onClick={(event) => {
                                         event.stopPropagation();
@@ -932,7 +960,7 @@ const DateApp: React.FC = () => {
                                     className="shrink-0 text-[11px] font-bold text-blue-500 bg-blue-50 px-3 py-1.5 rounded-full disabled:opacity-40"
                                 >导出{historyView === 'encounter' ? '本次' : '当天'}</button>
                             </div>
-                            <div className="p-4 space-y-4">
+                            {expandedHistory.has(group.id) && <div className="p-4 space-y-4">
                                 {group.messages.map(m => {
                                     const text = (m.content || '').replace(/\[.*?\]/g, '').trim();
                                     return (
@@ -954,18 +982,9 @@ const DateApp: React.FC = () => {
                                         </div>
                                     );
                                 })}
-                            </div>
+                            </div>}
                         </div>
                     ))}
-                    {!historyReachedEnd && historyMessages.length > 0 && (
-                        <button
-                            onClick={handleLoadMoreHistory}
-                            disabled={historyBusy}
-                            className="w-full py-3 rounded-2xl border border-slate-200 bg-white text-xs font-bold text-slate-500 disabled:opacity-50"
-                        >
-                            {historyBusy ? '正在加载…' : '加载更早的见面记录'}
-                        </button>
-                    )}
                 </div>
 
                 {/* Long-press context menu */}
@@ -1251,3 +1270,5 @@ const DateApp: React.FC = () => {
 };
 
 export default DateApp;
+import { useAppShortcut } from '../utils/appShortcutLaunch';
+import { AppID as ShortcutAppID } from '../types';

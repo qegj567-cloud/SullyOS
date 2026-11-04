@@ -3470,6 +3470,7 @@ export const Like520Session: React.FC<SessionProps> = ({ charId, onClose }) => {
                     <CreatorIframe
                         mode="user"
                         charName={char.name}
+                        savedState={existingData?.userChibi?.state}
                         onConfirm={handleUserChibiConfirm}
                     />
                 </div>

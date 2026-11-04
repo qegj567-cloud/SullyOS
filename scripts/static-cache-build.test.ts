@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { makeStaticManifest } from './static-cache-build';
+import type { Rollup } from 'vite';
+import { collectShellChunks, makeStaticManifest } from './static-cache-build';
 
 describe('static cache build manifest', () => {
   it('includes local shell dependencies and revisions, but leaves large optional assets out of precache', () => {
@@ -24,5 +25,27 @@ describe('static cache build manifest', () => {
     const a = makeStaticManifest({ buildId: 'a', appVersion: 'v1.0' }, new Map([['index.html', Buffer.from('html')], ['themes/a.webp', Buffer.from('one')]]));
     const b = makeStaticManifest({ buildId: 'b', appVersion: 'v1.0' }, new Map([['index.html', Buffer.from('html')], ['themes/a.webp', Buffer.from('two')]]));
     expect(a.entries.find(e => e.url === 'themes/a.webp')?.revision).not.toBe(b.entries.find(e => e.url === 'themes/a.webp')?.revision);
+  });
+});
+
+describe('offline shell entry selection', () => {
+  it('keeps desktop and settings available without downloading the independent wardrobe or unopened apps', () => {
+    const chunk = (name: string, imports: string[] = [], css: string[] = [], isEntry = false) => ({
+      type: 'chunk', name, fileName: name + '.js', isEntry, imports,
+      dynamicImports: ['ChatApp.js'], viteMetadata: { importedCss: new Set(css) },
+    } as unknown as Rollup.OutputChunk);
+    const bundle: Rollup.OutputBundle = {
+      'main.js': chunk('main', ['shared.js'], ['desktop.css'], true),
+      'shared.js': chunk('shared'),
+      'Launcher.js': chunk('Launcher', ['shared.js']),
+      'Settings.js': chunk('Settings', ['shared.js'], ['settings.css']),
+      'wardrobe.js': chunk('wardrobe', ['HairEditor.js', 'three.js'], ['wardrobe.css'], true),
+      'HairEditor.js': chunk('HairEditor', ['three.js']),
+      'three.js': chunk('three'),
+      'ChatApp.js': chunk('ChatApp'),
+    };
+    expect(new Set(collectShellChunks(bundle))).toEqual(new Set([
+      'main.js', 'shared.js', 'desktop.css', 'Launcher.js', 'Settings.js', 'settings.css',
+    ]));
   });
 });

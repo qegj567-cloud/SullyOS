@@ -21,6 +21,25 @@ function setup(getUserMedia = vi.fn()) {
   return { session, video, ready, error, status, getUserMedia };
 }
 async function flush() { for (let i = 0; i < 12; i++) await Promise.resolve(); }
+it('keeps an explicitly chosen lens through the compatible retry without adding a crop',async()=>{
+ const a=source(),f=setup(vi.fn().mockRejectedValueOnce(Object.assign(new Error('retry'),{name:'OverconstrainedError'})).mockResolvedValue(a.media));
+ f.session.start('environment','rear-main');await flush();
+ expect(f.getUserMedia.mock.calls[0][0].video).toMatchObject({deviceId:{exact:'rear-main'},resizeMode:{ideal:'none'}});
+ await vi.advanceTimersByTimeAsync(400);await flush();
+ expect(f.getUserMedia.mock.calls[1][0].video.deviceId).toEqual({exact:'rear-main'});f.session.stop();
+});
+it('requests portrait pixels for portrait phones and changes orientation without reacquiring or losing the lens/zoom',async()=>{
+ const a=source(),f=setup(vi.fn().mockResolvedValue(a.media));let portrait=true;
+ const constraints={deviceId:{exact:'main'},facingMode:{ideal:'environment'},advanced:[{zoom:1.5}]};
+ const applyConstraints=vi.fn().mockResolvedValue(undefined);
+ Object.assign(a.track,{getConstraints:()=>constraints,applyConstraints});
+ const session=createCameraPreview({video:()=>f.video as any,getUserMedia:f.getUserMedia,ready:f.ready,error:f.error,status:f.status,portrait:()=>portrait});
+ session.start('environment','main');await flush();
+ expect(f.getUserMedia.mock.calls[0][0].video).toMatchObject({width:{ideal:1080},height:{ideal:1440}});
+ portrait=false;session.reframe();await flush();
+ expect(f.getUserMedia).toHaveBeenCalledOnce();expect(applyConstraints).toHaveBeenCalledWith({...constraints,width:{ideal:1440},height:{ideal:1080},resizeMode:{ideal:'none'}});
+ session.stop();session.reframe();await flush();expect(applyConstraints).toHaveBeenCalledOnce();
+});
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 

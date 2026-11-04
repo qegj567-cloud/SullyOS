@@ -1,0 +1,6 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="icon" href="data:,"></head><body style="margin:0;background:#eceee7"><script type="module">
+import * as T from 'three';import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+const renderer=new T.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});renderer.setSize(1200,800);document.body.append(renderer.domElement);renderer.setScissorTest(true);
+for(const [row,name]of ['hamster','jellyfish'].entries()){const root=(await new GLTFLoader().loadAsync('./'+name+'-source.glb')).scene;const scene=new T.Scene();scene.background=new T.Color('#eceee7');scene.add(root,new T.HemisphereLight(0xffffff,0x909080,2));const light=new T.DirectionalLight(0xffffff,2);light.position.set(2,4,3);scene.add(light);const box=new T.Box3().setFromObject(root),center=box.getCenter(new T.Vector3());for(const [col,delta]of [[0,.3,4],[4,.3,0],[0,4,.01]].entries()){const camera=new T.OrthographicCamera(-1.2,1.2,1.2,-1.2,.01,100);camera.position.copy(center).add(new T.Vector3(...delta));camera.lookAt(center);renderer.setViewport(col*400,(1-row)*400,400,400);renderer.setScissor(col*400,(1-row)*400,400,400);renderer.render(scene,camera);}}
+window.ready=true;
+</script></body></html>

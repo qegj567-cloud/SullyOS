@@ -1,0 +1,67 @@
+{
+  "batch": "halloween-batch-08-texture",
+  "jobs": [
+    {
+      "id": "ghost-shorts-textured",
+      "image": "../separated/05-ghost/shorts.png",
+      "imageSha256": "5d8bd0d05e48ab39395ae080926117c056761e0c2ae9eb806f8d9a84258cdd31",
+      "params": {
+        "ai_model": "meshy-7",
+        "texture_resolution": "4k",
+        "enable_original_uv": true,
+        "enable_pbr": true,
+        "target_formats": [
+          "glb"
+        ],
+        "input_task_id": "01a17bde-9734-76d1-8f08-d13bfc062c56"
+      },
+      "estimatedCredits": 10,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-27T05:45:09.442Z",
+      "taskId": "01a17be4-1887-7512-a51f-ed073ad80cb0",
+      "progress": 100,
+      "consumedCredits": 10,
+      "downloaded": true,
+      "file": "ghost-shorts-textured.glb",
+      "bytes": 15625904,
+      "sha256": "760e3e6881a0bdfd4220241dee854ffc28fc93ef3c5bf92561d2985d4e222e69"
+    },
+    {
+      "id": "ghost-shoes-textured",
+      "image": "../separated/05-ghost/shoes.png",
+      "imageSha256": "47be37a8fa0171c5f8ae842d5057d3e8d93a5e447b0ef27b7016cf2d7c9456b6",
+      "params": {
+        "ai_model": "meshy-7",
+        "texture_resolution": "4k",
+        "enable_original_uv": true,
+        "enable_pbr": true,
+        "target_formats": [
+          "glb"
+        ],
+        "input_task_id": "01a17bde-a387-7075-b2c5-04a3ae337134"
+      },
+      "estimatedCredits": 10,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-27T05:45:13.729Z",
+      "taskId": "01a17be4-28a7-77a4-8b42-82c244668359",
+      "progress": 100,
+      "consumedCredits": 10,
+      "downloaded": true,
+      "file": "ghost-shoes-textured.glb",
+      "bytes": 16249308,
+      "sha256": "5c40b83298a134cbb27f8f22bd33478bad3920b04313e5e5122404188afa744a"
+    }
+  ],
+  "latestBalance": {
+    "balance": 896,
+    "monthly_credits": 655,
+    "permanent_credits": 241,
+    "monthly_resets_at": 1794576839000
+  },
+  "balanceBefore": {
+    "balance": 916,
+    "monthly_credits": 675,
+    "permanent_credits": 241,
+    "monthly_resets_at": 1794576839000
+  }
+}

@@ -132,6 +132,9 @@ function calling（例如携带 `tools` 就报 401），关闭它后首轮会直
   `buildMcpFireTools` 从 tool_config 现场生成——与凭据同源，不经过 fire_pack，
   没有陈旧窗口。amsg-server 带 `agentic-fire-tools` feature 的版本起，fire 循环
   透传 tools 请求参数。
+- **传输方式与执行许可分开**：`mcpUseNativeTools:false` 即使没有可用 MCP 服务器也保留，
+  Worker 不发送原生 `tools`。文字兼容模式仍可执行已获授权的能力；`allowedToolNames`
+  单独控制执行白名单，不依赖原生工具声明是否存在。排程能力另受用户的 2.0 开关约束。
 - **调用识别（与前台同构的两层）**：native tool_calls 优先；没有 native 时用
   前台「兼容模式」同一个解析器（`extractTextFakedMcpCalls`，`alsoMatchPrefix`
   选项认带前缀写法）从正文抠 `tool_name({...})`。统一 `mcp__` 前缀路由
@@ -153,3 +156,5 @@ function calling（例如携带 `tools` 就报 401），关闭它后首轮会直
 聊天生成入口在执行工具时也可以停止。前台和主动消息 2.0 的 instant 路径都把本轮 `AbortSignal` 传入 MCP 的握手与 `tools/call` 请求；停止后取消网络等待，不再把取消当作工具失败送回模型继续生成。后台执行链通过任务租约心跳收到取消，本应用的检测间隔为 1 秒。
 
 停止不能撤回工具服务端已经完成的操作；远端服务是否能停止自身执行取决于其实现。本应用会中断连接并阻止这一轮的后续调用。已经显示的聊天内容保留，尚未显示的结果不再写入聊天。
+
+MCP 管理列表按本机独立键 `sully-mcp-expanded-server` 记住展开项；主动收起会保存空值，关闭后重新打开仍保持收起。删除展开项不会自动展开其他服务器；新增服务器仍直接展开便于填写。此偏好不包含凭据，也不改变服务器启用和绑定状态。

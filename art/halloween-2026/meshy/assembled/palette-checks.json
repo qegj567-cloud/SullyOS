@@ -1,0 +1,35 @@
+{
+  "results": [
+    {
+      "outfit": "witch",
+      "presets": 4,
+      "originalRestored": true
+    },
+    {
+      "outfit": "count",
+      "presets": 4,
+      "originalRestored": true
+    },
+    {
+      "outfit": "apprentice",
+      "presets": 4,
+      "originalRestored": true
+    },
+    {
+      "outfit": "shorts",
+      "presets": 4,
+      "originalRestored": true
+    },
+    {
+      "outfit": "ghost",
+      "presets": 4,
+      "originalRestored": true
+    },
+    {
+      "outfit": "pumpkin",
+      "presets": 4,
+      "originalRestored": true
+    }
+  ],
+  "errors": []
+}

@@ -1,0 +1,84 @@
+{
+  "socks": [
+    {
+      "id": "witch",
+      "maxDistanceFromLeg": 0.007941486899500425
+    },
+    {
+      "id": "apprentice",
+      "maxDistanceFromLeg": 0.006000003386450573
+    },
+    {
+      "id": "ghost",
+      "maxDistanceFromLeg": 0.006000003386450573
+    }
+  ],
+  "footwear": [
+    {
+      "id": "witch",
+      "side": -1,
+      "centerErrorX": -0.03740840870887041,
+      "sole": -0.02500000037252903,
+      "toeMargin": 0.06499999761581421,
+      "heelMargin": 0.1345512419939041
+    },
+    {
+      "id": "witch",
+      "side": 1,
+      "centerErrorX": 0.03788445610553026,
+      "sole": -0.02500000037252903,
+      "toeMargin": 0.06499999761581421,
+      "heelMargin": 0.13533461093902588
+    },
+    {
+      "id": "count",
+      "side": -1,
+      "centerErrorX": -0.03740840870887041,
+      "sole": -0.02500000037252903,
+      "toeMargin": 0.06499999761581421,
+      "heelMargin": 0.1402352899312973
+    },
+    {
+      "id": "count",
+      "side": 1,
+      "centerErrorX": 0.03788445610553026,
+      "sole": -0.02500000037252903,
+      "toeMargin": 0.06499999761581421,
+      "heelMargin": 0.1405009627342224
+    },
+    {
+      "id": "apprentice",
+      "side": -1,
+      "centerErrorX": -0.0180598022416234,
+      "sole": -0.02500000037252903,
+      "toeMargin": 0.06499999761581421,
+      "heelMargin": 0.12395642697811127
+    },
+    {
+      "id": "apprentice",
+      "side": 1,
+      "centerErrorX": 0.018036392517387867,
+      "sole": -0.02500000037252903,
+      "toeMargin": 0.06499999761581421,
+      "heelMargin": 0.12357944250106812
+    },
+    {
+      "id": "ghost-shoes",
+      "side": -1,
+      "centerErrorX": -0.03030188102275133,
+      "sole": -0.02500000037252903,
+      "toeMargin": 0.06499999761581421,
+      "heelMargin": 0.09828092157840729
+    },
+    {
+      "id": "ghost-shoes",
+      "side": 1,
+      "centerErrorX": 0.03006083983927965,
+      "sole": -0.02500000037252903,
+      "toeMargin": 0.06499999761581421,
+      "heelMargin": 0.10152122378349304
+    }
+  ],
+  "failures": [],
+  "shortsWaist": 2.462923765182495
+}

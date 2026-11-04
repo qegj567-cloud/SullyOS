@@ -1,9 +1,10 @@
 import {classifyHomelyTouch} from '../homelyTouch';
 import {actionExpression,actionMouthFrame,type ActionExpression} from './actionExpression';
-import {createSocialProp} from './socialProps';
+import {createSocialProp,type SocialProp} from './socialProps';
 import {residentBlinkSeed,residentFaceFrame,type ResidentExpression} from './residentExpression';
 import * as THREE from 'three';
 import {setCharacterIllustration} from './illustration';
+import {subscribeCharacterStyle} from './characterStyle';
 import {buildBody,loadBody} from './FbxBody';
 import {BLANK_SCALE} from './blankBody';
 import {bodyHeightY} from './bodyHeight';
@@ -19,7 +20,7 @@ export const NEW_BODY_HOME_PERCENT=200;
 
 export async function decodeParts(result:RollResult,hair?:HairSettings):Promise<Parts>{
  const parts:Parts={};
- await Promise.all(Object.entries(result.layers).map(async([key,url])=>{const img=new Image();img.src=url;await img.decode();parts[key]=img;}));
+ await Promise.all(Object.entries(result.layers).map(async([key,url])=>{const img=new Image();img.src=url;await img.decode();img.dataset.creatorLineart=String((result.state as {preserveLineart?:number})?.preserveLineart??25);parts[key]=img;}));
  await Promise.all((hair?.extras??[]).filter(e=>e.src).map(async e=>{const img=new Image();img.src=e.src!;await img.decode();parts[e.source]=img;}));
  return parts;
 }
@@ -36,13 +37,14 @@ export async function createVisitor(parts:Parts,hair?:HairSettings){
  body.root.scale.setScalar(hair?.bodyShape==='blank'?1.4/BLANK_SCALE*(NEW_BODY_HOME_PERCENT/100):.7);
  // Keep the painted features legible under the room's brighter directional light.
  body.root.traverse(o=>{if(o instanceof THREE.Mesh){o.castShadow=false;o.receiveShadow=false;for(const m of Array.isArray(o.material)?o.material:[o.material])if(m instanceof THREE.MeshStandardMaterial){m.emissive.set('#ffffff');m.emissiveIntensity=.04;}}});
+ const unsubscribeStyle=subscribeCharacterStyle(()=>setCharacterIllustration(body.root));
  setCharacterIllustration(body.root);
  let actionFace:ActionExpression='neutral';
  const blinkSeed=residentBlinkSeed(root.uuid);let faceState={...residentFaceFrame(0,blinkSeed,{blink:false}),mouth:'base' as ReturnType<typeof actionMouthFrame>['mouth']};
- const updateExpression=(time:number,settings:Partial<ResidentExpression>&{speaking?:boolean}={})=>{const mouth=actionMouthFrame(settings.speaking?'speaking':actionFace,time);const eyes=residentFaceFrame(time,blinkSeed,{blink:hair?.face?.enabled?hair.face.blink:true,...settings},body.expressionBase);faceState={...eyes,mouth:mouth.mouth,nextIn:Math.min(eyes.nextIn,mouth.nextIn)};body.setExpressionFace(faceState.eyes,faceState.mouth);return faceState;};
+ const updateExpression=(time:number,settings:Partial<ResidentExpression>&{speaking?:boolean}={})=>{const mouth=actionMouthFrame(settings.speaking?'speaking':actionFace,time);const eyes=residentFaceFrame(time,blinkSeed,{blink:hair?.face?.enabled?hair.face.blink:true,...settings},body.expressionBase);faceState={...eyes,...(actionFace==='tender'?{eyes:'closed' as const}:{}),mouth:mouth.mouth,nextIn:Math.min(eyes.nextIn,mouth.nextIn)};body.setExpressionFace(faceState.eyes,faceState.mouth);return faceState;};
  const setActionExpression=(expression:ActionExpression,time:number)=>{actionFace=expression;updateExpression(time);};
  let disposed=false;
- let bedPhone:ReturnType<typeof createSocialProp>=null;
+ let bedPhone:SocialProp|null=null;
  const updateBedPhone=(time:number,activity?:ActivityPose)=>{
   if(body.rig&&activity?.kind==='bed-rest'&&activity.bedMode==='bed-phone'){
    bedPhone??=createSocialProp('bed-phone',[{root,rig:body.rig} as ChibiVisitor]);
@@ -115,6 +117,6 @@ export async function createVisitor(parts:Parts,hair?:HairSettings){
   if(!body.rig)base.y=crown.y-standingBounds.getSize(new THREE.Vector3()).y*.46*body.root.scale.y/baseScale;
   const arms=body.rig?(['L','R'] as const).map(side=>({side:(side==='L'?1:-1) as 1|-1,points:['upperArm','forearm','hand'].map(part=>body.rig!.bones[side+'_'+part].getWorldPosition(new THREE.Vector3()))})):[];
   return classifyHomelyTouch(point,base,crown,arms);
- },getHeadTopWorldPosition(){root.updateWorldMatrix(true,true);return headAnchor.localToWorld(headTopPoint.clone());},setPhotoExpression:body.setExpressionFace,lookToward:body.lookToward,translatePose,getHeadWorldPosition(){root.updateWorldMatrix(true,false);return body.rig?body.rig.bones.head.localToWorld(new THREE.Vector3(0,.72,0)):body.motionBody.localToWorld(new THREE.Vector3(0,1.2,0));},updateExpression,setActionExpression,get faceState(){return faceState;},rig:body.rig,navigation,finishPose,applySelectedFrame,classicPoint:body.classicPoint,classicContact:body.classicContact,get motionScale(){return motionLeg*body.root.scale.y;},setScaleMultiplier,setWalkMotion,get walkSpeed(){return walkSpeed===undefined?body.rig?1.05:1.45:walkSpeed*body.root.scale.y;},get seatScale(){return body.root.scale.y;},get gamingReach(){return body.rig?{shoulderHeight:bodyHeightY(.59*BLANK_SCALE,body.rig.bodyHeight)*body.root.scale.y,armReach:(body.rig.bones.L_forearm.position.length()+body.rig.bones.L_hand.position.length())*body.root.scale.y}:undefined;},get bedHipHeight(){return body.rig?bodyHeightY(.38*BLANK_SCALE,body.rig.bodyHeight)*body.root.scale.y:0;},get bedHeadToHip(){return body.rig?(standingBounds!.max.y/baseScale-bodyHeightY(.38*BLANK_SCALE,body.rig.bodyHeight))*body.root.scale.y:0;},seatOffset:0,animate(time:number,motion:Motion,posture:Posture='standing',activity?:ActivityPose){actionFace=actionExpression(activity?.bedMode==='bed-talk'?'bed-talk':motion);body.animate(time,motion,posture,body.rig&&activity&&(['computer','stream','race','rhythm','eat','hug','pet-contact'].includes(activity.kind)||activity.kind.startsWith('bath-'))?{...activity,handScale:(activity.kind.startsWith('bath-')?1:.7)/body.root.scale.y}:activity);updateBedPhone(time,activity);updateOutfitPose?.();updateExpression(time);},dispose(){if(disposed)return;disposed=true;bedPhone?.dispose();root.removeFromParent();for(const resource of body.resources)resource.dispose();}};
+ },getHeadTopWorldPosition(){root.updateWorldMatrix(true,true);return headAnchor.localToWorld(headTopPoint.clone());},setPhotoExpression:body.setExpressionFace,lookToward:body.lookToward,translatePose,getHeadWorldPosition(){root.updateWorldMatrix(true,false);return body.rig?body.rig.bones.head.localToWorld(new THREE.Vector3(0,.72,0)):body.motionBody.localToWorld(new THREE.Vector3(0,1.2,0));},updateExpression,setActionExpression,get faceState(){return faceState;},rig:body.rig,navigation,finishPose,applySelectedFrame,classicPoint:body.classicPoint,classicContact:body.classicContact,get motionScale(){return motionLeg*body.root.scale.y;},setScaleMultiplier,setWalkMotion,get walkSpeed(){return walkSpeed===undefined?body.rig?1.05:1.45:walkSpeed*body.root.scale.y;},get seatScale(){return body.root.scale.y;},get gamingReach(){return body.rig?{shoulderHeight:bodyHeightY(.59*BLANK_SCALE,body.rig.bodyHeight)*body.root.scale.y,armReach:(body.rig.bones.L_forearm.position.length()+body.rig.bones.L_hand.position.length())*body.root.scale.y}:undefined;},get bedHipHeight(){return body.rig?bodyHeightY(.38*BLANK_SCALE,body.rig.bodyHeight)*body.root.scale.y:0;},get bedHeadToHip(){return body.rig?(standingBounds!.max.y/baseScale-bodyHeightY(.38*BLANK_SCALE,body.rig.bodyHeight))*body.root.scale.y:0;},seatOffset:0,animate(time:number,motion:Motion,posture:Posture='standing',activity?:ActivityPose){actionFace=actionExpression(activity?.bedMode==='bed-talk'?'bed-talk':motion);body.animate(time,motion,posture,body.rig&&activity&&(['computer','stream','race','rhythm','eat','hug','pet-contact'].includes(activity.kind)||activity.kind.startsWith('bath-'))?{...activity,handScale:(activity.kind.startsWith('bath-')?1:.7)/body.root.scale.y}:activity);updateBedPhone(time,activity);updateOutfitPose?.();updateExpression(time);},dispose():void{if(disposed)return;disposed=true;unsubscribeStyle();bedPhone?.dispose();root.removeFromParent();for(const resource of body.resources)resource.dispose();}};
 }
 export type ChibiVisitor=Awaited<ReturnType<typeof createVisitor>>;

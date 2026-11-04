@@ -1,5 +1,7 @@
+import {renderCollaborationBeautySample} from '../../features/collaboration/CollaborationBeautySample';
+import {avatarFrameLayer,readAvatarFrameTarget} from '../../utils/avatarFrameTarget';
 import JournalThemeArtwork from '../journal/JournalThemeArtwork';
-import {meetingAppearance, MEETING_READING_CSS} from '../../utils/meetingAppearance';
+import {meetingAppearance, MEETING_READING_CSS, meetingCustomCss} from '../../utils/meetingAppearance';
 import {resolveJournalAppearanceCss,JOURNAL_APPEARANCE_SAFETY_CSS} from '../../utils/journalAppearance';
 import {ScheduleCardView} from '../schedule/ScheduleCard';
 import React from 'react';
@@ -32,6 +34,7 @@ const defaultBubble=PRESET_THEMES.default;
 /** Static rendering intentionally never mounts effects or binds actual message actions. */
 export function renderChatDecorationSample(value:unknown,sceneId:string,thumbnailPart?:DecorationThumbnailPart,state:DecorationPreviewState={}) {
  const p=validateDecoration(value).parts,l=p.layout||{};
+ if(p.collaboration)return renderCollaborationBeautySample(p.collaboration,!!thumbnailPart);
  if(p.date||p.story){
   const style=meetingAppearance(p.date||p.story);
   const markup=renderToStaticMarkup(<main className="meeting-reading" data-reading-preset={style.id}>
@@ -41,7 +44,7 @@ export function renderChatDecorationSample(value:unknown,sceneId:string,thumbnai
       {p.story&&<small style={{opacity:.5}}>▸ 场景与补充</small>}
     </div>
   </main>);
-  return {markup,css:baseCss+'\n'+MEETING_READING_CSS};
+  return {markup,css:baseCss+'\n'+MEETING_READING_CSS+'\n'+meetingCustomCss(p.date||p.story)};
  }
  if(thumbnailPart==='journal'||sceneId==='journal-app'){
   const preset=p.journal?.preset||'original';
@@ -56,7 +59,7 @@ export function renderChatDecorationSample(value:unknown,sceneId:string,thumbnai
  const scene=CHAT_PREVIEW_SCENES.find(item=>item.id===sceneId)||CHAT_PREVIEW_SCENES[0];
   const messages=scene.messages.flatMap(message=>{const status=state.transfers?.[message.id];if(!status||message.type!=='transfer'||message.metadata?.receipt)return [message];return [{...message,metadata:{...message.metadata,status}},{...message,id:-message.id,role:'user' as const,metadata:{amount:message.metadata?.amount,receipt:status}}];});
  const markup=renderToStaticMarkup(thumbnailPart?<main className={`sully-chat-root sample-chat sample-part sample-part-${thumbnailPart}`}>
-  {thumbnailPart==='avatar'&&<div className="sample-avatar sully-chat-message sully-chat-message-ai"><span className="sully-chat-avatar-wrap" style={{position:'relative',display:'block',width:100,height:100,margin:'auto'}}><img className="sully-chat-message-avatar-img" src={BEAUTY_PREVIEW_AVATAR} alt="示例头像" style={{width:'100%',height:'100%',borderRadius:'50%'}}/>{p.bubbles?.ai.avatarDecoration&&<img className="sully-chat-avatar-frame" src={p.bubbles.ai.avatarDecoration} alt="" style={{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'contain'}}/>}</span></div>}
+  {thumbnailPart==='avatar'&&<div className={`sample-avatar sully-chat-message sully-chat-message-${readAvatarFrameTarget(p.css||'')==='user'?'user':'ai'}`}><span className="sully-chat-avatar-wrap" style={{position:'relative',display:'block',width:100,height:100,margin:'auto'}}><img className="sully-chat-message-avatar-img" src={BEAUTY_PREVIEW_AVATAR} alt="示例头像" style={{width:'100%',height:'100%',borderRadius:'50%'}}/>{p.bubbles?.ai.avatarDecoration&&<img className="sully-chat-avatar-frame" src={p.bubbles.ai.avatarDecoration} alt="" style={{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'contain'}}/>}</span></div>}
   {thumbnailPart==='psyche'&&<div className="sample-psyche"><ThinkingChainBlock chain="听到开门的声音，忽然想把刚才看到的那朵云也分享给你。" styleId={p.psyche?.styleId} customColors={p.psyche?.customColors}/></div>}
   {thumbnailPart==='bubbles'&&<div className="sully-chat-messages sample-bubbles">{CHAT_PREVIEW_SCENES.find(item=>item.id==='conversation')!.messages.map((message,index)=><MessageItem key={message.id} msg={message} activeTheme={p.bubbles||defaultBubble} isFirstInGroup={index%2===0} isLastInGroup={index%2===1} charAvatar={BEAUTY_PREVIEW_AVATAR} userAvatar={BEAUTY_PREVIEW_AVATAR} charName="示例角色" onLongPress={noop} onReply={noop} selectionMode={false} isSelected={false} onToggleSelect={noop} showTimestamp="never" suppressEntranceAnimation/>)}</div>}
  </main>:<main className="sully-chat-root sample-chat">
@@ -79,6 +82,7 @@ export function renderChatDecorationSample(value:unknown,sceneId:string,thumbnai
  ${p.psyche?.customCss||''}
  ${p.css||''}
  ${p.bubbles?.customCss||''}
+ ${avatarFrameLayer(p.css||'')}
  .sample-chat .sample-messages,.sample-chat .no-scrollbar{scrollbar-width:none!important;-ms-overflow-style:none}
  .sample-chat .sample-messages::-webkit-scrollbar,.sample-chat .no-scrollbar::-webkit-scrollbar{display:none!important;width:0;height:0}
  ${thumbnailPart?`.beauty-preview-body,.sample-chat.sample-part{height:${thumbnailPart==='psyche'?180:360}px}.sample-chat.sample-part{justify-content:center}.sample-psyche{width:calc(100% - 40px);margin:auto}.sample-bubbles{width:100%;padding:20px 0}.sample-part-psyche,.sample-part-bubbles{background:#f5f4f7}.sample-part .sully-chat-message-content{margin-left:0!important;margin-right:0!important;max-width:86%}.sample-part .sully-chat-message-avatar-slot{display:none}`:''}

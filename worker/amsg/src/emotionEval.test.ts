@@ -20,6 +20,29 @@ const TEMPLATE = [
   '__EMOTION_EVAL_HISTORY__',
 ].join('\n');
 
+it('keeps main friend-feed reply tasks out of the cloud emotion ride-along', async () => {
+  const fetcher = vi.fn(async (_url: unknown, init: any) => {
+    const body = JSON.parse(init.body);
+    const prompt = JSON.stringify(body.messages);
+    expect(prompt).toContain('人设仍然保留');
+    expect(prompt).toContain('实时世界仍然保留');
+    expect(prompt).not.toContain('main-only-request');
+    expect(prompt).toContain('用户提到好友圈');
+    return new Response(JSON.stringify({choices: [{message: {content: '{"changed":false}'}}]}));
+  });
+  vi.stubGlobal('fetch', fetcher);
+  try {
+    const result = await runAmsgEmotionEval({prompt: TEMPLATE},
+      {baseUrl: 'https://test.invalid/v1', apiKey: '', model: 'eval'},
+      [{role: 'system', content: '人设仍然保留'},
+       {role: 'system', content: '【顺便回好友圈】main-only-request'},
+       {role: 'user', content: '用户提到好友圈'},
+       {role: 'system', content: '实时世界仍然保留'}], '小白');
+    expect(result.raw).toBe('{"changed":false}');
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  } finally {vi.unstubAllGlobals();}
+});
+
 describe('restoreEvalPrompt', () => {
   it('system prompt 进第一个槽，其余消息按 [角色]: 正文 拼进第二个槽', () => {
     const out = restoreEvalPrompt(TEMPLATE, [

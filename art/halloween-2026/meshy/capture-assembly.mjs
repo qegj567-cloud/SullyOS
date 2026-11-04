@@ -1,0 +1,3 @@
+import {chromium} from 'file:///C:/Users/Administrator/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs';
+const b=await chromium.launch({channel:'msedge',headless:true});
+try{const p=await b.newPage({viewport:{width:1000,height:1000}});p.on('pageerror',e=>console.error(e.message));await p.goto('http://127.0.0.1:5199/art/halloween-2026/meshy/viewer.html?model=assembled/pumpkin-preview.glb');await p.waitForFunction(()=>window.ready,{},{timeout:60000});for(const view of ['front','side','back']){await p.evaluate(view=>window.workbench.view(view),view);await p.screenshot({path:'art/halloween-2026/meshy/assembled/pumpkin-'+view+'.png'});}console.log('captured');}finally{await b.close();}

@@ -1,0 +1,139 @@
+{
+  "batch": "halloween-batch-09-furniture",
+  "jobs": [
+    {
+      "id": "bat-sofa",
+      "image": "../furniture/01-bat-sofa.png",
+      "imageSha256": "21e00c7abeb94ff3ce75cb9cf75c0de2b60a2a23cc37de25cdfc75b300565c0e",
+      "params": {
+        "model_type": "smart-topology",
+        "ai_model": "meshy-t2.5",
+        "topology": "triangle",
+        "should_texture": false,
+        "target_formats": [
+          "glb"
+        ],
+        "target_polycount": 8000
+      },
+      "estimatedCredits": 5,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-28T09:41:31.894Z",
+      "taskId": "01a181e2-e283-7665-9429-0e71bd6922a7",
+      "progress": 100,
+      "consumedCredits": 5,
+      "downloaded": true,
+      "file": "bat-sofa.glb",
+      "bytes": 152128,
+      "sha256": "d76356232bd86ba5f14f859de09fe357b2533e7303979f7346b68c6c9166bbb0"
+    },
+    {
+      "id": "coffin-coffee-table",
+      "image": "../furniture/02-coffin-coffee-table.png",
+      "imageSha256": "c98b3aff7eec9c9cbd75d6294765877e2a8f6f30b1ce1ae4086520c0d87540db",
+      "params": {
+        "model_type": "smart-topology",
+        "ai_model": "meshy-t2.5",
+        "topology": "triangle",
+        "should_texture": false,
+        "target_formats": [
+          "glb"
+        ],
+        "target_polycount": 6000
+      },
+      "estimatedCredits": 5,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-28T09:41:50.255Z",
+      "taskId": "01a181e3-2985-72ea-90ad-42204cb2bfef",
+      "progress": 100,
+      "consumedCredits": 5,
+      "downloaded": true,
+      "file": "coffin-coffee-table.glb",
+      "bytes": 113944,
+      "sha256": "cc270d8a0ad4541dee9bb1ff5c54bc15c9b64dd18966658b60a88397e450b5ee"
+    },
+    {
+      "id": "pumpkin-armchair",
+      "image": "../furniture/03-pumpkin-armchair.png",
+      "imageSha256": "188fc392864e4d2477492a419a1ed5e812c36e8785f403d574998bbfc9cd3aec",
+      "params": {
+        "model_type": "smart-topology",
+        "ai_model": "meshy-t2.5",
+        "topology": "triangle",
+        "should_texture": false,
+        "target_formats": [
+          "glb"
+        ],
+        "target_polycount": 8000
+      },
+      "estimatedCredits": 5,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-28T09:42:03.057Z",
+      "taskId": "01a181e3-5b9a-77c4-9b08-4171efe4c7bd",
+      "progress": 100,
+      "consumedCredits": 5,
+      "downloaded": true,
+      "file": "pumpkin-armchair.glb",
+      "bytes": 151528,
+      "sha256": "7bcc8f050ae451f0664b609cda6fa47d6f7d82dafd3fa8f10aad732a3ed79eda"
+    },
+    {
+      "id": "potion-bookcase",
+      "image": "../furniture/04-potion-bookcase.png",
+      "imageSha256": "6d5881ed2ada0755ca471dba5a9953f61128ccf229593077ecf8e3f04ca5ac77",
+      "params": {
+        "model_type": "smart-topology",
+        "ai_model": "meshy-t2.5",
+        "topology": "triangle",
+        "should_texture": false,
+        "target_formats": [
+          "glb"
+        ],
+        "target_polycount": 8000
+      },
+      "estimatedCredits": 5,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-28T09:42:29.070Z",
+      "taskId": "01a181e3-c13d-718d-a26a-d29e616ebcb8",
+      "progress": 100,
+      "consumedCredits": 5,
+      "downloaded": true,
+      "file": "potion-bookcase.glb",
+      "bytes": 148312,
+      "sha256": "0d3bd451bae10477b46327f178d21ff7f9f6de8c744636d9875301ac9e9b652f"
+    }
+  ],
+  "latestBalance": {
+    "balance": 636,
+    "monthly_credits": 395,
+    "permanent_credits": 241,
+    "monthly_resets_at": 1794576839000
+  },
+  "balanceBefore": {
+    "balance": 656,
+    "monthly_credits": 415,
+    "permanent_credits": 241,
+    "monthly_resets_at": 1794576839000
+  },
+  "rejectedRequests": [
+    {
+      "id": "bat-sofa",
+      "image": "../furniture/01-bat-sofa.png",
+      "imageSha256": "21e00c7abeb94ff3ce75cb9cf75c0de2b60a2a23cc37de25cdfc75b300565c0e",
+      "params": {
+        "model_type": "smart-topology",
+        "ai_model": "meshy-t2.5",
+        "image_enhancement": false,
+        "topology": "triangle",
+        "should_texture": false,
+        "target_formats": [
+          "glb"
+        ],
+        "target_polycount": 8000
+      },
+      "estimatedCredits": 5,
+      "status": "REJECTED",
+      "submittedAt": "2026-10-28T09:39:53.176Z",
+      "reason": "HTTP 400 unsupported image_enhancement; no task created"
+    }
+  ]
+}

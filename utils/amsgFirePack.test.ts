@@ -300,7 +300,7 @@ describe('self_log', () => {
 
   // 回归守卫（炸屏事故的根）：连发计数以前挂在 basePackAt 上，客户端每认领一条推送就
   // 重传一次 fire_pack，计数被自己发的消息洗回零——在线时连排提醒永远不出现。
-  // 现在两段各管各的生死：entries 只认「用户开口了」，tasks 只认「fire_pack 换代了」。
+  // entries 只认「用户开口了」；tasks 只在同 UUID 已进入客户端 pendingTasks 后去重。
   describe('reconcileSelfLogWithPack', () => {
     const task = (uuid: string) => ({
       taskUuid: uuid, clientTaskId: `${uuid}-c`, mode: 'auto', firstSendTime: '2026-08-07T09:00:00.000Z',
@@ -322,10 +322,10 @@ describe('self_log', () => {
       expect(log.anchorUserMsgAt).toBe(500);
     });
 
-    it('fire_pack 换代（builtAt 变了）→ 只丢 tasks（已随 pendingTasks 回来），entries 原样保留', () => {
+    it('fire_pack 换代但没有逐项认领证明 → tasks 和 entries 原样保留', () => {
       const log = reconcileSelfLogWithPack(seeded(), { ...pack, builtAt: packAt + 1 }, 500);
       expect(log.entries.map((e) => e.text)).toEqual(['第一条', '第二条']);
-      expect(log.tasks).toHaveLength(0);
+      expect(log.tasks).toHaveLength(1);
       expect(log.basePackAt).toBe(packAt + 1);
     });
 
@@ -342,10 +342,10 @@ describe('self_log', () => {
       expect(reconcileSelfLogWithPack(seeded(), pack, null).entries).toHaveLength(2);
     });
 
-    it('换代与用户开口同时发生 → entries、tasks 都清', () => {
+    it('换代与用户开口同时发生 → 只清 entries，未认领任务仍保留', () => {
       const log = reconcileSelfLogWithPack(seeded(), { ...pack, builtAt: packAt + 1 }, 900);
       expect(log.entries).toHaveLength(0);
-      expect(log.tasks).toHaveLength(0);
+      expect(log.tasks).toHaveLength(1);
     });
   });
 

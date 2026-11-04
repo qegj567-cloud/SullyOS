@@ -1,0 +1,14 @@
+[
+  {
+    "part": "shorts",
+    "triangles": 7306,
+    "file": "art/halloween-2026/meshy/assembled/ghost-shorts-wearables.glb",
+    "bones": 48
+  },
+  {
+    "part": "shoes",
+    "triangles": 9596,
+    "file": "art/halloween-2026/meshy/assembled/ghost-shoes-wearables.glb",
+    "bones": 48
+  }
+]

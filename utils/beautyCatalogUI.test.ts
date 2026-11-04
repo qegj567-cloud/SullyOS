@@ -10,6 +10,7 @@ vi.mock('./beautySourceBinding',()=>({readBeautyBinding:async()=>null,bindBeauty
 vi.mock('../components/share/BeautyPresetPreview',()=>({default:()=>{mocks.paint();return React.createElement('div',{'data-test-preview':true});}}));
 import BeautyCatalog from '../components/appearance/BeautyCatalog';
 import BeautyTermsEditor from '../components/share/BeautyTermsEditor';
+import { handleLocalBack } from './localBackHandlers';
 const metadata={name:'月光',credit:'作者',platforms:['糯米机美化群'],contact:'',allowRemix:false,allowRedistribute:false,exportVersion:'test',bugFeedback:'welcome' as const,message:'',allowPublicListing:true};
 const entries=Array.from({length:13},(_,i)=>({code:'S-'+i.toString(16).padStart(12,'0').toUpperCase(),revision:'a'.repeat(32),sha256:'b'.repeat(64),bytes:100,kind:'chat-decoration' as const,metadata:{...metadata,name:'月光 '+i},categories:['chat','whitebox'],file:'unused.json',cover:'unused.webp'}));
 let root:Root|undefined;
@@ -22,6 +23,13 @@ async function mount(element:React.ReactNode){
 const button=(text:string)=>[...document.querySelectorAll('button')].find(el=>el.textContent?.includes(text))!;
 const click=async(el:HTMLElement)=>act(async()=>{el.click();});
 describe('装扮库与批量协议交互',()=>{
+  it('returns from the preview to the catalog before exiting the catalog',async()=>{
+    mocks.catalog.mockResolvedValue({version:1,generatedAt:1,entries});
+    const back=vi.fn();await mount(React.createElement(BeautyCatalog,{onBack:back,onReceive:vi.fn()}));
+    await click(document.querySelector('.wardrobe-tile')!);expect(document.querySelector('dialog')).not.toBeNull();
+    await act(async()=>{expect(handleLocalBack()).toBe(true);});expect(document.querySelector('dialog')).toBeNull();expect(back).not.toHaveBeenCalled();
+    await act(async()=>{handleLocalBack();});expect(back).toHaveBeenCalledOnce();
+  });
   it('列表只显示当页静态图，详情按需预览，更新协议后必须重新勾选才能领取',async()=>{
     mocks.catalog.mockResolvedValue({version:1,generatedAt:1,entries});mocks.preview.mockResolvedValue({parts:{}});
     const receive=vi.fn().mockResolvedValue(undefined);

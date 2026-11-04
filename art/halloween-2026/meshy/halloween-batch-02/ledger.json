@@ -1,0 +1,95 @@
+{
+  "batch": "halloween-batch-02",
+  "jobs": [
+    {
+      "id": "pumpkin-costume-t2",
+      "image": "../outfits/06-pumpkin-costume.png",
+      "imageSha256": "30ed19d4781bbfd573aa86f8bfcb242b66f1afeed67515e9e44eefeace5dbd33",
+      "params": {
+        "model_type": "smart-topology",
+        "ai_model": "meshy-t2",
+        "topology": "triangle",
+        "should_texture": false,
+        "target_formats": [
+          "glb"
+        ],
+        "target_polycount": 15000,
+        "pose_mode": "t-pose"
+      },
+      "estimatedCredits": 5,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-27T01:31:32.973Z",
+      "taskId": "01a17afb-ec4c-7270-a9eb-1f85563b2623",
+      "progress": 100,
+      "consumedCredits": 5,
+      "downloaded": true,
+      "file": "pumpkin-costume-t2.glb",
+      "bytes": 293132,
+      "sha256": "0aac53b914ce3dcffb3d922332bec9a618d8d5bc6aa73742452b7d472b7d8125"
+    },
+    {
+      "id": "ghost-top-t2",
+      "image": "../separated/05-ghost/hooded-top.png",
+      "imageSha256": "049d242d23c38a9fe99bc757ee5d922c9b73607d3b88ef2dd961294a490146cb",
+      "params": {
+        "model_type": "smart-topology",
+        "ai_model": "meshy-t2",
+        "topology": "triangle",
+        "should_texture": false,
+        "target_formats": [
+          "glb"
+        ],
+        "target_polycount": 12000,
+        "pose_mode": "t-pose"
+      },
+      "estimatedCredits": 5,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-27T01:31:38.649Z",
+      "taskId": "01a17afc-01e6-70a0-8f5e-097def9f5e96",
+      "progress": 100,
+      "consumedCredits": 5,
+      "downloaded": true,
+      "file": "ghost-top-t2.glb",
+      "bytes": 230156,
+      "sha256": "44654a6253e3866b5dc2d652c48729b935db89869e2953e76fa03a477bb01928"
+    },
+    {
+      "id": "pumpkin-hat-t2",
+      "image": "../separated/06-pumpkin/hat.png",
+      "imageSha256": "24d5af4bc8a52b177b6053ba0dfabfec78fb3e78c5faf8672e4307dce8044db0",
+      "params": {
+        "model_type": "smart-topology",
+        "ai_model": "meshy-t2",
+        "topology": "triangle",
+        "should_texture": false,
+        "target_formats": [
+          "glb"
+        ],
+        "target_polycount": 8000,
+        "pose_mode": "t-pose"
+      },
+      "estimatedCredits": 5,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-27T01:31:46.881Z",
+      "taskId": "01a17afc-227e-7621-a5b8-9e94cd199ba1",
+      "progress": 100,
+      "consumedCredits": 5,
+      "downloaded": true,
+      "file": "pumpkin-hat-t2.glb",
+      "bytes": 158668,
+      "sha256": "591440cf9a5f2ba403d8c345a0e840f912cb2e62dbaae30b6e225e727bd68d70"
+    }
+  ],
+  "latestBalance": {
+    "balance": 1211,
+    "monthly_credits": 970,
+    "permanent_credits": 241,
+    "monthly_resets_at": 1794576839000
+  },
+  "balanceBefore": {
+    "balance": 1226,
+    "monthly_credits": 985,
+    "permanent_credits": 241,
+    "monthly_resets_at": 1794576839000
+  }
+}

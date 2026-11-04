@@ -1,0 +1,4 @@
+import fs from 'node:fs/promises';
+import {chromium} from 'file:///C:/Users/Administrator/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs';
+const browser=await chromium.launch({channel:'msedge',headless:true});
+try{const page=await browser.newPage();page.on('pageerror',console.error);await page.goto('http://127.0.0.1:5199/art/halloween-2026/reference-body.html');await page.waitForFunction(()=>window.reference);const {png,...report}=await page.evaluate(()=>window.reference);await fs.mkdir('art/halloween-2026/references',{recursive:true});await fs.writeFile('art/halloween-2026/references/current-body-front.png',Buffer.from(png.split(',')[1],'base64'));await fs.writeFile('art/halloween-2026/references/body-report.json',JSON.stringify(report,null,2));console.log(report);}finally{await browser.close();}

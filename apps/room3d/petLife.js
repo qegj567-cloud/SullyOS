@@ -65,7 +65,7 @@ export function createPetLife({home,catalog,changed=()=>{},random=Math.random,ac
   const a=catalog.find(a=>a.id===assetId&&a.petSpecies);if(!a)throw Error('找不到宠物素材');
   const owner=home().rooms.find(r=>r.items.some(i=>i.id===sourceId)),source=owner?.items.find(i=>i.id===sourceId);
   if(sourceId&&(!source||source.assetId!==assetId))throw Error('这个摆件已经不在了');
-  const p={id:uid(),name:String(name||a.name).trim().slice(0,24)||a.name,assetId,roomId:owner?.id||home().activeRoomId,x:source?.x||0,z:source?.z||0,rotation:0,color:source?.color||null,materialColors:copy(source?.materialColors||{}),traits:traits.filter(t=>Object.hasOwn(PET_TRAITS,t)).slice(0,2),needs:{food:75,energy:80,social:65,fun:70},relations:{},memory:{},bondCooldown:0,sourceFurnitureId:sourceId||null};
+  const p={hat:null,id:uid(),name:String(name||a.name).trim().slice(0,24)||a.name,assetId,roomId:owner?.id||home().activeRoomId,x:source?.x||0,z:source?.z||0,rotation:0,color:source?.color||null,materialColors:copy(source?.materialColors||{}),traits:traits.filter(t=>Object.hasOwn(PET_TRAITS,t)).slice(0,2),needs:{food:75,energy:80,social:65,fun:70},relations:{},memory:{},bondCooldown:0,sourceFurnitureId:sourceId||null};
   // Exclude the converted ornament while checking its new living footprint.
   const oldStored=source?.stored;if(source)source.stored=true;const spot=freeSpot(p);if(source)source.stored=oldStored;maps.delete(p.id);
   if(!spot)throw Error('房间太满，先留一块宠物活动的空地');

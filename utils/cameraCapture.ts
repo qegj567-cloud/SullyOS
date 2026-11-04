@@ -1,9 +1,11 @@
-/** Browser video is already upright; crop to the phone's viewfinder, never rotate its pixels. */
-export function cameraCaptureLayout(sourceWidth: number, sourceHeight: number, portrait: boolean, maxEdge = 1440) {
+/** Preserve upright sensor pixels, cropping only for an explicit digital zoom. */
+export function cameraCaptureLayout(sourceWidth: number, sourceHeight: number, portrait: boolean, maxEdge = 1440, zoom = 1) {
     if (![sourceWidth, sourceHeight, maxEdge].every(n => Number.isFinite(n) && n > 0)) return null;
-    const aspect = portrait ? 3 / 4 : 4 / 3;
-    const sourceCropWidth = Math.min(sourceWidth, sourceHeight * aspect);
-    const sourceCropHeight = sourceCropWidth / aspect;
+    // Video pixels are already upright. Preserve the sensor's complete field of
+    // view instead of cropping a landscape stream to a portrait phone rectangle.
+    const factor = Number.isFinite(zoom) ? Math.max(1, zoom) : 1;
+    const sourceCropWidth = sourceWidth / factor;
+    const sourceCropHeight = sourceHeight / factor;
     const scale = Math.min(1, maxEdge / Math.max(sourceCropWidth, sourceCropHeight));
     return {
         x: (sourceWidth - sourceCropWidth) / 2, y: (sourceHeight - sourceCropHeight) / 2,

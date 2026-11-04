@@ -1,0 +1,115 @@
+{
+  "batch": "halloween-batch-03",
+  "jobs": [
+    {
+      "id": "pumpkin-costume-hd",
+      "image": "../outfits/06-pumpkin-costume.png",
+      "imageSha256": "30ed19d4781bbfd573aa86f8bfcb242b66f1afeed67515e9e44eefeace5dbd33",
+      "params": {
+        "model_type": "standard",
+        "ai_model": "meshy-7.1",
+        "geometry_resolution": "4k",
+        "image_enhancement": false,
+        "should_remesh": true,
+        "save_pre_remeshed_model": true,
+        "topology": "triangle",
+        "should_texture": false,
+        "target_formats": [
+          "glb"
+        ],
+        "target_polycount": 80000,
+        "pose_mode": "t-pose"
+      },
+      "estimatedCredits": 25,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-27T02:43:18.925Z",
+      "taskId": "01a17b3d-9c89-759c-a4a2-f019e80c8b53",
+      "progress": 100,
+      "consumedCredits": 25,
+      "sourceFile": "pumpkin-costume-hd-source.glb",
+      "sourceBytes": 17235828,
+      "sourceSha256": "5f7c0ccb4746f7693d75079cb9d5b163cb1a13ee20f9d64e255d1b2d7439e167",
+      "downloaded": true,
+      "file": "pumpkin-costume-hd.glb",
+      "bytes": 3458640,
+      "sha256": "18c180d53d1fdff8f5b39dac4b55836f89bf37d7ec01d7c44ee78175117ab0b0"
+    },
+    {
+      "id": "ghost-top-hd",
+      "image": "../separated/05-ghost/hooded-top.png",
+      "imageSha256": "049d242d23c38a9fe99bc757ee5d922c9b73607d3b88ef2dd961294a490146cb",
+      "params": {
+        "model_type": "standard",
+        "ai_model": "meshy-7.1",
+        "geometry_resolution": "4k",
+        "image_enhancement": false,
+        "should_remesh": true,
+        "save_pre_remeshed_model": true,
+        "topology": "triangle",
+        "should_texture": false,
+        "target_formats": [
+          "glb"
+        ],
+        "target_polycount": 60000,
+        "pose_mode": "t-pose"
+      },
+      "estimatedCredits": 25,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-27T02:43:24.270Z",
+      "taskId": "01a17b3d-b0b4-762b-9e76-899cd47f422b",
+      "progress": 100,
+      "consumedCredits": 25,
+      "sourceFile": "ghost-top-hd-source.glb",
+      "sourceBytes": 10325316,
+      "sourceSha256": "7558846db4d3e4f8cb8409ba9bce3d8729e999350350848e26b2f496e71bca94",
+      "downloaded": true,
+      "file": "ghost-top-hd.glb",
+      "bytes": 2019392,
+      "sha256": "3f67e562a6338d15840f66f51ad894ebcd6afd4bcbbd1c3922f431daef067deb"
+    },
+    {
+      "id": "pumpkin-lantern-hd",
+      "image": "../furniture/09-pumpkin-lantern.png",
+      "imageSha256": "8077351f84bc48c25cac1023f47c598f0fff709cba681c8f9774a6d88da4e4ca",
+      "params": {
+        "model_type": "standard",
+        "ai_model": "meshy-7.1",
+        "geometry_resolution": "4k",
+        "image_enhancement": false,
+        "should_remesh": true,
+        "save_pre_remeshed_model": true,
+        "topology": "triangle",
+        "should_texture": false,
+        "target_formats": [
+          "glb"
+        ],
+        "target_polycount": 20000
+      },
+      "estimatedCredits": 25,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-27T02:43:34.245Z",
+      "taskId": "01a17b3d-d7c2-74d1-93e2-8252d37b17c0",
+      "progress": 100,
+      "consumedCredits": 25,
+      "sourceFile": "pumpkin-lantern-hd-source.glb",
+      "sourceBytes": 7906784,
+      "sourceSha256": "aa3423c65952f339a636ec2ea6e0cb8f43b5c039b28fd3a8cfc1b7fa790fff9a",
+      "downloaded": true,
+      "file": "pumpkin-lantern-hd.glb",
+      "bytes": 737624,
+      "sha256": "b004a4fca7a1774e9266165934678af78820bdb76db9c0ffe044fb1faabca9f8"
+    }
+  ],
+  "latestBalance": {
+    "balance": 1136,
+    "monthly_credits": 895,
+    "permanent_credits": 241,
+    "monthly_resets_at": 1794576839000
+  },
+  "balanceBefore": {
+    "balance": 1211,
+    "monthly_credits": 970,
+    "permanent_credits": 241,
+    "monthly_resets_at": 1794576839000
+  }
+}

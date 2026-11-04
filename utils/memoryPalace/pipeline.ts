@@ -278,12 +278,13 @@ export function mergePalaceFragmentsIntoMemories(
     }
 
     for (const frag of incoming) {
+        if (result.some(memory => memory.id === frag.id)) continue;
         if (frag.palaceMemoryId) {
             // Never merge a new link into a pre-upgrade daily snapshot, even on the same date.
             if (!result.some(memory => memory.palaceMemoryId === frag.palaceMemoryId)) result.push(frag);
             continue;
         }
-        const existingIdx = palaceByDate.get(frag.date);
+        const existingIdx = frag.mood === 'palace' ? palaceByDate.get(frag.date) : undefined;
         if (existingIdx !== undefined) {
             // merge：把新 bullets 直接追加到 summary。
             // 不做字符串去重——LLM 偶尔写出相同短句的合法情况会被误杀，
@@ -298,7 +299,7 @@ export function mergePalaceFragmentsIntoMemories(
             };
         } else {
             result.push(frag);
-            palaceByDate.set(frag.date, result.length - 1);
+            if (frag.mood === 'palace') palaceByDate.set(frag.date, result.length - 1);
         }
     }
 
@@ -379,6 +380,8 @@ export interface RecallRetrievalOptions {
     recallPlan?: RecallPlan;
     /** 调用方专用的最终召回/格式化上限；默认聊天仍保持 15。 */
     formatterMaxOutputItems?: number;
+    /** 隐去召回结果上的现实日期与「今天/距今X天」标注（用于虚构剧场与关掉线下时间感知的见面）。 */
+    omitDates?: boolean;
 }
 
 export async function retrieveMemories(
@@ -1111,7 +1114,7 @@ export async function retrieveMemories(
         const anticipations = await tRetrieve('AnticipationDB.getByCharId', 'IDB', AnticipationDB.getByCharId(charId));
 
         // 10. 格式化
-        const formatted = await tRetrieve('expandAndFormat', 'IDB', expandAndFormat(results, charId, anticipations, userName, formatterCap));
+        const formatted = await tRetrieve('expandAndFormat', 'IDB', expandAndFormat(results, charId, anticipations, userName, formatterCap, { omitDates: recallOptions?.omitDates }));
 
         // ── 汇总打印 ──
         const perfTotal = Math.round(performance.now() - perfRetrieveT0);
@@ -1179,7 +1182,7 @@ export async function injectMemoryPalace(
     recentMessages?: Message[],
     queryHint?: string,
     userName?: string,
-    traceContext?: { entryPoint?: RecallEntryPoint; formatterMaxOutputItems?: number },
+    traceContext?: { entryPoint?: RecallEntryPoint; formatterMaxOutputItems?: number; omitDates?: boolean },
 ): Promise<RecallTrace> {
     const hadPreviousMemory = Boolean(char.memoryPalaceInjection);
     const hadPreviousRoomPlates = Boolean(char.roomPlatesInjection);
@@ -1405,7 +1408,7 @@ export async function injectMemoryPalace(
             getRemoteVectorConfig(),
             char.name,
             telemetry => { retrievalTelemetry = telemetry; },
-            { explicitEntityAnalysis, formatterMaxOutputItems: traceContext?.formatterMaxOutputItems },
+            { explicitEntityAnalysis, formatterMaxOutputItems: traceContext?.formatterMaxOutputItems, omitDates: traceContext?.omitDates },
         );
         if (context || !legacyCompatibilityMode) {
             char.memoryPalaceInjection = context || '';
@@ -2195,7 +2198,7 @@ export async function processNewMessages(
         //       消息不会被重复处理，去重在这条路径上收益小、误伤大。
         const core = await extractAndStoreMemories(
             toProcess, charId, charName, embeddingConfig, llmConfig, userName, onProgress, true,
-            options.requireAllBatches === true,
+            true, // A failed batch must never be hidden by another batch's successful waterline advance.
         );
 
         if (core.memories.length === 0) {

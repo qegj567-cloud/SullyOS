@@ -9,6 +9,7 @@ import Modal from '../os/Modal';
 import DialogueApiFields from '../settings/DialogueApiFields';
 import ModelPicker from '../settings/ModelPicker';
 import ApiPresetGroups from '../settings/ApiPresetGroups';
+import { fetchLlm } from '../../utils/anthropicApi';
 
 export default function CharacterApiPanel({ character, onChange }: {
   character: CharacterProfile;
@@ -31,7 +32,7 @@ export default function CharacterApiPanel({ character, onChange }: {
     // A response from the previous provider must never populate the next provider's picker.
     requestVersion.current += 1;
     setLoading(false); setTesting(false); setStatus('');
-    if (patch.baseUrl !== undefined || patch.apiKey !== undefined) setModels([]);
+    if (patch.baseUrl !== undefined || patch.apiKey !== undefined || patch.apiType !== undefined) setModels([]);
     setDraft(previous => previous ? { ...previous, ...patch } : previous);
   };
   const open = () => {
@@ -47,7 +48,7 @@ export default function CharacterApiPanel({ character, onChange }: {
     const version = ++requestVersion.current;
     setLoading(true); setStatus('');
     try {
-      const response = await fetch(`${api.baseUrl}/models`, { headers: { Authorization: `Bearer ${api.apiKey || 'sk-none'}` } });
+      const response = await fetchLlm(`${api.baseUrl}/models`, { headers: { Authorization: `Bearer ${api.apiKey || 'sk-none'}` } });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const next = extractModelIds(await response.json());
       if (version !== requestVersion.current) return;
@@ -64,7 +65,7 @@ export default function CharacterApiPanel({ character, onChange }: {
     const version = ++requestVersion.current;
     setTesting(true); setStatus('');
     try {
-      const response = await fetch(`${api.baseUrl}/chat/completions`, {
+      const response = await fetchLlm(`${api.baseUrl}/chat/completions`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${api.apiKey || 'sk-none'}` },
         body: JSON.stringify({ model: api.model, messages: [{ role: 'user', content: 'Hi' }], max_tokens: 5, stream: api.stream ?? false }),
       });

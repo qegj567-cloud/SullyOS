@@ -1,0 +1,41 @@
+{
+  "id": "halloween-batch-12-furniture-texture",
+  "endpoint": "retexture",
+  "maxTasks": 4,
+  "maxEstimatedCredits": 40,
+  "defaults": {
+    "ai_model": "meshy-7",
+    "texture_resolution": "2k",
+    "enable_original_uv": false,
+    "enable_pbr": true,
+    "target_formats": [
+      "glb"
+    ]
+  },
+  "jobs": [
+    {
+      "id": "bat-sofa-textured",
+      "model": "furniture-texture-inputs/halloween_bat_sofa.glb",
+      "image": "../furniture/01-bat-sofa.png",
+      "estimatedCredits": 10
+    },
+    {
+      "id": "pumpkin-armchair-textured",
+      "model": "furniture-texture-inputs/halloween_pumpkin_armchair.glb",
+      "image": "../furniture/03-pumpkin-armchair.png",
+      "estimatedCredits": 10
+    },
+    {
+      "id": "coffin-coffee-table-textured",
+      "model": "furniture-texture-inputs/halloween_coffin_coffee_table.glb",
+      "image": "../furniture/02-coffin-coffee-table.png",
+      "estimatedCredits": 10
+    },
+    {
+      "id": "potion-bookcase-textured",
+      "model": "furniture-texture-inputs/halloween_potion_bookcase.glb",
+      "image": "../furniture/04-potion-bookcase.png",
+      "estimatedCredits": 10
+    }
+  ]
+}

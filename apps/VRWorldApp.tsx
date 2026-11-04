@@ -109,6 +109,8 @@ import type { CharacterProfile, UserProfile, VRWorldNovel, VRWorldNovelSummary, 
 
 // ============ chibi 形象解析（vrState.chibi → 立绘 → 头像） ============
 import { getChibi } from '../utils/vrWorld/chibi';
+import { HalloweenActions, HalloweenChibi, HalloweenDialogue, HalloweenPumpkins, KanataHalloweenProvider, useKanataHalloween } from './vrWorld/KanataHalloween';
+import type { HalloweenNpc } from '../utils/vrWorld/kanataHalloween';
 import { CharacterGroupFilterBar, filterCharactersByGroup, GROUP_FILTER_ALL } from '../components/character/CharacterGroupFilter';
 import { trackEvent } from '../utils/analytics';
 import { formatHours } from '../utils/format';
@@ -147,6 +149,9 @@ const IDLE_QUIPS: Record<VRRoomId, string[]> = {
 };
 
 const VRWorldApp: React.FC = () => {
+    const halloween = useKanataHalloween();
+    const [halloweenNpc, setHalloweenNpc] = useState<HalloweenNpc | null>(null);
+    const [halloweenCharacter, setHalloweenCharacter] = useState<CharacterProfile | null>(null);
     const { closeApp, characters, characterGroups, updateCharacter, addToast, registerBackHandler, userProfile, updateUserProfile, apiPresets, apiConfig, groups, realtimeConfig, memoryPalaceConfig } = useOS();
     useEffect(() => {
         const flush = () => { void flushFishingDeliveries(characters).then(() => flushMarketReceipts(characters)).catch(() => {}); };
@@ -188,6 +193,14 @@ const VRWorldApp: React.FC = () => {
     }, []);
 
     const [enterRoom, setEnterRoom] = useState<VRRoomId | null>(null);
+    useAppShortcut(ShortcutAppID.VRWorld, intent => {
+        setReaderNovel(null); setReaderJump(null); setShowUpload(false); setShowHelp(false);
+        setShowFishingMarket(null); setSarHubPanel(null); setShowSarModuleShop(false); setShowSarCabinet(false); setShowSarGacha(false); setShowSarDialogue(false); setFamiliarity(null);
+        const id = intent.entryId || 'world';
+        const isTab = ['world', 'library', 'sar', 'settings', 'api'].includes(id);
+        setTab(isTab ? id as Tab : 'world');
+        setEnterRoom(isTab ? null : id as VRRoomId);
+    });
     const [readerNovel, setReaderNovel] = useState<VRWorldNovel | null>(null);
     const [readerJump, setReaderJump] = useState<{ novel: VRWorldNovel; seg: number } | null>(null);
     const [showUpload, setShowUpload] = useState(false);
@@ -424,6 +437,8 @@ const VRWorldApp: React.FC = () => {
 
     // 返回键：有弹层先关弹层（阅读器/房间/上传/捏人），而不是直接退回桌面
     useEffect(() => registerBackHandler(() => {
+        if (halloweenNpc) { setHalloweenNpc(null); return true; }
+        if (halloweenCharacter) { setHalloweenCharacter(null); return true; }
         if (closeSARFacilityGuide()) return true;
         if (showSarRewindConfirm) { setShowSarRewindConfirm(false); return true; }
         if (familiarity && chibiEditUser) { setChibiEditUser(false); return true; }
@@ -443,7 +458,7 @@ const VRWorldApp: React.FC = () => {
         if (enterRoom) { setEnterRoom(null); return true; }
         if (tab === 'sar') { setTab('world'); return true; }
         return false; // 无弹层 → 交回默认（关闭 App）
-    }), [registerBackHandler, tab, familiarity, sarHubPanel, showFishingMarket, showSarModuleShop, showSarCabinet, showSarGacha, showSarRewindConfirm, showSarDialogue, readingPreferenceCharId, chibiEditChar, chibiEditUser, showUpload, readerJump, readerNovel, enterRoom]);
+    }), [registerBackHandler, halloweenNpc, halloweenCharacter, tab, familiarity, sarHubPanel, showFishingMarket, showSarModuleShop, showSarCabinet, showSarGacha, showSarRewindConfirm, showSarDialogue, readingPreferenceCharId, chibiEditChar, chibiEditUser, showUpload, readerJump, readerNovel, enterRoom]);
 
     // 从动态/批注点回原文：peek 模式打开阅读器跳到该段，不动用户书签
     const readerLoadGeneration = useRef(0);
@@ -608,8 +623,8 @@ const VRWorldApp: React.FC = () => {
                 ) : tab === 'sar' ? (
                     <SARWorldPage occupants={occupantsByRoom.sar || []} npcEnabled={sarState.npcPreference === 'show'} caianMet={sarState.caianMet}
                         roomView={sarRoomView(sarState)} onToggleLabels={() => {const view=nextSARRoomView(sarRoomView(sarState));setSarState(patchSARClubState({roomView:view,labelsHidden:view==='text-hidden'}));}}
-                        onTalkToCaian={() => sarState.caianMet ? setFamiliarity({npc:'caian'}) : setShowSarDialogue(true)} onTalkToAiven={() => setFamiliarity({npc:'aiven'})}
-                        onSelectCharacter={char => { setSarModuleTargetCharId(char.id); setShowSarModuleShop(true); }}
+                        onTalkToCaian={() => halloween.active && !halloween.state.completed.includes('caian') ? setHalloweenNpc('caian') : sarState.caianMet ? setFamiliarity({npc:'caian'}) : setShowSarDialogue(true)} onTalkToAiven={() => halloween.active && !halloween.state.completed.includes('aiven') ? setHalloweenNpc('aiven') : setFamiliarity({npc:'aiven'})}
+                        onSelectCharacter={char => { if (halloween.active) { setHalloweenCharacter(char); return; } setSarModuleTargetCharId(char.id); setShowSarModuleShop(true); }}
                         onOpenGacha={() => setShowSarGacha(true)} onOpenCabinet={() => setShowSarCabinet(true)}
                         onOpenModuleShop={() => setShowSarModuleShop(true)} onOpenFishingMarket={setShowFishingMarket}
                         onOpenSarSettings={() => setSarHubPanel('settings')} onOpenSarWarehouse={() => setSarHubPanel('warehouse')}
@@ -654,6 +669,8 @@ const VRWorldApp: React.FC = () => {
             {sarPromptStep && (
                 <SARUpdateModal step={sarPromptStep} onContinue={() => setSarPromptStep('preference')} onChoose={chooseSarNpcPreference} />
             )}
+            {halloweenNpc && sarState.npcPreference === 'show' && <HalloweenDialogue key={halloweenNpc} npc={halloweenNpc} userName={userName} onClose={() => setHalloweenNpc(null)}/>}
+            {halloweenCharacter && halloween.active && <div className="fixed inset-0 z-[550] flex items-end bg-black/50" role="presentation" onClick={() => setHalloweenCharacter(null)}><section role="dialog" aria-modal="true" aria-label={`${halloweenCharacter.name}的万圣节`} className="w-full rounded-t-2xl p-5 text-white bg-[#1a2236]" style={{ paddingBottom: vrBottomPad('1rem') }} onClick={e => e.stopPropagation()}><div className="flex items-center justify-between"><strong>{halloweenCharacter.name}</strong><button className="p-3" onClick={() => setHalloweenCharacter(null)} aria-label="关闭角色弹窗"><X size={20}/></button></div><HalloweenActions actorId={halloweenCharacter.id} name={halloweenCharacter.name}/><button className="mt-3 min-h-[44px] w-full" onClick={() => { setSarModuleTargetCharId(halloweenCharacter.id); setShowSarModuleShop(true); setHalloweenCharacter(null); }}>抓住 TA · 使用模块</button></section></div>}
             {showSarDialogue && sarState.npcPreference === 'show' && (
                 <SARCaianDialogue onClose={() => setShowSarDialogue(false)} onComplete={completeSarIntro} />
             )}
@@ -939,7 +956,7 @@ const Chibi: React.FC<{ char: CharacterProfile; bubble?: string; onTap?: () => v
             )}
             <div className="relative" style={{ animation: `${dance ? 'vrdance 0.9s' : 'vrfloat 3.2s'} ease-in-out infinite`, animationDelay: `${(char.id.charCodeAt(0) % 10) * 0.15}s` }}>
                 {c.img ? (
-                    <TokenImg value={c.img} alt={char.name}
+                    <HalloweenChibi actorId={char.id} img={c.img} name={char.name}
                         style={{ height: size * c.scale, transform: `scaleX(${c.flip ? -1 : 1}) translateY(${c.offsetY}px)`, filter: 'drop-shadow(0 4px 6px rgba(0,0,0,.5))' }}
                         className="object-contain" />
                 ) : (
@@ -3012,6 +3029,7 @@ const RoomScene: React.FC<{
                 {isSignal && <SignalPanel addToast={addToast} characters={characters} />}
 
                 {/* chibi 站位（可隐藏，避免挡住留言墙等文字） */}
+                <HalloweenPumpkins/>
                 {!hideChibi && occupants.map((c, i) => {
                     const slot = slots[i % slots.length];
                     const latest = latestByChar[c.id];
@@ -3087,6 +3105,7 @@ const RoomScene: React.FC<{
                         })() : (
                             <p className="text-[12px] text-indigo-300/60">还没有留下动态，等 ta 下一次登入吧。</p>
                         )}
+                        <HalloweenActions actorId={detail.id} name={detail.name}/>
                         {detail.id !== 'user' && (
                             <>
                                 {detail.vrState?.sarModule && (
@@ -4179,4 +4198,6 @@ const VRStyleTag: React.FC = () => (
     `}</style>
 );
 
-export default VRWorldApp;
+export default function KanataApp() { return <KanataHalloweenProvider><VRWorldApp/></KanataHalloweenProvider>; }
+import { useAppShortcut } from '../utils/appShortcutLaunch';
+import { AppID as ShortcutAppID } from '../types';

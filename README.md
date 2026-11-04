@@ -71,7 +71,7 @@ pnpm dev
 - **React + TypeScript** - 前端骨架
 - **Vite** - 构建工具，快得像作弊
 - **IndexedDB** - 本地数据存储（聊天记录不会上传到任何地方），图片二进制走 **Blob** 存储省配额
-- **Cloudflare Workers** - 联网能力的代理层（搜索 / 云备份 / 点单 MCP 等），单文件 `worker/index.js`，可一键自托管
+- **Cloudflare Workers** - 联网能力的代理层（搜索 / 云备份 / 点单 MCP / 微博等），入口 `worker/index.js`，可打包为单文件自托管
 - **Capacitor** - 可打包成安卓 App，真·手机模拟器
 - **Phosphor Icons** - 图标库，看起来挺酷的
 - **AMSG（ReiStandard）** - 主动消息协议
@@ -101,6 +101,8 @@ pnpm dev
 | **Model** | 模型名，如 `gpt-4o-mini`、`claude-3-sonnet`、`deepseek-chat` |
 
 **TTS（可选）**：语音支持 MiniMax、Fish Audio、ElevenLabs 三选一。在「设置 → 其他 API」填写所选服务的 Key 和模型，再到角色的语音设置填写对应音色 ID；未配置时仍可正常使用文字聊天。
+
+ElevenLabs 新配置默认使用 Eleven v4，也可选择 v4 Turbo。聊天、电话与见面保留 v4 的情绪、音效、节奏 Audio Tags 和 IPA 发音；v4 不支持数值语速、Style、Speaker Boost 或 SSML，当前仍等待完整音频后播放。接入能力与限制见 [ElevenLabs 语音说明](docs/elevenlabs-tts.md)。
 
 > 也可以建 `.env.local` 文件预填默认值，但设置里的优先级更高。
 
@@ -277,10 +279,10 @@ VITE_HIDE_BUILD_BADGE=1 npm run build
 
 **好消息**：现在**主代理已经统一成一个中心配置**，不用再满仓库改硬编码。
 
-**① 主代理 Worker**（默认作者公共实例 `proxy.friedsully.com`，源码单文件 [`worker/index.js`](./worker/index.js)）
+**① 主代理 Worker**（默认作者公共实例 `proxy.friedsully.com`，源码入口 [`worker/index.js`](./worker/index.js)）
 旧公共域名 `sullymeow.ccwu.cc` 保留兼容；更新后，中心代理、音乐和小红书保存的旧公共地址会自动迁移，用户自建地址不变。这次只调整后端代理入口，不搬前端网站或浏览器本地数据。详见 [代理域名迁移](docs/proxy-domain-migration.md)。
-覆盖：联网搜索 / 热榜（Brave）、WebDAV 云备份、GitHub 云备份、Notion、飞书多维表格、麦当劳 / 瑞幸点单 MCP、网页抓取、Fish Audio / ElevenLabs TTS、音乐生成、网易云音乐（默认）。
-👉 二改只要在 **「设置 → 网络代理 (Worker)」** 填上你自己部署的地址，以上能力**一键全切走，不用改任何代码**。（`wrangler deploy` 把 `worker/index.js` 丢自己 CF 账号，拿到地址填进去即可。）
+覆盖：联网搜索 / 热榜（Brave）、WebDAV 云备份、GitHub 云备份、Notion、飞书多维表格、麦当劳 / 瑞幸点单 MCP、网页抓取、Fish Audio / ElevenLabs TTS、音乐生成、网易云音乐（默认）、哔哔微博扫码与主页/关注流读取。哔哔 TikHub 付费导入已停用，旧 `/tikhub` 路由更新 Worker 后返回 410。
+👉 二改只要在 **「设置 → 网络代理 (Worker)」** 填上你自己部署的地址，以上能力**一键全切走，不用改任何代码**。可直接复制完整的 `worker/index.js` 到 CF 的 ES Module Worker，也可用 Wrangler 部署；它是无外部模块依赖的单文件。微博与网易云一样由用户各自扫码、凭据保存在浏览器，公共 Worker 仅随请求转发，不需要会话 Secret 或额外存储服务。普通用户使用公共代理无需部署。详见 [哔哔微博与隐私、部署说明](docs/friend-feed-weibo.md)。
 
 **② 还是独立、要各自部署 / 配置的 Worker**：
 
@@ -331,8 +333,8 @@ Instant Push（发完消息就能锁屏走人、角色回复好了自己以推�
 
 感谢老玩家 **哈基米欠我钱** 为 SullyOS 一周年提供的头像框和两张壁纸，让大家的小手机也能一起换上周年新装。谢谢你准备的这份礼物，也谢谢一路以来的陪伴。
 
-**动森主题（外观 · 动森风格）**  
-桌面「动森风格」皮肤的视觉语言参考了 [animal-island-ui](https://github.com/guokaigdg/animal-island-ui)（by guokaigdg，MIT License）——一套受《集合啦！动物森友会》启发的 React 组件库。我们沿用了它的设计 token（大地棕文字、薄荷青绿、奶油米白背景）、NookPhone 应用色板、Time 时钟组件配色等，自绘了同风格的图标与界面。仅借鉴设计语言，未使用任天堂的任何商标或角色形象。
+**森间手记主题（外观 · 森间手记）**
+桌面「森间手记」皮肤的视觉语言参考了 [animal-island-ui](https://github.com/guokaigdg/animal-island-ui)（by guokaigdg，MIT License）——一套受《集合啦！动物森友会》启发的 React 组件库。我们沿用了它的设计 token（大地棕文字、薄荷青绿、奶油米白背景）、NookPhone 应用色板、Time 时钟组件配色等，自绘了同风格的图标与界面。仅借鉴设计语言，未使用任天堂的任何商标或角色形象。
 
 ---
 

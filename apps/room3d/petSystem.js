@@ -1,3 +1,5 @@
+import {attachPetHat} from './petHatModel.js';
+import {normalizePetHat} from './petWardrobe.js';
 import {petSleepPose} from './petSleep.js';
 import * as THREE from 'three';
 import {createPetLife,PET_NEEDS,PET_ACTIONS} from './petLife.js';
@@ -17,11 +19,11 @@ export function mountPetSystem({host,scene,home,catalog,templates,actors,contact
  let selected=null,sourceId=null,previousFocus=null,error='',disposed=false,shadowDirty=true,tab='pets',detailTab='care',pending=null,feedback=null,wakeContact=null;
  let removeConfirm=null;
  const asset=id=>catalog.find(a=>a.id===id);
- function clearModels(){for(const root of models.values())root.traverse(o=>{if(o.isMesh)for(const m of Array.isArray(o.material)?o.material:[o.material])m.dispose();});models.clear();layer.clear();}
+ function clearModels(){for(const root of models.values())root.traverse(o=>{if(o.isMesh){if(o.userData.petHat)o.geometry.dispose();for(const m of Array.isArray(o.material)?o.material:[o.material])m.dispose();}});models.clear();layer.clear();}
  function sync(){
   shadowDirty=true;clearModels();
   for(const p of life.data.pets){const template=templates.get(p.assetId);if(!template)continue;const root=new THREE.Group(),visual=template.clone(true);root.userData.petId=p.id;root.userData.visual=visual;visual.scale.setScalar(.75);root.add(visual);
-   visual.traverse(o=>{if(!o.isMesh)return;o.castShadow=true;o.receiveShadow=true;const paint=m=>{const c=m.clone(),color=p.materialColors?.[m.name]||(asset(p.assetId).paintMaterials?.includes(m.name)?p.color:null);if(color)c.color.set(color);return c;};o.material=Array.isArray(o.material)?o.material.map(paint):paint(o.material);});layer.add(root);models.set(p.id,root);
+   visual.traverse(o=>{if(!o.isMesh)return;o.castShadow=true;o.receiveShadow=true;const paint=m=>{const c=m.clone(),color=p.materialColors?.[m.name]||(asset(p.assetId).paintMaterials?.includes(m.name)?p.color:null);if(color)c.color.set(color);return c;};o.material=Array.isArray(o.material)?o.material.map(paint):paint(o.material);});attachPetHat(visual,p.hat,asset(p.assetId));layer.add(root);models.set(p.id,root);
   }update(0);
  }
  function update(dt){
@@ -65,7 +67,7 @@ export function mountPetSystem({host,scene,home,catalog,templates,actors,contact
  function render(){
   const hadFocus=overlay.contains(document.activeElement),scroll=overlay.querySelector('.h3-pets-body')?.scrollTop||0;
   const adoptionOpen=overlay.querySelector('.pet-adoption')?.open;
-  overlay.innerHTML=petPanelMarkup({life,home:home(),catalog,selected,sourceId,tab,detailTab,error,removeConfirm,context:context(),portrait:p=>portraits.get(JSON.stringify([p.id,p.color,p.materialColors]),models.get(p.id)?.userData.visual)});
+  overlay.innerHTML=petPanelMarkup({life,home:home(),catalog,selected,sourceId,tab,detailTab,error,removeConfirm,context:context(),portrait:p=>portraits.get(JSON.stringify([p.id,p.color,p.materialColors,p.hat]),models.get(p.id)?.userData.visual)});
   if(adoptionOpen&&overlay.querySelector('.pet-adoption'))overlay.querySelector('.pet-adoption').open=true;
   overlay.querySelector('.h3-pets-body').scrollTop=scroll;
   refresh();if(hadFocus)overlay.querySelector('button')?.focus({preventScroll:true});
@@ -92,6 +94,7 @@ export function mountPetSystem({host,scene,home,catalog,templates,actors,contact
   }
   if(['close','select','back','tab','detail-tab'].includes(action))removeConfirm=null;
   try{error='';if(action==='close')return close();if(action==='select'){selected=b.dataset.id;detailTab='care';navigate();}if(action==='back'){selected=null;sourceId=null;navigate();}if(action==='tab'){tab=b.dataset.tab;navigate();}if(action==='detail-tab'){detailTab=b.dataset.tab;navigate();}if(action==='interact'){interact(selected,b.dataset.kind);render();}if(action==='refill'){life.refill(b.dataset.id);render();}
+   if(p&&b.hasAttribute('data-pet-hat')){p.hat=normalizePetHat(b.dataset.petHat);life.save();sync();render();}
    if(p&&b.dataset.action==='color-preset'){applyFurnitureColorPreset(p,asset(p.assetId),b.dataset.value);life.save();sync();render();}
    if(p&&b.dataset.action==='color'){setFurniturePrimaryColor(p,asset(p.assetId),b.dataset.value||null);life.save();sync();render();}
    if(p&&b.dataset.action==='reset-all-colors'){resetFurnitureColors(p);life.save();sync();render();}
@@ -122,5 +125,5 @@ export function mountPetSystem({host,scene,home,catalog,templates,actors,contact
  }
  const timer=setInterval(()=>{if(disposed)return;refresh();},250);
  sync();
- return {life,open,portrait:p=>portraits.get(JSON.stringify([p.id,p.color,p.materialColors]),models.get(p.id)?.userData.visual),summon(){contact.cancel();for(const p of life.data.pets){life.runtime.delete(p.id);p.roomId=home().activeRoomId;p.x=0;p.z=0;}life.reconcile();life.save();sync();invalidate();},update,interact,interactionOptions,getObject:id=>models.get(id),contact,contactPose:()=>contact.frame(),placeHeld,get contactBusy(){return contact.busy;},consumeShadowChange(){const value=shadowDirty;shadowDirty=false;return value;},reconcile(){life.reconcile();sync();},pick(raycaster,occluders){const hits=raycaster.intersectObjects([...layer.children,...occluders],true).filter(h=>{let o=h.object;while(o){if(!o.visible)return false;o=o.parent;}return true;});let o=hits[0]?.object;while(o&&!o.userData.petId)o=o.parent;return o?.userData.petId;},dispose(){disposed=true;contact.cancel();contactHud.remove();clearInterval(timer);life.save();portraits.dispose();clearModels();layer.removeFromParent();overlay.remove();button.remove();},inspect:()=>({...life.inspect(),contact:contact.inspect()})};
+ return {life,open,portrait:p=>portraits.get(JSON.stringify([p.id,p.color,p.materialColors,p.hat]),models.get(p.id)?.userData.visual),summon(){contact.cancel();for(const p of life.data.pets){life.runtime.delete(p.id);p.roomId=home().activeRoomId;p.x=0;p.z=0;}life.reconcile();life.save();sync();invalidate();},update,interact,interactionOptions,getObject:id=>models.get(id),contact,contactPose:()=>contact.frame(),placeHeld,get contactBusy(){return contact.busy;},consumeShadowChange(){const value=shadowDirty;shadowDirty=false;return value;},reconcile(){life.reconcile();sync();},pick(raycaster,occluders){const hits=raycaster.intersectObjects([...layer.children,...occluders],true).filter(h=>{let o=h.object;while(o){if(!o.visible)return false;o=o.parent;}return true;});let o=hits[0]?.object;while(o&&!o.userData.petId)o=o.parent;return o?.userData.petId;},dispose(){disposed=true;contact.cancel();contactHud.remove();clearInterval(timer);life.save();portraits.dispose();clearModels();layer.removeFromParent();overlay.remove();button.remove();},inspect:()=>({...life.inspect(),contact:contact.inspect()})};
 }

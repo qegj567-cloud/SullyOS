@@ -1,4 +1,11 @@
-/** Capacitor 原生 FCM 通道；普通 Web Push endpoint 完整委托给既有发送器。 */
+/** Capacitor 原生 FCM 通道与第三方推送 App（WxPusher / Bark / MeoW）通道；普通 Web Push endpoint 完整委托给既有发送器。 */
+
+import {
+  buildThirdPartyClickUrl,
+  parseThirdPartyPushEndpoint,
+  WXPUSHER_SIMPLE_PUSH_URL,
+  type ParsedThirdPartyPushEndpoint,
+} from '../../../utils/amsgThirdPartyPush';
 
 export interface NativeFcmEnv {
   FCM_PROJECT_ID?: string;
@@ -142,13 +149,164 @@ const sendFcmNotification = async (env: NativeFcmEnv, token: string, payload: st
   }
 };
 
+const isSilentPushPayload = (payload: Record<string, any>): boolean => {
+  const show = payload.notification?.show;
+  if (show === 'never' || show === false) return true;
+  const kind = payload.messageKind;
+  if (kind === 'reasoning' || kind === 'tool-request') return true;
+  return false;
+};
+
+export const buildThirdPartyPushRequest = (
+  parsed: ParsedThirdPartyPushEndpoint,
+  subscription: any,
+  rawPayload: string,
+): { url: string; body: Record<string, any> } | null => {
+  let payload: Record<string, any> = {};
+  try {
+    payload = JSON.parse(rawPayload) as Record<string, any>;
+  } catch {
+    payload = { body: rawPayload };
+  }
+
+  if (isSilentPushPayload(payload)) {
+    return null;
+  }
+
+  const title = String(
+    payload.notification?.title
+    ?? payload.title
+    ?? payload.contactName
+    ?? payload.metadata?.charName
+    ?? '主动消息',
+  ).trim() || '主动消息';
+
+  const actualBody = String(
+    payload.notification?.body
+    ?? payload.message
+    ?? payload.body
+    ?? '',
+  ).trim();
+  const body = actualBody || '有一条新消息';
+
+  const charId = String(payload.charId ?? payload.metadata?.charId ?? '').trim() || undefined;
+  const rawAvatarUrl = String(
+    payload.avatarUrl
+    ?? payload.notification?.icon
+    ?? payload.metadata?.avatarUrl
+    ?? '',
+  ).trim();
+  const avatarUrl = /^https?:\/\//i.test(rawAvatarUrl) ? rawAvatarUrl : undefined;
+  const clickUrl = buildThirdPartyClickUrl(
+    typeof subscription?.clickUrl === 'string' ? subscription.clickUrl : undefined,
+    charId,
+  );
+
+  if (parsed.provider === 'wxpusher') {
+    const summary = `${title}：${body}`.slice(0, 96);
+    const content = `${title}\n\n${body}`;
+    return {
+      url: WXPUSHER_SIMPLE_PUSH_URL,
+      body: {
+        spt: parsed.token,
+        summary,
+        content,
+        contentType: 1,
+        ...(clickUrl ? { url: clickUrl } : {}),
+      },
+    };
+  }
+
+  if (parsed.provider === 'bark') {
+    return {
+      url: `${parsed.serverOrigin}/push`,
+      body: {
+        device_key: parsed.token,
+        title,
+        body,
+        group: charId ? `amsg-${charId}` : 'sullyos',
+        ...(avatarUrl ? { icon: avatarUrl } : {}),
+        ...(clickUrl ? { url: clickUrl } : {}),
+      },
+    };
+  }
+
+  return {
+    url: `${parsed.serverOrigin}/${encodeURIComponent(parsed.token)}`,
+    body: {
+      title,
+      msg: body,
+      ...(clickUrl ? { url: clickUrl } : {}),
+    },
+  };
+};
+
+const sendThirdPartyNotification = async (
+  parsed: ParsedThirdPartyPushEndpoint,
+  subscription: any,
+  rawPayload: string,
+) => {
+  const req = buildThirdPartyPushRequest(parsed, subscription, rawPayload);
+  if (!req) {
+    return { skipped: true, reason: 'silent-payload' };
+  }
+
+  const response = await fetch(req.url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+    },
+    body: JSON.stringify(req.body),
+  });
+
+  const text = await response.text().catch(() => '');
+  let json: Record<string, any> | null = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    json = null;
+  }
+
+  if (parsed.provider === 'wxpusher') {
+    const code = typeof json?.code === 'number' ? json.code : undefined;
+    const ok = response.ok && (code === undefined || code === 1000) && json?.success !== false;
+    if (!ok) {
+      const msg = String(json?.msg || text || `HTTP ${response.status}`).slice(0, 300);
+      throw new Error(`WXPUSHER_SEND_FAILED (${code ?? response.status}): ${msg}`);
+    }
+    return { ok: true, provider: 'wxpusher' };
+  }
+
+  if (parsed.provider === 'bark') {
+    const code = typeof json?.code === 'number' ? json.code : undefined;
+    const ok = response.ok && (code === undefined || code === 200);
+    if (!ok) {
+      const msg = String(json?.message || text || `HTTP ${response.status}`).slice(0, 300);
+      throw new Error(`BARK_SEND_FAILED (${code ?? response.status}): ${msg}`);
+    }
+    return { ok: true, provider: 'bark' };
+  }
+
+  const ok = response.ok && json?.status !== 500 && json?.status !== 400;
+  if (!ok) {
+    const msg = String(json?.message || json?.msg || text || `HTTP ${response.status}`).slice(0, 300);
+    throw new Error(`MEOW_SEND_FAILED (${response.status}): ${msg}`);
+  }
+  return { ok: true, provider: 'meow' };
+};
+
 export const createHybridPushTransport = (
   env: NativeFcmEnv,
   webPush: PushTransport,
 ): PushTransport => ({
   async sendNotification(subscription: any, payload: string) {
-    const token = fcmTokenFromEndpoint(subscription?.endpoint);
+    const endpoint = subscription?.endpoint;
+    const token = fcmTokenFromEndpoint(endpoint);
     if (token) return sendFcmNotification(env, token, payload);
+
+    const thirdParty = parseThirdPartyPushEndpoint(typeof endpoint === 'string' ? endpoint : null);
+    if (thirdParty) return sendThirdPartyNotification(thirdParty, subscription, payload);
+
     return webPush.sendNotification(subscription, payload);
   },
 });

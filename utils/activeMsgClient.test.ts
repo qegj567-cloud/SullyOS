@@ -40,8 +40,8 @@ vi.mock('./keepAlive', () => ({
 
 import {
   ActiveMsgClient, buildFirePack, clearNamespaceValuesOrThrow, compareRemotePushSubscription,
-  describeInstantChatFailure, dropStaleSubscription, maybeGzipRequestBody, putClientStateOrThrow,
-  readAmsgFailKind, toRemoteAvatarUrl,
+  describeInstantChatFailure, dropStaleSubscription, formatAmsgServerError, maybeGzipRequestBody,
+  putClientStateOrThrow, readAmsgFailKind, toRemoteAvatarUrl,
 } from './activeMsgClient';
 import {
   AMSG_FIRE_PACK_KEY,
@@ -1947,6 +1947,95 @@ describe('describeInstantChatFailure — 后端那句真话要露出来', () => 
   it('有专属指引的错误码不受影响（401 仍然只说该去核对共享密钥）', () => {
     expect(describeInstantChatFailure(401, internalError('D1_ERROR: whatever')))
       .toBe('即时对话没发出去：共享密钥和 Worker 上的对不上，去「主动消息 2.0」设置里核对一下。');
+  });
+
+  it('上游 400 参数校验失败时把 details 里的 missingFields / invalidFields 透传出来', () => {
+    const text = describeInstantChatFailure(400, {
+      error: {
+        code: 'INSTANT_CHAT_TASK_FAILED',
+        message: '任务没建起来，这条没发出去',
+        upstream: {
+          success: false,
+          error: {
+            code: 'INVALID_PARAMETERS',
+            message: '缺少必需参数或参数格式错误',
+            details: {
+              missingFields: ['apiKey'],
+              invalidFields: ['temperature (must be a finite number)'],
+            },
+          },
+        },
+      },
+    });
+    expect(text).toContain('缺少字段: apiKey');
+    expect(text).toContain('无效字段: temperature (must be a finite number)');
+  });
+
+  it('PUT /client-state 局部 rejected 时把被拒条目原因透传出来', () => {
+    const text = describeInstantChatFailure(409, {
+      error: {
+        code: 'INSTANT_CHAT_STATE_FAILED',
+        message: '这一轮的输入未能保存，任务没有创建',
+        upstream: {
+          success: true,
+          data: {
+            rejected: [
+              { key: 'input-1', code: 'STATE_VALUE_TOO_LARGE', message: '单条状态超限', bytes: 6000000, maxBytes: 5242880 },
+            ],
+          },
+        },
+      },
+    });
+    expect(text).toContain('input-1(单条状态超限（6000000/5242880 bytes）)');
+  });
+
+  it('503 INSTANT_CHAT_WORKER_OUTDATED 保留专属更新指引，不被通用环境变量提示覆盖', () => {
+    const text = describeInstantChatFailure(503, {
+      error: {
+        code: 'INSTANT_CHAT_WORKER_OUTDATED',
+        message: '即时对话需要更新 Worker：打开「系统设置 → 主动消息 2.0 → 配置」，点「更新 Worker」。',
+      },
+    });
+    expect(text).toContain('即时对话需要更新 Worker');
+    expect(text).not.toContain('环境变量没配齐');
+  });
+});
+
+describe('formatAmsgServerError — 通用后端错误细节透传', () => {
+  it('透传 500 INTERNAL_ERROR 的 cause（避免只剩一句「服务器内部错误」）', () => {
+    const text = formatAmsgServerError({
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: '服务器内部错误',
+        cause: { code: 'CLOUD_OWNER_RETIRED', message: '角色已停用，不能继续写入云端数据' },
+      },
+    }, '操作失败');
+    expect(text).toBe('服务器内部错误：CLOUD_OWNER_RETIRED: 角色已停用，不能继续写入云端数据');
+  });
+
+  it.each([
+    ['D1_STORAGE_FULL', '云端数据库满了'],
+    ['D1_DAILY_READ_LIMIT', '今天的数据库读取额度用完了'],
+    ['D1_DAILY_WRITE_LIMIT', '今天的数据库写入额度用完了'],
+  ])('%s 换成能照着做的说明，并留下代码方便排查', (code, expected) => {
+    const text = formatAmsgServerError({
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: '服务器内部错误',
+        cause: { code, message: 'raw D1 error' },
+      },
+    }, '操作失败');
+    expect(text).toContain(expected);
+    expect(text).toContain(`（${code}）`);
+    expect(text).not.toContain('raw D1 error');
+  });
+
+  it('客户端体积预检无 message、只有 code 与 bytes/maxBytes 时也能拼出可读报错', () => {
+    const text = formatAmsgServerError(
+      { code: 'STATE_VALUE_TOO_LARGE', bytes: 6000000, maxBytes: 5242880 },
+      '工具配置写入未确认',
+    );
+    expect(text).toBe('STATE_VALUE_TOO_LARGE（6000000/5242880 bytes）');
   });
 });
 

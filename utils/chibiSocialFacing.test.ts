@@ -5,6 +5,8 @@ import {createSocialScene} from '../apps/room3d/chibi/selectedSocial';
 import {selectedMotions} from '../apps/room3d/chibi/selectedMotions';
 import type {ChibiVisitor} from '../apps/room3d/chibi/visitor';
 import {splitMotionHeading} from '../apps/room3d/chibi/motionHeading';
+import {isSeasonalSocial} from '../apps/room3d/chibi/seasonalSocial';
+import {isPrincessCarry} from '../apps/room3d/chibi/intimacyMotion';
 const clip=(id:string)=>JSON.parse(readFileSync(`public/room3d/motions/selected/${id}.json`,'utf8'));
 afterEach(()=>vi.unstubAllGlobals());
 function actor(z:number){
@@ -16,7 +18,7 @@ const signed=(v:T.Vector3)=>Math.atan2(v.x,v.z);
 const change=(a:number,b:number)=>Math.atan2(Math.sin(b-a),Math.cos(b-a));
 it('uses one shortest heading transition on entry and release for all imported paired actions',async()=>{
  vi.stubGlobal('fetch',vi.fn(async(url:string)=>({ok:true,json:async()=>clip(url.split('/').pop()!.replace('.json',''))})));
- for(const e of selectedMotions.filter(e=>e.participants===2&&!e.id.startsWith('home-'))){
+ for(const e of selectedMotions.filter(e=>e.participants===2&&!e.source.startsWith('SullyOS procedural')&&!isSeasonalSocial(e.id)&&!isPrincessCarry(e.id))){
   const actors=[actor(1.2),actor(-1.2)],runtime=createSocialScene(actors.map((a,i)=>({id:String(i),visitor:a.visitor})));
   await runtime.start(e.id,'0','1');const approach=runtime.inspect().session!.duration-e.duration-1.2;
   for(const start of [approach,approach+e.duration+.6]){
@@ -31,7 +33,7 @@ it('uses one shortest heading transition on entry and release for all imported p
  }
 });
 it('preserves captured rotations including intentional turns, leaning and quaternion sign changes',()=>{
- for(const e of selectedMotions.filter(e=>!e.id.startsWith('home-')))for(const a of clip(e.id).actors){
+ for(const e of selectedMotions.filter(e=>!e.source.startsWith('SullyOS procedural')))for(const a of clip(e.id).actors){
   for(let i=0;i<a.times.length;i+=7){
    const q=new T.Quaternion().fromArray(a.tracks.hips,i*4).normalize();
    for(const sign of [1,-1]){
@@ -46,11 +48,11 @@ it('preserves captured rotations including intentional turns, leaning and quater
 });
 it('orients a solo greeting toward its partner while paired clips ignore that target',async()=>{
  vi.stubGlobal('fetch',vi.fn(async(url:string)=>({ok:true,json:async()=>clip(url.split('/').pop()!.replace('.json',''))})));
- const single=selectedMotions.find(e=>e.participants===1&&!e.id.startsWith('home-'))!;
+ const single=selectedMotions.find(e=>e.participants===1&&!e.source.startsWith('SullyOS procedural'))!;
  const a=actor(0),runtime=createSocialScene([{id:'a',visitor:a.visitor}],{facingTarget:new T.Vector3(3,0,0)});
  await runtime.start(single.id,'a');runtime.seek(runtime.inspect().session!.duration-.3);
  const baseline=actor(0),solo=createSocialScene([{id:'a',visitor:baseline.visitor}]);await solo.start(single.id,'a');solo.seek(solo.inspect().session!.duration-.3);expect(a.visitor.root.quaternion.angleTo(baseline.visitor.root.quaternion)).toBeCloseTo(Math.PI/2,4);
- const pair=selectedMotions.find(e=>e.participants===2&&!e.id.startsWith('home-'))!;
+ const pair=selectedMotions.find(e=>e.participants===2&&!e.source.startsWith('SullyOS procedural')&&!isPrincessCarry(e.id))!;
  const make=(target?:T.Vector3)=>{const residents=[actor(1),actor(-1)];return {residents,runtime:createSocialScene(residents.map((a,i)=>({id:String(i),visitor:a.visitor})),{facingTarget:target})};};
  const normal=make(),withTarget=make(new T.Vector3(100,0,0));await normal.runtime.start(pair.id,'0','1');await withTarget.runtime.start(pair.id,'0','1');normal.runtime.seek(1);withTarget.runtime.seek(1);expect(normal.residents[0].visitor.root.quaternion.angleTo(withTarget.residents[0].visitor.root.quaternion)).toBeLessThan(1e-6);
 });

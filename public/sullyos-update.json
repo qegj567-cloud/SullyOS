@@ -1,16 +1,15 @@
 {
   "schemaVersion": 1,
-  "versionCode": 30508,
-  "versionName": "3.5.8",
-  "apkUrl": "https://github.com/qegj567-cloud/SullyOS/releases/download/android-v3.5.8/SullyOS-Android-v3.5.8.apk",
-  "sha256": "9babc22962afaf563f14f2cad4fa5a3387f173f8bb091d27adfea70dbf48adfa",
-  "sizeBytes": 80054069,
-  "publishedAt": "2026-10-07T17:19:42Z",
+  "versionCode": 30513,
+  "versionName": "3.5.13",
+  "apkUrl": "https://github.com/qegj567-cloud/SullyOS/releases/download/android-v3.5.13/SullyOS-Android-v3.5.13.apk",
+  "sha256": "7c064ec23f1765a0932915b4131af02aeac0ff3310255e691d0370a55dcc321b",
+  "sizeBytes": 98925661,
+  "publishedAt": "2026-10-30T13:40:37Z",
   "releaseNotes": [
-    "同步最新 master 78f1f15f，包含 v3.13 At Home 居家桌面与 3D 家园",
-    "包含启动恢复、外观选择保留、3D 家园备份与自定义部件修复",
-    "宠物移除支持确认和撤销，同步角色 API、会话收藏与美化更新",
-    "主动消息 2.0 跟随上游；保留 ntfy、相机权限、PDF、Umami 和应用内更新",
-    "沿用固定正式签名，可直接覆盖升级保留数据"
+    "同步 master 5ff0019f，包含万圣节衣柜、鞋子运动、哔哔发布与启动提示修复",
+    "照片支持新的构图、相纸装饰、文字与字体设置，并优化手机取景布局",
+    "保留水母／经典图标切换、ntfy、PDF、相机、前台定位、Umami 和应用内更新",
+    "沿用固定正式签名，可覆盖升级保留数据"
   ]
 }

@@ -1,0 +1,41 @@
+{
+  "id": "halloween-batch-13-furniture-texture",
+  "endpoint": "retexture",
+  "maxTasks": 4,
+  "maxEstimatedCredits": 40,
+  "defaults": {
+    "ai_model": "meshy-7",
+    "texture_resolution": "2k",
+    "enable_original_uv": false,
+    "enable_pbr": true,
+    "target_formats": [
+      "glb"
+    ]
+  },
+  "jobs": [
+    {
+      "id": "haunted-fireplace-textured",
+      "model": "furniture-texture-inputs/halloween_haunted_fireplace.glb",
+      "image": "../furniture/05-haunted-fireplace.png",
+      "estimatedCredits": 10
+    },
+    {
+      "id": "ghost-floor-lamp-textured",
+      "model": "furniture-texture-inputs/halloween_ghost_floor_lamp.glb",
+      "image": "../furniture/06-ghost-floor-lamp.png",
+      "estimatedCredits": 10
+    },
+    {
+      "id": "gothic-curtain-window-textured",
+      "model": "furniture-texture-inputs/halloween_gothic_curtain_window.glb",
+      "image": "../furniture/07-gothic-curtain-window.png",
+      "estimatedCredits": 10
+    },
+    {
+      "id": "bat-rug-textured",
+      "model": "furniture-texture-inputs/halloween_bat_rug.glb",
+      "image": "../furniture/08-bat-rug.png",
+      "estimatedCredits": 10
+    }
+  ]
+}

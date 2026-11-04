@@ -1,0 +1,241 @@
+{
+  "jobs": [
+    {
+      "id": "boo-a",
+      "params": {
+        "prompt": "A playful person facing forward. Begin relaxed with arms down. Crouch slightly and slowly raise both hands like monster claws. At second 2 spring up and lean forward to playfully scare a friend in front. Then relax, chuckle with a small shoulder bounce, lower hands and settle back to standing. Natural full body weight shifts, planted feet, no walking or turning.",
+        "mode": "prime",
+        "duration": 8
+      },
+      "status": "SUCCEEDED",
+      "taskId": "01a180cb-8ffc-7263-8fb7-2c53548331d1",
+      "progress": 100,
+      "consumedCredits": 10,
+      "file": "boo-a.fbx",
+      "sha256": "e0f20fe75e7a2643b661f91daa627470c9258ef8ff258b024010d684792126a3",
+      "bytes": 16954704,
+      "durationMs": 8000
+    },
+    {
+      "id": "boo-b",
+      "params": {
+        "prompt": "A person facing forward is playfully startled by a friend. Begin standing relaxed. At second 2 suddenly recoil, bend knees and raise open hands defensively near chest, shoulders lift. Recover balance with a small backward weight shift, then realize it is a joke and laugh softly, lower hands and settle relaxed. Stay in place facing forward, no turning.",
+        "mode": "prime",
+        "duration": 8
+      },
+      "status": "SUCCEEDED",
+      "taskId": "01a180cb-93a2-737b-8c5b-1c5c41d088fe",
+      "progress": 100,
+      "consumedCredits": 10,
+      "file": "boo-b.fbx",
+      "sha256": "4c2f6d4216ace262c0fa564b17a50e7ada5d48ef8c0c31dde2d6e0f4160b81ce",
+      "bytes": 16954704,
+      "durationMs": 8000
+    },
+    {
+      "id": "trick-a",
+      "params": {
+        "prompt": "Facing forward, a person holds a small candy bucket low in their left hand. Gently lift and offer the bucket to a friend in front, lean forward expectantly, raise the right palm in a playful request. Wait while receiving candy, then bounce slightly with delight and relax. Natural knees and shoulders, stay in place, no turning, eight seconds.",
+        "mode": "prime",
+        "duration": 8
+      },
+      "status": "SUCCEEDED",
+      "taskId": "01a180cf-2d56-7281-a67b-dccb18ceb6c3",
+      "progress": 100,
+      "consumedCredits": 10,
+      "file": "trick-a.fbx",
+      "sha256": "f2db60bd748f23c004ba98df5fea8e72c7358b1c32ef963a89b75fa2e7311287",
+      "bytes": 16954704,
+      "durationMs": 8000
+    },
+    {
+      "id": "trick-b",
+      "params": {
+        "prompt": "Facing forward, a person takes a small candy from near their waist with the right hand, bends gently toward a friend in front, extends the right hand to place candy in a low bucket at second 3.5. Release the candy, retract the hand, give a friendly small nod and return to relaxed standing. Natural full body movement, stay in place, no turning.",
+        "mode": "prime",
+        "duration": 8
+      },
+      "status": "SUCCEEDED",
+      "taskId": "01a180cf-34c8-7451-bf15-e0c835adf8b2",
+      "progress": 100,
+      "consumedCredits": 10,
+      "file": "trick-b.fbx",
+      "sha256": "c21ed33d298c7793f9c456ffc6bd12079719848e8e8fd3dca56a080dad792c64",
+      "bytes": 16954704,
+      "durationMs": 8000
+    },
+    {
+      "id": "candy-a",
+      "params": {
+        "prompt": "Facing forward, a cheerful person scoops a handful of candy with the right hand near their waist, dips the knees, then gently tosses it upward and forward to a friend around second 3. Follow through with wrist and shoulder, watch the candy fall, smile with a light shoulder bounce, return relaxed. Natural weight transfer, stay in place, no turning.",
+        "mode": "prime",
+        "duration": 8
+      },
+      "status": "SUCCEEDED",
+      "taskId": "01a180cf-3969-75be-9e6f-e28e5ead3478",
+      "progress": 100,
+      "consumedCredits": 10,
+      "file": "candy-a.fbx",
+      "sha256": "ee6c295f79eca7bafc8ff6807b753fafdef683d4cd497c612756af80f1c4b9a5",
+      "bytes": 16954704,
+      "durationMs": 8000
+    },
+    {
+      "id": "candy-b",
+      "params": {
+        "prompt": "Facing forward, a person watches a friend toss candy. Look slightly upward, bend knees and extend both cupped hands forward at waist level by second 3, shift weight softly from side to side to catch falling candy through second 5. Look down at hands delighted, then relax. Fluid whole body acting, stay in place, no turning.",
+        "mode": "prime",
+        "duration": 8
+      },
+      "status": "SUCCEEDED",
+      "taskId": "01a180cf-3cbf-7563-81c9-00d53166c024",
+      "progress": 100,
+      "consumedCredits": 10,
+      "file": "candy-b.fbx",
+      "sha256": "cc96243f0bff96ae77f7d8283ab7044a772618d1df742426c55a953def35ba2c",
+      "bytes": 16954704,
+      "durationMs": 8000
+    },
+    {
+      "id": "ghost-a",
+      "params": {
+        "prompt": "Facing forward, playfully show a tiny ghost puppet held in the right hand just below shoulder height. Gently wave the puppet side to side toward a friend in front, lean with it, tease with two small wrist bobs, then pull the puppet back and lower it, chuckling. Soft playful full body motion, stay in place with no turning.",
+        "mode": "prime",
+        "duration": 8
+      },
+      "status": "SUCCEEDED",
+      "taskId": "01a180cf-40f1-746e-8209-c05860716e35",
+      "progress": 100,
+      "consumedCredits": 10,
+      "file": "ghost-a.fbx",
+      "sha256": "2732818ef1c605d84b9da457c46fcf4fe343766e63570b371c091591f24924fe",
+      "bytes": 16954704,
+      "durationMs": 8000
+    },
+    {
+      "id": "ghost-b",
+      "params": {
+        "prompt": "Facing forward, react to a friend waving a tiny ghost puppet. Begin curious, tilt the head and lean back slightly in playful surprise at second 2.5. Lift the left hand to gently reach toward the puppet, then relax and laugh, lowering the hand. Natural knees and weight shifts, remain standing in place with no turning.",
+        "mode": "prime",
+        "duration": 8
+      },
+      "status": "SUCCEEDED",
+      "taskId": "01a180cf-446f-71ee-a262-475f9c26e034",
+      "progress": 100,
+      "consumedCredits": 10,
+      "file": "ghost-b.fbx",
+      "sha256": "aa496b10400dd08113f1d4016e265ee26b4885a4c2d1da8e264e4d61e7e8e566",
+      "bytes": 16954704,
+      "durationMs": 8000
+    },
+    {
+      "id": "forehead-a",
+      "params": {
+        "prompt": "Facing forward toward a loved partner, slowly raise the right hand to their shoulder and offer the left hand low. Soften knees and gently lean the upper body forward to rest foreheads together between seconds 2.5 and 5, tender small head tilt. Ease back and lower hands. Gentle natural full body motion, standing in place, no turning.",
+        "mode": "prime",
+        "duration": 8
+      },
+      "status": "SUCCEEDED",
+      "taskId": "01a180cf-48be-70ba-8753-beaddb3268bd",
+      "progress": 100,
+      "consumedCredits": 10,
+      "file": "forehead-a.fbx",
+      "sha256": "d83bfe81daa39fd0716abd0024470edbe54d4f2eb8ac38473579e2a36720ed43",
+      "bytes": 16954704,
+      "durationMs": 8000
+    },
+    {
+      "id": "forehead-b",
+      "params": {
+        "prompt": "Facing forward toward a loved partner, offer the right hand low and raise the left hand to their shoulder. Gently bend knees and lean forward to meet their forehead between seconds 2.5 and 5. Pause tenderly with a small relaxed sway, then ease back and lower hands. Soft natural full body movement, standing in place, no turning.",
+        "mode": "prime",
+        "duration": 8
+      },
+      "status": "SUCCEEDED",
+      "taskId": "01a180cf-4c8d-77ed-938a-e2c336d5d74c",
+      "progress": 100,
+      "consumedCredits": 10,
+      "file": "forehead-b.fbx",
+      "sha256": "f938c6b6a035203c26792d8253d55cd4eb3fef089bec1dcf3482e4be3c9594ce",
+      "bytes": 16954704,
+      "durationMs": 8000
+    },
+    {
+      "id": "hands-a",
+      "params": {
+        "prompt": "Facing forward toward a partner, extend the left hand low to hold their right hand. Slowly rock weight from left foot to right foot twice, gently swinging the joined hand, free right arm follows loosely. Slight knee bends, relaxed shoulders and affectionate head tilt. Release the hand and settle. Gentle natural standing motion, no walking or turning.",
+        "mode": "prime",
+        "duration": 8
+      },
+      "status": "SUCCEEDED",
+      "taskId": "01a180cf-5035-72d5-b9c9-6528fb1f8198",
+      "progress": 100,
+      "consumedCredits": 10,
+      "file": "hands-a.fbx",
+      "sha256": "524c42645386b3835afc3040b95de7349ed75a696f5dce7e71c7e93ee3039f6e",
+      "bytes": 16954704,
+      "durationMs": 8000
+    },
+    {
+      "id": "hands-b",
+      "params": {
+        "prompt": "Facing forward toward a partner, extend the right hand low to hold their left hand. Slowly rock weight from right foot to left foot twice, gently swinging the joined hand, free left arm follows loosely. Slight knee bends, relaxed shoulders and affectionate head tilt. Release the hand and settle. Gentle natural standing motion, no walking or turning.",
+        "mode": "prime",
+        "duration": 8
+      },
+      "status": "SUCCEEDED",
+      "taskId": "01a180cf-5391-739b-8f3f-3fd5da47daea",
+      "progress": 100,
+      "consumedCredits": 10,
+      "file": "hands-b.fbx",
+      "sha256": "8c4d8f77286087e241c5832760396c867727136e84660c9759dbb2ccceefae1b",
+      "bytes": 16954704,
+      "durationMs": 8000
+    },
+    {
+      "id": "kiss-a",
+      "params": {
+        "prompt": "Facing forward toward a romantic partner, gently lift the right hand toward their shoulder and left hand low to hold theirs. Lean forward gradually with soft knees, tilt head a little to the right and share a brief tender kiss between seconds 2.7 and 4.2. Slowly ease back, relax shoulders and lower hands. Natural standing full body movement, no walking or turning.",
+        "mode": "prime",
+        "duration": 8
+      },
+      "status": "SUCCEEDED",
+      "rejection": "HTTP 429 NoMorePendingTasks; no task accepted",
+      "taskId": "01a180d1-15ca-72f6-b5af-0256a1656f5f",
+      "progress": 100,
+      "consumedCredits": 10,
+      "file": "kiss-a.fbx",
+      "sha256": "bfb6176d75aba36f9f57ed561480e0ae9b12b68d28d5a0cd1d0d2f33cbbc61ae",
+      "bytes": 16954704,
+      "durationMs": 8000
+    },
+    {
+      "id": "kiss-b",
+      "params": {
+        "prompt": "Facing forward toward a romantic partner, gently lift the left hand toward their shoulder and right hand low to hold theirs. Lean forward gradually with soft knees, tilt head a little to the right and receive a brief tender kiss between seconds 2.7 and 4.2. Slowly ease back, relax shoulders and lower hands. Natural standing full body movement, no walking or turning.",
+        "mode": "prime",
+        "duration": 8
+      },
+      "status": "SUCCEEDED",
+      "taskId": "01a180d1-1955-75b3-b7ff-4fbeaa651878",
+      "progress": 100,
+      "consumedCredits": 10,
+      "file": "kiss-b.fbx",
+      "sha256": "9d0e601ca9b9c2ba05e0eb45a95d67ec01ac71f5ed16265392bda6e276b48b64",
+      "bytes": 16954704,
+      "durationMs": 8000
+    }
+  ],
+  "balanceBefore": {
+    "balance": 836,
+    "monthly_credits": 595,
+    "permanent_credits": 241,
+    "monthly_resets_at": 1794576839000
+  },
+  "balanceAfter": {
+    "balance": 696,
+    "monthly_credits": 455,
+    "permanent_credits": 241,
+    "monthly_resets_at": 1794576839000
+  }
+}

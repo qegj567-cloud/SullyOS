@@ -1,16 +1,19 @@
 import {parseDecorationText,validateDecoration,type DecorationPreset} from './chatDecoration';
 import {makeWorkshopPreset,replaceWorkshopCss,type DecorationWorkshop} from './decorationWorkshop';
 import type {DecorationOrigin} from './decorationLibrary';
-export interface CssAttribution {name:string;credit:string;category:DecorationWorkshop;allowRemix?:boolean;allowRedistribute?:boolean}
-const categories=['whitebox','bubbles','avatar','background','psyche','sound','schedule','journal'];
+import {validateMeetingAppearance,type MeetingAppearance} from './meetingAppearance';
+export interface CssAttribution {name:string;credit:string;category:DecorationWorkshop;allowRemix?:boolean;allowRedistribute?:boolean;readingPreset?:MeetingAppearance['preset']}
+const categories=['whitebox','bubbles','avatar','background','psyche','sound','schedule','journal','collaboration','date','story'];
 const marker=/\/\* SULLY-BEAUTY-V1 ([^\r\n]*?) \*\//;
 export function readCssAttribution(css:string):CssAttribution|null{
  const match=css.match(marker);if(!match){if(css.includes('SULLY-BEAUTY-V1'))throw Error('CSS 署名标记不完整，请使用原始分享内容');return null;}
  try{const m=JSON.parse(decodeURIComponent(match[1]));if(typeof m.credit!=='string'||!m.credit.trim()||m.credit.length>60||typeof m.name!=='string'||m.name.length>80||!categories.includes(m.category))throw Error();
- return {name:m.name,credit:m.credit,category:m.category,allowRemix:typeof m.allowRemix==='boolean'?m.allowRemix:undefined,allowRedistribute:typeof m.allowRedistribute==='boolean'?m.allowRedistribute:undefined};}catch{throw Error('CSS 署名标记无效，请使用原始分享内容');}
+ const readingPreset=(m.category==='date'||m.category==='story')&&m.readingPreset!==undefined?validateMeetingAppearance({preset:m.readingPreset}).preset:undefined;
+ return {name:m.name,credit:m.credit,category:m.category,allowRemix:typeof m.allowRemix==='boolean'?m.allowRemix:undefined,allowRedistribute:typeof m.allowRedistribute==='boolean'?m.allowRedistribute:undefined,...(readingPreset?{readingPreset}:{})};}catch{throw Error('CSS 署名标记无效，请使用原始分享内容');}
 }
 export function stampBeautyCss(css:string,meta:CssAttribution){
- const clean={name:meta.name.slice(0,80),credit:meta.credit.trim().slice(0,60),category:meta.category,allowRemix:meta.allowRemix,allowRedistribute:meta.allowRedistribute};
+ const readingPreset=(meta.category==='date'||meta.category==='story')&&meta.readingPreset!==undefined?validateMeetingAppearance({preset:meta.readingPreset}).preset:undefined;
+ const clean={name:meta.name.slice(0,80),credit:meta.credit.trim().slice(0,60),category:meta.category,allowRemix:meta.allowRemix,allowRedistribute:meta.allowRedistribute,...(readingPreset?{readingPreset}:{})};
  if(!clean.credit)throw Error('请先填写分享署名');
  const visible=clean.credit.replace(/[\r\n]/g,' ').replace(/\*\//g,'＊／');
  return `/* SULLY-BEAUTY-V1 ${encodeURIComponent(JSON.stringify(clean))} */\n/* SullyOS · 作者：${visible} */\n${css.replace(marker,'').replace(/\/\* SullyOS · 作者：[^\n]*?\*\/\s*/,'').trim()}`;
@@ -27,7 +30,9 @@ export function cssImportPreset(css:string,name:string,fallbackCategory:Decorati
  if(checked.parts.css===undefined)throw Error('这里仅接收 CSS，请通过文件导入装扮包');
  let preset=checked;
  if(meta||fallbackCategory!=='whitebox'){const category=meta?.category||fallbackCategory;preset=makeWorkshopPreset(category);preset.name=meta?.name||name;
-  if(category==='journal')preset.parts.journal!.customCss=text;
+  if(category==='date'||category==='story')preset.parts[category]={preset:meta?.readingPreset||'novel',customCss:text};
+  else if(category==='collaboration')preset.parts.collaboration!.customCss=text;
+  else if(category==='journal')preset.parts.journal!.customCss=text;
   else if(category==='schedule')preset.parts.schedule!.customCss=text;
   else if(category==='bubbles')preset.parts.bubbles!.customCss=text;
   else if(category==='psyche')preset.parts.psyche!.customCss=text;

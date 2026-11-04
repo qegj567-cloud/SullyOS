@@ -1,0 +1,41 @@
+[
+  {
+    "id": "pumpkin-pail",
+    "sourceTriangles": 2514,
+    "triangles": 2514,
+    "bytes": 61588,
+    "sourceBounds": [
+      1.4759520888328552,
+      1.8920760750770569,
+      1.4729670882225037
+    ],
+    "size": 0.43,
+    "grip": "handle top"
+  },
+  {
+    "id": "wrapped-candy",
+    "sourceTriangles": 836,
+    "triangles": 836,
+    "bytes": 21340,
+    "sourceBounds": [
+      1.89642995595932,
+      0.6607079803943634,
+      0.687760978937149
+    ],
+    "size": 0.16,
+    "grip": "center"
+  },
+  {
+    "id": "little-ghost",
+    "sourceTriangles": 1874,
+    "triangles": 2378,
+    "bytes": 60196,
+    "sourceBounds": [
+      1.2286120057106018,
+      1.8977118730545044,
+      0.9320240020751953
+    ],
+    "size": 0.38,
+    "grip": "bottom"
+  }
+]

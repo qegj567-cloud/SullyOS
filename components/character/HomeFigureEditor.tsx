@@ -34,6 +34,7 @@ export default function HomeFigureEditor({paletteId, name, ownerId, value, seedS
     });
     const [adjusting,setAdjusting]=useState(false);
     const {preview,deferred}=useFigurePreview(hair,adjusting);
+    const [sourceEyeTints,setSourceEyeTints]=useState<import("../../apps/room3d/chibi/CreatorRollBridge").RollResult["eyeTints"]>();
     const [sourceEyeColors,setSourceEyeColors]=useState<{L:string;R:string}>();
     const [parts, setParts] = useState<Parts>();
     const [items, setItems] = useState<CustomCreatorPart[]>();
@@ -98,14 +99,14 @@ export default function HomeFigureEditor({paletteId, name, ownerId, value, seedS
             {renderParts ? <HairEditor allowSully={isSully} parts={renderParts} hair={hair} previewHair={previewHair} deferredPreview={deferred} assets={assets} onChange={change}
                 bodyNotice={ownerId === 'user' ? '进入家园后，全员使用房主选择的体型。这里可先试捏你的形象。' : '这个家园内，全员跟随房主体型，包括你和来访角色。'}
                 onSullyEyes={isSully ? useSullyEyes : undefined}
-                sourceEyeColors={sourceEyeColors} flipped={state?.flipped} onFlipPart={flipPart} customParts={customParts} selectedParts={state?.selected} onCustomPart={useCustomPart}
+                sourceEyeTints={sourceEyeTints} sourceEyeColors={sourceEyeColors} flipped={state?.flipped} onFlipPart={flipPart} customParts={customParts} selectedParts={state?.selected} onCustomPart={useCustomPart}
                 onBegin={() => {if(!group.current){group.current = true; recorded.current = false;}setAdjusting(true);}} onEnd={() => {group.current = false;setAdjusting(false);}}
                 canUndo={past.length > 0} canRedo={future.length > 0}
                 onUndo={() => {const last = past.at(-1); if (last) {setFuture(rows => [...rows, {hair,state,image}]); setPast(rows => rows.slice(0, -1)); restore(last);}}}
                 onRedo={() => {const last = future.at(-1); if (last) {setPast(rows => [...rows, {hair,state,image}]); setFuture(rows => rows.slice(0, -1)); restore(last);}}}
                 onReset={() => change({layers: {}, extras: [], bodyShape: hair.bodyShape})} onEditAppearance={() => {setReady(false); revision.current++; setEditingBase(true);}} appearanceImage={image} /> : <p className="p-8">正在还原 3D 形象…</p>}
         </div>}
-        {state && !editingBase && <CreatorRollBridge key={JSON.stringify(state)} request={ready && items ? 1 : 0} savedState={state} extraItems={items} onReady={() => setReady(true)} onResult={result => {const token = ++revision.current; decodeParts(result).then(next => {if (alive.current && token === revision.current) {setParts(next); setSourceEyeColors(result.eyeColors); setImage(result.image); setRebuilding(false);}}).catch(e => {if (alive.current) setError(String(e));});}} onError={setError} />}
+        {state && !editingBase && <CreatorRollBridge key={JSON.stringify(state)} request={ready && items ? 1 : 0} savedState={state} extraItems={items} onReady={() => setReady(true)} onResult={result => {const token = ++revision.current; decodeParts(result).then(next => {if (alive.current && token === revision.current) {setParts(next); setSourceEyeColors(result.eyeColors); setSourceEyeTints(result.eyeTints); setImage(result.image); setRebuilding(false);}}).catch(e => {if (alive.current) setError(String(e));});}} onError={setError} />}
         {error && <p role="alert" className="p-3 text-sm text-red-700">{error} 请返回后重试。</p>}
     </div>;
 }

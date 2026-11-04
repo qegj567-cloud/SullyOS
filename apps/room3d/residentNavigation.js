@@ -1,6 +1,19 @@
+import {findWalkPath} from './navigation.js';
+
 // Use the body footprint; hair and accessories may overlap in narrow rooms.
 export function withResidents(map,people,start){
  return {...map,free:(x,z)=>map.free(x,z)&&people.every(p=>Math.hypot(x-p[0],z-p[1])>=Math.min(.58,start?Math.hypot(start[0]-p[0],start[1]-p[1]):.58)-1e-6)};
+}
+export const residentDestinationFree=(point,people)=>people.every(p=>Math.hypot(point[0]-p[0],point[1]-p[1])>=.58-1e-6);
+
+// People yield only along a route: walls/furniture remain solid and the final
+// standing position must be clear. Prefer an ordinary detour whenever possible.
+export function planResidentWalk(map,people,start,target,options={}){
+ const around=findWalkPath(withResidents(map,people,start),start,target,options);
+ if(around&&residentDestinationFree(around.at(-1),people)&&around.every((p,i)=>!i||!residentBlocksStep(around[i-1],p,people)))return {path:around,passResidents:false};
+ const through=findWalkPath(map,start,target,options);
+ if(!through||!residentDestinationFree(through.at(-1),people))return null;
+ return {path:through,passResidents:true};
 }
 export function residentBlocksStep(from,to,people){
  const vx=to[0]-from[0],vz=to[1]-from[1];

@@ -2198,3 +2198,79 @@ Added current furniture names and character action targets, model social executi
 - 250 张家具缩略图离线导出（约 1.1 MB），不再阻塞首屏现场生成。
 - 人物转换结果按输入缓存，编辑与随机生成绕过；手机 DPR clear/balanced/eco 提高至 3/2/1.5 上限。
 - 验证：10 个针对性测试通过；独立移动尺寸样板房首屏 33 个 GLB 请求，六房切换共 121 个，无 pageerror。实际转换二次返回同一结果（本地约 395 ms → 0.8 ms，不代表手机耗时）。检查 room screenshot，家具完整。公网测试保持关闭。
+
+## 2026-10-26 — 多人家园与串门闭环
+
+- 当前用户要求：列清单自主实现剩余多人 3D 家园，自己验收、审查并直接修复。完整范围见 plans/home3d-social-implementation.md、docs/room3d-social.md。
+- 新增访客独立本地活动、座位占用、基于真实通讯录 ID 的有向关系；同场按作者共享事件，私有上下文／总结水位保持独立。
+- 多人每轮逐角色调用自己的 API，沿用家园上下文与情绪／秘密管线；本轮后续角色看到此前已经发生的言行。失败明确展示，重试跳过已提交角色，离场与换房中止旧轮次。
+- 日程申请／手动预约 → 房主主回复文本审批 → 到点自动同意 → 实际加载才到场 → 到期或取消离开。事务去重、时间与拉黑验证、15 秒页面租约及崩溃恢复；手机局域网使用兼容本地 ID。
+- 已运行 12 文件 109 项回归；自审后 7 文件 102 项专项全部通过（两组重合），包括既有主回复后处理与入住流程。最终 pnpm build 成功，耗时 1m59s，静态缓存生成完成；git diff --check 无错误。全仓 tsc 有既有错误，未宣称通过。
+- 实际浏览器验收：四人、逐人回复、中断重试、共同上下文、缺席隔离、自动批准来访与取消、独立走动／坐下／起身。末次控制台 error 为空。测试使用独立 5190 端口的本地模拟 API，无真实模型调用、无部署、无清理用户备份。
+- Playwright 游戏 skill 客户端因环境缺少默认 Chromium，采用已安装 Edge，保留原客户端动作流程。截图 tmp/home-social-game-ready/shot-0.png、tmp/home-social-final.png；最后一轮输出 tmp/home-social-game-final/。
+- 产品版本 v3.15 (Neighbors)。未包含跨设备联机、离线模拟、多人单次 API 和访客全部家具技能。
+- 最终冒烟 3 文件 32 项通过；最终 Playwright 场景检查四人在场、无错误报告，已目视检查 tmp/home-social-game-final/shot-0.png。
+
+### 2026-10-26 — 非浪漫关系禁止亲密动作
+
+- 用户要求：两个人不是浪漫关系绝不能有浪漫动作。发现旧自动社交只有普通交谈，但模型动作表／手动／拍照缺少关系硬闸，已补齐。
+- 新增当前家园明确的 romanticPairs（ID 对，默认空），成员设置可确认与撤销。高好感／同住／名字和模型输出都不推断恋爱。
+- 统一过滤模型、互动轮盘、拍照动作；执行前和异步动作载入后再次验证；撤销取消未完成动作和拍照互动。既有普通活动保持可用。
+- 6 文件 62 项回归通过（首次上下文测试受本机负载触发 5 秒超时，降低并发、20 秒上限后通过）。浏览器确认默认无亲密分类、只授权一对后出现、撤销后恢复；演示关系已清空。截图 tmp/home-romance-settings.png。
+- 动画权限为硬限制，模型自由文本只有提示词约束，未宣称可以百分之百禁止模型用文字违约。
+- 最终生产构建通过（5m34s）；游戏 skill 客户端复验四人场景，tmp/home-romance-game/shot-0.png 已目视检查，无错误报告。
+
+2026-10-28 — Meshy hamster/jellyfish and pet wardrobe
+- User requested matching pet reference images, actual Meshy 3D generation, removable Halloween hats; later requested a rounder hamster and no mouth on jellyfish. Built-in image_gen references and two successful Meshy tasks retained in art/pets/halloween-2026 (40 credits).
+- Added nine-species catalog with eight palettes each; capacity stays seven. Hamster shortened to 52% source depth; jellyfish mouth removed, clean geometry color bands. Shared pet wardrobe equips witch/pumpkin hats, persists per pet, updates portraits, supports restore/removal undo.
+- Browser verification: all nine species with both hats, mobile wardrobe, actual equip/reload/color/remove/undo passed without console errors. Existing 30 pet tests passed before final asset constraints; final checks underway.
+- Final verification: 31 pet tests passed; isolated Vite build including Home3DView passed (existing chunk/eval warnings). Browser wardrobe flow and both hat galleries passed, no console errors; deterministic skill client final screenshots verified. No publish, no API credential stored.
+- Home3DView production component fixture also verified: dismissed quality introduction, equipped witch hat through wardrobe UI, updated portrait, no page errors. Final image: art/pets/halloween-2026/home-wardrobe.png.
+
+2026-10-29 — Halloween furnished showroom
+- Continued user request to generate/install 12 Halloween furniture and repair malformed results against the existing references. Meshy batches 09–11 finished; 11 new furniture + reused lantern, 60 credits charged including an explicitly disclosed accidental old-clothing job (5). No credential persisted.
+- Clean geometry materials, curved chair lining, mirror pane/ghost eyes/window repairs, flattened rug, scale/seat/support alignment. Published 12 catalog entries + category mappings, dedicated showroom and tonal purple/black wall finish. 73,046 triangles total, 1.38 MiB GLBs, all <= 8k.
+- 10 focused tests passed. Actual editor checked all 3 seats + rising, support drag, undo/redo, recolor/reload, mobile layout; no console errors. Vite production build passed with existing pdf.js warning. Skill Playwright client run and screenshots visually reviewed; final output under art/halloween-2026/meshy/qa.
+- Full lineage/rebuild/cost/limitations in meshy/WORKFLOW.txt. No commit or deployment. References are approximate, mirror/clock/cauldron decorative, no all-device FPS claim. Furniture work complete pending final visual/export checks this turn.
+Final visual/export checks completed: inspected front/back assets, real seats, mobile and final room screenshot; 12 refreshed thumbnails; all 10 tests passed. Temporary build output removed after successful build.
+
+2026-10-29 — Halloween reference-texture correction
+- User rejected flat recoloring and explicitly requested Meshy textures. Retextured all 12 repaired low-poly assets with the corresponding generated reference images, batches of four. 120 credits, final balance 476; credentials process-only.
+- Preserved original 2k PBR masters and clean inputs; normalized runtime geometry, compressed color to 1k and PBR maps to 512. Final 72,993 triangles / 10,703,472 bytes. Dedicated atlas sampling prevents mip bleed; PBR assets bypass flat-color furniture shader. Recolor remains a texture tint with white default.
+- Updated release publisher and texture-specific asset regression. Ten tests passed; real editor save/reload, support drag, undo/redo, mobile and three seats passed. Front/back/room screenshots inspected, thumbnails regenerated. Vite production build checked separately. No deploy.
+Final textured release: production Vite build passed in 1m23s (existing pdf.js warning); generated build folder cleaned; thumbnails and reference-textured room verified.
+
+2026-10-29 — Princess carry fluidity
+- User says current princess carry is stiff. Existing intimacyMotion hard-codes lift/90-degree recipient turn and fixed hold; replacing body performance with two Meshy Prime tracks plus staged support/contact correction. Preserve 48 bones, romantic permissions, role reversal, cancellation, floor alignment and deterministic seeking.
+- Completed: two actual Meshy Prime 10-second motions (20 credits; balance 476 -> 456), source hashes/task IDs in art/chibi/princess-carry-2026/motions/ledger.json. Imported both princess-carry JSONs and catalog provenance; no key persisted.
+- New princessCarry.ts uses captured torso/head detail plus staged crouch, turn, tuck, lift, breathing, supported lowering and release. Dedicated analytic arm contacts with a fixed elbow pole and soft reach avoid CCD branch/straight-elbow/wrist flips. Short carrier/tall recipient is floor-clamped; roles and cancellation share the existing runtime.
+- 57 related tests passed (51 social/facing/seasonal/romance/wheel + 6 intimacy). Includes 301-frame continuity across three height combinations and both directions, deterministic seeks, knee support proximity, live hold motion, landing-before-release and cancel/completion.
+- Browser default/extreme height checks: no page errors, maximum 30fps bone step 0.256 rad, minimum foot Y 0.0336 m. Final sequences, closeups and official skill-client snapshots inspected. Social fixture production build passed (existing chunk-size warning). Local formal implementation only; no deployment. Preview on 5202; source workflow and limitations documented in art/chibi/princess-carry-2026/README.md.
+- 2026-10-29 user accepted princess-carry preview and requested formal installation. Reconfirmed actual editor -> chibi/social -> selectedSocial, HomeSocialWheel intimacy entries, photoSession runtime and both public Meshy clips. All already use the approved shared implementation; no duplicate preview-only implementation, extra generation, version bump or deployment.
+2026-10-29 — Photo performance and landscape composition
+- User requests faster rendering, landscape/widescreen composition and research into other projects. Read R3F demand rendering/adaptive resolution, three.js UnrealBloomPass reduced-resolution bloom, pmndrs/postprocessing effect merging. Implementing a scene snapshot cache separate from filters, interactive/settled/export budgets, low-resolution reusable bloom buffers, true aspect framing plus local sideways mobile controls and negative-space compositions.
+
+2026-10-29 Halloween compression/window pass:
+- Shipped 25 separate compressed garments with 8 shared atlases, 96.05 MB -> 7.54 MB; preserved clothing/wardrobe IDs and standalone shorts category.
+- Meshopt loader + normalized/interleaved attribute expansion before fitting/clipping; material indices retained for palette controls.
+- Window overlap removed (131 triangles), catalog revision and thumbnails updated. SVG experiment remains unpublished/cancelled.
+- 17 tests passed, 25 pieces x 4 real-browser motion samples passed, original/midnight ensemble render checks passed, room interaction/mobile checks passed. Full 339-combination collision audit stopped after 25; not claimed complete.
+- Vite production build passed; temporary build output cleaned up.
+
+- 2026-10-29：拍照横幅与性能优化完成正式接入：原片缓存、低分辨率交互预览、独立 2560 导出、手机旋转、电影画幅与留白。16 项专项测试和独立生产构建通过；真实浏览器验证辅助线不导出、滤镜零新增场景捕获及退出恢复。记录 art/photo-mode-2026/README.md。用户追加 VRoid/MToon 风格化渲染方向，继续材质改进。
+
+- 2026-10-29：按用户 VRoid 方向更新小人材质，分离阴影颜色/边界、面部柔化、头发高光和材质内边缘。正式小屋与 Puppet 捏人器两套素体接入；9 项材质/染色测试通过，两个入口构建通过；日/夕阳/夜与双素体旋转浏览器检查无异常。记录 art/toon-style-2026/README.md。
+
+2026-10-29 Halloween furniture compression and full pane correction:
+- 12 self-contained runtime GLBs total 4,521,820 bytes (was 10,703,472). WebP90 from Meshy source + lossless Meshopt; editor decoder wired. All under 650 KB / 8k faces.
+- Fixed remaining baked black diagonal by using clean back-pane UVs for left front glass, clipping cross-center triangles. Right moon pane preserved; no SVG replacement or new API charge.
+- 3 asset/layout/seat tests pass, browser interaction/mobile checks pass, front/side screenshots inspected, skill screenshot/state captured, thumbnails refreshed, production build passes. See WORKFLOW.txt for guarded reproducible pipeline.
+
+- 2026-10-29：新增人物渲染可选项，新版默认，旧版恢复先前着色器/预览材质。本机持久化、同页与跨标签同步、销毁解除订阅。13 项专项测试、两入口生产构建和实际 UI 切换/刷新/跨标签浏览器验证通过。
+
+- 2026-10-29：收敛夕阳紫色阴影、橙色主光与明暗反差；新版人物独立中和阴影色、保留服装原色。20 项相关测试、三时段浏览器原片与入口构建通过。对照 art/toon-style-2026/sunset-compare.html。
+
+2026-10-29 Reference asset cleanup:
+- Moved 607 Halloween reference images / SVG experiments / design ZIPs (275,261,771 bytes) physically outside the project; no tracked files or reachable Git history found for art/halloween-2026.
+- Kept GLBs, scripts/manifests and public runtime atlases/thumbnails. Broad directory move was rejected by automatic approval; completed a narrower per-file image/archive move after dependency checks.
+- Added ignore rules + boundary regression test; release wardrobe metadata is independent of reference images.

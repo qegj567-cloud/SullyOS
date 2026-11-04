@@ -1,0 +1,73 @@
+/* Neutral in chat; each enclosing feed owns its attachment composition. */
+.ff-image-cards{display:grid;gap:12px;margin:12px 0;min-width:0}
+.ff-image-card{--fic-ink:var(--ff-ink,#303b37);--fic-muted:var(--ff-muted,#67756d);--fic-paper:var(--ff-paper,#faf9f6);--fic-accent:var(--ff-accent,#4b7661);--fic-pad:18px;--fic-inset:12px;--fic-frame:150px;--fic-title:20px;--fic-lines:3;color:var(--fic-ink);background:var(--fic-paper);border:0;border-radius:8px;overflow:hidden;text-align:left;min-width:0;container-type:inline-size}
+.ff-image-card>summary{display:block;padding:var(--fic-pad);cursor:pointer;list-style:none;-webkit-tap-highlight-color:transparent}
+.ff-image-card>summary::-webkit-details-marker{display:none}
+.ff-image-card>summary:focus-visible{outline:2px solid var(--fic-accent);outline-offset:-4px}
+.ff-image-card-top,.ff-image-card-bottom{display:flex;justify-content:space-between;align-items:center;gap:8px;color:var(--fic-muted);font-size:10px;letter-spacing:.03em;line-height:1.5}
+.ff-image-card-top>span:first-child,.ff-image-card-more{display:flex;align-items:center;gap:6px}
+.ff-image-card-index{font-variant-numeric:tabular-nums;letter-spacing:.08em;white-space:nowrap}
+.ff-image-card-index small{display:inline!important;font-size:9px;opacity:.65}
+.ff-image-card-frame{position:relative;display:flex;flex-direction:column;justify-content:center;padding:20px var(--fic-inset);margin:16px 0;min-height:var(--fic-frame)}
+.ff-image-card-frame strong{display:block;font-size:var(--fic-title);line-height:1.45;font-weight:600;letter-spacing:.01em;margin-bottom:12px;overflow-wrap:anywhere}
+.ff-image-card-excerpt{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:var(--fic-lines);overflow:hidden;font-size:13px;line-height:1.85;white-space:pre-wrap;overflow-wrap:anywhere}
+.ff-image-card-more{color:var(--fic-accent);white-space:nowrap}
+.ff-image-card-collapse{display:none}
+.ff-image-card-full{margin:0!important;padding:4px calc(var(--fic-pad) + var(--fic-inset)) 24px!important;color:var(--fic-ink);font-size:14px;line-height:1.9;white-space:pre-wrap;overflow-wrap:anywhere}
+.ff-image-card[open] .ff-image-card-excerpt,.ff-image-card[open] .ff-image-card-expand{display:none}
+.ff-image-card[open] .ff-image-card-collapse{display:inline}
+.ff-image-card[open] .ff-image-card-more svg{transform:rotate(-90deg)}
+.ff-image-card[open] .ff-image-card-frame{min-height:0;aspect-ratio:auto;margin:12px 0;padding-block:8px}
+.ff-image-card[open] .ff-image-card-frame strong{margin-bottom:0}
+/* 森间手记: soft paper, rounded stamp, no heavy outline. */
+.friend-feed[data-theme=island] .ff-image-card{--fic-muted:#786e50;--fic-accent:#397864;--fic-title:21px;--fic-frame:160px;background:#f1ecd7;border-radius:7px 26px 26px 26px}
+.friend-feed[data-theme=island] .ff-image-card-top>span:first-child{background:#dce5c5;color:#526743;border-radius:4px 12px 12px 12px;padding:5px 10px}
+.friend-feed[data-theme=island] .ff-image-card-index{display:grid;place-content:center;border-radius:50%;width:35px;height:35px;background:#fffdf3;color:#897958}
+.friend-feed[data-theme=island] .ff-image-card-index small{display:none!important}
+.friend-feed[data-theme=island] .ff-image-card-frame{border-bottom:1px dashed #c8bea0;padding-bottom:26px;justify-content:flex-start}
+.friend-feed[data-theme=island] .ff-image-card-frame strong{font-weight:750}
+/* 朋友圈: compact square attachment in the avatar-indented column. */
+.friend-feed[data-theme=moments] .ff-image-card{--fic-pad:14px;--fic-inset:0px;--fic-title:18px;--fic-frame:150px;--fic-muted:#707070;--fic-accent:#52688b;background:#f3f3f3;border-radius:2px}
+.friend-feed[data-theme=moments] .ff-image-card-frame{margin:12px 0;justify-content:flex-start}
+.friend-feed[data-theme=moments] .ff-image-card-bottom{padding-top:10px;border-top:1px solid #dedede}
+.friend-feed[data-theme=moments] .ff-image-card-bottom>span:first-child{display:none}
+.friend-feed[data-theme=moments] .ff-image-card-more{margin-left:auto}
+/* 照片墙: a dark typographic print, title anchored near the foot. */
+.friend-feed[data-theme=insta] .ff-image-card{--fic-pad:22px;--fic-inset:0px;--fic-ink:#f8f5ec;--fic-muted:#b8b9b3;--fic-accent:#f8f5ec;--fic-title:30px;--fic-lines:2;background:#232723;border-radius:0}
+.friend-feed[data-theme=insta] .ff-image-card>summary{display:flex;flex-direction:column;min-height:340px}
+.friend-feed[data-theme=insta] .ff-image-card-frame{flex:1;justify-content:flex-end;min-height:210px;margin:20px 0 26px}
+.friend-feed[data-theme=insta] .ff-image-card-frame strong{font-weight:500;letter-spacing:-.035em;max-width:9em;line-height:1.3}
+.friend-feed[data-theme=insta] .ff-image-card-excerpt{font-size:12px;color:#d0d2ca}
+.friend-feed[data-theme=insta] .ff-image-card-top{width:100%;letter-spacing:.1em}
+.friend-feed[data-theme=insta] .ff-image-card-bottom{width:100%;border-top:1px solid #62655e;padding-top:12px}
+.friend-feed[data-theme=insta] .ff-image-card[open]>summary{min-height:0}
+.friend-feed[data-theme=insta] .ff-image-card[open] .ff-image-card-frame{flex:none;min-height:0}
+/* 杂志: oversized folio, offset headline and editorial rules. */
+.friend-feed[data-theme=journal] .ff-image-card{--fic-pad:0px;--fic-inset:0px;--fic-title:30px;--fic-frame:170px;--fic-lines:3;background:transparent;border-radius:0;border-top:2px solid var(--fic-ink);border-bottom:1px solid var(--fic-ink)}
+.friend-feed[data-theme=journal] .ff-image-card>summary{padding-block:14px}
+.friend-feed[data-theme=journal] .ff-image-card-top{flex-direction:row-reverse;align-items:flex-start}
+.friend-feed[data-theme=journal] .ff-image-card-top>span:first-child{padding-top:7px}
+.friend-feed[data-theme=journal] .ff-image-card-top svg{display:none}
+.friend-feed[data-theme=journal] .ff-image-card-index{font-size:52px;letter-spacing:-.08em;line-height:1;font-weight:800;color:var(--fic-accent)}
+.friend-feed[data-theme=journal] .ff-image-card-index small{display:none!important}
+.friend-feed[data-theme=journal] .ff-image-card-frame{padding:0 0 0 40px;margin:20px 0 24px;justify-content:flex-start}
+.friend-feed[data-theme=journal] .ff-image-card-frame strong{font-weight:850;letter-spacing:-.05em;line-height:1.2;max-width:10em}
+.friend-feed[data-theme=journal] .ff-image-card-excerpt{font-size:12px;line-height:1.8}
+.friend-feed[data-theme=journal] .ff-image-card-full{padding-left:40px!important}
+/* 微博: warm attachment with a separate caption strip. */
+.friend-feed[data-theme=weibo] .ff-image-card{--fic-pad:16px;--fic-inset:0px;--fic-title:21px;--fic-frame:155px;--fic-accent:#b95100;--fic-muted:#73675b;background:#f6f1eb;border-radius:4px}
+.friend-feed[data-theme=weibo] .ff-image-card-top>span:first-child{border-left:3px solid #eb7d25;padding-left:8px}
+.friend-feed[data-theme=weibo] .ff-image-card-top svg{display:none}
+.friend-feed[data-theme=weibo] .ff-image-card-frame{margin:12px 0 18px;justify-content:flex-start;padding-top:18px}
+.friend-feed[data-theme=weibo] .ff-image-card-bottom{margin:0 -16px -16px;padding:11px 16px;background:#eee6dc}
+.friend-feed[data-theme=weibo] .ff-image-card[open] .ff-image-card-full{padding-top:16px!important}
+/* 推特: restrained media attachment, outline and compact metadata. */
+.friend-feed[data-theme=twitter] .ff-image-card{--fic-pad:18px;--fic-inset:0px;--fic-title:23px;--fic-frame:145px;--fic-muted:#536471;--fic-accent:#126f9f;background:#f7f9f9;border:1px solid #cfd9de;border-radius:16px}
+.friend-feed[data-theme=twitter] .ff-image-card-top>span:first-child{font-size:10px;letter-spacing:.06em}
+.friend-feed[data-theme=twitter] .ff-image-card-index{padding:2px 7px;background:#e5eaed;border-radius:5px;color:#344550}
+.friend-feed[data-theme=twitter] .ff-image-card-frame{margin:12px 0;padding-block:14px;justify-content:flex-start}
+.friend-feed[data-theme=twitter] .ff-image-card-frame strong{font-weight:750;letter-spacing:-.03em}
+.friend-feed[data-theme=twitter] .ff-image-card-bottom{border-top:1px solid #dce3e7;padding-top:12px}
+/* Small home phones and narrow share bubbles never bleed sideways. */
+@container(max-width:270px){.ff-image-card .ff-image-card-frame strong,.friend-feed[data-theme] .ff-image-card-frame strong{font-size:20px}.ff-image-card .ff-image-card-frame{min-height:115px}.ff-image-card-top,.ff-image-card-bottom{letter-spacing:0}.ff-image-card-bottom>span:first-child{max-width:8em}.ff-image-card-full{padding-inline:16px!important}}
+@media(prefers-reduced-motion:no-preference){.ff-image-card>summary{transition:background-color .16s ease}.ff-image-card-more svg{transition:transform .16s ease}.ff-image-card[open] .ff-image-card-full{animation:ff-image-card-in .18s ease-out}@media(hover:hover){.ff-image-card>summary:hover{background-color:#8080800a}.ff-image-card:not([open]) summary:hover .ff-image-card-more svg{transform:translate(2px,2px)}}@keyframes ff-image-card-in{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}}

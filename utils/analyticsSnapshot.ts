@@ -44,9 +44,16 @@ import { getPendingTasks, isAmsg2EnabledForChar } from './amsg2Tasks';
 import { ActiveMsgStore } from './activeMsgStore';
 import { getVRApi } from './vrWorld/vrApi';
 import { isBuiltinSullyLive2D } from './builtinSullyLive2D';
+import { loadUserLocationConfig } from './userLocationPrivacy';
 
 /** 布尔开关转「开 / 关」，带默认值。 */
 const onOff = (v: boolean | undefined, dflt = false) => ((v ?? dflt) ? '开' : '关');
+
+/** Only the saved switch. Never locate, or report a Key, region or provider response. */
+function realLocationEnabled(): string {
+    try { return onOff(loadUserLocationConfig().enabled); }
+    catch { return '读取失败'; }
+}
 
 /**
  * 收集数据规模。全部是数出来的计数，没有一项来自内容本身——
@@ -468,6 +475,7 @@ export function collectFeatureFlags(src: FeatureSources): Record<string, string>
         // 天气和热点走免鉴权的公共源，没有「配了」这一态，只有开没开。
         天气: rt.weatherEnabled ? '开' : '关',
         节假日感知: rt.userHolidays?.enabled && rt.userHolidays.countryCode ? '开' : '关',
+        真实定位: realLocationEnabled(),
         // 自备 key 的人走 OpenWeatherMap，留空走 Open-Meteo。只报有没有，不报 key。
         天气自备key: rt.weatherApiKey?.trim() ? '有' : '无',
         热点: rt.newsEnabled ? '开' : '关',

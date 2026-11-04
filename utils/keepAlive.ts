@@ -11,11 +11,20 @@
  */
 
 import { changeWebUpdateActivity, watchWebUpdates } from './webUpdateSession';
+import { recordDatabaseOpen } from './databaseOpenDiagnostics';
 
 let registered = false;
+let registering: Promise<void> | null = null;
 
-async function ensureRegistered(): Promise<void> {
-  if (registered || !('serviceWorker' in navigator)) return;
+function ensureRegistered(): Promise<void> {
+  if (registered || !('serviceWorker' in navigator)) return Promise.resolve();
+  // Startup and a fast first reply share registration instead of issuing it twice.
+  if (!registering) registering = register().finally(() => { registering = null; });
+  return registering;
+}
+
+async function register(): Promise<void> {
+  recordDatabaseOpen('sw-requested');
   try {
     const base = import.meta.env.BASE_URL || '/';
     const scriptUrl = base + 'sw-keep-alive.js';
@@ -23,8 +32,10 @@ async function ensureRegistered(): Promise<void> {
     watchWebUpdates(reg);
     await navigator.serviceWorker.ready;
     registered = true;
+    recordDatabaseOpen('sw-ready');
     console.log('[KeepAlive] Service Worker registered', reg.scope);
   } catch (e) {
+    recordDatabaseOpen('sw-error', {}, e);
     console.warn('[KeepAlive] SW registration failed, keep-alive disabled:', e);
   }
 }

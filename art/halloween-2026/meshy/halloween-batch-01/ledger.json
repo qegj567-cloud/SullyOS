@@ -1,0 +1,94 @@
+{
+  "batch": "halloween-batch-01",
+  "jobs": [
+    {
+      "id": "pumpkin-costume",
+      "image": "../outfits/06-pumpkin-costume.png",
+      "imageSha256": "30ed19d4781bbfd573aa86f8bfcb242b66f1afeed67515e9e44eefeace5dbd33",
+      "params": {
+        "model_type": "smart-topology",
+        "ai_model": "meshy-t2.5",
+        "topology": "triangle",
+        "should_texture": false,
+        "target_formats": [
+          "glb"
+        ],
+        "target_polycount": 18000,
+        "pose_mode": "t-pose"
+      },
+      "estimatedCredits": 5,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-26T09:56:49.426Z",
+      "taskId": "01a177a4-2d7e-7247-aa56-3a963e411d76",
+      "progress": 100,
+      "consumedCredits": 5,
+      "downloaded": true,
+      "file": "pumpkin-costume.glb",
+      "bytes": 341404,
+      "sha256": "1da337f4d09637784104c7812c847df4cfaeda3ffcd60d3570ddc0ac71d8d7bc"
+    },
+    {
+      "id": "ghost-costume",
+      "image": "../outfits/05-ghost-costume.png",
+      "imageSha256": "3cc89387e26c8b032495694f72d182dec5d23d539398b9e5c9efab7d0151859e",
+      "params": {
+        "model_type": "smart-topology",
+        "ai_model": "meshy-t2.5",
+        "topology": "triangle",
+        "should_texture": false,
+        "target_formats": [
+          "glb"
+        ],
+        "target_polycount": 18000,
+        "pose_mode": "t-pose"
+      },
+      "estimatedCredits": 5,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-26T09:56:54.074Z",
+      "taskId": "01a177a4-3f21-7092-84f1-4b638315deeb",
+      "progress": 100,
+      "consumedCredits": 5,
+      "downloaded": true,
+      "file": "ghost-costume.glb",
+      "bytes": 337636,
+      "sha256": "59000485a3b5a2f75d19fdb05b498774c5535d4a9eb998f784c1ca5de6745993"
+    },
+    {
+      "id": "pumpkin-lantern",
+      "image": "../furniture/09-pumpkin-lantern.png",
+      "imageSha256": "8077351f84bc48c25cac1023f47c598f0fff709cba681c8f9774a6d88da4e4ca",
+      "params": {
+        "model_type": "smart-topology",
+        "ai_model": "meshy-t2.5",
+        "topology": "triangle",
+        "should_texture": false,
+        "target_formats": [
+          "glb"
+        ],
+        "target_polycount": 3900
+      },
+      "estimatedCredits": 5,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-26T09:56:57.713Z",
+      "taskId": "01a177a4-4d52-70b7-9d21-a903940be52a",
+      "progress": 100,
+      "consumedCredits": 5,
+      "downloaded": true,
+      "file": "pumpkin-lantern.glb",
+      "bytes": 74700,
+      "sha256": "a640e4724f3a513dc5a7dfda902d9fa36b4f58fee36766991cb91728df342130"
+    }
+  ],
+  "latestBalance": {
+    "balance": 1226,
+    "monthly_credits": 985,
+    "permanent_credits": 241,
+    "monthly_resets_at": 1794576839000
+  },
+  "balanceBefore": {
+    "balance": 1241,
+    "monthly_credits": 1000,
+    "permanent_credits": 241,
+    "monthly_resets_at": 1794576839000
+  }
+}

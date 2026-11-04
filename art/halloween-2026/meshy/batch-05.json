@@ -1,0 +1,48 @@
+{
+  "id": "halloween-batch-05",
+  "maxTasks": 4,
+  "maxEstimatedCredits": 100,
+  "defaults": {
+    "model_type": "standard",
+    "ai_model": "meshy-7.1",
+    "geometry_resolution": "4k",
+    "image_enhancement": false,
+    "should_remesh": true,
+    "save_pre_remeshed_model": true,
+    "topology": "triangle",
+    "should_texture": false,
+    "target_formats": [
+      "glb"
+    ]
+  },
+  "jobs": [
+    {
+      "id": "witch",
+      "image": "../outfits/01-pumpkin-witch.png",
+      "target_polycount": 80000,
+      "pose_mode": "t-pose",
+      "estimatedCredits": 25
+    },
+    {
+      "id": "count",
+      "image": "../outfits/02-bat-count.png",
+      "target_polycount": 80000,
+      "pose_mode": "t-pose",
+      "estimatedCredits": 25
+    },
+    {
+      "id": "apprentice",
+      "image": "../outfits/03-potion-apprentice.png",
+      "target_polycount": 80000,
+      "pose_mode": "t-pose",
+      "estimatedCredits": 25
+    },
+    {
+      "id": "shorts",
+      "image": "../separated/04-shorts/shorts.png",
+      "target_polycount": 40000,
+      "pose_mode": "t-pose",
+      "estimatedCredits": 25
+    }
+  ]
+}

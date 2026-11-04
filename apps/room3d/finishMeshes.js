@@ -35,6 +35,7 @@ export function createRoomFinishes(){
   }[style]:{
    framed:'float rail=1.-smoothstep(.025,.05,abs(vFinishUV.y-.38));diffuseColor.rgb=mix(diffuseColor.rgb,finishTrim,rail);',
    stripe:'shade=step(.56,fract(vFinishUV.x/.32))*.15;',
+   halloween:'float lower=1.-step(1.25,vFinishUV.y);float seam=1.-smoothstep(.012,.026,min(fract(vFinishUV.x/.58),1.-fract(vFinishUV.x/.58)));diffuseColor.rgb=mix(diffuseColor.rgb,finishTrim,lower);shade=-mix(step(.5,fract(vFinishUV.x/.45))*.22,seam*.28,lower);',
    dot:'vec2 q=vec2(vFinishUV.x/.42+mod(floor(vFinishUV.y/.42),2.)*.5,vFinishUV.y/.42);shade=(1.-smoothstep(.075,.105,length(fract(q)-.5)))*-.18;',
    panel:'float lower=1.-step(1.25,vFinishUV.y);float seam=1.-smoothstep(.012,.026,min(fract(vFinishUV.x/.58),1.-fract(vFinishUV.x/.58)));shade=-lower*(.12+seam*.08)+(1.-smoothstep(.02,.035,abs(vFinishUV.y-1.25)))*.16;',
    timber:'float f=fract(vFinishUV.x/.36);float aa=max(fwidth(f),.001);shade=-(1.-smoothstep(.018-aa,.018+aa,min(f,1.-f)))*.16+.025*sin(floor(vFinishUV.x/.36)*2.3);',

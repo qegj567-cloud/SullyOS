@@ -49,6 +49,36 @@ async function fixture(){
   return {db,env,files,pub,api,submit,approve,snapshot,fire,storage};
 }
 describe('公开装扮库：真实 SQL、审批和快照边界',()=>{
+  it.each(['date','story'])('%s 自定义阅读 CSS 经投稿审核与目录导出完整保留',async part=>{
+    const f=await fixture();
+    const appearance={preset:'night',customCss:'.meeting-reading { --meeting-paper: #112233; }'};
+    const response=await f.api('/submissions','author',{metadata,package:{...pack,parts:{[part]:{...appearance,messages:['PRIVATE']}}},catalogCover:cover});
+    expect(response.status).toBe(201);
+    await f.approve(response.value.revision);await f.fire();
+    const entry=f.snapshot().entries[0];expect(entry.categories).toEqual([part]);
+    expect(JSON.parse(f.pub.get(entry.file)!.value as string).parts).toEqual({[part]:appearance});
+    expect((await f.api('/shares/'+entry.code)).status).toBe(200);
+    const updated={...appearance,preset:'paper',customCss:'.meeting-reading { --meeting-paper: #ffeedd; }'};
+    const next=await f.api('/submissions/'+response.value.id,'author',{metadata,package:{...pack,parts:{[part]:updated}},catalogCover:cover,expectedRevision:response.value.revision});
+    expect(next.status).toBe(201);
+    // Pending updates must not replace the version already available by code.
+    expect((await f.api('/shares/'+entry.code+'/file?revision='+response.value.revision)).value.parts).toEqual({[part]:appearance});
+    await f.approve(next.value.revision);await f.fire();
+    const published=f.snapshot().entries[0];expect(published.code).toBe(entry.code);
+    expect(JSON.parse(f.pub.get(published.file)!.value as string).parts).toEqual({[part]:updated});
+    expect((await f.api('/shares/'+entry.code+'/file?revision='+next.value.revision)).value.parts).toEqual({[part]:updated});
+  });
+  it('协同工作投稿通过审核后进入独立分类，分享码只带外观',async()=>{
+    const f=await fixture();
+    const collaboration={uiTheme:'midnight',customCss:'.collab-ui-root { --collab-accent: pink; }',avatarMode:'both',avatarStyle:'circle'};
+    const response=await f.api('/submissions','author',{metadata,package:{...pack,parts:{collaboration:{...collaboration,immersive:{apiKey:'PRIVATE'},messages:['PRIVATE']}}},catalogCover:cover});
+    expect(response.status).toBe(201);
+    await f.fire();expect(f.snapshot().entries).toHaveLength(0);
+    await f.approve(response.value.revision);await f.fire();
+    const entry=f.snapshot().entries[0];expect(entry.categories).toEqual(['collaboration']);
+    expect(JSON.parse(f.pub.get(entry.file)!.value as string).parts).toEqual({collaboration});
+    expect((await f.api('/shares/'+entry.code)).status).toBe(200);
+  });
   it('允许第 200 份作品，拒绝第 201 份，删除后释放作者名额',async()=>{
     const f=await fixture();
     const first=await f.submit();

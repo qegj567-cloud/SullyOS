@@ -122,16 +122,20 @@ describe('collaboration sidecar wiring', () => {
 
   it('ships six collaboration-only interface skins without printing third-party brands', () => {
     const windowSource = read('features/collaboration/CollaborationWindow.tsx');
+    const themeSource = read('features/collaboration/themeCss.ts');
+    const appearanceSource = read('features/collaboration/appearance.ts');
+    expect(windowSource).toMatch(/import\s*\{\s*COLLABORATION_UI_THEME_CSS\s*\}\s*from '\.\/themeCss'/);
+    expect(windowSource).toContain('{COLLABORATION_UI_THEME_CSS}');
     for (const id of ['sully', 'gpt', 'claude', 'gemini', 'kimi', 'deepseek']) {
-      expect(windowSource).toContain(`id: '${id}'`);
-      expect(windowSource).toContain(`collab-ui-${id}`);
+      expect(appearanceSource).toContain(`id: '${id}'`);
+      expect(themeSource).toContain(`collab-ui-${id}`);
     }
     expect(windowSource).toContain('只改变这个工作窗口，不影响 ChatApp 和角色数据');
     for (const brand of ['ChatGPT', 'Claude', 'Gemini', 'Kimi', 'DeepSeek']) {
       expect(windowSource).not.toContain(brand);
     }
-    expect(windowSource).toContain("label: '黑白助手'");
-    expect(windowSource).toContain("label: '渐光协作'");
+    expect(appearanceSource).toContain("label: '黑白助手'");
+    expect(appearanceSource).toContain("label: '渐光协作'");
     expect(windowSource).toContain('collab-message-bubble-assistant');
   });
 
@@ -305,9 +309,10 @@ describe('collaboration sidecar wiring', () => {
 
   it('uses the same iOS safe-top contract as ChatApp for every collaboration header', () => {
     const windowSource = read('features/collaboration/CollaborationWindow.tsx');
+    const themeSource = read('features/collaboration/themeCss.ts');
     expect(windowSource).toContain('collab-safe-header');
-    expect(windowSource).toContain('var(--safe-top,0px)');
-    expect(windowSource).toContain('height:calc(4rem + var(--safe-top,0px))');
+    expect(themeSource).toContain('var(--safe-top,0px)');
+    expect(themeSource).toContain('height:calc(4rem + var(--safe-top,0px))');
   });
 
   it('uses a searchable five-per-page role picker instead of a clipped native select', () => {

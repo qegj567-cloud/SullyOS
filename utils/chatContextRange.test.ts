@@ -2,8 +2,12 @@ import { describe, expect, it } from 'vitest';
 import type { CharacterProfile, Message } from '../types';
 import {
     computeContextRangeSnapshot,
+    loadCharacterContextMessageIds,
+    loadCharacterContextRange,
     migrateCharacterContextRange,
 } from './chatContextRange';
+import { DB } from './db';
+import { setReliableMemoryPalaceHighWaterMark } from './memoryPalace/highWaterMark';
 
 const makeMessages = (from: number, to: number): Message[] =>
     Array.from({ length: to - from + 1 }, (_, index) => {
@@ -242,5 +246,43 @@ describe('旧角色上下文迁移', () => {
         expect(restored.contextLimit).toBe(1200);
         expect(restored.contextUserStartMessageId).toBe(321);
         expect(restored.contextFollowsMemoryPalaceHwm).toBe(true);
+    });
+
+    it('localStorage 被清空时，loadCharacterContextRange 兜底从 IndexedDB 水位线恢复，不读全量历史', async () => {
+        await DB.clearMessages('char-hwm-fallback');
+        const total = 50;
+        let hwmId = 0;
+        for (let i = 1; i <= total; i++) {
+            const id = await DB.saveMessage({
+                charId: 'char-hwm-fallback',
+                role: i % 2 ? 'user' : 'assistant',
+                type: 'text',
+                content: `msg-${i}`,
+                timestamp: 1000 + i,
+            });
+            if (i === 40) hwmId = id;
+        }
+        await setReliableMemoryPalaceHighWaterMark('char-hwm-fallback', hwmId);
+
+        // 模拟大退重开后 localStorage 被系统清空，但 IndexedDB 仍在
+        localStorage.removeItem('mp_lastMsgId_char-hwm-fallback');
+
+        const char = makeChar({
+            id: 'char-hwm-fallback',
+            autoArchiveEnabled: true,
+            contextRangeMode: 'adaptive',
+        });
+
+        const snapshot = await loadCharacterContextRange(char);
+        expect(snapshot.hwm).toBe(hwmId);
+        expect(snapshot.messages).toHaveLength(10);
+        expect(snapshot.messages[0].content).toBe('msg-41');
+        expect(localStorage.getItem('mp_lastMsgId_char-hwm-fallback')).toBe(String(hwmId));
+
+        // 再次清除 localStorage，验证 loadCharacterContextMessageIds 同样兜底
+        localStorage.removeItem('mp_lastMsgId_char-hwm-fallback');
+        const allMsgs = await DB.getMessagesByCharId('char-hwm-fallback');
+        const idSet = await loadCharacterContextMessageIds(char, allMsgs);
+        expect(idSet.size).toBe(10);
     });
 });

@@ -28,7 +28,7 @@ export type PdfDocumentLike = {
 };
 
 type PdfJsLike = {
-    getDocument: (src: { data: ArrayBuffer }) => { promise: Promise<PdfDocumentLike> };
+    getDocument: (src: { data: ArrayBuffer; isEvalSupported?: boolean }) => { promise: Promise<PdfDocumentLike> };
     GlobalWorkerOptions?: { workerSrc?: string };
 };
 
@@ -251,7 +251,7 @@ export const extractPdfText = async (
     options: ExtractPdfTextOptions = {},
 ): Promise<PdfTextResult> => {
     const pdfjs = await loadPdfJs();
-    const pdf = await pdfjs.getDocument({ data }).promise;
+    const pdf = await pdfjs.getDocument({ data, isEvalSupported: false }).promise;
     try {
         return await extractPdfDocumentText(pdf, options);
     } finally {

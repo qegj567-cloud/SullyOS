@@ -1,6 +1,7 @@
 import type {Message} from '../types';
 import type {HomeRecord} from '../apps/room3d/types';
 import {assignHomeTurns,isRoutineHomeWalk} from './homeTurns';
+import {isSharedHomeRecord,sharedHomeEventKey,homeSharedEventText} from './homeSharedEvents';
 
 /** Pure persistence plan. Existing records keep their segment even if the editor
  * snapshot predates the last save. New records never join old legacy/archived rows.
@@ -20,6 +21,7 @@ export function assignHomeContextSegments(previous:HomeRecord[],input:HomeRecord
  let open:string|undefined,end=-Infinity;
  return [...assigned].sort((a,b)=>a.at-b.at).map(record=>{
   const existing=old.get(record.id)||inherited.get(record.id);
+  if(isSharedHomeRecord(record)){open=undefined;end=record.at;return {...record,contextSegmentId:sharedHomeEventKey(record)};}
   if(isRoutineHomeWalk(record))return {...record,contextSegmentId:existing||record.id};
   if(existing){
    open=extendable&&existing===extendable.metadata.homeTurnId&&record.id===extendable.metadata.homeRecordIds.at(-1)?existing:undefined;
@@ -39,6 +41,7 @@ export const isHomeActionRecord=(record:HomeRecord)=>record.kind!=='message'&&!r
 export function homeSegmentMessages(charId:string,records:HomeRecord[]):Omit<Message,'id'>[]{
  const groups=new Map<string,HomeRecord[]>();let actions:string|undefined;
  for(const record of [...records].sort((a,b)=>a.at-b.at)){
+  if(isSharedHomeRecord(record)){actions=undefined;groups.set(sharedHomeEventKey(record),[record]);continue;}
   if(isRoutineHomeWalk(record))continue;
   const action=isHomeActionRecord(record);
   const key=record.contextSegmentId||(action?actions:undefined)||record.id;
@@ -49,6 +52,18 @@ export function homeSegmentMessages(charId:string,records:HomeRecord[]):Omit<Mes
 }
 
 export function homeSegmentMessage(charId:string,key:string,events:HomeRecord[]):Omit<Message,'id'>{
+ const shared=events.length===1&&isSharedHomeRecord(events[0])?events[0]:undefined;
+ if(shared){
+  const speech=shared.kind==='message',ownSpeech=speech&&shared.actor==='character'&&shared.actorId===charId;
+  return {
+   charId,role:ownSpeech?'assistant':'user',type:'text',timestamp:shared.at,
+   content:(speech?'家园共同发言（按姓名区分说话者）：\n':'家园实际行为（场景记录，不是发言；开始不代表完成）：\n')+homeSharedEventText(shared),
+   metadata:{source:'home',homeTurnId:sharedHomeEventKey(shared),homeRecordIds:[shared.id],homeTurnEndAt:shared.at,
+    homeContextVersion:3,homeContextKind:speech?'speech':'actions',homeContextSealed:true,homeEvents:[shared],
+    homeSharedOwnerId:shared.sharedScene!.homeOwnerId,homeParticipantIds:shared.sharedScene!.participantIds,
+    homeActorId:shared.actorId,homeActorName:shared.actorName,homeSceneRecord:!speech||shared.actorId!=='user'&&!ownSpeech},
+  };
+ }
  const speech=events.length===1&&events[0].kind==='message';
  const actions=events.every(isHomeActionRecord);
  return {

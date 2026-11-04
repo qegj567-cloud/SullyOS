@@ -244,3 +244,9 @@ describe('全拉挂也不断链', () => {
         expect(out).toContain('实时天气');
     });
 });
+
+it('selects a character city on the worker and never borrows another city’s cached weather',async()=>{
+    const args={toolConfig:cfg({weatherEnabled:true,weatherCity:'北京',weatherCities:{a:'London'}}),timeAwarenessEnabled:false,tzId:TZ,nowMs:NOW,globalRows:[weatherSnapshot('London',NOW)],globalNamespace:'amsg:global'};
+    expect(await buildRealtimeWorldBlock({...args,charId:'a'})).toContain('London');expect(fetchMock).not.toHaveBeenCalled();
+    expect(await buildRealtimeWorldBlock({...args,charId:'b'})).not.toContain('London');expect(fetchMock).toHaveBeenCalled();
+});

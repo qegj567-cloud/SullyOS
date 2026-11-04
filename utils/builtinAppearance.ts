@@ -1,7 +1,8 @@
 import sully from '../presets/appearance/sully.json';
 import type { AppearancePreset, OSTheme } from '../types';
 
-/** Small manifest only; images are loaded when previewed or applied. */
+/** Small manifest only; images are loaded when previewed or applied.
+ * Existing installs: see docs/builtin-appearance-upgrades.md for the targeted icon backfill. */
 export const BUILTIN_APPEARANCE_PRESETS = [sully] as Array<AppearancePreset & { type: 'sully_appearance_preset'; version: number }>;
 
 export function isBuiltinAppearance(id: string): boolean {

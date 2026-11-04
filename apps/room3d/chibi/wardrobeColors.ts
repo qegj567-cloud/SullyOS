@@ -1,5 +1,7 @@
 import * as T from 'three';
 import definitions from './wardrobeColorRegions.json';
+import catalog from './approvedWardrobe.json';
+import {createHalloweenColorController} from './halloweenColors';
 
 export type WardrobeColors = Record<string, Record<string, string>>;
 export function resolveWardrobeColors(wardrobe:{ears?:string;tail?:string},value?:WardrobeColors):WardrobeColors{
@@ -40,6 +42,7 @@ export function cleanWardrobeColors(value:unknown):WardrobeColors {
  * alpha and material roughness. Unchanged regions have an exact zero delta.
  */
 export function createGarmentColorController(material:T.MeshStandardMaterial,garment:string,materialIndex:number){
+ if(catalog.some(g=>g.id===garment&&'colorMode' in g&&g.colorMode==='halloween'))return createHalloweenColorController(material,garment==='halloween-shorts-shorts');
  const regions=(garmentColorRegions[garment]??[]).flatMap(region=>region.targets.filter(t=>t.material===materialIndex).map(target=>({region,target})));
  const original=material.color.clone();
  if(!regions.length)return (_value?:Record<string,string>)=>{};

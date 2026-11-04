@@ -1,3 +1,6 @@
+import CollaborationBeautyLibrary from './CollaborationBeautyLibrary';
+import type {CollaborationAppearance} from './appearance';
+import {COLLABORATION_UI_THEME_CSS} from './themeCss';
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Archive,
@@ -27,6 +30,10 @@ import {
   X,
 } from '@phosphor-icons/react';
 import type { APIConfig, ApiPreset, CharacterProfile, ChatTheme, Emoji, EmojiCategory, GroupProfile, Message, RealtimeConfig, UserProfile } from '../../types';
+import { COLLABORATION_UI_THEMES, THEME_AVATAR_MODE, resolveCollaborationAppearance, validateCollaborationCss, COLLABORATION_CSS_EXAMPLE } from './appearance';
+import collaborationAppearanceCss from './appearance.css?inline';
+import CssCodeEditor from '../../components/chat/CssCodeEditor';
+import BlobRefStyle from '../../components/chat/BlobRefStyle';
 import TokenImg from '../../components/os/TokenImg';
 import { bucketFewCount, trackEvent } from '../../utils/analytics';
 import { processImageToBlob } from '../../utils/file';
@@ -155,149 +162,7 @@ const analyticsMakerKind = (value: string | undefined): string => (
   value && Object.prototype.hasOwnProperty.call(COLLABORATION_MAKER_MAP, value) ? value : 'unknown'
 );
 
-const COLLABORATION_UI_THEMES: Array<{
-  id: CollaborationUiTheme;
-  label: string;
-  caption: string;
-  presence: string;
-  emptyTitle: string;
-  emptyDescription: string;
-  swatches: [string, string, string];
-}> = [
-  { id: 'sully', label: '角色气泡', caption: 'SullyOS 原生布局', presence: '默认双方头像', emptyTitle: '从一件具体的事开始', emptyDescription: '上传资料或参考图，也可以直接告诉角色想完成什么。', swatches: ['#f4f6fa', '#ffffff', '#6366f1'] },
-  { id: 'gpt', label: '黑白助手', caption: '克制的 AI 对话布局', presence: '默认不显示头像', emptyTitle: '有什么可以帮忙完成？', emptyDescription: '输入任务、上传文件或图片，或者选择一个制作能力开始。', swatches: ['#ffffff', '#f4f4f4', '#000000'] },
-  { id: 'claude', label: '暖纸长文', caption: '适合阅读与写作', presence: '默认不显示头像', emptyTitle: '今天想一起做些什么？', emptyDescription: '把资料和目标交给角色，适合整理、写作与长文制作。', swatches: ['#f7f6f2', '#eee9df', '#d97757'] },
-  { id: 'gemini', label: '渐光协作', caption: '轻盈的助手工作台', presence: '默认只显示角色', emptyTitle: '你好，今天一起完成什么？', emptyDescription: '角色会带着最近聊天里的连续感，在这里专心处理任务。', swatches: ['#ffffff', '#eef3ff', '#4d75e8'] },
-  { id: 'kimi', label: '轻量资料', caption: '资料与文档优先', presence: '默认不显示头像', emptyTitle: '嗨，想从什么任务开始？', emptyDescription: '上传长文档、参考图或直接描述目标，角色会整理好再交付。', swatches: ['#f6f8fc', '#ffffff', '#2864ff'] },
-  { id: 'deepseek', label: '理性工作台', caption: '清楚的推理分区', presence: '默认不显示头像', emptyTitle: '有什么可以帮到你？', emptyDescription: '描述问题或上传资料、图片，角色会按步骤分析并完成。', swatches: ['#f5f7fb', '#ffffff', '#4d6bfe'] },
-];
-type CollaborationUiThemeSpec = (typeof COLLABORATION_UI_THEMES)[number];
 
-const THEME_AVATAR_MODE: Record<CollaborationUiTheme, Exclude<CollaborationAvatarMode, 'theme'>> = {
-  sully: 'both',
-  gpt: 'none',
-  claude: 'none',
-  gemini: 'character',
-  kimi: 'none',
-  deepseek: 'none',
-};
-
-const COLLABORATION_UI_THEME_CSS = `
-.collab-ui-root{--collab-bg:#f4f6fa;--collab-panel:rgba(255,255,255,.84);--collab-panel-solid:#fff;--collab-ink:#1e293b;--collab-muted:#94a3b8;--collab-line:rgba(148,163,184,.28);--collab-accent:#6366f1;--collab-user:#6366f1;--collab-user-ink:#fff;background-color:var(--collab-bg)!important;color:var(--collab-ink)}
-.collab-safe-header{height:calc(4rem + var(--safe-top,0px))!important;padding-top:var(--safe-top,0px)}
-.collab-brand-mark,.collab-brand-label,.collab-assistant-mark,.collab-empty-brand,.collab-empty-companion{display:none}
-.collab-mode-brand,.collab-mode-brand-title{display:none}
-.collab-ui-gpt{--collab-bg:#fff;--collab-panel:#fff;--collab-panel-solid:#fff;--collab-ink:#0d0d0d;--collab-muted:#676767;--collab-line:#dedede;--collab-accent:#000;--collab-user:#f4f4f4;--collab-user-ink:#0d0d0d}
-.collab-ui-claude{--collab-bg:#f7f6f2;--collab-panel:#f7f6f2;--collab-panel-solid:#fff;--collab-ink:#292522;--collab-muted:#756f69;--collab-line:#ddd8ce;--collab-accent:#d97757;--collab-user:#eee9df;--collab-user-ink:#292522}
-.collab-ui-gemini{--collab-bg:#fff;--collab-panel:rgba(255,255,255,.96);--collab-panel-solid:#fff;--collab-ink:#1f1f1f;--collab-muted:#5f6368;--collab-line:#dfe3eb;--collab-accent:#315ed1;--collab-user:#eef3ff;--collab-user-ink:#1f1f1f;background-image:radial-gradient(circle at 50% 32%,rgba(89,121,232,.08),transparent 27%)!important}
-.collab-ui-kimi{--collab-bg:#f6f8fc;--collab-panel:rgba(255,255,255,.96);--collab-panel-solid:#fff;--collab-ink:#202331;--collab-muted:#7b8193;--collab-line:#e7eaf1;--collab-accent:#2864ff;--collab-user:#e9efff;--collab-user-ink:#172453}
-.collab-ui-deepseek{--collab-bg:#f5f7fb;--collab-panel:rgba(255,255,255,.96);--collab-panel-solid:#fff;--collab-ink:#202739;--collab-muted:#778099;--collab-line:#e3e8f2;--collab-accent:#4d6bfe;--collab-user:#e8edff;--collab-user-ink:#20367d}
-.collab-ui-root:not(.collab-ui-sully) .collab-ui-header,.collab-ui-root:not(.collab-ui-sully) .collab-ui-composer,.collab-ui-root:not(.collab-ui-sully) .collab-settings-panel{background:var(--collab-panel)!important;border-color:var(--collab-line)!important;color:var(--collab-ink)!important}
-.collab-ui-root:not(.collab-ui-sully) .collab-entry-chooser{background:var(--collab-bg);color:var(--collab-ink)}
-.collab-ui-root:not(.collab-ui-sully) .collab-entry-chooser h2,.collab-ui-root:not(.collab-ui-sully) .collab-entry-chooser button span{color:var(--collab-ink)}
-.collab-ui-root:not(.collab-ui-sully) .collab-entry-chooser p,.collab-ui-root:not(.collab-ui-sully) .collab-entry-chooser button span+span{color:var(--collab-muted)}
-.collab-ui-root:not(.collab-ui-sully) .collab-thinking{background:color-mix(in srgb,var(--collab-accent) 5%,var(--collab-panel-solid));border-color:var(--collab-line);color:var(--collab-ink)}
-.collab-ui-root:not(.collab-ui-sully) .collab-ui-header{height:calc(56px + var(--safe-top,0px))!important;box-shadow:none!important;padding-inline:8px;padding-top:var(--safe-top,0px)}
-.collab-ui-root:not(.collab-ui-sully) .collab-ui-header button{color:var(--collab-ink)!important}
-.collab-ui-root:not(.collab-ui-sully) .collab-header-identity{justify-content:flex-start!important;gap:9px!important}
-.collab-ui-root:not(.collab-ui-sully) .collab-header-avatar{display:none}
-.collab-ui-root:not(.collab-ui-sully) .collab-brand-mark{display:grid;width:27px;height:27px;flex:none;place-items:center;border-radius:9px;background:var(--collab-accent);color:#fff;font-size:14px;font-weight:700}
-.collab-ui-root:not(.collab-ui-sully) .collab-brand-label{display:inline;font-size:14px;font-weight:650;color:var(--collab-ink)}
-.collab-ui-root:not(.collab-ui-sully) .collab-session-title{font-size:14px;font-weight:650;color:var(--collab-ink)}
-.collab-ui-root:not(.collab-ui-sully) .collab-session-title:before{content:none}
-.collab-ui-root:not(.collab-ui-sully) .collab-session-dot{display:none}
-.collab-ui-root:not(.collab-ui-sully) .collab-header-meta{font-size:9px;color:var(--collab-muted)!important}
-.collab-ui-root:not(.collab-ui-sully) .collab-ui-thread{padding-top:22px;background:var(--collab-bg)}
-.collab-ui-root:not(.collab-ui-sully) .collab-mode-picker{background:var(--collab-bg);color:var(--collab-ink);padding-top:44px}
-.collab-ui-root:not(.collab-ui-sully) .collab-mode-hero{gap:13px}
-.collab-ui-root:not(.collab-ui-sully) .collab-mode-avatar{display:none}
-.collab-ui-root:not(.collab-ui-sully) .collab-mode-brand{display:grid;width:48px;height:48px;flex:none;place-items:center;border-radius:15px;background:var(--collab-accent);color:#fff;font-size:23px;font-weight:700}
-.collab-ui-root:not(.collab-ui-sully) .collab-mode-kicker{display:none}
-.collab-ui-root:not(.collab-ui-sully) .collab-mode-brand-title{display:inline;color:var(--collab-ink)}
-.collab-ui-root:not(.collab-ui-sully) .collab-mode-role-title{display:block;margin-top:2px;color:var(--collab-ink);font-size:24px;font-weight:650}
-.collab-ui-root:not(.collab-ui-sully) .collab-mode-subtitle{color:var(--collab-muted)!important;font-size:12px}
-.collab-ui-root:not(.collab-ui-sully) .collab-mode-explanation{border-color:color-mix(in srgb,var(--collab-accent) 35%,transparent);color:var(--collab-ink)}
-.collab-ui-root:not(.collab-ui-sully) .collab-mode-explanation p,.collab-ui-root:not(.collab-ui-sully) .collab-mode-explanation dt{color:var(--collab-ink)!important}
-.collab-ui-root:not(.collab-ui-sully) .collab-mode-explanation dd{color:var(--collab-muted)!important}
-.collab-ui-root:not(.collab-ui-sully) .collab-mode-options{border-color:var(--collab-line);margin-top:42px}
-.collab-ui-root:not(.collab-ui-sully) .collab-mode-option{border-color:var(--collab-line)!important}
-.collab-ui-root:not(.collab-ui-sully) .collab-mode-option-title{color:var(--collab-ink)!important}
-.collab-ui-root:not(.collab-ui-sully) .collab-mode-option-description{color:var(--collab-muted)!important}
-.collab-ui-root:not(.collab-ui-sully) .collab-mode-footnote{color:var(--collab-muted)!important}
-.collab-ui-root:not(.collab-ui-sully) .collab-message-row{width:min(100%,760px);max-width:100%;min-width:0;margin-inline:auto;align-items:flex-start;padding:10px 18px;gap:12px;box-sizing:border-box}
-.collab-ui-root:not(.collab-ui-sully) .collab-message-avatar{display:none}
-.collab-ui-root:not(.collab-ui-sully) .collab-assistant-mark{display:grid;width:25px;height:25px;flex:none;place-items:center;margin-top:2px;border-radius:8px;background:var(--collab-accent);color:#fff;font-size:13px;font-weight:700}
-.collab-ui-root:not(.collab-ui-sully) .collab-message-row-user{justify-content:flex-start;flex-direction:row-reverse}
-.collab-ui-root:not(.collab-ui-sully) .collab-message-stack{min-width:0;max-width:85%}
-.collab-ui-root:not(.collab-ui-sully) .collab-message-bubble{box-shadow:none!important;border:0!important;font-size:15px;line-height:1.75}
-.collab-ui-root:not(.collab-ui-sully) .collab-message-bubble-assistant{background:transparent!important;color:var(--collab-ink)!important;padding:1px 0!important;border-radius:0!important}
-.collab-ui-root:not(.collab-ui-sully) .collab-message-bubble-user{background:var(--collab-user)!important;color:var(--collab-user-ink)!important;padding:10px 16px!important;border-radius:20px!important}
-.collab-ui-root:not(.collab-ui-sully) .collab-message-time{display:none}
-.collab-ui-root:not(.collab-ui-sully) .collab-message-system{background:color-mix(in srgb,var(--collab-ink) 6%,transparent)!important;color:var(--collab-muted)!important}
-.collab-ui-root:not(.collab-ui-sully) .collab-empty-avatar{display:none}
-.collab-ui-root:not(.collab-ui-sully) .collab-empty-brand{display:grid;width:48px;height:48px;place-items:center;border-radius:15px;background:var(--collab-accent);color:#fff;font-size:24px;font-weight:700;box-shadow:0 8px 26px color-mix(in srgb,var(--collab-accent) 22%,transparent)}
-.collab-ui-root:not(.collab-ui-sully) .collab-empty-state h2{color:var(--collab-ink)!important}
-.collab-ui-root:not(.collab-ui-sully) .collab-empty-state p{color:var(--collab-muted)!important}
-.collab-ui-root:not(.collab-ui-sully) .collab-empty-starter{border-color:var(--collab-line)!important;background:var(--collab-panel-solid)!important;color:var(--collab-ink)!important;box-shadow:none!important}
-.collab-ui-root:not(.collab-ui-sully) .collab-ui-composer{border-top:0!important;padding-top:8px}
-.collab-ui-root:not(.collab-ui-sully) .collab-composer-tools,.collab-ui-root:not(.collab-ui-sully) .collab-composer-field{width:min(100%,760px);margin-inline:auto}
-.collab-ui-root:not(.collab-ui-sully) .collab-composer-field{background:var(--collab-panel-solid)!important;border-color:var(--collab-line)!important;box-shadow:0 5px 22px rgba(20,28,45,.08)!important}
-.collab-ui-root:not(.collab-ui-sully) .collab-composer-field textarea{color:var(--collab-ink)!important}
-.collab-ui-root:not(.collab-ui-sully) .collab-primary-action{background:var(--collab-accent)!important;color:#fff!important}
-.collab-ui-root:not(.collab-ui-sully) .collab-accent-chip{background:color-mix(in srgb,var(--collab-accent) 11%,var(--collab-panel-solid))!important;color:var(--collab-accent)!important}
-.collab-ui-gpt .collab-brand-mark,.collab-ui-gpt .collab-empty-brand{background:#000;border-radius:50%}
-.collab-ui-gpt .collab-mode-brand{background:#000;border-radius:50%}
-.collab-ui-gpt .collab-mode-option-icon{background:#f4f4f4!important;color:#111!important;border-radius:50%!important}
-.collab-ui-gpt .collab-assistant-mark{background:#000;border-radius:50%}
-.collab-ui-gpt .collab-composer-field{border-radius:24px!important;box-shadow:0 2px 10px rgba(0,0,0,.08)!important}
-.collab-ui-claude .collab-brand-mark,.collab-ui-claude .collab-empty-brand,.collab-ui-claude .collab-assistant-mark{background:transparent;color:#c75f3c;font-size:20px}
-.collab-ui-claude .collab-mode-brand{background:transparent;color:#c75f3c;font-size:29px}
-.collab-ui-claude .collab-mode-brand-title,.collab-ui-claude .collab-mode-explanation>p{font-family:Georgia,'Times New Roman',serif}
-.collab-ui-claude .collab-mode-option-icon{background:#eee9df!important;color:#b95e41!important;border-radius:14px!important}
-.collab-ui-claude .collab-empty-state h2{font-family:Georgia,'Times New Roman',serif;font-weight:500;font-size:25px}
-.collab-ui-claude .collab-message-bubble-assistant{font-family:Georgia,'Times New Roman',serif;font-size:15.5px}
-.collab-ui-claude .collab-composer-field{border-radius:16px!important;box-shadow:0 3px 14px rgba(74,61,49,.07)!important}
-.collab-ui-gemini .collab-brand-mark,.collab-ui-gemini .collab-empty-brand,.collab-ui-gemini .collab-assistant-mark{background:linear-gradient(135deg,#3f7ee8,#9c59d1)}
-.collab-ui-gemini .collab-mode-brand{background:linear-gradient(135deg,#3f7ee8,#9c59d1)}
-.collab-ui-gemini .collab-mode-avatar{display:block;width:31px;height:31px;border-radius:11px;margin-left:-22px;margin-top:38px;z-index:1;border:3px solid #fff}
-.collab-ui-gemini .collab-mode-option-icon{background:#eef3ff!important;color:#4975df!important}
-.collab-ui-gemini .collab-header-avatar{display:block;width:25px;height:25px;border-radius:9px;order:2}
-.collab-ui-gemini .collab-message-avatar-assistant{display:block;width:27px;height:27px;border-radius:9px;order:-1}
-.collab-ui-gemini .collab-message-row-assistant .collab-assistant-mark{display:none}
-.collab-ui-gemini .collab-empty-companion{display:block;position:absolute;width:32px;height:32px;border-radius:11px;right:-8px;bottom:-7px;border:3px solid #fff;object-fit:cover}
-.collab-ui-gemini .collab-empty-brand-wrap{position:relative}
-.collab-ui-gemini .collab-empty-state h2{background:linear-gradient(90deg,#3576df,#8f55c8);-webkit-background-clip:text;background-clip:text;color:transparent!important}
-.collab-ui-kimi .collab-brand-mark,.collab-ui-kimi .collab-empty-brand,.collab-ui-kimi .collab-assistant-mark{background:#111936;color:#fff;border-radius:11px}
-.collab-ui-kimi .collab-mode-brand{background:#111936;border-radius:14px}
-.collab-ui-kimi .collab-mode-option{margin:8px 0;padding:18px 15px!important;border:1px solid var(--collab-line)!important;border-radius:17px;background:#fff}
-.collab-ui-kimi .collab-mode-options{border:0!important}
-.collab-ui-kimi .collab-mode-option-icon{background:#eef2ff!important;color:#2864ff!important}
-.collab-ui-kimi .collab-message-row-assistant{margin-top:2px;margin-bottom:2px}
-.collab-ui-kimi .collab-message-bubble-assistant{background:#fff!important;border:1px solid var(--collab-line)!important;border-radius:16px!important;padding:13px 15px!important}
-.collab-ui-kimi .collab-composer-field{border-radius:18px!important;border-color:#dfe4ee!important}
-.collab-ui-deepseek .collab-brand-mark,.collab-ui-deepseek .collab-empty-brand,.collab-ui-deepseek .collab-assistant-mark{background:#4d6bfe;border-radius:10px}
-.collab-ui-deepseek .collab-mode-brand{background:#4d6bfe;border-radius:12px}
-.collab-ui-deepseek .collab-mode-option{margin:7px 0;padding:18px 14px!important;border:1px solid var(--collab-line)!important;border-radius:14px;background:#fff}
-.collab-ui-deepseek .collab-mode-options{border:0!important}
-.collab-ui-deepseek .collab-mode-option-icon{background:#edf1ff!important;color:#4d6bfe!important}
-.collab-ui-deepseek .collab-message-bubble-assistant{background:#fff!important;border:1px solid var(--collab-line)!important;border-radius:14px!important;padding:13px 15px!important}
-.collab-ui-deepseek .collab-composer-field{border-radius:14px!important}
-.collab-brand-mark,.collab-brand-label,.collab-assistant-mark,.collab-empty-brand,.collab-mode-brand,.collab-mode-brand-title,.collab-empty-companion{display:none!important}
-.collab-ui-root.collab-avatar-none .collab-message-avatar,.collab-ui-root.collab-avatar-none .collab-header-avatar,.collab-ui-root.collab-avatar-none .collab-mode-avatar,.collab-ui-root.collab-avatar-none .collab-empty-avatar{display:none!important}
-.collab-ui-root.collab-avatar-user .collab-message-avatar-assistant,.collab-ui-root.collab-avatar-user .collab-header-avatar,.collab-ui-root.collab-avatar-user .collab-mode-avatar,.collab-ui-root.collab-avatar-user .collab-empty-avatar{display:none!important}
-.collab-ui-root.collab-avatar-character .collab-message-avatar-user{display:none!important}
-.collab-ui-root.collab-avatar-both .collab-message-avatar,.collab-ui-root.collab-avatar-user .collab-message-avatar-user,.collab-ui-root.collab-avatar-character .collab-message-avatar-assistant,.collab-ui-root.collab-avatar-character .collab-header-avatar,.collab-ui-root.collab-avatar-character .collab-mode-avatar,.collab-ui-root.collab-avatar-character .collab-empty-avatar,.collab-ui-root.collab-avatar-both .collab-header-avatar,.collab-ui-root.collab-avatar-both .collab-mode-avatar,.collab-ui-root.collab-avatar-both .collab-empty-avatar{display:block!important}
-.collab-avatar-style-circle .collab-message-avatar,.collab-avatar-style-circle .collab-header-avatar,.collab-avatar-style-circle .collab-mode-avatar,.collab-avatar-style-circle .collab-empty-avatar{border-radius:999px!important}
-.collab-avatar-style-rounded .collab-message-avatar,.collab-avatar-style-rounded .collab-header-avatar{border-radius:9px!important}
-.collab-avatar-style-rounded .collab-mode-avatar,.collab-avatar-style-rounded .collab-empty-avatar{border-radius:18px!important}
-.collab-avatar-style-portrait .collab-message-avatar{width:38px!important;height:48px!important;border-radius:12px!important}
-.collab-avatar-style-portrait .collab-header-avatar{width:29px!important;height:36px!important;border-radius:9px!important}
-.collab-avatar-style-portrait .collab-mode-avatar{width:54px!important;height:68px!important;border-radius:16px!important}
-.collab-avatar-style-portrait .collab-empty-avatar{width:68px!important;height:86px!important;border-radius:20px!important}
-.collab-message-row{width:100%;max-width:100%;min-width:0;box-sizing:border-box}
-.collab-message-stack{min-width:0}
-.collab-message-bubble{min-width:0;max-width:100%;box-sizing:border-box;overflow-wrap:anywhere}
-`;
 
 const shortPreview = (value: string, max = 52): string => {
   const compact = value.replace(/\s+/g, ' ').trim();
@@ -594,6 +459,7 @@ const ModePicker: React.FC<{
 
 const ApiSettingsPanel: React.FC<{
   settings: CollaborationSettings;
+  initialMode: CollaborationMode;
   character: CharacterProfile;
   user: UserProfile;
   chatCollaborationEnabled: boolean;
@@ -601,15 +467,18 @@ const ApiSettingsPanel: React.FC<{
   apiPresets: ApiPreset[];
   availableModels: string[];
   onToggleChatCollaboration: (enabled: boolean) => void;
+  onPreviewTheme: (theme: CollaborationUiTheme) => void;
+  onAppearanceApplied: (appearance: CollaborationAppearance) => void;
   onSave: (settings: CollaborationSettings) => Promise<void>;
   onClose: () => void;
-}> = ({ settings, character, user, chatCollaborationEnabled, chatApi, apiPresets, availableModels, onToggleChatCollaboration, onSave, onClose }) => {
+}> = ({ settings, initialMode, character, user, chatCollaborationEnabled, chatApi, apiPresets, availableModels, onToggleChatCollaboration, onPreviewTheme, onAppearanceApplied, onSave, onClose }) => {
   const [draft, setDraft] = useState<CollaborationSettings>(() => ({
     ...settings,
     immersive: { ...settings.immersive },
     focused: { ...settings.focused },
   }));
-  const [mode, setMode] = useState<CollaborationMode>('immersive');
+  const [beautyOpen,setBeautyOpen]=useState(false);
+  const [mode, setMode] = useState<CollaborationMode>(initialMode);
   const [saving, setSaving] = useState(false);
   const [modelOptions, setModelOptions] = useState<Record<CollaborationMode, string[]>>(() => ({
     immersive: collaborationProfileMatches(settings.immersive, chatApi) ? availableModels : [],
@@ -617,6 +486,7 @@ const ApiSettingsPanel: React.FC<{
   }));
   const [modelStatus, setModelStatus] = useState<Record<CollaborationMode, string>>({ immersive: '', focused: '' });
   const [fetchingMode, setFetchingMode] = useState<CollaborationMode | null>(null);
+  const cssValidation = useMemo(() => validateCollaborationCss(draft.customCss || ''), [draft.customCss]);
   const profile = draft[mode];
   const selectableModels = Array.from(new Set([profile.model, ...modelOptions[mode]].filter(Boolean)));
   const previewAvatar = user.perCharAvatars?.[character.id] || user.avatar || character.avatar;
@@ -657,6 +527,7 @@ const ApiSettingsPanel: React.FC<{
   };
 
   const save = async () => {
+    if (!cssValidation.isValid) return;
     setSaving(true);
     try {
       await onSave({ ...draft, id: 'main', updatedAt: Date.now() });
@@ -668,6 +539,7 @@ const ApiSettingsPanel: React.FC<{
 
   return (
     <div className="collab-settings-panel absolute inset-0 z-50 flex flex-col bg-[#f7f8fb] animate-[collabFade_.18s_ease-out]">
+      {beautyOpen&&<CollaborationBeautyLibrary draft={draft} onClose={()=>setBeautyOpen(false)} onApplied={appearance=>{setDraft(previous=>({...previous,...appearance}));onAppearanceApplied(appearance);onPreviewTheme(appearance.uiTheme);}}/>}
       <header className="collab-safe-header flex h-16 shrink-0 items-center border-b border-slate-200/80 bg-white/90 px-3 backdrop-blur-xl">
         <button type="button" onClick={onClose} className="grid h-10 w-10 place-items-center rounded-full text-slate-600 active:bg-slate-100" aria-label="返回">
           <ArrowLeft size={22} />
@@ -676,7 +548,7 @@ const ApiSettingsPanel: React.FC<{
           <h2 className="text-[15px] font-semibold text-slate-800">协同设置</h2>
           <p className="text-[10px] text-slate-400">界面与聊天感知全局生效；API 按协同模式独立配置</p>
         </div>
-        <button type="button" onClick={save} disabled={saving} className="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">
+        <button type="button" onClick={save} disabled={saving || !cssValidation.isValid} className="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">
           {saving ? '保存中' : '保存'}
         </button>
       </header>
@@ -707,7 +579,7 @@ const ApiSettingsPanel: React.FC<{
               {COLLABORATION_UI_THEMES.map(item => {
                 const active = draft.uiTheme === item.id;
                 return (
-                  <button key={item.id} type="button" onClick={() => setDraft(previous => ({ ...previous, uiTheme: item.id }))} className={`rounded-2xl border px-3 py-3 text-left transition-all active:scale-[.98] ${active ? 'border-slate-800 bg-white shadow-sm' : 'border-slate-200 bg-white/65'}`}>
+                  <button key={item.id} type="button" aria-pressed={active} onClick={() => { setDraft(previous => ({ ...previous, uiTheme: item.id })); onPreviewTheme(item.id); }} className={`rounded-2xl border px-3 py-3 text-left transition-all active:scale-[.98] ${active ? 'collab-theme-selected border-slate-800 bg-white shadow-sm' : 'border-slate-200 bg-white/65'}`}>
                     <span className="mb-2.5 flex gap-1">
                       {item.swatches.map(color => <span key={color} className="h-4 flex-1 rounded-full border border-black/5" style={{ background: color }} />)}
                     </span>
@@ -723,6 +595,34 @@ const ApiSettingsPanel: React.FC<{
                 );
               })}
             </div>
+          </section>
+
+          <section>
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-xs font-semibold text-slate-600">自定义 CSS</h3>
+                <p className="mt-0.5 text-[10px] leading-5 text-slate-400">叠加在所选风格之上，保存后应用。设置页保留官方样式，方便修改和恢复。</p>
+              </div>
+              <button type="button" disabled={!draft.customCss} onClick={() => setDraft(previous => ({ ...previous, customCss: '' }))} className="shrink-0 text-xs text-slate-500 disabled:opacity-35">清空 CSS</button>
+            </div>
+            <button type="button" disabled={saving} onClick={()=>setBeautyOpen(true)} className="mb-3 w-full rounded-2xl border border-slate-200 bg-white p-3 text-left text-sm text-slate-700">装扮收藏与分享 <span className="float-right">›</span><small className="mt-1 block text-slate-400">保存多套样式、切换、投稿或用分享码领取</small></button>
+            <CssCodeEditor
+              aria-label="协同自定义 CSS"
+              aria-invalid={!cssValidation.isValid}
+              aria-describedby="collab-css-help"
+              spellCheck={false}
+              value={draft.customCss || ''}
+              onChange={customCss => setDraft(previous => ({ ...previous, customCss }))}
+              placeholder={COLLABORATION_CSS_EXAMPLE}
+              className="collab-css-editor min-h-48 w-full resize-y rounded-2xl border border-slate-200 bg-white p-3 font-mono text-xs leading-6 text-slate-700 outline-none"
+            />
+            <p id="collab-css-help" className="mt-2 text-[10px] leading-5 text-slate-400">选择器以 .collab-ui-root 开头，只修改协同窗口。可覆盖 --collab-bg、--collab-ink、--collab-accent 等颜色变量。</p>
+            {!cssValidation.isValid && <p role="alert" className="mt-2 text-[11px] leading-5 text-rose-600">{cssValidation.errors.join('；')}</p>}
+            <details className="mt-2 text-[10px] leading-5 text-slate-500">
+              <summary className="cursor-pointer">查看示例和常用选择器</summary>
+              <pre className="mt-2 overflow-x-auto whitespace-pre-wrap rounded-xl bg-slate-100 p-3">{COLLABORATION_CSS_EXAMPLE}</pre>
+              <p className="mt-2">顶栏 .collab-ui-header · 输入区 .collab-ui-composer · 用户气泡 .collab-message-bubble-user · 角色气泡 .collab-message-bubble-assistant</p>
+            </details>
           </section>
 
           <section>
@@ -1607,7 +1507,14 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
 }) => {
   const [sessions, setSessions] = useState<CollaborationSession[]>([]);
   const [categories, setCategories] = useState<CollaborationCategory[]>([]);
-  const [settings, setSettings] = useState<CollaborationSettings>(() => cloneDefaultSettings());
+  const [savedSettings, setSettings] = useState<CollaborationSettings>(() => cloneDefaultSettings());
+  // The sidecar stays mounted while closed. Resolve linked sources from current
+  // props so changing the shared API also updates the next collaboration turn.
+  // Explicit mode overrides are detached (`custom`) and remain untouched.
+  const settings = useMemo(
+    () => hydrateCollaborationApiSettings(savedSettings, chatApi, apiPresets),
+    [savedSettings, chatApi, apiPresets],
+  );
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<CollaborationMessage[]>([]);
   const [transferOpen, setTransferOpen] = useState(false);
@@ -1622,6 +1529,7 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
   const [libraryFiles, setLibraryFiles] = useState<CollaborationLibraryFile[]>([]);
   const [libraryLoading, setLibraryLoading] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [previewTheme, setPreviewTheme] = useState<CollaborationUiTheme | null>(null);
   const [makerOpen, setMakerOpen] = useState(false);
   const [previewArtifact, setPreviewArtifact] = useState<CollaborationInstallableArtifact | null>(null);
   const [sessionFilter, setSessionFilter] = useState<SessionFilter>('active');
@@ -1866,8 +1774,8 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
       setShowModePicker(true);
     });
     return () => { cancelled = true; };
-    // The shared API sources are captured when this character's sidecar opens.
-    // The settings picker always receives the latest props for explicit changes.
+    // Load stored data once per character; linked API sources are resolved above
+    // on every prop change without resetting the active session or its messages.
   }, [character.id]);
 
   useEffect(() => {
@@ -2617,7 +2525,9 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
   const backgroundStyle: React.CSSProperties = backgroundUrl
     ? { backgroundImage: `linear-gradient(rgba(248,250,252,.78), rgba(248,250,252,.78)), url("${backgroundUrl}")`, backgroundSize: 'cover', backgroundPosition: 'center' }
     : { backgroundColor: '#f4f6fa', backgroundImage: 'radial-gradient(circle at 20% 0%, rgba(99,102,241,.09), transparent 28%), radial-gradient(circle at 90% 80%, rgba(148,163,184,.12), transparent 30%)' };
-  const uiTheme = settings.uiTheme || 'sully';
+  const appearance = useMemo(() => resolveCollaborationAppearance(settings), [settings.uiTheme, settings.customCss]);
+  const uiTheme = settingsOpen && previewTheme ? previewTheme : appearance.uiTheme;
+  const dark = !!COLLABORATION_UI_THEMES.find(item => item.id === uiTheme)?.dark;
   const uiThemeSpec = COLLABORATION_UI_THEMES.find(item => item.id === uiTheme) || COLLABORATION_UI_THEMES[0];
   const requestedAvatarMode = settings.avatarMode || 'theme';
   const avatarMode = requestedAvatarMode === 'theme' ? THEME_AVATAR_MODE[uiTheme] : requestedAvatarMode;
@@ -2645,14 +2555,17 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
   }
 
   return (
-    <div className={`collab-ui-root collab-ui-${uiTheme} collab-avatar-${avatarMode} collab-avatar-style-${avatarStyle} absolute inset-0 z-[120] flex flex-col overflow-hidden bg-[#f4f6fa] font-sans animate-[collabEnter_.28s_cubic-bezier(.2,.8,.2,1)]`} style={uiTheme === 'sully' ? backgroundStyle : undefined}>
+    <div className={`collab-ui-root collab-ui-${uiTheme} ${dark ? 'collab-ui-dark' : ''} collab-avatar-${avatarMode} collab-avatar-style-${avatarStyle} absolute inset-0 z-[120] flex flex-col overflow-hidden bg-[#f4f6fa] font-sans animate-[collabEnter_.28s_cubic-bezier(.2,.8,.2,1)]`} style={uiTheme === 'sully' ? backgroundStyle : undefined}>
       <style>{`
         @keyframes collabEnter { from { opacity: 0; transform: translateY(14px) scale(.992); } to { opacity: 1; transform: none; } }
         @keyframes collabFade { from { opacity: 0; } to { opacity: 1; } }
         @keyframes collabRise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
         @keyframes collabSheetIn { from { opacity: 0; transform: translateY(22px) scale(.985); } to { opacity: 1; transform: none; } }
         ${COLLABORATION_UI_THEME_CSS}
+        ${collaborationAppearanceCss}
       `}</style>
+
+      {!settingsOpen && appearance.customCss && <BlobRefStyle css={appearance.customCss} />}
 
       <header className="collab-safe-header collab-ui-header relative z-20 flex h-16 shrink-0 items-center border-b border-white/60 bg-white/78 px-2 shadow-[0_1px_0_rgba(15,23,42,.04)] backdrop-blur-xl">
         <button type="button" onClick={onClose} className="grid h-10 w-10 place-items-center rounded-full text-slate-600 active:bg-slate-100/80" aria-label="返回 ChatApp"><ArrowLeft size={22} /></button>
@@ -2842,6 +2755,7 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
       {settingsOpen && (
         <ApiSettingsPanel
           settings={settings}
+          initialMode={activeSession?.mode || 'immersive'}
           character={character}
           user={user}
           chatCollaborationEnabled={chatCollaborationEnabled}
@@ -2849,8 +2763,10 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
           apiPresets={apiPresets}
           availableModels={availableModels}
           onToggleChatCollaboration={enabled => void toggleChatCollaboration(enabled)}
+          onPreviewTheme={setPreviewTheme}
+          onAppearanceApplied={appearance=>setSettings(previous=>({...previous,...appearance}))}
           onSave={saveSettings}
-          onClose={() => setSettingsOpen(false)}
+          onClose={() => { setSettingsOpen(false); setPreviewTheme(null); }}
         />
       )}
 

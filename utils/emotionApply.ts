@@ -5,6 +5,7 @@ import { CHAT_GEN_EVENTS } from './chatGenEvents';
 import {landHomeSecrets} from './homeSecrets';
 import type {SecretNoteOrigin} from './secretNote';
 import {homeSecretEvalRequestId} from './emotionEvalCore';
+import {landFriendFeedEmotionAction} from './friendFeedEmotion';
 
 // 情绪评估失败的用户可见信号（OSContext 监听弹 toast）。本函数是本地 / instant(worker)
 // 两条路径的共用落点，在这里派发能覆盖「worker 推回的 raw 解析全灭」这类云端失败。
@@ -192,6 +193,7 @@ const extractBalancedObject = (raw: string): string | undefined => {
 };
 
 export interface EmotionEvalResult {
+    friendFeedAction?: unknown;
     homeSecrets?: unknown;
     homeSecretRequestId?: string;
     changed: boolean;
@@ -204,7 +206,7 @@ export interface EmotionEvalResult {
 
 const looksLikeEvalResult = (v: any): boolean =>
     !!v && typeof v === 'object' && !Array.isArray(v)
-    && ('changed' in v || 'buffs' in v || 'injection' in v || 'innerState' in v || 'homeSecrets' in v);
+    && ('changed' in v || 'buffs' in v || 'injection' in v || 'innerState' in v || 'homeSecrets' in v || 'friendFeedAction' in v);
 
 const tryParseObject = (s: string): any | null => {
     try {
@@ -331,6 +333,8 @@ export function parseEmotionEvalOutput(rawText: string): EmotionEvalResult | nul
                 const changed = v.changed === true || (typeof v.changed === 'string' && v.changed.toLowerCase() === 'true');
                 return {
                     changed,
+                    // Never publish a comment fabricated by closing a truncated string/object.
+                    friendFeedAction: attempt === c4 && c4 !== c3 ? undefined : v.friendFeedAction,
                     // Closing a truncated JSON string is acceptable for partial emotion text,
                     // but must not turn half a secret/memory into an established experience.
                     homeSecrets: attempt === c4 && c4 !== c3 ? salvageSecrets(c3) : v.homeSecrets,
@@ -411,6 +415,11 @@ export async function applyEmotionEvalRaw(
         }
 
         // Secrets are independent of changed/buffs; persist before the unchanged-emotion early return.
+        try {
+            await landFriendFeedEmotionAction(charData.id, result.friendFeedAction, 'emotion');
+        } catch (error) {
+            announceEmotionFailed(charData, error instanceof Error ? error.message : '好友圈评论保存失败');
+        }
         try {
             await landHomeSecrets(charData.id, result, secretRequestId || homeSecretEvalRequestId(rawText), rawText, secretOrigin);
         } catch (error) {

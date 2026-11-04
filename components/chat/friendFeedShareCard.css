@@ -1,0 +1,15 @@
+.friend-feed-share-card { width:224px; max-width:100%; box-sizing:border-box; padding:12px 2px; color:inherit; background:transparent; border:0; box-shadow:none; font-family:inherit; text-align:left; }
+.friend-feed-share-card>summary { display:flex; gap:14px; align-items:flex-start; cursor:pointer; list-style:none; }
+.friend-feed-share-card>summary::-webkit-details-marker { display:none; }
+.ff-share-card-copy { flex:1; min-width:0; }
+.ff-share-card-copy>small { display:block; font-size:10px; opacity:.65; letter-spacing:.02em; }
+.ff-share-card-copy>p { margin:8px 0 12px; font-size:14px; font-weight:550; line-height:1.7; overflow-wrap:anywhere; white-space:pre-wrap; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+.ff-share-card-copy>span { display:flex; align-items:center; gap:5px; font-size:10px; opacity:.6; }
+.ff-share-card-copy>span>svg:last-child { margin-left:auto; }
+.friend-feed-share-card>summary>img { width:76px; height:90px; object-fit:cover; border-radius:4px; flex:none; }
+.ff-share-card-expanded { padding-top:18px; font-size:13px; line-height:1.75; }
+.ff-share-card-expanded p { margin:0 0 12px; white-space:pre-wrap; overflow-wrap:anywhere; }
+.ff-share-card-expanded section { margin:20px 0; }
+.ff-share-card-expanded h4 { margin-bottom:12px; font-size:11px; font-weight:500; opacity:.6; }
+.ff-share-card-expanded small { display:block; font-size:10px; opacity:.6; }
+.friend-feed-share-card>summary:focus-visible { outline:2px solid currentColor; outline-offset:4px; }

@@ -28,10 +28,10 @@
     <link rel="apple-touch-icon" sizes="180x180" href="./icons/jellyfish-180.png?v=38b1adde1d" />
 
     <!-- KaTeX CSS for Math Rendering -->
-    <link rel="stylesheet" href="https://unpkg.com/katex@0.16.9/dist/katex.min.css" integrity="sha384-n8MVd4RsNIU0tAv4ct0nTaAbDJwPJzDEaqSD1odI+WdtXRGWt2kTvGFasHpSy3SV" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://unpkg.com/katex@0.16.9/dist/katex.min.css" integrity="sha384-n8MVd4RsNIU0tAv4ct0nTaAbDJwPJzDEaqSD1odI+WdtXRGWt2kTvGFasHpSy3SV" crossorigin="anonymous" media="print" onload="this.media='all'">
 
     <script src="%BASE_URL%vendor/tailwind-3.4.17.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@300;400;500;600&family=Nunito:wght@400;500;600;700;800;900&family=Noto+Sans+SC:wght@400;500;700;900&family=DM+Serif+Display:ital@0;1&family=Caveat:wght@400;500;600;700&family=Shippori+Mincho:wght@400;500;600;700&family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Ma+Shan+Zheng&family=Long+Cang&family=ZCOOL+KuaiLe&family=ZCOOL+XiaoWei&display=swap" rel="stylesheet" crossorigin="anonymous">
+    <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@300;400;500;600&family=Nunito:wght@400;500;600;700;800;900&family=Noto+Sans+SC:wght@400;500;700;900&family=DM+Serif+Display:ital@0;1&family=Caveat:wght@400;500;600;700&family=Shippori+Mincho:wght@400;500;600;700&family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Ma+Shan+Zheng&family=Long+Cang&family=ZCOOL+KuaiLe&family=ZCOOL+XiaoWei&display=swap" rel="stylesheet" crossorigin="anonymous" media="print" onload="this.media='all'">
     <script>
       tailwind.config = {
         theme: {
@@ -248,6 +248,12 @@
       .sully-chat-inputbar {
         transition: padding-bottom 0.18s ease-out;
       }
+      /* With contain, WebKit extends the shell backing into the native bar.
+         Match the visible header instead of extending the fallback pink gradient. */
+      html[data-ios-status-bar-contained] .sully-phone-shell {
+        background: var(--ios-status-bar-color, #0f1115);
+      }
+
       body.ios-keyboard-open .sully-shell-content {
         bottom: 0 !important;
       }
@@ -268,7 +274,47 @@
         overflow: hidden;
         pointer-events: none;
       }
+      /* Gecko 渲染引擎与系统「减弱透明度」偏好下统一关闭实时背景采样模糊与滚动容器内的投影滤镜，
+         避免高分屏滚动时逐帧重算高斯模糊导致掉帧；各卡片与导航栏由组件同步提供高对比度半透纯色底。 */
+      html[data-reduced-blur] *,
+      html[data-reduced-blur] *::before,
+      html[data-reduced-blur] *::after {
+        -webkit-backdrop-filter: none !important;
+        backdrop-filter: none !important;
+      }
+      html[data-reduced-blur] .launcher-desktop [class*="drop-shadow"],
+      html[data-reduced-blur] .sully-chat-root [class*="drop-shadow"] {
+        filter: none !important;
+      }
+      @media (prefers-reduced-transparency: reduce) {
+        *, *::before, *::after {
+          -webkit-backdrop-filter: none !important;
+          backdrop-filter: none !important;
+        }
+        .launcher-desktop [class*="drop-shadow"],
+        .sully-chat-root [class*="drop-shadow"] {
+          filter: none !important;
+        }
+      }
+      @supports (-moz-appearance: none) {
+        *, *::before, *::after {
+          -webkit-backdrop-filter: none !important;
+          backdrop-filter: none !important;
+        }
+        .launcher-desktop [class*="drop-shadow"],
+        .sully-chat-root [class*="drop-shadow"] {
+          filter: none !important;
+        }
+      }
     </style>
+    <script>
+      (function () {
+        var ua = navigator.userAgent || '';
+        var gecko = /\bGecko\/\d/i.test(ua) && !/\blike Gecko\b/i.test(ua);
+        var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-transparency: reduce)').matches;
+        if (gecko || reduced) document.documentElement.setAttribute('data-reduced-blur', '');
+      })();
+    </script>
   <script type="importmap">
 {
   "imports": {

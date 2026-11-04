@@ -1,0 +1,26 @@
+[
+  {
+    "id": "witch",
+    "top": 1.25,
+    "offset": 0.006,
+    "triangles": 1005,
+    "source": "current body",
+    "weights": "original, clipped edges blend bone contributions"
+  },
+  {
+    "id": "apprentice",
+    "top": 1.32,
+    "offset": 0.006,
+    "triangles": 1017,
+    "source": "current body",
+    "weights": "original, clipped edges blend bone contributions"
+  },
+  {
+    "id": "ghost",
+    "top": 1.55,
+    "offset": 0.006,
+    "triangles": 1058,
+    "source": "current body",
+    "weights": "original, clipped edges blend bone contributions"
+  }
+]

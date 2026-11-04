@@ -1,3 +1,4 @@
+import {playWhiteboxSound,unlockWhiteboxAudio} from '../../utils/whiteboxSound';
 import {resolveCssImageUrls} from '../../utils/cssImageAssets';
 import {decorationPreviewScenes,decorationThumbnailPart,type DecorationThumbnailPart} from '../../utils/decorationPreviewScenes';
 import React, { forwardRef, memo, useEffect, useImperativeHandle, useRef, useState } from 'react';
@@ -46,6 +47,7 @@ export default memo(forwardRef<BeautyPreviewHandle, Props>(function BeautyPreset
   const [desktopPages, setDesktopPages] = useState(1);
   useEffect(() => { setDesktopPage(0); setDesktopPages(1); }, [data]);
   const isChat = (data as any)?.format === 'sullyos-chat-decoration';
+  const soundOnly=compact&&isChat&&Object.keys((data as any).parts||{}).length===1&&Object.hasOwn((data as any).parts,'sound');
   const part = compact && isChat && thumbnailPart!=='full' ? thumbnailPart||decorationThumbnailPart(data) : undefined;
   const height = part==='psyche' ? 180 : part ? PREVIEW_WIDTH : isChat ? PREVIEW_HEIGHT : 720;
   const [scene, setScene] = useState(()=>(data as any)?.parts?.psyche && Object.keys((data as any).parts).length===1 ? 'psyche' : 'conversation');
@@ -65,7 +67,7 @@ export default memo(forwardRef<BeautyPreviewHandle, Props>(function BeautyPreset
     return()=>observer.disconnect();
   },[compact]);
   useEffect(() => {
-    if(!visible)return;
+    if(!visible||soundOnly)return;
     setReady(false); setError('');
     let alive = true;let cleanup:undefined|(()=>void);let releaseImages:undefined|(()=>void);
     const build = async () => { try {
@@ -100,7 +102,7 @@ export default memo(forwardRef<BeautyPreviewHandle, Props>(function BeautyPreset
     const cancel=compact?enqueuePreviewBuild(build):undefined;
     if(!compact)void build();
     return () => {alive=false;cancel?.();cleanup?.();releaseImages?.();};
-  }, [data,sceneId,isChat,compact,part,height,liveState,desktopPage,visible]);
+  }, [data,sceneId,isChat,compact,part,height,liveState,desktopPage,visible,soundOnly]);
   useEffect(() => {
     if (!container.current) return;
     const observer = new ResizeObserver(entries => setWidth(Math.min(PREVIEW_WIDTH, entries[0].contentRect.width)));
@@ -130,6 +132,7 @@ export default memo(forwardRef<BeautyPreviewHandle, Props>(function BeautyPreset
       }
     },
   }), [ready,height]);
+  if(soundOnly)return <div className="beauty-preset-preview" data-thumbnail-part="sound" style={{display:'grid',placeItems:'center',aspectRatio:'1',color:'#8b829a',background:'#efedf4'}}><svg aria-hidden="true" viewBox="0 0 80 48" width="60%" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round"><path d="M8 21v6m10-12v18m11-23v28m11-34v40m11-32v24m11-19v14m10-10v6"/></svg><small>{(data as any).parts.sound?.src && (data as any).parts.sound.src!=='none'?'提示音 · 点开试听':'静音'}</small></div>;
   return <div className="beauty-preset-preview" data-thumbnail-part={part} ref={container}>
     {!isChat && !compact && desktopPages > 1 && <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:16,marginBottom:10}}>
       <button type="button" aria-label="上一页桌面" title="上一页桌面" disabled={desktopPage === 0} onClick={() => setDesktopPage(p => p - 1)}>←</button>
@@ -137,10 +140,11 @@ export default memo(forwardRef<BeautyPreviewHandle, Props>(function BeautyPreset
       <button type="button" aria-label="下一页桌面" title="下一页桌面" disabled={desktopPage >= desktopPages - 1} onClick={() => setDesktopPage(p => p + 1)}>→</button>
     </div>}
     {isChat && !compact && scenes.length>1 && <div style={{display:'flex',alignItems:'center',gap:5,marginBottom:10,fontSize:12,color:'#666'}}><select aria-label="预览聊天内容" value={sceneId} onChange={event=>setScene(event.target.value)} style={{flex:1,minWidth:0,padding:'8px 10px',borderRadius:8,background:'#f2f2f2',color:'#333'}}>{scenes.map(item=><option key={item.id} value={item.id}>{item.label}</option>)}</select><button type="button" aria-label="上一条预览" title="上一条预览" disabled={sceneIndex<=0} onClick={()=>setScene(scenes[sceneIndex-1].id)} style={{padding:0,width:32,minHeight:36,flexShrink:0}}>↑</button><button type="button" aria-label="下一条预览" title="下一条预览" disabled={sceneIndex>=scenes.length-1} onClick={()=>setScene(scenes[sceneIndex+1].id)} style={{padding:0,width:32,minHeight:36,flexShrink:0}}>↓</button></div>}
+    {!compact && isChat && (data as any)?.parts?.sound?.src && (data as any).parts.sound.src!=='none' && <button type="button" onClick={()=>{unlockWhiteboxAudio();playWhiteboxSound((data as any).parts.sound);}}>试听提示音</button>}
     {error && <p role="alert">{error}</p>}
     <div style={{ height: height * width / PREVIEW_WIDTH, width, margin: 'auto', overflow: 'hidden', borderRadius: 20 }}>
       <div ref={host} data-beauty-preview-source role={isChat&&!compact?'group':'img'} aria-label="美化预设搭配预览" style={{ width: PREVIEW_WIDTH, height, transform: `scale(${width / PREVIEW_WIDTH})`, transformOrigin: 'top left' }}/>
     </div>
-    {!compact && <p className="beauty-preview-caption">{isChat && (sceneId==='date-reading'||sceneId==='story-reading')?'阅读界面样式预览 · 仅使用虚构文字。':isChat && sceneId==='journal-app'?'交换日记样式预览 · 示例日记本，不读取真实内容。':isChat && sceneId==='schedule-card' ? '日程表样式预览 · 示例日程，不读取真实安排。' : isChat ? <>试着点击心象、转账卡或聊天加号 · 仅演示，不影响真实聊天。 <button type="button" onClick={()=>setInteraction(null)}>重置演示</button></> : desktopPages > 1 ? '桌面预览 · 示例角色与消息，未应用到本机。' : '特殊皮肤示意预览 · 不代表实际桌面布局。'}</p>}
+    {!compact && <p className="beauty-preview-caption">{isChat && sceneId==='collaboration'?'协同工作样式预览 · 仅使用示例任务与文件，不读取真实内容。':isChat && (sceneId==='date-reading'||sceneId==='story-reading')?'阅读界面样式预览 · 仅使用虚构文字。':isChat && sceneId==='journal-app'?'交换日记样式预览 · 示例日记本，不读取真实内容。':isChat && sceneId==='schedule-card' ? '日程表样式预览 · 示例日程，不读取真实安排。' : isChat ? <>试着点击心象、转账卡或聊天加号 · 仅演示，不影响真实聊天。 <button type="button" onClick={()=>setInteraction(null)}>重置演示</button></> : desktopPages > 1 ? '桌面预览 · 示例角色与消息，未应用到本机。' : '特殊皮肤示意预览 · 不代表实际桌面布局。'}</p>}
   </div>;
 }));

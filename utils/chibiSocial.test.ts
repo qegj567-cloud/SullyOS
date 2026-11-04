@@ -10,7 +10,7 @@ function scene(options={}){const visitors=[actor(),actor(),actor()];visitors.for
 function mockFetch(){vi.stubGlobal('fetch',vi.fn(async(url:string)=>({ok:true,json:async()=>clips[url.split('/').pop()!.replace('.json','')]})));}
 afterEach(()=>vi.unstubAllGlobals());
 it('ships exactly the confirmed motions, with finite normalized rotations and clamped paired timelines',()=>{
- expect(selectedMotions).toHaveLength(42);expect(selectedMotions.filter(e=>e.participants===2)).toHaveLength(21);
+ expect(selectedMotions).toHaveLength(48);expect(selectedMotions.filter(e=>e.participants===2)).toHaveLength(27);
  for(const e of selectedMotions){const clip=clips[e.id];expect(clip.actors).toHaveLength(e.participants);for(const track of clip.actors){for(const t of [0,e.duration*.25,e.duration*.5,e.duration*.75,e.duration]){const frame=sampleSelected(track,t);expect(frame.position.toArray().every(Number.isFinite)).toBe(true);for(const q of Object.values(frame.rotations) as T.Quaternion[])expect(q.length()).toBeCloseTo(1,3);}expect(sampleSelected(track,1e6).position.toArray()).toEqual(sampleSelected(track,track.duration).position.toArray());}}
 });
 it('assigns two roles while leaving an observer stationary, and releases at completion',async()=>{

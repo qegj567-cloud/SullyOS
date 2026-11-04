@@ -50,6 +50,10 @@ const XhsFreeRoamApp: React.FC = () => {
 
     // Character selector — default to activeCharacterId, but user can switch
     const [selectedCharId, setSelectedCharId] = useState<string>(activeCharacterId || characters[0]?.id || '');
+    useAppShortcut(ShortcutAppID.XhsFreeRoam, intent => {
+        if (intent.characterId) setSelectedCharId(intent.characterId);
+        setShowCharPicker(false); setViewMode('profile');
+    });
     const [showCharPicker, setShowCharPicker] = useState(false);
     const [pickerGroupId, setPickerGroupId] = useState<string>(GROUP_FILTER_ALL); // 角色下拉选择器的分组筛选（须在组件顶层，勿移入 renderCharPicker）
 
@@ -828,3 +832,5 @@ const XhsFreeRoamApp: React.FC = () => {
 };
 
 export default XhsFreeRoamApp;
+import { useAppShortcut } from '../utils/appShortcutLaunch';
+import { AppID as ShortcutAppID } from '../types';

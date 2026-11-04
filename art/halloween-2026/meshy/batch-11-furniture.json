@@ -1,0 +1,34 @@
+{
+  "id": "halloween-batch-11-furniture",
+  "maxTasks": 4,
+  "maxEstimatedCredits": 20,
+  "defaults": {
+    "model_type": "smart-topology",
+    "ai_model": "meshy-t2.5",
+    "topology": "triangle",
+    "should_texture": false,
+    "target_formats": [
+      "glb"
+    ]
+  },
+  "jobs": [
+    {
+      "id": "cauldron-planter",
+      "image": "../furniture/10-cauldron-planter.png",
+      "target_polycount": 6000,
+      "estimatedCredits": 5
+    },
+    {
+      "id": "cat-mirror",
+      "image": "../furniture/11-cat-mirror.png",
+      "target_polycount": 6000,
+      "estimatedCredits": 5
+    },
+    {
+      "id": "pumpkin-bat-clock",
+      "image": "../furniture/12-pumpkin-bat-clock.png",
+      "target_polycount": 4000,
+      "estimatedCredits": 5
+    }
+  ]
+}

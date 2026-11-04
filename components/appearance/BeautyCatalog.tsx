@@ -1,4 +1,5 @@
 import React,{useEffect,useRef,useState} from 'react';
+import { useLocalBackHandler } from '../../hooks/useLocalBackHandler';
 import {createPortal} from 'react-dom';
 import {BEAUTY_CATEGORIES,belongsInBeautyLibrary,type BeautyCategory} from '../../utils/beautyCategories';
 import {shuffleCatalog,type BeautyCatalogEntry} from '../../utils/beautyCatalogContract';
@@ -13,6 +14,7 @@ function CatalogDetail({entry,onClose,onReceive}:{entry:BeautyCatalogEntry;onClo
   const dialog=useRef<HTMLDialogElement>(null);
   const [pack,setPack]=useState<unknown>(null),[busy,setBusy]=useState(false),[error,setError]=useState('');
   const [terms,setTerms]=useState<BeautyShare>(entry),[accepted,setAccepted]=useState(false);
+  useLocalBackHandler(()=>{if(!busy)onClose();return true;}, 40);
   useEffect(()=>{const node=dialog.current;node?.showModal();return()=>node?.close();},[]);
   const run=async(work:()=>Promise<void>)=>{setBusy(true);setError('');try{await work();}catch(e){setError(e instanceof Error?e.message:'操作失败，请重试');}finally{setBusy(false);}};
   return createPortal(<dialog ref={dialog} className="wardrobe-detail" aria-label={entry.metadata.name+'装扮详情'} onCancel={e=>{e.preventDefault();if(!busy)onClose();}}>
@@ -40,6 +42,7 @@ export default function BeautyCatalog({onBack,onReceive}:{onBack:()=>void;onRece
   const [entries,setEntries]=useState<BeautyCatalogEntry[]>([]),[loading,setLoading]=useState(true),[error,setError]=useState(''),[attempt,setAttempt]=useState(0);
   const [category,setCategory]=useState<BeautyCategory>('all'),[query,setQuery]=useState(''),[search,setSearch]=useState(false),[page,setPage]=useState(0);
   const [selected,setSelected]=useState<BeautyCatalogEntry>();const list=useRef<HTMLDivElement>(null);
+  useLocalBackHandler(()=>{if(search){setSearch(false);setQuery('');}else onBack();return true;}, 30);
   useEffect(()=>{let alive=true;setLoading(true);setError('');loadBeautyCatalog().then(c=>{if(alive)setEntries(shuffleCatalog(c.entries.filter(e=>belongsInBeautyLibrary(e.categories as BeautyCategory[],'chat'))));}).catch(e=>{if(alive)setError(e instanceof Error?e.message:'装扮库加载失败');}).finally(()=>{if(alive)setLoading(false);});return()=>{alive=false;};},[attempt]);
   const needle=query.trim().toLocaleLowerCase();
   const filtered=entries.filter(e=>(category==='all'||e.categories.includes(category))&&`${e.metadata.name}\n${e.metadata.credit}`.toLocaleLowerCase().includes(needle));

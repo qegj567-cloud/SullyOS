@@ -122,6 +122,19 @@ export async function materializeVisionDescriptions(
   const prepared: Message[] = [];
 
   for (const message of messages) {
+    if(message.type==='friend_feed_share_card') {
+      const share=message.metadata?.friendFeedShare;
+      if(!share?.imagesEnabled || !Array.isArray(share.imageRefs) || readVisionDescription(message)) {prepared.push(message);continue;}
+      const refs=share.imageRefs.filter((r:unknown)=>typeof r==='string'&&(isBlobRef(r)||r.startsWith('data:image/'))).slice(0,18);
+      const descriptions:string[]=[];
+      for(const [index,ref] of refs.entries()){
+        const description=descriptionByImage.get(ref)||await describeImageWithVisionApi(ref,config);
+        descriptionByImage.set(ref,description);descriptions.push(`配图 ${index+1}：${description}`);
+      }
+      if(!descriptions.length){prepared.push(message);continue;}
+      const metadata={...message.metadata,visionDescription:descriptions.join('\n'),visionRecognizedAt:Date.now(),visionModel:config.model.trim()};
+      await DB.updateMessageMetadata(message.id,prev=>({...prev,...metadata}));prepared.push({...message,metadata});continue;
+    }
     if (message.type !== 'image') {
       prepared.push(message);
       continue;

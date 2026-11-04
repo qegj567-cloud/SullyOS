@@ -1,6 +1,9 @@
+import BeautyShareContents from './BeautyShareContents';
+import {DEFAULT_SHARE_SELECTION,selectBeautyShareContents,type BeautyShareSelection} from '../../utils/beautyShareContents';
 import {trackBeauty} from '../../utils/beautyAnalytics';
 import {readRememberedBeautyAuthor,rememberBeautyAuthor,forgetBeautyAuthor} from '../../utils/beautyAuthorBackup';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useLocalBackHandler } from '../../hooks/useLocalBackHandler';
 import { APP_VERSION } from '../../utils/buildInfo';
 import { BEAUTY_PLATFORMS, validateBeautyMetadata, validateBeautyPassword, type BeautyKind, type BeautyMetadata, type BeautyShare, type BeautySubmission } from '../../utils/beautyShareContract';
 import { beautyRequest, downloadBeauty, normalizeBeautyPackage, readBeautyPackage, readBeautySession, saveBeautySession, type BeautySession } from '../../utils/beautyShareClient';
@@ -72,14 +75,28 @@ export default function BeautySharePanel({ kind, sources, onReceive, onBusyChang
   const [filter, setFilter] = useState('all');
   const [query, setQuery] = useState('');
   const [appliedQuery, setAppliedQuery] = useState('');
-  const [updateCandidate,setUpdateCandidate]=useState<{item:BeautySubmission;source:BeautySource;pack:unknown;fingerprint:string}|null>(null);
+  const [updateCandidate,setUpdateCandidate]=useState<{item:BeautySubmission;source:BeautySource;pack:unknown;selection:BeautyShareSelection}|null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [code, setCode] = useState('');
   const [share, setShare] = useState<BeautyShare | null>(null);
   const [accepted, setAccepted] = useState(false);
   const [previewPack, setPreviewPack] = useState<unknown>(null);
   const [submissionPreview,setSubmissionPreview]=useState<unknown>(null);
-  const [confirmedWork,setConfirmedWork]=useState<{pack:unknown;kind:BeautyKind;name:string;source:string}|null>(null);
+  const [confirmedWork,setConfirmedWork]=useState<{pack:unknown;kind:BeautyKind;name:string;source:string;selection:BeautyShareSelection}|null>(null);
+  const selectedWork=useMemo(()=>confirmedWork?selectBeautyShareContents(confirmedWork.pack,confirmedWork.selection):null,[confirmedWork]);
+  const selectedCandidate=useMemo(()=>updateCandidate?selectBeautyShareContents(updateCandidate.pack,updateCandidate.selection):null,[updateCandidate]);
+  useLocalBackHandler(()=>{
+    if(busy||mustSave)return true;
+    if(deleteId)setDeleteId(null);
+    else if(updateCandidate)setUpdateCandidate(null);
+    else if(termsItems)setTermsItems(null);
+    else if(authorNotice)setAuthorNotice(false);
+    else if(confirmedWork)setConfirmedWork(null);
+    else if(editing)setEditing(null);
+    else if(previewPack)setPreviewPack(null);
+    else return false;
+    return true;
+  }, 30, open);
   const [catalogCover,setCatalogCover]=useState('');
   const [candidateCover,setCandidateCover]=useState('');
   useEffect(()=>setCatalogCover(''),[confirmedWork]);
@@ -89,7 +106,7 @@ export default function BeautySharePanel({ kind, sources, onReceive, onBusyChang
   const confirmWork=()=>{
     if(!submissionPreview)return;
     const name=sources.find(s=>s.id===source)?.name||file?.name||'我的美化';
-    setConfirmedWork({pack:structuredClone(submissionPreview),kind:submissionKind,name,source});
+    setConfirmedWork({pack:structuredClone(submissionPreview),kind:submissionKind,name,source,selection:{...DEFAULT_SHARE_SELECTION}});
     setError('');setNotice('');
   };
   const field = <K extends keyof BeautyMetadata>(key: K, value: BeautyMetadata[K]) => setMetadata(m => ({ ...m, [key]: value }));
@@ -118,11 +135,11 @@ export default function BeautySharePanel({ kind, sources, onReceive, onBusyChang
     const m = validateBeautyMetadata({ ...metadata, exportVersion: APP_VERSION });
     const selected = sources.find(s => s.id === confirmedWork.source);
     if(confirmedWork.source!=='file')await selected?.beforeSubmit?.();
-    const pack = normalizeBeautyPackage(confirmedWork.pack, confirmedWork.kind);
+    const pack = normalizeBeautyPackage(selectedWork, confirmedWork.kind);
     if (!(await confirmExportSafety(pack))) return;
     const fingerprint=await beautyFingerprint(pack,confirmedWork.kind);
     const result=await beautyRequest<{id:string;revision:string}>(editing ? `/submissions/${editing.id}` : '/submissions', { method: 'POST', token: session.token, body: { metadata: m, package: pack, ...(m.allowPublicListing?{catalogCover:validateCatalogCover(catalogCover)}:{}), ...(editing ? { expectedRevision: editing.latestRevision } : {}) } });
-    if(selected?.bindingId&&result?.id){try{await bindBeautySource(session.authorCode,result.id,{sourceId:selected.bindingId,kind:confirmedWork.kind,fingerprint,revision:result.revision});}catch{setError('投稿已成功，但本机关联未保存。请在我的提交中手动选择作品更新。');}}
+    if(selected?.bindingId&&result?.id){try{await bindBeautySource(session.authorCode,result.id,{sourceId:selected.bindingId,kind:confirmedWork.kind,fingerprint,revision:result.revision,selection:confirmedWork.selection});}catch{setError('投稿已成功，但本机关联未保存。请在我的提交中手动选择作品更新。');}}
     trackBeauty('submit',editing?'revision':'new');
     localStorage.setItem(DEFAULTS, JSON.stringify({ ...m, name: '' }));
     setMetadata(m=>({...m,allowPublicListing:false}));setEditing(null);setConfirmedWork(null); setTab('mine'); setFilter('all'); setQuery(''); setAppliedQuery(''); setNotice('作品已送达，感谢你的分享。人工审核通常需要 1–2 天，通过后就能把专属美化码带给大家了。');await refresh(session, 0, 'all', '');
@@ -136,9 +153,10 @@ export default function BeautySharePanel({ kind, sources, onReceive, onBusyChang
     if(binding.revision!==item.latestRevision)throw Error('此作品已在其他地方更新，请用「选择文件更新」确认并重新关联。');
     await original.beforeSubmit?.();
     const pack=normalizeBeautyPackage(await (original.readCurrent||original.read)(),item.kind);
-    const fingerprint=await beautyFingerprint(pack,item.kind);
+    const selection=binding.selection||{...DEFAULT_SHARE_SELECTION};
+    const fingerprint=await beautyFingerprint(selectBeautyShareContents(pack,selection),item.kind);
     if(fingerprint===binding.fingerprint){setNotice('原始装扮没有变化，无需重复提交。');return;}
-    setUpdateCandidate({item,source:original,pack:structuredClone(pack),fingerprint});
+    setUpdateCandidate({item,source:original,pack:structuredClone(pack),selection});
   });
   useEffect(() => { if (open && session && surface !== 'receive') void run(() => refresh(session, 0)); }, [open]);
   return <section className="beauty-share-panel">
@@ -155,7 +173,7 @@ export default function BeautySharePanel({ kind, sources, onReceive, onBusyChang
             {unified && source === 'file' && <label>投稿文件类型<select value={fileKind} onChange={e => setFileKind(e.target.value as BeautyKind)}><option value="appearance">桌面主题</option><option value="chat-decoration">聊天 / App 美化</option></select></label>}
             <BeautyPresetPicker kind={submissionKind} sources={sources} source={source} file={file} onPreview={setSubmissionPreview} onFile={setFile} onSource={id=>{setSource(id);setSubmissionPreview(null);const s=sources.find(s=>s.id===id);if(s&&!editing)field('name',s.name);}}/>
             <div className="beauty-submit-next"><p>这一步只确认作品，还不会上传。</p><button className="beauty-submit-primary" disabled={!submissionPreview} onClick={confirmWork}>就是这份，继续 <span aria-hidden="true">→</span></button></div>
-          </>:<div className="beauty-confirmed-work"><div><small>已确认 · {confirmedWork.kind==='appearance'?'桌面主题':'美化作品'}</small><strong>{confirmedWork.name}</strong></div><button onClick={()=>{setConfirmedWork(null);setSubmissionPreview(null);}}>重新选择</button><details><summary>再看一眼预览</summary><BeautyPresetPreview data={confirmedWork.pack}/></details></div>}
+          </>:<div className="beauty-confirmed-work"><div><small>已确认 · {confirmedWork.kind==='appearance'?'桌面主题':'美化作品'}</small><strong>{confirmedWork.name}</strong></div><button onClick={()=>{setConfirmedWork(null);setSubmissionPreview(null);}}>重新选择</button><BeautyShareContents pack={confirmedWork.pack} selection={confirmedWork.selection} onChange={selection=>setConfirmedWork({...confirmedWork,selection})}/><details><summary>再看一眼预览</summary><BeautyPresetPreview data={selectedWork}/></details></div>}
         </div>}
         {tab === 'receive' ? <>
           {unified && <p>桌面主题、气泡、头像框、白框等美化码都在这里领取，自动识别，无需选择分类。</p>}
@@ -191,7 +209,7 @@ export default function BeautySharePanel({ kind, sources, onReceive, onBusyChang
               <label>如何找到你（选填）<input value={metadata.contact} maxLength={160} placeholder="如群昵称或 DC 用户名" onChange={e => field('contact', e.target.value)}/></label>
               <label className="beauty-share-check"><input type="checkbox" checked={metadata.allowRemix} onChange={e => field('allowRemix', e.target.checked)}/>允许二改</label><label className="beauty-share-check"><input type="checkbox" checked={metadata.allowRedistribute} onChange={e => field('allowRedistribute', e.target.checked)}/>允许二次传播</label>
               <label className="beauty-share-check"><input type="checkbox" checked={metadata.allowPublicListing===true} onChange={e=>field('allowPublicListing',e.target.checked)}/>允许在装扮库公开展示（选填）</label>
-              {metadata.allowPublicListing&&confirmedWork&&<BeautyCatalogConsent key={confirmedWork.source} pack={confirmedWork.pack} cover={catalogCover} onCover={setCatalogCover}/>}
+              {metadata.allowPublicListing&&confirmedWork&&<BeautyCatalogConsent key={confirmedWork.source} pack={selectedWork} cover={catalogCover} onCover={setCatalogCover}/>}
               <p>糯米机版本：{APP_VERSION}（当前导出版本）</p>
               <label>Bug 反馈<select value={metadata.bugFeedback} onChange={e => field('bugFeedback', e.target.value as BeautyMetadata['bugFeedback'])}><option value="welcome">欢迎反馈</option><option value="self-fix">Bug 请自行修复处理</option></select></label>
               <label>作者留言<textarea rows={4} value={metadata.message} maxLength={2000} onChange={e => field('message', e.target.value)}/></label>
@@ -215,15 +233,17 @@ export default function BeautySharePanel({ kind, sources, onReceive, onBusyChang
     {updateCandidate&&<BeautyConfirmDialog title="提交新版装扮" confirm="提交审核" onClose={()=>setUpdateCandidate(null)} onConfirm={async()=>{
       if(!session)throw Error('请重新登录作者身份');
       const candidate=updateCandidate;
+      const pack=normalizeBeautyPackage(selectedCandidate,candidate.item.kind);
+      const fingerprint=await beautyFingerprint(pack,candidate.item.kind);
       await candidate.source.beforeSubmit?.();
-      if(!(await confirmExportSafety(candidate.pack)))throw Error('尚未确认文件分享');
-      const result=await beautyRequest<{id:string;revision:string}>(`/submissions/${candidate.item.id}`,{method:'POST',token:session.token,body:{metadata:{...candidate.item.metadata,allowPublicListing:!candidate.item.catalogHidden&&candidate.item.metadata.allowPublicListing===true,exportVersion:APP_VERSION},...(!candidate.item.catalogHidden&&candidate.item.metadata.allowPublicListing?{catalogCover:validateCatalogCover(candidateCover)}:{}),package:candidate.pack,expectedRevision:candidate.item.latestRevision}});
+      if(!(await confirmExportSafety(pack)))throw Error('尚未确认文件分享');
+      const result=await beautyRequest<{id:string;revision:string}>(`/submissions/${candidate.item.id}`,{method:'POST',token:session.token,body:{metadata:{...candidate.item.metadata,allowPublicListing:!candidate.item.catalogHidden&&candidate.item.metadata.allowPublicListing===true,exportVersion:APP_VERSION},...(!candidate.item.catalogHidden&&candidate.item.metadata.allowPublicListing?{catalogCover:validateCatalogCover(candidateCover)}:{}),package:pack,expectedRevision:candidate.item.latestRevision}});
       trackBeauty('submit','revision');
       // A submitted snapshot, not a later edit, becomes the comparison baseline.
-      try{await bindBeautySource(session.authorCode,candidate.item.id,{sourceId:candidate.source.bindingId!,kind:candidate.item.kind,fingerprint:candidate.fingerprint,revision:result.revision});}catch{setError('新版已提交，但本机关联未保存，请勿重复提交。');}
+      try{await bindBeautySource(session.authorCode,candidate.item.id,{sourceId:candidate.source.bindingId!,kind:candidate.item.kind,fingerprint,revision:result.revision,selection:candidate.selection});}catch{setError('新版已提交，但本机关联未保存，请勿重复提交。');}
       setNotice('新版已送交人工审核，通常需要 1–2 天。通过后原分享码将提供新版，审核期间继续提供已通过的版本。');
       setUpdateCandidate(null);
       try{await refresh();}catch{setError('提交成功，状态刷新失败，请手动刷新。');}
-    }}><p>检测到您的原始装扮已经更新，是否提交？</p><p>「{updateCandidate.source.name}」</p><p>沿用原投稿的署名和使用规范。需要修改说明时，请使用「选择文件更新」。</p>{!updateCandidate.item.catalogHidden&&updateCandidate.item.metadata.allowPublicListing&&<BeautyCatalogConsent pack={updateCandidate.pack} cover={candidateCover} onCover={setCandidateCover}/>}<details><summary>查看本次更新预览</summary><BeautyPresetPreview data={updateCandidate.pack}/></details></BeautyConfirmDialog>}
+    }}><p>检测到您的原始装扮已经更新，是否提交？</p><p>「{updateCandidate.source.name}」</p><BeautyShareContents pack={updateCandidate.pack} selection={updateCandidate.selection} onChange={selection=>setUpdateCandidate({...updateCandidate,selection})}/><p>沿用原投稿的署名和使用规范。需要修改说明时，请使用「选择文件更新」。</p>{!updateCandidate.item.catalogHidden&&updateCandidate.item.metadata.allowPublicListing&&<BeautyCatalogConsent pack={selectedCandidate} cover={candidateCover} onCover={setCandidateCover}/>}<details><summary>查看本次更新预览</summary><BeautyPresetPreview data={selectedCandidate}/></details></BeautyConfirmDialog>}
   </section>;
 }

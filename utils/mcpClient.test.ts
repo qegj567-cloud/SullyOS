@@ -33,6 +33,7 @@ import {
     stripTextFakedMcpCalls,
 } from './mcpToolBridge';
 import { completeGroupChatWithMcp } from './groupChat/mcp';
+import { formatApiErrorPayload } from './safeApi';
 
 const mkServer = (over: Partial<McpServerConfig>): McpServerConfig => ({
     ...createMcpServer('测试', 'https://mcp.example.com/mcp'),
@@ -639,6 +640,46 @@ describe('collectMcpFireServers', () => {
         ]));
 
         expect(collectMcpFireServers().map((s) => s.id)).toEqual(['good']);
+    });
+});
+
+describe('错误详情透传（MCP JSON-RPC error.data 与 API 错误体）', () => {
+    it('tools/call 返回 JSON-RPC error.data 时把参数校验细节透传出来', async () => {
+        const server = mkServer({ id: 'rpc-error-server' });
+        vi.spyOn(globalThis, 'fetch').mockImplementation((_url, init) => {
+            const req = JSON.parse(String(init?.body || '{}'));
+            if (req.method === 'initialize') {
+                return Promise.resolve(new Response(JSON.stringify({ jsonrpc: '2.0', id: req.id, result: {} }), {
+                    status: 200, headers: { 'Content-Type': 'application/json' },
+                }));
+            }
+            if (req.method === 'notifications/initialized') {
+                return Promise.resolve(new Response('', { status: 202 }));
+            }
+            return Promise.resolve(new Response(JSON.stringify({
+                jsonrpc: '2.0',
+                id: req.id,
+                error: {
+                    code: -32602,
+                    message: 'Invalid params',
+                    data: { missingFields: ['query'] },
+                },
+            }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+        });
+
+        const res = await callMcpTool(server, 'search', {});
+        expect(res.success).toBe(false);
+        expect(res.error).toContain('[-32602]: Invalid params');
+        expect(res.error).toContain('{"missingFields":["query"]}');
+    });
+
+    it('formatApiErrorPayload: error 为无 message 的对象时不产出 [object Object]，并保留 code/param/details 与顶层 detail', () => {
+        expect(formatApiErrorPayload({ error: { code: 'invalid_request', details: { missing: ['model'] } } }, 400))
+            .toBe('invalid_request ({"missing":["model"]})');
+        expect(formatApiErrorPayload({ error: { message: 'Invalid parameter', code: 'invalid_argument', param: 'tools' } }, 400))
+            .toBe('Invalid parameter [invalid_argument, param=tools]');
+        expect(formatApiErrorPayload({ detail: 'Model not found', code: 404 }, 404))
+            .toBe('Model not found [404]');
     });
 });
 

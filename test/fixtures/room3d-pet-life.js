@@ -6,7 +6,8 @@ room.name='宠物活动室';room.wall='#f3f5e9';room.floor='#dee5cf';room.items=
 const editor=await mountHomeEditor(document.querySelector('#home'),{assetBase:new URL('/room3d/',location.href).href,initialState:localStorage.getItem('test-pet-life')?undefined:home,storageKey:'test-pet-life'});
 window.__homeEditor=editor;
 const system=editor.getPetSystem();
-if(!system.life.data.pets.length){for(const [index,a] of catalog.filter(a=>a.petSpecies).entries()){const p=system.life.adopt(a.id,a.name,[['playful','independent','clingy','greedy','shy','lazy','playful'][index]]);p.x=(index%3-1)*2.1;p.z=index<3?-1:1.4;if(index===6){p.x=2.6;p.z=2.75;}}system.life.refill('preview-bowls');system.reconcile();system.life.save();}
+if(!system.life.data.pets.length){for(const [index,a] of catalog.filter(a=>a.petSpecies).sort((a,b)=>Number(['hamster','jellyfish'].includes(b.petSpecies))-Number(['hamster','jellyfish'].includes(a.petSpecies))).slice(0,7).entries()){const p=system.life.adopt(a.id,a.name,[['playful','independent','clingy','greedy','shy','lazy','playful'][index]]);p.x=(index%3-1)*2.1;p.z=index<3?-1:1.4;if(index===6){p.x=2.6;p.z=2.75;}}system.life.refill('preview-bowls');system.reconcile();system.life.save();}
 window.render_game_to_text=()=>JSON.stringify({coordinates:'room-local x right, z front; y up',...system.inspect()});
-window.advanceTime=ms=>editor.advancePets(ms/1000);
+window.advanceTime=ms=>{editor.advancePets(ms/1000);editor.advanceTime(0);};
+if(new URLSearchParams(location.search).has('wardrobe')){const p=system.life.data.pets[0];p.hat='witch';system.reconcile();system.open(p.id);document.querySelector('[data-pet-action="detail-tab"][data-tab="wardrobe"]').click();}
 import.meta.hot?.dispose(()=>editor.dispose());

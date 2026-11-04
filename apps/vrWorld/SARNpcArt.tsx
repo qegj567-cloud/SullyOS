@@ -5,6 +5,7 @@ import aivenChibi from '../../assets/sar/aiven-chibi.png';
 import {sarPortraitPath,SAR_NPC_NAMES,type SARExpression,type SARCastExpressions} from '../../utils/vrWorld/sarArt';
 import type {SARDialogueSpeaker} from '../../utils/vrWorld/sarClub';
 import './sar-npc-art.css';
+import {HalloweenChibi} from './KanataHalloween';
 
 const CHIBI_ART={
     caian:caianChibi,
@@ -17,7 +18,7 @@ const refreshedPortraits=new Set(['Enduring Pain','avoidant','normal2','warm'].m
 export function SARNpcChibi({who,className=''}:{who:SARDialogueSpeaker;className?:string}){
     const art=CHIBI_ART[who];
     return <span className={`sar-npc-chibi ${className}`} style={{aspectRatio:'1'}}>
-        <img src={art} alt={`${SAR_NPC_NAMES[who]} Q 版形象`} draggable={false}
+        <HalloweenChibi actorId={`sar-npc-${who}`} img={art} name={`${SAR_NPC_NAMES[who]} Q 版形象`}
             style={{width:'100%',left:0,top:0}}/>
     </span>;
 }

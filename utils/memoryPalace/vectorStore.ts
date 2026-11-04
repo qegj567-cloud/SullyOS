@@ -8,7 +8,8 @@
 
 import type { EmbeddingConfig, MemoryNode, MemoryVector, RemoteVectorConfig } from './types';
 import { MemoryNodeDB, MemoryVectorDB, ensureFloat32 } from './db';
-import { getEmbeddings, cosineSimilarity } from './embedding';
+import { cosineSimilarity } from './embedding';
+import { getMemoryEmbeddings } from './memoryEmbeddings';
 import { upsertVector as remoteUpsert } from './supabaseVector';
 
 const DEDUP_THRESHOLD = 0.9;
@@ -39,8 +40,7 @@ export async function vectorizeAndStore(
     if (nodes.length === 0) return { stored: 0, skipped: 0 };
 
     // 1. 批量向量化
-    const texts = nodes.map(n => n.content);
-    const vectors = await getEmbeddings(texts, embeddingConfig);
+    const vectors = await getMemoryEmbeddings(nodes, embeddingConfig);
     if (vectors.length !== nodes.length || vectors.some(vector => !vector.length || !Array.from(vector).every(Number.isFinite))) {
         throw new Error('Embedding 返回的向量不完整或无效，本次没有写入记忆');
     }
@@ -203,8 +203,7 @@ export async function rebuildAllVectors(
     console.log(`🔄 [VectorStore] 开始重建 ${embeddedNodes.length} 条向量（${embeddingConfig.model}）...`);
 
     // 批量 embedding
-    const texts = embeddedNodes.map(n => n.content);
-    const vectors = await getEmbeddings(texts, embeddingConfig);
+    const vectors = await getMemoryEmbeddings(embeddedNodes, embeddingConfig);
 
     // 逐条替换
     for (let i = 0; i < embeddedNodes.length; i++) {

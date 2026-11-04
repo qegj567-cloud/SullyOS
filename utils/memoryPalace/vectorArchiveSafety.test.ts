@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { vectorizeAndStore } from './vectorStore';
+import { vectorizeAndStore, updateStoredMemoryNode, rebuildAllVectors } from './vectorStore';
 import { MemoryNodeDB, MemoryVectorDB } from './db';
 import { buildAutoArchiveFragments, mergePalaceFragmentsIntoMemories } from './pipeline';
 import type { MemoryNode } from './types';
@@ -13,6 +13,30 @@ function embeddings(values: number[][]) {
 }
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 describe('vectorization and linked archive safety', () => {
+    it('long box summary creation, editing and rebuilding all index the complete tail', async () => {
+        const batches: string[][] = [];
+        vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+            const input = JSON.parse(init.body).input as string[];
+            batches.push(input);
+            return { ok: true, json: async () => ({ data: input.map((text, index) => ({
+                index, embedding: text.includes('末尾事实') ? [0, 1] : [1, 0],
+            })) }) };
+        }));
+        const summary = { ...node('long-summary', 'long-box'), isBoxSummary: true,
+            content: '前'.repeat(4200) + '末尾事实：钥匙交给小林。' };
+        await vectorizeAndStore([summary], config, undefined, { skipDedup: true });
+        expect(batches.flat().join('')).toBe(summary.content);
+        expect((await MemoryVectorDB.getByMemoryId(summary.id))!.vector[1]).toBeGreaterThan(0);
+        expect((await MemoryNodeDB.getById(summary.id))!.content).toBe(summary.content);
+        batches.length = 0;
+        const edited = summary.content + '补充的新事实。';
+        await updateStoredMemoryNode(summary.id, { content: edited }, config);
+        expect(batches.flat().join('')).toBe(edited);
+        batches.length = 0;
+        await rebuildAllVectors(summary.charId, config);
+        expect(batches.flat().join('')).toBe(edited);
+    });
+
     it('commits vectors and nodes together, and creates links only for stored nodes after dedup', async () => {
         embeddings([[1, 0], [1, 0], [0, 1]]);
         const nodes = [node('first', 'dedup-safe'), node('duplicate', 'dedup-safe'), node('second', 'dedup-safe')];

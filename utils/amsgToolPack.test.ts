@@ -135,7 +135,7 @@ describe('buildToolConfig / parseToolConfig', () => {
     warn.mockRestore();
   });
 
-  it('整份清单都坏时两个字段一起消失, 并且留一条 warn', () => {
+  it('整份清单都坏时移除服务器，仍保留用户关闭原生工具的偏好', () => {
     const config = buildToolConfig(undefined, {
       servers: [{ id: 's1', name: '探针', url: 'https://probe.example.com', tools: [] }],
       useNativeTools: false,
@@ -145,7 +145,7 @@ describe('buildToolConfig / parseToolConfig', () => {
 
     expect(parsed).not.toBeNull();
     expect('mcpServers' in parsed!).toBe(false);
-    expect('mcpUseNativeTools' in parsed!).toBe(false);
+    expect(parsed?.mcpUseNativeTools).toBe(false);
     // 其余凭据字段不受牵连
     expect(typeof parsed?.proxyWorkerUrl).toBe('string');
     expect(warn).toHaveBeenCalled();

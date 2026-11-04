@@ -13,3 +13,15 @@ it('checks the common waterline after a new persisted turn; model reply counts o
 it('edits do not trigger processing; a new action segment only checks the threshold, never counts as dialogue',async()=>{const before=char();before.home3D.records=[event('u'),event('c','character')];const edited={...before,home3D:{records:[event('u'),{...event('c','character'),text:'编辑'}]}};await processHomeMemoryAfterSave(before,edited,config,{} as any,'U');expect(m.process).not.toHaveBeenCalled();const after={...edited,home3D:{records:[...edited.home3D.records,event('a','character','action')]}};await processHomeMemoryAfterSave(edited,after,config,{} as any,'U');expect(m.process).toHaveBeenCalledOnce();expect(m.count).not.toHaveBeenCalled();const continued={...after,home3D:{records:[...after.home3D.records,event('a2','character','action')]}};await processHomeMemoryAfterSave(after,continued,config,{} as any,'U');expect(m.process).toHaveBeenCalledOnce();});
 it('uses latest enabled state and skips missing embedding configuration',async()=>{const a=char();m.get.mockResolvedValue({...a,memoryPalaceEnabled:false});await processHomeMemoryAfterSave(a,{...a,home3D:{records:[event('u')]}},config,{} as any,'U');const b=char();m.get.mockResolvedValue(b);await processHomeMemoryAfterSave(b,{...b,home3D:{records:[event('u')]}},{},{} as any,'U');expect(m.process).not.toHaveBeenCalled();});
 it('rechecks enabled state after processing before cognition',async()=>{const a=char();m.get.mockResolvedValueOnce(a).mockResolvedValueOnce({...a,memoryPalaceEnabled:false});await processHomeMemoryAfterSave(a,{...a,home3D:{records:[event('u'),event('c','character')]}},config,{} as any,'U');expect(m.process).toHaveBeenCalledTimes(1);expect(m.count).not.toHaveBeenCalled();});
+it('checks every shared participant’s own memory pipeline and only counts their own model speech as a reply',async()=>{
+ const a=char(),b=char(),c=char();
+ const participants=[a.id,b.id,c.id];
+ const records=[a,b,c].map((actor,index)=>({...event('shared-'+actor.id,'character',index===0?'message':'action'),
+  actorId:actor.id,actorName:actor.name,sharedScene:{homeOwnerId:b.id,participantIds:participants},
+ }));
+ await processHomeMemoryAfterSave(b,{...b,home3D:{records}},config,{} as any,'U');
+ expect(m.process.mock.calls.map(call=>call[1]).sort()).toEqual([...participants].sort());
+ expect(m.count.mock.calls).toEqual([[a.id]]);
+ await processHomeMemoryAfterSave(b,{...b,home3D:{records}},config,{} as any,'U');
+ expect(m.process).toHaveBeenCalledTimes(3);
+});

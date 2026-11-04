@@ -1,10 +1,10 @@
 import * as T from 'three';
 import catalog from './selectedMotionCatalog.json';
-export const motionCategories={greet:'招呼与示好',talk:'聊天交流',care:'关心照顾',close:'亲密',play:'玩闹活动',conflict:'闹别扭',self:'自己的小动作'};
+export const motionCategories={greet:'招呼与示好',talk:'聊天交流',care:'关心照顾',close:'亲密',play:'玩闹活动',mischief:'恶作剧',conflict:'闹别扭',self:'自己的小动作'};
 export const selectedMotions=catalog;
 export type SelectedMotion=typeof catalog[number];
 export interface MotionTrack {duration:number;times:number[];tracks:Record<string,number[]>;positions:number[];points:Record<string,number[]>;hipHeight:number}
-export interface SelectedClip {version:number;id:string;duration:number;actors:MotionTrack[]}
+export interface SelectedClip {version:number;id:string;source?:'meshy-text-to-motion';duration:number;actors:MotionTrack[]}
 export interface MotionFrame {rotations:Record<string,T.Quaternion>;position:T.Vector3;points:Record<string,T.Vector3>;hipHeight:number}
 const cache=new Map<string,Promise<SelectedClip>>();
 export function loadSelectedMotion(id:string){

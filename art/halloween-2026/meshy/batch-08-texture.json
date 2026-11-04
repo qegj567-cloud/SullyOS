@@ -1,0 +1,29 @@
+{
+  "id": "halloween-batch-08-texture",
+  "endpoint": "retexture",
+  "maxTasks": 2,
+  "maxEstimatedCredits": 20,
+  "defaults": {
+    "ai_model": "meshy-7",
+    "texture_resolution": "4k",
+    "enable_original_uv": true,
+    "enable_pbr": true,
+    "target_formats": [
+      "glb"
+    ]
+  },
+  "jobs": [
+    {
+      "id": "ghost-shorts-textured",
+      "input_task_id": "01a17bde-9734-76d1-8f08-d13bfc062c56",
+      "image": "../separated/05-ghost/shorts.png",
+      "estimatedCredits": 10
+    },
+    {
+      "id": "ghost-shoes-textured",
+      "input_task_id": "01a17bde-a387-7075-b2c5-04a3ae337134",
+      "image": "../separated/05-ghost/shoes.png",
+      "estimatedCredits": 10
+    }
+  ]
+}

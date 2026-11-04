@@ -1,0 +1,921 @@
+[
+  {
+    "id": "halloween-witch-original",
+    "label": "南瓜女巫 · 经典万圣节",
+    "collection": "halloween",
+    "items": {
+      "onepiece": "halloween-witch-dress",
+      "headwear": "halloween-witch-hat",
+      "shoes": "halloween-witch-boots",
+      "socks": "halloween-witch-socks"
+    },
+    "clothes": {
+      "wardrobe": {
+        "onepiece": "halloween-witch-dress",
+        "headwear": "halloween-witch-hat",
+        "shoes": "halloween-witch-boots",
+        "socks": "halloween-witch-socks"
+      },
+      "wardrobeColors": {},
+      "wardrobeFits": {},
+      "wardrobeLayering": false
+    }
+  },
+  {
+    "id": "halloween-witch-midnight",
+    "label": "南瓜女巫 · 黑白午夜",
+    "collection": "halloween",
+    "items": {
+      "onepiece": "halloween-witch-dress",
+      "headwear": "halloween-witch-hat",
+      "shoes": "halloween-witch-boots",
+      "socks": "halloween-witch-socks"
+    },
+    "clothes": {
+      "wardrobe": {
+        "onepiece": "halloween-witch-dress",
+        "headwear": "halloween-witch-hat",
+        "shoes": "halloween-witch-boots",
+        "socks": "halloween-witch-socks"
+      },
+      "wardrobeColors": {
+        "halloween-witch-dress": {
+          "orange": "#16151d",
+          "purple": "#22212b",
+          "green": "#80818c",
+          "gold": "#c5c7d1"
+        },
+        "halloween-witch-hat": {
+          "orange": "#16151d",
+          "purple": "#22212b",
+          "green": "#80818c",
+          "gold": "#c5c7d1"
+        },
+        "halloween-witch-boots": {
+          "orange": "#16151d",
+          "purple": "#22212b",
+          "green": "#80818c",
+          "gold": "#c5c7d1"
+        },
+        "halloween-witch-socks": {
+          "orange": "#16151d",
+          "purple": "#22212b",
+          "green": "#80818c",
+          "gold": "#c5c7d1"
+        }
+      },
+      "wardrobeFits": {},
+      "wardrobeLayering": false
+    }
+  },
+  {
+    "id": "halloween-witch-crimson",
+    "label": "南瓜女巫 · 绯红晚宴",
+    "collection": "halloween",
+    "items": {
+      "onepiece": "halloween-witch-dress",
+      "headwear": "halloween-witch-hat",
+      "shoes": "halloween-witch-boots",
+      "socks": "halloween-witch-socks"
+    },
+    "clothes": {
+      "wardrobe": {
+        "onepiece": "halloween-witch-dress",
+        "headwear": "halloween-witch-hat",
+        "shoes": "halloween-witch-boots",
+        "socks": "halloween-witch-socks"
+      },
+      "wardrobeColors": {
+        "halloween-witch-dress": {
+          "orange": "#711a30",
+          "purple": "#191720",
+          "green": "#9a3448",
+          "gold": "#c69f61"
+        },
+        "halloween-witch-hat": {
+          "orange": "#711a30",
+          "purple": "#191720",
+          "green": "#9a3448",
+          "gold": "#c69f61"
+        },
+        "halloween-witch-boots": {
+          "orange": "#711a30",
+          "purple": "#191720",
+          "green": "#9a3448",
+          "gold": "#c69f61"
+        },
+        "halloween-witch-socks": {
+          "orange": "#711a30",
+          "purple": "#191720",
+          "green": "#9a3448",
+          "gold": "#c69f61"
+        }
+      },
+      "wardrobeFits": {},
+      "wardrobeLayering": false
+    }
+  },
+  {
+    "id": "halloween-witch-moonlight",
+    "label": "南瓜女巫 · 月光蓝银",
+    "collection": "halloween",
+    "items": {
+      "onepiece": "halloween-witch-dress",
+      "headwear": "halloween-witch-hat",
+      "shoes": "halloween-witch-boots",
+      "socks": "halloween-witch-socks"
+    },
+    "clothes": {
+      "wardrobe": {
+        "onepiece": "halloween-witch-dress",
+        "headwear": "halloween-witch-hat",
+        "shoes": "halloween-witch-boots",
+        "socks": "halloween-witch-socks"
+      },
+      "wardrobeColors": {
+        "halloween-witch-dress": {
+          "orange": "#3c648b",
+          "purple": "#202a48",
+          "green": "#8dbdc6",
+          "gold": "#cadbe6"
+        },
+        "halloween-witch-hat": {
+          "orange": "#3c648b",
+          "purple": "#202a48",
+          "green": "#8dbdc6",
+          "gold": "#cadbe6"
+        },
+        "halloween-witch-boots": {
+          "orange": "#3c648b",
+          "purple": "#202a48",
+          "green": "#8dbdc6",
+          "gold": "#cadbe6"
+        },
+        "halloween-witch-socks": {
+          "orange": "#3c648b",
+          "purple": "#202a48",
+          "green": "#8dbdc6",
+          "gold": "#cadbe6"
+        }
+      },
+      "wardrobeFits": {},
+      "wardrobeLayering": false
+    }
+  },
+  {
+    "id": "halloween-count-original",
+    "label": "蝙蝠伯爵 · 经典万圣节",
+    "collection": "halloween",
+    "items": {
+      "outer": "halloween-count-tailcoat",
+      "bottom": "halloween-count-trousers",
+      "shoes": "halloween-count-boots",
+      "top": "halloween-count-waistcoat",
+      "accessory": "halloween-count-cravat"
+    },
+    "clothes": {
+      "wardrobe": {
+        "outer": "halloween-count-tailcoat",
+        "bottom": "halloween-count-trousers",
+        "shoes": "halloween-count-boots",
+        "top": "halloween-count-waistcoat",
+        "accessory": "halloween-count-cravat"
+      },
+      "wardrobeColors": {},
+      "wardrobeFits": {},
+      "wardrobeLayering": false
+    }
+  },
+  {
+    "id": "halloween-count-midnight",
+    "label": "蝙蝠伯爵 · 黑白午夜",
+    "collection": "halloween",
+    "items": {
+      "outer": "halloween-count-tailcoat",
+      "bottom": "halloween-count-trousers",
+      "shoes": "halloween-count-boots",
+      "top": "halloween-count-waistcoat",
+      "accessory": "halloween-count-cravat"
+    },
+    "clothes": {
+      "wardrobe": {
+        "outer": "halloween-count-tailcoat",
+        "bottom": "halloween-count-trousers",
+        "shoes": "halloween-count-boots",
+        "top": "halloween-count-waistcoat",
+        "accessory": "halloween-count-cravat"
+      },
+      "wardrobeColors": {
+        "halloween-count-tailcoat": {
+          "orange": "#16151d",
+          "purple": "#22212b",
+          "green": "#80818c",
+          "gold": "#c5c7d1"
+        },
+        "halloween-count-trousers": {
+          "orange": "#16151d",
+          "purple": "#22212b",
+          "green": "#80818c",
+          "gold": "#c5c7d1"
+        },
+        "halloween-count-boots": {
+          "orange": "#16151d",
+          "purple": "#22212b",
+          "green": "#80818c",
+          "gold": "#c5c7d1"
+        },
+        "halloween-count-waistcoat": {
+          "orange": "#16151d",
+          "purple": "#22212b",
+          "green": "#80818c",
+          "gold": "#c5c7d1"
+        },
+        "halloween-count-cravat": {
+          "orange": "#16151d",
+          "purple": "#22212b",
+          "green": "#80818c",
+          "gold": "#c5c7d1"
+        }
+      },
+      "wardrobeFits": {},
+      "wardrobeLayering": false
+    }
+  },
+  {
+    "id": "halloween-count-crimson",
+    "label": "蝙蝠伯爵 · 绯红晚宴",
+    "collection": "halloween",
+    "items": {
+      "outer": "halloween-count-tailcoat",
+      "bottom": "halloween-count-trousers",
+      "shoes": "halloween-count-boots",
+      "top": "halloween-count-waistcoat",
+      "accessory": "halloween-count-cravat"
+    },
+    "clothes": {
+      "wardrobe": {
+        "outer": "halloween-count-tailcoat",
+        "bottom": "halloween-count-trousers",
+        "shoes": "halloween-count-boots",
+        "top": "halloween-count-waistcoat",
+        "accessory": "halloween-count-cravat"
+      },
+      "wardrobeColors": {
+        "halloween-count-tailcoat": {
+          "orange": "#711a30",
+          "purple": "#191720",
+          "green": "#9a3448",
+          "gold": "#c69f61"
+        },
+        "halloween-count-trousers": {
+          "orange": "#711a30",
+          "purple": "#191720",
+          "green": "#9a3448",
+          "gold": "#c69f61"
+        },
+        "halloween-count-boots": {
+          "orange": "#711a30",
+          "purple": "#191720",
+          "green": "#9a3448",
+          "gold": "#c69f61"
+        },
+        "halloween-count-waistcoat": {
+          "orange": "#711a30",
+          "purple": "#191720",
+          "green": "#9a3448",
+          "gold": "#c69f61"
+        },
+        "halloween-count-cravat": {
+          "orange": "#711a30",
+          "purple": "#191720",
+          "green": "#9a3448",
+          "gold": "#c69f61"
+        }
+      },
+      "wardrobeFits": {},
+      "wardrobeLayering": false
+    }
+  },
+  {
+    "id": "halloween-count-moonlight",
+    "label": "蝙蝠伯爵 · 月光蓝银",
+    "collection": "halloween",
+    "items": {
+      "outer": "halloween-count-tailcoat",
+      "bottom": "halloween-count-trousers",
+      "shoes": "halloween-count-boots",
+      "top": "halloween-count-waistcoat",
+      "accessory": "halloween-count-cravat"
+    },
+    "clothes": {
+      "wardrobe": {
+        "outer": "halloween-count-tailcoat",
+        "bottom": "halloween-count-trousers",
+        "shoes": "halloween-count-boots",
+        "top": "halloween-count-waistcoat",
+        "accessory": "halloween-count-cravat"
+      },
+      "wardrobeColors": {
+        "halloween-count-tailcoat": {
+          "orange": "#3c648b",
+          "purple": "#202a48",
+          "green": "#8dbdc6",
+          "gold": "#cadbe6"
+        },
+        "halloween-count-trousers": {
+          "orange": "#3c648b",
+          "purple": "#202a48",
+          "green": "#8dbdc6",
+          "gold": "#cadbe6"
+        },
+        "halloween-count-boots": {
+          "orange": "#3c648b",
+          "purple": "#202a48",
+          "green": "#8dbdc6",
+          "gold": "#cadbe6"
+        },
+        "halloween-count-waistcoat": {
+          "orange": "#3c648b",
+          "purple": "#202a48",
+          "green": "#8dbdc6",
+          "gold": "#cadbe6"
+        },
+        "halloween-count-cravat": {
+          "orange": "#3c648b",
+          "purple": "#202a48",
+          "green": "#8dbdc6",
+          "gold": "#cadbe6"
+        }
+      },
+      "wardrobeFits": {},
+      "wardrobeLayering": false
+    }
+  },
+  {
+    "id": "halloween-apprentice-original",
+    "label": "药剂学徒 · 经典万圣节",
+    "collection": "halloween",
+    "items": {
+      "top": "halloween-apprentice-coat",
+      "accessory": "halloween-apprentice-apron",
+      "bottom": "halloween-apprentice-shorts",
+      "headwear": "halloween-apprentice-cap",
+      "shoes": "halloween-apprentice-boots",
+      "socks": "halloween-apprentice-socks"
+    },
+    "clothes": {
+      "wardrobe": {
+        "top": "halloween-apprentice-coat",
+        "accessory": "halloween-apprentice-apron",
+        "bottom": "halloween-apprentice-shorts",
+        "headwear": "halloween-apprentice-cap",
+        "shoes": "halloween-apprentice-boots",
+        "socks": "halloween-apprentice-socks"
+      },
+      "wardrobeColors": {},
+      "wardrobeFits": {},
+      "wardrobeLayering": false
+    }
+  },
+  {
+    "id": "halloween-apprentice-midnight",
+    "label": "药剂学徒 · 黑白午夜",
+    "collection": "halloween",
+    "items": {
+      "top": "halloween-apprentice-coat",
+      "accessory": "halloween-apprentice-apron",
+      "bottom": "halloween-apprentice-shorts",
+      "headwear": "halloween-apprentice-cap",
+      "shoes": "halloween-apprentice-boots",
+      "socks": "halloween-apprentice-socks"
+    },
+    "clothes": {
+      "wardrobe": {
+        "top": "halloween-apprentice-coat",
+        "accessory": "halloween-apprentice-apron",
+        "bottom": "halloween-apprentice-shorts",
+        "headwear": "halloween-apprentice-cap",
+        "shoes": "halloween-apprentice-boots",
+        "socks": "halloween-apprentice-socks"
+      },
+      "wardrobeColors": {
+        "halloween-apprentice-coat": {
+          "orange": "#16151d",
+          "purple": "#22212b",
+          "green": "#80818c",
+          "gold": "#c5c7d1"
+        },
+        "halloween-apprentice-apron": {
+          "orange": "#16151d",
+          "purple": "#22212b",
+          "green": "#80818c",
+          "gold": "#c5c7d1"
+        },
+        "halloween-apprentice-shorts": {
+          "orange": "#16151d",
+          "purple": "#22212b",
+          "green": "#80818c",
+          "gold": "#c5c7d1"
+        },
+        "halloween-apprentice-cap": {
+          "orange": "#16151d",
+          "purple": "#22212b",
+          "green": "#80818c",
+          "gold": "#c5c7d1"
+        },
+        "halloween-apprentice-boots": {
+          "orange": "#16151d",
+          "purple": "#22212b",
+          "green": "#80818c",
+          "gold": "#c5c7d1"
+        },
+        "halloween-apprentice-socks": {
+          "orange": "#16151d",
+          "purple": "#22212b",
+          "green": "#80818c",
+          "gold": "#c5c7d1"
+        }
+      },
+      "wardrobeFits": {},
+      "wardrobeLayering": false
+    }
+  },
+  {
+    "id": "halloween-apprentice-crimson",
+    "label": "药剂学徒 · 绯红晚宴",
+    "collection": "halloween",
+    "items": {
+      "top": "halloween-apprentice-coat",
+      "accessory": "halloween-apprentice-apron",
+      "bottom": "halloween-apprentice-shorts",
+      "headwear": "halloween-apprentice-cap",
+      "shoes": "halloween-apprentice-boots",
+      "socks": "halloween-apprentice-socks"
+    },
+    "clothes": {
+      "wardrobe": {
+        "top": "halloween-apprentice-coat",
+        "accessory": "halloween-apprentice-apron",
+        "bottom": "halloween-apprentice-shorts",
+        "headwear": "halloween-apprentice-cap",
+        "shoes": "halloween-apprentice-boots",
+        "socks": "halloween-apprentice-socks"
+      },
+      "wardrobeColors": {
+        "halloween-apprentice-coat": {
+          "orange": "#711a30",
+          "purple": "#191720",
+          "green": "#9a3448",
+          "gold": "#c69f61"
+        },
+        "halloween-apprentice-apron": {
+          "orange": "#711a30",
+          "purple": "#191720",
+          "green": "#9a3448",
+          "gold": "#c69f61"
+        },
+        "halloween-apprentice-shorts": {
+          "orange": "#711a30",
+          "purple": "#191720",
+          "green": "#9a3448",
+          "gold": "#c69f61"
+        },
+        "halloween-apprentice-cap": {
+          "orange": "#711a30",
+          "purple": "#191720",
+          "green": "#9a3448",
+          "gold": "#c69f61"
+        },
+        "halloween-apprentice-boots": {
+          "orange": "#711a30",
+          "purple": "#191720",
+          "green": "#9a3448",
+          "gold": "#c69f61"
+        },
+        "halloween-apprentice-socks": {
+          "orange": "#711a30",
+          "purple": "#191720",
+          "green": "#9a3448",
+          "gold": "#c69f61"
+        }
+      },
+      "wardrobeFits": {},
+      "wardrobeLayering": false
+    }
+  },
+  {
+    "id": "halloween-apprentice-moonlight",
+    "label": "药剂学徒 · 月光蓝银",
+    "collection": "halloween",
+    "items": {
+      "top": "halloween-apprentice-coat",
+      "accessory": "halloween-apprentice-apron",
+      "bottom": "halloween-apprentice-shorts",
+      "headwear": "halloween-apprentice-cap",
+      "shoes": "halloween-apprentice-boots",
+      "socks": "halloween-apprentice-socks"
+    },
+    "clothes": {
+      "wardrobe": {
+        "top": "halloween-apprentice-coat",
+        "accessory": "halloween-apprentice-apron",
+        "bottom": "halloween-apprentice-shorts",
+        "headwear": "halloween-apprentice-cap",
+        "shoes": "halloween-apprentice-boots",
+        "socks": "halloween-apprentice-socks"
+      },
+      "wardrobeColors": {
+        "halloween-apprentice-coat": {
+          "orange": "#3c648b",
+          "purple": "#202a48",
+          "green": "#8dbdc6",
+          "gold": "#cadbe6"
+        },
+        "halloween-apprentice-apron": {
+          "orange": "#3c648b",
+          "purple": "#202a48",
+          "green": "#8dbdc6",
+          "gold": "#cadbe6"
+        },
+        "halloween-apprentice-shorts": {
+          "orange": "#3c648b",
+          "purple": "#202a48",
+          "green": "#8dbdc6",
+          "gold": "#cadbe6"
+        },
+        "halloween-apprentice-cap": {
+          "orange": "#3c648b",
+          "purple": "#202a48",
+          "green": "#8dbdc6",
+          "gold": "#cadbe6"
+        },
+        "halloween-apprentice-boots": {
+          "orange": "#3c648b",
+          "purple": "#202a48",
+          "green": "#8dbdc6",
+          "gold": "#cadbe6"
+        },
+        "halloween-apprentice-socks": {
+          "orange": "#3c648b",
+          "purple": "#202a48",
+          "green": "#8dbdc6",
+          "gold": "#cadbe6"
+        }
+      },
+      "wardrobeFits": {},
+      "wardrobeLayering": false
+    }
+  },
+  {
+    "id": "halloween-ghost-original",
+    "label": "幽灵装 · 经典万圣节",
+    "collection": "halloween",
+    "items": {
+      "top": "halloween-ghost-hooded-top",
+      "bottom": "halloween-ghost-shorts",
+      "shoes": "halloween-ghost-shoes",
+      "socks": "halloween-ghost-socks"
+    },
+    "clothes": {
+      "wardrobe": {
+        "top": "halloween-ghost-hooded-top",
+        "bottom": "halloween-ghost-shorts",
+        "shoes": "halloween-ghost-shoes",
+        "socks": "halloween-ghost-socks"
+      },
+      "wardrobeColors": {},
+      "wardrobeFits": {},
+      "wardrobeLayering": false
+    }
+  },
+  {
+    "id": "halloween-ghost-midnight",
+    "label": "幽灵装 · 黑白午夜",
+    "collection": "halloween",
+    "items": {
+      "top": "halloween-ghost-hooded-top",
+      "bottom": "halloween-ghost-shorts",
+      "shoes": "halloween-ghost-shoes",
+      "socks": "halloween-ghost-socks"
+    },
+    "clothes": {
+      "wardrobe": {
+        "top": "halloween-ghost-hooded-top",
+        "bottom": "halloween-ghost-shorts",
+        "shoes": "halloween-ghost-shoes",
+        "socks": "halloween-ghost-socks"
+      },
+      "wardrobeColors": {
+        "halloween-ghost-hooded-top": {
+          "orange": "#16151d",
+          "purple": "#22212b",
+          "green": "#80818c",
+          "gold": "#c5c7d1"
+        },
+        "halloween-ghost-shorts": {
+          "orange": "#16151d",
+          "purple": "#22212b",
+          "green": "#80818c",
+          "gold": "#c5c7d1"
+        },
+        "halloween-ghost-shoes": {
+          "orange": "#16151d",
+          "purple": "#22212b",
+          "green": "#80818c",
+          "gold": "#c5c7d1"
+        },
+        "halloween-ghost-socks": {
+          "orange": "#16151d",
+          "purple": "#22212b",
+          "green": "#80818c",
+          "gold": "#c5c7d1"
+        }
+      },
+      "wardrobeFits": {},
+      "wardrobeLayering": false
+    }
+  },
+  {
+    "id": "halloween-ghost-crimson",
+    "label": "幽灵装 · 绯红晚宴",
+    "collection": "halloween",
+    "items": {
+      "top": "halloween-ghost-hooded-top",
+      "bottom": "halloween-ghost-shorts",
+      "shoes": "halloween-ghost-shoes",
+      "socks": "halloween-ghost-socks"
+    },
+    "clothes": {
+      "wardrobe": {
+        "top": "halloween-ghost-hooded-top",
+        "bottom": "halloween-ghost-shorts",
+        "shoes": "halloween-ghost-shoes",
+        "socks": "halloween-ghost-socks"
+      },
+      "wardrobeColors": {
+        "halloween-ghost-hooded-top": {
+          "orange": "#711a30",
+          "purple": "#191720",
+          "green": "#9a3448",
+          "gold": "#c69f61"
+        },
+        "halloween-ghost-shorts": {
+          "orange": "#711a30",
+          "purple": "#191720",
+          "green": "#9a3448",
+          "gold": "#c69f61"
+        },
+        "halloween-ghost-shoes": {
+          "orange": "#711a30",
+          "purple": "#191720",
+          "green": "#9a3448",
+          "gold": "#c69f61"
+        },
+        "halloween-ghost-socks": {
+          "orange": "#711a30",
+          "purple": "#191720",
+          "green": "#9a3448",
+          "gold": "#c69f61"
+        }
+      },
+      "wardrobeFits": {},
+      "wardrobeLayering": false
+    }
+  },
+  {
+    "id": "halloween-ghost-moonlight",
+    "label": "幽灵装 · 月光蓝银",
+    "collection": "halloween",
+    "items": {
+      "top": "halloween-ghost-hooded-top",
+      "bottom": "halloween-ghost-shorts",
+      "shoes": "halloween-ghost-shoes",
+      "socks": "halloween-ghost-socks"
+    },
+    "clothes": {
+      "wardrobe": {
+        "top": "halloween-ghost-hooded-top",
+        "bottom": "halloween-ghost-shorts",
+        "shoes": "halloween-ghost-shoes",
+        "socks": "halloween-ghost-socks"
+      },
+      "wardrobeColors": {
+        "halloween-ghost-hooded-top": {
+          "orange": "#3c648b",
+          "purple": "#202a48",
+          "green": "#8dbdc6",
+          "gold": "#cadbe6"
+        },
+        "halloween-ghost-shorts": {
+          "orange": "#3c648b",
+          "purple": "#202a48",
+          "green": "#8dbdc6",
+          "gold": "#cadbe6"
+        },
+        "halloween-ghost-shoes": {
+          "orange": "#3c648b",
+          "purple": "#202a48",
+          "green": "#8dbdc6",
+          "gold": "#cadbe6"
+        },
+        "halloween-ghost-socks": {
+          "orange": "#3c648b",
+          "purple": "#202a48",
+          "green": "#8dbdc6",
+          "gold": "#cadbe6"
+        }
+      },
+      "wardrobeFits": {},
+      "wardrobeLayering": false
+    }
+  },
+  {
+    "id": "halloween-pumpkin-original",
+    "label": "南瓜装 · 经典万圣节",
+    "collection": "halloween",
+    "items": {
+      "headwear": "halloween-pumpkin-hat",
+      "accessory": "halloween-pumpkin-sleeves",
+      "onepiece": "halloween-pumpkin-romper",
+      "shoes": "halloween-pumpkin-boots",
+      "socks": "halloween-pumpkin-socks"
+    },
+    "clothes": {
+      "wardrobe": {
+        "headwear": "halloween-pumpkin-hat",
+        "accessory": "halloween-pumpkin-sleeves",
+        "onepiece": "halloween-pumpkin-romper",
+        "shoes": "halloween-pumpkin-boots",
+        "socks": "halloween-pumpkin-socks"
+      },
+      "wardrobeColors": {},
+      "wardrobeFits": {},
+      "wardrobeLayering": false
+    }
+  },
+  {
+    "id": "halloween-pumpkin-midnight",
+    "label": "南瓜装 · 黑白午夜",
+    "collection": "halloween",
+    "items": {
+      "headwear": "halloween-pumpkin-hat",
+      "accessory": "halloween-pumpkin-sleeves",
+      "onepiece": "halloween-pumpkin-romper",
+      "shoes": "halloween-pumpkin-boots",
+      "socks": "halloween-pumpkin-socks"
+    },
+    "clothes": {
+      "wardrobe": {
+        "headwear": "halloween-pumpkin-hat",
+        "accessory": "halloween-pumpkin-sleeves",
+        "onepiece": "halloween-pumpkin-romper",
+        "shoes": "halloween-pumpkin-boots",
+        "socks": "halloween-pumpkin-socks"
+      },
+      "wardrobeColors": {
+        "halloween-pumpkin-hat": {
+          "orange": "#16151d",
+          "purple": "#22212b",
+          "green": "#80818c",
+          "gold": "#c5c7d1"
+        },
+        "halloween-pumpkin-sleeves": {
+          "orange": "#16151d",
+          "purple": "#22212b",
+          "green": "#80818c",
+          "gold": "#c5c7d1"
+        },
+        "halloween-pumpkin-romper": {
+          "orange": "#16151d",
+          "purple": "#22212b",
+          "green": "#80818c",
+          "gold": "#c5c7d1"
+        },
+        "halloween-pumpkin-boots": {
+          "orange": "#16151d",
+          "purple": "#22212b",
+          "green": "#80818c",
+          "gold": "#c5c7d1"
+        },
+        "halloween-pumpkin-socks": {
+          "orange": "#16151d",
+          "purple": "#22212b",
+          "green": "#80818c",
+          "gold": "#c5c7d1"
+        }
+      },
+      "wardrobeFits": {},
+      "wardrobeLayering": false
+    }
+  },
+  {
+    "id": "halloween-pumpkin-crimson",
+    "label": "南瓜装 · 绯红晚宴",
+    "collection": "halloween",
+    "items": {
+      "headwear": "halloween-pumpkin-hat",
+      "accessory": "halloween-pumpkin-sleeves",
+      "onepiece": "halloween-pumpkin-romper",
+      "shoes": "halloween-pumpkin-boots",
+      "socks": "halloween-pumpkin-socks"
+    },
+    "clothes": {
+      "wardrobe": {
+        "headwear": "halloween-pumpkin-hat",
+        "accessory": "halloween-pumpkin-sleeves",
+        "onepiece": "halloween-pumpkin-romper",
+        "shoes": "halloween-pumpkin-boots",
+        "socks": "halloween-pumpkin-socks"
+      },
+      "wardrobeColors": {
+        "halloween-pumpkin-hat": {
+          "orange": "#711a30",
+          "purple": "#191720",
+          "green": "#9a3448",
+          "gold": "#c69f61"
+        },
+        "halloween-pumpkin-sleeves": {
+          "orange": "#711a30",
+          "purple": "#191720",
+          "green": "#9a3448",
+          "gold": "#c69f61"
+        },
+        "halloween-pumpkin-romper": {
+          "orange": "#711a30",
+          "purple": "#191720",
+          "green": "#9a3448",
+          "gold": "#c69f61"
+        },
+        "halloween-pumpkin-boots": {
+          "orange": "#711a30",
+          "purple": "#191720",
+          "green": "#9a3448",
+          "gold": "#c69f61"
+        },
+        "halloween-pumpkin-socks": {
+          "orange": "#711a30",
+          "purple": "#191720",
+          "green": "#9a3448",
+          "gold": "#c69f61"
+        }
+      },
+      "wardrobeFits": {},
+      "wardrobeLayering": false
+    }
+  },
+  {
+    "id": "halloween-pumpkin-moonlight",
+    "label": "南瓜装 · 月光蓝银",
+    "collection": "halloween",
+    "items": {
+      "headwear": "halloween-pumpkin-hat",
+      "accessory": "halloween-pumpkin-sleeves",
+      "onepiece": "halloween-pumpkin-romper",
+      "shoes": "halloween-pumpkin-boots",
+      "socks": "halloween-pumpkin-socks"
+    },
+    "clothes": {
+      "wardrobe": {
+        "headwear": "halloween-pumpkin-hat",
+        "accessory": "halloween-pumpkin-sleeves",
+        "onepiece": "halloween-pumpkin-romper",
+        "shoes": "halloween-pumpkin-boots",
+        "socks": "halloween-pumpkin-socks"
+      },
+      "wardrobeColors": {
+        "halloween-pumpkin-hat": {
+          "orange": "#3c648b",
+          "purple": "#202a48",
+          "green": "#8dbdc6",
+          "gold": "#cadbe6"
+        },
+        "halloween-pumpkin-sleeves": {
+          "orange": "#3c648b",
+          "purple": "#202a48",
+          "green": "#8dbdc6",
+          "gold": "#cadbe6"
+        },
+        "halloween-pumpkin-romper": {
+          "orange": "#3c648b",
+          "purple": "#202a48",
+          "green": "#8dbdc6",
+          "gold": "#cadbe6"
+        },
+        "halloween-pumpkin-boots": {
+          "orange": "#3c648b",
+          "purple": "#202a48",
+          "green": "#8dbdc6",
+          "gold": "#cadbe6"
+        },
+        "halloween-pumpkin-socks": {
+          "orange": "#3c648b",
+          "purple": "#202a48",
+          "green": "#8dbdc6",
+          "gold": "#cadbe6"
+        }
+      },
+      "wardrobeFits": {},
+      "wardrobeLayering": false
+    }
+  }
+]

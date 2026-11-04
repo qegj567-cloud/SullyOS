@@ -5,6 +5,8 @@ type Options = {
   ready: (value: boolean) => void;
   error: (message: string) => void;
   status: (message: string) => void;
+  track?: (value: MediaStreamTrack | null) => void;
+  portrait?: () => boolean;
 };
 
 /** One owner for permission requests, tracks and playback, including late iOS results. */
@@ -15,6 +17,22 @@ export function createCameraPreview(options: Options) {
   let attachedVideo: HTMLVideoElement | null = null;
   let detach = () => {};
   const timers = new Set<ReturnType<typeof setTimeout>>();
+  let compatibleMode = false;
+  let orientationQueue: Promise<void> = Promise.resolve();
+  const dimensions = (compatible = false): MediaTrackConstraints => {
+    const portrait = options.portrait?.() === true;
+    const long = compatible ? 960 : 1440, short = compatible ? 720 : 1080;
+    return { width: { ideal: portrait ? short : long }, height: { ideal: portrait ? long : short }, ...(!compatible ? { resizeMode: { ideal: 'none' } } : {}) };
+  };
+  function reframe() {
+    const track = media?.getVideoTracks()[0], token = generation;
+    if (!track?.applyConstraints || track.readyState !== 'live') return;
+    orientationQueue = orientationQueue.catch(() => {}).then(async () => {
+      if (token !== generation || track.readyState !== 'live') return;
+      // Keep lens, facing mode and hardware zoom while adjusting only orientation.
+      try { await track.applyConstraints({ ...track.getConstraints?.(), ...dimensions(compatibleMode) }); } catch {}
+    });
+  }
   const later = (callback: () => void, delay: number) => {
     const timer = setTimeout(() => { timers.delete(timer); callback(); }, delay);
     timers.add(timer);
@@ -29,12 +47,14 @@ export function createCameraPreview(options: Options) {
     const video = attachedVideo; attachedVideo = null;
     if (owned && video?.srcObject === owned) { video.pause(); video.srcObject = null; }
     owned?.getTracks().forEach(track => track.stop());
+    options.track?.(null);
     options.ready(false);
   }
-  function start(facing: Facing) {
+  function start(facing: Facing, deviceId?: string) {
     let recovered = false;
     const request = (compatible = false) => {
       stop();
+      compatibleMode = compatible;
       const token = generation;
       const current = () => token === generation;
       options.error(''); options.status(compatible ? '正在重新连接相机…' : '正在打开相机…');
@@ -53,7 +73,8 @@ export function createCameraPreview(options: Options) {
         if (!current()) return null;
         const result = await options.getUserMedia({ audio: false, video: {
           facingMode: { ideal: facing },
-          width: { ideal: compatible ? 960 : 1440 }, height: { ideal: compatible ? 720 : 1080 },
+          ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+          ...dimensions(compatible),
           frameRate: { ideal: 24, max: 30 },
         } });
         if (!current()) { result.getTracks().forEach(track => track.stop()); return null; }
@@ -102,6 +123,7 @@ export function createCameraPreview(options: Options) {
         video.setAttribute('playsinline', ''); video.setAttribute('webkit-playsinline', '');
         attachedVideo = video;
         video.srcObject = result;
+        options.track?.(tracks[0]);
         startupTimer = later(() => recover('相机没有返回画面，请重试或从相册选择。'), 10000);
         if (tracks.some(track => track.muted)) muted();
         void video.play().then(ready, () => fail('相机预览未能播放，请点重试；仍失败可从相册选择。'));
@@ -118,5 +140,5 @@ export function createCameraPreview(options: Options) {
     };
     request();
   }
-  return { start, stop };
+  return { start, stop, reframe };
 }

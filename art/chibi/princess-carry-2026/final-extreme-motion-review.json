@@ -1,0 +1,23 @@
+{
+  "errors": [],
+  "report": [
+    {
+      "id": "home-princess-carry",
+      "maxBoneStepRadians": 0.25575383216211556,
+      "maxAt": {
+        "time": 9.033333333333333,
+        "bone": "0:L_thumb"
+      },
+      "minFoot": 0.03359999999999973
+    },
+    {
+      "id": "home-princess-carried",
+      "maxBoneStepRadians": 0.25575383216211733,
+      "maxAt": {
+        "time": 9.033333333333333,
+        "bone": "1:L_hand"
+      },
+      "minFoot": 0.03359999999999971
+    }
+  ]
+}

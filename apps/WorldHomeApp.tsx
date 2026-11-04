@@ -1893,9 +1893,11 @@ const WorldView: React.FC<{
 // ============================================================
 // 主组件
 // ============================================================
-const WorldHomeApp: React.FC<{ embedded?: boolean; onFullscreen?: (full: boolean) => void }> = ({ embedded, onFullscreen }) => {
+const WorldHomeApp: React.FC<{ embedded?: boolean; launchWorldId?: string; onLaunchConsumed?: () => void; onFullscreen?: (full: boolean) => void }> = ({ embedded, launchWorldId, onLaunchConsumed, onFullscreen }) => {
     const { closeApp, characters, addToast, apiConfig, apiPresets } = useOS();
     const [worlds, setWorlds] = useState<WorldProfile[]>([]);
+    const [worldsLoaded, setWorldsLoaded] = useState(false);
+    const appliedLaunch = useRef(false);
     const [view, setView] = useState<'list' | 'edit' | 'world'>('list');
     const [activeId, setActiveId] = useState<string | null>(null);
     const [draft, setDraft] = useState<WorldProfile | null>(null);
@@ -1911,8 +1913,16 @@ const WorldHomeApp: React.FC<{ embedded?: boolean; onFullscreen?: (full: boolean
             if (migrateWorldDaySegs(w)) await DB.saveWorld(w).catch(() => {});
         }
         setWorlds(all);
+        setWorldsLoaded(true);
     }, []);
     useEffect(() => { reload(); }, [reload]);
+    useEffect(() => {
+        if (!worldsLoaded || !launchWorldId || appliedLaunch.current) return;
+        appliedLaunch.current = true;
+        if (worlds.some(world => world.id === launchWorldId)) { setActiveId(launchWorldId); setView('world'); }
+        else addToast('这个家园世界已不存在，请重新设置悬浮球槽位', 'error');
+        onLaunchConsumed?.();
+    }, [worldsLoaded, worlds, launchWorldId, addToast, onLaunchConsumed]);
     // 内嵌进「小小窝」时：开始玩（进世界/编辑）就让外层隐去三栏，回列表恢复
     useEffect(() => { if (embedded) onFullscreen?.(view !== 'list'); }, [embedded, view, onFullscreen]);
 

@@ -22,4 +22,8 @@ describe('voice text duplication', () => {
         expect(result).toBe('<語音>' + line + '</語音>');
     });
     it('leaves plain text replies unchanged', () => expect(deduplicateVoiceText(line)).toBe(line));
+    it('preserves multiline subtitles before the voice while removing their prose copy', () => {
+        const block = '<字幕>\n' + line + '\n</字幕>\n<语音>Hello there, I just got home.</语音>';
+        expect(deduplicateVoiceText(block + '\n' + line)).toBe(block);
+    });
 });

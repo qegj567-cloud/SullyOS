@@ -1,0 +1,3 @@
+import {defineConfig} from 'vite';
+import react from '@vitejs/plugin-react';
+export default defineConfig({plugins:[react()],cacheDir:'art/pets/halloween-2026/.vite',define:{__BUILD_BRANCH__:JSON.stringify('pet-wardrobe-preview'),__BUILD_COMMIT__:JSON.stringify('local'),__BUILD_TIME__:JSON.stringify(''),__BUILD_BADGE_VISIBLE__:'false',__APP_BUILD_ID__:JSON.stringify('pet-wardrobe-preview')},optimizeDeps:{entries:['test/fixtures/room3d-pet-life.html']},server:{host:'127.0.0.1',port:5204,strictPort:true},build:{target:'esnext',outDir:'art/pets/halloween-2026/build',emptyOutDir:true,copyPublicDir:false,rollupOptions:{input:['test/fixtures/room3d-pet-life.html','test/fixtures/home-pets.html','test/fixtures/room3d-pets.html']}}});

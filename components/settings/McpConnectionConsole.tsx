@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
     CaretDown,
     CheckCircle,
@@ -81,7 +81,16 @@ const McpConnectionConsole: React.FC<{
 }> = ({ addToast, onMcpConfigChanged }) => {
     const { characters, groups } = useOS();
     const [servers, setServers] = useState<McpServerConfig[]>(() => loadMcpServers());
-    const [expandedId, setExpandedId] = useState<string | null>(() => loadMcpServers()[0]?.id || null);
+    const [expandedId, setExpandedId] = useState<string | null>(() => {
+        try {
+            const saved = localStorage.getItem('sully-mcp-expanded-server');
+            if (saved !== null) return servers.some(server => server.id === saved) ? saved : null;
+        } catch { /* Keep the current session usable when storage is unavailable. */ }
+        return servers[0]?.id || null;
+    });
+    useEffect(() => {
+        try { localStorage.setItem('sully-mcp-expanded-server', expandedId || ''); } catch {}
+    }, [expandedId]);
     const [testingId, setTestingId] = useState<string | null>(null);
     const [testStates, setTestStates] = useState<Record<string, TestState>>({});
     const [useNativeTools, setUseNativeToolsState] = useState(() => getMcpUseNativeTools());
@@ -251,6 +260,7 @@ const McpConnectionConsole: React.FC<{
                                 <button
                                     type="button"
                                     onClick={() => setExpandedId(expanded ? null : server.id)}
+                                    aria-expanded={expanded}
                                     className="flex min-w-0 flex-1 items-center gap-3 text-left"
                                 >
                                     <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${live ? 'bg-emerald-500' : ready ? 'bg-slate-300' : 'border border-slate-300'}`}>

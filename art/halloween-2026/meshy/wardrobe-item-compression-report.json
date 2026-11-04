@@ -1,0 +1,306 @@
+{
+  "items": [
+    {
+      "id": "halloween-witch-dress",
+      "label": "女巫连衣裙",
+      "file": "halloween-witch-dress.glb",
+      "bytes": 840416,
+      "sharedTextures": [
+        "halloween-texture-4db03737518d.jpg"
+      ],
+      "triangles": 34177,
+      "revision": "b65a1950b8fc"
+    },
+    {
+      "id": "halloween-witch-hat",
+      "label": "女巫帽",
+      "file": "halloween-witch-hat.glb",
+      "bytes": 109972,
+      "sharedTextures": [
+        "halloween-texture-4db03737518d.jpg"
+      ],
+      "triangles": 4831,
+      "revision": "fe780637feb2"
+    },
+    {
+      "id": "halloween-witch-boots",
+      "label": "女巫搭扣靴",
+      "file": "halloween-witch-boots.glb",
+      "bytes": 80772,
+      "sharedTextures": [
+        "halloween-texture-4db03737518d.jpg"
+      ],
+      "triangles": 2744,
+      "revision": "aaf36d6cc2de"
+    },
+    {
+      "id": "halloween-witch-socks",
+      "label": "女巫波浪口袜",
+      "file": "halloween-witch-socks.glb",
+      "bytes": 27052,
+      "sharedTextures": [],
+      "triangles": 1222,
+      "revision": "09a88ea58c05"
+    },
+    {
+      "id": "halloween-count-tailcoat",
+      "label": "伯爵燕尾外套",
+      "file": "halloween-count-tailcoat.glb",
+      "bytes": 360416,
+      "sharedTextures": [
+        "halloween-texture-31ee4b62cd29.jpg"
+      ],
+      "triangles": 13635,
+      "revision": "22c94816c172"
+    },
+    {
+      "id": "halloween-count-trousers",
+      "label": "伯爵长裤",
+      "file": "halloween-count-trousers.glb",
+      "bytes": 90588,
+      "sharedTextures": [
+        "halloween-texture-31ee4b62cd29.jpg"
+      ],
+      "triangles": 3130,
+      "revision": "91491b3bc7a7"
+    },
+    {
+      "id": "halloween-count-boots",
+      "label": "伯爵短靴",
+      "file": "halloween-count-boots.glb",
+      "bytes": 137608,
+      "sharedTextures": [
+        "halloween-texture-31ee4b62cd29.jpg"
+      ],
+      "triangles": 5514,
+      "revision": "fa506f45ce99"
+    },
+    {
+      "id": "halloween-count-waistcoat",
+      "label": "伯爵马甲",
+      "file": "halloween-count-waistcoat.glb",
+      "bytes": 47876,
+      "sharedTextures": [
+        "halloween-texture-31ee4b62cd29.jpg"
+      ],
+      "triangles": 1366,
+      "revision": "1fbba02ad1b3"
+    },
+    {
+      "id": "halloween-count-cravat",
+      "label": "伯爵领巾",
+      "file": "halloween-count-cravat.glb",
+      "bytes": 115196,
+      "sharedTextures": [
+        "halloween-texture-31ee4b62cd29.jpg"
+      ],
+      "triangles": 5385,
+      "revision": "602e3e274251"
+    },
+    {
+      "id": "halloween-apprentice-coat",
+      "label": "药剂师上衣",
+      "file": "halloween-apprentice-coat.glb",
+      "bytes": 291536,
+      "sharedTextures": [
+        "halloween-texture-78071d744724.jpg"
+      ],
+      "triangles": 10452,
+      "revision": "3e81dd35f39f"
+    },
+    {
+      "id": "halloween-apprentice-apron",
+      "label": "药剂围裙",
+      "file": "halloween-apprentice-apron.glb",
+      "bytes": 139736,
+      "sharedTextures": [
+        "halloween-texture-78071d744724.jpg"
+      ],
+      "triangles": 5592,
+      "revision": "b47e66ddde8d"
+    },
+    {
+      "id": "halloween-apprentice-shorts",
+      "label": "药剂师短裤",
+      "file": "halloween-apprentice-shorts.glb",
+      "bytes": 72268,
+      "sharedTextures": [
+        "halloween-texture-78071d744724.jpg"
+      ],
+      "triangles": 3113,
+      "revision": "d6b7f2c225e3"
+    },
+    {
+      "id": "halloween-apprentice-cap",
+      "label": "药剂师软帽",
+      "file": "halloween-apprentice-cap.glb",
+      "bytes": 121768,
+      "sharedTextures": [
+        "halloween-texture-78071d744724.jpg"
+      ],
+      "triangles": 5726,
+      "revision": "ed7196245dc3"
+    },
+    {
+      "id": "halloween-apprentice-boots",
+      "label": "药剂师系带靴",
+      "file": "halloween-apprentice-boots.glb",
+      "bytes": 164456,
+      "sharedTextures": [
+        "halloween-texture-78071d744724.jpg"
+      ],
+      "triangles": 6460,
+      "revision": "e1d0ed3326db"
+    },
+    {
+      "id": "halloween-apprentice-socks",
+      "label": "药剂师条纹袜",
+      "file": "halloween-apprentice-socks.glb",
+      "bytes": 21208,
+      "sharedTextures": [],
+      "triangles": 1017,
+      "revision": "0846f538a55a"
+    },
+    {
+      "id": "halloween-shorts-shorts",
+      "label": "万圣糖果短裤",
+      "file": "halloween-shorts-shorts.glb",
+      "bytes": 273296,
+      "sharedTextures": [
+        "halloween-texture-efdfbe3287c0.jpg"
+      ],
+      "triangles": 11257,
+      "revision": "ab059747b667"
+    },
+    {
+      "id": "halloween-ghost-hooded-top",
+      "label": "幽灵连帽上衣",
+      "file": "halloween-ghost-hooded-top.glb",
+      "bytes": 638240,
+      "sharedTextures": [
+        "halloween-texture-3ae783e5b0e4.jpg"
+      ],
+      "triangles": 21259,
+      "revision": "c611aa6f6f1f"
+    },
+    {
+      "id": "halloween-ghost-shorts",
+      "label": "幽灵短裤",
+      "file": "halloween-ghost-shorts.glb",
+      "bytes": 170636,
+      "sharedTextures": [
+        "halloween-texture-1dbb8a57342a.jpg"
+      ],
+      "triangles": 7306,
+      "revision": "7e4564576ae5"
+    },
+    {
+      "id": "halloween-ghost-shoes",
+      "label": "幽灵搭扣鞋",
+      "file": "halloween-ghost-shoes.glb",
+      "bytes": 220976,
+      "sharedTextures": [
+        "halloween-texture-e12f422048ae.jpg"
+      ],
+      "triangles": 9596,
+      "revision": "762c4f7a4e07"
+    },
+    {
+      "id": "halloween-ghost-socks",
+      "label": "幽灵条纹袜",
+      "file": "halloween-ghost-socks.glb",
+      "bytes": 21944,
+      "sharedTextures": [],
+      "triangles": 1058,
+      "revision": "39a7e0f5283d"
+    },
+    {
+      "id": "halloween-pumpkin-hat",
+      "label": "南瓜帽",
+      "file": "halloween-pumpkin-hat.glb",
+      "bytes": 192324,
+      "sharedTextures": [
+        "halloween-texture-aadd0e185c27.jpg"
+      ],
+      "triangles": 8733,
+      "revision": "309ff4d10944"
+    },
+    {
+      "id": "halloween-pumpkin-sleeves",
+      "label": "南瓜内搭袖",
+      "file": "halloween-pumpkin-sleeves.glb",
+      "bytes": 105876,
+      "sharedTextures": [
+        "halloween-texture-aadd0e185c27.jpg"
+      ],
+      "triangles": 4244,
+      "revision": "74b2a04e0e84"
+    },
+    {
+      "id": "halloween-pumpkin-romper",
+      "label": "南瓜连体衣",
+      "file": "halloween-pumpkin-romper.glb",
+      "bytes": 361328,
+      "sharedTextures": [
+        "halloween-texture-aadd0e185c27.jpg"
+      ],
+      "triangles": 12191,
+      "revision": "940cd8890283"
+    },
+    {
+      "id": "halloween-pumpkin-boots",
+      "label": "南瓜搭扣靴",
+      "file": "halloween-pumpkin-boots.glb",
+      "bytes": 97360,
+      "sharedTextures": [
+        "halloween-texture-aadd0e185c27.jpg"
+      ],
+      "triangles": 3531,
+      "revision": "1e79294bcaa2"
+    },
+    {
+      "id": "halloween-pumpkin-socks",
+      "label": "南瓜条纹袜",
+      "file": "halloween-pumpkin-socks.glb",
+      "bytes": 27708,
+      "sharedTextures": [],
+      "triangles": 1156,
+      "revision": "7704eba709a3"
+    }
+  ],
+  "textures": [
+    {
+      "file": "halloween-texture-4db03737518d.jpg",
+      "bytes": 517277
+    },
+    {
+      "file": "halloween-texture-31ee4b62cd29.jpg",
+      "bytes": 367542
+    },
+    {
+      "file": "halloween-texture-78071d744724.jpg",
+      "bytes": 442375
+    },
+    {
+      "file": "halloween-texture-efdfbe3287c0.jpg",
+      "bytes": 277912
+    },
+    {
+      "file": "halloween-texture-3ae783e5b0e4.jpg",
+      "bytes": 334740
+    },
+    {
+      "file": "halloween-texture-1dbb8a57342a.jpg",
+      "bytes": 191948
+    },
+    {
+      "file": "halloween-texture-e12f422048ae.jpg",
+      "bytes": 241353
+    },
+    {
+      "file": "halloween-texture-aadd0e185c27.jpg",
+      "bytes": 441099
+    }
+  ],
+  "totalBytes": 7544802
+}

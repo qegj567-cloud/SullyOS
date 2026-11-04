@@ -4,6 +4,7 @@ import { CaretLeft, Lightning, Stop } from '@phosphor-icons/react';
 import { CharacterBuff, CharacterProfile } from '../../types';
 import TokenImg from '../os/TokenImg';
 import { chatCharacterDisplayName } from '../../utils/characterRemark';
+import { useReducedBlur } from '../../utils/blurPolicy';
 
 /** header 实际只用到这些字段——放宽类型让群聊传合成对象（群名/群头像）复用本组件 */
 type HeaderCharacter = Pick<CharacterProfile, 'id' | 'name' | 'avatar'> & Partial<Pick<CharacterProfile, 'description' | 'chatShowRemark'>> & { activeBuffs?: CharacterBuff[] };
@@ -201,6 +202,7 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
 
     const isDarkHeader = headerStyle === 'discord';
     const isPixelHeader = headerStyle === 'pixel';
+    const reducedBlur = useReducedBlur();
     const useCenteredLayout = headerAlign === 'center';
     const avatarRadiusClass = avatarShape === 'square' ? 'rounded-sm' : avatarShape === 'rounded' ? 'rounded-xl' : 'rounded-full';
     // 动森：情绪 buff 胶囊统一奶油底 + 棕字，和谐进绿顶栏（否则各 buff 自带的彩色底铺在绿上很糊）
@@ -213,22 +215,22 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
           ? 'bg-[#a8d6bb] border-b-[3px] border-[#86c29a] shadow-[0_3px_0_rgba(110,160,130,0.22)]'
           :
         headerStyle === 'gradient'
-            ? 'bg-gradient-to-r from-primary/20 via-primary/10 to-white/80 backdrop-blur-xl border-b border-slate-200/60 shadow-sm'
+            ? `bg-white/90 bg-gradient-to-r from-primary/20 via-primary/10 to-white/80 ${reducedBlur ? '' : 'backdrop-blur-xl '}border-b border-slate-200/60 shadow-sm`
             : headerStyle === 'minimal'
-              ? 'bg-white/95 backdrop-blur-md border-b border-slate-200/50 shadow-sm'
+              ? `bg-white/95 ${reducedBlur ? '' : 'backdrop-blur-md '}border-b border-slate-200/50 shadow-sm`
               : headerStyle === 'wechat'
-                ? 'bg-[#f7f7f7]/95 backdrop-blur-md border-b border-black/5 shadow-none'
+                ? `bg-[#f7f7f7]/95 ${reducedBlur ? '' : 'backdrop-blur-md '}border-b border-black/5 shadow-none`
                 : headerStyle === 'telegram'
-                  ? 'bg-white/85 backdrop-blur-xl border-b border-sky-100 shadow-sm'
+                  ? `${reducedBlur ? 'bg-white/95' : 'bg-white/85 backdrop-blur-xl'} border-b border-sky-100 shadow-sm`
                   : headerStyle === 'discord'
-                    ? 'bg-slate-900/95 backdrop-blur-xl border-b border-white/10 shadow-[0_10px_30px_rgba(15,23,42,0.35)]'
+                    ? `bg-slate-900/95 ${reducedBlur ? '' : 'backdrop-blur-xl '}border-b border-white/10 shadow-[0_10px_30px_rgba(15,23,42,0.35)]`
                     : headerStyle === 'pixel'
                       ? 'bg-[#c99872] border-b-[3px] border-[#7b5a40] shadow-[0_4px_0_rgba(123,90,64,0.25)]'
                       : chromeStyle === 'flat'
                         ? 'bg-white border-b border-slate-200 shadow-none'
                         : chromeStyle === 'floating'
-                          ? 'bg-white/85 backdrop-blur-xl border-b border-white/70 shadow-sm'
-                          : 'bg-white/80 backdrop-blur-xl border-b border-slate-200/60 shadow-sm';
+                          ? `${reducedBlur ? 'bg-white/95' : 'bg-white/85 backdrop-blur-xl'} border-b border-white/70 shadow-sm`
+                          : `${reducedBlur ? 'bg-white/95' : 'bg-white/80 backdrop-blur-xl'} border-b border-slate-200/60 shadow-sm`;
     const headerBaseHeight = headerDensity === 'compact' ? '5rem' : headerDensity === 'airy' ? '7rem' : '6rem';
     // 两种对齐都用对称 py，让内容垂直居中（原标准布局只给 pb → 底贴、上方留白、整体不居中）。
     const headerDensityClass = headerDensity === 'compact' ? 'px-4 py-2' : headerDensity === 'airy' ? 'px-6 py-4' : 'px-5 py-3';

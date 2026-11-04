@@ -1,0 +1,25 @@
+{
+  "vertices": 48478,
+  "failures": [],
+  "undressed": {
+    "bodyFaces": 6136,
+    "visibleParts": 0
+  },
+  "poseViews": 18,
+  "pageErrors": [],
+  "cuffs": {
+    "checkedVertices": 227,
+    "triangles": 548,
+    "restSurface": {
+      "sampleCount": 313,
+      "beforeMinimumGap": -0.0296872310542608,
+      "afterMinimumGap": 0.01833506385226527,
+      "movedVertices": 47,
+      "reboundVertices": 154,
+      "hemHeightUnchanged": true,
+      "topologyUnchanged": true,
+      "source": "sailor-school-user.glb#Sailor_pants",
+      "sourceTriangles": 548
+    }
+  }
+}

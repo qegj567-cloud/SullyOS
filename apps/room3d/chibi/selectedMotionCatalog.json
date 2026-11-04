@@ -14,23 +14,29 @@
     "id": "home-princess-carry",
     "label": "公主抱",
     "category": "close",
-    "source": "SullyOS procedural / user video reference",
-    "sourceUrl": "",
+    "source": "Meshy Text-to-Motion Prime; retargeted and contact-corrected",
+    "sourceUrl": "https://docs.meshy.ai/en/api/text-to-motion",
     "duration": 10,
     "participants": 2,
     "file": "home-princess-carry.json",
-    "hashes": []
+    "hashes": [
+      "9977d7bf31187af05454dbed5c0cbbe28d98398512affdf851945b4d1b63fd64",
+      "a6f1c27d297ebf52e0e102f1e364a853f6c0751865c30de29a73441076fcc4af"
+    ]
   },
   {
     "id": "home-princess-carried",
     "label": "被公主抱",
     "category": "close",
-    "source": "SullyOS procedural / user video reference",
-    "sourceUrl": "",
+    "source": "Meshy Text-to-Motion Prime; retargeted and contact-corrected",
+    "sourceUrl": "https://docs.meshy.ai/en/api/text-to-motion",
     "duration": 10,
     "participants": 2,
     "file": "home-princess-carried.json",
-    "hashes": []
+    "hashes": [
+      "9977d7bf31187af05454dbed5c0cbbe28d98398512affdf851945b4d1b63fd64",
+      "a6f1c27d297ebf52e0e102f1e364a853f6c0751865c30de29a73441076fcc4af"
+    ]
   },
   {
     "id": "cmu-22_07",
@@ -555,6 +561,90 @@
     "hashes": [
       "5dd2d8c4985e0b56c352f1276a428bf10f81f698baa791840ef10528b7d093a8",
       "12634f85d73a5790752a94f3d8112d14971dae88405fce792436696aff7dd63c"
+    ]
+  },
+  {
+    "id": "halloween-boo",
+    "label": "突然吓一下",
+    "category": "mischief",
+    "source": "Meshy Text-to-Motion Prime; retargeted and contact-corrected",
+    "sourceUrl": "https://docs.meshy.ai/en/api/text-to-motion",
+    "duration": 8,
+    "participants": 2,
+    "file": "halloween-boo.json",
+    "hashes": [
+      "e0f20fe75e7a2643b661f91daa627470c9258ef8ff258b024010d684792126a3",
+      "4c2f6d4216ace262c0fa564b17a50e7ada5d48ef8c0c31dde2d6e0f4160b81ce"
+    ]
+  },
+  {
+    "id": "halloween-trick-or-treat",
+    "label": "不给糖就捣蛋",
+    "category": "mischief",
+    "source": "Meshy Text-to-Motion Prime; retargeted and contact-corrected",
+    "sourceUrl": "https://docs.meshy.ai/en/api/text-to-motion",
+    "duration": 8,
+    "participants": 2,
+    "file": "halloween-trick-or-treat.json",
+    "hashes": [
+      "f2db60bd748f23c004ba98df5fea8e72c7358b1c32ef963a89b75fa2e7311287",
+      "c21ed33d298c7793f9c456ffc6bd12079719848e8e8fd3dca56a080dad792c64"
+    ]
+  },
+  {
+    "id": "halloween-candy-shower",
+    "label": "撒糖接糖",
+    "category": "mischief",
+    "source": "Meshy Text-to-Motion Prime; retargeted and contact-corrected",
+    "sourceUrl": "https://docs.meshy.ai/en/api/text-to-motion",
+    "duration": 8,
+    "participants": 2,
+    "file": "halloween-candy-shower.json",
+    "hashes": [
+      "ee6c295f79eca7bafc8ff6807b753fafdef683d4cd497c612756af80f1c4b9a5",
+      "cc96243f0bff96ae77f7d8283ab7044a772618d1df742426c55a953def35ba2c"
+    ]
+  },
+  {
+    "id": "halloween-ghost-tease",
+    "label": "举幽灵逗你",
+    "category": "mischief",
+    "source": "Meshy Text-to-Motion Prime; retargeted and contact-corrected",
+    "sourceUrl": "https://docs.meshy.ai/en/api/text-to-motion",
+    "duration": 8,
+    "participants": 2,
+    "file": "halloween-ghost-tease.json",
+    "hashes": [
+      "2732818ef1c605d84b9da457c46fcf4fe343766e63570b371c091591f24924fe",
+      "aa496b10400dd08113f1d4016e265ee26b4885a4c2d1da8e264e4d61e7e8e566"
+    ]
+  },
+  {
+    "id": "home-forehead-touch",
+    "label": "贴额头",
+    "category": "close",
+    "source": "Meshy Text-to-Motion Prime; retargeted and contact-corrected",
+    "sourceUrl": "https://docs.meshy.ai/en/api/text-to-motion",
+    "duration": 8,
+    "participants": 2,
+    "file": "home-forehead-touch.json",
+    "hashes": [
+      "d83bfe81daa39fd0716abd0024470edbe54d4f2eb8ac38473579e2a36720ed43",
+      "f938c6b6a035203c26792d8253d55cd4eb3fef089bec1dcf3482e4be3c9594ce"
+    ]
+  },
+  {
+    "id": "home-kiss",
+    "label": "接吻",
+    "category": "close",
+    "source": "Meshy Text-to-Motion Prime; retargeted and contact-corrected",
+    "sourceUrl": "https://docs.meshy.ai/en/api/text-to-motion",
+    "duration": 8,
+    "participants": 2,
+    "file": "home-kiss.json",
+    "hashes": [
+      "bfb6176d75aba36f9f57ed561480e0ae9b12b68d28d5a0cd1d0d2f33cbbc61ae",
+      "9d0e601ca9b9c2ba05e0eb45a95d67ec01ac71f5ed16265392bda6e276b48b64"
     ]
   }
 ]

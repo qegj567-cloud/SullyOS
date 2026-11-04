@@ -1,4 +1,5 @@
 import { trackSARFeature } from '../../utils/sarAnalytics';
+import { trackHalloweenFeature } from '../../utils/octoberAnalytics';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, BookOpen, CaretDown, CaretLeft, CaretRight, Check, Cpu, Fish, MagnifyingGlass, PawPrint, Stack, Users } from '@phosphor-icons/react';
 import type { FishingMarketState, MarketActor } from '../../utils/vrWorld/fishingMarket';
@@ -7,12 +8,17 @@ import { FishArt } from './FishArt';
 import { SARFamiliarityRoster } from './SARFamiliarityRoster';
 import { SARExclusiveKeepsakes } from './SARExclusiveKeepsakes';
 import type { FamiliarityNpc } from '../../utils/vrWorld/sarFamiliarity/types';
+import { HalloweenCandyArt, HalloweenDialogue } from './KanataHalloween';
+import { HALLOWEEN_COSTUMES, type HalloweenNpc } from '../../utils/vrWorld/kanataHalloween';
 
-const Icons = { fish: Fish, dinosaur: PawPrint, chip: Stack, module: Cpu };
+const Icons = { fish: Fish, dinosaur: PawPrint, chip: Stack, module: Cpu, halloween: BookOpen };
 const PAGE_SIZE = 12;
 function CollectionArt({ entry, size = 56 }: { entry: SARCollectionEntry; size?: number }) {
     const Icon = Icons[entry.category];
-    return entry.speciesId ? <FishArt speciesId={entry.speciesId} size={size + 28} silhouette={!entry.collected}/> : <Icon size={size} weight={entry.collected ? 'duotone' : 'thin'}/>;
+    const costume = HALLOWEEN_COSTUMES.find(c => c.id === entry.id);
+    if (costume) return <img src={`${import.meta.env.BASE_URL}kanata-halloween/${costume.file}`} alt={entry.title} style={{ width:size+28,height:size+28,objectFit:'contain',filter:entry.collected?undefined:'grayscale(1)',opacity:entry.collected?1:.35 }}/>;
+    if (entry.category === 'halloween' && entry.tag === '糖果') return <span style={{opacity:entry.collected?1:.3}}><HalloweenCandyArt id={entry.id} size={size+20}/></span>;
+    return entry.speciesId ? <FishArt speciesId={entry.speciesId} halloweenHat={entry.halloweenHat} size={size + 28} silhouette={!entry.collected}/> : <Icon size={size} weight={entry.collected ? 'duotone' : 'thin'}/>;
 }
 export function SARCollectionView({ market, owner, actors, onOwnerChange, onClose, backRef, onOpenFamiliarity, npcEnabled = true }: {
     npcEnabled?: boolean;
@@ -21,12 +27,14 @@ export function SARCollectionView({ market, owner, actors, onOwnerChange, onClos
     onOpenFamiliarity?: (npc: FamiliarityNpc, sceneId?: string) => void;
 }) {
     const [requestedSection, setSection] = useState<'collection' | 'roster' | 'keepsakes'>('collection');
+    const [halloweenReplay, setHalloweenReplay] = useState<HalloweenNpc | null>(null);
     const section = npcEnabled ? requestedSection : 'collection';
     useEffect(() => { if (!npcEnabled) { setSection('collection'); setKeepsakeTitle(null); } }, [npcEnabled]);
     useEffect(() => { if (section !== 'keepsakes') trackSARFeature(section); }, [section]);
     const keepsakeBack = useRef<(() => boolean) | null>(null);
     const [keepsakeTitle,setKeepsakeTitle]=useState<string|null>(null);
     const [category, setCategory] = useState<SARCollectionCategory | null>(null);
+    useEffect(() => { if (category === 'halloween') trackHalloweenFeature('collection'); }, [category]);
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [query, setQuery] = useState('');
     const [filter, setFilter] = useState<'all' | 'collected' | 'missing'>('all');
@@ -42,13 +50,14 @@ export function SARCollectionView({ market, owner, actors, onOwnerChange, onClos
     const shown = matches.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
     const collected = entries.filter(item => item.collected).length;
     const goBack = () => {
+        if (halloweenReplay) { setHalloweenReplay(null); return true; }
         if (section === 'keepsakes' && keepsakeBack.current?.()) return true;
         if (section !== 'collection') return false;
         if (selectedId) { setSelectedId(null); return true; }
         if (category) { setCategory(null); return true; }
         return false;
     };
-    useEffect(() => { backRef.current = goBack; return () => { backRef.current = null; }; }, [selectedId, category, section]);
+    useEffect(() => { backRef.current = goBack; return () => { backRef.current = null; }; }, [selectedId, category, section, halloweenReplay]);
     useEffect(() => { setSelectedId(null); setQuery(''); setFilter('all'); setPage(0); }, [owner.id, category]);
     useEffect(() => { setPage(0); }, [query, filter]);
     useEffect(() => { if (scroll.current) scroll.current.scrollTop = 0; }, [category, selectedId, currentPage, owner.id]);
@@ -64,6 +73,7 @@ export function SARCollectionView({ market, owner, actors, onOwnerChange, onClos
     const chipProgress = (tag: string) => { const chips = entries.filter(entry => entry.category === 'chip' && entry.tag === tag); return `${chips.filter(entry => entry.collected).length} / ${chips.length}`; };
 
     return <>
+        {halloweenReplay && npcEnabled && <HalloweenDialogue key={halloweenReplay} npc={halloweenReplay} userName={actors.find(a => a.id === 'user')?.name || '我'} replay onClose={() => setHalloweenReplay(null)}/>}
         <header className="sar-hub-header"><button ref={headerBack} type="button" onClick={() => { if (!goBack()) onClose(); }} aria-label={section==='keepsakes'&&keepsakeTitle?'返回专属纪念':section==='collection'&&selected?'返回分类图鉴':section==='collection'&&category?'返回图鉴总览':'返回随身仓库'}><ArrowLeft size={21}/></button><div><small>SAR · COLLECTION</small><h2>{section==='keepsakes'&&keepsakeTitle?keepsakeTitle:section==='collection'&&selected?selected.title:section==='collection'&&current?`${current.title}图鉴`:'收集图鉴'}</h2></div></header>
         <nav className="sar-collection-sections" aria-label="图鉴页面">
             <button type="button" aria-current={section==='collection'?'page':undefined} onClick={()=>setSection('collection')}><BookOpen size={16} weight={section==='collection'?'fill':'regular'}/>收藏</button>
@@ -77,6 +87,7 @@ export function SARCollectionView({ market, owner, actors, onOwnerChange, onClos
                 <div className={`sar-collection-large-art ${selected.collected ? 'is-collected' : ''}`}><CollectionArt entry={selected} size={100}/></div>
                 <div className="sar-collection-entry-status">{selected.collected ? <Check size={15}/> : <BookOpen size={15}/>}<span>{selected.collected ? '已收录' : '尚未收录'} · {selected.tag}</span></div>
                 <p>{selected.description}</p><div className="sar-collection-source"><strong>获得方式</strong><p>{selected.source}</p></div>
+                {selected.collected && selected.id.startsWith('halloween-memory-') && <button type="button" className="sar-hub-setting-action" onClick={() => setHalloweenReplay(selected.id.endsWith('caian') ? 'caian' : 'aiven')}>重看万圣节对话</button>}
                 {selected.collected && <p className="sar-collection-owned">当前持有 {selected.owned} 件{selected.owned === 0 ? ' · 已用掉或转出，收集记录保留' : ''}</p>}
             </article> : !category ? <>
                 <div className="sar-collection-total"><BookOpen size={29} weight="light"/><div><p><strong>{collected}</strong><span>/ {entries.length} 种</span></p><small>已经收录的相遇</small></div></div>

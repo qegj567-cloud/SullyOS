@@ -1,0 +1,12 @@
+{
+  "id": "halloween-batch-04-texture",
+  "endpoint": "retexture",
+  "maxTasks": 3,
+  "maxEstimatedCredits": 30,
+  "defaults": {"ai_model":"meshy-7","texture_resolution":"4k","enable_original_uv":true,"enable_pbr":true,"target_formats":["glb"]},
+  "jobs": [
+    {"id":"pumpkin-costume-textured","input_task_id":"01a17b3d-9c89-759c-a4a2-f019e80c8b53","image":"../outfits/06-pumpkin-costume.png","estimatedCredits":10},
+    {"id":"ghost-top-textured","input_task_id":"01a17b3d-b0b4-762b-9e76-899cd47f422b","image":"../separated/05-ghost/hooded-top.png","estimatedCredits":10},
+    {"id":"pumpkin-lantern-textured","input_task_id":"01a17b3d-d7c2-74d1-93e2-8252d37b17c0","image":"../furniture/09-pumpkin-lantern.png","estimatedCredits":10}
+  ]
+}

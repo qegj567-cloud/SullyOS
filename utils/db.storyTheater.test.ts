@@ -26,6 +26,7 @@ describe('剧情剧场数据与糯米机原生预设备份', () => {
                 messageCount: 2,
                 summary: 'Archived scene summary',
                 createdAt: 15,
+                memoryConversions: {'char-a': {date:'2026-09-01',convertedAt:16,destination:'palace',memoryIds:['converted-memory'],skipped:0}},
             }],
             selectedWorldbookIds: ['book-a'],
             presetId: 'story-backup-preset',

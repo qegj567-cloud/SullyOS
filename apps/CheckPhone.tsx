@@ -16,6 +16,7 @@ import {
 } from '../utils/relationshipChat';
 import PersonaSim, { LifeLog, generatePersonaScript } from './PersonaSim';
 import { usePersonaSim, personaSimStore } from '../utils/personaSimStore';
+import { createPersonaSimLog, getPersonaSimBeatIndex } from '../utils/personaSimLog';
 import { getLastInnerState } from '../utils/emotionApply';
 import { trackEvent } from '../utils/analytics';
 import { buildPhoneEvidenceChatCard, normalizePhoneEvidence, phoneFieldToText } from '../utils/phoneEvidence';
@@ -312,6 +313,7 @@ const CheckPhone: React.FC = () => {
 
     // Custom App Creation State
     const [showCreateModal, setShowCreateModal] = useState(false);
+    const [editingAppId, setEditingAppId] = useState<string | null>(null);
     const [newAppName, setNewAppName] = useState('');
     const [newAppIcon, setNewAppIcon] = useState('✨');
     const [newAppColor, setNewAppColor] = useState('#8b9cff');
@@ -467,6 +469,11 @@ const CheckPhone: React.FC = () => {
         setEvidenceBackAppId('home');
         setPage(0);
     };
+    useAppShortcut(ShortcutAppID.CheckPhone, intent => {
+        const target = characters.find(c => c.id === intent.characterId);
+        if (!target) { setView('select'); return; }
+        handleSelectChar(target); setActiveAppId(intent.entryId || 'home');
+    });
 
     const apiHost = (url?: string) => {
         try { return url ? new URL(url).host : '未配置'; }
@@ -669,30 +676,44 @@ const CheckPhone: React.FC = () => {
         addToast('App 已卸载', 'success');
     };
 
+    const openCustomAppEditor = (app?: PhoneCustomApp) => {
+        setEditingAppId(app?.id || null);
+        setNewAppName(app?.name || '');
+        setNewAppIcon(app?.icon || '✨');
+        setNewAppColor(app?.color || '#8b9cff');
+        setNewAppPrompt(app?.prompt || '');
+        setNewAppLayout(app?.layout || 'generic');
+        setShowCreateModal(true);
+    };
+
     const handleCreateCustomApp = () => {
-        if (!targetChar || !newAppName || !newAppPrompt) return;
+        if (!targetChar || !newAppName.trim() || !newAppPrompt.trim()) return;
 
         const newApp: PhoneCustomApp = {
-            id: `app-${Date.now()}`,
-            name: newAppName,
+            id: editingAppId || `app-${Date.now()}`,
+            name: newAppName.trim(),
             icon: newAppIcon,
             color: newAppColor,
             prompt: newAppPrompt,
             layout: newAppLayout
         };
 
-        const currentApps = targetChar.phoneState?.customApps || [];
-        updateCharacter(targetChar.id, {
-            phoneState: { records: targetChar.phoneState?.records || [], ...targetChar.phoneState, customApps: [...currentApps, newApp] }
-        });
+        updateCharacter(targetChar.id, previous => ({
+            phoneState: {
+                records: [], ...previous.phoneState,
+                customApps: editingAppId
+                    ? (previous.phoneState?.customApps || []).map(app => app.id === editingAppId ? { ...app, ...newApp } : app)
+                    : [...(previous.phoneState?.customApps || []), newApp],
+            },
+        }));
 
         setShowCreateModal(false);
         setNewAppName('');
         setNewAppPrompt('');
         setNewAppLayout('generic');
         setPage(1);
-        addToast(`已安装 ${newAppName}`, 'success');
-        trackEvent('安装自定义 App', { layout: newAppLayout });
+        addToast(`已${editingAppId ? '保存' : '安装'} ${newAppName}`, 'success');
+        if (!editingAppId) trackEvent('安装自定义 App', { layout: newAppLayout });
     };
 
     // --- Core Generation Logic ---
@@ -1957,7 +1978,14 @@ ${olderText}
             const generated = await generatePersonaScript({
                 char: targetChar, userProfile, apiConfig: effectiveApiConfig as any, mode: m, theme: t, userPresence: presence, tone,
             });
-            personaSimStore.set({ status: 'ready', mode: m, theme: t, script: generated, charId: cid, charName: cname });
+            const log = createPersonaSimLog(generated, m, t);
+            updateCharacter(cid, cur => ({
+                phoneState: {
+                    ...cur.phoneState, records: cur.phoneState?.records || [],
+                    simLogs: [log, ...(cur.phoneState?.simLogs || [])],
+                },
+            }));
+            personaSimStore.set({ status: 'ready', mode: m, theme: t, script: generated, logId: log.id, charId: cid, charName: cname });
             addToast('演出已就绪', 'success');
         } catch (e) {
             console.error(e);
@@ -3330,7 +3358,7 @@ ${olderText}
         return (
             <SubAppShell>
                 <TermHeader title={app.name} sub={layoutMeta?.name || 'custom app'} accent={accent} onBack={() => setActiveAppId('home')}
-                    right={<span className="text-lg">{app.icon}</span>} />
+                    right={<button onClick={() => openCustomAppEditor(app)} className="px-3 py-2 text-xs" aria-label={`编辑${app.name}`}>编辑</button>} />
                 <div className="flex-1 overflow-y-auto px-4 pt-2 no-scrollbar pb-28 overscroll-contain space-y-3">
                     {list.length === 0 && <EmptyState text="暂无数据" />}
                     {list.map((r, idx) => renderCustomItem(r, idx, list.length, accent, layout, app))}
@@ -3423,7 +3451,7 @@ ${olderText}
 
             {/* Add app + my apps row */}
             <div className="grid grid-cols-2 gap-3.5 mb-7">
-                <button onClick={() => setShowCreateModal(true)}
+                <button onClick={() => openCustomAppEditor()}
                     className={`${customApps.length ? '' : 'col-span-2'} rounded-[20px] p-4 border border-dashed border-white/15 bg-white/[0.02] flex flex-col items-center justify-center gap-2 active:scale-[0.98] transition min-h-[90px]`}>
                     <Plus size={22} weight="light" className="text-white/60" />
                     <span className="text-[11px] tracking-[0.25em] uppercase text-white/50">Add App</span>
@@ -3516,7 +3544,7 @@ ${olderText}
                         </div>
                     );
                 })}
-                <button onClick={() => setShowCreateModal(true)}
+                <button onClick={() => openCustomAppEditor()}
                     className="rounded-[24px] p-4 border border-dashed border-white/15 bg-white/[0.02] flex flex-col items-center justify-center gap-2 active:scale-[0.98] transition min-h-[130px]">
                     <Plus size={24} weight="light" className="text-white/60" />
                     <span className="text-[11px] tracking-[0.2em] uppercase text-white/50">Add App</span>
@@ -3753,16 +3781,16 @@ ${olderText}
                     {activeAppId === 'aiagent' && renderAiAgent()}
                     {activeAppId === 'ai_session' && renderAiSession()}
                     {activeAppId === 'persona' && targetChar && (
-                        <PersonaSim targetChar={targetChar} onExit={() => setActiveAppId('home')} openLifeLog={() => setActiveAppId('lifelog')}
-                            sim={sim} onStart={runSim} onConsumed={() => personaSimStore.reset()} />
+                        <PersonaSim key={targetChar.id} targetChar={targetChar} onExit={() => setActiveAppId('home')} openLifeLog={() => setActiveAppId('lifelog')}
+                            sim={sim.charId === targetChar.id ? sim : { status: 'idle' }} onStart={runSim} onConsumed={() => personaSimStore.reset()} />
                     )}
                     {activeAppId === 'lifelog' && targetChar && (
                         <LifeLog targetChar={targetChar} onBack={() => setActiveAppId('home')}
                             onRequestDelete={requestDeleteSimLog}
-                            onReplay={(log) => {
+                            onReplay={(log, action) => {
                                 if (!log.script) return;
                                 // 用存下来的脚本快照原样回放——直接喂给全局 store 的 ready 态
-                                personaSimStore.set({ status: 'ready', mode: log.mode, theme: log.theme, script: log.script, replay: true, charId: targetChar.id, charName: targetChar.name });
+                                personaSimStore.set({ status: 'ready', mode: log.mode, theme: log.theme, script: log.script, logId: log.id, startIndex: action === 'resume' ? getPersonaSimBeatIndex(log) : 0, charId: targetChar.id, charName: targetChar.name });
                                 setActiveAppId('persona');
                             }} />
                     )}
@@ -3956,8 +3984,8 @@ ${olderText}
             })()}
 
             {/* Create App Modal */}
-            <Modal isOpen={showCreateModal} title="安装自定义 App" onClose={() => setShowCreateModal(false)}
-                footer={<button onClick={handleCreateCustomApp} className="w-full py-3 bg-violet-500 text-white font-bold rounded-2xl">安装到桌面</button>}>
+            <Modal isOpen={showCreateModal} title={editingAppId ? '编辑自定义 App' : '安装自定义 App'} onClose={() => setShowCreateModal(false)}
+                footer={<button onClick={handleCreateCustomApp} disabled={!newAppName.trim() || !newAppPrompt.trim()} className="w-full py-3 bg-violet-500 text-white font-bold rounded-2xl disabled:opacity-40">{editingAppId ? '保存修改' : '安装到桌面'}</button>}>
                 <div className="space-y-4">
                     <div className="flex gap-4">
                         <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl shadow-md border border-white/10 shrink-0"
@@ -4134,3 +4162,5 @@ ${olderText}
 };
 
 export default CheckPhone;
+import { useAppShortcut } from '../utils/appShortcutLaunch';
+import { AppID as ShortcutAppID } from '../types';

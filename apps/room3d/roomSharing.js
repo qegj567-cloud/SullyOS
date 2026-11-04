@@ -3,7 +3,7 @@ import {ROOM_SIZE_VERSION} from './dimensions.js';
 import {boundary,neighbor,OPPOSITE} from './topology.js';
 import {layoutError} from './layout.js';
 
-const ROOM_KEYS=['name','wall','floor','trim','wallStyle','floorStyle'];
+const ROOM_KEYS=['name','wall','floor','trim','wallStyle','floorStyle','fixedPalette'];
 const ITEM_KEYS=['id','assetId','x','y','z','rotation','color','materialColors','length','supportId','dockId','dockSlot','dockDisabled'];
 const pick=(value,keys)=>Object.fromEntries(keys.filter(k=>value[k]!==undefined).map(k=>[k,clone(value[k])]));
 function cleanRoom(source){
@@ -48,6 +48,7 @@ export function applyRoomLayout(home,roomId,incoming,catalog){
  const target=next.rooms[index],source=checkedRoom(cleanRoom(incoming),catalog),ids=new Map(source.items.map(i=>[i.id,uid()]));
  for(const i of source.items){for(const k of ['supportId','dockId'])if(i[k]!=null)i[k]=ids.get(i[k]);i.id=ids.get(i.id);}
  const room={...source,id:target.id,x:target.x,z:target.z,level:target.level,items:[...source.items,...target.items.filter(i=>i.stored)]};
+ if(target.activityRoom){room.activityRoom=target.activityRoom;if(target.defaultTemplate)room.defaultTemplate=clone(target.defaultTemplate);}
  // Shared boundaries belong to both rooms: leave neighbors' walls and doors alone.
  for(const edge of ['left','right','front','back']){const other=neighbor(next,target,edge);if(other)room.boundaries={...room.boundaries,[edge]:clone(boundary(other,OPPOSITE[edge]))};}
  next.rooms[index]=room;

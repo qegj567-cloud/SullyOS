@@ -308,6 +308,7 @@ const ApiCallLogModal: React.FC<ApiCallLogModalProps> = ({ isOpen, onClose }) =>
                                                 {/* 云端这一轮调了不止一次模型时，回传的用量只有最后那次。
                                                     不注明的话这个数拿去对账永远对不上，还会以为是被多扣了 */}
                                                 {e.tokensPartial && <span className="text-amber-500"> · 只算末轮</span>}
+                                                {(e.cacheReadTokens != null || e.cacheWriteTokens != null) && <span className="block text-emerald-600">缓存读取 {(e.cacheReadTokens ?? 0).toLocaleString('en-US')} · 缓存写入 {(e.cacheWriteTokens ?? 0).toLocaleString('en-US')}</span>}
                                             </span>
                                         </div>
                                     )}

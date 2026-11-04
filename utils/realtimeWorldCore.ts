@@ -429,6 +429,8 @@ export interface RealtimeWorldRenderInput {
     specialDates?: string[];
     /** 天气读数；没拉到传 null，天气那段连同它的用法提示一起消失。 */
     weather?: WeatherData | null;
+    /** Already privacy-filtered device text, only supplied for foreground requests. */
+    userLocationText?: string;
     /** 本轮要注入的热点（抽样交给调用方，渲染保持纯净好测）。 */
     news?: NewsItem[];
 }
@@ -443,8 +445,9 @@ export const renderRealtimeWorldBlock = (input: RealtimeWorldRenderInput): strin
     const specialDates = input.specialDates?.filter(Boolean) ?? [];
     const weather = input.weather ?? null;
     const news = input.news ?? [];
+    const userLocationText = input.userLocationText?.trim();
 
-    if (!timeLine && specialDates.length === 0 && !weather && news.length === 0) {
+    if (!timeLine && specialDates.length === 0 && !weather && news.length === 0 && !userLocationText) {
         return '';
     }
 
@@ -473,6 +476,9 @@ export const renderRealtimeWorldBlock = (input: RealtimeWorldRenderInput): strin
         parts.push(`现在外面: ${weather.description}，气温 ${weather.temp}°C（体感 ${weather.feelsLike}°C），湿度 ${weather.humidity}%`);
         parts.push(`你的建议: ${generateWeatherAdvice(weather)}`);
     }
+
+    // Device location sits next to weather, never inside permanent profile/history.
+    if (userLocationText) { parts.push(''); parts.push(userLocationText); }
 
     // 4. 新闻热点（背景认知）
     if (news.length > 0) {

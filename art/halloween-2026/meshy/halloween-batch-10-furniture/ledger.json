@@ -1,0 +1,117 @@
+{
+  "batch": "halloween-batch-10-furniture",
+  "jobs": [
+    {
+      "id": "haunted-fireplace",
+      "image": "../furniture/05-haunted-fireplace.png",
+      "imageSha256": "3e8d4dd8f2d5a3b2d8dfff9e1df04c18084f11237bce233a7807642fec44d7e8",
+      "params": {
+        "model_type": "smart-topology",
+        "ai_model": "meshy-t2.5",
+        "topology": "triangle",
+        "should_texture": false,
+        "target_formats": [
+          "glb"
+        ],
+        "target_polycount": 8000
+      },
+      "estimatedCredits": 5,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-28T09:44:58.998Z",
+      "taskId": "01a181e6-0bbe-769f-b81b-97c392674f40",
+      "progress": 100,
+      "consumedCredits": 5,
+      "downloaded": true,
+      "file": "haunted-fireplace.glb",
+      "bytes": 145144,
+      "sha256": "b375d50e6f4e7a6bd88f6475e3e87da741a3cd69187f5eee2a9ff7b0c36e40f0"
+    },
+    {
+      "id": "ghost-floor-lamp",
+      "image": "../furniture/06-ghost-floor-lamp.png",
+      "imageSha256": "4045aac05b10a3f2ab51df684d640255af4494d78815cae3ef5a144be4a0e485",
+      "params": {
+        "model_type": "smart-topology",
+        "ai_model": "meshy-t2.5",
+        "topology": "triangle",
+        "should_texture": false,
+        "target_formats": [
+          "glb"
+        ],
+        "target_polycount": 6000
+      },
+      "estimatedCredits": 5,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-28T09:45:19.258Z",
+      "taskId": "01a181e6-5a91-730f-9738-0498b6dfab92",
+      "progress": 100,
+      "consumedCredits": 5,
+      "downloaded": true,
+      "file": "ghost-floor-lamp.glb",
+      "bytes": 109300,
+      "sha256": "85482e3badcfe372f700e42c11307926f1539af0263771a4726e3895f58331f6"
+    },
+    {
+      "id": "gothic-curtain-window",
+      "image": "../furniture/07-gothic-curtain-window.png",
+      "imageSha256": "0361afff976263d12ce53e8ba36cdf3d837ec7b7eb54d7b4289817c7033b895f",
+      "params": {
+        "model_type": "smart-topology",
+        "ai_model": "meshy-t2.5",
+        "topology": "triangle",
+        "should_texture": false,
+        "target_formats": [
+          "glb"
+        ],
+        "target_polycount": 8000
+      },
+      "estimatedCredits": 5,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-28T09:45:27.574Z",
+      "taskId": "01a181e6-7b02-7018-9baa-da275105792b",
+      "progress": 100,
+      "consumedCredits": 5,
+      "downloaded": true,
+      "file": "gothic-curtain-window.glb",
+      "bytes": 140704,
+      "sha256": "bd1c2dc5b3f14f1e7ba0d8f435a096234d58504399033b9bffb248d935af14b5"
+    },
+    {
+      "id": "bat-rug",
+      "image": "../furniture/08-bat-rug.png",
+      "imageSha256": "83a71ae1c99810b20b06dae334bbac90fa8aa08fb889e8492290247a5455e909",
+      "params": {
+        "model_type": "smart-topology",
+        "ai_model": "meshy-t2.5",
+        "topology": "triangle",
+        "should_texture": false,
+        "target_formats": [
+          "glb"
+        ],
+        "target_polycount": 4000
+      },
+      "estimatedCredits": 5,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-28T09:45:52.423Z",
+      "taskId": "01a181e6-dc56-772a-b8f7-3a06896f4b91",
+      "progress": 100,
+      "consumedCredits": 5,
+      "downloaded": true,
+      "file": "bat-rug.glb",
+      "bytes": 69804,
+      "sha256": "e235a47fd2785d2c311a9d5f348586a13bbc2e521ddcaf8b72b8ac09d10ef176"
+    }
+  ],
+  "latestBalance": {
+    "balance": 616,
+    "monthly_credits": 375,
+    "permanent_credits": 241,
+    "monthly_resets_at": 1794576839000
+  },
+  "balanceBefore": {
+    "balance": 636,
+    "monthly_credits": 395,
+    "permanent_credits": 241,
+    "monthly_resets_at": 1794576839000
+  }
+}

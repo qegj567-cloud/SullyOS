@@ -166,7 +166,7 @@ const DateSettings: React.FC<DateSettingsProps> = ({ char, onBack }) => {
                 // Upload to a specific skin set
                 const key = targetEmotionKey.trim().toLowerCase();
                 const skinId = editingSkinId;
-                if (!key || !skinId) { addToast('参数丢失', 'error'); return; }
+                if (!key || !skinId) { addToast('未选中要替换的皮肤或情绪', 'error'); return; }
                 const updatedSets = (char.dateSkinSets || []).map(s =>
                     s.id === skinId ? { ...s, sprites: { ...s.sprites, [key]: ref } } : s
                 );
@@ -175,7 +175,7 @@ const DateSettings: React.FC<DateSettingsProps> = ({ char, onBack }) => {
                 setTargetEmotionKey('');
             } else {
                 const key = targetEmotionKey.trim().toLowerCase();
-                if (!key) { addToast('情绪Key丢失', 'error'); return; }
+                if (!key) { addToast('未指定要替换的情绪名称', 'error'); return; }
                 const newSprites = { ...(char.sprites || {}), [key]: ref };
                 updateCharacter(char.id, { sprites: newSprites });
                 addToast(`立绘 [${key}] 已保存`, 'success');

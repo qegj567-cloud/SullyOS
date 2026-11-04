@@ -19,6 +19,25 @@ function generateId(): string {
     return `mn_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/** Bound batches by actual prompt text; keep every message intact, including long scenes. */
+export function splitExtractionMessages(messages: Message[], charName: string, userName: string): Message[][] {
+    const batches: Message[][] = [];
+    let batch: Message[] = [];
+    let chars = 0;
+    for (const message of messages) {
+        const size = formatMessageForPrompt(message, charName, userName).length + 50;
+        if (batch.length && (chars + size > 24_000 || batch.length >= 250)) {
+            batches.push(batch);
+            batch = [];
+            chars = 0;
+        }
+        batch.push(message);
+        chars += size;
+    }
+    if (batch.length) batches.push(batch);
+    return batches;
+}
+
 // ─── 共用的 prompt 规则部分 ──────────────────────────
 //
 // 设计决策（2026-04）：palace extraction 的提示词**完全固定**，不会被用户
@@ -80,7 +99,7 @@ function buildConversationText(messages: Message[], charName: string, userLabel:
     const pad2 = (n: number) => String(n).padStart(2, '0');
     return messages
         .map((m, index) => {
-            const body = (linkDates ? `[M${index}] ` : '') + formatMessageForPrompt(m, charName, userLabel).slice(0, 600);
+            const body = (linkDates ? `[M${index}] ` : '') + formatMessageForPrompt(m, charName, userLabel);
             const ts = m.timestamp;
             if (!ts || ts <= 0) return body;
             const d = new Date(ts);
@@ -191,7 +210,7 @@ function parseMemoryNodesFromBuffer(
                 && typeof item.relativeTimeSource === 'string' && /^M\d+$/.test(item.relativeTimeSource)) {
                 const source = messages[Number(item.relativeTimeSource.slice(1))];
                 if (source && Number.isFinite(source.timestamp) && source.timestamp > 0
-                    && hasMatchingRelativeSource(memory.content, formatMessageForPrompt(source, '', '').slice(0, 600))) {
+                    && hasMatchingRelativeSource(memory.content, formatMessageForPrompt(source, '', ''))) {
                     memory.relativeTimeAnchor = {
                         dateKey: getLocalDateKey(new Date(source.timestamp)), source: 'message', messageId: source.id,
                     };
@@ -403,6 +422,20 @@ export async function extractMemoriesFromBuffer(
 ): Promise<BufferExtractionResult> {
     if (messages.length === 0) return { memories: [], crossTimeLinks: [], eventBoxHints: [], unpinIds: [], corrections: [] };
 
+    const batches = splitExtractionMessages(messages, charName, userName || '用户');
+    if (batches.length > 1) {
+        const result: BufferExtractionResult = { memories: [], crossTimeLinks: [], eventBoxHints: [], unpinIds: [], corrections: [] };
+        for (const batch of batches) {
+            const next = await extractMemoriesFromBuffer(batch, charId, charName, llmConfig, charContext, userName, relatedMemories, pinnedMemories);
+            result.memories.push(...next.memories);
+            result.crossTimeLinks.push(...next.crossTimeLinks);
+            result.eventBoxHints.push(...next.eventBoxHints);
+            result.unpinIds.push(...next.unpinIds);
+            result.corrections.push(...next.corrections);
+        }
+        return result;
+    }
+
     const includeEntities = readRecallRuntimeSnapshot().featureFlagsSnapshot.recallRouter;
     const linkDates = relativeTimeEnabled();
     const userLabel = userName || '用户';
@@ -488,10 +521,13 @@ pinDays 仅在需要置顶时才写，大多数记忆不需要。
         );
 
         const reply = data.choices?.[0]?.message?.content || '';
+        if (['length', 'max_tokens'].includes(data.choices?.[0]?.finish_reason)) {
+            throw new Error('记忆提取输出被截断，请降低每批原文数量后重试');
+        }
         const parsed = safeParseJsonArray(reply);
 
-        if (parsed.length === 0 && reply.trim().length > 0) {
-            console.warn(`🏰 [Extraction] LLM 返回了内容但 JSON 解析为空数组，可能格式异常。原始回复前200字: ${reply.slice(0, 200)}`);
+        if (parsed.length === 0 && !/^\s*(?:```(?:json)?\s*)?\[\s*\]\s*(?:```)?\s*$/i.test(reply)) {
+            throw new Error('记忆提取未返回有效 JSON，原文保留，请重试');
         }
 
         console.log(`🏰 [Extraction] 缓冲区提取完成：从 ${messages.length} 条消息中提取 ${parsed.length} 条记忆`);
@@ -548,8 +584,7 @@ pinDays 仅在需要置顶时才写，大多数记忆不需要。
         return { memories, crossTimeLinks, eventBoxHints, unpinIds, corrections };
 
     } catch (err: any) {
-        if (llmConfig.deferPlateMaintenance) throw err;
         console.error(`❌ [Extraction] 缓冲区提取失败 (${messages.length} 条消息):`, err.message);
-        return { memories: [], crossTimeLinks: [], eventBoxHints: [], unpinIds: [], corrections: [] };
+        throw err;
     }
 }

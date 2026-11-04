@@ -1,0 +1,121 @@
+{
+  "batch": "halloween-batch-14-furniture-texture",
+  "jobs": [
+    {
+      "id": "cauldron-planter-textured",
+      "image": "../furniture/10-cauldron-planter.png",
+      "imageSha256": "96d7fd153f3dc39388fcd35100f8b5627d39d13fc093cae3119678066035b054",
+      "params": {
+        "ai_model": "meshy-7",
+        "texture_resolution": "2k",
+        "enable_original_uv": false,
+        "enable_pbr": true,
+        "target_formats": [
+          "glb"
+        ]
+      },
+      "estimatedCredits": 10,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-29T03:41:49.439Z",
+      "model": "furniture-texture-inputs/halloween_cauldron_planter.glb",
+      "modelSha256": "0267a005718241f6eb1df1b11ccd7a0c2c18a440b3eddc3eedac0aa0f514af90",
+      "taskId": "01a185bf-e3ef-720d-9056-cf6085d3274b",
+      "progress": 100,
+      "consumedCredits": 10,
+      "downloaded": true,
+      "file": "cauldron-planter-textured.glb",
+      "bytes": 5629876,
+      "sha256": "864797f423b3936a09c9ecd5905236092be8d77797e83e8e46c4f5bf1e899683"
+    },
+    {
+      "id": "cat-ear-mirror-textured",
+      "image": "../furniture/11-cat-mirror.png",
+      "imageSha256": "23e6a1a1cd4b1f032efde431ee1a9e3a363230201000cfc030ff6a1893322817",
+      "params": {
+        "ai_model": "meshy-7",
+        "texture_resolution": "2k",
+        "enable_original_uv": false,
+        "enable_pbr": true,
+        "target_formats": [
+          "glb"
+        ]
+      },
+      "estimatedCredits": 10,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-29T03:42:28.211Z",
+      "model": "furniture-texture-inputs/halloween_cat_ear_mirror.glb",
+      "modelSha256": "ce59f65a8c82462ce7c7cb609be0b830c4aa4cf249797442fdc73eaf12afb17f",
+      "taskId": "01a185c0-7a4f-7407-a3c4-e2e17f743179",
+      "progress": 100,
+      "consumedCredits": 10,
+      "downloaded": true,
+      "file": "cat-ear-mirror-textured.glb",
+      "bytes": 5507428,
+      "sha256": "75468e530a5c43aa982fda81d95a6123eec7da24ae973d4a51da635bdcd7348d"
+    },
+    {
+      "id": "bat-pumpkin-clock-textured",
+      "image": "../furniture/12-pumpkin-bat-clock.png",
+      "imageSha256": "87b549c4a4679b505a8ee6c16f8c2cd7fd72b4de2dff8fe92986d2748e8d786d",
+      "params": {
+        "ai_model": "meshy-7",
+        "texture_resolution": "2k",
+        "enable_original_uv": false,
+        "enable_pbr": true,
+        "target_formats": [
+          "glb"
+        ]
+      },
+      "estimatedCredits": 10,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-29T03:43:07.396Z",
+      "model": "furniture-texture-inputs/halloween_bat_pumpkin_clock.glb",
+      "modelSha256": "2c039c7814a981bbe852ebba519f0b0bf0ccf7832aba646898ad62c3b37041d1",
+      "taskId": "01a185c1-146f-7356-ae62-2a87d88e78d5",
+      "progress": 100,
+      "consumedCredits": 10,
+      "downloaded": true,
+      "file": "bat-pumpkin-clock-textured.glb",
+      "bytes": 6204920,
+      "sha256": "ba6c31f3ce28e582a4173949fe93c40189e1d6e9021de01eceb6632294b9fd44"
+    },
+    {
+      "id": "pumpkin-lantern-textured",
+      "image": "../furniture/09-pumpkin-lantern.png",
+      "imageSha256": "8077351f84bc48c25cac1023f47c598f0fff709cba681c8f9774a6d88da4e4ca",
+      "params": {
+        "ai_model": "meshy-7",
+        "texture_resolution": "2k",
+        "enable_original_uv": false,
+        "enable_pbr": true,
+        "target_formats": [
+          "glb"
+        ]
+      },
+      "estimatedCredits": 10,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-29T03:43:53.243Z",
+      "model": "furniture-texture-inputs/halloween_pumpkin_lantern.glb",
+      "modelSha256": "76f48962048203ccb7732f3bfa8684906fe4f798d6bc74ac4a56962a46d6f71c",
+      "taskId": "01a185c1-c684-71a1-b406-281c5fa76f2c",
+      "progress": 100,
+      "consumedCredits": 10,
+      "downloaded": true,
+      "file": "pumpkin-lantern-textured.glb",
+      "bytes": 5144496,
+      "sha256": "afdc6a5247dca8a5a7903a0a5825f52c58051e3a93eacf33b2872b44b0669d43"
+    }
+  ],
+  "latestBalance": {
+    "balance": 476,
+    "monthly_credits": 235,
+    "permanent_credits": 241,
+    "monthly_resets_at": 1794576839000
+  },
+  "balanceBefore": {
+    "balance": 516,
+    "monthly_credits": 275,
+    "permanent_credits": 241,
+    "monthly_resets_at": 1794576839000
+  }
+}

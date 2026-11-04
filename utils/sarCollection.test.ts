@@ -16,7 +16,7 @@ const entry = (s: M.FishingMarketState, who: string, itemId = id) => sarCollecti
 describe('SAR personal collection atlas', () => {
     it('uses the actual catalogs and counts distinct kinds, not duplicate units', () => {
         const s = init(); s.sarCommerce.gacha.collection = { 'story-01': 6, 'variant-01': 4, unknown: 90 }; s.sarCommerce.moduleShop.inventory = { [id]: 12, unknown: 8 };
-        const p = sarCollectionProgress(sarCollectionEntries(s, 'user'));
+        const p = sarCollectionProgress(sarCollectionEntries(s, 'user')).filter(category => category.id !== 'halloween');
         const availableDinos=[...M.FISH_CATALOG,...M.STORY_CATCH_CATALOG].filter(f=>f.category==='time-relic'&&f.id!=='dinosaur-egg').map(f=>f.id);
         expect(sarCollectionEntries(s,'user').filter(e=>e.category==='dinosaur').map(e=>e.id)).toEqual(availableDinos);
         expect(p.map(x => x.total)).toEqual([M.FISH_CATALOG.filter(f => f.category === 'fish').length, availableDinos.length, SAR_ALL_MODULES.length, SAR_MODULE_CATALOG.length]);

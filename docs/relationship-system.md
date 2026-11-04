@@ -10,6 +10,8 @@
 
 ## 数据模型（`types.ts`）
 
+自定义 App 内页顶部提供「编辑」入口，回填名称、图标、颜色、生成指令和布局。保存时保留原 App ID 与已生成记录，更新配置只影响后续生成，不自动重新生成旧记录。
+
 通讯录、完整聊天原文和话题盒都存在角色的 `phoneState` 中，随完整备份 / 文字备份的 `characters` 分片一起导出与恢复，与 `sendToChat` 开关无关。仅媒体备份不包含聊天文字。真实对话异步完成时，`applyRealConversationToPhoneState` 必须在 `updateCharacter` 的函数式回调里基于最新状态合并，避免覆盖生成期间新增的其他联系人和记录。回归见 `utils/phoneConversationBackup.test.ts`。
 
 - `PhoneContact`：联系人。`kind: 'real' | 'npc'`；`linkedCharId`（real 时绑定真实角色）；`affinity`（机主对 TA 的好感，**-100..100**，负=反感）；`status: 'friend'|'pending'|'blocked'|'deleted'`。

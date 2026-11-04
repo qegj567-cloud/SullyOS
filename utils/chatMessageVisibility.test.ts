@@ -44,6 +44,9 @@ describe('私聊与桌面预览的消息范围', () => {
         expect(isVisibleChatMessage(log)).toBe(true);
         expect(isVisibleChatMessage(log, true)).toBe(false);
         expect(isVisibleChatMessage(message({ role: 'system', type: 'score_card' }), true)).toBe(true);
+        const comment = message({role: 'system', type: 'friend_feed_card', metadata: {source: 'friend_feed'}});
+        expect(isVisibleChatMessage(comment, true)).toBe(true);
+        expect(isChatPreviewMessage(comment)).toBe(false); // Quiet history, never a new private reply notification.
         expect(isChatPreviewMessage(log)).toBe(false);
     });
 });

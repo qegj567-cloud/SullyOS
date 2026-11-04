@@ -548,6 +548,21 @@ const postCore = async (
     }
 };
 
+const formatMcpRpcError = (err: { code?: number; message?: string; data?: any }): string => {
+    const code = err?.code !== undefined ? `[${err.code}]: ` : '';
+    const message = err?.message || '未知错误';
+    let dataText = '';
+    if (err?.data !== undefined && err?.data !== null && err?.data !== '') {
+        if (typeof err.data === 'string') {
+            dataText = err.data.trim();
+        } else {
+            try { dataText = JSON.stringify(err.data); } catch { dataText = String(err.data); }
+        }
+    }
+    const suffix = dataText && !message.includes(dataText) ? `（${dataText}）` : '';
+    return `${code}${message}${suffix}`;
+};
+
 const initializeCore = async (
     target: McpTransportTarget,
     session: McpSessionState,
@@ -559,7 +574,7 @@ const initializeCore = async (
         clientInfo: { name: 'sullyos', title: 'SullyOS', version: '1.0.0' },
     });
     const { response } = await postCore(target, session, initReq, timeoutMs);
-    if (response?.error) throw new Error(`Initialize 失败: ${response.error.message}`);
+    if (response?.error) throw new Error(`Initialize 失败 ${formatMcpRpcError(response.error)}`);
 
     const negotiated = String(
         response?.result?.protocolVersion || MCP_LATEST_HANDSHAKE_PROTOCOL_VERSION,
@@ -612,7 +627,7 @@ export const discoverMcpToolsCore = async (
     await ensureInitializedCore(target, session, timeoutMs);
     opts.onStage?.('tools');
     const { response } = await postCore(target, session, buildRpcRequest(session, 'tools/list'), timeoutMs);
-    if (response?.error) throw new Error(`tools/list 失败: ${response.error.message}`);
+    if (response?.error) throw new Error(`tools/list 失败 ${formatMcpRpcError(response.error)}`);
     const tools = response?.result?.tools;
     if (!Array.isArray(tools)) return [];
     return tools.map((t: any) => ({
@@ -770,7 +785,7 @@ export const callMcpToolCore = async (
             }
         }
         if (!response) return finish({ success: false, error: '空响应' });
-        if (response.error) return finish({ success: false, error: `MCP 错误 [${response.error.code}]: ${response.error.message}` });
+        if (response.error) return finish({ success: false, error: `MCP 错误 ${formatMcpRpcError(response.error)}` });
 
         const result = response.result;
         if (result?.resultType === 'input_required') {

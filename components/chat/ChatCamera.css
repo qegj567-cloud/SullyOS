@@ -30,3 +30,8 @@
 
 .chat-camera fieldset.chat-camera-editor{border:0;border-top:1px solid var(--camera-line);margin:0;min-width:0}
 .chat-camera-gesture-hint{margin:6px 0;color:#73737e;font-size:11px;text-align:center}
+.chat-camera-sensor{position:relative;overflow:hidden;flex-shrink:0;background:#24242c}
+.chat-camera-lenses{display:flex;flex-direction:column;gap:6px;padding:8px 16px;border-top:1px solid var(--camera-line);font-size:12px}
+.chat-camera-lenses label{display:flex;gap:10px;align-items:center;min-height:30px}
+.chat-camera-lenses select{flex:1;min-width:0;border:1px solid var(--camera-line);border-radius:6px;padding:6px;background:var(--camera-soft);font:inherit;color:inherit}
+.chat-camera-lenses input{flex:1;min-width:0}.chat-camera-lenses output{min-width:38px;text-align:right}

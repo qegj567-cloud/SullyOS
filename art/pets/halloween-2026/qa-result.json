@@ -1,0 +1,43 @@
+{
+  "hats": [
+    [
+      "pet_hamster",
+      "witch"
+    ],
+    [
+      "pet_jellyfish",
+      "pumpkin"
+    ],
+    [
+      "pet_bird",
+      null
+    ],
+    [
+      "pet_snake",
+      null
+    ],
+    [
+      "pet_slime",
+      null
+    ],
+    [
+      "pet_cat",
+      null
+    ],
+    [
+      "pet_dog",
+      null
+    ]
+  ],
+  "errors": [],
+  "passed": [
+    "nine species two hats",
+    "round hamster side view",
+    "jellyfish no mouth",
+    "real UI equip",
+    "reload persistence",
+    "color retains hat",
+    "mobile no overflow",
+    "remove and undo retains hat"
+  ]
+}

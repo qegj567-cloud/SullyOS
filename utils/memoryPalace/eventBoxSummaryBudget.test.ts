@@ -11,10 +11,7 @@ describe('EventBox summary 字数预算', () => {
         expect(EVENT_BOX_SUMMARY_TARGET_MIN_CHARS).toBeLessThan(EVENT_BOX_SUMMARY_TARGET_MAX_CHARS);
     });
 
-    // 回归守卫：硬截断线必须高于目标上界，给「模型数不准字数」留缓冲。
-    // 若砍线 ≤ 目标上界，模型瞄着目标上界写、稍微超一点就会被硬截断拼上「……」——
-    // 这正是整合回忆末尾省略号的根因。砍线和目标上界不能一起往下压到同一个值。
-    it('硬截断线高于目标上界（留缓冲，避免模型稍超就被砍出「……」）', () => {
+    it('二次精简触发线高于目标上界，给模型估算留缓冲', () => {
         expect(EVENT_BOX_SUMMARY_HARD_MAX_CHARS).toBeGreaterThan(EVENT_BOX_SUMMARY_TARGET_MAX_CHARS);
     });
 });
@@ -38,18 +35,15 @@ describe('enforceSummaryLengthBudget — 超限二次压缩兜底', () => {
         expect(out.endsWith(ELLIPSIS)).toBe(false);
     });
 
-    it('超限 + 二次压缩后仍超：取更短者做基底，硬截断兜底', async () => {
+    it('二次压缩仍超目标：采用更短的完整结果，不截尾', async () => {
         const text = 'a'.repeat(1000);
-        // 二次压缩压到 950，仍 > 900 → 用 950 这份做基底截断
-        const out = await enforceSummaryLengthBudget(text, async () => 'b'.repeat(950), HARD);
-        expect(out.startsWith('b'.repeat(HARD))).toBe(true);
-        expect(out.endsWith(ELLIPSIS)).toBe(true);
-        expect(out.length).toBe(HARD + ELLIPSIS.length);
+        expect(await enforceSummaryLengthBudget(text, async () => 'b'.repeat(950), HARD)).toBe('b'.repeat(950));
     });
 
-    it('超限 + 二次压缩失败(null)：回退硬截断原文', async () => {
+    it('二次压缩失败：完整保留首次正文', async () => {
         const text = 'a'.repeat(1000);
-        const out = await enforceSummaryLengthBudget(text, async () => null, HARD);
-        expect(out).toBe('a'.repeat(HARD) + ELLIPSIS);
+        expect(await enforceSummaryLengthBudget(text, async () => null, HARD)).toBe(text);
+        expect(await enforceSummaryLengthBudget(text, async () => { throw new Error('timeout'); }, HARD)).toBe(text);
+        expect(await enforceSummaryLengthBudget(text, async () => 'b'.repeat(1200), HARD)).toBe(text);
     });
 });

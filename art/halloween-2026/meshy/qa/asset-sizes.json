@@ -1,0 +1,163 @@
+{
+  "furniture": [
+    {
+      "name": "蝙蝠双人沙发",
+      "bytes": 1042836
+    },
+    {
+      "name": "南瓜扶手椅",
+      "bytes": 849280
+    },
+    {
+      "name": "棺木月牙茶几",
+      "bytes": 706436
+    },
+    {
+      "name": "魔药尖顶书柜",
+      "bytes": 1045088
+    },
+    {
+      "name": "幽宅魔火壁炉",
+      "bytes": 1177396
+    },
+    {
+      "name": "幽灵落地灯",
+      "bytes": 751152
+    },
+    {
+      "name": "哥特月夜帘窗",
+      "bytes": 1324676
+    },
+    {
+      "name": "蝙蝠花边地毯",
+      "bytes": 796040
+    },
+    {
+      "name": "魔药蘑菇坩埚",
+      "bytes": 804108
+    },
+    {
+      "name": "猫耳穿衣镜",
+      "bytes": 750628
+    },
+    {
+      "name": "蝙蝠南瓜挂钟",
+      "bytes": 806100
+    },
+    {
+      "name": "万圣节南瓜提灯",
+      "bytes": 649732
+    }
+  ],
+  "clothing": [
+    {
+      "file": "halloween-witch-0.glb",
+      "path": "public\\room3d\\wardrobe\\halloween-witch-0.glb",
+      "items": [
+        "女巫连衣裙",
+        "女巫帽",
+        "女巫搭扣靴"
+      ],
+      "bytes": 14245744
+    },
+    {
+      "file": "halloween-witch-1.glb",
+      "path": "public\\room3d\\wardrobe\\halloween-witch-1.glb",
+      "items": [
+        "女巫波浪口袜"
+      ],
+      "bytes": 230392
+    },
+    {
+      "file": "halloween-count-0.glb",
+      "path": "public\\room3d\\wardrobe\\halloween-count-0.glb",
+      "items": [
+        "伯爵燕尾外套",
+        "伯爵长裤",
+        "伯爵短靴",
+        "伯爵马甲",
+        "伯爵领巾"
+      ],
+      "bytes": 12425720
+    },
+    {
+      "file": "halloween-apprentice-0.glb",
+      "path": "public\\room3d\\wardrobe\\halloween-apprentice-0.glb",
+      "items": [
+        "药剂师上衣",
+        "药剂围裙",
+        "药剂师短裤",
+        "药剂师软帽",
+        "药剂师系带靴"
+      ],
+      "bytes": 13694116
+    },
+    {
+      "file": "halloween-apprentice-1.glb",
+      "path": "public\\room3d\\wardrobe\\halloween-apprentice-1.glb",
+      "items": [
+        "药剂师条纹袜"
+      ],
+      "bytes": 189656
+    },
+    {
+      "file": "halloween-shorts-0.glb",
+      "path": "public\\room3d\\wardrobe\\halloween-shorts-0.glb",
+      "items": [
+        "万圣糖果短裤"
+      ],
+      "bytes": 10791712
+    },
+    {
+      "file": "halloween-ghost-0.glb",
+      "path": "public\\room3d\\wardrobe\\halloween-ghost-0.glb",
+      "items": [
+        "幽灵连帽上衣"
+      ],
+      "bytes": 11502464
+    },
+    {
+      "file": "halloween-ghost-2.glb",
+      "path": "public\\room3d\\wardrobe\\halloween-ghost-2.glb",
+      "items": [
+        "幽灵短裤"
+      ],
+      "bytes": 8558584
+    },
+    {
+      "file": "halloween-ghost-3.glb",
+      "path": "public\\room3d\\wardrobe\\halloween-ghost-3.glb",
+      "items": [
+        "幽灵搭扣鞋"
+      ],
+      "bytes": 9393740
+    },
+    {
+      "file": "halloween-ghost-1.glb",
+      "path": "public\\room3d\\wardrobe\\halloween-ghost-1.glb",
+      "items": [
+        "幽灵条纹袜"
+      ],
+      "bytes": 196812
+    },
+    {
+      "file": "halloween-pumpkin-0.glb",
+      "path": "public\\room3d\\wardrobe\\halloween-pumpkin-0.glb",
+      "items": [
+        "南瓜帽",
+        "南瓜内搭袖",
+        "南瓜连体衣",
+        "南瓜搭扣靴"
+      ],
+      "bytes": 14759056
+    },
+    {
+      "file": "halloween-pumpkin-1.glb",
+      "path": "public\\room3d\\wardrobe\\halloween-pumpkin-1.glb",
+      "items": [
+        "南瓜条纹袜"
+      ],
+      "bytes": 59564
+    }
+  ]
+}

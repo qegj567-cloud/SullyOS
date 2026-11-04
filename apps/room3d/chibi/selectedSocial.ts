@@ -1,3 +1,6 @@
+import {isSeasonalSocial,poseSeasonalSocial,seasonalExpression} from './seasonalSocial';
+import {loadHalloweenProps} from './halloweenProps';
+import {isFaceSocial} from './faceSocialContact';
 import {actionExpression} from './actionExpression';
 import * as T from 'three';
 import type {ChibiVisitor} from './visitor';
@@ -6,6 +9,7 @@ import {contactSolver} from './socialContact';
 import {furniturePalm} from './furnitureMotion';
 import {createSocialProp} from './socialProps';
 import {isIntimacy,isPrincessCarry,poseIntimacy} from './intimacyMotion';
+import {prepareCarryFrame,carryCaptureWeight} from './princessCarry';
 import {splitMotionHeading} from './motionHeading';
 export {motionCategories} from './selectedMotions';
 export type SocialAction=string;
@@ -13,7 +17,7 @@ export const socialActions=Object.fromEntries(selectedMotions.map(e=>[e.id,{...e
 export interface SocialResident {id:string;visitor:ChibiVisitor}
 const yAxis=new T.Vector3(0,1,0),smooth=T.MathUtils.smootherstep;
 /** Both roles share a clock and capture transform. Observers stay independent. */
-export function createSocialScene(residents:SocialResident[],options:{facingTarget?:T.Vector3;pinned?:{id:string;pose:any};onComplete?:()=>void;canPlace?:(paths:T.Vector3[][])=>boolean;canPerform?:(paths:T.Vector3[][])=>boolean;origins?:T.Vector3[];findPath?:(from:T.Vector3,to:T.Vector3)=>T.Vector3[]|null}={}){
+export function createSocialScene(residents:SocialResident[],options:{canInteract?:(action:string,a:string,b?:string)=>boolean;facingTarget?:T.Vector3;pinned?:{id:string;pose:any};onComplete?:()=>void;canPlace?:(paths:T.Vector3[][])=>boolean;canPerform?:(paths:T.Vector3[][])=>boolean;origins?:T.Vector3[];findPath?:(from:T.Vector3,to:T.Vector3)=>T.Vector3[]|null}={}){
  if(new Set(residents.map(r=>r.id)).size!==residents.length)throw Error('Duplicate resident ID');
  if(residents.some(r=>!!r.visitor.rig!==!!residents[0]?.visitor.rig))throw Error('A home must use one body type');
  const states=new Map(residents.map(r=>[r.id,{...r,solver:contactSolver(r.visitor),home:r.visitor.root.position.clone(),rotation:r.visitor.root.quaternion.clone()}]));
@@ -102,10 +106,23 @@ export function createSocialScene(residents:SocialResident[],options:{facingTarg
     const bend=T.MathUtils.clamp((difference-.15)*2.5,0,.78);
     if(bend){for(const side of ['L','R'])for(const [joint,angle] of [['thigh',-bend],['shin',bend*2],['foot',-bend]] as const)frames[i].rotations[`${side}_${joint}`].multiply(new T.Quaternion().setFromAxisAngle(new T.Vector3(1,0,0),angle));frames[i].position.y-=1-Math.cos(bend);}
    }
-   if(isIntimacy(s.action)){
+   if(isIntimacy(s.action)||isSeasonalSocial(s.action)){
     const other=points[1-i],toward=new T.Quaternion().setFromAxisAngle(yAxis,Math.atan2(other.x-points[i].x,other.z-points[i].z));
     r.visitor.root.quaternion.copy(turn).slerp(toward,smooth(actionTime,0,.6));
-    r.visitor.animate(sourceTime,'idle');
+    if(s.clip.source==='meshy-text-to-motion'){
+     if(isPrincessCarry(s.action))prepareCarryFrame(frames[i],sourceTime);
+     if(isFaceSocial(s.action)){
+      // Human torso bends place the oversized chibi head inside its partner.
+      // Compress the captured angles smoothly, retaining their changing rhythm.
+      for(const n of ['hips','spine','chest','neck','head']){
+       const q=frames[i].rotations[n],e=new T.Euler().setFromQuaternion(q,'YXZ');
+       const limit=n==='hips'?.12:n==='spine'||n==='neck'?.08:.16;
+       e.x=limit*Math.tanh(e.x/.4);e.y=.18*Math.tanh(e.y/.4);e.z=.16*Math.tanh(e.z/.4);q.setFromEuler(e);
+      }
+     }
+     r.visitor.applySelectedFrame(frames[i],weight*(isPrincessCarry(s.action)?carryCaptureWeight(sourceTime):1));
+    }
+    else r.visitor.animate(sourceTime,'idle');
    }else{
     const {heading,lean}=splitMotionHeading(frames[i].rotations.hips);
     // The sampled pelvis already contains this actor's capture heading. Put it
@@ -131,17 +148,19 @@ export function createSocialScene(residents:SocialResident[],options:{facingTarg
    const needed=Math.sqrt(Math.max(0,.74**2-vertical**2)),gap=delta.length();
    if(gap<needed){if(gap<.001)delta.copy(points[1]).sub(points[0]);delta.normalize().multiplyScalar((needed-gap)/2);both[0].visitor.root.position.sub(delta);both[1].visitor.root.position.add(delta);both.forEach(r=>r.visitor.root.updateWorldMatrix(true,true));}
   }
-  if(isIntimacy(s.action)&&both[0].visitor.rig)poseIntimacy(s.action,both,sourceTime,pinned?s.ids.indexOf(pinned.id):undefined);else contacts(both,frames,weight);prop?.update(sourceTime,s.clip.duration,weight);for(const r of both)r.visitor.setActionExpression(actionTime<s.clip.duration? actionExpression(s.action,socialActions[s.action].category,socialActions[s.action].label):'neutral',sourceTime);finish();
+  if(isSeasonalSocial(s.action))poseSeasonalSocial(s.action,both,sourceTime);else if(isIntimacy(s.action)&&both[0].visitor.rig)poseIntimacy(s.action,both,sourceTime,pinned?s.ids.indexOf(pinned.id):undefined);else contacts(both,frames,weight);prop?.update(sourceTime,s.clip.duration,weight);for(const [i,r] of both.entries())r.visitor.setActionExpression(isSeasonalSocial(s.action)?seasonalExpression(s.action,sourceTime,i):actionTime<s.clip.duration? actionExpression(s.action,socialActions[s.action].category,socialActions[s.action].label):'neutral',sourceTime);finish();
  }
  const restore=()=>{prop?.dispose();prop=null;session=null;draw();};
  return {
   get active(){return !!session;},
   async start(action:SocialAction,a:string,b?:string){
+   const checkRelation=()=>{if(options.canInteract&&!options.canInteract(action,a,b))throw Error('这两位未设置浪漫关系，不能执行亲密动作');};checkRelation();
    const entry=socialActions[action];if(!entry)throw Error('这个动作没有被选中');
    if(!states.has(a)||entry.participants===2&&(!b||!states.has(b)||a===b))throw Error('请选择两位不同的居民');
+   if(isSeasonalSocial(action)&&pinned)throw Error('这段互动需要两个人先站起来');
    if(isPrincessCarry(action)&&!states.get(a)!.visitor.rig)throw Error('公主抱需要二号素体');
    const token=++generation;restore();loading=true;
-   try{const sourceClip=await loadSelectedMotion(action);if(token!==generation)return false;
+   try{const [sourceClip,propModels]=await Promise.all([loadSelectedMotion(action),loadHalloweenProps(action)]);if(token!==generation)return false;checkRelation();
     // This capture stores the seated recipient first and the crouching comforter second.
     // Keep semantic participant IDs (initiator, recipient) stable; only map the tracks.
     const clip=action==='cmu-22_03'?{...sourceClip,actors:[sourceClip.actors[1],sourceClip.actors[0]]}:sourceClip;
@@ -162,13 +181,14 @@ export function createSocialScene(residents:SocialResident[],options:{facingTarg
      if(options.canPlace&&!options.canPlace(moving(paths)))return false;
      const motion=both.map(()=>[] as T.Vector3[]);
      for(let t=0;t<=clip.duration+.001;t+=.1)locations(candidate,Math.min(t,clip.duration)).forEach((p,i)=>motion[i].push(p));
+     if(isFaceSocial(action))for(const path of motion){const bases=[...path];for(const p of bases)for(const [x,z] of [[.24,0],[-.24,0],[0,.24],[0,-.24]])path.push(p.clone().add(new T.Vector3(x,0,z)));}
      const perform=options.canPerform||options.canPlace;
      if(perform&&!perform(moving(motion)))return false;
      // Temporary furniture overlap must not leave the residents standing in it.
      return !options.canPlace||options.canPlace(moving(locations(candidate,clip.duration).map(p=>[p])));};
     let valid=fits();if(!valid&&pinned&&action!=='cmu-22_09'&&action!=='home-hug'){const base=rotation.clone();for(const angle of [.35,-.35,.7,-.7,1.1,-1.1,Math.PI]){candidate.rotation=base.clone().multiply(new T.Quaternion().setFromAxisAngle(yAxis,angle));if(fits()){valid=true;break;}}}if(!valid&&!pinned)for(const alternative of options.origins??[]){candidate.origin=alternative.clone();if(fits()){valid=true;break;}}
     if(!valid)throw Error(action==='cmu-22_09'?'坐着的人身后没有可站立的位置，请先给椅背后留出空地':'这段动作需要更大的空地，先移动居民或挪开家具');
-    session=candidate;prop=createSocialProp(action,both);draw();return true;
+    session=candidate;prop=createSocialProp(action,both,propModels);draw();return true;
    }finally{if(token===generation)loading=false;}
   },
   advance(seconds:number){if(!Number.isFinite(seconds)||seconds<0)return;if(session){session.time=Math.min(session.time+seconds,socialActions[session.action].duration+session.approach);draw();if(session.time>=socialActions[session.action].duration+session.approach){restore();options.onComplete?.();}}},

@@ -1,0 +1,12 @@
+.friend-feed .ff-cover-layer { position:absolute; inset:0; pointer-events:none; z-index:1; overflow:hidden; }
+.friend-feed .ff-cover-image { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+.friend-feed .ff-cover-layer > .ff-cover-edit { pointer-events:auto; position:absolute; inset:0; width:100%; height:100%; padding:0; border:0; border-radius:0; background:transparent; box-shadow:none; cursor:pointer; }
+.friend-feed .ff-cover-edit:focus-visible { outline:2px solid var(--ff-accent); outline-offset:-4px; }
+.friend-feed .ff-cover-preview { position:relative; aspect-ratio:16/9; display:grid; place-items:center; background:var(--ff-bg); overflow:hidden; border-radius:12px; font-size:13px; color:var(--ff-muted); }
+.friend-feed .ff-cover-preview img { width:100%; height:100%; object-fit:cover; }
+.friend-feed .ff-cover-upload { position:relative; display:flex; align-items:center; justify-content:center; gap:8px; padding:13px; border:1px solid var(--ff-line); border-radius:10px; font-size:13px; cursor:pointer; }
+.friend-feed .ff-cover-upload input { position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; }
+.friend-feed .ff-cover-editor .friend-feed-form-actions { margin-top:auto; }
+.friend-feed .ff-profile-cover { position:relative; }
+.friend-feed .ff-classic-cover > .ff-cover-profile { z-index:2; }
+.friend-feed .ff-classic-profile:not(.ff-moments-profile) > .ff-profile-landscape { position:relative; flex:0 0 calc(100% + 40px); height:150px; margin:-26px -20px 4px; overflow:hidden; }

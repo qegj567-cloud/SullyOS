@@ -1,0 +1,29 @@
+[
+  {
+    "id": "outfit-04-halloween-shorts",
+    "width": 1254,
+    "height": 1254,
+    "transparent": 1277942,
+    "semi": 292990,
+    "edge": 21,
+    "transparentRatio": 0.8126734481556944
+  },
+  {
+    "id": "outfit-05-ghost-costume",
+    "width": 1254,
+    "height": 1254,
+    "transparent": 1169777,
+    "semi": 401562,
+    "edge": 46,
+    "transparentRatio": 0.743888774422645
+  },
+  {
+    "id": "outfit-06-pumpkin-costume",
+    "width": 1254,
+    "height": 1254,
+    "transparent": 1204085,
+    "semi": 367592,
+    "edge": 62,
+    "transparentRatio": 0.7657060405108755
+  }
+]

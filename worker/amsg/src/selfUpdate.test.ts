@@ -5,6 +5,7 @@ import {
   resolveBundleUrl,
   resolveObservability,
   handleSelfUpdate,
+  locateScript,
   rebuildBindings,
   resolveScriptName,
 } from './selfUpdate';
@@ -214,6 +215,61 @@ describe('handleSelfUpdate 上传时带的 metadata', () => {
     const { calls } = await runSelfUpdate({ enabled: false });
 
     expect(uploadMetadata(calls)?.observability).toEqual({ enabled: false });
+  });
+});
+
+describe('locateScript', () => {
+  const failure = (code: number, message: string) => ({ success: false, errors: [{ code, message }] });
+  const INVALID_TOKEN = failure(9109, 'Invalid access token');
+
+  const locate = async (env: Record<string, string>, respond: (path: string) => unknown) => {
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (url: any) =>
+      new Response(JSON.stringify(respond(new URL(String(url)).pathname)))) as any;
+    try {
+      return await locateScript(env, 'cf-token', 'sullyos-amsg');
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  };
+
+  it('多个账号时逐个找，用读得到这个 Worker 的那个', async () => {
+    const located = await locate({}, (path) => {
+      if (path.endsWith('/accounts')) return { success: true, result: [{ id: 'acc-1' }, { id: 'acc-2' }] };
+      return path.includes('/acc-2/')
+        ? { success: true, result: { bindings: [] } }
+        : failure(10007, 'workers.api.error.script_not_found');
+    });
+
+    expect(located).toMatchObject({ ok: true, accountId: 'acc-2' });
+  });
+
+  it('查账号列表时 token 无效：让用户换 token，不把 CF_ACCOUNT_ID 当成解法', async () => {
+    const located = await locate({}, () => INVALID_TOKEN);
+
+    expect(located.ok).toBe(false);
+    if (located.ok) return;
+    expect(located.message).toContain('Cloudflare 不认这枚 CF_API_TOKEN');
+    expect(located.message).toContain('9109: Invalid access token');
+    expect(located.message).not.toContain('即可跳过');
+  });
+
+  it('配了 CF_ACCOUNT_ID 时 token 无效：同样让用户换 token', async () => {
+    const located = await locate({ CF_ACCOUNT_ID: 'acc-1' }, () => INVALID_TOKEN);
+
+    expect(located.ok).toBe(false);
+    if (located.ok) return;
+    expect(located.message).toContain('Cloudflare 不认这枚 CF_API_TOKEN');
+    expect(located.message).not.toContain('读不到这个 Worker');
+  });
+
+  it('同样是 9109，权限不够时不算 token 失效', async () => {
+    const located = await locate({}, () => failure(9109, 'Unauthorized to access requested resource'));
+
+    expect(located.ok).toBe(false);
+    if (located.ok) return;
+    expect(located.message).toContain('问不到账号列表');
+    expect(located.message).toContain('CF_ACCOUNT_ID');
   });
 });
 

@@ -1,0 +1,92 @@
+[
+  {
+    "id": "halloween-ghost-hood",
+    "label": "幽灵连帽上衣",
+    "slot": "top",
+    "prefix": "Halloween_ghost-hood_",
+    "asset": "ghost-fitted.glb",
+    "triangles": 6116,
+    "sourceTriangles": 12327,
+    "hem": 1.9916000366210938,
+    "status": "fitting-candidate"
+  },
+  {
+    "id": "halloween-ghost-shorts",
+    "label": "幽灵装短裤",
+    "slot": "bottom",
+    "prefix": "Halloween_ghost-shorts_",
+    "asset": "ghost-fitted.glb",
+    "triangles": 1523,
+    "sourceTriangles": 1523,
+    "hem": 1.7391357421875,
+    "status": "fitting-candidate"
+  },
+  {
+    "id": "halloween-ghost-socks",
+    "label": "橙紫条纹长袜",
+    "slot": "socks",
+    "prefix": "Halloween_ghost-socks_",
+    "asset": "ghost-fitted.glb",
+    "triangles": 1849,
+    "sourceTriangles": 629,
+    "hem": 0.3803999722003937,
+    "status": "fitting-candidate"
+  },
+  {
+    "id": "halloween-ghost-shoes",
+    "label": "幽灵绿扣皮鞋",
+    "slot": "shoes",
+    "prefix": "Halloween_ghost-shoes_",
+    "asset": "ghost-fitted.glb",
+    "triangles": 1816,
+    "sourceTriangles": 1816,
+    "hem": 0.0181884765625,
+    "opening": 0.38,
+    "status": "fitting-candidate"
+  },
+  {
+    "id": "halloween-pumpkin-suit",
+    "label": "南瓜连体衣",
+    "slot": "onepiece",
+    "prefix": "Halloween_pumpkin-suit_",
+    "asset": "pumpkin-fitted.glb",
+    "triangles": 4125,
+    "sourceTriangles": 6707,
+    "hem": 1.9912123680114746,
+    "status": "fitting-candidate"
+  },
+  {
+    "id": "halloween-pumpkin-socks",
+    "label": "橙黑条纹长袜",
+    "slot": "socks",
+    "prefix": "Halloween_pumpkin-socks_",
+    "asset": "pumpkin-fitted.glb",
+    "triangles": 1046,
+    "sourceTriangles": 438,
+    "hem": 0.6192557215690613,
+    "status": "fitting-candidate"
+  },
+  {
+    "id": "halloween-pumpkin-boots",
+    "label": "南瓜叶扣短靴",
+    "slot": "shoes",
+    "prefix": "Halloween_pumpkin-boots_",
+    "asset": "pumpkin-fitted.glb",
+    "triangles": 2597,
+    "sourceTriangles": 2761,
+    "hem": 0.019999999552965164,
+    "opening": 0.6,
+    "status": "fitting-candidate"
+  },
+  {
+    "id": "halloween-pumpkin-hat",
+    "label": "南瓜贝雷帽",
+    "slot": "headwear",
+    "prefix": "Halloween_pumpkin-hat_",
+    "asset": "pumpkin-fitted.glb",
+    "triangles": 2222,
+    "sourceTriangles": 2222,
+    "hem": 4.151280403137207,
+    "status": "fitting-candidate"
+  }
+]

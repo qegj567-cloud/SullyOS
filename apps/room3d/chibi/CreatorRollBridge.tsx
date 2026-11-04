@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {readRollCache,writeRollCache,rollCacheKey} from './rollCache';
 import {captureCreatorLayer} from './captureCreatorLayer';
-export interface RollResult { layers:Record<string,string>; image:string; state?:unknown; eyeColors?:{L:string;R:string} }
+import type {EyeTint} from './faceTint';
+export interface RollResult { layers:Record<string,string>; image:string; state?:unknown; eyeColors?:{L:string;R:string}; eyeTints?:{L:EyeTint;R:EyeTint} }
 type BridgeProps={ request:number; savedState?:unknown; extraItems?:unknown[]; editing?:boolean; captureOnly?:boolean; onReady:()=>void; onResult:(r:RollResult)=>void; onError:(message:string)=>void };
 function RawCreatorRollBridge({ request, savedState, extraItems, editing=false, captureOnly=false, onReady, onResult, onError }: BridgeProps) {
     const frame=useRef<HTMLIFrameElement>(null),callbacks=useRef({onReady,onResult,onError});callbacks.current={onReady,onResult,onError};
@@ -54,15 +55,29 @@ function RawCreatorRollBridge({ request, savedState, extraItems, editing=false, 
               const key=layer.id.replace('layer-','');layers[key]=canvas.toDataURL();
               wholeCtx.globalAlpha=Number(getComputedStyle(layer).opacity);wholeCtx.drawImage(canvas,0,0);
             }
-            const eyePart=PARTS.find(p=>p.key==='eyes').items.find(p=>p.id===state.selected.eyes);
-            let eyeColors;
-            if(eyePart){
-              const raw=document.createElement('canvas');raw.width=raw.height=472;const ctx=raw.getContext('2d');
-              if(state.flipped.eyes){ctx.translate(472,0);ctx.scale(-1,1);}
-              ctx.drawImage(await loadImage(eyePart.src),0,0,472,472);layers['eyes-raw']=raw.toDataURL();
-              if(!eyePart.noTint){const eyes=state.tintColor.eyes;eyeColors={L:hexForTint(eyes[state.flipped.eyes?'R':'L']),R:hexForTint(eyes[state.flipped.eyes?'L':'R'])};}
+            // Keep untouched source pixels for 3D dye changes. Recoloring the
+            // composited, already tinted layer crushes its painted shadows.
+            for(const key of ['fronthair','earhair','back1','back2']){
+              const part=PARTS.find(p=>p.key===key),item=part?.items.find(p=>p.id===state.selected[key]);
+              if(!item)continue;
+              const img=await loadImage(item.src),raw=document.createElement('canvas');
+              raw.width=img.naturalWidth;raw.height=img.naturalHeight;const ctx=raw.getContext('2d');
+              if(state.flipped[key]){ctx.translate(raw.width,0);ctx.scale(-1,1);}
+              ctx.drawImage(img,0,0);layers[key+(item.noTint?'-raw-fixed':'-raw')]=raw.toDataURL();
+              if(item.shadow){
+                const shadow=await loadImage(item.shadow);ctx.clearRect(0,0,raw.width,raw.height);
+                ctx.drawImage(shadow,0,0,raw.width,raw.height);layers[key+'-shadow']=raw.toDataURL();
+              }
             }
-            parent.postMessage({type:'experiment-roll-result',id,payload:{layers,eyeColors,image:whole.toDataURL(),state:JSON.parse(JSON.stringify(state))}},${JSON.stringify(origin)});
+            const eyePart=PARTS.find(p=>p.key==='eyes').items.find(p=>p.id===state.selected.eyes);
+            let eyeColors,eyeTints;
+            if(eyePart){
+              const img=await loadImage(eyePart.src),raw=document.createElement('canvas');raw.width=img.naturalWidth;raw.height=img.naturalHeight;const ctx=raw.getContext('2d');
+              if(state.flipped.eyes){ctx.translate(raw.width,0);ctx.scale(-1,1);}
+              ctx.drawImage(img,0,0);layers['eyes-raw']=raw.toDataURL();
+              if(!eyePart.noTint){const eyes=state.tintColor.eyes;eyeTints={L:eyes[state.flipped.eyes?'R':'L'],R:eyes[state.flipped.eyes?'L':'R']};eyeColors={L:hexForTint(eyeTints.L),R:hexForTint(eyeTints.R)};}
+            }
+            parent.postMessage({type:'experiment-roll-result',id,payload:{layers,eyeColors,eyeTints,image:whole.toDataURL(),state:JSON.parse(JSON.stringify(state))}},${JSON.stringify(origin)});
           }catch(error){parent.postMessage({type:'experiment-roll-error',id,message:String(error)},${JSON.stringify(origin)});}
           finally{rollBusy=false;}
         });

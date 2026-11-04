@@ -1,4 +1,5 @@
 import React from 'react';
+import BibiIcon from './BibiIcon';
 import { AppID } from '../../types';
 
 // 动森(NookPhone)风格 App 图标 —— 填充式多色 SVG：奶油底 + 暖棕圆头描边 + 单个强调色。
@@ -57,6 +58,7 @@ const paletteGlyph = <>
 </>;
 
 const ACNH_ICON_MAP: Partial<Record<AppID, React.ReactNode>> = {
+  [AppID.FriendFeed]: <BibiIcon variant="island" className="w-full h-full"/>,
   [AppID.Chat]: draw([9, 24, 91, 72], <>
     <path d="M24 24 H76 a15 15 0 0 1 15 15 v13 a15 15 0 0 1 -15 15 H56 l-6 10 -6 -10 H24 a15 15 0 0 1 -15 -15 v-13 a15 15 0 0 1 15 -15Z" fill={CREAM} />
     <circle cx="32" cy="45.5" r="6" fill={BROWN} /><circle cx="50" cy="45.5" r="6" fill={BROWN} /><circle cx="68" cy="45.5" r="6" fill={BROWN} />

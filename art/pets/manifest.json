@@ -141,5 +141,46 @@
       "mouth": "#405b69"
     },
     "drawCalls": 6
+  },
+  {
+    "id": "pet_hamster",
+    "source": "halloween-2026/hamster-source.glb",
+    "sourceTriangles": 6261,
+    "triangles": 3812,
+    "bytes": 79568,
+    "size": [
+      0.7990436255931854,
+      0.665845433017239,
+      0.6238844692707062
+    ],
+    "colors": {
+      "body": "#cc9863",
+      "markings": "#f6e6cc",
+      "ears": "#d79797",
+      "feet": "#d7aaa0",
+      "eyes": "#34322f",
+      "nose": "#a15e69"
+    },
+    "drawCalls": 7
+  },
+  {
+    "id": "pet_jellyfish",
+    "source": "halloween-2026/jellyfish-source.glb",
+    "sourceTriangles": 6254,
+    "triangles": 3528,
+    "bytes": 82748,
+    "size": [
+      0.800000011920929,
+      0.643724953639321,
+      0.7624850273132324
+    ],
+    "colors": {
+      "body": "#b4a6cc",
+      "rim": "#92c5c0",
+      "tentacles": "#c5bbdb",
+      "cheeks": "#dfb2b9",
+      "eyes": "#343a4b"
+    },
+    "drawCalls": 6
   }
 ]

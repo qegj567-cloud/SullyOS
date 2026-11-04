@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DB } from './db';
-import { createReplyRun, publishReplyDisplay, stopReplyRuns, isReplyStopped, markReplyStopped } from './chatReplyCancellation';
+import { createReplyRun, publishReplyDisplay, stopReplyRuns, isReplyStopped, markReplyStopped, MAX_STOPPED_REPLY_UUIDS } from './chatReplyCancellation';
 
 describe('停止回复', () => {
     it('保留已提交到界面的气泡，删除已落库但还没显示的气泡', async () => {
@@ -42,6 +42,16 @@ describe('停止回复', () => {
         const late = createReplyRun('cloud-char', 'stopped-cloud-uuid');
         await expect(late.wait(Promise.resolve('late'))).rejects.toMatchObject({ name: 'AbortError' });
         await late.settle();
+    });
+
+    it('停止记录按上限滚动淘汰最旧 uuid，防止 localStorage 无限增长', () => {
+        for (let i = 0; i < MAX_STOPPED_REPLY_UUIDS + 25; i++) {
+            markReplyStopped(`cap-uuid-${i}`);
+        }
+        const stored = JSON.parse(localStorage.getItem('chat_stopped_reply_uuids_v1') || '[]') as string[];
+        expect(stored.length).toBe(MAX_STOPPED_REPLY_UUIDS);
+        expect(isReplyStopped('cap-uuid-0')).toBe(false);
+        expect(isReplyStopped(`cap-uuid-${MAX_STOPPED_REPLY_UUIDS + 24}`)).toBe(true);
     });
 });
 

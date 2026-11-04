@@ -82,6 +82,22 @@ const safeVoiceFilename = (id: string, index: number): string => {
     return `${safeId}_${index}.bin`;
 };
 
+/** Synchronous cursor-safe export. Queue the Blob itself; read it only when its
+ * ZIP entry is compressed. Marker semantics match the legacy byte writer. */
+export function externalizeVoiceMessageBlob(
+    value: unknown,
+    index: number,
+    writeBlob: (path: string, blob: Blob) => void,
+): void {
+    const asset = value as AssetRecord;
+    if (!isVoiceAsset(asset) || !asset.data || !(asset.data.blob instanceof Blob)) return;
+    const blob = asset.data.blob;
+    const backupDir = isCompanionVoiceAssetId(asset.id) ? COMPANION_VOICE_BACKUP_DIR : VOICE_BACKUP_DIR;
+    const path = `${backupDir}/${safeVoiceFilename(asset.id, index)}`;
+    writeBlob(path, blob);
+    asset.data.blob = { [VOICE_BACKUP_MARKER]: true, path, mimeType: blob.type || 'audio/mpeg', size: blob.size } satisfies VoiceBackupBlobMarker;
+}
+
 /**
  * Mutates the export clone in place. Dedicated favorite audio rows, the legacy
  * per-chat favorite shape, and companion-preset dependencies are externalized;

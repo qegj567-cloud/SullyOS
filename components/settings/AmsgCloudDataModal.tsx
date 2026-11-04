@@ -22,7 +22,7 @@ interface Props {
 const buttonClass = 'rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 disabled:opacity-40';
 const errorText = (error: unknown) => error instanceof Error ? error.message : String(error);
 const ownerKey = (owner: CloudOwner) => JSON.stringify([owner.type, owner.id]);
-const RESOURCE_STATUS_LABELS: Record<string, string> = { pending: '待处理', running: '处理中', processing: '处理中', completed: '已完成', failed: '失败', acked: '已接收', delivered: '已送达', registered: '已登记', unreadable: '内容无法读取', 'orphan-chunks': '残留数据切片' };
+const RESOURCE_STATUS_LABELS: Record<string, string> = { pending: '待处理', running: '处理中', processing: '处理中', completed: '已完成', failed: '失败', acked: '已接收', delivered: '已送达', registered: '已登记', unreadable: '内容无法读取', 'orphan-chunks': '未清理完的缓存碎片' };
 const resourceStatus = (status: string) => RESOURCE_STATUS_LABELS[status] ?? status;
 const localDate = (time: number | null) => time == null ? '更新时间未知' : new Date(time).toLocaleString();
 

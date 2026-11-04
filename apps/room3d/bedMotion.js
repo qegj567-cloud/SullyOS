@@ -9,6 +9,12 @@ export function body2BedTransform(seat,headToHip,hipHeight=0){
  const sleepStart=[0,(root[1]-root.at(-2))*hipHeight,(root[2]-root.at(-1))*hipHeight];
  return {...seat,pose:'bed',sleepStart,position:[seat.position[0]+Math.sin(seat.rotation)*forward,seat.position[1],seat.position[2]+Math.cos(seat.rotation)*forward]};
 }
+/** Convert the reviewed mattress profile into the unscaled motion-body frame. */
+export function bedFootSurface(seat,scale=1){
+ if(!seat?.bed?.footSurface||!(scale>0))return undefined;
+ const b=seat.bed,along=Math.sin(seat.rotation)*(seat.position[0]-b.center[0])+Math.cos(seat.rotation)*(seat.position[2]-b.center[2]);
+ return b.footSurface.map(([z,y])=>[(z-along)/scale,(b.center[1]+y-seat.position[1])/scale]);
+}
 export function bedEntry(seat,map,offset=[0,0]){
  const spec=seat.bed;if(!spec)return null;
  const c=Math.cos(spec.itemRotation),s=Math.sin(spec.itemRotation);

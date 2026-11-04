@@ -84,6 +84,23 @@ async function clearLocalStores(): Promise<Record<string, number>> {
     });
 }
 
+/** 同步清理 IndexedDB assets 表中的 mp_hwm_v1_* 水位镜像 */
+async function clearMirroredHighWatermarks(): Promise<void> {
+    try {
+        const db = await openDB();
+        if (!db.objectStoreNames.contains('assets')) return;
+        await new Promise<void>((resolve) => {
+            const tx = db.transaction('assets', 'readwrite');
+            const store = tx.objectStore('assets');
+            const range = IDBKeyRange.bound('mp_hwm_v1_', 'mp_hwm_v1_\uffff');
+            store.delete(range);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => resolve();
+            tx.onabort = () => resolve();
+        });
+    } catch { /* ignore */ }
+}
+
 /** 清空远程 Supabase 向量表（全表删除，跨所有角色） */
 async function clearRemoteVectors(config: RemoteVectorConfig): Promise<number> {
     if (!config.enabled || !config.initialized) return 0;
@@ -149,6 +166,7 @@ export async function wipeAllMemoryPalace(options: {
     const local = await clearLocalStores();
     const localRowsTotal = Object.values(local).reduce((s, v) => s + v, 0);
     const hwm = clearHighWatermarks();
+    await clearMirroredHighWatermarks();
 
     // 同步清空内存中的 BM25 倒排索引（否则下次查询会拿到孤儿 nodeId）
     bm25Index.dropAll();

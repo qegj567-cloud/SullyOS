@@ -1,0 +1,11 @@
+# 内置 image_gen 提示词
+
+## 仓鼠
+
+Create one new 3D game pet reference image, a tiny plump hamster, matching the two attached existing game-pet style references (references only, do not copy their species). Soft simple rounded solid toy sculpture, very squat pear-shaped body with large cheek pouches, tiny rounded ears, small stubby paws all visible, warm caramel tan back and cream muzzle/belly, muted pink inner ears, tiny shiny dark bead eyes and little nose, gentle cute expression. Smooth matte clay, restrained low-detail geometry, solid color parts, no fur strands, no cloth, no food, no accessories, NO HAT. One centered full-body hamster, three-quarter front view looking slightly to the viewer's right, low eye-level camera so facial features and paws are visible, orthographic product modeling reference, ample white margin on all sides, clean pure white background, soft neutral studio light, minimal contact shadow. No text, no collage, no platform. The silhouette should match a coherent existing family of chubby toy-like cat/slime/shark game pets and be practical to reconstruct as a compact 3D mesh.
+
+## 水母
+
+Create one new 3D game pet reference image, a tiny cute jellyfish matching the two attached existing game-pet style references (style references only, don't reproduce their species). A soft rounded squat dome-shaped bell, pale lavender with a muted mint-blue scalloped lower rim. Tiny dark bead eyes and a tiny curved smile on the front of the dome, two subtle rosy cheeks. Six short thick rounded dangling tentacles, clearly separated, gently curling at their ends, stout toy-like proportions with no thin hairlike strands. Opaque smooth matte clay/plush-toy sculpture aesthetic, NOT transparent glass, no water, no glow, no sparkling effects. Simple solid color parts suitable for game geometry. No hat, no accessories, no platform. Single centered full body subject, orthographic three-quarter front view, low eye-level camera, white background, neutral soft studio lighting, ample white margins, no text or collage. It should belong to the same chubby friendly low-detail pet collection as the reference slime and shark, with a broad clear top surface for a removable little hat later.
+
+后续用户要求水母不要嘴：最终 GLB 已移除，保留此原始提示词作为生成记录。

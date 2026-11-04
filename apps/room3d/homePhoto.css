@@ -1,6 +1,8 @@
 .home-photo-mode{position:absolute;inset:0;z-index:100;background:#181020;color:#fff8ff;font-family:system-ui,sans-serif;overflow:hidden;isolation:isolate}
+.home-photo-mode *{box-sizing:border-box}
 .photo-view{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
-.home-photo-mode header{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:center;padding:20px;background:linear-gradient(#18102099,transparent);pointer-events:none}
+.home-photo-mode header{position:absolute;z-index:5;top:var(--chrome-top,env(safe-area-inset-top,0px));left:0;right:0;display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:linear-gradient(#181020cc,transparent);pointer-events:none}
+.home-photo-mode .photo-exit{display:inline-flex;align-items:center;gap:6px;min-height:44px;background:#2d233cf2;color:#fff8ff;border:1px solid #ffffff55}
 .home-photo-mode header div{display:flex;flex-direction:column;gap:4px;text-shadow:0 1px 8px #000}.home-photo-mode small{font-size:9px;letter-spacing:3px}.home-photo-mode strong{font-size:17px;font-weight:500}
 .home-photo-mode button{color:inherit;cursor:pointer;border:0;background:#2d233ccc;border-radius:14px;padding:10px;min-height:40px;font:inherit;font-size:12px;pointer-events:auto}.home-photo-mode button:disabled{opacity:.35;cursor:default}.home-photo-mode button[aria-pressed=true]{background:#efd6ff;color:#382342}
 .photo-clean{position:absolute;right:18px;top:92px}.photo-controls{position:absolute;bottom:98px;left:14px;right:14px;max-width:420px;margin:auto;background:#20192ce8;backdrop-filter:blur(18px);border-radius:22px;padding:12px 16px;border:1px solid #ffffff25;animation:photo-enter .2s ease-out}
@@ -24,3 +26,31 @@
 .photo-action-preview{display:flex;align-items:center;gap:7px}.photo-action-preview>div{flex:1;min-width:0;display:flex;gap:2px;flex-direction:column}.home-photo-mode .photo-action-preview strong{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.photo-action-preview span{font-size:10px;opacity:.7}.photo-action-preview button{min-height:40px;flex-shrink:0}.photo-action-preview button[aria-label]{font-size:22px;min-width:36px;padding:4px 8px}.photo-action-preview+.photo-action-browser[hidden]+.photo-slider{margin-top:4px}
 @media(min-width:800px){.home-photo-mode .photo-dock{left:auto;right:22px;width:340px;max-width:calc(100% - 44px);margin:0}.home-photo-mode .photo-dock .photo-controls{max-height:min(65svh,530px)}.home-photo-mode .photo-controls .photo-settings{max-height:min(48svh,420px)}}
 @media(max-height:520px){.home-photo-mode .photo-dock{left:auto;right:12px;width:300px;max-width:48vw}.home-photo-mode .photo-dock .photo-controls{max-height:calc(100svh - 155px)}.home-photo-mode .photo-controls .photo-settings{max-height:calc(100svh - 225px)}.photo-dock-tools{flex-wrap:wrap;gap:4px}.photo-dock-tools button{min-height:30px;padding:5px}.photo-dock[data-preview=true] .photo-settings{max-height:100px}}
+/* The photo has its own aspect; rotating the controls never rotates exported pixels. */
+.photo-shell{position:absolute;inset:0;z-index:100;overflow:hidden;background:#181020}
+.photo-formats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.photo-formats button{text-align:left;transition:background .16s ease,color .16s ease}
+.photo-lettering{margin:12px 0;padding:10px 0;border-block:1px solid #ffffff20;font-size:12px}
+.photo-lettering summary{cursor:pointer;padding:4px 0}
+.photo-lettering label{display:flex;flex-direction:column;gap:6px;margin-top:12px;color:#e0d2e7}
+.photo-lettering input,.photo-lettering select{width:100%;min-width:0;min-height:42px;border:1px solid #ffffff30;border-radius:10px;background:#30253e;color:#fff3ff;padding:9px;font:inherit;font-size:16px}
+.photo-lettering input:focus-visible,.photo-lettering select:focus-visible{outline:2px solid #dca8f4;outline-offset:2px}
+@media(prefers-reduced-motion:reduce){.photo-formats button{transition:none}}
+.photo-frame{position:absolute;box-shadow:0 0 0 1px #ffffff12,0 18px 50px #0004;background:#131018}
+.photo-frame .photo-view{width:100%;height:100%;object-fit:fill}
+.photo-format-label{position:absolute;bottom:-22px;left:0;color:#c9bacd;font-size:9px;letter-spacing:1.5px;pointer-events:none}
+.photo-thirds{position:absolute;inset:0;pointer-events:none;background:linear-gradient(to right,transparent 33.2%,#fff6 33.2%,#fff6 33.4%,transparent 33.4%,transparent 66.5%,#fff6 66.5%,#fff6 66.7%,transparent 66.7%),linear-gradient(to bottom,transparent 33.2%,#fff6 33.2%,#fff6 33.4%,transparent 33.4%,transparent 66.5%,#fff6 66.5%,#fff6 66.7%,transparent 66.7%)}
+.home-photo-mode[data-wide=true] .photo-dock{left:auto;right:18px;width:340px;max-width:calc(100% - 44px);margin:0}
+.home-photo-mode[data-wide=true] .photo-dock .photo-controls{max-height:calc(var(--photo-height) - 200px)}
+.home-photo-mode[data-wide=true] .photo-controls .photo-settings{max-height:calc(var(--photo-height) - 280px)}
+.home-photo-mode[data-short=true] header{padding:8px 12px}
+.home-photo-mode[data-short=true] header small{display:none}
+.home-photo-mode[data-short=true] .photo-dock{right:12px;bottom:76px;width:280px}
+.home-photo-mode[data-short=true] .photo-dock .photo-controls{max-height:calc(var(--photo-height) - 150px);padding:8px 12px}
+.home-photo-mode[data-short=true] .photo-controls .photo-settings{max-height:calc(var(--photo-height) - 220px)}
+.home-photo-mode[data-short=true] .photo-dock-tools{gap:4px;flex-wrap:wrap}
+.home-photo-mode[data-short=true] .photo-dock-tools button{padding:5px;min-height:32px}
+.home-photo-mode[data-short=true] footer{bottom:10px}
+.home-photo-mode[data-short=true] .photo-shutter{width:46px;height:46px}
+.home-photo-mode[data-sideways=true] header{top:0;padding-left:max(12px,env(safe-area-inset-top,0px));padding-right:max(12px,env(safe-area-inset-bottom,0px))}
+.home-photo-mode[data-short=true] .photo-dock .photo-controls{max-height:calc(var(--photo-height) - 220px)}.home-photo-mode[data-short=true] .photo-controls .photo-settings{max-height:calc(var(--photo-height) - 280px)}

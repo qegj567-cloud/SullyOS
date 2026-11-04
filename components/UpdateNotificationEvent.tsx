@@ -7,7 +7,12 @@ import { SARUpdatePopup } from './os/SARUpdatePopup';
 import { SAR_UPDATE_KEY, SAR_CHANGELOG, sarLaunch } from '../utils/sarUpdate';
 import HomeUpdatePopup from './os/HomeUpdatePopup';
 import { HOME_UPDATE_KEY, HOME_CHANGELOG } from '../utils/homeUpdate';
+import OctoberUpdatePopup from './os/OctoberUpdatePopup';
+import { OCTOBER_UPDATE_KEY } from '../utils/octoberUpdate';
 import { roomLaunch } from '../utils/roomLaunch';
+import NavigationBallNotice, { NAVIGATION_BALL_NOTICE_KEY } from './os/NavigationBallNotice';
+import UserLocationNotice, { USER_LOCATION_NOTICE_KEY } from './os/UserLocationNotice';
+import { requestSettingsFocus } from '../utils/settingsNavigation';
 /**
  * 全局版本更新提醒。
  *
@@ -600,11 +605,30 @@ const HomeUpdateAnnouncement: React.FC<UpdatePopupProps> = ({ onDone, onExit }) 
     }}/>;
 };
 
+const NavigationBallAnnouncement: React.FC<UpdatePopupProps> = ({ onDone, onExit }) => {
+    const { openApp } = useOS();
+    return <NavigationBallNotice onDone={onDone} onConfigure={() => {
+        requestSettingsFocus('navigation'); openApp(AppID.Settings); onExit();
+    }} />;
+};
+
+const UserLocationAnnouncement: React.FC<UpdatePopupProps> = ({ onDone, onExit }) => {
+    const { openApp } = useOS();
+    return <UserLocationNotice onDone={onDone} onConfigure={() => {
+        requestSettingsFocus('location'); openApp(AppID.Settings); onExit();
+    }} />;
+};
+
+const OctoberUpdateAnnouncement: React.FC<UpdatePopupProps> = ({ onDone }) => <OctoberUpdatePopup onDone={onDone}/>;
+
 const UPDATE_QUEUE: { key: string; render: (props: UpdatePopupProps) => React.ReactNode }[] = [
+    { key: OCTOBER_UPDATE_KEY, render: props => <OctoberUpdateAnnouncement {...props} /> },
+    { key: USER_LOCATION_NOTICE_KEY, render: props => <UserLocationAnnouncement {...props} /> },
+    { key: NAVIGATION_BALL_NOTICE_KEY, render: props => <NavigationBallAnnouncement {...props} /> },
     { key: HOME_UPDATE_KEY, render: props => <HomeUpdateAnnouncement {...props} /> },
     { key: SMALL_UPDATES_KEY, render: props => <SmallUpdatesPopup onDone={props.onDone} /> },
     { key: HOLIDAY_NOTICE_KEY, render: props => <UserHolidayIntro {...props} /> },
-    { key: DECORATION_UPDATE_KEY, render: props => <DecorationUpdatePopup onClose={props.onExit}/> },
+    { key: DECORATION_UPDATE_KEY, render: props => <DecorationUpdatePopup onClose={props.onDone}/> },
     { key: SAR_UPDATE_KEY, render: (props) => <SARUpdateAnnouncement {...props} /> },
     { key: NETWORK_TRANSIT_NOTICE_KEY_2026_08, render: (props) => <NetworkTransitNoticePopup {...props} /> },
     { key: UPDATE_NOTIFICATION_KEY_2026_08_10, render: (props) => <Live2DUpdatePopup {...props} /> },

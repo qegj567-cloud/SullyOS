@@ -1,3 +1,4 @@
+import ChatRuntimeStyle from '../components/chat/ChatRuntimeStyle';
 import { resolveDialogueApi } from '../utils/characterApi';
 import {ChatCardSurface} from '../components/chat/ChatCardSurface';
 import { avatarDecorationImageStyle, isAnniversaryFrame } from '../utils/anniversaryGifts';
@@ -11,6 +12,8 @@ import { DB } from '../utils/db';
 import { Message, GroupProfile, CharacterProfile, MessageType, ChatTheme, BubbleStyle, EmojiCategory } from '../types';
 import { safeResponseJson } from '../utils/safeApi';
 import Modal from '../components/os/Modal';
+import DialogueVoicePanel from '../components/voice/DialogueVoicePanel';
+import type { DialogueLine } from '../utils/elevenLabsStream';
 import { ContextBuilder } from '../utils/context';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { deleteGroupMemoriesByGroupId } from '../utils/memoryPalace/groupPipeline';
@@ -20,6 +23,7 @@ import { PRESET_THEMES } from '../components/chat/ChatConstants';
 import { resolveChatTheme, scopeBubbleThemeCss } from '../utils/groupChat/theme';
 import { resolveBubbleCornerRadii, shouldHideBubbleTail } from '../utils/bubbleAppearance';
 import { buildChatFineTuneCss } from '../utils/chatFineTuneCss';
+import { isReducedBlurActive, useReducedBlur } from '../utils/blurPolicy';
 import { parseDirectorActions, stripSkipMarker, parseGroupTopicBox } from '../utils/groupChat/parse';
 import { GroupPacketMeta, PacketReceiptMeta, ClaimResult, claimPacket, effectivePacketStatus, makePacketMeta } from '../utils/groupChat/redpacket';
 import { messageLogText } from '../utils/groupChat/format';
@@ -202,7 +206,13 @@ const GroupMessageItem = React.memo(({
         ...(bubbleVariant === 'shadow' ? { boxShadow: '0 4px 12px rgba(0,0,0,0.12)' } : {}),
         ...(bubbleVariant === 'flat' ? { boxShadow: 'none' } : {}),
         ...(bubbleVariant === 'wechat' ? { boxShadow: 'none', border: '1px solid rgba(15,23,42,0.05)' } : {}),
-        ...(bubbleVariant === 'ios' ? { boxShadow: '0 10px 24px rgba(148,163,184,0.16)', border: '1px solid rgba(255,255,255,0.75)', backdropFilter: 'blur(12px)' } : {}),
+        ...(bubbleVariant === 'ios'
+            ? {
+                  boxShadow: '0 10px 24px rgba(148,163,184,0.16)',
+                  border: '1px solid rgba(255,255,255,0.75)',
+                  ...(isReducedBlurActive() ? {} : { backdropFilter: 'blur(12px)' }),
+              }
+            : {}),
     };
     // 气泡底纹画在 CSS background-image 上，拿不到 <img> 那层的自动解析，只能在顶层
     // 无条件解析一次（hook 不能进条件分支）。挂件/头像挂件走 TokenImg，各自组件内解析。
@@ -369,7 +379,7 @@ const GroupMessageItem = React.memo(({
             default:
                 return (
                     <div
-                        className={`relative px-5 py-3 text-[15px] leading-relaxed whitespace-pre-wrap break-all overflow-visible active:scale-[0.98] transition-transform ${bubbleVariant === 'flat' || bubbleVariant === 'outline' || bubbleVariant === 'wechat' ? '' : 'shadow-sm'} ${bubbleVariant === 'outline' ? '' : 'border border-black/5'} ${isUser ? 'sully-bubble-user' : 'sully-bubble-ai'} ${bubbleGroupClasses}`}
+                        className={`relative px-5 py-3 text-[15px] leading-relaxed whitespace-pre-wrap break-normal [overflow-wrap:anywhere] overflow-visible active:scale-[0.98] transition-transform ${bubbleVariant === 'flat' || bubbleVariant === 'outline' || bubbleVariant === 'wechat' ? '' : 'shadow-sm'} ${bubbleVariant === 'outline' ? '' : 'border border-black/5'} ${isUser ? 'sully-bubble-user' : 'sully-bubble-ai'} ${bubbleGroupClasses}`}
                         style={bubbleStyle}
                     >
                         {bubbleBgUrl && (
@@ -485,8 +495,16 @@ const GroupMessageItem = React.memo(({
 
 const GroupChat: React.FC = () => {
     const { closeApp, groups, createGroup, updateGroup, deleteGroup, characters, apiConfig, addToast, userProfile, virtualTime, characterGroups, theme: osTheme, customThemes, realtimeConfig } = useOS();
+    const reducedBlur = useReducedBlur();
     const [view, setView] = useState<'list' | 'chat'>('list');
     const [activeGroup, setActiveGroup] = useState<GroupProfile | null>(null);
+    useAppShortcut(ShortcutAppID.GroupChat, intent => {
+        const target = groups.find(group => group.id === intent.resourceId);
+        setActiveGroup(target || null); setView(target ? 'chat' : 'list');
+        setModalType('none'); setShowPanel('none'); setReplyTarget(null);
+        if (activeGroup?.id !== target?.id) setMessages([]);
+        if (intent.resourceId && !target) addToast('这个群聊已不存在，请重新设置槽位', 'error');
+    });
     const [messages, setMessages] = useState<Message[]>([]);
     const [totalMsgCount, setTotalMsgCount] = useState(0);
     const MESSAGE_PAGE_SIZE = 50;
@@ -563,6 +581,8 @@ const GroupChat: React.FC = () => {
     // Selection Mode
     const [selectionMode, setSelectionMode] = useState(false);
     const [selectedMsgIds, setSelectedMsgIds] = useState<Set<number>>(new Set());
+    const [voiceDialogueLines, setVoiceDialogueLines] = useState<DialogueLine[] | null>(null);
+    useEffect(() => { setVoiceDialogueLines(null); }, [activeGroup?.id, view]);
 
     // Data State
     const [emojis, setEmojis] = useState<{name: string, url: string, categoryId?: string}[]>([]);
@@ -1651,10 +1671,11 @@ ${memberTimeline || '(暂无互动记录)'}
     if (view === 'list') {
         return (
             <div className="h-full w-full bg-slate-50 flex flex-col font-light">
+                <ChatRuntimeStyle />
                 {/* safe-top spacer 透明 + backdrop-blur，下方容器/list bubbles 透出+模糊（跟 iOS 系统 status bar 一致），避免 header 白 bg 在刘海下铺一条突兀白带 */}
                 <div className="shrink-0 z-10 sticky top-0">
-                    <div className="bg-transparent backdrop-blur-xl" style={{ height: 'var(--safe-top)' }} />
-                    <div className="bg-white/70 backdrop-blur-md flex items-end pb-3 px-4 border-b border-white/40 h-20">
+                    <div className={reducedBlur ? 'bg-white/95' : 'bg-transparent backdrop-blur-xl'} style={{ height: 'var(--safe-top)' }} />
+                    <div className={`${reducedBlur ? 'bg-white/95' : 'bg-white/70 backdrop-blur-md'} flex items-end pb-3 px-4 border-b border-white/40 h-20`}>
                         <button onClick={closeApp} className="p-2 -ml-2 rounded-full hover:bg-black/5 active:scale-90 transition-transform">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-slate-600"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
                     </button>
@@ -1761,6 +1782,7 @@ ${memberTimeline || '(暂无互动记录)'}
         : groupChatRootStyle;
     return (
         <div className={`sully-chat-root ${finalGroupRootClass}`} style={finalGroupRootStyle}>
+            <ChatRuntimeStyle />
             {/* 外观 App 的全局聊天细节与私聊共用同一份生成 CSS。 */}
             {groupFineTuneCss && <style>{groupFineTuneCss}</style>}
             {/* 白框自定义 CSS：全局默认在前、群专属在后（后者叠加覆盖）。作用于 .sully-chat-* 各零件。 */}
@@ -1850,6 +1872,17 @@ ${memberTimeline || '(暂无互动记录)'}
             />
 
             {/* Messages Area */}
+            {apiConfig.ttsProvider === 'elevenlabs' && <div className="flex shrink-0 justify-end px-4 py-1">
+                <button className="rounded-full bg-white/80 px-3 py-1.5 text-xs text-emerald-700" onClick={() => {
+                    if (!selectionMode) { setSelectionMode(true); setSelectedMsgIds(new Set()); return; }
+                    const lines = messages.filter(message => selectedMsgIds.has(message.id) && message.role === 'assistant' && message.type === 'text')
+                        .map(message => ({ text: message.content, character: characters.find(character => character.id === message.charId) }))
+                        .filter((line): line is DialogueLine => !!line.character);
+                    if (!lines.length) { addToast('请先选中要配音的角色文字消息', 'info'); return; }
+                    setVoiceDialogueLines(lines);
+                }}>{selectionMode ? `为所选角色消息配音` : '选择消息配音'}</button>
+            </div>}
+            {voiceDialogueLines && <DialogueVoicePanel lines={voiceDialogueLines} apiConfig={apiConfig} onClose={() => setVoiceDialogueLines(null)} />}
             <div className="flex-1 overflow-y-auto overflow-x-hidden pt-6 pb-6 no-scrollbar" ref={scrollRef} onClick={() => { if (inputPreferences.autoReply) setShowPanel('none'); }}>
                 {collapsedCount > 0 && activeGroup && (
                     <div className="flex justify-center mb-6">
@@ -1859,7 +1892,7 @@ ${memberTimeline || '(暂无互动记录)'}
                             const { messages: moreMsgs, totalCount } = await DB.getRecentGroupMessagesWithCount(activeGroup.id, nextVisibleCount);
                             setMessages(moreMsgs);
                             setTotalMsgCount(totalCount);
-                        }} className="px-4 py-2 bg-white/50 backdrop-blur-sm rounded-full text-xs text-slate-500 shadow-sm border border-white hover:bg-white transition-colors">
+                        }} className="px-4 py-2 bg-white/85 rounded-full text-xs text-slate-500 shadow-sm border border-white hover:bg-white transition-colors">
                             加载历史消息 ({collapsedCount})
                         </button>
                     </div>
@@ -2529,3 +2562,5 @@ ${memberTimeline || '(暂无互动记录)'}
 };
 
 export default GroupChat;
+import { useAppShortcut } from '../utils/appShortcutLaunch';
+import { AppID as ShortcutAppID } from '../types';

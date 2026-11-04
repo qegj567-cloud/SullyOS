@@ -122,6 +122,42 @@ describe('hasSummaryReasoningLeak', () => {
 });
 
 describe('regenerateEventBoxSummary', () => {
+    it('精简后仍超目标时完整保存、向量化，召回也包含末尾事实', async () => {
+        const longSummary = '压缩后仍然超长'.repeat(150) + '末尾事实：我把钥匙交给了小林。';
+        mocks.responses.push(completion('完整记忆'.repeat(400)), {
+            choices: [{ message: { content: longSummary } }],
+        });
+        const result = await regenerateEventBoxSummary('box-1', llmConfig, embeddingConfig, '角色甲');
+        expect(result.summary.content).toBe(longSummary);
+        expect(mocks.getEmbeddings).toHaveBeenCalledWith([longSummary], embeddingConfig);
+        expect((await MemoryNodeDB.getById('summary-1'))?.content).toBe(longSummary);
+        expect((await MemoryNodeDB.getById('live-1'))?.archived).toBe(true);
+        expect((await MemoryNodeDB.getById('archived-1'))?.content).toBe('第一条归档原始记忆');
+        const { expandAndFormat } = await import('./formatter');
+        const recalled = await expandAndFormat([{ node: result.summary, finalScore: 1 } as any], 'char-1');
+        expect(recalled).toContain(longSummary);
+    });
+
+    it('二次输出被 token 上限截断时保留首次完整长正文', async () => {
+        const content = '长回忆'.repeat(400) + '完整结尾。';
+        mocks.responses.push(completion(content), {
+            choices: [{ finish_reason: 'length', message: { content: '被截断的一半' } }],
+        });
+        const result = await regenerateEventBoxSummary('box-1', llmConfig, embeddingConfig, '角色甲');
+        expect(result.summary.content).toBe(content);
+    });
+
+    it('首次输出未完成时拒绝写入，即使返回的 JSON 恰好可解析', async () => {
+        const truncated = completion('未完成的正文');
+        (truncated.choices[0] as any).finish_reason = 'length';
+        mocks.responses.push(truncated, truncated);
+        await expect(regenerateEventBoxSummary('box-1', llmConfig, embeddingConfig, '角色甲'))
+            .rejects.toThrow('原内容已保留');
+        expect(mocks.getEmbeddings).not.toHaveBeenCalled();
+        expect((await MemoryNodeDB.getById('live-1'))?.archived).toBe(false);
+        expect((await MemoryNodeDB.getById('summary-1'))?.content).toContain('旧坏总结');
+    });
+
     it('用全部 archived + live 原文重做，覆盖同一 summary 并强制重新向量化', async () => {
         mocks.responses.push(completion('这是重新整合后的干净回忆。'));
 

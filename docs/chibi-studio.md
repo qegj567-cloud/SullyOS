@@ -2,6 +2,14 @@
 
 ## 3D 家园形象与用户手办柜
 
+### 3D 发色与 Chibi 对齐（2026-10-11）
+
+3D 头发使用 `creatorHairTint.ts`，逐字移植原捏人器的 18 个 `HUE_PALETTE` 候选色、自然色饱和度/明度偏移、线稿保护和渐变规则；候选色的展示 HEX 不等于实际染色参数，`hairTint` 保存原始参数，`hairColor` 继续保留兼容用的显示色。不要再复用眼睛专用的白色高光规则。
+
+`CreatorRollBridge` 除已染色的展示层外，还捕获原尺寸、已翻转的 `*-raw`（固定原色素材为 `*-raw-fixed`）和独立 `*-shadow`。3D 换色从原始发片开始，沿用基础形象的 `preserveLineart`；不对已染色图二次染色，也不染投影层。和 Chibi 一样，固定原色素材不吃候选色，但明确自定义色可以重染。合成复用原捏人器的 1.5 倍高质量缩放再缩到 472px，避免边缘采样差异。恢复原色清除 3D 覆盖，回到基础形象的原搭配。
+
+`appearanceDye.test.ts` 从原 HTML 提取函数，对所有候选色、灰阶、透明度、线稿阈值和渐变做精确像素回归；`test/fixtures/chibi-hair-dye.html` 对照真实发片的两条路径。房间光照仍照常影响最终 3D 显示。
+
 角色手办柜增加「3D 家园形象」入口，保存在 `char.chibiStudio.home3D`（完整基础 state、预览 img、hair 3D 参数、updatedAt）；原三处一键同步保留此独立槽，不覆盖家园搭配。用户「个人档案 → 我的手办柜」管理自己的 Chibi 与 3D 形象：Chibi 沿用 `userProfile.vrState.chibi`，不会因捏人自动登录彼方；家园形象在 `userProfile.chibiStudio.home3D`。
 
 `HomeFigureStudio` / `HomeFigureEditor` 复用基础捏人器和已有 `HairEditor`（脸、发、衣橱、体型、撤销/重做），已有基础形象可作为底稿，必须显式保存一份家园形象。取消不改正式形象；3D 参数不读写实验页全局草稿。角色和用户使用独立基础草稿键。基础合成图仅作展示柜缩略预览，3D 编辑器展示实时模型。
@@ -53,7 +61,7 @@
 
 ## 草稿与 savedState 的关系
 
-捏人器 iframe 用 `localStorage` 存未确认草稿（key 按 `draftKey` 隔离；工坊用 `studio_${charId}_${slot}`）。草稿优先于 savedState——用户上次捏一半退出，再进来先恢复 WIP；确认导出后草稿内容与已存 state 一致，行为无感。
+捏人器 iframe 用 `localStorage` 存未确认草稿（key 按 `draftKey` 隔离；工坊用 `studio_${charId}_${slot}`）。非空草稿优先于 savedState——用户上次捏一半退出，再进来先恢复 WIP；确认导出后草稿内容与已存 state 一致，行为无感。重置产生的空草稿不覆盖 savedState；清草稿时同时取消待写计时器，避免旧回调重新写入空草稿。传入 savedState 时显示「已保存形象」，可显式丢弃当前草稿，完整恢复选件、颜色与翻转；这一步不会确认导出或修改宿主正式形象。520 的用户形象编辑入口也要传递已有 `userChibi.state`。
 
 家园捏人首屏直接展示 Chibi / 3D 体型，旁边说明家园内全员跟随房主体型。预览画布支持鼠标或单指水平拖动旋转，下方选项区域保留独立滚动；手机隐藏原生滚动条，桌面使用细滚动条。Sully 的家园入口沿用 `isSullyChar` 判断，向基础捏人器传递专属标识与初始预设，并在前发、耳发和两层后发分类分别提供 Sully 部件。
 
@@ -94,3 +102,5 @@ Sully 专属部件保存在 `public/like520/sully/`：`fronthair`、`earhair`、
 3D 镜像沿用基础 state.flipped：四层头发按类目保存，面纹/配饰按单件 ID 保存，3D 内可以切换、撤回和重做。CreatorRollBridge 把 2D 图层及子部件 CSS 翻转真实绘入贴图，避免仅在 2D 看起来翻转。额外发片独立保存 mirrored，不改变源发层。
 
 异色瞳以画面左/右为准，继承 2D 的两侧颜色及镜像后的顺序；3D 的独立颜色保存为 face.irisColors，face.heterochromia 控制同色/异色入口。基础眼型未改色的侧保留原合成图，显式改色从 eyes-raw 原图染色，避免对已染色图反复染色；分层眼型、Sully 原画与正式小屋使用同一分侧染色规则。切换分层眼型保留已有双侧颜色。内存验收入口 home-figure.html?mirror=1，覆盖头发与单件面纹镜像、异色、撤回、保存后重新编辑。
+
+3D 眼睛候选色与 Chibi 共用 18 色及饱和度/明度规则。`face.irisTint` / `face.irisTints` 保存原始预设参数，HEX 字段保留兼容；不能把高明度预设先压成 HEX 再还原。桥接保留原尺寸 `eyes-raw` 和镜像后的双侧参数，基础眼型先从原图染色，再按 Chibi 的 1.5 倍采样输出，未改的一侧继续使用底稿。分层脸沿用底稿线稿阈值并保留睫毛遮罩。旧 HEX 存档按原值重绘，无须重捏；没有 3D 改色的底稿保持原合成图，已导出图片和保存的底稿缩略图不被批量改写。回归：`chibiFaceTint.test.ts`、`homeFigureEyeControls.test.ts`；浏览器对照 `test/fixtures/chibi-eye-dye.html`。

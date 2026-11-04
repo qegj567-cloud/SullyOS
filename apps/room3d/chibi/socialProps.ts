@@ -1,3 +1,4 @@
+import {createHalloweenProp} from './halloweenProps';
 import * as T from 'three';
 import type {ChibiVisitor} from './visitor';
 import {furniturePalm} from './furnitureMotion';
@@ -10,8 +11,10 @@ const phoneHands:Record<string,'L'|'R'>={
  'vrma-54a37ca48a1d4ffb':'L',
  'vrma-cae36da2cc8b9845':'R',
 };
+export interface SocialProp {update(time:number,duration:number,weight:number):void;dispose():void}
 /** Transient props belong to an action, never to the furniture save. */
-export function createSocialProp(id:string,visitors:ChibiVisitor[]){
+export function createSocialProp(id:string,visitors:ChibiVisitor[],models:Record<string,T.Group>={}):SocialProp|null{
+ if(id.startsWith('halloween-'))return createHalloweenProp(id,visitors,models);
  const phoneSide=phoneHands[id],phone=!!phoneSide,drink=id==='cmu-22_13';
  if(!phone&&!drink)return null;
  const root=new T.Group(),materials:T.Material[]=[],geometries:T.BufferGeometry[]=[];

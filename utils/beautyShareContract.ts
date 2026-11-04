@@ -1,3 +1,5 @@
+import {validateCollaborationAppearance} from '../features/collaboration/appearance';
+import {validateMeetingAppearance} from './meetingAppearance';
 /** Shared wire format; no browser, database or model dependencies. */
 export const BEAUTY_MAX_BYTES = 20 * 1024 * 1024;
 export const BEAUTY_PLATFORMS = ['糯米机美化群', '糯米机官方DC'] as const;
@@ -84,12 +86,14 @@ export function validateBeautyPackage(value: unknown): { kind: BeautyKind; data:
   if (value.format === 'sullyos-chat-decoration' && value.version === 1 && isRecord(value.parts)) {
     const parts = { ...value.parts };
     const keys = Object.keys(value.parts);
-    if (!keys.length || keys.some(key => !['layout', 'bubbles', 'background', 'sound', 'css', 'psyche', 'schedule', 'journal', 'date', 'story'].includes(key))) throw Error('聊天装扮包含未知内容');
+    if (!keys.length || keys.some(key => !['layout', 'bubbles', 'background', 'sound', 'css', 'psyche', 'schedule', 'journal', 'date', 'story', 'collaboration'].includes(key))) throw Error('聊天装扮包含未知内容');
+    if (keys.includes('collaboration')) {
+      if (keys.length !== 1) throw Error('协同工作美化请单独提交');
+      parts.collaboration = validateCollaborationAppearance(value.parts.collaboration);
+    }
     if ((keys.includes('date') || keys.includes('story')) && keys.length !== 1) throw Error('见面与剧情界面美化请单独提交');
     for (const key of ['date', 'story']) if (value.parts[key] !== undefined) {
-      const part = value.parts[key];
-      if (!isRecord(part) || !['none', 'novel', 'paper', 'night'].includes(part.preset)) throw Error('见面／剧情美化样式无效');
-      parts[key] = { preset: part.preset, ...(typeof part.name === 'string' ? { name: part.name.slice(0, 60) } : {}) };
+      parts[key] = validateMeetingAppearance(value.parts[key]);
     }
     if ((keys.includes('schedule')||keys.includes('journal'))&&keys.length!==1) throw Error('App 美化请按分类分别提交');
     if (value.parts.css !== undefined && typeof value.parts.css !== 'string') throw Error('CSS 格式不正确');

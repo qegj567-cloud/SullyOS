@@ -15,6 +15,7 @@ import { CAMERA_FRAMES as FRAMES, cameraFrameLayout, drawCameraFrame } from '../
 import { CameraStickerGesture, type StickerTransform } from '../../utils/cameraStickerGesture';
 import { cameraCaptureLayout, cameraIsPortrait } from '../../utils/cameraCapture';
 import { createCameraPreview } from '../../utils/cameraPreview';
+import { applyCameraZoom, cameraZoomRange, type CameraZoom } from '../../utils/cameraZoom';
 
 const Live2DAvatarCanvas = lazy(() => import('../call/Live2DAvatarCanvas'));
 
@@ -31,6 +32,13 @@ export default function ChatCamera({ onClose, onGallery, onCapture, character }:
     const [viewfinder, setViewfinder] = useState({ width: 0, height: 0 });
     const [retry, setRetry] = useState(0);
     const [ready, setReady] = useState(false);
+    const [cameraTrack, setCameraTrack] = useState<MediaStreamTrack | null>(null);
+    const currentCameraTrack = useRef(cameraTrack); currentCameraTrack.current = cameraTrack;
+    const cameraFacing = cameraTrack?.getSettings?.().facingMode || facing;
+    const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
+    const [deviceId, setDeviceId] = useState('');
+    const [zoom, setZoom] = useState<CameraZoom>({ min: 1, max: 3, step: 0.1, value: 1, hardware: false });
+    const zoomQueue = useRef<Promise<void>>(Promise.resolve());
     const [error, setError] = useState('');
     const [cameraStatus, setCameraStatus] = useState('正在打开相机…');
     const [photo, setPhoto] = useState<HTMLCanvasElement | null>(null);
@@ -69,7 +77,7 @@ export default function ChatCamera({ onClose, onGallery, onCapture, character }:
             if (!navigator.mediaDevices?.getUserMedia) return Promise.reject(new Error('当前环境无法使用站内相机，请使用 HTTPS 浏览器打开。'));
             return navigator.mediaDevices.getUserMedia(constraints);
         },
-        ready: setReady, error: setError, status: setCameraStatus,
+        ready: setReady, error: setError, status: setCameraStatus, track: setCameraTrack, portrait: cameraIsPortrait,
     }), []);
     const nextId = useRef(0);
     const drag = useRef<CameraStickerGesture | null>(null);
@@ -99,7 +107,30 @@ export default function ChatCamera({ onClose, onGallery, onCapture, character }:
     const stop = () => preview.stop();
 
     useEffect(() => {
-        const update = () => setPortrait(cameraIsPortrait());
+        if (!cameraTrack) return;
+        let cancelled = false;
+        const range = cameraZoomRange(cameraTrack);
+        setZoom(range);
+        if (range.hardware) zoomQueue.current = applyCameraZoom(cameraTrack, range.value).catch(() => {
+            if (!cancelled) setZoom({ min: 1, max: 3, step: 0.1, value: 1, hardware: false });
+        });
+        void navigator.mediaDevices?.enumerateDevices?.().then(devices => {
+            if (!cancelled) setCameras(devices.filter(device => device.kind === 'videoinput' && device.deviceId));
+        }).catch(() => {});
+        return () => { cancelled = true; };
+    }, [cameraTrack]);
+    const changeZoom = (value: number) => {
+        if (!zoom.hardware || !cameraTrack) { setZoom(current => ({ ...current, value })); return; }
+        // Serialize hardware changes so an older slider request cannot finish last.
+        zoomQueue.current = zoomQueue.current.catch(() => {}).then(async () => {
+            if (cameraTrack.readyState !== 'live' || currentCameraTrack.current !== cameraTrack) return;
+            try { await applyCameraZoom(cameraTrack, value); if(currentCameraTrack.current === cameraTrack) setZoom(current => ({ ...current, value })); }
+            catch { if(currentCameraTrack.current === cameraTrack) setError('这个镜头无法调整变焦，请切换镜头或重试。'); }
+        });
+    };
+
+    useEffect(() => {
+        const update = () => { setPortrait(cameraIsPortrait()); preview.reframe(); };
         window.addEventListener('resize', update);
         window.addEventListener('orientationchange', update);
         screen.orientation?.addEventListener('change', update);
@@ -149,18 +180,18 @@ export default function ChatCamera({ onClose, onGallery, onCapture, character }:
         if (mode !== 'camera' || photo) return;
         let suspended = false;
         const pause = () => { suspended = true; preview.stop(); setError(''); setCameraStatus('相机已暂停，返回后恢复'); };
-        const resume = () => { if (!document.hidden && suspended) { suspended = false; preview.start(facing); } };
+        const resume = () => { if (!document.hidden && suspended) { suspended = false; preview.start(facing, deviceId); } };
         const visibility = () => {
             if (document.hidden) pause(); else resume();
         };
-        if (document.hidden) pause(); else preview.start(facing);
+        if (document.hidden) pause(); else preview.start(facing, deviceId);
         document.addEventListener('visibilitychange', visibility);
         window.addEventListener('pagehide', pause); window.addEventListener('pageshow', resume);
         return () => {
             preview.stop(); document.removeEventListener('visibilitychange', visibility);
             window.removeEventListener('pagehide', pause); window.removeEventListener('pageshow', resume);
         };
-    }, [mode, facing, retry, photo, preview]);
+    }, [mode, facing, deviceId, retry, photo, preview]);
 
     const renderPhoto = async (display: HTMLCanvasElement, fullSize: boolean, cancelled: () => boolean) => {
         if (!photo || !previewPhoto) return;
@@ -226,13 +257,13 @@ export default function ChatCamera({ onClose, onGallery, onCapture, character }:
     const capture = () => {
         const v = video.current;
         if (!v || !ready) return;
-        const layout = cameraCaptureLayout(v.videoWidth, v.videoHeight, portrait);
+        const layout = cameraCaptureLayout(v.videoWidth, v.videoHeight, portrait, 1440, zoom.hardware ? 1 : zoom.value);
         if (!layout) return;
         const image = document.createElement('canvas');
         image.width = layout.width; image.height = layout.height;
         const ctx = image.getContext('2d');
         if (!ctx) { setError('无法处理照片，请重试。'); return; }
-        if (facing === 'user') { ctx.translate(image.width, 0); ctx.scale(-1, 1); }
+        if (cameraFacing === 'user') { ctx.translate(image.width, 0); ctx.scale(-1, 1); }
         ctx.drawImage(v, layout.x, layout.y, layout.sourceWidth, layout.sourceHeight, 0, 0, image.width, image.height);
         stop(); setPhoto(image); setError('');
     };
@@ -363,12 +394,16 @@ export default function ChatCamera({ onClose, onGallery, onCapture, character }:
                         e.preventDefault(); pendingDrag.current = { id: moving.id, ...next };
                         if (dragFrame.current === null) dragFrame.current = requestAnimationFrame(flushDrag);
                     }} onPointerUp={finishDrag} onPointerCancel={finishDrag} onLostPointerCapture={finishDrag} />
-                        : <video ref={video} autoPlay muted playsInline style={{
-                            width: viewfinder.width, height: viewfinder.height, objectFit: 'cover', objectPosition: 'center',
-                            transform: facing === 'user' ? 'scaleX(-1)' : undefined,
-                        }} />}
+                        : <div className="chat-camera-sensor" style={{width:viewfinder.width,height:viewfinder.height}}><video ref={video} autoPlay muted playsInline style={{
+                            width: '100%', height: '100%', objectFit: 'contain', objectPosition: 'center',
+                            transform: `scale(${zoom.hardware ? 1 : zoom.value})${cameraFacing === 'user' ? ' scaleX(-1)' : ''}`,
+                        }} /></div>}
                     {!photo && !ready && !error && <p className="chat-camera-status" role="status">{cameraStatus}</p>}
                 </div>
+                {!photo && <div className="chat-camera-lenses">
+                    {cameras.length > 1 && <label>镜头<select aria-label="选择摄像头" value={deviceId || cameraTrack?.getSettings?.().deviceId || ''} onChange={e => setDeviceId(e.target.value)}><option value="">自动选择</option>{cameras.map((camera, i) => <option key={camera.deviceId} value={camera.deviceId}>{camera.label || `镜头 ${i + 1}`}</option>)}</select></label>}
+                    <label>{zoom.hardware ? '变焦' : '画面缩放'}<input aria-label="相机变焦" type="range" min={zoom.min} max={zoom.max} step={zoom.step} value={zoom.value} disabled={!ready} onChange={e => changeZoom(Number(e.target.value))}/><output>{zoom.value.toFixed(1)}×</output></label>
+                </div>}
                 {error && <div className="chat-camera-error" role="alert">{error}{photo ? <button type="button" onClick={() => setError('')}>知道了</button> : <><button type="button" onClick={() => setRetry(n => n + 1)}>重试</button><button type="button" onClick={openGallery}>从相册选择</button></>}</div>}
                 {photo && <fieldset className="chat-camera-editor" disabled={busy}>
                     {selected !== null && <p className="chat-camera-gesture-hint">单指拖动 · 双指缩放、旋转</p>}
@@ -410,7 +445,7 @@ export default function ChatCamera({ onClose, onGallery, onCapture, character }:
                     {active && <div className="chat-camera-adjust"><label>大小<input aria-label="贴纸大小" type="range" min="0.08" max={active.image ? '1.2' : '0.4'} step="0.01" value={active.size} onChange={e => updateSticker({ size: Number(e.target.value) })} /></label><label>旋转<input aria-label="贴纸旋转" type="range" min="-180" max="180" value={active.angle} onChange={e => updateSticker({ angle: Number(e.target.value) })} /></label><button type="button" title="删除贴纸" aria-label="删除贴纸" onClick={() => { setStickers(items => items.filter(s => s.id !== selected)); setSelected(null); }}><Trash size={20} /></button></div>}
                     </>}
                 </fieldset>}
-                <footer>{photo ? <><button type="button" disabled={busy || loadingSticker} onClick={() => { setPhoto(null); setStickers([]); setSelected(null); setReady(false); setLivePreview(false); }}><ArrowCounterClockwise size={20} />重拍</button><button type="button" className="chat-camera-send" disabled={busy || loadingSticker || rendering || compareOriginal} onClick={send}><PaperPlaneTilt size={20} />{busy || rendering ? '处理中…' : '发送照片'}</button></> : <><button type="button" aria-label="从相册选择" title="从相册选择" onClick={openGallery}><ImageSquare size={24} /></button><button type="button" className="chat-camera-shutter" aria-label="拍摄照片" title="拍摄照片" disabled={!ready} onClick={capture}><span /></button><button type="button" aria-label="切换镜头" title="切换镜头" onClick={() => { setReady(false); setFacing(f => f === 'user' ? 'environment' : 'user'); }}><ArrowsClockwise size={24} /></button></>}</footer>
+                <footer>{photo ? <><button type="button" disabled={busy || loadingSticker} onClick={() => { setPhoto(null); setStickers([]); setSelected(null); setReady(false); setLivePreview(false); }}><ArrowCounterClockwise size={20} />重拍</button><button type="button" className="chat-camera-send" disabled={busy || loadingSticker || rendering || compareOriginal} onClick={send}><PaperPlaneTilt size={20} />{busy || rendering ? '处理中…' : '发送照片'}</button></> : <><button type="button" aria-label="从相册选择" title="从相册选择" onClick={openGallery}><ImageSquare size={24} /></button><button type="button" className="chat-camera-shutter" aria-label="拍摄照片" title="拍摄照片" disabled={!ready} onClick={capture}><span /></button><button type="button" aria-label="切换镜头" title="切换镜头" onClick={() => { setReady(false); setDeviceId(''); setFacing(f => f === 'user' ? 'environment' : 'user'); }}><ArrowsClockwise size={24} /></button></>}</footer>
             </>}
         </div>
     </div>, document.body);

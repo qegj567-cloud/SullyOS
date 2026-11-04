@@ -2,10 +2,25 @@ import {expect,it} from 'vitest';
 import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
 import {tintAppearancePixels} from '../apps/room3d/chibi/appearanceColors';
+import {HUE_PALETTE,resolveTint,hexForTint,type CreatorHairTint} from '../apps/room3d/chibi/creatorHairTint';
 const html=readFileSync('public/like520/character_creator.html','utf8');
 const section=(start:string,end:string)=>html.slice(html.indexOf(start),html.indexOf(end));
 const helpers=section('function hslToRgb(', '/* 解析 tintColor')+section('function colorHsl(', '/* ===== 取翻转状态');
 const tint=section('function applyTint(', '/* 眼睛分左右染色');
+const palette=section('const HUE_PALETTE =','const state =');
+it('matches every original Chibi palette entry and its full grayscale/alpha ramp exactly',()=>{
+ expect(runInNewContext(palette+';HUE_PALETTE')).toEqual(HUE_PALETTE);
+ const cases:CreatorHairTint[]=HUE_PALETTE.flatMap((_,hueIdx)=>[0,50,100].map(sat=>({hueIdx,sat,light:(sat-50)/2})));
+ cases.push({hueIdx:0,sat:50,light:0,color:'#e2b8cb'},{hueIdx:0,sat:50,light:0,color:'#73513b',gradientColor:'#ecc5d5'});
+ for(const c of cases)for(const threshold of [0,25,55]){
+  const source=new Uint8ClampedArray(Array.from({length:256*5},(_,i)=>[i%256,i%256,i%256,i%7===0?0:i%3===0?127:255]).flat());
+  const expected=source.slice(),actual=source.slice(),ctx={getImageData:()=>({data:expected}),putImageData:()=>{}};
+  runInNewContext(palette+helpers+tint+';applyTint(canvas,resolveTint(c));',{state:{preserveLineart:threshold},canvas:{width:256,height:5,getContext:()=>ctx},c});
+  tintAppearancePixels(actual,256,5,hexForTint(c),c.gradientColor,c,threshold);
+  expect(actual,JSON.stringify(c)+' threshold='+threshold).toEqual(expected);
+  expect(runInNewContext(palette+helpers+';resolveTint(c);',{c})).toEqual(resolveTint(c));
+ }
+});
 function legacy(pixels:Uint8ClampedArray,width:number,height:number,color:string,gradientColor?:string,skin=false){
  const ctx={getImageData:()=>({data:pixels}),putImageData:()=>{}};
  runInNewContext(`${helpers}\n${tint}\napplyTint(canvas,{...resolveTint({color,gradientColor}),skin});`,{state:{preserveLineart:25},canvas:{width,height,getContext:()=>ctx},color,gradientColor,skin});

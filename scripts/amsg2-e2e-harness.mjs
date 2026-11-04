@@ -1,12 +1,12 @@
 /**
  * amsg2 本地全流程实测 harness（上线前检查用，跑法：`node scripts/amsg2-e2e-harness.mjs`）。
  *
- * 需 amsg-server ≥2.6.0-next.10 的 bundle 才能跑：断言依赖发送后回执 onAfterSend
- * （self_log 的实际发送时刻）与 tzId 时间渲染，旧 bundle 会在这些断言上挂。
+ * 使用当前依赖打出的 bundle 与 Node 24。这里验 cron 路径，不覆盖 Durable Object
+ * 持久存储、alarm 或即时对话起跳；Cloudflare 基类只为载入模块占位，实例化会明确失败。
  *
  * 跑的是仓库里提交的 **同一份** worker/amsg/worker.bundle.js（用户粘进 CF Dashboard 的就是它），
  * 外围环境全部真实化：
- *   - D1 → node:sqlite 内存库（prepare/bind/run/first/all/batch 语义对齐；需要 Node 22+）
+ *   - D1 → node:sqlite 内存库（prepare/bind/run/first/all/batch 语义对齐）
  *   - Web Push → 真实 VAPID + RFC8291 aes128gcm 加密，harness 持有浏览器侧私钥现场解密验内容
  *   - LLM → mock（按请求内容路由脚本回复，校验请求里的 prompt 是不是 fire-time 现场渲染）
  *   - HTTP → node:http 桥接 worker.fetch，前端同款 @rei-standard/amsg-client 直连
@@ -15,7 +15,7 @@
  *   S0 鉴权/CORS/capabilities   S1 init-tenant + get-user-key + vapid-public-key
  *   S2 fixed 一次性任务端到端    S3 满血 v2 多任务（fire_pack 现场填槽 + RECALL 工具循环 +
  *      directives + occurrenceMs + 大值分块 + daily 推进 + /messages 投影 + cancel）
- *   S4 防穿帮闸：锚点前进 → skip  S5a 活跃租约新鲜 → skip（无 fire_pack 也拦）
+ *   S4 锚点前进 → 最新上下文交给模型决定静默  S5a 活跃租约新鲜 → 延期，回复结束后恢复
  *   S5b 租约过期 + 无 fire_pack → 抛错不降级        S6 force 策略 → 全绿灯照发
  *   S7 clear-client-state
  *   S8 通用 MCP native（tools 声明 → 直连真 MCP 服务器 → 结果回喂 → 暗号进 push）
@@ -29,7 +29,7 @@ import { DatabaseSync } from 'node:sqlite';
 import crypto from 'node:crypto';
 import http from 'node:http';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { createRequire } from 'node:module';
+import { createRequire, registerHooks } from 'node:module';
 
 const REPO = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '');
 const require = createRequire(`${REPO}/package.json`);
@@ -51,17 +51,36 @@ const section = (t) => console.log(`\n━━ ${t}`);
 class D1Stmt {
   constructor(db, sql) { this.db = db; this.sql = sql; this.params = []; }
   bind(...p) { this.params = p.map((v) => v === undefined ? null : v); return this; }
-  async run() {
-    const r = this.db.prepare(this.sql).run(...this.params);
-    return { meta: { changes: Number(r.changes), last_row_id: Number(r.lastInsertRowid) }, results: [] };
+  execute() {
+    const statement = this.db.prepare(this.sql);
+    if (statement.columns().length > 0) {
+      const results = statement.all(...this.params);
+      const meta = /^\s*(SELECT|PRAGMA)\b/i.test(this.sql)
+        ? { changes: 0 }
+        : this.db.prepare('SELECT changes() AS changes, last_insert_rowid() AS last_row_id').get();
+      return { meta, results };
+    }
+    const result = statement.run(...this.params);
+    return { meta: { changes: Number(result.changes), last_row_id: Number(result.lastInsertRowid) }, results: [] };
   }
+  async run() { return this.execute(); }
   async first() { return this.db.prepare(this.sql).get(...this.params) ?? null; }
   async all() { return { results: this.db.prepare(this.sql).all(...this.params) }; }
 }
 class D1Shim {
   constructor() { this.db = new DatabaseSync(':memory:'); }
   prepare(sql) { return new D1Stmt(this.db, sql); }
-  async batch(stmts) { const out = []; for (const s of stmts) out.push(await s.run()); return out; }
+  async batch(stmts) {
+    this.db.exec('BEGIN');
+    try {
+      const results = stmts.map((statement) => statement.execute());
+      this.db.exec('COMMIT');
+      return results;
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+  }
   raw(sql) { return this.db.prepare(sql).all(); }
 }
 
@@ -82,10 +101,10 @@ const env = {
 const receiver = crypto.createECDH('prime256v1');
 receiver.generateKeys();
 const authSecret = crypto.randomBytes(16);
-const subscriptionFor = (tag) => ({
-  endpoint: `https://push.test/${tag}`,
+const subscription = {
+  endpoint: 'https://push.test/harness-user',
   keys: { p256dh: b64u(receiver.getPublicKey()), auth: b64u(authSecret) },
-});
+};
 const hkdf = (salt, ikm, info, len) => Buffer.from(crypto.hkdfSync('sha256', ikm, salt, info, len));
 function decryptPush(bodyBuf) {
   const salt = bodyBuf.subarray(0, 16);
@@ -169,6 +188,10 @@ globalThis.fetch = async (input, init = {}) => {
       content = '冻结提示词兜底照发成功。';
     } else if (all.includes('FIREPACK_FRESH_char-force')) {
       content = '闹钟型强制发送，正在聊天也照发。';
+    } else if (all.includes('FIREPACK_FRESH_char-anchor')) {
+      content = '[[SILENT]]';
+    } else if (all.includes('FIREPACK_FRESH_char-presence')) {
+      content = '上一轮已经聊完，现在接着说。';
     } else if (all.includes('FIREPACK_FRESH_char-chain')) {
       // 自排链：角色在这条消息里给自己排下一条，走 function calling 通道。
       // 分支只看「prompt 和回喂里出现了什么」，不数轮次——链断在任何一环，走到的
@@ -181,9 +204,9 @@ globalThis.fetch = async (input, init = {}) => {
       } else if (all.includes('"ok":true')) {
         content = '口令给你留一个：CHAIN-PASS-8823，等下我再来对。';
       } else if (all.includes('send_at_too_soon')) {
-        // 被打回后按回喂里的话改口，换一个合法时间（5 分钟后）重排。
+        // 被打回后按回喂改口，15 分钟后既满足最小提前量，也满足默认 10 分钟间隔。
         return llmReply('那就往后挪挪。', [
-          scheduleCall('call_sched_2', new Date(Date.now() + 5 * 60_000).toISOString(), '接着口令那件事往下说'),
+          scheduleCall('call_sched_2', new Date(Date.now() + 15 * 60_000).toISOString(), '接着口令那件事往下说'),
         ]);
       } else {
         // 第一轮故意把时间写太近（30 秒后）：验「参数写歪只回喂让它改口，不让整条 fire 失败」。
@@ -200,7 +223,29 @@ globalThis.fetch = async (input, init = {}) => {
 };
 
 // ─── 载入与线上部署同一份的 worker bundle，并起 http 桥 ───
-const worker = (await import(pathToFileURL(`${REPO}/worker/amsg/worker.bundle.js`))).default;
+const cloudflareLoader = registerHooks({
+  resolve(specifier, context, nextResolve) {
+    if (specifier === 'cloudflare:workers') return { url: specifier, shortCircuit: true };
+    return nextResolve(specifier, context);
+  },
+  load(url, context, nextLoad) {
+    if (url === 'cloudflare:workers') {
+      return {
+        format: 'module', shortCircuit: true,
+        source: `export class DurableObject {
+          constructor() { throw new Error('This cron harness does not emulate Durable Object storage or alarms'); }
+        }`,
+      };
+    }
+    return nextLoad(url, context);
+  },
+});
+let worker;
+try {
+  worker = (await import(pathToFileURL(`${REPO}/worker/amsg/worker.bundle.js`))).default;
+} finally {
+  cloudflareLoader.deregister();
+}
 const server = http.createServer(async (req, res) => {
   try {
     const chunks = [];
@@ -240,7 +285,7 @@ const mcpServer = http.createServer(async (req, res) => {
       {
         jsonrpc: '2.0', id: body.id,
         result: {
-          protocolVersion: '2024-11-05', capabilities: { tools: {} },
+          protocolVersion: '2025-11-25', capabilities: { tools: {} },
           serverInfo: { name: 'harness-mcp', version: '1.0.0' },
         },
       },
@@ -275,6 +320,18 @@ const MCP_TOOL_CONFIG = (useNative) => JSON.stringify({
 
 const runCron = () => worker.scheduled({ scheduledTime: Date.now(), cron: '* * * * *' }, env);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// 只推进测试进程的墙上时钟；任务的原始到点时刻、重试时间与频率闸全部保留。
+async function withClockAt(at, run) {
+  if (!Number.isFinite(at)) throw new Error(`Invalid harness clock: ${at}`);
+  const ActualDate = globalThis.Date;
+  class HarnessDate extends ActualDate {
+    constructor(...args) { super(...(args.length ? args : [at])); }
+    static now() { return at; }
+  }
+  globalThis.Date = HarnessDate;
+  try { return await run(); }
+  finally { globalThis.Date = ActualDate; }
+}
 
 // ─── 前端同款 client ───
 const USER_ID = crypto.randomUUID();
@@ -295,7 +352,9 @@ async function scheduleTask(payload) {
     }),
     body: JSON.stringify(encrypted),
   });
-  return res.json();
+  const result = await res.json();
+  if (!result.success) throw new Error(`schedule-message failed: ${JSON.stringify(result.error)}`);
+  return result;
 }
 async function listAllTasks() {
   const res = await realFetch(`${BASE}/messages?limit=100&offset=0`, {
@@ -326,21 +385,21 @@ const SLOT_TASK = '{{AMSG_TASK_INSTRUCTION}}';
 const SLOT_SELF_LOG = '{{AMSG_SELF_LOG}}';
 const SLOT_TASK_LIST = '{{AMSG_TASK_LIST}}';
 /** 自述回写那一段的小标题（utils/amsgFirePack.ts renderSelfLogBlock），S9 靠它判断段落到没到。 */
-const SELF_LOG_HEADING = '【这之后你又主动发过（对方还没回）】';
+const SELF_LOG_HEADING = '【这之后你又发过（对方还没回）】';
 /** 排程清单那一段的小标题（utils/amsg2Tasks.ts buildFireTaskListBlock）。 */
 const TASK_LIST_HEADING = '【你还挂着这些排程·仅你可见】';
 /**
- * 客户端打上来的 fire_pack（v3）。槽位顺序照客户端实际打包的样子：自述回写紧跟对话记录，
+ * 客户端打上来的 fire_pack（v7）。槽位顺序照客户端实际打包的样子：自述回写紧跟对话记录，
  * 排程清单在时间信息之后、本次任务之前。
  * opts: { fillerKb 世界书填充体积, builtAt 打包时刻, pendingTasks 打包那一刻挂着的任务 }
  */
 const firePack = (marker, lastUserMessageAt, opts = {}) => ({
-  v: 3,
+  v: 7,
   template: [
     `【角色系统设定】${marker} 的完整人设……`,
     opts.fillerKb ? `【世界书填充】${'填'.repeat(opts.fillerKb * 512)}【填充结束FILLER_END】` : '',
     '【最近对话上下文】',
-    'user: 想起什么就跟我说。',
+    `user: ${opts.latestUserMessage ?? '想起什么就跟我说。'}`,
     SLOT_SELF_LOG,
     `当前本地时间：${SLOT_TIME}`,
     SLOT_SINCE,
@@ -352,13 +411,17 @@ const firePack = (marker, lastUserMessageAt, opts = {}) => ({
   lastUserMessageAt,
   // 与客户端 buildFirePack 同款（必填）：worker 侧一切给角色看的时间都按这个参照系渲染。
   tzId: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  userTzId: Intl.DateTimeFormat().resolvedOptions().timeZone,
   targetName: '测试者',
+  scene: null,
+  selfScheduleEnabled: true,
   builtAt: opts.builtAt ?? Date.now(),
   pendingTasks: opts.pendingTasks ?? [],
 });
 const toolPack = (charName) => ({
   v: 1,
   charName,
+  timeAwarenessEnabled: true,
   xhsEnabled: false,
   // 2026-06 不在激活月清单 → runRecall 走「取回月度总结」正路（激活月按设计返回 null）
   activeMemoryMonths: [],
@@ -378,7 +441,6 @@ function aiTaskPayload({ charId, charName, mode, firstSendTime, recurrenceType, 
       messageSubtype: 'chat',
       firstSendTime,
       recurrenceType,
-      pushSubscription: subscriptionFor(charId),
       metadata: {
         charId, charName,
         source: 'active_msg_2',
@@ -390,9 +452,7 @@ function aiTaskPayload({ charId, charName, mode, firstSendTime, recurrenceType, 
         amsgTaskInstruction: taskInstruction,
       },
       completePrompt: frozenPrompt,
-      apiUrl: 'https://llm.test/v1/chat/completions',
-      apiKey: 'sk-e2e',
-      primaryModel: 'mock-model',
+      credRefs: { chat: 'harness/chat' },
     },
   };
 }
@@ -433,6 +493,12 @@ try {
     check('client.init() 拿到 user key（加密通道就绪）', true);
     const vk = await client.getVapidPublicKey();
     check('GET /vapid-public-key 与 env 一致', vk === vapidKeys.publicKey);
+    const registered = await client.putPushSubscription(subscription);
+    check('登记用户级推送订阅成功', registered?.success === true, JSON.stringify(registered));
+    const credentials = await client.putLlmCredentials([{ credId: 'harness/chat', value: {
+      apiUrl: 'https://llm.test/v1/chat/completions', apiKey: 'sk-e2e', primaryModel: 'mock-model',
+    } }]);
+    check('登记模型凭据成功（任务只携带 credRefs）', credentials?.success === true, JSON.stringify(credentials));
   }
 
   section('S2 fixed 一次性任务端到端（排程 → cron → push → 解密验文）');
@@ -444,7 +510,6 @@ try {
       userMessage: '到点了，这是固定消息正文。',
       firstSendTime: new Date(Date.now() + 1000).toISOString(),
       recurrenceType: 'none',
-      pushSubscription: subscriptionFor('char-fixed'),
       metadata: {
         charId: 'char-fixed', charName: '小固', source: 'active_msg_2', amsgMode: 'fixed',
         amsgClientTaskId: clientTaskId, amsgExpirePolicy: 'force', amsgRecurrence: 'none', amsgAnchorMs: 0,
@@ -457,7 +522,7 @@ try {
     check('GET /messages 投影 clientTaskId', row?.clientTaskId === clientTaskId);
     await sleep(1400);
     await runCron();
-    const mine = pushes.filter((p) => p.tag === 'char-fixed');
+    const mine = pushes.filter((p) => p.payload?.metadata?.charId === 'char-fixed');
     check('cron 到点后收到 1 条 push', mine.length === 1, `got ${mine.length}`);
     const p = mine[0]?.payload;
     check('push 正文 = 固定消息原文', p?.message === '到点了，这是固定消息正文。', JSON.stringify(p?.message));
@@ -510,7 +575,7 @@ try {
     const toolMsg = r2msgs.find((m) => m.role === 'tool');
     check('第 2 轮带回 RECALL 工具结果（月度总结命中）', String(toolMsg?.content || '').includes('RECALL_MEMORY_MARKER'), String(toolMsg?.content || '').slice(0, 120));
 
-    const mine = pushes.filter((p) => p.tag === 'char-full');
+    const mine = pushes.filter((p) => p.payload?.metadata?.charId === 'char-full');
     check('finish 后按行分段推送 3 条', mine.length === 3, `got ${mine.length}`);
     const [p1, , pLast] = [mine[0]?.payload, mine[1]?.payload, mine[mine.length - 1]?.payload];
     check('旁白（round-1 prefix）保序排在正文前', String(p1?.message || '').includes('翻翻记忆'), JSON.stringify(p1?.message));
@@ -535,33 +600,39 @@ try {
     check('取消后远端清单不再含该任务', !after.tasks.some((t) => t.uuid === s3uuid));
   }
 
-  section('S4 防穿帮闸：一次性任务锚点后有新用户消息 → onBeforeFire skip');
+  section('S4 锚点后有新用户消息 → 模型看到最新上下文并决定静默');
   {
     const now = Date.now();
     const anchor = now - 3600_000;
+    const latestUserMessage = 'ANCHOR_LATEST_MESSAGE 我已经说完了，先不用回。';
     await putState([
-      // 用户在排程后（锚点后）又说过话：lastUserMessageAt > anchor → 应作废
-      { namespace: NS('char-anchor'), key: 'fire_pack', value: JSON.stringify(firePack('FIREPACK_FRESH_char-anchor', anchor + 60_000)), updatedAt: now },
+      // 锚点前进不再硬作废：带最新对话进模型，让角色判断这次是否需要开口。
+      { namespace: NS('char-anchor'), key: 'fire_pack', value: JSON.stringify(firePack('FIREPACK_FRESH_char-anchor', anchor + 60_000, { latestUserMessage })), updatedAt: now },
+      { namespace: NS('char-anchor'), key: 'tool_pack', value: JSON.stringify(toolPack('小锚')), updatedAt: now },
     ]);
     const { payload } = aiTaskPayload({
       charId: 'char-anchor', charName: '小锚', mode: 'auto',
       firstSendTime: new Date(now + 1000).toISOString(), recurrenceType: 'none', expirePolicy: 'expire',
       anchorMs: anchor,
-      taskInstruction: '（skip 场景不应见到这条指令进入 LLM）',
-      frozenPrompt: 'FROZEN_char-anchor（skip 场景不应被调用）',
+      taskInstruction: '看看最新对话，再决定现在是否需要开口。',
+      frozenPrompt: 'FROZEN_char-anchor（不得使用排程时的旧上下文）',
     });
     const sched = await scheduleTask(payload);
     const uuid = sched?.data?.uuid;
     const llmBefore = llmRequests.length; const pushBefore = pushes.length;
     await sleep(1400);
     await runCron();
-    check('skip：零 LLM 调用', llmRequests.length === llmBefore, `+${llmRequests.length - llmBefore}`);
-    check('skip：零 push', pushes.length === pushBefore, `+${pushes.length - pushBefore}`);
+    const reqs = llmRequests.slice(llmBefore);
+    const prompt = reqs[0]?.messages?.map((m) => String(m.content)).join('\n') || '';
+    check('锚点前进仍调用一次模型，让角色决定是否开口', reqs.length === 1, `got ${reqs.length}`);
+    check('模型拿到更新后的对话与 fire_pack，没有旧冻结上下文',
+      prompt.includes(latestUserMessage) && prompt.includes('FIREPACK_FRESH_char-anchor') && !prompt.includes('FROZEN_char-anchor'));
+    check('合法静默响应：零 push', pushes.length === pushBefore, `+${pushes.length - pushBefore}`);
     const listed = await listAllTasks();
-    check('skip 出口任务照常出清（一次性删除，不再重试）', !listed.tasks.some((t) => t.uuid === uuid));
+    check('静默后一次性任务正常出清，不作为异常重试', !listed.tasks.some((t) => t.uuid === uuid));
   }
 
-  section('S5a 活跃会话租约新鲜 → 无 fire_pack 也拦（第一道快速门）');
+  section('S5a 活跃租约新鲜 → 先延期，回复结束并同步上下文后恢复');
   {
     const now = Date.now();
     await putState([
@@ -571,18 +642,47 @@ try {
       charId: 'char-presence', charName: '小租', mode: 'auto',
       firstSendTime: new Date(now + 1000).toISOString(), recurrenceType: 'none', expirePolicy: 'expire',
       anchorMs: now - 3600_000,
-      taskInstruction: '（presence skip 场景不应进入 LLM）',
-      frozenPrompt: 'FROZEN_char-presence（presence skip 场景不应被调用）',
+      taskInstruction: '等当前回复写完，再接着最新对话说。',
+      frozenPrompt: 'FROZEN_char-presence（不得使用排程时的旧上下文）',
     });
     const sched = await scheduleTask(payload);
     const uuid = sched?.data?.uuid;
     const llmBefore = llmRequests.length; const pushBefore = pushes.length;
     await sleep(1400);
+    const deferStartedAt = Date.now();
     await runCron();
     check('新鲜租约 → 零 LLM / 零 push', llmRequests.length === llmBefore && pushes.length === pushBefore,
       `llm+${llmRequests.length - llmBefore} push+${pushes.length - pushBefore}`);
     const listed = await listAllTasks();
-    check('presence skip 后任务出清', !listed.tasks.some((t) => t.uuid === uuid));
+    const deferred = d1.db.prepare('SELECT status, next_send_at, retry_after, retry_count FROM scheduled_messages WHERE uuid = ?').get(uuid);
+    const retryAt = Date.parse(deferred?.retry_after);
+    check('延期后任务仍待发送，未消耗失败重试额度',
+      listed.tasks.some((t) => t.uuid === uuid) && deferred?.status === 'pending' && deferred?.retry_count === 0,
+      JSON.stringify(deferred));
+    check('延期 45 秒且保留原始触发时刻',
+      retryAt >= deferStartedAt + 45_000 && retryAt <= Date.now() + 45_000
+      && deferred?.next_send_at === payload.firstSendTime, JSON.stringify(deferred));
+
+    const resumeAt = retryAt + 1000;
+    const latestUserMessage = 'PRESENCE_REPLY_FINISHED 刚才那轮已经聊完了。';
+    await withClockAt(resumeAt, async () => {
+      await putState([
+        { namespace: NS('char-presence'), key: 'chat_presence', value: JSON.stringify(presence('char-presence', now - 120_000, now - 5000)), updatedAt: resumeAt },
+        { namespace: NS('char-presence'), key: 'fire_pack', value: JSON.stringify(firePack('FIREPACK_FRESH_char-presence', now - 5000, { latestUserMessage })), updatedAt: resumeAt },
+        { namespace: NS('char-presence'), key: 'tool_pack', value: JSON.stringify(toolPack('小租')), updatedAt: resumeAt },
+      ]);
+      await runCron();
+    });
+    const reqs = llmRequests.slice(llmBefore);
+    const prompt = reqs[0]?.messages?.map((m) => String(m.content)).join('\n') || '';
+    check('租约结束后恢复生成，读到回复完成后的最新上下文',
+      reqs.length === 1 && prompt.includes(latestUserMessage) && !prompt.includes('FROZEN_char-presence'), `got ${reqs.length}`);
+    const mine = pushes.slice(pushBefore).filter((p) => p.payload?.metadata?.charId === 'char-presence');
+    check('恢复后正常投递，仍沿用原始触发身份',
+      mine.length > 0 && mine.some((p) => String(p.payload?.message || '').includes('上一轮已经聊完'))
+      && mine.every((p) => p.payload?.metadata?.amsgOccurrenceMs === Date.parse(payload.firstSendTime)), JSON.stringify(mine));
+    const afterResume = await listAllTasks();
+    check('恢复投递后一次性任务出清', !afterResume.tasks.some((t) => t.uuid === uuid));
   }
 
   section('S5b 租约过期 + 无 fire_pack → 抛 AMSG2_FIRE_STATE_MISSING（不降级）');
@@ -608,7 +708,7 @@ try {
     await runCron();
     const reqs = llmRequests.slice(llmBefore);
     check('状态缺失 → 零 LLM 调用（不吃冻结 prompt）', reqs.length === 0, `reqs=${reqs.length}`);
-    const mine = pushes.slice(pushBefore).filter((p) => p.tag === 'char-frozen');
+    const mine = pushes.slice(pushBefore).filter((p) => p.payload?.metadata?.charId === 'char-frozen');
     check('状态缺失 → 零 push', mine.length === 0, JSON.stringify(mine.map((m) => m.payload?.message)));
     const listed = await listAllTasks();
     check('任务不被当成发完出清（留在远端等重试）', listed.tasks.some((t) => t.uuid === uuid));
@@ -636,7 +736,7 @@ try {
     await runCron();
     check('缺 tzId → 零 LLM 调用（parse 失败走 fire-state 错误路径）',
       llmRequests.length === llmBefore, `llm+${llmRequests.length - llmBefore}`);
-    const mine = pushes.slice(pushBefore).filter((p) => p.tag === 'char-no-tz');
+    const mine = pushes.slice(pushBefore).filter((p) => p.payload?.metadata?.charId === 'char-no-tz');
     check('缺 tzId → 零 push', mine.length === 0, JSON.stringify(mine.map((m) => m.payload?.message)));
     const listed = await listAllTasks();
     check('缺 tzId 的任务留在远端等重试（不静默出清）', listed.tasks.some((t) => t.uuid === uuid));
@@ -666,13 +766,13 @@ try {
     await runCron();
     const reqs = llmRequests.slice(llmBefore);
     check('force：照走满血链路（fire_pack 渲染 + 任务槽）', reqs.length === 1 && JSON.stringify(reqs[0]).includes('FIREPACK_FRESH_char-force') && JSON.stringify(reqs[0]).includes('FORCE_TASK_MARKER'), `reqs=${reqs.length}`);
-    const mine = pushes.slice(pushBefore).filter((p) => p.tag === 'char-force');
+    const mine = pushes.slice(pushBefore).filter((p) => p.payload?.metadata?.charId === 'char-force');
     check('force：push 送达', mine.length >= 1 && String(mine[0]?.payload?.message || '').includes('照发'));
     const listed = await listAllTasks();
     check('force 任务发完出清', !listed.tasks.some((t) => t.uuid === uuid));
   }
 
-  section('S6b 旁路存储：客户端读回 + 写空值删除（push 装不下时的取回路径）');
+  section('S6b 旧旁路存储：客户端读回 + 删除整行');
   {
     // worker 把装不下一条 push 的 XHS 会话数据写进 client_state、push 只带引用键，
     // 客户端上线后按键取回再删。这里验的就是取回和删除这两步——它们走的是 HTTP
@@ -689,18 +789,16 @@ try {
     const hit = (read?.data?.entries || []).find((e) => e.key === key);
     check('按 namespace + key 读回旁路存储，内容逐字一致', hit?.value === value, JSON.stringify(hit?.value || read));
 
-    // 客户端只能把内容清空，删不掉整行：`value: null` 的删除语义是 hook 侧
-    // ctx.writeState 独有的，HTTP PUT 会把这条当无效条目跳过。这条断言就是钉住这个
-    // 差异——别哪天照着 writeState 的用法改客户端，然后以为自己清干净了。
+    // HTTP 与 hook 现在共用 value:null 删除语义；空串仍是有效值，不能当作删行。
     await client.putClientState([{ namespace: ns, key, value: null, updatedAt: Date.now() }]);
     const afterNull = await client.getClientState(ns);
-    const nullNoop = (afterNull?.data?.entries || []).find((e) => e.key === key);
-    check('HTTP PUT 不认 value:null（内容原封不动，删不掉行）', nullNoop?.value === value, JSON.stringify(nullNoop?.value));
+    const afterDelete = (afterNull?.data?.entries || []).find((e) => e.key === key);
+    check('HTTP PUT value:null 删除整行', afterDelete === undefined, JSON.stringify(afterDelete));
 
     await client.putClientState([{ namespace: ns, key, value: '', updatedAt: Date.now() }]);
     const afterClear = await client.getClientState(ns);
     const cleared = (afterClear?.data?.entries || []).find((e) => e.key === key);
-    check('写空串把内容清掉（取回落库后腾回空间）', cleared !== undefined && !cleared.value, JSON.stringify(cleared));
+    check('写空串保留一条空值记录，与删除语义区分', cleared !== undefined && cleared.value === '', JSON.stringify(cleared));
   }
 
   section('S7 clear-client-state（设置页「清除云端状态」）');
@@ -759,7 +857,7 @@ try {
     check('回喂措辞可读，且不漏 mcp__ 内部前缀',
       toolText.includes('调用「get_secret_word」') && !toolText.includes('mcp__'), toolText.slice(0, 160));
 
-    const mine = pushes.slice(pushBefore).filter((p) => p.tag === 'char-mcp-native');
+    const mine = pushes.slice(pushBefore).filter((p) => p.payload?.metadata?.charId === 'char-mcp-native');
     check('native：push 带回暗号', mine.some((m) => String(m.payload?.message || '').includes(MCP_PASSPHRASE)),
       JSON.stringify(mine.map((m) => m.payload?.message)));
     check('native：旁白保序排在正文前', String(mine[0]?.payload?.message || '').includes('问问那边'), JSON.stringify(mine[0]?.payload?.message));
@@ -801,7 +899,7 @@ try {
     const toolText = String((reqs[1]?.messages || []).find((m) => m.role === 'tool')?.content || '');
     check('正文兜底：工具结果按暗号原文回喂', toolText.includes(MCP_PASSPHRASE), toolText.slice(0, 160));
 
-    const mine = pushes.slice(pushBefore).filter((p) => p.tag === 'char-mcp-text');
+    const mine = pushes.slice(pushBefore).filter((p) => p.payload?.metadata?.charId === 'char-mcp-text');
     check('正文兜底：push 带回暗号', mine.some((m) => String(m.payload?.message || '').includes(MCP_PASSPHRASE)),
       JSON.stringify(mine.map((m) => m.payload?.message)));
     check('正文兜底：调用语法被剥掉，不进 push',
@@ -839,9 +937,15 @@ try {
     const sched1 = await scheduleTask(first.payload);
     check('schedule-message(自排链·第一条) 成功', sched1?.success === true, JSON.stringify(sched1?.error || sched1));
 
-    // fire_pack 里放两条「客户端此刻已知的排程」：正在发的这条（应被摘掉）+ 另一条挂着的（应列出）
+    // 任务列表以服务端实况为准；另一条必须真排到云端，不能只塞进客户端快照。
+    const other = aiTaskPayload({
+      charId: 'char-chain', charName: '小链', mode: 'auto',
+      firstSendTime: new Date(t0 + 3600_000).toISOString(), recurrenceType: 'none', expirePolicy: 'expire',
+      anchorMs: t0 - 3600_000, taskInstruction: '另一条尚未到点的任务', frozenPrompt: 'FROZEN_char-chain',
+    });
+    const otherScheduled = await scheduleTask(other.payload);
     const otherTask = taskRecord({
-      taskUuid: 'chainother-0001', clientTaskId: 'chain-other-client',
+      taskUuid: otherScheduled.data.uuid, clientTaskId: other.clientTaskId,
       firstSendTime: new Date(t0 + 3600_000).toISOString(),
     });
     const firingTask = taskRecord({
@@ -868,7 +972,7 @@ try {
     check('提示词带「你可以给自己排下一条」说明块', p1.includes('【你可以给自己排下一条】'), p1.slice(-400));
     check('第一次没有自述段（云端还没日志）', !p1.includes(SELF_LOG_HEADING));
     check('空日志时槽位被抹平，不裸露给模型', !p1.includes(SLOT_SELF_LOG));
-    check('排程清单块列出另一条挂着的任务', p1.includes(TASK_LIST_HEADING) && p1.includes('[chainoth]'),
+    check('排程清单块列出另一条实际挂着的任务', p1.includes(TASK_LIST_HEADING) && p1.includes(`[${otherTask.taskUuid.slice(0, 8)}]`),
       p1.slice(p1.indexOf(TASK_LIST_HEADING), p1.indexOf(TASK_LIST_HEADING) + 200));
     check('排程清单块摘掉正在发的这一条（否则角色以为还要再排一次）',
       !p1.includes(`[${String(sched1?.data?.uuid).slice(0, 8)}]`));
@@ -880,7 +984,7 @@ try {
     check('改口后排上了（回喂 ok:true + 任务号）',
       fb2.includes('"ok":true') && fb2.includes('排好了'), fb2.slice(0, 200));
 
-    const mine1 = pushes.slice(pushBefore).filter((p) => p.tag === 'char-chain');
+    const mine1 = pushes.slice(pushBefore).filter((p) => p.payload?.metadata?.charId === 'char-chain');
     const text1 = mine1.map((m) => String(m.payload?.message || '')).join('\n');
     check('第一条 push 带上口令', text1.includes('CHAIN-PASS-8823'), text1);
     const selfScheduled = mine1[mine1.length - 1]?.payload?.metadata?.amsgSelfScheduled;
@@ -891,8 +995,14 @@ try {
     const selfTask = selfScheduled?.[0];
     check('带回的记录标着来源是角色自己排的', selfTask?.source === 'character' && selfTask?.mode === 'prompted',
       JSON.stringify(selfTask));
-    check('任务 uuid 由角色 + 本次触发时刻推出来（投递失败重跑不会多排一条）',
-      selfTask?.taskUuid === `amsgself-char-chain-${fire1.getTime()}-0`, String(selfTask?.taskUuid));
+    // 当前 ID 在原身份前加 FNV-1a32 摘要，让清单前 8 位短号能区分不同任务。
+    // 独立按协议计算完整预期值；仍精确比较，不用后缀匹配放过错误摘要。
+    const idSeed = `char-chain|${fire1.getTime()}|0`;
+    const idDigest = [...idSeed].reduce((hash, char) =>
+      BigInt.asUintN(32, (hash ^ BigInt(char.charCodeAt(0))) * 16777619n), 2166136261n);
+    const expectedUuid = `${idDigest.toString(16).padStart(8, '0')}-amsgself-char-chain-${fire1.getTime()}-0`;
+    check('任务 uuid 精确包含稳定摘要、角色、触发时刻与序号（重跑不会多排）',
+      selfTask?.taskUuid === expectedUuid, JSON.stringify({ got: selfTask?.taskUuid, want: expectedUuid }));
 
     const listedAfter1 = await listAllTasks();
     const bRow = listedAfter1.tasks.find((t) => t.uuid === selfTask?.taskUuid);
@@ -902,11 +1012,11 @@ try {
     const wantMs = new Date(selfTask?.firstSendTime).getTime();
     check('远端行的触发时刻 = 角色要的那个时间', !!bRow && new Date(bRow.nextSendAt).getTime() === wantMs,
       JSON.stringify({ got: bRow?.nextSendAt, want: selfTask?.firstSendTime }));
-    check('角色要的是 5 分钟后（改口后那次）', Math.abs(wantMs - (Date.now() + 5 * 60_000)) < 5000,
+    check('角色要的是 15 分钟后（满足默认 10 分钟间隔）', Math.abs(wantMs - (Date.now() + 15 * 60_000)) < 5000,
       `差 ${Math.round((wantMs - Date.now()) / 1000)}s`);
 
     const log1 = await readSelfLog();
-    check('发完把正文写回云端（1 条）', log1?.v === 2 && log1?.entries?.length === 1, JSON.stringify(log1?.entries));
+    check('发完把正文写回云端（v4，1 条）', log1?.v === 4 && log1?.entries?.length === 1, JSON.stringify(log1?.entries));
     check('日志锚在这份 fire_pack 的 builtAt 上', log1?.basePackAt === builtAt,
       JSON.stringify({ got: log1?.basePackAt, want: builtAt }));
     check('记的就是刚发出去那条正文（含口令）',
@@ -924,15 +1034,10 @@ try {
     check('自排的任务也记进日志（客户端没认领之前，下次到点仍看得见）',
       log1?.tasks?.length === 1 && log1.tasks[0].taskUuid === selfTask?.taskUuid, JSON.stringify(log1?.tasks));
 
-    // ── 时间旅行：任务确实排在 5 分钟后（上面已断言），harness 不真等那 5 分钟，
-    //    把远端行的到点时刻改到现在，让下一跳 cron 捞到它。改的只是「什么时候到点」，
-    //    链路其余部分照常跑。客户端从头到尾没上线过，也没认领这条任务。
-    const dueAt = new Date(Date.now() - 1000).toISOString();
-    d1.db.prepare('UPDATE scheduled_messages SET next_send_at = ? WHERE uuid = ?').run(dueAt, selfTask?.taskUuid);
-
+    // 推进测试时钟到原定时间，保留任务行和默认间隔，客户端也不认领这条任务。
     llmBefore = llmRequests.length;
     pushBefore = pushes.length;
-    await runCron();
+    await withClockAt(wantMs + 1000, runCron);
 
     const reqs2 = llmRequests.slice(llmBefore);
     check('第二次到点自动触发（用户全程没上线）', reqs2.length === 1, `got ${reqs2.length}`);
@@ -947,12 +1052,12 @@ try {
     check('排程清单不再列正在发的这条自排任务',
       !p2.includes(`[${String(selfTask?.taskUuid).slice(0, 8)}]`));
 
-    const mine2 = pushes.slice(pushBefore).filter((p) => p.tag === 'char-chain');
+    const mine2 = pushes.slice(pushBefore).filter((p) => p.payload?.metadata?.charId === 'char-chain');
     const text2 = mine2.map((m) => String(m.payload?.message || '')).join('\n');
     check('第二条 push 接着上一条说（复述了自己留的口令）',
       text2.includes('CHAIN-PASS-8823') && text2.includes('没忘'), text2);
-    check('第二条 push 的触发时刻 = 改写后的到点时刻',
-      mine2.every((m) => m.payload?.metadata?.amsgOccurrenceMs === new Date(dueAt).getTime()),
+    check('第二条 push 的触发时刻 = 角色原先排定的时刻',
+      mine2.length > 0 && mine2.every((m) => m.payload?.metadata?.amsgOccurrenceMs === wantMs),
       JSON.stringify(mine2.map((m) => m.payload?.metadata?.amsgOccurrenceMs)));
 
     const log2 = await readSelfLog();

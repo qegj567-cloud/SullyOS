@@ -5,6 +5,8 @@ import { safeResponseJson } from '../../utils/safeApi';
 import { getLocalDateKey } from '../../utils/localDate';
 import { shareOrDownloadFile } from '../../utils/shareExport';
 import { formatMoney, roundMoney, sumMoney } from '../../utils/format';
+import { DB } from '../../utils/db';
+import { formatLedgerCsv, isExpense, ledgerTotals } from '../../utils/bankLedger';
 
 interface Props {
     transactions: BankTransaction[];
@@ -28,7 +30,10 @@ const CATEGORIES: Record<string, { icon: string; label: string; color: string; g
 };
 
 const BankAnalytics: React.FC<Props> = ({ transactions, goals, currency, onDeleteTx, apiConfig, dailyBudget = 100 }) => {
-    const [viewMode, setViewMode] = useState<'today' | 'week' | 'month'>('today');
+    const [viewMode, setViewMode] = useState<'today' | 'week' | 'month' | 'all'>('today');
+    const [selectedMonth, setSelectedMonth] = useState(() => getLocalDateKey().slice(0, 7));
+    const [exportBusy, setExportBusy] = useState(false);
+    const [exportError, setExportError] = useState('');
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [categorizedTx, setCategorizedTx] = useState<Record<string, string>>({});
     const [aiSummary, setAiSummary] = useState<string>('');
@@ -51,44 +56,38 @@ const BankAnalytics: React.FC<Props> = ({ transactions, goals, currency, onDelet
     const filteredTx = useMemo(() => {
         return transactions.filter(tx => {
             if (viewMode === 'today') return tx.dateStr === today;
-            if (viewMode === 'week') return tx.dateStr >= weekStart;
-            if (viewMode === 'month') return tx.dateStr.startsWith(currentMonth);
+            if (viewMode === 'week') return tx.dateStr >= weekStart && tx.dateStr <= today;
+            if (viewMode === 'month') return tx.dateStr.startsWith(selectedMonth);
             return true;
         });
-    }, [transactions, viewMode, today, weekStart, currentMonth]);
+    }, [transactions, viewMode, today, weekStart, selectedMonth]);
 
     // Calculate totals
-    const totalSpent = useMemo(() => sumMoney(filteredTx.map(tx => tx.amount)), [filteredTx]);
+    const expenseTx = useMemo(() => filteredTx.filter(isExpense), [filteredTx]);
+    const { expense: totalSpent, income: totalIncome, balance } = useMemo(() => ledgerTotals(filteredTx), [filteredTx]);
 
     // CSV Export
-    const handleExportCSV = async () => {
-        if (transactions.length === 0) return;
-        const BOM = '\uFEFF';
-        const header = '日期,时间,金额,备注,分类\n';
-        const rows = transactions
-            .sort((a, b) => b.timestamp - a.timestamp)
-            .map(tx => {
-                const date = tx.dateStr;
-                const time = new Date(tx.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                const cat = CATEGORIES[categorizedTx[tx.id] || guessCategory(tx.note)]?.label || '其他';
-                const note = tx.note.replace(/,/g, '，').replace(/"/g, '""');
-                return `${date},${time},${formatMoney(tx.amount)},"${note}",${cat}`;
-            })
-            .join('\n');
-        const csv = BOM + header + rows;
+    const handleExportCSV = async (scope: 'all' | 'current') => {
+        if (exportBusy) return;
+        setExportBusy(true); setExportError('');
+        try {
+        const rows = scope === 'all' ? await DB.getAllTransactions() : filteredTx;
+        if (!rows.length) { setExportError('这个范围暂无记录'); return; }
         await shareOrDownloadFile({
-            content: csv,
-            fileName: `记账记录_${new Date().toISOString().split('T')[0]}.csv`,
+            content: formatLedgerCsv(rows, tx => CATEGORIES[categorizedTx[tx.id] || guessCategory(tx.note)]?.label || '其他'),
+            fileName: `记账记录_${scope === 'all' ? '全部' : viewMode === 'month' ? selectedMonth : viewMode}_${today}.csv`,
             mimeType: 'text/csv;charset=utf-8',
             shareTitle: 'SullyOS·糯米机 记账记录',
         });
+        } catch { setExportError('导出失败，请重试'); }
+        finally { setExportBusy(false); }
     };
 
     // Group by category
     const categoryData = useMemo(() => {
         const groups: Record<string, { total: number; count: number; items: BankTransaction[] }> = {};
 
-        filteredTx.forEach(tx => {
+        expenseTx.forEach(tx => {
             const cat = categorizedTx[tx.id] || guessCategory(tx.note);
             if (!groups[cat]) groups[cat] = { total: 0, count: 0, items: [] };
             groups[cat].total += tx.amount;
@@ -99,7 +98,7 @@ const BankAnalytics: React.FC<Props> = ({ transactions, goals, currency, onDelet
         return Object.entries(groups)
             .map(([key, data]) => ({ category: key, ...data, total: roundMoney(data.total), percentage: totalSpent > 0 ? (data.total / totalSpent) * 100 : 0 }))
             .sort((a, b) => b.total - a.total);
-    }, [filteredTx, categorizedTx, totalSpent]);
+    }, [expenseTx, categorizedTx, totalSpent]);
 
     // Simple keyword-based category guessing
     function guessCategory(note: string): string {
@@ -116,12 +115,12 @@ const BankAnalytics: React.FC<Props> = ({ transactions, goals, currency, onDelet
 
     // AI categorization and summary
     const analyzeWithAI = async () => {
-        if (!apiConfig?.apiKey || filteredTx.length === 0) return;
+        if (!apiConfig?.apiKey || expenseTx.length === 0) return;
 
         setIsAnalyzing(true);
         try {
-            const txList = filteredTx.map(tx => `- ${tx.note}: ${currency}${formatMoney(tx.amount)}`).join('\n');
-            const periodLabel = viewMode === 'today' ? '今天' : viewMode === 'week' ? '本周' : '本月';
+            const txList = expenseTx.map(tx => `- ${tx.note}: ${currency}${formatMoney(tx.amount)}`).join('\n');
+            const periodLabel = viewMode === 'today' ? '今天' : viewMode === 'week' ? '本周' : viewMode === 'month' ? selectedMonth : '全部记录';
 
             const prompt = `作为一个财务分析助手，分析以下消费记录：
 
@@ -150,7 +149,7 @@ ${txList}
 
                 // Map categories to transaction IDs
                 const newCategories: Record<string, string> = { ...categorizedTx };
-                filteredTx.forEach(tx => {
+                expenseTx.forEach(tx => {
                     if (result.categories[tx.note]) {
                         newCategories[tx.id] = result.categories[tx.note];
                     }
@@ -188,7 +187,8 @@ ${txList}
                         {[
                             { key: 'today', label: '今日', icon: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/2600.png' },
                             { key: 'week', label: '本周', icon: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4c6.png' },
-                            { key: 'month', label: '本月', icon: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4c5.png' }
+                            { key: 'month', label: '按月', icon: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4c5.png' },
+                            { key: 'all', label: '全部', icon: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4d2.png' }
                         ].map(p => (
                             <button
                                 key={p.key}
@@ -205,17 +205,19 @@ ${txList}
                         ))}
                     </div>
 
+                    {viewMode === 'month' && <label className="block text-center text-xs text-white mb-4">选择月份 <input aria-label="账本月份" type="month" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value || currentMonth)} className="ml-2 p-2 rounded-xl text-[#5D4037]"/></label>}
                     {/* Main Stats */}
                     <div className="text-center mb-4">
                         <div className="text-xs text-white/60 uppercase tracking-widest mb-1">
-                            {viewMode === 'today' ? '今日支出' : viewMode === 'week' ? '本周支出' : '本月支出'}
+                            {viewMode === 'today' ? '今日支出' : viewMode === 'week' ? '本周支出' : viewMode === 'month' ? `${selectedMonth} 支出` : '全部支出'}
                         </div>
                         <div className="text-5xl font-black text-white font-mono tracking-tight">
-                            {currency}{totalSpent.toFixed(0)}
+                            {currency}{formatMoney(totalSpent)}
                         </div>
                         <div className="text-sm text-white/50 mt-1">
                             共 {filteredTx.length} 笔
                         </div>
+                        <div className="text-sm text-white/90 mt-3">收入 {currency}{formatMoney(totalIncome)} · 结余 {currency}{formatMoney(balance)}</div>
                     </div>
 
                     {/* Budget Status (Today only) */}
@@ -338,21 +340,23 @@ ${txList}
                     <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-2">
                             <span className="w-8 h-8 bg-gradient-to-br from-[#66BB6A] to-[#43A047] rounded-xl flex items-center justify-center text-lg shadow-md"><img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4dd.png" className="w-5 h-5" alt="" /></span>
-                            <span className="text-sm font-bold text-[#5D4037]">消费明细</span>
+                            <span className="text-sm font-bold text-[#5D4037]">收支明细</span>
                         </div>
                         {transactions.length > 0 && (
-                            <button onClick={handleExportCSV} className="flex items-center gap-1 px-3 py-1.5 bg-[#FDF6E3] hover:bg-[#FFF8E1] border border-[#E8DCC8] rounded-xl text-[10px] font-bold text-[#8D6E63] active:scale-95 transition-all">
+                            <button disabled={exportBusy} onClick={() => void handleExportCSV('all')} className="flex items-center gap-1 px-3 py-1.5 bg-[#FDF6E3] hover:bg-[#FFF8E1] border border-[#E8DCC8] rounded-xl text-[10px] font-bold text-[#8D6E63] active:scale-95 transition-all">
                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
-                                导出全部CSV
+                                {exportBusy ? '导出中…' : '导出全部CSV'}
                             </button>
                         )}
                     </div>
 
+                    <button disabled={exportBusy || !filteredTx.length} className="text-xs text-[#8D6E63] mb-3 disabled:opacity-40" onClick={() => void handleExportCSV('current')}>导出当前范围 CSV</button>
+                    {exportError && <p role="alert" className="text-xs text-red-600">{exportError}</p>}
                     {filteredTx.length === 0 ? (
                         <div className="text-center py-12">
                             <div className="mb-3 opacity-40"><img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4ed.png" className="w-16 h-16 mx-auto" alt="" /></div>
                             <div className="text-sm text-[#A1887F]">
-                                {viewMode === 'today' ? '今天还没有消费记录' : viewMode === 'week' ? '本周暂无记录' : '本月暂无记录'}
+                                这个范围暂无收支记录
                             </div>
                             <div className="text-xs text-[#BCAAA4] mt-1">点击右上角开始记账吧！</div>
                         </div>
@@ -369,12 +373,12 @@ ${txList}
                                             <div>
                                                 <div className="font-bold text-[#5D4037] text-sm">{tx.note}</div>
                                                 <div className="text-[10px] text-[#A1887F] flex items-center gap-2">
-                                                    <span>{new Date(tx.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
-                                                    <span className="px-1.5 py-0.5 bg-white rounded text-[9px]" style={{ color: cat.color }}>{cat.label}</span>
+                                                    <span>{tx.dateStr} {new Date(tx.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                                                    <span className="px-1.5 py-0.5 bg-white rounded text-[9px]" style={{ color: cat.color }}>{isExpense(tx) ? cat.label : '收入'}</span>
                                                 </div>
                                             </div>
                                         </div>
-                                        <div className="font-mono font-bold text-[#E64A19]">-{currency}{formatMoney(tx.amount)}</div>
+                                        <div className={`font-mono font-bold ${isExpense(tx) ? 'text-[#E64A19]' : 'text-[#388667]'}`}>{isExpense(tx) ? '−' : '+'}{currency}{formatMoney(tx.amount)}</div>
 
                                         <button
                                             onClick={() => onDeleteTx(tx.id)}

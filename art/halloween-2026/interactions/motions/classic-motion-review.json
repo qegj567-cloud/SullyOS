@@ -1,0 +1,47 @@
+{
+  "errors": [],
+  "report": [
+    {
+      "id": "halloween-boo",
+      "maxBoneStepRadians": 0,
+      "maxAt": null,
+      "minFoot": null
+    },
+    {
+      "id": "halloween-trick-or-treat",
+      "maxBoneStepRadians": 0,
+      "maxAt": null,
+      "minFoot": null
+    },
+    {
+      "id": "halloween-candy-shower",
+      "maxBoneStepRadians": 0,
+      "maxAt": null,
+      "minFoot": null
+    },
+    {
+      "id": "halloween-ghost-tease",
+      "maxBoneStepRadians": 0,
+      "maxAt": null,
+      "minFoot": null
+    },
+    {
+      "id": "home-forehead-touch",
+      "maxBoneStepRadians": 0,
+      "maxAt": null,
+      "minFoot": null
+    },
+    {
+      "id": "home-hand-sway",
+      "maxBoneStepRadians": 0,
+      "maxAt": null,
+      "minFoot": null
+    },
+    {
+      "id": "home-kiss",
+      "maxBoneStepRadians": 0,
+      "maxAt": null,
+      "minFoot": null
+    }
+  ]
+}

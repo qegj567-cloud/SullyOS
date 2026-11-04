@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { adaptiveMouthLevel, shouldKeepNativeCallAudio, vowelFromBands } from './callAudioFeed';
+import { CallAudioFeed, adaptiveMouthLevel, shouldKeepNativeCallAudio, vowelFromBands } from './callAudioFeed';
 
 describe('adaptiveMouthLevel', () => {
   it('小音量语音也能张到接近满口型（相对峰值归一）', () => {
@@ -64,5 +64,24 @@ describe('iOS call audio routing', () => {
       platform: 'Win32',
       maxTouchPoints: 0,
     })).toBe(false);
+  });
+});
+
+
+describe('streaming PCM lip sync', () => {
+  it('samples the external analyser without creating another context or taking ownership of it', () => {
+    const feed = new CallAudioFeed();
+    const analyser = {
+      fftSize: 1024, frequencyBinCount: 512, context: { sampleRate: 24000 },
+      getByteTimeDomainData: (data: Uint8Array) => data.fill(150),
+      getByteFrequencyData: (data: Uint8Array) => data.fill(40),
+    } as unknown as AnalyserNode;
+    feed.useStreamAnalyser(analyser);
+    feed.setActive(true);
+    expect(feed.sample(100).active).toBe(true);
+    expect(feed.sample(100).level).toBeGreaterThan(0);
+    feed.useStreamAnalyser(null);
+    expect(feed.sample(200).active).toBe(false);
+    feed.dispose();
   });
 });

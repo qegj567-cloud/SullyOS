@@ -3,8 +3,10 @@ import react from '@vitejs/plugin-react';
 import { execSync } from 'node:child_process';
 import { bakeVoiceMiddleware } from './server/bake-voice-middleware';
 import { staticCachePlugin } from './scripts/static-cache-build';
+import { homeResourcePacksPlugin } from './scripts/home-resource-packs.mjs';
 import { startupRecoveryPlugin } from './scripts/startup-recovery-plugin';
 import { APP_VERSION_TAG } from './utils/appVersion';
+import { tikhubMiddleware } from './server/tikhub-middleware';
 
 // MiniMax 国服 / 海外是两套域名，前端每个请求都带 X-MiniMax-Region 头说明走哪边。
 // Vite 的开发代理底层是 http-proxy，不认 router 选项，所以在 configure 里包一层 proxy.web，
@@ -84,6 +86,7 @@ export default defineConfig({
     ],
   },
   plugins: [
+    homeResourcePacksPlugin(),
     startupRecoveryPlugin(appBuildId),
     react(),
     staticCachePlugin({ buildId: appBuildId, appVersion: APP_VERSION_TAG }),
@@ -91,6 +94,7 @@ export default defineConfig({
       name: 'bake-voice-middleware',
       configureServer(server) {
         server.middlewares.use('/api/minimax/bake-voice', bakeVoiceMiddleware);
+        server.middlewares.use('/api/friend-feed/tikhub', tikhubMiddleware);
       },
     },
   ],
@@ -116,6 +120,13 @@ export default defineConfig({
         rewrite: () => '/v1/t2a_v2',
         configure: routeMinimaxByRegion,
       },
+      '/api/minimax/stt': {
+        target: 'https://api.minimaxi.com',
+        changeOrigin: true,
+        secure: true,
+        rewrite: () => '/v1/speech_to_text',
+        configure: routeMinimaxByRegion,
+      },
       '/api/minimax/get-voice': {
         target: 'https://api.minimaxi.com',
         changeOrigin: true,
@@ -137,6 +148,13 @@ export default defineConfig({
         secure: true,
         rewrite: () => '/v1/tts',
       },
+      // 鱼声 Fish Audio STT：转发到 https://api.fish.audio/v1/asr
+      '/api/fishaudio/stt': {
+        target: 'https://api.fish.audio',
+        changeOrigin: true,
+        secure: true,
+        rewrite: () => '/v1/asr',
+      },
       // ElevenLabs TTS：开发环境把同源查询参数改写到官方 voice_id 路径。
       '/api/elevenlabs/tts': {
         target: 'https://api.elevenlabs.io',
@@ -146,8 +164,17 @@ export default defineConfig({
           const parsed = new URL(path, 'http://localhost');
           const voiceId = parsed.searchParams.get('voice_id') || '';
           const outputFormat = parsed.searchParams.get('output_format') || 'mp3_44100_128';
-          return `/v1/text-to-speech/${encodeURIComponent(voiceId)}/stream?output_format=${encodeURIComponent(outputFormat)}`;
+          const endpoint = parsed.searchParams.get('mode') === 'dialogue' ? 'text-to-dialogue' : `text-to-speech/${encodeURIComponent(voiceId)}`;
+          const timing = parsed.searchParams.get('timestamps') === '1' ? '/with-timestamps' : '';
+          return `/v1/${endpoint}/stream${timing}?output_format=${encodeURIComponent(outputFormat)}`;
         },
+      },
+      // ElevenLabs STT (Scribe)：转发到 https://api.elevenlabs.io/v1/speech-to-text
+      '/api/elevenlabs/stt': {
+        target: 'https://api.elevenlabs.io',
+        changeOrigin: true,
+        secure: true,
+        rewrite: () => '/v1/speech-to-text',
       },
     }
   },
@@ -181,9 +208,15 @@ export default defineConfig({
             if (id.includes('@mediapipe/tasks-vision')) {
               return 'vendor-mediapipe';
             }
-            // VRM/Three 只在懒加载的 CallApp 视频模式使用。单独成包，避免 3D 引擎
+            // Optional parsers and UI must stay out of the eagerly loaded common vendor.
+            if (/[\\/]node_modules[\\/]animal-island-ui[\\/]/.test(id)) return 'vendor-island';
+            if (/[\\/]node_modules[\\/]ag-psd[\\/]/.test(id)) return 'vendor-psd';
+            if (/[\\/]node_modules[\\/]pdfjs-dist[\\/]/.test(id)) return 'vendor-pdf';
+            // BVH imports Three: leaving it in common vendor pulls the 3D engine
+            // back into desktop startup, even when application imports are lazy.
+            // VRM/Three 用于按需打开的 3D 小屋及通话。单独成包，避免 3D 引擎
             // 被通用 vendor 首屏加载，普通聊天/桌面用户无需支付这部分体积。
-            if (id.includes('@pixiv/three-vrm') || /[\\/]node_modules[\\/]three[\\/]/.test(id)) {
+            if (id.includes('@pixiv/three-vrm') || /[\\/]node_modules[\\/](?:three|three-mesh-bvh)[\\/]/.test(id)) {
               return 'vendor-vrm';
             }
             // The Cubism adapter checks window.Live2DCubismCore at module evaluation

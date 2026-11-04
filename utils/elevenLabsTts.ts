@@ -13,23 +13,34 @@ import type { TtsResult } from './minimaxTts';
 import { normalizeVoiceTags } from './sanitize';
 import { getProxyWorkerUrl } from './proxyWorker';
 import { isStaticWebDeployment } from './staticWebDeployment';
+import {
+  normalizeElevenLabsModel,
+  isElevenLabsV3Model,
+  isElevenLabsV4Model,
+  supportsElevenLabsAudioTags,
+} from './elevenLabsModels';
 
-export const DEFAULT_ELEVENLABS_MODEL = 'eleven_flash_v2_5';
+export {
+  DEFAULT_ELEVENLABS_MODEL,
+  ELEVENLABS_MODEL_OPTIONS,
+  normalizeElevenLabsModel,
+  isElevenLabsV3Model,
+  isElevenLabsV4Model,
+} from './elevenLabsModels';
+
 export const ELEVENLABS_OUTPUT_FORMAT = 'mp3_44100_128';
 
-export const ELEVENLABS_MODEL_OPTIONS = [
-  { value: 'eleven_flash_v2_5', label: 'Flash v2.5 —— 低延迟，通话推荐' },
-  { value: 'eleven_v3', label: 'Eleven v3 —— 情绪最丰富，支持 Audio Tags' },
-  { value: 'eleven_multilingual_v2', label: 'Multilingual v2 —— 长文本稳定、音质优先' },
-] as const;
+export const ELEVENLABS_V4_VOICE_ACTING_GUIDE = `### ElevenLabs v4 语音表演规则
 
-export const normalizeElevenLabsModel = (raw?: string | null): string => {
-  const value = (raw || '').trim();
-  return value || DEFAULT_ELEVENLABS_MODEL;
-};
+你写的是马上会被角色亲口说出来的台词。保留自然口语、呼吸、句子长短和段落；不要把“她轻声说道”一类叙述混进要朗读的正文。
 
-export const isElevenLabsV3Model = (raw?: string | null): boolean =>
-  normalizeElevenLabsModel(raw) === 'eleven_v3';
+Eleven v4 / v4 Turbo 支持开放式英文方括号 Audio Tags。根据角色和场景选择情绪、声音质感与演出指令：\`[whispers]\`、\`[laughs]\`、\`[curious]\`、\`[crying]\`、\`[low, gravelly voice]\`、\`[Warm, conversational tone, faint amusement]\`。可组合标签，也可写更具体的英文声音描述，不限于这些示例。放在对应台词附近，随表达变化使用，避免无意义重复。
+
+停顿和节奏可用 \`[short pause]\`、\`[long pause]\`、\`[measured]\`、\`[Quick, light, playful pace]\`，并配合标点、省略号、大小写强调和自然换行。v4 不支持 SSML 或数值语速；不要输出 XML / SSML 标签或 <#秒数#>。
+
+场景需要时也可使用声音事件和特殊演出：\`[sighs]\`、\`[clears throat]\`、\`[swallows]\`、\`[door slams]\`、\`[applause]\`、\`[sings]\`、\`[strong French accent]\`。声音事件可能真的生成音效，别把纯视觉动作（转头、看向窗外）写成标签。需要纠正专名发音时，可在正文用 /IPA音标/；不确定音标就保留原词。
+
+这些能力默认可用，但只在内容需要时使用。标签跟随角色的情绪和说话习惯，不要为了展示能力擅自改台词或场景。跨语言合成默认使用目标语言的自然发音，不能保证保留参考音色的外语口音。`;
 
 export const ELEVENLABS_V3_VOICE_ACTING_GUIDE = `### ElevenLabs v3 语音表演规则
 
@@ -43,12 +54,14 @@ export const ELEVENLABS_STANDARD_VOICE_ACTING_GUIDE = `### ElevenLabs 语音表�
 
 你写的是马上会被角色亲口说出来的台词，不是小说旁白。只写会说出口的话，保持口语化、自然、有长短句变化；不要写“她轻声说道”一类叙述。
 
-当前模型不是 Eleven v3，**不要输出方括号 Audio Tags、圆括号动作词或 SSML**，否则它们可能被原样念出来。情绪和停顿只靠措辞、语气词、逗号、句号、省略号、破折号与自然换行表达。强情绪也要克制，避免播音腔和每句同一种节奏。`;
+当前模型不支持 Audio Tags，**不要输出方括号 Audio Tags、圆括号动作词或 SSML**，否则它们可能被原样念出来。情绪和停顿只靠措辞、语气词、逗号、句号、省略号、破折号与自然换行表达。强情绪也要克制，避免播音腔和每句同一种节奏。`;
 
 export const getElevenLabsVoiceActingGuide = (model?: string | null): string =>
-  isElevenLabsV3Model(model)
-    ? ELEVENLABS_V3_VOICE_ACTING_GUIDE
-    : ELEVENLABS_STANDARD_VOICE_ACTING_GUIDE;
+  isElevenLabsV4Model(model)
+    ? ELEVENLABS_V4_VOICE_ACTING_GUIDE
+    : isElevenLabsV3Model(model)
+      ? ELEVENLABS_V3_VOICE_ACTING_GUIDE
+      : ELEVENLABS_STANDARD_VOICE_ACTING_GUIDE;
 
 const V3_CUE_ALIASES: Record<string, string> = {
   laugh: 'laughs', laughing: 'laughs', laughs: 'laughs', giggle: 'chuckles', giggles: 'chuckles',
@@ -68,6 +81,9 @@ const normalizeV3Cue = (raw: string): string => {
   const key = (raw || '').trim().toLowerCase().replace(/\s+/g, ' ');
   return V3_CUE_ALIASES[key] || '';
 };
+
+// v4 支持自由描述，不能套 v3 的小白名单。中文方括号标题仍作为正文保留在字幕里。
+const isV4AudioDirection = (raw: string): boolean => /[A-Za-z]/.test(raw);
 
 /** 支持粘贴纯 ID，也支持从常见 ElevenLabs 页面链接提取 voiceId。 */
 export const normalizeElevenLabsVoiceId = (raw?: string | null): string => {
@@ -101,27 +117,37 @@ const extractVoiceBody = (raw: string): string => {
 };
 
 /**
- * ElevenLabs 专属文本清洗：v3 保留一小组官方 Audio Tags；其余模型剥掉演出标签，
- * 防止把 [laughs] / (sighs) 当正文念出来。
+ * v4 保留开放式 Audio Tags 和段落；v3 兼容旧标签映射；其他模型剥掉演出指令。
  */
 export const cleanTextForTtsElevenLabs = (raw: string, model?: string | null): string => {
   const isV3 = isElevenLabsV3Model(model);
+  const isV4 = isElevenLabsV4Model(model);
   let text = extractVoiceBody(raw)
     .replace(/\[\[.*?\]\]/g, '')
     .replace(/%%BILINGUAL%%[\s\S]*/i, '')
     .replace(/<字幕>[\s\S]*?<\/字幕>/g, '')
+    .replace(/<\/?[A-Za-z][^>]*>/g, '')
     .replace(/<#\s*[\d.]+\s*#>/g, '')
     .replace(/（[^）]{0,80}）/g, '')
     .replace(/\(([^)]{1,60})\)/g, (_match, inner: string) => {
       const cue = normalizeV3Cue(inner);
-      return isV3 && cue ? `[${cue}]` : '';
+      return (isV3 || isV4) && cue ? `[${cue}]` : '';
     })
-    .replace(/\[([^\[\]]{1,60})\]/g, (_match, inner: string) => {
+    .replace(/\[([^\[\]\r\n]+)\]/g, (_match, inner: string) => {
+      if (isV4 && isV4AudioDirection(inner)) return `[${inner.trim()}]`;
       const cue = normalizeV3Cue(inner);
       if (!cue) return /[A-Za-z]/.test(inner) || /[\u4e00-\u9fff]/.test(inner) ? '' : _match;
       return isV3 ? `[${cue}]` : '';
     });
 
+  if (isV4) {
+    // 换行本身参与 v4 的表演与节奏，不擅自压平或插入固定停顿。
+    return text.replace(/\r\n?/g, '\n')
+      .replace(/[ \t]+/g, ' ')
+      .replace(/[ \t]+([，。！？、；：,.!?…])/g, '$1')
+      .replace(/[ \t]*\n[ \t]*/g, '\n')
+      .trim();
+  }
   text = text
     .replace(/\n{2,}/g, isV3 ? ' [pause] ' : '……')
     .replace(/\n+/g, ' ')
@@ -131,11 +157,12 @@ export const cleanTextForTtsElevenLabs = (raw: string, model?: string | null): s
   return text;
 };
 
-export const stripElevenLabsMarkupForDisplay = (text?: string | null): string => {
+export const stripElevenLabsMarkupForDisplay = (text?: string | null, model?: string | null): string => {
   if (!text) return '';
   return text
     .replace(/<#\s*[\d.]+\s*#>/g, '')
-    .replace(/\[([^\[\]]{1,60})\]/g, (match, inner: string) => normalizeV3Cue(inner) ? '' : match)
+    .replace(/\[([^\[\]\r\n]+)\]/g, (match, inner: string) =>
+      normalizeV3Cue(inner) || (isElevenLabsV4Model(model) && isV4AudioDirection(inner)) ? '' : match)
     .replace(/\(([^)]{1,60})\)/g, (match, inner: string) => normalizeV3Cue(inner) ? '' : match)
     .replace(/[ \t]{2,}/g, ' ')
     .replace(/[ \t]+([，。！？、；：,.!?…])/g, '$1')
@@ -148,7 +175,7 @@ const clamp = (value: unknown, fallback: number, min: number, max: number): numb
   return Number.isFinite(numeric) ? Math.max(min, Math.min(max, numeric)) : fallback;
 };
 
-const EMOTION_TO_V3_CUE: Record<string, string> = {
+const EMOTION_TO_AUDIO_CUE: Record<string, string> = {
   happy: 'excited', sad: 'sad', angry: 'angry', fearful: 'nervously',
   disgusted: 'sarcastic', surprised: 'curious', calm: 'softly', fluent: 'softly',
 };
@@ -160,9 +187,9 @@ export interface ElevenLabsRequestBody {
   voice_settings: {
     stability: number;
     similarity_boost: number;
-    style: number;
-    speed: number;
-    use_speaker_boost: boolean;
+    style?: number;
+    speed?: number;
+    use_speaker_boost?: boolean;
   };
 }
 
@@ -181,8 +208,8 @@ export const buildElevenLabsRequestBody = (
     : rawStability;
   const languageCode = (options?.languageBoost || '').trim().toLowerCase();
   let spoken = cleanTextForTtsElevenLabs(text, model);
-  const emotionCue = options?.emotion ? EMOTION_TO_V3_CUE[options.emotion.toLowerCase()] : '';
-  if (isElevenLabsV3Model(model) && emotionCue && !/\[[^\]]+\]/.test(spoken)) {
+  const emotionCue = options?.emotion ? EMOTION_TO_AUDIO_CUE[options.emotion.toLowerCase()] : '';
+  if (supportsElevenLabsAudioTags(model) && emotionCue && !/\[[^\]]+\]/.test(spoken)) {
     spoken = `[${emotionCue}] ${spoken}`;
   }
   return {
@@ -192,9 +219,11 @@ export const buildElevenLabsRequestBody = (
     voice_settings: {
       stability,
       similarity_boost: clamp(apiConfig.elevenLabsSimilarityBoost, 0.8, 0, 1),
-      style: clamp(apiConfig.elevenLabsStyle, 0, 0, 1),
-      speed: clamp(char.voiceProfile?.speed, 1, 0.7, 1.2),
-      use_speaker_boost: apiConfig.elevenLabsUseSpeakerBoost === true,
+      ...(!isElevenLabsV4Model(model) ? {
+        style: clamp(apiConfig.elevenLabsStyle, 0, 0, 1),
+        speed: clamp(char.voiceProfile?.speed, 1, 0.7, 1.2),
+        use_speaker_boost: apiConfig.elevenLabsUseSpeakerBoost === true,
+      } : {}),
     },
   };
 };
@@ -215,7 +244,7 @@ const base64ToBlob = (base64: string, mime = 'audio/mpeg'): Blob => {
   return new Blob([bytes], { type: mime });
 };
 
-const friendlyElevenLabsError = (status: number, detail: string): string => {
+export const friendlyElevenLabsError = (status: number, detail: string): string => {
   const normalized = detail.toLowerCase();
   if (status === 401 || normalized.includes('invalid api key')) return 'ElevenLabs API Key 无效或已过期';
   if (status === 402 || normalized.includes('quota') || normalized.includes('credits')) return 'ElevenLabs 额度不足';
@@ -278,6 +307,10 @@ export async function synthesizeSpeechElevenLabsDetailed(
 
   const payload = buildElevenLabsRequestBody(text, char, apiConfig, options);
   if (!payload.text) throw new Error('ElevenLabs TTS 文本为空');
+  // v4 官方单次上限：明确报错，不能截掉用户台词或悄悄换模型。
+  if (payload.model_id === 'eleven_v4' && Array.from(payload.text).length > 10000) {
+    throw new Error('ElevenLabs v4 单次最多 10000 个字符，请将台词分成多段后再合成');
+  }
 
   const cacheKey = hashTtsParams({
     kind: 'elevenlabs-tts',

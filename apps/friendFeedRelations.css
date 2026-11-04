@@ -1,0 +1,21 @@
+.friend-feed .ff-relations{padding:24px 20px;background:var(--ff-paper);min-height:100%;color:var(--ff-ink)}
+.friend-feed .ff-relations .ff-setting-field{margin:16px 0}
+.friend-feed .ff-relation-modes{display:flex;border-bottom:1px solid var(--ff-line);gap:20px;margin-top:24px}
+.friend-feed .ff-relation-modes button{background:none;border:0;border-bottom:2px solid transparent;border-radius:0;padding:12px 0;color:var(--ff-muted);font-size:12px;cursor:pointer}
+.friend-feed .ff-relation-modes button[aria-pressed=true]{color:var(--ff-accent);border-bottom-color:var(--ff-accent)}
+.friend-feed .ff-relation-caption{font-size:12px;line-height:1.8;color:var(--ff-muted);margin:14px 0}
+.friend-feed .ff-relation-list{list-style:none;padding:0;margin:0}
+.friend-feed .ff-relation-list>li{padding:18px 0;border-bottom:1px solid var(--ff-line)}
+.friend-feed .ff-relation-person{display:flex;gap:12px;align-items:center}
+.friend-feed .ff-relation-person>div{flex:1;min-width:0}
+.friend-feed .ff-relation-person strong{display:block;font-size:14px;overflow-wrap:anywhere}
+.friend-feed .ff-relation-person small{display:block;font-size:11px;color:var(--ff-muted);margin-top:4px}
+.friend-feed .ff-relation-face{display:grid;place-items:center;width:36px;height:36px;flex-shrink:0;border-radius:50%;background:var(--ff-bg);color:var(--ff-accent);font-weight:600}
+.friend-feed .ff-relation-edges{display:flex;flex-wrap:wrap;gap:12px 22px;padding:12px 0 0 48px;font-size:12px;color:var(--ff-muted)}
+.friend-feed .ff-relation-edges label{display:flex;align-items:center;gap:7px;min-height:32px;cursor:pointer}
+.friend-feed .ff-relation-edges input{accent-color:var(--ff-accent);width:16px;height:16px}
+.friend-feed .ff-relation-edges span{color:var(--ff-accent)}
+.friend-feed .ff-account-tabs{display:flex;gap:8px;overflow-x:auto;padding:10px 16px;scrollbar-width:none}
+.friend-feed .ff-account-tabs button{flex:none;background:transparent;border:1px solid var(--ff-line);border-radius:18px;padding:8px 12px;color:var(--ff-muted);font-size:12px;cursor:pointer}
+.friend-feed .ff-account-tabs button[aria-pressed=true]{color:var(--ff-accent);border-color:currentColor}
+@media(prefers-reduced-motion:no-preference){.friend-feed .ff-relation-list{animation:friend-feed-appear .16s ease-out}.friend-feed .ff-relation-modes button{transition:color .15s,border-color .15s}}

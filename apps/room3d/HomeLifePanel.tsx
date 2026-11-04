@@ -16,6 +16,7 @@ import type {HomeEditor} from './editor.js';
 import type {HomeRecord} from './types';
 import {homeRecords,makeHomeRecord,editHomeRecord} from '../../utils/homeRecords';
 import {generateHomeReply} from '../../utils/homeConversation';
+import {runHomeSocialRound} from '../../utils/homeSocialRound';
 import './homeLife.css';
 import {isScheduleFeatureOn} from '../../utils/scheduleFeature';
 import HomeScheduleTip from './HomeScheduleTip';
@@ -41,7 +42,7 @@ export default function HomeLifePanel({editor,character,user,api,conversationCon
  const [replyStage,setReplyStage]=useState('准备上下文');
  const [retry,setRetry]=useState<{userId:string;replyId?:string}>();
  useEffect(()=>{alive.current=true;return()=>{alive.current=false;controller.current?.abort(new DOMException('已离开家园或家园界面重新加载','AbortError'));conversationEnd.current?.();};},[]);
- useEffect(()=>{const stop=()=>{if((!active||document.hidden)&&automaticRequest.current)controller.current?.abort(new DOMException('已离开家园，停止自动开口','AbortError'));};stop();document.addEventListener('visibilitychange',stop);return()=>document.removeEventListener('visibilitychange',stop);},[active]);
+ useEffect(()=>{const stop=()=>{if((!active||document.hidden)&&(automaticRequest.current||editor.isSocialReplyBusy?.()))controller.current?.abort(new DOMException('已离开家园，停止自动开口','AbortError'));};stop();document.addEventListener('visibilitychange',stop);return()=>document.removeEventListener('visibilitychange',stop);},[active]);
  useEffect(()=>{if(!panel)return;refresh(n=>n+1);const timer=setInterval(()=>refresh(n=>n+1),1500);return()=>clearInterval(timer);},[panel]);
  useEffect(()=>{if(panel&&panel!=='interact'&&!(presentation==='homely'&&panel==='chat'))sheet.current?.querySelector<HTMLButtonElement>('button')?.focus();},[panel,presentation]);
  const home=editor.getState?.(),records=homeRecords(home),scene=editor.getHomeScene();
@@ -68,7 +69,7 @@ export default function HomeLifePanel({editor,character,user,api,conversationCon
   if(controller.current||!character||!user||!api)return;
   const all=current(),input=all.find(e=>e.id===userId),old=replyId?all.find(e=>e.id===replyId):undefined;
   if(!input)return;
-  const snapshot=editor.getHomeScene();
+  const snapshot=editor.getResidentScene?.(character.id)??editor.getHomeScene();
   if(!replyId&&!snapshot.present){setError('到角色所在的房间，再当面聊聊吧');return;}
   const abort=new AbortController();automaticRequest.current=input.automatic===true;controller.current=abort;setBusy(true);setError('');setRetry(undefined);
   conversationEnd.current?.();const endConversation=replyId?undefined:editor.beginHomeConversation?.();conversationEnd.current=endConversation;let speakingSeconds=0;
@@ -80,6 +81,11 @@ export default function HomeLifePanel({editor,character,user,api,conversationCon
   let savedReply=false;
   const replyRecord=old||makeHomeRecord({kind:'message',source:'model',actor:'character',text:'',roomId:input.roomId,roomName:input.roomName,replyTo:userId});
   try{
+   if(!replyId&&(snapshot.participants?.filter(p=>p.id!=='user').length||0)>1){
+    endConversation?.(0);conversationEnd.current=undefined;editor.setSocialReplyBusy(true);
+    await runHomeSocialRound({editor,owner:character,user,api,inputId:userId,signal:abort.signal,context:{...conversationContext,musicSnapshot:loadMusicPlaybackSnapshot()},onStage,commit:update});
+    savedReply=true;resolveOrigin(undefined);return;
+   }
    const history=all.slice(0,all.findIndex(e=>e.id===userId)+1);
    const result=await awaitHomeStage(abort.signal,()=>generateHomeReply({secretOrigin,onStage,context:{...conversationContext,musicSnapshot:loadMusicPlaybackSnapshot()},char:{...character,home3D:editor.getState?.()??character.home3D},initiative:input.initiative,automatic:input.automatic,user,api,scene:replyId?{...snapshot,present:true,actions:[],roomId:input.roomId,roomName:input.roomName}:snapshot,records:history,regenerating:!!replyId,signal:abort.signal}));
    if(abort.signal.aborted||!alive.current)return;
@@ -99,7 +105,7 @@ export default function HomeLifePanel({editor,character,user,api,conversationCon
    savedReply=true;
    void waitForHomeSecretOrigin(character.id,[input,committedReply],abort.signal).then(resolveOrigin);
   }catch(e){if(alive.current){setError(abort.signal.aborted?(abort.signal.reason?.message||'回复已停止，可重试'):e instanceof Error?e.message:'暂时没收到回复');setRetry({userId,replyId});if(input.initiative)onPanel('chat');}}
-  finally{if(!savedReply)resolveOrigin(undefined);endConversation?.(abort.signal.aborted?0:speakingSeconds);clearTimeout(timeout);if(controller.current===abort)controller.current=undefined;if(alive.current){setBusy(false);refresh(n=>n+1);}}
+  finally{editor.setSocialReplyBusy?.(false);if(!savedReply)resolveOrigin(undefined);endConversation?.(abort.signal.aborted?0:speakingSeconds);clearTimeout(timeout);if(controller.current===abort)controller.current=undefined;if(alive.current){setBusy(false);refresh(n=>n+1);}}
  };
  const handledInitiative=useRef<string>();
  useEffect(()=>{if(!initiative||handledInitiative.current===initiative.id)return;handledInitiative.current=initiative.id;
@@ -115,8 +121,8 @@ export default function HomeLifePanel({editor,character,user,api,conversationCon
  const remove=(record:HomeRecord)=>{controller.current?.abort(new DOMException('家园记录已修改，取消旧回复','AbortError'));const all=current();setRemoved({record,index:all.findIndex(e=>e.id===record.id)});update(all.filter(e=>e.id!==record.id));};
  const restore=()=>{if(!removed)return;const all=current();all.splice(Math.min(removed.index,all.length),0,removed.record);update(all);setRemoved(undefined);};
  const sourceName={user:'手动',local:'自主',model:'模型'};
- const title=panel==='mood'?`${character?.name||'TA'}的心情`:panel==='chat'?`和${character?.name||'TA'}聊聊`:panel==='journal'?'家里的日常':'我的家';
- if(!panel||panel==='interact')return null;
+ const title=panel==='mood'?`${character?.name||'TA'}的心情`:panel==='chat'?(editor.getPresentResidents?.().filter(p=>p.id!=='user').length>1?'大家聊聊':`和${character?.name||'TA'}聊聊`):panel==='journal'?'家里的日常':'我的家';
+ if(!panel||panel==='interact'||panel==='visits')return null;
  const docked=presentation==='homely'&&panel==='chat';
  return <div className={`home-life-overlay ${docked?'homely-chat':''}`} onPointerDown={e=>{if(!docked&&e.target===e.currentTarget)onPanel(null);}}>
   <section ref={sheet} className={`home-life-sheet home-life-${panel}`} aria-label={title} role="dialog" aria-modal={docked?undefined:true} onKeyDown={e=>{if(e.key==='Escape'){e.stopPropagation();onPanel(null);}if(e.key==='Tab'&&!docked){const items=[...e.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled),textarea:not(:disabled),input:not(:disabled),summary')].filter(el=>el.getClientRects().length);const first=items[0],last=items.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}}}}>
@@ -127,6 +133,7 @@ export default function HomeLifePanel({editor,character,user,api,conversationCon
    </div>:panel==='more'?<div className="home-menu-grid island-menu-grid">
     {[
      {label:'宠物',tone:'mint',note:'照顾伙伴、装扮与小记',Icon:PawPrint,run:()=>{onPanel(null);trackHomeFeature('pets');editor.openPets();}},
+     ...(presentation==='home'?[{label:'邀请与串门',tone:'sky',note:'一起住、约个时间来玩',Icon:Users,run:()=>onPanel('visits')}]:[]),
      {label:'布置房间',tone:'butter',note:'家具与装修',Icon:PaintBrush,run:()=>{onPanel(null);trackHomeFeature('edit');editor.openPanel('decorate');}},
      ...(onFigures?[{label:'手办柜',tone:'rose',note:'双方形象',Icon:House,run:()=>{onPanel(null);onFigures();}}]:[]),
      ...(onDefinition?[{label:'家园设定',tone:'sky',note:'我们的共同空间',Icon:BookOpen,run:()=>{onPanel(null);onDefinition();}}]:[]),
@@ -144,17 +151,17 @@ export default function HomeLifePanel({editor,character,user,api,conversationCon
      {panel==='journal'&&records.length>limit&&<button className="home-load-more" onClick={()=>setLimit(n=>n+40)}>更早的日常</button>}
      {!entries.length&&<div className="home-life-empty"><ChatCircle size={36}/><p>{panel==='chat'?'聊点什么，让这里有你们的声音。':'一起做过的事，会慢慢留在这里。'}</p></div>}
      {entries.map(e=><article key={e.id} className={`home-record home-record-${e.kind} home-record-${e.actor}`}>
-      <div className="home-record-meta"><span>{e.kind!=='message'&&<span className="home-event-mark" aria-label="行动">◇ </span>}{e.actor==='user'?user?.name||'你':character?.name||'TA'}{panel==='journal'?` · ${sourceName[e.source]}`:''}{e.editedAt?' · 已编辑':''}</span><time>{new Date(e.at).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})} · {e.roomName}</time></div>
+      <div className="home-record-meta"><span>{e.kind!=='message'&&<span className="home-event-mark" aria-label="行动">◇ </span>}{e.actorName||(e.actor==='user'?user?.name||'你':character?.name||'TA')}{panel==='journal'?` · ${sourceName[e.source]}`:''}{e.editedAt?' · 已编辑':''}</span><time>{new Date(e.at).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})} · {e.roomName}</time></div>
       {editing===e.id?<form onSubmit={event=>{event.preventDefault();if(!editText.trim())return;controller.current?.abort(new DOMException('家园记录已修改，取消旧回复','AbortError'));update(editHomeRecord(current(),e.id,editText));setEditing(undefined);}}><textarea aria-label="编辑记录" value={editText} maxLength={8000} onChange={event=>setEditText(event.target.value)}/><div className="home-record-edit-actions"><button type="button" onClick={()=>setEditing(undefined)}>取消</button><button type="submit"><Check/>保存</button></div></form>:<p>{e.text}</p>}
       <details className="home-record-menu"><summary aria-label="记录操作"><DotsThree size={22}/></summary><div>
        <button disabled={busy} onClick={()=>{setEditing(e.id);setEditText(e.text);}}><PencilSimple/>编辑</button>
        <button disabled={busy} onClick={()=>remove(e)}><Trash/>删除</button>
-       {e.kind==='message'&&e.actor==='character'&&e.replyTo&&records.some(r=>r.id===e.replyTo)&&<button disabled={busy||!api} title="重写回复，不重放动作" onClick={()=>void reply(e.replyTo!,e.id)}><ArrowCounterClockwise/>重新回复</button>}
+       {e.kind==='message'&&e.actor==='character'&&(!e.actorId||e.actorId===character?.id)&&e.replyTo&&records.some(r=>r.id===e.replyTo)&&<button disabled={busy||!api} title="重写回复，不重放动作" onClick={()=>void reply(e.replyTo!,e.id)}><ArrowCounterClockwise/>重新回复</button>}
        {e.kind==='message'&&e.actor==='user'&&!records.some(r=>r.replyTo===e.id)&&<button disabled={busy||!api||!scene.present} onClick={()=>void reply(e.id)}><ArrowCounterClockwise/>补回回复</button>}
       </div></details>
      </article>)}
      
-     {busy&&<p className="home-typing" role="status">{character?.name} · {replyStage}<span>…</span><button onClick={()=>controller.current?.abort(new DOMException('用户点击停止家园回复','AbortError'))}>停止</button></p>}
+     {busy&&<p className="home-typing" role="status">{editor.isSocialReplyBusy?.()?'':character?.name+' · '}{replyStage}<span>…</span><button onClick={()=>controller.current?.abort(new DOMException('用户点击停止家园回复','AbortError'))}>停止</button></p>}
     </div>
     {removed&&<div className="home-life-notice">已移除一条记录<button onClick={restore}>撤销</button></div>}
     {error&&<div role="alert" className="home-life-notice">{error}{retry&&<button disabled={busy} onClick={()=>void reply(retry.userId,retry.replyId)}>重试</button>}</div>}

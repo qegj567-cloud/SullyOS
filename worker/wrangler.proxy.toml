@@ -1,0 +1,7 @@
+name = "sully-proxy"
+main = "index.js"
+compatibility_date = "2026-03-01"
+# /weibo relays client-owned credentials. No secrets or storage bindings required.
+# Do not log request bodies or credentials.
+[observability]
+enabled = false

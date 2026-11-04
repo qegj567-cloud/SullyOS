@@ -1,3 +1,4 @@
+import {FRIEND_FEED_MAIN_PROMPT_PREFIX} from '../../../utils/friendFeedReplyFormat';
 /**
  * 即时对话的云端情绪评估。
  *
@@ -208,6 +209,10 @@ export const runAmsgEmotionEval = async (
   timeoutMs: number = EMOTION_EVAL_TIMEOUT_MS,
   signal?: AbortSignal,
 ): Promise<AmsgEmotionEvalOutcome> => {
-  const result = await requestEmotionEval(api, coreRestoreEvalPrompt(spec.prompt, chatMessages, charName), timeoutMs, signal);
+  // User-comment replies belong to the main generation. Keep its separate task
+  // out of the emotion prompt while retaining the shared history and live context.
+  const emotionMessages = chatMessages.filter(message => !(message.role === 'system'
+    && typeof message.content === 'string' && message.content.startsWith(FRIEND_FEED_MAIN_PROMPT_PREFIX)));
+  const result = await requestEmotionEval(api, coreRestoreEvalPrompt(spec.prompt, emotionMessages, charName), timeoutMs, signal);
   return result.raw ? {...result, raw: tagHomeSecretEval(result.raw, spec.homeSecretRequestId)} : result;
 };

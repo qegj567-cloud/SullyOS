@@ -1,4 +1,4 @@
-export type ActionExpression='neutral'|'speaking'|'smiling'|'sleeping'|'surprised';
+export type ActionExpression='neutral'|'speaking'|'smiling'|'sleeping'|'surprised'|'tender';
 export function actionExpression(motion:string,category='',label=''):ActionExpression {
  if(motion==='sleep')return 'sleeping';
  if(motion==='speaking'||motion==='bed-talk'||motion==='stream'||/聊天手势|交谈|争论/.test(label))return 'speaking';
@@ -12,5 +12,5 @@ export function actionMouthFrame(expression:ActionExpression,time:number){
   const phrase=((time%2.7)+2.7)%2.7,syllable=((time%.31)+.31)%.31;
   return {mouth:phrase<2.12&&syllable<.18?'open' as const:'closed' as const,nextIn:.06};
  }
- return {mouth:expression==='smiling'?'smile' as const:expression==='sleeping'?'closed' as const:expression==='surprised'?'open' as const:'base' as const,nextIn:Infinity};
+ return {mouth:expression==='smiling'?'smile' as const:expression==='sleeping'||expression==='tender'?'closed' as const:expression==='surprised'?'open' as const:'base' as const,nextIn:Infinity};
 }

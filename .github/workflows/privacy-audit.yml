@@ -337,19 +337,24 @@ jobs:
           # ── SSH ───────────────────────────────────────────────────
           # 请求执行的「命令」就是 run id 本身，服务器那边只把它当 nonce 收。
           set +e
-          ssh -i "$HOME/.ssh/audit_key" \
+          timeout 10m ssh -i "$HOME/.ssh/audit_key" \
               -o UserKnownHostsFile="$HOME/.ssh/audit_known_hosts" \
               -o StrictHostKeyChecking=yes \
               -o BatchMode=yes \
               -o ConnectTimeout=20 \
+              -o ServerAliveInterval=15 \
+              -o ServerAliveCountMax=3 \
               "audit@$HOST" "$GITHUB_RUN_ID" > /tmp/audit.out 2>&1
           rc=$?
           set -e
           echo "ssh 退出码 $rc"
+          if [[ "$rc" != 0 ]]; then
+            echo "::error::审计 SSH 返回 $rc（124 表示超过 10 分钟；255 表示 SSH 连接错误），完整输出见日志 artifact"
+          fi
           echo "$rc" > /tmp/audit.rc
 
           # 自检正文进日志；schema 那几百行折叠起来，不然正文被淹了。
-          sed -n '1,/^===== SCHEMA-BEGIN =====$/p' /tmp/audit.out | sed '$d'
+          awk '/^===== SCHEMA-BEGIN =====$/{exit} {print}' /tmp/audit.out
           echo "::group::pg_dump --schema-only（原文）"
           awk '/^===== SCHEMA-BEGIN =====$/{f=1;next} /^===== SCHEMA-END =====$/{f=0} f' /tmp/audit.out
           echo "::endgroup::"
@@ -435,7 +440,7 @@ jobs:
             echo "<details><summary>服务器自检原文</summary>"
             echo
             echo '```'
-            sed -n '1,/^===== SCHEMA-BEGIN =====$/p' /tmp/audit.out | sed '$d'
+            awk '/^===== SCHEMA-BEGIN =====$/{exit} {print}' /tmp/audit.out
             echo '```'
             echo
             echo "</details>"
@@ -466,4 +471,14 @@ jobs:
         with:
           name: umami-schema
           path: /tmp/umami-schema.sql
+          retention-days: 90
+
+      - name: 存档完整审计输出
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: privacy-audit-log
+          path: |
+            /tmp/audit.out
+            /tmp/audit.rc
           retention-days: 90

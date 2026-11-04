@@ -5,8 +5,8 @@ export function deduplicateVoiceText(text: string): string {
     const normalize = (s: string) => s.replace(/[\s\p{P}\p{S}]/gu, '').toLowerCase();
     const blocks: string[] = [];
     const spoken: string[] = [];
-    const protectedText = text.replace(/<[语語]音[^>]*>([\s\S]*?)<\/[语語]音>(?:\s*<字幕>([\s\S]*?)<\/字幕>)?/g, (block, voice, subtitle) => {
-        spoken.push(normalize(voice), ...(subtitle ? [normalize(subtitle)] : []));
+    const protectedText = text.replace(/(?:<字幕>([\s\S]*?)<\/字幕>\s*)?<[语語]音[^>]*>([\s\S]*?)<\/[语語]音>(?:\s*<字幕>([\s\S]*?)<\/字幕>)?/g, (block, leadingSubtitle, voice, subtitle) => {
+        spoken.push(normalize(voice), ...[leadingSubtitle, subtitle].filter(Boolean).map(normalize));
         return '\n\u0002VOICE' + (blocks.push(block) - 1) + '\u0002\n';
     });
     if (!blocks.length) return text;

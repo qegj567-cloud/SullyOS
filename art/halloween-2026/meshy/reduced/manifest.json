@@ -1,0 +1,173 @@
+[
+  {
+    "id": "pumpkin-costume",
+    "file": "pumpkin-costume-45000.glb",
+    "source": "art/halloween-2026/meshy/halloween-batch-04-texture/pumpkin-costume-smooth.glb",
+    "sourceSha256": "6ffccb86b175e7a8e39726048d13617625eb0bd64fafc4321e2c4cb2a6a15206",
+    "target": 45000,
+    "triangles": 45000,
+    "originalTriangles": 82764,
+    "reductionPercent": 45.6,
+    "vertices": 52728,
+    "maxAttributeAwareError": 0.0017604624154046178,
+    "bytes": 14128796,
+    "originalBytes": 26253044,
+    "textureHashes": [
+      "5c4a3d1ab6d02ee7fff23edf7b9d316674cbc1c720e1b8b20783aeb7ca4dbe07"
+    ],
+    "positionsAndUVs": "retained source vertices; no texture resampling",
+    "status": "visual-comparison"
+  },
+  {
+    "id": "pumpkin-costume",
+    "file": "pumpkin-costume-34000.glb",
+    "source": "art/halloween-2026/meshy/halloween-batch-04-texture/pumpkin-costume-smooth.glb",
+    "sourceSha256": "6ffccb86b175e7a8e39726048d13617625eb0bd64fafc4321e2c4cb2a6a15206",
+    "target": 34000,
+    "triangles": 34000,
+    "originalTriangles": 82764,
+    "reductionPercent": 58.9,
+    "vertices": 45160,
+    "maxAttributeAwareError": 0.004875896032899618,
+    "bytes": 13754620,
+    "originalBytes": 26253044,
+    "textureHashes": [
+      "5c4a3d1ab6d02ee7fff23edf7b9d316674cbc1c720e1b8b20783aeb7ca4dbe07"
+    ],
+    "positionsAndUVs": "retained source vertices; no texture resampling",
+    "status": "visual-comparison"
+  },
+  {
+    "id": "pumpkin-costume",
+    "file": "pumpkin-costume-30000.glb",
+    "source": "art/halloween-2026/meshy/halloween-batch-04-texture/pumpkin-costume-smooth.glb",
+    "sourceSha256": "6ffccb86b175e7a8e39726048d13617625eb0bd64fafc4321e2c4cb2a6a15206",
+    "target": 30000,
+    "triangles": 33746,
+    "originalTriangles": 82764,
+    "reductionPercent": 59.2,
+    "vertices": 44978,
+    "maxAttributeAwareError": 0.004978576675057411,
+    "bytes": 13745748,
+    "originalBytes": 26253044,
+    "textureHashes": [
+      "5c4a3d1ab6d02ee7fff23edf7b9d316674cbc1c720e1b8b20783aeb7ca4dbe07"
+    ],
+    "positionsAndUVs": "retained source vertices; no texture resampling",
+    "status": "visual-comparison"
+  },
+  {
+    "id": "ghost-top",
+    "file": "ghost-top-32000.glb",
+    "source": "art/halloween-2026/meshy/halloween-batch-04-texture/ghost-top-smooth.glb",
+    "sourceSha256": "14ab5467f8f99183d0fe6fbd3160a9035290f894d1db57c8fd5e29a8bf62929c",
+    "target": 32000,
+    "triangles": 31999,
+    "originalTriangles": 61695,
+    "reductionPercent": 48.1,
+    "vertices": 33487,
+    "maxAttributeAwareError": 0.0015046971384435892,
+    "bytes": 11365528,
+    "originalBytes": 21296980,
+    "textureHashes": [
+      "fc96d8904e1380c91695a50acb9c97ee2434685060f73b4e9909bb588b2d56ef"
+    ],
+    "positionsAndUVs": "retained source vertices; no texture resampling",
+    "status": "visual-comparison"
+  },
+  {
+    "id": "ghost-top",
+    "file": "ghost-top-24000.glb",
+    "source": "art/halloween-2026/meshy/halloween-batch-04-texture/ghost-top-smooth.glb",
+    "sourceSha256": "14ab5467f8f99183d0fe6fbd3160a9035290f894d1db57c8fd5e29a8bf62929c",
+    "target": 24000,
+    "triangles": 23999,
+    "originalTriangles": 61695,
+    "reductionPercent": 61.1,
+    "vertices": 28576,
+    "maxAttributeAwareError": 0.0039042450953274965,
+    "bytes": 11112376,
+    "originalBytes": 21296980,
+    "textureHashes": [
+      "fc96d8904e1380c91695a50acb9c97ee2434685060f73b4e9909bb588b2d56ef"
+    ],
+    "positionsAndUVs": "retained source vertices; no texture resampling",
+    "status": "visual-comparison"
+  },
+  {
+    "id": "ghost-top",
+    "file": "ghost-top-14000.glb",
+    "source": "art/halloween-2026/meshy/halloween-batch-04-texture/ghost-top-smooth.glb",
+    "sourceSha256": "14ab5467f8f99183d0fe6fbd3160a9035290f894d1db57c8fd5e29a8bf62929c",
+    "target": 14000,
+    "triangles": 22869,
+    "originalTriangles": 61695,
+    "reductionPercent": 62.9,
+    "vertices": 27871,
+    "maxAttributeAwareError": 0.00497810821980238,
+    "bytes": 11076256,
+    "originalBytes": 21296980,
+    "textureHashes": [
+      "fc96d8904e1380c91695a50acb9c97ee2434685060f73b4e9909bb588b2d56ef"
+    ],
+    "positionsAndUVs": "retained source vertices; no texture resampling",
+    "status": "visual-comparison"
+  },
+  {
+    "id": "pumpkin-lantern",
+    "file": "pumpkin-lantern-15000.glb",
+    "source": "art/halloween-2026/meshy/halloween-batch-04-texture/pumpkin-lantern-smooth.glb",
+    "sourceSha256": "bfe449a8fb11f822763a0cb427fdc91d8811aa6ccb54279768d3f261ecd62f65",
+    "target": 15000,
+    "triangles": 14999,
+    "originalTriangles": 20767,
+    "reductionPercent": 27.8,
+    "vertices": 15933,
+    "maxAttributeAwareError": 0.002183351432904601,
+    "bytes": 8715912,
+    "originalBytes": 15614948,
+    "textureHashes": [
+      "22e7d801465fb063694feb9af569ade6035a9df15068b38a49fe04204bbede65"
+    ],
+    "positionsAndUVs": "retained source vertices; no texture resampling",
+    "status": "visual-comparison"
+  },
+  {
+    "id": "pumpkin-lantern",
+    "file": "pumpkin-lantern-12000.glb",
+    "source": "art/halloween-2026/meshy/halloween-batch-04-texture/pumpkin-lantern-smooth.glb",
+    "sourceSha256": "bfe449a8fb11f822763a0cb427fdc91d8811aa6ccb54279768d3f261ecd62f65",
+    "target": 12000,
+    "triangles": 11999,
+    "originalTriangles": 20767,
+    "reductionPercent": 42.2,
+    "vertices": 14128,
+    "maxAttributeAwareError": 0.003839310258626938,
+    "bytes": 8622148,
+    "originalBytes": 15614948,
+    "textureHashes": [
+      "22e7d801465fb063694feb9af569ade6035a9df15068b38a49fe04204bbede65"
+    ],
+    "positionsAndUVs": "retained source vertices; no texture resampling",
+    "status": "visual-comparison"
+  },
+  {
+    "id": "pumpkin-lantern",
+    "file": "pumpkin-lantern-10000.glb",
+    "source": "art/halloween-2026/meshy/halloween-batch-04-texture/pumpkin-lantern-smooth.glb",
+    "sourceSha256": "bfe449a8fb11f822763a0cb427fdc91d8811aa6ccb54279768d3f261ecd62f65",
+    "target": 10000,
+    "triangles": 10985,
+    "originalTriangles": 20767,
+    "reductionPercent": 47.1,
+    "vertices": 13499,
+    "maxAttributeAwareError": 0.00497625395655632,
+    "bytes": 8589852,
+    "originalBytes": 15614948,
+    "textureHashes": [
+      "22e7d801465fb063694feb9af569ade6035a9df15068b38a49fe04204bbede65"
+    ],
+    "positionsAndUVs": "retained source vertices; no texture resampling",
+    "status": "visual-comparison"
+  }
+]

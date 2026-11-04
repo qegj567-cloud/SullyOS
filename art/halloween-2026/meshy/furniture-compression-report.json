@@ -1,0 +1,66 @@
+{
+  "before": 10703472,
+  "after": 4521820,
+  "items": [
+    {
+      "name": "蝙蝠双人沙发",
+      "file": "halloween_bat_sofa.glb",
+      "bytes": 450792
+    },
+    {
+      "name": "南瓜扶手椅",
+      "file": "halloween_pumpkin_armchair.glb",
+      "bytes": 355744
+    },
+    {
+      "name": "棺木月牙茶几",
+      "file": "halloween_coffin_coffee_table.glb",
+      "bytes": 304204
+    },
+    {
+      "name": "魔药尖顶书柜",
+      "file": "halloween_potion_bookcase.glb",
+      "bytes": 470072
+    },
+    {
+      "name": "幽宅魔火壁炉",
+      "file": "halloween_haunted_fireplace.glb",
+      "bytes": 529716
+    },
+    {
+      "name": "幽灵落地灯",
+      "file": "halloween_ghost_floor_lamp.glb",
+      "bytes": 312952
+    },
+    {
+      "name": "哥特月夜帘窗",
+      "file": "halloween_gothic_curtain_window.glb",
+      "bytes": 583256
+    },
+    {
+      "name": "蝙蝠花边地毯",
+      "file": "halloween_bat_rug.glb",
+      "bytes": 290508
+    },
+    {
+      "name": "魔药蘑菇坩埚",
+      "file": "halloween_cauldron_planter.glb",
+      "bytes": 332524
+    },
+    {
+      "name": "猫耳穿衣镜",
+      "file": "halloween_cat_ear_mirror.glb",
+      "bytes": 313324
+    },
+    {
+      "name": "蝙蝠南瓜挂钟",
+      "file": "halloween_bat_pumpkin_clock.glb",
+      "bytes": 330232
+    },
+    {
+      "name": "万圣节南瓜提灯",
+      "file": "halloween_pumpkin_lantern.glb",
+      "bytes": 248496
+    }
+  ]
+}

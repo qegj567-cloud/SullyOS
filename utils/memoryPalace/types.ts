@@ -215,8 +215,8 @@ export const EVENT_BOX_LIVE_HARD_CAP = 15;
 /** 盒内事件总数（archived + live）达到此值后封盒，之后的相关记忆另开新盒 */
 export const EVENT_BOX_SEAL_THRESHOLD = 12;
 
-/** summary 目标字数区间（prompt 引导，让模型尽量落在区间内）+ 硬上限（超过强制截断兜底）。
- *  目标上界低于硬上限，给「模型数不准字数」留缓冲——模型瞄着上界写、稍微超一点也不会被砍出「……」。 */
+/** summary 目标字数区间 + 二次精简触发线。HARD_MAX 名称为兼容现有引用保留，
+ *  不再是截断线：精简失败或仍超长时完整保存，召回读取全文。 */
 export const EVENT_BOX_SUMMARY_TARGET_MIN_CHARS = 400;
 export const EVENT_BOX_SUMMARY_TARGET_MAX_CHARS = 700;
 export const EVENT_BOX_SUMMARY_HARD_MAX_CHARS = 900;

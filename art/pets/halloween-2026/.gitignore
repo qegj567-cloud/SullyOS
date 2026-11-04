@@ -1,0 +1,11 @@
+active.lock
+*.pending
+build/
+.vite/
+
+skill-check*/
+skill-wardrobe/
+skill-wardrobe-ready/
+source-preview.png
+painted-preview.png
+new-pets*.png

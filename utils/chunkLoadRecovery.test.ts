@@ -60,27 +60,30 @@ describe('tryAutoReloadForChunkError', () => {
         vi.unstubAllGlobals();
     });
 
-    const stubEnv = () => {
+    const stubEnv = (nav: { onLine?: boolean } = { onLine: true }) => {
         const store = new Map<string, string>();
         const reload = vi.fn();
+        const getItem = vi.fn((k: string) => (store.has(k) ? store.get(k)! : null));
+        const setItem = vi.fn((k: string, v: string) => { store.set(k, String(v)); });
         vi.stubGlobal('sessionStorage', {
-            getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
-            setItem: (k: string, v: string) => { store.set(k, String(v)); },
+            getItem,
+            setItem,
         });
         vi.stubGlobal('window', { location: { reload } });
-        return { reload };
+        vi.stubGlobal('navigator', nav);
+        return { reload, store, getItem, setItem };
     };
 
     it('首次触发: 记录时间戳并整页刷新', () => {
         const { reload } = stubEnv();
-        expect(tryAutoReloadForChunkError()).toBe(true);
+        expect(tryAutoReloadForChunkError()).toBe('reloading');
         expect(reload).toHaveBeenCalledTimes(1);
     });
 
     it('冷却期内再触发: 不再自动刷新 (防循环), 留给手动按钮', () => {
         const { reload } = stubEnv();
-        expect(tryAutoReloadForChunkError()).toBe(true);
-        expect(tryAutoReloadForChunkError()).toBe(false);
+        expect(tryAutoReloadForChunkError()).toBe('reloading');
+        expect(tryAutoReloadForChunkError()).toBe('cooldown');
         expect(reload).toHaveBeenCalledTimes(1);
     });
 
@@ -88,7 +91,30 @@ describe('tryAutoReloadForChunkError', () => {
         const reload = vi.fn();
         vi.stubGlobal('window', { location: { reload } });
         // 不 stub sessionStorage → 访问抛 ReferenceError → 内部 catch → 不自刷
-        expect(tryAutoReloadForChunkError()).toBe(false);
+        expect(tryAutoReloadForChunkError()).toBe('storage-unavailable');
         expect(reload).not.toHaveBeenCalled();
+    });
+
+    it('明确离线时不刷新、不读写冷却，联网本身不刷新，之后重试仍有额度', () => {
+        const nav = { onLine: false };
+        const { reload, store, getItem, setItem } = stubEnv(nav);
+
+        expect(tryAutoReloadForChunkError()).toBe('offline');
+        expect(reload).not.toHaveBeenCalled();
+        expect(getItem).not.toHaveBeenCalled();
+        expect(setItem).not.toHaveBeenCalled();
+        expect(store.size).toBe(0);
+
+        nav.onLine = true;
+        expect(reload).not.toHaveBeenCalled();
+        expect(tryAutoReloadForChunkError()).toBe('reloading');
+        expect(reload).toHaveBeenCalledTimes(1);
+        expect(setItem).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([true, undefined])('onLine 为 %s 时不作为离线拦截', onLine => {
+        const { reload } = stubEnv({ onLine });
+        expect(tryAutoReloadForChunkError()).toBe('reloading');
+        expect(reload).toHaveBeenCalledTimes(1);
     });
 });

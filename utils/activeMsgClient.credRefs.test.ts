@@ -43,7 +43,10 @@ vi.mock('./activeMsgStore', () => ({
   },
 }));
 
-import { ActiveMsgClient } from './activeMsgClient';
+import { ActiveMsgClient, requireAnthropicWorker } from './activeMsgClient';
+import { ActiveMsgStore } from './activeMsgStore';
+import { requestStartupUpdateCheck, STARTUP_UPDATE_CHECK_STORAGE_KEY } from './amsgAutoUpdateTrigger';
+import { AMSG_BUNDLE_VERSION } from './amsgBundleVersion';
 import { forgetAllCredIds } from './amsgLlmCredentials';
 import { clearInstantChatPending } from './amsgInstantChat';
 import { ChatPrompts } from './chatPrompts';
@@ -81,6 +84,10 @@ beforeEach(() => {
   postedBodies = [];
   scheduleResponses = [{ status: 200, body: { success: true, data: { uuid: 'remote-uuid', status: 'pending' } } }];
   globalConfig.llmCredentialsSupported = true;
+  delete globalConfig.anthropicMessagesSupported;
+  delete globalConfig.anthropicMessagesWorkerUrl;
+  delete globalConfig.initializedAt;
+  localStorage.removeItem(STARTUP_UPDATE_CHECK_STORAGE_KEY);
   forgetAllCredIds();
   reiClient.init.mockReset().mockResolvedValue(undefined);
   reiClient.putClientState.mockReset().mockResolvedValue({ success: true });
@@ -110,6 +117,55 @@ afterEach(() => {
   clearInstantChatPending(CHAR_ID);
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+
+it('原生接口只提交给已确认支持且地址一致的 Worker，OpenAI 不受新门槛影响', async () => {
+  await expect(requireAnthropicWorker(['https://api.test/v1/chat/completions'])).resolves.toBeUndefined();
+  await expect(requireAnthropicWorker(['https://api.anthropic.com/v1/messages'])).rejects.toThrow('尚未就绪');
+  globalConfig.anthropicMessagesSupported=true;
+  globalConfig.anthropicMessagesWorkerUrl='https://other-worker.test';
+  await expect(requireAnthropicWorker(['https://api.anthropic.com/v1/messages'])).rejects.toThrow('尚未就绪');
+  globalConfig.anthropicMessagesWorkerUrl=globalConfig.workerUrl;
+  await expect(requireAnthropicWorker(['https://api.anthropic.com/v1/messages'])).resolves.toBeUndefined();
+});
+
+it('旧 Worker 的存量内联任务不会被更新成它不支持的原生凭据', async () => {
+  const update=vi.spyOn(ActiveMsgClient,'updatePendingTasksRemote');
+  await expect(ActiveMsgClient.refreshCharPendingAiTaskCredentials({char:CHAR,config:{enabled:true,tasks:[]},apiConfig:{...API,baseUrl:'https://api.anthropic.com',apiType:'anthropic'},tasks:[{taskUuid:'legacy',mode:'auto'} as any],remoteTasks:[{uuid:'legacy'}]})).rejects.toThrow('尚未就绪');
+  expect(update).not.toHaveBeenCalled();expect(reiClient.putLlmCredentials).not.toHaveBeenCalled();
+});
+
+it('新版冷启动自动更新 Worker 后复查原生能力，无需用户重连', async () => {
+  globalConfig.initializedAt=1;
+  vi.spyOn(ActiveMsgStore,'saveGlobalConfig').mockImplementation(async patch => Object.assign(globalConfig,patch) as any);
+  const connect=vi.spyOn(ActiveMsgClient,'connect');
+  let upgraded=false;
+  const network=vi.fn(async (url: string) => {
+    if (String(url).endsWith('/self-update')) {
+      upgraded=true;
+      return Response.json({success:true,data:{message:'updated'}});
+    }
+    expect(String(url)).toContain('/config-check');
+    return Response.json({success:true,data:{workerVersion:upgraded?AMSG_BUNDLE_VERSION:'old',instantTick:true,anthropicMessages:upgraded}});
+  });
+  vi.stubGlobal('fetch',network);
+  expect(await requestStartupUpdateCheck(Date.now(),'native-update-test')).toBe('updated');
+  expect(globalConfig.anthropicMessagesSupported).toBe(true);
+  expect(network).toHaveBeenCalledTimes(3);
+  await expect(requireAnthropicWorker(['https://api.anthropic.com/v1/messages'])).resolves.toBeUndefined();
+  expect(network).toHaveBeenCalledTimes(3);
+  expect(connect).not.toHaveBeenCalled();
+});
+
+it('自动部署晚于启动探测时，首次原生请求自动纠正旧的不支持结果', async () => {
+  globalConfig.anthropicMessagesSupported=false;
+  globalConfig.anthropicMessagesWorkerUrl=globalConfig.workerUrl;
+  vi.spyOn(ActiveMsgStore,'saveGlobalConfig').mockImplementation(async patch => Object.assign(globalConfig,patch) as any);
+  const network=vi.fn(async()=>Response.json({success:true,data:{workerVersion:AMSG_BUNDLE_VERSION,instantTick:true,anthropicMessages:true}}));
+  vi.stubGlobal('fetch',network);
+  await expect(requireAnthropicWorker(['https://api.anthropic.com/v1/messages'])).resolves.toBeUndefined();
+  await expect(requireAnthropicWorker(['https://api.anthropic.com/v1/messages'])).resolves.toBeUndefined();
+  expect(network).toHaveBeenCalledTimes(1);
 });
 
 /** 排程 POST 出去的那份任务载荷（云端状态那份没有 messageType，据此认出来）。 */

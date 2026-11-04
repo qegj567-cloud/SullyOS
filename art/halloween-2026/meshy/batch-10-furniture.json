@@ -1,0 +1,40 @@
+{
+  "id": "halloween-batch-10-furniture",
+  "maxTasks": 4,
+  "maxEstimatedCredits": 20,
+  "defaults": {
+    "model_type": "smart-topology",
+    "ai_model": "meshy-t2.5",
+    "topology": "triangle",
+    "should_texture": false,
+    "target_formats": [
+      "glb"
+    ]
+  },
+  "jobs": [
+    {
+      "id": "haunted-fireplace",
+      "image": "../furniture/05-haunted-fireplace.png",
+      "target_polycount": 8000,
+      "estimatedCredits": 5
+    },
+    {
+      "id": "ghost-floor-lamp",
+      "image": "../furniture/06-ghost-floor-lamp.png",
+      "target_polycount": 6000,
+      "estimatedCredits": 5
+    },
+    {
+      "id": "gothic-curtain-window",
+      "image": "../furniture/07-gothic-curtain-window.png",
+      "target_polycount": 8000,
+      "estimatedCredits": 5
+    },
+    {
+      "id": "bat-rug",
+      "image": "../furniture/08-bat-rug.png",
+      "target_polycount": 4000,
+      "estimatedCredits": 5
+    }
+  ]
+}

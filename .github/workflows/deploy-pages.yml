@@ -12,11 +12,17 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  # Finish deployment and save its history before the next release starts.
+  cancel-in-progress: false
 
 jobs:
-  build:
+  deploy:
+    # main/master can both exist, but one production site must have one history.
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     env:
       GITHUB_PAGES: 'true'
       # 使用统计。值存在仓库的 Variables 里，不写死在这份 YAML——
@@ -45,18 +51,33 @@ jobs:
       - name: Build
         run: pnpm run build
 
+      - name: Verify build asset retention
+        run: node --test scripts/prepare-retained-build-assets.test.mjs
+
+      # Keep previous hashed chunks reachable by tabs that are still running them.
+      # Restore after build so historical files never enter the new SW manifest.
+      - name: Restore previous build assets
+        id: retained-assets
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/retained-build-assets
+          key: site-assets-pages-v1-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: site-assets-pages-v1-${{ github.ref_name }}-
+
+      - name: Retain recent hashed build assets
+        run: node scripts/prepare-retained-build-assets.mjs --dist dist --history .cache/retained-build-assets
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./dist
 
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Save deployed build assets
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/retained-build-assets
+          key: ${{ steps.retained-assets.outputs.cache-primary-key }}

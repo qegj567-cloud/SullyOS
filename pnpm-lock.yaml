@@ -63,20 +63,20 @@ importers:
         specifier: 3.5.3
         version: 3.5.3(three@0.185.1)
       '@rei-standard/amsg-client':
-        specifier: 2.9.0-next.16
-        version: 2.9.0-next.16
+        specifier: 2.10.0
+        version: 2.10.0
       '@rei-standard/amsg-instant':
-        specifier: 0.11.0-next.6
-        version: 0.11.0-next.6
+        specifier: 0.11.0
+        version: 0.11.0
       '@rei-standard/amsg-shared':
-        specifier: 0.4.0-next.11
-        version: 0.4.0-next.11
+        specifier: 0.4.0
+        version: 0.4.0
       '@rei-standard/amsg-sw':
-        specifier: 2.4.0-next.6
-        version: 2.4.0-next.6
+        specifier: 2.4.0
+        version: 2.4.0
       '@rei-standard/blob-store':
-        specifier: 0.1.0-next.2
-        version: 0.1.0-next.2(react@18.3.1)
+        specifier: 0.1.0
+        version: 0.1.0(react@18.3.1)
       '@zip.js/zip.js':
         specifier: ^2.8.43
         version: 2.8.43
@@ -133,8 +133,8 @@ importers:
         specifier: ^6.0.0
         version: 6.2.1
       '@rei-standard/amsg-server':
-        specifier: 2.6.0-next.36
-        version: 2.6.0-next.36(@neondatabase/serverless@1.1.0)(pg@8.22.0)
+        specifier: 3.1.0
+        version: 3.1.0(@neondatabase/serverless@1.1.0)(pg@8.22.0)
       '@types/qrcode':
         specifier: ^1.5.6
         version: 1.5.6
@@ -765,16 +765,16 @@ packages:
   '@pixiv/types-vrmc-vrm-1.0@3.5.3':
     resolution: {integrity: sha512-3HsBZWKXU/CnY2J6uAVuYmM0NPt/e5jroQZH85WYK0EzYmebqTmWKF/fllguNliJQAovdhn8sIA8NbHZoQvbUA==}
 
-  '@rei-standard/amsg-client@2.9.0-next.16':
-    resolution: {integrity: sha512-ASKflWjvj/1mbyB9q4WK9+J7KhQ75SUh07O5Kgk4etXwjJBI8qlPm351GxycF9voUAgeiCupw7krUJQFTHjoeQ==}
+  '@rei-standard/amsg-client@2.10.0':
+    resolution: {integrity: sha512-ZCih6TltDFYMYTpo1JLZGqz6loHJSV7Mwi9Nz2YS6d2P7Ua63ZyQTJGayCgGQg61tzBrLGLuWGsCI5jlhUweYg==}
     engines: {node: '>=20'}
 
-  '@rei-standard/amsg-instant@0.11.0-next.6':
-    resolution: {integrity: sha512-jpOmxbsVcRejhQLFJ9bJsjvXiO56z7ET95UU3GX3iUY2afVLK4xbdmt0DK0hPKCZlRBBppqMfz2beoutfLBeaQ==}
+  '@rei-standard/amsg-instant@0.11.0':
+    resolution: {integrity: sha512-Bb1LyaS9QHinfGTFzd2um+h4CSF4M7g2qqz/7pcOwH2hPxMM+M7qw3yCzMFlfnoS/FwoSKZt2HL6dTjdpi+tGg==}
     engines: {node: '>=20'}
 
-  '@rei-standard/amsg-server@2.6.0-next.36':
-    resolution: {integrity: sha512-mCPvta3bN804tufr8AbBLhMIlY9gUPAwDpsB/ekKBn4+J5P4HAKdPDRKNzIPA4j8VxxpmJohB3MVbmNvX5pwdA==}
+  '@rei-standard/amsg-server@3.1.0':
+    resolution: {integrity: sha512-cAFLEGVZsG2govpH7PKLjgCKDqjlPtZn/L+a/gdGfnSyZKI79Hj9n/mgtxEmBkNvQq9PZ3o3EdZMcNWwU7rKpQ==}
     engines: {node: '>=20'}
     peerDependencies:
       '@neondatabase/serverless': '>=0.9.0'
@@ -785,20 +785,16 @@ packages:
       pg:
         optional: true
 
-  '@rei-standard/amsg-shared@0.4.0-next.10':
-    resolution: {integrity: sha512-PxPRSs4yeanpksb0xdjPl4a7cdXMiYesOYCsb0RD4M65HIPQOPxUVpQJGq65/GegIwdNOrl1f/gJBP2CNBUEAg==}
+  '@rei-standard/amsg-shared@0.4.0':
+    resolution: {integrity: sha512-dkACRBL4+j/6kYdo0ZLPi4a99+/xEk+SeGcbTLWySI/RKD+CRFbyk7Kd5xK2DHcM6RSH2pEKDMtGh0NnFLM58A==}
     engines: {node: '>=20'}
 
-  '@rei-standard/amsg-shared@0.4.0-next.11':
-    resolution: {integrity: sha512-+siX31oHgdorPql0UHNNESdGfTUwS7hFcpFXzCDPgWIhINe7FFHK/A1ZchXymt1xwPepBre8hs0r1fIHRMzmBA==}
+  '@rei-standard/amsg-sw@2.4.0':
+    resolution: {integrity: sha512-qOeUcEvrnihFj3bAYzXNwtqVyaJB8yAe6hd1Ni3FMlqIiTXSlVLp/N1JONQ4fUGOma8wk5LCk6rvQ9DnwzvmSg==}
     engines: {node: '>=20'}
 
-  '@rei-standard/amsg-sw@2.4.0-next.6':
-    resolution: {integrity: sha512-D5z7ZB3359TmLToH7r/lu35cqsqzo4eu56vSyWbh4ec958Tby6P6A5vwL+BTzwYrjZmkslB/OounA2TjDdMQ3w==}
-    engines: {node: '>=20'}
-
-  '@rei-standard/blob-store@0.1.0-next.2':
-    resolution: {integrity: sha512-l1Va5mes8EvgEkmefTKXgHVa9BJrDcJXQBYEZef632JyrkV1WwT48m4xrrinBWFTRcpnPf2RCSLlEw27H+1pnQ==}
+  '@rei-standard/blob-store@0.1.0':
+    resolution: {integrity: sha512-+Dx2Vj9X0aKAAWqCzx+SXkb6UvCjx1PfmkVbcUH3cIGDuzfZgwxzKzkuWQ4W0fCcmK++ifFK4l0vR5lJ8e9elw==}
     engines: {node: '>=20'}
     peerDependencies:
       react: '>=17'
@@ -1178,11 +1174,11 @@ packages:
     resolution: {integrity: sha512-apC2+fspHGI3mMKj+dGevkGo/tCqVB8jMb6i+OX+E29p0Iposz07fABkRIfVUPNd5A5VbuOz1bZbnmkKLYF+wQ==}
     engines: {node: '>= 5.10.0'}
 
-  brace-expansion@1.1.18:
-    resolution: {integrity: sha512-Edep/X9fGqVNmzKBVsDYIOtD+z1tuezV70LBjdCst9Tqu76lsnvRiZ6oTic1n+/BIwX6QDGAO94PN4N2SADvtw==}
+  brace-expansion@1.1.21:
+    resolution: {integrity: sha512-9zeA+KLZNNzglF2TPKRQEDyx6Yby7daAkuy8MiPzpXPsYDWi/DRM8jmwUDxokQjYqBpv5DgPiwD4h4ZZSy1Ujw==}
 
-  brace-expansion@2.1.0:
-    resolution: {integrity: sha512-TN1kCZAgdgweJhWWpgKYrQaMNHcDULHkWwQIspdtjV4Y5aurRdZpjAqn6yX3FPqTA9ngHCc4hJxMAMgGfve85w==}
+  brace-expansion@2.1.7:
+    resolution: {integrity: sha512-uZbew1NqdmPDTMJ8ah1y+b+9QEJrfkXFk3RcTQw3X0jW/xRUvFKsg1CfQdSYGdTbXZWExtU3J3ccxtnfw1Fi0g==}
 
   braces@3.0.3:
     resolution: {integrity: sha512-yQbXgO/OSZVD2IsiLlro+7Hf6Q18EJrKSEsdoMzKePKXct3gvD8oLcOQdIzGupr5Fj+EDe8gO/lxc1BzfMpxvA==}
@@ -2321,8 +2317,8 @@ packages:
   undici-types@7.24.6:
     resolution: {integrity: sha512-WRNW+sJgj5OBN4/0JpHFqtqzhpbnV0GuB+OozA9gCL7a993SmU+1JBZCzLNxYsbMfIeDL+lTsphD5jN5N+n0zg==}
 
-  undici@8.10.0:
-    resolution: {integrity: sha512-HvltHd7avK13QIw/oLe4qoOLyoVSoafqJ2jYOrtMRBkbYT31eiBQ8O0ehRKZiEZCMEyLFQNIADpgCWC5fALvYQ==}
+  undici@8.12.3:
+    resolution: {integrity: sha512-+fdndUTwBP86cVjihTp21hZHo7d6oj1c/47XPA3lL8mM0XHs+C4EkcjmgRsFnFk2f/UONGDy9ItBItmXsLOQHw==}
     engines: {node: '>=22.19.0'}
 
   universalify@2.0.1:
@@ -3153,18 +3149,18 @@ snapshots:
 
   '@pixiv/types-vrmc-vrm-1.0@3.5.3': {}
 
-  '@rei-standard/amsg-client@2.9.0-next.16':
+  '@rei-standard/amsg-client@2.10.0':
     dependencies:
-      '@rei-standard/amsg-shared': 0.4.0-next.11
+      '@rei-standard/amsg-shared': 0.4.0
 
-  '@rei-standard/amsg-instant@0.11.0-next.6':
+  '@rei-standard/amsg-instant@0.11.0':
     dependencies:
-      '@rei-standard/amsg-shared': 0.4.0-next.10
+      '@rei-standard/amsg-shared': 0.4.0
 
-  '@rei-standard/amsg-server@2.6.0-next.36(@neondatabase/serverless@1.1.0)(pg@8.22.0)':
+  '@rei-standard/amsg-server@3.1.0(@neondatabase/serverless@1.1.0)(pg@8.22.0)':
     dependencies:
       '@netlify/blobs': 8.2.0
-      '@rei-standard/amsg-shared': 0.4.0-next.11
+      '@rei-standard/amsg-shared': 0.4.0
       web-push: 3.6.7
     optionalDependencies:
       '@neondatabase/serverless': 1.1.0
@@ -3172,15 +3168,13 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@rei-standard/amsg-shared@0.4.0-next.10': {}
+  '@rei-standard/amsg-shared@0.4.0': {}
 
-  '@rei-standard/amsg-shared@0.4.0-next.11': {}
-
-  '@rei-standard/amsg-sw@2.4.0-next.6':
+  '@rei-standard/amsg-sw@2.4.0':
     dependencies:
-      '@rei-standard/amsg-shared': 0.4.0-next.10
+      '@rei-standard/amsg-shared': 0.4.0
 
-  '@rei-standard/blob-store@0.1.0-next.2(react@18.3.1)':
+  '@rei-standard/blob-store@0.1.0(react@18.3.1)':
     optionalDependencies:
       react: 18.3.1
 
@@ -3507,13 +3501,13 @@ snapshots:
     dependencies:
       big-integer: 1.6.52
 
-  brace-expansion@1.1.18:
+  brace-expansion@1.1.21:
     dependencies:
       balanced-match: 1.0.2
       concat-map: 0.0.1
     optional: true
 
-  brace-expansion@2.1.0:
+  brace-expansion@2.1.7:
     dependencies:
       balanced-match: 1.0.2
 
@@ -3958,7 +3952,7 @@ snapshots:
       saxes: 6.0.0
       symbol-tree: 3.2.4
       tough-cookie: 6.0.2
-      undici: 8.10.0
+      undici: 8.12.3
       w3c-xmlserializer: 5.0.0
       webidl-conversions: 8.0.1
       whatwg-mimetype: 5.0.0
@@ -4052,12 +4046,12 @@ snapshots:
 
   minimatch@3.1.5:
     dependencies:
-      brace-expansion: 1.1.18
+      brace-expansion: 1.1.21
     optional: true
 
   minimatch@8.0.7:
     dependencies:
-      brace-expansion: 2.1.0
+      brace-expansion: 2.1.7
 
   minimist@1.2.8: {}
 
@@ -4654,7 +4648,7 @@ snapshots:
 
   undici-types@7.24.6: {}
 
-  undici@8.10.0: {}
+  undici@8.12.3: {}
 
   universalify@2.0.1: {}
 

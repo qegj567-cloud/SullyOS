@@ -1,0 +1,13 @@
+<!doctype html><html><body style="margin:0"><script type="module">
+import * as T from '/node_modules/three/build/three.module.js';
+import {createBlankBody} from '/apps/room3d/chibi/blankBody.ts';
+import {bindBlankBody} from '/apps/room3d/chibi/blankRig.ts';
+const scene=new T.Scene();
+const mesh=new T.Mesh(createBlankBody('skin',{headSize:1,bodyHeight:1}),Array.from({length:6},()=>new T.MeshStandardMaterial({color:'#eed5c4',roughness:1})));
+const hair=new T.Group();scene.add(mesh,hair);const rig=bindBlankBody(mesh,hair,true);rig.setPose('bind');scene.updateMatrixWorld(true);rig.skeleton.update();
+const box=new T.Box3().setFromObject(mesh),size=box.getSize(new T.Vector3()),center=box.getCenter(new T.Vector3());
+const renderer=new T.WebGLRenderer({antialias:true,alpha:true,preserveDrawingBuffer:true});renderer.setSize(1600,1600);renderer.setPixelRatio(1);renderer.setClearColor(0,0);document.body.appendChild(renderer.domElement);
+const span=Math.max(size.x,size.y)*1.14;const camera=new T.OrthographicCamera(-span/2,span/2,span/2,-span/2,.1,100);camera.position.set(0,center.y,20);camera.lookAt(center);
+scene.add(new T.HemisphereLight(0xffffff,0xc9bdb0,2.6));const light=new T.DirectionalLight(0xffffff,2);light.position.set(-4,8,8);scene.add(light);
+renderer.render(scene,camera);window.reference={png:renderer.domElement.toDataURL('image/png'),bones:rig.skeleton.bones.length,triangles:rig.mesh.geometry.index.count/3};
+</script></body></html>

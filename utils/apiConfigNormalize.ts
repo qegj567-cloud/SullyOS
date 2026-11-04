@@ -1,4 +1,5 @@
 import type { APIConfig, ApiPreset } from '../types';
+import { normalizeLlmBaseUrl } from './llmEndpoint';
 
 // Clipboard contents can carry zero-width characters that String.trim() does not
 // remove. They are never valid at the edges of an API URL, token, or model id.
@@ -20,7 +21,7 @@ export function normalizeApiConfig(config: APIConfig): APIConfig {
   const visionApi = config.visionApi;
   return {
     ...config,
-    baseUrl: normalizeApiBaseUrl(config.baseUrl),
+    baseUrl: normalizeLlmBaseUrl(normalizeApiBaseUrl(config.baseUrl), config.apiType),
     apiKey: normalizeApiCredential(config.apiKey),
     model: normalizeApiModel(config.model),
     ...(visionApi ? {

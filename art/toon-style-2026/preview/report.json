@@ -1,0 +1,48 @@
+{
+  "errors": [],
+  "failed": [],
+  "front": {
+    "ready": true,
+    "yaw": 24,
+    "models": [
+      {
+        "focus": "body",
+        "frames": "9",
+        "drawCalls": "22",
+        "triangles": "63112",
+        "bodyId": "596568f0-70ab-4993-832b-164fdb537be4",
+        "equipMotion": "none"
+      },
+      {
+        "focus": "body",
+        "frames": "9",
+        "drawCalls": "16",
+        "triangles": "66407",
+        "bodyId": "bb44bb3a-3435-4e50-9160-fc37f4cd835b",
+        "equipMotion": "none"
+      }
+    ]
+  },
+  "side": {
+    "ready": true,
+    "yaw": -115,
+    "models": [
+      {
+        "focus": "body",
+        "frames": "10",
+        "drawCalls": "22",
+        "triangles": "63112",
+        "bodyId": "596568f0-70ab-4993-832b-164fdb537be4",
+        "equipMotion": "none"
+      },
+      {
+        "focus": "body",
+        "frames": "10",
+        "drawCalls": "16",
+        "triangles": "66407",
+        "bodyId": "bb44bb3a-3435-4e50-9160-fc37f4cd835b",
+        "equipMotion": "none"
+      }
+    ]
+  }
+}

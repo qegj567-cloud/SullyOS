@@ -15,7 +15,15 @@ import { resolveTtsProvider, getElevenLabsModel, getTtsProvider, getVoicePromptO
 import { getElevenLabsVoiceActingGuide, stripElevenLabsMarkupForDisplay } from '../utils/elevenLabsTts';
 import { canSynthesizeSpeech, stripTtsMarkupForDisplay, synthesizeSpeechDetailed as synthesizeSpeechRoutedDetailed } from '../utils/ttsRouter';
 import { CANTONESE_VOICE_SUPPORT_NOTE, VOICE_LANGUAGE_OPTIONS, voiceLanguageAnalyticsValue, voiceLanguagePromptLabel } from '../utils/voiceLanguage';
-import { startStt, isSttSupported, type SttSession } from '../utils/speechToText';
+import {
+  startStt,
+  isSttSupported,
+  resolveSttProvider,
+  isSttProviderConfigured,
+  getSttProviderLabel,
+  STT_PROVIDER_OPTIONS,
+  type SttSession,
+} from '../utils/speechToText';
 import { ContextBuilder } from '../utils/context';
 import { resolveCharTimeZone } from '../utils/timezone';
 import {
@@ -120,6 +128,10 @@ import {
 } from '../utils/companionAvatar';
 import { addCompanionModelOutfit, addUploadedCompanionOutfit } from '../utils/companionWardrobe';
 import VoiceFavoriteActionSheet from '../components/voice/VoiceFavoriteActionSheet';
+import StreamingVoiceBar from '../components/voice/StreamingVoiceBar';
+import { useStreamingVoice } from '../hooks/useStreamingVoice';
+import { IncrementalCallSpeech } from '../utils/incrementalCallSpeech';
+import { streamElevenLabsSpeech, type StreamedVoice } from '../utils/elevenLabsStream';
 import { getVoiceFavorite, removeVoiceFavorite, saveVoiceFavorite } from '../utils/voiceFavorites';
 type CallState = 'idle' | 'connecting' | 'listening' | 'thinking' | 'speaking' | 'ended' | 'error';
 type CallMode = 'voice' | 'video';
@@ -370,7 +382,7 @@ const cleanCurrentVoiceMarkupForDisplay = (text?: string | null): string => {
   if (!text) return '';
   const provider = getTtsProvider();
   if (provider === 'fishaudio') return stripFishMarkupForDisplay(text);
-  if (provider === 'elevenlabs') return stripElevenLabsMarkupForDisplay(text);
+  if (provider === 'elevenlabs') return stripElevenLabsMarkupForDisplay(text, getElevenLabsModel());
   // MiniMax 的 (sighs)/(chuckle) 会在 renderAssistantLine 里渲染成声音动作图标，不能提前剥掉。
   return text;
 };
@@ -512,9 +524,15 @@ ${currentVoiceActingGuide()}
   return [coreContext, timeContext, callPrompt, voiceLangPrompt].filter(Boolean).join('\n\n');
 };
 const CallApp: React.FC = () => {
-  const { closeApp, openApp, characters, activeCharacterId, addToast, apiConfig, userProfile, customThemes, suspendCall, suspendedCall, clearSuspendedCall, updateCharacter, characterGroups, groups, realtimeConfig, memoryPalaceConfig } = useOS();
+  const { closeApp, openApp, characters, activeCharacterId, addToast, apiConfig, updateApiConfig, userProfile, customThemes, suspendCall, suspendedCall, clearSuspendedCall, updateCharacter, characterGroups, groups, realtimeConfig, memoryPalaceConfig } = useOS();
 
   const [viewMode, setViewMode] = useState<ViewMode>('role-select');
+  useAppShortcut(ShortcutAppID.Call, intent => {
+    if (callState !== 'idle') { addToast('请先结束当前通话，再切换快捷入口', 'info'); return; }
+    const index = characters.findIndex(c => c.id === intent.characterId);
+    if (index >= 0) { setSelectedCharId(characters[index].id); setRoleGroupId(GROUP_FILTER_ALL); setRolePage(Math.floor(index / ROLES_PER_PAGE)); }
+    setViewMode(intent.entryId === 'history' ? 'history' : 'role-select');
+  });
   const [selectedCharId, setSelectedCharId] = useState<string>(activeCharacterId || characters[0]?.id || '');
   const ROLES_PER_PAGE = 6;
   const [roleGroupId, setRoleGroupId] = useState<string>(GROUP_FILTER_ALL); // 选人页的分组筛选
@@ -546,15 +564,42 @@ const CallApp: React.FC = () => {
   const [bubbles, setBubbles] = useState<CallBubble[]>([]);
   const [callRecords, setCallRecords] = useState<CallRecord[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string>(() => `call-${Date.now()}`);
+  const streamingVoice = useStreamingVoice(`${selectedCharId}:${currentSessionId}:${viewMode}`);
+  const [incrementalVoice, setIncrementalVoice] = useState(() => {
+    try { return localStorage.getItem('sully-call-incremental-voice') !== 'off'; } catch { return true; }
+  });
+  useEffect(() => { try { localStorage.setItem('sully-call-incremental-voice', incrementalVoice ? 'on' : 'off'); } catch { /* storage unavailable */ } }, [incrementalVoice]);
+  const callTextAbortRef = useRef<AbortController | null>(null);
+  const streamedCallAudio = useRef(new Map<string, StreamedVoice>());
+  const streamedAutoPlayed = useRef(new Set<string>());
+  useEffect(() => () => { callTextAbortRef.current?.abort(); }, [selectedCharId, currentSessionId, viewMode]);
+  useEffect(() => () => { streamedCallAudio.current.clear(); streamedAutoPlayed.current.clear(); }, [selectedCharId, currentSessionId]);
   const [draftInput, setDraftInput] = useState('');
   const [isListening, setIsListening] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const sttSessionRef = useRef<SttSession | null>(null);
-  const sttSupported = useMemo(() => isSttSupported(), []);
+  const activeSttProvider = resolveSttProvider(apiConfig);
+  const sttSupported = useMemo(() => isSttSupported(apiConfig), [apiConfig]);
   const [audioUrl, setAudioUrl] = useState<string>('');
   const [traceId, setTraceId] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState('');
   const [isSpeakerOn, setIsSpeakerOn] = useState(true);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
+  useEffect(() => {
+    if (!streamingVoice.state) return;
+    const playing = streamingVoice.state.status === 'playing';
+    setIsAudioPlaying(playing);
+    getAudioFeed().useStreamAnalyser(playing ? streamingVoice.analyserRef.current : null);
+    getAudioFeed().setActive(playing);
+    // Keep 'thinking' while the text stream is open, so another turn cannot race it.
+    if (!callTextAbortRef.current) setCallState(previous => ['idle', 'ended'].includes(previous) ? previous : playing ? 'speaking' : 'listening');
+    if (playing && pendingCueScheduleRef.current) {
+      const pending = pendingCueScheduleRef.current;
+      pendingCueScheduleRef.current = null;
+      schedulePerformanceCues(pending.cues, pending.fallbackMs);
+    }
+    if (!playing) clearPerformanceCueTimers();
+  }, [streamingVoice.state?.status]);
   const [callStartedAt, setCallStartedAt] = useState<number | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [showInputPanel, setShowInputPanel] = useState(true);
@@ -1231,9 +1276,21 @@ const CallApp: React.FC = () => {
   };
   const canSpeakVoice = (): boolean => isSpeakerOn && hasConfiguredVoice();
   // ── 通话语音合成统一入口：开场白 / 正常回合 / 重roll / 主动开口共用 ──
-  // MiniMax：缓存命中 → 单发合成 → 失败再分段兜底；Fish / ElevenLabs：共享 router 直接合成。
+  // ElevenLabs 使用带字幕的 PCM 流；Fish 使用共享 router；MiniMax 保留原缓存和分段逻辑。
   // 抛错或返回空 url 都表示没有可播放音频，由调用方降级为纯文字。
-  const synthesizeCallAudioUrl = async (rawText: string, emotion?: string): Promise<{ url: string; traceIds: string[] }> => {
+  const synthesizeCallAudioUrl = async (rawText: string, emotion?: string, playStream = false): Promise<{ url: string; traceIds: string[] }> => {
+    if (activeTtsProvider === 'elevenlabs') {
+      if (!selectedChar) throw new Error('未选择角色');
+      const script = extractVoiceTag(rawText).voiceText || rawText;
+      const options = { languageBoost: voiceLang || undefined, emotion };
+      const recording = playStream
+        ? await streamingVoice.speak('call', script, selectedChar, apiConfig, options)
+        : await streamElevenLabsSpeech(script, selectedChar, apiConfig, options);
+      const url = URL.createObjectURL(recording.blob);
+      streamedCallAudio.current.set(url, recording);
+      if (playStream) streamedAutoPlayed.current.add(url);
+      return { url, traceIds: [] };
+    }
     if (activeTtsProvider !== 'minimax') {
       if (!selectedChar) throw new Error('未选择角色');
       const { url } = await synthesizeSpeechRoutedDetailed(rawText, selectedChar, apiConfig, {
@@ -1369,6 +1426,7 @@ const CallApp: React.FC = () => {
   };
   const callAudioPrefetchKey = (rawText: string, emotion?: string) => `${emotion || ''}\u0000${rawText}`;
   const prefetchCallAudio = (rawText: string, emotion?: string) => {
+    if (activeTtsProvider === 'elevenlabs') return;
     if (!callPreferences.voiceAutoPlay || !canSpeakVoice()) return;
     const key = callAudioPrefetchKey(rawText, emotion);
     if (prefetchedCallAudioRef.current.has(key)) return;
@@ -1387,10 +1445,10 @@ const CallApp: React.FC = () => {
     void promise.catch(() => undefined);
     prefetchedCallAudioRef.current.set(key, promise);
   };
-  const takeOrSynthesizeCallAudio = (rawText: string, emotion?: string) => {
+  const takeOrSynthesizeCallAudio = (rawText: string, emotion?: string, playStream = true) => {
     const key = callAudioPrefetchKey(rawText, emotion);
     const prefetched = prefetchedCallAudioRef.current.get(key);
-    if (!prefetched) return synthesizeCallAudioUrl(rawText, emotion);
+    if (!prefetched) return synthesizeCallAudioUrl(rawText, emotion, playStream);
     prefetchedCallAudioRef.current.delete(key);
     return prefetched;
   };
@@ -1429,19 +1487,43 @@ const CallApp: React.FC = () => {
   }, []);
   // Voice input: toggle speech-to-text into the draft input box.
   const toggleStt = async () => {
-    if (isListening) { sttSessionRef.current?.stop(); trackEvent('切换语音输入', { action: 'stop' }); return; }
-    if (!sttSupported) { addToast('当前环境不支持语音输入', 'info'); return; }
+    if (isTranscribing) {
+      addToast('正在转写刚才的语音，请稍候…', 'info');
+      return;
+    }
+    if (isListening) {
+      sttSessionRef.current?.stop();
+      trackEvent('切换语音输入', { action: 'stop' });
+      return;
+    }
+    if (!sttSupported) {
+      addToast('当前环境不支持语音输入，可在「设置 → 其他 API」配置 ElevenLabs / 鱼声 Fish / MiniMax Key', 'info');
+      return;
+    }
     try {
       setIsListening(true);
       trackEvent('切换语音输入', { action: 'start' });
-      sttSessionRef.current = await startStt('zh-CN', {
-        onPartial: (t) => setDraftInput(t),
-        onFinal: (t) => setDraftInput(t),
-        onError: (m) => { if (m) addToast(m, 'info'); },
-        onEnd: () => { setIsListening(false); sttSessionRef.current = null; },
-      });
+      const providerAtStart = resolveSttProvider(apiConfig);
+      sttSessionRef.current = await startStt(
+        voiceLang === 'yue' ? 'yue' : 'zh-CN',
+        {
+          onPartial: (t) => setDraftInput(t),
+          onFinal: (t) => {
+            if (providerAtStart === 'browser') {
+              setDraftInput(t);
+            } else {
+              setDraftInput(prev => (prev.trim() ? `${prev.trim()} ${t}` : t));
+            }
+          },
+          onTranscribing: (busy) => setIsTranscribing(busy),
+          onError: (m) => { if (m) addToast(m, 'info'); },
+          onEnd: () => { setIsListening(false); sttSessionRef.current = null; },
+        },
+        apiConfig,
+      );
     } catch (e: any) {
       setIsListening(false);
+      setIsTranscribing(false);
       sttSessionRef.current = null;
       addToast(e?.message || '无法启动语音输入', 'error');
     }
@@ -1450,8 +1532,8 @@ const CallApp: React.FC = () => {
   const handleDownloadCallAudio = async (url?: string, ts?: number) => {
     if (!url) { addToast('这条还没有语音', 'error'); return; }
     try {
-      const fname = `${(selectedChar?.name || '通话').replace(/[\\/:*?"<>|]/g, '_')}_语音_${ts || Date.now()}.mp3`;
       const blob = await fetchBlobForShare(url, 'audio/mpeg');
+      const fname = `${(selectedChar?.name || '通话').replace(/[\\/:*?"<>|]/g, '_')}_语音_${ts || Date.now()}.${blob.type.includes('wav') ? 'wav' : 'mp3'}`;
       const result = await shareOrDownloadBlob({ blob, fileName: fname, shareTitle: `${selectedChar?.name || '通话'}的语音` });
       if (result === 'cancelled') return;
       addToast(result === 'shared' ? '已打开系统保存/分享' : '语音已开始下载', 'success');
@@ -1475,6 +1557,8 @@ const CallApp: React.FC = () => {
     if (showInputPanel) draftInputRef.current?.focus();
   }, [showInputPanel]);
   const stopPlayback = () => {
+    streamingVoice.stop();
+    getAudioFeed().useStreamAnalyser(null);
     clearSilentSpeechTimer();
     clearPerformanceCueTimers();
     if (!audioRef.current) return;
@@ -1562,6 +1646,8 @@ const CallApp: React.FC = () => {
     markCallTurnDirty();
   };
   const resetCurrentCall = () => {
+    callTextAbortRef.current?.abort();
+    callTextAbortRef.current = null;
     revokeSessionBlobs();
     stopPlayback();
     pendingAvatarTouchesRef.current = [];
@@ -1605,6 +1691,7 @@ const CallApp: React.FC = () => {
     trackEvent('打开通话偏好');
   };
   const primeCallAudioFromGesture = (forceManualPlayback = false) => {
+    if (activeTtsProvider === 'elevenlabs') streamingVoice.prime();
     if (!forceManualPlayback && (!callPreferences.voiceAutoPlay || !isSpeakerOn)) return;
     const audio = audioRef.current;
     if (!audio) return;
@@ -1906,117 +1993,169 @@ ${sentencePlan}`;
     includeUserCameraContext = false,
     userCameraSnapshotForTurn?: string,
   ): Promise<ParsedCallReply> => {
-    const dialogueApi = resolveDialogueApi(apiConfig, selectedChar);
-    const baseUrl = dialogueApi.baseUrl?.replace(/\/+$/, '');
-    if (!baseUrl) throw new Error('请先在设置里配置聊天 API URL');
-    const userName = userProfile?.name?.trim() || '用户';
-    if (selectedChar) {
-      const callMsgs = await loadCharacterContextMessages(selectedChar);
-      await injectMemoryPalace(selectedChar, callMsgs);
-    }
-    const touchContext = selectedChar
-      ? buildPendingAvatarTouchContext(pendingTouches, selectedChar.name, userName)
-      : '';
-    const messages = await buildHistoryMessages(input, skipDbId, touchContext);
-    const thinkingPrompt = selectedChar?.showThinkingChain
-      ? [
-          buildThinkingChainPrompt(selectedChar.name, userName),
-          selectedChar.thinkingChainCustomPrompt?.trim()
-            ? `【用户追加的 THINKING 要求】\n${selectedChar.thinkingChainCustomPrompt.trim()}`
-            : '',
-        ].filter(Boolean).join('\n\n')
-      : '';
-    // 模型专属动作白名单：Live2D 用用户授权的 actions；VRM 用加载时枚举出的
-    // 自定义表情（星星眼/黑脸这类，预设之外的全部可用）。
-    const allowedModelActions = getAllowedModelActions();
-    const highQualityPerformance = callMode === 'video'
-      && selectedChar?.videoCallPerformanceQuality === 'high';
-    const userCameraEmotionContext = includeUserCameraContext
-      && callMode === 'video'
-      && userCameraMode === 'emotion'
-      ? await captureUserCameraEmotionContext()
-      : '';
-    const userCameraSnapshot = includeUserCameraContext
-      && callMode === 'video'
-      && userCameraMode === 'snapshot'
-      ? (userCameraSnapshotForTurn ?? captureUserCameraSnapshotContext())
-      : '';
-    if (includeUserCameraContext && callMode === 'video' && userCameraMode === 'snapshot' && !userCameraSnapshot && userCameraSnapshotForTurn === undefined) {
-      addToast('摄像头画面还没准备好，本轮已只发送文字', 'info');
-    }
-    const snapshotHistory = prepareUserCameraSnapshot(messages, userCameraSnapshot);
-    const characterContext = selectedChar ? (await ContextBuilder.buildCharacterContext({
-      char: selectedChar, user: userProfile, history: snapshotHistory.messages,
-      timeOptions: { conversational: true },
-      instructions: core => buildCallPrompt(userName, selectedChar.name, core, voiceLang || undefined, callMode, resolveCharTimeZone(selectedChar)),
-    })) : null;
-    const baseCallPrompt = characterContext?.coreContext
-      ?? buildCallPrompt(userName, undefined, undefined, voiceLang || undefined, callMode);
-    const baseSystemPrompt = [
-      baseCallPrompt,
-      callMode === 'video' && !highQualityPerformance ? buildAvatarPerformancePrompt(allowedModelActions) : '',
-      userCameraEmotionContext,
-      thinkingPrompt,
-    ].filter(Boolean).join('\n\n');
-    const systemPrompt = [baseSystemPrompt, userCameraSnapshot ? USER_CAMERA_SNAPSHOT_SYSTEM_NOTE : '']
-      .filter(Boolean)
-      .join('\n\n');
-    const requestMessages = characterContext?.history ?? snapshotHistory.messages;
-    const textOnlyMessages = snapshotHistory.restoreTextMessages(requestMessages);
-    const sendChatRequest = (
-      nextMessages: any[],
-      nextSystemPrompt: string,
-      maxRetries: number,
-      purpose: string,
-    ) => safeFetchJson(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${dialogueApi.apiKey || 'sk-none'}` },
-      body: JSON.stringify({
-        model: dialogueApi.model,
-        messages: [{ role: 'system', content: nextSystemPrompt }, ...nextMessages],
-        temperature: dialogueApi.temperature ?? 0.85,
-        // max_tokens 是 Claude 原生 API 的必填字段；缺了它，OpenAI→Claude 中转会被
-        // 上游打回，包成 502 / bad_response_status_code。与私聊 (useChatAI.ts) 对齐。
-        max_tokens: 8000,
-        stream: dialogueApi.stream ?? false,
-      }),
-    }, maxRetries, 0, { appName: '电话', charId: selectedChar?.id, charName: selectedChar?.name, purpose });
-    let chatData: any;
+    callTextAbortRef.current?.abort();
+    const textAbort = new AbortController();
+    callTextAbortRef.current = textAbort;
+    let liveSpeech: ReturnType<typeof streamingVoice.sequence> | null = null;
     try {
-      // Do not repeat a rejected base64 frame three times. Text-only calls keep
-      // the normal transient-error retries; snapshot calls first try vision once.
-      chatData = await sendChatRequest(
-        requestMessages,
-        systemPrompt,
-        userCameraSnapshot ? 0 : 2,
-        userCameraSnapshot ? '视频通话·用户快照' : '语音通话',
-      );
-    } catch (error) {
-      if (!userCameraSnapshot || !isVisionInputUnsupportedError(error)) throw error;
-      console.warn('[camera-snapshot] provider rejected vision input; retrying text-only:', error);
-      addToast('当前模型不支持图片；本轮已自动改为只发文字', 'info');
-      chatData = await sendChatRequest(textOnlyMessages, baseSystemPrompt, 2, '视频通话·快照降级为文字');
-    }
-    const parsed = parseCallAssistantMessage(
-      chatData?.choices?.[0]?.message,
-      !!selectedChar?.showThinkingChain,
-    );
-    if (!parsed.text.trim()) throw new Error('文本接口返回为空，或只返回了思考内容');
-    const preparedForAudio = prepareCallAssistantReply(parsed);
-    prefetchCallAudio(preparedForAudio.text, preparedForAudio.speechEmotion);
-    if (highQualityPerformance) {
-      try {
-        const cues = await requestHighQualityPerformance(parsed.text, allowedModelActions);
-        if (cues?.length) {
-          return { ...parsed, performance: cues[0].direction, performanceCues: cues };
-        }
-        console.warn('[call] high-quality performance returned no usable cues; using local fallback');
-      } catch (error: any) {
-        // 动作导演不能拖垮通话正文；超时、额度或格式问题都退回本地文本推断。
-        console.warn('[call] high-quality performance failed; using local fallback:', error?.message || error);
+      const dialogueApi = resolveDialogueApi(apiConfig, selectedChar);
+      const baseUrl = dialogueApi.baseUrl?.replace(/\/+$/, '');
+      if (!baseUrl) throw new Error('请先在设置里配置聊天 API URL');
+      const userName = userProfile?.name?.trim() || '用户';
+      if (selectedChar) {
+        const callMsgs = await loadCharacterContextMessages(selectedChar);
+        await injectMemoryPalace(selectedChar, callMsgs);
       }
+      const touchContext = selectedChar
+        ? buildPendingAvatarTouchContext(pendingTouches, selectedChar.name, userName)
+        : '';
+      const messages = await buildHistoryMessages(input, skipDbId, touchContext);
+      const thinkingPrompt = selectedChar?.showThinkingChain
+        ? [
+            buildThinkingChainPrompt(selectedChar.name, userName),
+            selectedChar.thinkingChainCustomPrompt?.trim()
+              ? `【用户追加的 THINKING 要求】\n${selectedChar.thinkingChainCustomPrompt.trim()}`
+              : '',
+          ].filter(Boolean).join('\n\n')
+        : '';
+      // 模型专属动作白名单：Live2D 用用户授权的 actions；VRM 用加载时枚举出的
+      // 自定义表情（星星眼/黑脸这类，预设之外的全部可用）。
+      const allowedModelActions = getAllowedModelActions();
+      const highQualityPerformance = callMode === 'video'
+        && selectedChar?.videoCallPerformanceQuality === 'high';
+      const userCameraEmotionContext = includeUserCameraContext
+        && callMode === 'video'
+        && userCameraMode === 'emotion'
+        ? await captureUserCameraEmotionContext()
+        : '';
+      const userCameraSnapshot = includeUserCameraContext
+        && callMode === 'video'
+        && userCameraMode === 'snapshot'
+        ? (userCameraSnapshotForTurn ?? captureUserCameraSnapshotContext())
+        : '';
+      if (includeUserCameraContext && callMode === 'video' && userCameraMode === 'snapshot' && !userCameraSnapshot && userCameraSnapshotForTurn === undefined) {
+        addToast('摄像头画面还没准备好，本轮已只发送文字', 'info');
+      }
+      const snapshotHistory = prepareUserCameraSnapshot(messages, userCameraSnapshot);
+      const characterContext = selectedChar ? (await ContextBuilder.buildCharacterContext({
+        char: selectedChar, user: userProfile, history: snapshotHistory.messages,
+        timeOptions: { conversational: true, includeUserLocation: true },
+        instructions: core => buildCallPrompt(userName, selectedChar.name, core, voiceLang || undefined, callMode, resolveCharTimeZone(selectedChar)),
+      })) : null;
+      const baseCallPrompt = characterContext?.coreContext
+        ?? buildCallPrompt(userName, undefined, undefined, voiceLang || undefined, callMode);
+      const baseSystemPrompt = [
+        baseCallPrompt,
+        callMode === 'video' && !highQualityPerformance ? buildAvatarPerformancePrompt(allowedModelActions) : '',
+        userCameraEmotionContext,
+        thinkingPrompt,
+      ].filter(Boolean).join('\n\n');
+      const systemPrompt = [baseSystemPrompt, userCameraSnapshot ? USER_CAMERA_SNAPSHOT_SYSTEM_NOTE : '']
+        .filter(Boolean)
+        .join('\n\n');
+      const requestMessages = characterContext?.history ?? snapshotHistory.messages;
+      const textOnlyMessages = snapshotHistory.restoreTextMessages(requestMessages);
+      liveSpeech = selectedChar && !highQualityPerformance && activeTtsProvider === 'elevenlabs' && incrementalVoice && callPreferences.voiceAutoPlay && canSpeakVoice()
+        ? streamingVoice.sequence('call', selectedChar, apiConfig, { languageBoost: voiceLang || undefined }) : null;
+      const sentenceStream = liveSpeech ? new IncrementalCallSpeech(text => liveSpeech!.append(text), !!voiceLang) : null;
+      let speechError: Error | null = null;
+      let receivedTextDelta = false;
+      let lastLiveDirection = '';
+      const sendChatRequest = (
+        nextMessages: any[],
+        nextSystemPrompt: string,
+        maxRetries: number,
+        purpose: string,
+      ) => safeFetchJson(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        signal: textAbort.signal,
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${dialogueApi.apiKey || 'sk-none'}` },
+        body: JSON.stringify({
+          model: dialogueApi.model,
+          messages: [{ role: 'system', content: nextSystemPrompt }, ...nextMessages],
+          temperature: dialogueApi.temperature ?? 0.85,
+          // max_tokens 是 Claude 原生 API 的必填字段；缺了它，OpenAI→Claude 中转会被
+          // 上游打回，包成 502 / bad_response_status_code。与私聊 (useChatAI.ts) 对齐。
+          max_tokens: 8000,
+          stream: liveSpeech ? true : dialogueApi.stream ?? false,
+        }),
+      }, maxRetries, 0, { appName: '电话', charId: selectedChar?.id, charName: selectedChar?.name, purpose }, sentenceStream ? {
+        onDelta: (_delta, fullText) => {
+          receivedTextDelta = true;
+          if (textAbort.signal.aborted || speechError) return;
+          try {
+            sentenceStream.update(fullText);
+            const partial = parseCallAssistantMessage({ content: fullText }, false);
+            const direction = partial.performanceCues?.at(-1)?.direction || partial.performance;
+            const signature = direction ? JSON.stringify(direction) : '';
+            if (callMode === 'video' && direction && signature !== lastLiveDirection) {
+              lastLiveDirection = signature;
+              applyPerformanceDirection(direction);
+            }
+          }
+          catch (error) { speechError = error as Error; streamingVoice.stop(); }
+        },
+      } : undefined);
+      let chatData: any;
+      try {
+        // safeFetchJson never retries billable chat completions automatically.
+        // An explicitly rejected vision input may make one text-only attempt below.
+        chatData = await sendChatRequest(
+          requestMessages,
+          systemPrompt,
+          userCameraSnapshot ? 0 : 2,
+          userCameraSnapshot ? '视频通话·用户快照' : '语音通话',
+        );
+      } catch (error) {
+        if (!userCameraSnapshot || !isVisionInputUnsupportedError(error)) throw error;
+        console.warn('[camera-snapshot] provider rejected vision input; retrying text-only:', error);
+        addToast('当前模型不支持图片；本轮已自动改为只发文字', 'info');
+        chatData = await sendChatRequest(textOnlyMessages, baseSystemPrompt, 2, '视频通话·快照降级为文字');
+      }
+      if (liveSpeech && !chatData?.choices?.[0]?.message?.content) throw new Error('文字接口未返回可朗读的正文');
+      const parsed = parseCallAssistantMessage(
+        chatData?.choices?.[0]?.message,
+        !!selectedChar?.showThinkingChain,
+      );
+      if (textAbort.signal.aborted) throw new DOMException('通话已停止', 'AbortError');
+      if (liveSpeech && !receivedTextDelta) addToast('文字接口未返回流式内容，本轮在台词写完后开始播放', 'info');
+      if (!parsed.text.trim()) throw new Error('文本接口返回为空，或只返回了思考内容');
+      const preparedForAudio = prepareCallAssistantReply(parsed);
+      if (liveSpeech && sentenceStream) {
+        try { if (speechError) throw speechError; sentenceStream.finish(parsed.text); liveSpeech.finish(); }
+        catch (error) { speechError = error as Error; streamingVoice.stop(); }
+        const audioPromise = liveSpeech.result.then(recording => {
+          if (speechError) throw speechError;
+          const url = URL.createObjectURL(recording.blob);
+          trackBlobUrl(url); streamedCallAudio.current.set(url, recording); streamedAutoPlayed.current.add(url);
+          return { url, traceIds: [] as string[] };
+        });
+        void audioPromise.catch(() => {});
+        prefetchedCallAudioRef.current.set(callAudioPrefetchKey(preparedForAudio.text, preparedForAudio.speechEmotion), audioPromise);
+      } else prefetchCallAudio(preparedForAudio.text, preparedForAudio.speechEmotion);
+      if (!liveSpeech && parsed.performanceCues?.length) pendingCueScheduleRef.current = { cues: parsed.performanceCues, fallbackMs: estimateSpeechMs(parsed.text) };
+      if (highQualityPerformance) {
+        try {
+          const cues = await requestHighQualityPerformance(parsed.text, allowedModelActions);
+          if (textAbort.signal.aborted) throw new DOMException('通话已停止', 'AbortError');
+          if (cues?.length) {
+            pendingCueScheduleRef.current = { cues, fallbackMs: estimateSpeechMs(parsed.text) };
+            return { ...parsed, performance: cues[0].direction, performanceCues: cues };
+          }
+          console.warn('[call] high-quality performance returned no usable cues; using local fallback');
+        } catch (error: any) {
+          // 动作导演不能拖垮通话正文；超时、额度或格式问题都退回本地文本推断。
+          console.warn('[call] high-quality performance failed; using local fallback:', error?.message || error);
+        }
+      }
+      if (textAbort.signal.aborted) throw new DOMException('通话已停止', 'AbortError');
+      return parsed;
+    } catch (error) {
+      if (liveSpeech && callTextAbortRef.current === textAbort) streamingVoice.stop();
+      throw error;
+    } finally {
+      if (callTextAbortRef.current === textAbort) callTextAbortRef.current = null;
     }
-    return parsed;
   };
   // ── 演出时间轴调度：多条 [[AVATAR:]] 指令按语音播放进度依次生效 ──
   const performanceCueTimersRef = useRef<number[]>([]);
@@ -2112,6 +2251,7 @@ ${sentencePlan}`;
 
   useEffect(() => {
     if (audioRef.current) audioRef.current.muted = !isSpeakerOn;
+    streamingVoice.setMuted(!isSpeakerOn);
   }, [isSpeakerOn]);
 
   const startCallAudioElement = (audio: HTMLAudioElement, forceAudible = false): Promise<void> => {
@@ -2141,6 +2281,22 @@ ${sentencePlan}`;
       if (callMode === 'video') playSilentAvatarSpeech('', cues, estimatedDurationMs);
       return;
     }
+    if (streamedAutoPlayed.current.delete(targetUrl)) {
+      setCallState(previous => ['idle', 'ended'].includes(previous) ? previous : 'listening');
+      return;
+    }
+    const recording = streamedCallAudio.current.get(targetUrl);
+    if (recording) {
+      audioRef.current.pause();
+      if (forceAudible) streamingVoice.setMuted(false);
+      pendingCueScheduleRef.current = cues?.length ? { cues, fallbackMs: recording.duration * 1000 } : null;
+      void streamingVoice.replay('call', recording).catch(error => {
+        if (error?.name !== 'AbortError') addToast(voicePlaybackErrorMessage(error, '重播语音'), 'info');
+      });
+      return;
+    }
+    streamingVoice.stop();
+    getAudioFeed().useStreamAnalyser(null);
     clearSilentSpeechTimer();
     if (audioUrl !== targetUrl) setAudioUrl(targetUrl);
     // 时间轴在 onPlay 时用真实音频时长调度；拿不到时长再用估计值。
@@ -2163,7 +2319,7 @@ ${sentencePlan}`;
     });
     setCallState('speaking');
   };
-  const ensureCallBubbleAudio = async (bubble: CallBubble, forceRegenerate = false): Promise<string | null> => {
+  const ensureCallBubbleAudio = async (bubble: CallBubble, forceRegenerate = false, playStream = false): Promise<string | null> => {
     if (bubble.role !== 'assistant' || generatingAudioBubbleId) return null;
     if (bubble.audioUrl && !forceRegenerate) return bubble.audioUrl;
     if (!hasConfiguredVoice()) {
@@ -2177,6 +2333,7 @@ ${sentencePlan}`;
       const { url, traceIds } = await takeOrSynthesizeCallAudio(
         bubble.text,
         voiceTag.emotion || bubble.performance?.emotion,
+        playStream,
       );
       if (!url) throw new Error('未获得可播放音频');
       trackBlobUrl(url);
@@ -2209,7 +2366,7 @@ ${sentencePlan}`;
     // after this point when automatic voice is disabled.
     if (isAudioPlaying) pauseAudio();
     primeCallAudioFromGesture(true);
-    const url = await ensureCallBubbleAudio(bubble);
+    const url = await ensureCallBubbleAudio(bubble, false, true);
     if (!url) return;
     if (!isSpeakerOn) setIsSpeakerOn(true);
     playAudio(url, bubble.performanceTimeline, estimateSpeechMs(bubble.text), true);
@@ -2274,13 +2431,19 @@ ${sentencePlan}`;
     }
   };
   const resumeAudio = () => {
+    if (streamedCallAudio.current.has(audioUrl)) { playAudio(audioUrl); return; }
     if (!audioRef.current || !audioUrl) return;
     startCallAudioElement(audioRef.current).catch(() => addToast('继续播放失败，请点击重播', 'error'));
   };
   const pauseAudio = () => {
+    streamingVoice.stop();
+    clearPerformanceCueTimers();
+    getAudioFeed().useStreamAnalyser(null);
+    getAudioFeed().setActive(false);
+    setIsAudioPlaying(false);
     if (!audioRef.current) return;
     audioRef.current.pause();
-    setCallState('listening');
+    setCallState(previous => callTextAbortRef.current ? previous : 'listening');
   };
 
   useEffect(() => {
@@ -2366,6 +2529,7 @@ ${sentencePlan}`;
           }
         }
       } catch (error: any) {
+        if (error?.name === 'AbortError') return;
         setCallState('error');
         setErrorMessage(error?.message || '开场白生成失败');
       }
@@ -2608,6 +2772,7 @@ ${sentencePlan}`;
       setAvatarEmotion(reply.performance.emotion);
       setAvatarPerformance(reply.performance);
     } catch (err: any) {
+      if (err?.name === 'AbortError') return;
       setErrorMessage(err?.message || '文本回复失败');
       setCallState('error');
       return addToast(`文本回复失败：${err?.message || '未知错误'}`, 'error');
@@ -2674,6 +2839,7 @@ ${sentencePlan}`;
       }
       setCallState('listening');
     } catch (e: any) {
+      if (e?.name === 'AbortError') return;
       setErrorMessage(e?.message || '语音生成失败');
       if (callMode === 'video') playSilentAvatarSpeech(assistantText, turnPerformanceCues);
       else setCallState('listening');
@@ -2797,6 +2963,7 @@ ${sentencePlan}`;
         setCallState('listening');
       }
     } catch (e: any) {
+      if (e?.name === 'AbortError') return;
       setCallState('error');
       addToast(`重 roll 失败：${e?.message || '未知错误'}`, 'error');
     } finally {
@@ -3024,7 +3191,19 @@ ${sentencePlan}`;
         )}
         {showCallPreferences && (
           <CallPreferencesSheet
+            incrementalVoice={activeTtsProvider === 'elevenlabs' ? incrementalVoice : undefined}
+            onIncrementalChange={activeTtsProvider === 'elevenlabs' ? setIncrementalVoice : undefined}
             preferences={callPreferences}
+            apiConfig={apiConfig}
+            onSttProviderChange={provider => {
+              if (!isSttProviderConfigured(provider, apiConfig)) {
+                const opt = STT_PROVIDER_OPTIONS.find(o => o.id === provider);
+                addToast(`${opt?.keyHint || '请先填写对应 Key'}（可在「设置 → 其他 API」配置）`, 'info');
+                return;
+              }
+              updateApiConfig({ sttProvider: provider });
+              addToast(`语音转文字已切到 ${getSttProviderLabel(provider)}`, 'success');
+            }}
             accentColor={accentColor}
             lightTheme={lightTheme}
             onChange={next => {
@@ -3371,6 +3550,7 @@ ${sentencePlan}`;
     return (
       <div className={`h-full w-full bg-gradient-to-b text-white px-5 pb-6 flex flex-col ${lightTheme ? 'sully-call-light from-[#f5f2fd] via-[#eef0f8] to-[#eef0f8]' : 'from-[#140d28] via-[#0a0613] to-[#0a0613]'}`} style={{ paddingTop: 'max(2.5rem, var(--safe-top))' }}>
         {lightTheme && <style>{CALL_LIGHT_THEME_CSS}</style>}
+        <StreamingVoiceBar state={streamingVoice.state} onStop={pauseAudio} />
         <div className="flex items-center justify-between">
           <button onClick={() => setViewMode('history')} className="text-sm text-white/45">← 返回</button>
           <div className="text-sm text-white/80 font-medium">{recordDetail.characterName}</div>
@@ -3847,31 +4027,47 @@ ${sentencePlan}`;
         {errorMessage && <div className="text-xs text-rose-300/80 px-1">{errorMessage}</div>}
       </div>
       )}
+      <StreamingVoiceBar state={streamingVoice.state} onStop={pauseAudio} />
       {showInputPanel && (
         <div className={`shrink-0 ${callMode === 'video' ? 'px-3 pb-1.5' : 'px-4 pb-2'}`}>
           <div className={`${callMode === 'video' ? 'rounded-[1.15rem] p-1.5' : 'rounded-2xl p-2'} border border-white/12 bg-black/30 backdrop-blur-md flex gap-2 items-center`} style={{ boxShadow: `inset 0 0 20px ${accentColor}1f` }}>
-            {sttSupported && (
-              <button
-                onClick={toggleStt}
-                disabled={sendingBusy}
-                title={isListening ? '结束语音输入' : '按一下开始说话'}
-                className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 transition active:scale-90 disabled:opacity-40"
-                style={isListening ? { background: '#f0569f', boxShadow: '0 0 14px #f0569f99' } : { background: 'rgba(255,255,255,0.08)' }}
-              >
-                <Microphone size={18} weight="fill" className={isListening ? 'text-white animate-pulse' : 'text-white/70'} />
-              </button>
-            )}
+            <button
+              onClick={toggleStt}
+              disabled={sendingBusy || isTranscribing}
+              title={isTranscribing ? '正在转写语音…' : isListening ? '结束语音输入' : `按一下开始说话（${getSttProviderLabel(activeSttProvider)}）`}
+              className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 transition active:scale-90 disabled:opacity-40"
+              style={
+                isListening
+                  ? { background: '#f0569f', boxShadow: '0 0 14px #f0569f99' }
+                  : isTranscribing
+                    ? { background: `${accentColor}55`, boxShadow: `0 0 12px ${accentColor}66` }
+                    : { background: 'rgba(255,255,255,0.08)' }
+              }
+            >
+              <Microphone size={18} weight="fill" className={isListening || isTranscribing ? 'text-white animate-pulse' : 'text-white/70'} />
+            </button>
             <input
               ref={draftInputRef}
               value={draftInput}
               onChange={(e) => setDraftInput(e.target.value)}
               className="flex-1 min-w-0 bg-transparent px-2 text-sm outline-none placeholder:text-white/35"
-              placeholder={isListening ? '在听你说……' : sendingBusy ? `${selectedChar?.name || '对方'}正在想……` : pendingCallRetryText ? '上次回复中断，可直接重试' : `想对${selectedChar?.name || '对方'}说什么？`}
+              placeholder={isTranscribing ? `正在转写语音（${getSttProviderLabel(activeSttProvider)}）……` : isListening ? '在听你说，说完再点一下麦克风……' : sendingBusy ? `${selectedChar?.name || '对方'}正在想……` : pendingCallRetryText ? '上次回复中断，可直接重试' : `想对${selectedChar?.name || '对方'}说什么？`}
             />
-            <button onClick={handleTurn} disabled={sendingBusy} className="keep-white shrink-0 px-4 py-2 rounded-xl text-sm font-medium text-white disabled:opacity-40 transition active:scale-95" style={{ backgroundColor: accentColor, boxShadow: `0 0 16px ${accentColor}66` }}>{sendingBusy ? '…' : '发送'}</button>
+            <button onClick={handleTurn} disabled={sendingBusy || isTranscribing} className="keep-white shrink-0 px-4 py-2 rounded-xl text-sm font-medium text-white disabled:opacity-40 transition active:scale-95" style={{ backgroundColor: accentColor, boxShadow: `0 0 16px ${accentColor}66` }}>{sendingBusy ? '…' : '发送'}</button>
           </div>
           {!sendingBusy && pendingCallRetryText && !draftInput.trim() && <div className="text-[10px] text-amber-200/70 mt-1 px-1">上一句话还没得到回复，点击重试即可继续</div>}
-          {isListening && <div className="text-[10px] text-white/40 mt-1 px-1 animate-pulse">正在聆听，点麦克风结束</div>}
+          {isListening && (
+            <div className="text-[10px] text-white/45 mt-1 px-1 animate-pulse">
+              {activeSttProvider === 'browser'
+                ? '正在聆听，点麦克风结束'
+                : `正在录音（${getSttProviderLabel(activeSttProvider)}），说完再点一下麦克风转成文字`}
+            </div>
+          )}
+          {!isListening && isTranscribing && (
+            <div className="text-[10px] text-white/45 mt-1 px-1 animate-pulse">
+              正在通过 {getSttProviderLabel(activeSttProvider)} 识别刚才那句话……
+            </div>
+          )}
         </div>
       )}
       <div className={`shrink-0 ${callMode === 'video' ? 'px-3 pb-2 pt-0.5' : 'px-7 pb-2 pt-1.5'}`} data-testid={callMode === 'video' ? 'video-call-compact-controls' : undefined}>
@@ -4071,3 +4267,5 @@ ${sentencePlan}`;
   );
 };
 export default CallApp;
+import { useAppShortcut } from '../utils/appShortcutLaunch';
+import { AppID as ShortcutAppID } from '../types';

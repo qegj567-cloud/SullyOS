@@ -1,3 +1,4 @@
+import { useLocalBackHandler } from '../../hooks/useLocalBackHandler';
 import PsycheAppearanceEditor from './PsycheAppearanceEditor';
 import {resolvePsycheAppearance} from '../../utils/psycheAppearance';
 import React, {useState} from 'react';
@@ -30,6 +31,7 @@ export default function ChatDecorationPanel({character:char,theme,themes,updateC
  const [collapsed,setCollapsed]=useState(false);
  const [presetBusy,setPresetBusy]=useState(false);
  const [panelOpacity,setPanelOpacity]=useState(100);
+ useLocalBackHandler(()=>{if(!presetBusy)onClose();return true;}, 20);
  const global=scope==='global';
  const override=char.chatFineTune;
  const customized=override?.enabled===true;

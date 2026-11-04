@@ -55,6 +55,9 @@ export class CallAudioFeed {
 
   private context: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
+  private streamAnalyser: AnalyserNode | null = null;
+  private streamTimeData: Uint8Array<ArrayBuffer> | null = null;
+  private streamFreqData: Uint8Array<ArrayBuffer> | null = null;
   private attachedElement: HTMLAudioElement | null = null;
   private timeData: Uint8Array<ArrayBuffer> | null = null;
   private freqData: Uint8Array<ArrayBuffer> | null = null;
@@ -129,6 +132,15 @@ export class CallAudioFeed {
     }
   }
 
+  /** Borrow the PCM player's analyser; its context/output remain owned by the player. */
+  useStreamAnalyser(analyser: AnalyserNode | null): void {
+    if (this.streamAnalyser === analyser) return;
+    this.streamAnalyser = analyser;
+    this.streamTimeData = analyser ? new Uint8Array(analyser.fftSize) : null;
+    this.streamFreqData = analyser ? new Uint8Array(analyser.frequencyBinCount) : null;
+    this.lastSampleAt = 0;
+  }
+
   setActive(playing: boolean): void {
     this.playing = playing;
     if (!playing) {
@@ -140,10 +152,11 @@ export class CallAudioFeed {
   /** 每帧调用。多块画布同帧重复调用时命中 8ms 缓存，不会双重平滑。 */
   sample(now: number): LipSyncFrame {
     if (!this.playing) return this.frame;
-    const analyser = this.analyser;
-    const timeData = this.timeData;
-    const freqData = this.freqData;
-    if (!analyser || !timeData || !freqData || !this.context) {
+    const analyser = this.streamAnalyser || this.analyser;
+    const timeData = this.streamAnalyser ? this.streamTimeData : this.timeData;
+    const freqData = this.streamAnalyser ? this.streamFreqData : this.freqData;
+    const context = this.streamAnalyser?.context || this.context;
+    if (!analyser || !timeData || !freqData || !context) {
       this.frame = { level: 0, vowel: 0.5, active: false };
       return this.frame;
     }
@@ -164,7 +177,7 @@ export class CallAudioFeed {
     this.smoothedLevel += (adapted.level - this.smoothedLevel) * rate;
 
     analyser.getByteFrequencyData(freqData);
-    const hzPerBin = this.context.sampleRate / 2 / freqData.length;
+    const hzPerBin = context.sampleRate / 2 / freqData.length;
     const bandEnergy = (fromHz: number, toHz: number): number => {
       const from = Math.max(0, Math.floor(fromHz / hzPerBin));
       const to = Math.min(freqData.length - 1, Math.ceil(toHz / hzPerBin));
@@ -180,6 +193,7 @@ export class CallAudioFeed {
   }
 
   dispose(): void {
+    this.useStreamAnalyser(null);
     this.playing = false;
     this.analyser = null;
     this.attachedElement = null;

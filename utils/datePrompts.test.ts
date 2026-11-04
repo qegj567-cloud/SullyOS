@@ -3,6 +3,7 @@ import { DatePrompts, DATE_STYLE_PRESETS, extractObservation, stripObservation, 
 import type { CharacterProfile, UserProfile, Message, MountedWorldbook } from '../types';
 import { buildCharacterResponsePrinciples } from './characterResponsePrinciples';
 import { buildChatRequestPayload } from './chatRequestPayload';
+import { setElevenLabsModel, setTtsProvider, setVoicePromptOverrides } from './ttsProvider';
 
 const makeChar = (overrides: Partial<CharacterProfile> = {}): CharacterProfile => ({
     id: 'char-1',
@@ -42,6 +43,27 @@ describe('DatePrompts.buildSessionPayload', () => {
         emojis: [],
         userText: '我来了',
         variant: 'send' as const,
+    });
+
+    it('adds v4 audio directions inside VN dialogue while preserving the sprite and voice emotion channels', async () => {
+        setTtsProvider('elevenlabs');
+        setElevenLabsModel('eleven_v4');
+        try {
+            const { messages } = await DatePrompts.buildSessionPayload(baseInput(makeChar({ dateVoiceEnabled: true })));
+            const sys = sysOf(messages);
+            expect(sys).toContain('ElevenLabs v4');
+            expect(sys).toContain('Audio Tags');
+            expect(sys).toContain('放在台词引号内部');
+            expect(sys).toContain('[v:xxx]');
+            setVoicePromptOverrides({ dateVoice: '只按用户的见面语音规则' });
+            const custom = await DatePrompts.buildSessionPayload(baseInput(makeChar({ dateVoiceEnabled: true })));
+            expect(sysOf(custom.messages)).toContain('只按用户的见面语音规则');
+            expect(sysOf(custom.messages)).not.toContain('ElevenLabs v4');
+        } finally {
+            setTtsProvider('minimax');
+            setElevenLabsModel(undefined);
+            setVoicePromptOverrides(undefined);
+        }
     });
 
     it('默认注入电影感风格块，不注入人称块', async () => {
@@ -573,5 +595,52 @@ describe('DatePrompts.buildPeekPayload', async () => {
         expect(messages[0].content).toContain('WB_K');
         expect(messages.find(m => m.content === 'WB_D')?.role).toBe('system');
         expect(JSON.stringify(messages).split('WB_D')).toHaveLength(2);
+    });
+
+    it('关闭线下时间感知时，感知与会话都不泄漏今日日程、神经链接记忆日期或记忆宫殿现实日期标注', async () => {
+        const char = makeChar({
+            dateTimeAwarenessEnabled: false,
+            scheduleConfig: { enabled: true, style: 'conscious' },
+            refinedMemories: { '2026-10': '一起在旧书店躲雨' },
+            activeMemoryMonths: ['2026-10'],
+            memories: [{ id: 'm1', date: '2026-10-14', summary: '借走了一本诗集', mood: 'warm' }],
+            memoryPalaceEnabled: true,
+            memoryPalaceInjection: [
+                '### 记忆宫殿 (Memory Palace)',
+                '📌 **便利贴（近期重要事项）**',
+                '- [2026年11月3日（今天）] 记得还书（对应日期：2026年11月4日）（剩余 5 天）',
+                '**[客厅 · 共同经历]** (2026年11月2日（昨天）, 重要性: 4)',
+                '在车站挥手告别（对应日期：2026年11月2日）',
+                '**[书房 · 重要事件]** 📦 **事件盒：雨夜**',
+                '_整合回忆_ (2026年10月30日（4天前）, 重要性 5, 已压缩 1 次)',
+                '两人在屋檐下聊到很晚',
+                '_新增片段_：',
+                '- [2026年11月1日（前天）] 约好下次去海边（对应日期：2026年11月1日）',
+            ].join('\n'),
+        });
+        const peek = await DatePrompts.buildPeekPayload({
+            char, userProfile: user, allMsgs: [makeMsg({ content: '推开书店的门。' })], emojis: [],
+        });
+        const session = await DatePrompts.buildSessionPayload({
+            char, userProfile: user, allMsgs: [makeMsg({ content: '推开书店的门。' })], emojis: [], userText: '推开书店的门。', variant: 'send',
+        });
+
+        for (const payload of [peek.messages, session.messages]) {
+            const text = payload.map(m => String(m.content)).join('\n');
+            expect(text).toContain('一起在旧书店躲雨');
+            expect(text).toContain('在车站挥手告别');
+            expect(text).toContain('两人在屋檐下聊到很晚');
+            expect(text).toContain('约好下次去海边');
+            expect(text).not.toContain('2026-10');
+            expect(text).not.toContain('2026-10-14');
+            expect(text).not.toContain('2026年11月');
+            expect(text).not.toContain('2026年10月');
+            expect(text).not.toContain('对应日期');
+            expect(text).not.toContain('剩余 5 天');
+            expect(text).not.toContain('你今天的完整日程');
+        }
+        expect(sysOf(session.messages)).toContain('借走了一本诗集');
+        expect(lastUserOf(peek.messages).content).not.toContain('如果刚聊完');
+        expect(lastUserOf(peek.messages).content).toContain('根据最近记录中的剧情进展');
     });
 });

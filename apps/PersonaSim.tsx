@@ -9,6 +9,7 @@ import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { isScheduleFeatureOn } from '../utils/scheduleGenerator';
 import { safeResponseJson } from '../utils/safeApi';
 import { parsePersonaScriptApiResponse } from '../utils/personaSimParser';
+import { buildMemoryText, canResumePersonaSim, getPersonaSimBeatIndex, hasCompletedPersonaSim } from '../utils/personaSimLog';
 import { trackEvent } from '../utils/analytics';
 import { useBlobRefUrl } from '../utils/blobRef';
 import {
@@ -26,7 +27,7 @@ export interface SimApiConfig { apiKey: string; baseUrl: string; model: string; 
 export type SimState =
     | { status: 'idle' }
     | { status: 'loading'; mode: 'daily' | 'event'; theme: string }
-    | { status: 'ready'; mode: 'daily' | 'event'; theme: string; script: SimScript; replay?: boolean }
+    | { status: 'ready'; mode: 'daily' | 'event'; theme: string; script: SimScript; logId: string; startIndex?: number }
     | { status: 'error'; mode: 'daily' | 'event'; theme: string };
 
 interface Props {
@@ -142,7 +143,10 @@ const PersonaSim: React.FC<Props> = ({ targetChar, onExit, openLifeLog, sim, onS
     const [idx, setIdx] = useState(0);
     const [autoplay, setAutoplay] = useState(false);
     const [memorySent, setMemorySent] = useState(false);
+    const [logId, setLogId] = useState<string | null>(null);
     const savedRef = useRef(false);
+    const completedRef = useRef(false);
+    const progressRef = useRef<{ logId: string; beatIndex: number } | null>(null);
     const ffTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
     const beats = script?.beats || [];
@@ -168,37 +172,58 @@ const PersonaSim: React.FC<Props> = ({ targetChar, onExit, openLifeLog, sim, onS
         onStart(m, trimmed, presence, tone);
     };
 
-    // ----- consume a ready script (generated in background) and start playing -----
+    const startPlayback = useCallback((log: PhoneSimLog, action: 'resume' | 'restart') => {
+        if (!log.script?.beats.length) return;
+        setMode(log.mode); setTheme(log.theme); setScript(log.script); setLogId(log.id);
+        setIdx(action === 'resume' ? getPersonaSimBeatIndex(log) : 0);
+        completedRef.current = hasCompletedPersonaSim(log);
+        savedRef.current = false;
+        progressRef.current = null;
+        setAutoplay(false); setMemorySent(false); setPhase('play');
+    }, []);
+
+    // 生成已经归档；消费全局通知只开始播放，不再持有唯一一份剧本。
     useEffect(() => {
         if (phase === 'idle' && sim.status === 'ready') {
-            setMode(sim.mode); setTheme(sim.theme);
-            // 重播：脚本来自生活记录已存档的快照，别再 persist 一遍（否则生活记录里出现重复）
-            setScript(sim.script); setIdx(0); savedRef.current = !!sim.replay; setMemorySent(false); setPhase('play');
+            const log = targetChar.phoneState?.simLogs?.find(item => item.id === sim.logId);
+            setMode(sim.mode); setTheme(sim.theme); setScript(sim.script); setLogId(sim.logId);
+            const lastIndex = Math.max(0, sim.script.beats.length - 1);
+            setIdx(Math.max(0, Math.min(lastIndex, Math.floor(sim.startIndex || 0))));
+            completedRef.current = log ? hasCompletedPersonaSim(log) : false;
+            savedRef.current = false;
+            progressRef.current = null;
+            setAutoplay(false); setMemorySent(false); setPhase('play');
             onConsumed();
         }
-    }, [sim, phase, onConsumed]);
+    }, [sim, phase, targetChar, onConsumed]);
+
+    // 每次切换段落即保存，不依赖退出按钮或浏览器卸载事件。
+    useEffect(() => {
+        if (phase !== 'play' || !logId || !beat || beat.kind === 'end') return;
+        // OSContext 更新后回调引用会改变；同一段只写一次，避免状态更新循环。
+        if (progressRef.current?.logId === logId && progressRef.current.beatIndex === idx) return;
+        progressRef.current = { logId, beatIndex: idx };
+        updateCharacter(targetChar.id, cur => ({
+            phoneState: {
+                ...cur.phoneState, records: cur.phoneState?.records || [],
+                simLogs: (cur.phoneState?.simLogs || []).map(log => log.id === logId ? {
+                    ...log,
+                    // 旧版记录第一次重播时补齐「曾经完成」标记。
+                    completedAt: hasCompletedPersonaSim(log) ? (log.completedAt ?? log.timestamp) : undefined,
+                    playback: { beatIndex: idx, status: 'playing' },
+                } : log),
+            },
+        }));
+    }, [phase, logId, idx, beat, targetChar.id, updateCharacter]);
 
     // ----- persistence on reaching the end -----
     const persist = useCallback(async () => {
-        if (savedRef.current || !script) return;
+        if (savedRef.current || !script || !logId) return;
         savedRef.current = true;
-
-        const log: PhoneSimLog = {
-            id: `sim-${Date.now()}`,
-            mode,
-            theme,
-            title: script.title || theme,
-            summary: script.summary || '',
-            ending: script.ending,
-            beatsCount: beats.length,
-            memoryText: buildMemoryText(script),
-            timestamp: Date.now(),
-            script,   // 存完整脚本快照 → 生活记录可原样重播
-        };
 
         // emotion buff — only if the schedule feature is on for this character
         const scheduleOn = isScheduleFeatureOn(targetChar);
-        const newBuff: CharacterBuff | null = (scheduleOn && script.buff?.label) ? {
+        const newBuff: CharacterBuff | null = (!completedRef.current && scheduleOn && script.buff?.label) ? {
             id: `buff_${Date.now()}`,
             name: script.buff.name || `sim_${Date.now()}`,
             label: script.buff.label,
@@ -207,18 +232,26 @@ const PersonaSim: React.FC<Props> = ({ targetChar, onExit, openLifeLog, sim, onS
             color: script.buff.color || ACCENT,
             description: script.buff.description,
         } : null;
-        if (newBuff) log.buff = { label: newBuff.label, emoji: newBuff.emoji, color: newBuff.color };
+        completedRef.current = true;
 
         // 关键：基于「最新」角色状态合并，绝不用可能过期的 targetChar 快照整体覆盖 phoneState
         //（否则在异步间隙里别处的写入会把刚存的 simLogs / 其它 phoneState 字段抹掉）。
         let dispatchBuffs: CharacterBuff[] | null = null;
         updateCharacter(targetChar.id, (cur) => {
+            const currentLog = cur.phoneState?.simLogs?.find(log => log.id === logId);
+            if (!currentLog) return {}; // 已删除的记录不因播放自动复活。
+            const applyBuff = !!newBuff && !hasCompletedPersonaSim(currentLog);
             const phoneState = {
                 ...cur.phoneState,
                 records: cur.phoneState?.records || [],
-                simLogs: [log, ...(cur.phoneState?.simLogs || [])],
+                simLogs: (cur.phoneState?.simLogs || []).map(log => log.id === logId ? {
+                    ...log,
+                    completedAt: log.completedAt ?? (hasCompletedPersonaSim(log) ? log.timestamp : Date.now()),
+                    playback: { beatIndex: idx, status: 'completed' },
+                    ...(applyBuff && newBuff ? { buff: { label: newBuff.label, emoji: newBuff.emoji, color: newBuff.color } } : {}),
+                } : log),
             };
-            if (newBuff && script.buff) {
+            if (applyBuff && newBuff && script.buff) {
                 const existing = (cur.activeBuffs || []).filter(b => b.id !== newBuff.id);
                 const nextBuffs = [newBuff, ...existing].slice(0, 4);
                 dispatchBuffs = nextBuffs;
@@ -236,8 +269,8 @@ const PersonaSim: React.FC<Props> = ({ targetChar, onExit, openLifeLog, sim, onS
                 dispatchBuffs ? { detail: { charId: targetChar.id, buffs: dispatchBuffs, buffInjection: '' } }
                               : { detail: { charId: targetChar.id } }));
         }
-        addToast('已存入生活记录', 'success');
-    }, [script, mode, theme, beats.length, targetChar, updateCharacter, addToast]);
+        addToast('已看完，生活记录已更新', 'success');
+    }, [script, logId, idx, targetChar, updateCharacter, addToast]);
 
     // ----- advance -----
     const advance = useCallback(() => {
@@ -273,7 +306,9 @@ const PersonaSim: React.FC<Props> = ({ targetChar, onExit, openLifeLog, sim, onS
     useEffect(() => () => stopFF(), []);
 
     const restart = () => {
-        // 重看同一场演出不再重复写入「生活记录」(savedRef 保持已保存)
+        // 保留首次完成标记，只重置本次播放位置。
+        savedRef.current = false;
+        progressRef.current = null;
         setIdx(0);
         setPhase('play');
     };
@@ -299,6 +334,7 @@ const PersonaSim: React.FC<Props> = ({ targetChar, onExit, openLifeLog, sim, onS
     };
 
     const wallpaper = targetChar.dateBackground;
+    const unfinishedLog = targetChar.phoneState?.simLogs?.find(canResumePersonaSim);
 
     // ========================================================
     //  RENDER: SELECT
@@ -318,6 +354,18 @@ const PersonaSim: React.FC<Props> = ({ targetChar, onExit, openLifeLog, sim, onS
                             成为 {targetChar.name} 的<br />一段人生
                         </h1>
                     </div>
+
+                    {unfinishedLog && (
+                        <div className="mb-5 p-4 rounded-2xl border border-[#b89bff]/25 bg-white/[0.04]">
+                            <div className="text-[10px] text-white/45 mb-1">上次的小剧场还没看完</div>
+                            <div className="text-[14px] text-white mb-1">{unfinishedLog.title}</div>
+                            <div className="text-[11px] text-white/40 mb-3">停在第 {getPersonaSimBeatIndex(unfinishedLog) + 1} / {unfinishedLog.script!.beats.length} 段</div>
+                            <div className="flex gap-2">
+                                <button onClick={() => startPlayback(unfinishedLog, 'resume')} className="px-4 py-2 rounded-xl text-[12px] font-semibold active:scale-95 transition" style={{ background: ACCENT, color: '#1a1530' }}>继续上次</button>
+                                <button onClick={() => startPlayback(unfinishedLog, 'restart')} className="px-4 py-2 rounded-xl text-[12px] text-white/70 bg-white/[0.06] border border-white/[0.1] active:scale-95 transition">从头播放</button>
+                            </div>
+                        </div>
+                    )}
 
                     {/* 体验卡 · 中二叠甲：显得很牛逼，同时声明这只是小剧场、不代表角色真实情况 */}
                     <div className="relative rounded-2xl overflow-hidden mb-6 border border-[#b89bff]/25"
@@ -958,7 +1006,7 @@ const TopBar: React.FC<{ onBack: () => void; right?: React.ReactNode; title?: st
 export const LifeLog: React.FC<{
     targetChar: CharacterProfile;
     onBack: () => void;
-    onReplay?: (log: PhoneSimLog) => void;
+    onReplay?: (log: PhoneSimLog, action: 'resume' | 'restart') => void;
     onRequestDelete?: (log: PhoneSimLog) => void;
 }> = ({ targetChar, onBack, onReplay, onRequestDelete }) => {
     const { addToast } = useOS();
@@ -1030,20 +1078,26 @@ export const LifeLog: React.FC<{
                             <span className="text-[9px] text-white/30 tabular-nums">{fmt(log.timestamp)}</span>
                         </div>
                         <div className="text-[15px] font-light text-white mb-1.5" style={{ fontFamily: "'Shippori Mincho','Noto Sans SC',serif" }}>{log.title}</div>
-                        {log.ending && <div className="text-[10px] text-white/40 mb-1.5">结局 · {log.ending}</div>}
-                        <p className="text-[12.5px] text-white/60 leading-relaxed" style={{ fontFamily: "'Shippori Mincho','Noto Sans SC',serif" }}>{log.summary}</p>
-                        <div className="flex items-center justify-between mt-3 gap-2">
+                        {!canResumePersonaSim(log) && log.ending && <div className="text-[10px] text-white/40 mb-1.5">结局 · {log.ending}</div>}
+                        <p className="text-[12.5px] text-white/60 leading-relaxed" style={{ fontFamily: "'Shippori Mincho','Noto Sans SC',serif" }}>{canResumePersonaSim(log) ? `未看完 · 停在第 ${getPersonaSimBeatIndex(log) + 1} / ${log.script!.beats.length} 段` : log.summary}</p>
+                        <div className="flex flex-wrap items-center justify-between mt-3 gap-2">
                             {log.buff?.label ? (
                                 <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px]" style={{ borderColor: `${log.buff.color || ACCENT}55`, color: 'rgba(255,255,255,0.8)', background: `${log.buff.color || ACCENT}14` }}>
                                     <span>{log.buff.emoji || '✨'}</span>{log.buff.label}
                                 </div>
                             ) : <span />}
-                            <div className="flex items-center gap-2 shrink-0">
+                            <div className="flex flex-wrap items-center gap-2">
                                 {onReplay && log.script?.beats?.length ? (
-                                    <button onClick={() => onReplay(log)}
-                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-semibold active:scale-95 transition border border-white/[0.12] text-white/80 bg-white/[0.05]">
-                                        <ArrowClockwise size={12} weight="bold" /> 重播
-                                    </button>
+                                    <>
+                                        {canResumePersonaSim(log) && (
+                                            <button onClick={() => onReplay(log, 'resume')} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-semibold active:scale-95 transition border border-white/[0.12] text-white/80 bg-white/[0.05]">
+                                                <Play size={12} weight="bold" /> 继续上次
+                                            </button>
+                                        )}
+                                        <button onClick={() => onReplay(log, 'restart')} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-semibold active:scale-95 transition border border-white/[0.12] text-white/80 bg-white/[0.05]">
+                                            <ArrowClockwise size={12} weight="bold" /> {canResumePersonaSim(log) ? '从头播放' : '重播'}
+                                        </button>
+                                    </>
                                 ) : null}
                                 <button onClick={() => sendLog(log)} disabled={!!sent[log.id]}
                                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-semibold active:scale-95 transition disabled:opacity-60"
@@ -1074,37 +1128,6 @@ function describeAcquaintance(firstTs: number | undefined, userName: string, cha
     else if (days < 365) span = `约 ${Math.floor(days / 30)} 个月`;
     else span = `约 ${(days / 365).toFixed(1)} 年`;
     return `${charName} 与 ${userName} 自首次接触至今${span}（${days} 天）。`;
-}
-
-// 把演出脚本压成「可读梗概」——作为回忆发给角色时用这个（让角色真的知道发生了什么，
-// 而不是只收到一句留白的收尾）。
-function buildMemoryText(s: SimScript): string {
-    const lines: string[] = [];
-    for (const b of s.beats) {
-        if (b.kind === 'end') continue;
-        const t = b.time ? b.time + ' ' : '';
-        const mono = b.monologue ? `（${b.monologue}）` : '';
-        if (b.kind === 'thought') { if (b.monologue) lines.push(`${t}心里：${b.monologue}`); continue; }
-        if (b.kind === 'notification' && b.notif) { lines.push(`${t}${b.notif.app}通知：${b.notif.title}${b.notif.body ? ' ' + b.notif.body : ''}${mono}`); continue; }
-        if (b.kind === 'flashback') { lines.push(`${t}相册突然翻出${b.flashback?.label || '一张旧照片'}${b.flashback?.caption ? '：' + b.flashback.caption : ''}${mono}`); continue; }
-        if (b.kind === 'lock') { lines.push(`${t}${b.notif ? `锁屏，${b.notif.app}：${b.notif.title}` : '看了眼锁屏'}${mono}`); continue; }
-        if (b.kind === 'app' && b.app) {
-            const a = b.app; let act = `打开${a.name}`;
-            if (a.view === 'search' && a.search) act += `，搜：${a.search.queries.map(q => q.q).join(' → ')}`;
-            else if (a.view === 'compose' && a.compose) act += a.compose.sent ? `，给${a.compose.to || '对方'}发了「${a.compose.sent}」` : `，打了字又删了（${(a.compose.drafts || []).join('；')}）`;
-            else if (a.view === 'chat' && a.chat) act += `，和${a.chat.name}：${a.chat.lines.map(l => (l.me ? '我:' : '对方:') + l.text).join(' ')}`;
-            else if (a.view === 'photo' && a.photo) act += `，看一张照片${a.photo.caption ? '：' + a.photo.caption : ''}`;
-            else if (a.view === 'music' && a.music) act += `，听《${a.music.song}》${a.music.artist ? ' - ' + a.music.artist : ''}`;
-            else if (a.view === 'notes' && a.notes) act += `，备忘录：${(a.notes.items || []).join('；')}`;
-            else if (a.view === 'browser' && a.browser) act += `，标签页：${(a.browser.tabs || []).join('；')}`;
-            else if (a.view === 'weather' && a.weather) act += `，看天气（${a.weather.temp}° ${a.weather.desc}）`;
-            else if (a.text) act += `：${a.text}`;
-            lines.push(`${t}${act}${mono}`);
-        }
-    }
-    let text = lines.join('\n');
-    if (text.length > 3200) text = text.slice(0, 3200) + '…';
-    return text;
 }
 
 // 「本场变奏」——每次随机抽几根轴当硬约束，打破固定的起床→刷手机→睡觉流水账

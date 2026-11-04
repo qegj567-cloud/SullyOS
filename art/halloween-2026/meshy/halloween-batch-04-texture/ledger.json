@@ -1,0 +1,92 @@
+{
+  "batch": "halloween-batch-04-texture",
+  "jobs": [
+    {
+      "id": "pumpkin-costume-textured",
+      "image": "../outfits/06-pumpkin-costume.png",
+      "imageSha256": "30ed19d4781bbfd573aa86f8bfcb242b66f1afeed67515e9e44eefeace5dbd33",
+      "params": {
+        "ai_model": "meshy-7",
+        "texture_resolution": "4k",
+        "enable_original_uv": true,
+        "enable_pbr": true,
+        "target_formats": [
+          "glb"
+        ],
+        "input_task_id": "01a17b3d-9c89-759c-a4a2-f019e80c8b53"
+      },
+      "estimatedCredits": 10,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-27T02:47:50.512Z",
+      "taskId": "01a17b41-c15e-722e-9a22-586d04846c1c",
+      "progress": 100,
+      "consumedCredits": 10,
+      "downloaded": true,
+      "file": "pumpkin-costume-textured.glb",
+      "bytes": 25328892,
+      "sha256": "d423275f444781e93009088adb6971c8d52b515c7e802d7e0939bdf9b298bc0b"
+    },
+    {
+      "id": "ghost-top-textured",
+      "image": "../separated/05-ghost/hooded-top.png",
+      "imageSha256": "049d242d23c38a9fe99bc757ee5d922c9b73607d3b88ef2dd961294a490146cb",
+      "params": {
+        "ai_model": "meshy-7",
+        "texture_resolution": "4k",
+        "enable_original_uv": true,
+        "enable_pbr": true,
+        "target_formats": [
+          "glb"
+        ],
+        "input_task_id": "01a17b3d-b0b4-762b-9e76-899cd47f422b"
+      },
+      "estimatedCredits": 10,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-27T02:47:58.239Z",
+      "taskId": "01a17b41-dee6-76e6-a10c-9bb37005b44c",
+      "progress": 100,
+      "consumedCredits": 10,
+      "downloaded": true,
+      "file": "ghost-top-textured.glb",
+      "bytes": 20678916,
+      "sha256": "dcf7c9f7d55b428726f72f7f4975df2dd57bcabd56b5555f2529b2ca01a7126d"
+    },
+    {
+      "id": "pumpkin-lantern-textured",
+      "image": "../furniture/09-pumpkin-lantern.png",
+      "imageSha256": "8077351f84bc48c25cac1023f47c598f0fff709cba681c8f9774a6d88da4e4ca",
+      "params": {
+        "ai_model": "meshy-7",
+        "texture_resolution": "4k",
+        "enable_original_uv": true,
+        "enable_pbr": true,
+        "target_formats": [
+          "glb"
+        ],
+        "input_task_id": "01a17b3d-d7c2-74d1-93e2-8252d37b17c0"
+      },
+      "estimatedCredits": 10,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-27T02:48:09.826Z",
+      "taskId": "01a17b42-0c32-7268-90f7-1e0c809de841",
+      "progress": 100,
+      "consumedCredits": 10,
+      "downloaded": true,
+      "file": "pumpkin-lantern-textured.glb",
+      "bytes": 15385456,
+      "sha256": "3d8eec3084c2db852b8aeb726e2f2a921248eed6edaefdd421f15c6eecaaa444"
+    }
+  ],
+  "latestBalance": {
+    "balance": 1106,
+    "monthly_credits": 865,
+    "permanent_credits": 241,
+    "monthly_resets_at": 1794576839000
+  },
+  "balanceBefore": {
+    "balance": 1136,
+    "monthly_credits": 895,
+    "permanent_credits": 241,
+    "monthly_resets_at": 1794576839000
+  }
+}

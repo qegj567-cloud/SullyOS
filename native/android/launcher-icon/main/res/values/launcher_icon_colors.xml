@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="launcher_jellyfish_background">#12121a</color>
+    <color name="launcher_classic_background">#fcf9ee</color>
+</resources>

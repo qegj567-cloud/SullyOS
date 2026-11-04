@@ -3,6 +3,7 @@ import { speciesById } from '../../utils/vrWorld/fishingMarket';
 import { dinoDefinition } from '../../utils/vrWorld/dinosaurCatalog';
 import { DinoIcon } from './dinosaur/DinoIcon';
 import './fishing.css';
+import './kanata-halloween.css';
 
 // Lightweight collection silhouettes; the garden lazily loads the corresponding 3D model.
 const PALETTES: Record<string, [string, string, string, string]> = {
@@ -17,7 +18,7 @@ const PALETTES: Record<string, [string, string, string, string]> = {
     'static-whale': ['#c2d4dd', '#8aa6ba', '#435d76', 'whale'],
 };
 
-export const FishArt: React.FC<{ speciesId: string; size?: number; silhouette?: boolean; animated?: boolean }> = ({ speciesId, size = 112, silhouette, animated = false }) => {
+export const FishArt: React.FC<{ speciesId: string; size?: number; silhouette?: boolean; animated?: boolean; halloweenHat?: boolean }> = ({ speciesId, size = 112, silhouette, animated = false, halloweenHat }) => {
     const f = speciesById(speciesId);
     const palette = PALETTES[speciesId];
     if (!palette) return (
@@ -33,6 +34,7 @@ export const FishArt: React.FC<{ speciesId: string; size?: number; silhouette?: 
             <span className="fish-tail" /><span className="fish-dorsal" /><span className="fish-belly-fin" />
             <span className="fish-body"><span className="fish-scales" /><span className="fish-gill" /><span className="fish-side-fin" /><span className="fish-eye" /></span>
             {speciesId === 'snow-lantern' && <span className="fish-lantern" />}
+            {halloweenHat && !silhouette && <svg className="kanata-fish-hat" viewBox="0 0 80 80" aria-label="万圣节帽子" role="img"><path d="M19 60 45 6 61 18 50 18 65 61Z" fill="#49415d" stroke="#292333" strokeWidth="3"/><path d="m24 50 36 1 5 10-46-1z" fill="#e6a25a"/><ellipse cx="41" cy="64" rx="36" ry="10" fill="#49415d" stroke="#292333" strokeWidth="3"/><rect x="38" y="50" width="12" height="10" rx="2" fill="none" stroke="#f4d582" strokeWidth="3"/></svg>}
         </span>
     );
 };

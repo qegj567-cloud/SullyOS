@@ -10,7 +10,7 @@ export const VOICE_LANGUAGE_OPTIONS = [
   { value: 'ru', label: 'Русский' },
 ] as const;
 
-export const CANTONESE_VOICE_SUPPORT_NOTE = 'MiniMax 与 Fish S2 系列可直接使用；ElevenLabs 需选择 Eleven v3。';
+export const CANTONESE_VOICE_SUPPORT_NOTE = 'MiniMax 与 Fish S2 系列可直接使用；ElevenLabs 需选择 Eleven v3、v4 或 v4 Turbo。';
 
 export const voiceLanguageLabel = (value?: string): string => (
   VOICE_LANGUAGE_OPTIONS.find(option => option.value === (value || ''))?.label

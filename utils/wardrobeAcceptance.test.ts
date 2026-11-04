@@ -3,6 +3,7 @@ import {mkdirSync,readFileSync,writeFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import * as T from 'three';
 import {GLTFLoader} from 'three/examples/jsm/loaders/GLTFLoader.js';
+import {MeshoptDecoder} from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import {MeshBVH} from 'three-mesh-bvh';
 import {createBlankBody} from '../apps/room3d/chibi/blankBody';
 import {bindBlankBody} from '../apps/room3d/chibi/blankRig';
@@ -25,7 +26,11 @@ it.skipIf(!ids.length)('checks the affected wardrobe combinations on the shipped
  vi.stubGlobal('createImageBitmap',async()=>({width:1,height:1,close(){}}));
  vi.spyOn(GLTFLoader.prototype,'loadAsync').mockImplementation(async url=>{
   const bytes=readFileSync(`public/room3d/wardrobe/${String(url).split('/').pop()!.split('?')[0]}`);
-  return new GLTFLoader().parseAsync(bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength),'');
+  const length=bytes.readUInt32LE(12),json=JSON.parse(bytes.subarray(20,20+length).toString());
+  for(const image of json.images??[])if(image.uri&&!image.uri.startsWith('data:'))image.uri=`data:${image.mimeType};base64,${readFileSync(`public/room3d/wardrobe/${image.uri}`).toString('base64')}`;
+  const text=Buffer.from(JSON.stringify(json)),jsonLength=Math.ceil(text.length/4)*4,bin=bytes.subarray(28+length),packed=Buffer.alloc(28+jsonLength+bin.length);
+  bytes.copy(packed,0,0,20);packed.writeUInt32LE(packed.length,8);packed.writeUInt32LE(jsonLength,12);packed.fill(32,20,20+jsonLength);text.copy(packed,20);packed.writeUInt32LE(bin.length,20+jsonLength);packed.writeUInt32LE(0x004e4942,24+jsonLength);bin.copy(packed,28+jsonLength);
+  return new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).parseAsync(packed.buffer.slice(packed.byteOffset,packed.byteOffset+packed.byteLength),'');
  });
  const plan=planWardrobeChecks(ids);
  console.log(`接入检查开始：${plan.length} 组搭配 × ${poses.length} 种姿势（含旧压力姿势）`);

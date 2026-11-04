@@ -1,3 +1,284 @@
+// Standalone public proxy: copy this entire file into a Cloudflare ES Module Worker.
+// Weibo implementation is scoped here so deployment needs no other files or session secret.
+const weiboBridge = (() => {
+// Read-only Weibo bridge. No account store, no credential/content logging.
+// Uses the QR flow described by jackwener/weibo-cli; independently implemented.
+const HOSTS = new Set(['weibo.com', 'www.weibo.com', 'passport.weibo.com', 'passport.weibo.cn', 'login.sina.com.cn']);
+const dec = new TextDecoder();
+const uidOK = value => /^\d{4,25}$/.test(String(value || ''));
+const plain = value => String(value || '').replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+const fail = (message, status = 400) => Object.assign(new Error(message), {status});
+const COOKIE_DOMAINS = new Set([...HOSTS, 'weibo.cn', 'sina.com.cn']);
+function validCookie(c) {
+  return c && typeof c.name === 'string' && /^[!#$%&'*+.^_`|~0-9a-z-]{1,128}$/i.test(c.name)
+    && typeof c.value === 'string' && c.value.length <= 6000 && /^[\x21\x23-\x2B\x2D-\x3A\x3C-\x5B\x5D-\x7E]*$/.test(c.value)
+    && COOKIE_DOMAINS.has(c.domain) && typeof c.hostOnly === 'boolean'
+    && typeof c.path === 'string' && c.path.startsWith('/') && c.path.length <= 1024 && !/[\x00-\x20\x7f;]/.test(c.path);
+}
+/** Client-owned credentials, not a signed authorization token. Upstream Weibo authenticates cookies.
+ * Origin/expiry prevent accidental reuse in this client; they are not a server authentication boundary. */
+function readWeiboSession(data, origin) {
+  if (!data || data.version !== 2 || data.origin !== origin || !Number.isFinite(data.expires)
+    || data.expires <= Date.now() || data.expires > Date.now()+24*60*60*1000
+    || !['qr','account'].includes(data.kind) || !Array.isArray(data.cookies) || data.cookies.length > 40
+    || JSON.stringify(data.cookies).length > 14000 || !data.cookies.every(validCookie)
+    || data.kind === 'qr' && (typeof data.qrid !== 'string' || !/^[\w.-]{1,512}$/.test(data.qrid))
+    || data.kind === 'account' && !uidOK(data.uid)) throw fail('微博连接已失效，请重新扫码',401);
+  return {version:2,origin,expires:data.expires,kind:data.kind,
+    cookies:data.cookies.map(({name,value,domain,path,hostOnly})=>({name,value,domain,path,hostOnly})),
+    ...(data.kind==='qr'?{qrid:data.qrid}:{uid:String(data.uid)})};
+}
+async function bodyText(response, limit = 2 * 1024 * 1024, status = 502) {
+  const reader = response.body?.getReader(); if (!reader) return '';
+  const chunks = []; let size = 0;
+  while (true) {const {value, done} = await reader.read(); if (done) break; size += value.length;
+    if (size > limit) {await reader.cancel(); throw fail('请求或返回内容过大', status);} chunks.push(value);}
+  const all = new Uint8Array(size); let offset = 0; for (const c of chunks) {all.set(c, offset); offset += c.length;} return dec.decode(all);
+}
+function storeCookies(jar, response, url) {
+  const values = typeof response.headers.getSetCookie === 'function' ? response.headers.getSetCookie() : response.headers.getAll('Set-Cookie');
+  for (const raw of values) {
+    const [pair, ...attrs] = raw.split(';'), index = pair.indexOf('='); if (index < 1) continue;
+    const attr = name => attrs.find(s => s.trim().toLowerCase().startsWith(name + '='))?.trim().slice(name.length + 1);
+    const domain = (attr('domain') || url.hostname).replace(/^\./, '').toLowerCase();
+    if (url.hostname !== domain && !url.hostname.endsWith('.' + domain)) continue;
+    const item = {name:pair.slice(0,index),value:pair.slice(index+1),domain,path:attr('path') || '/',hostOnly:!attr('domain')};
+    if (!validCookie(item)) continue;
+    const i = jar.findIndex(c => c.name === item.name && c.domain === domain && c.path === item.path);
+    if (i < 0) jar.push(item); else jar[i] = item;
+  }
+  if (jar.length > 40 || JSON.stringify(jar).length > 14000) throw fail('微博会话过大，请重新连接', 502);
+}
+function upstreamFor(jar, signal) {
+  return async function request(path, csrf = false) {
+    let url = new URL(path, 'https://weibo.com');
+    for (let n = 0; n < 6; n++) {
+      if (url.protocol !== 'https:' || url.port || url.username || url.password || !HOSTS.has(url.hostname)) throw fail('微博返回了不支持的跳转', 502);
+      const cookies = jar.filter(c => (c.domain === url.hostname || (!c.hostOnly && url.hostname.endsWith('.' + c.domain)))
+        && (url.pathname === c.path || url.pathname.startsWith(c.path.endsWith('/') ? c.path : c.path + '/')));
+      const headers = {'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/145.0.0.0 Safari/537.36',
+        Accept:'application/json, text/plain, */*', Referer:url.hostname === 'passport.weibo.com' ? 'https://passport.weibo.com/sso/signin?entry=miniblog' : 'https://weibo.com/',
+        'X-Requested-With':'XMLHttpRequest'};
+      if (cookies.length) headers.Cookie = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+      if (csrf) {const token = cookies.find(c => c.name === 'X-CSRF-TOKEN'); if (token) headers['X-CSRF-TOKEN'] = token.value;}
+      const response = await fetch(url.href, {headers, redirect:'manual', signal});
+      storeCookies(jar, response, url);
+      if ([301,302,303,307,308].includes(response.status)) {const next = response.headers.get('location'); await response.body?.cancel();
+        if (!next) throw fail('微博跳转缺少地址', 502); url = new URL(next,url); continue;}
+      if (!response.ok) {await response.body?.cancel(); throw fail(`微博读取失败（HTTP ${response.status}）`, response.status === 401 || response.status === 403 ? 401 : 502);}
+      return bodyText(response);
+    }
+    throw fail('微博跳转过多',502);
+  };
+}
+function weiboPageUid(html) {
+  const match = /(?:window\.)?\$CONFIG\s*=\s*\{/.exec(html); if (!match) return '';
+  const start = match.index + match[0].length - 1; let depth = 0, quoted = false, escaped = false;
+  for (let i = start; i < html.length; i++) {const ch = html[i];
+    if (quoted) {if (escaped) escaped = false; else if (ch === '\\') escaped = true; else if (ch === '"') quoted = false; continue;}
+    if (ch === '"') quoted = true; else if (ch === '{') depth++; else if (ch === '}' && --depth === 0) {
+      try {const config = JSON.parse(html.slice(start,i+1)); const uid = String(config.uid || config.user?.idstr || config.user?.id || ''); return uidOK(uid) ? uid : '';} catch {return '';}
+    }
+  } return '';
+}
+// Public CDN URLs only; never forward the account cookies to image hosts.
+function weiboImageUrl(value) {
+  try {
+    const url = new URL(String(value || '').replace(/^http:/, 'https:'));
+    if (url.protocol !== 'https:' || !/^(?:[a-z0-9-]+\.)*sinaimg\.cn$/.test(url.hostname)
+      || url.username || url.password || url.port || url.href.length > 2048) return '';
+    return url.href;
+  } catch {return '';}
+}
+function weiboImages(post) {
+  const images = [], seen = new Set();
+  const add = pic => {
+    if (!pic || images.length >= 18) return;
+    const url = weiboImageUrl(pic.largest?.url || pic.original?.url || pic.large?.url || pic.bmiddle?.url || pic.url);
+    if (!url || seen.has(url)) return;
+    seen.add(url);
+    images.push({url, thumbnail:weiboImageUrl(pic.bmiddle?.url || pic.large?.url || pic.url) || url});
+  };
+  for (const item of [post, post.retweeted_status].filter(Boolean)) {
+    const ids = Array.isArray(item.pic_ids) ? item.pic_ids : Object.keys(item.pic_infos || {});
+    for (const id of ids.slice(0,18)) add(item.pic_infos?.[id]);
+    for (const pic of (Array.isArray(item.pics) ? item.pics : []).slice(0,18)) add(pic);
+    for (const media of (Array.isArray(item.mix_media_info?.items) ? item.mix_media_info.items : []).slice(0,18)) if (media?.type === 'pic') add(media.data);
+  }
+  return images;
+}
+/** Public image relay: no account ticket/cookies, no arbitrary hosts or active content. */
+async function handleWeiboImage(request) {
+  const headers = {'Access-Control-Allow-Origin':'*','Cache-Control':'no-store','X-Content-Type-Options':'nosniff',
+    'Content-Security-Policy':"default-src 'none'; sandbox",'Referrer-Policy':'no-referrer'};
+  const controller = new AbortController(), abort = () => controller.abort();
+  request.signal.addEventListener('abort',abort,{once:true});
+  const timer = setTimeout(abort,20000);
+  try {
+    if (request.method !== 'GET') throw fail('只接受图片读取',405);
+    let url = new URL(request.url).searchParams.get('url');
+    for (let hop = 0; hop < 3; hop++) {
+      if (!url?.startsWith('https:') || !weiboImageUrl(url)) throw fail('不支持的图片来源');
+      const response = await fetch(url,{redirect:'manual',signal:controller.signal,headers:{Referer:'https://weibo.com/',
+        'User-Agent':'Mozilla/5.0',Accept:'image/avif,image/webp,image/*'}});
+      if ([301,302,303,307,308].includes(response.status)) {
+        const next = response.headers.get('location'); await response.body?.cancel();
+        if (!next) throw fail('图片跳转异常',502); url = new URL(next,url).href; continue;
+      }
+      const mime = (response.headers.get('content-type') || '').split(';')[0].toLowerCase();
+      if (!response.ok || !['image/jpeg','image/png','image/gif','image/webp','image/avif'].includes(mime)) {
+        await response.body?.cancel(); throw fail('图片暂时无法读取',502);
+      }
+      const max = 12 * 1024 * 1024;
+      if (Number(response.headers.get('content-length')) > max) {await response.body?.cancel(); throw fail('图片过大',413);}
+      const reader = response.body?.getReader(); if (!reader) throw fail('图片为空',502);
+      const parts = []; let size = 0;
+      while (true) {const {done,value} = await reader.read(); if (done) break; size += value.length;
+        if (size > max) {await reader.cancel(); throw fail('图片过大',413);} parts.push(value);}
+      if (!size) throw fail('图片为空',502);
+      const bytes = new Uint8Array(size); let offset = 0; for (const part of parts) {bytes.set(part,offset); offset += part.length;}
+      return new Response(bytes,{headers:{...headers,'Content-Type':mime,'Content-Length':String(size)}});
+    }
+    throw fail('图片跳转过多',502);
+  } catch(e) {return new Response(e.status ? e.message : '图片暂时无法读取',{status:e.status || 502,headers:{...headers,'Content-Type':'text/plain; charset=utf-8'}});}
+  finally {clearTimeout(timer);request.signal.removeEventListener('abort',abort);}
+}
+function normalizeWeiboPost(post) {
+  const id = String(post.idstr || post.id || ''), uid = String(post.user?.idstr || post.user?.id || '');
+  const publishedAt = Date.parse(post.created_at || ''), text = plain(post.text_raw || post.text);
+  if (!/^\d{5,25}$/.test(id) || !uidOK(uid) || !text.trim() || !Number.isFinite(publishedAt) || publishedAt <= 0) return null;
+  const quote = post.retweeted_status ? '\n转发 @' + plain(post.retweeted_status.user?.screen_name) + '：' + plain(post.retweeted_status.text_raw || post.retweeted_status.text) : '';
+  const full = text + quote;
+  return {platform:'weibo',externalId:id,accountId:uid,author:plain(post.user.screen_name).slice(0,150) || '微博用户',
+    authorAvatar:weiboImageUrl(post.user.avatar_hd || post.user.avatar_large || post.user.profile_image_url)||undefined,
+    url:`https://weibo.com/${uid}/${/^[a-z\d]{5,20}$/i.test(post.mblogid || '') ? post.mblogid : id}`,
+    text:full.slice(0,12000),images:weiboImages(post),truncated:full.length > 12000 || !!post.isLongText,publishedAt,fetchedAt:Date.now()};
+}
+function normalizeWeiboComment(comment, parentId) {
+  const id = String(comment?.idstr || comment?.id || ''), uid = String(comment?.user?.idstr || comment?.user?.id || '');
+  const createdAt = Date.parse(comment?.created_at || ''), text = plain(comment?.text_raw || comment?.text).trim();
+  if (!/^\d{5,25}$/.test(id) || !uidOK(uid) || !Number.isFinite(createdAt) || createdAt <= 0 || !text) return null;
+  return {id,authorId:uid,authorName:plain(comment.user.screen_name).slice(0,150) || '微博用户',text:text.slice(0,4000),createdAt,
+    ...(parentId ? {parentId} : {})};
+}
+async function handleWeibo(request) {
+  const origin = request.headers.get('Origin') || '';
+  const reply = (data,status=200) => new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8',
+    'Cache-Control':'no-store','Access-Control-Allow-Origin':origin,'Vary':'Origin','Referrer-Policy':'no-referrer'}});
+  if (request.method !== 'POST') return reply({error:'只接受 POST 请求'},405);
+  if (!/^https:\/\/[^/]+$/.test(origin) && !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return reply({error:'不支持的页面来源'},403);
+  if (!(request.headers.get('Content-Type') || '').startsWith('application/json')) return reply({error:'需要 JSON 请求'},415);
+  const controller = new AbortController(), abort = () => controller.abort();
+  request.signal.addEventListener('abort',abort,{once:true}); const timer = setTimeout(abort,45000);
+  try {
+    const raw = await bodyText(request,28000,413);
+    let input; try {input = JSON.parse(raw);} catch {throw fail('请求格式错误');}
+    if (!input || typeof input !== 'object' || Array.isArray(input)) throw fail('请求格式错误');
+    const {action} = input;
+    if (!['start','poll','profile','posts','following','home','followingAccounts','comments'].includes(action)) throw fail('不支持的微博操作');
+    let session = action === 'start' ? {version:2,origin,cookies:[],expires:Date.now()+240000,kind:'qr'} : readWeiboSession(input.session,origin);
+    const get = upstreamFor(session.cookies,controller.signal);
+    const json = async path => {try {return JSON.parse(await get(path));} catch(e) {if (e.status) throw e; throw fail('微博未返回有效数据，请在微博检查登录状态',502);}};
+    if (action === 'start') {
+      await get('https://passport.weibo.com/sso/signin?entry=miniblog&source=miniblog&url=https%3A%2F%2Fweibo.com%2F');
+      const data = JSON.parse(await get('https://passport.weibo.com/sso/v2/qrcode/image?entry=miniblog&size=180',true));
+      if (data.retcode !== 20000000 || !data.data?.qrid) throw fail('微博暂时无法生成二维码',502);
+      const image = new URL(data.data.image);
+      if (image.protocol !== 'https:' || image.hostname !== 'v2.qr.weibo.cn') throw fail('二维码来源异常',502);
+      session.qrid = data.data.qrid;
+      return reply({phase:'waiting',image:image.href,session:readWeiboSession(session,origin)});
+    }
+    if (action === 'poll') {
+      if (session.kind !== 'qr') throw fail('扫码会话已结束');
+      const query = new URLSearchParams({entry:'miniblog',source:'miniblog',url:'https://weibo.com/',qrid:session.qrid,rid:'',ver:'20250520'});
+      const data = JSON.parse(await get('https://passport.weibo.com/sso/v2/qrcode/check?' + query,true));
+      if ([50114001,50114002].includes(data.retcode)) return reply({phase:data.retcode === 50114002 ? 'scanned':'waiting',session:readWeiboSession(session,origin)});
+      if (data.retcode !== 20000000) throw fail('二维码已过期或未获确认，请重新扫码',401);
+      if (data.data?.url) await get(data.data.url);
+      if (data.data?.alt) {
+        const text = await get('https://login.sina.com.cn/sso/login.php?' + new URLSearchParams({entry:'miniblog',alt:data.data.alt,returntype:'TEXT'}));
+        let result; try {result = JSON.parse(text);} catch {}
+        for (const url of (Array.isArray(result?.crossDomainUrlList) ? result.crossDomainUrlList : []).slice(0,4)) await get(url);
+      }
+      if (!session.cookies.some(c => c.name === 'SUB' && c.domain === 'weibo.com')) throw fail('未取得微博登录会话',401);
+      const uid = weiboPageUid(await get('/')); if (!uid) throw fail('未取得当前微博账号，请稍后重新连接',502);
+      session = {...session,kind:'account',uid,expires:Date.now()+24*60*60*1000}; delete session.qrid;
+      return reply({phase:'connected',uid,expires:session.expires,session:readWeiboSession(session,origin)});
+    }
+    if (session.kind !== 'account') throw fail('请先完成扫码',401);
+    const uid = String(input.uid || session.uid); if (!uidOK(uid)) throw fail('请填写微博 UID 或 /u/数字 主页链接');
+    let result;
+    if (action === 'profile') {
+      const data = await json('/ajax/profile/info?uid='+uid), user = data.data?.user;
+      if (Number(data.ok)!==1 || !user) throw fail('该微博主页不可读取',502);
+      const actualUid=String(user.idstr || user.id || '');
+      if(actualUid!==uid)throw fail('微博返回的账号与请求主页不符',502);
+      result = {profile:{uid,name:plain(user.screen_name).slice(0,150),description:plain(user.description).slice(0,1000),
+        avatar:weiboImageUrl(user.avatar_hd || user.avatar_large || user.profile_image_url)}};
+    } else if (action === 'comments') {
+      const mid = input.mid, cursor = String(input.cursor ?? '0');
+      if (typeof mid !== 'string' || !/^\d{5,25}$/.test(mid) || !uidOK(String(input.uid || '')) || !/^\d{1,25}$/.test(cursor)) throw fail('评论分页参数无效');
+      const query = new URLSearchParams({id:mid,uid,flow:'1',is_reload:'1',is_show_bulletin:'2',is_mix:cursor==='0'?'0':'1',max_id:cursor,count:'20',type:'1',fetch_level:'0',locale:'zh-CN'});
+      // Preserve integer IDs before JSON.parse; Weibo cursors may exceed Number.MAX_SAFE_INTEGER.
+      const rawComments = await get('/ajax/statuses/buildComments?' + query);
+      let data; try {data = JSON.parse(rawComments.replace(/"(id|rootid|max_id)"\s*:\s*(\d{16,})(?=\s*[,}])/g,'"$1":"$2"'));}
+      catch {throw fail('微博评论暂时不可读取',502);}
+      if (Number(data.ok)!==1 || !Array.isArray(data.data)) throw fail('微博评论暂时不可读取',502);
+      const comments = [];
+      for (const row of data.data.slice(0,20)) {
+        const root = normalizeWeiboComment(row); if (!root) continue;
+        comments.push(root);
+        for (const child of (Array.isArray(row.comments) ? row.comments : []).slice(0,5)) {
+          const replyComment = normalizeWeiboComment(child,root.id); if (replyComment) comments.push(replyComment);
+        }
+      }
+      const next = String(data.max_id ?? '0');
+      result = {comments,nextCursor:data.data.length && /^\d{1,25}$/.test(next) && next!=='0' && next!==cursor ? next : null};
+    } else if (action === 'home') {
+      // Default followed feed: keep Weibo's ranking, not the chronological friendstimeline.
+      const cursor = String(input.cursor ?? '0');
+      if (input.uid !== undefined || !/^[\w,.:=-]{1,512}$/.test(cursor)) throw fail('首页分页参数无效');
+      const query = new URLSearchParams({list_id:'10001'+session.uid,refresh:cursor==='0'?'4':'0',since_id:cursor,count:'25'});
+      const rawHome = await get('/ajax/feed/unreadfriendstimeline?'+query);
+      let data; try {data=JSON.parse(rawHome.replace(/"(id|since_id)"\s*:\s*(\d{16,})(?=\s*[,}])/g,'"$1":"$2"'));}
+      catch {throw fail('微博首页未返回有效数据',502);}
+      const list=data.statuses || data.data?.statuses;
+      if(Number(data.ok)!==1 || !Array.isArray(list))throw fail('微博默认关注首页暂时不可读取，请稍后重试',502);
+      const next=String(data.since_id ?? data.data?.since_id ?? '0');
+      result={posts:list.slice(0,50).map(normalizeWeiboPost).filter(Boolean),
+        nextCursor:list.length && /^[\w,.:=-]{1,512}$/.test(next) && next!=='0' && next!==cursor ? next : null};
+    } else if (action === 'followingAccounts') {
+      // Logged-in user's own list, not inferred from timeline authors. No upstream writes.
+      const page = input.page ?? 1, cursor = String(input.cursor ?? '');
+      if (input.uid !== undefined || !Number.isInteger(page) || page < 1 || page > 200 || !/^[\w,.:=-]{0,512}$/.test(cursor)) throw fail('关注列表分页参数无效');
+      const data = await json('/ajax/profile/followContent?' + new URLSearchParams({page:String(page),next_cursor:cursor,sortType:'all'}));
+      const follows = data.data?.follows;
+      if (Number(data.ok)!==1 || !Array.isArray(follows?.users)) throw fail('微博关注名单暂时不可读取',502);
+      const accounts = follows.users.slice(0,200).filter(u=>u && uidOK(String(u.idstr || u.id || ''))).map(u=>({
+        uid:String(u.idstr || u.id),name:plain(u.screen_name || u.name).slice(0,150) || '微博用户',description:plain(u.description).slice(0,200),
+        avatar:weiboImageUrl(u.avatar_hd || u.avatar_large || u.profile_image_url)||undefined}));
+      const next = String(follows.next_cursor ?? '');
+      const more = follows.users.length > 0 && page < 200 && next !== cursor && next !== '0' && /^[\w,.:=-]{1,512}$/.test(next);
+      result = {accounts,nextPage:more?page+1:null,nextCursor:more?next:null,filtered:!!follows.has_filtered_attentions};
+    } else {
+      const page = input.page ?? 1, cursor = String(input.cursor || '0');
+      if (!Number.isInteger(page) || page < 1 || page > 200 || !/^\d{1,25}$/.test(cursor)) throw fail('分页参数无效');
+      const data = await json(action === 'posts' ? `/ajax/statuses/mymblog?uid=${uid}&page=${page}&feature=0` : `/ajax/feed/friendstimeline?count=25&max_id=${cursor}`);
+      const list = action === 'posts' ? data.data?.list : data.statuses || data.data?.statuses;
+      if (Number(data.ok)!==1 || !Array.isArray(list)) throw fail('微博列表暂时不可读取',502);
+      const posts = list.slice(0,50).map(normalizeWeiboPost).filter(Boolean);
+      const next = String(data.max_id || data.data?.max_id || '0');
+      result = {posts,nextPage:action === 'posts' && list.length ? page+1 : null,
+        nextCursor:action === 'following' && /^\d{1,25}$/.test(next) && next !== cursor && next !== '0' ? next : null};
+    }
+    return reply({...result,session:readWeiboSession(session,origin)});
+  } catch(e) {return reply({error:e.status ? e.message : '微博连接暂时失败，请稍后重试'},e.status || 502);}
+  finally {clearTimeout(timer);request.signal.removeEventListener('abort',abort);}
+}
+
+return {handleWeibo,handleWeiboImage,readWeiboSession,weiboPageUid,normalizeWeiboPost,weiboImages};
+})();
+
 const BRAVE_ENDPOINT = "https://api.search.brave.com/res/v1";
 const FEISHU_BASE = "https://open.feishu.cn/open-apis";
 const XHS_BASE = "https://edith.xiaohongshu.com";
@@ -15,7 +296,7 @@ function corsHeaders(origin) {
   return {
     "Access-Control-Allow-Origin": origin || "*",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, xi-api-key, Depth, X-Brave-API-Key, X-Notion-API-Key, X-Feishu-Token, X-Xhs-Cookie, X-Xhs-Platform, X-Rnote-API-Key, X-Xhs-Experiment-Ack, X-Netease-Cookie, X-WebDAV-Method, X-WebDAV-Depth, X-WebDAV-Range, X-GitHub-Method, X-GitHub-Api-Version, X-CF-Method, Mcp-Session-Id, Accept, Range",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, xi-api-key, model, language, X-MiniMax-Region, X-MiniMax-API-Key, Depth, X-Brave-API-Key, X-Notion-API-Key, X-Feishu-Token, X-Xhs-Cookie, X-Xhs-Platform, X-Rnote-API-Key, X-Xhs-Experiment-Ack, X-Netease-Cookie, X-WebDAV-Method, X-WebDAV-Depth, X-WebDAV-Range, X-GitHub-Method, X-GitHub-Api-Version, X-CF-Method, Mcp-Session-Id, Accept, Range",
     "Access-Control-Expose-Headers": "Mcp-Session-Id",
     "Access-Control-Max-Age": "86400",
   };
@@ -2395,6 +2676,14 @@ const XHSLite = (() => {
 // 供 Node 验证用（Worker 运行时忽略多余的具名导出）。见 worker/xhs-lite/test/verify.mjs
 export const __xhsLiteTest = XHSLite.__test;
 
+// Retire the paid route, including requests from older clients. Never forward credentials.
+export async function handleTikHub(request) {
+  return new Response(JSON.stringify({error: 'TikHub integration disabled'}), {status: 410, headers: {
+    ...corsHeaders(request.headers.get('Origin') || '*'),
+    'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store',
+  }});
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -2404,6 +2693,10 @@ export default {
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: corsHeaders(origin) });
     }
+
+    if (url.pathname === '/tikhub') return handleTikHub(request);
+    if (url.pathname === '/weibo') return weiboBridge.handleWeibo(request);
+    if (url.pathname === '/weibo-image') return weiboBridge.handleWeiboImage(request);
 
     // ========== 小红书 Lite 桥接 (/api/<command>) ==========
     // 与 scripts/xhs-bridge.mjs 契约一致，前端 bridge 模式直接复用。
@@ -3848,6 +4141,109 @@ export default {
       }
     }
 
+    // ========== MiniMax STT 代理（静态部署绕 CORS，纯透传 multipart/form-data）==========
+    if (url.pathname === '/minimax/stt') {
+      if (request.method !== 'POST') {
+        return jsonResponse({ error: 'Method not allowed' }, { status: 405, origin });
+      }
+      const auth = request.headers.get('Authorization');
+      if (!auth) {
+        return jsonResponse({ error: 'Missing Authorization header (MiniMax API key)' }, { status: 401, origin });
+      }
+      const region = (request.headers.get('X-MiniMax-Region') || url.searchParams.get('region') || '').trim().toLowerCase();
+      const base = region === 'overseas' ? 'https://api.minimax.io' : 'https://api.minimaxi.com';
+      const lang = (request.headers.get('language') || url.searchParams.get('language') || '').trim();
+      const contentType = request.headers.get('Content-Type') || '';
+      try {
+        const fwdHeaders = {
+          'Authorization': auth,
+          ...(contentType ? { 'Content-Type': contentType } : {}),
+          ...(lang ? { 'language': lang } : {}),
+        };
+        const upstream = await fetch(`${base}/v1/speech_to_text`, {
+          method: 'POST',
+          headers: fwdHeaders,
+          body: await request.arrayBuffer(),
+        });
+        const text = await upstream.text();
+        return new Response(text, {
+          status: upstream.status,
+          headers: {
+            'Content-Type': upstream.headers.get('Content-Type') || 'application/json; charset=utf-8',
+            ...corsHeaders(origin),
+          },
+        });
+      } catch (e) {
+        return jsonResponse({ error: 'MiniMax STT upstream fetch failed', detail: String(e && e.message || e) }, { status: 502, origin });
+      }
+    }
+
+    // ========== 鱼声 Fish Audio STT 代理（静态部署绕 CORS，纯透传 multipart/form-data）==========
+    if (url.pathname === '/fishaudio/stt') {
+      if (request.method !== 'POST') {
+        return jsonResponse({ error: 'Method not allowed' }, { status: 405, origin });
+      }
+      const auth = request.headers.get('Authorization');
+      if (!auth) {
+        return jsonResponse({ error: 'Missing Authorization header (Fish API key)' }, { status: 401, origin });
+      }
+      const model = (url.searchParams.get('model') || request.headers.get('model') || 'transcribe-1-pro').trim();
+      const contentType = request.headers.get('Content-Type') || '';
+      try {
+        const upstream = await fetch('https://api.fish.audio/v1/asr', {
+          method: 'POST',
+          headers: {
+            'Authorization': auth,
+            'model': model,
+            ...(contentType ? { 'Content-Type': contentType } : {}),
+          },
+          body: await request.arrayBuffer(),
+        });
+        const text = await upstream.text();
+        return new Response(text, {
+          status: upstream.status,
+          headers: {
+            'Content-Type': upstream.headers.get('Content-Type') || 'application/json; charset=utf-8',
+            ...corsHeaders(origin),
+          },
+        });
+      } catch (e) {
+        return jsonResponse({ error: 'Fish Audio STT upstream fetch failed', detail: String(e && e.message || e) }, { status: 502, origin });
+      }
+    }
+
+    // ========== ElevenLabs STT 代理（静态部署绕 CORS，纯透传 multipart/form-data）==========
+    if (url.pathname === '/elevenlabs/stt') {
+      if (request.method !== 'POST') {
+        return jsonResponse({ error: 'Method not allowed' }, { status: 405, origin });
+      }
+      const apiKey = (request.headers.get('xi-api-key') || '').trim();
+      if (!apiKey) {
+        return jsonResponse({ error: 'Missing xi-api-key header (ElevenLabs API key)' }, { status: 401, origin });
+      }
+      const contentType = request.headers.get('Content-Type') || '';
+      try {
+        const upstream = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
+          method: 'POST',
+          headers: {
+            'xi-api-key': apiKey,
+            ...(contentType ? { 'Content-Type': contentType } : {}),
+          },
+          body: await request.arrayBuffer(),
+        });
+        const text = await upstream.text();
+        return new Response(text, {
+          status: upstream.status,
+          headers: {
+            'Content-Type': upstream.headers.get('Content-Type') || 'application/json; charset=utf-8',
+            ...corsHeaders(origin),
+          },
+        });
+      } catch (e) {
+        return jsonResponse({ error: 'ElevenLabs STT upstream fetch failed', detail: String(e && e.message || e) }, { status: 502, origin });
+      }
+    }
+
     // ========== ElevenLabs TTS 代理（静态部署绕 CORS，纯透传）==========
     // 前端 POST /elevenlabs/tts?voice_id=...&output_format=... + xi-api-key: <user key>
     // Worker 不记录、不持久化 Key 或待合成文本。
@@ -3858,29 +4254,36 @@ export default {
       const apiKey = (request.headers.get('xi-api-key') || '').trim();
       const voiceId = (url.searchParams.get('voice_id') || '').trim();
       const outputFormat = (url.searchParams.get('output_format') || 'mp3_44100_128').trim();
+      const dialogue = url.searchParams.get('mode') === 'dialogue';
+      const timestamps = url.searchParams.get('timestamps') === '1';
       if (!apiKey) {
         return jsonResponse({ error: 'Missing xi-api-key header (ElevenLabs API key)' }, { status: 401, origin });
       }
-      if (!/^[A-Za-z0-9_-]{8,64}$/.test(voiceId)) {
+      if (!dialogue && !/^[A-Za-z0-9_-]{8,64}$/.test(voiceId)) {
         return jsonResponse({ error: 'Missing or invalid voice_id' }, { status: 400, origin });
       }
       if (!/^[a-z0-9_]{3,32}$/.test(outputFormat)) {
         return jsonResponse({ error: 'Invalid output_format' }, { status: 400, origin });
       }
       try {
-        const upstreamUrl = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}/stream?output_format=${encodeURIComponent(outputFormat)}`;
+        const endpoint = dialogue ? 'text-to-dialogue' : `text-to-speech/${encodeURIComponent(voiceId)}`;
+        const upstreamUrl = `https://api.elevenlabs.io/v1/${endpoint}/stream${timestamps ? '/with-timestamps' : ''}?output_format=${encodeURIComponent(outputFormat)}`;
         const upstream = await fetch(upstreamUrl, {
           method: 'POST',
+          signal: request.signal,
           headers: {
             'xi-api-key': apiKey,
             'Content-Type': request.headers.get('Content-Type') || 'application/json',
-            'Accept': 'audio/mpeg',
+            'Accept': timestamps ? 'application/json' : 'audio/mpeg',
           },
           body: await request.text(),
         });
         const respHeaders = new Headers(corsHeaders(origin));
         respHeaders.set('Content-Type', upstream.headers.get('Content-Type') || 'audio/mpeg');
-        respHeaders.set('Access-Control-Expose-Headers', 'Content-Length, Content-Type');
+        respHeaders.set('Access-Control-Expose-Headers', 'Content-Length, Content-Type, request-id');
+        respHeaders.set('Cache-Control', 'no-store, no-transform');
+        const requestId = upstream.headers.get('request-id');
+        if (requestId) respHeaders.set('request-id', requestId);
         return new Response(upstream.body, { status: upstream.status, headers: respHeaders });
       } catch (e) {
         return jsonResponse({ error: 'ElevenLabs upstream fetch failed', detail: String(e && e.message || e) }, { status: 502, origin });

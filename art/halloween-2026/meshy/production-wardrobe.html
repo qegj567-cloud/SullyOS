@@ -1,0 +1,33 @@
+<!doctype html><meta charset="utf-8"><link rel="icon" href="data:,"><title>万圣节 · 正式换装入口核验</title><body style="margin:0"><script type="module">
+import * as T from 'three';
+import {createBlankBody} from '/apps/room3d/chibi/blankBody.ts';
+import {bindBlankBody} from '/apps/room3d/chibi/blankRig.ts';
+import {prepareApprovedWardrobe} from '/apps/room3d/chibi/approvedClothing.ts';
+import {approvedPresets,approvedGarments} from '/apps/room3d/chibi/approvedWardrobe.ts';
+import {createWardrobePose} from '/experiments/chibi/wardrobePose.ts';
+import {createWardrobePose as createStressPose} from '/test/fixtures/legacyWardrobePose.ts';
+const renderer=new T.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});renderer.setSize(900,900);renderer.setClearColor('#24212d');document.body.append(renderer.domElement);
+const scene=new T.Scene(),group=new T.Group();scene.add(group,new T.HemisphereLight(0xffffff,0x888298,2.5));const light=new T.DirectionalLight(0xffffff,2.5);light.position.set(-3,5,6);scene.add(light);
+const camera=new T.PerspectiveCamera(32,1,.01,100);camera.position.set(0,2.65,11);camera.lookAt(0,2.65,0);
+const body=new T.Mesh(createBlankBody('skin',{headSize:1,bodyHeight:1}),new T.MeshStandardMaterial({color:'#eed5c4',roughness:1})),hair=new T.Group();group.add(body,hair);const rig=bindBlankBody(body,hair,true);rig.mesh.material=body.material;const original=rig.baseGeometry;let current;
+window.wear=async id=>{current?.dispose();const p=approvedPresets[id],c=p.clothes;current=await prepareApprovedWardrobe(rig,p.items,c.wardrobeFits,c.wardrobeColors,c.wardrobeLayering);current.attach();rig.setPose('reference');group.updateMatrixWorld(true);rig.skeleton.update();renderer.render(scene,camera);return {meshes:current.meshes.length,bodyFaces:rig.mesh.geometry.index.count/3};};
+window.undress=()=>{current?.dispose();renderer.render(scene,camera);return rig.mesh.geometry===original;};
+window.checkPieces=async()=>{
+ const results=[];
+ for(const item of approvedGarments.filter(g=>g.collection==='halloween')){
+  current?.dispose();rig.setPose('bind');
+  current=await prepareApprovedWardrobe(rig,{[item.slot]:item.id},{},{},false);current.attach();
+  if(!current.meshes.length)throw Error('Missing '+item.id);
+  const mixer=new T.AnimationMixer(group),poses=[];
+  for(const pose of ['normal','library-idle','boy','cute']){
+   const clip=['boy','cute'].includes(pose)?createStressPose(rig,pose):createWardrobePose(rig,pose);
+   mixer.stopAllAction();mixer.clipAction(clip).play();mixer.setTime(.7);group.updateMatrixWorld(true);rig.skeleton.update();current.updatePose();
+   for(const mesh of current.meshes){mesh.computeBoundingBox();const b=mesh.boundingBox;if(![...b.min,...b.max].every(Number.isFinite)||b.getSize(new T.Vector3()).length()>20)throw Error('Invalid pose: '+item.id+' '+pose);}
+   renderer.render(scene,camera);poses.push(pose);
+  }
+  mixer.stopAllAction();mixer.uncacheRoot(group);results.push({id:item.id,meshes:current.meshes.length,poses});
+ }
+ return {items:results,restored:window.undress()};
+};
+window.ready=true;
+</script>

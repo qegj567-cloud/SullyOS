@@ -1,0 +1,21 @@
+{
+  "id": "halloween-batch-03",
+  "maxTasks": 3,
+  "maxEstimatedCredits": 75,
+  "defaults": {
+    "model_type": "standard",
+    "ai_model": "meshy-7.1",
+    "geometry_resolution": "4k",
+    "image_enhancement": false,
+    "should_remesh": true,
+    "save_pre_remeshed_model": true,
+    "topology": "triangle",
+    "should_texture": false,
+    "target_formats": ["glb"]
+  },
+  "jobs": [
+    {"id":"pumpkin-costume-hd","image":"../outfits/06-pumpkin-costume.png","target_polycount":80000,"pose_mode":"t-pose","estimatedCredits":25},
+    {"id":"ghost-top-hd","image":"../separated/05-ghost/hooded-top.png","target_polycount":60000,"pose_mode":"t-pose","estimatedCredits":25},
+    {"id":"pumpkin-lantern-hd","image":"../furniture/09-pumpkin-lantern.png","target_polycount":20000,"estimatedCredits":25}
+  ]
+}

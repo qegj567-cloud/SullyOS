@@ -15,6 +15,7 @@ describe('生活记录 (phoneState.simLogs) 导出/导入 round-trip', () => {
         simLogs: [
           // 新版：带完整脚本快照（可重播），导出导入须把 script.beats 一起带走
           { id: 'sim-1', mode: 'daily', theme: '雨天', title: '一个雨天', summary: '', ending: 'soft', beatsCount: 12, memoryText: '下了一天的雨。', timestamp: 1718900000000,
+            playback: { beatIndex: 1, status: 'playing' },
             script: { title: '一个雨天', summary: '', ending: 'soft', beats: [
               { kind: 'lock', time: '07:00', monologue: '不想起床。' },
               { kind: 'thought', monologue: '又下雨了。', vibe: 'numb' },
@@ -50,6 +51,7 @@ describe('生活记录 (phoneState.simLogs) 导出/导入 round-trip', () => {
     // 新版脚本快照完整 round-trip → 导入后仍可重播
     expect(restoredLogs?.[0].script?.beats?.length).toBe(3);
     expect(restoredLogs?.[0].script?.beats?.[0].monologue).toBe('不想起床。');
+    expect(restoredLogs?.[0].playback).toEqual({ beatIndex: 1, status: 'playing' });
     // 旧版没有 script，导入后依旧没有（不会凭空冒出来）
     expect(restoredLogs?.[1].script).toBeUndefined();
   });

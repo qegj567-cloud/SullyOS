@@ -1,5 +1,6 @@
 import { getMemoryPalaceHighWaterMarkForContext, selectCharacterContextMessages } from './chatContextRange';
 import { expandHomeContextHistory } from './homeContextSegments';
+import { protectPendingChatTurn } from './storyTheaterTimeline';
 /**
  * 聊天请求载荷统一构造器
  *
@@ -24,8 +25,7 @@ import { renderDeepEngagementGuidance } from './memoryPalace/deepEngagement';
 import { renderConversationEngagementGuidance } from './memoryPalace/conversationEngagement';
 import type { ConversationEngagementAnalysis } from './memoryPalace/conversationEngagement';
 import type { DeepEngagementAnalysis } from './memoryPalace/deepEngagement';
-import { buildHtmlPrompt } from './htmlPrompt';
-import { buildThinkingChainPrompt } from './thinkingChainPrompt';
+import { buildChatOutputStylePrompt } from './chatOutputStylePrompt';
 import { buildMcdMiniAppContextBlock } from './mcdToolBridge';
 import type { McdMiniAppSnapshot } from './mcdToolBridge';
 import { buildLuckinMiniAppContextBlock, buildLuckinChatSystemBlock } from './luckinToolBridge';
@@ -35,7 +35,6 @@ import { buildMcpSystemBlock, MCP_TAIL_REMINDER } from './mcpToolBridge';
 import type { MusicCfg, Song, LyricLine, MusicPlaybackSnapshot, RecentTrackChange } from '../context/MusicContext';
 import { isPromptBuildSkipped, isSystemMessageMergeEnabled } from './devDebug';
 import { mergeSystemMessages } from './systemMessageMerge';
-import { normalizeTranslationLangLabel } from './translationLang';
 import { cleanApiMessages, flattenImageContentParts } from './promptMessageCleanup';
 import { materializeVisionDescriptions } from './visionApi';
 import type { RecallEntryPoint, RecallTrace } from './memoryPalace/trace';
@@ -58,7 +57,7 @@ export interface BuildChatPayloadInput {
     /** Local phase timings only; no request content or telemetry. */
     onPreparationStage?: (event:ChatPreparationEvent)=>void;
     /** Replace ChatApp output/tool rules, retaining the same context pipeline and ordering. */
-    appPrompt?: { rules: string; scene: string };
+    appPrompt?: { rules: string; scene: string; messages?: Array<{role: 'user' | 'assistant'; content: string}> };
     /** Present only while ChatApp is embedded in the home phone; never persisted. */
     homePhoneContext?: string;
     char: CharacterProfile;
@@ -285,8 +284,8 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
     // Range/vision processing must retain database IDs. Only after those steps may
     // legacy home rows expand into their actual speakers and chronological events.
     // Recall and live context must see the same timeline as buildMessageHistory.
-    recentMsgsHint = expandHomeContextHistory(recentMsgsHint);
-    const chronologicalHistory = expandHomeContextHistory(historyMsgsForPrompt);
+    recentMsgsHint = protectPendingChatTurn(expandHomeContextHistory(recentMsgsHint));
+    const chronologicalHistory = protectPendingChatTurn(expandHomeContextHistory(historyMsgsForPrompt));
 
     if (isPromptBuildSkipped()) {
         const { apiMessages } = ChatPrompts.buildMessageHistory(
@@ -296,7 +295,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
             userProfile,
             emojis,
             undefined,
-            { useVisionDescriptions, contextHighWaterMark },
+            { useVisionDescriptions, contextHighWaterMark, protectPendingChatTurn: true },
         );
         const cleanedApiMessages = cleanApiMessages(input.stripImages ? flattenImageContentParts(apiMessages) : apiMessages);
         console.warn('[DevDebug] Prompt Build skipped: sending chat history without system prompt injection.');
@@ -362,11 +361,13 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         userProfile,
         emojis,
         undefined,
-        { useVisionDescriptions, contextHighWaterMark },
+        { useVisionDescriptions, contextHighWaterMark, protectPendingChatTurn: true },
     );
 
     // ── 8. 剥离历史里旧的双语标签（stripImages 时先压平 image_url → 纯文本占位） ──
     const cleanedApiMessages = cleanApiMessages(input.stripImages ? flattenImageContentParts(apiMessages) : apiMessages);
+    // Scene materials participate in keyword/depth handling, without fake private-message IDs.
+    if (input.appPrompt?.messages) cleanedApiMessages.push(...input.appPrompt.messages);
 
     const parts = await prepare('prompt',()=>ChatPrompts.buildSystemPromptParts(
         char, userProfile, groups, emojis, categories, recentMsgsHint,
@@ -378,6 +379,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         {
             history: cleanedApiMessages,
             timelyByWorker: input.timelyByWorker === true,
+            includeUserLocation: isChatConversationEntry(input.recallEntryPoint),
             returningFromMode: returningFromMode || undefined,
             appRules: input.appPrompt?.rules,
         },
@@ -393,54 +395,12 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         : '';
     const sarEnvelopeActive = sarModulePlan?.requiresEnvelope === true;
 
-    // ── 4. 双语指令注入 ───────────────────────────────────
-    const sourceLang = normalizeTranslationLangLabel(translationConfig?.sourceLang);
-    const targetLang = normalizeTranslationLangLabel(translationConfig?.targetLang);
-    const bilingualActive = !input.appPrompt && !!(translationConfig?.enabled && sourceLang && targetLang);
-    if (bilingualActive && translationConfig) {
-        systemPrompt += `\n\n[CRITICAL: 双语输出模式 - 必须严格遵守]
-你的每句话都必须用以下XML标签格式输出双语内容：
-<翻译>
-<原文>${sourceLang}内容</原文>
-<译文>${targetLang}内容</译文>
-</翻译>
-
-规则：
-- 每句话单独包裹一个<翻译>标签
-- 多句话就输出多个<翻译>标签，一句一个
-- ${sarEnvelopeActive
-            ? 'SAR 模块生效中：最外层必须是 <SAR_MODULE_OUTPUT>；在 CHAR_TRUE 与 CHAR_SURFACE 字段内部，各自用完整的 <翻译> 标签包裹每句话。除这个 SAR 容器与字段标签外，不写散落文字'
-            : '<翻译>标签外不要写任何文字'}
-- 表情包命令 [[SEND_EMOJI: ...]] 放在所有<翻译>标签外面
-- 引用命令 [[QUOTE: ...]] 也放在所有<翻译>标签外面；引用内容请原样照抄用户说过的原文（不要翻译、不要包<翻译>标签）
-
-示例（${sourceLang}→${targetLang}）：
-<翻译>
-<原文>こんにちは！</原文>
-<译文>你好！</译文>
-</翻译>
-<翻译>
-<原文>今日は何する？</原文>
-<译文>今天做什么？</译文>
-</翻译>`;
-    }
-
-    // ── 5. HTML 卡片模式 ─────────────────────────────────
-    const htmlActive = !input.appPrompt && !!htmlMode?.enabled;
-    if (htmlActive) {
-        systemPrompt += `\n\n${buildHtmlPrompt(htmlMode?.customPrompt)}`;
-    }
-
-    // ── 6. 思考链提示词 ───────────────────────────────────
-    const thinkingActive = !input.appPrompt && !!thinkingChain?.enabled;
-    if (thinkingActive) {
-        const userName = (userProfile?.name && userProfile.name.trim()) || '用户';
-        systemPrompt += `\n\n${buildThinkingChainPrompt(char.name, userName)}`;
-        const extra = (thinkingChain?.customPrompt || '').trim();
-        if (extra) {
-            systemPrompt += `\n\n## 用户对内心独白的额外要求\n${extra}`;
-        }
-    }
+    const { prompt: outputStylePrompt, bilingualActive, htmlActive, thinkingActive } = buildChatOutputStylePrompt({
+        charName: char.name,
+        userName: userProfile?.name,
+        ...(!input.appPrompt ? { translationConfig, htmlMode, thinkingChain, sarEnvelopeActive } : {}),
+    });
+    systemPrompt += outputStylePrompt;
 
     const messagesWithWorldbookDepth = parts.history;
 
@@ -578,6 +538,12 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
     }
     input.signal?.throwIfAborted();
 
+    if (!input.appPrompt || input.recallEntryPoint === 'home_3d') {
+        const {homeVisitPrompt}=await import('./homeVisits');
+        const visits=await homeVisitPrompt(char);
+        if(visits)fullMessages.push({role:'system',content:visits});
+        input.signal?.throwIfAborted();
+    }
     // Dev 开关：多条 system 合并成开头一条，A/B 对照中转适配层对多 system 的计量行为。
     let finalMessages = fullMessages;
     if (isSystemMessageMergeEnabled()) {

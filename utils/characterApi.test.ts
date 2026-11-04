@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { describeDialogueApi, pickDialogueApi, resolveDialogueApi } from './characterApi';
+import { describeDialogueApi, pickDialogueApi, resolveDialogueApi, dialogueMaxTokens } from './characterApi';
 import { buildCharChatCredRow, buildCharEmotionCredRow, buildCharInstantCredRow } from './amsgLlmCredentials';
 import { stripSensitiveCardFields } from './characterCard';
 
@@ -10,6 +10,11 @@ const app = { baseUrl: 'https://app.test/v1', apiKey: 'app-key', model: 'app' };
 const char = { id: 'a', dialogueApi: personal };
 
 describe('dialogue routing', () => {
+  it('validates output limits and inherits the global setting unless explicitly overridden', () => {
+    for (const maxTokens of [0, -1, 1.5, NaN, Infinity, '2000']) expect(dialogueMaxTokens({ maxTokens } as any)).toBe(8000);
+    expect(dialogueMaxTokens(resolveDialogueApi({ ...globalApi, maxTokens: 2048 }, char))).toBe(2048);
+    expect(dialogueMaxTokens(resolveDialogueApi({ ...globalApi, maxTokens: 2048 }, { dialogueApi: { ...personal, maxTokens: 16000 } }))).toBe(16000);
+  });
   it('uses app, character, then global without changing the global config', () => {
     expect(resolveDialogueApi(globalApi)).toBe(globalApi);
     expect(resolveDialogueApi(globalApi, char)).toMatchObject(personal);

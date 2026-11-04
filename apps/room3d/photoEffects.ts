@@ -7,9 +7,11 @@ export const photoLooks:Record<PhotoLook['preset'],PhotoLook>={
  watercolor:{preset:'watercolor',glow:.15,fringe:0,vignette:.1,exposure:1.06},
  daylight:{preset:'daylight',glow:.55,fringe:.60,vignette:.12,exposure:1.02},
 };
+const buffers=new WeakMap<HTMLCanvasElement,{light:HTMLCanvasElement;blur:HTMLCanvasElement;fringe:HTMLCanvasElement}>();
+function photoBuffers(out:HTMLCanvasElement){let b=buffers.get(out);if(!b){b={light:document.createElement('canvas'),blur:document.createElement('canvas'),fringe:document.createElement('canvas')};buffers.set(out,b);}return b;}
 export function paintPhoto(source:HTMLCanvasElement,out:HTMLCanvasElement,look:PhotoLook){
  if(out.width!==source.width||out.height!==source.height){out.width=source.width;out.height=source.height;}
- const ctx=out.getContext('2d')!;const w=out.width,h=out.height;
+ const ctx=out.getContext('2d',{willReadFrequently:true})!;const w=out.width,h=out.height;
  ctx.save();ctx.clearRect(0,0,w,h);
  ctx.filter=`brightness(${look.exposure*(look.preset==='neon'?.82:1)}) saturate(${look.preset==='natural'?1:['watercolor','daylight'].includes(look.preset)?1.08:1.45}) contrast(${look.preset==='natural'?1:['watercolor','daylight'].includes(look.preset)?1.03:1.2})`;
  ctx.drawImage(source,0,0);ctx.filter='none';
@@ -33,13 +35,15 @@ export function paintPhoto(source:HTMLCanvasElement,out:HTMLCanvasElement,look:P
  if(look.glow>0){
   // Extract coloured highlights too: luminance alone discards bright blue/pink.
   // Work at reduced resolution; the extracted light is blurred anyway.
-  const light=document.createElement('canvas'),scale=Math.min(1,640/Math.max(w,h));
-  light.width=Math.max(1,Math.round(w*scale));light.height=Math.max(1,Math.round(h*scale));
-  const l=light.getContext('2d')!;l.drawImage(out,0,0,light.width,light.height);
+  const {light,blur}=photoBuffers(out),scale=Math.min(1,640/Math.max(w,h));
+  const lw=Math.max(1,Math.round(w*scale)),lh=Math.max(1,Math.round(h*scale));
+  if(light.width!==lw||light.height!==lh){light.width=blur.width=lw;light.height=blur.height=lh;}
+  const l=light.getContext('2d',{willReadFrequently:true})!;l.clearRect(0,0,lw,lh);l.drawImage(out,0,0,lw,lh);
   const pixels=l.getImageData(0,0,light.width,light.height),d=pixels.data;
   for(let i=0;i<d.length;i+=4){const peak=Math.max(d[i],d[i+1],d[i+2])/255;const t=Math.max(0,Math.min(1,(peak-.5)/.4));const gain=t*t*(3-2*t);d[i]*=gain;d[i+1]*=gain;d[i+2]*=gain;}
   l.putImageData(pixels,0,0);ctx.globalCompositeOperation='screen';
-  for(const [radius,weight] of [[.004,.55],[.016,.4],[.04,.25]]){ctx.globalAlpha=Math.min(1,look.glow*weight);ctx.filter=`blur(${Math.max(w,h)*radius}px)`;ctx.drawImage(light,0,0,w,h);}
+  const soft=blur.getContext('2d')!;
+  for(const [radius,weight] of [[.004,.55],[.016,.4],[.04,.25]]){soft.clearRect(0,0,lw,lh);soft.filter=`blur(${Math.max(lw,lh)*radius}px)`;soft.drawImage(light,0,0);ctx.globalAlpha=Math.min(1,look.glow*weight);ctx.drawImage(blur,0,0,w,h);}
   ctx.filter='none';
  }
  if(look.preset!=='natural'&&!illustrated){
@@ -48,7 +52,7 @@ export function paintPhoto(source:HTMLCanvasElement,out:HTMLCanvasElement,look:P
  }
  if(look.fringe>0){
   // Screen-space colour fringing, baked into the same canvas used for export.
-  const layer=document.createElement('canvas');layer.width=w;layer.height=h;const c=layer.getContext('2d')!;
+  const layer=photoBuffers(out).fringe;if(layer.width!==w||layer.height!==h){layer.width=w;layer.height=h;}const c=layer.getContext('2d')!;
   for(const [color,sign] of [['#ff398b',-1],['#23ddff',1]] as const){c.clearRect(0,0,w,h);c.globalCompositeOperation='source-over';c.drawImage(source,sign*look.fringe*w*.008,0);c.globalCompositeOperation='multiply';c.fillStyle=color;c.fillRect(0,0,w,h);ctx.globalCompositeOperation='screen';ctx.globalAlpha=look.fringe*.3;ctx.drawImage(layer,0,0);}
  }
  ctx.globalCompositeOperation='source-over';ctx.globalAlpha=1;

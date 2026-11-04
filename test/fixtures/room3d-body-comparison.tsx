@@ -2,7 +2,7 @@ import React,{useEffect,useRef,useState} from 'react';
 // @ts-expect-error Shared runtime JS helpers have no declaration files.
 import {seatTransform} from '../../apps/room3d/seating.js';
 // @ts-expect-error Shared runtime JS helpers have no declaration files.
-import {body2BedTransform} from '../../apps/room3d/bedMotion.js';
+import {body2BedTransform,bedFootSurface} from '../../apps/room3d/bedMotion.js';
 import {createRoot} from 'react-dom/client';
 import {CreatorRollBridge} from '../../apps/room3d/chibi/CreatorRollBridge';
 import {createVisitor,decodeParts,NEW_BODY_HOME_PERCENT,type ChibiVisitor} from '../../apps/room3d/chibi/visitor';
@@ -69,9 +69,10 @@ function Comparison(){
   actors.current.forEach((v,i)=>{
    const seat=body2BedTransform(seatTransform(room,catalog,{roomId:room.id,itemId:item.id,seatId:String(i),bed:true},true),v.bedHeadToHip,v.bedHipHeight);
    v.root.parent!.position.fromArray(seat.position);v.root.parent!.rotation.set(0,seat.rotation,0);v.root.position.set(0,0,0);v.root.quaternion.identity();
-   v.animate(3,'sleep','lying',{kind:'bed-rest',hands:[],bedTime:3});
+   v.animate(3,'sleep','lying',{kind:'bed-rest',hands:[],bedTime:3,bedFootSurface:bedFootSurface(seat,v.seatScale)});
+   v.updateExpression(3,{eyes:'closed',blink:false});
   });
-  e.beginPhotoMode();e.setPhotoCamera({yaw:25,pitch:35,zoom:1.35,height:.05});void e.capturePhoto();setStatus('双人躺位静态验收：复用正式床位与睡姿；此视图不测试上床路径。');
+  e.beginPhotoMode();e.setPhotoCamera({yaw:65,pitch:25,zoom:1.35,height:.05});void e.capturePhoto();setStatus('双人躺位静态验收：复用正式床位与睡姿；此视图不测试上床路径。');
  };
  return <><header className="comparison-bar"><div><h1>小栗 · 样板房动作对照</h1><p>固定栗棕发、绿眼睛 · 两种体型同场 · 先从客厅逐间看</p></div><nav aria-label="样板房">{rooms.map(([id,label],i)=><button key={id} disabled={busy} aria-pressed={kind===id} onClick={()=>changeRoom(id)}>{i+1} {label}</button>)}</nav>{["beds","seats"].includes(kind)&&<label>家具 <select aria-label="验收家具" disabled={busy} value={assetId||(kind==="beds"?"bedroom_single_bed":"show_living_pouf")} onChange={event=>{setAssetId(event.target.value);const url=new URL(location.href);url.searchParams.set("asset",event.target.value);history.replaceState(null,"",url);}}>{catalogAssets.filter(a=>kind==="beds"?a.beds:a.seats).map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label>}<div className="comparison-actors"><span>当前测试</span>{ids.map((id,i)=><button key={id} disabled={busy} aria-pressed={active===id} onClick={()=>chooseActor(id)}>{bedPair?(id==='blank'?'操控小栗':'操控你'):labels[i]}</button>)}<div className="comparison-size"><label htmlFor="actor-size">角色大小 <output>{sizes[active]}%</output></label><input id="actor-size" type="range" min={active==='blank'?90:60} max={active==='blank'?260:180} step={1} value={sizes[active]} disabled={busy||bedPair} onChange={event=>resizeActor(Number(event.target.value))}/><button disabled={busy||sizes[active]===defaultSizes[active]} onClick={()=>resizeActor(defaultSizes[active])}>恢复原大小</button></div><span className="comparison-status" role="status">{status}</span></div><section className="comparison-walk" aria-label="日常走路"><strong>日常走路 · Meshy 10</strong><div className="comparison-walk-buttons"><button disabled={busy} onClick={()=>previewWalk()}>原地试看</button><button disabled={busy} onClick={()=>{chooseActor("blank");editor.current?.walkComparisonRoute();}}>走一小段</button><button disabled={busy} onClick={()=>previewWalk(false)}>停止试看</button><button disabled={busy} onClick={()=>{for(let i=0;i<120;i++)editor.current?.advanceTime?.(100);}}>快进当前动作 12 秒</button>{bedPair&&<button disabled={busy} onClick={previewBedPair}>查看双人躺位</button>}</div><p>点房间空地可实际走动。来源：<a href="https://www.meshy.ai/animation-library" target="_blank" rel="noreferrer">Meshy · Walking</a> · 用户导出第 10 段</p></section></header><div className="comparison-room" ref={host}/><CreatorRollBridge savedState={testCharacter.state} request={request} onReady={()=>setRequest(1)} onResult={result=>{void decodeParts(result).then(setParts).catch(error=>setStatus(String(error)));}} onError={setStatus}/></>;
 }

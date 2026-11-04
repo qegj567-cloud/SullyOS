@@ -1,0 +1,137 @@
+[
+  {
+    "id": "01-bat-sofa",
+    "width": 1254,
+    "height": 1254,
+    "transparent": 935537,
+    "semi": 635956,
+    "edge": 10,
+    "transparentRatio": 0.5949300356880312
+  },
+  {
+    "id": "02-coffin-coffee-table",
+    "width": 1254,
+    "height": 1254,
+    "transparent": 1105667,
+    "semi": 465884,
+    "edge": 35,
+    "transparentRatio": 0.7031197138852642
+  },
+  {
+    "id": "03-pumpkin-armchair",
+    "width": 1254,
+    "height": 1254,
+    "transparent": 670329,
+    "semi": 901333,
+    "edge": 120,
+    "transparentRatio": 0.42627801561319567
+  },
+  {
+    "id": "04-potion-bookcase",
+    "width": 1254,
+    "height": 1254,
+    "transparent": 972826,
+    "semi": 598902,
+    "edge": 86,
+    "transparentRatio": 0.6186429899600385
+  },
+  {
+    "id": "05-haunted-fireplace",
+    "width": 1254,
+    "height": 1254,
+    "transparent": 672650,
+    "semi": 898883,
+    "edge": 284,
+    "transparentRatio": 0.4277539942359887
+  },
+  {
+    "id": "06-ghost-floor-lamp",
+    "width": 1254,
+    "height": 1254,
+    "transparent": 1271128,
+    "semi": 300333,
+    "edge": 0,
+    "transparentRatio": 0.8083402649003253
+  },
+  {
+    "id": "07-gothic-curtain-window",
+    "width": 1254,
+    "height": 1254,
+    "transparent": 528562,
+    "semi": 1042494,
+    "edge": 188,
+    "transparentRatio": 0.33612503783745284
+  },
+  {
+    "id": "08-bat-rug",
+    "width": 1536,
+    "height": 1024,
+    "transparent": 605562,
+    "semi": 967302,
+    "edge": 8,
+    "transparentRatio": 0.3850059509277344
+  },
+  {
+    "id": "09-pumpkin-lantern",
+    "width": 1254,
+    "height": 1254,
+    "transparent": 863847,
+    "semi": 707381,
+    "edge": 0,
+    "transparentRatio": 0.549340674435109
+  },
+  {
+    "id": "10-cauldron-planter",
+    "width": 1254,
+    "height": 1254,
+    "transparent": 876813,
+    "semi": 694671,
+    "edge": 30,
+    "transparentRatio": 0.557586059537709
+  },
+  {
+    "id": "11-cat-mirror",
+    "width": 1254,
+    "height": 1254,
+    "transparent": 1038970,
+    "semi": 532710,
+    "edge": 37,
+    "transparentRatio": 0.6607055190535422
+  },
+  {
+    "id": "12-pumpkin-bat-clock",
+    "width": 1254,
+    "height": 1254,
+    "transparent": 1064854,
+    "semi": 506758,
+    "edge": 6,
+    "transparentRatio": 0.6771657649270342
+  },
+  {
+    "id": "outfit-01-pumpkin-witch",
+    "width": 1254,
+    "height": 1254,
+    "transparent": 1191678,
+    "semi": 379493,
+    "edge": 3,
+    "transparentRatio": 0.7578161366879574
+  },
+  {
+    "id": "outfit-02-bat-count",
+    "width": 1254,
+    "height": 1254,
+    "transparent": 1263602,
+    "semi": 307649,
+    "edge": 44,
+    "transparentRatio": 0.8035543040579556
+  },
+  {
+    "id": "outfit-03-potion-apprentice",
+    "width": 1254,
+    "height": 1254,
+    "transparent": 1218651,
+    "semi": 352166,
+    "edge": 36,
+    "transparentRatio": 0.7749689033370726
+  }
+]

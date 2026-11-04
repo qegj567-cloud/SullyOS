@@ -439,7 +439,7 @@ const GUIDE_COPY: Record<NonNullable<CharacterProfile['personalityStyle']>, Memo
     ],
     analytical: [
         { greeting: '你来啦，{user}。本轮召回现场已经封存，我们逐条核对。', trail: '以下是刚才实际经过的记忆，以及命中事件盒的完整结构。', empty: '核对完成：本轮没有记忆注入记录。' },
-        { greeting: '正好，{user}。刚才的回复和召回记录都还在可比对范围内。', trail: '召回痕迹正在展开，请从事实、对象和时间三个方向检查。', empty: '没有召回项。刚才的问题不应归因于向量记忆。' },
+        { greeting: '正好，{user}。刚才的回复和召回记录都还在可比对范围内。', trail: '召回痕迹正在展开，请从事实、对象和时间三个方向检查。', empty: '没有召回项。刚才的问题应该不在记忆宫殿里。' },
     ],
 };
 

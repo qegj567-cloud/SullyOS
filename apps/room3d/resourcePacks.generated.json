@@ -1,0 +1,554 @@
+[
+  {
+    "id": "halloween-furniture",
+    "name": "万圣节家具包",
+    "description": "12 件家具与预览图",
+    "revision": "232d0c0af2424abc6d03013b25422f0b63352684ebde6ac66722f1f72f601733",
+    "bytes": 4599475,
+    "files": [
+      {
+        "path": "room3d/halloween_bat_pumpkin_clock.glb",
+        "bytes": 330232,
+        "sha256": "090765d1d7abbff69b49bf1b443b3c208d3a1be93880c84589c6265b3977d800",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/halloween_bat_rug.glb",
+        "bytes": 290508,
+        "sha256": "dee2bc7f212927c9055241a2f40dae066bad6540a239b6ad58a0a171e9f9f8b6",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/halloween_bat_sofa.glb",
+        "bytes": 450792,
+        "sha256": "44784864c8807dbaa8acfaa7732e4d77744e60f2bc3dced46c7715f07e59e09f",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/halloween_cat_ear_mirror.glb",
+        "bytes": 313324,
+        "sha256": "2b17976d87d722f4fa6224c66fd07d9dd9069af86a2b247c356c91d931417bd4",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/halloween_cauldron_planter.glb",
+        "bytes": 332524,
+        "sha256": "81fb9a8cb49ae71a93153a59313ad6ffc44956d60ecb7f528a56111fe98d2423",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/halloween_coffin_coffee_table.glb",
+        "bytes": 304204,
+        "sha256": "122a8be8670364b851e6a660d8481fe51b0007674d435d6b16d8334fc6a51792",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/halloween_ghost_floor_lamp.glb",
+        "bytes": 312952,
+        "sha256": "a75d4892334dbd1ce7949a989b404ee2d0c58b9dfefa2737adfbf24aaf3aa286",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/halloween_gothic_curtain_window.glb",
+        "bytes": 583256,
+        "sha256": "ec934812ac8acfbc1a27fa1879753fc74c67a9681062b66a9d393f0fb1d3587b",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/halloween_haunted_fireplace.glb",
+        "bytes": 529716,
+        "sha256": "609abed225cba801ae22e221f37e589f2bdafd00a871271e47d04ac43b5b4db7",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/halloween_potion_bookcase.glb",
+        "bytes": 470072,
+        "sha256": "83dbe706f82bfd226809a79d033e45a825ad642b7bc7b7d26823ca464abff18c",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/halloween_pumpkin_armchair.glb",
+        "bytes": 355744,
+        "sha256": "33b67fa1c874591b57d7a7c92f24077730ecddc7cf826ac82b1c122bed280b02",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/halloween_pumpkin_lantern.glb",
+        "bytes": 248496,
+        "sha256": "5ef9c6eccbb370b0da6b4b889b6f6c15be3b3f263427e1e1b6ef84ee7b66d6d0",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/thumbnails/halloween_bat_pumpkin_clock.png",
+        "bytes": 3725,
+        "sha256": "d68c11fbcbb2b2a463e46dfdc6864fc85bcc4880c78b6674f8b888ed7c2b3132",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/thumbnails/halloween_bat_rug.png",
+        "bytes": 5417,
+        "sha256": "4564d1c8180ef3548237ab18a84092be409381c7e9a6cc8babd6d9e5f6ce3082",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/thumbnails/halloween_bat_sofa.png",
+        "bytes": 6664,
+        "sha256": "a318c5390e28519cfedc3532b6264c18ce0b85df1a30b48eef50a5d285777632",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/thumbnails/halloween_cat_ear_mirror.png",
+        "bytes": 5262,
+        "sha256": "9580382c2710d0b159564289ed35d3b1de71159992a3fd7a68a9f657eccfd77b",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/thumbnails/halloween_cauldron_planter.png",
+        "bytes": 7358,
+        "sha256": "f93ce10c24919bd658599960cbb471d0c33e58a9a378f3c40bb850de32b02b85",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/thumbnails/halloween_coffin_coffee_table.png",
+        "bytes": 5244,
+        "sha256": "5a1692870595b07c32a2dffe5cd8ae9f2d3e440171a5493dd775f724222f1fd0",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/thumbnails/halloween_ghost_floor_lamp.png",
+        "bytes": 3918,
+        "sha256": "bc72455b90f201fe81c9add35dbd499cd81159496a1ec0cbc1a656781dd0a818",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/thumbnails/halloween_gothic_curtain_window.png",
+        "bytes": 7648,
+        "sha256": "55ceb52951a962e57c41378f56085ab5b120d331be0331fee8231c29db33374a",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/thumbnails/halloween_haunted_fireplace.png",
+        "bytes": 9806,
+        "sha256": "1c6cfa26249019c1d0e146d29ac7f3d4ce1e415764cdb1679bbabde79eb57928",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/thumbnails/halloween_potion_bookcase.png",
+        "bytes": 6172,
+        "sha256": "ccc770526e76079067e8757ebc809c1c07d54b87a2a04afc66c2a56e39a39277",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/thumbnails/halloween_pumpkin_armchair.png",
+        "bytes": 10119,
+        "sha256": "2069850dea6f0455ddd3df10a6db13d2430b27e1c08705f04e1d50ec1077b57f",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/thumbnails/halloween_pumpkin_lantern.png",
+        "bytes": 6322,
+        "sha256": "b0af7dc75d231a75c7f07824c2bfa169d756e8b8de135960db7598b23831c2ac",
+        "dependencies": []
+      }
+    ]
+  },
+  {
+    "id": "halloween-wardrobe",
+    "name": "万圣节服装包",
+    "description": "25 件服装、共用贴图与预览图",
+    "revision": "46def5c598c4c130cf5e60a95812c4a0fbcc8cd4ce0366b3a997069c1c0781c5",
+    "bytes": 11666541,
+    "files": [
+      {
+        "path": "room3d/wardrobe/halloween-apprentice-apron.glb",
+        "bytes": 139736,
+        "sha256": "b47e66ddde8d4466827cc42ea12d938fc53f1368582f7aaebd513ecdd3c19ccc",
+        "dependencies": [
+          "room3d/wardrobe/halloween-texture-78071d744724.jpg"
+        ]
+      },
+      {
+        "path": "room3d/wardrobe/halloween-apprentice-boots.glb",
+        "bytes": 164456,
+        "sha256": "e1d0ed3326dbd1d98d12abe32941a18c190a5f55c5795e363cf0dfbc12c89691",
+        "dependencies": [
+          "room3d/wardrobe/halloween-texture-78071d744724.jpg"
+        ]
+      },
+      {
+        "path": "room3d/wardrobe/halloween-apprentice-cap.glb",
+        "bytes": 121768,
+        "sha256": "ed7196245dc3020e185a540c400f7907327c4dd8904905f93f6aee4496877d37",
+        "dependencies": [
+          "room3d/wardrobe/halloween-texture-78071d744724.jpg"
+        ]
+      },
+      {
+        "path": "room3d/wardrobe/halloween-apprentice-coat.glb",
+        "bytes": 291536,
+        "sha256": "3e81dd35f39f5c7258ec7a67eb5d595edff0e5d3a6303ba8107a54a0efc838c2",
+        "dependencies": [
+          "room3d/wardrobe/halloween-texture-78071d744724.jpg"
+        ]
+      },
+      {
+        "path": "room3d/wardrobe/halloween-apprentice-shorts.glb",
+        "bytes": 72268,
+        "sha256": "d6b7f2c225e3848f6340fd37028172c932a5e7c47927a2ed81163491aaef5474",
+        "dependencies": [
+          "room3d/wardrobe/halloween-texture-78071d744724.jpg"
+        ]
+      },
+      {
+        "path": "room3d/wardrobe/halloween-apprentice-socks.glb",
+        "bytes": 21208,
+        "sha256": "0846f538a55a1ac093f65881d08bb63a2ae5a3ca58819b6eba0535bd51ec3866",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/wardrobe/halloween-count-boots.glb",
+        "bytes": 137608,
+        "sha256": "fa506f45ce99a6c97ac07b8f72663a78602f523344bffad1fe61018cc4ea2f77",
+        "dependencies": [
+          "room3d/wardrobe/halloween-texture-31ee4b62cd29.jpg"
+        ]
+      },
+      {
+        "path": "room3d/wardrobe/halloween-count-cravat.glb",
+        "bytes": 115196,
+        "sha256": "602e3e2742510fbede419d8ca076997df40b8cc99f870619a198815e326bca46",
+        "dependencies": [
+          "room3d/wardrobe/halloween-texture-31ee4b62cd29.jpg"
+        ]
+      },
+      {
+        "path": "room3d/wardrobe/halloween-count-tailcoat.glb",
+        "bytes": 360416,
+        "sha256": "22c94816c1727185ea709b6b8ca949a803ffd7ec75310ba9aba282847ad9c817",
+        "dependencies": [
+          "room3d/wardrobe/halloween-texture-31ee4b62cd29.jpg"
+        ]
+      },
+      {
+        "path": "room3d/wardrobe/halloween-count-trousers.glb",
+        "bytes": 90588,
+        "sha256": "91491b3bc7a788554a405596be132833e7952f2b1ba69a1dfc801cf748c5ffd0",
+        "dependencies": [
+          "room3d/wardrobe/halloween-texture-31ee4b62cd29.jpg"
+        ]
+      },
+      {
+        "path": "room3d/wardrobe/halloween-count-waistcoat.glb",
+        "bytes": 47876,
+        "sha256": "1fbba02ad1b3f49b73f8d0c5d273d8b445cc061060470d789cbe5b0aad41bd09",
+        "dependencies": [
+          "room3d/wardrobe/halloween-texture-31ee4b62cd29.jpg"
+        ]
+      },
+      {
+        "path": "room3d/wardrobe/halloween-ghost-hooded-top.glb",
+        "bytes": 638240,
+        "sha256": "c611aa6f6f1fc8e0d3a99bf256eb940f949b6c1fad72e9cadbc5a05e968de8cf",
+        "dependencies": [
+          "room3d/wardrobe/halloween-texture-3ae783e5b0e4.jpg"
+        ]
+      },
+      {
+        "path": "room3d/wardrobe/halloween-ghost-shoes.glb",
+        "bytes": 220976,
+        "sha256": "762c4f7a4e0795ce22c05d0e2107c07d868b7c48eb5d8492224767d9c12e04d7",
+        "dependencies": [
+          "room3d/wardrobe/halloween-texture-e12f422048ae.jpg"
+        ]
+      },
+      {
+        "path": "room3d/wardrobe/halloween-ghost-shorts.glb",
+        "bytes": 170636,
+        "sha256": "7e4564576ae5b44c7f3ae24af5f67a7ee99928896c81afdbe0b2c6464f5b6892",
+        "dependencies": [
+          "room3d/wardrobe/halloween-texture-1dbb8a57342a.jpg"
+        ]
+      },
+      {
+        "path": "room3d/wardrobe/halloween-ghost-socks.glb",
+        "bytes": 21944,
+        "sha256": "39a7e0f5283de4a8a7b14608d8eea86edffed1c4101f1b9b6c857a36b42437af",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/wardrobe/halloween-pumpkin-boots.glb",
+        "bytes": 97360,
+        "sha256": "1e79294bcaa2e6b1262b3ffc25fc69db7ce4aaff1d6b00097b06f28afe78a877",
+        "dependencies": [
+          "room3d/wardrobe/halloween-texture-aadd0e185c27.jpg"
+        ]
+      },
+      {
+        "path": "room3d/wardrobe/halloween-pumpkin-hat.glb",
+        "bytes": 192324,
+        "sha256": "309ff4d10944ab7b5e315f14e709cb01dceac38564aca4b6379feb521bbd0221",
+        "dependencies": [
+          "room3d/wardrobe/halloween-texture-aadd0e185c27.jpg"
+        ]
+      },
+      {
+        "path": "room3d/wardrobe/halloween-pumpkin-romper.glb",
+        "bytes": 361328,
+        "sha256": "940cd889028333b1d7b4f87051e352199aaade37a569fed193cadeca41daf38a",
+        "dependencies": [
+          "room3d/wardrobe/halloween-texture-aadd0e185c27.jpg"
+        ]
+      },
+      {
+        "path": "room3d/wardrobe/halloween-pumpkin-sleeves.glb",
+        "bytes": 105876,
+        "sha256": "74b2a04e0e84a73d34db12fb384435613e12ec4419cb48e9c0e21b4fd26b2647",
+        "dependencies": [
+          "room3d/wardrobe/halloween-texture-aadd0e185c27.jpg"
+        ]
+      },
+      {
+        "path": "room3d/wardrobe/halloween-pumpkin-socks.glb",
+        "bytes": 27708,
+        "sha256": "7704eba709a3930ccf33f52ece45d2239b3f78a461fd192a5834729c3d191c11",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/wardrobe/halloween-shorts-shorts.glb",
+        "bytes": 273296,
+        "sha256": "ab059747b66735010d3addae027a48df588c5cca321b239bd4a9765a52ac9fca",
+        "dependencies": [
+          "room3d/wardrobe/halloween-texture-efdfbe3287c0.jpg"
+        ]
+      },
+      {
+        "path": "room3d/wardrobe/halloween-texture-1dbb8a57342a.jpg",
+        "bytes": 191948,
+        "sha256": "1dbb8a57342ae20d6cbad3a5e54df3f1b23a3105e3e623ce74ed0a513ae628b9",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/wardrobe/halloween-texture-31ee4b62cd29.jpg",
+        "bytes": 367542,
+        "sha256": "31ee4b62cd295b963ffb684434ba69aa689a11f18925e455c8ed4afca56b0353",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/wardrobe/halloween-texture-3ae783e5b0e4.jpg",
+        "bytes": 334740,
+        "sha256": "3ae783e5b0e4a8cd74f02610ee411a81efd1adbfd9b009283b47751ee7977280",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/wardrobe/halloween-texture-4db03737518d.jpg",
+        "bytes": 517277,
+        "sha256": "4db03737518d0a8f325056b84f44a4d1ff17cc1953a44205e22df64a23ac7142",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/wardrobe/halloween-texture-78071d744724.jpg",
+        "bytes": 442375,
+        "sha256": "78071d7447244f75893713b45d40f95c15e9456369b8b3776796d5a27df7c338",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/wardrobe/halloween-texture-aadd0e185c27.jpg",
+        "bytes": 441099,
+        "sha256": "aadd0e185c270c22e3e122cc7944e00e19b4ad94162d98c757c8f52c7e8aeb25",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/wardrobe/halloween-texture-e12f422048ae.jpg",
+        "bytes": 241353,
+        "sha256": "e12f422048aebeba511c4ffc61186edaf16f9945b2fad069b84a70e61c1bbe9b",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/wardrobe/halloween-texture-efdfbe3287c0.jpg",
+        "bytes": 277912,
+        "sha256": "efdfbe3287c0a2f2766836a9dd64a059dec11d6b7aef47ec9e0590854f7d24fd",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/wardrobe/halloween-witch-boots.glb",
+        "bytes": 80772,
+        "sha256": "aaf36d6cc2de78b6c41199be73f9967e5b6e07f6883c7a295ead90c916723b1c",
+        "dependencies": [
+          "room3d/wardrobe/halloween-texture-4db03737518d.jpg"
+        ]
+      },
+      {
+        "path": "room3d/wardrobe/halloween-witch-dress.glb",
+        "bytes": 840416,
+        "sha256": "b65a1950b8fc387c3ac08a315f65e0dbf8c3f4b2270da3194456fd465a208da5",
+        "dependencies": [
+          "room3d/wardrobe/halloween-texture-4db03737518d.jpg"
+        ]
+      },
+      {
+        "path": "room3d/wardrobe/halloween-witch-hat.glb",
+        "bytes": 109972,
+        "sha256": "fe780637feb2514f4ca55d3a32177b1e0253db9f35b231435a2597190efa6668",
+        "dependencies": [
+          "room3d/wardrobe/halloween-texture-4db03737518d.jpg"
+        ]
+      },
+      {
+        "path": "room3d/wardrobe/halloween-witch-socks.glb",
+        "bytes": 27052,
+        "sha256": "09a88ea58c052b95430f327e57b96b13024649abcf67f6dc6f73e14c15195644",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/wardrobe/thumbnails/halloween-apprentice-apron.png",
+        "bytes": 186676,
+        "sha256": "3455bfdb96a0302628c0c3d74ffb49cc44777f8d36ab666d13b8fd42729b605a",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/wardrobe/thumbnails/halloween-apprentice-boots.png",
+        "bytes": 227457,
+        "sha256": "c4f403c5195e7fd4609fe05455aef170a5b51fa1c9b1ee1b50046e431ad906b5",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/wardrobe/thumbnails/halloween-apprentice-cap.png",
+        "bytes": 150260,
+        "sha256": "b4638577461e324edc2404e9944ae740281be02cf25cab2afeef2dcea94f8f8a",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/wardrobe/thumbnails/halloween-apprentice-coat.png",
+        "bytes": 180636,
+        "sha256": "52a9bd095ba52a0090c34d926f1aab330774c850baee0b3f3a4f216a9984e07a",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/wardrobe/thumbnails/halloween-apprentice-shorts.png",
+        "bytes": 176739,
+        "sha256": "10cfe7290c1d0f5506eb00a122792b4c235a426c6b249c54901773e246ee18ca",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/wardrobe/thumbnails/halloween-apprentice-socks.png",
+        "bytes": 51381,
+        "sha256": "dce527fff275855c6c43c59064cf8a1815049f3c02e0d33f63249e2d8c9a6922",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/wardrobe/thumbnails/halloween-count-boots.png",
+        "bytes": 205283,
+        "sha256": "3646eba1300cc12cf3edb7afd95fdcdea22863094be651a9d088e2a14167609c",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/wardrobe/thumbnails/halloween-count-cravat.png",
+        "bytes": 206496,
+        "sha256": "882dbfc943d054eb9deec75559dc90de3b537a96db0237b1020efee1ad043d74",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/wardrobe/thumbnails/halloween-count-tailcoat.png",
+        "bytes": 171322,
+        "sha256": "740738460eb59c7dff95fbaf3cea399b604671c45aa9ef08b2d70f5f591569db",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/wardrobe/thumbnails/halloween-count-trousers.png",
+        "bytes": 139484,
+        "sha256": "d3f1e54f03ef8a851c9a432e4338ada6b1c154e9409c62ceee68c890b0d6c65a",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/wardrobe/thumbnails/halloween-count-waistcoat.png",
+        "bytes": 165377,
+        "sha256": "52d48ba3310f25bf7fd0dc6a0d941d9203df5ad3e7268f7f054b3ef34b066faa",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/wardrobe/thumbnails/halloween-ghost-hooded-top.png",
+        "bytes": 165517,
+        "sha256": "d62e85c1b580f58c64c58ebd82d3781bbc220eb9c0d2c7443d7c767ce065a814",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/wardrobe/thumbnails/halloween-ghost-shoes.png",
+        "bytes": 120729,
+        "sha256": "a17b9c7e45f21a4ed9234aed59f68ef579b508afc6ee6986891baba8ea6e3379",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/wardrobe/thumbnails/halloween-ghost-shorts.png",
+        "bytes": 287706,
+        "sha256": "42378d795e991182f3481c511d6b7381e3c4ba5cdd405eb56bd6428ac9dfc7a7",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/wardrobe/thumbnails/halloween-ghost-socks.png",
+        "bytes": 48398,
+        "sha256": "8666ef84a0226d3218be9441a70024cf2d7de3850f5e9dd6c1e236e3ff745fc6",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/wardrobe/thumbnails/halloween-pumpkin-boots.png",
+        "bytes": 185804,
+        "sha256": "08d4af8785522c0f5286ebc5dfab15681c9fda5eac0a4da2dbfd21e4eefd2f76",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/wardrobe/thumbnails/halloween-pumpkin-hat.png",
+        "bytes": 169880,
+        "sha256": "3e1330d656d83a4eb7cfb737bf37b1f10a351738a4339a5f63c3e854a596d99b",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/wardrobe/thumbnails/halloween-pumpkin-romper.png",
+        "bytes": 308671,
+        "sha256": "e67a16337e699d596685bece7342e907b363ac416c401452ef9307ae1adfdeca",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/wardrobe/thumbnails/halloween-pumpkin-sleeves.png",
+        "bytes": 82927,
+        "sha256": "17b794c72a8352ffc5a898e0c9c8da220fa9078d54321dc3e8af73e87fea668c",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/wardrobe/thumbnails/halloween-pumpkin-socks.png",
+        "bytes": 68174,
+        "sha256": "db25153c6cd42550fa1ceb5cf40a03e223c5e55749ffa99335cb6ee2e78ab78e",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/wardrobe/thumbnails/halloween-shorts-shorts.png",
+        "bytes": 296052,
+        "sha256": "0eb4d600ec109bad9f5f76c702e67e9dd4d05a9331c71172c9061a61a6345e9d",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/wardrobe/thumbnails/halloween-witch-boots.png",
+        "bytes": 161129,
+        "sha256": "ac4565b896a6d8c6beaf5c75a713e65f76e7e4b3e1dca0e551db296c014adcc7",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/wardrobe/thumbnails/halloween-witch-dress.png",
+        "bytes": 189819,
+        "sha256": "481a97c1683219e11225f4c424c3ebd5c43dad02e34f8b52321c9abc3115aa70",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/wardrobe/thumbnails/halloween-witch-hat.png",
+        "bytes": 139579,
+        "sha256": "d8494b4125fedcf589b4864cf8c75f35f786032cc3dd441a05da0d3cf152255a",
+        "dependencies": []
+      },
+      {
+        "path": "room3d/wardrobe/thumbnails/halloween-witch-socks.png",
+        "bytes": 36243,
+        "sha256": "481ca12077475b9915fc165193d976bf49d41de071977946e16966c9785e46c6",
+        "dependencies": []
+      }
+    ]
+  }
+]

@@ -9,6 +9,8 @@ export type {
   CloudCleanupPlan, CloudCleanupOperation, CloudOwner, CloudOwnerState,
 } from '@rei-standard/amsg-client';
 
+import { describeD1LimitCode } from './amsgD1Limits';
+
 export const CLOUD_DATA_FEATURE = 'cloud-data-management';
 export const CLOUD_RESOURCE_LABELS: Record<CloudResourceType, string> = {
   task: '任务', state: '上下文与状态', credential: 'API 凭据', outbox: '消息与结果', subscription: '推送订阅',
@@ -18,10 +20,58 @@ export class CloudDataError extends Error {
   constructor(public code: string, message: string) { super(message); this.name = 'CloudDataError'; }
 }
 
+function formatCloudErrorMessage(error: unknown): string {
+  if (!error || typeof error !== 'object') return '云端没有返回有效结果，请重试。';
+  const err = error as Record<string, unknown>;
+  const base = typeof err.message === 'string' && err.message.trim()
+    ? err.message.trim()
+    : (typeof err.code === 'string' && err.code.trim() ? err.code.trim() : '云端没有返回有效结果，请重试。');
+  const details = err.details && typeof err.details === 'object' && !Array.isArray(err.details)
+    ? (err.details as Record<string, unknown>)
+    : null;
+  const detailParts: string[] = [];
+  if (details) {
+    if (Array.isArray(details.missingFields) && details.missingFields.length > 0) {
+      detailParts.push(`缺少字段: ${details.missingFields.join(', ')}`);
+    }
+    if (Array.isArray(details.invalidFields) && details.invalidFields.length > 0) {
+      detailParts.push(`无效字段: ${details.invalidFields.join(', ')}`);
+    }
+    for (const [k, v] of Object.entries(details)) {
+      if (k === 'missingFields' || k === 'invalidFields' || v == null || v === '') continue;
+      if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+        detailParts.push(`${k}: ${v}`);
+      }
+    }
+  }
+  const cause = err.cause && typeof err.cause === 'object' && !Array.isArray(err.cause)
+    ? (err.cause as Record<string, unknown>)
+    : null;
+  const causeCode = typeof cause?.code === 'string' ? cause.code.trim() : '';
+  const causeName = typeof cause?.name === 'string' ? cause.name.trim() : '';
+  const causeMessage = typeof cause?.message === 'string' ? cause.message.trim() : '';
+  const causeHead = causeCode
+    ? (causeMessage.startsWith(causeCode) ? '' : causeCode)
+    : (causeName && causeName !== 'Error' ? causeName : '');
+  const limitText = describeD1LimitCode(causeCode);
+  const causeText = limitText
+    ? `${limitText}（${causeCode}）`
+    : [causeHead, causeMessage].filter(Boolean).join(': ');
+
+  let out = detailParts.length > 0 ? `${base}（${detailParts.join('；')}）` : base;
+  if (causeText && !out.includes(causeText)) {
+    out = `${out}：${causeText}`;
+  }
+  return out;
+}
+
 async function unwrap<T>(response: Promise<CloudDataResponse<T>>): Promise<T> {
   const result = await response;
   if (!result?.success || result.data == null) {
-    throw new CloudDataError(result?.error?.code ?? 'CLOUD_DATA_FAILED', result?.error?.message ?? '云端没有返回有效结果，请重试。');
+    throw new CloudDataError(
+      result?.error?.code ?? 'CLOUD_DATA_FAILED',
+      formatCloudErrorMessage(result?.error),
+    );
   }
   return result.data;
 }

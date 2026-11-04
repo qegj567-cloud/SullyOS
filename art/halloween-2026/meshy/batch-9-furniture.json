@@ -1,0 +1,40 @@
+{
+  "id": "halloween-batch-09-furniture",
+  "maxTasks": 4,
+  "maxEstimatedCredits": 20,
+  "defaults": {
+    "model_type": "smart-topology",
+    "ai_model": "meshy-t2.5",
+    "topology": "triangle",
+    "should_texture": false,
+    "target_formats": [
+      "glb"
+    ]
+  },
+  "jobs": [
+    {
+      "id": "bat-sofa",
+      "image": "../furniture/01-bat-sofa.png",
+      "target_polycount": 8000,
+      "estimatedCredits": 5
+    },
+    {
+      "id": "coffin-coffee-table",
+      "image": "../furniture/02-coffin-coffee-table.png",
+      "target_polycount": 6000,
+      "estimatedCredits": 5
+    },
+    {
+      "id": "pumpkin-armchair",
+      "image": "../furniture/03-pumpkin-armchair.png",
+      "target_polycount": 8000,
+      "estimatedCredits": 5
+    },
+    {
+      "id": "potion-bookcase",
+      "image": "../furniture/04-potion-bookcase.png",
+      "target_polycount": 8000,
+      "estimatedCredits": 5
+    }
+  ]
+}

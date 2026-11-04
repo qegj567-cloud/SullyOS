@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>完整对比 · 修改前与目前</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f0eeea;color:#393733;font:15px/1.6 system-ui,sans-serif}main{max-width:1800px;margin:auto;padding:32px 28px}h1{font-size:25px;font-weight:600;margin:0 0 8px}p{margin:0;color:#75716a}nav{display:flex;gap:8px;margin:24px 0}button{font:inherit;border:1px solid #d3cec5;border-radius:20px;padding:6px 20px;background:transparent;color:inherit;cursor:pointer}button[aria-pressed=true]{background:#47443f;color:#fff;border-color:#47443f}button:focus-visible,a:focus-visible{outline:2px solid #ad8256;outline-offset:4px}.pair{display:grid;grid-template-columns:1fr 1fr;gap:20px}figure{margin:0;min-width:0}figcaption{display:flex;align-items:baseline;gap:12px;margin-bottom:10px}strong{font-size:18px;font-weight:600}small{color:#827b72}img{display:block;width:100%;height:auto;border-radius:10px;background:#e7e3de}a{color:inherit;text-decoration:none}a:hover{text-decoration:underline}.note{margin-top:20px;font-size:13px}@media(max-width:760px){main{padding:24px 16px}.pair{grid-template-columns:1fr;gap:26px}figcaption{flex-wrap:wrap;gap:5px 12px}h1{font-size:22px}}
+</style></head><body><main>
+<h1>完整对比 · 修改前与目前</h1>
+<p>同机位、同人物与衣服、同光照时段。均为关闭照片滤镜的原片。</p>
+<nav aria-label="对比光照"><button data-phase="sunset" aria-pressed="true">夕阳</button><button data-phase="day" aria-pressed="false">白天</button><button data-phase="night" aria-pressed="false">夜晚</button></nav>
+<div class="pair">
+<figure><figcaption><strong>彻底修改前</strong><small>本轮三渲二与夕阳调整之前</small></figcaption><a id="old-link" href="before/sunset.png" target="_blank"><img id="old" src="before/sunset.png" alt="夕阳：本轮修改前的完整画面" width="1020" height="574"></a></figure>
+<figure><figcaption><strong>目前版本</strong><small>新版人物材质 ＋ 柔和夕阳</small></figcaption><a id="new-link" href="sunset-after/sunset.png" target="_blank"><img id="new" src="sunset-after/sunset.png" alt="夕阳：目前版本的完整画面" width="1020" height="574"></a></figure>
+</div>
+<p class="note">左图使用开始修改前实际保存的截图；右图使用当前实现的截图。点击图片可放大查看。</p>
+</main><script>
+const labels={sunset:'夕阳',day:'白天',night:'夜晚'};
+for(const button of document.querySelectorAll('button[data-phase]'))button.addEventListener('click',()=>{
+ const phase=button.dataset.phase;
+ for(const b of document.querySelectorAll('button[data-phase]'))b.setAttribute('aria-pressed',String(b===button));
+ for(const [id,dir,label]of [['old','before','本轮修改前'],['new','sunset-after','目前版本']]){
+  const img=document.getElementById(id);img.src=`${dir}/${phase}.png`;img.alt=`${labels[phase]}：${label}的完整画面`;document.getElementById(id+'-link').href=img.getAttribute('src');
+ }
+});
+</script></body></html>

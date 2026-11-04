@@ -1,0 +1,56 @@
+{
+  "id": "halloween_pumpkin_lantern",
+  "name": "万圣节南瓜提灯",
+  "surface": "tabletop",
+  "url": "halloween_pumpkin_lantern.glb",
+  "size": [
+    0.36,
+    0.4294929749541844,
+    0.36417837507635914
+  ],
+  "default": [
+    0,
+    0.15,
+    0
+  ],
+  "boxes": [
+    [
+      -0.18,
+      0,
+      -0.18208918753817957,
+      0.18,
+      0.4294929749541844,
+      0.18208918753817957
+    ]
+  ],
+  "collection": "living",
+  "paintMaterials": [
+    "halloween_pumpkin",
+    "halloween_leaf",
+    "halloween_iron",
+    "halloween_light"
+  ],
+  "colorParts": [
+    {
+      "material": "halloween_pumpkin",
+      "label": "南瓜",
+      "color": "#ff690b"
+    },
+    {
+      "material": "halloween_leaf",
+      "label": "叶片",
+      "color": "#8bbf22"
+    },
+    {
+      "material": "halloween_iron",
+      "label": "提环",
+      "color": "#24202c"
+    },
+    {
+      "material": "halloween_light",
+      "label": "灯芯",
+      "color": "#ffcb32"
+    }
+  ],
+  "triangles": 3682
+}

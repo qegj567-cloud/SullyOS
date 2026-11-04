@@ -1,0 +1,23 @@
+{
+  "errors": [],
+  "views": [
+    {
+      "phase": "day",
+      "drawCalls": 93,
+      "triangles": 280983,
+      "programs": 19
+    },
+    {
+      "phase": "sunset",
+      "drawCalls": 102,
+      "triangles": 295055,
+      "programs": 19
+    },
+    {
+      "phase": "night",
+      "drawCalls": 102,
+      "triangles": 295055,
+      "programs": 19
+    }
+  ]
+}

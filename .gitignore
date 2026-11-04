@@ -53,6 +53,7 @@ xiaohongshu-skills/
 .claude/
 .codex/
 .pnpm-store/
+/.cache/retained-build-assets/
 
 # Local research downloads, QA builds/screenshots and temporary worktrees.
 /.tmp/
@@ -118,3 +119,20 @@ xiaohongshu-skills/
 /art/acid-orbit/preview.bundle.js
 /art/acid-orbit/preview.bundle.css
 /public/instant-worker.bundle.js
+
+# Private Halloween reference art and design packs must stay outside the repository.
+/art/halloween-2026/**/*.png
+/art/halloween-2026/**/*.jpg
+/art/halloween-2026/**/*.jpeg
+/art/halloween-2026/**/*.webp
+/art/halloween-2026/**/*.svg
+/art/halloween-2026/*.zip
+
+# Local development scratch files and unreleased 3D source/intermediate assets.
+/tmp/
+/art/halloween-2026/**/*.glb
+/art/pets/halloween-2026/**/*.glb
+/art/pets/halloween-2026/**/*.png
+/art/chibi/princess-carry-2026/**/*.png
+/art/photo-mode-2026/**/*.png
+/art/toon-style-2026/**/*.png

@@ -1,0 +1,83 @@
+{
+  "batch": "halloween-batch-07",
+  "jobs": [
+    {
+      "id": "ghost-shorts",
+      "image": "../separated/05-ghost/shorts.png",
+      "imageSha256": "5d8bd0d05e48ab39395ae080926117c056761e0c2ae9eb806f8d9a84258cdd31",
+      "params": {
+        "model_type": "standard",
+        "ai_model": "meshy-7.1",
+        "geometry_resolution": "4k",
+        "image_enhancement": false,
+        "should_remesh": true,
+        "save_pre_remeshed_model": true,
+        "topology": "triangle",
+        "should_texture": false,
+        "target_formats": [
+          "glb"
+        ],
+        "target_polycount": 50000,
+        "pose_mode": "t-pose"
+      },
+      "estimatedCredits": 25,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-27T05:39:08.637Z",
+      "taskId": "01a17bde-9734-76d1-8f08-d13bfc062c56",
+      "progress": 100,
+      "consumedCredits": 25,
+      "sourceFile": "ghost-shorts-source.glb",
+      "sourceBytes": 3417580,
+      "sourceSha256": "4198b865629bbda6e1016b058e270378153c2470a2e750652d030b78b695b419",
+      "downloaded": true,
+      "file": "ghost-shorts.glb",
+      "bytes": 1517072,
+      "sha256": "7c2d24faf506d88f9718763974345ca311c58fa83387aad67e4b2644e82c81d4"
+    },
+    {
+      "id": "ghost-shoes",
+      "image": "../separated/05-ghost/shoes.png",
+      "imageSha256": "47be37a8fa0171c5f8ae842d5057d3e8d93a5e447b0ef27b7016cf2d7c9456b6",
+      "params": {
+        "model_type": "standard",
+        "ai_model": "meshy-7.1",
+        "geometry_resolution": "4k",
+        "image_enhancement": false,
+        "should_remesh": true,
+        "save_pre_remeshed_model": true,
+        "topology": "triangle",
+        "should_texture": false,
+        "target_formats": [
+          "glb"
+        ],
+        "target_polycount": 50000,
+        "pose_mode": "t-pose"
+      },
+      "estimatedCredits": 25,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-27T05:39:11.977Z",
+      "taskId": "01a17bde-a387-7075-b2c5-04a3ae337134",
+      "progress": 100,
+      "consumedCredits": 25,
+      "sourceFile": "ghost-shoes-source.glb",
+      "sourceBytes": 4893732,
+      "sourceSha256": "584e5886ab9fcf34010e2ddbb638940057d9627aadaaa85d73d20d1ec783562b",
+      "downloaded": true,
+      "file": "ghost-shoes.glb",
+      "bytes": 1717508,
+      "sha256": "dd72c1d49ea4c2aefa0e6682ec6deecc8ae42ec586d2d44fc247bc64b91e7bea"
+    }
+  ],
+  "latestBalance": {
+    "balance": 916,
+    "monthly_credits": 675,
+    "permanent_credits": 241,
+    "monthly_resets_at": 1794576839000
+  },
+  "balanceBefore": {
+    "balance": 966,
+    "monthly_credits": 725,
+    "permanent_credits": 241,
+    "monthly_resets_at": 1794576839000
+  }
+}

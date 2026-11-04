@@ -1,0 +1,79 @@
+{
+  "jobs": [
+    {
+      "id": "pumpkin-pail",
+      "params": {
+        "mode": "preview",
+        "ai_model": "meshy-6",
+        "should_remesh": true,
+        "topology": "triangle",
+        "target_formats": [
+          "glb"
+        ],
+        "prompt": "One cute Halloween pumpkin candy bucket, hollow open top, thick rounded pumpkin lobes, simple carved smiling jack o lantern face with recessed eyes, one sturdy semicircular arch handle above the opening. Toy prop for a cozy chibi game. Single isolated object, no candy inside, no ground, no character. Clean rounded silhouette, thick walls, no tiny details.",
+        "target_polycount": 2400
+      },
+      "status": "SUCCEEDED",
+      "taskId": "01a18063-72d5-77df-afe0-6aeeebb4adfd",
+      "progress": 100,
+      "consumedCredits": 20,
+      "file": "pumpkin-pail-source.glb",
+      "sha256": "fc9b3870a96383f4e4a772b6e4ef4e4fcc3dc4da2e18647ea65cb9123f6420d8",
+      "bytes": 140636
+    },
+    {
+      "id": "wrapped-candy",
+      "params": {
+        "mode": "preview",
+        "ai_model": "meshy-6",
+        "should_remesh": true,
+        "topology": "triangle",
+        "target_formats": [
+          "glb"
+        ],
+        "prompt": "One single wrapped round candy bonbon with two short twisted wrapper ends. Cute chunky toy game prop, simple rounded center, broad folded wrapper tips. Symmetric isolated object, horizontal long axis, no ground, no text, no characters, no other objects.",
+        "target_polycount": 800
+      },
+      "status": "SUCCEEDED",
+      "taskId": "01a18063-7a31-72b9-8596-76e3315fd16c",
+      "progress": 100,
+      "consumedCredits": 20,
+      "file": "wrapped-candy-source.glb",
+      "sha256": "45271af46af990676b43b818cf892554a405a51011bdbe7851b4fe0c9e1b1949",
+      "bytes": 64200
+    },
+    {
+      "id": "little-ghost",
+      "params": {
+        "mode": "preview",
+        "ai_model": "meshy-6",
+        "should_remesh": true,
+        "topology": "triangle",
+        "target_formats": [
+          "glb"
+        ],
+        "prompt": "One small cute ghost puppet toy, rounded domed head flowing into a short wavy sheet skirt, two recessed oval eyes and a small recessed round mouth, tiny outstretched side arms. Friendly Halloween chibi handheld prop, solid closed bottom, no stick, no ground, no character, no accessories. Chunky smooth rounded silhouette.",
+        "target_polycount": 1800
+      },
+      "status": "SUCCEEDED",
+      "taskId": "01a18063-8247-72bd-bcc1-a62afe5594b0",
+      "progress": 100,
+      "consumedCredits": 20,
+      "file": "little-ghost-source.glb",
+      "sha256": "01ad673fb21101966541f7267325a3043a0c350a44010ceecd362885b97d850e",
+      "bytes": 103168
+    }
+  ],
+  "balanceBefore": {
+    "balance": 896,
+    "monthly_credits": 655,
+    "permanent_credits": 241,
+    "monthly_resets_at": 1794576839000
+  },
+  "balanceAfter": {
+    "balance": 836,
+    "monthly_credits": 595,
+    "permanent_credits": 241,
+    "monthly_resets_at": 1794576839000
+  }
+}

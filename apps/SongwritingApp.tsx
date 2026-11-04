@@ -194,6 +194,12 @@ const SongwritingApp: React.FC = () => {
     const [tempLyricStyle, setTempLyricStyle] = useState<LyricCoWritingStyle>('adaptive');
     const [tempLyricStyleCategory, setTempLyricStyleCategory] = useState<LyricStyleCategory>('chinese');
     const [tempCollaboratorId, setTempCollaboratorId] = useState('');
+    useAppShortcut(ShortcutAppID.Songwriting, intent => {
+        if (intent.entryId === 'create') { setTempCollaboratorId(intent.characterId || ''); setView('create'); return; }
+        const target = songs.find(song => song.id === intent.resourceId);
+        setActiveSong(target || null); setLineDrafts({}); setWorkMode('notebook'); setView(target ? 'write' : 'shelf');
+        if (intent.resourceId && !target) addToast('这份乐谱已不存在，请重新设置槽位', 'error');
+    });
     const [partnerGroupId, setPartnerGroupId] = useState(GROUP_FILTER_ALL); // 创作伙伴页的分组筛选
     const [tempCoverStyle, setTempCoverStyle] = useState(COVER_STYLES[0]?.id || 'dawn-blush');
     const [tempTemplate, setTempTemplate] = useState<string>('free');
@@ -3651,3 +3657,5 @@ const SongwritingApp: React.FC = () => {
 };
 
 export default SongwritingApp;
+import { useAppShortcut } from '../utils/appShortcutLaunch';
+import { AppID as ShortcutAppID } from '../types';

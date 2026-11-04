@@ -2,6 +2,7 @@
 import React,{act} from 'react';import {createRoot} from 'react-dom/client';import {it,expect,vi} from 'vitest';import {useHomeSchedule} from '../apps/room3d/useHomeSchedule';
 const m=vi.hoisted(()=>({load:vi.fn(),presence:vi.fn()}));
 vi.mock('./dailySchedule',()=>({getDailyScheduleForChar:m.load}));vi.mock('./homePresence',()=>({homePresence:m.presence}));vi.mock('./scheduleFeature',()=>({isScheduleFeatureOn:()=>true}));vi.mock('./scheduleTime',()=>({getCurrentScheduleSlotIndex:()=>0}));
+vi.mock('./homeVisits',()=>({readHomeVisits:async()=>[],presentHomeVisit:()=>undefined,HOME_VISITS_EVENT:'home-visits-changed'}));
 it('restores the scheduled room on reentry, and publishes the current activity',async()=>{
  (globalThis as any).IS_REACT_ACT_ENVIRONMENT=true;
  m.load.mockResolvedValue({date:'test',slots:[{startTime:'09:00',activity:'阅读'}]});m.presence.mockReturnValue({kind:'home',roomId:'study'});

@@ -9,7 +9,7 @@ const events = {
 const categories = {
   chat:'聊天装扮', appearance:'桌面主题', whitebox:'白框', bubbles:'气泡',
   avatar:'头像框', background:'聊天背景', psyche:'心象', sound:'提示音',
-  schedule:'日程表', journal:'交换日记', outfit:'搭配',
+  collaboration:'协同工作', schedule:'日程表', journal:'交换日记', outfit:'搭配',
   file:'文件', image:'图片', css:'CSS', code:'分享码', new:'首次投稿', revision:'更新投稿',
 } as const;
 export function trackBeauty(action: string, category: unknown) {

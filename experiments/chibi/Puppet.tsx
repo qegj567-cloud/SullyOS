@@ -7,6 +7,8 @@ import {prepareHoodie} from '../../apps/room3d/chibi/hoodieClothes';
 import {prepareApprovedWardrobe} from '../../apps/room3d/chibi/approvedClothing';
 import {BLANK_SCALE} from '../../apps/room3d/chibi/blankBody';
 import {NEW_BODY_HOME_PERCENT} from '../../apps/room3d/chibi/visitor';
+import {setCharacterIllustration} from '../../apps/room3d/chibi/illustration';
+import {getCharacterStyle,subscribeCharacterStyle} from '../../apps/room3d/chibi/characterStyle';
 import type {HairSettings,Parts,Motion} from '../../apps/room3d/chibi/types';
 import type {LayeringReport} from '../../apps/room3d/chibi/garmentLayering';
 export type {Parts,Motion};
@@ -75,6 +77,7 @@ export const Puppet=React.memo(function Puppet({view,parts,yaw,motion,wire,playi
   if(!source||!scene.current)return;
   let next:ReturnType<typeof buildBody>;
   try{next=buildBody(source,parts,appearance,shapeHair);}catch(e){setError(String(e));return;}
+  if(appearance!=='skin')setCharacterIllustration(next.root,getCharacterStyle()==='modern');
   if(next.rig)next.root.scale.setScalar(1.4/BLANK_SCALE*(NEW_BODY_HOME_PERCENT/100));
   rig.current=next;setBody(next);scene.current.add(next.root);setError('');
   // Expose identity alongside the existing frame counters for preview QA.
@@ -82,6 +85,7 @@ export const Puppet=React.memo(function Puppet({view,parts,yaw,motion,wire,playi
   wake.current();
   return()=>{outfitRef.current?.dispose();outfitRef.current=undefined;next.root.removeFromParent();next.resources.forEach(r=>r.dispose());if(rig.current===next)rig.current=undefined;};
  },[source,parts,appearance,shapeHair]);
+ useEffect(()=>{if(!body)return;const update=()=>{setCharacterIllustration(body.root,appearance!=='skin'&&getCharacterStyle()==='modern');wake.current();};const unsubscribe=subscribeCharacterStyle(update);update();return unsubscribe;},[body,appearance]);
  useEffect(()=>{
   if(!body?.rig||!wardrobeStyle)return;
   const clip=createWardrobePose(body.rig,wardrobeStyle),mixer=new T.AnimationMixer(body.root),loop=mixer.clipAction(clip);loop.play();loop.paused=true;
@@ -102,6 +106,7 @@ export const Puppet=React.memo(function Puppet({view,parts,yaw,motion,wire,playi
    // No frame can see a half-loaded outfit. Pending/failed loads leave the
    // current clothes, skin mask, skeleton and footwear support in place.
    outfitRef.current?.dispose();outfit.attach();outfitRef.current=outfit;
+   setCharacterIllustration(body.root,getCharacterStyle()==='modern');
    const previous=equipped.current,next=outfitSettings.wardrobe;
    // Trigger only after a successful clothing equip, not loading a character,
    // taking clothes off, recoloring them or adjusting their fit.

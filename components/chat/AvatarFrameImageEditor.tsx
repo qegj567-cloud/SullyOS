@@ -1,3 +1,4 @@
+import {AVATAR_FRAME_TARGETS,readAvatarFrameTarget,targetAvatarFrameCss,type AvatarFrameTarget} from '../../utils/avatarFrameTarget';
 import React, {useEffect, useRef, useState} from 'react';
 import {UPLOADED_AVATAR_FRAME_STYLE, uploadedAvatarFrameCss} from '../../utils/avatarFrameUpload';
 import {putImageBlobDeduped} from '../../utils/blobRef';
@@ -10,8 +11,12 @@ export default function AvatarFrameImageEditor({css, disabled, onChange, onBusy,
     const [fit, setFit] = useState({...UPLOADED_AVATAR_FRAME_STYLE});
     const alive = useRef(true);
     useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
-    const adjustable = frame && css === uploadedAvatarFrameCss(frame.image, frame.width, frame.height, fit);
+    const [target,setTarget]=useState<AvatarFrameTarget>(()=>readAvatarFrameTarget(css));
+    useEffect(()=>{if(css.trim())setTarget(readAvatarFrameTarget(css));},[css]);
+    const generate=(image:string,width:number,height:number,style=UPLOADED_AVATAR_FRAME_STYLE)=>targetAvatarFrameCss(uploadedAvatarFrameCss(image,width,height,style),target);
+    const adjustable = frame && css === generate(frame.image, frame.width, frame.height, fit);
     return <>
+        <label>头像框给谁用<select aria-label="头像框给谁用" disabled={disabled} value={target} onChange={e=>{const next=e.target.value as AvatarFrameTarget;setTarget(next);onChange(targetAvatarFrameCss(css,next));}}>{AVATAR_FRAME_TARGETS.map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></label>
         <label>选择透明头像框图片<input type="file" accept="image/*" disabled={disabled} onChange={async event => {
             const file = event.target.files?.[0]; event.target.value = '';
             if (!file) return;
@@ -31,7 +36,7 @@ export default function AvatarFrameImageEditor({css, disabled, onChange, onBusy,
                 if (!alive.current) return;
                 const next = {image, width: img.naturalWidth, height: img.naturalHeight};
                 setFrame(next); setFit({...UPLOADED_AVATAR_FRAME_STYLE});
-                onChange(uploadedAvatarFrameCss(image, next.width, next.height));
+                onChange(generate(image, next.width, next.height));
             } catch (error) {
                 if (alive.current) onError(error instanceof Error ? error.message : '图片读取失败');
             } finally { if (temporaryUrl) URL.revokeObjectURL(temporaryUrl); if (alive.current) onBusy(false); }
@@ -45,7 +50,7 @@ export default function AvatarFrameImageEditor({css, disabled, onChange, onBusy,
             ] as const).map(([key, label, min, max, step]) => <label key={key}>{label}：{fit[key]}
                 <input aria-label={label} type="range" min={min} max={max} step={step} value={fit[key]} onChange={event => {
                     const next = {...fit, [key]: Number(event.target.value)}; setFit(next);
-                    onChange(uploadedAvatarFrameCss(frame.image, frame.width, frame.height, next));
+                    onChange(generate(frame.image, frame.width, frame.height, next));
                 }}/>
             </label>)}
         </fieldset>}

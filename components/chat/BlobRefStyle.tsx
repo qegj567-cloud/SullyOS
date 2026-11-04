@@ -1,17 +1,20 @@
-import React, {useEffect, useState} from 'react';
-import {resolveCssImageUrls} from '../../utils/cssImageAssets';
+import React, {useEffect, useRef} from 'react';
+import {applyCssImageUrls, resolveCssImageUrls} from '../../utils/cssImageAssets';
 
-/** Keep persisted CSS independent of the short-lived browser object URLs. */
+/** Keep saved CSS and font rules stable while local images finish loading. */
 export default function BlobRefStyle({css}: {css: string}) {
-    const [resolved, setResolved] = useState<{source: string; css: string; alive: () => boolean} | null>(null);
+    const styleRef = useRef<HTMLStyleElement>(null);
     useEffect(() => {
         if (!css.includes('blobref:')) return;
         let alive = true; let dispose: (() => void) | undefined;
         void resolveCssImageUrls(css, true).then(result => {
             if (!alive) {result.dispose(); return;}
-            dispose = result.dispose; setResolved({source: css, css: result.css, alive: () => alive});
-        }).catch(() => { /* Keep ordinary layout CSS usable if the asset store is unavailable. */ });
+            dispose = result.dispose;
+            try {
+                if (styleRef.current?.sheet) applyCssImageUrls(styleRef.current.sheet, result.replacements);
+            } catch { /* A stylesheet may have been detached during navigation. */ }
+        }).catch(() => { /* Ordinary layout CSS remains usable if the asset store is unavailable. */ });
         return () => {alive = false; dispose?.();};
     }, [css]);
-    return <style>{resolved?.source === css && resolved.alive() ? resolved.css : css}</style>;
+    return <style ref={styleRef}>{css}</style>;
 }

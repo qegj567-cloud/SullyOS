@@ -1,0 +1,31 @@
+[
+  {
+    "id": "witch",
+    "source": "reduced/witch-40000.glb",
+    "bones": 48,
+    "parts": [
+      {
+        "part": "dress",
+        "triangles": 6027
+      },
+      {
+        "part": "hat",
+        "triangles": 4831
+      },
+      {
+        "part": "dress",
+        "triangles": 24390
+      },
+      {
+        "part": "boots",
+        "triangles": 2744
+      },
+      {
+        "part": "dress",
+        "triangles": 3760
+      }
+    ],
+    "removedTriangles": 2223,
+    "texturePreserved": true
+  }
+]

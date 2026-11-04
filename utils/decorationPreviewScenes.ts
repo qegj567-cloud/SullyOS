@@ -2,7 +2,7 @@ import type {DecorationPreset} from './chatDecoration';
 import {cssRuleSelectors,maskCssComments} from './cssRuleSelectors';
 import {CHAT_PREVIEW_SCENES,type ChatPreviewScene} from './chatPreviewFixtures';
 
-export type DecorationThumbnailPart = 'bubbles'|'background'|'psyche'|'avatar'|'schedule'|'journal'|'date'|'story';
+export type DecorationThumbnailPart = 'bubbles'|'background'|'psyche'|'avatar'|'schedule'|'journal'|'date'|'story'|'collaboration';
 /** Only unambiguous single-part works get an isolated catalog thumbnail. */
 export function decorationThumbnailPart(value:unknown):DecorationThumbnailPart|undefined {
  const parts=(value as Partial<DecorationPreset>|null)?.parts;
@@ -15,12 +15,13 @@ export function decorationThumbnailPart(value:unknown):DecorationThumbnailPart|u
   if(Object.keys(parts).every(key=>key==='css'||key===kind))return kind;
   return;
  }
- const present=(['bubbles','background','psyche','sound','schedule','journal','date','story'] as const).filter(key=>parts[key]!=null);
+ const present=(['bubbles','background','psyche','sound','schedule','journal','date','story','collaboration'] as const).filter(key=>parts[key]!=null);
  return present.length===1&&present[0]!=='sound'?present[0]:undefined;
 }
 
 /** Limit the menu to the preset's parts and explicit CSS targets, not the fixture catalog. */
 export function decorationPreviewScenes(value: unknown, scope: 'preset'|'all' = 'preset'): ChatPreviewScene[] {
+  if((value as Partial<DecorationPreset>|null)?.parts?.collaboration)return [{id:'collaboration',label:'协同工作',messages:[]}];
   if((value as Partial<DecorationPreset>|null)?.parts?.date)return [{id:'date-reading',label:'见面界面',messages:[]}];
   if((value as Partial<DecorationPreset>|null)?.parts?.story)return [{id:'story-reading',label:'剧情界面',messages:[]}];
   // The composer checks the whole conversation, including content that keeps default styling.

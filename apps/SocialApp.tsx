@@ -159,6 +159,7 @@ const SocialApp: React.FC = () => {
     const [feed, setFeed] = useState<SocialPost[]>([]);
     // Modes: 'home' (Feed) | 'me' (Profile) | 'create' (Modal Overlay)
     const [activeTab, setActiveTab] = useState<'home' | 'me'>('home');
+    useAppShortcut(ShortcutAppID.Social, intent => { setSelectedPost(null); setIsCreateOpen(false); setShowSettings(false); setActiveTab(intent.entryId === 'me' ? 'me' : 'home'); });
     const [isCreateOpen, setIsCreateOpen] = useState(false); 
     
     const [selectedPost, setSelectedPost] = useState<SocialPost | null>(null);
@@ -1285,3 +1286,5 @@ ${buildSparkCommentHistory(post)}
 };
 
 export default SocialApp;
+import { useAppShortcut } from '../utils/appShortcutLaunch';
+import { AppID as ShortcutAppID } from '../types';

@@ -85,6 +85,8 @@ export interface ApiCallLogEntry extends ApiCallMeta {
     ok: boolean;
     /** 输入 token（prompt_tokens），来自响应 usage，拿不到则空 */
     promptTokens?: number;
+    cacheReadTokens?: number;
+    cacheWriteTokens?: number;
     /** 输出 token（completion_tokens） */
     completionTokens?: number;
     /** 总 token（total_tokens） */
@@ -305,7 +307,7 @@ function resolvePresetName(baseUrl: string, model: string): string {
  * 在 safeFetchJson 里对 `/chat/completions` 的成功与失败都会调用。
  */
 /** 从 OpenAI 兼容响应里抠 usage（各家代理大多遵循这个字段）。 */
-export function extractApiTokenUsage(response: unknown): { prompt?: number; completion?: number; total?: number } {
+export function extractApiTokenUsage(response: unknown): { prompt?: number; completion?: number; total?: number; cached?: number; cacheWrite?: number } {
     const root = response as any;
     const usage = root?.usage || root?.usage_metadata || root?.usageMetadata;
     if (!usage || typeof usage !== 'object') return {};
@@ -314,6 +316,8 @@ export function extractApiTokenUsage(response: unknown): { prompt?: number; comp
         prompt: num(usage.prompt_tokens ?? usage.input_tokens ?? usage.promptTokenCount),
         completion: num(usage.completion_tokens ?? usage.output_tokens ?? usage.candidatesTokenCount),
         total: num(usage.total_tokens ?? usage.totalTokenCount),
+        ...(num(usage.cache_read_input_tokens ?? usage.prompt_tokens_details?.cached_tokens) !== undefined ? {cached:num(usage.cache_read_input_tokens ?? usage.prompt_tokens_details?.cached_tokens)} : {}),
+        ...(num(usage.cache_creation_input_tokens) !== undefined ? {cacheWrite:num(usage.cache_creation_input_tokens)} : {}),
     };
 }
 
@@ -965,6 +969,8 @@ export function updateApiRequestCaptureUsage(input: {
             promptTokens: usage.prompt,
             completionTokens: usage.completion,
             totalTokens: usage.total,
+            ...(usage.cached !== undefined ? {cacheReadTokens:usage.cached} : {}),
+            ...(usage.cacheWrite !== undefined ? {cacheWriteTokens:usage.cacheWrite} : {}),
             usageStatus: !input.ok ? 'failed' : usage.prompt != null ? 'reported' : 'not-reported',
         };
         const pending = captureSaveInFlight?.id === input.captureId
@@ -1021,6 +1027,8 @@ export function recordApiCall(input: {
             promptTokens: usage.prompt,
             completionTokens: usage.completion,
             totalTokens: usage.total,
+            ...(usage.cached !== undefined ? {cacheReadTokens:usage.cached} : {}),
+            ...(usage.cacheWrite !== undefined ? {cacheWriteTokens:usage.cacheWrite} : {}),
             durationMs: input.durationMs,
             promptBreakdown: buildPromptBreakdown(input.body),
             appId: meta.appId,

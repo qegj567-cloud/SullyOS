@@ -1,0 +1,764 @@
+[
+  {
+    "entry": {
+      "id": "halloween_bat_sofa",
+      "name": "蝙蝠双人沙发",
+      "url": "halloween_bat_sofa.glb",
+      "surface": "floor",
+      "size": [
+        3.9000000000000004,
+        1.7381948590278626,
+        1.6049475431442262
+      ],
+      "default": [
+        0,
+        0.15,
+        0
+      ],
+      "boxes": [
+        [
+          -1.9500000000000002,
+          0,
+          -0.8024737715721131,
+          1.9500000000000002,
+          1.7381948590278626,
+          0.8024737715721131
+        ]
+      ],
+      "collection": "living",
+      "revision": "9867db19d840",
+      "paintMaterials": [
+        "halloween_texture_0"
+      ],
+      "colorParts": [
+        {
+          "material": "halloween_texture_0",
+          "label": "贴图整体色调",
+          "color": "#ffffff"
+        }
+      ],
+      "seats": [
+        {
+          "id": "0",
+          "label": "左侧",
+          "position": [
+            -0.94,
+            0.845,
+            0.38
+          ],
+          "rotation": 0
+        },
+        {
+          "id": "1",
+          "label": "右侧",
+          "position": [
+            0.94,
+            0.845,
+            0.38
+          ],
+          "rotation": 0
+        }
+      ],
+      "textureSource": "meshy-reference",
+      "materialStyle": "pbr",
+      "previewUrl": "furniture-textured-runtime/halloween_bat_sofa.glb?v=9867db19d840"
+    },
+    "triangles": 7893,
+    "bytes": 1042836,
+    "textureSizes": [
+      [
+        1024,
+        1024
+      ],
+      [
+        512,
+        512
+      ],
+      [
+        512,
+        512
+      ]
+    ],
+    "source": "art/halloween-2026/meshy/halloween-batch-12-furniture-texture/bat-sofa-textured.glb"
+  },
+  {
+    "entry": {
+      "id": "halloween_pumpkin_armchair",
+      "name": "南瓜扶手椅",
+      "url": "halloween_pumpkin_armchair.glb",
+      "surface": "floor",
+      "size": [
+        2.1,
+        2.047149324417114,
+        2.0654864430427553
+      ],
+      "default": [
+        0,
+        0.15,
+        0
+      ],
+      "boxes": [
+        [
+          -1.05,
+          0,
+          -1.0327432215213777,
+          1.05,
+          2.047149324417114,
+          1.0327432215213777
+        ]
+      ],
+      "collection": "living",
+      "revision": "a251b1a4416c",
+      "paintMaterials": [
+        "halloween_texture_0"
+      ],
+      "colorParts": [
+        {
+          "material": "halloween_texture_0",
+          "label": "贴图整体色调",
+          "color": "#ffffff"
+        }
+      ],
+      "seats": [
+        {
+          "id": "0",
+          "label": "中间",
+          "position": [
+            0,
+            0.55,
+            0.7
+          ],
+          "rotation": 0
+        }
+      ],
+      "textureSource": "meshy-reference",
+      "materialStyle": "pbr",
+      "previewUrl": "furniture-textured-runtime/halloween_pumpkin_armchair.glb?v=a251b1a4416c"
+    },
+    "triangles": 7267,
+    "bytes": 849280,
+    "textureSizes": [
+      [
+        1024,
+        1024
+      ],
+      [
+        512,
+        512
+      ],
+      [
+        512,
+        512
+      ]
+    ],
+    "source": "art/halloween-2026/meshy/halloween-batch-12-furniture-texture/pumpkin-armchair-textured.glb"
+  },
+  {
+    "entry": {
+      "id": "halloween_coffin_coffee_table",
+      "name": "棺木月牙茶几",
+      "url": "halloween_coffin_coffee_table.glb",
+      "surface": "floor",
+      "size": [
+        2.7,
+        0.6646373927593232,
+        1.3969800710678102
+      ],
+      "default": [
+        0,
+        0.15,
+        0
+      ],
+      "boxes": [
+        [
+          -1.35,
+          0,
+          -0.6984900355339051,
+          1.35,
+          0.6646373927593232,
+          0.6984900355339051
+        ]
+      ],
+      "collection": "living",
+      "revision": "b7b8aa2b79f2",
+      "paintMaterials": [
+        "halloween_texture_0"
+      ],
+      "colorParts": [
+        {
+          "material": "halloween_texture_0",
+          "label": "贴图整体色调",
+          "color": "#ffffff"
+        }
+      ],
+      "support": {
+        "shape": "rect",
+        "width": 1.9,
+        "depth": 0.85,
+        "height": 0.64
+      },
+      "textureSource": "meshy-reference",
+      "materialStyle": "pbr",
+      "previewUrl": "furniture-textured-runtime/halloween_coffin_coffee_table.glb?v=b7b8aa2b79f2"
+    },
+    "triangles": 5893,
+    "bytes": 706436,
+    "textureSizes": [
+      [
+        1024,
+        1024
+      ],
+      [
+        512,
+        512
+      ],
+      [
+        512,
+        512
+      ]
+    ],
+    "source": "art/halloween-2026/meshy/halloween-batch-12-furniture-texture/coffin-coffee-table-textured.glb"
+  },
+  {
+    "entry": {
+      "id": "halloween_potion_bookcase",
+      "name": "魔药尖顶书柜",
+      "url": "halloween_potion_bookcase.glb",
+      "surface": "floor",
+      "size": [
+        1.7724474089276552,
+        3.499996884286218,
+        0.9302186433695839
+      ],
+      "default": [
+        0,
+        0.15,
+        0
+      ],
+      "boxes": [
+        [
+          -0.8862237044638276,
+          0,
+          -0.46510932168479197,
+          0.8862237044638276,
+          3.499996884286218,
+          0.46510932168479197
+        ]
+      ],
+      "collection": "living",
+      "revision": "4d2f57ba76ee",
+      "paintMaterials": [
+        "halloween_texture_0"
+      ],
+      "colorParts": [
+        {
+          "material": "halloween_texture_0",
+          "label": "贴图整体色调",
+          "color": "#ffffff"
+        }
+      ],
+      "textureSource": "meshy-reference",
+      "materialStyle": "pbr",
+      "previewUrl": "furniture-textured-runtime/halloween_potion_bookcase.glb?v=4d2f57ba76ee"
+    },
+    "triangles": 7852,
+    "bytes": 1045088,
+    "textureSizes": [
+      [
+        1024,
+        1024
+      ],
+      [
+        512,
+        512
+      ],
+      [
+        512,
+        512
+      ]
+    ],
+    "source": "art/halloween-2026/meshy/halloween-batch-12-furniture-texture/potion-bookcase-textured.glb"
+  },
+  {
+    "entry": {
+      "id": "halloween_haunted_fireplace",
+      "name": "幽宅魔火壁炉",
+      "url": "halloween_haunted_fireplace.glb",
+      "surface": "floor",
+      "size": [
+        2.6,
+        2.247569942474365,
+        0.9269571840763092
+      ],
+      "default": [
+        0,
+        0.15,
+        0
+      ],
+      "boxes": [
+        [
+          -1.3,
+          0,
+          -0.4634785920381546,
+          1.3,
+          2.247569942474365,
+          0.4634785920381546
+        ]
+      ],
+      "collection": "living",
+      "revision": "1d424486642a",
+      "paintMaterials": [
+        "halloween_texture_0"
+      ],
+      "colorParts": [
+        {
+          "material": "halloween_texture_0",
+          "label": "贴图整体色调",
+          "color": "#ffffff"
+        }
+      ],
+      "support": {
+        "shape": "rect",
+        "width": 1.75,
+        "depth": 0.4,
+        "height": 1.49,
+        "center": [
+          0,
+          -0.08
+        ]
+      },
+      "textureSource": "meshy-reference",
+      "materialStyle": "pbr",
+      "previewUrl": "furniture-textured-runtime/halloween_haunted_fireplace.glb?v=1d424486642a"
+    },
+    "triangles": 7760,
+    "bytes": 1177396,
+    "textureSizes": [
+      [
+        1024,
+        1024
+      ],
+      [
+        512,
+        512
+      ],
+      [
+        512,
+        512
+      ]
+    ],
+    "source": "art/halloween-2026/meshy/halloween-batch-13-furniture-texture/haunted-fireplace-textured.glb"
+  },
+  {
+    "entry": {
+      "id": "halloween_ghost_floor_lamp",
+      "name": "幽灵落地灯",
+      "url": "halloween_ghost_floor_lamp.glb",
+      "surface": "floor",
+      "size": [
+        1.059184197024115,
+        2.6500010002298238,
+        1.1203700479697085
+      ],
+      "default": [
+        0,
+        0.15,
+        0
+      ],
+      "boxes": [
+        [
+          -0.5295920985120575,
+          0,
+          -0.5601850239848543,
+          0.5295920985120575,
+          2.6500010002298238,
+          0.5601850239848543
+        ]
+      ],
+      "collection": "living",
+      "revision": "ebce0c10870b",
+      "paintMaterials": [
+        "halloween_texture_0"
+      ],
+      "colorParts": [
+        {
+          "material": "halloween_texture_0",
+          "label": "贴图整体色调",
+          "color": "#ffffff"
+        }
+      ],
+      "textureSource": "meshy-reference",
+      "materialStyle": "pbr",
+      "previewUrl": "furniture-textured-runtime/halloween_ghost_floor_lamp.glb?v=ebce0c10870b"
+    },
+    "triangles": 5942,
+    "bytes": 751152,
+    "textureSizes": [
+      [
+        1024,
+        1024
+      ],
+      [
+        512,
+        512
+      ],
+      [
+        512,
+        512
+      ]
+    ],
+    "source": "art/halloween-2026/meshy/halloween-batch-13-furniture-texture/ghost-floor-lamp-textured.glb"
+  },
+  {
+    "entry": {
+      "id": "halloween_gothic_curtain_window",
+      "name": "哥特月夜帘窗",
+      "url": "halloween_gothic_curtain_window.glb",
+      "surface": "wall",
+      "size": [
+        3.6,
+        2.651364040374756,
+        0.3161988079547882
+      ],
+      "default": [
+        0,
+        0.15,
+        0
+      ],
+      "boxes": [
+        [
+          -1.8,
+          0,
+          -0.1580994039773941,
+          1.8,
+          2.651364040374756,
+          0.1580994039773941
+        ]
+      ],
+      "collection": "living",
+      "revision": "8036381c8be3",
+      "paintMaterials": [
+        "halloween_texture_0"
+      ],
+      "colorParts": [
+        {
+          "material": "halloween_texture_0",
+          "label": "贴图整体色调",
+          "color": "#ffffff"
+        }
+      ],
+      "textureSource": "meshy-reference",
+      "materialStyle": "pbr",
+      "previewUrl": "furniture-textured-runtime/halloween_gothic_curtain_window.glb?v=8036381c8be3"
+    },
+    "triangles": 7495,
+    "bytes": 1324676,
+    "textureSizes": [
+      [
+        1024,
+        1024
+      ],
+      [
+        512,
+        512
+      ],
+      [
+        512,
+        512
+      ]
+    ],
+    "source": "art/halloween-2026/meshy/halloween-batch-13-furniture-texture/gothic-curtain-window-textured.glb"
+  },
+  {
+    "entry": {
+      "id": "halloween_bat_rug",
+      "name": "蝙蝠花边地毯",
+      "url": "halloween_bat_rug.glb",
+      "surface": "rug",
+      "size": [
+        3.6,
+        0.04551242427366343,
+        3.6032320642074502
+      ],
+      "default": [
+        0,
+        0.15,
+        0
+      ],
+      "boxes": [],
+      "collection": "living",
+      "revision": "b13db12b83d1",
+      "paintMaterials": [
+        "halloween_texture_0"
+      ],
+      "colorParts": [
+        {
+          "material": "halloween_texture_0",
+          "label": "贴图整体色调",
+          "color": "#ffffff"
+        }
+      ],
+      "textureSource": "meshy-reference",
+      "materialStyle": "pbr",
+      "previewUrl": "furniture-textured-runtime/halloween_bat_rug.glb?v=b13db12b83d1"
+    },
+    "triangles": 3644,
+    "bytes": 796040,
+    "textureSizes": [
+      [
+        1024,
+        1024
+      ],
+      [
+        512,
+        512
+      ],
+      [
+        512,
+        512
+      ]
+    ],
+    "source": "art/halloween-2026/meshy/halloween-batch-13-furniture-texture/bat-rug-textured.glb"
+  },
+  {
+    "entry": {
+      "id": "halloween_cauldron_planter",
+      "name": "魔药蘑菇坩埚",
+      "url": "halloween_cauldron_planter.glb",
+      "surface": "floor",
+      "size": [
+        1,
+        1.144953381131354,
+        0.8679582127765106
+      ],
+      "default": [
+        0,
+        0.15,
+        0
+      ],
+      "boxes": [
+        [
+          -0.5,
+          0,
+          -0.4339791063882553,
+          0.5,
+          1.144953381131354,
+          0.4339791063882553
+        ]
+      ],
+      "collection": "living",
+      "revision": "ed3f23ace79c",
+      "paintMaterials": [
+        "halloween_texture_0"
+      ],
+      "colorParts": [
+        {
+          "material": "halloween_texture_0",
+          "label": "贴图整体色调",
+          "color": "#ffffff"
+        }
+      ],
+      "textureSource": "meshy-reference",
+      "materialStyle": "pbr",
+      "previewUrl": "furniture-textured-runtime/halloween_cauldron_planter.glb?v=ed3f23ace79c"
+    },
+    "triangles": 5780,
+    "bytes": 804108,
+    "textureSizes": [
+      [
+        1024,
+        1024
+      ],
+      [
+        512,
+        512
+      ],
+      [
+        512,
+        512
+      ]
+    ],
+    "source": "art/halloween-2026/meshy/halloween-batch-14-furniture-texture/cauldron-planter-textured.glb"
+  },
+  {
+    "entry": {
+      "id": "halloween_cat_ear_mirror",
+      "name": "猫耳穿衣镜",
+      "url": "halloween_cat_ear_mirror.glb",
+      "surface": "floor",
+      "size": [
+        1.4351899383983573,
+        2.6500006545665062,
+        1.2828282350979736
+      ],
+      "default": [
+        0,
+        0.15,
+        0
+      ],
+      "boxes": [
+        [
+          -0.7175949691991786,
+          0,
+          -0.6414141175489868,
+          0.7175949691991786,
+          2.6500006545665062,
+          0.6414141175489868
+        ]
+      ],
+      "collection": "living",
+      "revision": "3609f26e4928",
+      "paintMaterials": [
+        "halloween_texture_0"
+      ],
+      "colorParts": [
+        {
+          "material": "halloween_texture_0",
+          "label": "贴图整体色调",
+          "color": "#ffffff"
+        }
+      ],
+      "textureSource": "meshy-reference",
+      "materialStyle": "pbr",
+      "previewUrl": "furniture-textured-runtime/halloween_cat_ear_mirror.glb?v=3609f26e4928"
+    },
+    "triangles": 5911,
+    "bytes": 750628,
+    "textureSizes": [
+      [
+        1024,
+        1024
+      ],
+      [
+        512,
+        512
+      ],
+      [
+        512,
+        512
+      ]
+    ],
+    "source": "art/halloween-2026/meshy/halloween-batch-14-furniture-texture/cat-ear-mirror-textured.glb"
+  },
+  {
+    "entry": {
+      "id": "halloween_bat_pumpkin_clock",
+      "name": "蝙蝠南瓜挂钟",
+      "url": "halloween_bat_pumpkin_clock.glb",
+      "surface": "wall",
+      "size": [
+        1.55,
+        0.7991319060325622,
+        0.09178169947117568
+      ],
+      "default": [
+        0,
+        0.15,
+        0
+      ],
+      "boxes": [
+        [
+          -0.775,
+          0,
+          -0.04589084973558784,
+          0.775,
+          0.7991319060325622,
+          0.04589084973558784
+        ]
+      ],
+      "collection": "living",
+      "revision": "580825d04851",
+      "paintMaterials": [
+        "halloween_texture_0"
+      ],
+      "colorParts": [
+        {
+          "material": "halloween_texture_0",
+          "label": "贴图整体色调",
+          "color": "#ffffff"
+        }
+      ],
+      "textureSource": "meshy-reference",
+      "materialStyle": "pbr",
+      "previewUrl": "furniture-textured-runtime/halloween_bat_pumpkin_clock.glb?v=580825d04851"
+    },
+    "triangles": 3880,
+    "bytes": 806100,
+    "textureSizes": [
+      [
+        1024,
+        1024
+      ],
+      [
+        512,
+        512
+      ],
+      [
+        512,
+        512
+      ]
+    ],
+    "source": "art/halloween-2026/meshy/halloween-batch-14-furniture-texture/bat-pumpkin-clock-textured.glb"
+  },
+  {
+    "entry": {
+      "id": "halloween_pumpkin_lantern",
+      "name": "万圣节南瓜提灯",
+      "surface": "tabletop",
+      "url": "halloween_pumpkin_lantern.glb",
+      "size": [
+        0.36,
+        0.42949278971947563,
+        0.3641781120727852
+      ],
+      "default": [
+        0,
+        0.15,
+        0
+      ],
+      "boxes": [
+        [
+          -0.18,
+          0,
+          -0.1820890560363926,
+          0.18,
+          0.42949278971947563,
+          0.1820890560363926
+        ]
+      ],
+      "collection": "living",
+      "paintMaterials": [
+        "halloween_texture_0"
+      ],
+      "colorParts": [
+        {
+          "material": "halloween_texture_0",
+          "label": "贴图整体色调",
+          "color": "#ffffff"
+        }
+      ],
+      "triangles": 3682,
+      "revision": "c3fbfd4f1d3b",
+      "textureSource": "meshy-reference",
+      "materialStyle": "pbr",
+      "previewUrl": "furniture-textured-runtime/halloween_pumpkin_lantern.glb?v=c3fbfd4f1d3b"
+    },
+    "triangles": 3676,
+    "bytes": 649732,
+    "textureSizes": [
+      [
+        1024,
+        1024
+      ],
+      [
+        512,
+        512
+      ],
+      [
+        512,
+        512
+      ]
+    ],
+    "source": "art/halloween-2026/meshy/halloween-batch-14-furniture-texture/pumpkin-lantern-textured.glb"
+  }
+]

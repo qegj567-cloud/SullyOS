@@ -5,6 +5,7 @@ import {createRoot} from 'react-dom/client';
 import {expect,it,vi} from 'vitest';
 import BeautyShareChannel from '../components/appearance/BeautyShareChannel';
 import {PRESET_THEMES} from '../components/chat/ChatConstants';
+import { handleLocalBack } from './localBackHandlers';
 const mocks=vi.hoisted(()=>({update:vi.fn(),open:vi.fn(),active:vi.fn(),done:vi.fn(),read:vi.fn<(...args:any[])=>Promise<any>>(async()=>null),share:vi.fn(),wardrobe:vi.fn(),theme:vi.fn()}));
 vi.mock('../context/OSContext',()=>({useOS:()=>({characters:[{id:'a',name:'甲'},{id:'b',name:'乙'}],activeCharacterId:'b',theme:{},updateTheme:mocks.theme,updateCharacter:mocks.update,addCustomTheme:vi.fn(),setActiveCharacterId:mocks.active,openApp:mocks.open,closeApp:vi.fn(),applyAppearancePreset:vi.fn()})}));
 vi.mock('./db',()=>({DB:{getAsset:mocks.read,getAssetRaw:mocks.read,saveAsset:vi.fn()}}));
@@ -14,6 +15,21 @@ vi.mock('../components/share/BeautyRepoInvitation',()=>({BeautyRepoLibrary:()=>n
 vi.mock('../components/share/BeautySharePanel',()=>({default:(props:any)=>{mocks.share(props);return null;}}));
 vi.mock('../components/appearance/BeautyWardrobe',()=>({default:({onApply,entries,title}:any)=>{mocks.wardrobe(entries,title);return React.createElement('button',{onClick:()=>onApply({kind:'chat-decoration',read:async()=>({name:'测试心象',parts:{psyche:{styleId:'echo'}}})})},'测试应用');}}));
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT=true;
+it('returns through application confirmation and import page before leaving decorations', async()=>{
+ const host=document.createElement('div'), root=createRoot(host), back=vi.fn();
+ try{
+  await act(async()=>root.render(React.createElement(BeautyShareChannel,{presets:[],onExport:vi.fn(),onImport:vi.fn(),onBusyChange:vi.fn(),targetCharacterId:'a',onBack:back})));
+  await act(async()=>Array.from(host.querySelectorAll('button')).find(button=>button.textContent==='测试应用')!.click());
+  expect(host.querySelector('[role=dialog]')).not.toBeNull();
+  await act(async()=>{expect(handleLocalBack()).toBe(true);});
+  expect(host.querySelector('[role=dialog]')).toBeNull();expect(back).not.toHaveBeenCalled();
+  await act(async()=>host.querySelector<HTMLButtonElement>('[data-dress-guide=import]')!.click());
+  expect(host.querySelector('h2')?.textContent).toBe('导入装扮');
+  await act(async()=>{handleLocalBack();});expect(host.querySelector('h2')?.textContent).toBe('聊天装扮');expect(back).not.toHaveBeenCalled();
+  await act(async()=>{handleLocalBack();});expect(back).toHaveBeenCalledOnce();
+ }finally{await act(async()=>root.unmount());}
+ expect(handleLocalBack()).toBe(false);
+});
 it('opens the story category as chat decorations without requiring an entry character',async()=>{
  mocks.wardrobe.mockClear();
  const host=document.createElement('div');const root=createRoot(host);

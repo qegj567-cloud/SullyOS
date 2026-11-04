@@ -6,6 +6,7 @@ import {homePresence} from '../../utils/homePresence';
 import {isScheduleFeatureOn} from '../../utils/scheduleFeature';
 import {getCurrentScheduleSlotIndex} from '../../utils/scheduleTime';
 import {chooseHomeAction} from '../../utils/homeAutonomy';
+import {readHomeVisits,presentHomeVisit,HOME_VISITS_EVENT} from '../../utils/homeVisits';
 
 export function useHomeSchedule(editor:HomeEditor|undefined,character:CharacterProfile|undefined,ready:boolean,suspended:boolean){
  const [away,setAway]=useState(false),[plan,setPlan]=useState<{key:string;roomId:string;activity:string}>();
@@ -19,6 +20,7 @@ export function useHomeSchedule(editor:HomeEditor|undefined,character:CharacterP
   let cancelled=false,first=true;
   const refresh=async()=>{
    const char=latest.current!;
+   try{const visit=presentHomeVisit(await readHomeVisits(),char.id);if(cancelled)return;if(visit){editor.setResidentRoom(null,first);first=false;editor.setScheduleLabel(char.name+' · 正在串门');setCurrentSchedule(null);setAway(true);setPlan(undefined);return;}}catch(error){console.error('[Home visit] presence',error);return;}
    if(!isScheduleFeatureOn(char)){editor.setResidentRoom(undefined,first);first=false;editor.setScheduleLabel('');setCurrentSchedule(null);setAway(false);setPlan(undefined);return;}
    try{
     const now=new Date(),schedule=await getDailyScheduleForChar(char,now);if(cancelled)return;
@@ -31,8 +33,8 @@ export function useHomeSchedule(editor:HomeEditor|undefined,character:CharacterP
    }catch{/* A transient DB failure must not invent presence. */}
   };
   void refresh();const timer=setInterval(()=>{if(!document.hidden)void refresh();},60000);
-  const focus=()=>{if(!document.hidden)void refresh();};document.addEventListener('visibilitychange',focus);
-  return()=>{cancelled=true;clearInterval(timer);document.removeEventListener('visibilitychange',focus);};
+  const focus=()=>{if(!document.hidden)void refresh();};document.addEventListener('visibilitychange',focus);window.addEventListener(HOME_VISITS_EVENT,focus);
+  return()=>{cancelled=true;clearInterval(timer);document.removeEventListener('visibilitychange',focus);window.removeEventListener(HOME_VISITS_EVENT,focus);};
  },[editor,suspended,character?.id,character?.scheduleFeatureEnabled,character?.scheduleStyle,character?.customTimezone,character?.customTimezoneEnabled]);
  useEffect(()=>{
   if(!editor||!ready||suspended||!plan)return;

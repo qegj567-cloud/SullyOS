@@ -27,6 +27,13 @@ on:
       - 'worker/**'
       - 'utils/**'
       - 'types.ts'
+      # 依赖与构建脚本也会改变 bundle，纯升级包时同样需要重新同步。
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'patches/**'
+      - 'scripts/build-workers.mjs'
+      - 'scripts/worker-bundle-options.mjs'
       - '.github/workflows/sync-workers-repo.yml'
   workflow_dispatch:
 

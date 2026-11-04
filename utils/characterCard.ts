@@ -50,6 +50,7 @@ export const CARD_STRIPPED_FIELDS = [
   'dateVoiceEnabled',
   'dateExtraPresets',        // 用户私有补充预设随系统备份保存，不随角色卡分享
   'memoryPalaceWaterline', // 发卡人的使用节奏；接收方按自己的聊天习惯选择
+  'hideMonthlyRecallPrompt', // ChatApp 的旧版记忆调阅提示偏好由接收方自己决定
 
   // 4) 运行时状态残留
   'activeBuffs',

@@ -1,0 +1,41 @@
+{
+  "id": "halloween-batch-14-furniture-texture",
+  "endpoint": "retexture",
+  "maxTasks": 4,
+  "maxEstimatedCredits": 40,
+  "defaults": {
+    "ai_model": "meshy-7",
+    "texture_resolution": "2k",
+    "enable_original_uv": false,
+    "enable_pbr": true,
+    "target_formats": [
+      "glb"
+    ]
+  },
+  "jobs": [
+    {
+      "id": "cauldron-planter-textured",
+      "model": "furniture-texture-inputs/halloween_cauldron_planter.glb",
+      "image": "../furniture/10-cauldron-planter.png",
+      "estimatedCredits": 10
+    },
+    {
+      "id": "cat-ear-mirror-textured",
+      "model": "furniture-texture-inputs/halloween_cat_ear_mirror.glb",
+      "image": "../furniture/11-cat-mirror.png",
+      "estimatedCredits": 10
+    },
+    {
+      "id": "bat-pumpkin-clock-textured",
+      "model": "furniture-texture-inputs/halloween_bat_pumpkin_clock.glb",
+      "image": "../furniture/12-pumpkin-bat-clock.png",
+      "estimatedCredits": 10
+    },
+    {
+      "id": "pumpkin-lantern-textured",
+      "model": "furniture-texture-inputs/halloween_pumpkin_lantern.glb",
+      "image": "../furniture/09-pumpkin-lantern.png",
+      "estimatedCredits": 10
+    }
+  ]
+}

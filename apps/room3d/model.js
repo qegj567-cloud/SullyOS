@@ -1,4 +1,5 @@
 import {createLocalId} from '../../utils/localId.js';
+import {normalizeRomanticPairs} from './homeRomance';
 import {normalizePetLife} from './petState.js';
 import {furnitureGroup,dockCandidates,dockSlots,isDockChair,isDockTable} from './furnitureDock.js';
 import {validateFinishes} from './finishes.js';
@@ -22,11 +23,15 @@ function addStarterProps(room,catalog){
 export function validateHome(raw,catalog){
  if(!raw||raw.version!==1||!Array.isArray(raw.rooms)||raw.rooms.length<1||raw.rooms.length>24)throw Error('小屋存档格式不正确');
  raw=structuredClone(raw);
+ if(raw.romanticPairs!==undefined)raw.romanticPairs=normalizeRomanticPairs(raw.romanticPairs);
+ if(raw.socialMemberIds!==undefined){if(!Array.isArray(raw.socialMemberIds)||raw.socialMemberIds.some(id=>typeof id!=='string'||!id))throw Error('小屋邀请名单格式不正确');raw.socialMemberIds=[...new Set(raw.socialMemberIds)].slice(0,3);}
  if(raw.roomSizeVersion!=null&&![1,ROOM_SIZE_VERSION].includes(raw.roomSizeVersion))throw Error('不支持这个房间尺寸版本');
  const assets=new Set(catalog.map(a=>a.id)),cells=new Set(),ids=new Set();
  for(const r of raw.rooms){
   if(typeof r.id!=='string'||ids.has(r.id)||typeof r.name!=='string'||r.name.length>40||![r.x,r.z,r.level].every(Number.isInteger)||Math.abs(r.x)>12||Math.abs(r.z)>12||r.level<0||r.level>5)throw Error('房间信息不正确');
   ids.add(r.id);const key=[r.x,r.z,r.level].join();if(cells.has(key))throw Error('房间位置重复');cells.add(key);
+  if(r.fixedPalette!=null&&r.fixedPalette!=='halloween')throw Error('房间主题配色不正确');
+  if(r.activityRoom!=null&&(r.activityRoom!=='halloween'||r.level!==0||raw.rooms.filter(v=>v.activityRoom===r.activityRoom).length!==1))throw Error('活动别馆信息不正确');
   if(!/^#[0-9a-f]{6}$/i.test(r.wall)||!Array.isArray(r.items)||r.items.length>100)throw Error('房间内容不正确');
   for(const part of ['trim','floor'])if(r[part]!=null&&!/^#[0-9a-f]{6}$/i.test(r[part]))throw Error('房屋颜色不正确');
   validateFinishes(r);

@@ -193,7 +193,7 @@ const CharacterNoteView: React.FC<{ note: CharacterCabinetNoteRecord; actor?: Ch
             <blockquote>{note.highlight}</blockquote>
             <section><small>WHAT HAPPENED</small><h3>事情怎么变成这样的</h3><p>{note.story}</p></section>
             <section className="is-handwritten"><small>PRIVATE MARGIN NOTES</small><h3>{note.actorName} 留在柜子里的随笔</h3><p>{note.notes}</p></section>
-            <footer>这篇记录来自 {note.actorName} 自己的彼方自由活动，不属于 User 的五十轮推演史册。</footer>
+            <footer>这篇记录来自 {note.actorName} 自己的彼方自由活动，不属于与你的五十轮推演史册。</footer>
         </article>
     </main>
 );

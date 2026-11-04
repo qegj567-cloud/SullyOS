@@ -33,6 +33,22 @@ export interface AmsgSelfUpdateReport {
   state: AmsgSelfUpdateState | null;
 }
 
+/** 取出 Cloudflare 判定 token 本身无效的那段原话。9109 也用于权限不够，所以不能只看代码。 */
+export const findCfTokenRejection = (text: string): string | null =>
+  /\d+: invalid (access|api) token/i.exec(text)?.[0] ?? null;
+
+export const cfTokenRejectedMessage = (detail: string, hasAccountId: boolean): string =>
+  `Cloudflare 不认这枚 CF_API_TOKEN（${detail}），多半已经过期或被删了。` +
+  '去 Cloudflare 新建一枚（只勾 Workers Scripts → Edit），替换 Worker 里的 CF_API_TOKEN。' +
+  (hasAccountId ? '' : '如果它是 cfat_ 开头的账号令牌，换成普通 API Token，或者给 Worker 加一条 CF_ACCOUNT_ID。');
+
+/** token 失效的 Worker 更新不了，会一直报旧提示，所以界面这边按原话再换一次。 */
+export const explainCfTokenRejection = (message: string): string => {
+  const rejected = findCfTokenRejection(message);
+  if (!rejected || message.startsWith('Cloudflare 不认')) return message;
+  return cfTokenRejectedMessage(rejected, message.includes('CF_ACCOUNT_ID 指定'));
+};
+
 const OUTCOMES: ReadonlySet<string> = new Set(['updated', 'up_to_date', 'failed']);
 const SOURCES: ReadonlySet<string> = new Set(['cron', 'client', 'manual']);
 
@@ -81,7 +97,7 @@ export const describeAmsgSelfUpdate = (report: AmsgSelfUpdateReport | null, nowM
   const checked = `上次检查 ${describeAgo(state.lastCheckAt, nowMs)}`;
   if (state.lastOutcome === 'failed') {
     const error = state.lastError;
-    return `自动更新已开启。${checked}，没成功${error ? `（${error.code}：${error.message}）` : ''}，到点会再试。`;
+    return `自动更新已开启。${checked}，没成功${error ? `（${error.code}：${explainCfTokenRejection(error.message)}）` : ''}，到点会再试。`;
   }
   if (state.lastOutcome === 'updated') {
     return `自动更新已开启。${checked}，换上了新代码${state.lastUpdatedAt ? `（${describeAgo(state.lastUpdatedAt, nowMs)}）` : ''}。`;

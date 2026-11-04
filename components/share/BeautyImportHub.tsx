@@ -1,15 +1,17 @@
 import React,{useMemo,useRef,useState} from 'react';
+import { useLocalBackHandler } from '../../hooks/useLocalBackHandler';
 import {DECORATION_WORKSHOPS,type DecorationWorkshop} from '../../utils/decorationWorkshop';
 import {cssImportPreset,readLegacyWhiteboxShare} from '../../utils/beautyCssAttribution';
 import type {DecorationPreset} from '../../utils/chatDecoration';
 import type {DecorationOrigin} from '../../utils/decorationLibrary';
 import BeautyPresetPreview from './BeautyPresetPreview';
 import './BeautyImportHub.css';
-export default function BeautyImportHub({codePanel,busy,onFile,onCss,onCssBatch,initialCss}:{codePanel:React.ReactNode;busy:boolean;onFile:(file:File)=>void;onCss:(preset:DecorationPreset,origin:DecorationOrigin)=>Promise<void>;onCssBatch?:(items:{preset:DecorationPreset;origin:DecorationOrigin}[])=>Promise<void>;initialCss?:{text:string;name:string}}){
+export default function BeautyImportHub({codePanel,busy,onFile,onCss,onCssBatch,initialCss,initialCategory='whitebox'}:{codePanel:React.ReactNode;busy:boolean;onFile:(file:File)=>void;onCss:(preset:DecorationPreset,origin:DecorationOrigin)=>Promise<void>;onCssBatch?:(items:{preset:DecorationPreset;origin:DecorationOrigin}[])=>Promise<void>;initialCss?:{text:string;name:string};initialCategory?:DecorationWorkshop}){
  const [tab,setTab]=useState<'code'|'css'|'file'>(initialCss?'css':'code');const files=useRef<HTMLInputElement>(null),photos=useRef<HTMLInputElement>(null);
- const [category,setCategory]=useState<DecorationWorkshop>('whitebox');
- const [text,setText]=useState(initialCss?.text||'');const [name,setName]=useState(initialCss?.name||'导入的白框');const [source,setSource]=useState<'self'|'imported'|''>('');const [credit,setCredit]=useState('');const [error,setError]=useState('');const [saving,setSaving]=useState(false);const [preview,setPreview]=useState<DecorationPreset|null>(null);
+ const [category,setCategory]=useState<DecorationWorkshop>(initialCategory);
+ const [text,setText]=useState(initialCss?.text||'');const [name,setName]=useState(initialCss?.name||('导入的'+(DECORATION_WORKSHOPS.find(([id])=>id===initialCategory)?.[1]||'装扮')));const [source,setSource]=useState<'self'|'imported'|''>('');const [credit,setCredit]=useState('');const [error,setError]=useState('');const [saving,setSaving]=useState(false);const [preview,setPreview]=useState<DecorationPreset|null>(null);
  const legacy=useMemo(()=>{try{return readLegacyWhiteboxShare(text);}catch{return null;}},[text]);
+ useLocalBackHandler(()=>{if(busy||saving)return true;if(!preview)return false;setPreview(null);return true;}, 35);
  const parsed=useMemo(()=>{if(!text.trim())return null;try{return cssImportPreset(text,name,category);}catch{return null;}},[text,name,category]);
  const validate=()=>{const result=cssImportPreset(legacy?.[0]?.code||text,legacy?.[0]?.name||name.trim()||'导入的装扮',category);if(!result.origin&&!source)throw Error('请选择这份 CSS 是自制还是外部导入');return {...result,origin:result.origin||{kind:source as 'self'|'imported',credit:credit.trim()||undefined}};};
  const fileChange=(e:React.ChangeEvent<HTMLInputElement>)=>{const file=e.target.files?.[0];e.target.value='';if(file)onFile(file);};

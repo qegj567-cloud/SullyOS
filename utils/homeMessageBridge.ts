@@ -3,6 +3,8 @@ import {assignHomeTurns} from './homeTurns';
 import {assignHomeContextSegments,homeSegmentMessages as homeTurnMessages} from './homeContextSegments';
 import {homeRecords} from './homeRecords';
 import {deleteLinkedSecretNotes, announceSecretNotesChanged, HOME_HISTORY_COMMITTED} from './secretNote';
+import {isSharedHomeRecord,preserveHomeSharedIdentity} from './homeSharedEvents';
+import {syncHomeSharedMessages} from './homeSharedMessageBridge';
 
 /** Persist the room journal and its shared-history projection atomically, as DateApp does for messages.
  * String input migrates only the stored character, never a stale React snapshot.
@@ -12,26 +14,32 @@ export function persistCharacterWithHomeMessages(db:IDBDatabase,input:CharacterP
   const tx=db.transaction(['characters','messages','assets'],'readwrite');
   const characters=tx.objectStore('characters'),messages=tx.objectStore('messages');
   const id=typeof input==='string'?input:input.id;
-  let firstInserted=Infinity;
+  const firstInserted=new Map<string,number>(),changedCharacters=new Set([id]),changedNotes=new Set<string>();
+  const inserted=(tx:IDBTransaction,charId:string,key:number)=>{
+   firstInserted.set(charId,Math.min(firstInserted.get(charId)??Infinity,key));onInsert(tx,charId,key);
+  };
   let notesChanged=false;
   const request=characters.get(id);
   request.onsuccess=()=>{
    const previous=request.result as CharacterProfile|undefined;
    if(typeof input==='string'&&(!previous||previous.homeContextBridgeVersion===3))return;
    const character=typeof input==='string'?previous!:input;
-   const oldRecords=homeRecords(previous?.home3D),inputRecords=homeRecords(character.home3D);
+   const oldRecords=homeRecords(previous?.home3D),inputRecords=preserveHomeSharedIdentity(oldRecords,homeRecords(character.home3D));
    if(!oldRecords.length&&!inputRecords.length){characters.put({...character,homeContextBridgeVersion:3});return;}
    const persist=(last:Message|undefined,hwm:number,legacy:Message[])=>{
    const records=assignHomeContextSegments(oldRecords,inputRecords,last,hwm,legacy);
    const unchanged=previous?.homeContextBridgeVersion===3&&JSON.stringify(oldRecords)===JSON.stringify(records);
    characters.put({...character,...(character.home3D?{home3D:{...character.home3D,records}}:{}),homeContextBridgeVersion:3});
    if(unchanged)return;
-   const turns=homeTurnMessages(id,records);
+   syncHomeSharedMessages(tx,id,oldRecords,records,inserted,(charId,notes)=>{
+    changedCharacters.add(charId);if(notes)changedNotes.add(charId);
+   });
+   const turns=homeTurnMessages(id,records.filter(record=>!isSharedHomeRecord(record)));
    const pending=new Map(turns.map(turn=>[turn.metadata.homeTurnId as string,turn]));
-   const insert=(turn:typeof turns[number])=>{const add=messages.add(turn);add.onsuccess=()=>{const key=add.result as number;firstInserted=Math.min(firstInserted,key);onInsert(tx,id,key);};};
+   const insert=(turn:typeof turns[number])=>{const add=messages.add(turn);add.onsuccess=()=>inserted(tx,id,add.result as number);};
    if(previous?.homeContextBridgeVersion===3){
     // Normal writes touch only changed turns. No history scan on each local action.
-    const before=new Map(homeTurnMessages(id,assignHomeTurns(homeRecords(previous.home3D))).map(turn=>[turn.metadata.homeTurnId as string,turn]));
+    const before=new Map(homeTurnMessages(id,assignHomeTurns(oldRecords.filter(record=>!isSharedHomeRecord(record)))).map(turn=>[turn.metadata.homeTurnId as string,turn]));
     for(const key of new Set([...before.keys(),...pending.keys()])){
      const next=pending.get(key);if(JSON.stringify(before.get(key))===JSON.stringify(next))continue;
      const lookup=messages.index('charId_homeTurn').openCursor(IDBKeyRange.only([id,key]));let found=false;
@@ -72,11 +80,12 @@ export function persistCharacterWithHomeMessages(db:IDBDatabase,input:CharacterP
    };
   };
   tx.oncomplete=()=>{
-   if(notesChanged)announceSecretNotesChanged(id);
-   if(typeof window!=='undefined')window.dispatchEvent(new CustomEvent(HOME_HISTORY_COMMITTED,{detail:{charId:id}}));
-   if(Number.isFinite(firstInserted))try{
-    const key=`mp_lastMsgId_${id}`;
-    if(Number(localStorage.getItem(key))>=firstInserted)localStorage.removeItem(key);
+   if(notesChanged)changedNotes.add(id);
+   for(const charId of changedNotes)announceSecretNotesChanged(charId);
+   for(const charId of changedCharacters)if(typeof window!=='undefined')window.dispatchEvent(new CustomEvent(HOME_HISTORY_COMMITTED,{detail:{charId}}));
+   for(const [charId,first] of firstInserted)try{
+    const key=`mp_lastMsgId_${charId}`;
+    if(Number(localStorage.getItem(key))>=first)localStorage.removeItem(key);
    }catch{/* The transaction is committed even when localStorage is unavailable. */}
    resolve();
   };

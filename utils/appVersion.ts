@@ -4,7 +4,7 @@
  * 单独放一个文件，是因为构建脚本也要读它：网页更新靠版本号判断要不要弹提示，
  * 而 buildInfo.ts 依赖 Vite 注入的全局常量，没法在 Node 里直接 import。
  */
-export const APP_VERSION = 'v3.13 (At Home)';
+export const APP_VERSION = 'v3.15 (Neighbors)';
 
 /**
  * 版本号那半截（`v3.0`）。统计给每条记录打的标签用它，面板里按版本切分数据时

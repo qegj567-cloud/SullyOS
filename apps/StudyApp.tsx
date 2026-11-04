@@ -382,6 +382,10 @@ const StudyApp: React.FC = () => {
             setSelectedChar(char);
         }
     }, [activeCharacterId]);
+    useAppShortcut(ShortcutAppID.Study, intent => {
+        setSelectedChar(characters.find(c => c.id === intent.characterId) || null);
+        setMode('bookshelf');
+    });
 
 
     useEffect(() => {
@@ -1926,3 +1930,5 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
 };
 
 export default StudyApp;
+import { useAppShortcut } from '../utils/appShortcutLaunch';
+import { AppID as ShortcutAppID } from '../types';

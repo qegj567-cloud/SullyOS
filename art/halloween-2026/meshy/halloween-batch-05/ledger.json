@@ -1,0 +1,149 @@
+{
+  "batch": "halloween-batch-05",
+  "jobs": [
+    {
+      "id": "witch",
+      "image": "../outfits/01-pumpkin-witch.png",
+      "imageSha256": "5336da3eeaa30d515e2df34bc2e3d01dd21a31f3af5672999b7c7e8f1b347e30",
+      "params": {
+        "model_type": "standard",
+        "ai_model": "meshy-7.1",
+        "geometry_resolution": "4k",
+        "image_enhancement": false,
+        "should_remesh": true,
+        "save_pre_remeshed_model": true,
+        "topology": "triangle",
+        "should_texture": false,
+        "target_formats": [
+          "glb"
+        ],
+        "target_polycount": 80000,
+        "pose_mode": "t-pose"
+      },
+      "estimatedCredits": 25,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-27T05:30:10.872Z",
+      "taskId": "01a17bd6-6261-7369-adca-85f7c67881fb",
+      "progress": 100,
+      "consumedCredits": 25,
+      "sourceFile": "witch-source.glb",
+      "sourceBytes": 23820804,
+      "sourceSha256": "fa8359080889b98df4691c936b3a5d4482a28d86c0aab7ac09e3a0387ea1969c",
+      "downloaded": true,
+      "file": "witch.glb",
+      "bytes": 3724828,
+      "sha256": "f1ff72713e6ae344a8699dc71694cd7e78aa9652a8875bc955802ccc49ff5f61"
+    },
+    {
+      "id": "count",
+      "image": "../outfits/02-bat-count.png",
+      "imageSha256": "3a90de30af8f95239e98705caf6e88840dee8dde34c4470ad479a665eced41f4",
+      "params": {
+        "model_type": "standard",
+        "ai_model": "meshy-7.1",
+        "geometry_resolution": "4k",
+        "image_enhancement": false,
+        "should_remesh": true,
+        "save_pre_remeshed_model": true,
+        "topology": "triangle",
+        "should_texture": false,
+        "target_formats": [
+          "glb"
+        ],
+        "target_polycount": 80000,
+        "pose_mode": "t-pose"
+      },
+      "estimatedCredits": 25,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-27T05:30:15.242Z",
+      "taskId": "01a17bd6-72c9-7209-ae3e-a50e675f48b7",
+      "progress": 100,
+      "consumedCredits": 25,
+      "sourceFile": "count-source.glb",
+      "sourceBytes": 7782368,
+      "sourceSha256": "65e383edffbe1e28f1f9a0d5498753b799aa94f8a47ff527b9ae68b1462a17e2",
+      "downloaded": true,
+      "file": "count.glb",
+      "bytes": 3264928,
+      "sha256": "fcf27a3759e2e90ff1dc840ce135aa9c1f4feecab1596222603ff826b1cb43c8"
+    },
+    {
+      "id": "apprentice",
+      "image": "../outfits/03-potion-apprentice.png",
+      "imageSha256": "d0bea80e184e188a93d0443eea182db4de5ff8de27900ddf15a0ca220fa7160c",
+      "params": {
+        "model_type": "standard",
+        "ai_model": "meshy-7.1",
+        "geometry_resolution": "4k",
+        "image_enhancement": false,
+        "should_remesh": true,
+        "save_pre_remeshed_model": true,
+        "topology": "triangle",
+        "should_texture": false,
+        "target_formats": [
+          "glb"
+        ],
+        "target_polycount": 80000,
+        "pose_mode": "t-pose"
+      },
+      "estimatedCredits": 25,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-27T05:30:20.268Z",
+      "taskId": "01a17bd6-8666-7181-8de6-e72afcdd0169",
+      "progress": 100,
+      "consumedCredits": 25,
+      "sourceFile": "apprentice-source.glb",
+      "sourceBytes": 13059348,
+      "sourceSha256": "e598bebeb680978c3e41b1e996e011beb2d7e0dd3d35fc75d4c6a02bc5c4267d",
+      "downloaded": true,
+      "file": "apprentice.glb",
+      "bytes": 3417736,
+      "sha256": "10b5227740ff1ed233b4829b25393502e9cf4d3d0b98381a16806cbf6f883e23"
+    },
+    {
+      "id": "shorts",
+      "image": "../separated/04-shorts/shorts.png",
+      "imageSha256": "675cef12c8ae34d62457780cfac7c64d17114d9e14140f8c1a573ca48654aa9c",
+      "params": {
+        "model_type": "standard",
+        "ai_model": "meshy-7.1",
+        "geometry_resolution": "4k",
+        "image_enhancement": false,
+        "should_remesh": true,
+        "save_pre_remeshed_model": true,
+        "topology": "triangle",
+        "should_texture": false,
+        "target_formats": [
+          "glb"
+        ],
+        "target_polycount": 40000,
+        "pose_mode": "t-pose"
+      },
+      "estimatedCredits": 25,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-27T05:30:28.920Z",
+      "taskId": "01a17bd6-a83b-778e-98af-984380bc2eed",
+      "progress": 100,
+      "consumedCredits": 25,
+      "sourceFile": "shorts-source.glb",
+      "sourceBytes": 5101136,
+      "sourceSha256": "e3052a1e7b0df95527cf8d7b6fc498106ea911e926ff48f8a407ee419de2e1d6",
+      "downloaded": true,
+      "file": "shorts.glb",
+      "bytes": 1459396,
+      "sha256": "61c388b5219d16343280d446d8aa938886ed41e3f9ecbb27b01da13429394244"
+    }
+  ],
+  "latestBalance": {
+    "balance": 1006,
+    "monthly_credits": 765,
+    "permanent_credits": 241,
+    "monthly_resets_at": 1794576839000
+  },
+  "balanceBefore": {
+    "balance": 1106,
+    "monthly_credits": 865,
+    "permanent_credits": 241,
+    "monthly_resets_at": 1794576839000
+  }
+}

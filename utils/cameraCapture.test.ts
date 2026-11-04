@@ -3,10 +3,10 @@ import { cameraCaptureLayout, cameraIsPortrait } from './cameraCapture';
 afterEach(() => vi.unstubAllGlobals());
 
 describe('phone camera orientation', () => {
-    it.each([[1920,1080],[1280,720],[1440,1920],[1080,1920],[720,960]])('portrait viewfinder and capture agree for %s × %s sensors', (w,h) => {
+    it.each([[1920,1080],[1280,720],[1440,1920],[1080,1920],[720,960]])('preserves the complete sensor view for %s × %s, including landscape streams on portrait phones', (w,h) => {
         const crop = cameraCaptureLayout(w,h,true)!;
-        expect(crop.width / crop.height).toBeCloseTo(3/4,2);
-        expect(crop.sourceWidth / crop.sourceHeight).toBeCloseTo(3/4);
+        expect(crop.width / crop.height).toBeCloseTo(w/h,2);
+        expect(crop.sourceWidth).toBe(w);expect(crop.sourceHeight).toBe(h);
         expect(crop.x*2 + crop.sourceWidth).toBeCloseTo(w);
         expect(crop.y*2 + crop.sourceHeight).toBeCloseTo(h);
         expect(Math.max(crop.width,crop.height)).toBeLessThanOrEqual(1440);
@@ -15,7 +15,10 @@ describe('phone camera orientation', () => {
     });
     it('landscape capture follows landscape phone orientation', () => {
         const crop = cameraCaptureLayout(1920,1080,false)!;
-        expect(crop).toMatchObject({x:240,y:0,sourceWidth:1440,sourceHeight:1080,width:1440,height:1080});
+        expect(crop).toMatchObject({x:0,y:0,sourceWidth:1920,sourceHeight:1080,width:1440,height:810});
+    });
+    it('captures exactly the same central region as a digitally zoomed preview',()=>{
+        expect(cameraCaptureLayout(1920,1080,true,1440,2)).toMatchObject({x:480,y:270,sourceWidth:960,sourceHeight:540,width:960,height:540});
     });
     it('rejects unloaded camera sizes', () => {
         expect(cameraCaptureLayout(0,1080,true)).toBeNull();

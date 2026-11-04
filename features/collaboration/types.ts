@@ -1,6 +1,6 @@
 export type CollaborationMode = 'immersive' | 'focused';
 
-export type CollaborationUiTheme = 'sully' | 'gpt' | 'claude' | 'gemini' | 'kimi' | 'deepseek';
+export type CollaborationUiTheme = 'sully' | 'gpt' | 'claude' | 'gemini' | 'kimi' | 'deepseek' | 'charcoal' | 'warm-night' | 'midnight';
 
 /** Avatar visibility is independent from the workspace skin. */
 export type CollaborationAvatarMode = 'theme' | 'both' | 'character' | 'user' | 'none';
@@ -125,6 +125,8 @@ export interface CollaborationSettings {
   id: 'main';
   /** Optional for backups created before collaboration skins existed. */
   uiTheme?: CollaborationUiTheme;
+  /** Scoped overrides layered over the selected collaboration skin. */
+  customCss?: string;
   /** `theme` follows each skin's layout; every other value is an explicit user override. */
   avatarMode?: CollaborationAvatarMode;
   avatarStyle?: CollaborationAvatarStyle;
@@ -176,6 +178,7 @@ export const EMPTY_COLLABORATION_API_PROFILE: CollaborationApiProfile = {
 export const DEFAULT_COLLABORATION_SETTINGS: CollaborationSettings = {
   id: 'main',
   uiTheme: 'sully',
+  customCss: '',
   avatarMode: 'theme',
   avatarStyle: 'circle',
   recentChatContextCount: 'configured',

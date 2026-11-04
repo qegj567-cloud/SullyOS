@@ -126,7 +126,7 @@ export const FishingGame: React.FC<{
                 onPointerDown={e=>{if(e.button!==0)return;e.preventDefault();e.currentTarget.focus();e.currentTarget.setPointerCapture(e.pointerId);if(!simple)frame.current.held=true;else{const rect=e.currentTarget.getBoundingClientRect();cast({x:(e.clientX-rect.left)/rect.width,y:(e.clientY-rect.top)/rect.height});}}}
                 onPointerUp={release} onPointerCancel={release} onLostPointerCapture={release}/>
             {phase==='caught'&&!saving&&!error&&pending.current&&<div className="fishing-catch fish-reveal" role="status">
-                <FishArt speciesId={pending.current.speciesId} size={168} animated/>
+                <FishArt speciesId={pending.current.speciesId} halloweenHat={pending.current.halloweenHat} size={168} animated/>
                 <strong>{speciesById(pending.current.speciesId)?.name}</strong><span>{pending.current.sizeCm} cm · {'✦'.repeat(pending.current.quality)}</span>
                 {onOpenCollection&&<button type="button" onClick={onOpenCollection}>查看收藏 →</button>}
             </div>}

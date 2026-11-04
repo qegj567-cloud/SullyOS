@@ -6,6 +6,11 @@ on:
   pull_request_target:
     types: [opened, synchronize, reopened]
 
+# 同一 PR 的多次更新依次打标，避免不同轮次交错添加、删除 size 标签。
+concurrency:
+  group: pr-labeler-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
   pull-requests: write
@@ -38,7 +43,8 @@ jobs:
     steps:
       - name: 统计增删行数并贴标签（只算测试以外的改动）
         # https://github.com/CodelyTV/pr-size-labeler
-        uses: codelytv/pr-size-labeler@4ec67706cd878fbc1c8db0a5dcd28b6bb412e85a # v1.10.3
+        # 新版会明确删除旧 size 标签；旧版只 POST 添加，更新后会越积越多。
+        uses: codelytv/pr-size-labeler@19c335e7695ba922de938806dd129f0a9b992644 # v1.12.0
         with:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           xs_label: '🟢 ■□□□□'

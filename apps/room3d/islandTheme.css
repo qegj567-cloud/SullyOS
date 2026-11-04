@@ -55,7 +55,10 @@
 .home-island .home3d:not(.h3-playing) .h3-top .h3-pill{background:transparent;color:var(--animal-text-color);border:0;padding:8px;font-size:13px}
 .home-island .home3d:not(.h3-playing) .h3-top [data-action=overview]{display:none}
 .home-island .home3d:not(.h3-playing) .h3-top [data-action=edit]{background:var(--animal-primary-color);color:white;border-radius:18px;padding:8px 16px}
-.home-island .h3-sheet{background:var(--animal-bg-color);color:var(--animal-text-color);border:1px solid var(--animal-border-color);border-radius:24px 24px 0 0;padding:16px;box-shadow:0 -8px 32px #503e2510;max-height:55%;scrollbar-width:thin;scrollbar-color:#ded4b7 transparent}
+/* Editor sheets sit above the resident/pet rail and scene controls. */
+.home-island .h3-sheet{z-index:30;background:var(--animal-bg-color);color:var(--animal-text-color);border:1px solid var(--animal-border-color);border-radius:24px 24px 0 0;padding:16px;box-shadow:0 -8px 32px #503e2510;max-height:55%;scrollbar-width:thin;scrollbar-color:#ded4b7 transparent}
+/* The phone launcher is outside the editor's isolated stacking context. */
+.home-island:has(.h3-sheet,.h3-object-bar) .home-phone-launch{visibility:hidden;pointer-events:none}
 .home-island .h3-sheet header{display:flex;align-items:center;justify-content:space-between;margin:0 0 12px}
 .home-island .h3-sheet header h2{font-size:17px;margin:0}.home-island .h3-sheet header button{border:0;background:#f1ecdc;border-radius:50%;width:32px;height:32px}
 .home-island .h3-furniture-search{display:block;width:100%;box-sizing:border-box;background:#f1ecdc;border:0;border-radius:12px;padding:11px 14px;margin:0 0 12px;font-size:14px;color:inherit;outline-offset:2px}

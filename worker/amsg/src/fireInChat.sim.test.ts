@@ -21,6 +21,7 @@ vi.mock('../../../utils/activeMsgStore', () => ({ ActiveMsgStore: {} }));
 import { ReiClient } from '@rei-standard/amsg-client';
 import { createD1Adapter } from '@rei-standard/amsg-server/cloudflare';
 import worker, { InstantTickDO } from './index';
+import { installAnthropicFetch } from '../../../utils/anthropicApi';
 import {
   AMSG_FIRE_PACK_KEY,
   AMSG_SILENT_MARK,
@@ -120,7 +121,7 @@ const TASK_HINT = '八点了，叫对方起床去赶早班车';
 
 interface LlmCall { kind: 'scheduled' | 'instant'; at: number; prompt: string }
 
-const createWorld = async (startClock: string) => {
+const createWorld = async (startClock: string, native = false) => {
   vi.useFakeTimers();
   vi.setSystemTime(at(startClock));
 
@@ -214,17 +215,26 @@ const createWorld = async (startClock: string) => {
     }
     if (url.startsWith('https://llm.test/')) {
       const req = JSON.parse(init.body);
-      const prompt = req.messages.map((m: any) => (typeof m.content === 'string' ? m.content : '')).join('\n');
+      const prompt = [...(req.system || []), ...req.messages].map((m: any) => m.text || (typeof m.content === 'string' ? m.content : m.content.map((b: any) => b.text || '').join('\n'))).join('\n');
       const kind: LlmCall['kind'] = prompt.includes('【本次任务】') ? 'scheduled' : 'instant';
       llmCalls.push({ kind, at: Date.now(), prompt });
       const next = replies[kind].shift() ?? '（场景没给这一次的回复）';
       const content = await (typeof next === 'function' ? next() : next);
+      if (native) {
+        expect(url).toBe('https://llm.test/v1/messages');
+        expect(new Headers(init.headers).get('x-api-key')).toBe('sk-sim');
+        expect(new Headers(init.headers).has('anthropic-dangerous-direct-browser-access')).toBe(false);
+        expect(req.messages.some((m: any) => m.content.some((b: any) => b.cache_control?.type === 'ephemeral'))).toBe(true);
+        return Response.json({type:'message',id:'native-sim',model:'sim-model',role:'assistant',content:[{type:'text',text:content}],stop_reason:'end_turn',usage:{input_tokens:10,output_tokens:5,cache_read_input_tokens:1024}});
+      }
       return new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content } }] }), {
         status: 200, headers: { 'content-type': 'application/json' },
       });
     }
     return realFetch(input, init);
   });
+
+  if (native) installAnthropicFetch(false);
 
   // worker 的日志就是排障时看的那几行，顺手收下来判这一跳发生了什么。
   const logs: Array<{ at: number; tag: string; data: any }> = [];
@@ -397,7 +407,7 @@ const createWorld = async (startClock: string) => {
       recurrenceType,
       tzId: 'Asia/Shanghai',
       messages: [{ role: 'user', content: '（占位）' }],
-      apiUrl: 'https://llm.test/v1/chat/completions',
+      apiUrl: native ? 'https://llm.test/v1/messages' : 'https://llm.test/v1/chat/completions',
       apiKey: 'sk-sim',
       primaryModel: 'sim-model',
       metadata: {
@@ -490,7 +500,7 @@ const createWorld = async (startClock: string) => {
       messageType: 'auto', messageSubtype: 'instant-chat', immediate: true,
       recurrenceType: 'none', tzId: 'Asia/Shanghai',
       messages: [{ role: 'user', content: '（占位）' }],
-      apiUrl: 'https://llm.test/v1/chat/completions', apiKey: 'sk-sim', primaryModel: 'sim-model',
+      apiUrl: native ? 'https://llm.test/v1/messages' : 'https://llm.test/v1/chat/completions', apiKey: 'sk-sim', primaryModel: 'sim-model',
       metadata: {
         charId: CHAR_ID, charName: CHAR_NAME, source: 'active_msg_2', amsgMode: 'instant',
         amsgInstantChat: true, amsgClientTaskId: nodeCrypto.randomUUID(),
@@ -677,6 +687,21 @@ describe.skipIf(!sqlite)('到点时用户正在聊天（全链路模拟）', () 
   });
 
   const TIMEOUT = 60_000;
+
+  it('Anthropic 原生：真实 Worker 排程、D1、即时对话和推送均可贯通', async () => {
+    const w = await createWorld('07:30:00', true);
+    const task = await w.scheduleTask({clock:'08:00:00'});
+    await w.uploadPack('原生接口上下文');
+    w.watch.task = task; w.watch.from = at('08:00:00');
+    scheduledSays(w, '原生定时回复');
+    await w.goto('08:00:30');
+    expect(w.llmCalls.filter(c=>c.kind==='scheduled')).toHaveLength(1);
+    expect(w.pushes.some(p=>p.payload.message==='原生定时回复')).toBe(true);
+    const reply=w.startInstantReply(await w.sendInstant('你好'));
+    const landed=await reply.finish('原生即时回复');
+    expect(landed.some(p=>p.payload.message==='原生即时回复')).toBe(true);
+    expect(w.llmCalls.filter(c=>c.kind==='instant')).toHaveLength(1);
+  }, TIMEOUT);
 
   /** 开场：07:30 排一条 08:00 的任务，页面把当时的聊天记录传上云。 */
   const open = async (opts: Parameters<World['scheduleTask']>[0] = { clock: '08:00:00' }) => {

@@ -1,7 +1,8 @@
+import type {BeautyShareSelection} from './beautyShareContents';
 import {DB} from './db';
 import {normalizeBeautyPackage} from './beautyShareClient';
 import type {BeautyKind} from './beautyShareContract';
-export interface BeautySourceBinding {sourceId:string;kind:BeautyKind;fingerprint:string;revision:string}
+export interface BeautySourceBinding {sourceId:string;kind:BeautyKind;fingerprint:string;revision:string;selection?:BeautyShareSelection}
 const key=(author:string,id:string)=>'beauty_binding_'+author+'_'+id;
 function canonical(value:any):any {return Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().filter(k=>value[k]!==undefined).map(k=>[k,canonical(value[k])])):value;}
 export async function beautyFingerprint(pack:unknown,kind:BeautyKind){

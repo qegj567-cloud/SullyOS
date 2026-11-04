@@ -1,0 +1,11 @@
+import * as T from 'three';
+import {createBlankBody} from '../../../apps/room3d/chibi/blankBody';
+import {bindBlankBody} from '../../../apps/room3d/chibi/blankRig';
+import {saveGlb} from '../../jellyfish-home/asset-geometry.mjs';
+const root=new T.Group();
+const body=new T.Mesh(createBlankBody('skin',{headSize:1,bodyHeight:1}),Array.from({length:6},()=>new T.MeshStandardMaterial({color:'#eed5c4',roughness:1})));
+body.name='CurrentBody';const hair=new T.Group();root.add(body,hair);
+const rig=bindBlankBody(body,hair,true);rig.setPose('bind');root.updateMatrixWorld(true);rig.skeleton.update();
+rig.mesh.material=new T.MeshStandardMaterial({color:'#eed5c4',roughness:1});rig.mesh.geometry.clearGroups();
+await saveGlb(root,'art/halloween-2026/meshy/current-body.glb');
+console.log({bones:rig.skeleton.bones.length,bounds:new T.Box3().setFromObject(root)});

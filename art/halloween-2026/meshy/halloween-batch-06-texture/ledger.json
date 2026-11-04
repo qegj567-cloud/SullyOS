@@ -1,0 +1,117 @@
+{
+  "batch": "halloween-batch-06-texture",
+  "jobs": [
+    {
+      "id": "witch-textured",
+      "image": "../outfits/01-pumpkin-witch.png",
+      "imageSha256": "5336da3eeaa30d515e2df34bc2e3d01dd21a31f3af5672999b7c7e8f1b347e30",
+      "params": {
+        "ai_model": "meshy-7",
+        "texture_resolution": "4k",
+        "enable_original_uv": true,
+        "enable_pbr": true,
+        "target_formats": [
+          "glb"
+        ],
+        "input_task_id": "01a17bd6-6261-7369-adca-85f7c67881fb"
+      },
+      "estimatedCredits": 10,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-27T05:35:30.039Z",
+      "taskId": "01a17bdb-411e-727b-b1f3-72487b4c0829",
+      "progress": 100,
+      "consumedCredits": 10,
+      "downloaded": true,
+      "file": "witch-textured.glb",
+      "bytes": 23738916,
+      "sha256": "604d408fff0c4043728f885b1dde44c7d1eea787739ec5c3850f246a6051ad2c"
+    },
+    {
+      "id": "count-textured",
+      "image": "../outfits/02-bat-count.png",
+      "imageSha256": "3a90de30af8f95239e98705caf6e88840dee8dde34c4470ad479a665eced41f4",
+      "params": {
+        "ai_model": "meshy-7",
+        "texture_resolution": "4k",
+        "enable_original_uv": true,
+        "enable_pbr": true,
+        "target_formats": [
+          "glb"
+        ],
+        "input_task_id": "01a17bd6-72c9-7209-ae3e-a50e675f48b7"
+      },
+      "estimatedCredits": 10,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-27T05:35:38.022Z",
+      "taskId": "01a17bdb-5fb5-71d9-91de-a921336e1bf3",
+      "progress": 100,
+      "consumedCredits": 10,
+      "downloaded": true,
+      "file": "count-textured.glb",
+      "bytes": 20751516,
+      "sha256": "d9e2a21a705cad6ac4becffa563f1c5e83c8d413ce2d9d05e53537aece3cdb77"
+    },
+    {
+      "id": "apprentice-textured",
+      "image": "../outfits/03-potion-apprentice.png",
+      "imageSha256": "d0bea80e184e188a93d0443eea182db4de5ff8de27900ddf15a0ca220fa7160c",
+      "params": {
+        "ai_model": "meshy-7",
+        "texture_resolution": "4k",
+        "enable_original_uv": true,
+        "enable_pbr": true,
+        "target_formats": [
+          "glb"
+        ],
+        "input_task_id": "01a17bd6-8666-7181-8de6-e72afcdd0169"
+      },
+      "estimatedCredits": 10,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-27T05:35:45.351Z",
+      "taskId": "01a17bdb-7c4b-765b-b102-4f4e65b169d6",
+      "progress": 100,
+      "consumedCredits": 10,
+      "downloaded": true,
+      "file": "apprentice-textured.glb",
+      "bytes": 22916796,
+      "sha256": "6a5706139afae6ac313c7251eb9cb541bee84f9d36fd53f6e2f5dfab3d700727"
+    },
+    {
+      "id": "shorts-textured",
+      "image": "../separated/04-shorts/shorts.png",
+      "imageSha256": "675cef12c8ae34d62457780cfac7c64d17114d9e14140f8c1a573ca48654aa9c",
+      "params": {
+        "ai_model": "meshy-7",
+        "texture_resolution": "4k",
+        "enable_original_uv": true,
+        "enable_pbr": true,
+        "target_formats": [
+          "glb"
+        ],
+        "input_task_id": "01a17bd6-a83b-778e-98af-984380bc2eed"
+      },
+      "estimatedCredits": 10,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-27T05:35:55.756Z",
+      "taskId": "01a17bdb-a4f4-71a4-b905-99f9a5202a07",
+      "progress": 100,
+      "consumedCredits": 10,
+      "downloaded": true,
+      "file": "shorts-textured.glb",
+      "bytes": 17856968,
+      "sha256": "3dc7ffe4a3a58cb7594d4c6e8e1f24341be45d4c3c928218b8ff43f3a4f6e416"
+    }
+  ],
+  "latestBalance": {
+    "balance": 966,
+    "monthly_credits": 725,
+    "permanent_credits": 241,
+    "monthly_resets_at": 1794576839000
+  },
+  "balanceBefore": {
+    "balance": 1006,
+    "monthly_credits": 765,
+    "permanent_credits": 241,
+    "monthly_resets_at": 1794576839000
+  }
+}

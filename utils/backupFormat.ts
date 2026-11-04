@@ -7,10 +7,9 @@
 // 调用方，供其收集令牌。读端同时接受 2 和 3：两个版本的分片组装逻辑一字不差。
 //
 // 设计主线（见 notes/backup-streaming-refactor-plan.md）：
-//   导出端先按 v1 老逻辑把所有数据攒进一个 backupData 对象（角色/消息/单例/设置……，
-//   特殊分支一字不改）；这里只负责「换一种存法」——把其中的数组字段分片写进
-//   stores/<field>.NNN.json，其余非数组字段（主题/设置/单例对象等）整进 metadata.json，
-//   收尾写一份 manifest.json 当导入契约。
+//   大数组表由 backupStoreStreaming 逐条处理后直接写 stores/<field>.NNN.json，
+//   不整表驻留 backupData；其余设置/单例仍由这里写分片或 metadata.json。
+//   prewrittenStores 合入相同 manifest，三个模式的还原语义保持兼容。
 //   导入端读 manifest，把各片拼回「与 v1 完全相同的 data 对象」，再喂给原封不动的
 //   importFullData——还原语义（clear-and-add / merge / 单例 / media_only 补丁……）全部
 //   留在 importFullData 里，这里不重写，所以不会出现「两套语义彼此漂移」。
@@ -63,6 +62,8 @@ export interface BackupManifest {
 
 /** 写端：往 zip 里塞文本文件，或二进制（Uint8Array）文件。二进制直写，绝不经 base64 大字符串。 */
 export interface ZipFileWriter {
+    /** Optional native Blob path: keep large media out of the JS byte heap. */
+    fileBlob?(name: string, data: Blob, options?: { compression?: 'STORE' | 'DEFLATE' }): void;
     file(name: string, data: string | Uint8Array, options?: {
         base64?: boolean;
         compression?: 'STORE' | 'DEFLATE';

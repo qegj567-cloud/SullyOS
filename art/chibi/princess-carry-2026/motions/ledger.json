@@ -1,0 +1,48 @@
+{
+  "jobs": [
+    {
+      "id": "carry-a",
+      "params": {
+        "prompt": "Facing forward, gently lift a partner in a bridal carry. Seconds 0-2 bend knees and reach one arm behind their back, other under knees. Seconds 2-4 push through legs and rise, elbows cradling the weight. Seconds 4-7 hold them close with soft breathing, a tiny reassuring sway and downward head glance. Seconds 7-10 squat slowly, lower partner to floor, release arms. No walking or spinning.",
+        "mode": "prime",
+        "duration": 10
+      },
+      "status": "SUCCEEDED",
+      "taskId": "01a18617-ddac-7627-8370-d15aa1cff25b",
+      "progress": 100,
+      "consumedCredits": 10,
+      "file": "carry-a.fbx",
+      "sha256": "9977d7bf31187af05454dbed5c0cbbe28d98398512affdf851945b4d1b63fd64",
+      "bytes": 16932992,
+      "durationMs": 10000
+    },
+    {
+      "id": "carry-b",
+      "params": {
+        "prompt": "Being gently lifted in a bridal carry by a partner. Begin standing, reach arms toward their shoulders. Seconds 2-4 curl knees up, lean back slightly and turn sideways into their arms. Seconds 4-7 relax with head leaning toward partner, small breathing and a relaxed ankle movement. Seconds 7-10 uncurl legs gradually to stand, then release shoulders. Smooth gentle motion, no jumping.",
+        "mode": "prime",
+        "duration": 10
+      },
+      "status": "SUCCEEDED",
+      "taskId": "01a18617-e109-73cb-bc34-d14e09b88eab",
+      "progress": 100,
+      "consumedCredits": 10,
+      "file": "carry-b.fbx",
+      "sha256": "a6f1c27d297ebf52e0e102f1e364a853f6c0751865c30de29a73441076fcc4af",
+      "bytes": 16932336,
+      "durationMs": 10000
+    }
+  ],
+  "balanceBefore": {
+    "balance": 476,
+    "monthly_credits": 235,
+    "permanent_credits": 241,
+    "monthly_resets_at": 1794576839000
+  },
+  "balanceAfter": {
+    "balance": 456,
+    "monthly_credits": 215,
+    "permanent_credits": 241,
+    "monthly_resets_at": 1794576839000
+  }
+}

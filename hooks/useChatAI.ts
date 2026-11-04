@@ -1,4 +1,4 @@
-import { resolveDialogueApi } from '../utils/characterApi';
+import { resolveDialogueApi, dialogueMaxTokens } from '../utils/characterApi';
 import { createReplyRun, withReplyCancellation } from '../utils/chatReplyCancellation';
 
 import { useState, useRef, useEffect, useSyncExternalStore, MutableRefObject } from 'react';
@@ -55,6 +55,8 @@ import { AMSG2_TOOL_NAMES, buildAmsg2Tools, createAmsg2ToolSession, executeAmsg2
 import { AMSG2_EMPTY_REPLY_PROMPT, AMSG2_WRAP_UP_PROMPT, createAmsg2StallTracker, extractToolRoundLeadIn, mergeToolRoundLeadIns } from '../utils/amsg2ToolLoop';
 import { buildLimitsBrief, resolveAmsgLimits } from '../utils/amsgLimits';
 import { shouldSendThinkingParams } from '../utils/thinkingGate';
+import { isAnthropicEndpoint } from '../utils/llmEndpoint';
+import { anthropicContinuation } from '../utils/anthropicApi';
 import { buildClaudeProxyCompatibilityBody, shouldRetryClaudeProxyCompatibility } from '../utils/claudeProxyCompat';
 import { routeMiniAppToolCall } from '../utils/miniAppToolRoute';
 import { applyEmotionEvalRaw, extractAssistantText } from '../utils/emotionApply';
@@ -71,6 +73,8 @@ import {
 import { parseSARUserSurfaces, selectSARUserSurfaceTargets } from '../utils/vrWorld/sarUserSurface';
 import { isEmotionEvalSkipped } from '../utils/devDebug';
 import {prepareHomeSecretTask,failHomeSecretTask} from '../utils/homeSecrets';
+import {prepareFriendFeedEmotionTask, releaseFriendFeedEmotionTask, acknowledgeFriendFeedNotices,stageFriendFeedCloudTask} from '../utils/friendFeedEmotion';
+import {prepareFriendFeedMainTask,friendFeedUserDisclosure} from '../utils/friendFeedMain';
 import type {SecretNoteOriginPromise} from '../utils/secretNote';
 import {
     computeContextRangeSnapshot,
@@ -373,6 +377,7 @@ export async function evaluateEmotionBackground(
     // start/finally 派发一次即可全覆盖；即时对话的 worker 评估另行点灯。
     announceChatGen(CHAT_GEN_EVENTS.emotionStart, { charId: charData.id, charName: charData.name });
     let secretTask: Awaited<ReturnType<typeof prepareHomeSecretTask>> = undefined;
+    let friendFeedTask: Awaited<ReturnType<typeof prepareFriendFeedEmotionTask>> = undefined;
     try {
         if (signal?.aborted) return null;
         try { if (secretOrigin) secretTask = await prepareHomeSecretTask(charData, apiMessages); }
@@ -381,7 +386,11 @@ export async function evaluateEmotionBackground(
             announceChatGen(CHAT_GEN_EVENTS.emotionFailed, {charId: charData.id, charName: charData.name, reason: '秘密任务准备失败，本轮继续正常情绪评估'});
         }
         if (signal?.aborted) return null;
-        const prompt = buildEmotionEvalPrompt(charData, userProfile, mainSystemPrompt, apiMessages, true, secretTask?.prompt);
+        try { friendFeedTask = await prepareFriendFeedEmotionTask(charData.id); }
+        catch (error) { console.warn('[Friend feed] Could not prepare browsing task', error); }
+        if (signal?.aborted) return null;
+        const prompt = buildEmotionEvalPrompt(charData, userProfile, mainSystemPrompt, apiMessages, true,
+            (friendFeedTask?.prompt || '') + (secretTask?.prompt || ''));
 
         const baseUrl = api.baseUrl.replace(/\/+$/, '');
         const headers = {
@@ -459,6 +468,10 @@ export async function evaluateEmotionBackground(
         });
         return null;
     } finally {
+        if (friendFeedTask) {
+            try { await releaseFriendFeedEmotionTask(charData.id, friendFeedTask.id); }
+            catch (error) { console.warn('[Friend feed] Could not release unfinished browsing task', error); }
+        }
         if (secretTask) {
             try { await failHomeSecretTask(charData.id, secretTask.id); }
             catch (error) { console.warn('[Home secrets] Could not release unfinished task', error); }
@@ -687,6 +700,7 @@ export const useChatAI = ({
         // 这一轮走的是即时对话、并且云端已经受理：收尾时不要再打脏重传一次 fire_pack。
         // POST 上去的那份就是权威的（还多带了 chat 段），再传一遍是同样内容白走一趟网络。
         let instantChatAccepted = false;
+        let friendFeedMainTask: Awaited<ReturnType<typeof prepareFriendFeedMainTask>>;
         // amsg2 工具在三个工具循环（麦当劳 / 瑞幸 / 通用）里都可能出现，执行方式完全一样，
         // 只有各自的 loopMessages 不同。
         const runAmsg2ToolCall = async (
@@ -720,14 +734,16 @@ export const useChatAI = ({
         };
 
         try {
+            // Include SW readiness in send→API timing; it can be the first request's wait.
+            const perfSendT0 = performance.now();
             // 初始化失败也必须经过 finally 释放本轮占位。
             await replyStep(async () => KeepAlive.start());
+            const keepAliveMs = Math.round(performance.now() - perfSendT0);
             const baseUrl = effectiveApi.baseUrl.replace(/\/+$/, '');
             const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApi.apiKey || 'sk-none'}` };
 
             // ── 分段计时（从用户发送到 API 发出）──
-            const perfSendT0 = performance.now();
-            const perfStages: Record<string, number> = {};
+            const perfStages: Record<string, number> = { keepAlive: keepAliveMs };
             const stageT = async <T>(label: string, p: Promise<T>): Promise<T> => {
                 const t0 = performance.now();
                 try { return await replyStep(async () => p); }
@@ -939,6 +955,13 @@ export const useChatAI = ({
                     unansweredUserTurn: hasUnansweredUserTurn(currentMsgs, contextMsgs),
                 });
             const promptBuildSkipped = payload.flags.promptBuildSkipped;
+            if (!promptBuildSkipped) {
+                try {
+                    friendFeedMainTask = await prepareFriendFeedMainTask(char.id,friendFeedUserDisclosure(contextMsgs));
+                    if (friendFeedMainTask) fullMessages.splice(Math.max(1, payload.volatileTailIndex), 0,
+                        {role: 'system', content: friendFeedMainTask.prompt});
+                } catch (error) {console.warn('[Friend feed] Main task preparation failed', error);}
+            }
             if (payload.flags.mcdActive) {
                 console.log(`🍔 [MCD-MiniApp] 注入协同点餐上下文 step=${mcdMiniSnap?.step} cartItems=${mcdMiniSnap?.cart?.length || 0} menuItems=${mcdMiniSnap?.menuMeals ? Object.keys(mcdMiniSnap.menuMeals).length : 0} nutrition=${mcdMiniSnap?.nutritionData ? mcdMiniSnap.nutritionData.length : 0}字`);
             }
@@ -993,12 +1016,17 @@ export const useChatAI = ({
             // metadata.amsgEmotionEval（那份走加密信封）。
             // Cloud callbacks cannot prove ownership of every local reply bubble yet.
             // Do not generate unowned secrets; ordinary cloud emotion evaluation continues.
+            let cloudFriendFeedTask: Awaited<ReturnType<typeof prepareFriendFeedEmotionTask>>;
+            if (emotionEvalEnabled && instantChatRoute && emotionApi) {
+                try { cloudFriendFeedTask = await prepareFriendFeedEmotionTask(charForGen.id); }
+                catch (error) { console.warn('[Friend feed] Could not prepare cloud browsing task', error); }
+            }
             const cloudEmotionEval = (emotionEvalEnabled && instantChatRoute && emotionApi)
                 ? {
                     // includeContext=false: 不嵌 system prompt + 对话历史 (worker 复用本次请求的 messages 作前文),
                     // 把 emotionEval 块压到最小, 不把上下文在请求体里重复一份.
                     prompt: buildEmotionEvalPrompt(
-                        charForGen, userProfile, systemPrompt, cleanedApiMessages, false
+                        charForGen, userProfile, systemPrompt, cleanedApiMessages, false, cloudFriendFeedTask?.prompt
                     ),
                     homeSecretRequestId: undefined,
                     api: { baseUrl: emotionApi.baseUrl, apiKey: emotionApi.apiKey, model: emotionApi.model },
@@ -1087,7 +1115,7 @@ export const useChatAI = ({
                 model: effectiveApi.model,
                 messages: fullMessages,
                 temperature: userTemp,
-                max_tokens: 8000,
+                max_tokens: dialogueMaxTokens(effectiveApi),
                 stream: userStream,
             };
             // 思考过程展示开启时显式向后端请求 extended thinking。
@@ -1105,19 +1133,20 @@ export const useChatAI = ({
             // 拼进 tools，但参数取舍必须现在就定）。角色级开关关掉的不注入——否则被用户显式
             // 关掉的功能会被角色一次工具调用重新打开。
             const amsg2ToolsInjected = isAmsg2EnabledForChar(char) && await replyStep(async () => isAmsg2GlobalReady());
-            if (shouldSendThinkingParams({
+            if (baseReqBody.max_tokens > 1024 && shouldSendThinkingParams({
                 thinkingActive: !!payload.flags.thinkingActive,
                 legacyToolModeActive: !!toolModeActive,
                 amsg2ToolsInjected,
                 model: baseReqBody.model || '',
             })) {
                 const m: string = baseReqBody.model || '';
-                if (/^claude-/i.test(m) && !/-thinking$/i.test(m)) {
+                if (!isAnthropicEndpoint(baseUrl) && /^claude-/i.test(m) && !/-thinking$/i.test(m)) {
                     baseReqBody.model = `${m}-thinking`;
                 }
-                baseReqBody.thinking = { type: 'enabled', budget_tokens: 4000 };
+                const thinkingBudget = Math.min(4000, baseReqBody.max_tokens - 1);
+                baseReqBody.thinking = { type: 'enabled', budget_tokens: thinkingBudget };
                 baseReqBody.reasoning_effort = 'medium';
-                baseReqBody.extra_body = { ...(baseReqBody.extra_body || {}), thinking: { type: 'enabled', budget_tokens: 4000 } };
+                baseReqBody.extra_body = { ...(baseReqBody.extra_body || {}), thinking: { type: 'enabled', budget_tokens: thinkingBudget } };
                 // 开思考时不要带采样参数: Claude 系（含各种中转 claude-*）在 thinking 启用时
                 // 只接受 temperature=1，传 0.85 会被 400 ("temperature may only be set to 1 when
                 // thinking is enabled")。删掉让服务端用默认即可——对其它模型(非 Claude)也安全:
@@ -1306,6 +1335,7 @@ export const useChatAI = ({
                     if (amsg2ExpiredIds.length && instantChatResult.uuid) {
                         stageInstantChatExpiredNotices(char.id, instantChatResult.uuid, amsg2ExpiredIds);
                     }
+                    if(friendFeedMainTask && instantChatResult.uuid)await stageFriendFeedCloudTask(char.id,friendFeedMainTask.id,instantChatResult.uuid).catch(()=>{});
                 } else {
                     // 没发出去就是没发出去：明确落一条系统消息 + 弹错，用户可以直接重发。
                     // **绝不静默退回本地生成** —— 静默分流那种查无可查的坑踩过一次就够了。
@@ -1483,6 +1513,7 @@ export const useChatAI = ({
                         // 空 content + tool_calls 在 Gemini 兼容层会被判 INVALID_ARGUMENT, 给个占位
                         content: data.choices[0].message.content || '(调用工具中)',
                         tool_calls: toolCalls,
+                        ...anthropicContinuation(data.choices[0].message),
                     } as any);
                     for (const tc of toolCalls) {
                         const fname: string = tc.function?.name || '';
@@ -1595,6 +1626,7 @@ export const useChatAI = ({
                         // 空 content + tool_calls 在 Gemini 兼容层会被判 INVALID_ARGUMENT, 给个占位
                         content: data.choices[0].message.content || '(调用工具中)',
                         tool_calls: toolCalls,
+                        ...anthropicContinuation(data.choices[0].message),
                     } as any);
                     for (const tc of toolCalls) {
                         const fname: string = tc.function?.name || '';
@@ -1719,6 +1751,7 @@ export const useChatAI = ({
                         // 空 content + tool_calls 在 Gemini 兼容层会被判 INVALID_ARGUMENT, 给个占位
                         content: data.choices[0].message.content || '(调用工具中)',
                         tool_calls: toolCalls,
+                        ...anthropicContinuation(data.choices[0].message),
                     } as any);
                     let mcpCallsThisRound = 0;
                     let mcpProgressThisRound = false;
@@ -2133,6 +2166,7 @@ export const useChatAI = ({
             if (amsg2ExpiredIds.length) {
                 void ActiveMsgStore.markExpiredNoticesNotified(char.id, amsg2ExpiredIds);
             }
+            if(friendFeedMainTask)await acknowledgeFriendFeedNotices(char.id,friendFeedMainTask.id).catch(()=>{});
 
         } catch (e: any) {
             if (replyRun.signal.aborted) return;
@@ -2180,6 +2214,10 @@ export const useChatAI = ({
             // fire_pack 会停在排程那一刻、少掉角色排完之后说的这段。
             // 即时对话受理成功那一轮跳过：那次 POST 已经把这一轮的 fire_pack（还多带了
             // chat 段）传上去了，这里再打脏就是同样的内容再走一趟网络。
+            if (friendFeedMainTask && !instantChatAccepted) {
+                await releaseFriendFeedEmotionTask(char.id, friendFeedMainTask.id)
+                    .catch(error => console.warn('[Friend feed] Main task release failed', error));
+            }
             if (!instantChatAccepted) {
                 markAmsgStateDirty({
                     char: { ...char, activeMsg2Config: amsg2Session.getConfig() },

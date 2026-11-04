@@ -19,8 +19,10 @@ export function paletteRole(name,assetId=''){
  if(/^(gaming-led|gaming-mint|gaming-arcade-cyan)$/.test(name))return 'light';
  return null;
 }
+export const hasFixedRoomPalette=room=>room.fixedPalette==='halloween'||room.activityRoom==='halloween'||room.defaultTemplate?.kind==='halloween';
 export function applyRoomPalette(room,key,catalog){
  const palette=ROOM_PALETTES[key];if(!palette)throw Error('找不到这套精装配色');
+ if(hasFixedRoomPalette(room))return room;
  for(const part of ['wall','floor','trim'])room[part]=palette[part];
  for(const i of room.items){if(i.stored)continue;const a=catalog.find(a=>a.id===i.assetId);if(!a?.paletteMaterials?.length)continue;
   const colors={...i.materialColors};

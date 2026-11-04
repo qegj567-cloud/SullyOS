@@ -1,0 +1,77 @@
+import {pathToFileURL} from 'node:url';
+import {mkdirSync,writeFileSync} from 'node:fs';
+import assert from 'node:assert/strict';
+const {chromium}=await import(process.env.PLAYWRIGHT_MODULE?pathToFileURL(process.env.PLAYWRIGHT_MODULE).href:'playwright');
+const base=process.env.RESOURCE_PACK_TEST_URL||'http://127.0.0.1:5181';
+const out='output/home-resource-packs';mkdirSync(out,{recursive:true});
+const browser=await chromium.launch({headless:true,channel:'msedge'});
+const context=await browser.newContext({viewport:{width:390,height:844}}),page=await context.newPage();
+const errors=[],requests=[];page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>{if(/\/room3d\/.*(?:\.glb|\.jpg|\.png)/.test(r.url()))requests.push(r.url());});
+try{
+ await page.goto(`${base}/test/fixtures/home-resource-packs.html`,{waitUntil:'domcontentloaded',timeout:90000});
+ await page.getByRole('button',{name:'南瓜扶手椅'}).waitFor();
+ assert.equal(requests.filter(url=>/\.(glb|jpg)/.test(url)).length,0,'browsing previews must not download models or textures');
+ assert.equal(await page.getByRole('button',{name:'南瓜扶手椅'}).getAttribute('data-pack-locked'),'true');
+ await page.getByRole('button',{name:'南瓜扶手椅'}).click();
+ await page.getByRole('dialog').waitFor();await page.screenshot({path:`${out}/01-optional-pack-dialog.png`});
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+ await page.getByRole('button',{name:'取消',exact:true}).click();
+ assert.equal(requests.filter(url=>/\.(glb|jpg)/.test(url)).length,0,'cancel must not download assets');
+ await page.getByRole('button',{name:'南瓜扶手椅'}).click();
+ await page.getByRole('button',{name:'确定',exact:true}).click();
+ await page.getByText('已选中南瓜扶手椅',{exact:true}).waitFor({timeout:60000});
+ await page.getByRole('button',{name:'女巫连衣裙'}).click();
+ await page.getByRole('button',{name:'确定',exact:true}).click();
+ await page.getByText('已选中女巫连衣裙',{exact:true}).waitFor({timeout:60000});
+ const downloaded=requests.length;assert.ok(downloaded>=70);
+ assert.equal(await page.locator('canvas').count(),0,'downloading must not construct a 3D scene');
+ await page.screenshot({path:`${out}/02-installed.png`});
+ // Flush page/module memory. Block the resource server, while keeping app code reachable.
+ await context.route(/\/room3d\/.*\.(glb|jpg|png)(?:\?|$)/,route=>route.abort());
+ requests.length=0;
+ await page.reload();
+ await page.waitForFunction(()=>document.querySelectorAll('[data-pack-locked="false"]').length===2);
+ await page.getByRole('button',{name:'南瓜扶手椅'}).click();
+ await page.getByText('已选中南瓜扶手椅',{exact:true}).waitFor();
+ assert.equal(await page.getByRole('dialog').count(),0,'installed packs use the clicked item immediately');
+ await page.evaluate(()=>window.__loadPackPreview());
+ await page.waitForFunction(()=>window.__packRender?.textures>0);
+ assert.equal(requests.length,0,'refresh + real GLTF/texture loading must never reach the asset server');
+ const rendered=await page.evaluate(()=>window.__packRender);assert.ok(rendered.calls>0);
+ await page.screenshot({path:`${out}/03-offline-after-refresh.png`,fullPage:true});
+ const assetRequestsAfterRefresh=requests.length;
+ // Exercise the real furniture shelf, including resuming the original placement after download.
+ await context.unrouteAll();
+ await page.evaluate(async()=>{
+  const packs=await import('/apps/room3d/resourcePacks.ts');await packs.removeResourcePack('halloween-furniture');
+  await import('/apps/room3d/editor.css');
+  const {mountHomeEditor}=await import('/apps/room3d/editor.js'),{createHome}=await import('/apps/room3d/model.js');
+  const catalog=await fetch('/room3d/catalog.json').then(r=>r.json()),home=createHome(catalog);home.rooms[0].items=[];
+  const host=document.createElement('div');host.id='pack-editor-test';host.style.cssText='position:fixed;inset:0;background:white;z-index:10';document.body.append(host);
+  window.__packEditor=await mountHomeEditor(host,{assetBase:new URL('/room3d/',location.href).href,initialState:home});window.__packEditor.openPanel('furniture');
+ });
+ const chair=page.locator('#pack-editor-test .h3-asset[data-id="halloween_pumpkin_armchair"]');await chair.waitFor();
+ assert.equal(await chair.getAttribute('data-pack-locked'),'true');
+ await chair.click();await page.getByRole('button',{name:'取消',exact:true}).click();
+ assert.equal(await page.evaluate(()=>window.__packEditor.getState().rooms[0].items.length),0);
+ await chair.click();await page.getByRole('button',{name:'确定',exact:true}).click();
+ await page.waitForFunction(()=>window.__packEditor.getState().rooms[0].items.some(i=>i.assetId==='halloween_pumpkin_armchair'));
+ await page.evaluate(()=>{window.__packEditor.dispose();document.querySelector('#pack-editor-test').remove();});
+ await page.evaluate(async()=>{
+  const packs=await import('/apps/room3d/resourcePacks.ts');await packs.removeResourcePack('halloween-wardrobe');
+  const reactModule=await import('/node_modules/.vite/deps/react.js'),domModule=await import('/node_modules/.vite/deps/react-dom_client.js'),{WardrobePicker}=await import('/experiments/chibi/WardrobePicker.tsx');
+  const React=reactModule.default??reactModule,{createRoot}=domModule.default??domModule;
+  const host=document.createElement('div');host.id='pack-wardrobe-test';host.style.cssText='position:fixed;inset:0;background:white;z-index:10;overflow:auto';document.body.append(host);
+  window.__wardrobeTestRoot=createRoot(host);window.__wardrobeTestRoot.render(React.createElement(WardrobePicker,{hair:{layers:{},extras:[],bodyShape:'blank'},onChange:value=>{window.__appliedPackWardrobe=value.wardrobe;}}));
+ });
+ await page.getByRole('button',{name:'万圣节专属衣柜',exact:true}).click();
+ const outfit=page.locator('#pack-wardrobe-test .garment-tile[data-pack-locked="true"]').first();await outfit.waitFor();
+ await outfit.click();await page.getByRole('button',{name:'取消',exact:true}).click();
+ assert.equal(await page.evaluate(()=>window.__appliedPackWardrobe),undefined);
+ await outfit.click();await page.getByRole('button',{name:'确定',exact:true}).click();
+ await page.waitForFunction(()=>Object.values(window.__appliedPackWardrobe||{}).some(id=>id.startsWith('halloween-')));
+ await page.evaluate(()=>{window.__wardrobeTestRoot.unmount();document.querySelector('#pack-wardrobe-test').remove();});
+ assert.deepEqual(errors,[]);
+ writeFileSync(`${out}/report.json`,JSON.stringify({downloaded,assetRequestsAfterRefresh,rendered,furnitureClickFlow:true,wardrobeClickFlow:true,errors},null,2));
+ console.log(JSON.stringify({downloaded,assetRequestsAfterRefresh,rendered,furnitureClickFlow:true,wardrobeClickFlow:true,errors}));
+}finally{await browser.close();}

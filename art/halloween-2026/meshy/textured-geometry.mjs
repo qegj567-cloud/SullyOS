@@ -1,0 +1,15 @@
+import fs from 'node:fs/promises';
+import {createRequire} from 'node:module';
+const sharp=createRequire('C:/Users/Administrator/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/package.json')('sharp');
+import * as T from 'three';
+import {readGlb,packGlb} from './glb-utils.mjs';
+export async function loadTextured(file){
+ const {json,bin}=await readGlb(file),primitive=json.meshes[0].primitives[0];
+ function read(ai){const a=json.accessors[ai],v=json.bufferViews[a.bufferView],n={SCALAR:1,VEC2:2,VEC3:3,VEC4:4}[a.type],size={5126:4,5125:4,5123:2}[a.componentType],array=new ({5126:Float32Array,5125:Uint32Array,5123:Uint16Array}[a.componentType])(a.count*n);for(let i=0;i<a.count;i++)for(let k=0;k<n;k++){const offset=(v.byteOffset||0)+(a.byteOffset||0)+i*(v.byteStride||size*n)+k*size;array[i*n+k]=a.componentType===5126?bin.readFloatLE(offset):size===4?bin.readUInt32LE(offset):bin.readUInt16LE(offset);}return new T.BufferAttribute(array,n);}
+ const geo=new T.BufferGeometry();for(const [name,ai]of Object.entries(primitive.attributes))geo.setAttribute({POSITION:'position',NORMAL:'normal',TEXCOORD_0:'uv'}[name],read(ai));geo.setIndex(read(primitive.indices));
+ const material=json.materials[primitive.material],texture=json.textures[material.pbrMetallicRoughness.baseColorTexture.index],im=json.images[texture.source],v=json.bufferViews[im.bufferView],bytes=bin.subarray(v.byteOffset||0,(v.byteOffset||0)+v.byteLength),{data,info}=await sharp(bytes).removeAlpha().raw().toBuffer({resolveWithObject:true});
+ const sample=(u,v)=>{const x=Math.max(0,Math.min(info.width-1,Math.floor(u*info.width))),y=Math.max(0,Math.min(info.height-1,Math.floor(v*info.height))),offset=(y*info.width+x)*info.channels;return Array.from(data.subarray(offset,offset+3));};
+ return {geo,json,bin,material,textureBytes:bytes,mime:im.mimeType,sample};
+}
+export function subset(g,indices){const out=new T.BufferGeometry(),used=[],remap=new Map(),result=[];for(const old of indices){if(!remap.has(old)){remap.set(old,used.length);used.push(old);}result.push(remap.get(old));}for(const [name,a]of Object.entries(g.attributes)){const values=new a.array.constructor(used.length*a.itemSize);used.forEach((old,i)=>values.set(a.array.subarray(old*a.itemSize,(old+1)*a.itemSize),i*a.itemSize));out.setAttribute(name,new T.BufferAttribute(values,a.itemSize,a.normalized));}out.setIndex(result);return out;}
+export async function embedTexture(file,source,materialName){const {json,bin}=await readGlb(file),offset=Math.ceil(bin.length/4)*4,bytes=Buffer.alloc(offset+source.textureBytes.length);bin.copy(bytes);source.textureBytes.copy(bytes,offset);const vi=json.bufferViews.length;json.bufferViews.push({buffer:0,byteOffset:offset,byteLength:source.textureBytes.length});json.images=[{bufferView:vi,mimeType:source.mime}];json.samplers=[{magFilter:9729,minFilter:9729,wrapS:10497,wrapT:10497}];json.textures=[{source:0,sampler:0}];json.buffers[0].byteLength=bytes.length;for(const m of json.materials){if(!materialName||m.name===materialName)m.pbrMetallicRoughness={baseColorTexture:{index:0},metallicFactor:0,roughnessFactor:.9};}await fs.writeFile(file,packGlb(json,bytes));}

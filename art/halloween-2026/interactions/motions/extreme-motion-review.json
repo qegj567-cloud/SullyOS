@@ -1,0 +1,32 @@
+{
+  "errors": [],
+  "report": [
+    {
+      "id": "home-kiss",
+      "maxBoneStepRadians": 0.2858020848159131,
+      "maxAt": {
+        "time": 2.2333333333333334,
+        "bone": "1:R_twist3"
+      },
+      "minFoot": 0.03359999999999991
+    },
+    {
+      "id": "home-forehead-touch",
+      "maxBoneStepRadians": 0.2904070607472244,
+      "maxAt": {
+        "time": 1.0333333333333334,
+        "bone": "1:L_hand"
+      },
+      "minFoot": 0.03359999999999991
+    },
+    {
+      "id": "home-hand-sway",
+      "maxBoneStepRadians": 0.37008260347076605,
+      "maxAt": {
+        "time": 3.2,
+        "bone": "0:R_ring_tip"
+      },
+      "minFoot": 0.033599999999999894
+    }
+  ]
+}

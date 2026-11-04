@@ -1,0 +1,121 @@
+{
+  "batch": "halloween-batch-12-furniture-texture",
+  "jobs": [
+    {
+      "id": "bat-sofa-textured",
+      "image": "../furniture/01-bat-sofa.png",
+      "imageSha256": "21e00c7abeb94ff3ce75cb9cf75c0de2b60a2a23cc37de25cdfc75b300565c0e",
+      "params": {
+        "ai_model": "meshy-7",
+        "texture_resolution": "2k",
+        "enable_original_uv": false,
+        "enable_pbr": true,
+        "target_formats": [
+          "glb"
+        ]
+      },
+      "estimatedCredits": 10,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-29T03:22:28.285Z",
+      "model": "furniture-texture-inputs/halloween_bat_sofa.glb",
+      "modelSha256": "fdd9bea46d9c4a3ae243b2de25e996aa8974e1c97951b5666c8aa5ab035d14a7",
+      "taskId": "01a185ae-2c0e-7197-9153-0478bbc0f29b",
+      "progress": 100,
+      "consumedCredits": 10,
+      "downloaded": true,
+      "file": "bat-sofa-textured.glb",
+      "bytes": 6685448,
+      "sha256": "5d66f42270d2ee0d7d58c8ba425035eb8dbc099467070a8ef33f819773ba04f6"
+    },
+    {
+      "id": "pumpkin-armchair-textured",
+      "image": "../furniture/03-pumpkin-armchair.png",
+      "imageSha256": "188fc392864e4d2477492a419a1ed5e812c36e8785f403d574998bbfc9cd3aec",
+      "params": {
+        "ai_model": "meshy-7",
+        "texture_resolution": "2k",
+        "enable_original_uv": false,
+        "enable_pbr": true,
+        "target_formats": [
+          "glb"
+        ]
+      },
+      "estimatedCredits": 10,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-29T03:23:03.062Z",
+      "model": "furniture-texture-inputs/halloween_pumpkin_armchair.glb",
+      "modelSha256": "fbb104b9b5b0ad6dbaa0e776b0ec3bc65ae6c60dc1fe63beee206ca72d9910fc",
+      "taskId": "01a185ae-b30d-7511-9082-d705e6dc77a6",
+      "progress": 100,
+      "consumedCredits": 10,
+      "downloaded": true,
+      "file": "pumpkin-armchair-textured.glb",
+      "bytes": 5940540,
+      "sha256": "55be1f9c546bd3193e3f463f9004ed76fe380d54d732274068238ebac13b80f0"
+    },
+    {
+      "id": "coffin-coffee-table-textured",
+      "image": "../furniture/02-coffin-coffee-table.png",
+      "imageSha256": "c98b3aff7eec9c9cbd75d6294765877e2a8f6f30b1ce1ae4086520c0d87540db",
+      "params": {
+        "ai_model": "meshy-7",
+        "texture_resolution": "2k",
+        "enable_original_uv": false,
+        "enable_pbr": true,
+        "target_formats": [
+          "glb"
+        ]
+      },
+      "estimatedCredits": 10,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-29T03:23:52.650Z",
+      "model": "furniture-texture-inputs/halloween_coffin_coffee_table.glb",
+      "modelSha256": "f445a627f8c9b407a6b3f7bea3ec3a929a6a9f7950299cdb7a209e3384eaf512",
+      "taskId": "01a185af-7570-76e7-8c60-15bf08603201",
+      "progress": 100,
+      "consumedCredits": 10,
+      "downloaded": true,
+      "file": "coffin-coffee-table-textured.glb",
+      "bytes": 5624172,
+      "sha256": "c845bb6e0f8de278cd93f242090fd0aacc7538e0b88a289a331bac43a1da3dd5"
+    },
+    {
+      "id": "potion-bookcase-textured",
+      "image": "../furniture/04-potion-bookcase.png",
+      "imageSha256": "6d5881ed2ada0755ca471dba5a9953f61128ccf229593077ecf8e3f04ca5ac77",
+      "params": {
+        "ai_model": "meshy-7",
+        "texture_resolution": "2k",
+        "enable_original_uv": false,
+        "enable_pbr": true,
+        "target_formats": [
+          "glb"
+        ]
+      },
+      "estimatedCredits": 10,
+      "status": "SUCCEEDED",
+      "submittedAt": "2026-10-29T03:24:14.907Z",
+      "model": "furniture-texture-inputs/halloween_potion_bookcase.glb",
+      "modelSha256": "fd8fcb1434bcc69fb8c362f301f77ccc10fd1cc98b9e2d53d6960f4d30fb4a6a",
+      "taskId": "01a185af-cb85-772a-915f-3180c443c3dc",
+      "progress": 100,
+      "consumedCredits": 10,
+      "downloaded": true,
+      "file": "potion-bookcase-textured.glb",
+      "bytes": 6568504,
+      "sha256": "c8235c621acfd384929f5480ed76ecb11064743cc384a2ed1d734dc250e35cfc"
+    }
+  ],
+  "latestBalance": {
+    "balance": 556,
+    "monthly_credits": 315,
+    "permanent_credits": 241,
+    "monthly_resets_at": 1794576839000
+  },
+  "balanceBefore": {
+    "balance": 596,
+    "monthly_credits": 355,
+    "permanent_credits": 241,
+    "monthly_resets_at": 1794576839000
+  }
+}

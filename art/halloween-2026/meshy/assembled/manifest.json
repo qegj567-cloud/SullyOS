@@ -1,0 +1,59 @@
+{
+  "source": "reduced/pumpkin-costume-34000.glb",
+  "body": "current-body.glb",
+  "bones": 48,
+  "parts": [
+    {
+      "name": "Halloween_pumpkin_hat",
+      "triangles": 8733
+    },
+    {
+      "name": "Halloween_pumpkin_sleeves",
+      "triangles": 2415
+    },
+    {
+      "name": "Halloween_pumpkin_romper",
+      "triangles": 8153
+    },
+    {
+      "name": "Halloween_pumpkin_collar",
+      "triangles": 3490
+    },
+    {
+      "name": "Halloween_pumpkin_boots",
+      "triangles": 3531
+    },
+    {
+      "name": "Halloween_pumpkin_sleeve_colour_repair",
+      "triangles": 1
+    },
+    {
+      "name": "Halloween_pumpkin_undershirt_torso",
+      "triangles": 1828
+    },
+    {
+      "name": "Halloween_pumpkin_fitted_shorts",
+      "triangles": 548
+    }
+  ],
+  "removedTriangles": 6707,
+  "cuffFit": {
+    "sampleCount": 313,
+    "beforeMinimumGap": -0.0296872310542608,
+    "afterMinimumGap": 0.01833506385226527,
+    "movedVertices": 47,
+    "reboundVertices": 154,
+    "hemHeightUnchanged": true,
+    "topologyUnchanged": true,
+    "source": "sailor-school-user.glb#Sailor_pants",
+    "sourceTriangles": 548
+  },
+  "status": "fitting candidate; visual and motion QA in progress",
+  "ghost": {
+    "source": "reduced/ghost-top-24000.glb",
+    "triangles": 19869,
+    "repairTriangles": 1390,
+    "removedTriangles": 4130,
+    "bones": 48
+  }
+}

@@ -1,0 +1,7 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>万圣节互动道具</title><style>body{margin:0;background:#eee9e2;font:16px system-ui}header{position:absolute;top:20px;left:24px}canvas{display:block}</style><header>南瓜糖桶 · 包糖 · 小幽灵<br><small>拖动查看 · Meshy 生成后手工配色与握持点校准</small></header><script type="module">
+import * as T from 'three';import {GLTFLoader} from 'three/examples/jsm/loaders/GLTFLoader.js';import {OrbitControls} from 'three/examples/jsm/controls/OrbitControls.js';
+const scene=new T.Scene();scene.background=new T.Color('#eee9e2');scene.add(new T.HemisphereLight('#fff','#88808a',2));const sun=new T.DirectionalLight('#fff',2);sun.position.set(3,4,5);scene.add(sun);
+const renderer=new T.WebGLRenderer({antialias:true});renderer.setSize(innerWidth,innerHeight);document.body.append(renderer.domElement);const camera=new T.PerspectiveCamera(35,innerWidth/innerHeight,.01,20);camera.position.set(0,.5,2);const controls=new OrbitControls(camera,renderer.domElement);controls.target.set(0,.05,0);controls.update();
+for(const [i,id] of ['pumpkin-pail','wrapped-candy','little-ghost'].entries()){const g=(await new GLTFLoader().loadAsync('/room3d/props/halloween/'+id+'.glb')).scene;g.position.x=(i-1)*.6;g.position.y=id==='pumpkin-pail'?.3:id==='little-ghost'?-.18:0;scene.add(g);}
+window.ready=true;window.stage={scene,camera,controls};renderer.setAnimationLoop(()=>renderer.render(scene,camera));
+</script></html>

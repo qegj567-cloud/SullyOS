@@ -29,6 +29,7 @@ import { safeFetchJson, extractContent } from '../utils/safeApi';
 import { fetchMiniMaxVoices, MiniMaxVoiceItem } from '../utils/minimaxVoice';
 import { resolveMiniMaxApiKey } from '../utils/minimaxApiKey';
 import { normalizeElevenLabsVoiceId, synthesizeSpeechElevenLabsDetailed } from '../utils/elevenLabsTts';
+import { isElevenLabsV4Model } from '../utils/elevenLabsModels';
 import { normalizeUserImpression } from '../utils/impression';
 import { parseGeneratedImpression } from '../utils/impressionGeneration';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
@@ -157,8 +158,17 @@ const Character: React.FC = () => {
           .catch(() => {});
   }, []);
   useEffect(() => {
-      characterLaunch.consume();
-  }, []);
+      const apply = () => {
+          const intent = characterLaunch.consume();
+          if (!intent) return;
+          if (!characters.some(character => character.id === intent.charId)) { setView('list'); return; }
+          setEditingId(intent.charId); setView('detail');
+          setDetailTab(intent.detailTab || (intent.openChibiStudio ? 'chibi' : 'identity'));
+          setShowChibiStudio(!!intent.openChibiStudio);
+      };
+      apply();
+      return characterLaunch.subscribe(apply);
+  }, [characters]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cardImportRef = useRef<HTMLInputElement>(null);
   
@@ -1565,7 +1575,7 @@ ${isInitialGeneration ? `
                                    {([
                                        ['lifeRecordPeriodEnabled', 'period', '生理期', '经期状态 / 周期预测 + 代记「来了 / 结束了」'],
                                        ['lifeRecordMedEnabled', 'med', '药盒', '今日用药计划与打卡情况 + 代记「吃了 xx 药」'],
-                                       ['lifeRecordExpenseEnabled', 'expense', '记账', '今日支出（与银行 App 打通）+ 代记「花了 xx 钱」'],
+                                       ['lifeRecordExpenseEnabled', 'expense', '记账', '今日收支（与银行 App 打通）+ 代记花费与到账收入'],
                                        ['lifeRecordExerciseEnabled', 'exercise', '锻炼', '今日 / 本周锻炼情况 + 代记「做了 xx 运动」'],
                                    ] as const).filter(([, moduleKey]) => !hiddenLifeModules.includes(moduleKey)).map(([field, , label, desc]) => (
                                        <div key={field} className="flex items-center justify-between gap-3">
@@ -1730,7 +1740,11 @@ ${isInitialGeneration ? `
                                        })}
                                        className="w-full accent-primary"
                                    />
-                                   <p className="text-[10px] text-slate-400">越小越慢、越像娓娓道来。1.0 正常；觉得“赶”就拉到 0.85–0.95。MiniMax、鱼声与 ElevenLabs 共用该角色的语速。</p>
+                                   <p className="text-[10px] text-slate-400">
+                                       {apiConfig.ttsProvider === 'elevenlabs' && isElevenLabsV4Model(apiConfig.elevenLabsModel)
+                                           ? '当前 ElevenLabs v4 不支持数值语速，这个值会保留给其他模型。v4 请用 [measured]、[Quick, light, playful pace] 等 Audio Tags 控制节奏。'
+                                           : '越小越慢、越像娓娓道来。1.0 正常；觉得“赶”就拉到 0.85–0.95。MiniMax、鱼声与支持语速参数的 ElevenLabs 模型共用该角色的语速。'}
+                                   </p>
                                </div>
 
                                {(voiceOptions.system.length + voiceOptions.voice_cloning.length + voiceOptions.voice_generation.length) > 0 && (
@@ -1827,6 +1841,19 @@ ${isInitialGeneration ? `
                    
                    {detailTab === 'memory' && (
                        <div className="space-y-4 animate-fade-in">
+                           <details className="rounded-2xl border border-slate-100 bg-white shadow-sm">
+                               <summary className="cursor-pointer px-4 py-3 text-xs font-semibold text-slate-600">记忆设置</summary>
+                               <label className="flex items-center justify-between gap-4 border-t border-slate-100 px-4 py-3">
+                               <span className="min-w-0">
+                                   <span className="block text-sm font-semibold text-slate-700">隐藏 RECALL 指令提示</span>
+                                   <span className="mt-1 block text-xs leading-relaxed text-slate-400">聊天时不再提示角色按月份调阅旧版记忆。使用记忆宫殿时可保持开启。</span>
+                               </span>
+                               <span className="shrink-0">
+                                   <input type="checkbox" role="switch" aria-label="隐藏 RECALL 指令提示" checked={formData.hideMonthlyRecallPrompt !== false} onChange={e => handleChange('hideMonthlyRecallPrompt', e.target.checked)} className="peer sr-only" />
+                                   <span aria-hidden="true" className="relative block h-6 w-11 rounded-full bg-slate-200 transition-colors peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-primary peer-focus-visible:ring-offset-2 after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow-sm after:transition-transform peer-checked:after:translate-x-5" />
+                               </span>
+                               </label>
+                           </details>
                            <div className="flex justify-center gap-2 mb-4">
                                <button onClick={() => { setShowBatchModal(true); trackEvent('打开批量记忆总结弹窗'); }} className="px-4 py-2 bg-white rounded-full text-xs font-semibold text-slate-500 shadow-sm border border-slate-100">批量总结（可指定日期）</button>
                                <button onClick={() => setShowImportModal(true)} className="px-4 py-2 bg-white rounded-full text-xs font-semibold text-slate-500 shadow-sm border border-slate-100">导入/清洗</button>

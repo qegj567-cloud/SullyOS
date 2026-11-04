@@ -26,7 +26,7 @@ export function createRoomFinishPass(renderer){
  return {render(phase){
   renderer.getDrawingBufferSize(size);
   if(width!==size.x||height!==size.y){texture?.dispose();halo?.dispose();width=size.x;height=size.y;texture=new T.FramebufferTexture(width,height);texture.colorSpace=T.NoColorSpace;texture.minFilter=texture.magFilter=T.LinearFilter;halo=new T.WebGLRenderTarget(Math.ceil(width/2),Math.ceil(height/2),{depthBuffer:false,stencilBuffer:false});material.uniforms.source.value=glowMaterial.uniforms.source.value=texture;material.uniforms.halo.value=halo.texture;}
-  glowMaterial.uniforms.pixel.value.set(1/width,1/height);material.uniforms.glow.value=phase==='sunset'?.22:phase==='morning'?.14:phase==='night'?.12:.07;material.uniforms.warmth.value=phase==='sunset'?1:phase==='night'?.45:0;
+  glowMaterial.uniforms.pixel.value.set(1/width,1/height);material.uniforms.glow.value=phase==='sunset'?.12:phase==='morning'?.14:phase==='night'?.12:.07;material.uniforms.warmth.value=phase==='sunset'?.45:phase==='night'?.45:0;
   renderer.copyFramebufferToTexture(texture);const clear=renderer.autoClear,target=renderer.getRenderTarget();renderer.autoClear=false;
   try{renderer.setRenderTarget(halo);glowQuad.render(renderer);renderer.setRenderTarget(target);quad.render(renderer);}finally{renderer.setRenderTarget(target);renderer.autoClear=clear;}
  },dispose(){texture?.dispose();halo?.dispose();glowQuad.dispose();glowMaterial.dispose();quad.dispose();material.dispose();}};

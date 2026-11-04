@@ -1,0 +1,78 @@
+[
+  {
+    "id": "witch",
+    "file": "witch-40000.glb",
+    "source": "art/halloween-2026/meshy/halloween-batch-06-texture/witch-smooth.glb",
+    "sourceSha256": "742c7d4daf2182e7ede73151b4039cac625e426c13f23d1d387557b8f3a3ac51",
+    "target": 40000,
+    "triangles": 41502,
+    "originalTriangles": 82258,
+    "reductionPercent": 49.5,
+    "vertices": 57057,
+    "maxAttributeAwareError": 0.004978662356734276,
+    "bytes": 12987732,
+    "originalBytes": 24765172,
+    "textureHashes": [
+      "854d9913ee6b3d4ed9fa7a178b8cbe05f64eb03721324b8c0b19e18569214fe8"
+    ],
+    "positionsAndUVs": "retained source vertices; no texture resampling",
+    "status": "visual-comparison"
+  },
+  {
+    "id": "count",
+    "file": "count-34000.glb",
+    "source": "art/halloween-2026/meshy/halloween-batch-06-texture/count-smooth.glb",
+    "sourceSha256": "69fb2cef4bb5c31f6c8e19fb5cf6afc9b144ddfdbfc8eaf1999c3e9c47ad65cb",
+    "target": 34000,
+    "triangles": 34000,
+    "originalTriangles": 81816,
+    "reductionPercent": 58.4,
+    "vertices": 40991,
+    "maxAttributeAwareError": 0.0017261363100260496,
+    "bytes": 11197496,
+    "originalBytes": 21607296,
+    "textureHashes": [
+      "9889e4a1bf5bb5f9583eb565c095075392ff141af001806f17d049e7e79e8ae2"
+    ],
+    "positionsAndUVs": "retained source vertices; no texture resampling",
+    "status": "visual-comparison"
+  },
+  {
+    "id": "apprentice",
+    "file": "apprentice-38000.glb",
+    "source": "art/halloween-2026/meshy/halloween-batch-06-texture/apprentice-smooth.glb",
+    "sourceSha256": "b6976bc26bffcbc7bf34368f2a530b60e418ea566feae68e1b86a5dd22cd471b",
+    "target": 38000,
+    "triangles": 38000,
+    "originalTriangles": 82454,
+    "reductionPercent": 53.9,
+    "vertices": 46593,
+    "maxAttributeAwareError": 0.0023410406429320574,
+    "bytes": 12296040,
+    "originalBytes": 23827012,
+    "textureHashes": [
+      "39b6506d7960f5d48df1afd40a12fcaff27519cf4ccf321d15e36ef702cade98"
+    ],
+    "positionsAndUVs": "retained source vertices; no texture resampling",
+    "status": "visual-comparison"
+  },
+  {
+    "id": "shorts",
+    "file": "shorts-22000.glb",
+    "source": "art/halloween-2026/meshy/halloween-batch-06-texture/shorts-smooth.glb",
+    "sourceSha256": "9ddf8bba7c9f6047839451356bd1c048caf17937a7f94082531c60d4f60e151d",
+    "target": 22000,
+    "triangles": 21999,
+    "originalTriangles": 41067,
+    "reductionPercent": 46.4,
+    "vertices": 26085,
+    "maxAttributeAwareError": 0.0011442090617492795,
+    "bytes": 9920780,
+    "originalBytes": 18311448,
+    "textureHashes": [
+      "42577497c93fc995f070d26cfa66a6aa823fb4b3759c0c34aa138abc4661233e"
+    ],
+    "positionsAndUVs": "retained source vertices; no texture resampling",
+    "status": "visual-comparison"
+  }
+]

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import { resolve, relative } from 'node:path';
 import { build } from 'esbuild';
-import type { Plugin, ResolvedConfig } from 'vite';
+import type { Plugin, ResolvedConfig, Rollup } from 'vite';
 import type { StaticManifest } from '../worker/staticCache';
 import { workerBundleOptions } from './worker-bundle-options.mjs';
 
@@ -32,29 +32,36 @@ export function makeStaticManifest(release: Release, files: Map<string, Buffer>,
   return { ...release, entries, shell: [...shell].filter(path => known.has(path)) };
 }
 
+/** Only the OS entry and recovery settings belong to the offline shell. */
+export function collectShellChunks(bundle: Rollup.OutputBundle): string[] {
+  const core = new Set<string>();
+  const visit = (path: string) => {
+    if (core.has(path)) return;
+    core.add(path);
+    const item = bundle[path];
+    if (item?.type === 'chunk') {
+      item.imports.forEach(visit);
+      const metadata = (item as unknown as { viteMetadata?: { importedCss: Set<string> } }).viteMetadata;
+      metadata?.importedCss.forEach(path => core.add(path));
+      // importedAssets includes mere URL constants for large game images/PDF workers.
+      // Those are optional; actual CSS font/image dependencies are handled by the manifest.
+    }
+  };
+  for (const item of Object.values(bundle)) {
+    if (item.type === 'chunk' && ((item.isEntry && item.name === 'main') || ['Launcher', 'Settings'].includes(item.name))) visit(item.fileName);
+  }
+  return [...core];
+}
+
 /** Runs even on providers that call `vite build` directly. */
 export function staticCachePlugin(release: Release): Plugin {
   let config: ResolvedConfig;
-  const core = new Set<string>();
+  let core: string[] = [];
   return {
     name: 'sully-static-cache', apply: 'build',
     configResolved(value) { config = value; },
     generateBundle(_options, bundle) {
-      const visit = (path: string) => {
-        if (core.has(path)) return;
-        core.add(path);
-        const item = bundle[path];
-        if (item?.type === 'chunk') {
-          item.imports.forEach(visit);
-          const metadata = (item as unknown as { viteMetadata?: { importedCss: Set<string> } }).viteMetadata;
-          metadata?.importedCss.forEach(path => core.add(path));
-          // importedAssets includes mere URL constants for large game images/PDF workers.
-          // Those are optional; actual CSS font/image dependencies are handled by the manifest.
-        }
-      };
-      for (const item of Object.values(bundle)) {
-        if (item.type === 'chunk' && (item.isEntry || ['Launcher', 'Settings'].includes(item.name))) visit(item.fileName);
-      }
+      core = collectShellChunks(bundle);
     },
     async closeBundle(error) {
       // A failed build leaves nothing to scan. The native app loads its files from the package,

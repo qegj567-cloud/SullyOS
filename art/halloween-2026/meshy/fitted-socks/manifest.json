@@ -1,0 +1,40 @@
+[
+  {
+    "id": "ghost-socks",
+    "source": "public/room3d/wardrobe/sailor-girl.glb#Sailor_socks",
+    "triangles": 1156,
+    "bones": 48,
+    "topologyUnchanged": true,
+    "fitMethod": "existing fitSockSurface on current 48-bone body",
+    "sourceFingerprint": {
+      "position": "0a27760078b780fc963e3a5e63ce0e78fa87dc336f9c0c916470774bf83458f7",
+      "skinIndex": "fa6534f9de04ebd85b36d7c5789f63bbbe3d3c8790eac4dbc0b95302a3f0dd3c",
+      "skinWeight": "30b7e4d0f068bf33a2a76e26cd19c15b1a88a57745fcddbba6bdf9e85eafebf2"
+    },
+    "fittedFingerprint": {
+      "position": "0fec31c9cd2c7fb5ff773a04159afaefb8fc5d85e90caf220bf68dc902f39edb",
+      "skinIndex": "fa6534f9de04ebd85b36d7c5789f63bbbe3d3c8790eac4dbc0b95302a3f0dd3c",
+      "skinWeight": "590d79d1e461ed976997929caa5a9215b0e25d446a21ad82ff2c11166b1c92e3"
+    },
+    "status": "reused-approved-fit; pending outfit and motion QA"
+  },
+  {
+    "id": "pumpkin-socks",
+    "source": "public/room3d/wardrobe/sailor-girl.glb#Sailor_socks",
+    "triangles": 1156,
+    "bones": 48,
+    "topologyUnchanged": true,
+    "fitMethod": "existing fitSockSurface on current 48-bone body",
+    "sourceFingerprint": {
+      "position": "0a27760078b780fc963e3a5e63ce0e78fa87dc336f9c0c916470774bf83458f7",
+      "skinIndex": "fa6534f9de04ebd85b36d7c5789f63bbbe3d3c8790eac4dbc0b95302a3f0dd3c",
+      "skinWeight": "30b7e4d0f068bf33a2a76e26cd19c15b1a88a57745fcddbba6bdf9e85eafebf2"
+    },
+    "fittedFingerprint": {
+      "position": "0fec31c9cd2c7fb5ff773a04159afaefb8fc5d85e90caf220bf68dc902f39edb",
+      "skinIndex": "fa6534f9de04ebd85b36d7c5789f63bbbe3d3c8790eac4dbc0b95302a3f0dd3c",
+      "skinWeight": "590d79d1e461ed976997929caa5a9215b0e25d446a21ad82ff2c11166b1c92e3"
+    },
+    "status": "reused-approved-fit; pending outfit and motion QA"
+  }
+]

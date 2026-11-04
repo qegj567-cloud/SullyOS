@@ -156,6 +156,14 @@ const JournalApp: React.FC = () => {
         setMode('calendar');
         loadDiaries(char.id);
     };
+    useAppShortcut(ShortcutAppID.Journal, (intent, isCurrent) => {
+        const target = characters.find(c => c.id === intent.characterId);
+        setSelectedChar(target || null); setCurrentEntry(null); setDiaries([]);
+        setMode(target ? 'calendar' : 'select');
+        if (target) void DB.getDiariesByCharId(target.id).then(items => {
+            if (isCurrent()) setDiaries(items.sort((a, b) => b.date.localeCompare(a.date)));
+        }).catch(() => { if (isCurrent()) addToast('日记读取失败，请重试', 'error'); });
+    });
 
     const openEntry = (date: string) => {
         const existing = diaries.find(d => d.date === date);
@@ -1293,3 +1301,5 @@ ${charPart}
 };
 
 export default JournalApp;
+import { useAppShortcut } from '../utils/appShortcutLaunch';
+import { AppID as ShortcutAppID } from '../types';

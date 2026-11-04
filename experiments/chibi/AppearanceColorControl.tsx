@@ -1,7 +1,7 @@
 import React,{useEffect,useState} from 'react';
 import {ColorWheel} from './ColorWheel';
 export function AppearanceColorControl({label,value,colors,onChange,onBegin,onEnd}:{label:string;value?:string;colors:string[];onChange:(color:string|undefined)=>void;onBegin:()=>void;onEnd:()=>void}) {
- const current=value??colors[0];
+ const current=value??colors[0]??'#73513b';
  const [draft,setDraft]=useState(current);
  const [open,setOpen]=useState(false);
  useEffect(()=>setDraft(current),[current]);

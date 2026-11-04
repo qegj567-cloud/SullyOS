@@ -25,6 +25,7 @@
 import { sanitizeForNotification } from '../../../utils/sanitize';
 import { extractTransferCommands, parseTransferAmount } from '../../../utils/transferFormat';
 import { extractScheduleChangeDirectives } from '../../../utils/scheduleChangeParse';
+import {extractFriendFeedReplyTags} from '../../../utils/friendFeedReplyFormat';
 
 export type ToolCall = {
   id: string;
@@ -48,6 +49,8 @@ export interface MusicActionSong {
 }
 
 export type Directive =
+  | { type: 'friend_feed_reply'; action: unknown }
+  | { type: 'home_visit_reply'; action: unknown }
   | { type: 'poke' }
   | { type: 'transfer'; amount: number }
   // 角色收下 / 退回用户那笔待处理转账。老实现没把这两个标签列进 SIDE_EFFECT_TAGS,
@@ -170,6 +173,8 @@ const DATA_TAGS: DataTagSpec[] = [
     toArgs: () => ({}),
   },
 ];
+
+export const DATA_TOOL_NAMES = Object.freeze([...new Set(DATA_TAGS.map(spec => spec.toolName))]);
 
 // ── 副作用型 (finish + directives) ───────────────────────────────────────
 
@@ -330,6 +335,9 @@ function parseDiaryShort(m: RegExpMatchArray, type: DiaryDirectiveType): Directi
  *              格式. 但保留兼容性: 空字符串 → finish + 空 cleanedText)
  */
 export function classifyLLMOutput(text: string): ClassificationResult {
+  const social = extractFriendFeedReplyTags(text);
+  const visits = extractFriendFeedReplyTags(social.text,'HOME_VISIT_REPLY');
+  text = visits.text; // JSON action bodies are data, never tool instructions.
   // 1. 先扫数据标签. 任意一个命中就走 tool-request, 同一轮多个 SEARCH/RECALL 也一次性收集.
   const toolCalls: ToolCall[] = [];
   for (const spec of DATA_TAGS) {
@@ -352,12 +360,17 @@ export function classifyLLMOutput(text: string): ClassificationResult {
     let prefix = text;
     for (const spec of DATA_TAGS) prefix = prefix.replace(spec.re, '');
     prefix = prefix.trim();
+    if (social.actions.length) prefix += '\n' + social.actions.map(action =>
+      '[[FRIEND_FEED_REPLY:' + JSON.stringify(action) + ']]').join('\n');
+    if (visits.actions.length) prefix += '\n' + visits.actions.map(action =>
+      '[[HOME_VISIT_REPLY:' + JSON.stringify(action) + ']]').join('\n');
     const sanitizedPrefix = sanitizeForNotification(prefix);
     return { kind: 'tool-request', prefix, sanitizedPrefix, toolCalls };
   }
 
   // 2. 没数据标签 → 扫副作用标签, 凑成 directives.
-  const directives: Directive[] = [];
+  const directives: Directive[] = social.actions.map(action => ({type: 'friend_feed_reply', action}));
+  directives.push(...visits.actions.map(action=>({type:'home_visit_reply' as const,action})));
 
   // 2.0 转账先走 utils/transferFormat —— 跟客户端 chatParser 共用同一份解析, 规范标签
   // (`[[ACTION:TRANSFER:520元]]` 这类金额写法一并容错) 和模仿历史日志的口语形态
@@ -367,7 +380,7 @@ export function classifyLLMOutput(text: string): ClassificationResult {
   // "banner 文本为空" 的整块丢掉 (index.ts 拿 segments 发 push), 独占一行的转账日志
   // 到不了客户端。directives 挂在最后一条 push 上, 没有 segment 时还会单发一条
   // directive-only push, 是这类纯副作用唯一可靠的通道。
-  const { text: textAfterTransfers, events: transferEvents } = extractTransferCommands(text);
+  const { text: textAfterTransfers, events: transferEvents } = extractTransferCommands(visits.text);
   for (const ev of transferEvents) {
     if (ev.kind === 'send') {
       const amount = parseTransferAmount(ev.amount);

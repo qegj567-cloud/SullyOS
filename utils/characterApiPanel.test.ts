@@ -34,6 +34,21 @@ beforeEach(async () => {
 afterEach(() => { act(() => root.unmount()); host.remove(); vi.unstubAllGlobals(); });
 
 describe('character API draft transaction', () => {
+  it('native protocol draft tests and saves a Messages endpoint without changing global settings', async () => {
+    const network=vi.fn(async()=>new Response(JSON.stringify({type:'message',id:'m',model:'global-model',content:[{type:'text',text:'你好'}],stop_reason:'end_turn',usage:{input_tokens:1,output_tokens:2}}),{headers:{'content-type':'application/json'}}));
+    vi.stubGlobal('fetch',network);
+    await click('为角色使用独立 API');
+    const select=host.querySelector('select[aria-label="接口类型"]') as HTMLSelectElement;
+    await act(async()=>{select.value='anthropic';select.dispatchEvent(new Event('change',{bubbles:true}));});
+    await click('测试连接');
+    expect(host.textContent).toContain('连接成功');
+    const [url,options]=network.mock.calls[0] as any;
+    expect(url).toBe('https://global.test/v1/messages');
+    expect(new Headers(options.headers).get('anthropic-dangerous-direct-browser-access')).toBe('true');
+    await click('确定');
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({baseUrl:'https://global.test/v1/messages',apiType:'anthropic'}));
+    expect(os.apiConfig.baseUrl).toBe('https://global.test/v1');
+  });
   it('loads grouped presets as drafts; cancellation never mutates the role or global config', async () => {
     expect(host.textContent).toContain('目前跟随设置中的 API：global.test · global-model');
     await click('为角色使用独立 API');

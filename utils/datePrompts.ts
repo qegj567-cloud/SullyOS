@@ -25,7 +25,9 @@ import { ContextBuilder } from './context';
 import { ChatPrompts } from './chatPrompts';
 import { injectMemoryPalace } from './memoryPalace/pipeline';
 import { resolveCharTimeZone, nowInTimeZone } from './timezone';
-import { getVoicePromptOverride } from './ttsProvider';
+import { getElevenLabsModel, getTtsProvider, getVoicePromptOverride } from './ttsProvider';
+import { getElevenLabsVoiceActingGuide } from './elevenLabsTts';
+import { isElevenLabsV4Model } from './elevenLabsModels';
 import { selectCharacterContextMessages } from './chatContextRange';
 import { buildCharacterResponsePrinciples } from './characterResponsePrinciples';
 
@@ -56,6 +58,13 @@ export const DATE_VOICE_GUIDE = `4. **语音情绪（跟立绘分开）**: \`[em
    - 不是每句都要标——情绪平淡、自然说话时**不标**（默认更真实），只在台词确实有明显情绪、且和立绘强度不一致时才标。
    - 立绘可以夸张、语音要克制。例：\`[happy] "……真的吗？我等这句话好久了。" [v:calm]\`（脸上是惊喜，声音是压着的温柔）。
    - \`[v:xxx]\` 只写在带引号的台词行，动作/叙述行不用标。`;
+
+export const getDateVoiceGuide = (provider = getTtsProvider(), model = getElevenLabsModel()): string => {
+    const custom = getVoicePromptOverride('dateVoice');
+    if (custom) return custom;
+    if (provider !== 'elevenlabs' || !isElevenLabsV4Model(model)) return DATE_VOICE_GUIDE;
+    return `${DATE_VOICE_GUIDE}\n\n${getElevenLabsVoiceActingGuide(model)}\n\n见面格式约定：Audio Tags 放在台词引号内部，行首仍只写立绘表情，行尾仍可写独立的 [v:xxx]。上面的情绪标签枚举限制只针对行首立绘标签，不限制引号内部的声音指令。例如：[shy] "[whispers] 你终于来了。[soft chuckle]" [v:calm]。动作与叙述行保持原格式，不加语音标签。`;
+};
 
 /**
  * 注入 prompt 的当前时间，直接取真实系统时间（完整日期 + 星期 + 时分）。
@@ -597,7 +606,7 @@ const buildVNModeBlock = (char: CharacterProfile, userName: string): string => {
 1. **禁止混写**: 严禁在同一行里既写动作又写带引号的台词。
 2. **情绪标签**: **每一行都必须以** \`[emotion]\` **开头**，表示该行的表情立绘。逐行结合台词、动作和上下文选择最贴切的表情，细微情绪也要体现；[normal] 用于确实平静或中性的状态，不是默认占位符。已有笑意、低落、恼意或羞赧时，应从可用标签中选对应表情，不要把明确情绪全标成 [normal]。同一情绪延续时，相邻行可以重复标签；情绪发生变化时及时切换，不为了凑标签种类制造情绪。仅限使用以下情绪: ${dateEmotions.join(', ')}。不要使用任何不在此列表中的标签。
 3. **格式**: 台词用双引号 **"..."**，动作/叙述直接写（不加引号）。
-${char.dateVoiceEnabled ? (getVoicePromptOverride('dateVoice') ?? DATE_VOICE_GUIDE) : ''}
+${char.dateVoiceEnabled ? getDateVoiceGuide() : ''}
 
 ${preset.block}
 
@@ -681,7 +690,7 @@ export const DatePrompts = {
             history: apiMessages.map(message => ({ ...message, content: typeof message.content === 'string'
                 ? message.content : message.content.filter((part: any) => part?.type === 'text').map((part: any) => part.text).join(' ') })),
             includeDetailedMemories: false,
-            timeOptions: { skipTimeAwareness: !isDateTimeAwarenessOn(char) },
+            timeOptions: { skipTimeAwareness: !isDateTimeAwarenessOn(char), includeUserLocation: true },
         }));
 
         // 文风预设也作用于开场感知；人称（pov）刻意不作用——peek 的设计就是
@@ -711,7 +720,7 @@ ${invite ? '描写角色自己的到来、动作与必要的开场台词，停�
 
 ### 逻辑检查
 1. **上下文连贯性**: ${continuityRule}
-2. **状态一致性**: ${gapHint.includes('天') ? '如果间隔了很多天，可能在发呆、忙碌或者有点落寞。' : '根据最近的聊天内容和情绪来决定当前状态。如果刚聊完，角色的状态应该与聊天内容相呼应。'}
+2. **状态一致性**: ${!dateTimeOn ? '根据最近记录中的剧情进展、场景与情绪来决定当前状态，使角色表现与上一幕自然呼应。' : gapHint.includes('天') ? '如果间隔了很多天，可能在发呆、忙碌或者有点落寞。' : '根据最近的聊天内容和情绪来决定当前状态。如果刚聊完，角色的状态应该与聊天内容相呼应。'}
 3. **描写风格**: ${preset.peekHint}。${isObserveOn(char) ? '先按下方「观测协议」输出观测块，再开始描写内容（描写本身不要加任何前缀）。' : '不要输出任何前缀，直接输出描写内容。'}
 ${extraBlock ? `\n${extraBlock}` : ''}${isObserveOn(char) ? `\n${buildObserveBlock(char)}` : ''}`;
 
@@ -751,11 +760,12 @@ ${extraBlock ? `\n${extraBlock}` : ''}${isObserveOn(char) ? `\n${buildObserveBlo
 
         const conversation = [...historyMsgs, { role: 'user', content: userText }];
 
+        const dateTimeOn = isDateTimeAwarenessOn(char);
         // 向量召回挂到 char.memoryPalaceInjection，buildCoreContext 会读取
-        await injectMemoryPalace(char, allMsgs, undefined, userProfile?.name);
+        await injectMemoryPalace(char, allMsgs, undefined, userProfile?.name, { omitDates: !dateTimeOn });
         const context = (await ContextBuilder.buildCharacterContext({
             char, user: userProfile, history: conversation,
-            timeOptions: { skipTimeAwareness: !isDateTimeAwarenessOn(char), conversational: true },
+            timeOptions: { skipTimeAwareness: !dateTimeOn, conversational: true, includeUserLocation: true },
         }));
         const systemPrompt = context.coreContext
             + buildVNModeBlock(char, userProfile?.name || '')

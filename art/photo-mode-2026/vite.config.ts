@@ -1,0 +1,3 @@
+import {defineConfig} from 'vite';
+import react from '@vitejs/plugin-react';
+export default defineConfig({plugins:[react()],define:{__BUILD_BRANCH__:JSON.stringify("photo-preview"),__BUILD_COMMIT__:JSON.stringify("local"),__BUILD_TIME__:JSON.stringify(""),__BUILD_BADGE_VISIBLE__:"false",__APP_BUILD_ID__:JSON.stringify("photo-preview")},cacheDir:'node_modules/.vite-photo-mode',optimizeDeps:{entries:['test/fixtures/room3d-photo.html']},server:{host:'127.0.0.1',port:5206,strictPort:true},build:{target:'esnext',outDir:'art/photo-mode-2026/build',emptyOutDir:true,copyPublicDir:false,rollupOptions:{input:['test/fixtures/room3d-photo.html','test/fixtures/chibi-toon.html']}}});

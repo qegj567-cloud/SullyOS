@@ -17,8 +17,8 @@ vi.mock('./keepAlive', () => ({ KeepAlive: { start: vi.fn(), stop: vi.fn() } }))
 vi.mock('./safeApi', async importOriginal => ({ ...await importOriginal<typeof import('./safeApi')>(), safeFetchJson: vi.fn() }));
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
-const globalApi = { baseUrl: 'https://global.test/v1', apiKey: 'global-key', model: 'global-model', stream: true, temperature: 0.3 };
-const roleApi = { baseUrl: 'https://role.test/v1', apiKey: 'role-key', model: 'role-model', stream: false, temperature: 1.2 };
+const globalApi = { baseUrl: 'https://global.test/v1', apiKey: 'global-key', model: 'global-model', stream: true, temperature: 0.3, maxTokens: 2048 };
+const roleApi = { baseUrl: 'https://role.test/v1', apiKey: 'role-key', model: 'role-model', stream: false, temperature: 1.2, maxTokens: 16000 };
 const appApi = { baseUrl: 'https://app.test/v1', apiKey: 'app-key', model: 'app-model' };
 const preset = { id: 'role-preset', name: '角色模型', group: '写作', config: roleApi };
 async function clearCharacters() {
@@ -89,7 +89,7 @@ it.each(['full', 'text_only'] as const)('%s ZIP restores role credentials and pr
             const [url, init] = vi.mocked(safeFetchJson).mock.calls[0];
             expect(url).toBe(expected.baseUrl + '/chat/completions');
             expect(init?.headers).toMatchObject({ Authorization: `Bearer ${expected.apiKey}` });
-            expect(JSON.parse(init!.body as string)).toMatchObject({ model: expected.model, stream: expected.stream, temperature: expected.temperature });
+            expect(JSON.parse(init!.body as string)).toMatchObject({ model: expected.model, stream: expected.stream, temperature: expected.temperature, max_tokens: expected.maxTokens });
         }
     } finally {
         act(() => root.unmount()); errorSpy.mockRestore();

@@ -77,6 +77,18 @@ const NovelApp: React.FC = () => {
 
     // Writer State (Lifted slightly for init)
     const [targetCharId, setTargetCharId] = useState<string | null>(null);
+    useAppShortcut(ShortcutAppID.Novel, intent => {
+        setShowPersonaModal(false); setIsEditingPersona(false);
+        if (intent.entryId === 'library') {
+            const target = characters.find(c => c.id === intent.characterId);
+            setView('library'); setLibraryPersonaChar(target || null); setShowPersonaModal(!!target);
+        } else if (intent.entryId === 'create') setView('create');
+        else {
+            const target = novels.find(book => book.id === intent.resourceId);
+            setActiveBook(target || null); setTargetCharId(null); setView(target ? 'write' : 'shelf');
+            if (intent.resourceId && !target) addToast('这份书稿已不存在，请重新设置槽位', 'error');
+        }
+    });
 
     // Helpers
     const getTheme = (styleId: string) => NOVEL_THEMES.find(t => t.id === styleId) || NOVEL_THEMES[0];
@@ -401,3 +413,5 @@ const NovelApp: React.FC = () => {
 };
 
 export default NovelApp;
+import { useAppShortcut } from '../utils/appShortcutLaunch';
+import { AppID as ShortcutAppID } from '../types';

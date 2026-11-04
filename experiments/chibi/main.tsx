@@ -4,6 +4,7 @@ import { Puppet, type Motion } from './Puppet';
 import type { Parts } from './Puppet';
 import './style.css';
 import { CreatorRollBridge, type RollResult } from './CreatorRollBridge';
+import {decodeParts} from '../../apps/room3d/chibi/visitor';
 import Home3DView from '../../apps/room3d/Home3DView';
 import type {Home3DState} from '../../apps/room3d/types';
 import {HairEditor} from './HairEditor';
@@ -49,8 +50,7 @@ function App() {
     const requestRoll=()=>{setError('');setRolling(true);setRollRequest(v=>v+1);};
     const acceptRoll=async(result:RollResult)=>{
         try{
-            const loaded:Parts={};
-            await Promise.all(Object.entries(result.layers).map(async([key,url])=>{const img=new Image();img.src=url;await img.decode();loaded[key]=img;}));
+            const loaded=await decodeParts(result);
             setParts(loaded);setImage(result.image);setAssets(selectedHairAssets(result.state));
             if(captureTarget.current==='3d')setEditMode('3d');else setEditing(false);
             if(result.state)try{localStorage.setItem('chibi-world-experiment-appearance',JSON.stringify(result.state));}catch{}

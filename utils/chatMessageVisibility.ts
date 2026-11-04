@@ -4,6 +4,7 @@ import type { Message } from '../types';
 export const chatPreviewText = (message: Pick<Message, 'type' | 'content'>): string => {
     if (message.type === 'image') return '[图片]';
     if (message.type === 'emoji') return '[表情]';
+    if (message.type === 'friend_feed_share_card') return '[分享好友圈帖子]';
     if (/^(blobref:|data:image\/|blob:)/i.test(message.content)) return '[图片]';
     return message.content.replace(/\[.*?\]/g, '').trim() || '[消息]';
 };
@@ -17,7 +18,7 @@ export const isVisibleChatMessage = (message: Message, hideSystemLogs = false): 
     && message.metadata?.source !== 'home'
     && message.metadata?.source !== 'story_theater_memory'
     && !message.metadata?.proactiveHint
-    && !(hideSystemLogs && message.role === 'system' && message.type !== 'score_card')
+    && !(hideSystemLogs && message.role === 'system' && message.type !== 'score_card' && message.type !== 'friend_feed_card')
 );
 
 /** 点击后进入私聊的桌面消息卡，与聊天页共用来源过滤，不展示系统日志。 */

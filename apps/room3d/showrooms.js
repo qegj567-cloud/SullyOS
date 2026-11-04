@@ -5,8 +5,11 @@ import {snapToWall} from './wallMount.js';
 import {furnishReferenceBedroom} from './bedroomReference.js';
 import {furnishGamingStudy} from './studyShowroom.js';
 import {furnishReferenceLiving} from './livingReference.js';
+import {furnishHalloween} from './halloweenShowroom.js';
+import {hasFixedRoomPalette} from './roomPalettes.js';
 // Whole furniture groups are editable after placement. No room-sized mesh.
 export const SHOWROOMS={
+ halloween:{name:'万圣节魔法小屋',wall:'#663977',floor:'#806044',trim:'#28222e',floorStyle:'wood',wallStyle:'halloween',items:[],door:'walnut'},
  study:{name:'黑绿电竞书房',wall:'#f0e8dc',floor:'#c4b29a',trim:'#393e33',floorStyle:'wood',wallStyle:'solid',items:[],door:'oak'},
  kitchen:{name:'现代黑白厨房',wall:'#f0f0ef',floor:'#e3e4e5',trim:'#34363a',floorStyle:'marble',wallStyle:'tile',door:'oak',},
  living:{name:'暖木绿白客厅',wall:'#f0e6d5',floor:'#c8b295',trim:'#725849',floorStyle:'wood',wallStyle:'solid',items:[['show_living_sofa',.6,-2.45],['show_living_table',.6,.1],['show_living_console',-3.85,-.3,90],['show_living_pouf',2.6,1.7],['show_cat_tree',3.65,-2.2],['monstera',-3,2.7]],door:'ribbon'},
@@ -23,12 +26,14 @@ const DECOR={
 Object.assign(SHOWROOMS.study,{door:'oak'});Object.assign(SHOWROOMS.kitchen,{door:'oak'});Object.assign(SHOWROOMS.living,{door:'walnut',wallStyle:'framed'});Object.assign(SHOWROOMS.bedroom,{door:'walnut',wallStyle:'framed'});
 export function applyShowroomStyle(room,key){
  const t=SHOWROOMS[key];if(!t)throw Error('找不到这套房间配色');
+ if(hasFixedRoomPalette(room))return;
  for(const part of ['wall','trim','floor','floorStyle','wallStyle'])room[part]=t[part];
 }
 export function furnishShowroom(room,key,catalog,{compact=false}={}){
  const template=SHOWROOMS[key];if(!template)throw Error('找不到这套样板房');
  if(room.items.length)throw Error('样板房需要空房间，原有家具不会被覆盖');
  Object.assign(room,{name:template.name,wall:template.wall,trim:template.trim,floor:template.floor,floorStyle:template.floorStyle,wallStyle:template.wallStyle});
+ if(key==='halloween')return furnishHalloween(room,catalog);
  if(key==='bedroom'&&!compact)return furnishReferenceBedroom(room,catalog);
  if(key==='study')return furnishGamingStudy(room,catalog,{compact});
  if(key==='living'&&!compact)return furnishReferenceLiving(room,catalog);
@@ -49,6 +54,7 @@ export function addShowroom(home,key,catalog,options={}){
  const direction=[['right',1,0],['front',0,1],['left',-1,0],['back',0,-1]].find(([,dx,dz])=>!next.rooms.some(r=>r.level===anchor.level&&r.x===anchor.x+dx&&r.z===anchor.z+dz)&&(anchor.level===0||next.rooms.some(r=>r.level===anchor.level-1&&r.x===anchor.x+dx&&r.z===anchor.z+dz)));
  if(!direction)throw Error('这间房四周没有可扩建位置，请换到边上的房间');
  const room=addRoom(next,direction[0]);furnishShowroom(room,key,catalog,options);
+ room.defaultTemplate={kind:key,compact:options.compact===true};
  // Give each room a clear front entry, without altering furnished neighbors.
  if(!next.rooms.some(r=>r.id!==room.id&&r.level===room.level&&r.x===room.x&&r.z===room.z+1))setBoundary(next,room.id,'front',{kind:'wall_high',door:{kind:SHOWROOMS[key].door,at:0,width:2.2}},catalog);
  Object.assign(home,next);return room;

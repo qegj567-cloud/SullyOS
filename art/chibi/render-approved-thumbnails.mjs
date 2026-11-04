@@ -21,7 +21,7 @@ try {
       const source = document.querySelector('canvas'), canvas = document.createElement('canvas');
       canvas.width = canvas.height = 320;
       const context = canvas.getContext('2d');
-      context.drawImage(source, 0, 0);
+      context.drawImage(source, 0, 0, 320, 320);
       const pixels = context.getImageData(0, 0, 320, 320).data;
       let minX = 320, minY = 320, maxX = -1, maxY = -1, count = 0;
       for (let y = 0; y < 320; y++) for (let x = 0; x < 320; x++) {

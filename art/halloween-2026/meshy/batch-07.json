@@ -1,0 +1,34 @@
+{
+  "id": "halloween-batch-07",
+  "maxTasks": 2,
+  "maxEstimatedCredits": 50,
+  "defaults": {
+    "model_type": "standard",
+    "ai_model": "meshy-7.1",
+    "geometry_resolution": "4k",
+    "image_enhancement": false,
+    "should_remesh": true,
+    "save_pre_remeshed_model": true,
+    "topology": "triangle",
+    "should_texture": false,
+    "target_formats": [
+      "glb"
+    ]
+  },
+  "jobs": [
+    {
+      "id": "ghost-shorts",
+      "image": "../separated/05-ghost/shorts.png",
+      "target_polycount": 50000,
+      "pose_mode": "t-pose",
+      "estimatedCredits": 25
+    },
+    {
+      "id": "ghost-shoes",
+      "image": "../separated/05-ghost/shoes.png",
+      "target_polycount": 50000,
+      "pose_mode": "t-pose",
+      "estimatedCredits": 25
+    }
+  ]
+}

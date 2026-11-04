@@ -1,0 +1,50 @@
+{
+  "results": [
+    {
+      "target": "蝙蝠双人沙发",
+      "seat": {
+        "roomId": "c6a1318e-eee6-49b1-89cc-55bd90972c37",
+        "itemId": "4eebf749-9f0a-4ead-90a2-4447e7a9c5f6",
+        "seatId": "0",
+        "label": "蝙蝠双人沙发 · 左侧",
+        "alternate": false
+      },
+      "position": [
+        -0.33999999999999997,
+        0.9949999999999999,
+        -2.24
+      ]
+    },
+    {
+      "target": "蝙蝠双人沙发",
+      "seat": {
+        "roomId": "c6a1318e-eee6-49b1-89cc-55bd90972c37",
+        "itemId": "4eebf749-9f0a-4ead-90a2-4447e7a9c5f6",
+        "seatId": "1",
+        "label": "蝙蝠双人沙发 · 右侧",
+        "alternate": false
+      },
+      "position": [
+        1.54,
+        0.9949999999999999,
+        -2.24
+      ]
+    },
+    {
+      "target": "南瓜扶手椅",
+      "seat": {
+        "roomId": "c6a1318e-eee6-49b1-89cc-55bd90972c37",
+        "itemId": "960a59c6-dcdf-4d48-97bd-d129efd5bb10",
+        "seatId": "0",
+        "label": "南瓜扶手椅",
+        "alternate": false
+      },
+      "position": [
+        -2.15,
+        0.7,
+        2
+      ]
+    }
+  ],
+  "errors": []
+}

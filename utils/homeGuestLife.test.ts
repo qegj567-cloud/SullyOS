@@ -1,0 +1,16 @@
+import {it,expect,vi} from 'vitest';
+import {Group} from 'three';
+// @ts-expect-error Runtime JS module.
+import {findWalkPath} from '../apps/room3d/navigation.js';
+// @ts-expect-error Runtime JS module.
+import {createGuestLife} from '../apps/room3d/guestLife.js';
+const seat={roomId:'r',itemId:'chair',seatId:'one',label:'椅子'};
+vi.mock('../apps/room3d/seating.js',()=>({roomSeats:()=>[seat],seatTransform:()=>({position:[2,.7,0],rotation:0,pose:'chair',height:.7})}));
+vi.mock('../apps/room3d/seatChange.js',()=>({seatEntry:()=>[2,.18,1]}));
+vi.mock('../apps/room3d/navigation.js',()=>({findWalkPath:vi.fn((_map:any,_from:any,to:any)=>[to])}));
+function setup(){const records:any[]=[],e={id:'B',label:'乙',group:new Group(),visitor:{animate:vi.fn(),rig:true},width:.5,parkedSeat:null as any,parkedPose:null as any};e.group.position.set(0,.18,0);const other={...e,id:'C',group:new Group()};other.group.position.set(-3,.18,0);const main={group:new Group(),width:.5};main.group.position.set(-3,.18,-3);const c:any={entries:[e,other],ownerId:'A',main,seat:null,room:{id:'r'},catalog:[],time:0,offset:[0,0],autonomy:true,blocked:false,map:()=>({}),wake:vi.fn(),record:(...args:any[])=>records.push(args)};const life=createGuestLife(()=>c);const advance=(seconds:number)=>{for(let i=0;i<seconds*20;i++){c.time+=.05;life.animate(e);}};return {e,other,c,life,records,advance};}
+it('reserves a guest seat before walking and records actual completion with the guest ID',()=>{const s=setup();expect(s.life.start('B','guest:sit:chair:one','model','reply')).toBe(true);expect(s.life.reserved(seat,'C')).toBe(true);expect(s.life.start('C','guest:sit:chair:one')).toBe(false);expect(s.records).toHaveLength(0);s.advance(8);expect(s.e.parkedSeat).toEqual(seat);expect(s.records[0]).toEqual(['B','乙','坐在椅子休息','model','reply']);expect(s.life.start('B','guest:stand','model','reply')).toBe(true);s.advance(2);expect(s.e.parkedSeat).toBeNull();expect(s.life.reserved(seat,'C')).toBe(false);});
+it('does not steal an owner seat or record cancelled movement as a completed action',()=>{const s=setup();s.c.seat=seat;expect(s.life.start('B','guest:sit:chair:one')).toBe(false);s.c.seat=null;expect(s.life.start('B','guest:sit:chair:one')).toBe(true);s.life.cancel('B');s.advance(8);expect(s.records).toHaveLength(0);});
+it('does not teleport to the old room when cancelling a seated guest after a room change',()=>{const s=setup();s.life.start('B','guest:sit:chair:one');s.advance(8);s.c.room={id:'next'};s.e.group.position.set(4,.18,4);s.life.cancel('B');expect(s.e.group.position.toArray()).toEqual([4,.18,4]);expect(s.e.parkedSeat).toBeNull();});
+it('rejects a path that leaves the visible room even if another room connects to it',()=>{const s=setup();vi.mocked(findWalkPath).mockImplementationOnce(()=>[[8,0],[2,1]]);expect(s.life.start('B','guest:sit:chair:one')).toBe(false);expect(s.records).toHaveLength(0);});
+it('pauses a transition without completing it while editing',()=>{const s=setup();s.life.start('B','guest:sit:chair:one');while(!s.e.group.position.equals({x:2,y:.18,z:1} as any)&&s.c.time<10)s.advance(.05);s.advance(.1);s.c.blocked=true;s.advance(20);expect(s.records).toHaveLength(0);s.c.blocked=false;s.advance(2);expect(s.records).toHaveLength(1);});

@@ -1,0 +1,68 @@
+{
+  "errors": [],
+  "report": [
+    {
+      "id": "halloween-boo",
+      "maxBoneStepRadians": 0.5907929873015286,
+      "maxAt": {
+        "time": 1.8333333333333333,
+        "bone": "1:R_twist3"
+      },
+      "minFoot": 0.0335999999999998
+    },
+    {
+      "id": "halloween-trick-or-treat",
+      "maxBoneStepRadians": 0.1648957127728311,
+      "maxAt": {
+        "time": 2.3,
+        "bone": "1:R_index_tip"
+      },
+      "minFoot": 0.038687388489064015
+    },
+    {
+      "id": "halloween-candy-shower",
+      "maxBoneStepRadians": 0.3536790374478302,
+      "maxAt": {
+        "time": 3.7333333333333334,
+        "bone": "0:R_thumb_tip"
+      },
+      "minFoot": 0.03359999999999984
+    },
+    {
+      "id": "halloween-ghost-tease",
+      "maxBoneStepRadians": 0.4652802766804686,
+      "maxAt": {
+        "time": 0.8333333333333334,
+        "bone": "1:L_pinky_tip"
+      },
+      "minFoot": 0.03532068457463587
+    },
+    {
+      "id": "home-forehead-touch",
+      "maxBoneStepRadians": 0.29040706074722594,
+      "maxAt": {
+        "time": 1.0333333333333334,
+        "bone": "1:L_hand"
+      },
+      "minFoot": 0.04762928086923911
+    },
+    {
+      "id": "home-hand-sway",
+      "maxBoneStepRadians": 0.37008260347076605,
+      "maxAt": {
+        "time": 3.2,
+        "bone": "0:R_ring_tip"
+      },
+      "minFoot": 0.0335999999999998
+    },
+    {
+      "id": "home-kiss",
+      "maxBoneStepRadians": 0.24609280673425732,
+      "maxAt": {
+        "time": 2.1666666666666665,
+        "bone": "1:R_twist3"
+      },
+      "minFoot": 0.04623626793243896
+    }
+  ]
+}

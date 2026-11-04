@@ -102,7 +102,7 @@ export const requestStartupUpdateCheck = async (
   const action = pickStartupUpdateAction(probe);
   if (action === 'self-update') {
     // 跟设置页那颗按钮走的是同一个端点。这里不弹提示、不接着重连：换上的新代码下一跳会
-    // 自己把表补齐（见 worker 的 ensureSchemaOnce），设置页从 /config-check 能看到结果。
+    // 自己把表补齐（见 worker 的 ensureSchemaOnce）；selfUpdateWorker 会自动复查能力。
     const result = await ActiveMsgClient.selfUpdateWorker();
     if (result.ok) {
       console.info(`[ActiveMsg] 冷启动时把后端更新到了 ${probe.expected}（${result.bundleHash ?? ''}）`);

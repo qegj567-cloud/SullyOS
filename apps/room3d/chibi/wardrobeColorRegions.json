@@ -1029,5 +1029,1235 @@
         }
       ]
     }
+  ],
+  "halloween-witch-dress": [
+    {
+      "id": "orange",
+      "label": "主色",
+      "color": "#ee7916",
+      "targets": [
+        {
+          "material": 0
+        },
+        {
+          "material": 2
+        },
+        {
+          "material": 4
+        }
+      ]
+    },
+    {
+      "id": "purple",
+      "label": "副色",
+      "color": "#522478",
+      "targets": [
+        {
+          "material": 0
+        },
+        {
+          "material": 2
+        },
+        {
+          "material": 4
+        }
+      ]
+    },
+    {
+      "id": "green",
+      "label": "装饰色",
+      "color": "#99bc27",
+      "targets": [
+        {
+          "material": 0
+        },
+        {
+          "material": 2
+        },
+        {
+          "material": 4
+        }
+      ]
+    },
+    {
+      "id": "gold",
+      "label": "金属色",
+      "color": "#d9b448",
+      "targets": [
+        {
+          "material": 0
+        },
+        {
+          "material": 2
+        },
+        {
+          "material": 4
+        }
+      ]
+    }
+  ],
+  "halloween-witch-hat": [
+    {
+      "id": "orange",
+      "label": "主色",
+      "color": "#ee7916",
+      "targets": [
+        {
+          "material": 1
+        }
+      ]
+    },
+    {
+      "id": "purple",
+      "label": "副色",
+      "color": "#522478",
+      "targets": [
+        {
+          "material": 1
+        }
+      ]
+    },
+    {
+      "id": "green",
+      "label": "装饰色",
+      "color": "#99bc27",
+      "targets": [
+        {
+          "material": 1
+        }
+      ]
+    },
+    {
+      "id": "gold",
+      "label": "金属色",
+      "color": "#d9b448",
+      "targets": [
+        {
+          "material": 1
+        }
+      ]
+    }
+  ],
+  "halloween-witch-boots": [
+    {
+      "id": "orange",
+      "label": "主色",
+      "color": "#ee7916",
+      "targets": [
+        {
+          "material": 3
+        }
+      ]
+    },
+    {
+      "id": "purple",
+      "label": "副色",
+      "color": "#522478",
+      "targets": [
+        {
+          "material": 3
+        }
+      ]
+    },
+    {
+      "id": "green",
+      "label": "装饰色",
+      "color": "#99bc27",
+      "targets": [
+        {
+          "material": 3
+        }
+      ]
+    },
+    {
+      "id": "gold",
+      "label": "金属色",
+      "color": "#d9b448",
+      "targets": [
+        {
+          "material": 3
+        }
+      ]
+    }
+  ],
+  "halloween-witch-socks": [
+    {
+      "id": "orange",
+      "label": "主色",
+      "color": "#ee7916",
+      "targets": [
+        {
+          "material": 0
+        },
+        {
+          "material": 1
+        }
+      ]
+    },
+    {
+      "id": "purple",
+      "label": "副色",
+      "color": "#522478",
+      "targets": [
+        {
+          "material": 0
+        },
+        {
+          "material": 1
+        }
+      ]
+    },
+    {
+      "id": "green",
+      "label": "装饰色",
+      "color": "#99bc27",
+      "targets": [
+        {
+          "material": 0
+        },
+        {
+          "material": 1
+        }
+      ]
+    },
+    {
+      "id": "gold",
+      "label": "金属色",
+      "color": "#d9b448",
+      "targets": [
+        {
+          "material": 0
+        },
+        {
+          "material": 1
+        }
+      ]
+    }
+  ],
+  "halloween-count-tailcoat": [
+    {
+      "id": "orange",
+      "label": "主色",
+      "color": "#ee7916",
+      "targets": [
+        {
+          "material": 0
+        }
+      ]
+    },
+    {
+      "id": "purple",
+      "label": "副色",
+      "color": "#522478",
+      "targets": [
+        {
+          "material": 0
+        }
+      ]
+    },
+    {
+      "id": "green",
+      "label": "装饰色",
+      "color": "#99bc27",
+      "targets": [
+        {
+          "material": 0
+        }
+      ]
+    },
+    {
+      "id": "gold",
+      "label": "金属色",
+      "color": "#d9b448",
+      "targets": [
+        {
+          "material": 0
+        }
+      ]
+    }
+  ],
+  "halloween-count-trousers": [
+    {
+      "id": "orange",
+      "label": "主色",
+      "color": "#ee7916",
+      "targets": [
+        {
+          "material": 1
+        },
+        {
+          "material": 5
+        }
+      ]
+    },
+    {
+      "id": "purple",
+      "label": "副色",
+      "color": "#522478",
+      "targets": [
+        {
+          "material": 1
+        },
+        {
+          "material": 5
+        }
+      ]
+    },
+    {
+      "id": "green",
+      "label": "装饰色",
+      "color": "#99bc27",
+      "targets": [
+        {
+          "material": 1
+        },
+        {
+          "material": 5
+        }
+      ]
+    },
+    {
+      "id": "gold",
+      "label": "金属色",
+      "color": "#d9b448",
+      "targets": [
+        {
+          "material": 1
+        },
+        {
+          "material": 5
+        }
+      ]
+    }
+  ],
+  "halloween-count-boots": [
+    {
+      "id": "orange",
+      "label": "主色",
+      "color": "#ee7916",
+      "targets": [
+        {
+          "material": 2
+        }
+      ]
+    },
+    {
+      "id": "purple",
+      "label": "副色",
+      "color": "#522478",
+      "targets": [
+        {
+          "material": 2
+        }
+      ]
+    },
+    {
+      "id": "green",
+      "label": "装饰色",
+      "color": "#99bc27",
+      "targets": [
+        {
+          "material": 2
+        }
+      ]
+    },
+    {
+      "id": "gold",
+      "label": "金属色",
+      "color": "#d9b448",
+      "targets": [
+        {
+          "material": 2
+        }
+      ]
+    }
+  ],
+  "halloween-count-waistcoat": [
+    {
+      "id": "orange",
+      "label": "主色",
+      "color": "#ee7916",
+      "targets": [
+        {
+          "material": 3
+        },
+        {
+          "material": 6
+        }
+      ]
+    },
+    {
+      "id": "purple",
+      "label": "副色",
+      "color": "#522478",
+      "targets": [
+        {
+          "material": 3
+        },
+        {
+          "material": 6
+        }
+      ]
+    },
+    {
+      "id": "green",
+      "label": "装饰色",
+      "color": "#99bc27",
+      "targets": [
+        {
+          "material": 3
+        },
+        {
+          "material": 6
+        }
+      ]
+    },
+    {
+      "id": "gold",
+      "label": "金属色",
+      "color": "#d9b448",
+      "targets": [
+        {
+          "material": 3
+        },
+        {
+          "material": 6
+        }
+      ]
+    }
+  ],
+  "halloween-count-cravat": [
+    {
+      "id": "orange",
+      "label": "主色",
+      "color": "#ee7916",
+      "targets": [
+        {
+          "material": 4
+        }
+      ]
+    },
+    {
+      "id": "purple",
+      "label": "副色",
+      "color": "#522478",
+      "targets": [
+        {
+          "material": 4
+        }
+      ]
+    },
+    {
+      "id": "green",
+      "label": "装饰色",
+      "color": "#99bc27",
+      "targets": [
+        {
+          "material": 4
+        }
+      ]
+    },
+    {
+      "id": "gold",
+      "label": "金属色",
+      "color": "#d9b448",
+      "targets": [
+        {
+          "material": 4
+        }
+      ]
+    }
+  ],
+  "halloween-apprentice-coat": [
+    {
+      "id": "orange",
+      "label": "主色",
+      "color": "#ee7916",
+      "targets": [
+        {
+          "material": 0
+        },
+        {
+          "material": 5
+        }
+      ]
+    },
+    {
+      "id": "purple",
+      "label": "副色",
+      "color": "#522478",
+      "targets": [
+        {
+          "material": 0
+        },
+        {
+          "material": 5
+        }
+      ]
+    },
+    {
+      "id": "green",
+      "label": "装饰色",
+      "color": "#99bc27",
+      "targets": [
+        {
+          "material": 0
+        },
+        {
+          "material": 5
+        }
+      ]
+    },
+    {
+      "id": "gold",
+      "label": "金属色",
+      "color": "#d9b448",
+      "targets": [
+        {
+          "material": 0
+        },
+        {
+          "material": 5
+        }
+      ]
+    }
+  ],
+  "halloween-apprentice-apron": [
+    {
+      "id": "orange",
+      "label": "主色",
+      "color": "#ee7916",
+      "targets": [
+        {
+          "material": 2
+        }
+      ]
+    },
+    {
+      "id": "purple",
+      "label": "副色",
+      "color": "#522478",
+      "targets": [
+        {
+          "material": 2
+        }
+      ]
+    },
+    {
+      "id": "green",
+      "label": "装饰色",
+      "color": "#99bc27",
+      "targets": [
+        {
+          "material": 2
+        }
+      ]
+    },
+    {
+      "id": "gold",
+      "label": "金属色",
+      "color": "#d9b448",
+      "targets": [
+        {
+          "material": 2
+        }
+      ]
+    }
+  ],
+  "halloween-apprentice-shorts": [
+    {
+      "id": "orange",
+      "label": "主色",
+      "color": "#ee7916",
+      "targets": [
+        {
+          "material": 3
+        },
+        {
+          "material": 6
+        }
+      ]
+    },
+    {
+      "id": "purple",
+      "label": "副色",
+      "color": "#522478",
+      "targets": [
+        {
+          "material": 3
+        },
+        {
+          "material": 6
+        }
+      ]
+    },
+    {
+      "id": "green",
+      "label": "装饰色",
+      "color": "#99bc27",
+      "targets": [
+        {
+          "material": 3
+        },
+        {
+          "material": 6
+        }
+      ]
+    },
+    {
+      "id": "gold",
+      "label": "金属色",
+      "color": "#d9b448",
+      "targets": [
+        {
+          "material": 3
+        },
+        {
+          "material": 6
+        }
+      ]
+    }
+  ],
+  "halloween-apprentice-cap": [
+    {
+      "id": "orange",
+      "label": "主色",
+      "color": "#ee7916",
+      "targets": [
+        {
+          "material": 1
+        }
+      ]
+    },
+    {
+      "id": "purple",
+      "label": "副色",
+      "color": "#522478",
+      "targets": [
+        {
+          "material": 1
+        }
+      ]
+    },
+    {
+      "id": "green",
+      "label": "装饰色",
+      "color": "#99bc27",
+      "targets": [
+        {
+          "material": 1
+        }
+      ]
+    },
+    {
+      "id": "gold",
+      "label": "金属色",
+      "color": "#d9b448",
+      "targets": [
+        {
+          "material": 1
+        }
+      ]
+    }
+  ],
+  "halloween-apprentice-boots": [
+    {
+      "id": "orange",
+      "label": "主色",
+      "color": "#ee7916",
+      "targets": [
+        {
+          "material": 4
+        }
+      ]
+    },
+    {
+      "id": "purple",
+      "label": "副色",
+      "color": "#522478",
+      "targets": [
+        {
+          "material": 4
+        }
+      ]
+    },
+    {
+      "id": "green",
+      "label": "装饰色",
+      "color": "#99bc27",
+      "targets": [
+        {
+          "material": 4
+        }
+      ]
+    },
+    {
+      "id": "gold",
+      "label": "金属色",
+      "color": "#d9b448",
+      "targets": [
+        {
+          "material": 4
+        }
+      ]
+    }
+  ],
+  "halloween-apprentice-socks": [
+    {
+      "id": "orange",
+      "label": "主色",
+      "color": "#ee7916",
+      "targets": [
+        {
+          "material": 0
+        }
+      ]
+    },
+    {
+      "id": "purple",
+      "label": "副色",
+      "color": "#522478",
+      "targets": [
+        {
+          "material": 0
+        }
+      ]
+    },
+    {
+      "id": "green",
+      "label": "装饰色",
+      "color": "#99bc27",
+      "targets": [
+        {
+          "material": 0
+        }
+      ]
+    },
+    {
+      "id": "gold",
+      "label": "金属色",
+      "color": "#d9b448",
+      "targets": [
+        {
+          "material": 0
+        }
+      ]
+    }
+  ],
+  "halloween-shorts-shorts": [
+    {
+      "id": "orange",
+      "label": "主色",
+      "color": "#ee7916",
+      "targets": [
+        {
+          "material": 0
+        }
+      ]
+    },
+    {
+      "id": "purple",
+      "label": "副色",
+      "color": "#522478",
+      "targets": [
+        {
+          "material": 0
+        }
+      ]
+    },
+    {
+      "id": "green",
+      "label": "装饰色",
+      "color": "#99bc27",
+      "targets": [
+        {
+          "material": 0
+        }
+      ]
+    },
+    {
+      "id": "gold",
+      "label": "金属色",
+      "color": "#d9b448",
+      "targets": [
+        {
+          "material": 0
+        }
+      ]
+    }
+  ],
+  "halloween-ghost-hooded-top": [
+    {
+      "id": "orange",
+      "label": "主色",
+      "color": "#ee7916",
+      "targets": [
+        {
+          "material": 0
+        },
+        {
+          "material": 1
+        },
+        {
+          "material": 2
+        },
+        {
+          "material": 3
+        },
+        {
+          "material": 4
+        }
+      ]
+    },
+    {
+      "id": "purple",
+      "label": "副色",
+      "color": "#522478",
+      "targets": [
+        {
+          "material": 0
+        },
+        {
+          "material": 1
+        },
+        {
+          "material": 2
+        },
+        {
+          "material": 3
+        },
+        {
+          "material": 4
+        }
+      ]
+    },
+    {
+      "id": "green",
+      "label": "装饰色",
+      "color": "#99bc27",
+      "targets": [
+        {
+          "material": 0
+        },
+        {
+          "material": 1
+        },
+        {
+          "material": 2
+        },
+        {
+          "material": 3
+        },
+        {
+          "material": 4
+        }
+      ]
+    },
+    {
+      "id": "gold",
+      "label": "金属色",
+      "color": "#d9b448",
+      "targets": [
+        {
+          "material": 0
+        },
+        {
+          "material": 1
+        },
+        {
+          "material": 2
+        },
+        {
+          "material": 3
+        },
+        {
+          "material": 4
+        }
+      ]
+    }
+  ],
+  "halloween-ghost-shorts": [
+    {
+      "id": "orange",
+      "label": "主色",
+      "color": "#ee7916",
+      "targets": [
+        {
+          "material": 0
+        }
+      ]
+    },
+    {
+      "id": "purple",
+      "label": "副色",
+      "color": "#522478",
+      "targets": [
+        {
+          "material": 0
+        }
+      ]
+    },
+    {
+      "id": "green",
+      "label": "装饰色",
+      "color": "#99bc27",
+      "targets": [
+        {
+          "material": 0
+        }
+      ]
+    },
+    {
+      "id": "gold",
+      "label": "金属色",
+      "color": "#d9b448",
+      "targets": [
+        {
+          "material": 0
+        }
+      ]
+    }
+  ],
+  "halloween-ghost-shoes": [
+    {
+      "id": "orange",
+      "label": "主色",
+      "color": "#ee7916",
+      "targets": [
+        {
+          "material": 0
+        }
+      ]
+    },
+    {
+      "id": "purple",
+      "label": "副色",
+      "color": "#522478",
+      "targets": [
+        {
+          "material": 0
+        }
+      ]
+    },
+    {
+      "id": "green",
+      "label": "装饰色",
+      "color": "#99bc27",
+      "targets": [
+        {
+          "material": 0
+        }
+      ]
+    },
+    {
+      "id": "gold",
+      "label": "金属色",
+      "color": "#d9b448",
+      "targets": [
+        {
+          "material": 0
+        }
+      ]
+    }
+  ],
+  "halloween-ghost-socks": [
+    {
+      "id": "orange",
+      "label": "主色",
+      "color": "#ee7916",
+      "targets": [
+        {
+          "material": 0
+        }
+      ]
+    },
+    {
+      "id": "purple",
+      "label": "副色",
+      "color": "#522478",
+      "targets": [
+        {
+          "material": 0
+        }
+      ]
+    },
+    {
+      "id": "green",
+      "label": "装饰色",
+      "color": "#99bc27",
+      "targets": [
+        {
+          "material": 0
+        }
+      ]
+    },
+    {
+      "id": "gold",
+      "label": "金属色",
+      "color": "#d9b448",
+      "targets": [
+        {
+          "material": 0
+        }
+      ]
+    }
+  ],
+  "halloween-pumpkin-hat": [
+    {
+      "id": "orange",
+      "label": "主色",
+      "color": "#ee7916",
+      "targets": [
+        {
+          "material": 0
+        }
+      ]
+    },
+    {
+      "id": "purple",
+      "label": "副色",
+      "color": "#522478",
+      "targets": [
+        {
+          "material": 0
+        }
+      ]
+    },
+    {
+      "id": "green",
+      "label": "装饰色",
+      "color": "#99bc27",
+      "targets": [
+        {
+          "material": 0
+        }
+      ]
+    },
+    {
+      "id": "gold",
+      "label": "金属色",
+      "color": "#d9b448",
+      "targets": [
+        {
+          "material": 0
+        }
+      ]
+    }
+  ],
+  "halloween-pumpkin-sleeves": [
+    {
+      "id": "orange",
+      "label": "主色",
+      "color": "#ee7916",
+      "targets": [
+        {
+          "material": 1
+        },
+        {
+          "material": 5
+        },
+        {
+          "material": 6
+        }
+      ]
+    },
+    {
+      "id": "purple",
+      "label": "副色",
+      "color": "#522478",
+      "targets": [
+        {
+          "material": 1
+        },
+        {
+          "material": 5
+        },
+        {
+          "material": 6
+        }
+      ]
+    },
+    {
+      "id": "green",
+      "label": "装饰色",
+      "color": "#99bc27",
+      "targets": [
+        {
+          "material": 1
+        },
+        {
+          "material": 5
+        },
+        {
+          "material": 6
+        }
+      ]
+    },
+    {
+      "id": "gold",
+      "label": "金属色",
+      "color": "#d9b448",
+      "targets": [
+        {
+          "material": 1
+        },
+        {
+          "material": 5
+        },
+        {
+          "material": 6
+        }
+      ]
+    }
+  ],
+  "halloween-pumpkin-romper": [
+    {
+      "id": "orange",
+      "label": "主色",
+      "color": "#ee7916",
+      "targets": [
+        {
+          "material": 2
+        },
+        {
+          "material": 3
+        },
+        {
+          "material": 7
+        }
+      ]
+    },
+    {
+      "id": "purple",
+      "label": "副色",
+      "color": "#522478",
+      "targets": [
+        {
+          "material": 2
+        },
+        {
+          "material": 3
+        },
+        {
+          "material": 7
+        }
+      ]
+    },
+    {
+      "id": "green",
+      "label": "装饰色",
+      "color": "#99bc27",
+      "targets": [
+        {
+          "material": 2
+        },
+        {
+          "material": 3
+        },
+        {
+          "material": 7
+        }
+      ]
+    },
+    {
+      "id": "gold",
+      "label": "金属色",
+      "color": "#d9b448",
+      "targets": [
+        {
+          "material": 2
+        },
+        {
+          "material": 3
+        },
+        {
+          "material": 7
+        }
+      ]
+    }
+  ],
+  "halloween-pumpkin-boots": [
+    {
+      "id": "orange",
+      "label": "主色",
+      "color": "#ee7916",
+      "targets": [
+        {
+          "material": 4
+        }
+      ]
+    },
+    {
+      "id": "purple",
+      "label": "副色",
+      "color": "#522478",
+      "targets": [
+        {
+          "material": 4
+        }
+      ]
+    },
+    {
+      "id": "green",
+      "label": "装饰色",
+      "color": "#99bc27",
+      "targets": [
+        {
+          "material": 4
+        }
+      ]
+    },
+    {
+      "id": "gold",
+      "label": "金属色",
+      "color": "#d9b448",
+      "targets": [
+        {
+          "material": 4
+        }
+      ]
+    }
+  ],
+  "halloween-pumpkin-socks": [
+    {
+      "id": "orange",
+      "label": "主色",
+      "color": "#ee7916",
+      "targets": [
+        {
+          "material": 0
+        }
+      ]
+    },
+    {
+      "id": "purple",
+      "label": "副色",
+      "color": "#522478",
+      "targets": [
+        {
+          "material": 0
+        }
+      ]
+    },
+    {
+      "id": "green",
+      "label": "装饰色",
+      "color": "#99bc27",
+      "targets": [
+        {
+          "material": 0
+        }
+      ]
+    },
+    {
+      "id": "gold",
+      "label": "金属色",
+      "color": "#d9b448",
+      "targets": [
+        {
+          "material": 0
+        }
+      ]
+    }
   ]
 }

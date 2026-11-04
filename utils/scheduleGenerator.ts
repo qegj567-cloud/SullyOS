@@ -278,10 +278,12 @@ export async function generateDailyScheduleForChar(
     const dayOfWeek = ['日', '一', '二', '三', '四', '五', '六'][now.getDay()];
 
     const style = char.scheduleStyle || 'lifestyle';
+    const {scheduleHomeVisitPrompt,submitScheduleHomeVisits}=await import('./homeVisits');
     const homePrompt = buildHomeSchedulePrompt(char);
+    const visitPrompt=await scheduleHomeVisitPrompt(char);
     const prompt = (style === 'mindful'
         ? buildMindfulPrompt('', char, userProfile, today, dayOfWeek, chatHistoryBlock)
-        : buildLifestylePrompt('', char, userProfile, today, dayOfWeek, chatHistoryBlock)) + homePrompt;
+        : buildLifestylePrompt('', char, userProfile, today, dayOfWeek, chatHistoryBlock)) + homePrompt + visitPrompt;
 
     try {
         const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
@@ -354,7 +356,7 @@ export async function generateDailyScheduleForChar(
 
         // Missing or stale room IDs must not overwrite a usable old schedule.
         if (homePrompt && !hasHomeSchedulePositions(schedule, char)) return null;
-        await DB.saveDailySchedule(schedule);
+        await submitScheduleHomeVisits(char,schedule.date,parsed.homeVisits,schedule);
         return schedule;
     } catch (e) {
         console.error('[Schedule] Generation failed:', e);

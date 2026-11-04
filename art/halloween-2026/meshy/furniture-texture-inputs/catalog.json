@@ -1,0 +1,722 @@
+[
+  {
+    "id": "halloween_bat_sofa",
+    "name": "蝙蝠双人沙发",
+    "url": "halloween_bat_sofa.glb",
+    "surface": "floor",
+    "size": [
+      3.9000000000000004,
+      1.738194798572157,
+      1.604946455889852
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -1.9500000000000002,
+        0,
+        -0.802473227944926,
+        1.9500000000000002,
+        1.738194798572157,
+        0.802473227944926
+      ]
+    ],
+    "collection": "living",
+    "revision": "fdd9bea46d9c",
+    "paintMaterials": [
+      "halloween_black",
+      "halloween_purple",
+      "halloween_orange",
+      "halloween_green"
+    ],
+    "colorParts": [
+      {
+        "material": "halloween_black",
+        "label": "黑色框架",
+        "color": "#242129"
+      },
+      {
+        "material": "halloween_purple",
+        "label": "紫绒",
+        "color": "#54217c"
+      },
+      {
+        "material": "halloween_orange",
+        "label": "南瓜橙",
+        "color": "#ee7219"
+      },
+      {
+        "material": "halloween_green",
+        "label": "魔法绿",
+        "color": "#91b935"
+      }
+    ],
+    "seats": [
+      {
+        "id": "0",
+        "label": "左侧",
+        "position": [
+          -0.94,
+          0.845,
+          0.38
+        ],
+        "rotation": 0
+      },
+      {
+        "id": "1",
+        "label": "右侧",
+        "position": [
+          0.94,
+          0.845,
+          0.38
+        ],
+        "rotation": 0
+      }
+    ]
+  },
+  {
+    "id": "halloween_coffin_coffee_table",
+    "name": "棺木月牙茶几",
+    "url": "halloween_coffin_coffee_table.glb",
+    "surface": "floor",
+    "size": [
+      2.7,
+      0.6646366427840328,
+      1.3969805527123849
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -1.35,
+        0,
+        -0.6984902763561924,
+        1.35,
+        0.6646366427840328,
+        0.6984902763561924
+      ]
+    ],
+    "collection": "living",
+    "revision": "f445a627f8c9",
+    "paintMaterials": [
+      "halloween_black",
+      "halloween_purple",
+      "halloween_orange",
+      "halloween_gold"
+    ],
+    "colorParts": [
+      {
+        "material": "halloween_black",
+        "label": "黑色框架",
+        "color": "#242129"
+      },
+      {
+        "material": "halloween_purple",
+        "label": "紫绒",
+        "color": "#54217c"
+      },
+      {
+        "material": "halloween_orange",
+        "label": "南瓜橙",
+        "color": "#ee7219"
+      },
+      {
+        "material": "halloween_gold",
+        "label": "金色饰边",
+        "color": "#dca84b"
+      }
+    ],
+    "support": {
+      "shape": "rect",
+      "width": 1.9,
+      "depth": 0.85,
+      "height": 0.64
+    }
+  },
+  {
+    "id": "halloween_pumpkin_armchair",
+    "name": "南瓜扶手椅",
+    "url": "halloween_pumpkin_armchair.glb",
+    "surface": "floor",
+    "size": [
+      2.1,
+      2.0471494607087832,
+      2.065485362095532
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -1.05,
+        0,
+        -1.032742681047766,
+        1.05,
+        2.0471494607087832,
+        1.032742681047766
+      ]
+    ],
+    "collection": "living",
+    "revision": "fbb104b9b5b0",
+    "paintMaterials": [
+      "halloween_purple",
+      "halloween_orange",
+      "halloween_green",
+      "halloween_black"
+    ],
+    "colorParts": [
+      {
+        "material": "halloween_purple",
+        "label": "紫绒",
+        "color": "#54217c"
+      },
+      {
+        "material": "halloween_orange",
+        "label": "南瓜橙",
+        "color": "#ee7219"
+      },
+      {
+        "material": "halloween_green",
+        "label": "魔法绿",
+        "color": "#91b935"
+      },
+      {
+        "material": "halloween_black",
+        "label": "黑色框架",
+        "color": "#242129"
+      }
+    ],
+    "seats": [
+      {
+        "id": "0",
+        "label": "中间",
+        "position": [
+          0,
+          0.55,
+          0.7
+        ],
+        "rotation": 0
+      }
+    ]
+  },
+  {
+    "id": "halloween_potion_bookcase",
+    "name": "魔药尖顶书柜",
+    "url": "halloween_potion_bookcase.glb",
+    "surface": "floor",
+    "size": [
+      1.7724474089276552,
+      3.5,
+      0.9302206259620318
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.8862237044638276,
+        0,
+        -0.4651103129810159,
+        0.8862237044638276,
+        3.5,
+        0.4651103129810159
+      ]
+    ],
+    "collection": "living",
+    "revision": "fd8fcb1434bc",
+    "paintMaterials": [
+      "halloween_black",
+      "halloween_purple",
+      "halloween_green",
+      "halloween_orange",
+      "halloween_cream",
+      "halloween_gold"
+    ],
+    "colorParts": [
+      {
+        "material": "halloween_black",
+        "label": "黑色框架",
+        "color": "#242129"
+      },
+      {
+        "material": "halloween_purple",
+        "label": "紫绒",
+        "color": "#54217c"
+      },
+      {
+        "material": "halloween_green",
+        "label": "魔法绿",
+        "color": "#91b935"
+      },
+      {
+        "material": "halloween_orange",
+        "label": "南瓜橙",
+        "color": "#ee7219"
+      },
+      {
+        "material": "halloween_cream",
+        "label": "象牙白",
+        "color": "#fff0cf"
+      },
+      {
+        "material": "halloween_gold",
+        "label": "金色饰边",
+        "color": "#dca84b"
+      }
+    ]
+  },
+  {
+    "id": "halloween_haunted_fireplace",
+    "name": "幽宅魔火壁炉",
+    "url": "halloween_haunted_fireplace.glb",
+    "surface": "floor",
+    "size": [
+      2.6,
+      2.2475703324808185,
+      0.9269565217391305
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -1.3,
+        0,
+        -0.46347826086956523,
+        1.3,
+        2.2475703324808185,
+        0.46347826086956523
+      ]
+    ],
+    "collection": "living",
+    "revision": "787d2acb9a78",
+    "paintMaterials": [
+      "halloween_green",
+      "halloween_gold",
+      "halloween_black",
+      "halloween_orange"
+    ],
+    "colorParts": [
+      {
+        "material": "halloween_green",
+        "label": "魔法绿",
+        "color": "#91b935"
+      },
+      {
+        "material": "halloween_gold",
+        "label": "金色饰边",
+        "color": "#dca84b"
+      },
+      {
+        "material": "halloween_black",
+        "label": "黑色框架",
+        "color": "#242129"
+      },
+      {
+        "material": "halloween_orange",
+        "label": "南瓜橙",
+        "color": "#ee7219"
+      }
+    ],
+    "support": {
+      "shape": "rect",
+      "width": 1.75,
+      "depth": 0.4,
+      "height": 1.49,
+      "center": [
+        0,
+        -0.08
+      ]
+    }
+  },
+  {
+    "id": "halloween_ghost_floor_lamp",
+    "name": "幽灵落地灯",
+    "url": "halloween_ghost_floor_lamp.glb",
+    "surface": "floor",
+    "size": [
+      1.059184197024115,
+      2.65,
+      1.1203694202154952
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.5295920985120575,
+        0,
+        -0.5601847101077476,
+        0.5295920985120575,
+        2.65,
+        0.5601847101077476
+      ]
+    ],
+    "collection": "living",
+    "revision": "06c637d83ff0",
+    "paintMaterials": [
+      "halloween_cream",
+      "halloween_purple",
+      "halloween_orange",
+      "halloween_black"
+    ],
+    "colorParts": [
+      {
+        "material": "halloween_cream",
+        "label": "象牙白",
+        "color": "#fff0cf"
+      },
+      {
+        "material": "halloween_purple",
+        "label": "紫绒",
+        "color": "#54217c"
+      },
+      {
+        "material": "halloween_orange",
+        "label": "南瓜橙",
+        "color": "#ee7219"
+      },
+      {
+        "material": "halloween_black",
+        "label": "黑色框架",
+        "color": "#242129"
+      }
+    ]
+  },
+  {
+    "id": "halloween_bat_rug",
+    "name": "蝙蝠花边地毯",
+    "url": "halloween_bat_rug.glb",
+    "surface": "rug",
+    "size": [
+      3.6,
+      0.045512571183151315,
+      3.6032324268855827
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [],
+    "collection": "living",
+    "revision": "bc97687021b3",
+    "paintMaterials": [
+      "halloween_orange",
+      "halloween_black",
+      "halloween_purple"
+    ],
+    "colorParts": [
+      {
+        "material": "halloween_orange",
+        "label": "南瓜橙",
+        "color": "#ee7219"
+      },
+      {
+        "material": "halloween_black",
+        "label": "黑色框架",
+        "color": "#242129"
+      },
+      {
+        "material": "halloween_purple",
+        "label": "紫绒",
+        "color": "#54217c"
+      }
+    ]
+  },
+  {
+    "id": "halloween_cauldron_planter",
+    "name": "魔药蘑菇坩埚",
+    "url": "halloween_cauldron_planter.glb",
+    "surface": "floor",
+    "size": [
+      1,
+      1.1449530516431925,
+      0.8679577464788732
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.5,
+        0,
+        -0.4339788732394366,
+        0.5,
+        1.1449530516431925,
+        0.4339788732394366
+      ]
+    ],
+    "collection": "living",
+    "revision": "0267a0057182",
+    "paintMaterials": [
+      "halloween_black",
+      "halloween_purple",
+      "halloween_green",
+      "halloween_cream"
+    ],
+    "colorParts": [
+      {
+        "material": "halloween_black",
+        "label": "黑色框架",
+        "color": "#242129"
+      },
+      {
+        "material": "halloween_purple",
+        "label": "紫绒",
+        "color": "#54217c"
+      },
+      {
+        "material": "halloween_green",
+        "label": "魔法绿",
+        "color": "#91b935"
+      },
+      {
+        "material": "halloween_cream",
+        "label": "象牙白",
+        "color": "#fff0cf"
+      }
+    ]
+  },
+  {
+    "id": "halloween_cat_ear_mirror",
+    "name": "猫耳穿衣镜",
+    "url": "halloween_cat_ear_mirror.glb",
+    "surface": "floor",
+    "size": [
+      1.4351899383983573,
+      2.65,
+      1.2828285420944558
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.7175949691991786,
+        0,
+        -0.6414142710472279,
+        0.7175949691991786,
+        2.65,
+        0.6414142710472279
+      ]
+    ],
+    "collection": "living",
+    "revision": "ce59f65a8c82",
+    "paintMaterials": [
+      "halloween_black",
+      "halloween_glass"
+    ],
+    "colorParts": [
+      {
+        "material": "halloween_black",
+        "label": "黑色框架",
+        "color": "#242129"
+      },
+      {
+        "material": "halloween_glass",
+        "label": "紫色镜面",
+        "color": "#382247"
+      }
+    ]
+  },
+  {
+    "id": "halloween_bat_pumpkin_clock",
+    "name": "蝙蝠南瓜挂钟",
+    "url": "halloween_bat_pumpkin_clock.glb",
+    "surface": "wall",
+    "size": [
+      1.55,
+      0.7991322103113834,
+      0.0917815211842777
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.775,
+        0,
+        -0.04589076059213885,
+        0.775,
+        0.7991322103113834,
+        0.04589076059213885
+      ]
+    ],
+    "collection": "living",
+    "revision": "2c039c7814a9",
+    "paintMaterials": [
+      "halloween_black",
+      "halloween_orange",
+      "halloween_green",
+      "halloween_gold"
+    ],
+    "colorParts": [
+      {
+        "material": "halloween_black",
+        "label": "黑色框架",
+        "color": "#242129"
+      },
+      {
+        "material": "halloween_orange",
+        "label": "南瓜橙",
+        "color": "#ee7219"
+      },
+      {
+        "material": "halloween_green",
+        "label": "魔法绿",
+        "color": "#91b935"
+      },
+      {
+        "material": "halloween_gold",
+        "label": "金色饰边",
+        "color": "#dca84b"
+      }
+    ]
+  },
+  {
+    "id": "halloween_gothic_curtain_window",
+    "name": "哥特月夜帘窗",
+    "url": "halloween_gothic_curtain_window.glb",
+    "surface": "wall",
+    "size": [
+      3.6,
+      2.6513638703036544,
+      0.30015440041173447
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -1.8,
+        0,
+        -0.15007720020586723,
+        1.8,
+        2.6513638703036544,
+        0.15007720020586723
+      ]
+    ],
+    "collection": "living",
+    "revision": "b8753685df20",
+    "paintMaterials": [
+      "halloween_purple",
+      "halloween_glass",
+      "halloween_black",
+      "halloween_green",
+      "halloween_gold",
+      "halloween_orange"
+    ],
+    "colorParts": [
+      {
+        "material": "halloween_purple",
+        "label": "紫绒",
+        "color": "#54217c"
+      },
+      {
+        "material": "halloween_glass",
+        "label": "紫色镜面",
+        "color": "#382247"
+      },
+      {
+        "material": "halloween_black",
+        "label": "黑色框架",
+        "color": "#242129"
+      },
+      {
+        "material": "halloween_green",
+        "label": "魔法绿",
+        "color": "#91b935"
+      },
+      {
+        "material": "halloween_gold",
+        "label": "金色饰边",
+        "color": "#dca84b"
+      },
+      {
+        "material": "halloween_orange",
+        "label": "南瓜橙",
+        "color": "#ee7219"
+      }
+    ]
+  },
+  {
+    "id": "halloween_pumpkin_lantern",
+    "name": "万圣节南瓜提灯",
+    "surface": "tabletop",
+    "url": "halloween_pumpkin_lantern.glb",
+    "size": [
+      0.36,
+      0.4294929749541844,
+      0.36417837507635914
+    ],
+    "default": [
+      0,
+      0.15,
+      0
+    ],
+    "boxes": [
+      [
+        -0.18,
+        0,
+        -0.18208918753817957,
+        0.18,
+        0.4294929749541844,
+        0.18208918753817957
+      ]
+    ],
+    "collection": "living",
+    "paintMaterials": [
+      "halloween_pumpkin",
+      "halloween_leaf",
+      "halloween_iron",
+      "halloween_light"
+    ],
+    "colorParts": [
+      {
+        "material": "halloween_pumpkin",
+        "label": "南瓜",
+        "color": "#ff690b"
+      },
+      {
+        "material": "halloween_leaf",
+        "label": "叶片",
+        "color": "#8bbf22"
+      },
+      {
+        "material": "halloween_iron",
+        "label": "提环",
+        "color": "#24202c"
+      },
+      {
+        "material": "halloween_light",
+        "label": "灯芯",
+        "color": "#ffcb32"
+      }
+    ],
+    "triangles": 3682,
+    "revision": "76f489620482"
+  }
+]

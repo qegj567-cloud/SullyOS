@@ -46,6 +46,9 @@ it.each([72,73])('upgrades v%s without losing records and installs both branches
 it('rolls back an interrupted v72 home-index upgrade, preserves the archive and retries once',async()=>{
  vi.resetModules();
  localStorage.removeItem('sully_db_open_diagnostics_v1');
+ const diagnosticKeys=Array.from({length:localStorage.length},(_,i)=>localStorage.key(i)!)
+  .filter(key=>key.startsWith('sully_db_open_diagnostics_v2_')||key.startsWith('sully_db_open_checkpoint_v2_'));
+ for(const key of diagnosticKeys)localStorage.removeItem(key);
  const factory=new IDBFactory();vi.stubGlobal('indexedDB',factory);
  await seedLegacy(factory,72);
  const originalOpen=factory.open.bind(factory);
