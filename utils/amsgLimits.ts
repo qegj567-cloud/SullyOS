@@ -297,6 +297,13 @@ export const describeMinutes = (minutes: number): string => {
 
 // ─── 角色排程时的规矩 ───
 
+/**
+ * 角色自排的硬间隔，不随用户设置放开：跟已排的任务、上一次主动消息相差 2 分钟以内（含 2 分钟）
+ * 一律打回。send_at 精确到分，「不到 3 分钟」就是「2 分钟以内」。
+ * 用户把间隔设成 0 是「不介意连着找我」，不是「同一时刻排好几条」。
+ */
+export const SELF_SCHEDULE_HARD_GAP_MS = 3 * 60_000;
+
 export type SelfScheduleRecurrence = 'none' | 'daily' | 'weekly';
 export type SelfScheduleExpirePolicy = 'expire' | 'force';
 
@@ -336,16 +343,19 @@ export const checkSelfScheduleRules = (input: SelfScheduleRuleInput): SelfSchedu
       message: '用户没有让你排每天/每周重复的消息，这次只能排一次性的（去掉 recurrence 再排）。',
     };
   }
-  const conflict = findGapConflict(input.sendAtMs, limits.minSendGapMs, input.busy);
+  const userGapApplies = limits.minSendGapMs >= SELF_SCHEDULE_HARD_GAP_MS;
+  const gapMs = Math.max(limits.minSendGapMs, SELF_SCHEDULE_HARD_GAP_MS);
+  const conflict = findGapConflict(input.sendAtMs, gapMs, input.busy);
   if (conflict !== null) {
-    const gapMinutes = Math.round(limits.minSendGapMs / 60_000);
-    const earliest = earliestSlotAfter(
-      Math.max(input.earliestMs, input.sendAtMs), limits.minSendGapMs, input.busy);
+    const earliest = earliestSlotAfter(Math.max(input.earliestMs, input.sendAtMs), gapMs, input.busy);
     return {
       ok: false,
       reason: 'min_gap',
-      message: `离 ${input.formatTime(conflict)} 那次太近了：用户定了两次主动消息之间至少隔 ${describeMinutes(gapMinutes)}。`
-        + `要排的话最早 ${input.formatTime(earliest)}；没那么要紧的话，这次就别排了。`,
+      message: userGapApplies
+        ? `离 ${input.formatTime(conflict)} 那次太近了：用户定了两次主动消息之间至少隔 ${describeMinutes(Math.round(limits.minSendGapMs / 60_000))}。`
+          + `要排的话最早 ${input.formatTime(earliest)}；没那么要紧的话，这次就别排了。`
+        : `${input.formatTime(conflict)} 前后已经有一次主动消息了，同一时刻不能再排一条。`
+          + '如果是同一件事，它已经排着，不用再排；要换时间或内容，改原来那条（renew / cancel）。',
     };
   }
   return {

@@ -134,6 +134,17 @@ describe('checkSelfScheduleRules', () => {
     }
   });
 
+  it('间隔设成 0 也不能在已排任务 2 分钟以内（含）再排一条', () => {
+    const limits = resolveAmsgLimits({ minSendGapMinutes: 0 });
+    for (const offset of [0, 1, 2, -2]) {
+      const out = checkSelfScheduleRules({ ...base, limits, busy: [(60 + offset) * MIN] });
+      expect(out).toMatchObject({ ok: false, reason: 'min_gap' });
+      if (!out.ok) expect(out.message).not.toContain('用户定了');
+    }
+    expect(checkSelfScheduleRules({ ...base, limits, busy: [57 * MIN] }).ok).toBe(true);
+    expect(checkSelfScheduleRules({ ...base, limits, busy: [63 * MIN] }).ok).toBe(true);
+  });
+
   it('到点必发没放开 → 不打回，按普通的排；放开了原样', () => {
     const locked = checkSelfScheduleRules({ ...base, limits: resolveAmsgLimits(undefined), expirePolicy: 'force' });
     expect(locked).toEqual({ ok: true, expirePolicy: 'expire' });

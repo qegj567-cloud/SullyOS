@@ -2885,7 +2885,7 @@ describe('自排后续任务', () => {
   it('单次 fire 排满就打回，不再调远端', async () => {
     const stash = makeStash();
     for (let i = 0; i < MAX_FIRE_SCHEDULES; i += 1) {
-      await runFireScheduleTool(stash, okSchedule, { send_at: new Date(NOW_MS + (90 + i) * 60_000).toISOString() }, NOW_MS);
+      await runFireScheduleTool(stash, okSchedule, { send_at: new Date(NOW_MS + (90 + i * 3) * 60_000).toISOString() }, NOW_MS);
     }
     okSchedule.mockClear();
     const out = await runFireScheduleTool(stash, okSchedule, { send_at: sendAt }, NOW_MS);
