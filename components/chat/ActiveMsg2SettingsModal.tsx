@@ -202,9 +202,13 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
         : pushStatus.permission === 'denied'
           ? '已拒绝'
           : '未授权';
-      setPushSummary(pushStatus.supported
-        ? `权限：${permLabel} / 订阅：${pushStatus.hasSubscription ? '已就绪' : '未创建'}`
-        : '当前环境不支持 Web Push');
+      setPushSummary(
+        pushStatus.transport === 'third-party'
+          ? `${pushStatus.detail || '第三方推送'} / 状态：${pushStatus.hasSubscription ? '已就绪' : '未配置'}`
+          : pushStatus.supported
+            ? `权限：${permLabel} / 订阅：${pushStatus.hasSubscription ? '已就绪' : '未创建'}`
+            : '当前环境不支持 Web Push（可在全局设置改用第三方推送 App）',
+      );
     })();
 
     // 防穿帮闸最近拦下了哪次触发、今天主动找了几次。闸是静默的，不说一声的话「让路了」

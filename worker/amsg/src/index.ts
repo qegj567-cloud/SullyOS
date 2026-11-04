@@ -3075,12 +3075,17 @@ export const buildWorkerConfig = (env: Env) => {
     privateKey: env.VAPID_PRIVATE_KEY,
   };
   const nativeFcmReady = isFcmConfigured(env);
-  // 上游在进入发送器前会检查 VAPID 字段非空；纯 FCM 部署用内部占位值通过该检查。
-  // 普通 Web Push endpoint 仍只会走真实 VAPID，没配真实值时配置自检会明确提示。
-  const effectiveVapid = nativeFcmReady && (!vapid.publicKey?.trim() || !vapid.privateKey?.trim())
-    ? { email: vapid.email, publicKey: 'native-fcm', privateKey: 'native-fcm' }
-    : vapid;
-  const webpush = createHybridPushTransport(env, createWebCryptoWebPush(effectiveVapid));
+  const hasRealVapid = Boolean(vapid.publicKey?.trim() && vapid.privateKey?.trim());
+  // 上游在进入发送器前会检查 VAPID 字段非空；纯 FCM 或第三方推送（WxPusher/Bark/MeoW）
+  // 部署用内部占位值通过该检查，而普通 Web Push 仍走真实 vapid。
+  const effectiveVapid = hasRealVapid
+    ? vapid
+    : {
+      email: vapid.email,
+      publicKey: nativeFcmReady ? 'native-fcm' : 'third-party-push',
+      privateKey: nativeFcmReady ? 'native-fcm' : 'third-party-push',
+    };
+  const webpush = createHybridPushTransport(env, createWebCryptoWebPush(vapid));
   // 即时对话终态失败的直发通道拿同一份 transport（见 sendInstantErrorPush）。
   configureInstantErrorPush(env.DB && env.AMSG_MASTER_KEY
     ? { webpush, db: env.DB as unknown as InstantErrorPushDeps['db'], masterKey: env.AMSG_MASTER_KEY }
@@ -3668,6 +3673,7 @@ export default {
           // 正常，而门牌永远不更新。报的是**这份代码有没有**，不是版本号：自更新永远由
           // 旧代码执行，版本号对上了不代表新逻辑真的在跑。
           backgroundJobs: true,
+          thirdPartyPush: true,
           workerVersion: AMSG_BUNDLE_VERSION,
           // 自动更新：有没有这个能力（配没配 CF_API_TOKEN，不回值）+ 最近一次检查的结果。
           // 读的是诊断表，D1 没绑上时读不到就是 null，不影响上面那些照常回答。
@@ -3854,6 +3860,83 @@ export default {
         });
       }
       return handleInstantChat({ request, env, upstream, json: jsonWithCors });
+    }
+
+    // 推送测试：读取当前用户在 push_subscriptions 里登记的订阅（Web Push 或第三方推送 App），
+    // 直接发一条测试通知验证通道是否畅通。
+    if (pathname.endsWith('/test-push')) {
+      if (method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
+      if (method !== 'POST') {
+        return jsonWithCors(405, {
+          success: false,
+          error: { code: 'METHOD_NOT_ALLOWED', message: '/test-push 只接受 POST' },
+        });
+      }
+      const token = env.AMSG_SERVER_TOKEN?.trim() ?? '';
+      const clientToken = request.headers.get('X-Client-Token') ?? '';
+      if (token && (!clientToken || !(await constantTimeEqual(clientToken, token)))) {
+        return jsonWithCors(401, {
+          success: false,
+          error: { code: 'INVALID_CLIENT_TOKEN', message: '共享密钥无效或缺失' },
+        });
+      }
+      try {
+        const reqUserId = request.headers.get('X-User-Id')?.trim() || '';
+        const db = env.DB as unknown as InstantErrorPushDeps['db'];
+        const row = reqUserId
+          ? await db.prepare('SELECT user_id, subscription FROM push_subscriptions WHERE user_id = ? LIMIT 1').bind(reqUserId).first()
+          : await db.prepare('SELECT user_id, subscription FROM push_subscriptions LIMIT 1').first();
+        const stored = row?.subscription;
+        const userId = row?.user_id;
+        if (typeof stored !== 'string' || !stored || typeof userId !== 'string' || !userId) {
+          return jsonWithCors(404, {
+            success: false,
+            error: { code: 'SUBSCRIPTION_NOT_FOUND', message: '云端还没有登记推送订阅，请先保存或登记推送配置。' },
+          });
+        }
+        let subscription: unknown;
+        try {
+          const userKey = await deriveUserEncryptionKey(userId, env.AMSG_MASTER_KEY.trim());
+          subscription = JSON.parse(await decryptFromStorage(stored, userKey));
+        } catch {
+          subscription = JSON.parse(stored);
+        }
+        const payload = {
+          messageKind: 'test-push',
+          messageType: 'instant',
+          messageId: `test_${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          contactName: 'SullyOS 推送测试',
+          message: '如果你在手机通知栏看到这条消息，说明主动消息推送通道已经接通！',
+          notification: {
+            title: 'SullyOS 推送测试',
+            body: '如果你在手机通知栏看到这条消息，说明主动消息推送通道已经接通！',
+            show: 'always',
+            tag: 'sullyos-test-push',
+            renotify: true,
+          },
+        };
+        const cfg = buildWorkerConfig(env);
+        await cfg.webpush.sendNotification(subscription, JSON.stringify(payload));
+        return jsonWithCors(200, {
+          success: true,
+          data: { sent: true },
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return jsonWithCors(502, {
+          success: false,
+          error: { code: 'TEST_PUSH_FAILED', message },
+        });
+      }
+    }
+
+    if (pathname.endsWith('/vapid-public-key') && (!env.VAPID_PUBLIC_KEY?.trim() || !env.VAPID_PRIVATE_KEY?.trim())) {
+      if (method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
+      return jsonWithCors(503, {
+        success: false,
+        error: { code: 'VAPID_NOT_CONFIGURED', message: 'Worker 未配置 VAPID 密钥对，浏览器 Web Push 不可用（可使用第三方推送 App）。' },
+      });
     }
 
     return upstream.fetch(request, env);

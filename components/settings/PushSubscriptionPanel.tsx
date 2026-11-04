@@ -35,6 +35,12 @@ import {
   liveFailureKind,
 } from '../../utils/pushDiagnosticsView';
 import { bucketRetryCount, trackEvent } from '../../utils/analytics';
+import {
+  buildThirdPartyPushEndpoint,
+  getThirdPartyPushProviderMeta,
+  validateThirdPartyPushConfig,
+  type ThirdPartyPushConfig,
+} from '../../utils/amsgThirdPartyPush';
 
 interface PushSubscriptionPanelProps {
   addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
@@ -62,6 +68,8 @@ const REGISTRATION_TEXT: Record<AmsgPushRegistrationState, { value: string; bad:
 const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast }) => {
   const [browser, setBrowser] = useState<BrowserPushState | null>(null);
   const [remote, setRemote] = useState<AmsgRemotePushSubscription | null>(null);
+  const [pushMode, setPushMode] = useState<'web-push' | 'third-party'>('web-push');
+  const [thirdPartyConfig, setThirdPartyConfig] = useState<ThirdPartyPushConfig | null>(null);
   // 「登记的确实是这台设备，但推送根本送不到」——只有 Worker 那侧的投递结果知道这件事。
   // null = 还没问到（没填 Worker / 连不上），那时这一行照实说「没查到」。
   const [delivery, setDelivery] = useState<AmsgPushDeliveryProbe | null>(null);
@@ -80,6 +88,8 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
       // 没填 Worker 地址就别去问了——问也是白问，还会在控制台留一串没用的报错。
       const config = await ActiveMsgClient.getGlobalConfig().catch(() => null);
       const configured = Boolean(config?.workerUrl?.trim());
+      setPushMode(config?.pushMode === 'third-party' ? 'third-party' : 'web-push');
+      setThirdPartyConfig(config?.thirdPartyPush ?? null);
       setWorkerConfigured(configured);
       setRemote(configured ? await ActiveMsgClient.getRemotePushSubscription() : null);
       // 「推送有没有真的送出去」是 Worker 那侧算好的（见 /debug 的 pushDelivery）。
@@ -93,7 +103,18 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
 
   useEffect(() => { void refresh(); }, [refresh]);
 
-  const deepMode = zombieStreak >= DEEP_RESET_THRESHOLD;
+  const isThirdParty = pushMode === 'third-party';
+  const tpValidation = isThirdParty ? validateThirdPartyPushConfig(thirdPartyConfig) : null;
+  const thirdPartyEndpoint = isThirdParty && tpValidation?.ok && tpValidation.normalized
+    ? buildThirdPartyPushEndpoint({
+      provider: tpValidation.normalized.provider,
+      token: tpValidation.normalized.token,
+      serverUrl: tpValidation.normalized.serverOrigin,
+    })
+    : null;
+  const thirdPartyMeta = isThirdParty ? getThirdPartyPushProviderMeta(thirdPartyConfig?.provider) : null;
+
+  const deepMode = !isThirdParty && zombieStreak >= DEEP_RESET_THRESHOLD;
 
   const handleReset = async () => {
     if (resetting) return;
@@ -164,8 +185,9 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
     }
   };
 
+  const effectiveLocalEndpoint = isThirdParty ? thirdPartyEndpoint : browser?.endpoint;
   const registration: AmsgPushRegistrationState = workerConfigured
-    ? compareRemotePushSubscription(browser?.endpoint, remote)
+    ? compareRemotePushSubscription(effectiveLocalEndpoint, remote)
     : 'worker-unset';
   const registrationText = REGISTRATION_TEXT[registration];
 
@@ -183,12 +205,14 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
 
   const resetLabel = resetting
     ? (deepMode ? '深度重置中…' : '重置中…')
-    : (deepMode ? '深度重置' : '重置订阅');
+    : isThirdParty
+      ? '重新登记到 Worker'
+      : (deepMode ? '深度重置' : '重置订阅');
 
   return (
     <div>
       <p className="text-xs text-slate-500 mb-3 leading-relaxed">
-        主动消息到点靠网页推送送到你手上。这条链路上任意一环断了，表现都是「任务建得成、到点没消息」，
+        主动消息到点靠推送通道送到你手上。这条链路上任意一环断了，表现都是「任务建得成、到点没消息」，
         界面上不会有任何异常。这里把每一环摊开给你看。
       </p>
 
@@ -222,7 +246,29 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
           </button>
         </div>
 
-        {browser ? (
+        {isThirdParty ? (
+          <div className="space-y-1.5 text-[11px]">
+            <Row label="推送模式" value="第三方推送 App" />
+            <Row label="推送平台" value={thirdPartyMeta?.label || 'WxPusher（推荐）'} />
+            <Row
+              label="本地配置"
+              value={tpValidation?.ok ? '已填写' : (tpValidation?.error || '未填写')}
+              bad={!tpValidation?.ok}
+            />
+            <Row label="云端登记" value={registrationText.value} bad={registrationText.bad} />
+            <Row label="上次投递" value={deliveryText.value} bad={deliveryText.bad} />
+            {registration === 'other-endpoint' && (
+              <div className="mt-2 p-2 bg-rose-50 border border-rose-200 rounded-lg text-[10px] text-rose-700 leading-relaxed">
+                Worker 上登记的推送地址与当前本地配置不一致——点下面的「重新登记到 Worker」即可覆盖更新。
+              </div>
+            )}
+            {registration === 'missing' && tpValidation?.ok && (
+              <div className="mt-2 p-2 bg-rose-50 border border-rose-200 rounded-lg text-[10px] text-rose-700 leading-relaxed">
+                Worker 上还没有登记这条推送通道，点下面的「重新登记到 Worker」登记即可。
+              </div>
+            )}
+          </div>
+        ) : browser ? (
           <div className="space-y-1.5 text-[11px]">
             <Row label="浏览器支持" value={describeSupport(browser)} bad={isSupportBad(browser)} />
             <Row label="通知权限" value={describePermission(browser.permission)} bad={browser.permission !== 'granted'} />
@@ -264,7 +310,7 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
                   {(failure.kind === 'channel-unreachable' || failure.kind === 'no-subscription') && (
                     <p className="mt-1.5 pt-1.5 border-t border-rose-200">
                       这一类<b>重试多少次都是一样的结果</b>，问题不在这个站点、也不在权限，
-                      换个浏览器、换个网络或换台设备才有用。
+                      换个浏览器、换个网络或换台设备才有用，或者在「主动消息 2.0」设置里改用「第三方推送 App（WxPusher / Bark / MeoW）」。
                     </p>
                   )}
                 </div>
@@ -313,13 +359,12 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
             {browser.iosNeedsPwa && (
               <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg text-[10px] text-amber-700 leading-relaxed">
                 检测到 iOS Safari，但现在不是从主屏图标启动的。
-                iOS 的网页推送必须先「添加到主屏幕」、再从主屏图标打开才能用。
+                iOS 的网页推送必须先「添加到主屏幕」、再从主屏图标打开才能用；或者去「主动消息 2.0」设置里改用「第三方推送 App」。
               </div>
             )}
             {browser.capacitorNative && (
               <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg text-[10px] text-amber-700 leading-relaxed">
-                你现在用的是<b>打包好的 App</b>，不是浏览器网页。网页推送这条通道在 App 里不存在，
-                这个面板可以直接忽略——不影响正常使用。
+                你现在用的是<b>打包好的 App</b>，不是浏览器网页。可在「主动消息 2.0」设置中开启「第三方推送 App（WxPusher 推荐）」或使用内置推送通道。
               </div>
             )}
           </div>
@@ -328,12 +373,12 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
         )}
 
         <button
-          disabled={resetting || refreshing || browser?.capacitorNative}
+          disabled={resetting || refreshing || (!isThirdParty && browser?.capacitorNative)}
           onClick={() => void handleReset()}
           className={`mt-4 w-full py-2 rounded-xl text-xs font-bold border ${
-            resetting || refreshing || browser?.capacitorNative
+            resetting || refreshing || (!isThirdParty && browser?.capacitorNative)
               ? 'bg-slate-100 text-slate-400 border-slate-200'
-              : deepMode || browser?.endpointDead || registrationText.bad || deliveryText.bad
+              : deepMode || (!isThirdParty && browser?.endpointDead) || registrationText.bad || deliveryText.bad
                 ? 'bg-rose-500 text-white border-rose-500 hover:bg-rose-600'
                 : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
           }`}
@@ -341,8 +386,9 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
           {resetLabel}
         </button>
         <p className="text-[10px] text-slate-400 mt-2 leading-relaxed">
-          「重置订阅」会清掉现在这条、重建一条，再登记到 Worker 上。换了浏览器、换了 Worker、
-          或者订阅被吊销之后点它。
+          {isThirdParty
+            ? '把当前填写的第三方推送通道重新覆盖登记到 Worker 上。'
+            : '「重置订阅」会清掉现在这条、重建一条，再登记到 Worker 上。换了浏览器、换了 Worker、或者订阅被吊销之后点它。'}
           {deepMode && <><br/>连着几次都没成，已经切到「深度重置」——它会把 Service Worker 整个装一遍，更彻底。</>}
         </p>
 
@@ -350,7 +396,7 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
             平时冷启动和回到前台会自动捞一次，这个按钮是给「我确实少收了东西」的时候用的：
             它连头一趟的账本存量也当补收处理，而自动那条路会把存量整批销掉（分不清哪些是
             真丢的、哪些是当时收到了只是老版本不会销账，倒出来就是重放）。 */}
-        {workerConfigured && !browser?.capacitorNative && (
+        {workerConfigured && (
           <>
             <button
               disabled={catchingUp || resetting || refreshing}

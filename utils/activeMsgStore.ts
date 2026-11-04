@@ -484,7 +484,7 @@ export const ActiveMsgStore = {
  * 读得到哪一份数据（数据按它分区），共享密钥是端点的门禁。少一样都连不成，所以要摘
  * 就得一起摘。
  */
-const BACKEND_CONNECTION_KEYS = ['workerUrl', 'serverToken', 'masterKey', 'userId'] as const;
+const BACKEND_CONNECTION_KEYS = ['workerUrl', 'serverToken', 'masterKey', 'userId', 'pushMode', 'thirdPartyPush'] as const;
 
 /** 这份备份里带着后端连接吗（带了的话，谁拿到这个文件谁就能连上那台 Worker）。 */
 export const backupHasBackendConnection = (

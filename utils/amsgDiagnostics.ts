@@ -295,6 +295,8 @@ export interface AmsgDiagnosticsInput {
   probe: AmsgDiagnosticsProbe;
   /** 这台设备的浏览器有没有推送订阅（本地事实，worker 那侧看不到）。 */
   localPushSubscribed?: boolean;
+  /** 当前选择的推送模式：第三方推送不需要浏览器 VAPID。 */
+  pushMode?: 'web-push' | 'third-party';
   /** 把 epoch 毫秒写成给人看的时间；不传按本机习惯格式化（单测注入固定格式用）。 */
   formatTime?: (atMs: number) => string;
   /** 定时任务的逐条细账。没拉（null / 不传）时「定时任务」那一行只按 /debug 的两个数说话。 */
@@ -799,12 +801,15 @@ export const buildAmsgDiagnosticRows = (input: AmsgDiagnosticsInput): AmsgDiagno
   }
 
   const vapidWarning = config.warnings.find((item) => item.code === 'VAPID_MISSING');
+  const isThirdPartyPush = input.pushMode === 'third-party';
   rows.push({
     key: 'pushCredential',
     label: '推送凭据',
-    level: vapidWarning ? 'bad' : 'ok',
+    level: vapidWarning && !isThirdPartyPush ? 'bad' : 'ok',
     // 这是最难自己查出来的一种坏法：任务建得成、界面全绿，到点一条都推不出去。
-    detail: vapidWarning ? vapidWarning.message : 'VAPID 已配齐。',
+    detail: isThirdPartyPush
+      ? (vapidWarning ? '当前使用第三方推送 App，无需配置 VAPID 密钥。' : '使用第三方推送 App（VAPID 也已配置）。')
+      : (vapidWarning ? vapidWarning.message : 'VAPID 已配齐。'),
   });
 
   const remoteRegistered = storage.pushSubscriptionRegistered === true;
@@ -818,12 +823,19 @@ export const buildAmsgDiagnosticRows = (input: AmsgDiagnosticsInput): AmsgDiagno
     key: 'pushDevice',
     label: '这台设备',
     level: !localPushSubscribed ? 'bad' : !remoteRegistered ? 'bad' : deliveryVerdict?.level || 'ok',
-    detail: !localPushSubscribed
-      ? '这台设备还没订阅推送，点下面的「开启通知与推送」。'
-      : !remoteRegistered
-        ? '浏览器订阅好了，但 Worker 上没有登记收件设备——到点的消息发不出去。点下面的「开启通知与推送」补登记一次。'
-        : deliveryVerdict?.detail
-          || '浏览器已订阅，Worker 上也登记了收件设备，最近一次推送也没被退回来。换设备或换浏览器之后要在新的那台上再点一次「开启通知与推送」。',
+    detail: isThirdPartyPush
+      ? !localPushSubscribed
+        ? '还没填写有效的第三方推送 Token，请在上方填写并点击「保存并登记推送」。'
+        : !remoteRegistered
+          ? '第三方推送 Token 已填写，但还没登记到 Worker——请点击「保存并登记推送」。'
+          : deliveryVerdict?.detail
+            || '第三方推送通道已登记到 Worker。可点击「发送测试通知」确认手机能否收到横幅。'
+      : !localPushSubscribed
+        ? '这台设备还没订阅推送，点下面的「开启通知与推送」。'
+        : !remoteRegistered
+          ? '浏览器订阅好了，但 Worker 上没有登记收件设备——到点的消息发不出去。点下面的「开启通知与推送」补登记一次。'
+          : deliveryVerdict?.detail
+            || '浏览器已订阅，Worker 上也登记了收件设备，最近一次推送也没被退回来。换设备或换浏览器之后要在新的那台上再点一次「开启通知与推送」。',
   });
 
   rows.push(buildTickRow(probe.report, input));
