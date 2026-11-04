@@ -72,7 +72,7 @@ export async function refreshFriendFeed(user: UserProfile, globalApi: APIConfig,
         if (!api?.baseUrl || !api.model) throw Error('请在哔哔的 API 设置中配置独立 API，或检查角色 / 全局 API；已有内容已保留');
         task = await prepareFriendFeedEmotionTask(charId, random, undefined, source, kind, commentPostId);
         if (!task) return {warnings, message: '已刷新，这位朋友刚刚参与过，稍后再试'};
-        const messages = (await buildFriendFeedReplyPayload(char, user, globalApi, task.prompt, realtimeConfig)).fullMessages;
+        const messages = (await buildFriendFeedReplyPayload(char, user, globalApi, task.prompt, realtimeConfig, task.npcOnly)).fullMessages;
         const data = await safeFetchJson(`${api.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
             method: 'POST', headers: {'Content-Type': 'application/json', Authorization: `Bearer ${api.apiKey || 'sk-none'}`},
             body: JSON.stringify({model: api.model, messages, temperature: api.temperature ?? .85, max_tokens: commentPostId ? FRIEND_REPLY_OUTPUT_TOKENS : FRIEND_FEED_OUTPUT_TOKENS, stream: api.stream ?? false,
@@ -83,10 +83,10 @@ export async function refreshFriendFeed(user: UserProfile, globalApi: APIConfig,
         const action = result === null ? {requestId: task.id, kind: 'none'} : result;
         if (!action || typeof action !== 'object' || (action as {requestId?: string}).requestId !== task.id)
             throw Error('动态生成任务不匹配，请重试');
-        let rejection='模型返回的动作不符合本轮要求，内容未保存';
-        if (!await landFriendFeedEmotionAction(charId, action, source,reason=>{rejection=reason;})) throw Error('内容未发布：'+rejection);
-        const row = action as {kind?: string; npcActions?: unknown[]};
-        return {warnings, message: row.kind === 'none' && !row.npcActions?.length ? '刷新完成，这次朋友们没有新回应' : commentPostId?'新评论已送达':'新动态已送达'};
+        let rejection='模型返回的动作不符合本轮要求，内容未保存', landing={selfKind:'none',npcCount:0,skipped:0};
+        if (!await landFriendFeedEmotionAction(charId, action, source,reason=>{rejection=reason;},result=>{landing=result;})) throw Error('内容未发布：'+rejection);
+        const skipped=landing.skipped?`（${landing.skipped} 条不符合本轮要求，已略过）`:'';
+        return {warnings, message: (landing.selfKind === 'none' && !landing.npcCount ? '刷新完成，这次朋友们没有新回应' : commentPostId?'新评论已送达':'新动态已送达')+skipped};
     } catch(e) {
         if(!weibo?.attempted)throw e;
         warnings.push('角色 API：'+(e instanceof Error?e.message:'生成失败'));

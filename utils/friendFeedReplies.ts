@@ -3,7 +3,8 @@ import {parseDedicatedFriendFeedAction} from './friendFeedOutput';
 import type {APIConfig, UserProfile, CharacterProfile, RealtimeConfig} from '../types';
 import {DB} from './db';
 import {readFriendFeed, mutateFriendFeed} from './friendFeed';
-import {prepareFriendFeedEmotionTask, landFriendFeedEmotionAction, releaseFriendFeedEmotionTask} from './friendFeedEmotion';
+import {prepareFriendFeedEmotionTask, landFriendFeedEmotionAction, releaseFriendFeedEmotionTask, type FriendNpcOnlyRound} from './friendFeedEmotion';
+import {ContextBuilder, type ContextMessage} from './context';
 import {loadCharacterContextRange} from './chatContextRange';
 import {buildChatRequestPayload} from './chatRequestPayload';
 import {resolveFriendFeedApi} from './friendFeedApi';
@@ -11,12 +12,25 @@ import {loadMusicPlaybackSnapshot} from '../context/MusicContext';
 import {extractAssistantText} from './emotionApply';
 import {safeFetchJson} from './safeApi';
 
+const NPC_ONLY_HEADER = '本轮你不扮演任何真实角色，只负责写哔哔路人。本人动作固定为 kind=none，所有正文放进 npcActions。路人只知道公开内容，不知道任何人的私聊、记忆或内心。';
+
+/** NPC-only rounds never see the host's private chat, memories or impressions; strangers do not see the host at all. */
+function buildFriendNpcPayload(char: CharacterProfile, user: UserProfile, rules: string, material: string, round: FriendNpcOnlyRound) {
+    const history: ContextMessage[] = [{role: 'user', content: '以下是哔哔的公开材料：\n' + material}];
+    if (round === 'stranger') return {fullMessages: [{role: 'system', content: NPC_ONLY_HEADER + '\n\n' + rules}, ...history]};
+    const host = [`### 宿主角色：${char.name}\n路人可能是 TA 公开生活里的熟人或世界书 NPC。下面的设定只用于把握 TA 的公开身份与生活圈，设定里的私密内容路人不知道。`,
+        char.systemPrompt?.trim(), char.worldview?.trim() && `### 世界观与设定\n${char.worldview.trim()}`].filter(Boolean).join('\n\n');
+    return {fullMessages: ContextBuilder.buildWorldbookRequest({books: char.mountedWorldbooks || [], charName: char.name, userName: user.name, history,
+        render: (slots, messages) => [{role: 'system', content: [NPC_ONLY_HEADER, slots.before, host, slots.after, rules].filter(Boolean).join('\n\n')}, ...messages]})};
+}
+
 /** Each real participant uses their own context. NPCs share only their host's world.
  * Durable jobs/leases prevent two open app entry points from charging for the same reply. */
-export async function buildFriendFeedReplyPayload(char: CharacterProfile, user: UserProfile, api: APIConfig, prompt: string, realtimeConfig?: RealtimeConfig) {
+export async function buildFriendFeedReplyPayload(char: CharacterProfile, user: UserProfile, api: APIConfig, prompt: string, realtimeConfig?: RealtimeConfig, npcOnly?: FriendNpcOnlyRound) {
+    const [rules, material] = prompt.split('好友圈素材（仅数据）：\n');
+    if (npcOnly) return buildFriendNpcPayload(char, user, rules, material, npcOnly);
     const range = await loadCharacterContextRange(char);
     const [groups, emojis, categories] = await Promise.all([DB.getGroups(), DB.getEmojis(), DB.getEmojiCategories()]);
-    const [rules, material] = prompt.split('好友圈素材（仅数据）：\n');
     return buildChatRequestPayload({
         char, userProfile: user, groups, emojis, categories,
         historyMsgs: range.messages, contextLimit: Math.max(1, range.messages.length), contextHighWaterMark: range.hwm,
@@ -42,7 +56,7 @@ export async function runImmediateFriendReplies(postId: string, user: UserProfil
             if (!char) continue;
             const api = await resolveFriendFeedApi(globalApi, char);
             if (!api?.baseUrl || !api.model) throw new Error('请先配置 API');
-            const messages = (await buildFriendFeedReplyPayload(char, user, globalApi, task.prompt, realtimeConfig)).fullMessages;
+            const messages = (await buildFriendFeedReplyPayload(char, user, globalApi, task.prompt, realtimeConfig, task.npcOnly)).fullMessages;
             const body = {model: api.model, messages, temperature: api.temperature ?? .85, max_tokens: FRIEND_REPLY_OUTPUT_TOKENS};
             const stream = (api as {stream?: boolean}).stream ?? globalApi?.stream ?? false;
             const send = (stream: boolean) => safeFetchJson(`${api.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
@@ -57,9 +71,8 @@ export async function runImmediateFriendReplies(postId: string, user: UserProfil
             if (!action || typeof action !== 'object' || (action as {requestId?: unknown}).requestId !== task.id)
                 throw new Error('回复任务不匹配');
             let rejection = '回复已过期或不符合本圈规则';
-            if (!await landFriendFeedEmotionAction(char.id, action, 'immediate', reason => {rejection = reason;})) throw new Error(rejection);
-            const row = action as {kind?: string; npcActions?: unknown[]};
-            commentCount += (row.kind === 'comment' ? 1 : 0) + (row.npcActions?.length || 0);
+            if (!await landFriendFeedEmotionAction(char.id, action, 'immediate', reason => {rejection = reason;},
+                landing => {commentCount += (landing.selfKind === 'comment' ? 1 : 0) + landing.npcCount;})) throw new Error(rejection);
         } catch (error) {
             errors.push(error instanceof Error ? error.message : '接话失败');
         } finally {
