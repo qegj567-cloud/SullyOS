@@ -215,7 +215,7 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
           ? 'bg-[#a8d6bb] border-b-[3px] border-[#86c29a] shadow-[0_3px_0_rgba(110,160,130,0.22)]'
           :
         headerStyle === 'gradient'
-            ? `bg-white/90 bg-gradient-to-r from-primary/20 via-primary/10 to-white/80 ${reducedBlur ? '' : 'backdrop-blur-xl '}border-b border-slate-200/60 shadow-sm`
+            ? `${reducedBlur ? 'bg-white/90 ' : 'backdrop-blur-xl '}bg-gradient-to-r from-primary/20 via-primary/10 to-white/80 border-b border-slate-200/60 shadow-sm`
             : headerStyle === 'minimal'
               ? `bg-white/95 ${reducedBlur ? '' : 'backdrop-blur-md '}border-b border-slate-200/50 shadow-sm`
               : headerStyle === 'wechat'

@@ -5,6 +5,7 @@ import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import MessageItem from '../components/chat/MessageItem';
+import ChatHeaderShell from '../components/chat/ChatHeaderShell';
 import { AppID, type ChatTheme, type Message } from '../types';
 import {
     REDUCED_BLUR_ATTR,
@@ -259,7 +260,7 @@ describe('多层毛玻璃去重与滚动列表滤镜守卫', () => {
             });
 
             expect(host.innerHTML).not.toContain('backdrop-blur');
-            expect(host.innerHTML).toContain('bg-white/85');
+            expect(host.innerHTML).toContain('bg-white/60');
         });
 
         it('bubbleVariant="ios" 在常规环境保留内联 backdropFilter，在 data-reduced-blur 下省略', async () => {
@@ -321,5 +322,45 @@ describe('多层毛玻璃去重与滚动列表滤镜守卫', () => {
             expect(reducedBubble).not.toBeNull();
             expect(reducedBubble.style.backdropFilter).toBe('');
         });
+    });
+
+    it('渐变顶栏在常规环境不垫白底，保留透出聊天背景的半透明渐变；仅降级模式垫白底', async () => {
+        (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+        const renderHeaderClass = async () => {
+            const host = document.createElement('div');
+            document.body.append(host);
+            const root = createRoot(host);
+            await act(async () => {
+                root.render(React.createElement(ChatHeaderShell, {
+                    selectionMode: false,
+                    selectedCount: 0,
+                    onCancelSelection: vi.fn(),
+                    activeCharacter: { id: 'c1', name: 'Sully', avatar: '' },
+                    isTyping: false,
+                    isSummarizing: false,
+                    lastTokenUsage: null,
+                    onClose: vi.fn(),
+                    onTriggerAI: vi.fn(),
+                    onShowCharsPanel: vi.fn(),
+                    headerStyle: 'gradient',
+                }));
+            });
+            const className = host.querySelector('.sully-chat-header')?.className ?? '';
+            await act(async () => root.unmount());
+            host.remove();
+            return className;
+        };
+
+        document.documentElement.removeAttribute(REDUCED_BLUR_ATTR);
+        const normal = await renderHeaderClass();
+        expect(normal).toContain('bg-gradient-to-r');
+        expect(normal).toContain('backdrop-blur-xl');
+        expect(normal).not.toContain('bg-white/90');
+
+        document.documentElement.setAttribute(REDUCED_BLUR_ATTR, '');
+        const reduced = await renderHeaderClass();
+        document.documentElement.removeAttribute(REDUCED_BLUR_ATTR);
+        expect(reduced).toContain('bg-white/90');
+        expect(reduced).not.toContain('backdrop-blur');
     });
 });
