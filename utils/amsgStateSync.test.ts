@@ -927,6 +927,52 @@ describe('LLM 凭据行的后台重传', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(ActiveMsgClient.putLlmCredentials).toHaveBeenCalledTimes(1);
   });
+
+  it('某个角色在云端已停用 → 其余角色照常更新，不无限重试，并点名停用的角色', async () => {
+    vi.mocked(isLlmCredentialsReady).mockResolvedValue(true);
+    const RETIRED = { ...CHAR, id: 'char-retired', name: '小明' } as any as CharacterProfile;
+    vi.mocked(DB.getAllCharacters).mockResolvedValue([CHAR, RETIRED] as any);
+    const retiredError = () => Object.assign(new Error('CLOUD_OWNER_RETIRED'), { code: 'CLOUD_OWNER_RETIRED' });
+    // 服务端整批一个事务：混着停用角色的整批会被拒，单传停用角色也被拒。
+    vi.mocked(ActiveMsgClient.putLlmCredentials).mockImplementation(async (rows) => {
+      if (rows.some((row) => row.credId.startsWith('char:char-retired/'))) throw retiredError();
+      return rows.length;
+    });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    // 这个文件跑在 node 环境，没有 window；临时塞一个事件目标接住对账事件。
+    const onConflict = vi.fn();
+    const fakeWindow = new EventTarget();
+    fakeWindow.addEventListener('amsg2-owner-conflict', onConflict);
+    (globalThis as any).window = fakeWindow;
+
+    try {
+      syncAmsgLlmCredentials(API);
+      await vi.advanceTimersByTimeAsync(0);
+    } finally {
+      delete (globalThis as any).window;
+    }
+
+    expect(ActiveMsgClient.putLlmCredentials).toHaveBeenCalledWith([
+      expect.objectContaining({ credId: 'char:char-cred-sync/chat' }),
+    ]);
+    expect(localStorage.getItem(AMSG2_PENDING_CRED_SYNC_LS_KEY), '重试也过不去，不该留欠账').toBeNull();
+    expect(warn.mock.calls.flat().join(' ')).toContain('小明（char-retired）');
+    expect(onConflict, '要叫对账弹窗出来问用户').toHaveBeenCalledTimes(1);
+    const calls = vi.mocked(ActiveMsgClient.putLlmCredentials).mock.calls.length;
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(ActiveMsgClient.putLlmCredentials).toHaveBeenCalledTimes(calls);
+  });
+
+  it('不是停用导致的失败 → 照旧整体退避重试，不拆开', async () => {
+    vi.mocked(isLlmCredentialsReady).mockResolvedValue(true);
+    primeLedgerWithOldKey();
+    vi.mocked(ActiveMsgClient.putLlmCredentials).mockRejectedValue(Object.assign(new Error('boom'), { code: 'INTERNAL_ERROR' }));
+
+    syncAmsgLlmCredentials(API);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ActiveMsgClient.putLlmCredentials).toHaveBeenCalledTimes(1);
+    expect(localStorage.getItem(AMSG2_PENDING_CRED_SYNC_LS_KEY)).toBe('1');
+  });
 });
 
 describe('活跃会话租约', () => {

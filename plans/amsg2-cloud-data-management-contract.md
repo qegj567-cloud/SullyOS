@@ -102,6 +102,7 @@ SullyOS 规则：`amsg:char:<id>`、`char:<id>/<purpose>`、任务 metadata.char
 - 预览由 `createCloudDataCleanupPlan` 返回，执行由 `startCloudDataCleanup({planId,idempotencyKey})` 返回操作；`getCloudDataCleanupOperation` 只读进度。页面仅轮询 pending/running 操作，每 4 秒一次。后续批次依赖 Worker 的 Cron Trigger；暂停后台任务的部署需要恢复定时触发。
 - 普通清理 `purge` 固定资源及版本；删除角色用 `retire-owner`，成功受理响应必须已经建立停用屏障。未确认时保留本地角色，用户可明确选择仍删本地。
 - `getCloudDataOwner` 查询状态，`restoreCloudDataOwner` 明确恢复。恢复操作返回新 generation；已启用的 owner 返回当前代次供另一设备明确接入。每个浏览器连接在创建时冻结代次，旧异步请求不会随恢复获得新权限；停用/恢复时同时丢弃待重试的旧上下文快照。
+- 本地角色和云端停用登记对不上时（在别的设备删除或恢复过、导入了含已删角色的旧备份、本机清过浏览器数据），由 `AmsgOwnerConflictNotice` 弹窗让用户选：已停用的「继续使用」（恢复）或「删除本机」，代次对不上的「在本机接入」；「以后再说」则下次启动再问。检查时机是启动、导入备份重启后、凭据上传被拒时；判断逻辑在 `utils/amsgOwnerReconcile.ts`。凭据整批上传被拒时按角色拆开重传，其余角色不受影响。
 - 删除角色的请求身份、计划编号和幂等键按 Worker/user 保存在本机。丢响应后重试同一请求；本地角色已删也能从管理面板再次提交。此记录只是未确认请求，不作为云端资源存在的证据。
 - `amsg:global` 及订阅使用 `owner:null`、`kind:global-state/global-subscription`；不随单角色移除。未知资源同为 null，但没有共享 kind，界面显示“归属未知”。
 - 旧 Worker 只允许查看明确标成不完整的旧清单。角色删除保留旧兼容路径；设置中的旧组合“清空云端数据”按钮已移除，统一使用云端管理预览。
