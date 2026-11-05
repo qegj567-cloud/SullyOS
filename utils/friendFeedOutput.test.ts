@@ -1,5 +1,5 @@
 import {expect,it} from 'vitest';
-import {parseDedicatedFriendFeedAction} from './friendFeedOutput';
+import {parseDedicatedFriendFeedAction,readDedicatedFriendFeedResponse} from './friendFeedOutput';
 import {normalizeFriendFeedAction} from './friendFeedReplyFormat';
 
 it('accepts a complete bare or fenced action and equivalent text fields without inventing identity',()=>{
@@ -18,4 +18,15 @@ it('never completes a truncated action or changes a contradictory task ID',()=>{
 
 it('accepts a caption-only image post without inventing text, preserving cards for validation',()=>{
     expect(normalizeFriendFeedAction({requestId:'task',kind:'post',imageCards:[{caption:'晚霞',description:'窗外粉色的云'}]})).toMatchObject({text:'',imageCards:[{caption:'晚霞',description:'窗外粉色的云'}]});
+});
+
+it('accepts filled text next to an empty alias and optional empty image cards',()=>{
+    expect(parseDedicatedFriendFeedAction(JSON.stringify({request_id:'r',kind:'comment',post_id:'p',comment:null,content:'就这个！',imageCards:[],npc_actions:[]}))).toEqual(expect.objectContaining({requestId:'r',postId:'p',comment:'就这个！',npcActions:[]}));
+    expect(normalizeFriendFeedAction({kind:'comment',comment:'好',imageCards:[]})).not.toHaveProperty('imageCards');
+    expect(()=>readDedicatedFriendFeedResponse({choices:[{finish_reason:'length',message:{content:'{}'}}]})).toThrow('截断');
+});
+
+it('reads the final action after a proxy includes a tagged draft in the reply',()=>{
+ const content='<think>{"friendFeedAction":{"requestId":"draft","kind":"none"}}</think>\n{"friendFeedAction":{"requestId":"current","kind":"none"}}';
+ expect(readDedicatedFriendFeedResponse({choices:[{message:{content}}]})).toMatchObject({requestId:'current'});
 });

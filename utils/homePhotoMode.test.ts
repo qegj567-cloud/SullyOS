@@ -4,7 +4,7 @@ import {createRoot} from 'react-dom/client';
 import {afterEach,beforeEach,it,expect,vi} from 'vitest';
 import HomePhotoMode from '../apps/room3d/HomePhotoMode';
 import {PHOTO_LETTERING_KEY} from '../apps/room3d/photoLettering';
-vi.mock('../apps/room3d/PhotoActions',()=>({PhotoActions:()=>null}));
+
 vi.mock('../apps/room3d/PhotoFilterPresets',()=>({default:()=>null}));
 vi.mock('../utils/shareExport',()=>({shareOrDownloadBlob:vi.fn()}));
 vi.mock('@phosphor-icons/react',()=>({Camera:()=>null,X:()=>null,DownloadSimple:()=>null,ArrowCounterClockwise:()=>null}));
@@ -22,7 +22,7 @@ beforeEach(()=>{
  root=createRoot(host);
 });
 afterEach(()=>{act(()=>root.unmount());vi.restoreAllMocks();vi.unstubAllGlobals();});
-async function setup(actors:Array<{id:string;label:string}>=[]){const editor={beginPhotoMode:vi.fn(()=>actors),endPhotoMode:vi.fn(),setPhotoCamera:vi.fn(),setPhotoTogether:vi.fn(),renderPhoto:vi.fn(),subscribePhoto:vi.fn(()=>()=>{})};const close=vi.fn();await act(async()=>{root.render(React.createElement(HomePhotoMode,{editor:editor as any,onClose:close}));});await act(async()=>{await new Promise(r=>setTimeout(r,10));});return {editor,close};}
+async function setup(actors:Array<{id:string;label:string}>=[]){const editor={beginPhotoMode:vi.fn(()=>actors),endPhotoMode:vi.fn(),setPhotoCamera:vi.fn(),setPhotoTogether:vi.fn(),setPhotoPose:vi.fn(),setPhotoInteraction:vi.fn(),renderPhoto:vi.fn(),subscribePhoto:vi.fn(()=>()=>{})};const close=vi.fn();await act(async()=>{root.render(React.createElement(HomePhotoMode,{editor:editor as any,onClose:close}));});await act(async()=>{await new Promise(r=>setTimeout(r,10));});return {editor,close};}
 async function click(label:string){const button=[...host.querySelectorAll('button')].find(b=>(b.getAttribute('aria-label')||b.textContent)===label)!;expect(button).toBeTruthy();await act(async()=>button.click());}
 it('opens the lens controls in portrait and exports the chosen aspect',async()=>{
  const {editor}=await setup();expect(editor.renderPhoto.mock.calls.at(-1)?.[2]).toMatchObject({aspect:3/4,quality:'preview'});
@@ -81,4 +81,10 @@ it('waits for the chosen font before rendering the saved photo',async()=>{
   expect((host.querySelector('[aria-label="拍下合影"]') as HTMLButtonElement).disabled).toBe(true);
   await act(async()=>loaded());expect(editor.renderPhoto.mock.calls.some(c=>c[2]?.quality==='export')).toBe(true);
  }finally{if(original)Object.defineProperty(document,'fonts',original);else Reflect.deleteProperty(document,'fonts');}
+});
+
+it('keeps the selected pose and its adjustment controls across a shot and continue',async()=>{
+ await setup([{id:'a',label:'小白'},{id:'b',label:'小绿'}]);await click('动作');
+ const first=host.querySelector<HTMLButtonElement>('.photo-action-grid button')!;await act(async()=>first.click());const selected=host.querySelector('.photo-action-preview strong')!.textContent;
+ await click('拍下合影');await click('继续拍');expect(host.querySelector('.photo-action-preview strong')?.textContent).toBe(selected);await click('选择动作');await click('镜头');expect(host.querySelector('.photo-formats')).toBeTruthy();
 });

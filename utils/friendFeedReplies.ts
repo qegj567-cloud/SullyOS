@@ -1,5 +1,5 @@
-import {FRIEND_REPLY_OUTPUT_TOKENS} from './friendFeedLimits';
-import {parseDedicatedFriendFeedAction} from './friendFeedOutput';
+import {FRIEND_REPLY_OUTPUT_TOKENS, withFriendFeedOutputBudget} from './friendFeedLimits';
+import {readDedicatedFriendFeedResponse} from './friendFeedOutput';
 import type {APIConfig, UserProfile, CharacterProfile, RealtimeConfig} from '../types';
 import {DB} from './db';
 import {readFriendFeed, mutateFriendFeed} from './friendFeed';
@@ -9,7 +9,6 @@ import {loadCharacterContextRange} from './chatContextRange';
 import {buildChatRequestPayload} from './chatRequestPayload';
 import {resolveFriendFeedApi} from './friendFeedApi';
 import {loadMusicPlaybackSnapshot} from '../context/MusicContext';
-import {extractAssistantText} from './emotionApply';
 import {safeFetchJson} from './safeApi';
 
 const NPC_ONLY_HEADER = '本轮你不扮演任何真实角色，只负责写哔哔路人。本人动作固定为 kind=none，所有正文放进 npcActions。路人只知道公开内容，不知道任何人的私聊、记忆或内心。';
@@ -56,15 +55,17 @@ export async function runImmediateFriendReplies(postId: string, user: UserProfil
             if (!char) continue;
             const api = await resolveFriendFeedApi(globalApi, char);
             if (!api?.baseUrl || !api.model) throw new Error('请先配置 API');
-            const messages = (await buildFriendFeedReplyPayload(char, user, globalApi, task.prompt, realtimeConfig, task.npcOnly)).fullMessages;
-            const body = {model: api.model, messages, temperature: api.temperature ?? .85, max_tokens: FRIEND_REPLY_OUTPUT_TOKENS};
+            const maxTokens = FRIEND_REPLY_OUTPUT_TOKENS;
+            const prompt = withFriendFeedOutputBudget(task.prompt, maxTokens);
+            const messages = (await buildFriendFeedReplyPayload(char, user, globalApi, prompt, realtimeConfig, task.npcOnly)).fullMessages;
+            const body = {model: api.model, messages, temperature: api.temperature ?? .85, max_tokens: maxTokens};
             const stream = (api as {stream?: boolean}).stream ?? globalApi?.stream ?? false;
             const send = (stream: boolean) => safeFetchJson(`${api.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST', headers: {'Content-Type': 'application/json', Authorization: `Bearer ${api.apiKey || 'sk-none'}`},
                 body: JSON.stringify({...body, stream, ...(stream ? {stream_options: {include_usage: true}} : {})}),
             }, 0, 0, {appName: '哔哔', charId: char.id, charName: char.name, purpose: '评论接话'});
             const data = await send(stream);
-            const result = parseDedicatedFriendFeedAction(extractAssistantText(data.choices?.[0]?.message));
+            const result = readDedicatedFriendFeedResponse(data);
             if (result === undefined) throw new Error('回复格式不完整');
             const action = result === null
                 ? {requestId: task.id, kind: 'none', npcActions: []} : result;

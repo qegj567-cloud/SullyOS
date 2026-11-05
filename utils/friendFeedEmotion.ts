@@ -296,12 +296,18 @@ export async function landFriendFeedEmotionAction(charId: string, action: unknow
     const cards=row.imageCards as FriendImageCard[]|undefined;
     const validPostText=(text:unknown,images?:FriendImageCard[])=>validText(text,FRIEND_POST_TEXT_LIMIT)||typeof text==='string'&&!text.trim()&&!!images?.length;
     // Judged once the round is known: a self action the round does not accept is skipped, not rejected.
-    const selfError = row.accountId !== undefined && typeof row.accountId !== 'string' ? '模型返回的账号 ID 格式不正确'
-        : row.imageCards!==undefined&&(!['post','repost'].includes(String(kind))||!validFriendImageCards(row.imageCards)) ? '配图描述格式不完整，或用于了评论动作'
-        : !['post', 'comment', 'none', 'repost','follow','unfollow'].includes(kind as string)
-        || (kind === 'comment' && (typeof row.postId !== 'string' || !validText(row.comment, FRIEND_COMMENT_TEXT_LIMIT)))
-        || (kind === 'post' && !validPostText(row.text,cards))
-        || (kind === 'repost' && (typeof row.postId !== 'string' || !validPostText(row.text,cards))) ? `动态动作或正文不完整；动态最多 ${FRIEND_POST_TEXT_LIMIT} 字，评论最多 ${FRIEND_COMMENT_TEXT_LIMIT} 字` : undefined;
+    const validateSelf = () => {
+        if (row.accountId !== undefined && typeof row.accountId !== 'string') return '模型返回的账号 ID 格式不正确';
+        if (row.imageCards !== undefined && (!['post','repost'].includes(String(kind)) || !validFriendImageCards(row.imageCards))) return '配图描述格式不完整，或用于了评论动作';
+        if (!['post','comment','none','repost','follow','unfollow'].includes(String(kind))) return '模型返回了无法识别的动态动作';
+        if ((kind === 'comment' || kind === 'repost') && (typeof row.postId !== 'string' || !row.postId.trim())) return '回复缺少目标动态的 postId';
+        if (kind !== 'comment' && kind !== 'post' && kind !== 'repost') return;
+        const body = kind === 'comment' ? row.comment : row.text;
+        const limit = kind === 'comment' ? FRIEND_COMMENT_TEXT_LIMIT : FRIEND_POST_TEXT_LIMIT;
+        if (typeof body !== 'string' || (!body.trim() && !cards?.length)) return '回复缺少可发布的正文';
+        if (body.trim().length > limit) return `正文共 ${body.trim().length} 字，超过本轮 ${limit} 字上限`;
+    };
+    const selfError = validateSelf();
     const rawNpcs = row.npcActions ?? [];
     if (!Array.isArray(rawNpcs)) return reject('路人内容格式不正确，内容未保存');
     if (rawNpcs.some(n => n && typeof n === 'object' && !Array.isArray(n) && hasFriendAuthorOverride(n, true))) return reject('模型试图更换路人的发布者身份，内容未保存');

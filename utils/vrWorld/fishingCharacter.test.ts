@@ -42,3 +42,9 @@ it('distinguishes text goods from real specimens and uses the model-selected cat
     expect(next.inventory.find(c=>c.id==='chosen')?.ownerId).toBe(b.id);
     expect(next.inventory.find(c=>c.id==='first')?.ownerId).toBe(a.id);
 });
+
+it('reads one JSON board decision or the legacy tags; an unknown action cannot become a browse',()=>{
+    expect(parseMarketPlan('决定如下：\n{"action":"sell","catchIds":["fish-1"],"price":null,}')).toMatchObject({action:'sell',catchIds:['fish-1']});
+    expect(parseMarketPlan('<ACTION>sell</ACTION><CATCH>fish-1</CATCH><PRICE>留空</PRICE>')).toMatchObject({action:'sell',catchIds:['fish-1']});
+    for (const text of ['<NOTE>绕了一圈</NOTE>','<ACTION>unknown</ACTION><NOTE>看一眼</NOTE>', '{"action":"sell","catchIds":["one","one"]}','{"action":"list","catchId":"x"}']) expect(parseMarketPlan(text)).toBeNull();
+});

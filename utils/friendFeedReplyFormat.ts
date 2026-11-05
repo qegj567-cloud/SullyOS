@@ -39,7 +39,7 @@ export function normalizeFriendFeedAction(value: unknown): unknown {
     if (!record(value)) return value;
     const normalize = (input: Record<string, unknown>, npc: boolean) => {
         const row = {...input};
-        for (const [canonical, alias] of [['requestId','request_id'], ['accountId','account_id'], ['postId','post_id']]) {
+        for (const [canonical, alias] of [['requestId','request_id'], ['accountId','account_id'], ['postId','post_id'], ['npcActions','npc_actions']]) {
             if (row[alias] !== undefined) {
                 if (row[canonical] !== undefined && row[canonical] !== row[alias]) return null;
                 row[canonical] = row[alias]; delete row[alias];
@@ -47,11 +47,12 @@ export function normalizeFriendFeedAction(value: unknown): unknown {
         }
         if (typeof row.kind === 'string') row.kind = row.kind.trim().toLowerCase();
         const field = !npc && (row.kind === 'comment' || row.kind === undefined) ? 'comment' : 'text';
-        if (row[field] === undefined) {
-            const aliases = [row.content, row[field === 'text' ? 'comment' : 'text']].filter(v => v !== undefined);
+        if (row[field] == null || (typeof row[field] === 'string' && !(row[field] as string).trim())) {
+            const aliases = [row.content, row[field === 'text' ? 'comment' : 'text']].filter(v => typeof v === 'string' && v.trim());
             if (aliases.length && aliases.every(v => v === aliases[0])) row[field] = aliases[0];
         }
         if (row.text === undefined && ['post','repost'].includes(String(row.kind)) && Array.isArray(row.imageCards) && row.imageCards.length) row.text = '';
+        if (Array.isArray(row.imageCards) && !row.imageCards.length) delete row.imageCards;
         // JSON schemas often emit null for unused optional fields.
         for (const key of ['accountId','imageCards','replyToCommentId','replyToSourceCommentId','replyToNpcIndex','followAuthorId','learnIdentities']) {
             if (row[key] === null) delete row[key];

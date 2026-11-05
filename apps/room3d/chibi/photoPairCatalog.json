@@ -1,0 +1,8 @@
+[
+ {"id":"photo-heart","label":"合一颗小心心","style":"heart","sources":["heart","heart"],"category":"portrait-friends","duration":6,"defaultTime":3.5,"romantic":false},
+ {"id":"photo-peace","label":"双倍耶！","style":"peace","sources":["peace","peace"],"category":"portrait-friends","duration":6,"defaultTime":3.5,"romantic":false},
+ {"id":"photo-linked","label":"牵着你翘脚","style":"linked","sources":["handhold","handhold"],"category":"portrait-friends","duration":6,"defaultTime":3.5,"romantic":false},
+ {"id":"photo-shoulder","label":"搭肩拍一张","style":"shoulder","sources":["shoulder","peace"],"category":"portrait-friends","duration":6,"defaultTime":3.5,"romantic":false},
+ {"id":"photo-peek","label":"从你背后探头","style":"peek","sources":["peace","peek"],"category":"portrait-couple","duration":6,"defaultTime":3.5,"romantic":true},
+ {"id":"photo-bunny","label":"兔耳贴贴","style":"bunny","sources":["bunny","bunny"],"category":"portrait-friends","duration":6,"defaultTime":3.5,"romantic":false}
+]

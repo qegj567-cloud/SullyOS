@@ -42,7 +42,7 @@ export function buildVRSystemAddendum(room: VRRoomDef, charName: string, sarActi
         ...roomStanceLines(room.id, charName, sarActivity),
         ``,
         `完成后严格按下面的格式输出，不要有格式之外的多余文字。`,
-        kanataTitleActivityPrompt(title, sarActivity === 'fishing' || sarActivity === 'garden', titleUnlocked),
+        kanataTitleActivityPrompt(title, sarActivity === 'fishing' || sarActivity === 'market' || sarActivity === 'garden', titleUnlocked),
     ].join('\n');
 }
 

@@ -31,6 +31,10 @@ describe('布告板多人路人',()=>{
   const actions=dialogue(snapshot.visitors.map(v=>v.id));actions[0]={actorId:'wanderer:0',action:'comment',targetId:input.requests[0].id,words:'看鱼愿不愿意。'} as any;actions.forEach(a=>{if('targetId' in a)a.targetId=input.requests[0].id;});
   const state=applyMarketNPCs(input,snapshot,plan(snapshot,actions)).state;expect(state.requests[0].body).toBe('真的能砍价吗？');expect(state.requests[0].comments).toHaveLength(3);expect(snapshot.prompt).toContain('真的能砍价吗');
  });
+ it('accepts one explicit action per visitor on a two-person visit',()=>{
+  const snapshot=prepareMarketNPCs(initial(),()=>.1), actions=dialogue(snapshot.visitors.map(v=>v.id)).slice(0,2);
+  expect(plan(snapshot,actions)).toHaveLength(2);
+ });
  it('rejects impersonation, bad refs, excessive actions and duplicate references before any write',()=>{
   const snapshot=prepareMarketNPCs(initial(),()=>.1),actions=dialogue(snapshot.visitors.map(v=>v.id));
   for(const wrong of [[{...actions[0],actorId:'user'},...actions.slice(1)],[actions[0],{...actions[1],targetId:'invented'},actions[2]],Array(9).fill(actions[1]),[actions[0],actions[1],{...actions[0],ref:'n1'}]])expect(()=>plan(snapshot,wrong)).toThrow();

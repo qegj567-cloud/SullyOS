@@ -105,7 +105,9 @@ it('reports failure once, closes the attempt and never silently retries or falls
     expect((await readFriendFeed()).replyJobs!.every(j => j.done && !j.lease)).toBe(true);
     expect(safeFetchJson).toHaveBeenCalledTimes(1);
     expect(vi.mocked(safeFetchJson).mock.calls[0][0]).toBe('https://bibi.invalid/v1/chat/completions');
-    expect(JSON.parse(String(vi.mocked(safeFetchJson).mock.calls[0][1]!.body))).toMatchObject({model:'bibi',stream:false});
+    const body=JSON.parse(String(vi.mocked(safeFetchJson).mock.calls[0][1]!.body));
+    expect(body).toMatchObject({model:'bibi',stream:false,max_tokens:8000});
+    expect(JSON.stringify(body.messages)).toContain(`整份 JSON 的请求上限为 ${body.max_tokens} tokens`);
     vi.mocked(safeFetchJson).mockResolvedValue({choices: [{message: {content: '{"friendFeedAction":null}'}}]});
     await expect(runImmediateFriendReplies(id, user, api)).rejects.toThrow('没有可参与接话');
     expect(safeFetchJson).toHaveBeenCalledTimes(1);

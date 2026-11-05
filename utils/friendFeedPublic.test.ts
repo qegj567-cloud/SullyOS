@@ -239,6 +239,7 @@ it.each(['related','stranger'] as const)('sends no private chat or memories in a
     await refreshFriendFeed(user,api,undefined,undefined,()=>0,id);
     const sent=JSON.stringify(vi.mocked(safeFetchJson).mock.calls[0]);
     expect(sent).toContain('今天下雨');
+    expect(sent).toContain('整份 JSON 的请求上限为 8000 tokens');
     expect(sent).not.toContain('只在私聊说过的话');expect(sent).not.toContain('只在记忆里的私事');
     expect(sent.includes('只有阿白的设定')).toBe(kind==='related');
 });
@@ -270,8 +271,20 @@ it('publishes a complete bare action with alternate fields at the higher output 
         const body=JSON.parse(init!.body as string);
         const match=JSON.stringify(body.messages).match(/\\"requestId\\":\\"([^"\\]+)\\"/)!;
         expect(body.max_tokens).toBe(16000);
+        expect(JSON.stringify(body.messages)).toContain(`整份 JSON 的请求上限为 ${body.max_tokens} tokens`);
         return {choices:[{message:{content:JSON.stringify({request_id:match[1],kind:' POST ',content:'风'.repeat(4000)})}}]};
     });
     await refreshFriendFeed(user,api,undefined,undefined,()=>0);
     expect((await readFriendFeed()).posts[0].text).toHaveLength(4000);expect(safeFetchJson).toHaveBeenCalledOnce();
+});
+
+it('reports missing post text separately from the actual character limit on refresh',async()=>{
+    await publicSettings();
+    response({kind:'post'});
+    await expect(refreshFriendFeed(user,api,undefined,undefined,()=>0)).rejects.toThrow('缺少可发布的正文');
+    response({kind:'post',text:'甲'.repeat(4001)});
+    await expect(refreshFriendFeed(user,api,undefined,undefined,()=>0)).rejects.toThrow('4001 字，超过本轮 4000 字上限');
+    response({kind:'post',text:null,content:'换一种写法也能发布',imageCards:[]});
+    await refreshFriendFeed(user,api,undefined,undefined,()=>0);
+    expect((await readFriendFeed()).posts[0].text).toBe('换一种写法也能发布');
 });
