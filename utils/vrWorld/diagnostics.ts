@@ -21,10 +21,9 @@ import { readStorageOverview, formatBytes } from '../storageStats';
 /** 页面这次是什么时候起来的——用来看「跑了多久攒出这些记录」。 */
 const PAGE_STARTED_AT = Date.now();
 
-/** 调度相关的 localStorage 键，一次全捞出来（彼方 / 主动发消息 / 家园各一套）。 */
+/** 调度相关的 localStorage 键，一次全捞出来（彼方 / 家园各一套）。 */
 const SCHEDULE_KEYS = [
     'vr_schedules', 'vr_last_fire', 'vr_fail_streak',
-    'proactive_schedules', 'proactive_last_fire',
     'world_schedules', 'world_last_fire',
 ];
 

@@ -88,7 +88,8 @@ const staticManifest = typeof __STATIC_CACHE_MANIFEST__ === 'undefined' ? undefi
  */
 // 1.20.0: 静态资源缓存、离线启动、用户确认更新；保留原推送注册。
 // 1.22.0: amsg-sw next.8，修复并发冲刷回执与分片收尾失败的诊断。
-const SW_VERSION = '1.22.0';
+// 1.23.0: 移除主动消息 1.0 的本地定时器（proactive-start / stop / sync 消息不再处理）。
+const SW_VERSION = '1.23.0';
 
 const PING_INTERVAL = 15_000;
 const MAX_MANUAL_ALIVE_MS = 5 * 60_000;
@@ -111,9 +112,6 @@ const PUSH_SUBSCRIPTION_CHANGED_KV_ID = 'push_subscription_changed_v1';
 let pingTimer: number | null = null;
 let manualKeepAliveCount = 0;
 let manualKeepAliveStartedAt = 0;
-
-const proactiveSchedules = new Map<string, { charId: string; intervalMs: number }>();
-const proactiveTimers = new Map<string, number>();
 
 const sw = self as unknown as ServiceWorkerGlobalScope;
 
@@ -284,12 +282,8 @@ installReiSW(diagnosticNotificationScope(sw, appendDiagnosticEvent), {
   },
 });
 
-function hasActiveProactiveSchedules() {
-  return proactiveTimers.size > 0;
-}
-
 function shouldKeepAlive() {
-  return manualKeepAliveCount > 0 || hasActiveProactiveSchedules();
+  return manualKeepAliveCount > 0;
 }
 
 function stopPingLoop() {
@@ -392,51 +386,6 @@ async function notifyClients(data: Record<string, any>) {
     ...(failures.length > 0 ? { failures } : {}),
     ...(matchError ? { matchError } : {}),
   });
-}
-
-function fireProactiveTrigger(charId: string) {
-  void notifyClients({ type: 'proactive-trigger', charId });
-}
-
-function stopProactive(charId: string) {
-  const timer = proactiveTimers.get(charId);
-  if (timer) {
-    clearInterval(timer);
-    proactiveTimers.delete(charId);
-  }
-  proactiveSchedules.delete(charId);
-}
-
-const MIN_PROACTIVE_INTERVAL_MS = 30 * 60 * 1000;
-
-function upsertProactive(config: { charId: string; intervalMs: number }) {
-  const safeIntervalMs = Math.max(MIN_PROACTIVE_INTERVAL_MS, Math.round(config.intervalMs));
-  const safeConfig = { charId: config.charId, intervalMs: safeIntervalMs };
-  const prev = proactiveSchedules.get(safeConfig.charId);
-  const unchanged = prev && prev.intervalMs === safeConfig.intervalMs;
-  if (unchanged && proactiveTimers.has(safeConfig.charId)) return;
-
-  stopProactive(safeConfig.charId);
-  proactiveSchedules.set(safeConfig.charId, safeConfig);
-
-  const timer = setInterval(() => fireProactiveTrigger(safeConfig.charId), safeConfig.intervalMs) as unknown as number;
-  proactiveTimers.set(safeConfig.charId, timer);
-}
-
-function syncProactive(configs: Array<{ charId: string; intervalMs: number }>) {
-  const nextIds = new Set((configs || []).map((config) => config.charId));
-
-  for (const charId of Array.from(proactiveSchedules.keys())) {
-    if (!nextIds.has(charId)) stopProactive(charId);
-  }
-
-  for (const config of configs || []) {
-    if (config && config.charId && config.intervalMs > 0) {
-      upsertProactive(config);
-    }
-  }
-
-  refreshKeepAlive();
 }
 
 function readPushPayload(event: PushEvent): any | null {
@@ -844,22 +793,6 @@ sw.addEventListener('message', (event: ExtendableMessageEvent) => {
       break;
     case 'keepalive-stop':
       stopKeepAlive();
-      break;
-    case 'proactive-start':
-      if (event.data.config) {
-        syncProactive([...proactiveSchedules.values(), event.data.config]);
-      }
-      break;
-    case 'proactive-stop':
-      if (event.data.charId) {
-        stopProactive(event.data.charId);
-        refreshKeepAlive();
-      } else {
-        syncProactive([]);
-      }
-      break;
-    case 'proactive-sync':
-      syncProactive(event.data.configs || []);
       break;
   }
 });

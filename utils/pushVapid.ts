@@ -3,8 +3,7 @@
  *
  * The 主动消息 2.0 one-click deploy reuses the key pair stored here (and
  * writes the generated pair back), so redeploying keeps browser push
- * subscriptions valid. Proactive Push (utils/proactivePushConfig.ts) reads
- * the public key from here as well.
+ * subscriptions valid.
  *
  * Private key is intentionally persisted too: the user has to paste it
  * into their Cloudflare Worker env, and re-displaying it later is much

@@ -1,17 +1,15 @@
 /**
  * 「彼方」自主登入调度器。
  *
- * 复用 proactiveChat.ts 经过验证的稳态定时模式：
+ * 稳态定时模式：
  *   - 前台：单个精确 setTimeout 命中下一个到期时刻（前台计时器准）
  *   - visibilitychange / focus：回到前台时立刻补火 + 重排（后台节流会延迟）
  *   - 主线程 20s 轮询：最后兜底，防止精确计时器被后台节流卡死
  *
- * 但用**独立的存储键**（vr_schedules / vr_last_fire），和主动发消息
- * (proactive_schedules) 各自独立、互不挤占触发。
+ * 排程存在独立的存储键（vr_schedules / vr_last_fire）。
  *
- * 说明：v1 不接 Service Worker / Cloudflare 云端唤醒（那套 channel 与
- * proactive 强绑定）。前台精确计时 + 可见性补火已能覆盖"用户打开 App 时
- * 角色按时登入"的核心诉求；云端加速可后续叠加。
+ * 不接 Service Worker / Cloudflare 云端唤醒：前台精确计时 + 可见性补火已能覆盖
+ * "用户打开 App 时角色按时登入"的核心诉求。
  */
 
 import type { VRSARActivity } from '../../types';

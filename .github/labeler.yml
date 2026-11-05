@@ -16,8 +16,6 @@
           - 'components/chat/ActiveMsg*'
           - 'components/settings/ActiveMsg*'
           - 'utils/instantTraceLog*'
-          - 'worker/proactive-push/**'
-          - 'utils/proactive*'
 
 'scope: pushSubscription':
   - changed-files:

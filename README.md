@@ -289,7 +289,6 @@ VITE_HIDE_BUILD_BADGE=1 npm run build
 | 功能 | 位置 | 说明 |
 |------|------|------|
 | 主动消息 2.0（含即时对话） | [`worker/amsg/`](./worker/amsg/) + 设置里一键部署或填地址 | 每个用户自己部署一个 CF Worker，教程见 [`docs/amsg2-setup-walkthrough.md`](./docs/amsg2-setup-walkthrough.md) |
-| 主动消息推送 | `worker/proactive-push/` + `utils/proactivePushConfig.ts` | 同上，自己部署 |
 | 小红书 Lite | `worker/xhs-lite/` + 小红书设置里填地址 | 自己部署 |
 | 网易云音乐（可选覆盖） | 播放器设置里可单独填 | 不填就跟随主代理 |
 
