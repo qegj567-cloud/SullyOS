@@ -10,6 +10,7 @@ export interface HomeEditor {
  isSocialReplyBusy():boolean;
  setJoinedResidentIds(ids:string[]):void;
  canPlaySocial(action:string,a:string,b?:string):boolean;
+ canPlayPhoto(action:string,a:string,b?:string):boolean;
  setRomanticRelation(a:string,b:string,enabled:boolean):void;
  getGuestActions(id:string):HomeScene['actions'];
  performGuestAction(id:string,action:string):boolean;

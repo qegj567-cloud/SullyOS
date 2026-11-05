@@ -1,5 +1,5 @@
 import {FRIEND_REPLY_OUTPUT_TOKENS} from './friendFeedLimits';
-import {parseDedicatedFriendFeedAction} from './friendFeedOutput';
+import {readDedicatedFriendFeedResponse} from './friendFeedOutput';
 import type {APIConfig, UserProfile, CharacterProfile, RealtimeConfig} from '../types';
 import {DB} from './db';
 import {readFriendFeed, mutateFriendFeed} from './friendFeed';
@@ -9,7 +9,6 @@ import {loadCharacterContextRange} from './chatContextRange';
 import {buildChatRequestPayload} from './chatRequestPayload';
 import {resolveFriendFeedApi} from './friendFeedApi';
 import {loadMusicPlaybackSnapshot} from '../context/MusicContext';
-import {extractAssistantText} from './emotionApply';
 import {safeFetchJson} from './safeApi';
 
 const NPC_ONLY_HEADER = '本轮你不扮演任何真实角色，只负责写哔哔路人。本人动作固定为 kind=none，所有正文放进 npcActions。路人只知道公开内容，不知道任何人的私聊、记忆或内心。';
@@ -64,7 +63,7 @@ export async function runImmediateFriendReplies(postId: string, user: UserProfil
                 body: JSON.stringify({...body, stream, ...(stream ? {stream_options: {include_usage: true}} : {})}),
             }, 0, 0, {appName: '哔哔', charId: char.id, charName: char.name, purpose: '评论接话'});
             const data = await send(stream);
-            const result = parseDedicatedFriendFeedAction(extractAssistantText(data.choices?.[0]?.message));
+            const result = readDedicatedFriendFeedResponse(data);
             if (result === undefined) throw new Error('回复格式不完整');
             const action = result === null
                 ? {requestId: task.id, kind: 'none', npcActions: []} : result;

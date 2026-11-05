@@ -47,7 +47,19 @@ interface Props {
     characters:CharacterProfile[]; userProfile:UserProfile; realtimeConfig?:RealtimeConfig;
     addToast?:(message:string,type?:any)=>void; onClose:()=>void;
     onOpenGarden?:()=>void;
-    onCharacterTrip:(char:CharacterProfile,mode:'fishing'|'market')=>Promise<{ok:boolean;reason?:string}>;
+    onCharacterTrip:(char:CharacterProfile,mode:'fishing'|'market')=>Promise<{ok:boolean;reason?:string;activity?:string;detail?:string}>;
+}
+function tripError(result:{reason?:string;detail?:string}) {
+    switch (result.reason) {
+        case 'busy': return '角色正在进行另一项活动。';
+        case 'no-api': return '请先配置角色或彼方 API。';
+        case 'empty': return '模型没有返回可用的正文。';
+        case 'truncated': return '模型回复被截断，请检查 API 输出上限。';
+        case 'fishing-format': return '回复缺少有效的鱼获去向或反应。';
+        case 'market-format': return '回复没有给出完整的布告板动作。';
+        case 'fishing-settlement': return result.detail || '鱼获结算未完成。';
+        default: return '这次活动未完成，请查看彼方调用记录。';
+    }
 }
 export const FishingMarketOverlay:React.FC<Props> = ({initialEntry='water',apiConfig,characters,userProfile,realtimeConfig,addToast,onClose,onOpenGarden,onCharacterTrip}) => {
     const actors=useMemo(()=>listMarketActors(userProfile,characters),[userProfile.name,characters]);
@@ -130,10 +142,9 @@ export const FishingMarketOverlay:React.FC<Props> = ({initialEntry='water',apiCo
             if (visitor) {
                 setRefreshNotice(visitor.name + '正在看看布告板…');
                 const result = await onCharacterTrip(visitor, 'market');
-                if (!result.ok) throw new Error(result.reason === 'no-api' ? '尚未配置角色或彼方 API，暂时无法邀请这位角色。'
-                    : result.reason === 'busy' ? '这位角色正在进行另一项活动，稍后再刷新看看。' : '这次来访没有完成，可以稍后再试。');
+                if (!result.ok) throw new Error(tripError(result));
                 refresh();
-                setRefreshNotice(visitor.name + '来过了，看看有没有留下新便笺或回复。');
+                setRefreshNotice(result.activity || (visitor.name + '来过了。'));
             } else {
                 setRefreshNotice('路人正在看看最近的便笺…');
                 const controller=new AbortController();npcAbort.current=controller;
@@ -165,8 +176,16 @@ export const FishingMarketOverlay:React.FC<Props> = ({initialEntry='water',apiCo
     const runTrip=async(mode:'fishing'|'market')=>{
         const char=characters.find(c=>c.id===tripChar);if(!char||trip||busy||refreshInFlight.current)return;
         refreshInFlight.current=true;
-        setTrip(char.id);setError('');
-        try{const result=await onCharacterTrip(char,mode);if(!result.ok)throw new Error(pendingFishingTrip(readFishingMarketState(),char.id)?'这一竿的鱼获已暂存。点“继续处理这一竿”重试，不会重新抽取。':result.reason==='no-api'?'尚未配置角色或彼方 API':result.reason==='busy'?'角色正在进行另一项活动':result.reason==='empty'?'角色的回复没有给出可执行结果，这轮没有替角色编造行动':'这次活动未完成，请查看彼方调用记录');refresh();}
+        setTrip(char.id);setError('');setRefreshNotice('');
+        try {
+            const result = await onCharacterTrip(char,mode);
+            if (!result.ok) {
+                const pending = mode === 'fishing' && pendingFishingTrip(readFishingMarketState(),char.id);
+                throw new Error(tripError(result) + (pending ? ' 鱼获已暂存，可以继续处理这一竿。' : ''));
+            }
+            refresh();
+            if (mode === 'market') setRefreshNotice(result.activity || (char.name + '来过了。'));
+        }
         catch(e){report(e);}finally{refreshInFlight.current=false;setTrip(null);if(mode==='fishing')requestAnimationFrame(()=>tripResultRef.current?.scrollIntoView({block:'nearest',behavior:'smooth'}));}
     };
     useEffect(()=>{
@@ -199,6 +218,7 @@ export const FishingMarketOverlay:React.FC<Props> = ({initialEntry='water',apiCo
         <p className="fish-note mb-3">{mode==='fishing'?`由 ta 决定保留、放生或交给${sarNpcContentEnabled()?'艾文':'回收站'}，使用一次模型调用。`:'让 ta 自己决定看看、交易，或留一句话。每次邀请使用一次模型调用。'}</p>
         <select className="fish-input" aria-label={mode==='fishing'?'选择去水域的角色':'选择逛布告板的角色'} value={tripChar} onChange={e=>setTripChar(e.target.value)}><option value="">选择已接入彼方的角色</option>{characters.filter(c=>c.vrState?.enabled).map(c=><option value={c.id} key={c.id}>{c.name}</option>)}</select>
         <button disabled={!tripChar||!!trip||busy} className="fish-action mt-2 w-full" onClick={()=>void runTrip(mode)}>{trip?'活动进行中…':mode==='fishing'?(pendingTrip?'继续处理这一竿':'让 ta 去钓鱼'):'让 ta 逛布告板'}</button>
+        {mode==='market'&&refreshNotice&&<p role="status" className="board-refresh-notice">{refreshNotice}</p>}
         {mode==='fishing'&&latestTrip&&<div ref={tripResultRef} className="mt-3 rounded-xl bg-white/5 p-3" aria-live="polite">
             <div className="text-[13px]">{speciesById(latestTrip.catch.speciesId)?.name} · {latestTrip.catch.sizeCm} cm · {'✦'.repeat(latestTrip.catch.quality)}</div>
             <p className="fish-note mt-1">{latestTrip.status==='pending'?'鱼获已暂存，等 ta 决定去向。':latestTrip.result?.disposition==='release'?'已放生，个人图鉴记录保留。':latestTrip.sale?`已交给${sarNpcContentEnabled()?'艾文':'回收站'}，获得 ${latestTrip.sale.amount} 鳞币，个人图鉴记录保留。`:'已放进 ta 自己的收藏柜。'}</p>

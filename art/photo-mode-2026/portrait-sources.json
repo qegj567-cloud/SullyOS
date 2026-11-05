@@ -1,0 +1,128 @@
+[
+  {
+    "id": "photo-heart",
+    "bytes": 297403,
+    "sha256": "fa1809cb67c5c7cdeb893b9bcda4c207245443f3a88ce0dfac813bcd8b4fa54d",
+    "sources": [
+      {
+        "id": "heart",
+        "taskId": "01a18acd-f5dc-77a7-bcc8-544dddb26f0a",
+        "sha256": "e8a842d536e8073e59b5668af22779573a04a35e752bc0b278e49d07f8913caa",
+        "prompt": "A cute couple photo pose facing camera. Your partner is on your left. Lift your left arm in a large curved arc above your head to form half of a big heart with your partner. Bend the elbow overhead and point fingertips inward. Right hand on hip. Gently tilt head toward partner, keep face visible looking forward. Hold seconds 2 to 6, subtle breathing, feet planted, no turns.",
+        "credits": 10
+      },
+      {
+        "id": "heart",
+        "taskId": "01a18acd-f5dc-77a7-bcc8-544dddb26f0a",
+        "sha256": "e8a842d536e8073e59b5668af22779573a04a35e752bc0b278e49d07f8913caa",
+        "prompt": "A cute couple photo pose facing camera. Your partner is on your left. Lift your left arm in a large curved arc above your head to form half of a big heart with your partner. Bend the elbow overhead and point fingertips inward. Right hand on hip. Gently tilt head toward partner, keep face visible looking forward. Hold seconds 2 to 6, subtle breathing, feet planted, no turns.",
+        "credits": 10
+      }
+    ]
+  },
+  {
+    "id": "photo-peace",
+    "bytes": 297198,
+    "sha256": "30e8e080c58006a2ece9b2be92b21e2bfed9308f09a2dfc83134e10d0a3a71ea",
+    "sources": [
+      {
+        "id": "peace",
+        "taskId": "01a18acd-f99e-745a-8aae-9f351a2b3084",
+        "sha256": "c31a00f7d9e8f01f71ea637ac8c36e6a63e1b9cd0fa8cea1fc9dbf19d09a895c",
+        "prompt": "Stand facing the camera for a cute portrait. Lift the right hand out to the side beside the shoulder and make a V peace sign, palm forward. Keep the hand outside the face silhouette. Left hand rests on hip. Feet planted with a small relaxed knee bend. Head upright looking straight ahead throughout. Hold the pose from second 2 through 6. No turning or walking.",
+        "credits": 10
+      },
+      {
+        "id": "peace",
+        "taskId": "01a18acd-f99e-745a-8aae-9f351a2b3084",
+        "sha256": "c31a00f7d9e8f01f71ea637ac8c36e6a63e1b9cd0fa8cea1fc9dbf19d09a895c",
+        "prompt": "Stand facing the camera for a cute portrait. Lift the right hand out to the side beside the shoulder and make a V peace sign, palm forward. Keep the hand outside the face silhouette. Left hand rests on hip. Feet planted with a small relaxed knee bend. Head upright looking straight ahead throughout. Hold the pose from second 2 through 6. No turning or walking.",
+        "credits": 10
+      }
+    ]
+  },
+  {
+    "id": "photo-linked",
+    "bytes": 295910,
+    "sha256": "4b70efcd6083db40c19b879c3fe98f0ac4035b76b82d9ad5ff6502a49272a96f",
+    "sources": [
+      {
+        "id": "handhold",
+        "taskId": "01a18acd-fd4c-7080-96bc-11cc6d5dbf25",
+        "sha256": "13ff614d64769a71f7e7f2dd198ce2896c6b5bd750ff12ec98566dbbd5196978",
+        "prompt": "Playful best-friend portrait, facing camera with partner on your left. Link your left arm with their right arm at elbow height. Put right hand on hip, tilt head gently toward partner. Bend right knee and lift the right heel backward in a cute photo pose. Balance on left leg and hold seconds 2 through 6. Keep chest and face toward camera, tiny natural sway, no walking or turning.",
+        "credits": 10
+      },
+      {
+        "id": "handhold",
+        "taskId": "01a18acd-fd4c-7080-96bc-11cc6d5dbf25",
+        "sha256": "13ff614d64769a71f7e7f2dd198ce2896c6b5bd750ff12ec98566dbbd5196978",
+        "prompt": "Playful best-friend portrait, facing camera with partner on your left. Link your left arm with their right arm at elbow height. Put right hand on hip, tilt head gently toward partner. Bend right knee and lift the right heel backward in a cute photo pose. Balance on left leg and hold seconds 2 through 6. Keep chest and face toward camera, tiny natural sway, no walking or turning.",
+        "credits": 10
+      }
+    ]
+  },
+  {
+    "id": "photo-shoulder",
+    "bytes": 297078,
+    "sha256": "2f0adf66f6deedf369a8174619a45821eb1cfdabe1e6e15cb05083cdf204f8fa",
+    "sources": [
+      {
+        "id": "shoulder",
+        "taskId": "01a18ace-0112-7410-b203-6cffeccb46d5",
+        "sha256": "b24b8a5361818ba7527c8f961b594316d156f5e5ea9f0db484390378ebb46920",
+        "prompt": "Pose for a photo facing the camera beside a friend on your left. Extend the left arm sideways at shoulder height and bend the elbow gently to rest the forearm behind their shoulders. Right hand on your own hip. Keep the torso upright and face looking straight ahead. Feet stay planted. Hold from second 2 through 6 with subtle breathing. No turning, hugging in front, or walking.",
+        "credits": 10
+      },
+      {
+        "id": "peace",
+        "taskId": "01a18acd-f99e-745a-8aae-9f351a2b3084",
+        "sha256": "c31a00f7d9e8f01f71ea637ac8c36e6a63e1b9cd0fa8cea1fc9dbf19d09a895c",
+        "prompt": "Stand facing the camera for a cute portrait. Lift the right hand out to the side beside the shoulder and make a V peace sign, palm forward. Keep the hand outside the face silhouette. Left hand rests on hip. Feet planted with a small relaxed knee bend. Head upright looking straight ahead throughout. Hold the pose from second 2 through 6. No turning or walking.",
+        "credits": 10
+      }
+    ]
+  },
+  {
+    "id": "photo-peek",
+    "bytes": 296734,
+    "sha256": "12d91654ac0ceef6bce4af904befe03f133a7339ad236fd557812af468d7b999",
+    "sources": [
+      {
+        "id": "peace",
+        "taskId": "01a18acd-f99e-745a-8aae-9f351a2b3084",
+        "sha256": "c31a00f7d9e8f01f71ea637ac8c36e6a63e1b9cd0fa8cea1fc9dbf19d09a895c",
+        "prompt": "Stand facing the camera for a cute portrait. Lift the right hand out to the side beside the shoulder and make a V peace sign, palm forward. Keep the hand outside the face silhouette. Left hand rests on hip. Feet planted with a small relaxed knee bend. Head upright looking straight ahead throughout. Hold the pose from second 2 through 6. No turning or walking.",
+        "credits": 10
+      },
+      {
+        "id": "peek",
+        "taskId": "01a18ace-ed6e-775f-8ee1-f7e395a28259",
+        "sha256": "8556ec3746fa4c895ad0c736e19b52b4cc7b4e46271db2e7e59b5237cb6c4439",
+        "prompt": "Sweet couple photo: stand behind and slightly to the right of a partner, facing camera. Gently extend both arms forward at waist height to hug their waist. Lean head slightly to the right to peek beside their head, keeping your face visible to camera. Feet planted, upper body upright, gentle breathing. Hold from second 2 to 6, no turning or walking.",
+        "credits": 10
+      }
+    ]
+  },
+  {
+    "id": "photo-bunny",
+    "bytes": 296820,
+    "sha256": "935c4a3a1d46a419b13e21eca015a10b08aeb4502cf13859b6429e851fc492cb",
+    "sources": [
+      {
+        "id": "bunny",
+        "taskId": "01a18ace-f0fd-76d6-a3f6-a676e532385e",
+        "sha256": "309c42d1b8dd06109bc15c7f1a6b2c69de11ef2d6887383aa2e986ee7421fa0e",
+        "prompt": "Playful photo booth portrait, facing camera. Raise both hands beside and above your own head with index and middle fingers extended like bunny ears, keeping hands completely outside the face silhouette. Tilt head gently left and bend one knee inward, a tiny happy shoulder bounce. Hold from second 2 to 6, no walking or turning.",
+        "credits": 10
+      },
+      {
+        "id": "bunny",
+        "taskId": "01a18ace-f0fd-76d6-a3f6-a676e532385e",
+        "sha256": "309c42d1b8dd06109bc15c7f1a6b2c69de11ef2d6887383aa2e986ee7421fa0e",
+        "prompt": "Playful photo booth portrait, facing camera. Raise both hands beside and above your own head with index and middle fingers extended like bunny ears, keeping hands completely outside the face silhouette. Tilt head gently left and bend one knee inward, a tiny happy shoulder bounce. Hold from second 2 to 6, no walking or turning.",
+        "credits": 10
+      }
+    ]
+  }
+]

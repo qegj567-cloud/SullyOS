@@ -1,5 +1,5 @@
 import {FRIEND_FEED_OUTPUT_TOKENS, FRIEND_REPLY_OUTPUT_TOKENS} from './friendFeedLimits';
-import {parseDedicatedFriendFeedAction} from './friendFeedOutput';
+import {readDedicatedFriendFeedResponse} from './friendFeedOutput';
 import type {APIConfig, RealtimeConfig, UserProfile} from '../types';
 import {DB} from './db';
 import {createLocalId} from './localId.js';
@@ -11,7 +11,6 @@ import {syncWeibo,syncWeiboHome,readWeiboConnection,weiboSyncMessage,type WeiboS
 import {prepareFriendFeedEmotionTask, landFriendFeedEmotionAction, releaseFriendFeedEmotionTask} from './friendFeedEmotion';
 import {buildFriendFeedReplyPayload} from './friendFeedReplies';
 import {resolveFriendFeedApi} from './friendFeedApi';
-import {extractAssistantText} from './emotionApply';
 import {safeFetchJson} from './safeApi';
 
 /** Independent from model configuration and the AI generation lease. */
@@ -78,7 +77,7 @@ export async function refreshFriendFeed(user: UserProfile, globalApi: APIConfig,
             body: JSON.stringify({model: api.model, messages, temperature: api.temperature ?? .85, max_tokens: commentPostId ? FRIEND_REPLY_OUTPUT_TOKENS : FRIEND_FEED_OUTPUT_TOKENS, stream: api.stream ?? false,
                 ...(api.stream ? {stream_options: {include_usage: true}} : {})}),
         }, 0, 0, {appName: '哔哔', charId, charName: char.name, purpose: commentPostId?'刷新评论':'刷新动态'});
-        const result = parseDedicatedFriendFeedAction(extractAssistantText(data.choices?.[0]?.message));
+        const result = readDedicatedFriendFeedResponse(data);
         if (result === undefined) throw Error('动态生成格式不完整，请重试');
         const action = result === null ? {requestId: task.id, kind: 'none'} : result;
         if (!action || typeof action !== 'object' || (action as {requestId?: string}).requestId !== task.id)

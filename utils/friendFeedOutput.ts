@@ -1,5 +1,5 @@
 import {normalizeFriendFeedAction} from './friendFeedReplyFormat';
-import {parseEmotionEvalOutput} from './emotionApply';
+import {extractAssistantText, parseEmotionEvalOutput} from './emotionApply';
 
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 
@@ -26,4 +26,12 @@ export function parseDedicatedFriendFeedAction(raw: string): unknown {
         }
     }
     return undefined;
+}
+
+export function readDedicatedFriendFeedResponse(data:any) {
+    const choice = data?.choices?.[0];
+    if (choice?.finish_reason === 'length') throw Error('API 截断了本轮回复，请检查模型输出上限或减少本轮内容');
+    const raw = extractAssistantText(choice?.message);
+    const answer = raw.replace(/<(think|thinking|thought)\b[^>]*>[\s\S]*?<\/\1>/gi, '').replace(/<(?:think|thinking|thought)\b[^>]*>[\s\S]*$/i, '');
+    return parseDedicatedFriendFeedAction(answer);
 }
