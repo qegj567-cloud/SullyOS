@@ -10,11 +10,8 @@
 //   2. add a row to WORKERS below
 //   3. that's it — `pnpm run build` (which chains to build:workers) picks it up
 //
-// Why a manifest array instead of auto-discover: worker/proactive-push/ has
-// src/index.ts + wrangler.toml too, but its worker.bundle.js is hand-written
-// (not an esbuild artifact). A naive scan of worker/*/src/index.ts would
-// silently overwrite it. The manifest is explicit about which workers go
-// through this pipeline.
+// Why a manifest array instead of auto-discover: the manifest is explicit
+// about which workers go through this pipeline.
 
 import { build } from 'esbuild';
 import { existsSync, statSync, copyFileSync } from 'fs';

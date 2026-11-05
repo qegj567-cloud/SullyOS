@@ -80,9 +80,7 @@ export const MIRRORED_KEYS: readonly string[] = [
     'sully_music_cfg_v1',
     'sully_music_state_v1',
     'sully_music_local_album_v1',
-    // 主动消息（旧版）与彼方/家园定时排程
-    'proactive_schedules',
-    'proactive_last_fire_map',
+    // 彼方/家园定时排程
     'vr_schedules',
     'vr_last_fire_map',
     'world_home_schedules',

@@ -540,10 +540,6 @@ export function collectFeatureFlags(src: FeatureSources): Record<string, string>
         彼方独立线路: src.vrIndependentApi ? '配了' : '没配',
 
         // ── 主动消息 2.0 ──
-        // 没报「主动消息 Push 加速」：那一层已经全局下线（proactivePushConfig.ts 的
-        // FORCE_DISABLED，设置面板也藏了），loadPushConfig() 恒返回 enabled=false。
-        // 报出来只会是一片「关」，看着像没人用，其实是被下掉了——这种数据比没有更坏。
-        //
         // 四态（见 amsg2Stage）：三关里卡在哪一关，要修的引导完全不是一回事。
         '主动消息2.0': amsg2Stage(
             Boolean(src.amsg2Global.workerUrl?.trim()),

@@ -347,12 +347,6 @@ describe('当前功能启用 · 开关值的判定', () => {
         }));
         expect(flags['单独关了即时对话的角色数']).toBe('1');
     });
-
-    it('不上报已经全局下线的主动消息 Push 加速', () => {
-        // 那一层 FORCE_DISABLED 恒为关，报出来会被误读成「没人用」。
-        localStorage.setItem('proactive_push_enabled_v1', 'true');
-        expect(collectFeatureFlags(poisonedSources())).not.toHaveProperty('主动消息Push加速');
-    });
 });
 
 describe('当前外观 · 不泄漏用户自己捏的东西', () => {

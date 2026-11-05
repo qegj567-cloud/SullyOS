@@ -21,7 +21,7 @@ export const CARD_STRIPPED_FIELDS = [
   'dialogueApi',
   'emotionConfig',
   'embeddingConfig',
-  'proactiveConfig',
+  'proactiveConfig',         // 已下线的主动消息 1.0，旧数据里可能还带着副 API 凭据
   'activeMsg2Config',
 
   // 2) 美化

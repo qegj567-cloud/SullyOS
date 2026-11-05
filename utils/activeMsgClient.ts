@@ -1635,8 +1635,7 @@ const buildToolConfigEntry = (
  * 退订后要等浏览器清内部 removed 标记（SUBSCRIBE_SETTLE_MS），否则紧接着的
  * subscribe() 又拿到死哨兵。
  *
- * 判定口径与 proactivePushConfig.getOrCreateSubscription 的内联实现一致；那一处在
- * 它自己的文件里，将来合并时以这份抽出来的函数为准。export 供单测 mock pushManager 钉行为。
+ * export 供单测 mock pushManager 钉行为。
  */
 export const dropStaleSubscription = async (
   sub: PushSubscription | null,
@@ -2296,7 +2295,7 @@ export const ActiveMsgClient = {
    *
    * 副作用：SW 会短暂下线（1 秒上下），这期间来的推送是真丢。但会点这个按钮的前提
    * 就是「已经收不到了」，不存在把原本收得到的弄丢。主动消息 2.0 的排程存在 worker
-   * 的 D1 里、跟 SW 无关，不用像 proactive-push 那样重新推排程回去。
+   * 的 D1 里、跟 SW 无关，不用重新推排程回去。
    */
   async deepResetPushSubscription(): Promise<void> {
     const globalConfig = await ensureGlobalReady();

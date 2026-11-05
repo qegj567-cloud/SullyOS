@@ -2143,7 +2143,7 @@ function createStaticCache(deps) {
 
 // worker/sw-keep-alive.ts
 var staticManifest = typeof __STATIC_CACHE_MANIFEST__ === "undefined" ? void 0 : __STATIC_CACHE_MANIFEST__;
-var SW_VERSION = "1.22.0";
+var SW_VERSION = "1.23.0";
 var PING_INTERVAL = 15e3;
 var MAX_MANUAL_ALIVE_MS = 5 * 6e4;
 var ACTIVE_MSG_DB_NAME = "ActiveMsg";
@@ -2157,8 +2157,6 @@ var PUSH_SUBSCRIPTION_CHANGED_KV_ID = "push_subscription_changed_v1";
 var pingTimer = null;
 var manualKeepAliveCount = 0;
 var manualKeepAliveStartedAt = 0;
-var proactiveSchedules = /* @__PURE__ */ new Map();
-var proactiveTimers = /* @__PURE__ */ new Map();
 var sw = self;
 var resourceCache = staticManifest && createStaticCache({
   manifest: staticManifest,
@@ -2318,11 +2316,8 @@ installReiSW(diagnosticNotificationScope(sw, appendDiagnosticEvent), {
     }
   }
 });
-function hasActiveProactiveSchedules() {
-  return proactiveTimers.size > 0;
-}
 function shouldKeepAlive() {
-  return manualKeepAliveCount > 0 || hasActiveProactiveSchedules();
+  return manualKeepAliveCount > 0;
 }
 function stopPingLoop() {
   if (pingTimer) {
@@ -2399,41 +2394,6 @@ async function notifyClients(data) {
     ...failures.length > 0 ? { failures } : {},
     ...matchError ? { matchError } : {}
   });
-}
-function fireProactiveTrigger(charId) {
-  void notifyClients({ type: "proactive-trigger", charId });
-}
-function stopProactive(charId) {
-  const timer = proactiveTimers.get(charId);
-  if (timer) {
-    clearInterval(timer);
-    proactiveTimers.delete(charId);
-  }
-  proactiveSchedules.delete(charId);
-}
-var MIN_PROACTIVE_INTERVAL_MS = 30 * 60 * 1e3;
-function upsertProactive(config) {
-  const safeIntervalMs = Math.max(MIN_PROACTIVE_INTERVAL_MS, Math.round(config.intervalMs));
-  const safeConfig = { charId: config.charId, intervalMs: safeIntervalMs };
-  const prev = proactiveSchedules.get(safeConfig.charId);
-  const unchanged = prev && prev.intervalMs === safeConfig.intervalMs;
-  if (unchanged && proactiveTimers.has(safeConfig.charId)) return;
-  stopProactive(safeConfig.charId);
-  proactiveSchedules.set(safeConfig.charId, safeConfig);
-  const timer = setInterval(() => fireProactiveTrigger(safeConfig.charId), safeConfig.intervalMs);
-  proactiveTimers.set(safeConfig.charId, timer);
-}
-function syncProactive(configs) {
-  const nextIds = new Set((configs || []).map((config) => config.charId));
-  for (const charId of Array.from(proactiveSchedules.keys())) {
-    if (!nextIds.has(charId)) stopProactive(charId);
-  }
-  for (const config of configs || []) {
-    if (config && config.charId && config.intervalMs > 0) {
-      upsertProactive(config);
-    }
-  }
-  refreshKeepAlive();
 }
 var inboxDbPromise = null;
 function openInboxDb() {
@@ -2720,22 +2680,6 @@ sw.addEventListener("message", (event) => {
       break;
     case "keepalive-stop":
       stopKeepAlive();
-      break;
-    case "proactive-start":
-      if (event.data.config) {
-        syncProactive([...proactiveSchedules.values(), event.data.config]);
-      }
-      break;
-    case "proactive-stop":
-      if (event.data.charId) {
-        stopProactive(event.data.charId);
-        refreshKeepAlive();
-      } else {
-        syncProactive([]);
-      }
-      break;
-    case "proactive-sync":
-      syncProactive(event.data.configs || []);
       break;
   }
 });
