@@ -758,6 +758,7 @@ var describeMinutes = (minutes) => {
   const m = minutes % 60;
   return m ? `${h} \u5C0F\u65F6 ${m} \u5206\u949F` : `${h} \u5C0F\u65F6`;
 };
+var SELF_SCHEDULE_HARD_GAP_MS = 3 * 6e4;
 var checkSelfScheduleRules = (input) => {
   const { limits } = input;
   if (input.recurrence !== "none" && !limits.allowSelfRecurring) {
@@ -767,18 +768,15 @@ var checkSelfScheduleRules = (input) => {
       message: "\u7528\u6237\u6CA1\u6709\u8BA9\u4F60\u6392\u6BCF\u5929/\u6BCF\u5468\u91CD\u590D\u7684\u6D88\u606F\uFF0C\u8FD9\u6B21\u53EA\u80FD\u6392\u4E00\u6B21\u6027\u7684\uFF08\u53BB\u6389 recurrence \u518D\u6392\uFF09\u3002"
     };
   }
-  const conflict = findGapConflict(input.sendAtMs, limits.minSendGapMs, input.busy);
+  const userGapApplies = limits.minSendGapMs >= SELF_SCHEDULE_HARD_GAP_MS;
+  const gapMs = Math.max(limits.minSendGapMs, SELF_SCHEDULE_HARD_GAP_MS);
+  const conflict = findGapConflict(input.sendAtMs, gapMs, input.busy);
   if (conflict !== null) {
-    const gapMinutes = Math.round(limits.minSendGapMs / 6e4);
-    const earliest = earliestSlotAfter(
-      Math.max(input.earliestMs, input.sendAtMs),
-      limits.minSendGapMs,
-      input.busy
-    );
+    const earliest = earliestSlotAfter(Math.max(input.earliestMs, input.sendAtMs), gapMs, input.busy);
     return {
       ok: false,
       reason: "min_gap",
-      message: `\u79BB ${input.formatTime(conflict)} \u90A3\u6B21\u592A\u8FD1\u4E86\uFF1A\u7528\u6237\u5B9A\u4E86\u4E24\u6B21\u4E3B\u52A8\u6D88\u606F\u4E4B\u95F4\u81F3\u5C11\u9694 ${describeMinutes(gapMinutes)}\u3002\u8981\u6392\u7684\u8BDD\u6700\u65E9 ${input.formatTime(earliest)}\uFF1B\u6CA1\u90A3\u4E48\u8981\u7D27\u7684\u8BDD\uFF0C\u8FD9\u6B21\u5C31\u522B\u6392\u4E86\u3002`
+      message: userGapApplies ? `\u79BB ${input.formatTime(conflict)} \u90A3\u6B21\u592A\u8FD1\u4E86\uFF1A\u7528\u6237\u5B9A\u4E86\u4E24\u6B21\u4E3B\u52A8\u6D88\u606F\u4E4B\u95F4\u81F3\u5C11\u9694 ${describeMinutes(Math.round(limits.minSendGapMs / 6e4))}\u3002\u8981\u6392\u7684\u8BDD\u6700\u65E9 ${input.formatTime(earliest)}\uFF1B\u6CA1\u90A3\u4E48\u8981\u7D27\u7684\u8BDD\uFF0C\u8FD9\u6B21\u5C31\u522B\u6392\u4E86\u3002` : `${input.formatTime(conflict)} \u524D\u540E\u5DF2\u7ECF\u6709\u4E00\u6B21\u4E3B\u52A8\u6D88\u606F\u4E86\uFF0C\u540C\u4E00\u65F6\u523B\u4E0D\u80FD\u518D\u6392\u4E00\u6761\u3002\u5982\u679C\u662F\u540C\u4E00\u4EF6\u4E8B\uFF0C\u5B83\u5DF2\u7ECF\u6392\u7740\uFF0C\u4E0D\u7528\u518D\u6392\uFF1B\u8981\u6362\u65F6\u95F4\u6216\u5185\u5BB9\uFF0C\u6539\u539F\u6765\u90A3\u6761\uFF08renew / cancel\uFF09\u3002`
     };
   }
   return {
@@ -13787,7 +13785,7 @@ function buildScheduledPush(message, build, extraMeta, bannerBody) {
 }
 
 // utils/amsgBundleVersion.ts
-var AMSG_BUNDLE_VERSION = "2026-11-05";
+var AMSG_BUNDLE_VERSION = "2026-11-05.2";
 
 // worker/amsg/src/reproduction.ts
 async function writeDiagnosticStage(writeState, runId, event, fields = {}) {
