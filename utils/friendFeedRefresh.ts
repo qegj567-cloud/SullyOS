@@ -1,4 +1,4 @@
-import {FRIEND_FEED_OUTPUT_TOKENS, FRIEND_REPLY_OUTPUT_TOKENS} from './friendFeedLimits';
+import {FRIEND_FEED_OUTPUT_TOKENS, FRIEND_REPLY_OUTPUT_TOKENS, withFriendFeedOutputBudget} from './friendFeedLimits';
 import {readDedicatedFriendFeedResponse} from './friendFeedOutput';
 import type {APIConfig, RealtimeConfig, UserProfile} from '../types';
 import {DB} from './db';
@@ -71,10 +71,12 @@ export async function refreshFriendFeed(user: UserProfile, globalApi: APIConfig,
         if (!api?.baseUrl || !api.model) throw Error('请在哔哔的 API 设置中配置独立 API，或检查角色 / 全局 API；已有内容已保留');
         task = await prepareFriendFeedEmotionTask(charId, random, undefined, source, kind, commentPostId);
         if (!task) return {warnings, message: '已刷新，这位朋友刚刚参与过，稍后再试'};
-        const messages = (await buildFriendFeedReplyPayload(char, user, globalApi, task.prompt, realtimeConfig, task.npcOnly)).fullMessages;
+        const maxTokens = commentPostId ? FRIEND_REPLY_OUTPUT_TOKENS : FRIEND_FEED_OUTPUT_TOKENS;
+        const prompt = withFriendFeedOutputBudget(task.prompt, maxTokens);
+        const messages = (await buildFriendFeedReplyPayload(char, user, globalApi, prompt, realtimeConfig, task.npcOnly)).fullMessages;
         const data = await safeFetchJson(`${api.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
             method: 'POST', headers: {'Content-Type': 'application/json', Authorization: `Bearer ${api.apiKey || 'sk-none'}`},
-            body: JSON.stringify({model: api.model, messages, temperature: api.temperature ?? .85, max_tokens: commentPostId ? FRIEND_REPLY_OUTPUT_TOKENS : FRIEND_FEED_OUTPUT_TOKENS, stream: api.stream ?? false,
+            body: JSON.stringify({model: api.model, messages, temperature: api.temperature ?? .85, max_tokens: maxTokens, stream: api.stream ?? false,
                 ...(api.stream ? {stream_options: {include_usage: true}} : {})}),
         }, 0, 0, {appName: '哔哔', charId, charName: char.name, purpose: commentPostId?'刷新评论':'刷新动态'});
         const result = readDedicatedFriendFeedResponse(data);

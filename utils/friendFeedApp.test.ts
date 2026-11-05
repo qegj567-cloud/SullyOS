@@ -324,14 +324,16 @@ it('collapses long threads to three replies and opens a notification at its exac
         const id=await seedUserNotices();
         await mutateFriendFeed(feed=>{const post=feed.posts.find(p=>p.id===id)!;const root=post.comments[0];
             post.comments=[root];feed.userInbox=[];
-            for(let i=0;i<7;i++){const c={id:`nested-${i}`,authorId:`npc:n${i}`,authorName:`楼内网友${i}`,text:`楼内留言${i}`,createdAt:Date.now()+i,
-                localReply:{id:root.id,authorId:root.authorId,authorName:root.authorName,text:root.text}};
+            for(let i=0;i<7;i++){const parent=i<3?root:post.comments.at(-1)!;const c={id:`nested-${i}`,authorId:`npc:n${i}`,authorName:`楼内网友${i}`,text:`楼内留言${i}`,createdAt:Date.now()+i,
+                localReply:{id:parent.id,authorId:parent.authorId,authorName:parent.authorName,text:parent.text}};
                 post.comments.push(c);enqueueFriendUserNotice(feed,post,c);}});
         const host=await render(React.createElement(FriendFeedApp));
         await act(async()=>{requestFriendInbox({postId:id});});await settle(host);
         expect(host.querySelectorAll('.ff-thread-replies [data-comment-id]')).toHaveLength(3);
         expect(friendUserInbox(await readFriendFeed()).filter(r=>!r.notice.read)).toHaveLength(4);
-        await click(host,'查看全部 7 条回复');expect(host.querySelectorAll('.ff-thread-replies [data-comment-id]')).toHaveLength(7);
+        await click(host,'查看全部 7 条回复');
+        expect(Array.from(host.querySelectorAll('[data-comment-id]'),el=>el.getAttribute('data-level'))).toEqual(['1','2','2','2','3','3','3','3']);
+        expect(host.querySelector('[data-comment-id="nested-6"] .ff-comment-to')?.textContent).toContain('@楼内网友5');
         await click(host,'收起回复');expect(host.querySelectorAll('.ff-thread-replies [data-comment-id]')).toHaveLength(3);
         await click(host,'互动提醒');await click(host,'楼内留言6');
         await act(async()=>{await new Promise(resolve=>setTimeout(resolve,45));});

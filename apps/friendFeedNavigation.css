@@ -75,7 +75,8 @@
 .friend-feed .ff-share-recipients button[aria-pressed=true] { border-color:var(--ff-accent); background:var(--ff-bg); }
 .friend-feed .ff-source-reply p { font-size:12px; margin-bottom:0; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
 
-.friend-feed .ff-thread-replies{margin:0 0 10px 26px;padding-left:12px;border-left:2px solid var(--ff-line)}
+.friend-feed .ff-thread-replies{margin:0 0 10px 12px;padding-inline-start:8px;border-inline-start:2px solid var(--ff-line)}
+.friend-feed .ff-thread-replies .ff-detail-comment[data-level="3"]{margin-inline-start:14px}
 .friend-feed .ff-thread-replies .friend-feed-avatar{width:26px;height:26px;font-size:12px;flex:none}.friend-feed .ff-thread-replies .ff-detail-comment{padding:12px 0}
 .friend-feed .ff-detail-comment footer{display:flex;align-items:center;gap:4px 8px;flex-wrap:wrap}.friend-feed .ff-comment-reply{min-height:36px;padding:6px 8px;font-size:11px;color:var(--ff-muted);background:none;border:0;cursor:pointer}.friend-feed .ff-comment-reply:hover{color:var(--ff-accent)}.friend-feed .ff-comment-to{font-size:11px;color:var(--ff-muted)}
 

@@ -1,6 +1,6 @@
 import type {FriendComment} from './friendFeed';
 
-/** Replies stay flat in storage/context, and are grouped into one readable level in the UI. */
+/** Replies stay flat in storage/context, and are grouped by root for display in the UI. */
 export function friendCommentThreads(comments:FriendComment[]) {
     const byId=new Map(comments.map(c=>[c.id,c]));
     const rootId=(comment:FriendComment)=>{

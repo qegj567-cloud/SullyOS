@@ -1,4 +1,4 @@
-import {FRIEND_REPLY_OUTPUT_TOKENS} from './friendFeedLimits';
+import {FRIEND_REPLY_OUTPUT_TOKENS, withFriendFeedOutputBudget} from './friendFeedLimits';
 import {readDedicatedFriendFeedResponse} from './friendFeedOutput';
 import type {APIConfig, UserProfile, CharacterProfile, RealtimeConfig} from '../types';
 import {DB} from './db';
@@ -55,8 +55,10 @@ export async function runImmediateFriendReplies(postId: string, user: UserProfil
             if (!char) continue;
             const api = await resolveFriendFeedApi(globalApi, char);
             if (!api?.baseUrl || !api.model) throw new Error('请先配置 API');
-            const messages = (await buildFriendFeedReplyPayload(char, user, globalApi, task.prompt, realtimeConfig, task.npcOnly)).fullMessages;
-            const body = {model: api.model, messages, temperature: api.temperature ?? .85, max_tokens: FRIEND_REPLY_OUTPUT_TOKENS};
+            const maxTokens = FRIEND_REPLY_OUTPUT_TOKENS;
+            const prompt = withFriendFeedOutputBudget(task.prompt, maxTokens);
+            const messages = (await buildFriendFeedReplyPayload(char, user, globalApi, prompt, realtimeConfig, task.npcOnly)).fullMessages;
+            const body = {model: api.model, messages, temperature: api.temperature ?? .85, max_tokens: maxTokens};
             const stream = (api as {stream?: boolean}).stream ?? globalApi?.stream ?? false;
             const send = (stream: boolean) => safeFetchJson(`${api.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST', headers: {'Content-Type': 'application/json', Authorization: `Bearer ${api.apiKey || 'sk-none'}`},
