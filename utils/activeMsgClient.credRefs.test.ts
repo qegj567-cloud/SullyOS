@@ -168,6 +168,17 @@ it('自动部署晚于启动探测时，首次原生请求自动纠正旧的不�
   expect(network).toHaveBeenCalledTimes(1);
 });
 
+it('登记凭据被拒时带出云端包在 cause 里的错误码，供调用方分流', async () => {
+  reiClient.putLlmCredentials.mockResolvedValue({
+    success: false,
+    error: { code: 'INTERNAL_ERROR', message: '服务器内部错误', cause: { code: 'CLOUD_OWNER_RETIRED', message: 'retired' } },
+  });
+  await expect(ActiveMsgClient.putLlmCredentials([{
+    credId: 'char:char-x/chat',
+    value: { apiUrl: 'https://api.test/v1/chat/completions', apiKey: 'k', primaryModel: 'm' },
+  }])).rejects.toMatchObject({ code: 'CLOUD_OWNER_RETIRED' });
+});
+
 /** 排程 POST 出去的那份任务载荷（云端状态那份没有 messageType，据此认出来）。 */
 const scheduledTask = () => capturedPayloads.filter((p) => p && 'messageType' in p).at(-1);
 /** 传上去的凭据行（扁平化所有批次）。 */

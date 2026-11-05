@@ -9,6 +9,7 @@ import { collectFriendFeedMedia, exportActivityTextAsset, isActivityTextAsset } 
 import { prepareFriendFeedMainTask, consumeFriendFeedMainReply } from '../utils/friendFeedMain';
 import { releaseFriendFeedEmotionTask } from '../utils/friendFeedEmotion';
 import { retireCloudCharacter } from '../utils/amsgCloudRetirement';
+import { AMSG_OWNER_CHECK_AFTER_IMPORT_LS_KEY } from '../utils/amsgOwnerReconcile';
 import { resolveDialogueApi } from '../utils/characterApi';
 import {isBuiltinAppearance, readBuiltinAppearance} from '../utils/builtinAppearance';
 import { sameSullyIconSnapshot, SULLY_BIBI_UPGRADE_KEY, upgradeBuiltinSullyBibiIcon } from '../utils/builtinAppearanceUpgrade';
@@ -5379,6 +5380,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                       data.realtimeConfig || realtimeConfig,
                       { characters: importedChars, userProfile: user || userProfile, groups: groupsList },
                   );
+                  // 备份里可能有在云端删过的角色；重启后的对账按「来自备份」的口径问用户要不要恢复。
+                  try { localStorage.setItem(AMSG_OWNER_CHECK_AFTER_IMPORT_LS_KEY, '1'); } catch { /* 写不进去就按普通口径提示 */ }
               }
           } catch (e) {
               console.warn('[amsg2] 导入后云端对账失败（本地数据已恢复，不受影响）', e);

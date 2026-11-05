@@ -680,7 +680,9 @@ const putLlmCredentialRows = async (
   for (const batch of chunkCredRows(pending)) {
     const response = await client.putLlmCredentials(batch.map(row => stampCloudWrite(client, row)));
     if (!response?.success) {
-      throw new Error(formatAmsgServerError(response, '登记 LLM 凭据失败。'));
+      // 带上错误码给调用方分流：云端常把真正的原因包在 cause 里（如 CLOUD_OWNER_RETIRED）。
+      const code = response?.error?.cause?.code ?? response?.error?.code;
+      throw Object.assign(new Error(formatAmsgServerError(response, '登记 LLM 凭据失败。')), { code });
     }
     // 逐批记账：后面那批失败时，前面已经落地的不必再传一遍。
     rememberCredRows(batch);
