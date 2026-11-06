@@ -93,6 +93,11 @@ export interface ProvisionInput {
   databaseName?: string;
   /** 复用已有密钥（重装时传，避免换掉 Master Key 让旧任务解不开）。 */
   secrets?: Partial<AmsgSecrets>;
+  /**
+   * 复用的同名库里有旧数据、本机又没有旧 Master Key 时，用户确认「旧数据不要了」才传。
+   * 传了就在上传前把库里的数据清空，新密钥从一张白纸开始写。
+   */
+  resetExistingDatabase?: boolean;
   onProgress?: (p: ProvisionProgress) => void;
 }
 
@@ -110,6 +115,7 @@ export type ProvisionFailureCode =
   | 'SCRIPT_EXISTS'
   | 'UPLOAD_FAILED'
   | 'CF_ERROR'
+  | 'DATABASE_KEY_MISSING'
   | 'NETWORK';
 
 export interface ProvisionFailure {
@@ -549,6 +555,111 @@ async function ensureDatabase(
   return { ok: true, id: uuid, reused: false };
 }
 
+/** 后端存加密数据的表。这几张里有一行，就说明库里有用某把 Master Key 加密过的东西。 */
+const ENCRYPTED_DATA_TABLES = [
+  'client_state',
+  'scheduled_messages',
+  'push_subscriptions',
+  'llm_credentials',
+  'message_outbox',
+  'cloud_resource_metadata',
+];
+
+async function queryD1<Row>(
+  token: string,
+  accountId: string,
+  databaseId: string,
+  sql: string,
+): Promise<{ ok: true; rows: Row[] } | { ok: false; error: string }> {
+  const res = await cfApi<CfItemEnvelope<Array<{ results?: Row[] }>>>(
+    token,
+    `/accounts/${accountId}/d1/database/${databaseId}/query`,
+    { method: 'POST', body: JSON.stringify({ sql }), contentType: 'application/json' },
+  );
+  if (!res.ok) return { ok: false, error: res.error || '查询数据库失败。' };
+  return { ok: true, rows: res.body?.result?.[0]?.results ?? [] };
+}
+
+/**
+ * 复用同名库之前的把关。
+ *
+ * 库里的数据是用当初那把 Master Key 加密的。本机没存那把钥匙的话，这次会生成一把新的，
+ * 装好后一读写旧数据就报 `Decryption failed`。所以库里有数据又没有旧钥匙时先停下，
+ * 让用户选：回到存着钥匙的那台设备上部署，或者确认清空旧数据。只有用户点了确认
+ * （reset）才真的清。
+ */
+export async function guardReusedDatabase(input: {
+  token: string;
+  accountId: string;
+  databaseId: string;
+  databaseName: string;
+  hasExistingMasterKey: boolean;
+  reset?: boolean;
+}): Promise<{ ok: true; cleared: boolean } | ProvisionFailure> {
+  if (input.hasExistingMasterKey) return { ok: true, cleared: false };
+  const { token, accountId, databaseId, databaseName } = input;
+
+  const listed = await queryD1<{ name?: string }>(
+    token,
+    accountId,
+    databaseId,
+    "SELECT name FROM sqlite_master WHERE type = 'table'",
+  );
+  if (!listed.ok) {
+    return {
+      ok: false,
+      code: 'CF_ERROR',
+      message: `检查已有的数据库 ${databaseName} 时出错（${listed.error}）。确认 Token 勾了 D1 : Edit 再试一次。`,
+    };
+  }
+  // sqlite_ / _cf_ 开头的是 SQLite 和 D1 自己的表，d1_migrations 归 wrangler，都不归后端管，也删不得。
+  const userTables = listed.rows
+    .map((row) => row.name || '')
+    .filter((name) => /^[A-Za-z0-9_]+$/.test(name) && !/^(sqlite_|_cf_|d1_migrations$)/.test(name));
+  const encryptedTables = userTables.filter((name) => ENCRYPTED_DATA_TABLES.includes(name));
+  if (encryptedTables.length === 0) return { ok: true, cleared: false };
+
+  const probe = await queryD1<{ has_data?: number }>(
+    token,
+    accountId,
+    databaseId,
+    `SELECT ${encryptedTables.map((name) => `EXISTS(SELECT 1 FROM "${name}")`).join(' OR ')} AS has_data`,
+  );
+  if (!probe.ok) {
+    return {
+      ok: false,
+      code: 'CF_ERROR',
+      message: `检查已有的数据库 ${databaseName} 时出错（${probe.error}）。`,
+    };
+  }
+  if (!probe.rows[0]?.has_data) return { ok: true, cleared: false };
+
+  if (!input.reset) {
+    return {
+      ok: false,
+      code: 'DATABASE_KEY_MISSING',
+      message:
+        `账号里已经有一个装过后端的数据库 ${databaseName}，里面的数据是用之前那把 Master Key 加密的，`
+        + '而这台设备上没存那把钥匙。直接装的话会生成一把新钥匙，旧数据就解不开了，主动消息会一直报「解密失败」。\n'
+        + '之前部署的那台设备还在的话，去那台上点「开始部署」，会沿用原来的钥匙，数据都在。'
+        + '找不回来的话，点下面的按钮清空旧数据再装（已排的主动消息、云端保存的角色状态会一起清掉）。',
+    };
+  }
+
+  // 一张一条请求：表不多，逐条删出错时也知道是哪张。
+  for (const name of userTables) {
+    const deleted = await queryD1(token, accountId, databaseId, `DELETE FROM "${name}"`);
+    if (!deleted.ok) {
+      return {
+        ok: false,
+        code: 'CF_ERROR',
+        message: `清空旧数据时在 ${name} 这张表上出错（${deleted.error}）。再点一次会接着清。`,
+      };
+    }
+  }
+  return { ok: true, cleared: true };
+}
+
 /**
  * 拿账号的 workers.dev 子域；没有就用 desiredSubdomain 注册一个。
  * 全新的 Cloudflare 账号是没有子域的，而它决定了最终的 Worker 地址，绕不过去。
@@ -851,7 +962,18 @@ export async function provisionAmsgBackend(input: ProvisionInput): Promise<Provi
   const db = await ensureDatabase(token, accountId, databaseName);
   if (!db.ok) return { ok: false, code: 'CF_ERROR', message: db.error };
   if (db.reused) {
-    warnings.push(`用的是账号里已有的同名数据库 ${databaseName}。如果之前装过一套，两边会共用同一个库。`);
+    const guarded = await guardReusedDatabase({
+      token,
+      accountId,
+      databaseId: db.id,
+      databaseName,
+      hasExistingMasterKey: Boolean(input.secrets?.AMSG_MASTER_KEY),
+      reset: input.resetExistingDatabase,
+    });
+    if (!guarded.ok) return guarded;
+    warnings.push(guarded.cleared
+      ? `已清空数据库 ${databaseName} 里的旧数据，新后端从头开始。`
+      : `用的是账号里已有的同名数据库 ${databaseName}。如果之前装过一套，两边会共用同一个库。`);
   }
 
   report('subdomain', '确认 workers.dev 地址…');

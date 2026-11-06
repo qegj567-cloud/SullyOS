@@ -256,6 +256,8 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
   const [needsSubdomain, setNeedsSubdomain] = useState(false);
   const [desiredSubdomain, setDesiredSubdomain] = useState('');
   const [provisionError, setProvisionError] = useState('');
+  /** 账号里的同名库有旧数据、本机又没旧钥匙：记下是哪个账号，等用户确认清空后接着装。 */
+  const [staleDatabase, setStaleDatabase] = useState<{ accountId?: string } | null>(null);
 
   // 补装更新能力：老办法装的后端里没有 CF_API_TOKEN，点更新会被顶回来。
   // 粘一枚 token 就能就地补上，不用去 Cloudflare 面板。只在真的缺钥匙时才露出来。
@@ -649,7 +651,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
    * Token 只在这次操作期间留在内存里，成功与否都不落盘。需要长期留着的那一份已经作为
    * secret 写进用户自己的 Worker 了（以后「更新后端」用的就是它）。
    */
-  const handleOneClickDeploy = async (accountId?: string) => {
+  const handleOneClickDeploy = async (accountId?: string, resetExistingDatabase = false) => {
     const token = cfToken.trim();
     if (!token) {
       addToast('先把 Cloudflare API Token 填进来。', 'error');
@@ -659,6 +661,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
     setProvisioning(true);
     setProvisionError('');
     setProvisionStep('');
+    setStaleDatabase(null);
     try {
       const vapid = loadPushVapid();
       const result = await provisionAmsgBackend({
@@ -672,6 +675,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
           VAPID_EMAIL: vapid.vapidEmail || undefined,
           AMSG_SERVER_TOKEN: config?.serverToken || undefined,
         },
+        resetExistingDatabase,
         onProgress: (p: ProvisionProgress) => setProvisionStep(p.message),
       });
 
@@ -687,6 +691,12 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
           setNeedsSubdomain(true);
           setProvisionError(result.message);
           trackEvent('一键部署 2.0 后端', { result: '要起子域名' });
+          return;
+        }
+        if (result.code === 'DATABASE_KEY_MISSING') {
+          setStaleDatabase({ accountId });
+          setProvisionError(result.message);
+          trackEvent('一键部署 2.0 后端', { result: '旧库缺密钥' });
           return;
         }
         setProvisionError(result.message);
@@ -1275,6 +1285,20 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
 
           {provisionError ? (
             <p className="text-[11px] leading-relaxed text-rose-600 whitespace-pre-line">{provisionError}</p>
+          ) : null}
+
+          {staleDatabase ? (
+            <button
+              type="button"
+              disabled={provisioning || !cfToken.trim()}
+              onClick={() => {
+                if (!confirm('旧数据库里的数据会全部清掉（已排的主动消息、云端保存的角色状态和凭据），清了找不回来。\n\n确定清空并继续部署吗？')) return;
+                void handleOneClickDeploy(staleDatabase.accountId, true);
+              }}
+              className="w-full py-2.5 rounded-xl text-xs font-bold bg-white border border-rose-300 text-rose-600 active:scale-95 transition-transform disabled:opacity-50"
+            >
+              清空旧数据并继续部署
+            </button>
           ) : null}
 
           <p className="text-[10px] leading-relaxed text-slate-400">

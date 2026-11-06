@@ -19,6 +19,7 @@ import {
     isAccountScopedToken,
     uploadWorkerScript,
     ensureSubdomain,
+    guardReusedDatabase,
     type AmsgSecrets,
 } from './cfProvision';
 
@@ -434,6 +435,70 @@ describe('ensureSubdomain', () => {
 
         expect(result).toEqual({ ok: true, subdomain: 'kaede' });
         expect(seen).toContain('PUT /accounts/acc-1/workers/subdomain');
+    });
+});
+
+describe('guardReusedDatabase', () => {
+    /** 假中转：按 SQL 派结果，记下收到的每一条 SQL。 */
+    const stubD1 = (tables: string[], hasData: boolean) => {
+        const sqls: string[] = [];
+        vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
+            const sql = String(JSON.parse(String(init?.body || '{}')).sql || '');
+            sqls.push(sql);
+            const results = sql.includes('sqlite_master')
+                ? tables.map((name) => ({ name }))
+                : sql.includes('has_data') ? [{ has_data: hasData ? 1 : 0 }] : [];
+            return new Response(JSON.stringify({ success: true, result: [{ results }] }), {
+                headers: { 'Content-Type': 'application/json' },
+            });
+        }));
+        return sqls;
+    };
+    const base = { token: 'tok', accountId: 'acc-1', databaseId: 'db-1', databaseName: 'sullyos-amsg' };
+    const AMSG_TABLES = ['client_state', 'cloud_resource_metadata', 'worker_diagnostics', '_cf_KV', 'sqlite_sequence', 'd1_migrations'];
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        vi.restoreAllMocks();
+    });
+
+    it('库里有旧数据、本机没旧钥匙：停下来让用户选，一行都不删', async () => {
+        // 不拦的话会换一把新钥匙装上去，旧数据全部解不开，主动消息一直报 Decryption failed。
+        const sqls = stubD1(AMSG_TABLES, true);
+
+        const result = await guardReusedDatabase({ ...base, hasExistingMasterKey: false });
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.code).toBe('DATABASE_KEY_MISSING');
+        expect(sqls.some((sql) => sql.startsWith('DELETE'))).toBe(false);
+    });
+
+    it('用户确认清空后，删掉后端自己的表，SQLite / D1 / wrangler 的表不碰', async () => {
+        const sqls = stubD1(AMSG_TABLES, true);
+
+        const result = await guardReusedDatabase({ ...base, hasExistingMasterKey: false, reset: true });
+
+        expect(result).toEqual({ ok: true, cleared: true });
+        expect(sqls.filter((sql) => sql.startsWith('DELETE'))).toEqual([
+            'DELETE FROM "client_state"',
+            'DELETE FROM "cloud_resource_metadata"',
+            'DELETE FROM "worker_diagnostics"',
+        ]);
+    });
+
+    it('库是空的（比如上次装到一半）就直接用，不打扰用户', async () => {
+        stubD1(AMSG_TABLES, false);
+
+        expect(await guardReusedDatabase({ ...base, hasExistingMasterKey: false }))
+            .toEqual({ ok: true, cleared: false });
+    });
+
+    it('本机有旧钥匙就沿用，连查都不查', async () => {
+        const sqls = stubD1(AMSG_TABLES, true);
+
+        expect(await guardReusedDatabase({ ...base, hasExistingMasterKey: true, reset: true }))
+            .toEqual({ ok: true, cleared: false });
+        expect(sqls).toEqual([]);
     });
 });
 
