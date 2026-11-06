@@ -14107,7 +14107,7 @@ function buildScheduledPush(message, build, extraMeta, bannerBody) {
 }
 
 // utils/amsgBundleVersion.ts
-var AMSG_BUNDLE_VERSION = "2026-11-06.2";
+var AMSG_BUNDLE_VERSION = "2026-11-06.3";
 
 // worker/amsg/src/reproduction.ts
 async function writeDiagnosticStage(writeState, runId, event, fields = {}) {
@@ -19291,6 +19291,9 @@ var runFireScheduleTool = async (stash, scheduleTask, args, nowMs) => {
       ...stash.scheduledTaskInput ? { taskInput: stash.scheduledTaskInput } : {},
       recurrenceType: parsed.recurrence,
       messageType: parsed.mode,
+      // 不写的话上游会继承当前任务的 subtype：即时对话里排的后续会带上 'instant-chat'，
+      // 被下面的任务清单当成聊天行滤掉——角色看不见、取消不了，名额和间隔也数不到它。
+      messageSubtype: "chat",
       uuid,
       // 角色自排的循环任务也按角色所在时区的墙钟推进，跟用户在面板排的同一套。
       tzId: stash.tz.tzId,
@@ -19745,7 +19748,7 @@ var amsgHooks = {
         const page = await ctx.listTasks({ status: "pending", limit: 100, offset, includeMetadata: true });
         for (const row of page.tasks) {
           const meta = row.metadata ?? {};
-          if ((row.charId ?? meta.charId) !== charId || row.status !== "pending" || !row.uuid || !row.nextSendAt || meta.amsgInstantChat === true || meta.amsgKind || row.messageSubtype === "instant-chat") continue;
+          if ((row.charId ?? meta.charId) !== charId || row.status !== "pending" || !row.uuid || !row.nextSendAt || meta.amsgInstantChat === true || meta.amsgKind || row.messageSubtype === "instant-chat" && meta.amsgSelfScheduled !== true) continue;
           const old = known.get(row.uuid);
           live.push({
             ...old,
