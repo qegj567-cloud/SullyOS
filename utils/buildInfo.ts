@@ -2,7 +2,8 @@
  * 构建版本相关常量的单一来源。
  *
  * `__BUILD_BRANCH__` / `__BUILD_COMMIT__` / `__BUILD_TIME__`
- * 是 vite.config.ts 注入的全局常量（prod 也有真值），
+ * 由 Vite 替换成当前 HTML 里的发布元数据读取（prod 也有真值），
+ * 时间/commit 不再烤进共享代码，避免无源码变化的构建让功能包集体换 hash。
  * 但「branch@commit」这个 user-facing 标签字符串原本在 BuildBadge / VersionInfo / DevDebugPanel
  * 三处分别现拼，想加 dirty 标、截短 commit 之类要改三处——抽到这里集中维护。
  */
