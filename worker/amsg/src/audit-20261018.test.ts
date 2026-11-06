@@ -183,6 +183,25 @@ describe('amsg2 audit regressions', () => {
     expect(stash.plannedSelfSends).toBe(1);
   });
 
+  it('self-scheduled follow-ups from instant chat stay visible, cancellable and counted', async () => {
+    // Upstream copies the parent's messageSubtype unless told otherwise; an instant-chat parent
+    // used to hide every follow-up from the character's own task list and limits.
+    const { ctx, stash, scheduleTask } = await start();
+    await runFireScheduleTool(stash, scheduleTask, { send_at: '2026-10-18T12:00:00Z' }, now);
+    expect(scheduleTask.mock.calls[0][0].messageSubtype).toBe('chat');
+
+    const legacy = makeTask(40, now + 3_600_000);
+    const next = await start({ task: ctx.task, remote: [{
+      uuid: legacy.taskUuid, charId, clientTaskId: legacy.clientTaskId, status: 'pending',
+      nextSendAt: legacy.firstSendTime, recurrenceType: 'none', messageType: 'auto', messageSubtype: 'instant-chat',
+      metadata: { charId, amsgSelfScheduled: true, amsgExpirePolicy: 'expire' },
+    }, { uuid: 'instant-task', charId, status: 'pending', nextSendAt: legacy.firstSendTime,
+      messageSubtype: 'instant-chat', metadata: { charId, amsgInstantChat: true } }] });
+    expect(next.stash.pendingTasks.map((task: any) => task.taskUuid)).toEqual([legacy.taskUuid]);
+    expect(next.stash.plannedSelfSends).toBe(1);
+    expect(JSON.stringify(next.plan.messages)).toContain(legacy.taskUuid.slice(0, 8));
+  });
+
   it('native transport OFF retains execution permission for an explicit text scheduling call', async () => {
     const { plan, ctx } = await start({ config: buildToolConfig(undefined, { servers: [], useNativeTools: false }) });
     expect(plan.tools).toBeUndefined();
