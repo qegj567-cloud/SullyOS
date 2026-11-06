@@ -21,8 +21,8 @@ import {
   CharacterProfile,
 } from '../types';
 import { FIRE_GRACE_MS, recurrencePeriodMs } from './amsg2ExpireGuard';
-import { AMSG_INSTANT_CHAT_SUBTYPE, type AmsgTzRef, formatFireTimeShort } from './amsgFirePack';
-import { AMSG_BACKGROUND_JOB_SUBTYPE } from './amsgTaskKinds';
+import { type AmsgTzRef, formatFireTimeShort } from './amsgFirePack';
+import { classifyTaskRow } from './amsgTaskKinds';
 
 /**
  * 这个角色是否开着主动消息 2.0。
@@ -560,8 +560,7 @@ export const reconcileTasksWithRemote = (
       !known.has(row.uuid)
       && row.nextSendAt && row.recurrenceType && row.messageType
       && row.status !== 'failed'
-      && row.messageSubtype !== AMSG_INSTANT_CHAT_SUBTYPE
-      && row.messageSubtype !== AMSG_BACKGROUND_JOB_SUBTYPE
+      && classifyTaskRow(row) === 'scheduled'
     ))
     .map((row): ActiveMsg2TaskRecord => ({
       taskUuid: row.uuid,

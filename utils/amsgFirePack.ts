@@ -951,14 +951,8 @@ export const renderFirePack = (
  */
 export const FIRE_PACK_VERSION = 7;
 
-/**
- * 即时对话任务行的 messageSubtype 标签。上游只当自由文本原样透传；客户端两处都认它：
- * 排程时写（activeMsgClient.sendInstantChat）、面板对账时滤（amsg2Tasks 的
- * reconcileTasksWithRemote——即时对话的行不补进任务清单，不然用户正等着的一轮会显示
- * 成「待触发」，还可能被「取消全部」顺手掐掉）。写读两侧靠这一个常量绑死：它是
- * GET /messages 明文投影里唯一可查的即时对话标记，producer 改个说法 filter 就瞎了。
- */
-export const AMSG_INSTANT_CHAT_SUBTYPE = 'instant-chat';
+/** 即时对话任务行的 messageSubtype；定义和分类规则在 amsgTaskKinds。 */
+export { AMSG_INSTANT_CHAT_SUBTYPE } from './amsgTaskKinds';
 
 /**
  * 解析失败时给人看的一句原因。

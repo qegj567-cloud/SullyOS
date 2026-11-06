@@ -50,7 +50,7 @@ import { AMSG_BUNDLE_VERSION } from '../../../utils/amsgBundleVersion';
 // 往里加任何浏览器依赖都会连累这个 bundle）。这里只产出事实，红绿灯和文案归前端。
 import type { AmsgPushGoneFailure } from '../../../utils/amsgDiagnostics';
 import type { UserProfile } from '../../../types';
-import { AMSG_JOB_NAMESPACE, AMSG_JOB_TTL_DAYS } from '../../../utils/amsgTaskKinds';
+import { AMSG_JOB_NAMESPACE, AMSG_JOB_TTL_DAYS, classifyTaskRow } from '../../../utils/amsgTaskKinds';
 import {
   FIRE_KIND_HANDLERS,
   getKindFireStash,
@@ -332,6 +332,8 @@ type ScheduleTask = (options: {
   firstSendTime: string;
   recurrenceType?: string;
   messageType?: string;
+  /** 不传就继承当前任务的。 */
+  messageSubtype?: string;
   metadata?: Record<string, unknown>;
   taskInput?: Record<string, unknown>;
   uuid?: string;
@@ -1566,7 +1568,7 @@ export const runFireScheduleTool = async (
       recurrenceType: parsed.recurrence,
       messageType: parsed.mode,
       // 不写的话上游会继承当前任务的 subtype：即时对话里排的后续会带上 'instant-chat'，
-      // 被下面的任务清单当成聊天行滤掉——角色看不见、取消不了，名额和间隔也数不到它。
+      // 列表投影里就被 classifyTaskRow 当成即时对话——前端看不见、取消不了它。
       messageSubtype: 'chat',
       uuid,
       // 角色自排的循环任务也按角色所在时区的墙钟推进，跟用户在面板排的同一套。
@@ -2285,9 +2287,7 @@ export const amsgHooks = {
         for (const row of page.tasks) {
           const meta = row.metadata ?? {};
           if ((row.charId ?? meta.charId) !== charId || row.status !== 'pending' || !row.uuid || !row.nextSendAt
-            || meta.amsgInstantChat === true || meta.amsgKind
-            // 2026-11-06.3 之前从即时对话排出的自排任务带着继承来的 'instant-chat'，靠自排标记认回来。
-            || (row.messageSubtype === 'instant-chat' && meta.amsgSelfScheduled !== true)) continue;
+            || classifyTaskRow(row) !== 'scheduled') continue;
           const old = known.get(row.uuid);
           live.push({
             ...old,

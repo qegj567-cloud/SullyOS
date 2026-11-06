@@ -43,6 +43,50 @@ export const readTaskKind = (metadata: Record<string, unknown> | null | undefine
  */
 export const AMSG_BACKGROUND_JOB_SUBTYPE = 'job';
 
+/** 即时对话任务行的 `messageSubtype`（客户端 sendInstantChat 排程时写）。 */
+export const AMSG_INSTANT_CHAT_SUBTYPE = 'instant-chat';
+
+/** 任务 metadata 里标即时对话的键（客户端排任务时写、worker 到点读）。 */
+export const AMSG_INSTANT_CHAT_FLAG = 'amsgInstantChat';
+
+/** 这条任务是不是即时对话（客户端刚发完消息在等回复）。 */
+export const isInstantChatTask = (metadata: Record<string, unknown> | undefined | null): boolean =>
+  !!metadata && metadata[AMSG_INSTANT_CHAT_FLAG] === true;
+
+// ─── 任务行分类 ───────────────────────────────────────
+
+/**
+ * - `instant-chat`：用户正等着的一轮即时对话回复
+ * - `background-job`：不说话的后台活儿
+ * - `scheduled`：用户在面板排的、角色自己排的定时主动消息
+ *
+ * 只有 `scheduled` 进任务清单、算进角色的额度，也只有它能被角色和「取消全部」取消。
+ */
+export type AmsgTaskRowClass = 'instant-chat' | 'background-job' | 'scheduled';
+
+/**
+ * 云端一条任务行属于哪一类。所有「这一行算不算定时任务」的判断都走这里。
+ *
+ * 有 metadata 时以 metadata 为准；没有时只能看 `messageSubtype`——`GET /messages` 的
+ * 列表投影不带 metadata，前端拿到的只有它。所以排任务时 subtype 必须显式写：上游
+ * `scheduleTask` 没传的字段会继承当前任务的。
+ */
+export const classifyTaskRow = (row: {
+  messageSubtype?: string | null;
+  metadata?: Record<string, unknown> | null;
+}): AmsgTaskRowClass => {
+  const { metadata } = row;
+  if (metadata) {
+    if (isInstantChatTask(metadata)) return 'instant-chat';
+    if (readTaskKind(metadata)) return 'background-job';
+    // worker 2026-11-06.3 之前，即时对话里自排的任务继承了 'instant-chat'，靠自排标记认回来。
+    if (metadata.amsgSelfScheduled === true) return 'scheduled';
+  }
+  if (row.messageSubtype === AMSG_INSTANT_CHAT_SUBTYPE) return 'instant-chat';
+  if (row.messageSubtype === AMSG_BACKGROUND_JOB_SUBTYPE) return 'background-job';
+  return 'scheduled';
+};
+
 // ─── 一次性输入的云端抽屉 ─────────────────────────────
 
 /**

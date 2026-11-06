@@ -44,12 +44,7 @@ export const INSTANT_TOTAL_TIMEOUT_MS = 600_000;
 
 // ─── 任务身份 ───
 
-/** 任务 metadata 里标即时对话的那个键（客户端排任务时写、worker 到点读）。 */
-export const AMSG_INSTANT_CHAT_FLAG = 'amsgInstantChat';
-
-/** 这条任务是不是即时对话（客户端刚发完消息在等回复）。 */
-export const isInstantChatTask = (metadata: Record<string, unknown> | undefined | null): boolean =>
-  !!metadata && metadata[AMSG_INSTANT_CHAT_FLAG] === true;
+export { AMSG_INSTANT_CHAT_FLAG, isInstantChatTask } from '../../../utils/amsgTaskKinds';
 
 // ─── fire 时追加的「时效信息」块 ───
 
