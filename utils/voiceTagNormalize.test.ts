@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { normalizeVoiceTags, sanitizeIntoSegments, sanitizeForBubble } from './sanitize';
 import { ChatParser } from './chatParser';
+import { ChatPrompts } from './chatPrompts';
+import { parseVoiceOutput } from './minimaxTts';
 import { collectVoiceBatchSubtitle, isPoisonedVoiceSubtitle } from './voiceSubtitle';
 
 // 语音标签自愈：模型把 <语音> 写歪的各种真实形态都要能修回规范，
@@ -78,6 +80,31 @@ describe('normalizeVoiceTags', () => {
   it('全角字幕标签 → 规范化', () => {
     expect(normalizeVoiceTags('<语音>hi</语音>＜字幕＞你好＜/字幕＞'))
       .toBe('<语音>hi</语音><字幕>你好</字幕>');
+  });
+
+  it('字幕写进语音块里 → 挪到闭合标签后面', () => {
+    expect(normalizeVoiceTags('<语音 emotion="happy">Hey, you there?<字幕>喂，你在吗？</字幕></语音>'))
+      .toBe('<语音 emotion="happy">Hey, you there?</语音>\n<字幕>喂，你在吗？</字幕>');
+    // 未闭合的语音块里夹着字幕：补闭合时就让到字幕前面
+    expect(normalizeVoiceTags('<语音>Hey<字幕>喂</字幕>'))
+      .toBe('<语音>Hey</语音><字幕>喂</字幕>');
+  });
+
+  it('字幕嵌在语音块里时，朗读文本只剩外语、字幕单独取出', () => {
+    const parsed = parseVoiceOutput('<语音>Hey, you there?<字幕>喂，你在吗？</字幕></语音>');
+    expect(parsed.speech).toBe('Hey, you there?');
+    expect(parsed.rawSpeech).toBe('Hey, you there?');
+    expect(parsed.subtitle).toBe('喂，你在吗？');
+  });
+
+  it('历史上下文里的旧坏格式按规范写法交给模型', () => {
+    const char = { id: 'c1', name: '阿一' } as any;
+    const { apiMessages } = ChatPrompts.buildMessageHistory([
+      { id: 1, charId: 'c1', role: 'user', type: 'text', content: '在吗', timestamp: 1 },
+      { id: 2, charId: 'c1', role: 'assistant', type: 'text', content: '<语音>Hey<字幕>喂</字幕></语音>', timestamp: 2 },
+    ] as any, 20, char, { name: '小明' } as any, []);
+    const reply = String(apiMessages.find(m => m.role === 'assistant')?.content);
+    expect(reply).toContain('<语音>Hey</语音>\n<字幕>喂</字幕>');
   });
 });
 

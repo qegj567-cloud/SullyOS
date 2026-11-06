@@ -261,6 +261,7 @@ function repairPairedTag(
  *  3. 开标签属性: <语音emotion=…> 少空格、全角引号 “” / 全角等号 ＝ → 规范属性
  *  4. 配对修复: 有开无闭 → 末尾补闭合 (语音的闭合会插在末尾完整 <字幕> 块之前);
  *     孤儿闭合 (无开) / 嵌套多余开标签 / 自闭合空标签 → 删除
+ *  5. 字幕嵌在语音块里: <语音>台词<字幕>中文</字幕></语音> → <语音>台词</语音>\n<字幕>中文</字幕>
  */
 export function normalizeVoiceTags(t: string): string {
   if (!/[语語]音|字幕/.test(t)) return t; // fast path
@@ -279,6 +280,16 @@ export function normalizeVoiceTags(t: string): string {
   // 4. 配对扫描: 先修语音 (闭合避让末尾字幕块), 再修字幕
   result = repairPairedTag(result, /<\/?[语語]音[^>]*>/g, tok => (/語/.test(tok) ? '語音' : '语音'), true);
   result = repairPairedTag(result, /<\/?字幕[^>]*>/g, () => '字幕', false);
+  // 5. 字幕写进了语音块里: 挪到 </语音> 后面, 否则中文会被当成台词朗读、转文字面板显示两遍
+  result = result.replace(/(<[语語]音[^>]*>)([\s\S]*?)(<\/[语語]音>)/g, (block, open: string, inner: string, close: string) => {
+    const subtitles: string[] = [];
+    const speech = inner.replace(/<字幕>([\s\S]*?)<\/字幕>/g, (_m, sub: string) => {
+      if (sub.trim()) subtitles.push(sub.trim());
+      return '';
+    });
+    if (subtitles.length === 0) return block;
+    return `${open}${speech.trim()}${close}\n<字幕>${subtitles.join('\n')}</字幕>`;
+  });
   return result;
 }
 
