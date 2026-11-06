@@ -136,7 +136,7 @@ export async function runBlobGc(opts?: { minAgeMs?: number }) {
         throw new Error(`另一项存储维护（${currentMaintenanceHolder()}）正在进行，请稍后再试。`);
     }
     try {
-        return await blobStore.gc({ refSources: iterateRefSources(), ...opts });
+        return await blobStore.gc({ refSources: (async function* () { yield* iterateRefSources(); yield* (await import('./spaceAssets')).allSpaceReferenceSources(); })(), ...opts });
     } finally {
         releaseMaintenanceLock();
     }

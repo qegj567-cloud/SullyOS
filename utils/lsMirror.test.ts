@@ -82,6 +82,7 @@ describe('localStorage IndexedDB 镜像 (lsMirror)', () => {
         localStorage.setItem('aetheros.luckin.mcpEnabled', 'true');
         localStorage.setItem('sully_music_cfg_v1', '{"workerUrl":"","cookie":"MUSIC_U=abc","quality":"exhigh"}');
         localStorage.setItem('sullyos_update_2026_09_11_sar_seen', '1');
+        localStorage.setItem('sullyos_update_user_spaces_v1_seen', '1');
         localStorage.setItem('sullyos_disclaimer_accepted', '1700000000000');
 
         await snapshotLocalStorageMirror();
@@ -99,6 +100,7 @@ describe('localStorage IndexedDB 镜像 (lsMirror)', () => {
             'aetheros.luckin.mcpEnabled',
             'sully_music_cfg_v1',
             'sullyos_update_2026_09_11_sar_seen',
+            'sullyos_update_user_spaces_v1_seen',
             'sullyos_disclaimer_accepted',
         ]));
         expect(localStorage.getItem('vr_fishing_market_v1')).toBe('{"coins":9999,"dinosaurGarden":{"eggs":3},"sarFamiliarity":{"aiven":88}}');
@@ -107,6 +109,7 @@ describe('localStorage IndexedDB 镜像 (lsMirror)', () => {
         expect(localStorage.getItem('aetheros.luckin.mcpToken')).toBe('lk-secret');
         expect(localStorage.getItem('sully_music_cfg_v1')).toBe('{"workerUrl":"","cookie":"MUSIC_U=abc","quality":"exhigh"}');
         expect(localStorage.getItem('sullyos_update_2026_09_11_sar_seen')).toBe('1');
+        expect(localStorage.getItem('sullyos_update_user_spaces_v1_seen')).toBe('1');
     });
 
     it('记忆宫殿水位线在 localStorage 被清后从 IndexedDB mp_hwm_v1_* 批量自愈', async () => {

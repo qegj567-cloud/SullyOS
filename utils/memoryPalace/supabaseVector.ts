@@ -499,6 +499,16 @@ export async function bulkSetRoom(
 /**
  * 删除向量
  */
+/** Account deletion must never use the whole-table wipe on a shared remote database. */
+export async function deleteCharacterVectors(config: RemoteVectorConfig, charId: string): Promise<void> {
+    if (!charId) throw new Error('缺少远程记忆归属');
+    const params = new URLSearchParams({ char_id: `eq.${charId}` });
+    const response = await fetch(restUrl(config, `/memory_vectors?${params}`), {
+        method: 'DELETE', headers: headers(config), signal: AbortSignal.timeout(30000),
+    });
+    if (!response.ok) throw new Error(`远程记忆清理失败（${response.status}），本地存档已保留，请重试`);
+}
+
 export async function deleteVector(config: RemoteVectorConfig, memoryId: string): Promise<boolean> {
     try {
         const res = await fetch(restUrl(config, `/memory_vectors?memory_id=eq.${encodeURIComponent(memoryId)}`), {

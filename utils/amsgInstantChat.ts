@@ -1,4 +1,5 @@
 import { stageStoppedReplyReceipt } from './amsgStoppedReplyClient';
+import { listUserSpaces } from './userSpaces';
 import { amsgStateNamespace } from './amsgFirePack';
 import { stoppedReplyKey } from './amsgStoppedReply';
 import { getReplyDisplayIds, isReplyStopped, markReplyStopped, replyAbortError } from './chatReplyCancellation';
@@ -751,6 +752,7 @@ const backfillOutboxEntries = async (
   entries: AmsgOutboxEntry[],
 ): Promise<Omit<OutboxDrainResult, 'entries'>> => {
   const now = Date.now();
+  const localCharIds = listUserSpaces().length > 1 ? new Set((await DB.getAllCharacters()).map(c => c.id)) : null;
   const ackNow: string[] = [];
   const writtenIds: string[] = [];
   let written = 0;
@@ -768,6 +770,9 @@ const backfillOutboxEntries = async (
   }
   const persistedIdsByChar = new Map<string, Set<string>>();
   for (const [charId, ids] of candidatesByChar) {
+    // Other users' messages still enter the shared durable inbox. Their own page
+    // will deduplicate and run the unchanged chat pipeline when that space opens.
+    if (localCharIds && !localCharIds.has(charId)) continue;
     persistedIdsByChar.set(charId, await DB.findPersistedActiveMessageIds(charId, ids));
   }
   // 收件箱里已经躺着的那些，各自是什么时候到这台设备的。

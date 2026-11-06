@@ -17,6 +17,7 @@
  */
 
 import { DB } from './db';
+import { subscribeSpaceStorageChanges } from './userSpaces';
 import { HOME3D_LOCAL_KEYS } from './home3DBackup';
 import { healAllMemoryPalaceHighWaterMarks } from './memoryPalace/highWaterMark';
 
@@ -125,6 +126,7 @@ export const MIRRORED_KEYS: readonly string[] = [
     'sullyos_anniversary_gift_v1',
     'sullyos_real_location_intro_v1_seen',
     'sullyos_navigation_ball_intro_v1_seen',
+    'sullyos_update_user_spaces_v1_seen',
     'sullyos_update_2026_10_home3d_beta_seen',
     'sullyos_update_2026_09_small_updates_seen',
     'sullyos_user_holidays_intro_v1',
@@ -226,6 +228,7 @@ export async function initLocalStorageMirror(): Promise<string[]> {
 
     if (!listenersAttached && typeof window !== 'undefined' && typeof document !== 'undefined') {
         listenersAttached = true;
+        subscribeSpaceStorageChanges(key => { if (key === '*' || MIRRORED_KEYS_SET.has(key)) scheduleDebouncedSnapshot(); });
         const snap = () => {
             if (pendingDebounceTimer !== null) {
                 clearTimeout(pendingDebounceTimer);

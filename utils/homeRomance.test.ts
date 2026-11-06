@@ -1,6 +1,6 @@
 import {afterEach,expect,it,vi} from 'vitest';
 import {Group,OrthographicCamera,Vector3} from 'three';
-import {hasRomanticPair,homeSocialActionAllowed,isRomanticMotion,normalizeRomanticPairs,updateRomanticPair} from '../apps/room3d/homeRomance';
+import {hasRomanticPair,homeSocialActionAllowed,isRomanticMotion,normalizeRomanticPairs,updateRomanticPair,updateHomeRomanticRelation} from '../apps/room3d/homeRomance';
 import {createSocialScene} from '../apps/room3d/chibi/selectedSocial';
 // @ts-expect-error Runtime JS module.
 import {createPhotoSession} from '../apps/room3d/photoSession.js';
@@ -17,7 +17,7 @@ it('denies every intimate clip by default, including old homes and apparent high
 it('authorizes only the exact declared pair, symmetrically, with no transitive permission',()=>{
  const home={romanticPairs:updateRomanticPair({},'A','B',true)};
  expect(homeSocialActionAllowed(home,'home-hug','A','B')).toBe(true);expect(homeSocialActionAllowed(home,'home-hug','B','A')).toBe(true);
- for(const [a,b]of [['A','C'],['user','A'],['B','C'],['A','A']])expect(homeSocialActionAllowed(home,'home-hug',a,b)).toBe(false);
+ for(const [a,b]of [['A','C'],['B','C'],['A','A']])expect(homeSocialActionAllowed(home,'home-hug',a,b)).toBe(false);
  home.romanticPairs=updateRomanticPair(home,'B','A',false);expect(hasRomanticPair(home,'A','B')).toBe(false);
 });
 it('persists explicit pairs, rejects malformed imports, and leaves old homes unapproved',()=>{
@@ -39,4 +39,19 @@ it('applies the same restriction to photo interactions without changing actor tr
  const actors=residents().map(r=>({id:r.id,label:r.id,root:r.visitor.root,person:r.visitor}));actors[1].root.position.x=2;
  const session=createPhotoSession({actors,camera:new OrthographicCamera(),controls:{target:new Vector3()},invalidate:vi.fn(),canInteract:(id:string,a:string,b:string)=>homeSocialActionAllowed({},id,a,b)});
  await expect(session.interaction('home-hug','A','B')).rejects.toThrow('浪漫关系');expect(actors[1].root.position.x).toBe(2);session.restore();
+});
+
+it('defaults all user pairs on in new and old homes; disabling survives save/import and re-enabling',()=>{
+ for(const home of [{}, {romanticPairs:[]}, createHome(catalog as any)]){
+  expect(hasRomanticPair(home,'user','A')).toBe(true);
+  expect(hasRomanticPair(home,'B','user')).toBe(true);
+  expect(homeSocialActionAllowed(home,'home-hug','user','A')).toBe(true);
+  expect(hasRomanticPair(home,'A','B')).toBe(false);
+ }
+ const home={...createHome(catalog as any),...updateHomeRomanticRelation({},'A','user',false)};
+ const restored=validateHome(JSON.parse(JSON.stringify(home)),catalog as any);
+ expect(hasRomanticPair(restored,'user','A')).toBe(false);
+ expect(hasRomanticPair(restored,'user','B')).toBe(true);
+ expect(hasRomanticPair(updateHomeRomanticRelation(restored,'user','A',true),'A','user')).toBe(true);
+ expect(()=>validateHome({...home,userRomanceDisabledIds:[123]},catalog as any)).toThrow();
 });

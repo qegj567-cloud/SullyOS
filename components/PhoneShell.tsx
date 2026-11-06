@@ -18,6 +18,7 @@ import CompanionLockChrome from './os/CompanionLockChrome';
 import { loadCompanionFrameStyle } from './os/companionFrameStyles';
 import { createPreloadableLazy, type PreloadableLazy } from './os/preloadableLazy';
 import { setVisibleTimeout } from '../utils/visibleTimeout';
+import { isUserSpaceArrival, finishUserSpaceTransition, cancelUserSpaceTransition } from '../utils/userSpaceTransition';
 
 // 按需懒加载各 App —— 切到对应 App 时才下载/解析其代码块，首屏只加载 Launcher 与外壳，
 // 大体积 App（MemoryPalace / VRWorld / Songwriting 等）不再压在主包里。
@@ -518,7 +519,18 @@ const PhoneShell: React.FC = () => {
   }, [statusBarMode]);
 
   // 冷启动「世界入场」是否已结束。结束前由 BootSequence 接管整屏（同时取代旧的黑屏 spinner）。
-  const [bootDone, setBootDone] = useState(false);
+  const [spaceArrival] = useState(isUserSpaceArrival);
+  const [bootDone, setBootDone] = useState(spaceArrival);
+  useEffect(() => {
+    if (!spaceArrival) return;
+    if (deploymentNotice.blocked) {
+      if (deploymentNotice.source !== 'checking') cancelUserSpaceTransition();
+      return;
+    }
+    if (!isDataLoaded) return;
+    if (isLocked) unlock();
+    else finishUserSpaceTransition();
+  }, [spaceArrival, isDataLoaded, isLocked, deploymentNotice.blocked, deploymentNotice.source, unlock]);
   const bootAnimationEnabled = theme.bootAnimationEnabled !== false;
   useEffect(() => {
     // 本次启动一旦选择跳过，就记为已经完成；用户稍后重新打开开关时不在桌面中途补播。

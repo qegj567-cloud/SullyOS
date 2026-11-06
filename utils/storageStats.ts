@@ -559,7 +559,7 @@ export async function computeStorageBreakdown(
     }
 
     for (const name of await listDatabaseNames()) {
-        if (name === MAIN_DATABASE_NAME) continue; // 主库已经从 openDB() 拿到了，别重复开
+        if (opened.some(entry => entry.db.name === name)) continue;
         const db = await openExistingDatabase(name);
         if (db) opened.push({ db, category: DATABASE_CATEGORY[name], shouldClose: true });
     }

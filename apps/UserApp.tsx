@@ -1,3 +1,4 @@
+import UserSpacePanel from '../components/user/UserSpacePanel';
 
 import React, { useRef, useState } from 'react';
 import { useOS } from '../context/OSContext';
@@ -91,7 +92,7 @@ const UserApp: React.FC = () => {
                             </div>
                         </div>
                         <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleAvatarChange} />
-                        <p className="mt-2 text-center text-[10px] text-slate-400">整体头像：所有聊天的默认。想在某个角色那儿换一副面孔？下面「分角色聊天头像」里设。</p>
+                        <p className="mt-2 text-center text-[10px] text-slate-400">整体头像：所有聊天的默认。专属头像与额外信息可在下面「在 TA 面前的我」中设置。</p>
 
                         {/* Name field */}
                         <div className="mt-4">
@@ -108,7 +109,8 @@ const UserApp: React.FC = () => {
                     </div>
                 </div>
 
-                {/* 分角色聊天头像：上面的整体头像是宏观默认，这里可给每个角色的私聊单独换「你」的头像 */}
+                {/* 在 TA 面前的我：按角色设置用户头像与资料补充。 */}
+                <UserSpacePanel />
                 <PerCharAvatarPicker />
                 <button onClick={() => setShowFigures(true)} className="w-full text-left bg-white rounded-2xl p-5 border border-slate-100"><strong className="text-slate-700">我的手办柜</strong><span className="block text-sm text-slate-400 mt-1">Chibi 与 3D 家园形象</span></button>
 

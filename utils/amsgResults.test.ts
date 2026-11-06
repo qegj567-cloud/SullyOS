@@ -39,6 +39,13 @@ beforeEach(() => {
 });
 
 describe('结果分发口排队', () => {
+  it('另一个用户的云端结果不执行也不销账', async () => {
+    localStorage.setItem('sully_user_spaces_v1', JSON.stringify([{ id: 'default', name: '甲' }, { id: 'u_other', name: '乙' }]));
+    try {
+      expect(await dispatchAmsgResult({ ...result('other-user'), charId: 'only-in-other-space' })).toBe(false);
+      expect(trace).toEqual([]);
+    } finally { localStorage.removeItem('sully_user_spaces_v1'); }
+  });
   it('两条同时到达也串行落地，不交错', async () => {
     await Promise.all([dispatchAmsgResult(result('a')), dispatchAmsgResult(result('b'))]);
 

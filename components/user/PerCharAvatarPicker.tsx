@@ -3,9 +3,12 @@ import { useOS } from '../../context/OSContext';
 import { processImage } from '../../utils/file';
 import { migrateDataUrlToRef } from '../../utils/blobRef';
 import TokenImg from '../os/TokenImg';
+import CharacterUserPersonaEditor from '../character/CharacterUserPersonaEditor';
+import { useLocalBackHandler } from '../../hooks/useLocalBackHandler';
 
 /**
- * 档案 App「分角色聊天头像」：给每个角色的私聊单独设置「你」的头像。
+ * 档案 App「在 TA 面前的我」：一起管理分角色头像与用户资料补充。
+ * 文字补充存角色的 userPersona，由 ContextBuilder 合并到用户信息。
  * 不设置 = 用档案上面的整体头像（宏观默认）；数据存 userProfile.perCharAvatars，
  * 随 user_profile 单例进备份。群聊仍用整体头像。
  *
@@ -25,7 +28,7 @@ const isValidHttpImageUrl = (value: string) => {
 };
 
 const PerCharAvatarPicker: React.FC = () => {
-    const { characters, userProfile, updateUserProfile, addToast } = useOS();
+    const { characters, userProfile, updateUserProfile, updateCharacter, addToast } = useOS();
     const overrides = userProfile.perCharAvatars || {};
 
     const [query, setQuery] = useState('');
@@ -36,6 +39,7 @@ const PerCharAvatarPicker: React.FC = () => {
     const [editingId, setEditingId] = useState<string | null>(null);
     const [urlDraft, setUrlDraft] = useState('');
     const uploadRef = useRef<HTMLInputElement>(null);
+    useLocalBackHandler(() => { setEditingId(null); return true; }, 30, editingId !== null);
 
     const filtered = useMemo(() => {
         const q = query.trim().toLowerCase();
@@ -114,10 +118,10 @@ const PerCharAvatarPicker: React.FC = () => {
                         <path strokeLinecap="round" strokeLinejoin="round" d="M17.982 18.725A7.488 7.488 0 0 0 12 15.75a7.488 7.488 0 0 0-5.982 2.975m11.963 0a9 9 0 1 0-11.963 0m11.963 0A8.966 8.966 0 0 1 12 21a8.966 8.966 0 0 1-5.982-2.275M15 9.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
                     </svg>
                 </span>
-                <h2 className="text-sm font-bold text-slate-700">分角色聊天头像</h2>
+                <h2 className="text-sm font-bold text-slate-700">在 TA 面前的我</h2>
             </div>
             <p className="text-[11px] text-slate-400 mb-3 leading-relaxed">
-                和不同角色聊天时，「你」可以顶着不同的头像。这里不设置的角色，用上面的整体头像；群聊始终用整体头像。
+                选择角色，设置在 TA 面前使用的头像、称呼、外貌与补充设定。留空沿用个人档案，经历与记忆继续保留。
             </p>
 
             {characters.length > PAGE_SIZE && (
@@ -189,16 +193,16 @@ const PerCharAvatarPicker: React.FC = () => {
 
             {/* 编辑弹层：URL 优先（推荐）+ 本地上传 + 恢复整体头像 */}
             {editingChar && (
-                <div className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center bg-black/30 backdrop-blur-sm animate-fade-in" onClick={() => setEditingId(null)}>
-                    <div className="w-full sm:max-w-sm bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl p-5 animate-slide-up sm:animate-pop-in"
+                <div role="dialog" aria-modal="true" aria-label={`在 ${editingChar.name} 面前的我`} className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center bg-black/30 backdrop-blur-sm animate-fade-in" onClick={() => setEditingId(null)}>
+                    <div className="w-full sm:max-w-sm max-h-[85dvh] overflow-y-auto bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl p-5 animate-slide-up sm:animate-pop-in"
                         style={{ paddingBottom: 'calc(1.25rem + var(--safe-bottom))' }}
                         onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-start justify-between mb-3">
                             <div>
-                                <div className="text-sm font-bold text-slate-800">和 {editingChar.name} 聊天时，你的头像</div>
-                                <div className="mt-0.5 text-[10px] text-slate-400">只影响这个角色的私聊；其他聊天不变。</div>
+                                <div className="text-sm font-bold text-slate-800">在 {editingChar.name} 面前的我</div>
+                                <div className="mt-0.5 text-[10px] text-slate-400">专属头像用于私聊；群聊头像沿用整体设置。</div>
                             </div>
-                            <button onClick={() => setEditingId(null)} className="px-2 text-xl leading-none text-slate-400 hover:text-slate-600">×</button>
+                            <button aria-label="关闭在 TA 面前的我" onClick={() => setEditingId(null)} className="px-2 text-xl leading-none text-slate-400 hover:text-slate-600">×</button>
                         </div>
 
                         <div className="flex items-center justify-center gap-5 mb-4">
@@ -243,6 +247,7 @@ const PerCharAvatarPicker: React.FC = () => {
                             )}
                         </div>
                         <input type="file" ref={uploadRef} className="hidden" accept="image/*" onChange={handleUpload} />
+                        <CharacterUserPersonaEditor key={editingChar.id} value={editingChar.userPersona} onChange={value => updateCharacter(editingChar.id, { userPersona: value })} />
                     </div>
                 </div>
             )}

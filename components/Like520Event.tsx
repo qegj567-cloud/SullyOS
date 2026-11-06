@@ -1,4 +1,5 @@
 import { loadCharacterContextMessages } from '../utils/chatContextRange';
+import { spaceCreatorDraftKey } from '../utils/userSpaces';
 /**
  * Like520Event.tsx
  * 520 特别活动 (2026.5.20) — "如果 char 变得小小的"
@@ -175,6 +176,7 @@ export const CreatorIframe: React.FC<CreatorIframeProps> = ({ mode, charName, pr
             type: 'like520_init',
             payload: {
                 ...p,
+                draftKey: spaceCreatorDraftKey(p.draftKey, p.mode, p.charName),
                 isSully: !!p.isSully,
                 extraItems: extraItemsRef.current,
                 safeBottomPx,

@@ -35,6 +35,15 @@ const Gaps: React.FC<{ gaps: CloudDataGap[] }> = ({ gaps }) => gaps.length ? (
 
 /** 以服务端资源为清单；本地角色只补充身份提示。清理状态留在服务端，不随关页丢失。 */
 const AmsgCloudDataModal: React.FC<Props> = ({ isOpen, onClose, characters, addToast }) => {
+  const [knownCharacters, setKnownCharacters] = useState(characters);
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    void import('../../utils/userSpaceCloudSettings').then(module => module.allSpaceCharacters()).then(all => {
+      if (!cancelled) setKnownCharacters(all);
+    }).catch(() => { /* Cloud identities remain available if local storage cannot be read. */ });
+    return () => { cancelled = true; };
+  }, [isOpen, characters]);
   const [session, setSession] = useState<CloudDataSession | null>(null);
   const [resources, setResources] = useState<CloudResource[]>([]);
   const [summary, setSummary] = useState<CloudDataSummary | null>(null);
@@ -248,7 +257,7 @@ const AmsgCloudDataModal: React.FC<Props> = ({ isOpen, onClose, characters, addT
           {resources.length > 0 && <div className="flex gap-3"><button type="button" className="text-violet-700" disabled={busy} onClick={() => setSelected(new Set(resources.map(row => row.id)))}>选中已加载项</button><button type="button" className="text-slate-500" disabled={busy} onClick={() => setSelected(new Set())}>取消选择</button></div>}
           <div className="divide-y divide-slate-100">
             {resources.map(row => {
-              const identity = cloudResourceIdentity(row, characters);
+              const identity = cloudResourceIdentity(row, knownCharacters);
               return <label key={row.id} className="flex cursor-pointer items-start gap-3 py-3">
                 <input type="checkbox" checked={selected.has(row.id)} disabled={busy} onChange={() => setSelected(previous => { const next = new Set(previous); if (next.has(row.id)) next.delete(row.id); else next.add(row.id); return next; })} className="mt-1 h-4 w-4 shrink-0 accent-rose-600" />
                 <span className="min-w-0 flex-1"><span className="block break-words font-semibold text-slate-800">{identity.name}</span><span className="block break-all text-[10px] text-slate-500">{identity.detail}{row.owner?.type === 'character' ? identity.local ? '（本机有关联）' : '（本机未关联）' : ''}</span><span className="mt-1 block break-all text-slate-600">{CLOUD_RESOURCE_LABELS[row.type]}：{row.label}</span><span className="block text-[10px] text-slate-400">{row.byteSize == null ? '大小未知' : formatCloudSize(row.byteSize)} · {localDate(row.updatedAt)}{row.status ? ` · ${resourceStatus(row.status)}` : ''}</span></span>

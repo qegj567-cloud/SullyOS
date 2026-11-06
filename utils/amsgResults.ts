@@ -16,6 +16,7 @@
  */
 
 import { PLATE_CONSOLIDATE_RESULT_KIND } from './amsgPlateJob';
+import { listUserSpaces } from './userSpaces';
 import { SCHEDULE_CHANGE_RESULT_KIND } from './amsgScheduleResult';
 import { FIRE_SKIP_RESULT_KIND } from './amsgFireSkipResult';
 
@@ -99,6 +100,11 @@ const guardDispatch = async (payload: unknown, context?: AmsgResultContext): Pro
 };
 
 const dispatchOne = async (payload: unknown, context?: AmsgResultContext): Promise<boolean> => {
+  const charId = (payload as any)?.charId ?? (payload as any)?.metadata?.charId;
+  if (typeof charId === 'string' && listUserSpaces().length > 1) {
+    const { DB } = await import('./db');
+    if (!await DB.getCharacter(charId)) return false;
+  }
   const resultKind = readResultKind(payload);
   if (!resultKind) {
     console.warn(`${HEADER} 收到一条没有 resultKind 的结果，丢弃`, payload);

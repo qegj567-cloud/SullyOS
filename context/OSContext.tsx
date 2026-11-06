@@ -1,3 +1,5 @@
+import { mergePhoneGeneration, PHONE_GENERATION_COMMITTED, type PhoneGeneration } from '../utils/phoneGeneration';
+import { SESSION_SPACE_ID, DEFAULT_SPACE_ID, listUserSpaces } from '../utils/userSpaces';
 import { handleLocalBack } from '../utils/localBackHandlers';
 import { updateVirtualTimeIfChanged } from '../utils/blurPolicy';
 import {isHomeAssetDisposal} from '../utils/homeAssetCancellation';
@@ -458,7 +460,7 @@ interface OSContextType {
   listCloudBackups: () => Promise<CloudBackupFile[]>;
 
   // System
-  exportSystem: (mode: 'text_only' | 'media_only' | 'full', options?: { includeBackendConnection?: boolean }) => Promise<Blob>;
+  exportSystem: (mode: 'text_only' | 'media_only' | 'full', options?: { includeBackendConnection?: boolean; userScope?: 'current' | 'all' }) => Promise<Blob>;
   importSystem: (fileOrJson: File | string, options?: ImportSystemOptions) => Promise<void>; // Accept File or String
   resetSystem: (options?: { force?: boolean }) => Promise<ResetSystemResult>;
   sysOperation: { status: 'idle' | 'processing', message: string, progress: number }; // Progress state
@@ -1708,7 +1710,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         let finalChars = dbChars;
 
         // A failed read is not an empty installation: never overwrite the saved Sully with defaults.
-        if (charactersReadSucceeded && !finalChars.some(c => c.id === sullyV2.id)) {
+        if (SESSION_SPACE_ID === DEFAULT_SPACE_ID && charactersReadSucceeded && !finalChars.some(c => c.id === sullyV2.id)) {
             await DB.saveCharacter(sullyV2);
             finalChars = [...finalChars, sullyV2];
         } else {
@@ -1801,10 +1803,13 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           } else {
             setActiveCharacterId(finalChars[0].id);
           }
-        } else if (charactersReadSucceeded) {
+        } else if (charactersReadSucceeded && SESSION_SPACE_ID === DEFAULT_SPACE_ID) {
           await DB.saveCharacter(initialCharacter);
           setCharacters([initialCharacter]);
           setActiveCharacterId(initialCharacter.id);
+        } else if (charactersReadSucceeded) {
+          setCharacters([]);
+          setActiveCharacterId('');
         } else {
           addToast('角色资料读取未完成，未写入默认角色。请重新打开应用重试，无需清理数据。', 'error');
         }
@@ -2023,11 +2028,21 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           }
       };
 
-      const openHandler = (e: Event) => {
+      let openingNotification = false;
+      const openHandler = async (e: Event) => {
           const { charId } = (e as CustomEvent).detail as { charId?: string };
-          if (!charId) return;
-          setActiveApp(AppID.Chat);
-          setActiveCharacterId(charId);
+          if (!charId || openingNotification) return;
+          openingNotification = true;
+          try {
+              const { routeCharacterNotification } = await import('../utils/userSpaceNavigation');
+              const result = await routeCharacterNotification(charId);
+              if (result === 'current') {
+                  setActiveApp(AppID.Chat);
+                  setActiveCharacterId(charId);
+              } else if (result === 'missing') addToast('这条通知的角色已不在本机', 'info');
+          } catch (error) {
+              addToast(error instanceof Error ? error.message : '打开通知失败，请重试', 'error');
+          } finally { openingNotification = false; }
       };
 
       const onVisible = () => {
@@ -2520,6 +2535,17 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           }
       };
 
+      const phoneGenerationHandler = (event: Event) => {
+          const { charId, generation } = (event as CustomEvent<{ charId: string; generation: PhoneGeneration }>).detail;
+          setCharacters(previous => previous.map(character => {
+              if (character.id !== charId) return character;
+              const next = { ...character, phoneState: mergePhoneGeneration(character.phoneState, generation) };
+              markAmsgStateDirty({ char: next, userProfile: userProfileRef.current, groups: groupsRef.current, realtimeConfig: realtimeConfigRef.current });
+              return next;
+          }));
+          setLastMsgTimestamp(Date.now());
+      };
+      window.addEventListener(PHONE_GENERATION_COMMITTED, phoneGenerationHandler);
       window.addEventListener('amsg2-tasks-adopted', tasksAdoptedHandler);
       window.addEventListener(SAR_MODULE_RUNTIME_CHANGED_EVENT, sarModuleRuntimeChangedHandler);
       const linkedArchiveDeletedHandler = (event: Event) => {
@@ -2537,6 +2563,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       window.addEventListener('char-music-profile-updated', musicProfileSyncHandler);
       window.addEventListener(MEMORY_AUTO_ARCHIVE_SYNC_EVENT, memoryAutoArchiveSyncHandler);
       return () => {
+          window.removeEventListener(PHONE_GENERATION_COMMITTED, phoneGenerationHandler);
           window.removeEventListener('amsg2-tasks-adopted', tasksAdoptedHandler);
           window.removeEventListener(SAR_MODULE_RUNTIME_CHANGED_EVENT, sarModuleRuntimeChangedHandler);
           window.removeEventListener(LINKED_ARCHIVE_DELETED, linkedArchiveDeletedHandler);
@@ -2720,7 +2747,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       const { uploadBackup, cleanupOldBackups } = await loadBackupProvider();
       try {
           setSysOperation({ status: 'processing', message: '正在打包备份数据...', progress: 0 });
-          const blob = await exportSystem(mode);
+          const blob = await exportSystem(mode, { userScope: 'all' });
 
           setSysOperation({ status: 'processing', message: '正在上传到云端...', progress: 50 });
           const filename = `Sully_Backup_${mode}_${Date.now()}.zip`;
@@ -3482,11 +3509,18 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   // --- MODIFIED EXPORT SYSTEM WITH SEPARATED ASSETS ZIP ---
   const exportSystem = async (
       mode: 'text_only' | 'media_only' | 'full',
-      exportOptions: { includeBackendConnection?: boolean } = {},
+      exportOptions: { includeBackendConnection?: boolean; userScope?: 'current' | 'all' } = {},
   ): Promise<Blob> => {
       try {
           setSysOperation({ status: 'processing', message: '正在初始化打包引擎...', progress: 0 });
           
+          if (listUserSpaces().length > 1) {
+              const { exportUserSpaces } = await import('../utils/userSpaceBackup');
+              const result = await exportUserSpaces(mode, exportOptions.userScope || 'current', message => setSysOperation({ status: 'processing', message, progress: 30 }), exportOptions.includeBackendConnection);
+              setSysOperation({ status: 'idle', message: '', progress: 0 });
+              markBackupDone();
+              return result;
+          }
           const zip = createBackupArchive();
           const assetsFolder = zip.folder("assets");
           let assetCount = 0;
@@ -4316,6 +4350,17 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               } else {
                   const JSZip = await loadJSZip();
                   const loadedZip = await JSZip.loadAsync(fileOrJson);
+                  if (loadedZip.file('user-spaces.json')) {
+                      const { importUserSpaces } = await import('../utils/userSpaceBackup');
+                      const spaceManifest = JSON.parse(await loadedZip.file('user-spaces.json')!.async('string'));
+                      const allowBackend = backupHasBackendConnection(spaceManifest.backend) && importOptions.confirmBackendRestore
+                          ? await importOptions.confirmBackendRestore(String(spaceManifest.backend.workerUrl).trim()) : false;
+                      await importUserSpaces(loadedZip, allowBackend);
+                      clearImportInProgress();
+                      setSysOperation({ status: 'idle', message: '', progress: 0 });
+                      window.location.reload();
+                      return;
+                  }
                   zip = loadedZip;
                   totalAssetFiles = countZipAssetFiles(loadedZip);
                   const manifestFile = loadedZip.file("manifest.json");
@@ -4526,6 +4571,9 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           }
 
           showImportProgress('database', '正在写入数据库...', 50, { current: '准备写入数据库', currentFile: '' });
+          if (data.characters && listUserSpaces().length > 1) {
+              await (await import('../utils/userSpaceData')).assertUniqueSpaceCharacters(new Map([[SESSION_SPACE_ID, data.characters]]));
+          }
           suppressFeedbackInvitation();
           await DB.importFullData(data, {
               allowBackendConnection,
@@ -4873,9 +4921,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       if (!options?.force && cleanup.status === 'failed') {
         return { status: 'cloud-cleanup-failed', workerUrl: cleanup.workerUrl, detail: cleanup.detail };
       }
-      await DB.deleteDB();
+      await (await import('../utils/userSpaceData')).resetAllUserSpaces();
       await ActiveMsgStore.deleteDB();
-      localStorage.clear();
       window.location.reload();
       return { status: 'done' };
     } catch (e) {

@@ -1,5 +1,5 @@
 import {createLocalId} from '../../utils/localId.js';
-import {normalizeRomanticPairs} from './homeRomance';
+import {normalizeRomanticPairs,normalizeUserRomanceDisabledIds} from './homeRomance';
 import {normalizePetLife} from './petState.js';
 import {furnitureGroup,dockCandidates,dockSlots,isDockChair,isDockTable} from './furnitureDock.js';
 import {validateFinishes} from './finishes.js';
@@ -24,6 +24,7 @@ export function validateHome(raw,catalog){
  if(!raw||raw.version!==1||!Array.isArray(raw.rooms)||raw.rooms.length<1||raw.rooms.length>24)throw Error('小屋存档格式不正确');
  raw=structuredClone(raw);
  if(raw.romanticPairs!==undefined)raw.romanticPairs=normalizeRomanticPairs(raw.romanticPairs);
+ if(raw.userRomanceDisabledIds!==undefined)raw.userRomanceDisabledIds=normalizeUserRomanceDisabledIds(raw.userRomanceDisabledIds);
  if(raw.socialMemberIds!==undefined){if(!Array.isArray(raw.socialMemberIds)||raw.socialMemberIds.some(id=>typeof id!=='string'||!id))throw Error('小屋邀请名单格式不正确');raw.socialMemberIds=[...new Set(raw.socialMemberIds)].slice(0,3);}
  if(raw.roomSizeVersion!=null&&![1,ROOM_SIZE_VERSION].includes(raw.roomSizeVersion))throw Error('不支持这个房间尺寸版本');
  const assets=new Set(catalog.map(a=>a.id)),cells=new Set(),ids=new Set();

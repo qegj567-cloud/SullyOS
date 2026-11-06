@@ -859,9 +859,6 @@ ${realCharRule}
 
             const newRecordsToAdd: PhoneEvidence[] = [];
 
-            // 是否把查手机内容同步到私聊（默认开），关闭则只存本地、不进聊天/上下文
-            const pushToChat = targetChar.phoneState?.sendToChat !== false;
-
             // 人际关系：累积本轮甄别出的联系人（chat / contacts 两种生成都会喂这里）
             let contactsAcc: PhoneContact[] = [...(targetChar.phoneState?.contacts || [])];
             const isContactBearing = type === 'chat' || type === 'contacts';
@@ -913,27 +910,6 @@ ${realCharRule}
                         continue;
                     }
 
-                    let savedMsgId: number | undefined;
-                    if (pushToChat) {
-                        // 包装成上下文可读的漂亮卡片（phone_card），不再是古早的 [系统:...] 纯文本
-                        // 进角色上下文的措辞：第二人称讲「你自己手机里有啥」，不暗示用户在偷看
-                        const card = buildPhoneEvidenceChatCard({
-                            id: 'pending',
-                            type,
-                            title: recordTitle,
-                            detail: recordDetail,
-                            value: recordValue || undefined,
-                            timestamp: Date.now(),
-                        }, logPrefix);
-                        savedMsgId = await DB.saveMessage({
-                            charId: targetChar.id,
-                            role: 'assistant',
-                            type: 'phone_card',
-                            content: card.content,
-                            metadata: card.metadata,
-                        } as any);
-                    }
-
                     newRecordsToAdd.push({
                         id: `rec-${Date.now()}-${Math.random()}`,
                         type: type,
@@ -941,7 +917,6 @@ ${realCharRule}
                         detail: recordDetail,
                         value: recordValue || undefined,
                         timestamp: Date.now(),
-                        systemMessageId: savedMsgId,
                         contactId,
                     });
 
@@ -949,15 +924,11 @@ ${realCharRule}
                 }
             }
 
-            // 基于最新状态合并：生成是异步的，期间若有演出落库 simLogs，
-            // 用过期的 targetChar 快照覆盖会把 simLogs 等字段抹掉。
-            updateCharacter(targetChar.id, (cur) => ({
-                phoneState: {
-                    ...cur.phoneState,
-                    records: [...(cur.phoneState?.records || []), ...newRecordsToAdd],
-                    ...(isContactBearing ? { contacts: contactsAcc } : {}),
-                }
-            }));
+            // Phone records and their chat cards commit together, even after this page unmounts.
+            await DB.savePhoneGeneration(targetChar.id, {
+                records: newRecordsToAdd,
+                ...(isContactBearing ? { contacts: contactsAcc, baseContacts: targetChar.phoneState?.contacts || [] } : {}),
+            }, logPrefix);
 
             if (type === 'contacts') {
                 addToast(`已扫描 ${contactsAcc.length} 位联系人`, 'success');
@@ -967,7 +938,7 @@ ${realCharRule}
 
         } catch (e: any) {
             console.error(e);
-            addToast('解析失败，请重试', 'error');
+            addToast(e?.message || '生成或保存失败，请重试', 'error');
         } finally {
             setIsLoading(false);
         }

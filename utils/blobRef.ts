@@ -62,6 +62,7 @@ export function isImageValue(value: unknown): value is string {
 
 /** 把 Blob 存进 blob_assets，返回 `blobref:<id>` 令牌（新 id 由 SDK 生成，`b_` 前缀）。 */
 export async function putImageBlob(blob: Blob): Promise<string> {
+    // Keep independent upload handles; the storage adapter deduplicates their bytes.
     return blobStore.put(blob);
 }
 
@@ -198,8 +199,7 @@ export function clearContentMemo(): void {
  * 存 Blob，但先看看同样内容的是不是已经有了——有就复用它的令牌，不再存第二份。
  * 算不出哈希（非安全上下文没有 crypto.subtle）时退化成普通 put，功能照旧、只是不去重。
  *
- * 只给迁移路径用。用户当场上传的图仍走 putImageBlob 各存各的：那几个字段换图时是
- * 裸删旧 Blob 的，共享会让一次删除波及别人（见 deleteBlobRef 的注释）。
+ * 上传保留独立令牌，迁移可复用令牌；底层共享池在两种情况下都只保存一份文件字节。
  */
 export async function putImageBlobDeduped(blob: Blob): Promise<{ token: string; reused: boolean }> {
     let hash: string | null = null;
@@ -215,7 +215,8 @@ export async function putImageBlobDeduped(blob: Blob): Promise<{ token: string; 
         }
     }
 
-    const token = await putImageBlob(blob);
+    const { putSharedImage } = await import('./spaceAssets');
+    const token = await putSharedImage(blob);
     if (hash) contentMemo.set(hash, token);
     return { token, reused: false };
 }

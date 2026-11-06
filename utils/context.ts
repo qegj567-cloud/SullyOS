@@ -1,3 +1,4 @@
+import { resolveCharacterUser } from './userPersona';
 import {getDailyScheduleForChar} from './dailySchedule';
 import {getLastInnerState} from './emotionState';
 import { readableContextMemories } from './contextMemories';
@@ -569,6 +570,7 @@ const renderCoreContext = async (
             emotion?: EmotionContextOptions;
         },
     ): Promise<string> => {
+        user = resolveCharacterUser(user, char);
         let context = formatWorldbookSection(worldbookSections.beforeCharacter, '世界书 · 角色设定前');
         context += `${groupOptions?.headerOverride ?? '[System: Roleplay Configuration]'}\n\n`;
 
@@ -627,6 +629,9 @@ const renderCoreContext = async (
         context += buildHomeDefinitionContext(char.homeDefinition, user.name);
         context += buildHomePetContext(char.home3D);
 
+        if (groupOptions?.skipUserProfile && char.userPersona) {
+            context += `### 我所认识的同一个用户\n称呼：${user.name}\n${user.bio}\n\n`;
+        }
         // 4. [NEW] 印象档案 (Private Impression)
         // 这是角色对用户的私密看法，只有角色知道
         const imp = normalizeUserImpression(char.impression);
@@ -753,7 +758,8 @@ export interface CharacterContextInput {
 }
 
 async function resolveCharacterContext(input: CharacterContextInput) {
-    const { char, user, history, groupOptions, timeOptions } = input;
+    const { char, history, groupOptions, timeOptions } = input;
+    const user = resolveCharacterUser(input.user, char);
     const entries = resolveWorldbookEntries(
         (char.mountedWorldbooks || []).filter(book => !groupOptions?.skipWorldbookIds?.has(book.id)),
         history ?? timeOptions?.worldbookMessages ?? [], char.name, user.name,

@@ -219,6 +219,7 @@ export const normalizeStoryTheater = (entry: StoryTheaterEntry): StoryTheaterEnt
         characterContextLimits: entry.characterContextLimits || {},
         archiveAfter,
         archiveKeepRecent,
+        archiveMode: entry.archiveMode === 'manual' ? 'manual' : 'auto',
         archiveStrategy: entry.archiveStrategy === 'vector' ? 'vector' : 'summary',
         archives: Array.isArray(entry.archives) ? entry.archives : [],
         selectedWorldbookIds: Array.isArray(entry.selectedWorldbookIds) ? entry.selectedWorldbookIds.filter(Boolean) : [],

@@ -1,5 +1,7 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, DownloadSimple, LockSimple, UploadSimple, UserCircle } from '@phosphor-icons/react';
+import { DB } from '../../../utils/db';
+import { storyTheaterThreadId } from '../../../utils/storyTheater';
 import TokenImg from '../../os/TokenImg';
 import type { CharacterProfile, StoryTheaterEntry, StoryTheaterMask, StoryTheaterPreset, UserProfile } from '../../../types';
 import { dedupeTheaterWorldbooks, downloadStoryPreset, estimateStoryTokens, getPresetPromptStats, resolveStoryPresetDocument, resolveStoryTheaterMask, hasStoryTheaterParticipant } from '../../../utils/storyTheater';
@@ -12,6 +14,7 @@ interface Props {
     maskLocked: boolean;
     presets: StoryTheaterPreset[];
     onCancel: () => void;
+    onManualArchive: (entry: StoryTheaterEntry) => Promise<StoryTheaterEntry>;
     onSave: (entry: StoryTheaterEntry) => Promise<void> | void;
     onImportPreset: (file: File) => Promise<StoryTheaterPreset | null>;
     onEditPreset: (preset: StoryTheaterPreset, draft: StoryTheaterEntry) => void;
@@ -20,9 +23,31 @@ interface Props {
 
 const Toggle: React.FC<{ value: boolean; onChange: (value: boolean) => void; label?: string }> = ({ value, onChange, label }) => <button type='button' aria-label={label} aria-pressed={value} onClick={() => onChange(!value)} className={`w-11 h-6 shrink-0 rounded-full p-1 transition-colors ${value ? 'bg-violet-600' : 'bg-slate-200'}`}><span className={`block w-4 h-4 rounded-full bg-white transition-transform ${value ? 'translate-x-5' : ''}`} /></button>;
 
-const StoryTheaterEditor: React.FC<Props> = ({ initial, characters, user, masks, maskLocked, presets, onCancel, onSave, onImportPreset, onEditPreset, onOpenMaskBox }) => {
+const StoryTheaterEditor: React.FC<Props> = ({ initial, characters, user, masks, maskLocked, presets, onCancel, onSave, onManualArchive, onImportPreset, onEditPreset, onOpenMaskBox }) => {
     const [draft, setDraft] = useState<StoryTheaterEntry>({ ...initial });
     const [saving, setSaving] = useState(false);
+    const [summarizing, setSummarizing] = useState(false);
+    const summaryLock = useRef(false);
+    const [summaryError, setSummaryError] = useState('');
+    const [pendingLayers, setPendingLayers] = useState<number | null>(null);
+    const [hasCompleteReply, setHasCompleteReply] = useState(false);
+    useEffect(() => {
+        let cancelled = false;
+        void DB.getMessagesByCharId(storyTheaterThreadId(initial.id), true).then(rows => {
+            if (cancelled) return;
+            const pending = rows.filter(row => row.metadata?.source === 'story_theater' && !row.metadata.theaterArchived).sort((a, b) => a.id - b.id);
+            setPendingLayers(pending.length);
+            setHasCompleteReply(pending[pending.length - 1]?.role === 'assistant');
+        }).catch(() => { if (!cancelled) setSummaryError('剧情读取失败，请重新打开'); });
+        return () => { cancelled = true; };
+    }, [initial.id, initial.updatedAt]);
+    const summarize = async () => {
+        if (summaryLock.current || saving) return;
+        summaryLock.current = true; setSummarizing(true); setSummaryError('');
+        try { setDraft(await onManualArchive(draft)); setPendingLayers(0); }
+        catch (error) { setSummaryError(error instanceof Error ? error.message : '总结失败，原文已保留'); }
+        finally { summaryLock.current = false; setSummarizing(false); }
+    };
     const fileInput = useRef<HTMLInputElement>(null);
     const actors = useMemo(() => characters.filter(char => draft.characterIds.includes(char.id)), [characters, draft.characterIds]);
     const resolvedMask = useMemo(() => resolveStoryTheaterMask(draft.mask, user, characters, masks), [characters, draft.mask, masks, user]);
@@ -59,7 +84,7 @@ const StoryTheaterEditor: React.FC<Props> = ({ initial, characters, user, masks,
         return { actor: estimateStoryTokens(actorText), book: estimateStoryTokens(bookText), preset: estimateStoryTokens(presetText), archive: estimateStoryTokens(archiveText) };
     }, [actors, books, draft, effectivePreset, resolvedMask]);
     const save = async () => {
-        if (!draft.title.trim() || !canStart) return;
+        if (summaryLock.current || saving || !draft.title.trim() || !canStart) return;
         setSaving(true);
         const archiveAfter = Math.max(2, Math.min(200, Number(draft.archiveAfter) || 40));
         const archiveKeepRecent = Math.max(1, Math.min(archiveAfter - 1, Number(draft.archiveKeepRecent) || 5));
@@ -70,12 +95,12 @@ const StoryTheaterEditor: React.FC<Props> = ({ initial, characters, user, masks,
     return <div className='h-full w-full flex flex-col bg-stone-100 text-slate-800'>
         <header className='story-safe-header shrink-0 border-b border-slate-200'>
             <div className='h-16 px-4 flex items-center gap-3'>
-                <button onClick={onCancel} className='w-9 h-9 rounded-full grid place-items-center'><ArrowLeft size={20} /></button>
+                <button disabled={summarizing} onClick={onCancel} className='w-9 h-9 rounded-full grid place-items-center'><ArrowLeft size={20} /></button>
                 <div><div className='text-[9px] tracking-[.24em] uppercase font-bold text-violet-500'>Story setup</div><div className='font-semibold'>{initial.title ? '调整剧情沙盒' : '新增剧情'}</div></div>
-                <button onClick={save} disabled={saving || !draft.title.trim() || !canStart} className='ml-auto h-9 px-4 rounded-full bg-slate-900 text-white text-xs font-bold disabled:opacity-30'>{saving ? '保存中' : '保存并进入'}</button>
+                <button onClick={save} disabled={saving || summarizing || !draft.title.trim() || !canStart} className='ml-auto h-9 px-4 rounded-full bg-slate-900 text-white text-xs font-bold disabled:opacity-30'>{saving ? '保存中' : '保存并进入'}</button>
             </div>
         </header>
-        <main className='story-page-scroll flex-1 overflow-y-auto px-5 py-6 pb-28'><div className='max-w-2xl mx-auto space-y-8'>
+        <main className='story-page-scroll flex-1 overflow-y-auto px-5 py-6 pb-28'><fieldset disabled={summarizing} className='min-w-0 max-w-2xl mx-auto space-y-8'>
             <section>
                 <div className='text-[9px] tracking-[.22em] uppercase font-bold text-violet-500'>01 / Story</div>
                 <label className='block mt-2'><span className='text-[10px] font-bold text-slate-500'>标题 · 必填</span><input value={draft.title} onChange={event => update('title', event.target.value)} placeholder='剧情名称' className='mt-1 w-full bg-transparent text-3xl font-serif font-semibold outline-none placeholder:text-slate-300' /></label>
@@ -106,12 +131,22 @@ const StoryTheaterEditor: React.FC<Props> = ({ initial, characters, user, masks,
                     <div className='py-3 border-y border-slate-200 flex items-center justify-between gap-3'><div><div className='text-sm font-semibold'>自动记忆输出</div><p className='mt-1 text-[10px] leading-5 text-slate-500'>虚构时间与经历不会自动写入角色的正常记忆。需要保留时，可在剧情右上角「事件盒」选择摘要、填写日期，手动转为带剧情来源的记忆。</p></div><span className='shrink-0 px-2 py-1 rounded-full bg-slate-200 text-[9px] font-bold text-slate-500'>关闭</span></div>
                     <div className='flex items-start justify-between gap-5'><div><div className='text-sm font-semibold'>记忆输入</div><p className='mt-1 text-[10px] text-slate-500'>默认关闭；打开后角色会带着既有记忆进入虚构故事。关闭时只读取名字、核心指令和世界观。</p></div><Toggle value={draft.carryCharacterMemory} onChange={value => update('carryCharacterMemory', value)} /></div>
                     {draft.carryCharacterMemory && <div className='space-y-2'>{memoryParticipants.map(char => <label key={char.id} className='flex items-center gap-3 text-xs'><span className='flex-1 truncate'>{char.name}{draft.mask?.type === 'character' && draft.mask.id === char.id ? '（当前身份）' : ''} 最近原文</span><input type='number' min={0} max={500} value={draft.characterContextLimits[char.id] ?? 100} onChange={event => update('characterContextLimits', { ...draft.characterContextLimits, [char.id]: Math.max(0, Math.min(500, Number(event.target.value) || 0)) })} className='w-20 px-3 py-2 rounded-xl bg-white border border-slate-200 text-right' /><span className='text-slate-400'>条</span></label>)}</div>}
-                    <div><div className='text-sm font-semibold'>归档方式</div><div className='mt-2 grid grid-cols-2 p-1 rounded-xl bg-slate-200'><button onClick={() => update('archiveStrategy', 'summary')} className={`py-2 rounded-lg text-[11px] font-bold ${draft.archiveStrategy === 'summary' ? 'bg-white shadow-sm' : 'text-slate-500'}`}>事件盒</button><button onClick={() => update('archiveStrategy', 'vector')} className={`py-2 rounded-lg text-[11px] font-bold ${draft.archiveStrategy === 'vector' ? 'bg-white shadow-sm' : 'text-slate-500'}`}>独立向量</button></div></div>
+                    <div><div className='text-sm font-semibold'>归档方式</div><div className='mt-2 grid grid-cols-3 p-1 rounded-xl bg-slate-200'>
+                        {(['summary', 'vector', 'manual'] as const).map(mode => <button key={mode} disabled={summarizing} onClick={() => setDraft(current => ({ ...current, archiveMode: mode === 'manual' ? 'manual' : 'auto', archiveStrategy: mode === 'vector' ? 'vector' : 'summary' }))} className={`py-2 rounded-lg text-[11px] font-bold ${(draft.archiveMode === 'manual' ? mode === 'manual' : mode === draft.archiveStrategy) ? 'bg-white shadow-sm' : 'text-slate-500'}`}>{mode === 'summary' ? '事件盒' : mode === 'vector' ? '独立向量' : '手动总结'}</button>)}
+                    </div></div>
+                    {draft.archiveMode === 'manual' ? <div className='space-y-3'>
+                        <p className='text-[10px] leading-5 text-slate-500'>由你决定何时结束一段剧情。点击后，将全部未归档内容（含最新回复）总结为事件盒，原文保留，不写入角色正常记忆。此模式不会自动归档。</p>
+                        <p className='text-xs text-slate-600'>{pendingLayers === null ? '正在读取剧情…' : pendingLayers + ' 层未归档'}（一条输入或回复算一层）</p>
+                        <button onClick={() => void summarize()} disabled={summarizing || saving || !pendingLayers || !hasCompleteReply || !draft.title.trim()} className='w-full py-3 rounded-xl bg-violet-600 text-white text-xs font-bold disabled:opacity-40'>{summarizing ? '正在总结…' : '手动总结'}</button>
+                        {!!pendingLayers && !hasCompleteReply && <p className='text-[10px] text-slate-500'>请先完成本轮回复，再总结。</p>}
+                        {summaryError && <p role='alert' className='text-xs text-red-600'>{summaryError}</p>}
+                    </div> : <>
                     <div className='grid grid-cols-2 gap-3'>
                         <label><span className='block mb-2 text-[10px] text-slate-500'>累计多少层后归档</span><input type='number' min={2} max={200} value={draft.archiveAfter} onChange={event => update('archiveAfter', Number(event.target.value))} className='w-full px-3 py-2.5 rounded-xl bg-white border border-slate-200 text-sm' /></label>
                         <label><span className='block mb-2 text-[10px] text-slate-500'>至少保留最近几层</span><input type='number' min={1} max={Math.max(1, Number(draft.archiveAfter) - 1)} value={draft.archiveKeepRecent ?? 5} onChange={event => update('archiveKeepRecent', Number(event.target.value))} className='w-full px-3 py-2.5 rounded-xl bg-white border border-slate-200 text-sm' /></label>
                     </div>
                     <p className='text-[10px] leading-5 text-slate-500'>先完成并显示本轮回复，再归档最旧部分；默认保留最近 5 层。以后可以换策略，旧事件盒与旧向量都不会丢。</p>
+                    </>}
                 </div>}
             </section>
             <section className='pt-6 border-t border-slate-200'>
@@ -144,7 +179,7 @@ const StoryTheaterEditor: React.FC<Props> = ({ initial, characters, user, masks,
                 <div className='mt-4 grid grid-cols-4 gap-2'>{Object.entries({ '角色': tokenPreview.actor, '世界书': tokenPreview.book, '预设': tokenPreview.preset, '归档': tokenPreview.archive }).map(([label, value]) => <div key={label} className='py-3 rounded-xl bg-white border border-slate-200 text-center'><div className='text-[9px] text-slate-400'>{label}</div><div className='mt-1 text-xs font-bold'>{value.toLocaleString()}</div></div>)}</div>
             </section>
             <button onClick={save} disabled={saving || !draft.title.trim() || !canStart} className='w-full py-4 rounded-2xl bg-slate-900 text-white text-sm font-bold disabled:opacity-30'>{saving ? '正在保存……' : '保存并进入剧情'}</button>
-        </div></main>
+        </fieldset></main>
     </div>;
 };
 
