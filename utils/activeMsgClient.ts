@@ -1203,6 +1203,15 @@ const formatAmsgErrorDetails = (details: unknown, topLevel?: Record<string, unkn
   return parts.join('；');
 };
 
+/**
+ * Worker 解不开 D1 里的旧数据：几乎都是重新部署时换了 AMSG_MASTER_KEY，库里还留着旧钥匙加密的东西。
+ * amsg-server 3.2.0-next.2 起回 409 + 这个错误码；更早的 Worker 是 500，cause 里是 WebCrypto 的 OperationError。
+ */
+const STORED_DATA_UNDECRYPTABLE_CODE = 'STORED_DATA_UNDECRYPTABLE';
+const STORED_DATA_UNDECRYPTABLE_HINT =
+  '云端数据是用另一把 Master Key 加密的，Worker 现在这把解不开（多半是重新部署时换了密钥）。'
+  + '找得回原来的密钥就填回 Worker；找不回的话，去设置「高级信息」点「清空云端数据」，再点「重新连接并验证」';
+
 const formatAmsgErrorCause = (cause: unknown): string => {
   if (typeof cause === 'string') return cause.trim();
   if (!cause || typeof cause !== 'object' || Array.isArray(cause)) return '';
@@ -1212,6 +1221,7 @@ const formatAmsgErrorCause = (cause: unknown): string => {
   if (limitText) return `${limitText}（${code}）`;
   const name = typeof c.name === 'string' ? c.name.trim() : '';
   const message = typeof c.message === 'string' ? c.message.trim() : '';
+  if (name === 'OperationError' && /decrypt/i.test(message)) return `${STORED_DATA_UNDECRYPTABLE_HINT}（OperationError）`;
   const head = code
     ? (message.startsWith(code) ? '' : code)
     : (name && name !== 'Error' ? name : '');
@@ -1224,6 +1234,7 @@ export const formatAmsgErrorObject = (errorObj: unknown): string => {
   const err = errorObj as Record<string, unknown>;
   const message = typeof err.message === 'string' ? err.message.trim() : '';
   const code = typeof err.code === 'string' ? err.code.trim() : '';
+  if (code === STORED_DATA_UNDECRYPTABLE_CODE) return `${STORED_DATA_UNDECRYPTABLE_HINT}（${code}）`;
   const detailsText = formatAmsgErrorDetails(err.details, err);
   const causeText = formatAmsgErrorCause(err.cause);
 
@@ -2514,7 +2525,10 @@ export const ActiveMsgClient = {
    */
   async listRemoteTasksForChar(charId: string): Promise<RemoteTaskProjection[]> {
     const tasks = await this.listAllTasks();
-    if (tasks.length > 0 && tasks.every((t) => t?.charId == null)) {
+    // 解不开的任务（带 error，3.2.0-next.2 起）本来就没有 charId，别拿它当「worker 太旧」的证据：
+    // 换了 Master Key 时任务全是这种，按旧判断会叫用户去重新部署，越部署越乱。
+    const readable = tasks.filter((t) => !t?.error);
+    if (readable.length > 0 && readable.every((t) => t?.charId == null)) {
       throw new Error('worker 版本过旧：任务列表没有 charId 投影，无法按角色对账，请在设置里重新粘贴部署。');
     }
     return tasks

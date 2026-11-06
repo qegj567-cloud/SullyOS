@@ -157,7 +157,9 @@ const REQUIRED_WORKER_FEATURES = [
 const REQUIRED_WORKER_VERSION = '3.1.0';
 // 3.2.0-next 给任务占位加了租约令牌，并收紧了入参校验。前端没有用到新能力，门槛保持 3.1.0；
 // Worker 自动更新会带上新版，不必让旧部署重新粘贴。
-const WORKER_VERSION_LAG_ACK = '3.2.0-next.1';
+// 3.2.0-next.2 把解不开的旧数据报成 STORED_DATA_UNDECRYPTABLE。前端对新旧两种报法都认得，
+// 门槛同样不动。
+const WORKER_VERSION_LAG_ACK = '3.2.0-next.2';
 
 /** 装着打包好的 worker 代码的部署仓库：fork 它 → 在 Cloudflare 连上 → 以后点 Sync fork 更新。 */
 const WORKERS_REPO_URL = 'https://github.com/Tosd0/sullyos-workers';

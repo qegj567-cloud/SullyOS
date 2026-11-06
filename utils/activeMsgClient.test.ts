@@ -615,6 +615,14 @@ describe('ActiveMsgClient.listRemoteTasksForChar 的版本护栏', () => {
     vi.spyOn(ActiveMsgClient, 'listAllTasks').mockResolvedValue([]);
     await expect(ActiveMsgClient.listRemoteTasksForChar('char-1')).resolves.toEqual([]);
   });
+
+  it('任务全是解不开的（换了 Master Key）→ 不当成老 worker，别劝人重新部署', async () => {
+    vi.spyOn(ActiveMsgClient, 'listAllTasks').mockResolvedValue([
+      { uuid: 'task-a', status: 'pending', error: { code: 'STORED_DATA_UNDECRYPTABLE', message: 'x' } },
+      { uuid: 'task-b', status: 'pending', error: { code: 'STORED_DATA_UNDECRYPTABLE', message: 'x' } },
+    ]);
+    await expect(ActiveMsgClient.listRemoteTasksForChar('char-1')).resolves.toEqual([]);
+  });
 });
 
 // 回归守卫：删角色 / 关闭 2.0 都要把该角色的远端任务清干净——worker 上的任务不随本地
@@ -2040,6 +2048,32 @@ describe('formatAmsgServerError — 通用后端错误细节透传', () => {
     expect(text).toContain(expected);
     expect(text).toContain(`（${code}）`);
     expect(text).not.toContain('raw D1 error');
+  });
+
+  it('Worker 解不开旧数据时说清是密钥换了、该点哪个按钮，不甩 WebCrypto 原文', () => {
+    const text = formatAmsgServerError({
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: '服务器内部错误',
+        cause: {
+          stage: 'request',
+          name: 'OperationError',
+          message: 'Decryption failed. This could be due to a ciphertext authentication failure, bad padding, incorrect CryptoKey, or another algorithm-specific reason. Input length was 113, output length expected to be 113 for AES-GCM',
+        },
+      },
+    }, '操作失败');
+    expect(text).toContain('Master Key');
+    expect(text).toContain('清空云端数据');
+    expect(text).not.toContain('ciphertext authentication failure');
+  });
+
+  it('新版 Worker 的 STORED_DATA_UNDECRYPTABLE 也给出同一套能照着做的说明', () => {
+    const text = formatAmsgServerError({
+      success: false,
+      error: { code: 'STORED_DATA_UNDECRYPTABLE', message: 'Stored data could not be decrypted with the current AMSG_MASTER_KEY' },
+    }, '操作失败');
+    expect(text).toContain('清空云端数据');
+    expect(text).toContain('（STORED_DATA_UNDECRYPTABLE）');
   });
 
   it('客户端体积预检无 message、只有 code 与 bytes/maxBytes 时也能拼出可读报错', () => {
