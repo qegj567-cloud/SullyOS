@@ -1398,6 +1398,18 @@ describe('ActiveMsgClient.registerPushSubscription（② 订阅按用户登记�
 
     await expect(ActiveMsgClient.registerPushSubscription()).rejects.toThrow('worker 拒绝了订阅');
   });
+
+  // 真实的 amsg-client 碰到 4xx 只把信封还回来、不抛。之前没看 success，Worker 拒收
+  // （比如订阅地址格式不认）也当登记成功，用户之后一条推送都收不到。
+  it('Worker 回失败信封时同样往外抛，不当成登记成功', async () => {
+    vi.spyOn(ActiveMsgClient, 'ensurePushSubscription').mockResolvedValue(SUB_JSON as any);
+    reiClient.putPushSubscription.mockResolvedValue({
+      success: false,
+      error: { code: 'INVALID_PUSH_SUBSCRIPTION', message: '订阅地址不被接受' },
+    });
+
+    await expect(ActiveMsgClient.registerPushSubscription()).rejects.toThrow('订阅地址不被接受');
+  });
 });
 
 // 回归守卫：换一台 worker 就是换一个空的 D1，而浏览器这侧的订阅一个字都没变——
