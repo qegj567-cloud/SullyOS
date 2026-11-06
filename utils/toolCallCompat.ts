@@ -1,3 +1,5 @@
+import { anthropicContinuation } from './anthropicApi';
+
 type ToolCallLike = {
     id?: unknown;
     type?: unknown;
@@ -66,5 +68,18 @@ export function buildToolResultMessage(toolCall: ToolCallLike, content: string):
         name,
         tool_call_id: toolCallId,
         content,
+    };
+}
+
+/**
+ * 工具循环把上一轮 assistant 消息塞回请求时，除了正文和 tool_calls 还要原样带回的字段：
+ * Anthropic 的签名思考块，以及兼容格式的思考过程 reasoning_content。后者不带的话，
+ * DeepSeek 思考模式会直接 400，Kimi / GLM 则看不到自己上一轮的打算，容易查完一样又去查下一样。
+ */
+export function toolTurnContinuation(message: any): Record<string, any> {
+    const reasoning = message?.reasoning_content;
+    return {
+        ...anthropicContinuation(message),
+        ...(typeof reasoning === 'string' && reasoning ? { reasoning_content: reasoning } : {}),
     };
 }

@@ -11,7 +11,7 @@ import {
     MCP_CHAT_MAX_TOOL_LOOPS,
     shouldRetryMcpWithoutTools,
 } from '../mcpToolBridge';
-import { buildToolResultMessage, normalizeToolCallsForCompat } from '../toolCallCompat';
+import { buildToolResultMessage, normalizeToolCallsForCompat, toolTurnContinuation } from '../toolCallCompat';
 import { toolCallFingerprint } from '../agenticToolFeedback';
 
 interface GroupMcpCompletionOptions {
@@ -100,6 +100,7 @@ export async function completeGroupChatWithMcp(options: GroupMcpCompletionOption
             role: 'assistant',
             content: data.choices[0].message.content || '(调用工具中)',
             tool_calls: toolCalls,
+            ...toolTurnContinuation(data.choices[0].message),
         });
         let progressedThisRound = false;
         for (const toolCall of toolCalls) {
