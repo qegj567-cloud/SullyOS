@@ -1,6 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { webcrypto } from 'node:crypto';
 import { createStaticCache, type StaticManifest } from './staticCache';
+import { CODE_IDLE_TIMEOUT_MS, StaticCodeTimeoutError } from './staticCodeFetch';
+
+afterEach(() => vi.useRealTimers());
 
 // Cache Storage is a browser boundary; responses and requests remain real Fetch objects.
 class MemoryCache {
@@ -23,7 +26,7 @@ async function fixture(buildId = 'one', storage = new MemoryCaches(), limits: { 
   const lazy = 'assets/build/lazy-ijklmnop.js';
   const css = 'assets/build/ChatInputArea-DVfhoVgz.css';
   const bodies: Record<string, string> = {
-    'index.html': `<html>${buildId}<script type="module" src="./${main}"></script></html>`, [main]: 'console.log(1)', [lazy]: 'lazy',
+    'index.html': `<html>${buildId}<script data-sully-build="${buildId}"></script><script type="module" src="./${main}"></script></html>`, [main]: 'console.log(1)', [lazy]: 'lazy',
     [css]: '.chat{display:flex}',
     'themes/a.webp': 'image', 'themes/b.webp': 'image b', 'themes/c.webp': 'image c',
   };
@@ -37,7 +40,7 @@ async function fixture(buildId = 'one', storage = new MemoryCaches(), limits: { 
   const requests: string[] = [];
   const requestModes: string[] = [];
   const pending: Promise<unknown>[] = [];
-  const hooks: { respond?: (request: Request) => Response | undefined } = {};
+  const hooks: { respond?: (request: Request) => Response | undefined | Promise<Response> } = {};
   const engine = createStaticCache({
     manifest, scope: BASE, caches: storage as unknown as CacheStorage, ...limits, now: () => time,
     digest: async bytes => Buffer.from(await webcrypto.subtle.digest('SHA-256', bytes)).toString('hex'),
@@ -61,6 +64,98 @@ async function fixture(buildId = 'one', storage = new MemoryCaches(), limits: { 
 }
 
 describe('static resource cache', () => {
+  it('accepts host-injected HTML only when both page identity and build references match', async () => {
+    const f = await fixture();
+    f.bodies['index.html'] = f.bodies['index.html'].replace('</html>', '<script>/* host injection */</script></html>');
+    await f.engine.install();
+    expect((await f.engine.stats()).offlineReady).toBe(true);
+  });
+  it.each(['older-build', ''])('rejects stale HTML identity %s even with identical JS URLs', async identity => {
+    const f = await fixture();
+    f.bodies['index.html'] = f.bodies['index.html'].replace('data-sully-build="one"', identity ? `data-sully-build="${identity}"` : '');
+    await expect(f.engine.install()).rejects.toThrow();
+    expect((await f.engine.stats()).offlineReady).toBe(false);
+  });
+  it.each(['js', 'css'])('retries a stalled %s body once without returning partial bytes', async kind => {
+    const f = await fixture();
+    vi.useFakeTimers();
+    const path = kind === 'js' ? f.lazy : f.css;
+    let firstSignal: AbortSignal | undefined;
+    f.hooks.respond = request => {
+      if (request.url.endsWith(path) && request.cache !== 'reload') {
+        firstSignal = request.signal;
+        return new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode('partial')); } }));
+      }
+      return undefined;
+    };
+    const result = f.text(path);
+    await vi.advanceTimersByTimeAsync(CODE_IDLE_TIMEOUT_MS);
+    expect(await result).toBe(f.bodies[path]);
+    expect(firstSignal?.aborted).toBe(true);
+    expect(f.requestModes).toEqual(['default', 'reload']);
+    await f.settle(); f.offline();
+    expect(await f.text(path)).toBe(f.bodies[path]);
+  });
+  it('fails after two header stalls and does not mark an intact release stale', async () => {
+    const f = await fixture();
+    vi.useFakeTimers();
+    f.hooks.respond = () => new Promise(() => {});
+    const result = f.text(f.lazy);
+    const check = expect(result).rejects.toBeInstanceOf(StaticCodeTimeoutError);
+    await vi.advanceTimersByTimeAsync(CODE_IDLE_TIMEOUT_MS * 2);
+    await check;
+    expect(f.requestModes).toEqual(['default', 'reload']);
+    expect([...f.storage.stores.values()].flatMap(cache => [...cache.entries.keys()])).toEqual([]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it('replaces only the cached script whose body never finishes', async () => {
+    const f = await fixture(); await f.engine.install();
+    const shell = [...f.storage.stores.values()][0];
+    await shell.put(BASE + f.main, new Response(new ReadableStream({
+      start(controller) { controller.enqueue(new TextEncoder().encode('partial')); },
+    })));
+    f.requests.length = 0; f.requestModes.length = 0;
+    vi.useFakeTimers();
+    const result = f.text(f.main);
+    await vi.advanceTimersByTimeAsync(CODE_IDLE_TIMEOUT_MS);
+    expect(await result).toBe('console.log(1)');
+    expect(f.requestModes).toEqual(['reload']);
+    await f.settle(); f.offline();
+    expect(await f.text('')).toContain('<html>one');
+    expect(await f.text(f.main)).toBe('console.log(1)');
+  });
+  it('shares the single retry budget between timeout and integrity failures', async () => {
+    const f = await fixture();
+    vi.useFakeTimers();
+    f.hooks.respond = request => request.cache === 'reload' ? new Response('corrupt') : new Promise(() => {});
+    const result = f.engine.handle(new Request(BASE + f.lazy))!;
+    await vi.advanceTimersByTimeAsync(CODE_IDLE_TIMEOUT_MS);
+    expect((await result).type).toBe('error');
+    expect(f.requestModes).toEqual(['default', 'reload']);
+    await f.settle();
+  });
+  it('does not retry a caller-aborted code request', async () => {
+    const f = await fixture();
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    f.hooks.respond = () => new Promise(() => {});
+    const result = f.engine.handle(new Request(BASE + f.lazy, { signal: controller.signal }))!;
+    const check = expect(result).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.advanceTimersByTimeAsync(0); controller.abort(); await check;
+    expect(f.requests).toHaveLength(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it('does not apply code deadlines or body buffering to images', async () => {
+    const f = await fixture();
+    vi.useFakeTimers();
+    let finish!: (response: Response) => void;
+    f.hooks.respond = () => new Promise(resolve => { finish = resolve; });
+    const result = f.text('themes/a.webp');
+    await vi.advanceTimersByTimeAsync(CODE_IDLE_TIMEOUT_MS * 3);
+    expect(f.requests).toHaveLength(1);
+    finish(new Response('image'));
+    expect(await result).toBe('image'); await f.settle();
+  });
   it('keeps successful concurrent downloads after a failure and resumes only missing files after a restart', async () => {
     const extraShell = ['themes/a.webp', 'themes/b.webp', 'themes/c.webp'];
     const f = await fixture('one', new MemoryCaches(), {}, extraShell);

@@ -17,6 +17,7 @@ import Launcher from '../apps/Launcher';
 import CompanionLockChrome from './os/CompanionLockChrome';
 import { loadCompanionFrameStyle } from './os/companionFrameStyles';
 import { createPreloadableLazy, type PreloadableLazy } from './os/preloadableLazy';
+import { setVisibleTimeout } from '../utils/visibleTimeout';
 
 // 按需懒加载各 App —— 切到对应 App 时才下载/解析其代码块，首屏只加载 Launcher 与外壳，
 // 大体积 App（MemoryPalace / VRWorld / Songwriting 等）不再压在主包里。
@@ -404,20 +405,20 @@ const ImportRecoveryPopup: React.FC<{
 // （loading spinner 闪烁反模式）。所以前 ~220ms 一律渲染空（无感），只有真的慢才浮现。
 // 刻意「零动画开销」：之前那套呼吸/涟漪/上升微尘的持续动画在 iOS 上会引起卡顿，且预热命中后
 // 这屏几乎不出现 —— 收益小、代价大。现在只一次性淡入一个静态柔光点（无 infinite 动画），
-// 透明底让外壳虚化壁纸透出来。真卡住（>15s）才换成可点的刷新/返回兜底，避免低端设备
-// 仍在正常解析单个大模块时被 7 秒阈值过早判死。
+// 透明底让外壳虚化壁纸透出来。前台累计等待 >15s 才显示刷新/返回兜底；
+// 这只是慢加载提示，不代表 import 已经失败或死锁。
 const AppLoadingFallback: React.FC<{ onReturn?: () => void; animationEnabled?: boolean }> = ({ onReturn, animationEnabled = true }) => {
   const [show, setShow] = useState(false);
   const [stalled, setStalled] = useState(false);
   useEffect(() => {
     const t = animationEnabled ? setTimeout(() => setShow(true), 220) : null;
-    // 卡死逃生口：iOS standalone PWA 从后台恢复 / 弱网时，动态 import 可能既不 resolve 也不 reject，
-    // Suspense 会永远停在这一屏（不报错 → 错误边界不触发 → 不会自动刷新），用户狂点中心光点却毫无反应。
-    // 超过 STALL_MS 仍未加载完 → 把「看着像按钮其实不是」的光点换成真正可点的「刷新/返回」按钮，
-    // 既明确告诉用户该点哪里，又把静默卡死变成一键可恢复。只动占位 UI，不碰 import 逻辑。
-    const stall = setTimeout(() => { setStalled(true); trackEvent('App 加载卡死超时'); }, 15_000);
-    return () => { if (t) clearTimeout(t); clearTimeout(stall); };
+    return () => { if (t) clearTimeout(t); };
   }, [animationEnabled]);
+  useEffect(() => setVisibleTimeout(() => {
+    setStalled(true);
+    // 保留历史事件名，但只计前台等待；切后台/锁屏时间不再算作加载卡死。
+    trackEvent('App 加载卡死超时');
+  }, 15_000), []);
   if (stalled) {
     return (
       <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900/95 text-white p-6 text-center space-y-4" style={{ animation: 'appLoadIn 320ms ease-out both' }}>
@@ -434,6 +435,11 @@ const AppLoadingFallback: React.FC<{ onReturn?: () => void; animationEnabled?: b
           >
             刷新恢复
           </button>
+          {import.meta.env.MODE !== 'capacitor' && (
+            <a href={`${import.meta.env.BASE_URL}recover.html`} className="w-full px-4 py-2 bg-slate-700 rounded-full text-xs font-bold">
+              检查更新并修复
+            </a>
+          )}
           {onReturn && (
             <button
               type="button"
@@ -1107,7 +1113,7 @@ const PhoneShell: React.FC = () => {
           {/* App Container */}
           <div className="flex-1 relative overflow-hidden" style={{ contain: useIOSStandaloneLayout ? undefined : 'layout style paint' }}>
             <AppErrorBoundary onCloseApp={closeApp} resetKey={`${activeApp}:${activeCharacterId || 'none'}`}>
-              <Suspense fallback={<AppLoadingFallback onReturn={closeApp} animationEnabled={theme.appLoadingAnimationEnabled !== false} />}>
+              <Suspense fallback={<AppLoadingFallback key={activeApp} onReturn={closeApp} animationEnabled={theme.appLoadingAnimationEnabled !== false} />}>
                 {/* 统一「淡入」过渡：每次切换 App 时 key 变化 → 重新挂载并淡入，
                     让所有 App 都像个人档案那样「渐变进去」，而非瞬间咚一下。
                     关键：只动 opacity、不做 scale/translate —— 否则会把整棵（常含大量头像图片的）

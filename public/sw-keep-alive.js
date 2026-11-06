@@ -1777,6 +1777,87 @@ async function removeQueuedRequest(id) {
   });
 }
 
+// worker/staticCodeFetch.ts
+var CODE_IDLE_TIMEOUT_MS = 3e4;
+var MAX_CODE_BYTES = 16 * 1024 * 1024;
+var StaticCodeTimeoutError = class extends Error {
+  constructor() {
+    super("Static code download stopped making progress");
+  }
+};
+var StaticCodeBodyError = class extends Error {
+  constructor() {
+    super("Static code body could not be read completely");
+  }
+};
+async function loadStaticCode(source, signal) {
+  const controller = new AbortController();
+  let reader;
+  let timer;
+  let interrupt;
+  const interrupted = new Promise((_, reject) => {
+    interrupt = reject;
+  });
+  const stop = (reason) => {
+    interrupt(reason);
+    controller.abort();
+    void reader?.cancel().catch(() => {
+    });
+  };
+  const onAbort = () => stop(new DOMException("Request aborted", "AbortError"));
+  const arm = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => stop(new StaticCodeTimeoutError()), CODE_IDLE_TIMEOUT_MS);
+  };
+  signal?.addEventListener("abort", onAbort, { once: true });
+  try {
+    arm();
+    if (signal?.aborted) onAbort();
+    const response = await Promise.race([
+      Promise.resolve().then(() => {
+        if (controller.signal.aborted) throw new DOMException("Request aborted", "AbortError");
+        return source(controller.signal);
+      }).then((response2) => {
+        if (controller.signal.aborted) void response2.body?.cancel().catch(() => {
+        });
+        return response2;
+      }),
+      interrupted
+    ]);
+    if (!response.ok || !response.body) return response;
+    reader = response.body.getReader();
+    const chunks = [];
+    let size = 0;
+    for (; ; ) {
+      arm();
+      const { value, done } = await Promise.race([reader.read(), interrupted]);
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_CODE_BYTES) throw new Error("Static code exceeds size limit");
+      chunks.push(value);
+    }
+    const bytes = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    const headers = new Headers(response.headers);
+    headers.delete("Content-Encoding");
+    headers.set("Content-Length", String(size));
+    return new Response(bytes, { status: response.status, statusText: response.statusText, headers });
+  } catch (error) {
+    const failure = reader && !controller.signal.aborted ? new StaticCodeBodyError() : error;
+    controller.abort();
+    void reader?.cancel().catch(() => {
+    });
+    throw failure;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", onAbort);
+  }
+}
+
 // worker/staticCache.ts
 var MAX_FILE_BYTES = 16 * 1024 * 1024;
 var MAX_AGE = 30 * 24 * 60 * 60 * 1e3;
@@ -1834,7 +1915,7 @@ function createStaticCache(deps) {
   async function verifiedScript(response, entry) {
     try {
       if (response.status !== 200 || entry.bytes > MAX_FILE_BYTES) return;
-      const bytes = await response.arrayBuffer();
+      const bytes = await (await loadStaticCode(async () => response)).arrayBuffer();
       if (bytes.byteLength !== entry.bytes || await deps.digest(bytes) !== entry.revision) return;
       const headers = new Headers(response.headers);
       headers.delete("Content-Encoding");
@@ -1851,6 +1932,8 @@ function createStaticCache(deps) {
   }).catch(() => {
   });
   const sameBuildPage = (html) => {
+    const build = html.match(/<script\b[^>]*\bdata-sully-build=["']([^"']+)["']/i)?.[1];
+    if (build !== manifest.buildId) return false;
     const references = [...html.matchAll(/assets\/build\/[^"'\s<>)]+/g)];
     return references.length > 0 && references.every((match) => entries.has(absolute(match[0])));
   };
@@ -2045,6 +2128,8 @@ function createStaticCache(deps) {
     const hashed = local && immutablePath(pathname);
     if (!entry && !external && !hashed) return;
     const key = entry ? keyFor(entry) : request.url;
+    const code = hashed && /\.(js|css)$/.test(pathname);
+    const fetchResource = (next) => code ? loadStaticCode((signal) => deps.fetch(new Request(next, { signal })), next.signal) : deps.fetch(next);
     return (async () => {
       const shell = entry && shellPaths.has(absolute(entry.url));
       if (entry && !hashed && await isShellStale()) {
@@ -2071,6 +2156,15 @@ function createStaticCache(deps) {
           damaged = true;
           await discardDamaged(key);
         }
+      } else if (hit && code) {
+        try {
+          const cached = hit;
+          hit = await loadStaticCode(async () => cached);
+        } catch {
+          hit = void 0;
+          damaged = true;
+          await discardDamaged(key);
+        }
       }
       if (hit) {
         if (stored && !shell && age > REFRESH_MS && !refreshing.has(key)) {
@@ -2080,13 +2174,20 @@ function createStaticCache(deps) {
         }
         return hit;
       }
-      let response = await deps.fetch(damaged ? new Request(request, { cache: "reload" }) : entry && !hashed ? new Request(request, { cache: "no-cache" }) : request);
       let reloaded = damaged || request.cache === "reload";
+      let response;
+      try {
+        response = await fetchResource(damaged ? new Request(request, { cache: "reload" }) : entry && !hashed ? new Request(request, { cache: "no-cache" }) : request);
+      } catch (error) {
+        if (!(error instanceof StaticCodeTimeoutError || error instanceof StaticCodeBodyError) || reloaded || request.signal.aborted) throw error;
+        reloaded = true;
+        response = await fetchResource(new Request(request, { cache: "reload" }));
+      }
       if (entry && hashed && missing(response)) {
         if (!reloaded) {
           void response.body?.cancel().catch(() => {
           });
-          response = await deps.fetch(new Request(request, { cache: "reload" }));
+          response = await fetchResource(new Request(request, { cache: "reload" }));
         }
         reloaded = true;
         if (missing(response)) waitUntil(markShellStale());
@@ -2094,7 +2195,7 @@ function createStaticCache(deps) {
       if (entry && isBuildScript(entry) && response.ok && !missing(response)) {
         let verified = await verifiedScript(response, entry);
         if (!verified && !reloaded) {
-          response = await deps.fetch(new Request(request, { cache: "reload" }));
+          response = await fetchResource(new Request(request, { cache: "reload" }));
           if (missing(response)) {
             waitUntil(markShellStale());
             return response;
