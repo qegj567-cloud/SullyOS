@@ -30,6 +30,7 @@ import { getElevenLabsVoiceActingGuide } from './elevenLabsTts';
 import { isElevenLabsV4Model } from './elevenLabsModels';
 import { selectCharacterContextMessages } from './chatContextRange';
 import { buildCharacterResponsePrinciples } from './characterResponsePrinciples';
+import { resolveCharacterUser } from './userPersona';
 
 /** Adapted from story preset character-polyphony / evidence-gate / user-agency.
  * In-person companionship permits a small beat; it does not require plot escalation.
@@ -661,7 +662,8 @@ export const DatePrompts = {
         openingMode?: 'approach' | 'invite';
     }): Promise<{ messages: ApiMessage[] }> => {
 
-        const { char, userProfile, allMsgs, emojis } = input;
+        const { char, allMsgs, emojis } = input;
+        const userProfile = resolveCharacterUser(input.userProfile, char);
         const charTz = resolveCharTimeZone(char);
         const dateTimeOn = isDateTimeAwarenessOn(char);
         const timeStr = dateTimeOn ? getRealTimeStr(charTz) : '';
@@ -748,7 +750,8 @@ ${extraBlock ? `\n${extraBlock}` : ''}${isObserveOn(char) ? `\n${buildObserveBlo
         useVisionDescriptions?: boolean;
     }): Promise<{ messages: ApiMessage[] }> => {
 
-        const { char, userProfile, allMsgs, emojis, userText, variant } = input;
+        const { char, allMsgs, emojis, userText, variant } = input;
+        const userProfile = resolveCharacterUser(input.userProfile, char);
 
         const historyMsgs = buildDateHistory(
             allMsgs,

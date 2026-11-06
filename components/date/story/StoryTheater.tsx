@@ -19,6 +19,7 @@ import {
 } from '../../../utils/storyTheater';
 import StoryMaskBox from './StoryMaskBox';
 import StoryPresetMaker from './StoryPresetMaker';
+import { archiveStoryManually } from '../../../utils/storyTheaterArchive';
 import StoryTheaterEditor from './StoryTheaterEditor';
 import StoryTheaterSession from './StoryTheaterSession';
 import StoryVectorMemoryPanel from './StoryVectorMemoryPanel';
@@ -34,7 +35,7 @@ interface Props {
 type View = 'list' | 'editor' | 'session' | 'preset' | 'masks' | 'vectors' | 'archives';
 
 const StoryTheaterContent: React.FC<Props> = ({ onSwitchCompanion, onClose }) => {
-    const { characters, userProfile, addToast, remoteVectorConfig } = useOS();
+    const { characters, userProfile, addToast, remoteVectorConfig, apiConfig } = useOS();
     const [view, setView] = useState<View>('list');
     const [entries, setEntries] = useState<StoryTheaterEntry[]>([]);
     const [customPresets, setCustomPresets] = useState<StoryTheaterPreset[]>([]);
@@ -209,6 +210,13 @@ const StoryTheaterContent: React.FC<Props> = ({ onSwitchCompanion, onClose }) =>
         presets={presets}
         onCancel={() => setView(entries.some(item => item.id === activeEntry.id) ? 'session' : 'list')}
         onSave={saveEntry}
+        onManualArchive={async draft => {
+            const next = await archiveStoryManually(normalizeStoryTheater(draft), apiConfig);
+            setEntries(current => current.map(item => item.id === next.id ? next : item));
+            setActiveEntry(next);
+            addToast('本段剧情已总结为事件盒，原文仍保留', 'success');
+            return next;
+        }}
         onImportPreset={importPreset}
         onEditPreset={(preset, draft) => { setActiveEntry(draft); setEditingPreset(preset); setView('preset'); }}
         onOpenMaskBox={draft => { if (maskLocked || draft.writesToCharacterMemory) return; setActiveEntry(draft); setView('masks'); }}

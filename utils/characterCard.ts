@@ -17,6 +17,7 @@ import { CharacterProfile } from '../types';
  *  4) 运行时状态：buff、宫殿注入、见面/小屋存档、查手机数据等发卡人当下状态残留。
  */
 export const CARD_STRIPPED_FIELDS = [
+  'userPersona',
   // 1) 凭据（含 apiKey，灾难级泄漏）
   'dialogueApi',
   'emotionConfig',

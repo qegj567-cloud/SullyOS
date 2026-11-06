@@ -1,4 +1,5 @@
 import { diagnosticRunId } from './amsgReproduction';
+import { listUserSpaces } from './userSpaces';
 import { recordDiagnosticInbox } from './amsgReproductionStore';
 import { createReplyRun, isReplyStopped, withReplyCancellation, type ReplyRun } from './chatReplyCancellation';
 import { loadCharacterContextMessages } from './chatContextRange';
@@ -1525,8 +1526,9 @@ const flushInboxToChatImpl = async (trigger: FlushTrigger, charId?: string): Pro
   try {
     // 生成前收件不碰正在等重试 / 等前段的消息：它们按自己的定时器再处理，
     // 每次点发送都重跑一遍会把重试次数和等齐次数提前耗光。
+    const localIds = listUserSpaces().length > 1 ? new Set((await DB.getAllCharacters()).map(c => c.id)) : null;
     pendingMessages = await ActiveMsgStore.consumeInboxMessages(
-      charId, trigger === '生成前收件' ? isAwaitingInboxTimer : undefined,
+      charId, message => !!localIds && !localIds.has(message.charId) && !diagnosticRunId(message.metadata) || (trigger === '生成前收件' && isAwaitingInboxTimer(message)),
     );
   } finally {
     inboxClaimsInProgress -= 1;
@@ -2612,14 +2614,17 @@ export const refreshPushSubscriptionIfMarked = async (): Promise<'no-marker' | '
   }
 };
 
-const handleDeepLink = () => {
+const handleDeepLink = async () => {
+  const { takeSpaceNotificationTarget } = await import('./userSpaceNavigation');
+  const pendingCharId = takeSpaceNotificationTarget();
   const currentUrl = new URL(window.location.href);
   const charId = currentUrl.searchParams.get('activeMsgCharId');
   const openApp = currentUrl.searchParams.get('openApp');
 
-  if (openApp === 'chat' && charId) {
+  const destination = openApp === 'chat' && charId ? charId : pendingCharId;
+  if (destination) {
     window.dispatchEvent(new CustomEvent('active-msg-open', {
-      detail: { charId },
+      detail: { charId: destination },
     }));
   }
 
@@ -2788,6 +2793,6 @@ export const ActiveMsgRuntime = {
     });
     // 收件箱守望开跑。放在最后：上面那趟启动冲刷已经把积压清干净了，这里接管后续。
     scheduleLocalInboxWatch();
-    handleDeepLink();
+    await handleDeepLink();
   },
 };

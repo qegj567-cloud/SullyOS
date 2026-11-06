@@ -1,3 +1,4 @@
+import UserSpaceNotice from './components/user/UserSpaceNotice';
 
 import React from 'react';
 import { OSProvider } from './context/OSContext';
@@ -47,6 +48,7 @@ const App: React.FC = () => {
             <Amsg2DebugPanel />
             <WebUpdateNotice />
             <AmsgOwnerConflictNotice />
+            <UserSpaceNotice />
           </OSProvider>
         </div>
       </div>

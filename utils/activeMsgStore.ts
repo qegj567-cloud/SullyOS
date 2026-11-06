@@ -248,6 +248,33 @@ export const ActiveMsgStore = {
     await pruneStaleActionResultReceipts(charId);
   },
 
+  /** Targeted account deletion: never clear the shared connection or another character's inbox. */
+  async clearCharacters(characterIds: string[]): Promise<void> {
+    const ids = new Set(characterIds), db = await openDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction([STORE_INBOX, STORE_KV], 'readwrite');
+      for (const name of [STORE_INBOX, STORE_KV]) {
+        const cursor = tx.objectStore(name).openCursor();
+        cursor.onsuccess = () => {
+          const row = cursor.result;
+          if (!row) return;
+          const value = row.value;
+          let remove = name === STORE_INBOX && ids.has(value.charId);
+          if (name === STORE_KV && typeof value.id === 'string') {
+            if (value.id.startsWith(EXPIRED_NOTICES_PREFIX)) remove = ids.has(value.id.slice(EXPIRED_NOTICES_PREFIX.length));
+            if (value.id.startsWith(ACTION_RESULT_APPLIED_PREFIX)) {
+              try { remove = ids.has(JSON.parse(value.id.slice(ACTION_RESULT_APPLIED_PREFIX.length))[0]); } catch { /* Unknown receipt format stays intact. */ }
+            }
+          }
+          if (remove) row.delete();
+          row.continue();
+        };
+      }
+      tx.oncomplete = () => resolve();
+      tx.onerror = tx.onabort = () => reject(tx.error || new Error('角色收件箱清理失败'));
+    });
+  },
+
   /**
    * 删掉整个 ActiveMsg 库。只给「重置全部数据」用。
    *

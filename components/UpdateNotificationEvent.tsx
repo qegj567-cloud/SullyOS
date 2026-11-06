@@ -13,6 +13,7 @@ import { roomLaunch } from '../utils/roomLaunch';
 import NavigationBallNotice, { NAVIGATION_BALL_NOTICE_KEY } from './os/NavigationBallNotice';
 import UserLocationNotice, { USER_LOCATION_NOTICE_KEY } from './os/UserLocationNotice';
 import { requestSettingsFocus } from '../utils/settingsNavigation';
+import UserSpacesUpdatePopup, { USER_SPACES_UPDATE_KEY } from './os/UserSpacesUpdatePopup';
 /**
  * 全局版本更新提醒。
  *
@@ -621,7 +622,14 @@ const UserLocationAnnouncement: React.FC<UpdatePopupProps> = ({ onDone, onExit }
 
 const OctoberUpdateAnnouncement: React.FC<UpdatePopupProps> = ({ onDone }) => <OctoberUpdatePopup onDone={onDone}/>;
 
+const UserSpacesUpdateAnnouncement: React.FC<UpdatePopupProps> = ({ onExit }) => {
+    const { openApp } = useOS();
+    // Finish this launch's queue so older announcements do not cover the new feature.
+    return <UserSpacesUpdatePopup onDone={onExit} onVisit={() => { openApp(AppID.User); onExit(); }} />;
+};
+
 const UPDATE_QUEUE: { key: string; render: (props: UpdatePopupProps) => React.ReactNode }[] = [
+    { key: USER_SPACES_UPDATE_KEY, render: props => <UserSpacesUpdateAnnouncement {...props} /> },
     { key: OCTOBER_UPDATE_KEY, render: props => <OctoberUpdateAnnouncement {...props} /> },
     { key: USER_LOCATION_NOTICE_KEY, render: props => <UserLocationAnnouncement {...props} /> },
     { key: NAVIGATION_BALL_NOTICE_KEY, render: props => <NavigationBallAnnouncement {...props} /> },

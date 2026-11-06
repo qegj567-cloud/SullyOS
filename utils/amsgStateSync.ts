@@ -45,6 +45,7 @@ import {
 import { trackEvent } from './analytics';
 import { AMSG_OWNER_CONFLICT_EVENT } from './amsgOwnerReconcile';
 import { DB } from './db';
+import { allSpaceCharacters } from './userSpaceCloudSettings';
 
 /** 失败重试的退避起点，逐次翻倍（30s → 60s → 120s）。 */
 const RETRY_BASE_MS = 30_000;
@@ -589,7 +590,7 @@ export const buildCredentialRowsToResync = async (
     .map(parseCharCredId)
     .filter((parsed): parsed is { charId: string; purpose: 'chat' | 'emotion' } =>
       !!parsed && (parsed.purpose === 'chat' || parsed.purpose === 'emotion'));
-  const all = characters ?? await DB.getAllCharacters();
+  const all = characters ?? await allSpaceCharacters();
   // 备份恢复 / 换设备时可能没有本地凭据底账，仍需覆盖云端旧副 API。
   for (const char of all) {
     if (char.activeMsg2Config?.enabled && !wanted.some((item) => item.charId === char.id && item.purpose === 'chat')) {
@@ -656,7 +657,7 @@ const runLlmCredentialSync = async (reason: string): Promise<void> => {
       return;
     }
     if (await isLlmCredentialsReady()) {
-      const characters = await DB.getAllCharacters();
+      const characters = await allSpaceCharacters();
       const rows = await buildCredentialRowsToResync(snapshot, characters);
       const retired = pickChangedCredRows(rows).length > 0 ? await putCredentialRowsSkippingRetired(rows) : [];
       if (retired.length > 0) {

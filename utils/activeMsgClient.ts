@@ -1610,20 +1610,24 @@ const buildCharStateEntries = async (
 ];
 
 /** 全局工具凭据条目（v2 服务端工具循环用的搜索 / Notion / 飞书 / 小红书 / 自配 MCP 配置）。 */
-const buildToolConfigEntry = (
+const buildToolConfigEntry = async (
   realtimeConfig: RealtimeConfig | undefined,
   updatedAt: number,
-) => ({
+) => {
+  const { collectSpaceToolSettings } = await import('./userSpaceCloudSettings');
+  const settings = await collectSpaceToolSettings(realtimeConfig, collectMcpFireServers());
+  return {
   namespace: AMSG_GLOBAL_NAMESPACE,
   key: AMSG_TOOL_CONFIG_KEY,
   // MCP 配置在这里现读现带：三条上传路径（排程 / fire_pack 冲刷 / 设置保存）
   // 全走这个咽喉，不会出现某条路漏带的版本分叉。
-  value: JSON.stringify(buildToolConfig(realtimeConfig, {
-    servers: collectMcpFireServers(),
+  value: JSON.stringify(buildToolConfig(settings.realtime, {
+    servers: settings.servers,
     useNativeTools: getMcpUseNativeTools(),
   })),
   updatedAt,
-});
+  };
+};
 
 /**
  * 现有推送订阅还能不能继续用；不能用的当场退订，返回 null 让调用方重新订阅。
@@ -2870,7 +2874,7 @@ export const ActiveMsgClient = {
       const charEntries = await buildCharStateEntries(char, firePack, now);
       await putClientStateOrThrow(client, [
         ...(owesChat ? charEntries.filter((entry) => entry.key !== AMSG_FIRE_PACK_KEY) : charEntries),
-        buildToolConfigEntry(realtimeConfig, now),
+        await buildToolConfigEntry(realtimeConfig, now),
       ], '上传云端状态');
       ackStoppedReplyReceipts(charEntries, char.id);
     }
@@ -3305,7 +3309,7 @@ export const ActiveMsgClient = {
     const stampedAt = stampStateUpdatedAt();
     const stateEntries = [
       ...(await buildCharStateEntries(char, firePack, stampedAt)),
-      buildToolConfigEntry(realtimeConfig, stampedAt),
+      await buildToolConfigEntry(realtimeConfig, stampedAt),
     ];
     // 自愈那一轮只换戳、不重打包：value 里那份压好的 fire_pack 原样复用。
     const encryptStateEntries = (updatedAt: number) => encryptPayload(client, {
@@ -3475,7 +3479,7 @@ export const ActiveMsgClient = {
   ): Promise<void> {
     const globalConfig = await ensureWorkerReady();
     const client = await initializeClient(globalConfig);
-    const entry = buildToolConfigEntry(realtimeConfig, options?.updatedAt ?? stampStateUpdatedAt());
+    const entry = await buildToolConfigEntry(realtimeConfig, options?.updatedAt ?? stampStateUpdatedAt());
     const response = await putCloudClientState(client, [entry]);
     const [outcome] = classifyClientStateWrite([entry], response);
     if (outcome?.status === 'applied') return;
@@ -3987,7 +3991,8 @@ export const ActiveMsgClient = {
     updated: number;
     failed: number;
   }> {
-    const characters = (await DB.getAllCharacters()).filter(isAmsg2EnabledForChar);
+    const { allSpaceCharacters } = await import('./userSpaceCloudSettings');
+    const characters = (await allSpaceCharacters()).filter(isAmsg2EnabledForChar);
     if (!characters.length) return { status: 'no-tasks', updated: 0, failed: 0 };
     const remoteTasks = await this.listAllTasks();
     let updated = 0;
@@ -4242,7 +4247,7 @@ export const ActiveMsgClient = {
       const authed = await initializeClient(config);
       await putClientStateOrThrow(
         authed,
-        [buildToolConfigEntry(realtimeConfig, stampStateUpdatedAt())],
+        [await buildToolConfigEntry(realtimeConfig, stampStateUpdatedAt())],
         '重新上传工具凭据',
       );
     } catch (error) {

@@ -1021,6 +1021,19 @@ describe('推送丢了的补收（服务端账本）', () => {
     vi.spyOn(ActiveMsgClient, 'listOutboxEntries').mockResolvedValue(entries as any);
   };
 
+  it('keeps another users reply in the global inbox without reading this users history or acknowledging it', async () => {
+    localStorage.setItem('sully_user_spaces_v1', JSON.stringify([{ id: 'default', name: 'A' }, { id: 'u_other', name: 'B' }]));
+    vi.spyOn(DB, 'getAllCharacters').mockResolvedValue([CHAR] as any);
+    const history = vi.spyOn(DB, 'findPersistedActiveMessageIds');
+    const push = outboxPush('other-space-reply', { metadata: { charId: 'other-char' } });
+    stubOutbox([entry('other-space-reply', push)]);
+    const result = await drainOutbox();
+    expect(history).not.toHaveBeenCalled();
+    expect(result.written).toBe(1); expect(result.ackNow).toEqual([]);
+    expect(storeState.saved[0].charId).toBe('other-char');
+    localStorage.removeItem('sully_user_spaces_v1');
+  });
+
   // 有旧接管标记时也走同一条补收和去重链。
   beforeEach(() => {
     localStorage.setItem(AMSG_OUTBOX_ADOPTED_LS_KEY, JSON.stringify({ at: Date.now() }));

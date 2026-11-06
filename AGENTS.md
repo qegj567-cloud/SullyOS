@@ -12,6 +12,7 @@
 
 | 主题 | 文档 | 什么时候看 |
 |------|------|-----------|
+| **用户空间 / 角色继承 / 共享素材** | [`docs/user-spaces.md`](./docs/user-spaces.md) | 改用户切换、角色专属用户资料、跨空间继承、备份范围或素材删除前必读；会话固定所属空间、配置独立文件共用、继承不带经历、定位隐私不备份 |
 | **悬浮球与全局返回** | [`docs/navigation.md`](./docs/navigation.md) | 改快捷导航开关、拖动安全区、浏览器／Android 返回、美化子页退出前必读 |
 | **iOS 27 主屏幕顶部白雾 / 状态栏底色** | [`docs/ios-status-bar-edge.md`](./docs/ios-status-bar-edge.md) | 改顶部取色、viewport 或 iOS 门禁前必读；manifest standalone 使用 contain，零安全区不回退 44px，异步高度收缩要重建基线；纯色接合不等于壁纸贯穿 |
 | **3D 小屋 · 布局与功能分区** | [`docs/room3d-layout.md`](./docs/room3d-layout.md) | 设计或重排任何房间/样板房、自动摆家具前必读；先划功能区，再按家具组合摆放，保留连续动线，不能逐件随机找空位；本轮统一黑 × 绿 × 白 |

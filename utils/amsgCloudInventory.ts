@@ -95,6 +95,8 @@ const describeError = (error: unknown): string =>
 export const collectCloudInventory = async (
   localChars: CharacterProfile[],
 ): Promise<CloudInventory> => {
+  const { listUserSpaces } = await import('./userSpaces');
+  if (listUserSpaces().length > 1) localChars = await (await import('./userSpaceCloudSettings')).allSpaceCharacters();
   const byId = new Map<string, CloudCharEntry>();
   const gaps: CloudInventoryGap[] = [];
 

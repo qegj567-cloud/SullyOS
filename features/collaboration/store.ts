@@ -1,3 +1,4 @@
+import { spaceDatabaseName, SESSION_SPACE_ID, assertUserSpaceAvailable } from '../../utils/userSpaces';
 import type {
   CollaborationAssetRecord,
   CollaborationCategory,
@@ -10,7 +11,6 @@ import type {
 import { DEFAULT_COLLABORATION_SETTINGS } from './types';
 import { validateCollaborationAppearance, type CollaborationAppearance } from './appearance';
 
-const DB_NAME = 'SullyOS_Collaboration';
 const DB_VERSION = 1;
 const STORE_SESSIONS = 'sessions';
 const STORE_MESSAGES = 'messages';
@@ -18,9 +18,11 @@ const STORE_CATEGORIES = 'categories';
 const STORE_SETTINGS = 'settings';
 const STORE_ASSETS = 'assets';
 
-let databasePromise: Promise<IDBDatabase> | null = null;
+const collaborationConnections = new Map<string, Promise<IDBDatabase>>();
 
-const openCollaborationDatabase = (): Promise<IDBDatabase> => {
+export const openCollaborationSpace = (spaceId = SESSION_SPACE_ID): Promise<IDBDatabase> => {
+  const DB_NAME = spaceDatabaseName('SullyOS_Collaboration', spaceId);
+  let databasePromise = collaborationConnections.get(spaceId) || null;
   if (databasePromise) return databasePromise;
   const pending = new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
@@ -48,25 +50,38 @@ const openCollaborationDatabase = (): Promise<IDBDatabase> => {
       const db = request.result;
       db.onversionchange = () => {
         db.close();
-        if (databasePromise === pending) databasePromise = null;
+        if (collaborationConnections.get(spaceId) === pending) collaborationConnections.delete(spaceId);
       };
       db.onclose = () => {
-        if (databasePromise === pending) databasePromise = null;
+        if (collaborationConnections.get(spaceId) === pending) collaborationConnections.delete(spaceId);
       };
       resolve(db);
     };
     request.onerror = () => {
-      if (databasePromise === pending) databasePromise = null;
+      if (collaborationConnections.get(spaceId) === pending) collaborationConnections.delete(spaceId);
       reject(request.error);
     };
     request.onblocked = () => {
-      if (databasePromise === pending) databasePromise = null;
+      if (collaborationConnections.get(spaceId) === pending) collaborationConnections.delete(spaceId);
       reject(new Error('协同工作数据库被其它标签页占用，请关闭其它页面后重试'));
     };
   });
   databasePromise = pending;
+  collaborationConnections.set(spaceId, pending);
   return pending;
 };
+
+const openCollaborationDatabase = () => { assertUserSpaceAvailable(SESSION_SPACE_ID); return openCollaborationSpace(); };
+
+export async function deleteCollaborationSpace(spaceId: string): Promise<void> {
+  (await collaborationConnections.get(spaceId))?.close();
+  collaborationConnections.delete(spaceId);
+  await new Promise<void>((resolve, reject) => {
+    const request = indexedDB.deleteDatabase(spaceDatabaseName('SullyOS_Collaboration', spaceId));
+    request.onsuccess = () => resolve(); request.onerror = () => reject(request.error);
+    request.onblocked = () => reject(new Error('请关闭其他 SullyOS 标签页后重试重置'));
+  });
+}
 
 const requestResult = <T>(request: IDBRequest<T>): Promise<T> => new Promise((resolve, reject) => {
   request.onsuccess = () => resolve(request.result);

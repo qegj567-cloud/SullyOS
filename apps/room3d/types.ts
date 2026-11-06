@@ -3,7 +3,7 @@ export interface Home3DBoundary {kind:'wall_high'|'wall_low'|'wall_fence'|'open'
 export interface Home3DRoom {activityRoom?:'halloween';fixedPalette?:'halloween';defaultTemplate?:{kind:string;compact:boolean};id:string;name:string;x:number;z:number;level:number;wall:string;trim?:string;floor?:string;floorStyle?:'original'|'wood'|'tile'|'checker'|'stone'|'parquet'|'solid';wallStyle?:'solid'|'halloween'|'stripe'|'dot'|'panel'|'tile'|'timber'|'spa'|'framed';boundaries?:Partial<Record<'front'|'back'|'left'|'right',Home3DBoundary>>;items:Home3DItem[]}
 export interface Home3DActivity {at:number;roomId:string;roomName:string;label:string;kind:'activity-start'}
 export type HomeRecordSource='user'|'local'|'model';
-export interface Home3DState {socialMemberIds?:string[];romanticPairs?:[string,string][]}
+export interface Home3DState {socialMemberIds?:string[];romanticPairs?:[string,string][];userRomanceDisabledIds?:string[]}
 export interface HomeScene {participants?:Array<{id:string;name:string}>;romanticPartners?:Array<{id:string;name:string}>}
 export interface HomeRecord {id:string;at:number;kind:'message'|'action'|'presence';source:HomeRecordSource;actor:'user'|'character';text:string;roomId:string;roomName:string;initiative?:boolean;automatic?:boolean;replyTo?:string;turnId?:string;contextSegmentId?:string;editedAt?:number;actorId?:string;actorName?:string;targetIds?:string[];sharedScene?:{homeOwnerId:string;participantIds:string[]}}
 export interface HomeAction {id:string;kind:string;label:string;roomId:string;actor?:'character';target?:string;prerequisite?:string}

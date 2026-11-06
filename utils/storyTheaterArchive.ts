@@ -1,7 +1,7 @@
 import type { APIConfig, Message, StoryTheaterArchive, StoryTheaterEntry } from '../types';
 import { DB, openDB } from './db';
 import { extractContent, safeResponseJson } from './safeApi';
-import { describeStoryApiError, storyTheaterThreadId } from './storyTheater';
+import { describeStoryApiError, storyTheaterThreadId, makeStoryTheaterId } from './storyTheater';
 import { hasSummaryReasoningLeak } from './summaryReasoning';
 
 /** Summaries must come from the final channel, never a reasoning-only fallback. */
@@ -59,6 +59,53 @@ const sourceKey = (entry: StoryTheaterEntry, archive: StoryTheaterArchive) => JS
 ]);
 const rowsKey = (messages: Message[]) => JSON.stringify(messages.map(message => [message.id, message.role, message.content]));
 const running = new Set<string>();
+
+/** Manual archiving includes the newest completed reply, with no automatic keep window. */
+export async function archiveStoryManually(draft: StoryTheaterEntry, api: Pick<APIConfig, 'baseUrl' | 'apiKey' | 'model'>): Promise<StoryTheaterEntry> {
+    const key = `manual:${draft.id}`;
+    if (running.has(key)) throw new Error('正在总结，请稍候');
+    if (draft.writesToCharacterMemory) throw new Error('手动总结只用于虚构剧场');
+    running.add(key);
+    try {
+        const threadId = storyTheaterThreadId(draft.id);
+        const pendingRows = (rows: Message[]) => rows.filter(row => row.charId === threadId && !row.groupId
+            && row.metadata?.source === 'story_theater' && !row.metadata.theaterArchived).sort((a, b) => a.id - b.id);
+        const original = (await DB.getStoryTheaters()).find(item => item.id === draft.id);
+        if (!original || original.writesToCharacterMemory) throw new Error('请先保存虚构剧情');
+        const rows = pendingRows(await DB.getMessagesByCharId(threadId, true));
+        if (!rows.length) throw new Error('没有待总结的剧情');
+        if (rows[rows.length - 1].role !== 'assistant') throw new Error('请等本轮回复完成后再总结');
+        const summary = await generateStoryArchiveSummary(draft.title, rows, api);
+        const db = await openDB();
+        return await new Promise<StoryTheaterEntry>((resolve, reject) => {
+            const tx = db.transaction(['story_theaters', 'messages'], 'readwrite');
+            const stories = tx.objectStore('story_theaters'), messages = tx.objectStore('messages');
+            const entryRead = stories.get(draft.id), rowsRead = messages.index('charId').getAll(threadId);
+            let pending = 2, updated: StoryTheaterEntry, failure: unknown;
+            tx.oncomplete = () => resolve(updated);
+            tx.onerror = () => reject(failure || tx.error);
+            tx.onabort = () => reject(failure || tx.error || new Error('总结未保存，原文已保留'));
+            const finish = () => {
+                if (--pending) return;
+                try {
+                    const fresh = entryRead.result as StoryTheaterEntry | undefined;
+                    if (!fresh || JSON.stringify(fresh) !== JSON.stringify(original)
+                        || rowsKey(pendingRows(rowsRead.result)) !== rowsKey(rows)) {
+                        throw new Error('剧情已变更，本次未归档，请重新打开后重试');
+                    }
+                    updated = { ...draft, archiveMode: 'manual', archiveStrategy: 'summary', archives: [...fresh.archives, {
+                        id: makeStoryTheaterId(), strategy: 'summary', summary, fromMessageId: rows[0].id,
+                        toMessageId: rows[rows.length - 1].id, messageCount: rows.length, createdAt: Date.now(),
+                    }], updatedAt: Date.now() };
+                    for (const row of rows) messages.put({ ...row, metadata: { ...row.metadata, theaterArchived: true, theaterArchiveStrategy: 'summary' } });
+                    stories.put(updated);
+                } catch (error) { failure = error; tx.abort(); }
+            };
+            entryRead.onsuccess = finish;
+            rowsRead.onsuccess = finish;
+        });
+    } finally { running.delete(key); }
+}
 
 export async function regenerateStoryArchiveSummary(entryId: string, archiveId: string, api: Pick<APIConfig, 'baseUrl' | 'apiKey' | 'model'>): Promise<StoryTheaterEntry> {
     const key = JSON.stringify([entryId, archiveId]);

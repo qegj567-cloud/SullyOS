@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Message, StoryTheaterEntry } from '../types';
 import { DB } from './db';
 import { createStoryTheaterDraft, storyTheaterThreadId } from './storyTheater';
-import { generateStoryArchiveSummary, parseStoryArchiveSummary, regenerateStoryArchiveSummary } from './storyTheaterArchive';
+import { archiveStoryManually, generateStoryArchiveSummary, parseStoryArchiveSummary, regenerateStoryArchiveSummary } from './storyTheaterArchive';
 
 const api = { baseUrl: 'https://llm.invalid/v1/', apiKey: 'test', model: 'test' };
 const completion = (content: unknown, finish_reason = 'stop', reasoning_content = '思考过程') => ({ choices: [{ finish_reason, message: { content, reasoning_content } }] });
@@ -119,4 +119,63 @@ describe('story archive regeneration', () => {
         finally { spy.mockRestore(); }
         expect((await fresh()).archives[0]).toEqual(entry.archives[0]);
     });
+});
+
+async function addPending(role: 'user' | 'assistant', content: string) {
+ return DB.saveMessage({ charId: storyTheaterThreadId(entry.id), role, type: 'text', content, metadata: { source: 'story_theater', theaterId: entry.id } });
+}
+describe('manual story archive', () => {
+ it('includes the latest completed pair, preserves old boxes/originals and does not touch character memory', async () => {
+  await addPending('user', '本段最后的输入'); await addPending('assistant', '本段最后的回复');
+  const before = await DB.getAllCharacters();
+  const result = await archiveStoryManually(entry, api);
+  expect(result).toMatchObject({ archiveMode: 'manual', archiveStrategy: 'summary' });
+  expect(result.archives).toHaveLength(2); expect(result.archives[0]).toEqual(entry.archives[0]);
+  expect(result.archives[1].messageCount).toBe(2);
+  const prompt = JSON.parse(fetchMock.mock.calls[0][1].body).messages[1].content;
+  expect(prompt).toContain('本段最后的回复'); expect(prompt).not.toContain('我们先在车站等雨停');
+  const rows = await DB.getMessagesByCharId(storyTheaterThreadId(entry.id), true);
+  expect(rows).toHaveLength(4); expect(rows.every(row => row.metadata.theaterArchived)).toBe(true);
+  expect(await DB.getAllCharacters()).toEqual(before);
+  await expect(archiveStoryManually(result, api)).rejects.toThrow('没有待总结');
+ });
+ it('leaves text unarchived on model failure and permits retry', async () => {
+  await addPending('assistant', '完整的一段');
+  fetchMock.mockResolvedValueOnce(response(completion('', 'stop', '只有思考')));
+  await expect(archiveStoryManually(entry, api)).rejects.toThrow();
+  expect((await fresh()).archives).toHaveLength(1);
+  expect((await DB.getMessagesByCharId(storyTheaterThreadId(entry.id), true)).at(-1)?.metadata.theaterArchived).not.toBe(true);
+  await expect(archiveStoryManually(entry, api)).resolves.toMatchObject({ archiveMode: 'manual' });
+ });
+ it('refuses unfinished replies and real-time companion stories', async () => {
+  await addPending('user', '等待回复');
+  await expect(archiveStoryManually(entry, api)).rejects.toThrow('回复完成');
+  await expect(archiveStoryManually({...entry, writesToCharacterMemory:true}, api)).rejects.toThrow('虚构剧场');
+  expect(fetchMock).not.toHaveBeenCalled();
+ });
+ it('rejects duplicate clicks and discards a summary when the source changes during generation', async () => {
+  await addPending('assistant', '原剧情');
+  fetchMock.mockImplementationOnce(async () => {
+   await expect(archiveStoryManually(entry, api)).rejects.toThrow('正在总结');
+   await addPending('user', '新增输入');
+   return response(completion('已过期的摘要'));
+  });
+  await expect(archiveStoryManually(entry, api)).rejects.toThrow('剧情已变更');
+  expect((await fresh()).archives).toHaveLength(1);
+  const rows=await DB.getMessagesByCharId(storyTheaterThreadId(entry.id),true);
+  expect(rows.slice(-2).every(row=>!row.metadata.theaterArchived)).toBe(true);
+ });
+});
+
+it('manual archive rolls back message flags and the box together when commit fails', async () => {
+ await addPending('assistant', '事务失败时仍保留原文');
+ const put = IDBObjectStore.prototype.put;
+ const spy = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function(this: IDBObjectStore, ...args: Parameters<typeof put>) {
+  const request = put.apply(this, args);
+  if (this.name === 'story_theaters') request.addEventListener('success', () => this.transaction.abort());
+  return request;
+ });
+ try { await expect(archiveStoryManually(entry, api)).rejects.toThrow(); } finally { spy.mockRestore(); }
+ expect((await fresh()).archives).toHaveLength(1);
+ expect((await DB.getMessagesByCharId(storyTheaterThreadId(entry.id), true)).at(-1)?.metadata.theaterArchived).not.toBe(true);
 });

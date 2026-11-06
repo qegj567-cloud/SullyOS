@@ -32,7 +32,7 @@ import {createStarterHome,defaultRoomLayout,hasDefaultRoomLayout} from './starte
 import {furnishingSpaceError} from './furnishingSpace.js';
 import {homeMap,homeDisplayX} from './homeMap.js';
 import {createSocialScene,socialActions} from './chibi/social';
-import {homePhotoActionAllowed,homeSocialActionAllowed,hasRomanticPair,updateRomanticPair} from './homeRomance';
+import {homePhotoActionAllowed,homeSocialActionAllowed,hasRomanticPair,updateHomeRomanticRelation} from './homeRomance';
 import {createGuestLife} from './guestLife.js';
 import {setCharacterRoomTint,setCharacterRoomLighting} from './chibi/illustration';
 import {getCharacterStyle,setCharacterStyle,subscribeCharacterStyle} from './chibi/characterStyle';
@@ -314,7 +314,7 @@ export async function mountHomeEditor(host,{assetBase,initialState,onChange,onBa
  }
  function canPlaySocial(action,a,b){return homeSocialActionAllowed(state,action,a,b);}
  function romanticPartners(id){return getPresentResidents().filter(p=>hasRomanticPair(state,id,p.id));}
- function setRomanticRelation(a,b,enabled){const pairs=updateRomanticPair(state,a,b,enabled);stopSocial();photoSession?.cancelInteraction();homeActionPlan=null;state.romanticPairs=pairs;persist();dirty=true;wake();}
+ function setRomanticRelation(a,b,enabled){const relation=updateHomeRomanticRelation(state,a,b,enabled);stopSocial();photoSession?.cancelInteraction();homeActionPlan=null;Object.assign(state,relation);persist();dirty=true;wake();}
  async function playSocial(action,a,b,source='user',replyTo){
   if(!canPlaySocial(action,a,b))throw Error('这两位未设置浪漫关系，不能执行亲密动作');
   const seatedHug=action==='home-hug'&&(getResidentPosture(a)==='seated'||getResidentPosture(b)==='seated');

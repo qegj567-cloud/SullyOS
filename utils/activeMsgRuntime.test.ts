@@ -365,6 +365,15 @@ describe('shouldRenderInstantly（这条要不要跳过打字慢放）', () => {
  * 要看的东西全顶出缓冲区。
  */
 describe('本地收件箱守望', () => {
+  it('多用户时为其他空间保留本地收件，不误认领', async () => {
+    await ActiveMsgStore.consumeInboxMessages();
+    localStorage.setItem('sully_user_spaces_v1', JSON.stringify([{ id: 'default', name: '甲' }, { id: 'u_other', name: '乙' }]));
+    try {
+      await ActiveMsgStore.saveInboxMessage({ messageId: 'other-space-inbox', charId: 'only-in-other-space', charName: '乙的角色', body: '保留给乙', messageType: 'text', receivedAt: Date.now(), sentAt: Date.now() } as any);
+      await sweepLocalInbox();
+      expect((await ActiveMsgStore.consumeInboxMessages()).map(row => row.messageId)).toEqual(['other-space-inbox']);
+    } finally { localStorage.removeItem('sully_user_spaces_v1'); await ActiveMsgStore.consumeInboxMessages(); }
+  });
   it('库里没货：不动收件箱，也不留下冲刷记录', async () => {
     await ActiveMsgStore.consumeInboxMessages();  // 先清干净
     const before = readAllInstantTraces().length;

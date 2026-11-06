@@ -15,6 +15,7 @@ import { ensureDinosaurGarden } from './vrWorld/dinosaurGarden';
 import { collectSARLocalBackup, restoreSARLocalBackup } from './vrWorld/sarBackup';
 import { sarCollectionEntries } from './vrWorld/sarCollection';
 import {defaultFriendFeedSettings} from './friendFeedSettings';
+import { removeSharedBlob } from './sharedBlobPool';
 
 const feed = (image = 'blobref:picture'): FriendFeedState => ({version:1, circles:[], posts:[{
     id:'post', authorId:'user', authorName:'我', text:'新的日常', createdAt:123,
@@ -38,7 +39,8 @@ async function archive(data: Record<string, unknown>, zip = new JSZip(), prewrit
     const loaded = await JSZip.loadAsync(await zip.generateAsync({type:'uint8array'}));
     const restored = await assembleV2Backup(loaded,JSON.parse(await loaded.file('manifest.json')!.async('string')));
     // Simulate moving to a device without the original image bytes.
-    for (const token of refs) { await deleteBlobRef(token); expect(await getBlobForRef(token)).toBeNull(); }
+    // Simulate a different device below the reference-protecting public deletion API.
+    for (const token of refs) { await removeSharedBlob(token.slice('blobref:'.length)); expect(await getBlobForRef(token)).toBeNull(); }
     await restoreBlobsFromZip(loaded,await readBlobsIndex(loaded),restoreBlobRef);
     return restored;
 }

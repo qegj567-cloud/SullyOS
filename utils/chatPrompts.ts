@@ -1,3 +1,4 @@
+import { resolveCharacterUser } from './userPersona';
 import {weatherForCharacter} from './characterWeather';
 import {secretNoteContext} from './secretNote';
 import { buildCharacterResponsePrinciples } from './characterResponsePrinciples';
@@ -319,6 +320,7 @@ export const ChatPrompts = {
     ): Promise<{ stable: string; volatileState: string; recencyTail: string; history: import('./context').ContextMessage[] }> => {
         // 主动消息的模板是最后一次聊天时打好、到点才渲染的，凡是「打包这一刻」的状态
         // 到触发时都已经过期，一律不烤进模板。见 PromptBuildOptions 的清单。
+        userProfile = resolveCharacterUser(userProfile, char);
         const forFirePack = promptOptions?.forFirePack === true;
         // 即时对话：这一轮交给 worker 生成，时钟和真实世界块由它在 fire 时刻补。
         // 本地私有的易变段照常烤进去（worker 拿不到，而这一刻它们是新鲜的）。
