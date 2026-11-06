@@ -97,6 +97,7 @@ import {
 } from './amsgFirePack';
 import {
   AMSG_BACKGROUND_JOB_SUBTYPE,
+  classifyTaskRow,
   AMSG_JOB_ID_KEY,
   AMSG_JOB_NAMESPACE,
   AMSG_TASK_KIND_KEY,
@@ -2714,9 +2715,8 @@ export const ActiveMsgClient = {
    *
    * 逐条取消，单条失败记进 failed 继续跑完其余的：一条网络抖动不该让剩下的任务都留着。
    *
-   * 即时对话的行不在取消范围内（过滤口径与面板对账同一把尺 AMSG_INSTANT_CHAT_SUBTYPE，
-   * 见 amsg2Tasks 的 reconcileTasksWithRemote）：那不是定时任务，是用户此刻正等着的一轮
-   * 聊天。角色的 2.0 开关管的是定时主动消息，连它一起掐掉的话 worker 那一跳永远不会跑，
+   * 即时对话的行不在取消范围内（按 classifyTaskRow 分，跟面板对账同一个函数）：那不是
+   * 定时任务，是用户此刻正等着的一轮聊天。角色的 2.0 开关管的是定时主动消息，连它一起掐掉的话 worker 那一跳永远不会跑，
    * 用户等到的是一句「云端已处理这条消息，但回复没能取回」，还得自己把话重发一遍。
    * 退回本地清单的那条路天然不含即时对话（本地任务记录里从来没有它）。
    */
@@ -2727,7 +2727,7 @@ export const ActiveMsgClient = {
     let targets: string[];
     try {
       targets = (await this.listRemoteTasksForChar(charId))
-        .filter((task) => task.messageSubtype !== AMSG_INSTANT_CHAT_SUBTYPE)
+        .filter((task) => classifyTaskRow(task) !== 'instant-chat')
         .map((task) => task.uuid);
     } catch {
       targets = localTaskUuids;
@@ -3151,6 +3151,8 @@ export const ActiveMsgClient = {
     char: CharacterProfile;
     /** 本地生成会 POST 给 /chat/completions 的那串 fullMessages，原样带上去。 */
     chatMessages: Array<{ role: string; content: unknown }>;
+    /** 本地「实时状态」段在 chatMessages 里的下标，worker 时效块插在它前面（见 AmsgFirePackChat）。 */
+    timelyInsertAt?: number;
     /**
      * 这一轮该用的聊天凭据——**必须是本地生成那一轮会用的同一份**（effectiveApi）。
      */
@@ -3207,7 +3209,11 @@ export const ActiveMsgClient = {
       ...(await buildFirePack(char, userProfile, groups, realtimeConfig, undefined, { templateStub })),
       // 先还原图片令牌再算体积预算——反过来会让一份「看着没超」的包在云端胀成几 MB，
       // 而 worker 那边根本解不开令牌（见 resolveChatMessagesForUpload）。
-      chat: { messages: toFirePackChatMessages(await resolveChatMessagesForUpload(chatMessages)), builtAt: now },
+      chat: {
+        messages: toFirePackChatMessages(await resolveChatMessagesForUpload(chatMessages)),
+        builtAt: now,
+        ...(params.timelyInsertAt !== undefined && params.timelyInsertAt >= 0 ? { timelyInsertAt: params.timelyInsertAt } : {}),
+      },
     };
 
     const clientTaskId = crypto.randomUUID();
@@ -3262,7 +3268,7 @@ export const ActiveMsgClient = {
       messageType: 'auto',
       // 上游只把它当自由文本标签原样带进推送，不据此分支；本地拿它把即时对话的行跟
       // 定时任务的行分开——不然一条失败的即时对话行会被面板对账当成排程任务补进清单。
-      // 常量与面板对账的过滤端共用（amsgFirePack 的 AMSG_INSTANT_CHAT_SUBTYPE）。
+      // 列表投影里只认这个标签，分类见 amsgTaskKinds 的 classifyTaskRow。
       messageSubtype: AMSG_INSTANT_CHAT_SUBTYPE,
       // 落库即到期（不带 firstSendTime）：用户已经把话说完了，现在就该答。
       // 排未来时刻的话，打包/上传的耗时都要预支提前量，慢网低端机会被
@@ -4018,9 +4024,10 @@ export const ActiveMsgClient = {
       for (const remote of remoteTasks) {
         if (remote.charId !== char.id || remote.status !== 'pending') continue;
         if (remote.messageType !== 'auto' && remote.messageType !== 'prompted') continue;
-        if (remote.messageSubtype === AMSG_INSTANT_CHAT_SUBTYPE) {
-          // 上游自排会继承父任务的 subtype。只看标签会漏掉从即时对话排出的子任务；
-          // 读 metadata 确认是自排任务，不能改用户正在等待的那一轮即时回复。
+        const rowClass = classifyTaskRow(remote);
+        if (rowClass === 'instant-chat') {
+          // 列表投影不带 metadata，从即时对话排出的旧自排任务也挂着 instant-chat；
+          // 读 metadata 再分一次，不能改用户正在等待的那一轮即时回复。
           try {
             const globalConfig = await ensureWorkerReady();
             const response = await fetchWithAuth(`message?id=${encodeURIComponent(remote.uuid)}`, globalConfig, {
@@ -4034,12 +4041,12 @@ export const ActiveMsgClient = {
             }
             const client = await initializeClient(globalConfig);
             const metadata = (await decryptPayload(client, response.data))?.task?.metadata;
-            if (metadata?.amsgInstantChat || metadata?.amsgSelfScheduled !== true) continue;
+            if (classifyTaskRow({ ...remote, metadata }) !== 'scheduled') continue;
           } catch {
             failed += 1;
             continue;
           }
-        } else if (remote.messageSubtype && remote.messageSubtype !== 'chat') continue;
+        } else if (rowClass !== 'scheduled') continue;
         tasksByUuid.set(remote.uuid, { taskUuid: remote.uuid, mode: remote.messageType } as ActiveMsg2TaskRecord);
       }
       const tasks = [...tasksByUuid.values()];

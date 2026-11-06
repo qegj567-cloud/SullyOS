@@ -125,6 +125,16 @@ describe('useChatAI 的分流接缝', () => {
     expect(chatAiSrc).not.toContain('cloudGenRoute');
   });
 
+  it('回执块与 worker 时效块都排在易变尾段之前，不压过「回到你自己」', () => {
+    const branch = branchSrc();
+    expect(branch).toContain('timelyInsertAt: payload.volatileTailIndex');
+    expect(branch).toContain("insertAmsg2TaskContextBlock(fullMessages, { role: 'system', content: amsg2NoticesBlock }, payload.volatileTailIndex)");
+    expect(branch).not.toContain("[...fullMessages, { role: 'system', content: amsg2NoticesBlock }]");
+    // 下标一路带进 fire_pack 的 chat 段
+    expect(read('./amsgInstantChat.ts')).toContain('timelyInsertAt: params.timelyInsertAt');
+    expect(read('./activeMsgClient.ts')).toContain('{ timelyInsertAt: params.timelyInsertAt }');
+  });
+
   it('分支只认 instantChatRoute，不拿原料重算一遍', () => {
     // 「这份 prompt 剥没剥时效段」和「这一轮走不走云端」必须出自同一个值。分支要是
     // 自己再拿 instantChatOn / 否决名单拼一次条件，两处早晚会不同意——剥过时效段的
@@ -189,10 +199,10 @@ describe('useChatAI 的分流接缝', () => {
     expect(branch).not.toContain('safeFetchJson');
   });
 
-  it('云端拿到的就是本地要发的那串消息和那份凭据（回执块只附在末尾，不动原消息）', () => {
-    // 基底永远是 fullMessages；有作废回执时单独成块贴在末尾（云端到点自己渲染排程
+  it('云端拿到的就是本地要发的那串消息和那份凭据（回执块只另插一块，不动原消息）', () => {
+    // 基底永远是 fullMessages；有作废回执时单独成块插进去（云端到点自己渲染排程
     // 清单和能力简介，chat 段只补回执这一样，别和 timely block 撞车）。
-    expect(branchSrc()).toMatch(/\[\.\.\.fullMessages, \{ role: 'system', content: amsg2NoticesBlock \}\]/);
+    expect(branchSrc()).toMatch(/insertAmsg2TaskContextBlock\(fullMessages, \{ role: 'system', content: amsg2NoticesBlock \}/);
     expect(branchSrc()).toMatch(/:\s*fullMessages\)/);
     expect(branchSrc()).toMatch(/buildAmsg2NoticesText\(/);
     expect(branchSrc()).toMatch(/baseUrl:\s*effectiveApi\.baseUrl/);

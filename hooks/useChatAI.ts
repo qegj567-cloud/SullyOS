@@ -1288,9 +1288,12 @@ export const useChatAI = ({
                     signal: replyRun.signal,
                     char,
                     // 云端要发给模型的就是本地这一份，一个字不改（见 fire_pack 的 chat 段）。
+                    // 回执块和 worker 时效块都插在易变尾段之前，与本地 withAmsg2TaskContext 同位：
+                    // 「回到你自己」钢印留在模型开口前的最后一眼。
                     chatMessages: (amsg2NoticesBlock
-                        ? [...fullMessages, { role: 'system', content: amsg2NoticesBlock }]
+                        ? insertAmsg2TaskContextBlock(fullMessages, { role: 'system', content: amsg2NoticesBlock }, payload.volatileTailIndex)
                         : fullMessages) as Array<{ role: string; content: unknown }>,
+                    timelyInsertAt: payload.volatileTailIndex,
                     // 凭据用本地这一轮的那份：换成别的等于同一句话由不同模型来答，而用户看不出来。
                     // model / temperature 取 baseReqBody 的终值而不是 effectiveApi 的原始值：
                     // 上面那段已经按本地规则把 thinking 后缀（claude 系 -thinking）拼好、

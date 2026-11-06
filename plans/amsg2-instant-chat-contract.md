@@ -96,6 +96,9 @@
     // 最新一条用户消息的图片永不降级，仍超预算则整轮明确报错。
     messages: { role: string; content: string | Array<{ type: string; [key: string]: unknown }> }[];
     builtAt: number;
+    // 本地「实时状态」段在 messages 里的下标。worker 时效块插在它前面，
+    // 缺省或越界（< 1 / > messages.length）时追加到末尾。
+    timelyInsertAt?: number;
   }
   ```
 
@@ -104,7 +107,7 @@
 - `onBeforeFire`（`index.ts:791`）新增 instant 分支：`metadata.amsgInstantChat`
   为真时——
   - 用 `pack.chat.messages` 组请求消息（不走 `renderFirePack` 模板渲染），
-    在末尾追加 system 块注入时效内容：当前时间（沿用角色时区约定）、
+    在 `timelyInsertAt` 处（缺省为末尾）插入 system 块注入时效内容：当前时间（沿用角色时区约定）、
     实时世界块（`buildRealtimeWorldBlock`）。
   - **跳过**：presence gate、expire guard（`shouldExpireFire`）、
     task-instruction 检查——这些是「主动消息到点还该不该发」的语义，对

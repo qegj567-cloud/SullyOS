@@ -50,7 +50,7 @@ import { AMSG_BUNDLE_VERSION } from '../../../utils/amsgBundleVersion';
 // 往里加任何浏览器依赖都会连累这个 bundle）。这里只产出事实，红绿灯和文案归前端。
 import type { AmsgPushGoneFailure } from '../../../utils/amsgDiagnostics';
 import type { UserProfile } from '../../../types';
-import { AMSG_JOB_NAMESPACE, AMSG_JOB_TTL_DAYS } from '../../../utils/amsgTaskKinds';
+import { AMSG_JOB_NAMESPACE, AMSG_JOB_TTL_DAYS, classifyTaskRow } from '../../../utils/amsgTaskKinds';
 import {
   FIRE_KIND_HANDLERS,
   getKindFireStash,
@@ -332,6 +332,8 @@ type ScheduleTask = (options: {
   firstSendTime: string;
   recurrenceType?: string;
   messageType?: string;
+  /** 不传就继承当前任务的。 */
+  messageSubtype?: string;
   metadata?: Record<string, unknown>;
   taskInput?: Record<string, unknown>;
   uuid?: string;
@@ -1566,7 +1568,7 @@ export const runFireScheduleTool = async (
       recurrenceType: parsed.recurrence,
       messageType: parsed.mode,
       // 不写的话上游会继承当前任务的 subtype：即时对话里排的后续会带上 'instant-chat'，
-      // 被下面的任务清单当成聊天行滤掉——角色看不见、取消不了，名额和间隔也数不到它。
+      // 列表投影里就被 classifyTaskRow 当成即时对话——前端看不见、取消不了它。
       messageSubtype: 'chat',
       uuid,
       // 角色自排的循环任务也按角色所在时区的墙钟推进，跟用户在面板排的同一套。
@@ -2285,9 +2287,7 @@ export const amsgHooks = {
         for (const row of page.tasks) {
           const meta = row.metadata ?? {};
           if ((row.charId ?? meta.charId) !== charId || row.status !== 'pending' || !row.uuid || !row.nextSendAt
-            || meta.amsgInstantChat === true || meta.amsgKind
-            // 2026-11-06.3 之前从即时对话排出的自排任务带着继承来的 'instant-chat'，靠自排标记认回来。
-            || (row.messageSubtype === 'instant-chat' && meta.amsgSelfScheduled !== true)) continue;
+            || classifyTaskRow(row) !== 'scheduled') continue;
           const old = known.get(row.uuid);
           live.push({
             ...old,
@@ -2439,7 +2439,7 @@ export const amsgHooks = {
     // 不然一边声明成 tools、一边教语法，模型会两种都写一遍。
     // 时间上下文让 send_at 的示例是「明天这个点」的裸墙钟，别再教模型写 offset。
     //
-    // 块尾接「用户给你定的规矩」：还能再排几条、最早排到几点、今天还剩几条。额度摆在它
+    // 块尾接「用户给你定的规矩」：连发、今天、任务名额各报「已用/上限」，外加最早排到几点。额度摆在它
     // 面前，比让它排了再被打回省一轮；真超了照样由排程工具打回。
     const limitsBrief = canSelfSchedule
       ? buildLimitsBrief({
@@ -2509,6 +2509,13 @@ export const amsgHooks = {
           taskListBlock, mcpBlock, scheduleBlock,
         ],
       });
+      const chatMessages = pack.chat!.messages;
+      // 时效块（排程清单/额度/时钟等）插在本地「实时状态」段前面，与本地路径同位；
+      // 旧前端没给下标或下标越界时追加到末尾。
+      const insertAt = pack.chat!.timelyInsertAt;
+      const timelyAt = Number.isInteger(insertAt) && insertAt! >= 1 && insertAt! <= chatMessages.length
+        ? insertAt!
+        : chatMessages.length;
       const instantMessages = [
         // content 原样透传，一个字都不动：带图片的消息本地就是结构化分段
         // （`[{type:'text'},{type:'image_url'}]`），上游把这个数组整个丢进
@@ -2516,8 +2523,9 @@ export const amsgHooks = {
         // `messages: llmMessages`，不看 content 的类型）。这里但凡 String() 一下，
         // 模型收到的就是「[object Object]」而不是那张图。
         // 每条重新包一层对象只是不把 pack 上那份交出去，content 仍是同一个引用。
-        ...pack.chat!.messages.map((m) => ({ role: m.role, content: m.content })),
+        ...chatMessages.slice(0, timelyAt).map((m) => ({ role: m.role, content: m.content })),
         ...(timelyBlock ? [{ role: 'system' as const, content: timelyBlock }] : []),
+        ...chatMessages.slice(timelyAt).map((m) => ({ role: m.role, content: m.content })),
       ];
       if (userHoliday) {
         const profileMessage = instantMessages.find(m => m.role === 'system' && typeof m.content === 'string' && m.content.includes('### 互动对象 (User)\n'));

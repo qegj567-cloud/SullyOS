@@ -917,8 +917,8 @@ describe('频率与额度（到点兜底闸）', () => {
     });
     ctx.scheduleTask = vi.fn();
     const prompt = fired(await amsgHooks.onBeforeFire(ctx)).messages[0].content;
-    expect(prompt).toContain('现在还能再排 2 次');
-    expect(prompt).toContain('现在挂着 0 个');
+    expect(prompt).toContain('已用 1/3 次');
+    expect(prompt).toContain('挂着 0/1 个');
   });
 
   it('「不停」（0）时重复任务一直照发', async () => {
@@ -996,9 +996,9 @@ describe('频率与额度（到点兜底闸）', () => {
     ctx.scheduleTask = vi.fn();
     const prompt = fired(await amsgHooks.onBeforeFire(ctx)).messages[0].content;
     expect(prompt).toContain('用户给你定的规矩');
-    // 连发 3 次，正在发的这一次占 1 次 → 还能再排 2 次；今天发过 1 次 + 这一次 → 还剩 3 次。
-    expect(prompt).toContain('现在还能再排 2 次');
-    expect(prompt).toContain('今天还能再主动找对方 3 次');
+    // 连发 3 次，正在发的这一次占 1 次；今天发过 1 次 + 这一次 → 已用 2 次。
+    expect(prompt).toContain('已用 1/3 次');
+    expect(prompt).toContain('今天的主动联系：已用 2/5 次');
   });
 });
 
@@ -4186,6 +4186,33 @@ describe('onBeforeFire — 即时对话分支', () => {
     expect(appended.content).toContain('现在是');
     // 回归守卫：走模板渲染的话这里会出现主动消息那套措辞，用户刚说的话反而没人答
     expect(result.messages.map((m) => m.content).join('\n')).not.toContain('本次任务');
+  });
+
+  // 回归守卫：时效块（排程清单 + 额度 + 自主联系说明）曾一律贴在数组最末，压过本地放在
+  // 易变尾段末尾的「回到你自己」钢印，角色每轮都被最后一眼的排程说明牵着去排消息。
+  it('给了 timelyInsertAt 时，时效块插在本地实时状态段之前；越界退回末尾', async () => {
+    const withTail = [...CHAT_MESSAGES, { role: 'system', content: '[System: 实时状态] 回到你自己' }];
+    const runWith = async (timelyInsertAt: number) => {
+      const { ctx } = instantCtx({
+        charRows: [
+          { key: AMSG_FIRE_PACK_KEY, value: firePackValue(null, { chat: { messages: withTail, builtAt: PACK_BUILT_AT, timelyInsertAt } }) },
+          { key: AMSG_TOOL_PACK_KEY, value: toolPackValue },
+        ],
+      });
+      return fired(await amsgHooks.onBeforeFire(ctx)).messages;
+    };
+
+    const placed = await runWith(2);
+    expect(placed).toHaveLength(withTail.length + 1);
+    expect(placed.slice(0, 2)).toEqual(CHAT_MESSAGES);
+    expect(placed[2].content).toContain('现在是');
+    expect(placed[3]).toEqual(withTail[2]);
+
+    for (const bad of [0, 99]) {
+      const appended = await runWith(bad);
+      expect(appended.slice(0, 3)).toEqual(withTail);
+      expect(appended[3].content).toContain('现在是');
+    }
   });
 
   // 本地有常驻自主联系说明，云端以前只教「主动消息发完再接着说」。
