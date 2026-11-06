@@ -385,21 +385,22 @@ export interface LimitsBriefInput {
 export const buildLimitsBrief = (input: LimitsBriefInput): string => {
   const { limits } = input;
   const lines: string[] = [];
+  // 额度只报「已用/上限」：说成「还能再排 N 次」读起来像在催它把名额用掉。
   if (Number.isFinite(limits.maxUnansweredSends)) {
-    const left = Math.max(0, limits.maxUnansweredSends - input.committedSends);
-    lines.push(`- 对方没回的时候，你最多连着主动找对方 ${limits.maxUnansweredSends} 次（一次可以说好几句；排好还没发的也算），`
-      + (left > 0 ? `现在还能再排 ${left} 次。` : '现在一次都不能再排了，等对方回复。'));
+    const used = Math.min(limits.maxUnansweredSends, Math.max(0, input.committedSends));
+    lines.push(`- 对方没回期间的主动联系：已用 ${used}/${limits.maxUnansweredSends} 次（一次可以说好几句；排好还没发的也算）`
+      + (used < limits.maxUnansweredSends ? '。' : '，已满，等对方回复后才能再排。'));
   }
   if (limits.minSendGapMs > 0) {
     lines.push(`- 两次主动找对方之间至少隔 ${describeMinutes(Math.round(limits.minSendGapMs / 60_000))}`
       + (input.earliestText ? `，这次最早排到 ${input.earliestText}。` : '。'));
   }
   if (input.dailyRemaining !== undefined && Number.isFinite(limits.dailySendCap)) {
-    lines.push(input.dailyRemaining > 0
-      ? `- 今天还能再主动找对方 ${input.dailyRemaining} 次。`
-      : '- 今天主动找对方的次数已经用完了，要排就排到明天。');
+    const remaining = Math.min(limits.dailySendCap, Math.max(0, input.dailyRemaining));
+    lines.push(`- 今天的主动联系：已用 ${limits.dailySendCap - remaining}/${limits.dailySendCap} 次`
+      + (remaining > 0 ? '。' : '，已满，要排就排到明天。'));
   }
-  lines.push(`- 同时最多挂 ${limits.maxActiveTasks} 个排程任务，现在挂着 ${input.activeTasks} 个。`);
+  lines.push(`- 排程任务：挂着 ${input.activeTasks}/${limits.maxActiveTasks} 个。`);
   if (!limits.allowSelfRecurring) lines.push('- 只能排一次性的，不能排每天/每周重复的。');
   if (!limits.allowSelfForce) lines.push('- 排的消息到点碰上对方正在聊天会自动作罢（转成你在聊天里自然带出），没有「到点必发」。');
   return ['用户给你定的规矩（系统照着执行：超出的排不上，排上了到点也不发）：', ...lines].join('\n');

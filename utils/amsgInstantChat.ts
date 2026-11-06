@@ -516,6 +516,8 @@ export const sendInstantChatTurn = async (params: {
   signal?: AbortSignal;
   char: CharacterProfile;
   chatMessages: Array<{ role: string; content: unknown }>;
+  /** 本地「实时状态」段在 chatMessages 里的下标；-1 / 不传时 worker 把时效块追加到末尾。 */
+  timelyInsertAt?: number;
   /** 本地生成这一轮会用的凭据（effectiveApi），云端必须用同一份。 */
   api: { baseUrl: string; apiKey: string; model: string };
   /** 本地这一轮会发的采样温度；开思考时本地不发温度，这里也就不传。 */
@@ -573,6 +575,7 @@ export const sendInstantChatTurn = async (params: {
       signal: params.signal,
       char: params.char,
       chatMessages: params.chatMessages,
+      ...(params.timelyInsertAt !== undefined ? { timelyInsertAt: params.timelyInsertAt } : {}),
       api: params.api,
       ...(typeof params.temperature === 'number' ? { temperature: params.temperature } : {}),
       ...(params.maxTokens ? { maxTokens: params.maxTokens } : {}),
