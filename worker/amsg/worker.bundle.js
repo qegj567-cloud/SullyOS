@@ -1511,7 +1511,7 @@ function pickStaleStoppedReplyKeys(rows, nowMs = Date.now(), protectKey) {
 // worker/amsg/src/index.ts
 import { DurableObject } from "cloudflare:workers";
 
-// node_modules/.pnpm/@rei-standard+amsg-server@3.2.0-next.1_@neondatabase+serverless@1.1.0_pg@8.22.0/node_modules/@rei-standard/amsg-server/dist/chunk-R2CRPRKR.mjs
+// node_modules/.pnpm/@rei-standard+amsg-server@3.2.0-next.2_@neondatabase+serverless@1.1.0_pg@8.22.0/node_modules/@rei-standard/amsg-server/dist/chunk-R2CRPRKR.mjs
 var CLEANUP_BATCH_LIMIT = 100;
 var UPDATABLE_COLUMNS = /* @__PURE__ */ new Set([
   "user_id",
@@ -2769,7 +2769,7 @@ function stringifyDecisionForError(value) {
   }
 }
 
-// node_modules/.pnpm/@rei-standard+amsg-server@3.2.0-next.1_@neondatabase+serverless@1.1.0_pg@8.22.0/node_modules/@rei-standard/amsg-server/dist/chunk-3KQHHVXN.mjs
+// node_modules/.pnpm/@rei-standard+amsg-server@3.2.0-next.2_@neondatabase+serverless@1.1.0_pg@8.22.0/node_modules/@rei-standard/amsg-server/dist/chunk-WFKLHUUE.mjs
 var DAY_MS = 24 * 60 * 60 * 1e3;
 var MAX_LISTED_SKIPPED_OCCURRENCES = 32;
 var MAX_ADJUST_STEPS = 32;
@@ -2901,6 +2901,167 @@ function planNextOccurrence(occurrenceMs, recurrenceType, nowMs, tzId, anchorMs)
 function nextFutureOccurrence(occurrenceMs, recurrenceType, nowMs, tzId, anchorMs) {
   return new Date(planNextOccurrence(occurrenceMs, recurrenceType, nowMs, tzId, anchorMs).nextMs).toISOString();
 }
+var NonRetryableError = class extends Error {
+  /**
+   * @param {string} message
+   * @param {{ code?: string, cause?: unknown }} [options]
+   */
+  constructor(message, options = {}) {
+    super(message, options.cause !== void 0 ? { cause: options.cause } : void 0);
+    this.name = "NonRetryableError";
+    this.permanent = true;
+    if (options.code) this.code = options.code;
+  }
+};
+function isNonRetryableError(error) {
+  return !!error && typeof error === "object" && /** @type {any} */
+  error.permanent === true;
+}
+var DeploymentConfigError = class extends Error {
+  /**
+   * @param {string} message
+   * @param {{ code?: string, cause?: unknown }} [options]
+   */
+  constructor(message, options = {}) {
+    super(message, options.cause !== void 0 ? { cause: options.cause } : void 0);
+    this.name = "DeploymentConfigError";
+    if (options.code) this.code = options.code;
+  }
+};
+var STORED_DATA_UNDECRYPTABLE_CODE = "STORED_DATA_UNDECRYPTABLE";
+var StoredDataUndecryptableError = class extends Error {
+  /** @param {{ cause?: unknown }} [options] */
+  constructor(options = {}) {
+    super(
+      "\u5E93\u91CC\u7684\u6570\u636E\u662F\u7528\u53E6\u4E00\u628A\u4E3B\u5BC6\u94A5\u52A0\u5BC6\u7684\uFF0C\u5F53\u524D\u7684 AMSG_MASTER_KEY \u89E3\u4E0D\u5F00\u3002\u5E38\u89C1\u539F\u56E0\u662F\u91CD\u65B0\u90E8\u7F72\u65F6\u6362\u4E86 AMSG_MASTER_KEY\uFF1A\u6362\u56DE\u539F\u6765\u7684\u5BC6\u94A5\u5373\u53EF\u6062\u590D\uFF0C\u6216\u8005\u6E05\u6389\u4E91\u7AEF\u7684\u65E7\u6570\u636E\u540E\u91CD\u65B0\u5199\u5165\u3002",
+      options.cause !== void 0 ? { cause: options.cause } : void 0
+    );
+    this.name = "StoredDataUndecryptableError";
+    this.code = STORED_DATA_UNDECRYPTABLE_CODE;
+    this.status = 409;
+  }
+};
+function isStoredDataUndecryptableError(error) {
+  return !!error && typeof error === "object" && /** @type {any} */
+  error.code === STORED_DATA_UNDECRYPTABLE_CODE;
+}
+function markPermanent(error, code) {
+  if (!error || typeof error !== "object") return error;
+  const target = (
+    /** @type {any} */
+    error
+  );
+  try {
+    target.permanent = true;
+    if (code && typeof target.code !== "string") target.code = code;
+  } catch (_frozen) {
+  }
+  return error;
+}
+var TASK_CANCELLED_CODE = "TASK_CANCELLED";
+function isTaskCancelledError(error) {
+  return !!error && typeof error === "object" && /** @type {any} */
+  error.code === TASK_CANCELLED_CODE;
+}
+function markUnrecoverablePartialDelivery(error, { outboxed, pushedCount }) {
+  if (outboxed || !(pushedCount > 0) || isTaskCancelledError(error)) return error;
+  return markPermanent(error);
+}
+var TERMINAL_PUSH_STATUSES = /* @__PURE__ */ new Set([404, 410]);
+var PUSH_PAYLOAD_TOO_LARGE_STATUS = 413;
+var PERMANENT_ERROR_CODES = /* @__PURE__ */ new Set([
+  "PUSH_SUBSCRIPTION_MISSING",
+  "PUSH_SUBSCRIPTION_STORE_UNSUPPORTED",
+  "PUSH_PAYLOAD_TOO_LARGE"
+]);
+var LLM_CALL_FAILED_CODE = "LLM_CALL_FAILED";
+var PERMANENT_LLM_STATUSES = /* @__PURE__ */ new Set([400, 401, 402, 403, 404, 405, 413, 422]);
+function isPermanentLlmFailure(error) {
+  if (!error || typeof error !== "object") return false;
+  const { code, llmStatus } = (
+    /** @type {any} */
+    error
+  );
+  return code === LLM_CALL_FAILED_CODE && Number.isInteger(llmStatus) && PERMANENT_LLM_STATUSES.has(llmStatus);
+}
+function markPermanentIfLlmRejected(error) {
+  return isPermanentLlmFailure(error) ? markPermanent(error) : error;
+}
+function isPermanentDeliveryFailure(failure) {
+  const { permanent, errorCode, pushStatus } = failure || {};
+  return permanent === true || typeof errorCode === "string" && PERMANENT_ERROR_CODES.has(errorCode) || Number.isInteger(pushStatus) && (TERMINAL_PUSH_STATUSES.has(
+    /** @type {number} */
+    pushStatus
+  ) || pushStatus === PUSH_PAYLOAD_TOO_LARGE_STATUS);
+}
+var pushStatusCodes = /* @__PURE__ */ new WeakMap();
+function tagPushStatusCode(error) {
+  if (error && typeof error === "object" && Number.isInteger(
+    /** @type {any} */
+    error.statusCode
+  )) {
+    pushStatusCodes.set(
+      /** @type {object} */
+      error,
+      /** @type {any} */
+      error.statusCode
+    );
+  }
+  return error;
+}
+async function sendTaggedPush(webpush, subscription, payloadJson) {
+  try {
+    return await webpush.sendNotification(subscription, payloadJson);
+  } catch (error) {
+    throw tagPushStatusCode(error);
+  }
+}
+function readPushStatusCode(error) {
+  if (!error || typeof error !== "object") return null;
+  const statusCode = pushStatusCodes.get(
+    /** @type {object} */
+    error
+  );
+  return Number.isInteger(statusCode) ? statusCode : null;
+}
+function buildErrorExtra(errorCode, pushStatus) {
+  const extra = {};
+  if (typeof errorCode === "string" && errorCode) extra.errorCode = errorCode.slice(0, 64);
+  if (Number.isInteger(pushStatus)) extra.pushStatus = /** @type {number} */
+  pushStatus;
+  return Object.keys(extra).length > 0 ? extra : void 0;
+}
+var ERROR_SUMMARY_MAX_CHARS = 500;
+function sanitizeErrorSummary(reason) {
+  const flattened = String(reason ?? "").replace(/\s+/g, " ").trim();
+  const safe = redactCredentials(flattened);
+  return safe.length > ERROR_SUMMARY_MAX_CHARS ? `${safe.slice(0, ERROR_SUMMARY_MAX_CHARS - 3)}\u2026` : safe;
+}
+var D1_LIMIT_CODES = [
+  [/Exceeded maximum DB size/i, "D1_STORAGE_FULL"],
+  [/daily row read limit/i, "D1_DAILY_READ_LIMIT"],
+  [/daily row write limit/i, "D1_DAILY_WRITE_LIMIT"]
+];
+function summarizeErrorCause(error, stage) {
+  const raw = error && typeof error === "object" ? (
+    /** @type {any} */
+    error
+  ) : {};
+  const name = typeof raw.name === "string" && raw.name ? raw.name : "Error";
+  const rawMessage = typeof raw.message === "string" && raw.message ? raw.message : String(error ?? "");
+  const cause = {
+    stage,
+    name: sanitizeErrorSummary(name).slice(0, 100),
+    message: sanitizeErrorSummary(rawMessage)
+  };
+  if (typeof raw.code === "string" && raw.code) {
+    cause.code = sanitizeErrorSummary(raw.code).slice(0, 100);
+  } else {
+    const limit = D1_LIMIT_CODES.find(([pattern]) => pattern.test(rawMessage));
+    if (limit) cause.code = limit[1];
+  }
+  return cause;
+}
 var base64ToBytes2 = base64UrlToBytes;
 var TAG_LENGTH_BYTES = 16;
 var AES_KEY_CACHE_MAX = 128;
@@ -2984,14 +3145,18 @@ async function encryptForStorage(text2, encryptionKey) {
   return `${bytesToHex(iv)}:${bytesToHex(authTag)}:${bytesToHex(ciphertext)}`;
 }
 async function decryptFromStorage(encryptedText, encryptionKey) {
-  const [ivHex, authTagHex, encryptedDataHex] = encryptedText.split(":");
-  const plain = await aesGcmOpen(
-    encryptionKey,
-    hexToBytes(ivHex),
-    hexToBytes(encryptedDataHex),
-    hexToBytes(authTagHex)
-  );
-  return utf8Decode(plain);
+  try {
+    const [ivHex, authTagHex, encryptedDataHex] = encryptedText.split(":");
+    const plain = await aesGcmOpen(
+      encryptionKey,
+      hexToBytes(ivHex),
+      hexToBytes(encryptedDataHex),
+      hexToBytes(authTagHex)
+    );
+    return utf8Decode(plain);
+  } catch (error) {
+    throw new StoredDataUndecryptableError({ cause: error });
+  }
 }
 var CRED_ID_MAX_LENGTH = 128;
 var CRED_VALUE_FIELD_MAX_LENGTH = 2048;
@@ -3536,150 +3701,6 @@ function createGetUserKeyHandler(ctx) {
   }
   return { GET };
 }
-var NonRetryableError = class extends Error {
-  /**
-   * @param {string} message
-   * @param {{ code?: string, cause?: unknown }} [options]
-   */
-  constructor(message, options = {}) {
-    super(message, options.cause !== void 0 ? { cause: options.cause } : void 0);
-    this.name = "NonRetryableError";
-    this.permanent = true;
-    if (options.code) this.code = options.code;
-  }
-};
-function isNonRetryableError(error) {
-  return !!error && typeof error === "object" && /** @type {any} */
-  error.permanent === true;
-}
-var DeploymentConfigError = class extends Error {
-  /**
-   * @param {string} message
-   * @param {{ code?: string, cause?: unknown }} [options]
-   */
-  constructor(message, options = {}) {
-    super(message, options.cause !== void 0 ? { cause: options.cause } : void 0);
-    this.name = "DeploymentConfigError";
-    if (options.code) this.code = options.code;
-  }
-};
-function markPermanent(error, code) {
-  if (!error || typeof error !== "object") return error;
-  const target = (
-    /** @type {any} */
-    error
-  );
-  try {
-    target.permanent = true;
-    if (code && typeof target.code !== "string") target.code = code;
-  } catch (_frozen) {
-  }
-  return error;
-}
-var TASK_CANCELLED_CODE = "TASK_CANCELLED";
-function isTaskCancelledError(error) {
-  return !!error && typeof error === "object" && /** @type {any} */
-  error.code === TASK_CANCELLED_CODE;
-}
-function markUnrecoverablePartialDelivery(error, { outboxed, pushedCount }) {
-  if (outboxed || !(pushedCount > 0) || isTaskCancelledError(error)) return error;
-  return markPermanent(error);
-}
-var TERMINAL_PUSH_STATUSES = /* @__PURE__ */ new Set([404, 410]);
-var PUSH_PAYLOAD_TOO_LARGE_STATUS = 413;
-var PERMANENT_ERROR_CODES = /* @__PURE__ */ new Set([
-  "PUSH_SUBSCRIPTION_MISSING",
-  "PUSH_SUBSCRIPTION_STORE_UNSUPPORTED",
-  "PUSH_PAYLOAD_TOO_LARGE"
-]);
-var LLM_CALL_FAILED_CODE = "LLM_CALL_FAILED";
-var PERMANENT_LLM_STATUSES = /* @__PURE__ */ new Set([400, 401, 402, 403, 404, 405, 413, 422]);
-function isPermanentLlmFailure(error) {
-  if (!error || typeof error !== "object") return false;
-  const { code, llmStatus } = (
-    /** @type {any} */
-    error
-  );
-  return code === LLM_CALL_FAILED_CODE && Number.isInteger(llmStatus) && PERMANENT_LLM_STATUSES.has(llmStatus);
-}
-function markPermanentIfLlmRejected(error) {
-  return isPermanentLlmFailure(error) ? markPermanent(error) : error;
-}
-function isPermanentDeliveryFailure(failure) {
-  const { permanent, errorCode, pushStatus } = failure || {};
-  return permanent === true || typeof errorCode === "string" && PERMANENT_ERROR_CODES.has(errorCode) || Number.isInteger(pushStatus) && (TERMINAL_PUSH_STATUSES.has(
-    /** @type {number} */
-    pushStatus
-  ) || pushStatus === PUSH_PAYLOAD_TOO_LARGE_STATUS);
-}
-var pushStatusCodes = /* @__PURE__ */ new WeakMap();
-function tagPushStatusCode(error) {
-  if (error && typeof error === "object" && Number.isInteger(
-    /** @type {any} */
-    error.statusCode
-  )) {
-    pushStatusCodes.set(
-      /** @type {object} */
-      error,
-      /** @type {any} */
-      error.statusCode
-    );
-  }
-  return error;
-}
-async function sendTaggedPush(webpush, subscription, payloadJson) {
-  try {
-    return await webpush.sendNotification(subscription, payloadJson);
-  } catch (error) {
-    throw tagPushStatusCode(error);
-  }
-}
-function readPushStatusCode(error) {
-  if (!error || typeof error !== "object") return null;
-  const statusCode = pushStatusCodes.get(
-    /** @type {object} */
-    error
-  );
-  return Number.isInteger(statusCode) ? statusCode : null;
-}
-function buildErrorExtra(errorCode, pushStatus) {
-  const extra = {};
-  if (typeof errorCode === "string" && errorCode) extra.errorCode = errorCode.slice(0, 64);
-  if (Number.isInteger(pushStatus)) extra.pushStatus = /** @type {number} */
-  pushStatus;
-  return Object.keys(extra).length > 0 ? extra : void 0;
-}
-var ERROR_SUMMARY_MAX_CHARS = 500;
-function sanitizeErrorSummary(reason) {
-  const flattened = String(reason ?? "").replace(/\s+/g, " ").trim();
-  const safe = redactCredentials(flattened);
-  return safe.length > ERROR_SUMMARY_MAX_CHARS ? `${safe.slice(0, ERROR_SUMMARY_MAX_CHARS - 3)}\u2026` : safe;
-}
-var D1_LIMIT_CODES = [
-  [/Exceeded maximum DB size/i, "D1_STORAGE_FULL"],
-  [/daily row read limit/i, "D1_DAILY_READ_LIMIT"],
-  [/daily row write limit/i, "D1_DAILY_WRITE_LIMIT"]
-];
-function summarizeErrorCause(error, stage) {
-  const raw = error && typeof error === "object" ? (
-    /** @type {any} */
-    error
-  ) : {};
-  const name = typeof raw.name === "string" && raw.name ? raw.name : "Error";
-  const rawMessage = typeof raw.message === "string" && raw.message ? raw.message : String(error ?? "");
-  const cause = {
-    stage,
-    name: sanitizeErrorSummary(name).slice(0, 100),
-    message: sanitizeErrorSummary(rawMessage)
-  };
-  if (typeof raw.code === "string" && raw.code) {
-    cause.code = sanitizeErrorSummary(raw.code).slice(0, 100);
-  } else {
-    const limit = D1_LIMIT_CODES.find(([pattern]) => pattern.test(rawMessage));
-    if (limit) cause.code = limit[1];
-  }
-  return cause;
-}
 var DEFAULT_MAX_DELIVERY_RETRIES = 3;
 function resolveMaxDeliveryRetries(ctx) {
   const value = ctx.maxDeliveryRetries;
@@ -3868,7 +3889,7 @@ function parseChunkedRootCount(value) {
 function splitStateValue(value) {
   return chunkReasoningByUtf8Bytes(value, STATE_CHUNK_SLICE_BYTES);
 }
-async function resolveClientStateEntries(rows, fetchChunkRows, decryptValue) {
+async function resolveClientStateEntries(rows, fetchChunkRows, decryptValue, onUndecryptable) {
   let chunkMap = null;
   const loadChunks = async () => {
     if (chunkMap === null) {
@@ -3880,32 +3901,30 @@ async function resolveClientStateEntries(rows, fetchChunkRows, decryptValue) {
   const entries = [];
   for (const row of rows) {
     const count = parseChunkedRootCount(row.value);
-    if (count === null) {
-      entries.push({
-        namespace: row.namespace,
-        key: row.key,
-        value: await decryptValue(row.value),
-        updatedAt: row.updated_at
-      });
+    let valueSources = [row.value];
+    if (count !== null) {
+      const map = await loadChunks();
+      const chunkRows = [];
+      for (let i = 0; i < count; i++) {
+        const chunk = map.get(chunkKeyFor(row.key, i));
+        if (!chunk || chunk.updated_at !== row.updated_at) break;
+        chunkRows.push(chunk);
+      }
+      if (chunkRows.length !== count) continue;
+      valueSources = chunkRows.map((chunk) => chunk.value);
+    }
+    let value;
+    try {
+      value = (await Promise.all(valueSources.map(decryptValue))).join("");
+    } catch (error) {
+      if (!onUndecryptable || !isStoredDataUndecryptableError(error)) throw error;
+      onUndecryptable(row);
       continue;
     }
-    const map = await loadChunks();
-    const chunkRows = [];
-    let intact = true;
-    for (let i = 0; i < count; i++) {
-      const chunk = map.get(chunkKeyFor(row.key, i));
-      if (!chunk || chunk.updated_at !== row.updated_at) {
-        intact = false;
-        break;
-      }
-      chunkRows.push(chunk);
-    }
-    if (!intact) continue;
-    const parts = await Promise.all(chunkRows.map((chunk) => decryptValue(chunk.value)));
     entries.push({
       namespace: row.namespace,
       key: row.key,
-      value: parts.join(""),
+      value,
       updatedAt: row.updated_at
     });
   }
@@ -4452,6 +4471,14 @@ function projectTask(row, decryptedPayload, options = {}) {
     lastError: hasRowLastError(row) ? parseRowLastError(row.last_error) : payload.lastError ?? null
   };
 }
+async function projectStoredTask(row, userKey, options) {
+  try {
+    return projectTask(row, JSON.parse(await decryptFromStorage(row.encrypted_payload, userKey)), options);
+  } catch (error) {
+    if (!isStoredDataUndecryptableError(error)) throw error;
+    return { ...projectTask(row, null, options), error: { code: error.code, message: error.message } };
+  }
+}
 function hasRowLastError(row) {
   return !!row && Object.prototype.hasOwnProperty.call(row, "last_error");
 }
@@ -4630,11 +4657,7 @@ async function runAgenticFire({ task, decryptedPayload, userKey, ctx }) {
       throw new DeploymentConfigError("AGENTIC_TASK_VIEW_UNSUPPORTED: adapter has no listTasks", { code: "AGENTIC_TASK_VIEW_UNSUPPORTED" });
     }
     const { tasks, total } = await ctx.db.listTasks(task.user_id, { status, limit, offset });
-    const projected = await Promise.all(tasks.map(async (row) => projectTask(
-      row,
-      JSON.parse(await decryptFromStorage(row.encrypted_payload, userKey)),
-      { includeMetadata }
-    )));
+    const projected = await Promise.all(tasks.map((row) => projectStoredTask(row, userKey, { includeMetadata })));
     return { tasks: projected, pagination: { total, limit, offset, hasMore: offset + tasks.length < total } };
   };
   const scheduleTask = async (options) => {
@@ -5442,6 +5465,15 @@ async function captureCloudTaskGuard(db, userId, payload, resolveOwner, task) {
   await assertCloudGuard(db, userId, guard);
   return guard;
 }
+async function readPreviousMetadata(stored, userKey) {
+  try {
+    return JSON.parse(await decryptFromStorage(stored, userKey));
+  } catch (error) {
+    if (!isStoredDataUndecryptableError(error)) throw error;
+    console.warn("[amsg-server] \u65E7\u5F52\u5C5E\u8BB0\u5F55\u89E3\u4E0D\u5F00\uFF08\u4E3B\u5BC6\u94A5\u6362\u8FC7\uFF1F\uFF09\uFF0C\u6309\u6CA1\u6709\u65E7\u8BB0\u5F55\u8986\u76D6\u5199\u5165");
+    return null;
+  }
+}
 function createCloudGuardedAdapter(db, {
   masterKey,
   resolveOwner,
@@ -5463,8 +5495,8 @@ function createCloudGuardedAdapter(db, {
       );
       expectedCloudMetadata = stored;
       if (stored) {
-        const previous = JSON.parse(await decryptFromStorage(stored, userKey));
-        if (previous.owner) {
+        const previous = await readPreviousMetadata(stored, userKey);
+        if (previous?.owner) {
           if (resolved.owner && (previous.owner.type !== resolved.owner.type || previous.owner.id !== resolved.owner.id)) {
             throw guardError(
               "CLOUD_OWNER_IMMUTABLE",
@@ -6908,7 +6940,7 @@ async function deliverTasks(ctx, tasks) {
     const decryptedPayload = decrypted.ok ? decrypted.payload : null;
     const userKey = decrypted.ok ? decrypted.userKey : null;
     if (!decrypted.ok) {
-      await handleDeliveryFailure(task, decrypted.error && decrypted.error.message || "\u4EFB\u52A1\u8F7D\u8377\u89E3\u5BC6\u5931\u8D25", null, null, null);
+      await handleDeliveryFailure(task, decrypted.error && decrypted.error.message || "\u4EFB\u52A1\u8F7D\u8377\u89E3\u5BC6\u5931\u8D25", null, null, null, { errorCode: decrypted.error?.code });
       return;
     }
     const recurrenceType = decryptedPayload.recurrenceType;
@@ -7467,10 +7499,7 @@ function createMessagesHandler(ctx) {
     }
     const { tasks, total } = await db.listTasks(userId, { status, limit, offset });
     const userKey = await deriveUserEncryptionKey(userId, masterKey);
-    const decryptedTasks = await Promise.all(tasks.map(async (task) => {
-      const decrypted = JSON.parse(await decryptFromStorage(task.encrypted_payload, userKey));
-      return projectTask(task, decrypted);
-    }));
+    const decryptedTasks = await Promise.all(tasks.map((task) => projectStoredTask(task, userKey)));
     const responsePayload = {
       tasks: decryptedTasks,
       pagination: { total, limit, offset, hasMore: offset + limit < total }
@@ -10023,12 +10052,18 @@ function createClientStateHandler(ctx) {
     }
     const userKey = await deriveUserEncryptionKey(userId, masterKey);
     const rows = await db.getClientState(userId, namespace, key === null ? void 0 : { key });
+    const undecryptable = [];
     const decrypted = await resolveClientStateEntries(
       key === null ? rows : rows.filter((row) => row.key === key),
       () => db.getClientState(userId, chunkNamespaceFor(namespace), key === null ? void 0 : { keyPrefix: chunkKeyPrefixFor(key) }),
-      (value) => decryptFromStorage(value, userKey)
+      (value) => decryptFromStorage(value, userKey),
+      (row) => undecryptable.push({ key: row.key, updatedAt: row.updated_at, code: STORED_DATA_UNDECRYPTABLE_CODE })
     );
-    const encryptedResponse = await encryptPayload({ namespace, entries: decrypted }, userKey);
+    const encryptedResponse = await encryptPayload({
+      namespace,
+      entries: decrypted,
+      ...undecryptable.length > 0 ? { undecryptable } : {}
+    }, userKey);
     return { status: 200, body: { success: true, encrypted: true, version: 1, data: encryptedResponse } };
   }
   async function DELETE(url, headers) {
@@ -10099,7 +10134,7 @@ function createClientStateNamespacesHandler(ctx) {
   }
   return { GET };
 }
-var SERVER_VERSION = true ? "3.2.0-next.1" : "0.0.0-dev";
+var SERVER_VERSION = true ? "3.2.0-next.2" : "0.0.0-dev";
 var SERVER_FEATURES = Object.freeze([
   "client-state",
   "client-state-chunking",
@@ -14072,7 +14107,7 @@ function buildScheduledPush(message, build, extraMeta, bannerBody) {
 }
 
 // utils/amsgBundleVersion.ts
-var AMSG_BUNDLE_VERSION = "2026-11-06";
+var AMSG_BUNDLE_VERSION = "2026-11-06.2";
 
 // worker/amsg/src/reproduction.ts
 async function writeDiagnosticStage(writeState, runId, event, fields = {}) {

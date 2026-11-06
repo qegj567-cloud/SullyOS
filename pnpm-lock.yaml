@@ -133,8 +133,8 @@ importers:
         specifier: ^6.0.0
         version: 6.2.1
       '@rei-standard/amsg-server':
-        specifier: 3.2.0-next.1
-        version: 3.2.0-next.1(@neondatabase/serverless@1.1.0)(pg@8.22.0)
+        specifier: 3.2.0-next.2
+        version: 3.2.0-next.2(@neondatabase/serverless@1.1.0)(pg@8.22.0)
       '@types/qrcode':
         specifier: ^1.5.6
         version: 1.5.6
@@ -783,8 +783,8 @@ packages:
     resolution: {integrity: sha512-0j7zCHjjw6Ak2zI5FnK3frpwcXz9NEoLOAJORG4OWsKnFMD9BeFmyv7a8PuVlIDVXyoSAqgmz7BazB3+2pa1NA==}
     engines: {node: '>=20.3.0'}
 
-  '@rei-standard/amsg-server@3.2.0-next.1':
-    resolution: {integrity: sha512-0FAWvknk/IEEP7NCHkgunbdmOjAjwxDNFoyNfVcaBtPEu4l3VYOMp3e2zAD3grMNJES6w+7YUcjwz2r664vS9A==}
+  '@rei-standard/amsg-server@3.2.0-next.2':
+    resolution: {integrity: sha512-LQmiUUh5KX9vBvOa6QpX21fGobctrSvc++1/GOg1tXhCbgN3PthhFqxOwQiGiByLGNDA717THYdwMB+sLnmeTQ==}
     engines: {node: '>=20.3.0'}
     peerDependencies:
       '@neondatabase/serverless': '>=0.9.0'
@@ -3205,7 +3205,7 @@ snapshots:
     dependencies:
       '@rei-standard/amsg-shared': 0.5.0-next.0
 
-  '@rei-standard/amsg-server@3.2.0-next.1(@neondatabase/serverless@1.1.0)(pg@8.22.0)':
+  '@rei-standard/amsg-server@3.2.0-next.2(@neondatabase/serverless@1.1.0)(pg@8.22.0)':
     dependencies:
       '@netlify/blobs': 10.7.13
       '@rei-standard/amsg-shared': 0.5.0-next.0
