@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "versionCode": 30513,
-  "versionName": "3.5.13",
-  "apkUrl": "https://github.com/qegj567-cloud/SullyOS/releases/download/android-v3.5.13/SullyOS-Android-v3.5.13.apk",
-  "sha256": "7c064ec23f1765a0932915b4131af02aeac0ff3310255e691d0370a55dcc321b",
-  "sizeBytes": 98925661,
-  "publishedAt": "2026-10-30T13:40:37Z",
+  "versionCode": 30514,
+  "versionName": "3.5.14",
+  "apkUrl": "https://github.com/qegj567-cloud/SullyOS/releases/download/android-v3.5.14/SullyOS-Android-v3.5.14.apk",
+  "sha256": "1fd09ad9a53822fe0604ab1400394715794619713e0c8eee4efda445892d4934",
+  "sizeBytes": 99601514,
+  "publishedAt": "2026-11-07T07:24:17Z",
   "releaseNotes": [
-    "同步 master 5ff0019f，包含万圣节衣柜、鞋子运动、哔哔发布与启动提示修复",
-    "照片支持新的构图、相纸装饰、文字与字体设置，并优化手机取景布局",
+    "同步 master 2cbb46ed，包含用户空间、角色继承、共享素材与备份范围",
+    "同步主动消息 2.0 面板与诊断、图片系统分享、导览回放和 SAR 等修复",
     "保留水母／经典图标切换、ntfy、PDF、相机、前台定位、Umami 和应用内更新",
     "沿用固定正式签名，可覆盖升级保留数据"
   ]
