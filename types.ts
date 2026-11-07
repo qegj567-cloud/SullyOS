@@ -455,6 +455,8 @@ export interface ActiveMsg2TaskRecord {
   status: ActiveMsg2TaskStatus;
   createdAt: number;
   lastError?: string;
+  /** 「离开后消息」的云端任务：每个角色最多一条，对方开口后往后推，见 docs/away-message.md。 */
+  away?: boolean;
 }
 
 export interface ActiveMsg2CharacterConfig {
@@ -3095,6 +3097,11 @@ export interface CharacterProfile {
 
   // 情绪Buff系统
   activeMsg2Config?: ActiveMsg2CharacterConfig;
+  /**
+   * 离开后消息：对方多久没说话，角色就来找对方（见 docs/away-message.md）。
+   * 开着主动消息 2.0 的角色走云端推送，其余在下次打开页面时本地补上。
+   */
+  awayMessage?: { enabled: boolean; delayMinutes?: number };
   activeBuffs?: CharacterBuff[];
   buffInjection?: string;   // 注入到systemPrompt的叙事型情绪底色描述
   emotionConfig?: {

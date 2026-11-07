@@ -24,6 +24,7 @@ export const CARD_STRIPPED_FIELDS = [
   'embeddingConfig',
   'proactiveConfig',         // 已下线的主动消息 1.0，旧数据里可能还带着副 API 凭据
   'activeMsg2Config',
+  'awayMessage',             // 离开后消息：发卡人本机的提醒偏好
 
   // 2) 美化
   'embeddedTheme',           // CharacterExportData 上的内嵌主题（导入侧一并剥离）

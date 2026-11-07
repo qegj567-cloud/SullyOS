@@ -42,6 +42,7 @@
 | **云端数据管理 / 角色删除** | [`plans/amsg2-cloud-data-management-contract.md`](./plans/amsg2-cloud-data-management-contract.md) | 改云端清单、按项清理、删除角色、停用与恢复前必读；清单以服务端实际资源为准，删除由云端持久操作执行，旧请求不可随恢复获得新代次 |
 | **主动消息 2.0 · 即时对话** | [`plans/amsg2-instant-chat.md`](./plans/amsg2-instant-chat.md)（设计与取舍）、[`plans/amsg2-instant-chat-contract.md`](./plans/amsg2-instant-chat-contract.md)(端点/信封/fire_pack v7 契约) | 改「聊天在用户自己的 CF Worker 上生成」这条路（`POST /instant-chat`、`utils/amsgInstantChat.ts`、fire_pack 的 `chat` 段、chat_outbox 补收、「正在输入」超时）前必读 |
 | **主动消息 2.0 · 后台任务（不说话的活儿）** | [`plans/amsg2-expansion.md`](./plans/amsg2-expansion.md) | 改「页面关着也能跑完」的后台活儿前必读：`metadata.amsgKind` → handler 注册表（`worker/amsg/src/fireKinds.ts`）、一次性输入的 `amsg:job` 命名空间与 TTL、`ctx.emitResult` 的结果回程与客户端分发（`utils/amsgResults.ts`）。文首「现状」是实况，正文是「还有哪些调用点值得搬、哪些不该搬」的取舍 |
+| **离开后消息** | [`docs/away-message.md`](./docs/away-message.md) | 改「用户多久没说话角色就来找」前必读；开着 2.0 的角色走云端推送、其余本地上线时补，不叠加；云端到点必发且计入连发上限，一次离开只找一次 |
 | **主动消息 · 频率与额度** | [`docs/amsg2-pacing-limits.md`](./docs/amsg2-pacing-limits.md) | 改角色能自己排什么、连发/间隔/每日上限、重复消息没回就停、任务名额，或者改给角色看的「用户给你定的规矩」前必读；上限是代码硬闸，默认值只在 `utils/amsgLimits.ts` 定义一次 |
 | **主动消息 2.0 · API 凭据引用 credRefs** | [`plans/amsg2-llm-credentials-contract.md`](./plans/amsg2-llm-credentials-contract.md) | 改凭据上云（`llm_credentials` 表、任务 `credRefs`、`utils/amsgLlmCredentials.ts` 的每角色三行）或排查「换 Key 后主动消息 401 / 不来了」前必读；文末「SullyOS 侧落地」是实况 |
 | **使用统计** | [`docs/analytics.md`](./docs/analytics.md) | **加任何埋点前必读**。收什么/不收什么的边界、事件名与属性的规矩（属性只能是固定枚举）、构建时门禁与开关、完整事件清单。想加「某功能有多少人开了」看「加新埋点的规矩」第 5 条，别在配置页现场发 |

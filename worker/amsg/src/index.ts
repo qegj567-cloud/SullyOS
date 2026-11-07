@@ -122,6 +122,8 @@ import {
   parseFireScheduleArgs,
   resolveFireTargetTask,
   buildTaskInstruction,
+  AMSG_AWAY_DELAY_META,
+  AMSG_AWAY_MESSAGE_META,
 } from '../../../utils/amsgFireSchedule';
 import {
   AMSG_CHAT_PRESENCE_KEY,
@@ -557,6 +559,10 @@ const getFireStash = (scratch: Record<string, unknown> | undefined): FireStash |
  * 取整一分钟的话，下一跳来的时候还差几秒没到期，白白多等一整跳。
  */
 const REPLY_IN_FLIGHT_DEFER_MS = 45_000;
+/** 离开后消息到点时离真正该来的时刻差不到这么多就照发（cron 一分钟一跳）。 */
+const AWAY_DUE_TOLERANCE_MS = 60_000;
+/** 上游 defer 的上限是 24 小时。 */
+const AWAY_MAX_DEFER_MS = 24 * 60 * 60_000;
 
 /** 两个时间戳取较新的那个；两个都没有为 null。 */
 const laterOf = (a: number | null, b: number | null): number | null =>
@@ -1951,6 +1957,8 @@ export const amsgHooks = {
     const taskPolicy = typeof taskMeta.amsgExpirePolicy === 'string'
       ? taskMeta.amsgExpirePolicy : undefined;
     const selfScheduled = taskMeta.amsgSelfScheduled === true;
+    // 离开后消息：到点必发、计入连发上限，对方又开过口就原地推迟（见 docs/away-message.md）。
+    const away = taskMeta[AMSG_AWAY_MESSAGE_META] === true;
     const recurring = ctx.task.recurrenceType === 'daily' || ctx.task.recurrenceType === 'weekly';
 
     // 副 API 凭据落地即取走：这一份 metadata 对象上游还要按引用往下传（onLLMOutput 的
@@ -2134,6 +2142,18 @@ export const amsgHooks = {
       });
     }
 
+    // 离开后消息按「对方最后一次开口 + 等待时长」触发。客户端只在排期差得多时才去改期，
+    // 差的那点在这里补：对方在等待时长内说过话，就推迟到该来的时候，不消费任务、不占重试。
+    if (!instant && away) {
+      const delayMs = Number(taskMeta[AMSG_AWAY_DELAY_META]) * 60_000;
+      const dueAt = lastUserMessageAt != null && delayMs > 0 ? lastUserMessageAt + delayMs : null;
+      const waitMs = dueAt == null ? 0 : dueAt - ctx.now.getTime();
+      if (waitMs > AWAY_DUE_TOLERANCE_MS) {
+        console.log('[amsg:defer]', { taskId: ctx.task.id, reason: 'away-not-due', dueAt });
+        return { defer: { afterMs: Math.min(waitMs, AWAY_MAX_DEFER_MS) } } as const;
+      }
+    }
+
     // 任务指令缺失（开发期旧格式任务）：不能用默认 auto 指令凑一个渲染——那会把
     // prompted 任务的方向偷换掉，发出去的内容和用户当初排的不是一回事。
     // 即时对话没有「本次任务」这回事，方向就是回用户刚说的那句话。
@@ -2218,7 +2238,8 @@ export const amsgHooks = {
     }
 
     const maxUnansweredSends = limits.maxUnansweredSends;
-    if (!instant && selfScheduled
+    // 离开后消息也归它管：它发出去就算一次「没回时找你」，后面角色自排的接着往上数。
+    if (!instant && (selfScheduled || away)
       && countUnansweredSends(selfLog) >= maxUnansweredSends) {
       console.log('[amsg:unanswered-limit-skip]', {
         taskId: ctx.task.id,
@@ -2592,6 +2613,7 @@ export const amsgHooks = {
       // 「此刻在做什么」里的钟点跟今日节日同一个开关：关掉时间感知的角色不该从日程块
       // 读到「23:00」——那正是这个开关要挡的东西。日程内容本身照给。
       includeClock: toolPack.timeAwarenessEnabled,
+      mustSpeak: away,
     }), userHoliday) + mcpBlock + scheduleBlock + replyScopeBlock;
     return {
       messages: [{ role: 'user' as const, content: prompt }],
