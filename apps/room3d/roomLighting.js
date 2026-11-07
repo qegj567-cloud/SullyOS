@@ -14,7 +14,7 @@ export function roomLightPhase(timeZone,base=new Date()){
  return hour>=5&&hour<8?'morning':hour>=8&&hour<16?'day':hour>=16&&hour<19?'sunset':'night';
 }
 export function resolveRoomLightPhase(mode,timeZone,base){
- return Object.hasOwn(ROOM_LIGHT_PHASES,mode)?mode:roomLightPhase(timeZone,base);
+ return Object.prototype.hasOwnProperty.call(ROOM_LIGHT_PHASES,mode)?mode:roomLightPhase(timeZone,base);
 }
 // These uniform objects are shared by this editor's materials. Changing time
 // updates values only: no rebuild, shader compilation or new render pass.

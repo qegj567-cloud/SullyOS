@@ -23,7 +23,7 @@ export function readPhotoLettering():PhotoLetteringLibrary{
   const raw=JSON.parse(localStorage.getItem(PHOTO_LETTERING_KEY)||'{}'),result:PhotoLetteringLibrary={};
   for(const format of ['polaroid','sticker','collage'] as const){
    const value=raw?.[format];
-   if(value&&typeof value.title==='string'&&typeof value.footer==='string'&&Object.hasOwn(photoFonts,value.font))
+   if(value&&typeof value.title==='string'&&typeof value.footer==='string'&&Object.prototype.hasOwnProperty.call(photoFonts,value.font))
     result[format]={title:value.title.slice(0,40),footer:value.footer.slice(0,64),font:value.font};
   }
   return result;

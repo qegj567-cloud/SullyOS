@@ -641,6 +641,7 @@ const GuidebookApp: React.FC = () => {
 
     // End card / warnings
     const [showEndCard, setShowEndCard] = useState(false);
+    const sendingToChat = useRef(false);
     const [showExceedWarning, setShowExceedWarning] = useState(false);
 
     // Round context menu
@@ -1003,7 +1004,12 @@ const GuidebookApp: React.FC = () => {
 
     // --- Send to Chat ---
     const handleSendToChat = async () => {
-        if (!session?.endCard || !selectedChar) return;
+        if (!session?.endCard || sendingToChat.current) return;
+        if (!selectedChar || selectedChar.id !== session.charId) {
+            addToast('这份存档的角色已不存在，无法发送到聊天', 'error');
+            return;
+        }
+        sendingToChat.current = true;
         const card = session.endCard;
 
         const cardData = {
@@ -1030,6 +1036,7 @@ const GuidebookApp: React.FC = () => {
             addToast('已发送到聊天', 'success');
             setShowEndCard(false);
         } catch (e: any) { addToast('发送失败: ' + e.message, 'error'); }
+        finally { sendingToChat.current = false; }
     };
 
     // --- Delete Session ---
@@ -1711,7 +1718,14 @@ const GuidebookApp: React.FC = () => {
 
             {/* Replay footer */}
             {isReplay && (
-                <div className="shrink-0 p-3" style={{ background: 'linear-gradient(0deg, rgba(236,230,233,0.9) 0%, transparent 100%)' }}>
+                <div className="shrink-0 p-3 space-y-2" style={{ background: 'linear-gradient(0deg, rgba(236,230,233,0.9) 0%, transparent 100%)' }}>
+                    {session?.endCard && (
+                        <button onClick={() => selectedChar ? setShowEndCard(true) : addToast('这份存档的角色已不存在，无法发送到聊天', 'error')}
+                            className="w-full py-2.5 text-white text-sm font-bold rounded-xl active:scale-95 transition-transform shadow-sm"
+                            style={{ background: 'linear-gradient(135deg, #b8909a, #a07880)' }}>
+                            查看结算 · 发送到聊天
+                        </button>
+                    )}
                     <button onClick={backToLobby}
                         className="w-full py-2.5 bg-white/70 text-sm font-bold rounded-xl active:scale-95 transition-transform shadow-sm" style={{ color: '#8b7a7e', border: '1px solid rgba(200,185,190,0.3)' }}>
                         返回列表

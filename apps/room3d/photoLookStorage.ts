@@ -6,7 +6,7 @@ export function readPhotoLooks():SavedPhotoLook[]{
  try{
   const value=JSON.parse(localStorage.getItem(PHOTO_LOOK_LIBRARY_KEY)||'[]');
   if(!Array.isArray(value))return [];
-  return value.filter(p=>p&&typeof p.id==='string'&&typeof p.name==='string'&&p.look&&Object.hasOwn(photoLooks,p.look.preset)&&
+  return value.filter(p=>p&&typeof p.id==='string'&&typeof p.name==='string'&&p.look&&Object.prototype.hasOwnProperty.call(photoLooks,p.look.preset)&&
    ([['glow',0,3],['fringe',0,1],['vignette',0,1],['exposure',.5,1.6]] as const).every(([key,min,max])=>typeof p.look[key]==='number'&&Number.isFinite(p.look[key])&&p.look[key]>=min&&p.look[key]<=max)).slice(0,60);
  }catch{return [];}
 }

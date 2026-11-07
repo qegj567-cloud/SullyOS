@@ -5,7 +5,7 @@ import * as StoryTheater from './storyTheater';
 import { loadCharacterContextRange } from './chatContextRange';
 import { buildChatRequestPayload } from './chatRequestPayload';
 import { hasUnansweredUserTurn, withChatContinuation } from './chatContinuation';
-import { protectPendingChatTurn } from './storyTheaterTimeline';
+import { ensureStoryTimelineRepair, invalidateStoryTimelineRepair, protectPendingChatTurn } from './storyTheaterTimeline';
 
 const realTime = new Date('2026-10-10T18:48:00Z').getTime();
 const futureTime = new Date('2026-10-22T18:48:00Z').getTime();
@@ -28,6 +28,39 @@ const seedLegacy = async (id: string, timestamp = futureTime) => {
 afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
 
 describe('剧情与现实收发时间分离', () => {
+    it.each(['charId', 'charId_source'])('索引 %s 不可读时回滚并用主键扫描校正，导入仍可完成', async indexName => {
+        const id = `index-fallback-${indexName}`;
+        const { mirrorId, centralId } = await seedLegacy(id);
+        const originalIndex = IDBObjectStore.prototype.index;
+        vi.spyOn(IDBObjectStore.prototype, 'index').mockImplementation(function (this: IDBObjectStore, name: string) {
+            if (name === indexName && this.transaction.mode === 'readwrite') throw new DOMException('Index unavailable', 'UnknownError');
+            return originalIndex.call(this, name);
+        });
+        const db = await openDB();
+        invalidateStoryTimelineRepair(db);
+        expect((await ensureStoryTimelineRepair(db)).repairedCharacterIds).toContain(id);
+        const saved = (await DB.getMessagesByCharId(id, true))[0];
+        expect(saved).toMatchObject({ id: mirrorId, timestamp: realTime });
+        await DB.importFullData({messages:[{...saved,timestamp:futureTime,metadata:{source:'story_theater_memory',theaterId:id,theaterCentralId:centralId}}]} as FullBackupData);
+        expect((await DB.getMessagesByCharId(id, true))[0].timestamp).toBe(realTime);
+    });
+
+    it('异步索引错误等待事务回滚后才重试', async () => {
+        const { centralId } = await seedLegacy('async-index');
+        const db = await openDB();
+        const central = await new Promise<Message>(resolve => {
+            const request = db.transaction('messages').objectStore('messages').get(centralId);
+            request.onsuccess = () => resolve(request.result);
+        });
+        const originalCursor = IDBIndex.prototype.openKeyCursor;
+        vi.spyOn(IDBIndex.prototype, 'openKeyCursor').mockImplementation(function (this: IDBIndex, ...args) {
+            // 真实 IDB 请求异步失败并冒泡，模拟浏览器索引读取错误。
+            if (this.name === 'charId') return this.objectStore.add(central) as any;
+            return originalCursor.apply(this, args);
+        });
+        invalidateStoryTimelineRepair(db);
+        expect((await ensureStoryTimelineRepair(db)).repairedCharacterIds).toContain('async-index');
+    });
     it('真实陪伴的角色副本使用中央记录的实际时间，设定时间只保存在元数据', () => {
         const createdAt = new Date('2026-09-28T06:30:00').getTime();
         const entry = { ...StoryTheater.createStoryTheaterDraft(createdAt), writesToCharacterMemory: true,

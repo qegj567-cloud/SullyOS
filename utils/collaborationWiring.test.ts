@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
+import { openCollaborationSpace } from '../features/collaboration/store';
+import { openDB } from './db';
+import { SESSION_SPACE_ID, spaceDatabaseName } from './userSpaces';
 
 const read = (file: string) => fs.readFileSync(path.resolve(process.cwd(), file), 'utf8');
 
@@ -52,10 +55,11 @@ describe('collaboration sidecar wiring', () => {
     expect(context).toContain('chatCollaborationEnabled: false');
   });
 
-  it('keeps collaboration persistence in its own IndexedDB database', () => {
-    const store = read('features/collaboration/store.ts');
-    expect(store).toContain("const DB_NAME = 'SullyOS_Collaboration'");
-    expect(store).not.toContain("from '../../utils/db'");
+  it('keeps collaboration persistence in its own IndexedDB database', async () => {
+    const [collaboration, main] = await Promise.all([openCollaborationSpace(), openDB()]);
+    expect(collaboration.name).toBe(spaceDatabaseName('SullyOS_Collaboration', SESSION_SPACE_ID));
+    expect(collaboration.name).not.toBe(main.name);
+    expect(collaboration).not.toBe(main);
   });
 
   it('reports collaboration adoption without reading titles, messages, filenames or blobs', () => {

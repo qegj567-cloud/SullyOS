@@ -28,7 +28,7 @@ export function exportBeautyPreferences():BeautyPreferencesBackup{
 }
 export function importBeautyPreferences(value:unknown){
  if(value===undefined)return;if(!record(value)||value.version!==1||!record(value.values))throw Error('美化偏好备份版本无效');
- const entries=[USAGE,REPO,DEFAULTS,...FLAGS].filter(key=>Object.hasOwn(value.values,key)).map(key=>[key,clean(key,value.values[key])] as const);
+ const entries=[USAGE,REPO,DEFAULTS,...FLAGS].filter(key=>Object.prototype.hasOwnProperty.call(value.values,key)).map(key=>[key,clean(key,value.values[key])] as const);
  for(const [key,data] of entries)localStorage.setItem(key,FLAGS.includes(key)?data as string:JSON.stringify(data));
  if(typeof window!=='undefined')for(const name of ['sully-beauty-usage-change','sully-beauty-repo-status-change'])window.dispatchEvent(new Event(name));
 }

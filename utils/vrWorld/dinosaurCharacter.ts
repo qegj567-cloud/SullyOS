@@ -42,7 +42,7 @@ export function parseGardenVisit(text:string):GardenVisitPlan|null {
 export function applyGardenVisit(s:FishingMarketState,actor:MarketActor,plan:GardenVisitPlan,snapshot:GardenVisitSnapshot,now=Date.now()):FishingMarketState {
   const g=s.dinosaurGarden;if(!g?.visitsEnabled)throw new Error('共同摆弄已经关闭');
   const activeMapId=g.activeMapId;s=setGardenMap(s,snapshot.mapId);
-  if(plan.toyId&&!Object.hasOwn(snapshot.toys,plan.toyId))throw new Error('来访时没有看到这只恐龙');
+  if(plan.toyId&&!Object.prototype.hasOwnProperty.call(snapshot.toys,plan.toyId))throw new Error('来访时没有看到这只恐龙');
   let next=s;
   if(plan.action==='comment')next=gardenComment(s,actor,plan.toyId||undefined,plan.words,now);
   else {

@@ -4,6 +4,19 @@ import { buildSARArchiveMarkdown, parseSARSimulationReply } from './vrWorld/sarS
 
 const facts = { sceneFacts:['雨仍在下'],openThreads:['送信人尚未到'],offscreenFacts:['内部事实标记'],declinedHooks:['用户拒绝现在调查'],revealedFacts:['角色留了一杯茶'] };
 describe('SAR quiet scenes and private continuity',()=>{
+    it('reads a complete tagged scene with raw quotes and newlines, keeping private facts separate',()=>{
+        expect(parseSARSimulationReply(`<SAR_SCENE><worldNarration>门外静了下来。</worldNarration><character>他问："还记得我？"\n又低下头。</character><directorState>${JSON.stringify(facts)}</directorState></SAR_SCENE>`))
+            .toEqual({worldNarration:'门外静了下来。',character:'他问："还记得我？"\n又低下头。',directorState:facts});
+        expect(parseSARSimulationReply('<SAR_SCENE><character>他起身。</character><directorState>{broken}</directorState></SAR_SCENE>'))
+            .toEqual({worldNarration:'',character:'他起身。'});
+        for(const raw of [
+            '<SAR_SCENE><character>他起身。</character>',
+            '<SAR_SCENE><character>他起身。</SAR_SCENE>',
+            '<SAR_SCENE><worldNarration>只有旁白</worldNarration></SAR_SCENE>',
+            '<character>缺少外层</character><directorState>内部事实标记</directorState>',
+            '<SAR_SCENE><character>正文<directorState>秘密</directorState></character></SAR_SCENE>',
+        ]) expect(parseSARSimulationReply(raw)).toBeNull();
+    });
     it('accepts an intentionally empty narration without leaking structured output',()=>{
         expect(parseSARSimulationReply(JSON.stringify({worldNarration:'',character:'他握住你的手。',directorState:facts}))).toEqual({worldNarration:'',character:'他握住你的手。',directorState:facts});
     });

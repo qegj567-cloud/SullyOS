@@ -22,7 +22,7 @@ export function readDinosaurGarden(value: unknown): DinosaurGarden {
   if(!g.maps.length||new Set(g.maps.map((m:any)=>m?.id)).size!==g.maps.length) return fail();
   for(const m of g.maps) {
     if(!object(m)||typeof m.id!=='string'||typeof m.name!=='string'||!['grassland','coast','volcano'].includes(m.theme)||!Array.isArray(m.props))return fail();
-    for(const p of m.props)if(!object(p)||typeof p.id!=='string'||!Object.hasOwn(PROP_LABELS,p.kind)||!pose(p))return fail();
+    for(const p of m.props)if(!object(p)||typeof p.id!=='string'||!Object.prototype.hasOwnProperty.call(PROP_LABELS,p.kind)||!pose(p))return fail();
   }
   if(!g.maps.some((m:any)=>m.id===g.activeMapId))return fail();
   for(const [id,t] of Object.entries(g.toys)) {

@@ -992,7 +992,7 @@ ${xhsEnabled ? `${[notionEnabled, feishuEnabled, notionNotesEnabled].filter(Bool
         // 状态也会隐藏 date/call/story 消息，而 API 历史仍会携带它们。
         // fire_pack 不烤：打包时确实刚挂电话，但那条主动消息可能是第二天凌晨才发出去的，
         // 角色照着这句接一句「刚才电话里说的那个……」就穿帮了。
-        const returningFromMode = !forFirePack
+        const returningFromMode = !forFirePack && promptOptions?.appRules === undefined
             ? (promptOptions?.returningFromMode || detectChatModeTransition(currentMsgs))
             : null;
         if (returningFromMode) {

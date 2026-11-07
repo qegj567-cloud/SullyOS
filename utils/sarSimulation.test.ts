@@ -239,7 +239,8 @@ describe('SAR 推演与备份状态', () => {
         expect(prompt).toContain('不替用户行动');
         expect(prompt).toContain('世界意志｜旁白与航向');
         expect(prompt).toContain('让玩家不必自己承担剧本规划');
-        expect(prompt).toContain('{"worldNarration"');
+        expect(prompt).toContain('<SAR_SCENE>');
+        expect(prompt).toContain('<worldNarration>');
         expect(prompt).not.toContain('保持文字联系');
         expect(prompt).not.toContain('切换方式');
     });

@@ -47,7 +47,7 @@ export default memo(forwardRef<BeautyPreviewHandle, Props>(function BeautyPreset
   const [desktopPages, setDesktopPages] = useState(1);
   useEffect(() => { setDesktopPage(0); setDesktopPages(1); }, [data]);
   const isChat = (data as any)?.format === 'sullyos-chat-decoration';
-  const soundOnly=compact&&isChat&&Object.keys((data as any).parts||{}).length===1&&Object.hasOwn((data as any).parts,'sound');
+  const soundOnly=compact&&isChat&&Object.keys((data as any).parts||{}).length===1&&Object.prototype.hasOwnProperty.call((data as any).parts,'sound');
   const part = compact && isChat && thumbnailPart!=='full' ? thumbnailPart||decorationThumbnailPart(data) : undefined;
   const height = part==='psyche' ? 180 : part ? PREVIEW_WIDTH : isChat ? PREVIEW_HEIGHT : 720;
   const [scene, setScene] = useState(()=>(data as any)?.parts?.psyche && Object.keys((data as any).parts).length===1 ? 'psyche' : 'conversation');
