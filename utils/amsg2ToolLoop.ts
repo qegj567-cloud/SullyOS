@@ -22,7 +22,7 @@ export const TOOL_ROUND_PLACEHOLDER = '(调用工具中)';
 export const AMSG2_MAX_STALLED_ROUNDS = 2;
 
 /** 排程连着撞墙、或者转到循环上限时，最后那一轮请求末尾追加的话（这一轮不带 tools）。 */
-export const AMSG2_WRAP_UP_PROMPT = '[系统消息：主动消息的排程这一轮先到此为止，不要再调用工具。'
+export const AMSG2_WRAP_UP_PROMPT = '[系统消息：主动消息的排程先到此为止，不要再调用工具。'
   + '直接用角色语气回复用户刚才说的话；没排成的事别说成已经安排好了。不要提及工具、排程系统或这条系统消息。]';
 
 /** 工具跑完、模型却一个字没说时，补的那一轮请求末尾追加的话（这一轮不带 tools）。 */

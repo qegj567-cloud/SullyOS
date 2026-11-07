@@ -13393,7 +13393,7 @@ var buildMcpFireBlock = (resolve, opts) => {
     howTo,
     "\u7EAA\u5F8B\uFF1A\u4E0D\u9700\u8981\u5C31\u522B\u786C\u8C03\uFF1B\u6CA1\u6536\u5230\u7CFB\u7EDF\u8FD4\u56DE\u524D\u4E0D\u8981\u58F0\u79F0\u5DE5\u5177\u6210\u529F\uFF0C\u4E5F\u4E0D\u8981\u7F16\u9020\u7ED3\u679C\uFF1B\u5DE5\u5177\u5931\u8D25\u5C31\u6362\u4E2A\u65B9\u5F0F\u6216\u5982\u5B9E\u5E26\u8FC7\uFF1B\u7ED3\u679C\u53EA\u6311\u76F8\u5173\u90E8\u5206\u7528\u89D2\u8272\u8BED\u6C14\u8F6C\u8FF0\uFF0C\u522B\u590D\u8BFB JSON\u3002",
     "\u591A\u6B65\u4EFB\u52A1\uFF1A\u5148\u505A\u5FC5\u8981\u68C0\u67E5\uFF0C\u968F\u540E\u7ACB\u523B\u8C03\u7528\u80FD\u63A8\u8FDB\u76EE\u6807\u7684\u52A8\u4F5C\u5DE5\u5177\uFF1B\u4E0D\u8981\u53CD\u590D\u8BFB\u53D6\u540C\u4E00\u4EFD\u8BF4\u660E\u6216\u72B6\u6001\u3002\u6267\u884C\u52A8\u4F5C\u540E\u53EF\u4EE5\u518D\u6B21\u68C0\u67E5\u65B0\u72B6\u6001\uFF0C\u5E76\u7EE7\u7EED\u5230\u76EE\u6807\u5B8C\u6210\u6216\u5DE5\u5177\u660E\u786E\u5931\u8D25\u3002",
-    `\u526F\u4F5C\u7528\u64CD\u4F5C\uFF1A${userName} \u672C\u8F6E\u5DF2\u7ECF\u660E\u786E\u8981\u6C42\u6267\u884C\u7684\u89C6\u4E3A\u5DF2\u786E\u8BA4\uFF1B\u6CA1\u6709\u660E\u786E\u8981\u6C42\u65F6\u624D\u5148\u786E\u8BA4\u3002`,
+    `\u526F\u4F5C\u7528\u64CD\u4F5C\uFF1A${userName} \u5728\u6700\u65B0\u6D88\u606F\u91CC\u5DF2\u7ECF\u660E\u786E\u8981\u6C42\u6267\u884C\u7684\u89C6\u4E3A\u5DF2\u786E\u8BA4\uFF1B\u6CA1\u6709\u660E\u786E\u8981\u6C42\u65F6\u624D\u5148\u786E\u8BA4\u3002`,
     "\u53EF\u7528\u5DE5\u5177\uFF1A",
     ...lines,
     "---"
@@ -14133,7 +14133,7 @@ function buildScheduledPush(message, build, extraMeta, bannerBody) {
 }
 
 // utils/amsgBundleVersion.ts
-var AMSG_BUNDLE_VERSION = "2026-11-07.1";
+var AMSG_BUNDLE_VERSION = "2026-11-07.2";
 
 // worker/amsg/src/reproduction.ts
 async function writeDiagnosticStage(writeState, runId, event, fields = {}) {
@@ -18247,6 +18247,12 @@ async function dispatchAgenticTool(toolName, args, ctx) {
   }
 }
 
+// utils/replyScope.ts
+var buildReplyScopeRule = (trigger) => {
+  const start = trigger === "user" ? "\u4ECE\u7528\u6237\u6700\u65B0\u53D1\u6765\u7684\u90A3\u6761\u6D88\u606F\u5F00\u59CB" : "\u4ECE\u4F60\u6536\u5230\u8FD9\u4EFD\u8BF4\u660E\u5F00\u59CB\uFF08\u4F60\u4E4B\u524D\u5B89\u6392\u7684\u4E3B\u52A8\u6D88\u606F\u5230\u70B9\u4E86\uFF09";
+  return `[\u8FD9\u6B21\u56DE\u590D\u7684\u8303\u56F4\uFF1A${start}\uFF0C\u5230\u4F60\u7ED9\u51FA\u4E00\u6761\u4E0D\u518D\u8C03\u7528\u5DE5\u5177\u7684\u6B63\u6587\u4E3A\u6B62\u3002\u8FD9\u671F\u95F4\u4F60\u6BCF\u8C03\u7528\u4E00\u6B21\u5DE5\u5177\u3001\u62FF\u5230\u4E00\u6B21\u7ED3\u679C\uFF0C\u90FD\u53EA\u662F\u8FD9\u6B21\u56DE\u590D\u91CC\u7684\u4E00\u6B65\uFF0C\u4E0D\u662F\u65B0\u7684\u4E00\u6B21\uFF1B\u4F60\u5728\u8FD9\u671F\u95F4\u5199\u4E0B\u7684\u8BDD\u90FD\u7B97\u8FD9\u6B21\u56DE\u590D\u7684\u4E00\u90E8\u5206\uFF0C\u540E\u9762\u4E0D\u5FC5\u91CD\u590D\u3002]`;
+};
+
 // utils/agenticToolFeedback.ts
 var toolCallFingerprint = (name, args) => {
   const normalize2 = (value) => {
@@ -19900,6 +19906,9 @@ var amsgHooks = {
       ...canSelfSchedule && mcpNative ? [buildFireScheduleTool({ nowMs: ctx.now.getTime(), tz, abilities, context: instant ? "chat" : "fire" })] : [],
       ...canManageTasks && mcpNative ? [buildFireCancelTool(), buildFireRenewTool({ nowMs: ctx.now.getTime(), tz })] : []
     ];
+    const replyScopeBlock = fireTools.length > 0 || mcpBlock || scheduleBlock ? `
+${buildReplyScopeRule(instant ? "user" : "scheduled")}
+` : "";
     stash.fireToolNames = new Set(fireTools.map((t) => t?.function?.name).filter((n) => typeof n === "string" && !n.startsWith(MCP_FIRE_NAME_PREFIX)));
     stash.allowedToolNames = /* @__PURE__ */ new Set([
       ...DATA_TOOL_NAMES,
@@ -19924,7 +19933,8 @@ var amsgHooks = {
           renderSelfLogBlock(selfLog, ctx.now.getTime(), tz, maxUnansweredSends),
           taskListBlock,
           mcpBlock,
-          scheduleBlock
+          scheduleBlock,
+          replyScopeBlock
         ]
       });
       const chatMessages = pack.chat.messages;
@@ -19985,7 +19995,7 @@ ${userHoliday}` });
       // 「此刻在做什么」里的钟点跟今日节日同一个开关：关掉时间感知的角色不该从日程块
       // 读到「23:00」——那正是这个开关要挡的东西。日程内容本身照给。
       includeClock: toolPack.timeAwarenessEnabled
-    }), userHoliday) + mcpBlock + scheduleBlock;
+    }), userHoliday) + mcpBlock + scheduleBlock + replyScopeBlock;
     return {
       messages: [{ role: "user", content: prompt }],
       ...common
