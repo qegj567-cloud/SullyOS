@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "versionCode": 30514,
-  "versionName": "3.5.14",
-  "apkUrl": "https://github.com/qegj567-cloud/SullyOS/releases/download/android-v3.5.14/SullyOS-Android-v3.5.14.apk",
-  "sha256": "1fd09ad9a53822fe0604ab1400394715794619713e0c8eee4efda445892d4934",
-  "sizeBytes": 99601514,
-  "publishedAt": "2026-11-07T07:24:17Z",
+  "versionCode": 30515,
+  "versionName": "3.5.15",
+  "apkUrl": "https://github.com/qegj567-cloud/SullyOS/releases/download/android-v3.5.15/SullyOS-Android-v3.5.15.apk",
+  "sha256": "71bd2f5fe6230fb0280acd129b822b9b9cf4c0a794cd406bc2508e878a2f34f7",
+  "sizeBytes": 99612432,
+  "publishedAt": "2026-11-07T14:24:15Z",
   "releaseNotes": [
-    "同步 master 2cbb46ed，包含用户空间、角色继承、共享素材与备份范围",
-    "同步主动消息 2.0 面板与诊断、图片系统分享、导览回放和 SAR 等修复",
+    "同步 master 8fdf6935，包含离开后消息和跨网址／App 迁入独立用户",
+    "同步缺失素材备份提示与清单、存储优化锁等修复；云端新能力需按提示更新自有 Worker",
     "保留水母／经典图标切换、ntfy、PDF、相机、前台定位、Umami 和应用内更新",
     "沿用固定正式签名，可覆盖升级保留数据"
   ]
