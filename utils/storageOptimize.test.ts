@@ -58,6 +58,41 @@ async function blobBytes(token: string): Promise<Uint8Array> {
 }
 
 describe('优化资源存储（一次性批量迁移）', () => {
+    it('合并提交前并发清理保留图，不会把正常引用改成缺图', async () => {
+        const keeperId = 'img_100000_1_merge_race';
+        const duplicateId = 'img_200000_1_merge_race';
+        const keeper = `blobref:${keeperId}`;
+        await DB.putBlobAsset(keeperId, dataUrlToBlob(TINY_PNG));
+        await DB.putBlobAsset(duplicateId, dataUrlToBlob(TINY_PNG));
+        await DB.saveAsset('wallpaper', `blobref:${duplicateId}`);
+
+        let entered!: () => void, resume!: () => void;
+        const ready = new Promise<void>(resolve => { entered = resolve; });
+        const gate = new Promise<void>(resolve => { resume = resolve; });
+        const write = DB.putStoreRows.bind(DB);
+        const spy = vi.spyOn(DB, 'putStoreRows').mockImplementation(async (store, rows) => {
+            if (store === 'assets' && rows.some((row: any) => row.id === 'wallpaper' && row.data === keeper)) {
+                entered();
+                await gate; // 已检查保留图存在，尚未提交新引用。
+            }
+            return write(store, rows);
+        });
+        const optimizing = optimizeResourceStorage();
+        let deleting: Promise<void> | undefined;
+        try {
+            await ready;
+            deleting = DB.deleteBlobAsset(keeperId);
+            // 无保护时删除能在暂停点完成；受保护时它等待引用落盘。
+            await Promise.race([deleting, new Promise(resolve => setTimeout(resolve, 100))]);
+        } finally {
+            resume();
+            await Promise.all([optimizing, deleting]).finally(() => spy.mockRestore());
+        }
+        expect(await DB.getAssetRaw('wallpaper')).toBe(keeper);
+        expect(await getBlobForRef(keeper)).not.toBeNull();
+        expect(await blobBytes(keeper)).toEqual(new Uint8Array(await dataUrlToBlob(TINY_PNG).arrayBuffer()));
+    });
+
     it('壁纸 assets 行转成令牌，Blob 字节与原图逐一致', async () => {
         await DB.saveAsset('wallpaper', TINY_PNG);
         const r = await optimizeResourceStorage();

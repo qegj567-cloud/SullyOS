@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import JSZip from 'jszip';
 import { DB, openSpaceDB } from './db';
 import { saveUserSpaces, readSpaceLocal, createSpaceStorage, SPACE_DELETIONS_KEY, isUserSpaceDeleting } from './userSpaces';
@@ -6,6 +6,7 @@ import { commitSpaceRows, readSpaceStore, inheritSpaceCharacters } from './userS
 import { exportUserSpaces, importUserSpaces } from './userSpaceBackup';
 import { putSharedImage, isSharedAssetReferenced } from './spaceAssets';
 import { openCollaborationSpace } from '../features/collaboration/store';
+import type { BackupMissingAsset } from './backupMissingAssets';
 
 beforeEach(async () => {
     localStorage.clear();
@@ -17,6 +18,63 @@ beforeEach(async () => {
 });
 
 describe('space backup and asset ownership', () => {
+    it('exports intact records and files despite missing images, reporting their users and locations without changing live data', async () => {
+        const missing = 'blobref:img_missing_backup_test';
+        const available = await putSharedImage(new Blob(['remaining-image'], { type: 'image/png' }));
+        const original = { id: 'missing-owner', name: '小夏', avatar: missing, sprites: { chibi: available }, memories: [] };
+        await commitSpaceRows(await openSpaceDB('default'), {
+            characters: [original],
+            messages: [{ id: 1, charId: original.id, type: 'text', content: '不应出现在诊断清单的聊天正文', metadata: { cameraSnapshotRef: missing } }],
+            assets: [{ id: 'appearance_preset_rose', data: JSON.stringify({ name: '玫瑰主题', theme: { customCss: `.card{background:url("${missing}")}` }, apiKey: 'do-not-log-this-key' }) }],
+        });
+        await commitSpaceRows(await openSpaceDB('u_backup'), { characters: [{ id: 'other-owner', name: '小秋', avatar: missing, memories: [] }] });
+        localStorage.setItem('os_theme', JSON.stringify({ wallpaper: missing }));
+        const report = vi.fn<(items: BackupMissingAsset[]) => void>();
+        const zip = await JSZip.loadAsync(await (await exportUserSpaces('full', 'all', undefined, false, report)).arrayBuffer());
+        const manifest = JSON.parse(await zip.file('user-spaces.json')!.async('string'));
+        expect(manifest.missingAssets).toHaveLength(1);
+        expect(report).toHaveBeenCalledWith(manifest.missingAssets);
+        expect(manifest.blobs.map((item: any) => item.id)).toEqual([available.slice(8)]);
+        expect(await zip.file(manifest.blobs[0].path)!.async('string')).toBe('remaining-image');
+        const text = await zip.file('缺失素材清单.txt')!.async('string');
+        expect(text).toContain('甲'); expect(text).toContain('乙'); expect(text).toContain('小夏'); expect(text).toContain('小秋');
+        expect(text).toContain('头像'); expect(text).toContain('聊天拍照'); expect(text).toContain('玫瑰主题'); expect(text).toContain('壁纸');
+        expect(text).not.toContain('不应出现在诊断清单的聊天正文'); expect(text).not.toContain('do-not-log-this-key');
+        expect(JSON.parse(await zip.file('diagnostics/missing-assets.json')!.async('string')).items).toEqual(manifest.missingAssets);
+        expect(await DB.getCharacter(original.id)).toMatchObject(original);
+        await commitSpaceRows(await openSpaceDB('default'), { characters: [], messages: [] }, true);
+        await importUserSpaces(zip);
+        expect(await DB.getCharacter(original.id)).toMatchObject(original);
+        expect((await readSpaceStore(await openSpaceDB('default'), 'messages'))[0].content).toBe('不应出现在诊断清单的聊天正文');
+        expect(await (await DB.getBlobAsset(available.slice(8)))!.text()).toBe('remaining-image');
+    });
+    it.each(['full', 'media_only'] as const)('limits missing-asset diagnostics to the exported users and includes missing custom models (%s)', async mode => {
+        await commitSpaceRows(await openSpaceDB('default'), { characters: [{ id: 'model-owner', name: '模型角色', videoAvatar: { format: 'vrm', assetId: 'vrm_missing', builtIn: false } }] });
+        await commitSpaceRows(await openSpaceDB('u_backup'), { characters: [{ id: 'excluded', name: '不导出的用户角色', avatar: 'blobref:excluded_missing' }] });
+        const zip = await JSZip.loadAsync(await (await exportUserSpaces(mode, 'current')).arrayBuffer());
+        const manifest = JSON.parse(await zip.file('user-spaces.json')!.async('string'));
+        expect(manifest.missingAssets).toEqual([{ id: 'vrm_missing', locations: [expect.stringContaining('视频模型 → 素材文件')] }]);
+        expect(await zip.file('缺失素材清单.txt')!.async('string')).not.toContain('excluded_missing');
+    });
+    it('text-only backups ignore stripped missing assets and healthy archives have no missing-assets report', async () => {
+        await commitSpaceRows(await openSpaceDB('default'), { characters: [{ id: 'missing-text', name: '文字角色', avatar: 'blobref:missing_text' }] });
+        const report = vi.fn();
+        const zip = await JSZip.loadAsync(await (await exportUserSpaces('text_only', 'current', undefined, false, report)).arrayBuffer());
+        expect(zip.file('缺失素材清单.txt')).toBeNull(); expect(report).toHaveBeenCalledWith([]);
+        expect(JSON.parse(await zip.file('user-spaces.json')!.async('string')).missingAssets).toBeUndefined();
+        await commitSpaceRows(await openSpaceDB('default'), { characters: [{ id: 'missing-text', name: '文字角色', avatar: '' }] });
+        const full = await JSZip.loadAsync(await (await exportUserSpaces('full', 'current')).arrayBuffer());
+        expect(full.file('diagnostics/missing-assets.json')).toBeNull();
+    });
+    it('does not disguise a database read failure as an absent asset or report a completed backup', async () => {
+        await commitSpaceRows(await openSpaceDB('default'), { characters: [{ id: 'read-error', avatar: 'blobref:cannot_read' }] });
+        const read = vi.spyOn(DB, 'getBlobAsset').mockRejectedValue(new Error('storage unavailable'));
+        const report = vi.fn();
+        try {
+            await expect(exportUserSpaces('full', 'current', undefined, false, report)).rejects.toThrow('storage unavailable');
+            expect(report).not.toHaveBeenCalled();
+        } finally { read.mockRestore(); }
+    });
     it('restores a completed deletion from a full backup but rejects a pending deletion before writing', async () => {
         await commitSpaceRows(await openSpaceDB('u_backup'), { characters: [{ id: 'restore', name: '保留', memories: [] }] });
         const zip = await JSZip.loadAsync(await (await exportUserSpaces('full', 'all')).arrayBuffer());

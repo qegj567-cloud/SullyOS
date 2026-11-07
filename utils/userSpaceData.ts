@@ -22,7 +22,7 @@ export async function assertUniqueSpaceCharacters(incoming: Map<string, Array<{ 
     for (const spaceId of spaces) {
         const chars = incoming.get(spaceId) ?? await readSpaceStore(await openSpaceDB(spaceId), 'characters');
         for (const char of chars) {
-            if (owners.has(char.id) && owners.get(char.id) !== spaceId) throw new Error('备份中的角色编号已属于另一个用户空间。请在原空间恢复，或使用神经链接的「继承角色」创建独立角色。');
+            if (owners.has(char.id) && owners.get(char.id) !== spaceId) throw new Error('备份中的角色编号已属于另一个用户空间。恢复原存档请回到原用户；从其他网址或 App 搬来，请使用设置里的「迁入独立用户」，自动新建用户并保留聊天和记忆。');
             owners.set(char.id, spaceId);
         }
     }
