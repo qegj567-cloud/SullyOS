@@ -5,13 +5,12 @@
  *   - 本地：其余角色。每次打开页面时，给超过等待时长没说话的角色一次性补上
  *     「你不在时 TA 发的消息」，时间戳铺在离开那段时间里。
  */
-import type { APIConfig, ActiveMsg2TaskRecord, CharacterProfile, GroupProfile, Message, RealtimeConfig, UserProfile } from '../types';
+import type { APIConfig, ActiveMsg2TaskRecord, CharacterProfile, GroupProfile, RealtimeConfig, UserProfile } from '../types';
 import { DB } from './db';
 import { ActiveMsgClient } from './activeMsgClient';
 import { applyScheduledTask, isAmsg2EnabledForChar } from './amsg2Tasks';
 import { isAmsg2GlobalReady } from './amsg2ToolBridge';
 import {
-  AWAY_SEGMENT_MARK,
   decideAwayTaskAction,
   findAwayGapStart,
   planAwaySlots,
@@ -24,7 +23,7 @@ import { buildChatRequestPayload } from './chatRequestPayload';
 import { applyAssistantPostProcessing } from './applyAssistantPostProcessing';
 import { resolveDialogueApi } from './characterApi';
 import { extractContent, safeFetchJson } from './safeApi';
-import { resolveCharTimeZone } from './timezone';
+import { buildLocalAwayHint } from './awayMessagePrompt';
 import { loadMusicPlaybackSnapshot } from '../context/MusicContext';
 
 /** 失败后这么久内不再试，免得每次切回前台都白调一次。 */
@@ -184,24 +183,6 @@ export const runLocalAwayMessages = async (deps: LocalAwayDeps): Promise<void> =
   }
 };
 
-const formatCharClock = (ms: number, tz: string | undefined): string =>
-  new Date(ms).toLocaleString('zh-CN', {
-    timeZone: tz, month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
-  });
-
-const buildLocalHint = (char: CharacterProfile, userName: string, lastUserAt: number, slots: number[]): string => {
-  const n = slots.length;
-  const showClock = char.timeAwarenessEnabled !== false;
-  const tz = resolveCharTimeZone(char);
-  const when = showClock
-    ? `${userName}最后一次跟你说话是在 ${formatCharClock(lastUserAt, tz)}，之后一直没再找你。这段时间里你主动给${userName}发过 ${n} 次消息，分别在 ${slots.map(t => formatCharClock(t, tz)).join('、')}（你那边的时间）。`
-    : `${userName}已经有好一阵子没跟你说话了。这段时间里你主动给${userName}发过 ${n} 次消息。`;
-  return `[系统提示（非${userName}发言）: ${when}`
-    + `请把这 ${n} 次分别写出来：按时间先后，每次一到三句，像真人随手发的私聊，后面几次可以带着前面没等到回复的心情。`
-    + (n > 1 ? `两次之间单独一行写 ${AWAY_SEGMENT_MARK} 隔开。` : '')
-    + '不要写时间、序号或旁白，只写你发出去的消息本身。]';
-};
-
 const generateLocalAwayMessages = async (char: CharacterProfile, deps: LocalAwayDeps): Promise<void> => {
   const delayMs = resolveAwayDelayMinutes(char) * 60_000;
   const now = Date.now();
@@ -219,24 +200,23 @@ const generateLocalAwayMessages = async (char: CharacterProfile, deps: LocalAway
 
   const range = await loadCharacterContextRange(char);
   const { emojis, categories } = ChatPrompts.filterVisibleEmojis(await DB.getEmojis(), await DB.getEmojiCategories(), char.id);
-  // 提示只进这一次请求，不落库：它不是谁说过的话。
-  const hint = {
-    id: -1, charId: char.id, role: 'user', type: 'text', timestamp: now,
-    content: buildLocalHint(char, userName, lastUserAt, slots),
-    metadata: { proactiveHint: true, hidden: true },
-  } as Message;
-  const history = [...range.messages, hint];
   const groups = deps.getGroups();
   const realtimeConfig = deps.getRealtimeConfig();
   const payload = await buildChatRequestPayload({
     char, userProfile, groups, emojis, categories,
-    historyMsgs: history,
-    contextLimit: history.length,
+    historyMsgs: range.messages,
+    contextLimit: Math.max(1, range.messages.length),
     recallEntryPoint: 'proactive_chat',
     realtimeConfig,
     musicSnapshot: loadMusicPlaybackSnapshot(),
     htmlMode: { enabled: !!(char as any).htmlModeEnabled, customPrompt: (char as any).htmlModeCustomPrompt },
     visionApiConfig: deps.getApiConfig().visionApi,
+  });
+
+  // 在所有原文范围筛选之后注入本轮任务；负数假 ID 会被水位线、窗口或用户断点滤掉。
+  // 只加到 API 请求，不落库、不占历史条数，也不让范围外原文混入。保留末尾的人格提示。
+  payload.fullMessages.splice(payload.volatileTailIndex >= 0 ? payload.volatileTailIndex : payload.fullMessages.length, 0, {
+    role: 'user', content: buildLocalAwayHint(char, userName, lastUserAt, slots, recent, now),
   });
 
   const baseUrl = api.baseUrl.replace(/\/+$/, '');

@@ -36,12 +36,17 @@
 
 请求用聊天同一套上下文（`buildChatRequestPayload`），提示只进这次请求、不落库。落库走 `applyAssistantPostProcessing`，未读、提示和系统通知沿用主动消息送达的 `active-msg-received`。
 
+本地提示保留 1.0 的随手分享生活、自然想起对方、避免汇报和催回复的引导。最近一条真实消息是三小时内的见面记录时，改为分别后的语境；判断包含已归档记录，但不把范围外的见面原文重新放进请求，也不要求模型编造缺失细节。时刻按角色时区表示，关闭时间感知时不报钟。
+
+本轮指令在聊天历史筛选完成后直接插入 API 消息、位于实时状态尾段之前；不再使用 `id: -1` 的假历史消息，因此不会被记忆水位、手动窗口或用户断点过滤，也不会挤掉本应可读的历史。
+
 ## 改这块时要一起动的地方
 
 | 改什么 | 位置 |
 |---|---|
 | 判定、分时刻、切分、要不要改期 | `utils/awayMessageCore.ts`（有单测） |
 | 云端维护、本地生成 | `utils/awayMessage.ts` |
+| 本地生活分享 / 见面后语境提示 | `utils/awayMessagePrompt.ts` |
 | 云端任务的指令文案、metadata 键 | `utils/amsgFireSchedule.ts` 的 `buildAwayTaskInstruction` |
 | 到点推迟、计入连发、必发 | `worker/amsg/src/index.ts` 的 `onBeforeFire`；`renderFirePack` 的 `mustSpeak` |
 
