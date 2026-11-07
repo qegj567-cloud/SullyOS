@@ -101,6 +101,7 @@ import { blobStore } from './blobStore';
 import { collectUnmergeableRefs, buildMergePlan, rewriteBlobRefs } from './blobDedupe';
 import { creatorPartToBlobRefs } from './creatorPartsBlob';
 import { tryAcquireMaintenanceLock, releaseMaintenanceLock, currentMaintenanceHolder } from './maintenanceLock';
+import { withSharedAssetLock } from './sharedAssetLock';
 import type { AppearancePreset, ChatTheme, CharacterProfile, CustomCreatorPart, Emoji, GalleryImage, Message, SongSheet } from '../types';
 
 /** 本工具会写的表。守卫测试断言它 ⊆ blobGc 的 REF_SOURCE_STORES（转出的 Blob 必须在 GC 视野内）。 */
@@ -185,7 +186,7 @@ export async function optimizeResourceStorage(
     if (!tryAcquireMaintenanceLock('优化资源存储')) {
         throw new Error(`另一项存储维护（${currentMaintenanceHolder()}）正在进行，请稍后再试。`);
     }
-    try {
+    const run = async (): Promise<OptimizeResult> => {
         const result: OptimizeResult = {
             converted: 0, uniqueBlobs: 0, bytesBefore: 0, bytesAfter: 0, failed: 0,
             failureReasons: {},
@@ -767,6 +768,11 @@ export async function optimizeResourceStorage(
             result.linkError = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
         }
         return result;
+    };
+    try {
+        // 扫描得到的保留图可能暂时无人引用。直到迁移/合并引用全部落盘前，
+        // 不能让换图清理或另一页面的 GC 把它删掉；共享池锁跨标签页协调。
+        return await withSharedAssetLock('exclusive', run);
     } finally {
         releaseMaintenanceLock();
     }

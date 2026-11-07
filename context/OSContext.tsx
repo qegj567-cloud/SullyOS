@@ -1,5 +1,5 @@
 import { mergePhoneGeneration, PHONE_GENERATION_COMMITTED, type PhoneGeneration } from '../utils/phoneGeneration';
-import { SESSION_SPACE_ID, DEFAULT_SPACE_ID, listUserSpaces } from '../utils/userSpaces';
+import { SESSION_SPACE_ID, DEFAULT_SPACE_ID, listUserSpaces, selectUserSpace } from '../utils/userSpaces';
 import { handleLocalBack } from '../utils/localBackHandlers';
 import { updateVirtualTimeIfChanged } from '../utils/blurPolicy';
 import {isHomeAssetDisposal} from '../utils/homeAssetCancellation';
@@ -32,6 +32,7 @@ import { buildMalformedImageDiagnostics, extractImagesInPlace, deepCloneForExpor
 import { isBlobRef, getBlobForRef, restoreBlobRef, migrateDataUrlToRef, migrateAppearancePresetBlobRefs, migrateChatThemeBlobRefs, resolveBlobRefsDeep, resolveRefToDataUrl, BLOBREF_PREFIX, deleteBlobRefIfUnreferenced } from '../utils/blobRef';
 import { resolveBlobRefsInRequestBody } from '../utils/apiBlobRefs';
 import { collectBlobRefs, writeBlobsToZip, readBlobsIndex, restoreBlobsFromZip } from '../utils/backupBlobs';
+import { missingBackupAssetsSummary, writeMissingBackupAssets, type BackupExportOptions, type BackupMissingAsset } from '../utils/backupMissingAssets';
 import { initPwaIcon, clearPwaIcon } from '../utils/appIcon';
 import { LEGACY_DEFAULT_WALLPAPER, isLegacyDefaultWallpaper, shouldPreserveLegacyDefaultWallpaper } from '../utils/wallpaperCompat';
 import { migrateSharkpanAssets } from '../utils/sharkpanAssetMigration';
@@ -318,6 +319,8 @@ export type DeleteCharacterResult = { status: 'deleted'; cloudPending?: boolean;
  */
 /** importSystem 的可选行为。 */
 export interface ImportSystemOptions {
+  /** 从其他网址/App 迁入：自动建立独立用户，保留经历并重新分配身份编号。 */
+  asNewUsers?: boolean;
   /**
    * 备份里带着 Worker 后端连接（地址 + 共享密钥 + 主密钥 + 用户 id）时问一句要不要连上。
    *
@@ -461,7 +464,7 @@ interface OSContextType {
   listCloudBackups: () => Promise<CloudBackupFile[]>;
 
   // System
-  exportSystem: (mode: 'text_only' | 'media_only' | 'full', options?: { includeBackendConnection?: boolean; userScope?: 'current' | 'all' }) => Promise<Blob>;
+  exportSystem: (mode: 'text_only' | 'media_only' | 'full', options?: BackupExportOptions) => Promise<Blob>;
   importSystem: (fileOrJson: File | string, options?: ImportSystemOptions) => Promise<void>; // Accept File or String
   resetSystem: (options?: { force?: boolean }) => Promise<ResetSystemResult>;
   sysOperation: { status: 'idle' | 'processing', message: string, progress: number }; // Progress state
@@ -3532,14 +3535,17 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   // --- MODIFIED EXPORT SYSTEM WITH SEPARATED ASSETS ZIP ---
   const exportSystem = async (
       mode: 'text_only' | 'media_only' | 'full',
-      exportOptions: { includeBackendConnection?: boolean; userScope?: 'current' | 'all' } = {},
+      exportOptions: BackupExportOptions = {},
   ): Promise<Blob> => {
       try {
           setSysOperation({ status: 'processing', message: '正在初始化打包引擎...', progress: 0 });
           
           if (listUserSpaces().length > 1) {
               const { exportUserSpaces } = await import('../utils/userSpaceBackup');
-              const result = await exportUserSpaces(mode, exportOptions.userScope || 'current', message => setSysOperation({ status: 'processing', message, progress: 30 }), exportOptions.includeBackendConnection);
+              const result = await exportUserSpaces(mode, exportOptions.userScope || 'current', message => setSysOperation({ status: 'processing', message, progress: 30 }), exportOptions.includeBackendConnection, items => {
+                  exportOptions.onMissingAssets?.(items);
+                  if (items.length) addToast(missingBackupAssetsSummary(items), 'info');
+              });
               setSysOperation({ status: 'idle', message: '', progress: 0 });
               markBackupDone();
               return result;
@@ -3548,6 +3554,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           const assetsFolder = zip.folder("assets");
           let assetCount = 0;
           let malformedImageCount = 0;
+          let missingAssets: BackupMissingAsset[] = [];
           const malformedImageDiagnostics: MalformedBackupImageDiagnostic[] = [];
           const maxMalformedImageDiagnostics = 100;
 
@@ -4239,8 +4246,10 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               );
               if (missing.length > 0) {
                   console.warn(`备份时 ${missing.length} 个图片令牌已无对应数据，已跳过:`, missing);
+                  missingAssets = missing.map(token => ({ id: token.slice('blobref:'.length), locations: [] }));
               }
           }
+          writeMissingBackupAssets(zip as unknown as ZipFileWriter, missingAssets);
 
           if (malformedImageCount > 0) {
               zip.file(
@@ -4274,6 +4283,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           setSysOperation({ status: 'idle', message: '', progress: 100 });
           // 备份成功 → 推进「该备份啦」提醒的计时（本地导出 / 云备份都走这里，一处覆盖两条路径）
           markBackupDone();
+          exportOptions.onMissingAssets?.(missingAssets);
+          if (missingAssets.length) addToast(missingBackupAssetsSummary(missingAssets), 'info');
           if (malformedImageCount > 0) {
               console.warn(`[Backup] 备份已完成，已从导出副本跳过 ${malformedImageCount} 处损坏图片`, malformedImageDiagnostics);
               addToast(`备份已生成，已跳过 ${malformedImageCount} 处无法恢复的损坏图片；其他数据已正常保存`, 'info');
@@ -4376,9 +4387,10 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   if (loadedZip.file('user-spaces.json')) {
                       const { importUserSpaces } = await import('../utils/userSpaceBackup');
                       const spaceManifest = JSON.parse(await loadedZip.file('user-spaces.json')!.async('string'));
-                      const allowBackend = backupHasBackendConnection(spaceManifest.backend) && importOptions.confirmBackendRestore
+                      const allowBackend = !importOptions.asNewUsers && backupHasBackendConnection(spaceManifest.backend) && importOptions.confirmBackendRestore
                           ? await importOptions.confirmBackendRestore(String(spaceManifest.backend.workerUrl).trim()) : false;
-                      await importUserSpaces(loadedZip, allowBackend);
+                      const imported = await importUserSpaces(loadedZip, allowBackend, { asNewUsers: importOptions.asNewUsers });
+                      if (importOptions.asNewUsers) selectUserSpace(imported[0].id);
                       clearImportInProgress();
                       setSysOperation({ status: 'idle', message: '', progress: 0 });
                       window.location.reload();
@@ -4422,6 +4434,16 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           // 必须发生在 restoreAssetsInPlace / DB.importFullData 之前：不受支持的第三方
           // 备份一旦命中特征就整包拒绝，不能出现“导入了一半才报错”的状态。
           assertSupportedSullyBackup(data);
+          if (importOptions.asNewUsers) {
+              showImportProgress('database', '正在迁入独立用户...', 30, { current: '整理聊天、记忆与素材关联' });
+              const { importLegacyAsIndependentUser } = await import('../utils/legacyIndependentUserImport');
+              const imported = await importLegacyAsIndependentUser(data, zip);
+              selectUserSpace(imported[0].id);
+              clearImportInProgress();
+              setSysOperation({ status: 'idle', message: '', progress: 0 });
+              window.location.reload();
+              return;
+          }
 
           // 在 importFullData 为释放内存逐项清空 data 字段前冻结“这是否是主历史替换”。
           // 新版 media_only 明确不动 SAR；旧备份没有 mode 时，只要带 characters/messages
