@@ -402,6 +402,15 @@ describe('当前角色设置 · 不泄漏角色内容', () => {
         expect(flags.记忆宫殿).toBe('有人开');
     });
 
+    it('离开后消息只要一个角色开了就算', () => {
+        expect(collectCharSettings([poisonedChar()], 'c1').离开后消息).toBe('都没开');
+        const flags = collectCharSettings(
+            [poisonedChar(), poisonedChar({ awayMessage: { enabled: true, delayMinutes: 90 } })],
+            'c1',
+        );
+        expect(flags.离开后消息).toBe('有人开');
+    });
+
     it('默认开的开关问「有没有人特意关掉」——否则答案永远是「有」', () => {
         const allDefault = collectCharSettings([poisonedChar(), poisonedChar()], 'c1');
         expect(allDefault.时间感知).toBe('都开着');
