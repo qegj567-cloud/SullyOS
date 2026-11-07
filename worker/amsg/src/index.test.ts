@@ -1000,6 +1000,22 @@ describe('频率与额度（到点兜底闸）', () => {
     expect(prompt).toContain('已用 1/3 次');
     expect(prompt).toContain('今天的主动联系：已用 2/5 次');
   });
+
+  // 工具循环里每一步都是新请求，「本轮」会被当成眼下这一步；定时触发要从这份说明算起，
+  // 不能拿「用户最新发来的那条消息」划界——角色连着主动发的时候，用户可能根本没说话。
+  it('带工具的定时触发写明这次回复从到点这份说明算起，不带工具就不写', async () => {
+    const withTools = makeCtx({});
+    withTools.ctx.scheduleTask = vi.fn();
+    const fire = fired(await amsgHooks.onBeforeFire(withTools.ctx));
+    expect(fire.tools?.length).toBeGreaterThan(0);
+    const prompt = fire.messages[0].content;
+    expect(prompt).toContain('这次回复的范围：从你收到这份说明开始（你之前安排的主动消息到点了）');
+    expect(prompt).not.toContain('用户最新发来的那条消息');
+
+    const bare = fired(await amsgHooks.onBeforeFire(makeCtx({}).ctx));
+    expect(bare.tools ?? []).toHaveLength(0);
+    expect(bare.messages[0].content).not.toContain('这次回复的范围');
+  });
 });
 
 // ─── 通用 MCP：到点把工具说明块和 tools 声明一起带上 ───
@@ -4213,6 +4229,22 @@ describe('onBeforeFire — 即时对话分支', () => {
       expect(appended.slice(0, 3)).toEqual(withTail);
       expect(appended[3].content).toContain('现在是');
     }
+  });
+
+  it('即时对话带工具时写明这次回复从用户最新发来的那条消息算起', async () => {
+    const { ctx } = makeCtx({
+      charRows: [
+        { key: AMSG_FIRE_PACK_KEY, value: instantPack() },
+        { key: AMSG_TOOL_PACK_KEY, value: toolPackValue },
+      ],
+      globalRows: [{ key: AMSG_TOOL_CONFIG_KEY, value: mcpToolConfigValue({ mcpUseNativeTools: true }) }],
+      metadata: { amsgInstantChat: true, amsgTaskInstruction: undefined },
+    });
+    (ctx as any).scheduleTask = vi.fn();
+    const text = fired(await amsgHooks.onBeforeFire(ctx)).messages.map((m) => m.content).join('\n');
+    expect(text).toContain('这次回复的范围：从用户最新发来的那条消息开始');
+    expect(text.match(/这次回复的范围/g)).toHaveLength(1);
+    expect(text).not.toContain('主动消息到点了');
   });
 
   // 本地有常驻自主联系说明，云端以前只教「主动消息发完再接着说」。

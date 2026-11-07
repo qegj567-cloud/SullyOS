@@ -38,14 +38,14 @@ export async function completeCollaborationWithMcp({body,toolbox,request,signal,
    const signatures=new Set<string>();let progressed=false;
    const execute=async(name:string,raw:unknown)=>{
     check();const hit=toolbox.resolve.get(name);
-    if(!hit)return `未知或未授权的工具 ${name}，只能使用本轮提供的工具。`;
+    if(!hit)return `未知或未授权的工具 ${name}，只能使用系统提供的工具。`;
     let args:Record<string,any>;
     try{const parsed=typeof raw==='string'?JSON.parse(raw||'{}'):raw??{};if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))throw Error();args=parsed as Record<string,any>;}
     catch{return `工具 ${name} 未执行：参数必须是有效的 JSON 对象，请修正后重试。`;}
     const signature=toolCallFingerprint(name,args);
     if(previousSignatures.has(signature)||signatures.has(signature))return `工具 ${name} 的相同参数刚执行过，不再重复执行。请利用已有结果继续任务。`;
     signatures.add(signature);
-    if(executed>=MCP_CHAT_MAX_TOOL_LOOPS)return '本轮工具调用已到上限，此调用未执行。请基于已有结果回复。';
+    if(executed>=MCP_CHAT_MAX_TOOL_LOOPS)return '这次回复的工具调用已到上限，此调用未执行。请基于已有结果回复。';
     executed++;progressed=true;onStatus?.(`正在调用 MCP：${hit.server.name} · ${hit.toolName}`);
     try{
      const result=await callMcpTool(hit.server,hit.toolName,args,signal);check();
@@ -58,7 +58,7 @@ export async function completeCollaborationWithMcp({body,toolbox,request,signal,
    previousSignatures=new Set([...signatures,...(progressed?[]:previousSignatures)]);
    stalled=progressed?0:stalled+1;
    const done=executed>=MCP_CHAT_MAX_TOOL_LOOPS||round+1>=MCP_CHAT_MAX_TOOL_LOOPS||stalled>=MCP_CHAT_MAX_STALLED_ROUNDS;
-   if(done)conversation.push({role:'system',content:'本轮工具阶段已到上限或连续没有推进。停止调用工具，根据已返回的数据完成协同回复；未完成的部分如实说明。禁止继续输出工具调用。'});
+   if(done)conversation.push({role:'system',content:'这次回复的工具调用已到上限或连续没有推进。停止调用工具，根据已返回的数据完成协同回复；未完成的部分如实说明。禁止继续输出工具调用。'});
    current=nativeCalls.length&&!done?{...current,messages:conversation}:buildMcpTextFallbackBody(current,conversation);
    onStatus?.('正在整理 MCP 结果…');data=await send();
    if(done){

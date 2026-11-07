@@ -260,13 +260,13 @@ describe('MCP 多步任务策略', () => {
         expect(MCP_CHAT_MAX_STALLED_ROUNDS).toBe(2);
     });
 
-    it('提示模型从检查推进到动作，并把用户本轮明确要求视为已确认', () => {
+    it('提示模型从检查推进到动作，并把用户最新消息里的明确要求视为已确认', () => {
         saveMcpServers([mkServer({ name: '游戏盒' })]);
         const block = buildMcpSystemBlock('条条');
         expect(block).toContain('随后立刻调用能推进目标的动作工具');
         expect(block).toContain('不要反复读取同一份说明或状态');
-        expect(block).toContain('本轮已经明确要求执行，即视为已经确认');
-        expect(MCP_TAIL_REMINDER).toContain('本轮已明确要求的操作视为已确认');
+        expect(block).toContain('在最新消息里已经明确要求执行，即视为已经确认');
+        expect(MCP_TAIL_REMINDER).toContain('最新消息里已明确要求的操作视为已确认');
     });
 
     it('文字兼容提示允许按结果继续下一步，但要求每次只输出一个调用', () => {
