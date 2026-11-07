@@ -79,6 +79,7 @@ import { isScheduleFeatureOn } from '../utils/scheduleGenerator';
 import { evaluateEmotionBackground } from '../hooks/useChatAI';
 import {HOME_SECRETS_UPDATED} from '../utils/homeSecrets';
 import { CHAT_GEN_EVENTS, setChatViewSnapshot, isEmbeddedChatVisible } from '../utils/chatGenEvents';
+import { runLocalAwayMessages } from '../utils/awayMessage';
 import { mergePalaceFragmentsIntoMemories } from '../utils/memoryPalace/pipeline';
 import { applyLinkedArchiveDeletion, LINKED_ARCHIVE_DELETED, type LinkedArchiveDeletionDetail } from '../utils/memoryPalace/linkedArchiveDeletion';
 import {
@@ -2597,6 +2598,28 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       return () => { cancelled = true; };
   // 只在本次数据初始化完成时执行；后续新数据走已修复的统一双写入口。
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDataLoaded]);
+
+  // 离开后消息（本地那条路）：打开页面和切回前台时，给超过等待时长没说话的角色补上
+  // 离开期间的消息。云端那条路在 useChatAI 每轮开场维护，见 utils/awayMessage.ts。
+  useEffect(() => {
+      if (!isDataLoaded) return;
+      const run = () => {
+          if (document.visibilityState !== 'visible') return;
+          void runLocalAwayMessages({
+              getCharacters: () => charactersRef.current,
+              getApiConfig: () => apiConfigRef.current,
+              getUserProfile: () => userProfileRef.current,
+              getGroups: () => groupsRef.current,
+              getRealtimeConfig: () => realtimeConfigRef.current,
+              isBusyWith: (charId) => suspendedCallRef.current?.charId === charId
+                  || ((activeAppRef.current === AppID.Date || activeAppRef.current === AppID.Call)
+                      && activeCharIdScheduleRef.current === charId),
+          });
+      };
+      run();
+      document.addEventListener('visibilitychange', run);
+      return () => document.removeEventListener('visibilitychange', run);
   }, [isDataLoaded]);
 
   const updateTheme = async (updates: Partial<OSTheme>) => {

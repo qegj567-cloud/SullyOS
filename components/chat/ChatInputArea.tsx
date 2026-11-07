@@ -1,7 +1,7 @@
 import EmojiExportDialog from './EmojiExportDialog';
 import ChatCamera from './ChatCamera';
 import React, { useRef, useState, useEffect, useMemo } from 'react';
-import { ShareNetwork, Trash, Plus, Smiley, PaperPlaneTilt, Lightning, Money, BookOpenText, GearSix, Image, Lock, ArrowsClockwise, CalendarBlank, ForkKnife, Coffee, Code, Brain, PencilSimple, BellSimpleRinging, Alarm, Sparkle, FadersHorizontal, LinkSimple, Star, Briefcase } from '@phosphor-icons/react';
+import { ShareNetwork, Trash, Plus, Smiley, PaperPlaneTilt, Lightning, Money, BookOpenText, GearSix, Image, Lock, ArrowsClockwise, CalendarBlank, ForkKnife, Coffee, Code, Brain, PencilSimple, BellSimpleRinging, Alarm, ChatCircleDots, Sparkle, FadersHorizontal, LinkSimple, Star, Briefcase } from '@phosphor-icons/react';
 import { CharacterProfile, ChatTheme, EmojiCategory, Emoji } from '../../types';
 import { PRESET_THEMES } from './ChatConstants';
 import TokenImg from '../os/TokenImg';
@@ -17,6 +17,8 @@ const ACTION_PAGE_SIZE = 8;
 
 interface ChatInputAreaProps {
     compactHome?: boolean;
+    /** 这个角色开着离开后消息：菜单项上亮一个点。 */
+    awayMessageOn?: boolean;
 
     /** Initial page for static decoration previews; does not run menu actions. */
     previewActionsPage?: number;
@@ -84,7 +86,7 @@ interface ChatInputAreaProps {
 }
 
 const ChatInputArea: React.FC<ChatInputAreaProps> = ({
-    input, setInput, isTyping, selectionMode, compactHome=false,
+    input, setInput, isTyping, selectionMode, compactHome=false, awayMessageOn=false,
     showPanel, setShowPanel, onSend, onDeleteSelected, onForwardSelected, onFavoriteSelected, favoriteSelectedCount = 0, selectedCount,
     sendButtonGenerates = false, enterToSend = true, onGenerate,
     autoReplyEnabled = false, autoReplySeconds = null, onCancelAutoReply, onInputFocusChange,
@@ -533,6 +535,16 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                 <CalendarBlank className="w-6 h-6" weight="bold" />
             </div>)}
             <span className="text-xs font-bold">日程/情绪</span>
+        </button>,
+        <button key="away-message" onClick={() => onPanelAction('away-message')} className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${acnh ? 'text-[#725d42]' : isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}>
+            <div className="relative">
+                {acnh ? <AcnhActionTile kind="proactive" /> : (
+                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border ${isDiscordStyle ? 'bg-slate-800 text-violet-300 border-violet-400/20' : 'bg-violet-50 text-violet-500 border-violet-100'}`}>
+                    <ChatCircleDots className="w-6 h-6" weight="bold" />
+                </div>)}
+                {awayMessageOn && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border-2 bg-violet-500 border-white" />}
+            </div>
+            <span className="text-xs font-bold">离开后消息</span>
         </button>,
         <button key="active-msg-2" onClick={() => onPanelAction('active-msg-2')} className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${acnh ? 'text-[#725d42]' : isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}>
             {acnh ? <AcnhActionTile kind="proactive" /> : (
