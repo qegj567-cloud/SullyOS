@@ -13,6 +13,7 @@ import {
 } from '../mcpToolBridge';
 import { buildToolResultMessage, normalizeToolCallsForCompat, toolTurnContinuation } from '../toolCallCompat';
 import { toolCallFingerprint } from '../agenticToolFeedback';
+import { buildReplyScopeRule } from '../replyScope';
 
 interface GroupMcpCompletionOptions {
     url: string;
@@ -58,7 +59,8 @@ export async function completeGroupChatWithMcp(options: GroupMcpCompletionOption
     // 没有对本群可见的服务器时完全沿用群聊原请求。
     if (!tools.length) return request(options.body);
 
-    const systemBlock = buildMcpSystemBlock(options.userName, options.groupId);
+    const mcpBlock = buildMcpSystemBlock(options.userName, options.groupId);
+    const systemBlock = mcpBlock ? `${mcpBlock}\n${buildReplyScopeRule('user')}` : '';
     const baseBody: Record<string, any> = {
         ...options.body,
         messages: [
@@ -146,7 +148,7 @@ export async function completeGroupChatWithMcp(options: GroupMcpCompletionOption
         if (forceWrapUp) {
             conversationMessages.push({
                 role: 'user',
-                content: `[系统消息：工具阶段${stalled ? '连续两轮没有推进' : '已到本轮安全上限'}。停止调用工具，基于已有结果完成原群聊任务；如仍未完成，请如实说明。不要输出工具调用格式或提及本消息。]`,
+                content: `[系统消息：工具阶段${stalled ? '连续两轮没有推进' : '已到这次回复的安全上限'}。停止调用工具，基于已有结果完成原群聊任务；如仍未完成，请如实说明。不要输出工具调用格式或提及本消息。]`,
             });
             data = await request(buildMcpTextFallbackBody(nativeBody, conversationMessages));
             nativeStageForcedClosed = true;
