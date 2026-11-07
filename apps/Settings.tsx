@@ -2124,7 +2124,7 @@ const Settings: React.FC = () => {
                 <input type="file" ref={importInputRef} className="hidden" accept=".json,.zip" onChange={handleImport} />
                 <button onClick={() => independentImportInputRef.current?.click()} className="py-4 px-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs font-bold text-emerald-800 active:scale-95 transition-all">
                     从其他网址 / App 迁入独立用户
-                    <span className="block mt-2 text-[11px] font-normal leading-relaxed">建议使用整合备份，自动新建用户并保留聊天、记忆和素材。共用当前系统设置，主动消息需重新开启。</span>
+                    <span className="block mt-2 text-[11px] font-normal leading-relaxed">建议使用整合备份，自动新建用户并保留聊天、记忆和素材。共用当前系统设置，主动消息和离开后消息需重新开启。</span>
                 </button>
                 <input type="file" ref={independentImportInputRef} aria-label="迁入独立用户备份" className="hidden" accept=".json,.zip" onChange={event => handleImport(event, true)} />
             </div>

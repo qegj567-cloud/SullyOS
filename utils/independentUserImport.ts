@@ -84,6 +84,8 @@ export function remapIndependentUser(
             if (store === 'characters') {
                 copy.activeMsg2Config = { ...copy.activeMsg2Config, enabled: false, instantChatEnabled: false, tasks: [] };
                 delete copy.activeMsg2Config.lastSyncedAt; delete copy.activeMsg2Config.lastError;
+                // Imported history must not trigger catch-up replies on the first reload.
+                if (copy.awayMessage) copy.awayMessage = { ...copy.awayMessage, enabled: false };
             }
             if (store === 'assets' && row.id === 'ls_mirror_v1') {
                 // The mirror can repopulate localStorage at startup. Filter it just like live settings.

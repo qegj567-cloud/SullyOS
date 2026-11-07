@@ -26,6 +26,7 @@ async function archive(mode = 'full', malformed = false) {
     const rows: Record<string, any[]> = {
         characters: [{ id: 'same', name: 'same', systemPrompt: 'same', avatar: 'blobref:img_same',
             chatBackground: 'blobref:img_missing', videoAvatar: { format: 'vrm', assetId: 'model_same' },
+            awayMessage: { enabled: true, delayMinutes: 120 },
             memories: [{ id: 'long-term', content: 'same' }], activeMsg2Config: { enabled: true, instantChatEnabled: true, tasks: [{ id: 'cloud-task' }], lastSyncedAt: 9 } }],
         user_profile: [{ id: 'me', name: '迁入用户', perCharAvatars: { same: 'blobref:img_same' } }],
         messages: [{ id: 1, charId: 'same', senderName: 'same', type: 'text', content: 'same' }],
@@ -60,6 +61,7 @@ it('migrates a complete user with colliding character/media IDs, preserving hist
     expect(space.id).not.toBe('default'); expect(char.id).not.toBe('same');
     expect(char).toMatchObject({ name: 'same', systemPrompt: 'same', memories: [{ content: 'same' }], activeMsg2Config: { enabled: false, instantChatEnabled: false, tasks: [] } });
     expect(char.activeMsg2Config.lastSyncedAt).toBeUndefined();
+    expect(char.awayMessage).toEqual({ enabled: false, delayMinutes: 120 });
     expect((await readSpaceStore(db, 'messages'))[0]).toMatchObject({ id: 1, charId: char.id, content: 'same', senderName: 'same' });
     expect((await readSpaceStore(db, 'groups'))[0].memberIds).toEqual([char.id]);
     const [memory] = await readSpaceStore(db, 'memory_nodes');
