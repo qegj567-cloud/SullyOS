@@ -141,7 +141,7 @@ export const runCollaborationTurn = async ({
     },
     0,
     0,
-    { appId: 'collaboration', purpose: '协同工作' },
+    { appId: 'collaboration', appName: '协同工作', charId: characterId, purpose: '协同工作' },
     profile.stream && onDelta && !mcpActive
       ? { onDelta: (_delta, fullText) => onDelta(visibleCollaborationStreamText(fullText)) }
       : undefined,

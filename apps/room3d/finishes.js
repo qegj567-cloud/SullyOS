@@ -4,7 +4,7 @@ import {boundary,neighbor,OPPOSITE,roomBoundarySegments,subtractIntervals} from 
 export const FLOOR_STYLES={original:'原木拼板',wood:'细木地板',tile:'方砖',marble:'黑白石材拼花',checker:'双色格',stone:'错缝石砖',parquet:'拼花木地板',solid:'素色'};
 export const WALL_STYLES={solid:'素色墙',stripe:'细条纹',halloween:'万圣节条纹护墙',dot:'小圆点',panel:'半墙护板',timber:'竖木护墙',tile:'厨房小方砖',spa:'温泉石裙墙',framed:'木框奶油墙'};
 export function validateFinishes(room){
- if(room.floorStyle!=null&&!Object.hasOwn(FLOOR_STYLES,room.floorStyle)||room.wallStyle!=null&&!Object.hasOwn(WALL_STYLES,room.wallStyle))throw Error('地板或壁纸样式不正确');
+ if(room.floorStyle!=null&&!Object.prototype.hasOwnProperty.call(FLOOR_STYLES,room.floorStyle)||room.wallStyle!=null&&!Object.prototype.hasOwnProperty.call(WALL_STYLES,room.wallStyle))throw Error('地板或壁纸样式不正确');
 }
 // Each room owns the finish on its inward-facing surface, even when the wall
 // structure is shared. Door openings and replaceable perimeter segments survive.

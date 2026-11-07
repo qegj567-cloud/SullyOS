@@ -12,10 +12,10 @@ export function normalizePetLife(raw,home,catalog){
   x:Math.max(-4,Math.min(4,number(p.x,0))),z:Math.max(-3.3,Math.min(3.3,number(p.z,0))),rotation:number(p.rotation,0),color:/^#[\da-f]{6}$/i.test(p.color)?p.color:null,
   materialColors:Object.fromEntries((catalog.find(a=>a.id===p.assetId)?.colorParts||[]).filter(part=>/^#[\da-f]{6}$/i.test(p.materialColors?.[part.material])).map(part=>[part.material,p.materialColors[part.material]])),
   hat:normalizePetHat(p.hat),
-  traits:[...new Set(Array.isArray(p.traits)?p.traits:[])].filter(t=>Object.hasOwn(PET_TRAITS,t)).slice(0,2),
+  traits:[...new Set(Array.isArray(p.traits)?p.traits:[])].filter(t=>Object.prototype.hasOwnProperty.call(PET_TRAITS,t)).slice(0,2),
   needs:Object.fromEntries(Object.keys(PET_NEEDS).map(k=>[k,clamp(number(p.needs?.[k],75))])),
   relations:Object.fromEntries(Object.entries(p.relations||{}).filter(([id,v])=>id.length<100&&Number.isFinite(v)).slice(0,30).map(([id,v])=>[id,clamp(v)])),
-  memory:{lastFedBy:typeof p.memory?.lastFedBy==='string'?p.memory.lastFedBy:null,lastPlayedBy:typeof p.memory?.lastPlayedBy==='string'?p.memory.lastPlayedBy:null,favoriteSpot:typeof p.memory?.favoriteSpot==='string'?p.memory.favoriteSpot:null,recentAction:Object.hasOwn(PET_ACTIONS,p.memory?.recentAction)?p.memory.recentAction:null},
+  memory:{lastFedBy:typeof p.memory?.lastFedBy==='string'?p.memory.lastFedBy:null,lastPlayedBy:typeof p.memory?.lastPlayedBy==='string'?p.memory.lastPlayedBy:null,favoriteSpot:typeof p.memory?.favoriteSpot==='string'?p.memory.favoriteSpot:null,recentAction:Object.prototype.hasOwnProperty.call(PET_ACTIONS,p.memory?.recentAction)?p.memory.recentAction:null},
   bondCooldown:Math.max(0,Math.min(30,number(p.bondCooldown,0))),
   sourceFurnitureId:typeof p.sourceFurnitureId==='string'?p.sourceFurnitureId:null,
  }));

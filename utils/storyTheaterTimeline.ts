@@ -23,19 +23,33 @@ export const invalidateStoryTimelineRepair = (db: IDBDatabase): void => { repair
 export const ensureStoryTimelineRepair = (db: IDBDatabase): Promise<StoryTimelineRepairResult> => {
     const cached = repairs.get(db);
     if (cached) return cached;
-    const repair = new Promise<StoryTimelineRepairResult>((resolve, reject) => {
+    let indexReadFailed = false;
+    const attempt = (useIndexes: boolean) => new Promise<StoryTimelineRepairResult>((resolve, reject) => {
         const transaction = db.transaction('messages', 'readwrite');
         const store = transaction.objectStore('messages');
         const repaired = new Set<string>();
         let unresolvedCount = 0;
         let failure: unknown;
         transaction.oncomplete = () => resolve({ repairedCharacterIds: [...repaired], unresolvedCount });
-        transaction.onerror = () => reject(failure || transaction.error || new Error('剧情时间校正失败'));
+        // error 冒泡时 transaction.error 可能尚未赋值；等 abort 确认回滚再重试。
+        transaction.onerror = event => {
+            failure ??= (event.target as IDBRequest | null)?.error || transaction.error;
+        };
         transaction.onabort = () => reject(failure || transaction.error || new Error('剧情时间校正事务已回滚'));
         const guarded = (action: () => void) => {
             try { action(); } catch (error) {
                 failure = error;
                 try { transaction.abort(); } catch { /* 已经中止 */ }
+            }
+        };
+        const indexRequest = <T,>(open: () => IDBRequest<T>): IDBRequest<T> => {
+            try {
+                const request = open();
+                request.onerror = () => { if (request.error?.name !== 'AbortError') indexReadFailed = true; };
+                return request;
+            } catch (error) {
+                indexReadFailed = true;
+                throw error;
             }
         };
         const scanMirrors = (request: IDBRequest<IDBCursorWithValue | null>, done: () => void) => {
@@ -73,17 +87,25 @@ export const ensureStoryTimelineRepair = (db: IDBDatabase): Promise<StoryTimelin
             });
         };
         // 按角色的唯一键枚举，再精确读取该角色的剧情副本。普通聊天和图片不逐条扫描。
-        if (store.indexNames.contains('charId_source') && store.indexNames.contains('charId')) {
-            const characters = store.index('charId').openKeyCursor(undefined, 'nextunique');
-            characters.onsuccess = () => guarded(() => {
-                const cursor = characters.result;
-                if (!cursor) return;
-                scanMirrors(store.index('charId_source').openCursor(IDBKeyRange.only([cursor.key, 'story_theater_memory'])), () => cursor.continue());
-            });
-        } else {
-            // 兼容缺少复合索引的旧库；无需升级 schema 或改动其他应用数据。
-            scanMirrors(store.openCursor(), () => {});
-        }
+        guarded(() => {
+            if (useIndexes && store.indexNames.contains('charId_source') && store.indexNames.contains('charId')) {
+                const characters = indexRequest(() => store.index('charId').openKeyCursor(undefined, 'nextunique'));
+                characters.onsuccess = () => guarded(() => {
+                    const cursor = characters.result;
+                    if (!cursor) return;
+                    scanMirrors(indexRequest(() => store.index('charId_source').openCursor(IDBKeyRange.only([cursor.key, 'story_theater_memory']))), () => cursor.continue());
+                });
+            } else {
+                // 兼容缺少复合索引的旧库；无需升级 schema 或改动其他应用数据。
+                scanMirrors(store.openCursor(), () => {});
+            }
+        });
+    });
+    const repair = attempt(true).catch(error => {
+        if (!indexReadFailed) throw error;
+        // 某些旧库能读主表却读不了复合索引。只回退一次主键扫描，不改 schema 或删数据；
+        // 写入/原件读取失败仍报错，不能把配额不足或存储损坏伪装成成功。
+        return attempt(false);
     });
     repairs.set(db, repair);
     void repair.catch(() => { if (repairs.get(db) === repair) repairs.delete(db); });

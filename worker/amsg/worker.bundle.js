@@ -352,7 +352,7 @@ function cleanCharacterWeatherCities(value) {
   return Object.fromEntries(Object.entries(value).filter(([id, city]) => id && typeof city === "string" && city.trim()).map(([id, city]) => [id, city.trim().slice(0, 100)]));
 }
 function weatherForCharacter(config, charId) {
-  const city = charId && Object.hasOwn(config.weatherCities || {}, charId) ? config.weatherCities?.[charId] : void 0;
+  const city = charId && Object.prototype.hasOwnProperty.call(config.weatherCities || {}, charId) ? config.weatherCities?.[charId] : void 0;
   return typeof city === "string" && city.trim() ? { ...config, weatherCity: city.trim().slice(0, 100) } : config;
 }
 
@@ -1537,7 +1537,7 @@ function pickStaleStoppedReplyKeys(rows, nowMs = Date.now(), protectKey) {
 // worker/amsg/src/index.ts
 import { DurableObject } from "cloudflare:workers";
 
-// node_modules/.pnpm/@rei-standard+amsg-server@3.2.0-next.2_@neondatabase+serverless@1.1.0_pg@8.22.0/node_modules/@rei-standard/amsg-server/dist/chunk-R2CRPRKR.mjs
+// node_modules/.pnpm/@rei-standard+amsg-server@3_f2a08373d30841ce79e2e19c7fb88ed9/node_modules/@rei-standard/amsg-server/dist/chunk-R2CRPRKR.mjs
 var CLEANUP_BATCH_LIMIT = 100;
 var UPDATABLE_COLUMNS = /* @__PURE__ */ new Set([
   "user_id",
@@ -2795,7 +2795,7 @@ function stringifyDecisionForError(value) {
   }
 }
 
-// node_modules/.pnpm/@rei-standard+amsg-server@3.2.0-next.2_@neondatabase+serverless@1.1.0_pg@8.22.0/node_modules/@rei-standard/amsg-server/dist/chunk-WFKLHUUE.mjs
+// node_modules/.pnpm/@rei-standard+amsg-server@3_f2a08373d30841ce79e2e19c7fb88ed9/node_modules/@rei-standard/amsg-server/dist/chunk-WFKLHUUE.mjs
 var DAY_MS = 24 * 60 * 60 * 1e3;
 var MAX_LISTED_SKIPPED_OCCURRENCES = 32;
 var MAX_ADJUST_STEPS = 32;

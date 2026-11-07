@@ -7,4 +7,4 @@ const D1_LIMIT_TEXT: Record<string, string> = {
 
 /** 认得出的 D1 限额代码返回一句说明，其余返回空串。 */
 export const describeD1LimitCode = (code: unknown): string =>
-  typeof code === 'string' && Object.hasOwn(D1_LIMIT_TEXT, code) ? D1_LIMIT_TEXT[code] : '';
+  typeof code === 'string' && Object.prototype.hasOwnProperty.call(D1_LIMIT_TEXT, code) ? D1_LIMIT_TEXT[code] : '';

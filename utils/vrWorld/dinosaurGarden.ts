@@ -88,7 +88,7 @@ export function editGardenProp(s:FishingMarketState,actor:MarketActor,input:{id?
   const g=garden(s),map=activeGardenMap(g),old=map.props.find(p=>p.id===input.id),id=old?.id||marketId('prop');
   const withProps=(props:typeof map.props)=>({...s,dinosaurGarden:{...g,maps:g.maps.map(m=>m.id===map.id?{...m,props}:m)}});
   if(input.remove){if(!old)throw new Error('摆件已经收起来了');return record(withProps(map.props.filter(p=>p.id!==id)),{...actorFields(actor),kind:'prop',summary:`收起了${PROP_LABELS[old.kind]}。`},now);}
-  if(!old&&map.props.length>=MAX_GARDEN_PROPS)throw new Error('这张地图最多放十二件摆件');const kind=old?.kind||input.kind;if(!kind||!Object.hasOwn(PROP_LABELS,kind))throw new Error('请选择摆件');
+  if(!old&&map.props.length>=MAX_GARDEN_PROPS)throw new Error('这张地图最多放十二件摆件');const kind=old?.kind||input.kind;if(!kind||!Object.prototype.hasOwnProperty.call(PROP_LABELS,kind))throw new Error('请选择摆件');
   const pose=input.pose||findGardenSpace(s,id,{x:2,z:2},kind);assertGardenPose(s,pose,id,kind);
   const p={id,kind,...pose};return record(withProps(old?map.props.map(o=>o.id===id?p:o):[...map.props,p]),{...actorFields(actor),kind:'prop',summary:`摆好了${PROP_LABELS[kind]}。`},now);
 }

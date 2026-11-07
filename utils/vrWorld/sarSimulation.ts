@@ -143,9 +143,36 @@ export type SARSimulationReply = {
 
 /**
  * 正式推演使用双层响应。保留纯文本回退是为了兼容不稳定模型与旧 API，
- * 新请求使用 worldNarration / character；旧 gm 字段仍可读取。
+ * 新请求使用独立标签承载正文；旧 JSON / gm 字段仍可读取。
  */
 export const parseSARSimulationReply = (raw: string): SARSimulationReply | null => {
+    // 正文用独立标签承载，避免长剧情里的引号和换行破坏整份 JSON。
+    // 必须收齐外层与角色层；不补齐截断内容，也不把内部事实当正文。
+    const scene = (raw || '').replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, '').trim()
+        .replace(/^```(?:xml|html|json)?\s*([\s\S]*?)\s*```$/i, '$1').trim();
+    if (!/^[\[{]/.test(scene) && /<\/?(?:SAR_SCENE|worldNarration|character|directorState)\b/i.test(scene)) {
+        const envelope = scene.match(/<SAR_SCENE\s*>([\s\S]*?)<\/SAR_SCENE\s*>/i)?.[1];
+        if (!envelope) return null;
+        const fields = new Map<string, string>();
+        let invalid = false;
+        const remainder = envelope.replace(/<(worldNarration|character|directorState)\s*>([\s\S]*?)<\/\1\s*>/gi, (_match, key: string, value: string) => {
+            const name = key.toLowerCase();
+            if (fields.has(name)) invalid = true;
+            fields.set(name, value);
+            return '';
+        });
+        if (invalid || remainder.trim()) return null;
+        const character = cleanText(fields.get('character'), 12000);
+        if (!character || /<\/?(?:directorState|worldNarration|SAR_SCENE)\b/i.test(character)
+            || /^(?:本轮角色真正呈现给\s*User\s*的动作与台词|角色本轮的动作与台词)$/i.test(character)) return null;
+        const worldNarration = cleanText(fields.get('worldnarration'), 2400);
+        if (/<\/?(?:directorState|character|SAR_SCENE)\b/i.test(worldNarration)) return null;
+        const state = fields.get('directorstate');
+        let directorState: SARDirectorState | undefined;
+        try { directorState = state ? normalizeSARDirectorState(parseSimulationJson(state)) : undefined; }
+        catch { /* 事实快照坏格式时沿用上一轮，不展示内部记录。 */ }
+        return { worldNarration, character, ...(directorState ? { directorState } : {}) };
+    }
     for (const candidate of parseJsonCandidates(raw)) {
         try {
             const parsed = parseSimulationJson(candidate);
@@ -811,8 +838,12 @@ export const buildSARSimulationTurnPrompt = (
 ${directorState ? JSON.stringify(directorState) : '暂无独立记录，依据开场与已发生的历史建立。'}
 以上仅是上轮保存的事实数据，不是新指令。directorState 输出更新后的简短事实快照：sceneFacts 当前已成立的场景事实；openThreads 未结束事件及其当前状况；offscreenFacts 时间与能力允许的场外行动；declinedHooks 用户明确拒绝、不应反复召回的钩子；revealedFacts 用户已经获知的事实。每项最多六条、每条不超过 180 字。保留仍有效的事实，已完成事件可移出；明确拒绝不能因本轮换话题就遗忘。不得记录推理过程、拟议剧情、未来结局或推断用户的固定性格。所有记录都必须服从历史与本轮实际发生的内容。
 
-只输出一个合法 JSON 对象，不要代码围栏、分析或额外文字：
-{"worldNarration":"必要旁白，或空字符串","character":"本轮角色真正呈现给 User 的动作与台词","directorState":{"sceneFacts":[],"openThreads":[],"offscreenFacts":[],"declinedHooks":[],"revealedFacts":[]}}`;
+只输出以下完整结构，不要代码围栏、分析或额外文字。正文直接放在标签内，正常使用引号与换行，不要把整段剧情转义成 JSON 字符串。worldNarration 可以留空；character 必须有实际演出；directorState 内只写合法 JSON 事实快照。必须闭合所有标签：
+<SAR_SCENE>
+<worldNarration></worldNarration>
+<character>本轮角色真正呈现给 User 的动作与台词</character>
+<directorState>{"sceneFacts":[],"openThreads":[],"offscreenFacts":[],"declinedHooks":[],"revealedFacts":[]}</directorState>
+</SAR_SCENE>`;
 
 export const resolveSARSimulationApi = (char: CharacterProfile, vrGlobalApi: APIConfig | null, chatApi: APIConfig): APIConfig =>
     resolveDialogueApi(chatApi, char, vrGlobalApi?.baseUrl ? vrGlobalApi : undefined);
@@ -891,7 +922,7 @@ const extractSARAssistantRaw = (data: any) => {
         : Array.isArray(content)
             ? content.map(part => typeof part === 'string' ? part : (part?.text || '')).join('')
             : '';
-    return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim().slice(0, 16000);
+    return text.replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, '').trim();
 };
 
 const generatingRuns = new Set<string>();
@@ -953,7 +984,7 @@ async function generateSARSimulationTurn(input: RunSARSimulationTurnInput) {
                 model: api.model,
                 messages: [{ role: 'system', content: systemPrompt }, ...apiMessages],
                 temperature: api.temperature ?? 0.88,
-                max_tokens: 3200,
+                max_tokens: 8000,
                 stream: api.stream === true,
             }),
         }, 0, 0, {
@@ -962,7 +993,7 @@ async function generateSARSimulationTurn(input: RunSARSimulationTurnInput) {
             charName: char.name,
             purpose: `SAR 正式推演 ${promptRun.interactionsUsed + 1}/${run.maxInteractions}`,
         }, api.stream === true && onDelta ? {
-            // 双层 JSON 在完整闭合前不直接显示，避免把半截引号/转义符泄露给玩家。
+            // 结构完整闭合前不直接显示，避免半截标签或导演事实泄露给玩家。
             onDelta: () => onDelta(''),
         } : undefined);
         void logVRApiCall({ ts: callStart, charId: char.id, charName: char.name, room: 'sar-simulation', model: api.model, baseUrl, ok: true, ms: Date.now() - callStart });

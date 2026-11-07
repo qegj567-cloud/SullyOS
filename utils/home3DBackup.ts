@@ -41,12 +41,12 @@ export function importHome3DLocal(input: unknown): void {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('3D 家园偏好格式不正确');
     const next = input as Record<string, unknown>;
     for (const key of HOME3D_LOCAL_KEYS) {
-        if (Object.hasOwn(next, key) && !valid(key, next[key])) throw new Error('3D 家园偏好包含无效配置');
+        if (Object.prototype.hasOwnProperty.call(next, key) && !valid(key, next[key])) throw new Error('3D 家园偏好包含无效配置');
     }
     const previous = HOME3D_LOCAL_KEYS.map(key => localStorage.getItem(key));
     try {
         for (const key of HOME3D_LOCAL_KEYS) {
-            if (Object.hasOwn(next, key)) localStorage.setItem(key, next[key] as string);
+            if (Object.prototype.hasOwnProperty.call(next, key)) localStorage.setItem(key, next[key] as string);
             else localStorage.removeItem(key);
         }
     } catch (error) {

@@ -38,7 +38,7 @@ const pick = <T,>(items: readonly T[], random: () => number) => items[Math.min(i
 export function assignHalloweenCostume(state: FishingMarketState, actorId: string, mode: 'initial' | 'change' | 'remove', at = Date.now(), random = Math.random): FishingMarketState {
     if (!halloweenActive(state, at)) return state;
     const event = state.kanataHalloween || freshHalloween();
-    if (mode === 'initial' && Object.hasOwn(event.costumes, actorId)) return state;
+    if (mode === 'initial' && Object.prototype.hasOwnProperty.call(event.costumes, actorId)) return state;
     const previous = event.costumes[actorId];
     const costume = mode === 'remove' ? null : pick(HALLOWEEN_COSTUMES.filter(c => c.id !== previous), random).id;
     return { ...state, kanataHalloween: { ...event, costumes: { ...event.costumes, [actorId]: costume },

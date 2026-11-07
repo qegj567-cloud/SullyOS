@@ -75,7 +75,7 @@ function sourcePath(sceneId: string): string {
 export function expressionEditSource(address: ExpressionAddress): ExpressionSource | null {
     if (!isAddress(address)) return null;
     const scene = familiarityScene(address.sceneId);
-    const node = scene && Object.hasOwn(scene.nodes, address.nodeId) ? scene.nodes[address.nodeId] : undefined;
+    const node = scene && Object.prototype.hasOwnProperty.call(scene.nodes, address.nodeId) ? scene.nodes[address.nodeId] : undefined;
     const authoredLine = node?.lines[address.line];
     if (!authoredLine) return null;
     const sentenceText = dialogueSentences(authoredLine.text)[address.sentence];

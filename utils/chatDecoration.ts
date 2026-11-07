@@ -67,7 +67,7 @@ export function validateDecoration(value:unknown):DecorationPreset{
  if(p.layout!==undefined)result.parts.layout=pickDecorationLayout(p.layout);
  if(p.bubbles!==undefined)result.parts.bubbles=validateBubble(p.bubbles);
  if(p.background!==undefined){if(!record(p.background)||!['plain','grid','paper','mesh'].includes(p.background.style))throw Error('背景格式无效');result.parts.background={image:p.background.image===null?null:resource(p.background.image),style:p.background.style};}
- if(p.sound!==undefined){if(p.sound===null)result.parts.sound=null;else{if(!record(p.sound)||typeof p.sound.src!=='string')throw Error('提示音格式无效');const src=p.sound.src;if(src!=='none'&&!Object.hasOwn(BUILTIN_SOUNDS,src))resource(src);if(p.sound.volume!==undefined&&(typeof p.sound.volume!=='number'||p.sound.volume<0||p.sound.volume>1))throw Error('音量无效');result.parts.sound={src,volume:p.sound.volume??.6};}}
+ if(p.sound!==undefined){if(p.sound===null)result.parts.sound=null;else{if(!record(p.sound)||typeof p.sound.src!=='string')throw Error('提示音格式无效');const src=p.sound.src;if(src!=='none'&&!Object.prototype.hasOwnProperty.call(BUILTIN_SOUNDS,src))resource(src);if(p.sound.volume!==undefined&&(typeof p.sound.volume!=='number'||p.sound.volume<0||p.sound.volume>1))throw Error('音量无效');result.parts.sound={src,volume:p.sound.volume??.6};}}
  if(p.css!==undefined){if(typeof p.css!=='string'||p.css.length>8*1024*1024||/<\/?(?:script|html|iframe)\b/i.test(p.css))throw Error('CSS 内容无效');result.parts.css=p.css;}
  if(!Object.keys(result.parts).length)throw Error('预设中没有可用的装扮内容');
  return result;

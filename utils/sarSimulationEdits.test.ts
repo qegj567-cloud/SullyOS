@@ -21,6 +21,32 @@ async function seed(completed=false) {
 beforeEach(()=>{ vi.mocked(safeFetchJson).mockReset(); });
 
 describe('SAR 档案删除与格式容错', () => {
+    it('does not truncate a complete escaped JSON reply before parsing; only one request advances one turn', async () => {
+        const input = await seed();
+        const character = '回'.repeat(3000);
+        const raw = JSON.stringify({character}).replace(/回/g, '\\u56de');
+        expect(raw.length).toBeGreaterThan(16000);
+        vi.mocked(safeFetchJson).mockResolvedValue({choices:[{message:{content:raw}}]});
+        const result = await runSARSimulationTurn({...input, userText:'继续'});
+        expect(result.reply).toBe(character);
+        expect(result.run.interactionsUsed).toBe(3);
+        expect(safeFetchJson).toHaveBeenCalledOnce();
+        expect(JSON.parse(vi.mocked(safeFetchJson).mock.calls[0][1].body as string).max_tokens).toBe(8000);
+    });
+
+    it('accepts tagged content blocks and rejects an unfinished scene without saving or consuming a turn', async () => {
+        const input = await seed();
+        const before = await loadSARSimulationMessages(input.run.id);
+        vi.mocked(safeFetchJson).mockResolvedValueOnce({choices:[{message:{content:'<SAR_SCENE><character>半截</character>'},finish_reason:'length'}]});
+        await expect(runSARSimulationTurn(input)).rejects.toThrow('长度上限截断');
+        expect(await loadSARSimulationMessages(input.run.id)).toEqual(before);
+        expect(readSARSimulationState().runs[0].interactionsUsed).toBe(2);
+        vi.mocked(safeFetchJson).mockResolvedValueOnce({choices:[{message:{content:[{type:'text',text:'<SAR_SCENE><character>他抬头："记得。"</character>'},{type:'text',text:'</SAR_SCENE>'}]}}]});
+        const result = await runSARSimulationTurn(input);
+        expect(result.reply).toBe('他抬头："记得。"');
+        expect(result.run.interactionsUsed).toBe(3);
+        expect(result.messages).toHaveLength(before.length+2);
+    });
     it('删除身份卡及全部实例正文，不动另一张卡和原角色私聊', async () => {
         const input = await seed();
         const state = readSARSimulationState();

@@ -13,6 +13,6 @@ const categories = {
   file:'文件', image:'图片', css:'CSS', code:'分享码', new:'首次投稿', revision:'更新投稿',
 } as const;
 export function trackBeauty(action: string, category: unknown) {
-  if (!Object.hasOwn(events, action) || typeof category !== 'string' || !Object.hasOwn(categories, category)) return;
+  if (!Object.prototype.hasOwnProperty.call(events, action) || typeof category !== 'string' || !Object.prototype.hasOwnProperty.call(categories, category)) return;
   trackEvent(events[action as keyof typeof events], {分类: categories[category as keyof typeof categories]});
 }

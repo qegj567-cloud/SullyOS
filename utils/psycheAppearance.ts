@@ -303,7 +303,7 @@ export function resolvePsycheAppearance(theme: {chatPsyche?:PsycheAppearance}, c
 export function validatePsycheAppearance(value:unknown):PsycheAppearance {
  if(!value||typeof value!=='object'||Array.isArray(value))throw Error('心象样式无效');
  const v=value as Record<string,any>;
- if(v.styleId!=='custom'&&!Object.hasOwn(THINKING_CHAIN_PRESETS,v.styleId))throw Error('未知的心象风格');
+ if(v.styleId!=='custom'&&!Object.prototype.hasOwnProperty.call(THINKING_CHAIN_PRESETS,v.styleId))throw Error('未知的心象风格');
  const out:PsycheAppearance={styleId:v.styleId};
  if(v.customColors!==undefined){if(!v.customColors||typeof v.customColors!=='object')throw Error('心象颜色无效');out.customColors={};for(const key of ['bg','accent','text'] as const){const color=v.customColors[key];if(color!==undefined){if(typeof color!=='string'||color.length>500)throw Error('心象颜色无效');out.customColors[key]=color;}}}
  if(v.customCss!==undefined){if(typeof v.customCss!=='string'||v.customCss.length>1000000)throw Error('心象 CSS 无效');out.customCss=v.customCss;}

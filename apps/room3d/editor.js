@@ -132,7 +132,7 @@ export async function mountHomeEditor(host,{assetBase,initialState,onChange,onBa
  let faceTimer=0;const residentExpressions=new Map();
  let lightMode='auto',lightPhase=null,lightTimer=0,finishEnabled=true;
  try{finishEnabled=localStorage.getItem('sully-home3d-light-finish')!=='off'}catch{}
- try{const mode=localStorage.getItem('sully-home3d-light-mode');if(mode==='auto'||Object.hasOwn(ROOM_LIGHT_PHASES,mode))lightMode=mode;}catch{}
+ try{const mode=localStorage.getItem('sully-home3d-light-mode');if(mode==='auto'||Object.prototype.hasOwnProperty.call(ROOM_LIGHT_PHASES,mode))lightMode=mode;}catch{}
  const lightUniforms=createRoomLightUniforms();
  let quality='clear';try{const saved=localStorage.getItem('sully-home3d-quality');if(qualities[saved])quality=saved}catch{}
  let detailBudget=qualities[quality].details,frameInterval=1000/qualities[quality].fps,orbitMode=false,inTick=false;
@@ -217,7 +217,7 @@ export async function mountHomeEditor(host,{assetBase,initialState,onChange,onBa
   lightTimer=setTimeout(()=>{if(refreshRoomLighting())renderUI();scheduleRoomLighting();},60000);
  }
  function setLightingMode(mode){
-  if(mode!=='auto'&&!Object.hasOwn(ROOM_LIGHT_PHASES,mode))return;
+  if(mode!=='auto'&&!Object.prototype.hasOwnProperty.call(ROOM_LIGHT_PHASES,mode))return;
   lightMode=mode;try{localStorage.setItem('sully-home3d-light-mode',mode)}catch{}
   refreshRoomLighting();scheduleRoomLighting();renderUI();
  }
@@ -1696,7 +1696,7 @@ export async function mountHomeEditor(host,{assetBase,initialState,onChange,onBa
   if(d.action==='room-palette'){commit(()=>{applyRoomPalette(current(),d.value,catalog);message='已应用'+ROOM_PALETTES[d.value].name;});return;}
   if(d.action==='reset-room-layout'){const source=defaultRoomLayout(state,current(),catalog);if(!source){notify('这间房没有初始模板',true);return;}if(!confirm('恢复当前房间的初始家具与配色？房间名字和收纳箱会保留，可以撤销。'))return;commit(()=>{const room=current();source.name=room.name;const template=room.defaultTemplate;state=applyRoomLayout(state,room.id,source,catalog);if(template)current().defaultTemplate=template;selected=null;panel=null;rotationPreview=null;message='已恢复当前房间初始布局，可撤销';},{templateUpgrade:true});return;}
   if(d.action==='room-style-preset'){commit(()=>applyShowroomStyle(current(),d.value));return;}
-  if(d.action==='room-finish'){const options=d.part==='floorStyle'?FLOOR_STYLES:d.part==='wallStyle'?WALL_STYLES:null;if(options&&Object.hasOwn(options,d.value))commit(()=>{current()[d.part]=d.value});return}
+  if(d.action==='room-finish'){const options=d.part==='floorStyle'?FLOOR_STYLES:d.part==='wallStyle'?WALL_STYLES:null;if(options&&Object.prototype.hasOwnProperty.call(options,d.value))commit(()=>{current()[d.part]=d.value});return}
   if(d.action==='style-room'){activateRoom(state.rooms.find(r=>r.id===d.id));selected=null;persist();rebuild();renderUI();return}
   if(d.action==='house-color'){commit(()=>{current()[d.part]=d.value});return}
   if(d.action==='house-theme'){commit(()=>{const themes=[['#FFF2E3','#A99BE8','#D7B28A'],['#FFF8F2','#F2B8D5','#E6C9B1'],['#F3F6EE','#A5B99A','#D7B28A'],['#FFF8F2','#91C9F4','#DAD3DE']];const t=themes[Number(d.value)];[current().wall,current().trim,current().floor]=t});return}
