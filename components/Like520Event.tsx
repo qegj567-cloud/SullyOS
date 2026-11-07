@@ -162,6 +162,17 @@ export const CreatorIframe: React.FC<CreatorIframeProps> = ({ mode, charName, pr
     const onConfirmRef = useRef(onConfirm);
     onConfirmRef.current = onConfirm;
 
+    // 同源 iframe 直接调用宿主出口，保留保存按钮的用户手势，也能使用原生壳的 Share 插件。
+    const connectImageExport = () => {
+        const frameWindow = iframeRef.current?.contentWindow as (Window & {
+            sullySharePng?: (dataUrl: string, fileName: string) => ReturnType<typeof shareOrDownloadBlob>;
+        }) | null;
+        if (!frameWindow) return;
+        frameWindow.sullySharePng = (dataUrl, fileName) => shareOrDownloadBlob({
+            blob: dataUrlToBlob(dataUrl), fileName, shareTitle: '保存 Chibi 图片',
+        });
+    };
+
     // init 只发一次（首次 ready）；之后绝不重发，保住用户的选择
     const postInit = () => {
         const w = iframeRef.current?.contentWindow;
@@ -215,6 +226,7 @@ export const CreatorIframe: React.FC<CreatorIframeProps> = ({ mode, charName, pr
             if (e.source !== iframeWin) return;
 
             if (e.data.type === 'like520_ready') {
+                connectImageExport();
                 readyRef.current = true;
                 if (!initSentRef.current) postInit();
             } else if (e.data.type === 'like520_result' && e.data.payload) {
@@ -251,6 +263,8 @@ export const CreatorIframe: React.FC<CreatorIframeProps> = ({ mode, charName, pr
         <iframe
             ref={iframeRef}
             src={CHAR_CREATOR_URL}
+            onLoad={connectImageExport}
+            allow="web-share"
             title={mode === 'char' ? '捏 char chibi' : '捏 user chibi'}
             className="w-full h-full border-0"
             style={{ background: 'linear-gradient(180deg, #FFF1E6 0%, #FFE4EC 100%)' }}
