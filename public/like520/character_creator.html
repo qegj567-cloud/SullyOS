@@ -600,7 +600,7 @@
 <div class="modal-backdrop" id="modal">
   <div class="modal">
     <h3>♥ 出件 · ✦ ♥</h3>
-    <p>长按图片保存到相册<br>分享给那个 ta 一张限定贴纸 ～</p>
+    <p>点击「保存 PNG」选择保存或分享<br>也可以长按图片保存到相册</p>
     <div class="bg-toggle">
       <button class="bg-btn active" data-bg="frame">带相框</button>
       <button class="bg-btn" data-bg="transparent">透明背景</button>
@@ -609,7 +609,7 @@
     <div class="modal-actions">
       <button class="pill-btn" onclick="closeModal()">关闭</button>
       <button class="pill-btn" id="btnSavePng" style="display:none">📥 保存 PNG</button>
-      <button class="pill-btn primary" id="btnDownload">下载 PNG</button>
+      <button class="pill-btn primary" id="btnDownload">保存 PNG</button>
     </div>
   </div>
 </div>
@@ -2401,6 +2401,51 @@ async function captureAndShow() {
   });
 }
 
+async function sharePng(dataUrl, fileName) {
+  if (typeof window.sullySharePng === 'function') {
+    return window.sullySharePng(dataUrl, fileName);
+  }
+  // 独立打开捏人器时也优先系统分享；同步解码，避免异步取图丢失用户手势。
+  const binary = atob(dataUrl.split(',')[1]);
+  const bytes = Uint8Array.from(binary, ch => ch.charCodeAt(0));
+  const file = new File([bytes], fileName, { type: 'image/png' });
+  if (typeof navigator.share === 'function'
+      && (typeof navigator.canShare !== 'function' || navigator.canShare({ files: [file] }))) {
+    try {
+      await navigator.share({ title: '保存 Chibi 图片', files: [file] });
+      return 'shared';
+    } catch (error) {
+      if (error && error.name === 'AbortError') return 'cancelled';
+      // 分享失败时保留预览和重试机会，不假报已经保存。
+      throw error;
+    }
+  }
+  const url = URL.createObjectURL(file);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return 'downloaded';
+}
+
+async function savePng(dataUrl, fileName, button) {
+  if (button.disabled) return;
+  button.disabled = true;
+  try {
+    const result = await sharePng(dataUrl, fileName);
+    if (result === 'shared') toast('已交给系统分享 ♥');
+    else if (result === 'downloaded') toast('已发起下载，也可长按图片保存');
+  } catch (error) {
+    console.error('Chibi PNG export failed', error);
+    toast('无法保存，请重试或长按图片保存');
+  } finally {
+    button.disabled = false;
+  }
+}
+
 function setExportMode(mode) {
   const url = exportData[mode];
   const img = document.getElementById("modalImg");
@@ -2427,24 +2472,19 @@ function setExportMode(mode) {
     // 嵌入态：额外提供一个"保存 PNG"按钮，让 user 先存到相册再确认进入下一步
     btnSavePng.style.display = '';
     btnSavePng.onclick = () => {
-      const a = document.createElement("a");
-      a.href = url;
       const who = LIKE520_MODE === 'user' ? '我' : '大头贴';
-      a.download = mode === "transparent"
+      const fileName = mode === "transparent"
         ? `${who}_无背景_${Date.now()}.png`
         : `${who}_520_${Date.now()}.png`;
-      a.click();
-      toast("已保存 ♥");
+      return savePng(url, fileName, btnSavePng);
     };
   } else {
-    btnDownload.textContent = "下载 PNG";
+    btnDownload.textContent = "保存 PNG";
     btnDownload.onclick = () => {
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = mode === "transparent"
+      const fileName = mode === "transparent"
         ? `大头贴_无背景_${Date.now()}.png`
         : `大头贴_520_${Date.now()}.png`;
-      a.click();
+      return savePng(url, fileName, btnDownload);
     };
     btnSavePng.style.display = 'none';
   }
