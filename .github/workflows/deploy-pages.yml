@@ -25,6 +25,8 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     env:
       GITHUB_PAGES: 'true'
+      # Reruns retain earlier artifacts; deploy only this attempt's uniquely named upload.
+      PAGES_ARTIFACT_NAME: github-pages-${{ github.run_id }}-${{ github.run_attempt }}
       # 使用统计。值存在仓库的 Variables 里，不写死在这份 YAML——
       # fork 出去的仓库继承得到工作流、继承不到 Variables，构建出来就是零统计的版本
       # （两个变量缺任何一个，统计脚本压根不会加载）。详见 docs/analytics.md。
@@ -70,11 +72,14 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
+          name: ${{ env.PAGES_ARTIFACT_NAME }}
           path: ./dist
 
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          artifact_name: ${{ env.PAGES_ARTIFACT_NAME }}
 
       - name: Save deployed build assets
         uses: actions/cache/save@v4
