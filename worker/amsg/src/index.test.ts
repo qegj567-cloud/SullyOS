@@ -26,6 +26,7 @@ import {
   AMSG_LAST_SKIP_KEY,
   AMSG_SELF_LOG_KEY,
   AMSG_SILENT_MARK,
+  BEFORE_SPEAK_LINES,
   AMSG_SLOT_CURRENT_TIME,
   AMSG_SLOT_LIVE_CHAT,
   AMSG_SLOT_SELF_LOG,
@@ -708,6 +709,48 @@ describe('连发上限（到点兜底闸）', () => {
       charRows: rowsWith(JSON.stringify(log), { maxUnansweredSends: 10 }),
     });
     fired(await amsgHooks.onBeforeFire(ctx));
+  });
+});
+
+// ─── 离开后消息：对方最后一次开口 + 等待时长，到点必发、计入连发上限 ───
+describe('离开后消息（到点）', () => {
+  const awayMeta = { amsgAwayMessage: true, amsgAwayDelayMinutes: 90, amsgExpirePolicy: 'force' };
+  const rows = (lastUserMessageAt: number | null, extra: Array<{ key: string; value: string }> = []) => [
+    { key: AMSG_FIRE_PACK_KEY, value: firePackValue(lastUserMessageAt, { template: `${BEFORE_SPEAK_LINES.join('\n')}\n${AMSG_SLOT_TASK_INSTRUCTION}` }) },
+    { key: AMSG_TOOL_PACK_KEY, value: toolPackValue },
+    limitsRow({ minSendGapMinutes: 0 }),
+    ...extra,
+  ];
+
+  it('对方在等待时长内说过话 → 推迟到「最后开口 + 90 分钟」，不消费、不留痕', async () => {
+    const lastUser = NOW.getTime() - 30 * 60_000;
+    const { ctx, writeState } = makeCtx({ metadata: awayMeta, charRows: rows(lastUser) });
+    await expect(amsgHooks.onBeforeFire(ctx)).resolves.toEqual({ defer: { afterMs: 60 * 60_000 } });
+    expect(writeState).not.toHaveBeenCalled();
+  });
+
+  it('等待时长已满 → 照发，而且模板里没有【开口之前】，角色不能选择不说', async () => {
+    const { ctx } = makeCtx({ metadata: awayMeta, charRows: rows(NOW.getTime() - 91 * 60_000) });
+    const content = fired(await amsgHooks.onBeforeFire(ctx)).messages[0].content;
+    expect(content).not.toContain('【开口之前】');
+    expect(content).not.toContain(AMSG_SILENT_MARK);
+  });
+
+  it('普通任务照旧带着【开口之前】', async () => {
+    const { ctx } = makeCtx({ charRows: rows(NOW.getTime() - 91 * 60_000) });
+    expect(fired(await amsgHooks.onBeforeFire(ctx)).messages[0].content).toContain('【开口之前】');
+  });
+
+  it('计入连发上限：这段沉默里已经连着找了 3 次 → 跳过', async () => {
+    const selfLog = JSON.stringify({
+      v: 4, basePackAt: PACK_BUILT_AT, anchorUserMsgAt: null,
+      entries: [], unansweredSends: 3, tasks: [],
+    });
+    const { ctx } = makeCtx({
+      metadata: awayMeta,
+      charRows: rows(null, [{ key: AMSG_SELF_LOG_KEY, value: selfLog }]),
+    });
+    await expect(amsgHooks.onBeforeFire(ctx)).resolves.toEqual({ skip: true });
   });
 });
 

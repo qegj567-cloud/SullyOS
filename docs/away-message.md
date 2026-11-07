@@ -1,0 +1,48 @@
+# 离开后消息
+
+用户超过设定的时间没说话，角色就来找用户。一次离开只找一次，用户开口后重新计时。
+
+入口：聊天「＋」→「离开后消息」（`components/chat/AwayMessageSettingsModal.tsx`）。按角色设开关和等待时长（30 分钟到 6 小时，默认 90 分钟），存在 `CharacterProfile.awayMessage` 上，导出角色卡时剥掉。
+
+## 两条路，按角色二选一
+
+| 角色状态 | 走哪条 | 用户看到的 |
+|---|---|---|
+| 开着主动消息 2.0，且配了 Worker | 云端 | 到时间直接收到推送 |
+| 其余 | 本地 | 下次打开页面时，补上离开期间 TA 发的消息 |
+
+判定只有一处：`utils/awayMessage.ts` 的 `isAwayCloudRoute`。两条路不叠加：叠加的话云端发过一次，用户上线时本地又补一遍，同一段离开会收到两份。
+
+## 云端
+
+每个角色挂一条云端任务（任务记录上 `away: true`，任务 metadata 带 `amsgAwayMessage` 和 `amsgAwayDelayMinutes`）。
+
+- **谁来维护**：每轮聊天开场（`hooks/useChatAI.ts`，本地生成和即时对话都经过这里）调 `syncCloudAwayTask`，目标时刻是「用户最后一次开口 + 等待时长」。已有任务排得够晚（离目标不到 10 分钟）就不发请求；排早了原地改期；远端已经没有（发过了或被取消）就新建。
+- **差的那点谁兜**：worker 到点时用自己知道的最后开口时刻（fire_pack 与在场记录里较新的那份）再算一遍，没到就 `defer` 到该来的时候。推迟不消费任务、不占重试、不留跳过记录。
+- **到点必发**：任务是 force 策略，提示词里去掉【开口之前】那段，角色没有「这次不说」的选项。
+- **计入连发上限**：它发出去算一次「没回时找你」，到点时也受「没回时最多连着找几次」拦；之后角色自排的接着往上数。每日上限照常管它。
+- **不占任务名额**：建它时不查「最多同时排几次」，名额满了也能建。
+- **关掉或改了等待时长**：取消云端那条，用户下次开口时按新设置重建。
+
+## 本地
+
+打开页面和切回前台时（`context/OSContext.tsx`），对开了这项、走本地路的角色逐个检查：
+
+- 用户最后一次开口已经超过等待时长，并且那之后还没补过（补出来的消息 metadata 带 `awayMessage: true`，这是「这段离开补过了」的唯一依据），才补；
+- 用户正和这个角色见面或通话时不补；
+- 离开越久补的次数越多：每过一个等待时长一次，最多三次。时刻第一次落在等待时长刚满时，其余铺到现在之前。模型一次写完，用 `[[NEXT]]` 隔开各次，每次按自己的时刻落库；
+- 生成期间用户回来说了话，这次补的作废；
+- 失败后 10 分钟内不再试。
+
+请求用聊天同一套上下文（`buildChatRequestPayload`），提示只进这次请求、不落库。落库走 `applyAssistantPostProcessing`，未读、提示和系统通知沿用主动消息送达的 `active-msg-received`。
+
+## 改这块时要一起动的地方
+
+| 改什么 | 位置 |
+|---|---|
+| 判定、分时刻、切分、要不要改期 | `utils/awayMessageCore.ts`（有单测） |
+| 云端维护、本地生成 | `utils/awayMessage.ts` |
+| 云端任务的指令文案、metadata 键 | `utils/amsgFireSchedule.ts` 的 `buildAwayTaskInstruction` |
+| 到点推迟、计入连发、必发 | `worker/amsg/src/index.ts` 的 `onBeforeFire`；`renderFirePack` 的 `mustSpeak` |
+
+worker 有改动时先部署 worker，并把 `utils/amsgBundleVersion.ts` 往前推一版。

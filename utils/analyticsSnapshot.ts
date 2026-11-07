@@ -224,7 +224,7 @@ export function collectCharSettings(
         见面轻阅读: anyOn(x => x.dateLightReading),
         观测协议: anyOn(x => x.dateObserve?.enabled),
         彼方自主登入: anyOn(x => x.vrState?.enabled),
-        提示音绑白框: anyOn(x => x.chatSoundBound),
+        离开后消息: anyOn(x => x.awayMessage?.enabled),
         // ── 开关：默认开的，问有没有人特意关掉 ──
         时间感知: anyOn(x => x.timeAwarenessEnabled, true),
         见面时间感知: anyOn(x => x.dateTimeAwarenessEnabled, true),
