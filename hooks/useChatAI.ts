@@ -1096,7 +1096,7 @@ export const useChatAI = ({
                         // 静默熄灯, 用户只看到「情绪永远不更新」—— 给一条可操作的提示。
                         announceChatGen(CHAT_GEN_EVENTS.emotionFailed, {
                             charId: charIdAtArm, charName: charNameAtArm,
-                            reason: '云端情绪评估超时无回音——worker 可能是旧版（不支持情绪评估），请到 设置→主动消息 2.0 重新部署 worker 后重试',
+                            reason: '云端情绪评估超时无回音——worker 可能是旧版（不支持情绪评估），请去「设置 → 主动消息 2.0」点一下「更新 Worker」后重试',
                         });
                     }, delayMs));
                 };

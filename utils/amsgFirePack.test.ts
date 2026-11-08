@@ -760,9 +760,9 @@ describe('fire_pack 版本对不上时说清该做什么', () => {
     expect(describeFirePackVersion(pack(FIRE_PACK_VERSION - 1))).toContain('前端比 worker 旧');
   });
 
-  it('新包（前端新、worker 旧）→ 让用户去重新粘贴部署', () => {
+  it('新包（前端新、worker 旧）→ 让用户去更新 Worker', () => {
     expect(parseFirePack(pack(FIRE_PACK_VERSION + 1))).toBeNull();
-    expect(describeFirePackVersion(pack(FIRE_PACK_VERSION + 1))).toContain('重新粘贴部署');
+    expect(describeFirePackVersion(pack(FIRE_PACK_VERSION + 1))).toContain('更新 Worker');
   });
 
   it('版本号对得上但别的字段坏了 → 不甩锅给部署', () => {
