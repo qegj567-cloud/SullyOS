@@ -233,9 +233,8 @@ export const ContextBuilder = {
     },
 
     /**
-     * buildCoreContext(deferVolatile) 的另一半：时间 → 记忆宫殿召回 → 情绪 buff。
-     * 三块的开关判定与 buildCoreContext 内联版完全一致，只是输出位置交给调用方
-     * （聊天主路径放到消息数组末尾的"当前状态" system 消息里）。
+     * buildCoreContext(deferVolatile) 的另一半：时间、召回、情绪及当前日程。
+     * 保留各入口的开关判定，由调用方放到历史之后；显式传 user 时还可承接位置与节假日。
      */
     buildVolatileCoreState: async (
         char: CharacterProfile,
@@ -248,13 +247,20 @@ export const ContextBuilder = {
             /** 仅本次请求共用的读取结果；不缓存到下一轮，null 也不重复查询。 */
             scheduleSnapshot?: Promise<DailySchedule | null>;
             memoryPalaceContext?: string;
-            timeOptions?: { lastInteractionTs?: number; skipTimeAwareness?: boolean; conversational?: boolean };
+            /** 显式提供时，可把用户本轮的位置与节假日放到历史之后。 */
+            user?: UserProfile;
+            timeOptions?: {
+                lastInteractionTs?: number; skipTimeAwareness?: boolean; conversational?: boolean;
+                includeUserLocation?: boolean; userHolidays?: UserHolidayConfig; skipUserHoliday?: boolean;
+            };
         },
     ): Promise<string> => {
         let context = ContextBuilder.buildTimeAwarenessBlock(char, options?.timeOptions);
 
         if (char.memoryPalaceEnabled) {
-            const mpContext = char.memoryPalaceInjection || options?.memoryPalaceContext;
+            const rawMpContext = char.memoryPalaceInjection || options?.memoryPalaceContext;
+            const mpContext = rawMpContext && options?.timeOptions?.skipTimeAwareness
+                ? stripMemoryPalaceDateStamps(rawMpContext) : rawMpContext;
             if (mpContext && mpContext.trim()) {
                 context += `${mpContext}\n\n`;
             }
@@ -262,7 +268,14 @@ export const ContextBuilder = {
 
         context += ContextBuilder.buildEmotionContext(char, options?.emotion);
 
-        if (options?.scheduleDelivery !== 'worker') context += await ContextBuilder.buildCurrentScheduleContext(char, options?.emotion?.surface === 'chat', options?.scheduleSnapshot);
+        if (options?.scheduleDelivery !== 'worker') context += await ContextBuilder.buildCurrentScheduleContext(char, options?.emotion?.surface === 'chat', options?.scheduleSnapshot, options?.timeOptions);
+        if (options?.user && !options.timeOptions?.skipTimeAwareness) {
+            if (options.timeOptions?.includeUserLocation) context += await getUserLocationContext(options.user.name, char.id);
+            if (char.timeAwarenessEnabled !== false && !options.timeOptions?.skipUserHoliday) {
+                const holiday = getCachedUserHolidayReminder(options.user.name, options.timeOptions?.userHolidays);
+                if (holiday) context += `- ${holiday}\n\n`;
+            }
+        }
         return context;
     },
 
@@ -564,7 +577,7 @@ const renderCoreContext = async (
              * 把「每轮/每分钟都会变」的三块（当前时间、记忆宫殿召回、情绪 buff）从本函数输出里
              * 摘出去，由调用方通过 buildVolatileCoreState 拿到后放到消息数组末尾。
              * 目的：让 system prompt 前缀稳定，吃到中转的 prompt 前缀缓存（TTFT 直降）。
-             * 只有聊天主路径（chatPrompts.buildSystemPromptParts）用；其他 App 不传，行为不变。
+             * 聊天主路径与见面使用；其他 App 不传，行为不变。
              */
             deferVolatile?: boolean;
             emotion?: EmotionContextOptions;

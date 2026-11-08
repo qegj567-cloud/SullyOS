@@ -482,7 +482,8 @@ describe('见面里的世界书', () => {
         expect(messages[deepIndex].role).toBe('user');
         expect(messages[deepIndex + 1].content).toContain('开场白');
         expect(messages[tailIndex - 1].content).toContain('我来了');
-        expect(messages[tailIndex + 1].content).toContain('Start sensing');
+        expect(messages[tailIndex + 1].content).toContain('见面实时状态');
+        expect(messages[tailIndex + 2].content).toContain('Start sensing');
         expect(sysOf(messages)).toContain('钟楼的设定');
     });
 });
@@ -551,7 +552,7 @@ describe('DatePrompts.buildPeekPayload', async () => {
         expect(d).toBe(3); // 顶层 system + 前两条历史
         expect(messages[d]).toEqual({ role: 'system', content: 'WB_D' });
         expect(messages[d + 1]).toEqual({ role: 'system', content: 'WB_E' });
-        expect(messages.slice(d + 2, -1)).toHaveLength(4);
+        expect(messages.slice(d + 2, -1).filter(message => message.role !== 'system')).toHaveLength(4);
         expect(JSON.stringify(messages).match(/WB_D/g)).toHaveLength(1);
     });
 
