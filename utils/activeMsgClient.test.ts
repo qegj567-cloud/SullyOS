@@ -608,7 +608,7 @@ describe('ActiveMsgClient.listRemoteTasksForChar 的版本护栏', () => {
       { uuid: 'task-b', charId: null },
     ]);
     await expect(ActiveMsgClient.listRemoteTasksForChar('char-1'))
-      .rejects.toThrow(/重新粘贴部署/);
+      .rejects.toThrow(/更新 Worker/);
   });
 
   it('远端确实一条任务都没有 → 空数组（跟版本无关，别误伤）', async () => {

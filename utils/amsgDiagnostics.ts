@@ -121,14 +121,14 @@ export const describeAmsgFetchFailure = (
   if (looksLikeTimeoutError(raw, name)) {
     return {
       kind: '网络失败',
-      message: `主动消息 2.0 的${phase}请求等太久，超时了${where}。多半是当前网络到 Cloudflare 很慢或中途被掐断，稍后重试即可；一直这样的话，用设置面板里的「Deno 门面」换一条线路。\n到点的主动消息推送不走这条路，不受影响。`,
+      message: `主动消息 2.0 的${phase}请求等太久，超时了${where}。多半是当前网络到 Cloudflare 很慢或中途被掐断，稍后重试即可；一直这样的话，换个网络，或者照设置面板里 Worker 地址下面的「直连教程」配一下。\n到点的主动消息推送不走这条路，不受影响。`,
     };
   }
 
   if (looksLikeOfflineError(raw, name)) {
     return {
       kind: '网络失败',
-      message: `连不上你的 Worker${where}，${phase}没能完成。\n这一步是这台设备直接去连 Cloudflare，常见原因有三个：当前网络到 Cloudflare 不通（换个网络，或用设置面板里的「Deno 门面」套一层）、Worker 地址填错了、Worker 已经被删掉了。\n到点的主动消息推送是 Cloudflare 直接发给设备的，不走这条路，所以照常收得到。`,
+      message: `连不上你的 Worker${where}，${phase}没能完成。\n这一步是这台设备直接去连 Cloudflare，常见原因有三个：当前网络到 Cloudflare 不通（换个网络，或者照设置面板里 Worker 地址下面的「直连教程」配一下）、Worker 地址填错了、Worker 已经被删掉了。\n到点的主动消息推送是 Cloudflare 直接发给设备的，不走这条路，所以照常收得到。`,
     };
   }
 

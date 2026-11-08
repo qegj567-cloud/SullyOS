@@ -18,7 +18,6 @@ import { ActiveMsgStore, maskActiveMsgUserId } from '../../utils/activeMsgStore'
 import { formatTaskTime } from '../../utils/amsg2Tasks';
 import { isWorkerUrlCleared } from '../../utils/amsgStateSync';
 import { rememberDetachedWorker } from '../../utils/amsgDetachedWorkers';
-import { buildCloudflareDashboardUrl } from '../../utils/workerDeploy';
 import { generateClientToken } from '../../utils/vapidGen';
 import { loadPushVapid, savePushVapid } from '../../utils/pushVapid';
 import {
@@ -161,9 +160,10 @@ const REQUIRED_WORKER_VERSION = '3.1.0';
 // 门槛同样不动。
 const WORKER_VERSION_LAG_ACK = '3.2.0-next.2';
 
-/** 装着打包好的 worker 代码的部署仓库：fork 它 → 在 Cloudflare 连上 → 以后点 Sync fork 更新。 */
-const WORKERS_REPO_URL = 'https://github.com/Tosd0/sullyos-workers';
-const SETUP_WALKTHROUGH_URL = 'https://github.com/qegj567-cloud/SullyOS/blob/master/docs/amsg2-setup-walkthrough.md';
+/** 手动配置的图文教程，只在用户展开「我要手动配置」后出现。 */
+const MANUAL_SETUP_TUTORIAL_URL = 'https://discord.com/channels/1487742660314923100/1533520151784460449';
+/** workers.dev 在当前网络连不上时怎么直连的教程，挂在 Worker 地址输入框下面。 */
+const DIRECT_CONNECT_TUTORIAL_URL = 'https://discord.com/channels/1487742660314923100/1536968535727677450';
 /** 一键部署要的那枚 API Token 在这里建。 */
 const CF_TOKEN_URL = 'https://dash.cloudflare.com/profile/api-tokens';
 
@@ -234,11 +234,8 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
   const pushRequestIdRef = useRef(0);
   const [loading, setLoading] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [deployOpen, setDeployOpen] = useState(false);
-  // 手动粘贴部署：给没有 GitHub 账号的人留的退路，默认收着不干扰主流程。
-  const [pasteFallbackOpen, setPasteFallbackOpen] = useState(false);
-  // Deno 门面：workers.dev 在国内连不上时才需要，默认收着。
-  const [denoProxyOpen, setDenoProxyOpen] = useState(false);
+  // 手动配置：只给明确不想走一键部署的人看，默认收着。
+  const [manualSetupOpen, setManualSetupOpen] = useState(false);
   const [pushStatus, setPushStatus] = useState<ActiveMsg2PushStatus | null>(null);
   const [checkingPush, setCheckingPush] = useState(false);
   const [pushCheckError, setPushCheckError] = useState('');
@@ -461,8 +458,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
     setInstantChatSupported(false);
     setAdvancedOpen(false);
     setDiagnosticsOpen(false);
-    setDeployOpen(false);
-    setPasteFallbackOpen(false);
+    setManualSetupOpen(false);
     // 两个明文密钥都要清：留到下次打开面板还挂在页面上，就是白白多摊一次。
     setGeneratedMasterKey('');
     setGeneratedServerToken('');
@@ -949,8 +945,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
     }
   };
 
-  // 手动粘贴部署用。主流程是 fork sullyos-workers + 在 CF 连 Git，这条是给没有 GitHub
-  // 账号的人留的退路，所以在面板里收在折叠区里。
+  // 手动配置用：把打包好的 Worker 代码复制出来，贴进 CF 后台的 Edit code。
   const handleCopyWorkerBundle = async () => {
     try {
       await ActiveMsgClient.copyWorkerBundleToClipboard();
@@ -960,19 +955,6 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
       addToast(`复制失败（${error?.message || error}）。也可以从仓库 worker/amsg/worker.bundle.js 获取。`, 'error');
       // 剪贴板 API 在非 HTTPS / 部分 WebView 里会直接抛，这条就是那批人的规模。
       trackEvent('复制 2.0 Worker 代码', { result: 'failed' });
-    }
-  };
-
-  // workers.dev 在国内连不上时的门面脚本。跟上面那份不一样：这份不打包、原样发布，
-  // 用户要照着里面的注释改 UPSTREAM 那一行，所以注释必须留着。
-  const handleCopyDenoProxy = async () => {
-    try {
-      await ActiveMsgClient.copyDenoProxyToClipboard();
-      addToast('代理代码已复制，贴进 Deno Playground 后记得改 UPSTREAM 那一行。', 'success');
-      trackEvent('复制 2.0 Deno 代理代码', { result: 'ok' });
-    } catch (error: any) {
-      addToast(`复制失败（${error?.message || error}）。也可以从仓库 worker/amsg/deno-proxy.ts 获取。`, 'error');
-      trackEvent('复制 2.0 Deno 代理代码', { result: 'failed' });
     }
   };
 
@@ -1306,94 +1288,45 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
           <p className="text-[10px] leading-relaxed text-slate-400">
             浏览器不能直接调 Cloudflare 的接口（它不给跨域），所以这枚 Token 会经过本站的
             网络代理 Worker 转发一次。部署完它会作为密钥存进<strong>你自己的</strong> Worker，
-            以后「更新后端」用的就是它；本页不保存。介意的话可以照下面的手动方式装。
+            以后「更新后端」用的就是它；本页不保存。介意的话可以手动配置。
           </p>
-        </div>
-        )}
 
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3">
+          {/* 手动配置只给明确选了这条路的人看：入口做成一行浅色小字，平时所有人都走上面的一键部署。 */}
           <button
             type="button"
-            onClick={() => setDeployOpen((prev) => {
-              // 只在展开时记一笔：收起也记的话同一个人会被数两次，漏斗第一格直接虚高一倍。
-              if (!prev) trackEvent('展开 2.0 部署指引', { mode: '主流程' });
+            onClick={() => setManualSetupOpen((prev) => {
+              // 只在展开时记一笔：收起也记的话同一个人会被数两次。
+              if (!prev) trackEvent('展开 2.0 部署指引', { mode: '手动配置' });
               return !prev;
             })}
-            className="w-full flex items-center justify-between text-left"
+            className="w-full flex items-center justify-between text-left text-[11px] font-bold text-slate-400"
           >
-            <span className="font-bold text-slate-700">手动部署 Worker（想自己一步步来）</span>
-            <span className="text-xs font-bold text-slate-400">{deployOpen ? '收起' : '展开'}</span>
+            <span>我要手动配置</span>
+            <span>{manualSetupOpen ? '收起' : '展开'}</span>
           </button>
 
-          {deployOpen ? (
-            <div className="space-y-3">
-              <p className="text-xs leading-relaxed text-slate-500">
-                全程在网页上点，不用装东西也不用敲命令，大约 15 分钟。第一次做建议直接照着
-                <strong>图文教程</strong>走，下面是简版。
+          {manualSetupOpen ? (
+            <div className="space-y-2.5">
+              <p className="text-[11px] leading-relaxed text-slate-500">
+                手动配置要自己在 Cloudflare 后台建数据库和 Worker、填密钥，步骤比较多，照着教程一步步来。
+                下面是教程里要用到的几样东西。
               </p>
-
-              <ol className="text-xs leading-relaxed text-slate-500 space-y-1.5 list-decimal list-outside pl-4">
-                <li>
-                  Fork 后端仓库 <code className="font-mono">sullyos-workers</code>
-                  （页面右上角 Fork → Create fork）。
-                </li>
-                <li>
-                  CF 后台 Storage &amp; databases → <strong>D1 SQLite Database</strong> 建一个库，
-                  把它的 <strong>Database ID</strong> 复制下来。表不用建，下面点「连接」时会自动建好。
-                </li>
-                <li>
-                  CF 后台 Workers &amp; Pages → <strong>Create application</strong> →
-                  <strong> Continue with GitHub</strong>，选中你 fork 的仓库，然后填：
-                  <ul className="mt-1 space-y-0.5 list-disc list-outside pl-4">
-                    <li>Build command：<code className="font-mono">sh ./deploy-prepare.sh</code></li>
-                    <li>Advanced settings → Path：<code className="font-mono">/amsg</code></li>
-                    <li>
-                      Advanced settings 里加一个构建变量
-                      <code className="font-mono"> D1_DATABASE_ID </code>
-                      = 上一步的 Database ID（<strong>别点 Encrypt</strong>，构建时要读它）
-                    </li>
-                  </ul>
-                </li>
-                <li>部署完在 Settings → Variables and secrets 按下面的清单填密钥，再 Deploy 一次。</li>
-              </ol>
-
-              <p className="text-[11px] leading-relaxed text-slate-400">
-                D1 绑定和「每分钟检查一次」的定时触发器都写在仓库里，会自动带上，不用手动加。
-                以后想更新，回你 fork 的仓库点一下 <strong>Sync fork</strong> 就行，CF 会自动重新部署。
-              </p>
-
-              <div className="grid grid-cols-3 gap-2">
-                {/* 三个出口合成一个事件带 target 枚举：它们是部署流程同一步的三条岔路，
-                    拆成三个事件名只是多占清单行数，看漏斗时还得自己加回去。 */}
-                <a
-                  href={WORKERS_REPO_URL}
-                  target="_blank"
-                  rel="noreferrer"
-                  onClick={() => trackEvent('打开 2.0 部署外链', { target: 'fork仓库' })}
-                  className="py-2.5 rounded-xl text-xs font-bold bg-violet-500 text-white text-center active:scale-95 transition-transform"
-                >
-                  ↗ Fork 仓库
-                </a>
-                <a
-                  href={SETUP_WALKTHROUGH_URL}
-                  target="_blank"
-                  rel="noreferrer"
-                  onClick={() => trackEvent('打开 2.0 部署外链', { target: '图文教程' })}
-                  className="py-2.5 rounded-xl text-xs font-bold bg-white border border-slate-200 text-slate-600 text-center active:scale-95 transition-transform"
-                >
-                  ↗ 图文教程
-                </a>
-                <a
-                  href={buildCloudflareDashboardUrl(config.workerUrl.trim() || undefined)}
-                  target="_blank"
-                  rel="noreferrer"
-                  onClick={() => trackEvent('打开 2.0 部署外链', { target: 'CF面板' })}
-                  className="py-2.5 rounded-xl text-xs font-bold bg-white border border-slate-200 text-slate-600 text-center active:scale-95 transition-transform"
-                >
-                  ↗ CF 面板
-                </a>
-              </div>
-
+              <a
+                href={MANUAL_SETUP_TUTORIAL_URL}
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => trackEvent('打开 2.0 部署外链', { target: '手动配置教程' })}
+                className="block w-full py-2.5 rounded-xl text-xs font-bold bg-white border border-slate-200 text-slate-600 text-center active:scale-95 transition-transform"
+              >
+                ↗ 手动配置教程（Discord）
+              </a>
+              <button
+                type="button"
+                onClick={() => void handleCopyWorkerBundle()}
+                className="w-full py-2.5 rounded-xl text-xs font-bold bg-white border border-slate-200 text-slate-600 active:scale-95 transition-transform"
+              >
+                复制 Worker 代码
+              </button>
               <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 space-y-2.5 text-xs">
                 <p className="font-bold text-slate-700">环境变量清单</p>
 
@@ -1446,56 +1379,10 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
                   </p>
                 </div>
               </div>
-
-              <div className="border-t border-slate-100 pt-2.5">
-                <button
-                  type="button"
-                  onClick={() => setPasteFallbackOpen((prev) => {
-                    if (!prev) trackEvent('展开 2.0 部署指引', { mode: '手动粘贴' });
-                    return !prev;
-                  })}
-                  className="w-full flex items-center justify-between text-left text-[11px] font-bold text-slate-400"
-                >
-                  <span>没有 GitHub 账号？手动粘贴部署</span>
-                  <span>{pasteFallbackOpen ? '收起' : '展开'}</span>
-                </button>
-
-                {pasteFallbackOpen ? (
-                  <div className="mt-2 space-y-2">
-                    <ol className="text-[11px] leading-relaxed text-slate-500 space-y-1.5 list-decimal list-outside pl-4">
-                      <li>
-                        点下面「复制 Worker 代码」，CF 后台 Create → Worker 建一个空 Worker，
-                        进 <strong>Edit code</strong> 全选粘贴覆盖，Deploy。
-                      </li>
-                      <li>
-                        Settings → Bindings 加一个 <strong>D1 database</strong>，
-                        变量名必须是 <code className="font-mono">DB</code>。
-                      </li>
-                      <li>
-                        Settings → Trigger Events 加 <strong>Cron Trigger</strong>：
-                        <code className="font-mono"> * * * * * </code>（每分钟检查一次到点任务）。
-                      </li>
-                      <li>Settings → Variables and secrets 按上面的清单填密钥，然后重新 Deploy 一次。</li>
-                    </ol>
-
-                    <button
-                      type="button"
-                      onClick={() => void handleCopyWorkerBundle()}
-                      className="w-full py-2.5 rounded-xl text-xs font-bold bg-white border border-slate-200 text-slate-600 active:scale-95 transition-transform"
-                    >
-                      复制 Worker 代码
-                    </button>
-
-                    <p className="text-[11px] leading-relaxed text-slate-400">
-                      这条路每次 Worker 更新都要重新粘一遍，D1 绑定和定时触发器也得自己加，容易漏。
-                      能用 GitHub 的话还是走上面的 fork 流程。
-                    </p>
-                  </div>
-                ) : null}
-              </div>
             </div>
           ) : null}
         </div>
+        )}
 
         <div className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3">
           <div className="flex items-center justify-between gap-3">
@@ -1508,9 +1395,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
           {workerOutdated ? (
             <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 text-xs leading-relaxed text-amber-700">
               Worker 上跑的还是旧版代码，缺少新特性（大上下文云端存储、服务端工具循环等）。
-              回你 fork 的 <code className="font-mono">sullyos-workers</code> 仓库点一下
-              <strong> Sync fork</strong>，CF 会自动重新部署（当初是手动粘贴部署的话，
-              去下方「部署 Worker」里重新复制一次代码粘贴覆盖）。已有数据和任务不受影响。
+              点下方的<strong>「更新 Worker」</strong>就能换上新版，已有数据和任务不受影响。
             </div>
           ) : null}
 
@@ -1525,71 +1410,16 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
               placeholder="https://amsg.你的账号.workers.dev"
               className="w-full bg-white/70 border border-slate-200 rounded-2xl px-4 py-3 text-xs font-mono"
             />
-
-            <div className="mt-2">
-              <button
-                type="button"
-                onClick={() => setDenoProxyOpen((prev) => {
-                  if (!prev) trackEvent('展开 2.0 部署指引', { mode: 'Deno 代理' });
-                  return !prev;
-                })}
-                className="w-full flex items-center justify-between text-left text-[11px] font-bold text-slate-400"
-              >
-                <span>这个地址连不上？在外面套一层 Deno</span>
-                <span>{denoProxyOpen ? '收起' : '展开'}</span>
-              </button>
-
-              {denoProxyOpen ? (
-                <div className="mt-2 space-y-2">
-                  <p className="text-[11px] leading-relaxed text-slate-500">
-                    <code className="font-mono">workers.dev</code> 这个域名在国内连不上。
-                    办法是给它套一个门面：Worker 和数据全都留在 Cloudflare 不动，
-                    只在外面加一层只管转发的 Deno，然后把地址换成 Deno 那个。
-                  </p>
-
-                  <ol className="text-[11px] leading-relaxed text-slate-500 space-y-1.5 list-decimal list-outside pl-4">
-                    <li>
-                      去 Deno 控制台点右上角 <strong>New Playground</strong>。
-                    </li>
-                    <li>
-                      点下面「复制 Deno 代理代码」，在 Playground 里全选粘贴覆盖，
-                      把开头 <code className="font-mono">UPSTREAM</code> 那一行改成你上面填的
-                      Cloudflare 地址，然后 Deploy。
-                    </li>
-                    <li>
-                      把 Deploy 后拿到的 <code className="font-mono">https://xxx.deno.net</code> 地址
-                      填回上面的输入框，替换掉原来那个。
-                    </li>
-                  </ol>
-
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => void handleCopyDenoProxy()}
-                      className="flex-1 py-2.5 rounded-xl text-xs font-bold bg-white border border-slate-200 text-slate-600 active:scale-95 transition-transform"
-                    >
-                      复制 Deno 代理代码
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        trackEvent('打开 Deno 控制台');
-                        window.open('https://console.deno.com', '_blank');
-                      }}
-                      className="shrink-0 px-3 py-2.5 rounded-xl text-xs font-bold bg-white border border-slate-200 text-slate-600 active:scale-95 transition-transform"
-                    >
-                      去 Deno
-                    </button>
-                  </div>
-
-                  <p className="text-[11px] leading-relaxed text-slate-400">
-                    收消息不走这一层——推送是 Cloudflare 直接发给手机的，
-                    所以这层就算挂了也只影响你打开这个面板改配置。
-                    部署好后打开 <code className="font-mono">/__proxy-health</code> 能看它活着没。
-                  </p>
-                </div>
-              ) : null}
-            </div>
+            <a
+              href={DIRECT_CONNECT_TUTORIAL_URL}
+              target="_blank"
+              rel="noreferrer"
+              onClick={() => trackEvent('打开 2.0 部署外链', { target: '直连教程' })}
+              className="mt-2 flex items-center justify-between text-[11px] font-bold text-slate-400"
+            >
+              <span>这个地址连不上？看直连教程</span>
+              <span>↗</span>
+            </a>
           </div>
 
           <div>
@@ -2087,7 +1917,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
                 </div>
               </div>
               <p className="text-[11px] leading-relaxed text-slate-500">
-                Worker 侧的环境变量清单见上面「部署 Worker」一节。发布的 Worker 代码默认 CORS 全开
+                发布的 Worker 代码默认 CORS 全开
                 （<code className="font-mono">origin: '*'</code>），想收紧就把它改成自己站点的域名再部署。
               </p>
               {onOpenCloudData ? (

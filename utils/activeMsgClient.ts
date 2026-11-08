@@ -352,7 +352,7 @@ export const fetchWorkerDiagnostics = async (): Promise<AmsgDiagnosticsProbe> =>
     return {
       reachable: false,
       unsupported: true,
-      reason: 'Worker 上跑的代码还没有体检端点。回你 fork 的 sullyos-workers 点一下 Sync fork，或者用上面的「更新 Worker」，之后再来看。',
+      reason: 'Worker 上跑的代码还没有体检端点。点一下上面的「更新 Worker」，之后再来看。',
     };
   } catch (error: any) {
     // fetchWithAuthRaw 抛出来的已经是人话了（见 amsgDiagnostics 的 describeAmsgFetchFailure）。
@@ -1295,7 +1295,7 @@ export const describeInstantChatFailure = (status: number, body: any): string =>
     return '即时对话没发出去：共享密钥和 Worker 上的对不上，去「主动消息 2.0」设置里核对一下。';
   }
   if (status === 405 || status === 404) {
-    return '即时对话没发出去：Worker 上还没有这个端点，去你 fork 的 sullyos-workers 点一下 Sync fork 更新。';
+    return '即时对话没发出去：Worker 上还没有这个端点，去「设置 → 主动消息 2.0」点一下「更新 Worker」。';
   }
   if (status === 503) {
     if (code === 'INSTANT_CHAT_WORKER_OUTDATED' && outerMessage) {
@@ -2033,13 +2033,6 @@ export const ActiveMsgClient = {
     return copyWorkerBundleToClipboard('amsg-worker.bundle.js');
   },
 
-  // 复制 public/amsg-deno-proxy.ts —— 贴进 Deno Playground 当 worker 的门面用。
-  // 走的是同一套「fetch 站点静态文件 → 剪贴板」，只是这份不打包、原样发布，
-  // 因为用户要照着里面的注释改 UPSTREAM 那一行。
-  copyDenoProxyToClipboard(): Promise<void> {
-    return copyWorkerBundleToClipboard('amsg-deno-proxy.ts');
-  },
-
   async getPushStatus(): Promise<ActiveMsg2PushStatus> {
     const config = await ensureGlobalReady();
     const workerConfigured = Boolean(config.workerUrl.trim());
@@ -2530,7 +2523,7 @@ export const ActiveMsgClient = {
     // 换了 Master Key 时任务全是这种，按旧判断会叫用户去重新部署，越部署越乱。
     const readable = tasks.filter((t) => !t?.error);
     if (readable.length > 0 && readable.every((t) => t?.charId == null)) {
-      throw new Error('worker 版本过旧：任务列表没有 charId 投影，无法按角色对账，请在设置里重新粘贴部署。');
+      throw new Error('worker 版本过旧：任务列表没有 charId 投影，无法按角色对账，请去「设置 → 主动消息 2.0」点一下「更新 Worker」。');
     }
     return tasks
       .filter((t) => t?.charId === charId && typeof t?.uuid === 'string')
@@ -3060,7 +3053,7 @@ export const ActiveMsgClient = {
     assertWriteCurrent();
 
     if (!await isLlmCredentialsReady()) {
-      throw new Error('这台 Worker 还不支持凭据存表，后台任务跑不了（去设置页重新部署一次）。');
+      throw new Error('这台 Worker 还不支持凭据存表，后台任务跑不了（去「设置 → 主动消息 2.0」点一下「更新 Worker」）。');
     }
 
     const now = stampStateUpdatedAt();

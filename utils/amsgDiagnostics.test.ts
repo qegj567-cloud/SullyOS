@@ -67,7 +67,7 @@ describe('describeAmsgFetchFailure — 把 fetch 异常翻成人话', () => {
     expect(message).toContain('amsg.example.workers.dev');
     expect(message).toContain('连不上');
     // 三条自查线索都要在，缺一条就会有人往错的方向翻。
-    expect(message).toContain('Deno');
+    expect(message).toContain('直连教程');
     expect(message).toContain('地址填错');
     // 最要紧的一句：别让用户以为主动消息整个废了。
     expect(message).toContain('推送');
