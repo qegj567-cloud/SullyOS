@@ -37,6 +37,8 @@ import BeautyConfirmDialog from '../share/BeautyConfirmDialog';
 import {readLibraryDecorations,deleteLibraryDecoration,replaceReceivedDecoration,remixOrigin,type LibraryDecoration} from '../../utils/decorationLibrary';
 import BeautySharePanel from '../share/BeautySharePanel';
 import BeautyPresetPicker from '../share/BeautyPresetPicker';
+import BeautyShareContents from '../share/BeautyShareContents';
+import {selectBeautyShareContents,type BeautyShareSelection} from '../../utils/beautyShareContents';
 import { BeautyRepoLibrary } from '../share/BeautyRepoInvitation';
 import BeautyWardrobe, { type WardrobeEntry } from './BeautyWardrobe';
 import DecorationDraftEditor from '../chat/DecorationDraftEditor';
@@ -97,6 +99,8 @@ export default function BeautyShareChannel({ presets, onExport, onImport, onBusy
   const [searchOpen, setSearchOpen] = useState(false);
   const [shareMethod,setShareMethod]=useState<'file'|'image'|'code'>('file');
   const [shareSource,setShareSource]=useState('');
+  const [sharePack,setSharePack]=useState<unknown>(null);
+  const [shareSelection,setShareSelection]=useState<BeautyShareSelection>({});
   const [cssDraft,setCssDraft]=useState<{text:string;name:string}|undefined>();
   const [shareCredit,setShareCredit]=useState(()=>{try{return JSON.parse(localStorage.getItem('sully-beauty-author-defaults-v1')||'{}').credit||'';}catch{return '';}});
   const [page, setPage] = useState<'library' | 'receive' | 'submit' | 'mine' | 'catalog'>(() => hasBeautyReceiveRequest() ? 'receive' : 'library');
@@ -167,7 +171,7 @@ export default function BeautyShareChannel({ presets, onExport, onImport, onBusy
     let origin:DecorationOrigin={kind:'imported'};if(pngPackage||/\.json$/i.test(file.name)){try{origin=importedOrigin(JSON.parse(pngPackage?new TextDecoder().decode(pngPackage.payload):await file.text()));}catch{/* Legacy CSS share images have no structured permissions. */}}
     await saveLibraryDecoration(preset,origin);await refreshSaved();setReceived({kind:'chat-decoration',preset,name:preset.name});trackBeauty('import',pngPackage?'image':'file');
   }catch(e){setError(e instanceof Error?e.message:'导入失败');}finally{setBusy(false);onBusyChange(false);}};
-  const exportEntry=async(entry:WardrobeEntry,image=false,cssOnly=false)=>{setBusy(true);onBusyChange(true);setError('');try{
+  const exportEntry=async(entry:WardrobeEntry,image=false,cssOnly=false,selection:BeautyShareSelection={})=>{setBusy(true);onBusyChange(true);setError('');try{
     const origin=await readDecorationOrigin(await entry.attributionKey());
     if(origin.allowRedistribute===false)throw Error('作者禁止二次传播，这份作品不能导出分享');
     const credit=origin.credit||shareCredit.trim();if(!credit)throw Error('请先填写分享署名');
@@ -178,8 +182,8 @@ export default function BeautyShareChannel({ presets, onExport, onImport, onBusy
       if(!css?.trim())throw Error('这份装扮没有可单独复制的 CSS，请使用文件或图片分享');
       await navigator.clipboard.writeText(stampBeautyCss(css,{...publicOrigin,name:entry.name,category,...(category==='date'||category==='story'?{readingPreset:preset.parts[category]?.preset}:{})}));setNotice('已复制带署名的 CSS（仅样式，完整素材请用文件分享）');trackBeauty('share','css');return;
     }
-    if(entry.kind==='appearance'){const {default:JSZip}=await import('jszip');const zip=await JSZip.loadAsync(await onExport(entry.id));const presetFile=zip.file('preset.json');if(!presetFile)throw Error('主题文件缺少预设信息');const data=JSON.parse(await presetFile.async('string'));zip.file('preset.json',JSON.stringify({...data,beautyOrigin:publicOrigin}));content=await zip.generateAsync({type:'blob'});extension='.zip';}
-    else content=JSON.stringify({...await portableDecoration(validateDecoration(await entry.read())),beautyOrigin:publicOrigin},null,2);
+    if(entry.kind==='appearance'){const {default:JSZip}=await import('jszip');const zip=await JSZip.loadAsync(await onExport(entry.id));const presetFile=zip.file('preset.json');if(!presetFile)throw Error('主题文件缺少预设信息');const data=selectBeautyShareContents(JSON.parse(await presetFile.async('string')),selection);zip.file('preset.json',JSON.stringify({...data,beautyOrigin:publicOrigin}));content=await zip.generateAsync({type:'blob'});extension='.zip';}
+    else content=JSON.stringify({...await portableDecoration(validateDecoration(selectBeautyShareContents(await entry.read(),selection))),beautyOrigin:publicOrigin},null,2);
     trackBeauty('share',image?'image':'file');
     await shareOrDownloadBlob({blob:typeof content==='string'?new Blob([content],{type:'application/json'}):content,fileName:safeShareFileName(entry.name)+extension,...(image?{card:{kind:entry.kind==='appearance'?'appearance' as const:'chat-decoration' as const,title:entry.name,author:credit,restrictions:origin.allowRemix===false?'禁止二改':undefined}}:{})});
   }catch(e){setError(e instanceof Error?e.message:'导出失败');}finally{setBusy(false);onBusyChange(false);}};
@@ -350,10 +354,11 @@ export default function BeautyShareChannel({ presets, onExport, onImport, onBusy
       <nav className="wardrobe-share-methods" aria-label="分享方式">{([['file','文件分享'],['image','图片分享'],['code','码分享']] as const).map(([id,label])=><button key={id} disabled={busy} aria-pressed={shareMethod===id} onClick={()=>setShareMethod(id)}>{label}</button>)}</nav>
       {shareMethod==='code'?<BeautySharePanel key="author" surface="author" kind="appearance" unified embedded defaultOpen initialTab="submit" initialSource={shareSource||undefined} onBusyChange={value=>{setBusy(value);onBusyChange(value);}} sources={libraryEntries.map(entry=>({...entry,beforeSubmit:async()=>{const origin=await readDecorationOrigin(await entry.attributionKey());if(origin.allowRedistribute===false)throw Error('作者禁止二次传播，这份作品不能投稿分享');}}))} onReceive={receive}/>:<fieldset disabled={busy} className="beauty-share-panel">
         <p>{shareMethod==='image'?'制作可导入的分享图片，沿用原来的分享卡形式。':'导出预设原文件，接收方可直接导入。'}</p>
-        <BeautyPresetPicker allowFile={false} sources={libraryEntries} source={shareSource} file={null} kind={shareEntry?.kind||'chat-decoration'} onSource={setShareSource} onFile={()=>{}}/>
+        <BeautyPresetPicker allowFile={false} sources={libraryEntries} source={shareSource} file={null} kind={shareEntry?.kind||'chat-decoration'} onSource={setShareSource} onFile={()=>{}} onPreview={pack=>{setSharePack(pack);setShareSelection({});}}/>
+        {!!sharePack&&<BeautyShareContents pack={sharePack} selection={shareSelection} onChange={setShareSelection}/>}
         <label>分享署名<input maxLength={60} value={shareCredit} placeholder="填写你的作者署名；已有作者署名的作品会保留原署名" onChange={e=>setShareCredit(e.target.value)}/></label>
         {shareEntry?.kind==='chat-decoration'&&<button disabled={busy} onClick={()=>void exportEntry(shareEntry,false,true)}>复制带署名的 CSS</button>}
-        <button disabled={!shareEntry||busy} onClick={()=>{if(shareEntry)void exportEntry(shareEntry,shareMethod==='image');}}>{busy?'正在准备…':shareMethod==='image'?'制作分享图片':'分享预设文件'}</button>
+        <button disabled={!shareEntry||busy} onClick={()=>{if(shareEntry)void exportEntry(shareEntry,shareMethod==='image',false,shareSelection);}}>{busy?'正在准备…':shareMethod==='image'?'制作分享图片':'分享预设文件'}</button>
       </fieldset>}
     </section>}
     {page==='library'&&category==='collaboration'&&<BeautyWardrobe getUsage={getUsage} entries={builtinCollaborations} title="内置协同主题" onEdit={editEntry} onApply={entry=>void applyLocal(entry)}/>}
