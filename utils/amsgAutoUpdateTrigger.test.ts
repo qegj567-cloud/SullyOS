@@ -37,6 +37,8 @@ describe('pickStartupUpdateAction', () => {
 
   it('版本对得上、有自更新能力 → 敲门让它按指纹自查', () => {
     expect(pickStartupUpdateAction({ state: 'current', autoUpdate: { supported: true, state: null } })).toBe('check');
+    // Worker 比 App 新：App 是缓存的旧构建，催 Worker 更新只会把同一份代码重传一遍。
+    expect(pickStartupUpdateAction({ state: 'ahead', autoUpdate: { supported: true, state: null } })).toBe('none');
   });
 
   it('版本对得上但没钥匙 / 探不到版本 → 什么都不做', () => {

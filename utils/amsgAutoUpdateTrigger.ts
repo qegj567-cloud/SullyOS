@@ -78,7 +78,7 @@ export const pickStartupUpdateAction = (
  * 冷启动那一下调一次。返回值只为单测与日志：
  *   - 'updated' / 'update-failed'：版本对不上，直接更新了一次（成没成看返回值）；
  *   - 'requested'：版本对得上，敲了门让它按指纹自查（worker 收没收下看它自己）；
- *   - 'skipped'：探不到版本、或版本对得上但它没自更新能力，什么都没做；
+ *   - 'skipped'：探不到版本、Worker 比 App 还新（App 是缓存的旧构建）、或版本对得上但它没自更新能力，什么都没做；
  *   - 'throttled'：构建没换、也没到时候；
  *   - 'worker-unset'：没配 Worker 或还没连上过，一个请求都不发。
  *
