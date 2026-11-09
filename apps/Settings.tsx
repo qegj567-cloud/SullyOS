@@ -1,6 +1,7 @@
 import { listUserSpaces } from '../utils/userSpaces';
 import { BackupMissingAssetsNotice } from '../components/BackupMissingAssetsNotice';
 import type { BackupMissingAsset } from '../utils/backupMissingAssets';
+import { readBackupPreferences, updateBackupPreferences } from '../utils/backupPreferences';
 import {CharacterWeatherCities} from '../components/settings/CharacterAwarenessSettings';
 import {cleanCharacterWeatherCities} from '../utils/characterWeather';
 import NavigationBallSettings from '../components/settings/NavigationBallSettings';
@@ -768,15 +769,15 @@ const Settings: React.FC = () => {
 
   const [showAmsg2Modal, setShowAmsg2Modal] = useState(false);
   const [showAmsgCloudData, setShowAmsgCloudData] = useState(false);
+  const [exportUserScope, setExportUserScope] = useState<'current' | 'all'>('current');
   /**
-   * 导出时带不带主动消息 2.0 的后端连接（Worker 地址 + 密钥 + 用户 id）。
+   * 备份带不带主动消息 2.0 的后端连接（Worker 地址 + 密钥 + 用户 id），手动导出和云端备份共用。
    *
    * 默认不带。备份是会被分享出去的，带上就等于把自己那台 Worker 的钥匙一起发了：
    * 对方的 App 会静默连上来，把 ta 的 API 凭据和聊天上下文写进你的 D1，而 ta 手里的
    * 主密钥能解开你那台机器上所有的密文。换设备恢复自己的备份才需要它。
    */
-  const [exportUserScope, setExportUserScope] = useState<'current' | 'all'>('current');
-  const [exportBackendConnection, setExportBackendConnection] = useState(false);
+  const [exportBackendConnection, setExportBackendConnection] = useState(() => readBackupPreferences().includeBackendConnection);
   const [showVapidModal, setShowVapidModal] = useState(false);
   const [vapidReadyTick, setVapidReadyTick] = useState(0); // 关闭 VAPID 弹窗后刷新顶层徽标
 
@@ -1340,7 +1341,7 @@ const Settings: React.FC = () => {
 
           // Trigger export (Context handles loading state UI)
           setExportMissingAssets([]);
-          const blob = await exportSystem(mode, { includeBackendConnection: exportBackendConnection, userScope: exportUserScope, onMissingAssets: setExportMissingAssets });
+          const blob = await exportSystem(mode, { userScope: exportUserScope, onMissingAssets: setExportMissingAssets });
           
           const fileName = `Sully_Backup_${mode}_${new Date().toISOString().slice(0, 10)}.zip`;
           if (!Capacitor.isNativePlatform()) {
@@ -1366,22 +1367,21 @@ const Settings: React.FC = () => {
       }
   };
 
+  // 本地导入和云端恢复共用。备份里带着 Worker 后端连接时问一句：程序分不清这份文件是自己的
+  // 还是别人的（换新设备时用户 id 本来就对不上），只有拿着文件的人知道，所以把话问出去。
+  const confirmBackendRestore = (workerUrl: string) => window.confirm(
+      `这份备份里带着一个主动消息 2.0 的后端连接：\n\n${workerUrl}\n\n`
+      + '如果这是你自己导出的备份，点「确定」连上它。\n\n'
+      + '如果是别人给你的，点「取消」——连上去的话，你的 API 密钥和聊天记录会被写进对方那台服务器。\n\n'
+      + '（不连也不影响其它数据导入，之后可以在设置里手动填。）',
+  );
+
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>, asNewUsers = false) => {
       const file = e.target.files?.[0];
       if (!file) return;
 
       // Pass the File object directly to importSystem
-      importSystem(file, {
-          asNewUsers,
-          // 备份里带着 Worker 后端连接时问一句。程序分不清这份文件是自己的还是别人的
-          // （换新设备时用户 id 本来就对不上），只有拿着文件的人知道，所以把话问出去。
-          confirmBackendRestore: (workerUrl) => window.confirm(
-              `这份备份里带着一个主动消息 2.0 的后端连接：\n\n${workerUrl}\n\n`
-              + '如果这是你自己导出的备份，点「确定」连上它。\n\n'
-              + '如果是别人给你的，点「取消」——连上去的话，你的 API 密钥和聊天记录会被写进对方那台服务器。\n\n'
-              + '（不连也不影响其它数据导入，之后可以在设置里手动填。）',
-          ),
-      }).catch(err => {
+      importSystem(file, { asNewUsers, confirmBackendRestore }).catch(err => {
           console.error(err);
           // 只上报归类后的固定枚举：报错原文（可能含文件路径/内容片段）只留在 console
           const rawMessage = String(err?.message || '');
@@ -1607,7 +1607,7 @@ const Settings: React.FC = () => {
       }
       setShowCloudRestoreModal(false);
       try {
-          await cloudRestoreFromWebDAV(file);
+          await cloudRestoreFromWebDAV(file, { confirmBackendRestore });
       } catch (err: any) {
           // 只区分「下载阶段」还是「导入阶段」，报错原文只进 showError / console
           trackEvent('从云端恢复失败', {
@@ -2082,13 +2082,13 @@ const Settings: React.FC = () => {
                 <input
                     type="checkbox"
                     checked={exportBackendConnection}
-                    onChange={(e) => setExportBackendConnection(e.target.checked)}
+                    onChange={(e) => setExportBackendConnection(updateBackupPreferences({ includeBackendConnection: e.target.checked }).includeBackendConnection)}
                     className="mt-0.5 shrink-0"
                 />
                 <span className="text-[11px] leading-relaxed text-slate-600">
                     <span className="font-bold">包含主动消息 2.0 的后端连接</span>
                     <span className="block text-slate-400">
-                        换设备恢复时勾上，Worker 地址和密钥会一起带走。
+                        换设备恢复时勾上，导出和云端备份都会带上 Worker 地址和密钥。
                         <span className="font-bold text-rose-500">勾着导出的备份不要分享给别人</span>
                         ——拿到文件的人能连上你那台 Worker，也能解开里面的聊天记录。
                     </span>

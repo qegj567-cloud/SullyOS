@@ -1496,6 +1496,12 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
                   {workerVersion.deployed ? <code className="font-mono"> {workerVersion.deployed} </code> : '更早的版本'}
                   ，更新后即时对话才走得上新的生成通道。
                 </p>
+              ) : workerVersion?.state === 'ahead' ? (
+                <p className="text-xs leading-relaxed text-emerald-700">
+                  后端已经是更新的
+                  <code className="font-mono"> {workerVersion.deployed} </code>
+                  ，这个页面还是旧版（<code className="font-mono">{workerVersion.expected}</code>），刷新页面就能用上新版 App。
+                </p>
               ) : workerVersion?.state === 'current' ? (
                 <p className="text-xs leading-relaxed text-slate-500">
                   后端已经是最新版（<code className="font-mono">{workerVersion.expected}</code>）。

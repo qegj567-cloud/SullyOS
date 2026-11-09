@@ -56,7 +56,7 @@ export function selectUserSpace(id: string) {
 const sharedKeys = new Set([
     'amsg2_pending_llm_creds', 'amsg2_llm_cred_fingerprints', 'amsg2_pending_tool_config', 'amsg2_pending_tool_config_version', 'amsg2_state_clock_watermark',
     'os_api_config', 'os_api_presets', 'os_available_models', 'os_vision_available_models', 'os_analytics', 'os_memory_palace_config',
-    'os_user_location_privacy_v1', 'os_remote_vector_config', 'os_cloud_backup_config', 'os_realtime_config',
+    'os_user_location_privacy_v1', 'os_remote_vector_config', 'os_cloud_backup_config', 'os_backup_preferences_v1', 'os_realtime_config',
     'sully_proxy_worker_url', 'sully_proxy_worker_url_v1', 'push_vapid_v1', 'study_api_config', 'check_phone_api',
     'sully_music_cfg_v1', 'os_first_use_memory_guide_v1', 'os_first_use_skip_vector_v1', 'sullyos_backup_reminder',
     'world_home_api', 'browser_brave_key', 'browser_use_real_search', 'sully_firecrawl_api_key',

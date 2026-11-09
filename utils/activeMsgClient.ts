@@ -23,7 +23,7 @@ import {
   UserProfile,
 } from '../types';
 import { getLastRealUserMessageAt } from './amsg2ExpireGuard';
-import { AMSG_BUNDLE_VERSION } from './amsgBundleVersion';
+import { AMSG_BUNDLE_VERSION, compareBundleVersions } from './amsgBundleVersion';
 import { describeD1LimitCode } from './amsgD1Limits';
 import { explainCfTokenRejection, parseAmsgSelfUpdateState, type AmsgSelfUpdateReport } from './amsgSelfUpdateState';
 import { AMSG_AWAY_DELAY_META, AMSG_AWAY_MESSAGE_META, buildAwayTaskInstruction, buildTaskInstruction, resolveSendAtMs } from './amsgFireSchedule';
@@ -399,7 +399,8 @@ export const fetchWorkerTickReport = async (): Promise<AmsgTickReportResult> => 
 
 /** probeWorkerVersion 的回执：版本对不对，外加那台 Worker 自动更新的近况。 */
 export interface AmsgWorkerVersionProbe {
-  state: 'current' | 'outdated' | 'unknown';
+  /** ahead = Worker 比 App 新：App 还是缓存的旧构建，刷新页面就对上了，不该去更新 Worker。 */
+  state: 'current' | 'outdated' | 'ahead' | 'unknown';
   /** 那台 Worker 自报的版本；老 bundle 不报就是 null。 */
   deployed: string | null;
   /** 本 App 期望的版本，用来在界面上写「更新到 X」。 */
@@ -3725,6 +3726,7 @@ export const ActiveMsgClient = {
    * 就是「那台 Worker 贴的是旧 bundle」。
    *
    * 三种拿不到结论的情况分开表态，因为界面上该说的话不一样：
+   *   - Worker 报的版本比 App 认的还新 → ahead（App 是缓存的旧构建，该刷新页面，不该动 Worker）；
    *   - 老 bundle 根本不报这个字段 → outdated（它确实旧，只是旧到还不会自报家门）；
    *   - 网络不通 / 还没连上 → unknown（别在用户断网时催他更新）。
    */
@@ -3748,7 +3750,9 @@ export const ActiveMsgClient = {
       const deployed = typeof body?.data?.workerVersion === 'string' ? body.data.workerVersion : null;
       const autoUpdate = parseSelfUpdateReport(body?.data?.selfUpdate);
       if (!deployed) return { state: 'outdated', deployed: null, expected, autoUpdate };
-      return { state: deployed === expected ? 'current' : 'outdated', deployed, expected, autoUpdate };
+      if (deployed === expected) return { state: 'current', deployed, expected, autoUpdate };
+      const order = compareBundleVersions(deployed, expected);
+      return { state: order !== null && order > 0 ? 'ahead' : 'outdated', deployed, expected, autoUpdate };
     } catch {
       return { state: 'unknown', deployed: null, expected, autoUpdate: null };
     } finally {

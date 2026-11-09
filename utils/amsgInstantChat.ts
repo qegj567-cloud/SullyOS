@@ -33,7 +33,7 @@ import { announceEmotionDone } from './chatGenEvents';
 import { dispatchAmsgResult } from './amsgResults';
 import { DB } from './db';
 import type { AmsgEmotionEvalSpec } from '../worker/amsg/src/emotionEval';
-import { AMSG_BUNDLE_VERSION } from './amsgBundleVersion';
+import { AMSG_BUNDLE_VERSION, compareBundleVersions } from './amsgBundleVersion';
 import type { AmsgSarModuleSnapshot } from './vrWorld/sarEnvelopeCore';
 
 const HEADER = '[AmsgInstantChat]';
@@ -249,8 +249,8 @@ export interface InstantChatReadiness {
   ready: boolean;
   reason?: InstantChatReadinessReason;
   /**
-   * 那台 Worker 贴的是不是本 App 认的这一版 bundle（存量 workerBundleVersion 与
-   * AMSG_BUNDLE_VERSION 相等）。只在 ready 时给：true / false 是探到过的结论，
+   * 那台 Worker 贴的 bundle 是否不旧于本 App 认的这一版（存量 workerBundleVersion 等于或
+   * 新于 AMSG_BUNDLE_VERSION；App 还是缓存的旧构建时 Worker 会更新，那也认得新协议）。只在 ready 时给：true / false 是探到过的结论，
    * undefined = 不知道。不传 ensureBundleVersion 时它就是「还没探过」；传了的话
    * 存量为空会当场现探一次，那时 undefined 意味着「现探也没问到」。
    *
@@ -260,14 +260,15 @@ export interface InstantChatReadiness {
   workerBundleCurrent?: boolean;
 }
 
-/** 存量里那台 Worker 的 bundle 版本是不是当前这一版；没探过（undefined）返回 undefined。 */
+/** 存量里那台 Worker 的 bundle 版本是否不旧于当前这一版；没探过（undefined）返回 undefined。 */
 const resolveWorkerBundleCurrent = (
   config: { workerBundleVersion?: string | null },
-): boolean | undefined => (
-  config.workerBundleVersion === undefined
-    ? undefined
-    : config.workerBundleVersion === AMSG_BUNDLE_VERSION
-);
+): boolean | undefined => {
+  const deployed = config.workerBundleVersion;
+  if (deployed === undefined) return undefined;
+  if (deployed === null) return false;
+  return deployed === AMSG_BUNDLE_VERSION || (compareBundleVersions(deployed, AMSG_BUNDLE_VERSION) ?? -1) > 0;
+};
 
 /** ready 的那一档带上 bundle 结论；不知道就不带这个键。 */
 const readyWithBundle = (workerBundleCurrent: boolean | undefined): InstantChatReadiness => (
@@ -356,7 +357,7 @@ const probeBundleCurrentNow = async (): Promise<boolean | undefined> => {
     try {
       // 问到答案时 probeWorkerVersion 会顺手把版本存进 workerBundleVersion。
       const { state } = await ActiveMsgClient.probeWorkerVersion({ timeoutMs: INSTANT_CHAT_REPROBE_TIMEOUT_MS });
-      return state === 'current' ? true : state === 'outdated' ? false : undefined;
+      return state === 'current' || state === 'ahead' ? true : state === 'outdated' ? false : undefined;
     } catch {
       return undefined;
     }

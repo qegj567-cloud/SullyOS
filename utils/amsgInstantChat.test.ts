@@ -806,6 +806,11 @@ describe('开关', () => {
     expect(await resolveInstantChatReadiness()).toEqual({ ready: true, workerBundleCurrent: false });
   });
 
+  it('存量版本比当前 bundle 新（App 是缓存的旧构建）→ workerBundleCurrent: true，SAR 回合照常上云', async () => {
+    storeState.config = { ...storeState.config, instantChatSupported: true, workerBundleVersion: '2999-01-01.2' };
+    expect(await resolveInstantChatReadiness()).toEqual({ ready: true, workerBundleCurrent: true });
+  });
+
   it('从没探过版本（undefined）→ 不给结论，调用方放行', async () => {
     storeState.config = { ...storeState.config, instantChatSupported: true, workerBundleVersion: undefined };
     const readiness = await resolveInstantChatReadiness();

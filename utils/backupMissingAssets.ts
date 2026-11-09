@@ -7,8 +7,8 @@ export interface BackupMissingAsset {
     moreLocations?: boolean;
 }
 
+/** 带不带哪些东西不在这里传，统一由 exportSystem 读 backupPreferences。 */
 export interface BackupExportOptions {
-    includeBackendConnection?: boolean;
     userScope?: 'current' | 'all';
     onMissingAssets?: (items: BackupMissingAsset[]) => void;
 }
