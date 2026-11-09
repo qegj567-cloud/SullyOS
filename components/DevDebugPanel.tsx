@@ -1,5 +1,5 @@
 import HomeCompanionDebug from './HomeCompanionDebug';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowsClockwise, Broom, Check, ClipboardText, DownloadSimple, Power, Trash, Wrench, X } from '@phosphor-icons/react';
 import {
     clearDevDebugLog,
@@ -56,13 +56,15 @@ function getDefaultFloatingPosition(): DevDebugFloatingPosition {
     });
 }
 
-function getPanelPosition(position: DevDebugFloatingPosition): DevDebugFloatingPosition {
+// 按面板实测尺寸约束：内容会随开关展开变高，用固定预估值会把下半截推出屏幕、里面也滚不到。
+function getPanelPosition(
+    position: DevDebugFloatingPosition,
+    panelSize: { width: number; height: number },
+): DevDebugFloatingPosition {
     const viewport = getViewportSize();
-    const panelWidth = Math.min(PANEL_WIDTH, viewport.width - FLOATING_SAFE_MARGIN * 2);
-    const panelHeight = Math.min(PANEL_ESTIMATED_HEIGHT, viewport.height - FLOATING_SAFE_MARGIN * 2);
     return {
-        x: clamp(position.x, FLOATING_SAFE_MARGIN, viewport.width - panelWidth - FLOATING_SAFE_MARGIN),
-        y: clamp(position.y, FLOATING_SAFE_MARGIN, viewport.height - panelHeight - FLOATING_SAFE_MARGIN),
+        x: clamp(position.x, FLOATING_SAFE_MARGIN, viewport.width - panelSize.width - FLOATING_SAFE_MARGIN),
+        y: clamp(position.y, FLOATING_SAFE_MARGIN, viewport.height - panelSize.height - FLOATING_SAFE_MARGIN),
     };
 }
 
@@ -160,7 +162,11 @@ const DevDebugPanel: React.FC = () => {
         | null
     >(null);
     // 位置不持久化：每次出现都回默认角，拖动只在本次会话内有效（prod 刷新=失效=类似关闭，没必要存）。
+    // 浮球和展开的面板共用这一个左上角坐标，各自渲染时再按自己的尺寸约束回屏幕内。
     const [floatingPosition, setFloatingPosition] = useState<DevDebugFloatingPosition>(getDefaultFloatingPosition);
+    const [viewport, setViewport] = useState(getViewportSize);
+    const panelRef = useRef<HTMLElement>(null);
+    const [panelSize, setPanelSize] = useState({ width: PANEL_WIDTH, height: PANEL_ESTIMATED_HEIGHT });
     const dragStateRef = useRef<{
         pointerId: number;
         startX: number;
@@ -190,22 +196,37 @@ const DevDebugPanel: React.FC = () => {
     // 地址栏伸缩高频触发 setState 把整个 panel re-render（即使它返回 null）。
     useEffect(() => {
         if (!available) return;
-        const clampToViewport = () => {
-            setFloatingPosition((current) => {
-                const next = clampFloatingPosition(current);
-                // 同样的 {x,y} 还要返回原对象，免得 React 因为 Object.is 失败而每次 commit。
-                return (next.x === current.x && next.y === current.y) ? current : next;
+        const syncViewport = () => {
+            setViewport((current) => {
+                const next = getViewportSize();
+                // 尺寸没变还要返回原对象，免得 React 因为 Object.is 失败而每次 commit。
+                return (next.width === current.width && next.height === current.height) ? current : next;
             });
         };
-        window.addEventListener('resize', clampToViewport);
-        window.visualViewport?.addEventListener('resize', clampToViewport);
-        window.visualViewport?.addEventListener('scroll', clampToViewport);
+        syncViewport();
+        window.addEventListener('resize', syncViewport);
+        window.visualViewport?.addEventListener('resize', syncViewport);
+        window.visualViewport?.addEventListener('scroll', syncViewport);
         return () => {
-            window.removeEventListener('resize', clampToViewport);
-            window.visualViewport?.removeEventListener('resize', clampToViewport);
-            window.visualViewport?.removeEventListener('scroll', clampToViewport);
+            window.removeEventListener('resize', syncViewport);
+            window.visualViewport?.removeEventListener('resize', syncViewport);
+            window.visualViewport?.removeEventListener('scroll', syncViewport);
         };
     }, [available]);
+    // 展开时量面板真实尺寸（绘制前量好，不闪），内容变高变矮（勾开关、家园数据刷新）也跟着重新约束位置。
+    useLayoutEffect(() => {
+        const panel = panelRef.current;
+        if (!available || !open || !panel) return;
+        const measure = () => setPanelSize((current) => (
+            current.width === panel.offsetWidth && current.height === panel.offsetHeight
+                ? current
+                : { width: panel.offsetWidth, height: panel.offsetHeight }
+        ));
+        measure();
+        const observer = new ResizeObserver(measure);
+        observer.observe(panel);
+        return () => observer.disconnect();
+    }, [available, open]);
 
     const activeCount = useMemo(
         () => (flags.skipPromptBuild ? 1 : 0)
@@ -288,18 +309,26 @@ const DevDebugPanel: React.FC = () => {
         });
         trackEvent('导出调试日志', { 方式: result === 'shared' ? '分享' : '下载' });
     };
-    const handlePointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
-        if (open || (event.pointerType === 'mouse' && event.button !== 0)) return;
+    // 收起时拖浮球，展开时拖标题栏，两者共用同一套拖动逻辑，只是约束尺寸不同。
+    const ballPosition = clampFloatingPosition(floatingPosition);
+    const panelPosition = getPanelPosition(floatingPosition, panelSize);
+    const clampDragTarget = (position: DevDebugFloatingPosition) => (
+        open ? getPanelPosition(position, panelSize) : clampFloatingPosition(position)
+    );
+    const handlePointerDown = (event: React.PointerEvent<HTMLElement>) => {
+        if (event.pointerType === 'mouse' && event.button !== 0) return;
+        // 标题栏里的关闭按钮照常点，不当拖动起点（抓住指针后 click 会落到标题栏上）。
+        if (open && (event.target as Element).closest('button')) return;
         dragStateRef.current = {
             pointerId: event.pointerId,
             startX: event.clientX,
             startY: event.clientY,
-            origin: floatingPosition,
+            origin: open ? panelPosition : ballPosition,
             moved: false,
         };
         event.currentTarget.setPointerCapture(event.pointerId);
     };
-    const handlePointerMove = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const handlePointerMove = (event: React.PointerEvent<HTMLElement>) => {
         const drag = dragStateRef.current;
         if (!drag || drag.pointerId !== event.pointerId) return;
 
@@ -311,19 +340,19 @@ const DevDebugPanel: React.FC = () => {
 
         if (drag.moved) {
             event.preventDefault();
-            setFloatingPosition(clampFloatingPosition({
+            setFloatingPosition(clampDragTarget({
                 x: drag.origin.x + dx,
                 y: drag.origin.y + dy,
             }));
         }
     };
-    const finishDrag = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const finishDrag = (event: React.PointerEvent<HTMLElement>) => {
         const drag = dragStateRef.current;
         if (!drag || drag.pointerId !== event.pointerId) return;
 
         const dx = event.clientX - drag.startX;
         const dy = event.clientY - drag.startY;
-        const next = clampFloatingPosition({
+        const next = clampDragTarget({
             x: drag.origin.x + dx,
             y: drag.origin.y + dy,
         });
@@ -353,16 +382,15 @@ const DevDebugPanel: React.FC = () => {
 
     if (!available) return null;
 
-    const panelPosition = getPanelPosition(floatingPosition);
     // 面板最大高度按「实际可视高度」算（visualViewport，避开手机动态工具栏），跟定位口径一致，超出部分中间滚动。
-    const panelMaxHeight = getViewportSize().height - FLOATING_SAFE_MARGIN * 2;
+    const panelMaxHeight = viewport.height - FLOATING_SAFE_MARGIN * 2;
 
     return (
         <div
             className="fixed select-none"
             style={{
-                left: open ? panelPosition.x : floatingPosition.x,
-                top: open ? panelPosition.y : floatingPosition.y,
+                left: open ? panelPosition.x : ballPosition.x,
+                top: open ? panelPosition.y : ballPosition.y,
                 zIndex: 2147483646,
             }}
         >
@@ -388,11 +416,19 @@ const DevDebugPanel: React.FC = () => {
 
             {open && (
                 <section
+                    ref={panelRef}
                     className="flex w-[min(342px,calc(100vw-32px))] flex-col overflow-hidden rounded-2xl border border-white/12 bg-zinc-950/90 text-white shadow-2xl backdrop-blur-xl"
                     style={{ maxHeight: panelMaxHeight }}
                     aria-label="开发调试面板"
                 >
-                    <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
+                    {/* 标题栏即拖动把手：touch-none 让手机上按住拖动归面板，不被页面滚动抢走。 */}
+                    <div
+                        onPointerDown={handlePointerDown}
+                        onPointerMove={handlePointerMove}
+                        onPointerUp={finishDrag}
+                        onPointerCancel={finishDrag}
+                        className="flex shrink-0 cursor-grab touch-none items-center justify-between gap-3 border-b border-white/10 px-4 py-3 active:cursor-grabbing"
+                    >
                         <div className="flex min-w-0 items-center gap-2">
                             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-amber-200">
                                 <Wrench size={17} weight="bold" />
@@ -414,7 +450,8 @@ const DevDebugPanel: React.FC = () => {
                         </button>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto px-4">
+                    {/* overscroll-contain：滚到头不把手势传给后面的页面。 */}
+                    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4">
                         <HomeCompanionDebug />
                         <ToggleRow
                             title="跳过 Prompt Build"

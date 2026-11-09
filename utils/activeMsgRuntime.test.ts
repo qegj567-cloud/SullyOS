@@ -29,6 +29,10 @@ import {
   handleInstantErrorPushMessage,
   startLateEmotionPoll,
   sweepLocalInbox,
+  sweepThirdPartyOutbox,
+  THIRD_PARTY_FOREGROUND_DEBOUNCE_MS,
+  THIRD_PARTY_IDLE_DRAIN_INTERVAL_MS,
+  THIRD_PARTY_PENDING_DRAIN_INTERVAL_MS,
   shouldRenderInstantly,
   isOutboxBackfill,
 } from './activeMsgRuntime';
@@ -2714,7 +2718,7 @@ describe('上线补收不看有没有在等回复（走真库）', () => {
 
   afterEach(async () => {
     vi.restoreAllMocks();
-    await ActiveMsgStore.saveGlobalConfig({ workerUrl: '' });
+    await ActiveMsgStore.saveGlobalConfig({ workerUrl: '', pushMode: 'web-push' });
   });
 
   /** 账本上的一条定时主动消息（`push` 就是推送信封本身，跟 SW 收到的那份逐字一致）。 */
@@ -2801,6 +2805,47 @@ describe('上线补收不看有没有在等回复（走真库）', () => {
     vi.spyOn(ActiveMsgClient, 'listOutboxEntries').mockRejectedValue(new Error('worker 500'));
 
     await expect(catchUpMissedPushes('startup')).resolves.toBe('failed');
+  }, 20000);
+
+  // 第三方推送叫不醒页面：通知弹了，页面只能自己去账本拉。下面几条钉住「拉得够勤」，
+  // 也钉住网页推送模式不跟着多打请求。
+  it('网页推送模式下前台巡查不去拉账本', async () => {
+    const list = vi.spyOn(ActiveMsgClient, 'listOutboxEntries').mockResolvedValue([]);
+
+    await expect(sweepThirdPartyOutbox()).resolves.toBe(false);
+    expect(list).not.toHaveBeenCalled();
+  }, 20000);
+
+  it('第三方推送模式：平时 6 秒一拉，欠着即时回复时 3 秒一拉', async () => {
+    await ActiveMsgStore.saveGlobalConfig({ workerUrl: WORKER_URL, pushMode: 'third-party' });
+    const list = vi.spyOn(ActiveMsgClient, 'listOutboxEntries').mockResolvedValue([]);
+    const t0 = Date.now();
+
+    await expect(sweepThirdPartyOutbox(t0)).resolves.toBe(true);
+    // 没在等回复：下一跳（3 秒后）还不到 6 秒，不拉。
+    await expect(sweepThirdPartyOutbox(t0 + THIRD_PARTY_PENDING_DRAIN_INTERVAL_MS + 100)).resolves.toBe(false);
+    expect(list).toHaveBeenCalledTimes(1);
+
+    setInstantChatPending('char-third-party-poll', 'uuid-third-party-poll', Date.now());
+    await expect(sweepThirdPartyOutbox(t0 + THIRD_PARTY_PENDING_DRAIN_INTERVAL_MS + 100)).resolves.toBe(true);
+    expect(list).toHaveBeenCalledTimes(2);
+
+    localStorage.removeItem(AMSG_INSTANT_CHAT_PENDING_LS_KEY);
+    await expect(sweepThirdPartyOutbox(Date.now() + THIRD_PARTY_IDLE_DRAIN_INTERVAL_MS + 100)).resolves.toBe(true);
+    expect(list).toHaveBeenCalledTimes(3);
+  }, 20000);
+
+  it('第三方推送模式：回到前台只防抖，不套 60 秒节流', async () => {
+    await ActiveMsgStore.saveGlobalConfig({ workerUrl: WORKER_URL, pushMode: 'third-party' });
+    const list = vi.spyOn(ActiveMsgClient, 'listOutboxEntries').mockResolvedValue([]);
+    const realNow = Date.now.bind(Date);
+
+    await expect(catchUpMissedPushes('startup')).resolves.toBe('drained');
+    // 几十毫秒内连跳的可见性事件合成一次。
+    await expect(catchUpMissedPushes('foreground')).resolves.toBe('throttled');
+    vi.spyOn(Date, 'now').mockImplementation(() => realNow() + THIRD_PARTY_FOREGROUND_DEBOUNCE_MS + 100);
+    await expect(catchUpMissedPushes('foreground')).resolves.toBe('drained');
+    expect(list).toHaveBeenCalledTimes(2);
   }, 20000);
 });
 
