@@ -1118,7 +1118,7 @@ var describeFirePackVersion = (value) => {
     return `\u5305\u662F v${v}\u3001worker \u8981 v${FIRE_PACK_VERSION} \u2014\u2014 \u524D\u7AEF\u6BD4 worker \u65E7\uFF0C\u6253\u5F00\u4E00\u6B21\u7F51\u9875\u8BA9\u5B83\u91CD\u65B0\u4E0A\u4F20`;
   }
   if (typeof v === "number") {
-    return `\u5305\u662F v${v}\u3001worker \u53EA\u8BA4 v${FIRE_PACK_VERSION} \u2014\u2014 worker bundle \u662F\u65E7\u7684\uFF0C\u53BB\u8BBE\u7F6E\u9875\u91CD\u65B0\u7C98\u8D34\u90E8\u7F72`;
+    return `\u5305\u662F v${v}\u3001worker \u53EA\u8BA4 v${FIRE_PACK_VERSION} \u2014\u2014 worker bundle \u662F\u65E7\u7684\uFF0C\u53BB\u300C\u8BBE\u7F6E \u2192 \u4E3B\u52A8\u6D88\u606F 2.0\u300D\u70B9\u4E00\u4E0B\u300C\u66F4\u65B0 Worker\u300D`;
   }
   return "\u5305\u91CC\u6CA1\u6709\u7248\u672C\u53F7\uFF08\u6570\u636E\u635F\u574F\uFF09";
 };
@@ -14138,7 +14138,7 @@ function buildScheduledPush(message, build, extraMeta, bannerBody) {
 }
 
 // utils/amsgBundleVersion.ts
-var AMSG_BUNDLE_VERSION = "2026-11-07.3";
+var AMSG_BUNDLE_VERSION = "2026-11-09";
 
 // worker/amsg/src/reproduction.ts
 async function writeDiagnosticStage(writeState, runId, event, fields = {}) {
@@ -14499,6 +14499,11 @@ var parseAmsgChatPresence = (raw) => {
 var isFreshChatPresence = (value, charId, nowMs) => Boolean(
   value && value.v === 1 && value.charId === charId && value.activeAt <= nowMs + 1e4 && nowMs - value.activeAt <= CHAT_PRESENCE_TTL_MS
 );
+var chattedDuringFire = (value, charId, nowMs, seenLastUserMessageAt) => {
+  if (!value || value.charId !== charId) return false;
+  if (isFreshChatPresence(value, charId, nowMs)) return true;
+  return value.lastUserMessageAt != null && (seenLastUserMessageAt == null || value.lastUserMessageAt > seenLastUserMessageAt);
+};
 
 // utils/realtimeWorldCore.ts
 var readJson = async (res) => {
@@ -19868,6 +19873,7 @@ var amsgHooks = {
       // （resolveFireSceneSong 与 renderFireSceneBlock 共用判定），冻的必然是正文里那首。
       sceneSong: resolveFireSceneSong(pack.scene, ctx.now.getTime(), tz),
       instant,
+      overlapGuard: !instant && policy === "expire" ? { lastUserMessageAt } : null,
       instantInputKey,
       // 下面即时对话那一支起跑（要等请求消息拼完才知道给评估喂什么）。
       emotionEvalPromise: null,
@@ -20102,6 +20108,36 @@ ${userHoliday}` });
         sessionId: ctx.sessionId,
         pushes: decision.decision === "finish" ? decision.pushPayloads.length : 0
       });
+    }
+    if (decision.decision === "finish" && stash.overlapGuard) {
+      const presenceRows = await ctx.readState(amsgStateNamespace(stash.charId), { key: AMSG_CHAT_PRESENCE_KEY });
+      const presence = parseAmsgChatPresence(presenceRows.find((r) => r.key === AMSG_CHAT_PRESENCE_KEY)?.value);
+      if (chattedDuringFire(presence, stash.charId, Date.now(), stash.overlapGuard.lastUserMessageAt)) {
+        if (stash.scheduledTasks.length || stash.cancelledTasks.length || stash.renewedTasks.length) {
+          console.warn("[amsg:chat-overlap] \u751F\u6210\u671F\u95F4\u7528\u6237\u5F00\u53E3\u4E86\uFF0C\u4F46\u8FD9\u8F6E\u6539\u8FC7\u4EFB\u52A1\uFF0C\u7167\u5E38\u53D1\u51FA", { taskId });
+        } else {
+          console.log("[amsg:chat-overlap] \u751F\u6210\u671F\u95F4\u7528\u6237\u5F00\u53E3\u4E86\uFF0C\u8FD9\u6761\u4E0D\u53D1", {
+            taskId,
+            seenLastUserMessageAt: stash.overlapGuard.lastUserMessageAt,
+            presenceLastUserMessageAt: presence?.lastUserMessageAt ?? null
+          });
+          await writeLastSkip(ctx.writeState, stash.charId, {
+            v: 1,
+            taskUuid: stash.taskUuid,
+            occurrenceMs: stash.occurrenceMs,
+            reason: "chat-overlap",
+            skippedAt: Date.now()
+          });
+          await emitFireSkip(ctx.emitResult, {
+            charId: stash.charId,
+            taskUuid: stash.taskUuid,
+            occurrenceMs: stash.occurrenceMs,
+            reason: "chat-overlap",
+            task: findTaskBrief(stash.pendingTasks, stash.taskUuid)
+          });
+          return { decision: "skip-push" };
+        }
+      }
     }
     if (decision.decision === "skip-push" && decision.sideEffects) {
       if (typeof ctx.emitResult !== "function") throw new Error("AMSG2_RESULT_UNSUPPORTED: \u8BF7\u66F4\u65B0 Worker \u4EE5\u63A5\u6536\u52A8\u4F5C\u7ED3\u679C");

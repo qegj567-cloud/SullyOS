@@ -64,6 +64,8 @@ const describeSkipReason = (reason: Amsg2ExpiredNoticeRecord['reason'], target: 
     case 'recurring-unanswered':
     case 'daily-limit':
       return `被${target}定的主动消息频率规矩拦下了`;
+    case 'chat-overlap':
+      return `写好时${target}正好在跟你聊，那句没赶上新对话，就没发`;
     default:
       return '';
   }

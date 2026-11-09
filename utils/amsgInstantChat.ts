@@ -26,7 +26,7 @@ import { getReplyDisplayIds, isReplyStopped, markReplyStopped, replyAbortError }
 
 import { ActiveMsg2InboxMessage, CharacterProfile, GroupProfile, RealtimeConfig, UserProfile } from '../types';
 import { ActiveMsgClient, type AmsgOutboxEntry, type InstantChatProbeOutcome } from './activeMsgClient';
-import { ActiveMsgStore } from './activeMsgStore';
+import { ActiveMsgStore, isInstantChatSwitchedOn } from './activeMsgStore';
 import { trackEvent } from './analytics';
 import { cloudApiCallLogId, recordCloudApiCall, settleCloudApiCall } from './apiCallLog';
 import { announceEmotionDone } from './chatGenEvents';
@@ -427,7 +427,7 @@ export const resolveInstantChatReadiness = async (
     console.warn(`${HEADER} 全局配置读不出来，这一轮判断不了即时对话开没开（按走不通处理，但这不是「没开」）`, error);
     return { ready: false, reason: 'config-unreadable' };
   }
-  if (!config.instantChatEnabled) return { ready: false, reason: 'disabled' };
+  if (!isInstantChatSwitchedOn(config)) return { ready: false, reason: 'disabled' };
   // 地址排在能力前面：没填地址时那份能力位多半是上一台 Worker 留下的存量，
   // 报「Worker 太旧」会把人指去点一个根本没连上的东西。
   if (!config.workerUrl?.trim()) return { ready: false, reason: 'no-worker-url' };

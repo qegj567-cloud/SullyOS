@@ -54,7 +54,8 @@ const { storeState } = vi.hoisted(() => ({
     markedNotices: [] as Array<{ charId: string; ids: string[] }>,
   },
 }));
-vi.mock('./activeMsgStore', () => ({
+vi.mock('./activeMsgStore', async () => ({
+  isInstantChatSwitchedOn: (await vi.importActual<typeof import('./activeMsgStore')>('./activeMsgStore')).isInstantChatSwitchedOn,
   ActiveMsgStore: {
     ensureUserId: async () => TEST_USER_ID,
     getGlobalConfig: async () => {
@@ -697,6 +698,18 @@ describe('开关', () => {
   it('开关没开 → 不走（每条消息都读这一份，别处不做第二道门）', async () => {
     storeState.config = { ...storeState.config, instantChatEnabled: false };
     expect(await isInstantChatReady()).toBe(false);
+    expect(await resolveInstantChatReadiness()).toEqual({ ready: false, reason: 'disabled' });
+  });
+
+  // 很多人配好了 2.0 却没看懂这个开关、一直没开：没点过的，Worker 连上过就默认开。
+  it('没点过开关、Worker 连接验证成功过 → 默认走云端', async () => {
+    storeState.config = { ...storeState.config, instantChatEnabled: undefined, initializedAt: 1 };
+    expect(await resolveInstantChatReadiness()).toEqual({ ready: true });
+  });
+
+  // 只填了地址的那种上云会发一条挂一条，又不退回本地，不能默认开。
+  it('没点过开关、只填了地址没连上过 → 不走', async () => {
+    storeState.config = { ...storeState.config, instantChatEnabled: undefined, initializedAt: undefined };
     expect(await resolveInstantChatReadiness()).toEqual({ ready: false, reason: 'disabled' });
   });
 

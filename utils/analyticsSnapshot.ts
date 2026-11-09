@@ -41,7 +41,7 @@ import { loadMcpServers, getMcpUseNativeTools } from './mcpClient';
 import { getLuckinToken, isLuckinEnabled } from './luckinMcpClient';
 import { getMcdToken, isMcdEnabled } from './mcdMcpClient';
 import { getPendingTasks, isAmsg2EnabledForChar } from './amsg2Tasks';
-import { ActiveMsgStore } from './activeMsgStore';
+import { ActiveMsgStore, isInstantChatSwitchedOn } from './activeMsgStore';
 import { getVRApi } from './vrWorld/vrApi';
 import { isBuiltinSullyLive2D } from './builtinSullyLive2D';
 import { loadUserLocationConfig } from './userLocationPrivacy';
@@ -551,7 +551,7 @@ export function collectFeatureFlags(src: FeatureSources): Record<string, string>
         '开了2.0的角色数': bucketFewCount(amsg2ActiveChars.length),
         // 聊天主路径搬没搬上云端。只有开/关：配置到哪一步由上面那格四态回答，
         // 这一格问的是「配好了的人里有多少真把聊天切过去了」。
-        即时对话: onOff(src.amsg2Global.instantChatEnabled),
+        即时对话: onOff(isInstantChatSwitchedOn(src.amsg2Global)),
         // 全局开着、却在某几个角色上单独关掉的有多少。角色级开关是「跟随全局」缺省，
         // 只有显式关才落 false——这一格数的就是这种显式关，回答「按角色区分有没有人用」。
         // 一个都没有的话这个开关可以从角色面板收掉。
