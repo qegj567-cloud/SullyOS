@@ -1501,6 +1501,7 @@ export type FlushTrigger =
   | '原生收件箱'      // 原生壳把消息塞进收件箱后触发
   | '原生推送'       // 原生壳收到推送后触发
   | '本地巡查'        // 前台每几秒数一眼本地收件箱，自己发现躺着的消息
+  | '第三方补收'      // 第三方推送叫不醒页面，前台时定期去云端账本拉
   | '生成前收件';     // 只处理本轮角色的本地收件箱，不拉云端账本
 
 // ─── 生成前收件与冲刷之间的共享状态（见 prepareInboxBeforeChat）───
@@ -2158,7 +2159,9 @@ const scheduleLocalInboxWatch = (): void => {
   if (localInboxWatchTimer != null) clearTimeout(localInboxWatchTimer);
   localInboxWatchTimer = setTimeout(() => {
     localInboxWatchTimer = null;
-    void sweepLocalInbox().finally(() => scheduleLocalInboxWatch());
+    void sweepLocalInbox()
+      .then(() => sweepThirdPartyOutbox())
+      .finally(() => scheduleLocalInboxWatch());
   }, LOCAL_INBOX_WATCH_INTERVAL_MS);
 };
 
@@ -2166,14 +2169,15 @@ const scheduleLocalInboxWatch = (): void => {
 // 推送是会静默丢的（换网、代理断流、系统压制、SW 没醒）。云端每条推送发出去之前都在
 // 服务端账本上记了一行，客户端落库之后销账，所以「哪些没收下」是查得出来的事实。
 //
-// 拉账本的时机分两类，别混：
+// 拉账本的时机分三类，别混：
 //   1. 上线补收（catchUpMissedPushes）——冷启动、回到前台各一次，带节流。**不看有没有
 //      在等回复**。定时主动消息是云端到点自己发的，客户端从来不知道自己在等它，
 //      要是只在「欠着回复」时才拉，它的推送丢了就永远没人去捞（那正是这条路存在的理由）。
 //   2. 等回复时的点名（runInstantChatStatusCheck）——每 60s 一跳，下结论前必拉一次最新的。
 //      **不受节流管**：为省一次往返而跳过，就可能拿着旧账本去判「回复取不回」。
+//   3. 第三方推送模式的前台补收（sweepThirdPartyOutbox）——见那边的注释。
 //
-// 两类共用 drainOutboxAndFlush，也共用同一个节流时钟——点名拉过之后，紧跟着的上线补收
+// 三类共用 drainOutboxAndFlush，也共用同一个节流时钟——点名拉过之后，紧跟着的上线补收
 // 那一趟就会被挡下。
 //
 // 账本是按用户存的、不分角色，所以一趟就把所有角色欠的都捞回来了，不用逐个角色拉。
@@ -2239,6 +2243,39 @@ const drainOutboxAndFlush = async (trigger: FlushTrigger): Promise<AmsgOutboxEnt
   }
 };
 
+// ─── 第三方推送模式的前台补收 ───
+//
+// 选了 WxPusher / Bark / MeoW 之后，云端只把消息推给第三方 App，浏览器的 Service Worker
+// 一条都收不到：手机上的通知立刻弹了，页面却不知道有新消息，只能等下一次去云端账本拉。
+// 所以这个模式下页面在前台时自己勤着拉：欠着即时回复时每 3 秒一次，其余时候 6 秒一次
+// （定时主动消息）。挂在本地巡查那条 3 秒链上，不另起定时器；后台时不拉。
+// 网页推送模式不跑这一段：SW 收到推送会直接写本地收件箱，本地巡查就够了。
+export const THIRD_PARTY_PENDING_DRAIN_INTERVAL_MS = 3_000;
+export const THIRD_PARTY_IDLE_DRAIN_INTERVAL_MS = 6_000;
+/** 第三方模式下回到前台的补收只留这点防抖，挡掉几十毫秒内连跳的可见性事件。 */
+export const THIRD_PARTY_FOREGROUND_DEBOUNCE_MS = 3_000;
+
+/**
+ * 第三方推送模式下，到点就拉一次云端账本。返回这一跳有没有真去拉（只为单测断言）。
+ * `now` 只给单测拨钟用。
+ */
+export const sweepThirdPartyOutbox = async (now = Date.now()): Promise<boolean> => {
+  try {
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return false;
+    const config = await ActiveMsgStore.getGlobalConfig();
+    if (config?.pushMode !== 'third-party' || !config.workerUrl?.trim()) return false;
+    const interval = listInstantChatPendings().length > 0
+      ? THIRD_PARTY_PENDING_DRAIN_INTERVAL_MS
+      : THIRD_PARTY_IDLE_DRAIN_INTERVAL_MS;
+    if (lastOutboxDrainAt > 0 && now - lastOutboxDrainAt < interval) return false;
+    await drainOutboxAndFlush('第三方补收');
+    return true;
+  } catch (e) {
+    log.warn('第三方推送模式的前台补收没跑成（下一跳还会再来）', { error: e });
+    return false;
+  }
+};
+
 /**
  * 上线就去账本上捞一次漏掉的推送。冷启动、回到前台各调一次。
  *
@@ -2257,21 +2294,25 @@ const drainOutboxAndFlush = async (trigger: FlushTrigger): Promise<AmsgOutboxEnt
 export const catchUpMissedPushes = async (
   trigger: 'startup' | 'foreground' | 'manual',
 ): Promise<'drained' | 'throttled' | 'worker-unset' | 'failed'> => {
-  // 手动那趟是用户自己发现丢了消息才点的，不受节流管。
-  if (trigger !== 'manual'
-    && lastOutboxDrainAt > 0
-    && Date.now() - lastOutboxDrainAt < OUTBOX_CATCH_UP_MIN_INTERVAL_MS) {
-    return 'throttled';
-  }
-
   // 没配过 Worker 的用户一个请求都不该发。不靠 ensureWorkerReady 抛错来兜：那条路每次
   // 回前台都会 warn 一行，控制台会被刷满，而「没配」根本不是异常。
+  let thirdPartyPush = false;
   try {
     const config = await ActiveMsgStore.getGlobalConfig();
     if (!config?.workerUrl?.trim()) return 'worker-unset';
+    thirdPartyPush = config.pushMode === 'third-party';
   } catch (e) {
     log.warn('读不到主动消息配置，这趟补收先跳过', { error: e });
     return 'failed';
+  }
+
+  // 手动那趟是用户自己发现丢了消息才点的，不受节流管。第三方推送模式下页面收不到 SW
+  // 的消息，切回来、点通知进来正是用户等着看新消息的时刻，只留防抖不套 60 秒节流。
+  const minInterval = thirdPartyPush ? THIRD_PARTY_FOREGROUND_DEBOUNCE_MS : OUTBOX_CATCH_UP_MIN_INTERVAL_MS;
+  if (trigger !== 'manual'
+    && lastOutboxDrainAt > 0
+    && Date.now() - lastOutboxDrainAt < minInterval) {
+    return 'throttled';
   }
 
   const entries = await drainOutboxAndFlush(trigger === 'manual' ? '手动补收' : '上线补收');
