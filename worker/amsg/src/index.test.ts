@@ -1510,6 +1510,7 @@ describe('轮次上限与上游共用同一个数', () => {
     contactName: 'Nyah',
     metadata: { charId: CHAR_ID, amsgMode: 'auto' },
     scratch,
+    readState: async () => [],
     iteration,
   }) as any;
 
@@ -3469,7 +3470,7 @@ describe('没发出去时写 last_skip', () => {
       choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: THINK_ONLY } }],
     };
     const runFireCapturingDiag = async (llmOutputText: string, llmResponse: unknown) => {
-      const { ctx, scratch, writeState } = makeCtx({});
+      const { ctx, scratch, readState, writeState } = makeCtx({});
       await amsgHooks.onBeforeFire(ctx);
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
       try {
@@ -3481,6 +3482,7 @@ describe('没发出去时写 last_skip', () => {
           contactName: 'Nyah',
           metadata: { charId: CHAR_ID, amsgClientTaskId: 'client-task-1', amsgMode: 'auto' },
           scratch,
+          readState,
           writeState,
         } as any);
         return warn.mock.calls.find(([tag]) => tag === '[amsg:skip-diag]')?.[1];
@@ -3521,7 +3523,7 @@ describe('没发出去时写 last_skip', () => {
   });
 
   it('正常出正文的 fire 不写 empty-generation', async () => {
-    const { ctx, scratch, writeState } = makeCtx({});
+    const { ctx, scratch, readState, writeState } = makeCtx({});
     await amsgHooks.onBeforeFire(ctx);
     await amsgHooks.onLLMOutput({
       sessionId: 'sess_task_42',
@@ -3530,6 +3532,7 @@ describe('没发出去时写 last_skip', () => {
       contactName: 'Nyah',
       metadata: { charId: CHAR_ID, amsgClientTaskId: 'client-task-1', amsgMode: 'auto' },
       scratch,
+      readState,
       writeState,
     } as any);
     const call = writeState.mock.calls.find(([, entries]) =>
@@ -3542,7 +3545,7 @@ describe('没发出去时写 last_skip', () => {
 // update-message 的可写字段里也没有它）。tool_pack 每轮聊天都重新上云，所以以它为准。
 describe('推送标题跟着当前角色名', () => {
   it('tool_pack 的 charName 盖过任务行冻结的 contactName', async () => {
-    const { ctx, scratch, writeState } = makeCtx({
+    const { ctx, scratch, readState, writeState } = makeCtx({
       charRows: [
         { key: AMSG_FIRE_PACK_KEY, value: firePackValue() },
         {
@@ -3562,6 +3565,7 @@ describe('推送标题跟着当前角色名', () => {
       contactName: 'Nyah',   // 任务行还顶着改名前的旧名字
       metadata: { charId: CHAR_ID, amsgClientTaskId: 'client-task-1', amsgMode: 'auto' },
       scratch,
+      readState,
       writeState,
     } as any) as any;
 
@@ -5329,5 +5333,67 @@ describe('打包进来的 amsg-server 得会写 pushStatus', () => {
       `package.json 里还锁着 ${version}：那个版本的上游不写 last_error.pushStatus，`
       + '打出来的 worker 会把「推送投递」这一项一路报绿。等上游发版后升到 next.20 再打 bundle。',
     ).toBe(true);
+  });
+});
+
+// 开场那道租约门只查一次，生成要几十秒：这期间用户在本地开口的话，主动消息没看到新对话，
+// 跟本地那轮回复会同时落到聊天里各说各的。推送前要再查一次，聊上了就不发、留回执。
+describe('推送前复查：生成期间用户开口了', () => {
+  const EXPIRE_META = { amsgMode: 'auto', amsgTaskInstruction: '想到什么说什么', amsgExpirePolicy: 'expire' };
+
+  /** 跑一次 fire，在 onBeforeFire 和 onLLMOutput 之间写进一份 presence（模拟生成期间用户开口）。 */
+  const fireWithPresenceInBetween = async (metadata: Record<string, unknown>, presence?: string) => {
+    const store = makeFireStore();
+    const scratch: Record<string, unknown> = {};
+    const meta = { charId: CHAR_ID, ...metadata };
+    const emitResult = vi.fn(async () => ({}));
+    await amsgHooks.onBeforeFire({
+      task: {
+        id: FIRE_TASK_ID, uuid: TASK_UUID, contactName: 'Nyah', recurrenceType: 'none',
+        nextSendAt: FIRE_NEXT_SEND_AT, metadata: meta,
+      },
+      userId: 'u1', readState: store.readState, writeState: store.writeState,
+      now: NOW, scratch, emitResult,
+    } as any);
+    if (presence) store.rows.set(AMSG_CHAT_PRESENCE_KEY, presence);
+    const decision = await amsgHooks.onLLMOutput({
+      sessionId: `sess_task_${FIRE_TASK_ID}@1`, taskId: FIRE_TASK_ID, taskUuid: TASK_UUID,
+      llmResponse: {}, llmOutputText: '在干嘛呀', contactName: 'Nyah',
+      metadata: meta, scratch, readState: store.readState, writeState: store.writeState, emitResult,
+    } as any) as any;
+    return { decision, store, emitResult };
+  };
+
+  it('生成期间来了一条新的用户消息（租约已过期也算）→ 不发，留 last_skip 和回执', async () => {
+    // activeAt 故意很旧：只靠「最近一条用户消息变新了」判，不依赖设备时钟准不准。
+    const { decision, store, emitResult } = await fireWithPresenceInBetween(
+      EXPIRE_META,
+      presenceValue(NOW.getTime() - 10 * 60_000, { lastUserMessageAt: NOW.getTime() + 5_000 }),
+    );
+    expect(decision.decision).toBe('skip-push');
+    expect(JSON.parse(store.rows.get(AMSG_LAST_SKIP_KEY) ?? '{}').reason).toBe('chat-overlap');
+    expect(emitResult).toHaveBeenCalledWith(expect.objectContaining({ resultKind: 'fire-skipped', reason: 'chat-overlap' }));
+  });
+
+  it('生成期间开了新鲜租约（本地正在回复）→ 不发', async () => {
+    const { decision } = await fireWithPresenceInBetween(
+      EXPIRE_META,
+      presenceValue(Date.now(), { lastUserMessageAt: null }),
+    );
+    expect(decision.decision).toBe('skip-push');
+  });
+
+  it('生成期间没人开口 → 照常发', async () => {
+    const { decision, store } = await fireWithPresenceInBetween(EXPIRE_META);
+    expect(decision.decision).toBe('finish');
+    expect(store.rows.has(AMSG_LAST_SKIP_KEY)).toBe(false);
+  });
+
+  it('到点必发（force）不复查', async () => {
+    const { decision } = await fireWithPresenceInBetween(
+      { ...EXPIRE_META, amsgExpirePolicy: 'force' },
+      presenceValue(Date.now(), { lastUserMessageAt: Date.now() }),
+    );
+    expect(decision.decision).toBe('finish');
   });
 });

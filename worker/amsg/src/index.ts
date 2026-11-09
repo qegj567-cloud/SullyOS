@@ -127,6 +127,7 @@ import {
 } from '../../../utils/amsgFireSchedule';
 import {
   AMSG_CHAT_PRESENCE_KEY,
+  chattedDuringFire,
   isFreshChatPresence,
   parseAmsgChatPresence,
 } from '../../../utils/amsgChatPresence';
@@ -378,6 +379,7 @@ interface SessionCtx {
   avatarUrl?: string;
   metadata: Record<string, unknown>;
   scratch?: Record<string, unknown>;
+  readState: (namespace: string, options?: { key: string }) => Promise<Array<{ key: string; value: string }>>;
   writeState?: WriteState;
   storeAttachment?: StoreAttachment;
   scheduleTask?: ScheduleTask;
@@ -526,6 +528,11 @@ interface FireStash {
   sceneSong: { id?: number; name: string; artists: string } | null;
   /** 这条任务是不是即时对话（用户刚发完消息在等回复）；决定要不要写 outbox。 */
   instant: boolean;
+  /**
+   * 推送前复查「生成期间用户开口没有」要的基准：开场时看到的最近一条真实用户消息。
+   * 只有让路型（expire）的定时任务才有；即时对话和到点必发的任务是 null，不复查。
+   */
+  overlapGuard: { lastUserMessageAt: number | null } | null;
   /**
    * 一次性即时对话任务绑定的 `amsg:instant-input` 键（定时任务的兜底输入不在这里清）。
    * 本轮即时对话落定（送达 / skip / 取消 / 终态失败）后即刻删掉，避免每轮聊天在 D1 里
@@ -2402,6 +2409,7 @@ export const amsgHooks = {
       // （resolveFireSceneSong 与 renderFireSceneBlock 共用判定），冻的必然是正文里那首。
       sceneSong: resolveFireSceneSong(pack.scene, ctx.now.getTime(), tz),
       instant,
+      overlapGuard: !instant && policy === 'expire' ? { lastUserMessageAt } : null,
       instantInputKey,
       // 下面即时对话那一支起跑（要等请求消息拼完才知道给评估喂什么）。
       emotionEvalPromise: null,
@@ -2749,6 +2757,41 @@ export const amsgHooks = {
         sessionId: ctx.sessionId,
         pushes: decision.decision === 'finish' ? decision.pushPayloads.length : 0,
       });
+    }
+
+    // 开场那道门只查过一次，生成要几十秒：这期间用户在本地聊上的话，这句没看到新对话，
+    // 跟本地那轮回复会同时落到聊天里各说各的。推送前再看一眼，聊上了就不发，给角色留回执。
+    if (decision.decision === 'finish' && stash.overlapGuard) {
+      const presenceRows = await ctx.readState(amsgStateNamespace(stash.charId), { key: AMSG_CHAT_PRESENCE_KEY });
+      const presence = parseAmsgChatPresence(presenceRows.find((r) => r.key === AMSG_CHAT_PRESENCE_KEY)?.value);
+      if (chattedDuringFire(presence, stash.charId, Date.now(), stash.overlapGuard.lastUserMessageAt)) {
+        // shortcut: 这一轮已经用工具改过任务的照常发出——跳过的话客户端收不到这批改动、认领不到新任务；
+        // 真撞上再改成拦下时单独 emitResult 送任务改动。
+        if (stash.scheduledTasks.length || stash.cancelledTasks.length || stash.renewedTasks.length) {
+          console.warn('[amsg:chat-overlap] 生成期间用户开口了，但这轮改过任务，照常发出', { taskId });
+        } else {
+          console.log('[amsg:chat-overlap] 生成期间用户开口了，这条不发', {
+            taskId,
+            seenLastUserMessageAt: stash.overlapGuard.lastUserMessageAt,
+            presenceLastUserMessageAt: presence?.lastUserMessageAt ?? null,
+          });
+          await writeLastSkip(ctx.writeState, stash.charId, {
+            v: 1,
+            taskUuid: stash.taskUuid,
+            occurrenceMs: stash.occurrenceMs,
+            reason: 'chat-overlap',
+            skippedAt: Date.now(),
+          });
+          await emitFireSkip(ctx.emitResult, {
+            charId: stash.charId,
+            taskUuid: stash.taskUuid,
+            occurrenceMs: stash.occurrenceMs,
+            reason: 'chat-overlap',
+            task: findTaskBrief(stash.pendingTasks, stash.taskUuid),
+          });
+          return { decision: 'skip-push' as const };
+        }
+      }
     }
 
     if (decision.decision === 'skip-push' && decision.sideEffects) {
