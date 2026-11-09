@@ -226,6 +226,14 @@ const pruneStaleActionResultReceipts = async (purgeCharId?: string): Promise<voi
   } catch { /* prune 尽力而为, 失败不影响主流程 */ }
 };
 
+/**
+ * 全局即时对话开没开。点过开关就听用户的；没点过的，Worker 连接验证成功过就默认开。
+ * 只填了地址、没连上过的不算：那时上云发一条挂一条，又不会退回本地生成。
+ */
+export const isInstantChatSwitchedOn = (
+  config: { instantChatEnabled?: boolean; initializedAt?: number; workerUrl?: string },
+): boolean => config.instantChatEnabled ?? Boolean(config.initializedAt && config.workerUrl?.trim());
+
 export const ActiveMsgStore = {
   /** 纯动作可以没有聊天产物，需单独保留完成回执，防止补收/ACK 重试重放动作。 */
   async hasAppliedActionResult(charId: string, messageId: string): Promise<boolean> {

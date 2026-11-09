@@ -20,8 +20,9 @@ vi.mock('./activeMsgClient', () => ({
 // Opening the form must not contact a deployment service or save fake test credentials.
 vi.mock('./cfProvision', () => ({}));
 vi.mock('./amsgStateSync', () => ({ isWorkerUrlCleared: () => false }));
-vi.mock('./activeMsgStore', () => ({
+vi.mock('./activeMsgStore', async () => ({
   ActiveMsgStore: { saveGlobalConfig: vi.fn().mockResolvedValue(undefined) },
+  isInstantChatSwitchedOn: (await vi.importActual<typeof import('./activeMsgStore')>('./activeMsgStore')).isInstantChatSwitchedOn,
   maskActiveMsgUserId: (value: string) => value,
 }));
 vi.mock('./analytics', () => ({ trackEvent: vi.fn() }));

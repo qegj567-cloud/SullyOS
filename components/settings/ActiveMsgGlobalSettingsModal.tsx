@@ -14,7 +14,7 @@ import {
   INSTANT_CHAT_BLOCKER_HINTS, resolveInstantChatBlocker,
   type InstantChatGateInput,
 } from '../../utils/amsgDiagnostics';
-import { ActiveMsgStore, maskActiveMsgUserId } from '../../utils/activeMsgStore';
+import { ActiveMsgStore, isInstantChatSwitchedOn, maskActiveMsgUserId } from '../../utils/activeMsgStore';
 import { formatTaskTime } from '../../utils/amsg2Tasks';
 import { isWorkerUrlCleared } from '../../utils/amsgStateSync';
 import { rememberDetachedWorker } from '../../utils/amsgDetachedWorkers';
@@ -401,7 +401,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
             connected: Boolean(nextConfig.initializedAt),
             pushSubscribed: Boolean(nextPushStatus.hasSubscription),
             workerSupportsInstantChat: supported,
-          }, Boolean(nextConfig.instantChatEnabled));
+          }, isInstantChatSwitchedOn(nextConfig));
         }).catch(() => {
           if (requestId === pushRequestIdRef.current) setInstantChatSupported(false);
         });
@@ -1001,7 +1001,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
    * 点完立刻生效（下一条消息就按新路走），而不是「点完还得等一下」。
    */
   const handleToggleInstantChat = async () => {
-    const next = !config?.instantChatEnabled;
+    const next = !(config && isInstantChatSwitchedOn(config));
     // 开了又关是这条路上最值钱的信号：能开、开过、然后放弃了，跟「压根没开」不是一回事。
     trackEvent('切换即时对话', { action: next ? '开' : '关' });
     patchConfig({ instantChatEnabled: next });
@@ -1038,6 +1038,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
   }
 
   const isConnected = Boolean(config.initializedAt);
+  const instantChatOn = isInstantChatSwitchedOn(config);
 
   // 体检：探测结果 + 「这台设备订阅了没」这个只有前端知道的事实，红绿灯判定全在
   // amsgDiagnostics 那份纯函数里（那边有回归测试钉着）。
@@ -1860,10 +1861,10 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
             {/* 开着但有门没过时不能只写「已开启」——那几道门是真的会让这一轮走本地生成的，
                 标成绿色的「已开启」就是在骗人：用户以为聊天在云端跑，实际一直在本地。 */}
             <span className={`text-xs font-bold ${
-              !config.instantChatEnabled ? 'text-slate-400'
+              !instantChatOn ? 'text-slate-400'
                 : instantChatBlockedReason ? 'text-amber-600' : 'text-emerald-600'
             }`}>
-              {!config.instantChatEnabled ? '未开启'
+              {!instantChatOn ? '未开启'
                 : instantChatBlockedReason ? '已开启 · 暂不生效' : '已开启'}
             </span>
           </div>
@@ -1882,12 +1883,12 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
           <button
             type="button"
             onClick={() => void handleToggleInstantChat()}
-            disabled={loading || (!config.instantChatEnabled && !!instantChatBlockedReason)}
+            disabled={loading || (!instantChatOn && !!instantChatBlockedReason)}
             className={`w-full py-3 font-bold rounded-2xl active:scale-95 transition-transform disabled:opacity-40 ${
-              config.instantChatEnabled ? 'bg-slate-200 text-slate-600' : 'bg-slate-900 text-white'
+              instantChatOn ? 'bg-slate-200 text-slate-600' : 'bg-slate-900 text-white'
             }`}
           >
-            {config.instantChatEnabled ? '关闭即时对话' : '开启即时对话'}
+            {instantChatOn ? '关闭即时对话' : '开启即时对话'}
           </button>
         </div>
 
