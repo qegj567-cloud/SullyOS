@@ -33,6 +33,7 @@ import { isBlobRef, getBlobForRef, restoreBlobRef, migrateDataUrlToRef, migrateA
 import { resolveBlobRefsInRequestBody } from '../utils/apiBlobRefs';
 import { collectBlobRefs, writeBlobsToZip, readBlobsIndex, restoreBlobsFromZip } from '../utils/backupBlobs';
 import { missingBackupAssetsSummary, writeMissingBackupAssets, type BackupExportOptions, type BackupMissingAsset } from '../utils/backupMissingAssets';
+import { readBackupPreferences } from '../utils/backupPreferences';
 import { initPwaIcon, clearPwaIcon } from '../utils/appIcon';
 import { LEGACY_DEFAULT_WALLPAPER, isLegacyDefaultWallpaper, shouldPreserveLegacyDefaultWallpaper } from '../utils/wallpaperCompat';
 import { migrateSharkpanAssets } from '../utils/sharkpanAssetMigration';
@@ -460,7 +461,7 @@ interface OSContextType {
   cloudBackupConfig: CloudBackupConfig;
   updateCloudBackupConfig: (updates: Partial<CloudBackupConfig>) => void;
   cloudBackupToWebDAV: (mode: 'text_only' | 'media_only' | 'full') => Promise<void>;
-  cloudRestoreFromWebDAV: (file: CloudBackupFile) => Promise<void>;
+  cloudRestoreFromWebDAV: (file: CloudBackupFile, options?: ImportSystemOptions) => Promise<void>;
   listCloudBackups: () => Promise<CloudBackupFile[]>;
 
   // System
@@ -2811,7 +2812,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       }
   };
 
-  const cloudRestoreFromWebDAV = async (file: CloudBackupFile) => {
+  const cloudRestoreFromWebDAV = async (file: CloudBackupFile, importOptions?: ImportSystemOptions) => {
       const { downloadBackup } = await loadBackupProvider();
       try {
           setSysOperation({ status: 'processing', message: '正在从云端下载...', progress: 0 });
@@ -2823,7 +2824,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
           setSysOperation({ status: 'processing', message: '正在恢复数据...', progress: 50 });
           const zipFile = new File([blob], file.name, { type: 'application/zip' });
-          await importSystem(zipFile);
+          await importSystem(zipFile, importOptions);
       } catch (e: any) {
           setSysOperation({ status: 'idle', message: '', progress: 0 });
           addToast(`云端恢复失败: ${e.message}`, 'error');
@@ -3539,10 +3540,12 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   ): Promise<Blob> => {
       try {
           setSysOperation({ status: 'processing', message: '正在初始化打包引擎...', progress: 0 });
-          
+          // 手动导出和云端备份都从这里过，带哪些东西只在这一处按备份偏好决定。
+          const { includeBackendConnection } = readBackupPreferences();
+
           if (listUserSpaces().length > 1) {
               const { exportUserSpaces } = await import('../utils/userSpaceBackup');
-              const result = await exportUserSpaces(mode, exportOptions.userScope || 'current', message => setSysOperation({ status: 'processing', message, progress: 30 }), exportOptions.includeBackendConnection, items => {
+              const result = await exportUserSpaces(mode, exportOptions.userScope || 'current', message => setSysOperation({ status: 'processing', message, progress: 30 }), includeBackendConnection, items => {
                   exportOptions.onMissingAssets?.(items);
                   if (items.length) addToast(missingBackupAssetsSummary(items), 'info');
               });
@@ -3903,7 +3906,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           // ActiveMsg 库里，不在上面那份 store 清单内，所以单独取一次；异步，故在字面量外。
           // 纯配置无媒体，跟着 text_only / full 走。
           if (mode === 'text_only' || mode === 'full') {
-              backupData.amsg2GlobalConfig = await exportAmsg2GlobalConfig(exportOptions);
+              backupData.amsg2GlobalConfig = await exportAmsg2GlobalConfig({ includeBackendConnection });
           }
 
           // 桌面皮肤偏好（电子宠物/手游风的界面配色 + 看板 banner）——异步（看板图令牌需解析为
