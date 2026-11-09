@@ -2195,7 +2195,10 @@ export const OUTBOX_CATCH_UP_MIN_INTERVAL_MS = 60_000;
 let lastOutboxDrainAt = 0;
 
 /** 只给单测用：把节流时钟拨回从没拉过的状态。 */
-export const resetOutboxCatchUpThrottleForTesting = (): void => { lastOutboxDrainAt = 0; };
+export const resetOutboxCatchUpThrottleForTesting = (): void => {
+  lastOutboxDrainAt = 0;
+  scheduledTasksCache = null;
+};
 
 /**
  * 「有 N 条太旧了，没能补回来」——广播出去让 OSContext 弹一句。
@@ -2247,13 +2250,56 @@ const drainOutboxAndFlush = async (trigger: FlushTrigger): Promise<AmsgOutboxEnt
 //
 // 选了 WxPusher / Bark / MeoW 之后，云端只把消息推给第三方 App，浏览器的 Service Worker
 // 一条都收不到：手机上的通知立刻弹了，页面却不知道有新消息，只能等下一次去云端账本拉。
-// 所以这个模式下页面在前台时自己勤着拉：欠着即时回复时每 3 秒一次，其余时候 6 秒一次
-// （定时主动消息）。挂在本地巡查那条 3 秒链上，不另起定时器；后台时不拉。
+// 所以这个模式下页面在前台时自己去拉，按「下一条大概什么时候来」分三档：
+//   - 欠着即时回复：每 3 秒；
+//   - 本机任务清单里有定时任务快到点（到点前 1 分钟到到点后 5 分钟）：每 6 秒；
+//   - 其余时候：每 60 秒，兜住本机不知道时间的那些（失败重发、清单还没同步的任务等）。
+// 挂在本地巡查那条 3 秒链上，不另起定时器；后台时不拉。
 // 网页推送模式不跑这一段：SW 收到推送会直接写本地收件箱，本地巡查就够了。
 export const THIRD_PARTY_PENDING_DRAIN_INTERVAL_MS = 3_000;
-export const THIRD_PARTY_IDLE_DRAIN_INTERVAL_MS = 6_000;
+export const THIRD_PARTY_DUE_DRAIN_INTERVAL_MS = 6_000;
+export const THIRD_PARTY_SLOW_DRAIN_INTERVAL_MS = 60_000;
 /** 第三方模式下回到前台的补收只留这点防抖，挡掉几十毫秒内连跳的可见性事件。 */
 export const THIRD_PARTY_FOREGROUND_DEBOUNCE_MS = 3_000;
+/** 快档窗口：到点前多早开始勤拉、到点后多久还算「刚到点」（留出云端生成和重试的时间）。 */
+export const THIRD_PARTY_DUE_LEAD_MS = 60_000;
+export const THIRD_PARTY_DUE_TAIL_MS = 5 * 60_000;
+const RECURRENCE_PERIOD_MS: Record<ActiveMsg2TaskRecord['recurrenceType'], number> = {
+  none: 0,
+  daily: 24 * 60 * 60_000,
+  weekly: 7 * 24 * 60 * 60_000,
+};
+
+/**
+ * 有没有哪条定时任务正处在快档窗口里。纯函数，边界见单测。
+ *
+ * 重复任务发过一次之后，本机记录的下次时间可能还停在上一次（要等对账才同步），这里按
+ * 周期往后推到最近一次。跨夏令时那两天会差一小时，那两次退回慢档，不影响送达。
+ */
+export const isNearScheduledSend = (tasks: ActiveMsg2TaskRecord[], now: number): boolean =>
+  tasks.some((task) => {
+    if (task.status !== 'scheduled') return false;
+    let due = Date.parse(task.nextSendAt || task.firstSendTime);
+    if (!Number.isFinite(due)) return false;
+    const period = RECURRENCE_PERIOD_MS[task.recurrenceType] ?? 0;
+    if (period > 0 && due + THIRD_PARTY_DUE_TAIL_MS < now) {
+      due += Math.ceil((now - THIRD_PARTY_DUE_TAIL_MS - due) / period) * period;
+    }
+    return now >= due - THIRD_PARTY_DUE_LEAD_MS && now <= due + THIRD_PARTY_DUE_TAIL_MS;
+  });
+
+/** 读全部角色的任务清单有一定开销，缓存一小会儿；新排的任务最晚这么久之后被看见。 */
+const SCHEDULED_TASKS_CACHE_MS = 30_000;
+let scheduledTasksCache: { at: number; tasks: ActiveMsg2TaskRecord[] } | null = null;
+const readLocalScheduledTasks = async (): Promise<ActiveMsg2TaskRecord[]> => {
+  const now = Date.now();
+  if (scheduledTasksCache && now - scheduledTasksCache.at < SCHEDULED_TASKS_CACHE_MS) {
+    return scheduledTasksCache.tasks;
+  }
+  const tasks = (await DB.getAllCharacters()).flatMap((c) => c.activeMsg2Config?.tasks ?? []);
+  scheduledTasksCache = { at: now, tasks };
+  return tasks;
+};
 
 /**
  * 第三方推送模式下，到点就拉一次云端账本。返回这一跳有没有真去拉（只为单测断言）。
@@ -2264,10 +2310,15 @@ export const sweepThirdPartyOutbox = async (now = Date.now()): Promise<boolean> 
     if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return false;
     const config = await ActiveMsgStore.getGlobalConfig();
     if (config?.pushMode !== 'third-party' || !config.workerUrl?.trim()) return false;
-    const interval = listInstantChatPendings().length > 0
-      ? THIRD_PARTY_PENDING_DRAIN_INTERVAL_MS
-      : THIRD_PARTY_IDLE_DRAIN_INTERVAL_MS;
-    if (lastOutboxDrainAt > 0 && now - lastOutboxDrainAt < interval) return false;
+    const sinceLast = lastOutboxDrainAt > 0 ? now - lastOutboxDrainAt : Infinity;
+    if (listInstantChatPendings().length > 0) {
+      if (sinceLast < THIRD_PARTY_PENDING_DRAIN_INTERVAL_MS) return false;
+    } else {
+      // 快档都还没到就不用读任务清单。
+      if (sinceLast < THIRD_PARTY_DUE_DRAIN_INTERVAL_MS) return false;
+      if (sinceLast < THIRD_PARTY_SLOW_DRAIN_INTERVAL_MS
+        && !isNearScheduledSend(await readLocalScheduledTasks(), now)) return false;
+    }
     await drainOutboxAndFlush('第三方补收');
     return true;
   } catch (e) {
