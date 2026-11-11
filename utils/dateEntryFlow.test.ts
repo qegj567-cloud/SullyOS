@@ -7,6 +7,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
     toast: vi.fn(), updateCharacter: vi.fn(), fetch: vi.fn(),
     session: null as any, rows: [] as any[],
+    suspended: null as any, suspendDate: vi.fn(), openApp: vi.fn(), autoStart: null as string | null,
     characters: [{ id: 'c', name: '测试角色', avatar: '', savedDateState: { currentText: '旧快照' } }],
 }));
 vi.mock('../context/OSContext', async () => {
@@ -16,14 +17,19 @@ vi.mock('../context/OSContext', async () => {
         return {
             activeCharacterId, setActiveCharacterId,
             characters: mocks.characters,
-            closeApp: vi.fn(), openApp: vi.fn(), addToast: mocks.toast, updateCharacter: mocks.updateCharacter,
+            closeApp: vi.fn(), openApp: mocks.openApp, addToast: mocks.toast, updateCharacter: mocks.updateCharacter,
             updateUserProfile: vi.fn(), userProfile: { name: '用户' }, groups: [], characterGroups: [],
-            virtualTime: { hours: 12, minutes: 0, day: 'Thu' }, apiConfig: { baseUrl: 'https://example.invalid' }, consumeDateAutoStart: vi.fn(),
+            virtualTime: { hours: 12, minutes: 0, day: 'Thu' }, apiConfig: { baseUrl: 'https://example.invalid' },
+            dateAutoStartCharId: mocks.autoStart, consumeDateAutoStart: () => { mocks.autoStart = null; },
+            suspendedDate: mocks.suspended, suspendDate: mocks.suspendDate,
+            takeSuspendedDate: () => { const taken = mocks.suspended; mocks.suspended = null; return taken; },
         };
     } };
 });
 vi.mock('../components/date/DateSession', () => ({ default: (props: any) => {
     mocks.session = props;
+    // 真组件每次渲染都把画面状态写进 snapshotRef，挂起时父组件从这里取。
+    if (props.snapshotRef) props.snapshotRef.current = { currentText: '画面上这一句' };
     return React.createElement('button', { onClick: props.onExit }, '退出见面');
 } }));
 vi.mock('../components/date/DateSettings', () => ({ default: () => null }));
@@ -51,6 +57,8 @@ beforeEach(() => {
     localStorage.setItem('sully-date-entry-guide-v1', 'seen');
     mocks.rows = [];
     mocks.session = null;
+    mocks.suspended = null;
+    mocks.autoStart = null;
     mocks.fetch.mockResolvedValue({ ok: true });
     vi.stubGlobal('fetch', mocks.fetch);
     (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
@@ -126,4 +134,52 @@ it('有旧快照仍显示三个入口；直接见面不请求开场，退出无�
     await clickText('直接见面');
     expect(mocks.session.encounterId).not.toBe(firstId);
     expect(mocks.session.messages.map((message: any) => message.content)).toEqual(['上一场']);
+});
+
+// ─── 见面挂起（见 docs/date-leave-reminder.md） ───
+
+it('对话中走开（没点结束就离开见面）→ 挂起，带上场次和画面状态', async () => {
+    await act(async () => root.render(React.createElement(DateApp)));
+    await clickText('测试角色');
+    await clickText('直接见面');
+    const encounterId = mocks.session.encounterId;
+    await act(async () => root.unmount());
+    expect(mocks.suspendDate).toHaveBeenCalledOnce();
+    expect(mocks.suspendDate.mock.calls[0][0]).toMatchObject({
+        charId: 'c', charName: '测试角色', encounterId, state: { currentText: '画面上这一句' },
+    });
+    root = createRoot(container);
+});
+
+it('从聊天进来、点结束回聊天 → 不挂起（主动结束不算走开）', async () => {
+    mocks.autoStart = 'c';
+    await act(async () => root.render(React.createElement(DateApp)));
+    await clickText('直接见面');
+    await clickText('退出见面');
+    expect(mocks.openApp).toHaveBeenCalled();
+    await act(async () => root.unmount());
+    expect(mocks.suspendDate).not.toHaveBeenCalled();
+    root = createRoot(container);
+});
+
+it('打开见面时有挂起的那场 → 直接回到对话，交回场次和画面状态，并取走挂起', async () => {
+    mocks.suspended = { charId: 'c', charName: '测试角色', encounterId: 'enc-1', peekStatus: '开场',
+        cameFromChat: false, state: { currentText: '接着这句' }, suspendedAt: 1 };
+    await act(async () => root.render(React.createElement(DateApp)));
+    expect(mocks.session.encounterId).toBe('enc-1');
+    expect(mocks.session.initialState).toMatchObject({ currentText: '接着这句' });
+    expect(mocks.suspended).toBeNull();
+});
+
+it('挂起时回复还没回来 → 恢复后交给对话画面，落定后再读一次记录', async () => {
+    let finish!: () => void;
+    const pendingTurn = new Promise<void>(resolve => { finish = resolve; });
+    mocks.suspended = { charId: 'c', charName: '测试角色', encounterId: 'enc-2', peekStatus: '',
+        cameFromChat: false, state: null, suspendedAt: 1, pendingTurn };
+    await act(async () => root.render(React.createElement(DateApp)));
+    expect(mocks.session.pendingTurn).toBe(pendingTurn);
+    const { DB } = await import('./db');
+    const readsBefore = vi.mocked(DB.getRecentMessagesByCharIdAndSource).mock.calls.length;
+    await act(async () => { finish(); await pendingTurn; });
+    expect(vi.mocked(DB.getRecentMessagesByCharIdAndSource).mock.calls.length).toBeGreaterThan(readsBefore);
 });

@@ -89,9 +89,10 @@ export const describeExpirePolicy = (policy: ActiveMsg2ExpirePolicy): string =>
 
 /** 任务「要说什么」的一句话描述。fixed 有固定内容、prompted 有方向、auto 可带灵感。 */
 export const describeTaskMode = (
-  task: { mode: ActiveMsg2Mode; promptHint?: string; away?: boolean },
+  task: { mode: ActiveMsg2Mode; promptHint?: string; away?: boolean; dateLeave?: boolean },
 ): string => {
   if (task.away) return '离开后消息';
+  if (task.dateLeave) return '见面离开提醒';
   if (task.mode === 'fixed') return '固定消息';
   if (task.mode === 'prompted') return `提示方向「${task.promptHint || ''}」`;
   return task.promptHint ? `自动（灵感：${task.promptHint}）` : '自动';

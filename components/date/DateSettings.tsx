@@ -12,6 +12,10 @@ import { DATE_STYLE_PRESETS } from '../../utils/datePrompts';
 import ObserveSettings from './ObserveSettings';
 import DateExtraPresets from './DateExtraPresets';
 import DateExtraEditor from './DateExtraEditor';
+import { isAwayCloudRoute } from '../../utils/awayMessage';
+import {
+    DATE_LEAVE_MAX_MINUTES, DATE_LEAVE_MIN_MINUTES, disarmDateLeaveReminder, resolveDateLeaveDelayMinutes,
+} from '../../utils/dateLeaveReminder';
 
 // 标准情绪列表
 const REQUIRED_EMOTIONS = ['normal', 'happy', 'angry', 'sad', 'shy'];
@@ -32,6 +36,70 @@ const Section: React.FC<{ title: string; defaultOpen?: boolean; children: React.
         <div className="px-4 pb-4 pt-1">{children}</div>
     </details>
 );
+
+/** 见面离开提醒：见面对话中途走开多久，角色在私聊里找对方（见 docs/date-leave-reminder.md）。 */
+const LeaveReminderSection: React.FC<{ char: CharacterProfile }> = ({ char }) => {
+    const { updateCharacter } = useOS();
+    const enabled = !!char.dateLeaveReminder?.enabled;
+    const savedDelay = resolveDateLeaveDelayMinutes(char);
+    const [delay, setDelay] = useState(savedDelay);
+    useEffect(() => setDelay(savedDelay), [savedDelay]);
+    const [cloud, setCloud] = useState<boolean | null>(null);
+    useEffect(() => {
+        let cancelled = false;
+        void isAwayCloudRoute(char).then(v => { if (!cancelled) setCloud(v); });
+        return () => { cancelled = true; };
+    }, [char]);
+
+    // 关掉或改了时长都撤掉已经备好的那条（它带着旧时长），见面对话里会按新设置重新备好。
+    const save = (next: { enabled: boolean; delayMinutes: number }) => {
+        void disarmDateLeaveReminder({ char, updateCharacter });
+        updateCharacter(char.id, { dateLeaveReminder: next });
+    };
+    // 拖动时只改显示，松手才保存：每一格都保存会反复撤掉、新建云端任务。
+    const commitDelay = () => { if (delay !== savedDelay) save({ enabled, delayMinutes: delay }); };
+
+    return (
+        <Section title="离开提醒">
+            <div className="space-y-4">
+                <div className="flex items-center justify-between gap-4">
+                    <p className="text-[11px] text-slate-400 leading-relaxed">见面聊到一半走开，过一会儿 {char.name} 会在私聊里找你。点结束离开的不算。</p>
+                    <button
+                        onClick={() => save({ enabled: !enabled, delayMinutes: delay })}
+                        type="button"
+                        role="switch"
+                        aria-checked={enabled}
+                        aria-label="切换离开提醒"
+                        className={`w-12 h-7 shrink-0 rounded-full transition-colors relative ${enabled ? 'bg-primary' : 'bg-slate-200'}`}
+                    >
+                        <div className={`absolute top-0.5 w-6 h-6 bg-white rounded-full shadow-md transition-transform ${enabled ? 'translate-x-5' : 'translate-x-0.5'}`}></div>
+                    </button>
+                </div>
+                {enabled && (
+                    <>
+                        <div>
+                            <div className="flex justify-between text-[10px] text-slate-500 mb-2"><span>走开多久后</span><span>{delay} 分钟</span></div>
+                            <input
+                                type="range" min={DATE_LEAVE_MIN_MINUTES} max={DATE_LEAVE_MAX_MINUTES} step={1} value={delay}
+                                aria-label="走开多久后提醒"
+                                onChange={e => setDelay(parseInt(e.target.value, 10))}
+                                onPointerUp={commitDelay} onKeyUp={commitDelay} onBlur={commitDelay}
+                                className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-primary"
+                            />
+                        </div>
+                        {cloud !== null && (
+                            <p className="text-[11px] text-slate-400 leading-relaxed">
+                                {cloud
+                                    ? `${char.name} 开着主动消息 2.0：切出 SullyOS 也会推送给你，不受主动频率里的上限拦。`
+                                    : `只在 SullyOS 开着时提醒，切出 SullyOS 或锁屏就不发了。开启主动消息 2.0 后切出去也能收到。`}
+                            </p>
+                        )}
+                    </>
+                )}
+            </div>
+        </Section>
+    );
+};
 
 const DateSettings: React.FC<DateSettingsProps> = ({ char, onBack }) => {
     const { updateCharacter, addToast, userProfile } = useOS();
@@ -362,6 +430,8 @@ const DateSettings: React.FC<DateSettingsProps> = ({ char, onBack }) => {
                 </section>}
 
                 <ObserveSettings char={char} />
+
+                <LeaveReminderSection char={char} />
 
                 <Section title="文风与叙事 (Writing Style)">
                     <p className="text-[11px] text-slate-400 mt-1 mb-4">调整见面时 AI 的写作风格与叙事人称，修改后从下一条回复开始生效。</p>

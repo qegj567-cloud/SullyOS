@@ -748,6 +748,8 @@ ${extraBlock ? `\n${extraBlock}` : ''}${isObserveOn(char) ? `\n${buildObserveBlo
         userText: string;
         variant: 'send' | 'reroll';
         useVisionDescriptions?: boolean;
+        /** 见面期间作废的主动消息（amsg2TaskContext.buildInPersonNoticesText），可提可不提。 */
+        inPersonNotes?: string | null;
     }): Promise<{ messages: ApiMessage[] }> => {
 
         const { char, allMsgs, emojis, userText, variant } = input;
@@ -789,6 +791,7 @@ ${extraBlock ? `\n${extraBlock}` : ''}${isObserveOn(char) ? `\n${buildObserveBlo
                 ...messagesWithWorldbooks.map(message => message === pendingMessage
                     ? { ...message, content: `${userText}\n\n${note}` }
                     : message),
+                ...(input.inPersonNotes ? [{ role: 'system', content: input.inPersonNotes }] : []),
                 { role: 'system', content: buildDateInteractionPrinciples(char.name, userProfile?.name || '对方') },
             ],
         };

@@ -124,6 +124,8 @@ import {
   buildTaskInstruction,
   AMSG_AWAY_DELAY_META,
   AMSG_AWAY_MESSAGE_META,
+  AMSG_DATE_LEAVE_META,
+  AMSG_DATE_LEAVE_DELAY_META,
 } from '../../../utils/amsgFireSchedule';
 import {
   AMSG_CHAT_PRESENCE_KEY,
@@ -570,6 +572,8 @@ const REPLY_IN_FLIGHT_DEFER_MS = 45_000;
 const AWAY_DUE_TOLERANCE_MS = 60_000;
 /** 上游 defer 的上限是 24 小时。 */
 const AWAY_MAX_DEFER_MS = 24 * 60 * 60_000;
+// 见面离开提醒的等待时长最短 1 分钟，人还在见面里时剩余时间可能只有十几秒，容差要比上面小得多。
+const DATE_LEAVE_DUE_TOLERANCE_MS = 5_000;
 
 /** 两个时间戳取较新的那个；两个都没有为 null。 */
 const laterOf = (a: number | null, b: number | null): number | null =>
@@ -1966,6 +1970,9 @@ export const amsgHooks = {
     const selfScheduled = taskMeta.amsgSelfScheduled === true;
     // 离开后消息：到点必发、计入连发上限，对方又开过口就原地推迟（见 docs/away-message.md）。
     const away = taskMeta[AMSG_AWAY_MESSAGE_META] === true;
+    // 见面离开提醒：到点必发，不受连发和每日上限拦，这一轮不给排程工具（见 docs/date-leave-reminder.md）。
+    // 原因：一次离开只发一条，生成时又排不了后续，没有离开后消息那条「越排越多」的链要拦。
+    const dateLeave = taskMeta[AMSG_DATE_LEAVE_META] === true;
     const recurring = ctx.task.recurrenceType === 'daily' || ctx.task.recurrenceType === 'weekly';
 
     // 副 API 凭据落地即取走：这一份 metadata 对象上游还要按引用往下传（onLLMOutput 的
@@ -2034,7 +2041,9 @@ export const amsgHooks = {
     const presence = parseAmsgChatPresence(
       charRows.find((r) => r.key === AMSG_CHAT_PRESENCE_KEY)?.value,
     );
-    if (!instant && policy === 'expire' && isFreshChatPresence(presence, charId, ctx.now.getTime())) {
+    // 见面中的租约不在这里推迟，交给下面的 in-person 闸作废（那里才拿得到任务概要）。
+    const inPerson = presence?.scene === 'date' && isFreshChatPresence(presence, charId, ctx.now.getTime());
+    if (!instant && policy === 'expire' && !inPerson && isFreshChatPresence(presence, charId, ctx.now.getTime())) {
       console.log('[amsg:defer]', {
         taskId: ctx.task.id,
         reason: 'reply-in-flight',
@@ -2149,6 +2158,23 @@ export const amsgHooks = {
       });
     }
 
+    // 见面离开提醒：按「见面中」租约最后一次续上的时刻算该什么时候发。人还在见面里（或刚走开）
+    // 就推迟到「最后一次见到人 + 等待时长」，不消费任务、不占重试、不留痕。租约行被私聊那边
+    // 盖成了聊天场景，说明走开之后已经在私聊里开过口，这次离开就结束了：按取消处理，不留回执
+    // （客户端开口时会先取消它，这里兜住取消没发出去的情况）。
+    if (!instant && dateLeave && presence?.charId === charId) {
+      if (presence.scene !== 'date') {
+        console.log('[amsg:date-leave-returned]', { taskId: ctx.task.id, charId, presenceActiveAt: presence.activeAt });
+        return { skip: true } as const;
+      }
+      const dueAt = presence.activeAt + Number(taskMeta[AMSG_DATE_LEAVE_DELAY_META]) * 60_000;
+      const waitMs = Number.isFinite(dueAt) ? dueAt - ctx.now.getTime() : 0;
+      if (waitMs > DATE_LEAVE_DUE_TOLERANCE_MS) {
+        console.log('[amsg:defer]', { taskId: ctx.task.id, reason: 'date-leave-not-due', dueAt });
+        return { defer: { afterMs: Math.min(waitMs, AWAY_MAX_DEFER_MS) } } as const;
+      }
+    }
+
     // 离开后消息按「对方最后一次开口 + 等待时长」触发。客户端只在排期差得多时才去改期，
     // 差的那点在这里补：对方在等待时长内说过话，就推迟到该来的时候，不消费任务、不占重试。
     if (!instant && away) {
@@ -2244,8 +2270,18 @@ export const amsgHooks = {
       return { skip: true } as const;
     }
 
+    // 用户正在和这个角色见面：人就在面前，这时候弹手机消息会穿帮。直接作废、不推迟——
+    // 推迟到见面结束再发，角色每次都得编个「刚才忘了说」来圆。回执送回客户端，见面的
+    // 下一轮当成可提可不提的小事交给角色。到点必发（force）的照发。
+    if (!instant && policy === 'expire' && inPerson) {
+      console.log('[amsg:in-person-skip]', { taskId: ctx.task.id, charId });
+      await recordSkip(ctx, charId, 'in-person', occurrenceMs, taskBrief);
+      return { skip: true } as const;
+    }
+
     const maxUnansweredSends = limits.maxUnansweredSends;
     // 离开后消息也归它管：它发出去就算一次「没回时找你」，后面角色自排的接着往上数。
+    // 原因：它这一轮能顺手再排下一条，不放进同一个计数，用户不回时会一路排下去。
     if (!instant && (selfScheduled || away)
       && countUnansweredSends(selfLog) >= maxUnansweredSends) {
       console.log('[amsg:unanswered-limit-skip]', {
@@ -2294,7 +2330,7 @@ export const amsgHooks = {
     const dailyDay = dayKeyInZone(nowMs, pack.userTzId);
     const dailySends = parseDailySends(charRows.find((r) => r.key === AMSG_DAILY_SENDS_KEY)?.value);
     const sentToday = sendsOnDay(dailySends, dailyDay);
-    if (!instant && sentToday >= limits.dailySendCap) {
+    if (!instant && !dateLeave && sentToday >= limits.dailySendCap) {
       console.log('[amsg:daily-limit-skip]', {
         taskId: ctx.task.id, charId, day: dailyDay, sentToday, cap: limits.dailySendCap,
       });
@@ -2345,7 +2381,8 @@ export const amsgHooks = {
     // amsg2ToolsInjected——用户显式关掉的功能不能被云端聊天轮绕开重排任务。
     // 必填字段（parseFirePack 把关），不做缺省——这道闸缺省放行就是 fail-open。
     // limits 那份更新得更快（关 2.0 时第一个写的就是它），任一说关就是关。
-    const selfScheduleAllowed = !scheduleOff;
+    // 见面离开提醒这一轮也不给：见上面 dateLeave 处的说明。
+    const selfScheduleAllowed = !scheduleOff && !dateLeave;
 
     // 老 worker 部署（amsg-server < 2.6.0-next.9）没有这个口子。教了也排不成，
     // 只会让角色说「我等下再找你」然后没有下文——干脆不教。
@@ -2409,7 +2446,8 @@ export const amsgHooks = {
       // （resolveFireSceneSong 与 renderFireSceneBlock 共用判定），冻的必然是正文里那首。
       sceneSong: resolveFireSceneSong(pack.scene, ctx.now.getTime(), tz),
       instant,
-      overlapGuard: !instant && policy === 'expire' ? { lastUserMessageAt } : null,
+      // 见面离开提醒也查：生成期间回到见面或开了口，人已经回来了，这条就不发。
+      overlapGuard: !instant && (policy === 'expire' || dateLeave) ? { lastUserMessageAt } : null,
       instantInputKey,
       // 下面即时对话那一支起跑（要等请求消息拼完才知道给评估喂什么）。
       emotionEvalPromise: null,
@@ -2621,7 +2659,7 @@ export const amsgHooks = {
       // 「此刻在做什么」里的钟点跟今日节日同一个开关：关掉时间感知的角色不该从日程块
       // 读到「23:00」——那正是这个开关要挡的东西。日程内容本身照给。
       includeClock: toolPack.timeAwarenessEnabled,
-      mustSpeak: away,
+      mustSpeak: away || dateLeave,
     }), userHoliday) + mcpBlock + scheduleBlock + replyScopeBlock;
     return {
       messages: [{ role: 'user' as const, content: prompt }],
@@ -2765,6 +2803,8 @@ export const amsgHooks = {
       const presenceRows = await ctx.readState(amsgStateNamespace(stash.charId), { key: AMSG_CHAT_PRESENCE_KEY });
       const presence = parseAmsgChatPresence(presenceRows.find((r) => r.key === AMSG_CHAT_PRESENCE_KEY)?.value);
       if (chattedDuringFire(presence, stash.charId, Date.now(), stash.overlapGuard.lastUserMessageAt)) {
+        // 生成期间用户进了见面：跟开场那道 in-person 闸同一个原因，回执才会带进见面。
+        const overlapReason = presence?.scene === 'date' ? 'in-person' as const : 'chat-overlap' as const;
         // shortcut: 这一轮已经用工具改过任务的照常发出——跳过的话客户端收不到这批改动、认领不到新任务；
         // 真撞上再改成拦下时单独 emitResult 送任务改动。
         if (stash.scheduledTasks.length || stash.cancelledTasks.length || stash.renewedTasks.length) {
@@ -2779,14 +2819,14 @@ export const amsgHooks = {
             v: 1,
             taskUuid: stash.taskUuid,
             occurrenceMs: stash.occurrenceMs,
-            reason: 'chat-overlap',
+            reason: overlapReason,
             skippedAt: Date.now(),
           });
           await emitFireSkip(ctx.emitResult, {
             charId: stash.charId,
             taskUuid: stash.taskUuid,
             occurrenceMs: stash.occurrenceMs,
-            reason: 'chat-overlap',
+            reason: overlapReason,
             task: findTaskBrief(stash.pendingTasks, stash.taskUuid),
           });
           return { decision: 'skip-push' as const };

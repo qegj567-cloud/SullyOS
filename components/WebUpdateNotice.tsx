@@ -6,12 +6,12 @@ import './WebUpdateNotice.css';
 
 export default function WebUpdateNotice() {
   const state = useSyncExternalStore(webUpdateSession.subscribe, webUpdateSession.getSnapshot, webUpdateSession.getSnapshot);
-  const { sysOperation, suspendedCall, activeApp } = useOS();
+  const { sysOperation, suspendedCall, suspendedDate, activeApp } = useOS();
   const [confirming, setConfirming] = useState(false);
   useEffect(() => {
-    webUpdateSession.setBlocked(sysOperation.status === 'processing' || Boolean(suspendedCall) || activeApp === 'call');
+    webUpdateSession.setBlocked(sysOperation.status === 'processing' || Boolean(suspendedCall) || Boolean(suspendedDate) || activeApp === 'call');
     return () => webUpdateSession.setBlocked(false);
-  }, [sysOperation.status, suspendedCall, activeApp]);
+  }, [sysOperation.status, suspendedCall, suspendedDate, activeApp]);
   if (!state.available || state.dismissed) return null;
   return createPortal(
     <aside className="sully-web-update" role="region" aria-label="网页更新">

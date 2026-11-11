@@ -397,6 +397,7 @@ interface ChatPresenceLease {
   timer: ReturnType<typeof setInterval>;
   /** 本轮最新的「最近一条真实用户消息」时间戳；续租时读它，不吃闭包里的陈旧值。 */
   lastUserMessageAt: number | null;
+  scene?: 'date';
 }
 
 // charId → 心跳租约。同一 char 只保留一个 timer（重入只刷新 lastUserMessageAt）。
@@ -876,12 +877,13 @@ export const wipeAmsgCloudDataForReset = async (): Promise<AmsgResetCloudWipe> =
   return { status: 'failed', workerUrl, detail: reasons.join('、') };
 };
 
-const writeChatPresence = (charId: string, lastUserMessageAt: number | null) => {
+const writeChatPresence = (charId: string, lastUserMessageAt: number | null, scene?: 'date') => {
   const presence: AmsgChatPresence = {
     v: 1,
     charId,
     activeAt: Date.now(),
     lastUserMessageAt,
+    ...(scene ? { scene } : {}),
   };
   // 写入失败只 warn：心跳故障不能打断正常聊天，下一次 interval 继续尝试；远端 45s TTL 兜底。
   ActiveMsgClient.syncChatPresence(charId, presence).catch((error) => {
@@ -889,14 +891,18 @@ const writeChatPresence = (charId: string, lastUserMessageAt: number | null) => 
   });
 };
 
-/** 一轮真实用户消息进入生成流程时启动租约：立即写一次，之后每 15s 续租。 */
-export const startAmsgChatPresence = (charId: string, lastUserMessageAt: number | null) => {
-  writeChatPresence(charId, lastUserMessageAt);
+/**
+ * 一轮真实用户消息进入生成流程时启动租约：立即写一次，之后每 15s 续租。
+ * 见面（DateApp）在整场见面期间续租，并传 scene: 'date'（云端据此作废到点的主动消息）。
+ */
+export const startAmsgChatPresence = (charId: string, lastUserMessageAt: number | null, scene?: 'date') => {
+  writeChatPresence(charId, lastUserMessageAt, scene);
 
   const existing = chatPresenceLeases.get(charId);
   if (existing) {
-    // 已有 timer：只刷新本轮最新的 lastUserMessageAt，复用同一个心跳。
+    // 已有 timer：只刷新本轮最新的 lastUserMessageAt / scene，复用同一个心跳。
     existing.lastUserMessageAt = lastUserMessageAt;
+    existing.scene = scene;
     return;
   }
 
@@ -905,15 +911,18 @@ export const startAmsgChatPresence = (charId: string, lastUserMessageAt: number 
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
     const lease = chatPresenceLeases.get(charId);
     if (!lease) return;
-    writeChatPresence(charId, lease.lastUserMessageAt);
+    writeChatPresence(charId, lease.lastUserMessageAt, lease.scene);
   }, CHAT_PRESENCE_HEARTBEAT_MS);
-  chatPresenceLeases.set(charId, { timer, lastUserMessageAt });
+  chatPresenceLeases.set(charId, { timer, lastUserMessageAt, scene });
 };
 
-/** 停止本地续租（不发「离线」写入，远端靠 45s TTL 自然失效）。 */
-export const stopAmsgChatPresence = (charId: string) => {
+/**
+ * 停止本地续租（不发「离线」写入，远端靠 45s TTL 自然失效）。
+ * 只停同一场景开的：聊天那轮回复晚于进见面才结束时，不能把见面的租约一起停掉。
+ */
+export const stopAmsgChatPresence = (charId: string, scene?: 'date') => {
   const lease = chatPresenceLeases.get(charId);
-  if (lease) {
+  if (lease && lease.scene === scene) {
     clearInterval(lease.timer);
     chatPresenceLeases.delete(charId);
   }

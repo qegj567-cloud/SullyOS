@@ -26,6 +26,7 @@
 
 - 即时对话的回复一律不算。那是正常聊天。
 - 「离开后消息」（见 [`away-message.md`](./away-message.md)）不是角色自排的，但跟自排的一样计入连发、也受连发上限拦；它不占任务名额，不受间隔管。
+- 「见面离开提醒」（见 [`date-leave-reminder.md`](./date-leave-reminder.md)）不受连发上限和每日上限拦，也不占任务名额；发出去照常记进发送记录，之后角色自排的会把它算作一次没回。这一轮不给排程工具。
 - 固定内容的任务不调模型，也不经过到点那几道闸，所以「每天最多几次」和「重复的连续没回就停」都管不到它。面板文案里写明了「写好固定内容的那种不算」。
 - 「角色自排」看任务 metadata 上的 `amsgSelfScheduled`。前台工具桥和到点生成里的排程工具都会打上这个标记。
 - 「到点必发」没放开时，角色的 force 不会被打回，而是按 expire 来排；已经排下的 force 任务到点时也按 expire 判。用户自己排的 force 不受这项影响。前台改期（renew 一次性任务）沿用原任务的策略，不降级。
@@ -69,17 +70,22 @@
 
 最前面一道不是拦，是等：页面正在本地生成一轮回复（在场记录 `chat_presence` 还新鲜）时，这次触发推迟 45 秒、下一跳 cron 再来（`onBeforeFire` 返回 `{ defer }`），任务不消费、不留记录。policy 为 expire 时才生效，没放开的角色 force 在这里已按 expire 算。云端生成的即时回复不用这道门：它和定时任务排在同一个串行分组里，回复结束前定时任务认领不到。
 
+见面（DateApp）开着且页面可见时，页面在整场见面的感知和对话阶段都续这份记录，并标上 `scene: 'date'`。带这个标记的不走推迟，交给下面的「见面中」那道作废。见面离开提醒反过来用它：按这份记录最后一次续上的时刻往后推，人走开了才发（见 [`date-leave-reminder.md`](./date-leave-reminder.md)）。
+
 后面每道拦下都会写 `last_skip`，面板用 `describeLastSkip` 照实说明原因：
 
 1. 2.0 关了，或者角色自排了重复任务但用户没放开 → `schedule-off`
-2. 角色自排的，连发已到上限 → `unanswered-limit`
-3. 角色自排的，离上一条主动消息还没隔够。「上一条」按它开始生成的时刻算（日志条目的 `startedAt`），跟排程时比的是同一个时刻；另有 3 分钟宽限（`FIRE_GAP_TOLERANCE_MS`）兜住没有 `startedAt` 的老条目 → `min-gap`
-4. 重复任务连续没回够次数 → `recurring-unanswered`
-5. 今天已发满 → `daily-limit`
+2. 用户正在和这个角色见面（见面记录还新鲜）。人就在面前，这次直接作废，不推迟到见面结束，免得角色每次都要编个理由圆过去。force 照发 → `in-person`
+3. 角色自排的，连发已到上限 → `unanswered-limit`
+4. 角色自排的，离上一条主动消息还没隔够。「上一条」按它开始生成的时刻算（日志条目的 `startedAt`），跟排程时比的是同一个时刻；另有 3 分钟宽限（`FIRE_GAP_TOLERANCE_MS`）兜住没有 `startedAt` 的老条目 → `min-gap`
+5. 重复任务连续没回够次数 → `recurring-unanswered`
+6. 今天已发满 → `daily-limit`
 
 过了这几道就生成。到点时用户在不在聊天不拦发送：角色看着最新的对话自己决定说不说（提示词里的【开口之前】），决定不说时输出 `AMSG_SILENT_MARK`，记成 `declined`。
 
 除了 `schedule-off`，每次没发还会用 `ctx.emitResult` 回一条 `fire-skipped` 结果（不弹通知）。客户端收到后记进回执台账，角色下一轮聊天时在排程现状块里看到这条没发和原因（`utils/amsgFireSkipResult.ts`、`utils/amsgFireSkipResultApply.ts`）。
+
+`in-person` 的回执优先交给见面的下一轮：只写原本想说的事、不写时间，口吻是想起来就当面顺口提、忘了也正常（`buildInPersonNoticesText`）。发出那一轮就销账。见面结束前没赶上的，下一轮聊天照常出现在排程现状块里。离开见面后，云端那份记录还要 45 秒才过期，这期间到点的也按 `in-person` 作废，这是预期行为，回执同样交给下一轮聊天。生成到一半用户进了见面，推送前那道复查也记成 `in-person`。
 
 ## 告诉角色的那一段
 
