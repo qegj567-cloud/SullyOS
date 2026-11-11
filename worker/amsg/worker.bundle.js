@@ -13415,6 +13415,7 @@ var AMSG2_SCHEDULE_NOT_YET_NOTE = "\u6392\u5728\u672A\u6765\u7684\u4E8B\u5230\u7
 var describeExpirePolicy = (policy) => policy === "force" ? "\u5230\u70B9\u5FC5\u53D1" : "\u5230\u70B9\u770B\u60C5\u51B5";
 var describeTaskMode = (task) => {
   if (task.away) return "\u79BB\u5F00\u540E\u6D88\u606F";
+  if (task.dateLeave) return "\u89C1\u9762\u79BB\u5F00\u63D0\u9192";
   if (task.mode === "fixed") return "\u56FA\u5B9A\u6D88\u606F";
   if (task.mode === "prompted") return `\u63D0\u793A\u65B9\u5411\u300C${task.promptHint || ""}\u300D`;
   return task.promptHint ? `\u81EA\u52A8\uFF08\u7075\u611F\uFF1A${task.promptHint}\uFF09` : "\u81EA\u52A8";
@@ -13613,6 +13614,8 @@ var buildTaskInstruction = (mode, promptHint) => {
 };
 var AMSG_AWAY_MESSAGE_META = "amsgAwayMessage";
 var AMSG_AWAY_DELAY_META = "amsgAwayDelayMinutes";
+var AMSG_DATE_LEAVE_META = "amsgDateLeave";
+var AMSG_DATE_LEAVE_DELAY_META = "amsgDateLeaveDelayMinutes";
 var pad22 = (n) => n.toString().padStart(2, "0");
 var hasExplicitOffset = (s) => /(?:Z|[+-]\d{2}:?\d{2})$/i.test(s.trim());
 var wallClockIso = (ms, tz) => {
@@ -14138,7 +14141,7 @@ function buildScheduledPush(message, build, extraMeta, bannerBody) {
 }
 
 // utils/amsgBundleVersion.ts
-var AMSG_BUNDLE_VERSION = "2026-11-11";
+var AMSG_BUNDLE_VERSION = "2026-11-11.2";
 
 // worker/amsg/src/reproduction.ts
 async function writeDiagnosticStage(writeState, runId, event, fields = {}) {
@@ -18815,6 +18818,7 @@ var getFireStash = (scratch) => scratch?.fire;
 var REPLY_IN_FLIGHT_DEFER_MS = 45e3;
 var AWAY_DUE_TOLERANCE_MS = 6e4;
 var AWAY_MAX_DEFER_MS = 24 * 60 * 6e4;
+var DATE_LEAVE_DUE_TOLERANCE_MS = 5e3;
 var laterOf = (a, b) => a == null ? b : b == null ? a : Math.max(a, b);
 var buildToolCtx = (pack, config) => {
   const char = {
@@ -19578,6 +19582,7 @@ var amsgHooks = {
     const taskPolicy = typeof taskMeta.amsgExpirePolicy === "string" ? taskMeta.amsgExpirePolicy : void 0;
     const selfScheduled = taskMeta.amsgSelfScheduled === true;
     const away = taskMeta[AMSG_AWAY_MESSAGE_META] === true;
+    const dateLeave = taskMeta[AMSG_DATE_LEAVE_META] === true;
     const recurring = ctx.task.recurrenceType === "daily" || ctx.task.recurrenceType === "weekly";
     const emotionEvalSpec = takeEmotionEvalSpec(ctx.task.metadata);
     const taskKind = readTaskKind(taskMeta);
@@ -19688,6 +19693,18 @@ var amsgHooks = {
         presenceLastUserMessageAt
       });
     }
+    if (!instant && dateLeave && presence?.charId === charId) {
+      if (presence.scene !== "date") {
+        console.log("[amsg:date-leave-returned]", { taskId: ctx.task.id, charId, presenceActiveAt: presence.activeAt });
+        return { skip: true };
+      }
+      const dueAt = presence.activeAt + Number(taskMeta[AMSG_DATE_LEAVE_DELAY_META]) * 6e4;
+      const waitMs = Number.isFinite(dueAt) ? dueAt - ctx.now.getTime() : 0;
+      if (waitMs > DATE_LEAVE_DUE_TOLERANCE_MS) {
+        console.log("[amsg:defer]", { taskId: ctx.task.id, reason: "date-leave-not-due", dueAt });
+        return { defer: { afterMs: Math.min(waitMs, AWAY_MAX_DEFER_MS) } };
+      }
+    }
     if (!instant && away) {
       const delayMs = Number(taskMeta[AMSG_AWAY_DELAY_META]) * 6e4;
       const dueAt = lastUserMessageAt != null && delayMs > 0 ? lastUserMessageAt + delayMs : null;
@@ -19787,7 +19804,7 @@ var amsgHooks = {
     const dailyDay = dayKeyInZone(nowMs, pack.userTzId);
     const dailySends = parseDailySends(charRows.find((r) => r.key === AMSG_DAILY_SENDS_KEY)?.value);
     const sentToday = sendsOnDay(dailySends, dailyDay);
-    if (!instant && sentToday >= limits.dailySendCap) {
+    if (!instant && !dateLeave && sentToday >= limits.dailySendCap) {
       console.log("[amsg:daily-limit-skip]", {
         taskId: ctx.task.id,
         charId,
@@ -19828,7 +19845,7 @@ var amsgHooks = {
       livePendingTasks = live;
     }
     const otherLiveTasks = livePendingTasks.filter((t) => recurring || t.taskUuid !== ctx.task.uuid && (!clientTaskId || t.clientTaskId !== clientTaskId));
-    const selfScheduleAllowed = !scheduleOff;
+    const selfScheduleAllowed = !scheduleOff && !dateLeave;
     const canSelfSchedule = typeof ctx.scheduleTask === "function" && selfScheduleAllowed;
     const tz = { tzId: pack.tzId };
     const { toolCtx, proxyWorkerUrl, xhsCookie } = buildToolCtx(toolPack, toolConfig);
@@ -19879,7 +19896,8 @@ var amsgHooks = {
       // （resolveFireSceneSong 与 renderFireSceneBlock 共用判定），冻的必然是正文里那首。
       sceneSong: resolveFireSceneSong(pack.scene, ctx.now.getTime(), tz),
       instant,
-      overlapGuard: !instant && policy === "expire" ? { lastUserMessageAt } : null,
+      // 见面离开提醒也查：生成期间回到见面或开了口，人已经回来了，这条就不发。
+      overlapGuard: !instant && (policy === "expire" || dateLeave) ? { lastUserMessageAt } : null,
       instantInputKey,
       // 下面即时对话那一支起跑（要等请求消息拼完才知道给评估喂什么）。
       emotionEvalPromise: null,
@@ -20024,7 +20042,7 @@ ${userHoliday}` });
       // 「此刻在做什么」里的钟点跟今日节日同一个开关：关掉时间感知的角色不该从日程块
       // 读到「23:00」——那正是这个开关要挡的东西。日程内容本身照给。
       includeClock: toolPack.timeAwarenessEnabled,
-      mustSpeak: away
+      mustSpeak: away || dateLeave
     }), userHoliday) + mcpBlock + scheduleBlock + replyScopeBlock;
     return {
       messages: [{ role: "user", content: prompt }],

@@ -5,7 +5,7 @@ import { loadCharacterContextMessages } from '../utils/chatContextRange';
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { CharacterProfile, Message, AppID } from '../types';
+import { CharacterProfile, Message, AppID, DateState } from '../types';
 import { DatePrompts, ApiMessage } from '../utils/datePrompts';
 import { processNewMessagesWithAutoArchive } from '../utils/memoryPalace/autoArchive';
 import type { PipelineResult } from '../utils/memoryPalace/pipeline';
@@ -25,6 +25,7 @@ import { markAmsgStateDirty, startAmsgChatPresence, stopAmsgChatPresence } from 
 import { hasActiveAiTask } from '../utils/amsg2Tasks';
 import { collectInPersonNotices } from '../utils/amsg2TaskContext';
 import { ActiveMsgStore } from '../utils/activeMsgStore';
+import { armDateLeaveReminder, disarmDateLeaveReminder, startLocalDateLeaveTimer } from '../utils/dateLeaveReminder';
 import StoryTheater from '../components/date/story/StoryTheater';
 import { dateLaunch } from '../utils/dateLaunch';
 import { getLocalDateKey } from '../utils/localDate';
@@ -50,12 +51,16 @@ import {
 } from '../utils/dateHistory';
 
 const DateApp: React.FC = () => {
-    const { closeApp, openApp, characters, activeCharacterId, setActiveCharacterId, apiConfig, addToast, updateCharacter, updateUserProfile, virtualTime, userProfile, memoryPalaceConfig, dateAutoStartCharId, consumeDateAutoStart, characterGroups, groups, realtimeConfig } = useOS();
+    const { closeApp, openApp, characters, activeCharacterId, setActiveCharacterId, apiConfig, addToast, updateCharacter, updateUserProfile, virtualTime, userProfile, memoryPalaceConfig, dateAutoStartCharId, consumeDateAutoStart, characterGroups, groups, realtimeConfig, suspendedDate, suspendDate, takeSuspendedDate } = useOS();
+
+    // 从挂起恢复：对话中途走开时见面留在了内存里，打开见面就回到原来的画面（见 docs/date-leave-reminder.md）。
+    // 打开见面的入口会把当前角色一起切回去，所以角色对不上的只能是别处另开了一场见面，那就不恢复。
+    const [resumed] = useState(() => suspendedDate && suspendedDate.charId === activeCharacterId ? suspendedDate : null);
 
     // 是否由聊天「见面」按钮进入：为真时，退出见面流程回到聊天而非见面选择页/桌面。
     // 用本地 state（而非 context）承载：DateApp 切走即卸载，标记随之消失，不会泄漏到
     // 之后从桌面直接打开的见面会话里。
-    const [cameFromChat, setCameFromChat] = useState(false);
+    const [cameFromChat, setCameFromChat] = useState(resumed?.cameFromChat ?? false);
     const [meetSurface, setMeetSurface] = useState<'companion' | 'story'>(() => dateLaunch.peek()?.surface ?? 'companion');
 
     // 记忆宫殿（与聊天侧共用同一套上下文：同 charId、同高水位线）
@@ -71,7 +76,7 @@ const DateApp: React.FC = () => {
     charactersRef.current = characters;
     
     // Modes: 'select' -> 'peek' -> 'session' | 'settings' | 'history'
-    const [mode, setMode] = useState<'select' | 'entry' | 'peek' | 'session' | 'settings' | 'history'>('select');
+    const [mode, setMode] = useState<'select' | 'entry' | 'peek' | 'session' | 'settings' | 'history'>(resumed ? 'session' : 'select');
     // Track previous mode for Settings back navigation
     const [previousMode, setPreviousMode] = useState<'select' | 'peek'>('select');
 
@@ -110,7 +115,7 @@ const DateApp: React.FC = () => {
         el.scrollTo({ left: pi * el.clientWidth, behavior: 'smooth' });
     };
 
-    const [peekStatus, setPeekStatus] = useState<string>('');
+    const [peekStatus, setPeekStatus] = useState<string>(resumed?.peekStatus ?? '');
     const [peekLoading, setPeekLoading] = useState(false);
     
     // History State
@@ -131,7 +136,7 @@ const DateApp: React.FC = () => {
     const [historyEditMsg, setHistoryEditMsg] = useState<Message | null>(null);
     const [historyEditContent, setHistoryEditContent] = useState('');
     
-    const encounterIdRef = useRef('');
+    const encounterIdRef = useRef(resumed?.encounterId ?? '');
     const [openingMode, setOpeningMode] = useState<'approach' | 'invite'>('approach');
     const [showEntryNotice, setShowEntryNotice] = useState(() => {
         try { return localStorage.getItem('sully-date-entry-guide-v1') !== 'seen'; }
@@ -149,7 +154,7 @@ const DateApp: React.FC = () => {
         loadOlder: handleLoadMoreDateHistory, reachedEnd: dateHistoryReachedEnd,
         loading: dateHistoryLoading, error: dateHistoryError } = useDateMessageHistory(
             activeCharacterId || undefined, encounterIdRef.current, mode === 'session');
-    const [hasSavedOpening, setHasSavedOpening] = useState(false);
+    const [hasSavedOpening, setHasSavedOpening] = useState(!!resumed);
 
     // Edit Modal State
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -179,7 +184,15 @@ const DateApp: React.FC = () => {
     // 不会在人就在面前时弹手机消息。门槛与聊天那边一致：开了 2.0 且有还会响的 AI 任务。
     // 离开见面后云端那份还要 45s TTL 才过期，这期间到点的也按见面中作废，属预期：
     // 回执进不了见面，就在下一轮聊天的排程块里交给角色。
-    const inPersonLeaseCharId = (mode === 'peek' || mode === 'session')
+    // 页面被隐藏（切出 SullyOS、锁屏）时也停：桌面浏览器的后台标签计时器只是变慢、不会停，
+    // 不停的话租约会断断续续续上，云端以为人还在面前，见面离开提醒就一直发不出去。
+    const [pageVisible, setPageVisible] = useState(() => document.visibilityState === 'visible');
+    useEffect(() => {
+        const onVisibility = () => setPageVisible(document.visibilityState === 'visible');
+        document.addEventListener('visibilitychange', onVisibility);
+        return () => document.removeEventListener('visibilitychange', onVisibility);
+    }, []);
+    const inPersonLeaseCharId = pageVisible && (mode === 'peek' || mode === 'session')
         && char?.activeMsg2Config?.enabled && hasActiveAiTask(char.activeMsg2Config)
         ? char.id : undefined;
     useEffect(() => {
@@ -187,6 +200,51 @@ const DateApp: React.FC = () => {
         startAmsgChatPresence(inPersonLeaseCharId, null, 'date');
         return () => stopAmsgChatPresence(inPersonLeaseCharId, 'date');
     }, [inPersonLeaseCharId]);
+
+    // ── 见面挂起 + 离开提醒（见 docs/date-leave-reminder.md） ──
+    const leaveDeps = (target: CharacterProfile) => ({ char: target, apiConfig, userProfile, groups, realtimeConfig, updateCharacter });
+    // 人在对话里：备好云端提醒（worker 按租约往后推），撤掉本地计时。进入对话、恢复、回到前台都会走到这里。
+    const leaveArmKey = mode === 'session' && pageVisible && char?.dateLeaveReminder?.enabled
+        ? `${char.id}:${char.dateLeaveReminder.delayMinutes ?? ''}` : '';
+    useEffect(() => {
+        if (leaveArmKey && char) void armDateLeaveReminder(leaveDeps(char));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [leaveArmKey]);
+
+    // 挂起时要交出去的东西：DateSession 每次渲染把画面状态写进 snapshotRef；还没回来的那次回复记在
+    // pendingTurnRef。点结束 / 返回手势是主动结束，记在 explicitExitRef，卸载时就不挂起。
+    const snapshotRef = useRef<DateState | null>(null);
+    const pendingTurnRef = useRef<Promise<unknown> | undefined>(undefined);
+    const explicitExitRef = useRef(false);
+    useEffect(() => { if (mode === 'session') explicitExitRef.current = false; }, [mode]);
+    const trackTurn = <T,>(turn: Promise<T>): Promise<T> => {
+        pendingTurnRef.current = turn;
+        turn.finally(() => { if (pendingTurnRef.current === turn) pendingTurnRef.current = undefined; }).catch(() => {});
+        return turn;
+    };
+    const suspendOnUnmountRef = useRef<() => void>(() => {});
+    suspendOnUnmountRef.current = () => {
+        if (mode !== 'session' || explicitExitRef.current || !char || !encounterIdRef.current) return;
+        const suspendedAt = Date.now();
+        suspendDate({
+            charId: char.id, charName: char.name, encounterId: encounterIdRef.current,
+            peekStatus, cameFromChat, state: snapshotRef.current, suspendedAt,
+            pendingTurn: pendingTurnRef.current,
+        });
+        void startLocalDateLeaveTimer(leaveDeps(char), suspendedAt);
+    };
+    useEffect(() => () => suspendOnUnmountRef.current(), []);
+
+    // 打开见面时取走挂起的那场：恢复了就是它，没恢复（别处另开了一场）就扔掉，顶部的条随之消失。
+    // 挂起前那次回复落定后再读一次记录：发它的是已经卸载的那份页面，刷新落不到这里。
+    const refreshDateMessagesRef = useRef(loadDateMessages);
+    refreshDateMessagesRef.current = loadDateMessages;
+    useEffect(() => {
+        takeSuspendedDate();
+        const pending = resumed?.pendingTurn;
+        if (pending) trackTurn(pending).finally(() => { void refreshDateMessagesRef.current(); }).catch(() => {});
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const loadRecentDateMessages = async (charId: string, limit = DATE_SESSION_MESSAGE_LIMIT) => {
         return (await DB.getRecentMessagesByCharIdAndSource(charId, 'date', limit))
@@ -662,6 +720,8 @@ const DateApp: React.FC = () => {
     };
 
     const onExitSession = () => {
+        explicitExitRef.current = true;
+        if (char) void disarmDateLeaveReminder({ char, updateCharacter });
         clearDateResumeAttempt();
         encounterIdRef.current = '';
         // 来自聊天：退出见面回聊天
@@ -1130,9 +1190,12 @@ const DateApp: React.FC = () => {
                     userProfile={userProfile}
                     messages={dateMessages}
                     peekStatus={peekStatus}
+                    initialState={resumed?.encounterId === encounterIdRef.current ? resumed.state ?? undefined : undefined}
+                    snapshotRef={snapshotRef}
+                    pendingTurn={resumed?.encounterId === encounterIdRef.current ? resumed.pendingTurn : undefined}
                     encounterId={encounterIdRef.current}
-                    onSendMessage={handleSendMessage}
-                    onReroll={handleReroll}
+                    onSendMessage={(text, kind) => trackTurn(handleSendMessage(text, kind))}
+                    onReroll={() => trackTurn(handleReroll())}
                     onExit={onExitSession}
                     onEditMessage={(msg) => { setEditTargetMsg(msg); setEditContent(msg.content); setIsEditModalOpen(true); }}
                     onDeleteMessage={handleDeleteMessage}

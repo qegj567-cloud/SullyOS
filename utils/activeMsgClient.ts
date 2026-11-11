@@ -26,7 +26,7 @@ import { getLastRealUserMessageAt } from './amsg2ExpireGuard';
 import { AMSG_BUNDLE_VERSION, compareBundleVersions } from './amsgBundleVersion';
 import { describeD1LimitCode } from './amsgD1Limits';
 import { explainCfTokenRejection, parseAmsgSelfUpdateState, type AmsgSelfUpdateReport } from './amsgSelfUpdateState';
-import { AMSG_AWAY_DELAY_META, AMSG_AWAY_MESSAGE_META, buildAwayTaskInstruction, buildTaskInstruction, resolveSendAtMs } from './amsgFireSchedule';
+import { AMSG_AWAY_DELAY_META, AMSG_AWAY_MESSAGE_META, AMSG_DATE_LEAVE_META, AMSG_DATE_LEAVE_DELAY_META, buildAwayTaskInstruction, buildDateLeaveInstruction, buildTaskInstruction, resolveSendAtMs } from './amsgFireSchedule';
 import {
   getPendingTasks, isAmsg2EnabledForChar,
   parseRemoteTaskLastError, RemoteTaskLastError, type RemoteTaskProjection,
@@ -2750,6 +2750,8 @@ export const ActiveMsgClient = {
       selfScheduled?: boolean;
       /** 离开后消息（见 docs/away-message.md）：不占任务名额，指令换成「对方离开了这么久」那份。 */
       away?: { delayMinutes: number };
+      /** 见面离开提醒（见 docs/date-leave-reminder.md）：同样不占任务名额。 */
+      dateLeave?: { delayMinutes: number };
     };
     /** 编辑/续期时传旧任务 uuid：先取消它再新建（不传 = 纯新建）。 */
     replaceTaskUuid?: string;
@@ -2774,7 +2776,7 @@ export const ActiveMsgClient = {
     const pendingOthers = getPendingTasks(config, Date.now())
       .filter((t) => t.taskUuid !== replaceTaskUuid);
     // 离开后消息是用户开的系统任务，不跟角色抢名额；名额满时它也不能建不出来。
-    if (!task.away && pendingOthers.length >= maxActiveTasks) {
+    if (!task.away && !task.dateLeave && pendingOthers.length >= maxActiveTasks) {
       throw new Error(`该角色已经排好了 ${maxActiveTasks} 次主动消息，到上限了（上限在「主动频率」里调），请先取消或合并已有的。`);
     }
 
@@ -2823,6 +2825,7 @@ export const ActiveMsgClient = {
         // 自排标记：到点兜底闸只拦带它的任务（用户面板排的不带、不受连发上限管）。
         ...(task.selfScheduled ? { amsgSelfScheduled: true } : {}),
         ...(task.away ? { [AMSG_AWAY_MESSAGE_META]: true, [AMSG_AWAY_DELAY_META]: task.away.delayMinutes } : {}),
+        ...(task.dateLeave ? { [AMSG_DATE_LEAVE_META]: true, [AMSG_DATE_LEAVE_DELAY_META]: task.dateLeave.delayMinutes } : {}),
       },
     };
 
@@ -2841,6 +2844,7 @@ export const ActiveMsgClient = {
       // 「本次任务」指令随任务 metadata 走，worker 到点拿它填 fire_pack 的指令槽。
       payload.metadata.amsgTaskInstruction = task.away
         ? buildAwayTaskInstruction(task.away.delayMinutes)
+        : task.dateLeave ? buildDateLeaveInstruction()
         : buildTaskInstruction(task.mode, task.promptHint);
       // 服务端要求「completePrompt 或 messages」二选一，且 messages 必须非空、
       // content 必须非空字符串，所以这里给一条占位。到点真正发给 LLM 的 messages 由

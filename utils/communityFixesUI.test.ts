@@ -12,7 +12,7 @@ import {makeWorkshopPreset} from './decorationWorkshop';
 import {shareOrDownloadFile} from './shareExport';
 import {saveLibraryDecoration} from './decorationLibrary';
 
-const os = vi.hoisted(() => ({theme:{},apiConfig:{},characters:[{id:'date-ui',name:'示例角色',avatar:''}],characterGroups:[],groups:[],activeCharacterId:'date-ui',setActiveCharacterId:vi.fn(),userProfile:{name:'我'},virtualTime:{hours:10,minutes:0},registerBackHandler:()=>()=>{},addToast:vi.fn(),updateCharacter:vi.fn(),updateUserProfile:vi.fn(),closeApp:vi.fn(),openApp:vi.fn(),consumeDateAutoStart:vi.fn()}));
+const os = vi.hoisted(() => ({theme:{},apiConfig:{},characters:[{id:'date-ui',name:'示例角色',avatar:''}],characterGroups:[],groups:[],activeCharacterId:'date-ui',setActiveCharacterId:vi.fn(),userProfile:{name:'我'},virtualTime:{hours:10,minutes:0},registerBackHandler:()=>()=>{},addToast:vi.fn(),updateCharacter:vi.fn(),updateUserProfile:vi.fn(),closeApp:vi.fn(),openApp:vi.fn(),consumeDateAutoStart:vi.fn(),suspendedDate:null,suspendDate:vi.fn(),takeSuspendedDate:()=>null}));
 vi.mock('../context/OSContext',()=>({useOS:()=>os}));
 vi.mock('../components/date/DateSession',()=>({default:()=>null}));
 vi.mock('../components/date/DateSettings',()=>({default:()=>React.createElement('p',null,'见面设置测试页')}));

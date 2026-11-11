@@ -1040,6 +1040,59 @@ describe('频率与额度（到点兜底闸）', () => {
     fired(await amsgHooks.onBeforeFire(alarm.ctx));
   });
 
+  // 见面离开提醒：用户为这次见面设的一次性提醒，必发、不受连发和每日上限拦，也不给排程工具；
+  // 人还在见面里就按租约往后推，走开后在私聊里开过口就作废（见 docs/date-leave-reminder.md）。
+  const dateLeaveMeta = { amsgDateLeave: true, amsgDateLeaveDelayMinutes: 5, amsgExpirePolicy: 'force' };
+  // 见面里续的租约不带开口时刻（DateApp 传 null）。
+  const dateLease = (activeAt: number) => presenceValue(activeAt, { scene: 'date', lastUserMessageAt: null });
+
+  it('见面离开提醒：连发和每日上限都已满 → 照发，而且没有【开口之前】、不给排程工具', async () => {
+    const { ctx } = makeCtx({
+      metadata: dateLeaveMeta,
+      charRows: rows({
+        settings: { maxUnansweredSends: 3, dailySendCap: 2 },
+        selfLog: selfLogWith({ unansweredSends: 3 }),
+        daily: { day: '2026-07-25', sends: 2 },
+        pack: { template: `${BEFORE_SPEAK_LINES.join('\n')}\n${AMSG_SLOT_TASK_INSTRUCTION}` },
+      }),
+    });
+    ctx.scheduleTask = vi.fn();
+    const result = fired(await amsgHooks.onBeforeFire(ctx));
+    expect(result.messages[0].content).not.toContain('【开口之前】');
+    expect(result.tools?.some((t) => t.function.name === AMSG_FIRE_SCHEDULE_TOOL)).toBeFalsy();
+  });
+
+  it('见面离开提醒：对照组——同样的额度下普通自排任务被连发上限拦下', async () => {
+    const { ctx } = makeCtx({
+      metadata: { amsgSelfScheduled: true },
+      charRows: rows({ settings: { maxUnansweredSends: 3 }, selfLog: selfLogWith({ unansweredSends: 3 }) }),
+    });
+    await expect(amsgHooks.onBeforeFire(ctx)).resolves.toEqual({ skip: true });
+  });
+
+  it('见面离开提醒：人还在见面里 → 推迟到「最后一次见到人 + 5 分钟」，不留痕', async () => {
+    const { ctx, writeState } = makeCtx({ metadata: dateLeaveMeta, charRows: rows({ presence: dateLease(NOW.getTime() - 10_000) }) });
+    await expect(amsgHooks.onBeforeFire(ctx)).resolves.toEqual({ defer: { afterMs: 5 * 60_000 - 10_000 } });
+    expect(writeState).not.toHaveBeenCalled();
+  });
+
+  it('见面离开提醒：走开 2 分钟（租约已过期）→ 再推 3 分钟；走开满 5 分钟 → 照发', async () => {
+    const early = makeCtx({ metadata: dateLeaveMeta, charRows: rows({ presence: dateLease(NOW.getTime() - 2 * 60_000) }) });
+    await expect(amsgHooks.onBeforeFire(early.ctx)).resolves.toEqual({ defer: { afterMs: 3 * 60_000 } });
+
+    const due = makeCtx({ metadata: dateLeaveMeta, charRows: rows({ presence: dateLease(NOW.getTime() - 5 * 60_000) }) });
+    fired(await amsgHooks.onBeforeFire(due.ctx));
+  });
+
+  it('见面离开提醒：租约被私聊盖掉（走开后开过口）→ 作废，不留回执', async () => {
+    const { ctx, writeState } = makeCtx({
+      metadata: dateLeaveMeta,
+      charRows: rows({ presence: presenceValue(NOW.getTime() - 3 * 60_000) }),
+    });
+    await expect(amsgHooks.onBeforeFire(ctx)).resolves.toEqual({ skip: true });
+    expect(skipReason(writeState)).toBeUndefined();
+  });
+
   it('用户自己排的「到点必发」不受这项影响', async () => {
     const { ctx } = makeCtx({
       metadata: { amsgExpirePolicy: 'force' },

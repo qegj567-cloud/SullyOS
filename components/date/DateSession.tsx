@@ -118,6 +118,10 @@ interface DateSessionProps {
     messages: Message[]; // The DB messages for history/novel mode
     peekStatus: string;  // Initial text from the Peek phase
     initialState?: DateState; // Resume state
+    /** 每次渲染写入当前画面状态，挂起时父组件从这里取（见 docs/date-leave-reminder.md）。 */
+    snapshotRef?: React.MutableRefObject<DateState | null>;
+    /** 挂起时还没回来的那次回复：恢复后显示「正在输入」，落定前不让重试。 */
+    pendingTurn?: Promise<unknown>;
     encounterId?: string;
     onSendMessage: (text: string, kind?: 'continue') => Promise<string>; // Returns AI content
     onReroll: () => Promise<string>;
@@ -187,6 +191,8 @@ const DateSession: React.FC<DateSessionProps> = ({
     messages: historyMessages,
     peekStatus, 
     initialState,
+    snapshotRef,
+    pendingTurn,
     encounterId,
     onSendMessage, 
     onReroll, 
@@ -224,10 +230,10 @@ const DateSession: React.FC<DateSessionProps> = ({
     
     // Interaction State
     const messages = React.useMemo(() => encounterId ? historyMessages.filter(message => message.metadata?.dateEncounterId === encounterId) : historyMessages, [historyMessages, encounterId]);
-    const [input, setInput] = useState('');
-    const [showInputBox, setShowInputBox] = useState(!peekStatus && !initialState);
-    const [isTyping, setIsTyping] = useState(false); // Waiting for API
-    const [isShowingOpening, setIsShowingOpening] = useState(!!peekStatus && !initialState); // True until first user interaction
+    const [input, setInput] = useState(initialState?.draftInput ?? '');
+    const [showInputBox, setShowInputBox] = useState(initialState ? !!initialState.draftInput : !peekStatus);
+    const [isTyping, setIsTyping] = useState(!!pendingTurn); // Waiting for API
+    const [isShowingOpening, setIsShowingOpening] = useState(initialState ? !!initialState.showingOpening : !!peekStatus); // True until first user interaction
     // API 失败时本地记住本轮输入，不依赖父组件的 DB 刷新是否已经完成；用户可直接点重试。
     const [pendingRetryText, setPendingRetryText] = useState('');
     const [sarTruthMessageIds, setSarTruthMessageIds] = useState<Set<number>>(new Set());
@@ -743,8 +749,15 @@ const DateSession: React.FC<DateSessionProps> = ({
         return '';
     }, [messages]);
     const dialogueSyncMountRef = useRef(false);
+    // 从挂起恢复：记录是挂载后才异步读回来的，读回来的还是挂起时那条就别重播（会把播放位置
+    // 拉回批次开头）；不一样说明离开期间回复到了，照常接着播。
+    const restoredAssistantRef = useRef(initialState ? initialState.lastAssistantContent ?? '' : undefined);
     useEffect(() => {
-        if (!dialogueSyncMountRef.current) { dialogueSyncMountRef.current = true; return; }
+        if (restoredAssistantRef.current !== undefined) {
+            if (!lastAssistantContent || lastAssistantContent === restoredAssistantRef.current) return;
+            restoredAssistantRef.current = undefined;
+            dialogueSyncMountRef.current = true;
+        } else if (!dialogueSyncMountRef.current) { dialogueSyncMountRef.current = true; return; }
         if (isTyping || !lastAssistantContent) return;
         const { rest } = extractObservation(lastAssistantContent, { lenient: observeEnabled, custom: char.dateObserve?.custom });
         const items = parseDialogue(rest, 'normal');
@@ -849,7 +862,21 @@ const DateSession: React.FC<DateSessionProps> = ({
         }
     };
 
-    // Messages are persisted per turn; leaving ends this encounter. No resume snapshot.
+    // 挂起：父组件卸载时从 snapshotRef 取走这一份，回来时作为 initialState 交回。
+    if (snapshotRef) snapshotRef.current = {
+        dialogueQueue, dialogueBatch, currentText, currentSpriteKey,
+        activeSkinSetId: char.activeSkinSetId, isNovelMode, timestamp: Date.now(), peekStatus,
+        ...(observation ? { observation } : {}),
+        lastAssistantContent, showingOpening: isShowingOpening, draftInput: input,
+    };
+
+    // 挂起前发出去的那次回复还在路上：等它落定再放开输入（父组件会刷新记录，新回复由上面的同步接着播）。
+    useEffect(() => {
+        if (!pendingTurn) return;
+        let alive = true;
+        pendingTurn.finally(() => { if (alive) setIsTyping(false); }).catch(() => {});
+        return () => { alive = false; };
+    }, [pendingTurn]);
 
     // Message Touch Logic (Robust version for scrollable lists)
     const handleMsgTouchStart = (e: React.TouchEvent | React.MouseEvent, msg: Message) => {

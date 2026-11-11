@@ -498,7 +498,7 @@ const AppEnterStage: React.FC<{
 };
 
 const PhoneShell: React.FC = () => {
-  const { theme, isLocked, unlock, activeApp, closeApp, openApp, virtualTime, isDataLoaded, toasts, unreadMessages, characters, groups, handleBack, suspendedCall, resumeCall, activeCharacterId, errorDialog, dismissError, sysOperation } = useOS();
+  const { theme, isLocked, unlock, activeApp, closeApp, openApp, virtualTime, isDataLoaded, toasts, unreadMessages, characters, groups, handleBack, suspendedCall, resumeCall, suspendedDate, resumeDate, activeCharacterId, errorDialog, dismissError, sysOperation } = useOS();
   const useIOSStandaloneLayout = isIOSStandaloneWebApp();
   const reducedBlur = useReducedBlur();
   const deploymentNotice = useDeploymentNotice();
@@ -1154,6 +1154,17 @@ const PhoneShell: React.FC = () => {
               <span className="opacity-70">点击返回</span>
             </button>
           )}
+          {/* 挂起的见面：和通话条同一个位置，两条都在时排在通话条下面。 */}
+          {suspendedDate && activeApp !== AppID.Date && (
+            <button
+              onClick={resumeDate}
+              className="absolute left-0 w-full z-[55] flex items-center justify-center gap-2 bg-rose-400 text-white text-xs font-bold py-1.5 cursor-pointer active:bg-rose-500 transition-colors"
+              style={{ top: `calc(max(1.75rem, calc(var(--chrome-top, 1.5rem) + 0.25rem))${suspendedCall && activeApp !== AppID.Call ? ' + 1.75rem' : ''})` }}
+            >
+              <span>见面中 · {suspendedDate.charName}</span>
+              <span className="opacity-70">点击返回</span>
+            </button>
+          )}
 
           {/* Overlays: Global Mini Player (when music is playing in background) */}
           <GlobalMiniPlayer />
@@ -1230,12 +1241,12 @@ const PhoneShell: React.FC = () => {
 
        <FeedbackInvitation
          ready={isDataLoaded && !isLocked && (bootDone || !bootAnimationEnabled)}
-         blocked={activeApp !== AppID.Launcher || !!suspendedCall || !!errorDialog || sysOperation.status !== 'idle' || anniversaryHasPriority || showDisclaimer || showImportRecoveryPrompt || showAuthorLetter || showUpdateNotification || shouldShowUpdateNotification() || showQixiLaunchPopup || showLike520Popup || showBackupReminder}
+         blocked={activeApp !== AppID.Launcher || !!suspendedCall || !!suspendedDate || !!errorDialog || sysOperation.status !== 'idle' || anniversaryHasPriority || showDisclaimer || showImportRecoveryPrompt || showAuthorLetter || showUpdateNotification || shouldShowUpdateNotification() || showQixiLaunchPopup || showLike520Popup || showBackupReminder}
        />
 
        <BeautyRepoInvitation
          ready={isDataLoaded && !isLocked && (bootDone || !bootAnimationEnabled)}
-         blocked={activeApp !== AppID.Launcher || !!suspendedCall || !!errorDialog || sysOperation.status !== 'idle' || anniversaryHasPriority || showDisclaimer || showImportRecoveryPrompt || showAuthorLetter || showUpdateNotification || shouldShowUpdateNotification() || showQixiLaunchPopup || showLike520Popup || showBackupReminder}
+         blocked={activeApp !== AppID.Launcher || !!suspendedCall || !!suspendedDate || !!errorDialog || sysOperation.status !== 'idle' || anniversaryHasPriority || showDisclaimer || showImportRecoveryPrompt || showAuthorLetter || showUpdateNotification || shouldShowUpdateNotification() || showQixiLaunchPopup || showLike520Popup || showBackupReminder}
        />
        {/* 「该备份啦」提醒（local-first 数据只在本机，隔 N 天没导出弹一次） */}
        {!anniversaryHasPriority && !showDisclaimer && !showImportRecoveryPrompt && !showAuthorLetter && !showUpdateNotification && !showQixiLaunchPopup && !showLike520Popup && showBackupReminder && (

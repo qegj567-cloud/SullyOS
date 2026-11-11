@@ -43,6 +43,7 @@ import { ActiveMsgStore } from '../utils/activeMsgStore';
 import { markAmsgStateDirty, startAmsgChatPresence, stopAmsgChatPresence } from '../utils/amsgStateSync';
 import { getLastRealUserMessageAt } from '../utils/amsg2ExpireGuard';
 import { syncCloudAwayTask } from '../utils/awayMessage';
+import { disarmDateLeaveReminder } from '../utils/dateLeaveReminder';
 import { getPendingTasks, hasActiveAiTask, isAmsg2EnabledForChar } from '../utils/amsg2Tasks';
 import { buildAmsg2NoticesText, buildAmsg2TaskContextText, collectAmsg2TaskContext, insertAmsg2TaskContextBlock } from '../utils/amsg2TaskContext';
 import { resolveCharTimeZone } from '../utils/timezone';
@@ -790,6 +791,8 @@ export const useChatAI = ({
                     char, lastUserAt: awayLastUserAt, userProfile, groups, realtimeConfig, apiConfig, updateCharacter,
                 });
             }
+            // 见面离开提醒：走开后在私聊里跟 TA 说上话了，这次离开就结束了。没有待发的提醒时不发请求。
+            void disarmDateLeaveReminder({ char, updateCharacter });
             // 空范围先报可操作的本地错误，避免继续识图/召回和发送 system-only 请求。
             // 原始消息可能是无文字图片或卡片，此处只判角色；正文有效性在格式化后校验。
             assertChatHasDialogue(contextMsgs.map(message => ({

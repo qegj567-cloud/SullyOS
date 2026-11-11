@@ -86,6 +86,7 @@ export function remapIndependentUser(
                 delete copy.activeMsg2Config.lastSyncedAt; delete copy.activeMsg2Config.lastError;
                 // Imported history must not trigger catch-up replies on the first reload.
                 if (copy.awayMessage) copy.awayMessage = { ...copy.awayMessage, enabled: false };
+                if (copy.dateLeaveReminder) copy.dateLeaveReminder = { ...copy.dateLeaveReminder, enabled: false };
             }
             if (store === 'assets' && row.id === 'ls_mirror_v1') {
                 // The mirror can repopulate localStorage at startup. Filter it just like live settings.
