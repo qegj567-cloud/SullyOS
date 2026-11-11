@@ -620,7 +620,7 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
     >
       <div className="space-y-4 text-sm text-slate-600">
         <p className="text-xs leading-relaxed text-slate-500">
-          这是新的云端主动消息入口。它会把当前角色设定、最近聊天快照和推送订阅一起提交到主动消息标准服务里。长周期循环任务建议在剧情变化后重新保存一次，避免使用过旧的上下文。
+          打开后，TA 可以在 App 关着的时候来找你：到点由你的云端后端把话写好，再用通知送过来。任务用的是保存那一刻的角色设定和最近聊天，长期重复的任务在剧情变化后重新保存一次。
         </p>
 
         <div className="flex items-center justify-between bg-fuchsia-50 border border-fuchsia-100 rounded-2xl p-4">
@@ -651,7 +651,7 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
             <div className={`font-bold ${globalInstantChatOn ? 'text-slate-700' : 'text-slate-400'}`}>即时对话</div>
             <div className="text-xs text-slate-400 mt-1 leading-relaxed">
               {globalInstantChatOn
-                ? '开着时 TA 的回复在云端生成、走推送送回，发完就能锁屏。关掉的话这个角色回到本地生成。'
+                ? '不是秒回：回复照样由模型现写，只是换到云端后端去写，写好了用通知送回来，所以发完就算把 App 杀后台也收得到。关掉的话这个角色回到本机生成。'
                 : '需要先在全局设置里开启即时对话，才能按角色单独调。'}
             </div>
           </div>

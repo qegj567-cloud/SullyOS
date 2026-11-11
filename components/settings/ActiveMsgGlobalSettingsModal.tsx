@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Modal from '../os/Modal';
 import ConfirmDialog from '../os/ConfirmDialog';
+import AmsgIntroDemo from './AmsgIntroDemo';
 import { ActiveMsg2GlobalConfig, RealtimeConfig } from '../../types';
 import {
   ActiveMsgClient, ActiveMsg2PushStatus, fetchWorkerDiagnostics, fetchWorkerTickReport, readAmsgFailKind,
@@ -233,6 +234,43 @@ const SecretReveal: React.FC<{ value: string; className?: string }> = ({ value, 
   );
 };
 
+/**
+ * 面板里的一块：标题和状态常驻，内容平时收着。
+ * 有事要处理（needsAttention）时自己展开；只自动开、不自动关——刚办完的那一步下面往往还挂着
+ * 下一个要点的按钮（开好通知之后的「发送测试通知」），办完就收走会让人找不到。
+ */
+const FoldCard: React.FC<{
+  title: string;
+  status?: string;
+  statusClass?: string;
+  needsAttention?: boolean;
+  className?: string;
+  children: React.ReactNode;
+}> = ({ title, status, statusClass = 'text-slate-400', needsAttention = false, className = 'bg-white border-slate-200', children }) => {
+  const [open, setOpen] = useState(needsAttention);
+  useEffect(() => { if (needsAttention) setOpen(true); }, [needsAttention]);
+  return (
+    <div className={`border rounded-2xl p-4 space-y-3 ${className}`}>
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((prev) => !prev)}
+        className="w-full flex items-center justify-between gap-3 text-left"
+      >
+        <span className="font-bold text-slate-700">{title}</span>
+        <span className="shrink-0 flex items-center gap-2">
+          {status ? <span className={`text-xs font-bold ${statusClass}`}>{status}</span> : null}
+          <span className="text-xs font-bold text-slate-400">{open ? '收起' : '展开'}</span>
+        </span>
+      </button>
+      {open ? children : null}
+    </div>
+  );
+};
+
+/** 引导的四步（介绍页是第 0 屏，不算在里面）。 */
+const GUIDE_STEPS = ['装后端', '开通知', '即时对话', '给角色开启'];
+
 interface ActiveMsgGlobalSettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -258,7 +296,14 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
   const configRequestIdRef = useRef(0);
   const pushRequestIdRef = useRef(0);
   const [loading, setLoading] = useState(false);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
+  // 这次打开看哪一面：没连上后端的人走引导（介绍 → 三步），连上的直接进面板。
+  // 配置读回来时定一次、之后只由用户点按钮切换——引导走到一半连上了后端，不能把人直接甩进面板。
+  const [view, setView] = useState<'guide' | 'panel' | null>(null);
+  /** 引导走到第几屏：0 是介绍，1~4 对应 GUIDE_STEPS。 */
+  const [guideStep, setGuideStep] = useState(0);
+  const topRef = useRef<HTMLDivElement>(null);
+  // 换一屏就回到顶上，不然会停在上一屏滚到的位置。（jsdom 里没有 scrollIntoView。）
+  useEffect(() => { topRef.current?.scrollIntoView?.({ block: 'start' }); }, [view, guideStep]);
   // 手动配置：只给明确不想走一键部署的人看，默认收着。
   const [manualSetupOpen, setManualSetupOpen] = useState(false);
   const [pushStatus, setPushStatus] = useState<ActiveMsg2PushStatus | null>(null);
@@ -459,6 +504,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
     savedWorkerUrlRef.current = nextConfig.workerUrl || '';
     // 先交出表单，推送就绪与否只影响推送区域，不挡住整个面板。
     setConfig(nextConfig);
+    setView((prev) => prev ?? (nextConfig.initializedAt ? 'panel' : 'guide'));
     void refreshPushStatus(nextConfig);
     void probeWorkerCaps(Boolean(nextConfig.workerUrl?.trim()));
     if (nextConfig.workerUrl?.trim()) {
@@ -481,7 +527,8 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
     setConfig(null);
     setPushStatus(null);
     setInstantChatSupported(false);
-    setAdvancedOpen(false);
+    setView(null);
+    setGuideStep(0);
     setDiagnosticsOpen(false);
     setManualSetupOpen(false);
     // 两个明文密钥都要清：留到下次打开面板还挂在页面上，就是白白多摊一次。
@@ -1092,41 +1139,14 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
       ? '暂时无法确认推送状态，请先重试推送检查。'
       : instantChatBlocker ? INSTANT_CHAT_BLOCKER_HINTS[instantChatBlocker] : '';
 
-  return (
-    <>
-    <Modal
-      isOpen={isOpen}
-      title="主动消息 2.0"
-      onClose={onClose}
-      footer={(
-        <button
-          onClick={onClose}
-          className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl active:scale-95 transition-transform"
-        >
-          关闭
-        </button>
-      )}
-    >
-      <div className="space-y-4 text-sm text-slate-600">
-        {configLoadError ? (
-          <div role="alert" className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 text-xs text-amber-700 space-y-2">
-            <p>{configLoadError}</p>
-            <button type="button" onClick={() => void refresh().catch(() => {})} className="font-bold underline">
-              重试读取配置
-            </button>
-          </div>
-        ) : null}
-        {/* 后台任务暂停着的时候常驻这一条：下面的按钮在折叠区里，不然一眼看不出角色为什么都不响。 */}
-        {cronState?.kind === 'known' && !cronState.enabled ? (
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 text-xs leading-relaxed text-amber-700">
-            后台任务已暂停，到点的消息先攒着，恢复后一起补发。
-          </div>
-        ) : null}
+  // ── 各块的内容 ──────────────────────────────────────────────────────────────
+  // 引导和面板摆的是同一份内容，只是外面的壳不同：引导一屏只做一件事，面板一块只占一行、
+  // 平时收着。取舍见 docs/amsg2-settings-guide.md。
 
-        {/* 体检。主动消息坏掉的那几种方式在界面上全是隐形的：D1 没绑、表结构是旧的、
-            VAPID 没配、云端没登记收件设备——任务照建、面板照常，就是一条都不发。
-            Worker 的 /debug 一直算得出这些，这里只是把它摆到看得见的地方。 */}
-        {config.workerUrl?.trim() ? (
+  /* 体检。主动消息坏掉的那几种方式在界面上全是隐形的：D1 没绑、表结构是旧的、
+     VAPID 没配、云端没登记收件设备——任务照建、面板照常，就是一条都不发。
+     Worker 的 /debug 一直算得出这些，这里只是把它摆到看得见的地方。 */
+  const diagnosticsCard = config.workerUrl?.trim() ? (
           <div className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3">
             {/* 收着时那句「都正常 / 有问题」就是全部结论，逐项细节点开再看。 */}
             <div className="flex items-center justify-between gap-3">
@@ -1205,10 +1225,10 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
               </p>
             )}
           </div>
-        ) : null}
+  ) : null;
 
-        {/* 已经填了 Worker 地址就说明后端装好了，这张卡收起来；重装走「清掉地址再回来」这条路。 */}
-        {config.workerUrl?.trim() ? null : (
+  // 已经填了 Worker 地址就说明后端装好了，这张卡收起来；重装走「清掉地址再回来」这条路。
+  const deployCard = config.workerUrl?.trim() ? null : (
         <div className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3">
           <div className="flex items-center justify-between gap-2">
             <span className="font-bold text-slate-700">一键部署（推荐）</span>
@@ -1408,16 +1428,10 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
             </div>
           ) : null}
         </div>
-        )}
+  );
 
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <span className="font-bold text-slate-700">当前状态</span>
-            <span className={`text-xs font-bold ${isConnected ? 'text-emerald-600' : 'text-amber-600'}`}>
-              {isConnected ? '已连接' : '未连接'}
-            </span>
-          </div>
-
+  const workerBody = (
+    <>
           {workerOutdated ? (
             <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 text-xs leading-relaxed text-amber-700">
               Worker 上跑的还是旧版代码，缺少新特性（大上下文云端存储、服务端工具循环等）。
@@ -1652,22 +1666,16 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
               ) : null}
             </div>
           ) : null}
-        </div>
+    </>
+  );
 
-        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <span className="font-bold text-slate-700">
-              {config.pushMode === 'third-party'
-                ? '第三方推送 App'
-                : pushStatus?.transport === 'unified-push'
-                  ? 'UnifiedPush 通知'
-                  : '通知与推送通道'}
-            </span>
-            <span className={`text-xs font-bold ${pushStatus?.hasSubscription ? 'text-emerald-600' : 'text-amber-600'}`}>
-              {checkingPush ? '检查中…' : pushCheckError ? '暂时无法检查' : pushStatus?.hasSubscription ? '已开启' : '未开启'}
-            </span>
-          </div>
-
+  const pushTitle = config.pushMode === 'third-party'
+    ? '第三方推送 App'
+    : pushStatus?.transport === 'unified-push' ? 'UnifiedPush 通知' : '通知与推送通道';
+  const pushStatusText = checkingPush ? '检查中…' : pushCheckError ? '暂时无法检查' : pushStatus?.hasSubscription ? '已开启' : '未开启';
+  const pushStatusClass = checkingPush ? 'text-slate-400' : pushStatus?.hasSubscription ? 'text-emerald-600' : 'text-amber-600';
+  const pushBody = (
+    <>
           <div className="grid grid-cols-2 gap-1.5 bg-slate-200/70 p-1 rounded-xl">
             <button
               type="button"
@@ -1826,9 +1834,6 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
             })()
           ) : (
             <>
-              <p className="text-xs leading-relaxed text-slate-500">
-                这是第二步。只有你真的想让角色在后台主动推送消息时，才需要点。
-              </p>
               {pushStatus?.transport === 'unified-push' ? (
                 <p className="text-xs leading-relaxed text-slate-500">
                   Android App 通过开放的 UnifiedPush 收消息，不依赖 Firebase 或 Google 服务。
@@ -1882,65 +1887,52 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
               </div>
             </>
           )}
+    </>
+  );
+
+  /* 即时对话：聊天本身也交给云端跑。几道门缺一不可，缺哪道就把哪道写出来——
+     置灰而不说原因的话，用户只会反复点它。
+     开着但有门没过时状态不能只写「已开启」——那几道门是真的会让这一轮走本地生成的，
+     标成绿色的「已开启」就是在骗人：用户以为聊天在云端跑，实际一直在本地。 */
+  const instantStatusText = !instantChatOn ? '未开启' : instantChatBlockedReason ? '已开启 · 暂不生效' : '已开启';
+  const instantStatusClass = !instantChatOn ? 'text-slate-400' : instantChatBlockedReason ? 'text-amber-600' : 'text-emerald-600';
+  const instantBody = (
+    <>
+      {/* 「即时」容易被读成「秒回、不走模型」，所以第一句先把这个误会拆掉，再讲开和关差在哪。 */}
+      <p className="text-xs leading-relaxed text-slate-500">
+        「即时」不是秒回。回复照样由你配的模型现写，要等多久、花多少 API 费用都和平时一样，变的只是<strong>在哪儿写</strong>。
+      </p>
+      <div className="bg-white border border-slate-200 rounded-xl divide-y divide-slate-100 text-xs leading-relaxed text-slate-500">
+        <div className="px-3 py-2.5">
+          <p className="font-bold text-slate-600">关着</p>
+          <p>回复在这台设备的页面里写。写完之前页面得一直开着，切到后台、锁屏，或者 App 被杀后台，这条回复就断了。</p>
         </div>
-
-        {/* 即时对话：聊天本身也交给云端跑。四道门缺一不可，缺哪道就把哪道写出来——
-            置灰而不说原因的话，用户只会反复点它。 */}
-        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <span className="font-bold text-slate-700">即时对话</span>
-            {/* 开着但有门没过时不能只写「已开启」——那几道门是真的会让这一轮走本地生成的，
-                标成绿色的「已开启」就是在骗人：用户以为聊天在云端跑，实际一直在本地。 */}
-            <span className={`text-xs font-bold ${
-              !instantChatOn ? 'text-slate-400'
-                : instantChatBlockedReason ? 'text-amber-600' : 'text-emerald-600'
-            }`}>
-              {!instantChatOn ? '未开启'
-                : instantChatBlockedReason ? '已开启 · 暂不生效' : '已开启'}
-            </span>
-          </div>
-          <p className="text-xs leading-relaxed text-slate-500">
-            开了以后，你发出的每一条消息都由这台 Worker 去生成回复，回复走推送回来。
-            发完就能切后台、关掉应用，回来时消息已经在那儿了。关掉则回到本地直连生成。
-          </p>
-          {instantChatBlockedReason ? (
-            <p className="text-xs leading-relaxed text-amber-600">{instantChatBlockedReason}</p>
-          ) : (
-            <p className="text-[11px] leading-relaxed text-slate-400">
-              没有逐字吐出，生成期间显示「正在输入…」；云端明确报错才会提示重发，
-              只要还在生成或重试就一直等（LLM 慢不算失败）。
-            </p>
-          )}
-          <button
-            type="button"
-            onClick={() => void handleToggleInstantChat()}
-            disabled={loading || (!instantChatOn && !!instantChatBlockedReason)}
-            className={`w-full py-3 font-bold rounded-2xl active:scale-95 transition-transform disabled:opacity-40 ${
-              instantChatOn ? 'bg-slate-200 text-slate-600' : 'bg-slate-900 text-white'
-            }`}
-          >
-            {instantChatOn ? '关闭即时对话' : '开启即时对话'}
-          </button>
+        <div className="px-3 py-2.5">
+          <p className="font-bold text-violet-600">开着</p>
+          <p>回复在你的云端后端里写，写好了用通知送回来。发完消息就算把 App 杀后台也没关系，回来时消息已经在那儿了。</p>
         </div>
+      </div>
+      {instantChatBlockedReason ? (
+        <p className="text-xs leading-relaxed text-amber-600">{instantChatBlockedReason}</p>
+      ) : (
+        <p className="text-[11px] leading-relaxed text-slate-400">
+          开着时没有逐字吐出，生成期间显示「正在输入…」；云端明确报错才会提示重发，只要还在生成或重试就一直等（LLM 慢不算失败）。
+        </p>
+      )}
+      <button
+        type="button"
+        onClick={() => void handleToggleInstantChat()}
+        disabled={loading || (!instantChatOn && !!instantChatBlockedReason)}
+        className={`w-full py-3 font-bold rounded-2xl active:scale-95 transition-transform disabled:opacity-40 ${
+          instantChatOn ? 'bg-slate-200 text-slate-600' : 'bg-slate-900 text-white'
+        }`}
+      >
+        {instantChatOn ? '关闭即时对话' : '开启即时对话'}
+      </button>
+    </>
+  );
 
-        <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 text-xs leading-relaxed text-amber-700 space-y-2">
-          <div className="font-bold text-amber-800">风险说明</div>
-          <p>开了 2.0 以后，主动消息内容、提示词、相关配置，都会进入你自己部署的 Worker 及其 D1 数据库。</p>
-          <p>这是你自己的 Worker、你自己的库，项目不会额外接一个中心服务器。但只要数据进库，能碰到这台 Worker / 数据库的人（也就是你自己）就能看到这些内容。</p>
-          <p>如果你不接受把私密提示词、API Key 放进自己部署的服务，就不要开 2.0。</p>
-        </div>
-
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3">
-          <button
-            type="button"
-            onClick={() => setAdvancedOpen((prev) => !prev)}
-            className="w-full flex items-center justify-between text-left"
-          >
-            <span className="font-bold text-slate-700">高级信息</span>
-            <span className="text-xs font-bold text-slate-400">{advancedOpen ? '收起' : '展开'}</span>
-          </button>
-
-          {advancedOpen ? (
+  const advancedBody = (
             <div className="space-y-3 text-xs">
               <div className="bg-violet-50 border border-violet-100 rounded-2xl p-3 space-y-2">
                 <div className="flex items-center justify-between gap-3">
@@ -1969,8 +1961,248 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
               ) : null}
 
             </div>
-          ) : null}
+  );
+
+  // ── 引导 ────────────────────────────────────────────────────────────────────
+
+  const cardClass = 'bg-white border border-slate-200 rounded-2xl p-4 space-y-3';
+  const mutedCardClass = 'bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3';
+  const cardHeader = (title: string, status: string, statusClass: string) => (
+    <div className="flex items-center justify-between gap-3">
+      <span className="font-bold text-slate-700">{title}</span>
+      <span className={`text-xs font-bold ${statusClass}`}>{status}</span>
+    </div>
+  );
+  const stepHeader = (title: string, desc: string) => (
+    <div className="space-y-2">
+      <div className="flex gap-1.5" aria-hidden="true">
+        {GUIDE_STEPS.map((name, index) => (
+          <span key={name} className={`h-1 flex-1 rounded-full ${index < guideStep ? 'bg-violet-500' : 'bg-slate-200'}`} />
+        ))}
+      </div>
+      <p className="text-[11px] font-bold text-violet-600">
+        第 {guideStep} 步，共 {GUIDE_STEPS.length} 步 · {GUIDE_STEPS[guideStep - 1]}
+      </p>
+      <h4 className="text-base font-bold text-slate-800">{title}</h4>
+      <p className="text-xs leading-relaxed text-slate-500">{desc}</p>
+    </div>
+  );
+
+  const guideContent = guideStep === 0 ? (
+    <>
+      <AmsgIntroDemo />
+      <h4 className="text-base font-bold text-slate-800 text-center">App 关着，TA 也能来找你</h4>
+      <p className="text-xs leading-relaxed text-slate-500">
+        平时角色只能在你开着页面的时候说话，App 一被杀后台就什么都收不到了。主动消息 2.0 给你装一个一直醒着的云端小后台：到了时间，它替角色把话写好，再用通知送到你手机上。
+      </p>
+      <ul className="bg-violet-50 border border-violet-100 rounded-2xl p-4 space-y-2 text-xs leading-relaxed text-slate-600">
+        <li><strong>TA 自己约时间来找你</strong>，你也可以替 TA 定好每天几点发。</li>
+        <li><strong>你很久没说话时</strong>，TA 的「离开后消息」能直接推到手机上。</li>
+        <li><strong>聊天也能交给云端</strong>：发完消息就算把 App 杀后台，回复写好了也会推给你。</li>
+      </ul>
+      {/* 数据会进用户自己的 Worker 这件事，要在动手装之前就说，不能等装完才在折叠区里看到。 */}
+      <div className="space-y-1.5 text-xs leading-relaxed text-slate-500">
+        <p><strong className="text-slate-700">要准备：</strong>一个 Cloudflare 账号（免费版就能用），两三分钟。</p>
+        <p>
+          <strong className="text-slate-700">要知道：</strong>消息内容、提示词和 API Key 会存进这个后台和它的数据库。后台装在你自己的账号里，项目没有另接中心服务器；不接受的话就不要开。
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={() => setView('panel')}
+        className="w-full text-center text-[11px] font-bold text-slate-400"
+      >
+        跳过引导，直接看全部设置
+      </button>
+    </>
+  ) : guideStep === 1 ? (
+    <>
+      {stepHeader(
+        '装一个你自己的后端',
+        '页面关着的时候，得有个一直醒着的地方替角色写消息。它装在你自己的 Cloudflare 账号里，粘一枚 Token 就能自动装好。',
+      )}
+      {isConnected ? (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 space-y-1">
+          <p className="font-bold text-emerald-700">后端已经连上了</p>
+          <p className="text-[11px] font-mono text-emerald-700/80 break-all">{config.workerUrl}</p>
         </div>
+      ) : (
+        <>
+          {deployCard}
+          {/* 地址和密钥那几栏只在用得上时出现：选了手动配置，或者一键部署已经把地址填好、正在等它生效。 */}
+          {config.workerUrl?.trim() || manualSetupOpen ? (
+            <div className={cardClass}>{workerBody}</div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setView('panel')}
+              className="w-full text-center text-[11px] font-bold text-slate-400"
+            >
+              已经有后端地址？去全部设置里填
+            </button>
+          )}
+        </>
+      )}
+    </>
+  ) : guideStep === 2 ? (
+    <>
+      {stepHeader(
+        '让消息能送到手机上',
+        '后端写好的消息靠系统通知送过来。点下面的按钮，浏览器问要不要允许通知时选「允许」。',
+      )}
+      <div className={mutedCardClass}>
+        {cardHeader(pushTitle, pushStatusText, pushStatusClass)}
+        {pushBody}
+      </div>
+    </>
+  ) : guideStep === 3 ? (
+    <>
+      {stepHeader('要不要把聊天也交给云端', '这一步可选，以后随时能回来改。')}
+      <div className={mutedCardClass}>
+        {cardHeader('即时对话', instantStatusText, instantStatusClass)}
+        {instantBody}
+      </div>
+    </>
+  ) : (
+    <>
+      {/* 全局配好只是「能用」，角色那边的开关不开的话一条都不会来——引导在前一步就结束的话，
+          用户会以为装坏了。所以单独占一屏，不跟别的内容挤在一起。 */}
+      {stepHeader(
+        '在每个角色那里单独打开',
+        '前面装的后端和通知是所有角色共用的，但主动消息要一个角色一个角色地开。没开的角色不会来找你。',
+      )}
+      <ol className="bg-violet-50 border border-violet-100 rounded-2xl p-4 space-y-2 text-xs leading-relaxed text-slate-600 list-decimal list-outside pl-8">
+        <li>回到和 TA 的聊天。</li>
+        <li>点输入框旁边的<strong>「+」</strong>，打开功能菜单。</li>
+        <li>找到<strong>「主动消息 2.0」</strong>，把<strong>「启用主动消息 2.0」</strong>的开关打开。</li>
+      </ol>
+      <p className="text-xs leading-relaxed text-slate-500">
+        想让别的角色也来找你，就到那个角色的聊天里再开一次。即时对话也可以在同一个面板里按角色单独关掉。
+      </p>
+    </>
+  );
+
+  // ── 面板 ────────────────────────────────────────────────────────────────────
+
+  const cronPaused = cronState?.kind === 'known' && !cronState.enabled;
+  const panelContent = (
+    <>
+      {/* 后台任务暂停着的时候常驻这一条：下面的按钮在折叠区里，不然一眼看不出角色为什么都不响。 */}
+      {cronPaused ? (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 text-xs leading-relaxed text-amber-700">
+          后台任务已暂停，到点的消息先攒着，恢复后一起补发。
+        </div>
+      ) : null}
+      {isConnected ? (
+        <p className="px-1 text-[11px] leading-relaxed text-slate-400">
+          主动消息按角色单独开：在和 TA 的聊天里点「+」→「主动消息 2.0」。
+        </p>
+      ) : null}
+
+      {diagnosticsCard}
+      {deployCard}
+
+      <FoldCard
+        title="后端 Worker"
+        status={isConnected ? '已连接' : '未连接'}
+        statusClass={isConnected ? 'text-emerald-600' : 'text-amber-600'}
+        needsAttention={!isConnected || workerOutdated || workerVersion?.state === 'outdated' || cronPaused}
+      >
+        {workerBody}
+      </FoldCard>
+
+      <FoldCard
+        title={pushTitle}
+        status={pushStatusText}
+        statusClass={pushStatusClass}
+        needsAttention={Boolean(pushCheckError) || (pushStatus ? !pushStatus.hasSubscription : false)}
+        className="bg-slate-50 border-slate-200"
+      >
+        {pushBody}
+      </FoldCard>
+
+      {/* 不自动展开：「Worker 认不认即时对话」是异步探的，探到之前跟「不支持」分不出来，
+          按它展开的话每个正常用户打开面板都会被弹开一次。状态那几个字变黄已经够提醒了。 */}
+      <FoldCard
+        title="即时对话"
+        status={instantStatusText}
+        statusClass={instantStatusClass}
+        className="bg-slate-50 border-slate-200"
+      >
+        {instantBody}
+      </FoldCard>
+
+      <FoldCard title="数据存在哪儿" className="bg-amber-50 border-amber-100">
+        <div className="text-xs leading-relaxed text-amber-700 space-y-2">
+          <p>开了 2.0 以后，主动消息内容、提示词、相关配置，都会进入你自己部署的 Worker 及其 D1 数据库。</p>
+          <p>这是你自己的 Worker、你自己的库，项目不会额外接一个中心服务器。但只要数据进库，能碰到这台 Worker / 数据库的人（也就是你自己）就能看到这些内容。</p>
+          <p>如果你不接受把私密提示词、API Key 放进自己部署的服务，就不要开 2.0。</p>
+        </div>
+      </FoldCard>
+
+      <FoldCard title="高级信息">{advancedBody}</FoldCard>
+
+      <button
+        type="button"
+        onClick={() => { setGuideStep(0); setView('guide'); }}
+        className="w-full text-center text-[11px] font-bold text-slate-400"
+      >
+        这个功能是做什么的？重看介绍
+      </button>
+    </>
+  );
+
+  const inGuide = view === 'guide';
+  const closeButton = (
+    <button
+      onClick={onClose}
+      className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl active:scale-95 transition-transform"
+    >
+      关闭
+    </button>
+  );
+
+  return (
+    <>
+    <Modal
+      isOpen={isOpen}
+      title="主动消息 2.0"
+      onClose={onClose}
+      footer={!inGuide ? closeButton : (
+        <>
+          {guideStep === 0 ? closeButton : (
+            <button
+              onClick={() => setGuideStep((step) => step - 1)}
+              className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl active:scale-95 transition-transform"
+            >
+              上一步
+            </button>
+          )}
+          {/* 第 1 步没连上就不放行：后面几步都要问这台后端，跳过去只会看到一排开不了的开关。 */}
+          <button
+            onClick={() => (guideStep < GUIDE_STEPS.length ? setGuideStep((step) => step + 1) : setView('panel'))}
+            disabled={guideStep === 1 && !isConnected}
+            className="flex-1 py-3 bg-violet-500 text-white font-bold rounded-2xl active:scale-95 transition-transform disabled:opacity-40"
+          >
+            {guideStep === 0 ? '开始配置'
+              : guideStep === 1 ? (isConnected ? '下一步' : '装好后继续')
+              : guideStep === 2 ? (pushStatus?.hasSubscription ? '下一步' : '先跳过')
+              : guideStep === 3 ? '下一步'
+              : '完成'}
+          </button>
+        </>
+      )}
+    >
+      <div ref={topRef} className="space-y-4 text-sm text-slate-600">
+        {configLoadError ? (
+          <div role="alert" className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 text-xs text-amber-700 space-y-2">
+            <p>{configLoadError}</p>
+            <button type="button" onClick={() => void refresh().catch(() => {})} className="font-bold underline">
+              重试读取配置
+            </button>
+          </div>
+        ) : null}
+        {inGuide ? guideContent : panelContent}
       </div>
     </Modal>
     {/* 摆在 Modal 外面：它自己是全屏 fixed 定位，放进面板里会被面板的动画容器框住。 */}
