@@ -14138,7 +14138,7 @@ function buildScheduledPush(message, build, extraMeta, bannerBody) {
 }
 
 // utils/amsgBundleVersion.ts
-var AMSG_BUNDLE_VERSION = "2026-11-09";
+var AMSG_BUNDLE_VERSION = "2026-11-11";
 
 // worker/amsg/src/reproduction.ts
 async function writeDiagnosticStage(writeState, runId, event, fields = {}) {
@@ -14491,7 +14491,7 @@ var CHAT_PRESENCE_TTL_MS = 45e3;
 var parseAmsgChatPresence = (raw) => {
   try {
     const value = raw ? JSON.parse(raw) : null;
-    return value?.v === 1 && typeof value.charId === "string" && typeof value.activeAt === "number" && (value.lastUserMessageAt === null || typeof value.lastUserMessageAt === "number") ? value : null;
+    return value?.v === 1 && typeof value.charId === "string" && typeof value.activeAt === "number" && (value.lastUserMessageAt === null || typeof value.lastUserMessageAt === "number") && (value.scene === void 0 || value.scene === "date") ? value : null;
   } catch {
     return null;
   }
@@ -19609,7 +19609,8 @@ var amsgHooks = {
     const presence = parseAmsgChatPresence(
       charRows.find((r) => r.key === AMSG_CHAT_PRESENCE_KEY)?.value
     );
-    if (!instant && policy === "expire" && isFreshChatPresence(presence, charId, ctx.now.getTime())) {
+    const inPerson = presence?.scene === "date" && isFreshChatPresence(presence, charId, ctx.now.getTime());
+    if (!instant && policy === "expire" && !inPerson && isFreshChatPresence(presence, charId, ctx.now.getTime())) {
       console.log("[amsg:defer]", {
         taskId: ctx.task.id,
         reason: "reply-in-flight",
@@ -19743,6 +19744,11 @@ var amsgHooks = {
         scheduleOff
       });
       await recordSkip(ctx, charId, "schedule-off", occurrenceMs, taskBrief);
+      return { skip: true };
+    }
+    if (!instant && policy === "expire" && inPerson) {
+      console.log("[amsg:in-person-skip]", { taskId: ctx.task.id, charId });
+      await recordSkip(ctx, charId, "in-person", occurrenceMs, taskBrief);
       return { skip: true };
     }
     const maxUnansweredSends = limits.maxUnansweredSends;
@@ -20113,6 +20119,7 @@ ${userHoliday}` });
       const presenceRows = await ctx.readState(amsgStateNamespace(stash.charId), { key: AMSG_CHAT_PRESENCE_KEY });
       const presence = parseAmsgChatPresence(presenceRows.find((r) => r.key === AMSG_CHAT_PRESENCE_KEY)?.value);
       if (chattedDuringFire(presence, stash.charId, Date.now(), stash.overlapGuard.lastUserMessageAt)) {
+        const overlapReason = presence?.scene === "date" ? "in-person" : "chat-overlap";
         if (stash.scheduledTasks.length || stash.cancelledTasks.length || stash.renewedTasks.length) {
           console.warn("[amsg:chat-overlap] \u751F\u6210\u671F\u95F4\u7528\u6237\u5F00\u53E3\u4E86\uFF0C\u4F46\u8FD9\u8F6E\u6539\u8FC7\u4EFB\u52A1\uFF0C\u7167\u5E38\u53D1\u51FA", { taskId });
         } else {
@@ -20125,14 +20132,14 @@ ${userHoliday}` });
             v: 1,
             taskUuid: stash.taskUuid,
             occurrenceMs: stash.occurrenceMs,
-            reason: "chat-overlap",
+            reason: overlapReason,
             skippedAt: Date.now()
           });
           await emitFireSkip(ctx.emitResult, {
             charId: stash.charId,
             taskUuid: stash.taskUuid,
             occurrenceMs: stash.occurrenceMs,
-            reason: "chat-overlap",
+            reason: overlapReason,
             task: findTaskBrief(stash.pendingTasks, stash.taskUuid)
           });
           return { decision: "skip-push" };

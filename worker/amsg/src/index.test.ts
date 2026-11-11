@@ -103,12 +103,13 @@ const firePackValue = (
 
 const presenceValue = (
   activeAt: number,
-  opts: { lastUserMessageAt?: number | null; charId?: string } = {},
+  opts: { lastUserMessageAt?: number | null; charId?: string; scene?: 'date' } = {},
 ) => JSON.stringify({
   v: 1,
   charId: opts.charId ?? CHAR_ID,
   activeAt,
   lastUserMessageAt: opts.lastUserMessageAt === undefined ? activeAt : opts.lastUserMessageAt,
+  ...(opts.scene ? { scene: opts.scene } : {}),
 });
 
 // tool_pack / tool_config 与 fire_pack 同批原子上传，所以默认造齐——缺任何一份都是
@@ -1005,6 +1006,38 @@ describe('频率与额度（到点兜底闸）', () => {
       charRows: rows({ settings: { allowSelfForce: true }, presence }),
     });
     fired(await amsgHooks.onBeforeFire(allowed.ctx));
+  });
+
+  // 见面期间人就在面前：到点直接作废（不推迟），回执带上原本要说的事，交给见面下一轮。
+  it('正在见面（scene=date 租约新鲜）→ 作废，留 in-person 痕并回传任务概要', async () => {
+    const { ctx, writeState } = makeCtx({
+      charRows: rows({
+        presence: presenceValue(NOW.getTime() - 5_000, { scene: 'date' }),
+        pack: { pendingTasks: [{
+          taskUuid: TASK_UUID, clientTaskId: 'ctid-1', status: 'scheduled', mode: 'prompted',
+          promptHint: '问问药吃了没', recurrenceType: 'none', expirePolicy: 'expire',
+          firstSendTime: '2026-07-25T12:00:00.000Z', createdAt: 1,
+        }] },
+      }),
+    });
+    ctx.emitResult = vi.fn(async () => ({ messageId: 'm', pushed: false }));
+    await expect(amsgHooks.onBeforeFire(ctx)).resolves.toEqual({ skip: true });
+    expect(skipReason(writeState)).toBe('in-person');
+    expect(ctx.emitResult.mock.calls[0][0]).toMatchObject({
+      reason: 'in-person',
+      task: { mode: 'prompted', promptHint: '问问药吃了没' },
+    });
+  });
+
+  it('见面租约过期（离开见面超过 TTL）→ 照常发；到点必发的见面中也照发', async () => {
+    const left = makeCtx({ charRows: rows({ presence: presenceValue(NOW.getTime() - 120_000, { scene: 'date' }) }) });
+    fired(await amsgHooks.onBeforeFire(left.ctx));
+
+    const alarm = makeCtx({
+      metadata: { amsgExpirePolicy: 'force' },
+      charRows: rows({ presence: presenceValue(NOW.getTime() - 5_000, { scene: 'date' }) }),
+    });
+    fired(await amsgHooks.onBeforeFire(alarm.ctx));
   });
 
   it('用户自己排的「到点必发」不受这项影响', async () => {
@@ -5381,6 +5414,16 @@ describe('推送前复查：生成期间用户开口了', () => {
       presenceValue(Date.now(), { lastUserMessageAt: null }),
     );
     expect(decision.decision).toBe('skip-push');
+  });
+
+  it('生成期间用户进了见面 → 不发，原因记成 in-person', async () => {
+    const { decision, store, emitResult } = await fireWithPresenceInBetween(
+      EXPIRE_META,
+      presenceValue(Date.now(), { lastUserMessageAt: null, scene: 'date' }),
+    );
+    expect(decision.decision).toBe('skip-push');
+    expect(JSON.parse(store.rows.get(AMSG_LAST_SKIP_KEY) ?? '{}').reason).toBe('in-person');
+    expect(emitResult).toHaveBeenCalledWith(expect.objectContaining({ reason: 'in-person' }));
   });
 
   it('生成期间没人开口 → 照常发', async () => {

@@ -66,6 +66,8 @@ const describeSkipReason = (reason: Amsg2ExpiredNoticeRecord['reason'], target: 
       return `被${target}定的主动消息频率规矩拦下了`;
     case 'chat-overlap':
       return `写好时${target}正好在跟你聊，那句没赶上新对话，就没发`;
+    case 'in-person':
+      return `当时你们正在见面，人就在面前，就没发消息`;
     default:
       return '';
   }
@@ -251,4 +253,37 @@ export async function collectAmsg2TaskContext(
     expiredIds: unnotified.map((r) => r.id),
     notices: unnotified,
   };
+}
+
+/** 见面期间到点作废、还没告诉角色的回执（只交给见面的下一轮）。 */
+export const isInPersonNotice = (r: Amsg2ExpiredNoticeRecord): boolean =>
+  !r.notifiedAt && r.kind !== 'user-cancelled' && r.reason === 'in-person';
+
+/**
+ * 见面下一轮的那段提示：只写原本想说的事，不写时间（见面可能是架空时间线），
+ * 口吻放低——忘了也正常，不提就算了。没有能说出内容的条目时返回 null。
+ */
+export function buildInPersonNoticesText(
+  notices: Amsg2ExpiredNoticeRecord[],
+  targetName?: string,
+): string | null {
+  const hints = [...new Set(notices.filter(isInPersonNotice)
+    .map((r) => r.promptHint?.trim())
+    .filter((h): h is string => !!h))];
+  if (!hints.length) return null;
+  const target = targetName?.trim() || '对方';
+  return [
+    `【仅你可见】见面这段时间里，你原本打算发消息跟${target}说的事没发（人就在面前，用不着发消息）：`,
+    ...hints.map((h) => `- ${h}`),
+    '都是小事，不必非提。正好聊到、自然想起来了，就当面顺口带一句；不合适或者忘了都很正常，不提就算了，别为它转移话题。不要说出「排程」「定时消息」这类字眼。',
+  ].join('\n');
+}
+
+/** 读台账里见面期间作废的回执：text 交给见面提示词，ids 在这一轮回复成功后销账。 */
+export async function collectInPersonNotices(
+  charId: string,
+  targetName?: string,
+): Promise<{ text: string | null; ids: string[] }> {
+  const notices = (await ActiveMsgStore.getExpiredNotices(charId)).filter(isInPersonNotice);
+  return { text: buildInPersonNoticesText(notices, targetName), ids: notices.map((r) => r.id) };
 }

@@ -12,6 +12,7 @@ import {
   buildAmsg2TaskContextText,
   buildUserCancelledNotices,
   collectAmsg2TaskContext,
+  collectInPersonNotices,
 } from './amsg2TaskContext';
 import { ActiveMsgStore } from './activeMsgStore';
 import { buildAmsg2ChatScheduleBrief, buildFireScheduleBlock } from './amsgFireSchedule';
@@ -248,5 +249,35 @@ describe('collectAmsg2TaskContext', () => {
     const result = await collectAmsg2TaskContext(char);
     expect(result.expiredIds).toEqual([]);
     expect(result.text).not.toContain('到点没发出去');
+  });
+});
+
+// 见面期间作废的主动消息：只交给见面下一轮，只写想说的事，不写时间（见面可能是架空时间线）。
+describe('collectInPersonNotices', () => {
+  beforeEach(() => {
+    (ActiveMsgStore.getExpiredNotices as any).mockReset();
+  });
+
+  it('只取见面中作废、还没告知的；没有内容的也销账但不进文案', async () => {
+    (ActiveMsgStore.getExpiredNotices as any).mockResolvedValue([
+      { ...expired, id: 'date-1', reason: 'in-person', promptHint: '问问药吃了没' },
+      { ...expired, id: 'date-auto', reason: 'in-person', mode: 'auto', promptHint: undefined },
+      { ...expired, id: 'date-told', reason: 'in-person', notifiedAt: 1 },
+      { ...expired, id: 'declined', reason: 'declined' },
+    ]);
+    const result = await collectInPersonNotices('c1', '小明');
+    expect(result.ids).toEqual(['date-1', 'date-auto']);
+    expect(result.text).toContain('- 问问药吃了没');
+    expect(result.text).toContain('不提就算了');
+    expect(result.text).not.toMatch(/\d{1,2}:\d{2}/);
+  });
+
+  it('全是没内容的 → 不出文案', async () => {
+    (ActiveMsgStore.getExpiredNotices as any).mockResolvedValue([
+      { ...expired, id: 'date-auto', reason: 'in-person', mode: 'auto', promptHint: undefined },
+    ]);
+    const result = await collectInPersonNotices('c1');
+    expect(result.text).toBeNull();
+    expect(result.ids).toEqual(['date-auto']);
   });
 });

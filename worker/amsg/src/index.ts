@@ -2034,7 +2034,9 @@ export const amsgHooks = {
     const presence = parseAmsgChatPresence(
       charRows.find((r) => r.key === AMSG_CHAT_PRESENCE_KEY)?.value,
     );
-    if (!instant && policy === 'expire' && isFreshChatPresence(presence, charId, ctx.now.getTime())) {
+    // 见面中的租约不在这里推迟，交给下面的 in-person 闸作废（那里才拿得到任务概要）。
+    const inPerson = presence?.scene === 'date' && isFreshChatPresence(presence, charId, ctx.now.getTime());
+    if (!instant && policy === 'expire' && !inPerson && isFreshChatPresence(presence, charId, ctx.now.getTime())) {
       console.log('[amsg:defer]', {
         taskId: ctx.task.id,
         reason: 'reply-in-flight',
@@ -2241,6 +2243,15 @@ export const amsgHooks = {
         taskId: ctx.task.id, charId, selfScheduled, recurring, scheduleOff,
       });
       await recordSkip(ctx, charId, 'schedule-off', occurrenceMs, taskBrief);
+      return { skip: true } as const;
+    }
+
+    // 用户正在和这个角色见面：人就在面前，这时候弹手机消息会穿帮。直接作废、不推迟——
+    // 推迟到见面结束再发，角色每次都得编个「刚才忘了说」来圆。回执送回客户端，见面的
+    // 下一轮当成可提可不提的小事交给角色。到点必发（force）的照发。
+    if (!instant && policy === 'expire' && inPerson) {
+      console.log('[amsg:in-person-skip]', { taskId: ctx.task.id, charId });
+      await recordSkip(ctx, charId, 'in-person', occurrenceMs, taskBrief);
       return { skip: true } as const;
     }
 
@@ -2765,6 +2776,8 @@ export const amsgHooks = {
       const presenceRows = await ctx.readState(amsgStateNamespace(stash.charId), { key: AMSG_CHAT_PRESENCE_KEY });
       const presence = parseAmsgChatPresence(presenceRows.find((r) => r.key === AMSG_CHAT_PRESENCE_KEY)?.value);
       if (chattedDuringFire(presence, stash.charId, Date.now(), stash.overlapGuard.lastUserMessageAt)) {
+        // 生成期间用户进了见面：跟开场那道 in-person 闸同一个原因，回执才会带进见面。
+        const overlapReason = presence?.scene === 'date' ? 'in-person' as const : 'chat-overlap' as const;
         // shortcut: 这一轮已经用工具改过任务的照常发出——跳过的话客户端收不到这批改动、认领不到新任务；
         // 真撞上再改成拦下时单独 emitResult 送任务改动。
         if (stash.scheduledTasks.length || stash.cancelledTasks.length || stash.renewedTasks.length) {
@@ -2779,14 +2792,14 @@ export const amsgHooks = {
             v: 1,
             taskUuid: stash.taskUuid,
             occurrenceMs: stash.occurrenceMs,
-            reason: 'chat-overlap',
+            reason: overlapReason,
             skippedAt: Date.now(),
           });
           await emitFireSkip(ctx.emitResult, {
             charId: stash.charId,
             taskUuid: stash.taskUuid,
             occurrenceMs: stash.occurrenceMs,
-            reason: 'chat-overlap',
+            reason: overlapReason,
             task: findTaskBrief(stash.pendingTasks, stash.taskUuid),
           });
           return { decision: 'skip-push' as const };

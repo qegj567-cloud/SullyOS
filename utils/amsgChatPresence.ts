@@ -10,6 +10,9 @@
  * 等待角色回复期间每 15s 续租；成功/失败/中断后停止续租，远端值靠 45s TTL 自然失效。
  * 它只代表「正在和这个角色交互」，不是 App 在线状态。worker 对 expire AI 任务开场先检查
  * 新鲜租约，新鲜则推迟；生成完推送前再查一次（chattedDuringFire），聊上了就不发。
+ *
+ * 见面（DateApp）开着时也续这份租约，并标上 scene: 'date'：人就在面前，到点的主动消息
+ * 直接作废（不推迟），回执带进见面的下一轮。
  */
 
 export const AMSG_CHAT_PRESENCE_KEY = 'chat_presence';
@@ -23,6 +26,8 @@ export interface AmsgChatPresence {
   activeAt: number;
   /** 最近一条真实用户消息，用于一次性任务的 anchor 规则。 */
   lastUserMessageAt: number | null;
+  /** 'date' = 正在见面；不带 = 聊天里一轮回复正在生成。 */
+  scene?: 'date';
 }
 
 export const parseAmsgChatPresence = (raw: string | undefined): AmsgChatPresence | null => {
@@ -30,7 +35,8 @@ export const parseAmsgChatPresence = (raw: string | undefined): AmsgChatPresence
     const value = raw ? JSON.parse(raw) : null;
     return value?.v === 1 && typeof value.charId === 'string' &&
       typeof value.activeAt === 'number' &&
-      (value.lastUserMessageAt === null || typeof value.lastUserMessageAt === 'number')
+      (value.lastUserMessageAt === null || typeof value.lastUserMessageAt === 'number') &&
+      (value.scene === undefined || value.scene === 'date')
       ? value as AmsgChatPresence : null;
   } catch {
     return null;

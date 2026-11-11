@@ -21,7 +21,10 @@ import { BookOpen, Sparkle, CaretLeft, GearSix } from '@phosphor-icons/react';
 import { CharacterGroupFilterBar, filterCharactersByGroup, GROUP_FILTER_ALL } from '../components/character/CharacterGroupFilter';
 import { trimHistoryThrough } from '../utils/dateSessionHistory';
 import { trackEvent } from '../utils/analytics';
-import { markAmsgStateDirty } from '../utils/amsgStateSync';
+import { markAmsgStateDirty, startAmsgChatPresence, stopAmsgChatPresence } from '../utils/amsgStateSync';
+import { hasActiveAiTask } from '../utils/amsg2Tasks';
+import { collectInPersonNotices } from '../utils/amsg2TaskContext';
+import { ActiveMsgStore } from '../utils/activeMsgStore';
 import StoryTheater from '../components/date/story/StoryTheater';
 import { dateLaunch } from '../utils/dateLaunch';
 import { getLocalDateKey } from '../utils/localDate';
@@ -171,6 +174,19 @@ const DateApp: React.FC = () => {
         if (!target) return;
         markAmsgStateDirty({ char: target, userProfile, groups, realtimeConfig });
     };
+
+    // 见面期间（感知 + 对话）一直续活跃会话租约并标上见面：云端到点的主动消息据此作废，
+    // 不会在人就在面前时弹手机消息。门槛与聊天那边一致：开了 2.0 且有还会响的 AI 任务。
+    // 离开见面后云端那份还要 45s TTL 才过期，这期间到点的也按见面中作废，属预期：
+    // 回执进不了见面，就在下一轮聊天的排程块里交给角色。
+    const inPersonLeaseCharId = (mode === 'peek' || mode === 'session')
+        && char?.activeMsg2Config?.enabled && hasActiveAiTask(char.activeMsg2Config)
+        ? char.id : undefined;
+    useEffect(() => {
+        if (!inPersonLeaseCharId) return;
+        startAmsgChatPresence(inPersonLeaseCharId, null, 'date');
+        return () => stopAmsgChatPresence(inPersonLeaseCharId, 'date');
+    }, [inPersonLeaseCharId]);
 
     const loadRecentDateMessages = async (charId: string, limit = DATE_SESSION_MESSAGE_LIMIT) => {
         return (await DB.getRecentMessagesByCharIdAndSource(charId, 'date', limit))
@@ -424,6 +440,8 @@ const DateApp: React.FC = () => {
         const modelText = isContinueTurn
             ? buildInPersonContinueInstruction(userProfile?.name, char.name)
             : text;
+        // 读不到台账不挡见面：这几条本来就是可提可不提的。
+        const inPerson = await collectInPersonNotices(char.id, userProfile?.name).catch(() => null);
         const { messages } = await DatePrompts.buildSessionPayload({
             char,
             userProfile,
@@ -432,6 +450,7 @@ const DateApp: React.FC = () => {
             userText: modelText,
             variant: 'send',
             useVisionDescriptions: apiConfig.visionApi?.enabled === true,
+            inPersonNotes: inPerson?.text,
         });
         const rawContent = await callLLM(messages, resolveDialogueApi(apiConfig, char).temperature ?? 0.85);
         const parsed = parseSARModuleReply(rawContent, sarModulePlan);
@@ -452,6 +471,8 @@ const DateApp: React.FC = () => {
 
         // 3. Save AI Response
         await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'text', content: parsed.canonical, metadata: { source: 'date', dateEncounterId: currentEncounterId, ...(assistantSurface ? { sarModuleSurface: assistantSurface } : {}) } });
+        // 交给过角色就销账（没带出来也算，忘了是正常的）；失败下一轮再带一次。
+        if (inPerson?.ids.length) void ActiveMsgStore.markExpiredNoticesNotified(char.id, inPerson.ids).catch(() => {});
         if (sarModulePlan.character) {
             updateCharacter(char.id, previous => ({
                 vrState: { ...(previous.vrState || { enabled: false, intervalMinutes: 120 }), sarModule: advanceSARModuleAfterReply(previous.vrState?.sarModule, sarModulePlan.character) },

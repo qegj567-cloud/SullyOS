@@ -1000,6 +1000,23 @@ describe('活跃会话租约', () => {
     expect(ActiveMsgClient.syncChatPresence).toHaveBeenCalledTimes(3);
     stopAmsgChatPresence(charId);
   });
+
+  // 从聊天点进见面时，聊天那轮回复可能晚于进见面才结束：它的 stop 不能把见面的心跳停掉。
+  it('见面中的租约标着 date，聊天那边的 stop 停不掉它', async () => {
+    const charId = nextCharId();
+    startAmsgChatPresence(charId, Date.now()); // 聊天那轮回复还在等
+    startAmsgChatPresence(charId, null, 'date'); // 进了见面
+    expect(vi.mocked(ActiveMsgClient.syncChatPresence).mock.calls.at(-1)?.[1]).toMatchObject({ scene: 'date' });
+
+    stopAmsgChatPresence(charId); // 聊天那轮回复结束
+    await vi.advanceTimersByTimeAsync(CHAT_PRESENCE_HEARTBEAT_MS + 100);
+    expect(ActiveMsgClient.syncChatPresence).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(ActiveMsgClient.syncChatPresence).mock.calls.at(-1)?.[1]).toMatchObject({ scene: 'date' });
+
+    stopAmsgChatPresence(charId, 'date'); // 离开见面
+    await vi.advanceTimersByTimeAsync(CHAT_PRESENCE_HEARTBEAT_MS * 3);
+    expect(ActiveMsgClient.syncChatPresence).toHaveBeenCalledTimes(3);
+  });
 });
 
 
