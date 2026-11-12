@@ -9,6 +9,8 @@ export default defineConfig({
     },
   },
   test: {
+    // These inline styles are part of the chat appearance compatibility contract.
+    css: { include: [/ChatNoticeCompat\.css/, /chat(?:Runtime|Preview)\.generated\.css/] },
     // Transform the UI library's CSS modules in browser component tests.
     server: { deps: { inline: ['animal-island-ui'] } },
     environment: 'node',
