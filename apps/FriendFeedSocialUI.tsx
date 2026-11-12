@@ -101,7 +101,7 @@ export function SocialPost({theme,post,user,characters,onProfile,onComment,onDel
             {post.source&&<a href={post.source.url} target="_blank" rel="noopener noreferrer"><ArrowSquareOut size={18}/><span>查看原文</span></a>}
         </footer>
         {!!visible.length&&<div className="ff-post-replies">{visible.map(c=><div className="ff-post-reply" key={c.id}>
-            {theme==='twitter'&&<FriendFeedAvatar name={c.authorName} avatar={c.authorId==='user'?user.avatar:characters.find(char=>char.id===c.authorId)?.avatar}/>}
+            {theme==='twitter'&&<FriendFeedAvatar name={c.authorName} avatar={c.accountId&&c.accountId!=='main'?undefined:c.authorId==='user'?user.avatar:characters.find(char=>char.id===c.authorId)?.avatar}/>}
             <p><strong>{c.authorName}</strong><span>{theme==='weibo'?'：':''}{c.text}</span></p></div>)}
             {post.comments.length>2&&<button className="ff-expand-replies" onClick={onComment}>{`查看全部 ${post.comments.length} 条回复`}</button>}
         </div>}

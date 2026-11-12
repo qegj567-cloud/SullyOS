@@ -1,4 +1,5 @@
 import type { Message } from '../types';
+import { stripDateVoiceTranslations } from './dateVoiceText';
 
 export type DateHistoryView = 'encounter' | 'date';
 export type DateHistorySortOrder = 'newest' | 'oldest';
@@ -151,7 +152,7 @@ const exportedContent = (message: Message): string => {
     }
     if (message.type === 'emoji') return message.content?.trim() ? `[表情] ${message.content.trim()}` : '[表情]';
     if (message.type === 'voice') return message.content?.trim() ? `[语音] ${message.content.trim()}` : '[语音]';
-    return message.content?.trim() || '(无内容)';
+    return stripDateVoiceTranslations(message.content || '') || '(无内容)';
 };
 
 export function formatDateHistoryExport(

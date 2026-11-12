@@ -108,6 +108,14 @@ describe('date history views', () => {
 });
 
 describe('date history export', () => {
+    it('朗读译文留在存档中，导出正文不重复展示', () => {
+        const row = message(1, at(9, 9), { content: '[happy] "你好。" <date-voice lang="en">Hello.</date-voice>' });
+        const output = formatDateHistoryExport('Sully', buildDateHistoryGroups([row], 'encounter', 'oldest'), 'encounter');
+        expect(output).toContain('[happy] "你好。"');
+        expect(output).not.toContain('date-voice');
+        expect(output).not.toContain('Hello.');
+        expect(row.content).toContain('Hello.');
+    });
     it('导出文本保留原始舞台动作和说话人', () => {
         const groups = buildDateHistoryGroups([
             message(1, at(9, 9), { opening: true, content: '[走近你]早上好' }),

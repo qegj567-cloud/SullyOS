@@ -1,4 +1,5 @@
 import { resolveCharacterUser } from './userPersona';
+import { stripDateVoiceTranslations } from './dateVoiceText';
 import {weatherForCharacter} from './characterWeather';
 import {secretNoteContext} from './secretNote';
 import { buildCharacterResponsePrinciples } from './characterResponsePrinciples';
@@ -1149,6 +1150,7 @@ ${voiceActingGuide()}`;
                 }
                 // 历史里的坏语音格式按规范写法呈现：模型照着上文学格式，旧错不能一路示范下去
                 let content: any = m.role === 'assistant' && typeof m.content === 'string' ? normalizeVoiceTags(m.content) : m.content;
+                if (m.metadata?.source === 'date' && m.role === 'assistant') content = stripDateVoiceTranslations(content || '');
                 const timeStr = timeAwarenessOn && hasReliableMessageTimestamp(m) ? `[${ChatPrompts.formatDate(m.timestamp, charTz)}]` : '';
                 const sourceTag = (() => {
                     const source = m.metadata?.source;

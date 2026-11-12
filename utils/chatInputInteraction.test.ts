@@ -52,6 +52,41 @@ afterEach(() => {
 });
 
 describe('private chat input controls', () => {
+    it.each([false, true])('closes the toolbar on an outside touch regardless of auto reply (%s) and keyboard focus', autoReplyEnabled => {
+        renderInput({ showPanel: 'actions', autoReplyEnabled });
+        pointerdown(container);
+        expect(props.setShowPanel).toHaveBeenLastCalledWith('none');
+        vi.mocked(props.setShowPanel).mockClear();
+        act(() => textarea().focus());
+        pointerdown(container);
+        expect(props.setShowPanel).toHaveBeenLastCalledWith('none');
+        expect(props.onSend).not.toHaveBeenCalled();
+        expect(props.onPanelAction).not.toHaveBeenCalled();
+    });
+
+    it('keeps toolbar buttons usable and only removes its own outside listener when closed', () => {
+        renderInput({ showPanel: 'actions' });
+        const action = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('戳一戳'))!;
+        expect(action).toBeDefined();
+        pointerdown(action);
+        expect(props.setShowPanel).not.toHaveBeenCalled();
+        act(() => action.click());
+        expect(props.onPanelAction).toHaveBeenCalled();
+        renderInput({ showPanel: 'none' });
+        vi.mocked(props.setShowPanel).mockClear();
+        pointerdown(container);
+        expect(props.setShowPanel).not.toHaveBeenCalled();
+    });
+
+    it.each(['emojis', 'chars'] as const)('also dismisses the %s panel when a nested message stops bubbling', showPanel => {
+        renderInput({ showPanel });
+        const message = document.createElement('div');
+        message.addEventListener('pointerdown', event => event.stopPropagation());
+        container.append(message);
+        pointerdown(message);
+        expect(props.setShowPanel).toHaveBeenCalledWith('none');
+    });
+
     it('keeps the existing send button and Enter behavior by default', () => {
         renderInput();
         expect(primary().getAttribute('aria-label')).toBe('发送文字');

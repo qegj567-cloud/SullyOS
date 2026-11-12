@@ -178,6 +178,10 @@ const setViewportVars = () => {
     }
 
     document.documentElement.style.setProperty('--app-height', `${fullAppHeight}px`);
+    // 根页面只占可见高度；body 的额外 home 安全区仍可供外壳绘制，但不得撑出根滚动条。
+    // 使用经过脏值保护的高度，不能把动画期 visualViewport 的 80px 直接拿来裁根页面。
+    const visibleAppHeight = shouldStabilizeHeight && !keyboardOpen ? fullAppHeight - bottomSafeInset : fullAppHeight;
+    document.documentElement.style.setProperty('--app-visible-height', `${visibleAppHeight}px`);
     document.documentElement.style.setProperty('--visual-viewport-height', `${viewportHeight}px`);
     document.documentElement.style.setProperty('--keyboard-inset', `${keyboardInset}px`);
     document.documentElement.style.setProperty('--standalone-safe-area-bottom', `${bottomSafeInset}px`);

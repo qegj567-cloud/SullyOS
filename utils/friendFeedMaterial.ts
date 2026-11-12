@@ -7,7 +7,7 @@ export const friendFeedExcerpt = (text: string) => text.length > FRIEND_FEED_EXC
 
 /** Keep every local contribution, including replies quoting an original comment. */
 export const friendLocalComments = (post: FriendPost) => post.comments.map(c => ({
-    id: c.id, authorId:c.authorId, author: c.authorName, text: friendFeedExcerpt(c.text),
+    id: c.id, authorId:c.authorId, accountId:c.accountId, accountBio:c.accountBio, author: c.authorName, text: friendFeedExcerpt(c.text),
     ...(c.localReply ? {localReply:c.localReply} : {}),
     ...(c.sourceReply ? {sourceReply: c.sourceReply} : {}),
 }));

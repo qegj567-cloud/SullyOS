@@ -114,6 +114,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     const [cameraOpen, setCameraOpen] = useState(false);
     useEffect(() => setCameraOpen(false), [activeCharacterId]);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const inputBarRef = useRef<HTMLDivElement>(null);
     const sendButtonRef = useRef<HTMLButtonElement>(null);
     const suggestionsRef = useRef<HTMLDivElement>(null);
     const [isInputFocused, setIsInputFocused] = useState(false);
@@ -131,6 +132,17 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     const canEndEditing = canSwitchToGenerate || autoReplyEnabled;
     const isGenerateButton = canSwitchToGenerate && !isInputFocused;
     const primaryButtonDisabled = isGenerateButton ? false : !input.trim();
+
+    useEffect(() => {
+        if (showPanel === 'none') return;
+        // 不依赖输入框焦点、输入法或自动回复开关；capture 也能接到消息子项的触摸。
+        const closePanelOutside = (event: PointerEvent) => {
+            if (!(event.target instanceof Node) || inputBarRef.current?.contains(event.target)) return;
+            setShowPanel('none');
+        };
+        document.addEventListener('pointerdown', closePanelOutside, true);
+        return () => document.removeEventListener('pointerdown', closePanelOutside, true);
+    }, [showPanel, setShowPanel]);
 
     useEffect(() => {
         onInputFocusChange?.(isInputFocused);
@@ -700,7 +712,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                     <button type="button" onClick={onCancelAutoReply} className="min-h-11 px-3 font-bold text-primary" aria-label="取消自动回复">取消</button>
                 </div>
             )}
-        <div className={`sully-chat-inputbar ${shellClass} pb-safe shrink-0 z-40 relative`}>
+        <div ref={inputBarRef} className={`sully-chat-inputbar ${shellClass} pb-safe shrink-0 z-40 relative`}>
             {selectionMode ? (
                 <div className={`p-3 flex gap-2 ${isPixelStyle ? 'bg-[#f3e7d6]' : isDiscordStyle ? (reducedBlur ? 'bg-slate-900/95' : 'bg-slate-900/60 backdrop-blur-md') : (reducedBlur ? 'bg-white/95' : 'bg-white/50 backdrop-blur-md')}`}>
                     {onFavoriteSelected && <button type="button" onClick={onFavoriteSelected} disabled={!favoriteSelectedCount}

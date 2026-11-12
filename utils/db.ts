@@ -11,7 +11,7 @@ import {exportBeautyPreferences,importBeautyPreferences} from './beautyPreferenc
 import {exportBeautyAuthorBackup,importBeautyAuthorBackup} from './beautyAuthorBackup';
 import { toMountedWorldbook } from './worldbook';
 import { persistCharacterWithHomeMessages } from './homeMessageBridge';
-import { buildPhoneEvidenceChatCard } from './phoneEvidence';
+import { buildPhoneEvidenceChatCard, phoneEvidenceDeliveryId, applyPhoneEvidenceChatLink, PHONE_EVIDENCE_SYNCED } from './phoneEvidence';
 import { mergePhoneGeneration, PHONE_GENERATION_COMMITTED, type PhoneGeneration } from './phoneGeneration';
 import {deleteSecretNotesForIds, announceSecretNotesChanged} from './secretNote';
 import { ensureStoryTimelineRepair, invalidateStoryTimelineRepair } from './storyTheaterTimeline';
@@ -1001,6 +1001,70 @@ export const DB = {
       };
       tx.onerror = () => reject(failure || tx.error);
       tx.onabort = () => reject(failure || tx.error || new Error('手机记录未保存，请重试'));
+    });
+  },
+
+  /** 记录仍在但私聊卡片已删时可补发；查重、卡片、关联编号在一个事务中提交。 */
+  syncPhoneEvidenceToChat: async (charId: string, recordId: string, appName: string): Promise<{ messageId: number; inserted: boolean }> => {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(['characters', STORE_MESSAGES, STORE_ASSETS], 'readwrite');
+      const characters = tx.objectStore('characters'), messages = tx.objectStore(STORE_MESSAGES);
+      let result: { messageId: number; inserted: boolean }, failure: unknown;
+      const fail = (error: unknown) => { failure = error; tx.abort(); };
+      const read = characters.get(charId);
+      read.onsuccess = () => {
+        const character = read.result as CharacterProfile | undefined;
+        const record = character?.phoneState?.records?.find(item => item.id === recordId);
+        if (!character || !record) { fail(new Error('角色或这条手机记录已不存在，无法同步')); return; }
+        const deliveryId = phoneEvidenceDeliveryId(record.id);
+        const isLinkedCard = (message?: Message) => message && message.charId === charId && !message.groupId
+          && message.type === 'phone_card' && (!message.metadata?.deliveryId || message.metadata.deliveryId === deliveryId);
+        const link = (messageId: number, inserted: boolean) => {
+          try {
+            result = { messageId, inserted };
+            if (record.systemMessageId !== messageId) characters.put(applyPhoneEvidenceChatLink(character, { charId, recordId, messageId }));
+            if (inserted) clearStaleMemoryMirror(tx, charId, messageId);
+          } catch (error) { fail(error); }
+        };
+        const findOrCreate = () => {
+          const indexed = messages.indexNames.contains('charId_deliveryId');
+          const cursor = messages.index(indexed ? 'charId_deliveryId' : 'charId').openCursor(IDBKeyRange.only(indexed ? [charId, deliveryId] : charId));
+          cursor.onsuccess = () => {
+            const row = cursor.result;
+            if (row) {
+              if (row.value.metadata?.deliveryId === deliveryId && isLinkedCard(row.value)) { link(row.value.id, false); return; }
+              row.continue(); return;
+            }
+            try {
+              const card = buildPhoneEvidenceChatCard(record, appName);
+              const add = messages.add({ charId, role: 'assistant', type: 'phone_card', ...card,
+                // 补的是原记录，不把发生时间改成补发时刻。
+                timestamp: Number.isFinite(record.timestamp) && record.timestamp > 0 ? record.timestamp : Date.now() });
+              add.onsuccess = () => link(add.result as number, true);
+            } catch (error) { fail(error); }
+          };
+        };
+        if (record.systemMessageId) {
+          const previous = messages.get(record.systemMessageId);
+          previous.onsuccess = () => {
+            if (isLinkedCard(previous.result)) link(previous.result.id, false);
+            else findOrCreate();
+          };
+        } else findOrCreate();
+      };
+      tx.oncomplete = () => {
+        if (result.inserted) {
+          try {
+            const key = `mp_lastMsgId_${charId}`;
+            if (Number(localStorage.getItem(key)) >= result.messageId) localStorage.removeItem(key);
+          } catch { /* Durable data is already committed. */ }
+        }
+        if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(PHONE_EVIDENCE_SYNCED, { detail: { charId, recordId, messageId: result.messageId } }));
+        resolve(result);
+      };
+      tx.onerror = () => reject(failure || tx.error);
+      tx.onabort = () => reject(failure || tx.error || new Error('同步失败，请重试'));
     });
   },
 

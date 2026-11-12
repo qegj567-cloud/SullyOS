@@ -71,7 +71,7 @@ export default function FriendFeedPreferences({value, onChange, disabled, embedd
         </section>}
         {(section === 'profile' || section === 'weights' || section === 'accounts') && <FriendFeedAccounts section={section} value={value} onChange={onChange} characters={characters} groups={groups} disabled={disabled}/>}
         {section === 'advanced' && <><FriendFeedTikHubSettings/>
-        <button type="button" className="friend-feed-reset" disabled={disabled} onClick={() => onChange({...defaultFriendFeedSettings(),userNickname:value.userNickname,weiboProfile:value.weiboProfile,identities:value.identities,coverImages:value.coverImages, ...(embedded ? {theme: value.theme} : {})})}>恢复默认设置</button>
+        <button type="button" className="friend-feed-reset" disabled={disabled} onClick={() => onChange({...defaultFriendFeedSettings(),userNickname:value.userNickname,userBio:value.userBio,userAccounts:value.userAccounts,weiboProfile:value.weiboProfile,identities:value.identities,coverImages:value.coverImages, ...(embedded ? {theme: value.theme} : {})})}>恢复默认设置</button>
         <p className="friend-feed-settings-hint">恢复外观与互动默认值，保留网名和小号。点击保存后生效。</p></>}
     </div>;
 }
