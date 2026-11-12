@@ -112,6 +112,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
 }) => {
     const chatImageInputRef = useRef<HTMLInputElement>(null);
     const [cameraOpen, setCameraOpen] = useState(false);
+    const [exportEmojis, setExportEmojis] = useState<Emoji[] | null>(null);
     useEffect(() => setCameraOpen(false), [activeCharacterId]);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const inputBarRef = useRef<HTMLDivElement>(null);
@@ -134,15 +135,19 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     const primaryButtonDisabled = isGenerateButton ? false : !input.trim();
 
     useEffect(() => {
-        if (showPanel === 'none') return;
+        if (showPanel === 'none' || cameraOpen || exportEmojis) return;
         // 不依赖输入框焦点、输入法或自动回复开关；capture 也能接到消息子项的触摸。
+        // 从工具栏弹出的对话框 / Portal（分享照片、表情管理、确认窗等）与外挂辅助条不触发外部收起。
         const closePanelOutside = (event: PointerEvent) => {
-            if (!(event.target instanceof Node) || inputBarRef.current?.contains(event.target)) return;
+            const target = event.target;
+            if (!(target instanceof Node)) return;
+            if (inputBarRef.current?.contains(target) || suggestionsRef.current?.contains(target)) return;
+            if (target instanceof Element && target.closest('[role="dialog"], [aria-modal="true"], .chat-camera-backdrop')) return;
             setShowPanel('none');
         };
         document.addEventListener('pointerdown', closePanelOutside, true);
         return () => document.removeEventListener('pointerdown', closePanelOutside, true);
-    }, [showPanel, setShowPanel]);
+    }, [showPanel, setShowPanel, cameraOpen, exportEmojis]);
 
     useEffect(() => {
         onInputFocusChange?.(isInputFocused);
@@ -171,7 +176,6 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     const [isBubbleSectionOpen, setIsBubbleSectionOpen] = useState(false);
     const [pendingDeleteThemeId, setPendingDeleteThemeId] = useState<string | null>(null);
     const [emojiSelectionMode, setEmojiSelectionMode] = useState(false);
-    const [exportEmojis, setExportEmojis] = useState<Emoji[] | null>(null);
     const [selectedEmojis, setSelectedEmojis] = useState<Emoji[]>([]);
     // 手动分页避免旧版/第三方 WebView 不触发 IntersectionObserver，永远卡在「加载中」。
     const [emojiPaging, setEmojiPaging] = useState({category: activeCategory, page: 0});
@@ -211,10 +215,10 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
 
     const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>, type: 'chat' | 'bg') => {
         const file = e.target.files?.[0];
+        if (e.target) e.target.value = '';
         if (file) {
             onImageSelect(file);
         }
-        if (e.target) e.target.value = ''; // Reset
     };
 
     // --- Unified Touch/Long-Press Logic ---
@@ -679,6 +683,8 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
             <div className={`fixed inset-0 z-[-1] ${isPixelStyle ? 'bg-[#eadfce]/70 backdrop-blur-[2px]' : isDiscordStyle ? 'bg-slate-950/70 backdrop-blur-[2px]' : 'bg-white/60 backdrop-blur-[2px]'}`} />
         )}
         {exportEmojis && <EmojiExportDialog emojis={exportEmojis} onClose={() => setExportEmojis(null)} />}
+        {/* 选图 input 常驻在输入栏外：面板收起时不会随条件分支卸载而丢失点击或回传事件，也不改变 .sully-chat-inputbar 子节点序号。 */}
+        <input type="file" ref={chatImageInputRef} className="hidden" accept="image/*" onChange={(e) => handleImageChange(e, 'chat')} />
         {cameraOpen && <ChatCamera character={characters.find(c => c.id === activeCharacterId)} onClose={() => setCameraOpen(false)} onCapture={onImageSelect} onGallery={() => { chatImageInputRef.current?.click(); setCameraOpen(false); }} />}
         {/* 辅助提示保持在输入栏外，避免改变社区 CSS 的 > div:first-child / nth-child 目标。 */}
             {suggestedEmojis.length > 0 && (
@@ -968,7 +974,6 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                             onTouchEnd={handleActionsSwipeEnd}
                             onClickCapture={handleActionsClickCapture}
                         >
-                          <input type="file" ref={chatImageInputRef} className="hidden" accept="image/*" onChange={(e) => handleImageChange(e, 'chat')} />
                           {Array.from({length: actionPageCount}, (_, page) => (
                             <div key={page} role="group" aria-label={`聊天功能第 ${page + 1} 页`} className={`p-6 grid grid-cols-4 grid-rows-[repeat(2,96px)] gap-x-4 gap-y-8 ${actionsPage === page ? '' : 'hidden'}`}>
                               {actionTiles.slice(page * ACTION_PAGE_SIZE, (page + 1) * ACTION_PAGE_SIZE)}

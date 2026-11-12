@@ -26,7 +26,9 @@ export default function ChatCamera({ onClose, onGallery, onCapture, character }:
 }) {
     const [mode, setMode] = useState<'choose' | 'camera'>('choose');
     const [trackCamera] = useState(createCameraAnalytics);
-    const openGallery = () => { trackCamera('gallery'); onGallery(); };
+    // 转交浏览器原生文件选择器时不恢复旧焦点，避免与系统选图器抢焦点或重新聚焦输入框收起工具栏。
+    const restoreFocusRef = useRef(true);
+    const openGallery = () => { restoreFocusRef.current = false; trackCamera('gallery'); onGallery(); };
     const [facing, setFacing] = useState<'user' | 'environment'>('environment');
     const [portrait, setPortrait] = useState(cameraIsPortrait);
     const [viewfinder, setViewfinder] = useState({ width: 0, height: 0 });
@@ -173,7 +175,7 @@ export default function ChatCamera({ onClose, onGallery, onCapture, character }:
         alive.current = true;
         const previous = document.activeElement as HTMLElement | null;
         dialog.current?.focus();
-        return () => { alive.current = false; stop(); previous?.focus(); const pending = gpu.current; gpu.current = null; void pending?.then(renderer => renderer.destroy()).catch(() => {}); };
+        return () => { alive.current = false; stop(); if (restoreFocusRef.current) previous?.focus(); const pending = gpu.current; gpu.current = null; void pending?.then(renderer => renderer.destroy()).catch(() => {}); };
     }, []);
 
     useEffect(() => {

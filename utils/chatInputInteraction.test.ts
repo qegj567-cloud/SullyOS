@@ -288,4 +288,51 @@ describe('private chat input controls', () => {
         act(() => header.click());
         expect(box.checked).toBe(true);
     });
+
+    it('opens the native photo file input when tapping gallery in the portal chooser despite outside pointerdown', () => {
+        vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+        const clickSpy = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => {});
+        const StatefulHarness = () => {
+            const [showPanel, setShowPanel] = React.useState<'none' | 'actions' | 'emojis' | 'chars'>('actions');
+            return React.createElement(ChatInputArea, { ...props, showPanel, setShowPanel });
+        };
+        act(() => root.render(React.createElement(StatefulHarness)));
+
+        const albumTile = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('相册'))!;
+        expect(albumTile).toBeDefined();
+        pointerdown(albumTile);
+        act(() => albumTile.click());
+
+        const galleryBtn = Array.from(document.body.querySelectorAll('button')).find(button => button.textContent?.includes('从相册选择'))!;
+        expect(galleryBtn).toBeDefined();
+        // 真实浏览器点击顺序：先捕获/冒泡 pointerdown，再触发 click。
+        pointerdown(galleryBtn);
+        act(() => galleryBtn.click());
+
+        expect(clickSpy).toHaveBeenCalledTimes(1);
+
+        // 即使随后用户点消息区收起了面板，系统相册选完图回传 change 事件时 input 仍在 DOM 内。
+        pointerdown(container);
+        const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept="image/*"]')!;
+        expect(fileInput).not.toBeNull();
+        const photo = new File(['jpeg-bytes'], 'photo.jpg', { type: 'image/jpeg' });
+        Object.defineProperty(fileInput, 'files', { configurable: true, value: [photo] });
+        act(() => { fileInput.dispatchEvent(new Event('change', { bubbles: true })); });
+        expect(props.onImageSelect).toHaveBeenCalledWith(photo);
+    });
+
+    it('does not dismiss the open toolbar when interacting with a modal dialog above chat', () => {
+        renderInput({ showPanel: 'emojis' });
+        const dialog = document.createElement('div');
+        dialog.setAttribute('role', 'dialog');
+        const dialogBtn = document.createElement('button');
+        dialog.appendChild(dialogBtn);
+        document.body.appendChild(dialog);
+        try {
+            pointerdown(dialogBtn);
+            expect(props.setShowPanel).not.toHaveBeenCalled();
+        } finally {
+            dialog.remove();
+        }
+    });
 });
