@@ -11,7 +11,7 @@ import { markAmsgStateDirty } from '../utils/amsgStateSync';
 import { loadRangeMessagePage, formatRangeTimestamp } from '../utils/memoryPalace/rangeMessagePage';
 import { MainApiMemoryChoice, SkipVectorMemoryChoice } from '../components/MemoryGuideActions';
 import { useFirstUseGuideStep, GUIDE_SULLY_ID } from '../utils/firstUseGuide';
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import { useOS } from '../context/OSContext';
 import {
     MemoryRoom, MemoryNode, ROOM_CONFIGS, ROOM_LABELS, getRoomLabel,
@@ -771,11 +771,32 @@ export default function MemoryPalaceApp() {
     // 完成后的结果弹窗（逐条列出新增记忆，和水位线总结一致）
     const [rangeResultData, setRangeResultData] = useState<import('../utils/memoryPalace/pipeline').RangeProcessResult | null>(null);
 
-    // 全部记忆视图
+    // 全部记忆视图与列表滚动位置保持
     const [allNodes, setAllNodes] = useState<MemoryNode[]>([]);
     const [allSortBy, setAllSortBy] = useState<'time' | 'importance'>('time');
     const [allSortDir, setAllSortDir] = useState<'desc' | 'asc'>('desc');
-    const [prevView, setPrevView] = useState<'room' | 'all' | 'boxes'>('room');
+    type MemoryListOriginView = 'palace' | 'room' | 'all' | 'boxes';
+    const [prevView, setPrevView] = useState<MemoryListOriginView>('room');
+    const listScrollRef = useRef<HTMLDivElement | null>(null);
+    const scrollPositionsRef = useRef<Record<MemoryListOriginView, number>>({
+        palace: 0,
+        room: 0,
+        all: 0,
+        boxes: 0,
+    });
+    useEffect(() => {
+        scrollPositionsRef.current = { palace: 0, room: 0, all: 0, boxes: 0 };
+    }, [char?.id]);
+    // 列表与详情通过条件分支切换，进入详情会卸载列表 DOM；
+    // 在绘制前恢复来源列表的 scrollTop，返回时停在刚才查看的位置。
+    useLayoutEffect(() => {
+        if (view === 'palace' || view === 'room' || view === 'all' || view === 'boxes') {
+            const el = listScrollRef.current;
+            if (el) {
+                el.scrollTop = scrollPositionsRef.current[view] || 0;
+            }
+        }
+    }, [view, selectedRoom]);
 
     // 认知消化状态
     const [digesting, setDigesting] = useState(false);
@@ -1155,6 +1176,7 @@ export default function MemoryPalaceApp() {
     const openAllMemories = async () => {
         if (!char) return;
         const nodes = await MemoryNodeDB.getByCharId(char.id);
+        scrollPositionsRef.current.all = 0;
         setAllNodes(nodes);
         setView('all');
     };
@@ -1164,6 +1186,7 @@ export default function MemoryPalaceApp() {
         trackEvent('打开事件盒列表');
         const boxes = await EventBoxDB.getByCharId(char.id);
         boxes.sort((a, b) => b.updatedAt - a.updatedAt);
+        scrollPositionsRef.current.boxes = 0;
         setAllBoxes(boxes);
         setExpandedBoxId(null);
         setBoxMembers({});
@@ -1367,6 +1390,7 @@ export default function MemoryPalaceApp() {
         trackEvent('打开记忆宫殿房间', { room });
         const nodes = await MemoryNodeDB.getByRoom(char.id, room);
         nodes.sort((a: MemoryNode, b: MemoryNode) => b.createdAt - a.createdAt);
+        scrollPositionsRef.current.room = 0;
         setRoomNodes(nodes);
         setSelectedRoom(room);
         setView('room');
@@ -1430,7 +1454,59 @@ export default function MemoryPalaceApp() {
         }
     };
 
-    const openMemory = (node: MemoryNode, from?: 'room' | 'all' | 'boxes') => {
+    /** 将更新后的节点同步到当前已加载的各列表状态，返回上一视图时直接展示最新数据。 */
+    const syncUpdatedNodesInLists = useCallback((updatedNodes: MemoryNode[]) => {
+        if (updatedNodes.length === 0) return;
+        const updatedMap = new Map(updatedNodes.map(n => [n.id, n]));
+        setSelectedNode(prev => (prev && updatedMap.has(prev.id) ? updatedMap.get(prev.id)! : prev));
+        setAllNodes(prev => prev.length > 0 ? prev.map(n => updatedMap.get(n.id) || n) : prev);
+        setPinnedNodes(prev => {
+            if (prev.length === 0) return prev;
+            const now = Date.now();
+            return prev
+                .map(n => updatedMap.get(n.id) || n)
+                .filter(n => n.pinnedUntil && n.pinnedUntil > now && !n.archived);
+        });
+        setGlobalSearchResults(prev => prev.length > 0 ? prev.map(n => updatedMap.get(n.id) || n) : prev);
+        setRoomNodes(prev => {
+            if (!selectedRoom || prev.length === 0) return prev;
+            return prev
+                .map(n => updatedMap.get(n.id) || n)
+                .filter(n => n.room === selectedRoom)
+                .sort((a, b) => b.createdAt - a.createdAt);
+        });
+        setBoxMembers(prev => {
+            let changed = false;
+            const next: typeof prev = {};
+            for (const [boxId, group] of Object.entries(prev)) {
+                const summary = group.summary && updatedMap.has(group.summary.id)
+                    ? (changed = true, updatedMap.get(group.summary.id)!)
+                    : group.summary;
+                const live = group.live.map(n => {
+                    const u = updatedMap.get(n.id);
+                    if (u) { changed = true; return u; }
+                    return n;
+                });
+                const archived = group.archived.map(n => {
+                    const u = updatedMap.get(n.id);
+                    if (u) { changed = true; return u; }
+                    return n;
+                });
+                next[boxId] = { summary, live, archived };
+            }
+            return changed ? next : prev;
+        });
+    }, [selectedRoom]);
+
+    const openMemory = (node: MemoryNode, from?: MemoryListOriginView) => {
+        if (view === 'palace' || view === 'room' || view === 'all' || view === 'boxes') {
+            if (listScrollRef.current) {
+                scrollPositionsRef.current[view] = listScrollRef.current.scrollTop;
+            }
+            setPrevView(from || view);
+        } else if (from) {
+            setPrevView(from);
+        }
         setSelectedNode(node);
         setEditing(false);
         setEditContent(node.content);
@@ -1440,7 +1516,6 @@ export default function MemoryPalaceApp() {
         setEditTags(node.tags.join(', '));
         setLinkedMemories([]);
         setCurrentBox(null);
-        setPrevView(from || 'room');
         setView('memory');
         loadLinkedMemories(node.id);
     };
@@ -1464,13 +1539,12 @@ export default function MemoryPalaceApp() {
                 remoteVectorConfig,
             );
             const updated = result.node;
-            setSelectedNode(updated);
+            syncUpdatedNodesInLists([updated]);
             setEditing(false);
             addToast(
                 result.reembedded ? '记忆已保存，语义向量已同步更新' : '记忆设置已保存',
                 'success',
             );
-            // 如果房间变了，刷新房间列表
             if (selectedRoom) {
                 const nodes = await MemoryNodeDB.getByRoom(char.id, selectedRoom);
                 nodes.sort((a: MemoryNode, b: MemoryNode) => b.createdAt - a.createdAt);
@@ -1559,6 +1633,7 @@ export default function MemoryPalaceApp() {
         if (!target) { setView('picker'); return; }
         setActiveCharacterId(target.id);
         if (intent.entryId === 'all' || intent.entryId === 'boxes') {
+            scrollPositionsRef.current[intent.entryId] = 0;
             setAllNodes([]); setAllBoxes([]); setExpandedBoxId(null); setBoxMembers({});
             setView(intent.entryId);
             const load = async () => {
@@ -2091,7 +2166,10 @@ export default function MemoryPalaceApp() {
             if (!await deleteMemory(nodeId)) return;
             setSelectedNode(null);
             setView(prevView);
-            if (prevView === 'room' && selectedRoom && char) {
+            if (prevView === 'palace') {
+                setPinnedNodes(prev => prev.filter(n => n.id !== nodeId));
+                setGlobalSearchResults(prev => prev.filter(n => n.id !== nodeId));
+            } else if (prevView === 'room' && selectedRoom && char) {
                 const nodes = await MemoryNodeDB.getByRoom(char.id, selectedRoom);
                 nodes.sort((a: MemoryNode, b: MemoryNode) => b.createdAt - a.createdAt);
                 setRoomNodes(nodes);
@@ -4970,7 +5048,13 @@ create table if not exists memory_vectors (
 
     if (view === 'palace' && char) {
         return (
-            <div style={{ paddingLeft: 16, paddingRight: 16, paddingBottom: 16, paddingTop: SAFE_PAD_TOP, maxHeight: '100%', overflowY: 'auto' }}>
+            <div
+                key="palace"
+                ref={listScrollRef}
+                data-mp-scroll-view="palace"
+                onScroll={e => { scrollPositionsRef.current.palace = e.currentTarget.scrollTop; }}
+                style={{ paddingLeft: 16, paddingRight: 16, paddingBottom: 16, paddingTop: SAFE_PAD_TOP, maxHeight: '100%', overflowY: 'auto' }}
+            >
                 {/* 标题 + 返回 + 设置 */}
                 <div style={{ textAlign: 'center', marginBottom: 20, position: 'relative' }}>
                     {/* 返回（到选角界面）按钮 */}
@@ -5142,7 +5226,7 @@ create table if not exists memory_vectors (
                                     border: '1px solid #fde68a', background: '#fffbeb',
                                     display: 'flex', alignItems: 'flex-start', gap: 8,
                                 }}>
-                                    <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => openMemory(node, 'all')}>
+                                    <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => openMemory(node, 'palace')}>
                                         <div style={{ fontSize: 13, lineHeight: 1.5, color: '#1f2937' }}>
                                             <MemoryTimeText node={node} enabled={memoryPalaceConfig.relativeTimeAnnotations === true} maxLength={80} />
                                         </div>
@@ -5184,7 +5268,7 @@ create table if not exists memory_vectors (
                             return (
                                 <div
                                     key={node.id}
-                                    onClick={() => openMemory(node, 'all')}
+                                    onClick={() => openMemory(node, 'palace')}
                                     style={{
                                         padding: '10px 12px', borderRadius: 10, marginBottom: 6,
                                         border: `1px solid ${color}33`, background: `${color}08`,
@@ -5400,7 +5484,13 @@ create table if not exists memory_vectors (
         });
 
         return (
-            <div style={{ paddingLeft: 16, paddingRight: 16, paddingBottom: 16, paddingTop: SAFE_PAD_TOP, maxHeight: '100%', overflowY: 'auto' }}>
+            <div
+                key="all"
+                ref={listScrollRef}
+                data-mp-scroll-view="all"
+                onScroll={e => { scrollPositionsRef.current.all = e.currentTarget.scrollTop; }}
+                style={{ paddingLeft: 16, paddingRight: 16, paddingBottom: 16, paddingTop: SAFE_PAD_TOP, maxHeight: '100%', overflowY: 'auto' }}
+            >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                     <div
                         onClick={() => { setView('palace'); }}
@@ -5493,7 +5583,13 @@ create table if not exists memory_vectors (
 
     if (view === 'boxes') {
         return (
-            <div style={{ paddingLeft: 16, paddingRight: 16, paddingBottom: 16, paddingTop: SAFE_PAD_TOP, maxHeight: '100%', overflowY: 'auto' }}>
+            <div
+                key="boxes"
+                ref={listScrollRef}
+                data-mp-scroll-view="boxes"
+                onScroll={e => { scrollPositionsRef.current.boxes = e.currentTarget.scrollTop; }}
+                style={{ paddingLeft: 16, paddingRight: 16, paddingBottom: 16, paddingTop: SAFE_PAD_TOP, maxHeight: '100%', overflowY: 'auto' }}
+            >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                     <div
                         onClick={() => { setView('palace'); }}
@@ -5794,7 +5890,13 @@ create table if not exists memory_vectors (
         const roomColor = ROOM_COLORS[selectedRoom];
 
         return (
-            <div style={{ paddingLeft: 16, paddingRight: 16, paddingBottom: 16, paddingTop: SAFE_PAD_TOP, maxHeight: '100%', overflowY: 'auto' }}>
+            <div
+                key={`room:${selectedRoom}`}
+                ref={listScrollRef}
+                data-mp-scroll-view="room"
+                onScroll={e => { scrollPositionsRef.current.room = e.currentTarget.scrollTop; }}
+                style={{ paddingLeft: 16, paddingRight: 16, paddingBottom: 16, paddingTop: SAFE_PAD_TOP, maxHeight: '100%', overflowY: 'auto' }}
+            >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                     <div
                         onClick={() => { setView('palace'); setSelectedRoom(null); setSelectMode(false); setSelectedIds(new Set()); }}
@@ -5899,13 +6001,17 @@ create table if not exists memory_vectors (
         const MOODS = ['happy', 'sad', 'angry', 'anxious', 'tender', 'peaceful', 'excited', 'nostalgic', 'frustrated', 'hopeful', 'lonely', 'grateful'];
 
         return (
-            <div style={{ paddingLeft: 16, paddingRight: 16, paddingBottom: 16, paddingTop: SAFE_PAD_TOP, maxHeight: '100%', overflowY: 'auto' }}>
+            <div
+                key={`memory:${selectedNode.id}`}
+                data-mp-scroll-view="memory"
+                style={{ paddingLeft: 16, paddingRight: 16, paddingBottom: 16, paddingTop: SAFE_PAD_TOP, maxHeight: '100%', overflowY: 'auto' }}
+            >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                     <div
                         onClick={() => { setView(prevView); setSelectedNode(null); setEditing(false); }}
                         style={{ fontSize: 13, color: '#6b7280', cursor: 'pointer' }}
                     >
-                        ← 返回 {prevView === 'all' ? '全部记忆' : prevView === 'boxes' ? '事件盒' : getRoomLabel(selectedRoom || selectedNode.room, userProfile?.name)}
+                        ← 返回 {prevView === 'palace' ? '记忆宫殿' : prevView === 'all' ? '全部记忆' : prevView === 'boxes' ? '事件盒' : getRoomLabel(selectedRoom || selectedNode.room, userProfile?.name)}
                     </div>
                     {!editing && (
                         <div
