@@ -168,14 +168,20 @@ export async function buildLinks(
             }
         }
 
-        // 同批次内的节点
+        // 同批次内的节点：新提取和外部搬入节点默认不带旧版 boxId，
+        // 需显式同盒或创建时间落在 24 小时内才建立时间链，避免跨月跨年的同批导入被两两全连。
         for (const other of newNodes) {
             if (newNode.id === other.id) continue;
 
-            if (newNode.boxId === other.boxId) {
+            const sameBox = Boolean(
+                (newNode.boxId && newNode.boxId === other.boxId)
+                || (newNode.eventBoxId && newNode.eventBoxId === other.eventBoxId)
+            );
+            const withinTemporalWindow = Math.abs(newNode.createdAt - other.createdAt) < TEMPORAL_WINDOW_MS;
+            if (sameBox || withinTemporalWindow) {
                 const key = makeKey(newNode.id, other.id, 'temporal');
                 if (!linkSet.has(key)) {
-                    links.push(createLink(newNode.id, other.id, 'temporal', 0.5));
+                    links.push(createLink(newNode.id, other.id, 'temporal', sameBox ? 0.5 : 0.3));
                     linkSet.add(key);
                 }
             }
