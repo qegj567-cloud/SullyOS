@@ -13,6 +13,8 @@ dist
 dist-ssr
 *.local
 
+references/*
+
 # build artifact — `pnpm run build:workers` 原样复制过来的，与源文件逐字节相同；
 # 提交的那份在 worker/amsg/deno-proxy.ts
 public/amsg-deno-proxy.ts
