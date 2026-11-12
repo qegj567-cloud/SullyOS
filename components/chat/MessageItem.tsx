@@ -1579,7 +1579,7 @@ const MessageItem = React.memo(({
                     </div>
                 )}
                 <div className="flex justify-center my-6 px-10 w-full" {...interactionProps}>
-                    <div className="flex items-center gap-1.5 bg-white/60 text-slate-500 px-3 py-1 rounded-full shadow-sm border border-slate-200/70 select-none cursor-pointer active:scale-95 transition-transform">
+                    <div className="sully-chat-system-notice flex items-center gap-1.5 bg-white/60 bg-slate-200/40 backdrop-blur-md text-slate-500 px-3 py-1 rounded-full shadow-sm border border-slate-200/70 border-white/20 select-none cursor-pointer active:scale-95 transition-transform">
                         {/* Optional Icon based on content */}
                         <img src={displayText.includes('任务') ? 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/2728.png' :
                         displayText.includes('纪念日') || displayText.includes('Event') ? 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4c5.png' :
@@ -1603,7 +1603,7 @@ const MessageItem = React.memo(({
                 )}
                 <div className="text-[10px] text-slate-400 mb-1 opacity-70">{formatTime(m.timestamp)}</div>
                 <div className="group relative cursor-pointer active:scale-95 transition-transform" {...interactionProps}>
-                        <div className="text-[11px] text-slate-500 bg-white/60 px-4 py-1.5 rounded-full flex items-center gap-1.5 border border-slate-200/70 shadow-sm select-none">
+                        <div className="sully-chat-poke text-[11px] text-slate-500 bg-white/60 bg-slate-200/50 backdrop-blur-sm px-4 py-1.5 rounded-full flex items-center gap-1.5 border border-slate-200/70 border-white/40 shadow-sm select-none">
                         <img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f449.png" alt="poke" className="w-4 h-4 group-hover:animate-bounce" />
                         <span className="font-medium opacity-80">{isUser ? '你' : charName}</span>
                         <span className="opacity-60">戳了戳</span>

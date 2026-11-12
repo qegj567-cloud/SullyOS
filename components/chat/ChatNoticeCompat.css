@@ -1,0 +1,16 @@
+/* Legacy utility classes remain on these elements for existing whitebox CSS.
+ * Neutralize their old fills/blur AFTER Tailwind and BEFORE custom styles.
+ * Keep single-class specificity so authors can also use the stable hooks below.
+ */
+.sully-chat-poke,
+.sully-chat-system-notice,
+.sully-chat-history-load {
+    background-color: rgb(255 255 255 / 0.6);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+}
+
+.sully-chat-poke,
+.sully-chat-system-notice {
+    border-color: rgb(226 232 240 / 0.7);
+}

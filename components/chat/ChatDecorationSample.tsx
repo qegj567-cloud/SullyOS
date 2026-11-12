@@ -19,6 +19,7 @@ import {CHAT_PREVIEW_SCENES} from '../../utils/chatPreviewFixtures';
 import {BEAUTY_PREVIEW_AVATAR} from '../../utils/beautyPreviewAssets';
 import type {CharacterBuff} from '../../types';
 import baseCss from './chatPreview.generated.css?inline';
+import noticeCompatCss from './ChatNoticeCompat.css?inline';
 import cardCss from './ChatCardSurface.css?inline';
 import qixiCss from './QixiEventCard.css?inline';
 import sarCss from '../sar/sar-speech.css?inline';
@@ -71,7 +72,7 @@ export function renderChatDecorationSample(value:unknown,sceneId:string,thumbnai
   <ChatInputArea input="" setInput={noop} isTyping={false} selectionMode={false} showPanel={state.panel?"actions":"none"} previewActionsPage={state.actionsPage} setShowPanel={noop} onSend={noop} onDeleteSelected={noop} selectedCount={0} emojis={[]} onPanelAction={noop} onImageSelect={noop} isSummarizing={false} onReroll={noop} canReroll={false} inputStyle={l.chatInputStyle} sendButtonStyle={l.chatSendButtonStyle} chromeStyle={l.chatChromeStyle}/>
  </main>);
  const background=p.background?.image?`url(${JSON.stringify(p.background.image)}) center/cover`:'#f4f2f5';
- return {markup,css:`${baseCss}\n${cardCss}\n${qixiCss}\n${sarCss}
+ return {markup,css:`${baseCss}\n${cardCss}\n${qixiCss}\n${sarCss}\n${noticeCompatCss}
  .beauty-preview-body{width:360px;height:600px;font:14px/1.6 system-ui;--app-font:system-ui;--safe-top:0px;--safe-bottom:0px;--primary-hue:265;--primary-sat:30%;--primary-lightness:60%;}
  .sample-chat{height:600px;display:flex;flex-direction:column;background:${background};overflow:hidden;position:relative;color:#38323e}
  .sample-messages{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:16px 0 28px}
