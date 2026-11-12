@@ -128,6 +128,14 @@ export async function updateStoredMemoryNode(
 
     if (!contentChanged) {
         await MemoryNodeDB.save(updated);
+        if (
+            updated.embedded
+            && remoteVectorConfig?.enabled
+            && remoteVectorConfig.initialized
+            && (typeof localStorage === 'undefined' || !localStorage.getItem('os_remote_vector_config'))
+        ) {
+            MemoryNodeDB.syncRemoteMetadataMany([updated], remoteVectorConfig);
+        }
         return { node: updated, reembedded: false };
     }
 
