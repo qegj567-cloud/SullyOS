@@ -7,6 +7,7 @@ import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
 import { CharacterProfile, Message, AppID, DateState } from '../types';
 import { DatePrompts, ApiMessage } from '../utils/datePrompts';
+import { stripDateVoiceTranslations } from '../utils/dateVoiceText';
 import { processNewMessagesWithAutoArchive } from '../utils/memoryPalace/autoArchive';
 import type { PipelineResult } from '../utils/memoryPalace/pipeline';
 import { incrementDigestRound, runCognitiveDigestion } from '../utils/memoryPalace';
@@ -1043,7 +1044,7 @@ const DateApp: React.FC = () => {
                             </div>
                             {expandedHistory.has(group.id) && <div className="p-4 space-y-4">
                                 {group.messages.map(m => {
-                                    const text = (m.content || '').replace(/\[.*?\]/g, '').trim();
+                                    const text = stripDateVoiceTranslations(m.content || '').replace(/\[.*?\]/g, '').trim();
                                     return (
                                         <div
                                             key={m.id}

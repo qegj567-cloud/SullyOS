@@ -6,12 +6,14 @@ export const DEFAULT_FRIEND_NPC_PROMPT = `你写的是各自刷手机的网友�
 短评可以只有 1–8 字或纯表情，普通评论随意一两句，偶尔有 100–500 字的较长讨论。长短由想说的事决定；不是每个人都写同样长度。不要每批固定凑齐这些类型，不给网友标注“围观型/专业型”，不要照抄示例。无需每人都赞美，也无需人人刻薄，允许无聊、困惑、敷衍和话没说完。
 少写“太有共鸣了”“被治愈了”“狠狠期待”“你真的好棒”式万能捧场；不要把原文换个说法再夸一遍，不要整齐排队“赞美＋分析＋建议”，不用总结陈词或固定结尾反问。emoji 可以独占一条，别每人都配一个。
 网友也会接其他评论的话，而不只围着帖主：按已有评论 ID 指定回复对象，延续具体分歧、问题或梗；普通顶层评论不填回复 ID。只知道公开帖子和评论，不知道私聊与内心，不强行装熟。`;
-export interface FriendAccount {id: string; name: string; purpose: string; tags: string[]}
-export interface FriendIdentity {nickname?:string; tags: string[]; accounts: FriendAccount[]}
+export interface FriendAccount {id: string; name: string; purpose: string; bio?: string; tags: string[]}
+export interface FriendIdentity {nickname?:string; bio?:string; purpose?:string; tags: string[]; accounts: FriendAccount[]}
 export type FriendRefreshKind = 'self' | 'related' | 'stranger';
 export type WeiboHomeMode = 'default' | 'latest';
 export interface FriendFeedSettings {
     userNickname?:string;
+    userBio?:string;
+    userAccounts?:FriendAccount[];
     weiboHomeMode: WeiboHomeMode;
     weiboProfile?:{uid:string;name:string;avatar?:string};
     coverImages?: Record<string,string>;
@@ -32,6 +34,7 @@ export interface FriendFeedSettings {
 }
 export const defaultFriendFeedSettings = (): FriendFeedSettings => ({
     userNickname: '',
+    userBio: '', userAccounts: [],
     weiboHomeMode: 'default',
     coverImages: {},
     interactionPrompt: DEFAULT_FRIEND_FEED_PROMPT, npcPrompt: DEFAULT_FRIEND_NPC_PROMPT, theme: 'moments', layout: 'paper', fontSize: 14, showCover: true,
@@ -48,15 +51,18 @@ export function resolveFriendIdentities(value: unknown): Record<string, FriendId
         const accounts: FriendAccount[] = [];
         if (Array.isArray(v.accounts)) for (const a of v.accounts) {
             if (!record(a) || typeof a.id !== 'string' || !a.id || a.id === 'main' || seen.has(a.id) || typeof a.name !== 'string' || !a.name.trim()) continue;
-            seen.add(a.id); accounts.push({id: a.id.slice(0, 100), name: a.name.trim().slice(0, 40), purpose: typeof a.purpose === 'string' ? a.purpose.slice(0, 300) : '', tags: tags(a.tags)});
+            const accountId=a.id.slice(0,100);
+            if(seen.has(accountId))continue;
+            seen.add(accountId); accounts.push({id: accountId, name: a.name.trim().slice(0, 40), purpose: typeof a.purpose === 'string' ? a.purpose.slice(0, 300) : '', bio:typeof a.bio==='string'?a.bio.slice(0,1000):'', tags: tags(a.tags)});
             if (accounts.length === 3) break;
         }
-        return [id, {nickname:typeof v.nickname==='string'?v.nickname.trim().slice(0,40):undefined,tags: tags(v.tags), accounts}];
+        return [id, {nickname:typeof v.nickname==='string'?v.nickname.trim().slice(0,40):undefined,bio:typeof v.bio==='string'?v.bio.slice(0,1000):'',purpose:typeof v.purpose==='string'?v.purpose.slice(0,300):'',tags: tags(v.tags), accounts}];
     }));
 }
 export function friendAccounts(settings: FriendFeedSettings, char: {id: string; name: string}): FriendAccount[] {
+    if(char.id==='user')return [{id:'main',name:settings.userNickname||char.name,purpose:'主号',bio:settings.userBio,tags:[]},...(settings.userAccounts||[])];
     const identity = settings.identities[char.id];
-    return [{id: 'main', name: identity?.nickname||char.name, purpose: '主号', tags: identity?.tags || []}, ...(identity?.accounts || [])];
+    return [{id: 'main', name: identity?.nickname||char.name, purpose: identity?.purpose||'主号', bio:identity?.bio, tags: identity?.tags || []}, ...(identity?.accounts || [])];
 }
 export function friendAccountPrompt(settings: FriendFeedSettings, char: {id: string; name: string}) {
     return '这是公共广场，不同世界的人也能刷到。只按已有关系认人，未认识的作者按陌生网友理解，不因此共享世界观或私聊。\n你的账号（只属于你，不代表额外角色）：' + JSON.stringify(friendAccounts(settings, char))
@@ -67,6 +73,8 @@ export function resolveFriendFeedSettings(value?: Partial<FriendFeedSettings> | 
     const defaults = defaultFriendFeedSettings();
     return {
         userNickname:typeof value?.userNickname==='string'?value.userNickname.trim().slice(0,40):'',
+        userBio:typeof value?.userBio==='string'?value.userBio.slice(0,1000):'',
+        userAccounts:resolveFriendIdentities({user:{accounts:value?.userAccounts}}).user.accounts,
         weiboHomeMode:value?.weiboHomeMode==='latest'?'latest':'default',
         weiboProfile:value?.weiboProfile && /^\d{4,25}$/.test(value.weiboProfile.uid) && typeof value.weiboProfile.name==='string' && value.weiboProfile.name.trim()
             ? {uid:value.weiboProfile.uid,name:value.weiboProfile.name.trim().slice(0,150),

@@ -80,6 +80,7 @@ const focusTextarea = () => {
 };
 
 const appHeight = () => document.documentElement.style.getPropertyValue('--app-height');
+const visibleAppHeight = () => document.documentElement.style.getPropertyValue('--app-visible-height');
 const inKeyboardMode = () => document.body.classList.contains('ios-keyboard-open');
 
 describe('iOS 全屏 PWA 键盘态', () => {
@@ -110,6 +111,7 @@ describe('iOS 全屏 PWA 键盘态', () => {
     it('无键盘时 app 高度 = 可视高度 + 底部安全区（那段溢出区留给 home 条）', async () => {
         await install();
         expect(appHeight()).toBe(`${SCREEN_H + SAFE_BOTTOM}px`);
+        expect(visibleAppHeight()).toBe(`${SCREEN_H}px`);
         expect(inKeyboardMode()).toBe(false);
     });
 
@@ -120,6 +122,7 @@ describe('iOS 全屏 PWA 键盘态', () => {
         expect(document.documentElement.style.getPropertyValue('--standalone-safe-area-top')).toBe('0px');
         emitViewportResize(SCREEN_H - 62);
         expect(appHeight()).toBe(`${SCREEN_H - 62}px`);
+        expect(visibleAppHeight()).toBe(`${SCREEN_H - 62}px`);
         expect(inKeyboardMode()).toBe(false);
         emitViewportResize(SCREEN_H - 62 - KEYBOARD_H);
         expect(inKeyboardMode()).toBe(true);
@@ -158,6 +161,7 @@ describe('iOS 全屏 PWA 键盘态', () => {
 
         expect(inKeyboardMode()).toBe(true);
         expect(appHeight()).toBe(`${SCREEN_H - KEYBOARD_H}px`);
+        expect(visibleAppHeight()).toBe(`${SCREEN_H - KEYBOARD_H}px`);
     });
 
     // 回归守卫：聚焦中的输入框被 React 卸载时（退出聊天页），WebKit 不派发 focusout。
@@ -182,6 +186,7 @@ describe('iOS 全屏 PWA 键盘态', () => {
 
         expect(inKeyboardMode()).toBe(false);
         expect(appHeight()).toBe(`${SCREEN_H + SAFE_BOTTOM}px`);
+        expect(visibleAppHeight()).toBe(`${SCREEN_H}px`);
     });
 
     it.each(['Android Chrome', 'iPhone Safari'])('浏览器平移不抵消键盘高度：%s', async userAgent => {

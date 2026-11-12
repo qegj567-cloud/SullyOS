@@ -67,6 +67,39 @@ beforeEach(async () => {
     for (const char of m.chars) await DB.saveCharacter(char);
 });
 
+it('creates user aliases, selects their posting identity and manages per-character disclosure',async()=>{
+    await mutateFriendFeed(feed=>{feed.setupSeen=true;});
+    const host=await render(React.createElement(FriendFeedApp));
+    const changeValue=async(selector:string,value:string)=>{
+        const field=host.querySelector(selector) as HTMLInputElement|HTMLSelectElement|HTMLTextAreaElement;
+        expect(field,selector).not.toBeNull();
+        await act(async()=>{Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field),'value')!.set!.call(field,value);field.dispatchEvent(new Event(field.tagName==='SELECT'?'change':'input',{bubbles:true}));});
+    };
+    await click(host,'哔哔设置');await click(host,'我的账号与小号');await click(host,'添加我的小号');
+    await changeValue('[aria-label="我的小号 1 账号名"]','午夜电台');
+    await changeValue('[aria-label="我的小号 1 公开简介"]','记录深夜听到的歌');
+    await click(host,'保存设置');
+    const alias=(await readFriendFeed()).settings!.userAccounts![0];expect(alias.name).toBe('午夜电台');
+    await click(host,'关注与身份关系');
+    const publicId=friendAccountRef(await readFriendFeed(),{authorId:'user',accountId:alias.id})!.id;
+    await changeValue('[aria-label="发起关注的账号"]',publicId);
+    const check=host.querySelector('[aria-label="小白知道午夜电台是我"]') as HTMLInputElement;
+    expect(check.checked).toBe(false);
+    await act(async()=>{check.click();await new Promise(r=>setTimeout(r,25));});
+    expect(knowsFriendAccount(await readFriendFeed(),m.chars[0].id,friendAccountRef(await readFriendFeed(),{authorId:'user',accountId:alias.id})!)).toBe(true);
+    expect(knowsFriendAccount(await readFriendFeed(),m.chars[1].id,friendAccountRef(await readFriendFeed(),{authorId:'user',accountId:alias.id})!)).toBe(false);
+    await act(async()=>{handleLocalBack();});await act(async()=>{handleLocalBack();});
+    await click(host,'分享今天的新鲜事');
+    await changeValue('[aria-label="发言账号"]',alias.id);await changeValue('form textarea','今晚的歌真好听');
+    await click(host,'发布动态');
+    const published=(await readFriendFeed()).posts.find(p=>p.text==='今晚的歌真好听')!;
+    expect(published).toMatchObject({authorId:'user',accountId:alias.id,authorName:'午夜电台'});
+    await click(host,'查看午夜电台的主页');
+    expect(host.querySelector('[aria-label="我的账号"]')).not.toBeNull();
+    expect(host.querySelector('.ff-profile-bio')?.textContent).toBe('记录深夜听到的歌');
+    expect(runImmediateFriendReplies).not.toHaveBeenCalled();expect(refreshFriendFeed).not.toHaveBeenCalled();
+});
+
 it.each(['island','moments','insta','journal','weibo','twitter'] as const)('keeps text-only image cards interactive in %s posts and details',async theme=>{
     const circle=await saveFriendCircle({name:'预览',description:'',memberIds:m.chars.map(c=>c.id)});
     await publishFriendPost(circle,'小雨','无配图的文字');
@@ -93,7 +126,7 @@ it('separates preference pages and returns through sources and connection withou
     expect(host.querySelector('input,textarea')).toBeNull();
     for (const [name,selector] of [
         ['外观与阅读','.friend-feed-theme-options'], ['互动方式','[aria-label="互动与提示词"]'],
-        ['我的网名','[aria-label="我的哔哔网名"]'],
+        ['我的账号与小号','[aria-label="我的哔哔网名"]'],
         ['角色与小号','[aria-label="角色账号"]'], ['角色与内容权重','[aria-label="刷新与抽取"]'],
     ]) {
         await click(host,name);
@@ -141,7 +174,7 @@ it('an already connected account reads its real home timeline and displays its o
     const host=await render(React.createElement(FriendFeedApp));
     await click(host,'哔哔设置');await click(host,'微博与真实内容');
     await click(host,'同步微博首页');
-    await act(async()=>{await vi.waitFor(()=>expect(host.textContent).toContain('已读取 1 条微博，新增 1 条'));});
+    await vi.waitFor(async()=>{await act(async()=>{});expect(host.textContent).toContain('已读取 1 条微博，新增 1 条');});
     expect(fetcher.mock.calls.map(([,o])=>JSON.parse(o.body).action).sort()).toEqual(['home','posts','profile']);
     await click(host,'查看动态');
     expect(host.textContent).toContain('关注的人发的真实内容');expect(host.textContent).toContain('我的真实微博名');
@@ -191,7 +224,7 @@ it('refreshes ranked batches, retains them on return, changes endpoint through s
         if(fail)return Response.json({error:'微博读取测试错误'},{status:502});
         return Response.json({session,posts:reads++===0?[older,newer]:[third],nextCursor:null});});vi.stubGlobal('fetch',fetcher);
     const host=await render(React.createElement(React.StrictMode,null,React.createElement(FriendFeedApp)));await click(host,'微博首页');
-    await act(async()=>{await vi.waitFor(()=>expect(host.textContent).toContain('推荐在前的旧微博'));});
+    await vi.waitFor(async()=>{await act(async()=>{});expect(host.textContent).toContain('推荐在前的旧微博');});
     expect([...host.querySelectorAll('.ff-post-text')].map(p=>p.textContent)).toEqual(['推荐在前的旧微博','排在后的新微博']);
     expect((await readFriendFeed()).posts.map(p=>p.source?.externalId).sort()).toEqual(['111111','222222']);
     await act(async()=>{host.querySelector<HTMLElement>('[aria-label="查看动态评论区：推荐在前的旧微博"]')!.click();await new Promise(r=>setTimeout(r,20));});await click(host,'返回上一级');
@@ -201,7 +234,7 @@ it('refreshes ranked batches, retains them on return, changes endpoint through s
     fail=true;await click(host,'刷新微博首页');expect(host.textContent).toContain('微博读取测试错误');expect(host.textContent).toContain('刷新后的另一批');fail=false;
     await click(host,'首页设置');const select=host.querySelector<HTMLSelectElement>('[aria-label="微博首页模式"]')!;
     await act(async()=>{select.value='latest';select.dispatchEvent(new Event('change',{bubbles:true}));await new Promise(r=>setTimeout(r,20));});
-    await click(host,'返回上一级');await act(async()=>{await vi.waitFor(()=>expect(fetcher.mock.calls.some(([,o])=>JSON.parse(o.body).action==='following')).toBe(true));});
+    await click(host,'返回上一级');await vi.waitFor(async()=>{await act(async()=>{});expect(fetcher.mock.calls.some(([,o])=>JSON.parse(o.body).action==='following')).toBe(true);});
     expect(host.textContent).toContain('最新关注');expect((await readFriendFeed()).settings?.realContentEnabled).toBe(true);expect(refreshFriendFeed).not.toHaveBeenCalled();
 });
 it('automatically restores my own posts on entry and retries a failed read without requiring an AI API',async()=>{
@@ -211,7 +244,7 @@ it('automatically restores my own posts on entry and retries a failed read witho
     const own={platform:'weibo',accountId:'123456',externalId:'999999',url:'https://weibo.com/123456/999999',author:'我',text:'找回我的真实微博',publishedAt:Date.now(),fetchedAt:Date.now(),truncated:false};
     const fetcher=vi.fn().mockResolvedValueOnce(Response.json({error:'我的微博暂时不可读取'},{status:502})).mockImplementation(async()=>Response.json({session,posts:[own],nextPage:null}));vi.stubGlobal('fetch',fetcher);
     const host=await render(React.createElement(React.StrictMode,null,React.createElement(FriendFeedApp)));await click(host,'我的主页');
-    await act(async()=>{await vi.waitFor(()=>expect(host.textContent).toContain('我的微博暂时不可读取'));});
+    await vi.waitFor(async()=>{await act(async()=>{});expect(host.textContent).toContain('我的微博暂时不可读取');});
     await click(host,'刷新我的微博');expect(host.textContent).toContain('找回我的真实微博');
     const scroll=host.querySelector('.friend-feed-scroll')!;
     await act(async()=>{for(const [type,y] of [['touchstart',0],['touchmove',120],['touchend',120]] as const){const e=new Event(type,{bubbles:true,cancelable:true});Object.defineProperty(e,'touches',{value:[{clientX:0,clientY:y}]});scroll.dispatchEvent(e);}await new Promise(r=>setTimeout(r,25));});
@@ -226,7 +259,7 @@ it('reads original comments after StrictMode remounts and opens their authors on
     const opened=vi.spyOn(window,'open').mockImplementation(()=>null);
     const post={platform:'weibo' as const,accountId:'123456',externalId:'999999',url:'https://weibo.com/123456/999999',author:'我',text:'原帖',publishedAt:Date.now(),fetchedAt:Date.now(),truncated:false};
     const host=await render(React.createElement(React.StrictMode,null,React.createElement(FriendFeedWeiboBrowser,{post,theme:'weibo',user:{name:'我'} as any,onConnect:()=>{}})));
-    await act(async()=>{await vi.waitFor(()=>expect(host.textContent).toContain('真实接口评论'));});
+    await vi.waitFor(async()=>{await act(async()=>{});expect(host.textContent).toContain('真实接口评论');});
     await click(host,'原评论作者');expect(opened).toHaveBeenCalledWith('https://weibo.com/u/654321','_blank','noopener,noreferrer');
 });
 it('continues syncing followed posts when a personal source fails',async()=>{
@@ -268,7 +301,7 @@ it('allows another real Weibo refresh while the character API is still pending',
 it('keeps nickname edits local to their page and returns from relations to the settings directory',async()=>{
     await saveFriendFeedSettings({...defaultFriendFeedSettings(),userNickname:'橘子汽水',identities:{[m.chars[1].id]:{nickname:'绿灯',tags:[],accounts:[{id:'private-id',name:'半夜吃面',purpose:'匿名日常',tags:[]}]}}});
     const host=await render(React.createElement(FriendFeedApp));
-    await click(host,'哔哔设置');await click(host,'我的网名');
+    await click(host,'哔哔设置');await click(host,'我的账号与小号');
     const nickname=host.querySelector('[aria-label="我的哔哔网名"]') as HTMLInputElement;
     await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(nickname,'新汽水');nickname.dispatchEvent(new Event('input',{bubbles:true}));});
     await click(host,'取消');
@@ -289,7 +322,7 @@ it('keeps nickname edits local to their page and returns from relations to the s
     feed=await readFriendFeed();expect(knowsFriendAccount(feed,m.chars[0].id,alias)).toBe(true);
     await click(host,'返回上一级');
     expect(host.querySelector('[aria-label="设置目录"]')).not.toBeNull();
-    await click(host,'我的网名');
+    await click(host,'我的账号与小号');
     expect((host.querySelector('[aria-label="我的哔哔网名"]') as HTMLInputElement).value).toBe('橘子汽水');
     await click(host,'取消');expect((await readFriendFeed()).settings?.userNickname).toBe('橘子汽水');
     expect(runImmediateFriendReplies).not.toHaveBeenCalled();expect(refreshFriendFeed).not.toHaveBeenCalled();

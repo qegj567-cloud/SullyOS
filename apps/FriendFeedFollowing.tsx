@@ -38,11 +38,12 @@ export function useWeiboFollowing() {
     return {connection,accounts,next,loaded,busy,error,filtered,load};
 }
 
-export default function FriendFeedFollowing({characters, groups=[], weibo, onProfile, onConnect,feed,user,onManage}: {
+export default function FriendFeedFollowing({characters, groups=[], weibo, onProfile, onConnect,feed,user,onManage,accountId='main'}: {
     feed:FriendFeedState;user:UserProfile;onManage:()=>void;
+    accountId?:string;
     characters:CharacterProfile[];groups?:CharacterGroup[];weibo:ReturnType<typeof useWeiboFollowing>;onProfile:(id:string)=>void;onConnect:()=>void;
 }) {
-    const source=friendAccountRef(feed,{authorId:'user'});
+    const source=friendAccountRef(feed,{authorId:'user',accountId});
     const accounts=activeFriendAccounts(feed,characters).filter(a=>source&&feed.accountGraph?.follows[source.id]?.includes(a.id));
     const characterMap=new Map(characters.map(c=>[c.id,c]));
     return <div className="ff-following-directory">

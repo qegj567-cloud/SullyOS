@@ -124,6 +124,7 @@
 .friend-feed-embedded .ff-settings-intro { margin-bottom: 18px; }
 .friend-feed-embedded .ff-scan-stage { min-height: 155px; padding: 16px 0; }
 .friend-feed-embedded .ff-scan-stage .friend-feed-qr { width: 152px; height: 152px; }
+.friend-feed .ff-profile-bio { margin: 10px 16px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.6; }
 @media (max-width: 360px) {
     .friend-feed .ff-settings-menu > button > small { display: none; }
 }

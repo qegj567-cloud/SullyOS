@@ -5,7 +5,7 @@ export const preferenceTitles = {
     appearance: '外观与阅读',
     interaction: '互动方式',
     content: '真实内容',
-    profile: '我的网名',
+    profile: '我的账号与小号',
     accounts: '角色与小号',
     weights: '角色与内容权重',
     advanced: '更多设置',

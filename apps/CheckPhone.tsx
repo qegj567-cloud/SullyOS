@@ -19,7 +19,7 @@ import { usePersonaSim, personaSimStore } from '../utils/personaSimStore';
 import { createPersonaSimLog, getPersonaSimBeatIndex } from '../utils/personaSimLog';
 import { getLastInnerState } from '../utils/emotionApply';
 import { trackEvent } from '../utils/analytics';
-import { buildPhoneEvidenceChatCard, normalizePhoneEvidence, phoneFieldToText } from '../utils/phoneEvidence';
+import { normalizePhoneEvidence, phoneFieldToText } from '../utils/phoneEvidence';
 import { normalizePhoneAiSession } from '../utils/phoneTranscript';
 import { CharacterGroupFilterBar, filterCharactersByGroup, GROUP_FILTER_ALL } from '../components/character/CharacterGroupFilter';
 import { getCheckPhoneApi, resolveCheckPhoneApi, setCheckPhoneApi } from '../utils/checkPhoneApi';
@@ -281,6 +281,8 @@ const CheckPhone: React.FC = () => {
     const [selectedEvidenceRecord, setSelectedEvidenceRecord] = useState<PhoneEvidence | null>(null);
     const [evidenceBackAppId, setEvidenceBackAppId] = useState<string>('home');
     const [evidenceMenu, setEvidenceMenu] = useState<{ record: PhoneEvidence; backAppId: string } | null>(null);
+    const [evidenceSyncBusy, setEvidenceSyncBusy] = useState(false);
+    const evidenceSyncLock = useRef(false);
     const chatEndRef = useRef<HTMLDivElement>(null);
     const contactEndRef = useRef<HTMLDivElement>(null);
 
@@ -2025,44 +2027,20 @@ ${olderText}
     };
 
     const syncEvidenceRecordToChat = async (record: PhoneEvidence) => {
-        if (!targetChar) return;
+        if (!targetChar || evidenceSyncLock.current) return;
+        evidenceSyncLock.current = true;
+        setEvidenceSyncBusy(true);
         try {
-            if (record.systemMessageId) {
-                const existing = await DB.getMessageById(record.systemMessageId);
-                if (existing) {
-                    addToast('这条记录已经同步到私聊', 'info');
-                    setEvidenceMenu(null);
-                    return;
-                }
-            }
             const app = record.type === 'chat' ? '聊天软件' : appLabel(record.type);
-            const card = buildPhoneEvidenceChatCard(record, app);
-            const messageId = await DB.saveMessage({
-                charId: targetChar.id,
-                role: 'assistant',
-                type: 'phone_card',
-                content: card.content,
-                metadata: card.metadata,
-            } as any);
-            updateCharacter(targetChar.id, (current) => ({
-                phoneState: {
-                    ...current.phoneState,
-                    records: (current.phoneState?.records || []).map(item => item.id === record.id
-                        ? { ...item, systemMessageId: messageId }
-                        : item),
-                },
-            }));
-            if (selectedEvidenceRecord?.id === record.id) {
-                setSelectedEvidenceRecord({ ...selectedEvidenceRecord, systemMessageId: messageId });
-            }
-            if (selectedChatRecord?.id === record.id) {
-                setSelectedChatRecord({ ...selectedChatRecord, systemMessageId: messageId });
-            }
-            setEvidenceMenu(null);
-            addToast('已把这条查手机记录同步到私聊', 'success');
-            trackEvent('事后同步查手机记录到私聊', { kind: record.type });
+            const { inserted } = await DB.syncPhoneEvidenceToChat(targetChar.id, record.id, app);
+            setEvidenceMenu(current => current?.record === record ? null : current);
+            addToast(inserted ? '已把这条查手机记录同步到私聊' : '私聊中已有这条记录，无需重复同步', inserted ? 'success' : 'info');
+            if (inserted) trackEvent('事后同步查手机记录到私聊', { kind: record.type });
         } catch (error: any) {
             addToast(error?.message || '同步失败，请重试', 'error');
+        } finally {
+            evidenceSyncLock.current = false;
+            setEvidenceSyncBusy(false);
         }
     };
 
@@ -2350,10 +2328,11 @@ ${olderText}
                         <div className="flex justify-between gap-4"><dt className="text-white/30">记录编号</dt><dd className="text-white/40 text-right font-mono">#{r.id.slice(-8).toUpperCase()}</dd></div>
                     </dl>
 
-                    <button onClick={() => void syncEvidenceRecordToChat(r)} disabled={!!r.systemMessageId}
+                    <button onClick={() => void syncEvidenceRecordToChat(r)} disabled={evidenceSyncBusy}
                         className="w-full mt-2 py-3 rounded-2xl text-[12px] font-semibold text-sky-100 bg-sky-400/10 border border-sky-300/20 active:scale-[0.99] transition flex items-center justify-center gap-2 disabled:text-white/30 disabled:bg-white/[0.03] disabled:border-white/[0.06]">
-                        <PaperPlaneTilt size={15} weight="bold" /> {r.systemMessageId ? '已同步到私聊' : '同步这条到私聊'}
+                        <PaperPlaneTilt size={15} weight="bold" /> {evidenceSyncBusy ? '同步中…' : r.systemMessageId ? '检查并补同步到私聊' : '同步这条到私聊'}
                     </button>
+                    <p className="mt-2 text-center text-[10px] text-white/40">私聊卡片已删除时可补发，仍在时不会重复发送。</p>
                     <button onClick={() => askConfirm({
                         title: '删除这条记录？', desc: '删除「' + r.title + '」后无法恢复。', confirmLabel: '删除', danger: true,
                         onConfirm: () => handleDeleteRecord(r),
@@ -3809,9 +3788,10 @@ ${olderText}
                             <div className="px-4 py-2.5 text-[12px] text-white/50 border-b border-white/10 truncate">查手机记录：{evidenceMenu.record.title}</div>
                             <button
                                 onClick={() => void syncEvidenceRecordToChat(evidenceMenu.record)}
-                                disabled={!!evidenceMenu.record.systemMessageId}
+                                disabled={evidenceSyncBusy}
                                 className="w-full px-4 py-3.5 text-left text-[14px] text-sky-300 active:bg-white/5 transition flex items-center gap-3 disabled:text-white/30"
-                            ><PaperPlaneTilt size={17} /> {evidenceMenu.record.systemMessageId ? '已同步到私聊' : '同步到私聊'}</button>
+                            ><PaperPlaneTilt size={17} /> {evidenceSyncBusy ? '同步中…' : evidenceMenu.record.systemMessageId ? '检查并补同步到私聊' : '同步到私聊'}</button>
+                            <p className="px-4 pb-3 text-[11px] text-white/40">卡片删掉后可补发；私聊里仍有卡片时不会重复发送。</p>
                             <button onClick={() => {
                                 const record = evidenceMenu.record;
                                 setEvidenceMenu(null);
