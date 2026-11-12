@@ -65,6 +65,18 @@ export { spreadActivation } from './activation';
 export { applyPriming, checkRumination } from './priming';
 export { expandAndFormat } from './formatter';
 export { formatMemoryDateWithDistance } from './memoryDate';
+export {
+    EMPTY_PARTIAL_DATE_DRAFT,
+    hasAnyPartialDateInput,
+    formatLocalDateKey,
+    parsePartialDateDraft,
+    applyPartialDatePatchToTimestamp,
+    applyPartialDatePatchToNode,
+    getSharedDatePlaceholders,
+    syncLinkedArchiveFragmentDates,
+    batchUpdateMemoryDates,
+} from './memoryDateEdit';
+export type { PartialDateDraft, PartialDatePatch } from './memoryDateEdit';
 
 // 集成
 export type { LightLLMConfig, PipelineResult, DiaryIngestResult } from './pipeline';

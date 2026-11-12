@@ -11,7 +11,7 @@ import { markAmsgStateDirty } from '../utils/amsgStateSync';
 import { loadRangeMessagePage, formatRangeTimestamp } from '../utils/memoryPalace/rangeMessagePage';
 import { MainApiMemoryChoice, SkipVectorMemoryChoice } from '../components/MemoryGuideActions';
 import { useFirstUseGuideStep, GUIDE_SULLY_ID } from '../utils/firstUseGuide';
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import { useOS } from '../context/OSContext';
 import {
     MemoryRoom, MemoryNode, ROOM_CONFIGS, ROOM_LABELS, getRoomLabel,
@@ -28,8 +28,14 @@ import {
     updateStoredMemoryNode,
     regenerateEventBoxSummary,
     DEFAULT_CHARACTER_ACCOMMODATION,
+    EMPTY_PARTIAL_DATE_DRAFT,
+    parsePartialDateDraft,
+    applyPartialDatePatchToNode,
+    getSharedDatePlaceholders,
+    syncLinkedArchiveFragmentDates,
+    batchUpdateMemoryDates,
 } from '../utils/memoryPalace';
-import type { Anticipation, MigrationProgress, DigestResult, MemoryLink, EventBox, DigestReport } from '../utils/memoryPalace';
+import type { Anticipation, MigrationProgress, DigestResult, MemoryLink, EventBox, DigestReport, PartialDateDraft } from '../utils/memoryPalace';
 import { confirmExportSafety } from '../utils/exportGuard';
 import type { CharacterAccommodationPolicy, CharacterProfile, MemoryPalaceWaterlinePreset, Message } from '../types';
 import { CharacterGroupFilterBar, filterCharactersByGroup, GROUP_FILTER_ALL } from '../components/character/CharacterGroupFilter';
@@ -66,6 +72,72 @@ function CharacterHomePages({pixel=false,onChange}:{pixel?:boolean;onChange:(pag
         {([{id:'palace',label:'记忆房间'},{id:'pixelHome',label:'像素家园'}] as const).map(page=><button key={page.id} type="button" aria-pressed={(page.id==='pixelHome')===pixel} onClick={()=>onChange(page.id)} style={{flex:1,padding:'10px 8px',border:0,borderRadius:10,fontSize:12,fontWeight:600,cursor:'pointer',background:(page.id==='pixelHome')===pixel?(pixel?'#475569':'#fff'):'transparent',color:pixel?'#e2e8f0':'#715588'}}>{page.label}</button>)}
     </nav>;
 }
+
+/** 年 / 月 / 日三框局部编辑组件：留空的框保持每条记忆原本的对应字段不变 */
+const PartialDateFields: React.FC<{
+    value: PartialDateDraft;
+    onChange: (next: PartialDateDraft) => void;
+    placeholders: { year: string; month: string; day: string };
+    disabled?: boolean;
+    ariaPrefix?: string;
+}> = ({ value, onChange, placeholders, disabled, ariaPrefix = '记忆' }) => {
+    const boxStyle: React.CSSProperties = {
+        width: '100%', boxSizing: 'border-box', minWidth: 0,
+        padding: '6px 8px', borderRadius: 8,
+        border: '1px solid #d1d5db', background: 'white',
+        fontSize: 13, color: '#111827', outline: 'none',
+        textAlign: 'center', fontFamily: 'inherit',
+    };
+    const unitStyle: React.CSSProperties = {
+        fontSize: 12, color: '#6b7280', fontWeight: 600, flexShrink: 0,
+    };
+    return (
+        <div style={{ display: 'grid', gridTemplateColumns: '1.35fr 1fr 1fr', gap: 8, alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
+                <input
+                    type="text"
+                    inputMode="numeric"
+                    aria-label={`${ariaPrefix}年份`}
+                    placeholder={placeholders.year}
+                    value={value.year}
+                    disabled={disabled}
+                    maxLength={4}
+                    onChange={e => onChange({ ...value, year: e.target.value.replace(/\s+/g, '') })}
+                    style={boxStyle}
+                />
+                <span style={unitStyle}>年</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
+                <input
+                    type="text"
+                    inputMode="numeric"
+                    aria-label={`${ariaPrefix}月份`}
+                    placeholder={placeholders.month}
+                    value={value.month}
+                    disabled={disabled}
+                    maxLength={2}
+                    onChange={e => onChange({ ...value, month: e.target.value.replace(/\s+/g, '') })}
+                    style={boxStyle}
+                />
+                <span style={unitStyle}>月</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
+                <input
+                    type="text"
+                    inputMode="numeric"
+                    aria-label={`${ariaPrefix}日期`}
+                    placeholder={placeholders.day}
+                    value={value.day}
+                    disabled={disabled}
+                    maxLength={2}
+                    onChange={e => onChange({ ...value, day: e.target.value.replace(/\s+/g, '') })}
+                    style={boxStyle}
+                />
+                <span style={unitStyle}>日</span>
+            </div>
+        </div>
+    );
+};
 
 /** 手动总结面板：每页渲染多少条聊天记录（翻页，避免一次性塞几百条 DOM 卡顿） */
 const RANGE_PAGE_SIZE = 50;
@@ -405,6 +477,13 @@ const Icon: React.FC<{ name: string; size?: number; style?: React.CSSProperties 
             return (
                 <svg {...p}>
                     <rect x="3" y="3" width="18" height="18" rx="3" />
+                </svg>
+            );
+        case 'calendar':
+            return (
+                <svg {...p}>
+                    <rect x="3" y="4" width="18" height="18" rx="2" />
+                    <path d="M16 2v4M8 2v4M3 10h18" />
                 </svg>
             );
         case 'celebrate':
@@ -771,11 +850,32 @@ export default function MemoryPalaceApp() {
     // 完成后的结果弹窗（逐条列出新增记忆，和水位线总结一致）
     const [rangeResultData, setRangeResultData] = useState<import('../utils/memoryPalace/pipeline').RangeProcessResult | null>(null);
 
-    // 全部记忆视图
+    // 全部记忆视图与列表滚动位置保持
     const [allNodes, setAllNodes] = useState<MemoryNode[]>([]);
     const [allSortBy, setAllSortBy] = useState<'time' | 'importance'>('time');
     const [allSortDir, setAllSortDir] = useState<'desc' | 'asc'>('desc');
-    const [prevView, setPrevView] = useState<'room' | 'all' | 'boxes'>('room');
+    type MemoryListOriginView = 'palace' | 'room' | 'all' | 'boxes';
+    const [prevView, setPrevView] = useState<MemoryListOriginView>('room');
+    const listScrollRef = useRef<HTMLDivElement | null>(null);
+    const scrollPositionsRef = useRef<Record<MemoryListOriginView, number>>({
+        palace: 0,
+        room: 0,
+        all: 0,
+        boxes: 0,
+    });
+    useEffect(() => {
+        scrollPositionsRef.current = { palace: 0, room: 0, all: 0, boxes: 0 };
+    }, [char?.id]);
+    // 列表与详情通过条件分支切换，进入详情会卸载列表 DOM；
+    // 在绘制前恢复来源列表的 scrollTop，返回时停在刚才查看的位置。
+    useLayoutEffect(() => {
+        if (view === 'palace' || view === 'room' || view === 'all' || view === 'boxes') {
+            const el = listScrollRef.current;
+            if (el) {
+                el.scrollTop = scrollPositionsRef.current[view] || 0;
+            }
+        }
+    }, [view, selectedRoom]);
 
     // 认知消化状态
     const [digesting, setDigesting] = useState(false);
@@ -884,7 +984,22 @@ export default function MemoryPalaceApp() {
     const [editMood, setEditMood] = useState('');
     const [editRoom, setEditRoom] = useState<MemoryRoom>('living_room');
     const [editTags, setEditTags] = useState('');
+    const [editDateDraft, setEditDateDraft] = useState<PartialDateDraft>(EMPTY_PARTIAL_DATE_DRAFT);
     const [saving, setSaving] = useState(false);
+
+    // 列表选择与批量改日期状态
+    const [batchDateOpen, setBatchDateOpen] = useState(false);
+    const [batchDateDraft, setBatchDateDraft] = useState<PartialDateDraft>(EMPTY_PARTIAL_DATE_DRAFT);
+    const [updatingDates, setUpdatingDates] = useState(false);
+    const resetSelectionState = useCallback((nextSelectMode = false) => {
+        setSelectMode(nextSelectMode);
+        setSelectedIds(new Set());
+        setBatchDateOpen(false);
+        setBatchDateDraft(EMPTY_PARTIAL_DATE_DRAFT);
+    }, []);
+    useEffect(() => {
+        resetSelectionState(false);
+    }, [char?.id, resetSelectionState]);
 
     // Embedding 配置本地状态（从全局配置初始化）
     const [embUrl, setEmbUrl] = useState(memoryPalaceConfig.embedding.baseUrl || 'https://api.siliconflow.cn/v1');
@@ -1155,6 +1270,8 @@ export default function MemoryPalaceApp() {
     const openAllMemories = async () => {
         if (!char) return;
         const nodes = await MemoryNodeDB.getByCharId(char.id);
+        scrollPositionsRef.current.all = 0;
+        resetSelectionState(false);
         setAllNodes(nodes);
         setView('all');
     };
@@ -1164,6 +1281,7 @@ export default function MemoryPalaceApp() {
         trackEvent('打开事件盒列表');
         const boxes = await EventBoxDB.getByCharId(char.id);
         boxes.sort((a, b) => b.updatedAt - a.updatedAt);
+        scrollPositionsRef.current.boxes = 0;
         setAllBoxes(boxes);
         setExpandedBoxId(null);
         setBoxMembers({});
@@ -1367,6 +1485,8 @@ export default function MemoryPalaceApp() {
         trackEvent('打开记忆宫殿房间', { room });
         const nodes = await MemoryNodeDB.getByRoom(char.id, room);
         nodes.sort((a: MemoryNode, b: MemoryNode) => b.createdAt - a.createdAt);
+        scrollPositionsRef.current.room = 0;
+        resetSelectionState(false);
         setRoomNodes(nodes);
         setSelectedRoom(room);
         setView('room');
@@ -1430,7 +1550,59 @@ export default function MemoryPalaceApp() {
         }
     };
 
-    const openMemory = (node: MemoryNode, from?: 'room' | 'all' | 'boxes') => {
+    /** 将更新后的节点同步到当前已加载的各列表状态，返回上一视图时直接展示最新数据。 */
+    const syncUpdatedNodesInLists = useCallback((updatedNodes: MemoryNode[]) => {
+        if (updatedNodes.length === 0) return;
+        const updatedMap = new Map(updatedNodes.map(n => [n.id, n]));
+        setSelectedNode(prev => (prev && updatedMap.has(prev.id) ? updatedMap.get(prev.id)! : prev));
+        setAllNodes(prev => prev.length > 0 ? prev.map(n => updatedMap.get(n.id) || n) : prev);
+        setPinnedNodes(prev => {
+            if (prev.length === 0) return prev;
+            const now = Date.now();
+            return prev
+                .map(n => updatedMap.get(n.id) || n)
+                .filter(n => n.pinnedUntil && n.pinnedUntil > now && !n.archived);
+        });
+        setGlobalSearchResults(prev => prev.length > 0 ? prev.map(n => updatedMap.get(n.id) || n) : prev);
+        setRoomNodes(prev => {
+            if (!selectedRoom || prev.length === 0) return prev;
+            return prev
+                .map(n => updatedMap.get(n.id) || n)
+                .filter(n => n.room === selectedRoom)
+                .sort((a, b) => b.createdAt - a.createdAt);
+        });
+        setBoxMembers(prev => {
+            let changed = false;
+            const next: typeof prev = {};
+            for (const [boxId, group] of Object.entries(prev)) {
+                const summary = group.summary && updatedMap.has(group.summary.id)
+                    ? (changed = true, updatedMap.get(group.summary.id)!)
+                    : group.summary;
+                const live = group.live.map(n => {
+                    const u = updatedMap.get(n.id);
+                    if (u) { changed = true; return u; }
+                    return n;
+                });
+                const archived = group.archived.map(n => {
+                    const u = updatedMap.get(n.id);
+                    if (u) { changed = true; return u; }
+                    return n;
+                });
+                next[boxId] = { summary, live, archived };
+            }
+            return changed ? next : prev;
+        });
+    }, [selectedRoom]);
+
+    const openMemory = (node: MemoryNode, from?: MemoryListOriginView) => {
+        if (view === 'palace' || view === 'room' || view === 'all' || view === 'boxes') {
+            if (listScrollRef.current) {
+                scrollPositionsRef.current[view] = listScrollRef.current.scrollTop;
+            }
+            setPrevView(from || view);
+        } else if (from) {
+            setPrevView(from);
+        }
         setSelectedNode(node);
         setEditing(false);
         setEditContent(node.content);
@@ -1438,9 +1610,9 @@ export default function MemoryPalaceApp() {
         setEditMood(node.mood);
         setEditRoom(node.room);
         setEditTags(node.tags.join(', '));
+        setEditDateDraft(EMPTY_PARTIAL_DATE_DRAFT);
         setLinkedMemories([]);
         setCurrentBox(null);
-        setPrevView(from || 'room');
         setView('memory');
         loadLinkedMemories(node.id);
     };
@@ -1450,6 +1622,8 @@ export default function MemoryPalaceApp() {
         const annotate = memoryPalaceConfig.relativeTimeAnnotations === true && !selectedNode.archived && !selectedNode.isBoxSummary;
         setSaving(true);
         try {
+            const datePatch = parsePartialDateDraft(editDateDraft);
+            const dateAdjusted = applyPartialDatePatchToNode(selectedNode, datePatch);
             const result = await updateStoredMemoryNode(
                 selectedNode.id,
                 {
@@ -1459,18 +1633,24 @@ export default function MemoryPalaceApp() {
                 mood: editMood.trim(),
                 room: editRoom,
                 tags: editTags.split(/[,，]/).map(t => t.trim()).filter(Boolean),
+                createdAt: dateAdjusted.createdAt,
+                lastAccessedAt: dateAdjusted.lastAccessedAt,
                 },
                 memoryPalaceConfig.embedding,
                 remoteVectorConfig,
             );
             const updated = result.node;
-            setSelectedNode(updated);
+            syncUpdatedNodesInLists([updated]);
+            const nextLinkedMemories = syncLinkedArchiveFragmentDates(char.memories, [updated]);
+            if (nextLinkedMemories) {
+                updateCharacter(char.id, { memories: nextLinkedMemories });
+            }
+            setEditDateDraft(EMPTY_PARTIAL_DATE_DRAFT);
             setEditing(false);
             addToast(
                 result.reembedded ? '记忆已保存，语义向量已同步更新' : '记忆设置已保存',
                 'success',
             );
-            // 如果房间变了，刷新房间列表
             if (selectedRoom) {
                 const nodes = await MemoryNodeDB.getByRoom(char.id, selectedRoom);
                 nodes.sort((a: MemoryNode, b: MemoryNode) => b.createdAt - a.createdAt);
@@ -1559,6 +1739,7 @@ export default function MemoryPalaceApp() {
         if (!target) { setView('picker'); return; }
         setActiveCharacterId(target.id);
         if (intent.entryId === 'all' || intent.entryId === 'boxes') {
+            scrollPositionsRef.current[intent.entryId] = 0;
             setAllNodes([]); setAllBoxes([]); setExpandedBoxId(null); setBoxMembers({});
             setView(intent.entryId);
             const load = async () => {
@@ -2060,22 +2241,55 @@ export default function MemoryPalaceApp() {
         return true;
     };
 
+    /** 批量按年/月/日局部修改选中记忆的日期（单选或多选共用，留空字段保留原值） */
+    const handleBatchUpdateDate = async () => {
+        if (selectedIds.size === 0 || !char || updatingDates) return;
+        let patch;
+        try {
+            patch = parsePartialDateDraft(batchDateDraft, { requireAtLeastOne: true });
+        } catch (error: any) {
+            addToast(error?.message || '日期格式无效', 'error');
+            return;
+        }
+        setUpdatingDates(true);
+        try {
+            const updatedNodes = await batchUpdateMemoryDates(selectedIds, patch, remoteVectorConfig);
+            syncUpdatedNodesInLists(updatedNodes);
+            const nextLinkedMemories = syncLinkedArchiveFragmentDates(char.memories, updatedNodes);
+            if (nextLinkedMemories) {
+                updateCharacter(char.id, { memories: nextLinkedMemories });
+            }
+            addToast(`已修改 ${updatedNodes.length} 条记忆的日期`, 'success');
+            resetSelectionState(false);
+            loadStats();
+        } catch (error: any) {
+            addToast(error?.message || '修改日期失败，请重试', 'error');
+        } finally {
+            setUpdatingDates(false);
+        }
+    };
+
     /** 批量删除选中的记忆 */
     const handleBatchDelete = async () => {
         if (selectedIds.size === 0 || !char) return;
         setDeleting(true);
         try {
+            const deletedIds = new Set<string>();
             for (const id of selectedIds) {
                 if (!await deleteMemory(id)) break;
+                deletedIds.add(id);
             }
-            // 刷新房间数据
             if (selectedRoom) {
                 const nodes = await MemoryNodeDB.getByRoom(char.id, selectedRoom);
                 nodes.sort((a: MemoryNode, b: MemoryNode) => b.createdAt - a.createdAt);
                 setRoomNodes(nodes);
             }
-            setSelectedIds(new Set());
-            setSelectMode(false);
+            if (deletedIds.size > 0) {
+                setAllNodes(prev => prev.filter(n => !deletedIds.has(n.id)));
+                setPinnedNodes(prev => prev.filter(n => !deletedIds.has(n.id)));
+                setGlobalSearchResults(prev => prev.filter(n => !deletedIds.has(n.id)));
+            }
+            resetSelectionState(false);
             loadStats();
         } catch (error) {
             addToast(error instanceof Error ? error.message : '删除失败，请重试', 'error');
@@ -2091,7 +2305,10 @@ export default function MemoryPalaceApp() {
             if (!await deleteMemory(nodeId)) return;
             setSelectedNode(null);
             setView(prevView);
-            if (prevView === 'room' && selectedRoom && char) {
+            if (prevView === 'palace') {
+                setPinnedNodes(prev => prev.filter(n => n.id !== nodeId));
+                setGlobalSearchResults(prev => prev.filter(n => n.id !== nodeId));
+            } else if (prevView === 'room' && selectedRoom && char) {
                 const nodes = await MemoryNodeDB.getByRoom(char.id, selectedRoom);
                 nodes.sort((a: MemoryNode, b: MemoryNode) => b.createdAt - a.createdAt);
                 setRoomNodes(nodes);
@@ -4970,7 +5187,13 @@ create table if not exists memory_vectors (
 
     if (view === 'palace' && char) {
         return (
-            <div style={{ paddingLeft: 16, paddingRight: 16, paddingBottom: 16, paddingTop: SAFE_PAD_TOP, maxHeight: '100%', overflowY: 'auto' }}>
+            <div
+                key="palace"
+                ref={listScrollRef}
+                data-mp-scroll-view="palace"
+                onScroll={e => { scrollPositionsRef.current.palace = e.currentTarget.scrollTop; }}
+                style={{ paddingLeft: 16, paddingRight: 16, paddingBottom: 16, paddingTop: SAFE_PAD_TOP, maxHeight: '100%', overflowY: 'auto' }}
+            >
                 {/* 标题 + 返回 + 设置 */}
                 <div style={{ textAlign: 'center', marginBottom: 20, position: 'relative' }}>
                     {/* 返回（到选角界面）按钮 */}
@@ -5142,7 +5365,7 @@ create table if not exists memory_vectors (
                                     border: '1px solid #fde68a', background: '#fffbeb',
                                     display: 'flex', alignItems: 'flex-start', gap: 8,
                                 }}>
-                                    <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => openMemory(node, 'all')}>
+                                    <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => openMemory(node, 'palace')}>
                                         <div style={{ fontSize: 13, lineHeight: 1.5, color: '#1f2937' }}>
                                             <MemoryTimeText node={node} enabled={memoryPalaceConfig.relativeTimeAnnotations === true} maxLength={80} />
                                         </div>
@@ -5184,7 +5407,7 @@ create table if not exists memory_vectors (
                             return (
                                 <div
                                     key={node.id}
-                                    onClick={() => openMemory(node, 'all')}
+                                    onClick={() => openMemory(node, 'palace')}
                                     style={{
                                         padding: '10px 12px', borderRadius: 10, marginBottom: 6,
                                         border: `1px solid ${color}33`, background: `${color}08`,
@@ -5390,6 +5613,118 @@ create table if not exists memory_vectors (
         );
     }
 
+    const renderSelectionToolbar = (visibleNodes: MemoryNode[]) => {
+        if (!selectMode) return null;
+        const selectedList = visibleNodes.filter(n => selectedIds.has(n.id));
+        const allSelected = visibleNodes.length > 0 && selectedList.length === visibleNodes.length;
+        const placeholders = getSharedDatePlaceholders(selectedList);
+        const busy = deleting || updatingDates;
+
+        return (
+            <div style={{
+                padding: '10px 12px', borderRadius: 10, marginBottom: 12,
+                background: '#f8f6ff', border: '1px solid #ddd6fe',
+                display: 'flex', flexDirection: 'column', gap: 10,
+            }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <div style={{ fontSize: 12, color: '#4c1d95', fontWeight: 600 }}>
+                        已选 {selectedIds.size} 条
+                        <span
+                            onClick={() => {
+                                if (busy) return;
+                                setSelectedIds(allSelected ? new Set() : new Set(visibleNodes.map(n => n.id)));
+                            }}
+                            style={{ marginLeft: 8, color: '#6b7280', fontWeight: 500, cursor: busy ? 'default' : 'pointer', textDecoration: 'underline' }}
+                        >
+                            {allSelected ? '清空选择' : '全选'}
+                        </span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                        <button
+                            type="button"
+                            onClick={() => setBatchDateOpen(v => !v)}
+                            disabled={busy}
+                            style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 4,
+                                padding: '4px 10px', borderRadius: 8,
+                                border: batchDateOpen ? '1px solid #7c3aed' : '1px solid #c4b5fd',
+                                fontSize: 12, fontWeight: 700,
+                                color: batchDateOpen ? 'white' : '#6d28d9',
+                                background: batchDateOpen ? '#7c3aed' : 'white',
+                                cursor: busy ? 'not-allowed' : 'pointer',
+                            }}
+                        >
+                            <Icon name="calendar" size={13} />
+                            <span>改日期</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleBatchDelete}
+                            disabled={selectedIds.size === 0 || busy}
+                            style={{
+                                padding: '4px 10px', borderRadius: 8, border: 'none',
+                                fontSize: 12, fontWeight: 700,
+                                color: 'white', background: selectedIds.size > 0 && !busy ? '#dc2626' : '#d4d4d4',
+                                cursor: selectedIds.size > 0 && !busy ? 'pointer' : 'not-allowed',
+                            }}
+                        >
+                            {deleting ? '删除中...' : `删除 (${selectedIds.size})`}
+                        </button>
+                    </div>
+                </div>
+
+                {batchDateOpen && (
+                    <div style={{
+                        paddingTop: 10, borderTop: '1px solid #ede9fe',
+                        display: 'flex', flexDirection: 'column', gap: 8,
+                    }}>
+                        <div style={{ fontSize: 11, color: '#6b7280' }}>
+                            留空保留每条记忆原有的年 / 月 / 日
+                        </div>
+                        <PartialDateFields
+                            value={batchDateDraft}
+                            onChange={setBatchDateDraft}
+                            placeholders={placeholders}
+                            disabled={busy}
+                            ariaPrefix="批量记忆"
+                        />
+                        <div style={{ display: 'flex', gap: 8 }}>
+                            <button
+                                type="button"
+                                onClick={handleBatchUpdateDate}
+                                disabled={selectedIds.size === 0 || busy}
+                                style={{
+                                    flex: 1, padding: '7px 0', borderRadius: 8, border: 'none',
+                                    fontSize: 12, fontWeight: 700, color: 'white',
+                                    background: selectedIds.size > 0 && !busy ? '#7c3aed' : '#d4d4d4',
+                                    cursor: selectedIds.size > 0 && !busy ? 'pointer' : 'not-allowed',
+                                }}
+                            >
+                                {updatingDates ? '保存中...' : `应用日期 (${selectedIds.size})`}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setBatchDateOpen(false);
+                                    setBatchDateDraft(EMPTY_PARTIAL_DATE_DRAFT);
+                                }}
+                                disabled={busy}
+                                style={{
+                                    padding: '7px 12px', borderRadius: 8,
+                                    border: '1px solid #d1d5db', background: 'white',
+                                    fontSize: 12, fontWeight: 600, color: '#6b7280',
+                                    cursor: busy ? 'not-allowed' : 'pointer',
+                                }}
+                            >
+                                收起
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    };
+
     // ─── 全部记忆视图 ────────────────────────────────
 
     if (view === 'all') {
@@ -5400,15 +5735,31 @@ create table if not exists memory_vectors (
         });
 
         return (
-            <div style={{ paddingLeft: 16, paddingRight: 16, paddingBottom: 16, paddingTop: SAFE_PAD_TOP, maxHeight: '100%', overflowY: 'auto' }}>
+            <div
+                key="all"
+                ref={listScrollRef}
+                data-mp-scroll-view="all"
+                onScroll={e => { scrollPositionsRef.current.all = e.currentTarget.scrollTop; }}
+                style={{ paddingLeft: 16, paddingRight: 16, paddingBottom: 16, paddingTop: SAFE_PAD_TOP, maxHeight: '100%', overflowY: 'auto' }}
+            >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                     <div
-                        onClick={() => { setView('palace'); }}
+                        onClick={() => { resetSelectionState(false); setView('palace'); }}
                         style={{ fontSize: 13, color: '#6b7280', cursor: 'pointer' }}
                     >
                         ← 返回宫殿
                     </div>
-                    <div style={{ fontSize: 12, color: '#9ca3af' }}>{allNodes.length} 条记忆</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <span style={{ fontSize: 12, color: '#9ca3af' }}>{allNodes.length} 条记忆</span>
+                        {allNodes.length > 0 && (
+                            <span
+                                onClick={() => resetSelectionState(!selectMode)}
+                                style={{ fontSize: 12, color: selectMode ? '#7c3aed' : '#6b7280', cursor: 'pointer', fontWeight: 600 }}
+                            >
+                                {selectMode ? '取消选择' : '选择'}
+                            </span>
+                        )}
+                    </div>
                 </div>
 
                 <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -5446,6 +5797,8 @@ create table if not exists memory_vectors (
                     </button>
                 </div>
 
+                {renderSelectionToolbar(sorted)}
+
                 {sorted.length === 0 ? (
                     <div style={{ textAlign: 'center', color: '#9ca3af', padding: 40, fontSize: 13 }}>
                         这里还没有整理好的记忆
@@ -5454,13 +5807,19 @@ create table if not exists memory_vectors (
                     sorted.map((node: MemoryNode) => (
                         <div
                             key={node.id}
-                            onClick={() => openMemory(node, 'all')}
+                            onClick={() => selectMode ? toggleSelect(node.id) : openMemory(node, 'all')}
                             style={{
                                 padding: 12, borderRadius: 10, marginBottom: 8,
-                                border: '1px solid #e5e7eb', cursor: 'pointer',
-                                backgroundColor: '#fafafa',
+                                border: `1px solid ${selectMode && selectedIds.has(node.id) ? '#7c3aed' : '#e5e7eb'}`,
+                                cursor: 'pointer',
+                                backgroundColor: selectMode && selectedIds.has(node.id) ? '#f5f3ff' : '#fafafa',
                             }}
                         >
+                            {selectMode && (
+                                <div style={{ float: 'right', marginLeft: 8, color: selectedIds.has(node.id) ? '#7c3aed' : '#9ca3af', display: 'inline-flex' }}>
+                                    <Icon name={selectedIds.has(node.id) ? 'square-check' : 'square'} size={16} />
+                                </div>
+                            )}
                             <div style={{ fontSize: 13, lineHeight: 1.5 }}><MemoryTimeText node={node} enabled={memoryPalaceConfig.relativeTimeAnnotations === true} /></div>
                             <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 6, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
@@ -5493,7 +5852,13 @@ create table if not exists memory_vectors (
 
     if (view === 'boxes') {
         return (
-            <div style={{ paddingLeft: 16, paddingRight: 16, paddingBottom: 16, paddingTop: SAFE_PAD_TOP, maxHeight: '100%', overflowY: 'auto' }}>
+            <div
+                key="boxes"
+                ref={listScrollRef}
+                data-mp-scroll-view="boxes"
+                onScroll={e => { scrollPositionsRef.current.boxes = e.currentTarget.scrollTop; }}
+                style={{ paddingLeft: 16, paddingRight: 16, paddingBottom: 16, paddingTop: SAFE_PAD_TOP, maxHeight: '100%', overflowY: 'auto' }}
+            >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                     <div
                         onClick={() => { setView('palace'); }}
@@ -5794,18 +6159,24 @@ create table if not exists memory_vectors (
         const roomColor = ROOM_COLORS[selectedRoom];
 
         return (
-            <div style={{ paddingLeft: 16, paddingRight: 16, paddingBottom: 16, paddingTop: SAFE_PAD_TOP, maxHeight: '100%', overflowY: 'auto' }}>
+            <div
+                key={`room:${selectedRoom}`}
+                ref={listScrollRef}
+                data-mp-scroll-view="room"
+                onScroll={e => { scrollPositionsRef.current.room = e.currentTarget.scrollTop; }}
+                style={{ paddingLeft: 16, paddingRight: 16, paddingBottom: 16, paddingTop: SAFE_PAD_TOP, maxHeight: '100%', overflowY: 'auto' }}
+            >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                     <div
-                        onClick={() => { setView('palace'); setSelectedRoom(null); setSelectMode(false); setSelectedIds(new Set()); }}
+                        onClick={() => { setView('palace'); setSelectedRoom(null); resetSelectionState(false); }}
                         style={{ fontSize: 13, color: '#6b7280', cursor: 'pointer' }}
                     >
                         ← 返回宫殿
                     </div>
                     {roomNodes.length > 0 && (
                         <div
-                            onClick={() => { setSelectMode(!selectMode); setSelectedIds(new Set()); }}
-                            style={{ fontSize: 12, color: selectMode ? '#dc2626' : '#6b7280', cursor: 'pointer', fontWeight: 600 }}
+                            onClick={() => resetSelectionState(!selectMode)}
+                            style={{ fontSize: 12, color: selectMode ? '#7c3aed' : '#6b7280', cursor: 'pointer', fontWeight: 600 }}
                         >
                             {selectMode ? '取消选择' : '选择'}
                         </div>
@@ -5818,34 +6189,7 @@ create table if not exists memory_vectors (
                     <span style={{ fontSize: 12, color: '#9ca3af' }}>{roomNodes.length} 条记忆</span>
                 </div>
 
-                {/* 批量删除工具栏 */}
-                {selectMode && (
-                    <div style={{
-                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                        padding: '8px 12px', borderRadius: 10, marginBottom: 12,
-                        background: '#fef2f2', border: '1px solid #fecaca',
-                    }}>
-                        <div style={{ fontSize: 12, color: '#991b1b' }}>
-                            已选 {selectedIds.size} 条
-                            <span
-                                onClick={() => setSelectedIds(new Set(roomNodes.map(n => n.id)))}
-                                style={{ marginLeft: 8, color: '#6b7280', cursor: 'pointer', textDecoration: 'underline' }}
-                            >全选</span>
-                        </div>
-                        <button
-                            onClick={handleBatchDelete}
-                            disabled={selectedIds.size === 0 || deleting}
-                            style={{
-                                padding: '4px 12px', borderRadius: 8, border: 'none',
-                                fontSize: 12, fontWeight: 700,
-                                color: 'white', background: selectedIds.size > 0 ? '#dc2626' : '#d4d4d4',
-                                cursor: selectedIds.size > 0 ? 'pointer' : 'not-allowed',
-                            }}
-                        >
-                            {deleting ? '删除中...' : `删除 (${selectedIds.size})`}
-                        </button>
-                    </div>
-                )}
+                {renderSelectionToolbar(roomNodes)}
 
                 {roomNodes.length === 0 ? (
                     <div style={{ textAlign: 'center', color: '#9ca3af', padding: 40, fontSize: 13 }}>
@@ -5858,13 +6202,13 @@ create table if not exists memory_vectors (
                             onClick={() => selectMode ? toggleSelect(node.id) : openMemory(node)}
                             style={{
                                 padding: 12, borderRadius: 10, marginBottom: 8,
-                                border: `1px solid ${selectMode && selectedIds.has(node.id) ? '#dc2626' : '#e5e7eb'}`,
+                                border: `1px solid ${selectMode && selectedIds.has(node.id) ? '#7c3aed' : '#e5e7eb'}`,
                                 cursor: 'pointer',
-                                backgroundColor: selectMode && selectedIds.has(node.id) ? '#fef2f2' : '#fafafa',
+                                backgroundColor: selectMode && selectedIds.has(node.id) ? '#f5f3ff' : '#fafafa',
                             }}
                         >
                             {selectMode && (
-                                <div style={{ float: 'right', marginLeft: 8, color: selectedIds.has(node.id) ? '#dc2626' : '#9ca3af', display: 'inline-flex' }}>
+                                <div style={{ float: 'right', marginLeft: 8, color: selectedIds.has(node.id) ? '#7c3aed' : '#9ca3af', display: 'inline-flex' }}>
                                     <Icon name={selectedIds.has(node.id) ? 'square-check' : 'square'} size={16} />
                                 </div>
                             )}
@@ -5899,13 +6243,17 @@ create table if not exists memory_vectors (
         const MOODS = ['happy', 'sad', 'angry', 'anxious', 'tender', 'peaceful', 'excited', 'nostalgic', 'frustrated', 'hopeful', 'lonely', 'grateful'];
 
         return (
-            <div style={{ paddingLeft: 16, paddingRight: 16, paddingBottom: 16, paddingTop: SAFE_PAD_TOP, maxHeight: '100%', overflowY: 'auto' }}>
+            <div
+                key={`memory:${selectedNode.id}`}
+                data-mp-scroll-view="memory"
+                style={{ paddingLeft: 16, paddingRight: 16, paddingBottom: 16, paddingTop: SAFE_PAD_TOP, maxHeight: '100%', overflowY: 'auto' }}
+            >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                     <div
                         onClick={() => { setView(prevView); setSelectedNode(null); setEditing(false); }}
                         style={{ fontSize: 13, color: '#6b7280', cursor: 'pointer' }}
                     >
-                        ← 返回 {prevView === 'all' ? '全部记忆' : prevView === 'boxes' ? '事件盒' : getRoomLabel(selectedRoom || selectedNode.room, userProfile?.name)}
+                        ← 返回 {prevView === 'palace' ? '记忆宫殿' : prevView === 'all' ? '全部记忆' : prevView === 'boxes' ? '事件盒' : getRoomLabel(selectedRoom || selectedNode.room, userProfile?.name)}
                     </div>
                     {!editing && (
                         <div
@@ -5957,6 +6305,16 @@ create table if not exists memory_vectors (
                                 </div>
                             </div>
                             <div>
+                                <label className={labelClass}>日期（留空保留原值）</label>
+                                <PartialDateFields
+                                    value={editDateDraft}
+                                    onChange={setEditDateDraft}
+                                    placeholders={getSharedDatePlaceholders([selectedNode])}
+                                    disabled={saving}
+                                    ariaPrefix="单条记忆"
+                                />
+                            </div>
+                            <div>
                                 <label className={labelClass}>重要性: {editImportance}</label>
                                 <input
                                     type="range" min="1" max="10" step="1"
@@ -6000,6 +6358,7 @@ create table if not exists memory_vectors (
                                         setEditMood(selectedNode.mood);
                                         setEditRoom(selectedNode.room);
                                         setEditTags(selectedNode.tags.join(', '));
+                                        setEditDateDraft(EMPTY_PARTIAL_DATE_DRAFT);
                                     }}
                                     style={{
                                         padding: '10px 16px', borderRadius: 10, border: '1px solid #e5e7eb',
