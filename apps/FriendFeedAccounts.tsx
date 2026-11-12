@@ -3,6 +3,7 @@ import type {CharacterGroup, CharacterProfile} from '../types';
 import FriendFeedCharacterPicker, {FriendFeedGroupedList} from './FriendFeedGroupedList';
 import {createLocalId} from '../utils/localId.js';
 import type {FriendFeedSettings, FriendIdentity} from '../utils/friendFeedSettings';
+import FriendFeedUserAccounts from './FriendFeedUserAccounts';
 
 const tags = (text: string) => text.split(/[,，、\n]/).map(t => t.trim()).filter(Boolean).slice(0, 8);
 export default function FriendFeedAccounts({value, onChange, characters, groups = [], disabled, section}: {
@@ -13,10 +14,7 @@ export default function FriendFeedAccounts({value, onChange, characters, groups 
     const identity = value.identities[char?.id] || {tags: [], accounts: []};
     const update = (patch: Partial<FriendIdentity>) => char && onChange({...value, identities: {...value.identities, [char.id]: {...identity, ...patch}}});
     return <>
-        {section === 'profile' && <section className="ff-preferences-section" aria-label="我的账号">
-            <label className="ff-setting-field">哔哔网名<input aria-label="我的哔哔网名" value={value.userNickname||''} maxLength={40} disabled={disabled} placeholder="留空使用档案里的名字" onChange={e=>onChange({...value,userNickname:e.target.value})}/></label>
-            <p className="friend-feed-settings-hint">只改变哔哔里的公开名字，不改私聊档案。模型不能使用你的账号发言。</p>
-        </section>}
+        {section === 'profile' && <FriendFeedUserAccounts value={value} onChange={onChange} disabled={disabled}/>}
         {section === 'weights' && <section className="ff-preferences-section" tabIndex={-1} aria-label="刷新与抽取">
             <p className="friend-feed-settings-hint">首页先同步微博再生成动态，评论区只刷新当前帖子的讨论。每次抽一位角色、抽一种内容，只调用这位角色的 API。数值越大越容易被抽中，0 表示不参与；角色权重也用于用户评论后的接话。</p>
             <fieldset disabled={disabled} className="ff-weight-list"><legend>角色权重</legend>
@@ -35,6 +33,8 @@ export default function FriendFeedAccounts({value, onChange, characters, groups 
             <p className="friend-feed-settings-hint">每位角色有一个主号、最多三个小号。填写各账号的用途，角色会自己选用；发帖和评论都记到原角色的上下文。</p>
             {char && <><FriendFeedCharacterPicker characters={characters} groups={groups} label="编辑角色账号" value={char.id} onChange={setSelected} disabled={disabled}/>
                 <label className="ff-setting-field">主号网名<input aria-label="角色主号网名" value={identity.nickname||''} maxLength={40} disabled={disabled} placeholder={char.name} onChange={e=>update({nickname:e.target.value})}/></label>
+                <label className="ff-setting-field">主号公开简介<textarea value={identity.bio||''} maxLength={1000} rows={2} disabled={disabled} placeholder="所有看到这个账号的网友都能读到。" onChange={e=>update({bio:e.target.value})}/></label>
+                <label className="ff-setting-field">主号用途与身份<textarea value={identity.purpose||''} maxLength={300} rows={2} disabled={disabled} placeholder="仅告诉角色本人，指导这个账号的发言。" onChange={e=>update({purpose:e.target.value})}/></label>
                 <label className="ff-setting-field">主号话题 / 俱乐部<input key={`${char.id}:${identity.tags.join(',')}`} disabled={disabled} defaultValue={identity.tags.join('，')} maxLength={240}
                     placeholder="咖啡师，夜猫子，摄影" onBlur={e => update({tags: tags(e.target.value)})}/></label>
                 {identity.accounts.map((account, index) => <fieldset className="ff-account-editor" key={account.id} disabled={disabled}>
@@ -42,6 +42,7 @@ export default function FriendFeedAccounts({value, onChange, characters, groups 
                     <label className="ff-setting-field">账号名<input value={account.name} maxLength={40} required onChange={e => update({accounts: identity.accounts.map(a => a.id === account.id ? {...a, name: e.target.value} : a)})}/></label>
                     <label className="ff-setting-field">用途与身份<textarea value={account.purpose} maxLength={300} rows={2} placeholder="例如：职业账号，只发工作；匿名吐槽号，不透露主号身份。"
                         onChange={e => update({accounts: identity.accounts.map(a => a.id === account.id ? {...a, purpose: e.target.value} : a)})}/></label>
+                    <label className="ff-setting-field">公开简介<textarea value={account.bio||''} maxLength={1000} rows={2} placeholder="给网友看的介绍；上面的用途与身份只给本人。" onChange={e=>update({accounts:identity.accounts.map(a=>a.id===account.id?{...a,bio:e.target.value}:a)})}/></label>
                     <label className="ff-setting-field">标签<input key={account.tags.join(',')} defaultValue={account.tags.join('，')} maxLength={240} placeholder="用逗号分开"
                         onBlur={e => update({accounts: identity.accounts.map(a => a.id === account.id ? {...a, tags: tags(e.target.value)} : a)})}/></label>
                     <button className="ff-setting-link" type="button" onClick={() => update({accounts: identity.accounts.filter(a => a.id !== account.id)})}>移除这个小号</button>

@@ -52,6 +52,41 @@ afterEach(() => {
 });
 
 describe('private chat input controls', () => {
+    it.each([false, true])('closes the toolbar on an outside touch regardless of auto reply (%s) and keyboard focus', autoReplyEnabled => {
+        renderInput({ showPanel: 'actions', autoReplyEnabled });
+        pointerdown(container);
+        expect(props.setShowPanel).toHaveBeenLastCalledWith('none');
+        vi.mocked(props.setShowPanel).mockClear();
+        act(() => textarea().focus());
+        pointerdown(container);
+        expect(props.setShowPanel).toHaveBeenLastCalledWith('none');
+        expect(props.onSend).not.toHaveBeenCalled();
+        expect(props.onPanelAction).not.toHaveBeenCalled();
+    });
+
+    it('keeps toolbar buttons usable and only removes its own outside listener when closed', () => {
+        renderInput({ showPanel: 'actions' });
+        const action = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('戳一戳'))!;
+        expect(action).toBeDefined();
+        pointerdown(action);
+        expect(props.setShowPanel).not.toHaveBeenCalled();
+        act(() => action.click());
+        expect(props.onPanelAction).toHaveBeenCalled();
+        renderInput({ showPanel: 'none' });
+        vi.mocked(props.setShowPanel).mockClear();
+        pointerdown(container);
+        expect(props.setShowPanel).not.toHaveBeenCalled();
+    });
+
+    it.each(['emojis', 'chars'] as const)('also dismisses the %s panel when a nested message stops bubbling', showPanel => {
+        renderInput({ showPanel });
+        const message = document.createElement('div');
+        message.addEventListener('pointerdown', event => event.stopPropagation());
+        container.append(message);
+        pointerdown(message);
+        expect(props.setShowPanel).toHaveBeenCalledWith('none');
+    });
+
     it('keeps the existing send button and Enter behavior by default', () => {
         renderInput();
         expect(primary().getAttribute('aria-label')).toBe('发送文字');
@@ -252,5 +287,52 @@ describe('private chat input controls', () => {
         expect(body.hidden).toBe(true);
         act(() => header.click());
         expect(box.checked).toBe(true);
+    });
+
+    it('opens the native photo file input when tapping gallery in the portal chooser despite outside pointerdown', () => {
+        vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+        const clickSpy = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => {});
+        const StatefulHarness = () => {
+            const [showPanel, setShowPanel] = React.useState<'none' | 'actions' | 'emojis' | 'chars'>('actions');
+            return React.createElement(ChatInputArea, { ...props, showPanel, setShowPanel });
+        };
+        act(() => root.render(React.createElement(StatefulHarness)));
+
+        const albumTile = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('相册'))!;
+        expect(albumTile).toBeDefined();
+        pointerdown(albumTile);
+        act(() => albumTile.click());
+
+        const galleryBtn = Array.from(document.body.querySelectorAll('button')).find(button => button.textContent?.includes('从相册选择'))!;
+        expect(galleryBtn).toBeDefined();
+        // 真实浏览器点击顺序：先捕获/冒泡 pointerdown，再触发 click。
+        pointerdown(galleryBtn);
+        act(() => galleryBtn.click());
+
+        expect(clickSpy).toHaveBeenCalledTimes(1);
+
+        // 即使随后用户点消息区收起了面板，系统相册选完图回传 change 事件时 input 仍在 DOM 内。
+        pointerdown(container);
+        const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept="image/*"]')!;
+        expect(fileInput).not.toBeNull();
+        const photo = new File(['jpeg-bytes'], 'photo.jpg', { type: 'image/jpeg' });
+        Object.defineProperty(fileInput, 'files', { configurable: true, value: [photo] });
+        act(() => { fileInput.dispatchEvent(new Event('change', { bubbles: true })); });
+        expect(props.onImageSelect).toHaveBeenCalledWith(photo);
+    });
+
+    it('does not dismiss the open toolbar when interacting with a modal dialog above chat', () => {
+        renderInput({ showPanel: 'emojis' });
+        const dialog = document.createElement('div');
+        dialog.setAttribute('role', 'dialog');
+        const dialogBtn = document.createElement('button');
+        dialog.appendChild(dialogBtn);
+        document.body.appendChild(dialog);
+        try {
+            pointerdown(dialogBtn);
+            expect(props.setShowPanel).not.toHaveBeenCalled();
+        } finally {
+            dialog.remove();
+        }
     });
 });

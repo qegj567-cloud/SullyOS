@@ -172,11 +172,17 @@
       html.sully-statusbar-compact {
         --chrome-top: max(var(--safe-top), 1.5rem);
       }
+      /* 外壳本身可多画一段 home 安全区，但不能因此把根页面变成可拖动的滚动容器。 */
+      html.ios-standalone {
+        height: var(--app-visible-height, 100dvh);
+        min-height: 0;
+        overflow: hidden;
+        overscroll-behavior: none;
+      }
       body.ios-standalone {
         min-height: var(--app-height);
         height: var(--app-height);
-        overscroll-behavior-y: auto;
-        overscroll-behavior-x: none;
+        overscroll-behavior: none;
       }
       body.ios-standalone #root {
         min-height: var(--app-height);

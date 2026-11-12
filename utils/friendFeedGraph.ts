@@ -38,7 +38,7 @@ export function resolveFriendActingAccount(feed:FriendFeedState,char:Pick<Charac
 export function activeFriendAccounts(feed:FriendFeedState, characters:Pick<CharacterProfile,'id'>[]) {
     const settings=resolveFriendFeedSettings(feed.settings), owners=new Set(['user',...characters.map(c=>c.id)]);
     return (feed.accountGraph?.accounts||[]).filter(a=>owners.has(a.ownerId)
-        &&(a.accountId==='main'||a.ownerId!=='user'&&settings.identities[a.ownerId]?.accounts.some(alias=>alias.id===a.accountId)));
+        &&(a.accountId==='main'||(a.ownerId==='user'?settings.userAccounts:settings.identities[a.ownerId]?.accounts)?.some(alias=>alias.id===a.accountId)));
 }
 /** Called inside the existing feed transaction. Opaque IDs never encode a hidden owner. */
 export function normalizeFriendGraph(feed:FriendFeedState, characters:Pick<CharacterProfile,'id'>[]) {
@@ -52,6 +52,7 @@ export function normalizeFriendGraph(feed:FriendFeedState, characters:Pick<Chara
         return account;
     };
     const user=add('user');
+    for(const account of settings.userAccounts||[])add('user',account.id);
     for(const char of characters) {
         const main=add(char.id);
         if(!Object.prototype.hasOwnProperty.call(graph.follows,main.id)) {
@@ -74,6 +75,8 @@ function rememberMutualIdentities(graph:FriendAccountGraph) {
         if(!graph.follows[targetId]?.includes(source.id))continue;
         const target=graph.accounts.find(a=>a.id===targetId);
         if(!target||source.ownerId===target.ownerId)continue;
+        // Following an anonymous user account is not a disclosure of its owner.
+        if(target.ownerId==='user'&&target.accountId!=='main')continue;
         const known=graph.known[source.ownerId] ||= {};
         if(known[targetId]===undefined)known[targetId]=true;
     }
@@ -100,15 +103,18 @@ export function followsFriendPost(feed:FriendFeedState,viewerId:string,post:Pick
 }
 export function friendAccountName(feed:FriendFeedState,account:FriendAccountRef,characters:Pick<CharacterProfile,'id'|'name'>[],userName='我') {
     const settings=resolveFriendFeedSettings(feed.settings);
-    if(account.ownerId==='user')return settings.userNickname||userName;
-    const char=characters.find(c=>c.id===account.ownerId);
+    const char=account.ownerId==='user'?{id:'user',name:userName}:characters.find(c=>c.id===account.ownerId);
     const configured=char&&friendAccounts(settings,char).find(a=>a.id===account.accountId);
     return configured?.name||feed.posts.flatMap(p=>[p,...p.comments]).find(c=>c.authorId===account.ownerId&&(c.accountId||'main')===account.accountId)?.authorName||'已停用账号';
 }
 /** Actor knowledge is separate from routing. No owner key or local alias ID escapes when unknown. */
 export function projectFriendComment(feed:FriendFeedState,viewerId:string,row:FriendComment):FriendComment {
     const ref=friendAccountRef(feed,row), known=ref&&knowsFriendAccount(feed,viewerId,ref);
+    const settings=resolveFriendFeedSettings(feed.settings);
+    const identity=ref?.ownerId==='user'?{bio:settings.userBio,accounts:settings.userAccounts}:ref?settings.identities[ref.ownerId]:undefined;
+    const bio=ref?.accountId==='main'?identity?.bio:identity?.accounts?.find(a=>a.id===ref?.accountId)?.bio;
     return {...row,authorId:known?row.authorId:ref?.id||`unmapped-${row.id}`,accountId:ref?.id,
+        accountBio:bio||undefined,
         ...(row.localReply?{localReply:projectFriendQuote(feed,viewerId,row.localReply)}:{})};
 }
 function projectFriendQuote(feed:FriendFeedState,viewerId:string,quote:NonNullable<FriendComment['localReply']>) {
@@ -129,5 +135,6 @@ export function friendPublicName(feed:FriendFeedState,viewerId:string,row:Pick<F
 }
 export function friendGraphStamp(feed:FriendFeedState) {
     const graph=feed.accountGraph,owners=new Set(['user',...feed.circles.flatMap(c=>c.memberIds)]);
-    return JSON.stringify([graph&&{...graph,accounts:graph.accounts.filter(a=>owners.has(a.ownerId))},resolveFriendFeedSettings(feed.settings).identities,resolveFriendFeedSettings(feed.settings).userNickname]);
+    const settings=resolveFriendFeedSettings(feed.settings);
+    return JSON.stringify([graph&&{...graph,accounts:graph.accounts.filter(a=>owners.has(a.ownerId))},settings.identities,settings.userNickname,settings.userBio,settings.userAccounts]);
 }

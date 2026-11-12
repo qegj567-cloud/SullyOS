@@ -74,6 +74,29 @@ describe('DatePrompts.buildSessionPayload', () => {
         expect(sys).not.toContain('叙事人称');
     });
 
+    it.each(['send', 'reroll'] as const)('%s 在生成回复时同步要求目标语译文，语音关闭或默认语种不注入', async variant => {
+        const input = baseInput(makeChar({ dateVoiceEnabled: true, dateVoiceLang: 'ja' }));
+        const { messages } = await DatePrompts.buildSessionPayload({ ...input, variant });
+        expect(sysOf(messages)).toContain('<date-voice lang="ja">');
+        expect(sysOf(messages)).toContain('日本語');
+        expect(sysOf(messages)).toContain('同一次回复');
+        for (const overrides of [{ dateVoiceEnabled: false, dateVoiceLang: 'ja' }, { dateVoiceEnabled: true }]) {
+            const disabled = await DatePrompts.buildSessionPayload({ ...baseInput(makeChar(overrides)), variant });
+            expect(sysOf(disabled.messages)).not.toContain('<date-voice');
+        }
+    });
+
+    it('已保存的朗读译文不重复注入对话历史，但保留本轮译文规则', async () => {
+        const input = baseInput(makeChar({ dateVoiceEnabled: true, dateVoiceLang: 'en' }));
+        input.allMsgs[0] = makeMsg({ role: 'assistant', content: '[happy] "你好。" <date-voice lang="en">Hello.</date-voice>', metadata: { source: 'date' } });
+        const { messages } = await DatePrompts.buildSessionPayload(input);
+        const history = messages.filter(m => m.role === 'assistant').map(m => m.content).join('\n');
+        expect(history).toContain('你好。');
+        expect(history).not.toContain('Hello.');
+        expect(history).not.toContain('date-voice');
+        expect(sysOf(messages)).toContain('<date-voice lang="en">');
+    });
+
     it('按 dateStyleConfig.style 切换风格块', async () => {
         for (const preset of DATE_STYLE_PRESETS) {
             const char = makeChar({ dateStyleConfig: { style: preset.id } });
@@ -488,6 +511,10 @@ describe('见面里的世界书', () => {
 });
 
 describe('DatePrompts.buildPeekPayload', async () => {
+    it('开场也在生成正文时附带朗读译文', async () => {
+        const result = await DatePrompts.buildPeekPayload({ char: makeChar({ dateVoiceEnabled: true, dateVoiceLang: 'ja' }), userProfile: user, allMsgs: [], emojis: [] });
+        expect(result.messages.map(m => m.content).join('\n')).toContain('<date-voice lang="ja">');
+    });
     it('让他靠近读取同一份上下文与世界书，只改变开场发起者，保留用户自主权', async () => {
         const char = makeChar({ mountedWorldbooks: [{
             id: 'place', title: '常去的店', content: '在街角书店见面', category: '地点', constant: true,

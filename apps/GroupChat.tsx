@@ -1007,9 +1007,9 @@ const GroupChat: React.FC = () => {
 
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
+        if (e.target) e.target.value = '';
         if (!file) return;
         await handleImageFile(file);
-        if (e.target) e.target.value = '';
     };
 
     // --- Logic: 红包 2.0 ---
@@ -1964,6 +1964,7 @@ ${memberTimeline || '(暂无互动记录)'}
             {/* 输入区 — 复用私聊 ChatInputArea（输入/表情面板/多选删除随 OS 外观设置），
                 actions 面板整体替换为群聊自己的 4 格 */}
             {previewImage && <ImageViewer value={previewImage} fallback={previewImage} onClose={() => setPreviewImage(null)} />}
+            <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
             <ChatInputArea
                 input={input}
                 setInput={setInput}
@@ -2004,7 +2005,6 @@ ${memberTimeline || '(暂无互动记录)'}
                             </div>
                             <span className="text-xs font-bold">相册</span>
                         </button>
-                        <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
 
                         <button onClick={() => { setModalType('transfer'); setShowPanel('none'); trackEvent('打开发红包面板'); }} className="flex flex-col items-center gap-2 active:scale-95 transition-transform text-slate-600">
                             <div className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border bg-orange-50 text-orange-400 border-orange-100">

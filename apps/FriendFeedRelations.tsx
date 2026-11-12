@@ -34,8 +34,15 @@ export default function FriendFeedRelations({feed,characters,groups=[],user,onPr
             <button type="button" aria-pressed={!preview} onClick={()=>setPreview(false)}>管理关系</button>
             <button type="button" aria-pressed={preview} onClick={()=>setPreview(true)}>以 {ownerName(owner)} 视角查看</button>
         </div>}
-        <p className="ff-relation-caption">{preview?'只显示 TA 能知道的身份。未认出的账号不会按主人归组。':'修改立即保存。互关会认出参与互关的两个账号，不会顺带认出其他小号。'}</p>
+        <p className="ff-relation-caption">{preview?'只显示 TA 能知道的身份。未认出的账号不会按主人归组。':'修改立即保存。用户小号互关不会暴露身份；其他账号沿用互关认知，不会顺带认出其他小号。'}</p>
         {error&&<p role="alert" className="friend-feed-error">{error}</p>}
+        {owner==='user'&&source&&<section className="ff-preferences-section" aria-label="谁知道这个账号是我">
+            <h3>谁知道「{name(source)}」是我</h3>
+            <p className="ff-relation-caption">只影响这个账号。取消勾选不会删除已经发生的聊天与记忆；新的明确身份说明仍可让角色认出。</p>
+            <FriendFeedGroupedList items={characters.map(c=>({...c,searchText:c.name}))} groups={groups} label="知情角色" searchLabel="搜索知情角色" disabled={busy} renderItem={char=><label className="ff-toggle-row" key={char.id}>
+                <span>{char.name}</span><input type="checkbox" aria-label={`${char.name}知道${name(source)}是我`} disabled={busy} checked={knowsFriendAccount(feed,char.id,source)} onChange={e=>void change({kind:'known',viewerId:char.id,targetId:source.id,value:e.target.checked})}/>
+            </label>}/>
+        </section>}
         <div className="ff-relation-list" aria-label={preview?'角色可见账号':'账号关系列表'}>
             {source&&<FriendFeedGroupedList key={`${owner}:${preview}`} stateKey={`relations:${owner}:${preview}`} items={targetRows} groups={[{id:'__bibi_user__',name:'我',order:-1},...groups]}
                 label="关系账号" searchLabel="搜索账号" showGroups={!preview} disabled={busy} renderItem={a=>{

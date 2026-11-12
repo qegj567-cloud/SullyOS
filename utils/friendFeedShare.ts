@@ -68,7 +68,7 @@ export async function shareFriendPost(postId:string,charId:string,deliveryId:str
     const characters=await DB.getAllCharacters();
     const projected=projectFriendPost(latest,charId,current);
     const share:FriendFeedShareSnapshot={version:1,postId,authorId:projected.authorId,authorName:current.authorName,text:current.text,
-        identity:friendKnownIdentity(latest,charId,current,characters),
+        identity:friendKnownIdentity(latest,charId,current,characters),accountBio:projected.accountBio,
         ...(current.source?{source:structuredClone(current.source)}:{}),synced:current.synced,sharedAt:Date.now(),
         ...(current.images ? {images:structuredClone(current.images)} : {}),
         ...(current.imageCards?.length?{imageCards:structuredClone(current.imageCards)}:{}),

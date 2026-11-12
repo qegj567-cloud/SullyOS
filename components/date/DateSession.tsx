@@ -24,15 +24,15 @@ import { fetchBlobForShare } from '../../utils/shareExport';
 import VoiceFavoriteActionSheet from '../voice/VoiceFavoriteActionSheet';
 import { getVoiceFavorite, makeVoiceFavoriteId, removeVoiceFavorite, saveVoiceFavorite } from '../../utils/voiceFavorites';
 import { MEETING_CONTINUE_DISPLAY_TEXT } from '../../utils/meetingContinue';
-import { VOICE_LANGUAGE_OPTIONS, voiceLanguageAnalyticsValue, voiceLanguageLabel, voiceLanguagePromptLabel } from '../../utils/voiceLanguage';
+import { VOICE_LANGUAGE_OPTIONS, voiceLanguageAnalyticsValue, voiceLanguageLabel } from '../../utils/voiceLanguage';
 import { trackEvent } from '../../utils/analytics';
 import { SARSpeechSwitch } from '../sar/SARSpeechSwitch';
 import { resolveSARDateSpeech } from '../../utils/sarDatePresentation';
-import { extractDateDialogueText as extractDialogueText } from '../../utils/dateVoiceText';
+import { extractDateDialogueText as extractDialogueText, normalizeDateVoiceLines, stripDateVoiceTranslations, resolveDateSpeechText, buildDateReadingScript, dateVoiceCacheKey } from '../../utils/dateVoiceText';
 import { isElevenLabsV4Model } from '../../utils/elevenLabsModels';
 import { useStreamingVoice } from '../../hooks/useStreamingVoice';
 import StreamingVoiceBar from '../voice/StreamingVoiceBar';
-import type { StreamedVoice } from '../../utils/elevenLabsStream';
+import { streamElevenLabsSpeech, type StreamedVoice } from '../../utils/elevenLabsStream';
 import { useDateReadingScroll } from '../../utils/useDateReadingScroll';
 
 // 语音情绪标记 [v:xxx]：跟立绘情绪 [emotion] 分开的独立通道。立绘的 happy 是
@@ -64,7 +64,7 @@ const isContextNoise = (line: string) => {
 const cleanTextForDisplay = (text: string) => {
     // Remove content inside brackets [] and trim extra spaces
     // Also remove typical system prompts if any leak through
-    return text.replace(/\[.*?\]/g, '').trim();
+    return stripDateVoiceTranslations(text).replace(/\[.*?\]/g, '').trim();
 };
 
 // Helper: Check if a line is dialogue (starts with quoted speech "...")
@@ -77,7 +77,7 @@ const isDialogueLine = (text: string) => {
 
 const parseDialogue = (fullText: string, initialEmotion: string = 'normal'): DialogueItem[] => {
     if (!fullText) return [];
-    const lines = fullText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    const lines = normalizeDateVoiceLines(fullText).split('\n').map(l => l.trim()).filter(l => l.length > 0);
     const results: DialogueItem[] = [];
     let currentEmotion = initialEmotion;
 
@@ -267,7 +267,7 @@ const DateSession: React.FC<DateSessionProps> = ({
     const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const touchStartRef = useRef<{x: number, y: number} | null>(null);
 
-    // Voice TTS — single shared cache keyed by dialogue text, used by both GAL & novel mode
+    // GAL、阅读与收藏共享完整音频缓存，按台词、语言和合成参数区分。
     const [dateVoicePlaying, setDateVoicePlaying] = useState(false);
     const [galVoiceLoading, setGalVoiceLoading] = useState(false);
     const [showVoiceLangPicker, setShowVoiceLangPicker] = useState(false);
@@ -284,6 +284,7 @@ const DateSession: React.FC<DateSessionProps> = ({
         dateVoiceGenerationRef.current += 1;
         dateStreamUrls.current.forEach(url => URL.revokeObjectURL(url));
         dateStreamUrls.current.clear();
+        voiceCacheRef.current = {};
     }, [char.id]);
     useEffect(() => {
         if (apiConfig.ttsProvider !== 'elevenlabs') return;
@@ -305,43 +306,42 @@ const DateSession: React.FC<DateSessionProps> = ({
     const voiceFavoriteLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const voiceFavoriteLongPressTriggered = useRef(false);
 
-    const translateAndSpeak = async (text: string, emotion?: string, streamId?: string): Promise<DateSpeechResult | null> => {
-        if (!canSynthesizeSpeech(char, apiConfig)) return null;
+    const speechTextForLine = (text: string) => resolveDateSpeechText(text, voiceLang, preserveAudioTags);
+    const displayTextForLine = (text: string) => stripTtsMarkupForDisplay(cleanTextForDisplay(text), apiConfig);
+    const speechCacheKey = (text: string, emotion?: string) => dateVoiceCacheKey(text, char, apiConfig, emotion);
+    const speakDateText = async (text: string, emotion?: string, streamId?: string): Promise<DateSpeechResult | null> => {
         const generation = dateVoiceGenerationRef.current;
+        const cacheKey = speechCacheKey(text, emotion);
         try {
-            let ttsText = cleanTextForTtsProvider(text, apiConfig);
-            if (!ttsText || ttsText.length < 2) return null;
-            if (voiceLang) {
-                const langLabel = voiceLanguagePromptLabel(voiceLang);
-                try {
-                    const transRes = await fetch(`${apiConfig.baseUrl}/chat/completions`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiConfig.apiKey}` },
-                        body: JSON.stringify({
-                            model: apiConfig.model,
-                            messages: [{ role: 'system', content: `Translate the following text to ${langLabel}. Output ONLY the translation, nothing else.${preserveAudioTags ? ' Preserve all square-bracketed English audio tags and /IPA/ pronunciation instructions exactly; translate only spoken dialogue.' : ''}` }, { role: 'user', content: ttsText }],
-                            temperature: 0.3,
-                        }),
-                    });
-                    const transData = await transRes.json();
-                    const translated = transData?.choices?.[0]?.message?.content?.trim();
-                    if (translated) ttsText = translated;
-                } catch { /* use original */ }
+            const cached = voiceCacheRef.current[cacheKey];
+            if (cached) {
+                if (streamId && cached.recording) {
+                    dateAudioRef.current?.pause();
+                    await streamingVoice.replay(streamId, cached.recording);
+                }
+                return cached;
             }
-            if (streamId && apiConfig.ttsProvider === 'elevenlabs') {
+            if (!canSynthesizeSpeech(char, apiConfig)) return null;
+            const ttsText = cleanTextForTtsProvider(text, apiConfig);
+            if (!ttsText || ttsText.length < 2) return null;
+            if (apiConfig.ttsProvider === 'elevenlabs') {
                 if (generation !== dateVoiceGenerationRef.current) return null;
-                dateAudioRef.current?.pause();
-                const recording = await streamingVoice.speak(streamId, ttsText, char, apiConfig, { languageBoost: voiceLang || undefined, emotion });
+                if (streamId) dateAudioRef.current?.pause();
+                const options = { languageBoost: voiceLang || undefined, emotion };
+                const recording = streamId
+                    ? await streamingVoice.speak(streamId, ttsText, char, apiConfig, options)
+                    : await streamElevenLabsSpeech(ttsText, char, apiConfig, options);
+                if (generation !== dateVoiceGenerationRef.current) return null;
                 const url = URL.createObjectURL(recording.blob);
                 dateStreamUrls.current.add(url);
-                return { url, spokenText: stripTtsMarkupForDisplay(ttsText, apiConfig), recording };
+                return voiceCacheRef.current[cacheKey] = { url, spokenText: stripTtsMarkupForDisplay(ttsText, apiConfig), recording };
             }
             const url = await synthesizeSpeech(ttsText, char, apiConfig, {
                 languageBoost: voiceLang || undefined,
                 groupId: apiConfig.minimaxGroupId || undefined,
                 emotion,
             });
-            return {
+            return voiceCacheRef.current[cacheKey] = {
                 url,
                 spokenText: stripTtsMarkupForDisplay(ttsText, apiConfig),
             };
@@ -368,20 +368,18 @@ const DateSession: React.FC<DateSessionProps> = ({
         if (isShowingOpening) return;
         if (!isDialogueLine(galShownText)) return;
         let cancelled = false;
-        const dialogueText = extractDialogueText(galShownText, preserveAudioTags);
+        const dialogueText = speechTextForLine(galShownText);
         if (apiConfig.ttsProvider === 'elevenlabs') {
-            void translateAndSpeak(dialogueText, currentLineEmotionRef.current, 'gal').then(speech => {
-                if (speech && !cancelled) voiceCacheRef.current[dialogueText] = speech;
-            });
+            void speakDateText(dialogueText, currentLineEmotionRef.current, 'gal');
             return () => { cancelled = true; stopDateStream(); };
         }
-        const cacheKey = dialogueText;
+        const cacheKey = speechCacheKey(dialogueText, currentLineEmotionRef.current);
         const play = async () => {
             // Check cache first
             let speech: DateSpeechResult | undefined = voiceCacheRef.current[cacheKey];
             if (!speech) {
                 setGalVoiceLoading(true);
-                speech = await translateAndSpeak(dialogueText, currentLineEmotionRef.current) || undefined;
+                speech = await speakDateText(dialogueText, currentLineEmotionRef.current) || undefined;
                 if (cancelled) return;
                 setGalVoiceLoading(false);
                 if (!speech) return;
@@ -404,9 +402,8 @@ const DateSession: React.FC<DateSessionProps> = ({
         if (apiConfig.ttsProvider === 'elevenlabs') {
             if (streamingVoice.state && ['loading', 'playing'].includes(streamingVoice.state.status)) { stopDateStream(); return; }
             stopDateStream();
-            const text = extractDialogueText(galShownText, preserveAudioTags);
-            const speech = await translateAndSpeak(text, currentLineEmotionRef.current, 'gal');
-            if (speech) voiceCacheRef.current[text] = speech;
+            const text = speechTextForLine(galShownText);
+            await speakDateText(text, currentLineEmotionRef.current, 'gal');
             return;
         }
         // If playing, pause
@@ -415,12 +412,12 @@ const DateSession: React.FC<DateSessionProps> = ({
             setDateVoicePlaying(false);
             return;
         }
-        const dialogueText = extractDialogueText(galShownText, preserveAudioTags);
-        const cacheKey = dialogueText;
+        const dialogueText = speechTextForLine(galShownText);
+        const cacheKey = speechCacheKey(dialogueText, currentLineEmotionRef.current);
         let speech: DateSpeechResult | undefined = voiceCacheRef.current[cacheKey];
         if (!speech) {
             setGalVoiceLoading(true);
-            speech = await translateAndSpeak(dialogueText, currentLineEmotionRef.current) || undefined;
+            speech = await speakDateText(dialogueText, currentLineEmotionRef.current) || undefined;
             setGalVoiceLoading(false);
             if (!speech) { addToast('语音合成失败，请稍后重试', 'error'); return; }
             voiceCacheRef.current[cacheKey] = speech;
@@ -440,11 +437,10 @@ const DateSession: React.FC<DateSessionProps> = ({
         if (apiConfig.ttsProvider === 'elevenlabs') {
             if (streamingVoice.state?.id === lineKey && ['loading', 'playing'].includes(streamingVoice.state.status)) { stopDateStream(); return; }
             stopDateStream();
-            const speech = await translateAndSpeak(dialogueText, voiceEmotion, lineKey);
-            if (speech) voiceCacheRef.current[dialogueText] = speech;
+            await speakDateText(dialogueText, voiceEmotion, lineKey);
             return;
         }
-        const cached = voiceCacheRef.current[dialogueText];
+        const cached = voiceCacheRef.current[speechCacheKey(dialogueText, voiceEmotion)];
         if (cached) {
             // Already have URL (from GAL or previous novel play), just play/pause
             if (!dateAudioRef.current) dateAudioRef.current = new Audio();
@@ -460,10 +456,9 @@ const DateSession: React.FC<DateSessionProps> = ({
             return;
         }
         setNovelVoiceLoading(prev => new Set(prev).add(lineKey));
-        const speech = await translateAndSpeak(dialogueText, voiceEmotion);
+        const speech = await speakDateText(dialogueText, voiceEmotion);
         setNovelVoiceLoading(prev => { const n = new Set(prev); n.delete(lineKey); return n; });
         if (!speech) { addToast('语音合成失败，请稍后重试', 'error'); return; }
-        voiceCacheRef.current[dialogueText] = speech;
         if (!dateAudioRef.current) dateAudioRef.current = new Audio();
         dateAudioRef.current.src = speech.url;
         dateAudioRef.current.onended = () => setNovelPlayingId(null);
@@ -478,14 +473,14 @@ const DateSession: React.FC<DateSessionProps> = ({
             const message = messages[messageIndex];
             if (message.role !== 'assistant') continue;
             const { rest: body } = extractObservation(message.content || '', { lenient: observeEnabled, custom: char.dateObserve?.custom });
-            const lines = body.split('\n');
+            const lines = normalizeDateVoiceLines(body).split('\n');
             for (let lineIndex = lines.length - 1; lineIndex >= 0; lineIndex--) {
                 const parsed = extractVoiceEmotionTag(lines[lineIndex]);
                 if (isDialogueLine(parsed.rest) && extractDialogueText(parsed.rest) === originalText) {
                     return {
                         sourceKey: `${char.id}:${message.id}-${lineIndex}`,
                         originalText,
-                        speechText: extractDialogueText(parsed.rest, preserveAudioTags),
+                        speechText: speechTextForLine(parsed.rest),
                         sourceTimestamp: message.timestamp,
                         voiceEmotion: parsed.voiceEmotion || currentLineEmotionRef.current,
                     };
@@ -495,7 +490,7 @@ const DateSession: React.FC<DateSessionProps> = ({
         return {
             sourceKey: `${char.id}:live:${makeVoiceFavoriteId('date', originalText)}`,
             originalText,
-            speechText: extractDialogueText(galShownText, preserveAudioTags),
+            speechText: speechTextForLine(galShownText),
             sourceTimestamp: Date.now(),
             voiceEmotion: currentLineEmotionRef.current,
         };
@@ -537,10 +532,9 @@ const DateSession: React.FC<DateSessionProps> = ({
                 return;
             }
             const speechText = target.speechText || target.originalText;
-            let speech: DateSpeechResult | undefined = voiceCacheRef.current[speechText];
+            let speech: DateSpeechResult | undefined = voiceCacheRef.current[speechCacheKey(speechText, target.voiceEmotion)];
             if (!speech) {
-                speech = await translateAndSpeak(speechText, target.voiceEmotion) || undefined;
-                if (speech) voiceCacheRef.current[speechText] = speech;
+                speech = await speakDateText(speechText, target.voiceEmotion) || undefined;
             }
             if (!speech) throw new Error('语音合成失败，请稍后重试');
             const blob = await fetchBlobForShare(speech.url, 'audio/mpeg');
@@ -641,7 +635,7 @@ const DateSession: React.FC<DateSessionProps> = ({
             setCurrentSprite(restoredSprite.src);
             setCurrentSpriteKey(restoredSprite.key);
             setCurrentText(initialState.currentText || '');
-            setDisplayedText(initialState.currentText || '');
+            setDisplayedText(cleanTextForDisplay(initialState.currentText || ''));
             setDialogueQueue(Array.isArray(initialState.dialogueQueue) ? initialState.dialogueQueue : []);
             setDialogueBatch(Array.isArray(initialState.dialogueBatch) ? initialState.dialogueBatch : []);
             setIsNovelMode(!!initialState.isNovelMode);
@@ -694,7 +688,7 @@ const DateSession: React.FC<DateSessionProps> = ({
 
     // Typewriter effect
     useEffect(() => {
-        const displayText = preserveAudioTags ? stripTtsMarkupForDisplay(currentText, apiConfig) : currentText;
+        const displayText = displayTextForLine(currentText);
         if (!currentText || isNovelMode) {
             if (isNovelMode) setDisplayedText(displayText);
             return;
@@ -783,7 +777,7 @@ const DateSession: React.FC<DateSessionProps> = ({
 
         // Skip animation
         if (isTextAnimating) {
-            setDisplayedText(preserveAudioTags ? stripTtsMarkupForDisplay(currentText, apiConfig) : currentText);
+            setDisplayedText(displayTextForLine(currentText));
             setIsTextAnimating(false);
             return;
         }
@@ -1018,6 +1012,7 @@ const DateSession: React.FC<DateSessionProps> = ({
                         </button>
                         {voiceEnabled && showVoiceLangPicker && (
                             <div className="flex flex-wrap justify-end gap-1 max-w-[200px] animate-fade-in">
+                                <p className="w-full text-right text-[10px] leading-relaxed text-white/70">语种用于新回复；旧台词没有对应译文时朗读原文。已生成的语音可直接重播。</p>
                                 {VOICE_LANGUAGE_OPTIONS.map(opt => (
                                     <button key={opt.value} onClick={() => { updateCharacter(char.id, { dateVoiceLang: opt.value }); trackEvent('设置见面语音语种', { 语种: voiceLanguageAnalyticsValue(opt.value) }); setShowVoiceLangPicker(false); }}
                                         className={`h-7 px-2.5 rounded-full text-[10px] font-bold transition-all active:scale-95 whitespace-nowrap ${voiceLang === opt.value ? 'bg-white/30 text-white shadow-md' : 'bg-black/30 backdrop-blur-md text-white/60 border border-white/10'}`}>
@@ -1090,8 +1085,8 @@ const DateSession: React.FC<DateSessionProps> = ({
                             const chosen = messages.filter(message => message.role === 'assistant' && (!isBatchSelectMode || selectedMsgIds.has(message.id)));
                             const source = isBatchSelectMode ? chosen : chosen.slice(-1);
                             const script = source.map(message => extractObservation(message.content || '', { lenient: observeEnabled, custom: char.dateObserve?.custom }).rest)
-                                .map(body => body.replace(/^\s*\[[a-z_]+\]\s*/gim, '').replace(/\[v:[^\]]+\]/g, '')).join('\n\n');
-                            if (script.trim()) void translateAndSpeak(script, undefined, 'reading').then(speech => { if (speech) voiceCacheRef.current[script] = speech; });
+                                .map(body => buildDateReadingScript(body, voiceLang, preserveAudioTags)).join('\n\n');
+                            if (script.trim()) void speakDateText(script, undefined, 'reading');
                             else addToast('请先选择有正文的角色消息', 'info');
                         }}>{isBatchSelectMode ? '连续朗读所选内容' : '朗读最新一段'}</button>}
                         <div className="max-w-2xl mx-auto animate-fade-in space-y-6">
@@ -1190,14 +1185,14 @@ const DateSession: React.FC<DateSessionProps> = ({
                                                 {observeEnabled && hasObservation(msgObs) && (
                                                     <ReadingObservation reading={decoratedReading} observation={msgObs} variant="card" charName={char.name} config={char.dateObserve} />
                                                 )}
-                                                {(msgBody || '').split('\n').map((line, idx) => {
+                                                {normalizeDateVoiceLines(msgBody || '').split('\n').map((line, idx) => {
                                                 const cleanLine = cleanTextForDisplay(line);
                                                 if (!cleanLine) return null;
                                                 const lineIsDialogue = isDialogueLine(line);
                                                 const lineKey = `${msg.id}-${idx}`;
                                                 const isOpeningMsg = msg.metadata?.isOpening === true;
                                                 const parsedVoiceLine = extractVoiceEmotionTag(line);
-                                                const dialogueText = extractDialogueText(parsedVoiceLine.rest, preserveAudioTags);
+                                                const dialogueText = speechTextForLine(parsedVoiceLine.rest);
                                                 const voiceTarget: DateVoiceFavoriteTarget = {
                                                     sourceKey: `${char.id}:${lineKey}`,
                                                     originalText: extractDialogueText(parsedVoiceLine.rest),
@@ -1323,7 +1318,7 @@ const DateSession: React.FC<DateSessionProps> = ({
                                     </div>
                                 )}
                                 <p className="text-white/90 text-[16px] leading-relaxed font-light tracking-wide drop-shadow-md mt-2 whitespace-pre-wrap" data-sar-gal-text>
-                                    {galShownText === currentText ? displayedText : (preserveAudioTags ? stripTtsMarkupForDisplay(galShownText, apiConfig) : galShownText)}
+                                    {galShownText === currentText ? displayedText : displayTextForLine(galShownText)}
                                     {isTextAnimating && galShownText === currentText && <span className="inline-block w-2 h-4 bg-white/70 ml-1 animate-pulse align-middle"></span>}
                                 </p>
                                 {!isTextAnimating && dialogueQueue.length > 0 && <div className="absolute bottom-3 right-4 animate-bounce opacity-70"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 text-white"><path fillRule="evenodd" d="M12.53 16.28a.75.75 0 0 1-1.06 0l-7.5-7.5a.75.75 0 0 1 1.06-1.06L12 14.69l6.97-6.97a.75.75 0 1 1 1.06 1.06l-7.5 7.5Z" clipRule="evenodd" /></svg></div>}
