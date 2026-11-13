@@ -1,7 +1,7 @@
 import {CollaborationStore} from '../../features/collaboration/store';
 import {COLLABORATION_UI_THEMES,validateCollaborationAppearance,type CollaborationAppearance} from '../../features/collaboration/appearance';
 import {localizeCssImages} from '../../utils/cssImageAssets';
-import {AVATAR_FRAME_TARGETS,hasAvatarFrameCss,readAvatarFrameTarget,withAvatarFrameTarget,type AvatarFrameTarget} from '../../utils/avatarFrameTarget';
+import {AVATAR_FRAME_TARGETS,hasAvatarFrameCss,hasSplitAvatarFrames,readAvatarFrameSlots,readAvatarFrameTarget,withAvatarFrameTarget,type AvatarFrameTarget} from '../../utils/avatarFrameTarget';
 import {createWardrobeUsageReader} from '../../utils/wardrobeUsage';
 import {BUILTIN_SOUNDS} from '../../utils/whiteboxSound';
 import { useLocalBackHandler } from '../../hooks/useLocalBackHandler';
@@ -130,6 +130,18 @@ export default function BeautyShareChannel({ presets, onExport, onImport, onBusy
           await writeDecorationOrigin('bubble-' + reset.bubble.id, remixOrigin(await readDecorationOrigin('bubble-' + activeBubble.id)));
         }
         await updateCharacter(targetCharacter.id, reset.character);
+        const rawSlots = await DB.getAsset('decoration_slots_' + targetCharacter.id);
+        if (rawSlots) {
+          const slots: Record<string, string> = JSON.parse(rawSlots);
+          if (category === 'avatar') { delete slots['css:avatar']; delete slots['css:avatar:user']; delete slots['css:avatar:ai']; }
+          else if (category === 'background') { delete slots['background']; delete slots['css:background']; }
+          else if (category === 'whitebox') { delete slots['css']; delete slots['layout']; delete slots['css:avatar']; delete slots['css:avatar:user']; delete slots['css:avatar:ai']; delete slots['css:background']; }
+          else delete slots[category];
+          await DB.saveAsset('decoration_slots_' + targetCharacter.id, JSON.stringify(slots));
+          if (!Object.keys(slots).length) await DB.saveAsset('decoration_applied_' + targetCharacter.id, '');
+        } else if (category === 'whitebox') {
+          await DB.saveAsset('decoration_applied_' + targetCharacter.id, '');
+        }
       }
       setNotice('已恢复本分类默认样式');
     } catch (e) { setError(e instanceof Error ? e.message : '恢复失败，请重试'); }
@@ -138,7 +150,7 @@ export default function BeautyShareChannel({ presets, onExport, onImport, onBusy
   const [deleteEntry,setDeleteEntry]=useState<WardrobeEntry|null>(null);
   const [updateEntry,setUpdateEntry]=useState<{entry:WardrobeEntry;share:BeautyShare;previous:string}|null>(null);
   const [desktopEdit,setDesktopEdit]=useState<{entry:WardrobeEntry;name:string;origin:DecorationOrigin;useCurrent:boolean}|null>(null);
-  const [draft,setDraft]=useState<{preset:DecorationPreset;origin:DecorationOrigin;originalKey?:string;originalEntryId?:string;maker?:DecorationWorkshop}|null>(()=>initialMaker?{preset:makeWorkshopPreset(initialMaker),origin:{kind:'self'},maker:initialMaker}:null);
+  const [draft,setDraft]=useState<{preset:DecorationPreset;origin:DecorationOrigin;initialOrigins?:Record<string,DecorationOrigin>;originalKey?:string;originalEntryId?:string;maker?:DecorationWorkshop}|null>(()=>initialMaker?{preset:makeWorkshopPreset(initialMaker),origin:{kind:'self'},maker:initialMaker}:null);
   const openMaker=(kind:DecorationWorkshop)=>{trackBeauty('maker',kind);setDraft({preset:makeWorkshopPreset(kind),origin:{kind:'self'},maker:kind});};
   const refreshSaved=async()=>setSaved(await readLibraryDecorations());
   const editEntry=async(entry:WardrobeEntry)=>{
@@ -150,10 +162,15 @@ export default function BeautyShareChannel({ presets, onExport, onImport, onBusy
     if(!targetCharacter)throw Error('请先选择角色');
     const key=await DB.getAsset('decoration_applied_'+target);
     const slots=await DB.getAsset('decoration_slots_'+target);
-    const origin:DecorationOrigin=slots?combineDecorationOrigins(await Promise.all(Object.values(JSON.parse(slots) as Record<string,string>).map(readDecorationOrigin))):key?await readDecorationOrigin(key):{kind:'self'};
+    const parsedSlots:Record<string,string>|null=slots?JSON.parse(slots):null;
+    const slotOrigins:Record<string,DecorationOrigin>|undefined=parsedSlots?Object.fromEntries(await Promise.all(Object.entries(parsedSlots).flatMap(([slotKey,sourceKey])=>{
+      const mappedKeys=slotKey==='css:avatar'?['avatar:user','avatar:ai']:slotKey.startsWith('css:avatar:')?['avatar:'+slotKey.slice(11)]:slotKey==='css:background'?['background:css']:[slotKey];
+      return mappedKeys.map(async mapped=>[mapped,await readDecorationOrigin(sourceKey)] as const);
+    }))):undefined;
+    const origin:DecorationOrigin=slotOrigins!==undefined?combineDecorationOrigins(Object.values(slotOrigins)):key?await readDecorationOrigin(key):{kind:'self'};
     const bubbleId=targetCharacter.bubbleStyle||theme.chatDefaultBubbleStyle||'default';
     const preset=await snapshotDecoration(`${targetCharacter.name}的搭配`,theme,targetCharacter,customThemes.find(item=>item.id===bubbleId)||PRESET_THEMES[bubbleId]||PRESET_THEMES.default);
-    setDraft({preset,origin});if(guideStep!==null)setGuideStep(2);
+    setDraft({preset,origin,initialOrigins:slotOrigins});if(guideStep!==null)setGuideStep(2);
   }catch(e){setError(e instanceof Error?e.message:'无法创建草稿');}finally{setBusy(false);}};
   const importFile=async(file:File)=>{setBusy(true);onBusyChange(true);setError('');setApplyAll(false);setApplyError('');try{
     if(file.size>40*1024*1024)throw Error('文件超过 40 MB，请精简素材后重试');
@@ -232,19 +249,46 @@ export default function BeautyShareChannel({ presets, onExport, onImport, onBusy
         // Prepare every patch before writing, so malformed input cannot partly apply.
         const origin=await readDecorationOrigin(key);
         const customIds=new Set(customThemes.map(item=>item.id));
-        const {prepared,bubbles}=await prepareDecorationApplication(hasAvatarFrameCss(received.preset)?withAvatarFrameTarget(received.preset,avatarTarget):received.preset,parts,targets,theme,
+        const appliedPreset=hasAvatarFrameCss(received.preset)&&!hasSplitAvatarFrames(received.preset)?withAvatarFrameTarget(received.preset,avatarTarget):received.preset;
+        const {prepared,bubbles,bubbleOrigins}=await prepareDecorationApplication(appliedPreset,parts,targets,theme,
           [...customThemes,...Object.values(PRESET_THEMES)],origin,
           id=>customIds.has(id)?readDecorationOrigin('bubble-'+id):Promise.resolve({kind:'builtin'}));
-        for(const bubble of bubbles){await addCustomTheme(bubble);await writeDecorationOrigin('bubble-'+bubble.id,origin);}
+        for(const bubble of bubbles){await addCustomTheme(bubble);await writeDecorationOrigin('bubble-'+bubble.id,bubbleOrigins.get(bubble.id)||origin);}
         for(const {character,changes} of prepared){
           await updateCharacter(character.id,changes.character);
           await DB.saveAsset('decoration_applied_'+character.id,key);
           const rawSlots=await DB.getAsset('decoration_slots_'+character.id);
           const slots:Record<string,string>=rawSlots?JSON.parse(rawSlots):{};
-          const css=received.preset.parts.css;
+          const css=appliedPreset.parts.css;
           const componentBlocks=css?[...css.matchAll(/\/\* sully-composer:(avatar|background) \*\/[\s\S]*?\/\* end-sully-composer:\1 \*\//g)]:[];
-          const componentOnly=componentBlocks.length>0&&!css!.replace(/\/\* sully-composer:(avatar|background) \*\/[\s\S]*?\/\* end-sully-composer:\1 \*\//g,'').trim();
-          for(const part of parts){if(part==='css'&&componentOnly){for(const block of componentBlocks)slots['css:'+block[1]]=key;}else{slots[part]=key;if(part==='css'){delete slots['css:avatar'];delete slots['css:background'];}}}
+          const extraCss=css?css.replace(/\/\* sully-composer:(avatar|background) \*\/[\s\S]*?\/\* end-sully-composer:\1 \*\//g,'').trim():'';
+          const isFullOutfit=Boolean(appliedPreset.parts.layout||extraCss||Object.keys(appliedPreset.parts).filter(k=>k!=='css').length>1);
+          const componentOnly=!isFullOutfit&&componentBlocks.length>0;
+          for(const part of parts){
+            if(part==='css'&&componentOnly){
+              if(componentBlocks.some(block=>block[1]==='background'))slots['css:background']=key;
+              if(componentBlocks.some(block=>block[1]==='avatar')){
+                const frameSlots=readAvatarFrameSlots(css!);
+                if(frameSlots.shared){
+                  slots['css:avatar:user']=key;slots['css:avatar:ai']=key;delete slots['css:avatar'];
+                }else{
+                  // Migrate any legacy shared slot before overwriting only one side so the other side's attribution survives.
+                  if(slots['css:avatar']){slots['css:avatar:user']??=slots['css:avatar'];slots['css:avatar:ai']??=slots['css:avatar'];delete slots['css:avatar'];}
+                  if(frameSlots.user)slots['css:avatar:user']=key;
+                  if(frameSlots.ai)slots['css:avatar:ai']=key;
+                }
+              }
+            }else{
+              slots[part]=key;
+              if(part==='css'){delete slots['css:avatar'];delete slots['css:avatar:user'];delete slots['css:avatar:ai'];delete slots['css:background'];}
+              if(part==='bubbles'&&!appliedPreset.parts.css&&!appliedPreset.parts.layout&&appliedPreset.parts.bubbles){
+                for(const side of ['user','ai'] as const)if(appliedPreset.parts.bubbles[side].avatarDecoration){
+                  if(slots['css:avatar']){slots['css:avatar:user']??=slots['css:avatar'];slots['css:avatar:ai']??=slots['css:avatar'];delete slots['css:avatar'];}
+                  delete slots['css:avatar:'+side];
+                }
+              }
+            }
+          }
           await DB.saveAsset('decoration_slots_'+character.id,JSON.stringify(slots));
           await startBeautyUsage(key,'chat:'+character.id);
         }
@@ -402,7 +446,7 @@ export default function BeautyShareChannel({ presets, onExport, onImport, onBusy
           <label className="block text-sm mt-4">选择应用角色<select disabled={applying||applyAll} value={target} onChange={e => setTarget(e.target.value)} className="block w-full mt-2 p-3 border rounded-xl">
             <option value="">请选择角色</option>{characters.map(character => <option key={character.id} value={character.id}>{character.name}</option>)}
           </select></label>
-          {hasAvatarFrameCss(received.preset)&&<label className="block text-sm mt-4">头像框给谁用<select aria-label="头像框给谁用" disabled={applying} value={avatarTarget} onChange={e=>setAvatarTarget(e.target.value as AvatarFrameTarget)} className="block w-full mt-2 p-3 border rounded-xl">{AVATAR_FRAME_TARGETS.map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></label>}
+          {hasAvatarFrameCss(received.preset)&&!hasSplitAvatarFrames(received.preset)&&<label className="block text-sm mt-4">头像框给谁用<select aria-label="头像框给谁用" disabled={applying} value={avatarTarget} onChange={e=>setAvatarTarget(e.target.value as AvatarFrameTarget)} className="block w-full mt-2 p-3 border rounded-xl">{AVATAR_FRAME_TARGETS.map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></label>}
           <label className="beauty-share-check"><input type="checkbox" disabled={applying} checked={applyAll} onChange={e=>setApplyAll(e.target.checked)}/>应用到所有角色（{characters.length}）</label>
           <p className="text-xs text-slate-500 mt-2">{applyAll?'将替换全部现有角色的对应装扮。':'只替换所选角色的对应装扮。'}{!characters.length && '暂无角色，可稍后创建角色再应用。'}</p>
         </>}

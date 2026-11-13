@@ -1,3 +1,4 @@
+import {mergeAvatarFrameCss} from './avatarFrameTarget';
 import {validateCollaborationCss} from '../features/collaboration/appearance';
 import {MEETING_CSS_SCOPE, MEETING_CSS_HINT, MEETING_CSS_PROMPT} from './meetingAppearance';
 import {JOURNAL_AI_CSS_PROMPT,JOURNAL_CSS_SCOPE_REGEX,JOURNAL_CSS_SCOPE_HINT} from './journalAppearance';
@@ -29,7 +30,8 @@ export function projectWorkshopPreset(preset:DecorationPreset,category:Decoratio
  if(category==='whitebox')return structuredClone(preset);
  const out=makeWorkshopPreset(category);out.name=preset.name;
  if(category==='avatar'||category==='background'){
-  const css=replaceWorkshopCss('',category,workshopCss(preset,category));
+  const raw=replaceWorkshopCss('',category,workshopCss(preset,category));
+  const css=category==='avatar'&&raw?mergeAvatarFrameCss('',raw):raw;
   if(css)out.parts.css=css;else delete out.parts.css;
   if(category==='background'&&preset.parts.background)out.parts.background=preset.parts.background;
  }else if(preset.parts[category]!==undefined)out.parts={[category]:preset.parts[category]};

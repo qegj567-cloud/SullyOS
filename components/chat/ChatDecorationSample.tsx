@@ -1,5 +1,5 @@
 import {renderCollaborationBeautySample} from '../../features/collaboration/CollaborationBeautySample';
-import {avatarFrameLayer,readAvatarFrameTarget} from '../../utils/avatarFrameTarget';
+import {avatarFrameLayer,readAvatarFrameSlots} from '../../utils/avatarFrameTarget';
 import JournalThemeArtwork from '../journal/JournalThemeArtwork';
 import {meetingAppearance, MEETING_READING_CSS, meetingCustomCss} from '../../utils/meetingAppearance';
 import {resolveJournalAppearanceCss,JOURNAL_APPEARANCE_SAFETY_CSS} from '../../utils/journalAppearance';
@@ -59,8 +59,15 @@ export function renderChatDecorationSample(value:unknown,sceneId:string,thumbnai
  }
  const scene=CHAT_PREVIEW_SCENES.find(item=>item.id===sceneId)||CHAT_PREVIEW_SCENES[0];
   const messages=scene.messages.flatMap(message=>{const status=state.transfers?.[message.id];if(!status||message.type!=='transfer'||message.metadata?.receipt)return [message];return [{...message,metadata:{...message.metadata,status}},{...message,id:-message.id,role:'user' as const,metadata:{amount:message.metadata?.amount,receipt:status}}];});
+  const cssSlots=readAvatarFrameSlots(p.css||'');
+  const hasUserFrame=Boolean(cssSlots.shared||cssSlots.user||p.bubbles?.user.avatarDecoration);
+  const hasAiFrame=Boolean(cssSlots.shared||cssSlots.ai||p.bubbles?.ai.avatarDecoration);
+  const sameSharedOnly=Boolean(cssSlots.shared&&!cssSlots.coupled&&!p.bubbles?.user.avatarDecoration&&!p.bubbles?.ai.avatarDecoration)
+   ||Boolean(!cssSlots.shared&&!cssSlots.user&&!cssSlots.ai&&p.bubbles?.user.avatarDecoration&&p.bubbles.user.avatarDecoration===p.bubbles?.ai.avatarDecoration);
+  const splitAvatar=hasUserFrame&&hasAiFrame&&!sameSharedOnly;
+  const singleAvatarSide=hasUserFrame&&!hasAiFrame?'user':'ai';
  const markup=renderToStaticMarkup(thumbnailPart?<main className={`sully-chat-root sample-chat sample-part sample-part-${thumbnailPart}`}>
-  {thumbnailPart==='avatar'&&<div className={`sample-avatar sully-chat-message sully-chat-message-${readAvatarFrameTarget(p.css||'')==='user'?'user':'ai'}`}><span className="sully-chat-avatar-wrap" style={{position:'relative',display:'block',width:100,height:100,margin:'auto'}}><img className="sully-chat-message-avatar-img" src={BEAUTY_PREVIEW_AVATAR} alt="示例头像" style={{width:'100%',height:'100%',borderRadius:'50%'}}/>{p.bubbles?.ai.avatarDecoration&&<img className="sully-chat-avatar-frame" src={p.bubbles.ai.avatarDecoration} alt="" style={{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'contain'}}/>}</span></div>}
+  {thumbnailPart==='avatar'&&(splitAvatar?<div className="sample-avatar sample-avatar-pair" style={{display:'flex',alignItems:'center',justifyContent:'center',gap:28}}>{(['ai','user'] as const).map(side=><div key={side} className={`sully-chat-message sully-chat-message-${side}`}><span className="sully-chat-avatar-wrap" style={{position:'relative',display:'block',width:84,height:84}}><img className="sully-chat-message-avatar-img" src={BEAUTY_PREVIEW_AVATAR} alt="示例头像" style={{width:'100%',height:'100%',borderRadius:'50%'}}/>{p.bubbles?.[side].avatarDecoration&&<img className="sully-chat-avatar-frame" src={p.bubbles[side].avatarDecoration} alt="" style={{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'contain'}}/>}</span></div>)}</div>:<div className={`sample-avatar sully-chat-message sully-chat-message-${singleAvatarSide}`}><span className="sully-chat-avatar-wrap" style={{position:'relative',display:'block',width:100,height:100,margin:'auto'}}><img className="sully-chat-message-avatar-img" src={BEAUTY_PREVIEW_AVATAR} alt="示例头像" style={{width:'100%',height:'100%',borderRadius:'50%'}}/>{p.bubbles?.[singleAvatarSide].avatarDecoration&&<img className="sully-chat-avatar-frame" src={p.bubbles[singleAvatarSide].avatarDecoration} alt="" style={{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'contain'}}/>}</span></div>)}
   {thumbnailPart==='psyche'&&<div className="sample-psyche"><ThinkingChainBlock chain="听到开门的声音，忽然想把刚才看到的那朵云也分享给你。" styleId={p.psyche?.styleId} customColors={p.psyche?.customColors}/></div>}
   {thumbnailPart==='bubbles'&&<div className="sully-chat-messages sample-bubbles">{CHAT_PREVIEW_SCENES.find(item=>item.id==='conversation')!.messages.map((message,index)=><MessageItem key={message.id} msg={message} activeTheme={p.bubbles||defaultBubble} isFirstInGroup={index%2===0} isLastInGroup={index%2===1} charAvatar={BEAUTY_PREVIEW_AVATAR} userAvatar={BEAUTY_PREVIEW_AVATAR} charName="示例角色" onLongPress={noop} onReply={noop} selectionMode={false} isSelected={false} onToggleSelect={noop} showTimestamp="never" suppressEntranceAnimation/>)}</div>}
  </main>:<main className="sully-chat-root sample-chat">

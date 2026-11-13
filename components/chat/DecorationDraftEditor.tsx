@@ -1,4 +1,5 @@
 import {COLLABORATION_UI_THEMES} from '../../features/collaboration/appearance';
+import {AVATAR_FRAME_TARGETS,setAvatarFrameSlot,type AvatarFrameTarget} from '../../utils/avatarFrameTarget';
 import type {WardrobeUsageReader} from '../../utils/wardrobeUsage';
 import { useLocalBackHandler } from '../../hooks/useLocalBackHandler';
 import {MEETING_APPEARANCES} from '../../utils/meetingAppearance';
@@ -26,12 +27,14 @@ import './DecorationDraftEditor.css';
 import {DECORATION_WORKSHOPS,workshopCss,replaceWorkshopCss,projectWorkshopPreset,checkWorkshopCss,workshopPrompt,type DecorationWorkshop} from '../../utils/decorationWorkshop';
 type Shelf=DecorationWorkshop;
 const shelves=DECORATION_WORKSHOPS;
-interface Props {getUsage?:WardrobeUsageReader;outfits?:WardrobeEntry[];onOutfitsChange?:()=>Promise<void>;preset:DecorationPreset;origin:DecorationOrigin;originalKey?:string;theme:OSTheme;sources:WardrobeEntry[];onOpenWorkshop:()=>void;onClose:()=>void;onSaved:(preset:DecorationPreset)=>void;onShareSaved?:(id:string)=>Promise<void>;maker?:Shelf;characterName?:string;onApply?:(preset:DecorationPreset,origin:DecorationOrigin)=>void|Promise<void>}
-export default function DecorationDraftEditor({getUsage,outfits=[],onOutfitsChange,preset,origin,originalKey,theme,sources,onOpenWorkshop,onClose,onSaved,onShareSaved,maker,characterName,onApply}:Props){
+interface Props {getUsage?:WardrobeUsageReader;outfits?:WardrobeEntry[];onOutfitsChange?:()=>Promise<void>;preset:DecorationPreset;origin:DecorationOrigin;initialOrigins?:Record<string,DecorationOrigin>;originalKey?:string;theme:OSTheme;sources:WardrobeEntry[];onOpenWorkshop:()=>void;onClose:()=>void;onSaved:(preset:DecorationPreset)=>void;onShareSaved?:(id:string)=>Promise<void>;maker?:Shelf;characterName?:string;onApply?:(preset:DecorationPreset,origin:DecorationOrigin)=>void|Promise<void>}
+export default function DecorationDraftEditor({getUsage,outfits=[],onOutfitsChange,preset,origin,initialOrigins,originalKey,theme,sources,onOpenWorkshop,onClose,onSaved,onShareSaved,maker,characterName,onApply}:Props){
  const [draft,setDraft]=useState(()=>structuredClone(preset));
  const [extraCss,setExtraCss]=useState('');
- const [origins,setOrigins]=useState<Record<string,DecorationOrigin>>(()=>Object.fromEntries(Object.keys(preset.parts).map(key=>[key,origin])));
+ const [origins,setOrigins]=useState<Record<string,DecorationOrigin>>(()=>initialOrigins!==undefined?{...initialOrigins}:Object.fromEntries(Object.keys(preset.parts).map(key=>[key,origin])));
  const [labels,setLabels]=useState<Partial<Record<Shelf,string>>>({});
+ const [avatarShelfTarget,setAvatarShelfTarget]=useState<AvatarFrameTarget>('both');
+ const [avatarSideLabels,setAvatarSideLabels]=useState<{user?:string;ai?:string}>({});
  const [outfitOpen,setOutfitOpen]=useState(false);const [deleteOutfit,setDeleteOutfit]=useState<WardrobeEntry|null>(null);
  const [sideOpen,setSideOpen]=useState(false);const [saveOpen,setSaveOpen]=useState(false);
  const [layoutOpen,setLayoutOpen]=useState(false);
@@ -89,7 +92,28 @@ export default function DecorationDraftEditor({getUsage,outfits=[],onOutfitsChan
    else if(shelf==='avatar'){
     const css=workshopCss(next,'avatar');
     const fields=['avatarDecoration','avatarDecorationX','avatarDecorationY','avatarDecorationScale','avatarDecorationRotate'] as const;
-    setDraft(old=>{const bubbles=structuredClone(old.parts.bubbles||PRESET_THEMES.default);if(next.parts.bubbles)for(const side of ['user','ai'] as const)for(const field of fields)(bubbles[side] as any)[field]=next.parts.bubbles[side][field];return {...old,parts:{...old.parts,...(next.parts.bubbles?{bubbles}:{}),css:replaceWorkshopCss(old.parts.css||'','avatar',css)}};});
+    if(maker){
+     setDraft(old=>{const bubbles=structuredClone(old.parts.bubbles||PRESET_THEMES.default);if(next.parts.bubbles)for(const side of ['user','ai'] as const)for(const field of fields)(bubbles[side] as any)[field]=next.parts.bubbles[side][field];return {...old,parts:{...old.parts,...(next.parts.bubbles?{bubbles}:{}),css:replaceWorkshopCss(old.parts.css||'','avatar',css)}};});
+    }else{
+     const hasBubbleFrame=Boolean(next.parts.bubbles?.user.avatarDecoration||next.parts.bubbles?.ai.avatarDecoration);
+     if(!css.trim()&&!hasBubbleFrame)throw Error('这份预设没有头像框');
+     const targetSides=avatarShelfTarget==='both'?(['user','ai'] as const):([avatarShelfTarget] as const);
+     setDraft(old=>{
+      let bubbles=old.parts.bubbles?structuredClone(old.parts.bubbles):undefined;
+      if(css.trim()){
+       if(bubbles)for(const side of targetSides)for(const field of fields)delete (bubbles[side] as any)[field];
+       return {...old,parts:{...old.parts,...(bubbles?{bubbles}:{}),css:setAvatarFrameSlot(old.parts.css||'',avatarShelfTarget,css)}};
+      }
+      bubbles=bubbles||structuredClone(PRESET_THEMES.default);
+      if(next.parts.bubbles){
+       for(const side of targetSides){
+        const sourceSide=next.parts.bubbles[side].avatarDecoration?next.parts.bubbles[side]:avatarShelfTarget!=='both'?(next.parts.bubbles.ai.avatarDecoration?next.parts.bubbles.ai:next.parts.bubbles.user):next.parts.bubbles[side];
+        for(const field of fields){if(sourceSide[field]!==undefined)(bubbles[side] as any)[field]=sourceSide[field];else delete (bubbles[side] as any)[field];}
+       }
+      }
+      return {...old,parts:{...old.parts,bubbles,css:setAvatarFrameSlot(old.parts.css||'',avatarShelfTarget,'')}};
+     });
+    }
    }
    else if(shelf==='background'){
     const cssBlock=(next.parts.css||'').match(backgroundBlock)?.[0];
@@ -97,11 +121,34 @@ export default function DecorationDraftEditor({getUsage,outfits=[],onOutfitsChan
     setDraft(old=>({...old,parts:{...old.parts,...(next.parts.background?{background:next.parts.background}:{}),css:[(old.parts.css||'').replace(backgroundBlock,'').trim(),cssBlock].filter(Boolean).join('\n')}}));
    }
    else {const part=next.parts[shelf];if(part===undefined)throw Error('这份预设没有对应内容');setDraft(old=>({...old,parts:{...old.parts,[shelf]:part}}));}
-   setOrigins(old=>({...old,...Object.fromEntries((shelf==='whitebox'?Object.keys(next.parts):[shelf]).map(key=>[key,nextOrigin]))}));setLabels(old=>({...old,[shelf]:entry.name}));setShelf(null);setNotice('已加入搭配');setSideOpen(false);
+   if(!maker&&shelf==='avatar'){
+    setOrigins(old=>{
+     const copy={...old};
+     if(avatarShelfTarget==='both'){copy['avatar:user']=nextOrigin;copy['avatar:ai']=nextOrigin;delete copy.avatar;}
+     else{if(copy.avatar){copy['avatar:user']??=copy.avatar;copy['avatar:ai']??=copy.avatar;delete copy.avatar;}copy['avatar:'+avatarShelfTarget]=nextOrigin;}
+     return copy;
+    });
+    const nextSideLabels=avatarShelfTarget==='both'?{user:entry.name,ai:entry.name}:{...avatarSideLabels,[avatarShelfTarget]:entry.name};
+    const summary=nextSideLabels.user&&nextSideLabels.ai&&nextSideLabels.user===nextSideLabels.ai?nextSideLabels.user:[nextSideLabels.user?`我：${nextSideLabels.user}`:'',nextSideLabels.ai?`TA：${nextSideLabels.ai}`:''].filter(Boolean).join(' · ');
+    setAvatarSideLabels(nextSideLabels);
+    setLabels(prev=>({...prev,avatar:summary||entry.name}));
+   }else{
+    setOrigins(old=>{
+     const copy={...old,...Object.fromEntries((shelf==='whitebox'?Object.keys(next.parts):[shelf]).map(key=>[key,nextOrigin]))};
+     if(shelf==='whitebox'&&next.parts.css!==undefined){delete copy['avatar:user'];delete copy['avatar:ai'];delete copy.avatar;delete copy['background:css'];}
+     if(shelf==='background')delete copy['background:css'];
+     return copy;
+    });
+    if(shelf==='whitebox'){
+     setAvatarSideLabels({});
+     setLabels(old=>{const copy={...old,whitebox:entry.name};delete copy.avatar;return copy;});
+    }else setLabels(old=>({...old,[shelf]:entry.name}));
+   }
+   setShelf(null);setNotice('已加入搭配');setSideOpen(false);
  }catch(e){setError(e instanceof Error?e.message:'无法读取预设');}finally{setBusy(false);}};
  const matches=sources.filter(entry=>entry.kind==='chat-decoration'&&(!shelf||entry.categories?.includes(shelf))&&entry.name.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
  const pageCount=Math.max(1,Math.ceil(matches.length/8));const currentPage=Math.min(page,pageCount-1);
- const loadOutfit=async(entry:WardrobeEntry)=>{setBusy(true);setError('');try{const nextOrigin=await readDecorationOrigin(await entry.attributionKey());if(!canEditDecoration(nextOrigin))throw Error('作者禁止二改');const next=validateDecoration(await (entry.readLocal || entry.read)());setDraft(next);setExtraCss('');setOrigins(Object.fromEntries(Object.keys(next.parts).map(key=>[key,nextOrigin])));setLabels({});setSideOpen(false);setOutfitOpen(false);setNotice('已载入搭配，点击应用搭配后才会更改角色。');}catch(e){setError(e instanceof Error?e.message:'读取失败');}finally{setBusy(false);}};
+ const loadOutfit=async(entry:WardrobeEntry)=>{setBusy(true);setError('');try{const nextOrigin=await readDecorationOrigin(await entry.attributionKey());if(!canEditDecoration(nextOrigin))throw Error('作者禁止二改');const next=validateDecoration(await (entry.readLocal || entry.read)());setDraft(next);setExtraCss('');setOrigins(Object.fromEntries(Object.keys(next.parts).map(key=>[key,nextOrigin])));setLabels({});setAvatarSideLabels({});setSideOpen(false);setOutfitOpen(false);setNotice('已载入搭配，点击应用搭配后才会更改角色。');}catch(e){setError(e instanceof Error?e.message:'读取失败');}finally{setBusy(false);}};
  return createPortal(<div data-dress-guide={!maker?'outfit':undefined} className={`decoration-draft ${maker?'decoration-maker':'decoration-current'}`} role="dialog" aria-modal="true" aria-label={maker?`${shelves.find(([id])=>id===maker)?.[1]}制作器`:'我的搭配'}>
   <header><button data-dress-guide={!maker?'outfit-back':undefined} disabled={busy} onClick={onClose}>‹ 返回</button><strong>{maker?`${shelves.find(([id])=>id===maker)?.[1]}制作器`:'我的搭配'}</strong><button disabled={busy||locked} onClick={()=>save(!maker)}>{busy?'保存中…':maker?'保存预设':'应用搭配'}</button></header>
   <div className="decoration-composer-body"><div className="decoration-composer-preview">
@@ -142,6 +189,6 @@ export default function DecorationDraftEditor({getUsage,outfits=[],onOutfitsChan
   {deleteOutfit&&<BeautyConfirmDialog title="删除这套搭配？" confirm="删除" danger onClose={()=>setDeleteOutfit(null)} onConfirm={async()=>{await deleteLibraryDecoration(deleteOutfit.id);await onOutfitsChange?.();}}><p>只移除搭配收藏，已应用的效果和各部件原件会保留。</p></BeautyConfirmDialog>}
   {saveOpen&&<BeautyConfirmDialog title="保存当前搭配" confirm="保存到搭配栏" onClose={()=>setSaveOpen(false)} onConfirm={async()=>{if(!canEditDecoration(combinedOrigin))throw Error("作者禁止二改");if(!draft.name.trim())throw Error("请填写搭配名称");const result={...preview,name:draft.name.trim()};await saveLibraryDecoration(result,remixOrigin(combinedOrigin),undefined,'outfit');trackBeauty('save','outfit');await onOutfitsChange?.();setNotice('已保存到搭配栏');}}><p>保存这次组合，下次可以整套应用。</p><label>搭配名称<input aria-label="搭配名称" maxLength={60} value={draft.name} onChange={e=>setDraft({...draft,name:e.target.value})}/></label></BeautyConfirmDialog>}
   {editCurrentPsyche&&<DecorationDraftEditor preset={projectWorkshopPreset({...draft,name:'当前心象'},'psyche')} origin={combinedOrigin} theme={theme} sources={sources} maker="psyche" onOpenWorkshop={onOpenWorkshop} onClose={()=>setEditCurrentPsyche(false)} onSaved={next=>{setDraft(old=>({...old,parts:{...old.parts,psyche:next.parts.psyche}}));setEditCurrentPsyche(false);setShelf(null);void onOutfitsChange?.().catch(()=>setError('心象已保存，预设库刷新失败，请重新打开。'));setNotice('心象已保存到预设库；应用搭配后更新角色。');}}/>}
-  {shelf&&<div className="decoration-shelf-overlay"><section role="dialog" aria-modal="true" aria-label="选择搭配预设"><header><strong>{shelves.find(([id])=>id===shelf)?.[1]}</strong><button disabled={busy} onClick={()=>setShelf(null)}>关闭</button></header>{!maker&&shelf==='psyche'&&<button disabled={busy||locked} onClick={()=>setEditCurrentPsyche(true)}>编辑并另存当前心象</button>}<input type="search" aria-label="搜索搭配预设" placeholder="搜索预设名称" value={query} onChange={e=>{setQuery(e.target.value);setPage(0);}}/><div className="decoration-shelf-results decoration-shelf-grid">{matches.slice(currentPage*8,currentPage*8+8).map(entry=><DecorationPresetThumb getUsage={getUsage} key={entry.id} entry={entry} category={shelf} disabled={busy} onChoose={()=>{void choose(entry);}}/>)}{!matches.length&&<p>暂无对应预设，请先在装扮库导入或保存。</p>}</div>{error&&<p role="alert">{error}</p>}<footer><button disabled={busy||currentPage===0} onClick={()=>setPage(currentPage-1)}>上一页</button><span>{currentPage+1} / {pageCount}</span><button disabled={busy||currentPage+1>=pageCount} onClick={()=>setPage(currentPage+1)}>下一页</button></footer></section></div>}
+  {shelf&&<div className="decoration-shelf-overlay"><section role="dialog" aria-modal="true" aria-label="选择搭配预设"><header><strong>{shelves.find(([id])=>id===shelf)?.[1]}</strong><button disabled={busy} onClick={()=>setShelf(null)}>关闭</button></header>{!maker&&shelf==='avatar'&&<div className="decoration-avatar-target" role="group" aria-label="头像框给谁用">{AVATAR_FRAME_TARGETS.map(([id,label])=><button key={id} type="button" disabled={busy} aria-pressed={avatarShelfTarget===id} onClick={()=>setAvatarShelfTarget(id)}>{label}</button>)}</div>}{!maker&&shelf==='psyche'&&<button disabled={busy||locked} onClick={()=>setEditCurrentPsyche(true)}>编辑并另存当前心象</button>}<input type="search" aria-label="搜索搭配预设" placeholder="搜索预设名称" value={query} onChange={e=>{setQuery(e.target.value);setPage(0);}}/><div className="decoration-shelf-results decoration-shelf-grid">{matches.slice(currentPage*8,currentPage*8+8).map(entry=><DecorationPresetThumb getUsage={getUsage} key={entry.id} entry={entry} category={shelf} disabled={busy} onChoose={()=>{void choose(entry);}}/>)}{!matches.length&&<p>暂无对应预设，请先在装扮库导入或保存。</p>}</div>{error&&<p role="alert">{error}</p>}<footer><button disabled={busy||currentPage===0} onClick={()=>setPage(currentPage-1)}>上一页</button><span>{currentPage+1} / {pageCount}</span><button disabled={busy||currentPage+1>=pageCount} onClick={()=>setPage(currentPage+1)}>下一页</button></footer></section></div>}
  </div>,document.body);
 }

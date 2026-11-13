@@ -1,5 +1,5 @@
 import {validateCollaborationAppearance,type CollaborationAppearance} from '../features/collaboration/appearance';
-import {targetAvatarFrameCss} from './avatarFrameTarget';
+import {readAvatarFrameSlots,targetAvatarFrameCss} from './avatarFrameTarget';
 import type {CharacterProfile, OSTheme, ChatTheme} from '../types';
 import {LAYOUT_DEFAULTS, pickDecorationLayout, resolveDecorationTheme} from './chatDecoration';
 import {mergeChatFineTune} from './chatFineTuneCss';
@@ -9,7 +9,7 @@ import {workshopBlock} from './decorationWorkshop';
 import {resolveRefToDataUrl, blobToDataUrl} from './blobRef';
 import {portableCssImages} from './cssImageAssets';
 
-export type WardrobeUsage = '当前使用中' | '部分使用中' | '';
+export type WardrobeUsage = '使用中' | '部分使用中' | '';
 export type WardrobeUsageReader = (pack: unknown) => Promise<WardrobeUsage>;
 const object = (v: any): v is Record<string, any> => !!v && typeof v === 'object' && !Array.isArray(v);
 const css = (v: string) => stripWhiteboxSoundDirective(v).replace(/\/\*[\s\S]*?\*\//g, '').trim();
@@ -66,11 +66,53 @@ export function createWardrobeUsageReader(theme: OSTheme, char: CharacterProfile
     if(key==='sound')expected=sound(value);
     if(key==='psyche')expected=psyche(value);
     if(['date','story','schedule','journal'].includes(key))expected=app(value,key==='date'||key==='story'?'none':'original');
+    if(key==='bubbles'){
+     const bodyMatched=await equal(expected,actual);
+     const hasEmbeddedFrame=Boolean(expected?.user?.avatarDecoration||expected?.ai?.avatarDecoration);
+     if(!hasEmbeddedFrame){matches.push(bodyMatched);continue;}
+     let frameMatched=bodyMatched;
+     if(!frameMatched){
+      for(const side of ['user','ai'] as const){
+       if(expected?.[side]?.avatarDecoration&&actual?.[side]?.avatarDecoration&&await equal(expected[side].avatarDecoration,actual[side].avatarDecoration)){frameMatched=true;break;}
+      }
+     }
+     matches.push(bodyMatched,frameMatched);
+     continue;
+    }
     if(key==='css'){
      const source=String(value||'');
      const blocks=[...source.matchAll(/\/\* sully-composer:(avatar|background) \*\/\n?([\s\S]*?)\/\* end-sully-composer:\1 \*\//g)];
-     if(blocks.length&&!source.replace(workshopBlock('avatar'),'').replace(workshopBlock('background'),'').trim()){
-      for(const block of blocks){const installed=[...String(actual).matchAll(workshopBlock(block[1] as 'avatar'|'background'))].map(m=>m[1]).join('\n');matches.push(await equal(targetAvatarFrameCss(css(block[2]),'both').trim(),targetAvatarFrameCss(css(installed),'both').trim()));}
+     const stripBlocks=(v:string)=>v.replace(workshopBlock('avatar'),'').replace(workshopBlock('background'),'');
+     const isFullOutfit=Boolean(pack.parts.layout||Object.keys(pack.parts).filter(k=>k!=='css').length>1);
+     if(blocks.length){
+      const sourceRest=css(stripBlocks(source));
+      const actualRest=css(stripBlocks(String(actual)));
+      if(sourceRest||isFullOutfit)matches.push(await equal(sourceRest,actualRest));
+      const actualSlots=readAvatarFrameSlots(String(actual));
+      const expectedSlots=readAvatarFrameSlots(source);
+      if(blocks.some(b=>b[1]==='avatar')){
+       const equalFrame=(a:string,b:string)=>equal(targetAvatarFrameCss(css(a),'both').trim(),targetAvatarFrameCss(css(b),'both').trim());
+       if(isFullOutfit||(expectedSlots.user&&expectedSlots.ai)){
+        const expectedUser=expectedSlots.shared??expectedSlots.user??'';
+        const expectedAi=expectedSlots.shared??expectedSlots.ai??'';
+        const actualUser=actualSlots.shared??actualSlots.user??'';
+        const actualAi=actualSlots.shared??actualSlots.ai??'';
+        matches.push(expectedUser?Boolean(actualUser)&&await equalFrame(expectedUser,actualUser):!actualUser);
+        matches.push(expectedAi?Boolean(actualAi)&&await equalFrame(expectedAi,actualAi):!actualAi);
+       }else{
+        // A standalone frame preset is active when worn on either side (or both),
+        // so user and character wearing two different frames both show as in use.
+        const single=expectedSlots.shared||expectedSlots.user||expectedSlots.ai||'';
+        const activeFrames=[actualSlots.shared,actualSlots.user,actualSlots.ai].filter((v):v is string=>!!v);
+        let matched=false;
+        for(const active of activeFrames){if(await equalFrame(single,active)){matched=true;break;}}
+        matches.push(matched);
+       }
+      }
+      for(const block of blocks)if(block[1]==='background'){
+       const installed=[...String(actual).matchAll(workshopBlock('background'))].map(m=>m[1]).join('\n');
+       matches.push(await equal(css(block[2]),css(installed)));
+      }
       continue;
      }
      expected=css(source);actual=css(actual);
@@ -85,7 +127,7 @@ export function createWardrobeUsageReader(theme: OSTheme, char: CharacterProfile
    matches.push(await equal(expected,actual));
    if(pack.customIcons)matches.push(await equal(pack.customIcons,icons));
   }
-  return matches.length&&matches.every(Boolean)?'当前使用中':matches.some(Boolean)?'部分使用中':'';
+  return matches.length&&matches.every(Boolean)?'使用中':matches.some(Boolean)?'部分使用中':'';
  };
  return pack=>{
   if(!object(pack))return Promise.resolve('');
