@@ -221,6 +221,41 @@ it('refreshes one post with one related character context, writes its comment ca
     expect((await DB.getMessagesByCharId(b.id,true)).at(-1)?.content).toContain('下次试试');
 });
 
+it('selects another eligible character before requesting a consecutive self comment',async()=>{
+    await publicSettings({characterWeights:{[a.id]:10,[b.id]:10}});
+    const id=await publishFriendPost('public',user.name,'晚饭');
+    await mutateFriendFeed(f=>{f.posts[0].comments.push({id:'last',authorId:a.id,authorName:a.name,text:'好香',createdAt:Date.now()-1000});});
+    response({kind:'comment',postId:id,comment:'今天做了什么菜？'});
+    await refreshFriendFeed(user,api,undefined,undefined,()=>0,id);
+    expect(safeFetchJson).toHaveBeenCalledOnce();
+    expect((await readFriendFeed()).posts[0].comments.at(-1)?.authorId).toBe(b.id);
+});
+it('does not call the API or enable a zero-weight character when only the last commenter can participate',async()=>{
+    await publicSettings();
+    const id=await publishFriendPost('public',user.name,'晚饭');
+    await mutateFriendFeed(f=>{f.posts[0].comments.push({id:'last',authorId:a.id,authorName:a.name,text:'好香',createdAt:Date.now()-1000});});
+    const result=await refreshFriendFeed(user,api,undefined,undefined,()=>0,id);
+    expect(result.message).toContain('未调用 API');expect(safeFetchJson).not.toHaveBeenCalled();
+    expect((await readFriendFeed()).refreshLease).toBeUndefined();
+});
+it('still permits an NPC-only round when its host wrote the last comment',async()=>{
+    await publicSettings({contentWeights:{self:0,related:100,stranger:0}});
+    const id=await publishFriendPost('public',user.name,'晚饭');
+    await mutateFriendFeed(f=>{f.posts[0].comments.push({id:'last',authorId:a.id,authorName:a.name,text:'好香',createdAt:Date.now()-1000});});
+    response({kind:'none',npcActions:[{kind:'comment',name:'围观饭友',postId:id,text:'想要菜谱'}]});
+    await refreshFriendFeed(user,api,undefined,undefined,()=>0,id);
+    expect(safeFetchJson).toHaveBeenCalledOnce();
+    expect((await readFriendFeed()).posts[0].comments.at(-1)?.authorName).toBe('围观饭友');
+});
+it('retains the post owner for relationship checks when excluding that owner from consecutive comments',async()=>{
+    await publicSettings({characterWeights:{[a.id]:10,[b.id]:10}});
+    await DB.saveCharacter({...b,phoneState:{contacts:[{kind:'real',linkedCharId:a.id,status:'blocked'}]}} as CharacterProfile);
+    const id=await publishFriendPost('public',user.name,'晚饭');
+    await mutateFriendFeed(f=>{Object.assign(f.posts[0],{authorId:a.id,authorName:a.name});
+        f.posts[0].comments.push({id:'last',authorId:a.id,authorName:a.name,text:'自己补充',createdAt:Date.now()-1000});});
+    const result=await refreshFriendFeed(user,api,undefined,undefined,()=>0,id);
+    expect(result.message).toContain('未调用 API');expect(safeFetchJson).not.toHaveBeenCalled();
+});
 it('keeps NPC comments and skips the host comment when an NPC-only round gets both',async()=>{
     await publicSettings({contentWeights:{self:0,related:100,stranger:0}});
     const id=await publishFriendPost('public',user.name,'晒一下晚饭');

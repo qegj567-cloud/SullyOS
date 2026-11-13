@@ -56,6 +56,16 @@ const musicCard = (): Message => ({
 });
 
 describe('MessageItem module layout', () => {
+    it('renders an XHS card as a real note link with a visible copy-link hint', () => {
+        const markup=renderMessage({...htmlCard(),type:'xhs_card',metadata:{xhsNote:{
+            noteId:'a'.repeat(24),title:'晚饭',xsecToken:'abc+=',xsecSource:'pc_search',
+        }}} as Message);
+        expect(markup).toContain('<a href="https://www.xiaohongshu.com/');
+        expect(markup).toContain('xsec_token=abc%2B%3D');
+        expect(markup).toContain('xsec_source=pc_search');
+        expect(markup).toContain('rel="noopener noreferrer"');
+        expect(markup).toContain('长按此处复制链接');
+    });
     const moduleModes = [
         ['center', 'grouped'],
         ['center', 'every_message'],

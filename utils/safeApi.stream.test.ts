@@ -34,6 +34,51 @@ const lingeringSseResponse = (events: string[], onCancel: () => void) => new Res
 
 afterEach(() => vi.restoreAllMocks());
 
+describe('compatible thinking response formats', () => {
+    it.each(['reasoning', 'thinking', 'reasoning_details', 'content'])(
+        'normalizes non-stream %s without putting thoughts in the answer', async field => {
+            const message: any = {content:'你好',reasoning_content:''};
+            message[field] = field === 'reasoning_details' ? [{type:'reasoning.summary',summary:'摘要'}]
+                : field === 'content' ? [{text:'摘要',thought:true},{text:'你好'}] : '摘要';
+            vi.stubGlobal('fetch',vi.fn(async () => new Response(JSON.stringify({choices:[{message}]}),
+                {headers:{'content-type':'application/json'}})));
+            const data = await safeFetchJson('https://api.test/v1/chat/completions',{method:'POST',body:'{}'},0,0);
+            expect(data.choices[0].message.content).toBe('你好');
+            expect(data.choices[0].message.reasoning_content).toBe('摘要');
+        },
+    );
+
+    it.each([true,false])('keeps structured SSE summaries separate (stream callbacks: %s)', async streaming => {
+        const deltas = ['First',' ','thought'].map(text => ({reasoning_content:'',reasoning:text,
+            reasoning_details:[{type:'reasoning.text',text}]}));
+        deltas.push({reasoning_details:[{type:'reasoning.encrypted',data:'opaque'}],content:'你好'} as any);
+        const events=deltas.map(delta => `data: ${JSON.stringify({choices:[{delta}]})}\n\n`);
+        events.push('data: [DONE]\n\n');
+        vi.stubGlobal('fetch',vi.fn(async () => sseResponse(events)));
+        const onDelta=vi.fn(), onReasoningDelta=vi.fn();
+        const data=await safeFetchJson('https://api.test/v1/chat/completions',{method:'POST',body:'{}'},0,0,undefined,
+            streaming ? {onDelta,onReasoningDelta} : undefined);
+        expect(data.choices[0].message).toMatchObject({content:'你好',reasoning_content:'First thought'});
+        if (streaming) {
+            expect(onDelta.mock.calls.map(args=>args[0]).join('')).toBe('你好');
+            expect(onReasoningDelta.mock.calls.map(args=>args[0]).join('')).toBe('First thought');
+        }
+    });
+
+    it('reads detail-only increments and one-shot SSE thought content arrays', async () => {
+        const events = [
+            {delta:{reasoning_details:[{type:'reasoning.summary',summary:'先想'}]}},
+            {message:{content:[{text:'后想',thought:true},{type:'text',text:'你好'}]}},
+        ].map(choice=>`data: ${JSON.stringify({choices:[choice]})}\n\n`);
+        events.push('data: [DONE]\n\n');
+        vi.stubGlobal('fetch',vi.fn(async () => sseResponse(events)));
+        const onDelta=vi.fn();
+        const data=await safeFetchJson('https://api.test/v1/chat/completions',{method:'POST',body:'{}'},0,0,undefined,{onDelta});
+        expect(data.choices[0].message).toMatchObject({content:'你好',reasoning_content:'先想后想'});
+        expect(onDelta.mock.calls.map(args=>args[0]).join('')).toBe('你好');
+    });
+});
+
 describe('safeFetchJson streaming', () => {
     it('SSE 增量触发 onDelta 且最终 completion 与整包解析一致', async () => {
         const events = [

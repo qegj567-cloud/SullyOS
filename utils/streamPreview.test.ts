@@ -90,6 +90,22 @@ describe('computeStreamPreviewBubbles', () => {
 });
 
 describe('extractStreamingEmbeddedThinking', () => {
+    it('a closed block followed by an open block on the same line never leaks later lines', () => {
+        const text='<think>第一段</think>你好<think>第二段\n不能上屏\n';
+        expect(computeStreamPreviewBubbles(text)).toEqual(['你好']);
+        expect(extractStreamingEmbeddedThinking(text)).toBe('第一段\n\n第二段\n不能上屏');
+    });
+
+    it('an unfinished multi-line opening tag stays hidden until it completes', () => {
+        expect(computeStreamPreviewBubbles('你好\n<thinking\nmode="summary"\n')).toEqual(['你好']);
+        expect(computeStreamPreviewBubbles('你好\n<thinking\nmode="summary">\n摘要\n')).toEqual(['你好']);
+    });
+
+    it('tag attributes and a closing space do not leak thoughts into preview', () => {
+        const text='<thinking mode="summary">\n第一段\n</thinking >\n你好\n<thought>后半段\n';
+        expect(extractStreamingEmbeddedThinking(text)).toBe('第一段\n\n后半段');
+        expect(computeStreamPreviewBubbles(text)).toEqual(['你好']);
+    });
     it('实时提取仍未闭合的 think 尾块', () => {
         expect(extractStreamingEmbeddedThinking('<think>刚想到这里')).toBe('刚想到这里');
     });

@@ -844,6 +844,31 @@ describe('double-bracket sticker history output', () => {
     });
 });
 
+describe('心象与正文分离', () => {
+    it.each([true,false])('trailing unfinished thinking is stored only when enabled (%s)', async enabled => {
+        const charId = `c-thought-tail-${enabled}`;
+        const ctx = makeCtx(charId,[]);
+        ctx.instantRender = true;
+        ctx.char.showThinkingChain = enabled;
+        const raw='<think mode="summary">第一段</think >你好<thinking>后半段';
+        ctx.initialData={choices:[{message:{content:raw,reasoning:'原生摘要'}}]};
+        await applyAssistantPostProcessing(raw,ctx);
+        const messages=await DB.getRecentMessagesByCharId(charId,20);
+        expect(messages.map(m=>m.content)).toEqual(['你好']);
+        expect(messages[0].metadata?.thinkingChain).toBe(enabled ? '原生摘要\n\n第一段\n\n后半段' : undefined);
+    });
+
+    it('does not hide unmarked English analytical prose', async () => {
+        const charId='c-thought-unmarked';
+        const ctx=makeCtx(charId,[]);
+        ctx.instantRender=true;
+        const raw="The patient's recollection aligns with the timeline.";
+        await applyAssistantPostProcessing(raw,ctx);
+        const messages=await DB.getRecentMessagesByCharId(charId,20);
+        expect(messages.map(m=>m.content)).toEqual([raw]);
+    });
+});
+
 describe('停止上屏', () => {
     it('第一条显示后停止，不落后续正文，也不生成错误提示', async () => {
         const { createReplyRun, publishReplyDisplay, stopReplyRuns } = await import('./chatReplyCancellation');

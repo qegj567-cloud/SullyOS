@@ -11,6 +11,7 @@
  */
 
 import { classifyFetchFailure, parseTargetUrl } from './networkFailureDiagnosis';
+import { buildXhsNoteLink } from './xhsNoteLink';
 
 export interface McpToolResult {
     success: boolean;
@@ -713,9 +714,14 @@ export const XhsMcpClient = {
         sort_by?: string; note_type?: string; publish_time?: string; search_scope?: string; location?: string;
     }, signal?: AbortSignal): Promise<McpToolResult> => {
         signal?.throwIfAborted();
-        return detectMode(serverUrl) === 'bridge'
+        const result = await (detectMode(serverUrl) === 'bridge'
             ? bridgePost(serverUrl, 'search', { keyword, ...options }, signal)
-            : mcpCallTool(serverUrl, 'search', { keyword }, signal);
+            : mcpCallTool(serverUrl, 'search', { keyword }, signal));
+        if (result.success) for (const note of extractNotesFromMcpData(result.data)) {
+            if (note && typeof note === 'object' && !note.xsecSource && !note.xsec_source
+                && !note.url && !note.note_url && !note.shareUrl && !note.share_url) note.xsecSource = 'pc_search';
+        }
+        return result;
     },
 
     getRecommend: async (serverUrl: string, signal?: AbortSignal): Promise<McpToolResult> => {
@@ -1013,6 +1019,9 @@ export const normalizeNote = (n: any): {
     commentCount: number;
     shareCount: number;
     xsecToken?: string;
+    xsecSource?: string;
+    url?: string;
+    platform?: 'xhs' | 'rednote';
     coverUrl?: string;
     type?: string;
 } => {
@@ -1030,8 +1039,14 @@ export const normalizeNote = (n: any): {
     const collectsRaw = n.collects ?? n.collected_count ?? interact.collected_count ?? interact.collectedCount ?? 0;
     const commentCountRaw = n.commentCount ?? n.comment_count ?? interact.comment_count ?? interact.commentCount ?? 0;
     const shareCountRaw = n.shareCount ?? n.share_count ?? interact.share_count ?? interact.shareCount ?? 0;
+    const noteId = n.noteId || n.note_id || n.id || card?.note_id || card?.noteId || '';
+    const platform = n.platform === 'rednote' || n.platform === 'xhs' ? n.platform : litePlatform === 'rednote' ? 'rednote' : 'xhs';
+    const xsecToken = n.xsecToken || n.xsec_token || card?.xsec_token || card?.xsecToken || undefined;
+    const xsecSource = n.xsecSource || n.xsec_source || card?.xsec_source || card?.xsecSource || undefined;
+    const url = buildXhsNoteLink({noteId, platform, xsecToken, xsecSource, url:n.url || n.note_url,
+        shareUrl:n.shareUrl || n.share_url || card?.share_url});
     return {
-        noteId: n.noteId || n.note_id || n.id || card?.note_id || card?.noteId || card?.noteId || '',
+        noteId,
         title: n.title || n.display_title || n.displayTitle || card?.display_title || card?.displayTitle || '',
         desc: (n.desc || n.description || n.content || card?.desc || card?.description || card?.title || '').slice(0, 500),
         author: n.author || n.nickname || n.user?.nickname || n.user?.name || card?.user?.nickname || card?.user?.name || '',
@@ -1040,7 +1055,7 @@ export const normalizeNote = (n: any): {
         collects: parseXhsCount(collectsRaw),
         commentCount: parseXhsCount(commentCountRaw),
         shareCount: parseXhsCount(shareCountRaw),
-        xsecToken: n.xsecToken || n.xsec_token || card?.xsec_token || card?.xsecToken || undefined,
+        xsecToken, xsecSource, url, platform,
         coverUrl,
         type: n.type || card?.type || undefined,
     };

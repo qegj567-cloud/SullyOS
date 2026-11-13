@@ -1134,7 +1134,7 @@ export const useChatAI = ({
             //  - thinking.type='enabled' / budget_tokens：Anthropic 原生与多数官方代理
             //  - reasoning_effort：OpenAI 系（o1/o3、GLM-4.5、deepseek-reasoner 等）
             //  - extra_body.thinking：LiteLLM 系桥
-            // 关掉则一个都不传，避免无谓的 thinking token 计费。
+            // 关掉则不主动传这些参数；这不等于关闭模型推理，Gemini 等仍可能产生思考用量。
             // ⚠️ 工具模式(瑞幸点单/麦当劳)下绝不带 thinking/reasoning 参数: "thinking + tools" 同发
             //    Gemini 等会直接 400 INVALID_ARGUMENT —— 表现就是"开了思考链的角色一点单就报错,
             //    换个没开思考链的角色就好"。工具循环优先, 思考链这一轮让步。

@@ -54,36 +54,34 @@ const ThinkingChainSettingsModal: React.FC<Props> = ({ isOpen, onClose, value, o
                     <section className="rounded-2xl bg-amber-50/70 border border-amber-200/70 px-3.5 py-3 text-[11px] leading-[1.7] text-slate-600">
                         <div className="font-bold text-amber-700 mb-1 text-[11.5px]">⚠ 先看这里：「心象」到底是什么</div>
                         <p>
-                            这是 AI 模型**自己原生输出的思考链**——模型自带的思考过程。
+                            「心象」展示模型或渠道返回的思考文字。有些模型只提供摘要，不代表完整的内部思考，也不保证每轮都有。
                         </p>
                         <p className="mt-2">
-                            正因如此——**它的本质决定了它不会像角色台词那样鲜活**，更像看一个演员在化妆间的喃喃自语，而不是舞台上的台词。这个功能本来就是给"喜欢看大模型思维链"的用户准备的彩蛋，**不一定适合每个人**。
+                            这些文字可能是分析、规划或自言自语，语气不一定像角色台词。如果觉得影响沉浸感，可以关闭显示。
                         </p>
                         <p className="mt-2">
-                            还有一点同样由这个本质决定:思维链**不进入上下文**,也**不会成为角色真实回复的一部分**——它只反映当前模型这一轮的思考瞬间。所以**下一轮,角色不会记得自己上一轮在想什么**,ta 只会基于真正发出去的那段回复(以及对话历史)往下走。
+                            被识别为心象的文字会与聊天正文分开保存，不作为普通聊天记录传给下一轮。角色实际说出口的内容仍以聊天气泡为准。
                         </p>
                         <p className="mt-2">
-                            如果你看到思考链觉得跳戏 / 影响沉浸感 / 觉得太"AI"——直接关掉就好，不会有任何损失，角色回复本身完全不受影响。
+                            关闭「心象」会停止显示新回复的心象卡片，但不等于关闭模型本身的推理，也不保证减少思考用量。Gemini 等模型可能仍会思考。
                         </p>
-                        <p className="mt-2 text-slate-500">看不太懂上面在说啥？去问给你 API 的人，他/她会比这里讲得清楚。</p>
                         <div className="mt-2.5 pt-2.5 border-t border-amber-200/60">
                             <div className="font-bold text-amber-700 mb-1 text-[11.5px]">开了但没看到「心象」卡片？</div>
                             <ul className="list-disc pl-4 space-y-0.5">
-                                <li><b>你的模型不带思考链</b> → 请问你 API 提供者哪些模型支持 thinking，或自己查找</li>
-                                <li><b>这一轮模型没思考</b>（短回复 / 模型自己判断不需要） → 正常现象，下一轮可能就有</li>
-                                <li><b>代理拒绝转发 thinking 字段</b> → 跟 API 提供方确认对应模型是否启用了 extended thinking</li>
+                                <li>模型或渠道没有提供可显示的思考文字，或这一轮没有返回摘要。</li>
+                                <li>摘要可能比实际推理短；没有卡片也不代表模型没有思考。</li>
+                                <li>同一模型在别的平台有、这里没有时，可向渠道确认是否分别返回了思考和正文。</li>
                             </ul>
                         </div>
                         <div className="mt-2.5 pt-2.5 border-t border-amber-200/60">
                             <div className="font-bold text-amber-700 mb-1 text-[11.5px]">思考链一直是英文怎么办？</div>
                             <p>
-                                这通常**不是模型本身的问题**——同一个模型走官方渠道（Anthropic / OpenAI / 智谱直连等）能正常保持中文，是中转 API 把 system prompt 截短或改写造成的。可以试：
+                                思考摘要的语言由模型和渠道决定，仅凭英文无法判断是哪一方出了问题。可以在下面的追加提示词里写「请用中文概括思考」，但不保证模型会遵循。
                             </p>
-                            <ul className="list-disc pl-4 space-y-0.5 mt-1">
-                                <li>下面「追加提示词」里再加一条肘击：「thinking 必须中文，禁止英文」</li>
-                                <li>直接在聊天里跟角色说一句「用中文想」</li>
-                                <li>换一个跑得动官克的渠道</li>
-                            </ul>
+                        </div>
+                        <div className="mt-2.5 pt-2.5 border-t border-amber-200/60">
+                            <div className="font-bold text-amber-700 mb-1 text-[11.5px]">思考文字出现在聊天气泡里？</div>
+                            <p>先更新页面，再试一次新回复。如果仍然出现，请反馈完整模型名、是否流式，以及渠道是否把思考混在正文里。无需清空聊天记录；关闭心象也无法可靠隐藏没有标记的正文。</p>
                         </div>
                     </section>
 

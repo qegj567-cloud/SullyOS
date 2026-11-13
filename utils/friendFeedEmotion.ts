@@ -392,7 +392,9 @@ export async function landFriendFeedEmotionAction(charId: string, action: unknow
             &&(n.replyToNpcIndex===undefined||n.kind==='comment'&&kept[n.replyToNpcIndex as number].kind==='comment'&&kept[n.replyToNpcIndex as number].postId===n.postId)
             &&(n.replyToCommentId===undefined||n.kind==='comment'&&!!localReply(n.postId,n.replyToCommentId))
             &&(n.replyToSourceCommentId===undefined||n.kind==='comment'&&!!sourceReply(n.postId,n.replyToSourceCommentId)));
-        if (kind === 'comment' && !canComment(row.postId, charId)) return reject('评论目标已变化、不可见，或该角色刚刚回复过');
+        if (kind === 'comment' && !canComment(row.postId, charId)) return reject(target(row.postId)
+            ? '这位角色已经回复过了，本次没有重复发布。你可以先接一句，再刷新评论'
+            : '要回复的动态已变化或当前不可见，请返回动态后重新刷新');
         if ((kind === 'post' || kind === 'repost') && (!request.canPost || job || feed.posts.some(p =>
             !p.synced && p.authorId === charId && (request.source !== 'refresh' && Date.now() - p.createdAt < RESERVATION_TIME || friendPostText(p)===friendPostText({text:(row.text as string).trim(),imageCards:cards}))))) return reject('本人动态与已有内容重复，或本轮不允许发帖');
         const repostSource = kind === 'repost' ? target(row.postId)?.source : undefined;
@@ -413,7 +415,7 @@ export async function landFriendFeedEmotionAction(charId: string, action: unknow
             .map(normalize));
         const npcNames = new Set<string>();
         const blockedNpcNames=new Set((char.phoneState?.contacts||[]).filter(c=>c.kind==='npc'&&['blocked','deleted'].includes(c.status)).map(c=>normalize(c.name)));
-        if (npcs.some(npc => realNames.has(normalize(npc.name)))) return reject('路人姓名与用户或真实角色重合，内容未保存');
+        if (npcs.some(npc => realNames.has(normalize(npc.name)))) return reject('生成的路人用了你、已有角色或原帖作者的名字，为避免冒名，本次未发布。可在哔哔设置中暂时关闭路人，先让角色本人参与');
         // A candidate post that changed since the request means the whole round read stale material.
         if (npcs.some(npc => npc.kind === 'comment' && request.posts.some(p => p.id === npc.postId) && !visible.some(p => p.id === npc.postId
             && request.posts.some(r => r.id === p.id && r.signature === postSignature(p))))) return reject('评论目标已变化，请重新刷新');

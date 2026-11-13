@@ -114,14 +114,14 @@ describe('手机小红书分享回归', () => {
       success: true, data: { finalUrl: captchaUrl },
     }))));
     const expanded = await expandShortUrl(shortUrl);
-    expect(extractXhsNoteLink(expanded)).toEqual({ noteId, xsecToken: 'test+token=' });
+    expect(extractXhsNoteLink(expanded)).toMatchObject({ noteId, xsecToken: 'test+token=', xsecSource:'app_share', url:noteUrl });
     expect(extractXhsNoteId(expanded)).toBe(noteId);
   });
 
   it('兼容直接笔记 URL 和电脑版文案，token 仅解码一次', () => {
-    expect(extractXhsNoteLink(noteUrl)).toEqual({ noteId, xsecToken: 'test+token=' });
+    expect(extractXhsNoteLink(noteUrl)).toMatchObject({ noteId, xsecToken: 'test+token=', xsecSource:'app_share', url:noteUrl });
     expect(extractXhsNoteLink(`80 【胡闹厨房别太胡闹 - 兮橙 | 小红书】 😆 code 😆 [https://www.xiaohongshu.com/discovery/item/${noteId}?xsec_token=desktop_token=](https://www.xiaohongshu.com/discovery/item/${noteId}?xsec_token=desktop_token=)`))
-      .toEqual({ noteId, xsecToken: 'desktop_token=' });
+      .toMatchObject({ noteId, xsecToken: 'desktop_token=' });
     expect(extractXhsNoteLink(noteUrl.replace('test%2Btoken%3D', 'test%253D'))?.xsecToken).toBe('test%3D');
   });
 
