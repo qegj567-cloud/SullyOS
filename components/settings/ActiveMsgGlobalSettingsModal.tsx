@@ -312,6 +312,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
   // 「生成 Master Key」只在本次打开期间展示，前端不落盘——它是 worker 侧密钥，粘进 CF env 即可。
   const [generatedMasterKey, setGeneratedMasterKey] = useState('');
   const [generatedServerToken, setGeneratedServerToken] = useState('');
+  const [serverTokenOpen, setServerTokenOpen] = useState(false);
 
   // 一键部署：填一枚 CF Token，剩下的（建库、传 worker、写密钥、加定时）都自动做完。
   // Token 只在这次部署期间留在内存里，成功与否都不落盘——它是能改整个账号 Workers 的
@@ -1332,9 +1333,8 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
           ) : null}
 
           <p className="text-[10px] leading-relaxed text-slate-400">
-            浏览器不能直接调 Cloudflare 的接口（它不给跨域），所以这枚 Token 会经过本站的
-            网络代理 Worker 转发一次。部署完它会作为密钥存进<strong>你自己的</strong> Worker，
-            以后「更新后端」用的就是它；本页不保存。介意的话可以手动配置。
+            Token 会经本站中转一次，部署完存进<strong>你自己的</strong> Worker，以后更新后端也用它；
+            本页不保存。介意的话可以手动配置。
           </p>
 
           {/* 手动配置只给明确选了这条路的人看：入口做成一行浅色小字，平时所有人都走上面的一键部署。 */}
@@ -1421,7 +1421,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
                 <div className="space-y-1">
                   <code className="font-mono text-[11px] text-slate-600">AMSG_SERVER_TOKEN（可选）</code>
                   <p className="text-[11px] text-slate-400">
-                    防止别人滥用你的 Worker。值 = 下面「共享密钥」填的那串，两边一致即可；不配则端点全开。
+                    防止别人滥用你的 Worker。值 = 下面「共享密钥」（点「展开」才出现）填的那串，两边一致即可；不配则端点全开。
                   </p>
                 </div>
               </div>
@@ -1462,28 +1462,46 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
             </a>
           </div>
 
-          <div>
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">
-              共享密钥（可选）
-            </label>
-            <div className="flex gap-2">
-              <input
-                type="password"
-                value={config.serverToken || ''}
-                onChange={(event) => patchConfig({ serverToken: event.target.value })}
-                placeholder="worker 配了 AMSG_SERVER_TOKEN 才需要填"
-                className="flex-1 bg-white/70 border border-slate-200 rounded-2xl px-4 py-3 text-sm"
-              />
-              <button
-                type="button"
-                onClick={() => void handleGenerateServerToken()}
-                className="shrink-0 px-3 py-3 text-xs rounded-2xl font-bold bg-white border border-slate-200 text-slate-600 active:scale-95 transition-transform"
-              >
-                随机
-              </button>
-            </div>
-            {generatedServerToken ? (
-              <SecretReveal value={generatedServerToken} className="mt-1.5" />
+          {/*
+            共享密钥默认收着：一键部署会自己生成并填好，跟 Worker 上的 AMSG_SERVER_TOKEN 是同一串。
+            这里一改（尤其是误点「随机」）两边就对不上，之后每个请求都 401。只有手动配置或
+            从别的设备搬过来的人才需要动它，所以入口做成一行浅色小字，点开才有输入框。
+          */}
+          <div className="space-y-2">
+            <button
+              type="button"
+              aria-expanded={serverTokenOpen}
+              onClick={() => setServerTokenOpen((prev) => !prev)}
+              className="w-full flex items-center justify-between text-left text-[11px] font-bold text-slate-400 pl-1"
+            >
+              <span>共享密钥 · {config.serverToken ? '已填好' : '未填'}</span>
+              <span>{serverTokenOpen ? '收起' : '展开'}</span>
+            </button>
+            {serverTokenOpen ? (
+              <>
+                <p className="text-[11px] leading-relaxed text-slate-400 pl-1">
+                  一键部署已经自动填好，不用动。改了的话要和 Worker 上的 AMSG_SERVER_TOKEN 保持一致，否则会连不上。
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    value={config.serverToken || ''}
+                    onChange={(event) => patchConfig({ serverToken: event.target.value })}
+                    placeholder="worker 配了 AMSG_SERVER_TOKEN 才需要填"
+                    className="flex-1 bg-white/70 border border-slate-200 rounded-2xl px-4 py-3 text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void handleGenerateServerToken()}
+                    className="shrink-0 px-3 py-3 text-xs rounded-2xl font-bold bg-white border border-slate-200 text-slate-600 active:scale-95 transition-transform"
+                  >
+                    随机
+                  </button>
+                </div>
+                {generatedServerToken ? (
+                  <SecretReveal value={generatedServerToken} className="mt-1.5" />
+                ) : null}
+              </>
             ) : null}
           </div>
 
@@ -1502,10 +1520,6 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
               ? provisionStep || '部署中…'
               : loading ? '处理中...' : isConnected ? '重新连接并验证' : '连接并启用'}
           </button>
-
-          <p className="text-xs leading-relaxed text-slate-500">
-            「连接」会自动在你的 D1 里把表建好（幂等，重复点没关系），不用手动执行 SQL。
-          </p>
 
           {isConnected ? (
             <div className="pt-1 space-y-2 border-t border-slate-200">
@@ -1841,8 +1855,8 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
                 </p>
               ) : (
                 <p className="text-xs leading-relaxed text-slate-500">
-                  推送跟着「排程时所在的设备」走：每条任务到点后，推给保存这条排程时用的那台设备。
-                  换了设备（或者换了浏览器）之后，在新设备上把排程重新保存一次，之后的推送就发到这台。若你的 iOS 版本不支持网页推送，或受网络影响收不到通知，可切换到上方的「第三方推送 App」。
+                  若你的 iOS 版本不支持网页推送，或受网络影响（如谷歌浏览器）收不到通知，可切换到上方的「第三方推送 App」。
+                  换了设备或浏览器，在新设备上点一次「开启通知与推送」，会覆盖原来的订阅，之后通知只发到新设备。
                 </p>
               )}
               {pushStatus?.needsDistributor ? (
@@ -2059,7 +2073,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
     <>
       {stepHeader('要不要把聊天也交给云端', '这一步可选，以后随时能回来改。')}
       <div className={mutedCardClass}>
-        {cardHeader('即时对话', instantStatusText, instantStatusClass)}
+        {cardHeader('即时对话（防杀后台）', instantStatusText, instantStatusClass)}
         {instantBody}
       </div>
     </>
@@ -2124,7 +2138,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
       {/* 不自动展开：「Worker 认不认即时对话」是异步探的，探到之前跟「不支持」分不出来，
           按它展开的话每个正常用户打开面板都会被弹开一次。状态那几个字变黄已经够提醒了。 */}
       <FoldCard
-        title="即时对话"
+        title="即时对话（防杀后台）"
         status={instantStatusText}
         statusClass={instantStatusClass}
         className="bg-slate-50 border-slate-200"

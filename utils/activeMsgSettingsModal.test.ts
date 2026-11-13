@@ -139,6 +139,19 @@ describe('主动消息 2.0 配置入口', () => {
     expect(host.textContent).toContain('正在检查推送状态');
   });
 
+  it('共享密钥默认收着，点开才有输入框和「随机」', async () => {
+    client.getGlobalConfig.mockResolvedValue({ ...initialConfig, serverToken: 'deployed-token' });
+    await render();
+    await skipGuide();
+    expect(host.querySelector('input[placeholder="https://amsg.你的账号.workers.dev"]')).not.toBeNull();
+    expect(host.querySelector('input[placeholder="worker 配了 AMSG_SERVER_TOKEN 才需要填"]')).toBeNull();
+    expect(Array.from(host.querySelectorAll('button')).some((item) => item.textContent === '随机')).toBe(false);
+    expect(host.textContent).toContain('共享密钥 · 已填好');
+    await expand('共享密钥');
+    expect(host.querySelector<HTMLInputElement>('input[placeholder="worker 配了 AMSG_SERVER_TOKEN 才需要填"]')?.value).toBe('deployed-token');
+    expect(Array.from(host.querySelectorAll('button')).some((item) => item.textContent === '随机')).toBe(true);
+  });
+
   it('推送检查失败后保留配置，并能单独重试', async () => {
     client.getPushStatus.mockRejectedValueOnce(new Error('Push service failed'));
     await render();

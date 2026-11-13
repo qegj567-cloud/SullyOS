@@ -92,9 +92,9 @@ describe('② 订阅刷新接线（SW 标记 ↔ 主线程消费）', () => {
 });
 
 describe('④ 多设备说明文案', () => {
-  it('全局设置弹窗的通知区块里说明「推送跟着排程时所在的设备走」', () => {
+  it('全局设置弹窗的通知区块里说明「换设备要重新开启，会覆盖原来的订阅」', () => {
     const src = read('../components/settings/ActiveMsgGlobalSettingsModal.tsx');
-    expect(src).toContain('排程时所在的设备');
-    expect(src).toContain('重新保存一次');
+    expect(src).toContain('换了设备或浏览器');
+    expect(src).toContain('会覆盖原来的订阅');
   });
 });
