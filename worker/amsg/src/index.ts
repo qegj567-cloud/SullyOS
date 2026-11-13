@@ -104,7 +104,11 @@ import {
 } from '../../../utils/amsgLimits';
 import { resolveFireSceneSong } from '../../../utils/amsgFireScene';
 import {
-  type AmsgFireSkipTaskBrief, buildFireSkipResult, shouldReportFireSkip,
+  type AmsgFireSkipTaskBrief,
+  type AmsgFireSkipUsage,
+  type AmsgProactiveKind,
+  buildFireSkipResult,
+  shouldReportFireSkip,
 } from '../../../utils/amsgFireSkipResult';
 import { buildFireTaskListBlock, currentOccurrenceMs, isPendingTask, shortTaskId } from '../../../utils/amsg2Tasks';
 import {
@@ -555,6 +559,14 @@ interface FireStash {
   emotionLatePending: boolean;
   /** 本轮可顺手清理的过期或超量 `chat_stop:<uuid>` 键。 */
   staleStoppedKeys?: string[];
+  /** 定时任务细分身份與多轮模型用量累加（供客户端写入「API 调用记录」）。 */
+  away?: boolean;
+  dateLeave?: boolean;
+  selfScheduled?: boolean;
+  llmRounds?: number;
+  llmRoundsWithUsage?: number;
+  promptTokensAcc?: number;
+  completionTokensAcc?: number;
 }
 
 const getFireStash = (scratch: Record<string, unknown> | undefined): FireStash | undefined =>
@@ -835,6 +847,28 @@ const writeLastSkip = async (
   }
 };
 
+const proactiveKindOf = (
+  stash: Pick<FireStash, 'away' | 'dateLeave' | 'selfScheduled'>,
+): AmsgProactiveKind => (
+  stash.away ? 'away' : stash.dateLeave ? 'dateLeave' : stash.selfScheduled ? 'self' : 'scheduled'
+);
+
+const readStashUsage = (
+  stash: Pick<FireStash, 'promptTokensAcc' | 'completionTokensAcc'>,
+): { promptTokens?: number; completionTokens?: number } | undefined => {
+  const pt = stash.promptTokensAcc;
+  const ct = stash.completionTokensAcc;
+  if (pt === undefined && ct === undefined) return undefined;
+  return {
+    ...(pt !== undefined ? { promptTokens: pt } : {}),
+    ...(ct !== undefined ? { completionTokens: ct } : {}),
+  };
+};
+
+const hasPartialStashUsage = (
+  stash: Pick<FireStash, 'llmRounds' | 'llmRoundsWithUsage'>,
+): boolean => (stash.llmRounds ?? 0) > (stash.llmRoundsWithUsage ?? 0);
+
 /**
  * 把「这次到点没发」送回客户端（见 utils/amsgFireSkipResult）。落服务端收件箱、不弹通知，
  * 客户端上线拉到后给角色留一条回执。best-effort：送不出去只是角色少知道一件事。
@@ -847,9 +881,11 @@ const emitFireSkip = async (
     occurrenceMs: number;
     reason: AmsgLastSkip['reason'];
     task?: AmsgFireSkipTaskBrief | null;
+    usage?: AmsgFireSkipUsage;
+    proactiveKind?: AmsgProactiveKind;
   },
 ): Promise<void> => {
-  if (!args.taskUuid || !shouldReportFireSkip(args.reason) || typeof emitResult !== 'function') return;
+  if (!args.taskUuid || (!shouldReportFireSkip(args.reason) && !args.usage) || typeof emitResult !== 'function') return;
   try {
     await emitResult({
       ...buildFireSkipResult({ ...args, taskUuid: args.taskUuid }),
@@ -2431,6 +2467,9 @@ export const amsgHooks = {
       // 下面即时对话那一支起跑（要等请求消息拼完才知道给评估喂什么）。
       emotionEvalPromise: null,
       emotionLatePending: false,
+      away,
+      dateLeave,
+      selfScheduled,
     };
     ctx.scratch.fire = stash;
 
@@ -2687,6 +2726,23 @@ export const amsgHooks = {
     }
     const session = stash.session;
 
+    // 按轮累加模型调用的 token 用量：带工具的一轮会连进多次 onLLMOutput，只取末轮会把前面
+    // 查记忆、跑 MCP、排程那几轮的消耗漏掉。任一轮供应商没报 usage 时保留已累加的部分并标为偏小。
+    stash.llmRounds = (stash.llmRounds ?? 0) + 1;
+    const roundRawUsage = (ctx as { usage?: Record<string, unknown> | null }).usage
+      ?? ((ctx.llmResponse as { usage?: Record<string, unknown> | null } | null)?.usage);
+    if (roundRawUsage && typeof roundRawUsage === 'object') {
+      const pt = typeof roundRawUsage.prompt_tokens === 'number' && Number.isFinite(roundRawUsage.prompt_tokens)
+        ? roundRawUsage.prompt_tokens : undefined;
+      const ct = typeof roundRawUsage.completion_tokens === 'number' && Number.isFinite(roundRawUsage.completion_tokens)
+        ? roundRawUsage.completion_tokens : undefined;
+      if (pt !== undefined || ct !== undefined) {
+        stash.llmRoundsWithUsage = (stash.llmRoundsWithUsage ?? 0) + 1;
+        if (pt !== undefined) stash.promptTokensAcc = (stash.promptTokensAcc ?? 0) + pt;
+        if (ct !== undefined) stash.completionTokensAcc = (stash.completionTokensAcc ?? 0) + ct;
+      }
+    }
+
     // 与本地共用响应解析：别名、结构化摘要、带 thought 标记的 content 块与内联标签。
     // 保留原始 content 块供心象提取；上面的 rawContent 已经只剩正文。
     // 不复用上游的 readReasoningContent：它是「原生**或**第一个内联块」，这里要的是
@@ -2799,12 +2855,17 @@ export const amsgHooks = {
             reason: overlapReason,
             skippedAt: Date.now(),
           });
+          const overlapUsage = readStashUsage(stash);
           await emitFireSkip(ctx.emitResult, {
             charId: stash.charId,
             taskUuid: stash.taskUuid,
             occurrenceMs: stash.occurrenceMs,
             reason: overlapReason,
             task: findTaskBrief(stash.pendingTasks, stash.taskUuid),
+            ...(overlapUsage ? {
+              usage: { ...overlapUsage, ...(hasPartialStashUsage(stash) ? { tokensPartial: true } : {}) },
+              proactiveKind: proactiveKindOf(stash),
+            } : {}),
           });
           return { decision: 'skip-push' as const };
         }
@@ -2814,6 +2875,7 @@ export const amsgHooks = {
     if (decision.decision === 'skip-push' && decision.sideEffects) {
       // 没有聊天正文仍可能有有效卡片/动作。可靠落账后再让任务消费；失败抛出走原重试链。
       if (typeof ctx.emitResult !== 'function') throw new Error('AMSG2_RESULT_UNSUPPORTED: 请更新 Worker 以接收动作结果');
+      const sideEffectUsage = readStashUsage(stash);
       const metadata = {
         ...stripSarSnapshot(stripEmotionEvalSpec(ctx.metadata)),
         ...decision.sideEffects,
@@ -2821,6 +2883,11 @@ export const amsgHooks = {
         ...(stash.scheduledTasks.length ? { amsgSelfScheduled: stash.scheduledTasks } : {}),
         ...((stash.cancelledTasks.length || stash.renewedTasks.length) ? {
           amsgTaskMutations: { cancelled: stash.cancelledTasks, renewed: stash.renewedTasks },
+        } : {}),
+        ...(sideEffectUsage ? {
+          amsgUsage: sideEffectUsage,
+          amsgProactiveKind: proactiveKindOf(stash),
+          ...(hasPartialStashUsage(stash) ? { amsgTokensPartial: true } : {}),
         } : {}),
       };
       await ctx.emitResult({
@@ -2896,12 +2963,17 @@ export const amsgHooks = {
       });
       // 定时主动消息这次没发：也告诉客户端一声，角色下一轮聊天时知道这条没说出去。
       if (!stash.instant) {
+        const skipUsage = readStashUsage(stash);
         await emitFireSkip(ctx.emitResult, {
           charId: stash.charId,
           taskUuid: stash.taskUuid,
           occurrenceMs: stash.occurrenceMs,
           reason: decision.reason,
           task: findTaskBrief(stash.pendingTasks, stash.taskUuid),
+          ...(skipUsage ? {
+            usage: { ...skipUsage, ...(hasPartialStashUsage(stash) ? { tokensPartial: true } : {}) },
+            proactiveKind: proactiveKindOf(stash),
+          } : {}),
         });
       }
       // 即时对话被 skip：一次性行会被上游当成功消费删掉，客户端点名只能看到「行没了、
@@ -2983,21 +3055,13 @@ export const amsgHooks = {
         const lastMeta: Record<string, unknown> = {};
         const toolTrace = condenseToolTrace(session.toolCalls);
         if (toolTrace.length > 0) lastMeta.amsgToolTrace = toolTrace;
-        // 最后一轮的 token 用量（amsg-server 2.6.0-next.15 起 sessionCtx 带 usage，
-        // 来源是供应商响应体的 usage 字段）。只挑三个数、不透传原对象——各家供应商
-        // 往 usage 里塞的私有字段（缓存命中、思考 token 明细…）没必要跟着每条 push 走。
-        // 客户端暂时只存不显示，将来做用量角标不用再动 worker。
-        const usage = (ctx as { usage?: Record<string, unknown> | null }).usage;
-        if (usage && typeof usage === 'object') {
-          const pick = (key: string): number | undefined =>
-            typeof usage[key] === 'number' ? usage[key] as number : undefined;
-          const promptTokens = pick('prompt_tokens');
-          const completionTokens = pick('completion_tokens');
-          if (promptTokens !== undefined || completionTokens !== undefined) {
-            lastMeta.amsgUsage = {
-              ...(promptTokens !== undefined ? { promptTokens } : {}),
-              ...(completionTokens !== undefined ? { completionTokens } : {}),
-            };
+        // 整轮模型调用的累加 token 用量（只挑两个数、不透传供应商私有字段）。
+        // 多轮工具调用且每一轮都报了 usage 时额外标 amsgUsageComplete，客户端不用再一律打「只算末轮」。
+        const stashUsage = readStashUsage(stash);
+        if (stashUsage) {
+          lastMeta.amsgUsage = stashUsage;
+          if ((stash.llmRounds ?? 0) > 1 && !hasPartialStashUsage(stash)) {
+            lastMeta.amsgUsageComplete = true;
           }
         }
         if (stash.emotionEvalPromise) {
@@ -3018,10 +3082,20 @@ export const amsgHooks = {
             lastMeta.amsgEmotionDone = true;
             if (outcome.raw) lastMeta.amsgEmotionUpdate = outcome.raw;
             else if (outcome.error) lastMeta.amsgEmotionError = outcome.error;
+            if (outcome.usage) lastMeta.amsgEmotionUsage = outcome.usage;
           }
         }
         if (Object.keys(lastMeta).length > 0) {
           payloads = attachMetaAt(payloads, payloads.length - 1, lastMeta);
+        }
+      } else if (!stash.instant && payloads.length > 0) {
+        const stashUsage = readStashUsage(stash);
+        if (stashUsage) {
+          payloads = attachMetaAt(payloads, payloads.length - 1, {
+            amsgUsage: stashUsage,
+            amsgProactiveKind: proactiveKindOf(stash),
+            ...(hasPartialStashUsage(stash) ? { amsgTokensPartial: true } : {}),
+          });
         }
       }
 

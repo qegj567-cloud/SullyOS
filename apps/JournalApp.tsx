@@ -524,8 +524,15 @@ Structure:
                         { role: 'user', content: `Users Diary:\n${currentEntry.userPage.text}` }
                     ])),
                     temperature: 0.85
-                })
-            });
+                }),
+                __sullyMeta: {
+                    appId: 'journal',
+                    appName: '交换日记',
+                    charId: selectedChar.id,
+                    charName: selectedChar.name,
+                    purpose: '交换日记回信',
+                },
+            } as RequestInit);
 
             if (!response.ok) throw new Error('API Error');
             const data = await safeResponseJson(response);
@@ -635,7 +642,14 @@ ${charPart}
                     temperature: 0.4,
                     max_tokens: 1200,
                 }),
-            });
+                __sullyMeta: {
+                    appId: 'journal',
+                    appName: '交换日记',
+                    charId: selectedChar.id,
+                    charName: selectedChar.name,
+                    purpose: '日记归档总结',
+                },
+            } as RequestInit);
             if (!response.ok) throw new Error(`主 API 失败 (${response.status})`);
             const data = await safeResponseJson(response);
             let s = (data.choices?.[0]?.message?.content || '').trim();

@@ -12,12 +12,15 @@ import {
     isApiRequestCaptureArmed,
     isFixedPromptBlockLabel,
     isSameCoreModel,
+    recordCompletedCloudApiCall,
+    resolveApiCallMeta,
     scanSseForLog,
     setApiRequestCaptureArmed,
     setApiCallAmbientContext,
     summarizeApiRequestCaptureDuplicates,
     updateApiRequestCaptureUsage,
 } from './apiCallLog';
+import { setCharNameRegistry } from './charNameRegistry';
 import { formatWorldbookSection, resolveWorldbookEntries } from './worldbook';
 
 describe('one-shot full API request capture', () => {
@@ -529,4 +532,79 @@ it('没有标准收尾的世界书文本仍按标题拆分，所有消息分区�
     expect(parts.length).toBeGreaterThan(1);
     expect(parts.map(s => getApiRequestCaptureSectionContent(capture, s)).join('')).toBe(content);
     expect(JSON.stringify(capture.payload)).toContain('末尾标记');
+});
+
+describe('resolveApiCallMeta · 归属补全与前台上下文隔离', () => {
+    it('显式传入无角色的 meta 时，绝不混入前台打开的私聊角色', () => {
+        setApiCallAmbientContext({ appId: 'chat', appName: '消息', charId: 'char-fg', charName: '前台角色' });
+        const resolved = resolveApiCallMeta({ appId: 'settings', purpose: '测试连接' });
+        expect(resolved).toEqual({
+            appId: 'settings',
+            appName: '设置',
+            charId: undefined,
+            charName: undefined,
+            purpose: '测试连接',
+        });
+    });
+
+    it('只传 appId 与 charId 时自动补齐中文 App 名与已注册角色名', () => {
+        setCharNameRegistry([{ id: 'char-mp', name: 'Sully' }]);
+        const resolved = resolveApiCallMeta({ appId: 'memorypalace', charId: 'char-mp', purpose: '记忆消化' });
+        expect(resolved).toEqual({
+            appId: 'memorypalace',
+            appName: '记忆宫殿',
+            charId: 'char-mp',
+            charName: 'Sully',
+            purpose: '记忆消化',
+        });
+    });
+
+    it('未传显式 meta 时仍退回前台环境快照', () => {
+        setApiCallAmbientContext({ appId: 'chat', appName: '消息', charId: 'char-fg', charName: '前台角色' });
+        expect(resolveApiCallMeta(undefined)).toMatchObject({
+            appId: 'chat',
+            appName: '消息',
+            charId: 'char-fg',
+            charName: '前台角色',
+        });
+    });
+});
+
+describe('recordCompletedCloudApiCall · 单阶段云端调用落账', () => {
+    it('一次写齐渠道、角色用途与总 Token 且不挂 pending', async () => {
+        const { DB } = await import('./db');
+        const logged: any[] = [];
+        const spy = vi.spyOn(DB, 'appendApiCallLog').mockImplementation(async (entry: any) => {
+            logged.push(entry);
+        });
+        try {
+            recordCompletedCloudApiCall({
+                id: 'cloud-proactive-task-1:1700000000000',
+                route: 'cloud-proactive',
+                baseUrl: 'https://api.example.com/v1',
+                model: 'claude-sonnet-4-5',
+                ok: true,
+                timestamp: 1700000000000,
+                promptTokens: 3200,
+                completionTokens: 180,
+                meta: { appId: 'chat', charId: 'char-mp', purpose: '主动消息' },
+            });
+            await vi.waitFor(() => expect(logged).toHaveLength(1));
+            expect(logged[0]).toMatchObject({
+                id: 'cloud-proactive-task-1:1700000000000',
+                route: 'cloud-proactive',
+                pending: false,
+                ok: true,
+                baseUrl: 'https://api.example.com/v1',
+                model: 'claude-sonnet-4-5',
+                promptTokens: 3200,
+                completionTokens: 180,
+                totalTokens: 3380,
+                appName: '消息',
+                purpose: '主动消息',
+            });
+        } finally {
+            spy.mockRestore();
+        }
+    });
 });

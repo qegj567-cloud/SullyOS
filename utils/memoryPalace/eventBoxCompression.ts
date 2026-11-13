@@ -217,7 +217,7 @@ ${sarMemoryBoundary ? `\n${sarMemoryBoundary}` : ''}
                     stream: false,
                 }),
             },
-            2, 120_000, { appName: '记忆宫殿', purpose: '事件压缩' }
+            2, 120_000, { appId: 'memorypalace', appName: '记忆宫殿', charId: box.charId, charName, purpose: '事件压缩' }
         );
 
         if (['length', 'max_tokens', 'content_filter'].includes(data?.choices?.[0]?.finish_reason)) {
@@ -251,7 +251,7 @@ ${sarMemoryBoundary ? `\n${sarMemoryBoundary}` : ''}
             console.warn(`🗜️ [Compression] LLM summary ${content.length} 字，尝试精简一次；不达标时保留完整正文`);
             content = await enforceSummaryLengthBudget(
                 content,
-                (t) => recompressSummary(t, EVENT_BOX_SUMMARY_TARGET_MAX_CHARS, llmConfig, charName),
+                (t) => recompressSummary(t, EVENT_BOX_SUMMARY_TARGET_MAX_CHARS, llmConfig, charName, box.charId),
                 EVENT_BOX_SUMMARY_HARD_MAX_CHARS,
             );
         }
@@ -287,6 +287,7 @@ async function recompressSummary(
     targetMaxChars: number,
     llmConfig: LightLLMConfig,
     charName: string,
+    charId: string,
 ): Promise<string | null> {
     const systemPrompt = `你是 ${charName}。下面这段第一人称回忆写得太长了。请在**不丢关键信息**（具体人物、地点、事件、转折、情绪）的前提下，把它压缩到 ${targetMaxChars} 字以内。
 要求：保持第一人称（「我」）、连贯通顺；只删语气填充和重复铺陈，不删事实；引用一律用「」《》或单引号，不要用半角双引号。
@@ -311,7 +312,7 @@ async function recompressSummary(
                     stream: false,
                 }),
             },
-            2, 90_000, { appName: '记忆宫殿', purpose: '事件压缩-二次压缩' }
+            2, 90_000, { appId: 'memorypalace', appName: '记忆宫殿', charId, charName, purpose: '事件压缩-二次压缩' }
         );
         if (['length', 'max_tokens', 'content_filter'].includes(data?.choices?.[0]?.finish_reason)) return null;
         const reply = extractContent(data).trim();

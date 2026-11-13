@@ -456,6 +456,9 @@ ${transcriptParts.join('\n\n')}
 
 直接输出 JSON 数组。`;
 
+    const activeChars = perChar.filter(p => p.totalLines > 0);
+    const soleChar = activeChars.length === 1 ? activeChars[0] : undefined;
+
     try {
         const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
             method: 'POST',
@@ -466,7 +469,13 @@ ${transcriptParts.join('\n\n')}
                 temperature: 0.8,
                 max_tokens: 12000,
             }),
-        });
+            __sullyMeta: {
+                appId: 'handbook',
+                appName: '手账',
+                ...(soleChar ? { charId: soleChar.charId, charName: soleChar.charName } : {}),
+                purpose: '日记手账生成',
+            },
+        } as RequestInit);
         if (!response.ok) {
             console.error('[Handbook/UserDiary] API error:', response.status);
             return { page: null, placements: [], totalUserMsgs, perChar };
@@ -710,7 +719,14 @@ text 里允许少量 markdown 语法,渲染时会变成对应的视觉效果:
                 temperature: 0.85,
                 max_tokens: 12000,
             }),
-        });
+            __sullyMeta: {
+                appId: 'handbook',
+                appName: '手账',
+                charId: char.id,
+                charName: char.name,
+                purpose: '生活流手账生成',
+            },
+        } as RequestInit);
         if (!response.ok) {
             console.error('[Handbook/Lifestream] API error:', response.status, char.name);
             return { page: null, placements: [] };

@@ -140,9 +140,29 @@ export const plateConsolidateHandler: FireKindHandler = {
       return { decision: 'skip-push', reason: 'plate-emit-result-unsupported' };
     }
 
+    const rawUsage = (ctx as { usage?: Record<string, unknown> | null }).usage
+      ?? ((ctx.llmResponse as { usage?: Record<string, unknown> | null } | null)?.usage);
+    const promptTokens = typeof rawUsage?.prompt_tokens === 'number' && Number.isFinite(rawUsage.prompt_tokens)
+      ? rawUsage.prompt_tokens : undefined;
+    const completionTokens = typeof rawUsage?.completion_tokens === 'number' && Number.isFinite(rawUsage.completion_tokens)
+      ? rawUsage.completion_tokens : undefined;
+    const usage = (promptTokens !== undefined || completionTokens !== undefined)
+      ? {
+        ...(promptTokens !== undefined ? { promptTokens } : {}),
+        ...(completionTokens !== undefined ? { completionTokens } : {}),
+      }
+      : undefined;
+
     try {
       await ctx.emitResult({
-        ...buildPlateConsolidateResult({ jobId, charId: job.charId, items, rooms: job.rooms, snapshotAt: job.snapshotAt }),
+        ...buildPlateConsolidateResult({
+          jobId,
+          charId: job.charId,
+          items,
+          rooms: job.rooms,
+          snapshotAt: job.snapshotAt,
+          ...(usage ? { usage } : {}),
+        }),
         // 背景工作，整理完不该把人叫回来看。show:false 的 payload 上游只落收件箱、
         // 不发推送，客户端下次上线补收。
         notification: { show: false },

@@ -139,8 +139,9 @@ ${txList}
             const res = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-                body: JSON.stringify({ model: apiConfig.model, messages: [{ role: 'user', content: prompt }] })
-            });
+                body: JSON.stringify({ model: apiConfig.model, messages: [{ role: 'user', content: prompt }] }),
+                __sullyMeta: { appId: 'bank', appName: '银行', purpose: '账单消费点评' },
+            } as RequestInit);
 
             if (res.ok) {
                 const data = await safeResponseJson(res);

@@ -68,7 +68,8 @@ export default function CharacterApiPanel({ character, onChange }: {
       const response = await fetchLlm(`${api.baseUrl}/chat/completions`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${api.apiKey || 'sk-none'}` },
         body: JSON.stringify({ model: api.model, messages: [{ role: 'user', content: 'Hi' }], max_tokens: 5, stream: api.stream ?? false }),
-      });
+        __sullyMeta: { appId: 'character', appName: '神经链接', charId: character.id, charName: character.name, purpose: '测试连接' },
+      } as RequestInit);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const content = extractContent(await safeResponseJson(response));
       if (version === requestVersion.current) setStatus(content ? '连接成功' : '接口已响应，但回复为空');

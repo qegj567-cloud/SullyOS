@@ -9,6 +9,7 @@ import { injectMemoryPalace } from './memoryPalace/pipeline';
 import { DB } from './db';
 import { safeResponseJson } from './safeApi';
 import { phoneTranscriptToText } from './phoneTranscript';
+import type { ApiCallMeta } from './apiCallLog';
 
 export interface MiniApiConfig {
     baseUrl: string;
@@ -227,6 +228,7 @@ async function chatCompletion(api: MiniApiConfig,
     temperature = 0.85,
     characterContext?: CharacterContextInput,
     history: ContextMessage[] = [],
+    meta?: ApiCallMeta,
 ): Promise<string> {
     const res = await fetch(`${api.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
         method: 'POST',
@@ -239,7 +241,13 @@ async function chatCompletion(api: MiniApiConfig,
             ])) : [{ role: 'user', content: userContent }],
             temperature,
         }),
-    });
+        __sullyMeta: {
+            appId: 'checkphone',
+            appName: '查手机',
+            ...(characterContext?.char ? { charId: characterContext.char.id, charName: characterContext.char.name } : {}),
+            ...meta,
+        },
+    } as RequestInit);
     if (!res.ok) throw new Error(`LLM ${res.status}`);
     const data = await safeResponseJson(res);
     return (data?.choices?.[0]?.message?.content || '').trim();
@@ -299,6 +307,7 @@ async function lastUserInteractionTs(charId: string): Promise<number | undefined
  */
 export async function summarizeConversation(p: {
     api: MiniApiConfig;
+    speakerId?: string;
     speakerName: string;
     otherName: string;
     transcript: string;
@@ -310,7 +319,11 @@ ${p.transcript}
 """
 请用**第一人称、带你自己的主观色彩**，把这段聊天浓缩成一段你自己的记忆/印象（3-5 句）：你们聊了什么、你当时的感受和判断、对 TA 的看法有没有变化。只输出这段记忆本身，别加「我:」之类前缀、别解释、别旁白。`;
     try {
-        const out = await chatCompletion(p.api, prompt, 0.7);
+        const out = await chatCompletion(p.api, prompt, 0.7, undefined, [], {
+            ...(p.speakerId ? { charId: p.speakerId } : {}),
+            charName: p.speakerName,
+            purpose: '关系记忆整理',
+        });
         return out.replace(/^[「"']|[」"']$/g, '').trim();
     } catch {
         return '';
@@ -457,7 +470,14 @@ ${turns.length ? '见独立消息历史。' : '（还没开始，由你起头）
 如果这次交流让你对「${b.name}」**有了新的认识**（TA 是谁、什么身份、在意什么、透露了什么关键信息——记住这些只是 TA 自己说的、**未必是真的**，写成你的判断），再另起一行用 [[了解:一句话]] 记下来；没有新认识就别写这一行。`;
         let aRaw = '';
         try {
-            aRaw = await chatCompletion(api, aPrompt, 0.85, ctxA, turns.map(t => ({ role: t.speaker === 'A' ? 'assistant' : 'user', content: t.text })));
+            aRaw = await chatCompletion(
+                api,
+                aPrompt,
+                0.85,
+                ctxA,
+                turns.map(t => ({ role: t.speaker === 'A' ? 'assistant' : 'user', content: t.text })),
+                { charId: a.id, charName: a.name, purpose: '跨角色私聊互动' },
+            );
         } catch {
             break;
         }
@@ -510,7 +530,14 @@ ${p.bSummary ? '最近的对话' : '对话记录'}（"${b.name}:" 是你，"${a.
 如果这次交流让你对「${a.name}」**有了新的认识**（TA 是谁、身份、在意什么、透露了什么——记住只是 TA 自己说的、**未必为真**，写成你的判断），再另起一行用 [[了解:一句话]] 记下来；没有就别写。`;
         let bRaw = '';
         try {
-            bRaw = await chatCompletion(api, bPrompt, 0.85, ctxB, turns.map(t => ({ role: t.speaker === 'B' ? 'assistant' : 'user', content: t.text })));
+            bRaw = await chatCompletion(
+                api,
+                bPrompt,
+                0.85,
+                ctxB,
+                turns.map(t => ({ role: t.speaker === 'B' ? 'assistant' : 'user', content: t.text })),
+                { charId: b.id, charName: b.name, purpose: '跨角色私聊互动' },
+            );
         } catch {
             break;
         }
@@ -615,7 +642,14 @@ ${p.existingDetail ? `已经聊了：\n"""\n见独立消息历史。\n"""\n请�
 
     let out = '';
     try {
-        out = await chatCompletion(p.api, prompt, 0.9, ctxHost, exTurns.map(t => ({ role: t.isMe ? 'assistant' : 'user', content: t.text })));
+        out = await chatCompletion(
+            p.api,
+            prompt,
+            0.9,
+            ctxHost,
+            exTurns.map(t => ({ role: t.isMe ? 'assistant' : 'user', content: t.text })),
+            { charId: p.host.id, charName: p.host.name, purpose: '联系人私聊回复' },
+        );
     } catch {
         return { detail: p.existingDetail || '', learnedNew: '' };
     }

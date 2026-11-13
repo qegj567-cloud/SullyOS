@@ -570,7 +570,7 @@ const Character: React.FC = () => {
                   ],
                   temperature: 0.3,
               })
-          }, 0);
+          }, 0, 0, { appId: 'character', appName: '神经链接', charId: targetId, charName: formData.name, purpose: '月度核心记忆提炼' });
           const dt = Math.round(performance.now() - t0);
           const summary = extractContent(data);
           if (!summary) {
@@ -666,7 +666,7 @@ const Character: React.FC = () => {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
               body: JSON.stringify({ model: apiConfig.model, messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, [{ role: 'user', content: prompt }])), temperature: 0.5, max_tokens: 8000, stream: false }),
-          }, 0);
+          }, 0, 0, { appId: 'character', appName: '神经链接', charId: targetId, charName: formData.name, purpose: '单日记忆强制归档' });
           let summary = extractContent(data).replace(/^["']|["']$/g, '');
           if (!summary) throw new Error('空响应');
 
@@ -856,7 +856,7 @@ const Character: React.FC = () => {
                             max_tokens: 8000,
                             temperature: 0.5
                         })
-                    }, 0);
+                    }, 0, 0, { appId: 'character', appName: '神经链接', charId: targetId, charName: formData.name, purpose: '批量记忆总结' });
                 } catch {
                     // 单天失败软跳过，继续后面的日期（与原 if(response.ok) 的语义一致）
                 }
@@ -1046,7 +1046,7 @@ ${isInitialGeneration ? `
                   // 流式响应由 safeResponseJson 拼回完整对象，下游 extractContent 无需改动。
                   stream: apiConfig.stream === true
               })
-          }, 0);
+          }, 0, 0, { appId: 'character', appName: '神经链接', charId: targetId, charName, purpose: '生成用户印象档案' });
           const parsed = parseGeneratedImpression(data);
 
           if (editingIdRef.current === targetId) {

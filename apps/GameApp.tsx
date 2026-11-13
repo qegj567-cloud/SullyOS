@@ -290,7 +290,7 @@ const GameApp: React.FC = () => {
     };
 
     // --- Helper: Robust API Call ---
-    const fetchGameAPI = async (prompt: string, maxTokens: number = 8000, members: CharacterProfile[] = []) => {
+    const fetchGameAPI = async (prompt: string, maxTokens: number = 8000, members: CharacterProfile[] = [], purpose: string = '跑团回合推进') => {
         const history = [{ role: 'user', content: '请按上述要求继续本轮游戏。' }];
         const messages = members.length ? ContextBuilder.buildGroupWorldbookRequest({ members, user: userProfile, history, scanMessages: [{ role: 'user', content: prompt }],
             render: (slots, turns) => [{ role: 'system', content: slots.before + prompt + slots.after }, ...turns],
@@ -304,8 +304,14 @@ const GameApp: React.FC = () => {
                 temperature: 0.9, 
                 max_tokens: maxTokens,
                 stream: false
-            })
-        });
+            }),
+            __sullyMeta: {
+                appId: 'game',
+                appName: '跑团桌游',
+                ...(members.length === 1 ? { charId: members[0].id, charName: members[0].name } : {}),
+                purpose,
+            },
+        } as RequestInit);
 
         if (!response.ok) throw new Error(`HTTP Error ${response.status}`);
 
@@ -438,7 +444,7 @@ ${worldIdea.trim() ? `**玩家的灵感/想法（请务必围绕它发挥）**: 
 ===
 <世界观正文。请写充分、生动，篇幅自由不设上限，包含：时代/地点背景与基调氛围、当前世界的核心矛盾或危机、玩家小队的处境与初始目标钩子、一两个可探索的悬念或势力。留足玩家发挥空间，不要写死结局。>`;
 
-            const data = await fetchGameAPI(prompt, 6000);
+            const data = await fetchGameAPI(prompt, 6000, [], '跑团世界观生成');
             const raw = (extractContent(data) || '').trim();
             if (!raw) throw new Error('AI 返回了空响应');
 
@@ -508,7 +514,7 @@ ${playerContext}
   ]
 }`;
 
-            const data = await fetchGameAPI(prompt, 8000, players);
+            const data = await fetchGameAPI(prompt, 8000, players, '跑团开局');
             const rawContent = extractContent(data);
             if (!rawContent) throw new Error('AI 返回了空响应');
 
@@ -771,7 +777,7 @@ ${rollInstruction}
   ]
 }`;
 
-            const data = await fetchGameAPI(prompt, 8000, players);
+            const data = await fetchGameAPI(prompt, 8000, players, '跑团回合推进');
             const rawContent = extractContent(data);
             if (!rawContent) throw new Error('AI 返回了空响应');
 
@@ -880,7 +886,7 @@ ${logText}
 
 直接输出总结正文：`;
 
-            const data = await fetchGameAPI(prompt, 1500, players);
+            const data = await fetchGameAPI(prompt, 1500, players, '跑团前情总结');
             let summaryText = (extractContent(data) || '').trim();
             if (!summaryText) summaryText = '（这段冒险继续推进了剧情）';
 
@@ -1039,7 +1045,7 @@ Logs:
 ${logText}
 Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆"). No preamble.`;
 
-            const data = await fetchGameAPI(prompt, 8000, players);
+            const data = await fetchGameAPI(prompt, 8000, players, '跑团结局结算');
             let summary = extractContent(data) || '进行了一场冒险';
             summary = summary.replace(/[。\.]$/, ''); // Remove trailing dot
 

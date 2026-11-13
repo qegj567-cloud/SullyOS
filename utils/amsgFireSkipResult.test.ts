@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const store = vi.hoisted(() => ({ upsertExpiredNotices: vi.fn(async () => []) }));
-const db = vi.hoisted(() => ({ getAllCharacters: vi.fn(async () => [] as unknown[]) }));
+const db = vi.hoisted(() => ({
+  getAllCharacters: vi.fn(async () => [] as unknown[]),
+  appendApiCallLog: vi.fn(async () => {}),
+}));
 vi.mock('./activeMsgStore', () => ({ ActiveMsgStore: store }));
 vi.mock('./db', () => ({ DB: db }));
 
@@ -43,6 +46,7 @@ describe('客户端消化「这次没发」', () => {
     store.upsertExpiredNotices.mockClear();
     db.getAllCharacters.mockReset();
     db.getAllCharacters.mockResolvedValue([]);
+    db.appendApiCallLog.mockClear();
   });
 
   const written = () => (store.upsertExpiredNotices.mock.calls[0] as unknown as [string, any[]]);
@@ -81,5 +85,37 @@ describe('客户端消化「这次没发」', () => {
     await expect(applyFireSkipResult(buildFireSkipResult(base))).resolves.toBe(true);
     await expect(applyFireSkipResult({ resultKind: FIRE_SKIP_RESULT_KIND })).resolves.toBe(true);
     expect(store.upsertExpiredNotices).not.toHaveBeenCalled();
+  });
+
+  it('带回模型用量时把「未发送但已消耗额度」的云端主动轮次写进 API 调用记录', async () => {
+    db.getAllCharacters.mockResolvedValue([{
+      id: 'char-1',
+      name: 'Sully',
+      dialogueApi: { baseUrl: 'https://relay.example.com/v1', apiKey: 'sk-x', model: 'gpt-5' },
+      activeMsg2Config: { tasks: [{ taskUuid: 'task-1', mode: 'auto', recurrenceType: 'none' }] },
+    }]);
+    const payload = buildFireSkipResult({
+      ...base,
+      usage: { promptTokens: 2100, completionTokens: 45 },
+      proactiveKind: 'self',
+      task: { mode: 'auto', recurrenceType: 'none' },
+    });
+    await expect(applyFireSkipResult(payload)).resolves.toBe(true);
+    await vi.waitFor(() => expect(db.appendApiCallLog).toHaveBeenCalledTimes(1));
+    expect((db.appendApiCallLog.mock.calls[0] as any)[0]).toMatchObject({
+      id: 'cloud-proactive-skip-task-1:1000',
+      route: 'cloud-proactive',
+      pending: false,
+      ok: true,
+      baseUrl: 'https://relay.example.com/v1',
+      model: 'gpt-5',
+      promptTokens: 2100,
+      completionTokens: 45,
+      totalTokens: 2145,
+      appName: '消息',
+      charId: 'char-1',
+      charName: 'Sully',
+      purpose: '角色自排提醒（未发送）',
+    });
   });
 });

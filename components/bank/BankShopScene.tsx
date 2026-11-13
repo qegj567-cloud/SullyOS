@@ -163,8 +163,9 @@ Language: Chinese.`;
             const res = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-                body: JSON.stringify({ model: apiConfig.model, messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, [{ role: 'user', content: prompt }])) })
-            });
+                body: JSON.stringify({ model: apiConfig.model, messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, [{ role: 'user', content: prompt }])) }),
+                __sullyMeta: { appId: 'bank', appName: '银行', charId: char.id, charName: char.name, purpose: '咖啡馆邀约互动' },
+            } as RequestInit);
 
             if (res.ok) {
                 const data = await safeResponseJson(res);

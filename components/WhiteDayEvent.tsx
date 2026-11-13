@@ -727,7 +727,14 @@ export const WhiteDaySession: React.FC<WhiteDaySessionProps> = ({ charId, onClos
                     ])),
                     temperature: 0.85,
                 }),
-            });
+                __sullyMeta: {
+                    appId: 'special-moments',
+                    appName: '白色情人节',
+                    charId: c.id,
+                    charName: c.name,
+                    purpose: '默契问答出题',
+                },
+            } as RequestInit);
 
             if (!response.ok) throw new Error(`API 错误: ${response.status}`);
             const data = await safeResponseJson(response);
@@ -856,7 +863,14 @@ ${answerSummary}
                     ])),
                     temperature: 0.82,
                 }),
-            });
+                __sullyMeta: {
+                    appId: 'special-moments',
+                    appName: '白色情人节',
+                    charId: char.id,
+                    charName: char.name,
+                    purpose: '默契答卷批改',
+                },
+            } as RequestInit);
 
             if (!response.ok) throw new Error(`API 错误: ${response.status}`);
             const data = await safeResponseJson(response);
@@ -933,6 +947,13 @@ ${answerSummary}
 
             const endpoint = `${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`;
             const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` };
+            const commentMeta = {
+                appId: 'special-moments',
+                appName: '白色情人节',
+                charId: char.id,
+                charName: char.name,
+                purpose: '手作巧克力点评',
+            };
             let response = await fetch(endpoint, {
                 method: 'POST',
                 headers,
@@ -949,7 +970,8 @@ ${answerSummary}
                     ])),
                     temperature: 0.88,
                 }),
-            });
+                __sullyMeta: commentMeta,
+            } as RequestInit);
 
             // 模型不支持视觉时降级为纯文字评价
             if (!response.ok && (response.status === 400 || response.status === 422)) {
@@ -964,7 +986,8 @@ ${answerSummary}
                         ])),
                         temperature: 0.88,
                     }),
-                });
+                    __sullyMeta: commentMeta,
+                } as RequestInit);
             }
 
             if (!response.ok) throw new Error(`API 错误: ${response.status}`);
@@ -1326,7 +1349,14 @@ ${answerSummary}
                             }],
                             temperature: 0.7,
                         }),
-                    });
+                        __sullyMeta: {
+                            appId: 'special-moments',
+                            appName: '白色情人节',
+                            charId: char.id,
+                            charName: char.name,
+                            purpose: '巧克力摆件生成',
+                        },
+                    } as RequestInit);
                     if (resp.ok) {
                         const data = await resp.json();
                         const text = data.choices?.[0]?.message?.content?.trim() || '';

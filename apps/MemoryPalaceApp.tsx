@@ -3507,7 +3507,8 @@ export default function MemoryPalaceApp() {
                                         messages: [{ role: 'user', content: 'Hi' }],
                                         max_tokens: 5,
                                     }),
-                                });
+                                    __sullyMeta: { appId: 'memorypalace', appName: '记忆宫殿', purpose: '测试连接' },
+                                } as RequestInit);
                                 if (res.ok) {
                                     const data = await res.json();
                                     const reply = (data.choices?.[0]?.message?.content || '').toString();

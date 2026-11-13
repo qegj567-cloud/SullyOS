@@ -568,8 +568,9 @@ ${previousGuestbook}
             const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-                body: JSON.stringify({ model: apiConfig.model, messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, [{ role: 'user', content: prompt }])) })
-            });
+                body: JSON.stringify({ model: apiConfig.model, messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, [{ role: 'user', content: prompt }])) }),
+                __sullyMeta: { appId: 'bank', appName: '银行', charId: randomChar.id, charName: randomChar.name, purpose: '咖啡馆访客留言' },
+            } as RequestInit);
 
             if (response.ok) {
                 const data = await safeResponseJson(response);

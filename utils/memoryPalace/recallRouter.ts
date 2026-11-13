@@ -486,6 +486,7 @@ export async function runLightRecallRouter(
     if (!conversation) {
         return { status: 'invalid_response', plan: emptyRecallPlan(), durationMs: 0 };
     }
+    const charId = messages[messages.length - 1]?.charId || messages[0]?.charId;
 
     const systemPrompt = `你是聊天应用的记忆检索路由器，不回答用户，只生成额外检索计划。
 本地闸门已认为最后一句可能缺少指代对象。请结合给出的最近对话，判断是否能生成比原句更明确的检索词。
@@ -523,7 +524,7 @@ export async function runLightRecallRouter(
             },
             0,
             timeoutMs,
-            { appName: 'ChatApp', purpose: '记忆召回路由' },
+            { appId: 'chat', appName: '消息', ...(charId ? { charId } : {}), ...(charName ? { charName } : {}), purpose: '记忆召回路由' },
         );
         const parsed = extractJson(extractContent(data));
         if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {

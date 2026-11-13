@@ -108,7 +108,8 @@ export async function generatePersonaScript(opts: {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
         body: JSON.stringify({ model: apiConfig.model, messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, [{ role: 'user', content: prompt }])), temperature: 0.98, max_tokens: 24000 }),
-    });
+        __sullyMeta: { appId: 'personasim', appName: '人格模拟', charId: char.id, charName: char.name, purpose: '生成人格模拟剧本' },
+    } as RequestInit);
     if (!res.ok) throw new Error('API');
     const data = await safeResponseJson(res);
     // 截断直接报错，不兜底：模型输出被 token 上限截断时 finish_reason 为 'length'

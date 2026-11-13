@@ -73,6 +73,7 @@ async function batchClassifyDeepLinks(
 strength 范围 0.3-0.8。没有关联返回 []。只输出 JSON。`;
 
     const userMsg = `新记忆：\n${newList}\n\n旧记忆：\n${oldList}`;
+    const charId = newNodes[0]?.charId || candidates[0]?.charId;
 
     try {
         const data = await safeFetchJson(
@@ -94,7 +95,7 @@ strength 范围 0.3-0.8。没有关联返回 []。只输出 JSON。`;
                     stream: false,
                 }),
             },
-            2, 90_000, { appName: '记忆宫殿', purpose: '记忆关联' }
+            2, 90_000, { appId: 'memorypalace', appName: '记忆宫殿', ...(charId ? { charId } : {}), purpose: '记忆关联' }
         );
 
         const reply = data.choices?.[0]?.message?.content || '';

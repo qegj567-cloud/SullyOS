@@ -1236,7 +1236,7 @@ export async function applyAssistantPostProcessing(
                     signal: ctx.replyRun?.signal,
                 method: 'POST', headers,
                 body: JSON.stringify({ model: effectiveApi.model, messages: msgs, temperature: 0.8, max_tokens: dialogueMaxTokens(effectiveApi), stream: false })
-            }, 2, 0, { ...apiLogMeta, purpose: '写日记' }));
+            }, 2, 0, { ...apiLogMeta, purpose: '翻阅日记' }));
             updateTokenUsage(data, historyMsgCount, 'diary-fallback');
             aiContent = data.choices?.[0]?.message?.content || '';
             aiContent = normalizeAiContent(await replyStep(async () => consumeHomeVisitReply(char.id, await consumeFriendFeedMainReply(char.id, aiContent))));

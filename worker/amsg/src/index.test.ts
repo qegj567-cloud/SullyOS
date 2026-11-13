@@ -3428,6 +3428,46 @@ describe('fire 侧取消 / 改期任务', () => {
     expect(last.metadata.amsgUsage).toEqual({ promptTokens: 1234, completionTokens: 56 });
   });
 
+  it('多轮工具调用时按轮累加 usage 并标 amsgUsageComplete，定时主动消息同样在末条带回 amsgUsage', async () => {
+    const stash = makeStash({ instant: true, maxToolIterations: 5 });
+    const round1 = await amsgHooks.onLLMOutput({
+      sessionId: 'sess_task_42', taskId: FIRE_TASK_ID, taskUuid: TASK_UUID,
+      iteration: 0,
+      llmResponse: {}, llmOutputText: '[[RECALL: 2026-07]]', contactName: 'Nyah',
+      metadata: { charId: CHAR_ID, amsgClientTaskId: 'ct-u', amsgMode: 'instant', amsgInstantChat: true },
+      scratch: { fire: stash },
+      usage: { prompt_tokens: 1000, completion_tokens: 30 },
+      writeState: vi.fn(async () => ({ upserted: 1, skipped: 0, deleted: 0 })),
+    } as any) as any;
+    expect(round1.decision).toBe('tool-request');
+
+    const round2 = await amsgHooks.onLLMOutput({
+      sessionId: 'sess_task_42', taskId: FIRE_TASK_ID, taskUuid: TASK_UUID,
+      iteration: 1,
+      llmResponse: {}, llmOutputText: '想起来了，是七月那件事。', contactName: 'Nyah',
+      metadata: { charId: CHAR_ID, amsgClientTaskId: 'ct-u', amsgMode: 'instant', amsgInstantChat: true },
+      scratch: { fire: stash },
+      usage: { prompt_tokens: 1400, completion_tokens: 70 },
+      writeState: vi.fn(async () => ({ upserted: 1, skipped: 0, deleted: 0 })),
+    } as any) as any;
+    const last = round2.pushPayloads[round2.pushPayloads.length - 1];
+    expect(last.metadata.amsgUsage).toEqual({ promptTokens: 2400, completionTokens: 100 });
+    expect(last.metadata.amsgUsageComplete).toBe(true);
+
+    const scheduledStash = makeStash({ instant: false, selfScheduled: true });
+    const scheduledDecision = await amsgHooks.onLLMOutput({
+      sessionId: 'sess_task_43', taskId: FIRE_TASK_ID, taskUuid: TASK_UUID,
+      llmResponse: {}, llmOutputText: '忙完了吗？', contactName: 'Nyah',
+      metadata: { charId: CHAR_ID, amsgClientTaskId: 'ct-s', amsgMode: 'auto' },
+      scratch: { fire: scheduledStash },
+      usage: { prompt_tokens: 900, completion_tokens: 25 },
+      writeState: vi.fn(async () => ({ upserted: 1, skipped: 0, deleted: 0 })),
+    } as any) as any;
+    const scheduledLast = scheduledDecision.pushPayloads[scheduledDecision.pushPayloads.length - 1];
+    expect(scheduledLast.metadata.amsgUsage).toEqual({ promptTokens: 900, completionTokens: 25 });
+    expect(scheduledLast.metadata.amsgProactiveKind).toBe('self');
+  });
+
   it('取消 / 改期的账随末条 push 的 amsgTaskMutations 回客户端（首条不带）', async () => {
     const stash = makeStash({
       cancelledTasks: ['u-cancelled'],

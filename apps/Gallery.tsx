@@ -216,8 +216,9 @@ CRITICAL: Stay in character. If there's conversation context, your comment shoul
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${apiConfig.apiKey}`
                 },
-                body: JSON.stringify(payload)
-            });
+                body: JSON.stringify(payload),
+                __sullyMeta: { appId: 'gallery', appName: '相册', charId: char.id, charName: char.name, purpose: '照片看图点评' },
+            } as RequestInit);
 
             if (!response.ok) {
                 let errorMsg = `HTTP Error ${response.status}`;

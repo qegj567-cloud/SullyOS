@@ -1854,6 +1854,7 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
           try {
             const rawSummary = await summarizeCollaborationForMemory({
               profile: settings[session.mode],
+              characterId: character.id,
               characterName: character.name,
               userName: user.name,
               sessionTitle: session.title,
@@ -1988,6 +1989,7 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
               const description = await describeImageWithVisionApi(
                 await collaborationBlobToDataUrl(blob),
                 chatApi.visionApi,
+                { appId: 'collaboration', appName: '协同工作', charId: character.id, charName: character.name, purpose: '识图' },
               );
               extractedText = `[参考图片视觉描述]\n${description}`;
             } catch (error: any) {
@@ -2227,6 +2229,7 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
         signal: abortController.signal,
         onDelta: setStreamingText,
         characterId: character.id,
+        characterName: character.name,
         userName: user.name,
         onStatus: setToolStatus,
         makerKind: startedSession.makerKind,

@@ -309,8 +309,9 @@ Generate realistic results linking to hypothetical URLs.`;
                     ],
                     temperature: 0.6,
                     max_tokens: 4000
-                })
-            });
+                }),
+                __sullyMeta: { appId: 'browser', appName: '浏览器', purpose: '生成虚拟网页' },
+            } as RequestInit);
 
             if (!response.ok) throw new Error('Network Error');
             

@@ -77,6 +77,7 @@ interface ChunkExtractionResult {
 async function extractMonthMemories(
     monthKey: string,
     dailyLogs: MemoryFragment[],
+    charId: string,
     charName: string,
     charContext: string,
     llmConfig: LightLLMConfig,
@@ -160,7 +161,7 @@ date 字段填记忆对应的大概日期。`;
             1,         // 失败只再试 1 次（整体 3 次 × 5min = 15min 太久）
             5 * 60_000, // 单次 5 分钟硬超时：第一批 142s 就过了，若超过 5min 基本是 provider 卡死，
                        // 继续等只会让用户误以为整页冻住（实际主线程闲着等 fetch），主动 abort 切下一批。
-            { appName: '记忆宫殿', purpose: '记忆迁移' }
+            { appId: 'memorypalace', appName: '记忆宫殿', charId, charName, purpose: '记忆迁移' }
         );
 
         const reply = data.choices?.[0]?.message?.content || '';
@@ -415,7 +416,7 @@ export async function migrateOldMemories(
         console.log(`🏰 [Migration] [${i + 1}/${total}] 开始 LLM 提取 → ${currentLabel}（${dailyLogs.length} 条日度总结），模型: ${llmConfig.model}`);
         const llmStart = Date.now();
         const { items, rawRelated } = await extractMonthMemories(
-            currentLabel, dailyLogs, charName, charContext || '', llmConfig, userName, relatedRefs, );
+            currentLabel, dailyLogs, charId, charName, charContext || '', llmConfig, userName, relatedRefs, );
         const llmElapsed = ((Date.now() - llmStart) / 1000).toFixed(1);
         console.log(`🏰 [Migration] [${i + 1}/${total}] LLM 提取完成 ← ${currentLabel}: ${items.length} 条记忆，耗时 ${llmElapsed}s`);
 

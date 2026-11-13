@@ -978,6 +978,7 @@ function validateCallB(parsed: any): parsed is Like520CallBResult {
 
 interface CallOptions<T> {
     label: string;
+    purpose?: string;
     apiConfig: ApiConfig;
     characterContext: CharacterContextInput;
     userPrompt: string;
@@ -990,6 +991,7 @@ async function callLike520LLM<T>(opts: CallOptions<T>): Promise<T> {
     const maxRetries = opts.maxRetries ?? 2;
     let lastErr: any = null;
     let lastRawResponse: string | null = null;
+    const char = opts.characterContext.char;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
         const isRetry = attempt > 0;
@@ -1017,7 +1019,14 @@ async function callLike520LLM<T>(opts: CallOptions<T>): Promise<T> {
                     // 拉到 32000 把上限堆死，让信能完整写完。
                     max_tokens: 32000,
                 }),
-            });
+                __sullyMeta: {
+                    appId: 'special-moments',
+                    appName: '520特别活动',
+                    charId: char.id,
+                    charName: char.name,
+                    purpose: opts.purpose || '520活动剧情生成',
+                },
+            } as RequestInit);
 
             if (!response.ok) {
                 throw new Error(`API ${response.status}`);
@@ -1086,6 +1095,7 @@ export async function runLike520CallA(
 
     return callLike520LLM<Like520CallAResult>({
         label: 'CallA',
+        purpose: '520活动主剧本生成',
         apiConfig,
         characterContext: { char, user: userProfile },
         userPrompt: buildCallAPrompt(userProfile.name || '你', recentMsgs),
@@ -1110,6 +1120,7 @@ export async function runLike520CallB(
 
     return callLike520LLM<Like520CallBResult>({
         label: 'CallB',
+        purpose: '520活动书信与尾声生成',
         apiConfig,
         characterContext: { char, user: userProfile },
         userPrompt: buildCallBPrompt(userProfile.name || '你', callA, chosenTucao, recentMsgs),

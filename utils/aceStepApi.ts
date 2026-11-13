@@ -322,7 +322,13 @@ ${trimmed ? '⚠️ 再次提醒: 用户 hint 里写明的具体音乐元素 (vo
       max_tokens: 8000,
     }),
     signal,
-  });
+    __sullyMeta: {
+      appId: 'songwriting',
+      appName: '写歌',
+      ...(collaborator ? { charId: collaborator.id, charName: collaborator.name } : {}),
+      purpose: '编曲风格标签生成',
+    },
+  } as RequestInit);
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new Error(`LLM 调用失败 (HTTP ${res.status}): ${text.slice(0, 150)}`);

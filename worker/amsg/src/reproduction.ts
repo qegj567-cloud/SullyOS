@@ -46,10 +46,27 @@ export const reproductionHandler: FireKindHandler = {
     });
     if (decision.decision === 'tool-request') return { decision: 'skip-push', reason: 'diagnostic-tools-disabled' };
     if (decision.decision === 'skip-push') return { decision: 'skip-push', reason: decision.reason };
+    const rawUsage = (ctx as { usage?: Record<string, unknown> | null }).usage
+      ?? ((ctx.llmResponse as { usage?: Record<string, unknown> | null } | null)?.usage);
+    const promptTokens = typeof rawUsage?.prompt_tokens === 'number' && Number.isFinite(rawUsage.prompt_tokens)
+      ? rawUsage.prompt_tokens : undefined;
+    const completionTokens = typeof rawUsage?.completion_tokens === 'number' && Number.isFinite(rawUsage.completion_tokens)
+      ? rawUsage.completion_tokens : undefined;
+    const amsgUsage = (promptTokens !== undefined || completionTokens !== undefined)
+      ? {
+        ...(promptTokens !== undefined ? { promptTokens } : {}),
+        ...(completionTokens !== undefined ? { completionTokens } : {}),
+      }
+      : undefined;
     // 只保留诊断所需 metadata，分类器解析出的动作绝不交给客户端执行。
-    return { decision: 'finish', pushPayloads: decision.pushPayloads.map(payload => ({
+    return { decision: 'finish', pushPayloads: decision.pushPayloads.map((payload, index) => ({
       ...payload,
-      metadata: { charId: DIAGNOSTIC_CHAR_ID, amsgKind: 'diagnostic', amsgDiagnosticRunId: diagnostic.runId },
+      metadata: {
+        charId: DIAGNOSTIC_CHAR_ID,
+        amsgKind: 'diagnostic',
+        amsgDiagnosticRunId: diagnostic.runId,
+        ...(amsgUsage && index === decision.pushPayloads.length - 1 ? { amsgUsage } : {}),
+      },
     })) };
   },
 };

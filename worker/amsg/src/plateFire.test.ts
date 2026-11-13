@@ -257,6 +257,20 @@ describe('门牌整理 handler', () => {
     );
   });
 
+  it('服务商返回 usage 时随结果回传 promptTokens 与 completionTokens', async () => {
+    const { ctx: fireCtx, scratch } = makeCtx({
+      jobValue: await packStateValue(JSON.stringify(jobInput())),
+    });
+    await amsgHooks.onBeforeFire(fireCtx);
+
+    const { ctx, emitResult } = makeSessionCtx(scratch, REPLY);
+    ctx.usage = { prompt_tokens: 1850, completion_tokens: 230, total_tokens: 2080 };
+    await amsgHooks.onLLMOutput(ctx);
+
+    const payload = (emitResult.mock.calls[0] as unknown as [any])[0];
+    expect(payload.usage).toEqual({ promptTokens: 1850, completionTokens: 230 });
+  });
+
   it('LLM 一条都没吐出来 → 不送空结果（空列表会被客户端当成「清空门牌」）', async () => {
     const { ctx: fireCtx, scratch } = makeCtx({
       jobValue: await packStateValue(JSON.stringify(jobInput())),

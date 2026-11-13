@@ -58,6 +58,7 @@ import { isPlateRoom, mergePlateEntries } from './roomPlateCore';
  * 提示词与解析共用 roomPlateCore，跟云端那条路一字不差。
  */
 async function callPlateLLM(
+    charId: string,
     charName: string,
     userName: string,
     plates: RoomPlate[],
@@ -92,7 +93,7 @@ async function callPlateLLM(
                 stream: false,
             }),
         },
-        2, PLATE_LLM_TIMEOUT_MS, { appName: '记忆宫殿', purpose: '门牌整理' }
+        2, PLATE_LLM_TIMEOUT_MS, { appId: 'memorypalace', appName: '记忆宫殿', charId, charName, purpose: '门牌整理' }
     );
 
     return parsePlateLlmReply(data.choices?.[0]?.message?.content || '');
@@ -202,7 +203,7 @@ async function consolidatePlates(
 
     let items: PlateLLMItem[] = [];
     try {
-        items = await callPlateLLM(charName, userName, plates, materials, llmConfig, identityContext);
+        items = await callPlateLLM(charId, charName, userName, plates, materials, llmConfig, identityContext);
     } catch (e: any) {
         if (llmConfig.deferPlateMaintenance) throw e;
         console.warn(`🚪 [RoomPlate] LLM 整理调用失败: ${e?.message || e}`);

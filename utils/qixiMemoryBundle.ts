@@ -727,7 +727,17 @@ export async function prepareQixiMemoryBundle(
                 },
                 0,
                 QIXI_PART1_TIMEOUT_MS,
-                { appId: 'special-moments', charId: char.id, purpose: `qixi-dual-layer-part1${phase === 'first' ? 'a' : phase === 'second' ? 'b' : 'c-bridge'}-v19` },
+                {
+                    appId: 'special-moments',
+                    appName: '七夕特别时刻',
+                    charId: char.id,
+                    charName: char.name,
+                    purpose: phase === 'first'
+                        ? '七夕双层记忆·上篇'
+                        : phase === 'second'
+                            ? '七夕双层记忆·中篇'
+                            : '七夕双层记忆·下篇与鹊桥',
+                },
                 {}, // Incremental SSE reader stops on [DONE] even if the proxy keeps the socket open.
             );
             const content = data?.choices?.[0]?.message?.content;
