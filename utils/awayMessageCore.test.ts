@@ -3,6 +3,7 @@ import {
   AWAY_SEGMENT_MARK,
   decideAwayTaskAction,
   findAwayGapStart,
+  getLastAwayAnchorAt,
   planAwaySlots,
   splitAwaySegments,
 } from './awayMessageCore';
@@ -42,6 +43,43 @@ describe('findAwayGapStart（本地版这次上线补不补）', () => {
 
   it('隐藏提示不算对方开口；从没开过口 → 不补', () => {
     expect(findAwayGapStart([{ role: 'user', timestamp: NOW - 500 * MIN, metadata: { proactiveHint: true } }], DELAY, NOW)).toBeNull();
+  });
+
+  it('用户删掉推进词只留角色见面正文、且见面刚发生不久 → 按见面时刻算，不误触发', () => {
+    const msgs = [
+      { role: 'user', timestamp: NOW - 360 * MIN },
+      { role: 'assistant', timestamp: NOW - 7 * MIN, metadata: { source: 'date' } },
+    ];
+    expect(findAwayGapStart(msgs, DELAY, NOW)).toBeNull();
+  });
+
+  it('线下见面或通话记录超过等待时长 → 从最后一条在场记录起算，不摸回更早的线上发言', () => {
+    const dateMsgs = [
+      { role: 'user', timestamp: NOW - 500 * MIN },
+      { role: 'assistant', timestamp: NOW - 120 * MIN, metadata: { source: 'date' } },
+    ];
+    expect(findAwayGapStart(dateMsgs, DELAY, NOW)).toBe(NOW - 120 * MIN);
+
+    const callMsgs = [
+      { role: 'user', timestamp: NOW - 500 * MIN },
+      { role: 'assistant', timestamp: NOW - 130 * MIN, metadata: { source: 'call' } },
+      { role: 'system', timestamp: NOW - 110 * MIN, metadata: { source: 'call-end-popup' } },
+    ];
+    expect(findAwayGapStart(callMsgs, DELAY, NOW)).toBe(NOW - 110 * MIN);
+  });
+
+  it('线上单方面消息（见面离开提醒、手机卡片等）不重置离开计时', () => {
+    const msgs = [
+      { role: 'user', timestamp: NOW - 120 * MIN },
+      { role: 'assistant', timestamp: NOW - 10 * MIN, metadata: { dateLeaveReminder: true } },
+      { role: 'assistant', timestamp: NOW - 5 * MIN, metadata: { source: 'phone' } },
+    ];
+    expect(findAwayGapStart(msgs, DELAY, NOW)).toBe(NOW - 120 * MIN);
+    expect(getLastAwayAnchorAt(msgs)).toBe(NOW - 120 * MIN);
+    expect(getLastAwayAnchorAt([
+      ...msgs,
+      { role: 'assistant', timestamp: NOW - 2 * MIN, metadata: { source: 'date' } },
+    ])).toBe(NOW - 2 * MIN);
   });
 });
 

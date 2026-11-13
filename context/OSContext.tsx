@@ -2638,7 +2638,10 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               getUserProfile: () => userProfileRef.current,
               getGroups: () => groupsRef.current,
               getRealtimeConfig: () => realtimeConfigRef.current,
+              // 正在见面/通话，以及见面/通话挂起期间都不补离开后消息；
+              // 见面挂起后的短时离开提醒走 utils/dateLeaveReminder.ts 的独立计时，不受这里拦截。
               isBusyWith: (charId) => suspendedCallRef.current?.charId === charId
+                  || suspendedDateRef.current?.charId === charId
                   || ((activeAppRef.current === AppID.Date || activeAppRef.current === AppID.Call)
                       && activeCharIdScheduleRef.current === charId),
           });
@@ -5027,7 +5030,10 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     setActiveApp(AppID.Call);
   };
   // 挂起由 DateApp 卸载时调用，不负责导航：用户已经在去别处的路上了。
-  const suspendDate = (info: SuspendedDate) => setSuspendedDate(info);
+  const suspendDate = (info: SuspendedDate) => {
+    suspendedDateRef.current = info;
+    setSuspendedDate(info);
+  };
   const resumeDate = () => openApp(AppID.Date);
   const takeSuspendedDate = () => {
     const taken = suspendedDateRef.current;

@@ -114,6 +114,7 @@ import {
   USER_CAMERA_SNAPSHOT_SYSTEM_NOTE,
 } from '../utils/userCameraSnapshot';
 import { markAmsgStateDirty } from '../utils/amsgStateSync';
+import { syncCloudAwayTaskFromRecent } from '../utils/awayMessage';
 import { trackEvent } from '../utils/analytics';
 import { fetchBlobForShare, shareOrDownloadBlob } from '../utils/shareExport';
 import { getPendingReplyText } from '../utils/pendingReply';
@@ -908,9 +909,14 @@ const CallApp: React.FC = () => {
       : hasDatePortraits(selectedChar);
   // 通话与普通聊天共用主动消息的云端快照。每个落库点都打脏，微任务会把同一轮
   // 的多次调用合并；这样用户通话后立刻关 App，也不会让角色漏掉刚发生的内容。
-  const markCallTurnDirty = () => {
+  const markCallTurnDirty = (opts?: { syncAway?: boolean }) => {
     if (!selectedChar) return;
     markAmsgStateDirty({ char: selectedChar, userProfile, groups, realtimeConfig });
+    if (opts?.syncAway !== false && selectedChar.awayMessage?.enabled && userProfile) {
+      void syncCloudAwayTaskFromRecent({
+        char: selectedChar, userProfile, groups, realtimeConfig, apiConfig, updateCharacter,
+      });
+    }
   };
   const selectedAvatar = selectedChar?.videoAvatar;
   const selectedBuiltinSullyAvatar = isBuiltinSullyLive2D(selectedAvatar) ? selectedAvatar : null;
@@ -1645,7 +1651,7 @@ const CallApp: React.FC = () => {
         ? { ...bubble, cameraSnapshotRef: undefined, cameraSnapshotExpired: true }
         : bubble
     )));
-    markCallTurnDirty();
+    markCallTurnDirty({ syncAway: false });
   };
   const resetCurrentCall = () => {
     callTextAbortRef.current?.abort();

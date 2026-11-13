@@ -2,13 +2,20 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { CharacterProfile, Message } from '../types';
 import { DB } from './db';
-import { runLocalAwayMessages } from './awayMessage';
+import { ActiveMsgClient } from './activeMsgClient';
+import * as amsg2ToolBridge from './amsg2ToolBridge';
+import { runLocalAwayMessages, syncCloudAwayTaskFromRecent } from './awayMessage';
 import { safeFetchJson } from './safeApi';
 import { applyAssistantPostProcessing } from './applyAssistantPostProcessing';
 import * as devDebug from './devDebug';
 
 // Keep the actual context-range and chat-payload pipelines; only external generation/delivery is stubbed.
-vi.mock('./activeMsgClient', () => ({ ActiveMsgClient: {} }));
+vi.mock('./activeMsgClient', () => ({
+  ActiveMsgClient: {
+    scheduleCharacterTask: vi.fn(),
+    updatePendingTasksRemote: vi.fn(),
+  },
+}));
 vi.mock('../context/MusicContext', () => ({ loadMusicPlaybackSnapshot: () => null }));
 vi.mock('./applyAssistantPostProcessing', () => ({ applyAssistantPostProcessing: vi.fn() }));
 vi.mock('./safeApi', async importOriginal => ({ ...await importOriginal<typeof import('./safeApi')>(), safeFetchJson: vi.fn() }));
@@ -75,14 +82,68 @@ it.each(['adaptive', 'full-window', 'breakpoint', 'fully-archived', 'merged-syst
   },
 );
 
-it('recognizes a recent archived meeting without bringing excluded meeting prose back into the request', async () => {
+it('skips away generation while character is busy (active or suspended meeting/call)', async () => {
+  await runLocalAwayMessages({
+    getCharacters: () => [char],
+    getApiConfig: () => ({ baseUrl: 'https://fixture.invalid/v1', apiKey: '', model: 'fixture' }),
+    getUserProfile: () => ({ name: '小明' } as any), getGroups: () => [], getRealtimeConfig: () => ({} as any),
+    isBusyWith: id => id === char.id,
+  });
+  expect(safeFetchJson).not.toHaveBeenCalled();
+});
+
+it('does not trigger away generation when recent meeting prose exists without user turns', async () => {
   rows.push({ id: 13, charId: char.id, role: 'assistant', type: 'text', timestamp: NOW - 30 * 60_000,
+    content: 'RECENT_DATE_PROSE', metadata: { source: 'date' } });
+  await runLocalAwayMessages({
+    getCharacters: () => [char],
+    getApiConfig: () => ({ baseUrl: 'https://fixture.invalid/v1', apiKey: '', model: 'fixture' }),
+    getUserProfile: () => ({ name: '小明' } as any), getGroups: () => [], getRealtimeConfig: () => ({} as any),
+    isBusyWith: () => false,
+  });
+  expect(safeFetchJson).not.toHaveBeenCalled();
+});
+
+it('recognizes a recent archived meeting without bringing excluded meeting prose back into the request', async () => {
+  rows.push({ id: 13, charId: char.id, role: 'assistant', type: 'text', timestamp: NOW - 100 * 60_000,
     content: 'EXCLUDED_DATE_PROSE', metadata: { source: 'date' } });
   char.contextRangeMode = 'adaptive'; char.autoArchiveEnabled = true;
   localStorage.setItem(`mp_lastMsgId_${char.id}`, '13');
   const messages = await generate();
   const allText = messages.map(m => m.content).join('\n');
   expect(allText).toContain('刚刚在线下见过面，现在暂时分开了');
+  expect(allText).toContain('上一次在线下互动是在');
   expect(allText).not.toContain('EXCLUDED_DATE_PROSE');
   expect(DB.saveMessage).not.toHaveBeenCalled();
+});
+
+it('schedules or renews 2.0 cloud away task from recent meeting/call records even without user rows', async () => {
+  const dateAt = NOW - 5 * 60_000;
+  rows.push({ id: 13, charId: char.id, role: 'assistant', type: 'text', timestamp: dateAt,
+    content: 'DATE_OPENING', metadata: { source: 'date' } });
+  char.activeMsg2Config = { enabled: true, tasks: [] } as any;
+  vi.spyOn(amsg2ToolBridge, 'isAmsg2GlobalReady').mockResolvedValue(true);
+  vi.mocked(ActiveMsgClient.scheduleCharacterTask).mockResolvedValue({
+    uuid: 'away-uuid-1',
+    clientTaskId: 'ctid-away-1',
+    firstSendAt: new Date(dateAt + 90 * 60_000).toISOString(),
+  } as any);
+  const updateCharacter = vi.fn();
+
+  await syncCloudAwayTaskFromRecent({
+    char,
+    userProfile: { name: '小明' } as any,
+    groups: [],
+    realtimeConfig: {} as any,
+    apiConfig: { baseUrl: 'https://fixture.invalid/v1', apiKey: '', model: 'fixture' },
+    updateCharacter,
+  });
+
+  expect(ActiveMsgClient.scheduleCharacterTask).toHaveBeenCalledWith(expect.objectContaining({
+    task: expect.objectContaining({
+      firstSendTime: new Date(dateAt + 90 * 60_000).toISOString(),
+      away: { delayMinutes: 90 },
+    }),
+  }));
+  expect(updateCharacter).toHaveBeenCalledOnce();
 });

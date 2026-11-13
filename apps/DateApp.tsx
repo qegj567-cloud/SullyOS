@@ -27,6 +27,7 @@ import { hasActiveAiTask } from '../utils/amsg2Tasks';
 import { collectInPersonNotices } from '../utils/amsg2TaskContext';
 import { ActiveMsgStore } from '../utils/activeMsgStore';
 import { armDateLeaveReminder, disarmDateLeaveReminder, startLocalDateLeaveTimer } from '../utils/dateLeaveReminder';
+import { syncCloudAwayTaskFromRecent } from '../utils/awayMessage';
 import StoryTheater from '../components/date/story/StoryTheater';
 import { dateLaunch } from '../utils/dateLaunch';
 import { getLocalDateKey } from '../utils/localDate';
@@ -176,9 +177,14 @@ const DateApp: React.FC = () => {
     // 见面消息和普通聊天共用同一份历史，也就是主动消息 2.0 云端快照（fire_pack）的素材。
     // 每次落库 / 删改后打一次脏：中途杀 App 时这一场见面就不会在云端整个丢掉，删改过的
     // 内容也不会被角色到点又提一遍。快照里的消息在上传时从 DB 重读，打脏本身很便宜。
-    const markDateTurnDirty = (target = char) => {
+    const markDateTurnDirty = (target = char, opts?: { syncAway?: boolean }) => {
         if (!target) return;
         markAmsgStateDirty({ char: target, userProfile, groups, realtimeConfig });
+        if (opts?.syncAway !== false && target.awayMessage?.enabled && userProfile) {
+            void syncCloudAwayTaskFromRecent({
+                char: target, userProfile, groups, realtimeConfig, apiConfig, updateCharacter,
+            });
+        }
     };
 
     // 见面期间（感知 + 对话）一直续活跃会话租约并标上见面：云端到点的主动消息据此作废，
@@ -671,7 +677,7 @@ const DateApp: React.FC = () => {
     const handleDeleteMessage = async (msg: Message) => {
         await DB.deleteMessage(msg.id);
         setDateMessages(prev => prev.filter(m => m.id !== msg.id));
-        markDateTurnDirty();
+        markDateTurnDirty(char, { syncAway: false });
         trackEvent('删除一条见面消息');
     };
 
@@ -679,7 +685,7 @@ const DateApp: React.FC = () => {
         if (ids.length === 0) return;
         await Promise.all(ids.map(id => DB.deleteMessage(id)));
         setDateMessages(prev => prev.filter(m => !ids.includes(m.id)));
-        markDateTurnDirty();
+        markDateTurnDirty(char, { syncAway: false });
         addToast(`已删除 ${ids.length} 条记录`, 'success');
         trackEvent('批量删除见面消息');
     };
@@ -688,7 +694,7 @@ const DateApp: React.FC = () => {
         if (!editTargetMsg) return;
         await DB.updateMessage(editTargetMsg.id, editContent);
         setDateMessages(prev => prev.map(m => m.id === editTargetMsg.id ? { ...m, content: editContent } : m));
-        markDateTurnDirty();
+        markDateTurnDirty(char, { syncAway: false });
         setIsEditModalOpen(false);
         setEditTargetMsg(null);
         addToast('已修改', 'success');
@@ -715,7 +721,7 @@ const DateApp: React.FC = () => {
     const handleHistoryDelete = async (msg: Message) => {
         await DB.deleteMessage(msg.id);
         setHistoryMessages(prev => prev.filter(m => m.id !== msg.id));
-        markDateTurnDirty();
+        markDateTurnDirty(char, { syncAway: false });
         setHistoryMenuMsg(null);
         addToast('已删除', 'success');
         trackEvent('删除见面记录里的一条消息');
@@ -733,7 +739,7 @@ const DateApp: React.FC = () => {
         setHistoryMessages(prev => prev.map(m => (
             m.id === historyEditMsg.id ? { ...m, content: historyEditContent } : m
         )));
-        markDateTurnDirty();
+        markDateTurnDirty(char, { syncAway: false });
         setHistoryEditMsg(null);
         addToast('已修改', 'success');
         trackEvent('编辑见面记录里的一条消息');
