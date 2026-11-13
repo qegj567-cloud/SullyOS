@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { prepareDecorationApplication } from './decorationApplication';
 import { validateDecoration } from './chatDecoration';
+import { withAvatarFrameTarget } from './avatarFrameTarget';
+import { replaceWorkshopCss } from './decorationWorkshop';
 import { PRESET_THEMES } from '../components/chat/ChatConstants';
 import { migrateChatThemeBlobRefs } from './blobRef';
 import type { CharacterProfile, ChatTheme, OSTheme } from '../types';
@@ -101,5 +103,51 @@ describe('装扮应用共享气泡', () => {
         expect((await prepareDecorationApplication(preset(undefined, { css: '.x{}' }), ['css'], chars, base, [], self, readSelf)).bubbles).toEqual([]);
         expect((await prepareDecorationApplication(preset(), ['bubbles'], [], base, [], self, readSelf)).bubbles).toEqual([]);
         expect(migrateChatThemeBlobRefs).not.toHaveBeenCalled();
+    });
+
+    it('独立 CSS 头像框与旧版气泡内嵌头像框同侧应用时自动清掉同侧旧挂件，保留异侧挂件与原气泡署名', async () => {
+        const bubbleWithBothFrames: ChatTheme = {
+            ...structuredClone(PRESET_THEMES.default),
+            id: 'legacy-dual-bubble',
+            type: 'custom',
+            user: { ...PRESET_THEMES.default.user, avatarDecoration: 'data:image/png;base64,AA==' },
+            ai: { ...PRESET_THEMES.default.ai, avatarDecoration: 'data:image/png;base64,BB==' },
+        };
+        const bubbleOrigin: DecorationOrigin = { kind: 'imported', credit: '气泡作者', allowRemix: true, allowRedistribute: false };
+        const cssAiOnly = withAvatarFrameTarget(validateDecoration({
+            format: 'sullyos-chat-decoration',
+            version: 1,
+            name: 'CSS框',
+            parts: { css: replaceWorkshopCss('', 'avatar', '.sully-chat-avatar-wrap::after{content:"";background:red}') },
+        }), 'ai');
+        const step1 = await prepareDecorationApplication(
+            cssAiOnly,
+            ['css'],
+            [{ ...chars[0], chromeCustomCss: '', bubbleStyle: 'legacy-dual-bubble' }],
+            base,
+            [bubbleWithBothFrames],
+            self,
+            async () => bubbleOrigin,
+        );
+        expect(step1.bubbles).toHaveLength(1);
+        expect(step1.bubbles[0].ai.avatarDecoration).toBeUndefined();
+        expect(step1.bubbles[0].user.avatarDecoration).toBe('data:image/png;base64,AA==');
+        expect(step1.bubbleOrigins.get(step1.bubbles[0].id)).toMatchObject({ kind: 'remix', credit: '气泡作者', allowRedistribute: false });
+
+        // Reverse: applying a bubble with user.avatarDecoration clears user's CSS frame while keeping ai's CSS frame
+        const userBubbleFrame: ChatTheme = {
+            ...structuredClone(PRESET_THEMES.dream),
+            user: { ...PRESET_THEMES.dream.user, avatarDecoration: 'data:image/png;base64,CC==' },
+        };
+        const bothCssChar = {
+            ...chars[0],
+            chromeCustomCss: [
+                withAvatarFrameTarget(cssAiOnly, 'ai').parts.css,
+                withAvatarFrameTarget(cssAiOnly, 'user').parts.css,
+            ].join('\n'),
+        };
+        const step2 = await prepareDecorationApplication(preset(userBubbleFrame), ['bubbles'], [bothCssChar], base, [], self, readSelf);
+        expect(step2.prepared[0].changes.character.chromeCustomCss).toContain('message-ai');
+        expect(step2.prepared[0].changes.character.chromeCustomCss).not.toContain('message-user');
     });
 });

@@ -3,6 +3,7 @@ import React,{useEffect,useMemo,useRef,useState} from 'react';
 import BeautyPresetPreview from '../share/BeautyPresetPreview';
 import type {WardrobeEntry} from '../appearance/BeautyWardrobe';
 import {validateDecoration,type DecorationPreset} from '../../utils/chatDecoration';
+import {workshopBlock} from '../../utils/decorationWorkshop';
 import {PRESET_THEMES} from './ChatConstants';
 
 export type DecorationShelf='whitebox'|'bubbles'|'avatar'|'background'|'psyche'|'sound'|'schedule'|'journal'|'date'|'story'|'collaboration';
@@ -12,7 +13,7 @@ export function DecorationMiniPreview({preset,category}:{preset:DecorationPreset
  const sample=useMemo(()=>{
   if(category==='whitebox'||category==='collaboration')return preset;
   const parts:DecorationPreset['parts']=category==='date'?{date:preset.parts.date||{preset:'none'}}:category==='story'?{story:preset.parts.story||{preset:'none'}}:category==='journal'?{journal:preset.parts.journal||{preset:'original'}}:category==='schedule'?{schedule:preset.parts.schedule||{preset:'original'}}:category==='psyche'?{psyche:preset.parts.psyche||{styleId:'echo'}}:
-   category==='avatar'?{bubbles:preset.parts.bubbles||PRESET_THEMES.default,css:preset.parts.css}:category==='bubbles'?{bubbles:preset.parts.bubbles||PRESET_THEMES.default}:
+   category==='avatar'?{bubbles:preset.parts.bubbles||PRESET_THEMES.default,css:[...(preset.parts.css||'').matchAll(workshopBlock('avatar'))].map(m=>m[0]).join('\n')||undefined}:category==='bubbles'?{bubbles:preset.parts.bubbles||PRESET_THEMES.default}:
    category==='background'?{background:preset.parts.background||{image:null,style:'plain'},css:preset.parts.css}:{};
   return {...preset,parts};
  },[preset,category]);

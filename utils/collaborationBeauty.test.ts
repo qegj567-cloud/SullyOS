@@ -70,7 +70,7 @@ describe('collaboration beauty lifecycle',()=>{
     expect(validateCollaborationAppearance(actual)).toEqual(appearance);
     expect(actual.immersive.apiKey).toBe('keep-key');
     const read=createWardrobeUsageReader({} as any,undefined,PRESET_THEMES.default,{},undefined,appearance);
-    expect(await read(preset())).toBe('当前使用中');
+    expect(await read(preset())).toBe('使用中');
     expect(await read(makeWorkshopPreset('collaboration'))).toBe('');
   });
   it('uses a collaboration-only preview and never chat scenes',()=>{

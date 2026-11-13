@@ -10,9 +10,9 @@ export function decorationThumbnailPart(value:unknown):DecorationThumbnailPart|u
  if(parts.css){
   const blocks=[...parts.css.matchAll(/\/\* sully-composer:(avatar|background) \*\/[\s\S]*?\/\* end-sully-composer:\1 \*\//g)];
   const rest=parts.css.replace(/\/\* sully-composer:(avatar|background) \*\/[\s\S]*?\/\* end-sully-composer:\1 \*\//g,'').trim();
-  if(rest||blocks.length!==1)return;
+  if(rest||!blocks.length)return;
   const kind=blocks[0][1] as 'avatar'|'background';
-  if(Object.keys(parts).every(key=>key==='css'||key===kind))return kind;
+  if(blocks.every(block=>block[1]===kind)&&Object.keys(parts).every(key=>key==='css'||key===kind))return kind;
   return;
  }
  const present=(['bubbles','background','psyche','sound','schedule','journal','date','story','collaboration'] as const).filter(key=>parts[key]!=null);
