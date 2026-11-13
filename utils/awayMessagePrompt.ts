@@ -1,5 +1,5 @@
 import type { CharacterProfile, Message } from '../types';
-import { AWAY_SEGMENT_MARK } from './awayMessageCore';
+import { AWAY_SEGMENT_MARK, isAwayActivityAnchor } from './awayMessageCore';
 import { resolveCharTimeZone } from './timezone';
 
 const DATE_AFTERGLOW_MS = 3 * 60 * 60_000;
@@ -7,6 +7,30 @@ const formatCharClock = (ms: number, tz: string | undefined): string =>
   new Date(ms).toLocaleString('zh-CN', {
     timeZone: tz, month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
   });
+
+const buildGapSummary = (
+  anchorSource: string | undefined, userName: string, lastUserAt: number,
+  slots: number[], showClock: boolean, tz: string | undefined,
+): string => {
+  const n = slots.length;
+  if (!showClock) {
+    if (anchorSource === 'date') return `线下分开后这段时间${userName}没有在线上给你发消息，你主动给${userName}发过 ${n} 次消息。`;
+    if (anchorSource === 'call' || anchorSource === 'call-end-popup') {
+      return `通话结束后这段时间${userName}没有在线上给你发消息，你主动给${userName}发过 ${n} 次消息。`;
+    }
+    return `这段时间${userName}没有再在线上给你发消息，你主动给${userName}发过 ${n} 次消息。`;
+  }
+  const anchorClock = formatCharClock(lastUserAt, tz);
+  const slotClocks = slots.map(t => formatCharClock(t, tz)).join('、');
+  const tail = `这段时间里你主动给${userName}发过 ${n} 次消息，分别在 ${slotClocks}（你那边的时间）。`;
+  if (anchorSource === 'date') {
+    return `你和${userName}上一次在线下互动是在 ${anchorClock}，分开后还没有在线上聊过。${tail}`;
+  }
+  if (anchorSource === 'call' || anchorSource === 'call-end-popup') {
+    return `你和${userName}上一次通话是在 ${anchorClock}，挂断后还没有在线上聊过。${tail}`;
+  }
+  return `${userName}最后一次在线上给你发消息是在 ${anchorClock}。${tail}`;
+};
 
 /** Request-only instructions; recent includes archived messages, but their prose is never copied here. */
 export const buildLocalAwayHint = (
@@ -16,12 +40,12 @@ export const buildLocalAwayHint = (
   const n = slots.length;
   const showClock = char.timeAwarenessEnabled !== false;
   const tz = resolveCharTimeZone(char);
+  const lastAnchor = [...recent].reverse().find(isAwayActivityAnchor);
+  const anchorSource = typeof lastAnchor?.metadata?.source === 'string' ? lastAnchor.metadata.source : undefined;
   const lastReal = [...recent].reverse().find(m => m.role !== 'system' && !m.metadata?.proactiveHint);
   const justMetOffline = lastReal?.metadata?.source === 'date'
     && now >= lastReal.timestamp && now - lastReal.timestamp < DATE_AFTERGLOW_MS;
-  const when = showClock
-    ? `${userName}最后一次在线上给你发消息是在 ${formatCharClock(lastUserAt, tz)}。这段时间里你主动给${userName}发过 ${n} 次消息，分别在 ${slots.map(t => formatCharClock(t, tz)).join('、')}（你那边的时间）。`
-    : `这段时间${userName}没有再在线上给你发消息，你主动给${userName}发过 ${n} 次消息。`;
+  const when = buildGapSummary(anchorSource, userName, lastUserAt, slots, showClock, tz);
   return [
     `[系统提示（非${userName}发言）: ${when}`,
     `${userName}此刻并没有发来新消息，是你自己想起了${userName}，拿起手机主动找对方。`,

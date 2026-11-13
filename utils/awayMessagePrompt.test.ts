@@ -28,6 +28,8 @@ describe('recent offline meeting', () => {
       { role: 'user', timestamp: NOW - MIN, metadata: { proactiveHint: true } },
     ]);
     expect(text).toContain('刚刚在线下见过面，现在暂时分开了');
+    expect(text).toContain('上一次在线下互动是在');
+    expect(text).not.toContain('最后一次在线上给你发消息是在');
     expect(text).toContain('补一句当时没说出口的话');
     expect(text).toContain('不要表现得像很久没联系');
     expect(text).toContain('如果具体细节已不在可见上下文里，不要编造');
@@ -41,10 +43,18 @@ describe('recent offline meeting', () => {
   });
 
   it('uses ordinary sharing after the conversation has already moved on', () => {
-    expect(hint([
+    const text = hint([
       { role: 'assistant', timestamp: NOW - 30 * MIN, metadata: { source: 'date' } },
       { role: 'user', timestamp: NOW - 20 * MIN },
-    ])).not.toContain('刚刚在线下见过面');
+    ]);
+    expect(text).not.toContain('刚刚在线下见过面');
+    expect(text).toContain('最后一次在线上给你发消息是在');
+  });
+
+  it('describes call hangup accurately when the latest interaction was a call', () => {
+    const text = hint([{ role: 'system', timestamp: NOW - 120 * MIN, metadata: { source: 'call-end-popup' } }]);
+    expect(text).toContain('上一次通话是在');
+    expect(text).not.toContain('最后一次在线上给你发消息是在');
   });
 });
 

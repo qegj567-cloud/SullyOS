@@ -43,6 +43,7 @@ import {
 import { ActiveMsgStore } from '../utils/activeMsgStore';
 import { markAmsgStateDirty, startAmsgChatPresence, stopAmsgChatPresence } from '../utils/amsgStateSync';
 import { getLastRealUserMessageAt } from '../utils/amsg2ExpireGuard';
+import { getLastAwayAnchorAt } from '../utils/awayMessageCore';
 import { syncCloudAwayTask } from '../utils/awayMessage';
 import { disarmDateLeaveReminder } from '../utils/dateLeaveReminder';
 import { getPendingTasks, hasActiveAiTask, isAmsg2EnabledForChar } from '../utils/amsg2Tasks';
@@ -793,8 +794,8 @@ export const useChatAI = ({
             }
             const fullHistory = contextRange?.messages || null;
             const contextMsgs = fullHistory || currentMsgs;
-            // 离开后消息（云端）：对方刚开过口，把那条任务往后推。不等它，失败只影响这一条。
-            const awayLastUserAt = getLastRealUserMessageAt(contextMsgs);
+            // 离开后消息（云端）：按最近一次在场互动（用户发言或线下见面/通话记录）把任务往后推。不等它，失败只影响这一条。
+            const awayLastUserAt = getLastAwayAnchorAt(contextMsgs);
             if (char.awayMessage?.enabled && awayLastUserAt != null) {
                 void syncCloudAwayTask({
                     char, lastUserAt: awayLastUserAt, userProfile, groups, realtimeConfig, apiConfig, updateCharacter,

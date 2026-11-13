@@ -753,6 +753,38 @@ describe('离开后消息（到点）', () => {
     });
     await expect(amsgHooks.onBeforeFire(ctx)).resolves.toEqual({ skip: true });
   });
+
+  it('用户删掉推进词只剩角色见面/通话记录（lastAwayAnchorAt 在等待时长内）→ 照样推迟，不误发', async () => {
+    const ancientUser = NOW.getTime() - 360 * 60_000;
+    const recentDateAnchor = NOW.getTime() - 20 * 60_000;
+    const { ctx } = makeCtx({
+      metadata: awayMeta,
+      charRows: [
+        {
+          key: AMSG_FIRE_PACK_KEY,
+          value: firePackValue(ancientUser, {
+            lastAwayAnchorAt: recentDateAnchor,
+            template: `${BEFORE_SPEAK_LINES.join('\n')}\n${AMSG_SLOT_TASK_INSTRUCTION}`,
+          }),
+        },
+        { key: AMSG_TOOL_PACK_KEY, value: toolPackValue },
+        limitsRow({ minSendGapMinutes: 0 }),
+      ],
+    });
+    await expect(amsgHooks.onBeforeFire(ctx)).resolves.toEqual({ defer: { afterMs: 70 * 60_000 } });
+  });
+
+  it('人正停在见面界面里（presence.scene === date）撞上到点 → 推迟到离开后，不当面弹消息', async () => {
+    const ancientUser = NOW.getTime() - 360 * 60_000;
+    const activeAt = NOW.getTime() - 5_000;
+    const { ctx } = makeCtx({
+      metadata: awayMeta,
+      charRows: rows(ancientUser, [
+        { key: AMSG_CHAT_PRESENCE_KEY, value: presenceValue(activeAt, { lastUserMessageAt: null, scene: 'date' }) },
+      ]),
+    });
+    await expect(amsgHooks.onBeforeFire(ctx)).resolves.toEqual({ defer: { afterMs: 90 * 60_000 - 5_000 } });
+  });
 });
 
 // ─── 用户定的「频率与额度」：到点那几道闸 ───

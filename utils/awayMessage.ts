@@ -13,6 +13,7 @@ import { isAmsg2GlobalReady } from './amsg2ToolBridge';
 import {
   decideAwayTaskAction,
   findAwayGapStart,
+  getLastAwayAnchorAt,
   planAwaySlots,
   resolveAwayDelayMinutes,
   splitAwaySegments,
@@ -125,6 +126,23 @@ export const syncCloudAwayTask = async (deps: {
   } finally {
     cloudInFlight.delete(char.id);
   }
+};
+
+/**
+ * 见面与通话轮次落库后维护云端离开后消息：从最近消息（含已归档）取最后一次在场互动时刻，
+ * 按它新建或改期云端任务。距离已有排期不到 AWAY_RENEW_SLACK_MS（10 分钟）时不发请求。
+ */
+export const syncCloudAwayTaskFromRecent = async (
+  deps: Omit<Parameters<typeof syncCloudAwayTask>[0], 'lastUserAt'>,
+): Promise<void> => {
+  const { char } = deps;
+  if (!char.awayMessage?.enabled || cloudInFlight.has(char.id)) return;
+  if ((cloudCooldownUntil.get(char.id) ?? 0) > Date.now()) return;
+  if (!await isAwayCloudRoute(char) || !char.activeMsg2Config) return;
+  const recent = await DB.getRecentMessagesByCharId(char.id, 50, true);
+  const lastAnchorAt = getLastAwayAnchorAt(recent);
+  if (lastAnchorAt == null) return;
+  await syncCloudAwayTask({ ...deps, lastUserAt: lastAnchorAt });
 };
 
 /** 关掉离开后消息或改了等待时长时调用：取消云端那条，下一轮对方开口时按新设置重建。 */

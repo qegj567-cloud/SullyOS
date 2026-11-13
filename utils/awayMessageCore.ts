@@ -27,15 +27,36 @@ interface MessageLike {
   metadata?: Record<string, any> | null;
 }
 
+// 线下见面与实时通话只在双方同时在场时产生。线上 assistant 消息必须跳过，免得主动消息、
+// 见面离开提醒或手机卡片把离开计时重置；而见面开场白、重随回复、通话挂断记录，以及用户删掉
+// 自己的推进词后留下的见面/通话正文，都代表那个时刻双方刚互动过。后续若新增实时在场渠道，
+// 或把某类见面/通话记录改成后台自动生成，需要同步调整这里的来源集合。
+const IN_PERSON_SOURCES = new Set(['date', 'call', 'call-end-popup']);
+
+export const isAwayActivityAnchor = (message: MessageLike): boolean => {
+  if (message.metadata?.proactiveHint) return false;
+  const source = message.metadata?.source;
+  if (typeof source === 'string' && IN_PERSON_SOURCES.has(source)) return true;
+  return message.role === 'user';
+};
+
+/** 最近一次在场互动的时刻（供云端排程与 fire_pack 快照共用，消息按时间升序传入）。 */
+export const getLastAwayAnchorAt = (messages: MessageLike[]): number | null => {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (isAwayActivityAnchor(messages[i])) return messages[i].timestamp;
+  }
+  return null;
+};
+
 /**
- * 本地版：消息按时间升序传入。对方最后一次开口已经超过等待时长、且那之后还没补过
- * 离开后消息时，返回那次开口的时刻；否则 null。一次离开只补一次，对方开口才重新计时。
+ * 本地版：消息按时间升序传入。最后一次互动（用户发言，或线下见面/通话记录）已经超过等待时长、
+ * 且那之后还没补过离开后消息时，返回那次互动的时刻；否则 null。一次离开只补一次，再次互动后重新计时。
  */
 export const findAwayGapStart = (messages: MessageLike[], delayMs: number, nowMs: number): number | null => {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
     if (m.metadata?.awayMessage) return null;
-    if (m.role === 'user' && !m.metadata?.proactiveHint) {
+    if (isAwayActivityAnchor(m)) {
       return nowMs - m.timestamp >= delayMs ? m.timestamp : null;
     }
   }

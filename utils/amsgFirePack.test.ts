@@ -226,6 +226,9 @@ describe('parseFirePack', () => {
 
   it('lastUserMessageAt 数字也合法', () => {
     expect(parseFirePack(JSON.stringify({ ...valid, lastUserMessageAt: 123 }))?.lastUserMessageAt).toBe(123);
+    expect(parseFirePack(JSON.stringify({ ...valid, lastAwayAnchorAt: 456 }))?.lastAwayAnchorAt).toBe(456);
+    expect(parseFirePack(JSON.stringify({ ...valid, lastAwayAnchorAt: null }))?.lastAwayAnchorAt).toBeNull();
+    expect(parseFirePack(JSON.stringify({ ...valid, lastAwayAnchorAt: 'bad' }))).toBeNull();
   });
 
   it('tzId 必填：缺失 / 空串 / 非字符串整包打回（渲染时间没有第二套算法可退）', () => {
