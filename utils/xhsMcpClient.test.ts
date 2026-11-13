@@ -108,7 +108,7 @@ describe('XHS Lite platform affinity', () => {
             }
             if (url.endsWith('/api/search')) {
                 expect(headers.get('x-xhs-platform')).toBe('rednote');
-                return new Response(JSON.stringify({ success: true, feeds: [], platform: 'rednote' }), {
+                return new Response(JSON.stringify({ success: true, feeds: [{note_id:'a'.repeat(24),xsec_token:'search-token'}], platform: 'rednote' }), {
                     headers: { 'content-type': 'application/json' },
                 });
             }
@@ -120,6 +120,10 @@ describe('XHS Lite platform affinity', () => {
 
         expect(login.success).toBe(true);
         expect(search.success).toBe(true);
+        const note = normalizeNote(search.data.feeds[0]);
+        expect(note.xsecSource).toBe('pc_search');
+        expect(new URL(note.url!).hostname).toBe('www.rednote.com');
+        expect(new URL(note.url!).searchParams.get('xsec_source')).toBe('pc_search');
         expect(upstream).toHaveBeenCalledTimes(2);
     });
 });

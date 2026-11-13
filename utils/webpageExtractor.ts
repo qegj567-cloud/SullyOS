@@ -174,7 +174,7 @@ export function isXhsUrl(url: string): boolean {
  * 同时支持国内域名 xiaohongshu.com 和新版国际域名 rednote.com；
  * xhslink.com / xhslink.cn 短链没有 ID，需先 expandShortUrl 后再调用本函数。
  */
-export function extractXhsNoteLink(text: string): { noteId: string; xsecToken?: string } | null {
+export function extractXhsNoteLink(text: string): { noteId: string; xsecToken?: string; xsecSource?: string; url: string } | null {
   if (!text) return null;
 
   const candidates: string[] = [...(text.match(/https?:\/\/[^\s，。！？；、"'《》()（）【】]+/ig) || [])];
@@ -193,7 +193,8 @@ export function extractXhsNoteLink(text: string): { noteId: string; xsecToken?: 
         const noteId = parsed.pathname.match(XHS_NOTE_PATH_RE)?.[1];
         if (noteId) {
           // URLSearchParams 解码一次即可：手机分享常带 %3D，不能原样送给详情 API。
-          return { noteId, xsecToken: parsed.searchParams.get('xsec_token') || undefined };
+          return { noteId, xsecToken: parsed.searchParams.get('xsec_token') || undefined,
+            xsecSource: parsed.searchParams.get('xsec_source') || undefined, url: parsed.href };
         }
         // 兼容旧代理一路 follow 到验证码页的响应，不需要访问或通过验证码。
         if (parsed.pathname !== '/website-login/captcha') break;

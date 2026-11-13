@@ -10,6 +10,7 @@ import { tryParseLifeSimResetCard } from '../../utils/lifeSimChatCard';
 import { VALID_INTERJECTION_TAGS, cleanVoiceMarkupForDisplay } from '../../utils/minimaxTts';
 import { stripFishCuesForDisplay } from '../../utils/fishAudioTts';
 import { formatStatCount } from '../../utils/videoParser';
+import { buildXhsNoteLink } from '../../utils/xhsNoteLink';
 import { trackEvent } from '../../utils/analytics';
 import { resolveBubbleCornerRadii, shouldHideBubbleTail } from '../../utils/bubbleAppearance';
 import { isReducedBlurActive } from '../../utils/blurPolicy';
@@ -1901,17 +1902,11 @@ const MessageItem = React.memo(({
     // --- XHS Card Rendering (小红书笔记卡片) ---
     if (m.type === 'xhs_card' && m.metadata?.xhsNote) {
         const note = m.metadata.xhsNote;
-        const openXhsNote = () => {
-            const nid = note.noteId || note.note_id || note.id;
-            if (!nid) return;
-            const token = note.xsecToken || note.xsec_token;
-            const url = `https://www.xiaohongshu.com/explore/${nid}${token ? `?xsec_token=${encodeURIComponent(token)}&xsec_source=pc_feed` : ''}`;
-            window.open(url, '_blank', 'noopener,noreferrer');
-        };
+        const noteUrl = buildXhsNoteLink(note, /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+            || navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
         return commonLayout(
-            <div
-                onClick={openXhsNote}
-                className="w-64 bg-white rounded-xl overflow-hidden shadow-sm border border-slate-100 cursor-pointer active:opacity-90 transition-opacity">
+            <a href={noteUrl} target="_blank" rel="noopener noreferrer"
+                className="block no-underline w-64 bg-white rounded-xl overflow-hidden shadow-sm border border-slate-100 cursor-pointer active:opacity-90 transition-opacity">
                 {/* Cover image */}
                 {note.coverUrl ? (
                     <div className="relative w-full h-36 bg-slate-100 overflow-hidden">
@@ -1968,8 +1963,14 @@ const MessageItem = React.memo(({
                     <div className="mt-2 pt-1.5 flex items-center gap-1 text-[9px] text-slate-300">
                         <span className="text-red-400 font-bold">小红书</span> <span>·</span> <span>{note.type === 'video' ? '视频' : '笔记'}{isUser ? '分享' : '推荐'}</span>
                     </div>
+                    <div className="mt-1 text-[10px] text-slate-400"
+                        onPointerDown={e => { if (!selectionMode) e.stopPropagation(); }}
+                        onContextMenu={e => { if (!selectionMode) e.stopPropagation(); }}
+                        style={{WebkitTouchCallout:'default'}}>
+                        {noteUrl ? '点击查看原帖 · 长按此处复制链接' : '这张卡片缺少有效链接，可按标题搜索原帖'}
+                    </div>
                 </div>
-            </div>
+            </a>
         );
     }
 

@@ -695,6 +695,8 @@ export async function runXhsDetail(
                     author: detailNote.author || matched?.author || '',
                     authorId: detailNote.authorId || matched?.authorId || '',
                     xsecToken: detailNote.xsecToken || detailToken || xsecToken || matched?.xsecToken,
+                    url: matched?.url || detailNote.url,
+                    xsecSource: matched?.xsecSource || detailNote.xsecSource,
                     comments: detailNote.comments || matched?.comments,
                 };
                 const index = ctx.lastXhsNotesRef.current.findIndex(n => n.noteId === args.noteId);

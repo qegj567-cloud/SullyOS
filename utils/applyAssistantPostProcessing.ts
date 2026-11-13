@@ -28,6 +28,7 @@ import { dialogueMaxTokens } from './characterApi';
 
 import { CharacterProfile, UserProfile, Message, Emoji, EmojiCategory, RealtimeConfig, GroupProfile } from '../types';
 import { DB } from './db';
+import { readAssistantThinking, splitInlineThinking } from './assistantThinking';
 import { ChatParser, type FrozenMusicSong } from './chatParser';
 import { resolveCharTimeZone } from './timezone';
 import { NotionManager, FeishuManager, XhsNote } from './realtimeContext';
@@ -85,8 +86,7 @@ export function buildReplySnapshotContent(msg: { type?: string; content: string 
 const normalizeAiContent = (raw: string): string => {
     let cleaned = normalizeAssistantActionFormatting(raw || '');
     // Strip hidden chain-of-thought blocks: <think> / <thinking> / <thought>
-    cleaned = cleaned.replace(/<(think|thinking|thought)>[\s\S]*?<\/\1>/gi, '');
-    cleaned = cleaned.replace(/<(?:think|thinking|thought)>[\s\S]*$/gi, '');
+    cleaned = splitInlineThinking(cleaned).content;
     cleaned = cleaned.replace(/\[\d{4}[-/年]\d{1,2}[-/月]\d{1,2}.*?\]/g, '');
     cleaned = cleaned.replace(/^[\w一-龥]+:\s*/, '');
     // Strip source tags leaked from history context, including model-mutated forms such as [聊chat].
@@ -721,6 +721,7 @@ export async function applyAssistantPostProcessing(
 
     // 局部 data 副本 — 后续 2nd-pass 会覆盖, 模仿旧版的 let data 行为
     let data: any = initialData;
+    const initialRawMessage = initialData?.choices?.[0]?.message || {content:rawAiContent};
 
     let scheduleFailureNotified = false;
     // 这句话**说出口**的时刻。本地聊天没传就是「现在」；主动消息传 push 的 sentAt。
@@ -771,6 +772,7 @@ export async function applyAssistantPostProcessing(
     };
 
     // ─── Step 1: 初次粗洗 ───
+    rawAiContent = splitInlineThinking(rawAiContent).content;
     rawAiContent = await replyStep(() => consumeHomeVisitReply(char.id, rawAiContent,
         (directives || []).flatMap(d=>d.type==='home_visit_reply'?[d.action]:[])));
     rawAiContent = await replyStep(() => consumeFriendFeedMainReply(char.id, rawAiContent,
@@ -801,25 +803,8 @@ export async function applyAssistantPostProcessing(
     // 抽取思考链 (showThinkingChain 开启时): reasoning_content + 内联 <think> 块。
     const extractThinkingChain = (dataObj: any, reasoningOverride?: string): string | null => {
         if (!(char as any).showThinkingChain) return null;
-        const lastRaw = dataObj?.choices?.[0]?.message?.content || '';
-        const lastReasoning = (
-            (reasoningOverride && reasoningOverride.trim())
-            || dataObj?.choices?.[0]?.message?.reasoning_content
-            || ''
-        ).trim();
-        const thinkBlocks: string[] = [];
-        const thinkPat = /<(think|thinking|thought)>([\s\S]*?)<\/\1>/gi;
-        let tm: RegExpExecArray | null;
-        while ((tm = thinkPat.exec(lastRaw)) !== null) {
-            const t = tm[2].trim();
-            if (t) thinkBlocks.push(t);
-        }
-        if (!/<\/(?:think|thinking|thought)>/i.test(lastRaw)) {
-            const openOnly = lastRaw.match(/<(?:think|thinking|thought)>([\s\S]*$)/i);
-            if (openOnly && openOnly[1].trim()) thinkBlocks.push(openOnly[1].trim());
-        }
-        const chain = [lastReasoning, ...thinkBlocks].filter(s => !!s).join('\n\n').trim();
-        return chain || null;
+        return readAssistantThinking(dataObj?.choices?.[0]?.message
+            || (dataObj === initialData ? initialRawMessage : undefined), reasoningOverride) || null;
     };
 
     // 把一段文本 (parseAndExecuteActions / HTML 之外的部分) 渲染成气泡并落库 —— 双语 / 表情 / 引用 / 分段

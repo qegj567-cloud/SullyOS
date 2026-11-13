@@ -1639,6 +1639,7 @@ describe('云端思考链随首条 push 回客户端', () => {
   /** 一轮 LLM：正文 + 可选的思考（放在哪个响应字段里也能挑）。 */
   interface Round {
     output: string;
+    message?: Record<string, unknown>;
     reasoning?: string;
     /** 思考放哪个字段，默认 reasoning_content。 */
     field?: 'reasoning_content' | 'reasoning' | 'thinking';
@@ -1682,6 +1683,7 @@ describe('云端思考链随首条 push 回客户端', () => {
             message: {
               content: round.output,
               ...(round.reasoning ? { [round.field ?? 'reasoning_content']: round.reasoning } : {}),
+              ...round.message,
             },
           }],
         },
@@ -1726,6 +1728,29 @@ describe('云端思考链随首条 push 回客户端', () => {
     }
     expect(payloads.map((p) => p.message)).toEqual(['在的。', '怎么啦？']);
     expect(JSON.stringify(payloads)).not.toContain('<think>');
+  });
+
+  it.each([
+    {content:[{text:'摘要',thought:true},{type:'text',text:'你好'}]},
+    {content:'你好',reasoning_content:'',reasoning_details:[{type:'reasoning.summary',summary:'摘要'}]},
+  ])('structured thoughts stay out of push messages', async message => {
+    const decision=await instantFire([{output:'摘要你好',message}]);
+    expect(decision.decision).toBe('finish');
+    expect(decision.pushPayloads.map((p:any)=>p.message)).toEqual(['你好']);
+    expect(decision.pushPayloads[0].metadata.amsgReasoning).toBe('摘要');
+  });
+
+  it('captures a trailing unfinished block without pushing it', async () => {
+    const decision=await instantFire([{output:'<think>前半段</think>你好<thinking>后半段'}]);
+    expect(decision.decision).toBe('finish');
+    expect(decision.pushPayloads.map((p:any)=>p.message)).toEqual(['你好']);
+    expect(decision.pushPayloads[0].metadata.amsgReasoning).toBe('前半段\n\n后半段');
+  });
+
+  it('does not use SDK fallback thinking as a missing answer', async () => {
+    const decision=await instantFire([{output:'只有思考没有回答',message:{content:null,reasoning:'只有思考没有回答'}}]);
+    expect(decision.decision).toBe('skip-push');
+    expect(decision.pushPayloads).toBeUndefined();
   });
 
   // 工具循环一次 fire 跑好几轮，每轮都有自己的思考。留最后一轮的：用户看到的正文就是

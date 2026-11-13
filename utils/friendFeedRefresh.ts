@@ -62,10 +62,19 @@ export async function refreshFriendFeed(user: UserProfile, globalApi: APIConfig,
         const post=commentPostId?current.posts.find(p=>p.id===commentPostId):undefined;
         if(commentPostId&&!post)throw Error('这条动态已经不存在');
         const pool=post?friendCommentPool(characters.filter(c=>friendPostsForCharacter(current,c.id).some(p=>p.id===post.id)),post,settings,current):characters;
-        const char = weightedFriendPick(pool.map(c => ({value: c, weight: settings.characterWeights[c.id] ?? 10})), random);
+        let char = weightedFriendPick(pool.map(c => ({value: c, weight: settings.characterWeights[c.id] ?? 10})), random);
         const kind = weightedFriendPick((['self', 'related', 'stranger'] as FriendRefreshKind[]).map(value => ({value,
             weight: value !== 'self' && (!settings.npcEnabled||char?.phoneState?.allowFictionalContacts===false) ? 0 : settings.contentWeights[value]})), random);
         if (!char || !kind) return {warnings, message: weibo?.message||(post?.source&&!settings.realContentEnabled?'尚未允许角色阅读真实内容，可在设置中开启':'没有可抽取的角色或内容类型，请在设置中调整权重')};
+        // A self round must not pay for a reply that landing will reject as a monologue.
+        // NPC rounds still use the original host; zero weights remain excluded.
+        if (post && kind === 'self' && post.comments.at(-1)?.authorId === char.id) {
+            const eligibleSettings = {...settings,characterWeights:{...settings.characterWeights,[char.id]:0}};
+            const alternatives = friendCommentPool(characters.filter(c =>
+                friendPostsForCharacter(current,c.id).some(p => p.id === post.id)),post,eligibleSettings,current);
+            char = weightedFriendPick(alternatives.map(c => ({value:c,weight:settings.characterWeights[c.id]??10})),random);
+            if (!char) return {warnings,message:'最后一条评论已经是这位角色发的，这次未调用 API。你可以先接一句，或在设置中让其他角色参与评论。'};
+        }
         charId = char.id;
         const api = await resolveFriendFeedApi(globalApi, char);
         if (!api?.baseUrl || !api.model) throw Error('请在哔哔的 API 设置中配置独立 API，或检查角色 / 全局 API；已有内容已保留');

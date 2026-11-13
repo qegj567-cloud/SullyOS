@@ -1539,7 +1539,7 @@ function pickStaleStoppedReplyKeys(rows, nowMs = Date.now(), protectKey) {
 // worker/amsg/src/index.ts
 import { DurableObject } from "cloudflare:workers";
 
-// node_modules/.pnpm/@rei-standard+amsg-server@3.2.0-next.2_@neondatabase+serverless@1.1.0_pg@8.22.0/node_modules/@rei-standard/amsg-server/dist/chunk-R2CRPRKR.mjs
+// node_modules/.pnpm/@rei-standard+amsg-server@3_f2a08373d30841ce79e2e19c7fb88ed9/node_modules/@rei-standard/amsg-server/dist/chunk-R2CRPRKR.mjs
 var CLEANUP_BATCH_LIMIT = 100;
 var UPDATABLE_COLUMNS = /* @__PURE__ */ new Set([
   "user_id",
@@ -2797,7 +2797,7 @@ function stringifyDecisionForError(value) {
   }
 }
 
-// node_modules/.pnpm/@rei-standard+amsg-server@3.2.0-next.2_@neondatabase+serverless@1.1.0_pg@8.22.0/node_modules/@rei-standard/amsg-server/dist/chunk-WFKLHUUE.mjs
+// node_modules/.pnpm/@rei-standard+amsg-server@3_f2a08373d30841ce79e2e19c7fb88ed9/node_modules/@rei-standard/amsg-server/dist/chunk-WFKLHUUE.mjs
 var DAY_MS = 24 * 60 * 60 * 1e3;
 var MAX_LISTED_SKIPPED_OCCURRENCES = 32;
 var MAX_ADJUST_STEPS = 32;
@@ -11957,6 +11957,56 @@ function createSingleUserCloudflareWorker(buildConfig, options = {}) {
   return { fetch: fetch2, scheduled, runTask: runTask2, getSchemaVersion: getSchemaVersion2, ensureSchema: ensureSchema2 };
 }
 
+// utils/assistantThinking.ts
+var isThinkingPart = (part) => part?.thought === true || ["thinking", "thought", "reasoning", "reasoning.text", "reasoning.summary"].includes(part?.type);
+var isOpaquePart = (part) => ["redacted_thinking", "reasoning.encrypted", "thought_signature"].includes(part?.type);
+function plainText(value) {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.map(plainText).join("");
+  if (!value || typeof value !== "object" || isOpaquePart(value)) return "";
+  return plainText(value.text ?? value.thinking ?? value.summary ?? value.content ?? value.value);
+}
+function contentParts(value) {
+  if (typeof value === "string") return { content: value, reasoning: "" };
+  if (Array.isArray(value)) return value.map(contentParts).reduce((all, part) => ({
+    content: all.content + part.content,
+    reasoning: all.reasoning + part.reasoning
+  }), { content: "", reasoning: "" });
+  if (!value || typeof value !== "object" || isOpaquePart(value)) return { content: "", reasoning: "" };
+  if (isThinkingPart(value)) return { content: "", reasoning: plainText(value) };
+  return contentParts(value.text ?? value.content ?? value.value);
+}
+function readAssistantMessage(message) {
+  const parts = contentParts(message?.content);
+  const aliases = [message?.reasoning_content, message?.reasoning, message?.thinking].map(plainText);
+  const native = aliases.find((text2) => text2.trim().length > 0) || aliases.find((text2) => text2.length > 0) || "";
+  const details = Array.isArray(message?.reasoning_details) ? message.reasoning_details.filter(isThinkingPart).map(plainText).join("") : "";
+  const reasoning = [native.trim() ? native : details || native, parts.reasoning].filter(Boolean);
+  return { content: parts.content, reasoning: [...new Set(reasoning)].join("\n\n") };
+}
+function splitInlineThinking(text2) {
+  const open = /<(think|thinking|thought)(?:\s[^>]*)?>/gi;
+  let content = "", cursor = 0;
+  const blocks = [];
+  let match;
+  while (match = open.exec(text2)) {
+    content += text2.slice(cursor, match.index);
+    const close = new RegExp(`<\\/\\s*${match[1]}\\s*>`, "gi");
+    close.lastIndex = open.lastIndex;
+    const end = close.exec(text2);
+    const block = text2.slice(open.lastIndex, end ? end.index : text2.length).trim();
+    if (block) blocks.push(block);
+    cursor = end ? close.lastIndex : text2.length;
+    open.lastIndex = cursor;
+    if (!end) break;
+  }
+  return { content: content + text2.slice(cursor), reasoning: blocks.join("\n\n") };
+}
+function readAssistantThinking(message, override) {
+  const parts = readAssistantMessage(message);
+  return [override?.trim() || parts.reasoning.trim(), splitInlineThinking(parts.content).reasoning].filter(Boolean).join("\n\n");
+}
+
 // utils/voiceTextDedup.ts
 function deduplicateVoiceText(text2) {
   if (/\[html\]|<翻[译譯]>|```/i.test(text2)) return text2;
@@ -12025,8 +12075,8 @@ var LONGEST_MESSAGE_KIND = Object.values(MESSAGE_KIND).reduce((longest, kind) =>
 var PUSH_PAYLOAD_BYTE_ENCODER = new TextEncoder();
 function segmentTextWithProtectedBlocks(text2, options) {
   if (!text2) return [];
-  const splitAndSanitize = (plainText) => {
-    const chunks = options.splitText(plainText).filter((c) => c !== "");
+  const splitAndSanitize = (plainText2) => {
+    const chunks = options.splitText(plainText2).filter((c) => c !== "");
     return chunks.map((chunk) => ({
       raw: chunk,
       sanitized: options.sanitizeText ? options.sanitizeText(chunk) : chunk,
@@ -12072,8 +12122,8 @@ function segmentTextWithProtectedBlocks(text2, options) {
   const resolveField = (field, raw, match) => typeof field === "function" ? field(raw, match) : field;
   for (const m of validMatches) {
     if (m.index > cursor) {
-      const plainText = text2.substring(cursor, m.index);
-      segments.push(...splitAndSanitize(plainText));
+      const plainText2 = text2.substring(cursor, m.index);
+      segments.push(...splitAndSanitize(plainText2));
     }
     const previewStr = resolveField(m.patternDef.preview, m.raw, m.matchObj);
     const metaData = resolveField(m.patternDef.meta, m.raw, m.matchObj);
@@ -12093,8 +12143,8 @@ function segmentTextWithProtectedBlocks(text2, options) {
     cursor = m.index + m.length;
   }
   if (cursor < text2.length) {
-    const plainText = text2.substring(cursor);
-    segments.push(...splitAndSanitize(plainText));
+    const plainText2 = text2.substring(cursor);
+    segments.push(...splitAndSanitize(plainText2));
   }
   return segments;
 }
@@ -12122,7 +12172,7 @@ var stripMarkdownDividers = (t) => t.replace(/^\s*---\s*$/gm, "").replace(/^\s*[
 var stripBackticks = (t) => t.replace(/`(\[\[[\s\S]*?\]\])`/g, "$1").replace(/``+/g, "").replace(/(^|\s)`(\s|$)/gm, "$1$2");
 var stripLegacyTrans = (t) => t.replace(/%%TRANS%%[\s\S]*/gi, "");
 var collapseWhitespace = (t) => t.replace(/\n{3,}/g, "\n\n").trim();
-var stripThinkBlocks = (t) => t.replace(/<(think|thinking|thought)>[\s\S]*?<\/\1>/gi, "").replace(/<(?:think|thinking|thought)>[\s\S]*$/gi, "");
+var stripThinkBlocks = (t) => splitInlineThinking(t).content;
 var stripInnerState = (t) => t.replace(/\[\[INNER_STATE:\s*[\s\S]*?\]\]/g, "");
 var replaceMarkdownLinks = (t) => t.replace(/\[([^\]]+)\]\([^)]+\)/g, "[\u94FE\u63A5\uFF1A$1]");
 var replaceSendEmoji = (t) => t.replace(/\[\[SEND_EMOJI[:：]\s*(.+?)\]\]/g, "[\u8868\u60C5\uFF1A$1]");
@@ -12275,7 +12325,7 @@ function sanitizeIntoSegments(text2) {
   const ATOM_MARKER = String.fromCharCode(2);
   const atomBlocks = [];
   const atomSegments = segmentTextWithProtectedBlocks(cleaned, {
-    splitText: (plainText) => [plainText],
+    splitText: (plainText2) => [plainText2],
     protectedPatterns: [
       {
         pattern: /\[html\][\s\S]*?\[\/html\]/i,
@@ -14141,7 +14191,7 @@ function buildScheduledPush(message, build, extraMeta, bannerBody) {
 }
 
 // utils/amsgBundleVersion.ts
-var AMSG_BUNDLE_VERSION = "2026-11-11.2";
+var AMSG_BUNDLE_VERSION = "2026-11-13";
 
 // worker/amsg/src/reproduction.ts
 async function writeDiagnosticStage(writeState, runId, event, fields = {}) {
@@ -16882,6 +16932,36 @@ var classifyFetchFailure = (ctx) => {
   return "unknown";
 };
 
+// utils/xhsNoteLink.ts
+function buildXhsNoteLink(note, mobile = false) {
+  const id = note.noteId || note.note_id || note.id;
+  if (!id || !/^[a-f\d]{24}$/i.test(id)) return;
+  let original;
+  for (const value of [note.url, note.shareUrl]) {
+    if (!value) continue;
+    try {
+      const candidate = new URL(value);
+      if (/^https?:$/.test(candidate.protocol) && !candidate.username && !candidate.password && ["xiaohongshu.com", "www.xiaohongshu.com", "rednote.com", "www.rednote.com"].includes(candidate.hostname) && candidate.pathname.match(/^\/(?:explore|discovery\/item|search_result)\/([a-f\d]{24})\/?$/i)?.[1] === id) {
+        original = candidate;
+        break;
+      }
+    } catch {
+    }
+  }
+  const host = original?.hostname || (note.platform === "rednote" ? "www.rednote.com" : "www.xiaohongshu.com");
+  const url = original || new URL(`https://${host}/explore/${id}`);
+  url.protocol = "https:";
+  url.port = "";
+  if (mobile) url.pathname = `/discovery/item/${id}`;
+  const token = note.xsecToken || note.xsec_token || url.searchParams.get("xsec_token");
+  const source = note.xsecSource || note.xsec_source || url.searchParams.get("xsec_source");
+  if (token) {
+    url.searchParams.set("xsec_token", token);
+    url.searchParams.set("xsec_source", source || "pc_feed");
+  }
+  return url.href;
+}
+
 // utils/xhsMcpClient.ts
 var XHS_SPIDER_V3_EXPERIMENT = Object.freeze({
   optInValue: "spider-v3-isolated-cookie",
@@ -17435,7 +17515,11 @@ var XhsMcpClient = {
   },
   search: async (serverUrl, keyword, options, signal) => {
     signal?.throwIfAborted();
-    return detectMode(serverUrl) === "bridge" ? bridgePost(serverUrl, "search", { keyword, ...options }, signal) : mcpCallTool(serverUrl, "search", { keyword }, signal);
+    const result = await (detectMode(serverUrl) === "bridge" ? bridgePost(serverUrl, "search", { keyword, ...options }, signal) : mcpCallTool(serverUrl, "search", { keyword }, signal));
+    if (result.success) for (const note of extractNotesFromMcpData(result.data)) {
+      if (note && typeof note === "object" && !note.xsecSource && !note.xsec_source && !note.url && !note.note_url && !note.shareUrl && !note.share_url) note.xsecSource = "pc_search";
+    }
+    return result;
   },
   getRecommend: async (serverUrl, signal) => {
     signal?.throwIfAborted();
@@ -17690,8 +17774,20 @@ var normalizeNote = (n) => {
   const collectsRaw = n.collects ?? n.collected_count ?? interact.collected_count ?? interact.collectedCount ?? 0;
   const commentCountRaw = n.commentCount ?? n.comment_count ?? interact.comment_count ?? interact.commentCount ?? 0;
   const shareCountRaw = n.shareCount ?? n.share_count ?? interact.share_count ?? interact.shareCount ?? 0;
+  const noteId = n.noteId || n.note_id || n.id || card?.note_id || card?.noteId || "";
+  const platform = n.platform === "rednote" || n.platform === "xhs" ? n.platform : litePlatform === "rednote" ? "rednote" : "xhs";
+  const xsecToken = n.xsecToken || n.xsec_token || card?.xsec_token || card?.xsecToken || void 0;
+  const xsecSource = n.xsecSource || n.xsec_source || card?.xsec_source || card?.xsecSource || void 0;
+  const url = buildXhsNoteLink({
+    noteId,
+    platform,
+    xsecToken,
+    xsecSource,
+    url: n.url || n.note_url,
+    shareUrl: n.shareUrl || n.share_url || card?.share_url
+  });
   return {
-    noteId: n.noteId || n.note_id || n.id || card?.note_id || card?.noteId || card?.noteId || "",
+    noteId,
     title: n.title || n.display_title || n.displayTitle || card?.display_title || card?.displayTitle || "",
     desc: (n.desc || n.description || n.content || card?.desc || card?.description || card?.title || "").slice(0, 500),
     author: n.author || n.nickname || n.user?.nickname || n.user?.name || card?.user?.nickname || card?.user?.name || "",
@@ -17700,7 +17796,10 @@ var normalizeNote = (n) => {
     collects: parseXhsCount(collectsRaw),
     commentCount: parseXhsCount(commentCountRaw),
     shareCount: parseXhsCount(shareCountRaw),
-    xsecToken: n.xsecToken || n.xsec_token || card?.xsec_token || card?.xsecToken || void 0,
+    xsecToken,
+    xsecSource,
+    url,
+    platform,
     coverUrl,
     type: n.type || card?.type || void 0
   };
@@ -18121,6 +18220,8 @@ async function runXhsDetail(args, ctx) {
         author: detailNote.author || matched?.author || "",
         authorId: detailNote.authorId || matched?.authorId || "",
         xsecToken: detailNote.xsecToken || detailToken || xsecToken || matched?.xsecToken,
+        url: matched?.url || detailNote.url,
+        xsecSource: matched?.xsecSource || detailNote.xsecSource,
         comments: detailNote.comments || matched?.comments
       };
       const index = ctx.lastXhsNotesRef.current.findIndex((n) => n.noteId === args.noteId);
@@ -18853,16 +18954,6 @@ var fireStateError = (reason, detail) => {
   const error = new Error(`AMSG2_FIRE_STATE_MISSING: ${reason}`);
   error.permanent = true;
   return error;
-};
-var INLINE_THINK_RE = /<(think|thinking|thought)>([\s\S]*?)<\/\1>/gi;
-var extractInlineThink = (text2) => {
-  if (!text2.includes("<")) return "";
-  const blocks = [];
-  for (const match of text2.matchAll(INLINE_THINK_RE)) {
-    const inner = match[2].trim();
-    if (inner) blocks.push(inner);
-  }
-  return blocks.join("\n\n");
 };
 var amsgReasoningKey = (clientTaskId) => `reasoning:${clientTaskId}`;
 var pushFits = (payload) => measurePushPayload(JSON.stringify(payload), { reserveEnvelope: true }).withinLimit;
@@ -20059,7 +20150,9 @@ ${userHoliday}` });
       }
       return handler.llmOutput({ ctx, state: kindFire.state });
     }
-    const content = stripReasoningTags(ctx.llmOutputText || "").trim();
+    const llmMessage = ctx.llmResponse?.choices?.[0]?.message;
+    const rawContent = llmMessage && "content" in llmMessage ? readAssistantMessage(llmMessage).content : ctx.llmOutputText || "";
+    const content = splitInlineThinking(rawContent).content.trim();
     const taskId = ctx.taskId != null ? String(ctx.taskId) : null;
     if (taskId == null) {
       console.warn("[amsg:agentic] ctx \u4E0A\u6CA1\u6709 taskId\uFF0C\u9001\u8FBE\u5F52\u5C5E\u4F1A\u5931\u6548", ctx.sessionId);
@@ -20070,9 +20163,7 @@ ${userHoliday}` });
       throw new Error("AMSG2_FIRE_STASH_MISSING: onLLMOutput \u8BFB\u4E0D\u5230 ctx.scratch.fire\uFF0C\u68C0\u67E5 amsg-server \u662F\u5426\u4ECD\u5171\u4EAB scratch");
     }
     const session = stash.session;
-    const llmMessage = ctx.llmResponse?.choices?.[0]?.message;
-    const nativeReasoning = llmMessage?.reasoning_content ?? llmMessage?.reasoning ?? llmMessage?.thinking;
-    const roundReasoning = [nativeReasoning, extractInlineThink(ctx.llmOutputText || "")].filter((s) => typeof s === "string" && !!s.trim()).map((s) => s.trim()).join("\n\n");
+    const roundReasoning = readAssistantThinking(llmMessage && "content" in llmMessage ? llmMessage : { ...llmMessage, content: rawContent });
     session.finalReasoning = roundReasoning || null;
     const rawToolCalls = ctx.llmResponse?.choices?.[0]?.message?.tool_calls;
     const nativeCalls = classifyNativeToolCalls(rawToolCalls, stash.fireToolNames, stash.mcpResolve);

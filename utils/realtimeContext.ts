@@ -1625,6 +1625,9 @@ export interface XhsNote {
     author: string;
     authorId: string;
     xsecToken?: string;
+    xsecSource?: string;
+    url?: string;
+    platform?: 'xhs' | 'rednote';
     coverUrl?: string;
     type?: string;  // 'normal' | 'video'
     comments?: {
