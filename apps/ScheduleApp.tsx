@@ -182,8 +182,15 @@ const ScheduleApp: React.FC = () => {
                     messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, messages)),
                     temperature: 0.9, 
                     max_tokens: 8000 
-                })
-            });
+                }),
+                __sullyMeta: {
+                    appId: 'schedule',
+                    appName: '日程表',
+                    charId: supervisor.id,
+                    charName: supervisor.name,
+                    purpose: '待办完成反馈',
+                },
+            } as RequestInit);
 
             if (!response.ok) {
                 const errorText = await response.text();
@@ -268,8 +275,15 @@ const ScheduleApp: React.FC = () => {
                     messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, messages)),
                     temperature: 0.8,
                     max_tokens: 8000
-                })
-            });
+                }),
+                __sullyMeta: {
+                    appId: 'schedule',
+                    appName: '日程表',
+                    charId: char.id,
+                    charName: char.name,
+                    purpose: '纪念日感想生成',
+                },
+            } as RequestInit);
 
             if (!response.ok) {
                  const errorText = await response.text();

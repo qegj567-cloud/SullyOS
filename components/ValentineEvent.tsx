@@ -576,8 +576,15 @@ export const ValentineSession: React.FC<ValentineSessionProps> = ({ charId, onCl
                         { role: 'user', content: `[最近记录 (Previous Context)]:\n${recentMsgs}\n\n---\n\n${valentinePrompt}` }
                     ])),
                     temperature: 0.88
-                })
-            });
+                }),
+                __sullyMeta: {
+                    appId: 'special-moments',
+                    appName: '情人节企划',
+                    charId: c.id,
+                    charName: c.name,
+                    purpose: '情人节剧情生成',
+                },
+            } as RequestInit);
 
             if (!response.ok) throw new Error(`API 错误: ${response.status}`);
             const data = await safeResponseJson(response);

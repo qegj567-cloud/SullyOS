@@ -517,7 +517,7 @@ pinDays 仅在需要置顶时才写，大多数记忆不需要。
                     stream: false,
                 }),
             },
-            2, 180_000, { appName: '记忆宫殿', purpose: '记忆提取' }
+            2, 180_000, { appId: 'memorypalace', appName: '记忆宫殿', charId, charName, purpose: '记忆提取' }
         );
 
         const reply = data.choices?.[0]?.message?.content || '';

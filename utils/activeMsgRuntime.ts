@@ -31,7 +31,10 @@ import {
   listInstantChatPendings,
   settleInstantChatApiLog,
   settleInstantChatExpiredNotices,
+  settleLateCloudEmotionEvalLog,
 } from './amsgInstantChat';
+import { recordCompletedCloudApiCall } from './apiCallLog';
+import { resolveDialogueApi } from './characterApi';
 import { dispatchAmsgResult } from './amsgResults';
 import { requestStartupUpdateCheck } from './amsgAutoUpdateTrigger';
 import { flushAmsgState } from './amsgStateSync';
@@ -353,6 +356,7 @@ export const startLateEmotionPoll = (
     if (raw) {
       lateEmotionPolls.delete(charId);
       await landCloudEmotionResult(charId, raw);
+      settleLateCloudEmotionEvalLog(opts?.taskUuid, true);
       announceEmotionDone(charId);
       activeMsgTrace('runtime-late-emotion-landed', { charId, tries });
       // 用完即删（同旁路取回的口径）；删不掉下次触发会覆盖，只 warn。
@@ -365,6 +369,7 @@ export const startLateEmotionPoll = (
     }
     if (tries >= maxTries) {
       lateEmotionPolls.delete(charId);
+      settleLateCloudEmotionEvalLog(opts?.taskUuid, false);
       announceChatGen(CHAT_GEN_EVENTS.emotionFailed, {
         charId, charName,
         reason: '云端情绪评估最终没等到（副 API 太慢或报错），这一轮不更新',
@@ -802,6 +807,7 @@ const processInboxMessageWithPostProcessing = async (
       startLateEmotionPoll(message.charId, pendingRef, message.charName || '', { taskUuid: message.taskUuid });
     } else {
       // 标了 pending 却没给引用键（worker bug）：没法轮询，按「有结论但没结果」收尾。
+      settleLateCloudEmotionEvalLog(message.taskUuid, false);
       announceChatGen(CHAT_GEN_EVENTS.emotionFailed, {
         charId: message.charId, charName: message.charName || '',
         reason: '云端情绪评估晚投但缺少引用键（worker 可能有 bug），这一轮不更新',
@@ -1575,8 +1581,27 @@ const flushInboxToChatImpl = async (trigger: FlushTrigger, charId?: string): Pro
   // 保证 toast / 未读 / 通知语义不变。
   for (const message of pendingMessages) {
     // 包括重启后的补收与重复推送：任何诊断消息都不能进入角色业务。
-    if (diagnosticRunId(message.metadata)) {
-      try { await recordDiagnosticInbox(message, trigger); }
+    const diagId = diagnosticRunId(message.metadata);
+    if (diagId) {
+      try {
+        await recordDiagnosticInbox(message, trigger);
+        const diagUsage = (message.metadata as any)?.amsgUsage;
+        if (diagUsage && typeof diagUsage === 'object') {
+          const apiCfg = loadApiConfigFromLocalStorage();
+          const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+          recordCompletedCloudApiCall({
+            id: `cloud-diag-${diagId}`,
+            route: 'cloud-diagnostic',
+            baseUrl: apiCfg.baseUrl,
+            model: apiCfg.model,
+            ok: true,
+            timestamp: message.sentAt || message.receivedAt || Date.now(),
+            promptTokens: num(diagUsage.promptTokens),
+            completionTokens: num(diagUsage.completionTokens),
+            meta: { appId: 'settings', appName: '设置', purpose: '主动消息诊断测试' },
+          });
+        }
+      }
       catch {
         retainedInboxMessageIds.add(message.messageId);
         try { await ActiveMsgStore.saveInboxMessage(message); } catch { /* 云端账不销，下次补收 */ }
@@ -1816,6 +1841,7 @@ const flushInboxToChatImpl = async (trigger: FlushTrigger, charId?: string): Pro
               startLateEmotionPoll(message.charId, degradedPendingRef, message.charName || '', { taskUuid: message.taskUuid });
             } else {
               // 标了 pending 却没给引用键（worker bug）：没法轮询，按「有结论但没结果」收尾。
+              settleLateCloudEmotionEvalLog(message.taskUuid, false);
               announceChatGen(CHAT_GEN_EVENTS.emotionFailed, {
                 charId: message.charId, charName: message.charName || '',
                 reason: '云端情绪评估晚投但缺少引用键（worker 可能有 bug），这一轮不更新',
@@ -1863,12 +1889,12 @@ const flushInboxToChatImpl = async (trigger: FlushTrigger, charId?: string): Pro
       // 认末段（messageIndex >= totalMessages）而不是随便哪一段：第一段就销账的话，
       // 后续段丢在路上时兜底同样全停，用户永远只看到半截回复。段号缺失（单段消息 /
       // 旧 worker）当末段处理，保持旧行为。
+      const segIndex = Number((message.metadata as any)?.messageIndex);
+      const segTotal = Number((message.metadata as any)?.totalMessages);
+      const isLastSegment = !Number.isFinite(segTotal) || segTotal <= 1
+        || (Number.isFinite(segIndex) && segIndex >= segTotal);
       const pendingForChar = getInstantChatPending(message.charId);
       if (pendingForChar && message.taskUuid === pendingForChar.uuid) {
-        const segIndex = Number((message.metadata as any)?.messageIndex);
-        const segTotal = Number((message.metadata as any)?.totalMessages);
-        const isLastSegment = !Number.isFinite(segTotal) || segTotal <= 1
-          || (Number.isFinite(segIndex) && segIndex >= segTotal);
         if (isLastSegment && clearInstantChatPending(message.charId)) {
           scheduleNextInstantChatStatusCheck();
           // 「API 调用记录」里那笔（发出去时记的）在这里补完：用量挂在末条推送上，
@@ -1902,6 +1928,8 @@ const flushInboxToChatImpl = async (trigger: FlushTrigger, charId?: string): Pro
           // 不收尾（不推进回合、不写事件 / 用户外显），按「失败不扣回合」处理。
           await replyStep(async () => settleInstantChatSarModule(message));
         }
+      } else if (!isInstantReply && isLastSegment) {
+        void recordProactiveCloudApiLog(message);
       }
     } catch (stageErr) {
       if (replyRun?.signal.aborted || isReplyStopped(message.taskUuid)) continue;
@@ -1941,6 +1969,65 @@ const flushInboxToChatImpl = async (trigger: FlushTrigger, charId?: string): Pro
     }
   }
   return landedMessageIds;
+};
+
+/**
+ * 定时主动消息末段入库后，把这一轮云端模型调用写进「设置 → API 调用记录」。
+ *
+ * 固定文案（fixed）不调模型、不入账；其余定时触发（面板排程、角色自排、离开后消息、见面离开提醒、
+ * 纯动作回执）都在云端实打实调了对话模型。凭据不随推送回传，按角色当前默认对话 API 归属。
+ */
+const recordProactiveCloudApiLog = async (message: ActiveMsg2InboxMessage): Promise<void> => {
+  try {
+    if (message.messageType === 'fixed') return;
+    const meta = (message.metadata ?? {}) as Record<string, any>;
+    const usage = meta.amsgUsage && typeof meta.amsgUsage === 'object' ? meta.amsgUsage : null;
+    const isLlmProactive = Boolean(usage)
+      || meta.amsgActionResult === true
+      || message.messageType === 'auto'
+      || message.messageType === 'prompted';
+    if (!isLlmProactive) return;
+
+    const chars = await DB.getAllCharacters().catch(() => []);
+    const char = chars.find((c) => c.id === message.charId);
+    const apiCfg = loadApiConfigFromLocalStorage();
+    const effectiveApi = char ? resolveDialogueApi(apiCfg, char) : apiCfg;
+
+    const purpose = meta.amsgActionResult === true
+      ? '主动消息（纯动作）'
+      : (meta.amsgProactiveKind === 'away' || meta.amsgAway === true)
+        ? '离开后消息'
+        : (meta.amsgProactiveKind === 'dateLeave' || meta.amsgDateLeave === true)
+          ? '见面离开提醒'
+          : (meta.amsgProactiveKind === 'self'
+            || meta.amsgSelfScheduled === true
+            || char?.activeMsg2Config?.tasks?.some((t) => t.taskUuid === message.taskUuid && t.source === 'character'))
+            ? '角色自排提醒'
+            : '主动消息';
+
+    const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+    const occKey = meta.amsgOccurrenceMs ?? message.occurrenceMs ?? message.sentAt ?? message.messageId;
+    recordCompletedCloudApiCall({
+      id: `cloud-proactive-${message.taskUuid || message.messageId}:${occKey}`,
+      route: 'cloud-proactive',
+      baseUrl: effectiveApi.baseUrl,
+      model: effectiveApi.model,
+      ok: true,
+      timestamp: message.sentAt || message.receivedAt || Date.now(),
+      promptTokens: num(usage?.promptTokens),
+      completionTokens: num(usage?.completionTokens),
+      tokensPartial: meta.amsgTokensPartial === true,
+      meta: {
+        appId: 'chat',
+        appName: '消息',
+        charId: message.charId,
+        charName: char?.name || message.charName,
+        purpose,
+      },
+    });
+  } catch {
+    // 观测记录失败绝不连累已落库的主动消息
+  }
 };
 
 /**

@@ -1173,7 +1173,11 @@ const Settings: React.FC = () => {
     setTestingVisionApi(true);
     setVisionTestResult(null);
     try {
-      const description = await describeImageWithVisionApi(VISION_API_TEST_IMAGE_DATA_URL, config);
+      const description = await describeImageWithVisionApi(VISION_API_TEST_IMAGE_DATA_URL, config, {
+        appId: 'settings',
+        appName: '设置',
+        purpose: '测试连接',
+      });
       setVisionTestResult(`✅ 识图成功 — ${description.slice(0, 80)}`);
       trackEvent('测试识图 API', { result: '成功' });
     } catch (error: any) {
@@ -2509,7 +2513,8 @@ const Settings: React.FC = () => {
                                     max_tokens: 5,
                                     stream: localStream,
                                 }),
-                            });
+                                __sullyMeta: { appId: 'settings', appName: '设置', purpose: '测试连接' },
+                            } as RequestInit);
                             if (res.ok) {
                                 // 走 safeResponseJson —— 它能透明把 SSE 流响应拼成普通 chat/completion 结构
                                 const data = await safeResponseJson(res);

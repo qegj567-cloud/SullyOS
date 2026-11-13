@@ -515,7 +515,8 @@ const CheckPhone: React.FC = () => {
                     max_tokens: 5,
                     stream: false,
                 }),
-            });
+                __sullyMeta: { appId: 'checkphone', appName: '查手机', purpose: '测试连接' },
+            } as RequestInit);
             if (!response.ok) {
                 const detail = await response.text().catch(() => '');
                 setPhoneApiTestResult(`HTTP ${response.status}${detail ? `：${detail.slice(0, 80)}` : ''}`);
@@ -842,6 +843,17 @@ ${realCharRule}
 
             const fullPrompt = `\n\n### [你和用户「${userProfile.name}」的最近聊天（仅背景参考）]\n${recentMsgs}\n\n${perspectiveLock}\n\n### [Task]\n${promptInstruction}\n请结合上面的「当前时间 / 距离上次联系」和人设调整生成内容的时间戳和情绪。如果很久没联系，记录可能是近期的独处状态；如果刚聊过，记录可能与聊天内容相关。`;
 
+            const purposeLabel = customPrompt
+                ? `生成自定义应用·${logPrefix || type}`
+                : ({
+                    chat: '生成聊天记录',
+                    contacts: '扫描通讯录联系人',
+                    call: '生成通话记录',
+                    order: '生成购物订单',
+                    delivery: '生成外卖记录',
+                    social: '生成朋友圈动态',
+                } as Record<string, string>)[type] || '生成手机应用数据';
+
             const response = await fetch(`${effectiveApiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApiConfig.apiKey}` },
@@ -849,8 +861,15 @@ ${realCharRule}
                     model: effectiveApiConfig.model,
                     messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, [{ role: "user", content: fullPrompt }])),
                     temperature: 0.8
-                })
-            });
+                }),
+                __sullyMeta: {
+                    appId: 'checkphone',
+                    appName: '查手机',
+                    charId: targetChar.id,
+                    charName: targetChar.name,
+                    purpose: purposeLabel,
+                },
+            } as RequestInit);
 
             if (!response.ok) throw new Error('API Error');
             const data = await safeResponseJson(response);
@@ -954,7 +973,7 @@ ${realCharRule}
     // ============================================================
 
     // 裸 LLM 调用（智能体生成 / 互动续写共用）
-    const callLLM = async (prompt: string, temperature = 0.85, withCharacter = true): Promise<string> => {
+    const callLLM = async (prompt: string, temperature = 0.85, withCharacter = true, purpose = '查手机AI生成'): Promise<string> => {
         const recent = withCharacter && targetChar ? await loadCharacterContextMessages(targetChar) : [];
         const messages = withCharacter && targetChar ? (await ContextBuilder.buildCharacterRequest({
             char: targetChar, user: userProfile, timeOptions: { lastInteractionTs: recent[recent.length - 1]?.timestamp },
@@ -963,7 +982,13 @@ ${realCharRule}
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApiConfig.apiKey}` },
             body: JSON.stringify({ model: effectiveApiConfig.model, messages, temperature }),
-        });
+            __sullyMeta: {
+                appId: 'checkphone',
+                appName: '查手机',
+                ...(targetChar ? { charId: targetChar.id, charName: targetChar.name } : {}),
+                purpose,
+            },
+        } as RequestInit);
         if (!response.ok) throw new Error('API Error');
         const data = await safeResponseJson(response);
         // 用 extractContent 而非裸读 message.content：兼容 Claude/思考类模型把正文放在
@@ -1047,7 +1072,7 @@ ${AI_VENDOR_LORE}
 
             const fullPrompt = `\n\n### [Recent Chat Context]\n${recentMsgs}\n\n### [Task]\n${task}\n请结合「当前时间 / 距离上次联系」和人设，让内容贴合你近期的真实状态。只输出 JSON，不要解释。`;
 
-            const content = await callLLM(fullPrompt);
+            const content = await callLLM(fullPrompt, 0.85, true, '生成TA的AI会话');
             const now = Date.now();
             const rid = () => Math.random().toString(36).slice(2, 8);
             const newSessions: AiSession[] = [];
@@ -1178,7 +1203,7 @@ ${prevRecap ? `\n【已有前情（仅供衔接，别重复）】\n${prevRecap}\
 ${olderText}
 
 要求：第三人称，含起因→经过→结果，重点写人物关系/情绪的变化与暴露的心事，200~350 字，文笔流畅，不要分点、不要"总结如下"开场白。直接输出正文：`;
-            let summaryText = (await callLLM(prompt, 0.7, false)).trim();
+            let summaryText = (await callLLM(prompt, 0.7, false, 'AI会话摘要')).trim();
             if (!summaryText) summaryText = '（这段剧情继续推进了）';
             const now = Date.now();
             patchAiSession(sessionId, (s) => ({
@@ -1233,7 +1258,7 @@ ${olderText}
                 prompt = `\n\n你（${charName}）正在用手机和 ${aiDesc} 聊天。下面是对话（"我:"=你本人，"对方:"=那个 AI）。AI 刚回了最新一段，请以你的本色人设续写 "我:" 的下一句——你对它这句话的真实反应 / 追问 / 倾诉，贴合你的处境与心事。可以满意、可以失望、可以怼它答非所问、可以顺着深聊，别一味客气。别太长。只输出正文，不要前缀、不要解释。${recap}\n\n${transcript}`;
             }
 
-            let reply = (await callLLM(prompt)).trim();
+            let reply = (await callLLM(prompt, 0.85, true, 'TA的AI助手回复')).trim();
             reply = reply.replace(/^(我|对方|Me|Them|AI|助手)\s*[:：]\s*/i, '').trim();
             if (!reply) { addToast('对方没说话，再试一次', 'error'); return; }
             const full = `${transcript}\n${replyPrefix}: ${reply}`;
@@ -1275,7 +1300,7 @@ ${olderText}
                 prompt = `你在还原「${charName}」和 AI「${session.serviceName}」的对话（"我:"=用户 ${charName}，"对方:"=AI）。${persona}
 **替玩家跑一个完整回合（一来一回）**：承接最后一段——最后通常是"我:"(${charName} 刚发出、还没被回)，那就先"对方:"按那家口吻作答、再"我:"追问 / 倾诉一句（暴露 TA 的处境或心事）。**整段必须以 "我:"(${charName})收尾**（停在等 AI 回的地方）。**每行带 "我:"/"对方:" 前缀**，不要解释。${recap}\n\n${session.transcript}`;
             }
-            let out = (await callLLM(prompt)).trim().replace(/```/g, '').trim();
+            let out = (await callLLM(prompt, 0.85, true, 'TA的AI会话续写')).trim().replace(/```/g, '').trim();
             if (!/^(我|对方|Me|Them)\s*[:：]/m.test(out)) out = `${lastIsMe ? '对方' : '我'}: ${out}`;
             if (!out.trim()) { addToast('没续出内容，再试一次', 'error'); return; }
             const transcript = `${session.transcript}\n${out}`;
@@ -1404,7 +1429,7 @@ ${olderText}
 **transcript 写法**：长剧情小说体，第三人称叙事 + 引号对白，动作/神态/心理用 *星号*；"我:" = 你(玩家 ${charName}) 敲进输入框的 RP，"对方:" = AI 扮的「${card.name}」，交替推进，4-6 轮，首轮"对方:"当开场白、**整段以 "我:"(玩家)收尾**（停在等对方回应处）。**"我:"括号外只写故事里所扮角色的动作/对白，不要写你现实里的身体反应（盯屏幕/扔手机/吃东西等）；（全角括号内）= 越过角色直接跟皮下 AI 本体说话（骂它/OOC 提醒/指导怎么演/指出哪段不对）。**
 返回 JSON：{ "title": "剧情标题(12字内)", "transcript": "我: ...\\n对方: ..." }`;
             const fullPrompt = `\n\n### [Recent Chat Context]\n${recentMsgs}\n\n### [Task]\n${task}\n只输出 JSON，不要解释。`;
-            const content = await callLLM(fullPrompt);
+            const content = await callLLM(fullPrompt, 0.85, true, '酒馆角色卡开场');
             const obj: any = extractJson(content) || {};
             if (!obj.transcript) { addToast('没生成出来，再试一次', 'error'); return; }
             const now = Date.now();
@@ -1714,8 +1739,8 @@ ${olderText}
             const aChunk = serializeTurns(aLines.slice(mark, mark + ARCHIVE_EVERY));
             const bChunk = flipTranscript(aChunk);
             const [aSum, bSum] = await Promise.all([
-                summarizeConversation({ api: effectiveApiConfig as any, speakerName: targetChar.name, otherName: b.name, transcript: aChunk }),
-                summarizeConversation({ api: effectiveApiConfig as any, speakerName: b.name, otherName: targetChar.name, transcript: bChunk }),
+                summarizeConversation({ api: effectiveApiConfig as any, speakerId: targetChar.id, speakerName: targetChar.name, otherName: b.name, transcript: aChunk }),
+                summarizeConversation({ api: effectiveApiConfig as any, speakerId: b.id, speakerName: b.name, otherName: targetChar.name, transcript: bChunk }),
             ]);
             const ts = Date.now();
             const mk = () => `tp-${ts}-${Math.random().toString(36).slice(2, 7)}`;

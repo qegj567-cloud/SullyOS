@@ -8,12 +8,32 @@
  */
 
 import { ActiveMsgStore } from './activeMsgStore';
+import { recordCompletedCloudApiCall } from './apiCallLog';
+import { resolveDialogueApi } from './characterApi';
 import { DB } from './db';
-import { parseFireSkipResult, shouldReportFireSkip } from './amsgFireSkipResult';
+import { parseFireSkipResult, shouldReportFireSkip, type AmsgProactiveKind } from './amsgFireSkipResult';
 import type { AmsgResultContext } from './amsgResults';
-import type { Amsg2ExpiredNoticeRecord } from '../types';
+import type { Amsg2ExpiredNoticeRecord, APIConfig, CharacterProfile } from '../types';
 
 const HEADER = '[amsg2:fire-skipped]';
+
+const loadApiConfigSnapshot = (): APIConfig => {
+  try {
+    const raw = localStorage.getItem('os_api_config');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return { baseUrl: parsed.baseUrl || '', apiKey: parsed.apiKey || '', model: parsed.model || '', ...parsed };
+    }
+  } catch { /* ignore */ }
+  return { baseUrl: '', apiKey: '', model: '' };
+};
+
+const skippedProactivePurpose = (kind?: AmsgProactiveKind): string => {
+  if (kind === 'away') return '离开后消息（未发送）';
+  if (kind === 'dateLeave') return '见面离开提醒（未发送）';
+  if (kind === 'self') return '角色自排提醒（未发送）';
+  return '主动消息（未发送）';
+};
 
 export const applyFireSkipResult = async (
   payload: unknown,
@@ -24,12 +44,42 @@ export const applyFireSkipResult = async (
     console.warn(`${HEADER} 结果形状认不出来，丢弃`, payload);
     return true;
   }
+
+  let char: CharacterProfile | undefined;
+  if (result.usage || !result.task) {
+    char = (await DB.getAllCharacters()).find((c) => c.id === result.charId);
+  }
+
+  // 若本次跳过发生在云端调完模型之后（如角色决定不说、或生成期间用户开口避让），
+  // 这一轮实打实消耗了对话模型的 token，照实记进「API 调用记录」（即使该 reason 不留角色回执也照记）。
+  if (result.usage) {
+    const apiCfg = loadApiConfigSnapshot();
+    const effectiveApi = char ? resolveDialogueApi(apiCfg, char) : apiCfg;
+    recordCompletedCloudApiCall({
+      id: `cloud-proactive-skip-${result.taskUuid}:${result.occurrenceMs}`,
+      route: 'cloud-proactive',
+      baseUrl: effectiveApi.baseUrl,
+      model: effectiveApi.model,
+      ok: true,
+      timestamp: Math.min(Date.now(), result.occurrenceMs),
+      promptTokens: result.usage.promptTokens,
+      completionTokens: result.usage.completionTokens,
+      tokensPartial: result.usage.tokensPartial,
+      meta: {
+        appId: 'chat',
+        appName: '消息',
+        charId: result.charId,
+        charName: char?.name,
+        purpose: skippedProactivePurpose(result.proactiveKind),
+      },
+    });
+  }
+
   if (!shouldReportFireSkip(result.reason)) return true;
 
   // 云端带了任务概要就用它；没带（过期跳过那条路拿不到）就查本地清单。
   let task = result.task;
   if (!task) {
-    const char = (await DB.getAllCharacters()).find((c) => c.id === result.charId);
     if (!char) {
       // 角色已经被删了：这条永远没有落点，留着只会每次上线重放一遍。
       console.warn(`${HEADER} 找不到角色 ${result.charId}（已删除？），销账丢弃`);

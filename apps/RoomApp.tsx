@@ -657,8 +657,15 @@ const RoomApp: React.FC = () => {
                     messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, [{ role: "user", content: fallbackPrompt }])),
                     temperature: 0.5,
                     max_tokens: 8000 // Keep it tiny
-                })
-            });
+                }),
+                __sullyMeta: {
+                    appId: 'room',
+                    appName: '2D小屋',
+                    charId: c.id,
+                    charName: c.name,
+                    purpose: '小屋降级问候',
+                },
+            } as RequestInit);
 
             if (response.ok) {
                 const data = await safeResponseJson(response);
@@ -829,8 +836,15 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
                         { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
                         { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
                     ]
-                })
-            });
+                }),
+                __sullyMeta: {
+                    appId: 'room',
+                    appName: '2D小屋',
+                    charId: c.id,
+                    charName: c.name,
+                    purpose: '小屋进房状态生成',
+                },
+            } as RequestInit);
 
             if (response.ok) {
                 const data = await safeResponseJson(response);

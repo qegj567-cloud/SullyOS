@@ -272,9 +272,19 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         const uniqueMessages = new Map<number, Message>();
         for (const message of rawRecentMsgsHint) uniqueMessages.set(message.id, message);
         for (const message of selectedHistory) uniqueMessages.set(message.id, message);
+        const visionAppMeta = input.recallEntryPoint === 'home_3d'
+            ? { appId: 'room3d', appName: '3D家园' }
+            : input.recallEntryPoint === 'collaboration'
+                ? { appId: 'collaboration', appName: '协同工作' }
+                : input.recallEntryPoint === 'vr_world'
+                    ? { appId: 'vrworld', appName: '彼方' }
+                    : input.recallEntryPoint === 'world_home'
+                        ? { appId: 'worldhome', appName: '家园' }
+                        : { appId: 'chat', appName: '消息' };
         const prepared = await prepare('vision',()=>materializeVisionDescriptions(
             [...uniqueMessages.values()],
             input.visionApiConfig,
+            { ...visionAppMeta, charId: char.id, charName: char.name, purpose: '识图' },
         ));
         const preparedById = new Map(prepared.map(message => [message.id, message]));
         historyMsgsForPrompt = selectedHistory.map(message => preparedById.get(message.id) || message);

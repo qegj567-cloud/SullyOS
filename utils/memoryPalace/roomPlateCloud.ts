@@ -301,16 +301,14 @@ export const submitPlateConsolidation = async (args: {
   markPlateJobInFlight(args.charId, jobId, args.snapshotAt);
 
   // 这一次调用记进「设置 → API 调用记录」：请求是云端发的，本地的 fetch 拦截器只认
-  // `/chat/completions`，够不着它。
-  // 用量补不上：结果信封里没有 usage（跟即时对话那条路不同，那边云端随末条推送捎回来），
-  // 所以落地时只把 pending 收掉，token 那两格空着。
+  // `/chat/completions`，够不着它。结果回程时带上供应商回报的 usage 一并补齐。
   recordCloudApiCall({
     id: cloudApiCallLogId(jobId),
     route: 'cloud-plate-consolidate',
     baseUrl: args.lightLLM?.baseUrl || '',
     model: args.lightLLM?.model || '',
     messages: buildPlateJobMessages(jobInput),
-    meta: { appName: '记忆宫殿', purpose: '门牌整理', charId: args.charId, charName: args.charName },
+    meta: { appId: 'memorypalace', appName: '记忆宫殿', purpose: '门牌整理', charId: args.charId, charName: args.charName },
   });
 
   let uuid: string;
@@ -439,7 +437,12 @@ export const applyPlateConsolidateResult = async (
    * 收一遍。所以三条出口各说各的实话，落库失败那条干脆不收——账没销，下次上线重放，
    * 那时候再照实收。
    */
-  const settle = (ok: boolean) => settleCloudApiCall({ id: cloudApiCallLogId(result.jobId), ok });
+  const settle = (ok: boolean) => settleCloudApiCall({
+    id: cloudApiCallLogId(result.jobId),
+    ok,
+    ...(result.usage?.promptTokens !== undefined ? { promptTokens: result.usage.promptTokens } : {}),
+    ...(result.usage?.completionTokens !== undefined ? { completionTokens: result.usage.completionTokens } : {}),
+  });
 
   // 这份已经落过地了（销账失败被重放、或者推送和补收两条腿各送了一遍）。再合并一次的
   // 代价不是「白做一遍」而是**门牌被改坏**：合并对每条保留下来的条目 sourceCount + 1，

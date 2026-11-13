@@ -142,6 +142,11 @@ export function buildPlateJobMessages(job: PlateJobInput): Array<{ role: 'system
 
 // ─── 结果（worker 写、客户端读） ──────────────────────
 
+export interface PlateConsolidateUsage {
+  promptTokens?: number;
+  completionTokens?: number;
+}
+
 export interface PlateConsolidateResult {
   resultKind: typeof PLATE_CONSOLIDATE_RESULT_KIND;
   v: 1;
@@ -158,7 +163,23 @@ export interface PlateConsolidateResult {
    * 不用为每个在飞的 job 在本地留一份待办（页面关掉再打开也不会丢）。
    */
   rooms: Array<{ room: PlateRoom; entryIds: string[] }>;
+  /** 云端执行此次门牌整理时供应商回报的 token 用量；未返回或旧 Worker 时缺失。 */
+  usage?: PlateConsolidateUsage;
 }
+
+const normalizePlateUsage = (value: unknown): PlateConsolidateUsage | undefined => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const u = value as Record<string, unknown>;
+  const promptTokens = typeof u.promptTokens === 'number' && Number.isFinite(u.promptTokens)
+    ? u.promptTokens : undefined;
+  const completionTokens = typeof u.completionTokens === 'number' && Number.isFinite(u.completionTokens)
+    ? u.completionTokens : undefined;
+  if (promptTokens === undefined && completionTokens === undefined) return undefined;
+  return {
+    ...(promptTokens !== undefined ? { promptTokens } : {}),
+    ...(completionTokens !== undefined ? { completionTokens } : {}),
+  };
+};
 
 /** 组一条结果。形状由宿主定，`resultKind` 是上游唯一的硬要求。 */
 export function buildPlateConsolidateResult(args: {
@@ -167,7 +188,9 @@ export function buildPlateConsolidateResult(args: {
   items: PlateLLMItem[];
   rooms: PlateJobRoom[];
   snapshotAt?: number;
+  usage?: PlateConsolidateUsage;
 }): PlateConsolidateResult {
+  const usage = normalizePlateUsage(args.usage);
   return {
     resultKind: PLATE_CONSOLIDATE_RESULT_KIND,
     v: 1,
@@ -176,6 +199,7 @@ export function buildPlateConsolidateResult(args: {
     items: args.items,
     rooms: args.rooms.map((r) => ({ room: r.room, entryIds: r.entryIds })),
     ...snapshotTimeFields(args.snapshotAt),
+    ...(usage ? { usage } : {}),
   };
 }
 
@@ -199,9 +223,11 @@ export function parsePlateConsolidateResult(raw: unknown): PlateConsolidateResul
   const items = o.items.filter(
     (i): i is PlateLLMItem => !!i && typeof i === 'object' && typeof (i as PlateLLMItem).text === 'string',
   );
+  const usage = normalizePlateUsage(o.usage);
 
   return {
     resultKind: PLATE_CONSOLIDATE_RESULT_KIND, v: 1, jobId: o.jobId, charId: o.charId, items, rooms,
     ...snapshotTimeFields(o.snapshotAt),
+    ...(usage ? { usage } : {}),
   };
 }

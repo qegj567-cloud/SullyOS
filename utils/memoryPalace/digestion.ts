@@ -247,6 +247,7 @@ async function gatherDigestMaterial(charId: string): Promise<{
 // ─── LLM 统一消化调用 ────────────────────────────────
 
 async function callDigestLLM(
+    charId: string,
     charName: string,
     charPersona: string,
     material: {
@@ -378,7 +379,7 @@ ${material.recentEpisodes.length > 0 ? `
                     stream: false,
                 }),
             },
-            2, 120_000, { appName: '记忆宫殿', purpose: '记忆消化' }
+            2, 120_000, { appId: 'memorypalace', appName: '记忆宫殿', charId, charName, purpose: '记忆消化' }
         );
 
         const reply = data.choices?.[0]?.message?.content || '';
@@ -897,7 +898,7 @@ export async function runCognitiveDigestion(
 
     // LLM 统一消化
     onProgress?.('正在审视记忆…');
-    const actions = await callDigestLLM(charName, charPersona, material, llmConfig, userName);
+    const actions = await callDigestLLM(charId, charName, charPersona, material, llmConfig, userName);
 
     // 执行动作：状态机改现有节点；概括类产出汇集为门牌蒸馏候选
     const { result, plateSubmissions } = await executeActions(actions, charId, material);
@@ -1045,7 +1046,7 @@ ${memoryContext}
                     stream: false,
                 }),
             },
-            2, 120_000, { appName: '记忆宫殿', charName, purpose: '人格审视' }
+            2, 120_000, { appId: 'memorypalace', appName: '记忆宫殿', charId, charName, purpose: '人格审视' }
         );
 
         const reply = data.choices?.[0]?.message?.content || '';

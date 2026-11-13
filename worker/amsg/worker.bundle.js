@@ -1400,7 +1400,19 @@ function buildPlateJobMessages(job) {
     { role: "user", content: PLATE_USER_TURN }
   ];
 }
+var normalizePlateUsage = (value) => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return void 0;
+  const u = value;
+  const promptTokens = typeof u.promptTokens === "number" && Number.isFinite(u.promptTokens) ? u.promptTokens : void 0;
+  const completionTokens = typeof u.completionTokens === "number" && Number.isFinite(u.completionTokens) ? u.completionTokens : void 0;
+  if (promptTokens === void 0 && completionTokens === void 0) return void 0;
+  return {
+    ...promptTokens !== void 0 ? { promptTokens } : {},
+    ...completionTokens !== void 0 ? { completionTokens } : {}
+  };
+};
 function buildPlateConsolidateResult(args) {
+  const usage = normalizePlateUsage(args.usage);
   return {
     resultKind: PLATE_CONSOLIDATE_RESULT_KIND,
     v: 1,
@@ -1408,7 +1420,8 @@ function buildPlateConsolidateResult(args) {
     charId: args.charId,
     items: args.items,
     rooms: args.rooms.map((r) => ({ room: r.room, entryIds: r.entryIds })),
-    ...snapshotTimeFields(args.snapshotAt)
+    ...snapshotTimeFields(args.snapshotAt),
+    ...usage ? { usage } : {}
   };
 }
 
@@ -1539,7 +1552,7 @@ function pickStaleStoppedReplyKeys(rows, nowMs = Date.now(), protectKey) {
 // worker/amsg/src/index.ts
 import { DurableObject } from "cloudflare:workers";
 
-// node_modules/.pnpm/@rei-standard+amsg-server@3_f2a08373d30841ce79e2e19c7fb88ed9/node_modules/@rei-standard/amsg-server/dist/chunk-R2CRPRKR.mjs
+// node_modules/.pnpm/@rei-standard+amsg-server@3.2.0-next.2_@neondatabase+serverless@1.1.0_pg@8.22.0/node_modules/@rei-standard/amsg-server/dist/chunk-R2CRPRKR.mjs
 var CLEANUP_BATCH_LIMIT = 100;
 var UPDATABLE_COLUMNS = /* @__PURE__ */ new Set([
   "user_id",
@@ -2797,7 +2810,7 @@ function stringifyDecisionForError(value) {
   }
 }
 
-// node_modules/.pnpm/@rei-standard+amsg-server@3_f2a08373d30841ce79e2e19c7fb88ed9/node_modules/@rei-standard/amsg-server/dist/chunk-WFKLHUUE.mjs
+// node_modules/.pnpm/@rei-standard+amsg-server@3.2.0-next.2_@neondatabase+serverless@1.1.0_pg@8.22.0/node_modules/@rei-standard/amsg-server/dist/chunk-WFKLHUUE.mjs
 var DAY_MS = 24 * 60 * 60 * 1e3;
 var MAX_LISTED_SKIPPED_OCCURRENCES = 32;
 var MAX_ADJUST_STEPS = 32;
@@ -14191,7 +14204,7 @@ function buildScheduledPush(message, build, extraMeta, bannerBody) {
 }
 
 // utils/amsgBundleVersion.ts
-var AMSG_BUNDLE_VERSION = "2026-11-13";
+var AMSG_BUNDLE_VERSION = "2026-11-14";
 
 // worker/amsg/src/reproduction.ts
 async function writeDiagnosticStage(writeState, runId, event, fields = {}) {
@@ -14235,9 +14248,21 @@ var reproductionHandler = {
     });
     if (decision.decision === "tool-request") return { decision: "skip-push", reason: "diagnostic-tools-disabled" };
     if (decision.decision === "skip-push") return { decision: "skip-push", reason: decision.reason };
-    return { decision: "finish", pushPayloads: decision.pushPayloads.map((payload) => ({
+    const rawUsage = ctx.usage ?? ctx.llmResponse?.usage;
+    const promptTokens = typeof rawUsage?.prompt_tokens === "number" && Number.isFinite(rawUsage.prompt_tokens) ? rawUsage.prompt_tokens : void 0;
+    const completionTokens = typeof rawUsage?.completion_tokens === "number" && Number.isFinite(rawUsage.completion_tokens) ? rawUsage.completion_tokens : void 0;
+    const amsgUsage = promptTokens !== void 0 || completionTokens !== void 0 ? {
+      ...promptTokens !== void 0 ? { promptTokens } : {},
+      ...completionTokens !== void 0 ? { completionTokens } : {}
+    } : void 0;
+    return { decision: "finish", pushPayloads: decision.pushPayloads.map((payload, index) => ({
       ...payload,
-      metadata: { charId: DIAGNOSTIC_CHAR_ID, amsgKind: "diagnostic", amsgDiagnosticRunId: diagnostic.runId }
+      metadata: {
+        charId: DIAGNOSTIC_CHAR_ID,
+        amsgKind: "diagnostic",
+        amsgDiagnosticRunId: diagnostic.runId,
+        ...amsgUsage && index === decision.pushPayloads.length - 1 ? { amsgUsage } : {}
+      }
     })) };
   }
 };
@@ -14477,9 +14502,23 @@ var plateConsolidateHandler = {
       await discardJob(ctx.writeState, jobId);
       return { decision: "skip-push", reason: "plate-emit-result-unsupported" };
     }
+    const rawUsage = ctx.usage ?? ctx.llmResponse?.usage;
+    const promptTokens = typeof rawUsage?.prompt_tokens === "number" && Number.isFinite(rawUsage.prompt_tokens) ? rawUsage.prompt_tokens : void 0;
+    const completionTokens = typeof rawUsage?.completion_tokens === "number" && Number.isFinite(rawUsage.completion_tokens) ? rawUsage.completion_tokens : void 0;
+    const usage = promptTokens !== void 0 || completionTokens !== void 0 ? {
+      ...promptTokens !== void 0 ? { promptTokens } : {},
+      ...completionTokens !== void 0 ? { completionTokens } : {}
+    } : void 0;
     try {
       await ctx.emitResult({
-        ...buildPlateConsolidateResult({ jobId, charId: job.charId, items, rooms: job.rooms, snapshotAt: job.snapshotAt }),
+        ...buildPlateConsolidateResult({
+          jobId,
+          charId: job.charId,
+          items,
+          rooms: job.rooms,
+          snapshotAt: job.snapshotAt,
+          ...usage ? { usage } : {}
+        }),
         // 背景工作，整理完不该把人叫回来看。show:false 的 payload 上游只落收件箱、
         // 不发推送，客户端下次上线补收。
         notification: { show: false }
@@ -14520,7 +14559,20 @@ var getKindFireStash = (scratch) => {
 var FIRE_SKIP_RESULT_KIND = "fire-skipped";
 var SILENT_REASONS = /* @__PURE__ */ new Set(["schedule-off"]);
 var shouldReportFireSkip = (reason) => !SILENT_REASONS.has(reason);
+var normalizeSkipUsage = (value) => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return void 0;
+  const u = value;
+  const promptTokens = typeof u.promptTokens === "number" && Number.isFinite(u.promptTokens) ? u.promptTokens : void 0;
+  const completionTokens = typeof u.completionTokens === "number" && Number.isFinite(u.completionTokens) ? u.completionTokens : void 0;
+  if (promptTokens === void 0 && completionTokens === void 0) return void 0;
+  return {
+    ...promptTokens !== void 0 ? { promptTokens } : {},
+    ...completionTokens !== void 0 ? { completionTokens } : {},
+    ...u.tokensPartial === true ? { tokensPartial: true } : {}
+  };
+};
 function buildFireSkipResult(args) {
+  const usage = normalizeSkipUsage(args.usage);
   return {
     resultKind: FIRE_SKIP_RESULT_KIND,
     v: 1,
@@ -14534,7 +14586,9 @@ function buildFireSkipResult(args) {
         ...args.task.promptHint ? { promptHint: args.task.promptHint } : {},
         recurrenceType: args.task.recurrenceType
       }
-    } : {}
+    } : {},
+    ...usage ? { usage } : {},
+    ...args.proactiveKind ? { proactiveKind: args.proactiveKind } : {}
   };
 }
 
@@ -18533,15 +18587,23 @@ var requestEmotionEval = async (api, promptContent, timeoutMs = EMOTION_EVAL_TIM
       return { raw: null, error: `\u526F API HTTP ${res.status}${snippet ? `\uFF1A${snippet}` : ""}` };
     }
     const data = await res.json();
+    const rawUsage = data?.usage;
+    const promptTokens = typeof rawUsage?.prompt_tokens === "number" && Number.isFinite(rawUsage.prompt_tokens) ? rawUsage.prompt_tokens : void 0;
+    const completionTokens = typeof rawUsage?.completion_tokens === "number" && Number.isFinite(rawUsage.completion_tokens) ? rawUsage.completion_tokens : void 0;
+    const usage = promptTokens !== void 0 || completionTokens !== void 0 ? {
+      ...promptTokens !== void 0 ? { promptTokens } : {},
+      ...completionTokens !== void 0 ? { completionTokens } : {}
+    } : void 0;
     const message = data?.choices?.[0]?.message;
     const raw = flattenEvalContent(message?.content) || (typeof message?.reasoning_content === "string" ? message.reasoning_content : "");
     if (!raw.trim()) {
       return {
         raw: null,
-        error: `\u8BC4\u4F30\u6A21\u578B\u6CA1\u6709\u8F93\u51FA\u5185\u5BB9\uFF08finish_reason: ${data?.choices?.[0]?.finish_reason ?? "?"}\uFF09`
+        error: `\u8BC4\u4F30\u6A21\u578B\u6CA1\u6709\u8F93\u51FA\u5185\u5BB9\uFF08finish_reason: ${data?.choices?.[0]?.finish_reason ?? "?"}\uFF09`,
+        ...usage ? { usage } : {}
       };
     }
-    return { raw, error: null };
+    return { raw, error: null, ...usage ? { usage } : {} };
   } catch (error) {
     if (signal?.aborted) return { raw: null, error: null };
     console.warn("[emotion-eval] \u8BC4\u4F30\u5931\u8D25\uFF08\u4E3B\u6D41\u7A0B\u4E0D\u53D7\u5F71\u54CD\uFF09", error);
@@ -19044,8 +19106,19 @@ var writeLastSkip = async (writeState, charId, skip) => {
     console.warn("[amsg:skip] \u8DF3\u8FC7\u539F\u56E0\u5199\u5165\u5931\u8D25\uFF08\u8DF3\u8FC7\u672C\u8EAB\u7167\u5E38\u751F\u6548\uFF0C\u53EA\u662F\u9762\u677F\u5C11\u4E00\u53E5\u8BF4\u660E\uFF09", error);
   }
 };
+var proactiveKindOf = (stash) => stash.away ? "away" : stash.dateLeave ? "dateLeave" : stash.selfScheduled ? "self" : "scheduled";
+var readStashUsage = (stash) => {
+  const pt = stash.promptTokensAcc;
+  const ct = stash.completionTokensAcc;
+  if (pt === void 0 && ct === void 0) return void 0;
+  return {
+    ...pt !== void 0 ? { promptTokens: pt } : {},
+    ...ct !== void 0 ? { completionTokens: ct } : {}
+  };
+};
+var hasPartialStashUsage = (stash) => (stash.llmRounds ?? 0) > (stash.llmRoundsWithUsage ?? 0);
 var emitFireSkip = async (emitResult, args) => {
-  if (!args.taskUuid || !shouldReportFireSkip(args.reason) || typeof emitResult !== "function") return;
+  if (!args.taskUuid || !shouldReportFireSkip(args.reason) && !args.usage || typeof emitResult !== "function") return;
   try {
     await emitResult({
       ...buildFireSkipResult({ ...args, taskUuid: args.taskUuid }),
@@ -19992,7 +20065,10 @@ var amsgHooks = {
       instantInputKey,
       // 下面即时对话那一支起跑（要等请求消息拼完才知道给评估喂什么）。
       emotionEvalPromise: null,
-      emotionLatePending: false
+      emotionLatePending: false,
+      away,
+      dateLeave,
+      selfScheduled
     };
     ctx.scratch.fire = stash;
     const canManageTasks = canSelfSchedule && mcpNative && typeof ctx.cancelTask === "function" && typeof ctx.renewTask === "function";
@@ -20163,6 +20239,17 @@ ${userHoliday}` });
       throw new Error("AMSG2_FIRE_STASH_MISSING: onLLMOutput \u8BFB\u4E0D\u5230 ctx.scratch.fire\uFF0C\u68C0\u67E5 amsg-server \u662F\u5426\u4ECD\u5171\u4EAB scratch");
     }
     const session = stash.session;
+    stash.llmRounds = (stash.llmRounds ?? 0) + 1;
+    const roundRawUsage = ctx.usage ?? ctx.llmResponse?.usage;
+    if (roundRawUsage && typeof roundRawUsage === "object") {
+      const pt = typeof roundRawUsage.prompt_tokens === "number" && Number.isFinite(roundRawUsage.prompt_tokens) ? roundRawUsage.prompt_tokens : void 0;
+      const ct = typeof roundRawUsage.completion_tokens === "number" && Number.isFinite(roundRawUsage.completion_tokens) ? roundRawUsage.completion_tokens : void 0;
+      if (pt !== void 0 || ct !== void 0) {
+        stash.llmRoundsWithUsage = (stash.llmRoundsWithUsage ?? 0) + 1;
+        if (pt !== void 0) stash.promptTokensAcc = (stash.promptTokensAcc ?? 0) + pt;
+        if (ct !== void 0) stash.completionTokensAcc = (stash.completionTokensAcc ?? 0) + ct;
+      }
+    }
     const roundReasoning = readAssistantThinking(llmMessage && "content" in llmMessage ? llmMessage : { ...llmMessage, content: rawContent });
     session.finalReasoning = roundReasoning || null;
     const rawToolCalls = ctx.llmResponse?.choices?.[0]?.message?.tool_calls;
@@ -20244,12 +20331,17 @@ ${userHoliday}` });
             reason: overlapReason,
             skippedAt: Date.now()
           });
+          const overlapUsage = readStashUsage(stash);
           await emitFireSkip(ctx.emitResult, {
             charId: stash.charId,
             taskUuid: stash.taskUuid,
             occurrenceMs: stash.occurrenceMs,
             reason: overlapReason,
-            task: findTaskBrief(stash.pendingTasks, stash.taskUuid)
+            task: findTaskBrief(stash.pendingTasks, stash.taskUuid),
+            ...overlapUsage ? {
+              usage: { ...overlapUsage, ...hasPartialStashUsage(stash) ? { tokensPartial: true } : {} },
+              proactiveKind: proactiveKindOf(stash)
+            } : {}
           });
           return { decision: "skip-push" };
         }
@@ -20257,6 +20349,7 @@ ${userHoliday}` });
     }
     if (decision.decision === "skip-push" && decision.sideEffects) {
       if (typeof ctx.emitResult !== "function") throw new Error("AMSG2_RESULT_UNSUPPORTED: \u8BF7\u66F4\u65B0 Worker \u4EE5\u63A5\u6536\u52A8\u4F5C\u7ED3\u679C");
+      const sideEffectUsage = readStashUsage(stash);
       const metadata = {
         ...stripSarSnapshot(stripEmotionEvalSpec(ctx.metadata)),
         ...decision.sideEffects,
@@ -20264,6 +20357,11 @@ ${userHoliday}` });
         ...stash.scheduledTasks.length ? { amsgSelfScheduled: stash.scheduledTasks } : {},
         ...stash.cancelledTasks.length || stash.renewedTasks.length ? {
           amsgTaskMutations: { cancelled: stash.cancelledTasks, renewed: stash.renewedTasks }
+        } : {},
+        ...sideEffectUsage ? {
+          amsgUsage: sideEffectUsage,
+          amsgProactiveKind: proactiveKindOf(stash),
+          ...hasPartialStashUsage(stash) ? { amsgTokensPartial: true } : {}
         } : {}
       };
       await ctx.emitResult({
@@ -20335,12 +20433,17 @@ ${userHoliday}` });
         skippedAt: Date.now()
       });
       if (!stash.instant) {
+        const skipUsage = readStashUsage(stash);
         await emitFireSkip(ctx.emitResult, {
           charId: stash.charId,
           taskUuid: stash.taskUuid,
           occurrenceMs: stash.occurrenceMs,
           reason: decision.reason,
-          task: findTaskBrief(stash.pendingTasks, stash.taskUuid)
+          task: findTaskBrief(stash.pendingTasks, stash.taskUuid),
+          ...skipUsage ? {
+            usage: { ...skipUsage, ...hasPartialStashUsage(stash) ? { tokensPartial: true } : {} },
+            proactiveKind: proactiveKindOf(stash)
+          } : {}
         });
       }
       if (stash.instant && stash.taskUuid && ctx.writeState) {
@@ -20380,16 +20483,11 @@ ${userHoliday}` });
         const lastMeta = {};
         const toolTrace = condenseToolTrace(session.toolCalls);
         if (toolTrace.length > 0) lastMeta.amsgToolTrace = toolTrace;
-        const usage = ctx.usage;
-        if (usage && typeof usage === "object") {
-          const pick = (key) => typeof usage[key] === "number" ? usage[key] : void 0;
-          const promptTokens = pick("prompt_tokens");
-          const completionTokens = pick("completion_tokens");
-          if (promptTokens !== void 0 || completionTokens !== void 0) {
-            lastMeta.amsgUsage = {
-              ...promptTokens !== void 0 ? { promptTokens } : {},
-              ...completionTokens !== void 0 ? { completionTokens } : {}
-            };
+        const stashUsage = readStashUsage(stash);
+        if (stashUsage) {
+          lastMeta.amsgUsage = stashUsage;
+          if ((stash.llmRounds ?? 0) > 1 && !hasPartialStashUsage(stash)) {
+            lastMeta.amsgUsageComplete = true;
           }
         }
         if (stash.emotionEvalPromise) {
@@ -20407,10 +20505,20 @@ ${userHoliday}` });
             lastMeta.amsgEmotionDone = true;
             if (outcome.raw) lastMeta.amsgEmotionUpdate = outcome.raw;
             else if (outcome.error) lastMeta.amsgEmotionError = outcome.error;
+            if (outcome.usage) lastMeta.amsgEmotionUsage = outcome.usage;
           }
         }
         if (Object.keys(lastMeta).length > 0) {
           payloads = attachMetaAt(payloads, payloads.length - 1, lastMeta);
+        }
+      } else if (!stash.instant && payloads.length > 0) {
+        const stashUsage = readStashUsage(stash);
+        if (stashUsage) {
+          payloads = attachMetaAt(payloads, payloads.length - 1, {
+            amsgUsage: stashUsage,
+            amsgProactiveKind: proactiveKindOf(stash),
+            ...hasPartialStashUsage(stash) ? { amsgTokensPartial: true } : {}
+          });
         }
       }
       if (stash.charId) {

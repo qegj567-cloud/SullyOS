@@ -3639,7 +3639,12 @@ const Like520InlineApiSetup: React.FC<{ onDone: () => void; onBack: () => void }
                     max_tokens: 5,
                     stream: localStream,
                 }),
-            });
+                __sullyMeta: {
+                    appId: 'special-moments',
+                    appName: '520特别活动',
+                    purpose: '测试连接',
+                },
+            } as RequestInit);
             if (res.ok) {
                 const data = await safeResponseJson(res);
                 const reply = data.choices?.[0]?.message?.content || '';

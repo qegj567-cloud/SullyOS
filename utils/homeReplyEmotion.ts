@@ -13,6 +13,6 @@ export async function evaluateHomeReplyEmotion(args:HomeReplyRequest,messages:Ar
   const {evaluateEmotionBackground}=await import('../hooks/useChatAI');
   if(args.signal.aborted)return;
   timingLog.info('启动共享情绪评估器',{moduleReadyMs:Math.round(performance.now()-started)});
-  await evaluateEmotionBackground(args.regenerating?{...args.char,buffInjection:'',activeBuffs:[]}:args.char,args.user,String(messages[0]?.content||''),messages.slice(1),{baseUrl:api.baseUrl,apiKey:api.apiKey||'',model:api.model,stream:!!api.stream},args.signal,args.secretOrigin);
+  await evaluateEmotionBackground(args.regenerating?{...args.char,buffInjection:'',activeBuffs:[]}:args.char,args.user,String(messages[0]?.content||''),messages.slice(1),{baseUrl:api.baseUrl,apiKey:api.apiKey||'',model:api.model,stream:!!api.stream},args.signal,args.secretOrigin,{appId:'room3d',appName:'3D家园'});
  }catch(error){console.warn('[Home emotion] 情绪更新失败',error instanceof Error?error.message:String(error));}
 }

@@ -903,6 +903,7 @@ export const requestAvatarTouchReactionPack = async (options: {
   // but align its timeout policy with normal chat instead of killing valid
   // long generations before the optional TTS phase has even started.
   }, 0, 0, {
+    appId: 'companion',
     appName: '触感陪伴',
     charId: character.id,
     charName: character.name,

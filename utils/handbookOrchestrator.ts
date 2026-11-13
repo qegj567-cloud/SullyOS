@@ -135,7 +135,13 @@ async function callLLM(
                 temperature,
                 max_tokens: maxTokens,
             }),
-        });
+            __sullyMeta: {
+                appId: 'handbook',
+                appName: '手账',
+                ...(characterContext?.char ? { charId: characterContext.char.id, charName: characterContext.char.name } : {}),
+                purpose: '手账排版编排',
+            },
+        } as RequestInit);
         if (!response.ok) {
             console.error(`[Handbook v2] HTTP ${response.status} ${response.statusText}`);
             return null;

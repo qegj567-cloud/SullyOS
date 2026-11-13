@@ -273,7 +273,7 @@ const DateApp: React.FC = () => {
     const formatTime = () => `${virtualTime.hours.toString().padStart(2, '0')}:${virtualTime.minutes.toString().padStart(2, '0')}`;
 
     // peek / send / reroll 共用的 LLM 调用（提示词构建统一在 utils/datePrompts.ts）
-    const callLLM = async (messages: ApiMessage[], temperature: number, speaker = char): Promise<string> => {
+    const callLLM = async (messages: ApiMessage[], temperature: number, speaker = char, purpose = '见面对话'): Promise<string> => {
         const dialogueApi = resolveDialogueApi(apiConfig, speaker);
         const response = await fetch(`${dialogueApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
             method: 'POST',
@@ -287,8 +287,9 @@ const DateApp: React.FC = () => {
                 // 与私聊 (useChatAI.ts) 对齐，统一带 8000。
                 max_tokens: 8000,
                 stream: dialogueApi.stream ?? false,
-            })
-        });
+            }),
+            __sullyMeta: { appId: 'date', appName: '见面', charId: speaker?.id, charName: speaker?.name, purpose },
+        } as RequestInit);
         if (!response.ok) throw new Error(`API Error ${response.status}`);
         const data = await safeResponseJson(response);
         // 思考型渠道会把正文塞进 reasoning_content、content 留空——直接取 content
@@ -381,7 +382,13 @@ const DateApp: React.FC = () => {
 
         try {
             const msgs = await loadCharacterContextMessages(c);
-            const preparedMsgs = await materializeVisionDescriptions(msgs, apiConfig.visionApi);
+            const preparedMsgs = await materializeVisionDescriptions(msgs, apiConfig.visionApi, {
+                appId: 'date',
+                appName: '见面',
+                charId: c.id,
+                charName: c.name,
+                purpose: '识图',
+            });
             const emojis = await DB.getEmojis();
             const { messages } = (await DatePrompts.buildPeekPayload({
                 char: c,
@@ -391,7 +398,7 @@ const DateApp: React.FC = () => {
                 useVisionDescriptions: apiConfig.visionApi?.enabled === true,
                 openingMode: selectedOpening,
             }));
-            const content = await callLLM(messages, resolveDialogueApi(apiConfig, c).temperature ?? 0.85, c);
+            const content = await callLLM(messages, resolveDialogueApi(apiConfig, c).temperature ?? 0.85, c, '见面开场');
             if (requestId === peekRequestRef.current) setPeekStatus(content);
 
         } catch (e: any) {
@@ -490,7 +497,13 @@ const DateApp: React.FC = () => {
         // Re-fetch messages. Since we saved the opening in handleEnterSession,
         // 'allMsgs' will now correctly contain: [History..., Opening, UserMsg]
         const allMsgs = await loadCharacterContextMessages(char);
-        const preparedAllMsgs = await materializeVisionDescriptions(allMsgs, apiConfig.visionApi);
+        const preparedAllMsgs = await materializeVisionDescriptions(allMsgs, apiConfig.visionApi, {
+            appId: 'date',
+            appName: '见面',
+            charId: char.id,
+            charName: char.name,
+            purpose: '识图',
+        });
 
         // Update local state for display
         if (encounterIdRef.current === currentEncounterId) await loadDateMessages();
@@ -511,7 +524,7 @@ const DateApp: React.FC = () => {
             useVisionDescriptions: apiConfig.visionApi?.enabled === true,
             inPersonNotes: inPerson?.text,
         });
-        const rawContent = await callLLM(messages, resolveDialogueApi(apiConfig, char).temperature ?? 0.85);
+        const rawContent = await callLLM(messages, resolveDialogueApi(apiConfig, char).temperature ?? 0.85, char, '见面对话');
         const parsed = parseSARModuleReply(rawContent, sarModulePlan);
         const sarModuleEvents = createSARModuleEventMeta(sarModulePlan);
         const userSurface = sarModulePlan.user?.phase === 'active' && parsed.userSurface
@@ -563,7 +576,13 @@ const DateApp: React.FC = () => {
         // Keep the old reply until the replacement request succeeds.
         const allMsgs = await loadCharacterContextMessages(char);
         const validMsgs = allMsgs.filter(m => m.id !== lastMsg.id);
-        const preparedValidMsgs = await materializeVisionDescriptions(validMsgs, apiConfig.visionApi);
+        const preparedValidMsgs = await materializeVisionDescriptions(validMsgs, apiConfig.visionApi, {
+            appId: 'date',
+            appName: '见面',
+            charId: char.id,
+            charName: char.name,
+            purpose: '识图',
+        });
         const emojis = await DB.getEmojis();
 
         // 重掷的是开场白（isOpening 锚点消息）：走感知同款 payload 重新生成开场。
@@ -580,7 +599,7 @@ const DateApp: React.FC = () => {
                 emojis,
                 useVisionDescriptions: apiConfig.visionApi?.enabled === true,
             }));
-            const content = await callLLM(messages, Math.max(resolveDialogueApi(apiConfig, char).temperature ?? 0.85, 0.9));
+            const content = await callLLM(messages, Math.max(resolveDialogueApi(apiConfig, char).temperature ?? 0.85, 0.9), char, '重随见面开场');
             // 生成成功后才动库：先删旧开场、再带 isOpening 落新开场，请求失败时原剧情不丢
             await DB.deleteMessage(lastMsg.id);
             await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'text', content, metadata: { ...lastMsg.metadata, source: 'date', isOpening: true } });
@@ -613,7 +632,7 @@ const DateApp: React.FC = () => {
             useVisionDescriptions: apiConfig.visionApi?.enabled === true,
         });
         // Reroll 略调高温度求多样性，但绝不低于用户配置的基线。
-        const rawContent = await callLLM(messages, Math.max(resolveDialogueApi(apiConfig, char).temperature ?? 0.85, 0.9));
+        const rawContent = await callLLM(messages, Math.max(resolveDialogueApi(apiConfig, char).temperature ?? 0.85, 0.9), char, '重随见面回复');
         const sarPlan = getSARModuleRuntimePlan(char, userProfile);
         const parsed = parseSARModuleReply(rawContent, sarPlan);
         const sarModuleEvents = createSARModuleEventMeta(sarPlan);

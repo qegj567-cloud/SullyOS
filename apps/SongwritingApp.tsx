@@ -515,8 +515,15 @@ const SongwritingApp: React.FC = () => {
             const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-                body: JSON.stringify({ model: apiConfig.model, messages: (await ContextBuilder.buildCharacterRequest({ char: collaborator, user: userProfile }, apiMessages)), temperature: 0.8, max_tokens: 2000 })
-            });
+                body: JSON.stringify({ model: apiConfig.model, messages: (await ContextBuilder.buildCharacterRequest({ char: collaborator, user: userProfile }, apiMessages)), temperature: 0.8, max_tokens: 2000 }),
+                __sullyMeta: {
+                    appId: 'songwriting',
+                    appName: '写歌',
+                    charId: collaborator.id,
+                    charName: collaborator.name,
+                    purpose: '写歌创作讨论',
+                },
+            } as RequestInit);
 
             if (response.ok) {
                 const data = await safeResponseJson(response);
@@ -880,7 +887,14 @@ const SongwritingApp: React.FC = () => {
                         temperature: attempt === 0 ? 0.9 : 0.65,
                         max_tokens: 500,
                     }),
-                });
+                    __sullyMeta: {
+                        appId: 'songwriting',
+                        appName: '写歌',
+                        charId: collaborator.id,
+                        charName: collaborator.name,
+                        purpose: '歌词合作填词',
+                    },
+                } as RequestInit);
                 if (!response.ok) throw new Error(`API Error: ${response.status}`);
                 const data = await safeResponseJson(response);
                 const raw = data.choices?.[0]?.message?.content?.trim() || '';
@@ -947,8 +961,15 @@ const SongwritingApp: React.FC = () => {
                     ])),
                     temperature: 0.7,
                     max_tokens: 500,
-                })
-            });
+                }),
+                __sullyMeta: {
+                    appId: 'songwriting',
+                    appName: '写歌',
+                    charId: collaborator.id,
+                    charName: collaborator.name,
+                    purpose: '全曲完稿乐评',
+                },
+            } as RequestInit);
 
             if (response.ok) {
                 const data = await safeResponseJson(response);

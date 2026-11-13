@@ -618,7 +618,8 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
                     messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: text }],
                     temperature: 0.3,
                 }),
-            });
+                __sullyMeta: { appId: 'chat', appName: '消息', charId: char?.id, charName: char?.name, purpose: '语音字幕翻译' },
+            } as RequestInit);
             if (!res.ok) throw new Error(`translate http ${res.status}`);
             const data = await res.json();
             return data?.choices?.[0]?.message?.content?.trim() || '';
@@ -2881,8 +2882,9 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
                         messages: [{ role: "user", content: prompt }],
                         temperature: 0.5,
                         max_tokens: 8000 
-                    })
-                });
+                    }),
+                    __sullyMeta: { appId: 'chat', appName: '消息', charId: char?.id, charName: char?.name, purpose: '单日记忆归档' },
+                } as RequestInit);
 
                 if (!response.ok) throw new Error(`API Error on ${dateStr}`);
                 const data = await safeResponseJson(response);

@@ -32,6 +32,14 @@ export interface AmsgFireSkipTaskBrief {
   recurrenceType: 'none' | 'daily' | 'weekly';
 }
 
+export type AmsgProactiveKind = 'away' | 'dateLeave' | 'self' | 'scheduled';
+
+export interface AmsgFireSkipUsage {
+  promptTokens?: number;
+  completionTokens?: number;
+  tokensPartial?: boolean;
+}
+
 export interface AmsgFireSkipResult {
   resultKind: typeof FIRE_SKIP_RESULT_KIND;
   v: 1;
@@ -41,7 +49,27 @@ export interface AmsgFireSkipResult {
   occurrenceMs: number;
   reason: AmsgFireSkipReason;
   task?: AmsgFireSkipTaskBrief;
+  /** 若本次跳过发生在模型生成之后（如模型判定不发、或生成期间用户开口避让），带回本轮实际消耗的用量。 */
+  usage?: AmsgFireSkipUsage;
+  proactiveKind?: AmsgProactiveKind;
 }
+
+const PROACTIVE_KINDS = ['away', 'dateLeave', 'self', 'scheduled'] as const;
+
+const normalizeSkipUsage = (value: unknown): AmsgFireSkipUsage | undefined => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const u = value as Record<string, unknown>;
+  const promptTokens = typeof u.promptTokens === 'number' && Number.isFinite(u.promptTokens)
+    ? u.promptTokens : undefined;
+  const completionTokens = typeof u.completionTokens === 'number' && Number.isFinite(u.completionTokens)
+    ? u.completionTokens : undefined;
+  if (promptTokens === undefined && completionTokens === undefined) return undefined;
+  return {
+    ...(promptTokens !== undefined ? { promptTokens } : {}),
+    ...(completionTokens !== undefined ? { completionTokens } : {}),
+    ...(u.tokensPartial === true ? { tokensPartial: true } : {}),
+  };
+};
 
 /** 组一条结果（版本号只有这一处写，别在调用点手抄）。 */
 export function buildFireSkipResult(args: {
@@ -50,7 +78,10 @@ export function buildFireSkipResult(args: {
   occurrenceMs: number;
   reason: AmsgFireSkipReason;
   task?: AmsgFireSkipTaskBrief | null;
+  usage?: AmsgFireSkipUsage;
+  proactiveKind?: AmsgProactiveKind;
 }): AmsgFireSkipResult {
+  const usage = normalizeSkipUsage(args.usage);
   return {
     resultKind: FIRE_SKIP_RESULT_KIND,
     v: 1,
@@ -67,6 +98,8 @@ export function buildFireSkipResult(args: {
         },
       }
       : {}),
+    ...(usage ? { usage } : {}),
+    ...(args.proactiveKind ? { proactiveKind: args.proactiveKind } : {}),
   };
 }
 
@@ -93,6 +126,10 @@ export function parseFireSkipResult(raw: unknown): AmsgFireSkipResult | null {
       recurrenceType: t.recurrenceType as AmsgFireSkipTaskBrief['recurrenceType'],
     }
     : undefined;
+  const usage = normalizeSkipUsage(o.usage);
+  const proactiveKind = (PROACTIVE_KINDS as readonly unknown[]).includes(o.proactiveKind)
+    ? o.proactiveKind as AmsgProactiveKind
+    : undefined;
 
   return {
     resultKind: FIRE_SKIP_RESULT_KIND,
@@ -102,5 +139,7 @@ export function parseFireSkipResult(raw: unknown): AmsgFireSkipResult | null {
     occurrenceMs: o.occurrenceMs,
     reason: o.reason as AmsgFireSkipReason,
     ...(task ? { task } : {}),
+    ...(usage ? { usage } : {}),
+    ...(proactiveKind ? { proactiveKind } : {}),
   };
 }

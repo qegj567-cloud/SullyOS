@@ -628,7 +628,13 @@ export async function prepareQixiReunion(
             },
             0,
             QIXI_PART3_TIMEOUT_MS,
-            { appId: 'special-moments', charId: char.id, purpose: 'qixi-reunion-and-promise-v5' },
+            {
+                appId: 'special-moments',
+                appName: '七夕特别时刻',
+                charId: char.id,
+                charName: char.name,
+                purpose: '七夕重逢立约',
+            },
             {}, // Do not wait for a Claude proxy to close the socket after [DONE].
         );
         const content = data?.choices?.[0]?.message?.content;

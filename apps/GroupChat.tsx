@@ -1316,7 +1316,8 @@ ${memberTimeline || '(暂无互动记录)'}
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
                 body: JSON.stringify({ model: apiConfig.model, messages: [{ role: 'user', content: prompt }], temperature: 0.3, max_tokens: 2000 }),
-            });
+                __sullyMeta: { appId: 'groupchat', appName: '群聊', purpose: '群话题归档总结' },
+            } as RequestInit);
             if (!response.ok) throw new Error(`API 返回 ${response.status}`);
             const data = await safeResponseJson(response);
             const parsed = parseGroupTopicBox(data.choices?.[0]?.message?.content || '');
@@ -1429,7 +1430,11 @@ ${memberTimeline || '(暂无互动记录)'}
             // 3. Group History + 导演任务指令（模板原文照搬进 utils/groupChat/prompts.ts）
             const liveHistoryMsgs = currentMsgs.filter(m => m.id > (activeGroup.archivedThroughMessageId || 0));
             const historyWindow = liveHistoryMsgs.slice(-contextLimit);
-            const preparedHistory = await materializeVisionDescriptions(historyWindow, apiConfig.visionApi);
+            const preparedHistory = await materializeVisionDescriptions(historyWindow, apiConfig.visionApi, {
+                appId: 'groupchat',
+                appName: '群聊',
+                purpose: '识图',
+            });
             const history = buildGroupHistoryBlock(
                 preparedHistory,
                 characters,
@@ -1459,6 +1464,7 @@ ${memberTimeline || '(暂无互动记录)'}
                 userName: userProfile.name,
                 signal: abort.signal,
                 onStatus: setMcpStatus,
+                meta: { appId: 'groupchat', appName: '群聊', purpose: '群聊导演回复' },
             });
 
             // Token 统计：从导演响应里读 usage（兼容 OpenAI 兼容接口的标准字段）
@@ -1542,7 +1548,11 @@ ${memberTimeline || '(暂无互动记录)'}
                     const memberBlock = await buildMemberBlock(member, roundMsgs, sharedScene);
                     const liveRoundMsgs = roundMsgs.filter(m => m.id > (activeGroup.archivedThroughMessageId || 0));
                     const historyWindow = liveRoundMsgs.slice(-contextLimit);
-                    const preparedHistory = await materializeVisionDescriptions(historyWindow, apiConfig.visionApi);
+                    const preparedHistory = await materializeVisionDescriptions(historyWindow, apiConfig.visionApi, {
+                        appId: 'groupchat',
+                        appName: '群聊',
+                        purpose: '识图',
+                    });
                     const preparedById = new Map(preparedHistory.map(message => [message.id, message]));
                     // 轮询模式后续成员继续复用本轮刚写回的描述，不能每位成员各识图一次。
                     roundMsgs = roundMsgs.map(message => preparedById.get(message.id) || message);
@@ -1574,6 +1584,7 @@ ${memberTimeline || '(暂无互动记录)'}
                         userName: userProfile.name,
                         signal: abort.signal,
                         onStatus: status => setMcpStatus(status ? `${member.name}：${status}` : ''),
+                        meta: { appId: 'groupchat', appName: '群聊', charId: member.id, charName: member.name, purpose: '群聊角色发言' },
                     });
 
                     // Token 统计：整轮累加显示

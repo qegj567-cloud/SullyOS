@@ -166,7 +166,8 @@ export async function generateDreamScript(opts: {
         // max_tokens 用 8192：梦是一堆短碎片，足够用；16000 在 claude-3.5 等输出上限 8192 的
         // 模型上会 400。仍有「finish_reason==='length' → 截断」兜底。
         body: JSON.stringify({ model: apiConfig.model, messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, [{ role: 'user', content: prompt }])), temperature: 1.0, max_tokens: 8192 }),
-    });
+        __sullyMeta: { appId: 'dreamtheater', appName: '潜意识剧场', charId: char.id, charName: char.name, purpose: '梦境剧本生成' },
+    } as RequestInit);
     if (!res.ok) throw new Error('API');
     const data = await safeResponseJson(res);
     if (data.choices?.[0]?.finish_reason === 'length') throw new Error('梦境生成被截断');

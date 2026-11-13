@@ -346,7 +346,7 @@ export async function extractExternalMemoryText(
                     },
                     2,
                     EXTERNAL_MEMORY_TIMEOUT_MS,
-                    { appName: '记忆搬家', purpose: '外部记忆清洗' },
+                    { appId: 'memorypalace', appName: '记忆搬家', charId, charName, purpose: '外部记忆清洗' },
                 );
                 receivedResponse = true;
                 if (['length', 'max_tokens'].includes(data.choices?.[0]?.finish_reason)) {

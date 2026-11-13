@@ -15,6 +15,7 @@ import { DB } from '../db';
 import { getVRApi } from './vrApi';
 import { buildChatRequestPayload } from '../chatRequestPayload';
 import { safeFetchJson } from '../safeApi';
+import type { ApiCallMeta } from '../apiCallLog';
 import { STAGE_BUBBLE_MAX } from './constants';
 import {
     buildLLMScriptTurn, buildPolishTurn, parseScriptOutput, type ParsedScript,
@@ -33,12 +34,17 @@ export async function resolveTheaterApi(apiConfig: APIConfig): Promise<TheaterAp
     return { baseUrl: api.baseUrl.replace(/\/+$/, ''), apiKey: api.apiKey || 'sk-none', model: api.model };
 }
 
-async function chat(api: TheaterApi, messages: Array<{ role: string; content: any }>, temperature = 0.9): Promise<string> {
+async function chat(
+    api: TheaterApi,
+    messages: Array<{ role: string; content: any }>,
+    temperature = 0.9,
+    meta?: Partial<ApiCallMeta>,
+): Promise<string> {
     const data: any = await safeFetchJson(`${api.baseUrl}/chat/completions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.apiKey}` },
         body: JSON.stringify({ model: api.model, messages, temperature, stream: false }),
-    }, 2, 0, { appName: '彼方·剧院' });
+    }, 2, 0, { appId: 'vrworld', appName: '彼方', purpose: '夜间剧场', ...meta });
     const c: string = data.choices?.[0]?.message?.content || '';
     return c.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 }
@@ -65,12 +71,12 @@ const personaBrief = (ch: CharacterProfile): string =>
 
 /** 用户给个 brief（可带写作风格预设），让 LLM 代写一出剧本。 */
 export async function generateScript(brief: string, api: TheaterApi, presetPrompt?: string): Promise<ParsedScript> {
-    return parseScriptOutput(await chat(api, [{ role: 'user', content: buildLLMScriptTurn(brief, presetPrompt) }]));
+    return parseScriptOutput(await chat(api, [{ role: 'user', content: buildLLMScriptTurn(brief, presetPrompt) }], 0.9, { purpose: '剧院生成剧本' }));
 }
 
 /** 按写作风格预设 + 额外要求润色重写一份剧本正文。 */
 export async function polishScript(body: string, presetPrompt: string, extra: string, api: TheaterApi): Promise<ParsedScript> {
-    return parseScriptOutput(await chat(api, [{ role: 'user', content: buildPolishTurn(body, presetPrompt, extra) }]));
+    return parseScriptOutput(await chat(api, [{ role: 'user', content: buildPolishTurn(body, presetPrompt, extra) }], 0.9, { purpose: '剧院润色剧本' }));
 }
 
 const castLineOf = (cast: VRCastAssign[]) => cast.map(c => `${c.actorName} 饰 ${c.roleName}`).join('；');
@@ -94,7 +100,12 @@ async function perRoleNotes(script: VRScript, cast: VRCastAssign[], charAssigns:
                 historyMsgs, contextLimit, recallQueryHint,
             });
             const userTurn = buildActorReviewTurn(script.title, script.logline, script.body, a.roleName, line, char.name);
-            const out = await chat(api, [{ role: 'system', content: payload.systemPrompt }, ...payload.cleanedApiMessages, { role: 'user', content: userTurn }]);
+            const out = await chat(
+                api,
+                [{ role: 'system', content: payload.systemPrompt }, ...payload.cleanedApiMessages, { role: 'user', content: userTurn }],
+                0.9,
+                { charId: char.id, charName: char.name, purpose: '剧院演员审本' },
+            );
             const p = parseActorReview(out);
             return { actorId: char.id, actorName: char.name, roleName: a.roleName, note: p.note, lines: p.lines, taboo: p.taboo, direction: p.direction, attitude: p.attitude, cooperative: p.cooperative };
         } catch {
@@ -115,7 +126,7 @@ async function batchNotes(script: VRScript, charAssigns: VRCastAssign[], ctx: Th
         const out = await chat(api, [
             { role: 'system', content: sys },
             { role: 'user', content: buildActorsBatchTurn(script.title, script.logline, script.body, castForBatch) },
-        ]);
+        ], 0.9, { purpose: '剧院批量审本' });
         parsed = parseActorsBatch(out);
     } catch { /* 失败则全体默认就位 */ }
     return charAssigns.map(a => {
@@ -161,6 +172,6 @@ export async function runDirector(script: VRScript, cast: VRCastAssign[], notes:
             cast.map(c => ({ roleName: c.roleName, actorName: c.actorName })),
             personas, notes, STAGE_BUBBLE_MAX, userRequirement,
         ),
-    }], 0.85);
+    }], 0.85, { purpose: '剧院导演整合' });
     return parseDirectorOutput(out);
 }

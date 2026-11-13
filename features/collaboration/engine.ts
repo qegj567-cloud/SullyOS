@@ -1,4 +1,5 @@
 import { extractContent, safeFetchJson } from '../../utils/safeApi';
+import { getCharNameById } from '../../utils/charNameRegistry';
 import { buildCollaborationModelMessages } from './context';
 import type { ModelMessage } from './context';
 import { collaborationBlobToDataUrl } from './files';
@@ -24,6 +25,7 @@ export interface RunCollaborationTurnInput {
   thinkingEnabled?: boolean;
   turnContext?: string;
   characterId?: string;
+  characterName?: string;
   userName?: string;
   onStatus?: (status: string) => void;
 }
@@ -99,6 +101,7 @@ export const runCollaborationTurn = async ({
   thinkingEnabled,
   turnContext,
   characterId,
+  characterName,
   userName,
   onStatus,
 }: RunCollaborationTurnInput): Promise<ParsedCollaborationReply> => {
@@ -131,21 +134,34 @@ export const runCollaborationTurn = async ({
     requestBody.extra_body = { thinking: { type: 'enabled', budget_tokens: 4000 } };
     delete requestBody.temperature;
   }
-  const request = (body: Record<string,unknown>) => safeFetchJson(
-    `${baseUrl}/chat/completions`,
-    {
-      method: 'POST',
-      headers,
-      signal,
-      body: JSON.stringify(body),
-    },
-    0,
-    0,
-    { appId: 'collaboration', appName: '协同工作', charId: characterId, purpose: '协同工作' },
-    profile.stream && onDelta && !mcpActive
-      ? { onDelta: (_delta, fullText) => onDelta(visibleCollaborationStreamText(fullText)) }
-      : undefined,
-  );
+  const resolvedCharName = characterName || getCharNameById(characterId) || undefined;
+  const request = (body: Record<string,unknown>) => {
+    const isToolContinuation = mcpActive && Array.isArray(body.messages) && body.messages.some((message: any) => (
+      message?.role === 'tool'
+      || (message?.role === 'user' && typeof message?.content === 'string' && message.content.startsWith('[系统工具结果]'))
+    ));
+    return safeFetchJson(
+      `${baseUrl}/chat/completions`,
+      {
+        method: 'POST',
+        headers,
+        signal,
+        body: JSON.stringify(body),
+      },
+      0,
+      0,
+      {
+        appId: 'collaboration',
+        appName: '协同工作',
+        charId: characterId,
+        charName: resolvedCharName,
+        purpose: isToolContinuation ? '协同工具续写' : '协同角色发言',
+      },
+      profile.stream && onDelta && !mcpActive
+        ? { onDelta: (_delta, fullText) => onDelta(visibleCollaborationStreamText(fullText)) }
+        : undefined,
+    );
+  };
   const data=mcpActive
     ?await completeCollaborationWithMcp({body:requestBody,toolbox,request,signal,onStatus})
     :await request(requestBody);
@@ -172,13 +188,14 @@ const collaborationMemoryTranscript = (messages: CollaborationMessage[]): string
 /** 归档时生成一条可进入神经链接/记忆宫殿的第一人称经历。 */
 export const summarizeCollaborationForMemory = async (input: {
   profile: CollaborationApiProfile;
+  characterId?: string;
   characterName: string;
   userName: string;
   sessionTitle: string;
   messages: CollaborationMessage[];
   signal?: AbortSignal;
 }): Promise<string> => {
-  const { profile, characterName, userName, sessionTitle, messages, signal } = input;
+  const { profile, characterId, characterName, userName, sessionTitle, messages, signal } = input;
   if (!isCollaborationApiConfigured(profile)) throw new Error('当前协同模式没有可用的总结 API');
   const transcript = collaborationMemoryTranscript(messages);
   if (!transcript.trim()) throw new Error('这个窗口还没有可以总结的对话');
@@ -209,7 +226,7 @@ export const summarizeCollaborationForMemory = async (input: {
     },
     0,
     120_000,
-    { appId: 'collaboration', purpose: '协同归档记忆总结' },
+    { appId: 'collaboration', appName: '协同工作', charId: characterId, charName: characterName, purpose: '协同归档记忆总结' },
   );
   const summary = extractContent(data)
     .replace(/^```[^\n]*\n?|```$/g, '')
