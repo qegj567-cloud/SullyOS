@@ -1,5 +1,7 @@
 import {avatarFrameLayer} from '../utils/avatarFrameTarget';
 import ChatRuntimeStyle from '../components/chat/ChatRuntimeStyle';
+import { ChatSubtitleLayer } from '../components/chat/ChatSubtitleLayer';
+import { readChatTranslationStyle, type ChatTranslationStyle } from '../utils/chatTranslationStyle';
 import {homePhoneAppearance,HOME_PHONE_BUBBLES} from './room3d/homePhoneAppearance';
 
 import { publishReplyDisplay, stopReplyRuns } from '../utils/chatReplyCancellation';
@@ -323,6 +325,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
     const [translationExpanded, setTranslationExpanded] = useState(() => {
         try { return JSON.parse(localStorage.getItem(`chat_translate_expanded_${activeCharacterId}`) || 'false'); } catch { return false; }
     });
+    const [translationStyle, setTranslationStyle] = useState<ChatTranslationStyle>(() => readChatTranslationStyle(activeCharacterId));
     // Which messages are currently showing "译" version (toggle state only, no API calls)
     const [showingTargetIds, setShowingTargetIds] = useState<Set<number>>(new Set());
 
@@ -1144,6 +1147,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
             try {
                 setTranslationExpanded(JSON.parse(localStorage.getItem(`chat_translate_expanded_${activeCharacterId}`) || 'false'));
             } catch { setTranslationExpanded(false); }
+            setTranslationStyle(readChatTranslationStyle(activeCharacterId));
             setVisibleCount(30);
             visibleCountRef.current = 30;
             lastMsgIdRef.current = null;
@@ -3934,6 +3938,11 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
                 translateSourceLang={translateSourceLang}
                 translateTargetLang={translateTargetLang}
                 translationExpanded={translationExpanded}
+                translationStyle={translationStyle}
+                onSetTranslationStyle={(style) => {
+                    setTranslationStyle(style);
+                    localStorage.setItem(`chat_translate_style_${activeCharacterId}`, style);
+                }}
                 onToggleTranslationExpanded={() => {
                     const next = !translationExpanded;
                     setTranslationExpanded(next);
@@ -4185,6 +4194,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
 
             <StreamingVoiceBar state={streamingVoice.state} onStop={stopStreamingVoice} />
             <div ref={scrollRef} onScroll={handleChatScroll} onClick={() => setShowPanel('none')} className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden overscroll-contain pt-6 pb-6 no-scrollbar" style={{ backgroundImage: activeTheme.type === 'custom' && activeTheme.user.backgroundImage ? 'none' : undefined }}>
+                <ChatSubtitleLayer enabled={translationEnabled && translationExpanded && translationStyle === 'subtitle'}>
                 {windowedFocusMsgId !== null && (
                     <div className="sticky top-0 z-20 flex justify-center pb-2 pointer-events-none">
                         <button onClick={handleBackToCurrent} className="pointer-events-auto px-4 py-2 bg-primary text-white rounded-full text-xs font-bold shadow-lg active:scale-95 transition-transform flex items-center gap-1.5">
@@ -4268,6 +4278,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
                             onToggleThinkingSelect={toggleThinkingSelection}
                             translationEnabled={translationEnabled && m.type === 'text' && m.role === 'assistant'}
                             translationExpanded={translationExpanded}
+                            translationStyle={translationStyle}
                             isShowingTarget={showingTargetIds.has(m.id)}
                             onTranslateToggle={handleTranslateToggle}
                             voiceData={voiceDataMap[m.id]}
@@ -4397,6 +4408,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
                         </div>
                     </div>
                 )}
+                </ChatSubtitleLayer>
             </div>
 
             <div className="relative z-40">

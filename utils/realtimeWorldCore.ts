@@ -15,6 +15,9 @@
 
 import { nowInTimeZone } from './timezone';
 
+import { normalizeFreeWeatherSource, WEATHER_SOURCE_LABELS, type FreeWeatherSource, type WeatherSource } from './weatherSources';
+export { normalizeFreeWeatherSource, WEATHER_SOURCE_LABELS, type FreeWeatherSource, type WeatherSource } from './weatherSources';
+
 export interface WeatherData {
     temp: number;
     feelsLike: number;
@@ -22,6 +25,8 @@ export interface WeatherData {
     description: string;
     icon: string;
     city: string;
+    source?: WeatherSource;
+    fallbackFrom?: WeatherSource;
 }
 
 export interface NewsItem {
@@ -48,6 +53,44 @@ const readJson = async (res: Response): Promise<any> => {
 
 // Open-Meteo 地名解析缓存：城市名 → 坐标，避免每次取天气都多打一次 geocoding
 const geocodeCache = new Map<string, { latitude: number; longitude: number; name: string }>();
+
+/** 包含响应体读取；网络或上游卡住时不能让聊天和设置测试一直等下去。 */
+const WEATHER_REQUEST_TIMEOUT_MS = 8_000;
+const fetchWeatherJson = async (url: string, stage: string, timeoutMs = WEATHER_REQUEST_TIMEOUT_MS): Promise<any> => {
+    if (timeoutMs <= 0) throw new Error(`${stage}超时，请稍后重试或检查网络`);
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+            reject(new Error(`${stage}超时，请稍后重试或检查网络`));
+            controller.abort();
+        }, timeoutMs);
+    });
+    const request = async () => {
+        let response: Response;
+        try {
+            response = await fetch(url, { signal: controller.signal });
+        } catch {
+            throw new Error(`${stage}连接失败，请检查网络或稍后重试`);
+        }
+        if (!response.ok) {
+            const hint = response.status === 429 ? '，请求过多，请稍后重试' : '';
+            throw new Error(`${stage} HTTP ${response.status}${hint}`);
+        }
+        try {
+            return await readJson(response);
+        } catch {
+            throw new Error(`${stage}响应读取失败，请稍后重试`);
+        }
+    };
+    try {
+        return await Promise.race([request(), timeout]);
+    } finally {
+        clearTimeout(timer);
+    }
+};
+
+const isWeatherNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 
 // WMO weather code（Open-Meteo 返回的 weather_code）→ 中文描述 + 近似 OWM icon 码
 // 完整码表见 https://open-meteo.com/en/docs（WMO Weather interpretation codes）
@@ -85,19 +128,18 @@ const WMO_WEATHER_CODES: Record<number, { description: string; icon: string }> =
 /**
  * OpenWeatherMap 源（需要 API Key）。失败时抛错，由调用方决定是否回落。
  */
-export const fetchOwmWeather = async (city: string, apiKey: string): Promise<WeatherData> => {
-    const url = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(city)}&appid=${apiKey}&units=metric&lang=zh_cn`;
-    const response = await fetch(url);
-    if (!response.ok) {
-        throw new Error(`OpenWeatherMap HTTP ${response.status}`);
+export const fetchOwmWeather = async (city: string, apiKey: string, timeoutMs = WEATHER_REQUEST_TIMEOUT_MS): Promise<WeatherData> => {
+    const url = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(city.trim())}&appid=${encodeURIComponent(apiKey.trim())}&units=metric&lang=zh_cn`;
+    const data = await fetchWeatherJson(url, 'OpenWeatherMap 天气服务', timeoutMs);
+    if (![data?.main?.temp, data?.main?.feels_like, data?.main?.humidity].every(isWeatherNumber)) {
+        throw new Error('OpenWeatherMap 天气数据不完整，请稍后重试');
     }
-    const data = await readJson(response);
     return {
         temp: Math.round(data.main.temp),
         feelsLike: Math.round(data.main.feels_like),
         humidity: data.main.humidity,
-        description: data.weather[0]?.description || '未知',
-        icon: data.weather[0]?.icon || '01d',
+        description: data.weather?.[0]?.description || '未知',
+        icon: data.weather?.[0]?.icon || '01d',
         city: data.name
     };
 };
@@ -105,30 +147,41 @@ export const fetchOwmWeather = async (city: string, apiKey: string): Promise<Wea
 /**
  * Open-Meteo 源（免费、免 key、CORS 友好）。城市名先过官方 geocoding（支持中文），失败时抛错。
  */
-export const fetchOpenMeteoWeather = async (city: string): Promise<WeatherData> => {
+export const fetchOpenMeteoWeather = async (city: string, timeoutMs = WEATHER_REQUEST_TIMEOUT_MS): Promise<WeatherData> => {
+    city = city.trim();
+    if (!city) throw new Error('请先填写城市');
+    const deadline = Date.now() + timeoutMs;
     let geo = geocodeCache.get(city);
     if (!geo) {
-        const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=zh&format=json`;
-        const geoRes = await fetch(geoUrl);
-        if (!geoRes.ok) {
-            throw new Error(`Open-Meteo geocoding HTTP ${geoRes.status}`);
+        const lookup = (name: string) => fetchWeatherJson(
+            `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=1&language=zh&format=json`,
+            'Open-Meteo 城市查询',
+            deadline - Date.now(),
+        );
+        let hit = (await lookup(city))?.results?.[0];
+        // GeoNames 常收录「北京 / 深圳」而非「北京市 / 深圳市」。仅无结果时
+        // 重试简称；不能无条件去掉「市」，海外地名也可能以这个字结尾。
+        if (!hit && /^[\u3400-\u9fff]{2,}市$/.test(city)) {
+            hit = (await lookup(city.slice(0, -1)))?.results?.[0];
         }
-        const geoData = await readJson(geoRes);
-        const hit = geoData.results?.[0];
         if (!hit) {
-            throw new Error(`Open-Meteo 找不到城市: ${city}`);
+            throw new Error(`Open-Meteo 找不到城市: ${city}，请尝试城市简称或英文名（如北京 / Beijing）`);
+        }
+        if (!isWeatherNumber(hit.latitude) || Math.abs(hit.latitude) > 90
+            || !isWeatherNumber(hit.longitude) || Math.abs(hit.longitude) > 180
+            || typeof hit.name !== 'string' || !hit.name.trim()) {
+            throw new Error('Open-Meteo 城市数据不完整，请稍后重试');
         }
         geo = { latitude: hit.latitude, longitude: hit.longitude, name: hit.name };
         geocodeCache.set(city, geo);
     }
 
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${geo.latitude}&longitude=${geo.longitude}&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code&timezone=auto`;
-    const response = await fetch(url);
-    if (!response.ok) {
-        throw new Error(`Open-Meteo HTTP ${response.status}`);
+    const data = await fetchWeatherJson(url, 'Open-Meteo 天气服务', deadline - Date.now());
+    const current = data?.current;
+    if (![current?.temperature_2m, current?.apparent_temperature, current?.relative_humidity_2m, current?.weather_code].every(isWeatherNumber)) {
+        throw new Error('Open-Meteo 天气数据不完整，请稍后重试');
     }
-    const data = await readJson(response);
-    const current = data.current;
     const wmo = WMO_WEATHER_CODES[current.weather_code] || { description: '未知', icon: '01d' };
     return {
         temp: Math.round(current.temperature_2m),
@@ -140,26 +193,91 @@ export const fetchOpenMeteoWeather = async (city: string): Promise<WeatherData> 
     };
 };
 
+// wttr.in 的 WWO code → 已有 WMO 描述与图标；不依赖上游中文翻译是否可用。
+// https://www.worldweatheronline.com/weather-api/api/docs/weather-icons.aspx
+const WWO_TO_WMO: Record<number, number> = {
+    113: 0, 116: 2, 119: 3, 122: 3, 143: 45, 176: 61, 179: 71, 182: 67,
+    185: 56, 200: 95, 227: 75, 230: 75, 248: 45, 260: 48, 263: 51, 266: 53,
+    281: 56, 284: 57, 293: 61, 296: 61, 299: 63, 302: 63, 305: 65, 308: 65,
+    311: 66, 314: 67, 317: 67, 320: 67, 323: 71, 326: 71, 329: 73, 332: 73,
+    335: 75, 338: 75, 350: 77, 353: 80, 356: 81, 359: 82, 362: 67, 365: 67,
+    368: 85, 371: 86, 374: 77, 377: 77, 386: 95, 389: 95, 392: 95, 395: 95,
+};
+
+/** 备用免费源独立按指定城市查询，不借用 Open-Meteo 的地名接口或设备定位。 */
+export const fetchWttrWeather = async (city: string, timeoutMs = WEATHER_REQUEST_TIMEOUT_MS): Promise<WeatherData> => {
+    city = city.trim();
+    if (!city) throw new Error('请先填写城市');
+    // 禁止 wttr 特殊路径与空路径（空路径会按请求 IP 定位）。
+    if (/^\.{1,2}$|[/\\:@~?#]/.test(city)) throw new Error('请填写城市名称，不要填写网址');
+    const data = await fetchWeatherJson(`https://wttr.in/${encodeURIComponent(city)}?format=j1&lang=zh`, 'wttr.in 天气服务', timeoutMs);
+    const current = data?.current_condition?.[0];
+    const number = (value: unknown): number => typeof value === 'string' && value.trim() ? Number(value) : typeof value === 'number' ? value : NaN;
+    const temp = number(current?.temp_C), feelsLike = number(current?.FeelsLikeC), humidity = number(current?.humidity);
+    if (![temp, feelsLike, humidity].every(isWeatherNumber) || humidity < 0 || humidity > 100) {
+        throw new Error('wttr.in 天气数据不完整，请稍后重试');
+    }
+    const code = number(current?.weatherCode);
+    const mapped = code === 149 ? { description: '霾', icon: '50d' }
+        : [182, 317, 320, 362, 365].includes(code) ? { description: '雨夹雪', icon: '13d' }
+        : [392, 395].includes(code) ? { description: '雷阵雪', icon: '13d' }
+        : WMO_WEATHER_CODES[WWO_TO_WMO[code]];
+    const description = current.lang_zh?.[0]?.value || current.lang_xx?.[0]?.value || current.weatherDesc?.[0]?.value;
+    return {
+        temp: Math.round(temp), feelsLike: Math.round(feelsLike), humidity: Math.round(humidity),
+        description: mapped?.description || (typeof description === 'string' ? description.trim().slice(0, 80) : '') || '未知',
+        icon: mapped?.icon || '01d',
+        // nearest_area 是气象站附近的地名，不一定是用户填写的城市（如成都返回郫县）。
+        city,
+    };
+};
+
+/** 单源测试不自动切换，否则源 1 失败却会被源 2 的成功掩盖。 */
+export const fetchWeatherFromSource = async (
+    city: string, source: WeatherSource, apiKey = '', timeoutMs = WEATHER_REQUEST_TIMEOUT_MS,
+): Promise<WeatherData> => {
+    if (!city.trim()) throw new Error('请先填写城市');
+    const data = source === 'owm' ? await fetchOwmWeather(city, apiKey, timeoutMs)
+        : source === 'wttr' ? await fetchWttrWeather(city, timeoutMs)
+        : await fetchOpenMeteoWeather(city, timeoutMs);
+    return { ...data, source };
+};
+
+/** 预览与聊天共用路由；自动查询总预算最多 8/9 秒，给后台 10 秒总预算留余量。 */
+export const fetchWeatherOrThrow = async (
+    city: string, apiKey?: string, freeSource?: FreeWeatherSource,
+): Promise<WeatherData> => {
+    city = city.trim();
+    if (!city) throw new Error('请先填写城市');
+    const key = apiKey?.trim() || '';
+    const preferred = normalizeFreeWeatherSource(freeSource);
+    const sources: WeatherSource[] = [...(key ? ['owm' as const] : []), preferred, preferred === 'wttr' ? 'open-meteo' : 'wttr'];
+    const failures: string[] = [];
+    for (const source of sources) {
+        try {
+            const weather = await fetchWeatherFromSource(city, source, key, key ? 3_000 : 4_000);
+            return failures.length ? { ...weather, fallbackFrom: sources[0] } : weather;
+        } catch (error) {
+            failures.push(error instanceof Error ? error.message : `${WEATHER_SOURCE_LABELS[source]}连接失败`);
+        }
+    }
+    throw new Error(failures.join('；'));
+};
+
 /**
- * 取天气：填了 OpenWeatherMap key 优先走 OWM，失败或没填 key 时回落免费的 Open-Meteo。
- * 两源都不成返回 null（调用方按「这次没天气」渲染，不断链）。
+ * 聊天调用的容错入口：OWM（有 key 时）→ 所选免费源 → 另一免费源。全失败才返回 null。
  */
 export const fetchWeatherWithFallback = async (
     city: string,
     apiKey?: string,
+    freeSource?: FreeWeatherSource,
 ): Promise<WeatherData | null> => {
+    city = city.trim();
+    apiKey = apiKey?.trim();
     if (!city) return null;
 
-    if (apiKey) {
-        try {
-            return await fetchOwmWeather(city, apiKey);
-        } catch (e) {
-            console.warn('OpenWeatherMap 失败，回落 Open-Meteo:', e);
-        }
-    }
-
     try {
-        return await fetchOpenMeteoWeather(city);
+        return await fetchWeatherOrThrow(city, apiKey, freeSource);
     } catch (e) {
         console.error('Failed to fetch weather:', e);
         return null;

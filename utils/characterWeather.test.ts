@@ -19,6 +19,9 @@ it('isolates cached weather by city and key, including failed city switches',asy
     expect((await RealtimeContextManager.fetchWeather({...cfg,weatherCity:'London'}))?.city).toBe('London');
     expect((await RealtimeContextManager.fetchWeather(cfg))?.city).toBe('上海');
     expect(fetchWeatherWithFallback).toHaveBeenCalledTimes(2);
+    expect((await RealtimeContextManager.fetchWeather({...cfg,weatherFreeSource:'wttr'}))?.city).toBe('上海');
+    expect(fetchWeatherWithFallback).toHaveBeenLastCalledWith('上海', '', 'wttr');
+    expect(fetchWeatherWithFallback).toHaveBeenCalledTimes(3);
     vi.mocked(fetchWeatherWithFallback).mockResolvedValue(null);
     expect(await RealtimeContextManager.fetchWeather({...cfg,weatherCity:'Paris'})).toBeNull();
     expect(await RealtimeContextManager.fetchWeather({...cfg,weatherApiKey:'new-key'})).toBeNull();

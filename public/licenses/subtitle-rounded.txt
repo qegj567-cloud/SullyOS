@@ -1,0 +1,14 @@
+Sully Subtitle Rounded Bold
+
+Source: ChillRoundF Bold v3.200, by ChillType / Warren2060
+Release: https://github.com/Warren2060/ChillRound/releases/tag/v3.200
+Archive: https://github.com/Warren2060/ChillRound/releases/download/v3.200/ChillRoundF_v3.200.zip
+Original TTF SHA-256: f2c4f9295d9d04a1eb6392ae3c51ecf2a9ffab355a45c6686eeec5eede3381ec
+
+Changes: converted TTF to WOFF2 and renamed the font family / full / PostScript
+names to Sully Subtitle Rounded, respecting the upstream Reserved Font Names.
+Glyph outlines, character coverage and font weight are unchanged.
+Rebuild: scripts/build-subtitle-font.py (FontTools 4.68.0, Brotli 1.2.1).
+
+This font remains licensed under the SIL Open Font License 1.1.
+Copyright and complete license: subtitle-rounded-OFL.txt in this directory.

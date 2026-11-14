@@ -577,7 +577,8 @@ export interface RealtimeConfig {
     userHolidays?: import('./utils/userHolidays').UserHolidayConfig;
   // 天气配置
   weatherEnabled: boolean;
-  weatherApiKey: string;  // OpenWeatherMap API Key（可选；留空走免 key 的 Open-Meteo）
+  weatherApiKey: string;  // OpenWeatherMap API Key（可选；留空走所选免费源）
+  weatherFreeSource?: import('./utils/weatherSources').FreeWeatherSource;
   weatherCities?: Record<string, string>; // Per-character override; missing/blank inherits weatherCity.
     weatherCity: string;    // 城市名（如 "北京"、"Beijing"）
 
@@ -4155,6 +4156,7 @@ export interface FullBackupData {
     chatTranslateTargetLangByChar?: Record<string, string>;
     chatTranslateEnabledByChar?: Record<string, boolean>;
     chatTranslateExpandedByChar?: Record<string, boolean>;
+    chatTranslateStyleByChar?: Record<string, 'bubble' | 'subtitle'>;
     chatArchivePrompts?: any;
     chatActiveArchivePromptId?: string;
     characterRefinePrompts?: any;

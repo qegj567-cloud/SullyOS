@@ -143,6 +143,7 @@ export async function importLegacyAsIndependentUser(data: FullBackupData, zip: a
     const perCharacterFields: Partial<Record<keyof FullBackupData, string>> = {
         memoryPalaceHighWaterMarks: 'mp_lastMsgId_', chatTranslateEnabledByChar: 'chat_translate_enabled_',
         chatTranslateExpandedByChar: 'chat_translate_expanded_', chatTranslateSourceLangByChar: 'chat_translate_source_lang_',
+        chatTranslateStyleByChar: 'chat_translate_style_',
         chatTranslateTargetLangByChar: 'chat_translate_lang_',
     };
     for (const [field, prefix] of Object.entries(perCharacterFields)) for (const [id, value] of Object.entries((data as any)[field] || {})) put(prefix + id, value);
