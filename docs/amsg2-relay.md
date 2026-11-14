@@ -90,6 +90,7 @@
 - 线上 `/etc/caddy/Caddyfile` 与仓库 `infra/Caddyfile` 每天由隐私审计 CI 比对指纹，改了一边要在同一天同步另一边并合进 master，否则 CI 会红。`relay.py` 不在指纹清单里。
 - Caddy 中转站点里不要写日志指令，也别在注释里写出那个字面量：`assert-privacy.sh` 靠数这一行的出现次数来判断日志有没有被打开，多一处就会误判。
 - 固定连的 Cloudflare IP 列在 `relay.py` 的 `CF_IPS`。不是所有 CF 的 IP 都通用（比如 `104.16.132.229` 对所有域名都回 403），换之前在 dmit 上用 `curl --resolve <worker 域名>:443:<IP>` 实测一遍。
+- dmit 的网络会阵发性丢包（几分钟一阵，严重时丢一半以上），DNS 也直连 1.1.1.1、跟着一起丢。中转偶发 502、机器人偶发「应用程序没有响应」时先在机器上 `ping -c 40 -i 0.25 1.1.1.1` 看是不是这个。为此机器人对 Discord 的 DNS 缓存了 6 小时（`DISCORD_DNS_TTL`）：回复 interaction 只有 3 秒，不能每次现查 DNS。
 - 中转和统计服务、以及机器上其他服务共用一个 IP。这个 IP 或 `friedsully.com` 被封的话会一起受影响。
 
 ## 不在范围内

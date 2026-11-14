@@ -49,6 +49,7 @@ ALLOWED_ORIGINS = {"https://qegj567-cloud.github.io", "https://sully-os-nu.verce
 # 所以中转只到得了 Cloudflare，不会变成通往任意网站的开放代理。
 CF_IPS = ["104.16.0.1", "104.17.0.1", "104.18.0.1", "104.19.0.1", "104.20.0.1", "104.21.0.1"]
 
+DISCORD_DNS_TTL = 6 * 3600
 TOKEN_IDLE_DAYS = 30
 USAGE_KEEP_DAYS = 90
 RATE_BURST = 120          # 每个账号的令牌桶容量（次）
@@ -153,7 +154,10 @@ class Relay:
         self.upstream = aiohttp.ClientSession(
             connector=connector, auto_decompress=False, trust_env=False,
             timeout=aiohttp.ClientTimeout(total=None, connect=10, sock_read=300))
+        # 机器人回复要在 3 秒内送到 Discord。dmit 去 1.1.1.1 的 DNS 会阵发性丢包，每次现查就可能
+        # 在这一步超时，所以 discord.com 的地址缓存 6 小时（默认只缓存 10 秒）
         self.discord = aiohttp.ClientSession(
+            connector=aiohttp.TCPConnector(ttl_dns_cache=DISCORD_DNS_TTL),
             headers={"User-Agent": USER_AGENT}, timeout=aiohttp.ClientTimeout(total=20))
 
     async def close(self):
