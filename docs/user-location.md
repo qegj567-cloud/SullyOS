@@ -91,3 +91,15 @@ Umami 只在 `当前功能启用` 冷启动快照中报告「真实定位」开�
 天气感知保留默认城市，并提供按角色设置城市的可折叠列表。空白或「恢复默认」沿用默认城市；配置 `RealtimeConfig.weatherCities` 按角色 ID 保存，与真实定位授权和角色时区互不关联。天气缓存按城市与 API Key 隔离；城市失败时不借用别的城市天气。前台聊天选取目标角色的有效城市；后台主动／即时消息通过 tool_config 的城市映射与任务 charId 取城，同样禁止复用其他城市快照。用户自建的主动消息 Worker 需要更新为包含此逻辑的新 bundle，旧 Worker 不识别城市映射。
 
 验收：`test/fixtures/character-awareness.html` 使用模拟角色与本地组件；`characterWeather.test.ts`、`characterAwarenessSettings.test.ts`、`userLocationContext.test.ts` 与 Worker realtimeWorld 测试覆盖选择、恢复默认、未授权零查询、在途撤权和多城市隔离。
+
+### 免费天气双源与故障切换
+
+天气 Key 留空时可选择首选免费源：**免费源 1 · Open-Meteo（默认）**、**免费源 2 · wttr.in**。偏好 `weatherFreeSource` 随实时配置保存并同步至后台 `tool_config`，旧配置或未知值按源 1。两源都查询手填的城市，与设备真实定位无关，不读取 GPS、不走公共代理。源 2 直接按城市查询，不依赖源 1 的城市接口；拒绝空路径及特殊路径，避免 wttr.in 回退按 IP 定位。接口与 JSON 格式见 [wttr.in 官方文档](https://github.com/chubin/wttr.in#json-output)，天气码按 [WorldWeatherOnline 码表](https://www.worldweatheronline.com/weather-api/api/docs/weather-icons.aspx)转换为中文，未知码保留服务商文字。
+
+「测试源 1」「测试源 2」各自只测对应服务，结果互不覆盖，单源最多等 8 秒（城市与天气共用预算，含响应体），不把另一源的成功伪装成测试成功。「预览天气（自动切换）」与聊天共用 `fetchWeatherOrThrow` 路由：所选免费源失败、超时或数据无效后尝试另一个，每源最多 4 秒；有 OWM Key 时先测 OWM，再按免费源偏好回落，每源最多 3 秒。自动流程分别最多 8/9 秒，留在后台 10 秒取数预算内。实际来源与自动切换显示在预览中；全失败保留各源原因，聊天按无天气处理，缺失数值不当成 0°C。更改城市、Key 或首选源后清除旧测试状态，忽略在途旧结果。
+
+城市和 Key 会去除首尾空格，只有空格的 Key 视为留空。Open-Meteo 城市查询无结果且输入是「北京市」这类全称时，再试不带「市」的简称；已有结果不改写，避免截断海外地名。两家服务的地名匹配与天气模型可能不同，同名城市仍建议用明确的英文名／地区限定。wttr.in 的 `nearest_area` 是气象站附近地名，显示保留用户指定的城市，不用附近站点名替代。
+
+前台缓存按城市、Key 与首选源隔离；后台快照记录城市、首选源及实际来源，切换首选源后不复用旧偏好的快照。前后台共用取数逻辑，用户自建 Worker 需更新 bundle。没有新增统计事件或上报来源／城市；测试仍只报告原有连接测试的成功／失败。
+
+超时不代表 Key 填错，也不足以判断服务全球宕机。Open-Meteo [官方说明](https://github.com/open-meteo/open-meteo/issues/1651)指出，公共出口 IP 的请求量可能触发限制；网络连通性也要在实际设备确认。`realtimeWorldCore.weather.test.ts`、`weatherSourceSettings.test.ts`、`characterWeather.test.ts`、Worker realtimeWorld 与 toolPack 测试覆盖双向回落、预算中止、单源测试、缓存与云端偏好；`test/fixtures/weather-sources.html` 默认模拟源 1 故障、源 2 成功，`?live=1` 才查询实际服务。

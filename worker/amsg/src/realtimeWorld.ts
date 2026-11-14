@@ -16,6 +16,8 @@ import {
   checkSpecialDates,
   fetchHotNews,
   fetchWeatherWithFallback,
+  normalizeFreeWeatherSource,
+  type FreeWeatherSource,
   getHotNewsSlot,
   pickRandomNews,
   renderRealtimeWorldBlock,
@@ -68,6 +70,7 @@ type WriteState = (
 
 interface WeatherSnapshot {
   city: string;
+  freeSource?: FreeWeatherSource;
   data: WeatherData;
   fetchedAt: number;
 }
@@ -124,25 +127,27 @@ const loadWeather = async (
 ): Promise<WeatherData | null> => {
   const city = cfg.weatherCity?.trim();
   if (!city) return null;
+  const freeSource = normalizeFreeWeatherSource(cfg.weatherFreeSource);
 
   const snap = parseSnapshot<WeatherSnapshot>(globalRows, AMSG_WEATHER_SNAPSHOT_KEY,
     (v) => v && typeof v.city === 'string' && v.data && typeof v.fetchedAt === 'number');
-  if (snap && snap.city === city && nowMs - snap.fetchedAt < WEATHER_TTL_MS) {
+  const matches = snap && snap.city === city && normalizeFreeWeatherSource(snap.freeSource) === freeSource;
+  if (matches && nowMs - snap.fetchedAt < WEATHER_TTL_MS) {
     console.log('[amsg:world] 天气命中快照', { city, ageMin: Math.round((nowMs - snap.fetchedAt) / 60000) });
     return snap.data;
   }
 
-  const fresh = await fetchWeatherWithFallback(city, cfg.weatherApiKey);
+  const fresh = await fetchWeatherWithFallback(city, cfg.weatherApiKey, freeSource);
   if (fresh) {
     pendingWrites.push({
       key: AMSG_WEATHER_SNAPSHOT_KEY,
-      value: JSON.stringify({ city, data: fresh, fetchedAt: nowMs } satisfies WeatherSnapshot),
+      value: JSON.stringify({ city, freeSource, data: fresh, fetchedAt: nowMs } satisfies WeatherSnapshot),
     });
     return fresh;
   }
   // 拉不到就用手上这份旧的：半小时前的气温也比「今天天气怎么样都不知道」强，
   // 而且不写快照，下次触发会再试一次。城市换过了、或者旧得过头了就宁可不说。
-  if (snap && snap.city === city && nowMs - snap.fetchedAt <= WEATHER_FALLBACK_MAX_AGE_MS) {
+  if (matches && nowMs - snap.fetchedAt <= WEATHER_FALLBACK_MAX_AGE_MS) {
     console.warn('[amsg:world] 天气拉取失败，先用上一次的读数', { city });
     return snap.data;
   }

@@ -246,6 +246,7 @@ const loadJSZip = async (): Promise<JSZipCtorLike> => {
 const defaultRealtimeConfig: RealtimeConfig = {
   weatherEnabled: false,
   weatherApiKey: '',
+  weatherFreeSource: 'open-meteo',
   weatherCity: 'Beijing',
   newsEnabled: false,
   newsApiKey: '',
@@ -3855,6 +3856,17 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   }
                   return Object.keys(map).length > 0 ? map : undefined;
               })() : undefined,
+              chatTranslateStyleByChar: (mode === 'text_only' || mode === 'full') ? (() => {
+                  const map: Record<string, 'bubble' | 'subtitle'> = {};
+                  for (let i = 0; i < localStorage.length; i++) {
+                      const key = localStorage.key(i);
+                      if (!key?.startsWith('chat_translate_style_')) continue;
+                      const charId = key.slice('chat_translate_style_'.length);
+                      const value = localStorage.getItem(key);
+                      if (charId && (value === 'bubble' || value === 'subtitle')) map[charId] = value;
+                  }
+                  return Object.keys(map).length > 0 ? map : undefined;
+              })() : undefined,
               chatTranslateSourceLangByChar: (mode === 'text_only' || mode === 'full') ? (() => {
                   const map: Record<string, string> = {};
                   for (let i = 0; i < localStorage.length; i++) {
@@ -4778,6 +4790,11 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           if (data.chatTranslateExpandedByChar && typeof data.chatTranslateExpandedByChar === 'object') {
               for (const [charId, expanded] of Object.entries(data.chatTranslateExpandedByChar)) {
                   localStorage.setItem(`chat_translate_expanded_${charId}`, expanded ? 'true' : 'false');
+              }
+          }
+          if (data.chatTranslateStyleByChar && typeof data.chatTranslateStyleByChar === 'object') {
+              for (const [charId, style] of Object.entries(data.chatTranslateStyleByChar)) {
+                  if (style === 'bubble' || style === 'subtitle') localStorage.setItem(`chat_translate_style_${charId}`, style);
               }
           }
           if (data.chatTranslateSourceLangByChar && typeof data.chatTranslateSourceLangByChar === 'object') {

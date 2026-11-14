@@ -83,6 +83,7 @@ describe('buildToolConfig / parseToolConfig', () => {
       // 天气不是工具，但 worker 到点要自己拉一次填进提示词，所以也得上云
       weatherEnabled: true,
       weatherCity: '上海',
+      weatherFreeSource: 'wttr',
       newsPlatforms: ['weibo', 'zhihu'],
     } as unknown as RealtimeConfig;
 
@@ -97,6 +98,7 @@ describe('buildToolConfig / parseToolConfig', () => {
     // 到点组提示词要用的实时世界配置：天气开关 + 城市 + 热榜平台
     expect(parsed?.weatherEnabled).toBe(true);
     expect(parsed?.weatherCity).toBe('上海');
+    expect(parsed?.weatherFreeSource).toBe('wttr');
     expect(parsed?.newsPlatforms).toEqual(['weibo', 'zhihu']);
     // 未配置的可选键不写（省 payload，也避免 undefined 序列化怪态）
     expect('feishuAppId' in config).toBe(false);
@@ -106,6 +108,7 @@ describe('buildToolConfig / parseToolConfig', () => {
     const config = buildToolConfig(undefined);
     expect(config.newsEnabled).toBe(false);
     expect(config.weatherEnabled).toBe(false);
+    expect(config.weatherFreeSource).toBe('open-meteo');
     expect('weatherCity' in config).toBe(false);
     expect('newsPlatforms' in config).toBe(false);
     expect(config.notionEnabled).toBe(false);

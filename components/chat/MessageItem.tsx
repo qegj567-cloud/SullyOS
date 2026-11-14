@@ -31,6 +31,8 @@ export {THINKING_CHAIN_PRESETS,resolveThinkingChainStyle} from '../../utils/psyc
 export type {ThinkingChainStyleId,ThinkingChainStyleSpec} from '../../utils/psycheAppearance';
 import {ChatCardSurface} from './ChatCardSurface';
 import {FriendFeedNote} from './FriendFeedNote';
+import { ChatTranslationText } from './ChatSubtitleLayer';
+import type { ChatTranslationStyle } from '../../utils/chatTranslationStyle';
 import FriendFeedShareCard from './FriendFeedShareCard';
 // 心象卡片的「破格」装饰：溢出卡片边框的风格化元素。
 // 必须渲染在卡片（overflow-hidden）的兄弟层、且父容器 relative + 不裁剪，才能真的探出边框。
@@ -1107,6 +1109,7 @@ interface MessageItemProps {
     // Translation (AI messages only, bilingual content parsed from %%BILINGUAL%%)
     translationEnabled?: boolean;
     translationExpanded?: boolean;
+    translationStyle?: ChatTranslationStyle;
     isShowingTarget?: boolean;
     onTranslateToggle?: (msgId: number) => void;
     // Voice TTS
@@ -1166,6 +1169,7 @@ const MessageItem = React.memo(({
     onToggleThinkingSelect,
     translationEnabled,
     translationExpanded,
+    translationStyle = 'bubble',
     isShowingTarget,
     onTranslateToggle,
     voiceData,
@@ -3399,15 +3403,16 @@ const MessageItem = React.memo(({
             {/* Layer 4: Text Content — shown when there's visible text after stripping voice tags */}
             {/* 外语语音消息把双语文字交给下方语音条渲染，顶部不再重复正文 */}
             {displayContent && !isForeignVoiceMsg && (
-            <div className="relative z-10 text-[15px] leading-relaxed whitespace-pre-wrap break-normal [overflow-wrap:anywhere] select-text" style={{ color: styleConfig.textColor }}>
+            <ChatTranslationText className="relative z-10 text-[15px] leading-relaxed whitespace-pre-wrap break-normal [overflow-wrap:anywhere] select-text" style={{ color: styleConfig.textColor }}
+                subtitle={showExpandedTranslation && translationStyle === 'subtitle' ? renderContent(langBContent) : undefined}>
                 {renderContent(displayContent)}
-                {showExpandedTranslation && (
+                {showExpandedTranslation && translationStyle !== 'subtitle' && (
                     <div className="mt-2.5 pt-2 border-t border-current/15">
                         <div className="mb-1 text-[9px] font-bold tracking-[0.16em] opacity-40 select-none">翻译</div>
                         {renderContent(langBContent)}
                     </div>
                 )}
-            </div>
+            </ChatTranslationText>
             )}
 
             {hasSarSurface && (displayContent || hasVoiceContent) && (
@@ -3648,6 +3653,7 @@ const MessageItem = React.memo(({
            prev.isSelected === next.isSelected &&
            prev.translationEnabled === next.translationEnabled &&
            prev.translationExpanded === next.translationExpanded &&
+           prev.translationStyle === next.translationStyle &&
            prev.isShowingTarget === next.isShowingTarget &&
            prev.avatarShape === next.avatarShape &&
            prev.avatarSize === next.avatarSize &&

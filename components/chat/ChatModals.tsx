@@ -7,6 +7,8 @@ import ScheduleCard from '../schedule/ScheduleCard';
 import EmotionSettingsPanel from './EmotionSettingsPanel';
 import ChatInputSettings from './ChatInputSettings';
 import ChatSettingsSection from './ChatSettingsSection';
+import TranslationStylePicker from './TranslationStylePicker';
+import type { ChatTranslationStyle } from '../../utils/chatTranslationStyle';
 import SecretNote from './SecretNote';
 import type { ChatInputPreferences } from '../../utils/chatInputPreferences';
 import { isTranslationLangPreset, normalizeTranslationLangLabel, TRANSLATION_LANG_MAX_LENGTH, TRANSLATION_LANG_PRESETS } from '../../utils/translationLang';
@@ -101,6 +103,8 @@ interface ChatModalsProps {
     onToggleTranslation?: () => void;
     translationExpanded?: boolean;
     onToggleTranslationExpanded?: () => void;
+    translationStyle?: ChatTranslationStyle;
+    onSetTranslationStyle?: (style: ChatTranslationStyle) => void;
     translateSourceLang?: string;
     translateTargetLang?: string;
     onSetTranslateSourceLang?: (lang: string) => void;
@@ -264,7 +268,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
     onArchive, onCreatePrompt, onEditPrompt, onSavePrompt, onDeletePrompt,
     onSetHistoryStart, onRestoreAdaptiveContext, onJumpToMessageInChat, onEnterSelectionMode, onReplyMessage, onEditMessageStart, onConfirmEditMessage, onDeleteMessage, onCopyMessage, onToggleMessageFavorite, messageFavorited, onDeleteEmoji, onDeleteCategory, onRenameCategory, onDownloadCategory,
     allCharacters = [], onSaveCategoryVisibility,
-    translationEnabled, onToggleTranslation, translationExpanded, onToggleTranslationExpanded, translateSourceLang, translateTargetLang, onSetTranslateSourceLang, onSetTranslateLang,
+    translationEnabled, onToggleTranslation, translationExpanded, onToggleTranslationExpanded, translationStyle = 'bubble', onSetTranslationStyle, translateSourceLang, translateTargetLang, onSetTranslateSourceLang, onSetTranslateLang,
     xhsEnabled, onToggleXhs,
     htmlModeEnabled, onToggleHtmlMode, htmlModeCustomPrompt, setHtmlModeCustomPrompt,
     chatVoiceEnabled, onToggleChatVoice, chatVoiceAutoPlay, onToggleChatVoiceAutoPlay, chatVoiceLang, onSetChatVoiceLang,
@@ -594,12 +598,13 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                                     >
                                         <span>
                                             <span className="block text-[11px] font-bold text-slate-600">原文与译文同时展开</span>
-                                            <span className="block mt-0.5 text-[9px] leading-relaxed text-slate-400">开启后不再逐条点击切换，双语气泡会直接上下显示两种语言。</span>
+                                            <span className="block mt-0.5 text-[9px] leading-relaxed text-slate-400">开启后直接显示两种语言，可选择译文样式。</span>
                                         </span>
                                         <span className={`shrink-0 w-10 h-6 rounded-full p-1 transition-colors flex items-center ${translationExpanded ? 'bg-primary' : 'bg-slate-200'}`}>
                                             <span className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${translationExpanded ? 'translate-x-4' : ''}`} />
                                         </span>
                                     </button>
+                                    {translationExpanded && <TranslationStylePicker value={translationStyle} onChange={onSetTranslationStyle} />}
                                     {/* Preview */}
                                     <div className="text-[11px] text-center text-slate-500 bg-slate-50 rounded-lg py-2">
                                         选<span className="font-bold text-slate-700">{translateSourceLang || '?'}</span> 译<span className="font-bold text-primary">{translateTargetLang || '?'}</span>

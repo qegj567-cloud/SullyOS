@@ -1,0 +1,40 @@
+import { createRequire } from 'node:module';
+import assert from 'node:assert/strict';
+import { mkdirSync } from 'node:fs';
+const require = createRequire(import.meta.url);
+const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const output = 'output/weather-sources';
+mkdirSync(output, { recursive: true });
+const browser = await chromium.launch({ headless: true, ...(process.env.BROWSER_CHANNEL ? { channel: process.env.BROWSER_CHANNEL } : {}) });
+const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+const errors = [];
+page.on('pageerror', error => errors.push(error.message));
+try {
+    await page.goto(process.env.WEATHER_TEST_URL || 'http://127.0.0.1:5197/test/fixtures/weather-sources.html');
+    await page.getByRole('button', { name: '测试源 1', exact: true }).click();
+    await page.locator('[data-weather-status="open-meteo"]').filter({ hasText: '连接失败' }).waitFor();
+    await page.getByRole('button', { name: '测试源 2', exact: true }).click();
+    await page.locator('[data-weather-status="wttr"]').filter({ hasText: '15°C' }).waitFor();
+    await page.getByRole('button', { name: '预览天气（自动切换）', exact: true }).click();
+    await page.locator('[data-weather-status="preview"]').filter({ hasText: '已从免费源 1' }).waitFor();
+    await page.screenshot({ path: `${output}/fallback-390.png`, fullPage: true });
+    await page.setViewportSize({ width: 320, height: 740 });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+    await page.screenshot({ path: `${output}/fallback-320.png`, fullPage: true });
+    await page.locator('input[value="wttr"]').check();
+    await page.getByRole('button', { name: '保存配置', exact: true }).click();
+    await page.reload();
+    assert.equal(await page.locator('input[value="wttr"]').isChecked(), true);
+    await page.getByRole('button', { name: '预览天气（自动切换）', exact: true }).click();
+    await page.locator('[data-weather-status="preview"]').filter({ hasText: '15°C' }).waitFor();
+    assert(!(await page.locator('[data-weather-status="preview"]').textContent()).includes('自动切换'));
+    await page.getByLabel('天气 Key', { exact: true }).fill('test-key');
+    await page.getByRole('button', { name: '测试 OpenWeatherMap', exact: true }).waitFor();
+    assert.equal(await page.locator('input[type=radio]').count(), 0);
+    await page.getByLabel('天气 Key', { exact: true }).fill('');
+    assert.equal(await page.locator('input[value="wttr"]').isChecked(), true);
+    assert.deepEqual(errors, []);
+    console.log('PASS: independent source tests, automatic fallback, selection persistence, Key toggle, 320px layout');
+} finally {
+    await browser.close();
+}

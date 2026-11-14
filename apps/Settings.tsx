@@ -28,7 +28,9 @@ import { useLocalBackHandler } from '../hooks/useLocalBackHandler';
 import { loadUserLocationConfig, type UserLocationConfig } from '../utils/userLocationPrivacy';
 import { saveUserLocationConfig } from '../utils/userLocation';
 import { consumeHolidaySettings, hasHolidaySettingsRequest, type UserHolidayConfig } from '../utils/userHolidays';
-import { NotionManager, FeishuManager, RealtimeContextManager, fetchOwmWeather, fetchOpenMeteoWeather } from '../utils/realtimeContext';
+import { NotionManager, FeishuManager, RealtimeContextManager } from '../utils/realtimeContext';
+import { normalizeFreeWeatherSource } from '../utils/realtimeWorldCore';
+import WeatherSourceSettings from '../components/settings/WeatherSourceSettings';
 import { XhsMcpClient } from '../utils/xhsMcpClient';
 import { resolveXhsDeploymentMode } from '../utils/xhsMcpConfig';
 import { getMcdToken, setMcdToken as saveMcdToken, isMcdEnabled, setMcdEnabled as saveMcdEnabled, testMcdConnection, resetMcdSession } from '../utils/mcdMcpClient';
@@ -706,6 +708,7 @@ const Settings: React.FC = () => {
   useLocalBackHandler(() => { closeRealtimePage(); return true; }, 30, showRealtimeModal);
   const [rtUserHolidays, setRtUserHolidays] = useState<UserHolidayConfig>(() => ({ ...(realtimeConfig.userHolidays || { enabled: false, countryCode: '' }), ...(holidaySettingsFocus ? { enabled: true } : {}) }));
   const [rtWeatherKey, setRtWeatherKey] = useState(realtimeConfig.weatherApiKey);
+  const [rtWeatherFreeSource, setRtWeatherFreeSource] = useState(() => normalizeFreeWeatherSource(realtimeConfig.weatherFreeSource));
   const [rtWeatherCities, setRtWeatherCities] = useState(()=>cleanCharacterWeatherCities(realtimeConfig.weatherCities));
   const [rtWeatherCity, setRtWeatherCity] = useState(realtimeConfig.weatherCity);
   const [rtNewsEnabled, setRtNewsEnabled] = useState(realtimeConfig.newsEnabled);
@@ -1752,6 +1755,7 @@ const Settings: React.FC = () => {
           weatherEnabled: rtWeatherEnabled,
           userHolidays: { ...rtUserHolidays, introChoice: rtUserHolidays.enabled ? 'configured' as const : 'declined' as const },
           weatherApiKey: rtWeatherKey,
+          weatherFreeSource: rtWeatherFreeSource,
           weatherCity: rtWeatherCity.trim(),
           weatherCities: cleanCharacterWeatherCities(rtWeatherCities),
           newsEnabled: rtNewsEnabled,
@@ -1785,28 +1789,6 @@ const Settings: React.FC = () => {
       syncAmsgToolConfigAndPrompts(nextRealtimeConfig, { characters, userProfile, groups });
       addToast('实时感知配置已保存', 'success');
       setShowRealtimeModal(false);
-  };
-
-  // 测试天气API连接：填了 key 测 OpenWeatherMap，没填测免费的 Open-Meteo
-  const testWeatherApi = async () => {
-      const setRtTestStatus = (value: string) => setRtTestStatuses(previous => ({ ...previous, weather: value }));
-      if (!rtWeatherCity) {
-          setRtTestStatus('请先填写城市');
-          return;
-      }
-      setRtTestStatus('正在测试...');
-      try {
-          const weather = rtWeatherKey
-              ? await fetchOwmWeather(rtWeatherCity, rtWeatherKey)
-              : await fetchOpenMeteoWeather(rtWeatherCity);
-          const source = rtWeatherKey ? 'OpenWeatherMap' : 'Open-Meteo';
-          // 刻意不带数据源名：那等价于「有没有填天气 key」，属于配置状态
-          trackEvent('测试天气数据源连接', { result: 'ok' });
-          setRtTestStatus(`连接成功！(${source}) ${weather.city}: ${weather.description}, ${weather.temp}°C`);
-      } catch (e: any) {
-          trackEvent('测试天气数据源连接', { result: 'failed' });
-          setRtTestStatus(`连接失败: ${e.message}`);
-      }
   };
 
   // 测试Notion连接
@@ -3896,14 +3878,14 @@ const Settings: React.FC = () => {
                       <div className="space-y-2">
                           <div>
                               <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">OpenWeatherMap API Key（可选）</label>
-                              <input type="password" value={rtWeatherKey} onChange={e => setRtWeatherKey(e.target.value)} className="w-full bg-white/80 border border-emerald-200 rounded-xl px-3 py-2 text-sm font-mono" placeholder="留空则用免费的 Open-Meteo，无需注册" />
+                              <input type="password" value={rtWeatherKey} onChange={e => setRtWeatherKey(e.target.value)} className="w-full bg-white/80 border border-emerald-200 rounded-xl px-3 py-2 text-sm font-mono" placeholder="留空可选免费源 1 / 2，无需注册" />
                           </div>
                           <div>
                               <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">默认天气城市</label>
                               <input type="text" value={rtWeatherCity} onChange={e => setRtWeatherCity(e.target.value)} className="w-full bg-white/80 border border-emerald-200 rounded-xl px-3 py-2 text-sm" placeholder="北京 / Beijing / Shanghai" />
                           </div>
-<button onClick={testWeatherApi} className="w-full py-2 bg-emerald-100 text-emerald-600 text-xs font-bold rounded-xl active:scale-95 transition-transform">测试天气API</button>
-                          {renderRtTestStatus('weather')}
+                          <WeatherSourceSettings city={rtWeatherCity} apiKey={rtWeatherKey} value={rtWeatherFreeSource} onChange={setRtWeatherFreeSource}
+                              onTestResult={ok => trackEvent('测试天气数据源连接', { result: ok ? 'ok' : 'failed' })} />
                           <CharacterWeatherCities characters={characters} value={rtWeatherCities} defaultCity={rtWeatherCity} onChange={setRtWeatherCities}/>
                       </div>
                   )}

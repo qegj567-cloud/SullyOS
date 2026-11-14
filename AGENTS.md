@@ -20,6 +20,7 @@
 | **角色默认对话 API** | [`docs/character-api.md`](./docs/character-api.md) | 改角色独立 API、API 预设分组或对话模型路由前必读；App 优先，单角色回复才使用角色默认，凭据整套选择 |
 | **Anthropic 原生接口 / Prompt Caching** | [`docs/anthropic-messages.md`](./docs/anthropic-messages.md) | 改 Messages 转换、SSE、缓存或 amsg 原生模型调用前必读；原生端点随整套凭据保存，不新增代理，旧 Worker 先更新并验证能力 |
 | **心象 / 思考摘要与正文分离** | [`docs/thinking-response.md`](./docs/thinking-response.md) | 改 thinking 解析、心象显示或排查思考漏进气泡前必读；只按明确字段和标签分流，不凭语言猜测，空正文不得用思考补齐 |
+| **聊天译文样式 / 外挂字幕** | [`docs/chat-translation.md`](./docs/chat-translation.md) | 改双语展示或字幕定位前必读；默认保留气泡内译文，外挂字幕独立浮层贴原文末行，样式按角色保存 |
 | **ElevenLabs 角色语音** | [`docs/elevenlabs-tts.md`](./docs/elevenlabs-tts.md) | 改 v4 / Turbo 语音、Audio Tags、模型参数或字幕前必读；v4 保留开放式标签，只发送稳定度与相似度，不自动降级 |
 | **角色统计 / 上下文字数与 Token 估算** | [`docs/character-statistics.md`](./docs/character-statistics.md) | 改神经链接角色统计前必读；可读范围不等于实际请求，概率预览不得抽签，宫殿缓存单列 |
 | **API 调用记录 / 用途与云端记账** | [`docs/api-call-log.md`](./docs/api-call-log.md) | 新增 `/chat/completions` 调用点、改 `ApiCallMeta` 归属或云端模型用量回传前必读；显式 `meta` 不混入前台环境角色，推送不回传凭据 |

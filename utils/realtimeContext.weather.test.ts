@@ -118,6 +118,7 @@ describe('RealtimeContextManager.fetchWeather 双源策略', () => {
         expect(weather).toEqual({
             temp: 21, feelsLike: 19, humidity: 60,
             description: '多云', icon: '03d', city: 'Beijing',
+            source: 'owm',
         });
         expect(vi.mocked(fetch).mock.calls[0][0]).toContain('openweathermap');
     });

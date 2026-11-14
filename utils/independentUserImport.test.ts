@@ -116,6 +116,7 @@ it('migrates legacy image ZIPs, memory vectors, activity state and embedded appe
         messages: [{ id: 4, charId: 'same', content: 'same' }], userProfile: { name: '旧账号' },
         memoryNodes: [{ id: 'memory', charId: 'same', content: '过去的经历' }], memoryVectors: [{ memoryId: 'memory', charId: 'same', vector: [0.5, 0.25] }],
         memoryPalaceHighWaterMarks: { same: 4 }, lastActiveCharId: 'same',
+        chatTranslateStyleByChar: { same: 'subtitle' },
         appearancePresets: [{ id: 'theme', name: '主题', theme: { wallpaper: 'assets/avatar.png' } }],
         sarLocalState: { version: 1, club: { retained: true } }, vrMusicRoom: { queue: ['song'] },
         collaborationSessions: [{ id: 'session', charId: 'same' }],
@@ -130,6 +131,8 @@ it('migrates legacy image ZIPs, memory vectors, activity state and embedded appe
     expect(vector.vector).toBeInstanceOf(Uint8Array); expect([...new Float32Array(vector.vector.buffer)]).toEqual([0.5, 0.25]);
     expect(vector.memoryId).toBe((await readSpaceStore(db, 'memory_nodes'))[0].id);
     expect(readSpaceLocal(space.id)[`mp_lastMsgId_${char.id}`]).toBe('4');
+    expect(readSpaceLocal(space.id)[`chat_translate_style_${char.id}`]).toBe('subtitle');
+    expect(readSpaceLocal(space.id).chat_translate_style_same).toBeUndefined();
     expect((await readSpaceStore(db, 'assets')).find(row => row.id === `mp_hwm_v1_${char.id}`).data).toMatchObject({ version: 1, charId: char.id, msgId: 4 });
     expect(Object.values(readSpaceLocal(space.id))).toContain(JSON.stringify({ retained: true }));
     expect((await readSpaceStore(db, 'vr_music'))[0]).toMatchObject({ id: 'state', queue: ['song'] });

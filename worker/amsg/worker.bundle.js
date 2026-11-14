@@ -356,6 +356,14 @@ function weatherForCharacter(config, charId) {
   return typeof city === "string" && city.trim() ? { ...config, weatherCity: city.trim().slice(0, 100) } : config;
 }
 
+// utils/weatherSources.ts
+var normalizeFreeWeatherSource = (value) => value === "wttr" ? "wttr" : "open-meteo";
+var WEATHER_SOURCE_LABELS = {
+  "open-meteo": "\u514D\u8D39\u6E90 1 \xB7 Open-Meteo",
+  wttr: "\u514D\u8D39\u6E90 2 \xB7 wttr.in",
+  owm: "OpenWeatherMap"
+};
+
 // utils/proxyWorker.ts
 var DEFAULT_PROXY_WORKER = "https://proxy.friedsully.com";
 var LS_KEY = "sully_proxy_worker_url_v1";
@@ -421,6 +429,7 @@ var parseToolConfig = (value) => {
       delete parsed.mcpServers;
     }
     if (parsed.weatherCities !== void 0) parsed.weatherCities = cleanCharacterWeatherCities(parsed.weatherCities);
+    parsed.weatherFreeSource = normalizeFreeWeatherSource(parsed.weatherFreeSource);
     return parsed;
   } catch {
     return null;
@@ -1552,7 +1561,7 @@ function pickStaleStoppedReplyKeys(rows, nowMs = Date.now(), protectKey) {
 // worker/amsg/src/index.ts
 import { DurableObject } from "cloudflare:workers";
 
-// node_modules/.pnpm/@rei-standard+amsg-server@3.2.0-next.2_@neondatabase+serverless@1.1.0_pg@8.22.0/node_modules/@rei-standard/amsg-server/dist/chunk-R2CRPRKR.mjs
+// ../../node_modules/.pnpm/@rei-standard+amsg-server@3_f2a08373d30841ce79e2e19c7fb88ed9/node_modules/@rei-standard/amsg-server/dist/chunk-R2CRPRKR.mjs
 var CLEANUP_BATCH_LIMIT = 100;
 var UPDATABLE_COLUMNS = /* @__PURE__ */ new Set([
   "user_id",
@@ -1572,7 +1581,7 @@ var UPDATABLE_COLUMNS = /* @__PURE__ */ new Set([
 var TASK_DELIVERY_COLUMNS = "id, user_id, uuid, encrypted_payload, message_type, next_send_at, retry_after, status, retry_count";
 var TASK_DETAIL_COLUMNS = "id, user_id, uuid, encrypted_payload, message_type, next_send_at, status, retry_count, last_error, created_at, updated_at";
 
-// node_modules/.pnpm/@rei-standard+amsg-shared@0.5.0-next.0/node_modules/@rei-standard/amsg-shared/dist/index.mjs
+// ../../node_modules/.pnpm/@rei-standard+amsg-shared@0.5.0-next.0/node_modules/@rei-standard/amsg-shared/dist/index.mjs
 var TEXT_ENCODER = new TextEncoder();
 var TEXT_DECODER = new TextDecoder("utf-8", { fatal: false });
 function toUint8(buf) {
@@ -2810,7 +2819,7 @@ function stringifyDecisionForError(value) {
   }
 }
 
-// node_modules/.pnpm/@rei-standard+amsg-server@3.2.0-next.2_@neondatabase+serverless@1.1.0_pg@8.22.0/node_modules/@rei-standard/amsg-server/dist/chunk-WFKLHUUE.mjs
+// ../../node_modules/.pnpm/@rei-standard+amsg-server@3_f2a08373d30841ce79e2e19c7fb88ed9/node_modules/@rei-standard/amsg-server/dist/chunk-WFKLHUUE.mjs
 var DAY_MS = 24 * 60 * 60 * 1e3;
 var MAX_LISTED_SKIPPED_OCCURRENCES = 32;
 var MAX_ADJUST_STEPS = 32;
@@ -12078,7 +12087,7 @@ function extractFriendFeedReplyTags(raw, namespace = "FRIEND_FEED_REPLY") {
   return { text: text2 + raw.slice(cursor), actions };
 }
 
-// node_modules/.pnpm/@rei-standard+amsg-instant@0.12.0-next.0/node_modules/@rei-standard/amsg-instant/dist/index.mjs
+// ../../node_modules/.pnpm/@rei-standard+amsg-instant@0.12.0-next.0/node_modules/@rei-standard/amsg-instant/dist/index.mjs
 var MAX_REQUEST_BODY_BYTES = 32 * 1024 * 1024;
 var WEB_PUSH_MAX_BODY_BYTES2 = 4096;
 var WEB_PUSH_ENCRYPTION_OVERHEAD_BYTES2 = 16 + 4 + 1 + 65 + 1 + 16;
@@ -14204,7 +14213,7 @@ function buildScheduledPush(message, build, extraMeta, bannerBody) {
 }
 
 // utils/amsgBundleVersion.ts
-var AMSG_BUNDLE_VERSION = "2026-11-14.2";
+var AMSG_BUNDLE_VERSION = "2026-11-14.3";
 
 // worker/amsg/src/reproduction.ts
 async function writeDiagnosticStage(writeState, runId, event, fields = {}) {
@@ -14622,6 +14631,41 @@ var readJson = async (res) => {
   }
 };
 var geocodeCache = /* @__PURE__ */ new Map();
+var WEATHER_REQUEST_TIMEOUT_MS = 8e3;
+var fetchWeatherJson = async (url, stage, timeoutMs = WEATHER_REQUEST_TIMEOUT_MS) => {
+  if (timeoutMs <= 0) throw new Error(`${stage}\u8D85\u65F6\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5\u6216\u68C0\u67E5\u7F51\u7EDC`);
+  const controller = new AbortController();
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(`${stage}\u8D85\u65F6\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5\u6216\u68C0\u67E5\u7F51\u7EDC`));
+      controller.abort();
+    }, timeoutMs);
+  });
+  const request = async () => {
+    let response;
+    try {
+      response = await fetch(url, { signal: controller.signal });
+    } catch {
+      throw new Error(`${stage}\u8FDE\u63A5\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u7F51\u7EDC\u6216\u7A0D\u540E\u91CD\u8BD5`);
+    }
+    if (!response.ok) {
+      const hint = response.status === 429 ? "\uFF0C\u8BF7\u6C42\u8FC7\u591A\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5" : "";
+      throw new Error(`${stage} HTTP ${response.status}${hint}`);
+    }
+    try {
+      return await readJson(response);
+    } catch {
+      throw new Error(`${stage}\u54CD\u5E94\u8BFB\u53D6\u5931\u8D25\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5`);
+    }
+  };
+  try {
+    return await Promise.race([request(), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+};
+var isWeatherNumber = (value) => typeof value === "number" && Number.isFinite(value);
 var WMO_WEATHER_CODES = {
   0: { description: "\u6674", icon: "01d" },
   1: { description: "\u5927\u81F4\u6674\u6717", icon: "02d" },
@@ -14652,45 +14696,51 @@ var WMO_WEATHER_CODES = {
   96: { description: "\u96F7\u9635\u96E8\u4F34\u5C0F\u51B0\u96F9", icon: "11d" },
   99: { description: "\u96F7\u9635\u96E8\u4F34\u5927\u51B0\u96F9", icon: "11d" }
 };
-var fetchOwmWeather = async (city, apiKey) => {
-  const url = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(city)}&appid=${apiKey}&units=metric&lang=zh_cn`;
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`OpenWeatherMap HTTP ${response.status}`);
+var fetchOwmWeather = async (city, apiKey, timeoutMs = WEATHER_REQUEST_TIMEOUT_MS) => {
+  const url = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(city.trim())}&appid=${encodeURIComponent(apiKey.trim())}&units=metric&lang=zh_cn`;
+  const data = await fetchWeatherJson(url, "OpenWeatherMap \u5929\u6C14\u670D\u52A1", timeoutMs);
+  if (![data?.main?.temp, data?.main?.feels_like, data?.main?.humidity].every(isWeatherNumber)) {
+    throw new Error("OpenWeatherMap \u5929\u6C14\u6570\u636E\u4E0D\u5B8C\u6574\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5");
   }
-  const data = await readJson(response);
   return {
     temp: Math.round(data.main.temp),
     feelsLike: Math.round(data.main.feels_like),
     humidity: data.main.humidity,
-    description: data.weather[0]?.description || "\u672A\u77E5",
-    icon: data.weather[0]?.icon || "01d",
+    description: data.weather?.[0]?.description || "\u672A\u77E5",
+    icon: data.weather?.[0]?.icon || "01d",
     city: data.name
   };
 };
-var fetchOpenMeteoWeather = async (city) => {
+var fetchOpenMeteoWeather = async (city, timeoutMs = WEATHER_REQUEST_TIMEOUT_MS) => {
+  city = city.trim();
+  if (!city) throw new Error("\u8BF7\u5148\u586B\u5199\u57CE\u5E02");
+  const deadline = Date.now() + timeoutMs;
   let geo = geocodeCache.get(city);
   if (!geo) {
-    const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=zh&format=json`;
-    const geoRes = await fetch(geoUrl);
-    if (!geoRes.ok) {
-      throw new Error(`Open-Meteo geocoding HTTP ${geoRes.status}`);
+    const lookup = (name) => fetchWeatherJson(
+      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=1&language=zh&format=json`,
+      "Open-Meteo \u57CE\u5E02\u67E5\u8BE2",
+      deadline - Date.now()
+    );
+    let hit = (await lookup(city))?.results?.[0];
+    if (!hit && /^[\u3400-\u9fff]{2,}市$/.test(city)) {
+      hit = (await lookup(city.slice(0, -1)))?.results?.[0];
     }
-    const geoData = await readJson(geoRes);
-    const hit = geoData.results?.[0];
     if (!hit) {
-      throw new Error(`Open-Meteo \u627E\u4E0D\u5230\u57CE\u5E02: ${city}`);
+      throw new Error(`Open-Meteo \u627E\u4E0D\u5230\u57CE\u5E02: ${city}\uFF0C\u8BF7\u5C1D\u8BD5\u57CE\u5E02\u7B80\u79F0\u6216\u82F1\u6587\u540D\uFF08\u5982\u5317\u4EAC / Beijing\uFF09`);
+    }
+    if (!isWeatherNumber(hit.latitude) || Math.abs(hit.latitude) > 90 || !isWeatherNumber(hit.longitude) || Math.abs(hit.longitude) > 180 || typeof hit.name !== "string" || !hit.name.trim()) {
+      throw new Error("Open-Meteo \u57CE\u5E02\u6570\u636E\u4E0D\u5B8C\u6574\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5");
     }
     geo = { latitude: hit.latitude, longitude: hit.longitude, name: hit.name };
     geocodeCache.set(city, geo);
   }
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${geo.latitude}&longitude=${geo.longitude}&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code&timezone=auto`;
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Open-Meteo HTTP ${response.status}`);
+  const data = await fetchWeatherJson(url, "Open-Meteo \u5929\u6C14\u670D\u52A1", deadline - Date.now());
+  const current = data?.current;
+  if (![current?.temperature_2m, current?.apparent_temperature, current?.relative_humidity_2m, current?.weather_code].every(isWeatherNumber)) {
+    throw new Error("Open-Meteo \u5929\u6C14\u6570\u636E\u4E0D\u5B8C\u6574\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5");
   }
-  const data = await readJson(response);
-  const current = data.current;
   const wmo = WMO_WEATHER_CODES[current.weather_code] || { description: "\u672A\u77E5", icon: "01d" };
   return {
     temp: Math.round(current.temperature_2m),
@@ -14701,17 +14751,108 @@ var fetchOpenMeteoWeather = async (city) => {
     city: geo.name
   };
 };
-var fetchWeatherWithFallback = async (city, apiKey) => {
-  if (!city) return null;
-  if (apiKey) {
+var WWO_TO_WMO = {
+  113: 0,
+  116: 2,
+  119: 3,
+  122: 3,
+  143: 45,
+  176: 61,
+  179: 71,
+  182: 67,
+  185: 56,
+  200: 95,
+  227: 75,
+  230: 75,
+  248: 45,
+  260: 48,
+  263: 51,
+  266: 53,
+  281: 56,
+  284: 57,
+  293: 61,
+  296: 61,
+  299: 63,
+  302: 63,
+  305: 65,
+  308: 65,
+  311: 66,
+  314: 67,
+  317: 67,
+  320: 67,
+  323: 71,
+  326: 71,
+  329: 73,
+  332: 73,
+  335: 75,
+  338: 75,
+  350: 77,
+  353: 80,
+  356: 81,
+  359: 82,
+  362: 67,
+  365: 67,
+  368: 85,
+  371: 86,
+  374: 77,
+  377: 77,
+  386: 95,
+  389: 95,
+  392: 95,
+  395: 95
+};
+var fetchWttrWeather = async (city, timeoutMs = WEATHER_REQUEST_TIMEOUT_MS) => {
+  city = city.trim();
+  if (!city) throw new Error("\u8BF7\u5148\u586B\u5199\u57CE\u5E02");
+  if (/^\.{1,2}$|[/\\:@~?#]/.test(city)) throw new Error("\u8BF7\u586B\u5199\u57CE\u5E02\u540D\u79F0\uFF0C\u4E0D\u8981\u586B\u5199\u7F51\u5740");
+  const data = await fetchWeatherJson(`https://wttr.in/${encodeURIComponent(city)}?format=j1&lang=zh`, "wttr.in \u5929\u6C14\u670D\u52A1", timeoutMs);
+  const current = data?.current_condition?.[0];
+  const number = (value) => typeof value === "string" && value.trim() ? Number(value) : typeof value === "number" ? value : NaN;
+  const temp = number(current?.temp_C), feelsLike = number(current?.FeelsLikeC), humidity = number(current?.humidity);
+  if (![temp, feelsLike, humidity].every(isWeatherNumber) || humidity < 0 || humidity > 100) {
+    throw new Error("wttr.in \u5929\u6C14\u6570\u636E\u4E0D\u5B8C\u6574\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5");
+  }
+  const code = number(current?.weatherCode);
+  const mapped = code === 149 ? { description: "\u973E", icon: "50d" } : [182, 317, 320, 362, 365].includes(code) ? { description: "\u96E8\u5939\u96EA", icon: "13d" } : [392, 395].includes(code) ? { description: "\u96F7\u9635\u96EA", icon: "13d" } : WMO_WEATHER_CODES[WWO_TO_WMO[code]];
+  const description = current.lang_zh?.[0]?.value || current.lang_xx?.[0]?.value || current.weatherDesc?.[0]?.value;
+  return {
+    temp: Math.round(temp),
+    feelsLike: Math.round(feelsLike),
+    humidity: Math.round(humidity),
+    description: mapped?.description || (typeof description === "string" ? description.trim().slice(0, 80) : "") || "\u672A\u77E5",
+    icon: mapped?.icon || "01d",
+    // nearest_area 是气象站附近的地名，不一定是用户填写的城市（如成都返回郫县）。
+    city
+  };
+};
+var fetchWeatherFromSource = async (city, source, apiKey = "", timeoutMs = WEATHER_REQUEST_TIMEOUT_MS) => {
+  if (!city.trim()) throw new Error("\u8BF7\u5148\u586B\u5199\u57CE\u5E02");
+  const data = source === "owm" ? await fetchOwmWeather(city, apiKey, timeoutMs) : source === "wttr" ? await fetchWttrWeather(city, timeoutMs) : await fetchOpenMeteoWeather(city, timeoutMs);
+  return { ...data, source };
+};
+var fetchWeatherOrThrow = async (city, apiKey, freeSource) => {
+  city = city.trim();
+  if (!city) throw new Error("\u8BF7\u5148\u586B\u5199\u57CE\u5E02");
+  const key = apiKey?.trim() || "";
+  const preferred = normalizeFreeWeatherSource(freeSource);
+  const sources = [...key ? ["owm"] : [], preferred, preferred === "wttr" ? "open-meteo" : "wttr"];
+  const failures = [];
+  for (const source of sources) {
     try {
-      return await fetchOwmWeather(city, apiKey);
-    } catch (e) {
-      console.warn("OpenWeatherMap \u5931\u8D25\uFF0C\u56DE\u843D Open-Meteo:", e);
+      const weather = await fetchWeatherFromSource(city, source, key, key ? 3e3 : 4e3);
+      return failures.length ? { ...weather, fallbackFrom: sources[0] } : weather;
+    } catch (error) {
+      failures.push(error instanceof Error ? error.message : `${WEATHER_SOURCE_LABELS[source]}\u8FDE\u63A5\u5931\u8D25`);
     }
   }
+  throw new Error(failures.join("\uFF1B"));
+};
+var fetchWeatherWithFallback = async (city, apiKey, freeSource) => {
+  city = city.trim();
+  apiKey = apiKey?.trim();
+  if (!city) return null;
   try {
-    return await fetchOpenMeteoWeather(city);
+    return await fetchWeatherOrThrow(city, apiKey, freeSource);
   } catch (e) {
     console.error("Failed to fetch weather:", e);
     return null;
@@ -15398,24 +15539,26 @@ var withBudget = async (job, ms, fallback, label) => {
 var loadWeather = async (cfg, nowMs, globalRows, pendingWrites) => {
   const city = cfg.weatherCity?.trim();
   if (!city) return null;
+  const freeSource = normalizeFreeWeatherSource(cfg.weatherFreeSource);
   const snap = parseSnapshot(
     globalRows,
     AMSG_WEATHER_SNAPSHOT_KEY,
     (v) => v && typeof v.city === "string" && v.data && typeof v.fetchedAt === "number"
   );
-  if (snap && snap.city === city && nowMs - snap.fetchedAt < WEATHER_TTL_MS) {
+  const matches = snap && snap.city === city && normalizeFreeWeatherSource(snap.freeSource) === freeSource;
+  if (matches && nowMs - snap.fetchedAt < WEATHER_TTL_MS) {
     console.log("[amsg:world] \u5929\u6C14\u547D\u4E2D\u5FEB\u7167", { city, ageMin: Math.round((nowMs - snap.fetchedAt) / 6e4) });
     return snap.data;
   }
-  const fresh = await fetchWeatherWithFallback(city, cfg.weatherApiKey);
+  const fresh = await fetchWeatherWithFallback(city, cfg.weatherApiKey, freeSource);
   if (fresh) {
     pendingWrites.push({
       key: AMSG_WEATHER_SNAPSHOT_KEY,
-      value: JSON.stringify({ city, data: fresh, fetchedAt: nowMs })
+      value: JSON.stringify({ city, freeSource, data: fresh, fetchedAt: nowMs })
     });
     return fresh;
   }
-  if (snap && snap.city === city && nowMs - snap.fetchedAt <= WEATHER_FALLBACK_MAX_AGE_MS) {
+  if (matches && nowMs - snap.fetchedAt <= WEATHER_FALLBACK_MAX_AGE_MS) {
     console.warn("[amsg:world] \u5929\u6C14\u62C9\u53D6\u5931\u8D25\uFF0C\u5148\u7528\u4E0A\u4E00\u6B21\u7684\u8BFB\u6570", { city });
     return snap.data;
   }

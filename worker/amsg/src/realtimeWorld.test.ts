@@ -109,6 +109,30 @@ describe('这一段永远不带自己的钟', () => {
 });
 
 describe('天气快照', () => {
+    it('源 1 不通时后台消息也用源 2，并写入来源与偏好', async () => {
+        fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch')).mockResolvedValueOnce(new Response(JSON.stringify({
+            current_condition: [{ temp_C: '15', FeelsLikeC: '13', humidity: '73', weatherCode: '116' }],
+        })));
+        const writeState = vi.fn().mockResolvedValue({});
+        const out = await run({ toolConfig: cfg({ weatherEnabled: true, weatherCity: '成都' }), writeState });
+        expect(out).toContain('成都实时天气');
+        expect(out).toContain('气温 15°C');
+        const saved = JSON.parse(writeState.mock.calls[0][1][0].value);
+        expect(saved.freeSource).toBe('open-meteo');
+        expect(saved.data.source).toBe('wttr');
+    });
+
+    it('切换首选源后不复用旧偏好的天气快照', async () => {
+        fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
+            current_condition: [{ temp_C: '15', FeelsLikeC: '13', humidity: '73', weatherCode: '116' }],
+        })));
+        const writeState = vi.fn().mockResolvedValue({});
+        const out = await run({ toolConfig: cfg({ weatherEnabled: true, weatherCity: '上海', weatherFreeSource: 'wttr' }), globalRows: [weatherSnapshot('上海', NOW)], writeState });
+        expect(out).toContain('气温 15°C');
+        expect(fetchMock.mock.calls[0][0]).toContain('wttr.in');
+        expect(JSON.parse(writeState.mock.calls[0][1][0].value).freeSource).toBe('wttr');
+    });
+
     it('同城半小时内 → 直接复用，不发请求', async () => {
         const out = await run({
             toolConfig: cfg({ weatherEnabled: true, weatherCity: '上海' }),
