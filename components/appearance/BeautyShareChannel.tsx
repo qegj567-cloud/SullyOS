@@ -370,7 +370,7 @@ export default function BeautyShareChannel({ presets, onExport, onImport, onBusy
     (onBack || closeApp)();
   };
   useLocalBackHandler(() => { goBack(); return true; }, 20);
-  if(page==='catalog')return <Suspense fallback={<p role="status">正在打开装扮库…</p>}><BeautyCatalog onBack={()=>setPage('library')} onReceive={async(data,share)=>{await receive(data,share);setPage('library');}}/></Suspense>;
+  if(page==='catalog')return <Suspense fallback={<p role="status" className="text-slate-700 p-4">正在打开装扮库…</p>}><BeautyCatalog onBack={()=>setPage('library')} onReceive={async(data,share)=>{await receive(data,share);setPage('library');}}/></Suspense>;
   return <div className="beauty-wardrobe">
     <div className="wardrobe-navigation">
       <header className="wardrobe-topline">

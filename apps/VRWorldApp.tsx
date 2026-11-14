@@ -3528,13 +3528,13 @@ const UploadModal: React.FC<{
                             <div className="flex items-center gap-1.5 mt-2">
                                 <span className="text-[9.5px] text-indigo-300/55 shrink-0">乱码？换编码</span>
                                 <select value={chosenEncoding} onChange={e => redecode(e.target.value)}
-                                    className="flex-1 text-[10px] bg-[#1b2236] text-indigo-100 border border-indigo-300/25 rounded px-1.5 py-1 outline-none">
-                                    <option value="auto">自动识别</option>
-                                    <option value="utf-8">UTF-8</option>
-                                    <option value="gb18030">简体中文 · GB18030 / GBK</option>
-                                    <option value="big5">繁体中文 · Big5</option>
-                                    <option value="shift_jis">日文 · Shift_JIS</option>
-                                    <option value="euc-jp">日文 · EUC-JP</option>
+                                    className="flex-1 text-[10px] bg-[#1b2236] text-indigo-100 [color-scheme:dark] border border-indigo-300/25 rounded px-1.5 py-1 outline-none">
+                                    <option value="auto" className="bg-[#1b2236] text-indigo-100">自动识别</option>
+                                    <option value="utf-8" className="bg-[#1b2236] text-indigo-100">UTF-8</option>
+                                    <option value="gb18030" className="bg-[#1b2236] text-indigo-100">简体中文 · GB18030 / GBK</option>
+                                    <option value="big5" className="bg-[#1b2236] text-indigo-100">繁体中文 · Big5</option>
+                                    <option value="shift_jis" className="bg-[#1b2236] text-indigo-100">日文 · Shift_JIS</option>
+                                    <option value="euc-jp" className="bg-[#1b2236] text-indigo-100">日文 · EUC-JP</option>
                                 </select>
                             </div>
                         )}

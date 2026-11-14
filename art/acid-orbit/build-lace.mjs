@@ -180,7 +180,7 @@ await writeFile(path,css+`/* ACID GOTHIC LACE */
 .sully-chat-header .sully-chat-info > .sully-chat-status {
   grid-column:2;grid-row:1;gap:4px !important;justify-self:start;
 }
-.sully-chat-header .sully-chat-status > :first-child:not(.sully-chat-token) {display:none !important;}
+.sully-chat-header .sully-chat-status > .sully-chat-online-status {display:none !important;}
 .sully-chat-header .sully-chat-token {
   border:0 !important;border-left:1px solid #b7a3cc66 !important;
   border-radius:0 !important;background:none !important;box-shadow:none !important;
@@ -212,6 +212,8 @@ await writeFile(path,css+`/* ACID GOTHIC LACE */
 .sully-collaboration-file-action {width:24px !important;height:28px !important;border:0 !important;background:none !important;}
 .sully-collaboration-file > span:last-child {padding:5px 10px !important;font-size:9px !important;letter-spacing:.04em !important;}
 .sully-psyche-status {color:#fff !important;opacity:1 !important;}
+.sully-chat-header .sully-chat-selection-cancel,.sully-chat-header .sully-chat-selection-count {color:#f0edff !important;}
+.sully-chat-header .sully-chat-extra-action {color:#f0edff !important;background:#dbceff14 !important;border-color:#d8cbff40 !important;}
 .sully-chat-switch-item {background:#303249 !important;border-color:transparent !important;box-shadow:none !important;}
 .sully-chat-switch-item[data-active="true"] {background:#3b3c56 !important;border-color:#bca8dd66 !important;}
 .sully-chat-switch-name {color:#eee5f7 !important;}
@@ -221,8 +223,8 @@ await writeFile(path,css+`/* ACID GOTHIC LACE */
 .sully-chat-panel [role="group"] > button > div:first-child {
   background:#d3c3ff12 !important;border-color:#d3c3ff26 !important;box-shadow:none !important;
 }
-/* HTML owns its presentation; do not frame its sandbox with the theme shell. */
-.sully-chat-card[data-card-kind="html_card"] .sully-chat-card-surface {
-  background:transparent !important;border:0 !important;box-shadow:none !important;
+/* HTML and custom-art event cards own their presentation; do not frame them with the theme shell. */
+.sully-chat-card:is([data-card-kind="html_card"], [data-card-variant="qixi_event_card"], [data-card-variant="like520_card"]) .sully-chat-card-surface {
+  background:transparent !important;border:0 !important;box-shadow:none !important;overflow:visible !important;
 }
 `);

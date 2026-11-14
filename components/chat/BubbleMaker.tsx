@@ -1193,7 +1193,7 @@ const ThemeMaker: React.FC<ThemeMakerProps> = ({embedded=false,initialTheme,onCl
     }, [customThemes, themeLibrarySearch]);
 
     return (
-        <div className="h-full w-full bg-slate-50 flex flex-col font-light relative">
+        <div className="h-full w-full bg-slate-50 text-slate-800 flex flex-col font-light relative">
             {/* Header */}
             <div className="bg-white/70 backdrop-blur-md border-b border-white/40 shrink-0 z-20 sticky top-0" style={{ paddingTop: 'max(var(--safe-top, 0px), env(safe-area-inset-top, 0px))' }}>
             <div className="flex items-center px-4 py-3 justify-between">
@@ -1251,7 +1251,7 @@ const ThemeMaker: React.FC<ThemeMakerProps> = ({embedded=false,initialTheme,onCl
                 {isThemeLibraryOpen && (customThemes.length > 0 ? (
                     <div className="mt-3">
                         {customThemes.length > 6 && (
-                            <input value={themeLibrarySearch} onChange={e => setThemeLibrarySearch(e.target.value)} placeholder="搜索我的气泡…" className="w-full mb-2.5 px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs outline-none focus:border-indigo-300" />
+                            <input value={themeLibrarySearch} onChange={e => setThemeLibrarySearch(e.target.value)} placeholder="搜索我的气泡…" className="w-full mb-2.5 px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 placeholder:text-slate-400 outline-none focus:border-indigo-300" />
                         )}
                         <div className="grid grid-cols-2 gap-2 max-h-[42vh] overflow-y-auto no-scrollbar pb-1">
                         {visibleSavedThemes.map((theme: ChatTheme) => (
@@ -1525,7 +1525,7 @@ const ThemeMaker: React.FC<ThemeMakerProps> = ({embedded=false,initialTheme,onCl
                             {/* Name Input (Only on Base) */}
                             <div>
                                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">主题名称 (Theme Name)</label>
-                                <input value={editingTheme.name} onChange={(e) => updateTheme(prev => ({ ...prev, name: e.target.value }), { trackHistory: false })} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm focus:border-primary/50 transition-all outline-none" placeholder="我的个性主题" />
+                                <input value={editingTheme.name} onChange={(e) => updateTheme(prev => ({ ...prev, name: e.target.value }), { trackHistory: false })} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-primary/50 transition-all outline-none" placeholder="我的个性主题" />
                             </div>
 
                             <div>
@@ -1554,7 +1554,7 @@ const ThemeMaker: React.FC<ThemeMakerProps> = ({embedded=false,initialTheme,onCl
                                         <input type="checkbox" checked={userFollowAi} onChange={(e) => setUserFollowAi(e.target.checked)} className="accent-primary" />
                                         用户气泡跟随角色气泡
                                     </label>
-                                    <button onClick={mirrorToOtherBubble} className="text-[10px] px-2.5 py-1 rounded-full bg-white border border-slate-200 hover:border-primary/30">镜像参数到另一个气泡</button>
+                                    <button onClick={mirrorToOtherBubble} className="text-[10px] px-2.5 py-1 rounded-full bg-white text-slate-700 border border-slate-200 hover:border-primary/30">镜像参数到另一个气泡</button>
                                 </div>
                             </div>
 
@@ -1900,7 +1900,7 @@ const ThemeMaker: React.FC<ThemeMakerProps> = ({embedded=false,initialTheme,onCl
             {/* Discard unsaved changes confirm */}
             {pendingDiscardAction && (
                 <div className="absolute inset-0 z-[999] bg-black/40 backdrop-blur-sm flex items-center justify-center px-6">
-                    <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl">
+                    <div className="w-full max-w-sm bg-white text-slate-800 rounded-3xl p-5 shadow-2xl">
                         <div className="text-base font-bold text-slate-700">有未保存的改动</div>
                         <p className="mt-2 text-sm text-slate-500">继续操作将丢失当前未保存的改动。</p>
                         <div className="mt-5 flex gap-3">
@@ -1914,7 +1914,7 @@ const ThemeMaker: React.FC<ThemeMakerProps> = ({embedded=false,initialTheme,onCl
             {/* Delete saved theme confirm */}
             {pendingDeleteTheme && (
                 <div className="absolute inset-0 z-[999] bg-black/40 backdrop-blur-sm flex items-center justify-center px-6">
-                    <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl">
+                    <div className="w-full max-w-sm bg-white text-slate-800 rounded-3xl p-5 shadow-2xl">
                         <div className="text-base font-bold text-slate-700">删除这套气泡？</div>
                         <p className="mt-2 text-sm text-slate-500">「{pendingDeleteTheme.name}」将从气泡库中移除，正在使用它的角色会回落到默认气泡。此操作无法撤销，删除前可先导出备份。</p>
                         <div className="mt-5 flex gap-3">
@@ -1928,7 +1928,7 @@ const ThemeMaker: React.FC<ThemeMakerProps> = ({embedded=false,initialTheme,onCl
             {/* Low contrast confirm */}
             {showLowContrastConfirm && (
                 <div className="absolute inset-0 z-[999] bg-black/40 backdrop-blur-sm flex items-center justify-center px-6">
-                    <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl">
+                    <div className="w-full max-w-sm bg-white text-slate-800 rounded-3xl p-5 shadow-2xl">
                         <div className="text-base font-bold text-slate-700">可读性评分极低</div>
                         <p className="mt-2 text-sm text-slate-500">当前文字与背景的对比度过低，可能导致聊天内容难以辨认。仍要保存此样式吗？</p>
                         <div className="mt-5 flex gap-3">

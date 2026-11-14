@@ -907,7 +907,7 @@ const DateApp: React.FC = () => {
                         <button onClick={() => setMeetSurface('story')} className='rounded-lg py-2 text-xs font-bold text-[#8f7bb5]'>剧情</button>
                     </div>
                     {/* 分组筛选（没建分组时不渲染）。切组后回到第一页 */}
-                    <CharacterGroupFilterBar characters={characters} groups={characterGroups} dark
+                    <CharacterGroupFilterBar characters={characters} groups={characterGroups}
                         value={selectGroupId}
                         onChange={(id) => { setSelectGroupId(id); setSelectPage(0); pagerRef.current?.scrollTo({ left: 0 }); }}
                         className="px-4 mb-3" />

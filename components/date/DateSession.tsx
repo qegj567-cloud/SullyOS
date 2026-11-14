@@ -1111,7 +1111,7 @@ const DateSession: React.FC<DateSessionProps> = ({
                                 return (
                                     <>
                                         {observeEnabled && hasObservation(peekObs) && (
-                                            <div className="max-w-md mx-auto mb-6"><ReadingObservation reading={decoratedReading} observation={peekObs} variant="card" charName={char.name} config={char.dateObserve} /></div>
+                                            <div className="max-w-md mx-auto mb-6"><ReadingObservation reading={decoratedReading} lightSurface={!!lightReading} observation={peekObs} variant="card" charName={char.name} config={char.dateObserve} /></div>
                                         )}
                                         <div className={`meeting-prose italic text-center text-sm mb-8 px-4 ${lightReading ? 'text-stone-400' : 'text-slate-200/50'}`}>
                                             {cleanTextForDisplay(peekBody).split('\n').map((line, idx) => line.trim() && <p key={idx} className="whitespace-pre-wrap leading-relaxed tracking-wide my-2">{line}</p>)}
@@ -1183,7 +1183,7 @@ const DateSession: React.FC<DateSessionProps> = ({
                                             )}
                                             <div className="min-w-0 flex-1">
                                                 {observeEnabled && hasObservation(msgObs) && (
-                                                    <ReadingObservation reading={decoratedReading} observation={msgObs} variant="card" charName={char.name} config={char.dateObserve} />
+                                                    <ReadingObservation reading={decoratedReading} lightSurface={!!lightReading} observation={msgObs} variant="card" charName={char.name} config={char.dateObserve} />
                                                 )}
                                                 {normalizeDateVoiceLines(msgBody || '').split('\n').map((line, idx) => {
                                                 const cleanLine = cleanTextForDisplay(line);
@@ -1362,7 +1362,7 @@ const DateSession: React.FC<DateSessionProps> = ({
             {/* Settings measures its visible height on mount. A translateY entrance
                 animation here would measure the offscreen position and lock it at 0. */}
             {showSettings && (
-                <div className="absolute inset-0 z-[200] bg-white">
+                <div className="absolute inset-0 z-[200] bg-white text-slate-800">
                     <DateSettings char={char} onBack={() => setShowSettings(false)} />
                 </div>
             )}
@@ -1407,5 +1407,5 @@ const DateSession: React.FC<DateSessionProps> = ({
 export default DateSession;
 
 function ReadingObservation({reading,...props}: React.ComponentProps<typeof ObserveHUD> & {reading:boolean}) {
-    return reading ? <details className="mb-4 text-xs text-slate-500"><summary className="cursor-pointer py-2">场景信息</summary><ObserveHUD {...props}/></details> : <ObserveHUD {...props}/>;
+    return reading ? <details className="mb-4 text-xs" style={{ color: 'var(--meeting-muted, #64748b)' }}><summary className="cursor-pointer py-2">场景信息</summary><ObserveHUD {...props}/></details> : <ObserveHUD {...props}/>;
 }

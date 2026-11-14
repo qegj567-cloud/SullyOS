@@ -20,7 +20,7 @@ export default function UserSpaceDeleteDialog({ space, onClose, onDeleted }: {
     }, [remaining, stage, busy]);
     useLocalBackHandler(() => { if (!busy) onClose(); return true; }, 80, true);
     return createPortal(<div className="fixed inset-0 z-[260] bg-black/45 flex items-center justify-center p-5">
-        <div role="alertdialog" aria-modal="true" aria-labelledby="delete-user-title" aria-describedby="delete-user-description" className="bg-white w-full max-w-sm rounded-2xl p-5 space-y-4">
+        <div role="alertdialog" aria-modal="true" aria-labelledby="delete-user-title" aria-describedby="delete-user-description" className="bg-white text-slate-800 w-full max-w-sm rounded-2xl p-5 space-y-4">
             <p className="text-xs font-medium text-red-500">删除用户 · {stage} / 2</p>
             <h2 id="delete-user-title" className="text-lg font-bold break-words">{stage === 1 ? '删除' : '最后确认：删除'}「{space.name}」？</h2>
             <div id="delete-user-description" className="text-sm text-slate-600 leading-relaxed space-y-2">

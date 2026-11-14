@@ -106,7 +106,7 @@ const HtmlCard: React.FC<{ html: string }> = ({ html }) => {
                 labels, checkboxes, text selection and other embedded gestures
                 therefore keep their native long-press behavior. */}
             <div
-                className="sully-html-source-bar flex h-8 select-none items-center justify-between overflow-hidden border-t border-slate-300/20 bg-white/25 px-2 text-[10px] text-slate-400 transition-all duration-200 ease-out"
+                className="sully-html-source-bar flex h-8 select-none items-center justify-between overflow-hidden border-t border-slate-200/80 bg-white/85 px-2 text-[10px] text-slate-600 shadow-sm transition-all duration-200 ease-out"
                 style={sourceExpanded ? undefined : {
                     height: 20,
                     justifyContent: 'center',
@@ -129,16 +129,17 @@ const HtmlCard: React.FC<{ html: string }> = ({ html }) => {
                     aria-expanded={sourceExpanded}
                     aria-label={sourceExpanded ? '收起 HTML 源码操作' : '展开 HTML 源码操作'}
                     title={sourceExpanded ? '收起源码操作' : '展开源码操作'}
-                    className="sully-html-source-toggle inline-flex h-5 items-center gap-1 rounded-full font-medium text-slate-400/80 transition-all duration-200 hover:bg-slate-500/[0.04] hover:text-slate-400 focus:outline-none focus-visible:bg-slate-500/10 focus-visible:text-slate-500"
+                    className="sully-html-source-toggle inline-flex h-5 items-center gap-1 rounded-full font-medium text-slate-600 transition-all duration-200 hover:bg-slate-500/[0.08] hover:text-slate-700 focus:outline-none focus-visible:bg-slate-500/10 focus-visible:text-slate-700"
                     style={sourceExpanded ? undefined : {
                         gap: 2,
                         paddingLeft: 8,
                         paddingRight: 8,
-                        color: 'rgba(148, 163, 184, 0.35)',
+                        backgroundColor: 'rgba(255, 255, 255, 0.72)',
+                        color: 'rgba(71, 85, 105, 0.85)',
                     }}
                 >
                     <span
-                        className="rounded border border-slate-300/50 px-1 py-px font-mono text-[7px] tracking-[0.14em] text-slate-400/80 transition-all duration-200"
+                        className="rounded border border-slate-300/70 px-1 py-px font-mono text-[7px] tracking-[0.14em] text-slate-600 transition-all duration-200"
                         style={sourceExpanded ? undefined : { borderWidth: 0, paddingLeft: 0, paddingRight: 0, color: 'inherit' }}
                     >HTML</span>
                     <span

@@ -718,7 +718,7 @@ const ApiSettingsPanel: React.FC<{
                 <span className="mt-1 block text-[10px] leading-relaxed text-slate-500">开启后，角色会知道可以引导你从 ChatApp 加号页进入协同工作，也能读取、发送文件柜里已有的文件。不会向普通聊天注入制作规则，也不能在那里干活。</span>
               </span>
               <span className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${chatCollaborationEnabled ? 'bg-indigo-600' : 'bg-slate-200'}`}>
-                <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${chatCollaborationEnabled ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
+                <span className={`collab-switch-thumb absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${chatCollaborationEnabled ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
               </span>
             </button>
           </section>
@@ -937,7 +937,7 @@ const CharacterTargetPicker: React.FC<{
         <div className="shrink-0 px-4 pb-2 pt-3">
           <label className="flex h-11 items-center gap-2 rounded-2xl bg-slate-100 px-3 ring-1 ring-transparent focus-within:bg-white focus-within:ring-slate-300">
             <MagnifyingGlass size={17} className="shrink-0 text-slate-400" />
-            <input value={query} onChange={event => { setQuery(event.target.value); setPage(0); }} placeholder="搜索角色" className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400" />
+            <input value={query} onChange={event => { setQuery(event.target.value); setPage(0); }} placeholder="搜索角色" className="min-w-0 flex-1 bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400" />
             {query && <button type="button" onClick={() => { setQuery(''); setPage(0); }} className="grid h-7 w-7 place-items-center rounded-full text-slate-400 active:bg-slate-200" aria-label="清空搜索"><X size={14} /></button>}
           </label>
           {allowEmpty && (
@@ -1472,7 +1472,7 @@ const SessionDrawer: React.FC<{
         </div>
 
         <form onSubmit={event => { event.preventDefault(); const value = categoryName.trim(); if (!value) return; onCreateCategory(value); setCategoryName(''); }} className="flex shrink-0 gap-2 border-t border-slate-200 bg-white p-3">
-          <input value={categoryName} onChange={event => setCategoryName(event.target.value)} placeholder="新分类" className="min-w-0 flex-1 rounded-xl bg-slate-100 px-3 py-2 text-xs outline-none" />
+          <input value={categoryName} onChange={event => setCategoryName(event.target.value)} placeholder="新分类" className="min-w-0 flex-1 rounded-xl bg-slate-100 px-3 py-2 text-xs text-slate-800 placeholder:text-slate-400 outline-none" />
           <button type="submit" className="rounded-xl px-3 text-xs font-semibold text-slate-600">添加</button>
         </form>
       </aside>
@@ -2711,7 +2711,7 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
         </>
       )}
 
-      {transferOpen && activeSession && <div className="absolute inset-0 z-[180] flex flex-col bg-slate-50" role="dialog" aria-modal="true" aria-label="选择发送到 ChatApp 的消息" style={{ paddingTop: 'var(--safe-top)', paddingBottom: 'var(--safe-bottom)' }}>
+      {transferOpen && activeSession && <div className="absolute inset-0 z-[180] flex flex-col bg-slate-50 text-slate-800" role="dialog" aria-modal="true" aria-label="选择发送到 ChatApp 的消息" style={{ paddingTop: 'var(--safe-top)', paddingBottom: 'var(--safe-bottom)' }}>
         <header className="flex items-center justify-between gap-2 border-b border-slate-200 p-4">
           <button disabled={transferring} onClick={() => setTransferOpen(false)} className="text-sm text-slate-500">取消</button>
           <h2 className="text-sm font-semibold">选择消息</h2>

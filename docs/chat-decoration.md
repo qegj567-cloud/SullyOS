@@ -114,3 +114,9 @@ HTML 卡片仍在独立 iframe 沙盒中；白框控制其外壳和排版，不�
 回归：`pnpm vitest run utils/chatWhitebox.test.ts utils/chatDecoration.test.ts utils/collaborationMakers.test.ts utils/beautyShare.test.ts`；另做手机宽度下的心象、转账、长卡片、滚动和旧预设验证。
 
 内置白框新增「星轨 · 深空」「星轨 · 雾紫」，在聊天装扮的全部/白框分类和「我的搭配」选择器中展示。入口通过 `utils/builtinWhitebox.ts` 读取 `presets/chat/*.json`，只使用本地静态素材，不写入收藏库或替换用户已有设置；应用沿用角色选择确认流程。两款源文件与构建脚本在 `art/acid-orbit`：依次执行 `build-lace.mjs`、`build.mjs`、`build-builtins.mjs`、`build-preview.mjs` 可同步 CSS、导入文件和内置包。蕾丝为用户提供的 CC0 scallop2（来源见 `art/acid-orbit/SCALLOP-LICENSE.txt`）。
+
+### 舞台隔离与深浅色对比度边界
+
+- `.sully-chat-root` 仅包裹聊天舞台本身（顶栏、消息流、底部输入区／加号与表情面板，以及舞台内直出的转账详情弹层 `.sully-chat-transfer-overlay` / `.sully-chat-transfer-dialog`、日程变更卡 `.sully-schedule-change`）。设置弹窗（如心象设置）、装扮工坊与自由搭配面板、小程序（瑞幸／麦当劳）、全屏语音／图片预览、消息内展开的全屏转发／520 信纸弹层及全局确认弹窗均挂载或 Portal 到 `.sully-chat-root` 之外，独立聊天页外层带 `text-slate-900`（家园小手机 `homePhone` 模式除外，保留小手机自身配色与 `.home-phone .fixed` 高度约束），使深色白框的文字配色仅作用于聊天舞台，不向通用弹窗或表单继承。
+- Tailwind Preflight 为 `input`、`textarea`、`select` 设置 `color: inherit`：浅色背景上的输入框与下拉框需要显式声明文字色与占位符色（如 `text-slate-800 placeholder:text-slate-400`；聊天默认浅色输入栏将 `text-slate-800` 放在 `.sully-chat-inputbar` 外壳上，兼顾防顶层白字继承与白框对输入栏的继承覆盖），深色底上的原生 `<select>` 与 `<input type="date">`／`<input type="time">` 声明 `[color-scheme:dark]` 并用 `[&_option]` 覆盖含 `<optgroup>` 在内的选项配色，避免 Windows / Chromium 原生弹出列表出现白底浅字。
+- 内置白框的通用面板／卡片覆盖使用零权重的 `:not(:where(...))` 排除语义功能元素，避免抬高选择器权重压过后续状态规则：颜色色板点（`.sully-chat-swatch-dot`）、未读或状态角标点（`.sully-chat-badge-dot`）、分页指示点（`.sully-chat-page-dot`）、可扫描二维码白底区（`.sully-chat-qr-surface`）、进度条填充（`.sully-chat-meter-fill`），以及自带独立视觉设计的七夕活动卡（`[data-card-variant="qixi_event_card"]`）与 520 典藏卡（`[data-card-variant="like520_card"]`）。回归守卫见 `utils/__tests__/themeContrastInheritance.test.ts`。

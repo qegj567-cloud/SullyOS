@@ -11,14 +11,18 @@
 .sully-chat-header .sully-chat-token {color:#826b97 !important;border-left-color:#ad98bd80 !important;}
 .sully-chat-header .sully-chat-buffs button {color:#685277 !important;border-color:#ad98bd80 !important;}
 .sully-chat-root .sully-chat-back,.sully-chat-root .sully-chat-trigger,.sully-chat-root .sully-chat-actions-button,.sully-chat-root .sully-chat-send-button {color:#6a5182 !important;}
+.sully-chat-header .sully-chat-status,.sully-chat-header .sully-chat-selection-cancel,.sully-chat-header .sully-chat-selection-count {color:#6a5182 !important;}
+.sully-chat-header .sully-chat-extra-action {color:#6a5182 !important;background:#faf7fd88 !important;border-color:#bca8d180 !important;}
 .sully-chat-message,.sully-chat-message-sender {color:#81708f !important;}
 .sully-bubble-ai,.sully-bubble-user {color:#493958 !important;border-color:#ffffffc9 !important;box-shadow:inset 0 1px #fff,0 3px 12px #9074ad16 !important;}
 .sully-bubble-ai {background:linear-gradient(135deg,#fffcffed,#eee6f7ed) !important;}
 .sully-bubble-user {background:linear-gradient(135deg,#e6d6f8,#d5c1ed) !important;}
 .sully-chat-message-avatar-img {border-color:#fffbff !important;box-shadow:0 0 10px #9275ac24 !important;}
-.sully-chat-card[data-card-kind]:not([data-card-kind="transfer"]) {--sully-card-background:linear-gradient(125deg,#fbf7ffed,#e5d9f1eb);--sully-card-color:#493958;--sully-card-shadow:inset 0 0 0 1px #fff9,0 3px 12px #9275ac1a;}
-.sully-chat-card[data-card-kind]:not([data-card-kind="transfer"]):not([data-card-kind="html_card"]) .sully-chat-card-content :is(div,section,article,header,footer,button,a,p,span,h2,h3,h4,small,strong) {color:#584367 !important;border-color:#a991c03b !important;}
-.sully-chat-card[data-card-kind] .sully-chat-card-content :is(h2,h3,h4,strong) {color:#493958 !important;}
+.sully-chat-card[data-card-kind]:not(:where([data-card-kind="transfer"], [data-card-variant="qixi_event_card"], [data-card-variant="like520_card"])) {--sully-card-background:linear-gradient(125deg,#fbf7ffed,#e5d9f1eb);--sully-card-color:#493958;--sully-card-shadow:inset 0 0 0 1px #fff9,0 3px 12px #9275ac1a;}
+.sully-chat-card[data-card-kind]:not(:where([data-card-kind="transfer"], [data-card-kind="html_card"], [data-card-variant="qixi_event_card"], [data-card-variant="like520_card"])) .sully-chat-card-content :is(div,section,article,header,footer,button,a,p,span,h2,h3,h4,h5,small,strong,b,label,li,blockquote,details,summary,pre) {color:#584367 !important;border-color:#a991c03b !important;}
+.sully-chat-card[data-card-kind]:not(:where([data-card-kind="transfer"], [data-card-kind="html_card"], [data-card-variant="qixi_event_card"], [data-card-variant="like520_card"])) .sully-chat-card-content .sully-chat-qr-surface {background-color:#ffffff !important;}
+.sully-chat-card[data-card-kind]:not(:where([data-card-kind="transfer"], [data-card-kind="html_card"], [data-card-variant="qixi_event_card"], [data-card-variant="like520_card"])) .sully-chat-card-content .sully-chat-meter-fill {background-color:#c9b1bd !important;}
+.sully-chat-card[data-card-kind]:not(:where([data-card-kind="transfer"], [data-card-kind="html_card"], [data-card-variant="qixi_event_card"], [data-card-variant="like520_card"])) .sully-chat-card-content :is(h2,h3,h4,h5,strong,b) {color:#493958 !important;}
 .sully-chat-transfer-card,.sully-chat-transfer-receipt {color:#493958 !important;background:linear-gradient(125deg,#eee4f9,#d9c9ed) !important;border-color:#aa92c480 !important;box-shadow:inset 0 1px #fff9 !important;}
 .sully-chat-transfer-card .sully-chat-transfer-amount,.sully-chat-transfer-brand,.sully-chat-transfer-icon,.sully-chat-transfer-note,.sully-chat-transfer-recipient,.sully-chat-transfer-status {color:#584367 !important;}
 .sully-chat-transfer-status {background:#ffffff4d !important;border-color:#b6a1c780 !important;}
@@ -31,7 +35,7 @@
 .sully-voice-bar-wave-segment {background:#9478af !important;}
 .sully-voice-bar-toggle,.sully-voice-bar-transcript {color:#604c73 !important;background:#e8ddf4 !important;}
 .sully-psyche-card {background:linear-gradient(125deg,#f5effbed,#e6daf2ed) !important;color:#493958 !important;border-color:#bca6cf80 !important;box-shadow:inset 3px 0 #b49bcf60 !important;}
-.sully-psyche-title,.sully-psyche-preview,.sully-psyche-body {color:#68527a !important;}
+.sully-psyche-title,.sully-psyche-subtitle,.sully-psyche-preview,.sully-psyche-body,.sully-psyche-status {color:#68527a !important;}
 .sully-chat-system,.sully-chat-interaction {color:#726080 !important;background:#f3ecf8b8 !important;border-color:#b9a3cd40 !important;}
 .sully-schedule-change {background:#f3ecf9 !important;color:#493958 !important;border-color:#b9a3cd80 !important;}
 .sully-schedule-change-kicker,.sully-schedule-change-count,.sully-schedule-change-time,.sully-schedule-change-after {color:#584367 !important;}
@@ -41,13 +45,22 @@
 .sully-chat-input-wrap {background:#faf7fd88 !important;border-color:#bca8d180 !important;box-shadow:inset 0 1px #fff9 !important;}
 .sully-chat-textarea {color:#493958 !important;caret-color:#8e6baa !important;}
 .sully-chat-textarea::placeholder {color:#94839f !important;}
-.sully-chat-inputbar button {color:#786089 !important;}
+.sully-chat-composer button {color:#786089 !important;}
 .sully-chat-root .sully-voice-bar-placeholder button {color:#8d6eaa !important;}
 .sully-schedule-change {box-shadow:inset 3px 0 #b49bcd70,0 6px 18px #8e71a31c !important;}
 .sully-schedule-change-arrow {color:#8a719f !important;}
 .sully-chat-header::after,.sully-chat-inputbar::before {filter:drop-shadow(0 1px 1px #c9bcdf) !important;}
-.sully-chat-panel {background:#e8e0f2 !important;color:#584367 !important;}
-.sully-chat-panel button {color:#786089 !important;}
+.sully-chat-panel,.sully-chat-emoji-suggestions,.sully-chat-auto-reply {background:#e8e0f2 !important;color:#584367 !important;border-color:#9c82b64d !important;}
+.sully-chat-panel button:not(:where(.sully-chat-page-dot, .sully-chat-bubble-danger)) {color:#786089 !important;background:#faf7fd88 !important;border-color:#bca8d166 !important;}
+.sully-chat-panel .sully-chat-bubble-search {color:#493958 !important;background:#faf7fdc8 !important;border-color:#bca8d180 !important;}
+.sully-chat-panel .sully-chat-bubble-search::placeholder {color:#94839f !important;}
+.sully-chat-panel .sully-chat-bubble-pill {background:#faf7fd88 !important;border-color:#bca8d166 !important;color:#584367 !important;}
+.sully-chat-panel .sully-chat-bubble-pill button:not(:where(.sully-chat-bubble-danger)) {color:inherit !important;background:transparent !important;border-color:transparent !important;}
+.sully-chat-panel .sully-chat-bubble-pill[data-active="true"],.sully-chat-panel .sully-chat-bubble-chip[data-active="true"] {background:#8c6fb0 !important;border-color:#745898 !important;color:#ffffff !important;}
+.sully-chat-panel .sully-chat-bubble-danger {background:#dc2626 !important;color:#ffffff !important;border-color:#f87171 !important;}
+.sully-chat-panel .sully-chat-page-dot {background:#bca8d180 !important;border:0 !important;padding:0 !important;}
+.sully-chat-panel .sully-chat-page-dot[data-active="true"] {background:#6a5182 !important;}
+.sully-chat-panel [role="group"] > button {background:transparent !important;border:0 !important;box-shadow:none !important;}
 .sully-chat-panel [role="group"] > button > div:first-child {background:#faf7fd88 !important;border-color:#bca8d140 !important;}
 .sully-chat-switch-item {background:#eee7f5 !important;border-color:transparent !important;}
 .sully-chat-switch-item[data-active="true"] {background:#faf5ff !important;border-color:#b49bcf99 !important;}

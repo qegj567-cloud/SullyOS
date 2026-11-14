@@ -18,13 +18,13 @@ export default function DateExtraPresets({ presets, value, onApply, onChange }: 
             const preset = presets.find(item => item.id === event.target.value);
             setSelected(preset?.id || ''); setName(preset?.name || ''); setConfirmDelete(false);
             if (preset) onApply(preset.content);
-        }} className="w-full min-w-0 px-3 py-2 bg-slate-100 rounded-xl text-sm">
+        }} className="w-full min-w-0 px-3 py-2 bg-slate-100 text-slate-800 rounded-xl text-sm">
             <option value="">选择已保存的补充预设</option>
             {presets.map(preset => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
         </select>
         <div className="flex gap-2">
             <input aria-label="补充预设名称" placeholder="预设名称，如：日常、冒险" value={name}
-                onChange={event => setName(event.target.value)} className="min-w-0 flex-1 px-3 py-2 bg-slate-100 rounded-xl text-sm" />
+                onChange={event => setName(event.target.value)} className="min-w-0 flex-1 px-3 py-2 bg-slate-100 text-slate-800 placeholder:text-slate-400 rounded-xl text-sm" />
             <button type="button" disabled={!name.trim() || !value.trim()} onClick={() => {
                 const preset = { id: crypto.randomUUID(), name: name.trim(), content: value.trim() };
                 onChange([...presets, preset]); setSelected(preset.id); setConfirmDelete(false);
