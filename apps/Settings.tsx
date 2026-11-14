@@ -771,6 +771,7 @@ const Settings: React.FC = () => {
   const [luckinTesting, setLuckinTesting] = useState(false);
 
   const [showAmsg2Modal, setShowAmsg2Modal] = useState(false);
+  useSettingsFocus('amsg2', () => setShowAmsg2Modal(true));
   const [showAmsgCloudData, setShowAmsgCloudData] = useState(false);
   const [exportUserScope, setExportUserScope] = useState<'current' | 'all'>('current');
   /**
