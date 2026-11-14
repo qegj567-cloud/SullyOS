@@ -14,6 +14,7 @@ import NavigationBallNotice, { NAVIGATION_BALL_NOTICE_KEY } from './os/Navigatio
 import UserLocationNotice, { USER_LOCATION_NOTICE_KEY } from './os/UserLocationNotice';
 import { requestSettingsFocus } from '../utils/settingsNavigation';
 import UserSpacesUpdatePopup, { USER_SPACES_UPDATE_KEY } from './os/UserSpacesUpdatePopup';
+import RelayUpdatePopup, { RELAY_UPDATE_KEY, shouldOfferRelayNotice } from './os/RelayUpdatePopup';
 /**
  * 全局版本更新提醒。
  *
@@ -628,7 +629,16 @@ const UserSpacesUpdateAnnouncement: React.FC<UpdatePopupProps> = ({ onExit }) =>
     return <UserSpacesUpdatePopup onDone={onExit} onVisit={() => { openApp(AppID.User); onExit(); }} />;
 };
 
-const UPDATE_QUEUE: { key: string; render: (props: UpdatePopupProps) => React.ReactNode }[] = [
+const RelayUpdateAnnouncement: React.FC<UpdatePopupProps> = ({ onDone, onExit }) => {
+    const { openApp } = useOS();
+    return <RelayUpdatePopup onDone={onDone} onVisit={() => {
+        requestSettingsFocus('amsg2'); openApp(AppID.Settings); onExit();
+    }} />;
+};
+
+/** `offered` 返回 false 的这次不弹、也不记已读。 */
+const UPDATE_QUEUE: { key: string; offered?: () => boolean; render: (props: UpdatePopupProps) => React.ReactNode }[] = [
+    { key: RELAY_UPDATE_KEY, offered: () => typeof location === 'undefined' || shouldOfferRelayNotice(location.href), render: props => <RelayUpdateAnnouncement {...props} /> },
     { key: USER_SPACES_UPDATE_KEY, render: props => <UserSpacesUpdateAnnouncement {...props} /> },
     { key: OCTOBER_UPDATE_KEY, render: props => <OctoberUpdateAnnouncement {...props} /> },
     { key: USER_LOCATION_NOTICE_KEY, render: props => <UserLocationAnnouncement {...props} /> },
@@ -642,7 +652,9 @@ const UPDATE_QUEUE: { key: string; render: (props: UpdatePopupProps) => React.Re
     { key: UPDATE_NOTIFICATION_KEY_2026_08_10, render: (props) => <Live2DUpdatePopup {...props} /> },
 ];
 
-export const shouldShowUpdateNotification = (): boolean => UPDATE_QUEUE.some((entry) => !isUpdateSeen(entry.key));
+const isPending = (entry: (typeof UPDATE_QUEUE)[number]): boolean => !isUpdateSeen(entry.key) && (entry.offered?.() ?? true);
+
+export const shouldShowUpdateNotification = (): boolean => UPDATE_QUEUE.some(isPending);
 
 interface UpdateNotificationControllerProps {
     onClose: () => void;
@@ -651,7 +663,7 @@ interface UpdateNotificationControllerProps {
 export const UpdateNotificationController: React.FC<UpdateNotificationControllerProps> = ({ onClose }) => {
     // 进场时把没看过的挑出来定住。每次渲染重算的话，当前这条一被标记已读就会自己从队列里
     // 消失、直接跳到下一条，用户还没来得及点——推进队列的只能是下面 onDone 那一下。
-    const [pending, setPending] = React.useState(() => UPDATE_QUEUE.filter((entry) => !isUpdateSeen(entry.key)));
+    const [pending, setPending] = React.useState(() => UPDATE_QUEUE.filter(isPending));
     const current = pending[0];
 
     React.useEffect(() => {
