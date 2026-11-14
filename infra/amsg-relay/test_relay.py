@@ -173,6 +173,10 @@ class RelayTest(unittest.IsolatedAsyncioTestCase):
         self.assertLess(first_at, 0.4)  # 第一段没等第二段就到了
         self.assertEqual(rest, b"data: second\n\n")
 
+    async def test_discord_dns_cached_long_enough_to_survive_resolver_outages(self):
+        # 回复 interaction 只有 3 秒；默认 10 秒的 DNS 缓存会让每次回复都现查，DNS 丢包时直接超时
+        self.assertGreaterEqual(self.relay.discord.connector._cached_hosts._ttl, 3600)
+
     async def test_commands(self):
         h = self.relay.handle_command
         self.assertIsNone(h({"type": 2, "guild_id": GUILD, "data": {"name": "判断有误"}}))  # 别的进程的命令不回
