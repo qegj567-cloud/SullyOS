@@ -90,17 +90,18 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
                         </div>
                     </div>
                 </div>
-                <div className="shrink-0 bg-slate-50 px-6 py-4 flex gap-3 justify-end border-t border-slate-100">
+                {/* 按钮文字不折行；窄屏放不下两个时整颗换到下一行，而不是把「先不开」劈成两行 */}
+                <div className="shrink-0 bg-slate-50 px-6 py-4 flex flex-wrap gap-3 justify-end border-t border-slate-100">
                     <button 
                         onClick={onCancel}
-                        className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors"
+                        className="px-4 py-2 whitespace-nowrap bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors"
                     >
                         {cancelText}
                     </button>
                     <button
                         onClick={onConfirm}
                         disabled={locked}
-                        className={`px-4 py-2 rounded-xl text-sm font-bold shadow-lg transition-transform active:scale-95 disabled:opacity-50 disabled:active:scale-100 ${getBtnColor()}`}
+                        className={`px-4 py-2 whitespace-nowrap rounded-xl text-sm font-bold shadow-lg transition-transform active:scale-95 disabled:opacity-50 disabled:active:scale-100 ${getBtnColor()}`}
                     >
                         {locked ? `${confirmText}（${remaining}）` : confirmText}
                     </button>

@@ -347,6 +347,10 @@ export interface ActiveMsg2GlobalConfig {
   workerUrl: string;
   /** 与 worker 约定的共享密钥；配了就每次请求带 X-Client-Token，缺/错 worker 返回 401 */
   serverToken?: string;
+  /** 请求经 SullyOS 中转服务器转发（设置里叫「大陆连接优化」），见 utils/amsgRelay.ts */
+  useRelay?: boolean;
+  /** 中转令牌，在 SullyOS 的 Discord 群里用 /中转令牌 领取。绑着 Discord 账号，只存在本机，不随默认备份导出 */
+  relayToken?: string;
   /**
    * 一键部署时生成的 AMSG_MASTER_KEY（worker 侧用它加密任务内容）。
    * 存在这里只为「重装时沿用同一把」——它一换，之前加密进 D1 的任务就全解不开了，

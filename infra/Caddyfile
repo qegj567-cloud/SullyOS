@@ -69,3 +69,41 @@ stats.friedsully.com, stats.palm.cdsv.cc {
 		}
 	}
 }
+
+# 主动消息 2.0 中转：大陆连不上 workers.dev（DNS 污染 + SNI 重置），用户可在设置里选择经这里转发。
+# 设计与取舍见 docs/amsg2-relay.md。域名同样必须是灰云，否则流量又绕回 CF。
+# 这个站点刻意不写日志指令：Caddy 默认不记访问日志，运行时日志由上方全局块统一丢弃；
+# 写了反而会让 assert-privacy.sh 的计数断言对不上。
+# 令牌、路径白名单、限流、流量记录和「只连 Cloudflare」都在本机的中转服务里（infra/amsg-relay/relay.py），
+# 这里只管 HTTPS 和几道粗筛。
+amsg-relay.friedsully.com {
+	header -Server
+
+	# 最大的单个请求是 client-state 同步，实测约 800KB，留足余量
+	request_body {
+		max_size 10MB
+	}
+
+	# 只认带令牌的地址，并拒绝 WebSocket 升级（翻墙 Worker 最常见的走法）
+	@amsg_relay {
+		method GET POST PUT DELETE OPTIONS
+		path /t/*
+		not header Upgrade *
+	}
+
+	handle @amsg_relay {
+		reverse_proxy 127.0.0.1:8787 {
+			# 中转服务本身也不看用户 IP：在这一跳就去掉，它和 Worker 都拿不到
+			header_up -X-Forwarded-For
+			header_up -X-Forwarded-Proto
+			header_up -X-Forwarded-Host
+			header_up -X-Real-IP
+			header_up -Forwarded
+			flush_interval -1
+		}
+	}
+
+	handle {
+		respond 404
+	}
+}

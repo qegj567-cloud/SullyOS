@@ -2,7 +2,8 @@ import { Capacitor } from '@capacitor/core';
 
 export type DeploymentSource = 'official' | 'unofficial' | 'unknown';
 
-const OFFICIAL_HOSTS = new Set([
+// infra/amsg-relay/relay.py 的 ALLOWED_ORIGINS 按这份名单放行，utils/amsgRelay.test.ts 对照两边
+export const OFFICIAL_HOSTS = new Set([
   'qegj567-cloud.github.io',
   'sully-os-nu.vercel.app',
   'friedsully.com',

@@ -519,7 +519,9 @@ export const ActiveMsgStore = {
  * 读得到哪一份数据（数据按它分区），共享密钥是端点的门禁。少一样都连不成，所以要摘
  * 就得一起摘。
  */
-const BACKEND_CONNECTION_KEYS = ['workerUrl', 'serverToken', 'masterKey', 'userId', 'pushMode', 'thirdPartyPush'] as const;
+// 中转令牌绑着领取人的 Discord 账号和流量记录，分享出去的备份不能带；中转开关跟着一起摘，
+// 免得导入别人的备份时跳过打开中转前的那道数据边界提醒。
+const BACKEND_CONNECTION_KEYS = ['workerUrl', 'serverToken', 'masterKey', 'userId', 'pushMode', 'thirdPartyPush', 'useRelay', 'relayToken'] as const;
 
 /** 这份备份里带着后端连接吗（带了的话，谁拿到这个文件谁就能连上那台 Worker）。 */
 export const backupHasBackendConnection = (

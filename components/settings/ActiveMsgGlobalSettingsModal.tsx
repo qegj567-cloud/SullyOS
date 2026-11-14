@@ -31,6 +31,10 @@ import {
 import { isAmsgServerVersionAtLeast } from '../../utils/amsgWorkerVersion';
 import { trackEvent } from '../../utils/analytics';
 import {
+  canRelayWorkerUrl, fetchRelayUsage, getRelayDeploymentSource, isRelayTokenWellFormed, resolveWorkerFetchBase, type RelayUsageResult,
+} from '../../utils/amsgRelay';
+import { formatBytes } from '../../utils/format';
+import {
   getThirdPartyPushProviderMeta,
   THIRD_PARTY_PUSH_PROVIDERS,
   validateThirdPartyPushConfig,
@@ -368,6 +372,9 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
   >(null);
   /** 「暂停后台任务」的确认框开着没有。恢复不用确认。 */
   const [pauseConfirmOpen, setPauseConfirmOpen] = useState(false);
+  const [relayConfirmOpen, setRelayConfirmOpen] = useState(false);
+  /** 中转令牌近 30 天的用量；null = 还没查（或没开中转、令牌格式不对）。 */
+  const [relayUsage, setRelayUsage] = useState<RelayUsageResult | null>(null);
   // 这台 worker 认不认 /instant-chat。即时对话的**唯一**版本门槛就在这儿，
   // 别处不做逐调用预检——每发一条消息多探一次网络，探失败还分不清是旧版还是网抖。
   const [instantChatSupported, setInstantChatSupported] = useState(false);
@@ -617,6 +624,47 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
     }));
   };
 
+  // 立刻存盘，不等「连接」：一键部署后等 Worker 生效、连接建表，都按存盘的配置发请求
+  const saveRelay = async (next: boolean) => {
+    patchConfig({ useRelay: next });
+    await ActiveMsgStore.saveGlobalConfig({ useRelay: next });
+  };
+
+  const saveRelayToken = async (value: string) => {
+    const relayToken = value.trim();
+    patchConfig({ relayToken });
+    await ActiveMsgStore.saveGlobalConfig({ relayToken });
+  };
+
+  // 打开面板、令牌变了各查一次用量，不轮询；稍等一下再查，免得边粘贴边发请求
+  // 非官方渠道不能用官方中转；判定前（checking）也先当不能用，免得开关闪一下可点
+  const [relayDeployment, setRelayDeployment] = useState<'checking' | 'official' | 'other'>('checking');
+  useEffect(() => {
+    let cancelled = false;
+    void getRelayDeploymentSource().then((source) => {
+      if (!cancelled) setRelayDeployment(source === 'official' ? 'official' : 'other');
+    });
+    return () => { cancelled = true; };
+  }, []);
+  const relayAllowed = relayDeployment === 'official';
+  const relayTokenReady = relayAllowed && !!config?.useRelay && isRelayTokenWellFormed(config?.relayToken);
+  useEffect(() => {
+    setRelayUsage(null);
+    if (!isOpen || !relayTokenReady || !config?.relayToken) return;
+    let cancelled = false;
+    const relayToken = config.relayToken;
+    const timer = setTimeout(() => {
+      void fetchRelayUsage(relayToken).then((result) => { if (!cancelled) setRelayUsage(result); });
+    }, 600);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [isOpen, relayTokenReady, config?.relayToken]);
+
+  // 打开要先过数据边界的提醒；关掉直接生效
+  const handleToggleRelay = (next: boolean) => {
+    if (next) setRelayConfirmOpen(true);
+    else void saveRelay(false);
+  };
+
   const handleSwitchPushMode = async (nextMode: 'web-push' | 'third-party') => {
     if (!config) return;
     const nextThirdParty = config.thirdPartyPush || { provider: 'wxpusher' as const, token: '' };
@@ -811,7 +859,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
 
       // 刚建好的 workers.dev 地址要等一会儿才解析得到，等它活过来再建表。
       setProvisionStep('等待 Worker 启动…');
-      const ready = await waitForWorkerReady(result.workerUrl);
+      const ready = await waitForWorkerReady(resolveWorkerFetchBase(result.workerUrl, config?.useRelay, config?.relayToken));
       if (!ready) {
         addToast('Worker 装好了，但地址还没生效。过一两分钟点一下「连接并启用」即可。', 'info');
         return;
@@ -1430,6 +1478,60 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
         </div>
   );
 
+  // 数据边界放在打开时的确认弹窗里（relayConfirmDialog），这里只留一句用途
+  const relayToggle = (
+    <div className="bg-white/70 border border-slate-200 rounded-2xl px-4 py-3 space-y-3">
+      <label className="flex items-start gap-3">
+        <input
+          type="checkbox"
+          checked={relayAllowed && !!config.useRelay}
+          disabled={!relayAllowed}
+          onChange={(event) => handleToggleRelay(event.target.checked)}
+          className="mt-0.5 shrink-0 disabled:opacity-40"
+        />
+        <span className="space-y-1">
+          <span className="block text-xs font-bold text-slate-700">大陆连接优化</span>
+          <span className="block text-[11px] leading-relaxed text-slate-400">
+            大陆网络连不上 Worker 时打开，请求经维护者的中转服务器转给你的 Worker。
+          </span>
+          {relayDeployment === 'other' ? (
+            <span className="block text-[11px] leading-relaxed text-amber-600">
+              为防止二改中修改过的主动消息逻辑产生未经认证的流量（可能会被判定为滥用），非官方版本不能使用官方中转。
+            </span>
+          ) : null}
+          {relayAllowed && config.useRelay && config.workerUrl?.trim() && !canRelayWorkerUrl(config.workerUrl) ? (
+            <span className="block text-[11px] leading-relaxed text-amber-600">
+              中转只支持 https 域名地址，不能是 IP，也不能带端口或路径。现在这个地址会直接连。
+            </span>
+          ) : null}
+        </span>
+      </label>
+      {relayAllowed && config.useRelay ? (
+        <label className="block space-y-1.5">
+          <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">中转令牌</span>
+          <input
+            type="password"
+            value={config.relayToken || ''}
+            onChange={(event) => void saveRelayToken(event.target.value)}
+            placeholder="在 SullyOS 的 Discord 群里发 /中转令牌 领取"
+            className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-xs font-mono"
+          />
+          {!isRelayTokenWellFormed(config.relayToken) ? (
+            <span className="block text-[11px] leading-relaxed text-amber-600 pl-1">填好令牌后才会走中转，现在仍是直连</span>
+          ) : relayUsage?.kind === 'ok' ? (
+            <span className="block text-[11px] leading-relaxed text-slate-500 pl-1">
+              近 30 天：上传 {formatBytes(relayUsage.last30.up) || '0 B'} · 下载 {formatBytes(relayUsage.last30.down) || '0 B'} · {relayUsage.last30.requests} 次请求
+            </span>
+          ) : relayUsage?.kind === 'invalid-token' ? (
+            <span className="block text-[11px] leading-relaxed text-amber-600 pl-1">令牌无效或已过期，请在群里重新发 /中转令牌</span>
+          ) : relayUsage?.kind === 'error' ? (
+            <span className="block text-[11px] leading-relaxed text-slate-400 pl-1">暂时查不到用量</span>
+          ) : null}
+        </label>
+      ) : null}
+    </div>
+  );
+
   const workerBody = (
     <>
           {workerOutdated ? (
@@ -1461,6 +1563,8 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
               <span>↗</span>
             </a>
           </div>
+
+          {relayToggle}
 
           {/*
             共享密钥默认收着：一键部署会自己生成并填好，跟 Worker 上的 AMSG_SERVER_TOKEN 是同一串。
@@ -2047,13 +2151,17 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
           {config.workerUrl?.trim() || manualSetupOpen ? (
             <div className={cardClass}>{workerBody}</div>
           ) : (
-            <button
-              type="button"
-              onClick={() => setView('panel')}
-              className="w-full text-center text-[11px] font-bold text-slate-400"
-            >
-              已经有后端地址？去全部设置里填
-            </button>
+            <>
+              {/* 地址栏还没出现时也要能开：大陆用户一键部署完，等 Worker 生效那一步就得走中转 */}
+              {relayToggle}
+              <button
+                type="button"
+                onClick={() => setView('panel')}
+                className="w-full text-center text-[11px] font-bold text-slate-400"
+              >
+                已经有后端地址？去全部设置里填
+              </button>
+            </>
           )}
         </>
       )}
@@ -2228,6 +2336,31 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
       variant="warning"
       onConfirm={() => void applyCronTrigger(false)}
       onCancel={() => setPauseConfirmOpen(false)}
+    />
+    {/* 中转要在中间解开 TLS 才能转发，打开前强制读 5 秒，确认后才存盘 */}
+    <ConfirmDialog
+      isOpen={relayConfirmOpen}
+      title="打开大陆连接优化前请读完"
+      message={(
+        // 共用弹窗的正文默认是小号浅灰字；这份提醒要逐条读完，字号、颜色都提一档，重点加粗
+        <ul className="list-disc pl-4 space-y-2.5 text-[15px] leading-relaxed font-medium text-slate-700">
+          <li>请求会先到<strong className="font-bold text-slate-900">维护者在美国的中转服务器</strong>，再转给你的 Worker。</li>
+          <li>中转要在中间解开加密，<strong className="font-bold text-slate-900">技术上看得到经过的全部内容</strong>：聊天消息、提示词、API Key 和后端密钥。中转<strong className="font-bold text-slate-900">不保存这些内容</strong>，也不会把你的 IP 转给 Worker。</li>
+          <li>要先在 SullyOS 的 Discord 群里，用<strong className="font-bold text-slate-900">已验证的账号</strong>发 /中转令牌 领一个令牌。中转<strong className="font-bold text-slate-900">只按账号、按天记流量和请求次数</strong>，保存 90 天，你随时能查。令牌 30 天不用会失效，也可以随时重领。</li>
+          <li>这是<strong className="font-bold text-slate-900">维护者自费搭的</strong>，不保证一直能用，但会尽力维护。连不上的时候，关掉开关就恢复直连。</li>
+          <li className="text-red-600 marker:text-red-600"><strong className="font-bold">中转只允许正常主动消息使用。恶意滥用 Worker 会被禁止使用中转，严重的会被移出社区！</strong></li>
+          <li>介意的话请别打开，可以看 Worker 地址下面的直连教程。</li>
+        </ul>
+      )}
+      confirmText="我已了解，打开"
+      cancelText="先不开"
+      variant="warning"
+      confirmDelaySeconds={5}
+      onConfirm={() => {
+        setRelayConfirmOpen(false);
+        void saveRelay(true);
+      }}
+      onCancel={() => setRelayConfirmOpen(false)}
     />
     </>
   );
