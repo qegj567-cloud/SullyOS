@@ -17,6 +17,7 @@
 | **iOS 27 主屏幕顶部白雾 / 状态栏底色** | [`docs/ios-status-bar-edge.md`](./docs/ios-status-bar-edge.md) | 改顶部取色、viewport 或 iOS 门禁前必读；manifest standalone 使用 contain，零安全区不回退 44px，异步高度收缩要重建基线；纯色接合不等于壁纸贯穿 |
 | **3D 小屋 · 布局与功能分区** | [`docs/room3d-layout.md`](./docs/room3d-layout.md) | 设计或重排任何房间/样板房、自动摆家具前必读；先划功能区，再按家具组合摆放，保留连续动线，不能逐件随机找空位；本轮统一黑 × 绿 × 白 |
 | **美化分享码与人工审核** | [`docs/beauty-share.md`](./docs/beauty-share.md) | 改美化投稿、作者身份、分享码领取或 `worker/beauty-share` 前必读；未审文件保持私有，更新通过后才替换已发布指针，仅作者明确授权且已审作品进入公开静态装扮库，未授权旧作不公开 |
+| **ChatApp 装扮、白框与深浅色对比度边界** | [`docs/chat-decoration.md`](./docs/chat-decoration.md) | 改 `.sully-chat-root` 挂载范围、白框选择器、心象/装扮弹窗或深浅色表单控件前必读；弹窗与迷你应用挂载在 `.sully-chat-root` 外并带显式深字/浅底边界，深底 `<select>`／日期时间控件配 `[color-scheme:dark]` 与 `[&_option]`，白框用 `:not(:where(...))` 排除色板点/二维码白底/进度条/`qixi_event_card`/`like520_card` |
 | **角色默认对话 API** | [`docs/character-api.md`](./docs/character-api.md) | 改角色独立 API、API 预设分组或对话模型路由前必读；App 优先，单角色回复才使用角色默认，凭据整套选择 |
 | **Anthropic 原生接口 / Prompt Caching** | [`docs/anthropic-messages.md`](./docs/anthropic-messages.md) | 改 Messages 转换、SSE、缓存或 amsg 原生模型调用前必读；原生端点随整套凭据保存，不新增代理，旧 Worker 先更新并验证能力 |
 | **心象 / 思考摘要与正文分离** | [`docs/thinking-response.md`](./docs/thinking-response.md) | 改 thinking 解析、心象显示或排查思考漏进气泡前必读；只按明确字段和标签分流，不凭语言猜测，空正文不得用思考补齐 |

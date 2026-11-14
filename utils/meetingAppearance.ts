@@ -34,9 +34,9 @@ export function meetingAppearance(value?: MeetingAppearance) {
 
 /** Shared reading typography for real surfaces and isolated sample previews. */
 export const MEETING_READING_CSS = `
-.meeting-reading { --meeting-paper:#fcfcfa; --meeting-ink:#292929; }
-.meeting-reading:where([data-reading-preset="paper"]) { --meeting-paper:#f3ead8; --meeting-ink:#51432f; }
-.meeting-reading:where([data-reading-preset="night"]) { --meeting-paper:#191d24; --meeting-ink:#d6d9df; }
+.meeting-reading { --meeting-paper:#fcfcfa; --meeting-ink:#292929; --meeting-muted:#6b7280; }
+.meeting-reading:where([data-reading-preset="paper"]) { --meeting-paper:#f3ead8; --meeting-ink:#51432f; --meeting-muted:#826f55; }
+.meeting-reading:where([data-reading-preset="night"]) { --meeting-paper:#191d24; --meeting-ink:#d6d9df; --meeting-muted:#9ca3af; }
 .meeting-reading .meeting-reading-page { background:var(--meeting-paper)!important; color:var(--meeting-ink)!important; mask-image:none!important; backdrop-filter:none!important; }
 .meeting-reading .meeting-prose { color:var(--meeting-ink)!important; font-family:var(--app-font,serif); font-size:var(--meeting-font-size,17px)!important; line-height:var(--meeting-line-height,2)!important; letter-spacing:var(--meeting-letter-spacing,.035em); text-align:justify!important; font-style:normal!important; border:0!important; padding-inline:0!important; text-shadow:none!important; }
 .meeting-reading .meeting-prose p { margin-block:.7em; }

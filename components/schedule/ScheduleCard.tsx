@@ -156,6 +156,14 @@ export const ScheduleCardView: React.FC<ScheduleCardProps & {theme:OSTheme;previ
     const accentHsl = palette.accent;
     const accentBg = palette.accentSoft;
     const cardBg = palette.base;
+    const isDarkScheduleSurface = (() => {
+        if (palette.preset === 'cream' || palette.preset === 'sakura' || palette.preset === 'mint') return false;
+        if (palette.preset === 'original' || palette.preset === 'twilight' || palette.preset === 'midnight') return true;
+        const m = /^#([0-9a-f]{6})$/i.exec(palette.text.trim());
+        if (!m) return true;
+        const v = Number.parseInt(m[1], 16);
+        return (0.299 * ((v >> 16) & 255) + 0.587 * ((v >> 8) & 255) + 0.114 * (v & 255)) > 140;
+    })();
     const scheduleVars = {
         '--schedule-bg': palette.background,
         '--schedule-text': palette.text,
@@ -266,7 +274,7 @@ export const ScheduleCardView: React.FC<ScheduleCardProps & {theme:OSTheme;previ
                 <div className="sully-schedule-list px-5 pb-5 pt-1 space-y-1 min-w-0">
                     {isGenerating && !schedule ? (
                         <div className="py-12 text-center">
-                            <div className="inline-block w-6 h-6 border-2 border-white/20 border-t-white/60 rounded-full animate-spin mb-3"></div>
+                            <div className="inline-block w-6 h-6 border-2 rounded-full animate-spin mb-3" style={{ borderColor: palette.line, borderTopColor: accentHsl }}></div>
                             <p className="text-xs opacity-40">正在生成日程...</p>
                         </div>
                     ) : schedule && schedule.slots.length > 0 ? (
@@ -284,31 +292,35 @@ export const ScheduleCardView: React.FC<ScheduleCardProps & {theme:OSTheme;previ
                                                 type="time"
                                                 value={editTime}
                                                 onChange={e => setEditTime(e.target.value)}
-                                                className="bg-white/10 rounded-lg px-2 py-1 text-xs font-mono w-24 border border-white/10 focus:outline-none"
+                                                style={{ background: cardBg, color: palette.text, borderColor: palette.line, colorScheme: isDarkScheduleSurface ? 'dark' : 'light' }}
+                                                className="rounded-lg px-2 py-1 text-xs font-mono w-24 border focus:outline-none"
                                             />
                                             <input
                                                 value={editEmoji}
                                                 onChange={e => setEditEmoji(e.target.value)}
                                                 placeholder="emoji"
-                                                className="bg-white/10 rounded-lg px-2 py-1 text-xs w-14 border border-white/10 focus:outline-none text-center"
+                                                style={{ background: cardBg, color: palette.text, borderColor: palette.line }}
+                                                className="rounded-lg px-2 py-1 text-xs w-14 border focus:outline-none text-center placeholder:text-current placeholder:opacity-45"
                                             />
                                         </div>
                                         <input
                                             value={editActivity}
                                             onChange={e => setEditActivity(e.target.value)}
                                             placeholder="活动"
-                                            className="w-full bg-white/10 rounded-lg px-2 py-1 text-sm font-bold mb-1 border border-white/10 focus:outline-none"
+                                            style={{ background: cardBg, color: palette.text, borderColor: palette.line }}
+                                            className="w-full rounded-lg px-2 py-1 text-sm font-bold mb-1 border focus:outline-none placeholder:text-current placeholder:opacity-45"
                                         />
                                         <input
                                             value={editDesc}
                                             onChange={e => setEditDesc(e.target.value)}
                                             placeholder="描述 (可选)"
-                                            className="w-full bg-white/10 rounded-lg px-2 py-1 text-xs border border-white/10 focus:outline-none opacity-70"
+                                            style={{ background: cardBg, color: palette.text, borderColor: palette.line }}
+                                            className="w-full rounded-lg px-2 py-1 text-xs border focus:outline-none opacity-80 placeholder:text-current placeholder:opacity-45"
                                         />
-                                        {!!character?.home3D?.rooms.length && <select aria-label="日程所在房间" value={editHomePosition} onChange={event => setEditHomePosition(event.target.value)} className="w-full text-slate-800 bg-white rounded-lg px-2 py-2 text-xs mt-2"><option value="">位置待补全</option><option value="__away">外出</option>{character.home3D.rooms.map(room => <option key={room.id} value={room.id}>{room.name}</option>)}</select>}
+                                        {!!character?.home3D?.rooms.length && <select aria-label="日程所在房间" value={editHomePosition} onChange={event => setEditHomePosition(event.target.value)} style={{ background: cardBg, color: palette.text, borderColor: palette.line, colorScheme: isDarkScheduleSurface ? 'dark' : 'light' }} className={`w-full rounded-lg border px-2 py-2 text-xs mt-2 focus:outline-none ${isDarkScheduleSurface ? '[&_option]:bg-[#161428] [&_option]:text-white' : '[&_option]:bg-white [&_option]:text-slate-800'}`}><option value="">位置待补全</option><option value="__away">外出</option>{character.home3D.rooms.map(room => <option key={room.id} value={room.id}>{room.name}</option>)}</select>}
                                         <div className="flex gap-2 mt-2">
-                                            <button onClick={saveEdit} className="text-[10px] font-bold px-3 py-1 rounded-lg bg-white/20 hover:bg-white/30 transition-colors">保存</button>
-                                            <button onClick={() => setEditingIdx(null)} className="text-[10px] font-bold px-3 py-1 rounded-lg bg-white/10 hover:bg-white/20 transition-colors opacity-60">取消</button>
+                                            <button onClick={saveEdit} style={{ background: cardBg, color: palette.text, borderColor: palette.line }} className="text-[10px] font-bold px-3 py-1 rounded-lg border hover:opacity-90 transition-opacity">保存</button>
+                                            <button onClick={() => setEditingIdx(null)} style={{ background: cardBg, color: palette.text, borderColor: palette.line }} className="text-[10px] font-bold px-3 py-1 rounded-lg border opacity-75 hover:opacity-100 transition-opacity">取消</button>
                                         </div>
                                     </div>
                                 );
@@ -445,7 +457,7 @@ export const ScheduleCardView: React.FC<ScheduleCardProps & {theme:OSTheme;previ
                     onClick={() => setActionIdx(null)}
                 >
                     <div
-                        className="w-full sm:w-64 bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden"
+                        className="w-full sm:w-64 bg-white text-slate-800 rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden"
                         onClick={(e) => e.stopPropagation()}
                     >
                         <div className="px-4 py-3 border-b border-slate-100">

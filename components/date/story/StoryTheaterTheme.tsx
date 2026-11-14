@@ -126,6 +126,12 @@ const STORY_THEME_CSS = `
 .story-theme-dark .bg-rose-50\\/70 { background-color: rgba(78, 35, 55, .72) !important; }
 .story-theme-dark .text-rose-800, .story-theme-dark .text-rose-700, .story-theme-dark .text-rose-600, .story-theme-dark .text-rose-500 { color: #f4a8bd !important; }
 .story-theme-dark .border-rose-200, .story-theme-dark .border-rose-200\\/70 { border-color: rgba(244, 168, 189, .28) !important; }
+.story-theme-dark .bg-amber-50, .story-theme-dark .bg-amber-100 { background-color: rgba(82, 54, 18, .55) !important; }
+.story-theme-dark .text-amber-800, .story-theme-dark .text-amber-700, .story-theme-dark .text-amber-600 { color: #fcd38d !important; }
+.story-theme-dark .border-amber-200, .story-theme-dark .border-amber-100 { border-color: rgba(252, 211, 141, .28) !important; }
+.story-theme :is(input, textarea, select) { color: var(--story-ink); }
+.story-theme :is(input, textarea)::placeholder { color: var(--story-muted); opacity: 1; }
+.story-theme-dark select option { background-color: var(--story-raised); color: var(--story-ink); }
 .story-theme .story-safe-header { padding-top: max(1.25rem, var(--safe-top)); }
 .story-theme .story-safe-footer { padding-bottom: calc(var(--safe-bottom) + 12px); }
 .story-theme .story-safe-sheet { padding-bottom: calc(var(--safe-bottom) + 18px); }
@@ -235,13 +241,15 @@ export const StoryAppearanceButton: React.FC<{ className?: string }> = ({ classN
     }, [closePanel, open, registerBackHandler]);
     if (!context) return null;
     const { appearance, setColor, setDecor } = context;
+    const reading = meetingAppearance(theme.storyAppearance);
+    const effectiveColor: StoryColorMode = reading.id === 'none' ? appearance.color : reading.id === 'night' ? 'dark' : 'light';
 
     return <>
         <button type='button' onClick={() => setOpen(true)} className={`w-9 h-9 rounded-full grid place-items-center ${className}`} title='剧情外观' aria-label='剧情外观'>
             <Palette size={18} weight={appearance.decor === 'cinema' ? 'fill' : 'regular'} />
         </button>
         {open && createPortal(<div
-            className={`story-theme story-theme-${appearance.color} story-decor-${appearance.decor} fixed inset-0 z-[90] flex items-end sm:items-center justify-center overflow-y-auto overscroll-contain`}
+            className={`story-theme story-theme-${effectiveColor} story-decor-${appearance.decor} fixed inset-0 z-[90] flex items-end sm:items-center justify-center overflow-y-auto overscroll-contain`}
             style={{ position: 'fixed', paddingTop: 'max(12px, var(--safe-top))', paddingBottom: 'max(0px, var(--safe-bottom))', backgroundColor: 'rgba(2, 6, 23, .35)' }}
             onClick={closePanel}
             role='presentation'

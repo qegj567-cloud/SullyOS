@@ -271,6 +271,7 @@ const LifeSimSettingsPanel: React.FC<{
                                         className="w-full"
                                         style={{
                                             background: 'rgba(255,255,255,0.72)',
+                                            color: '#1f2937',
                                             border: '1px solid rgba(0,0,0,0.1)',
                                             borderRadius: 6,
                                             padding: '8px 10px',
@@ -291,6 +292,7 @@ const LifeSimSettingsPanel: React.FC<{
                                         className="w-full"
                                         style={{
                                             background: 'rgba(255,255,255,0.72)',
+                                            color: '#1f2937',
                                             border: '1px solid rgba(0,0,0,0.1)',
                                             borderRadius: 6,
                                             padding: '8px 10px',
@@ -311,6 +313,7 @@ const LifeSimSettingsPanel: React.FC<{
                                         className="w-full"
                                         style={{
                                             background: 'rgba(255,255,255,0.72)',
+                                            color: '#1f2937',
                                             border: '1px solid rgba(0,0,0,0.1)',
                                             borderRadius: 6,
                                             padding: '8px 10px',

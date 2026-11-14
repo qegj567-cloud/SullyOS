@@ -256,18 +256,20 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
           ? 'text-[#fff7ed] hover:bg-[#f8f0e0]/20 rounded-[4px] border-2 border-[#8f674a] bg-[#f8f0e0]/10'
           : 'text-indigo-500 hover:bg-indigo-50 rounded-full';
 
-    // 在线状态由独立的外观设置决定，头部风格不能覆盖它。
+    // 在线状态由独立的外观设置决定，头部风格不能覆盖它。预览采样的默认「在线」与真实单聊一致归入 online。
+    const isOnlineStatus = !statusText || statusText === '在线' || statusText.toLowerCase() === 'online';
+    const statusKindClass = isOnlineStatus ? 'sully-chat-online-status' : 'sully-chat-custom-status';
     const onlineStatusNode = statusStyle === 'pill' ? (
-            <div className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold border ${isDarkHeader ? 'bg-emerald-500/20 text-emerald-200 border-emerald-400/20' : isPixelHeader ? 'bg-[#fff7ed] text-[#8f674a] border-[#8f674a]/25' : 'bg-emerald-50 text-emerald-500 border-emerald-100'}`}>
+            <div className={`${statusKindClass} text-[9px] px-1.5 py-0.5 rounded-full font-semibold border ${isDarkHeader ? 'bg-emerald-500/20 text-emerald-200 border-emerald-400/20' : isPixelHeader ? 'bg-[#fff7ed] text-[#8f674a] border-[#8f674a]/25' : 'bg-emerald-50 text-emerald-500 border-emerald-100'}`}>
                 {statusText ?? 'online'}
             </div>
         ) : statusStyle === 'dot' ? (
-            <div className={`flex items-center gap-1 text-[10px] ${secondaryTextClass}`}>
+            <div className={`${statusKindClass} flex items-center gap-1 text-[10px] ${secondaryTextClass}`}>
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                 <span>{statusText ?? 'Online'}</span>
             </div>
         ) : (
-            <div className={`text-[10px] uppercase ${secondaryTextClass}`}>{statusText ?? 'Online'}</div>
+            <div className={`${statusKindClass} text-[10px] uppercase ${secondaryTextClass}`}>{statusText ?? 'Online'}</div>
         );
 
     const triggerIconNode = triggerIcon === 'stop'
@@ -405,9 +407,9 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
                 </svg>
             )}
             {selectionMode ? (
-                <div className="flex items-center justify-between w-full">
-                    <button onClick={onCancelSelection} className={`text-sm font-bold px-2 py-1 ${secondaryTextClass}`}>取消</button>
-                    <span className={`text-sm font-bold ${primaryTextClass}`}>已选 {selectedCount} 项</span>
+                <div className="sully-chat-selection-bar flex items-center justify-between w-full">
+                    <button onClick={onCancelSelection} className={`sully-chat-selection-cancel text-sm font-bold px-2 py-1 ${secondaryTextClass}`}>取消</button>
+                    <span className={`sully-chat-selection-count text-sm font-bold ${primaryTextClass}`}>已选 {selectedCount} 项</span>
                     <div className="w-10" />
                 </div>
             ) : useCenteredLayout ? (
@@ -429,7 +431,7 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
                         {triggerIconNode}
                     </button>}
                     {extraAction && (
-                        <button onClick={extraAction.onClick} className={`absolute right-10 bottom-2 p-2 ${iconButtonClass}`} title={extraAction.label} aria-label={extraAction.label}>
+                        <button onClick={extraAction.onClick} className={`sully-chat-extra-action absolute right-10 bottom-2 p-2 ${iconButtonClass}`} title={extraAction.label} aria-label={extraAction.label}>
                             {extraAction.icon}
                         </button>
                     )}
@@ -446,7 +448,7 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
                     </div>
 
                     {extraAction && (
-                        <button onClick={extraAction.onClick} className={`p-2 ml-auto ${iconButtonClass}`} title={extraAction.label} aria-label={extraAction.label}>
+                        <button onClick={extraAction.onClick} className={`sully-chat-extra-action p-2 ml-auto ${iconButtonClass}`} title={extraAction.label} aria-label={extraAction.label}>
                             {extraAction.icon}
                         </button>
                     )}
@@ -457,7 +459,7 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
             )}
 
             {isBuffListExpanded && hiddenBuffCount > 0 && (
-                <div ref={buffPanelRef} className="absolute top-full left-4 right-4 mt-1 bg-white rounded-xl shadow-lg border border-slate-200 p-3 z-40">
+                <div ref={buffPanelRef} className="absolute top-full left-4 right-4 mt-1 bg-white text-slate-800 rounded-xl shadow-lg border border-slate-200 p-3 z-40">
                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">全部状态</div>
                     <div className="max-h-36 overflow-y-auto pr-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                         <div className="flex flex-wrap gap-1.5">
@@ -484,7 +486,7 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
             )}
 
             {openBuff && (
-                <div ref={cardRef} className="absolute top-full left-4 right-4 mt-1 bg-white rounded-xl shadow-lg border border-slate-200 p-3 z-50">
+                <div ref={cardRef} className="absolute top-full left-4 right-4 mt-1 bg-white text-slate-800 rounded-xl shadow-lg border border-slate-200 p-3 z-50">
                     <div className="flex items-center justify-between mb-1">
                         <div className="flex items-center gap-2">
                             <span className="text-sm font-bold" style={{ color: openBuff.color || '#db2777' }}>
@@ -510,7 +512,7 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
 
             {confirmDeleteBuff && typeof document !== 'undefined' && createPortal(
                 <div className="fixed inset-0 bg-slate-900/45 backdrop-blur-[1px] z-[100]" onClick={() => setConfirmDeleteBuff(null)}>
-                    <div className="absolute left-1/2 top-1/2 w-[min(88vw,360px)] -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-white/40 bg-white/95 p-5 shadow-2xl shadow-slate-900/25" onClick={(e) => e.stopPropagation()}>
+                    <div className="absolute left-1/2 top-1/2 w-[min(88vw,360px)] -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-white/40 bg-white/95 text-slate-800 p-5 shadow-2xl shadow-slate-900/25" onClick={(e) => e.stopPropagation()}>
                         <div className="text-center mb-4">
                             <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-rose-100 to-red-100 text-xl shadow-inner">
                                 {confirmDeleteBuff.emoji || '🗑'}

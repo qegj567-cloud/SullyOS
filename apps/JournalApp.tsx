@@ -1287,7 +1287,7 @@ ${charPart}
             {/* Sticker Import Modal */}
             <Modal 
                 isOpen={showImportModal} title="添加日记贴纸" onClose={() => setShowImportModal(false)}
-                footer={<button onClick={handleImportStickers} className="w-full py-3 bg-white/10 text-white font-bold rounded-2xl hover:bg-white/20 transition-all">确认添加</button>}
+                footer={<button onClick={handleImportStickers} className="w-full py-3 bg-slate-900 text-white font-bold rounded-2xl hover:bg-slate-800 transition-all">确认添加</button>}
             >
                 <div className="space-y-3">
                     <p className="text-xs text-slate-500">格式：贴纸名称--图片URL (每行一个)</p>

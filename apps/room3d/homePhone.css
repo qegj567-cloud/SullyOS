@@ -9,7 +9,7 @@
 @keyframes home-phone-open{from{opacity:0;transform:translateY(16px) rotate(2deg)}to{opacity:1;transform:none}}@media(prefers-reduced-motion:reduce){.home-phone{animation:none}.home-phone-launch svg{transition:none}}@media(max-height:600px){.home-phone{bottom:10px;height:84%}.home-phone-home{padding-top:10px}.home-phone-greeting svg{display:none}.home-phone-apps{margin:18px 0}}
 .home-phone-apps{width:100%;gap:clamp(10px,5%,22px)}.home-phone-apps button{min-width:0;flex:1}.home-phone-apps button span{width:min(62px,100%);height:auto;aspect-ratio:1;border-radius:20px}.home-phone-apps button:nth-child(3) span{background:#e3e9d2;border-color:#ccd7b5;color:#788b58}
 
-.home-phone-chat-avatar{display:grid;place-items:center;width:32px;height:32px;border-radius:12px;background:#dfefdf;color:#718764;font-size:14px}.home-phone .sully-chat-root .fixed{max-height:100%}
+.home-phone-chat-avatar{display:grid;place-items:center;width:32px;height:32px;border-radius:12px;background:#dfefdf;color:#718764;font-size:14px}.home-phone .fixed{max-height:100%}
 
 .home-phone .sully-bubble-user{background:#dceedd!important;color:#4f6c53!important;border-color:#cde0ca!important}.home-phone .sully-bubble-ai{background:#fffef8!important;color:#715e40!important;border-color:#e8dfc9!important}.home-phone .sully-chat-inputbar{background:#fffdf6!important;border-color:#e8dfc9!important}.home-phone .sully-chat-inputbar textarea{background:#f3f0e4!important;color:#715e40!important}
 

@@ -31,7 +31,7 @@ const ThinkingChainSettingsModal: React.FC<Props> = ({ isOpen, onClose, value, o
             onClick={onClose}
         >
             <div
-                className="w-full sm:max-w-md bg-white rounded-t-3xl sm:rounded-3xl max-h-[85vh] overflow-y-auto no-scrollbar shadow-2xl"
+                className="w-full sm:max-w-md bg-white text-slate-800 rounded-t-3xl sm:rounded-3xl max-h-[85vh] overflow-y-auto no-scrollbar shadow-2xl"
                 onClick={e => e.stopPropagation()}
             >
                 <div className="sticky top-0 z-10 bg-white px-5 pt-5 pb-3 border-b border-slate-100">
@@ -109,7 +109,7 @@ const ThinkingChainSettingsModal: React.FC<Props> = ({ isOpen, onClose, value, o
                             onChange={e => setDraftPrompt(e.target.value)}
                             onBlur={commitPrompt}
                             placeholder="比如：思考时偶尔切到日语 / 多写一些感官细节 / 想到用户时用昵称…"
-                            className="w-full h-28 bg-slate-50 rounded-xl p-3 text-[12px] resize-none border border-slate-200 focus:outline-none focus:border-indigo-300"
+                            className="w-full h-28 bg-slate-50 text-slate-800 placeholder:text-slate-400 rounded-xl p-3 text-[12px] resize-none border border-slate-200 focus:outline-none focus:border-indigo-300"
                         />
                         <div className="text-[9.5px] text-slate-400 mt-1">留空 = 仅使用原生提示词。</div>
                     </section>

@@ -13,7 +13,7 @@ const CallUpdateAnnouncement: React.FC<CallUpdateAnnouncementProps> = ({
   onOpenSettings,
 }) => (
   <div
-    className="absolute inset-0 z-[90] flex items-center justify-center bg-[#05030c]/78 px-6 backdrop-blur-md"
+    className="sully-stage-dark absolute inset-0 z-[90] flex items-center justify-center bg-[#05030c]/78 px-6 text-white backdrop-blur-md"
     role="dialog"
     aria-modal="true"
     aria-labelledby="call-update-title"
@@ -37,7 +37,7 @@ const CallUpdateAnnouncement: React.FC<CallUpdateAnnouncementProps> = ({
     `}</style>
 
     <section
-      className="sully-call-update-panel relative w-full max-w-[20rem] overflow-hidden rounded-[1.8rem] border border-white/12 bg-[#120c22]/95 px-5 pb-5 pt-4 shadow-2xl"
+      className="sully-stage-dark sully-call-update-panel relative w-full max-w-[20rem] overflow-hidden rounded-[1.8rem] border border-white/12 bg-[#120c22]/95 px-5 pb-5 pt-4 shadow-2xl"
       onClick={event => event.stopPropagation()}
     >
       <button

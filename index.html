@@ -46,6 +46,7 @@
               surface: 'rgba(255, 255, 255, 0.75)',
               'surface-glass': 'rgba(255, 255, 255, 0.35)',
             },
+            opacity: Object.fromEntries(Array.from({ length: 101 }, (_, i) => [i, (i / 100).toString()])),
             animation: {
               'fade-in': 'fadeIn 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
               'slide-up': 'slideUp 0.35s cubic-bezier(0.25, 1, 0.5, 1)',
@@ -149,6 +150,8 @@
       }
       body {
         background-color: #0f1115;
+        color: #0f172a;
+        color-scheme: light;
         margin: 0;
         overflow: hidden;
         /* Critical: Prevent browser back/forward swipe navigation AND vertical rubber-banding */
