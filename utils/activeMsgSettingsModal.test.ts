@@ -26,9 +26,15 @@ vi.mock('./activeMsgStore', async () => ({
   maskActiveMsgUserId: (value: string) => value,
 }));
 vi.mock('./analytics', () => ({ trackEvent: vi.fn() }));
+const deployment = vi.hoisted(() => ({ source: 'official' as 'official' | 'unofficial' | 'unknown' }));
+vi.mock('./deploymentSource', async (importOriginal) => ({
+  ...await importOriginal<typeof import('./deploymentSource')>(),
+  detectDeploymentSource: async () => deployment.source,
+}));
 
 import ActiveMsgGlobalSettingsModal from '../components/settings/ActiveMsgGlobalSettingsModal';
 import { fetchWorkerDiagnostics } from './activeMsgClient';
+import { ActiveMsgStore } from './activeMsgStore';
 
 const initialConfig: ActiveMsg2GlobalConfig = { userId: 'test-user', workerUrl: '' };
 const subscribedPush = {
@@ -150,6 +156,102 @@ describe('主动消息 2.0 配置入口', () => {
     await expand('共享密钥');
     expect(host.querySelector<HTMLInputElement>('input[placeholder="worker 配了 AMSG_SERVER_TOKEN 才需要填"]')?.value).toBe('deployed-token');
     expect(Array.from(host.querySelectorAll('button')).some((item) => item.textContent === '随机')).toBe(true);
+  });
+
+  // 中转看得到明文，打开前必须读完数据边界；倒数没完、点了取消都不能存盘
+  it('打开中转要先读完 5 秒提醒，确认后才存盘；关掉直接生效', async () => {
+    const save = vi.mocked(ActiveMsgStore.saveGlobalConfig);
+    save.mockClear();
+    await render();
+    await skipGuide();
+    const relayBox = () => Array.from(host.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
+      .find((item) => item.closest('label')?.textContent?.includes('大陆连接优化'));
+    const confirmButton = () => Array.from(host.querySelectorAll('button'))
+      .find((item) => item.textContent?.startsWith('我已了解，打开'));
+    const tick = async (seconds: number) => {
+      for (let i = 0; i < seconds; i += 1) await act(async () => { vi.advanceTimersByTime(1000); });
+    };
+
+    expect(relayBox()?.checked).toBe(false);
+    await act(async () => { relayBox()!.click(); });
+    expect(host.textContent).toContain('维护者自费搭的');
+    await click('先不开');
+    expect(host.textContent).not.toContain('维护者自费搭的');
+    expect(relayBox()?.checked).toBe(false);
+
+    await act(async () => { relayBox()!.click(); });
+    // 滥用后果必须写在打开前那道提醒里
+    expect(host.textContent).toContain('移出社区');
+    expect(confirmButton()?.disabled).toBe(true);
+    await tick(4);
+    expect(confirmButton()?.disabled).toBe(true);
+    expect(relayBox()?.checked).toBe(false);
+    await tick(1);
+    expect(confirmButton()?.disabled).toBe(false);
+    // 打开面板时本来就会存一次别的字段，这里只看有没有提前写入中转开关
+    expect(save.mock.calls.some(([updates]) => 'useRelay' in updates)).toBe(false);
+
+    await act(async () => { confirmButton()!.click(); });
+    expect(save).toHaveBeenCalledWith({ useRelay: true });
+    expect(relayBox()?.checked).toBe(true);
+
+    await act(async () => { relayBox()!.click(); });
+    expect(save).toHaveBeenLastCalledWith({ useRelay: false });
+    expect(relayBox()?.checked).toBe(false);
+    expect(host.textContent).not.toContain('维护者自费搭的');
+  });
+
+  it('非官方版本中转开关不能点，并说明原因', async () => {
+    const { checkRelayDeployment } = await import('./amsgRelay');
+    deployment.source = 'unofficial';
+    await checkRelayDeployment();
+    try {
+      await render();
+      await skipGuide();
+      const box = Array.from(host.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
+        .find((item) => item.closest('label')?.textContent?.includes('大陆连接优化'));
+      expect(box?.disabled).toBe(true);
+      expect(host.textContent).toContain('非官方版本不能使用官方中转');
+    } finally {
+      deployment.source = 'official';
+      await checkRelayDeployment();
+    }
+  });
+
+  it('开了中转才出现令牌栏：没填时提示仍是直连，填了存盘并查近 30 天用量', async () => {
+    const save = vi.mocked(ActiveMsgStore.saveGlobalConfig);
+    save.mockClear();
+    const usage = { up: 1024 * 1024 * 1.2, down: 1024 * 1024 * 3.4, requests: 128 };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ today: usage, last7: usage, last30: usage, issuedDay: '2026-11-01' })));
+    vi.stubGlobal('fetch', fetchMock);
+    const tokenInput = () => host.querySelector<HTMLInputElement>('input[placeholder="在 SullyOS 的 Discord 群里发 /中转令牌 领取"]');
+    try {
+      client.getGlobalConfig.mockResolvedValue({ ...initialConfig, workerUrl: 'https://amsg.example.workers.dev' });
+      await render();
+      await skipGuide();
+      expect(tokenInput()).toBeNull();
+      await render(false);
+
+      client.getGlobalConfig.mockResolvedValue({ ...initialConfig, workerUrl: 'https://amsg.example.workers.dev', useRelay: true });
+      await render();
+      await skipGuide();
+      expect(tokenInput()).not.toBeNull();
+      expect(host.textContent).toContain('填好令牌后才会走中转，现在仍是直连');
+
+      const token = 'abcdefghijklmnopqrstuvwxyz0123456789_-ABCDE';
+      await act(async () => {
+        const input = tokenInput()!;
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, ` ${token} `);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      expect(save).toHaveBeenCalledWith({ relayToken: token });
+      expect(host.textContent).not.toContain('填好令牌后才会走中转');
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      expect(fetchMock).toHaveBeenCalledWith(`https://amsg-relay.friedsully.com/t/${token}/_usage`);
+      expect(host.textContent).toContain('近 30 天：上传 1.2 MB · 下载 3.4 MB · 128 次请求');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('推送检查失败后保留配置，并能单独重试', async () => {

@@ -1,0 +1,24 @@
+# /etc/systemd/system/amsg-relay.service —— 主动消息 2.0 中转服务，见 docs/amsg2-relay.md
+[Unit]
+Description=SullyOS amsg2 relay (loopback only, behind Caddy)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# 依赖用发行版的 python3-aiohttp，跟着系统安全更新走
+ExecStart=/usr/bin/python3 /opt/amsg-relay/relay.py
+# DISCORD_TOKEN / DISCORD_GUILD_ID / DISCORD_VERIFIED_ROLE_ID，root 600，不进仓库
+EnvironmentFile=/etc/amsg-relay/env
+Environment=RELAY_DB=/var/lib/amsg-relay/relay.db
+DynamicUser=yes
+StateDirectory=amsg-relay
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+MemoryMax=150M
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

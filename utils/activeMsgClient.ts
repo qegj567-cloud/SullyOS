@@ -6,6 +6,7 @@ import { ackStoppedReplyReceipts, stoppedReplyStateEntries } from './amsgStopped
 import { loadCharacterContextMessages } from './chatContextRange';
 import { ReiClient, classifyClientStateWrite } from '@rei-standard/amsg-client';
 import { createCloudDataSession } from './amsgCloudData';
+import { resolveWorkerFetchBase } from './amsgRelay';
 import { captureCloudOwnerGenerations, rememberCloudOwnerGeneration, stampCloudWrite, captureCloudWriteCheck, invalidateCloudOwnerWrites } from './amsgCloudOwnerGeneration';
 import {
   ActiveMsg2CharacterConfig,
@@ -219,13 +220,11 @@ const REMOTE_TASK_NOT_FOUND_CODE = 'TASK_NOT_FOUND';
 /** 行还在、但已经跑完出清（sent / failed）时回的错误码（HTTP 409）。 */
 const REMOTE_TASK_ALREADY_COMPLETED_CODE = 'TASK_ALREADY_COMPLETED';
 
-// 单用户模式：所有请求打到用户自部署的 Cloudflare Worker（config.workerUrl）。
+// 单用户模式：所有请求打到用户自部署的 Cloudflare Worker（config.workerUrl），开了中转就经中转转发。
 // 配了 serverToken 就每次带 X-Client-Token；worker 端配了就强制校验，缺/错回 401。
-const normalizeWorkerBase = (workerUrl: string) => workerUrl.trim().replace(/\/+$/, '');
-
-const createClient = (config: Pick<ActiveMsg2GlobalConfig, 'userId' | 'workerUrl' | 'serverToken'>) => {
+const createClient = (config: Pick<ActiveMsg2GlobalConfig, 'userId' | 'workerUrl' | 'serverToken' | 'useRelay' | 'relayToken'>) => {
   const client = new ReiClient({
-    baseUrl: normalizeWorkerBase(config.workerUrl),
+    baseUrl: resolveWorkerFetchBase(config.workerUrl, config.useRelay, config.relayToken),
     userId: config.userId,
     serverToken: config.serverToken || undefined,
   });
@@ -571,7 +570,8 @@ const createAndInitClient = async (config: ActiveMsg2GlobalConfig) => {
 };
 
 const initializeClient = (config: ActiveMsg2GlobalConfig) => {
-  const key = `${config.workerUrl}|${config.userId}|${config.serverToken ?? ''}`;
+  // 实际请求地址进键：中转开关或令牌一变，就换一条按新地址发请求的 client
+  const key = `${config.workerUrl}|${config.userId}|${config.serverToken ?? ''}|${resolveWorkerFetchBase(config.workerUrl, config.useRelay, config.relayToken)}`;
   if (cachedClientEntry?.key === key) return cachedClientEntry.promise;
   const promise = createAndInitClient(config);
   cachedClientEntry = { key, promise };
@@ -1861,7 +1861,7 @@ const fetchWithAuthRaw = async (
   if (gzipped) headers.set('Content-Encoding', 'gzip');
 
   try {
-    const response = await fetch(`${normalizeWorkerBase(config.workerUrl)}/${path}`, {
+    const response = await fetch(`${resolveWorkerFetchBase(config.workerUrl, config.useRelay, config.relayToken)}/${path}`, {
       ...init,
       headers,
       body,
