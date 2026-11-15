@@ -1,6 +1,6 @@
 // Render original Sully art + CSS. No generated imagery or QR re-encoding.
 import assert from 'node:assert/strict';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, copyFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -25,9 +25,10 @@ try {
     assert.equal(bounds.banner.height, 860);
     assert.ok(bounds.letter.bottom < bounds.footer.top && bounds.remark.bottom < bounds.footer.top);
     await page.locator('.banner').screenshot({ path: output, animations: 'disabled' });
-    for (const channel of ['wechat', 'alipay']) {
+    for (const channel of ['wechat']) {
         await page.locator(`#${channel}-code`).screenshot({ path: `${qa}/readme-${channel}-code.png` });
     }
+    copyFileSync(output, 'art/sully-support/exports/dc-support-1600x860.png');
     // Inspect the exported PNG at a typical README width and on a narrow screen.
     for (const width of [800, 360]) {
         await page.setViewportSize({ width, height: Math.ceil(width * 860 / 1600) });

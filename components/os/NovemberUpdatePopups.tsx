@@ -88,7 +88,7 @@ export function SullySupportNotice(props: NoticeActions) {
             <p className="november-notice-signature">—— 条 &amp; TO 敬上</p>
         </div>
         <section className="november-notice-support-detail">
-            <p>支持微信赞赏与支付宝，可保存收款小票后，在对应 App 中从相册扫码。</p>
+            <p>支持微信赞赏，可保存赞赏小票后，在微信扫一扫中从相册识别。</p>
             <p>想留下名字的话，请在付款时的<strong>【添加备注】</strong>写下希望公开展示的署名。每月更新会收录进「饲养员感谢名单」；未备注默认为「神秘猫奴」。</p>
             <p className="november-notice-gentle">先照顾好自己，有余力再支持。</p>
         </section>
