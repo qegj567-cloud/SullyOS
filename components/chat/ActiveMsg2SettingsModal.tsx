@@ -14,6 +14,7 @@ import {
 } from '../../types';
 import { ActiveMsgClient, getDefaultActiveMsgFirstSendTime } from '../../utils/activeMsgClient';
 import { ActiveMsgStore } from '../../utils/activeMsgStore';
+import { isAmsg2GloballyEnabled, isAmsg2WorkerActive } from '../../utils/amsgGlobalGate';
 import { type AmsgLastSkip, describeLastSkip } from '../../utils/amsgFirePack';
 import {
   type AmsgDailySends,
@@ -149,6 +150,7 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
   const [lastSkip, setLastSkip] = useState<AmsgLastSkip | null>(null);
   // 今天主动找了几次（worker 每次发完累加的那份）。null = 没有记录 / 没读到。
   const [dailySends, setDailySends] = useState<AmsgDailySends | null>(null);
+  const [globalPaused, setGlobalPaused] = useState(false);
 
   // 表单值重置：面板打开或切换编辑对象时，用被编辑任务的字段填表单（新建则填默认值）。
   // 角色级共享设置（maxTokens）始终跟随保存值。
@@ -196,7 +198,9 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
     void (async () => {
       const globalConfig = await ActiveMsgClient.getGlobalConfig();
       const pushStatus = await ActiveMsgClient.getPushStatus();
-      setGlobalReady(Boolean(globalConfig.workerUrl));
+      const active = isAmsg2WorkerActive(globalConfig);
+      setGlobalReady(active);
+      setGlobalPaused(Boolean(globalConfig.workerUrl?.trim()) && !isAmsg2GloballyEnabled(globalConfig));
       const permLabel = pushStatus.permission === 'granted'
         ? '已允许'
         : pushStatus.permission === 'denied'
@@ -209,53 +213,59 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
             ? `权限：${permLabel} / 订阅：${pushStatus.hasSubscription ? '已就绪' : '未创建'}`
             : '当前环境不支持 Web Push（可在全局设置改用第三方推送 App）',
       );
-    })();
-
-    // 防穿帮闸最近拦下了哪次触发、今天主动找了几次。闸是静默的，不说一声的话「让路了」
-    // 在用户看来跟「没发出去」一模一样；次数摆出来，用户才知道上限是不是在起作用。
-    setDailySends(null);
-    void (async () => {
-      const status = await ActiveMsgClient.readPanelStatus(char.id);
-      setLastSkip(status.lastSkip);
-      setDailySends(status.dailySends);
-    })();
-
-    void (async () => {
-      let remote: Set<string>;
-      let remoteTasks: RemoteTaskProjection[];
-      try {
-        // 全量投影一次拉齐：uuid 当对账底账，status / lastError 给任务卡片说明
-        // 「上次到点为什么没发出去」，nextSendAt 给循环任务显示真正会响的时刻。
-        remoteTasks = await ActiveMsgClient.listRemoteTasksForChar(char.id);
-        remote = new Set(remoteTasks.map((t) => t.uuid));
-        setRemoteTaskInfo(new Map(remoteTasks.map((t) => [
-          t.uuid, { status: t.status, lastError: t.lastError },
-        ])));
-      } catch {
-        // 对账失败不打扰：null 让「远端不存在」徽标整体不显示，也不清任何任务。
+      if (!active) {
+        setLastSkip(null);
+        setDailySends(null);
         setKnownRemoteUuids(null);
         return;
       }
-      setKnownRemoteUuids(remote);
 
-      // 对账两个方向都走：把已经走完的一次性任务清出列表（不然发过的任务会一直堆在
-      // 这儿，得手动一条条取消），同时把远端有、本地没有的接回来——角色自排的任务是
-      // 随 push 认领的，那条 push 推失败或被防穿帮闸吞掉，本地就永远不知道它存在，
-      // 而它照常到点触发。先拿渲染时这份探一下有没有变化，避免每次开面板都写一次库。
-      // 真正落盘时在 updater 里用最新的 prev 重算——面板保存要 await 网络请求，
-      // 这期间角色可能在聊天里用工具排了新任务。
-      const settle = (tasks: ActiveMsg2TaskRecord[]) =>
-        pruneFiredTasks(reconcileTasksWithRemote(tasks, remoteTasks), remote, Date.now());
-      const current = char.activeMsg2Config?.tasks ?? [];
-      const settled = settle(current);
-      const changed = settled.length !== current.length
-        || settled.some((t, i) => t !== current[i]);
-      if (changed) {
-        onSave((prev) => ({
-          ...(prev ?? { enabled: true, tasks: [] }),
-          tasks: settle(prev?.tasks ?? []),
-        }));
-      }
+      // 防穿帮闸最近拦下了哪次触发、今天主动找了几次。闸是静默的，不说一声的话「让路了」
+      // 在用户看来跟「没发出去」一模一样；次数摆出来，用户才知道上限是不是在起作用。
+      setDailySends(null);
+      void (async () => {
+        const status = await ActiveMsgClient.readPanelStatus(char.id);
+        setLastSkip(status.lastSkip);
+        setDailySends(status.dailySends);
+      })();
+
+      void (async () => {
+        let remote: Set<string>;
+        let remoteTasks: RemoteTaskProjection[];
+        try {
+          // 全量投影一次拉齐：uuid 当对账底账，status / lastError 给任务卡片说明
+          // 「上次到点为什么没发出去」，nextSendAt 给循环任务显示真正会响的时刻。
+          remoteTasks = await ActiveMsgClient.listRemoteTasksForChar(char.id);
+          remote = new Set(remoteTasks.map((t) => t.uuid));
+          setRemoteTaskInfo(new Map(remoteTasks.map((t) => [
+            t.uuid, { status: t.status, lastError: t.lastError },
+          ])));
+        } catch {
+          // 对账失败不打扰：null 让「远端不存在」徽标整体不显示，也不清任何任务。
+          setKnownRemoteUuids(null);
+          return;
+        }
+        setKnownRemoteUuids(remote);
+
+        // 对账两个方向都走：把已经走完的一次性任务清出列表（不然发过的任务会一直堆在
+        // 这儿，得手动一条条取消），同时把远端有、本地没有的接回来——角色自排的任务是
+        // 随 push 认领的，那条 push 推失败或被防穿帮闸吞掉，本地就永远不知道它存在，
+        // 而它照常到点触发。先拿渲染时这份探一下有没有变化，避免每次开面板都写一次库。
+        // 真正落盘时在 updater 里用最新的 prev 重算——面板保存要 await 网络请求，
+        // 这期间角色可能在聊天里用工具排了新任务。
+        const settle = (tasks: ActiveMsg2TaskRecord[]) =>
+          pruneFiredTasks(reconcileTasksWithRemote(tasks, remoteTasks), remote, Date.now());
+        const current = char.activeMsg2Config?.tasks ?? [];
+        const settled = settle(current);
+        const changed = settled.length !== current.length
+          || settled.some((t, i) => t !== current[i]);
+        if (changed) {
+          onSave((prev) => ({
+            ...(prev ?? { enabled: true, tasks: [] }),
+            tasks: settle(prev?.tasks ?? []),
+          }));
+        }
+      })();
     })();
     // char.activeMsg2Config 只在函数体里读当前值当探针，不进依赖——清理落盘会改它，
     // 进了依赖就是「清理 → 重跑 → 再清理」的自激循环。
@@ -347,22 +357,26 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
     }
 
     const failed = new Set<string>();
-    for (const t of toCancel) {
-      try { await ActiveMsgClient.cancelTask(t.taskUuid); } catch { failed.add(t.taskUuid); }
-    }
-    if (toCancel.length) {
-      const cancelled = toCancel.filter((t) => !failed.has(t.taskUuid));
-      await writeCancelledNotices(cancelled);
-      setKnownRemoteUuids((prev) => applyRemoteTaskDelta(prev, { gone: cancelled.map((t) => t.taskUuid) }));
-      onSave((prev) => buildConfig(prev, (list) => list
-        .filter((x) => !cancelled.some((c) => c.taskUuid === x.taskUuid))
-        .map((x) => (failed.has(x.taskUuid) ? { ...x, lastError: '远端取消失败，可重试' } : x))));
+    if (globalReady) {
+      for (const t of toCancel) {
+        try { await ActiveMsgClient.cancelTask(t.taskUuid); } catch { failed.add(t.taskUuid); }
+      }
+      if (toCancel.length) {
+        const cancelled = toCancel.filter((t) => !failed.has(t.taskUuid));
+        await writeCancelledNotices(cancelled);
+        setKnownRemoteUuids((prev) => applyRemoteTaskDelta(prev, { gone: cancelled.map((t) => t.taskUuid) }));
+        onSave((prev) => buildConfig(prev, (list) => list
+          .filter((x) => !cancelled.some((c) => c.taskUuid === x.taskUuid))
+          .map((x) => (failed.has(x.taskUuid) ? { ...x, lastError: '远端取消失败，可重试' } : x))));
+      }
     }
 
     if (failed.size) {
       addToast(`主动频率已保存，但 TA 排的重复消息有 ${failed.size} 次没能取消，可以在任务列表里单独取消。`, 'error');
     } else if (!synced) {
       addToast('主动频率已保存在本机，这次没同步到云端，下次同步时会自动带上。', 'error');
+    } else if (!globalReady && toCancel.length) {
+      addToast('主动频率已保存在本机；已排过的重复消息可在恢复全局连接后于列表中取消。', 'info');
     } else {
       addToast(toCancel.length
         ? `主动频率已保存，TA 排过的 ${toCancel.length} 次重复消息已经取消。`
@@ -406,6 +420,15 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
   };
 
   const handleCancelTask = async (t: ActiveMsg2TaskRecord) => {
+    if (!globalReady) {
+      addToast(
+        globalPaused
+          ? '全局总开关当前处于暂停状态，恢复总开关后再取消远端任务。'
+          : '请先去系统设置里完成“主动消息 2.0”的全局配置。',
+        'info',
+      );
+      return;
+    }
     // alreadyGone = 远端本来就没有这一条（一次性任务发完就删行）。这也是取消成功，
     // 只是文案上说清楚，免得用户以为自己刚刚拦下了一条还没发的消息。
     let alreadyGone = false;
@@ -443,6 +466,17 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
     setIsSubmitting(true);
     try {
       if (!enabled) {
+        if (!globalReady) {
+          onSave((prev) => buildConfig(prev, (list) => list, { enabled: false }));
+          addToast(
+            globalPaused
+              ? '本机已记录关闭；当前全局总开关处于暂停状态，远端任务将在恢复总开关后重开面板时清理。'
+              : '主动消息 2.0 已关闭。',
+            'info',
+          );
+          onClose();
+          return;
+        }
         // 第一件事：告诉云端这个角色关了。下面逐条取消要花几秒，这期间正在跑的那一轮
         // （尤其是即时对话——它不在取消范围里）还可能顺手给自己排一条；云端先知道「关了」，
         // 这种漏网的到点就会被直接跳过。传不上去也照样往下关：取消本身才是主线。
@@ -497,7 +531,13 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
         return;
       }
 
-      if (!globalReady) throw new Error('请先去系统设置里完成“主动消息 2.0”的全局配置。');
+      if (!globalReady) {
+        if (globalPaused) {
+          addToast('全局「主动消息 2.0」总开关当前已暂停，请先到系统设置里重新开启后再新建或修改任务。', 'info');
+          return;
+        }
+        throw new Error('请先去系统设置里完成“主动消息 2.0”的全局配置。');
+      }
 
       // 时间框里的是用户桌上的钟，先折成绝对时刻再往下传。裸墙钟交出去的话，排程接口
       // 会按角色时区解释它（那条规则是给角色自己排程用的），角色一开自定义时区就差一个
@@ -612,13 +652,22 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
           <button onClick={onClose} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl active:scale-95 transition-transform">
             取消
           </button>
-          <button onClick={handleSubmit} disabled={isSubmitting} className="flex-1 py-3 bg-fuchsia-500 text-white font-bold rounded-2xl active:scale-95 transition-transform disabled:opacity-50">
+          <button
+            onClick={handleSubmit}
+            disabled={isSubmitting || (enabled && globalPaused)}
+            className="flex-1 py-3 bg-fuchsia-500 text-white font-bold rounded-2xl active:scale-95 transition-transform disabled:opacity-50"
+          >
             {isSubmitting ? '保存中...' : !enabled ? '关闭 2.0' : (editingTaskUuid ? '保存修改' : '新建任务')}
           </button>
         </>
       )}
     >
       <div className="space-y-4 text-sm text-slate-600">
+        {globalPaused ? (
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 text-xs leading-relaxed text-amber-700">
+            系统设置里的「主动消息 2.0」总开关当前处于暂停状态，恢复总开关后才会重新连接云端并生效。
+          </div>
+        ) : null}
         <p className="text-xs leading-relaxed text-slate-500">
           打开后，TA 可以在 App 关着的时候来找你：到点由你的云端后端把话写好，再用通知送过来。任务用的是保存那一刻的角色设定和最近聊天，长期重复的任务在剧情变化后重新保存一次。
         </p>
@@ -747,9 +796,21 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
                       </div>
                       <div className="flex gap-2 shrink-0 ml-2">
                         {enabled ? (
-                          <button onClick={() => setEditingTaskUuid(t.taskUuid)} className="px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-600 font-bold">编辑</button>
+                          <button
+                            onClick={() => setEditingTaskUuid(t.taskUuid)}
+                            disabled={!globalReady}
+                            className="px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-600 font-bold disabled:opacity-40"
+                          >
+                            编辑
+                          </button>
                         ) : null}
-                        <button onClick={() => void handleCancelTask(t)} className="px-2.5 py-1.5 rounded-lg bg-red-50 text-red-500 font-bold">取消</button>
+                        <button
+                          onClick={() => void handleCancelTask(t)}
+                          disabled={!globalReady}
+                          className="px-2.5 py-1.5 rounded-lg bg-red-50 text-red-500 font-bold disabled:opacity-40"
+                        >
+                          取消
+                        </button>
                       </div>
                     </div>
                   </div>

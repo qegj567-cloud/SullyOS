@@ -8,6 +8,7 @@ import { DB } from './db';
 import { ChatPrompts } from './chatPrompts';
 import { ActiveMsgStore } from './activeMsgStore';
 import { ActiveMsgClient, type AmsgOutboxEntry, type RemoteTaskStatus } from './activeMsgClient';
+import { isAmsg2GloballyEnabled, isAmsg2WorkerActive, isAmsgGlobalDisabledError } from './amsgGlobalGate';
 import { AMSG_CHAT_FAIL_KEY, amsgStateNamespace, parseChatFailRecord } from './amsgFirePack';
 import {
   applyAssistantPostProcessing,
@@ -178,15 +179,26 @@ const loadRealtimeConfigFromLocalStorage = (): RealtimeConfig | undefined => {
  */
 type OffloadedCleanup = { namespace: string; ref: string; what: string };
 
+const isGloballyEnabledNow = async (): Promise<boolean> => {
+  if (typeof ActiveMsgStore.getGlobalConfig !== 'function') return true;
+  try {
+    return isAmsg2GloballyEnabled(await ActiveMsgStore.getGlobalConfig());
+  } catch {
+    return true;
+  }
+};
+
 /**
  * 这条消息处理成功之后，把它取用过的那几份云端旁路副本删掉。
  * 尽力而为：删不掉只 warn（下次触发会覆盖，不影响正确性）。
  */
 const runOffloadedCleanups = async (cleanups: OffloadedCleanup[]): Promise<void> => {
+  if (cleanups.length === 0 || !(await isGloballyEnabledNow())) return;
   for (const { namespace, ref, what } of cleanups) {
     try {
       await ActiveMsgClient.clearClientStateValue(namespace, ref);
     } catch (error) {
+      if (isAmsgGlobalDisabledError(error)) return;
       log.warn(`清空旁路存储的${what}失败（下次触发会覆盖，不影响正确性）`, { ref, error });
     }
   }
@@ -205,15 +217,28 @@ const fetchOffloadedXhsSession = async (
 ): Promise<any | null> => {
   const attachment = (message.metadata as any)?.xhsSessionAttachment;
   if (attachment && typeof attachment === 'object') {
-    const raw = await ActiveMsgClient.readAttachment(attachment);
-    if (raw == null) throw new Error('XHS attachment is unavailable or expired');
-    return JSON.parse(raw);
+    if (!(await isGloballyEnabledNow())) return null;
+    try {
+      const raw = await ActiveMsgClient.readAttachment(attachment);
+      if (raw == null) throw new Error('XHS attachment is unavailable or expired');
+      return JSON.parse(raw);
+    } catch (error) {
+      if (isAmsgGlobalDisabledError(error)) return null;
+      throw error;
+    }
   }
   const ref = (message.metadata as any)?.xhsSessionRef;
   if (typeof ref !== 'string' || !ref) return null;
+  if (!(await isGloballyEnabledNow())) return null;
 
   const namespace = amsgStateNamespace(message.charId);
-  const raw = await ActiveMsgClient.readClientStateValue(namespace, ref);
+  let raw: string | null = null;
+  try {
+    raw = await ActiveMsgClient.readClientStateValue(namespace, ref);
+  } catch (error) {
+    if (isAmsgGlobalDisabledError(error)) return null;
+    throw error;
+  }
   if (raw == null) {
     // 键不在了：同任务的下一次触发已经把它覆盖/清掉了，这条 push 是迟到的老消息。
     // 重试也取不回来，按「没有卡片数据」继续——比卡在收件箱里反复重试强。
@@ -249,11 +274,17 @@ const fetchOffloadedExtra = async (
 ): Promise<string | null> => {
   const attachment = (message.metadata as any)?.[refField.replace(/Ref$/, 'Attachment')];
   if (attachment && typeof attachment === 'object') {
+    if (!(await isGloballyEnabledNow())) return null;
     try { return await ActiveMsgClient.readAttachment(attachment); }
-    catch (error) { log.warn(`取附件中的${labels.what}失败（${labels.whenMissing}）`, { error }); return null; }
+    catch (error) {
+      if (isAmsgGlobalDisabledError(error)) return null;
+      log.warn(`取附件中的${labels.what}失败（${labels.whenMissing}）`, { error });
+      return null;
+    }
   }
   const ref = (message.metadata as any)?.[refField];
   if (typeof ref !== 'string' || !ref) return null;
+  if (!(await isGloballyEnabledNow())) return null;
 
   const namespace = amsgStateNamespace(message.charId);
   try {
@@ -266,6 +297,7 @@ const fetchOffloadedExtra = async (
     cleanups.push({ namespace, ref, what: labels.what });
     return raw;
   } catch (error) {
+    if (isAmsgGlobalDisabledError(error)) return null;
     log.warn(`取旁路存储的${labels.what}失败（${labels.whenMissing}）`, { ref, error });
     return null;
   }
@@ -318,7 +350,7 @@ const LATE_EMOTION_POLL_INTERVAL_MS = 20_000;
 const LATE_EMOTION_POLL_MAX_TRIES = 8;
 // value 是各轮询独有的会话对象：tick 的 await 期间被 cancel / 被新一轮顶替时，
 // 比对引用就能发现自己已经不是当前那一轮，静默退场。
-const lateEmotionPolls = new Map<string, { timer: ReturnType<typeof setTimeout> }>();
+const lateEmotionPolls = new Map<string, { timer: ReturnType<typeof setTimeout>; taskUuid?: string | null }>();
 
 export const cancelLateEmotionPoll = (charId: string): void => {
   const entry = lateEmotionPolls.get(charId);
@@ -339,14 +371,30 @@ export const startLateEmotionPoll = (
   const maxTries = opts?.maxTries ?? LATE_EMOTION_POLL_MAX_TRIES;
   cancelLateEmotionPoll(charId);
   const namespace = amsgStateNamespace(charId);
-  const entry = { timer: undefined as unknown as ReturnType<typeof setTimeout> };
+  const entry = { timer: undefined as unknown as ReturnType<typeof setTimeout>, taskUuid: opts?.taskUuid };
   let tries = 0;
   const tick = async (): Promise<void> => {
+    if (!(await isGloballyEnabledNow())) {
+      if (lateEmotionPolls.get(charId) === entry) {
+        lateEmotionPolls.delete(charId);
+        settleLateCloudEmotionEvalLog(opts?.taskUuid, false);
+        announceEmotionDone(charId);
+      }
+      return;
+    }
     tries += 1;
     let raw: string | null = null;
     try {
       raw = await ActiveMsgClient.readClientStateValue(namespace, ref);
     } catch (error) {
+      if (isAmsgGlobalDisabledError(error)) {
+        if (lateEmotionPolls.get(charId) === entry) {
+          lateEmotionPolls.delete(charId);
+          settleLateCloudEmotionEvalLog(opts?.taskUuid, false);
+          announceEmotionDone(charId);
+        }
+        return;
+      }
       // 读失败当「还没到」：网络抖一下不该终结这轮补落。
       logAmsg.warn('晚投情绪补落这一跳没读到（下一跳再试）', { charId, ref, error });
     }
@@ -1435,10 +1483,12 @@ const notifyInboxProcessFailed = (
  * 一直推给一个不存在的角色。取消不掉也不要紧（网络问题），下一条推过来时还会再试一次。
  */
 const cancelOrphanedRemoteTasks = async (charId: string): Promise<void> => {
+  if (!(await isGloballyEnabledNow())) return;
   try {
     const { targets, failed } = await ActiveMsgClient.cancelAllTasksForChar(charId, []);
     log.warn('清理远端孤儿任务', { charId, targets: targets.length, failed: failed.size });
   } catch (e) {
+    if (isAmsgGlobalDisabledError(e)) return;
     log.warn('清理远端孤儿任务失败（下次收到同角色 push 时会再试）', { charId, error: e });
   }
 };
@@ -1908,10 +1958,11 @@ const flushInboxToChatImpl = async (trigger: FlushTrigger, charId?: string): Pro
           // 这条回复是从 outbox 补收回来的 = 真推送没送到 = 那条任务行多半正挂在
           // 2/4/6 分钟的重试队列里，跑起来就是同一轮的第二份回复。尽力取消；
           // 正常送达的路不带这个标记（行发完即删，也无从取消），一个多余请求都不发。
-          if ((message.metadata as any)?.amsgOutboxBackfill) {
+          if ((message.metadata as any)?.amsgOutboxBackfill && await isGloballyEnabledNow()) {
             // 取消失败别静默吞：重试跑起来就是同一轮的第二份回复（重叠段有上面的
             // messageId 去重兜着，多出的段拦不住），至少留下一条可查的痕。
             ActiveMsgClient.cancelTask(pendingForChar.uuid).catch((e) => {
+              if (isAmsgGlobalDisabledError(e)) return;
               log.warn('补收销账后取消重试任务失败（若重试已在跑，重复段会被落库去重拦下）', { uuid: pendingForChar.uuid, error: e });
             });
           }
@@ -1962,8 +2013,9 @@ const flushInboxToChatImpl = async (trigger: FlushTrigger, charId?: string): Pro
       .map((m) => m.messageId)
       .filter((id) => !!id && !retainedInboxMessageIds.has(id));
     retainedInboxMessageIds.clear();
-    if (settled.length > 0) {
+    if (settled.length > 0 && await isGloballyEnabledNow()) {
       void ActiveMsgClient.ackOutboxMessages(settled).catch((e) => {
+        if (isAmsgGlobalDisabledError(e)) return;
         log.warn('云端账本销账失败（下次拉回来会被去重挡下）', { count: settled.length, error: e });
       });
     }
@@ -2076,6 +2128,7 @@ const settleInstantChatSarModule = async (message: ActiveMsg2InboxMessage): Prom
  * 插回正确位置）。尽力而为：失败就算了，正常路径什么都扫不到。
  */
 const sweepSettledInstantRound = async (charId: string, uuid: string): Promise<void> => {
+  if (!(await isGloballyEnabledNow())) return;
   const entries = await drainOutboxAndFlush('轮询补收');
   if (entries === null) {
     log.warn('即时对话销账后补扫没读成（缺段只能等下一轮顺带）', { charId, uuid });
@@ -2396,7 +2449,7 @@ export const sweepThirdPartyOutbox = async (now = Date.now()): Promise<boolean> 
   try {
     if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return false;
     const config = await ActiveMsgStore.getGlobalConfig();
-    if (config?.pushMode !== 'third-party' || !config.workerUrl?.trim()) return false;
+    if (config?.pushMode !== 'third-party' || !isAmsg2WorkerActive(config)) return false;
     const sinceLast = lastOutboxDrainAt > 0 ? now - lastOutboxDrainAt : Infinity;
     if (listInstantChatPendings().length > 0) {
       if (sinceLast < THIRD_PARTY_PENDING_DRAIN_INTERVAL_MS) return false;
@@ -2437,7 +2490,7 @@ export const catchUpMissedPushes = async (
   let thirdPartyPush = false;
   try {
     const config = await ActiveMsgStore.getGlobalConfig();
-    if (!config?.workerUrl?.trim()) return 'worker-unset';
+    if (!isAmsg2WorkerActive(config)) return 'worker-unset';
     thirdPartyPush = config.pushMode === 'third-party';
   } catch (e) {
     log.warn('读不到主动消息配置，这趟补收先跳过', { error: e });
@@ -2569,6 +2622,7 @@ const scheduleNextInstantChatStatusCheck = () => {
  */
 export const runInstantChatStatusCheck = async (): Promise<void> => {
   if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+  if (!(await isGloballyEnabledNow())) return;
   const pendings = listInstantChatPendings();
   // 计数器只留还在等的轮次（销账走别的路时这里顺手清，别攒垃圾）。
   const activeUuids = new Set(pendings.map((p) => p.uuid));
@@ -2778,6 +2832,10 @@ export const refreshPushSubscriptionIfMarked = async (): Promise<'no-marker' | '
     return 'no-marker';
   }
   if (!marked) return 'no-marker';
+  if (!(await isGloballyEnabledNow())) {
+    // 总开关暂停期间不向 Worker 登记新订阅，保留标记待恢复开启时再补登，也不记失败统计。
+    return 'kept';
+  }
 
   try {
     await ActiveMsgClient.registerPushSubscription();
@@ -2816,6 +2874,21 @@ const handleDeepLink = async () => {
     // Keep same-page navigation markers (for example the browser back guard)
     // while removing only the consumed deep-link parameters from the URL.
     window.history.replaceState(window.history.state, '', currentUrl.toString());
+  }
+};
+
+/** 全局总开关暂停时撤掉云端状态轮询与晚投情绪补落定时器。 */
+export const pauseActiveMsgRuntime = (): void => {
+  if (instantChatStatusPollTimer != null) {
+    clearTimeout(instantChatStatusPollTimer);
+    instantChatStatusPollTimer = null;
+  }
+  instantStatusCheckFailures.clear();
+  for (const [charId, entry] of [...lateEmotionPolls.entries()]) {
+    clearTimeout(entry.timer);
+    lateEmotionPolls.delete(charId);
+    settleLateCloudEmotionEvalLog(entry.taskUuid, false);
+    announceEmotionDone(charId);
   }
 };
 

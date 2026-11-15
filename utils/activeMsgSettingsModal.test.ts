@@ -390,4 +390,33 @@ describe('主动消息 2.0 引导与面板', () => {
     await click('完成');
     expect(host.textContent).toContain('重看介绍');
   });
+
+  it('总开关暂停时打开面板不向 Worker 发任何探测请求，且保留已有连接配置', async () => {
+    client.getCapabilities.mockClear();
+    client.probeWorkerVersion.mockClear();
+    client.probeInstantChatSupport.mockClear();
+    client.getCronTriggerState.mockClear();
+    client.getGlobalConfig.mockResolvedValue({
+      ...connected,
+      enabled: false,
+      serverToken: 'saved-token',
+    });
+    await render();
+    expect(host.textContent).toContain('主动消息 2.0 总开关 · 已暂停');
+    expect(host.textContent).toContain('后端 Worker已暂停');
+    expect(client.getCapabilities).not.toHaveBeenCalled();
+    expect(client.probeWorkerVersion).not.toHaveBeenCalled();
+    expect(client.probeInstantChatSupport).not.toHaveBeenCalled();
+    expect(client.getCronTriggerState).not.toHaveBeenCalled();
+    expect(fetchWorkerDiagnostics).not.toHaveBeenCalled();
+    // 暂停是用户主动选的，不把「后端 Worker」当故障自动弹开。
+    expect(host.querySelector('input[placeholder="https://amsg.你的账号.workers.dev"]')).toBeNull();
+    await expand('后端 Worker');
+    expect(host.querySelector<HTMLInputElement>('input[placeholder="https://amsg.你的账号.workers.dev"]')?.value)
+      .toBe('https://worker.invalid');
+    // 展开即时对话：暂停态只报总开关暂停，绝不误报「更新 Worker」或「Worker 过旧」。
+    await expand('即时对话（防杀后台）');
+    expect(host.textContent).toContain('总开关已暂停，当前聊天在本机生成');
+    expect(host.textContent).not.toContain('点上面的「更新 Worker」');
+  });
 });

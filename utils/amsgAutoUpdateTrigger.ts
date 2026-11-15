@@ -18,6 +18,7 @@
 
 import { ActiveMsgClient, type AmsgWorkerVersionProbe } from './activeMsgClient';
 import { ActiveMsgStore } from './activeMsgStore';
+import { isAmsg2WorkerActive } from './amsgGlobalGate';
 import { BUILD_LABEL } from './buildInfo';
 
 /** 同一个构建下，两次敲门至少隔这么久。 */
@@ -91,7 +92,7 @@ export const requestStartupUpdateCheck = async (
 ): Promise<'updated' | 'update-failed' | 'requested' | 'skipped' | 'throttled' | 'worker-unset'> => {
   try {
     const config = await ActiveMsgStore.getGlobalConfig();
-    if (!config?.workerUrl?.trim() || !config.initializedAt) return 'worker-unset';
+    if (!isAmsg2WorkerActive(config) || !config.initializedAt) return 'worker-unset';
   } catch {
     return 'worker-unset';
   }

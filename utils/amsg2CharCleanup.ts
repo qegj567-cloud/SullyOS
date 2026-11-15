@@ -17,6 +17,7 @@
 import { CharacterProfile } from '../types';
 import { ActiveMsgClient } from './activeMsgClient';
 import { ActiveMsgStore } from './activeMsgStore';
+import { isAmsg2WorkerActive } from './amsgGlobalGate';
 import { clearStoppedReplyReceipts } from './amsgStoppedReplyClient';
 import {
   ALL_CREDENTIAL_PURPOSES,
@@ -138,7 +139,12 @@ export const purgeCloudCharById = async (
         sidechannelShellsSweptCharIds: globalConfig.sidechannelShellsSweptCharIds.filter((id) => id !== charId),
       }).catch(() => {});
     }
-    if (!globalConfig.workerUrl?.trim()) return { status: 'skipped' };
+    if (!isAmsg2WorkerActive(globalConfig)) {
+      if (plan.credPurposes.length > 0) {
+        forgetCredIds(plan.credPurposes.map((purpose) => charCredId(charId, purpose)));
+      }
+      return { status: 'skipped' };
+    }
   } catch {
     // 连本地配置都读不到，等于无从判断有没有云端；按没有处理，别为它弹错误。
     return { status: 'skipped' };

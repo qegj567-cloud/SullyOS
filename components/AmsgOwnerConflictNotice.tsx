@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import { useOS } from '../context/OSContext';
 import Modal from './os/Modal';
 import ConfirmDialog from './os/ConfirmDialog';
+import { ActiveMsgStore } from '../utils/activeMsgStore';
+import { AMSG_GLOBAL_CONFIG_EVENT, isAmsg2GloballyEnabled, isAmsg2WorkerActive } from '../utils/amsgGlobalGate';
 import { flushAmsgState, markAmsgStateDirty, syncAmsgLlmCredentials } from '../utils/amsgStateSync';
 import {
   AMSG_OWNER_CHECK_AFTER_IMPORT_LS_KEY,
@@ -39,6 +41,12 @@ export default function AmsgOwnerConflictNotice() {
     if (checking.current) return;
     checking.current = true;
     try {
+      const globalConfig = await ActiveMsgStore.getGlobalConfig();
+      if (!isAmsg2WorkerActive(globalConfig)) {
+        setConflicts([]);
+        return;
+      }
+      if (takeImportMark()) setFromImport(true);
       const found = await findCloudOwnerConflicts(latest.current.characters);
       setConflicts(found);
       setError('');
@@ -51,11 +59,23 @@ export default function AmsgOwnerConflictNotice() {
 
   useEffect(() => {
     if (!isDataLoaded) return;
-    setFromImport(takeImportMark());
     const timer = setTimeout(() => { void check(); }, STARTUP_CHECK_DELAY_MS);
     const onConflict = () => { void check(); };
+    const onGlobalConfig = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (detail && !isAmsg2GloballyEnabled(detail)) {
+        setConflicts([]);
+        setConfirmDelete(null);
+        setError('');
+      }
+    };
     window.addEventListener(AMSG_OWNER_CONFLICT_EVENT, onConflict);
-    return () => { clearTimeout(timer); window.removeEventListener(AMSG_OWNER_CONFLICT_EVENT, onConflict); };
+    window.addEventListener(AMSG_GLOBAL_CONFIG_EVENT, onGlobalConfig);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener(AMSG_OWNER_CONFLICT_EVENT, onConflict);
+      window.removeEventListener(AMSG_GLOBAL_CONFIG_EVENT, onGlobalConfig);
+    };
   }, [isDataLoaded, check]);
 
   const settle = (id: string) => setConflicts(prev => prev.filter(item => item.id !== id));

@@ -11,6 +11,7 @@ import { readFriendFeed } from '../utils/friendFeed';
 import { collectFriendFeedMedia, exportActivityTextAsset, isActivityTextAsset } from '../utils/activityBackup';
 import { retireCloudCharacter } from '../utils/amsgCloudRetirement';
 import { AMSG_OWNER_CHECK_AFTER_IMPORT_LS_KEY } from '../utils/amsgOwnerReconcile';
+import { isAmsg2GloballyEnabled, isAmsg2WorkerActive } from '../utils/amsgGlobalGate';
 import {isBuiltinAppearance, readBuiltinAppearance} from '../utils/builtinAppearance';
 import { sameSullyIconSnapshot, SULLY_BIBI_UPGRADE_KEY, upgradeBuiltinSullyBibiIcon } from '../utils/builtinAppearanceUpgrade';
 import { browserHolidayCache, deviceTimeZone, getUserHolidayReminder } from '../utils/userHolidays';
@@ -3000,7 +3001,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     if (!managed && !options?.force && charMayHaveCloudState(target)) {
       let workerConfigured = false;
       try {
-        workerConfigured = Boolean((await ActiveMsgStore.getGlobalConfig()).workerUrl?.trim());
+        workerConfigured = isAmsg2WorkerActive(await ActiveMsgStore.getGlobalConfig());
       } catch { /* 配置读不到按没配处理，与 purgeCharCloudState 同口径 */ }
 
       if (workerConfigured) {
@@ -3047,6 +3048,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       // 「仍然删除」放行后仍旧尽力清一次：能清掉多少算多少，失败只提示、不再拦。
       void (async () => {
         try {
+          if (!isAmsg2WorkerActive(await ActiveMsgStore.getGlobalConfig().catch(() => null))) return;
           if (localTaskUuids.length > 0) {
             const { failed } = await ActiveMsgClient.cancelAllTasksForChar(id, localTaskUuids);
             if (failed.size > 0) {
@@ -4922,38 +4924,42 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           // 到点照样推送，新档角色的 fire_pack 和工具凭据则停格在导入前那一刻。
           // 整段 best-effort：这是恢复流程的收尾，云端够不着不该让已经写好的本地数据回滚。
           try {
-              const amsgWorkerUrl = (await ActiveMsgStore.getGlobalConfig()).workerUrl?.trim();
+              const amsgGlobal = await ActiveMsgStore.getGlobalConfig();
+              const amsgWorkerUrl = amsgGlobal.workerUrl?.trim();
               if (amsgWorkerUrl) {
-                  const knownCharIds = new Set(importedChars.map(c => c.id));
-                  const orphanCharIds = new Set<string>();
-                  const remoteTasks = await ActiveMsgClient.listAllTasks();
-                  for (const task of remoteTasks) {
-                      if (typeof task?.uuid !== 'string') continue;
-                      const owner = typeof task?.charId === 'string' ? task.charId : '';
-                      if (owner && knownCharIds.has(owner)) continue;
-                      if (owner) orphanCharIds.add(owner);
-                      // 「导入即放弃旧数据」：这条任务的主人在新档里已经不存在了（连主人是谁
-                      // 都没投影出来的同理），它正属于该一起放弃的部分，取消就是对的。
-                      await ActiveMsgClient.cancelTask(task.uuid).catch(() => {});
-                  }
-                  // 凭据清单是另一条线索：只配过 API、没排过任务的角色在任务表里根本不露面，
-                  // 但 credId 的形状是 `char:<charId>/<用途>`，角色身份就编在那个字符串里。
-                  try {
-                      for (const { credId } of await ActiveMsgClient.listLlmCredentials()) {
-                          const parsed = parseCharCredId(credId);
-                          if (parsed && !knownCharIds.has(parsed.charId)) orphanCharIds.add(parsed.charId);
+                  if (isAmsg2GloballyEnabled(amsgGlobal)) {
+                      const knownCharIds = new Set(importedChars.map(c => c.id));
+                      const orphanCharIds = new Set<string>();
+                      const remoteTasks = await ActiveMsgClient.listAllTasks();
+                      for (const task of remoteTasks) {
+                          if (typeof task?.uuid !== 'string') continue;
+                          const owner = typeof task?.charId === 'string' ? task.charId : '';
+                          if (owner && knownCharIds.has(owner)) continue;
+                          if (owner) orphanCharIds.add(owner);
+                          // 「导入即放弃旧数据」：这条任务的主人在新档里已经不存在了（连主人是谁
+                          // 都没投影出来的同理），它正属于该一起放弃的部分，取消就是对的。
+                          await ActiveMsgClient.cancelTask(task.uuid).catch(() => {});
                       }
-                  } catch (e) {
-                      console.warn('[amsg2] 导入后读云端凭据清单失败，孤儿角色可能漏清', e);
-                  }
-                  // 取消任务只解决「还会不会响」。旧档角色在云端那份上下文（完整角色卡 +
-                  // 最近 30 条对话原文，一个角色 32KB 起步）和那几行 API 凭据还留着，而且
-                  // 新档里已经没有这个角色，再没有任何一条路会去刷新它或清掉它——角色命名
-                  // 空间在 worker 侧没有 TTL，不在这里清就是永久留着。
-                  for (const charId of orphanCharIds) {
-                      await purgeCloudCharById(charId).catch(() => {});
+                      // 凭据清单是另一条线索：只配过 API、没排过任务的角色在任务表里根本不露面，
+                      // 但 credId 的形状是 `char:<charId>/<用途>`，角色身份就编在那个字符串里。
+                      try {
+                          for (const { credId } of await ActiveMsgClient.listLlmCredentials()) {
+                              const parsed = parseCharCredId(credId);
+                              if (parsed && !knownCharIds.has(parsed.charId)) orphanCharIds.add(parsed.charId);
+                          }
+                      } catch (e) {
+                          console.warn('[amsg2] 导入后读云端凭据清单失败，孤儿角色可能漏清', e);
+                      }
+                      // 取消任务只解决「还会不会响」。旧档角色在云端那份上下文（完整角色卡 +
+                      // 最近 30 条对话原文，一个角色 32KB 起步）和那几行 API 凭据还留着，而且
+                      // 新档里已经没有这个角色，再没有任何一条路会去刷新它或清掉它——角色命名
+                      // 空间在 worker 侧没有 TTL，不在这里清就是永久留着。
+                      for (const charId of orphanCharIds) {
+                          await purgeCloudCharById(charId).catch(() => {});
+                      }
                   }
                   // 留下来的角色逐个刷云端快照，同时把导入进来的实时感知凭据传上去。
+                  // 总开关暂停期间内部门禁保证零网络，仅在 localStorage 记下脏标，恢复总开关后自动补传。
                   // 走同一个入口：云端提示词是按凭据裁过的，两者必须同进同退。
                   // 有 AI 任务的角色才会真的上传（门在 markAmsgStateDirty 里）。
                   syncAmsgToolConfigAndPrompts(

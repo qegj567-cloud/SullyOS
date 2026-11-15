@@ -6,6 +6,13 @@ import { ackStoppedReplyReceipts, stoppedReplyStateEntries } from './amsgStopped
 import { loadCharacterContextMessages } from './chatContextRange';
 import { ReiClient, classifyClientStateWrite } from '@rei-standard/amsg-client';
 import { createCloudDataSession } from './amsgCloudData';
+import {
+  createAmsgGlobalDisabledError,
+  isAmsg2GloballyEnabled,
+  isAmsg2WorkerActive,
+  readMasterPausedCron,
+  writeMasterPausedCron,
+} from './amsgGlobalGate';
 import { resolveWorkerFetchBase } from './amsgRelay';
 import { captureCloudOwnerGenerations, rememberCloudOwnerGeneration, stampCloudWrite, captureCloudWriteCheck, invalidateCloudOwnerWrites } from './amsgCloudOwnerGeneration';
 import {
@@ -479,10 +486,13 @@ const ensureGlobalReady = async (): Promise<ActiveMsg2GlobalConfig> => {
   return { ...config, userId };
 };
 
-const ensureWorkerReady = async () => {
+const ensureWorkerReady = async (options?: { allowWhenDisabled?: boolean }) => {
   const config = await ensureGlobalReady();
   if (!config.workerUrl.trim()) {
     throw withFailKind(new Error('请先在系统设置里填写「主动消息 2.0」的 Worker 地址。'), '地址没填');
+  }
+  if (!options?.allowWhenDisabled && !isAmsg2GloballyEnabled(config)) {
+    throw createAmsgGlobalDisabledError();
   }
   return config;
 };
@@ -639,6 +649,7 @@ export const isLlmCredentialsReady = async (): Promise<boolean> => {
 export const requireAnthropicWorker = async (urls: string[]): Promise<void> => {
   if (!urls.some(isAnthropicEndpoint)) return;
   let config = await ActiveMsgStore.getGlobalConfig();
+  if (!isAmsg2GloballyEnabled(config)) throw createAmsgGlobalDisabledError();
   if (config.anthropicMessagesSupported === true && config.anthropicMessagesWorkerUrl === config.workerUrl) return;
   // An automatic deployment can finish after the startup probe. Recheck the
   // current Worker instead of making users reconnect to clear a stale negative.
@@ -2378,6 +2389,7 @@ export const ActiveMsgClient = {
    */
   async reconcilePushSubscription(): Promise<'registered' | 'skipped' | 'failed'> {
     const globalConfig = await ensureGlobalReady();
+    if (!isAmsg2WorkerActive(globalConfig)) return 'skipped';
     if (globalConfig.pushMode === 'third-party') {
       if (!validateThirdPartyPushConfig(globalConfig.thirdPartyPush).ok) return 'skipped';
       try {
@@ -2430,7 +2442,9 @@ export const ActiveMsgClient = {
   // （Dashboard 粘贴部署的用户不用碰 SQL），再拿一次 user key 验证地址与鉴权都通，
   // 最后把推送订阅补登记上去（换 worker 后云端那份是空的，见 reconcilePushSubscription）。
   async connect() {
-    const config = await ensureWorkerReady();
+    const config = await ensureWorkerReady({ allowWhenDisabled: true });
+    const wasDisabled = !isAmsg2GloballyEnabled(config);
+    const hadMasterPausedCron = readMasterPausedCron();
 
     // 先问 worker 配齐了没：缺 D1 绑定或 master key 的话，下面的 init-tenant 必然失败，
     // 而那一步只能按 HTTP 状态猜个大概（三种原因共用「建表失败」）。自检能直接说出
@@ -2468,13 +2482,31 @@ export const ActiveMsgClient = {
       anthropicMessagesWorkerUrl: _staleAnthropicWorkerUrl,
       ...handshakeConfig
     } = config;
-    await ActiveMsgStore.saveGlobalConfig({ ...handshakeConfig, initializedAt: Date.now() });
+    await ActiveMsgStore.saveGlobalConfig({ ...handshakeConfig, enabled: true, initializedAt: Date.now() });
+    if (wasDisabled) {
+      void this.probeInstantChatSupport().catch(() => {});
+    }
+    if (hadMasterPausedCron) {
+      try {
+        const cronRes = await this.setCronTriggerEnabled(true, { timeoutMs: 6_000 });
+        if (cronRes.ok || cronRes.code === 'CF_TOKEN_MISSING' || cronRes.code === 'NOT_FOUND') {
+          writeMasterPausedCron(false);
+        }
+      } catch {
+        // 恢复定时触发失败不拦住连接本身，保留标记供后续开关或面板继续补恢复
+      }
+    }
     // 「重新连接并验证」是用户显式的一次对表，按特性位存的能力位也当场探准，别等下次握手。
     // 排在保存之后：上面那句写的是握手前的配置快照，探测结论放它前面会被原样盖回去。
     await this.probeWorkerFeatures();
     await this.reconcilePushSubscription();
     const nativeToken = config.pushMode === 'third-party' ? '' : readNativePushToken();
     if (nativeToken) await this.registerNativePushToken(nativeToken);
+    if (wasDisabled || hadMasterPausedCron) {
+      void import('./amsgGlobalSwitch')
+        .then((mod) => mod.flushAmsg2AfterReenable())
+        .catch(() => {});
+    }
     // warnings 是「连上了，但有一块功能是哑的」——比如 VAPID 没配齐，任务能建、到点
     // 却一条都推不出去。连接本身算成功，交给调用方提示，别拦住流程。
     return { ok: true, userId: config.userId, warnings: report?.warnings ?? [] };
@@ -2557,10 +2589,17 @@ export const ActiveMsgClient = {
    * 成红色的「远端取消失败，可重试」，其实没有任何东西需要重试。
    * 其余错误（鉴权、D1 挂了、网络）照常抛，别一起吞掉。
    */
-  async cancelTask(taskUuid: string): Promise<{ uuid: string; alreadyGone: boolean }> {
-    const config = await ensureWorkerReady();
+  async cancelTask(
+    taskUuid: string,
+    options?: { allowWhenDisabled?: boolean; timeoutMs?: number },
+  ): Promise<{ uuid: string; alreadyGone: boolean }> {
+    const config = await ensureWorkerReady({ allowWhenDisabled: options?.allowWhenDisabled });
+    const signal = typeof options?.timeoutMs === 'number' && options.timeoutMs > 0 && typeof AbortSignal?.timeout === 'function'
+      ? AbortSignal.timeout(options.timeoutMs)
+      : undefined;
     const response = await fetchWithAuth(`cancel-message?id=${encodeURIComponent(taskUuid)}`, config, {
       method: 'DELETE',
+      ...(signal ? { signal } : {}),
     }, '取消任务');
 
     if (!response?.success) {
@@ -3847,10 +3886,20 @@ export const ActiveMsgClient = {
    * 回 null 表示问不到：旧版 Worker 没有这个端点（404）、没填地址、或者这一次没连上。
    * 三种都按「不支持」处理——设置页不显示那个按钮，也不报错。
    */
-  async getCronTriggerState(): Promise<AmsgCronTriggerState | null> {
+  async getCronTriggerState(
+    options?: { allowWhenDisabled?: boolean; timeoutMs?: number },
+  ): Promise<AmsgCronTriggerState | null> {
     try {
-      const config = await ensureWorkerReady();
-      const { status, body } = await fetchWithAuthRaw('cron-trigger', config, { method: 'GET' }, '后台任务状态');
+      const config = await ensureWorkerReady({ allowWhenDisabled: options?.allowWhenDisabled });
+      const signal = typeof options?.timeoutMs === 'number' && options.timeoutMs > 0 && typeof AbortSignal?.timeout === 'function'
+        ? AbortSignal.timeout(options.timeoutMs)
+        : undefined;
+      const { status, body } = await fetchWithAuthRaw(
+        'cron-trigger',
+        config,
+        { method: 'GET', ...(signal ? { signal } : {}) },
+        '后台任务状态',
+      );
       // 旧 worker 没有这个端点：可能回 404，也可能被上游当成未知路由回一段自己的 JSON。
       if (status === 404 || body?.error?.code === 'NOT_FOUND') return null;
       if (status === 200 && body?.success === true) {
@@ -3881,17 +3930,29 @@ export const ActiveMsgClient = {
    * 成功和失败都带一句能直接显示的话；code 是 worker 报的代号，缺 CF_API_TOKEN 时
    * 面板据此露出补钥匙那一块。网络层面的失败照常抛（跟 selfUpdateWorker 一样），调用方兜。
    */
-  async setCronTriggerEnabled(enabled: boolean): Promise<{ ok: boolean; message: string; code?: string }> {
-    const config = await ensureWorkerReady();
+  async setCronTriggerEnabled(
+    enabled: boolean,
+    options?: { allowWhenDisabled?: boolean; timeoutMs?: number },
+  ): Promise<{ ok: boolean; message: string; code?: string }> {
+    const config = await ensureWorkerReady({ allowWhenDisabled: options?.allowWhenDisabled });
+    const signal = typeof options?.timeoutMs === 'number' && options.timeoutMs > 0 && typeof AbortSignal?.timeout === 'function'
+      ? AbortSignal.timeout(options.timeoutMs)
+      : undefined;
     const { status, body } = await fetchWithAuthRaw(
       'cron-trigger',
       config,
-      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }) },
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+        ...(signal ? { signal } : {}),
+      },
       enabled ? '恢复后台任务' : '暂停后台任务',
     );
     if (status === 404 || body?.error?.code === 'NOT_FOUND') {
       return {
         ok: false,
+        code: 'NOT_FOUND',
         message: '这台 Worker 还是旧版本，没有暂停后台任务的能力。先点「更新 Worker」，之后就能在这儿点了。',
       };
     }
@@ -4115,6 +4176,9 @@ export const ActiveMsgClient = {
 
     const uuids = getPendingTasks(char.activeMsg2Config, Date.now()).map((t) => t.taskUuid);
     if (uuids.length === 0) return { status: 'no-tasks', updated: 0, failed: 0 };
+    if (!isAmsg2WorkerActive(await ensureGlobalReady())) {
+      return { status: 'no-tasks', updated: 0, failed: 0 };
+    }
 
     const { updated, failed } = await this.updatePendingTasksRemote(uuids, updates);
     return { status: failed.length ? 'partial' : 'ok', updated, failed: failed.length };
@@ -4288,5 +4352,11 @@ export const ActiveMsgClient = {
       toolConfigRestored = false;
     }
     return { deleted, toolConfigRestored };
+  },
+
+  /** 总开关切换时清空内存中的握手与后台能力缓存，避免复用暂停前的会话状态。 */
+  resetSessionCache(): void {
+    invalidateClientCache();
+    forgetBackgroundJobProbe();
   },
 };
