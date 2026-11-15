@@ -2,6 +2,7 @@ import { hashBlob, dataUrlToBlob, blobToDataUrl } from '@rei-standard/blob-store
 import { DB, openSpaceDB } from './db';
 import { createBackupArchive } from './backupArchive';
 import { collectBlobRefs } from './backupBlobs';
+import { createDamagedPictureGuard } from './backupFormat';
 import { listUserSpaces, SESSION_SPACE_ID, readSpaceLocal, writeSpaceLocal, rawSpaceStorage, isSharedSpaceKey, saveUserSpaces, sharedSettingForBackup, createSpaceStorage, prepareUserSpaceRestore, assertUserSpaceAvailable, type UserSpace } from './userSpaces';
 import { exportAmsg2GlobalConfig, importAmsg2GlobalConfig } from './activeMsgStore';
 import { openCollaborationSpace, deleteCollaborationSpace } from '../features/collaboration/store';
@@ -149,12 +150,23 @@ async function exportUserSpacesUnderLease(mode: Mode, scope: 'current' | 'all', 
     return result;
 }
 
+export type ImportUserSpacesOptions = {
+    asNewUsers?: boolean;
+    /** Called once every read-only check has passed, right before the first database write. */
+    onBeforeWrite?: () => void;
+    /** asNewUsers only: the failed attempt's new users were removed completely, so existing data is as before. */
+    onRolledBack?: () => void;
+    /** A picture whose bytes are corrupt inside the archive was skipped like a missing one; the rest still restores. */
+    onDamagedAsset?: (id: string) => void;
+};
+
 /** Preflight every file and store before any live writes. Each space commits atomically. */
-export async function importUserSpaces(zip: any, allowBackendConnection = false, options: { asNewUsers?: boolean } = {}): Promise<UserSpace[]> {
+export async function importUserSpaces(zip: any, allowBackendConnection = false, options: ImportUserSpacesOptions = {}): Promise<UserSpace[]> {
     return withSharedAssetLock('exclusive', async () => {
         const created: string[] = [];
-        try { return await importUserSpacesUnderLease(zip, allowBackendConnection, options.asNewUsers === true, created); }
+        try { return await importUserSpacesUnderLease(zip, allowBackendConnection, options.asNewUsers === true, created, options.onBeforeWrite, options.onDamagedAsset); }
         catch (error) {
+            let cleanedUp = true;
             // Only IDs allocated by this attempt can be removed. Existing spaces are never rollback targets.
             if (created.length) {
                 for (const id of created) {
@@ -165,19 +177,20 @@ export async function importUserSpaces(zip: any, allowBackendConnection = false,
                             const view = createSpaceStorage(rawSpaceStorage, id);
                             for (const key of Object.keys(readSpaceLocal(id))) view.removeItem(key);
                         }
-                    } catch (cleanupError) { console.warn('迁入临时用户清理未完成', cleanupError); }
+                    } catch (cleanupError) { cleanedUp = false; console.warn('迁入临时用户清理未完成', cleanupError); }
                 }
                 const catalog = listUserSpaces();
                 if (catalog.some(space => created.includes(space.id))) {
                     saveUserSpaces(catalog.filter(space => !created.includes(space.id)));
-                    try { await persistSpaceCatalog(); } catch { /* Preserve the original failure. */ }
+                    try { await persistSpaceCatalog(); } catch { cleanedUp = false; /* Preserve the original failure. */ }
                 }
             }
+            if (options.asNewUsers && cleanedUp) options.onRolledBack?.();
             throw error;
         }
     });
 }
-async function importUserSpacesUnderLease(zip: any, allowBackendConnection: boolean, asNewUsers: boolean, created: string[]): Promise<UserSpace[]> {
+async function importUserSpacesUnderLease(zip: any, allowBackendConnection: boolean, asNewUsers: boolean, created: string[], onBeforeWrite?: () => void, onDamagedAsset?: (id: string) => void): Promise<UserSpace[]> {
     const manifest = JSON.parse(await zip.file('user-spaces.json').async('string')) as SpaceArchive;
     if (manifest.format !== 'sully-user-spaces' || manifest.version !== 1 || !['full', 'text_only', 'media_only'].includes(manifest.mode)
         || !Array.isArray(manifest.spaces) || !manifest.spaces.length || !Array.isArray(manifest.blobs)) throw new Error('用户空间备份格式无效');
@@ -189,6 +202,13 @@ async function importUserSpacesUnderLease(zip: any, allowBackendConnection: bool
         if (match) occupiedSpaceIds.add(match[1]);
     }
     const unique = new Set<string>();
+    // 图片在包里坏了（CRC 不符、解压失败）按缺图跳过并上报；读文件失败、内存不足不是包坏了，照常中止。
+    const skipDamaged = createDamagedPictureGuard(zip);
+    const readPicture = async (path: string, id: string) => {
+        const bytes = await skipDamaged<any>(() => zip.file(path).async('uint8array'));
+        if (bytes === null) onDamagedAsset?.(id);
+        return bytes;
+    };
     const unpack = async (v: any): Promise<any> => {
         if (typeof v === 'string' && /^\s*[\[{]/.test(v)) {
             try {
@@ -199,7 +219,9 @@ async function importUserSpacesUnderLease(zip: any, allowBackendConnection: bool
         }
         if (v?.__spaceDataURL) {
             if (!/^shared\/[a-zA-Z0-9_-]+\.bin$/.test(v.__spaceDataURL) || !zip.file(v.__spaceDataURL) || typeof v.header !== 'string' || !/^data:[^,]*;base64,$/.test(v.header)) throw new Error('备份内嵌素材无效');
-            const url = await blobToDataUrl(new Blob([await zip.file(v.__spaceDataURL).async('uint8array')], { type: v.type || '' }));
+            const bytes = await readPicture(v.__spaceDataURL, v.__spaceDataURL);
+            if (!bytes) return ''; // 与文字备份里被剥掉的图片同形
+            const url = await blobToDataUrl(new Blob([bytes], { type: v.type || '' }));
             return v.header + url.slice(url.indexOf(',') + 1);
         }
         if (v?.__spaceDate) { const date = new Date(v.__spaceDate); if (!Number.isFinite(date.getTime())) throw new Error('备份日期无效'); return date; }
@@ -263,7 +285,8 @@ async function importUserSpacesUnderLease(zip: any, allowBackendConnection: bool
     const blobs: Array<{ id: string; blob: Blob }> = [];
     for (const entry of manifest.blobs) {
         if (!/^[a-zA-Z0-9_:.-]+$/.test(entry.id) || !/^shared\/[a-zA-Z0-9_-]+\.bin$/.test(entry.path) || !zip.file(entry.path)) throw new Error('共享素材索引无效');
-        const bytes = await zip.file(entry.path).async('uint8array');
+        const bytes = await readPicture(entry.path, entry.id);
+        if (!bytes) continue;
         if (bytes.byteLength !== entry.size) throw new Error('共享素材文件不完整');
         const blob = new Blob([bytes], { type: entry.type });
         const id = blobIds.get(entry.id) || entry.id;
@@ -287,6 +310,7 @@ async function importUserSpacesUnderLease(zip: any, allowBackendConnection: bool
             }
         }
     }
+    onBeforeWrite?.();
     for (const entry of blobs) if (!await DB.getBlobAsset(entry.id)) await DB.putBlobAsset(entry.id, entry.blob);
     for (const { space, db, tables, collaboration, collabTables } of prepared) {
         if (manifest.mode !== 'media_only') prepareUserSpaceRestore(space.id, true);

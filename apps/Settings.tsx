@@ -64,7 +64,7 @@ import StorageUsagePanel from '../components/settings/StorageUsagePanel';
 import WebCacheControl from '../components/settings/WebCacheControl';
 import McpConnectionConsole from '../components/settings/McpConnectionConsole';
 import { DB } from '../utils/db';
-import { getBackupReminderState, setBackupReminderIntervalDays, daysSinceLastBackup, BACKUP_REMINDER_MIN_DAYS, BACKUP_REMINDER_MAX_DAYS } from '../utils/backupReminder';
+import { getBackupReminderState, markBackupDone, setBackupReminderIntervalDays, daysSinceLastBackup, BACKUP_REMINDER_MIN_DAYS, BACKUP_REMINDER_MAX_DAYS } from '../utils/backupReminder';
 import {
     createAvatarModelBackup,
     getAvatarModelBackupInventory,
@@ -873,6 +873,13 @@ const Settings: React.FC = () => {
   // 用 ref 跟住当前的 object URL，关弹窗 / 重新导出 / 卸载时都能 revoke 到最新那个，
   // 不受 state 闭包过期影响。
   const downloadUrlRef = useRef<string>('');
+  // 这次导出还没记过备份时间：分享成功和点手动下载链接都从这里取，同一次导出只记一次。
+  const backupRecordPendingRef = useRef(false);
+  const recordBackupOnce = useCallback(() => {
+      if (!backupRecordPendingRef.current) return;
+      backupRecordPendingRef.current = false;
+      markBackupDone();
+  }, []);
   const revokeDownloadUrl = useCallback(() => {
       if (downloadUrlRef.current) {
           URL.revokeObjectURL(downloadUrlRef.current);
@@ -1426,6 +1433,7 @@ const Settings: React.FC = () => {
           // Trigger export (Context handles loading state UI)
           setExportMissingAssets([]);
           const blob = await exportSystem(mode, { userScope: exportUserScope, onMissingAssets: setExportMissingAssets });
+          backupRecordPendingRef.current = true;
           
           const fileName = `Sully_Backup_${mode}_${new Date().toISOString().slice(0, 10)}.zip`;
           if (!Capacitor.isNativePlatform()) {
@@ -1444,6 +1452,8 @@ const Settings: React.FC = () => {
               nativeChunked: true,
           });
           if (result === 'cancelled') return;
+          // 分享面板和浏览器下载都无从得知用户是否真的存下了文件，交出文件就算备份过。
+          recordBackupOnce();
       } catch (e: any) {
           // 只报导出档位，错误文案是动态串不能进属性
           trackEvent('导出备份失败', { mode });
@@ -1489,6 +1499,7 @@ const Settings: React.FC = () => {
 
   const deliverStandaloneBackup = async (blob: Blob, fileName: string, shareTitle: string) => {
       setExportMissingAssets([]);
+      backupRecordPendingRef.current = false; // 模型备份不算系统备份
       if (!Capacitor.isNativePlatform()) {
           if (downloadUrlRef.current) URL.revokeObjectURL(downloadUrlRef.current);
           const url = URL.createObjectURL(blob);
@@ -3960,7 +3971,7 @@ const Settings: React.FC = () => {
               <p className="text-sm font-bold text-slate-700">备份文件已生成！</p>
               <div className="text-left"><BackupMissingAssetsNotice items={exportMissingAssets} /></div>
               <p className="text-xs text-slate-500">如果浏览器没有自动下载，请点击下方链接。</p>
-              {downloadUrl && <a href={downloadUrl} download={downloadFileName} className="text-primary text-sm underline block py-2">点击手动下载 .zip</a>}
+              {downloadUrl && <a href={downloadUrl} download={downloadFileName} onClick={recordBackupOnce} className="text-primary text-sm underline block py-2">点击手动下载 .zip</a>}
           </div>
       </Modal>
 

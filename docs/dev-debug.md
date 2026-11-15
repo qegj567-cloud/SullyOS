@@ -139,6 +139,18 @@ sullyos.devDebug.log.v1.<branch>        ← 分类捕获日志（各类混存，
 | 捕获类 `lifecycle` | 捕获 | 抓页面前后台/焦点/网络状态变化：`visibilitychange`、`focus`/`blur`、`pagehide`/`pageshow`（含 bfcache `persisted` 标记）、`online`/`offline`、`freeze`/`resume`（Chromium 系）。跟 api 类对时间线用——API 报错前后紧挨着 `visibilitychange → hidden`，基本就是切后台/锁屏把 fetch 冻死的 | 同上，取消勾选不清日志 |
 | `exposeLogDetail`<br>（记录完整内容） | 抓取 | 关（默认）：`messages` 聊天历史数组整组换成一句 `…共 N 项（已折叠）`；开：整段存 | 影响**抓取 / 存储**；要完整须复现前打开，已抓的折叠版不可还原 |
 
+### 一次性工具：OPFS 探针
+
+面板里的「OPFS 探针」按钮在真机上核对 OPFS 的建文件、写入、读回校验、配额和删除，结果是一段可复制的 JSON，带 UA、协议和页面是否被 Service Worker 接管。实现在 `utils/opfsProbe.ts`，用途见 [`backup-pipeline.md`](./backup-pipeline.md) 第零期。
+
+要顺便核对 WebKit 319985（落盘的文件上传时发出 0 字节），有两种上传方式：
+
+- **「探针 + 传到已配置的 WebDAV」**：配了 WebDAV 云备份时才出现。走云备份自己的上传通道，把 OPFS 文件按原文件、整段 `slice`、部分 `slice` 三种请求体各传一次，传完删除。上传自带远端大小核对，哪一种发出去是 0 字节，结果里会直接写明云端收到的字节数。
+- **填上传地址**：往这个地址 PUT 同样三种请求体，再用 HEAD 读远端大小。地址要允许匿名写入和跨域。
+
+不用 Service Worker 回显：请求体被 SW 接走之后，就不再经过出问题的那条上传路径，测出来全是正常值。
+
+
 捕获日志：各类**混存在一个数组**里、每条带 `category`，全局最多留 **100 条 / 1 MB**（先到先淘汰）。因为长文本在写入时就折叠了（见第九节），实际存的是瘦身版、很省空间，1 MB 基本撑不爆、轻松存满 100 条；导出（复制 / 下载）默认导全部、自动带上当前分支 + commit，并对密钥字段脱敏。
 
 ---

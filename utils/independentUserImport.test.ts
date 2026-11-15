@@ -5,6 +5,8 @@ import { commitSpaceRows, readSpaceStore } from './userSpaceData';
 import { listUserSpaces, saveUserSpaces, readSpaceLocal } from './userSpaces';
 import { importUserSpaces } from './userSpaceBackup';
 import { importLegacyAsIndependentUser } from './legacyIndependentUserImport';
+import { writeV2Backup, openLegacyBackup, pendingBackupField } from './backupFormat';
+import { openBackupZip } from './backupZipReader';
 import { remapIndependentUser } from './independentUserImport';
 import { openCollaborationSpace } from '../features/collaboration/store';
 import * as activeMsgStore from './activeMsgStore';
@@ -143,6 +145,89 @@ it('migrates legacy image ZIPs, memory vectors, activity state and embedded appe
     expect(await DB.getCharacter('same')).toMatchObject({ name: '原角色' });
 });
 
+it('migrates a sharded legacy ZIP opened by the on-demand reader, loading every table before renumbering', async () => {
+    const source = new JSZip();
+    await writeV2Backup(source as any, { version: 3, timestamp: 1,
+        characters: [{ id: 'same', name: '分片角色 🐱' }], userProfile: { name: '旧账号' },
+        messages: Array.from({ length: 5 }, (_, i) => ({ id: i + 1, charId: 'same', content: `第 ${i} 条 👋` })),
+        memoryNodes: [{ id: 'memory', charId: 'same', content: '过去的经历' }],
+        collaborationSessions: [{ id: 'session', charId: 'same' }],
+    }, { limits: { maxLen: 1 << 30, maxItems: 2, hardMaxLen: 1 << 30 } });
+    const zip = await openBackupZip(new Blob([await source.generateAsync({ type: 'arraybuffer' })]));
+    const data = await openLegacyBackup(zip);
+    expect(pendingBackupField(data.messages)?.field).toBe('messages');
+
+    const [space] = await importLegacyAsIndependentUser(data as any, zip);
+    await zip.close();
+    const db = await openSpaceDB(space.id), [char] = await readSpaceStore(db, 'characters');
+    expect(char).toMatchObject({ name: '分片角色 🐱' }); expect(char.id).not.toBe('same');
+    const messages = await readSpaceStore(db, 'messages');
+    expect(messages.map(row => row.content)).toEqual([0, 1, 2, 3, 4].map(i => `第 ${i} 条 👋`));
+    expect(messages.every(row => row.charId === char.id)).toBe(true);
+    expect((await readSpaceStore(db, 'memory_nodes'))[0].charId).toBe(char.id);
+    expect((await readSpaceStore(await openCollaborationSpace(space.id), 'sessions'))[0].charId).toBe(char.id);
+    expect(await DB.getCharacter('same')).toMatchObject({ name: '原角色' });
+});
+
+it('migrates a legacy ZIP whose pictures are corrupt: they are reported and skipped, the history still arrives', async () => {
+    const source = new JSZip();
+    source.file('assets/avatar.png', 'BROKEN-ASSET-IMAGE-0123456789');
+    source.file('blobs/index.json', JSON.stringify([{ id: 'img_legacy', type: 'image/png', size: 28 }, { id: 'img_ok', type: 'image/png', size: 3 }]));
+    source.file('blobs/img_legacy', 'BROKEN-BLOB-IMAGE-0123456789');
+    source.file('blobs/img_ok', new Uint8Array([4, 5, 6]));
+    source.file('data.json', JSON.stringify({ version: 3, timestamp: 1,
+        characters: [{ id: 'same', name: '角色', avatar: 'assets/avatar.png', chatBackground: 'blobref:img_legacy', dateBackground: 'blobref:img_ok' }],
+        messages: [{ id: 4, charId: 'same', content: '正文还在' }], userProfile: { name: '旧账号' } }));
+    const bytes = await source.generateAsync({ type: 'uint8array' });
+    for (const needle of ['BROKEN-ASSET-IMAGE', 'BROKEN-BLOB-IMAGE']) bytes[Buffer.from(bytes).indexOf(needle)] ^= 0x01;
+    const zip = await openBackupZip(new Blob([bytes as BlobPart]));
+    const data = await openLegacyBackup(zip);
+
+    const thrown = new DOMException('file is gone', 'NotReadableError');
+    const flaky = { file: (name: string) => (name === 'blobs/img_ok' ? { async: () => Promise.reject(thrown) } : zip.file(name)) };
+    await expect(importLegacyAsIndependentUser(structuredClone(data) as any, flaky)).rejects.toBe(thrown);
+    expect(listUserSpaces()).toHaveLength(1);
+
+    const damaged: string[] = [];
+    const [space] = await importLegacyAsIndependentUser(data as any, zip, { onDamagedAsset: id => { damaged.push(id); } });
+    await zip.close();
+    expect(damaged.sort()).toEqual(['assets/avatar.png', 'img_legacy']);
+    const db = await openSpaceDB(space.id), [char] = await readSpaceStore(db, 'characters');
+    expect(char.avatar).toBe('assets/avatar.png');
+    expect(await DB.getBlobAsset(char.chatBackground.slice(8))).toBeNull();
+    expect(await (await DB.getBlobAsset(char.dateBackground.slice(8)))!.arrayBuffer()).toEqual(new Uint8Array([4, 5, 6]).buffer);
+    expect((await readSpaceStore(db, 'messages'))[0].content).toBe('正文还在');
+});
+
+it('aborts a legacy migration when the backup file itself stops being readable, instead of reporting every picture as damaged', async () => {
+    const source = new JSZip();
+    source.file('assets/avatar.png', new Uint8Array([1, 2, 3]));
+    source.file('data.json', JSON.stringify({ version: 3, timestamp: 1,
+        characters: [{ id: 'same', name: '角色', avatar: 'assets/avatar.png' }], messages: [{ id: 4, charId: 'same', content: '正文' }] }));
+    // 文件被系统收回后不报错、只给出全零数据：读到图片的那一刻起每次读都是零。
+    class VanishingBlob extends Blob {
+        gone = false;
+        slice(start?: number, end?: number, contentType?: string): Blob {
+            const part = super.slice(start, end, contentType);
+            return this.gone ? new Blob([new Uint8Array(part.size)]) : part;
+        }
+    }
+    const blob = new VanishingBlob([await source.generateAsync({ type: 'arraybuffer' })]);
+    const reader = await openBackupZip(blob);
+    const data = await openLegacyBackup(reader);
+    const zip = { verify: () => reader.verify(), file: (name: string) => {
+        const entry = reader.file(name);
+        return entry && name === 'assets/avatar.png' ? { ...entry, async: (type: any) => { blob.gone = true; return entry.async(type); } } : entry;
+    } };
+    const onDamagedAsset = vi.fn();
+    const error = await importLegacyAsIndependentUser(data as any, zip, { onDamagedAsset }).catch(e => e);
+    expect(error).toBeInstanceOf(DOMException);
+    expect(error.name).toBe('NotReadableError');
+    expect(error.message).toContain('备份文件已经读不出来了');
+    expect(onDamagedAsset).not.toHaveBeenCalled();
+    expect(listUserSpaces()).toHaveLength(1);
+});
+
 it('migrates standalone legacy JSON and rejects a media patch without creating a user', async () => {
     await expect(importLegacyAsIndependentUser({ characters: [], collaborationBackupMode: 'media_only' } as any, null)).rejects.toThrow('整合或文字备份');
     expect(listUserSpaces()).toHaveLength(1);
@@ -183,4 +268,36 @@ it('removes only the newly allocated user if writing fails after collaboration d
     expect(listUserSpaces()).toEqual([{ id: 'default', name: '原用户' }]);
     expect((await indexedDB.databases()).filter(db => !databases.has(db.name))).toEqual([]);
     expect(await DB.getCharacter('same')).toMatchObject({ name: '原角色' });
+});
+
+it('migration starts the pre-write hook only after every check, and reports a clean rollback after a write failure', async () => {
+    const onBeforeWrite = vi.fn();
+    const onRolledBack = vi.fn();
+    await expect(importLegacyAsIndependentUser({ characters: [], collaborationBackupMode: 'media_only' } as any, null, { onBeforeWrite, onRolledBack })).rejects.toThrow('整合或文字备份');
+    // The size mismatch is caught in preflight: the hook never runs, and the users allocated for it are removed again.
+    await expect(importUserSpaces(await archive('full', true), false, { asNewUsers: true, onBeforeWrite, onRolledBack })).rejects.toThrow('不完整');
+    expect(onBeforeWrite).not.toHaveBeenCalled();
+    onRolledBack.mockClear();
+
+    const databases = new Set((await indexedDB.databases()).map(db => db.name));
+    const original = spaceData.commitSpaceRows;
+    vi.spyOn(spaceData, 'commitSpaceRows').mockImplementation(async (db, tables, replace) => {
+        if (db.name.startsWith('AetherOS_Data__u_')) throw new DOMException('满了', 'QuotaExceededError');
+        return original(db, tables, replace);
+    });
+    await expect(importUserSpaces(await archive(), false, { asNewUsers: true, onBeforeWrite, onRolledBack })).rejects.toThrow('满了');
+    await expect(importLegacyAsIndependentUser({ characters: [{ id: 'same', name: 'JSON 角色' }] } as any, null, { onBeforeWrite, onRolledBack })).rejects.toThrow('满了');
+    expect(onBeforeWrite).toHaveBeenCalledTimes(2);
+    expect(onRolledBack).toHaveBeenCalledTimes(2);
+    expect(listUserSpaces()).toEqual([{ id: 'default', name: '原用户' }]);
+    expect((await indexedDB.databases()).filter(db => !databases.has(db.name))).toEqual([]);
+});
+
+it('does not report a rollback when removing the failed new user did not finish', async () => {
+    vi.spyOn(spaceData, 'commitSpaceRows').mockRejectedValue(new DOMException('满了', 'QuotaExceededError'));
+    vi.spyOn(DB, 'deleteDB').mockRejectedValue(new Error('blocked'));
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const onRolledBack = vi.fn();
+    await expect(importLegacyAsIndependentUser({ characters: [{ id: 'same', name: 'JSON 角色' }] } as any, null, { onRolledBack })).rejects.toThrow('满了');
+    expect(onRolledBack).not.toHaveBeenCalled();
 });

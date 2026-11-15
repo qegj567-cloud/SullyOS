@@ -1,6 +1,6 @@
 import HomeCompanionDebug from './HomeCompanionDebug';
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ArrowsClockwise, Broom, Check, ClipboardText, DownloadSimple, Power, Trash, Wrench, X } from '@phosphor-icons/react';
+import { ArrowsClockwise, Broom, Check, ClipboardText, DownloadSimple, HardDrives, Power, Trash, Wrench, X } from '@phosphor-icons/react';
 import {
     clearDevDebugLog,
     closeDevDebug,
@@ -18,6 +18,7 @@ import {
 import { BUILD_LABEL } from '../utils/buildInfo';
 import { trackEvent } from '../utils/analytics';
 import { runBlobGc } from '../utils/blobGc';
+import { runOpfsProbe, urlProbeUploader, webdavProbeUploader } from '../utils/opfsProbe';
 import type { DevDebugCaptureCategory, DevDebugFlags, DevDebugFloatingPosition } from '../utils/devDebug';
 import { shareOrDownloadFile } from '../utils/shareExport';
 
@@ -161,6 +162,10 @@ const DevDebugPanel: React.FC = () => {
         | { kind: 'error'; message: string }
         | null
     >(null);
+    // OPFS 探针同样是一次性动作；上传地址留空就不发任何请求。
+    const [opfsProbeUrl, setOpfsProbeUrl] = useState('');
+    const [opfsProbeRunning, setOpfsProbeRunning] = useState(false);
+    const [opfsProbeText, setOpfsProbeText] = useState('');
     // 位置不持久化：每次出现都回默认角，拖动只在本次会话内有效（prod 刷新=失效=类似关闭，没必要存）。
     // 浮球和展开的面板共用这一个左上角坐标，各自渲染时再按自己的尺寸约束回屏幕内。
     const [floatingPosition, setFloatingPosition] = useState<DevDebugFloatingPosition>(getDefaultFloatingPosition);
@@ -287,6 +292,29 @@ const DevDebugPanel: React.FC = () => {
             setBlobGcResult({ kind: 'error', message: error instanceof Error ? error.message : String(error) });
         } finally {
             setBlobGcRunning(false);
+        }
+    };
+    // 面板挂在 OSProvider 外面，云备份配置直接读它落盘的那份。
+    const readWebdavBackupConfig = () => {
+        try {
+            const config = JSON.parse(localStorage.getItem('os_cloud_backup_config') || 'null');
+            return config?.provider !== 'github' && config?.webdavUrl && config?.username ? config : null;
+        } catch {
+            return null;
+        }
+    };
+    const handleOpfsProbe = async (viaWebdav = false) => {
+        if (opfsProbeRunning) return;
+        setOpfsProbeRunning(true);
+        setOpfsProbeText('');
+        try {
+            const webdavConfig = viaWebdav ? readWebdavBackupConfig() : null;
+            const uploader = webdavConfig
+                ? webdavProbeUploader(webdavConfig)
+                : opfsProbeUrl.trim() ? urlProbeUploader(opfsProbeUrl.trim()) : undefined;
+            setOpfsProbeText(JSON.stringify(await runOpfsProbe(uploader), null, 2));
+        } finally {
+            setOpfsProbeRunning(false);
         }
     };
     const copyLog = async () => {
@@ -580,6 +608,49 @@ const DevDebugPanel: React.FC = () => {
                                         </>
                                     )}
                                 </div>
+                            )}
+                        </div>
+                        <div className="h-px bg-white/10" />
+
+                        {/* OPFS 探针：真机核对 OPFS 读写和 WebKit 319985（落盘文件上传发出 0 字节）。 */}
+                        <div className="py-3">
+                            <input
+                                type="url"
+                                value={opfsProbeUrl}
+                                onChange={(event) => setOpfsProbeUrl(event.target.value)}
+                                placeholder="上传测试地址（留空不上传）"
+                                className="mb-2 h-8 w-full rounded-full border border-white/15 bg-white/5 px-3 text-[11px] text-white placeholder:text-white/30 select-text"
+                            />
+                            <div className="flex flex-wrap gap-2">
+                                <LogActionButton
+                                    onClick={() => { void handleOpfsProbe(); }}
+                                    disabled={opfsProbeRunning}
+                                    icon={<HardDrives size={13} weight="bold" />}
+                                    label={opfsProbeRunning ? '探测中…' : 'OPFS 探针'}
+                                />
+                                {readWebdavBackupConfig() && (
+                                    <LogActionButton
+                                        onClick={() => { void handleOpfsProbe(true); }}
+                                        disabled={opfsProbeRunning}
+                                        icon={<HardDrives size={13} weight="bold" />}
+                                        label="探针 + 传到已配置的 WebDAV"
+                                    />
+                                )}
+                                {opfsProbeText && (
+                                    <LogActionButton
+                                        onClick={() => { void navigator.clipboard.writeText(opfsProbeText); }}
+                                        disabled={false}
+                                        icon={<ClipboardText size={13} weight="bold" />}
+                                        label="复制结果"
+                                    />
+                                )}
+                            </div>
+                            {opfsProbeText && (
+                                <textarea
+                                    readOnly
+                                    value={opfsProbeText}
+                                    className="mt-2 h-40 w-full resize-none rounded-lg bg-white/5 p-2 font-mono text-[10px] text-white/70 select-text"
+                                />
                             )}
                         </div>
                     </div>

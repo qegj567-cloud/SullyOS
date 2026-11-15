@@ -14,7 +14,7 @@
 // 这样导出端没有「哪些 store 要处理」的名单可漏：任何字段里的令牌都会被收进来。
 
 import { extractRefs, DEFAULT_PREFIX } from '@rei-standard/blob-store';
-import type { ZipFileWriter, ZipFileReader } from './backupFormat';
+import { createDamagedPictureGuard, type ZipFileWriter, type ZipFileReader } from './backupFormat';
 
 /** blob 旁路索引在 zip 里的固定文件名。v2 老包没有这个文件（读端以此区分，无需看版本号）。 */
 export const BLOBS_INDEX_FILE = 'blobs/index.json';
@@ -99,8 +99,9 @@ export async function readBlobsIndex(zip: ZipFileReader): Promise<BackupBlobInde
     if (!indexFile) return [];
 
     let parsed: unknown;
+    const indexText = await indexFile.async('string'); // 读取放在 try 外面：读文件失败、内存不足原样抛出
     try {
-        parsed = JSON.parse(await indexFile.async('string'));
+        parsed = JSON.parse(indexText);
     } catch {
         throw new Error('损坏的备份包：blobs/index.json 解析失败，已中止导入（数据未改动）。');
     }
@@ -123,8 +124,11 @@ export async function readBlobsIndex(zip: ZipFileReader): Promise<BackupBlobInde
 
 /**
  * 把 blobs/* 逐个还原成带 mime 的 Blob，经 restore 按原令牌 id 写回宿主存储。
- * 任何一步失败直接上抛，调用方应中止整个导入——此时主数据（JSON 分片）尚未写库，
- * 已写回的部分 blob 只是暂时的孤儿，由孤儿 GC 收口，不构成数据损坏。
+ * 单个条目在包里坏了（CRC 不符、解压失败）按缺图处理：不写回、报给 onDamaged、继续下一个，
+ * 引用它的令牌在恢复后渲染为空图——一张坏图不该挡住其余数据的恢复。第一次遇到时会先确认
+ * 备份文件本身还读得到（见 createDamagedPictureGuard），读不到就按读文件失败中止。
+ * 其余失败（读文件失败、内存不足、写库失败）直接上抛，调用方应中止整个导入——此时主数据
+ * （JSON 分片）尚未写库，已写回的部分 blob 只是暂时的孤儿，由孤儿 GC 收口，不构成数据损坏。
  * 字节数与索引声明不符视为包被截断，同样上抛。
  */
 export async function restoreBlobsFromZip(
@@ -134,16 +138,25 @@ export async function restoreBlobsFromZip(
     opts: {
         onYield?: () => Promise<void>;
         onProgress?: (done: number, total: number, id: string) => void;
+        onDamaged?: (entry: BackupBlobIndexEntry) => void;
     } = {},
 ): Promise<number> {
     let done = 0;
+    let handled = 0;
+    const skipDamaged = createDamagedPictureGuard(zip);
     for (const entry of entries) {
+        handled++;
         const file = zip.file(blobEntryPath(entry.id));
         if (!file) {
             // readBlobsIndex 已验过文件都在；走到这说明调用方传了未经校验的索引。
             throw new Error(`损坏的备份包：缺少 blobs/${entry.id}，已中止导入。`);
         }
-        const bytes = await file.async('uint8array');
+        const bytes = await skipDamaged(() => file.async('uint8array'));
+        if (!bytes) {
+            opts.onDamaged?.(entry);
+            opts.onProgress?.(handled, entries.length, entry.id);
+            continue;
+        }
         if (bytes.byteLength !== entry.size) {
             throw new Error(
                 `损坏的备份包：blobs/${entry.id} 实际 ${bytes.byteLength} 字节、索引声明 ${entry.size} 字节，` +
@@ -156,8 +169,85 @@ export async function restoreBlobsFromZip(
         const blob = entry.type ? new Blob([buf], { type: entry.type }) : new Blob([buf]);
         await restore(DEFAULT_PREFIX + entry.id, blob);
         done++;
-        opts.onProgress?.(done, entries.length, entry.id);
+        opts.onProgress?.(handled, entries.length, entry.id);
         if (opts.onYield) await opts.onYield();
     }
     return done;
+}
+
+const estimateBase64Bytes = (base64: string) => {
+    const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0;
+    return Math.max(0, Math.floor(base64.length * 3 / 4) - padding);
+};
+
+/**
+ * v1/v2 备份的图片是 zip 里的 assets/* 文件，JSON 里只留 `assets/<文件名>` 路径。
+ * 就地把 root 里的这些路径换回 data URL。包里没有的文件保留原路径；包里坏了的也保留原路径并报给 onDamaged。
+ * skipDamaged 传 createDamagedPictureGuard 的结果，一次恢复共用一个。
+ */
+export async function restoreAssetFilesInPlace(
+    zip: { file(name: string): { async(type: 'base64'): Promise<string>; uncompressedSize?: number; compressedSize?: number } | null },
+    root: any,
+    hooks: {
+        skipDamaged: <T>(read: () => Promise<T>) => Promise<T | null>;
+        /** 读每个文件之前：文件名、目录里记的大小、这次要处理的文件数 */
+        onFile?: (filename: string, size: number | undefined, fileCount: number) => void;
+        onRestored?: (filename: string, size: number, fileCount: number) => void;
+        onDamaged?: (filename: string) => void;
+        onYield?: () => Promise<void>;
+    },
+): Promise<void> {
+    type Ref = { parent: any; key: string | number };
+    const refsByFile = new Map<string, Ref[]>();
+    const seen = new WeakSet<object>();
+    const stack: any[] = [root];
+    const visit = (parent: any, key: string | number) => {
+        const v = parent[key];
+        if (typeof v === 'string' && v.startsWith('assets/')) {
+            const filename = v.slice('assets/'.length);
+            const refs = refsByFile.get(filename) || [];
+            refs.push({ parent, key });
+            refsByFile.set(filename, refs);
+        } else if (v && typeof v === 'object') {
+            stack.push(v);
+        }
+    };
+    while (stack.length) {
+        const node = stack.pop();
+        if (node === null || typeof node !== 'object') continue;
+        if (seen.has(node)) continue;
+        seen.add(node);
+        if (Array.isArray(node)) {
+            for (let i = 0; i < node.length; i++) visit(node, i);
+        } else {
+            for (const k in node) {
+                if (Object.prototype.hasOwnProperty.call(node, k)) visit(node, k);
+            }
+        }
+    }
+
+    const fileCount = refsByFile.size;
+    for (const [filename, refs] of refsByFile) {
+        const fileInZip = zip.file(`assets/${filename}`);
+        hooks.onFile?.(filename, fileInZip?.uncompressedSize || fileInZip?.compressedSize, fileCount);
+        if (!fileInZip) {
+            console.warn(`Missing asset in backup: assets/${filename}`);
+            continue;
+        }
+        const base64 = await hooks.skipDamaged(() => fileInZip.async('base64'));
+        if (base64 === null) {
+            console.warn(`Failed to restore asset: assets/${filename}`);
+            hooks.onDamaged?.(filename);
+        } else {
+            const ext = (filename.split('.').pop() || 'png').toLowerCase();
+            const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg'
+                : ext === 'gif' ? 'image/gif'
+                : ext === 'webp' ? 'image/webp'
+                : 'image/png';
+            const dataUri = `data:${mime};base64,${base64}`;
+            for (const ref of refs) ref.parent[ref.key] = dataUri;
+            hooks.onRestored?.(filename, estimateBase64Bytes(base64), fileCount);
+        }
+        if (hooks.onYield) await hooks.onYield();
+    }
 }

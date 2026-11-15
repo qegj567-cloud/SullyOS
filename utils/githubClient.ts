@@ -19,6 +19,7 @@
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
 
 import { CloudBackupConfig, CloudBackupFile } from '../types';
+import { DownloadedBackup, receiveBackupDownload, verifyBackupPart } from './backupDownload';
 import { getProxyWorkerUrl } from './proxyWorker';
 
 const API_HOST = 'https://api.github.com';
@@ -94,7 +95,7 @@ const isNative = (): boolean => {
 //
 // 用 FileReader.readAsDataURL 走流式编码，比 btoa(String.fromCharCode(...))
 // 抗大文件——后者一次性展开 80MB Uint8Array 当 apply 参数会爆栈。
-const blobToBase64 = (blob: Blob): Promise<string> =>
+export const blobToBase64 = (blob: Blob): Promise<string> =>
     new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => {
@@ -916,6 +917,7 @@ export const listBackups = async (config: CloudBackupConfig): Promise<CloudBacku
                     status: isComplete ? 'ready' : 'incomplete',
                     statusMessage: isComplete ? undefined : `上传未完成：${incompleteReasons.join('；') || '附件状态异常'}`,
                     partSizes: group.parts.map(part => Math.max(0, Number(part.asset.size) || 0)),
+                    partDigests: group.parts.map(part => (typeof part.asset.digest === 'string' ? part.asset.digest : undefined)),
                 });
             }
         }
@@ -933,15 +935,17 @@ export const listBackups = async (config: CloudBackupConfig): Promise<CloudBacku
  * web; CapacitorHttp follows redirects by default.
  *
  * For multi-part backups, href is 'releaseId:id1,id2,id3,...'. We download
- * each part sequentially and concatenate into a single Blob — bytes line up
+ * each part sequentially and append it to one download file — bytes line up
  * directly because uploadBackup used Blob.slice() with no envelope/header.
  */
 const downloadAssetPart = async (
     config: CloudBackupConfig,
     assetId: number,
     expectedSize: number | undefined,
+    expectedDigest: string | undefined,
+    label: string,
     onPartProgress?: (loadedBytes: number) => void,
-): Promise<ArrayBuffer> => {
+): Promise<Uint8Array<ArrayBuffer>> => {
     const token = config.githubToken!;
     const owner = config.githubOwner!;
     const repo = repoName(config);
@@ -967,17 +971,23 @@ const downloadAssetPart = async (
                 throw lastError;
             }
 
-            const buffer = await response.arrayBuffer(onPartProgress);
-            if (expectedSize && buffer.byteLength !== expectedSize) {
-                lastError = new Error(`GitHub 备份分片大小不符（应为 ${expectedSize} 字节，实际 ${buffer.byteLength} 字节）。`);
+            const bytes = new Uint8Array(await response.arrayBuffer(onPartProgress));
+            try {
+                await verifyBackupPart(bytes, {
+                    label,
+                    size: expectedSize || undefined,
+                    digest: expectedDigest,
+                });
+            } catch (mismatch: any) {
+                lastError = mismatch;
                 if (attempt < MAX_ASSET_ATTEMPTS - 1) {
                     await delay(750 * (attempt + 1));
                     continue;
                 }
                 throw lastError;
             }
-            if (buffer.byteLength === 0) throw new Error('GitHub 返回了 0 字节备份附件。');
-            return buffer;
+            if (bytes.byteLength === 0) throw new Error('GitHub 返回了 0 字节备份附件。');
+            return bytes;
         } catch (error: any) {
             lastError = error instanceof Error ? error : new Error(String(error || '下载失败'));
             if (attempt >= MAX_ASSET_ATTEMPTS - 1) break;
@@ -992,7 +1002,7 @@ export const downloadBackup = async (
     config: CloudBackupConfig,
     file: CloudBackupFile,
     onProgress?: (percent: number) => void,
-): Promise<Blob | null> => {
+): Promise<DownloadedBackup | null> => {
     const token = config.githubToken;
     const owner = config.githubOwner;
     const repo = repoName(config);
@@ -1011,26 +1021,28 @@ export const downloadBackup = async (
 
     try {
         onProgress?.(2);
-        const buffers: ArrayBuffer[] = [];
         let downloadedBytes = 0;
         const totalBytes = Math.max(0, Number(file.size) || 0);
         const span = 96 / assetIds.length;
-        for (let i = 0; i < assetIds.length; i++) {
-            const completedBeforePart = downloadedBytes;
-            const buf = await downloadAssetPart(config, assetIds[i], file.partSizes?.[i], (partLoadedBytes) => {
-                if (totalBytes > 0) {
-                    const byteFraction = Math.min(1, (completedBeforePart + partLoadedBytes) / totalBytes);
-                    onProgress?.(Math.min(98, Math.max(2, Math.floor(2 + byteFraction * 96))));
-                }
-            });
-            buffers.push(buf);
-            downloadedBytes += buf.byteLength;
-            onProgress?.(totalBytes > 0
-                ? Math.min(99, Math.floor(2 + Math.min(1, downloadedBytes / totalBytes) * 96))
-                : Math.min(99, Math.floor(2 + (i + 1) * span)));
-        }
+        const backup = await receiveBackupDownload(async sink => {
+            for (let i = 0; i < assetIds.length; i++) {
+                const completedBeforePart = downloadedBytes;
+                const label = `GitHub 备份第 ${i + 1}/${assetIds.length} 片`;
+                const bytes = await downloadAssetPart(config, assetIds[i], file.partSizes?.[i], file.partDigests?.[i], label, (partLoadedBytes) => {
+                    if (totalBytes > 0) {
+                        const byteFraction = Math.min(1, (completedBeforePart + partLoadedBytes) / totalBytes);
+                        onProgress?.(Math.min(98, Math.max(2, Math.floor(2 + byteFraction * 96))));
+                    }
+                });
+                await sink.write(bytes);
+                downloadedBytes += bytes.byteLength;
+                onProgress?.(totalBytes > 0
+                    ? Math.min(99, Math.floor(2 + Math.min(1, downloadedBytes / totalBytes) * 96))
+                    : Math.min(99, Math.floor(2 + (i + 1) * span)));
+            }
+        }, totalBytes || undefined);
         onProgress?.(100);
-        return new Blob(buffers, { type: 'application/zip' });
+        return backup;
     } catch (error: any) {
         if (
             !shouldUseGithubProxy(config)

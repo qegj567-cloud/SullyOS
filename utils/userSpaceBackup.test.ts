@@ -4,6 +4,7 @@ import { DB, openSpaceDB } from './db';
 import { saveUserSpaces, readSpaceLocal, createSpaceStorage, SPACE_DELETIONS_KEY, isUserSpaceDeleting } from './userSpaces';
 import { commitSpaceRows, readSpaceStore, inheritSpaceCharacters } from './userSpaceData';
 import { exportUserSpaces, importUserSpaces } from './userSpaceBackup';
+import { openBackupZip } from './backupZipReader';
 import { putSharedImage, isSharedAssetReferenced } from './spaceAssets';
 import { openCollaborationSpace } from '../features/collaboration/store';
 import type { BackupMissingAsset } from './backupMissingAssets';
@@ -116,6 +117,144 @@ describe('space backup and asset ownership', () => {
         zip.remove(manifest.spaces[0].stores.characters[0]);
         await expect(importUserSpaces(zip)).rejects.toThrow('分片缺失');
         expect((await DB.getCharacter('c'))?.name).toBe('keep');
+    });
+    it('restores through the on-demand zip reader the import entry uses, and rejects a tampered archive before writing', async () => {
+        const token = await putSharedImage(new Blob(['shared-image'], { type: 'image/png' }));
+        await commitSpaceRows(await openSpaceDB('default'), {
+            characters: [{ id: 'c', name: '备份里的角色 🐱', avatar: token, memories: [] }],
+            messages: [{ id: 1, charId: 'c', content: 'TAMPER-TARGET 你好 👋', role: 'user' }],
+        });
+        const archive = await exportUserSpaces('full', 'current');
+        await commitSpaceRows(await openSpaceDB('default'), { characters: [{ id: 'c', name: 'live', memories: [] }], messages: [] }, true);
+
+        // 分片是压缩过的，改不到明文；把它按 STORE 重新打包再改一个字节，只有 CRC 对不上。
+        const stored = await JSZip.loadAsync(await archive.arrayBuffer());
+        const bytes = await stored.generateAsync({ type: 'uint8array', compression: 'STORE' });
+        const at = Buffer.from(bytes).indexOf('TAMPER-TARGET');
+        expect(at).toBeGreaterThan(0);
+        bytes[at] ^= 0x01;
+        const tampered = await openBackupZip(new Blob([bytes as BlobPart]));
+        await expect(importUserSpaces(tampered)).rejects.toThrow(/损坏的备份包/);
+        expect((await DB.getCharacter('c'))?.name).toBe('live');
+        await tampered.close();
+
+        const reader = await openBackupZip(archive);
+        await importUserSpaces(reader);
+        await reader.close();
+        expect(await DB.getCharacter('c')).toMatchObject({ name: '备份里的角色 🐱', avatar: token });
+        expect((await readSpaceStore(await openSpaceDB('default'), 'messages'))[0].content).toBe('TAMPER-TARGET 你好 👋');
+    });
+    it('skips a corrupt shared picture like a missing one, reports it, and still restores everything else', async () => {
+        const good = await putSharedImage(new Blob(['good-shared-image'], { type: 'image/png' }));
+        const bad = await putSharedImage(new Blob(['BROKEN-SHARED-IMAGE-0123456789'], { type: 'image/png' }));
+        const inline = `data:image/png;base64,${Buffer.from('BROKEN-INLINE-IMAGE-0123456789').toString('base64')}`;
+        await commitSpaceRows(await openSpaceDB('default'), {
+            characters: [{ id: 'c', name: '备份里的角色', avatar: good, chatBackground: bad, dateBackground: inline, memories: [] }],
+            messages: [{ id: 1, charId: 'c', content: '你好 👋', role: 'user' }],
+        });
+        const archive = await exportUserSpaces('full', 'current');
+        await commitSpaceRows(await openSpaceDB('default'), { characters: [{ id: 'c', name: 'live', memories: [] }], messages: [] }, true);
+        for (const token of [good, bad]) await DB.deleteBlobAsset(token.slice(8));
+
+        const bytes = await (await JSZip.loadAsync(await archive.arrayBuffer())).generateAsync({ type: 'uint8array', compression: 'STORE' });
+        const intact = bytes.slice();
+        for (const needle of ['BROKEN-SHARED-IMAGE', 'BROKEN-INLINE-IMAGE']) {
+            const at = Buffer.from(bytes).indexOf(needle);
+            expect(at, needle).toBeGreaterThan(0);
+            bytes[at] ^= 0x01;
+        }
+
+        // 读文件失败、内存不足不是图片损坏：整个恢复在写库前中止，报出原错误。
+        const healthy = await openBackupZip(new Blob([intact as BlobPart]));
+        const manifest = JSON.parse(await healthy.file('user-spaces.json')!.async('string'));
+        const badPath = manifest.blobs.find((entry: any) => entry.id === bad.slice(8)).path;
+        for (const thrown of [new DOMException('file is gone', 'NotReadableError'), new RangeError('Array buffer allocation failed')]) {
+            const onBeforeWrite = vi.fn(), onDamagedAsset = vi.fn();
+            const flaky = { file: (name: string) => (name === badPath ? { async: () => Promise.reject(thrown) } : healthy.file(name)) };
+            await expect(importUserSpaces(flaky, false, { onBeforeWrite, onDamagedAsset })).rejects.toBe(thrown);
+            expect(onBeforeWrite).not.toHaveBeenCalled();
+            expect(onDamagedAsset).not.toHaveBeenCalled();
+            expect((await DB.getCharacter('c'))?.name).toBe('live');
+        }
+
+        const damaged: string[] = [];
+        const source = await openBackupZip(new Blob([bytes as BlobPart]));
+        await importUserSpaces(source, false, { onDamagedAsset: id => { damaged.push(id); } });
+        await source.close();
+        // 共享图片按素材编号上报，行里内嵌的图片按它在包里的路径上报。
+        expect(damaged).toHaveLength(2);
+        expect(damaged).toContain(bad.slice(8));
+        expect(damaged.find(id => id !== bad.slice(8))).toMatch(/^shared\/[a-zA-Z0-9_-]+\.bin$/);
+        // 坏图没写进库，引用原样留着（显示为空）；内嵌的坏图变成空串；好图和文字都回来了。
+        expect(await DB.getCharacter('c')).toMatchObject({ name: '备份里的角色', avatar: good, chatBackground: bad, dateBackground: '' });
+        expect(await DB.getBlobAsset(bad.slice(8))).toBeNull();
+        expect(await (await DB.getBlobAsset(good.slice(8)))!.text()).toBe('good-shared-image');
+        expect((await readSpaceStore(await openSpaceDB('default'), 'messages'))[0].content).toBe('你好 👋');
+
+        // 反证：没被改坏的同一个包，两张图都恢复，没有上报。
+        await commitSpaceRows(await openSpaceDB('default'), { characters: [], messages: [] }, true);
+        const onDamagedAsset = vi.fn();
+        await importUserSpaces(healthy, false, { onDamagedAsset });
+        await healthy.close();
+        expect(onDamagedAsset).not.toHaveBeenCalled();
+        expect(await (await DB.getBlobAsset(bad.slice(8)))!.text()).toBe('BROKEN-SHARED-IMAGE-0123456789');
+        expect((await DB.getCharacter('c'))?.dateBackground).toBe(inline);
+    });
+    it('treats pictures as unreadable, not damaged, when the archive file itself stops being readable', async () => {
+        const token = await putSharedImage(new Blob(['a-shared-image'], { type: 'image/png' }));
+        await commitSpaceRows(await openSpaceDB('default'), { characters: [{ id: 'c', name: '备份里的角色', avatar: token, memories: [] }] });
+        const archive = await exportUserSpaces('full', 'current');
+        await commitSpaceRows(await openSpaceDB('default'), { characters: [{ id: 'c', name: 'live', memories: [] }] }, true);
+        await DB.deleteBlobAsset(token.slice(8));
+
+        // 文件被系统收回后不报错、只给出全零数据：读到共享图片的那一刻起每次读都是零。
+        class VanishingBlob extends Blob {
+            gone = false;
+            slice(start?: number, end?: number, contentType?: string): Blob {
+                const part = super.slice(start, end, contentType);
+                return this.gone ? new Blob([new Uint8Array(part.size)]) : part;
+            }
+        }
+        const blob = new VanishingBlob([await archive.arrayBuffer()]);
+        const reader = await openBackupZip(blob);
+        const zip = { file: (name: string) => {
+            const entry = reader.file(name);
+            return entry && name.startsWith('shared/') ? { ...entry, async: (type: any) => { blob.gone = true; return entry.async(type); } } : entry;
+        } };
+        const onBeforeWrite = vi.fn(), onDamagedAsset = vi.fn();
+        const error = await importUserSpaces(zip, false, { onBeforeWrite, onDamagedAsset }).catch(e => e);
+        expect(error).toBeInstanceOf(DOMException);
+        expect(error.name).toBe('NotReadableError');
+        expect(error.message).toContain('备份文件已经读不出来了');
+        expect(onDamagedAsset).not.toHaveBeenCalled();
+        expect(onBeforeWrite).not.toHaveBeenCalled();
+        expect((await DB.getCharacter('c'))?.name).toBe('live');
+        expect(await DB.getBlobAsset(token.slice(8))).toBeNull();
+    });
+    it('calls the pre-write hook only after the archive passes every check, before live data changes', async () => {
+        await DB.putBlobAsset('img_hook_order', new Blob(['backup-image'], { type: 'image/png' }));
+        await commitSpaceRows(await openSpaceDB('default'), { characters: [{ id: 'c', name: 'backup', avatar: 'blobref:img_hook_order', memories: [] }] });
+        const zip = await JSZip.loadAsync(await (await exportUserSpaces('full', 'current')).arrayBuffer());
+        expect(JSON.parse(await zip.file('user-spaces.json')!.async('string')).blobs.map((b: any) => b.id)).toContain('img_hook_order');
+        await commitSpaceRows(await openSpaceDB('default'), { characters: [{ id: 'c', name: 'live', memories: [] }] }, true);
+        await DB.deleteBlobAsset('img_hook_order');
+        expect(await DB.getBlobAsset('img_hook_order')).toBeNull();
+        // Throwing from the hook stops the import there, so unchanged data proves nothing was written before it.
+        const onBeforeWrite = vi.fn(() => { throw new Error('stop at hook'); });
+        const broken = await JSZip.loadAsync(await zip.generateAsync({ type: 'uint8array' }));
+        broken.remove(JSON.parse(await broken.file('user-spaces.json')!.async('string')).spaces[0].stores.characters[0]);
+        const onRolledBack = vi.fn();
+        await expect(importUserSpaces(broken, false, { onBeforeWrite, onRolledBack })).rejects.toThrow('分片缺失');
+        expect(onBeforeWrite).not.toHaveBeenCalled();
+        await expect(importUserSpaces(zip, false, { onBeforeWrite, onRolledBack })).rejects.toThrow('stop at hook');
+        expect(onBeforeWrite).toHaveBeenCalledOnce();
+        expect((await DB.getCharacter('c'))?.name).toBe('live');
+        expect(await DB.getBlobAsset('img_hook_order')).toBeNull();
+        // A normal restore overwrites existing users, so a failure there is never reported as rolled back.
+        expect(onRolledBack).not.toHaveBeenCalled();
+        await importUserSpaces(zip, false, { onBeforeWrite: () => {} });
+        expect((await DB.getCharacter('c'))?.name).toBe('backup');
+        expect(await (await DB.getBlobAsset('img_hook_order'))!.text()).toBe('backup-image');
     });
     it('retains assets used only by another user when deleting the old owner', async () => {
         const token = await putSharedImage(new Blob(['other-owner'], { type: 'image/png' }));

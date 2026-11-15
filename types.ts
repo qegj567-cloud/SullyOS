@@ -4237,6 +4237,8 @@ export interface CloudBackupFile {
     statusMessage?: string;
     /** Expected GitHub asset sizes, in the same order as the ids encoded in href. */
     partSizes?: number[];
+    /** GitHub asset digests (`sha256:…`), same order as partSizes; missing where GitHub reports none. */
+    partDigests?: (string | undefined)[];
 }
 
 // --- GUIDEBOOK (攻略本) APP TYPES ---
