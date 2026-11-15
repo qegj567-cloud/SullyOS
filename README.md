@@ -92,11 +92,11 @@ pnpm dev
 
 ## 支持 Sully
 
-[![支持 Sully：微信赞赏与支付宝收款码，所有赞赏用于项目更新与维护](art/sully-support/exports/readme-support-1600x860.png)](art/sully-support/exports/readme-support-1600x860.png)
+[![支持 Sully：微信赞赏码，所有赞赏用于项目更新与维护](art/sully-support/exports/readme-support-1600x860.png)](art/sully-support/exports/readme-support-1600x860.png)
 
 所有赞赏将直接用于继续项目的更新与维护。**赞赏完全自愿，不影响正常使用**，不附带额外权益、更新承诺或优先服务。请按自己的意愿与余力决定就好。
 
-点击横图可查看大图，也可单独保存 [微信赞赏小票](assets/sully-support/wechat-support-card.png)（单次上限 ¥200）或 [支付宝小票](assets/sully-support/alipay-support-card.png)，再到对应 App 从相册扫码。应用内的入口在 **设置页最下方 → 打赏 Sully**。
+点击横图可查看大图，也可单独保存 [微信赞赏小票](assets/sully-support/wechat-support-card.png)（单次上限 ¥200），再到微信扫一扫中从相册识别。应用内的入口在 **设置页最下方 → 打赏 Sully**。
 
 想留下名字的话，请在付款时的【添加备注】写下希望公开展示的署名。每月更新会收录进「饲养员感谢名单」；未备注默认为「神秘猫奴」。
 

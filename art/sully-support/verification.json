@@ -10,12 +10,6 @@
     "88.88"
   ],
   "funding_description": "Above menu and payment codes",
-  "alipay_same_payload": {
-    "alipay-sully-code.png": true,
-    "alipay-support-card.png": true,
-    "alipay-ticket-390.png": true,
-    "alipay-ticket-320.png": true
-  },
   "pixel_changes": {
     "wechat": {
       "difference_bbox": [
@@ -30,27 +24,10 @@
         371,
         371
       ]
-    },
-    "alipay": {
-      "difference_bbox": [
-        293,
-        291,
-        449,
-        447
-      ],
-      "allowed_avatar_bbox": [
-        293,
-        291,
-        449,
-        447
-      ]
     }
   },
   "wechat_scan_status": "User scanned the unified-avatar support card with WeChat and confirmed it opens the original reward page; no payment performed; original-code fallback retained",
   "assets": {
-    "alipay-original.png": "b9193a6e129809ddd440f036b43c340a581563ba902fdc748b05af5cc182c2af",
-    "alipay-sully-code.png": "6307e3d0f4c16f98d7e259e334d63477d6fbad1a7ca2463089ac8569743dd07a",
-    "alipay-support-card.png": "2c4776dec8995094385e908c47b501455d0060dc823bffffe82e11cb96db624d",
     "sully-peeking.png": "039cdefbcd1bb74f16980646b8f25199bdfcc868212a2e147d7f811e9ea0f5c0",
     "sully-phone.png": "642846a53ffcc09f85eab842e476cd4742fad0e6f101c76470caaa307330d0bb",
     "sully-standing.png": "2b222b11f04f93bb2012f026238d176d8dbe4c82a6b92693c77884957c532a1f",
@@ -64,7 +41,6 @@
     "settings_entry": true,
     "removed_hero_copy": true,
     "funding_before_payment": true,
-    "downloaded_bytes_match_both_channels": true,
     "web_share_has_active_user_gesture": true,
     "nested_back_focus_scroll_and_unsaved_api_draft": true,
     "viewports": [
@@ -73,9 +49,13 @@
       900
     ],
     "runtime_errors": [],
-    "alipay_app_screenshots_decode_same_payload": true,
-    "related_tests_passed": 23,
     "production_build": "passed",
-    "typecheck": "No diagnostics in Settings or SullySupport files; existing diagnostics in other imported modules prevent a clean repository typecheck"
-  }
+    "typecheck": "No diagnostics in Settings or SullySupport files; existing diagnostics in other imported modules prevent a clean repository typecheck",
+    "downloaded_bytes_match_wechat_card": true,
+    "related_tests_passed": 24,
+    "wechat_only": true
+  },
+  "channels": [
+    "wechat"
+  ]
 }

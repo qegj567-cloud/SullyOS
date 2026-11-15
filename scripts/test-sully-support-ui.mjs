@@ -103,28 +103,25 @@ try {
     await panel.locator('.charm-character').evaluate(image => image.decode());
     assert.equal(await panel.getByText('DC 陪聊小猫 · 工号 Sully-08', { exact: true }).count(), 0);
     assert.equal(await panel.locator('input').count(), 0);
-    assert.equal(await panel.locator('.funding-note').evaluate(el => Boolean(el.compareDocumentPosition(document.querySelector('.payment-tabs')) & Node.DOCUMENT_POSITION_FOLLOWING)), true);
+    assert.equal(await panel.locator('.funding-note').evaluate(el => Boolean(el.compareDocumentPosition(document.querySelector('.payment-heading')) & Node.DOCUMENT_POSITION_FOLLOWING)), true);
     assert.equal(await entry.evaluate(el => Boolean(el.closest('[inert]'))), true);
     await page.screenshot({ path: `${out}/app-detail-390.png`, animations: 'disabled' });
     await panel.locator('summary').click();
     assert.deepEqual(await panel.locator('.menu-price').allTextContents(), ['¥2.33', '¥6.66', '¥18.80', '¥18.88', '¥23.33', '¥66.66', '¥88.88']);
     await panel.locator('summary').click();
-    for (const [label, channel] of [['微信赞赏', 'wechat'], ['支付宝', 'alipay']]) {
-        await panel.getByRole('tab', { name: label, exact: true }).click();
-        await panel.locator('.qr-crop img').evaluate(image => image.decode());
-        await panel.locator('.ticket').screenshot({ path: `${out}/app-${channel}-ticket.png`, animations: 'disabled' });
-        const pending = page.waitForEvent('download');
-        await panel.getByRole('button', { name: '保存投喂小票', exact: true }).click();
-        const download = await pending;
-        await download.saveAs(`${out}/app-${channel}-download.png`);
-        assert.deepEqual(readFileSync(`${out}/app-${channel}-download.png`), readFileSync(`assets/sully-support/${channel}-support-card.png`));
-        await panel.locator('.original-link').click();
-        assert.match(await panel.locator('.original-page img').getAttribute('src'), new RegExp(`${channel}-original`));
-        await page.evaluate(() => window.sullySupportBack());
-        await panel.locator('.original-page').waitFor({ state: 'detached' });
-    }
-    await panel.getByRole('tab', { name: '支付宝', exact: true }).press('ArrowLeft');
-    assert.equal(await panel.getByRole('tab', { name: '微信赞赏', exact: true }).getAttribute('aria-selected'), 'true');
+    assert.equal(await panel.getByRole('tab').count(), 0);
+    assert.equal((await panel.textContent()).includes('支付宝'), false);
+    await panel.locator('.qr-crop img').evaluate(image => image.decode());
+    await panel.locator('.ticket').screenshot({ path: `${out}/app-wechat-ticket.png`, animations: 'disabled' });
+    const pending = page.waitForEvent('download');
+    await panel.getByRole('button', { name: '保存投喂小票', exact: true }).click();
+    const download = await pending;
+    await download.saveAs(`${out}/app-wechat-download.png`);
+    assert.deepEqual(readFileSync(`${out}/app-wechat-download.png`), readFileSync('assets/sully-support/wechat-support-card.png'));
+    await panel.locator('.original-link').click();
+    assert.match(await panel.locator('.original-page img').getAttribute('src'), /wechat-original/);
+    await page.evaluate(() => window.sullySupportBack());
+    await panel.locator('.original-page').waitFor({ state: 'detached' });
     await page.evaluate(() => {
         Object.defineProperty(navigator, 'canShare', { configurable: true, value: () => true });
         Object.defineProperty(navigator, 'share', { configurable: true, value: async data => {
@@ -144,10 +141,8 @@ try {
         assert.equal(await panel.locator('.support-scroll').evaluate(el => el.scrollWidth <= el.clientWidth), true);
         await page.screenshot({ path: `${out}/app-detail-${width}.png`, animations: 'disabled' });
         if (width === 320) {
-            await panel.getByRole('tab', { name: '支付宝', exact: true }).click();
             await panel.locator('.qr-crop img').evaluate(image => image.decode());
-            await panel.locator('.ticket').screenshot({ path: `${out}/app-alipay-ticket-320.png`, animations: 'disabled' });
-            await panel.getByRole('tab', { name: '微信赞赏', exact: true }).click();
+            await panel.locator('.ticket').screenshot({ path: `${out}/app-wechat-ticket-320.png`, animations: 'disabled' });
         }
     }
     await page.setViewportSize({ width: 390, height: 844 });
@@ -165,7 +160,7 @@ try {
     await page.getByRole('button', { name: '返回设置', exact: true }).click();
     await panel.waitFor({ state: 'detached' });
     assert.deepEqual(errors, []);
-    console.log('Passed: real Settings entry, funding-first order, seven amounts, channel/keyboard switch, both downloaded file bytes, synchronous Web Share gesture, original-code back, parent back/focus/scroll/unsaved draft, pet interaction, 320/390/900 layouts, no runtime errors.');
+    console.log('Passed: real Settings entry, funding-first order, seven amounts, WeChat-only donation, downloaded file bytes, synchronous Web Share gesture, original-code back, parent back/focus/scroll/unsaved draft, pet interaction, 320/390/900 layouts, no runtime errors.');
 } catch (error) {
     console.error(error);
     if (page) {
