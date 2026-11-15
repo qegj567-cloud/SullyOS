@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>支持 Sully · README 横版赞赏图</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; color: #443f3c; font-family: "Microsoft YaHei", "PingFang SC", sans-serif; }
+    .banner { position: relative; width: 1600px; height: 860px; padding: 55px 74px; overflow: hidden; background: #e8e4df; }
+    .paper { position: absolute; inset: 190px 34px 32px; background: #faf9f6; border-radius: 40px; }
+    header { position: relative; display: flex; align-items: center; justify-content: space-between; }
+    .wordmark { display: flex; align-items: center; gap: 18px; font: 1000 88px/.95 "Arial Rounded MT Bold", "Arial Black", Arial, sans-serif; letter-spacing: -5px; }
+    .star { display: inline-block; width: 36px; height: 36px; background: #afcada; clip-path: polygon(50% 0,65% 32%,100% 38%,74% 64%,80% 100%,50% 82%,18% 100%,25% 64%,0 38%,36% 32%); transform: rotate(12deg); }
+    .brand-note { margin: 17px 0 0; font-size: 19px; letter-spacing: 5px; color: #8c8179; }
+    .edition { text-align: right; color: #958a80; font-size: 22px; letter-spacing: 2px; }
+    .edition span { display: block; margin-top: 13px; font-size: 13px; letter-spacing: 3px; }
+    .letter { position: absolute; left: 76px; top: 239px; width: 430px; }
+    .eyebrow { margin: 0 0 22px; font-size: 13px; letter-spacing: 3px; color: #97877a; }
+    h1 { margin: 0; font-size: 45px; line-height: 1.5; font-weight: 850; letter-spacing: -1px; }
+    h1 span { background: linear-gradient(transparent 87%, #c5d8e4 87%, #c5d8e4 96%, transparent 96%); }
+    .purpose { margin: 28px 0 0; font-size: 24px; line-height: 1.85; color: #81746b; }
+    .signature { margin: 28px 0 0; color: #857165; font-size: 24px; letter-spacing: 2px; }
+    .gentle { margin: 17px 0 0; font-size: 19px; color: #96877b; }
+    .art { position: absolute; left: 504px; top: 281px; width: 224px; height: 326px; }
+    .disc { position: absolute; inset: 40px -2px auto; height: 225px; background: #ccdce6; border-radius: 50%; }
+    .charm { position: absolute; left: 12px; top: 0; width: 196px; transform: rotate(7deg); filter: drop-shadow(4px 10px 5px #594d432b); }
+    .charm::before { content: ""; position: absolute; left: calc(50% - 18px); top: -17px; width: 36px; height: 44px; border: 8px solid white; border-radius: 50%; box-shadow: inset 0 0 0 2px #d6cfd0, 0 0 0 1px #e5dfe0; }
+    .charm img { display: block; position: relative; width: 100%; height: auto; filter: drop-shadow(4px 0 white) drop-shadow(-4px 0 white) drop-shadow(0 4px white) drop-shadow(0 -4px white); }
+    .sparkle { position: absolute; color: white; font-size: 39px; left: 0; top: 200px; }
+    .art .star { position: absolute; right: 2px; top: -18px; width: 23px; height: 23px; }
+    .payments { position: absolute; top: 226px; left: 774px; right: 76px; display: grid; grid-template-columns: 1fr 1fr; gap: 25px; }
+    figure { margin: 0; border-radius: 17px; background: white; box-shadow: 0 6px 14px #6c60560c; overflow: hidden; }
+    .channel { padding: 15px 0; text-align: center; font-size: 25px; font-weight: 650; background: #c9dce8; color: #456276; }
+    .code { display: flex; align-items: center; justify-content: center; height: 292px; background: #fff; }
+    .code img { display: block; width: 276px; height: 276px; }
+    figcaption { margin: 0; padding: 4px 8px 20px; font-size: 17px; color: #8b7d73; text-align: center; }
+    .remark { position: absolute; top: 640px; left: 775px; right: 78px; margin: 0; color: #8a7e74; font-size: 19px; line-height: 1.7; text-align: center; }
+    .voluntary { position: absolute; left: 76px; right: 76px; bottom: 59px; padding-top: 24px; border-top: 2px dashed #d5ccc3; }
+    .voluntary p { margin: 0; font-size: 23px; line-height: 1.8; color: #83766c; }
+    .voluntary strong { color: #60574f; font-weight: 650; }
+    .voluntary p + p { font-size: 21px; margin-top: 3px; }
+  </style>
+</head>
+<body>
+  <main class="banner">
+    <div class="paper" aria-hidden="true"></div>
+    <header>
+      <div><div class="wordmark">Sully<span class="star" aria-hidden="true"></span></div><p class="brand-note">SULLYOS · 糯米机</p></div>
+      <p class="edition">一份小小的感谢<span>WITH A LITTLE LOVE</span></p>
+    </header>
+    <section class="letter">
+      <p class="eyebrow">THANK YOU FOR BEING HERE</p>
+      <h1>谢谢你，<br><span>让热爱继续发光。</span></h1>
+      <p class="purpose">所有赞赏将直接用于<br>继续项目的更新与维护。</p>
+      <p class="signature">—— 条 &amp; TO 敬上</p>
+      <p class="gentle">先照顾好自己，有余力再支持。</p>
+    </section>
+    <div class="art" aria-hidden="true"><div class="disc"></div><div class="charm"><img src="assets/sully-standing.png" alt="" width="2260" height="3378"></div><span class="sparkle">✦</span><span class="star"></span></div>
+    <section class="payments" aria-label="赞赏方式">
+      <figure><div class="channel">微信赞赏</div><div class="code"><img id="wechat-code" src="assets/wechat-sully-code.png" width="550" height="550" alt="微信赞赏码"></div><figcaption>微信赞赏 · 单次上限 ¥200</figcaption></figure>
+      <figure><div class="channel">支付宝</div><div class="code"><img id="alipay-code" src="assets/alipay-sully-code.png" width="740" height="740" alt="支付宝收款码"></div><figcaption>经营收款码 · 手抓糯米鸡</figcaption></figure>
+    </section>
+    <p class="remark">想留下名字的话，扫码时请在【添加备注】填写公开署名。</p>
+    <footer class="voluntary">
+      <p><strong>赞赏完全自愿，不影响正常使用。</strong>它是一份单纯支持项目的心意。</p>
+      <p>不附带额外权益、更新承诺或优先服务。请按自己的意愿与余力决定就好。</p>
+    </footer>
+  </main>
+</body>
+</html>

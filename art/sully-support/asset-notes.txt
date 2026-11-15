@@ -15,6 +15,11 @@ Sully 猫猫补给站 · CSS 视觉与 App 实装
 原画与原码仅复制进 assets，未覆盖源文件。挂件白边、挂环、格纹、纸票、排版均为 CSS。
 没有使用 AI 生成图片。assets 中带 sully-code 与 support-card 的 PNG 是浏览器对 HTML/CSS 的原生截图。
 
+README 横版赞赏图：readme-banner.html → exports/readme-support-1600x860.png。
+使用同一份 Sully 原画与两张已美化收款码，通过 scripts/export-sully-readme-banner.mjs 原生浏览器截图导出。
+横图保持两码不透明、白底，附带自愿赞赏及无额外权益／更新承诺／优先服务说明。原图与 800px README 显示预览中的支付宝码本地解码均与原码一致；微信沿用用户已确认可用的码图，横图本身尚未经微信实扫。
+README 另附两张完整小票的独立链接，便于移动端查看与保存，正文包含公开署名规则。
+
 可编辑的码图源：code-art.html?channel=wechat 或 channel=alipay。
 可编辑的小票源：code-card.html?channel=wechat 或 channel=alipay。
 导出时使用 deviceScaleFactor=1，不缩放 code-art 根元素。
