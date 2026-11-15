@@ -5,6 +5,8 @@
 用户自己的 Worker → 标准加密 Web Push → UnifiedPush distributor（如 ntfy）→ 原生通知和持久收件队列 → master 的处理器。
 不使用 Firebase，不替代 ntfy，也不在 Android 本地再生成回复。
 
+这是已有系统推送配置的兼容桥，并非 APK 必走的独立流程。设置入口、第三方服务商及默认选择与网页版共用；选择 WxPusher / Bark / MeoW 时走 master 的第三方推送实现，不依赖此桥，也不需要另配 ntfy。升级不自动更换用户已有推送方式。
+
 ## 构建契约
 
 - 将 `main/java/` 中的文件同步进 Capacitor Android 工程的 `app/src/main/java/`；测试放进 `app/src/test/java/`。
