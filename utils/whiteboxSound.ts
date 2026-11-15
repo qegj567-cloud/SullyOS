@@ -10,6 +10,8 @@
 // - 浏览器忽略 CSS 注释，所以对渲染零影响、对老白框完全向后兼容。
 // - 内置音效用 WebAudio 现场合成（无音频文件、分享码里只存一个短 key，体积极小）；也支持自定义音频 URL。
 
+import { isRecalledNotificationSound, isRecalledSoundOwner, notifyRecalledSound } from './recalledNotificationSound';
+
 export interface WhiteboxSound {
     /** 内置音效 key（见 BUILTIN_SOUNDS）、'none'（显式静音，用于角色覆盖全局）、或自定义音频直链 URL。 */
     src: string;
@@ -203,20 +205,30 @@ const playBuiltin = (sound: BuiltinSound, volume: number): void => {
 export const isCustomAudioSrc = (s: string): boolean => /^https?:\/\//i.test(s) || /^data:audio\//i.test(s);
 
 /** 播放一个白框提示音配置。best-effort：被自动播放策略挡住 / 无音频能力时静默失败，绝不抛。 */
-export const playWhiteboxSound = (sound: WhiteboxSound | null): void => {
+export const playWhiteboxSound = (sound: WhiteboxSound | null, options: { onBlocked?: (src: string) => void | Promise<void> } = {}): void => {
     if (!sound || !sound.src || sound.src === 'none') return;
+    const src = sound.src;
     const volume = clampVolume(sound.volume);
     try {
-        const builtin = BUILTIN_SOUNDS[sound.src];
+        const builtin = BUILTIN_SOUNDS[src];
         if (builtin) {
             playBuiltin(builtin, volume);
             return;
         }
         // 自定义音频：http(s) 直链或上传后内联的 data:audio URI，交给 <audio> 播放。
-        if (isCustomAudioSrc(sound.src) && typeof Audio !== 'undefined') {
-            const el = new Audio(sound.src);
-            el.volume = volume;
-            el.play().catch(() => {});
+        if (isCustomAudioSrc(src) && typeof Audio !== 'undefined') {
+            const play = () => {
+                const el = new Audio(src);
+                el.volume = volume;
+                el.play().catch(() => {});
+            };
+            if (isRecalledSoundOwner()) { play(); return; }
+            void isRecalledNotificationSound(src).then(async blocked => {
+                // Identity may have changed while hashing.
+                if (!blocked || isRecalledSoundOwner()) { play(); return; }
+                try { await options.onBlocked?.(src); }
+                finally { notifyRecalledSound(); }
+            }).catch(() => { /* Failed verification/reset never plays the suspect audio. */ });
         }
     } catch {
         /* 播放失败静默，提示音不该影响聊天主流程 */

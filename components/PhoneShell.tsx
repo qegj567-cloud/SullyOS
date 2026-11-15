@@ -1,3 +1,4 @@
+import RecalledSoundNotice from './os/RecalledSoundNotice';
 import FirstUseGuide from './FirstUseGuide';
 import DeploymentNotice from './os/DeploymentNotice';
 import { useDeploymentNotice } from '../hooks/useDeploymentNotice';
@@ -1192,6 +1193,7 @@ const PhoneShell: React.FC = () => {
        </div>
 
        {/* Global error dialog (长报错走它, 替代单行 toast) */}
+       <RecalledSoundNotice />
        <ErrorDialog
          isOpen={!!errorDialog}
          title={errorDialog?.title ?? ''}
