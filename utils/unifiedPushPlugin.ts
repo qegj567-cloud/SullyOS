@@ -10,6 +10,9 @@ export interface UnifiedPushSubscription {
 }
 
 export interface UnifiedPushStatus {
+  bridgeVersion?: number;
+  registrationRevision?: string;
+  acknowledgedRegistration?: string;
   native: boolean;
   distributors: string[];
   distributor: string | null;
@@ -19,6 +22,7 @@ export interface UnifiedPushStatus {
 }
 
 export interface UnifiedPushStoredMessage {
+  id: string;
   payload: string;
   receivedAt: number;
 }
@@ -28,8 +32,11 @@ interface UnifiedPushNativePlugin {
   register(options: { vapidPublicKey: string }): Promise<{ pending: boolean }>;
   unregister(): Promise<void>;
   drainPendingPushes(): Promise<{ messages: UnifiedPushStoredMessage[]; launchPayload?: string }>;
+  peekPendingPushes(): Promise<{ messages: UnifiedPushStoredMessage[]; launchPayload?: string }>;
+  acknowledgePush(options: { id: string }): Promise<void>;
+  acknowledgeRegistration(options: { revision: string }): Promise<void>;
   addListener(
-    eventName: 'pushReceived' | 'notificationTapped' | 'registrationChanged',
+    eventName: 'pushReceived' | 'notificationTapped' | 'registrationChanged' | 'foreground',
     listener: (event: any) => void,
   ): Promise<PluginListenerHandle>;
 }
@@ -112,8 +119,12 @@ export const readUnifiedPushSubscription = async () =>
   (await getUnifiedPushStatus()).subscription;
 
 export const drainUnifiedPushMessages = () => NativeUnifiedPush.drainPendingPushes();
+export const peekUnifiedPushMessages = () => NativeUnifiedPush.peekPendingPushes();
+export const acknowledgeUnifiedPushMessage = (id: string) => NativeUnifiedPush.acknowledgePush({ id });
+export const readUnifiedPushTransportStatus = () => NativeUnifiedPush.getStatus();
+export const acknowledgeUnifiedPushRegistration = (revision: string) => NativeUnifiedPush.acknowledgeRegistration({ revision });
 
 export const addUnifiedPushListener = (
-  eventName: 'pushReceived' | 'notificationTapped' | 'registrationChanged',
+  eventName: 'pushReceived' | 'notificationTapped' | 'registrationChanged' | 'foreground',
   listener: (event: any) => void,
 ) => NativeUnifiedPush.addListener(eventName, listener);

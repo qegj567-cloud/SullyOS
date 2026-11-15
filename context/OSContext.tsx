@@ -2027,7 +2027,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       let awayActiveMsgCount = 0;
 
       const handler = (e: Event) => {
-          const { charId, charName, body } = (e as CustomEvent).detail as { charId: string; charName: string; body?: string };
+          const { charId, charName, body, nativeNotificationHandled } = (e as CustomEvent).detail as { charId: string; charName: string; body?: string; nativeNotificationHandled?: boolean };
           setLastMsgTimestamp(Date.now());
 
           const isChattingWithThisChar = (activeAppRef.current === AppID.Chat && activeCharIdScheduleRef.current === charId) || isEmbeddedChatVisible(charId);
@@ -2040,7 +2040,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               }
               setUnreadMessages(prev => ({ ...prev, [charId]: (prev[charId] || 0) + 1 }));
               const preview = (body || `${charName} sent an active message`).replace(/\s+/g, ' ').trim() || `${charName} sent an active message`;
-              void sendProactiveNativeNotification(charId, charName, preview);
+              if (!nativeNotificationHandled) void sendProactiveNativeNotification(charId, charName, preview);
               // SW push handler 已经 fire 过系统通知（不在前台时露出真实内容、在前台时
               // silent + close 静默），这里不再补一次，避免重复弹窗。
           }
@@ -2218,6 +2218,16 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       window.addEventListener('active-msg-backfill-stale', backfillStaleHandler);
       window.addEventListener('active-msg-progress', progressHandler);
       window.addEventListener('active-msg-open', openHandler);
+      // Dynamic import keeps the native-only handoff off the regular web startup path.
+      let disposeNativeOpen: (() => void) | undefined;
+      let nativeOpenCancelled = false;
+      if (import.meta.env.VITE_AMSG_NATIVE_PUSH === 'true') {
+          void import('../utils/nativeNotificationNavigation').then(({ subscribeNativeNotificationOpen }) => {
+              if (!nativeOpenCancelled) disposeNativeOpen = subscribeNativeNotificationOpen(charId => {
+                  void openHandler(new CustomEvent('active-msg-open', { detail: { charId } }));
+              });
+          });
+      }
       const secretSyncHandler = (event: Event) => {
           const charId = (event as CustomEvent).detail?.charId;
           const char = charactersRef.current.find(c => c.id === charId);
@@ -2238,6 +2248,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           window.removeEventListener('active-msg-backfill-stale', backfillStaleHandler);
           window.removeEventListener('active-msg-progress', progressHandler);
           window.removeEventListener('active-msg-open', openHandler);
+          nativeOpenCancelled = true;
+          disposeNativeOpen?.();
           window.removeEventListener(HOME_SECRETS_UPDATED, secretSyncHandler);
           window.removeEventListener('friend-feed-history-updated', secretSyncHandler);
           window.removeEventListener('emotion-updated', buffSyncHandler);
