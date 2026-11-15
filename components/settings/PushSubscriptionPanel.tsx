@@ -23,6 +23,7 @@ import {
   type AmsgPushDeliveryProbe,
 } from '../../utils/amsgDiagnostics';
 import { catchUpMissedPushesManually } from '../../utils/activeMsgRuntime';
+import { AMSG_GLOBAL_CONFIG_EVENT, isAmsg2GloballyEnabled, isAmsg2WorkerActive } from '../../utils/amsgGlobalGate';
 import { readBrowserPushState, type BrowserPushState } from '../../utils/pushSubscribeShared';
 import {
   describeElapsed,
@@ -74,6 +75,7 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
   // null = 还没问到（没填 Worker / 连不上），那时这一行照实说「没查到」。
   const [delivery, setDelivery] = useState<AmsgPushDeliveryProbe | null>(null);
   const [workerConfigured, setWorkerConfigured] = useState(false);
+  const [globallyPaused, setGloballyPaused] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [catchingUp, setCatchingUp] = useState(false);
@@ -88,13 +90,15 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
       // 没填 Worker 地址就别去问了——问也是白问，还会在控制台留一串没用的报错。
       const config = await ActiveMsgClient.getGlobalConfig().catch(() => null);
       const configured = Boolean(config?.workerUrl?.trim());
+      const active = isAmsg2WorkerActive(config);
       setPushMode(config?.pushMode === 'third-party' ? 'third-party' : 'web-push');
       setThirdPartyConfig(config?.thirdPartyPush ?? null);
       setWorkerConfigured(configured);
-      setRemote(configured ? await ActiveMsgClient.getRemotePushSubscription() : null);
+      setGloballyPaused(configured && !isAmsg2GloballyEnabled(config));
+      setRemote(active ? await ActiveMsgClient.getRemotePushSubscription() : null);
       // 「推送有没有真的送出去」是 Worker 那侧算好的（见 /debug 的 pushDelivery）。
       // 这一行和体检面板读的是同一份，不会一个说红一个说绿。
-      const probe = configured ? await fetchWorkerDiagnostics() : null;
+      const probe = active ? await fetchWorkerDiagnostics() : null;
       setDelivery(probe?.reachable ? probe.report.storage.pushDelivery ?? null : null);
     } finally {
       setRefreshing(false);
@@ -102,6 +106,11 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    const onGlobalCfg = () => { void refresh(); };
+    window.addEventListener(AMSG_GLOBAL_CONFIG_EVENT, onGlobalCfg);
+    return () => window.removeEventListener(AMSG_GLOBAL_CONFIG_EVENT, onGlobalCfg);
+  }, [refresh]);
 
   const isThirdParty = pushMode === 'third-party';
   const tpValidation = isThirdParty ? validateThirdPartyPushConfig(thirdPartyConfig) : null;
@@ -186,15 +195,19 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
   };
 
   const effectiveLocalEndpoint = isThirdParty ? thirdPartyEndpoint : browser?.endpoint;
-  const registration: AmsgPushRegistrationState = workerConfigured
+  const registration: AmsgPushRegistrationState = workerConfigured && !globallyPaused
     ? compareRemotePushSubscription(effectiveLocalEndpoint, remote)
     : 'worker-unset';
-  const registrationText = REGISTRATION_TEXT[registration];
+  const registrationText = globallyPaused
+    ? { value: '总开关已暂停（不连接 Worker）', bad: false }
+    : REGISTRATION_TEXT[registration];
 
   // 上一次推送到底送没送到。判定跟体检面板共用 judgePushDeliveryFailure——两处各写一套的话，
   // 用户会看到一个红一个绿，而这正是他判断该不该重置订阅的唯一依据。
   const deliveryVerdict = judgePushDeliveryFailure(delivery);
-  const deliveryText: { value: string; bad: boolean } = !workerConfigured || !delivery
+  const deliveryText: { value: string; bad: boolean } = globallyPaused
+    ? { value: '总开关已暂停', bad: false }
+    : !workerConfigured || !delivery
     ? { value: '没查到（要先连上 Worker）', bad: false }
     : !delivery.probed
       ? { value: delivery.reason === 'unsupported' ? '这台 Worker 还不查' : '没查成', bad: false }
@@ -373,10 +386,10 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
         )}
 
         <button
-          disabled={resetting || refreshing || (!isThirdParty && browser?.capacitorNative)}
+          disabled={globallyPaused || resetting || refreshing || (!isThirdParty && browser?.capacitorNative)}
           onClick={() => void handleReset()}
           className={`mt-4 w-full py-2 rounded-xl text-xs font-bold border ${
-            resetting || refreshing || (!isThirdParty && browser?.capacitorNative)
+            globallyPaused || resetting || refreshing || (!isThirdParty && browser?.capacitorNative)
               ? 'bg-slate-100 text-slate-400 border-slate-200'
               : deepMode || (!isThirdParty && browser?.endpointDead) || registrationText.bad || deliveryText.bad
                 ? 'bg-rose-500 text-white border-rose-500 hover:bg-rose-600'
@@ -399,10 +412,10 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
         {workerConfigured && (
           <>
             <button
-              disabled={catchingUp || resetting || refreshing}
+              disabled={globallyPaused || catchingUp || resetting || refreshing}
               onClick={() => void handleCatchUp()}
               className={`mt-3 w-full py-2 rounded-xl text-xs font-bold border ${
-                catchingUp || resetting || refreshing
+                globallyPaused || catchingUp || resetting || refreshing
                   ? 'bg-slate-100 text-slate-400 border-slate-200'
                   : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
               }`}

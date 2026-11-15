@@ -21,6 +21,7 @@ import {
 } from '../types';
 import { ActiveMsgClient } from './activeMsgClient';
 import { ActiveMsgStore } from './activeMsgStore';
+import { isAmsg2WorkerActive } from './amsgGlobalGate';
 import { buildDuplicateToolMessage, toolCallFingerprint, type ToolCallRecord } from './agenticToolFeedback';
 import { trackEvent } from './analytics';
 import {
@@ -515,7 +516,7 @@ async function handleList(deps: Amsg2ToolDeps): Promise<string> {
 export const isAmsg2GlobalReady = async (): Promise<boolean> => {
   try {
     const config = await ActiveMsgStore.getGlobalConfig();
-    return !!config.workerUrl?.trim();
+    return isAmsg2WorkerActive(config);
   } catch {
     return false;
   }

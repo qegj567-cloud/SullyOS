@@ -27,6 +27,7 @@ import { getReplyDisplayIds, isReplyStopped, markReplyStopped, replyAbortError }
 import { ActiveMsg2InboxMessage, CharacterProfile, GroupProfile, RealtimeConfig, UserProfile } from '../types';
 import { ActiveMsgClient, type AmsgOutboxEntry, type InstantChatProbeOutcome } from './activeMsgClient';
 import { ActiveMsgStore, isInstantChatSwitchedOn } from './activeMsgStore';
+import { isAmsg2GloballyEnabled } from './amsgGlobalGate';
 import { trackEvent } from './analytics';
 import {
   cloudApiCallLogId,
@@ -470,6 +471,7 @@ export const resolveInstantChatReadiness = async (
     console.warn(`${HEADER} 全局配置读不出来，这一轮判断不了即时对话开没开（按走不通处理，但这不是「没开」）`, error);
     return { ready: false, reason: 'config-unreadable' };
   }
+  if (!isAmsg2GloballyEnabled(config)) return { ready: false, reason: 'disabled' };
   if (!isInstantChatSwitchedOn(config)) return { ready: false, reason: 'disabled' };
   // 地址排在能力前面：没填地址时那份能力位多半是上一台 Worker 留下的存量，
   // 报「Worker 太旧」会把人指去点一个根本没连上的东西。
@@ -1052,4 +1054,45 @@ export const stopInstantChat = async (charId: string): Promise<void> => {
   const results = await Promise.allSettled([cancel, reconcile]);
   const failed = results.find(result => result.status === 'rejected');
   if (failed?.status === 'rejected') throw failed.reason;
+};
+
+/**
+ * 全局总开关关闭时立即收束本机所有正在等待的即时对话轮次：熄灭输入中与情绪灯、结清调用记录、
+ * 清理未展示的分段，返回待尽力取消的远端任务 UUID 列表（不在此处等待网络）。
+ */
+export const abortAllInstantChatPendingsLocally = async (): Promise<string[]> => {
+  const pendings = listInstantChatPendings();
+  if (pendings.length === 0) return [];
+  const uuids: string[] = [];
+  for (const pending of pendings) {
+    const visibleIds = getReplyDisplayIds(pending.charId);
+    markReplyStopped(pending.uuid);
+    clearInstantChatPending(pending.charId);
+    discardInstantChatExpiredNotices(pending.charId, pending.uuid);
+    void import('./friendFeedEmotion')
+      .then((m) => m.settleFriendFeedCloudTask(pending.charId, pending.uuid, false))
+      .catch(() => {});
+    announceEmotionDone(pending.charId);
+    settleCloudApiCall({ id: cloudApiCallLogId(pending.uuid), ok: false });
+    if (consumeEmotionEvalInFlight(pending.uuid)) {
+      settleCloudApiCall({ id: cloudEmotionApiCallLogId(pending.uuid), ok: false });
+    }
+    uuids.push(pending.uuid);
+    await stageStoppedReplyReceipt(pending.charId, pending.uuid, (async () => {
+      try {
+        const messages = (await DB.getMessagesByCharId(pending.charId)).filter((message) =>
+          (message.metadata as any)?.activeMsg2?.taskUuid === pending.uuid);
+        const kept = messages.filter((message) => !visibleIds || visibleIds.has(message.id));
+        const unseen = messages.filter((message) => visibleIds && !visibleIds.has(message.id));
+        if (unseen.length) await DB.deleteMessages(unseen.map((message) => message.id));
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('active-msg-progress', { detail: { charId: pending.charId } }));
+        }
+        return kept.map((message) => message.content).join('\n');
+      } catch {
+        return '';
+      }
+    })());
+  }
+  return uuids;
 };

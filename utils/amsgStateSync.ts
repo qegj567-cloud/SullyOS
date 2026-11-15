@@ -31,6 +31,7 @@
 import { APIConfig, CharacterProfile, GroupProfile, RealtimeConfig, UserProfile } from '../types';
 import { ActiveMsgClient, isLlmCredentialsReady, owesInstantChatReply } from './activeMsgClient';
 import { ActiveMsgStore } from './activeMsgStore';
+import { isAmsg2GloballyEnabled, isAmsg2WorkerActive, isAmsgGlobalDisabledError } from './amsgGlobalGate';
 import { stampStateUpdatedAt } from './amsgStateClock';
 import { hasActiveAiTask } from './amsg2Tasks';
 import { AmsgChatPresence, CHAT_PRESENCE_HEARTBEAT_MS } from './amsgChatPresence';
@@ -204,8 +205,8 @@ export const markAmsgStateDirty = (
  */
 export const invalidateCharCloudState = async (charId: string): Promise<void> => {
   try {
-    const workerUrl = (await ActiveMsgStore.getGlobalConfig()).workerUrl?.trim();
-    if (!workerUrl) return;
+    const globalConfig = await ActiveMsgStore.getGlobalConfig();
+    if (!isAmsg2WorkerActive(globalConfig)) return;
     await ActiveMsgClient.clearCharClientState(charId);
   } catch (error) {
     console.warn(`${HEADER} 作废云端角色上下文失败（本地删除不受影响）`, charId, error);
@@ -286,6 +287,12 @@ export const flushAmsgState = async (reason: string): Promise<void> => {
       const all = [...dirty.values()];
       dirty.clear();
       prunePersistedMarks(all);
+      return;
+    }
+    if (!isAmsg2GloballyEnabled(globalConfig)) {
+      // 总开关关闭期间不发请求也不排退避；charId 底账保留在 localStorage，重新开启后补传。
+      dirty.clear();
+      deferredIds.clear();
       return;
     }
 
@@ -489,6 +496,12 @@ const runToolConfigSync = async (reason: string): Promise<void> => {
       writeToolConfigMark(false);
       return;
     }
+    if (!isAmsg2GloballyEnabled(globalConfig)) {
+      // 总开关暂停期间保留 localStorage 待传标记，清掉内存队列与重试，待重新开启后对齐。
+      hasPendingToolConfig = false;
+      pendingToolConfig = undefined;
+      return;
+    }
     await ActiveMsgClient.syncToolConfig(snapshot, { updatedAt: version });
     if (pendingToolConfigVersion === version) {
       hasPendingToolConfig = false;
@@ -655,6 +668,12 @@ const runLlmCredentialSync = async (reason: string): Promise<void> => {
       hasPendingCredSync = false;
       pendingCredApiConfig = undefined;
       writeCredSyncMark(false);
+      return;
+    }
+    if (!isAmsg2GloballyEnabled(globalConfig)) {
+      // 总开关暂停期间保留 localStorage 欠账标记，恢复开启时统一重传最新凭据。
+      hasPendingCredSync = false;
+      pendingCredApiConfig = undefined;
       return;
     }
     if (await isLlmCredentialsReady()) {
@@ -857,7 +876,9 @@ export type AmsgResetCloudWipe =
 export const wipeAmsgCloudDataForReset = async (): Promise<AmsgResetCloudWipe> => {
   let workerUrl = '';
   try {
-    workerUrl = (await ActiveMsgStore.getGlobalConfig()).workerUrl?.trim() || '';
+    const config = await ActiveMsgStore.getGlobalConfig();
+    if (!isAmsg2WorkerActive(config)) return { status: 'skipped' };
+    workerUrl = config.workerUrl?.trim() || '';
   } catch {
     // 连本地配置都读不到，等于无从判断有没有云端；按没有处理，别为它拦下重置。
     return { status: 'skipped' };
@@ -887,6 +908,10 @@ const writeChatPresence = (charId: string, lastUserMessageAt: number | null, sce
   };
   // 写入失败只 warn：心跳故障不能打断正常聊天，下一次 interval 继续尝试；远端 45s TTL 兜底。
   ActiveMsgClient.syncChatPresence(charId, presence).catch((error) => {
+    if (isAmsgGlobalDisabledError(error)) {
+      stopAmsgChatPresence(charId, scene);
+      return;
+    }
     console.warn(`${HEADER} 活跃会话租约写入失败（45s TTL 自然失效）`, error);
   });
 };
@@ -926,4 +951,32 @@ export const stopAmsgChatPresence = (charId: string, scene?: 'date') => {
     clearInterval(lease.timer);
     chatPresenceLeases.delete(charId);
   }
+};
+
+/**
+ * 全局总开关关闭时立即停下本模块全部心跳与重试定时器，清空内存待传队列；
+ * localStorage 上的待传标记予以保留，重新开启后由 resumePendingAmsgStateSync 统一对齐。
+ */
+export const pauseAmsgStateSync = (): void => {
+  for (const lease of chatPresenceLeases.values()) {
+    clearInterval(lease.timer);
+  }
+  chatPresenceLeases.clear();
+
+  if (flushDebounceTimer != null) { clearTimeout(flushDebounceTimer); flushDebounceTimer = null; }
+  if (retryTimer != null) { clearTimeout(retryTimer); retryTimer = null; }
+  if (toolConfigRetryTimer != null) { clearTimeout(toolConfigRetryTimer); toolConfigRetryTimer = null; }
+  if (credRetryTimer != null) { clearTimeout(credRetryTimer); credRetryTimer = null; }
+
+  dirty.clear();
+  reflushRequested = false;
+  retryCount = 0;
+
+  hasPendingToolConfig = false;
+  pendingToolConfig = undefined;
+  toolConfigRetryCount = 0;
+
+  hasPendingCredSync = false;
+  pendingCredApiConfig = undefined;
+  credRetryCount = 0;
 };

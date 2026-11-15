@@ -1,6 +1,7 @@
 import { ActiveMsgClient } from './activeMsgClient';
 import { ActiveMsgStore } from './activeMsgStore';
 import { CloudDataError, describeCloudOperation, type CloudCleanupPlan, type CloudCleanupOperation } from './amsgCloudData';
+import { isAmsg2GloballyEnabled, isAmsg2WorkerActive } from './amsgGlobalGate';
 
 type Connection = { workerUrl: string; userId: string };
 type Character = { id: string; name: string };
@@ -32,6 +33,17 @@ export async function retireCloudCharacter(character: Character, expectedConnect
     const connection = { workerUrl: config.workerUrl, userId: config.userId };
     if (expectedConnection && keyFor(connection) !== keyFor(expectedConnection)) {
       throw new Error('Worker 连接已切换，请重新打开云端数据管理。');
+    }
+    // 全局总开关暂停期间删除本地角色或用户空间时（无论是否传入 expectedConnection），
+    // 都不主动打云端请求，先把待停用角色记入本地底账，等总开关恢复后再自动收尾。
+    if (!isAmsg2GloballyEnabled(config)) {
+      if (config.userId) {
+        const existing = readAttempts(connection).find(item => item.character.id === character.id);
+        if (!existing) {
+          saveAttempt(connection, character.id, { character, plan: null, idempotencyKey: crypto.randomUUID() });
+        }
+      }
+      return { status: 'skipped' };
     }
     let attempt = readAttempts(connection).find(item => item.character.id === character.id);
     if (!attempt) {
@@ -88,5 +100,19 @@ export async function retireCloudCharacter(character: Character, expectedConnect
   } catch (failure) {
     if (failure instanceof CloudDataError && failure.code === 'CLOUD_DATA_UNSUPPORTED') return { status: 'unsupported' };
     return { status: 'failed', detail: failure instanceof Error ? failure.message : String(failure) };
+  }
+}
+
+/** 总开关重新启用后，尽力把暂停期间攒下的待停用角色补送到云端。 */
+export async function flushPendingCloudRetirements(): Promise<void> {
+  try {
+    const config = await ActiveMsgStore.getGlobalConfig();
+    if (!isAmsg2WorkerActive(config) || !config.userId) return;
+    const queued = pendingCloudRetirements({ workerUrl: config.workerUrl, userId: config.userId });
+    for (const character of queued) {
+      await retireCloudCharacter(character);
+    }
+  } catch {
+    // 尽力而为；仍未确认的条目保留在本地底账里，用户可在「云端数据管理」查看或重试。
   }
 }

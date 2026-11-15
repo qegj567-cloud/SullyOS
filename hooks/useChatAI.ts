@@ -1441,7 +1441,7 @@ export const useChatAI = ({
             // 别在用户正聊时又弹主动消息。即时对话路径在上方已 return，天然不重复开 lease。
             // 只对已排程 AI 任务的角色开租约：其余角色没有 worker 消费，开了纯浪费还刷 warn。
             const amsg2Cfg = char.activeMsg2Config;
-            if (amsg2Cfg?.enabled && hasActiveAiTask(amsg2Cfg)) {
+            if (amsg2ToolsInjected && amsg2Cfg?.enabled && hasActiveAiTask(amsg2Cfg)) {
                 startAmsgChatPresence(char.id, getLastRealUserMessageAt(contextMsgs));
             }
 

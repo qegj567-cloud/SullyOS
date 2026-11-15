@@ -339,6 +339,11 @@ export type ActiveMsg2Mode = 'fixed' | 'auto' | 'prompted';
 export type ActiveMsg2Recurrence = 'none' | 'daily' | 'weekly';
 
 export interface ActiveMsg2GlobalConfig {
+  /**
+   * 全局总开关：false 时保留 Worker 地址、密钥与各角色配置，暂停本机一切向云端的请求与轮询；
+   * undefined / true 均为开启（兼容存量配置）。
+   */
+  enabled?: boolean;
   /** Confirmed by /config-check, scoped to the Worker URL that was checked. */
   anthropicMessagesSupported?: boolean;
   anthropicMessagesWorkerUrl?: string;

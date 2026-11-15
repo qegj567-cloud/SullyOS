@@ -11,6 +11,8 @@ import { DB } from './db';
 import { ActiveMsgClient } from './activeMsgClient';
 import { applyScheduledTask } from './amsg2Tasks';
 import { buildDateLeaveInstruction } from './amsgFireSchedule';
+import { ActiveMsgStore } from './activeMsgStore';
+import { isAmsg2GloballyEnabled, isAmsgGlobalDisabledError } from './amsgGlobalGate';
 import { isAwayCloudRoute, runLocalProactiveTurn } from './awayMessage';
 
 export const DATE_LEAVE_DEFAULT_MINUTES = 5;
@@ -154,8 +156,14 @@ export const disarmDateLeaveReminder = (deps: Pick<DateLeaveDeps, 'char' | 'upda
     const uuid = cloudTaskOf(char);
     knownCloudTasks.delete(char.id);
     if (!uuid) return;
+    const cfg = await ActiveMsgStore.getGlobalConfig().catch(() => null);
+    if (!isAmsg2GloballyEnabled(cfg)) return;
     // 取消失败不重试：走开后开过口的，worker 到点看到私聊盖掉了见面租约会自己作废。
-    try { await ActiveMsgClient.cancelTask(uuid); } catch (error) { console.warn('[DateLeave] 取消云端任务失败', error); }
+    try {
+      await ActiveMsgClient.cancelTask(uuid);
+    } catch (error) {
+      if (!isAmsgGlobalDisabledError(error)) console.warn('[DateLeave] 取消云端任务失败', error);
+    }
     deps.updateCharacter(char.id, prev => prev.activeMsg2Config ? {
       activeMsg2Config: {
         ...prev.activeMsg2Config,

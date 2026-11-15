@@ -14,6 +14,7 @@ import type { CloudOwnerState } from '@rei-standard/amsg-client';
 import { ActiveMsgClient } from './activeMsgClient';
 import { ActiveMsgStore } from './activeMsgStore';
 import { CloudDataError } from './amsgCloudData';
+import { isAmsg2WorkerActive } from './amsgGlobalGate';
 import { pendingCloudRetirements } from './amsgCloudRetirement';
 import { readCloudOwnerGeneration } from './amsgCloudOwnerGeneration';
 
@@ -50,7 +51,7 @@ export function diffCloudOwners(
 /** 没配 Worker、或 Worker 太旧不支持云端数据管理时返回空：没有可对的账。 */
 export async function findCloudOwnerConflicts(characters: ReadonlyArray<Character>): Promise<CloudOwnerConflict[]> {
   if (characters.length === 0) return [];
-  if (!(await ActiveMsgStore.getGlobalConfig()).workerUrl?.trim()) return [];
+  if (!isAmsg2WorkerActive(await ActiveMsgStore.getGlobalConfig())) return [];
   let session: Awaited<ReturnType<typeof ActiveMsgClient.openCloudDataSession>>;
   try {
     session = await ActiveMsgClient.openCloudDataSession();
