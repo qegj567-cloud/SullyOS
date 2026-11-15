@@ -57,6 +57,7 @@ import { ActiveMsgStore } from '../utils/activeMsgStore';
 import { AMSG_GLOBAL_CONFIG_EVENT, isAmsg2GloballyEnabled } from '../utils/amsgGlobalGate';
 import { flushAmsg2AfterReenable, setAmsg2GlobalEnabled } from '../utils/amsgGlobalSwitch';
 import VersionInfo from '../components/settings/VersionInfo';
+import SullySupportEntry, { SupportIcon } from '../components/settings/SullySupportEntry';
 import { isPushVapidReady } from '../utils/pushVapid';
 import ApiCallLogModal from '../components/settings/ApiCallLogModal';
 import StorageUsagePanel from '../components/settings/StorageUsagePanel';
@@ -88,6 +89,8 @@ import {
     setFirecrawlApiKey,
     type FirecrawlCreditUsage,
 } from '../utils/firecrawl';
+
+const SullySupportPage = React.lazy(() => import('../components/settings/SullySupportPage'));
 
 // hot_news（news.orz.ai）可选热榜平台。key 必须与 API 的 ?platform= 完全一致。
 const HOTNEWS_PLATFORM_OPTIONS: { key: string; label: string }[] = [
@@ -580,6 +583,18 @@ const Settings: React.FC = () => {
   const presetDeleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   // UI States
+  const [showSupport, setShowSupport] = useState(false);
+  const supportEntryRef = useRef<HTMLButtonElement>(null);
+  const supportWasOpen = useRef(false);
+  useSettingsFocus('support', () => {
+      supportEntryRef.current?.scrollIntoView({ block: 'center' });
+      setShowSupport(true);
+  });
+  useLocalBackHandler(() => { setShowSupport(false); return true; }, 30, showSupport);
+  useEffect(() => {
+      if (!showSupport && supportWasOpen.current) supportEntryRef.current?.focus({ preventScroll: true });
+      supportWasOpen.current = showSupport;
+  }, [showSupport]);
   const [showModelModal, setShowModelModal] = useState(false);
   // 打开模型弹窗那一刻的模型名：点 × 关掉时退回它，只有「确定」/点选列表才算数。
   const modelBeforePickerRef = useRef('');
@@ -2035,7 +2050,7 @@ const Settings: React.FC = () => {
       )}
 
       {/* Header */}
-      <div className="bg-[#fffefe] border-b border-slate-200 shrink-0 z-10 sticky top-0" style={{ paddingTop: 'var(--safe-top)' }}>
+      <div className="bg-[#fffefe] border-b border-slate-200 shrink-0 z-10 sticky top-0" style={{ paddingTop: 'var(--safe-top)' }} {...(showSupport ? { inert: '' } : {})} aria-hidden={showSupport || undefined}>
         <div className="flex items-center px-4 py-3">
         <div className="flex items-center gap-2 w-full">
             <button onClick={closeApp} className="p-2 -ml-2 rounded-full hover:bg-black/5 active:scale-90 transition-transform">
@@ -2048,7 +2063,7 @@ const Settings: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-5 space-y-6 no-scrollbar pb-20">
+      <div className="flex-1 overflow-y-auto p-5 space-y-6 no-scrollbar pb-20" {...(showSupport ? { inert: '' } : {})} aria-hidden={showSupport || undefined}>
 
         <NavigationBallSettings characters={characters} loadWorlds={() => DB.getWorlds()} />
         {/* 外观救急入口统一放在设置顶部，无需进入已被错误 CSS 遮住的聊天或日记。 */}
@@ -3454,8 +3469,15 @@ const Settings: React.FC = () => {
         )}
 
         <VersionInfo />
+        <SullySupportEntry ref={supportEntryRef} onOpen={() => setShowSupport(true)} />
 
       </div>
+
+      {showSupport && <React.Suspense fallback={
+          <section className="sully-support support-page" aria-label="打赏 Sully" onKeyDown={event => {
+              if (event.key === 'Escape') { event.stopPropagation(); setShowSupport(false); }
+          }}><div className="support-loading"><header className="support-header"><button autoFocus className="header-back" type="button" onClick={() => setShowSupport(false)} aria-label="返回设置"><SupportIcon name="back" /></button><h1>打赏 Sully</h1><span /></header><p role="status">猫猫正在准备小票…</p></div></section>
+      }><SullySupportPage onClose={() => setShowSupport(false)} /></React.Suspense>}
 
       {/* Cloud Config Modal */}
       <Modal isOpen={showCloudModal} title="云端备份配置" onClose={() => setShowCloudModal(false)}>

@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>打赏 Sully · 界面预览</title>
+  <link rel="stylesheet" href="preview.css">
+</head>
+<body>
+  <svg class="icon-defs" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
+    <symbol id="back" viewBox="0 0 24 24"><path d="m14 6-6 6 6 6"/></symbol>
+    <symbol id="download" viewBox="0 0 24 24"><path d="M12 3v12m-4-4 4 4 4-4M5 15v5h14v-5"/></symbol>
+    <symbol id="heart" viewBox="0 0 24 24"><path d="M20.5 4.7a5.2 5.2 0 0 0-7.4 0L12 5.8l-1.1-1.1a5.2 5.2 0 0 0-7.4 7.4L12 21l8.5-8.9a5.2 5.2 0 0 0 0-7.4Z"/></symbol>
+    <symbol id="cloud" viewBox="0 0 24 24"><path d="M7 18H6a4 4 0 0 1-.6-8A7 7 0 0 1 19 9a4.5 4.5 0 0 1-1 9h-1m-5 3V10m-3 3 3-3 3 3"/></symbol>
+    <symbol id="database" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 4 16 4 16 0V5M4 12c0 4 16 4 16 0"/></symbol>
+    <symbol id="chart" viewBox="0 0 24 24"><path d="M4 13h3v8H4zm6-7h3v15h-3zm6-4h3v19h-3z"/></symbol>
+  </svg>
+
+  <header class="preview-header">
+    <a class="preview-brand" href="./preview.html">SullyOS<span>WITH A LITTLE LOVE</span></a>
+    <div class="view-switch" role="group" aria-label="预览视图">
+      <button type="button" data-view="both" aria-pressed="true">一起看</button>
+      <button type="button" data-view="settings" aria-pressed="false">设置入口</button>
+      <button type="button" data-view="detail" aria-pressed="false">打赏页面</button>
+    </div>
+  </header>
+
+  <main class="board" data-view="both">
+    <section class="artboard settings-artboard" aria-label="设置底部预览">
+      <div class="artboard-label"><span>01</span> 设置底部 <i>一点点偏爱，放在这里。</i></div>
+      <div class="screen settings-screen">
+        <div class="status-bar" aria-hidden="true"><span>9:41</span><span class="status-icons"><b>▂▄▆</b><span class="wifi">◔</span><span class="battery"></span></span></div>
+        <header class="app-header"><span class="header-back" aria-hidden="true"><svg class="icon"><use href="#back"/></svg></span><h1>系统设置</h1><span></span></header>
+        <div class="settings-content">
+          <div class="setting-rows" aria-label="已有设置的展示占位">
+            <div class="setting-row"><svg class="icon"><use href="#cloud"/></svg><span>数据与备份</span><b>›</b></div>
+            <div class="setting-row"><svg class="icon"><use href="#database"/></svg><span>存储管理</span><b>›</b></div>
+            <div class="setting-row"><svg class="icon"><use href="#chart"/></svg><span>使用统计</span><b>›</b></div>
+          </div>
+          <div class="version-note">SullyOS · 糯米机</div>
+
+          <button class="support-entry" type="button" id="open-support" aria-label="打开打赏 Sully 页面">
+            <span class="gingham entry-gingham" aria-hidden="true"></span><span class="paper-tape" aria-hidden="true"></span>
+            <span class="entry-copy"><span class="entry-kicker">SULLY-08 · SNACK STATION</span><strong>打赏 Sully<span class="star small-star" aria-hidden="true"></span></strong><span class="entry-subtitle">给像素猫买点小鱼干</span><span class="entry-action">去投喂 <svg class="icon"><use href="#arrow"/></svg></span></span>
+            <img class="entry-character" src="assets/sully-peeking.png" alt="从角落探出头的 Sully" width="1350" height="1409">
+            <span class="star entry-star" aria-hidden="true"></span>
+          </button>
+          <p class="settings-thanks"><span></span>谢谢你，让这个小世界继续发光。<span></span></p>
+          <div class="settings-signoff" aria-hidden="true"><svg class="icon"><use href="#heart"/></svg><span>made with love, always.</span></div>
+        </div>
+        <div class="home-indicator" aria-hidden="true"></div>
+      </div>
+    </section>
+
+    <section class="artboard detail-artboard" aria-label="打赏页面预览">
+      <div class="artboard-label"><span>02</span> 打赏 Sully <i>心意，我会好好收着。</i></div>
+      <div class="screen detail-screen">
+        <div class="status-bar" aria-hidden="true"><span>9:41</span><span class="status-icons"><b>▂▄▆</b><span class="wifi">◔</span><span class="battery"></span></span></div>
+        <header class="app-header"><button class="header-back" id="back-settings" type="button" aria-label="返回设置"><svg class="icon"><use href="#back"/></svg></button><h1>打赏 Sully</h1><span></span></header>
+        <div class="support-content">
+          <section class="support-hero" aria-labelledby="support-title">
+            <div class="hero-copy"><div class="sully-wordmark">Sully<span class="star" aria-hidden="true"></span></div><h2 id="support-title">给像素猫<br><span>买点小鱼干</span></h2><p class="hero-quote" id="sully-quote" aria-live="polite">你的喜欢，我有好好收到。</p></div>
+            <div class="hero-art"><span class="blue-disc" aria-hidden="true"></span><span class="star hero-star-one" aria-hidden="true"></span><span class="sparkle hero-star-two" aria-hidden="true">✦</span><span class="hero-heart" aria-hidden="true">♡</span><div class="charm"><span class="charm-loop" aria-hidden="true"></span><img class="charm-character" src="assets/sully-standing.png" alt="穿着淡紫色条纹外套的 Sully" width="2260" height="3378"></div></div>
+          </section>
+
+          <section class="team-note funding-note" aria-label="打赏用途与项目组致谢">
+            <p>为了给大家带来更好的体验，开发组每月在模型调用与测试上的硬性支出已达<strong>四位数</strong>。</p>
+            <p>所有赞赏将直接用于继续项目的更新与维护。</p>
+            <p class="team-thanks">感谢你愿意为这份热爱助力。</p>
+            <p class="team-signature">—— 条 &amp; TO 敬上 <svg class="icon"><use href="#heart"/></svg></p>
+          </section>
+
+          <details class="snack-menu" id="snack-menu">
+            <summary><span><strong>投喂参考菜单</strong><small>七份小小心意，随心挑一份</small></span><span class="menu-toggle" aria-hidden="true">＋</span></summary>
+            <ol class="menu-items">
+              <li><span class="menu-emoji" aria-hidden="true">🐟</span><div><strong>一口小鱼干</strong><p>猫猫探头：这口归我了！</p></div><span class="menu-price"><small>¥</small>2.33</span></li>
+              <li><span class="menu-emoji" aria-hidden="true">🍪</span><div><strong>工位加餐包</strong><p>给条和 TO 的灵感垫垫肚子。</p></div><span class="menu-price"><small>¥</small>6.66</span></li>
+              <li><span class="menu-emoji" aria-hidden="true">🥫</span><div><strong>灵感猫罐头</strong><p>开罐声一响，新点子探出头。</p></div><span class="menu-price"><small>¥</small>18.80</span></li>
+              <li><span class="menu-emoji" aria-hidden="true">🎧</span><div><strong>八号工位夜宵</strong><p>Sully-08：陪聊小猫申请加餐。</p></div><span class="menu-price"><small>¥</small>18.88</span></li>
+              <li><span class="menu-emoji" aria-hidden="true">💭</span><div><strong>咕噜咕噜快乐包</strong><p>猫猫笑出 233，Bug 先靠边站。</p></div><span class="menu-price"><small>¥</small>23.33</span></li>
+              <li><span class="menu-emoji" aria-hidden="true">🏰</span><div><strong>豪华猫爬架</strong><p>站高一点，看看下一个新功能。</p></div><span class="menu-price"><small>¥</small>66.66</span></li>
+              <li><span class="menu-emoji" aria-hidden="true">🌌</span><div><strong>银河猫粮储备</strong><p>猫粮常满，灵感常亮，大家常来。</p></div><span class="menu-price"><small>¥</small>88.88</span></li>
+            </ol>
+            <p class="menu-footnote">金额只是心意参考，可在支付 App 中自由填写。<br>不投喂也欢迎来玩，DC 陪聊照常营业。</p>
+          </details>
+
+          <aside class="signature-note"><span class="signature-pin" aria-hidden="true">✎</span><div><h3>留个名字，让猫猫认领这份偏爱。</h3><p>扫码投喂时，请在<strong>【添加备注】</strong>写下你希望公开展示的署名。每月更新时，我们会把它写进 SullyOS<strong>【饲养员感谢名单】</strong>。</p><p class="mystery-name">没留名字？那就记作「神秘猫奴」。</p></div></aside>
+
+          <div class="payment-tabs" role="tablist" aria-label="打赏方式">
+            <button type="button" role="tab" id="tab-wechat" aria-selected="true" aria-controls="payment-panel" tabindex="0" data-payment="wechat">微信赞赏</button>
+            <button type="button" role="tab" id="tab-alipay" aria-selected="false" aria-controls="payment-panel" tabindex="-1" data-payment="alipay">支付宝</button>
+          </div>
+          <section id="payment-panel" role="tabpanel" aria-labelledby="tab-wechat" tabindex="0">
+            <div class="ticket">
+              <div class="ticket-top">A LITTLE LOVE, A BIG THANK YOU</div>
+              <div class="ticket-main">
+                <div class="qr-crop qr-crop--wechat" id="qr-crop"><img id="payment-code" src="assets/wechat-sully-code.png" alt="微信赞赏码，中央为 Sully 头像" width="550" height="550"></div>
+                <p class="code-caption" id="code-caption">微信赞赏 · 单次上限 <strong>¥200</strong></p>
+              </div>
+              <div class="ticket-footer"><span>心意我会好好收着。</span><span class="footer-scribble" aria-hidden="true"></span></div>
+              <img class="ticket-sticker" src="assets/sully-phone.png" alt="" width="1174" height="1240">
+            </div>
+            <a class="save-button" id="save-code" href="assets/wechat-support-card.png" download="Sully-微信投喂小票.png"><svg class="icon"><use href="#download"/></svg><span>保存投喂小票</span></a>
+            <p class="save-help" id="save-help">微信扫一扫 → 从相册选择 → 填写金额与署名</p>
+            <a class="original-link" id="open-original" href="assets/wechat-original.png" target="_blank" rel="noopener">识别不顺利？打开原始赞赏码 <span aria-hidden="true">↗</span></a>
+            <p class="download-status" id="download-status" role="status" hidden></p>
+          </section>
+
+          <div class="gentle-footer"><p>先照顾好自己，有余力再投喂。</p><button type="button" class="pet-button" id="pet-sully">摸摸 Sully，也很好 <svg class="icon"><use href="#heart"/></svg></button><p class="pet-response" id="pet-response" aria-live="polite"></p></div>
+        </div>
+        <div class="home-indicator" aria-hidden="true"></div>
+      </div>
+    </section>
+  </main>
+  <footer class="preview-footer">SULLYOS <span>✦</span> A LITTLE LOVE GOES A LONG WAY</footer>
+  <script src="preview.js"></script>
+</body>
+</html>

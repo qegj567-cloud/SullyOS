@@ -1,3 +1,4 @@
+import { useChatNotificationSound } from '../hooks/useChatNotificationSound';
 import ChatRuntimeStyle from '../components/chat/ChatRuntimeStyle';
 import { resolveDialogueApi } from '../utils/characterApi';
 import {ChatCardSurface} from '../components/chat/ChatCardSurface';
@@ -49,7 +50,7 @@ import { buildReplySnapshotContent } from '../utils/applyAssistantPostProcessing
 import ChromeCssEditor from '../components/chat/ChromeCssEditor';
 import WhiteboxSoundEditor from '../components/chat/WhiteboxSoundEditor';
 import HtmlCard from '../components/chat/HtmlCard';
-import { WhiteboxSound, parseWhiteboxSound, upsertWhiteboxSound, stripWhiteboxSoundDirective, resolveActiveSound, playWhiteboxSound, unlockWhiteboxAudio } from '../utils/whiteboxSound';
+import { WhiteboxSound, parseWhiteboxSound, upsertWhiteboxSound, stripWhiteboxSoundDirective, unlockWhiteboxAudio } from '../utils/whiteboxSound';
 import { buildHtmlPrompt } from '../utils/htmlPrompt';
 import { materializeVisionDescriptions } from '../utils/visionApi';
 import {
@@ -494,6 +495,7 @@ const GroupMessageItem = React.memo(({
 // --- Main Component ---
 
 const GroupChat: React.FC = () => {
+    const playChatNotificationSound = useChatNotificationSound();
     const { closeApp, groups, createGroup, updateGroup, deleteGroup, characters, apiConfig, addToast, userProfile, virtualTime, characterGroups, theme: osTheme, customThemes, realtimeConfig } = useOS();
     const reducedBlur = useReducedBlur();
     const [view, setView] = useState<'list' | 'chat'>('list');
@@ -660,7 +662,7 @@ const GroupChat: React.FC = () => {
         if (isNew && last?.role === 'assistant') {
             const now = Date.now();
             if (sync.lastAt == null || now - sync.lastAt > SOUND_ROUND_GAP_MS) {
-                playWhiteboxSound(resolveActiveSound(activeGroup?.chromeCustomCss, activeGroup?.chatSound, osTheme.chatChromeCustomCss, osTheme.chatSound));
+                if (activeGroup) playChatNotificationSound('group', activeGroup.id);
             }
             sync.lastAt = now;
         }
