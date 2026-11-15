@@ -2227,7 +2227,9 @@ export const ActiveMsgClient = {
 
   async sendTestPush(): Promise<{ sent: boolean }> {
     const config = await ensureWorkerReady();
-    const signal = typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(15000) : undefined;
+    // amsg-shared Web Push waits up to 30s. Leave room for that upstream result,
+    // encryption and transport; a 15s client abort hides the actual push error.
+    const signal = typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(45_000) : undefined;
     const { status, body } = await fetchWithAuthRaw(
       'test-push',
       config,

@@ -1850,7 +1850,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
 
   const pushTitle = config.pushMode === 'third-party'
     ? '第三方推送 App'
-    : pushStatus?.transport === 'unified-push' ? 'UnifiedPush 通知' : '通知与推送通道';
+    : '通知与推送通道';
   const pushStatusText = checkingPush ? '检查中…' : pushCheckError ? '暂时无法检查' : pushStatus?.hasSubscription ? '已开启' : '未开启';
   const pushStatusClass = checkingPush ? 'text-slate-400' : pushStatus?.hasSubscription ? 'text-emerald-600' : 'text-amber-600';
   const pushBody = (
@@ -1865,7 +1865,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
                   : 'text-slate-500'
               }`}
             >
-              {pushStatus?.transport === 'unified-push' ? '系统 / ntfy 推送' : '网页 / 系统原生推送'}
+              网页 / 系统原生推送
             </button>
             <button
               type="button"
@@ -2013,27 +2013,10 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
             })()
           ) : (
             <>
-              {pushStatus?.transport === 'unified-push' ? (
-                <p className="text-xs leading-relaxed text-slate-500">
-                  Android App 通过开放的 UnifiedPush 收消息，不依赖 Firebase 或 Google 服务。
-                  ntfy 只负责在后台唤醒本 App，AMSG Worker 仍是你自己部署的那一台。你也可以切换到上方的「第三方推送 App」使用 WxPusher（推荐）。
-                </p>
-              ) : (
-                <p className="text-xs leading-relaxed text-slate-500">
-                  若你的 iOS 版本不支持网页推送，或受网络影响（如谷歌浏览器）收不到通知，可切换到上方的「第三方推送 App」。
-                  换了设备或浏览器，在新设备上点一次「开启通知与推送」，会覆盖原来的订阅，之后通知只发到新设备。
-                </p>
-              )}
-              {pushStatus?.needsDistributor ? (
-                <a
-                  href="https://docs.ntfy.sh/subscribe/phone/"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="block text-xs font-bold text-violet-600 underline"
-                >
-                  安装并打开 ntfy（选择无 Firebase 版本）
-                </a>
-              ) : null}
+              <p className="text-xs leading-relaxed text-slate-500">
+                若设备不支持网页或系统推送，或受网络影响收不到通知，可切换到上方的「第三方推送 App」。
+                换了设备或浏览器，在新设备上点一次「开启通知与推送」，会覆盖原来的订阅，之后通知只发到新设备。
+              </p>
               {pushStatus?.detail ? (
                 <p className="text-xs leading-relaxed text-amber-600">{pushStatus.detail}</p>
               ) : null}
@@ -2051,7 +2034,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
                   disabled={loading || globallyPaused}
                   className="flex-1 py-3 bg-violet-500 text-white font-bold rounded-2xl active:scale-95 transition-transform disabled:opacity-50"
                 >
-                  {loading ? '处理中...' : pushStatus?.transport === 'unified-push' ? '连接 ntfy 并开启通知' : '开启通知与推送'}
+                  {loading ? '处理中...' : '开启通知与推送'}
                 </button>
                 {isConnected && pushStatus?.hasSubscription ? (
                   <button

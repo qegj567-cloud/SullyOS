@@ -1922,6 +1922,7 @@ const flushInboxToChatImpl = async (trigger: FlushTrigger, charId?: string): Pro
           charId: message.charId,
           charName: message.charName,
           body: message.previewBody || message.body,
+          ...((message.metadata as any)?.nativeNotificationHandled === true ? { nativeNotificationHandled: true } : {}),
           avatarUrl: message.avatarUrl,
           sentAt: eventSentAt,
         },

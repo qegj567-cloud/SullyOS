@@ -1,15 +1,15 @@
 {
   "schemaVersion": 1,
-  "versionCode": 30516,
-  "versionName": "3.5.16",
-  "apkUrl": "https://github.com/qegj567-cloud/SullyOS/releases/download/android-v3.5.16/SullyOS-Android-v3.5.16.apk",
-  "sha256": "b37822989d1ef41618a17f516df8a85efad3a7990ca6e9764dd277a04808df93",
-  "sizeBytes": 103845100,
-  "publishedAt": "2026-11-15T10:49:53Z",
+  "versionCode": 30519,
+  "versionName": "3.5.19",
+  "apkUrl": "https://github.com/qegj567-cloud/SullyOS/releases/download/android-v3.5.19/SullyOS-Android-v3.5.19.apk",
+  "sha256": "9722a66afb3aac5032b1e53d7ae358f29656eedacd2a88795ec8afb8f9dcdcda",
+  "sizeBytes": 103851028,
+  "publishedAt": "2026-11-15T16:02:44Z",
   "releaseNotes": [
-    "同步 master aed79c61，包含主动消息 2.0 引导、总开关与可选中转连接",
-    "同步美化、头像框、聊天交互、思考与正文分离、天气与译文样式等更新；云端新能力需按提示更新自有 Worker",
-    "保留水母／经典图标切换、ntfy、PDF、相机、前台定位、Umami 和应用内更新",
+    "同步 master 2d662ed7，主动消息 2.0 推送入口、服务商与默认选择跟随网页版，不强制迁移已有配置",
+    "补齐原生推送消息、情绪、后台结果、分片与诊断兼容；第三方推送继续使用 master 的共用实现，聊天提示词不变",
+    "保留水母／经典图标切换、既有 UnifiedPush 兼容、PDF、相机、前台定位、Umami 和应用内更新",
     "沿用固定正式签名，可覆盖升级保留数据"
   ]
 }
