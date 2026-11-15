@@ -131,6 +131,7 @@ export default function SullySupportPage({ onClose }: { onClose: () => void }) {
                 <section className="team-note funding-note" aria-label="打赏用途与项目组致谢">
                     <p>为了给大家带来更好的体验，开发组每月在模型调用与测试上的硬性支出已达<strong>四位数</strong>。</p>
                     <p>所有赞赏将直接用于继续项目的更新与维护。</p>
+                    <p><strong>赞赏完全自愿，不影响正常使用。</strong>它是一份单纯支持项目的心意，不附带额外权益、更新承诺或优先服务。请按自己的意愿与余力决定就好。</p>
                     <p className="team-thanks">感谢你愿意为这份热爱助力。</p>
                     <p className="team-signature">—— 条 &amp; TO 敬上 <SupportIcon name="heart" /></p>
                 </section>
