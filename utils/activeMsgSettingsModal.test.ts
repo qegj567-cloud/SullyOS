@@ -373,6 +373,47 @@ describe('主动消息 2.0 引导与面板', () => {
     expect(button('开启通知与推送')).toBeTruthy();
   });
 
+  it.each(['web-push', 'unified-push'])('%s 共用推送入口，不自动迁移已有配置', async (transport) => {
+    const save = vi.mocked(ActiveMsgStore.saveGlobalConfig);
+    save.mockClear();
+    client.getGlobalConfig.mockResolvedValue({ ...connected, pushMode: 'web-push' });
+    client.getPushStatus.mockResolvedValue({
+      ...subscribedPush, transport, hasSubscription: false,
+      needsDistributor: transport === 'unified-push',
+      detail: '测试用传输状态',
+    });
+    await render();
+    expect(host.textContent).toContain('通知与推送通道');
+    expect(button('网页 / 系统原生推送')).toBeTruthy();
+    expect(button('第三方推送 App')).toBeTruthy();
+    expect(button('开启通知与推送')).toBeTruthy();
+    expect(host.textContent).toContain('测试用传输状态');
+    expect(host.textContent).not.toContain('连接 ntfy');
+    expect(host.querySelector('a[href="https://docs.ntfy.sh/subscribe/phone/"]')).toBeNull();
+    expect(save.mock.calls.some(([updates]) => 'pushMode' in updates || 'thirdPartyPush' in updates)).toBe(false);
+
+    await click('第三方推送 App');
+    expect(host.textContent).toContain('WxPusher（推荐）');
+    expect(host.textContent).toContain('Bark（支持角色头像）');
+    expect(host.textContent).toContain('MeoW（纯血鸿蒙备用）');
+    expect(button('保存并登记推送')).toBeTruthy();
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({
+      pushMode: 'third-party', thirdPartyPush: { provider: 'wxpusher', token: '' },
+    }));
+  });
+
+  it('打开已有第三方配置不覆盖服务商或凭据', async () => {
+    const save = vi.mocked(ActiveMsgStore.saveGlobalConfig);
+    save.mockClear();
+    client.getGlobalConfig.mockResolvedValue({
+      ...connected, pushMode: 'third-party', thirdPartyPush: { provider: 'bark', token: 'fixture-key' },
+    });
+    client.getPushStatus.mockResolvedValue({ ...subscribedPush, transport: 'third-party', hasSubscription: false });
+    await render();
+    expect(host.querySelector<HTMLInputElement>('input[placeholder*="AbCdEfGh"]')?.value).toBe('fixture-key');
+    expect(save.mock.calls.some(([updates]) => 'pushMode' in updates || 'thirdPartyPush' in updates)).toBe(false);
+  });
+
   it('引导说清即时对话不是秒回，最后单独一步讲给角色开启，走完回到面板', async () => {
     client.getGlobalConfig.mockResolvedValue(connected);
     await render();
