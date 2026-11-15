@@ -106,6 +106,15 @@ describe('UnifiedPush payload 入库桥', () => {
     expect(mocks.error).not.toHaveBeenCalled();
   });
 
+  it('独立诊断身份不是另一个用户空间，不会永久阻塞错误回执', async () => {
+    mocks.spaces.mockReturnValue([{ id: 'a' }, { id: 'b' }]);
+    await ingestNativeAmsgPayload({ messageKind: 'error', metadata: {
+      charId: 'amsg-diagnostic', amsgDiagnosticRunId: '00000000-0000-4000-8000-000000000001',
+    } });
+    expect(mocks.error).toHaveBeenCalledOnce();
+    expect(mocks.saveInboxMessage).not.toHaveBeenCalled();
+  });
+
   it.each([[], '[]', { messageKind: 'reasoning' }, { messageKind: 'tools' }, { messageKind: '_multipart' }])('不把协议内部消息写进聊天：%j', async payload => {
     expect(await ingestNativeAmsgPayload(payload)).toBeNull();
     expect(mocks.saveInboxMessage).not.toHaveBeenCalled();

@@ -21,6 +21,7 @@
 - 原生接收、分片完成记录及去重标记先同一次持久提交，再通知 WebView。分片遵循 amsg-shared 的 multipart v1：UTF-8 字节、base64url、1 起始序号、最多 128 片/256000 字节/60 秒，最多 16 个并行组。
 - 按 `notification.show`（always / when-hidden / false）、silent、tag、renotify 处理通知；通知专用预览优先于私密正文。情绪/错误默认不弹系统通知，后台 result 是否通知取决于 Worker 的策略。
 - 原生已决定通知策略的正文不会再由 WebView 补弹一条本地通知；点击冷启动通知会等 UI 就绪再走现有跨空间导航。
+- 新版“测试推送”的原生回执保留真实接收时间与通知 API 调用结果，以 `side: native` 写入独立诊断库，不冒充 SW；没有回执不记为成功，测试通知不打开虚构角色，不导出普通消息正文。
 - distributor 端点变化后记录待同步版本；仅在 2.0 总开关开启、Worker 已配置且不是第三方推送模式时补登记。成功后才确认；不后台轮询、不反复重新注册 distributor。
 
 ## 真机验收边界

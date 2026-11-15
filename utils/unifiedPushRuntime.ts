@@ -1,6 +1,8 @@
 import type { PluginListenerHandle } from '@capacitor/core';
 import { requestNativeNotificationOpen } from './nativeNotificationNavigation';
 import { AMSG_GLOBAL_CONFIG_EVENT, isAmsg2WorkerActive } from './amsgGlobalGate';
+import { diagnosticRunId } from './amsgReproduction';
+import { recordNativeDiagnosticReceipt } from './nativeAmsgDiagnostics';
 import { ingestNativeAmsgPayload, parseNativeAmsgPayload } from './nativeAmsgInbox';
 import {
   acknowledgeUnifiedPushMessage, acknowledgeUnifiedPushRegistration, addUnifiedPushListener,
@@ -13,6 +15,7 @@ let refreshAgain = false;
 
 const openNotification = (raw: unknown) => {
   const payload = parseNativeAmsgPayload(raw);
+  if (diagnosticRunId(payload?.metadata)) return;
   const charId = payload?.metadata?.charId ?? payload?.charId;
   if (typeof charId === 'string' && charId) {
     requestNativeNotificationOpen(charId);
@@ -43,6 +46,7 @@ const refresh = (): Promise<void> => {
       const pending = await peekUnifiedPushMessages();
       for (const message of pending.messages || []) {
         try {
+          await recordNativeDiagnosticReceipt(message);
           await ingestNativeAmsgPayload(message.payload);
           await acknowledgeUnifiedPushMessage(message.id);
         } catch {

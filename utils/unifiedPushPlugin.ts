@@ -25,6 +25,8 @@ export interface UnifiedPushStoredMessage {
   id: string;
   payload: string;
   receivedAt: number;
+  notificationAt?: number;
+  notificationOutcome?: 'requested' | 'policy-skipped' | 'permission-denied' | 'invalid' | 'failed';
 }
 
 interface UnifiedPushNativePlugin {

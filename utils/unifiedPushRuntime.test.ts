@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+vi.mock('./nativeAmsgDiagnostics', () => ({ recordNativeDiagnosticReceipt: vi.fn().mockResolvedValue(undefined) }));
 
 const m = vi.hoisted(() => ({
   native: vi.fn(), peek: vi.fn(), ack: vi.fn(), status: vi.fn(), ackRegistration: vi.fn(),
   listener: vi.fn(), ingest: vi.fn(), config: vi.fn(), reconcile: vi.fn(),
+  open: vi.fn(),
 }));
+vi.mock('./nativeNotificationNavigation', () => ({ requestNativeNotificationOpen: m.open }));
 vi.mock('./unifiedPushPlugin', () => ({
   isUnifiedPushPlatform: m.native, peekUnifiedPushMessages: m.peek, acknowledgeUnifiedPushMessage: m.ack,
   readUnifiedPushTransportStatus: m.status, acknowledgeUnifiedPushRegistration: m.ackRegistration,
@@ -110,5 +113,14 @@ describe('native durable queue runtime', () => {
     m.config.mockResolvedValue({ workerUrl: 'https://worker.example' });
     window.dispatchEvent(new Event('amsg2-global-config-changed'));
     await vi.waitFor(() => expect(m.ackRegistration).toHaveBeenCalledWith('rev'));
+  });
+
+  it('普通通知点击走导航，诊断测试通知不跳进虚构角色', async () => {
+    await start();
+    callbacks.notificationTapped({ payload: { charId: 'c' } });
+    expect(m.open).toHaveBeenCalledWith('c');
+    m.open.mockClear();
+    callbacks.notificationTapped({ payload: { metadata: { charId: 'amsg-diagnostic', amsgDiagnosticRunId: '00000000-0000-4000-8000-000000000001' } } });
+    expect(m.open).not.toHaveBeenCalled();
   });
 });

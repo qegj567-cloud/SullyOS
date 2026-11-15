@@ -165,8 +165,15 @@ public class AmsgUnifiedPushService extends PushService {
             // Assembly completion, duplicate marker and queue entry are ONE durable commit.
             if (!prefs.edit().putString(KEY_PENDING, pending.toString()).putString(KEY_MULTIPART, state.toString())
                 .putString(KEY_RECENT, nextRecent.toString()).remove(KEY_PUSH_ERROR).commit()) throw new IllegalStateException("Push commit failed");
+            String outcome;
+            try { outcome = showNotification(context, raw); }
+            catch (Exception error) { outcome = "failed"; }
+            pending.getJSONObject(pending.length() - 1).put("notificationOutcome", outcome)
+                .put("notificationAt", System.currentTimeMillis());
+            // Queue was already durable before notify(). If killed between the two commits,
+            // retain receipt evidence but never invent a successful notification outcome.
+            if (!prefs.edit().putString(KEY_PENDING, pending.toString()).commit()) throw new IllegalStateException("Receipt commit failed");
             AmsgUnifiedPushPlugin.emitPush(raw);
-            showNotification(context, raw);
         } catch (Exception error) {
             // No payload, endpoint, token or private chat content in diagnostics.
             prefs.edit().putString(KEY_PUSH_ERROR, "原生推送接收失败（" + error.getClass().getSimpleName() + "）").commit();
@@ -205,11 +212,11 @@ public class AmsgUnifiedPushService extends PushService {
         manager.createNotificationChannel(channel);
     }
 
-    static void showNotification(Context context, String rawPayload) {
+    static String showNotification(Context context, String rawPayload) {
         if (
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
             && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) return;
+        ) return "permission-denied";
 
         String title = "主动消息";
         String body = "收到一条新消息";
@@ -219,7 +226,7 @@ public class AmsgUnifiedPushService extends PushService {
         boolean renotify;
         try {
             JSONObject payload = new JSONObject(rawPayload);
-            if (!AmsgPushProtocol.shouldNotify(payload, AmsgUnifiedPushPlugin.isVisible())) return;
+            if (!AmsgPushProtocol.shouldNotify(payload, AmsgUnifiedPushPlugin.isVisible())) return "policy-skipped";
             String charName = payload.optString("contactName", payload.optJSONObject("metadata") == null
                 ? "主动消息"
                 : payload.optJSONObject("metadata").optString("charName", "主动消息"));
@@ -229,7 +236,7 @@ public class AmsgUnifiedPushService extends PushService {
             tag = AmsgPushProtocol.text(payload, "tag", messageId);
             silent = AmsgPushProtocol.silent(payload, AmsgUnifiedPushPlugin.isVisible());
             renotify = AmsgPushProtocol.renotify(payload);
-        } catch (JSONException ignored) { return; }
+        } catch (JSONException ignored) { return "invalid"; }
 
         ensureChannel(context);
         Intent openIntent = new Intent(context, MainActivity.class);
@@ -255,5 +262,6 @@ public class AmsgUnifiedPushService extends PushService {
             .setAutoCancel(true)
             .setContentIntent(pendingIntent);
         NotificationManagerCompat.from(context).notify(tag, 0, notification.build());
+        return "requested";
     }
 }

@@ -3,6 +3,7 @@ import { flushInboxToChat, handleInstantErrorPushMessage } from './activeMsgRunt
 import { ActiveMsgStore } from './activeMsgStore';
 import { dispatchAmsgResult } from './amsgResults';
 import { listUserSpaces } from './userSpaces';
+import { diagnosticRunId } from './amsgReproduction';
 
 const RECEIVED_IDS_KEY = 'amsg2_native_received_ids_v2';
 
@@ -62,7 +63,7 @@ const ingest = async (
     return typeof charId === 'string' ? { charId, messageId: String(payload.messageId || '') } : null;
   }
   if (kind === 'error') {
-    if (typeof charId === 'string' && listUserSpaces().length > 1) {
+    if (typeof charId === 'string' && !diagnosticRunId(payload.metadata) && listUserSpaces().length > 1) {
       const { DB } = await import('./db');
       if (!await DB.getCharacter(charId)) throw new NativeAmsgDeferredError();
     }
