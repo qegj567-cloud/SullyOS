@@ -23,6 +23,8 @@ export interface OpfsProbeResult {
     write: ProbeStep;
     readBack: ProbeStep;
     estimate: ProbeStep;
+    /** 备份临时目录里现存的文件：恢复或下载结束后应当是空的。 */
+    backupTmp: ProbeStep;
     upload: ProbeStep | Record<'file' | 'sliceWhole' | 'slicePart', ProbeStep>;
     uploadVia?: string;
     remove: ProbeStep;
@@ -110,6 +112,7 @@ export async function runOpfsProbe(uploader?: OpfsProbeUploader): Promise<OpfsPr
         write: skipped('未执行'),
         readBack: skipped('未执行'),
         estimate: skipped('未执行'),
+        backupTmp: skipped('未执行'),
         upload: skipped('未选择上传方式'),
         remove: skipped('未执行'),
     };
@@ -132,6 +135,24 @@ export async function runOpfsProbe(uploader?: OpfsProbeUploader): Promise<OpfsPr
         return {};
     });
     if (!dir) return result;
+
+    result.backupTmp = await attempt(async () => {
+        const entries: Array<{ name: string; size: number | null }> = [];
+        let tmp: FileSystemDirectoryHandle;
+        try {
+            tmp = await dir!.getDirectoryHandle('backup-tmp');
+        } catch {
+            return { entries };
+        }
+        // lib.dom 的类型里还没有目录句柄的异步迭代。
+        for await (const [name, handle] of (tmp as any).entries() as AsyncIterable<[string, FileSystemHandle]>) {
+            const size = handle.kind === 'file'
+                ? await (handle as FileSystemFileHandle).getFile().then(f => f.size, () => null)
+                : null;
+            entries.push({ name, size });
+        }
+        return { entries };
+    });
 
     let handle: FileSystemFileHandle | undefined;
     result.createFile = await attempt(async () => {

@@ -15,7 +15,13 @@ function fakeStorage(readBack: (written: Uint8Array<ArrayBuffer>) => Blob) {
         removeEntry,
         storage: {
             estimate: async () => ({ quota: 1000, usage: 10 }),
-            getDirectory: async () => ({ getFileHandle: async () => handle, removeEntry }),
+            getDirectory: async () => ({
+                getFileHandle: async () => handle,
+                removeEntry,
+                getDirectoryHandle: async () => ({
+                    async *entries() { yield ['download-1-abc.tmp', { kind: 'file', getFile: async () => new Blob(['12345']) }]; },
+                }),
+            }),
         },
     };
 }
@@ -51,6 +57,7 @@ describe('runOpfsProbe', () => {
         const result = await runOpfsProbe();
         expect(result.readBack.ok).toBe(true);
         expect((result.upload as ProbeStep).skipped).toBe(true);
+        expect(result.backupTmp.entries).toEqual([{ name: 'download-1-abc.tmp', size: 5 }]);
         expect(fetchSpy).not.toHaveBeenCalled();
     });
 
