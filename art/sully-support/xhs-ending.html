@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Sully · 谢谢你愿意陪它长大</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #e7e3de; color: #413c3b; font-family: "Microsoft YaHei", "PingFang SC", sans-serif; }
+    .poster { position: relative; width: 1080px; height: 1440px; overflow: hidden; background: #e7e3de; }
+    .brand { position: absolute; top: 47px; left: 88px; }
+    .wordmark { display: flex; align-items: center; gap: 18px; font: 1000 112px/.95 "Arial Rounded MT Bold", "Arial Black", Arial, sans-serif; letter-spacing: -8px; }
+    .star { display: inline-block; width: 43px; height: 43px; background: #b3ccdd; clip-path: polygon(50% 0,65% 32%,100% 38%,75% 64%,80% 100%,50% 83%,18% 100%,24% 64%,0 38%,35% 32%); transform: rotate(13deg); }
+    .brand p { margin: 18px 0 0 5px; color: #817771; font-size: 18px; font-weight: 500; letter-spacing: 5px; }
+    .edition { position: absolute; top: 82px; right: 86px; font-size: 16px; line-height: 1.9; letter-spacing: 3px; text-align: right; color: #8b8179; }
+    .edition span { display: block; font-size: 12px; letter-spacing: 2px; margin-top: 3px; }
+    .paper { position: absolute; left: 62px; right: 62px; top: 235px; bottom: 62px; background: #faf9f6; border-radius: 44px; }
+    .tape { position: absolute; width: 180px; height: 48px; top: -14px; left: -16px; transform: rotate(-23deg); background-color: #c5d8e6d9; background-image: linear-gradient(90deg,#ffffff70 1px,transparent 1px),linear-gradient(#ffffff70 1px,transparent 1px); background-size: 14px 14px; border: 1px solid #ffffff80; box-shadow: 0 4px 5px #7287940a; }
+    .hero { position: absolute; top: 76px; left: 59px; right: 59px; height: 395px; }
+    .eyebrow { font-size: 15px; letter-spacing: 3px; color: #9a8a7f; margin: 0 0 27px; }
+    h1 { position: relative; margin: 0; font-size: 58px; font-weight: 850; line-height: 1.45; letter-spacing: -1.5px; z-index: 2; }
+    h1 span { position: relative; display: inline-block; }
+    h1 span::after { content: ""; position: absolute; bottom: -3px; left: 0; right: 0; height: 7px; background: #bacfdd; border-radius: 50%; transform: rotate(-2deg); z-index: -1; }
+    .hero-note { font-size: 26px; line-height: 1.85; letter-spacing: 1px; color: #8b7e76; margin: 30px 0 0; }
+    .hero-art { position: absolute; width: 290px; height: 427px; right: -8px; top: -22px; }
+    .disc { position: absolute; width: 290px; height: 290px; border-radius: 50%; background: #c8dae7; top: 56px; right: 0; }
+    .charm { position: absolute; width: 240px; top: 12px; left: 22px; transform: rotate(8deg); filter: drop-shadow(4px 12px 6px #594d4327); }
+    .charm::before { content: ""; position: absolute; width: 42px; height: 48px; left: calc(50% - 21px); top: -19px; border: 10px solid #fff; border-radius: 50%; box-shadow: inset 0 0 0 2px #d2cbd0,0 0 0 1px #e8e3e0; }
+    .charm img { position: relative; width: 100%; height: auto; display: block; filter: drop-shadow(5px 0 #fff) drop-shadow(-5px 0 #fff) drop-shadow(0 5px #fff) drop-shadow(0 -5px #fff); }
+    .art-star { position: absolute; right: -12px; top: 7px; width: 27px; height: 27px; }
+    .sparkle { position: absolute; left: 2px; top: 245px; font-size: 41px; line-height: 1; color: #fff; }
+    .letter { position: absolute; top: 503px; left: 60px; right: 60px; padding-top: 35px; border-top: 2px dashed #d5cdc5; }
+    .letter h2 { font-size: 22px; font-weight: 550; letter-spacing: 2px; margin: 0 0 22px; color: #71665f; }
+    .letter p { font-size: 27px; line-height: 1.95; letter-spacing: .3px; color: #776b63; margin: 0 0 20px; }
+    .letter strong { font-weight: 650; color: #504740; }
+    .letter .thank-you { margin-top: 26px; font-size: 29px; color: #61544b; }
+    .remark-note { position: absolute; left: 60px; top: 875px; width: 360px; color: #8e8075; font-size: 18px; line-height: 1.7; letter-spacing: .2px; }
+    .remark-note p { margin: 0 0 6px; }
+    .remark-note strong { font-weight: 600; color: #786b61; }
+    .remark-note .anonymous { color: #a09287; }
+    .signoff { position: absolute; left: 61px; bottom: 27px; }
+    .signature { display: flex; align-items: center; gap: 19px; margin: 0; font-size: 30px; font-weight: 500; letter-spacing: 3px; color: #89766a; }
+    .signature svg { width: 25px; height: 25px; fill: none; stroke: #a38b7d; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; transform: rotate(12deg); }
+    .signoff .gentle { margin: 25px 0 0; font-size: 20px; letter-spacing: 1px; color: #a29489; }
+    .qr-note { position: absolute; left: 438px; top: 850px; margin: 0; width: 150px; text-align: center; }
+    .qr-note img { display: block; width: 130px; height: 130px; margin: 0 auto; opacity: .18; mix-blend-mode: multiply; }
+    .clear-code .qr-note { left: auto; top: auto; right: 55px; width: 222px; bottom: 41px; }
+    .clear-code .qr-note img { width: 220px; height: 220px; opacity: 1; }
+    .qr-note figcaption { color: #a29890; font-size: 14px; letter-spacing: 1px; margin-top: 11px; }
+    .bottom-note { position: absolute; left: 0; right: 0; bottom: 23px; margin: 0; text-align: center; font-size: 12px; letter-spacing: 4px; color: #a3978f; }
+  </style>
+</head>
+<body>
+  <main class="poster" id="poster">
+    <header class="brand"><div class="wordmark">Sully<span class="star" aria-hidden="true"></span></div><p>SULLYOS · 糯米机</p></header>
+    <div class="edition">一份小小的感谢<span>WITH A LITTLE LOVE</span></div>
+    <article class="paper">
+      <div class="tape" aria-hidden="true"></div>
+      <section class="hero">
+        <p class="eyebrow">THANK YOU FOR BEING HERE</p>
+        <h1>谢谢你，<br><span>让热爱继续发光。</span></h1>
+        <p class="hero-note">这份小小的世界，<br>有你喜欢，真好。</p>
+        <div class="hero-art"><span class="disc" aria-hidden="true"></span><div class="charm"><img src="assets/sully-standing.png" width="2260" height="3378" alt="Sully 原画亚克力挂件"></div><span class="star art-star" aria-hidden="true"></span><span class="sparkle" aria-hidden="true">✦</span></div>
+      </section>
+      <section class="letter">
+        <h2>一封来自开发组的感谢信</h2>
+        <p>为了给大家带来更好的体验，开发组每月在模型调用与测试上的硬性支出已达<strong>四位数</strong>。</p>
+        <p>所有赞赏将直接用于继续项目的更新与维护。</p>
+        <p class="thank-you">感谢你愿意为这份热爱助力。</p>
+      </section>
+      <aside class="remark-note"><p>打赏时，请在<strong>【添加备注】</strong>写下<br>希望公开展示的署名。</p><p>每月更新收录进「饲养员感谢名单」。</p><p class="anonymous">未备注默认记作「神秘猫奴」。</p></aside>
+      <footer class="signoff"><p class="signature">—— 条 &amp; TO 敬上 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 4.7a5.2 5.2 0 0 0-7.4 0L12 5.8l-1.1-1.1a5.2 5.2 0 0 0-7.4 7.4L12 21l8.5-8.9a5.2 5.2 0 0 0 0-7.4Z"/></svg></p><p class="gentle">先照顾好自己，有余力再支持。</p></footer>
+      <figure class="qr-note"><img src="assets/wechat-sully-code.png" width="550" height="550" alt="微信赞赏码"></figure>
+    </article>
+    <p class="bottom-note">SULLYOS · THANK YOU, ALWAYS.</p>
+  </main>
+  <script>if(new URLSearchParams(location.search).get('clear')==='1') document.getElementById('poster').classList.add('clear-code');</script>
+</body>
+</html>

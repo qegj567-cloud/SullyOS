@@ -127,6 +127,8 @@ export const MIRRORED_KEYS: readonly string[] = [
     'sullyos_real_location_intro_v1_seen',
     'sullyos_navigation_ball_intro_v1_seen',
     'sullyos_update_user_spaces_v1_seen',
+    'sullyos_update_20261115_amsg2_seen',
+    'sullyos_update_20261115_support_seen',
     'sullyos_update_2026_10_home3d_beta_seen',
     'sullyos_update_2026_09_small_updates_seen',
     'sullyos_user_holidays_intro_v1',

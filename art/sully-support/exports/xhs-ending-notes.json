@@ -1,0 +1,73 @@
+{
+  "method": "Original Sully artwork and HTML/CSS screenshot; no image generation",
+  "main_code": {
+    "source": "assets/wechat-sully-code.png",
+    "width_px": 130,
+    "opacity": 0.18,
+    "blend": "multiply",
+    "caption": false,
+    "image_origin_px": [
+      510,
+      1085
+    ],
+    "position_change": "User-indicated position retained; opacity reduced from 42% to 18%"
+  },
+  "backup_code": {
+    "width_px": 220,
+    "opacity": 1
+  },
+  "wechat_scan": "Latest 130px / 18% opacity revision has not been verified with WeChat",
+  "platform_review": "No claim of avoiding platform identification or moderation",
+  "files": {
+    "xhs-ending-1080x1440.png": {
+      "size": [
+        1080,
+        1440
+      ],
+      "sha256": "72e0ebb92540a1fde60e192abd297313dd26ad69d2c5eeac93f6572947843187"
+    },
+    "xhs-ending-clear-code-1080x1440.png": {
+      "size": [
+        1080,
+        1440
+      ],
+      "sha256": "623ceeba33fe03686aad4a7712c7485c0625fa90d33f906f0c0bf5464c25585a"
+    },
+    "xhs-ending-tested-180px.png": {
+      "size": [
+        1080,
+        1440
+      ],
+      "sha256": "1a0a3fe821cf9250ba5f2d408d5afadb471f2be8cb3c33994db8e8eefc0acb70"
+    },
+    "xhs-ending-soft-v3-1080x1440.png": {
+      "size": [
+        1080,
+        1440
+      ],
+      "sha256": "cc9aeedffcf27e2987fb8da2a785cf58257861b97514940a6804111f428f02da"
+    },
+    "xhs-ending-soft-v4-1080x1440.png": {
+      "size": [
+        1080,
+        1440
+      ],
+      "sha256": "1368040b55b4c09332b9eeeee42f5490858c23f848b4794dc0ac301de6ac27b2"
+    },
+    "xhs-ending-soft-v5-1080x1440.png": {
+      "size": [
+        1080,
+        1440
+      ],
+      "sha256": "72e0ebb92540a1fde60e192abd297313dd26ad69d2c5eeac93f6572947843187"
+    }
+  },
+  "previous_scan": {
+    "file": "xhs-ending-tested-180px.png",
+    "width_px": 180,
+    "opacity": 0.68,
+    "result": "User confirmed reward page opens; requested less prominent code"
+  },
+  "funding_copy": "所有赞赏将直接用于继续项目的更新与维护。",
+  "attribution_note": "打赏时，请在【添加备注】写下希望公开展示的署名。每月更新收录进「饲养员感谢名单」。未备注默认记作「神秘猫奴」。"
+}

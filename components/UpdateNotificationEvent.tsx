@@ -14,7 +14,8 @@ import NavigationBallNotice, { NAVIGATION_BALL_NOTICE_KEY } from './os/Navigatio
 import UserLocationNotice, { USER_LOCATION_NOTICE_KEY } from './os/UserLocationNotice';
 import { requestSettingsFocus } from '../utils/settingsNavigation';
 import UserSpacesUpdatePopup, { USER_SPACES_UPDATE_KEY } from './os/UserSpacesUpdatePopup';
-import RelayUpdatePopup, { RELAY_UPDATE_KEY, shouldOfferRelayNotice } from './os/RelayUpdatePopup';
+import { AmsgRecentUpdatePopup, SullySupportNotice } from './os/NovemberUpdatePopups';
+import { AMSG_RECENT_UPDATE_KEY, SULLY_SUPPORT_NOTICE_KEY } from '../utils/novemberNotices';
 /**
  * 全局版本更新提醒。
  *
@@ -629,16 +630,26 @@ const UserSpacesUpdateAnnouncement: React.FC<UpdatePopupProps> = ({ onExit }) =>
     return <UserSpacesUpdatePopup onDone={onExit} onVisit={() => { openApp(AppID.User); onExit(); }} />;
 };
 
-const RelayUpdateAnnouncement: React.FC<UpdatePopupProps> = ({ onDone, onExit }) => {
+const AmsgRecentUpdateAnnouncement: React.FC<UpdatePopupProps> = ({ onDone, onExit }) => {
     const { openApp } = useOS();
-    return <RelayUpdatePopup onDone={onDone} onVisit={() => {
+    return <AmsgRecentUpdatePopup onDone={onDone} onVisit={() => {
         requestSettingsFocus('amsg2'); openApp(AppID.Settings); onExit();
+    }} />;
+};
+
+const SullySupportAnnouncement: React.FC<UpdatePopupProps> = ({ onExit }) => {
+    const { openApp } = useOS();
+    // End this launch after the two new notices; older unread notices wait until next time.
+    return <SullySupportNotice onDone={onExit} onVisit={() => {
+        requestSettingsFocus('support'); openApp(AppID.Settings); onExit();
     }} />;
 };
 
 /** `offered` 返回 false 的这次不弹、也不记已读。 */
 const UPDATE_QUEUE: { key: string; offered?: () => boolean; render: (props: UpdatePopupProps) => React.ReactNode }[] = [
-    { key: RELAY_UPDATE_KEY, offered: () => typeof location === 'undefined' || shouldOfferRelayNotice(location.href), render: props => <RelayUpdateAnnouncement {...props} /> },
+    // The mainland relay is included in this recap instead of a third, repeated popup.
+    { key: AMSG_RECENT_UPDATE_KEY, render: props => <AmsgRecentUpdateAnnouncement {...props} /> },
+    { key: SULLY_SUPPORT_NOTICE_KEY, render: props => <SullySupportAnnouncement {...props} /> },
     { key: USER_SPACES_UPDATE_KEY, render: props => <UserSpacesUpdateAnnouncement {...props} /> },
     { key: OCTOBER_UPDATE_KEY, render: props => <OctoberUpdateAnnouncement {...props} /> },
     { key: USER_LOCATION_NOTICE_KEY, render: props => <UserLocationAnnouncement {...props} /> },
