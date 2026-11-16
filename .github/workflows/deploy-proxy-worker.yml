@@ -5,10 +5,16 @@ on:
     branches: [master]
     paths:
       - 'worker/index.js'
-      - 'worker/wrangler.proxy.toml'
-      - 'scripts/deploy-proxy-worker.mjs'
-      - '.github/workflows/deploy-proxy-worker.yml'
   workflow_dispatch:
+    inputs:
+      mode:
+        description: 'deploy 更新主代理 / list 只读列出账号下现有 Workers 与域名'
+        required: false
+        default: 'deploy'
+        type: choice
+        options:
+          - deploy
+          - list
 
 permissions:
   contents: read
@@ -27,6 +33,7 @@ jobs:
       PROXY_CF_API_TOKEN: ${{ secrets.PROXY_CF_API_TOKEN }}
       PROXY_CF_ACCOUNT_ID: ${{ secrets.PROXY_CF_ACCOUNT_ID }}
       PROXY_CF_SCRIPT_NAME: ${{ secrets.PROXY_CF_SCRIPT_NAME }}
+      PROXY_DEPLOY_MODE: ${{ inputs.mode || 'deploy' }}
     steps:
       - name: Checkout master
         uses: actions/checkout@v4

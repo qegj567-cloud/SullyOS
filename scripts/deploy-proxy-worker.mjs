@@ -105,6 +105,44 @@ async function locateExistingProxyWorker(accountIds) {
 }
 
 const accountIds = await collectCandidateAccounts();
+const mode = (process.env.PROXY_DEPLOY_MODE || 'deploy').trim().toLowerCase();
+
+if (mode === 'list') {
+  for (const accountId of accountIds) {
+    console.log(`=== Account ${maskId(accountId)} ===`);
+    const scriptsRes = await cfFetch(`/accounts/${accountId}/workers/scripts`);
+    if (scriptsRes.ok && Array.isArray(scriptsRes.result)) {
+      console.log(`Workers (${scriptsRes.result.length}):`);
+      for (const s of scriptsRes.result) {
+        console.log(`  - ${s.id} (created: ${s.created_on || 'n/a'}, modified: ${s.modified_on || 'n/a'})`);
+      }
+    } else {
+      console.log(`Workers list unavailable: ${scriptsRes.errors}`);
+    }
+
+    const domRes = await cfFetch(`/accounts/${accountId}/workers/domains`);
+    if (domRes.ok && Array.isArray(domRes.result)) {
+      console.log(`Custom Domains (${domRes.result.length}):`);
+      for (const d of domRes.result) {
+        console.log(`  - ${d.hostname} -> ${d.service} (${d.environment || 'production'})`);
+      }
+    } else {
+      console.log(`Custom Domains unavailable: ${domRes.errors}`);
+    }
+
+    const d1Res = await cfFetch(`/accounts/${accountId}/d1/database`);
+    if (d1Res.ok && Array.isArray(d1Res.result)) {
+      console.log(`D1 Databases (${d1Res.result.length}):`);
+      for (const db of d1Res.result) {
+        console.log(`  - ${db.name} (created: ${db.created_at || 'n/a'})`);
+      }
+    } else {
+      console.log(`D1 list unavailable: ${d1Res.errors}`);
+    }
+  }
+  process.exit(0);
+}
+
 const located = await locateExistingProxyWorker(accountIds);
 
 if (!located) {
