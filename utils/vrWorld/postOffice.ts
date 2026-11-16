@@ -1,11 +1,13 @@
 /**
  * 彼方虚拟邮局 · 客户端 API
  *
- * 对接【所有用户共用】的后端（默认 https://noir2.cc.cd/po）。
+ * 对接【所有用户共用】的 bifang 后端。
  * 匿名：本地一个随机 deviceId，无登录无 PII。
  */
 
-const DEFAULT_BASE = 'https://noir2.cc.cd/po';
+import { BIFANG_BASE, migratePostOfficeBase } from './bifangConfig';
+
+const DEFAULT_BASE = BIFANG_BASE;
 const BASE_KEY = 'vr_po_base';
 const DEVICE_KEY = 'vr_po_device';
 
@@ -15,7 +17,7 @@ export const MAX_LETTER_CHARS = 400;
 const clipContent = (s: string): string => [...(s || '')].slice(0, MAX_LETTER_CHARS).join('');
 
 export const getPostOfficeBase = (): string => {
-    try { return (localStorage.getItem(BASE_KEY) || DEFAULT_BASE).replace(/\/+$/, ''); }
+    try { return migratePostOfficeBase(localStorage.getItem(BASE_KEY) || DEFAULT_BASE); }
     catch { return DEFAULT_BASE; }
 };
 export const setPostOfficeBase = (url: string) => {

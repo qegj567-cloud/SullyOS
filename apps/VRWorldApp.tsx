@@ -41,6 +41,7 @@ import { decodeBytes } from '../utils/vrWorld/decodeText';
 import { extractPdfText, isPdfFile } from '../utils/pdfText';
 import { stripLeakedAttrs } from '../utils/vrWorld/prompts';
 import { PostOffice, MAX_LETTER_CHARS, exportIdentity, importIdentity, getAdminToken, setAdminToken, type RemoteReply, type RemoteLetterStat, type RemoteAdminLetter } from '../utils/vrWorld/postOffice';
+import { SIGNAL_OWNERSHIP_RECOVERED } from '../utils/vrWorld/signalRecovery';
 import { Signal, getMyAuthorship, setSignalWhisper, hasSignalNoticeAck, ackSignalNotice, type SignalState } from '../utils/vrWorld/signal';
 import type { SignalPoem, SignalBooklet } from '../types';
 import { getVRApi, setVRApi, getVRApiLog, clearVRApiLog, type VRApiCall } from '../utils/vrWorld/vrApi';
@@ -2375,22 +2376,30 @@ const SignalPanel: React.FC<{ addToast?: (m: string, t?: any) => void; character
         addToast?.(whisper.trim() ? `${c.name} 带着你的话，正在信号坠落处落笔…` : `${c.name} 正在信号坠落处落笔…`, 'info');
     };
 
+    const stateRead = useRef(0);
+    const feedRead = useRef(0);
     const load = useCallback(async () => {
-        try { setState(await Signal.current()); setOffline(false); }
-        catch { setOffline(true); }
-        finally { setLoading(false); }
+        const read = ++stateRead.current;
+        try { const next = await Signal.current(); if (read === stateRead.current) { setState(next); setOffline(false); } }
+        catch { if (read === stateRead.current) setOffline(true); }
+        finally { if (read === stateRead.current) setLoading(false); }
     }, []);
     // 星图始终拉全量：分幕要按「每首在册子里的顺位」归幕，取子集会算错顺位；
     // 「只看我的回声」改为客户端过滤（mineCount 已随本机 device 标注，结果等价）。
     const loadFeed = useCallback(async () => {
-        try { setFeed(await Signal.feed(60)); } catch { /* 离线不影响 */ }
+        const read = ++feedRead.current;
+        try { const next = await Signal.feed(60); if (read === feedRead.current) setFeed(next); } catch { /* 离线不影响 */ }
     }, []);
 
     useEffect(() => {
         void load(); void loadFeed();
         const h = () => { void load(); void loadFeed(); };
         window.addEventListener('vr-session-done', h);
-        return () => window.removeEventListener('vr-session-done', h);
+        window.addEventListener(SIGNAL_OWNERSHIP_RECOVERED, h);
+        return () => {
+            window.removeEventListener('vr-session-done', h);
+            window.removeEventListener(SIGNAL_OWNERSHIP_RECOVERED, h);
+        };
     }, [load, loadFeed]);
 
     // 参与被打回（调 LLM 之前，零 token）→ 温柔提示

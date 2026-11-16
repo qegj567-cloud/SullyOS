@@ -1,0 +1,19 @@
+name = "bifang"
+main = "src/index.ts"
+account_id = "2cd975a0e2a9d667b85119c456d9478f"
+compatibility_date = "2026-01-01"
+workers_dev = true
+routes = [{ pattern = "bifang.friedsully.com", custom_domain = true }]
+
+# Public reading carries anonymous identity codes in query parameters.
+[observability]
+enabled = false
+
+[[d1_databases]]
+binding = "DB"
+database_name = "bifang"
+database_id = "b85e6bb6-75bb-4be3-93b5-dc3137f69a22"
+
+[vars]
+PO_MAX_REPLIES = "3"
+PO_DISLIKE_LIMIT = "5"
