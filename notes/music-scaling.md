@@ -184,8 +184,8 @@ docker run -d --restart=always -p 3000:3000 --name netease-api \
 Worker 的 `fetchFromAnyUpstream` 已经自动识别 `code=-460/-7` 并切换上游。但如果**所有上游都被风控**，前端会收到：
 
 ```json
-{ "error": "netease upstream fetch failed (all sources)",
-  "detail": "xxx.vercel.app risk-control | yyy.deno.dev risk-control",
+{ "error": "网易云接口触发风控，请稍后再试",
+  "detail": "xxx.vercel.app risk-control (code=-460) | yyy.deno.dev risk-control (code=-460)",
   "tried": 2 }
 ```
 
