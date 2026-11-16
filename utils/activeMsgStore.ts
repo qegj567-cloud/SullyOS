@@ -236,6 +236,30 @@ export const isInstantChatSwitchedOn = (
 ): boolean => config.instantChatEnabled ?? Boolean(config.initializedAt && config.workerUrl?.trim());
 
 export const ActiveMsgStore = {
+  /** Deployment recovery only; never stores the Cloudflare API Token. */
+  async getReplacementPlan<T>(accountId: string, scriptName: string): Promise<T | null> {
+    return getKv<T>(`replacement-plan:${JSON.stringify([accountId, scriptName])}`);
+  },
+  async saveReplacementPlan(accountId: string, scriptName: string, plan: unknown): Promise<void> {
+    const db = await openDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_KV, 'readwrite'), store = tx.objectStore(STORE_KV);
+      tx.oncomplete = () => resolve();
+      tx.onerror = tx.onabort = () => reject(tx.error || new Error('保存重配进度失败'));
+      store.put({ id: `replacement-plan:${JSON.stringify([accountId, scriptName])}`, value: plan });
+      if (plan) store.put({ id: 'replacement-hint', value: { accountId, scriptName } });
+      else {
+        const request = store.get('replacement-hint');
+        request.onsuccess = () => {
+          const hint = request.result?.value;
+          if (hint?.accountId === accountId && hint?.scriptName === scriptName) store.delete('replacement-hint');
+        };
+      }
+    });
+  },
+  async getReplacementHint(): Promise<{ accountId: string; scriptName: string } | null> {
+    return getKv('replacement-hint');
+  },
   /** 纯动作可以没有聊天产物，需单独保留完成回执，防止补收/ACK 重试重放动作。 */
   async hasAppliedActionResult(charId: string, messageId: string): Promise<boolean> {
     const val = await getKv<boolean | { savedAt?: number }>(`${ACTION_RESULT_APPLIED_PREFIX}${JSON.stringify([charId, messageId])}`);
@@ -543,7 +567,7 @@ export const backupHasBackendConnection = (
  * **后端连接默认不带走。** 备份文件是会被分享出去的——发一份角色合集给朋友，就等于把
  * 自己那台 Worker 的钥匙一起发了：对方的 App 会静默连上去，把 ta 的 API 凭据和聊天上
  * 下文写进你的 D1，而 ta 手里的主密钥能解开你那台机器上的所有密文。换设备恢复自己的
- * 备份才需要这几样，那是用户明确知道的场景，让 ta 自己勾。
+ * 文件备份才需要这几样时由用户勾选；个人云备份调用方会显式开启，避免丢掉换机所需的身份。
  *
  * 程序分不清「自己的备份」和「别人的备份」：文件里没有可信的身份标记，换新设备时用户
  * id 本来就跟备份里的对不上——而那恰恰是最正当的自己人。能判断的只有拿着文件的人，
@@ -562,8 +586,8 @@ export async function exportAmsg2GlobalConfig(
     // 白跑一段、还在日志里留一条「主动消息配置」的假账。
     return Object.keys(stripped).length > 0 ? stripped : undefined;
   } catch (e) {
-    console.warn('[amsg2] 读取全局配置失败，备份将不含这一项', e);
-    return undefined;
+    console.warn('[amsg2] 读取全局配置失败，已停止备份', e);
+    throw new Error('读取主动消息 2.0 配置失败，本次备份已中止，请稍后重试。');
   }
 }
 

@@ -22,6 +22,11 @@
 .sully-repo-note p span { margin-left: 5px; font-family: Georgia, serif; font-style: italic; }
 .sully-repo-note-star { position: absolute; right: 15px; bottom: 13px; color: #bda9cf; font-size: 35px; line-height: 1; transform: rotate(12deg); }
 .sully-repo-copy .sully-repo-closing { color: #83766b; font-size: 11px; line-height: 1.9; }
+.sully-repo-support { margin-top: 20px; padding-top: 16px; border-top: 1px dashed #d8cfc1; text-align: center; }
+.sully-repo-support h3 { margin: 0 0 6px; color: #746083; font-size: 13px; font-weight: 600; }
+.sully-repo-support p { font-size: 11px; color: #83766b; line-height: 1.8; }
+.sully-repo-support img { display: block; width: 168px; height: 168px; max-width: 100%; object-fit: contain; margin: 12px auto 7px; background: white; border-radius: 8px; }
+.sully-repo-support > span { font-size: 10px; color: #968795; }
 .sully-repo-signoff { display: flex; justify-content: space-between; gap: 12px; margin-top: 16px; padding: 12px 0 1px; border-top: 1px dashed #d8cfc1; font-size: 9px; color: #a09386; }
 .sully-repo-signoff span:last-child { white-space: nowrap; color: #86748e; transform: rotate(-4deg); }
 .sully-repo-button { flex-shrink: 0; width: 100%; margin-top: 19px; padding: 13px 16px; border: 0; border-radius: 12px; background: #78628d; box-shadow: 0 3px 0 #594666; color: #fffafc; font: inherit; font-size: 13px; font-weight: 600; letter-spacing: .12em; cursor: pointer; transition: transform .15s ease, box-shadow .15s ease, background .15s ease; }

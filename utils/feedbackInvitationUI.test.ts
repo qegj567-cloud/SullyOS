@@ -27,6 +27,7 @@ it('让位给其他界面与弹窗，解除后只出现一个我知道了按钮'
     expect(host.querySelectorAll('button')).toHaveLength(1);
     expect(host.querySelector('button')!.textContent).toBe('我知道了');
     expect(host.querySelectorAll('a')).toHaveLength(0);
+    expect(host.querySelector('img[alt="Sully 的微信赞赏码"]')).not.toBeNull();
     await act(async () => host.querySelector('button')!.click());
     await wait(); expect(host.textContent).toBe('');
 });

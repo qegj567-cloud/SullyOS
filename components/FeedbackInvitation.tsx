@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { claimFeedbackInvitation, FEEDBACK_INVITATION_EVENT, hasPendingFeedbackInvitation, recordFeedbackVisit } from '../utils/feedbackInvitation';
 import './FeedbackInvitation.css';
+import wechatCode from '../assets/sully-support/wechat-sully-code.png';
 
 export default function FeedbackInvitation({ ready, blocked }: { ready: boolean; blocked: boolean }) {
     const [open, setOpen] = useState(false);
@@ -98,6 +99,12 @@ export function FeedbackInvitationDialog({ onClose }: { onClose: () => void }) {
                             <span className="sully-repo-note-star" aria-hidden="true">✳</span>
                         </div>
                         <p className="sully-repo-closing">糯米机是免费项目。你愿意分享的每一份真实 repo，都是让我继续更新的一点动力。</p>
+                        <section className="sully-repo-support" aria-label="打赏 Sully">
+                            <h3>也可以打赏 Sully</h3>
+                            <p>用于项目的更新与维护。按心意与余力，完全自愿，不影响正常使用。</p>
+                            <img src={wechatCode} alt="Sully 的微信赞赏码" width="168" height="168" loading="lazy" />
+                            <span>长按保存图片，用微信扫一扫</span>
+                        </section>
                     </div>
                     <div className="sully-repo-signoff"><span>谢谢你来玩，故事还在继续。</span><span>— 作者留</span></div>
                 </div>

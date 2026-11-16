@@ -37,6 +37,26 @@ const baseInput = (): BuildChatPayloadInput => ({
 const joinMessages = (messages: Array<{ content: any }>): string =>
     messages.map(m => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content))).join('\n');
 
+it.each([false, true])('excludes original thinking, its translation and bilingual pairs from actual chat context (worker=%s)', async timelyByWorker => {
+    const input = baseInput();
+    input.historyMsgs.unshift({ id: 0, charId: input.char.id, role: 'assistant', type: 'text', content: '这是角色说出口的正文。', timestamp: input.historyMsgs[0].timestamp - 1 });
+    const baseline = await buildChatRequestPayload({ ...input, timelyByWorker });
+    const thinkingChain = 'PRIVATE_THINKING_SOURCE_7f2b';
+    const text = '仅供界面展示的中文译文_9a81';
+    const decorated = { ...input, timelyByWorker, historyMsgs: input.historyMsgs.map(message => message.role === 'assistant' ? {
+        ...message, metadata: { thinkingChain, thinkingChainTranslation: { source: thinkingChain, text, segments: [{ source: thinkingChain, text }] } },
+    } : message) };
+    const payload = await buildChatRequestPayload(decorated);
+    expect(payload.cleanedApiMessages).toEqual(baseline.cleanedApiMessages);
+    expect(joinMessages(payload.fullMessages)).toContain('这是角色说出口的正文。');
+    expect(JSON.stringify(payload.fullMessages)).not.toContain(thinkingChain);
+    expect(JSON.stringify(payload.fullMessages)).not.toContain(text);
+    expect(JSON.stringify(payload.fullMessages)).not.toContain('thinkingChainTranslation');
+    // Proactive message transcripts use this same history formatter.
+    expect(ChatPrompts.buildMessageHistory(decorated.historyMsgs, 20, input.char, input.userProfile, []).apiMessages)
+        .toEqual(ChatPrompts.buildMessageHistory(input.historyMsgs, 20, input.char, input.userProfile, []).apiMessages);
+});
+
 it.each([false,true])('adds home phone background only to this request (worker=%s) and retains normal chat history', async timelyByWorker => {
     const input={...baseInput(),timelyByWorker};
     const background='【家园手机聊天】你们在客厅里用手机聊天。';

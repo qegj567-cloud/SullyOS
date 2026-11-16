@@ -10,7 +10,7 @@
 
 Geoapify 同样先检查设备定位与隐藏地点；命中隐私圈或边界精度不确定时零地图请求。圈外设备直连固定 `https://api.geoapify.com/v1/geocode/reverse`，使用 WGS84、CORS、`credentials: omit`、`cache: no-store` 与 AbortSignal，不用 Worker／代理、不加载第三方地图脚本。配置修改、切后台或超时取消；失败只输出固定错误，未授权／额度不足不回退其他服务。
 
-响应仅选国家、省市、区镇、街道、门牌及地点名称文字；不使用 `formatted` 兜底，不读取经纬度、邮编、Plus Code、电话、place_id 或完整原始数据。实际查到的 Geoapify 地址在位置提示词中标明来源，预览同一信息框显示 Geoapify 与 OpenStreetMap 链接；隐藏地点别名不标成地图查询结果。`geoapifyKey` 与隐私配置同存 `os_user_location_privacy_v1`，不进角色卡、备份、云端或 localStorage 镜像。
+响应仅选国家、省市、区镇、街道、门牌及地点名称文字；不使用 `formatted` 兜底，不读取经纬度、邮编、Plus Code、电话、place_id 或完整原始数据。实际查到的 Geoapify 地址在位置提示词中标明来源，预览同一信息框显示 Geoapify 与 OpenStreetMap 链接；隐藏地点别名不标成地图查询结果。`geoapifyKey` 与隐私配置同存 `os_user_location_privacy_v1`，随个人备份迁移，不进角色卡、Worker 状态或 localStorage 镜像。
 
 `isUserLocationLookupUrl` 对 Geoapify 固定接口直接透传原 fetch，避免坐标及 Key 进入 API 抓取、请求比较缓存和失败诊断。短缓存仍只在内存保留五分钟，复用前必须重新取定位并检查隐藏地点。没有新增定位埋点、后台轮询或轨迹。
 
@@ -45,11 +45,13 @@ Geoapify 同样先检查设备定位与隐藏地点；命中隐私圈或边界�
 
 高德模式同样先匹配本机隐藏地点，圈内不会加载查询 iframe。圈外通过其 `/v3/geocode/regeo` 的 callback（JSONP）接口直接查询，不经过 Worker／代理、不加载完整地图 SDK。查询脚本在只有 `allow-scripts`、没有 `allow-same-origin` 的 iframe 中运行，不能读取父页面的 localStorage、隐藏中心点或聊天；内层 CSP 仅允许查询高德，禁止 connect/img/form。消息回程同时校验 frame.contentWindow 和本次随机 token，成功、失败或取消后清除 frame 与监听器。
 
-手机 WGS84 坐标只在本机近似转换为高德 GCJ02 坐标，隐藏距离判断仍使用转换前的 WGS84。转换算法改编自 MIT 的 [coordtransform](https://github.com/wandergis/coordtransform)，授权声明保留在 `amapCoordinates.ts`。返回只读取 formatted_address／地址文字与 100 米内最近 POI 名称，不读取电话、经纬度、ID；位置仅作参考，具体以 user 的说明为准。Key 仅存在本机并直接提交高德，不进入角色提示词、共享配置或备份。高德查不到／Key 无效／网络阻断时位置未知，不自动切换免费服务。
+手机 WGS84 坐标只在本机近似转换为高德 GCJ02 坐标，隐藏距离判断仍使用转换前的 WGS84。转换算法改编自 MIT 的 [coordtransform](https://github.com/wandergis/coordtransform)，授权声明保留在 `amapCoordinates.ts`。返回只读取 formatted_address／地址文字与 100 米内最近 POI 名称，不读取电话、经纬度、ID；位置仅作参考，具体以 user 的说明为准。Key 保存在本机，查询时直接提交高德，并随个人备份迁移；不进入角色提示词或 Worker 状态。高德查不到／Key 无效／网络阻断时位置未知，不自动切换免费服务。
 
 BigDataCloud 会收到区域外坐标及请求 IP，并将它们用于改进其 IP 定位数据。设置里明确展示这个用途及说明链接：[服务说明](https://www.bigdatacloud.com/docs/article/why-is-reverse-geocoding-api-free)、[客户端接口](https://www.bigdatacloud.com/free-api/free-reverse-geocode-to-city-api)、[使用政策](https://www.bigdatacloud.com/docs/article/fair-use-policy-for-free-client-side-reverse-geocoding-api)。仅设备直接请求当前授权取得的位置；不在服务端调用、不自动兜底其它地图接口。
 
-隐私配置单独保存在 `os_user_location_privacy_v1`，不进入 RealtimeConfig、角色卡、整机／云端备份或 localStorage 镜像；导入备份保留本机已有定位设置，新设备导入后仍默认关闭，需重新设置隐藏地点与 Key。当前设备坐标不落库，区域外地点查询短缓存只在内存中保留最多五分钟，且每次复用前必须取得新定位并再次判断隐私圈；距旧查询位置超过 50 米则重新查询。定位请求本身并发合并，不做后台轮询或轨迹记录。
+隐私配置单独保存在 `os_user_location_privacy_v1`，不进入 RealtimeConfig、角色卡、Worker 状态或 localStorage 镜像。个人整合／文字备份（包括云端）包含开关、地图服务与 Key、隐藏地点的名称／中心／半径，以及各用户自己的可见角色范围。当前设备坐标不落库、不备份；区域外地点查询短缓存只在内存中保留最多五分钟，每次复用前必须取得新定位并再次判断隐私圈；距旧查询位置超过 50 米则重新查询。定位请求本身并发合并，不做后台轮询或轨迹记录。
+
+备份专用路径 `userLocationBackup.ts` 只导出校验后的设置白名单，未知的实时定位或查询缓存字段不会带走。单用户写入 `userLocationSettings`，多用户写入 `user-spaces.json.userLocation`，共享设置与按空间的授权分开保存；`null` 表示该空间全部角色，空数组表示无人，缺失或损坏范围不能放宽成全部。导入在任何数据写入前校验，恢复后取消旧定位请求并清内存缓存；系统定位权限仍由新设备授权，不复制旧设备当前位置。仅媒体包、没有该字段的旧包、迁入独立用户均保留目的地定位设置；旧包的缺失内容需要从原设备重新备份。设置读取失败中止导出，不能静默生成缺项备份。
 
 Umami 只在 `当前功能启用` 冷启动快照中报告「真实定位」开关（开／关／读取失败），不收位置、隐藏地点、半径或 Key，不在定位或保存时逐次打点。本地开发照常不发送统计。
 
@@ -84,7 +86,7 @@ Umami 只在 `当前功能启用` 冷启动快照中报告「真实定位」开�
 
 ## 按角色授权与天气城市（2026-10-31）
 
-真实定位 → 可见角色：可选「所有角色」或「仅选中的角色」，支持头像列表、搜索、全选和清空。旧配置不带 characterIds 时保持所有角色可见；切到仅选中时初始为空，空列表表示无人可见，新角色不会自动得到授权。列表按角色 ID 保存，损坏的范围配置按未授权处理。范围与隐私圈一起只保存在本机 `os_user_location_privacy_v1`，不进备份、云端或角色卡。
+真实定位 → 可见角色：可选「所有角色」或「仅选中的角色」，支持头像列表、搜索、全选和清空。旧配置不带 characterIds 时保持所有角色可见；切到仅选中时初始为空，空列表表示无人可见，新角色不会自动得到授权。列表按角色 ID 保存，损坏的范围配置按未授权处理。范围与隐私圈一起保存在本机 `os_user_location_privacy_v1`，随个人备份按用户恢复，不进入 Worker 状态或角色卡。
 
 聊天本地／即时对话、电话和见面在发起设备定位前检查目标角色，并在结果返回后再检查一次。未授权时不定位、不查询地图、不注入“位置未知”。后台模板也按角色控制“位置未知”，始终不包含真实位置；本机预览仍由用户主动发起，可独立于授权范围查看。所有原有隐私圈、直连地图与失败不回退规则保留。
 

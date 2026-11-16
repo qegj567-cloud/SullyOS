@@ -289,6 +289,8 @@ export interface APIConfig {
   apiKey: string;
   // 可选识图中转：给不支持 image_url 的主模型补视觉能力。
   visionApi?: VisionApiConfig;
+  /** 心象手动翻译专用；全局共用，未配置时不自动调用对话 API。 */
+  thinkingTranslationApi?: DialogueApiConfig;
   minimaxApiKey?: string;
   minimaxGroupId?: string;
   // 'domestic' → https://api.minimaxi.com (国内站)
@@ -4001,6 +4003,8 @@ export interface FullBackupData {
      * 的 exportAmsg2GlobalConfig）。角色身上那份 activeMsg2Config 跟着 characters 走。
      */
     amsg2GlobalConfig?: ActiveMsg2GlobalConfig;
+    /** Personal backup: saved provider/keys, hidden regions and this user's audience; never live coordinates. */
+    userLocationSettings?: import('./utils/userLocationPrivacy').UserLocationConfig;
     apiPresets?: ApiPreset[];
     availableModels?: string[];
     realtimeConfig?: RealtimeConfig;  // 实时感知配置（天气/新闻/Notion）
@@ -4166,6 +4170,7 @@ export interface FullBackupData {
     chatTranslateEnabledByChar?: Record<string, boolean>;
     chatTranslateExpandedByChar?: Record<string, boolean>;
     chatTranslateStyleByChar?: Record<string, 'bubble' | 'subtitle'>;
+    chatSubtitleByChar?: Record<string, import('./utils/chatTranslationStyle').ChatSubtitleSettings>;
     chatArchivePrompts?: any;
     chatActiveArchivePromptId?: string;
     characterRefinePrompts?: any;

@@ -5,6 +5,8 @@
 
 ## 总体架构（定案）
 
+前台恢复：`pageForeground.ts` 合并 visibilitychange／pageshow／focus／resume 信号；每种可见恢复都进入原 `handlePageBecameVisible` 的本地冲刷、云端补收与待收点名，不再只对 focus/pageshow 查本地 inbox。保留原网络节流和消息 ID 去重，不新增轮询。已经挂载的 Chat 同时重读当前角色的本地消息及待收指示灯，历史搜索窗口保留当前位置，不必退出聊天 App 再进入。测试覆盖无 visibilitychange 的恢复、重复事件、后台不触发和真实聊天组件漏事件后的补显示；移动端系统事件差异仍需真机观察。
+
 - 业务实现放在本仓库的 `worker/amsg/src/`（包装层）、`utils/` 和前端。
   2026-10-19 审计修复依赖上游通用能力：任务输入、任务查询、工具执行白名单、不可变附件和条件写结果。
   当前精确依赖 `amsg-client@2.10.0-next.0` 与 `amsg-server@3.1.0-next.0` 已包含这些能力，

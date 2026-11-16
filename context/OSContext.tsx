@@ -60,6 +60,7 @@ import { migrateWorldDaySegs } from '../utils/worldHome/prompts';
 import { safeFetchJson } from '../utils/safeApi';
 import { captureApiRequestOnce, getApiCallAmbientContext, recordApiCall, setApiCallAmbientContext, updateApiRequestCaptureUsage } from '../utils/apiCallLog';
 import { isUserLocationLookupUrl } from '../utils/userLocationPrivacy';
+import { exportUserLocationSettings } from '../utils/userLocationBackup';
 import { isGlobalStreamEnabled, upgradeChatBodyToStream, assembleUpgradedResponse } from '../utils/streamUpgrade';
 import { rewriteStaleWorkerUrl } from '../utils/proxyWorker';
 import { buildFetchFailureDetail, classifyFetchFailure, describeReachabilityProbe, parseTargetUrl, probeOriginReachability, shouldProbeReachability, summarizeFetchRequestBody } from '../utils/networkFailureDiagnosis';
@@ -95,6 +96,7 @@ import {
 import { ActiveMsgClient } from '../utils/activeMsgClient';
 import { resolveCharTimeZone } from '../utils/timezone';
 import { ActiveMsgStore, backupHasBackendConnection, exportAmsg2GlobalConfig } from '../utils/activeMsgStore';
+import { exportSubtitleSettings } from '../utils/chatTranslationStyle';
 import { charMayHaveCloudState, purgeCharCloudState, purgeCloudCharById } from '../utils/amsg2CharCleanup';
 import { parseCharCredId } from '../utils/amsgLlmCredentials';
 import { SAR_MODULE_RUNTIME_CHANGED_EVENT, type SarModuleRuntimeChangedDetail } from '../utils/sarModuleRuntimeEvents';
@@ -2815,7 +2817,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       const { uploadBackup, cleanupOldBackups } = await loadBackupProvider();
       try {
           setSysOperation({ status: 'processing', message: '正在打包备份数据...', progress: 0 });
-          const blob = await exportSystem(mode, { userScope: 'all' });
+          // 个人云备份用于换机恢复，必须保留原后台身份和密钥。不能被文件分享的脱敏偏好剥掉。
+          const blob = await exportSystem(mode, { userScope: 'all', includeBackendConnection: true });
 
           setSysOperation({ status: 'processing', message: '正在上传到云端...', progress: 50 });
           const filename = `Sully_Backup_${mode}_${Date.now()}.zip`;
@@ -3582,8 +3585,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   ): Promise<Blob> => {
       try {
           setSysOperation({ status: 'processing', message: '正在初始化打包引擎...', progress: 0 });
-          // 手动导出和云端备份都从这里过，带哪些东西只在这一处按备份偏好决定。
-          const { includeBackendConnection } = readBackupPreferences();
+          // 文件导出由用户选择是否带连接；个人云备份显式要求完整恢复配置。
+          const includeBackendConnection = exportOptions.includeBackendConnection ?? readBackupPreferences().includeBackendConnection;
 
           if (listUserSpaces().length > 1) {
               const { exportUserSpaces } = await import('../utils/userSpaceBackup');
@@ -3960,6 +3963,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           // 纯配置无媒体，跟着 text_only / full 走。
           if (mode === 'text_only' || mode === 'full') {
               backupData.amsg2GlobalConfig = await exportAmsg2GlobalConfig({ includeBackendConnection });
+              backupData.userLocationSettings = exportUserLocationSettings();
+              backupData.chatSubtitleByChar = exportSubtitleSettings();
           }
 
           // 桌面皮肤偏好（电子宠物/手游风的界面配色 + 看板 banner）——异步（看板图令牌需解析为

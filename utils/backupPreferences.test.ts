@@ -9,7 +9,7 @@ describe('备份偏好', () => {
         expect(readBackupPreferences().includeBackendConnection).toBe(false);
     });
 
-    it('勾上后记住，手动导出和云端备份读到的是同一份', () => {
+    it('记住文件导出是否包含后端连接的选择', () => {
         updateBackupPreferences({ includeBackendConnection: true });
         expect(readBackupPreferences().includeBackendConnection).toBe(true);
         updateBackupPreferences({ includeBackendConnection: false });
