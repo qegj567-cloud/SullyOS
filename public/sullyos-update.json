@@ -1,15 +1,15 @@
 {
   "schemaVersion": 1,
-  "versionCode": 30520,
-  "versionName": "3.5.20",
-  "apkUrl": "https://github.com/qegj567-cloud/SullyOS/releases/download/android-v3.5.20/SullyOS-Android-v3.5.20.apk",
-  "sha256": "9fe7a8f9e0d3e2e14974f21ca45ab2f853b7ae13b9e3934e0872bee767ff2969",
-  "sizeBytes": 103278643,
-  "publishedAt": "2026-11-15T17:27:05Z",
+  "versionCode": 30521,
+  "versionName": "3.5.21",
+  "apkUrl": "https://github.com/qegj567-cloud/SullyOS/releases/download/android-v3.5.21/SullyOS-Android-v3.5.21.apk",
+  "sha256": "75aaed5210997b291c25a96c630ee2ebf490cd8a4c41a45967fa5e6c870465f4",
+  "sizeBytes": 103329259,
+  "publishedAt": "2026-11-16T17:04:35Z",
   "releaseNotes": [
-    "同步 master 1ef34ce2，赞赏页与公告仅保留微信赞赏，更新项目横图",
-    "聊天、情绪评估与推送机制继续跟随 master，本次未额外修改提示词或用户配置",
-    "保留水母／经典图标切换、共用第三方推送与既有 UnifiedPush 兼容、PDF、相机、前台定位、Umami 和应用内更新",
-    "沿用固定正式签名，可覆盖升级保留数据"
+    "同步 master b8a56e67，新版主动消息 2.0 设置、通知状态、连接码换机与后台维护",
+    "同步云端备份恢复、聊天发送进度、字幕样式与心象翻译，以及音乐播放和彼方迁移适配",
+    "保留既有通知渠道、图标切换、PDF、相机、前台定位、Umami 和应用内更新；无个人后端预设",
+    "沿用固定正式签名，可覆盖升级保留数据；APK 更新不会自动更新用户自己的后台"
   ]
 }
