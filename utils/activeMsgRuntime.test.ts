@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, it, expect, vi } from 'vitest';
+import { subscribePageForeground } from './pageForeground';
 import {
   AMSG2_TASKS_ADOPTED_EVENT,
   INBOX_FRESH_DELIVERY_WINDOW_MS,
@@ -2766,6 +2767,27 @@ describe('上线补收不看有没有在等回复（走真库）', () => {
     expect(listInstantChatPendings()).toHaveLength(0);
     await expect(catchUpMissedPushes('foreground')).resolves.toBe('drained');
     expect(list).toHaveBeenCalledTimes(1);
+  }, 20000);
+
+  it('only focus/resume arrives: recovers the cloud reply without remounting and never inserts it twice', async () => {
+    const previousWindow = globalThis.window, previousDocument = globalThis.document;
+    Object.assign(globalThis, { window: new EventTarget(), document: Object.assign(new EventTarget(), { visibilityState: 'visible' }) });
+    const release = subscribePageForeground(handlePageBecameVisible);
+    const charId = 'char-resume-cloud', messageId = 'resume-cloud-reply';
+    try {
+      await DB.saveCharacter({ id: charId, name: '恢复测试' } as any);
+      await ActiveMsgStore.saveGlobalConfig({ workerUrl: WORKER_URL, pushMode: 'third-party' });
+      const entry = scheduledEntry(charId, messageId);
+      entry.push.messageType = 'instant';
+      vi.spyOn(ActiveMsgClient, 'listOutboxEntries').mockResolvedValue([entry] as any);
+      window.dispatchEvent(new Event('focus')); document.dispatchEvent(new Event('resume'));
+      await vi.waitFor(async () => expect((await DB.getRecentMessagesByCharId(charId, 10)).filter(m => String(m.content).includes('到点啦'))).toHaveLength(1), { timeout: 8000 });
+      window.dispatchEvent(new Event('pageshow'));
+      await new Promise(resolve => setTimeout(resolve, 100));
+      expect((await DB.getRecentMessagesByCharId(charId, 10)).filter(m => String(m.content).includes('到点啦'))).toHaveLength(1);
+    } finally {
+      release(); Object.assign(globalThis, { window: previousWindow, document: previousDocument });
+    }
   }, 20000);
 
   it('推送丢掉的那条定时主动消息，从账本补回聊天流', async () => {

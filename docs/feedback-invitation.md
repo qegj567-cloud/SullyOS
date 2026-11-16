@@ -8,6 +8,7 @@
 - 显示前先持久化为 `shown`，刷新、关闭页面、点遮罩或点“我知道了”均不再追问。写入失败则不弹。支持 Web Locks 的浏览器在多个标签页之间串行领取展示资格。
 - 恢复备份在写数据库前永久取消邀请资格，导入通知标记时不恢复备份里的邀请状态。此键参与 localStorage 镜像；若状态丢失但已有角色，则保守地视为已有安装，不重新邀请。
 - 不请求好评、不检查发帖结果、不附链接、不调用 API、不新增统计事件。完整清除数据且不导入备份，或换到全新设备，仍可能被识别为新安装；local-first 无账号系统无法可靠跨设备识别人。
+- 邀请末尾附现有微信赞赏码，说明自愿支持更新维护、不影响使用；图片随应用打包，支持长按保存。「我知道了」常驻底部。追加内容不更换邀请 key、不重置资格或已读状态，老用户不补弹。
 
 实现：`utils/feedbackInvitation.ts`、`components/FeedbackInvitation.tsx`、`components/PhoneShell.tsx`。
 测试：`utils/feedbackInvitation.test.ts`、`utils/feedbackInvitationUI.test.ts`。

@@ -1,4 +1,4 @@
-/** Device-only data. Never put this object in RealtimeConfig, backups or cloud state. */
+/** Saved privacy settings may enter personal backups, never prompts, character cards or Worker state. */
 export interface UserPrivacyRegion {
     id: string;
     name: string;
@@ -7,14 +7,14 @@ export interface UserPrivacyRegion {
     radiusKm: number;
 }
 export interface UserLocationConfig {
-    /** Absent: all characters (legacy); empty: nobody. Device-only. */
+    /** Absent: all characters within this user space (legacy); empty: nobody. */
     characterIds?: string[];
     enabled: boolean;
     regions: UserPrivacyRegion[];
     provider?: 'basic' | 'amap' | 'geoapify';
-    /** Device-only, sent solely to the selected AMap endpoint outside hidden areas. */
+    /** Saved map credential; lookups send it only to AMap outside hidden areas. */
     amapKey?: string;
-    /** Device-only, sent solely to Geoapify outside hidden areas. */
+    /** Saved map credential; lookups send it only to Geoapify outside hidden areas. */
     geoapifyKey?: string;
 }
 export interface LocationFix { latitude: number; longitude: number; accuracy: number }

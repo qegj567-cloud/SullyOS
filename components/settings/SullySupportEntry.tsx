@@ -20,7 +20,7 @@ const SullySupportEntry = forwardRef<HTMLButtonElement, { onOpen: () => void }>(
                 <span className="entry-kicker">SULLY-08 · SNACK STATION</span>
                 <strong>打赏 Sully<span className="star small-star" aria-hidden="true" /></strong>
                 <span className="entry-subtitle">给像素猫买点小鱼干</span>
-                <span className="entry-action">去投喂 <SupportIcon name="arrow" /></span>
+                <span className="entry-action">去打赏 <SupportIcon name="arrow" /></span>
             </span>
             <img className="entry-character" src={peeking} alt="从角落探出头的 Sully" width="360" height="376" loading="lazy" />
             <span className="star entry-star" aria-hidden="true" />

@@ -1,4 +1,5 @@
 import { diagnosticRunId } from './amsgReproduction';
+import { subscribePageForeground } from './pageForeground';
 import { listUserSpaces } from './userSpaces';
 import { recordDiagnosticInbox } from './amsgReproductionStore';
 import { createReplyRun, isReplyStopped, withReplyCancellation, type ReplyRun } from './chatReplyCancellation';
@@ -2969,8 +2970,6 @@ export const ActiveMsgRuntime = {
         // 而只记「回来了」的话，前面那段空白到底是页面没在跑、还是在跑但没人喊它，
         // 事后分不出来。
         activeMsgTrace('runtime-page-visibility', { state: document.visibilityState });
-        if (document.visibilityState !== 'visible') return;
-        handlePageBecameVisible();
       });
       // 冷启动那一下（点通知才把 App 拉起来）没有 visibilitychange 可听，这里补一次：
       // 不补的话「回到前台的时刻」一直是 0，从通知进来的第一条判不出「送达时人不在」。
@@ -2990,15 +2989,11 @@ export const ActiveMsgRuntime = {
       });
     }
 
-    // 页面「刚活过来」的那一下，立刻数一眼收件箱，不用干等守望的下一跳。
-    // pageshow：iOS 把 App 挂起后恢复、以及 bfcache 前进/后退时会发，而 visibilitychange
-    //   不一定发——线上记录里就有「只见进后台、不见回前台」的断档。
-    // focus：切回窗口或标签页。
-    // 这两个可能跟 visibilitychange 撞在一起重复触发，但收件箱是「取出即删」、冲刷又都
-    // 走同一条串行链，重复最多是多数一次个数，不会把同一条消息演两遍。
-    if (typeof window !== 'undefined') {
-      window.addEventListener('pageshow', () => { void sweepLocalInbox(); });
-      window.addEventListener('focus', () => { void sweepLocalInbox(); });
+    // Every resume signal uses the same local + cloud catch-up. Only checking the local
+    // inbox misses third-party deliveries whose bodies are still in the Worker outbox.
+    // The subscription coalesces bursts; existing outbox throttling and dedup stay in force.
+    if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+      subscribePageForeground(handlePageBecameVisible);
     }
 
     // 受理一轮即时对话之后（useChatAI 那边写记录 + 广播），把点名周期排上。

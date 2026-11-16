@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import Modal from '../os/Modal';
+import SettingsDetailPage from '../settings/SettingsDetailPage';
 import {
   type AmsgPacingSettings,
   DEFAULT_MAX_ACTIVE_TASKS,
@@ -23,6 +24,7 @@ import {
 
 interface ActiveMsg2PacingModalProps {
   isOpen: boolean;
+  fullPage?: boolean;
   onClose: () => void;
   /** 当前保存着的设置（没设的项 = 用默认值）。 */
   initial: AmsgPacingSettings;
@@ -43,30 +45,33 @@ const range = (from: number, to: number) => Array.from({ length: to - from + 1 }
 const GAP_OPTIONS = [5, 10, 20, 30, 60, 120, 180];
 const DAILY_CAP_OPTIONS = [1, 2, 3, 5, 8, 10, 15, 20, 30];
 
-const selectClass = 'w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-sm';
+const selectClass = 'amsg-pacing-select';
 
 const Field: React.FC<{ label: string; hint: string; children: React.ReactNode; warning?: string | null }> = ({
   label, hint, children, warning,
 }) => (
-  <div>
-    <div className="font-bold text-slate-700 text-sm mb-1.5 pl-1">{label}</div>
-    {children}
-    <p className="text-xs text-slate-400 mt-1.5 pl-1 leading-relaxed">{hint}</p>
-    {warning ? <p className="text-xs text-amber-600 mt-1 pl-1 leading-relaxed">{warning}</p> : null}
+  <div className="amsg-pacing-field">
+    <label className="amsg-pacing-row"><span>{label}</span>{children}</label>
+    <p className="amsg-pacing-hint">{hint}</p>
+    {warning ? <p className="amsg-pacing-warning">{warning}</p> : null}
   </div>
 );
 
-const Toggle: React.FC<{ on: boolean; onClick: () => void }> = ({ on, onClick }) => (
+const Toggle: React.FC<{ label: string; on: boolean; onClick: () => void }> = ({ label, on, onClick }) => (
   <button
+    type="button"
+    role="switch"
+    aria-label={label}
+    aria-checked={on}
     onClick={onClick}
-    className={`w-12 h-7 rounded-full transition-colors relative shrink-0 ${on ? 'bg-fuchsia-500' : 'bg-slate-200'}`}
+    className="amsg-overview-switch"
   >
-    <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow transition-all duration-200 ${on ? 'translate-x-5' : 'translate-x-0'}`} />
+    <span />
   </button>
 );
 
 const ActiveMsg2PacingModal: React.FC<ActiveMsg2PacingModalProps> = ({
-  isOpen, onClose, initial, selfRecurringTaskCount, onSubmit,
+  isOpen, fullPage = false, onClose, initial, selfRecurringTaskCount, onSubmit,
 }) => {
   const [maxUnanswered, setMaxUnanswered] = useState<SelectValue>('');
   const [minGap, setMinGap] = useState<SelectValue>('');
@@ -115,33 +120,33 @@ const ActiveMsg2PacingModal: React.FC<ActiveMsg2PacingModalProps> = ({
     }
   };
 
+  const Panel = fullPage ? SettingsDetailPage : Modal;
   return (
-    <Modal
+    <Panel
       isOpen={isOpen}
       title="主动频率"
-      onClose={onClose}
+      onClose={() => { if (!fullPage || !saving) onClose(); }}
       footer={(
         <>
-          <button onClick={onClose} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl active:scale-95 transition-transform">
-            取消
+          <button onClick={onClose} disabled={fullPage && saving} className="amsg-pacing-action amsg-pacing-back flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl active:scale-95 transition-transform">
+            返回角色设置
           </button>
-          <button onClick={() => void handleSave()} disabled={saving} className="flex-1 py-3 bg-fuchsia-500 text-white font-bold rounded-2xl active:scale-95 transition-transform disabled:opacity-50">
+          <button onClick={() => void handleSave()} disabled={saving} className="amsg-pacing-action amsg-pacing-save flex-1 py-3 bg-fuchsia-500 text-white font-bold rounded-2xl active:scale-95 transition-transform disabled:opacity-50">
             {saving ? '保存中...' : '保存'}
           </button>
         </>
       )}
     >
-      <div className="space-y-5 text-sm text-slate-600">
-        <p className="text-xs leading-relaxed text-slate-500">
+      <div className="amsg-pacing-settings">
+        <p className="amsg-pacing-intro">
           这里管的是 TA 主动来找你的消息。你们正常聊天时 TA 的回复不算在内。
         </p>
 
-        <div className="space-y-4">
-          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block pl-1">多久找你一次</label>
+        <section className="amsg-pacing-fields" aria-label="联系频率">
 
           <Field
-            label="你没回时，最多连着找你几次"
-            hint="一次可以是好几句话。TA 自己排的后续都算在里面，你回一句就重新数。到了上限，TA 排的后续到点会直接跳过、不补发。你自己排的不受影响。想让 TA 在你睡着时隔一阵报备一句的话，就调大些。"
+            label="未回复时主动联系"
+            hint="一次联系可包含多条消息；你回复后重新计数。达到上限后，TA 自己安排的后续联系会跳过、不补发；你手动安排的不受此项限制。"
             warning={maxUnanswered === '0' ? '选了不限，你不回的时候 TA 可以一直接着找你，每一次都要消耗 API 额度。' : null}
           >
             <select value={maxUnanswered} onChange={(e) => setMaxUnanswered(e.target.value)} className={selectClass}>
@@ -152,7 +157,7 @@ const ActiveMsg2PacingModal: React.FC<ActiveMsg2PacingModalProps> = ({
           </Field>
 
           <Field
-            label="两次之间至少隔多久"
+            label="两次联系至少间隔"
             hint="只管 TA 自己排的，免得接连不断地刷屏。"
           >
             <select value={minGap} onChange={(e) => setMinGap(e.target.value)} className={selectClass}>
@@ -163,7 +168,7 @@ const ActiveMsg2PacingModal: React.FC<ActiveMsg2PacingModalProps> = ({
           </Field>
 
           <Field
-            label="每天最多主动找你几次"
+            label="每天最多联系"
             hint="你手动排的也算在内（写好固定内容的那种不算）。到了上限，当天剩下的会跳过、不补发，第二天重新数。"
           >
             <select value={dailyCap} onChange={(e) => setDailyCap(e.target.value)} className={selectClass}>
@@ -173,7 +178,7 @@ const ActiveMsg2PacingModal: React.FC<ActiveMsg2PacingModalProps> = ({
           </Field>
 
           <Field
-            label="重复的消息，连续几次没回就先停"
+            label="重复消息未回暂停"
             hint="对每天、每周重复的消息生效，你手动排的也算（写好固定内容的那种不算）。停下以后，你回一句话它就会恢复。"
           >
             <select value={recurringStop} onChange={(e) => setRecurringStop(e.target.value)} className={selectClass}>
@@ -184,7 +189,7 @@ const ActiveMsg2PacingModal: React.FC<ActiveMsg2PacingModalProps> = ({
           </Field>
 
           <Field
-            label="最多同时排好几次"
+            label="最多同时安排"
             hint="你和 TA 排的共用这些名额，每天、每周重复的只算一次。"
           >
             <select value={maxTasks} onChange={(e) => setMaxTasks(e.target.value)} className={selectClass}>
@@ -192,36 +197,35 @@ const ActiveMsg2PacingModal: React.FC<ActiveMsg2PacingModalProps> = ({
               {range(1, MAX_ACTIVE_TASKS_CEILING).map((n) => <option key={n} value={String(n)}>{n} 次</option>)}
             </select>
           </Field>
-        </div>
+        </section>
 
-        <div className="space-y-3 pt-1 border-t border-slate-100">
-          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block pl-1 pt-3">TA 自己能排什么</label>
+        <section className="amsg-pacing-permissions" aria-label="TA 的排程权限">
+          <h4>TA 自己能排什么</h4>
+          <p className="amsg-pacing-hint">仅限制 TA 自己安排的消息。</p>
 
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0 pl-1">
-              <div className="font-bold text-slate-700">可以排每天、每周重复的消息</div>
-              <div className="text-xs text-slate-400 mt-1 leading-relaxed">关着时 TA 只能排一次性的。</div>
+          <div className="amsg-pacing-permission">
+            <div className="amsg-pacing-row">
+              <span>允许每天／每周重复</span>
+              <Toggle label="允许每天／每周重复" on={allowRecurring} onClick={() => setAllowRecurring(!allowRecurring)} />
+            </div>
+            <p className="amsg-pacing-hint">关闭时，TA 只能安排一次性的消息。</p>
               {willCancelRecurring ? (
-                <div className="text-xs text-amber-600 mt-1 leading-relaxed">
+                <p className="amsg-pacing-warning">
                   TA 排过 {selfRecurringTaskCount} 次重复消息，保存后会一起取消。
-                </div>
+                </p>
               ) : null}
-            </div>
-            <Toggle on={allowRecurring} onClick={() => setAllowRecurring(!allowRecurring)} />
           </div>
 
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0 pl-1">
-              <div className="font-bold text-slate-700">可以排「到点必发」的消息</div>
-              <div className="text-xs text-slate-400 mt-1 leading-relaxed">
-                比如答应了 8 点叫你起床，到点你正好在跟 TA 聊天也照发。关着时，碰上这种情况 TA 会改成在聊天里自然提起。
-              </div>
+          <div className="amsg-pacing-permission">
+            <div className="amsg-pacing-row">
+              <span>允许到点必发</span>
+              <Toggle label="允许到点必发" on={allowForce} onClick={() => setAllowForce(!allowForce)} />
             </div>
-            <Toggle on={allowForce} onClick={() => setAllowForce(!allowForce)} />
+            <p className="amsg-pacing-hint">开启后，约好的消息到点照发；关闭时，TA 会结合聊天决定是否开口。</p>
           </div>
-        </div>
+        </section>
       </div>
-    </Modal>
+    </Panel>
   );
 };
 

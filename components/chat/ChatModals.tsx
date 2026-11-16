@@ -8,7 +8,8 @@ import EmotionSettingsPanel from './EmotionSettingsPanel';
 import ChatInputSettings from './ChatInputSettings';
 import ChatSettingsSection from './ChatSettingsSection';
 import TranslationStylePicker from './TranslationStylePicker';
-import type { ChatTranslationStyle } from '../../utils/chatTranslationStyle';
+import { DEFAULT_SUBTITLE_SETTINGS, type ChatTranslationStyle, type ChatTranslationMode, type ChatSubtitleSettings } from '../../utils/chatTranslationStyle';
+import SubtitleSettingsDialog from './SubtitleSettingsDialog';
 import SecretNote from './SecretNote';
 import type { ChatInputPreferences } from '../../utils/chatInputPreferences';
 import { isTranslationLangPreset, normalizeTranslationLangLabel, TRANSLATION_LANG_MAX_LENGTH, TRANSLATION_LANG_PRESETS } from '../../utils/translationLang';
@@ -102,9 +103,11 @@ interface ChatModalsProps {
     translationEnabled?: boolean;
     onToggleTranslation?: () => void;
     translationExpanded?: boolean;
-    onToggleTranslationExpanded?: () => void;
+    onSetTranslationMode?: (mode: ChatTranslationMode) => void;
     translationStyle?: ChatTranslationStyle;
-    onSetTranslationStyle?: (style: ChatTranslationStyle) => void;
+    subtitleSettings?: ChatSubtitleSettings;
+    appearanceFonts?: Array<{ name: string; source: string }>;
+    onSetSubtitleSettings?: (settings: ChatSubtitleSettings) => void;
     translateSourceLang?: string;
     translateTargetLang?: string;
     onSetTranslateSourceLang?: (lang: string) => void;
@@ -268,8 +271,8 @@ const ChatModals: React.FC<ChatModalsProps> = ({
     onArchive, onCreatePrompt, onEditPrompt, onSavePrompt, onDeletePrompt,
     onSetHistoryStart, onRestoreAdaptiveContext, onJumpToMessageInChat, onEnterSelectionMode, onReplyMessage, onEditMessageStart, onConfirmEditMessage, onDeleteMessage, onCopyMessage, onToggleMessageFavorite, messageFavorited, onDeleteEmoji, onDeleteCategory, onRenameCategory, onDownloadCategory,
     allCharacters = [], onSaveCategoryVisibility,
-    translationEnabled, onToggleTranslation, translationExpanded, onToggleTranslationExpanded, translationStyle = 'bubble', onSetTranslationStyle, translateSourceLang, translateTargetLang, onSetTranslateSourceLang, onSetTranslateLang,
-    xhsEnabled, onToggleXhs,
+    translationEnabled, onToggleTranslation, translationExpanded, onSetTranslationMode, translationStyle = 'bubble', subtitleSettings = DEFAULT_SUBTITLE_SETTINGS, onSetSubtitleSettings, translateSourceLang, translateTargetLang, onSetTranslateSourceLang, onSetTranslateLang,
+    appearanceFonts, xhsEnabled, onToggleXhs,
     htmlModeEnabled, onToggleHtmlMode, htmlModeCustomPrompt, setHtmlModeCustomPrompt,
     chatVoiceEnabled, onToggleChatVoice, chatVoiceAutoPlay, onToggleChatVoiceAutoPlay, chatVoiceLang, onSetChatVoiceLang,
     onGenerateVoice, voiceAvailable, onDownloadVoice, voiceDownloadable, voiceCollectable, onToggleVoiceFavorite, voiceFavorited,
@@ -281,6 +284,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
     apiPresets, onAddApiPreset, onSaveEmotion, onClearBuffs,
 }) => {
     const [visibilitySelection, setVisibilitySelection] = useState<Set<string>>(new Set());
+    const [subtitleSettingsOpen, setSubtitleSettingsOpen] = useState(false);
     const [historyPage, setHistoryPage] = useState(0);
     const [historySearch, setHistorySearch] = useState('');
     const longPressTimerRef = useRef<number | null>(null);
@@ -397,6 +401,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                 isOpen={modalType === 'chat-settings'} title="聊天设置" onClose={() => setModalType('none')}
                 footer={<button onClick={onSaveSettings} className="w-full py-3 bg-primary text-white font-bold rounded-2xl">保存设置</button>}
             >
+                {subtitleSettingsOpen && <SubtitleSettingsDialog key={activeCharacter.id} value={subtitleSettings} appearanceFonts={appearanceFonts} onChange={settings => onSetSubtitleSettings?.(settings)} onClose={() => setSubtitleSettingsOpen(false)} />}
                 <div className="space-y-3">
                     <ChatSettingsSection title="输入与发送" summary="表情联想、回车与自动回复">
                         <ChatInputSettings value={settingsInputPreferences} onChange={setSettingsInputPreferences} />
@@ -591,20 +596,11 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                                         inputPlaceholder="自定义，如 中文（繁體）"
                                         onSelect={onSetTranslateLang}
                                     />
-                                    <button
-                                        type="button"
-                                        onClick={onToggleTranslationExpanded}
-                                        className="w-full flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left active:bg-slate-50"
-                                    >
-                                        <span>
-                                            <span className="block text-[11px] font-bold text-slate-600">原文与译文同时展开</span>
-                                            <span className="block mt-0.5 text-[9px] leading-relaxed text-slate-400">开启后直接显示两种语言，可选择译文样式。</span>
-                                        </span>
-                                        <span className={`shrink-0 w-10 h-6 rounded-full p-1 transition-colors flex items-center ${translationExpanded ? 'bg-primary' : 'bg-slate-200'}`}>
-                                            <span className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${translationExpanded ? 'translate-x-4' : ''}`} />
-                                        </span>
-                                    </button>
-                                    {translationExpanded && <TranslationStylePicker value={translationStyle} onChange={onSetTranslationStyle} />}
+                                    <TranslationStylePicker value={translationExpanded ? translationStyle : 'collapsed'} onChange={onSetTranslationMode} />
+                                    {translationExpanded && translationStyle === 'subtitle' && <button type="button" onClick={() => setSubtitleSettingsOpen(true)}
+                                        className="flex min-h-11 w-full items-center justify-between border-t border-slate-100 py-2 text-left text-[11px] text-primary">
+                                        <span>字幕设置与预览<span className="mt-0.5 block text-[10px] text-slate-400">字号、颜色与字体</span></span><span aria-hidden="true">›</span>
+                                    </button>}
                                     {/* Preview */}
                                     <div className="text-[11px] text-center text-slate-500 bg-slate-50 rounded-lg py-2">
                                         选<span className="font-bold text-slate-700">{translateSourceLang || '?'}</span> 译<span className="font-bold text-primary">{translateTargetLang || '?'}</span>

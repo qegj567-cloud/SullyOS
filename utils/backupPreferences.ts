@@ -1,14 +1,14 @@
 /**
  * 备份偏好：控制「整包备份里带哪些东西」。
  *
- * 手动导出、上传到 GitHub / WebDAV 都经过 OSContext 的 exportSystem，由它在那一处读这份
- * 偏好，各个入口不再自己传开关。以后要按模块细分备份范围，往这里加字段即可。
+ * 文件导出经过 OSContext 的 exportSystem，由它读取这份分享偏好。
+ * 个人 GitHub / WebDAV 云备份始终携带后台连接，不受文件导出的脱敏选项影响。
  *
  * 存在设备级的共享设置里（见 userSpaces 的 sharedKeys），切换用户空间不会变。
  */
 export interface BackupPreferences {
     /**
-     * 带不带主动消息 2.0 的后端连接（Worker 地址、共享密钥、主密钥、用户 id）。
+     * 文件导出带不带主动消息 2.0 的后端连接（Worker 地址、共享密钥、主密钥、用户 id）。
      * 带上后，拿到备份的人能连上那台 Worker、解开里面的密文，所以默认不带。
      */
     includeBackendConnection: boolean;

@@ -1,6 +1,8 @@
-import React, { createContext, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { acquireSavedFont } from '../../utils/fontLibrary';
 import { createPortal } from 'react-dom';
 import subtitleFontUrl from '../../assets/fonts/subtitle-rounded-bold.woff2?url';
+import { DEFAULT_SUBTITLE_SETTINGS, normalizeSubtitleSettings, SUBTITLE_FONTS, type ChatSubtitleSettings } from '../../utils/chatTranslationStyle';
 
 type RegisterSubtitle = (source: HTMLElement, subtitle: HTMLElement) => () => void;
 const SubtitleContext = createContext<{ target: ShadowRoot; register: RegisterSubtitle } | null>(null);
@@ -38,7 +40,19 @@ function lastTextRect(source: HTMLElement): DOMRect | undefined {
     }
 }
 
-export function ChatSubtitleLayer({ children, enabled = true }: { children: React.ReactNode; enabled?: boolean }) {
+export function ChatSubtitleLayer({ children, enabled = true, settings = DEFAULT_SUBTITLE_SETTINGS }: { children: React.ReactNode; enabled?: boolean; settings?: ChatSubtitleSettings }) {
+    const appearance = normalizeSubtitleSettings(settings);
+    const [customFont, setCustomFont] = useState<{ id: string; family: string } | null>(null);
+    useEffect(() => {
+        if (!enabled || appearance.font !== 'custom' || !appearance.fontId) return;
+        const id = appearance.fontId, acquired = acquireSavedFont(id);
+        let cancelled = false;
+        void acquired.ready.then(family => { if (!cancelled) setCustomFont({ id, family }); }).catch(() => { if (!cancelled) setCustomFont(null); });
+        return () => { cancelled = true; acquired.release(); };
+    }, [enabled, appearance.font, appearance.fontId]);
+    const fontFamily = appearance.font === 'custom'
+        ? customFont && customFont.id === appearance.fontId ? `"${customFont.family}", sans-serif` : SUBTITLE_FONTS.system.family
+        : SUBTITLE_FONTS[appearance.font].family;
     const hostRef = useRef<HTMLDivElement>(null);
     const [target, setTarget] = useState<ShadowRoot | null>(null);
     const entries = useRef(new Map<HTMLElement, HTMLElement>());
@@ -128,7 +142,7 @@ export function ChatSubtitleLayer({ children, enabled = true }: { children: Reac
     return <SubtitleContext.Provider value={context}>
         {enabled && <style>{subtitleFontCss}</style>}
         {enabled && <div ref={hostRef} data-chat-subtitle-layer="" style={{ height: 0, position: 'relative', pointerEvents: 'none', zIndex: 20 }} />}
-        {enabled && target && createPortal(<style>{subtitleCss}</style>, target)}
+        {enabled && target && createPortal(<style>{subtitleCss + `.subtitle { font-size: ${appearance.fontSize}px; color: ${appearance.color}; font-family: ${fontFamily}; -webkit-text-stroke-color: ${appearance.outlineColor}; text-shadow: 0 1px 1px ${appearance.outlineColor}; }`}</style>, target)}
         {children}
     </SubtitleContext.Provider>;
 }

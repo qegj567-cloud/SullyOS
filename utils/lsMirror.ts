@@ -98,6 +98,7 @@ export const MIRRORED_KEYS: readonly string[] = [
     'browser_use_real_search',
     'sully_firecrawl_api_key',
     'sullyos_chat_input_preferences_v1',
+    'os_thinking_help_seen_v1',
     'schedule_app_theme',
     'handbook_lifestream_depth',
     'groupchat_context_limit',

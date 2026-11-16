@@ -37,6 +37,9 @@ import { exportMcdLocal, importMcdLocal } from './mcdMcpClient';
 import { exportMcpLocal, importMcpLocal } from './mcpClient';
 import { exportHome3DLocal, importHome3DLocal, HOME3D_LOCAL_KEYS } from './home3DBackup';
 import { exportAmsg2GlobalConfig, importAmsg2GlobalConfig } from './activeMsgStore';
+import { exportUserLocationSettings, importUserLocationSettings } from './userLocationBackup';
+import { exportSubtitleSettings, importSubtitleSettings } from './chatTranslationStyle';
+import { validateUserLocationConfig } from './userLocationPrivacy';
 import { exportWorldHomeLocal, importWorldHomeLocal } from './worldHome/localBackup';
 import { exportDesktopSkinLocal, importDesktopSkinLocal } from './desktopSkinBackup';
 import { editLibrary, VR_LIBRARY_RECORD, type LibraryEdit } from './vrWorld/library';
@@ -3805,6 +3808,8 @@ export const DB = {
           home3DLocal: exportHome3DLocal(),
           mcpLocal: exportMcpLocal(),             // 通用 MCP 服务器配置（存 localStorage）
           amsg2GlobalConfig: await exportAmsg2GlobalConfig(options), // 主动消息 2.0 全局配置（存独立的 ActiveMsg 库；后端连接默认不带走）
+          userLocationSettings: exportUserLocationSettings(),
+          chatSubtitleByChar: exportSubtitleSettings(),
           beautyAuthorLocal: exportBeautyAuthorBackup(),
           beautyPreferences: exportBeautyPreferences(),
           desktopSkinLocal: await exportDesktopSkinLocal(), // 桌面皮肤：界面配色 + 看板 banner（看板图令牌解析为 data URL）
@@ -3892,6 +3897,9 @@ export const DB = {
       };
 
       const mediaOnly = data.collaborationBackupMode === 'media_only';
+      // Reject a broken privacy circle before writing any restored data; never silently drop protection.
+      const userLocationSettings = !mediaOnly && data.userLocationSettings !== undefined
+          ? validateUserLocationConfig(data.userLocationSettings) : undefined;
       // Older media archives included entire text records from assets. Recover
       // their pictures only; never roll a user's current history back with them.
       if (mediaOnly && !data.friendFeedMedia) {
@@ -3902,6 +3910,8 @@ export const DB = {
           }
       }
       const plannedSections = [
+          userLocationSettings !== undefined,
+          !mediaOnly && data.chatSubtitleByChar !== undefined,
           data.characters !== undefined || data.mediaAssets !== undefined,
           data.characterGroups !== undefined,
           data.messages !== undefined,
@@ -4355,6 +4365,14 @@ export const DB = {
               { allowBackendConnection: options.allowBackendConnection },
           );
           (data as any).amsg2GlobalConfig = undefined;
+      }, 1);
+      await runSection('真实定位设置', userLocationSettings !== undefined, async () => {
+          await importUserLocationSettings(userLocationSettings);
+          data.userLocationSettings = undefined;
+      }, 1);
+      await runSection('外挂字幕设置', !mediaOnly && data.chatSubtitleByChar !== undefined, async () => {
+          importSubtitleSettings(data.chatSubtitleByChar);
+          data.chatSubtitleByChar = undefined;
       }, 1);
       await runSection('美化偏好', data.beautyPreferences !== undefined, async () => {
           importBeautyPreferences(data.beautyPreferences);data.beautyPreferences=undefined;

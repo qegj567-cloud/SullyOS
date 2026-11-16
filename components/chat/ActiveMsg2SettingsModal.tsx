@@ -1,5 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { useLocalBackHandler } from '../../hooks/useLocalBackHandler';
 import Modal from '../os/Modal';
+import SettingsDetailPage from '../settings/SettingsDetailPage';
 import {
   ActiveMsg2CharacterConfig,
   ActiveMsg2ExpirePolicy,
@@ -26,6 +28,7 @@ import {
 } from '../../utils/amsgLimits';
 import ActiveMsg2PacingModal from './ActiveMsg2PacingModal';
 import { isInstantChatReady } from '../../utils/amsgInstantChat';
+import { showInstantChatSendHelp } from '../../utils/instantChatSendHelp';
 import { syncAmsgLlmCredentials } from '../../utils/amsgStateSync';
 import { disableScheduleCharPurge, purgeCharCloudState } from '../../utils/amsg2CharCleanup';
 import { buildUserCancelledNotices } from '../../utils/amsg2TaskContext';
@@ -56,6 +59,7 @@ import {
 
 interface ActiveMsg2SettingsModalProps {
   isOpen: boolean;
+  fullPage?: boolean;
   onClose: () => void;
   char: CharacterProfile;
   apiConfig: APIConfig;
@@ -77,9 +81,9 @@ interface ActiveMsg2SettingsModalProps {
 }
 
 const MODE_OPTIONS = [
-  { id: 'fixed', label: '固定', desc: '到点直接发你写好的内容' },
-  { id: 'auto', label: '自动', desc: '用当前角色设定和聊天快照自己生成' },
-  { id: 'prompted', label: '提示词', desc: '围绕你写的方向生成主动消息' },
+  { id: 'fixed', label: '固定内容', desc: '到点直接发送你写好的内容，不经过 AI 生成。' },
+  { id: 'prompted', label: '指定话题', desc: '到点结合最新的聊天上下文和角色设定，围绕你指定的话题生成消息。' },
+  { id: 'auto', label: '自由发挥', desc: '到点结合最新的聊天上下文、角色设定和当前时间，由 TA 自己决定聊什么。' },
 ] as const;
 
 const RECURRENCE_OPTIONS = [
@@ -93,7 +97,7 @@ const describePacingSummary = (config: AmsgPacingSettings | undefined): string =
   const limits = resolveAmsgLimits(config);
   const gapMinutes = Math.round(limits.minSendGapMs / 60_000);
   return [
-    Number.isFinite(limits.maxUnansweredSends) ? `没回最多连发 ${limits.maxUnansweredSends} 次` : '没回也不限次数',
+    Number.isFinite(limits.maxUnansweredSends) ? `未回复时主动联系 ${limits.maxUnansweredSends} 次` : '未回复时主动联系不限次数',
     gapMinutes > 0 ? `至少隔 ${describeMinutes(gapMinutes)}` : '间隔不限',
     Number.isFinite(limits.dailySendCap) ? `每天最多 ${limits.dailySendCap} 次` : '每天不限',
   ].join(' · ');
@@ -101,6 +105,7 @@ const describePacingSummary = (config: AmsgPacingSettings | undefined): string =
 
 const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
   isOpen,
+  fullPage = false,
   onClose,
   char,
   apiConfig,
@@ -134,6 +139,19 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   // editingTaskUuid=null → 新建；非 null → 编辑该任务（保存时 replaceTaskUuid）。
   const [editingTaskUuid, setEditingTaskUuid] = useState<string | null>(null);
+  const [taskEditorOpen, setTaskEditorOpen] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const closeTaskEditor = () => { if (!isSubmitting) setTaskEditorOpen(false); };
+  useLocalBackHandler(() => { closeTaskEditor(); return true; }, 45, isOpen && taskEditorOpen && !pacingOpen);
+  useEffect(() => { if (!isOpen) { setTaskEditorOpen(false); setEditingTaskUuid(null); } }, [isOpen]);
+  useEffect(() => {
+    const scroll = contentRef.current?.closest('.amsg-detail-scroll') ?? contentRef.current?.parentElement;
+    const frame = requestAnimationFrame(() => {
+      scroll?.scrollTo?.({ top: 0 });
+      if (taskEditorOpen) contentRef.current?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [taskEditorOpen]);
   const [expirePolicy, setExpirePolicy] = useState<ActiveMsg2ExpirePolicy>('expire');
   // 远端对账底账：打开面板时拉一次全量任务，只留归属本角色的 uuid。null = 没对上账
   // （读失败/未拉完），此时不显示「远端不存在」徽标，免得半个清单误伤。
@@ -400,6 +418,7 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
       // 开着存 undefined（= 跟随全局默认开），只有显式关掉才落 false。
       instantChatEnabled: next ? undefined : false,
     }));
+    if (next) showInstantChatSendHelp('cloud', true);
   };
 
   /**
@@ -593,6 +612,7 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
         isEdit: editingTaskUuid ? 'yes' : 'no',
       });
       setEditingTaskUuid(null);
+      setTaskEditorOpen(false);
       // 编辑走的是「先建新的再取消旧的」，编号必然换一个——只说「已更新」的话，
       // 用户会以为列表里那条陌生编号是多出来的。
       addToast(result.replacedCancelFailed
@@ -641,82 +661,88 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
   const selfRecurringTaskCount = tasks.filter((t) => t.source === 'character'
     && t.recurrenceType !== 'none' && isPendingTask(t, now)).length;
 
+  const hintInput = (
+    <textarea
+      aria-label={mode === 'prompted' ? '这次想聊什么' : '补充灵感'}
+      value={promptHint}
+      onChange={(event) => setPromptHint(event.target.value)}
+      placeholder={mode === 'prompted' ? '例如：问问我今天的考试怎么样' : '例如：今天下雨，想聊一点轻松的'}
+      className="w-full h-24 bg-white border border-slate-200 rounded-2xl px-4 py-3 text-sm resize-none"
+    />
+  );
+
+  const Panel = fullPage ? SettingsDetailPage : Modal;
   return (
     <>
-    <Modal
+    <Panel
       isOpen={isOpen}
-      title="主动消息 2.0"
-      onClose={onClose}
+      hidden={fullPage && pacingOpen}
+      title={taskEditorOpen ? (editingTaskUuid ? '编辑定时任务' : '手动安排消息') : fullPage ? `${char.name} · 主动消息` : '主动消息 2.0'}
+      onClose={() => { if (isSubmitting) return; if (taskEditorOpen) closeTaskEditor(); else onClose(); }}
       footer={(
         <>
-          <button onClick={onClose} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl active:scale-95 transition-transform">
-            取消
+          <button onClick={taskEditorOpen ? closeTaskEditor : onClose} disabled={isSubmitting} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl active:scale-95 transition-transform">
+            {taskEditorOpen ? '返回角色设置' : '完成'}
           </button>
-          <button
+          {(taskEditorOpen || !enabled) && <button
             onClick={handleSubmit}
             disabled={isSubmitting || (enabled && globalPaused)}
-            className="flex-1 py-3 bg-fuchsia-500 text-white font-bold rounded-2xl active:scale-95 transition-transform disabled:opacity-50"
+            className="amsg-character-save flex-1 py-3 bg-fuchsia-500 text-white font-bold rounded-2xl active:scale-95 transition-transform disabled:opacity-50"
           >
             {isSubmitting ? '保存中...' : !enabled ? '关闭 2.0' : (editingTaskUuid ? '保存修改' : '新建任务')}
-          </button>
+          </button>}
         </>
       )}
     >
-      <div className="space-y-4 text-sm text-slate-600">
+      <div ref={contentRef} tabIndex={-1} className="space-y-4 text-sm text-slate-600 amsg-character-settings">
+        {!taskEditorOpen && <>
         {globalPaused ? (
           <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 text-xs leading-relaxed text-amber-700">
             系统设置里的「主动消息 2.0」总开关当前处于暂停状态，恢复总开关后才会重新连接云端并生效。
           </div>
         ) : null}
-        <p className="text-xs leading-relaxed text-slate-500">
-          打开后，TA 可以在 App 关着的时候来找你：到点由你的云端后端把话写好，再用通知送过来。任务用的是保存那一刻的角色设定和最近聊天，长期重复的任务在剧情变化后重新保存一次。
-        </p>
-
-        <div className="flex items-center justify-between bg-fuchsia-50 border border-fuchsia-100 rounded-2xl p-4">
-          <div>
-            <div className="font-bold text-slate-700">启用主动消息 2.0</div>
-            <div className="text-xs text-fuchsia-600 mt-1">{pushSummary || '正在检查 Push 状态...'}</div>
-          </div>
+        <section className="amsg-overview-controls" aria-label="角色功能开关">
+        <div className="amsg-overview-control">
+          <h4>启用主动消息 2.0</h4>
           <button
+            role="switch"
+            aria-label="角色主动消息"
+            aria-checked={enabled}
             onClick={handleToggleEnabled}
-            className={`w-12 h-7 rounded-full transition-colors relative ${enabled ? 'bg-fuchsia-500' : 'bg-slate-200'}`}
+            disabled={isSubmitting}
+            className="amsg-overview-switch"
           >
-            <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow transition-all duration-200 ${enabled ? 'translate-x-5' : 'translate-x-0'}`} />
+            <span />
           </button>
         </div>
 
-        {/* 关着的时候面板下面整块都是空的，不说一句的话，用户看不出这个开关是按角色算的，
-            也不知道打开它能换来什么。 */}
-        {!enabled ? (
-          <p className="text-xs leading-relaxed text-slate-400 pl-1">
-            主动消息 2.0 按角色单独开启。打开这个开关，TA 才能在聊天里给你排定时消息，到点由云端发出；你也可以在这里手动建任务。
-          </p>
-        ) : null}
-
         {/* 即时对话按角色单独关，和上面的排程开关互相独立（只排程不即时、只即时不排程
             都行），所以不裹在 enabled 里。全局那道门没开时这里只置灰说明，不代替它。 */}
-        <div className={`flex items-center justify-between rounded-2xl p-4 border ${globalInstantChatOn ? 'bg-white border-slate-200' : 'bg-slate-50 border-slate-100'}`}>
-          <div className="min-w-0 pr-3">
-            <div className={`font-bold ${globalInstantChatOn ? 'text-slate-700' : 'text-slate-400'}`}>即时对话</div>
-            <div className="text-xs text-slate-400 mt-1 leading-relaxed">
-              {globalInstantChatOn
-                ? '不是秒回：回复照样由模型现写，只是换到云端后端去写，写好了用通知送回来，所以发完就算把 App 杀后台也收得到。关掉的话这个角色回到本机生成。'
-                : '需要先在全局设置里开启即时对话，才能按角色单独调。'}
-            </div>
-          </div>
+        <div className="amsg-character-instant"><div className="amsg-overview-control">
+          <h4>即时对话</h4>
           <button
+            role="switch"
+            aria-label="角色即时对话"
+            aria-checked={globalInstantChatOn && instantChatOn}
             onClick={handleToggleInstantChat}
-            disabled={!globalInstantChatOn}
-            className={`w-12 h-7 rounded-full transition-colors relative shrink-0 ${globalInstantChatOn && instantChatOn ? 'bg-fuchsia-500' : 'bg-slate-200'} ${!globalInstantChatOn ? 'opacity-50' : ''}`}
+            disabled={!globalInstantChatOn || isSubmitting}
+            className="amsg-overview-switch"
           >
-            <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow transition-all duration-200 ${globalInstantChatOn && instantChatOn ? 'translate-x-5' : 'translate-x-0'}`} />
+            <span />
           </button>
+        </div></div>
+        </section>
+        <div className="amsg-overview-footnote">
+          <p>仅调整 {char.name}，与系统设置中的角色开关同步。</p>
+          {!globalInstantChatOn && <p>即时对话需先开启系统总开关。</p>}
+          {!globalReady && <p>{pushSummary || '正在检查后台连接…'}</p>}
+          {!enabled && isAmsg2EnabledForChar(char) && <p>关闭尚未保存，请点击下方「关闭 2.0」。</p>}
         </div>
 
         {/* 「主动频率」：几条上限集中在自己那一页改、自己那一页存，这里只放一行摘要。
             今天主动找了几次摆在摘要下面——上限是不是在起作用，用户一眼能看到。 */}
         {enabled ? (
-          <div className="flex items-center justify-between bg-white border border-slate-200 rounded-2xl p-4">
+          <section aria-label="主动频率" className="amsg-character-pacing">
             <div className="min-w-0 pr-3">
               <div className="font-bold text-slate-700">主动频率</div>
               <div className="text-xs text-slate-400 mt-1 leading-relaxed">{describePacingSummary(saved)}</div>
@@ -725,14 +751,14 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
                   这些到点会被跳过。不替用户删，说清楚两条路让用户自己选。 */}
               {selfRecurringTaskCount > 0 && !resolveAmsgLimits(saved).allowSelfRecurring ? (
                 <div className="text-xs text-amber-600 mt-1 leading-relaxed">
-                  TA 之前排过 {selfRecurringTaskCount} 次重复消息，之后都不会再发了。想留着，就在「调整」里打开「可以排每天、每周重复的消息」；不要了，可以在下面的列表里取消。
+                  TA 之前排过 {selfRecurringTaskCount} 次重复消息，之后都不会再发了。想留着，就在「调整」里打开「允许每天／每周重复」；不要了，可以在下面的列表里取消。
                 </div>
               ) : null}
             </div>
             <button onClick={() => setPacingOpen(true)} className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 font-bold text-xs shrink-0">
               调整
             </button>
-          </div>
+          </section>
         ) : null}
 
         {/* 闸拦下一次触发时不发任何推送，远端那行任务却照样被消费掉——不说一声的话，
@@ -745,11 +771,11 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
 
         {/* 关着 2.0 也照样列出来：关闭时没取消掉的任务还会响，藏起来的话用户只能对着
             一个空面板盲点「关闭 2.0」重试。关着时只给「取消」，不给编辑。 */}
-        {tasks.length > 0 ? (
-          <div>
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block pl-1">
-              任务列表（{tasks.length}）
-            </label>
+          <section className="amsg-character-schedule" aria-label="消息排期">
+            <div className="amsg-schedule-heading"><h4>消息排期</h4><span>{tasks.length} 项</span></div>
+            {tasks.length === 0 && <div className="amsg-schedule-empty">
+              <p>暂无排期</p><span>TA 或你安排的消息会显示在这里。</span>
+            </div>}
             {/* 一次 render 内所有任务用同一个 now，免得同屏卡片踩在不同的时刻上判定。 */}
             <div className="space-y-2">
               {tasks.map((t) => {
@@ -797,7 +823,7 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
                       <div className="flex gap-2 shrink-0 ml-2">
                         {enabled ? (
                           <button
-                            onClick={() => setEditingTaskUuid(t.taskUuid)}
+                            onClick={() => { setEditingTaskUuid(t.taskUuid); setTaskEditorOpen(true); }}
                             disabled={!globalReady}
                             className="px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-600 font-bold disabled:opacity-40"
                           >
@@ -817,36 +843,36 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
                 );
               })}
             </div>
-            {editingTaskUuid ? (
-              <button onClick={() => setEditingTaskUuid(null)} className="mt-2 text-xs text-fuchsia-500 font-bold pl-1">
-                ＋ 放弃编辑，改为新建任务
-              </button>
-            ) : null}
-          </div>
-        ) : null}
-
-        {enabled ? (
+          </section>
+        {enabled && <section className="amsg-character-manual" aria-label="手动安排">
+          <div><h4>手动安排 <small>可选</small></h4><p>指定时间或内容时使用，不是开启功能的必填项。</p></div>
+          <button type="button" className="amsg-button-secondary" disabled={!globalReady || globalPaused || isSubmitting} onClick={() => { setEditingTaskUuid(null); setTaskEditorOpen(true); }}>新建定时任务 <span aria-hidden>→</span></button>
+        </section>}
+        </>}
+        {enabled && taskEditorOpen ? (
           <>
             <div>
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block pl-1">
-                {editingTaskUuid ? '编辑任务' : '新建任务'}
-              </label>
-              <div className="space-y-2">
+              <p className="amsg-caption mb-3">选择发送方式，再设置时间。</p>
+              <div className="amsg-task-modes" aria-label="发送方式">
                 {MODE_OPTIONS.map((option) => (
                   <button
                     key={option.id}
+                    type="button"
+                    aria-pressed={mode === option.id}
                     onClick={() => {
                       setMode(option.id);
                       // fixed 进不了 worker 闸（taskNeedsLlm=false），策略统一钉成 force。
                       if (option.id === 'fixed') setExpirePolicy('force');
                     }}
-                    className={`w-full text-left rounded-2xl border px-4 py-3 transition-all ${mode === option.id ? 'bg-fuchsia-500 text-white border-fuchsia-500' : 'bg-white border-slate-200 text-slate-600'}`}
+                    className="amsg-task-mode"
                   >
-                    <div className="font-bold">{option.label}</div>
-                    <div className={`text-xs mt-1 ${mode === option.id ? 'text-fuchsia-50' : 'text-slate-400'}`}>{option.desc}</div>
+                    {option.label}
                   </button>
                 ))}
               </div>
+              <p className="amsg-caption mt-2" aria-live="polite">
+                {mode === 'fixed' ? <>到点直接发送你写好的内容，<strong>不经过 AI 生成。</strong></> : MODE_OPTIONS.find(option => option.id === mode)?.desc}
+              </p>
             </div>
 
             <div>
@@ -904,23 +930,21 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
                 <textarea
                   value={userMessage}
                   onChange={(event) => setUserMessage(event.target.value)}
-                  placeholder="到点后直接推送这段消息"
+                  placeholder="写下要发送的原文，TA 不会用 AI 改写"
                   className="w-full h-28 bg-white border border-slate-200 rounded-2xl px-4 py-3 text-sm resize-none"
                 />
               </div>
             ) : (
               <>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">
-                    {mode === 'prompted' ? '额外提示词' : '补充灵感 (可选)'}
-                  </label>
-                  <textarea
-                    value={promptHint}
-                    onChange={(event) => setPromptHint(event.target.value)}
-                    placeholder={mode === 'prompted' ? '例如：晚安前撒娇一下，但别太油' : '例如：今天下雨、想找我聊一点轻松的'}
-                    className="w-full h-24 bg-white border border-slate-200 rounded-2xl px-4 py-3 text-sm resize-none"
-                  />
-                </div>
+                {mode === 'prompted' ? <div>
+                  <label className="text-[10px] font-bold text-slate-400 mb-1.5 block pl-1">这次想聊什么</label>
+                  {hintInput}
+                  <p className="amsg-caption mt-1">写话题或要求，具体消息由 AI 生成。</p>
+                </div> : <details key={editingTaskUuid || 'new'} open={promptHint ? true : undefined}>
+                  <summary className="cursor-pointer text-xs text-slate-500 py-2">补充灵感（可选）</summary>
+                  <p className="amsg-caption mb-2">仅供参考，TA 仍可自行选择话题。</p>
+                  {hintInput}
+                </details>}
 
                 <div>
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">单次回复长度上限 (可选)</label>
@@ -936,17 +960,18 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
               </>
             )}
 
-            <p className="pt-1 border-t border-slate-100 text-xs text-slate-400">
-              主动消息使用当前聊天主 API，调用费用也由主 API 承担。
-            </p>
+            {mode !== 'fixed' && <p className="pt-1 border-t border-slate-100 text-xs text-slate-400">
+              聊天内容以最近成功同步到后台的为准。AI 生成使用当前聊天主 API，费用由该 API 承担。
+            </p>}
           </>
         ) : null}
       </div>
-    </Modal>
+    </Panel>
     {/* 跟主面板并排渲染而不是塞进它里面：Modal 的卡片带进场动画（transform），嵌在里面的
         fixed 浮层会被困在卡片里、跟着裁掉。后渲染的这个自然盖在上面。 */}
     <ActiveMsg2PacingModal
       isOpen={isOpen && pacingOpen}
+      fullPage={fullPage}
       onClose={() => setPacingOpen(false)}
       initial={pickPacingSettings(saved)}
       selfRecurringTaskCount={selfRecurringTaskCount}
