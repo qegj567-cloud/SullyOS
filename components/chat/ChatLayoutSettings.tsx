@@ -32,6 +32,7 @@ const presets: Array<{ name: string; desc: string; config: Partial<OSTheme> }> =
             chatInputStyle: 'rounded',
             chatSendButtonStyle: 'circle',
             chatShowTimestamp: 'always',
+            chatTimestampPosition: 'below',
         },
     },
     {
@@ -52,6 +53,7 @@ const presets: Array<{ name: string; desc: string; config: Partial<OSTheme> }> =
             chatInputStyle: 'wechat',
             chatSendButtonStyle: 'pill',
             chatShowTimestamp: 'always',
+            chatTimestampPosition: 'top_center',
         },
     },
     {
@@ -72,6 +74,7 @@ const presets: Array<{ name: string; desc: string; config: Partial<OSTheme> }> =
             chatInputStyle: 'telegram',
             chatSendButtonStyle: 'circle',
             chatShowTimestamp: 'always',
+            chatTimestampPosition: 'below',
         },
     },
     {
@@ -92,6 +95,7 @@ const presets: Array<{ name: string; desc: string; config: Partial<OSTheme> }> =
             chatInputStyle: 'discord',
             chatSendButtonStyle: 'minimal',
             chatShowTimestamp: 'always',
+            chatTimestampPosition: 'below',
         },
     },
     {
@@ -112,6 +116,7 @@ const presets: Array<{ name: string; desc: string; config: Partial<OSTheme> }> =
             chatInputStyle: 'ios',
             chatSendButtonStyle: 'circle',
             chatShowTimestamp: 'always',
+            chatTimestampPosition: 'below',
         },
     },
     {
@@ -132,6 +137,7 @@ const presets: Array<{ name: string; desc: string; config: Partial<OSTheme> }> =
             chatInputStyle: 'flat',
             chatSendButtonStyle: 'minimal',
             chatShowTimestamp: 'never',
+            chatTimestampPosition: 'below',
             chatAvatarVisibility: 'hide_both',
             chatSnapToEdge: true,
             chatBubbleLineHeight: 1.5,
@@ -155,6 +161,7 @@ const presets: Array<{ name: string; desc: string; config: Partial<OSTheme> }> =
             chatInputStyle: 'flat',
             chatSendButtonStyle: 'minimal',
             chatShowTimestamp: 'never',
+            chatTimestampPosition: 'below',
             chatAvatarVisibility: 'both',
             chatAvatarAlign: 'top',
             chatBubbleFontSize: 13,
@@ -179,6 +186,7 @@ const presets: Array<{ name: string; desc: string; config: Partial<OSTheme> }> =
             chatInputStyle: 'pixel',
             chatSendButtonStyle: 'pill',
             chatShowTimestamp: 'always',
+            chatTimestampPosition: 'below',
         },
     },
 ];
@@ -191,6 +199,7 @@ const defaults = {
     chatBubbleStyle: 'modern',
     chatMessageSpacing: 'default',
     chatShowTimestamp: 'always',
+    chatTimestampPosition: 'below',
     chatHeaderStyle: 'default',
     chatInputStyle: 'default',
     chatChromeStyle: 'soft',
@@ -284,6 +293,10 @@ const choices = {
         { value: 'hover', label: '悬停（电脑）' },
         { value: 'never', label: '不显示' },
     ],
+    timestampPosition: [
+        { value: 'below', label: '气泡下方', desc: '每组末尾贴边（默认）' },
+        { value: 'top_center', label: '上方居中', desc: '微信式 · 按间隔分段' },
+    ],
     emojiSize: [
         { value: 'small', label: '小', desc: '96px' },
         { value: 'medium', label: '中', desc: '128px' },
@@ -324,6 +337,7 @@ export default function ChatLayoutSettings({theme,updateTheme}:{theme:OSTheme;up
     const bubbleStyle = theme.chatBubbleStyle || defaults.chatBubbleStyle;
     const messageSpacing = theme.chatMessageSpacing || defaults.chatMessageSpacing;
     const showTimestamp = theme.chatShowTimestamp || defaults.chatShowTimestamp;
+    const timestampPosition = theme.chatTimestampPosition || defaults.chatTimestampPosition;
     const headerStyle = theme.chatHeaderStyle || defaults.chatHeaderStyle;
     const inputStyle = theme.chatInputStyle || defaults.chatInputStyle;
     const chromeStyle = theme.chatChromeStyle || defaults.chatChromeStyle;
@@ -396,6 +410,10 @@ return <div><details className="chat-decoration-layout-group"><summary>内置布
                 </div>
                 <div className="mt-4">
                     <ChoiceGroup title="时间戳" items={choices.timestamp} value={showTimestamp} onPick={(value) => updateTheme({ chatShowTimestamp: value as OSTheme['chatShowTimestamp'] })} />
+                </div>
+                <div className="mt-4">
+                    <ChoiceGroup title="时间位置" items={choices.timestampPosition} value={timestampPosition} onPick={(value) => updateTheme({ chatTimestampPosition: value as OSTheme['chatTimestampPosition'] })} />
+                    <p className="mt-1.5 text-[10px] text-slate-400">具体字号、胶囊底色或装饰可在「白框」里用 .sully-chat-time-divider 与 .sully-chat-timestamp 自定义。</p>
                 </div>
                 </div></details>
 <details className="chat-decoration-layout-group" open><summary>细节微调</summary><div><ChatFineTunePanel value={theme} onChange={updateTheme}/><button className="chat-decoration-link" onClick={()=>updateTheme({...FINE_TUNE_DEFAULTS})}>微调恢复默认</button></div></details>
