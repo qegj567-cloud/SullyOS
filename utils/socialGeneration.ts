@@ -1,6 +1,7 @@
 import { ContextBuilder } from './context';
 import type { CharacterProfile, Message, SocialAppProfile, SocialPost, SubAccount, UserProfile } from '../types';
 import { formatMessageForPrompt } from './messageFormat';
+import { injectMemoryPalace } from './memoryPalace/pipeline';
 
 type Handles = Record<string, SubAccount[]>;
 const normalizeName = (name: string) => name.normalize('NFKC').trim().toLowerCase();
@@ -16,7 +17,10 @@ export async function buildSparkGenerationContext(participants: CharacterProfile
 ): Promise<string> {
     const profiles = (await Promise.all(participants.map(async char => {
         const recent = (recentMessages[char.id] || []).slice(-6);
-        const core = (await ContextBuilder.buildCoreContext(char, user, false, undefined, {
+        // 召回结果只挂在本次请求的副本上：角色对象上不存召回，也不能读别处留下的旧值。
+        const recallChar = { ...char, memoryPalaceInjection: '', roomPlatesInjection: '' };
+        await injectMemoryPalace(recallChar, undefined, undefined, user.name);
+        const core = (await ContextBuilder.buildCoreContext(recallChar, user, false, undefined, {
             skipUserProfile: true,
             headerOverride: `[角色资料，仅属于 charId=${JSON.stringify(char.id)}]`,
         }, { worldbookMessages: recent }));

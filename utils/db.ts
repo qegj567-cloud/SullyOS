@@ -145,6 +145,18 @@ const SULLY_PRESET_EMOJIS = [
 // (含 Service Worker 的 dedupe / inbox 库) 可能跟着开不了或被强关, 推送消息因此确认超时。
 // 改成复用同一条连接, 并在连接被外部失效 (另一 tab 升级版本 / 浏览器强制关闭) 时
 // 清掉缓存, 下次 openDB 自动重开 —— 一处改, 全部 ~165 个调用点受益。
+/**
+ * 召回结果与门牌只对算出它们的那一次请求有效，进出数据库都剥掉。
+ * 很多 App 直接在共享的角色对象上跑召回，随后的任意一次保存会把这份结果写进库，
+ * 下次加载后别的入口（含主动消息打包）会把几周前、别处话题的召回当成当前记忆。
+ * 读的时候也剥，是为了让库里已经存下的旧值一并作废。
+ */
+const withoutRuntimeRecall = <T extends CharacterProfile | undefined>(character: T): T => {
+    if (!character || (!('memoryPalaceInjection' in character) && !('roomPlatesInjection' in character))) return character;
+    const { memoryPalaceInjection: _recall, roomPlatesInjection: _plates, ...rest } = character;
+    return rest as T;
+};
+
 /** 和新消息同事务失效镜像，防止后台把刚清掉的旧水位重新恢复。 */
 function clearStaleMemoryMirror(transaction: IDBTransaction, charId: string, newId: number): void {
     const assets = transaction.objectStore(STORE_ASSETS);
@@ -619,7 +631,7 @@ export const DB = {
     const db = await openDB();
     return new Promise((resolve, reject) => {
       const request = db.transaction(STORE_CHARACTERS, 'readonly').objectStore(STORE_CHARACTERS).get(id);
-      request.onsuccess = () => resolve(request.result);
+      request.onsuccess = () => resolve(withoutRuntimeRecall(request.result));
       request.onerror = () => reject(request.error);
     });
   },
@@ -630,14 +642,14 @@ export const DB = {
       const transaction = db.transaction(STORE_CHARACTERS, 'readonly');
       const store = transaction.objectStore(STORE_CHARACTERS);
       const request = store.getAll();
-      request.onsuccess = () => resolve(request.result || []);
+      request.onsuccess = () => resolve((request.result || []).map(withoutRuntimeRecall));
       request.onerror = () => reject(request.error);
     });
   },
 
   saveCharacter: async (character: CharacterProfile): Promise<void> => {
     const db = await openDB();
-    return persistCharacterWithHomeMessages(db, character, clearStaleMemoryMirror);
+    return persistCharacterWithHomeMessages(db, withoutRuntimeRecall(character), clearStaleMemoryMirror);
   },
 
   /** An asynchronous evaluation updates only emotion fields, never its stale home/history snapshot. */

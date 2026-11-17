@@ -578,6 +578,8 @@ export const sendInstantChatTurn = async (params: {
   userProfile: UserProfile;
   groups: GroupProfile[];
   realtimeConfig: RealtimeConfig;
+  /** 这一轮私聊刚算好的召回与门牌，随行的云端快照直接复用。 */
+  palaceRecall?: Pick<CharacterProfile, 'memoryPalaceInjection' | 'roomPlatesInjection'>;
   /**
    * 这一轮的情绪评估，一起交给云端跑（提示词模板 + 副 API 凭据）。
    * 不传就是这一轮不评估（角色没开情绪评估 / 本轮跳过）。
@@ -636,6 +638,7 @@ export const sendInstantChatTurn = async (params: {
       userProfile: params.userProfile,
       groups: params.groups,
       realtimeConfig: params.realtimeConfig,
+      ...(params.palaceRecall ? { palaceRecall: params.palaceRecall } : {}),
       ...(params.emotionEval ? { emotionEval: params.emotionEval } : {}),
       ...(params.sarModule ? { sarModule: params.sarModule } : {}),
       ...(supersedes ? { supersedesUuid: supersedes.uuid } : {}),

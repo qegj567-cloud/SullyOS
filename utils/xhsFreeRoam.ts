@@ -22,6 +22,7 @@ import {
     normalizeXhsLiteDetail,
 } from './xhsMcpClient';
 import { DB } from './db';
+import { injectMemoryPalace } from './memoryPalace/pipeline';
 import {
     collectOwnedPostsFromActivities,
     extractPublishedNoteId,
@@ -490,7 +491,11 @@ export const XhsFreeRoamEngine = {
             callbacks.onStatus(`${char.name}正在思考...`);
             const pastActivities = await DB.getXhsActivities(char.id, 10);
             const chatSummary = await getRecentChatContext(char);
-            const systemPrompt = (await buildFreeRoamSystemPrompt(char, user, chatSummary, pastActivities));
+            // 召回结果只挂在本次请求的副本上：角色对象上不存召回，也不能读别处留下的旧值。
+            // 一次自由活动的几轮请求共用这一份召回。
+            const recallChar = { ...char, memoryPalaceInjection: '', roomPlatesInjection: '' };
+            await injectMemoryPalace(recallChar, undefined, undefined, user.name);
+            const systemPrompt = (await buildFreeRoamSystemPrompt(recallChar, user, chatSummary, pastActivities));
 
             // 4. Character decides
             callbacks.onStatus(`${char.name}在决定做什么...`);

@@ -1354,6 +1354,8 @@ export const useChatAI = ({
                         }
                         : {}),
                     userProfile, groups, realtimeConfig,
+                    // 随行的云端快照复用这一轮刚算好的召回，发送前不再多等一轮向量检索。
+                    ...(payload.palaceRecall ? { palaceRecall: payload.palaceRecall } : {}),
                     // 情绪评估也交给云端：worker 到点和主回复并行跑，结果随最后一条推送回来
                     // （见 worker/amsg/src/emotionEval.ts）。放在这里而不是本地 fire 一枪，
                     // 是因为用户发完就能关页面——留在本地的话，页面一关情绪底色就停更了。
