@@ -16,6 +16,7 @@ import { formatStatCount } from '../../utils/videoParser';
 import { buildXhsNoteLink } from '../../utils/xhsNoteLink';
 import { trackEvent } from '../../utils/analytics';
 import { resolveBubbleCornerRadii, shouldHideBubbleTail } from '../../utils/bubbleAppearance';
+import { formatChatTimeDivider, formatChatTimestamp } from '../../utils/chatMessageGrouping';
 import { isReducedBlurActive } from '../../utils/blurPolicy';
 import { isImageValue, useBlobRefUrl } from '../../utils/blobRef';
 import { buildReplySnapshotContent } from '../../utils/applyAssistantPostProcessing';
@@ -513,7 +514,7 @@ const ForwardCard: React.FC<{
         setExpanded(true);
     };
 
-    const formatTime = (ts: number) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    const formatTime = formatChatTimestamp;
 
     return (
         <>
@@ -1191,6 +1192,9 @@ interface MessageItemProps {
     bubbleVariant?: 'modern' | 'flat' | 'outline' | 'shadow' | 'wechat' | 'ios';
     messageSpacing?: 'compact' | 'default' | 'spacious';
     showTimestamp?: 'always' | 'hover' | 'never';
+    timestampPosition?: 'below' | 'top_center';
+    startsTimeSegment?: boolean;
+    timestampNow?: Date;
     /** Only the user turn being handed to the Worker receives this prop. */
     sendPhase?: ChatSendPhase;
     /** HTML / 心象 / 音乐卡片的出现位置（聊天细节微调 chatModuleAlign 合并后的生效值）。缺省 = 居中 */
@@ -1252,6 +1256,9 @@ const MessageItem = React.memo(({
     bubbleVariant = 'modern',
     messageSpacing = 'default',
     showTimestamp = 'always',
+    timestampPosition = 'below',
+    startsTimeSegment = false,
+    timestampNow,
     sendPhase,
     moduleAlign = 'center',
     suppressEntranceAnimation = false,
@@ -1267,8 +1274,13 @@ const MessageItem = React.memo(({
     const isUser = m.role === 'user';
     const showSendProgress = isUser && !selectionMode && !!sendPhase && sendPhase !== 'accepted' && sendPhase !== 'cancelled';
     const isSystem = m.role === 'system';
-    const spacingClass = messageSpacing === 'compact' ? (isLastInGroup ? 'mb-3' : 'mb-0.5') : messageSpacing === 'spacious' ? (isLastInGroup ? 'mb-8' : 'mb-2.5') : (isLastInGroup ? 'mb-6' : 'mb-1.5');
-    const marginBottom = showSendProgress && !isLastInGroup ? 'mb-4' : spacingClass;
+    const groupBottomGap = timestampPosition === 'top_center'
+        ? (messageSpacing === 'compact' ? 'mb-2.5' : messageSpacing === 'spacious' ? 'mb-6' : 'mb-3.5')
+        : (messageSpacing === 'compact' ? 'mb-3' : messageSpacing === 'spacious' ? 'mb-8' : 'mb-6');
+    const spacingClass = isLastInGroup
+        ? groupBottomGap
+        : (messageSpacing === 'compact' ? 'mb-0.5' : messageSpacing === 'spacious' ? 'mb-2.5' : 'mb-1.5');
+    const marginBottom = showSendProgress && (timestampPosition === 'top_center' || !isLastInGroup) ? 'mb-5' : spacingClass;
     const avatarSizeClass = avatarSize === 'small' ? 'w-7 h-7' : avatarSize === 'large' ? 'w-12 h-12' : 'w-9 h-9';
     const avatarRadiusClass = avatarShape === 'square' ? 'rounded-sm' : avatarShape === 'rounded' ? 'rounded-xl' : 'rounded-full';
     const avatarSizePx = avatarSize === 'small' ? 28 : avatarSize === 'large' ? 48 : 36;
@@ -1405,7 +1417,17 @@ const MessageItem = React.memo(({
         onClick: handleClick
     };
 
-    const formatTime = (ts: number) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    const formatTime = formatChatTimestamp;
+    const showTopTimeDivider = timestampPosition === 'top_center' && startsTimeSegment && showTimestamp !== 'never';
+    const showBelowTimestamp = timestampPosition !== 'top_center' && isLastInGroup && showTimestamp !== 'never';
+    const isWechatTopCapsule = bubbleVariant === 'wechat';
+    const timeDividerNode = showTopTimeDivider ? (
+        <div className={`sully-chat-time-divider flex justify-center w-full px-3 mt-1.5 mb-3 select-none ${showTimestamp === 'hover' ? 'opacity-0 hover:opacity-100 transition-opacity' : ''}`}>
+            <span className={`sully-chat-timestamp text-[11px] leading-tight font-normal whitespace-nowrap ${isWechatTopCapsule ? 'bg-black/[0.05] text-[#7f7f7f] px-2.5 py-[3px] rounded-[4px]' : 'text-slate-400 px-2 py-0.5 rounded-md'}`}>
+                {formatChatTimeDivider(m.timestamp, timestampNow)}
+            </span>
+        </div>
+    ) : null;
 
     // Render Avatar with potential decoration/frame
     // Removed mb-5 from here, handled via absolute positioning in parent
@@ -1670,24 +1692,29 @@ const MessageItem = React.memo(({
 
     if (m.type === 'interaction') {
         return (
-            <div className={`flex flex-col items-center ${marginBottom} w-full animate-fade-in relative transition-[padding] duration-300 ${selectionMode ? 'pl-8' : ''}`}>
-                {selectionMode && (
-                    <div className="absolute left-2 top-1/2 -translate-y-1/2 cursor-pointer z-20" onClick={() => onToggleSelect(m.id)}>
-                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-primary border-primary' : 'border-slate-300 bg-white/80'}`}>
-                            {isSelected && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>}
+            <>
+                {timeDividerNode}
+                <div className={`flex flex-col items-center ${marginBottom} w-full animate-fade-in relative transition-[padding] duration-300 ${selectionMode ? 'pl-8' : ''}`}>
+                    {selectionMode && (
+                        <div className="absolute left-2 top-1/2 -translate-y-1/2 cursor-pointer z-20" onClick={() => onToggleSelect(m.id)}>
+                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-primary border-primary' : 'border-slate-300 bg-white/80'}`}>
+                                {isSelected && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>}
+                            </div>
+                        </div>
+                    )}
+                    {timestampPosition !== 'top_center' && showTimestamp !== 'never' && (
+                        <div className={`sully-chat-timestamp text-[10px] text-slate-400 mb-1 opacity-70 ${showTimestamp === 'hover' ? 'opacity-0 hover:opacity-100 transition-opacity' : ''}`}>{formatTime(m.timestamp)}</div>
+                    )}
+                    <div className="group relative cursor-pointer active:scale-95 transition-transform" {...interactionProps}>
+                            <div className="sully-chat-poke text-[11px] text-slate-500 bg-white/60 bg-slate-200/50 backdrop-blur-sm px-4 py-1.5 rounded-full flex items-center gap-1.5 border border-slate-200/70 border-white/40 shadow-sm select-none">
+                            <img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f449.png" alt="poke" className="w-4 h-4 group-hover:animate-bounce" />
+                            <span className="font-medium opacity-80">{isUser ? '你' : charName}</span>
+                            <span className="opacity-60">戳了戳</span>
+                            <span className="font-medium opacity-80">{isUser ? charName : '你'}</span>
                         </div>
                     </div>
-                )}
-                <div className="text-[10px] text-slate-400 mb-1 opacity-70">{formatTime(m.timestamp)}</div>
-                <div className="group relative cursor-pointer active:scale-95 transition-transform" {...interactionProps}>
-                        <div className="sully-chat-poke text-[11px] text-slate-500 bg-white/60 bg-slate-200/50 backdrop-blur-sm px-4 py-1.5 rounded-full flex items-center gap-1.5 border border-slate-200/70 border-white/40 shadow-sm select-none">
-                        <img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f449.png" alt="poke" className="w-4 h-4 group-hover:animate-bounce" />
-                        <span className="font-medium opacity-80">{isUser ? '你' : charName}</span>
-                        <span className="opacity-60">戳了戳</span>
-                        <span className="font-medium opacity-80">{isUser ? charName : '你'}</span>
-                    </div>
                 </div>
-            </div>
+            </>
         );
     }
 
@@ -1729,6 +1756,7 @@ const MessageItem = React.memo(({
     ) : null;
     const commonLayout = (content: React.ReactNode) => (
         <>
+            {timeDividerNode}
             {centerModules && thinkingChainNode && (
                 <div className="px-3 flex justify-center">
                     <div className="w-[72%] max-w-[72%]">{thinkingChainNode}</div>
@@ -1806,10 +1834,14 @@ const MessageItem = React.memo(({
                     <div className={selectionMode ? 'pointer-events-none' : ''}>
                         {<ChatCardSurface message={m}>{content}</ChatCardSurface>}
                     </div>
-                    {(showSendProgress || (isLastInGroup && showTimestamp !== 'never')) && (
-                        <div className={`absolute top-full ${isUser ? 'right-0' : 'left-0'} mt-0.5 px-1 text-[9px] text-slate-400/80 font-medium whitespace-nowrap pointer-events-none ${showTimestamp === 'hover' && !showSendProgress ? 'opacity-0 group-hover:opacity-100 transition-opacity' : ''}`}>
+                    {(showSendProgress || showBelowTimestamp) && (
+                        <div className={`sully-chat-timestamp-slot absolute top-full ${isUser ? 'right-0' : 'left-0'} mt-0.5 px-1 flex items-center gap-1 text-[9px] text-slate-400/80 font-medium whitespace-nowrap pointer-events-none`}>
                             {showSendProgress && <ChatSendProgress phase={sendPhase!} />}
-                            {isLastInGroup && showTimestamp !== 'never' && formatTime(m.timestamp)}
+                            {showBelowTimestamp && (
+                                <span className={`sully-chat-timestamp ${showTimestamp === 'hover' ? 'opacity-0 group-hover:opacity-100 transition-opacity' : ''}`}>
+                                    {formatTime(m.timestamp)}
+                                </span>
+                            )}
                         </div>
                     )}
                     </div>
@@ -3743,6 +3775,9 @@ const MessageItem = React.memo(({
            prev.bubbleVariant === next.bubbleVariant &&
            prev.messageSpacing === next.messageSpacing &&
            prev.showTimestamp === next.showTimestamp &&
+           prev.timestampPosition === next.timestampPosition &&
+           prev.startsTimeSegment === next.startsTimeSegment &&
+           prev.timestampNow?.getTime() === next.timestampNow?.getTime() &&
            prev.sendPhase === next.sendPhase &&
            prev.moduleAlign === next.moduleAlign &&
            prev.previewExpanded === next.previewExpanded &&
