@@ -7,8 +7,39 @@ import { companionDialogueReady, openCompanionSetupTarget } from './setup';
 import { characterLaunch } from '../characterLaunch';
 import { useSettingsFocus } from '../settingsNavigation';
 import { AppID } from '../../types';
+import { testCompanionDialogue, testCompanionVideo, testCompanionStt } from './apiTests';
+vi.mock('./apiTests', async original => ({ ...await original<typeof import('./apiTests')>(),
+  testCompanionDialogue: vi.fn(async () => ({ summary: '收到对话正文' })),
+  testCompanionVideo: vi.fn(async () => ({ summary: '收到视频描述' })),
+  testCompanionStt: vi.fn(async () => ({ summary: '收到识别结果' })),
+}));
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+it('tests video and STT drafts without saving them and cancels a running test before starting another', async () => {
+  const host = document.createElement('div'), root = createRoot(host); document.body.append(host);
+  const saveVideoApi = vi.fn(), saveStt = vi.fn(), beforeTest = vi.fn();
+  const api = { baseUrl: 'https://chat.test', model: 'chat', apiKey: 'chat-key', companionStt: { provider: 'doubao', apiKey: 'old-key', resourceId: 'volc.seedasr.sauc.duration' } } as any;
+  const click = async (text: string) => act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === text)!.click());
+  const fill = async (label: string, value: string) => act(async () => {
+    const input = host.querySelector<HTMLInputElement>(`[aria-label="${label}"]`)!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  try {
+    await act(async () => root.render(React.createElement(CompanionSetupGuide, { api, canListen: true, navigate: vi.fn(), close: vi.fn(), saveVideoApi, saveStt, beforeTest })));
+    expect(testCompanionDialogue).not.toHaveBeenCalled(); expect(testCompanionStt).not.toHaveBeenCalled();
+    await fill('视频 API Key', 'draft-video-key'); await click('测试视频 API');
+    expect(testCompanionVideo).toHaveBeenLastCalledWith(expect.objectContaining({ apiKey: 'draft-video-key', provider: 'doubao' }), expect.any(AbortSignal), expect.any(Function));
+    await fill('豆包语音 API Key', 'draft-speech-key'); await click('测试语音识别');
+    expect(testCompanionStt).toHaveBeenLastCalledWith(expect.objectContaining({ apiKey: 'draft-speech-key', provider: 'doubao' }), expect.any(AbortSignal), expect.any(Function));
+    expect(saveVideoApi).not.toHaveBeenCalled(); expect(saveStt).not.toHaveBeenCalled(); expect(beforeTest).toHaveBeenCalledTimes(2);
+    let firstSignal!: AbortSignal;
+    vi.mocked(testCompanionDialogue).mockImplementationOnce((_api, _char, signal) => { firstSignal = signal; return new Promise(() => {}); });
+    await click('测试对话 API'); expect(firstSignal.aborted).toBe(false);
+    await click('测试视频 API'); expect(firstSignal.aborted).toBe(true); expect(host.textContent).toContain('已取消');
+    expect(host.textContent).not.toContain('draft-speech-key'); expect(api.companionStt.apiKey).toBe('old-key');
+  } finally { act(() => root.unmount()); host.remove(); vi.clearAllMocks(); }
+});
 it('configures Doubao STT separately, keeps a saved key hidden and supplies direct registration links', async () => {
   const host = document.createElement('div'), root = createRoot(host); document.body.append(host);
   const saveStt = vi.fn();

@@ -225,7 +225,7 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
       {observation && <details className="companion-observation"><summary>最近理解的视频</summary><p>{observationText(observation)}</p>{observation.imageNote && <p>{observation.imageNote}</p>}</details>}
       {!canListen && <small className="companion-note">此浏览器不支持当前识别方式，可在 API 接入中切换，或输入文字。</small>}
     </footer>
-    {setupOpen && <CompanionSetupGuide char={char} api={api} imageMode={imageMode} changeImageMode={mode => {
+    {setupOpen && <CompanionSetupGuide char={char} api={api} beforeTest={stopAll} imageMode={imageMode} changeImageMode={mode => {
       stopAll(); session.current = undefined; debug.clear(); setImageMode(mode); setStatus('截图方式已更新，可重新开启同行');
     }} saveVideoApi={saveVideoApi ? config => {
       stopAll(); session.current = undefined; debug.clear(); saveVideoApi(config); setStatus('视频 API 已保存，可重新开启镜头');

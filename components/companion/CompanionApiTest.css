@@ -1,0 +1,10 @@
+.companion-api-test{margin:16px 0;padding:12px 0 12px 12px;border-left:2px solid #b7c8b5;font-size:12px;line-height:1.7}
+.companion-api-test>small{display:block;color:#63766b;font-size:11px;line-height:1.8}
+.companion-api-test .companion-setup-actions{align-items:center;margin:10px 0}
+.companion-api-test button:disabled{opacity:.45;cursor:not-allowed}
+.companion-api-test strong{font-weight:500;overflow-wrap:anywhere}
+.companion-api-test[data-state=success]{border-color:#286d55;color:#286d55}
+.companion-api-test[data-state=error]{border-color:#ac593f;color:#8f4030}
+.companion-api-test[data-state=cancelled]{color:#63766b}
+.companion-api-test pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto;font:inherit;user-select:text;margin:8px 0 0;color:#334e40}
+.companion-test-time{color:#63766b;font-size:11px;font-variant-numeric:tabular-nums}

@@ -12,7 +12,7 @@ export function companionRecordingMime(): string {
 }
 
 /** Restart each recorder: timeslice chunks alone are not standalone videos. */
-export function recordCompanionClip(stream: MediaStream, mime: string, signal: AbortSignal): Promise<CompanionClip> {
+export function recordCompanionClip(stream: MediaStream, mime: string, signal: AbortSignal, durationMs = CLIP_MS): Promise<CompanionClip> {
   signal.throwIfAborted();
   return new Promise((resolve, reject) => {
     const recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 700_000 });
@@ -39,7 +39,7 @@ export function recordCompanionClip(stream: MediaStream, mime: string, signal: A
     };
     try {
       recorder.start();
-      timer = setTimeout(() => { if (recorder.state !== 'inactive') recorder.stop(); }, CLIP_MS);
+      timer = setTimeout(() => { if (recorder.state !== 'inactive') recorder.stop(); }, durationMs);
     } catch (error) { fail(error); }
   });
 }
