@@ -5,16 +5,19 @@ vi.mock('../proxyWorker', () => ({ getProxyWorkerUrl: () => 'https://proxy.test'
 
 const config = { provider: 'doubao', apiKey: 'test-key', resourceId: 'volc.seedasr.sauc.duration' } as const;
 const flush = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
-const callbacks = () => ({ speech: vi.fn(), partial: vi.fn(), final: vi.fn(), error: vi.fn(), state: vi.fn() });
+const callbacks = () => ({ speech: vi.fn(), partial: vi.fn(), final: vi.fn(), error: vi.fn(), state: vi.fn(), diagnostics: vi.fn() });
 class Context {
+  state = 'running'; sampleRate = 48000;
+  static blockResume = false;
   static instances: Context[] = [];
   audioWorklet = { addModule: vi.fn(async () => {}) };
-  destination = {}; resume = vi.fn(async () => {}); close = vi.fn(async () => {});
+  destination = {}; resume = vi.fn(() => Context.blockResume ? new Promise<void>(() => {}) : Promise.resolve()); close = vi.fn(async () => {});
   createMediaStreamSource = vi.fn(() => ({ connect: vi.fn(), disconnect: vi.fn() }));
   createGain = vi.fn(() => ({ gain: { value: 1 }, connect: vi.fn(), disconnect: vi.fn() }));
   constructor() { Context.instances.push(this); }
 }
 class Worklet {
+  onprocessorerror: (() => void) | null = null;
   static instances: Worklet[] = [];
   port = { onmessage: null as any }; connect = vi.fn(); disconnect = vi.fn();
   constructor() { Worklet.instances.push(this); }
@@ -36,12 +39,12 @@ const response = (utterances: unknown[]) => {
 };
 let track: { stop: ReturnType<typeof vi.fn>; onended?: () => void }, media: any;
 beforeEach(() => {
-  vi.useFakeTimers(); Context.instances = []; Socket.instances = []; Worklet.instances = [];
+  vi.useFakeTimers(); Context.instances = []; Context.blockResume = false; Socket.instances = []; Worklet.instances = [];
   vi.stubGlobal('AudioContext', Context); vi.stubGlobal('AudioWorkletNode', Worklet); vi.stubGlobal('WebSocket', Socket);
   track = { stop: vi.fn() }; media = { getTracks: () => [track], getAudioTracks: () => [track] };
   vi.stubGlobal('navigator', { mediaDevices: { getUserMedia: vi.fn(async () => media) } });
 });
-afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 it('uses local relay in preview, production proxy otherwise, without credentials in either URL', () => {
   expect(doubaoRelayUrl({ hostname: '127.0.0.1', origin: 'http://127.0.0.1:5175' } as Location)).toBe('ws://127.0.0.1:5175/doubao/asr');
@@ -78,6 +81,45 @@ it('cancels while permission is pending and disposes the late stream without eve
   const cb = callbacks(), stop = startDoubaoListening(config, cb);
   stop(); grant(media); await flush();
   expect(track.stop).toHaveBeenCalledOnce(); expect(Socket.instances).toHaveLength(0); expect(cb.error).not.toHaveBeenCalled();
+});
+
+it('reports the actual outgoing PCM level and packet/response counts without treating noise as speech', async () => {
+  const cb = callbacks(), stop = startDoubaoListening(config, cb); await flush();
+  Socket.instances[0].receive('{"type":"ready"}'); await flush();
+  const pcm = new ArrayBuffer(6400), view = new DataView(pcm);
+  for (let i = 0; i < 3200; i++) view.setInt16(i * 2, 16384, true);
+  Worklet.instances[0].port.onmessage({ data: pcm });
+  expect(cb.diagnostics.mock.calls.at(-1)![0]).toMatchObject({ rms: 0.5, packets: 1, responses: 0, quietSeconds: 0 });
+  expect(cb.speech).not.toHaveBeenCalled();
+  Socket.instances[0].receive(response([])); await flush();
+  expect(cb.diagnostics.mock.calls.at(-1)![0].responses).toBe(1);
+  for (let i = 0; i < 30; i++) Worklet.instances[0].port.onmessage({ data: new ArrayBuffer(6400) });
+  expect(cb.diagnostics.mock.calls.at(-1)![0].quietSeconds).toBeCloseTo(6);
+  stop(); expect(vi.getTimerCount()).toBe(0);
+});
+
+it('releases the microphone if a worklet crashes or stops delivering audio', async () => {
+  const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
+  const cb = callbacks(); startDoubaoListening(config, cb); await flush();
+  Socket.instances[0].receive('{"type":"ready"}'); await flush();
+  Worklet.instances[0].onprocessorerror?.();
+  expect(cb.error).toHaveBeenCalledWith(expect.stringContaining('音频处理停止'));
+  expect(track.stop).toHaveBeenCalledOnce(); expect(vi.getTimerCount()).toBe(0);
+  startDoubaoListening(config, cb); await flush();
+  Socket.instances[1].receive('{"type":"ready"}'); await flush();
+  clock.mockReturnValue(6000);
+  await vi.advanceTimersByTimeAsync(6000);
+  expect(cb.error).toHaveBeenLastCalledWith(expect.stringContaining('没有音频数据'));
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it('does not leave the mic on indefinitely when browser audio resume never resolves', async () => {
+  Context.blockResume = true;
+  const cb = callbacks(); startDoubaoListening(config, cb); await flush();
+  await vi.advanceTimersByTimeAsync(10_000);
+  expect(cb.error).toHaveBeenCalledWith(expect.stringContaining('音频仍未启动'));
+  expect(track.stop).toHaveBeenCalledOnce(); expect(Socket.instances).toHaveLength(0);
+  expect(vi.getTimerCount()).toBe(0);
 });
 
 it('stops capture on authentication errors and network stalls, without retrying or falling back', async () => {

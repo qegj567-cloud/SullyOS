@@ -110,5 +110,6 @@ export class CompanionSession<P> {
     line.heard = text;
     line.status = 'done';
     trace?.deliveryEnd(phase);
+    this.publish(phase === 'quick' ? 'a 已结束 · 继续准备 a′' : '在你身边');
   }
 }

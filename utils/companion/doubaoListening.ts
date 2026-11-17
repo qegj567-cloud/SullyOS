@@ -1,7 +1,7 @@
 import type { CompanionSttConfig } from '../../types';
 import { getProxyWorkerUrl } from '../proxyWorker';
 import { asrPacket, asrStartPacket, AsrTranscript, parseAsrPacket } from './doubaoProtocol';
-import type { ListeningCallbacks } from './listening';
+import type { ListeningCallbacks, ListeningDiagnostics } from './listening';
 
 export function doubaoRelayUrl(location = window.location) {
   const local = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
@@ -24,13 +24,23 @@ export function startDoubaoListening(config: CompanionSttConfig, callbacks: List
   let stream: MediaStream | undefined, socket: WebSocket | undefined, node: AudioWorkletNode | undefined;
   let source: MediaStreamAudioSourceNode | undefined, mute: GainNode | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let watchdog: ReturnType<typeof setInterval> | undefined;
   const context = new AudioContext({ latencyHint: 'interactive' });
+  const diagnostics: ListeningDiagnostics = { device: '', contextState: context.state, sampleRate: context.sampleRate,
+    rms: 0, packets: 0, responses: 0, quietSeconds: 0, muted: false };
+  let lastPacketAt = performance.now();
+  const report = () => {
+    if (stopped) return;
+    const track = stream?.getAudioTracks()[0];
+    callbacks.diagnostics?.({ ...diagnostics, contextState: context.state,
+      device: track?.label || '默认麦克风', muted: track?.muted ?? false });
+  };
   const transcript = new AsrTranscript();
   const stop = () => {
     if (stopped) return;
-    stopped = true; clearTimeout(timer);
+    stopped = true; clearTimeout(timer); clearInterval(watchdog);
     stream?.getTracks().forEach(track => track.stop());
-    if (node) { node.port.onmessage = null; node.disconnect(); }
+    if (node) { node.port.onmessage = null; node.onprocessorerror = null; node.disconnect(); }
     source?.disconnect(); mute?.disconnect();
     if (socket && socket.readyState < 2) socket.close(1000, 'stopped');
     void context.close().catch(() => {});
@@ -43,10 +53,13 @@ export function startDoubaoListening(config: CompanionSttConfig, callbacks: List
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
       if (stopped) { stream.getTracks().forEach(track => track.stop()); return; }
+      callbacks.state?.('麦克风已允许，正在启动收音'); report();
+      timer = setTimeout(() => fail('麦克风已允许，但浏览器音频仍未启动；请回到此页面，点击重新开启连续听'), 10_000);
       await resume;
       if (stopped) return;
       await context.audioWorklet.addModule(new URL('./doubaoPcm.worklet.js', import.meta.url));
       if (stopped) return;
+      clearTimeout(timer);
       callbacks.state?.('正在连接豆包识别');
       socket = new WebSocket(doubaoRelayUrl()); socket.binaryType = 'arraybuffer';
       timer = setTimeout(() => fail('豆包识别连接超时，请检查网络和语音服务配置'), 20_000);
@@ -66,6 +79,7 @@ export function startDoubaoListening(config: CompanionSttConfig, callbacks: List
             socket!.send(asrStartPacket());
             source = context.createMediaStreamSource(stream!);
             node = new AudioWorkletNode(context, 'companion-pcm');
+            node.onprocessorerror = () => fail('麦克风音频处理停止，已释放收音；请刷新页面后重试');
             mute = context.createGain(); mute.gain.value = 0;
             source.connect(node); node.connect(mute); mute.connect(context.destination);
             node.port.onmessage = ({ data }) => {
@@ -73,12 +87,28 @@ export function startDoubaoListening(config: CompanionSttConfig, callbacks: List
               if (!(data instanceof ArrayBuffer) || data.byteLength !== 6400) { fail('麦克风音频分包异常'); return; }
               if (socket.bufferedAmount > 128 * 1024) { fail('语音上传网络过慢，已停止收音，请重新开启'); return; }
               socket.send(asrPacket(2, new Uint8Array(data)));
+              // Measure the same PCM bytes sent upstream, not a separate microphone path.
+              const samples = new DataView(data); let squares = 0;
+              for (let i = 0; i < 3200; i++) { const value = samples.getInt16(i * 2, true) / 32768; squares += value * value; }
+              diagnostics.rms = Math.sqrt(squares / 3200);
+              diagnostics.packets++;
+              diagnostics.quietSeconds = diagnostics.rms < 0.002 ? diagnostics.quietSeconds + 0.2 : 0;
+              lastPacketAt = performance.now(); report();
             };
+            lastPacketAt = performance.now();
+            watchdog = setInterval(() => {
+              report();
+              if (performance.now() - lastPacketAt > 5000) fail(context.state === 'running'
+                ? '麦克风已连接，但连续 5 秒没有音频数据；请检查 Edge 使用的输入设备后重新开启'
+                : '浏览器暂停了收音，已停止识别；请回到此页面重新开启连续听');
+            }, 1000);
+            report();
             callbacks.state?.('豆包正在听'); return;
           }
           if (!(event.data instanceof ArrayBuffer)) throw new Error('豆包识别响应格式异常');
           const result = await parseAsrPacket(event.data);
           if (stopped) return;
+          diagnostics.responses++; report();
           const update = transcript.consume(result);
           if (update.partial || update.finals.length) callbacks.speech();
           callbacks.partial(update.partial);

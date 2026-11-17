@@ -1,7 +1,18 @@
 /** Browser-only streaming recognizer for the demo. Paid file STT is not relabelled as realtime. */
+export interface ListeningDiagnostics {
+  device: string;
+  contextState: string;
+  sampleRate: number;
+  rms: number;
+  packets: number;
+  responses: number;
+  quietSeconds: number;
+  muted: boolean;
+}
 export interface ListeningCallbacks {
   speech(): void; partial(text: string): void; final(text: string): void; error(message: string): void;
   state?(message: string): void;
+  diagnostics?(data: ListeningDiagnostics): void;
 }
 export function canListenContinuously() {
   return !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);

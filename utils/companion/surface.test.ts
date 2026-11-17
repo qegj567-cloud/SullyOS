@@ -37,6 +37,10 @@ it('uses selected Doubao independently of browser recognition and stops listenin
   const callbacks = vi.mocked(startDoubaoListening).mock.calls.at(-1)![1];
   await act(async () => callbacks.final('看看这件'));
   expect(quick).toHaveBeenCalledOnce(); expect(full).toHaveBeenCalledOnce();
+  expect(host.querySelector('.companion-caption')!.textContent).toContain('a′ · 完整回复');
+  await click('本次记录');
+  const history = host.querySelector('[aria-label="本次同行记录"]')!;
+  expect(history.textContent).toContain('a · 接话'); expect(history.textContent).toContain('a′ · 完整回复');
   await act(async () => {
     vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
     document.dispatchEvent(new Event('visibilitychange'));

@@ -1,0 +1,2 @@
+.companion-mic-meter{margin:6px 0 10px;padding:8px 10px;border-left:2px solid #9ab29e;color:#4d6256;font-size:11px;line-height:1.6;font-variant-numeric:tabular-nums}
+.companion-mic-device{overflow-wrap:anywhere}.companion-mic-level{display:flex;align-items:center;gap:8px}.companion-mic-level meter{flex:1;min-width:30px;height:10px;accent-color:#286d55}.companion-mic-level>span:last-child{min-width:32px;text-align:right}.companion-mic-meter small{display:block;color:#63766b}

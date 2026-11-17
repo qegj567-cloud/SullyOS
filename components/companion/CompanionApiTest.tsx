@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { redactCompanionTestText, type CompanionTestRun } from '../../utils/companion/apiTests';
+import type { ListeningDiagnostics } from '../../utils/companion/listening';
+import { CompanionMicMeter } from './CompanionMicMeter';
 import './CompanionApiTest.css';
 
 export type BeginCompanionTest = (cancel: () => void) => void;
@@ -12,6 +14,7 @@ export function CompanionApiTest({ label, description, config, disabled, begin, 
   const active = useRef<{ controller: AbortController; started: number; timer: ReturnType<typeof setTimeout>; ticker: ReturnType<typeof setInterval> }>();
   const [state, setState] = useState<'idle' | 'running' | 'success' | 'error' | 'cancelled'>('idle');
   const [message, setMessage] = useState('尚未测试'), [detail, setDetail] = useState(''), [elapsed, setElapsed] = useState(0);
+  const [micDiagnostics, setMicDiagnostics] = useState<ListeningDiagnostics>();
   const dispose = () => {
     const task = active.current; active.current = undefined;
     if (task) { clearTimeout(task.timer); clearInterval(task.ticker); task.controller.abort(); }
@@ -22,7 +25,7 @@ export function CompanionApiTest({ label, description, config, disabled, begin, 
     setElapsed(performance.now() - task.started); setState('cancelled'); setMessage('已取消'); setDetail('');
   };
   useEffect(() => {
-    dispose(); setState('idle'); setMessage('尚未测试'); setDetail(''); setElapsed(0);
+    dispose(); setState('idle'); setMessage('尚未测试'); setDetail(''); setElapsed(0); setMicDiagnostics(undefined);
     return () => { dispose(); };
   }, [scope]);
   useEffect(() => {
@@ -42,8 +45,12 @@ export function CompanionApiTest({ label, description, config, disabled, begin, 
     const timer = setTimeout(() => finish('error', '测试超时（90 秒），已停止等待；请检查网络、接口或模型响应速度'), 90_000);
     const ticker = setInterval(() => setElapsed(performance.now() - started), 200);
     active.current = { controller, started, timer, ticker };
-    setState('running'); setMessage('正在测试…'); setDetail(''); setElapsed(0);
-    const progress = (text: string) => { if (active.current?.controller === controller) setMessage(redactCompanionTestText(text, config)); };
+    setState('running'); setMessage('正在测试…'); setDetail(''); setElapsed(0); setMicDiagnostics(undefined);
+    const progress = (text: string, diagnostics?: ListeningDiagnostics) => {
+      if (active.current?.controller !== controller) return;
+      setMessage(redactCompanionTestText(text, config));
+      if (diagnostics) setMicDiagnostics({ ...diagnostics, device: redactCompanionTestText(diagnostics.device, config) });
+    };
     try {
       void run(controller.signal, progress).then(result => finish('success', result.summary, result.detail), error => {
         const text = error instanceof Error ? error.message : '未知错误';
@@ -63,5 +70,6 @@ export function CompanionApiTest({ label, description, config, disabled, begin, 
       {state !== 'idle' && <span className="companion-test-time">{(elapsed / 1000).toFixed(1)} 秒</span>}
     </div>
     <div role="status" aria-live="polite"><strong>{state === 'success' ? '测试通过 · ' : state === 'error' ? '测试失败 · ' : ''}{message}</strong>{detail && <pre>{detail}</pre>}</div>
+    <CompanionMicMeter data={micDiagnostics} active={state === 'running'}/>
   </div>;
 }

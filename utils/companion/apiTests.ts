@@ -5,11 +5,12 @@ import { blobDataUrl } from './capture';
 import { companionVideoEndpoint, videoRequestParameters } from './videoProviders';
 import { companionTestImage, companionTestVideo } from './testMedia';
 import { CompanionVoice } from './voice';
-import { startCompanionListening, type ListeningCallbacks } from './listening';
+import { startCompanionListening, type ListeningCallbacks, type ListeningDiagnostics } from './listening';
 import { startDoubaoListening } from './doubaoListening';
 
 export interface CompanionTestResult { summary: string; detail?: string }
-export type CompanionTestRun = (signal: AbortSignal, progress: (message: string) => void) => Promise<CompanionTestResult>;
+export type CompanionTestProgress = (message: string, diagnostics?: ListeningDiagnostics) => void;
+export type CompanionTestRun = (signal: AbortSignal, progress: CompanionTestProgress) => Promise<CompanionTestResult>;
 type Endpoint = Pick<APIConfig, 'baseUrl' | 'apiKey' | 'model'>;
 
 async function probe(api: Endpoint, body: object, signal: AbortSignal, char?: CharacterProfile, endpoint?: string) {
@@ -70,10 +71,12 @@ export async function testCompanionVoice(api: APIConfig, char: CharacterProfile,
   } finally { signal.removeEventListener('abort', close); close(); }
 }
 
-export function testCompanionStt(config: CompanionSttConfig, signal: AbortSignal, progress: (text: string) => void): Promise<CompanionTestResult> {
+export function testCompanionStt(config: CompanionSttConfig, signal: AbortSignal, progress: CompanionTestProgress): Promise<CompanionTestResult> {
   signal.throwIfAborted();
   return new Promise((resolve, reject) => {
-    let stop: (() => void) | undefined, settled = false;
+    let stop: (() => void) | undefined, settled = false, latest = '请允许麦克风，说一句话后稍作停顿；最长 30 秒';
+    let diagnostics: ListeningDiagnostics | undefined;
+    const publish = (message = latest) => { latest = message; if (!settled) progress(message, diagnostics); };
     const finish = (error?: unknown, text?: string) => {
       if (settled) return;
       settled = true; clearTimeout(timer); signal.removeEventListener('abort', cancel); stop?.();
@@ -82,12 +85,13 @@ export function testCompanionStt(config: CompanionSttConfig, signal: AbortSignal
     const cancel = () => finish(signal.reason ?? new DOMException('已取消', 'AbortError'));
     const timer = setTimeout(() => finish(new Error('30 秒内未得到确认文字；请检查麦克风输入、权限或识别服务，再试一次')), 30_000);
     signal.addEventListener('abort', cancel, { once: true });
-    progress('请允许麦克风，说一句话后稍作停顿；最长 30 秒');
+    publish();
     const callbacks: ListeningCallbacks = {
-      speech: () => {}, partial: text => { if (!settled && text) progress(`临时识别：${text}`); },
+      speech: () => {}, partial: text => { if (text) publish(`临时识别：${text}`); },
       final: text => { if (text.trim()) finish(undefined, text.trim()); },
       error: message => finish(new Error(message)),
-      state: text => { if (!settled) progress(`${text}；请说一句话后稍作停顿`); },
+      state: text => publish(`${text}；请说一句话后稍作停顿`),
+      diagnostics: data => { diagnostics = data; publish(); },
     };
     try { stop = config.provider === 'doubao' ? startDoubaoListening(config, callbacks) : startCompanionListening(callbacks); if (settled) stop(); }
     catch (error) { finish(error); }
