@@ -47,7 +47,10 @@ export const applyScheduleChangeResult = async (
             DB.getGroups().catch(() => undefined),
         ]);
         if (userProfile && groups) {
-            markAmsgStateDirty({ char, userProfile, groups });
+            // 实时配置也要带：缺了它，重打的模板里搜索 / 翻日记 / 小红书的能力说明和日记标题整段消失，
+            // 一直到下次聊天重新打包。这里不在 React 里，跟推送路径一样从本机设置读。
+            const { loadRealtimeConfigFromLocalStorage } = await import('./activeMsgRuntime');
+            markAmsgStateDirty({ char, userProfile, groups, realtimeConfig: loadRealtimeConfigFromLocalStorage() });
         } else {
             // 这两样是拼 fire_pack 的必需材料，编不出来，所以这一轮只能不打脏。
             // 后果要说清楚：本地的表已经改好了，云端那份还留着旧安排，下一次主动消息

@@ -91,6 +91,14 @@ export async function fetchSlotMemories(
     .map(s => s.node);
 }
 
+/**
+ * 潜行的记忆直接按房间查库放进 prompt，不走通用召回；
+ * 这里把角色对象上可能残留的召回结果清掉，免得别处的旧召回混进来。
+ */
+function withoutPalaceRecall(charContext: CharacterContextInput): CharacterContextInput {
+  return { ...charContext, char: { ...charContext.char, memoryPalaceInjection: '', roomPlatesInjection: '' } };
+}
+
 // ─── Prompt 构建 ─────────────────────────────────────────
 
 /**
@@ -309,7 +317,7 @@ export async function callDiveLLM(
       },
       body: JSON.stringify({
         model: apiConfig.model,
-        messages: (await ContextBuilder.buildCharacterRequest(charContext, [{ role: 'user', content: prompt }])),
+        messages: (await ContextBuilder.buildCharacterRequest(withoutPalaceRecall(charContext), [{ role: 'user', content: prompt }])),
         temperature: 0.8,
         // 中文散文 + JSON 包装极吃 token，给足余量，避免在字符串中间被截断
         max_tokens: 8000,
@@ -857,7 +865,7 @@ export async function planRoomVisit(
       },
       body: JSON.stringify({
         model: apiConfig.model,
-        messages: (await ContextBuilder.buildCharacterRequest(charContext, [{ role: 'user', content: prompt }])),
+        messages: (await ContextBuilder.buildCharacterRequest(withoutPalaceRecall(charContext), [{ role: 'user', content: prompt }])),
         temperature: 0.85,
         // 3 beats × 3 choices × (line+reaction+narrator) + intro/close 容易超，
         // 给足余量避免被 max_tokens 截断

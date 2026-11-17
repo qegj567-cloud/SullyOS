@@ -190,7 +190,7 @@
 | 见面台词翻译 `components/date/DateSession.tsx:224` | 挡在出声前的小请求，上云只让语音更慢 |
 | 写歌 AI tag `utils/aceStepApi.ts:192` | 输出一行字符串，秒回 |
 | 出歌 `utils/aceStepApi.ts:494` | 不是 LLM，是 Replicate 长轮询，而且已经走 `workerBase()` 代理了 |
-| 记忆检索侧（`pipeline.ts:321` / embedding / rerank） | 打的是本地 IndexedDB 向量库 + BM25 + 链接图，云端无库可查；而且它不需要上云 —— 产出已经随 fire_pack 烘进 system prompt 送上去了 |
+| 记忆检索侧（`pipeline.ts:321` / embedding / rerank） | 打的是本地 IndexedDB 向量库 + BM25 + 链接图，云端无库可查；而且它不需要上云 —— `buildFirePack` 打包时在本地现跑一次召回，产出烘进模板送上去（即时对话复用本轮私聊的召回，见 `docs/memory-system-overview.md`「召回结果只属于这一次请求」） |
 | 旧记忆迁移 `utils/memoryPalace/migration.ts:321` | 每批落库后下一批要向量召回搜到它才能建跨 chunk 关联，是硬闭环 |
 | 网页编造 `apps/BrowserApp.tsx:301` | 结果不落库、刷新即丢，用户点了链接就是要立刻看到，异步化等于功能消失 |
 

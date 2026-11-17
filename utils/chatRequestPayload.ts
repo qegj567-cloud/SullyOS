@@ -25,7 +25,7 @@ import { renderDeepEngagementGuidance } from './memoryPalace/deepEngagement';
 import { renderConversationEngagementGuidance } from './memoryPalace/conversationEngagement';
 import type { ConversationEngagementAnalysis } from './memoryPalace/conversationEngagement';
 import type { DeepEngagementAnalysis } from './memoryPalace/deepEngagement';
-import { buildChatOutputStylePrompt } from './chatOutputStylePrompt';
+import { BILINGUAL_TAIL_REMINDER, buildChatOutputStylePrompt } from './chatOutputStylePrompt';
 import { buildMcdMiniAppContextBlock } from './mcdToolBridge';
 import type { McdMiniAppSnapshot } from './mcdToolBridge';
 import { buildLuckinMiniAppContextBlock, buildLuckinChatSystemBlock } from './luckinToolBridge';
@@ -146,6 +146,8 @@ export interface BuildChatPayloadResult {
     volatileTailIndex: number;
     /** 本轮记忆召回的脱敏 Trace；Prompt Build 被整体跳过时不存在。 */
     recallTrace?: RecallTrace;
+    /** 本轮召回正文与门牌。即时对话顺手打的云端快照直接复用，不再检索第二遍。 */
+    palaceRecall?: Pick<CharacterProfile, 'memoryPalaceInjection' | 'roomPlatesInjection'>;
     /** 调试用：bilingual / mcd 是否实际注入 */
     flags: {
         bilingualActive: boolean;
@@ -501,7 +503,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
             role: 'system',
             content: sarEnvelopeActive
                 ? `[Reminder: 最外层输出 <SAR_MODULE_OUTPUT>；CHAR_TRUE 和 CHAR_SURFACE 内的每个气泡都分别使用完整的 <翻译><原文>...</原文><译文>...</译文></翻译>，原文/译文语义一致，一句一个标签。]`
-                : `[Reminder: 每句话必须用 <翻译><原文>...</原文><译文>...</译文></翻译> 标签包裹。一句一个标签。绝对不能省略。]`,
+                : BILINGUAL_TAIL_REMINDER,
         });
     }
     if (mcpChatActive && !input.timelyByWorker) {
@@ -571,6 +573,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         volatileTailIndex: finalMessages === fullMessages ? volatileTailIndex : -1,
         amsg2ExpiredNoticeIds,
         recallTrace,
+        palaceRecall: { memoryPalaceInjection: char.memoryPalaceInjection || '', roomPlatesInjection: char.roomPlatesInjection || '' },
         flags: { bilingualActive, mcdActive, luckinActive, luckinChatActive, mcpChatActive, htmlActive, thinkingActive, sarModuleActive: !!sarModuleBlock, promptBuildSkipped: false },
     };
 }

@@ -12,6 +12,7 @@ import ConfirmDialog from '../os/ConfirmDialog';
 import { useOS } from '../../context/OSContext';
 import { safeResponseJson } from '../../utils/safeApi';
 import { DB } from '../../utils/db';
+import { injectMemoryPalace } from '../../utils/memoryPalace/pipeline';
 import { CharacterGroupFilterBar, filterCharactersByGroup, GROUP_FILTER_ALL } from '../character/CharacterGroupFilter';
 import { getLocalDateKey } from '../../utils/localDate';
 import TokenImg from '../os/TokenImg';
@@ -239,10 +240,14 @@ const NovelWriter: React.FC<NovelWriterProps> = ({
             // Sampling is a writing-task default, not inferred from the user's personality.
             const temperature = 0.85;
 
+            // 召回结果只挂在本次请求的副本上：角色对象上不存召回，也不能读别处留下的旧值。
+            const recallChar = { ...char, memoryPalaceInjection: '', roomPlatesInjection: '' };
+            await injectMemoryPalace(recallChar, undefined, activeBook.title, userProfile.name);
+
             const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-                body: JSON.stringify({ model: apiConfig.model, messages: (await ContextBuilder.buildCharacterRequest({ char, user: userProfile }, [{ role: "user", content: prompt }])), temperature, max_tokens: 8000 }),
+                body: JSON.stringify({ model: apiConfig.model, messages: (await ContextBuilder.buildCharacterRequest({ char: recallChar, user: userProfile }, [{ role: "user", content: prompt }])), temperature, max_tokens: 8000 }),
                 __sullyMeta: {
                     appId: 'novel',
                     appName: '一起写小说',

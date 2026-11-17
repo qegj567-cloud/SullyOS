@@ -57,8 +57,7 @@ export function buildCharacterStats(char: CharacterProfile, user: UserProfile, r
         { title: '情绪底色', content: isScheduleFeatureOn(char) && char.emotionConfig?.enabled ? char.buffInjection || '' : '' },
     ].filter(row => row.content.trim());
     const otherCharacters = otherRows.reduce((n, row) => n + countContextCharacters(row.content), 0);
-    const recallSnapshot = char.memoryPalaceEnabled ? char.memoryPalaceInjection || '' : '';
     const texts = [...history.map(m => String(m.content || '')), ...memoryRows.map(m => m.content), ...books.filter(b => b.status === 'readable').map(b => b.content), ...otherRows.map(r => r.content)];
     const estimatedTokens = texts.reduce((n, text) => n + estimateContextTokens(text), 0);
-    return { range, memories, memoryRows, books, otherRows, otherCharacters, recallSnapshot, estimatedTokens, sources: [...sources.values()].sort((a, b) => b.characters - a.characters), memoryCharacters, worldbookCharacters, historyCharacters, total: memoryCharacters + worldbookCharacters + historyCharacters + otherCharacters };
+    return { range, memories, memoryRows, books, otherRows, otherCharacters, estimatedTokens, sources: [...sources.values()].sort((a, b) => b.characters - a.characters), memoryCharacters, worldbookCharacters, historyCharacters, total: memoryCharacters + worldbookCharacters + historyCharacters + otherCharacters };
 }
