@@ -2964,6 +2964,8 @@ export interface CharacterProfile {
   memories: MemoryFragment[];
   refinedMemories?: Record<string, string>;
   activeMemoryMonths?: string[];
+  /** 允许角色自主查阅指定月份的详细记忆，默认开启；关闭同时禁止提示与执行。 */
+  monthlyRecallEnabled?: boolean;
   /** 默认隐藏 ChatApp 的按月 RECALL 指令提示；false 恢复提示，不禁用指令解析。 */
   hideMonthlyRecallPrompt?: boolean;
   

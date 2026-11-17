@@ -3321,6 +3321,28 @@ export const DB = {
   },
 
   appendApiCallLog: async (entry: any): Promise<void> => {
+      return DB.updateApiCallLog(cur => {
+          const duplicateIndex = cur.findIndex(e => e?.id && e.id === entry?.id);
+          if (duplicateIndex < 0) return [entry, ...cur];
+          const existing = cur[duplicateIndex];
+          // A delayed pending/legacy aggregate must not overwrite an already split model call.
+          const metadataKeys = ['appId', 'appName', 'charId', 'charName', 'model', 'baseUrl', 'presetName', 'promptBreakdown'];
+          const defined = Object.fromEntries(Object.entries(entry || {}).filter(([key, value]) =>
+              value !== undefined && (existing.cloudCallIndex == null || entry.cloudCallIndex != null || metadataKeys.includes(key))));
+          cur[duplicateIndex] = { ...existing, ...defined, id: existing.id };
+          if (existing.cloudCallIndex === 1 && entry.cloudCallIndex == null) {
+              // Pending registration can finish after a very fast cloud response. Its local API
+              // attribution belongs to every request, but the captured input belongs only to #1.
+              const { promptBreakdown: _firstInput, ...attribution } = defined;
+              cur = cur.map(e => e.id?.startsWith(`${existing.id}:call:`)
+                  ? { ...e, ...attribution } : e);
+          }
+          return cur;
+      });
+  },
+
+  /** Atomic mutation also lets cloud round logs replace their pending aggregate in one write. */
+  updateApiCallLog: async (update: (entries: any[]) => any[]): Promise<void> => {
       const db = await openDB();
       if (!db.objectStoreNames.contains(STORE_API_CALL_LOG)) return;
       // 必须在同一个 readwrite 事务里完成“读 → 合并/去重 → 写”。
@@ -3331,19 +3353,9 @@ export const DB = {
           const store = tx.objectStore(STORE_API_CALL_LOG);
           const req = store.get('log');
           req.onsuccess = () => {
-              const cur: any[] = req.result?.entries ?? [];
-              const duplicateIndex = cur.findIndex((e) => e?.id && e.id === entry?.id);
-              if (duplicateIndex >= 0) {
-                  // 显式 safeFetch 记录和全局 clone 兜底可能先后抵达；合并非空字段，
-                  // 既不重复计费，也能让后到的 usage/backendModel 补齐早到的简版记录。
-                  const existing = cur[duplicateIndex];
-                  const defined = Object.fromEntries(
-                      Object.entries(entry || {}).filter(([, value]) => value !== undefined),
-                  );
-                  cur[duplicateIndex] = { ...existing, ...defined, id: existing.id };
-              } else {
-                  cur.unshift(entry);
-              }
+              let cur: any[];
+              try { cur = update(req.result?.entries ?? []); }
+              catch { tx.abort(); return; }
               const cutoff = Date.now() - API_CALL_LOG_MAX_AGE_MS;
               const pruned = cur
                   .filter((e) => (e?.timestamp ?? 0) > cutoff)

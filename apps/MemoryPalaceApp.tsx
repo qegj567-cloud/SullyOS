@@ -3402,11 +3402,11 @@ export default function MemoryPalaceApp() {
                 }}>
                     <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
                         <Icon name="warning" size={14} />
-                        <span>建议使用超低价模型</span>
+                        <span>兼顾记忆质量与费用</span>
                     </div>
                     记忆宫殿的后台处理（话题切分、记忆提取、关联分析、认知消化）使用下方配置的「副 API」，
-                    日常对话期间每轮会调用几次。<br/>
-                    <b>建议配一个超低价的模型</b>跑后台任务就行，具体选哪家哪款自己对比；按量 vs 按次差别在这个量级下都不大，真想省心自己比一下单价即可。<br/>
+                    模型的理解和整理能力会影响记忆质量。<br/>
+                    <b>建议选择比主 API 更便宜、同时能可靠处理记忆的模型</b>，不必只追求最低价格。日常整理按你设置的节奏触发，并不是每条消息都整理一次。<br/>
                     <span style={{ fontSize: 11, color: '#b91c1c' }}>
                         注：「导入旧记忆」是一次性大批量操作，调用次数会明显多于日常，单独见那里的提示。
                     </span>

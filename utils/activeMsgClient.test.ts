@@ -996,6 +996,17 @@ describe('buildFirePack 的时区参照系与模板（①）', () => {
 
   const pack = (char: any) => buildFirePack(char, user, [], undefined, { all: [], categories: [] });
 
+  it('关闭自主月度查阅时，主动消息模板不再提示查月份，记忆仍保留', async () => {
+    const memories = [{ id: 'recall-toggle', date: '2026-06-12', mood: 'happy', summary: '六月一起看过日落' }];
+    const enabled = await pack(baseChar({ memories }));
+    expect(enabled.template).toContain('[[RECALL: 年-月]]');
+    const char = baseChar({ memories, monthlyRecallEnabled: false, activeMemoryMonths: ['2026-06'] });
+    const before = JSON.stringify(char);
+    const disabled = await pack(char);
+    expect(disabled.template).not.toContain('[[RECALL');
+    expect(JSON.stringify(char)).toBe(before);
+  });
+
   it('角色开了自定义时区 → tzId 用角色的', async () => {
     const out = await pack(baseChar({ customTimezoneEnabled: true, customTimezone: 'Asia/Tokyo' }));
     expect(out.tzId).toBe('Asia/Tokyo');

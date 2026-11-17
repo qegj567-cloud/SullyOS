@@ -1921,6 +1921,31 @@ describe('即时对话的待收记录（走真库）', () => {
     },
   }];
 
+  it('刷新后没有 pending 仍能逐次记账，气泡已落库的重复推送也能补回用量', async () => {
+    const charId = 'char-instant-call-log';
+    const uuid = 'uuid-instant-call-log';
+    await DB.saveCharacter({ id: charId, name: '即时角色' } as any);
+    const message = { messageId: 'msg-instant-call-log', charId, charName: '即时角色', body: '查到了',
+      messageType: 'instant', taskUuid: uuid, receivedAt: Date.now(), sentAt: Date.now(),
+      metadata: { charId, amsgInstantChat: true, amsgModelCalls: [
+        { index: 1, completedAt: Date.now(), causes: [], ok: true, promptTokens: 1000, completionTokens: 30 },
+        { index: 2, completedAt: Date.now() + 1, causes: ['recall'], ok: true, promptTokens: 1100, completionTokens: 50 },
+      ] } } as any;
+    expect(getInstantChatPending(charId)).toBeNull();
+    await ActiveMsgStore.saveInboxMessage(message);
+    await flushInboxToChat('SW通知');
+    const rows = () => DB.getApiCallLog().then(entries => entries.filter(entry => entry.id.startsWith(`cloud-${uuid}`)));
+    expect(await rows()).toHaveLength(2);
+    // Simulate an older frontend having persisted the bubble without the new usage records.
+    await DB.updateApiCallLog(entries => entries.filter(entry => !entry.id.startsWith(`cloud-${uuid}`)));
+    await ActiveMsgStore.saveInboxMessage(message);
+    await flushInboxToChat('SW通知');
+    expect(await rows()).toHaveLength(2);
+    expect((await rows()).find(row => row.cloudCallIndex === 2)).toMatchObject({ purpose: '查记忆后回复', promptTokens: 1100 });
+    const messages = await DB.getMessagesByCharId(charId);
+    expect(messages.filter(row => row.role === 'assistant')).toHaveLength(1);
+  }, 20000);
+
   it('欠着的那一轮回复到了 → 待收记录销账（灯灭）', async () => {
     const charId = 'char-instant-clear';
     await DB.saveCharacter({ id: charId, name: '即时角色' } as any);
