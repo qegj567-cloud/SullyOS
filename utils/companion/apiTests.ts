@@ -2,7 +2,7 @@ import type { APIConfig, CharacterProfile, CompanionSttConfig, CompanionVideoApi
 import { dialogueMaxTokens, resolveDialogueApi } from '../characterApi';
 import { safeFetchJson, extractContent } from '../safeApi';
 import { blobDataUrl } from './capture';
-import { videoRequestParameters } from './videoProviders';
+import { companionVideoEndpoint, videoRequestParameters } from './videoProviders';
 import { companionTestImage, companionTestVideo } from './testMedia';
 import { CompanionVoice } from './voice';
 import { startCompanionListening, type ListeningCallbacks } from './listening';
@@ -12,11 +12,11 @@ export interface CompanionTestResult { summary: string; detail?: string }
 export type CompanionTestRun = (signal: AbortSignal, progress: (message: string) => void) => Promise<CompanionTestResult>;
 type Endpoint = Pick<APIConfig, 'baseUrl' | 'apiKey' | 'model'>;
 
-async function probe(api: Endpoint, body: object, signal: AbortSignal, char?: CharacterProfile) {
+async function probe(api: Endpoint, body: object, signal: AbortSignal, char?: CharacterProfile, endpoint?: string) {
   const url = new URL(api.baseUrl.trim());
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('请填写有效的 HTTP(S) API 地址');
   if (!api.model.trim()) throw new Error('请填写模型 ID');
-  const response = await safeFetchJson(`${api.baseUrl.trim().replace(/\/+$/, '')}/chat/completions`, {
+  const response = await safeFetchJson(endpoint ?? `${api.baseUrl.trim().replace(/\/+$/, '')}/chat/completions`, {
     method: 'POST', signal, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${api.apiKey}` },
     body: JSON.stringify({ model: api.model, ...body }),
   }, 0, 60_000, { appId: 'companion', appName: '同行', charId: char?.id, charName: char?.name, purpose: '测试连接' });
@@ -50,7 +50,7 @@ export async function testCompanionVideo(api: CompanionVideoApiConfig, signal: A
   const detail = await probe(api, { stream: false, ...videoRequestParameters(api), messages: [{ role: 'user', content: [
     { type: 'video_url', video_url: { url, ...(['doubao', 'minimax'].includes(api.provider ?? '') ? { fps: 1 } : {}) } },
     { type: 'text', text: '请按先后顺序，简短描述这段视频中形状和颜色的变化。' },
-  ] }] }, signal, char);
+  ] }] }, signal, char, companionVideoEndpoint(api));
   return { summary: '已收到视频描述，请核对是否为红色圆形 → 蓝色方形', detail };
 }
 

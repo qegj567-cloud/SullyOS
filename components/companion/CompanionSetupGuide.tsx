@@ -9,7 +9,7 @@ import { useLocalBackHandler } from '../../hooks/useLocalBackHandler';
 import { COMPANION_SETUP_LINKS as links, COMPANION_VOICE_GUIDES, companionDialogueReady, type CompanionSetupTarget } from '../../utils/companion/setup';
 import { companionVideoReady, type CompanionImageMode } from '../../utils/companion/vision';
 import { normalizeApiBaseUrl, normalizeApiCredential, normalizeApiModel } from '../../utils/apiConfigNormalize';
-import { COMPANION_VIDEO_PROVIDERS, type CompanionVideoProvider } from '../../utils/companion/videoProviders';
+import { COMPANION_VIDEO_PROVIDERS, COMPANION_ARK_PLAN, isCompanionArkPlan, type CompanionVideoProvider } from '../../utils/companion/videoProviders';
 import { CompanionApiTest, type BeginCompanionTest } from './CompanionApiTest';
 import { testCompanionDialogue, testCompanionImage, testCompanionStt, testCompanionVideo, testCompanionVoice } from '../../utils/companion/apiTests';
 
@@ -21,6 +21,7 @@ function VideoApiFields({ config, save, begin }: { config?: CompanionVideoApiCon
   const [clearKey, setClearKey] = useState(false);
   const [message, setMessage] = useState('');
   const guide = COMPANION_VIDEO_PROVIDERS[provider];
+  const arkPlan = provider === 'doubao' && isCompanionArkPlan(baseUrl);
   const sameEndpoint = normalizeApiBaseUrl(baseUrl) === config?.baseUrl && provider === (config?.provider ?? 'custom');
   const draft: CompanionVideoApiConfig = { provider, baseUrl: normalizeApiBaseUrl(baseUrl), model: normalizeApiModel(model),
     apiKey: normalizeApiCredential(key) || (!clearKey && sameEndpoint ? config?.apiKey ?? '' : '') };
@@ -42,8 +43,15 @@ function VideoApiFields({ config, save, begin }: { config?: CompanionVideoApiCon
       setProvider(next); setBaseUrl(COMPANION_VIDEO_PROVIDERS[next].baseUrl); setModel(COMPANION_VIDEO_PROVIDERS[next].model);
       setKey(''); setClearKey(true); setMessage('已切换草稿，请填写对应凭据并保存。');
     }}>{Object.entries(COMPANION_VIDEO_PROVIDERS).map(([id, item]) => <option key={id} value={id}>{item.name}</option>)}</select></label>
-    <p>{guide.note}</p>
-    <div className="companion-setup-links"><ExternalLink href={guide.signup}>注册 / 登录{guide.name}</ExternalLink><ExternalLink href={guide.keys}>获取视频模型 Key</ExternalLink><ExternalLink href={guide.docs}>视频输入文档</ExternalLink></div>
+    {provider === 'doubao' && <label>豆包接入方式<select aria-label="豆包接入方式" value={arkPlan ? 'plan' : 'standard'} onChange={event => {
+      const next = event.target.value === 'plan' ? COMPANION_ARK_PLAN : COMPANION_VIDEO_PROVIDERS.doubao;
+      setBaseUrl(next.baseUrl); setModel(next.model); setKey(''); setClearKey(true);
+      setMessage('已切换地址和模型，请填写所选服务的 Key；测试通过后再保存。');
+    }}><option value="standard">普通模型 API · 单独计费</option><option value="plan">已购 Agent Plan 套餐</option></select></label>}
+    <p>{arkPlan ? '使用已购套餐的专属 Key、专属地址和模型名；在套餐控制台「使用配置」获取。完整视频输入已用 Small 套餐实测通过，无需购买视频生成模型。套餐适用范围与额度以官方规则为准。' : guide.note}</p>
+    {provider === 'doubao' && !arkPlan && <small>这里是普通 API，Agent Plan 会员不抵扣这个入口的费用。已买套餐请选择上方「已购 Agent Plan 套餐」。</small>}
+    {arkPlan && <small>本地预览通过本机内存转发连接火山官方套餐接口，解决浏览器跨域；不存录像、不创建文件 ID，也不自动切到普通计费接口。线上网页尚未接入这条转发。</small>}
+    <div className="companion-setup-links"><ExternalLink href={arkPlan ? COMPANION_ARK_PLAN.keys : guide.signup}>{arkPlan ? '打开已购套餐' : `注册 / 登录${guide.name}`}</ExternalLink><ExternalLink href={arkPlan ? COMPANION_ARK_PLAN.keys : guide.keys}>{arkPlan ? '获取套餐专属 Key' : '获取视频模型 Key'}</ExternalLink><ExternalLink href={guide.docs}>视频输入文档</ExternalLink></div>
     <label>视频 API Base URL<input aria-label="视频 API Base URL" type="url" required value={baseUrl} onChange={event => setBaseUrl(event.target.value)} placeholder="填写平台的 OpenAI 兼容地址"/></label>
     <label>视频模型 ID<input aria-label="视频模型 ID" required value={model} onChange={event => setModel(event.target.value)} placeholder="账号已开通的视频理解模型"/></label>
     <label>视频 API Key<input aria-label="视频 API Key" type="password" autoComplete="off" value={key} onChange={event => setKey(event.target.value)} placeholder={config?.apiKey && sameEndpoint && !clearKey ? '已保存，留空保留原 Key' : '粘贴 Key；无 Key 代理可留空'}/></label>

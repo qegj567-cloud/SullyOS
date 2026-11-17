@@ -75,6 +75,16 @@
 
 ### 三家视频协议
 
+#### 已购 Agent Plan（本地预览）
+
+2026-11-18 实测：Agent Plan Small 的 `doubao-seed-2.1-pro`，在 `https://ark.cn-beijing.volces.com/api/plan/v3/chat/completions` 接收完整 MP4 Base64，返回 HTTP 200，并按正确顺序描述红色圆形变为蓝色正方形。一次接口耗时约 2.8 秒，仅代表该次小样片；不能推断真实街景质量或所有账号额度。视频理解属于 Seed 多模态输入，不是 Seedance 视频生成。无需 Files API、文件 ID 或临时存储。
+
+同行视频设置新增「豆包接入方式」：普通模型 API 与已购 Agent Plan 分开选择；套餐填写专属 Key 与不带日期的模型别名，不能混用普通 `/api/v3` 的凭据与计费入口。切换只改草稿并清空 Key，不购买、升级套餐或开启超额后付费。官方入口：[套餐配置](https://ark.volcengine.com/region:cn-beijing/subscription/agent-plan)、[兼容工具说明](https://docs.volcengine.com/docs/ark/agent-plan-personal-other-tools?lang=zh)、[套餐使用范围与额度](https://docs.volcengine.com/docs/ark/agent-plan-personal-plan-overview?lang=zh)。技术实测通过不等于扩大平台规定的套餐用途。
+
+本机浏览器直连失败，而本机服务直连同一接口成功，因此 Vite dev / preview 加入 `server/companion-ark-middleware.ts`：仅在 localhost 页面、精确匹配官方套餐地址时，同行的视频测试与正式视频观察统一走同源 `/api/companion/ark-plan/chat/completions`。转发目标固定为官方套餐 API，检查 Origin、POST、Key、JSON 和 12 MiB 上限，60 秒超时，无重试、无重定向、无文件存储或日志，也不回退普通 API。取消下游会取消上游请求。其它模型与 App 的请求不改。线上部署尚未添加该中继，不能宣称线上浏览器同样可用。
+
+本轮验证：同行回归 62 项通过；新增中继 2 项与套餐选择 1 项后定向复测通过（合计 65 项），覆盖跨站拦截、缺 Key、固定目标、失败不改计费入口、完整视频载荷和凭据分离。Vite 构建通过，5175 保留旧资源更新并重启；同行界面真实点击「测试视频 API」，约 4.3 秒返回「红色圆形变为蓝色正方形」。配置作为草稿留给用户点击保存；未将凭据写入代码或诊断文件。截图 `output/companion-setup/companion-agent-plan-passed.jpg`；首次隔离实测的脱敏返回 `output/companion-setup/agent-plan-video-result.json`。本轮没有测试用户摄像头、STT 或角色对话质量。
+
 未配置时表单默认展示豆包草稿，选择平台会填写参考地址/模型，必须手动保存后才生效。旧配置没有 `provider` 时保留自定义 Base64 协议，不根据域名或模型名自动迁移。切平台清空草稿 Key，换地址不带旧 Key。已删除上传服务、地址和口令字段，载入/导入/保存 API 配置时丢弃旧上传配置。打开或切换引导不调用 API。
 
 | 平台 | 默认配置 | 视频请求参数 |

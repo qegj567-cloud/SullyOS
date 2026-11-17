@@ -15,6 +15,22 @@ vi.mock('./apiTests', async original => ({ ...await original<typeof import('./ap
 }));
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+it('selects the paid plan credentials separately without calling or saving an API automatically', async () => {
+  const host = document.createElement('div'), root = createRoot(host); document.body.append(host);
+  const saveVideoApi = vi.fn();
+  try {
+    await act(async () => root.render(React.createElement(CompanionSetupGuide, { api: { companionVideoApi: { provider: 'doubao', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', model: 'regular', apiKey: 'standard-secret' } } as any, canListen: false, navigate: vi.fn(), close: vi.fn(), saveVideoApi })));
+    await act(async () => {
+      const select = host.querySelector<HTMLSelectElement>('[aria-label="豆包接入方式"]')!;
+      select.value = 'plan'; select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(host.querySelector<HTMLInputElement>('[aria-label="视频 API Base URL"]')!.value).toBe('https://ark.cn-beijing.volces.com/api/plan/v3');
+    expect(host.querySelector<HTMLInputElement>('[aria-label="视频模型 ID"]')!.value).toBe('doubao-seed-2.1-pro');
+    expect(saveVideoApi).not.toHaveBeenCalled(); expect(testCompanionVideo).not.toHaveBeenCalled();
+    await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === '测试视频 API')!.click());
+    expect(testCompanionVideo).toHaveBeenLastCalledWith(expect.objectContaining({ apiKey: '', model: 'doubao-seed-2.1-pro' }), expect.any(AbortSignal), expect.any(Function));
+  } finally { act(() => root.unmount()); host.remove(); vi.clearAllMocks(); }
+});
 it('tests video and STT drafts without saving them and cancels a running test before starting another', async () => {
   const host = document.createElement('div'), root = createRoot(host); document.body.append(host);
   const saveVideoApi = vi.fn(), saveStt = vi.fn(), beforeTest = vi.fn();

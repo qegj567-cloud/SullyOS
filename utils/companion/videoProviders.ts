@@ -1,6 +1,20 @@
 import type { CompanionVideoApiConfig } from '../../types';
 
 export type CompanionVideoProvider = NonNullable<CompanionVideoApiConfig['provider']>;
+export const COMPANION_ARK_PLAN = {
+  baseUrl: 'https://ark.cn-beijing.volces.com/api/plan/v3', model: 'doubao-seed-2.1-pro',
+  keys: 'https://ark.volcengine.com/region:cn-beijing/subscription/agent-plan',
+};
+export function isCompanionArkPlan(baseUrl: string) {
+  return baseUrl.trim().replace(/\/+$/, '') === COMPANION_ARK_PLAN.baseUrl;
+}
+export function companionVideoEndpoint(api: Pick<CompanionVideoApiConfig, 'baseUrl'>, origin = typeof window !== 'undefined' ? window.location.origin : '') {
+  const direct = `${api.baseUrl.trim().replace(/\/+$/, '')}/chat/completions`;
+  if (!isCompanionArkPlan(api.baseUrl) || !origin) return direct;
+  const page = new URL(origin);
+  return ['127.0.0.1', 'localhost', '[::1]'].includes(page.hostname)
+    ? `${page.origin}/api/companion/ark-plan/chat/completions` : direct;
+}
 // Official contracts checked 2026-11-17. Defaults are editable, never model capability detection.
 export const COMPANION_VIDEO_PROVIDERS = {
   doubao: {
