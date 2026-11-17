@@ -56,3 +56,29 @@ it('routes to the intended settings section or selected character without touchi
     expect(characterLaunch.consume()).toEqual({ charId: 'selected-character', detailTab: 'identity' });
   } finally { act(() => root.unmount()); }
 });
+
+it('saves a separate video endpoint and does not reuse a stored key after its URL changes', async () => {
+  const host = document.createElement('div'), root = createRoot(host); document.body.append(host);
+  const saveVideoApi = vi.fn(), changeImageMode = vi.fn();
+  const api = { baseUrl: 'https://chat.test', model: 'chat', apiKey: 'chat-secret', companionVideoApi: { baseUrl: 'https://old-video.test/v1', model: 'video', apiKey: 'old-video-secret' } } as any;
+  const snapshot = JSON.stringify(api);
+  try {
+    await act(async () => root.render(React.createElement(CompanionSetupGuide, { api, canListen: false, navigate: vi.fn(), close: vi.fn(), saveVideoApi, changeImageMode })));
+    const key = host.querySelector<HTMLInputElement>('[aria-label="视频 API Key"]')!;
+    expect(key.value).toBe(''); expect(key.type).toBe('password');
+    expect(host.textContent).not.toContain('old-video-secret');
+    // Stored-key removal is the first checkbox; the image opt-in is separate and starts off.
+    const direct = [...host.querySelectorAll<HTMLInputElement>('input[type=checkbox]')].find(input => input.parentElement!.textContent!.includes('主对话模型支持图片'))!;
+    expect(direct.checked).toBe(false);
+    await act(async () => direct.click());
+    expect(changeImageMode).toHaveBeenCalledWith('direct'); expect(saveVideoApi).not.toHaveBeenCalled();
+    await act(async () => {
+      const url = host.querySelector<HTMLInputElement>('[aria-label="视频 API Base URL"]')!;
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(url, 'https://new-video.test/v1');
+      url.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+    expect(saveVideoApi).toHaveBeenCalledWith({ baseUrl: 'https://new-video.test/v1', model: 'video', apiKey: '' });
+    expect(JSON.stringify(api)).toBe(snapshot);
+  } finally { act(() => root.unmount()); host.remove(); }
+});

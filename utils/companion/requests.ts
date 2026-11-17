@@ -8,6 +8,8 @@ import { DB } from '../db';
 import { loadMusicPlaybackSnapshot } from '../../context/MusicContext';
 import type { CompanionLine } from './session';
 import type { CompanionDebugStore } from './debug';
+import { observationText, type CompanionImageMode, type CompanionObservation } from './vision';
+import type { CompanionFrame } from './capture';
 
 export interface CompanionRequestContext {
   char: CharacterProfile;
@@ -15,6 +17,8 @@ export interface CompanionRequestContext {
   api: APIConfig;
   style: string;
   scene: () => string;
+  observation?: () => CompanionObservation | undefined;
+  imageMode?: CompanionImageMode;
   realtimeConfig?: BuildChatPayloadInput['realtimeConfig'];
   debug?: CompanionDebugStore;
 }
@@ -72,10 +76,12 @@ export function createCompanionRequests(context: CompanionRequestContext) {
         const [groups, emojis, categories] = await Promise.all([DB.getGroups(), DB.getEmojis(), DB.getEmojiCategories()]);
         signal.throwIfAborted();
         trace?.end('history');
+        let sceneMessage = '', sceneFrames: CompanionFrame[] = [];
         const payload = await buildChatRequestPayload({ char: context.char, userProfile: context.user, groups, emojis, categories, signal,
           historyMsgs: [...range.messages, ...current], contextLimit: range.messages.length + current.length,
           contextHighWaterMark: range.hwm, recallEntryPoint: 'companion', realtimeConfig: context.realtimeConfig,
-          musicSnapshot: loadMusicPlaybackSnapshot(), visionApiConfig: context.api.visionApi, stripImages: true,
+          musicSnapshot: loadMusicPlaybackSnapshot(),
+          visionApiConfig: context.imageMode === 'helper' ? context.api.visionApi : undefined, stripImages: true,
           onPreparationStage: event => { if (event.status === 'start') trace?.begin(event.stage); else trace?.end(event.stage); },
           appPrompt: { rules: RULES, scene: '\n' + RULES + '\n末尾的 assistant 是本轮接话全文，正在播放或已展示；用户未必已听完。你的回答会排在它完整结束之后。沿着它自然继续，补充新信息，避免重新问候或复述。若记忆纠正了初步判断，自然修正；不要假定用户已回答接话里的问题。',
             prepareMessages: async () => {
@@ -84,10 +90,19 @@ export function createCompanionRequests(context: CompanionRequestContext) {
               signal.throwIfAborted();
               trace?.end('wait_a');
               // The observation is scene material, not an invented statement by the user.
-              return [{ role: 'user', content: `[同行现场观测，非用户发言]\n${context.scene()}` }, { role: 'assistant', content: a }];
+              const observation = context.observation?.();
+              sceneMessage = `[同行现场观测，非用户发言]\n${context.observation ? observationText(observation) : context.scene()}`;
+              if (context.imageMode === 'direct') sceneFrames = observation?.frames?.slice(0, 3) ?? [];
+              return [{ role: 'user', content: sceneMessage }, { role: 'assistant', content: a }];
             } },
         });
         signal.throwIfAborted();
+        // Shared ContextBuilder has already placed memory/worldbooks/a. Enrich only
+        // this observation, using its matching clip stills; never reattach historical images.
+        if (context.imageMode === 'direct' && sceneFrames.length) {
+          const message = payload.fullMessages.find(message => message.role === 'user' && message.content === sceneMessage);
+          if (message) message.content = [{ type: 'text', text: sceneMessage }, ...sceneFrames.map(frame => ({ type: 'image_url', image_url: { url: frame.image } }))];
+        }
         const outcome = payload.recallTrace?.outcome;
         const memoryNotes = { success: '已召回', empty: '无召回结果', skipped_palace_disabled: '未开启记忆宫殿',
           skipped_embedding_unconfigured: '未配置向量模型', error: '召回出错，沿共享管线继续' };

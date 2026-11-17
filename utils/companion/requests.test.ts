@@ -17,6 +17,24 @@ const char = (id: string): any => ({ id, name: 'C', systemPrompt: '完整人设�
   mountedWorldbooks: [{ id: 'quick-key', title: '关键设定', content: '世界书深度标记', constant: false, key: ['短答关键词'], position: 4, depth: 1, role: 0 }] });
 const context = (character: any): any => ({ char: character, user: { name: 'U' }, api: { baseUrl: 'https://global.example', apiKey: 'global-key', model: 'wrong-model' }, style: '轻量语气', scene: () => '一件蓝外套' });
 
+it.each(['none', 'direct', 'helper'] as const)('only attaches matching clip stills to the full request with explicit direct opt-in: %s', async imageMode => {
+  vi.spyOn(palace, 'injectMemoryPalace').mockResolvedValue({} as any);
+  const calls = vi.spyOn(api, 'safeFetchJson').mockResolvedValue({ choices: [{ message: { content: '短答关键词' } }] });
+  const observation = { text: '先看红衣服，再转向蓝外套', from: Date.now() - 8000, to: Date.now(), frames: [{ image: 'data:image/jpeg;base64,MATCHED', at: Date.now() }] };
+  const requests = createCompanionRequests({ ...context(char('images-' + imageMode)), imageMode, observation: () => observation });
+  const signal = new AbortController().signal;
+  const quick = requests.quick([line('A')], signal);
+  const payload = await requests.prepare([line('A')], quick, signal);
+  await requests.full(payload, signal);
+  const first = calls.mock.calls[0][1].body as string, second = calls.mock.calls[1][1].body as string;
+  expect(first).not.toContain('image_url');
+  expect(second.includes('image_url')).toBe(imageMode === 'direct');
+  expect(second.includes('MATCHED')).toBe(imageMode === 'direct');
+  expect(second).toContain('先看红衣服，再转向蓝外套');
+  expect(second).toContain('完整人设标记'); expect(second).toContain('世界书深度标记');
+  expect(second.match(/短答关键词/g)).toHaveLength(1);
+});
+
 it('keeps quick history bounded after lengthy continuations without truncating the current question', () => {
   const current = '当前问题'.repeat(500);
   const request = ContextBuilder.buildCompanionQuickRequest({ char: char('bounded'), user: { name: 'U' } as any,

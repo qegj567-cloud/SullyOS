@@ -23,6 +23,13 @@ export function companionDialogueReady(api: APIConfig, char?: CharacterProfile) 
 
 // Official destinations checked 2026-11-17. No referral links, credentials or user data in URLs.
 export const COMPANION_SETUP_LINKS = {
+  qwen: {
+    signup: 'https://bailian.console.aliyun.com/',
+    keys: 'https://help.aliyun.com/zh/model-studio/get-api-key',
+    docs: 'https://help.aliyun.com/zh/model-studio/vision',
+    baseUrls: 'https://help.aliyun.com/zh/model-studio/base-url',
+    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+  },
   glm: {
     signup: 'https://open.bigmodel.cn/', keys: 'https://bigmodel.cn/usercenter/proj-mgmt/apikeys',
     docs: 'https://docs.bigmodel.cn/cn/guide/start/quick-start',

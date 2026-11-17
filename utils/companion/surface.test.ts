@@ -7,7 +7,8 @@ import { CompanionSurface } from '../../apps/CompanionApp';
 vi.mock('../../context/OSContext', () => ({ useOS: () => ({}) }));
 vi.mock('./voice', () => ({ CompanionVoice: class { prime() {} close() {} } }));
 vi.mock('./requests', () => ({ createCompanionRequests: vi.fn() }));
-vi.mock('./vision', () => ({ observeCompanionFrames: vi.fn(), observationText: () => '尚无画面' }));
+vi.mock('./vision', async importOriginal => ({ ...await importOriginal<typeof import('./vision')>(), observeCompanionVideo: vi.fn(), observationText: () => '尚无画面' }));
+vi.mock('./capture', async importOriginal => ({ ...await importOriginal<typeof import('./capture')>(), companionRecordingMime: () => 'video/mp4', startCompanionVideoLoop: vi.fn() }));
 vi.mock('../visionApi', () => ({ isVisionApiReady: (config: any) => !!config?.enabled }));
 vi.mock('../ttsRouter', () => ({ canSynthesizeSpeech: () => false, characterHasVoice: () => false }));
 vi.mock('../chatContextRange', () => ({ resolveContextRangeMode: () => 'manual', clampManualContextLimit: (value: number) => value || 500 }));
@@ -48,7 +49,7 @@ it('stops a camera stream whose permission resolves after the user has cancelled
   const permission = deferred<MediaStream>();
   const track = { stop: vi.fn() };
   Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: vi.fn(() => permission.promise) } });
-  await act(async () => root.render(React.createElement(CompanionSurface, { ...props, api: { visionApi: { enabled: true, baseUrl: 'https://vision.test', apiKey: 'test', model: 'vision' } } })));
+  await act(async () => root.render(React.createElement(CompanionSurface, { ...props, api: { companionVideoApi: { baseUrl: 'https://video.test', apiKey: 'test', model: 'video' } } })));
   await click('开启镜头'); await click('取消开启');
   await act(async () => permission.resolve({ getTracks: () => [track] } as any));
   expect(track.stop).toHaveBeenCalledOnce();

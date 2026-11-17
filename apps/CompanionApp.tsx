@@ -1,14 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowUp, Camera, CameraSlash, Microphone, MicrophoneSlash, SpeakerHigh, SpeakerSlash, Stop, SlidersHorizontal, ChatsCircle, Compass } from '@phosphor-icons/react';
 import { useOS } from '../context/OSContext';
-import type { APIConfig, CharacterProfile, RealtimeConfig, UserProfile } from '../types';
+import type { APIConfig, CharacterProfile, CompanionVideoApiConfig, RealtimeConfig, UserProfile } from '../types';
 import { CompanionSession, type CompanionLine } from '../utils/companion/session';
 import { createCompanionRequests } from '../utils/companion/requests';
 import { CompanionVoice } from '../utils/companion/voice';
 import { canListenContinuously, startCompanionListening } from '../utils/companion/listening';
-import { observeCompanionFrames, observationText, type CompanionFrame, type CompanionObservation } from '../utils/companion/vision';
+import { observeCompanionVideo, observationText, companionVideoReady, type CompanionImageMode, type CompanionObservation } from '../utils/companion/vision';
+import { companionRecordingMime, recordCompanionClip, startCompanionVideoLoop } from '../utils/companion/capture';
 import { canSynthesizeSpeech } from '../utils/ttsRouter';
-import { isVisionApiReady } from '../utils/visionApi';
 import { resolveContextRangeMode, clampManualContextLimit } from '../utils/chatContextRange';
 import { CompanionDebugStore } from '../utils/companion/debug';
 import { CompanionDebugPanel } from '../components/companion/CompanionDebugPanel';
@@ -21,11 +21,12 @@ export interface CompanionSurfaceProps {
   characters: CharacterProfile[]; user: UserProfile; api: APIConfig; realtimeConfig?: RealtimeConfig;
   close(): void;
   navigateSetup?(target: CompanionSetupTarget, charId?: string): void;
+  saveVideoApi?(config: CompanionVideoApiConfig): void;
   /** Fixture injection only; production always uses the shared request pipeline. */
   requestFactory?: RequestFactory;
 }
 
-export function CompanionSurface({ characters, user, api, realtimeConfig, close, navigateSetup, requestFactory = createCompanionRequests }: CompanionSurfaceProps) {
+export function CompanionSurface({ characters, user, api, realtimeConfig, close, navigateSetup, saveVideoApi, requestFactory = createCompanionRequests }: CompanionSurfaceProps) {
   const [charId, setCharId] = useState(characters[0]?.id || '');
   const char = characters.find(item => item.id === charId);
   const [style, setStyle] = useState('');
@@ -44,10 +45,11 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [observation, setObservation] = useState<CompanionObservation>();
   const [observing, setObserving] = useState(false);
+  const [imageMode, setImageMode] = useState<CompanionImageMode>('none');
   const videoRef = useRef<HTMLVideoElement>(null);
   const mediaRef = useRef<MediaStream>();
   const cameraGeneration = useRef(0);
-  const frames = useRef<CompanionFrame[]>([]);
+  const recordingMime = useRef('');
   const observationRef = useRef<CompanionObservation>();
   const visionAbort = useRef<AbortController>();
   const stopListening = useRef<() => void>();
@@ -64,16 +66,16 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
     cameraGeneration.current++;
     visionAbort.current?.abort();
     mediaRef.current?.getTracks().forEach(track => track.stop()); mediaRef.current = undefined;
-    frames.current = []; observationRef.current = undefined;
+    observationRef.current = undefined;
     if (videoRef.current) videoRef.current.srcObject = null;
-    setCamera(false); setCameraPending(false); setObservation(undefined);
+    setCamera(false); setCameraPending(false); setObservation(undefined); setObserving(false);
   };
   const stopAll = () => { session.current?.interrupt(); stopMic(); stopCamera(); };
 
   useEffect(() => {
     session.current?.interrupt(); session.current = undefined;
     debug.clear();
-    stopMic(); stopCamera(); setLines([]); setStatus('在你身边');
+    stopMic(); stopCamera(); setLines([]); setImageMode('none'); setStatus('在你身边');
     // This editable seed is intentionally short and visibly labelled as an excerpt.
     setStyle(char?.systemPrompt?.slice(0, 1600) || '保留角色的身份和熟悉的说话方式，自然回应眼前的话题。');
   }, [charId]);
@@ -92,7 +94,7 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
   const ensureSession = () => {
     if (!char) throw new Error('请先在神经链接中添加角色');
     if (!session.current) {
-      const requests = requestFactory({ char, user, api, style, realtimeConfig, debug, scene: () => observationText(observationRef.current) });
+      const requests = requestFactory({ char, user, api, style, realtimeConfig, debug, scene: () => observationText(observationRef.current), observation: () => observationRef.current, imageMode });
       session.current = new CompanionSession({ ...requests, debug,
         play: async (text, signal, heard, started) => {
           if (!voiceOn.current || !canSynthesizeSpeech(char, api)) { signal.throwIfAborted(); started('text'); heard(text); return; }
@@ -126,11 +128,12 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
 
   const toggleCamera = async () => {
     if (camera || cameraPending) { stopCamera(); return; }
-    if (!char || !isVisionApiReady(api.visionApi)) { setError('请在设置 → 识图 API 配置并开启独立识图，再开启镜头'); setSetupOpen(true); return; }
+    if (!char || !companionVideoReady(api.companionVideoApi)) { setError('请在同行 → API 接入配置独立的视频理解 API，再开启镜头'); setSetupOpen(true); return; }
     setError(''); setCameraPending(true);
     const generation = ++cameraGeneration.current;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 960 } }, audio: false });
+      recordingMime.current = companionRecordingMime();
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 640 }, frameRate: { ideal: 12, max: 15 } }, audio: false });
       if (generation !== cameraGeneration.current || !mounted.current) { stream.getTracks().forEach(track => track.stop()); return; }
       mediaRef.current = stream;
       if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play(); }
@@ -142,37 +145,27 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
   };
 
   useEffect(() => {
-    if (!camera || !char || !isVisionApiReady(api.visionApi)) return;
+    if (!camera || !char || !companionVideoReady(api.companionVideoApi) || !mediaRef.current) return;
     const abort = new AbortController(); visionAbort.current = abort;
-    let busy = false, lastRequest = 0, previous = '', failures = 0;
-    const canvas = document.createElement('canvas');
-    const sample = async () => {
-      const video = videoRef.current;
-      if (abort.signal.aborted || !video || video.readyState < 2 || !video.videoWidth) return;
-      const scale = Math.min(1, 640 / video.videoWidth);
-      canvas.width = Math.round(video.videoWidth * scale); canvas.height = Math.round(video.videoHeight * scale);
-      const ctx = canvas.getContext('2d'); if (!ctx) return;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height); // rear camera: never mirror text
-      const image = canvas.toDataURL('image/jpeg', 0.65);
-      if (image === previous) return;
-      previous = image;
-      frames.current = [...frames.current.slice(-2), { image, at: Date.now() }];
-      if (busy || Date.now() - lastRequest < 8000) return;
-      busy = true; lastRequest = Date.now(); setObserving(true);
-      try {
-        const next = await observeCompanionFrames([...frames.current], api.visionApi!, char.id, char.name, abort.signal);
-        if (!abort.signal.aborted) { failures = 0; observationRef.current = next; setObservation(next); }
-      } catch (err) {
-        if (!abort.signal.aborted) {
-          setError(`画面识别失败：${(err as Error).message}`);
-          // Avoid endlessly billing a broken configuration.
-          if (++failures >= 2) { stopCamera(); setError('连续两次识图失败，镜头已暂停。请检查识图配置后重新开启。'); }
-        }
-      } finally { busy = false; if (mounted.current) setObserving(false); }
+    const stream = mediaRef.current;
+    const publish = (next: CompanionObservation) => {
+      if (!abort.signal.aborted && mounted.current) { observationRef.current = next; setObservation(next); }
     };
-    void sample(); const timer = setInterval(() => void sample(), 2500);
-    return () => { clearInterval(timer); abort.abort(); };
-  }, [camera, charId, api.visionApi]);
+    startCompanionVideoLoop({ signal: abort.signal,
+      record: () => recordCompanionClip(stream, recordingMime.current, abort.signal),
+      observe: async clip => {
+        setObserving(true);
+        try { publish(await observeCompanionVideo(clip, api.companionVideoApi!, char.id, char.name, abort.signal, { mode: imageMode, helper: api.visionApi }, publish)); }
+        finally { if (!abort.signal.aborted && mounted.current) setObserving(false); }
+      },
+      error: (err, fatal) => {
+        if (abort.signal.aborted) return;
+        if (fatal) stopCamera();
+        setError(`视频理解失败${fatal ? '，镜头已暂停，请检查配置后重新开启' : ''}：${err instanceof Error ? err.message : '未知错误'}`);
+      },
+    });
+    return () => abort.abort();
+  }, [camera, charId, api.companionVideoApi, api.visionApi, imageMode]);
 
   return <section className="companion-app" aria-label="同行">
     <header className="companion-header">
@@ -188,7 +181,7 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
         <select aria-label="同行角色" value={charId} onChange={event => setCharId(event.target.value)}>
           {!characters.length && <option value="">请先添加角色</option>}
           {characters.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-        </select></label><span>{camera ? observing ? '正在看' : '镜头已开启' : '镜头关闭'}</span></div>
+        </select></label><span>{camera ? observing ? '正在理解视频' : '正在采集视频' : '镜头关闭'}</span></div>
       {latest && !historyOpen && <div className="companion-caption" key={latest.id}>
         <small>{latest.role === 'user' ? user.name : char?.name}{latest.status === 'interrupted' ? ' · 已打断' : latest.status === 'speaking' ? ' · 正在说' : ''}</small>
         <p>{latest.status === 'interrupted' ? latest.heard || '这句话还没来得及说出口。' : latest.text}</p>
@@ -205,7 +198,7 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
         <label>接话设定<textarea value={style} maxLength={2400} disabled={!!session.current} onChange={event => setStyle(event.target.value)}/></label>
         <p>默认摘取人设开头，可在开始前改成语气、称呼和关系要点。续答使用完整人设和记忆。</p>
         <p>连续听使用浏览器识别，建议戴耳机避免扬声器被识别成你说的话。豆包流式识别尚未接入。</p>
-        <p>镜头开启后，每隔至少 8 秒将最近 1–3 张截图发给独立识图 API。不会保存图片；本次对话离开后清空，暂不写入聊天和长期记忆。</p>
+        <p>镜头开启后，录制约 8 秒的无声视频片段交给独立视频理解 API。主模型默认只收视频摘要；补充截图在 API 接入中另行选择。音频仍走连续听。视频和截图不存档，本次对话离开后清空。</p>
         <button className="companion-reset" onClick={() => { stopAll(); session.current = undefined; setLines([]); setStatus('已结束本次同行'); }}>结束本次同行</button>
       </div>}
     </div>
@@ -221,10 +214,14 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
         <button aria-pressed={voiceEnabled && canVoice} onClick={() => { session.current?.interrupt(); voice.current.prime(); setVoiceEnabled(!voiceEnabled); }} disabled={!canVoice}>{voiceEnabled && canVoice ? <SpeakerHigh size={23}/> : <SpeakerSlash size={23}/>}<span>{canVoice ? voiceEnabled ? '角色语音' : '文字模式' : '未配音色'}</span></button>
         <button onClick={() => session.current?.interrupt()}><Stop size={23}/><span>打断</span></button>
       </div>
-      {observation && <details className="companion-observation"><summary>最近看到的画面</summary><p>{observationText(observation)}</p></details>}
+      {observation && <details className="companion-observation"><summary>最近理解的视频</summary><p>{observationText(observation)}</p>{observation.imageNote && <p>{observation.imageNote}</p>}</details>}
       {!canListenContinuously() && <small className="companion-note">此浏览器不支持连续识别，可以输入文字。</small>}
     </footer>
-    {setupOpen && <CompanionSetupGuide char={char} api={api} canListen={canListenContinuously()} close={() => setSetupOpen(false)} navigate={target => {
+    {setupOpen && <CompanionSetupGuide char={char} api={api} imageMode={imageMode} changeImageMode={mode => {
+      stopAll(); session.current = undefined; debug.clear(); setImageMode(mode); setStatus('截图方式已更新，可重新开启同行');
+    }} saveVideoApi={saveVideoApi ? config => {
+      stopAll(); session.current = undefined; debug.clear(); saveVideoApi(config); setStatus('视频 API 已保存，可重新开启镜头');
+    } : undefined} canListen={canListenContinuously()} close={() => setSetupOpen(false)} navigate={target => {
       if (!navigateSetup) { setError('此模拟页不进入真实配置，请在主应用打开同行后配置。'); setSetupOpen(false); return; }
       stopAll(); session.current = undefined; setSetupOpen(false);
       navigateSetup(target, char?.id);
@@ -233,7 +230,7 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
 }
 
 export default function CompanionApp() {
-  const { characters, userProfile, apiConfig, realtimeConfig, closeApp, openApp } = useOS();
+  const { characters, userProfile, apiConfig, updateApiConfig, realtimeConfig, closeApp, openApp } = useOS();
   return <CompanionSurface characters={characters} user={userProfile} api={apiConfig} realtimeConfig={realtimeConfig} close={closeApp}
-    navigateSetup={(target, charId) => openCompanionSetupTarget(target, charId, openApp)}/>;
+    navigateSetup={(target, charId) => openCompanionSetupTarget(target, charId, openApp)} saveVideoApi={config => updateApiConfig({ companionVideoApi: config })}/>;
 }

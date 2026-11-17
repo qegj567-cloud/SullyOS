@@ -271,6 +271,13 @@ export type TtsProvider = 'minimax' | 'fishaudio' | 'elevenlabs';
 // 语音转文字（STT）服务商。电话麦克风收音可选任意已配置 Key 的平台（与 TTS 独立），或浏览器自带免费识别。
 export type SttProvider = 'minimax' | 'fishaudio' | 'elevenlabs' | 'browser';
 
+/** 同行专用：接收完整 MP4 的 video_url 接口，与识图/对话配置分开。 */
+export interface CompanionVideoApiConfig {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+}
+
 export interface VisionApiConfig {
   /** 开启后，聊天图片先由独立视觉模型转成文字，再交给主对话模型。 */
   enabled: boolean;
@@ -290,6 +297,7 @@ export interface APIConfig {
   apiKey: string;
   // 可选识图中转：给不支持 image_url 的主模型补视觉能力。
   visionApi?: VisionApiConfig;
+  companionVideoApi?: CompanionVideoApiConfig;
   minimaxApiKey?: string;
   minimaxGroupId?: string;
   // 'domestic' → https://api.minimaxi.com (国内站)
