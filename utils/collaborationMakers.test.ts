@@ -55,9 +55,9 @@ title: 夜航日记
     const patch = installableToThemePatch({
       kind: 'appearance-preset',
       title: '清晨',
-      payload: { theme: { hue: 32, darkMode: false, chatHeaderStyle: 'minimal', apiKey: 'must-not-pass' } },
+      payload: { theme: { hue: 32, darkMode: false, chatHeaderStyle: 'minimal', chatTimestampPosition: 'top_center', apiKey: 'must-not-pass' } },
     });
-    expect(patch).toEqual({ hue: 32, darkMode: false, chatHeaderStyle: 'minimal' });
+    expect(patch).toEqual({ hue: 32, darkMode: false, chatHeaderStyle: 'minimal', chatTimestampPosition: 'top_center' });
     expect(JSON.stringify(patch)).not.toContain('apiKey');
 
     const worldbooks = installableToWorldbooks({
@@ -116,6 +116,8 @@ title: 夜航日记
     const psychePrompt = COLLABORATION_MAKER_MAP['psyche-css'].prompt;
     expect(bubblePrompt).toContain('.sully-voice-bar-wave-segment');
     expect(whiteboxPrompt).toContain('.sully-chat-turn-avatar-slot');
+    expect(whiteboxPrompt).toContain('.sully-chat-time-divider');
+    expect(whiteboxPrompt).toContain('.sully-chat-timestamp');
     expect(whiteboxPrompt).toContain('.sully-collaboration-file-action');
     for (const part of ['card', 'receipt', 'header', 'icon', 'brand', 'watermark', 'amount', 'note', 'recipient', 'status', 'overlay', 'dialog', 'accept', 'return']) {
       expect(whiteboxPrompt).toContain(`.sully-chat-transfer-${part}`);

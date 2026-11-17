@@ -23,6 +23,7 @@ import { stickerNameFromUrl } from '../utils/messageFormat';
 import { PRESET_THEMES } from '../components/chat/ChatConstants';
 import { resolveChatTheme, scopeBubbleThemeCss } from '../utils/groupChat/theme';
 import { resolveBubbleCornerRadii, shouldHideBubbleTail } from '../utils/bubbleAppearance';
+import { computeTimeSegmentStarts, formatChatTimeDivider, formatChatTimestamp } from '../utils/chatMessageGrouping';
 import { buildChatFineTuneCss } from '../utils/chatFineTuneCss';
 import { isReducedBlurActive, useReducedBlur } from '../utils/blurPolicy';
 import { parseDirectorActions, stripSkipMarker, parseGroupTopicBox } from '../utils/groupChat/parse';
@@ -151,6 +152,8 @@ const GroupMessageItem = React.memo(({
     bubbleVariant = 'modern',
     messageSpacing = 'default',
     showTimestamp = 'always',
+    timestampPosition = 'below',
+    startsTimeSegment = false,
 }: {
     msg: Message,
     isUser: boolean,
@@ -176,15 +179,18 @@ const GroupMessageItem = React.memo(({
     bubbleVariant?: 'modern' | 'flat' | 'outline' | 'shadow' | 'wechat' | 'ios',
     messageSpacing?: 'compact' | 'default' | 'spacious',
     showTimestamp?: 'always' | 'hover' | 'never',
+    timestampPosition?: 'below' | 'top_center',
+    startsTimeSegment?: boolean,
 }) => {
     const avatar = isUser ? userAvatar : char?.avatar;
     const name = isUser ? '我' : char?.name || '未知成员';
 
-    const spacingClass = messageSpacing === 'compact'
-        ? (isLastInGroup ? 'mb-3' : 'mb-0.5')
-        : messageSpacing === 'spacious'
-            ? (isLastInGroup ? 'mb-8' : 'mb-2.5')
-            : (isLastInGroup ? 'mb-6' : 'mb-1.5');
+    const groupBottomGap = timestampPosition === 'top_center'
+        ? (messageSpacing === 'compact' ? 'mb-2.5' : messageSpacing === 'spacious' ? 'mb-6' : 'mb-3.5')
+        : (messageSpacing === 'compact' ? 'mb-3' : messageSpacing === 'spacious' ? 'mb-8' : 'mb-6');
+    const spacingClass = isLastInGroup
+        ? groupBottomGap
+        : (messageSpacing === 'compact' ? 'mb-0.5' : messageSpacing === 'spacious' ? 'mb-2.5' : 'mb-1.5');
     const avatarSizeClass = avatarSize === 'small' ? 'w-7 h-7' : avatarSize === 'large' ? 'w-12 h-12' : 'w-9 h-9';
     const avatarSizePx = avatarSize === 'small' ? 28 : avatarSize === 'large' ? 48 : 36;
     const avatarRadiusClass = avatarShape === 'square' ? 'rounded-sm' : avatarShape === 'rounded' ? 'rounded-xl' : 'rounded-full';
@@ -231,7 +237,10 @@ const GroupMessageItem = React.memo(({
     const [isReplyGestureActive, setIsReplyGestureActive] = useState(false);
 
     // Time formatting
-    const timeStr = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    const timeStr = formatChatTimestamp(msg.timestamp);
+    const showTopTimeDivider = timestampPosition === 'top_center' && startsTimeSegment && showTimestamp !== 'never';
+    const showBelowTimestamp = timestampPosition !== 'top_center' && isLastInGroup && showTimestamp !== 'never';
+    const isWechatTopCapsule = bubbleVariant === 'wechat';
 
     const clearLongPressTimer = () => {
         if (!longPressTimer.current) return;
@@ -420,10 +429,18 @@ const GroupMessageItem = React.memo(({
     };
 
     return (
-        <div
-            className={`${themeScopeClass} sully-chat-message ${isUser ? 'sully-chat-message-user justify-end' : 'sully-chat-message-ai justify-start'} ${isFirstInGroup ? 'sully-chat-message-group-first' : ''} ${isLastInGroup ? 'sully-chat-message-group-last' : ''} flex items-end ${spacingClass} px-3 w-full group relative transition-[padding] duration-300 ${selectionMode ? 'pl-12' : ''}`}
-            style={{ '--sully-chat-message-avatar-size': `${avatarSizePx}px` } as React.CSSProperties}
-        >
+        <>
+            {showTopTimeDivider && (
+                <div className={`sully-chat-time-divider flex justify-center w-full px-3 mt-1.5 mb-3 select-none ${showTimestamp === 'hover' ? 'opacity-0 hover:opacity-100 transition-opacity' : ''}`}>
+                    <span className={`sully-chat-timestamp text-[11px] leading-tight font-normal whitespace-nowrap ${isWechatTopCapsule ? 'bg-black/[0.05] text-[#7f7f7f] px-2.5 py-[3px] rounded-[4px]' : 'text-slate-400 px-2 py-0.5 rounded-md'}`}>
+                        {formatChatTimeDivider(msg.timestamp)}
+                    </span>
+                </div>
+            )}
+            <div
+                className={`${themeScopeClass} sully-chat-message ${isUser ? 'sully-chat-message-user justify-end' : 'sully-chat-message-ai justify-start'} ${isFirstInGroup ? 'sully-chat-message-group-first' : ''} ${isLastInGroup ? 'sully-chat-message-group-last' : ''} flex items-end ${spacingClass} px-3 w-full group relative transition-[padding] duration-300 ${selectionMode ? 'pl-12' : ''}`}
+                style={{ '--sully-chat-message-avatar-size': `${avatarSizePx}px` } as React.CSSProperties}
+            >
             {selectionMode && (
                 <div className="absolute left-3 top-1/2 -translate-y-1/2 cursor-pointer z-20" onClick={handleClick}>
                     <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-violet-500 border-violet-500' : 'border-slate-300 bg-white'}`}>
@@ -477,8 +494,10 @@ const GroupMessageItem = React.memo(({
                     <div className={selectionMode ? 'pointer-events-none' : ''}>
                         <ChatCardSurface message={msg}>{renderContent()}</ChatCardSurface>
                     </div>
-                    {isLastInGroup && showTimestamp !== 'never' && (
-                        <span className={`absolute top-full ${isUser ? 'right-0' : 'left-0'} mt-0.5 px-1 text-[9px] text-slate-400/80 font-medium whitespace-nowrap pointer-events-none ${showTimestamp === 'hover' ? 'opacity-0 group-hover:opacity-100 transition-opacity' : ''}`}>{timeStr}</span>
+                    {showBelowTimestamp && (
+                        <span className={`sully-chat-timestamp-slot absolute top-full ${isUser ? 'right-0' : 'left-0'} mt-0.5 px-1 text-[9px] text-slate-400/80 font-medium whitespace-nowrap pointer-events-none ${showTimestamp === 'hover' ? 'opacity-0 group-hover:opacity-100 transition-opacity' : ''}`}>
+                            <span className="sully-chat-timestamp">{timeStr}</span>
+                        </span>
                     )}
                 </div>
             </div>
@@ -488,7 +507,8 @@ const GroupMessageItem = React.memo(({
                     {renderAvatar()}
                 </div>
             )}
-        </div>
+            </div>
+        </>
     );
 });
 
@@ -1787,6 +1807,7 @@ ${memberTimeline || '(暂无互动记录)'}
                 }
                 : { backgroundImage: 'none' };
     const groupFineTuneCss = buildChatFineTuneCss(osTheme);
+    const timeSegmentStarts = computeTimeSegmentStarts(displayMessages);
     const finalGroupRootClass = acnh
         ? 'h-full w-full flex flex-col overflow-hidden font-sans relative transition-[background-color] duration-500'
         : groupChatRootClass;
@@ -1950,6 +1971,8 @@ ${memberTimeline || '(暂无互动记录)'}
                             bubbleVariant={osTheme.chatBubbleStyle}
                             messageSpacing={osTheme.chatMessageSpacing}
                             showTimestamp={osTheme.chatShowTimestamp}
+                            timestampPosition={osTheme.chatTimestampPosition}
+                            startsTimeSegment={timeSegmentStarts[i]}
                         />
                     );
                 })}
