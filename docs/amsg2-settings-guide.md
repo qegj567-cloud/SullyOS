@@ -116,7 +116,7 @@ APK 使用现有 `getPushStatus()` 和原生 endpoint 检查，不能调用浏�
 
 状态由请求生命周期持有，切出聊天再进入仍可见；旧请求收尾不能覆盖新请求状态。只有 `sendInstantChatTurn` 成功（底层确认 202 与 UUID）才算上云完成，不能用「情绪更新中」判断。强退页面前未完成的准备不承诺恢复；在 App 内换页并不会主动取消这一轮。帮助弹窗采用原生 dialog，关闭只关闭说明，不退出当前设置或聊天。
 
-两个宿主都读取 `OSContext.characters`，保存都调用 `updateCharacter(id, prev => ({ activeMsg2Config: updater(prev.activeMsg2Config) }))`，不会持久化第二份开关。即时对话和开启主动消息立即保存；关闭主动消息沿用原「关闭 2.0」提交与云端清理，未提交时提示关闭尚未保存，不能把表单草稿当作两处已同步的关闭状态。
+两个宿主都读取 `OSContext.characters`，保存都调用 `updateCharacter(id, prev => ({ activeMsg2Config: updater(prev.activeMsg2Config) }))`，不会持久化第二份开关。即时对话和开启主动消息立即保存；关闭主动消息沿用原「关闭 2.0」提交与云端清理，未提交时提示关闭尚未保存，不能把表单草稿当作两处已同步的关闭状态。角色关闭「聊天 · 时间感知强化」时，开启主动消息 2.0 会先展开内联确认卡片说明现实定时与架空剧情时间可能错乱，用户明确确认（`allowWithoutTimeAwareness`）后才开启；在神经链接关闭聊天时间感知时，若角色已启用 2.0，默认引导同步停用并清理云端排期（`utils/amsg2TimeAwarenessGate.ts`），恢复时间感知或停用 2.0 时清除确认标记。
 
 云端管理遵守 `plans/amsg2-cloud-data-management-contract.md`：实际资源清单、持久清理操作、停用与恢复的代次均不改变。普通文件导出默认不带后台连接，用户可以勾选用于自己换机；个人 GitHub / WebDAV 云端备份显式带上连接，不受文件导出的脱敏偏好影响。单用户及多用户的文字／完整包都保留原 userId、地址、密钥、全局开关、通知渠道配置和角色设置／任务记录。媒体补图包仍不恢复文字配置。配置读取失败会中止备份，不再跳过后显示成功。
 

@@ -2,6 +2,9 @@ import { buildHtmlPrompt } from './htmlPrompt';
 import { buildThinkingChainPrompt } from './thinkingChainPrompt';
 import { normalizeTranslationLangLabel } from './translationLang';
 
+/** 双语角色开口前最后一眼的格式提醒：格式说明压在长提示词中间，单靠它模型容易漏标签。 */
+export const BILINGUAL_TAIL_REMINDER = '[Reminder: 每句话必须用 <翻译><原文>...</原文><译文>...</译文></翻译> 标签包裹。一句一个标签。绝对不能省略。]';
+
 /** 聊天与定时主动消息共享用户配置的输出协议。 */
 export function buildChatOutputStylePrompt(input: {
     charName: string;

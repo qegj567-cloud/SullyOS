@@ -41,7 +41,6 @@ describe('read-only character statistics', () => {
         const stats = buildCharacterStats(char, user, range);
         expect(stats.sources.map(s => s.name)).toEqual(expect.arrayContaining(['通话 · CallApp', '见面 · DateApp', '其他 · custom']));
         expect(stats.sources.reduce((n, s) => n + s.count, 0)).toBe(3);
-        expect(stats.recallSnapshot).toBe('');
         expect(stats.otherRows.some(r => r.content.includes('stale'))).toBe(false);
         expect(stats.total).toBe(stats.historyCharacters + stats.memoryCharacters + stats.worldbookCharacters + stats.otherCharacters);
     });

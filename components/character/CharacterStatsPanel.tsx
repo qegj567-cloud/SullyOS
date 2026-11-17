@@ -32,8 +32,15 @@ export default function CharacterStatsPanel({ character, user, emojis = EMPTY_EM
     useEffect(() => {
         let cancelled = false;
         setStats(null); setError(false);
-        Promise.all([loadCharacterContextRange(character), emojis.length ? Promise.resolve(emojis) : DB.getEmojis()]).then(([range, availableEmojis]) => {
-            if (!cancelled) setStats(buildCharacterStats(character, user, range, availableEmojis));
+        Promise.all([
+            loadCharacterContextRange(character),
+            emojis.length ? Promise.resolve(emojis) : DB.getEmojis(),
+            // 门牌不存在角色对象上，统计时现读（纯本地读，不调模型）。
+            character.memoryPalaceEnabled
+                ? import('../../utils/memoryPalace/roomPlates').then(m => m.buildRoomPlatesInjection(character.id, user.name))
+                : Promise.resolve(''),
+        ]).then(([range, availableEmojis, roomPlatesInjection]) => {
+            if (!cancelled) setStats(buildCharacterStats({ ...character, roomPlatesInjection }, user, range, availableEmojis));
         }).catch(() => { if (!cancelled) setError(true); });
         return () => { cancelled = true; };
     }, [character, user, emojis, revision]);
@@ -73,7 +80,6 @@ export default function CharacterStatsPanel({ character, user, emojis = EMPTY_EM
                 <TextRows rows={stats.books.map(({ book, content, status, probability }) => ({ title: book.title || '未命名世界书', content, note: `${statuses[status]}${status === 'probability' ? ` ${probability}%` : ''} · ${WORLDBOOK_POSITION_LABELS[book.position ?? 1]}${book.position === 4 ? ` · 深度 ${book.depth ?? 4} · ${WORLDBOOK_ROLE_LABELS[book.role ?? 0]}` : ''} · 顺序 ${book.order ?? 100}` }))} />
             </details>
             <details className="border-t border-slate-200 py-5"><summary className="cursor-pointer text-sm font-semibold">其他常驻来源 <span className="float-right font-mono text-xs font-normal text-slate-400">{number(stats.otherCharacters)} 字</span></summary><TextRows rows={stats.otherRows} /></details>
-            <details className="border-t border-slate-200 py-5"><summary className="cursor-pointer text-sm font-semibold">宫殿召回快照 <span className="float-right font-mono text-xs font-normal text-slate-400">{number(countContextCharacters(stats.recallSnapshot))} 字</span></summary><p className="my-3 text-[11px] leading-5 text-slate-400">这是上次保存的召回正文，不代表下一次召回，不计入上方总量。实际召回会随问题变化；宫殿关闭时不读取残留内容。</p><TextRows rows={stats.recallSnapshot ? [{ title: '上次召回', content: stats.recallSnapshot }] : []} /></details>
             <details open className="border-t border-slate-200 py-5"><summary className="cursor-pointer text-sm font-semibold">消息来源 <span className="float-right font-mono text-xs font-normal text-slate-400">{stats.sources.reduce((n, s) => n + s.count, 0)} 条</span></summary>
                 <p className="my-3 text-[11px] leading-5 text-slate-400">按消息最初产生的 App 分类。它们位于角色共享记录中，不代表只有对应 App 才能读取；未写入共享记录的独立会话不在此处。</p>
                 {stats.sources.map(source => <div key={source.name} className="border-b border-slate-100 py-3"><div className="flex justify-between gap-3 text-xs"><span className="break-all">{source.name}</span><span className="shrink-0 font-mono text-slate-500">{number(source.characters)} 字</span></div><div className="mt-2 flex items-center gap-3"><div className="h-1 flex-1 rounded-full bg-slate-100"><div className="h-full rounded-full bg-violet-300" style={{ width: `${stats.historyCharacters ? source.characters / stats.historyCharacters * 100 : 0}%` }} /></div><span className="text-[10px] text-slate-400">{source.count} 条</span></div></div>)}

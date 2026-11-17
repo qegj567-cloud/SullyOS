@@ -1,4 +1,4 @@
-import { buildChatOutputStylePrompt, readChatTranslationConfig } from './chatOutputStylePrompt';
+import { BILINGUAL_TAIL_REMINDER, buildChatOutputStylePrompt, readChatTranslationConfig } from './chatOutputStylePrompt';
 import { buildReproductionTask, DIAGNOSTIC_NAMESPACE, diagnosticRunId, type DiagnosticEvent } from './amsgReproduction';
 import { resolveDialogueApi } from './characterApi';
 import { isAnthropicEndpoint } from './llmEndpoint';
@@ -726,6 +726,15 @@ const formatHistoryLine =(role: string, content: any, char: CharacterProfile, us
   return `【${speaker}】\n${text.trim()}`;
 };
 
+/**
+ * 召回正文里的「（今天）」「（距今约 3 天）」「（剩余 2 天）」按召回那一刻算，模板到点才渲染，
+ * 隔夜触发就会把昨天的事说成今天。只去掉这层相对距离，绝对日期保留——
+ * 到点由 worker 填当前时间，角色自己能算出隔了多久。格式见 formatMemoryDateWithDistance。
+ */
+const stripRecallDayDistance = (text: string): string => text
+  .replace(/(\d{4}年\d{1,2}月\d{1,2}日)（(?:今天|距今约\d+天|约\d+天后)）/g, '$1')
+  .replace(/（剩余 \d+ 天）/g, '');
+
 const buildTimeGapHint = async (charId: string) => {
   // includeProcessed=true：最近的互动刚被自动归档进记忆宫殿时，锚点时间戳也不能丢。
   const recentMessages = await DB.getRecentMessagesByCharId(charId, 200, true);
@@ -788,15 +797,14 @@ export const buildFirePack = async (
      * 即时 fire 自己要读它们（sceneSong、锚点、任务清单块）。
      */
     templateStub?: boolean;
+    /** 即时对话这一轮私聊刚算好的召回与门牌；给了就直接用，不再检索第二遍。 */
+    palaceRecall?: Pick<CharacterProfile, 'memoryPalaceInjection' | 'roomPlatesInjection'>;
   },
 ): Promise<AmsgFirePack> => {
   const templateStub = opts?.templateStub === true;
-  // 请求内副本：门牌常驻但内容会变，每次从本机重读，不能沿用 UI 挂着的旧注入。
-  char = { ...char, roomPlatesInjection: '' };
-  if (!templateStub && char.memoryPalaceEnabled) {
-    const { buildRoomPlatesInjection } = await import('./memoryPalace/roomPlates');
-    char.roomPlatesInjection = await buildRoomPlatesInjection(char.id, userProfile.name);
-  }
+  // 请求内副本：召回与门牌只认这次现算（或本轮私聊刚算）的，角色对象上挂着的可能是
+  // 别的 App、甚至很久以前的召回，一律不用。
+  char = { ...char, memoryPalaceInjection: '', roomPlatesInjection: '' };
   const [{ lastUserMessageAt, lastAwayAnchorAt }, recentMessages, library, schedule] = await Promise.all([
     buildTimeGapHint(char.id),
     templateStub ? Promise.resolve([]) : loadCharacterContextMessages(char),
@@ -813,6 +821,17 @@ export const buildFirePack = async (
         })
       : Promise.resolve(null),
   ]);
+  if (!templateStub && char.memoryPalaceEnabled) {
+    if (opts?.palaceRecall) {
+      Object.assign(char, opts.palaceRecall);
+    } else {
+      // 自适应上下文的原文只到宫殿水位为止，刚归档的内容（比如一场见面）只能靠召回取回；
+      // 不跑这一步，云端角色对刚归档的事一无所知。查询用的就是下面要烘进模板的同一份近史。
+      const { injectMemoryPalace } = await import('./memoryPalace/pipeline');
+      await injectMemoryPalace(char, recentMessages, undefined, userProfile.name, { entryPoint: 'proactive_chat' });
+    }
+    char.memoryPalaceInjection = stripRecallDayDistance(char.memoryPalaceInjection || '');
+  }
   // 角色的时间参照系：开了自定义时区用角色的，没开用设备的。worker 渲染一切给角色看的
   // 时间（当前时间、日程日期、排程清单）都按它来。
   const charTz = resolveCharTimeZone(char);
@@ -888,6 +907,10 @@ export const buildFirePack = async (
     char,
     userProfile,
     emojis,
+    undefined,
+    // 模板里放不下原图，有识图描述就用描述（与私聊同一份），没有就明说别猜；
+    // 剧情副本错序兜底也与私聊一致。
+    { useVisionDescriptions: true, protectPendingChatTurn: true },
   ).apiMessages
     .map((message) => formatHistoryLine(message.role, message.content, char, userProfile))
     .join('\n\n');
@@ -947,6 +970,8 @@ export const buildFirePack = async (
     // 到点说不说由角色自己判（见 amsgFirePack 的 BEFORE_SPEAK_LINES）。
     ...BEFORE_SPEAK_LINES,
     '',
+    // 双语格式说明在【角色系统设定】中段，私聊靠末尾提醒兜住，这里同样补在人声锚之前。
+    ...(outputStyle.bilingualActive ? [BILINGUAL_TAIL_REMINDER, ''] : []),
     // recency 末位人声锚：上面【角色系统设定】里已带「回到你自己」钢印，但被任务说明压在后面、
     // 失了 recency。这里在最后一句把它拎回来，让主动消息也从「你这个人」长出来，而不是滑回均值腔。
     `（开口前回到你自己：这条得是 ${char.name} 会发的那一条——语气、用词、节奏都只属于你。哪怕只是随口一句，也要是你。）`,
@@ -3223,6 +3248,8 @@ export const ActiveMsgClient = {
     userProfile: UserProfile;
     groups: GroupProfile[];
     realtimeConfig: RealtimeConfig;
+    /** 这一轮私聊刚算好的召回与门牌；随行快照直接复用，发送路径上不再检索第二遍。 */
+    palaceRecall?: Pick<CharacterProfile, 'memoryPalaceInjection' | 'roomPlatesInjection'>;
     /**
      * 这一轮的情绪评估（副 API 提示词 + 凭据），交给云端跑。
      * 走 taskPayload —— 那份是端到端加密的信封，凭据不会以明文出门。
@@ -3256,7 +3283,7 @@ export const ActiveMsgClient = {
     const templateStub = !isAmsg2EnabledForChar(char)
       && (char.activeMsg2Config?.tasks?.length ?? 0) === 0;
     const firePack: AmsgFirePack = {
-      ...(await buildFirePack(char, userProfile, groups, realtimeConfig, undefined, { templateStub })),
+      ...(await buildFirePack(char, userProfile, groups, realtimeConfig, undefined, { templateStub, palaceRecall: params.palaceRecall })),
       // 先还原图片令牌再算体积预算——反过来会让一份「看着没超」的包在云端胀成几 MB，
       // 而 worker 那边根本解不开令牌（见 resolveChatMessagesForUpload）。
       chat: {

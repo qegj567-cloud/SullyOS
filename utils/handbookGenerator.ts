@@ -22,6 +22,7 @@ import { loadCharacterContextMessages } from './chatContextRange';
 import { safeResponseJson, extractJson } from './safeApi';
 import { ContextBuilder } from './context';
 import { getLocalDayRange } from './localDate';
+import { injectMemoryPalace } from './memoryPalace/pipeline';
 
 // 局部 seedFloat — composePageLayout 用 (不引用 components/ 避免 utils → components 反向依赖).
 // FNV-1a + xorshift, 与 paper.tsx 里同名函数行为一致.
@@ -554,7 +555,10 @@ export async function generateLifestreamPage(
     //   /user profile/impression(完整含 likes/triggers/comfort/changes)
     //   /refinedMemories/activeMemoryMonths 详细日志/memoryPalace/buff
     //   是聊天系统在用的 source of truth,改它会自动跟进
-    const characterContextInput = { char, user: userProfile, includeDetailedMemories: true };
+    // 召回结果只挂在本次请求的副本上：角色对象上不存召回，也不能读别处留下的旧值。
+    const recallChar = { ...char, memoryPalaceInjection: '', roomPlatesInjection: '' };
+    await injectMemoryPalace(recallChar, undefined, undefined, userProfile.name);
+    const characterContextInput = { char: recallChar, user: userProfile, includeDetailedMemories: true };
 
 
     // ─── 1b. ta 实际怎么说话 — buildCoreContext 没的,得自己补 ──

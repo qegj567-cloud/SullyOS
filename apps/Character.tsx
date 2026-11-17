@@ -35,6 +35,11 @@ import { normalizeUserImpression } from '../utils/impression';
 import { parseGeneratedImpression } from '../utils/impressionGeneration';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { COMMON_TIMEZONES } from '../utils/timezone';
+import {
+    clearTimeAwarenessOverride,
+    disableCharacterAmsg2Schedule,
+    shouldPromptDisableAmsg2OnTimeAwarenessOff,
+} from '../utils/amsg2TimeAwarenessGate';
 import { toMountedWorldbook } from '../utils/worldbook';
 import { stripSensitiveCardFields } from '../utils/characterCard';
 import { shareOrDownloadFile } from '../utils/shareExport';
@@ -185,6 +190,8 @@ const Character: React.FC = () => {
   const [cloudCleanupFailTarget, setCloudCleanupFailTarget] = useState<string | null>(null);
   // 删除要先 await 云端任务取消（名下有 amsg2 任务时），期间锁住按钮防连点。
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showTimeAwareAmsgModal, setShowTimeAwareAmsgModal] = useState(false);
+  const [isDisablingAmsgFromTimeAware, setIsDisablingAmsgFromTimeAware] = useState(false);
   const [showWorldbookModal, setShowWorldbookModal] = useState(false); // New Modal
   // 挂载世界书弹窗：搜索词 + 当前展开的分组（分组默认折叠，避免全量条目一次性渲染卡爆）
   const [wbModalSearch, setWbModalSearch] = useState('');
@@ -318,6 +325,7 @@ const Character: React.FC = () => {
   // Sync Ref with State
   useEffect(() => {
       editingIdRef.current = editingId;
+      setShowTimeAwareAmsgModal(false);
   }, [editingId]);
 
   // CRITICAL FIX: Breaking the render loop.
@@ -408,6 +416,68 @@ const Character: React.FC = () => {
           if (!prev) return null;
           return { ...prev, [field]: value };
       });
+  };
+
+  // 关闭「聊天 · 时间感知强化」时：主动消息 2.0 依赖现实时间调度与作息，若当前角色正开着 2.0，
+  // 默认引导一并停用并清远端排期；用户必须主动点确认才能保留 2.0。
+  const handleToggleChatTimeAwareness = () => {
+      if (!formData) return;
+      if (formData.timeAwarenessEnabled === false) {
+          setFormData(prev => prev ? {
+              ...prev,
+              timeAwarenessEnabled: true,
+              activeMsg2Config: clearTimeAwarenessOverride(prev.activeMsg2Config),
+          } : null);
+          return;
+      }
+      if (shouldPromptDisableAmsg2OnTimeAwarenessOff(formData)) {
+          setShowTimeAwareAmsgModal(true);
+          return;
+      }
+      handleChange('timeAwarenessEnabled', false);
+  };
+
+  const confirmDisableTimeAwarenessAndAmsg2 = async () => {
+      if (!formData || isDisablingAmsgFromTimeAware) return;
+      const targetChar = characters.find(c => c.id === formData.id) ?? formData;
+      const targetId = targetChar.id;
+      setIsDisablingAmsgFromTimeAware(true);
+      try {
+          const outcome = await disableCharacterAmsg2Schedule(targetChar);
+          if (outcome.cleanupFailed) {
+              addToast('ta 在云端的聊天上下文没能清掉，可以稍后进主动消息 2.0 面板再关一次。', 'error');
+          }
+          if (editingIdRef.current === targetId) {
+              setFormData(prev => prev && prev.id === targetId ? {
+                  ...prev,
+                  timeAwarenessEnabled: false,
+                  activeMsg2Config: outcome.applyToConfig(prev.activeMsg2Config),
+              } : prev);
+          } else {
+              updateCharacter(targetId, prev => ({
+                  timeAwarenessEnabled: false,
+                  activeMsg2Config: outcome.applyToConfig(prev.activeMsg2Config),
+              }));
+          }
+          addToast(`已关闭聊天时间感知。${outcome.toastMessage}`, outcome.toastType);
+          setShowTimeAwareAmsgModal(false);
+      } finally {
+          setIsDisablingAmsgFromTimeAware(false);
+      }
+  };
+
+  const confirmKeepAmsg2WithoutTimeAwareness = () => {
+      if (!formData || isDisablingAmsgFromTimeAware) return;
+      setFormData(prev => prev ? {
+          ...prev,
+          timeAwarenessEnabled: false,
+          activeMsg2Config: {
+              ...(prev.activeMsg2Config ?? { enabled: true }),
+              allowWithoutTimeAwareness: true,
+          },
+      } : null);
+      setShowTimeAwareAmsgModal(false);
+      addToast('已关闭聊天时间感知并保留主动消息 2.0（主动消息仍按现实时间运行）。', 'info');
   };
 
   // Worldbook Logic
@@ -1488,12 +1558,17 @@ ${isInitialGeneration ? `
                                            <p className="text-[10px] text-slate-400 mt-0.5 leading-relaxed">默认开。开启后角色会知道现实时间和你们多久没聊；关掉后不再提供现实时间与消息时间戳，更适合架空剧情。</p>
                                        </div>
                                        <button
-                                           onClick={() => handleChange('timeAwarenessEnabled', formData.timeAwarenessEnabled === false)}
+                                           onClick={handleToggleChatTimeAwareness}
                                            className={`w-12 h-7 rounded-full transition-colors relative shrink-0 ${formData.timeAwarenessEnabled !== false ? 'bg-primary' : 'bg-slate-200'}`}
                                        >
                                            <div className={`absolute top-0.5 w-6 h-6 bg-white rounded-full shadow-md transition-transform ${formData.timeAwarenessEnabled !== false ? 'translate-x-5' : 'translate-x-0.5'}`}></div>
                                        </button>
                                    </div>
+                                   {formData.timeAwarenessEnabled === false && formData.activeMsg2Config?.enabled === true && (
+                                       <p className="mt-2 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-[11px] leading-relaxed text-amber-800">
+                                           当前仍开着主动消息 2.0：后台定时与角色作息继续按现实时间（或角色时区）运行，可能与架空剧情时段不一致。
+                                       </p>
+                                   )}
                                </div>
 
                                {/* 2. 自定义时区（异国恋等） */}
@@ -2189,6 +2264,43 @@ ${isInitialGeneration ? `
                 <span className="text-xs text-red-400 font-bold">选「仍然删除」的话，残留的任务之后可能仍会到点推送</span>
                 <span className="text-xs text-slate-400">——可以去设置 → 主动消息 2.0 → 云端数据管理继续检查。</span>
             </p>
+        </Modal>
+
+        <Modal
+            isOpen={showTimeAwareAmsgModal}
+            title="关闭时间感知将停用主动消息 2.0"
+            onClose={() => { if (!isDisablingAmsgFromTimeAware) setShowTimeAwareAmsgModal(false); }}
+            footer={<div className="flex flex-col gap-2 w-full">
+                <button
+                    type="button"
+                    onClick={() => void confirmDisableTimeAwarenessAndAmsg2()}
+                    disabled={isDisablingAmsgFromTimeAware}
+                    className="w-full py-3 bg-primary text-white font-bold rounded-2xl active:scale-95 transition-transform disabled:opacity-50"
+                >{isDisablingAmsgFromTimeAware ? '停用中...' : '关闭时间感知并停用 2.0'}</button>
+                <div className="flex gap-2 w-full">
+                    <button
+                        type="button"
+                        onClick={() => setShowTimeAwareAmsgModal(false)}
+                        disabled={isDisablingAmsgFromTimeAware}
+                        className="flex-1 py-2.5 bg-slate-100 text-slate-600 rounded-2xl text-xs font-bold active:scale-95 transition-transform disabled:opacity-50"
+                    >取消</button>
+                    <button
+                        type="button"
+                        onClick={confirmKeepAmsg2WithoutTimeAwareness}
+                        disabled={isDisablingAmsgFromTimeAware}
+                        className="flex-[1.6] py-2.5 bg-amber-50 border border-amber-200 text-amber-800 rounded-2xl text-xs font-bold active:scale-95 transition-transform disabled:opacity-50"
+                    >我知道自己在做什么，保留 2.0</button>
+                </div>
+            </div>}
+        >
+            <div className="space-y-2.5 py-2 text-sm text-slate-600 leading-relaxed">
+                <p>
+                    主动消息 2.0 按现实时间（或角色时区）定时触发、读取当日作息并安排后续联系，无法跟随架空剧情里的虚拟时间推进。
+                </p>
+                <p className="text-xs text-slate-500">
+                    关闭「聊天 · 时间感知强化」后，默认会一并停用该角色的主动消息 2.0 并取消待发排期；强行保留可能出现早晚问候、作息与剧情时段错乱等问题。
+                </p>
+            </div>
         </Modal>
     </div>
   );

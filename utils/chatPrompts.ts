@@ -160,6 +160,16 @@ export const detectChatModeTransition = (messages: readonly Message[]): ChatMode
  * | 群聊背景的「约 X 分钟前」 | 打包时的「刚才」到点变成昨天 | 保留绝对时间戳 |
  * | 生活记录的代记工具说明 | 后台没有用户新说的话，记下来的一定是重复或臆造 | 不补（摘要数据仍保留） |
  * | `[schedule_message]` 教学 | 排的是浏览器里的本地定时消息，App 关着没人派发 | worker 追加自己的排程工具说明 |
+ * | 协同功能里「系统另给已有文件标题」那句 | 文件柜清单只在私聊请求里拼，模板里没有，留着这句角色会编文件或说没有 | 不补 |
+ * | 彼方称号 | 游戏内装饰信息，主动开口用不上，带上反而容易拿它开场 | 不补 |
+ *
+ * 记忆宫殿召回与门牌不在这张表里：它们照常进模板，由 buildFirePack 打包时现跑一次召回
+ * （即时对话复用本轮刚算的），只去掉按召回时刻算的「今天 / 距今约 N 天」。
+ *
+ * buildFirePack 不走 buildChatRequestPayload，后者每轮另拼的这些块也不进模板：
+ * 语境分析与谈话参与原则（分析的是「用户刚说的这句」，主动消息没有这一句）、
+ * 小程序 / 瑞一杯快照与串门申请（都是用户此刻开着的界面状态）、
+ * SAR 模块说明与输出容器（worker 只在即时对话里拆 SAR 信封，定时触发会把容器原样发给用户）。
  */
 export interface PromptBuildOptions {
     /** Other conversation surfaces replace only app rules; shared context and recency stay identical. */
@@ -983,7 +993,7 @@ ${xhsEnabled ? `${[notionEnabled, feishuEnabled, notionNotesEnabled].filter(Bool
             baseSystemPrompt += `
 
 ### 协同功能
-你在普通聊天。需要处理文件时，可引导${userProfile.name}从 ChatApp 加号页进入“协同工作”；不要在这里假装制作。系统另给已有文件标题，可按规则发送。
+你在普通聊天。需要处理文件时，可引导${userProfile.name}从 ChatApp 加号页进入“协同工作”；不要在这里假装制作。${forFirePack ? '' : '系统另给已有文件标题，可按规则发送。'}
 `;
         }
 
