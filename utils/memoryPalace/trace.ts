@@ -23,6 +23,7 @@ export const DEFAULT_MEMORY_PALACE_FEATURE_FLAGS: MemoryPalaceFeatureFlags = Obj
 export type RecallEntryPoint =
     | 'chat_app'
     | 'home_3d'
+    | 'companion'
     | 'collaboration'
     | 'emotion_eval'
     | 'proactive_chat'
@@ -33,7 +34,7 @@ export type RecallEntryPoint =
 
 /** Direct conversation surfaces share recall and conversational guidance. */
 export const isChatConversationEntry = (entry?: RecallEntryPoint): boolean =>
-    entry === 'chat_app' || entry === 'home_3d';
+    entry === 'chat_app' || entry === 'home_3d' || entry === 'companion';
 
 export type RecallOutcome =
     | 'success'

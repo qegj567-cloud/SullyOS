@@ -150,7 +150,7 @@ const SettingsSection: React.FC<{
     const [open, setOpen] = useState(() => title === 'API 配置' && guideStep === 0);
     const sectionRef = useRef<HTMLElement>(null);
     const [focusRequest, setFocusRequest] = useState(0);
-    useSettingsFocus(title === 'API 配置' ? 'api' : undefined, () => {
+    useSettingsFocus(title === 'API 配置' ? 'api' : title === '识图 API' ? 'vision' : title === '其他 API' ? 'voice' : undefined, () => {
         setOpen(true); setFocusRequest(value => value + 1);
     });
     useEffect(() => {

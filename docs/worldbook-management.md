@@ -31,6 +31,8 @@
 
 ## 全 App 世界书构建管线
 
+同行 demo 的 a′ 复用 `buildChatRequestPayload` 和本节完整管线；a 全文在召回之后、世界书解析之前作为临时 assistant 消息拼入，深度/关键词同轮处理一次。用户明确要求轻量接话 a 缩短提示词、不等召回，因此 `ContextBuilder.buildCompanionQuickRequest` 是专用例外：只读用户可编辑的简短设定、近段交流和现场，不读取世界书或完整记忆，不声称与完整人设等价。其他入口不使用此轻量方法。详见 [同行 demo](companion-demo.md)。
+
 新 App 的默认入口是 `await ContextBuilder.buildCharacterRequest({ char, user }, messages)`，返回可直接发送的完整消息数组。角色档案、挂载世界书、固定位置和指定深度一次装配；不要先拼 `buildCoreContext` 再调用它，否则会重复人设。App 只负责本次玩法规则、输出格式和本场景历史。
 
 `buildCharacterContext({ char, user, history, instructions })` 是需要拆分主提示词与历史的同一管线接口（聊天、见面、通话使用）。`buildWorldbookRequest` 服务剧场的自定义预设布局，`buildGroupWorldbookRequest` 服务多人布局；这些都在 ContextBuilder 内调用同一解析器和深度放置器。App 不得直接调用世界书解析/插入函数。

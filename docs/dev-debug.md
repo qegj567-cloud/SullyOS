@@ -478,3 +478,7 @@ Resource Timing: responseStatus=429, transferSize=0 → 对方其实回了 HTTP 
 ### 3D 素材的正常取消
 
 `Home3DView` 将实际编辑器初始化推迟到微任务，跳过 StrictMode 已清理的首次 effect，不发出废弃的素材请求。卸载时由 signal 通知编辑器清理，取消原因标记为 `Home3D disposed`。全局 fetch 日志只对 room3d 路径、信号确已取消且原因为该标记的 AbortError 不生成网络故障日志；仍把异常交回调用方。未标记取消、超时、HTTP 失败和真实联网失败保持原有诊断。回归：homeEditorLifecycle / homeAssetCancellation / networkFailureDiagnosis。
+
+### 同行 demo 的本轮调试
+
+同行输入区上方提供默认收起的「本轮调试」，直接查看短回复、召回、上下文准备、长回复和播放的同轴时间线，以及两次实际交给共享传输层的完整请求消息。它是用户主动要求的 demo 内检查入口，不依赖全局扳手解锁或 capture 开关；只在同行页面内存保留最近 5 轮，换角色/离开清空，不写全局日志、持久存储或遥测，不记录请求地址与鉴权头。迟到结果无法更新已打断轮次。实现位于 `utils/companion/debug.ts` 与 `components/companion/CompanionDebugPanel.tsx`，计时口径和读图例子见 [同行 demo](./companion-demo.md#同行内的调试面板)。

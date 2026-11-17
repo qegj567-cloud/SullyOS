@@ -69,6 +69,7 @@ export const Icons: Record<string, React.FC<{ className?: string }>> = {
   Songwriting: ({ className }) => <MusicNotes className={className} weight="regular" />,
   Music: ({ className }) => <MusicNotes className={className} weight="regular" />,
   Call: ({ className }) => <PhoneCall className={className} weight="regular" />,
+  Companion: ({ className }) => <Compass className={className} weight="regular" />,
   Guidebook: ({ className }) => <Crosshair className={className} weight="regular" />,
   LifeSim: ({ className }) => <Smiley className={className} weight="regular" />,
   MemoryPalace: ({ className }) => <Brain className={className} weight="regular" />,
@@ -85,6 +86,7 @@ export const INSTALLED_APPS: AppConfig[] = [
   { id: AppID.MemoryPalace, name: '记忆宫殿', icon: 'MemoryPalace', color: 'violet' },
   { id: AppID.Chat, name: 'Message', icon: 'Chat', color: 'green' },
   { id: AppID.Call, name: '电话', icon: 'Call', color: 'emerald' },
+  { id: AppID.Companion, name: '同行', icon: 'Companion', color: 'emerald' },
   { id: AppID.GroupChat, name: '群聊', icon: 'GroupChat', color: 'violet' },
   { id: AppID.Room, name: '小小窝', icon: 'Room', color: 'rose' },
   // 家园不再做独立桌面图标，改从「小小窝 · 像素家园」里进入（openApp(AppID.WorldHome) 仍可渲染）

@@ -58,6 +58,7 @@ const BrowserApp = lazyApp(() => import('../apps/BrowserApp'));
 const SongwritingApp = lazyApp(() => import('../apps/SongwritingApp'));
 const MusicApp = lazyApp(() => import('../apps/MusicApp'));
 const CallApp = lazyApp(() => import('../apps/CallApp'));
+const CompanionApp = lazyApp(() => import('../apps/CompanionApp'));
 const VoiceDesignerApp = lazyApp(() => import('../apps/VoiceDesignerApp'));
 const GuidebookApp = lazyApp(() => import('../apps/GuidebookApp'));
 const LifeSimApp = lazyApp(() => import('../apps/LifeSimApp'));
@@ -88,6 +89,7 @@ let idlePreloadCursor = 0;
 // AppID → 懒加载组件，供「按下即预取」复用同一个模块 Promise。
 // AppID 由下方 import 引入，ES 模块提升后全模块可用。
 const APP_BY_ID: Partial<Record<AppID, PreloadableLazy>> = {
+  [AppID.Companion]: CompanionApp,
   [AppID.Settings]: Settings, [AppID.Character]: Character, [AppID.Chat]: Chat,
   [AppID.GroupChat]: GroupChat, [AppID.ThemeMaker]: ThemeMaker, [AppID.Appearance]: Appearance,
   [AppID.Gallery]: Gallery, [AppID.Date]: DateApp, [AppID.User]: UserApp,
@@ -1044,6 +1046,7 @@ const PhoneShell: React.FC = () => {
       case AppID.Songwriting: return <SongwritingApp />;
       case AppID.Music: return <MusicApp />;
       case AppID.Call: return <CallApp />;
+      case AppID.Companion: return <CompanionApp />;
       case AppID.VoiceDesigner: return <VoiceDesignerApp />;
       case AppID.Guidebook: return <GuidebookApp />;
       case AppID.LifeSim: return <LifeSimApp />;

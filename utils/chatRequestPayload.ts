@@ -57,7 +57,14 @@ export interface BuildChatPayloadInput {
     /** Local phase timings only; no request content or telemetry. */
     onPreparationStage?: (event:ChatPreparationEvent)=>void;
     /** Replace ChatApp output/tool rules, retaining the same context pipeline and ordering. */
-    appPrompt?: { rules: string; scene: string; messages?: Array<{role: 'user' | 'assistant'; content: string}> };
+    appPrompt?: {
+        rules: string;
+        scene: string;
+        messages?: Array<{role: 'user' | 'assistant'; content: string}>;
+        /** A live companion can recall while its first reply is being generated.
+         * Resolve the planned utterance AFTER recall, BEFORE worldbook scanning/depth placement. */
+        prepareMessages?: () => Promise<Array<{role: 'user' | 'assistant'; content: string}>>;
+    };
     /** Present only while ChatApp is embedded in the home phone; never persisted. */
     homePhoneContext?: string;
     char: CharacterProfile;
@@ -274,6 +281,8 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         for (const message of selectedHistory) uniqueMessages.set(message.id, message);
         const visionAppMeta = input.recallEntryPoint === 'home_3d'
             ? { appId: 'room3d', appName: '3D家园' }
+            : input.recallEntryPoint === 'companion'
+                ? { appId: 'companion', appName: '同行' }
             : input.recallEntryPoint === 'collaboration'
                 ? { appId: 'collaboration', appName: '协同工作' }
                 : input.recallEntryPoint === 'vr_world'
@@ -378,6 +387,10 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
     const cleanedApiMessages = cleanApiMessages(input.stripImages ? flattenImageContentParts(apiMessages) : apiMessages);
     // Scene materials participate in keyword/depth handling, without fake private-message IDs.
     if (input.appPrompt?.messages) cleanedApiMessages.push(...input.appPrompt.messages);
+    if (input.appPrompt?.prepareMessages) {
+        cleanedApiMessages.push(...await input.appPrompt.prepareMessages());
+        input.signal?.throwIfAborted();
+    }
 
     const parts = await prepare('prompt',()=>ChatPrompts.buildSystemPromptParts(
         char, userProfile, groups, emojis, categories, recentMsgsHint,

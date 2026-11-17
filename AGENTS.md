@@ -8,6 +8,8 @@
 
 ## 文档地图
 
+同行独立 App、轻量接话 / 完整上下文续答、持续看听和打断：先读 [`docs/companion-demo.md`](./docs/companion-demo.md)。不接入 CallApp 管线；长回复复用 ChatApp 组装器与公共上下文范围。
+
 静态资源、Service Worker 缓存、离线启动或网页更新：先读 [`docs/static-resource-cache.md`](./docs/static-resource-cache.md)。不得注销推送 SW、清应用数据库或按整个 `/assets/` 目录设置 immutable。
 
 | 主题 | 文档 | 什么时候看 |
