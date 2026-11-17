@@ -9,14 +9,23 @@ import { useLocalBackHandler } from '../../hooks/useLocalBackHandler';
 import { COMPANION_SETUP_LINKS as links, COMPANION_VOICE_GUIDES, companionDialogueReady, type CompanionSetupTarget } from '../../utils/companion/setup';
 import { companionVideoReady, type CompanionImageMode } from '../../utils/companion/vision';
 import { normalizeApiBaseUrl, normalizeApiCredential, normalizeApiModel } from '../../utils/apiConfigNormalize';
+import { COMPANION_VIDEO_PROVIDERS, type CompanionVideoProvider } from '../../utils/companion/videoProviders';
+import { clipUploadBase } from '../../utils/companion/videoUpload';
+import uploadWorkerSource from '../../worker/companion-video/index.js?raw';
 
 function VideoApiFields({ config, save }: { config?: CompanionVideoApiConfig; save?: (config: CompanionVideoApiConfig) => void }) {
-  const [baseUrl, setBaseUrl] = useState(config?.baseUrl ?? '');
-  const [model, setModel] = useState(config?.model ?? '');
+  const [provider, setProvider] = useState<CompanionVideoProvider>(config ? config.provider ?? 'custom' : 'doubao');
+  const [baseUrl, setBaseUrl] = useState(config?.baseUrl ?? COMPANION_VIDEO_PROVIDERS.doubao.baseUrl);
+  const [model, setModel] = useState(config?.model ?? COMPANION_VIDEO_PROVIDERS.doubao.model);
   const [key, setKey] = useState('');
   const [clearKey, setClearKey] = useState(false);
   const [message, setMessage] = useState('');
-  const sameEndpoint = normalizeApiBaseUrl(baseUrl) === config?.baseUrl;
+  const [uploadBase, setUploadBase] = useState(config?.upload?.baseUrl ?? '');
+  const [uploadToken, setUploadToken] = useState('');
+  const [clearUploadToken, setClearUploadToken] = useState(false);
+  const guide = COMPANION_VIDEO_PROVIDERS[provider];
+  const sameEndpoint = normalizeApiBaseUrl(baseUrl) === config?.baseUrl && provider === (config?.provider ?? 'custom');
+  const retainedUploadToken = !clearUploadToken && provider === config?.provider && uploadBase.trim().replace(/\/+$/, '') === config?.upload?.baseUrl ? config?.upload?.token ?? '' : '';
   return <form className="companion-video-fields" onSubmit={event => {
     event.preventDefault();
     if (!save) return;
@@ -26,15 +35,49 @@ function VideoApiFields({ config, save }: { config?: CompanionVideoApiConfig; sa
       if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error('请填写有效的 HTTP(S) Base URL');
       const normalizedModel = normalizeApiModel(model);
       if (!normalizedModel) throw new Error('请填写支持视频输入的模型 ID');
-      save({ baseUrl: url, model: normalizedModel, apiKey: normalizeApiCredential(key) || (!clearKey && sameEndpoint ? config?.apiKey ?? '' : '') });
-      setKey(''); setClearKey(false); setMessage('已保存。返回同行开启镜头后，才会录制并发送视频。');
+      let upload: CompanionVideoApiConfig['upload'];
+      if (provider === 'zhipu') {
+        if (!uploadBase.trim()) throw new Error('智谱需配置临时视频上传服务，见下方部署指引');
+        const token = normalizeApiCredential(uploadToken) || retainedUploadToken;
+        if (!token) throw new Error('请填写临时上传口令，与智谱 API Key 分开');
+        upload = { baseUrl: clipUploadBase(uploadBase), token };
+      }
+      save({ provider, baseUrl: url, model: normalizedModel, apiKey: normalizeApiCredential(key) || (!clearKey && sameEndpoint ? config?.apiKey ?? '' : ''), ...(upload ? { upload } : {}) });
+      setKey(''); setUploadToken(''); setClearKey(false); setClearUploadToken(false); setMessage('已保存。返回同行开启镜头后，才会录制并发送视频。');
     } catch (error) { setMessage(error instanceof Error ? error.message : '保存失败'); }
   }}>
+    <label className="companion-setup-provider">视频服务商<select aria-label="视频服务商" value={provider} onChange={event => {
+      const next = event.target.value as CompanionVideoProvider;
+      setProvider(next); setBaseUrl(COMPANION_VIDEO_PROVIDERS[next].baseUrl); setModel(COMPANION_VIDEO_PROVIDERS[next].model);
+      setKey(''); setClearKey(true); setUploadBase(''); setUploadToken(''); setClearUploadToken(true); setMessage('已切换草稿，请填写对应凭据并保存。');
+    }}>{Object.entries(COMPANION_VIDEO_PROVIDERS).map(([id, item]) => <option key={id} value={id}>{item.name}</option>)}</select></label>
+    <p>{guide.note}</p>
+    <div className="companion-setup-links"><ExternalLink href={guide.signup}>注册 / 登录{guide.name}</ExternalLink><ExternalLink href={guide.keys}>获取视频模型 Key</ExternalLink><ExternalLink href={guide.docs}>视频输入文档</ExternalLink></div>
     <label>视频 API Base URL<input aria-label="视频 API Base URL" type="url" required value={baseUrl} onChange={event => setBaseUrl(event.target.value)} placeholder="填写平台的 OpenAI 兼容地址"/></label>
     <label>视频模型 ID<input aria-label="视频模型 ID" required value={model} onChange={event => setModel(event.target.value)} placeholder="账号已开通的视频理解模型"/></label>
     <label>视频 API Key<input aria-label="视频 API Key" type="password" autoComplete="off" value={key} onChange={event => setKey(event.target.value)} placeholder={config?.apiKey && sameEndpoint && !clearKey ? '已保存，留空保留原 Key' : '粘贴 Key；无 Key 代理可留空'}/></label>
     {config?.apiKey && <label className="companion-image-choice"><input type="checkbox" checked={clearKey} onChange={event => setClearKey(event.target.checked)}/>保存时移除旧 Key</label>}
-    <small>只用于同行视频理解。修改地址时不会复用旧 Key；请同时填写对应凭据。与其他 API 设置一起保存在本机，随系统配置备份。</small>
+    <small>只用于同行视频理解。切换服务商或修改地址时不会复用旧 Key；请同时填写对应凭据。模型 ID 可修改，需选支持视频输入的型号。配置保存在本机，随系统配置备份。</small>
+    {provider === 'zhipu' && <>
+      <p>录像先上传到你配置的临时存储，再由智谱读取。示例服务的链接 120 秒到期，请求结束后尝试删除；断网遗留由定时任务清理。未配置时不能开启镜头。</p>
+      <label>临时上传服务地址<input aria-label="临时上传服务地址" type="url" required value={uploadBase} onChange={event => setUploadBase(event.target.value)} placeholder="https://your-video-worker.workers.dev"/></label>
+      <label>临时上传口令<input aria-label="临时上传口令" type="password" autoComplete="off" value={uploadToken} onChange={event => setUploadToken(event.target.value)} placeholder={retainedUploadToken ? '已保存，留空保留原口令' : '自建服务的 UPLOAD_TOKEN，不是模型 Key'}/></label>
+      {config?.upload?.token && <label className="companion-image-choice"><input type="checkbox" checked={clearUploadToken} onChange={event => setClearUploadToken(event.target.checked)}/>保存时移除旧上传口令（需填写新口令）</label>}
+      <details><summary>部署智谱所需的临时上传服务</summary>
+        <ol><li>在自己的 Cloudflare 账号创建私有 R2 bucket 和独立 Worker，粘贴下方下载的代码；不打开 bucket 公共访问。</li>
+          <li>给 Worker 绑定 R2，变量名 CLIPS；设置 Secret UPLOAD_TOKEN（至少 32 位随机字符）。模型 Key 不填到 Worker。</li>
+          <li>设置 ALLOWED_ORIGINS 为本站 origin：<code>{window.location.origin}</code>；多个 origin 用逗号分隔。关闭请求日志采集。</li>
+          <li>添加 Cron Trigger：<code>*/5 * * * *</code>，清理过期录像。建议给 companion-clips/ 前缀另设 1 天 R2 生命周期兜底。</li>
+          <li>将 Worker 的 HTTPS 根地址和上传口令填到上方并保存。它只暂存视频，不转发模型请求；R2 / Workers 可能产生用量费用。</li></ol>
+        <p>临时链接有效期间，知道完整链接的人也可读取。客户端删除不成功时，到期仍会拒绝读取；物理文件由下一次定时清理删除。</p>
+        <div className="companion-setup-links"><ExternalLink href="https://dash.cloudflare.com/">注册 / 登录 Cloudflare</ExternalLink><ExternalLink href="https://developers.cloudflare.com/r2/api/workers/workers-api-usage/">R2 绑定指引</ExternalLink></div>
+        <button type="button" onClick={() => {
+          const url = URL.createObjectURL(new Blob([uploadWorkerSource], { type: 'text/javascript' }));
+          const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'companion-video-worker.js'; anchor.click();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }}>下载独立上传 Worker</button>
+      </details>
+    </>}
     <div className="companion-setup-actions"><button type="submit" disabled={!save}>保存视频 API</button></div>
     {!save && <small>模拟页不保存真实 API，请在主应用的同行中配置。</small>}
     {message && <p role="status">{message}</p>}
@@ -108,15 +151,8 @@ export function CompanionSetupGuide({ char, api, canListen, close, navigate, sav
 
       <section aria-label="视频理解接入"><div className="companion-setup-heading"><h3><span>02</span> 理解一段视频</h3><small>{videoReady ? '已填写' : '待配置'} · 开镜头时需要</small></div>
         <p>摄像头录制约 8 秒的完整无声视频，由独立视频模型理解动作、镜头变化和先后关系，再把文字摘要交给对话模型。下一段录制与分析并行；慢请求只保留最新待分析片段。</p>
-        <p>需要接收 MP4 Base64 视频的 video_url 兼容接口。只有图片理解或视频生成功能的 API 不适用。视频在开启镜头后发送给这里填写的服务商，按平台用量计费；不保存录像。</p>
+        <p>豆包、MiniMax 直接接收完整 MP4；智谱通过你配置的临时上传服务取得视频链接。视频只在开启镜头后发送，按平台用量计费；本机不保存录像。</p>
         <VideoApiFields config={api.companionVideoApi} save={saveVideoApi}/>
-        <details open={!videoReady}><summary>注册与配置：阿里云百炼视频理解</summary>
-          <div className="companion-setup-links"><ExternalLink href={links.qwen.signup}>注册 / 登录百炼</ExternalLink><ExternalLink href={links.qwen.keys}>获取 API Key</ExternalLink><ExternalLink href={links.qwen.docs}>视频理解与模型文档</ExternalLink><ExternalLink href={links.qwen.baseUrls}>各地域 Base URL</ExternalLink></div>
-          <CopyValue label="Base URL" value={links.qwen.baseUrl}/>
-          <p>上方为北京通用地址示例。按控制台复制所在地域和业务空间的实际地址、Key，并填写已开通且支持视频文件输入的模型 ID；不自动替你选择或更换模型。官方文档的「视频文件 → Base64 编码传入」对应当前接法。</p>
-          <p>智谱也有视频理解模型，但其官方示例使用视频链接。当前 demo 没有公共视频上传服务，不能把仅接收公网视频链接的接口直接填进来。</p>
-          <div className="companion-setup-links"><ExternalLink href={links.glm.visionDocs}>智谱视频理解说明</ExternalLink></div>
-        </details>
         <details open><summary>给主模型的补充截图 · 可选</summary>
           <p>视频理解完成后，才从同一段视频中提取 1–3 张相关截图。默认只发送摘要文字；对话模型是否支持图片由你确认，不根据模型名称猜测。</p>
           <label className="companion-image-choice"><input type="checkbox" checked={imageMode === 'direct'} disabled={!changeImageMode} onChange={event => changeImageMode?.(event.target.checked ? 'direct' : 'none')}/>主对话模型支持图片，向长回复附带截图</label>

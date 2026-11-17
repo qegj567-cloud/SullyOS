@@ -271,11 +271,15 @@ export type TtsProvider = 'minimax' | 'fishaudio' | 'elevenlabs';
 // 语音转文字（STT）服务商。电话麦克风收音可选任意已配置 Key 的平台（与 TTS 独立），或浏览器自带免费识别。
 export type SttProvider = 'minimax' | 'fishaudio' | 'elevenlabs' | 'browser';
 
-/** 同行专用：接收完整 MP4 的 video_url 接口，与识图/对话配置分开。 */
+/** 同行专用：完整 MP4（Base64 或临时 URL），与识图/对话配置分开。 */
 export interface CompanionVideoApiConfig {
+  /** Omitted on older configurations: retain the generic Base64 video protocol. */
+  provider?: 'doubao' | 'minimax' | 'zhipu' | 'custom';
   baseUrl: string;
   apiKey: string;
   model: string;
+  /** Only Zhipu needs an expiring, provider-fetchable clip URL. Separate credentials. */
+  upload?: { baseUrl: string; token: string };
 }
 
 export interface VisionApiConfig {

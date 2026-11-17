@@ -2,14 +2,14 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import * as transport from '../safeApi';
 import * as capture from './capture';
-import { observeCompanionVideo, parseVideoObservation } from './vision';
+import { companionVideoReady, observeCompanionVideo, parseVideoObservation } from './vision';
 
 vi.mock('./capture', async importOriginal => ({ ...await importOriginal<typeof import('./capture')>(), extractCompanionFrames: vi.fn(async () => [{ image: 'data:image/jpeg;base64,STILL', at: 5000 }]) }));
 const videoApi = { baseUrl: 'https://video.example/v1', apiKey: 'video-key', model: 'video-model' };
 const helper = { enabled: true, baseUrl: 'https://images.example/v1', apiKey: 'image-key', model: 'image-model' };
 const clip = () => ({ blob: new Blob(['real-clip-bytes'], { type: 'video/mp4' }), from: 1000, to: 9000 });
 const response = (content: string) => ({ choices: [{ message: { content } }] });
-afterEach(() => { vi.restoreAllMocks(); vi.clearAllMocks(); });
+afterEach(() => { vi.restoreAllMocks(); vi.clearAllMocks(); vi.unstubAllGlobals(); });
 
 it('submits the entire video via video_url and never calls image understanding by default', async () => {
   const call = vi.spyOn(transport, 'safeFetchJson').mockResolvedValue(response('{"summary":"镜头从红衣移到蓝衣","keyframes":[2,6]}'));
@@ -61,4 +61,54 @@ it('rejects a late video response after cancellation without extracting or publi
 it('bounds keyframe timestamps and falls back to the clip end for prose responses', () => {
   expect(parseVideoObservation('{"summary":"变化","keyframes":[-1,2,2,"4",3,10,4,5]}', 8)).toEqual({ text: '变化', seconds: [2,3,4] });
   expect(parseVideoObservation('变化', 8)).toEqual({ text: '变化', seconds: [7.8] });
+});
+
+it.each(['doubao', 'minimax'] as const)('sends whole clips with provider-specific parameters: %s', async provider => {
+  const call = vi.spyOn(transport, 'safeFetchJson').mockResolvedValue(response('先看红衣，再看蓝衣'));
+  await observeCompanionVideo(clip(), { ...videoApi, provider }, 'c', 'C', new AbortController().signal);
+  const body = JSON.parse(call.mock.calls[0][1].body as string);
+  expect(body.messages[0].content[0].video_url).toMatchObject({ url: expect.stringContaining('data:video/mp4;base64,'), fps: 1 });
+  if (provider === 'doubao') expect(body.thinking).toEqual({ type: 'disabled' });
+  else {
+    expect(body).toMatchObject({ reasoning_effort: 'low', reasoning_split: true, max_completion_tokens: 4096 });
+    expect(body).not.toHaveProperty('thinking'); expect(body).not.toHaveProperty('temperature'); expect(body).not.toHaveProperty('max_tokens');
+  }
+});
+
+const zhipuApi = { ...videoApi, provider: 'zhipu' as const, model: 'glm-4.6v', upload: { baseUrl: 'https://clips.example', token: 'upload-secret' } };
+it('requires Zhipu upload configuration and sends the temporary video URL with isolated credentials, then deletes it', async () => {
+  expect(companionVideoReady({ ...zhipuApi, upload: undefined })).toBe(false);
+  const upload = vi.fn().mockResolvedValue({ ok: true, status: 204 }); vi.stubGlobal('fetch', upload);
+  const call = vi.spyOn(transport, 'safeFetchJson').mockResolvedValue(response('视频理解'));
+  await observeCompanionVideo(clip(), zhipuApi, 'c', 'C', new AbortController().signal);
+  const body = JSON.parse(call.mock.calls[0][1].body as string);
+  const url = body.messages[0].content[0].video_url.url;
+  expect(url).toMatch(/^https:\/\/clips.example\/clips\/[a-f0-9]{32}$/);
+  expect(body.thinking).toEqual({ type: 'disabled' }); expect(body.messages[0].content[0].video_url).not.toHaveProperty('fps');
+  expect(upload.mock.calls[0]).toEqual([url, expect.objectContaining({ method: 'PUT', headers: { Authorization: 'Bearer upload-secret', 'Content-Type': 'video/mp4' }, body: expect.any(Blob), redirect: 'error' })]);
+  expect(call.mock.calls[0][1].headers).toMatchObject({ Authorization: 'Bearer video-key' });
+  expect(upload.mock.calls[1]).toEqual([url, expect.objectContaining({ method: 'DELETE' })]);
+  expect(JSON.stringify(call.mock.calls)).not.toContain('upload-secret'); expect(JSON.stringify(upload.mock.calls)).not.toContain('video-key');
+});
+
+it('does not call the model after a failed or cancelled upload', async () => {
+  const upload = vi.fn().mockResolvedValue({ ok: false, status: 401 }); vi.stubGlobal('fetch', upload);
+  const call = vi.spyOn(transport, 'safeFetchJson');
+  await expect(observeCompanionVideo(clip(), zhipuApi, 'c', 'C', new AbortController().signal)).rejects.toThrow('401');
+  expect(call).not.toHaveBeenCalled();
+  const abort = new AbortController();
+  upload.mockImplementation(async (_url, init) => { if (init.method === 'PUT') abort.abort(); return { ok: true }; });
+  await expect(observeCompanionVideo(clip(), zhipuApi, 'c', 'C', abort.signal)).rejects.toMatchObject({ name: 'AbortError' });
+  expect(call).not.toHaveBeenCalled(); expect(upload).toHaveBeenLastCalledWith(expect.any(String), expect.objectContaining({ method: 'DELETE' }));
+});
+
+it('deletes the temporary clip if model generation fails or returns after cancellation', async () => {
+  const upload = vi.fn().mockResolvedValue({ ok: true, status: 204 }); vi.stubGlobal('fetch', upload);
+  vi.spyOn(transport, 'safeFetchJson').mockRejectedValue(new Error('model failed'));
+  await expect(observeCompanionVideo(clip(), zhipuApi, 'c', 'C', new AbortController().signal)).rejects.toThrow('model failed');
+  expect(upload).toHaveBeenLastCalledWith(expect.any(String), expect.objectContaining({ method: 'DELETE' }));
+  const abort = new AbortController(), publish = vi.fn();
+  vi.mocked(transport.safeFetchJson).mockImplementation(async () => { abort.abort(); return response('late'); });
+  await expect(observeCompanionVideo(clip(), zhipuApi, 'c', 'C', abort.signal, { mode: 'none' }, publish)).rejects.toMatchObject({ name: 'AbortError' });
+  expect(publish).not.toHaveBeenCalled(); expect(upload).toHaveBeenLastCalledWith(expect.any(String), expect.objectContaining({ method: 'DELETE' }));
 });

@@ -20,19 +20,34 @@
 | 用途 | 填写位置 | 引导行为 |
 | --- | --- | --- |
 | 短回复与长回复 | 设置 → API 配置，或神经链接 → 当前角色 → 设定 → 独立 API | 显示实际使用的模型和配置来源；角色有独立 API 时，主按钮打开该角色，不误导用户修改全局配置 |
-| 视频理解 | 同行 → API 接入 → 理解一段视频 | 独立 URL / Key / Model，提供百炼注册、Key 与视频输入文档；要求 MP4 Base64 `video_url`，开镜头才发视频 |
+| 视频理解 | 同行 → API 接入 → 理解一段视频 | 可选豆包 / MiniMax / 智谱 / 自定义，每家独立协议、默认地址、模型示例和官方注册链接；豆包与 MiniMax 直接发送 MP4 Base64，智谱需配置自己的临时上传服务 |
 | 补充截图 | 同行内选择直发主模型，或设置 → 识图 API | 默认不发图。主模型支持图片由用户显式确认；辅助识图只处理视频分析后的截图，不能代替视频理解 |
 | 角色语音 | 设置 → 其他 API；神经链接 → 当前角色 → 设定 | 自动展开语音设置；按 ElevenLabs / MiniMax / Fish 提供注册、Key、音色字段和保存步骤 |
 | 连续语音输入 | 浏览器麦克风与语音识别 | 不需要 API Key；豆包明确显示“尚未接入”，只提供资料与控制台入口，不提供无效配置表单 |
 
-官方入口按 2026-11-17 文档核对，链接集中在 `utils/companion/setup.ts`，没有邀请码，不向站外链接附带用户配置。需要登录的控制台只能确认官方入口与跳转，未替用户登录或创建账号。
+官方入口按 2026-11-17 文档核对，链接集中在 `utils/companion/setup.ts` 与 `utils/companion/videoProviders.ts`，没有邀请码，不向站外链接附带用户配置。需要登录的控制台只能确认官方入口与跳转，未替用户登录或创建账号。
 
 - 百炼：[注册 / 控制台](https://bailian.console.aliyun.com/)、[获取 API Key](https://help.aliyun.com/zh/model-studio/get-api-key)、[视频理解](https://help.aliyun.com/zh/model-studio/vision)、[地域地址](https://help.aliyun.com/zh/model-studio/base-url)。视频文档包含完整 MP4 Base64 `video_url` 示例；按账户、地域和空间填写支持视频文件输入的模型，不猜测模型能力。
-- 智谱：[注册 / 登录](https://open.bigmodel.cn/)、[模型 API Keys](https://bigmodel.cn/usercenter/proj-mgmt/apikeys)、[快速开始](https://docs.bigmodel.cn/cn/guide/start/quick-start)、[GLM-4.6V 视频理解](https://docs.bigmodel.cn/cn/guide/models/vlm/glm-4.6v)。对话示例 Base URL 为 `https://open.bigmodel.cn/api/paas/v4`。视频示例使用公网链接；当前 demo 没有公共上传服务，不能假定仅接受链接的模型支持本地 MP4 Base64。
+- 智谱：[注册 / 登录](https://open.bigmodel.cn/)、[模型 API Keys](https://bigmodel.cn/usercenter/proj-mgmt/apikeys)、[快速开始](https://docs.bigmodel.cn/cn/guide/start/quick-start)、[GLM-4.6V 视频理解](https://docs.bigmodel.cn/cn/guide/models/vlm/glm-4.6v)。Base URL 为 `https://open.bigmodel.cn/api/paas/v4`。按官方视频 URL 协议接入，使用自己部署的临时上传服务，不假定支持 Base64。
 - ElevenLabs：[注册](https://elevenlabs.io/app/sign-up)、[API Keys](https://elevenlabs.io/app/developers/api-keys)、[鉴权文档](https://elevenlabs.io/docs/api-reference/authentication)。原 `settings/api-keys` 跳到 `developers/api-keys`，引导使用新路径。
 - MiniMax：[国内平台](https://platform.minimax.cn/)、[国内 Key 控制台](https://platform.minimax.cn/console/keys)、[海外平台](https://platform.minimax.io/)。国内旧控制台地址会跳到新域名；账号地区与应用中所选服务器需一致。
 - Fish Audio：[注册](https://fish.audio/auth/signup/?redirect=/app/)、[API Keys](https://fish.audio/app/api-keys/)、[官方接口指引](https://docs.fish.audio/api-reference/introduction)。角色填写 Reference ID。
-- 豆包：[语音控制台](https://console.volcengine.com/speech/service)、[开通文档](https://docs.volcengine.com/docs/doubao-voice/console-guidance?lang=zh)。当前 demo 不消费豆包凭据，不要求预先充值。
+- 豆包视频：[方舟控制台](https://console.volcengine.com/ark/)、[模型 API Keys](https://ark.volcengine.com/region:cn-beijing/apikey)、[视频理解文档](https://console.volcengine.com/ark/region:cn-beijing/docs/video-understanding)。与[豆包语音控制台](https://console.volcengine.com/speech/service)是两套能力；连续语音识别仍未接入。
+
+### 三家视频协议
+
+未配置时表单默认展示豆包草稿，选择平台会填写参考地址/模型，必须手动保存后才生效。旧配置没有 `provider` 时保留自定义 Base64 协议，不根据域名或模型名自动迁移。切平台清空草稿 Key，换地址不带旧 Key；上传口令和模型 Key 各自校验、保存，互不转发。打开或切换引导不调用 API。
+
+| 平台 | 默认配置 | 视频请求参数 |
+| --- | --- | --- |
+| 豆包 | `https://ark.cn-beijing.volces.com/api/v3` / `doubao-seed-2-1-pro-260915` | 完整 MP4 Base64 `video_url.url`，`fps: 1`，`thinking.type: disabled`，`max_completion_tokens: 1200` |
+| MiniMax 国内 | `https://api.minimax.cn/v1` / `MiniMax-M3.1-Flash` | 完整 MP4 Base64，`fps: 1`，`reasoning_effort: low`，`reasoning_split: true`，`max_completion_tokens: 4096`；不发送 temperature 或禁用思考参数，M3.1 Flash 必须思考 |
+| 智谱 | `https://open.bigmodel.cn/api/paas/v4` / `glm-4.6v` | MP4 临时 HTTPS 链接，`max_tokens: 4096`，仅默认 GLM-4.6V 显式禁用思考，改为其他型号时保留其思考默认行为；不发送未文档化的 fps |
+| 自定义 | 保留用户原有地址和模型 | 原 Base64 协议、`max_tokens: 1000`，适用于已确认支持此输入的兼容平台 |
+
+依据：[豆包 Chat 思考控制](https://console.volcengine.com/ark/region:cn-beijing/docs/deep-thinking)、[MiniMax OpenAI 兼容 API](https://platform.minimax.cn/docs/api-reference/text-chat-openai)、[智谱 Chat 完整 schema](https://docs.bigmodel.cn/api-reference/模型-api/对话补全.md)。模型 ID 可编辑，账号需要先开通相应模型；所列默认值不保证账号已获权限。视频理解都限制 45 秒，空正文不拿 reasoning 冒充观察。
+
+智谱的录像先由 `videoUpload.ts` 以原始 MP4 上传（15 秒超时），成功后才发模型请求。独立服务见 [临时上传部署与协议](../worker/companion-video/README.md)，引导内提供源文件下载和控制台部署步骤。没有默认公共上传实例；缺少上传地址或口令时不启用镜头。视频 URL 随机生成，有效 120 秒，完成/失败/取消后尝试删除；删除失败由每 5 分钟 cron 清理，到期 GET 立即拒绝。用户需要知道视频会经过自己的 R2 再到智谱，不能把这一模式描述为全程仅内存。示例 Worker 支持 HEAD/Range、大小限制、来源校验与上传鉴权，不接入其他 App 或主代理，也不转发模型密钥。上传和模型返回都继续受取消与迟到结果检查约束。
 
 测试：`pnpm vitest run utils/companion/ utils/settingsNavigation.test.ts --silent`，9 文件共 24 用例通过，覆盖打开引导不生成、切换指引不改配置、按当前角色跳转、跨 App 前取消旧轮、识图/语音板块挂载前请求与已挂载重复定位，以及原有同行调度。生产 Vite 构建通过；定向类型检查在本次同行与设置导航文件中没有诊断，共享依赖仍有仓库既有类型错误。2026-11-17 的浏览器自动化初始化超时，新的引导未完成视觉验收。模拟页不会跳转到真实设置；站内导航在主应用生效。
 
@@ -99,11 +114,15 @@ sequenceDiagram
 
 ElevenLabs 按字符时间轴和播放器时钟保留已播前缀；其他 MP3 服务商没有对齐数据，只把已完整播完的小段计作已听，不能伪造按百分比推算的字幕。它们已经提交的合成不能撤回计费，但迟到音频不会播放。语音错误明确提示，不静默切音色。无语音模式按已展示文字记录。
 
-视频摘要携带片段起止时间，结束时间距今超过 20 秒标为旧观察。更新观察不会自动发起角色说话。后台暂停后需手动重新开启看听；会话文本保留至离开此 App，录像和图片只短暂保留在内存。若选择直发截图，最近五轮调试请求快照也会包含所发截图，离开、换角色或改视频配置/截图模式时清空。
+视频摘要携带片段起止时间，结束时间距今超过 20 秒标为旧观察。更新观察不会自动发起角色说话。后台暂停后需手动重新开启看听；会话文本保留至离开此 App，录像和图片在本机只短暂保留在内存，智谱模式另有上文说明的 R2 临时存储。若选择直发截图，最近五轮调试请求快照也会包含所发截图，离开、换角色或改视频配置/截图模式时清空。
 
 ## demo 边界与下一步
 
-- 当前接的是完整视频片段理解，不是持续流式视频会话；先支持兼容接口的 MP4 Base64 输入。只支持公网链接或厂商文件上传 ID 的视频 API 尚未接入。无真实服务凭据时不能声称视频理解质量、CORS 或延迟已验证。
+2026-11-17 三家视频接入验证：13 个测试文件、74 项通过，包含三家真实协议形状、旧自定义配置兼容、切平台清凭据、智谱上传成功/失败/取消/迟到结果、模型失败后删除、Worker 鉴权/Range/过期/定时清理，以及原有 a → a′ 调度。定向 TypeScript 检查在本轮修改文件中无错误，共享依赖仍有既有错误；隔离生产构建通过。浏览器模拟页验证三家切换、默认地址/模型、智谱上传字段与部署指引，控制台无错误。未使用真实 Key 调用模型，未部署上传服务，真实网络连通性、视频理解质量和延迟仍需用户实测。
+
+原 `http://127.0.0.1:5175/` 预览已用隔离产物更新，保留旧哈希资源。新入口、上一版入口、旧好友圈分块、恢复页和 SW 均验证 HTTP 200；没有注销 SW 或清理本机存档。
+
+- 当前接的是完整视频片段理解，不是持续流式视频会话。已支持豆包 / MiniMax 的 MP4 Base64、智谱经自建临时上传的 URL，以及原自定义兼容接口；厂商文件 ID 模式未接入。没有真实服务凭据时不能声称视频理解质量、CORS 或延迟已验证，智谱上传服务也需用户单独部署。
 - 浏览器 STT 的可用性、网络依赖、分句速度和扬声器回声因环境不同。建议耳机测试。豆包 WebSocket STT、移动端稳定 VAD/回声消除和真实外出弱网仍待接入与实测。
 - 镜头移动会刷新观察，但当前没有自动判断“用户已经改看另一件商品”并只取消 a′ 的机制。需要用户插话/打断；不能把摘要更新等同于完成场景有效性校验。
 - 本次同行文字留在内存，尚无持久会话、跨 App 回流和长期记忆提取。完整请求会读取已有的共享记忆，读取与写回是不同能力。

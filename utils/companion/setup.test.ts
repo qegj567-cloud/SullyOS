@@ -27,7 +27,7 @@ it('shows official registration links and current route without exposing keys or
     expect(host.textContent).not.toMatch(/secret-global|secret-role/);
     expect(host.textContent).toContain('此浏览器不支持');
     await act(async () => {
-      const select = host.querySelector('select')!; select.value = 'elevenlabs'; select.dispatchEvent(new Event('change', { bubbles: true }));
+      const select = host.querySelector<HTMLSelectElement>('[aria-label="查看语音平台指引"]')!; select.value = 'elevenlabs'; select.dispatchEvent(new Event('change', { bubbles: true }));
     });
     expect(host.querySelector('a[href="https://elevenlabs.io/app/sign-up"]')).toBeTruthy();
     expect(host.querySelector('a[href="https://elevenlabs.io/app/developers/api-keys"]')).toBeTruthy();
@@ -78,7 +78,41 @@ it('saves a separate video endpoint and does not reuse a stored key after its UR
       url.dispatchEvent(new Event('input', { bubbles: true }));
     });
     await act(async () => host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
-    expect(saveVideoApi).toHaveBeenCalledWith({ baseUrl: 'https://new-video.test/v1', model: 'video', apiKey: '' });
+    expect(saveVideoApi).toHaveBeenCalledWith({ provider: 'custom', baseUrl: 'https://new-video.test/v1', model: 'video', apiKey: '' });
     expect(JSON.stringify(api)).toBe(snapshot);
+  } finally { act(() => root.unmount()); host.remove(); }
+});
+
+it('switches provider drafts without saving or carrying keys, and requires Zhipu upload credentials', async () => {
+  const host = document.createElement('div'), root = createRoot(host); document.body.append(host);
+  const saveVideoApi = vi.fn();
+  const api = { baseUrl: '', model: '', apiKey: '', companionVideoApi: { provider: 'doubao', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', model: 'selected-model', apiKey: 'old-secret' } } as any;
+  const fill = async (label: string, value: string) => act(async () => {
+    const input = host.querySelector<HTMLInputElement>(`[aria-label="${label}"]`)!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  const select = async (value: string) => act(async () => {
+    const control = host.querySelector<HTMLSelectElement>('[aria-label="视频服务商"]')!;
+    control.value = value; control.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  const submit = async () => act(async () => { host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); });
+  try {
+    await act(async () => root.render(React.createElement(CompanionSetupGuide, { api, canListen: false, navigate: vi.fn(), close: vi.fn(), saveVideoApi })));
+    await fill('视频 API Key', 'draft-secret');
+    await select('minimax');
+    expect(saveVideoApi).not.toHaveBeenCalled();
+    expect(host.querySelector<HTMLInputElement>('[aria-label="视频 API Key"]')!.value).toBe('');
+    expect(host.querySelector<HTMLInputElement>('[aria-label="视频模型 ID"]')!.value).toBe('MiniMax-M3.1-Flash');
+    expect(host.querySelector('a[href="https://platform.minimax.cn/console/keys"]')).toBeTruthy();
+    await submit();
+    expect(saveVideoApi).toHaveBeenLastCalledWith(expect.objectContaining({ provider: 'minimax', baseUrl: 'https://api.minimax.cn/v1', apiKey: '' }));
+    saveVideoApi.mockClear();
+    await select('zhipu'); await submit();
+    expect(saveVideoApi).not.toHaveBeenCalled(); expect(host.textContent).toContain('需配置临时视频上传服务');
+    await fill('临时上传服务地址', 'https://clips.example'); await fill('临时上传口令', 'u'.repeat(32));
+    await fill('视频 API Key', 'zhipu-key'); await submit();
+    expect(saveVideoApi).toHaveBeenCalledWith(expect.objectContaining({ provider: 'zhipu', model: 'glm-4.6v', apiKey: 'zhipu-key', upload: { baseUrl: 'https://clips.example', token: 'u'.repeat(32) } }));
+    expect(api.companionVideoApi.apiKey).toBe('old-secret');
   } finally { act(() => root.unmount()); host.remove(); }
 });
