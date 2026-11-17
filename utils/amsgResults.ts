@@ -19,6 +19,7 @@ import { PLATE_CONSOLIDATE_RESULT_KIND } from './amsgPlateJob';
 import { listUserSpaces } from './userSpaces';
 import { SCHEDULE_CHANGE_RESULT_KIND } from './amsgScheduleResult';
 import { FIRE_SKIP_RESULT_KIND } from './amsgFireSkipResult';
+import { INSTANT_API_CALLS_RESULT_KIND } from './amsgApiCallRecords';
 
 const HEADER = '[amsg2:result]';
 
@@ -128,6 +129,10 @@ const dispatchOne = async (payload: unknown, context?: AmsgResultContext): Promi
       case FIRE_SKIP_RESULT_KIND: {
         const { applyFireSkipResult } = await import('./amsgFireSkipResultApply');
         return await applyFireSkipResult(payload, context);
+      }
+      case INSTANT_API_CALLS_RESULT_KIND: {
+        const { applyInstantApiCallResult } = await import('./amsgApiCallLog');
+        return await applyInstantApiCallResult(payload);
       }
       default:
         // 认不出来的多半是**前端比 worker 旧**：worker 可以脱开前端单独更新（fork 的

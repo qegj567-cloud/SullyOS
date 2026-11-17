@@ -2892,6 +2892,11 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     });
     setMemoryPalaceConfig(newConfig);
     localStorage.setItem('os_memory_palace_config', JSON.stringify(newConfig));
+    // 主动消息模板也包含智能语境；切换后刷新已有任务，不能等下次聊天才生效。
+    const smartFlags = ['recallRouter', 'interactionAdaptation', 'deepEngagement'] as const;
+    if (smartFlags.some(key => !!memoryPalaceConfig.featureFlags?.[key] !== !!newConfig.featureFlags?.[key])) {
+      markAmsgStateDirtyForAll({ characters, userProfile, groups, realtimeConfig });
+    }
   };
 
   // 情绪 API 同步到所有角色：API 字段（baseUrl/apiKey/model）所有角色共用，

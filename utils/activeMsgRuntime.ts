@@ -1660,8 +1660,12 @@ const flushInboxToChatImpl = async (trigger: FlushTrigger, charId?: string): Pro
       continue;
     }
     if (isReplyStopped(message.taskUuid)) {
-      if (message.taskUuid && (message.metadata as any)?.amsgUsage) {
-        settleInstantChatApiLog(message.taskUuid, message.metadata);
+      if (message.taskUuid && ((message.metadata as any)?.amsgUsage || (message.metadata as any)?.amsgModelCalls)) {
+        try { await settleInstantChatApiLog(message.taskUuid, message.metadata); }
+        catch {
+          retainedInboxMessageIds.add(message.messageId);
+          try { await ActiveMsgStore.saveInboxMessage(message); } catch { /* 下次补收重试记账 */ }
+        }
       }
       continue;
     }
@@ -1679,6 +1683,11 @@ const flushInboxToChatImpl = async (trigger: FlushTrigger, charId?: string): Pro
     // 聊天记录、也没回到收件箱——用户那边只看到「正在输入…」一直亮到 60s 点名判失败，
     // 角色的回复彻底消失。所以整段都得包住，不能只包后处理那一小截。
     try {
+      // Usage must survive reloads, cancellation and replay of an already persisted chat bubble.
+      // The Worker only attaches model-call records to the final segment; commit before message dedup.
+      if (isInstantReply && message.taskUuid && (message.metadata as any)?.amsgModelCalls) {
+        await settleInstantChatApiLog(message.taskUuid, message.metadata);
+      }
       // 'active-msg-received' 事件里的 sentAt 维持原口径（发送时刻优先）：
       // 它只喂 toast / 未读预览，不进聊天记录，别跟落库口径搅在一起。
       const eventSentAt = message.sentAt || message.receivedAt || Date.now();
@@ -1951,7 +1960,9 @@ const flushInboxToChatImpl = async (trigger: FlushTrigger, charId?: string): Pro
           scheduleNextInstantChatStatusCheck();
           // 「API 调用记录」里那笔（发出去时记的）在这里补完：用量挂在末条推送上，
           // 而这里正好是认末段的地方。
-          settleInstantChatApiLog(pendingForChar.uuid, message.metadata as Record<string, any> | null);
+          if (!(message.metadata as any)?.amsgModelCalls) {
+            await settleInstantChatApiLog(pendingForChar.uuid, message.metadata as Record<string, any> | null);
+          }
           // 随这一轮上云的「任务被作废」回执到这里才真的销账。发出时（worker 回 202）
           // 只是记账：202 仅表示受理，那一轮要是整个失败了，回执得留着下轮重新注入，
           // 否则角色永远不知道自己许过的那条排程已经没了。认 uuid，上一轮迟到的结论
