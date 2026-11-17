@@ -5,7 +5,7 @@ import { readBackupPreferences, updateBackupPreferences } from '../utils/backupP
 import {CharacterWeatherCities} from '../components/settings/CharacterAwarenessSettings';
 import {cleanCharacterWeatherCities} from '../utils/characterWeather';
 import NavigationBallSettings from '../components/settings/NavigationBallSettings';
-import { useSettingsFocus } from '../utils/settingsNavigation';
+import { requestSettingsFocus, useSettingsFocus } from '../utils/settingsNavigation';
 import ApiPresetGroups from '../components/settings/ApiPresetGroups';
 import DialogueApiFields from '../components/settings/DialogueApiFields';
 import { llmApiType, normalizeLlmBaseUrl, type LlmApiType } from '../utils/llmEndpoint';
@@ -25,6 +25,7 @@ import Modal from '../components/os/Modal';
 import UserHolidaySettings from '../components/settings/UserHolidaySettings';
 import UserLocationSettings, { USER_LOCATION_PAGE_TITLES, getUserLocationParentPage, type UserLocationSettingsPage } from '../components/settings/UserLocationSettings';
 import { useLocalBackHandler } from '../hooks/useLocalBackHandler';
+import { ActiveMsgSettingsEntry, ActiveMsgSettingsPages, type AmsgSettingsPage } from '../components/settings/ActiveMsgSettings';
 import { loadUserLocationConfig, type UserLocationConfig } from '../utils/userLocationPrivacy';
 import { saveUserLocationConfig } from '../utils/userLocation';
 import { consumeHolidaySettings, hasHolidaySettingsRequest, type UserHolidayConfig } from '../utils/userHolidays';
@@ -47,10 +48,6 @@ import {
 import { getDateVoiceGuide } from '../utils/datePrompts';
 import { Sun, Newspaper, NotePencil, Notebook, Book, ForkKnife, Coffee, PlugsConnected } from '@phosphor-icons/react';
 import { loadMcpServers, saveMcpServers, createMcpServer, testMcpConnection, resetMcpSession, getMcpUseNativeTools, setMcpUseNativeTools, type McpServerConfig } from '../utils/mcpClient';
-import { PushVapidSettingsModal } from '../components/settings/PushVapidSettingsModal';
-import AmsgCloudDataModal from '../components/settings/AmsgCloudDataModal';
-import PushSubscriptionPanel from '../components/settings/PushSubscriptionPanel';
-import ActiveMsgGlobalSettingsModal from '../components/settings/ActiveMsgGlobalSettingsModal';
 import { syncAmsgLlmCredentials, syncAmsgToolConfig, syncAmsgToolConfigAndPrompts } from '../utils/amsgStateSync';
 import { ActiveMsgClient } from '../utils/activeMsgClient';
 import { ActiveMsgStore } from '../utils/activeMsgStore';
@@ -58,7 +55,6 @@ import { AMSG_GLOBAL_CONFIG_EVENT, isAmsg2GloballyEnabled } from '../utils/amsgG
 import { flushAmsg2AfterReenable, setAmsg2GlobalEnabled } from '../utils/amsgGlobalSwitch';
 import VersionInfo from '../components/settings/VersionInfo';
 import SullySupportEntry, { SupportIcon } from '../components/settings/SullySupportEntry';
-import { isPushVapidReady } from '../utils/pushVapid';
 import ApiCallLogModal from '../components/settings/ApiCallLogModal';
 import StorageUsagePanel from '../components/settings/StorageUsagePanel';
 import WebCacheControl from '../components/settings/WebCacheControl';
@@ -156,11 +152,14 @@ const SettingsSection: React.FC<{
     const [open, setOpen] = useState(() => title === 'API 配置' && guideStep === 0);
     const sectionRef = useRef<HTMLElement>(null);
     const [focusRequest, setFocusRequest] = useState(0);
-    useSettingsFocus(title === 'API 配置' ? 'api' : undefined, () => {
+    useSettingsFocus(title === 'API 配置' ? 'api' : title === '备份与恢复 (ZIP)' ? 'backup' : undefined, () => {
         setOpen(true); setFocusRequest(value => value + 1);
     });
     useEffect(() => {
-        if (focusRequest) sectionRef.current?.scrollIntoView({ block: 'start' });
+        if (!focusRequest) return;
+        const restore = sectionRef.current?.querySelector<HTMLButtonElement>('[data-amsg-backup-restore]');
+        if (restore) { restore.scrollIntoView({ block: 'center' }); restore.focus({ preventScroll: true }); }
+        else sectionRef.current?.scrollIntoView({ block: 'start' });
     }, [focusRequest]);
     useEffect(() => {
         const reveal = () => { if (title === 'API 配置' && guideStep === 0) setOpen(true); };
@@ -510,7 +509,7 @@ const Settings: React.FC = () => {
       sysOperation, // Get progress state
       realtimeConfig, updateRealtimeConfig, // 实时感知配置
       // 改工具凭据时要连云端提示词一起刷（见 syncAmsgToolConfigAndPrompts）
-      characters, groups, userProfile,
+      characters, characterGroups, groups, userProfile,
       cloudBackupConfig, updateCloudBackupConfig,
       cloudBackupToWebDAV, cloudRestoreFromWebDAV, listCloudBackups,
   } = useOS();
@@ -796,9 +795,19 @@ const Settings: React.FC = () => {
   const [luckinTestStatus, setLuckinTestStatus] = useState('');
   const [luckinTesting, setLuckinTesting] = useState(false);
 
-  const [showAmsg2Modal, setShowAmsg2Modal] = useState(false);
-  useSettingsFocus('amsg2', () => setShowAmsg2Modal(true));
-  const [showAmsgCloudData, setShowAmsgCloudData] = useState(false);
+  const [amsgPage, setAmsgPage] = useState<AmsgSettingsPage | null>(null);
+  const amsgEntryFocus = useRef<HTMLElement | null>(null);
+  const amsgWasOpen = useRef(false);
+  useEffect(() => {
+      if (!amsgPage && amsgWasOpen.current) amsgEntryFocus.current?.focus({ preventScroll: true });
+      amsgWasOpen.current = Boolean(amsgPage);
+  }, [amsgPage]);
+  const openAmsgPage = (page: AmsgSettingsPage) => {
+      amsgEntryFocus.current = document.activeElement as HTMLElement | null;
+      if (page === 'config' || page === 'overview') trackEvent('打开主动消息2.0配置');
+      setAmsgPage(page);
+  };
+  useSettingsFocus('amsg2', () => openAmsgPage('config'));
   const [amsgGlobalConfig, setAmsgGlobalConfig] = useState<{ workerUrl: string; enabled?: boolean; initializedAt?: number } | null>(null);
   const [amsgGlobalToggling, setAmsgGlobalToggling] = useState(false);
 
@@ -851,15 +860,13 @@ const Settings: React.FC = () => {
   };
   const [exportUserScope, setExportUserScope] = useState<'current' | 'all'>('current');
   /**
-   * 备份带不带主动消息 2.0 的后端连接（Worker 地址 + 密钥 + 用户 id），手动导出和云端备份共用。
+   * 文件导出带不带主动消息 2.0 的后端连接；个人云备份始终携带完整连接。
    *
    * 默认不带。备份是会被分享出去的，带上就等于把自己那台 Worker 的钥匙一起发了：
    * 对方的 App 会静默连上来，把 ta 的 API 凭据和聊天上下文写进你的 D1，而 ta 手里的
    * 主密钥能解开你那台机器上所有的密文。换设备恢复自己的备份才需要它。
    */
   const [exportBackendConnection, setExportBackendConnection] = useState(() => readBackupPreferences().includeBackendConnection);
-  const [showVapidModal, setShowVapidModal] = useState(false);
-  const [vapidReadyTick, setVapidReadyTick] = useState(0); // 关闭 VAPID 弹窗后刷新顶层徽标
 
   // 模型选择 Modal 的过滤 + 公共前缀（memo 掉，避免每次 Settings 重渲染都重算）
   const visionModelPickerView = useMemo(
@@ -2061,7 +2068,7 @@ const Settings: React.FC = () => {
       )}
 
       {/* Header */}
-      <div className="bg-[#fffefe] border-b border-slate-200 shrink-0 z-10 sticky top-0" style={{ paddingTop: 'var(--safe-top)' }} {...(showSupport ? { inert: '' } : {})} aria-hidden={showSupport || undefined}>
+      <div className="bg-[#fffefe] border-b border-slate-200 shrink-0 z-10 sticky top-0" style={{ paddingTop: 'var(--safe-top)' }} {...(showSupport || amsgPage ? { inert: '' } : {})} aria-hidden={Boolean(showSupport || amsgPage) || undefined}>
         <div className="flex items-center px-4 py-3">
         <div className="flex items-center gap-2 w-full">
             <button onClick={closeApp} className="p-2 -ml-2 rounded-full hover:bg-black/5 active:scale-90 transition-transform">
@@ -2074,7 +2081,7 @@ const Settings: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-5 space-y-6 no-scrollbar pb-20" {...(showSupport ? { inert: '' } : {})} aria-hidden={showSupport || undefined}>
+      <div className="flex-1 overflow-y-auto p-5 space-y-6 no-scrollbar pb-20" {...(showSupport || amsgPage ? { inert: '' } : {})} aria-hidden={Boolean(showSupport || amsgPage) || undefined}>
 
         <NavigationBallSettings characters={characters} loadWorlds={() => DB.getWorlds()} />
         {/* 外观救急入口统一放在设置顶部，无需进入已被错误 CSS 遮住的聊天或日记。 */}
@@ -2160,15 +2167,16 @@ const Settings: React.FC = () => {
                     className="mt-0.5 shrink-0"
                 />
                 <span className="text-[11px] leading-relaxed text-slate-600">
-                    <span className="font-bold">包含主动消息 2.0 的后端连接</span>
+                    <span className="font-bold">导出文件包含主动消息 2.0 的后端连接</span>
                     <span className="block text-slate-400">
-                        换设备恢复时勾上，导出和云端备份都会带上 Worker 地址和密钥。
+                        导出文件用于自己换机时勾上，会带上后台地址、密钥和原用户身份。云端备份会自动包含这些信息。
                         <span className="font-bold text-rose-500">勾着导出的备份不要分享给别人</span>
                         ——拿到文件的人能连上你那台 Worker，也能解开里面的聊天记录。
                     </span>
                 </span>
             </label>
 
+            <p className="mb-3 text-[11px] leading-relaxed text-slate-400">文字与完整备份也包含真实定位设置（地图 Key、隐藏地点、可见角色），以及字幕设置和已导入字体，请仅自己保管。设备实时位置不会导出。</p>
             <div className="mb-3">
                 <button onClick={() => handleExport('full')} className="w-full py-4 bg-gradient-to-r from-violet-500 to-purple-600 border border-violet-300 rounded-xl text-xs font-bold text-white shadow-sm active:scale-95 transition-all flex flex-col items-center gap-2 relative overflow-hidden mb-3">
                     <div className="absolute top-0 right-0 px-1.5 py-0.5 bg-white/20 text-[9px] text-white rounded-bl-lg font-bold">完整</div>
@@ -2191,10 +2199,10 @@ const Settings: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-1 gap-3 mb-4">
-                 <div onClick={() => importInputRef.current?.click()} className="py-4 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 shadow-sm active:scale-95 transition-all flex flex-col items-center gap-2 cursor-pointer hover:bg-emerald-50 hover:border-emerald-200">
+                 <button type="button" data-amsg-backup-restore onClick={() => importInputRef.current?.click()} className="py-4 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 shadow-sm active:scale-95 transition-all flex flex-col items-center gap-2 cursor-pointer hover:bg-emerald-50 hover:border-emerald-200">
                     <div className="p-2 bg-emerald-100 rounded-full text-emerald-600"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg></div>
                     <span>导入备份 (.zip / .json)</span>
-                </div>
+                </button>
                 <input type="file" ref={importInputRef} className="hidden" accept=".json,.zip" onChange={handleImport} />
                 <button onClick={() => independentImportInputRef.current?.click()} className="py-4 px-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs font-bold text-emerald-800 active:scale-95 transition-all">
                     从其他网址 / App 迁入独立用户
@@ -2441,6 +2449,9 @@ const Settings: React.FC = () => {
                         </p>
                     )}
 
+                    <p className="text-[11px] leading-relaxed text-slate-500" data-cloud-backup-amsg-note>
+                        个人云备份会包含主动消息 2.0 的后台连接、全局开关和角色设置，以及真实定位设置，无需额外勾选。恢复后，新设备的通知和定位权限仍需授权；备份请仅自己保管。
+                    </p>
                     <div className="grid grid-cols-2 gap-2">
                         <button
                             onClick={() => handleCloudBackup('text_only')}
@@ -3268,108 +3279,8 @@ const Settings: React.FC = () => {
             })()}
         </SettingsSection>
 
-        {/* ───────── 推送凭据 (VAPID) ───────── */}
-        {/* VAPID 公私钥：主动消息 2.0 部署 Worker 时用的就是这一对（一键部署自动沿用，手动部署照着填 env）。 */}
-        {/* vapidReadyTick: VAPID 弹窗关闭后 +1, 让本节点 re-render 重读 isPushVapidReady(). */}
-        <SettingsSection
-            title="推送凭据 (VAPID)"
-            sectionProps={{ 'data-vapid-tick': vapidReadyTick }}
-            icon={
-                <div className="p-2 bg-violet-100/60 rounded-xl text-violet-600">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 0 1 3 3m3 0a6 6 0 0 1-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1 1 21.75 8.25Z" />
-                    </svg>
-                </div>
-            }
-            actions={
-                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${isPushVapidReady() ? 'bg-violet-100 text-violet-600' : 'bg-rose-100 text-rose-600'}`}>
-                    {isPushVapidReady() ? '已配置' : '未配置'}
-                </span>
-            }
-        >
-            <p className="text-xs text-slate-500 mb-3 leading-relaxed">
-                主动消息 2.0 的 Worker 用这对密钥签推送：一键部署会自动沿用，手动部署时把它们填进 Worker 的环境变量。重新生成之后要重新部署 Worker 才能生效。
-            </p>
-            <button
-                type="button"
-                onClick={() => setShowVapidModal(true)}
-                className={`w-full py-2.5 rounded-xl text-xs font-bold ${isPushVapidReady() ? 'bg-white text-violet-700 border border-violet-200 hover:bg-violet-50' : 'bg-violet-500 text-white hover:bg-violet-600 shadow-md shadow-violet-200'}`}
-            >
-                {isPushVapidReady() ? '查看 / 重新生成' : '生成 VAPID 密钥对 →'}
-            </button>
-        </SettingsSection>
-
-        {/* ───────── 推送订阅状态（诊断 + 重置） ───────── */}
-        <SettingsSection
-            title="推送订阅状态"
-            icon={
-                <div className="p-2 bg-sky-100/60 rounded-xl text-sky-600">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 0 1-1.043 3.296 3.745 3.745 0 0 1-3.296 1.043A3.745 3.745 0 0 1 12 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 0 1-3.296-1.043 3.745 3.745 0 0 1-1.043-3.296A3.745 3.745 0 0 1 3 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 0 1 1.043-3.296 3.746 3.746 0 0 1 3.296-1.043A3.746 3.746 0 0 1 12 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 0 1 3.296 1.043 3.746 3.746 0 0 1 1.043 3.296A3.745 3.745 0 0 1 21 12Z" />
-                    </svg>
-                </div>
-            }
-        >
-            <PushSubscriptionPanel addToast={addToast} />
-        </SettingsSection>
-
-        {/* ───────── 主动消息 2.0（定时推送） ───────── */}
-        <section className="bg-white/80 rounded-3xl p-5 shadow-sm border border-white/50">
-            <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                    <div className="p-2 bg-violet-100/60 rounded-xl text-violet-600">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-                        </svg>
-                    </div>
-                    <h2 className="text-sm font-semibold text-slate-600 tracking-wider">主动消息 2.0</h2>
-                </div>
-                <button
-                    onClick={() => { trackEvent('打开主动消息2.0配置'); setShowAmsg2Modal(true); }}
-                    className="text-[10px] bg-violet-100 text-violet-600 px-3 py-1.5 rounded-full font-bold shadow-sm active:scale-95 transition-transform"
-                >
-                    配置
-                </button>
-            </div>
-            <p className="text-xs text-slate-500 leading-relaxed">
-                角色到点自动给你发消息，App 关着也能收。需要一个属于你自己的 Cloudflare Worker（自带 D1 数据库 + 定时触发），在配置里粘一枚 Token 就能一键部署。聊天上云（即时对话）与定时主动消息都由它承担。
-            </p>
-            {amsgGlobalConfig?.workerUrl?.trim() ? (
-                <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-violet-100 bg-white/80 px-4 py-3">
-                    <div className="min-w-0">
-                        <div className="text-xs font-semibold text-slate-700">
-                            总开关 · {isAmsg2GloballyEnabled(amsgGlobalConfig) ? '运行中' : '已暂停'}
-                        </div>
-                        <div className="mt-0.5 text-[11px] leading-relaxed text-slate-500">
-                            {isAmsg2GloballyEnabled(amsgGlobalConfig)
-                                ? '关闭后立即暂停本机所有 Worker 请求、状态同步与即时对话，保留全部连接配置。'
-                                : '已暂停本机所有云端请求，聊天回到本地生成，已有连接与角色配置均保留。'}
-                        </div>
-                    </div>
-                    <button
-                        type="button"
-                        role="switch"
-                        aria-checked={isAmsg2GloballyEnabled(amsgGlobalConfig)}
-                        aria-label="主动消息 2.0 总开关"
-                        disabled={amsgGlobalToggling}
-                        onClick={() => void handleToggleAmsg2Global(!isAmsg2GloballyEnabled(amsgGlobalConfig))}
-                        className={`w-12 h-7 rounded-full transition-colors relative shrink-0 disabled:opacity-50 ${
-                            isAmsg2GloballyEnabled(amsgGlobalConfig) ? 'bg-violet-500' : 'bg-slate-200'
-                        }`}
-                    >
-                        <span
-                            className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow transition-all duration-200 ${
-                                isAmsg2GloballyEnabled(amsgGlobalConfig) ? 'translate-x-5' : 'translate-x-0'
-                            }`}
-                        />
-                    </button>
-                </div>
-            ) : null}
-            <button type="button" onClick={() => setShowAmsgCloudData(true)} className="mt-3 w-full rounded-2xl border border-violet-100 bg-violet-50/60 px-4 py-3 text-left text-xs text-violet-700">
-                <span className="block font-semibold">云端数据管理</span>
-                <span className="mt-1 block text-[11px] text-slate-500">查看 Worker 实际保存的数据，按项清理或彻底移除角色。</span>
-            </button>
-        </section>
+        <ActiveMsgSettingsEntry onOpen={openAmsgPage} connected={Boolean(amsgGlobalConfig?.initializedAt && amsgGlobalConfig.workerUrl?.trim())} enabled={amsgGlobalConfig?.workerUrl?.trim() ? isAmsg2GloballyEnabled(amsgGlobalConfig) : undefined} toggling={amsgGlobalToggling} onToggle={next => void handleToggleAmsg2Global(next)} />
+        <SullySupportEntry ref={supportEntryRef} onOpen={() => setShowSupport(true)} />
 
         {/* 自定义网络代理 — 刻意低调的高级入口。默认折叠，不主动指引基本发现不了。
             普通用户无需配置：默认走作者部署的公共 Worker，所有功能开箱即用。 */}
@@ -3480,7 +3391,6 @@ const Settings: React.FC = () => {
         )}
 
         <VersionInfo />
-        <SullySupportEntry ref={supportEntryRef} onOpen={() => setShowSupport(true)} />
 
       </div>
 
@@ -4537,32 +4447,22 @@ const Settings: React.FC = () => {
           </div>
       </Modal>
 
-      <PushVapidSettingsModal
-        open={showVapidModal}
-        onClose={() => { setShowVapidModal(false); setVapidReadyTick((n) => n + 1); }}
-      />
-      <ActiveMsgGlobalSettingsModal
-        isOpen={showAmsg2Modal}
-        onClose={() => setShowAmsg2Modal(false)}
+      {amsgPage && <ActiveMsgSettingsPages
+        initialPage={amsgPage}
+        onClose={() => setAmsgPage(null)}
+        onRestoreBackup={() => {
+            // This is explicit navigation to restore, not a return to the AMSG entry.
+            amsgEntryFocus.current = null;
+            setAmsgPage(null); requestSettingsFocus('backup');
+        }}
         addToast={addToast}
         realtimeConfig={realtimeConfig}
-        onOpenVapid={() => { setShowAmsg2Modal(false); setShowVapidModal(true); }}
-        onOpenCloudData={() => { setShowAmsg2Modal(false); setShowAmsgCloudData(true); }}
-        onToggleGlobalEnabled={handleToggleAmsg2Global}
-        onReenabledAfterConnect={() => void flushAmsg2AfterReenable({
-          characters,
-          userProfile,
-          groups,
-          realtimeConfig,
-          apiConfig,
-        })}
-      />
-      <AmsgCloudDataModal
-        isOpen={showAmsgCloudData}
-        onClose={() => setShowAmsgCloudData(false)}
         characters={characters}
-        addToast={addToast}
-      />
+        characterGroups={characterGroups}
+        characterSettings={{ apiConfig, userProfile, groups, onSave: (id, updater) => updateCharacter(id, previous => ({ activeMsg2Config: updater(previous.activeMsg2Config) })) }}
+        onToggleGlobalEnabled={handleToggleAmsg2Global}
+        onReenabledAfterConnect={() => void flushAmsg2AfterReenable({ characters, userProfile, groups, realtimeConfig, apiConfig })}
+      />}
 
     </div>
   );

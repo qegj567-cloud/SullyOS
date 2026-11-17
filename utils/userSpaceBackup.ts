@@ -16,6 +16,8 @@ import { collectCharacterCompanionVoiceAssetIds } from './companionPresets';
 import { withSharedAssetLock } from './sharedAssetLock';
 import { backupAssetField, backupAssetSource, recordMissingBackupAsset, writeMissingBackupAssets, type BackupMissingAsset } from './backupMissingAssets';
 import { newImportedSpaceId, newImportedBlobId, remapIndependentUser } from './independentUserImport';
+import { exportUserLocationSettings, validateSpaceLocationBackup, type SpaceLocationBackup } from './userLocationBackup';
+import { USER_LOCATION_STORAGE_KEY } from './userLocationPrivacy';
 
 type Mode = 'full' | 'text_only' | 'media_only';
 interface SpaceArchive {
@@ -23,6 +25,7 @@ interface SpaceArchive {
     spaces: Array<UserSpace & { local: Record<string, string>; stores: Record<string, string[]> }>;
     settings: Record<string, string>;
     backend?: Awaited<ReturnType<typeof exportAmsg2GlobalConfig>>;
+    userLocation?: SpaceLocationBackup;
     blobs: Array<{ id: string; path: string; type: string; size: number }>;
     missingAssets?: BackupMissingAsset[];
 }
@@ -140,6 +143,15 @@ async function exportUserSpacesUnderLease(mode: Mode, scope: 'current' | 'all', 
     }
     if (mode !== 'text_only') for (const ref of refs) await addAsset(ref.slice('blobref:'.length));
     if (mode !== 'media_only') manifest.backend = await exportAmsg2GlobalConfig({ includeBackendConnection });
+    if (mode !== 'media_only' && rawSpaceStorage) {
+        for (const space of manifest.spaces) {
+            const config = exportUserLocationSettings(createSpaceStorage(rawSpaceStorage, space.id));
+            if (!config) continue;
+            const { characterIds, ...settings } = config;
+            manifest.userLocation ??= { settings, audiences: {} };
+            manifest.userLocation.audiences[space.id] = characterIds ?? null;
+        }
+    }
     const missing = [...missingAssets.values()];
     if (missing.length) manifest.missingAssets = missing;
     writeMissingBackupAssets(zip, missing);
@@ -241,6 +253,8 @@ async function importUserSpacesUnderLease(zip: any, allowBackendConnection: bool
         if (v && typeof v === 'object') { const out: any = Object.create(null); for (const [k, value] of Object.entries(v)) out[k] = await unpack(value); return out; }
         return v;
     };
+    const userLocation = !asNewUsers && manifest.mode !== 'media_only'
+        ? validateSpaceLocationBackup(manifest.userLocation, manifest.spaces.map(space => space.id)) : undefined;
     const prepared = [];
     for (const storedSpace of manifest.spaces) {
         const space = { ...storedSpace, local: await unpack(storedSpace.local) };
@@ -332,6 +346,16 @@ async function importUserSpacesUnderLease(zip: any, allowBackendConnection: bool
     if (!asNewUsers && manifest.mode !== 'media_only') await importAmsg2GlobalConfig(manifest.backend, { allowBackendConnection });
     if (!asNewUsers && manifest.mode !== 'media_only') for (const [key, value] of Object.entries(manifest.settings || {})) {
         if (isSharedSpaceKey(key) && !privateLocalExcluded(key) && typeof value === 'string') rawSpaceStorage?.setItem(key, value);
+    }
+    if (userLocation && rawSpaceStorage) {
+        for (const { space } of prepared) {
+            const audience = userLocation.audiences[space.id];
+            createSpaceStorage(rawSpaceStorage, space.id).setItem(USER_LOCATION_STORAGE_KEY, JSON.stringify({
+                ...userLocation.settings, ...(audience === null ? {} : { characterIds: audience }),
+            }));
+        }
+        // Invalidate any lookup/cache in the current page while keeping its own audience intact.
+        (await import('./userLocation')).invalidateUserLocationContext();
     }
     return prepared.map(({ space }) => ({ id: space.id, name: space.name }));
 }

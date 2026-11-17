@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
+import SettingsDetailPage from './SettingsDetailPage';
 import Modal from '../os/Modal';
+import { useLocalBackHandler } from '../../hooks/useLocalBackHandler';
 import ConfirmDialog from '../os/ConfirmDialog';
 import type { CharacterProfile } from '../../types';
 import { ActiveMsgClient } from '../../utils/activeMsgClient';
@@ -257,10 +259,11 @@ const AmsgCloudDataModal: React.FC<Props> = ({ isOpen, onClose, characters, addT
     ...(selectedOwner ? [selectedOwner] : []),
   ].map(owner => [ownerKey(owner), owner])).values()];
   const close = () => { if (!executing.current) onClose(); };
+  useLocalBackHandler(() => { if (!busy) { setPlan(null); setRestore(null); setError(''); } return true; }, 60, isOpen && Boolean(plan || restore));
   const allGaps = [...gaps, ...(summary?.gaps ?? []), ...(summary && !summary.complete && !summary.gaps.length ? [{ source: 'summary', code: 'INCOMPLETE', message: '云端汇总尚未确认完整。' }] : [])];
 
   return <>
-    <Modal isOpen={isOpen && !plan && !restore} title="云端数据管理" onClose={close} footer={<div className="flex w-full gap-2">
+    <SettingsDetailPage isOpen={isOpen} hidden={Boolean(plan || restore)} title="云端数据管理" onClose={close} footer={<div className="flex w-full gap-2">
       <button type="button" onClick={close} disabled={busy} className={`${buttonClass} flex-1`}>关闭</button>
       {session && <button type="button" disabled={busy || !selected.size} onClick={() => void preview()} className="flex-1 rounded-xl bg-rose-600 px-3 py-3 text-xs font-bold text-white disabled:opacity-40">预览清理 ({selected.size})</button>}
     </div>}>
@@ -323,7 +326,7 @@ const AmsgCloudDataModal: React.FC<Props> = ({ isOpen, onClose, characters, addT
         </>}
         {!!detached.length && <details className="border-t border-slate-100 pt-3 text-slate-500"><summary className="cursor-pointer">以前断开的 Worker</summary><p className="py-2">当前清单不包含这些连接。需要管理时，在配置里重新连接对应地址。</p>{detached.map(url => <p key={url} className="break-all">{url}</p>)}</details>}
       </div>
-    </Modal>
+    </SettingsDetailPage>
     <Modal isOpen={isOpen && !!plan} title={plan?.mode === 'retire-owner' ? '确认彻底移除' : '确认清理范围'} onClose={() => { if (!busy) { setPlan(null); setError(''); } }} footer={<div className="flex w-full gap-2"><button type="button" disabled={busy} onClick={() => { setPlan(null); setError(''); }} className={`${buttonClass} flex-1`}>返回</button><button type="button" disabled={busy || !plan?.complete || !!plan.gaps.length} onClick={() => void execute()} className="flex-1 rounded-xl bg-rose-600 px-3 py-3 text-xs font-bold text-white disabled:opacity-40">{busy ? '正在提交…' : '确认清理'}</button></div>}>
       {plan && <div className="space-y-3 text-xs leading-relaxed text-slate-600"><p>以下范围由云端确认，共 {plan.count} 项。</p>{plan.counts.map(row => <p key={row.type}>{CLOUD_RESOURCE_LABELS[row.type]}：{row.count} 项</p>)}{!!plan.resources.length && <details><summary className="cursor-pointer font-semibold">查看具体数据</summary><div className="mt-2 max-h-48 space-y-2 overflow-y-auto">{plan.resources.map(resource => <p key={resource.id} className="break-all">{cloudResourceIdentity(resource, characters).name} · {CLOUD_RESOURCE_LABELS[resource.type]}：{resource.label}</p>)}</div></details>}<p className="break-all">当前连接：{session?.workerUrl}</p>{plan.owner && <p className="break-all">归属：{plan.owner.label ?? plan.owner.id}（{plan.owner.id}）</p>}<p className="font-semibold text-rose-700">{plan.mode === 'retire-owner' ? '先停用此角色，再清除执行时它名下的全部云端数据。之后必须明确允许重新使用，才可继续上传；已发出的通知无法撤回。归属未知的记录需要单独检查。' : '只删除预览中选定的数据，不会删除本地记录。后续聊天可能重新上传；清除上下文或凭据可能使相关任务失败。'}</p>{plan.impacts.map((impact, index) => <p key={index}>{impact}</p>)}<Gaps gaps={plan.gaps} /><p>已清除的数据无法撤销。</p>{error && <p role="alert" className="text-rose-700">{error}</p>}</div>}
     </Modal>

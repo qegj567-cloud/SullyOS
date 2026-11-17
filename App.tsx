@@ -10,6 +10,7 @@ import Amsg2DebugPanel from './components/Amsg2DebugPanel';
 import VRBroadcast from './components/VRBroadcast';
 import WorldBroadcast from './components/WorldBroadcast';
 import ChatBroadcast from './components/ChatBroadcast';
+import InstantChatSendHelp from './components/chat/InstantChatSendHelp';
 import WebUpdateNotice from './components/WebUpdateNotice';
 import AmsgOwnerConflictNotice from './components/AmsgOwnerConflictNotice';
 import { isIOSStandaloneWebApp } from './utils/iosStandalone';
@@ -57,6 +58,7 @@ const App: React.FC = () => {
       <VRBroadcast />
       <WorldBroadcast />
       <ChatBroadcast />
+      <InstantChatSendHelp />
     </>
   );
 };

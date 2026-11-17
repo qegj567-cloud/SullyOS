@@ -6,13 +6,15 @@ import { stripBackupImages } from './backupExport';
 /** These records live in assets for historical reasons, but contain user history/settings. */
 export const isActivityTextAsset = (id: string): boolean =>
     ['friend_feed_v1', 'friend_feed_api', 'home_visits_v1'].includes(id)
-    || id.startsWith('friend_feed_eval_v1_') || id.startsWith('home_secrets_v1_');
+    || id.startsWith('friend_feed_eval_v1_') || id.startsWith('home_secrets_v1_') || id.startsWith('font_library_');
 
 export type ActivityTextAsset = { id: string; data: string };
 export function exportActivityTextAsset(item: { id: string; data: unknown }): ActivityTextAsset | undefined {
     // The feed has its own typed section, including its text-only image stripping.
     if (!isActivityTextAsset(item.id) || item.id === 'friend_feed_v1') return undefined;
     if (typeof item.data !== 'string') throw new Error('活动文字存档格式不正确，请保留原存档');
+    // Font bytes use plain base64 inside JSON, so both text and full backups remain self-contained.
+    if (item.id.startsWith('font_library_')) return { id: item.id, data: item.data };
     return { id: item.id, data: JSON.stringify(stripBackupImages(JSON.parse(item.data))) };
 }
 

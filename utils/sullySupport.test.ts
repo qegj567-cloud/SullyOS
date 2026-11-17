@@ -23,11 +23,12 @@ beforeEach(async () => {
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
 
-it('saves the selected channel and treats a cancelled share as cancellation', async () => {
-    await click(button('支付宝'));
+it('only offers WeChat and treats a cancelled share as cancellation', async () => {
+    expect(host.textContent).not.toContain('支付宝');
+    expect(host.querySelector('[role=tablist]')).toBeNull();
     await click(button('保存投喂小票'));
-    expect(fetchBlobForShare).toHaveBeenLastCalledWith(expect.stringContaining('alipay-support-card'), 'image/png');
-    expect(shareOrDownloadBlob).toHaveBeenLastCalledWith(expect.objectContaining({ fileName: 'Sully-支付宝投喂小票.png' }));
+    expect(fetchBlobForShare).toHaveBeenLastCalledWith(expect.stringContaining('wechat-support-card'), 'image/png');
+    expect(shareOrDownloadBlob).toHaveBeenLastCalledWith(expect.objectContaining({ fileName: 'Sully-微信投喂小票.png' }));
     expect(host.textContent).toContain('已交给浏览器下载');
     vi.mocked(shareOrDownloadBlob).mockResolvedValueOnce('cancelled');
     await click(button('保存投喂小票'));
@@ -37,10 +38,10 @@ it('saves the selected channel and treats a cancelled share as cancellation', as
 it('prepares before the tap and invokes sharing synchronously in the click gesture', async () => {
     let resolve!: (value: Blob) => void;
     vi.mocked(fetchBlobForShare).mockReturnValueOnce(new Promise(done => { resolve = done; }));
-    await click(button('支付宝'));
+    await click(button('打开原始赞赏码'));
     expect(button('正在准备图片').disabled).toBe(true);
-    await click(button('微信赞赏'));
-    await act(async () => resolve(new Blob(['alipay png'])));
+    await click(host.querySelector('[aria-label="返回打赏页面"]')!);
+    await act(async () => resolve(new Blob(['original png'])));
     expect(shareOrDownloadBlob).not.toHaveBeenCalled();
     act(() => {
         button('保存投喂小票').click();
@@ -69,10 +70,10 @@ it('reports save errors, keeps the original-code fallback and returns one level'
 
 it('allows preparation to be retried without automatically sharing on completion', async () => {
     vi.mocked(fetchBlobForShare).mockRejectedValueOnce(new Error('offline'));
-    await click(button('支付宝'));
+    await click(button('打开原始赞赏码'));
     expect(host.textContent).toContain('图片暂未准备好');
     await click(button('重新准备图片'));
     expect(shareOrDownloadBlob).not.toHaveBeenCalled();
-    await click(button('保存投喂小票'));
-    expect(shareOrDownloadBlob).toHaveBeenCalledWith(expect.objectContaining({ fileName: 'Sully-支付宝投喂小票.png' }));
+    await click(button('保存原始码'));
+    expect(shareOrDownloadBlob).toHaveBeenCalledWith(expect.objectContaining({ fileName: 'Sully-微信赞赏-原始码.png' }));
 });

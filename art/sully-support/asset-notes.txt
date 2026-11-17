@@ -1,42 +1,25 @@
-Sully 猫猫补给站 · CSS 视觉与 App 实装
+Sully 微信赞赏 · CSS 视觉与 App 实装
 
-打开 preview.html 可看独立设计稿。正式入口已接入设置 App 最下方（版本信息之后）。
-实装组件：components/settings/SullySupportEntry.tsx、SullySupportPage.tsx、SullySupport.css。
-生产素材位于 assets/sully-support，随 Vite 生成带 hash 的资源地址；详情页点击后加载。
-三张角色原画按展示尺寸缩小为透明 WebP，合计约 100 KB；六张收款 PNG 与此目录对应文件完全一致。
-页面顺序：主视觉 → 打赏用途 → 可展开的参考菜单 → 署名规则 → 支付渠道与二维码。
-金额只作参考，没有金额选择器；由付款人在微信／支付宝内填写。
-每月感谢名单由项目组整理；此功能不接收支付回调、不收集或记录署名。
-保存使用项目 shareOrDownloadBlob：原生 App 调系统分享，浏览器使用 Web Share 或下载；取消不显示保存成功。图片在点击前准备好，点击同步调用分享出口，保留移动浏览器要求的用户手势。
-原始收款码在 App 内打开，可保存或长按；全局返回先退回打赏页，再回设置，设置内容保持挂载。
-用户指定删除的「DC 陪聊小猫 · 工号 Sully-08」已从主视觉与保存用小票中移除。
+设置 App 最下方（版本信息之后）进入打赏 Sully；只保留微信赞赏。
+正式组件：components/settings/SullySupportEntry.tsx、SullySupportPage.tsx、SullySupport.css。
+生产素材位于 assets/sully-support，随 Vite 生成带 hash 的资源地址；详情页按需加载。
+页面顺序：主视觉 → 用途与自愿说明 → 可展开的参考菜单 → 公开署名规则 → 微信赞赏码。
+金额只作参考，实际金额在微信内填写；单次上限 ¥200。没有预填金额或支付回调。
 
-素材来源：用户提供的 S2.png、wait.png、see.png，以及两张原始收款码。
-原画与原码仅复制进 assets，未覆盖源文件。挂件白边、挂环、格纹、纸票、排版均为 CSS。
-没有使用 AI 生成图片。assets 中带 sully-code 与 support-card 的 PNG 是浏览器对 HTML/CSS 的原生截图。
+保存复用 shareOrDownloadBlob：提前准备 Blob，点击时同步进入原生／浏览器分享，保留用户手势；取消不显示保存成功。
+原始赞赏码保留备用入口，支持保存或长按。返回时恢复设置页滚动、入口焦点及未保存草稿。
 
-README 横版赞赏图：readme-banner.html → exports/readme-support-1600x860.png。
-使用同一份 Sully 原画与两张已美化收款码，通过 scripts/export-sully-readme-banner.mjs 原生浏览器截图导出。
-横图保持两码不透明、白底，附带自愿赞赏及无额外权益／更新承诺／优先服务说明。原图与 800px README 显示预览中的支付宝码本地解码均与原码一致；微信沿用用户已确认可用的码图，横图本身尚未经微信实扫。
-README 另附两张完整小票的独立链接，便于移动端查看与保存，正文包含公开署名规则。
+素材由用户提供的 S2.png、wait.png、see.png 与原始微信赞赏码组成。
+挂件白边、挂环、格纹、纸票与排版均为 CSS；没有使用 AI 生图。
+微信码从原图 (330,166) 裁出 550×550，仅替换原图 (509,345) 的 192×192 中心头像；外围码点与留白不变。
+用户已使用微信实扫统一头像小票，确认能进入原赞赏页；没有进行实际付款。
+微信赞赏码不属于通用 QR 解码器支持的格式，不能把自动检查当成微信实扫。
 
-可编辑的码图源：code-art.html?channel=wechat 或 channel=alipay。
-可编辑的小票源：code-card.html?channel=wechat 或 channel=alipay。
-导出时使用 deviceScaleFactor=1，不缩放 code-art 根元素。
-微信：从原图 (330,166) 裁出 550×550；仅替换原图 (509,345) 的 192×192 中心头像。
-支付宝：从原图 (220,510) 裁出 740×740；仅替换原图 (513,801) 的 156×156 中心头像。
-两份头像都取同一张 Sully 原画，未扩大原头像占位。裁切包含码点外白边。
+码图源：code-art.html；小票源：code-card.html；界面原型：preview.html。
+横图源：readme-banner.html；脚本：scripts/export-sully-readme-banner.mjs。
+横图导出：exports/readme-support-1600x860.png、exports/dc-support-1600x860.png。
+两份均为微信单码版，保留公开署名、自愿赞赏与无额外权益／更新承诺／优先服务说明；README 另提供完整微信小票链接。
+小红书图原本就仅含微信赞赏码。
 
-验证结果在 verification.json：
-- 逐像素比较显示，裁切后的码图只在原头像矩形内改变；二维码外围像素完全一致。
-- 支付宝原图、美化码、小票、手机 390/320px 页面中的码均本地解码，内容完全一致。
-- 完整支付宝小票缩小到 720px 与 540px 宽也解码成功。
-- 微信赞赏码不属于本次通用二维码解码器支持的格式；用户已使用微信实扫统一头像小票，确认「能正常进入赞赏页」。此项为用户实测，不是自动解码结果。
-- 页面保留原始收款码备用链接。此次仅验收扫码进入页面，没有发起或验证实际付款。
-- 浏览器检查通过：说明先于支付区、七档金额、渠道与键盘切换、下载文件、原码回退、返回／进入、摸摸反馈、320/390px 宽度无横向溢出及无脚本错误。
-
-实装回归：pnpm vitest run utils/sullySupport.test.ts utils/localBackHandlers.test.ts utils/shareExport.test.ts utils/shareExportNative.test.ts。
-浏览器回归：pnpm exec node scripts/test-sully-support-ui.mjs（PLAYWRIGHT_MODULE 可指向本机 Playwright；SULLY_QA_BROWSER_CHANNEL 可设为 msedge）。
-此测试会先打包真实 Settings，再通过本机静态服务器与独立浏览器上下文打开，并阻止外部请求；不使用用户浏览器资料或实际付款。
-
-实装验收通过：真实 Settings 底部入口、说明顺序、两渠道下载字节、Web Share 点击手势、原码逐层返回、设置焦点与滚动位置及未保存 API 草稿保留、320/390/900px 排版；无浏览器运行错误。相关回归测试共 23 项通过，生产构建通过。独立类型检查在本次文件无报错，仓库其他被导入模块仍有既存类型诊断。
+浏览器回归：pnpm exec node scripts/test-sully-support-ui.mjs。
+用独立浏览器验证微信小票下载字节、分享手势、原始码、逐层返回、未保存草稿与 320/390/900px 布局；不使用用户浏览器资料或真实付款。

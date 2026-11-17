@@ -1,0 +1,21 @@
+.sully-chat-send-progress { position: relative; display: inline-flex; align-items: center; gap: 3px; padding: 0; margin-right: 6px; color: inherit; font: inherit; pointer-events: auto; vertical-align: baseline; white-space: nowrap; }
+.sully-chat-send-progress::before { content: ''; position: absolute; inset: -6px -3px; }
+.sully-chat-send-progress:focus-visible { outline: 1px solid currentColor; outline-offset: 4px; border-radius: 2px; }
+.sully-send-dots { display: inline-flex; gap: 1.5px; }
+.sully-send-dots i { width: 2px; height: 2px; border-radius: 50%; background: currentColor; animation: sully-send-dot 1.3s ease-in-out infinite; }
+.sully-send-dots i:nth-child(2) { animation-delay: .16s; }
+.sully-send-dots i:nth-child(3) { animation-delay: .32s; }
+@keyframes sully-send-dot { 0%, 65%, 100% { transform: translateY(0); opacity: .45; } 30% { transform: translateY(-2px); opacity: 1; } }
+.instant-send-help { width: min(360px, calc(100vw - 40px)); max-height: calc(var(--visual-viewport-height, 100dvh) - 80px - var(--safe-top, 0px) - var(--safe-bottom, 0px)); margin: auto; overflow-y: auto; padding: 24px; border: 1px solid #eae6ee; border-radius: 20px; background: #fff; color: #514a59; box-shadow: 0 16px 60px #24203125; }
+.instant-send-help::backdrop { background: #221c3338; }
+.instant-send-help h3 { margin: 0; font-size: 16px; font-weight: 550; color: #342d3b; }
+.instant-send-help > p { font-size: 12px; line-height: 1.85; margin: 14px 0; }
+.instant-send-help strong { font-weight: 550; color: #51405f; }
+.instant-send-demo { margin: 20px 0; padding: 18px 18px 14px; background: #f7f5fa; border-radius: 12px; }
+.instant-send-demo-bubble { width: fit-content; margin-left: auto; padding: 10px 15px; color: #5b466d; background: #eae2f3; border-radius: 14px 14px 3px 14px; font-size: 13px; }
+.instant-send-demo-meta { display: flex; justify-content: flex-end; gap: 8px; margin-top: 5px; color: #91849c; font-size: 10px; }
+.instant-send-demo-working { color: #826493; }
+.instant-send-demo-caption { margin-top: 14px; text-align: center; color: #908699; font-size: 11px; }
+.instant-send-help-notice { color: #9a682b; }
+.instant-send-help-close { width: 100%; min-height: 44px; margin-top: 6px; background: #f0ebf5; color: #77598e; border-radius: 10px; font-size: 13px; }
+@media (prefers-reduced-motion: reduce) { .sully-send-dots i { animation: none; } }

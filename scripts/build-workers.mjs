@@ -41,6 +41,7 @@ const WORKERS = [
     name: 'post-office',
     skipPublicOut: true,
   },
+  { name: 'bifang', skipPublicOut: true },
   // amsg = 主动消息 2.0 的单用户 worker（amsg-server/cloudflare, D1 + Cron Trigger）。
   // public/ 副本给设置页「复制 Worker 代码」按钮 fetch。amsg-server 2.6.0-next.2 起
   // 全 Web Crypto，免 nodejs_compat flag。

@@ -784,6 +784,8 @@ const Appearance: React.FC = () => {
       reader.onload = async (ev) => {
           try {
               const dataUrl = ev.target?.result as string;
+              const { rememberFontDataUrl } = await import('../utils/fontLibrary');
+              await rememberFontDataUrl(dataUrl, file.name.replace(/\.[^.]+$/, ''));
               updateTheme({ customFont: dataUrl });
               addToast('系统字体已更新', 'success');
           } catch(err) {

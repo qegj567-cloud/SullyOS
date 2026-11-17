@@ -9,9 +9,10 @@ export interface BackupMissingAsset {
     reason?: 'damaged';
 }
 
-/** 带不带哪些东西不在这里传，统一由 exportSystem 读 backupPreferences。 */
+/** 文件导出沿用备份偏好；个人云端备份显式携带完整后台连接。 */
 export interface BackupExportOptions {
     userScope?: 'current' | 'all';
+    includeBackendConnection?: boolean;
     onMissingAssets?: (items: BackupMissingAsset[]) => void;
 }
 

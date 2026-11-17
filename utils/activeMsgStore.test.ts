@@ -1,11 +1,20 @@
 import { describe, it, expect, vi } from 'vitest';
-import { ActiveMsgStore, importAmsg2GlobalConfig } from './activeMsgStore';
+import { ActiveMsgStore, exportAmsg2GlobalConfig, importAmsg2GlobalConfig } from './activeMsgStore';
 import type { Amsg2ExpiredNoticeRecord } from '../types';
 
 // fake-indexeddb 已通过 test-setup.ts 自动注入. 跨测试 deleteDatabase 会被单例连接
 // block — 改用每个 case 唯一 key 隔离.
 
 let _sid = 0;
+
+it('读取 2.0 配置失败时拒绝生成缺项备份，不能返回 undefined 冒充未配置', async () => {
+  const read = vi.spyOn(ActiveMsgStore, 'getGlobalConfig').mockRejectedValue(new Error('storage unavailable'));
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  try {
+    await expect(exportAmsg2GlobalConfig({ includeBackendConnection: true })).rejects.toThrow('本次备份已中止');
+    await expect(exportAmsg2GlobalConfig()).rejects.toThrow('本次备份已中止');
+  } finally { read.mockRestore(); warn.mockRestore(); }
+});
 
 it('恢复备份不会把旧 Worker 原生能力结论当成当前状态', async () => {
   const previous=await ActiveMsgStore.getGlobalConfig();

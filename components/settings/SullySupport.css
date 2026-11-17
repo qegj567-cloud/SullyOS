@@ -49,9 +49,6 @@
 .sully-support .hero-art.is-petted .charm{animation:sully-support-charm-pet .7s ease-in-out}
 .sully-support .hero-art.is-petted .hero-heart{animation:sully-support-heart-rise .85s ease-out}
 
-.sully-support .payment-tabs{display:grid;grid-template-columns:1fr 1fr;gap:3px;padding:3px;border-radius:12px;background:#e5e2e4;margin-bottom:12px}
-.sully-support .payment-tabs button{border:0;border-radius:9px;background:transparent;min-height:40px;font-size:13px;color:#797475;transition:background .18s,box-shadow .18s,color .18s}
-.sully-support .payment-tabs button[aria-selected=true]{background:#fff;color:var(--ink);font-weight:700;box-shadow:0 2px 4px #2f24231c}
 .sully-support .ticket{position:relative;border:5px solid white;border-radius:13px;background:#fff;box-shadow:0 5px 9px #66554d15;isolation:isolate}
 .sully-support .ticket-top{height:27px;display:flex;align-items:center;justify-content:center;background:#bad0e1;color:#3f586d;font-family:Arial,sans-serif;font-size:8px;font-weight:600;letter-spacing:1.7px;border-radius:7px 7px 0 0}
 .sully-support .ticket-main{padding:9px 20px 11px}
@@ -183,3 +180,5 @@ to{opacity:1;transform:rotate(7deg) translateY(0)}
 .sully-support .support-loading{display:flex;flex-direction:column;height:100%}
 .sully-support .support-loading>p{text-align:center;padding:36px;color:#817977}
 @media(prefers-reduced-motion:reduce){.sully-support *,.sully-support *:before,.sully-support *:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+
+.sully-support .payment-heading{margin:0 0 12px;padding:12px;border-radius:12px;background:#e2eaf0;color:#526c7d;font-size:13px;font-weight:650;text-align:center}

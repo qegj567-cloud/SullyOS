@@ -1,5 +1,7 @@
 # 彼方虚拟邮局 · 后端 Worker
 
+> 正式公共服务已迁往 [`../bifang/`](../bifang/)，Worker / D1 名称为 `bifang`，入口 `https://bifang.friedsully.com/po`。本目录保留共用邮局实现和旧部署模板；当前迁移与诗句归属恢复见 [bifang 说明](../../docs/bifang-migration.md)。
+
 跨用户漂流信的**共享后端**（Cloudflare Worker + D1）。所有用户共用同一个实例，
 其他用户无需任何配置。匿名：客户端只带一个随机 `deviceId`（owner_id），无登录、无 PII。
 

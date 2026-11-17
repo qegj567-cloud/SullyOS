@@ -8,6 +8,8 @@ import { openBackupZip } from './backupZipReader';
 import { putSharedImage, isSharedAssetReferenced } from './spaceAssets';
 import { openCollaborationSpace } from '../features/collaboration/store';
 import type { BackupMissingAsset } from './backupMissingAssets';
+import { USER_LOCATION_STORAGE_KEY } from './userLocationPrivacy';
+import { exportUserLocationSettings } from './userLocationBackup';
 
 beforeEach(async () => {
     localStorage.clear();
@@ -16,6 +18,75 @@ beforeEach(async () => {
         const db = await openSpaceDB(id);
         await commitSpaceRows(db, Object.fromEntries(Array.from(db.objectStoreNames).filter(n => n !== 'blob_assets').map(n => [n, []])), true);
     }
+});
+
+describe('saved location settings in space backups', () => {
+    const config = { enabled: true, provider: 'geoapify' as const, geoapifyKey: 'fixture-key', characterIds: ['fixture-role'],
+        regions: [{ id: 'home', name: '家', latitude: 31, longitude: 121, radiusKm: 2 }] };
+    const view = (id: string) => createSpaceStorage(localStorage, id);
+    const read = (id: string) => exportUserLocationSettings(view(id));
+    const archive = async (mode: 'full' | 'text_only' | 'media_only', scope: 'current' | 'all' = 'all') =>
+        JSZip.loadAsync(await (await exportUserSpaces(mode, scope)).arrayBuffer());
+
+    it.each(['full', 'text_only'] as const)('restores each user’s audience with shared settings in %s backups', async mode => {
+        view('default').setItem(USER_LOCATION_STORAGE_KEY, JSON.stringify(config));
+        view('u_backup').setItem(USER_LOCATION_STORAGE_KEY, JSON.stringify({ ...config, characterIds: [] }));
+        const zip = await archive(mode);
+        const manifest = JSON.parse(await zip.file('user-spaces.json')!.async('string'));
+        expect(manifest.userLocation.audiences).toEqual({ default: config.characterIds, u_backup: [] });
+        expect(manifest.userLocation.settings).not.toHaveProperty('characterIds');
+        localStorage.clear();
+        await importUserSpaces(zip);
+        expect(read('default')).toEqual(config);
+        expect(read('u_backup')).toEqual({ ...config, characterIds: [] });
+    });
+    it('preserves all-within-space selection without exporting or overwriting other user audiences', async () => {
+        const { characterIds: _, ...all } = config;
+        view('default').setItem(USER_LOCATION_STORAGE_KEY, JSON.stringify(all));
+        view('u_backup').setItem(USER_LOCATION_STORAGE_KEY, JSON.stringify({ ...config, characterIds: ['other-private-role'] }));
+        const zip = await archive('text_only', 'current');
+        const manifest = JSON.parse(await zip.file('user-spaces.json')!.async('string'));
+        expect(manifest.userLocation.audiences).toEqual({ default: null });
+        expect(JSON.stringify(manifest)).not.toContain('other-private-role');
+        view('default').setItem(USER_LOCATION_STORAGE_KEY, JSON.stringify({ enabled: false, regions: [], characterIds: [] }));
+        await importUserSpaces(zip);
+        expect(read('default')).toEqual(all);
+        expect(read('u_backup')?.characterIds).toEqual(['other-private-role']);
+    });
+    it.each(['missing', 'invalid', 'extra'] as const)('rejects %s audience before replacing records', async defect => {
+        view('default').setItem(USER_LOCATION_STORAGE_KEY, JSON.stringify(config));
+        const zip = await archive('full');
+        const manifest = JSON.parse(await zip.file('user-spaces.json')!.async('string'));
+        if (defect === 'missing') delete manifest.userLocation.audiences.u_backup;
+        if (defect === 'invalid') manifest.userLocation.audiences.default = 'all';
+        if (defect === 'extra') manifest.userLocation.audiences.u_unknown = null;
+        zip.file('user-spaces.json', JSON.stringify(manifest));
+        await DB.saveCharacter({ id: 'location-fixture', name: '保留' } as any);
+        await expect(importUserSpaces(zip)).rejects.toThrow('真实定位授权范围');
+        expect((await DB.getCharacter('location-fixture'))?.name).toBe('保留');
+        expect(read('default')).toEqual(config);
+    });
+    it('media, legacy and independent-user imports preserve destination location settings', async () => {
+        view('default').setItem(USER_LOCATION_STORAGE_KEY, JSON.stringify(config));
+        const zip = await archive('full'), media = await archive('media_only');
+        expect(JSON.parse(await media.file('user-spaces.json')!.async('string')).userLocation).toBeUndefined();
+        const destination = { enabled: false, regions: [], characterIds: [] };
+        view('default').setItem(USER_LOCATION_STORAGE_KEY, JSON.stringify(destination));
+        await importUserSpaces(media);
+        expect(read('default')).toEqual(destination);
+        const imported = await importUserSpaces(zip, false, { asNewUsers: true });
+        expect(read('default')).toEqual(destination);
+        for (const space of imported) expect(read(space.id)?.characterIds).toEqual([]);
+        const manifest = JSON.parse(await zip.file('user-spaces.json')!.async('string'));
+        delete manifest.userLocation;
+        zip.file('user-spaces.json', JSON.stringify(manifest));
+        await importUserSpaces(zip);
+        expect(read('default')).toEqual(destination);
+    });
+    it('does not upload an apparently complete archive when saved settings are unreadable', async () => {
+        localStorage.setItem(USER_LOCATION_STORAGE_KEY, '{broken');
+        await expect(exportUserSpaces('text_only', 'all')).rejects.toThrow('真实定位设置无法读取');
+    });
 });
 
 describe('space backup and asset ownership', () => {
@@ -97,7 +168,7 @@ describe('space backup and asset ownership', () => {
             });
         }
         await commitSpaceRows(await openCollaborationSpace('u_backup'), { sessions: [{ id: 'session', charId: 'c_u_backup', title: '乙的协同' }] });
-        localStorage.setItem('os_user_location_privacy_v1', JSON.stringify({ latitude: 12, longitude: 34 }));
+        localStorage.setItem('os_user_location_privacy_v1', JSON.stringify({ enabled: false, regions: [], lastFix: { latitude: 12, longitude: 34 } }));
         const zip = await JSZip.loadAsync(await (await exportUserSpaces('full', 'all')).arrayBuffer());
         expect(Object.keys(zip.files).filter(p => p.startsWith('shared/') && !zip.files[p].dir)).toHaveLength(1);
         const manifest = JSON.parse(await zip.file('user-spaces.json')!.async('string'));

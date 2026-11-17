@@ -1,6 +1,9 @@
 # SullyOS·糯米机
+
 <div align="center">
-<img width="800" alt="banner" src="https://cdn.jsdelivr.net/gh/qegj567-cloud/SullyOS-assets@main/bgm/SULLY/sDN.png" />
+<a href="art/sully-support/exports/readme-support-1600x860.png">
+<img width="800" alt="支持 Sully：微信赞赏码，所有赞赏用于项目更新与维护" src="art/sully-support/exports/readme-support-1600x860.png" />
+</a>
 </div>
 
 ---
@@ -92,11 +95,9 @@ pnpm dev
 
 ## 支持 Sully
 
-[![支持 Sully：微信赞赏与支付宝收款码，所有赞赏用于项目更新与维护](art/sully-support/exports/readme-support-1600x860.png)](art/sully-support/exports/readme-support-1600x860.png)
-
 所有赞赏将直接用于继续项目的更新与维护。**赞赏完全自愿，不影响正常使用**，不附带额外权益、更新承诺或优先服务。请按自己的意愿与余力决定就好。
 
-点击横图可查看大图，也可单独保存 [微信赞赏小票](assets/sully-support/wechat-support-card.png)（单次上限 ¥200）或 [支付宝小票](assets/sully-support/alipay-support-card.png)，再到对应 App 从相册扫码。应用内的入口在 **设置页最下方 → 打赏 Sully**。
+点击顶部横图可查看大图，也可单独保存 [微信赞赏小票](assets/sully-support/wechat-support-card.png)（单次上限 ¥200），再到微信扫一扫中从相册识别。应用内的入口在 **设置页最下方 → 打赏 Sully**。
 
 想留下名字的话，请在付款时的【添加备注】写下希望公开展示的署名。每月更新会收录进「饲养员感谢名单」；未备注默认为「神秘猫奴」。
 
@@ -287,6 +288,8 @@ VITE_HIDE_BUILD_BADGE=1 npm run build
 
 ### ⚠️ 后端代理：二改请换成你自己的
 
+> **后端更新提醒**：自建主代理请同步更新 `worker/index.js`，只更新前端不会更新后台；使用官方公共代理无需操作。主动消息 2.0 的后台请在应用设置中单独更新。
+
 项目是 local-first，但有些能力绕不开代理 / 签名 / 跨域，走了 Cloudflare Worker。你 fork 直接跑会打在**作者账号**上——流量额度都是作者的，用多了大家一起 429。所以二改请务必换。
 
 **好消息**：现在**主代理已经统一成一个中心配置**，不用再满仓库改硬编码。
@@ -306,7 +309,7 @@ VITE_HIDE_BUILD_BADGE=1 npm run build
 
 **③ 彼方（VRWorld）的后端不用你操心 —— 但二次发布要删**
 
-彼方里的**邮局 / 漂流瓶**和**信号坠落处（特别活动）**连的是作者【所有用户共用】的后端 `noir2.cc.cd`（源码 `worker/post-office/`）——跨实例合写诗、投递漂流瓶全靠它。你自己 fork 玩**不用改、能直接连**。
+彼方里的**邮局 / 漂流瓶**和**信号坠落处（特别活动）**连的是作者【所有用户共用】的后端 `bifang.friedsully.com/po`（部署入口 `worker/bifang/`，邮局逻辑复用 `worker/post-office/`）。旧 `noir2.cc.cd` 的公开诗集已迁入，用户原身份的诗句归属由新后端向旧接口核实补回；旧信件不补迁。详见 [彼方后端迁移](docs/bifang-migration.md)。你自己 fork 玩**不用改、能直接连**。
 
 **二改授权不包含二次发布或使用官方后端承载第三方流量的权限。** 若你已另获对外发布的书面许可：请把彼方的**邮局**和**特别活动（信号坠落处）删掉**。那些请求打在作者后端上，你**既管不到、也控制不了**，别把你用户的数据往作者服务器上灌。
 

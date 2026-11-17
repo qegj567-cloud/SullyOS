@@ -20,6 +20,11 @@ let placeCache: { fix: LocationFix; place: string; at: number; provider: string 
 export function saveUserLocationConfig(value: UserLocationConfig): void {
     const config = validateUserLocationConfig(value);
     localStorage.setItem(USER_LOCATION_STORAGE_KEY, JSON.stringify(config));
+    invalidateUserLocationContext();
+}
+
+/** Call after restoring shared settings and per-space audiences without rewriting either. */
+export function invalidateUserLocationContext(): void {
     revision++;
     activeLookup?.abort();
     placeCache = undefined;

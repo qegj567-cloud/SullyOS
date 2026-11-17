@@ -159,6 +159,7 @@ export async function importLegacyAsIndependentUser(data: FullBackupData, zip: a
         chatTranslateTargetLangByChar: 'chat_translate_lang_',
     };
     for (const [field, prefix] of Object.entries(perCharacterFields)) for (const [id, value] of Object.entries((data as any)[field] || {})) put(prefix + id, value);
+    for (const [id, value] of Object.entries(data.chatSubtitleByChar || {})) put('chat_translate_subtitle_' + id, value, true);
     put('spark_char_handles', data.socialAppData?.charHandles, true);
     put('spark_user_id', data.socialAppData?.userId);
     put(STORY_THEATER_APPEARANCE_STORAGE_KEY, data.storyTheaterAppearance);

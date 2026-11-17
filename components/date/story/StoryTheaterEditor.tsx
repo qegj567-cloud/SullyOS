@@ -49,6 +49,7 @@ const StoryTheaterEditor: React.FC<Props> = ({ initial, characters, user, masks,
         finally { summaryLock.current = false; setSummarizing(false); }
     };
     const fileInput = useRef<HTMLInputElement>(null);
+    const titleInput = useRef<HTMLInputElement>(null);
     const actors = useMemo(() => characters.filter(char => draft.characterIds.includes(char.id)), [characters, draft.characterIds]);
     const resolvedMask = useMemo(() => resolveStoryTheaterMask(draft.mask, user, characters, masks), [characters, draft.mask, masks, user]);
     const memoryParticipants = useMemo(() => {
@@ -103,7 +104,7 @@ const StoryTheaterEditor: React.FC<Props> = ({ initial, characters, user, masks,
         <main className='story-page-scroll flex-1 overflow-y-auto px-5 py-6 pb-28'><fieldset disabled={summarizing} className='min-w-0 max-w-2xl mx-auto space-y-8'>
             <section>
                 <div className='text-[9px] tracking-[.22em] uppercase font-bold text-violet-500'>01 / Story</div>
-                <label className='block mt-2'><span className='text-[10px] font-bold text-slate-500'>标题 · 必填</span><input value={draft.title} onChange={event => update('title', event.target.value)} placeholder='剧情名称' className='mt-1 w-full bg-transparent text-3xl font-serif font-semibold outline-none placeholder:text-slate-300' /></label>
+                <label className='block mt-2'><span className='text-[10px] font-bold text-slate-500'>标题 · 必填</span><input ref={titleInput} value={draft.title} onChange={event => update('title', event.target.value)} placeholder='剧情名称' className='mt-1 w-full bg-transparent text-3xl font-serif font-semibold outline-none placeholder:text-slate-300' /></label>
                 <label className='block mt-5'><span className='text-[10px] font-bold text-slate-500'>剧情介绍 · 可选</span><textarea value={draft.premise} onChange={event => update('premise', event.target.value)} placeholder='不填写也能直接开场；也可以写地点、冲突或必须守住的设定……' className='mt-2 w-full min-h-28 p-4 rounded-2xl bg-white border border-slate-200 text-sm leading-7 resize-y outline-none' /></label>
                 <div className='mt-5'><div className='text-[10px] font-bold text-slate-500'>谁先落笔</div><div className='mt-2 grid grid-cols-2 p-1 rounded-xl bg-slate-200'><button disabled={maskLocked} onClick={() => update('openingMode', 'user')} className={`py-2.5 rounded-lg text-[11px] font-bold disabled:opacity-60 ${(draft.openingMode || 'user') === 'user' ? 'bg-white shadow-sm text-violet-700' : 'text-slate-500'}`}>我先写</button><button disabled={maskLocked} onClick={() => update('openingMode', 'assistant')} className={`py-2.5 rounded-lg text-[11px] font-bold disabled:opacity-60 ${draft.openingMode === 'assistant' ? 'bg-white shadow-sm text-violet-700' : 'text-slate-500'}`}>故事先写</button></div><p className='mt-2 text-[10px] text-slate-400'>{draft.openingMode === 'assistant' ? '进入后可直接让故事根据标题与介绍写出第一幕。' : '进入后由你用当前身份写下第一句话。'}</p></div>
             </section>
@@ -178,7 +179,13 @@ const StoryTheaterEditor: React.FC<Props> = ({ initial, characters, user, masks,
                 <div className='mt-2 flex items-end justify-between gap-4'><div><h2 className='text-lg font-semibold'>静态配置预算</h2><p className='mt-1 text-[10px] leading-5 text-slate-500'>这里只比较角色、世界书、预设与归档；剧场内会按续写实际使用的完整上下文统计历史、召回和本轮输入。</p></div><strong className='text-2xl font-serif'>{Object.values(tokenPreview).reduce((sum, value) => sum + value, 0).toLocaleString()}</strong></div>
                 <div className='mt-4 grid grid-cols-4 gap-2'>{Object.entries({ '角色': tokenPreview.actor, '世界书': tokenPreview.book, '预设': tokenPreview.preset, '归档': tokenPreview.archive }).map(([label, value]) => <div key={label} className='py-3 rounded-xl bg-white border border-slate-200 text-center'><div className='text-[9px] text-slate-400'>{label}</div><div className='mt-1 text-xs font-bold'>{value.toLocaleString()}</div></div>)}</div>
             </section>
-            <button onClick={save} disabled={saving || !draft.title.trim() || !canStart} className='w-full py-4 rounded-2xl bg-slate-900 text-white text-sm font-bold disabled:opacity-30'>{saving ? '正在保存……' : '保存并进入剧情'}</button>
+            <div className='space-y-3'>
+                {!draft.title.trim() && <button type='button' onClick={() => {
+                    titleInput.current?.focus({ preventScroll: true });
+                    titleInput.current?.scrollIntoView({ block: 'center' });
+                }} className='block w-full py-2 text-center text-xs font-semibold text-violet-600 underline underline-offset-4'>还没有起名字哦，点这里给剧情起个名字</button>}
+                <button onClick={save} disabled={saving || !draft.title.trim() || !canStart} className='w-full py-4 rounded-2xl bg-slate-900 text-white text-sm font-bold disabled:opacity-30'>{saving ? '正在保存……' : '保存并进入剧情'}</button>
+            </div>
         </fieldset></main>
     </div>;
 };
