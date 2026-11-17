@@ -3,44 +3,85 @@ export interface CompanionFrame { image: string; at: number }
 export const CLIP_MS = 8000;
 export const MAX_CLIP_BYTES = 8 * 1024 * 1024;
 
+export class CompanionRecordingError extends Error {
+  constructor(readonly kind: 'empty' | 'size' | 'encoder' | 'stopped', message: string) { super(message); }
+}
+
+function recordingMimes(): string[] {
+  // Let the browser choose its working MP4 codec before forcing a specific H.264 profile.
+  return typeof MediaRecorder === 'undefined' ? [] : ['video/mp4', 'video/mp4;codecs=avc1.42E01E']
+    .filter(value => MediaRecorder.isTypeSupported(value));
+}
+
 /** Only negotiate formats supported by the video API. Never disguise stills as video. */
 export function companionRecordingMime(): string {
-  const mime = typeof MediaRecorder !== 'undefined' &&
-    ['video/mp4;codecs=avc1.42E01E', 'video/mp4'].find(value => MediaRecorder.isTypeSupported(value));
+  const mime = recordingMimes()[0];
   if (!mime) throw new Error('此浏览器不能录制 MP4 视频片段，请使用支持 MP4 录制的新版 Chrome、Edge 或 Safari。');
   return mime;
+}
+
+/** Retry only local encoder failures with another supported MP4 mode; never retry an API here. */
+export function createCompanionClipRecorder(stream: MediaStream, signal: AbortSignal) {
+  const mimes = recordingMimes();
+  if (!mimes.length) companionRecordingMime();
+  let selected = 0;
+  return async () => {
+    while (true) {
+      try { return await recordCompanionClip(stream, mimes[selected], signal); }
+      catch (error) {
+        signal.throwIfAborted();
+        if (!(error instanceof CompanionRecordingError) || !['empty', 'encoder'].includes(error.kind) || selected + 1 >= mimes.length) throw error;
+        selected++;
+      }
+    }
+  };
 }
 
 /** Restart each recorder: timeslice chunks alone are not standalone videos. */
 export function recordCompanionClip(stream: MediaStream, mime: string, signal: AbortSignal, durationMs = CLIP_MS): Promise<CompanionClip> {
   signal.throwIfAborted();
   return new Promise((resolve, reject) => {
-    const recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 700_000 });
+    let recorder: MediaRecorder;
+    try { recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 700_000 }); }
+    catch { reject(new CompanionRecordingError('encoder', '浏览器未能启动 MP4 编码器')); return; }
     const parts: Blob[] = [];
     const from = Date.now();
-    let timer: ReturnType<typeof setTimeout>, settled = false;
-    const cleanup = () => { clearTimeout(timer); signal.removeEventListener('abort', cancel); recorder.onstop = recorder.ondataavailable = recorder.onerror = null; };
+    let timer: ReturnType<typeof setTimeout>, finishTimer: ReturnType<typeof setTimeout>, settled = false, bytes = 0, to: number | undefined;
+    const cleanup = () => { clearTimeout(timer); clearTimeout(finishTimer); signal.removeEventListener('abort', cancel); recorder.onstop = recorder.ondataavailable = recorder.onerror = null; };
     const fail = (error: unknown) => {
       if (settled) return;
       settled = true; cleanup();
-      if (recorder.state !== 'inactive') recorder.stop();
+      try { if (recorder.state !== 'inactive') recorder.stop(); } catch { /* Still release callbacks and reject. */ }
+      parts.length = 0;
       reject(error);
     };
     const cancel = () => fail(signal.reason ?? new DOMException('Cancelled', 'AbortError'));
     signal.addEventListener('abort', cancel, { once: true });
-    recorder.ondataavailable = event => { if (event.data.size) parts.push(event.data); };
-    recorder.onerror = () => fail(new Error('视频录制失败，请重新开启镜头'));
+    recorder.ondataavailable = event => {
+      if (settled || !event.data.size) return;
+      bytes += event.data.size;
+      if (bytes > MAX_CLIP_BYTES) { fail(new CompanionRecordingError('size', `录制片段超过 8 MB（已收到 ${(bytes / 1024 / 1024).toFixed(1)} MB），本段未发送`)); return; }
+      parts.push(event.data);
+    };
+    recorder.onerror = () => fail(new CompanionRecordingError('encoder', '浏览器 MP4 编码失败，本段未发送'));
     recorder.onstop = () => {
       if (settled) return;
       settled = true; cleanup();
       const blob = new Blob(parts, { type: 'video/mp4' });
-      if (!blob.size || blob.size > MAX_CLIP_BYTES) { reject(new Error('录制片段为空或超过 8 MB，请重新开启镜头')); return; }
-      resolve({ blob, from, to: Date.now() });
+      parts.length = 0;
+      if (!blob.size) { reject(new CompanionRecordingError('empty', '浏览器录制结果为 0 字节，本段未发送；可重试视频理解或换摄像头后重开')); return; }
+      resolve({ blob, from, to: to ?? Date.now() });
     };
     try {
-      recorder.start();
-      timer = setTimeout(() => { if (recorder.state !== 'inactive') recorder.stop(); }, durationMs);
-    } catch (error) { fail(error); }
+      // Collect bounded pieces, then join every piece (including the final one) into ONE complete MP4.
+      recorder.start(1000);
+      timer = setTimeout(() => {
+        to = Date.now();
+        finishTimer = setTimeout(() => fail(new CompanionRecordingError('encoder', '浏览器未能完成 MP4 封装，本段未发送')), 5000);
+        try { if (recorder.state !== 'inactive') recorder.stop(); }
+        catch { fail(new CompanionRecordingError('encoder', '浏览器未能结束视频录制，本段未发送')); }
+      }, durationMs);
+    } catch { fail(new CompanionRecordingError('encoder', '浏览器未能开始视频录制，本段未发送')); }
   });
 }
 

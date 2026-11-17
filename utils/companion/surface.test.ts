@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { beforeEach, afterEach, expect, it, vi } from 'vitest';
 import { CompanionSurface } from '../../apps/CompanionApp';
 import { startDoubaoListening } from './doubaoListening';
+import { createCompanionClipRecorder, startCompanionVideoLoop } from './capture';
 
 vi.mock('./doubaoListening', () => ({ canUseDoubaoListening: () => true, startDoubaoListening: vi.fn(() => vi.fn()) }));
 
@@ -11,7 +12,7 @@ vi.mock('../../context/OSContext', () => ({ useOS: () => ({}) }));
 vi.mock('./voice', () => ({ CompanionVoice: class { prime() {} close() {} } }));
 vi.mock('./requests', () => ({ createCompanionRequests: vi.fn() }));
 vi.mock('./vision', async importOriginal => ({ ...await importOriginal<typeof import('./vision')>(), observeCompanionVideo: vi.fn(), observationText: () => '尚无画面' }));
-vi.mock('./capture', async importOriginal => ({ ...await importOriginal<typeof import('./capture')>(), companionRecordingMime: () => 'video/mp4', startCompanionVideoLoop: vi.fn() }));
+vi.mock('./capture', async importOriginal => ({ ...await importOriginal<typeof import('./capture')>(), createCompanionClipRecorder: vi.fn(() => vi.fn()), startCompanionVideoLoop: vi.fn() }));
 vi.mock('../visionApi', () => ({ isVisionApiReady: (config: any) => !!config?.enabled }));
 vi.mock('../ttsRouter', () => ({ canSynthesizeSpeech: () => false, characterHasVoice: () => false }));
 vi.mock('../chatContextRange', () => ({ resolveContextRangeMode: () => 'manual', clampManualContextLimit: (value: number) => value || 500 }));
@@ -79,6 +80,45 @@ it('stops a camera stream whose permission resolves after the user has cancelled
   await act(async () => permission.resolve({ getTracks: () => [track] } as any));
   expect(track.stop).toHaveBeenCalledOnce();
   expect(host.textContent).toContain('镜头关闭');
+});
+
+it('keeps the same live preview through recording, analysis failure and retry; closing alone releases camera', async () => {
+  const track = { stop: vi.fn(), onended: null }, stream = { getTracks: () => [track], getVideoTracks: () => [track] };
+  vi.stubGlobal('navigator', { mediaDevices: { getUserMedia: vi.fn(async () => stream) } });
+  vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+  await act(async () => root.render(React.createElement(CompanionSurface, { ...props,
+    api: { companionVideoApi: { baseUrl: 'https://video.test', apiKey: 'test', model: 'video' } },
+  })));
+  await click('开启镜头');
+  const video = host.querySelector('video')!;
+  expect(video.srcObject).toBe(stream); expect(video.classList.contains('is-on')).toBe(true);
+  const loop = vi.mocked(startCompanionVideoLoop).mock.calls.at(-1)![0];
+  await act(async () => loop.error(new Error('浏览器录制结果为 0 字节'), true));
+  expect(loop.signal.aborted).toBe(true);
+  expect(host.textContent).toContain('视频理解已暂停'); expect(host.textContent).toContain('实时预览仍保留');
+  expect(video.srcObject).toBe(stream); expect(track.stop).not.toHaveBeenCalled();
+  const before = vi.mocked(startCompanionVideoLoop).mock.calls.length;
+  await click('重试视频理解');
+  expect(vi.mocked(startCompanionVideoLoop).mock.calls.length).toBe(before + 1);
+  expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledOnce();
+  expect(video.srcObject).toBe(stream);
+  await click('关闭镜头'); expect(track.stop).toHaveBeenCalledOnce(); expect(video.srcObject).toBeNull();
+});
+
+it('opens preview even without video API or with an unsupported recorder', async () => {
+  const track = { stop: vi.fn(), onended: null }, stream = { getTracks: () => [track], getVideoTracks: () => [track] };
+  vi.stubGlobal('navigator', { mediaDevices: { getUserMedia: vi.fn(async () => stream) } });
+  vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+  await act(async () => root.render(React.createElement(CompanionSurface, props)));
+  await click('开启镜头'); expect(host.textContent).toContain('仅实时预览'); expect(host.querySelector('video')!.srcObject).toBe(stream);
+  await click('关闭镜头');
+  vi.mocked(createCompanionClipRecorder).mockImplementationOnce(() => { throw new Error('不支持 MP4'); });
+  await act(async () => root.render(React.createElement(CompanionSurface, { ...props,
+    api: { companionVideoApi: { baseUrl: 'https://video.test', apiKey: 'test', model: 'video' } },
+  })));
+  await click('开启镜头'); expect(host.textContent).toContain('不支持 MP4');
+  expect(host.querySelector('video')!.classList.contains('is-on')).toBe(true);
+  expect(track.stop).toHaveBeenCalledOnce();
 });
 
 it('opens the setup guide without generating, and stops a live turn before navigating to settings', async () => {

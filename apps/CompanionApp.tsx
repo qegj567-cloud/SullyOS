@@ -9,12 +9,13 @@ import { canListenContinuously, startCompanionListening, type ListeningCallbacks
 import { CompanionMicMeter } from '../components/companion/CompanionMicMeter';
 import { canUseDoubaoListening, startDoubaoListening } from '../utils/companion/doubaoListening';
 import { observeCompanionVideo, observationText, companionVideoReady, type CompanionImageMode, type CompanionObservation } from '../utils/companion/vision';
-import { companionRecordingMime, recordCompanionClip, startCompanionVideoLoop } from '../utils/companion/capture';
+import { createCompanionClipRecorder, startCompanionVideoLoop } from '../utils/companion/capture';
 import { canSynthesizeSpeech } from '../utils/ttsRouter';
 import { resolveContextRangeMode, clampManualContextLimit } from '../utils/chatContextRange';
 import { CompanionDebugStore } from '../utils/companion/debug';
 import { CompanionDebugPanel } from '../components/companion/CompanionDebugPanel';
 import { CompanionReplyProgress, companionReplyLabel } from '../components/companion/CompanionReplyProgress';
+import { CompanionVideoStatus } from '../components/companion/CompanionVideoStatus';
 import { CompanionSetupGuide } from '../components/companion/CompanionSetupGuide';
 import { companionDialogueReady, openCompanionSetupTarget, type CompanionSetupTarget } from '../utils/companion/setup';
 import './companion.css';
@@ -28,9 +29,10 @@ export interface CompanionSurfaceProps {
   saveStt?(config: CompanionSttConfig): void;
   /** Fixture injection only; production always uses the shared request pipeline. */
   requestFactory?: RequestFactory;
+  videoObserver?: typeof observeCompanionVideo;
 }
 
-export function CompanionSurface({ characters, user, api, realtimeConfig, close, navigateSetup, saveVideoApi, saveStt, requestFactory = createCompanionRequests }: CompanionSurfaceProps) {
+export function CompanionSurface({ characters, user, api, realtimeConfig, close, navigateSetup, saveVideoApi, saveStt, requestFactory = createCompanionRequests, videoObserver = observeCompanionVideo }: CompanionSurfaceProps) {
   const [charId, setCharId] = useState(characters[0]?.id || '');
   const char = characters.find(item => item.id === charId);
   const [style, setStyle] = useState('');
@@ -51,11 +53,13 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [observation, setObservation] = useState<CompanionObservation>();
   const [observing, setObserving] = useState(false);
+  const [analysisPaused, setAnalysisPaused] = useState(false);
+  const [analysisProblem, setAnalysisProblem] = useState('');
+  const [analysisClip, setAnalysisClip] = useState<{ from: number; to: number }>();
   const [imageMode, setImageMode] = useState<CompanionImageMode>('none');
   const videoRef = useRef<HTMLVideoElement>(null);
   const mediaRef = useRef<MediaStream>();
   const cameraGeneration = useRef(0);
-  const recordingMime = useRef('');
   const observationRef = useRef<CompanionObservation>();
   const visionAbort = useRef<AbortController>();
   const stopListening = useRef<() => void>();
@@ -77,6 +81,7 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
     observationRef.current = undefined;
     if (videoRef.current) videoRef.current.srcObject = null;
     setCamera(false); setCameraPending(false); setObservation(undefined); setObserving(false);
+    setAnalysisPaused(false); setAnalysisProblem(''); setAnalysisClip(undefined);
   };
   const stopAll = () => { session.current?.interrupt(); stopMic(); stopCamera(); };
 
@@ -139,14 +144,16 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
 
   const toggleCamera = async () => {
     if (camera || cameraPending) { stopCamera(); return; }
-    if (!char || !companionVideoReady(api.companionVideoApi)) { setError('请在同行 → API 接入配置独立的视频理解 API，再开启镜头'); setSetupOpen(true); return; }
+    if (!char) return;
     setError(''); setCameraPending(true);
     const generation = ++cameraGeneration.current;
     try {
-      recordingMime.current = companionRecordingMime();
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 640 }, frameRate: { ideal: 12, max: 15 } }, audio: false });
       if (generation !== cameraGeneration.current || !mounted.current) { stream.getTracks().forEach(track => track.stop()); return; }
       mediaRef.current = stream;
+      for (const track of stream.getVideoTracks()) track.onended = () => {
+        if (generation === cameraGeneration.current) { stopCamera(); setError('摄像头已断开，请检查设备后重新开启'); }
+      };
       if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play(); }
       if (generation !== cameraGeneration.current) return;
       setCamera(true);
@@ -156,47 +163,56 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
   };
 
   useEffect(() => {
-    if (!camera || !char || !companionVideoReady(api.companionVideoApi) || !mediaRef.current) return;
+    if (!camera || analysisPaused || !char || !companionVideoReady(api.companionVideoApi) || !mediaRef.current) return;
     const abort = new AbortController(); visionAbort.current = abort;
     const stream = mediaRef.current;
-    const publish = (next: CompanionObservation) => {
-      if (!abort.signal.aborted && mounted.current) { observationRef.current = next; setObservation(next); }
+    const failAnalysis = (err: unknown, fatal: boolean) => {
+      if (abort.signal.aborted) return;
+      setAnalysisProblem(`${err instanceof Error ? err.message : '视频理解失败'}${fatal ? '' : '；将尝试下一段视频。'}`);
+      if (fatal) {
+        // Cancel recording and model work, but keep the SAME preview stream alive.
+        abort.abort(); setAnalysisPaused(true); setObserving(false); setAnalysisClip(undefined);
+      }
     };
+    const publish = (next: CompanionObservation) => {
+      if (!abort.signal.aborted && mounted.current) { observationRef.current = next; setObservation(next); setAnalysisProblem(''); }
+    };
+    let record: ReturnType<typeof createCompanionClipRecorder>;
+    try { record = createCompanionClipRecorder(stream, abort.signal); }
+    catch (err) { failAnalysis(err, true); return () => abort.abort(); }
     startCompanionVideoLoop({ signal: abort.signal,
-      record: () => recordCompanionClip(stream, recordingMime.current, abort.signal),
+      record,
       observe: async clip => {
-        setObserving(true);
-        try { publish(await observeCompanionVideo(clip, api.companionVideoApi!, char.id, char.name, abort.signal, { mode: imageMode, helper: api.visionApi }, publish)); }
-        finally { if (!abort.signal.aborted && mounted.current) setObserving(false); }
+        setObserving(true); setAnalysisClip({ from: clip.from, to: clip.to });
+        try { publish(await videoObserver(clip, api.companionVideoApi!, char.id, char.name, abort.signal, { mode: imageMode, helper: api.visionApi }, publish)); }
+        finally { if (!abort.signal.aborted && mounted.current) { setObserving(false); setAnalysisClip(undefined); } }
       },
-      error: (err, fatal) => {
-        if (abort.signal.aborted) return;
-        if (fatal) stopCamera();
-        setError(`视频理解失败${fatal ? '，镜头已暂停，请检查配置后重新开启' : ''}：${err instanceof Error ? err.message : '未知错误'}`);
-      },
+      error: failAnalysis,
     });
     return () => abort.abort();
-  }, [camera, charId, api.companionVideoApi, api.visionApi, imageMode]);
+  }, [camera, analysisPaused, charId, api.companionVideoApi, api.visionApi, imageMode, videoObserver]);
 
-  return <section className="companion-app" aria-label="同行">
+  const caption = latest && !historyOpen && <div className="companion-caption" key={latest.id}>
+    <small>{latest.role === 'user' ? user.name : char?.name}{latest.phase && <b className="companion-reply-label">{companionReplyLabel(latest.phase)}</b>}{latest.status === 'interrupted' ? ' · 已打断' : ''}</small>
+    <p>{latest.status === 'interrupted' ? latest.heard || '这句话还没来得及说出口。' : latest.text}</p>
+  </div>;
+
+  return <section className={`companion-app${camera ? ' camera-on' : ''}`} aria-label="同行">
     <header className="companion-header">
       <button className="companion-icon" aria-label="返回桌面" onClick={() => { stopAll(); close(); }}><ArrowLeft size={22}/></button>
       <div className="companion-title"><strong>同行<span>DEMO</span></strong><small>{status}</small></div>
       <button type="button" className="companion-setup-entry" onClick={() => setSetupOpen(true)}>API 接入</button>
       <button className="companion-icon" aria-label="同行设置" onClick={() => setSettings(!settings)}><SlidersHorizontal size={22}/></button>
     </header>
-    <div className="companion-stage">
+    <div className={`companion-stage${camera ? ' has-camera' : ''}`} data-vision={analysisPaused ? 'paused' : observing ? 'analyzing' : 'recording'}>
       <video ref={videoRef} muted playsInline aria-label="摄像头实时画面" className={camera ? 'is-on' : ''}/>
       {!camera && <div className="companion-empty"><Compass size={68} weight="thin"/><h1>一起，看看眼前。</h1><p>打开镜头，或直接说说你看到的。</p></div>}
       <div className="companion-topline"><label><span className="companion-dot"/>
         <select aria-label="同行角色" value={charId} onChange={event => setCharId(event.target.value)}>
           {!characters.length && <option value="">请先添加角色</option>}
           {characters.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-        </select></label><span>{camera ? observing ? '正在理解视频' : '正在采集视频' : '镜头关闭'}</span></div>
-      {latest && !historyOpen && <div className="companion-caption" key={latest.id}>
-        <small>{latest.role === 'user' ? user.name : char?.name}{latest.phase && <b className="companion-reply-label">{companionReplyLabel(latest.phase)}</b>}{latest.status === 'interrupted' ? ' · 已打断' : ''}</small>
-        <p>{latest.status === 'interrupted' ? latest.heard || '这句话还没来得及说出口。' : latest.text}</p>
-      </div>}
+        </select></label><span>{camera ? '实时预览' : cameraPending ? '正在打开镜头' : '镜头关闭'}</span></div>
+      {!camera && caption}
       {historyOpen && <div className="companion-history" aria-label="本次同行记录">
         <header>本次同行<button onClick={() => setHistoryOpen(false)}>收起</button></header>
         {!lines.length && <p>从一句话开始。</p>}
@@ -209,10 +225,14 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
         <label>接话设定<textarea value={style} maxLength={2400} disabled={!!session.current} onChange={event => setStyle(event.target.value)}/></label>
         <p>默认摘取人设开头，可在开始前改成语气、称呼和关系要点。续答使用完整人设和记忆。</p>
         <p>连续听：{useDoubao ? '豆包流式语音识别 2.0' : '浏览器识别'}。在 API 接入中切换和配置；建议戴耳机避免识别到角色的外放声音。</p>
-        <p>镜头开启后，录制约 8 秒的无声视频片段交给独立视频理解 API。主模型默认只收视频摘要；补充截图在 API 接入中另行选择。音频仍走连续听。视频和截图不存档，本次对话离开后清空。</p>
+        <p>镜头开启后始终显示完整实时画面。后台录制约 8 秒的无声视频片段交给视频理解 API；绿色边框表示正在分析已录完的片段。分析失败会暂停理解，实时预览保留。主模型默认只收视频摘要；补充截图在 API 接入中选择。视频和截图不存档，本次对话离开后清空。</p>
         <button className="companion-reset" onClick={() => { stopAll(); session.current = undefined; debug.clear(); setLines([]); setStatus('已结束本次同行'); }}>结束本次同行</button>
       </div>}
     </div>
+    <CompanionVideoStatus active={camera} analyzing={observing} paused={analysisPaused} configured={companionVideoReady(api.companionVideoApi)}
+      clip={analysisClip} lastSeen={observation?.to} problem={analysisProblem}
+      retry={() => { setAnalysisProblem(''); setAnalysisPaused(false); }} configure={() => setSetupOpen(true)}/>
+    {camera && <div className="companion-camera-caption">{caption}</div>}
     <CompanionReplyProgress store={debug}/>
     <CompanionDebugPanel store={debug}/>
     <footer className="companion-controls">

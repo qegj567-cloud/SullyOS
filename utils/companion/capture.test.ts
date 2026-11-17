@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { companionRecordingMime, recordCompanionClip, startCompanionVideoLoop, type CompanionClip } from './capture';
+import { companionRecordingMime, createCompanionClipRecorder, recordCompanionClip, startCompanionVideoLoop, MAX_CLIP_BYTES, type CompanionClip } from './capture';
 const deferred = <T>() => { let resolve!: (value: T) => void; const promise = new Promise<T>(r => { resolve = r; }); return { promise, resolve }; };
 const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
 const clip = (from: number): CompanionClip => ({ blob: new Blob(['video'], { type: 'video/mp4' }), from, to: from + 8000 });
@@ -19,12 +19,66 @@ it('records independent MP4 clips and cancels an unfinished recorder', async () 
   const mime = companionRecordingMime(); expect(mime).toBe('video/mp4');
   const abort = new AbortController();
   const first = recordCompanionClip({} as any, mime, abort.signal);
+  expect(instances[0].start).toHaveBeenCalledWith(1000);
   await vi.advanceTimersByTimeAsync(8000);
   expect((await first).blob.type).toBe('video/mp4');
   const second = recordCompanionClip({} as any, mime, abort.signal);
   const rejected = expect(second).rejects.toMatchObject({ name: 'AbortError' });
   abort.abort(); await rejected;
   expect(instances).toHaveLength(2); expect(instances[1].stop).toHaveBeenCalledOnce(); expect(vi.getTimerCount()).toBe(0);
+});
+
+it('joins all periodic pieces and the final piece instead of submitting fragment-only videos', async () => {
+  vi.useFakeTimers(); let recorder: Recorder;
+  class Recorder {
+    state = 'inactive'; onstop: null | (() => void) = null; onerror = null; ondataavailable: null | ((e: any) => void) = null;
+    constructor() { recorder = this; }
+    start() { this.state = 'recording'; }
+    stop() { this.state = 'inactive'; this.ondataavailable?.({ data: new Blob(['-final']) }); this.onstop?.(); }
+  }
+  vi.stubGlobal('MediaRecorder', Recorder);
+  const task = recordCompanionClip({} as any, 'video/mp4', new AbortController().signal);
+  recorder!.ondataavailable!({ data: new Blob(['header-']) });
+  recorder!.ondataavailable!({ data: new Blob(['frames']) });
+  await vi.advanceTimersByTimeAsync(8000);
+  expect(await (await task).blob.text()).toBe('header-frames-final'); expect(vi.getTimerCount()).toBe(0);
+});
+
+it('distinguishes empty output from oversized video, bounds buffering and leaves camera tracks untouched', async () => {
+  vi.useFakeTimers(); let recorder: Recorder;
+  class Recorder {
+    state = 'inactive'; onstop: null | (() => void) = null; onerror = null; ondataavailable: null | ((e: any) => void) = null;
+    constructor() { recorder = this; }
+    start() { this.state = 'recording'; }
+    stop() { this.state = 'inactive'; this.onstop?.(); }
+  }
+  vi.stubGlobal('MediaRecorder', Recorder);
+  const track = { stop: vi.fn() }, stream = { getTracks: () => [track] } as any;
+  const empty = recordCompanionClip(stream, 'video/mp4', new AbortController().signal);
+  const emptyResult = expect(empty).rejects.toMatchObject({ kind: 'empty', message: expect.stringContaining('0 字节') });
+  await vi.advanceTimersByTimeAsync(8000); await emptyResult;
+  const large = recordCompanionClip(stream, 'video/mp4', new AbortController().signal);
+  const largeResult = expect(large).rejects.toMatchObject({ kind: 'size' });
+  recorder!.ondataavailable!({ data: new Blob([new Uint8Array(MAX_CLIP_BYTES + 1)]) });
+  await largeResult; expect(recorder!.state).toBe('inactive'); expect(vi.getTimerCount()).toBe(0);
+  expect(track.stop).not.toHaveBeenCalled();
+});
+
+it('tries another supported MP4 encoder locally after empty output, then retains the working choice', async () => {
+  vi.useFakeTimers(); const formats: string[] = [];
+  class Recorder {
+    static isTypeSupported = () => true;
+    state = 'inactive'; onstop: null | (() => void) = null; onerror = null; ondataavailable: null | ((e: any) => void) = null;
+    constructor(_stream: unknown, private options: { mimeType: string }) { formats.push(options.mimeType); }
+    start() { this.state = 'recording'; }
+    stop() { this.state = 'inactive'; if (this.options.mimeType.includes('codecs')) this.ondataavailable?.({ data: new Blob(['complete']) }); this.onstop?.(); }
+  }
+  vi.stubGlobal('MediaRecorder', Recorder);
+  const record = createCompanionClipRecorder({} as any, new AbortController().signal);
+  const first = record(); await vi.advanceTimersByTimeAsync(16000); expect((await first).blob.size).toBe(8);
+  const next = record(); await vi.advanceTimersByTimeAsync(8000); await next;
+  expect(formats).toEqual(['video/mp4', 'video/mp4;codecs=avc1.42E01E', 'video/mp4;codecs=avc1.42E01E']);
+  expect(vi.getTimerCount()).toBe(0);
 });
 
 it('does not silently fall back to screenshots or unsupported webm', () => {
