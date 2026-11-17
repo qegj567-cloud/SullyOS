@@ -8,6 +8,7 @@ import { startupRecoveryPlugin } from './scripts/startup-recovery-plugin';
 import { pageBuildMetadataPlugin } from './scripts/build-metadata';
 import { APP_VERSION_TAG } from './utils/appVersion';
 import { tikhubMiddleware } from './server/tikhub-middleware';
+import { installDoubaoAsrRelay } from './server/doubao-asr-middleware';
 
 // MiniMax 国服 / 海外是两套域名，前端每个请求都带 X-MiniMax-Region 头说明走哪边。
 // Vite 的开发代理底层是 http-proxy，不认 router 选项，所以在 configure 里包一层 proxy.web，
@@ -87,6 +88,10 @@ export default defineConfig({
     ],
   },
   plugins: [
+    { name: 'companion-doubao-asr',
+      configureServer(server) { if (server.httpServer) installDoubaoAsrRelay(server.httpServer); },
+      configurePreviewServer(server) { installDoubaoAsrRelay(server.httpServer); },
+    },
     homeResourcePacksPlugin(),
     startupRecoveryPlugin(appBuildId),
     pageBuildMetadataPlugin({ buildId: appBuildId, branch: gitInfo.branch, commit: gitInfo.commit, time: buildTime }),

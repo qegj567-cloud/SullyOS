@@ -75,40 +75,28 @@ it.each(['doubao', 'minimax'] as const)('sends whole clips with provider-specifi
   }
 });
 
-const zhipuApi = { ...videoApi, provider: 'zhipu' as const, model: 'glm-4.6v', upload: { baseUrl: 'https://clips.example', token: 'upload-secret' } };
-it('requires Zhipu upload configuration and sends the temporary video URL with isolated credentials, then deletes it', async () => {
-  expect(companionVideoReady({ ...zhipuApi, upload: undefined })).toBe(false);
-  const upload = vi.fn().mockResolvedValue({ ok: true, status: 204 }); vi.stubGlobal('fetch', upload);
+const zhipuApi = { ...videoApi, provider: 'zhipu' as const, model: 'glm-5.3-flash' };
+it('sends Zhipu video bytes inline without touching any legacy upload service', async () => {
+  expect(companionVideoReady(zhipuApi)).toBe(true);
+  const otherFetch = vi.fn(); vi.stubGlobal('fetch', otherFetch);
   const call = vi.spyOn(transport, 'safeFetchJson').mockResolvedValue(response('视频理解'));
-  await observeCompanionVideo(clip(), zhipuApi, 'c', 'C', new AbortController().signal);
+  const legacy = { ...zhipuApi, upload: { baseUrl: 'https://retired-storage.example', token: 'retired-token' } };
+  await observeCompanionVideo(clip(), legacy, 'c', 'C', new AbortController().signal);
   const body = JSON.parse(call.mock.calls[0][1].body as string);
-  const url = body.messages[0].content[0].video_url.url;
-  expect(url).toMatch(/^https:\/\/clips.example\/clips\/[a-f0-9]{32}$/);
-  expect(body.thinking).toEqual({ type: 'disabled' }); expect(body.messages[0].content[0].video_url).not.toHaveProperty('fps');
-  expect(upload.mock.calls[0]).toEqual([url, expect.objectContaining({ method: 'PUT', headers: { Authorization: 'Bearer upload-secret', 'Content-Type': 'video/mp4' }, body: expect.any(Blob), redirect: 'error' })]);
+  expect(body.messages[0].content[0].video_url).toEqual({ url: 'data:video/mp4;base64,cmVhbC1jbGlwLWJ5dGVz' });
+  expect(body).not.toHaveProperty('thinking');
+  expect(otherFetch).not.toHaveBeenCalled(); expect(call).toHaveBeenCalledOnce();
   expect(call.mock.calls[0][1].headers).toMatchObject({ Authorization: 'Bearer video-key' });
-  expect(upload.mock.calls[1]).toEqual([url, expect.objectContaining({ method: 'DELETE' })]);
-  expect(JSON.stringify(call.mock.calls)).not.toContain('upload-secret'); expect(JSON.stringify(upload.mock.calls)).not.toContain('video-key');
+  expect(JSON.stringify(call.mock.calls)).not.toContain('retired-');
 });
 
-it('does not call the model after a failed or cancelled upload', async () => {
-  const upload = vi.fn().mockResolvedValue({ ok: false, status: 401 }); vi.stubGlobal('fetch', upload);
-  const call = vi.spyOn(transport, 'safeFetchJson');
-  await expect(observeCompanionVideo(clip(), zhipuApi, 'c', 'C', new AbortController().signal)).rejects.toThrow('401');
-  expect(call).not.toHaveBeenCalled();
-  const abort = new AbortController();
-  upload.mockImplementation(async (_url, init) => { if (init.method === 'PUT') abort.abort(); return { ok: true }; });
-  await expect(observeCompanionVideo(clip(), zhipuApi, 'c', 'C', abort.signal)).rejects.toMatchObject({ name: 'AbortError' });
-  expect(call).not.toHaveBeenCalled(); expect(upload).toHaveBeenLastCalledWith(expect.any(String), expect.objectContaining({ method: 'DELETE' }));
-});
-
-it('deletes the temporary clip if model generation fails or returns after cancellation', async () => {
-  const upload = vi.fn().mockResolvedValue({ ok: true, status: 204 }); vi.stubGlobal('fetch', upload);
-  vi.spyOn(transport, 'safeFetchJson').mockRejectedValue(new Error('model failed'));
-  await expect(observeCompanionVideo(clip(), zhipuApi, 'c', 'C', new AbortController().signal)).rejects.toThrow('model failed');
-  expect(upload).toHaveBeenLastCalledWith(expect.any(String), expect.objectContaining({ method: 'DELETE' }));
+it('never falls back to storage or stills when direct video fails or returns late', async () => {
+  const otherFetch = vi.fn(); vi.stubGlobal('fetch', otherFetch);
+  const call = vi.spyOn(transport, 'safeFetchJson').mockRejectedValue(new Error('video unsupported'));
+  await expect(observeCompanionVideo(clip(), zhipuApi, 'c', 'C', new AbortController().signal)).rejects.toThrow('video unsupported');
+  expect(call).toHaveBeenCalledOnce(); expect(otherFetch).not.toHaveBeenCalled(); expect(capture.extractCompanionFrames).not.toHaveBeenCalled();
   const abort = new AbortController(), publish = vi.fn();
   vi.mocked(transport.safeFetchJson).mockImplementation(async () => { abort.abort(); return response('late'); });
   await expect(observeCompanionVideo(clip(), zhipuApi, 'c', 'C', abort.signal, { mode: 'none' }, publish)).rejects.toMatchObject({ name: 'AbortError' });
-  expect(publish).not.toHaveBeenCalled(); expect(upload).toHaveBeenLastCalledWith(expect.any(String), expect.objectContaining({ method: 'DELETE' }));
+  expect(publish).not.toHaveBeenCalled(); expect(otherFetch).not.toHaveBeenCalled();
 });

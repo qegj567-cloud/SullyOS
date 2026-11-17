@@ -16,10 +16,10 @@ export const COMPANION_VIDEO_PROVIDERS = {
     note: '使用国内开放平台的模型 API Key，并确认账号已开通 M3.1 Flash 或 M3 视频输入。录像直接发送；M3.1 Flash 必须开启思考，这里使用 low 强度，不向它发送禁用思考参数。',
   },
   zhipu: {
-    name: '智谱 · GLM', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4.6v',
+    name: '智谱 · 直传试用', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-5.3-flash',
     signup: 'https://open.bigmodel.cn/', keys: 'https://bigmodel.cn/usercenter/proj-mgmt/apikeys',
-    docs: 'https://docs.bigmodel.cn/cn/guide/models/vlm/glm-4.6v',
-    note: '使用模型标准 API Key，开通 GLM-4.6V。官方视频参数要求链接，需在下方配置自己的临时上传服务；单填智谱 Key 还不能开启摄像头。默认模型的视频观察关闭深度思考。',
+    docs: 'https://docs.bigmodel.cn/cn/guide/models/vlm/glm-5.3-flash',
+    note: '使用模型标准 API Key，默认 GLM-5.3-Flash。参考官方 ZCode 的视频直传方式，国内接口是否接收仍需实测，旧型号也不保证支持；当前标为试用。只发送完整视频，不提供临时图床或云存储。该默认模型不能关闭思考。',
   },
   custom: {
     name: '自定义兼容接口', baseUrl: '', model: '',

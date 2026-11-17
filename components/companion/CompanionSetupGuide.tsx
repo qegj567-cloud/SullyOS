@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowUpRight } from '@phosphor-icons/react';
-import type { APIConfig, CharacterProfile, CompanionVideoApiConfig, TtsProvider } from '../../types';
+import type { APIConfig, CharacterProfile, CompanionVideoApiConfig, CompanionSttConfig, TtsProvider } from '../../types';
 import { resolveDialogueApi } from '../../utils/characterApi';
 import { isVisionApiReady } from '../../utils/visionApi';
 import { canSynthesizeSpeech, characterHasVoice } from '../../utils/ttsRouter';
@@ -10,8 +10,6 @@ import { COMPANION_SETUP_LINKS as links, COMPANION_VOICE_GUIDES, companionDialog
 import { companionVideoReady, type CompanionImageMode } from '../../utils/companion/vision';
 import { normalizeApiBaseUrl, normalizeApiCredential, normalizeApiModel } from '../../utils/apiConfigNormalize';
 import { COMPANION_VIDEO_PROVIDERS, type CompanionVideoProvider } from '../../utils/companion/videoProviders';
-import { clipUploadBase } from '../../utils/companion/videoUpload';
-import uploadWorkerSource from '../../worker/companion-video/index.js?raw';
 
 function VideoApiFields({ config, save }: { config?: CompanionVideoApiConfig; save?: (config: CompanionVideoApiConfig) => void }) {
   const [provider, setProvider] = useState<CompanionVideoProvider>(config ? config.provider ?? 'custom' : 'doubao');
@@ -20,12 +18,8 @@ function VideoApiFields({ config, save }: { config?: CompanionVideoApiConfig; sa
   const [key, setKey] = useState('');
   const [clearKey, setClearKey] = useState(false);
   const [message, setMessage] = useState('');
-  const [uploadBase, setUploadBase] = useState(config?.upload?.baseUrl ?? '');
-  const [uploadToken, setUploadToken] = useState('');
-  const [clearUploadToken, setClearUploadToken] = useState(false);
   const guide = COMPANION_VIDEO_PROVIDERS[provider];
   const sameEndpoint = normalizeApiBaseUrl(baseUrl) === config?.baseUrl && provider === (config?.provider ?? 'custom');
-  const retainedUploadToken = !clearUploadToken && provider === config?.provider && uploadBase.trim().replace(/\/+$/, '') === config?.upload?.baseUrl ? config?.upload?.token ?? '' : '';
   return <form className="companion-video-fields" onSubmit={event => {
     event.preventDefault();
     if (!save) return;
@@ -35,21 +29,14 @@ function VideoApiFields({ config, save }: { config?: CompanionVideoApiConfig; sa
       if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error('请填写有效的 HTTP(S) Base URL');
       const normalizedModel = normalizeApiModel(model);
       if (!normalizedModel) throw new Error('请填写支持视频输入的模型 ID');
-      let upload: CompanionVideoApiConfig['upload'];
-      if (provider === 'zhipu') {
-        if (!uploadBase.trim()) throw new Error('智谱需配置临时视频上传服务，见下方部署指引');
-        const token = normalizeApiCredential(uploadToken) || retainedUploadToken;
-        if (!token) throw new Error('请填写临时上传口令，与智谱 API Key 分开');
-        upload = { baseUrl: clipUploadBase(uploadBase), token };
-      }
-      save({ provider, baseUrl: url, model: normalizedModel, apiKey: normalizeApiCredential(key) || (!clearKey && sameEndpoint ? config?.apiKey ?? '' : ''), ...(upload ? { upload } : {}) });
-      setKey(''); setUploadToken(''); setClearKey(false); setClearUploadToken(false); setMessage('已保存。返回同行开启镜头后，才会录制并发送视频。');
+      save({ provider, baseUrl: url, model: normalizedModel, apiKey: normalizeApiCredential(key) || (!clearKey && sameEndpoint ? config?.apiKey ?? '' : '') });
+      setKey(''); setClearKey(false); setMessage('已保存。返回同行开启镜头后，才会录制并发送视频。');
     } catch (error) { setMessage(error instanceof Error ? error.message : '保存失败'); }
   }}>
     <label className="companion-setup-provider">视频服务商<select aria-label="视频服务商" value={provider} onChange={event => {
       const next = event.target.value as CompanionVideoProvider;
       setProvider(next); setBaseUrl(COMPANION_VIDEO_PROVIDERS[next].baseUrl); setModel(COMPANION_VIDEO_PROVIDERS[next].model);
-      setKey(''); setClearKey(true); setUploadBase(''); setUploadToken(''); setClearUploadToken(true); setMessage('已切换草稿，请填写对应凭据并保存。');
+      setKey(''); setClearKey(true); setMessage('已切换草稿，请填写对应凭据并保存。');
     }}>{Object.entries(COMPANION_VIDEO_PROVIDERS).map(([id, item]) => <option key={id} value={id}>{item.name}</option>)}</select></label>
     <p>{guide.note}</p>
     <div className="companion-setup-links"><ExternalLink href={guide.signup}>注册 / 登录{guide.name}</ExternalLink><ExternalLink href={guide.keys}>获取视频模型 Key</ExternalLink><ExternalLink href={guide.docs}>视频输入文档</ExternalLink></div>
@@ -58,26 +45,6 @@ function VideoApiFields({ config, save }: { config?: CompanionVideoApiConfig; sa
     <label>视频 API Key<input aria-label="视频 API Key" type="password" autoComplete="off" value={key} onChange={event => setKey(event.target.value)} placeholder={config?.apiKey && sameEndpoint && !clearKey ? '已保存，留空保留原 Key' : '粘贴 Key；无 Key 代理可留空'}/></label>
     {config?.apiKey && <label className="companion-image-choice"><input type="checkbox" checked={clearKey} onChange={event => setClearKey(event.target.checked)}/>保存时移除旧 Key</label>}
     <small>只用于同行视频理解。切换服务商或修改地址时不会复用旧 Key；请同时填写对应凭据。模型 ID 可修改，需选支持视频输入的型号。配置保存在本机，随系统配置备份。</small>
-    {provider === 'zhipu' && <>
-      <p>录像先上传到你配置的临时存储，再由智谱读取。示例服务的链接 120 秒到期，请求结束后尝试删除；断网遗留由定时任务清理。未配置时不能开启镜头。</p>
-      <label>临时上传服务地址<input aria-label="临时上传服务地址" type="url" required value={uploadBase} onChange={event => setUploadBase(event.target.value)} placeholder="https://your-video-worker.workers.dev"/></label>
-      <label>临时上传口令<input aria-label="临时上传口令" type="password" autoComplete="off" value={uploadToken} onChange={event => setUploadToken(event.target.value)} placeholder={retainedUploadToken ? '已保存，留空保留原口令' : '自建服务的 UPLOAD_TOKEN，不是模型 Key'}/></label>
-      {config?.upload?.token && <label className="companion-image-choice"><input type="checkbox" checked={clearUploadToken} onChange={event => setClearUploadToken(event.target.checked)}/>保存时移除旧上传口令（需填写新口令）</label>}
-      <details><summary>部署智谱所需的临时上传服务</summary>
-        <ol><li>在自己的 Cloudflare 账号创建私有 R2 bucket 和独立 Worker，粘贴下方下载的代码；不打开 bucket 公共访问。</li>
-          <li>给 Worker 绑定 R2，变量名 CLIPS；设置 Secret UPLOAD_TOKEN（至少 32 位随机字符）。模型 Key 不填到 Worker。</li>
-          <li>设置 ALLOWED_ORIGINS 为本站 origin：<code>{window.location.origin}</code>；多个 origin 用逗号分隔。关闭请求日志采集。</li>
-          <li>添加 Cron Trigger：<code>*/5 * * * *</code>，清理过期录像。建议给 companion-clips/ 前缀另设 1 天 R2 生命周期兜底。</li>
-          <li>将 Worker 的 HTTPS 根地址和上传口令填到上方并保存。它只暂存视频，不转发模型请求；R2 / Workers 可能产生用量费用。</li></ol>
-        <p>临时链接有效期间，知道完整链接的人也可读取。客户端删除不成功时，到期仍会拒绝读取；物理文件由下一次定时清理删除。</p>
-        <div className="companion-setup-links"><ExternalLink href="https://dash.cloudflare.com/">注册 / 登录 Cloudflare</ExternalLink><ExternalLink href="https://developers.cloudflare.com/r2/api/workers/workers-api-usage/">R2 绑定指引</ExternalLink></div>
-        <button type="button" onClick={() => {
-          const url = URL.createObjectURL(new Blob([uploadWorkerSource], { type: 'text/javascript' }));
-          const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'companion-video-worker.js'; anchor.click();
-          setTimeout(() => URL.revokeObjectURL(url), 1000);
-        }}>下载独立上传 Worker</button>
-      </details>
-    </>}
     <div className="companion-setup-actions"><button type="submit" disabled={!save}>保存视频 API</button></div>
     {!save && <small>模拟页不保存真实 API，请在主应用的同行中配置。</small>}
     {message && <p role="status">{message}</p>}
@@ -86,6 +53,39 @@ function VideoApiFields({ config, save }: { config?: CompanionVideoApiConfig; sa
 
 function ExternalLink({ href, children }: { href: string; children: React.ReactNode }) {
   return <a href={href} target="_blank" rel="noopener noreferrer">{children}<ArrowUpRight size={13} aria-hidden="true"/></a>;
+}
+
+function SttApiFields({ config, save }: { config?: CompanionSttConfig; save?: (config: CompanionSttConfig) => void }) {
+  const [provider, setProvider] = useState<CompanionSttConfig['provider']>(config?.provider ?? 'browser');
+  const [resourceId, setResourceId] = useState<CompanionSttConfig['resourceId']>(config?.resourceId ?? 'volc.seedasr.sauc.duration');
+  const [key, setKey] = useState(''), [clearKey, setClearKey] = useState(false), [message, setMessage] = useState('');
+  return <form className="companion-video-fields" onSubmit={event => {
+    event.preventDefault(); if (!save) return;
+    const apiKey = normalizeApiCredential(key) || (!clearKey ? config?.apiKey ?? '' : '');
+    if (provider === 'doubao' && !apiKey) { setMessage('请填写豆包语音控制台的 API Key'); return; }
+    save({ provider, resourceId, apiKey }); setKey(''); setClearKey(false); setMessage('已保存语音识别设置，返回同行后重新开启连续听。');
+  }}>
+    <label className="companion-setup-provider">语音识别引擎<select aria-label="语音识别引擎" value={provider} onChange={event => { setProvider(event.target.value as CompanionSttConfig['provider']); setMessage(''); }}>
+      <option value="browser">浏览器识别</option><option value="doubao">豆包流式语音识别 2.0</option>
+    </select></label>
+    {provider === 'browser' ? <p>无需 API Key，使用浏览器提供的语音识别。可用性因浏览器而异；不支持时可切换豆包或输入文字。</p> : <>
+      <p>边说边识别，临时文字触发打断；一句话确认后才交给角色。豆包只听写，不更换你的对话模型或角色音色。</p>
+      <ol><li>进入豆包语音控制台，开通「豆包流式语音识别模型 2.0」，选择小时版或已购买的并发版。</li>
+        <li>在新版控制台「API Key 管理」创建语音 Key，填到下方。它和方舟聊天 / 视频 Key 不同。</li>
+        <li>保存后返回同行，点击「连续听」并允许麦克风。建议戴耳机，避免把角色外放的声音识别成你的话。</li></ol>
+      <div className="companion-setup-links"><ExternalLink href="https://console.volcengine.com/speech/new/overview">注册 / 登录豆包语音</ExternalLink><ExternalLink href="https://console.volcengine.com/speech/new/setting/apikeys?projectName=default">获取豆包语音 Key</ExternalLink><ExternalLink href="https://docs.volcengine.com/docs/doubao-voice/quick-start-new-console?lang=zh">开通指引</ExternalLink><ExternalLink href="https://docs.volcengine.com/docs/doubao-voice/bidirectional-streaming-automatic-speech-recognition-websocket?lang=zh">流式识别文档</ExternalLink></div>
+      <label>豆包语音 API Key<input aria-label="豆包语音 API Key" type="password" autoComplete="off" value={key} onChange={event => setKey(event.target.value)} placeholder={config?.apiKey && !clearKey ? '已保存，留空保留原 Key' : '新版语音控制台的 API Key'}/></label>
+      {config?.apiKey && <label className="companion-image-choice"><input type="checkbox" checked={clearKey} onChange={event => setClearKey(event.target.checked)}/>保存时移除旧语音 Key</label>}
+      <label className="companion-setup-provider">服务规格<select aria-label="豆包识别服务规格" value={resourceId} onChange={event => setResourceId(event.target.value as CompanionSttConfig['resourceId'])}>
+        <option value="volc.seedasr.sauc.duration">小时版 · 按识别时长计费</option><option value="volc.seedasr.sauc.concurrent">并发版 · 需已购买并发资源</option>
+      </select></label>
+      <small>开启连续听后，音频及语音 Key 经应用的语音转发入口发送给豆包；本地预览经本机，线上沿用应用主代理，无需另填服务地址。转发不保存录音或 Key，不创建录音链接；豆包的数据处理以其服务条款为准。关闭、离开或切到后台即停止收音。</small>
+      <small>Key 保存在本机设置，并随系统配置备份。当前连接最多 30 分钟，到时提示重新开启；识别失败会停止，不自动切换服务商。</small>
+    </>}
+    <div className="companion-setup-actions"><button type="submit" disabled={!save}>保存语音识别设置</button></div>
+    {!save && <small>模拟页不保存凭据，请在主应用配置。</small>}
+    {message && <p role="status">{message}</p>}
+  </form>;
 }
 
 function CopyValue({ label, value }: { label: string; value: string }) {
@@ -98,9 +98,10 @@ function CopyValue({ label, value }: { label: string; value: string }) {
   </div>;
 }
 
-export function CompanionSetupGuide({ char, api, canListen, close, navigate, saveVideoApi, imageMode = 'none', changeImageMode }: {
+export function CompanionSetupGuide({ char, api, canListen, close, navigate, saveVideoApi, saveStt, imageMode = 'none', changeImageMode }: {
   char?: CharacterProfile; api: APIConfig; canListen: boolean; close(): void; navigate(target: CompanionSetupTarget): void;
   saveVideoApi?: (config: CompanionVideoApiConfig) => void;
+  saveStt?: (config: CompanionSttConfig) => void;
   imageMode?: CompanionImageMode; changeImageMode?: (mode: CompanionImageMode) => void;
 }) {
   const dialog = useRef<HTMLDivElement>(null);
@@ -151,7 +152,7 @@ export function CompanionSetupGuide({ char, api, canListen, close, navigate, sav
 
       <section aria-label="视频理解接入"><div className="companion-setup-heading"><h3><span>02</span> 理解一段视频</h3><small>{videoReady ? '已填写' : '待配置'} · 开镜头时需要</small></div>
         <p>摄像头录制约 8 秒的完整无声视频，由独立视频模型理解动作、镜头变化和先后关系，再把文字摘要交给对话模型。下一段录制与分析并行；慢请求只保留最新待分析片段。</p>
-        <p>豆包、MiniMax 直接接收完整 MP4；智谱通过你配置的临时上传服务取得视频链接。视频只在开启镜头后发送，按平台用量计费；本机不保存录像。</p>
+        <p>完整视频从本机内存随 API 请求直接发给所选服务商，只在开启镜头后发送，按平台用量计费。同行不另存录像、不创建可公开访问的视频链接，无需部署上传服务。服务商的数据保留规则以其条款为准。</p>
         <VideoApiFields config={api.companionVideoApi} save={saveVideoApi}/>
         <details open><summary>给主模型的补充截图 · 可选</summary>
           <p>视频理解完成后，才从同一段视频中提取 1–3 张相关截图。默认只发送摘要文字；对话模型是否支持图片由你确认，不根据模型名称猜测。</p>
@@ -175,11 +176,8 @@ export function CompanionSetupGuide({ char, api, canListen, close, navigate, sav
         <div className="companion-setup-actions"><button type="button" onClick={() => navigate('voice')}>配置语音 Key / 引擎</button><button type="button" disabled={!char} onClick={() => navigate('character')}>配置当前角色音色</button></div>
       </section>
 
-      <section aria-label="语音输入接入"><div className="companion-setup-heading"><h3><span>04</span> 听你说话</h3><small>{canListen ? '浏览器支持识别' : '此浏览器不支持'} · 无需 API Key</small></div>
-        <p>当前连续听使用浏览器语音识别。允许麦克风后即可试用，建议戴耳机；不支持时仍可输入文字。系统里配置的文件转写 API 不会用于这里的连续听。</p>
-        <details><summary>豆包连续识别 · 尚未接入</summary><p>这是后续接入方向，当前没有豆包 Key 填写入口，注册后也不能立即用于同行。可先了解开通流程，暂时无需为此 demo 充值。</p>
-          <div className="companion-setup-links"><ExternalLink href={links.doubao.console}>火山引擎注册 / 控制台</ExternalLink><ExternalLink href={links.doubao.docs}>豆包语音开通文档</ExternalLink></div>
-        </details>
+      <section aria-label="语音输入接入"><div className="companion-setup-heading"><h3><span>04</span> 听你说话</h3><small>{api.companionStt?.provider === 'doubao' ? api.companionStt.apiKey ? '豆包 Key 已填写' : '豆包待配置' : canListen ? '浏览器支持识别' : '此浏览器不支持'}</small></div>
+        <SttApiFields config={api.companionStt} save={saveStt}/>
       </section>
       <p className="companion-setup-note">长回复继续沿用当前角色的上下文条数、自动记忆与记忆宫殿配置，无需为同行重复创建一套记忆 API。</p>
       <button type="button" className="companion-setup-primary" onClick={close}>返回同行，开始测试</button>

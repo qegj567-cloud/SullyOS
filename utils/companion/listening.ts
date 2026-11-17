@@ -1,11 +1,13 @@
 /** Browser-only streaming recognizer for the demo. Paid file STT is not relabelled as realtime. */
+export interface ListeningCallbacks {
+  speech(): void; partial(text: string): void; final(text: string): void; error(message: string): void;
+  state?(message: string): void;
+}
 export function canListenContinuously() {
   return !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
 }
 
-export function startCompanionListening(callbacks: {
-  speech(): void; partial(text: string): void; final(text: string): void; error(message: string): void;
-}) {
+export function startCompanionListening(callbacks: ListeningCallbacks) {
   const Ctor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
   if (!Ctor) throw new Error('此浏览器不支持连续识别，请使用文字输入');
   let stopped = false;

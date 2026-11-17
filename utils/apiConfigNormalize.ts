@@ -19,11 +19,25 @@ export const normalizeApiModel = (value: unknown): string =>
 
 export function normalizeApiConfig(config: APIConfig): APIConfig {
   const visionApi = config.visionApi;
+  const videoApi = config.companionVideoApi;
+  const stt = config.companionStt;
   return {
     ...config,
     baseUrl: normalizeLlmBaseUrl(normalizeApiBaseUrl(config.baseUrl), config.apiType),
     apiKey: normalizeApiCredential(config.apiKey),
     model: normalizeApiModel(config.model),
+    ...(stt ? { companionStt: {
+      provider: stt.provider === 'doubao' ? 'doubao' as const : 'browser' as const,
+      apiKey: normalizeApiCredential(stt.apiKey),
+      resourceId: stt.resourceId === 'volc.seedasr.sauc.concurrent' ? 'volc.seedasr.sauc.concurrent' as const : 'volc.seedasr.sauc.duration' as const,
+    } } : {}),
+    // Whitelist current video settings: retired upload addresses/tokens never survive load/import/save.
+    ...(videoApi ? { companionVideoApi: {
+      ...(videoApi.provider ? { provider: videoApi.provider } : {}),
+      baseUrl: normalizeApiBaseUrl(videoApi.baseUrl),
+      apiKey: normalizeApiCredential(videoApi.apiKey),
+      model: normalizeApiModel(videoApi.model),
+    } } : {}),
     ...(visionApi ? {
       visionApi: {
         enabled: visionApi.enabled === true,

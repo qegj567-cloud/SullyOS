@@ -2684,10 +2684,90 @@ export async function handleTikHub(request) {
   }});
 }
 
+// Companion ASR: fixed upstream, per-connection credentials, no storage and no content logging.
+// Shared with local Vite's WebSocket adapter; browser keys travel in the first frame, never the URL.
+export function attachDoubaoAsrRelay(client, connect) {
+  let stopped = false, opening = false, upstream;
+  const handshake = new AbortController();
+  let lastAudio = Date.now();
+  const timers = [];
+  const close = () => {
+    if (stopped) return;
+    stopped = true; timers.forEach(clearTimeout); handshake.abort();
+    try { client.close(1000, 'ended'); } catch {}
+    try { upstream?.close(1000, 'ended'); } catch {}
+  };
+  const fail = code => {
+    if (stopped) return;
+    try { client.send(JSON.stringify({ type: 'error', code })); } catch {}
+    close();
+  };
+  timers.push(setTimeout(() => { if (!upstream) fail('handshake-timeout'); }, 15_000));
+  timers.push(setTimeout(() => fail('session-limit'), 30 * 60_000));
+  const idle = () => {
+    if (stopped) return;
+    if (upstream && Date.now() - lastAudio > 15_000) { fail('audio-timeout'); return; }
+    timers.push(setTimeout(idle, 5000));
+  };
+  timers.push(setTimeout(idle, 5000));
+  client.addEventListener('message', async event => {
+    if (stopped) return;
+    if (!upstream) {
+      if (opening || typeof event.data !== 'string' || event.data.length > 8192) { fail('invalid-start'); return; }
+      let config;
+      try { config = JSON.parse(event.data); } catch { fail('invalid-start'); return; }
+      if (!config || config.type !== 'start' || typeof config.apiKey !== 'string' || !config.apiKey.trim()
+        || config.apiKey.length > 4096 || /[\r\n]/.test(config.apiKey)
+        || !['volc.seedasr.sauc.duration', 'volc.seedasr.sauc.concurrent'].includes(config.resourceId)) { fail('invalid-config'); return; }
+      opening = true;
+      try {
+        const socket = await connect({ 'X-Api-Key': config.apiKey.trim(), 'X-Api-Resource-Id': config.resourceId,
+          'X-Api-Request-Id': crypto.randomUUID(), 'X-Api-Connect-Id': crypto.randomUUID() }, handshake.signal);
+        config = undefined;
+        if (stopped) { socket.close(1000, 'cancelled'); return; }
+        upstream = socket; lastAudio = Date.now();
+        upstream.addEventListener('message', response => {
+          if (stopped) return;
+          if (!(response.data instanceof ArrayBuffer) || response.data.byteLength > 1024 * 1024 || client.bufferedAmount > 1024 * 1024) { fail('upstream-payload'); return; }
+          try { client.send(response.data); } catch { close(); }
+        });
+        upstream.addEventListener('error', () => fail('upstream-error'));
+        upstream.addEventListener('close', () => fail('upstream-closed'));
+        client.send(JSON.stringify({ type: 'ready' }));
+      } catch (error) { fail(Number.isInteger(error?.status) ? `http-${error.status}` : 'upstream-connect'); }
+      return;
+    }
+    if (!(event.data instanceof ArrayBuffer) || event.data.byteLength > 128 * 1024 || event.data.byteLength < 8 || upstream.bufferedAmount > 128 * 1024) { fail('audio-payload'); return; }
+    lastAudio = Date.now();
+    try { upstream.send(event.data); } catch { close(); }
+  });
+  client.addEventListener('close', close);
+  client.addEventListener('error', close);
+  return close;
+}
+
+async function handleDoubaoAsr(request) {
+  if (new URL(request.url).search) return new Response('Query parameters not allowed', { status: 400 });
+  if (request.method !== 'GET' || request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
+    return new Response('WebSocket required', { status: 426, headers: { 'Cache-Control': 'no-store' } });
+  }
+  const pair = new WebSocketPair();
+  const client = pair[0], server = pair[1]; server.binaryType = 'arraybuffer'; server.accept();
+  attachDoubaoAsrRelay(server, async (headers, signal) => {
+    const response = await fetch('https://openspeech.bytedance.com/api/v3/sauc/bigmodel_async', { headers: { ...headers, Upgrade: 'websocket' }, redirect: 'error', signal });
+    if (!response.webSocket) throw Object.assign(new Error('ASR handshake failed'), { status: response.status });
+    const socket = response.webSocket; socket.binaryType = 'arraybuffer'; socket.accept();
+    return socket;
+  });
+  return new Response(null, { status: 101, webSocket: client });
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const origin = request.headers.get("Origin") || "*";
+
+    if (url.pathname === '/doubao/asr') return handleDoubaoAsr(request);
 
     // CORS preflight
     if (request.method === "OPTIONS") {

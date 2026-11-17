@@ -9,6 +9,34 @@ import { useSettingsFocus } from '../settingsNavigation';
 import { AppID } from '../../types';
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+it('configures Doubao STT separately, keeps a saved key hidden and supplies direct registration links', async () => {
+  const host = document.createElement('div'), root = createRoot(host); document.body.append(host);
+  const saveStt = vi.fn();
+  const api = { baseUrl: 'https://chat.test', model: 'chat', apiKey: 'chat-secret',
+    companionStt: { provider: 'doubao', apiKey: 'speech-secret', resourceId: 'volc.seedasr.sauc.duration' } } as any;
+  const snapshot = JSON.stringify(api);
+  try {
+    await act(async () => root.render(React.createElement(CompanionSetupGuide, { api, canListen: true, navigate: vi.fn(), close: vi.fn(), saveStt })));
+    const key = host.querySelector<HTMLInputElement>('[aria-label="豆包语音 API Key"]')!;
+    expect(key.type).toBe('password'); expect(key.value).toBe('');
+    expect(host.textContent).not.toMatch(/speech-secret|chat-secret/);
+    expect(host.querySelector('a[href="https://console.volcengine.com/speech/new/overview"]')).toBeTruthy();
+    expect(host.querySelector('a[href*="speech/new/setting/apikeys"]')).toBeTruthy();
+    expect(saveStt).not.toHaveBeenCalled();
+    await act(async () => {
+      const select = host.querySelector<HTMLSelectElement>('[aria-label="豆包识别服务规格"]')!;
+      select.value = 'volc.seedasr.sauc.concurrent'; select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    const submit = async () => act(async () => key.form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+    await submit(); expect(saveStt).toHaveBeenLastCalledWith({ provider: 'doubao', apiKey: 'speech-secret', resourceId: 'volc.seedasr.sauc.concurrent' });
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(key, ' new-speech-key ');
+      key.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await submit(); expect(saveStt).toHaveBeenLastCalledWith(expect.objectContaining({ apiKey: 'new-speech-key' }));
+    expect(key.value).toBe(''); expect(JSON.stringify(api)).toBe(snapshot);
+  } finally { act(() => root.unmount()); host.remove(); }
+});
 it('uses the character route atomically and leaves a keyless proxy usable', () => {
   const api = { baseUrl: 'https://global.test', model: 'global', apiKey: 'global-secret' } as any;
   expect(companionDialogueReady(api, { dialogueApi: { baseUrl: '', model: '' } } as any)).toBe(false);
@@ -83,7 +111,7 @@ it('saves a separate video endpoint and does not reuse a stored key after its UR
   } finally { act(() => root.unmount()); host.remove(); }
 });
 
-it('switches provider drafts without saving or carrying keys, and requires Zhipu upload credentials', async () => {
+it('switches provider drafts without carrying keys and configures Zhipu direct trials without storage', async () => {
   const host = document.createElement('div'), root = createRoot(host); document.body.append(host);
   const saveVideoApi = vi.fn();
   const api = { baseUrl: '', model: '', apiKey: '', companionVideoApi: { provider: 'doubao', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', model: 'selected-model', apiKey: 'old-secret' } } as any;
@@ -108,11 +136,12 @@ it('switches provider drafts without saving or carrying keys, and requires Zhipu
     await submit();
     expect(saveVideoApi).toHaveBeenLastCalledWith(expect.objectContaining({ provider: 'minimax', baseUrl: 'https://api.minimax.cn/v1', apiKey: '' }));
     saveVideoApi.mockClear();
-    await select('zhipu'); await submit();
-    expect(saveVideoApi).not.toHaveBeenCalled(); expect(host.textContent).toContain('需配置临时视频上传服务');
-    await fill('临时上传服务地址', 'https://clips.example'); await fill('临时上传口令', 'u'.repeat(32));
+    await select('zhipu');
+    expect(host.querySelector('[aria-label="临时上传服务地址"]')).toBeNull();
+    expect(host.querySelector('[aria-label="临时上传口令"]')).toBeNull();
+    expect(host.textContent).toContain('国内接口是否接收仍需实测');
     await fill('视频 API Key', 'zhipu-key'); await submit();
-    expect(saveVideoApi).toHaveBeenCalledWith(expect.objectContaining({ provider: 'zhipu', model: 'glm-4.6v', apiKey: 'zhipu-key', upload: { baseUrl: 'https://clips.example', token: 'u'.repeat(32) } }));
+    expect(saveVideoApi).toHaveBeenCalledWith({ provider: 'zhipu', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-5.3-flash', apiKey: 'zhipu-key' });
     expect(api.companionVideoApi.apiKey).toBe('old-secret');
   } finally { act(() => root.unmount()); host.remove(); }
 });

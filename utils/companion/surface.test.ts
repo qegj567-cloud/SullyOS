@@ -3,6 +3,9 @@ import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { beforeEach, afterEach, expect, it, vi } from 'vitest';
 import { CompanionSurface } from '../../apps/CompanionApp';
+import { startDoubaoListening } from './doubaoListening';
+
+vi.mock('./doubaoListening', () => ({ canUseDoubaoListening: () => true, startDoubaoListening: vi.fn(() => vi.fn()) }));
 
 vi.mock('../../context/OSContext', () => ({ useOS: () => ({}) }));
 vi.mock('./voice', () => ({ CompanionVoice: class { prime() {} close() {} } }));
@@ -21,6 +24,24 @@ afterEach(() => { act(() => root.unmount()); host.remove(); vi.restoreAllMocks()
 const click = async (label: string) => act(async () => {
   const button = [...host.querySelectorAll('button')].find(b => b.getAttribute('aria-label') === label || b.textContent?.trim() === label);
   expect(button).toBeTruthy(); button!.click();
+});
+
+it('uses selected Doubao independently of browser recognition and stops listening when the page becomes hidden', async () => {
+  const quick = vi.fn(async () => '接话'), full = vi.fn(async () => '续答'), stop = vi.fn();
+  vi.mocked(startDoubaoListening).mockReturnValueOnce(stop);
+  await act(async () => root.render(React.createElement(CompanionSurface, { ...props,
+    api: { companionStt: { provider: 'doubao', apiKey: 'test-key', resourceId: 'volc.seedasr.sauc.duration' } },
+    requestFactory: () => ({ quick, prepare: async () => ({}), full }),
+  })));
+  await click('连续听');
+  const callbacks = vi.mocked(startDoubaoListening).mock.calls.at(-1)![1];
+  await act(async () => callbacks.final('看看这件'));
+  expect(quick).toHaveBeenCalledOnce(); expect(full).toHaveBeenCalledOnce();
+  await act(async () => {
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  expect(stop).toHaveBeenCalledOnce(); expect(host.textContent).toContain('已暂停');
 });
 
 it('renders the independent surface, shows both replies and discards a continuation after interruption', async () => {
@@ -65,7 +86,7 @@ it('opens the setup guide without generating, and stops a live turn before navig
   })));
   await click('API 接入');
   expect(host.querySelector('[role=dialog]')).toBeTruthy();
-  expect(host.textContent).toContain('豆包连续识别 · 尚未接入');
+  expect(host.textContent).toContain('豆包流式语音识别 2.0');
   expect(quick).not.toHaveBeenCalled();
   await click('返回同行');
   await act(async () => {
