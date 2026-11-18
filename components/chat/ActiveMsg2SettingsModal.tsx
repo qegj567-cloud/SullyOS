@@ -56,7 +56,6 @@ import {
   resolveExpirePolicy,
   type RemoteTaskLastError,
   type RemoteTaskProjection,
-  shortTaskId,
   toDatetimeLocalValue,
 } from '../../utils/amsg2Tasks';
 
@@ -494,7 +493,7 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
       console.warn('[ActiveMsg2Modal] 远端取消失败（保留记录待重试）', e);
       onSave((prev) => buildConfig(prev, (list) =>
         list.map((x) => x.taskUuid === t.taskUuid ? { ...x, lastError: '远端取消失败，可重试' } : x)));
-      addToast(`任务 [${shortTaskId(t.taskUuid)}] 取消失败（远端未确认），稍后重试。`, 'error');
+      addToast('任务取消失败（远端未确认），稍后重试。', 'error');
       // 排程有埋点、取消没有的话，任务生命周期只记了一半。三个结果各有各的含义：
       // failed = 远端照发但面板以为拦下了，是对账不平里最难受的一种。
       trackEvent('取消定时消息', { result: 'failed' });
@@ -512,8 +511,8 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
       { lastSyncedAt: Date.now() },
     ));
     addToast(alreadyGone
-      ? `任务 [${shortTaskId(t.taskUuid)}] 在远端已不存在（多半已经发过了），已从列表移除。`
-      : `任务 [${shortTaskId(t.taskUuid)}] 已取消。`, 'info');
+      ? '这条任务在远端已不存在（多半已经发过了），已从列表移除。'
+      : '任务已取消。', 'info');
     trackEvent('取消定时消息', { result: alreadyGone ? '远端已不存在' : 'ok' });
   };
 
@@ -616,13 +615,11 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
       });
       setEditingTaskUuid(null);
       setTaskEditorOpen(false);
-      // 编辑走的是「先建新的再取消旧的」，编号必然换一个——只说「已更新」的话，
-      // 用户会以为列表里那条陌生编号是多出来的。
       addToast(result.replacedCancelFailed
         ? '新任务已创建，但旧任务取消失败，请稍后重试。'
         : (editingTaskUuid
-          ? `任务已更新，编号换成 [${shortTaskId(result.uuid)}]。`
-          : `任务已创建 [${shortTaskId(result.uuid)}]。`),
+          ? '任务已更新。'
+          : '任务已创建。'),
       result.replacedCancelFailed ? 'error' : 'success');
 
       // 同步主 API，并为存量任务补刷凭据。失败只提示，不把已成功排程标成失败。
@@ -851,39 +848,13 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
                 const remoteErrorText = describeRemoteLastError(remoteInfo?.lastError, formatTaskTime);
                 return (
                   <div key={t.taskUuid} className={`rounded-2xl border px-4 py-3 text-xs ${editingTaskUuid === t.taskUuid ? 'border-fuchsia-400 bg-fuchsia-50' : 'border-slate-200 bg-white'}`}>
-                    <div className="flex items-center justify-between">
-                      <div className="min-w-0">
-                        <div className="font-bold text-slate-700 truncate">
-                          [{shortTaskId(t.taskUuid)}] {formatTaskTime(occurrenceMs ?? t.firstSendTime)} · {describeRecurrence(t.recurrenceType)}
-                        </div>
-                        {/* 进度排最前：这一行会被截断，而「发没发」是用户最想先看到的一条，
-                            排在末尾的话（模式描述可能很长）它永远看不见。 */}
-                        <div className="text-slate-400 mt-0.5 truncate">
-                          {describeTaskProgress(t, knownRemoteUuids, now, remoteInfo?.status)} · {describeTaskMode(t)}
-                          · {describeExpirePolicy(t.expirePolicy)}
-                          · {t.source === 'character' ? '角色创建' : '手动创建'}
-                        </div>
-                        {missingRemote ? (
-                          <div className="text-slate-400 mt-1 text-[11px]">⚠ 云端已无此任务（可能已发送或在别处取消）</div>
-                        ) : null}
-                        {remoteErrorText ? (
-                          <div className="text-amber-600 mt-1 text-[11px]">⚠ {remoteErrorText}</div>
-                        ) : null}
-                        {/* 上面那行只留得下原因的关键半句，状态码和上游原话的其余部分都截掉了。
-                            原文收在这里，排查或者截图问人时点开就能看到全文。stale 是个机器词，没有原文可看。 */}
-                        {remoteErrorText && remoteInfo?.lastError?.reason && remoteInfo.lastError.reason !== 'stale' ? (
-                          <details className="mt-0.5">
-                            <summary className="cursor-pointer text-[10px] font-bold text-slate-400">原文</summary>
-                            <pre className="mt-1 whitespace-pre-wrap break-all font-mono text-[10px] leading-relaxed text-slate-500 bg-slate-50 rounded-lg p-2 select-text">
-                              {remoteInfo.lastError.reason}
-                            </pre>
-                          </details>
-                        ) : null}
-                        {t.lastError ? (
-                          <div className="text-red-500 mt-1 text-[11px]">{t.lastError}</div>
-                        ) : null}
+                    {/* 按钮只跟时间共用第一行，下面的标签和内容占满整宽，不被按钮那一列挤窄。
+                        卡片不显示短编号：用户靠时间和内容认任务，编号只在给角色看的清单里有用。 */}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="font-bold text-slate-700 text-[13px] min-w-0">
+                        {formatTaskTime(occurrenceMs ?? t.firstSendTime)}
                       </div>
-                      <div className="flex gap-2 shrink-0 ml-2">
+                      <div className="flex gap-2 shrink-0">
                         {enabled ? (
                           <button
                             onClick={() => { setEditingTaskUuid(t.taskUuid); setTaskEditorOpen(true); }}
@@ -902,6 +873,39 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
                         </button>
                       </div>
                     </div>
+                    {/* 状态拆成可换行的小标签，不截断：「发没发」排最前，是用户最想先看到的。 */}
+                    <div className="flex flex-wrap gap-1 mt-1.5 text-[10px]">
+                      {(() => {
+                        const progress = describeTaskProgress(t, knownRemoteUuids, now, remoteInfo?.status);
+                        const tone = progress === '发送失败' ? 'bg-red-50 text-red-500'
+                          : progress === '待触发' ? 'bg-fuchsia-50 text-fuchsia-600' : 'bg-slate-100 text-slate-500';
+                        return <span className={`px-1.5 py-0.5 rounded-md font-bold ${tone}`}>{progress}</span>;
+                      })()}
+                      {[describeRecurrence(t.recurrenceType), describeExpirePolicy(t.expirePolicy), t.source === 'character' ? '角色创建' : '手动创建'].map((label) => (
+                        <span key={label} className="px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-500">{label}</span>
+                      ))}
+                    </div>
+                    {/* 提示方向 / 灵感可能很长，完整换行显示，不截断。 */}
+                    <div className="text-slate-500 mt-1.5 leading-relaxed break-words">{describeTaskMode(t)}</div>
+                    {missingRemote ? (
+                      <div className="text-slate-400 mt-1 text-[11px]">⚠ 云端已无此任务（可能已发送或在别处取消）</div>
+                    ) : null}
+                    {remoteErrorText ? (
+                      <div className="text-amber-600 mt-1 text-[11px]">⚠ {remoteErrorText}</div>
+                    ) : null}
+                    {/* 上面那行只留得下原因的关键半句，状态码和上游原话的其余部分都截掉了。
+                        原文收在这里，排查或者截图问人时点开就能看到全文。stale 是个机器词，没有原文可看。 */}
+                    {remoteErrorText && remoteInfo?.lastError?.reason && remoteInfo.lastError.reason !== 'stale' ? (
+                      <details className="mt-0.5">
+                        <summary className="cursor-pointer text-[10px] font-bold text-slate-400">原文</summary>
+                        <pre className="mt-1 whitespace-pre-wrap break-all font-mono text-[10px] leading-relaxed text-slate-500 bg-slate-50 rounded-lg p-2 select-text">
+                          {remoteInfo.lastError.reason}
+                        </pre>
+                      </details>
+                    ) : null}
+                    {t.lastError ? (
+                      <div className="text-red-500 mt-1 text-[11px]">{t.lastError}</div>
+                    ) : null}
                   </div>
                 );
               })}
