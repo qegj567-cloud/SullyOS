@@ -48,6 +48,7 @@ import {
   AMSG_SLOT_CURRENT_TIME, AMSG_SLOT_REALTIME_WORLD, AMSG_SLOT_SCENE,
   AMSG_SILENT_MARK, AMSG_SLOT_LIVE_CHAT,
   AMSG_SLOT_TASK_LIST, AMSG_SLOT_TIME_SINCE_USER, AMSG_SLOT_USER_CLOCK,
+  packStateValue, registerGzipFallbackCompressor, resetGzipCompressionStateForTests, unpackStateValue,
 } from './amsgFirePack';
 import { clearInstantChatPending, setInstantChatPending } from './amsgInstantChat';
 import { AMSG_TOOL_CONFIG_KEY, AMSG_TOOL_PACK_KEY } from './amsgToolPack';
@@ -2098,22 +2099,25 @@ describe('formatAmsgServerError — 通用后端错误细节透传', () => {
 
 // 大 body 走 gzip 上行（省掉密文那层 base64 的膨胀，约 25%）。这几条钉的是
 // 「压缩绝不能变成发不出去的理由」：这条路上唯一该有的结局是「压了」或「原样发」，
-// 任何一种失败都必须落回明文，而不是把整轮聊天卡在发送键上。
-describe('请求体 gzip 上行', () => {
+// 原生流缺失、抛错或产出截断 gzip 时自动切换按需加载的纯 JS gzip；连纯 JS 分包也不可用时退回明文，不把整轮聊天卡在发送键上。
+describe('请求体 gzip 上行与前端纯 JS 压缩兜底', () => {
   const bigJson = () => JSON.stringify({ v: 'ぷ'.repeat(20_000) });
+  const gunzipBuffer = (buf: ArrayBuffer) =>
+    new Response(new Response(buf).body!.pipeThrough(new DecompressionStream('gzip'))).text();
+
+  afterEach(() => {
+    resetGzipCompressionStateForTests();
+  });
 
   it('超阈值 → 压，且真能解回原文', async () => {
     const original = bigJson();
     const { body, gzipped } = await maybeGzipRequestBody(original);
     expect(gzipped).toBe(true);
     expect(body).toBeInstanceOf(ArrayBuffer);
-    const restored = await new Response(
-      new Response(body as ArrayBuffer).body!.pipeThrough(new DecompressionStream('gzip')),
-    ).text();
-    expect(restored).toBe(original);
+    expect(await gunzipBuffer(body as ArrayBuffer)).toBe(original);
   });
 
-  it('小 body 原样发：压缩省下的字节还不够抵一次 CompressionStream 的开销', async () => {
+  it('小 body 原样发：压缩省下的字节还不够抵一次压缩开销', async () => {
     const small = JSON.stringify({ hello: 'world' });
     expect(await maybeGzipRequestBody(small)).toEqual({ body: small, gzipped: false });
   });
@@ -2126,27 +2130,86 @@ describe('请求体 gzip 上行', () => {
     expect((await maybeGzipRequestBody(JSON.stringify({ cjk }))).gzipped).toBe(true);
   });
 
-  it('运行时没有 CompressionStream（老 Safari）→ 退回明文，不抛', async () => {
+  it('运行时没有 CompressionStream（老 Safari）→ 自动走纯 JS gzip 压缩并精确裁出 ArrayBuffer', async () => {
     const original = bigJson();
     const saved = globalThis.CompressionStream;
     // @ts-expect-error 故意抹掉，模拟老 Safari
     delete globalThis.CompressionStream;
     try {
-      expect(await maybeGzipRequestBody(original)).toEqual({ body: original, gzipped: false });
+      const { body, gzipped } = await maybeGzipRequestBody(original);
+      expect(gzipped).toBe(true);
+      expect(body).toBeInstanceOf(ArrayBuffer);
+      expect(await gunzipBuffer(body as ArrayBuffer)).toBe(original);
     } finally {
       globalThis.CompressionStream = saved;
     }
   });
 
-  it('压缩本身抛错 → 退回明文，不连累这一轮发送', async () => {
+  it('原生 CompressionStream 抛错 → 自动切换纯 JS gzip，不连累这一轮发送', async () => {
     const original = bigJson();
     const saved = globalThis.CompressionStream;
+    let calls = 0;
+    // @ts-expect-error 换成一个必炸的替身
+    globalThis.CompressionStream = function Broken() {
+      calls += 1;
+      throw new Error('boom');
+    };
+    try {
+      const first = await maybeGzipRequestBody(original);
+      expect(first.gzipped).toBe(true);
+      expect(await gunzipBuffer(first.body as ArrayBuffer)).toBe(original);
+      expect(calls).toBe(1);
+
+      const second = await maybeGzipRequestBody(original);
+      expect(second.gzipped).toBe(true);
+      expect(calls).toBe(1);
+    } finally {
+      globalThis.CompressionStream = saved;
+    }
+  });
+
+  it('原生 CompressionStream 静默产出半截 gzip（iOS WebKit 未刷完尾部）→ 拦截坏包并切换纯 JS 产出完整压缩包', async () => {
+    const original = bigJson();
+    const saved = globalThis.CompressionStream;
+    globalThis.CompressionStream = class TruncatedGzipStream {
+      readable: ReadableStream<Uint8Array>;
+      writable: WritableStream<Uint8Array>;
+      constructor() {
+        // 只吐出合法 gzip 头 + 几字节残片，不抛异常，模拟 WebKit 解压侧会报 incomplete data 的半成品。
+        const ts = new TransformStream<Uint8Array, Uint8Array>({
+          transform(_chunk, controller) {
+            controller.enqueue(new Uint8Array([0x1f, 0x8b, 0x08, 0, 0, 0, 0, 0, 0, 3, 0xab, 0xcd]));
+          },
+        });
+        this.readable = ts.readable;
+        this.writable = ts.writable;
+      }
+    } as unknown as typeof CompressionStream;
+    try {
+      const packedState = await packStateValue(original);
+      expect(packedState.startsWith('gz1:')).toBe(true);
+      expect(await unpackStateValue(packedState)).toBe(original);
+
+      const { body, gzipped } = await maybeGzipRequestBody(original);
+      expect(gzipped).toBe(true);
+      expect(await gunzipBuffer(body as ArrayBuffer)).toBe(original);
+    } finally {
+      globalThis.CompressionStream = saved;
+    }
+  });
+
+  it('原生压缩异常且纯 JS 分包也无法加载（如首次断网）→ 退回明文，绝不阻断发送', async () => {
+    const original = bigJson();
+    const saved = globalThis.CompressionStream;
+    const prevFallback = registerGzipFallbackCompressor(() => null);
     // @ts-expect-error 换成一个必炸的替身
     globalThis.CompressionStream = function Broken() { throw new Error('boom'); };
     try {
       expect(await maybeGzipRequestBody(original)).toEqual({ body: original, gzipped: false });
+      expect(await packStateValue(original)).toBe(original);
     } finally {
       globalThis.CompressionStream = saved;
+      registerGzipFallbackCompressor(prevFallback);
     }
   });
 

@@ -144,6 +144,22 @@ Trace 和输入指纹；同输入同配置时直接复用，否则重新构建�
 双语、HTML 和内心独白提示词由 `chatOutputStylePrompt` 供聊天和定时模板共用。
 `thinkingChainEnabled` 明确标记模板已经包含内心独白协议；旧包缺省时不回传原始推理。
 
+### 上行压缩完整性与前端纯 JS 兜底
+
+`packStateValue`（状态值内层 gzip）与 `maybeGzipRequestBody`（超 16 KB 请求体外层 gzip）共用
+`utils/amsgFirePack.ts` 的 `compressGzipBytes`：
+
+- 流写入直接走 `TransformStream.writable` 并传入独立切片，避免移动端读取临时 `Blob.stream()` 报错，
+  也防止流实现转移底层缓冲影响后续核对。
+- 原生 `CompressionStream('gzip')` 返回后同步核对 RFC 1952 魔数及末尾 8 字节（CRC32 与原始字节长度
+  `ISIZE`）。部分移动端内核在压缩较大缓冲或切后台时不会抛异常，直接返回缺尾部的半截流；纯算术头尾核对
+  微秒级完成，且不调用同一内核的 `DecompressionStream`。
+- 原生构造器缺失、抛错或头尾核对不通过时，当前页面对该构造器熔断，改调前端在 `utils/activeMsgClient.ts`
+  注册的按需 `fflate`（独立懒加载分包 `vendor-fflate`，正常浏览器零额外下载；返回共享大缓冲子视图时裁成
+  精确 `ArrayBuffer`）。`utils/amsgFirePack.ts` 本体保持零外部依赖，避免把前端兜底库打进 Worker bundle。
+- 极端情况下（首次触发兜底时设备离线，懒加载分包拉取失败）返回 `null`，两条路径均退回未压缩明文，不阻断
+  状态同步与即时对话发送。
+
 ## push metadata 扩展字段
 
 即时对话往返用到的 metadata 键，一并记在这（发侧走加密信封，回程随 push 明文 metadata）：
