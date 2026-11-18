@@ -1,4 +1,6 @@
 import { ChatLocationPin } from './ChatLocationPin';
+import { SullyHelpCard } from './SullyHelpCard';
+import { BUILTIN_SULLY_ID } from '../../utils/sullyIdentity';
 import { avatarDecorationImageStyle, isAnniversaryFrame } from '../../utils/anniversaryGifts';
 
 
@@ -1872,6 +1874,10 @@ const MessageItem = React.memo(({
     }
 
     // --- Music Card Rendering (一起听 / 加入歌单) ---
+    if (m.type === 'sully_help_card' && m.role === 'assistant' && m.charId === BUILTIN_SULLY_ID) {
+        return commonLayout(<SullyHelpCard />);
+    }
+
     if (m.type === 'music_card' && m.metadata?.song) {
         const song = m.metadata.song as { songId: number; name: string; artists: string; albumPic: string };
         const intent = (m.metadata.intent || 'join') as 'join' | 'add' | 'join_and_add';

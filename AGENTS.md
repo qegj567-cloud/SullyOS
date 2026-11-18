@@ -8,6 +8,8 @@
 
 ## 文档地图
 
+使用帮助里的 Sully-11 使用[内部手册](./docs/sully-11-handbook.md)。改用户操作时同步对应页：标题列用户叫法，首行「能力」进常驻目录，「核对」链接到实现，正文用箭头写条件、操作、结果去向及例外。客服按问题读取正文，实时设置由 `utils/sullyHelpSettings.ts` 投影。
+
 静态资源、Service Worker 缓存、离线启动或网页更新：先读 [`docs/static-resource-cache.md`](./docs/static-resource-cache.md)。不得注销推送 SW、清应用数据库或按整个 `/assets/` 目录设置 immutable。
 
 | 主题 | 文档 | 什么时候看 |

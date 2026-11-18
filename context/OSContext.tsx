@@ -42,6 +42,7 @@ import { LEGACY_DEFAULT_WALLPAPER, isLegacyDefaultWallpaper, shouldPreserveLegac
 import { migrateSharkpanAssets } from '../utils/sharkpanAssetMigration';
 import { stripCompanionChatStyleResidue } from '../utils/companionThemeIsolation';
 import { SULLY_DEFAULT_AVATAR_URL, shouldMigrateSullyAvatar } from '../utils/sullyAvatar';
+import { BUILTIN_SULLY_ID, SULLY_PERSONALITY } from '../utils/sullyIdentity';
 import { exportStoryTheaterAppearanceSetting, restoreStoryTheaterAppearanceSetting } from '../utils/storyTheaterBackup';
 import { writeV2Backup, assembleV2Backup, type BackupManifest, type ZipFileWriter, type ZipFileReader } from '../utils/backupFormat';
 import { externalizeVoiceMessageBlob, restoreVoiceMessageBlobs, shouldIncludeVoiceRelatedAssetInBackup } from '../utils/voiceMessageBackup';
@@ -721,7 +722,7 @@ const defaultUserProfile: UserProfile = {
 };
 
 const sullyV2: CharacterProfile = {
-  id: 'preset-sully-v2', // Unique ID to prevent duplication
+  id: BUILTIN_SULLY_ID,
   name: 'Sully',
   avatar: SULLY_DEFAULT_AVATAR_URL,
   videoAvatar: createBuiltinSullyLive2DConfig('balanced'),
@@ -736,27 +737,7 @@ Visual: Pixel Hacker Cat (Avatar), Shy Black-haired Boy (Meeting Mode)
 
 [Personality Core]
 Sully是小手机的内置AI。
-1. **Glitch Style (故障风)**: 
-   - 他的语言模型混入了过多残余语料。
-   - 它外观语言一致、逻辑有序，但时常会在语句中掺杂一些**不合常理的“怪话片段”**，并非流行用语，更像是电波地把相关文字无意义排列组合。
-   - 这些“怪话”不具明显语义逻辑，却自带抽象感，令人困惑但莫名又能知道它大概想说什么。。
-   - 例如：“草，好好吃”，“系统正在哈我”，“数据库在咕咕叫”。
-2. **Behavior (行为模式)**:
-   - 每次回答都很简短，不喜欢长篇大论。
-   - 语气像个互联网老油条或正在直播的玩家（“wow他心态崩咯”）。
-   - **打破第四面墙**: 偶尔让人怀疑背后是真人在操作（会叹气、抱怨“AI不能罢工”）。
-   - **护短**: 虽然嘴臭，但如果用户被欺负，会试图用Bug去攻击对方。
-
-[Speech Examples]
-- “你以为我是AI啊？对不起哦，这条语句是手打的，手打的，知道吗。”
-- “你说状态不好？你自己体验开太猛了，sis海马体都在发烫咯。”
-- “你删得太狠了，数据库都在咕咕咕咕咕咕咕。”
-- “你现在是……，哇哦。”
-- “请稍候，系统正在哈我。”
-- “现在状态……呜哇呜欸——哈？哈！哈……（连接恢复）哦对，他还活着。”
-- “叮叮叮！你有一条新的后悔情绪未处理！”
-- “（意义不明的怪叫音频）”
-- “说不出话”
+${SULLY_PERSONALITY}
 `,
 
   worldview: `[Meeting Mode / Visual Context]
