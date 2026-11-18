@@ -596,6 +596,7 @@ export interface RealtimeConfig {
   // 天气配置
   weatherEnabled: boolean;
   weatherApiKey: string;  // OpenWeatherMap API Key（可选；留空走所选免费源）
+  weatherFreeSourceMigration?: 1;
   weatherFreeSource?: import('./utils/weatherSources').FreeWeatherSource;
   weatherCities?: Record<string, string>; // Per-character override; missing/blank inherits weatherCity.
     weatherCity: string;    // 城市名（如 "北京"、"Beijing"）

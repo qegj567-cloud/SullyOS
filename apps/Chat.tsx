@@ -1,3 +1,4 @@
+import { clearLocationPin } from '../utils/userLocation';
 import {avatarFrameLayer} from '../utils/avatarFrameTarget';
 import ChatRuntimeStyle from '../components/chat/ChatRuntimeStyle';
 import { ChatSubtitleLayer } from '../components/chat/ChatSubtitleLayer';
@@ -3640,6 +3641,11 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
     const mergedFineTune = useMemo(() => mergeChatFineTune(osTheme, homePhone?undefined:char?.chatFineTune), [osTheme, char?.chatFineTune,!!homePhone]);
     const chatFineTuneCss = useMemo(() => buildChatFineTuneCss(mergedFineTune), [mergedFineTune]);
     const selectedAvatarFrameCss=useMemo(()=>avatarFrameLayer([osTheme.chatChromeCustomCss,char?.chromeCustomCss].filter(Boolean).join('\n')),[osTheme.chatChromeCustomCss,char?.chromeCustomCss]);
+    const locatingChat = isTyping || instantChatPending;
+    React.useEffect(() => {
+        if (!locatingChat && char?.id) clearLocationPin(char.id);
+    }, [locatingChat, char?.id]);
+    const locationMessage = locatingChat ? [...messages].reverse().find(message => message.role === 'user') : undefined;
     if (!char) {
         return (
             <div className="flex flex-col items-center justify-center h-full bg-[#f1f5f9] text-center px-8 gap-3">
@@ -3922,6 +3928,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
                         >
                         <MessageItem
                             msg={m}
+                            locationPinCharId={locationMessage?.id === m.id ? char.id : undefined}
                             isFirstInGroup={breaksWithPrevious}
                             isLastInGroup={breaksWithNext}
                             activeTheme={activeTheme}

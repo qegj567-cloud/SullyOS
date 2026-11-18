@@ -1,3 +1,4 @@
+import { migrateFreeWeatherPreference } from '../utils/weatherSources';
 import { mergePhoneGeneration, PHONE_GENERATION_COMMITTED, type PhoneGeneration } from '../utils/phoneGeneration';
 import { applyPhoneEvidenceChatLink, PHONE_EVIDENCE_SYNCED, type PhoneEvidenceChatLink } from '../utils/phoneEvidence';
 import { SESSION_SPACE_ID, DEFAULT_SPACE_ID, listUserSpaces, selectUserSpace } from '../utils/userSpaces';
@@ -100,7 +101,7 @@ import { exportSubtitleSettings } from '../utils/chatTranslationStyle';
 import { charMayHaveCloudState, purgeCharCloudState, purgeCloudCharById } from '../utils/amsg2CharCleanup';
 import { parseCharCredId } from '../utils/amsgLlmCredentials';
 import { SAR_MODULE_RUNTIME_CHANGED_EVENT, type SarModuleRuntimeChangedDetail } from '../utils/sarModuleRuntimeEvents';
-import { markAmsgStateDirty, markAmsgStateDirtyForAll, resumePendingAmsgStateSync, syncAmsgLlmCredentials, syncAmsgToolConfigAndPrompts, wipeAmsgCloudDataForReset } from '../utils/amsgStateSync';
+import { markAmsgStateDirty, markAmsgStateDirtyForAll, resumePendingAmsgStateSync, syncAmsgLlmCredentials, syncAmsgToolConfig, syncAmsgToolConfigAndPrompts, wipeAmsgCloudDataForReset } from '../utils/amsgStateSync';
 import { setCharNameRegistry } from '../utils/charNameRegistry';
 import { setMinimaxRegion } from '../utils/minimaxEndpoint';
 import { setElevenLabsModel, setTtsProvider, setVoicePromptOverrides } from '../utils/ttsProvider';
@@ -250,7 +251,8 @@ const loadJSZip = async (): Promise<JSZipCtorLike> => {
 const defaultRealtimeConfig: RealtimeConfig = {
   weatherEnabled: false,
   weatherApiKey: '',
-  weatherFreeSource: 'open-meteo',
+  weatherFreeSource: 'wttr',
+    weatherFreeSourceMigration: 1,
   weatherCity: 'Beijing',
   newsEnabled: false,
   newsApiKey: '',
@@ -1523,7 +1525,13 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                 if (parsed?.xhsMcpConfig?.serverUrl) {
                     parsed.xhsMcpConfig.serverUrl = rewriteStaleWorkerUrl(parsed.xhsMcpConfig.serverUrl);
                 }
-                setRealtimeConfig({ ...defaultRealtimeConfig, ...parsed });
+                const migrated = migrateFreeWeatherPreference(parsed);
+                const config = { ...defaultRealtimeConfig, ...migrated };
+                setRealtimeConfig(config);
+                if (migrated !== parsed) {
+                    localStorage.setItem('os_realtime_config', JSON.stringify(migrated));
+                    if (!parsed.weatherApiKey?.trim() && parsed.weatherFreeSource !== 'wttr') syncAmsgToolConfig(config);
+                }
             } catch (e) {
                 console.error('Failed to load realtime config', e);
             }

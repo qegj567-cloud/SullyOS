@@ -31,6 +31,23 @@ it.each([false, true])('local/instant-worker chat carries only the private label
     expect(sent).not.toContain('不要追问或猜测隐私区域');
 });
 
+it.each([false, true])('local/instant-worker payload proceeds without location after five seconds (worker=%s)', async timelyByWorker => {
+    vi.useFakeTimers();
+    vi.mocked(getCurrentPositionSmart).mockReturnValueOnce(new Promise(() => {}));
+    try {
+        const request = buildChatRequestPayload({ char, userProfile: user, groups: [], emojis: [], categories: [],
+            recallEntryPoint: 'chat_app', timelyByWorker, contextLimit: 10,
+            historyMsgs: [{ id: 1, charId: char.id, role: 'user', type: 'text', content: '在吗', timestamp: 1 }],
+        });
+        await vi.waitFor(() => expect(getCurrentPositionSmart).toHaveBeenCalledOnce());
+        await vi.advanceTimersByTimeAsync(5000);
+        const sent = JSON.stringify((await request).fullMessages);
+        expect(sent).toContain('在吗');
+        expect(sent).not.toContain('小雨当前的位置');
+        expect(vi.mocked(getCurrentPositionSmart).mock.calls[0][0]?.signal?.aborted).toBe(true);
+    } finally { vi.useRealTimers(); }
+});
+
 it('explicit realtime call/date context can know the private range; fictional and non-conversation builds do not locate', async () => {
     const normal = await ContextBuilder.buildCharacterRequest({ char, user, timeOptions: { conversational: true, includeUserLocation: true } }, [{ role: 'user', content: '你好' }]);
     expect(JSON.stringify(normal)).toContain('在家附近');

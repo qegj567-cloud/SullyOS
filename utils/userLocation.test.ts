@@ -126,7 +126,7 @@ describe('device location privacy boundary', () => {
         expect(preview.failureHint).not.toContain('SECRET');
         expect(preview.context).toContain('定位未知');
         expect(preview.context).not.toContain(hint); expect(preview.context).not.toContain('SECRET');
-        expect(getCurrentPositionSmart).toHaveBeenCalledWith({ quiet: true, retry: true });
+        expect(getCurrentPositionSmart).toHaveBeenCalledWith({ quiet: true, retry: true, signal: expect.any(AbortSignal) });
         expect(fetchMock).not.toHaveBeenCalled(); expect(queryAmapLocation).not.toHaveBeenCalled();
     });
     it('shows AMap platform errors only in preview, and never switches provider after a rejection', async () => {

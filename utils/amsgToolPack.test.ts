@@ -117,7 +117,7 @@ describe('buildToolConfig / parseToolConfig', () => {
     const config = buildToolConfig(undefined);
     expect(config.newsEnabled).toBe(false);
     expect(config.weatherEnabled).toBe(false);
-    expect(config.weatherFreeSource).toBe('open-meteo');
+    expect(config.weatherFreeSource).toBe('wttr');
     expect('weatherCity' in config).toBe(false);
     expect('newsPlatforms' in config).toBe(false);
     expect(config.notionEnabled).toBe(false);

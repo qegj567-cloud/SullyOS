@@ -1,3 +1,5 @@
+import AwarenessSwitch from './AwarenessSwitch';
+import { LocationPinPreference } from '../chat/ChatLocationPin';
 import {CharacterLocationAudience} from './CharacterAwarenessSettings';
 import type {CharacterProfile} from '../../types';
 import React, { useEffect, useState } from 'react';
@@ -6,18 +8,19 @@ import { describeDevicePositionError, getCurrentPositionSmart } from '../../util
 import { getUserLocationPreview } from '../../utils/userLocation';
 import { MAX_PRIVACY_REGIONS, type UserLocationConfig, type UserPrivacyRegion } from '../../utils/userLocationPrivacy';
 
-export type UserLocationSettingsPage = 'characters' | 'main' | 'location' | 'regions' | 'amap' | 'geoapify' | 'about';
+export const awarenessSections = {"holidays":"节假日","weather":"天气","news":"新闻与网页读取","notion":"Notion","feishu":"飞书","xhs":"小红书","orders":"点单服务"} as const;
+export type UserLocationSettingsPage = keyof typeof awarenessSections | 'calls' | 'characters' | 'main' | 'location' | 'regions' | 'amap' | 'geoapify' | 'about';
 export const USER_LOCATION_PAGE_TITLES: Record<UserLocationSettingsPage, string> = {
-    characters: '定位可见角色', main: '实时感知配置', location: '真实定位', regions: '隐藏地点', amap: '高德 API', geoapify: '全球街道 · Geoapify', about: '定位说明',
+    ...awarenessSections, calls: '感知调用详细设定', characters: '定位可见角色', main: '实时感知配置', location: '真实定位', regions: '隐藏地点', amap: '高德 API', geoapify: '全球街道 · Geoapify', about: '定位说明',
 };
 export const getUserLocationParentPage = (page: UserLocationSettingsPage): UserLocationSettingsPage =>
-    page === 'location' || page === 'main' ? 'main' : 'location';
+    page in awarenessSections || page === 'location' || page === 'main' ? 'main' : 'location';
 
-export default function UserLocationSettings({ value, onChange, onSave, page, onNavigate, onBusyChange, userName, characters = [] }: {
+export default function UserLocationSettings({ value, onChange, onSave, page, onNavigate, onBusyChange, userName, hideBack = false, characters = [] }: {
     value: UserLocationConfig; onChange: (config: UserLocationConfig) => void; onSave: () => boolean;
     page: UserLocationSettingsPage; onNavigate: (page: UserLocationSettingsPage) => void;
     onBusyChange?: (busy: boolean) => void;
-    userName?: string; characters?: Pick<CharacterProfile, 'id'|'name'|'avatar'>[];
+    hideBack?: boolean; userName?: string; characters?: Pick<CharacterProfile, 'id'|'name'|'avatar'>[];
 }) {
     const [busy, setBusy] = useState(false), [message, setMessage] = useState('');
     const [previewText, setPreviewText] = useState('');
@@ -28,7 +31,7 @@ export default function UserLocationSettings({ value, onChange, onSave, page, on
     useEffect(() => { setPreviewText(''); setFailureHint(''); setPreviewSource(undefined); }, [value, userName]);
     useLocalBackHandler(() => {
         if (busy) return true;
-        if (page === 'main') return false;
+        if (page === 'main' || (hideBack && page === 'location')) return false;
         onNavigate(getUserLocationParentPage(page)); return true;
     }, 40);
     const updateRegion = (id: string, patch: Partial<UserPrivacyRegion>) => onChange({ ...value, regions: value.regions.map(region => region.id === id ? { ...region, ...patch } : region) });
@@ -59,17 +62,49 @@ export default function UserLocationSettings({ value, onChange, onSave, page, on
     };
     const addManual = () => onChange({ ...value, regions: [...value.regions, { id: crypto.randomUUID(), name: '隐藏地点', latitude: NaN, longitude: NaN, radiusKm: 3 }] });
     const pageLink = (target: UserLocationSettingsPage, title: string, detail: string) => <button type="button" disabled={busy} onClick={() => onNavigate(target)} className="flex min-h-14 w-full items-center justify-between gap-3 border-b border-sky-100 py-3 text-left disabled:opacity-40"><span><span className="block text-xs font-bold text-slate-700">{title}</span><span className="mt-1 block text-[11px] text-slate-500">{detail}</span></span><span aria-hidden="true" className="text-xl text-sky-600">›</span></button>;
-    return <section className="space-y-3 rounded-2xl bg-sky-50/60 p-4">
-        {page !== 'main' && <button type="button" disabled={busy} onClick={() => onNavigate(getUserLocationParentPage(page))} className="min-h-11 text-xs text-sky-700 disabled:opacity-40">{page === 'location' ? '‹ 返回实时感知' : '‹ 返回真实定位'}</button>}
-        {(page === 'main' || page === 'location') && <label className="flex items-center justify-between gap-3"><span className="text-sm font-bold text-sky-800">真实定位</span><input aria-label="开启真实定位" type="checkbox" checked={value.enabled} disabled={busy} onChange={event => onChange({ ...value, enabled: event.target.checked })} className="h-5 w-5 accent-sky-600" /></label>}
-        {page === 'main' && <button type="button" disabled={busy} onClick={() => onNavigate('location')} className="flex min-h-11 w-full items-center justify-between gap-3 text-left text-xs text-sky-700 disabled:opacity-40"><span>设置与预览</span><span aria-hidden="true" className="text-xl">›</span></button>}
-        {page === 'location' && <>
-        <label className="block text-xs font-bold text-slate-700">定位方式<select aria-label="定位方式" value={value.provider || 'basic'} disabled={busy} onChange={event => { const provider = event.target.value as NonNullable<UserLocationConfig['provider']>; setMessage(''); onChange({ ...value, provider }); if (provider === 'amap' || provider === 'geoapify') onNavigate(provider); }} className="mt-2 w-full rounded-xl border border-sky-200 bg-white p-3 text-xs"><option value="basic">免费 · 全球大概地区，不用填 Key</option><option value="amap">高德 · 街道和附近地点，需要填 Key</option><option value="geoapify">全球 · 街道地址，Geoapify 免费 Key</option></select></label>
+    return <section className="space-y-3">
+        {!hideBack && page !== 'main' && <button type="button" disabled={busy} onClick={() => onNavigate(getUserLocationParentPage(page))} className="min-h-11 text-xs text-sky-700 disabled:opacity-40">{getUserLocationParentPage(page) === 'main' ? '‹ 返回实时感知' : '‹ 返回真实定位'}</button>}
+        {(page === 'main' || page === 'location') && <label className="flex items-center justify-between gap-3"><span className="text-sm font-bold text-sky-800">真实定位</span><AwarenessSwitch aria-label="开启真实定位" checked={value.enabled} disabled={busy} onChange={event => onChange({ ...value, enabled: event.target.checked })} /></label>}
+        {page === 'main' && value.enabled && <button type="button" disabled={busy} onClick={() => onNavigate('location')} className="flex min-h-11 w-full items-center justify-between gap-3 text-left text-xs text-sky-700 disabled:opacity-40"><span>设置与预览</span><span aria-hidden="true" className="text-xl">›</span></button>}
+        {page === 'location' && value.enabled && <>
+        <label className="block text-xs font-bold text-slate-700">定位方式<select aria-label="定位方式" value={value.provider || 'basic'} disabled={busy} onChange={event => { const provider = event.target.value as NonNullable<UserLocationConfig['provider']>; setMessage(''); onChange({ ...value, provider }); setShowKey(false); }} className="mt-2 w-full rounded-xl border border-sky-200 bg-white p-3 text-xs"><option value="basic">免费 · 全球大概地区，不用填 Key</option><option value="amap">高德 · 街道和附近地点，需要填 Key</option><option value="geoapify">全球 · 街道地址，Geoapify 免费 Key</option></select></label>
+        {value.provider === 'amap' && <div className="space-y-3">
+            <label className="block text-xs font-bold text-slate-700">高德 Web服务 Key</label>
+            <div className="flex items-center gap-2">
+                <input aria-label="高德 Key" type={showKey ? 'text' : 'password'} autoComplete="off" value={value.amapKey || ''} disabled={busy} onChange={event => { setMessage(''); onChange({ ...value, provider: 'amap', amapKey: event.target.value }); }} placeholder="粘贴高德 Web服务 Key" className="min-w-0 flex-1 rounded-xl border border-sky-200 bg-white p-3 text-sm" />
+                <button type="button" aria-label={showKey ? '隐藏高德 Key' : '显示高德 Key'} aria-pressed={showKey} disabled={busy} onClick={() => setShowKey(current => !current)} className="min-h-11 shrink-0 px-2 text-xs text-sky-700">{showKey ? '隐藏' : '显示'}</button>
+            </div>
+            <details><summary className="cursor-pointer py-2 text-xs text-sky-700">高德 Key 申请与说明</summary>
+            <p className="text-xs leading-6 text-slate-600">还没有 Key？去高德申请时选「Web服务」。</p>
+            <a href="https://console.amap.com/" target="_blank" rel="noreferrer" className="flex min-h-11 items-center justify-center rounded-xl border border-sky-200 bg-white px-3 text-xs font-bold text-sky-700">去高德申请 Key ↗</a>
+            <details><summary className="cursor-pointer py-2 text-xs text-sky-700">怎么申请？</summary><ol className="space-y-2 text-xs leading-6 text-slate-600"><li>1. 登录或注册高德控制台。</li><li>2. 创建应用，添加 Key 时选「Web服务」，不是「Web端 JS API」。</li><li>3. 复制 Key，回到这里粘贴。</li></ol></details>
+            <a href="https://lbs.amap.com/api/webservice/create-project-and-key" target="_blank" rel="noreferrer" className="inline-block py-2 text-xs text-sky-700 underline">不会申请？看高德图文步骤 ↗</a>
+            <p className="text-[11px] leading-5 text-slate-500">查到的店铺只是附近地点，不代表你一定在店里，也不能知道楼层。隐藏地点附近仍然不查高德。</p></details>
+        </div>}
+        {value.provider === 'geoapify' && <div className="space-y-3">
+            <label className="block text-xs font-bold text-slate-700">Geoapify API Key</label>
+            <div className="flex items-center gap-2">
+                <input aria-label="Geoapify Key" type={showKey ? 'text' : 'password'} autoComplete="off" value={value.geoapifyKey || ''} disabled={busy} onChange={event => {setMessage(''); onChange({...value, provider:'geoapify', geoapifyKey:event.target.value});}} placeholder="粘贴 Geoapify Key" className="min-w-0 flex-1 rounded-xl border border-sky-200 bg-white p-3 text-sm" />
+                <button type="button" aria-label={showKey ? '隐藏 Geoapify Key' : '显示 Geoapify Key'} aria-pressed={showKey} disabled={busy} onClick={() => setShowKey(current => !current)} className="min-h-11 shrink-0 px-2 text-xs text-sky-700">{showKey ? '隐藏' : '显示'}</button>
+            </div>
+            <details><summary className="cursor-pointer py-2 text-xs text-sky-700">Geoapify Key 申请与说明</summary><p className="text-xs">注册免费账户，不用绑信用卡。</p>
+            <a href="https://myprojects.geoapify.com/" target="_blank" rel="noreferrer" className="flex min-h-11 items-center justify-center rounded-xl border border-sky-200 bg-white px-3 text-xs font-bold text-sky-700">注册并获取免费 Key ↗</a>
+            <ol className="space-y-2 text-xs leading-6 text-slate-600"><li>1. 注册或登录 Geoapify MyProjects。</li><li>2. 创建项目，在 API Keys 中复制自动生成的 Key。</li><li>3. 回到这里粘贴，再保存并预览。</li></ol>
+            <details><summary className="cursor-pointer py-2 text-xs text-sky-700">保护 Key 与免费额度</summary><p className="text-xs leading-6 text-slate-600">可在 Key 设置中添加允许的网站 Origin，填写你打开糯米机的网址。每个账户有免费额度，最新限额以官方页面为准；用自己的 Key，不与所有用户共用一份额度。</p><a href="https://myprojects.geoapify.com/help/api-keys/" target="_blank" rel="noreferrer" className="text-xs text-sky-700 underline">Key 设置说明 ↗</a></details>
+            <a href="https://www.geoapify.com/pricing/" target="_blank" rel="noreferrer" className="inline-block py-2 text-xs text-sky-700 underline">查看免费额度与价格 ↗</a>
+            <p className="text-[11px] leading-5 text-slate-500">地址来自地图数据，部分地方可能只有街道或地区；不能判断你是否进了店或在哪一层。隐藏地点附近不查询任何地图。</p></details>
+        </div>}
+
+        <div className="space-y-3 text-xs">
+            <label className="block">地址缓存时间<select className="ml-3 rounded-lg p-2" value={value.cacheMinutes ?? 10} onChange={e => onChange({...value, cacheMinutes: Number(e.target.value)})}>
+                {[[0,'关闭'],[10,'10 分钟'],[30,'30 分钟'],[180,'3 小时'],[360,'6 小时'],[720,'12 小时']].map(([minutes,label]) => <option key={minutes} value={minutes}>{label}</option>)}
+            </select></label>
+            <p>默认十分钟内，如果手机位置移动不到 50 米，会复用地址，省去一次地图 API 调用。每轮仍先确认当前位置和隐藏地点。</p>
+            <LocationPinPreference />
+        </div>
         <nav aria-label="真实定位设置">
             {pageLink('characters', '可见角色', value.characterIds === undefined ? '所有角色可见 · 点击单独授权' : `仅选中的 ${characters.filter(c=>value.characterIds?.includes(c.id)).length} 位角色可见`)}
             {pageLink('regions', '隐藏地点', value.regions.length ? `已设置 ${value.regions.length} 个地点 · 点击修改` : '把家、公司等不想发送的地点隐藏')}
-            {pageLink('amap', '高德 API', value.amapKey?.trim() ? (value.provider === 'amap' ? '已填写 Key · 当前使用高德' : '已填写 Key · 当前未选用') : '查街道和附近地点 · 申请并填写 Key')}
-            {pageLink('geoapify', '全球街道 · Geoapify', value.geoapifyKey?.trim() ? (value.provider === 'geoapify' ? '已填写 Key · 当前使用全球街道' : '已填写 Key · 当前未选用') : '适合海外 · 注册复制免费 Key，不用绑信用卡')}
             {pageLink('about', '定位说明', '位置怎么查，角色能知道什么')}
         </nav>
         <div className="space-y-3 rounded-xl bg-white/80 p-3">
@@ -91,37 +126,6 @@ export default function UserLocationSettings({ value, onChange, onSave, page, on
         </div>
         </>}
         {page === 'characters' && <CharacterLocationAudience characters={characters} value={value.characterIds} onChange={characterIds=>onChange({...value,characterIds})}/>}
-        {page === 'amap' && <div className="space-y-3">
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-6 text-amber-900">
-                添加 Key 时，服务平台请选择 <strong className="inline-block rounded-md bg-amber-200 px-2 text-sm font-bold">Web服务</strong>
-                <p className="mt-1">别选「Web端（JS API）」，这个功能用不了那种 Key。</p>
-            </div>
-            <label className="block text-xs font-bold text-slate-700">高德 Web服务 Key</label>
-            <div className="flex items-center gap-2">
-                <input aria-label="高德 Key" type={showKey ? 'text' : 'password'} autoComplete="off" value={value.amapKey || ''} disabled={busy} onChange={event => { setMessage(''); onChange({ ...value, provider: 'amap', amapKey: event.target.value }); }} placeholder="粘贴高德 Web服务 Key" className="min-w-0 flex-1 rounded-xl border border-sky-200 bg-white p-3 text-sm" />
-                <button type="button" aria-label={showKey ? '隐藏高德 Key' : '显示高德 Key'} aria-pressed={showKey} disabled={busy} onClick={() => setShowKey(current => !current)} className="min-h-11 shrink-0 px-2 text-xs text-sky-700">{showKey ? '隐藏' : '显示'}</button>
-            </div>
-            <p className="text-[11px] leading-5 text-slate-500">填写后自动选用高德，保存并返回即可。Key 只存这台设备。</p>
-            <p className="text-xs leading-6 text-slate-600">还没有 Key？去高德申请时选「Web服务」。</p>
-            <a href="https://console.amap.com/" target="_blank" rel="noreferrer" className="flex min-h-11 items-center justify-center rounded-xl border border-sky-200 bg-white px-3 text-xs font-bold text-sky-700">去高德申请 Key ↗</a>
-            <details><summary className="cursor-pointer py-2 text-xs text-sky-700">怎么申请？</summary><ol className="space-y-2 text-xs leading-6 text-slate-600"><li>1. 登录或注册高德控制台。</li><li>2. 创建应用，添加 Key 时选「Web服务」，不是「Web端 JS API」。</li><li>3. 复制 Key，回到这里粘贴。</li></ol></details>
-            <a href="https://lbs.amap.com/api/webservice/create-project-and-key" target="_blank" rel="noreferrer" className="inline-block py-2 text-xs text-sky-700 underline">不会申请？看高德图文步骤 ↗</a>
-            <p className="text-[11px] leading-5 text-slate-500">查到的店铺只是附近地点，不代表你一定在店里，也不能知道楼层。隐藏地点附近仍然不查高德。</p>
-        </div>}
-        {page === 'geoapify' && <div className="space-y-3">
-            <p className="rounded-xl border border-sky-200 bg-white/80 p-3 text-xs leading-6 text-sky-900">海外用户可以选这个。免费账户不用绑信用卡，注册后创建项目、复制 Key 就能用。</p>
-            <label className="block text-xs font-bold text-slate-700">Geoapify API Key</label>
-            <div className="flex items-center gap-2">
-                <input aria-label="Geoapify Key" type={showKey ? 'text' : 'password'} autoComplete="off" value={value.geoapifyKey || ''} disabled={busy} onChange={event => {setMessage(''); onChange({...value, provider:'geoapify', geoapifyKey:event.target.value});}} placeholder="粘贴 Geoapify Key" className="min-w-0 flex-1 rounded-xl border border-sky-200 bg-white p-3 text-sm" />
-                <button type="button" aria-label={showKey ? '隐藏 Geoapify Key' : '显示 Geoapify Key'} aria-pressed={showKey} disabled={busy} onClick={() => setShowKey(current => !current)} className="min-h-11 shrink-0 px-2 text-xs text-sky-700">{showKey ? '隐藏' : '显示'}</button>
-            </div>
-            <p className="text-[11px] leading-5 text-slate-500">填写后自动选用全球街道，保存并返回即可。Key 只存这台设备。</p>
-            <a href="https://myprojects.geoapify.com/" target="_blank" rel="noreferrer" className="flex min-h-11 items-center justify-center rounded-xl border border-sky-200 bg-white px-3 text-xs font-bold text-sky-700">注册并获取免费 Key ↗</a>
-            <ol className="space-y-2 text-xs leading-6 text-slate-600"><li>1. 注册或登录 Geoapify MyProjects。</li><li>2. 创建项目，在 API Keys 中复制自动生成的 Key。</li><li>3. 回到这里粘贴，再保存并预览。</li></ol>
-            <details><summary className="cursor-pointer py-2 text-xs text-sky-700">保护 Key 与免费额度</summary><p className="text-xs leading-6 text-slate-600">可在 Key 设置中添加允许的网站 Origin，填写你打开糯米机的网址。每个账户有免费额度，最新限额以官方页面为准；用自己的 Key，不与所有用户共用一份额度。</p><a href="https://myprojects.geoapify.com/help/api-keys/" target="_blank" rel="noreferrer" className="text-xs text-sky-700 underline">Key 设置说明 ↗</a></details>
-            <a href="https://www.geoapify.com/pricing/" target="_blank" rel="noreferrer" className="inline-block py-2 text-xs text-sky-700 underline">查看免费额度与价格 ↗</a>
-            <p className="text-[11px] leading-5 text-slate-500">地址来自地图数据，部分地方可能只有街道或地区；不能判断你是否进了店或在哪一层。隐藏地点附近不查询任何地图。</p>
-        </div>}
         {page === 'about' && <div className="space-y-3 text-xs leading-6 text-slate-600">
             <p>让角色知道你在哪。首次使用要允许手机或浏览器定位。</p>
             <p>任何形式的 API 中转站，理论上都能看到你发给角色的聊天内容。地址涉及隐私，不想把家、公司等具体地址发出去，就把这些地点隐藏。</p>

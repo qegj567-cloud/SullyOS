@@ -1,3 +1,4 @@
+import AwarenessSwitch from '../components/settings/AwarenessSwitch';
 import { listUserSpaces } from '../utils/userSpaces';
 import { BackupMissingAssetsNotice } from '../components/BackupMissingAssetsNotice';
 import type { BackupMissingAsset } from '../utils/backupMissingAssets';
@@ -21,9 +22,11 @@ import { extractContent, safeResponseJson } from '../utils/safeApi';
 import { extractModelIds, normalizeModelIds } from '../utils/modelList';
 import { shareOrDownloadBlob } from '../utils/shareExport';
 import { isAnalyticsConfigured, isAnalyticsEnabled, setAnalyticsEnabled, trackEvent } from '../utils/analytics';
+import '../components/settings/realtimeSettings.css';
+import SettingsDetailPage from '../components/settings/SettingsDetailPage';
 import Modal from '../components/os/Modal';
 import UserHolidaySettings from '../components/settings/UserHolidaySettings';
-import UserLocationSettings, { USER_LOCATION_PAGE_TITLES, getUserLocationParentPage, type UserLocationSettingsPage } from '../components/settings/UserLocationSettings';
+import UserLocationSettings, { awarenessSections, USER_LOCATION_PAGE_TITLES, getUserLocationParentPage, type UserLocationSettingsPage } from '../components/settings/UserLocationSettings';
 import { useLocalBackHandler } from '../hooks/useLocalBackHandler';
 import { ActiveMsgSettingsEntry, ActiveMsgSettingsPages, type AmsgSettingsPage } from '../components/settings/ActiveMsgSettings';
 import { loadUserLocationConfig, type UserLocationConfig } from '../utils/userLocationPrivacy';
@@ -500,6 +503,12 @@ const McpServersCard: React.FC<{
     );
 };
 
+const awarenessGroups = [
+  { label: '环境感知', pages: ['location', 'weather', 'holidays'] },
+  { label: '资讯动态', pages: ['news', 'xhs'] },
+  { label: '外部服务', pages: ['notion', 'feishu', 'orders'] },
+] as const;
+
 const Settings: React.FC = () => {
   const {
       apiConfig, updateApiConfig, closeApp, availableModels, setAvailableModels,
@@ -719,18 +728,19 @@ const Settings: React.FC = () => {
   // 实时感知配置的本地状态
   const [rtWeatherEnabled, setRtWeatherEnabled] = useState(realtimeConfig.weatherEnabled);
   const [rtUserLocation, setRtUserLocation] = useState<UserLocationConfig>(() => { try { return loadUserLocationConfig(); } catch { return { enabled: false, regions: [] }; } });
-  const [rtUserLocationPage, setRtUserLocationPage] = useState<UserLocationSettingsPage>('main');
+  const [rtUserLocationPage, setRtUserLocationPage] = useState<UserLocationSettingsPage>(holidaySettingsFocus ? 'holidays' : 'location');
   const [rtUserLocationBusy, setRtUserLocationBusy] = useState(false);
   useSettingsFocus('location', () => {
       setRtUserLocationPage('location');
       setShowRealtimeModal(true);
   });
+  const primaryAwarenessPage = rtUserLocationPage === 'location' || rtUserLocationPage in awarenessSections;
+  const awarenessGroup = awarenessGroups.find(group => group.pages.some(id => id === rtUserLocationPage)) ?? awarenessGroups[0];
   const closeRealtimePage = () => {
       if (rtUserLocationBusy) return;
-      if (rtUserLocationPage !== 'main') setRtUserLocationPage(getUserLocationParentPage(rtUserLocationPage));
+      if (!primaryAwarenessPage) setRtUserLocationPage(getUserLocationParentPage(rtUserLocationPage));
       else setShowRealtimeModal(false);
   };
-  useLocalBackHandler(() => { closeRealtimePage(); return true; }, 30, showRealtimeModal);
   const [rtUserHolidays, setRtUserHolidays] = useState<UserHolidayConfig>(() => ({ ...(realtimeConfig.userHolidays || { enabled: false, countryCode: '' }), ...(holidaySettingsFocus ? { enabled: true } : {}) }));
   const [rtWeatherKey, setRtWeatherKey] = useState(realtimeConfig.weatherApiKey);
   const [rtWeatherFreeSource, setRtWeatherFreeSource] = useState(() => normalizeFreeWeatherSource(realtimeConfig.weatherFreeSource));
@@ -2057,7 +2067,7 @@ const Settings: React.FC = () => {
       )}
 
       {/* Header */}
-      <div className="bg-[#fffefe] border-b border-slate-200 shrink-0 z-10 sticky top-0" style={{ paddingTop: 'var(--safe-top)' }} {...(showSupport || amsgPage ? { inert: '' } : {})} aria-hidden={Boolean(showSupport || amsgPage) || undefined}>
+      <div className="bg-[#fffefe] border-b border-slate-200 shrink-0 z-10 sticky top-0" style={{ paddingTop: 'var(--safe-top)' }} {...(showSupport || amsgPage || showRealtimeModal ? { inert: '' } : {})} aria-hidden={Boolean(showSupport || amsgPage || showRealtimeModal) || undefined}>
         <div className="flex items-center px-4 py-3">
         <div className="flex items-center gap-2 w-full">
             <button onClick={closeApp} className="p-2 -ml-2 rounded-full hover:bg-black/5 active:scale-90 transition-transform">
@@ -2070,7 +2080,7 @@ const Settings: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-5 space-y-6 no-scrollbar pb-20" {...(showSupport || amsgPage ? { inert: '' } : {})} aria-hidden={Boolean(showSupport || amsgPage) || undefined}>
+      <div className="flex-1 overflow-y-auto p-5 space-y-6 no-scrollbar pb-20" {...(showSupport || amsgPage || showRealtimeModal ? { inert: '' } : {})} aria-hidden={Boolean(showSupport || amsgPage || showRealtimeModal) || undefined}>
 
         <NavigationBallSettings characters={characters} loadWorlds={() => DB.getWorlds()} />
         {/* 外观救急入口统一放在设置顶部，无需进入已被错误 CSS 遮住的聊天或日记。 */}
@@ -3194,7 +3204,7 @@ const Settings: React.FC = () => {
                 </div>
             }
             actions={
-                <button onClick={() => { trackEvent('打开实时感知配置'); setShowRealtimeModal(true); }} className="text-[10px] bg-violet-100 text-violet-600 px-3 py-1.5 rounded-full font-bold shadow-sm active:scale-95 transition-transform">
+                <button onClick={() => { trackEvent('打开实时感知配置'); setRtUserLocationPage('location'); setShowRealtimeModal(true); }} className="text-[10px] bg-violet-100 text-violet-600 px-3 py-1.5 rounded-full font-bold shadow-sm active:scale-95 transition-transform">
                     配置
                 </button>
             }
@@ -3874,30 +3884,40 @@ const Settings: React.FC = () => {
           </div>
       </Modal>
 
-      {/* 实时感知配置 Modal */}
-      <Modal
+      {/* 实时感知全屏设置 */}
+      <SettingsDetailPage className="realtime-design" sectionLabel="实时感知"
           isOpen={showRealtimeModal}
-          title={USER_LOCATION_PAGE_TITLES[rtUserLocationPage]}
+          title={primaryAwarenessPage ? '实时感知' : USER_LOCATION_PAGE_TITLES[rtUserLocationPage]}
+          navigation={primaryAwarenessPage && <nav aria-label="感知分类" className="realtime-groups">
+              {awarenessGroups.map(group => <button type="button" key={group.label} disabled={rtUserLocationBusy}
+                  aria-current={group === awarenessGroup ? 'page' : undefined}
+                  onClick={() => { if (group !== awarenessGroup) setRtUserLocationPage(group.pages[0]); }}>
+                  {group.label}
+              </button>)}
+          </nav>}
           onClose={closeRealtimePage}
-          footer={rtUserLocationPage === 'main'
+          footer={primaryAwarenessPage
               ? <button disabled={rtUserLocationBusy} onClick={handleSaveRealtimeConfig} className="w-full py-3 bg-violet-500 text-white font-bold rounded-2xl shadow-lg disabled:opacity-40">保存配置</button>
               : <button disabled={rtUserLocationBusy} onClick={() => { if (rtUserLocationPage === 'about' || handleSaveUserLocation()) setRtUserLocationPage(getUserLocationParentPage(rtUserLocationPage)); }} className="w-full py-3 bg-sky-700 text-white font-bold rounded-2xl disabled:opacity-40">{rtUserLocationPage === 'about' ? '返回真实定位' : '保存并返回'}</button>}
       >
-          <div className="space-y-5 max-h-[60vh] overflow-y-auto no-scrollbar">
-              {rtUserLocationPage === 'main' && <UserHolidaySettings value={rtUserHolidays} onChange={setRtUserHolidays} />}
-              <UserLocationSettings characters={characters} value={rtUserLocation} onChange={setRtUserLocation} onSave={handleSaveUserLocation} page={rtUserLocationPage} onNavigate={setRtUserLocationPage} onBusyChange={setRtUserLocationBusy} userName={userProfile.name} />
-              {rtUserLocationPage === 'main' && <>
+          <div key={rtUserLocationPage} className={primaryAwarenessPage ? "h-full overflow-y-auto overscroll-contain" : ""}><div className={primaryAwarenessPage ? "amsg-detail-content space-y-5" : "space-y-5"}>
+              {primaryAwarenessPage && <nav aria-label={awarenessGroup.label + '功能'} className="realtime-items">
+                  {awarenessGroup.pages.map(id => <button key={id} type="button" disabled={rtUserLocationBusy}
+                      aria-current={id === rtUserLocationPage ? 'page' : undefined}
+                      onClick={() => setRtUserLocationPage(id)}>{id === 'location' ? '定位' : awarenessSections[id]}</button>)}
+              </nav>}
+              <div className="realtime-card space-y-3">
+              {rtUserLocationPage === 'holidays' && <UserHolidaySettings value={rtUserHolidays} onChange={setRtUserHolidays} />}
+              {!(rtUserLocationPage in awarenessSections) && <UserLocationSettings hideBack characters={characters} value={rtUserLocation} onChange={setRtUserLocation} onSave={handleSaveUserLocation} page={rtUserLocationPage} onNavigate={setRtUserLocationPage} onBusyChange={setRtUserLocationBusy} userName={userProfile.name} />}
+              {rtUserLocationPage === 'weather' && <>
               {/* 天气配置 */}
-              <div className="bg-emerald-50/50 p-4 rounded-2xl space-y-3">
+              <div className="space-y-3">
                   <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                           <Sun size={20} weight="fill" />
                           <span className="text-sm font-bold text-emerald-700">天气感知</span>
                       </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                          <input type="checkbox" checked={rtWeatherEnabled} onChange={e => setRtWeatherEnabled(e.target.checked)} className="sr-only peer" />
-                          <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
-                      </label>
+                      <AwarenessSwitch aria-label="启用天气感知" checked={rtWeatherEnabled} onChange={e => setRtWeatherEnabled(e.target.checked)} />
                   </div>
                   {rtWeatherEnabled && (
                       <div className="space-y-2">
@@ -3916,17 +3936,16 @@ const Settings: React.FC = () => {
                   )}
               </div>
 
+              </>}
+              {rtUserLocationPage === 'news' && <>
               {/* 新闻配置 */}
-              <div className="bg-blue-50/50 p-4 rounded-2xl space-y-3">
+              <div className="space-y-3">
                   <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                           <Newspaper size={20} weight="fill" />
                           <span className="text-sm font-bold text-blue-700">新闻热点</span>
                       </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                          <input type="checkbox" checked={rtNewsEnabled} onChange={e => setRtNewsEnabled(e.target.checked)} className="sr-only peer" />
-                          <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
-                      </label>
+                      <AwarenessSwitch aria-label="启用新闻感知" checked={rtNewsEnabled} onChange={e => setRtNewsEnabled(e.target.checked)} />
                   </div>
                   {rtNewsEnabled && (
                       <div className="space-y-2">
@@ -3969,7 +3988,7 @@ const Settings: React.FC = () => {
 
               {/* Firecrawl 网页读取：方舟计划默认隐藏，代码与降级能力保留。 */}
               {SHOW_FIRECRAWL_ARK_UI && (
-              <div className="bg-amber-50/60 p-4 rounded-2xl space-y-3">
+              <div className="space-y-3">
                   <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-2 min-w-0">
                           <PlugsConnected size={20} weight="fill" className="text-amber-600 shrink-0" />
@@ -4054,17 +4073,16 @@ const Settings: React.FC = () => {
               </div>
               )}
 
+              </>}
+              {rtUserLocationPage === 'notion' && <>
               {/* Notion 配置 */}
-              <div className="bg-orange-50/50 p-4 rounded-2xl space-y-3">
+              <div className="space-y-3">
                   <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                           <NotePencil size={20} weight="fill" />
                           <span className="text-sm font-bold text-orange-700">Notion 日记</span>
                       </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                          <input type="checkbox" checked={rtNotionEnabled} onChange={e => setRtNotionEnabled(e.target.checked)} className="sr-only peer" />
-                          <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-500"></div>
-                      </label>
+                      <AwarenessSwitch aria-label="启用Notion" checked={rtNotionEnabled} onChange={e => setRtNotionEnabled(e.target.checked)} />
                   </div>
                   {rtNotionEnabled && (
                       <div className="space-y-2">
@@ -4095,24 +4113,23 @@ const Settings: React.FC = () => {
                   )}
               </div>
 
+              </>}
+              {rtUserLocationPage === 'feishu' && <>
               {/* 飞书配置 (中国区替代) */}
-              <div className="bg-indigo-50/50 p-4 rounded-2xl space-y-3">
+              <div className="space-y-3">
                   <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                           <Notebook size={20} weight="fill" />
                           <span className="text-sm font-bold text-indigo-700">飞书日记</span>
                           <span className="text-[9px] bg-indigo-100 text-indigo-500 px-1.5 py-0.5 rounded-full">中国区</span>
                       </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                          <input type="checkbox" checked={rtFeishuEnabled} onChange={e => setRtFeishuEnabled(e.target.checked)} className="sr-only peer" />
-                          <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-500"></div>
-                      </label>
+                      <AwarenessSwitch aria-label="启用飞书" checked={rtFeishuEnabled} onChange={e => setRtFeishuEnabled(e.target.checked)} />
                   </div>
-                  <p className="text-[10px] text-indigo-500/70 leading-relaxed">
-                      Notion 的中国区替代方案，无需翻墙。使用飞书多维表格存储日记。
-                  </p>
                   {rtFeishuEnabled && (
                       <div className="space-y-2">
+                          <p className="text-[10px] text-indigo-500/70 leading-relaxed">
+                              Notion 的中国区替代方案，无需翻墙。使用飞书多维表格存储日记。
+                          </p>
                           <div>
                               <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">飞书 App ID</label>
                               <input type="text" value={rtFeishuAppId} onChange={e => setRtFeishuAppId(e.target.value)} className="w-full bg-white/80 border border-indigo-200 rounded-xl px-3 py-2 text-sm font-mono" placeholder="cli_xxxxxxxx" />
@@ -4146,68 +4163,24 @@ const Settings: React.FC = () => {
                   )}
               </div>
 
-              {/* 小红书自动化 */}
-              <div className="bg-red-50/50 p-4 rounded-2xl space-y-3">
-                  <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                          <Book size={20} weight="fill" />
-                          <span className="text-sm font-bold text-red-700">小红书 · 本地</span>
-                          <span className="text-[9px] bg-red-100 text-red-500 px-1.5 py-0.5 rounded-full">MCP 兼容 / Skills</span>
-                      </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                          <input type="checkbox" checked={rtXhsMcpEnabled && rtXhsMode === 'local'} onChange={e => { if (e.target.checked) { setRtXhsMcpEnabled(true); setRtXhsEnabled(true); setRtXhsMode('local'); } else { setRtXhsMcpEnabled(false); setRtXhsEnabled(false); } }} className="sr-only peer" />
-                          <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-500"></div>
-                      </label>
-                  </div>
-                  <p className="text-[10px] text-red-500/70 leading-relaxed">
-                      本地模式继续可用：xiaohongshu-mcp 走 MCP 协议，xhs-bridge / Skills 走本地 /api。MCP 保留兼容，但不再承诺随其上游版本持续适配；新配置建议使用下方持续维护的 Lite。
-                  </p>
-                  {rtXhsMcpEnabled && rtXhsMode === 'local' && (
-                      <div className="space-y-2">
-                          <div>
-                              <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">服务器 URL</label>
-                              <input value={rtXhsLocalUrl} onChange={e => setRtXhsLocalUrl(e.target.value)} className="w-full bg-white/80 border border-red-200 rounded-xl px-3 py-2 text-[11px] font-mono" placeholder="http://localhost:18060/mcp" />
-                          </div>
-                          <button onClick={testXhsMcp} className="w-full py-2 bg-red-100 text-red-600 text-xs font-bold rounded-xl active:scale-95 transition-transform">测试连接</button>
-                          {renderRtTestStatus('xhs-local')}
-                          <div className="grid grid-cols-2 gap-2">
-                              <div>
-                                  <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">小红书昵称</label>
-                                  <input value={rtXhsNickname} onChange={e => setRtXhsNickname(e.target.value)} className="w-full bg-white/80 border border-red-200 rounded-xl px-3 py-2 text-[11px]" placeholder="手动填写" />
-                              </div>
-                              <div>
-                                  <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">用户 ID</label>
-                                  <input value={rtXhsUserId} onChange={e => setRtXhsUserId(e.target.value)} className="w-full bg-white/80 border border-red-200 rounded-xl px-3 py-2 text-[11px] font-mono" placeholder="可选，用于查看主页" />
-                              </div>
-                          </div>
-                          <p className="text-[10px] text-red-500/70 leading-relaxed">
-                              <b>MCP 模式:</b> 下载 xiaohongshu-mcp + 运行脚本，URL 填 http://localhost:18060/mcp（代理则 18061/mcp）<br/>
-                              <b>Skills 模式:</b> URL 填 http://localhost:18061/api（需 Python + xhs-bridge.mjs，额外支持视频/长文）<br/>
-                              系统按 URL 结尾自动判断（/mcp 或 /api）。
-                          </p>
-                      </div>
-                  )}
-              </div>
-
+              </>}
+              {rtUserLocationPage === 'xhs' && <>
               {/* 小红书 Lite (云端) */}
-              <div className="bg-rose-50/60 p-4 rounded-2xl space-y-3">
+              <div className="space-y-3">
                   <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                           <Book size={20} weight="fill" />
                           <span className="text-sm font-bold text-rose-700">小红书 Lite</span>
-                          <span className="text-[9px] bg-rose-100 text-rose-500 px-1.5 py-0.5 rounded-full">持续维护</span>
+                          <span className="text-[9px] bg-rose-100 text-rose-500 px-1.5 py-0.5 rounded-full">推荐</span>
                       </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                          <input type="checkbox" checked={rtXhsMcpEnabled && rtXhsMode === 'lite'} onChange={e => { if (e.target.checked) { if (!window.confirm(XHS_RISK_TEXT + '\n\n确定要开启吗？')) return; setRtXhsMcpEnabled(true); setRtXhsEnabled(true); setRtXhsMode('lite'); } else { setRtXhsMcpEnabled(false); setRtXhsEnabled(false); } }} className="sr-only peer" />
-                          <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-500"></div>
-                      </label>
+                      <AwarenessSwitch aria-label="启用小红书 Lite" checked={rtXhsMcpEnabled && rtXhsMode === 'lite'} onChange={e => { if (e.target.checked) { if (!window.confirm(XHS_RISK_TEXT + '\n\n确定要开启吗？')) return; setRtXhsMcpEnabled(true); setRtXhsEnabled(true); setRtXhsMode('lite'); } else { setRtXhsMcpEnabled(false); setRtXhsEnabled(false); } }} />
                   </div>
-                  <p className="text-[10px] text-rose-500/70 leading-relaxed">
-                      免电脑、免扫码：粘贴一次小红书 / RedNote cookie，即可搜索、浏览、看详情及互动；国内小红书还支持发帖(带图)。地址已内置，无需填写。
-                  </p>
-                  <p className="text-[10px] text-amber-700 leading-relaxed bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">{XHS_RISK_TEXT}</p>
                   {rtXhsMcpEnabled && rtXhsMode === 'lite' && (
                       <div className="space-y-2">
+                          <p className="text-[10px] text-rose-500/70 leading-relaxed">
+                              免电脑、免扫码：粘贴一次小红书 / RedNote cookie，即可搜索、浏览、看详情及互动；国内小红书还支持发帖(带图)。地址已内置，无需填写。
+                          </p>
+                          <p className="text-[10px] text-amber-700 leading-relaxed bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">{XHS_RISK_TEXT}</p>
                           <div>
                               <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">小红书 Cookie</label>
                               <textarea value={rtXhsCookie} onChange={e => { setRtXhsCookie(e.target.value); setRtXhsPlatform(undefined); }} rows={2} className="w-full bg-white/80 border border-rose-200 rounded-xl px-3 py-2 text-[10px] font-mono resize-y" placeholder="a1=...; web_session=...; （从浏览器登录后复制完整 cookie）" />
@@ -4239,25 +4212,60 @@ const Settings: React.FC = () => {
                       </div>
                   )}
               </div>
-
+              <div className="space-y-3 border-t border-slate-200 pt-3 text-slate-600">
+                  <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                          <Book size={20} weight="fill" />
+                          <span className="text-sm font-bold text-slate-700">旧版本地接入 · MCP / Skills</span>
+                      </div>
+                      <AwarenessSwitch aria-label="启用旧版本地服务" checked={rtXhsMcpEnabled && rtXhsMode === 'local'} onChange={e => { if (e.target.checked) { setRtXhsMcpEnabled(true); setRtXhsEnabled(true); setRtXhsMode('local'); } else { setRtXhsMcpEnabled(false); setRtXhsEnabled(false); } }} />
+                  </div>
+                  {rtXhsMcpEnabled && rtXhsMode === 'local' && (
+                      <div className="space-y-2">
+                          <p className="text-[10px] text-slate-500 leading-relaxed">
+                              供已有本地服务的用户继续使用。首次接入请选上方的小红书 Lite。
+                          </p>
+                          <div>
+                              <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">服务器 URL</label>
+                              <input value={rtXhsLocalUrl} onChange={e => setRtXhsLocalUrl(e.target.value)} className="w-full bg-white/80 border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-mono" placeholder="http://localhost:18060/mcp" />
+                          </div>
+                          <button onClick={testXhsMcp} className="w-full py-2 bg-slate-100 text-slate-600 text-xs font-bold rounded-xl active:scale-95 transition-transform">测试连接</button>
+                          {renderRtTestStatus('xhs-local')}
+                          <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                  <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">小红书昵称</label>
+                                  <input value={rtXhsNickname} onChange={e => setRtXhsNickname(e.target.value)} className="w-full bg-white/80 border border-slate-200 rounded-xl px-3 py-2 text-[11px]" placeholder="手动填写" />
+                              </div>
+                              <div>
+                                  <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">用户 ID</label>
+                                  <input value={rtXhsUserId} onChange={e => setRtXhsUserId(e.target.value)} className="w-full bg-white/80 border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-mono" placeholder="可选，用于查看主页" />
+                              </div>
+                          </div>
+                          <p className="text-[10px] text-slate-500 leading-relaxed">
+                              <b>MCP 模式:</b> 下载 xiaohongshu-mcp + 运行脚本，URL 填 http://localhost:18060/mcp（代理则 18061/mcp）<br/>
+                              <b>Skills 模式:</b> URL 填 http://localhost:18061/api（需 Python + xhs-bridge.mjs，额外支持视频/长文）<br/>
+                              系统按 URL 结尾自动判断（/mcp 或 /api）。
+                          </p>
+                      </div>
+                  )}
+              </div>
+              </>}
+              {rtUserLocationPage === 'orders' && <>
               {/* 麦当劳 MCP */}
-              <div className="bg-yellow-50/60 p-4 rounded-2xl space-y-3">
+              <div className="space-y-3">
                   <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                           <ForkKnife size={20} weight="fill" className="text-yellow-600" />
                           <span className="text-sm font-bold text-yellow-700">麦当劳</span>
                           <span className="text-[9px] bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded-full">官方 MCP</span>
                       </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                          <input type="checkbox" checked={mcdEnabled} onChange={e => handleMcdEnabledChange(e.target.checked)} className="sr-only peer" />
-                          <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-yellow-500"></div>
-                      </label>
+                      <AwarenessSwitch aria-label="启用麦当劳" checked={mcdEnabled} onChange={e => handleMcdEnabledChange(e.target.checked)} />
                   </div>
-                  <p className="text-[10px] text-yellow-700/70 leading-relaxed">
-                      启用后，在聊天里点 + 号 → 第二页 → 麦当劳，发送"麦请求"激活，角色就能为你查菜单、查门店、点麦乐送/到店取餐/团餐、积分兑券、查活动。
-                  </p>
                   {mcdEnabled && (
                       <div className="space-y-2">
+                          <p className="text-[10px] text-yellow-700/70 leading-relaxed">
+                              启用后，在聊天里点 + 号 → 第二页 → 麦当劳，发送"麦请求"激活，角色就能为你查菜单、查门店、点麦乐送/到店取餐/团餐、积分兑券、查活动。
+                          </p>
                           <div>
                               <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">MCP Token (个人)</label>
                               <input type="password" value={mcdToken} onChange={e => handleMcdTokenChange(e.target.value)} className="w-full bg-white/80 border border-yellow-200 rounded-xl px-3 py-2 text-sm font-mono" placeholder="去 open.mcd.cn/mcp 申请" />
@@ -4280,24 +4288,22 @@ const Settings: React.FC = () => {
                   )}
               </div>
 
+              <hr className="border-slate-200" />
               {/* 瑞幸 MCP */}
-              <div className="bg-blue-50/60 p-4 rounded-2xl space-y-3">
+              <div className="space-y-3">
                   <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                           <Coffee size={20} weight="fill" className="text-blue-600" />
                           <span className="text-sm font-bold text-blue-700">瑞幸咖啡</span>
                           <span className="text-[9px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">官方 MCP</span>
                       </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                          <input type="checkbox" checked={luckinEnabled} onChange={e => handleLuckinEnabledChange(e.target.checked)} className="sr-only peer" />
-                          <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
-                      </label>
+                      <AwarenessSwitch aria-label="启用瑞幸" checked={luckinEnabled} onChange={e => handleLuckinEnabledChange(e.target.checked)} />
                   </div>
-                  <p className="text-[10px] text-blue-700/70 leading-relaxed">
-                      启用后，在聊天里点 + 号 → 第二页 → 瑞一杯，发送"瑞一杯"激活，角色就能为你查门店、搜咖啡、选规格、下单到店自提、查取餐码。
-                  </p>
                   {luckinEnabled && (
                       <div className="space-y-2">
+                          <p className="text-[10px] text-blue-700/70 leading-relaxed">
+                              启用后，在聊天里点 + 号 → 第二页 → 瑞一杯，发送"瑞一杯"激活，角色就能为你查门店、搜咖啡、选规格、下单到店自提、查取餐码。
+                          </p>
                           <div>
                               <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">MCP Token (个人)</label>
                               <input type="password" value={luckinToken} onChange={e => handleLuckinTokenChange(e.target.value)} className="w-full bg-white/80 border border-blue-200 rounded-xl px-3 py-2 text-sm font-mono" placeholder="去 open.lkcoffee.com 登录后复制" />
@@ -4320,8 +4326,9 @@ const Settings: React.FC = () => {
                   )}
               </div>
               </>}
-          </div>
-      </Modal>
+              </div>
+          </div></div>
+      </SettingsDetailPage>
 
       {/* 通用 MCP 管理（从实时感知里独立出来） */}
       <Modal isOpen={showMcpModal} title="MCP" onClose={() => { setShowMcpModal(false); flushMcpToolConfigSync(); }}>
@@ -4457,4 +4464,8 @@ const Settings: React.FC = () => {
   );
 };
 
-export default Settings;
+// Initialise editable drafts only after persisted settings have been restored.
+export default function SettingsEntry() {
+    const { isDataLoaded } = useOS();
+    return isDataLoaded ? <Settings /> : <div role="status">正在读取设置…</div>;
+}

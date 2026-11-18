@@ -1,3 +1,4 @@
+import { ChatLocationPin } from './ChatLocationPin';
 import { avatarDecorationImageStyle, isAnniversaryFrame } from '../../utils/anniversaryGifts';
 
 
@@ -1161,6 +1162,7 @@ interface MessageItemProps {
     activeTheme: ChatTheme;
     charAvatar: string;
     charName: string;
+    locationPinCharId?: string;
     userAvatar: string;
     /** 当前窗口里的最后一条消息；最新图片需要立即解码，避免移动端懒加载卡在滚动容器底部。 */
     isLatestMessage?: boolean;
@@ -1231,6 +1233,7 @@ const MessageItem = React.memo(({
     activeTheme,
     charAvatar,
     charName,
+    locationPinCharId,
     userAvatar,
     isLatestMessage = false,
     onMediaLoad,
@@ -1773,7 +1776,7 @@ const MessageItem = React.memo(({
                 `flex items-end ${marginBottom} px-3 group select-none relative transition-[padding] duration-300`,
                 selectionMode ? 'pl-12' : '',
             ].filter(Boolean).join(' ')}
-            style={{ '--sully-chat-message-avatar-size': `${avatarSizePx}px` } as React.CSSProperties}>
+            style={{ ...(locationPinCharId ? { marginBottom: 18 } : {}), '--sully-chat-message-avatar-size': `${avatarSizePx}px` } as React.CSSProperties}>
                 {selectionMode && (
                     <div className="absolute left-3 top-1/2 -translate-y-1/2 cursor-pointer z-20" onClick={() => onToggleSelect(m.id)}>
                         <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-primary border-primary' : 'border-slate-300 bg-white/80'}`}>
@@ -1851,6 +1854,7 @@ const MessageItem = React.memo(({
                 {isUser && !isModuleCard && (
                     <div className={`sully-chat-message-avatar-slot absolute right-3 bottom-0 z-0 transition-[left] duration-300`}>
                         {renderAvatar(userAvatar, { className: 'sully-chat-message-avatar' })}
+                        {locationPinCharId && <ChatLocationPin charId={locationPinCharId} />}
                     </div>
                 )}
             </div>
@@ -3760,6 +3764,7 @@ const MessageItem = React.memo(({
            prev.activeTheme === next.activeTheme &&
            prev.charAvatar === next.charAvatar &&
            prev.charName === next.charName &&
+           prev.locationPinCharId === next.locationPinCharId &&
            prev.userAvatar === next.userAvatar &&
            prev.isLatestMessage === next.isLatestMessage &&
            prev.onMediaLoad === next.onMediaLoad &&

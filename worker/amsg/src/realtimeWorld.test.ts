@@ -18,6 +18,7 @@ const TZ = 'Asia/Shanghai';
 const cfg = (extra: Partial<AmsgToolConfig> = {}): AmsgToolConfig => ({
     v: 1,
     proxyWorkerUrl: 'https://proxy.example.com',
+    weatherFreeSource: 'open-meteo',
     weatherEnabled: false,
     newsEnabled: false,
     notionEnabled: false,

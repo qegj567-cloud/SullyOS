@@ -1,3 +1,4 @@
+import { migrateFreeWeatherPreference } from './weatherSources';
 import {beforeEach,expect,it,vi} from 'vitest';
 import {cleanCharacterWeatherCities,weatherForCharacter} from './characterWeather';
 import {RealtimeContextManager,defaultRealtimeConfig} from './realtimeContext';
@@ -19,10 +20,20 @@ it('isolates cached weather by city and key, including failed city switches',asy
     expect((await RealtimeContextManager.fetchWeather({...cfg,weatherCity:'London'}))?.city).toBe('London');
     expect((await RealtimeContextManager.fetchWeather(cfg))?.city).toBe('上海');
     expect(fetchWeatherWithFallback).toHaveBeenCalledTimes(2);
-    expect((await RealtimeContextManager.fetchWeather({...cfg,weatherFreeSource:'wttr'}))?.city).toBe('上海');
-    expect(fetchWeatherWithFallback).toHaveBeenLastCalledWith('上海', '', 'wttr');
+    expect((await RealtimeContextManager.fetchWeather({...cfg,weatherFreeSource:'open-meteo'}))?.city).toBe('上海');
+    expect(fetchWeatherWithFallback).toHaveBeenLastCalledWith('上海', '', 'open-meteo');
     expect(fetchWeatherWithFallback).toHaveBeenCalledTimes(3);
     vi.mocked(fetchWeatherWithFallback).mockResolvedValue(null);
     expect(await RealtimeContextManager.fetchWeather({...cfg,weatherCity:'Paris'})).toBeNull();
     expect(await RealtimeContextManager.fetchWeather({...cfg,weatherApiKey:'new-key'})).toBeNull();
+});
+
+it('migrates legacy free preferences once and preserves later choices and paid configurations', () => {
+    const {weatherFreeSourceMigration, ...legacy} = defaultRealtimeConfig;
+    const previous = {...legacy, weatherFreeSource: 'open-meteo' as const};
+    expect(migrateFreeWeatherPreference(previous).weatherFreeSource).toBe('wttr');
+    expect(migrateFreeWeatherPreference({...previous, weatherFreeSource: undefined}).weatherFreeSource).toBe('wttr');
+    const chosen = {...migrateFreeWeatherPreference(previous), weatherFreeSource: 'open-meteo' as const};
+    expect(migrateFreeWeatherPreference(chosen)).toBe(chosen);
+    expect(migrateFreeWeatherPreference({...previous, weatherApiKey: 'test-key'}).weatherFreeSource).toBe('open-meteo');
 });

@@ -57,7 +57,7 @@ export default function WeatherSourceSettings({ city, apiKey, value, onChange, o
                 <div className="flex items-center justify-between gap-2">
                     <label className="flex min-w-0 items-center gap-2 text-xs text-slate-700 cursor-pointer">
                         <input type="radio" name={group} value={source} checked={value === source} onChange={() => onChange(source)} className="accent-emerald-600" />
-                        <span><strong className="block">免费源 {index + 1}{index === 0 ? '（默认）' : ''}</strong><span className="text-slate-500">{source === 'wttr' ? 'wttr.in' : 'Open-Meteo'}</span></span>
+                        <span><strong className="block">免费源 {index + 1}{source === 'wttr' ? '（默认）' : ''}</strong><span className="text-slate-500">{source === 'wttr' ? 'wttr.in' : 'Open-Meteo'}</span></span>
                     </label>
                     {button(source, `测试源 ${index + 1}`)}
                 </div>

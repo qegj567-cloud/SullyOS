@@ -101,7 +101,8 @@ export interface RealtimeConfig {
 export const defaultRealtimeConfig: RealtimeConfig = {
     weatherEnabled: false,
     weatherApiKey: '',
-    weatherFreeSource: 'open-meteo',
+    weatherFreeSource: 'wttr',
+    weatherFreeSourceMigration: 1,
     weatherCity: 'Beijing',
     newsEnabled: false,
     newsApiKey: '',
