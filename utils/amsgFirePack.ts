@@ -126,9 +126,81 @@ export const parseChatFailRecord = (value: string | null | undefined): AmsgChatF
  */
 const GZIP_VALUE_PREFIX = 'gz1:';
 
-/** 运行时有没有压缩能力（老 Safari 没有 CompressionStream）。 */
-const canCompress = (): boolean =>
-  typeof CompressionStream === 'function' && typeof DecompressionStream === 'function';
+/**
+ * 合法单成员 gzip 帧的最小长度：10 字节头 + 至少 2 字节 DEFLATE 结束块 + 8 字节尾部（CRC32 + ISIZE）。
+ * 原文字节数不超过这一行加上前缀与 base64 膨胀（gz1: + 28 字符 = 32 字节）时，压完绝不可能比原文短。
+ */
+const GZIP_MIN_FRAME_BYTES = 20;
+const MIN_WORTH_PACKING_BYTES = 32;
+
+export type GzipFallbackCompressor = (
+  rawBytes: Uint8Array,
+) => Promise<Uint8Array | null> | Uint8Array | null;
+
+// 记录已确认异常的原生 CompressionStream 构造器引用：生产环境里页面生命周期内构造器恒定，
+// 一旦触发熔断本页后续不再调它；单测替换并还原 globalThis.CompressionStream 时自动恢复隔离。
+let brokenCompressionStreamCtor: unknown = null;
+let gzipFallbackCompressor: GzipFallbackCompressor | null = null;
+
+/**
+ * 注册前端按需纯 JS gzip 压缩器（如懒加载 fflate）。
+ * 本模块被 Worker bundle 直接引用，保持零外部依赖；纯 JS 兜底由前端入口注入。
+ * 返回先前的处理器便于单测临时替换后还原。
+ */
+export const registerGzipFallbackCompressor = (
+  compressor: GzipFallbackCompressor | null,
+): GzipFallbackCompressor | null => {
+  const prev = gzipFallbackCompressor;
+  gzipFallbackCompressor = compressor;
+  return prev;
+};
+
+/** 单测重置压缩熔断状态用。 */
+export const resetGzipCompressionStateForTests = (): void => {
+  brokenCompressionStreamCtor = null;
+};
+
+let crc32Table: Uint32Array | null = null;
+
+const getCrc32Table = (): Uint32Array => {
+  if (crc32Table) return crc32Table;
+  const table = new Uint32Array(256);
+  for (let i = 0; i < 256; i += 1) {
+    let c = i;
+    for (let k = 0; k < 8; k += 1) {
+      c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+    }
+    table[i] = c >>> 0;
+  }
+  crc32Table = table;
+  return table;
+};
+
+const computeCrc32 = (bytes: Uint8Array): number => {
+  const table = getCrc32Table();
+  let crc = 0xffffffff;
+  for (let i = 0; i < bytes.byteLength; i += 1) {
+    crc = table[(crc ^ bytes[i]) & 0xff] ^ (crc >>> 8);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+};
+
+/**
+ * 核对压缩产物是否为对应输入字节的完整 gzip 帧（RFC 1952）。
+ *
+ * 部分移动端 WebKit 的 CompressionStream 在压缩较大缓冲或切后台时不会抛异常，而是静默返回
+ * 未刷完尾部的半截字节流；单看是否抛错或字节变短无法识别，读侧解压会报 incomplete data。
+ * 核对魔数与末尾 8 字节（CRC32 + 原始长度 ISIZE）可在微秒~亚毫秒级拦截截断产物，且不依赖
+ * 同一内核的 DecompressionStream。
+ */
+export const isValidGzipForInput = (rawBytes: Uint8Array, gz: Uint8Array): boolean => {
+  if (gz.byteLength < GZIP_MIN_FRAME_BYTES) return false;
+  if (gz[0] !== 0x1f || gz[1] !== 0x8b || gz[2] !== 0x08) return false;
+  const view = new DataView(gz.buffer, gz.byteOffset, gz.byteLength);
+  const expectedSize = rawBytes.byteLength >>> 0;
+  if (view.getUint32(gz.byteLength - 4, true) !== expectedSize) return false;
+  return view.getUint32(gz.byteLength - 8, true) === computeCrc32(rawBytes);
+};
 
 // btoa/atob 只吃 latin1 字符串，二进制要一个字节一个字符地喂。整段 apply 展开会在大数据上
 // 爆调用栈，按块拼。
@@ -149,20 +221,69 @@ const base64ToBytes = (base64: string): Uint8Array => {
   return bytes;
 };
 
-const streamThrough = async (data: Uint8Array, transform: TransformStream): Promise<Uint8Array> => {
-  const stream = new Blob([data as BlobPart]).stream().pipeThrough(transform);
-  return new Uint8Array(await new Response(stream).arrayBuffer());
+// 直接向 TransformStream.writable 写入，不经过 Blob.stream()（规避 Safari 读取临时 Blob 流时的
+// I/O 异常）；同时传入独立切片，避免部分流实现转移底层 ArrayBuffer 影响后续长度/CRC32 核对与兜底压缩。
+const streamThrough = async (
+  data: Uint8Array,
+  transform: { readable: ReadableStream<Uint8Array>; writable: WritableStream<BufferSource> },
+): Promise<Uint8Array> => {
+  const readablePromise = new Response(transform.readable).arrayBuffer();
+  const writer = transform.writable.getWriter();
+  const writePromise = writer.write(data.slice())
+    .then(() => writer.close())
+    .catch(async (error) => {
+      try { await writer.abort(error); } catch { /* ignore */ }
+      throw error;
+    });
+  const [buffer] = await Promise.all([readablePromise, writePromise]);
+  return new Uint8Array(buffer);
 };
 
 /**
- * 上传前把值压掉。压不动或运行时不支持时原样返回 —— 这个函数永远不该让同步失败，
+ * 将字节压成经完整性核对的 gzip：优先走健康的原生 CompressionStream；原生缺失、抛错或
+ * 输出截断时熔断本页原生压缩并切换已注册的纯 JS 压缩器；两边都不可用时返回 null 由调用方退回明文。
+ */
+export const compressGzipBytes = async (rawBytes: Uint8Array): Promise<Uint8Array | null> => {
+  if (typeof CompressionStream === 'function' && CompressionStream !== brokenCompressionStreamCtor) {
+    const ctor = CompressionStream;
+    try {
+      const gz = await streamThrough(rawBytes, new CompressionStream('gzip'));
+      if (isValidGzipForInput(rawBytes, gz)) {
+        return gz;
+      }
+      brokenCompressionStreamCtor = ctor;
+      console.warn('[AmsgGzip] 原生 CompressionStream 输出的 gzip 头尾不完整，切换备用压缩通道');
+    } catch (error) {
+      brokenCompressionStreamCtor = ctor;
+      console.warn('[AmsgGzip] 原生 CompressionStream 压缩失败，切换备用压缩通道', error);
+    }
+  }
+  if (gzipFallbackCompressor) {
+    try {
+      const fallbackGz = await gzipFallbackCompressor(rawBytes);
+      if (fallbackGz && isValidGzipForInput(rawBytes, fallbackGz)) {
+        return fallbackGz;
+      }
+    } catch {
+      // 备用压缩也不可用（例如离线且懒加载分包尚未缓存）时回退明文。
+    }
+  }
+  return null;
+};
+
+/**
+ * 上传前把值压掉。压不动或压缩通道均不可用时原样返回 —— 这个函数永远不该让同步失败，
  * 云端那份 fire_pack 是角色到点时唯一的上下文来源，为了省流量把它弄丢是本末倒置。
  */
 export const packStateValue = async (json: string): Promise<string> => {
-  if (!canCompress()) return json;
+  const nativeAvailable =
+    typeof CompressionStream === 'function' && CompressionStream !== brokenCompressionStreamCtor;
+  if (!nativeAvailable && !gzipFallbackCompressor) return json;
   try {
     const rawBytes = new TextEncoder().encode(json);
-    const gz = await streamThrough(rawBytes, new CompressionStream('gzip'));
+    if (rawBytes.byteLength <= MIN_WORTH_PACKING_BYTES) return json;
+    const gz = await compressGzipBytes(rawBytes);
+    if (!gz) return json;
     const packed = `${GZIP_VALUE_PREFIX}${bytesToBase64(gz)}`;
     // 划算不划算按**字节**比，不能用 .length。fire_pack 几乎全是中文，一个字符占 3 个
     // UTF-8 字节，而压完的 base64 全是 ASCII（1 字符 = 1 字节）——拿字符数比的话，

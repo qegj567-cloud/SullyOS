@@ -106,8 +106,10 @@ import {
   type AmsgFirePackChatContent,
   type AmsgLastSkip,
   amsgStateNamespace,
+  compressGzipBytes,
   packStateValue,
   parseLastSkip,
+  registerGzipFallbackCompressor,
 } from './amsgFirePack';
 import {
   AMSG_BACKGROUND_JOB_SUBTYPE,
@@ -1855,6 +1857,29 @@ const resubscribeAndRegister = async (client: ReiClient): Promise<void> => {
  */
 const REQUEST_GZIP_THRESHOLD_BYTES = 16 * 1024;
 
+let fflateGzipPromise: Promise<((data: Uint8Array) => Uint8Array) | null> | null = null;
+
+/**
+ * 原生 CompressionStream 缺失、报错或产出截断 gzip 时的前端纯 JS 兜底。
+ * 按需加载 vendor-fflate 分包，健康浏览器零额外下载；同一时刻并发请求共用一次加载；
+ * 断网导致分包暂时拉不下来时清掉失败缓存并返回 null，交给上层按明文发送。
+ */
+const compressWithLazyFflate = async (rawBytes: Uint8Array): Promise<Uint8Array | null> => {
+  if (!fflateGzipPromise) {
+    fflateGzipPromise = import('fflate')
+      .then((mod) => mod.gzipSync)
+      .catch((error) => {
+        fflateGzipPromise = null;
+        console.warn(`${ACTIVE_MSG_RUNTIME_HEADER} 按需加载 fflate 失败，本次回退明文`, error);
+        return null;
+      });
+  }
+  const gzipSync = await fflateGzipPromise;
+  return gzipSync ? gzipSync(rawBytes) : null;
+};
+
+registerGzipFallbackCompressor(compressWithLazyFflate);
+
 /**
  * 超阈值的请求体先 gzip 再上网线。
  *
@@ -1867,8 +1892,8 @@ const REQUEST_GZIP_THRESHOLD_BYTES = 16 * 1024;
  * 自己的 `/instant-chat` 由 readMaybeGzippedBody 解。两边都按 gzip 魔数判断，所以
  * 中途被边缘节点替我们解开、头还留着的那种情形也接得住。
  *
- * 压不动就退回明文：老 Safari 没有 CompressionStream，压缩本身出错也一样——这条路
- * 只是省流量，绝不能变成发不出去的理由。
+ * 与 packStateValue 共用 compressGzipBytes：原生流压缩经过头尾 CRC32 + 原始长度核对，
+ * 原生缺失或产出不完整时自动切换纯 JS gzip，纯 JS 分包也不可用时退回明文——省流量不能变成发不出去的理由。
  *
  * export 只为单测。
  */
@@ -1881,13 +1906,17 @@ export const maybeGzipRequestBody = async (
   // **不成立**——「字符数不到阈值」推不出「字节数不到阈值」，一段六千字的中文就是
   // 六千字符、一万八千字节。绝大多数请求都在这条线以下，一次 encode 都不用做。
   if (body.length * 3 < REQUEST_GZIP_THRESHOLD_BYTES) return { body, gzipped: false };
-  if (typeof CompressionStream !== 'function') return { body, gzipped: false };
   try {
     const raw = new TextEncoder().encode(body);
     // 到这儿才量得准。压缩要用的也是这份字节，没有多算。
     if (raw.byteLength < REQUEST_GZIP_THRESHOLD_BYTES) return { body, gzipped: false };
-    const stream = new Response(raw).body!.pipeThrough(new CompressionStream('gzip'));
-    return { body: await new Response(stream).arrayBuffer(), gzipped: true };
+    const gz = await compressGzipBytes(raw);
+    if (!gz || gz.byteLength >= raw.byteLength) return { body, gzipped: false };
+    // 纯 JS 压缩器常返回共享大缓冲上的子视图，切成精确长度的 ArrayBuffer 再交给 fetch。
+    const exactBuffer = gz.byteOffset === 0 && gz.byteLength === gz.buffer.byteLength
+      ? (gz.buffer as ArrayBuffer)
+      : gz.slice().buffer;
+    return { body: exactBuffer, gzipped: true };
   } catch (error) {
     console.warn(`${ACTIVE_MSG_RUNTIME_HEADER} 请求体压缩失败，这一次照常发明文`, error);
     return { body, gzipped: false };
