@@ -11,6 +11,16 @@ const ctxWith = (memories: AgenticToolMemory[]): AgenticToolCtx => ({
 });
 
 describe('listRecallableMonths', () => {
+  it('自主月度查阅默认可用，关闭后不读取月份（小眼睛不改变这个开关）', async () => {
+    const ctx = ctxWith([mem('2026-06-15', '六月的详细经历')]);
+    expect(await runRecall({ year: '2026', month: '06' }, ctx)).toMatchObject({ ok: true, logsText: expect.stringContaining('六月的详细经历') });
+    ctx.char.monthlyRecallEnabled = false;
+    expect(await runRecall({ year: '2026', month: '06' }, ctx)).toEqual({ ok: false, reason: 'disabled', yearMonth: '2026-06' });
+    ctx.char.activeMemoryMonths = ['2026-06'];
+    expect(await runRecall({ year: '2026', month: '06' }, ctx)).toMatchObject({ ok: false, reason: 'disabled' });
+    ctx.char.monthlyRecallEnabled = true;
+    expect(await runRecall({ year: '2026', month: '06' }, ctx)).toMatchObject({ ok: true, alreadyActive: true, logsText: null });
+  });
   it('ISO 日期取出年月，去重后升序', () => {
     expect(listRecallableMonths([mem('2026-06-15'), mem('2026-06-28'), mem('2026-05-02')]))
       .toEqual(['2026-05', '2026-06']);

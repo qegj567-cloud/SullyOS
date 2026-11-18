@@ -18,6 +18,7 @@ import { DEFAULT_ARCHIVE_PROMPTS } from '../components/chat/ChatConstants';
 import ImpressionPanel from '../components/character/ImpressionPanel';
 import RoomPlatePanel from '../components/character/RoomPlatePanel';
 import MemoryArchivist from '../components/character/MemoryArchivist';
+import MonthlyRecallSetting, { MemoryEyeHelpButton } from '../components/character/MonthlyRecallSetting';
 import { resolveLinkedArchives, useLinkedArchives } from '../utils/memoryPalace/linkedArchive';
 import { updateStoredMemoryNode } from '../utils/memoryPalace/vectorStore';
 import { MemoryNodeDB } from '../utils/memoryPalace/db';
@@ -1915,10 +1916,11 @@ ${isInitialGeneration ? `
                        <div className="space-y-4 animate-fade-in">
                            <details className="rounded-2xl border border-slate-100 bg-white shadow-sm">
                                <summary className="cursor-pointer px-4 py-3 text-xs font-semibold text-slate-600">记忆设置</summary>
+                               <MonthlyRecallSetting enabled={formData.monthlyRecallEnabled} onChange={enabled => handleChange('monthlyRecallEnabled', enabled)} />
                                <label className="flex items-center justify-between gap-4 border-t border-slate-100 px-4 py-3">
                                <span className="min-w-0">
                                    <span className="block text-sm font-semibold text-slate-700">隐藏 RECALL 指令提示</span>
-                                   <span className="mt-1 block text-xs leading-relaxed text-slate-400">聊天时不再提示角色按月份调阅旧版记忆。使用记忆宫殿时可保持开启。</span>
+                                   <span className="mt-1 block text-xs leading-relaxed text-slate-400">只隐藏聊天里的指令提示，不禁止调用。要停用按月查阅，请关闭上方开关。</span>
                                </span>
                                <span className="shrink-0">
                                    <input type="checkbox" role="switch" aria-label="隐藏 RECALL 指令提示" checked={formData.hideMonthlyRecallPrompt !== false} onChange={e => handleChange('hideMonthlyRecallPrompt', e.target.checked)} className="peer sr-only" />
@@ -1926,6 +1928,7 @@ ${isInitialGeneration ? `
                                </span>
                                </label>
                            </details>
+                           <div className="flex justify-end"><MemoryEyeHelpButton /></div>
                            <div className="flex justify-center gap-2 mb-4">
                                <button onClick={() => { setShowBatchModal(true); trackEvent('打开批量记忆总结弹窗'); }} className="px-4 py-2 bg-white rounded-full text-xs font-semibold text-slate-500 shadow-sm border border-slate-100">批量总结（可指定日期）</button>
                                <button onClick={() => setShowImportModal(true)} className="px-4 py-2 bg-white rounded-full text-xs font-semibold text-slate-500 shadow-sm border border-slate-100">导入/清洗</button>

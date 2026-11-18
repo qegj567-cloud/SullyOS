@@ -192,6 +192,25 @@ const makeCtx = (opts: {
 };
 
 describe('取消中的 instant hook', () => {
+  it.each([false, true])('自主月度查阅关闭后不进入工具循环，仍发送正常正文（instant=%s）', async instant => {
+    const { ctx, scratch, writeState } = makeCtx({
+      metadata: instant ? { amsgInstantChat: true } : {},
+      charRows: [
+        { key: AMSG_FIRE_PACK_KEY, value: firePackValue(null, instant ? { chat: { messages: [{ role: 'user', content: '还记得六月吗？' }], builtAt: PACK_BUILT_AT } } : {}) },
+        { key: AMSG_TOOL_PACK_KEY, value: JSON.stringify({ ...JSON.parse(toolPackValue), monthlyRecallEnabled: false, memories: [{ date: '2026-06-15', summary: '六月的详细经历' }] }) },
+      ],
+    });
+    const before = await amsgHooks.onBeforeFire(ctx) as any;
+    expect(before.allowedToolNames).not.toContain('recall');
+    const decision = await amsgHooks.onLLMOutput({
+      sessionId: 'sess_task_42', taskId: 42, taskUuid: TASK_UUID,
+      llmResponse: {}, llmOutputText: '六月一起吃过午饭。[[RECALL: 2026-06]]', contactName: 'Nyah',
+      metadata: ctx.task.metadata, scratch, writeState, readState: ctx.readState,
+    } as any) as any;
+    expect(decision.decision).toBe('finish');
+    expect(JSON.stringify(decision.pushPayloads)).toContain('六月一起吃过午饭。');
+    expect(JSON.stringify(decision.pushPayloads)).not.toContain('RECALL');
+  });
   it('已取消的请求不读上下文、不继续处理模型输出', async () => {
     const { ctx, readState, writeState } = makeCtx({ metadata: { amsgInstantChat: true } });
     const cancelled = new DOMException('Stopped', 'AbortError');
@@ -3458,6 +3477,82 @@ describe('fire 侧取消 / 改期任务', () => {
     } as any) as any;
     const last = decision.pushPayloads[decision.pushPayloads.length - 1];
     expect(last.metadata.amsgUsage).toEqual({ promptTokens: 1234, completionTokens: 56 });
+  });
+
+  it('排程与查记忆后的续答是一笔独立请求，多个工具不虚增调用次数', async () => {
+    const stash = makeStash({ instant: true, maxToolIterations: 5, selfScheduleAllowed: true,
+      fireToolNames: new Set(['schedule_active_message']) });
+    const common = { sessionId: 'sess_task_42', taskId: FIRE_TASK_ID, taskUuid: TASK_UUID,
+      contactName: 'Nyah', metadata: { charId: CHAR_ID, amsgMode: 'instant', amsgInstantChat: true },
+      scratch: { fire: stash }, scheduleTask: vi.fn(),
+      writeState: vi.fn(async () => ({ upserted: 1, skipped: 0, deleted: 0 })) };
+    const first = await amsgHooks.onLLMOutput({ ...common, iteration: 0,
+      llmResponse: {}, llmOutputText: `[[RECALL: 2026-07]]\nschedule_active_message({"send_at":"${newSendAt}"})`,
+      usage: { prompt_tokens: 1000, completion_tokens: 40 },
+    } as any) as any;
+    expect(first.decision).toBe('tool-request');
+    expect(first.toolCalls.map((call: any) => call.function.name)).toEqual(expect.arrayContaining(['recall', 'schedule_active_message']));
+    const final = await amsgHooks.onLLMOutput({ ...common, iteration: 1,
+      llmResponse: { model: 'actual-backend' }, llmOutputText: '好，到时提醒你。',
+      usage: { prompt_tokens: 1100, completion_tokens: 50, prompt_tokens_details: { cached_tokens: 900 }, provider_secret_detail: 'private' },
+    } as any) as any;
+    const calls = final.pushPayloads.at(-1).metadata.amsgModelCalls;
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toMatchObject({ index: 1, causes: [], promptTokens: 1000, completionTokens: 40 });
+    expect(calls[1]).toMatchObject({ index: 2, causes: expect.arrayContaining(['recall', 'schedule']),
+      promptTokens: 1100, completionTokens: 50, cacheReadTokens: 900, backendModel: 'actual-backend' });
+    expect(JSON.stringify(calls)).not.toContain('private');
+  });
+
+  it.each([
+    ['模型失败', 'failed', 2],
+    ['工具失败', 'failed', 1],
+    ['空回复', 'skipped', 1],
+  ])('%s 时只回传实际发生的模型请求，重复收尾不重发', async (_label, status, llmCalls) => {
+    const stash = makeStash({ instant: true, maxToolIterations: 5 });
+    const writeState = vi.fn(async () => ({ upserted: 1, skipped: 0, deleted: 0 }));
+    await amsgHooks.onLLMOutput({
+      sessionId: 'sess_task_42', taskId: FIRE_TASK_ID, taskUuid: TASK_UUID, iteration: 0,
+      llmResponse: {}, llmOutputText: '[[RECALL: 2026-07]]', contactName: 'Nyah',
+      metadata: { charId: CHAR_ID, amsgMode: 'instant', amsgInstantChat: true },
+      scratch: { fire: stash }, usage: { prompt_tokens: 1000, completion_tokens: 30 }, writeState,
+    } as any);
+    const emitResult = vi.fn(async () => ({}));
+    const info = { status, llmCalls, sentCount: 0, outboxed: false, scratch: { fire: stash }, writeState, emitResult,
+      error: Object.assign(new Error('model rejected'), { llmStatus: 429 }) };
+    await amsgFireSettled(info as any);
+    await amsgFireSettled(info as any);
+    expect(emitResult).toHaveBeenCalledTimes(1);
+    const receipt = (emitResult.mock.calls[0] as any)[0];
+    expect(receipt).toMatchObject({ resultKind: 'instant-api-calls', taskUuid: TASK_UUID, notification: { show: false } });
+    expect(receipt.calls).toHaveLength(llmCalls);
+    expect(receipt.calls[0]).toMatchObject({ ok: true, promptTokens: 1000, completionTokens: 30 });
+    if (llmCalls === 2) {
+      expect(receipt.calls[1]).toMatchObject({ index: 2, ok: false, status: 429, causes: ['recall'] });
+      expect(receipt.calls[1].promptTokens).toBeUndefined();
+    }
+  });
+
+  it('取消租约已禁止写结果时不绕过门禁，也不让记账异常打断收尾', async () => {
+    const emitResult = vi.fn(async () => { throw Object.assign(new Error('cancelled'), { code: 'TASK_CANCELLED' }); });
+    const stash = makeStash({ instant: true, modelCalls: [
+      { index: 1, completedAt: Date.now(), causes: [], ok: true, promptTokens: 1000, completionTokens: 30 },
+    ] });
+    await expect(amsgFireSettled({ status: 'cancelled', llmCalls: 1, outboxed: false,
+      scratch: { fire: stash }, emitResult,
+      writeState: vi.fn(async () => ({ upserted: 1, skipped: 0, deleted: 0 })),
+    } as any)).resolves.toBeUndefined();
+    expect(emitResult).toHaveBeenCalledTimes(1);
+    expect(stash.modelCallsReceiptSent).not.toBe(true);
+  });
+
+  it('已落入消息 outbox 的回复即使推送失败也不额外回传一份调用记录', async () => {
+    const emitResult = vi.fn(async () => ({}));
+    await amsgFireSettled({ status: 'failed', llmCalls: 1, outboxed: true,
+      scratch: { fire: makeStash({ instant: true }) }, emitResult,
+      writeState: vi.fn(async () => ({ upserted: 1, skipped: 0, deleted: 0 })),
+    } as any);
+    expect(emitResult).not.toHaveBeenCalled();
   });
 
   it('多轮工具调用时按轮累加 usage 并标 amsgUsageComplete，定时主动消息同样在末条带回 amsgUsage', async () => {

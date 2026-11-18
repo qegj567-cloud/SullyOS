@@ -131,9 +131,34 @@
 
 ### 定时提示词与聊天设置
 
-`buildFirePack` 每次从本地门牌库构建新的房间注入，不沿用角色对象上的旧缓存，也不要求配置
-Embedding API。双语、HTML 和内心独白提示词由 `chatOutputStylePrompt` 供聊天和定时模板共用。
+`buildFirePack` 按最新可见聊天范围运行 `injectMemoryPalace`，同时取得召回正文、房间门牌与
+智能语境分析，不沿用角色对象上的旧缓存。即时对话可以通过 `palaceRecall` 提供本轮的两段正文、
+Trace 和输入指纹；同输入同配置时直接复用，否则重新构建。Trace 和指纹只在本地请求内使用，
+不进角色存储或云端包。门牌与本地语境分析不要求配置 Embedding API。
+
+智能语境开关同时控制普通消息、即时对话和主动消息；两种主动消息模板构建方式都使用
+`renderSmartContextGuidance`。主动消息分析最近一轮可见用户发言、保留其后的角色回复，
+不推进谈话参与状态；模板说明这份分析属于最近对话，不能把旧发言当成用户现在又说了一遍。
+详细边界见 [`memory-system-overview.md`](../docs/memory-system-overview.md#主动消息的智能语境)。
+
+双语、HTML 和内心独白提示词由 `chatOutputStylePrompt` 供聊天和定时模板共用。
 `thinkingChainEnabled` 明确标记模板已经包含内心独白协议；旧包缺省时不回传原始推理。
+
+### 上行压缩完整性与前端纯 JS 兜底
+
+`packStateValue`（状态值内层 gzip）与 `maybeGzipRequestBody`（超 16 KB 请求体外层 gzip）共用
+`utils/amsgFirePack.ts` 的 `compressGzipBytes`：
+
+- 流写入直接走 `TransformStream.writable` 并传入独立切片，避免移动端读取临时 `Blob.stream()` 报错，
+  也防止流实现转移底层缓冲影响后续核对。
+- 原生 `CompressionStream('gzip')` 返回后同步核对 RFC 1952 魔数及末尾 8 字节（CRC32 与原始字节长度
+  `ISIZE`）。部分移动端内核在压缩较大缓冲或切后台时不会抛异常，直接返回缺尾部的半截流；纯算术头尾核对
+  微秒级完成，且不调用同一内核的 `DecompressionStream`。
+- 原生构造器缺失、抛错或头尾核对不通过时，当前页面对该构造器熔断，改调前端在 `utils/activeMsgClient.ts`
+  注册的按需 `fflate`（独立懒加载分包 `vendor-fflate`，正常浏览器零额外下载；返回共享大缓冲子视图时裁成
+  精确 `ArrayBuffer`）。`utils/amsgFirePack.ts` 本体保持零外部依赖，避免把前端兜底库打进 Worker bundle。
+- 极端情况下（首次触发兜底时设备离线，懒加载分包拉取失败）返回 `null`，两条路径均退回未压缩明文，不阻断
+  状态同步与即时对话发送。
 
 ## push metadata 扩展字段
 
@@ -277,6 +302,19 @@ fire 时的处理规则：
 共用一次处理。完成回执在 ACK 之前落盘，无聊天产物的动作也有去重依据。外部动作已经执行、
 本地回执尚未写成功时仍存在重试窗口，这套回执不等于外部服务的 exactly-once 保证。成功的纯动作轮不写
 `last_skip` 或 `chat_fail`，收尾账目按已交付结果处理。
+
+## API 调用记录
+
+即时对话以实际模型请求为单位记账。Worker 在末段推送或 `assistant-actions` 的 metadata 中
+携带 `amsgModelCalls`（类型与校验见 `utils/amsgApiCallRecords.ts`），每条包含序号、完成时刻、
+续答原因枚举、成功状态、服务商返回的用量与实际模型。第一条用途为聊天回复，后续条目按前一轮
+工具标记为查记忆后回复、主动消息排程后回复等；同次请求中的多个工具不会拆成虚构的模型调用。
+
+没有可交付结果时，`onFireSettled` 将已发生的请求通过 `instant-api-calls` 静默结果写入可靠
+outbox；SDK `llmCalls` 可确认尚未收到响应的失败请求。缺少 usage 保持未知，不复制前一轮用量。
+客户端用 taskUuid + 调用序号幂等落库，第一条替换 pending，后续各列一条。只有第一条保留本地
+输入构成；回执不含请求正文、工具参数、API Key 或渠道地址。保留 `amsgUsage` 兼容旧前端；
+新前端收到旧 Worker 的整轮用量时不能伪造拆分，提示更新。详细规范见 `docs/api-call-log.md`。
 
 ## 已拍板的行为语义
 

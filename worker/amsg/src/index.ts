@@ -1,5 +1,7 @@
 import { INSTANT_INPUT_NAMESPACE, INSTANT_INPUT_TTL_DAYS, parseInstantInputEnvelope, parseInstantInputRef } from './instantInput';
 import { installAnthropicFetch } from '../../../utils/anthropicApi';
+import { isMonthlyRecallEnabled, stripDisabledMonthlyRecall } from '../../../utils/monthlyRecall';
+import { INSTANT_API_CALLS_RESULT_KIND, makeModelCall, modelCallCauses, type AmsgModelCall, type AmsgCallCause } from '../../../utils/amsgApiCallRecords';
 
 // Stateless endpoint adapter also covers the upstream SDK's private LLM transport.
 // No request/tenant credentials are retained in the isolate.
@@ -567,6 +569,10 @@ interface FireStash {
   llmRoundsWithUsage?: number;
   promptTokensAcc?: number;
   completionTokensAcc?: number;
+  /** 即时对话每次模型请求独立用量；nextCallCauses 说明下一次为什么需要继续请求。 */
+  modelCalls?: AmsgModelCall[];
+  nextCallCauses?: AmsgCallCause[];
+  modelCallsReceiptSent?: boolean;
 }
 
 const getFireStash = (scratch: Record<string, unknown> | undefined): FireStash | undefined =>
@@ -608,6 +614,7 @@ const buildToolCtx = (
     name: pack.charName,
     xhsEnabled: pack.xhsEnabled,
     activeMemoryMonths: pack.activeMemoryMonths,
+    monthlyRecallEnabled: pack.monthlyRecallEnabled,
     memories: pack.memories,
   };
 
@@ -1120,6 +1127,7 @@ export const amsgFireSettled = async (
      * 老版本上没有——那样每日计数里就只有「发了几次」，没有「调了几次模型」。
      */
     llmCalls?: unknown;
+    emitResult?: EmitResult;
     /**
      * 这一批有没有整批落进服务端收件箱（上游 amsg-server 新版才报）。落进去了就说明内容
      * 已经定了：推送这一跳就算没成，上游重试时只会原样补推、不会重新生成，客户端上线
@@ -1140,6 +1148,28 @@ export const amsgFireSettled = async (
   if (cancelled) stash.selfLogTexts = null;
   const committed = !cancelled && (info.outboxed === true || stash.actionResultCommitted === true);
   const delivered = committed || (info.sentCount ?? 0) > 0;
+
+  // 成功正文/动作已在末条带上逐次用量。失败、取消、空回复也要留下已发生的调用，
+  // 走可靠结果箱补收；不把「工具失败」或「推送失败」冒充一次新的模型请求。
+  // 取消后的 emitResult 仍受 SDK 租约约束，禁止写入时只能保留未知，不绕过门禁。
+  if (stash.instant && stash.taskUuid && !committed && !stash.modelCallsReceiptSent) {
+    const calls = stash.modelCalls ?? (stash.modelCalls = []);
+    const attempted = typeof info.llmCalls === 'number' && Number.isInteger(info.llmCalls)
+      ? Math.min(info.llmCalls, 32) : calls.length;
+    while (calls.length < attempted) {
+      const status = (info.error as { llmStatus?: unknown } | null)?.llmStatus;
+      calls.push(makeModelCall({ index: calls.length + 1, completedAt: Date.now(), causes: stash.nextCallCauses ?? [], ok: false,
+        ...(typeof status === 'number' ? { status } : {}),
+      }));
+    }
+    if (calls.length && info.emitResult) {
+      try {
+        await info.emitResult({ resultKind: INSTANT_API_CALLS_RESULT_KIND, charId: stash.charId,
+          charName: stash.toolCtx.char.name, taskUuid: stash.taskUuid, calls, notification: { show: false } });
+        stash.modelCallsReceiptSent = true;
+      } catch (error) { console.warn('[amsg:usage] 逐次调用记录写入结果箱失败', error); }
+    }
+  }
 
   // 这一轮往云端回写的条目攒在一起，收尾一次写完。
   const stateWrites: Array<{ key: string; value: string | null }> = [];
@@ -2579,7 +2609,7 @@ export const amsgHooks = {
     // 而上游只有内部默认值、没导出常量，各写各的迟早对不上。
     // tools 由 amsg-server 带 agentic-fire-tools feature 的版本起透传给每轮 LLM 请求。
     stash.allowedToolNames = new Set([
-      ...DATA_TOOL_NAMES,
+      ...DATA_TOOL_NAMES.filter(name => name !== 'recall' || isMonthlyRecallEnabled(stash.toolCtx.char)),
       ...(mcpResolve ? [...mcpResolve.keys()].map(name => `${MCP_FIRE_NAME_PREFIX}${name}`) : []),
       ...(canSelfSchedule ? [AMSG_FIRE_SCHEDULE_TOOL] : []),
       ...(canManageTasks ? [AMSG_FIRE_CANCEL_TOOL, AMSG_FIRE_RENEW_TOOL] : []),
@@ -2739,6 +2769,11 @@ export const amsgHooks = {
     stash.llmRounds = (stash.llmRounds ?? 0) + 1;
     const roundRawUsage = (ctx as { usage?: Record<string, unknown> | null }).usage
       ?? ((ctx.llmResponse as { usage?: Record<string, unknown> | null } | null)?.usage);
+    if (stash.instant) {
+      const calls = stash.modelCalls ?? (stash.modelCalls = []);
+      calls.push(makeModelCall({ index: calls.length + 1, completedAt: Date.now(), causes: stash.nextCallCauses ?? [],
+        ok: true, usage: roundRawUsage, response: ctx.llmResponse }));
+    }
     if (roundRawUsage && typeof roundRawUsage === 'object') {
       const pt = typeof roundRawUsage.prompt_tokens === 'number' && Number.isFinite(roundRawUsage.prompt_tokens)
         ? roundRawUsage.prompt_tokens : undefined;
@@ -2787,7 +2822,7 @@ export const amsgHooks = {
       });
     }
 
-    let decision = processLLMRound(session, content, {
+    let decision = processLLMRound(session, stripDisabledMonthlyRecall(content, stash.toolCtx.char), {
       // 名字取 tool_pack 里的那份：它跟着每轮聊天重新上云，改名当天就是新的。
       // ctx.contactName 是排程那一刻冻进任务行的快照，用户改完名字之后，之前排的
       // 任务推送出来横幅还顶着旧名字（上游 update-message 也不让改这个字段）。
@@ -2824,6 +2859,7 @@ export const amsgHooks = {
     stash.maxToolIterations);
 
     if (decision.decision === 'tool-request') {
+      stash.nextCallCauses = modelCallCauses(decision.toolCalls.map(tc => tc.function.name));
       console.log('[amsg:agentic]', {
         type: 'tool_request',
         sessionId: ctx.sessionId,
@@ -2888,6 +2924,7 @@ export const amsgHooks = {
         ...stripSarSnapshot(stripEmotionEvalSpec(ctx.metadata)),
         ...decision.sideEffects,
         amsgOccurrenceMs: stash.occurrenceMs,
+        ...(stash.instant && stash.modelCalls?.length ? { amsgModelCalls: stash.modelCalls } : {}),
         ...(stash.scheduledTasks.length ? { amsgSelfScheduled: stash.scheduledTasks } : {}),
         ...((stash.cancelledTasks.length || stash.renewedTasks.length) ? {
           amsgTaskMutations: { cancelled: stash.cancelledTasks, renewed: stash.renewedTasks },
@@ -3061,6 +3098,7 @@ export const amsgHooks = {
       // 两样都排在旁路存储之前，装不下时才能连它们一起挪走。
       if (stash.instant && payloads.length > 0) {
         const lastMeta: Record<string, unknown> = {};
+        if (stash.modelCalls?.length) lastMeta.amsgModelCalls = stash.modelCalls;
         const toolTrace = condenseToolTrace(session.toolCalls);
         if (toolTrace.length > 0) lastMeta.amsgToolTrace = toolTrace;
         // 整轮模型调用的累加 token 用量（只挑两个数、不透传供应商私有字段）。

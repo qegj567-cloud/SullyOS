@@ -7,7 +7,7 @@ import './chatSendProgress.css';
 const ChatSendProgress: React.FC<{ phase: ChatSendPhase }> = ({ phase }) => {
     if (phase === 'accepted' || phase === 'cancelled') return null;
     const working = phase === 'preparing' || phase === 'sending';
-    const title = working ? '发送中' : phase === 'local' ? '本机生成' : '发送未确认';
+    const title = working ? '发送中' : phase === 'local' ? '本机生成中' : '发送未确认';
     return <button type="button" className="sully-chat-send-progress" data-working={working || undefined}
         aria-label={`${title}，查看说明`}
         onPointerDown={event => event.stopPropagation()} onTouchStart={event => event.stopPropagation()}

@@ -49,6 +49,20 @@ const quotedUserMsg = {
     timestamp: Date.now() - 1000,
 };
 
+it('关闭自主月度查阅后，即使模型输出 RECALL 也不发起第二次 API，正文仍正常落库', async () => {
+    const charId = `monthly-recall-off-${Date.now()}`;
+    const ctx = makeCtx(charId, []);
+    ctx.char.monthlyRecallEnabled = false;
+    ctx.char.memories = [{ id: 'detail', date: '2026-06-15', summary: '详细经历', mood: 'happy' }];
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('不应调用 API'));
+    try {
+        await applyAssistantPostProcessing('这件事我记得。[[RECALL: 2026-06]]', ctx);
+        expect(fetchSpy).not.toHaveBeenCalled();
+        const messages = await DB.getRecentMessagesByCharId(charId, 20);
+        expect(messages.filter(m => m.role === 'assistant').map(m => m.content)).toEqual(['这件事我记得。']);
+    } finally { fetchSpy.mockRestore(); }
+}, 20000);
+
 describe('renderAndPersist 引用解析', () => {
     it('[[QUOTE:]] 单独成行 (后跟 SEND_EMOJI + 正文) 时引用顺延到第一条文字气泡', async () => {
         const charId = `c-quote-${Date.now()}`;

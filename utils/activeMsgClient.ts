@@ -1,9 +1,14 @@
 import { BILINGUAL_TAIL_REMINDER, buildChatOutputStylePrompt, readChatTranslationConfig } from './chatOutputStylePrompt';
 import { buildReproductionTask, DIAGNOSTIC_NAMESPACE, diagnosticRunId, type DiagnosticEvent } from './amsgReproduction';
 import { resolveDialogueApi } from './characterApi';
+import { isMonthlyRecallEnabled } from './monthlyRecall';
 import { isAnthropicEndpoint } from './llmEndpoint';
 import { ackStoppedReplyReceipts, stoppedReplyStateEntries } from './amsgStoppedReplyClient';
 import { loadCharacterContextMessages } from './chatContextRange';
+import { expandHomeContextHistory } from './homeContextSegments';
+import { protectPendingChatTurn } from './storyTheaterTimeline';
+import { canReusePalaceRecall, renderSmartContextGuidance, type PreparedPalaceRecall } from './memoryPalace/smartContext';
+import { readRecallRuntimeSnapshot, type RecallTrace } from './memoryPalace/trace';
 import { ReiClient, classifyClientStateWrite } from '@rei-standard/amsg-client';
 import { createCloudDataSession } from './amsgCloudData';
 import {
@@ -101,8 +106,10 @@ import {
   type AmsgFirePackChatContent,
   type AmsgLastSkip,
   amsgStateNamespace,
+  compressGzipBytes,
   packStateValue,
   parseLastSkip,
+  registerGzipFallbackCompressor,
 } from './amsgFirePack';
 import {
   AMSG_BACKGROUND_JOB_SUBTYPE,
@@ -797,8 +804,8 @@ export const buildFirePack = async (
      * 即时 fire 自己要读它们（sceneSong、锚点、任务清单块）。
      */
     templateStub?: boolean;
-    /** 即时对话这一轮私聊刚算好的召回与门牌；给了就直接用，不再检索第二遍。 */
-    palaceRecall?: Pick<CharacterProfile, 'memoryPalaceInjection' | 'roomPlatesInjection'>;
+    /** 即时对话本轮的召回、门牌和智能语境分析；同输入同配置时复用。 */
+    palaceRecall?: PreparedPalaceRecall;
   },
 ): Promise<AmsgFirePack> => {
   const templateStub = opts?.templateStub === true;
@@ -821,14 +828,24 @@ export const buildFirePack = async (
         })
       : Promise.resolve(null),
   ]);
-  if (!templateStub && char.memoryPalaceEnabled) {
-    if (opts?.palaceRecall) {
-      Object.assign(char, opts.palaceRecall);
-    } else {
+  const recallMessages = protectPendingChatTurn(expandHomeContextHistory(recentMessages));
+  const smartFlags = readRecallRuntimeSnapshot().featureFlagsSnapshot;
+  const smartContextEnabled = smartFlags.recallRouter || smartFlags.interactionAdaptation || smartFlags.deepEngagement;
+  let recallTrace: RecallTrace | undefined;
+  if (!templateStub) {
+    if (canReusePalaceRecall(opts?.palaceRecall, char, recallMessages, userProfile.name)) {
+      // 只复制两段正文；Trace 和输入指纹只在请求内使用，不挂到角色或上传。
+      if (char.memoryPalaceEnabled) {
+        char.memoryPalaceInjection = opts.palaceRecall.memoryPalaceInjection || '';
+        char.roomPlatesInjection = opts.palaceRecall.roomPlatesInjection || '';
+      }
+      recallTrace = opts.palaceRecall.trace;
+    } else if (char.memoryPalaceEnabled || smartContextEnabled) {
       // 自适应上下文的原文只到宫殿水位为止，刚归档的内容（比如一场见面）只能靠召回取回；
       // 不跑这一步，云端角色对刚归档的事一无所知。查询用的就是下面要烘进模板的同一份近史。
       const { injectMemoryPalace } = await import('./memoryPalace/pipeline');
-      await injectMemoryPalace(char, recentMessages, undefined, userProfile.name, { entryPoint: 'proactive_chat' });
+      // 智能语境独立于宫殿开关；没有启用宫殿时仍需本地语境分析。
+      recallTrace = await injectMemoryPalace(char, recallMessages, undefined, userProfile.name, { entryPoint: 'proactive_chat' });
     }
     char.memoryPalaceInjection = stripRecallDayDistance(char.memoryPalaceInjection || '');
   }
@@ -918,7 +935,7 @@ export const buildFirePack = async (
   // 记忆库里有哪些月份查得到 —— 提示词一直在教角色用 [[RECALL: 年-月]]，却没说过
   // 哪些月份有东西。不报菜单的话它多半不查，直接凭空编一段「回忆」出来。
   // 只写进下面这段主动消息自己的规则里，不动 chatPrompts 那条所有角色每轮都走的主链路。
-  const recallableMonths = listRecallableMonths(char.memories);
+  const recallableMonths = isMonthlyRecallEnabled(char) ? listRecallableMonths(char.memories) : [];
   const recallHint = recallableMonths.length > 0
     ? `- 你的记忆库里存着这些月份的经历：${recallableMonths.join('、')}。想聊起其中某段时，先输出 [[RECALL: 年-月]] 把细节取回来再写，别凭印象编。`
     : null;
@@ -933,7 +950,7 @@ export const buildFirePack = async (
     '- 可以用换行拆成多个聊天气泡，但不要写时间戳、名字前缀、系统提示。',
     '- 不要出现“作为AI”“系统提示”等元话语。',
     '- 语气更像真人突然想起对方时发来的私聊，不要像在完成任务。',
-    '- 角色设定里描述的查记忆、读日记、联网搜索、逛小红书等能力照常可用：需要时正常输出对应标签，系统会取回结果后让你继续写。',
+    `- 角色设定里描述的${isMonthlyRecallEnabled(char) ? '查记忆、' : ''}读日记、联网搜索、逛小红书等能力照常可用：需要时正常输出对应标签，系统会取回结果后让你继续写。`,
     ...(recallHint ? [recallHint] : []),
     '',
     '【角色系统设定】',
@@ -945,6 +962,7 @@ export const buildFirePack = async (
     // 输出跟没这个槽位一模一样；有内容时那段自带前导空行，见 renderSelfLogBlock。
     `${recentTranscript || '（暂时没有最近聊天记录）'}${AMSG_SLOT_SELF_LOG}`,
     '',
+    renderSmartContextGuidance(recallTrace, true),
     // 「此刻在做什么」紧跟当前时间：日程时段本来就要对着钟读，挨在一起才对得上。
     // 没日程的角色 worker 填空串，这一行连带消失（那段自带前导空行，见 renderFireSceneBlock）。
     // 时区那两行也挨着钟：静态说明打包时就烤好，「对方那边现在几点」由 worker 到点现算——
@@ -1839,6 +1857,29 @@ const resubscribeAndRegister = async (client: ReiClient): Promise<void> => {
  */
 const REQUEST_GZIP_THRESHOLD_BYTES = 16 * 1024;
 
+let fflateGzipPromise: Promise<((data: Uint8Array) => Uint8Array) | null> | null = null;
+
+/**
+ * 原生 CompressionStream 缺失、报错或产出截断 gzip 时的前端纯 JS 兜底。
+ * 按需加载 vendor-fflate 分包，健康浏览器零额外下载；同一时刻并发请求共用一次加载；
+ * 断网导致分包暂时拉不下来时清掉失败缓存并返回 null，交给上层按明文发送。
+ */
+const compressWithLazyFflate = async (rawBytes: Uint8Array): Promise<Uint8Array | null> => {
+  if (!fflateGzipPromise) {
+    fflateGzipPromise = import('fflate')
+      .then((mod) => mod.gzipSync)
+      .catch((error) => {
+        fflateGzipPromise = null;
+        console.warn(`${ACTIVE_MSG_RUNTIME_HEADER} 按需加载 fflate 失败，本次回退明文`, error);
+        return null;
+      });
+  }
+  const gzipSync = await fflateGzipPromise;
+  return gzipSync ? gzipSync(rawBytes) : null;
+};
+
+registerGzipFallbackCompressor(compressWithLazyFflate);
+
 /**
  * 超阈值的请求体先 gzip 再上网线。
  *
@@ -1851,8 +1892,8 @@ const REQUEST_GZIP_THRESHOLD_BYTES = 16 * 1024;
  * 自己的 `/instant-chat` 由 readMaybeGzippedBody 解。两边都按 gzip 魔数判断，所以
  * 中途被边缘节点替我们解开、头还留着的那种情形也接得住。
  *
- * 压不动就退回明文：老 Safari 没有 CompressionStream，压缩本身出错也一样——这条路
- * 只是省流量，绝不能变成发不出去的理由。
+ * 与 packStateValue 共用 compressGzipBytes：原生流压缩经过头尾 CRC32 + 原始长度核对，
+ * 原生缺失或产出不完整时自动切换纯 JS gzip，纯 JS 分包也不可用时退回明文——省流量不能变成发不出去的理由。
  *
  * export 只为单测。
  */
@@ -1865,13 +1906,17 @@ export const maybeGzipRequestBody = async (
   // **不成立**——「字符数不到阈值」推不出「字节数不到阈值」，一段六千字的中文就是
   // 六千字符、一万八千字节。绝大多数请求都在这条线以下，一次 encode 都不用做。
   if (body.length * 3 < REQUEST_GZIP_THRESHOLD_BYTES) return { body, gzipped: false };
-  if (typeof CompressionStream !== 'function') return { body, gzipped: false };
   try {
     const raw = new TextEncoder().encode(body);
     // 到这儿才量得准。压缩要用的也是这份字节，没有多算。
     if (raw.byteLength < REQUEST_GZIP_THRESHOLD_BYTES) return { body, gzipped: false };
-    const stream = new Response(raw).body!.pipeThrough(new CompressionStream('gzip'));
-    return { body: await new Response(stream).arrayBuffer(), gzipped: true };
+    const gz = await compressGzipBytes(raw);
+    if (!gz || gz.byteLength >= raw.byteLength) return { body, gzipped: false };
+    // 纯 JS 压缩器常返回共享大缓冲上的子视图，切成精确长度的 ArrayBuffer 再交给 fetch。
+    const exactBuffer = gz.byteOffset === 0 && gz.byteLength === gz.buffer.byteLength
+      ? (gz.buffer as ArrayBuffer)
+      : gz.slice().buffer;
+    return { body: exactBuffer, gzipped: true };
   } catch (error) {
     console.warn(`${ACTIVE_MSG_RUNTIME_HEADER} 请求体压缩失败，这一次照常发明文`, error);
     return { body, gzipped: false };
@@ -3248,8 +3293,8 @@ export const ActiveMsgClient = {
     userProfile: UserProfile;
     groups: GroupProfile[];
     realtimeConfig: RealtimeConfig;
-    /** 这一轮私聊刚算好的召回与门牌；随行快照直接复用，发送路径上不再检索第二遍。 */
-    palaceRecall?: Pick<CharacterProfile, 'memoryPalaceInjection' | 'roomPlatesInjection'>;
+    /** 本轮私聊的召回、门牌和智能语境分析；主动消息模板在同输入同配置时复用。 */
+    palaceRecall?: PreparedPalaceRecall;
     /**
      * 这一轮的情绪评估（副 API 提示词 + 凭据），交给云端跑。
      * 走 taskPayload —— 那份是端到端加密的信封，凭据不会以明文出门。

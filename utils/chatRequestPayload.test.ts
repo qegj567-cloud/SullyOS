@@ -412,6 +412,20 @@ it('文本入口误传 history 时仍保留深度世界书，不丢弃移交后�
 
 
 describe('ChatApp 按月 RECALL 提示偏好', () => {
+    it.each([false, true])('禁用自主月度查阅时，聊天和后台模板均不教 RECALL（worker=%s），保留月度总结与小眼睛记忆', async timelyByWorker => {
+        const input = baseInput();
+        const char = { ...input.char, monthlyRecallEnabled: false, hideMonthlyRecallPrompt: false,
+            activeMemoryMonths: ['2026-09'], refinedMemories: { '2026-09': '仍然可见的月度总结' },
+            memories: [{ id: 'month-recall-off', date: '2026-09-01', summary: '小眼睛选中的详细记忆' }],
+        } as any;
+        const payload = await buildChatRequestPayload({ ...input, timelyByWorker, char });
+        expect(payload.systemPrompt).not.toContain('[[RECALL');
+        expect(payload.systemPrompt).toContain('仍然可见的月度总结');
+        expect(payload.systemPrompt).toContain('小眼睛选中的详细记忆');
+        const fire = await ChatPrompts.buildSystemPromptParts(char, input.userProfile, [], [], [], [],
+            undefined, undefined, undefined, undefined, undefined, undefined, { forFirePack: true });
+        expect(fire.stable).not.toContain('[[RECALL');
+    });
     const recallRule = "- 调取记忆: `[[RECALL: YYYY-MM]]`，请注意，当用户提及具体某个月份时，或者当你想仔细想某个月份的事情时，欢迎你随时使该动作";
     for (const timelyByWorker of [false, true]) {
         it.each([undefined, true])('本地/云端模式 '+timelyByWorker+'：缺省或开启 %s 时隐藏指令教学', async hideMonthlyRecallPrompt => {

@@ -55,6 +55,10 @@ export type ApiCallRoute =
 /** 落库的一条记录。 */
 export interface ApiCallLogEntry extends ApiCallMeta {
     id: string;
+    /** 即时对话内的实际模型请求序号（从 1 开始），与任务整体成败分开。 */
+    cloudCallIndex?: number;
+    /** 旧 Worker 的整轮合计无法恢复为逐次记录。 */
+    cloudUsageAggregated?: boolean;
     /** 调用发起（实际是响应回来）时间戳 ms */
     timestamp: number;
     /** 见 ApiCallRoute。空 = 浏览器直连。 */
@@ -71,11 +75,8 @@ export interface ApiCallLogEntry extends ApiCallMeta {
      */
     superseded?: boolean;
     /**
-     * Token 数只覆盖这一轮里的**最后一次**模型调用，不是全部。
-     *
-     * 云端带工具时一轮对话会连着调好几次模型（查完东西再接着说），而回传的用量只有
-     * 最后那次——不标出来的话，用户拿这个数去对供应商账单会一直对不上，还以为是被
-     * 多扣了。只在确实跑过工具时才置位。
+     * 已知用量不完整：某次供应商未返回 usage，或旧 Worker 只回传了末次请求。
+     * 新版即时对话逐次记账，每条只代表对应请求；没有 usage 时保持未知，不估算。
      */
     tokensPartial?: boolean;
     /** 命中的预设名；匹配不到时回退成 baseUrl 的 host */
@@ -1184,6 +1185,7 @@ export function settleCloudApiCall(input: {
     tokensPartial?: boolean;
     /** 见 ApiCallLogEntry.superseded。 */
     superseded?: boolean;
+    cloudUsageAggregated?: boolean;
 }): void {
     try {
         const { promptTokens, completionTokens } = input;
@@ -1202,6 +1204,7 @@ export function settleCloudApiCall(input: {
                 ? promptTokens + completionTokens
                 : undefined,
             tokensPartial: input.tokensPartial || undefined,
+            ...(input.cloudUsageAggregated ? { cloudUsageAggregated: true } : {}),
         };
         import('./db')
             .then(({ DB }) => DB.appendApiCallLog(patch))

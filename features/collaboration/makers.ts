@@ -94,12 +94,12 @@ const ALL_COLLABORATION_MAKERS: CollaborationMakerDefinition[] = [
     "chatBubbleLineHeight": 1.5, "chatBubbleIndent": 48, "chatSnapToEdge": false,
     "chatModuleAlign": "center", "chatChromeStyle": "soft", "chatHeaderStyle": "gradient",
     "chatInputStyle": "rounded", "chatBackgroundStyle": "mesh", "chatBubbleStyle": "modern",
-    "chatMessageSpacing": "default", "chatShowTimestamp": "always", "chatHeaderAlign": "left",
+    "chatMessageSpacing": "default", "chatShowTimestamp": "always", "chatTimestampPosition": "below", "chatHeaderAlign": "left",
     "chatHeaderDensity": "default", "chatStatusStyle": "subtle", "chatSendButtonStyle": "circle",
     "chatHideHeaderBuffs": false
   }
 }`, `这是原生字段预设，不接受自造 CSS 或不存在的键。要把色相、明暗、桌面皮肤、聊天顶栏/输入栏/气泡、头像、间距和时间戳做成同一套视觉方向，不要逐字段随机选择。
-可用枚举：skin=default|animalcrossing|mobilegame|tamagotchi|companion；desktopVariant=paper|nostalgia；statusBarMode=standard|compact|hidden；chatAvatarShape=circle|rounded|square；chatAvatarSize=small|medium|large；chatEmojiSize=small|medium|large；chatAvatarMode=grouped|every_message；chatAvatarPlacement=beside|above_group；chatAvatarVisibility=both|hide_ai|hide_user|hide_both；chatAvatarAlign=bottom|top|center；chatModuleAlign=anchor|center；chatChromeStyle=soft|flat|floating|pixel；chatHeaderStyle=default|minimal|gradient|wechat|telegram|discord|pixel；chatInputStyle=default|rounded|flat|wechat|ios|telegram|discord|pixel；chatBackgroundStyle=plain|grid|paper|mesh；chatBubbleStyle=modern|flat|outline|shadow|wechat|ios；chatMessageSpacing=compact|default|spacious；chatShowTimestamp=always|hover|never；chatHeaderAlign=left|center；chatHeaderDensity=compact|default|airy；chatStatusStyle=subtle|pill|dot；chatSendButtonStyle=circle|pill|minimal。
+可用枚举：skin=default|animalcrossing|mobilegame|tamagotchi|companion；desktopVariant=paper|nostalgia；statusBarMode=standard|compact|hidden；chatAvatarShape=circle|rounded|square；chatAvatarSize=small|medium|large；chatEmojiSize=small|medium|large；chatAvatarMode=grouped|every_message；chatAvatarPlacement=beside|above_group；chatAvatarVisibility=both|hide_ai|hide_user|hide_both；chatAvatarAlign=bottom|top|center；chatModuleAlign=anchor|center；chatChromeStyle=soft|flat|floating|pixel；chatHeaderStyle=default|minimal|gradient|wechat|telegram|discord|pixel；chatInputStyle=default|rounded|flat|wechat|ios|telegram|discord|pixel；chatBackgroundStyle=plain|grid|paper|mesh；chatBubbleStyle=modern|flat|outline|shadow|wechat|ios；chatMessageSpacing=compact|default|spacious；chatShowTimestamp=always|hover|never；chatTimestampPosition=below|top_center；chatHeaderAlign=left|center；chatHeaderDensity=compact|default|airy；chatStatusStyle=subtle|pill|dot；chatSendButtonStyle=circle|pill|minimal。
 只写界面视觉字段，不写 API、角色内容、记忆、壁纸数据或任何凭据。`),
   },
   {
@@ -290,7 +290,7 @@ export const installableToChatTheme = (artifact: CollaborationInstallableArtifac
 const APPEARANCE_KEYS: Array<keyof OSTheme> = [
   'hue', 'saturation', 'lightness', 'darkMode', 'contentColor', 'skin', 'desktopVariant', 'statusBarMode',
   'chatAvatarShape', 'chatAvatarSize', 'chatEmojiSize', 'chatAvatarMode', 'chatAvatarPlacement',
-  'chatBubbleStyle', 'chatMessageSpacing', 'chatShowTimestamp', 'chatHeaderStyle', 'chatInputStyle',
+  'chatBubbleStyle', 'chatMessageSpacing', 'chatShowTimestamp', 'chatTimestampPosition', 'chatHeaderStyle', 'chatInputStyle',
   'chatChromeStyle', 'chatBackgroundStyle', 'chatHeaderAlign', 'chatHeaderDensity', 'chatStatusStyle',
   'chatSendButtonStyle', 'chatHideHeaderBuffs',
   'chatAvatarVisibility', 'chatAvatarAlign', 'chatAvatarOffsetY', 'chatBubbleFontSize',

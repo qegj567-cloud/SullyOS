@@ -401,7 +401,7 @@ const ChromeCssEditor: React.FC<{ value: string; onChange: (css: string) => void
                     className="w-full resize-y rounded-2xl border border-slate-700 bg-slate-900 p-4 font-mono text-xs leading-relaxed text-slate-200 outline-none focus:border-primary/50 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                 />
                 <div className="mt-1.5 text-[10px] leading-relaxed text-slate-400">
-                    可用选择器：<code className="rounded bg-slate-100 px-1 text-slate-500">.sully-chat-header / -avatar / -name / -buffs / -token / -trigger / -back / -status / -inputbar / -panel / -root</code>
+                    可用选择器：<code className="rounded bg-slate-100 px-1 text-slate-500">.sully-chat-header / -avatar / -name / -buffs / -token / -trigger / -back / -status / -time-divider / -timestamp / -inputbar / -panel / -root</code>
                 </div>
                 <div className="mt-1 text-[10px] leading-relaxed text-slate-400">
                     日程修改动效：<code className="rounded bg-slate-100 px-1 text-slate-500">.sully-schedule-change / -head / -mark / -kicker / -list / -row / -time / -before / -arrow / -after / -shine</code>

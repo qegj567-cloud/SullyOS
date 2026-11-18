@@ -179,10 +179,10 @@ const ApiCallLogModal: React.FC<ApiCallLogModalProps> = ({ isOpen, onClose }) =>
                             <span className="font-semibold">「生成中」</span>：本地提交的任务云端已经收下，结果还没回来。收到结果才会变成成功。
                         </p>
                         <p>
-                            <span className="font-semibold">没有耗时、没有实际后端</span>：请求在云端发出，本地既量不到单次耗时，也不回传对面自报的模型名。
+                            <span className="font-semibold">即时对话逐次记录</span>：聊天回复、查记忆后回复、主动消息排程后回复分别显示，每条只计算那次模型请求。缓存用量与实际后端按 API 返回显示；云端暂不提供单次耗时。
                         </p>
                         <p>
-                            <span className="font-semibold text-amber-600">「只算末轮」</span>：角色查了东西再接着说的多轮调用里，如果有几轮服务商没有返回 token 用量，这条记录上的数字<span className="font-semibold">比实际用量小</span>，别拿它去跟账单对齐。
+                            <span className="font-semibold text-amber-600">「用量不完整」</span>：部分请求没有返回用量，或旧版 Worker 只回传了末次请求，已知数字不能当作完整账单。旧记录没有逐次明细，不能事后拆分。
                         </p>
                         <p>
                             <span className="font-semibold">「已顶替」</span>：这条还没等到回复你就又发了一句，云端把两句合成一次回。这一轮不再单独等回复了。
@@ -301,18 +301,20 @@ const ApiCallLogModal: React.FC<ApiCallLogModalProps> = ({ isOpen, onClose }) =>
                                         <div className="col-span-2 flex items-baseline gap-1.5 min-w-0">
                                             <span className="text-[10px] text-slate-400 shrink-0">Token</span>
                                             <span className="text-slate-600 truncate">
-                                                {(e.totalTokens ?? 0).toLocaleString('en-US')}
+                                                {e.totalTokens?.toLocaleString('en-US') ?? '—'}
                                                 <span className="text-slate-400">
-                                                    {' '}（入 {(e.promptTokens ?? 0).toLocaleString('en-US')} · 出 {(e.completionTokens ?? 0).toLocaleString('en-US')}）
+                                                    {' '}（入 {e.promptTokens?.toLocaleString('en-US') ?? '—'} · 出 {e.completionTokens?.toLocaleString('en-US') ?? '—'}）
                                                 </span>
-                                                {/* 云端这一轮调了不止一次模型时，回传的用量只有最后那次。
-                                                    不注明的话这个数拿去对账永远对不上，还会以为是被多扣了 */}
-                                                {e.tokensPartial && <span className="text-amber-500"> · 只算末轮</span>}
+                                                {/* 供应商缺报或旧版 Worker 只报末次，不能当作完整账单。 */}
+                                                {e.tokensPartial && <span className="text-amber-500"> · 用量不完整</span>}
                                                 {(e.cacheReadTokens != null || e.cacheWriteTokens != null) && <span className="block text-emerald-600">缓存读取 {(e.cacheReadTokens ?? 0).toLocaleString('en-US')} · 缓存写入 {(e.cacheWriteTokens ?? 0).toLocaleString('en-US')}</span>}
                                             </span>
                                         </div>
                                     )}
                                 </div>
+                                {e.cloudCallIndex != null && <p className="mt-1 text-[10px] text-slate-400">本轮第 {e.cloudCallIndex} 次模型调用 · 用量仅计本次请求</p>}
+                                {e.cloudCallIndex != null && e.totalTokens == null && e.promptTokens == null && e.completionTokens == null && <p className="mt-1 text-[10px] text-slate-400">未收到本次请求的 Token 用量</p>}
+                                {e.cloudUsageAggregated && <p className="mt-1 text-[10px] leading-relaxed text-amber-600">旧版 Worker 未提供逐次用量，暂按整轮显示。更新 Worker 后，新对话会逐次显示。</p>}
                                 {hasBreakdown && (
                                     <div className="mt-1.5 text-[10px] text-slate-300 select-none">
                                         {expanded ? '▲ 收起输入构成' : '▼ 点击查看输入构成（哪块占了多少）'}

@@ -579,7 +579,7 @@ export const sendInstantChatTurn = async (params: {
   groups: GroupProfile[];
   realtimeConfig: RealtimeConfig;
   /** 这一轮私聊刚算好的召回与门牌，随行的云端快照直接复用。 */
-  palaceRecall?: Pick<CharacterProfile, 'memoryPalaceInjection' | 'roomPlatesInjection'>;
+  palaceRecall?: import('./memoryPalace/smartContext').PreparedPalaceRecall;
   /**
    * 这一轮的情绪评估，一起交给云端跑（提示词模板 + 副 API 凭据）。
    * 不传就是这一轮不评估（角色没开情绪评估 / 本轮跳过）。
@@ -727,22 +727,28 @@ export const sendInstantChatTurn = async (params: {
  * 痕迹（`amsgToolTrace`）都挂在末条上。补收路径拿到的是同一份（账本存的就是推送信封
  * 的副本），所以推送丢了也照样补得上。
  *
- * 云端回传的用量只有**最后一次**模型调用那一份——带工具的一轮会连着调好几次模型，
- * 中间几次的数在云端就没留下。跑过工具就把这笔标成「只算末轮」，让用户知道这个数字
- * 偏小，别拿它去跟账单对齐。
+ * 当前 Worker 通过 amsgModelCalls 回传每次模型请求的独立用量与续答原因；第一条替换
+ * 挂起记录，后续调用各记一条。旧 Worker 没有逐次明细时保留原有整轮记录并提示更新，
+ * 不能根据工具数量猜测每次请求的 Token。
  */
-export const settleInstantChatApiLog = (uuid: string, metadata?: Record<string, any> | null): void => {
+export const settleInstantChatApiLog = async (uuid: string, metadata?: Record<string, any> | null): Promise<void> => {
   const num = (value: unknown): number | undefined =>
     (typeof value === 'number' && Number.isFinite(value) ? value : undefined);
   const usage = metadata?.amsgUsage;
   const toolTrace = metadata?.amsgToolTrace;
   const hasToolTrace = Array.isArray(toolTrace) && toolTrace.length > 0;
-  settleCloudApiCall({
+  const { parseModelCalls } = await import('./amsgApiCallRecords');
+  const calls = parseModelCalls(metadata?.amsgModelCalls);
+  if (calls) {
+    const { settleInstantModelCalls } = await import('./amsgApiCallLog');
+    await settleInstantModelCalls(uuid, calls, metadata ?? undefined);
+  } else settleCloudApiCall({
     id: cloudApiCallLogId(uuid),
     ok: !isReplyStopped(uuid),
     promptTokens: num(usage?.promptTokens),
     completionTokens: num(usage?.completionTokens),
     tokensPartial: metadata?.amsgUsageComplete === true ? false : hasToolTrace,
+    cloudUsageAggregated: hasToolTrace,
   });
   if (metadata?.amsgEmotionPending === true) return;
   if (consumeEmotionEvalInFlight(uuid)) {
