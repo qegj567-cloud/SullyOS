@@ -261,12 +261,12 @@ export const RealtimeContextManager = {
                 headers: {
                     'Accept': 'application/json',
                     'X-Brave-API-Key': apiKey  // Worker 需要这个 header
-                }
-            });
+                }, __sullyHandlesFailure: true
+            } as RequestInit);
 
             if (!response.ok) {
                 const errorText = await response.text();
-                console.error('Brave API error:', response.status, errorText);
+                console.warn('Brave API error:', response.status, errorText);
                 return [];
             }
 
@@ -282,7 +282,7 @@ export const RealtimeContextManager = {
             }
             return [];
         } catch (e) {
-            console.error('Brave Search failed:', e);
+            console.warn('Brave Search failed:', e);
             return [];
         }
     },
@@ -327,6 +327,7 @@ export const RealtimeContextManager = {
             console.log(`%c[hot_news] 本次新闻源 = Hacker News 兜底（${news.length} 条，英文）`, 'color:#dc2626;font-weight:bold');
             newsCache = { data: news, timestamp: now };
         }
+        if (!news.length) console.error('[hot_news] 所有新闻源均未返回内容');
         return news;
     },
 
@@ -335,7 +336,7 @@ export const RealtimeContextManager = {
      */
     fetchBackupNews: async (): Promise<NewsItem[]> => {
         try {
-            const response = await fetch('https://hacker-news.firebaseio.com/v0/topstories.json');
+            const response = await fetch('https://hacker-news.firebaseio.com/v0/topstories.json', { __sullyHandlesFailure: true } as RequestInit);
             if (!response.ok) return [];
 
             const ids = await safeResponseJson(response);
@@ -343,7 +344,7 @@ export const RealtimeContextManager = {
 
             const stories = await Promise.all(
                 topIds.map(async (id: number) => {
-                    const storyRes = await fetch(`https://hacker-news.firebaseio.com/v0/item/${id}.json`);
+                    const storyRes = await fetch(`https://hacker-news.firebaseio.com/v0/item/${id}.json`, { __sullyHandlesFailure: true } as RequestInit);
                     return safeResponseJson(storyRes);
                 })
             );

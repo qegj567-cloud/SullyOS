@@ -1,5 +1,6 @@
+import { selfCheck } from '../../utils/errorSelfCheck';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useOS } from '../../context/OSContext';
 import Modal from './Modal';
 import { resolveStatusBarMode } from '../../utils/iosStandalone';
@@ -22,6 +23,39 @@ const StatusBar: React.FC = () => {
   const [batteryLevel, setBatteryLevel] = useState<number>(100);
   const [isCharging, setIsCharging] = useState<boolean>(false);
   const [showLogModal, setShowLogModal] = useState(false);
+  const [lastViewedId, setLastViewedId] = useState<string>();
+  const [copyState, setCopyState] = useState<'idle' | 'pending' | 'copied' | 'manual'>('idle');
+  const latestId = systemLogs[0]?.id;
+  const copyAttempt = useRef(0);
+  useEffect(() => {
+    if (showLogModal) setLastViewedId(latestId);
+    setCopyState('idle');
+    return () => { copyAttempt.current++; };
+  }, [showLogModal, latestId]);
+
+  const copyAll = async () => {
+    const attempt = ++copyAttempt.current;
+    const text = JSON.stringify(systemLogs, null, 2);
+    setCopyState('pending');
+    try {
+      await navigator.clipboard.writeText(text);
+      if (attempt === copyAttempt.current) setCopyState('copied');
+    } catch {
+      if (attempt !== copyAttempt.current) return;
+      const field = document.createElement('textarea');
+      field.value = text;
+      field.style.cssText = 'position:fixed;left:0;top:0;opacity:0';
+      document.body.appendChild(field);
+      try {
+        field.select();
+        setCopyState(document.execCommand('copy') ? 'copied' : 'manual');
+      } catch {
+        setCopyState('manual');
+      } finally {
+        field.remove();
+      }
+    }
+  };
   
   // Format numbers to have leading zeros
   const format = (n: number) => n.toString().padStart(2, '0');
@@ -60,7 +94,7 @@ const StatusBar: React.FC = () => {
     initBattery();
   }, []);
 
-  const hasError = systemLogs.length > 0;
+  const hasError = !!latestId && latestId !== lastViewedId && !showLogModal;
   const hasIndexedDbBackingStoreError = systemLogs.some(log => {
     const text = `${log.message} ${log.detail || ''}`.toLowerCase();
     return text.includes('backing store') || text.includes('indexeddb.open');
@@ -130,21 +164,39 @@ const StatusBar: React.FC = () => {
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
                   <path fillRule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-8-5a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0v-4.5A.75.75 0 0 1 10 5Zm0 10a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clipRule="evenodd" />
               </svg>
-              <span>SYSTEM ERROR</span>
+              <span>查看报错</span>
           </button>
       )}
 
       <Modal 
           isOpen={showLogModal} 
-          title="系统调试终端" 
+          title="报错自检"
           onClose={() => setShowLogModal(false)}
           footer={
-              <div className="flex gap-2 w-full">
-                  <button onClick={() => { navigator.clipboard.writeText(JSON.stringify(systemLogs, null, 2)); }} className="flex-1 py-3 bg-slate-100 font-bold rounded-xl text-slate-600">复制 JSON</button>
-                  <button onClick={clearLogs} className="flex-1 py-3 bg-red-500 text-white font-bold rounded-xl shadow-lg shadow-red-200">清空日志</button>
+              <div className="w-full space-y-2">
+                <div role="status" className="text-xs text-slate-600">
+                  {copyState === 'copied' && '已复制全部日志，可以粘贴了。'}
+                  {copyState === 'manual' && '自动复制失败，请选中下方文本手动复制。'}
+                </div>
+                {copyState === 'manual' && <textarea aria-label="手动复制全部日志" readOnly value={JSON.stringify(systemLogs, null, 2)} onFocus={event => event.target.select()} className="w-full rounded-lg border p-2 text-xs" />}
+                <div className="flex gap-2">
+                  <button onClick={copyAll} disabled={!systemLogs.length || copyState === 'pending'} className="flex-1 py-3 bg-slate-100 font-bold rounded-xl text-slate-600">{copyState === 'pending' ? '复制中…' : copyState === 'copied' ? '✓ 已复制' : '复制全部'}</button>
+                  <button onClick={clearLogs} disabled={!systemLogs.length} className="flex-1 py-3 bg-slate-100 font-bold rounded-xl text-slate-600">清空日志</button>
+                  <button onClick={() => setShowLogModal(false)} className="flex-1 py-3 bg-slate-800 text-white font-bold rounded-xl">关闭</button>
+                </div>
               </div>
           }
       >
+          <div className="space-y-3">
+              {[...new Map(systemLogs.map(log => {
+                  const result = selfCheck(log);
+                  return [result.title + result.action, result] as const;
+              })).values()].map(result => <div key={result.title + result.action}>
+                  <strong className="text-sm">{result.title}</strong>
+                  <p className="mt-1 text-xs leading-relaxed text-slate-600">{result.action}</p>
+              </div>)}
+          </div>
+          <details className="mt-3"><summary className="cursor-pointer py-2 text-xs text-slate-600">技术详情（{systemLogs.length} 条）</summary>
           {hasIndexedDbBackingStoreError && (
               <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">
                   <div className="font-bold mb-1">检测到浏览器存储无法打开</div>
@@ -179,6 +231,7 @@ const StatusBar: React.FC = () => {
                   ))
               )}
           </div>
+          </details>
       </Modal>
     </>
   );
