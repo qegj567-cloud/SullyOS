@@ -5,7 +5,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useOS } from '../../context/OSContext';
 import Modal from './Modal';
 import { resolveStatusBarMode } from '../../utils/iosStandalone';
-import { NETWORK_SELF_CHECK_STEPS } from '../../utils/networkFailureDiagnosis';
+import { NETWORK_SELF_CHECK_STEPS, shouldShowNetworkSelfCheck } from '../../utils/networkFailureDiagnosis';
 
 // TypeScript definition for Web Battery API
 interface BatteryManager extends EventTarget {
@@ -102,7 +102,7 @@ const StatusBar: React.FC = () => {
   });
   // 「连不上」这类错误光看日志没用，多半要用户自己在设备上试几刀才能定位，
   // 所以顺手把自查顺序摆在终端里，省得每次都要去群里问。
-  const hasNetworkFailure = systemLogs.some(log => log.type === 'network' && log.source === 'Network');
+  const hasNetworkFailure = shouldShowNetworkSelfCheck(systemLogs);
 
   // 三档状态栏布局；旧版 hideStatusBar 存档仍可解析。错误指示器与本设置无关，始终独立渲染。
   const statusBarMode = resolveStatusBarMode(theme.statusBarMode, theme.hideStatusBar);
@@ -219,15 +219,19 @@ const StatusBar: React.FC = () => {
               ) : (
                   systemLogs.map(log => (
                       <div key={log.id} className="border-b border-white/10 pb-2 mb-2 last:border-0 last:mb-0 last:pb-0">
-                          <div className="flex justify-between items-start text-white/50 mb-1">
-                              <span>[{new Date(log.timestamp).toLocaleTimeString()}]</span>
-                              <span className={`uppercase font-bold ${log.type === 'error' ? 'text-red-400' : 'text-orange-400'}`}>{log.type}</span>
+                          <div className="flex flex-wrap justify-between items-center gap-1.5 text-white/50 mb-1">
+                              <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                                  <span className="shrink-0">[{new Date(log.timestamp).toLocaleTimeString()}]</span>
+                                  {log.source && <span className="px-1.5 py-0.5 rounded bg-white/10 text-sky-300 font-bold break-all">{log.source}</span>}
+                              </div>
+                              <span className={`uppercase font-bold shrink-0 ${log.type === 'error' ? 'text-red-400' : 'text-orange-400'}`}>
+                                  {log.context?.failureKind || log.type}
+                              </span>
                           </div>
                           <div className="text-white font-bold mb-1 break-words">{log.message}</div>
                           {log.detail && (
                               <pre className="text-slate-400 whitespace-pre-wrap break-all bg-black/30 p-2 rounded">{log.detail}</pre>
                           )}
-                          <div className="text-white/30 text-right mt-1">Src: {log.source}</div>
                       </div>
                   ))
               )}
