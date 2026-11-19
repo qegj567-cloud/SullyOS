@@ -8,7 +8,8 @@
 .sully-chat-root {
     container-type: size;
     isolation: isolate;
-    --halo-u: min(calc(100cqw / 941), .65px);
+    --halo-scale: 1.3;
+    --halo-u: calc(min(100cqw / 941, .65px) * var(--halo-scale));
     --halo-v: clamp(.24px, calc(100cqh / 1670), .68px);
     --halo-message-gap: clamp(8px,calc(22 * var(--halo-v)),14px);
     --sully-chat-day-divider-display: grid;
@@ -75,6 +76,7 @@
 }
 
 .sully-chat-root .sully-chat-messages {
+    --halo-v: calc(clamp(.24px, 100cqh / 1670, .68px) * var(--halo-scale));
     margin: 0; padding: 0 0 calc(36 * var(--halo-v));
     border: 0; scrollbar-width: none;
 }
@@ -105,7 +107,7 @@
     margin-bottom: calc(40 * var(--halo-v));
 }
 .sully-chat-root .sully-chat-message-user:not([data-selecting]):has(.sully-bubble-user) {
-    min-height: max(calc(132 * var(--halo-v)),calc(7.86cqw + 14px)) !important;
+    min-height: max(calc(78 * var(--halo-v)),calc(74 * var(--halo-u) + 14px)) !important;
 }
 .sully-chat-root .sully-chat-message-ai:not([data-selecting]) > .sully-chat-message-avatar-slot { left: 8.61%; }
 .sully-chat-root .sully-chat-message-user:not([data-selecting]) > .sully-chat-message-avatar-slot { right: 5.59%; }
@@ -113,9 +115,8 @@
 .sully-chat-root .sully-chat-message-user .sully-chat-message-avatar-slot .sully-chat-avatar-wrap { width: calc(74 * var(--halo-u)); height: calc(74 * var(--halo-u)); }
 .sully-chat-root .sully-chat-avatar-timestamp { color: #282d42; font: calc(16 * var(--halo-u))/1.2 var(--halo-serif); letter-spacing: .105em; }
 .sully-chat-root .sully-chat-message-content { overflow-wrap: anywhere; }
-.sully-chat-root .sully-chat-message-ai:not([data-selecting]) > .sully-chat-message-content:not(.sully-html-wrap) { margin-left: 17.2157%; max-width: 74%; }
-.sully-chat-root .sully-chat-message-user:not([data-selecting]) > .sully-chat-message-content:not(.sully-html-wrap) { margin-right: 15.09%; max-width: 67%; }
-.sully-chat-root .sully-chat-message-ai:not([data-selecting]) > .sully-chat-message-content:has(.sully-bubble-ai) { max-width: 61.4%; }
+.sully-chat-root .sully-chat-message-ai:not([data-selecting]) > .sully-chat-message-content:not(.sully-html-wrap) { margin-left: calc(8.61% + 82 * var(--halo-u)); max-width: 74%; }
+.sully-chat-root .sully-chat-message-user:not([data-selecting]) > .sully-chat-message-content:not(.sully-html-wrap) { margin-right: calc(5.59% + 90 * var(--halo-u)); max-width: 74%; }
 .sully-chat-root .sully-chat-message-content > div > div { min-width: 0; max-width: 100%; }
 
 /* 原稿为短句、连续消息、独立消息及语音各画了一张不同切角的纸面。 */
@@ -140,8 +141,8 @@
     --halo-face: var(--halo-plain); min-width: 23.06cqw;
 }
 .sully-chat-root .sully-bubble-user {
-    --halo-face: var(--halo-night); min-width: 30.82cqw; min-height: calc(78 * var(--halo-v));
-    padding: calc(7 * var(--halo-v)) calc(36 * var(--halo-u)) calc(7 * var(--halo-v)) calc(18 * var(--halo-u));
+    --halo-face: var(--halo-night); width: fit-content; min-width: 0; max-width: 100%; box-sizing: border-box;
+    min-height: 2.35em; padding: .36em .8em;
     color: #f8f7fc; font-size: calc(24 * var(--halo-u)); font-weight: 400; letter-spacing: .085em;
     align-items: flex-end; filter: drop-shadow(0 calc(8 * var(--halo-v)) calc(12 * var(--halo-u)) #65637e29);
 }
@@ -185,7 +186,7 @@
 .sully-chat-root .sully-psyche-translation-tools { color: #ece7f3 !important; }
 
 .sully-chat-root .sully-chat-transfer-card {
-    width: 48.57cqw; max-width: 100%; min-height: calc(110 * var(--halo-v));
+    width: calc(48.57cqw * var(--halo-scale)); max-width: 100%; min-height: calc(110 * var(--halo-v));
     padding: calc(18 * var(--halo-v)) 8% calc(13 * var(--halo-v)) 27.6%;
     background: var(--halo-pay) center / 100% 100% no-repeat !important;
     border-radius: 0; color: #faf8fc; box-shadow: none;
@@ -214,18 +215,18 @@
 /* 分享如银纸，剧场、彼方、跑团等沉浸记录沿用心象的深银。 */
 .sully-chat-root {
     --halo-card-art: var(--halo-paper); --halo-card-slice: 24% 8%; --halo-card-edge: 6px 7px;
-    --halo-card-width: clamp(166px,52cqw,224px);
+    --halo-card-width: calc(clamp(166px,52cqw,224px) * var(--halo-scale));
     --halo-card-text: #383b4b; --halo-card-title: #282c40; --halo-card-caption: #5b5d72;
     --halo-card-rule: #a5a2b542; --halo-card-inset: #b8b6c51a;
 }
 .sully-chat-root :is([data-card-kind="collaboration_file"],[data-card-kind="vr_card"],[data-card-kind="sim_card"],[data-card-kind="phone_card"],
     [data-card-kind="theater_card"],[data-card-kind="trpg_card"]), .sully-chat-root .sully-chat-packet {
     --halo-card-art: var(--halo-pay); --halo-card-slice: 40% 10%; --halo-card-edge: 10px 11px;
-    --halo-card-width: clamp(178px,56cqw,240px);
+    --halo-card-width: calc(clamp(178px,56cqw,240px) * var(--halo-scale));
     --halo-card-text: #f2eff7; --halo-card-title: #fffaff; --halo-card-caption: #dddbea;
     --halo-card-rule: #dfd6dc36; --halo-card-inset: #e8e4f015;
 }
-.sully-chat-root [data-card-kind="collaboration_file"] { --halo-card-width: clamp(164px,50cqw,216px); }
+.sully-chat-root [data-card-kind="collaboration_file"] { --halo-card-width: calc(clamp(164px,50cqw,216px) * var(--halo-scale)); }
 .sully-chat-root :is([data-card-kind="vr_card"],[data-card-kind="trpg_card"],[data-card-kind="theater_card"])
     .sully-chat-card-face > .border-b { position: relative; }
 .sully-chat-root :is([data-card-kind="vr_card"],[data-card-kind="trpg_card"],[data-card-kind="theater_card"])
@@ -250,7 +251,7 @@
     padding-inline: 8px; padding-block: 4px;
 }
 .sully-chat-root .sully-chat-card-face > .border-t { padding-block: 3px; font-size: 9px; }
-.sully-chat-root .sully-chat-card-face :is(.text-sm,.text-base) { font-size: clamp(11px,3.05cqw,13px); line-height: 1.4; }
+.sully-chat-root .sully-chat-card-face :is(.text-sm,.text-base) { font-size: calc(clamp(11px,3.05cqw,13px) * var(--halo-scale)); line-height: 1.4; }
 .sully-chat-root .sully-chat-card-face :is(.font-bold,.font-semibold) { font-weight: 500; }
 .sully-chat-root .sully-chat-card-face .min-w-0:has(> .uppercase + .truncate) {
     display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap;
