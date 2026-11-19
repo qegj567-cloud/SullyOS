@@ -46,8 +46,8 @@ export const EXPIRE_POLICY_DESCRIPTION = [
   '这类兑现的是一个具体承诺，用户中途回来聊过天也不影响它该响。',
 ].join('\n');
 
-/** 即时对话是在回复用户，不能沿用「正在发主动消息」的语境。 */
-const buildScheduleToolDescription = (context: 'chat' | 'fire') => [
+/** 即时对话与本地聊天都是在回复用户，与定时触发「正在发主动消息」分开措辞。 */
+const buildScheduleToolDescription = (context: 'chat' | 'fire', maxActiveTasks?: number) => [
   ...(context === 'chat'
     ? [
       '创建定时主动消息：到指定时间后，你会根据最新聊天上下文生成并推送消息给用户。',
@@ -59,7 +59,11 @@ const buildScheduleToolDescription = (context: 'chat' | 'fire') => [
     ]),
   '排下的这条到点时会知道你这次说了什么，能接得上，不用在参数里复述。',
   'send_at 是开始生成的时间，不是送达时间（生成有十几秒延迟），且必须至少比现在晚 1 分钟。',
-  `一次最多排 ${MAX_FIRE_SCHEDULES} 条；每个角色同时挂的任务也有上限，排不下时会告诉你。`,
+  `一次最多排 ${MAX_FIRE_SCHEDULES} 条；${
+    typeof maxActiveTasks === 'number' && Number.isFinite(maxActiveTasks)
+      ? `每个角色最多同时挂 ${maxActiveTasks} 个任务`
+      : '每个角色同时挂的任务也有上限'
+  }，排不下时会告诉你。`,
   context === 'chat'
     ? '未来那个时刻真的想联系就排，尊重用户的生活和「别打扰」，不要为了排而排。'
     : '没有「接着说」的必要就别排——为了排而排出来的后续，用户读起来就是没话找话。',
@@ -134,12 +138,16 @@ const buildParameters = (example: string, abilities: SelfScheduleAbilities) => b
 });
 
 export const buildFireScheduleTool = (
-  opts: FireScheduleTimeOpts & { abilities: SelfScheduleAbilities; context?: 'chat' | 'fire' },
+  opts: FireScheduleTimeOpts & {
+    abilities: SelfScheduleAbilities;
+    context?: 'chat' | 'fire';
+    maxActiveTasks?: number;
+  },
 ): FireScheduleToolDef => ({
   type: 'function',
   function: {
     name: AMSG_FIRE_SCHEDULE_TOOL,
-    description: buildScheduleToolDescription(opts.context ?? 'fire'),
+    description: buildScheduleToolDescription(opts.context ?? 'fire', opts.maxActiveTasks),
     parameters: buildParameters(
       buildSendAtExample(opts.nowMs, opts.tz),
       opts.abilities,
@@ -148,8 +156,7 @@ export const buildFireScheduleTool = (
 });
 
 /**
- * fire 侧的取消 / 改期工具声明。参数语义与前台同名工具一致（task_id 短 id、
- * send_at 裸墙钟），描述按 fire 语境（「你正在发消息」）微调。
+ * 取消 / 改期工具声明，前台聊天与后台 fire 共用同一套参数与描述。
  */
 export const buildFireCancelTool = (): FireScheduleToolDef => ({
   type: 'function',
@@ -175,7 +182,7 @@ export const buildFireRenewTool = (opts: FireScheduleTimeOpts): FireScheduleTool
     name: AMSG_FIRE_RENEW_TOOL,
     description: [
       '给你挂着的一个任务改触发时间：只换时间，沿用原有模式与提示方向。',
-      '一次性任务 = 整条改到新时间（编号不变）；循环任务 = 只给这一次补发一条一次性任务，原来的每天/每周节奏不动。',
+      '一次性任务 = 整条改到新时间；循环任务 = 只给这一次补发一条一次性任务，原来的每天/每周节奏不动。',
       '想改的是循环任务本身的时间、或者想说的内容方向已经变了，改用 cancel_active_message + schedule_active_message 重新创建。',
       `send_at 至少比现在晚 1 分钟（写你本地的墙钟时间，如 ${buildSendAtExample(opts.nowMs, opts.tz)}，不带时区后缀）。`,
     ].join('\n'),

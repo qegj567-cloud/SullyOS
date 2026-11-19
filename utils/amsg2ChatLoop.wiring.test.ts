@@ -56,4 +56,14 @@ describe('工具循环的消息起点', () => {
   it('MCP 正文兜底那条也一样', () => {
     expect(src).toMatch(/textLoopMessages = \[\.\.\.baseReqBody\.messages\]/);
   });
+
+  it('工具轮回塞历史先剥内联思考、收尾提示区分前序是否已开口、额度说明用聊天语境、保留说话轮心象', () => {
+    expect(src).toContain('formatToolRoundHistoryContent(data.choices[0].message.content)');
+    expect(src).not.toContain("data.choices[0].message.content || '(调用工具中)'");
+    expect(src).toContain('buildAmsg2WrapUpPrompt(amsg2LeadIns.length > 0 || displayedMcpLeadIns.size > 0)');
+    expect(src).toContain('displayedMcpLeadIns.size === 0');
+    expect(src).toContain('effectivePostProcessData');
+    expect(src).toContain('parseSARModuleReplyRounds');
+    expect(src).toMatch(/buildLimitsBrief\(\{[\s\S]{0,360}context:\s*'chat'/);
+  });
 });
