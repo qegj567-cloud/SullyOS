@@ -18,6 +18,7 @@
  */
 
 import { getCharNameById } from './charNameRegistry';
+import { sanitizeUrlForLog } from './networkRequestSource';
 
 /** 调用方可补充的语义信息（哪个 App / 角色 / 用途）。能填多少填多少。 */
 export interface ApiCallMeta {
@@ -251,9 +252,9 @@ function stripTrailingSlash(s: string): string {
     return s.replace(/\/+$/, '');
 }
 
-/** 把 `https://host/v1/chat/completions` 还原成 `https://host/v1`（预设里存的 baseUrl 形态）。 */
+/** 把 `https://host/v1/chat/completions` 还原成 `https://host/v1`（预设里存的 baseUrl 形态），并抹掉凭据参数。 */
 function deriveBaseUrl(url: string): string {
-    return stripTrailingSlash(url.replace(/\/chat\/completions\/?$/i, ''));
+    return stripTrailingSlash(sanitizeUrlForLog(url).replace(/\/chat\/completions\/?(?=[?#]|$)/i, ''));
 }
 
 function hostOf(url: string): string {
@@ -344,14 +345,14 @@ function resolvePresetName(baseUrl: string, model: string): string {
         if (!raw) return hostOf(baseUrl);
         const presets = JSON.parse(raw);
         if (!Array.isArray(presets)) return hostOf(baseUrl);
-        const normBase = stripTrailingSlash(baseUrl);
+        const normBase = stripTrailingSlash(sanitizeUrlForLog(baseUrl));
         // 优先 baseUrl + model 都对上；退而求其次只对 baseUrl
         const exact = presets.find((p: any) =>
-            stripTrailingSlash(p?.config?.baseUrl || '') === normBase &&
+            stripTrailingSlash(sanitizeUrlForLog(p?.config?.baseUrl || '')) === normBase &&
             (p?.config?.model || '') === model);
         if (exact?.name) return exact.name;
         const byBase = presets.find((p: any) =>
-            stripTrailingSlash(p?.config?.baseUrl || '') === normBase);
+            stripTrailingSlash(sanitizeUrlForLog(p?.config?.baseUrl || '')) === normBase);
         if (byBase?.name) return byBase.name;
         return hostOf(baseUrl);
     } catch {
@@ -1139,7 +1140,7 @@ export function recordCloudApiCall(input: {
     sendFailed?: boolean;
 }): void {
     try {
-        const baseUrl = stripTrailingSlash(input.baseUrl || '');
+        const baseUrl = stripTrailingSlash(sanitizeUrlForLog(input.baseUrl || ''));
         const meta = resolveApiCallMeta(input.meta);
         const entry: ApiCallLogEntry = {
             id: input.id,
@@ -1236,7 +1237,7 @@ export function recordCompletedCloudApiCall(input: {
     meta?: ApiCallMeta;
 }): void {
     try {
-        const baseUrl = stripTrailingSlash(input.baseUrl || '');
+        const baseUrl = stripTrailingSlash(sanitizeUrlForLog(input.baseUrl || ''));
         const model = input.model || '';
         const meta = resolveApiCallMeta(input.meta);
         const { promptTokens, completionTokens } = input;

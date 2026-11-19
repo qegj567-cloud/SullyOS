@@ -24,6 +24,7 @@ import {
     identifyApplicationErrorSource,
     identifyNetworkRequestSource,
     readCompactBuildString,
+    redactRelayTokensInText,
     sanitizeUrlForLog,
     type ConfiguredEndpointSnapshot,
     type NetworkRequestIdentity,
@@ -263,7 +264,7 @@ export const formatFetchFailureHeadline = (ctx: FetchFailureContext): string => 
     };
     const dur = typeof ctx.durationMs === 'number' ? ` · ${ctx.durationMs}ms` : '';
     const bgTag = ctx.backgroundedDuringRequest && kind !== 'aborted' ? ' · 期间切过后台' : '';
-    const rawMsg = message || 'Fetch Failed';
+    const rawMsg = redactRelayTokensInText(message || 'Fetch Failed');
     return `${method} ${compactTarget} ${kindLabel[kind]}: ${rawMsg}${dur}${bgTag}`;
 };
 
@@ -369,7 +370,7 @@ export const buildFetchFailureDetail = (
     lines.push(`URL: ${safeUrl}`);
     const durationText = typeof ctx.durationMs === 'number' ? ` · 失败于 ${ctx.durationMs}ms` : '';
     lines.push(`请求: ${method}${durationText}`);
-    lines.push(`错误: ${name}: ${message}`);
+    lines.push(`错误: ${name}: ${redactRelayTokensInText(message)}`);
     if (ctx.responseHeadersReceived) {
         const hdr = ctx.responseHeadersReceived;
         const ctText = hdr.contentType ? ` (${hdr.contentType})` : '';
@@ -818,7 +819,7 @@ export const buildHttpErrorSystemLog = (input: BuildHttpErrorSystemLogInput): Sy
         : '';
     const shortErr = input.unreadableBody
         ? '响应体无法读取'
-        : (relayNote || extractShortHttpErrorMessage(input.responseText, input.status));
+        : redactRelayTokensInText(relayNote || extractShortHttpErrorMessage(input.responseText, input.status));
     const modelPart = identity.model ? ` · ${identity.model}` : '';
     const durPart = typeof input.durationMs === 'number' ? ` · ${input.durationMs}ms` : '';
 
@@ -848,7 +849,7 @@ export const buildHttpErrorSystemLog = (input: BuildHttpErrorSystemLogInput): Sy
     if (input.caller) detailLines.push(`调用入口: ${input.caller}`);
 
     if (!input.unreadableBody && input.responseText !== undefined) {
-        detailLines.push(`Response: ${input.responseText.slice(0, 600)}`);
+        detailLines.push(`Response: ${redactRelayTokensInText(input.responseText).slice(0, 600)}`);
     }
 
     if (typeof input.body === 'string' && input.body.trim().startsWith('{')) {
@@ -932,7 +933,9 @@ export const buildConsoleErrorSystemLog = (input: {
     if (input.caller) {
         detailParts.push(`调用入口: ${input.caller}`);
     }
-    detailParts.push(input.stacks || input.message);
+    const safeMessage = redactRelayTokensInText(input.message);
+    const safeStacks = input.stacks ? redactRelayTokensInText(input.stacks) : undefined;
+    detailParts.push(safeStacks || safeMessage);
 
     return {
         ...(input.advice ? { advice: input.advice } : {}),
@@ -941,7 +944,7 @@ export const buildConsoleErrorSystemLog = (input: {
         time: formatDiagnosticTimestamp(ts),
         type: 'error',
         source,
-        message: input.message.slice(0, 160),
+        message: safeMessage.slice(0, 160),
         context: {
             build: readCompactBuildString(),
             failureKind: 'console-error',

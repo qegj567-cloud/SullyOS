@@ -12,6 +12,7 @@ import {
     isApiRequestCaptureArmed,
     isFixedPromptBlockLabel,
     isSameCoreModel,
+    recordApiCall,
     recordCompletedCloudApiCall,
     resolveApiCallMeta,
     scanSseForLog,
@@ -605,6 +606,76 @@ describe('recordCompletedCloudApiCall · 单阶段云端调用落账', () => {
             });
         } finally {
             spy.mockRestore();
+        }
+    });
+
+    it('sanitizes credentials in baseUrl for cloud logs while still matching presets', async () => {
+        const { DB } = await import('./db');
+        const logged: any[] = [];
+        const spy = vi.spyOn(DB, 'appendApiCallLog').mockImplementation(async (entry: any) => {
+            logged.push(entry);
+        });
+        const prevStorage = globalThis.localStorage;
+        const storageMap = new Map<string, string>([
+            ['os_api_presets', JSON.stringify([{
+                name: '带参渠道',
+                config: { baseUrl: 'https://user:pass@api.example.com/v1?key=secret-key-999', model: 'gpt-5' },
+            }])],
+        ]);
+        Object.defineProperty(globalThis, 'localStorage', {
+            configurable: true,
+            value: { getItem: (k: string) => storageMap.get(k) ?? null },
+        });
+        try {
+            recordCompletedCloudApiCall({
+                id: 'cloud-sanitize-1',
+                route: 'cloud-proactive',
+                baseUrl: 'https://user:pass@api.example.com/v1?key=secret-key-999',
+                model: 'gpt-5',
+                ok: true,
+                timestamp: 1700000001000,
+            });
+            await vi.waitFor(() => expect(logged).toHaveLength(1));
+            expect(logged[0].baseUrl).not.toContain('secret-key-999');
+            expect(logged[0].baseUrl).not.toContain('user:pass');
+            expect(logged[0].presetName).toBe('带参渠道');
+        } finally {
+            spy.mockRestore();
+            Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: prevStorage });
+        }
+    });
+});
+
+describe('recordApiCall · 本地调用落账', () => {
+    it('strips /chat/completions before the query and sanitizes credentials while still matching presets', async () => {
+        const { DB } = await import('./db');
+        const logged: any[] = [];
+        const spy = vi.spyOn(DB, 'appendApiCallLog').mockImplementation(async (entry: any) => {
+            logged.push(entry);
+        });
+        vi.stubGlobal('localStorage', {
+            getItem: (k: string) => k === 'os_api_presets'
+                ? JSON.stringify([{
+                    name: '带参渠道',
+                    config: { baseUrl: 'https://user:pass@api.example.com/v1?key=secret-key-999', model: 'gpt-5' },
+                }])
+                : null,
+        });
+        try {
+            recordApiCall({
+                url: 'https://user:pass@api.example.com/v1/chat/completions?key=secret-key-999',
+                body: { model: 'gpt-5', messages: [] },
+                ok: true,
+            });
+            await vi.waitFor(() => expect(logged).toHaveLength(1));
+            expect(logged[0].baseUrl).not.toContain('secret-key-999');
+            expect(logged[0].baseUrl).not.toContain('user:pass');
+            expect(logged[0].baseUrl).not.toContain('/chat/completions');
+            expect(logged[0].baseUrl).toContain('api.example.com/v1?key=');
+            expect(logged[0].presetName).toBe('带参渠道');
+        } finally {
+            spy.mockRestore();
+            vi.unstubAllGlobals();
         }
     });
 });
