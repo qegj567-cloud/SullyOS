@@ -6,7 +6,7 @@ import {
     type RealtimeConfig,
 } from './realtimeContext';
 
-// 天气双源策略：有 OWM key 走 OWM，失败 / 没 key 回落免费的 Open-Meteo。
+// 有 OWM key 时优先使用 OWM，免费源按用户偏好选择，默认 wttr.in。
 // Open-Meteo 路径 = geocoding（中文城市名 → 坐标）+ forecast（WMO code → 中文描述）。
 
 function jsonResponse(body: any, ok = true, status = 200) {
@@ -96,13 +96,22 @@ describe('fetchOpenMeteoWeather', () => {
 });
 
 describe('RealtimeContextManager.fetchWeather 双源策略', () => {
-    it('没填 key 时直接走 Open-Meteo', async () => {
+    it('没填 key 且使用默认设置时直接走 wttr.in', async () => {
+        global.fetch = vi.fn().mockResolvedValueOnce(jsonResponse({
+            current_condition: [{ temp_C: '15', FeelsLikeC: '13', humidity: '73', weatherCode: '116' }],
+        }));
+        const weather = await RealtimeContextManager.fetchWeather(makeConfig({ weatherApiKey: '', weatherCity: '北京' }));
+        expect(weather?.source).toBe('wttr');
+        expect(vi.mocked(fetch).mock.calls[0][0]).toContain('wttr.in');
+    });
+
+    it('没填 key 且选了 Open-Meteo 时直接走 Open-Meteo', async () => {
         global.fetch = vi.fn()
             .mockResolvedValueOnce(jsonResponse(GEO_BEIJING))
             .mockResolvedValueOnce(jsonResponse(METEO_CURRENT));
 
         const weather = await RealtimeContextManager.fetchWeather(
-            makeConfig({ weatherApiKey: '', weatherCity: '北京' }));
+            makeConfig({ weatherApiKey: '', weatherCity: '北京', weatherFreeSource: 'open-meteo' }));
 
         expect(weather?.description).toBe('小雨');
         const urls = vi.mocked(fetch).mock.calls.map(c => c[0] as string);
@@ -130,7 +139,7 @@ describe('RealtimeContextManager.fetchWeather 双源策略', () => {
             .mockResolvedValueOnce(jsonResponse(METEO_CURRENT));
 
         const weather = await RealtimeContextManager.fetchWeather(
-            makeConfig({ weatherApiKey: 'k123', weatherCity: '北京' }));
+            makeConfig({ weatherApiKey: 'k123', weatherCity: '北京', weatherFreeSource: 'open-meteo' }));
 
         expect(weather?.description).toBe('小雨');
         expect(weather?.city).toBe('北京市');

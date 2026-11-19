@@ -4,8 +4,16 @@ import UserLocationSettings, { USER_LOCATION_PAGE_TITLES, getUserLocationParentP
 import { saveUserLocationConfig, getUserLocationContext } from '../../utils/userLocation';
 import type { UserLocationConfig } from '../../utils/userLocationPrivacy';
 import UserLocationNotice from '../../components/os/UserLocationNotice';
+import { ChatLocationPin } from '../../components/chat/ChatLocationPin';
 
 if (location.port !== '5192') throw new Error('仅在独立验收端口 5192 使用模拟定位');
+if (new URLSearchParams(location.search).has('chat')) {
+    const settings = new Map<string, string>();
+    Object.defineProperty(window, 'localStorage', { configurable: true, value: {
+        getItem: (key: string) => settings.get(key) ?? null,
+        setItem: (key: string, value: string) => settings.set(key, value),
+    } });
+}
 const originalFetch = window.fetch.bind(window);
 const originalGeo = Object.getOwnPropertyDescriptor(navigator, 'geolocation');
 const originalCreateElement = document.createElement.bind(document);
@@ -57,11 +65,39 @@ function App() {
         ['模拟高精度超时后成功', () => { outside = true; deny = alwaysTimeout = false; highAccuracyTimeout = true; }], ['模拟持续定位超时', () => { deny = false; alwaysTimeout = true; }],
     ].map(([label, action]) => <button key={String(label)} className="min-h-11 rounded-xl bg-white px-3" onClick={() => { (action as () => void)(); setReport(String(label)); }}>{String(label)}</button>)}<button className="min-h-11 rounded-xl bg-sky-700 px-3 text-white" onClick={() => void inspect()}>检查实际位置提示词</button></div><pre className="mt-5 whitespace-pre-wrap break-words text-xs leading-6" role="status">{report}</pre></aside></div>;
 }
+function ChatPinDemo() {
+    const [phase, setPhase] = useState<'ready' | 'reply' | 'done'>('ready');
+    const send = async () => {
+        setPhase('reply');
+        // On the phone's HTTP LAN URL only the simulated GPS below is used.
+        Object.defineProperty(window, 'isSecureContext', { configurable: true, value: true });
+        Object.defineProperty(navigator, 'geolocation', { configurable: true, value: {
+            getCurrentPosition(success: PositionCallback) {
+                setTimeout(() => success({ coords: { latitude: 30, longitude: 120, accuracy: 10 } } as GeolocationPosition), 1800);
+            },
+        } });
+        if (phase === 'ready') saveUserLocationConfig({ enabled: true, regions: [{id:'demo',name:'图书馆',latitude:30,longitude:120,radiusKm:1}] });
+        await getUserLocationContext('小雨', 'pin-demo', true);
+    };
+    return <main className="mx-auto max-w-md min-h-screen bg-slate-50 p-5"><h1 className="font-bold">聊天定位预览</h1>
+        <p className="my-3 text-xs text-slate-500">使用模拟位置。可手动结束回复，方便查看大头针详情。</p>
+        {phase !== 'ready' && <div className="mt-10 flex justify-end gap-3"><span className="rounded-xl bg-white p-3">我到啦</span><div className="relative grid h-10 w-10 place-items-center rounded-full bg-sky-100">雨{phase === 'reply' && <ChatLocationPin charId="pin-demo" />}</div></div>}
+        {phase === 'done' && <p className="mt-10">好，我在门口等你。</p>}
+        <button className="mt-20 rounded-xl bg-sky-700 px-4 py-3 text-white" onClick={() => phase === 'reply' ? setPhase('done') : void send()}>{phase === 'reply' ? '结束模拟回复' : '发送测试消息'}</button>
+    </main>;
+}
 function Preview() {
     const [notice, setNotice] = useState(new URLSearchParams(location.search).has('notice'));
+    if (new URLSearchParams(location.search).has('chat')) return <ChatPinDemo />;
     return <><App />{notice && <UserLocationNotice onDone={() => setNotice(false)} onConfigure={() => setNotice(false)} />}</>;
 }
-const root = createRoot(document.getElementById('root')!); root.render(<Preview />);
+const root = createRoot(document.getElementById('root')!); if (new URLSearchParams(location.search).has('fullscreen')) {
+    const [{default: Settings}, {OSProvider}, {requestSettingsFocus}] = await Promise.all([
+        import('../../apps/Settings'), import('../../context/OSContext'), import('../../utils/settingsNavigation'),
+    ]);
+    requestSettingsFocus('location');
+    root.render(<OSProvider><Settings /></OSProvider>);
+} else root.render(<Preview />);
 import.meta.hot?.dispose(() => {
     root.unmount(); window.fetch = originalFetch;
     document.createElement = originalCreateElement;

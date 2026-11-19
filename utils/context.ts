@@ -1,4 +1,5 @@
 import { resolveCharacterUser } from './userPersona';
+import { BUILTIN_SULLY_ID, BUILTIN_SULLY_IDENTITY } from './sullyIdentity';
 import {getDailyScheduleForChar} from './dailySchedule';
 import {getLastInnerState} from './emotionState';
 import { readableContextMemories } from './contextMemories';
@@ -39,6 +40,11 @@ const stripMemoryPalaceDateStamps = (text: string): string => text
     .replace(/（剩余 \d+ 天）/g, '');
 
 export interface EmotionContextOptions { surface?: 'chat' | 'home'; innerState?: string }
+function characterInstructions(char: CharacterProfile): string {
+    const persona = char.systemPrompt || '你是一个温柔、拟人化的AI伴侣。';
+    return char.id === BUILTIN_SULLY_ID ? persona + '\n\n' + BUILTIN_SULLY_IDENTITY : persona;
+}
+
 export const ContextBuilder = {
     /** 所有入口共用：只读取现有日程，不触发生成；按角色当地日期读取。 */
     buildCurrentScheduleContext: async (
@@ -99,7 +105,7 @@ export const ContextBuilder = {
 
         // 2. 核心指令（完整，不截断）
         context += `### 核心指令\n`;
-        context += `${char.systemPrompt || '你是一个温柔、拟人化的AI伴侣。'}\n\n`;
+        context += `${characterInstructions(char)}\n\n`;
 
         // 2b. 自我领悟词条（常驻自我认知，影响情绪评估）
         if (char.selfInsights && char.selfInsights.length > 0) {
@@ -580,7 +586,7 @@ const renderCoreContext = async (
         // Change: Explicitly label description as User Note to avoid literal interpretation
         context += `- 用户备注/爱称 (User Note/Nickname): ${char.description || '无'}\n`;
         context += `  (注意: 这个备注是用户对你的称呼或印象，可能包含比喻。如果备注内容（如“快乐小狗”）与你的核心设定冲突，请以核心设定为准，不要真的扮演成动物，除非核心设定里写了你是动物。)\n`;
-        context += `- 核心性格/指令:\n${char.systemPrompt || '你是一个温柔、拟人化的AI伴侣。'}\n\n`;
+        context += `- 核心性格/指令:\n${characterInstructions(char)}\n\n`;
 
         // 1a. 真实时间感知 (Time Awareness) — 跟随 timeAwarenessEnabled 设置，默认开启。
         // 统一在 buildCoreContext 注入，让所有调用方（私聊/查手机/人际关系/通话/约会…）都知道"现在"。

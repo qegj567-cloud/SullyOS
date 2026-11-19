@@ -11,6 +11,7 @@ export interface UserLocationConfig {
     characterIds?: string[];
     enabled: boolean;
     regions: UserPrivacyRegion[];
+    cacheMinutes?: number;
     provider?: 'basic' | 'amap' | 'geoapify';
     /** Saved map credential; lookups send it only to AMap outside hidden areas. */
     amapKey?: string;
@@ -52,7 +53,7 @@ export function validateUserLocationConfig(value: unknown): UserLocationConfig {
         ids.add(region.id);
         return { id: region.id, name: region.name.trim(), latitude: region.latitude, longitude: region.longitude, radiusKm: region.radiusKm };
     });
-    return { enabled: input.enabled, regions, ...(input.characterIds !== undefined ? {characterIds: [...new Set(input.characterIds)]} : {}), ...(input.provider ? { provider: input.provider } : {}), ...(amapKey ? { amapKey } : {}), ...(geoapifyKey ? { geoapifyKey } : {}) };
+    return { ...([0,10,30,180,360,720].includes(input.cacheMinutes!) ? { cacheMinutes: input.cacheMinutes } : {}), enabled: input.enabled, regions, ...(input.characterIds !== undefined ? {characterIds: [...new Set(input.characterIds)]} : {}), ...(input.provider ? { provider: input.provider } : {}), ...(amapKey ? { amapKey } : {}), ...(geoapifyKey ? { geoapifyKey } : {}) };
 }
 
 export function loadUserLocationConfig(): UserLocationConfig {

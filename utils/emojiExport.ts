@@ -2,6 +2,7 @@ import JSZip from 'jszip';
 import type { Emoji } from '../types';
 import { getBlobForRef, isBlobRef } from './blobRef';
 import { fetchBlobForShare } from './shareExport';
+import { cachedEmojiOriginal, hasEmojiCacheStorage, isRemoteEmoji, rememberEmojiOriginal } from './emojiOriginals';
 
 const safeName = (name: string) => name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/[. ]+$/g, '').slice(0, 100) || '表情';
 
@@ -24,7 +25,14 @@ export async function prepareEmojiExport(emojis: Pick<Emoji, 'name' | 'url'>[], 
     const used = new Set<string>();
     let single: { blob: Blob; fileName: string } | undefined;
     for (const emoji of emojis) {
-        const blob = isBlobRef(emoji.url) ? await getBlobForRef(emoji.url) : await fetchBlobForShare(emoji.url);
+        let blob = isBlobRef(emoji.url) ? await getBlobForRef(emoji.url)
+            : await cachedEmojiOriginal(emoji.url).catch(() => undefined);
+        if (!blob && !isBlobRef(emoji.url)) {
+            blob = await fetchBlobForShare(emoji.url);
+            if (isRemoteEmoji(emoji.url) && hasEmojiCacheStorage()) {
+                await rememberEmojiOriginal(emoji.url, blob).catch(() => false);
+            }
+        }
         if (!blob?.size) throw new Error(`表情「${emoji.name}」的原文件已丢失`);
         const ext = await emojiExtension(blob);
         const base = safeName(emoji.name).replace(/\.(png|gif|jpe?g|webp|avif|svg|bmp|ico)$/i, '');

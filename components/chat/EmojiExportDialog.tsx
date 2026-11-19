@@ -1,3 +1,4 @@
+import { trackEvent } from '../../utils/analytics';
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Emoji } from '../../types';
@@ -20,6 +21,7 @@ export default function EmojiExportDialog({ emojis, title = '表情包', onClose
         setSharing(true); setError('');
         try {
             const result = await shareOrDownloadBlob({ ...file, shareTitle: title, nativeChunked: true });
+            if (result !== 'cancelled') trackEvent('导出表情原图', { 格式: emojis.length === 1 ? '单图' : '压缩包' });
             if (result !== 'cancelled') onClose();
         } catch (e) { setError(e instanceof Error ? e.message : '无法拉起分享，请重试'); }
         finally { setSharing(false); }

@@ -4,6 +4,11 @@ import { HOME_CHANGELOG } from '../utils/homeUpdate';
 
 import React, { useEffect, useState } from 'react';
 import { useOS } from '../context/OSContext';
+import { AppID } from '../types';
+import { useAppShortcut } from '../utils/appShortcutLaunch';
+import { SULLY_HELP_DESK_ID } from '../utils/sullyIdentity';
+import { buildHelpDeskKnowledge } from '../utils/sullyHelpDesk';
+import { SullyHelpDesk } from '../components/SullyHelpDesk';
 import { Sparkle } from '@phosphor-icons/react';
 import {
     FAQ_TARGET_SECTION_KEY,
@@ -33,6 +38,7 @@ const FAQ_DATA = [
     },
     {
         q: "1. 进不去网页 / 白屏 / 点了没反应",
+        supportAnswer: "先问整台小手机还是单个页面白屏、在哪个操作后发生；只凭白屏无法确认是网络还是界面加载问题。",
         reason: "网络有点小脾气，不够通畅。",
         solution: "需要一点点“魔法”才能连上外网。\n如果你不知道什么是“梯子/魔法”，请自行搜索一下~ \n这不是软件坏啦，是网路不通。",
         icon: "https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1fa84.png",
@@ -47,6 +53,7 @@ const FAQ_DATA = [
     },
     {
         q: "3. 为什么拉取不到模型列表？",
+        supportAnswer: "核对服务商给的接口地址、接口类型和模型列表支持情况。不同接口的路径约定不同，不能统一追加 /v1。",
         reason: "很多时候是填写的地址（URL）差了一点点。",
         solution: "请仔细检查你的链接：\n1. 后面是不是漏掉了 `/v1` 这个小尾巴？\n2. 复制时是否多带了空格？\n3. 地址不对是敲不开门的哦。",
         icon: "https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f50d.png",
@@ -54,6 +61,7 @@ const FAQ_DATA = [
     },
     {
         q: "4. 出现红色弹窗 (API 报错)",
+        supportAnswer: "看报错状态、调用用途和去掉隐私的错误短句，按接口排查手册判断；仅在提示上下文过长时检查原文范围。",
         reason: "情况A：如果你最近发了很多高清图，或者聊得太久了。\n情况B：没发图也报错？可能是提供接口的那边欠费或波动。",
         solution: "**情况A**：进【设置】，把“上下文条数”调低一点（例如 20-50）。\n**情况B**：请直接联系你购买/获取 API 的那个渠道哦，模拟器本身是无辜哒。",
         icon: "https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/26a0.png",
@@ -75,6 +83,7 @@ const FAQ_DATA = [
     },
     {
         q: "7. 遇到奇怪的 Bug 怎么办？",
+        supportAnswer: "先记录所在页面、复现步骤和去掉私密信息的错误原文。客服窗口只能协助排查，无法接收备份或代为报修。",
         reason: "可以在群里问，但严肃报修需要“病历本”。",
         solution: "请去桌面【设置】→【数据备份】导出 JSON 文件发给我。\n只有复现了问题，才能修好它。",
         icon: "https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f691.png",
@@ -97,12 +106,13 @@ const FAQ_DATA = [
     {
         q: "10. 导入的表情包不显示 / 导入没反应？",
         reason: "通常是格式不对，或者链接无效。",
-        solution: "1. **严格检查格式**：必须是 `名字--URL`，中间是**两个减号**！\n   错误：`滑稽 http://...`\n   正确：`滑稽--http://...`\n2. **检查链接**：必须是图片直链（.jpg/.png/.gif 结尾）。\n3. **一行一个**：不要把所有内容写在一行里。",
+        solution: "在私聊点笑脸，选分类 → 图片格的「＋」，每行填一个 `名字--图片直链`，点「添加至当前分类」。直链打开应直接显示图片，也可以没有文件后缀。\n已经导入却出现破图时，点分类栏最右的铅笔 →「刷新排查」。可以查看失效名单，确认后清除。显示「待重试」的表情会保留。",
         icon: "https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f5bc.png",
         color: "bg-cyan-50 text-cyan-700"
     },
     {
         q: "11. 点聊天输入框没反应 / 键盘唤不起来？",
+        supportAnswer: "询问是否在导入美化后发生。先试默认气泡和关闭该角色聊天背景。若考虑「外观 → 聊天界面 → 还原白框美化」，先说明它会重置全局和所有角色的白框 CSS，让用户决定是否保留自己的搭配。",
         reason: "多半是随备份一起导入的美化在捣乱：白框自定义 CSS、气泡主题或聊天背景把输入框盖住/禁用了。这类数据跟着备份走，所以重启、重新导入备份都没用，而全新页面（没导数据）反而正常。",
         solution: "按顺序排查：\n1. 【外观】→【聊天界面】→ **还原白框美化**（一键清掉全局和所有角色的白框 CSS）。\n2. 点顶部角色名 → 把「气泡样式」换回默认。\n3. 关掉该角色的聊天背景图。\n4. 还不行：换个浏览器（如 Safari）打开同一链接导入备份试试；仍复现请把备份 JSON 按第 7 条发给作者。",
         icon: "https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/2328.png",
@@ -242,7 +252,9 @@ const CHANGELOG_ENTRIES: ChangelogEntry[] = [
     },
 ];
 
-type Tab = 'faq' | 'changelog';
+const helpDeskKnowledge = buildHelpDeskKnowledge(FAQ_DATA, CHANGELOG_ENTRIES);
+
+type Tab = 'faq' | 'changelog' | 'support';
 
 const FAQApp: React.FC = () => {
     const { closeApp } = useOS();
@@ -263,6 +275,13 @@ const FAQApp: React.FC = () => {
         } catch { /* ignore */ }
     }, []);
 
+    useAppShortcut(AppID.FAQ, intent => {
+        if (intent.entryId === SULLY_HELP_DESK_ID) {
+            setActiveChangelog(null);
+            setTab('support');
+        }
+    });
+
     const handleBack = () => {
         if (activeChangelog) {
             setActiveChangelog(null);
@@ -273,7 +292,7 @@ const FAQApp: React.FC = () => {
 
     const headerTitle = activeChangelog
         ? activeChangelog.title
-        : tab === 'changelog' ? '更新日志' : '常见问题';
+        : tab === 'support' ? '使用帮助' : tab === 'changelog' ? '更新日志' : '常见问题';
 
     return (
         <div className="h-full w-full bg-slate-50 flex flex-col font-light">
@@ -315,11 +334,18 @@ const FAQApp: React.FC = () => {
                         >
                             更新日志
                         </button>
+                        <button onClick={() => { if (tab !== 'support') trackEvent('打开 Sully-11', { 入口: '使用帮助' }); setTab('support'); }} aria-pressed={tab === 'support'}
+                            className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${tab === 'support' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 active:scale-95'}`}>
+                            问 Sully-11
+                        </button>
                     </div>
                 </div>
             )}
 
             {/* Content area */}
+            <div className={tab === 'support' && !activeChangelog ? 'flex min-h-0 flex-1' : 'hidden'}>
+                <SullyHelpDesk knowledge={helpDeskKnowledge} />
+            </div>
             {activeChangelog ? (
                 <div className="flex-1 bg-[#faf7f2] overflow-hidden">
                     <iframe
@@ -329,7 +355,7 @@ const FAQApp: React.FC = () => {
                         className="w-full h-full border-0"
                     />
                 </div>
-            ) : tab === 'faq' ? (
+            ) : tab === 'support' ? null : tab === 'faq' ? (
                 <div className="flex-1 overflow-y-auto p-5 pb-20 no-scrollbar">
                     {/* Intro Banner */}
                     <div className="bg-gradient-to-r from-pink-100 to-indigo-100 p-5 rounded-3xl mb-6 shadow-sm">

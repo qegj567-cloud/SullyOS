@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { parseStandardWorldbook, serializeSullyWorldbook } from './worldbook';
 import {
   COLLABORATION_MAKER_MAP,
   buildInstallablePreviewDocument,
@@ -9,6 +10,18 @@ import {
 } from '../features/collaboration/makers';
 
 describe('collaboration installable makers', () => {
+  it('installs the worldbook example exactly as prompted and round-trips it with native titles', () => {
+    const [artifact] = parseInstallableArtifactBlocks(COLLABORATION_MAKER_MAP.worldbook.prompt).artifacts;
+    expect(artifact.payload).toMatchObject({ format: 'sullyos-worldbook', version: 1 });
+    expect(validateInstallableArtifact(artifact)).toEqual([]);
+    const books = installableToWorldbooks(artifact);
+    expect(books[0]).toMatchObject({ title: '条目标题', content: '完整设定正文', category: '世界书分类名' });
+    expect(books[0].sourceUid).toBeUndefined();
+    const exported = serializeSullyWorldbook(books);
+    expect(JSON.parse(exported).worldbook.entries['0'].comment).toBe('条目标题');
+    expect(parseStandardWorldbook(exported, '复原')[0].sourceUid).toBeUndefined();
+    expect(validateInstallableArtifact({ ...artifact, payload: { ...artifact.payload, version: 333 } }).join()).toContain('暂不支持');
+  });
   it('whitebox defaults to core content while accepting optional card styles',()=>{
     const css='.sully-psyche-body{color:#345!important}.sully-chat-card[data-card-kind="world_card"] .sully-chat-card-surface{border-radius:12px}';
     expect(validateInstallableArtifact({kind:'whitebox-css',title:'完整白框',payload:{css}})).toEqual([]);

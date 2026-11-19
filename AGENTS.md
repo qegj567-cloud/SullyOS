@@ -6,7 +6,18 @@
 
 > 包管理器统一用 **pnpm**：装依赖 `pnpm install`、跑测试 `pnpm vitest run`、跑脚本 `pnpm <script>`。别用 npm / yarn（仓库里是 `pnpm-lock.yaml`）。
 
+## 每次改动的联动检查
+
+按以下顺序检查改动影响。已有机制覆盖时复用原路径，收尾说明实际改动与验证结果。
+
+1. **Umami 使用统计**。核对新入口、实际完成的动作与失败信号，先查已有事件，按同一口径计数。设置使用率进冷启动快照。属性只用显式白名单里的固定值，同时更新事件清单和隐私回归。[使用统计](./docs/analytics.md)
+2. **导入、导出与迁移**。逐项确认新增数据归属、文字／媒体／整合范围、单用户／全部用户、迁入为独立用户、云备份、旧文件和单项分享。用实际导出的数据恢复一次；媒体补图仅更新匹配记录。App 内的文件导出统一经 `shareOrDownloadBlob` 或 `shareOrDownloadFile` 拉起系统文件分享，大文件启用分块，网页「下载」可直接保存。区分成功、取消和失败。[用户空间](./docs/user-spaces.md) · [分享实现](./utils/shareExport.ts)
+3. **Sully-11**。入口、按键、可调范围、存储边界或失败处理有变化时，更新对应手册区；涉及用户实际配置时核对设置摘要。[十一号手册](./docs/sully-11-handbook.md)
+4. **协同工作制作提示词**。美化改动核对复制给 AI 的说明、选择器、预览和安装器。世界书等可制作格式改动同时检查制作提示词示例、校验、预览、安装、导出和旧作品加载；用新示例沿实际路径验收。[制作器](./features/collaboration/makers.ts) · [美化契约](./docs/chat-decoration.md)
+
 ## 文档地图
+
+使用帮助里的 Sully-11 使用[操作手册](./docs/sully-11-handbook.md)和[Discord 社区规则](./docs/sully-11-discord.md)。改用户操作时同步对应功能区：二级标题列 App / 系统与别名，首行「能力」供检索，「核对」链接到实现，三级标题直接构成可查阅目录。社区规则每个二级标题为一区。每轮提供短目录，按需读区；应用和系统的实时设置由 `utils/sullyHelpSettings.ts` 投影。本机按用户空间保留完整咨询记录，每段仅最近 200 条可参与本轮上下文。20 分钟无互动或手动新建后归档，历史可续聊。
 
 静态资源、Service Worker 缓存、离线启动或网页更新：先读 [`docs/static-resource-cache.md`](./docs/static-resource-cache.md)。不得注销推送 SW、清应用数据库或按整个 `/assets/` 目录设置 immutable。
 

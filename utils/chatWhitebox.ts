@@ -29,14 +29,14 @@ export const WHITEBOX_SELECTOR_GROUPS = [
   {
     label: '整屏与顶栏',
     selectors: [
-      '.sully-chat-root', '.sully-chat-header', '.sully-chat-back', '.sully-chat-avatar',
+      '.sully-chat-root', '.sully-chat-messages', '.sully-chat-header', '.sully-chat-back', '.sully-chat-avatar',
       '.sully-chat-info', '.sully-chat-name', '.sully-chat-status', '.sully-chat-buffs',
       '.sully-chat-token', '.sully-chat-trigger',
     ],
   },
   {
     label: '输入与功能面板',
-    selectors: ['.sully-chat-inputbar', '.sully-chat-composer', '.sully-chat-input-wrap', '.sully-chat-textarea', '.sully-chat-actions-button', '.sully-chat-send-button', '.sully-chat-emoji-suggestions', '.sully-chat-auto-reply', '.sully-chat-panel', '.sully-chat-panel button'],
+    selectors: ['.sully-chat-inputbar', '.sully-chat-composer', '.sully-chat-input-wrap', '.sully-chat-textarea', '.sully-chat-actions-button', '.sully-chat-send-button', '.sully-chat-emoji-suggestions', '.sully-chat-auto-reply', '.sully-chat-panel', '.sully-chat-panel button', '.sully-chat-action-page'],
   },
   {
     label: '消息布局',
@@ -46,7 +46,7 @@ export const WHITEBOX_SELECTOR_GROUPS = [
       '.sully-chat-system', '.sully-chat-interaction', '.sully-chat-message-content', '.sully-chat-message-sender', '.sully-chat-message-avatar-slot',
       '.sully-chat-message-avatar', '.sully-chat-message-avatar-img', '.sully-chat-turn-avatar-slot',
       '.sully-chat-turn-avatar', '.sully-chat-avatar-wrap', '.sully-chat-avatar-frame',
-      '.sully-chat-time-divider', '.sully-chat-timestamp-slot', '.sully-chat-timestamp',
+      '.sully-chat-time-divider', '.sully-chat-timestamp-slot', '.sully-chat-timestamp', '.sully-chat-avatar-timestamp',
     ],
   },
   {
@@ -57,7 +57,7 @@ export const WHITEBOX_SELECTOR_GROUPS = [
   },
   {
     label: '转账主卡、回执与详情',
-    selectors: ['card', 'receipt', 'header', 'icon', 'brand', 'watermark', 'amount', 'note', 'recipient', 'status', 'overlay', 'dialog', 'accept', 'return'].map(part => `.sully-chat-transfer-${part}`),
+    selectors: ['card', 'receipt', 'header', 'icon', 'brand', 'watermark', 'amount', 'note', 'recipient', 'status', 'overlay', 'dialog', 'detail-header', 'detail-body', 'detail-amount', 'detail-note', 'compose', 'accept', 'return'].map(part => `.sully-chat-transfer-${part}`),
   },
   {
     label: '正式文件附件',
@@ -86,7 +86,7 @@ export const WHITEBOX_LAYOUT_REFERENCE = `【布局说明与设计自由度】
 .sully-chat-header 是 position:relative，头像、名字、状态、闪电和 token 可在其中重新布局；顶栏头像 .sully-chat-avatar 是 img，不能在它上面做伪元素。顶栏挂饰需要溢出时设 overflow:visible。
 .sully-chat-buffs button 是情绪胶囊，带内联样式；覆盖时需要 !important。输入行使用 .sully-chat-composer，输入框用 .sully-chat-input-wrap / .sully-chat-textarea；表情联想和自动回复倒计时是输入栏外的同级区域，不依赖元素序号定位。
 每轮头像在上方时，显示默认隐藏的 .sully-chat-turn-avatar-slot、隐藏 .sully-chat-message-avatar，给 .sully-chat-message-group-first 留出顶部空间，并清零 .sully-chat-message-content 的左右 margin。已有头像贴图 .sully-chat-avatar-frame 可隐藏以免重叠。
-时间位置（气泡下方 vs 对话段上方居中）由「布局 → 时间位置」控制：上方居中整行容器为 .sully-chat-time-divider，气泡下方挂载位为 .sully-chat-timestamp-slot，两种模式的时间文字均为 .sully-chat-timestamp（可调字号、颜色、胶囊底色、圆角或伪元素装饰）。
+「布局 → 时间位置」可以选择气泡下方、头像下方或上方居中。气泡下方挂载位为 .sully-chat-timestamp-slot，头像下方的 .sully-chat-avatar-timestamp 紧随可见头像，上方居中的整行容器为 .sully-chat-time-divider。三种模式的时间文字均为 .sully-chat-timestamp。
 不限于换颜色：可设计渐变、图案、图片背景、多层叠加、异形切角、描边、内外阴影、文字层级和伪元素挂饰，重新组织顶栏视觉。静态 blur/backdrop-filter 可用，持续动画仅用 transform/opacity 并尊重 prefers-reduced-motion。
 `;
 export const WHITEBOX_DESIGN_RULES=`白框默认沿用聊天背景、顶栏、输入栏和双方消息与头像的结构，内容样式只要求四类：普通聊天、语音条、转账、心象（折叠/展开）。如果用户只要求其中一部分，就只设计该部分。
