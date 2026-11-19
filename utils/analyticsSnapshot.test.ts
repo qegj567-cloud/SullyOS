@@ -602,7 +602,9 @@ describe('快照事件的属性宽度', () => {
     });
 
     it('当前角色设置', () => {
-        expect(Object.keys(collectCharSettings([plainChar('a')], 'a')).length).toBeLessThanOrEqual(38);
+        const fields = collectCharSettings([{...plainChar('a'),stickerVision:true}], 'a');
+        expect(fields.表情看图).toBe('有人开');
+        expect(Object.keys(fields).length).toBeLessThanOrEqual(39);
     });
 
     it('SAR 发布功能保持小快照', () => {

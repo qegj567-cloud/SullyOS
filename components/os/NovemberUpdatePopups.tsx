@@ -1,7 +1,9 @@
 import React, { useEffect, useId, useRef } from 'react';
 import { ArrowRight, X } from '@phosphor-icons/react';
 import { useLocalBackHandler } from '../../hooks/useLocalBackHandler';
-import { AMSG_RECENT_UPDATE_KEY, SULLY_SUPPORT_NOTICE_KEY } from '../../utils/novemberNotices';
+import { AMSG_RECENT_UPDATE_KEY, HELP_STICKERS_UPDATE_KEY, SULLY_SUPPORT_NOTICE_KEY } from '../../utils/novemberNotices';
+import { SULLY_HELP_DESK_AVATAR } from '../../utils/sullyIdentity';
+import { trackEvent } from '../../utils/analytics';
 import { shouldOfferRelayNotice } from './RelayUpdatePopup';
 import sullyPeeking from '../../assets/sully-support/sully-peeking.webp';
 import './NovemberUpdatePopups.css';
@@ -41,6 +43,31 @@ function NovemberNotice({ noticeKey, title, eyebrow, visitLabel, children, onDon
             </footer>
         </div>
     </dialog>;
+}
+
+export function HelpStickersUpdatePopup({ onDone, onVisit }: NoticeActions) {
+    const version = { 版本: 'changelog-2026-11-19-help-stickers' };
+    const shown = useRef(false);
+    useEffect(() => {
+        if (shown.current) return;
+        shown.current = true;
+        trackEvent('弹出版本更新提醒', { 版本: 'changelog-2026-11-19-help-stickers' });
+    }, []);
+    return <NovemberNotice noticeKey={HELP_STICKERS_UPDATE_KEY} eyebrow="11 月 19 日 · 小更新"
+        title="Sully-11 答疑与表情包更新" visitLabel="问 Sully-11"
+        onDone={() => { trackEvent('跳过本次更新说明', version); onDone(); }}
+        onVisit={() => { trackEvent('点立刻体验', version); onVisit(); }}>
+        <section>
+            <img className="november-help-avatar" src={SULLY_HELP_DESK_AVATAR} width="60" height="60" alt="" />
+            <h3>找不到设置？问问值班猫</h3>
+            <p>在「使用帮助 → 问 Sully-11」写下问题，也可以附上报错截图。点纸飞机发送，再点闪电，11 号就会翻手册帮你找答案。</p>
+        </section>
+        <section>
+            <h3>把相册里的表情带进聊天</h3>
+            <p>在私聊点笑脸，再点铅笔进入表情管理。可以一次选多张图、导入整个 ZIP，或粘贴图床链接。默认沿用文件名，也可以选中一批表情，让主 API 看图起名。</p>
+            <p>按文件夹整理后，可以为每个角色勾选可用的分组。导出时，本地图片随包保存，图床表情只保存链接。</p>
+        </section>
+    </NovemberNotice>;
 }
 
 export function AmsgRecentUpdatePopup(props: NoticeActions) {

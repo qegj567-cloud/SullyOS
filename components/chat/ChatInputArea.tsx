@@ -49,6 +49,7 @@ interface ChatInputAreaProps {
     /** Visible library across all categories; also invalidates removed/replaced cached thumbnails. */
     suggestionEmojis?: Emoji[];
     /** Only the private chat editor manages the complete, space-local library. */
+    onManageEmojis?: () => void;
     fullEmojiLibrary?: Emoji[];
     onRemoveInvalidEmojis?: (items: Emoji[]) => Promise<number>;
     /** 以下会话切换/主题 props 仅私聊使用；群聊等复用方不传（'chars' 面板不会被打开） */
@@ -96,7 +97,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     sendButtonGenerates = false, enterToSend = true, onGenerate,
     autoReplyEnabled = false, autoReplySeconds = null, onCancelAutoReply, onInputFocusChange,
     emojis, characters = [], activeCharacterId = '', onCharSelect = () => {},
-    emojiSuggestionsEnabled = false, suggestionEmojis = emojis, fullEmojiLibrary, onRemoveInvalidEmojis,
+    emojiSuggestionsEnabled = false, suggestionEmojis = emojis, onManageEmojis, fullEmojiLibrary, onRemoveInvalidEmojis,
     unreadMessages = {},
     customThemes = [], onUpdateTheme = () => {}, onRemoveTheme = () => {}, activeThemeId = '',
     actionsContent,
@@ -690,7 +691,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
         {emojiSelectionMode && (
             <div className={`fixed inset-0 z-[-1] ${isPixelStyle ? 'bg-[#eadfce]/70 backdrop-blur-[2px]' : isDiscordStyle ? 'bg-slate-950/70 backdrop-blur-[2px]' : 'bg-white/60 backdrop-blur-[2px]'}`} />
         )}
-        {exportEmojis && <EmojiExportDialog emojis={exportEmojis} onClose={() => setExportEmojis(null)} />}
+        {exportEmojis && <EmojiExportDialog emojis={exportEmojis} groups={categories} onClose={() => setExportEmojis(null)} />}
         {scanItems && onRemoveInvalidEmojis && <EmojiHealthDialog emojis={scanItems} onRemove={onRemoveInvalidEmojis}
             onClose={() => setScanItems(null)} onRefreshed={refreshThumbnails} />}
         {/* 选图 input 常驻在输入栏外：面板收起时不会随条件分支卸载而丢失点击或回传事件，也不改变 .sully-chat-inputbar 子节点序号。 */}
@@ -707,7 +708,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                     </div>
                     <div className="flex gap-2 overflow-x-auto overscroll-x-contain pb-1">
                         {suggestedEmojis.map(emoji => (
-                            <button key={emoji.url} type="button" aria-label={`发送表情：${emoji.name}`} title={emoji.name}
+                            <button key={emoji.name} type="button" aria-label={`发送表情：${emoji.name}`} title={emoji.name}
                                 onMouseDown={event => event.preventDefault()}
                                 onClick={() => {
                                     setDismissedSuggestionInput(input);
@@ -777,7 +778,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                             placeholder="Message..."
                             style={{ height: 'auto' }}
                         />
-                        <button hidden={compactHome} onClick={() => setShowPanel(showPanel === 'emojis' ? 'none' : 'emojis')} className={`p-2 shrink-0 ${isDiscordStyle ? 'text-slate-400 hover:text-sky-300' : isPixelStyle ? 'text-[#8f674a] hover:text-[#a16207]' : 'text-slate-400 hover:text-primary'}`}>
+                        <button hidden={compactHome} aria-label="表情包面板" onClick={() => setShowPanel(showPanel === 'emojis' ? 'none' : 'emojis')} className={`p-2 shrink-0 ${isDiscordStyle ? 'text-slate-400 hover:text-sky-300' : isPixelStyle ? 'text-[#8f674a] hover:text-[#a16207]' : 'text-slate-400 hover:text-primary'}`}>
                             <Smiley className="w-6 h-6" weight="regular" />
                         </button>
                     </div>
@@ -872,7 +873,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                                     /* 编辑按钮占据独立列，滚动区在它左侧结束，末尾的 + 不会再被覆盖。 */
                                     <div className="flex h-10 shrink-0 items-center pl-1 pr-3">
                                         <button
-                                            onClick={(e) => { e.stopPropagation(); setEmojiSelectionMode(true); }}
+                                            onClick={(e) => { e.stopPropagation(); if (onManageEmojis) onManageEmojis(); else setEmojiSelectionMode(true); }}
                                             aria-label="批量管理表情"
                                             className={`w-6 h-6 rounded-full flex items-center justify-center transition-colors shadow-sm ${
                                                 isPixelStyle ? 'bg-[#c99872] text-[#fff7ed] hover:bg-[#b07d57]' :
@@ -906,7 +907,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                                     ) : (
                                         <button onClick={() => onPanelAction('emoji-import')} className={emojiImportTileClass}>+</button>
                                     )}
-                                    {emojiSelectionMode && <button onClick={() => setExportEmojis([...selectedEmojis])} disabled={!selectedEmojis.length} aria-label="下载选中的表情" className={`${emojiImportTileClass} text-xs disabled:opacity-40`}>下载原图</button>}
+                                    {emojiSelectionMode && <button onClick={() => setExportEmojis([...selectedEmojis])} disabled={!selectedEmojis.length} aria-label="下载选中的表情" className={`${emojiImportTileClass} text-xs disabled:opacity-40`}>导出表情</button>}
                                     {emojiSelectionMode && fullEmojiLibrary && onRemoveInvalidEmojis && <button
                                         type="button" aria-label="刷新与排查全部表情包" onClick={() => { trackEvent('刷新排查表情包'); setScanItems(fullEmojiLibrary); }}
                                         className={`${emojiImportTileClass} flex-col gap-1 !text-xs`}>

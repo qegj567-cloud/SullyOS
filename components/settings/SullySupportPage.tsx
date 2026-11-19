@@ -1,3 +1,4 @@
+import { SULLY_SUPPORT_NOTICE_KEY } from '../../utils/novemberNotices';
 import { trackEvent } from '../../utils/analytics';
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useLocalBackHandler } from '../../hooks/useLocalBackHandler';
@@ -26,6 +27,9 @@ const menu = [
 const petMessages = ['摸摸收到。今天也要好好照顾自己。', '嗯，再陪你待一会儿。', '你愿意来，我就已经很开心了。'];
 
 export default function SullySupportPage({ onClose }: { onClose: () => void }) {
+    useEffect(() => {
+        try { localStorage.setItem(SULLY_SUPPORT_NOTICE_KEY, '1'); } catch { /* Storage may be unavailable. */ }
+    }, []);
     const [originalOpen, setOriginalOpen] = useState(false);
     const [saving, setSaving] = useState(false);
     const [status, setStatus] = useState('');

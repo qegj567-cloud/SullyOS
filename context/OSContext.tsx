@@ -12,7 +12,7 @@ import { homeRecords } from '../utils/homeRecords';
 import { readFriendFeed } from '../utils/friendFeed';
 import { collectFriendFeedMedia, exportActivityTextAsset, isActivityTextAsset } from '../utils/activityBackup';
 import { HELP_HISTORY_KEY, helpMediaHistory, helpTextHistory } from '../utils/sullyHelpBackup';
-import { collectEmojiBackup, portableEmojiRow } from '../utils/emojiBackup';
+import { legacyStickerLinks, portableEmojiRow } from '../utils/emojiBackup';
 import { retireCloudCharacter } from '../utils/amsgCloudRetirement';
 import { AMSG_OWNER_CHECK_AFTER_IMPORT_LS_KEY } from '../utils/amsgOwnerReconcile';
 import { AMSG_GLOBAL_CONFIG_EVENT, isAmsg2GloballyEnabled, isAmsg2WorkerActive } from '../utils/amsgGlobalGate';
@@ -4271,7 +4271,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               life_record_settings: 'lifeRecordSettings',
           };
           const prewrittenStores: BackupManifest['stores'] = {};
-          const emojiBackup = await collectEmojiBackup(mode === 'text_only' ? [] : (await DB.getEmojis()).map(e => e.url));
+          const stickerLinks = legacyStickerLinks(await DB.getEmojis());
           // Vectors retain the existing binary format, read one record at a time.
           let vectorPayload: Awaited<ReturnType<typeof encodeVectorsForBackupChunked>> | undefined;
           // Only voice Blobs reachable from the exported Live2D settings are portable.
@@ -4301,7 +4301,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   prewrittenStores[field] = await streamBackupArrayStore(zip, storeName, field, {
                       onSerialized: collectSerialized,
                       transform: (item, index) => {
-                          item = portableEmojiRow(storeName, item, emojiBackup.tokens);
+                          item = portableEmojiRow(storeName, item, stickerLinks);
                           if (storeName === 'characters') {
                               normalizeCharacterRoomAssetsInPlace(item);
                               if (mode !== 'text_only') {
@@ -4432,7 +4432,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               const { missing } = await writeBlobsToZip(
                   zip as unknown as ZipFileWriter,
                   referencedBlobTokens,
-                  async token => emojiBackup.blobs.get(token) ?? await getBlobForRef(token),
+                  getBlobForRef,
                   { onYield: () => new Promise<void>(r => setTimeout(r, 0)) },
               );
               if (missing.length > 0) {

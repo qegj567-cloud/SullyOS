@@ -43,6 +43,11 @@ describe('ChatPrompts.filterVisibleEmojis', () => {
     expect(res.categories.map(c => c.id)).not.toContain('onlyA');
   });
 
+  it('默认组设为仅自己使用后，旧的无分类记录也从候选清单移除', () => {
+    const groups = [...categories,{id:'default',name:'默认',personalOnly:true}];
+    expect(ChatPrompts.filterVisibleEmojis(emojis,groups,'A').emojis.map(e=>e.name)).not.toContain('无分类');
+  });
+
   it('没有任何受限分类时原样返回（短路）', () => {
     const openCats: EmojiCategory[] = [{ id: 'public', name: '通用' }];
     const res = ChatPrompts.filterVisibleEmojis(emojis, openCats, 'B');

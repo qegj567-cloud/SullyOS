@@ -845,7 +845,7 @@ export async function applyAssistantPostProcessing(
             await replyStep(async () => typingPause(Math.random() * 500 + 300));
             const foundEmoji = resolveEmojiForSend(name, emojis, ctx.categories);
             if (foundEmoji) {
-                await replyStep(async () => persistMessage({ charId: char.id, role: 'assistant', type: 'emoji', content: foundEmoji.url, metadata: takeMeta(mcdInheritMeta) } as any));
+                await replyStep(async () => persistMessage({ charId: char.id, role: 'assistant', type: 'emoji', content: foundEmoji.url, metadata: { ...takeMeta(mcdInheritMeta), stickerName: foundEmoji.name } } as any));
             } else {
                 console.warn('[emoji] 表情库里没有这个名字，落降级文本气泡', { name, charId: char.id });
                 await replyStep(async () => persistMessage({ charId: char.id, role: 'assistant', type: 'text', content: `[表情：${name}]`, metadata: takeMeta(mcdInheritMeta) } as any));

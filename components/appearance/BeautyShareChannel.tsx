@@ -12,7 +12,6 @@ import {trackEvent} from '../../utils/analytics';
 import {BUILTIN_WHITEBOX_PRESETS} from '../../utils/builtinWhitebox';
 import {BUILTIN_APPEARANCE_PRESETS} from '../../utils/builtinAppearance';
 import DecorationGuide from '../chat/DecorationGuide';
-import BeautyUpdateNotice, { BEAUTY_CATALOG_NOTICE, needsBeautyNotice } from '../share/BeautyUpdateNotice';
 import {needsDecorationGuide,finishDecorationGuide} from '../../utils/decorationGuide';
 import {useFirstUseGuideStep} from '../../utils/firstUseGuide';
 import {SCHEDULE_CARD_PRESETS} from '../../utils/scheduleAppearance';
@@ -80,7 +79,6 @@ export default function BeautyShareChannel({ presets, onExport, onImport, onBusy
   const trackedOpen=useRef(false);
   useEffect(()=>{if(!trackedOpen.current){trackedOpen.current=true;trackBeauty('library',libraryContext==='chat'?'chat':'appearance');if(initialMaker)trackBeauty('maker',initialMaker);}},[]);
   const firstGuideActive=useFirstUseGuideStep()!==null;
-  const [catalogNotice, setCatalogNotice] = useState(() => !initialMaker && !!targetCharacterId && needsBeautyNotice(BEAUTY_CATALOG_NOTICE));
   const [guideStep,setGuideStep]=useState<number|null>(()=>!initialMaker&&targetCharacterId&&needsDecorationGuide()?0:null);
   const endGuide=()=>{finishDecorationGuide();setGuideStep(null);};
   const [saveCurrent,setSaveCurrent]=useState<{preset:DecorationPreset;key:string}|null>(null);
@@ -451,8 +449,7 @@ export default function BeautyShareChannel({ presets, onExport, onImport, onBusy
     {page === 'library' && <><BeautyRepoLibrary/>{targetCharacterId&&<button className="dress-guide-replay" onClick={()=>setGuideStep(0)}>再看一次使用引导</button>}</>}
     {draft?.maker==='bubbles'?createPortal(<div className="decoration-bubble-maker" role="dialog" aria-modal="true" aria-label="气泡制作器"><Suspense fallback={<p>正在打开气泡制作器…</p>}><BubbleMaker embedded initialTheme={draft.preset.parts.bubbles} onClose={()=>setDraft(null)} onSaveTheme={async bubbles=>{const preset=await portableDecoration({format:'sullyos-chat-decoration',version:1,name:bubbles.name,parts:{bubbles}});if(draft.originalEntryId?.startsWith('bubble-')&&['self','remix'].includes(draft.origin.kind)){await addCustomTheme({...bubbles,id:draft.originalEntryId.slice(7)});await writeDecorationOrigin(draft.originalEntryId,remixOrigin(draft.origin));}else await saveLibraryDecoration(preset,remixOrigin(draft.origin),draft.originalKey&&['self','remix'].includes(draft.origin.kind)?draft.originalKey:undefined);trackBeauty('save','bubbles');await refreshSaved();setDraft(null);setReceived({kind:'chat-decoration',preset,name:preset.name});setApplyAll(false);}}/></Suspense></div>,document.body):draft&&<DecorationDraftEditor getUsage={getUsage} {...draft} outfits={outfitEntries} onOutfitsChange={refreshSaved} characterName={targetCharacter?.name} theme={theme} sources={[...entries.filter(entry=>entry.kind==='chat-decoration'&&!outfitIds.has(entry.id)),...builtinWhitebox,...builtinBubbles,...builtinSounds,...builtinPsyche,...builtinProfiles,...builtinApps,...builtinMeetings]} onOpenWorkshop={()=>openMaker('bubbles')} onClose={()=>{setDraft(null);if(guideStep===2||guideStep===3)setGuideStep(4);}} onApply={async(preset,origin)=>{await writeOrigin(await decorationSourceKey(preset),origin);setDraft(null);if(guideStep===2||guideStep===3)setGuideStep(4);setApplyAll(false);setReceived({kind:'chat-decoration',preset,name:preset.name});}} onShareSaved={async id=>{await refreshSaved();setReceived(null);setShareSource(id);setShareMethod('code');setPage('mine');setDraft(null);}} onSaved={preset=>{setDraft(null);void refreshSaved().catch(()=>setError('预设已保存，列表刷新失败，请重新打开'));setReceived({kind:'chat-decoration',preset,name:preset.name});setApplyAll(false);}}/>}
     </div>
-    {catalogNotice && !firstGuideActive && page==='library' && !draft && <BeautyUpdateNotice onClose={()=>setCatalogNotice(false)}/>}
-    {!catalogNotice&&guideStep!==null&&!firstGuideActive&&!draft?.maker&&<DecorationGuide step={guideStep} onSkip={endGuide} onNext={()=>{if(guideStep===7)endGuide();else if(guideStep===5){setPage('library');setGuideStep(6);}else setGuideStep(guideStep+1);}}/>}
+    {guideStep!==null&&!firstGuideActive&&!draft?.maker&&<DecorationGuide step={guideStep} onSkip={endGuide} onNext={()=>{if(guideStep===7)endGuide();else if(guideStep===5){setPage('library');setGuideStep(6);}else setGuideStep(guideStep+1);}}/>}
     {deleteEntry&&<BeautyConfirmDialog title="删除这份装扮？" confirm="删除" danger onClose={()=>setDeleteEntry(null)} onConfirm={()=>removeEntry(deleteEntry)}><p>「{deleteEntry.name}」将从本机收藏移除。</p><p>{deleteEntry.id.startsWith('bubble-')?'仍在使用这份气泡的角色将回到默认气泡。':'已应用的装扮会保留。'}不会撤下已发布的分享码。</p></BeautyConfirmDialog>}
     {updateEntry&&<BeautyConfirmDialog title="发现新版装扮" confirm="同意规范并更新" onClose={()=>setUpdateEntry(null)} onConfirm={async()=>{
       const {entry,share,previous}=updateEntry;

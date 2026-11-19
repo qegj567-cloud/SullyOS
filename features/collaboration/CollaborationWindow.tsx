@@ -1657,12 +1657,13 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
 
   const visibleEmojiLibrary = useMemo(() => {
     const visibleCategories = emojiCategories.filter(category => (
-      !category.allowedCharacterIds?.length || category.allowedCharacterIds.includes(character.id)
+      !category.personalOnly && (!category.allowedCharacterIds?.length || category.allowedCharacterIds.includes(character.id))
     ));
     const visibleIds = new Set(visibleCategories.map(category => category.id));
+    const hasDefaultGroup = emojiCategories.some(category => category.id === 'default');
     return {
       categories: visibleCategories,
-      emojis: emojis.filter(emoji => !emoji.categoryId || visibleIds.has(emoji.categoryId)),
+      emojis: emojis.filter(emoji => visibleIds.has(emoji.categoryId || 'default') || (!emoji.categoryId && !hasDefaultGroup)),
     };
   }, [character.id, emojiCategories, emojis]);
 

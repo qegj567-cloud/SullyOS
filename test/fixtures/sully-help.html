@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <base href="/">
+    <title>使用帮助 · 输入与发送测试</title>
+    <script src="/vendor/tailwind-3.4.17.js"></script>
+    <style>html, body, #root { height: 100%; margin: 0; }</style>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="module">
+        import React from 'react';
+        import { createRoot } from 'react-dom/client';
+        import { OSProvider } from '../../context/OSContext';
+        import FAQApp from '../../apps/FAQApp';
+
+        createRoot(document.getElementById('root')).render(
+            React.createElement(OSProvider, null, React.createElement(FAQApp))
+        );
+    </script>
+</body>
+</html>

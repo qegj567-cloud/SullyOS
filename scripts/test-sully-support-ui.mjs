@@ -54,6 +54,10 @@ try {
     const fixture = `${base}test/fixtures/sully-support.html`;
     await page.goto(`${fixture}?notices`, { waitUntil: 'domcontentloaded', timeout: 120000 });
     const notice = page.locator('dialog.november-notice');
+    await notice.getByRole('heading', { name: 'Sully-11 答疑与表情包更新' }).waitFor();
+    await notice.getByRole('button', { name: '知道了', exact: true }).click();
+    await notice.waitFor({ state: 'detached' });
+    await page.reload({ waitUntil: 'domcontentloaded' });
     await notice.getByRole('heading', { name: '最近的主动消息更新', exact: true }).waitFor();
     for (const [width, height] of [[390, 844], [320, 568], [844, 390]]) {
         await page.setViewportSize({ width, height });
@@ -84,7 +88,7 @@ try {
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.locator('button[aria-label="打开打赏 Sully 页面"]').waitFor();
     assert.equal(await notice.count(), 0);
-    console.log('Passed: two once-only notices, fixed actions at 320/390/landscape, native focus trap, support CTA, no repeat after reload.');
+    console.log('Passed: three once-only notices, fixed actions at 320/390/landscape, native focus trap, support CTA, no repeat after reload.');
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(fixture, { waitUntil: 'domcontentloaded', timeout: 120000 });
     console.log('Loaded isolated Settings fixture.');

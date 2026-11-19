@@ -10,7 +10,6 @@ import { beautyRequest, downloadBeauty, normalizeBeautyPackage, readBeautyPackag
 import { confirmExportSafety } from '../../utils/exportGuard';
 import { shareOrDownloadFile } from '../../utils/shareExport';
 import BeautyConfirmDialog from './BeautyConfirmDialog';
-import BeautyUpdateNotice, { BEAUTY_AUTHOR_NOTICE, needsBeautyNotice } from './BeautyUpdateNotice';
 import {beautyFingerprint,readBeautyBinding,bindBeautySource} from '../../utils/beautySourceBinding';
 import BeautyPresetPicker from './BeautyPresetPicker';
 import BeautyPresetPreview from './BeautyPresetPreview';
@@ -67,7 +66,6 @@ export default function BeautySharePanel({ kind, sources, onReceive, onBusyChang
   const [file, setFile] = useState<File | null>(null);
   const [editing, setEditing] = useState<BeautySubmission | null>(null);
   const [submissions, setSubmissions] = useState<BeautySubmission[]>([]);
-  const [authorNotice, setAuthorNotice] = useState(false);
   const [selectedTerms,setSelectedTerms]=useState<BeautySubmission[]>([]);
   const [termsItems,setTermsItems]=useState<BeautySubmission[]|null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -90,7 +88,6 @@ export default function BeautySharePanel({ kind, sources, onReceive, onBusyChang
     if(deleteId)setDeleteId(null);
     else if(updateCandidate)setUpdateCandidate(null);
     else if(termsItems)setTermsItems(null);
-    else if(authorNotice)setAuthorNotice(false);
     else if(confirmedWork)setConfirmedWork(null);
     else if(editing)setEditing(null);
     else if(previewPack)setPreviewPack(null);
@@ -119,7 +116,6 @@ export default function BeautySharePanel({ kind, sources, onReceive, onBusyChang
     if (!auth) return;
     const result = await beautyRequest<{ submissions: BeautySubmission[]; total: number; offset: number; pageSize: number; nextOffset: number | null }>(`/submissions?offset=${offset}&status=${status}&q=${encodeURIComponent(search)}`, { token: auth.token });
     setSubmissions(result.submissions); setPage(result); setLoaded(true); setDeleteId(null);
-    if (result.submissions.length && needsBeautyNotice(BEAUTY_AUTHOR_NOTICE)) setAuthorNotice(true);
   };
   const authenticate = () => run(async () => {
     validateBeautyPassword(password);
@@ -160,7 +156,6 @@ export default function BeautySharePanel({ kind, sources, onReceive, onBusyChang
   });
   useEffect(() => { if (open && session && surface !== 'receive') void run(() => refresh(session, 0)); }, [open]);
   return <section className="beauty-share-panel">
-    {authorNotice && open && surface !== 'receive' && <BeautyUpdateNotice author onClose={()=>setAuthorNotice(false)}/>}
     {!embedded && <button type="button" className="beauty-share-heading" disabled={busy} aria-expanded={open} onClick={() => setOpen(v => !v)}>美化分享码 <span>{open ? '收起' : '导出 / 领取 / 我的提交'}</span></button>}
     {open && <>
       {surface!=='receive'&&<nav aria-label="美化分享">{surface!=='author'&&<button disabled={busy} aria-pressed={tab === 'receive'} onClick={() => onOpenReceiver ? onOpenReceiver() : setTab('receive')}>用码领取</button>}<button disabled={busy} aria-pressed={tab === 'submit'} onClick={() => setTab('submit')}>投稿获取分享码</button><button disabled={busy} aria-pressed={tab === 'mine'} onClick={() => { setTab('mine'); void run(() => refresh()); }}>我的提交</button></nav>}

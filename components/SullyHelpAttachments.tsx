@@ -27,8 +27,8 @@ export function HelpStickerPicker({ onPick, onClose }: { onPick: (item: HelpAtta
     useEffect(() => {
         let active = true;
         Promise.all([DB.getEmojis(), DB.getEmojiCategories()]).then(([library, categories]) => {
-            const restricted = new Set(categories.filter(c => c.allowedCharacterIds?.length && !c.allowedCharacterIds.includes(SULLY_HELP_DESK_ID)).map(c => c.id));
-            if (active) setItems(library.filter(e => !e.categoryId || !restricted.has(e.categoryId)));
+            const restricted = new Set(categories.filter(c => c.personalOnly || (c.allowedCharacterIds?.length && !c.allowedCharacterIds.includes(SULLY_HELP_DESK_ID))).map(c => c.id));
+            if (active) setItems(library.filter(e => !restricted.has(e.categoryId || 'default')));
         }).catch(() => { if (active) setError(true); });
         return () => { active = false; };
     }, []);

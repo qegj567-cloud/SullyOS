@@ -60,3 +60,9 @@
     .november-notice { animation: none; }
     .november-notice button { transition: none; }
 }
+.november-help-avatar {
+    float: right;
+    object-fit: cover;
+    border-radius: 50%;
+    margin: 0 0 8px 12px;
+}

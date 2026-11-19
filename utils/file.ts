@@ -94,7 +94,7 @@ export const processImage = (file: File, options?: { maxWidth?: number, quality?
  * 场景（壁纸、小屋等，见 utils/blobRef.ts）使用，省掉一次 base64 编码 + 常驻内存。
  * GIF / skipCompression 直接返回原文件（File 本身即 Blob，不经 Canvas 重绘）。
  */
-export const processImageToBlob = async (file: File, options?: { maxWidth?: number, quality?: number, forceJpeg?: boolean, skipCompression?: boolean }): Promise<Blob> => {
+export const processImageToBlob = async (file: Blob, options?: { maxWidth?: number, quality?: number, forceJpeg?: boolean, skipCompression?: boolean, outputType?: 'image/webp' }): Promise<Blob> => {
     if (!file.type.startsWith('image/')) throw new Error('请上传图片文件');
     if (options?.skipCompression) return file;
     if (file.type === 'image/gif') {
@@ -114,7 +114,7 @@ export const processImageToBlob = async (file: File, options?: { maxWidth?: numb
         const ctx = canvas.getContext('2d');
         if (!ctx) throw new Error('Canvas context error');
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        const mimeType = !options?.forceJpeg && (file.type === 'image/png' || file.type === 'image/webp') ? file.type : 'image/jpeg';
+        const mimeType = options?.outputType ?? (!options?.forceJpeg && (file.type === 'image/png' || file.type === 'image/webp') ? file.type : 'image/jpeg');
         return await new Promise<Blob>((resolve, reject) => canvas.toBlob(
             blob => blob ? resolve(blob) : reject(new Error('图片压缩失败')), mimeType, options?.quality ?? 0.85,
         ));
