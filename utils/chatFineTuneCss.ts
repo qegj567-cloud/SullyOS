@@ -127,7 +127,7 @@ export function buildChatFineTuneCss(theme: ChatFineTuneFields): string {
     if ((theme.chatAvatarPlacement || 'beside') === 'above_group') {
         rules.push(`${TURN_AVATAR} { display: block !important; top: 0 !important; bottom: auto !important; transform: none !important; }`);
         rules.push(`${DEFAULT_AVATAR} { display: none !important; }`);
-        rules.push(`${GROUP_FIRST} { padding-top: calc(var(--sully-chat-message-avatar-size, 36px) + 8px) !important; }`);
+        rules.push(`${GROUP_FIRST} { padding-top: calc(var(--sully-chat-message-avatar-size, 36px) + var(--sully-chat-avatar-time-space, 0px) + 8px) !important; }`);
         rules.push(`${MESSAGE_CONTENT} { margin-left: 0 !important; margin-right: 0 !important; }`);
     }
 

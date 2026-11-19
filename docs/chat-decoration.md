@@ -69,10 +69,12 @@ CSS 编辑器的旧预设及分享格式不迁移。CSS 分类保留 body portal
 
 消息头像通用容器 `.sully-chat-avatar-wrap` 仅在该头像可见时提供，含普通消息头像及组首头像。用它的 `::after` 配合透明背景图绘制外框，设置 `pointer-events:none`；容器保持 overflow:visible，图片形状单独通过 `.sully-chat-message-avatar-img` 的圆角或 clip-path 控制。气泡工坊已有框图是 `.sully-chat-avatar-frame`，可按需隐藏以避免叠加。以上 CSS 随原有 CSS 预设保存、分享和切换，不要求额外配置气泡贴图。
 
-消息时间位置由布局字段 `chatTimestampPosition`（`below` / `top_center`）控制，随角色装扮、整套预设导出与装扮预览保存，内置 `WeChat` 布局预设使用 `top_center`：
+消息时间位置由布局字段 `chatTimestampPosition` 控制，随角色装扮、整套预设导出与装扮预览保存。内置 `WeChat` 布局使用 `top_center`，「银晕」使用 `below_avatar`。
 - `below`（默认）：在同侧连续发言的末条气泡下方 `.sully-chat-timestamp-slot` 中显示 `HH:mm`，与即时对话发送进度 `<ChatSendProgress />` 独立渲染，美化时间样式不影响发送状态提示。
 - `top_center`：按相邻消息绝对时间差（≥ 5 分钟）分段，在每段首条非系统消息上方渲染整行居中的 `.sully-chat-time-divider`（脱离气泡宽度与左滑引用层），跨本地日历日自动附带「昨天 / 月日 / 年月日」（统一使用设备本地时区）；`chatBubbleStyle: 'wechat'`（含内置 `WeChat` 布局预设）默认渲染 4px 小圆角浅灰半透明时间胶囊，其余布局保持无底色灰字以免干扰深色白框。
-两种模式下的时间文字节点均为 `.sully-chat-timestamp`，供白框 CSS 定制字号、配色、胶囊底纹或伪元素装饰。
+- `below_avatar` 在可见的双方头像下居中显示该条消息的收发时间。`.sully-chat-avatar-timestamp` 与头像同处一个槽位，随每条、分组或组首上方头像布局一起移动。独立模块和系统通知沿用其自身布局，发送进度仍在气泡下方。
+
+三种模式共用时间文字节点 `.sully-chat-timestamp`。
 
 已确认过旧版 `v1:decoration` 公告的用户不会重复弹出。装扮面板本身不再挂公告。聊天加号功能按单一顺序列表每页 8 项自动分页，第二页补入相册；各页固定两行，避免第三页内容少导致面板和翻页圆点跳动。
 
@@ -118,7 +120,9 @@ HTML 卡片仍在独立 iframe 沙盒中；白框控制其外壳和排版，不�
 
 回归：`pnpm vitest run utils/chatWhitebox.test.ts utils/chatDecoration.test.ts utils/collaborationMakers.test.ts utils/beautyShare.test.ts`；另做手机宽度下的心象、转账、长卡片、滚动和旧预设验证。
 
-内置白框新增「星轨 · 深空」「星轨 · 雾紫」，在聊天装扮的全部/白框分类和「我的搭配」选择器中展示。入口通过 `utils/builtinWhitebox.ts` 读取 `presets/chat/*.json`，只使用本地静态素材，不写入收藏库或替换用户已有设置；应用沿用角色选择确认流程。两款源文件与构建脚本在 `art/acid-orbit`：依次执行 `build-lace.mjs`、`build.mjs`、`build-builtins.mjs`、`build-preview.mjs` 可同步 CSS、导入文件和内置包。蕾丝为用户提供的 CC0 scallop2（来源见 `art/acid-orbit/SCALLOP-LICENSE.txt`）。
+内置白框「星轨 · 深空」「星轨 · 雾紫」「银晕」在聊天装扮的全部/白框分类和「我的搭配」选择器中展示。入口由 `utils/builtinWhitebox.ts` 注册，使用本地静态素材，应用沿用角色选择确认流程。「银晕」的布局与配色在 `presets/chat/silver-halo.ts`，可导出的完整白框样式在同目录 `silver-halo.css`。图标下的淡星影只作用于加号功能页，发起转账的独立表单通过 `.sully-chat-transfer-compose` 定向适配。
+
+两款星轨的源文件与构建脚本在 `art/acid-orbit`。依次执行 `build-lace.mjs`、`build.mjs`、`build-builtins.mjs`、`build-preview.mjs` 可同步 CSS、导入文件和内置包。蕾丝为用户提供的 CC0 scallop2（来源见 `art/acid-orbit/SCALLOP-LICENSE.txt`）。
 
 ### 舞台隔离与深浅色对比度边界
 

@@ -976,7 +976,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                             onClickCapture={handleActionsClickCapture}
                         >
                           {Array.from({length: actionPageCount}, (_, page) => (
-                            <div key={page} role="group" aria-label={`聊天功能第 ${page + 1} 页`} className={`p-6 grid grid-cols-4 grid-rows-[repeat(2,96px)] gap-x-4 gap-y-8 ${actionsPage === page ? '' : 'hidden'}`}>
+                            <div key={page} role="group" aria-label={`聊天功能第 ${page + 1} 页`} className={`sully-chat-action-page p-6 grid grid-cols-4 grid-rows-[repeat(2,96px)] gap-x-4 gap-y-8 ${actionsPage === page ? '' : 'hidden'}`}>
                               {actionTiles.slice(page * ACTION_PAGE_SIZE, (page + 1) * ACTION_PAGE_SIZE)}
                             </div>
                           ))}

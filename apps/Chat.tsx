@@ -3861,7 +3861,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
              />}
 
             <StreamingVoiceBar state={streamingVoice.state} onStop={stopStreamingVoice} />
-            <div ref={scrollRef} onScroll={handleChatScroll} onClick={() => setShowPanel('none')} className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden overscroll-contain pt-6 pb-6 no-scrollbar" style={{ backgroundImage: activeTheme.type === 'custom' && activeTheme.user.backgroundImage ? 'none' : undefined }}>
+            <div ref={scrollRef} onScroll={handleChatScroll} onClick={() => setShowPanel('none')} className="sully-chat-messages flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden overscroll-contain pt-6 pb-6 no-scrollbar" style={{ backgroundImage: activeTheme.type === 'custom' && activeTheme.user.backgroundImage ? 'none' : undefined }}>
                 <ChatSubtitleLayer enabled={translationEnabled && translationExpanded && translationStyle === 'subtitle'} settings={subtitleSettings}>
                 {windowedFocusMsgId !== null && (
                     <div className="sticky top-0 z-20 flex justify-center pb-2 pointer-events-none">
@@ -3961,6 +3961,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
                             messageSpacing={osTheme.chatMessageSpacing}
                             showTimestamp={osTheme.chatShowTimestamp}
                             timestampPosition={osTheme.chatTimestampPosition}
+                            avatarPlacement={mergedFineTune.chatAvatarPlacement}
                             startsTimeSegment={timeSegmentStarts[i]}
                             suppressEntranceAnimation={suppressEntranceAnimation}
                             onMcdSendCart={handleMcdSendCart}
@@ -4044,6 +4045,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
                                     messageSpacing={osTheme.chatMessageSpacing}
                                     showTimestamp={osTheme.chatShowTimestamp}
                                     timestampPosition={osTheme.chatTimestampPosition}
+                                    avatarPlacement={mergedFineTune.chatAvatarPlacement}
                                     startsTimeSegment={i === 0 && startsNewTimeSegment(lastNonSystemRenderedMessage, { timestamp: Date.now() })}
                                     thinkingChainOptions={thinkingChainOptions}
                                 />

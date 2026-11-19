@@ -21,7 +21,7 @@ describe('buildChatFineTuneCss', () => {
         const css = buildChatFineTuneCss({ chatAvatarPlacement: 'above_group' });
         expect(css).toContain('.sully-chat-turn-avatar-slot { display: block !important;');
         expect(css).toContain('.sully-chat-message-avatar { display: none !important;');
-        expect(css).toContain('padding-top: calc(var(--sully-chat-message-avatar-size, 36px) + 8px) !important;');
+        expect(css).toContain('padding-top: calc(var(--sully-chat-message-avatar-size, 36px) + var(--sully-chat-avatar-time-space, 0px) + 8px) !important;');
         expect(css).toContain('.sully-chat-message-content:not(.sully-html-wrap) { margin-left: 0 !important; margin-right: 0 !important; }');
     });
 

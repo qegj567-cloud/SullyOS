@@ -366,7 +366,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
     return (
         <>
             <Modal 
-                isOpen={modalType === 'transfer'} title="Credits 转账" onClose={() => setModalType('none')}
+                isOpen={modalType === 'transfer'} className="sully-chat-transfer-compose" title="Credits 转账" onClose={() => setModalType('none')}
                 footer={<><button onClick={() => setModalType('none')} className="flex-1 py-3 bg-slate-100 text-slate-700 rounded-2xl">取消</button><button onClick={onTransfer} className="flex-1 py-3 bg-orange-500 text-white rounded-2xl">确认</button></>}
             >
                 <input type="number" value={transferAmt} onChange={e => setTransferAmt(e.target.value)} placeholder="金额" className="w-full bg-slate-100 text-slate-800 placeholder:text-slate-400 rounded-2xl px-5 py-4 text-lg font-bold" autoFocus />
