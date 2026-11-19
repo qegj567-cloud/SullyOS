@@ -1,5 +1,6 @@
 
-import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { useLocalBackHandler } from '../../hooks/useLocalBackHandler';
 import { CharacterProfile, ScheduleSlot, TheaterLine } from '../../types';
 import TokenImg from '../os/TokenImg';
 import { useBlobRefUrl } from '../../utils/blobRef';
@@ -9,6 +10,7 @@ interface TheaterPlayerProps {
     slot: ScheduleSlot | null;
     lines: TheaterLine[] | null;   // null / 空 = 还在生成
     isGenerating: boolean;
+    error?: string;
     onReplay: () => void;          // 重演（重新生成）
     // 把这段演出作为卡片留痕到聊天。两态都留痕、角色都知道自己干了啥；
     // exposed=true → TA 会发现你在偷看；exposed=false → TA 不知道你看了。
@@ -35,8 +37,15 @@ function beatClock(startTime: string | undefined, index: number): string {
 }
 
 const TheaterPlayer: React.FC<TheaterPlayerProps> = ({
-    character, slot, lines, isGenerating, onReplay, onSendCard, onClose,
+    character, slot, lines, isGenerating, error, onReplay, onSendCard, onClose,
 }) => {
+    const dialog = useRef<HTMLDialogElement>(null);
+    useLayoutEffect(() => {
+        const element = dialog.current;
+        element?.showModal();
+        return () => element?.close();
+    }, []);
+    useLocalBackHandler(() => { onClose(); return true; }, 70);
     const accent = `hsl(${HUE}, 75%, 72%)`;
     const charName = character?.name || '角色';
     // 背景那层是 CSS 背景图，没有 <img> 帮忙解析，在组件顶层先把令牌解开
@@ -109,6 +118,8 @@ const TheaterPlayer: React.FC<TheaterPlayerProps> = ({
     const headTime = useMemo(() => beatClock(slot?.startTime, Math.max(0, (finished ? total : shownCount) - 1)), [slot?.startTime, finished, total, shownCount]);
 
     return (
+        <dialog ref={dialog} aria-label="日程小剧场" className="m-0 w-full h-full max-w-none max-h-none p-0 border-0"
+            onCancel={event => { event.preventDefault(); onClose(); }}>
         <div
             className="fixed inset-0 z-[120] flex flex-col overflow-hidden text-white"
             style={{ background: `radial-gradient(130% 90% at 50% -5%, hsl(${HUE},42%,15%), hsl(${HUE},48%,7%) 62%, #050409)` }}
@@ -177,7 +188,7 @@ const TheaterPlayer: React.FC<TheaterPlayerProps> = ({
 
                 {/* 同步状态副标题 */}
                 <p className="text-[11px] mt-2 ml-12" style={{ color: `hsl(${HUE},45%,68%)`, opacity: 0.75 }}>
-                    {isGenerating || !lines
+                    {error ? '同步中断' : isGenerating || !lines
                         ? '⟶ 正在同步 TA 的行为轨迹…'
                         : finished
                             ? `✦ 同步完成 · 共截获 ${total} 帧行为`
@@ -239,7 +250,10 @@ const TheaterPlayer: React.FC<TheaterPlayerProps> = ({
                     className="flex-1 min-w-0 overflow-y-auto no-scrollbar pr-0.5"
                     onClick={handleAdvance}
                 >
-                    {(isGenerating || !lines) ? (
+                    {error ? <div className="h-full flex flex-col items-center justify-center gap-4 text-center px-4">
+                        <p role="alert" className="text-sm">{error}</p>
+                        <button type="button" className="rounded-xl border border-white/30 px-4 py-2" onClick={onReplay}>重试</button>
+                    </div> : (isGenerating || !lines) ? (
                         <div className="h-full flex flex-col items-center justify-center gap-4 text-center px-4">
                             <div className="relative w-11 h-11">
                                 <div className="absolute inset-0 rounded-full border-2 border-white/10" />
@@ -275,7 +289,7 @@ const TheaterPlayer: React.FC<TheaterPlayerProps> = ({
 
             {/* ===== 底部控制 ===== */}
             <div className="relative flex-shrink-0 px-4 pt-2 pb-5">
-                {(!isGenerating && lines) && (
+                {(!error && !isGenerating && lines) && (
                     !finished ? (
                         <div className="flex justify-center">
                             <button
@@ -328,6 +342,7 @@ const TheaterPlayer: React.FC<TheaterPlayerProps> = ({
                 )}
             </div>
         </div>
+        </dialog>
     );
 };
 

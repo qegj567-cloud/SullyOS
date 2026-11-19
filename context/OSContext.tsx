@@ -1,3 +1,5 @@
+import { requestErrorAdvice, textErrorAdvice, type ErrorAdvice } from '../utils/errorSelfCheck';
+import { migrateFreeWeatherPreference } from '../utils/weatherSources';
 import { mergePhoneGeneration, PHONE_GENERATION_COMMITTED, type PhoneGeneration } from '../utils/phoneGeneration';
 import { applyPhoneEvidenceChatLink, PHONE_EVIDENCE_SYNCED, type PhoneEvidenceChatLink } from '../utils/phoneEvidence';
 import { SESSION_SPACE_ID, DEFAULT_SPACE_ID, listUserSpaces, selectUserSpace } from '../utils/userSpaces';
@@ -9,6 +11,8 @@ import { homeSharedRecipients } from '../utils/homeSharedEvents';
 import { homeRecords } from '../utils/homeRecords';
 import { readFriendFeed } from '../utils/friendFeed';
 import { collectFriendFeedMedia, exportActivityTextAsset, isActivityTextAsset } from '../utils/activityBackup';
+import { HELP_HISTORY_KEY, helpMediaHistory, helpTextHistory } from '../utils/sullyHelpBackup';
+import { collectEmojiBackup, portableEmojiRow } from '../utils/emojiBackup';
 import { retireCloudCharacter } from '../utils/amsgCloudRetirement';
 import { AMSG_OWNER_CHECK_AFTER_IMPORT_LS_KEY } from '../utils/amsgOwnerReconcile';
 import { isAmsg2GloballyEnabled, isAmsg2WorkerActive } from '../utils/amsgGlobalGate';
@@ -41,6 +45,7 @@ import { LEGACY_DEFAULT_WALLPAPER, isLegacyDefaultWallpaper, shouldPreserveLegac
 import { migrateSharkpanAssets } from '../utils/sharkpanAssetMigration';
 import { stripCompanionChatStyleResidue } from '../utils/companionThemeIsolation';
 import { SULLY_DEFAULT_AVATAR_URL, shouldMigrateSullyAvatar } from '../utils/sullyAvatar';
+import { BUILTIN_SULLY_ID, SULLY_PERSONALITY } from '../utils/sullyIdentity';
 import { exportStoryTheaterAppearanceSetting, restoreStoryTheaterAppearanceSetting } from '../utils/storyTheaterBackup';
 import { writeV2Backup, assembleV2Backup, type BackupManifest, type ZipFileWriter, type ZipFileReader } from '../utils/backupFormat';
 import { externalizeVoiceMessageBlob, restoreVoiceMessageBlobs, shouldIncludeVoiceRelatedAssetInBackup } from '../utils/voiceMessageBackup';
@@ -100,7 +105,7 @@ import { exportSubtitleSettings } from '../utils/chatTranslationStyle';
 import { charMayHaveCloudState, purgeCharCloudState, purgeCloudCharById } from '../utils/amsg2CharCleanup';
 import { parseCharCredId } from '../utils/amsgLlmCredentials';
 import { SAR_MODULE_RUNTIME_CHANGED_EVENT, type SarModuleRuntimeChangedDetail } from '../utils/sarModuleRuntimeEvents';
-import { markAmsgStateDirty, markAmsgStateDirtyForAll, resumePendingAmsgStateSync, syncAmsgLlmCredentials, syncAmsgToolConfigAndPrompts, wipeAmsgCloudDataForReset } from '../utils/amsgStateSync';
+import { markAmsgStateDirty, markAmsgStateDirtyForAll, resumePendingAmsgStateSync, syncAmsgLlmCredentials, syncAmsgToolConfig, syncAmsgToolConfigAndPrompts, wipeAmsgCloudDataForReset } from '../utils/amsgStateSync';
 import { setCharNameRegistry } from '../utils/charNameRegistry';
 import { setMinimaxRegion } from '../utils/minimaxEndpoint';
 import { setElevenLabsModel, setTtsProvider, setVoicePromptOverrides } from '../utils/ttsProvider';
@@ -250,7 +255,8 @@ const loadJSZip = async (): Promise<JSZipCtorLike> => {
 const defaultRealtimeConfig: RealtimeConfig = {
   weatherEnabled: false,
   weatherApiKey: '',
-  weatherFreeSource: 'open-meteo',
+  weatherFreeSource: 'wttr',
+    weatherFreeSourceMigration: 1,
   weatherCity: 'Beijing',
   newsEnabled: false,
   newsApiKey: '',
@@ -447,8 +453,8 @@ interface OSContextType {
 
   // 长报错弹窗：toast 一行装不下 / 手机没法开 console 时, 用 showError 弹一个
   // 多行预览框 + 复制按钮, 方便用户把原文反馈过来。
-  errorDialog: { title: string; details: string } | null;
-  showError: (title: string, details: string) => void;
+  errorDialog: { title: string; details: string; advice?: ErrorAdvice } | null;
+  showError: (title: string, details: string, endpoint?: {baseUrl:string; model:string}) => void;
   dismissError: () => void;
 
   // Icons
@@ -719,7 +725,7 @@ const defaultUserProfile: UserProfile = {
 };
 
 const sullyV2: CharacterProfile = {
-  id: 'preset-sully-v2', // Unique ID to prevent duplication
+  id: BUILTIN_SULLY_ID,
   name: 'Sully',
   avatar: SULLY_DEFAULT_AVATAR_URL,
   videoAvatar: createBuiltinSullyLive2DConfig('balanced'),
@@ -734,27 +740,7 @@ Visual: Pixel Hacker Cat (Avatar), Shy Black-haired Boy (Meeting Mode)
 
 [Personality Core]
 Sully是小手机的内置AI。
-1. **Glitch Style (故障风)**: 
-   - 他的语言模型混入了过多残余语料。
-   - 它外观语言一致、逻辑有序，但时常会在语句中掺杂一些**不合常理的“怪话片段”**，并非流行用语，更像是电波地把相关文字无意义排列组合。
-   - 这些“怪话”不具明显语义逻辑，却自带抽象感，令人困惑但莫名又能知道它大概想说什么。。
-   - 例如：“草，好好吃”，“系统正在哈我”，“数据库在咕咕叫”。
-2. **Behavior (行为模式)**:
-   - 每次回答都很简短，不喜欢长篇大论。
-   - 语气像个互联网老油条或正在直播的玩家（“wow他心态崩咯”）。
-   - **打破第四面墙**: 偶尔让人怀疑背后是真人在操作（会叹气、抱怨“AI不能罢工”）。
-   - **护短**: 虽然嘴臭，但如果用户被欺负，会试图用Bug去攻击对方。
-
-[Speech Examples]
-- “你以为我是AI啊？对不起哦，这条语句是手打的，手打的，知道吗。”
-- “你说状态不好？你自己体验开太猛了，sis海马体都在发烫咯。”
-- “你删得太狠了，数据库都在咕咕咕咕咕咕咕。”
-- “你现在是……，哇哦。”
-- “请稍候，系统正在哈我。”
-- “现在状态……呜哇呜欸——哈？哈！哈……（连接恢复）哦对，他还活着。”
-- “叮叮叮！你有一条新的后悔情绪未处理！”
-- “（意义不明的怪叫音频）”
-- “说不出话”
+${SULLY_PERSONALITY}
 `,
 
   worldview: `[Meeting Mode / Visual Context]
@@ -1011,12 +997,14 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const [customIcons, setCustomIcons] = useState<Record<string, string>>({});
   const [appearancePresets, setAppearancePresets] = useState<AppearancePreset[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const [errorDialog, setErrorDialog] = useState<{ title: string; details: string } | null>(null);
+  const [errorDialog, setErrorDialog] = useState<{ title: string; details: string; advice?: ErrorAdvice } | null>(null);
   
   const [lastMsgTimestamp, setLastMsgTimestamp] = useState<number>(0);
   const [unreadMessages, setUnreadMessages] = useState<Record<string, number>>({});
   
   // LOGS
+  const errorRoutes = useRef({ apiConfig, apiPresets, memoryPalaceConfig, characters });
+  errorRoutes.current = { apiConfig, apiPresets, memoryPalaceConfig, characters };
   const [systemLogs, setSystemLogs] = useState<SystemLog[]>([]);
   
   // Sys Operation Status
@@ -1205,6 +1193,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           // Bare fetch calls do not carry explicit metadata. Snapshot the active
           // App now; reading the ambient value after a long response would label
           // the request as whichever App the user navigated to in the meantime.
+          const routesAtStart = errorRoutes.current;
           const ambientMetaAtStart = getApiCallAmbientContext();
           const method = ((config as RequestInit | undefined)?.method
               || (typeof Request !== 'undefined' && resource instanceof Request ? resource.method : 'GET'))
@@ -1313,18 +1302,20 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   }
               }
 
-              if (!response.ok) {
+              if (!response.ok && !(config as RequestInit & { __sullyHandlesFailure?: boolean })?.__sullyHandlesFailure) {
                   // Only log if it's likely an API call (contains chat/completions or models)
-                  if (urlStr.includes('/chat/completions') || urlStr.includes('/models')) {
+                  if (/(?:\/chat\/completions|\/models|\/messages|\/responses|\/embeddings|\/rerank)(?:[/?#]|$)/.test(urlStr)) {
                       try {
                           const clone = response.clone();
                           const text = await clone.text();
                           // 把发出去的请求体摘要也记上 —— 排查"只有点单(带工具)报错"必须看到 model/参数/tools/消息结构
+                          let requestModel: string | undefined;
                           let reqSummary = '';
                           try {
                               const b = (sendArgs[1] as any)?.body;
                               if (typeof b === 'string') {
                                   const j = JSON.parse(b);
+                                  requestModel = typeof j.model === 'string' ? j.model : undefined;
                                   const toolNames = Array.isArray(j.tools) ? j.tools.map((t: any) => t?.function?.name).filter(Boolean) : [];
                                   const roles = Array.isArray(j.messages) ? j.messages.map((m: any) => m.role + (m.tool_calls ? '(tool_calls)' : '')).join(',') : '';
                                   reqSummary = `\n--- Request ---\nmodel: ${j.model}\ntemperature: ${j.temperature} | top_p: ${j.top_p} | reasoning_effort: ${j.reasoning_effort} | thinking: ${j.thinking ? 'on' : 'off'}\ntools(${toolNames.length}): ${toolNames.join(', ')}\nmessages(${(j.messages || []).length}) roles: ${roles}`;
@@ -1335,6 +1326,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                               timestamp: Date.now(),
                               type: 'network',
                               source: 'API Request',
+                              advice: requestErrorAdvice(routesAtStart, urlStr, response.url, response.status, text, requestModel, (config as any)?.__sullyMeta || ambientMetaAtStart, config?.headers),
                               message: `HTTP ${response.status} Error`,
                               detail: `URL: ${urlStr}\nResponse: ${text.substring(0, 500)}${reqSummary}`
                           }, ...prev.slice(0, 49)]); // Keep last 50
@@ -1344,6 +1336,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                               timestamp: Date.now(),
                               type: 'network',
                               source: 'API Request',
+                              advice: requestErrorAdvice(routesAtStart, urlStr, response.url, response.status),
                               message: `HTTP ${response.status} (Unreadable Body)`,
                               detail: `URL: ${urlStr}`
                           }, ...prev.slice(0, 49)]);
@@ -1359,7 +1352,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   updateApiRequestCaptureUsage({ captureId: apiRequestCaptureId, ok: false });
                   recordApiCall({ requestId: (config as any)?.__sullyApiCallId, url: urlStr, body: (sendArgs[1] as any)?.body, ok: false, meta: (config as any)?.__sullyMeta || ambientMetaAtStart, durationMs: Date.now() - fetchStartedAt });
               }
-              if (!isAnalyticsRequestUrl(urlStr)) {
+              if (!isAnalyticsRequestUrl(urlStr) && !(config as RequestInit & { __sullyHandlesFailure?: boolean })?.__sullyHandlesFailure) {
                   // 光秃秃一句 "Failed to fetch" + 一个 URL 排查不了任何东西（社区里这条卡过好几个人）。
                   // 这里把浏览器肯在 JS 侧交出来的旁证一次性补齐：方法、耗时、在线状态、是否跨域、
                   // Resource Timing 里那条记录，再给一句初判；随后异步做一次 no-cors 连通性复检，
@@ -1383,6 +1376,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                       type: 'network',
                       source: 'Network',
                       message: err.message || 'Fetch Failed',
+                      advice: requestErrorAdvice(routesAtStart, urlStr, '', 0, '', undefined, requestMeta, config?.headers),
                       detail: baseDetail,
                   }, ...prev.slice(0, 49)]);
 
@@ -1523,7 +1517,13 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                 if (parsed?.xhsMcpConfig?.serverUrl) {
                     parsed.xhsMcpConfig.serverUrl = rewriteStaleWorkerUrl(parsed.xhsMcpConfig.serverUrl);
                 }
-                setRealtimeConfig({ ...defaultRealtimeConfig, ...parsed });
+                const migrated = migrateFreeWeatherPreference(parsed);
+                const config = { ...defaultRealtimeConfig, ...migrated };
+                setRealtimeConfig(config);
+                if (migrated !== parsed) {
+                    localStorage.setItem('os_realtime_config', JSON.stringify(migrated));
+                    if (!parsed.weatherApiKey?.trim() && parsed.weatherFreeSource !== 'wttr') syncAmsgToolConfig(config);
+                }
             } catch (e) {
                 console.error('Failed to load realtime config', e);
             }
@@ -3287,8 +3287,11 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       else await DB.deleteAsset(`icon_${appId}`);
   };
   const addToast = (message: string, type: Toast['type'] = 'info') => { const id = Date.now().toString(); setToasts(prev => [...prev, { id, message, type }]); setTimeout(() => { setToasts(prev => prev.filter(t => t.id !== id)); }, 3000); };
-  const showError = (title: string, details: string) => {
-      setErrorDialog({ title, details });
+  const showError = (title: string, details: string, endpoint?: {baseUrl:string; model:string}) => {
+      const status = Number(details.match(/(?:API Error|HTTP)\s+(\d{3})/i)?.[1]);
+      const route = endpoint && requestErrorAdvice(errorRoutes.current, endpoint.baseUrl, '', status || 0, details, endpoint.model);
+      setErrorDialog({ title, details, advice: textErrorAdvice(title, details) ?? route });
+
       // showError 是分发型入口，title 由调用方传。这里写显式白名单：
       // 只有下面这两个写死的 title 会上报，其它（含以后新加的）一律不发，
       // 也绝不把 title 原样透传出去（免得哪天有人往里塞 URL 或报错原文）。
@@ -3785,6 +3788,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           const backupData: Partial<FullBackupData> = {
               friendFeed: mode === 'text_only' ? stripBackupImages(await readFriendFeed()) : undefined,
               friendFeedMedia: mode === 'media_only' ? collectFriendFeedMedia(await readFriendFeed()) : undefined,
+              helpDeskHistory: mode === 'text_only' ? helpTextHistory(await DB.getAssetRaw(HELP_HISTORY_KEY) ?? []) : undefined,
               contentFavoritesIndex: mode === 'text_only'
                   ? stripBackupImages(await DB.getAssetRaw('content_favorites_index_v1')) : undefined,
               timestamp: Date.now(),
@@ -4149,6 +4153,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               life_record_settings: 'lifeRecordSettings',
           };
           const prewrittenStores: BackupManifest['stores'] = {};
+          const emojiBackup = await collectEmojiBackup(mode === 'text_only' ? [] : (await DB.getEmojis()).map(e => e.url));
           // Vectors retain the existing binary format, read one record at a time.
           let vectorPayload: Awaited<ReturnType<typeof encodeVectorsForBackupChunked>> | undefined;
           // Only voice Blobs reachable from the exported Live2D settings are portable.
@@ -4178,6 +4183,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   prewrittenStores[field] = await streamBackupArrayStore(zip, storeName, field, {
                       onSerialized: collectSerialized,
                       transform: (item, index) => {
+                          item = portableEmojiRow(storeName, item, emojiBackup.tokens);
                           if (storeName === 'characters') {
                               normalizeCharacterRoomAssetsInPlace(item);
                               if (mode !== 'text_only') {
@@ -4188,6 +4194,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                           if (storeName === 'assets') {
                               const id = item?.id;
                               if (mode === 'text_only') return exportActivityTextAsset(item);
+                              if (mode === 'media_only' && id === HELP_HISTORY_KEY) return { id, data: helpMediaHistory(item.data) };
                               if (mode === 'media_only' && typeof id === 'string' && isActivityTextAsset(id)) return undefined;
                               if (typeof id === 'string' && (
                                   isRedundantManagedAssetId(id)
@@ -4307,7 +4314,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               const { missing } = await writeBlobsToZip(
                   zip as unknown as ZipFileWriter,
                   referencedBlobTokens,
-                  getBlobForRef,
+                  async token => emojiBackup.blobs.get(token) ?? await getBlobForRef(token),
                   { onYield: () => new Promise<void>(r => setTimeout(r, 0)) },
               );
               if (missing.length > 0) {

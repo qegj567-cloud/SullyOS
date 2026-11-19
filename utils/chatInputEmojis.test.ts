@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { Blob as CloneableBlob } from 'node:buffer';
 import ChatInputArea from '../components/chat/ChatInputArea';
 import type { Emoji } from '../types';
 import { DB } from './db';
@@ -52,6 +53,8 @@ async function render(emojis: Emoji[]) {
 }
 
 beforeEach(() => {
+    // fake-indexeddb uses Node's structuredClone; jsdom's Blob loses its bytes there.
+    vi.stubGlobal('Blob', CloneableBlob);
     vi.clearAllMocks();
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -61,6 +64,7 @@ afterEach(() => {
     act(() => root.unmount());
     container.remove();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
 });
 
 describe('表情面板的记录身份与图片复用', () => {

@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { DB } from './db';
+import { saveCabinetNoteRevision } from './vrWorld/sarCabinetNoteEdit';
 import {
     buildSARCharacterCabinetTurn,
     createSARCharacterCabinetNote,
@@ -56,5 +58,19 @@ describe('SAR 角色柜子自由活动', () => {
         const parsed = parseSARCharacterCabinetOutput('他变成猫以后，真的被一根黄瓜吓上了吊灯。');
         expect(parsed?.story).toContain('黄瓜');
         expect(parsed?.notes).toContain('黄瓜');
+    });
+    it('重写只更新同一张活动卡的随笔，过期回复或已删除的卡不能写回', async () => {
+        const scenario = rollSARCharacterCabinetScenario(actor, [actor, other], user, () => 0.99);
+        const parsed = { title: '雨天', activity: '看雨', story: '同一段剧情', notes: '初稿', highlight: '雨停了' };
+        const note = createSARCharacterCabinetNote(actor, scenario, parsed, 12345);
+        const content = '剧情：同一段剧情\n随笔：初稿\n高光：雨停了';
+        const id = await DB.saveMessage({ charId: actor.id, role: 'assistant', type: 'vr_card', content, metadata: { sarCabinetNote: note } });
+        try {
+            await saveCabinetNoteRevision(id, note, '新稿');
+            expect(await DB.getMessageById(id)).toMatchObject({ content: content.replace('初稿', '新稿'), metadata: { sarCabinetNote: { ...note, notes: '新稿' } } });
+            await expect(saveCabinetNoteRevision(id, note, '晚到的旧稿')).rejects.toThrow();
+        } finally { await DB.deleteMessage(id); }
+        await expect(saveCabinetNoteRevision(id, note, '已删除')).rejects.toThrow();
+        expect(await DB.getMessageById(id)).toBeNull();
     });
 });

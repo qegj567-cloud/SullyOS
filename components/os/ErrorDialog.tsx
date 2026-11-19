@@ -5,12 +5,13 @@ interface ErrorDialogProps {
     isOpen: boolean;
     title: string;
     details: string;
+    advice?: import('../../utils/errorSelfCheck').ErrorAdvice;
     onClose: () => void;
 }
 
 // 全局错误弹窗：toast 一行装不下的长报错走这里 —— 多行 monospace 预览框 + 复制按钮,
 // 手机上没法开 console 时, 用户能直接看清、长按复制原文反馈过来。
-const ErrorDialog: React.FC<ErrorDialogProps> = ({ isOpen, title, details, onClose }) => {
+const ErrorDialog: React.FC<ErrorDialogProps> = ({ isOpen, title, details, advice, onClose }) => {
     const [copied, setCopied] = useState(false);
 
     if (!isOpen) return null;
@@ -51,14 +52,16 @@ const ErrorDialog: React.FC<ErrorDialogProps> = ({ isOpen, title, details, onClo
                             </svg>
                         </div>
                         <div className="flex-1 min-w-0">
-                            <h3 className="text-base font-bold text-slate-800 leading-6 break-words">{title}</h3>
+                            <h3 className="text-base font-bold text-slate-800 leading-6 break-words">{advice?.title ?? title}</h3>
                         </div>
                     </div>
                 </div>
                 <div className="px-5 pb-3">
+                    {advice && <p className="mb-3 text-sm">{advice.action}</p>}
+                    <details key={details} open={advice ? undefined : true}><summary className="cursor-pointer text-xs text-slate-500">技术详情</summary>
                     <pre className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-[11px] leading-relaxed text-slate-700 whitespace-pre-wrap break-words max-h-[40vh] overflow-y-auto font-mono select-text">
 {details}
-                    </pre>
+                    </pre></details>
                 </div>
                 <div className="bg-slate-50 px-5 py-3 flex gap-2 justify-end border-t border-slate-100">
                     <button

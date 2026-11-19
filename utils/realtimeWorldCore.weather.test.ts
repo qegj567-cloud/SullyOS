@@ -18,19 +18,19 @@ beforeEach(() => {
 describe('两个免费源的选择、测试与自动切换', () => {
     it('免费源 1 的天气域名连不上时，预览自动使用源 2 并标明实际来源', async () => {
         fetchMock.mockResolvedValueOnce(json(geo)).mockRejectedValueOnce(new TypeError('Failed to fetch')).mockResolvedValueOnce(json(wttr));
-        expect(await fetchWeatherOrThrow('成都')).toMatchObject({ temp: 15, feelsLike: 13, humidity: 73, description: '局部多云', city: '成都', source: 'wttr', fallbackFrom: 'open-meteo' });
+        expect(await fetchWeatherOrThrow('成都', '', 'open-meteo')).toMatchObject({ temp: 15, feelsLike: 13, humidity: 73, description: '局部多云', city: '成都', source: 'wttr', fallbackFrom: 'open-meteo' });
         expect(fetchMock.mock.calls.map(call => new URL(call[0]).hostname)).toEqual(['geocoding-api.open-meteo.com', 'api.open-meteo.com', 'wttr.in']);
     });
 
     it('源 1 的城市接口也不可达时，源 2 独立按城市查询', async () => {
         fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch')).mockResolvedValueOnce(json(wttr));
-        expect((await fetchWeatherWithFallback('成都'))?.source).toBe('wttr');
+        expect((await fetchWeatherWithFallback('成都', '', 'open-meteo'))?.source).toBe('wttr');
         expect(new URL(fetchMock.mock.calls[1][0]).pathname).toBe('/' + encodeURIComponent('成都'));
     });
 
     it('选择源 2 后不先碰 Open-Meteo；源 2 的天气代码转换为中文', async () => {
         fetchMock.mockResolvedValueOnce(json(wttr));
-        expect(await fetchWeatherOrThrow('London', '', 'wttr')).toMatchObject({ city: 'London', source: 'wttr', description: '局部多云' });
+        expect(await fetchWeatherOrThrow('London')).toMatchObject({ city: 'London', source: 'wttr', description: '局部多云' });
         expect(fetchMock).toHaveBeenCalledTimes(1);
         expect(fetchMock.mock.calls[0][0]).toBe('https://wttr.in/London?format=j1&lang=zh');
     });
@@ -56,8 +56,8 @@ describe('两个免费源的选择、测试与自动切换', () => {
 
     it('全部失败时预览保留两源原因，聊天返回 null', async () => {
         fetchMock.mockImplementation(() => Promise.resolve(json({}, 503)));
-        await expect(fetchWeatherOrThrow('成都')).rejects.toThrow(/Open-Meteo.*503.*wttr.in.*503/);
-        expect(await fetchWeatherWithFallback('成都')).toBeNull();
+        await expect(fetchWeatherOrThrow('成都', '', 'open-meteo')).rejects.toThrow(/Open-Meteo.*503.*wttr.in.*503/);
+        expect(await fetchWeatherWithFallback('成都', '', 'open-meteo')).toBeNull();
         expect(fetchMock).toHaveBeenCalledTimes(4);
     });
 
@@ -65,7 +65,7 @@ describe('两个免费源的选择、测试与自动切换', () => {
         vi.useFakeTimers();
         fetchMock.mockImplementationOnce(() => new Promise(resolve => setTimeout(() => resolve(json(geo)), 3_000)))
             .mockImplementationOnce(() => new Promise(() => {})).mockResolvedValueOnce(json(wttr));
-        const pending = fetchWeatherOrThrow('成都');
+        const pending = fetchWeatherOrThrow('成都', '', 'open-meteo');
         await vi.advanceTimersByTimeAsync(4_000);
         expect((await pending).source).toBe('wttr');
         expect(fetchMock.mock.calls[1][1].signal.aborted).toBe(true);
@@ -75,7 +75,7 @@ describe('两个免费源的选择、测试与自动切换', () => {
     it('两个源都挂起也会在后台总预算内结束', async () => {
         vi.useFakeTimers();
         fetchMock.mockImplementation(() => new Promise(() => {}));
-        const pending = fetchWeatherWithFallback('成都');
+        const pending = fetchWeatherWithFallback('成都', '', 'open-meteo');
         await vi.advanceTimersByTimeAsync(8_000);
         expect(await pending).toBeNull();
         expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -172,7 +172,7 @@ describe('免费天气实际失败路径', () => {
 
     it('只有空格的 Key 视为留空，不请求 OWM', async () => {
         fetchMock.mockResolvedValueOnce(json(geo)).mockResolvedValueOnce(json(meteo));
-        expect(await fetchWeatherWithFallback(' 北京 ', '  ')).not.toBeNull();
+        expect(await fetchWeatherWithFallback(' 北京 ', '  ', 'open-meteo')).not.toBeNull();
         expect(fetchMock.mock.calls.some(call => String(call[0]).includes('openweathermap'))).toBe(false);
     });
 
@@ -186,7 +186,7 @@ describe('免费天气实际失败路径', () => {
         vi.useFakeTimers();
         fetchMock.mockImplementationOnce(() => new Promise(() => {}))
             .mockResolvedValueOnce(json(geo)).mockResolvedValueOnce(json(meteo));
-        const pending = fetchWeatherWithFallback('北京', 'key');
+        const pending = fetchWeatherWithFallback('北京', 'key', 'open-meteo');
         await vi.advanceTimersByTimeAsync(8_000);
         expect((await pending)?.description).toBe('小雨');
         expect(fetchMock.mock.calls[0][1].signal.aborted).toBe(true);

@@ -102,6 +102,7 @@ export function collectAppearance(
     theme: OSTheme,
     activeChar: CharacterProfile | undefined,
 ): Record<string, string> {
+    const timePosition = (activeChar?.chatFineTune?.enabled !== false && activeChar?.chatAppearance?.chatTimestampPosition) || theme.chatTimestampPosition;
     return {
         // ── 桌面 ──
         桌面皮肤: presetOrCustom(theme.skin ?? 'default', ['default','animalcrossing','mobilegame','tamagotchi','companion','homely']),
@@ -123,6 +124,7 @@ export function collectAppearance(
         输入栏样式: theme.chatInputStyle ?? 'default',
         聊天背景: theme.chatBackgroundStyle ?? 'plain',
         消息间距: theme.chatMessageSpacing ?? 'default',
+        消息时间位置: enumOrCustom(timePosition, ['below', 'below_avatar', 'top_center'], 'below'),
         时间戳显示: theme.chatShowTimestamp ?? 'always',
         顶栏对齐: theme.chatHeaderAlign ?? 'left',
         顶栏密度: theme.chatHeaderDensity ?? 'default',

@@ -1,4 +1,6 @@
 import EmojiExportDialog from './EmojiExportDialog';
+import EmojiHealthDialog from './EmojiHealthDialog';
+import EmojiImage from './EmojiImage';
 import ChatCamera from './ChatCamera';
 import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { ShareNetwork, Trash, Plus, Smiley, PaperPlaneTilt, Lightning, Money, BookOpenText, GearSix, Image, Lock, ArrowsClockwise, CalendarBlank, ForkKnife, Coffee, Code, Brain, PencilSimple, BellSimpleRinging, Alarm, ChatCircleDots, Sparkle, FadersHorizontal, LinkSimple, Star, Briefcase } from '@phosphor-icons/react';
@@ -46,6 +48,9 @@ interface ChatInputAreaProps {
     emojiSuggestionsEnabled?: boolean;
     /** Visible library across all categories; also invalidates removed/replaced cached thumbnails. */
     suggestionEmojis?: Emoji[];
+    /** Only the private chat editor manages the complete, space-local library. */
+    fullEmojiLibrary?: Emoji[];
+    onRemoveInvalidEmojis?: (items: Emoji[]) => Promise<number>;
     /** 以下会话切换/主题 props 仅私聊使用；群聊等复用方不传（'chars' 面板不会被打开） */
     characters?: CharacterProfile[];
     activeCharacterId?: string;
@@ -91,7 +96,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     sendButtonGenerates = false, enterToSend = true, onGenerate,
     autoReplyEnabled = false, autoReplySeconds = null, onCancelAutoReply, onInputFocusChange,
     emojis, characters = [], activeCharacterId = '', onCharSelect = () => {},
-    emojiSuggestionsEnabled = false, suggestionEmojis = emojis,
+    emojiSuggestionsEnabled = false, suggestionEmojis = emojis, fullEmojiLibrary, onRemoveInvalidEmojis,
     unreadMessages = {},
     customThemes = [], onUpdateTheme = () => {}, onRemoveTheme = () => {}, activeThemeId = '',
     actionsContent,
@@ -113,6 +118,9 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     const chatImageInputRef = useRef<HTMLInputElement>(null);
     const [cameraOpen, setCameraOpen] = useState(false);
     const [exportEmojis, setExportEmojis] = useState<Emoji[] | null>(null);
+    const [scanItems, setScanItems] = useState<Emoji[] | null>(null);
+    const [emojiRevision, setEmojiRevision] = useState(0);
+    const refreshThumbnails = React.useCallback(() => setEmojiRevision(n => n + 1), []);
     useEffect(() => setCameraOpen(false), [activeCharacterId]);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const inputBarRef = useRef<HTMLDivElement>(null);
@@ -683,6 +691,8 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
             <div className={`fixed inset-0 z-[-1] ${isPixelStyle ? 'bg-[#eadfce]/70 backdrop-blur-[2px]' : isDiscordStyle ? 'bg-slate-950/70 backdrop-blur-[2px]' : 'bg-white/60 backdrop-blur-[2px]'}`} />
         )}
         {exportEmojis && <EmojiExportDialog emojis={exportEmojis} onClose={() => setExportEmojis(null)} />}
+        {scanItems && onRemoveInvalidEmojis && <EmojiHealthDialog emojis={scanItems} onRemove={onRemoveInvalidEmojis}
+            onClose={() => setScanItems(null)} onRefreshed={refreshThumbnails} />}
         {/* 选图 input 常驻在输入栏外：面板收起时不会随条件分支卸载而丢失点击或回传事件，也不改变 .sully-chat-inputbar 子节点序号。 */}
         <input type="file" ref={chatImageInputRef} className="hidden" accept="image/*" onChange={(e) => handleImageChange(e, 'chat')} />
         {cameraOpen && <ChatCamera character={characters.find(c => c.id === activeCharacterId)} onClose={() => setCameraOpen(false)} onCapture={onImageSelect} onGallery={() => { chatImageInputRef.current?.click(); setCameraOpen(false); }} />}
@@ -705,7 +715,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                                     textareaRef.current?.focus({ preventScroll: true });
                                 }}
                                 className="flex w-16 shrink-0 flex-col items-center gap-1 rounded-xl p-1 hover:bg-slate-400/10 active:scale-95 transition-transform motion-reduce:transition-none">
-                                <TokenImg value={emoji.url} alt={emoji.name} decoding="async" className="h-12 w-12 object-contain" />
+                                <EmojiImage value={emoji.url} alt={emoji.name} decoding="async" className="h-12 w-12 object-contain" />
                                 <span className="w-full truncate text-center text-[10px]">{emoji.name}</span>
                             </button>
                         ))}
@@ -897,6 +907,11 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                                         <button onClick={() => onPanelAction('emoji-import')} className={emojiImportTileClass}>+</button>
                                     )}
                                     {emojiSelectionMode && <button onClick={() => setExportEmojis([...selectedEmojis])} disabled={!selectedEmojis.length} aria-label="下载选中的表情" className={`${emojiImportTileClass} text-xs disabled:opacity-40`}>下载原图</button>}
+                                    {emojiSelectionMode && fullEmojiLibrary && onRemoveInvalidEmojis && <button
+                                        type="button" aria-label="刷新与排查全部表情包" onClick={() => { trackEvent('刷新排查表情包'); setScanItems(fullEmojiLibrary); }}
+                                        className={`${emojiImportTileClass} flex-col gap-1 !text-xs`}>
+                                        <ArrowsClockwise className="h-5 w-5" />刷新排查
+                                    </button>}
                                     {retainedEmojis.map((e) => {
                                         const isSelected = selectedEmojiNames.has(e.name);
                                         const hidden = !visibleEmojiNames.has(e.name);
@@ -923,7 +938,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                                         >
                                             <div className="aspect-square w-full">
                                                 {/* 换图仍重建 img，避免新图解码前残留旧位图；分页和懒加载照旧。 */}
-                                                <TokenImg key={e.url} value={e.url} loading="lazy" decoding="async" className="sully-emoji-thumb w-full h-full object-contain pointer-events-none" />
+                                                <EmojiImage key={emojiRevision + e.url} value={e.url} loading="lazy" decoding="async" className="sully-emoji-thumb w-full h-full object-contain pointer-events-none" />
                                             </div>
                                             <span className={`text-[9px] truncate w-full text-center mt-0.5 leading-tight pointer-events-none ${emojiLabelClass}`}>{e.name}</span>
                                             {isSelected && <div className="absolute inset-0 bg-blue-500/20 rounded-2xl pointer-events-none border-2 border-blue-500" />}
@@ -976,7 +991,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                             onClickCapture={handleActionsClickCapture}
                         >
                           {Array.from({length: actionPageCount}, (_, page) => (
-                            <div key={page} role="group" aria-label={`聊天功能第 ${page + 1} 页`} className={`p-6 grid grid-cols-4 grid-rows-[repeat(2,96px)] gap-x-4 gap-y-8 ${actionsPage === page ? '' : 'hidden'}`}>
+                            <div key={page} role="group" aria-label={`聊天功能第 ${page + 1} 页`} className={`sully-chat-action-page p-6 grid grid-cols-4 grid-rows-[repeat(2,96px)] gap-x-4 gap-y-8 ${actionsPage === page ? '' : 'hidden'}`}>
                               {actionTiles.slice(page * ACTION_PAGE_SIZE, (page + 1) * ACTION_PAGE_SIZE)}
                             </div>
                           ))}

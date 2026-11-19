@@ -598,7 +598,7 @@ describe('快照事件的属性宽度', () => {
     const plainChar = (id: string) => ({ id, name: '小明' } as unknown as CharacterProfile);
 
     it('当前外观', () => {
-        expect(Object.keys(collectAppearance({} as OSTheme, undefined)).length).toBeLessThanOrEqual(38);
+        expect(Object.keys(collectAppearance({} as OSTheme, undefined)).length).toBeLessThanOrEqual(39);
     });
 
     it('当前角色设置', () => {

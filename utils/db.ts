@@ -1,7 +1,9 @@
 import { spaceDatabaseName, SESSION_SPACE_ID, DEFAULT_SPACE_ID, createSpaceStorage, rawSpaceStorage, listUserSpaces, assertUserSpaceAvailable } from './userSpaces';
+import { clearEmojiOriginals } from './emojiOriginals';
 import { withSharedAssetLock, canCoordinateAssetDeletion } from './sharedAssetLock';
 import { readLocalCursor } from './localRead';
 import { applyFriendFeedMedia, collectFriendFeedMedia, isActivityTextAsset } from './activityBackup';
+import { HELP_HISTORY_KEY, helpTextHistory, restoreHelpMedia } from './sullyHelpBackup';
 import { compactMemoryLink } from './memoryPalace/linkPrecision';
 import { reportDatabaseFailure } from './databaseHealth';
 import { associateDatabaseOpen, beginDatabaseOpen, recordDatabaseOpen } from './databaseOpenDiagnostics';
@@ -618,6 +620,7 @@ export const DB = {
       // 删库前先关掉单例连接, 否则这条还开着的连接会 block 掉 deleteDatabase。
       await spaceOpeners.get(spaceId)?.close();
       spaceOpeners.delete(spaceId);
+      await clearEmojiOriginals(spaceId);
       return new Promise((resolve, reject) => {
           const req = indexedDB.deleteDatabase(spaceDatabaseName('AetherOS_Data', spaceId));
           req.onsuccess = () => resolve();
@@ -1411,6 +1414,28 @@ export const DB = {
     const db = await openDB();
     const transaction = db.transaction(STORE_EMOJIS, 'readwrite');
     transaction.objectStore(STORE_EMOJIS).delete(name);
+  },
+
+  // A scan may be older than a re-import or a move in another tab.
+  deleteScannedEmojis: async (items: Emoji[]): Promise<number> => {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_EMOJIS, 'readwrite');
+          const store = tx.objectStore(STORE_EMOJIS);
+          let removed = 0;
+          for (const item of items) {
+              const request = store.get(item.name);
+              request.onsuccess = () => {
+                  const current: Emoji | undefined = request.result;
+                  if (current && current.url === item.url && current.categoryId === item.categoryId) {
+                      store.delete(item.name);
+                      removed++;
+                  }
+              };
+          }
+          tx.oncomplete = () => resolve(removed);
+          tx.onabort = () => reject(tx.error || new Error('清除失败，请重试'));
+      });
   },
 
   // 表情包重命名: name 是主键, 改名 = 删旧键 + 写新键 (保留 url / categoryId)。
@@ -3945,6 +3970,7 @@ export const DB = {
           data.assets !== undefined,
           data.friendFeed !== undefined && !mediaOnly,
           data.activityTextAssets !== undefined && !mediaOnly,
+          data.helpDeskHistory !== undefined && !mediaOnly,
           data.friendFeedMedia !== undefined,
           data.savedJournalStickers !== undefined,
           data.galleryImages !== undefined,
@@ -4190,10 +4216,20 @@ export const DB = {
       }, data.emojiCategories?.length || 0);
       await runSection('系统资源', data.assets !== undefined, async () => {
           if (mediaOnly) {
-              await mergeStore(STORE_ASSETS, (data.assets || []).filter(a => !isActivityTextAsset(a.id)), '系统资源', true);
+              const history = data.assets?.find(a => a.id === HELP_HISTORY_KEY);
+              if (history) await withStore(STORE_ASSETS, store => {
+                  const current = store.get(HELP_HISTORY_KEY);
+                  current.onsuccess = () => {
+                      if (current.result) store.put({ id: HELP_HISTORY_KEY, data: restoreHelpMedia(current.result.data, history.data) });
+                  };
+              });
+              await mergeStore(STORE_ASSETS, (data.assets || []).filter(a => a.id !== HELP_HISTORY_KEY && !isActivityTextAsset(a.id)), '系统资源', true);
           } else await clearAndAdd(STORE_ASSETS, data.assets || [], '系统资源', true);
           data.assets = undefined as any;
       }, data.assets?.length || 0);
+      await runSection('客服咨询记录', data.helpDeskHistory !== undefined && !mediaOnly, async () => {
+          await DB.saveAssetRaw(HELP_HISTORY_KEY, helpTextHistory(data.helpDeskHistory!));
+      });
       await runSection('活动文字记录', data.activityTextAssets !== undefined && !mediaOnly, async () => {
           const records = data.activityTextAssets!;
           if (!Array.isArray(records) || records.some(a => !a || typeof a.id !== 'string'

@@ -12,6 +12,7 @@ import { selectCharacterContextMessages } from './chatContextRange';
 
 import { CharacterProfile, UserProfile, Message, Emoji, EmojiCategory, GroupProfile, RealtimeConfig, DailySchedule } from '../types';
 import { ContextBuilder } from './context';
+import { BUILTIN_SULLY_ID, SULLY_CHAT_HANDOFF } from './sullyIdentity';
 import { DB } from './db';
 import { formatLifeSimResetCardForContext } from './lifeSimChatCard';
 import { formatQixiEventCardForContext, tryParseQixiEventChatCard } from './qixiChatCard';
@@ -361,7 +362,7 @@ export const ChatPrompts = {
             : Promise.resolve(null);
         const userLocationPromise = forFirePack
             ? Promise.resolve(getBackgroundUserLocationContext(userProfile.name, char.id))
-            : promptOptions?.includeUserLocation ? getUserLocationContext(userProfile.name, char.id) : Promise.resolve('');
+            : promptOptions?.includeUserLocation ? getUserLocationContext(userProfile.name, char.id, true) : Promise.resolve('');
 
         // 记忆宫殿检索结果现在从 char.memoryPalaceInjection 读取。
         // deferVolatile：时间/宫殿召回/情绪 buff 三块不进 stable，由下面的 volatileState 承接。
@@ -657,6 +658,7 @@ ${uname} 的化身正挂在《彼方》的【${roomName}】${act ? `，状态写
             baseSystemPrompt += promptOptions.appRules;
         } else {
         const emojiContextStr = ChatPrompts.buildEmojiContext(emojis, categories);
+        if (char.id === BUILTIN_SULLY_ID) baseSystemPrompt += SULLY_CHAT_HANDOFF + '\n\n';
         const searchEnabled = !!(realtimeConfig?.newsEnabled && realtimeConfig?.newsApiKey);
         const notionEnabled = !!(realtimeConfig?.notionEnabled && realtimeConfig?.notionApiKey && realtimeConfig?.notionDatabaseId);
         const notionNotesEnabled = !!(realtimeConfig?.notionEnabled && realtimeConfig?.notionApiKey && realtimeConfig?.notionNotesDatabaseId);

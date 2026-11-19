@@ -1,0 +1,9 @@
+.sully-schedule-play { position: relative; flex-shrink: 0; align-self: start; }
+.sully-schedule-play button {
+    display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%;
+    color: var(--schedule-text); background: color-mix(in srgb, var(--schedule-text) 12%, transparent);
+    font: 14px/1 system-ui, sans-serif;
+}
+.sully-schedule-play button[data-cached="true"] { background: var(--schedule-accent); color: var(--schedule-base); }
+.sully-schedule-play button[aria-disabled="true"] { color: color-mix(in srgb, var(--schedule-text) 38%, transparent); background: color-mix(in srgb, var(--schedule-text) 6%, transparent); cursor: not-allowed; }
+.sully-schedule-play [role="status"] { position: absolute; right: 0; bottom: 100%; z-index: 2; white-space: nowrap; border-radius: 5px; padding: 4px 7px; color: white; background: #302c3e; font: 12px/1.5 system-ui, sans-serif; }

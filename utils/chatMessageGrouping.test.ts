@@ -98,7 +98,27 @@ describe('chatMessageGrouping & timestamp position', () => {
         expect(hiddenHtml).not.toContain('sully-chat-timestamp');
     });
 
-    it('keeps Worker send progress below the bubble when timestampPosition is top_center', () => {
+    it.each([
+        ['every_message', 'beside', '.sully-chat-message-avatar-slot', ''],
+        ['grouped', 'beside', '.sully-chat-message-avatar-slot', '.sully-chat-message-group-last'],
+        ['grouped', 'above_group', '.sully-chat-turn-avatar-slot', '.sully-chat-message-group-first'],
+    ] as const)('places one clock under each %s / %s avatar', (chatAvatarMode, chatAvatarPlacement, slot, group) => {
+        const sample = (visibility: 'always' | 'never') => renderChatDecorationSample({
+            format: 'sullyos-chat-decoration', version: 1, name: '头像时间',
+            parts: { layout: { chatAvatarMode, chatAvatarPlacement, chatTimestampPosition: 'below_avatar', chatShowTimestamp: visibility } },
+        }, 'conversation').markup;
+        const stage = document.createElement('div');
+        stage.innerHTML = sample('always');
+        const rows = stage.querySelectorAll('.sully-chat-message' + group);
+        expect(rows.length).toBeGreaterThan(0);
+        expect(stage.querySelectorAll('.sully-chat-timestamp')).toHaveLength(rows.length);
+        for (const row of rows) {
+            expect(row.querySelector(slot + ' > .sully-chat-avatar-wrap + .sully-chat-avatar-timestamp')?.textContent).toMatch(/^\d\d:\d\d$/);
+        }
+        expect(sample('never')).not.toContain('sully-chat-avatar-timestamp');
+    });
+
+    it.each(['top_center', 'below_avatar'] as const)('keeps Worker send progress below the bubble in %s mode', (timestampPosition) => {
         const msg: Message = {
             id: 1,
             charId: 'char-1',
@@ -122,13 +142,13 @@ describe('chatMessageGrouping & timestamp position', () => {
                 isSelected: false,
                 onToggleSelect: noop,
                 showTimestamp: 'always',
-                timestampPosition: 'top_center',
+                timestampPosition,
                 startsTimeSegment: true,
                 timestampNow: new Date(2026, 10, 17, 15, 0),
                 sendPhase: 'sending',
             }),
         );
-        expect(html).toContain('sully-chat-time-divider');
+        expect(html).toContain(timestampPosition === 'top_center' ? 'sully-chat-time-divider' : 'sully-chat-avatar-timestamp');
         expect(html).toContain('14:32');
         // Send progress stays in the below-bubble slot without duplicating timestamp text there
         expect(html).toContain('sully-chat-timestamp-slot');

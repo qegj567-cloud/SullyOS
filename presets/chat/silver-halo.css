@@ -1,0 +1,214 @@
+/* 银晕。图形随白框打包，消息、头像、情绪及操作来自当前会话。 */
+.sully-chat-root, .sully-chat-transfer-compose {
+    --halo-serif: "Times New Roman", "Noto Serif SC", "Songti SC", "SimSun", serif;
+    --halo-ink: #202536;
+    --halo-muted: #606173;
+    --halo-rule: #b8b6c966;
+    --halo-gold: #d4b997;
+    font-family: var(--halo-serif);
+}
+.sully-chat-root {
+    color: var(--halo-ink);
+    background: var(--halo-orbits) center / 100% 100% no-repeat,
+        radial-gradient(ellipse at 90% -8%, #bfc0d4, transparent 35%),
+        radial-gradient(ellipse at 14% 88%, #deddea88, transparent 38%),
+        linear-gradient(130deg, #e5e3ee, #efedf5 29%, #eae9f2 65%, #efedf5) !important;
+}
+
+/* 标题和头像保留真实图片及名片入口。 */
+.sully-chat-root .sully-chat-header {
+    padding-inline: clamp(12px, 4%, 26px);
+    background: transparent !important;
+    border: 0;
+    box-shadow: none;
+    backdrop-filter: none;
+}
+.sully-chat-root .sully-chat-header :is(.sully-chat-back,.sully-chat-extra-action,.sully-chat-trigger) {
+    background: transparent; color: #35394b; box-shadow: none;
+}
+.sully-chat-root .sully-chat-avatar {
+    border: 2px solid #f8f6f6; border-radius: 50%;
+    outline: 1px solid #c4ad90; outline-offset: 2px;
+    box-shadow: 0 0 0 5px #eeebf188;
+}
+.sully-chat-root .sully-chat-name { color: var(--halo-ink); font-size: 18px; font-weight: 500; letter-spacing: .10em; overflow-wrap: anywhere; }
+.sully-chat-root .sully-chat-status :is(.sully-chat-online-status,.sully-chat-custom-status,.sully-chat-token) {
+    color: var(--halo-muted); background: transparent; border-color: var(--halo-rule);
+}
+.sully-chat-root .sully-chat-online-status > span:empty { background: #74788d; }
+.sully-chat-root .sully-chat-buffs :is(button,[aria-hidden] span) {
+    background: #f3f1f666 !important; border: 1px solid #c8c5d5 !important; color: #49485a !important;
+    border-radius: 12px; box-shadow: none; padding: 3px 6px; font: 500 10px/1.05 var(--halo-serif);
+}
+.sully-chat-root .sully-chat-messages {
+    margin-inline: clamp(9px, 4.8%, 26px);
+    border: 1px solid var(--halo-rule);
+    padding-block: 18px 24px;
+    scrollbar-width: none;
+}
+.sully-chat-root .sully-chat-message-ai:not(.sully-chat-message-module)::before {
+    content: ""; position: absolute; pointer-events: none;
+    left: 0; top: 15px; width: 4px; height: 4px; transform: rotate(45deg);
+    border: 1px solid #8b899d; background: #eeedf5;
+}
+.sully-chat-root .sully-chat-avatar-wrap {
+    background: #e7e3e8; overflow: visible; border-radius: 2px;
+    box-shadow: 0 2px 5px #45475812;
+}
+.sully-chat-root .sully-chat-avatar-wrap::before {
+    content: ""; position: absolute; z-index: 1; inset: -1px; pointer-events: none;
+    border: 1px solid #c8b6a37a; border-radius: 2px;
+    background:
+        linear-gradient(var(--halo-gold),var(--halo-gold)) left top / 5px 1px,
+        linear-gradient(var(--halo-gold),var(--halo-gold)) right bottom / 5px 1px;
+    background-repeat: no-repeat;
+}
+.sully-chat-root .sully-chat-message-avatar-img { border: 2px solid #f4f0f0; box-shadow: none; }
+.sully-chat-root .sully-chat-avatar-timestamp { color: #595a6c; font: 400 10px/12px var(--halo-serif); letter-spacing: .035em; }
+.sully-chat-root .sully-chat-message-content { overflow-wrap: anywhere; }
+.sully-chat-root .sully-chat-message-content > div > div { min-width: 0; max-width: 100%; }
+.sully-chat-root .sully-chat-message-content > [aria-hidden="true"] { right: -2rem; }
+
+/* 切角绘在底纹上，长消息、引用和语音字幕可自然撑高。 */
+.sully-chat-root :is(.sully-bubble-ai,.sully-bubble-user) {
+    background: var(--halo-face) center / 100% 100% no-repeat !important;
+    border: 0 !important; border-radius: 0 !important; box-shadow: none !important;
+    padding: 10px 15px;
+}
+.sully-chat-root .sully-bubble-ai { --halo-face: var(--halo-paper); color: var(--halo-ink); }
+.sully-chat-root .sully-bubble-user { --halo-face: var(--halo-night); color: #faf8fb; }
+.sully-chat-root .sully-voice-bar {
+    max-width: 100%; min-width: 0;
+    background: var(--halo-paper) center / 100% 100% no-repeat !important;
+    color: var(--halo-ink); border: 0 !important; border-radius: 0 !important; box-shadow: none;
+}
+.sully-chat-root .sully-voice-bar-button { color: #373c50 !important; background: #e2e1eb !important; }
+.sully-chat-root .sully-voice-bar-wave-segment { background: #666a80 !important; }
+.sully-chat-root .sully-voice-bar-toggle { color: #4b4e62 !important; background: #e5e3ed; }
+.sully-chat-root .sully-voice-bar-transcript { color: #43475e !important; background: #f2f1f7 !important; }
+
+/* 心象的分隔线贴着真实标题，折叠、展开和翻译都可用。 */
+.sully-chat-root .sully-psyche-card {
+    background: var(--halo-psyche) center / 100% 100% no-repeat !important;
+    border: 0 !important; border-radius: 0 !important; box-shadow: none !important;
+    padding: 12px 17px 14px; color: #f7f5fa;
+}
+.sully-chat-root .sully-psyche-card > div:has(> .sully-psyche-title) {
+    padding-bottom: 6px; margin-bottom: 8px; border-bottom: 1px solid #d2bb946b;
+}
+.sully-chat-root .sully-psyche-card > div:has(> .sully-psyche-title)::after {
+    content: ""; position: absolute; left: 50%; bottom: -2px; width: 3px; height: 3px;
+    background: #e5cfad; transform: rotate(45deg); pointer-events: none;
+}
+.sully-chat-root .sully-psyche-card :is(.sully-psyche-title,.sully-psyche-subtitle,.sully-psyche-status,button) {
+    color: #efedf6 !important; font-family: var(--halo-serif) !important; text-shadow: none !important;
+}
+.sully-chat-root .sully-psyche-card :is(.sully-psyche-preview,.sully-psyche-body) {
+    color: #faf7fc !important; font-family: var(--halo-serif) !important; font-style: italic;
+    font-weight: 400; line-height: 1.7; text-shadow: none !important;
+}
+.sully-chat-root .sully-psyche-preview > span { color: #dec8a8 !important; }
+.sully-chat-root .sully-psyche-body { border-color: #d4b99388 !important; mask-image: none !important; }
+.sully-chat-root .sully-psyche-translation-tools { color: #ece7f3 !important; }
+
+/* Sully Pay 保留原金额、币种、备注和处理状态。 */
+.sully-chat-root .sully-chat-transfer-card {
+    width: 236px; max-width: 100%; padding: 12px 18px 12px 54px;
+    background: var(--halo-pay) center / 100% 100% no-repeat !important;
+    border-radius: 0; color: #faf8fc; box-shadow: none;
+}
+.sully-chat-root .sully-chat-transfer-watermark { display: none; }
+.sully-chat-root .sully-chat-transfer-header { margin: 0; }
+.sully-chat-root .sully-chat-transfer-card .sully-chat-transfer-icon {
+    position: absolute; left: 12px; top: 50%; transform: translateY(-50%); padding: 6px;
+    background: #ffffff0f; border: 1px solid #ebdfd47d; border-radius: 1px;
+}
+.sully-chat-root .sully-chat-transfer-brand { color: #eeecf4; font: 400 12px/1.4 var(--halo-serif); letter-spacing: .14em; }
+.sully-chat-root .sully-chat-transfer-card .sully-chat-transfer-amount {
+    color: #fcfafd; font: 400 23px/1.2 Garamond, var(--halo-serif); letter-spacing: .045em; overflow-wrap: anywhere;
+}
+.sully-chat-root .sully-chat-transfer-card :is(.sully-chat-transfer-note,.sully-chat-transfer-recipient,.sully-chat-transfer-status) { color: #eeedf5; }
+.sully-chat-root .sully-chat-transfer-status { backdrop-filter: none; }
+.sully-chat-root .sully-chat-transfer-receipt { border: 0; background: #f3f2f5; box-shadow: none; }
+.sully-chat-root .sully-chat-transfer-receipt .sully-chat-transfer-icon { background: #e6e4e9; color: #66636e; }
+.sully-chat-root .sully-chat-transfer-receipt .sully-chat-transfer-status { color: #524f59; }
+
+.sully-chat-root .sully-chat-inputbar { background: transparent; box-shadow: none; border: 0; backdrop-filter: none; }
+.sully-chat-root .sully-chat-composer { gap: 4px; align-items: center; padding: 10px 4%; }
+.sully-chat-root :is(.sully-chat-actions-button,.sully-chat-input-wrap,.sully-chat-send-button) { border: 0; border-radius: 0; box-shadow: none; }
+.sully-chat-root .sully-chat-actions-button { background: transparent; color: #34384a; }
+.sully-chat-root .sully-chat-input-wrap { background: var(--halo-input) center / 100% 100% no-repeat; }
+.sully-chat-root .sully-chat-textarea { color: var(--halo-ink); font-family: var(--halo-serif); }
+.sully-chat-root .sully-chat-textarea::placeholder { color: var(--halo-muted); font-style: italic; }
+.sully-chat-root .sully-chat-input-wrap button { color: #515467; }
+.sully-chat-root .sully-chat-send-button { width: 45px; background: var(--halo-send) center / 100% 88% no-repeat; color: #fff; }
+.sully-chat-root .sully-chat-send-button:disabled { opacity: .55; }
+
+/* 加号保留完整的触控区域，星影仅在图标下面。 */
+.sully-chat-root .sully-chat-panel:has(.sully-chat-action-page) { background: #f1f0f5; border: 0; box-shadow: none; }
+.sully-chat-root .sully-chat-action-page { grid-template-rows: repeat(2,minmax(68px,auto)); gap: 7px 3px; padding: 12px 10px 8px; }
+.sully-chat-root .sully-chat-action-page > button { gap: 2px; color: #514f58; }
+.sully-chat-root .sully-chat-action-page > button > :first-child {
+    position: relative; isolation: isolate; display: grid; place-items: center;
+    width: 46px; height: 43px; background: transparent; color: #555361; border: 0; border-radius: 0; box-shadow: none;
+}
+.sully-chat-root .sully-chat-action-page > button > :first-child::before {
+    content: ""; position: absolute; z-index: -1; pointer-events: none; inset: 5px 6px;
+    background: var(--halo-star) center / contain no-repeat; opacity: .18; filter: blur(1.4px);
+}
+.sully-chat-root .sully-chat-action-page > button > :first-child > div {
+    display: grid; place-items: center; width: 100%; height: 100%; background: none; color: inherit; border: 0; box-shadow: none;
+}
+.sully-chat-root .sully-chat-action-page :is(svg,img) { width: 19px; height: 19px; }
+/* 用本地线描图标呈现戳一戳，离线时也能辨认。 */
+.sully-chat-root .sully-chat-action-page img[alt="poke"] {
+    content: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23555361' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8.5 20.5h5.8c2.1 0 3.4-1.5 3.7-3.4l.6-4.4c.2-1.1-.8-2-1.8-1.7l-1.1.4c-.4-1.4-2-1.6-2.9-.7-.5-1.2-1.8-1.3-2.6-.6l-.5-5.7c-.2-1.9-3-1.7-2.9.3l.7 9.2-1.9-1.7c-1.4-1.2-3 .5-2 1.8l3.4 4.7c.4.6 1 1.3 1.5 1.8Z'/%3E%3C/svg%3E");
+}
+.sully-chat-root .sully-chat-action-page > button > span:last-child { color: #514f58; font: 400 12px/1.4 var(--halo-serif); }
+.sully-chat-root .sully-chat-action-page .sully-chat-badge-dot { top: 6px; right: 6px; width: 5px; height: 5px; border: 0; background: #8b8596; }
+.sully-chat-root .sully-chat-page-dot { background: #d1ced6; }
+.sully-chat-root .sully-chat-page-dot[data-active="true"] { background: #85818f; }
+
+/* 收款详情在聊天舞台内，发起转账只匹配它自己的表单。 */
+.sully-chat-transfer-overlay, .sully-chat-transfer-compose > :first-child {
+    background: #302e373b; backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
+}
+.sully-chat-transfer-dialog, .sully-chat-transfer-compose > div:nth-child(2) {
+    width: min(100%,330px); max-width: 100%; max-height: 100%; overflow-y: auto;
+    border: 0; border-radius: 16px; background: #fcfbfc; color: #37363d; box-shadow: 0 8px 32px #2d2a341a;
+    font-family: var(--halo-serif);
+}
+.sully-chat-transfer-detail-header { margin: 0 22px; padding: 21px 0 15px; border-bottom: 1px solid #e6e4e8; background: none; color: #37363d; }
+.sully-chat-transfer-detail-header > :first-child { display: none; }
+.sully-chat-transfer-detail-header > div { color: #69686e; }
+.sully-chat-transfer-detail-header > div:nth-child(2) { gap: 6px; margin-bottom: 13px; }
+.sully-chat-transfer-detail-header > div:nth-child(2) > * { background: none; padding: 0; color: #57555e; }
+.sully-chat-transfer-detail-header .sully-chat-transfer-detail-amount { color: #323138; font: 400 32px/1.2 var(--halo-serif); overflow-wrap: anywhere; }
+.sully-chat-transfer-detail-body { padding: 14px 22px 18px; }
+.sully-chat-transfer-detail-body > div:not(:has(button)) {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+    margin: 0; padding: 5px 0; background: transparent; font: 400 13px/1.55 var(--halo-serif);
+}
+.sully-chat-transfer-detail-body > div:not(:has(button)) > :first-child { flex: none; color: #69686e; font: inherit; }
+.sully-chat-transfer-detail-body > div:not(:has(button)) > :last-child { color: #37363d; font: inherit; text-align: right; overflow-wrap: anywhere; }
+.sully-chat-transfer-dialog button, .sully-chat-transfer-compose button {
+    min-height: 42px; border: 0; border-radius: 8px; background: #efedf1;
+    color: #48464e; font: 400 14px/1.4 var(--halo-serif); box-shadow: none;
+}
+.sully-chat-transfer-dialog .sully-chat-transfer-accept, .sully-chat-transfer-compose button:last-child { background: #65636f; color: #fff; }
+.sully-chat-transfer-compose h3 { text-align: left; font: 500 17px/1.5 var(--halo-serif); color: #37363d; }
+.sully-chat-transfer-compose input { border-radius: 7px; color: #37363d; background: #f1f0f3; font: 400 16px/1.5 var(--halo-serif); }
+.sully-chat-transfer-compose input::placeholder { color: #706e75; }
+
+
+/* 内嵌 SVG 使预设可离线应用及单独导出。 */
+.sully-chat-root {
+    --halo-orbits: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 941 1670%22 preserveAspectRatio=%22none%22%3E%3Cdefs%3E%3ClinearGradient id=%22g%22 x1=%220%22 y1=%220%22 x2=%22.95%22 y2=%22.94%22%3E%3Cstop offset=%220%22 stop-color=%22%23ffffff%22 stop-opacity=%220.58%22/%3E%3Cstop offset=%220.3%22 stop-color=%22%23fff9eb%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.6%22 stop-color=%22%23ffe9c2%22 stop-opacity=%220.95%22/%3E%3Cstop offset=%221%22 stop-color=%22%23fff%22 stop-opacity=%220.04%22/%3E%3C/linearGradient%3E%3ClinearGradient id=%22q%22 x1=%220%22 y1=%22.88%22 x2=%221%22 y2=%22.15%22%3E%3Cstop offset=%220%22 stop-color=%22%23fff9eb%22 stop-opacity=%220.35%22/%3E%3Cstop offset=%220.45%22 stop-color=%22%23f4d6ad%22 stop-opacity=%220.92%22/%3E%3Cstop offset=%220.88%22 stop-color=%22%23fff%22 stop-opacity=%220.98%22/%3E%3Cstop offset=%221%22 stop-color=%22%23fff%22 stop-opacity=%220.24%22/%3E%3C/linearGradient%3E%3ClinearGradient id=%22c%22 x1=%22.12%22 y1=%220%22 x2=%22.78%22 y2=%22.97%22%3E%3Cstop offset=%220%22 stop-color=%22%23ffe7bc%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.32%22 stop-color=%22%23cfab85%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.55%22 stop-color=%22%23fff%22 stop-opacity=%221%22/%3E%3Cstop offset=%221%22 stop-color=%22%23f7e4ce%22 stop-opacity=%220.9%22/%3E%3C/linearGradient%3E%3ClinearGradient id=%22f%22 x2=%221%22 y2=%22.26%22%3E%3Cstop offset=%220%22 stop-color=%22%23aba9c1%22 stop-opacity=%220.82%22/%3E%3Cstop offset=%220.52%22 stop-color=%22%23aaa8bd%22 stop-opacity=%220.87%22/%3E%3Cstop offset=%221%22 stop-color=%22%23b9b8cb%22 stop-opacity=%220.53%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d=%22M208 -9Q394 20 521 132%22 fill=%22none%22 stroke=%22%23fff7%22 stroke-width=%220.75%22/%3E%3Cpath d=%22M410 -6C639 96 785 273 870 550%22 fill=%22none%22 stroke=%22url%28%23g%29%22 stroke-width=%221.45%22/%3E%3Cpath d=%22M958 149C776 124 613 271 565 440%22 fill=%22none%22 stroke=%22url%28%23q%29%22 stroke-width=%221.25%22/%3E%3Cpath d=%22M396 727Q459 650 532 580%22 fill=%22none%22 stroke=%22%23ffffff%22 stroke-width=%221.35%22/%3E%3Cpath d=%22M-20 1362Q76 1466 220 1550%22 fill=%22none%22 stroke=%22%23ffffff%22 stroke-width=%221.05%22/%3E%3Cpath d=%22M486 1670Q705 1494 958 1281%22 fill=%22none%22 stroke=%22%23ffffff%22 stroke-width=%221.2%22/%3E%3Cellipse cx=%22854%22 cy=%221325%22 rx=%22162%22 ry=%22162%22 fill=%22none%22 stroke=%22url%28%23c%29%22 stroke-width=%221.35%22/%3E%3C/svg%3E");
+    --halo-paper: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 246 74%22 preserveAspectRatio=%22none%22%3E%3Cdefs%3E%3ClinearGradient id=%22p%22 x1=%220%22 y1=%22.7%22 x2=%221%22 y2=%22.15%22%3E%3Cstop offset=%220%22 stop-color=%22%23eeedf3%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.32%22 stop-color=%22%23f4f3f8%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.7%22 stop-color=%22%23f6f5f9%22 stop-opacity=%221%22/%3E%3Cstop offset=%221%22 stop-color=%22%23eae9f1%22 stop-opacity=%221%22/%3E%3C/linearGradient%3E%3CradialGradient id=%22h%22 cx=%22.83%22 cy=%22-.2%22 r=%22.93%22%3E%3Cstop offset=%220%22 stop-color=%22%23fff%22 stop-opacity=%220.58%22/%3E%3Cstop offset=%220.55%22 stop-color=%22%23fff%22 stop-opacity=%220.2%22/%3E%3Cstop offset=%221%22 stop-color=%22%23fff%22 stop-opacity=%220%22/%3E%3C/radialGradient%3E%3ClinearGradient id=%22e%22 x2=%221%22 y2=%22.75%22%3E%3Cstop offset=%220%22 stop-color=%22%23cfccd8%22 stop-opacity=%220.9%22/%3E%3Cstop offset=%220.3%22 stop-color=%22%23e2e0e9%22 stop-opacity=%220.84%22/%3E%3Cstop offset=%220.55%22 stop-color=%22%23fff%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.78%22 stop-color=%22%23d9d6e2%22 stop-opacity=%220.94%22/%3E%3Cstop offset=%221%22 stop-color=%22%23ddd8e2%22 stop-opacity=%221%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d=%22M.8 14L14 .8H245L245.5 59L231 73.2H1Z%22 fill=%22url%28%23p%29%22 stroke=%22url%28%23e%29%22 stroke-width=%221.25%22/%3E%3Cpath d=%22M.8 14L14 .8H245L245.5 59L231 73.2H1Z%22 fill=%22url%28%23h%29%22 stroke=%22none%22 stroke-width=%221%22/%3E%3Cpath d=%22M.8 14L14 .8%22 fill=%22none%22 stroke=%22%23d4bb9e%22 stroke-width=%220.8%22/%3E%3Cpath d=%22M231 73.2l14 -14%22 fill=%22none%22 stroke=%22%23d5b28a%22 stroke-width=%220.95%22/%3E%3Cpath d=%22M233 4h7l2 3v4M4 62v6l3 3h5%22 fill=%22none%22 stroke=%22%23d3cfdd%22 stroke-width=%221.25%22/%3E%3Cpath d=%22M16 2h179%22 fill=%22none%22 stroke=%22%23fff%22 stroke-width=%220.65%22/%3E%3C/svg%3E");
+    --halo-night: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 290 78%22 preserveAspectRatio=%22none%22%3E%3Cdefs%3E%3ClinearGradient id=%22n%22 x2=%221%22 y2=%22.012%22%3E%3Cstop offset=%220%22 stop-color=%22%23484c5d%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.22%22 stop-color=%22%23434757%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.55%22 stop-color=%22%23464a5b%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.85%22 stop-color=%22%23585c6d%22 stop-opacity=%221%22/%3E%3Cstop offset=%221%22 stop-color=%22%236c6e7f%22 stop-opacity=%221%22/%3E%3C/linearGradient%3E%3CradialGradient id=%22w%22 cx=%221.04%22 cy=%221.05%22 r=%220.34%22%3E%3Cstop offset=%220%22 stop-color=%22%23f3eef3%22 stop-opacity=%220.96%22/%3E%3Cstop offset=%220.25%22 stop-color=%22%23dcd8e0%22 stop-opacity=%220.78%22/%3E%3Cstop offset=%220.56%22 stop-color=%22%23b6b6c5%22 stop-opacity=%220.49%22/%3E%3Cstop offset=%220.84%22 stop-color=%22%239b9bab%22 stop-opacity=%220.17%22/%3E%3Cstop offset=%221%22 stop-color=%22%23858294%22 stop-opacity=%220%22/%3E%3C/radialGradient%3E%3CradialGradient id=%22l%22 cx=%22.01%22 cy=%221.05%22 r=%220.47%22%3E%3Cstop offset=%220%22 stop-color=%22%23aaa8b5%22 stop-opacity=%220.92%22/%3E%3Cstop offset=%220.4%22 stop-color=%22%239796a6%22 stop-opacity=%220.6%22/%3E%3Cstop offset=%220.78%22 stop-color=%22%23838396%22 stop-opacity=%220.2%22/%3E%3Cstop offset=%221%22 stop-color=%22%2377798a%22 stop-opacity=%220%22/%3E%3C/radialGradient%3E%3ClinearGradient id=%22b%22 x1=%220%22 y1=%22.1%22 x2=%221%22 y2=%22.96%22%3E%3Cstop offset=%220%22 stop-color=%22%23ffe5bd%22 stop-opacity=%220.99%22/%3E%3Cstop offset=%220.2%22 stop-color=%22%23fff%22 stop-opacity=%220.99%22/%3E%3Cstop offset=%220.56%22 stop-color=%22%23a4a4b4%22 stop-opacity=%220.4%22/%3E%3Cstop offset=%220.85%22 stop-color=%22%23fff4e0%22 stop-opacity=%220.93%22/%3E%3Cstop offset=%221%22 stop-color=%22%23e4caa4%22 stop-opacity=%221%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d=%22M1 24V5l4-4h21M270 77h14l5-5V57%22 fill=%22none%22 stroke=%22%23fdf1dd%22 stroke-width=%221.4%22/%3E%3Cpath d=%22M1 21L21 .7H289V61l-17 16H1Z%22 fill=%22url%28%23n%29%22 stroke=%22none%22 stroke-width=%221%22/%3E%3Cpath d=%22M1 21L21 .7H289V61l-17 16H1Z%22 fill=%22url%28%23l%29%22 stroke=%22none%22 stroke-width=%221%22/%3E%3Cpath d=%22M1 21L21 .7H289V61l-17 16H1Z%22 fill=%22url%28%23w%29%22 stroke=%22none%22 stroke-width=%221%22/%3E%3Cpath d=%22M1 21L21 .7H289V61l-17 16H1Z%22 fill=%22none%22 stroke=%22url%28%23b%29%22 stroke-width=%221.15%22/%3E%3Cdefs%3E%3Cfilter id=%22silk%22 x=%220%22 y=%220%22 width=%22100%25%22 height=%22100%25%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%22.015 .024%22 numOctaves=%223%22 seed=%2218%22 stitchTiles=%22stitch%22/%3E%3CfeColorMatrix type=%22matrix%22 values=%22.19 .64 .17 0 0 .19 .64 .17 0 0 .19 .64 .17 0 0 0 0 0 .16 0%22/%3E%3C/filter%3E%3CclipPath id=%22mask%22%3E%3Cpath d=%22M1 21L21 .7H289V61l-17 16H1Z%22 fill=%22%23fff%22 stroke=%22none%22 stroke-width=%221%22/%3E%3C/clipPath%3E%3C/defs%3E%3Cg clip-path=%22url%28%23mask%29%22%3E%3Crect width=%22290%22 height=%2278%22 filter=%22url%28%23silk%29%22 opacity=%22.65%22/%3E%3C/g%3E%3Cpath d=%22M5 15v-10h10M275 5h10v10M5 63v10h10M285 63v10h-10%22 fill=%22none%22 stroke=%22%23e5c595%22 stroke-width=%220.72%22/%3E%3C/svg%3E");
+    --halo-psyche: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 677 302%22 preserveAspectRatio=%22none%22%3E%3Cdefs%3E%3ClinearGradient id=%22n%22 x2=%221%22 y2=%22.012%22%3E%3Cstop offset=%220%22 stop-color=%22%23484c5d%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.22%22 stop-color=%22%23434757%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.55%22 stop-color=%22%23464a5b%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.85%22 stop-color=%22%23585c6d%22 stop-opacity=%221%22/%3E%3Cstop offset=%221%22 stop-color=%22%236c6e7f%22 stop-opacity=%221%22/%3E%3C/linearGradient%3E%3CradialGradient id=%22w%22 cx=%221.04%22 cy=%221.05%22 r=%220.69%22%3E%3Cstop offset=%220%22 stop-color=%22%23f3eef3%22 stop-opacity=%220.96%22/%3E%3Cstop offset=%220.25%22 stop-color=%22%23dcd8e0%22 stop-opacity=%220.78%22/%3E%3Cstop offset=%220.56%22 stop-color=%22%23b6b6c5%22 stop-opacity=%220.49%22/%3E%3Cstop offset=%220.84%22 stop-color=%22%239b9bab%22 stop-opacity=%220.17%22/%3E%3Cstop offset=%221%22 stop-color=%22%23858294%22 stop-opacity=%220%22/%3E%3C/radialGradient%3E%3CradialGradient id=%22l%22 cx=%22.01%22 cy=%221.05%22 r=%220.47%22%3E%3Cstop offset=%220%22 stop-color=%22%23aaa8b5%22 stop-opacity=%220.92%22/%3E%3Cstop offset=%220.4%22 stop-color=%22%239796a6%22 stop-opacity=%220.6%22/%3E%3Cstop offset=%220.78%22 stop-color=%22%23838396%22 stop-opacity=%220.2%22/%3E%3Cstop offset=%221%22 stop-color=%22%2377798a%22 stop-opacity=%220%22/%3E%3C/radialGradient%3E%3ClinearGradient id=%22b%22 x1=%220%22 y1=%22.1%22 x2=%221%22 y2=%22.96%22%3E%3Cstop offset=%220%22 stop-color=%22%23ffe5bd%22 stop-opacity=%220.99%22/%3E%3Cstop offset=%220.2%22 stop-color=%22%23fff%22 stop-opacity=%220.99%22/%3E%3Cstop offset=%220.56%22 stop-color=%22%23a4a4b4%22 stop-opacity=%220.4%22/%3E%3Cstop offset=%220.85%22 stop-color=%22%23fff4e0%22 stop-opacity=%220.93%22/%3E%3Cstop offset=%221%22 stop-color=%22%23e4caa4%22 stop-opacity=%221%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d=%22M1 28V5l4-4h25M652 301h19l5-5V276%22 fill=%22none%22 stroke=%22%23fdf1dd%22 stroke-width=%221.4%22/%3E%3Cpath d=%22M2 279L24 300H2ZM655 301L676 280V301Z%22 fill=%22%23c5c1c9%22 stroke=%22%23f7ead6%22 stroke-width=%220.8%22/%3E%3Cpath d=%22M1 21L25 .7H676V280l-22 21H23L1 280Z%22 fill=%22url%28%23n%29%22 stroke=%22none%22 stroke-width=%221%22/%3E%3Cpath d=%22M1 21L25 .7H676V280l-22 21H23L1 280Z%22 fill=%22url%28%23l%29%22 stroke=%22none%22 stroke-width=%221%22/%3E%3Cpath d=%22M1 21L25 .7H676V280l-22 21H23L1 280Z%22 fill=%22url%28%23w%29%22 stroke=%22none%22 stroke-width=%221%22/%3E%3Cpath d=%22M1 21L25 .7H676V280l-22 21H23L1 280Z%22 fill=%22none%22 stroke=%22url%28%23b%29%22 stroke-width=%221.15%22/%3E%3Cdefs%3E%3Cfilter id=%22silk%22 x=%220%22 y=%220%22 width=%22100%25%22 height=%22100%25%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%22.015 .024%22 numOctaves=%223%22 seed=%2218%22 stitchTiles=%22stitch%22/%3E%3CfeColorMatrix type=%22matrix%22 values=%22.19 .64 .17 0 0 .19 .64 .17 0 0 .19 .64 .17 0 0 0 0 0 .16 0%22/%3E%3C/filter%3E%3CclipPath id=%22mask%22%3E%3Cpath d=%22M1 21L25 .7H676V280l-22 21H23L1 280Z%22 fill=%22%23fff%22 stroke=%22none%22 stroke-width=%221%22/%3E%3C/clipPath%3E%3C/defs%3E%3Cg clip-path=%22url%28%23mask%29%22%3E%3Crect width=%22677%22 height=%22302%22 filter=%22url%28%23silk%29%22 opacity=%22.65%22/%3E%3C/g%3E%3Cpath d=%22M1 278l1 21h22M655 301l21 -21%22 fill=%22none%22 stroke=%22%23fff3df%22 stroke-width=%221.2%22/%3E%3Cpath d=%22M20 35v-15h15M642 20h15v15M20 267v15h15M657 267v15h-15%22 fill=%22none%22 stroke=%22%23e5c595%22 stroke-width=%221%22/%3E%3Cdefs%3E%3ClinearGradient id=%22r%22 gradientUnits=%22userSpaceOnUse%22 x1=%2230%22 x2=%22643%22 y1=%2285%22 y2=%2285%22%3E%3Cstop offset=%220%22 stop-color=%22%23d2b68e%22 stop-opacity=%220.58%22/%3E%3Cstop offset=%220.48%22 stop-color=%22%23f6e0bb%22 stop-opacity=%221%22/%3E%3Cstop offset=%221%22 stop-color=%22%23e4c9a3%22 stop-opacity=%220.15%22/%3E%3C/linearGradient%3E%3ClinearGradient id=%22s%22 gradientUnits=%22userSpaceOnUse%22 x1=%2230%22 x2=%2230%22 y1=%22102%22 y2=%22276%22%3E%3Cstop offset=%220%22 stop-color=%22%23d6bd97%22 stop-opacity=%220%22/%3E%3Cstop offset=%220.24%22 stop-color=%22%23d6bd97%22 stop-opacity=%220.73%22/%3E%3Cstop offset=%220.85%22 stop-color=%22%23dcc19d%22 stop-opacity=%220.6%22/%3E%3Cstop offset=%221%22 stop-color=%22%23dcc19d%22 stop-opacity=%220%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d=%22M517 302Q573 207 677 145%22 fill=%22none%22 stroke=%22%23e4d2ba%22 stroke-width=%221%22/%3E%3C/svg%3E");
+    --halo-pay: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 457 110%22 preserveAspectRatio=%22none%22%3E%3Cdefs%3E%3ClinearGradient id=%22n%22 x2=%221%22 y2=%22.012%22%3E%3Cstop offset=%220%22 stop-color=%22%23575b6b%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.22%22 stop-color=%22%23494d5f%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.55%22 stop-color=%22%23484c5d%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.85%22 stop-color=%22%23626578%22 stop-opacity=%221%22/%3E%3Cstop offset=%221%22 stop-color=%22%237c7d91%22 stop-opacity=%221%22/%3E%3C/linearGradient%3E%3CradialGradient id=%22w%22 cx=%221.04%22 cy=%221.05%22 r=%220.69%22%3E%3Cstop offset=%220%22 stop-color=%22%23f3eef3%22 stop-opacity=%220.96%22/%3E%3Cstop offset=%220.25%22 stop-color=%22%23dcd8e0%22 stop-opacity=%220.78%22/%3E%3Cstop offset=%220.56%22 stop-color=%22%23b6b6c5%22 stop-opacity=%220.49%22/%3E%3Cstop offset=%220.84%22 stop-color=%22%239b9bab%22 stop-opacity=%220.17%22/%3E%3Cstop offset=%221%22 stop-color=%22%23858294%22 stop-opacity=%220%22/%3E%3C/radialGradient%3E%3CradialGradient id=%22l%22 cx=%22.01%22 cy=%221.05%22 r=%220.69%22%3E%3Cstop offset=%220%22 stop-color=%22%23aaa8b5%22 stop-opacity=%220.92%22/%3E%3Cstop offset=%220.4%22 stop-color=%22%239796a6%22 stop-opacity=%220.6%22/%3E%3Cstop offset=%220.78%22 stop-color=%22%23838396%22 stop-opacity=%220.2%22/%3E%3Cstop offset=%221%22 stop-color=%22%2377798a%22 stop-opacity=%220%22/%3E%3C/radialGradient%3E%3ClinearGradient id=%22b%22 x1=%220%22 y1=%22.1%22 x2=%221%22 y2=%22.96%22%3E%3Cstop offset=%220%22 stop-color=%22%23ffe5bd%22 stop-opacity=%220.99%22/%3E%3Cstop offset=%220.2%22 stop-color=%22%23fff%22 stop-opacity=%220.99%22/%3E%3Cstop offset=%220.56%22 stop-color=%22%23a4a4b4%22 stop-opacity=%220.4%22/%3E%3Cstop offset=%220.85%22 stop-color=%22%23fff4e0%22 stop-opacity=%220.93%22/%3E%3Cstop offset=%221%22 stop-color=%22%23e4caa4%22 stop-opacity=%221%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d=%22M1 24V5l4-4h21M413 109h38l5-5V65%22 fill=%22none%22 stroke=%22%23fdf1dd%22 stroke-width=%221.4%22/%3E%3Cpath d=%22M2 87L24 108H2ZM416 109L456 69V109Z%22 fill=%22%23c5c1c9%22 stroke=%22%23f7ead6%22 stroke-width=%220.8%22/%3E%3Cpath d=%22M1 21L21 .7H456V69l-41 40H1Z%22 fill=%22url%28%23n%29%22 stroke=%22none%22 stroke-width=%221%22/%3E%3Cpath d=%22M1 21L21 .7H456V69l-41 40H1Z%22 fill=%22url%28%23l%29%22 stroke=%22none%22 stroke-width=%221%22/%3E%3Cpath d=%22M1 21L21 .7H456V69l-41 40H1Z%22 fill=%22url%28%23w%29%22 stroke=%22none%22 stroke-width=%221%22/%3E%3Cpath d=%22M1 21L21 .7H456V69l-41 40H1Z%22 fill=%22none%22 stroke=%22url%28%23b%29%22 stroke-width=%221.15%22/%3E%3Cdefs%3E%3Cfilter id=%22silk%22 x=%220%22 y=%220%22 width=%22100%25%22 height=%22100%25%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%22.015 .024%22 numOctaves=%223%22 seed=%2218%22 stitchTiles=%22stitch%22/%3E%3CfeColorMatrix type=%22matrix%22 values=%22.19 .64 .17 0 0 .19 .64 .17 0 0 .19 .64 .17 0 0 0 0 0 .16 0%22/%3E%3C/filter%3E%3CclipPath id=%22mask%22%3E%3Cpath d=%22M1 21L21 .7H456V69l-41 40H1Z%22 fill=%22%23fff%22 stroke=%22none%22 stroke-width=%221%22/%3E%3C/clipPath%3E%3C/defs%3E%3Cg clip-path=%22url%28%23mask%29%22%3E%3Crect width=%22457%22 height=%22110%22 filter=%22url%28%23silk%29%22 opacity=%22.65%22/%3E%3C/g%3E%3Cpath d=%22M1 86l1 21h22M416 109l40 -40%22 fill=%22none%22 stroke=%22%23fff3df%22 stroke-width=%221.2%22/%3E%3Cpath d=%22M5 15v-10h10M442 5h10v10M5 95v10h10M452 95v10h-10%22 fill=%22none%22 stroke=%22%23e5c595%22 stroke-width=%220.72%22/%3E%3C/svg%3E");
+    --halo-input: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 684 71%22 preserveAspectRatio=%22none%22%3E%3Cdefs%3E%3ClinearGradient id=%22g%22 x2=%221%22 y2=%22.3%22%3E%3Cstop offset=%220%22 stop-color=%22%23f4f3f9%22 stop-opacity=%220.42%22/%3E%3Cstop offset=%220.45%22 stop-color=%22%23f7f6fb%22 stop-opacity=%220.72%22/%3E%3Cstop offset=%221%22 stop-color=%22%23efeef6%22 stop-opacity=%220.62%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d=%22M1 .8H683V53L666 70H1Z%22 fill=%22url%28%23g%29%22 stroke=%22%23c8c6d6%22 stroke-width=%221.1%22/%3E%3Cpath d=%22M4 10V4h8M671 4h9v8M4 59v8h10%22 fill=%22none%22 stroke=%22%23d5d1dd%22 stroke-width=%221%22/%3E%3Cpath d=%22M667 70l15-15%22 fill=%22none%22 stroke=%22%23dfc7a7%22 stroke-width=%220.85%22/%3E%3C/svg%3E");
+    --halo-send: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 108 71%22 preserveAspectRatio=%22none%22%3E%3Cdefs%3E%3ClinearGradient id=%22g%22 x1=%220%22 y1=%221%22 x2=%221%22 y2=%22.3%22%3E%3Cstop offset=%220%22 stop-color=%22%239695a6%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.45%22 stop-color=%22%23626779%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.78%22 stop-color=%22%23797c8f%22 stop-opacity=%221%22/%3E%3Cstop offset=%221%22 stop-color=%22%23b7b5c0%22 stop-opacity=%221%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d=%22M1 70 27 22 59 1H107L81 70Z%22 fill=%22url%28%23g%29%22 stroke=%22%23e6dfdf%22 stroke-width=%220.8%22/%3E%3Cpath d=%22M26 25 38 2h18M81 70l6-16-17 16%22 fill=%22none%22 stroke=%22%23efd7b2%22 stroke-width=%220.85%22/%3E%3C/svg%3E");
+    --halo-star: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 40 40%27%3E%3Cpath fill=%27%23968fa4%27 d=%27M20 1Q22 17 39 20Q22 23 20 39Q17 23 1 20Q17 17 20 1Z%27/%3E%3C/svg%3E");
+}

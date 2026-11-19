@@ -52,6 +52,32 @@ it('keeps the existing single eight-second attempt for other consumers', async (
     expect(position).toHaveBeenCalledOnce();
     expect(position.mock.calls[0][2]).toEqual({ enableHighAccuracy: true, timeout: 8000, maximumAge: 0 });
 });
+it('cancels the browser wait without retrying and ignores late callbacks', async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const request = getCurrentPositionSmart({ quiet: true, retry: true, signal: controller.signal });
+    const checked = expect(request).rejects.toMatchObject({ name: 'AbortError' });
+    controller.abort();
+    await checked;
+    position.mock.calls[0][0]({ coords: { latitude: 31, longitude: 121, accuracy: 10 } });
+    await vi.advanceTimersByTimeAsync(25000);
+    expect(position).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+});
+it('does not start browser fallback when an aborted native lookup fails late', async () => {
+    vi.mocked(Capacitor.isNativePlatform).mockReturnValue(true);
+    vi.mocked(Geolocation.checkPermissions).mockResolvedValue({ location: 'granted', coarseLocation: 'granted' });
+    let reject!: (error: Error) => void;
+    vi.mocked(Geolocation.getCurrentPosition).mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
+    const controller = new AbortController();
+    const request = getCurrentPositionSmart({ quiet: true, retry: true, signal: controller.signal });
+    const checked = expect(request).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.waitFor(() => expect(Geolocation.getCurrentPosition).toHaveBeenCalledOnce());
+    controller.abort();
+    reject(new Error('native unavailable'));
+    await checked;
+    expect(position).not.toHaveBeenCalled();
+});
 it('releases a stuck browser request, ignores late callbacks and allows a subsequent fresh request', async () => {
     vi.useFakeTimers();
     const request = getCurrentPositionSmart({ retry: true });

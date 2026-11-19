@@ -295,6 +295,7 @@ const choices = {
     ],
     timestampPosition: [
         { value: 'below', label: '气泡下方', desc: '每组末尾贴边（默认）' },
+        { value: 'below_avatar', label: '头像下方', desc: '跟随双方头像居中显示' },
         { value: 'top_center', label: '上方居中', desc: '微信式 · 按间隔分段' },
     ],
     emojiSize: [

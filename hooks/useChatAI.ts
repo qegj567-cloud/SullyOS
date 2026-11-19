@@ -502,7 +502,7 @@ interface UseChatAIProps {
     categories: EmojiCategory[];
     addToast: (msg: string, type: 'info'|'success'|'error') => void;
     /** 长报错走弹窗 (toast 一行装不下), 手机用户能看清并复制反馈 */
-    showError?: (title: string, details: string) => void;
+    showError?: (title: string, details: string, endpoint?: {baseUrl:string; model:string}) => void;
     setMessages: (msgs: Message[]) => void; // Callback to update UI messages
     /** 正式消息接替流式预览前同步登记 id，避免真实气泡重新播放入场动画。 */
     onStreamPreviewHandover?: (charId: string, messageIds: number[]) => void;
@@ -2224,6 +2224,9 @@ export const useChatAI = ({
             // 注意: 这个 catch 兜的是「拿到 API 响应之后」的整条后处理管线 (applyAssistantPostProcessing,
             // 13 步)。这里抛错多半不是网络问题, 而是解析/正则/落库异常。别再叫"连接中断"误导排查。
             const errMsg = e?.message || String(e);
+            if (showError && /API Error \d{3}|Failed to fetch|API返回了|输出被截断|模型.*格式不正确/i.test(errMsg)) {
+                showError('聊天回复失败', errMsg, effectiveApi);
+            }
             // 瑞一杯模式下报错: 大概率是聊天模型/中转不支持 function calling(tools) → 带 tools 一发就 400。
             // 在 APK 里看不到控制台, 这里把完整原因 + 解法存成可读消息, 方便排查。
             if (luckinChatRef?.current?.active && /\b400\b|tool|function[_\s-]?call/i.test(errMsg)) {

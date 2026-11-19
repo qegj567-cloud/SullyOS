@@ -7,6 +7,8 @@ interface Props {
   isOpen: boolean;
   hidden?: boolean;
   title: string;
+  sectionLabel?: string;
+  className?: string;
   onClose: () => void;
   children: React.ReactNode;
   footer?: React.ReactNode;
@@ -22,7 +24,7 @@ export function focusSettingsBackIfNeeded(anchor: HTMLElement | null) {
 }
 
 /** A settings subpage fills the app. Covered pages stay mounted to retain drafts. */
-export default function SettingsDetailPage({ isOpen, hidden = false, title, onClose, children, footer, navigation }: Props) {
+export default function SettingsDetailPage({ isOpen, hidden = false, title, className = '', sectionLabel = '主动消息 2.0', onClose, children, footer, navigation }: Props) {
   const embedded = useContext(SettingsPageEmbedded);
   const titleId = useId();
   const page = useRef<HTMLElement>(null);
@@ -48,7 +50,7 @@ export default function SettingsDetailPage({ isOpen, hidden = false, title, onCl
       aria-label={title ? undefined : '主动消息配置内容'}
       hidden={hidden}
       {...(hidden ? { inert: '' } : {})}
-      className={embedded ? 'amsg-embedded-page' : `amsg-detail-page${navigation ? ' amsg-workspace-page' : ''}`}
+      className={embedded ? 'amsg-embedded-page' : `amsg-detail-page ${className}${navigation ? ' amsg-workspace-page' : ''}`}
       onKeyDown={event => {
         if (embedded) return;
         if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); goBack(); }
@@ -66,7 +68,7 @@ export default function SettingsDetailPage({ isOpen, hidden = false, title, onCl
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="m14 6-6 6 6 6" /></svg>
             <span>返回</span>
           </button>
-          <div className="amsg-detail-heading min-w-0">{!navigation && <p className="text-[10px] text-slate-400">系统设置 · 主动消息 2.0</p>}<h2 id={titleId} className="text-base font-semibold text-slate-800">{title}</h2></div>
+          <div className="amsg-detail-heading min-w-0">{!navigation && <p className="text-[10px] text-slate-400">系统设置 · {sectionLabel}</p>}<h2 id={titleId} className="text-base font-semibold text-slate-800">{title}</h2></div>
         </div>
       </header>}
       {navigation ? <div className="amsg-workspace">

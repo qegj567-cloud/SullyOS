@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><base href="../../">
+  <title>角色名片 · 交互预览</title><link rel="icon" href="data:,">
+  <script src="/vendor/tailwind-3.4.17.js"></script>
+  <script>tailwind.config={theme:{extend:{colors:{primary:'#74687e'}}}};</script>
+  <style>
+    :root{--safe-top:0px;--safe-bottom:0px}body{margin:0;background:#e9e6ed;font:14px system-ui,sans-serif;color:#443f4c}
+    #root{margin:auto;width:min(100%,460px);height:100dvh;background:#faf9fc;display:flex;flex-direction:column}
+    #root>nav{display:flex;align-items:center;gap:12px;padding:8px 12px;border-bottom:1px solid #d9d4df;flex:none}
+    #root>nav small{margin-right:auto;color:#625a6c}#root>nav button{min-height:36px}#root>main{position:relative;min-height:0;flex:1}
+  </style>
+</head>
+<body>
+  <div id="root">正在打开角色名片…</div>
+  <script type="module">
+    // Keep the example character, model endpoint and edits in a dedicated browser origin.
+    if (location.hostname === 'profile-preview.localhost') {
+      import('/test/fixtures/chat-character-profile.tsx');
+    } else {
+      const preview = new URL(location.href);
+      preview.hostname = 'profile-preview.localhost';
+      location.replace(preview);
+    }
+  </script>
+</body></html>
