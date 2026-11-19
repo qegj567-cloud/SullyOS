@@ -39,6 +39,7 @@ import { recordCompletedCloudApiCall } from './apiCallLog';
 import { resolveDialogueApi } from './characterApi';
 import { dispatchAmsgResult } from './amsgResults';
 import { requestStartupUpdateCheck } from './amsgAutoUpdateTrigger';
+import { probeRescueOnForeground, probeRescueOnStartup } from './amsgRescueProbe';
 import { flushAmsgState } from './amsgStateSync';
 import { describeInstantChatFailure, pruneStaleTasks, type RemoteTaskLastError } from './amsg2Tasks';
 // 线协议常量的唯一出处是 shared（amsg-sw 只是 re-export 同一份）。
@@ -3042,6 +3043,12 @@ export const ActiveMsgRuntime = {
     // 点「更新 Worker」一样；对得上就敲一下让它按指纹自查。前端刚更新往往意味着后端也该更新，
     // 不必干等它 cron 上那几个小时。没配 Worker 的用户在里面就返回了。
     void requestStartupUpdateCheck();
+    // 救援模式（RESCUE）安全警告：只要连着 2.0 Worker 就问一次，回到前台够久了再问。
+    // 不跟上面那次共用 6 小时节流——警告晚到几小时，就是让人多蒙在鼓里几小时。
+    void probeRescueOnStartup();
+    if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+      subscribePageForeground(() => { void probeRescueOnForeground(); });
+    }
     // 上次会话发出去、回来前进程就没了的那一轮：指示灯靠 localStorage 记录挂回来，
     // 内容靠云端点名那一步补回来（它自带补收，还顺手把 60s 的点名周期排上）。
     if (listInstantChatPendings().length > 0) {

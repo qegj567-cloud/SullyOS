@@ -28,6 +28,8 @@ import { initializeFirstUseGuide } from '../utils/firstUseGuide';
 import { startBeautyUsage, stopBeautyUsage, stopBeautyForThemeChange } from '../utils/beautyUsage';
 import { FEEDBACK_INVITATION_KEY, hasPriorFeedbackInstallEvidence, initializeFeedbackInvitation, suppressFeedbackInvitation } from '../utils/feedbackInvitation';
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
+import { generateAvatar } from '../utils/defaultAvatar';
+import { buildRescueImportAnalytics, isAmsgRescueExport, rescueExportToBackup } from '../utils/amsgRescueImport';
 import type { VRSARActivity } from '../types';
 import { APIConfig, AppID, OSTheme, VirtualTime, CharacterProfile, CharacterGroup, ChatTheme, Toast, FullBackupData, UserProfile, ApiPreset, GroupProfile, SystemLog, Worldbook, NovelBook, SongSheet, Message, RealtimeConfig, AppearancePreset, CloudBackupConfig, CloudBackupFile, MemoryPalaceFeatureFlags, SuspendedDate } from '../types';
 import { DB } from '../utils/db';
@@ -723,13 +725,6 @@ const defaultApiConfig: APIConfig = {
   model: 'gpt-4o-mini',
   stream: false,
   temperature: 0.85,
-};
-
-const generateAvatar = (seed: string) => {
-    const colors = ['FF9AA2', 'FFB7B2', 'FFDAC1', 'E2F0CB', 'B5EAD7', 'C7CEEA', 'e2e8f0', 'fcd34d', 'fca5a5'];
-    const color = colors[seed.charCodeAt(0) % colors.length];
-    const letter = seed.charAt(0).toUpperCase();
-    return `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="%23${color}"/><text x="50" y="55" font-family="sans-serif" font-weight="bold" font-size="50" text-anchor="middle" dy=".3em" fill="white" opacity="0.9">${letter}</text></svg>`;
 };
 
 const defaultUserProfile: UserProfile = {
@@ -4623,6 +4618,15 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                       jsonStr = '';
                   }
               }
+          }
+
+          // 救援页导出的云端碎片（docs/amsg2-rescue.md）：先转成备份，再一律迁入为新用户。
+          // 不管点的是哪个导入按钮都不走覆盖恢复，救回来的东西比本机少，不能拿它盖掉现有数据。
+          if (isAmsgRescueExport(data)) {
+              const { backup, summary } = rescueExportToBackup(data);
+              trackEvent('导入救援文件', buildRescueImportAnalytics(summary));
+              data = backup;
+              importOptions = { ...importOptions, asNewUsers: true };
           }
 
           // 必须发生在 restoreAssetsInPlace / DB.importFullData 之前：不受支持的第三方

@@ -4,6 +4,7 @@ import {
     extractCallerHint,
     identifyApplicationErrorSource,
     identifyNetworkRequestSource,
+    redactRelayTokensInText,
     sanitizeUrlForLog,
     type ConfiguredEndpointSnapshot,
 } from './networkRequestSource';
@@ -60,6 +61,119 @@ describe('sanitizeUrlForLog（隐私脱敏守卫）', () => {
     it('不含敏感信息的常规 URL 原样保留，不破坏已有断言', () => {
         expect(sanitizeUrlForLog('https://proxy.friedsully.com/api/health')).toBe('https://proxy.friedsully.com/api/health');
         expect(sanitizeUrlForLog('https://api.siliconflow.cn/v1/embeddings')).toBe('https://api.siliconflow.cn/v1/embeddings');
+    });
+
+    it('报错原文、HTTP 响应回显与 console.error 里的中转令牌也会一并打码', () => {
+        const token = 'secretRelayToken_0123456789ABCDEFabcdef';
+        const relayUrl = `https://amsg-relay.friedsully.com/t/${token}/sullyos-amsg.louis810.workers.dev/debug`;
+
+        expect(redactRelayTokensInText(`GET ${relayUrl} failed`)).toBe(
+            'GET https://amsg-relay.friedsully.com/t/<redacted>/sullyos-amsg.louis810.workers.dev/debug failed',
+        );
+
+        const fetchLog = buildFetchFailureSystemLog({
+            url: relayUrl,
+            method: 'GET',
+            error: new TypeError(`Failed to fetch ${relayUrl}`),
+            durationMs: 8005,
+            startedAtPerf: 0,
+        }).log;
+        expect(fetchLog.message).not.toContain(token);
+        expect(fetchLog.detail).not.toContain(token);
+        expect(fetchLog.detail).toContain('/t/<redacted>/sullyos-amsg.louis810.workers.dev/debug');
+
+        const httpLog = buildHttpErrorSystemLog({
+            url: relayUrl,
+            method: 'GET',
+            status: 502,
+            responseText: JSON.stringify({ error: `upstream failed for ${relayUrl}` }),
+        });
+        expect(httpLog.message).not.toContain(token);
+        expect(httpLog.detail).not.toContain(token);
+
+        const consoleLog = buildConsoleErrorSystemLog({
+            message: `请求失败: ${relayUrl}`,
+            stacks: `Error: 请求失败: ${relayUrl}\n    at fetchDebug`,
+        });
+        expect(consoleLog.message).not.toContain(token);
+        expect(consoleLog.detail).not.toContain(token);
+        expect(consoleLog.detail).toContain('/t/<redacted>/sullyos-amsg.louis810.workers.dev/debug');
+    });
+
+    it('抹掉 appid、xsec_token、定位经纬度、第三方推送路径与自由文本内联凭据', () => {
+        const weather = sanitizeUrlForLog('https://api.openweathermap.org/data/2.5/weather?q=Beijing&appid=owm-secret-123&units=metric');
+        expect(weather).not.toContain('owm-secret-123');
+        expect(weather).toContain('q=Beijing');
+        expect(weather).toContain('units=metric');
+
+        const xhs = sanitizeUrlForLog('https://www.xiaohongshu.com/explore/123?xsec_token=xhs-secret-xyz&xsec_source=pc_share');
+        expect(xhs).not.toContain('xhs-secret-xyz');
+        expect(xhs).toContain('xsec_source=pc_share');
+
+        const geo = sanitizeUrlForLog('https://api.geoapify.com/v1/geocode/reverse?lat=31.2304&lon=121.4737&lang=zh&apiKey=geo-key-999');
+        expect(geo).not.toContain('31.2304');
+        expect(geo).not.toContain('121.4737');
+        expect(geo).not.toContain('geo-key-999');
+        expect(geo).toContain('lang=zh');
+
+        expect(sanitizeUrlForLog('https://api.day.app/MyBarkDeviceKey123/Hello')).toBe('https://api.day.app/<redacted>/Hello');
+        expect(sanitizeUrlForLog('https://api.day.app/push')).toBe('https://api.day.app/push');
+        expect(sanitizeUrlForLog('https://api.chuckfang.com/mySecretNick/title')).toBe('https://api.chuckfang.com/<redacted>/title');
+
+        const freeText = redactRelayTokensInText(
+            'Failed bark:https://api.day.app/BarkKey999/test, wxpusher:SPT_ABCDEFGHIJKLMN, '
+            + 'Authorization: Bearer sk-live-secret-12345678, cookie MUSIC_U=supersecretcookie123; '
+            + 'url=https://proxy.example.com/v1?key=AIzaSecretKey',
+        );
+        expect(freeText).not.toContain('BarkKey999');
+        expect(freeText).not.toContain('SPT_ABCDEFGHIJKLMN');
+        expect(freeText).not.toContain('sk-live-secret-12345678');
+        expect(freeText).not.toContain('supersecretcookie123');
+        expect(freeText).not.toContain('AIzaSecretKey');
+        // 只抹凭据本身，推送域名、接口路径和凭据类型要留着排障。
+        expect(freeText).toContain('bark:https://api.day.app/<redacted>/test,');
+        expect(freeText).toContain('Bearer <redacted>');
+        expect(freeText).toContain('MUSIC_U=<redacted>');
+        expect(freeText).toContain('https://proxy.example.com/v1?key=');
+    });
+
+    it('普通业务参数不被误判成凭据', () => {
+        const url = 'https://api.example.com/v1/chat?model=gpt-5&max_tokens=100&keyword=cat&session_id=s1&client_id=c1&q=hi';
+        expect(sanitizeUrlForLog(url)).toBe(url);
+        expect(redactRelayTokensInText(`GET ${url} failed`)).toBe(`GET ${url} failed`);
+    });
+
+    it('MCP 代理的目标地址解析失败时，回显的原值同样抹掉凭据参数', () => {
+        const identity = identifyNetworkRequestSource({
+            url: 'https://my-mcp-proxy.workers.dev/?target=' + encodeURIComponent('https://bad host/sse?key=mcp-secret-123'),
+            method: 'POST',
+            endpoints: baseEndpoints,
+        });
+        expect(identity.upstreamTarget).not.toContain('mcp-secret-123');
+        expect(identity.upstreamTarget).toContain('bad host/sse?key=');
+    });
+
+    it('中文标点、自建 Bark/MeoW、转义 JSON、多段/驼峰参数与幂等性均正常', () => {
+        const cnText = redactRelayTokensInText('请求失败：https://api.day.app/MyBarkKey123，请检查网络；wxpusher:SPT_123456789012，推送失败');
+        expect(cnText).toBe('请求失败：https://api.day.app/<redacted>，请检查网络；wxpusher:<redacted>，推送失败');
+
+        const selfHosted = redactRelayTokensInText('bark:https://bark.myhost.com/MySelfHostedKey/title');
+        expect(selfHosted).toBe('bark:https://bark.myhost.com/<redacted>/title');
+
+        const escapedJson = redactRelayTokensInText('{\\"url\\":\\"https://api.day.app/Key123\\"} `https://api.chuckfang.com/Nick99`');
+        expect(escapedJson).toBe('{\\"url\\":\\"https://api.day.app/<redacted>\\"} `https://api.chuckfang.com/<redacted>`');
+
+        const multiPrefix = sanitizeUrlForLog('https://api.example.com/v1?x_api_key=k1&cf_api_token=k2&accessToken=k3&deviceKey=k4&appId=k5&ok=1');
+        expect(multiPrefix).not.toContain('k1');
+        expect(multiPrefix).not.toContain('k2');
+        expect(multiPrefix).not.toContain('k3');
+        expect(multiPrefix).not.toContain('k4');
+        expect(multiPrefix).not.toContain('k5');
+        expect(multiPrefix).toContain('ok=1');
+
+        const once = redactRelayTokensInText('https://amsg-relay.friedsully.com/t/abcdefghijklmnopqrstuvwxyz/w.workers.dev/debug?key=secret');
+        expect(redactRelayTokensInText(once)).toBe(once);
+        expect(sanitizeUrlForLog(once)).toBe(once);
     });
 });
 
