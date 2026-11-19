@@ -15,13 +15,14 @@ const silverHalo: DecorationPreset = {
     name: '银晕',
     parts: {
         layout: {
-            chatAvatarMode: 'every_message', chatAvatarShape: 'circle', chatAvatarSize: 'medium',
+            chatAvatarMode: 'every_message', chatAvatarShape: 'circle', chatAvatarSize: 'small',
             chatAvatarVisibility: 'both', chatAvatarPlacement: 'beside', chatAvatarAlign: 'top',
-            chatAvatarOffsetY: 0, chatSnapToEdge: false, chatBubbleIndent: 0,
+            chatAvatarOffsetY: 8, chatSnapToEdge: false, chatBubbleIndent: 0,
+            chatBubbleFontSize: 0, chatBubbleLineHeight: 0,
             chatBubbleStyle: 'flat', chatMessageSpacing: 'default',
             chatShowTimestamp: 'always', chatTimestampPosition: 'below_avatar',
             chatHeaderStyle: 'default', chatChromeStyle: 'soft', chatHeaderAlign: 'left',
-            chatHeaderDensity: 'airy', chatHideHeaderBuffs: false, chatStatusStyle: 'dot',
+            chatHeaderDensity: 'compact', chatHideHeaderBuffs: false, chatStatusStyle: 'dot',
             chatInputStyle: 'rounded', chatSendButtonStyle: 'circle', chatModuleAlign: 'center',
         },
         bubbles: {

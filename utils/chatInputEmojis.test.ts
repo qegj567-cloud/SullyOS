@@ -68,6 +68,19 @@ afterEach(() => {
 });
 
 describe('表情面板的记录身份与图片复用', () => {
+    it.each([true, false])('图床整批失效时就地占位（缓存可用 %s）', async cacheEnabled => {
+        vi.stubGlobal('caches', cacheEnabled ? {open: async () => ({match: async () => undefined})} : undefined);
+        const fetchImage = vi.fn().mockRejectedValue(new TypeError('CORS'));
+        vi.stubGlobal('fetch', fetchImage);
+        const url = 'https://example.test/cat.gif';
+        await render([{name:'猫猫',url,categoryId:'a'}, {name:'狗狗',url:url+'?dog',categoryId:'a'}]);
+        const images = thumbnails();
+        await vi.waitFor(() => expect(images[0].src).toBe(url));
+        if (cacheEnabled) expect(fetchImage).toHaveBeenCalledWith(url, expect.objectContaining({__sullyHandlesFailure:true}));
+        await act(async () => { for (const image of images) image.dispatchEvent(new Event('error')); });
+        expect(images.every(image => image.src.startsWith('data:image/svg+xml'))).toBe(true);
+        expect(images.map(image => image.alt)).toEqual(['猫猫','狗狗']);
+    });
     it('首次打开才加载，关闭再打开或切加号不重建图片，退出聊天仍释放引用', async () => {
         const ref = await putImageBlob(dataUrlToBlob(PNG));
         const emojis = [{name: '缓存', url: ref, categoryId: 'a'}];

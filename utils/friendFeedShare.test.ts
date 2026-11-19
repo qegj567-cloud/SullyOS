@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import {beforeEach,afterEach,it,expect,vi} from 'vitest';
+import {Blob as CloneableBlob} from 'node:buffer';
 import {DB} from './db';
 import {saveFriendCircle,publishFriendPost,readFriendFeed,mutateFriendFeed,saveFriendFeedSettings} from './friendFeed';
 import {defaultFriendFeedSettings} from './friendFeedSettings';
@@ -29,6 +30,8 @@ beforeEach(async()=>{
 });
 afterEach(()=>vi.unstubAllGlobals());
 it('keeps local photos visible in shares without sending them to the model until opted in, and never proxies local photos',async()=>{
+    // fake-indexeddb uses Node structuredClone, which preserves Node Blob bytes.
+    vi.stubGlobal('Blob',CloneableBlob);
     const ref='blobref:b_localsharephoto';
     await restoreBlobRef(ref,new Blob(['photo'],{type:'image/jpeg'}));
     await mutateFriendFeed(f=>{const p=f.posts[0];delete p.source;delete p.weiboComments;p.images=[{url:ref,thumbnail:ref}];});

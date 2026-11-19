@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 360" preserveAspectRatio="none">
+  <defs>
+    <linearGradient id="sky" x2=".65" y2="1"><stop stop-color="#8eafa4"/><stop offset=".32" stop-color="#c5d9d3"/><stop offset=".65" stop-color="#edf3ef"/><stop offset="1" stop-color="#b5cfca"/></linearGradient>
+    <radialGradient id="fog"><stop stop-color="#f9f9ef"/><stop offset="1" stop-color="#f4f8f3" stop-opacity="0"/></radialGradient>
+    <linearGradient id="green" x2="1" y2=".65"><stop stop-color="#415c50"/><stop offset=".49" stop-color="#749581"/><stop offset=".52" stop-color="#9bae8c"/><stop offset="1" stop-color="#c0ca99"/></linearGradient>
+    <linearGradient id="drop" x2=".65" y2="1"><stop stop-color="#91afa5" stop-opacity=".15"/><stop offset=".58" stop-color="#94b7ad" stop-opacity=".65"/><stop offset="1" stop-color="#fbfff6"/></linearGradient>
+    <g id="leaf"><path d="M0 0Q-8-12 2-26Q7-31 10-35Q13-22 7-9Q4-3 0 0Z" fill="url(#green)"/><path d="M0 0Q4-14 10-34" fill="none" stroke="#d1d6ab" stroke-width=".5"/></g>
+    <g id="bead"><path d="M0-8Q-.4-4-2 .2C-4 5 4 5 2 0Q.7-3 0-8Z" fill="url(#drop)" stroke="#e2f4eb" stroke-width=".45"/><circle cx=".7" cy="1.6" r=".8" fill="white"/></g>
+  </defs>
+  <path fill="url(#sky)" d="M0 0h360v360H0z"/><ellipse cx="196" cy="175" rx="145" ry="146" fill="url(#fog)"/>
+  <g fill="none" stroke-linecap="round"><path d="M22-8q40 20 109 1M43 0q9 19 11 49M64 7q21 10 31 33M89 5q14 1 32 15" stroke="#596e5a" stroke-width="2.4"/><path d="M51 28 37 48m15-16 17 13M83 24l-5 22M85 24l21 6M111 14l8 11" stroke="#657d66" stroke-width="1.3"/></g>
+  <g><use href="#leaf" transform="translate(48 20) rotate(201) scale(.86)"/><use href="#leaf" transform="translate(53 33) rotate(142) scale(.8)"/><use href="#leaf" transform="translate(55 46) rotate(176) scale(.7)"/><use href="#leaf" transform="translate(61 3) rotate(112) scale(.92)"/><use href="#leaf" transform="translate(79 16) rotate(132) scale(.9)"/><use href="#leaf" transform="translate(80 24) rotate(188) scale(.7)"/><use href="#leaf" transform="translate(91 30) rotate(142) scale(.71)"/><use href="#leaf" transform="translate(102 11) rotate(96) scale(.93)"/><use href="#leaf" transform="translate(115 16) rotate(128) scale(.55)"/></g>
+  <g fill="none" stroke="#e8f5eb" opacity=".64" stroke-width=".7"><path d="M216 0v23m1 5v5m22-35v56m12-48v12m19-21v81m15-77v36m19-39v104m9-96v42m22-53v73m14-61v20"/></g>
+  <use href="#bead" x="304" y="102"/><use href="#bead" x="270" y="82"/><use href="#bead" x="239" y="57"/><use href="#bead" x="335" y="73"/><use href="#bead" x="54" y="74"/><use href="#bead" x="91" y="59"/><use href="#bead" transform="translate(130 33) scale(.75)"/>
+  <g fill="none" stroke="#f8fbec" stroke-width=".75" opacity=".85"><ellipse cx="276" cy="344" rx="15" ry="2.1"/><ellipse cx="276" cy="345" rx="35" ry="4.9"/><ellipse cx="276" cy="347" rx="60" ry="8.1"/><ellipse cx="276" cy="350" rx="81" ry="10.8"/><ellipse cx="186" cy="329" rx="17" ry="2"/><ellipse cx="186" cy="330" rx="27" ry="3.6"/><ellipse cx="338" cy="330" rx="12" ry="1.8"/></g>
+  <path d="M0 351q47-31 115-6t127 9" fill="none" stroke="#fcf5d7" stroke-width=".9"/><use href="#bead" x="276" y="340"/><use href="#bead" transform="translate(281 321) scale(.6)"/>
+</svg>

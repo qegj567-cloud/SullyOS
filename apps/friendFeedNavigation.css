@@ -3,6 +3,15 @@
 .friend-feed .ff-classic-header { display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); gap:6px; padding:10px 12px; }
 .friend-feed .ff-classic-header h1 { text-align:center; min-width:0; }
 .friend-feed .ff-classic-header .ff-feed-title { width:auto; height:44px; font:inherit; letter-spacing:inherit; padding:0 2px; border:0; border-radius:0; background:transparent; color:inherit; box-shadow:none; }
+.friend-feed[data-theme] > :is(.ff-classic-header,.ff-social-header,.friend-feed-header) {
+    min-height: 48px;
+    padding-block: 2px;
+}
+.friend-feed .friend-feed-header .ff-detail-title {
+    display: block; width: 100%; min-height: 44px; padding: 0;
+    border: 0; background: transparent; box-shadow: none; color: inherit; font: inherit;
+    touch-action: manipulation;
+}
 .friend-feed .ff-header-leading,.friend-feed .ff-header-trailing { display:flex; align-items:center; gap:2px; }
 .friend-feed .ff-header-trailing { justify-content:flex-end; }
 .friend-feed .ff-classic-header > div > button { width:34px; height:44px; min-height:44px; border:0; border-radius:0; background:transparent; color:var(--ff-ink); box-shadow:none; }

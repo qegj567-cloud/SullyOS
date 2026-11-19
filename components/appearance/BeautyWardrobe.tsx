@@ -4,6 +4,8 @@ import { useLocalBackHandler } from '../../hooks/useLocalBackHandler';
 import { createPortal } from 'react-dom';
 import { DB } from '../../utils/db';
 import type { BeautyShare } from '../../utils/beautyShareContract';
+import {useWardrobeDetailDialog} from '../chat/ChatDecorationTrial';
+import {validateDecoration} from '../../utils/chatDecoration';
 import BeautyPresetPreview from '../share/BeautyPresetPreview';
 import type { BeautySource } from '../share/BeautySharePanel';
 import './BeautyWardrobe.css';
@@ -69,12 +71,12 @@ async function loadEntry(entry: WardrobeEntry): Promise<Loaded> {
 }
 
 function WardrobeDetail({ entry, initial, onClose, onApply,onEdit,onExport,onShare,onDelete,onUpdate }: WardrobeActions & { entry: WardrobeEntry; initial?: Loaded; onClose: () => void; onApply: (entry: WardrobeEntry) => void;onEdit?:(entry:WardrobeEntry)=>void;onExport?:(entry:WardrobeEntry)=>void }) {
-  const dialog = useRef<HTMLDialogElement>(null);
+  const {dialog,trial} = useWardrobeDetailDialog();
+  const [starting,setStarting] = useState(false);
   const [loaded, setLoaded] = useState(initial);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
-  useLocalBackHandler(() => { onClose(); return true; }, 40);
-  useEffect(() => { dialog.current?.showModal(); return () => dialog.current?.close(); }, []);
+  useLocalBackHandler(() => { if(!starting)onClose(); return true; }, 40);
   useEffect(() => {
     if (initial) return;
     let alive = true; setError('');
@@ -82,8 +84,8 @@ function WardrobeDetail({ entry, initial, onClose, onApply,onEdit,onExport,onSha
     return () => { alive = false; };
   }, [entry, initial, attempt]);
   const metadata = loaded?.share?.metadata;
-  return createPortal(<dialog ref={dialog} className="wardrobe-detail" aria-labelledby="wardrobe-detail-title" onCancel={onClose}>
-    <header><button type="button" onClick={onClose} aria-label="返回我的装扮">‹</button><span>装扮预览</span>{loaded?.share ? <BeautyRepoBadge share={loaded.share}/> : <span className="wardrobe-detail-label">本机</span>}</header>
+  return createPortal(<dialog ref={dialog} className="wardrobe-detail" aria-labelledby="wardrobe-detail-title" onCancel={e=>{e.preventDefault();if(!starting)onClose();}}>
+    <header><button type="button" disabled={starting} onClick={onClose} aria-label="返回我的装扮">‹</button><span>装扮预览</span>{loaded?.share ? <BeautyRepoBadge share={loaded.share}/> : <span className="wardrobe-detail-label">本机</span>}</header>
     <div className="wardrobe-detail-scroll">
       <div className="wardrobe-detail-stage">{loaded ? <BeautyPresetPreview data={loaded.pack}/> : error ? <div role="alert"><p>{error}</p><button onClick={() => setAttempt(v => v + 1)}>重新载入</button></div> : <p role="status">正在载入预览…</p>}</div>
       <div className="wardrobe-detail-info"><h2 id="wardrobe-detail-title">{entry.name}</h2><p>{metadata ? `作者 · ${metadata.credit}` : '保存在这台设备上的装扮'}</p>
@@ -98,7 +100,15 @@ function WardrobeDetail({ entry, initial, onClose, onApply,onEdit,onExport,onSha
         </details>}
       </div>
     </div>
-    <footer><span>应用后查看实际效果</span><button type="button" disabled={!loaded} onClick={() => { onClose(); onApply(entry); }}>立即应用</button></footer>
+    {loaded&&error&&<p role="alert">{error}</p>}
+    <footer>{trial && entry.kind==='chat-decoration' && !entry.categories?.some(c=>['date','story','collaboration','journal','schedule'].includes(c)) ?
+      <button type="button" disabled={!loaded||starting} onClick={async()=>{
+        if(!loaded)return;
+        setStarting(true);setError('');
+        try{await trial.start(validateDecoration(loaded.pack),loaded.origin);}
+        catch(e){setError(e instanceof Error?e.message:'试用失败');}
+        finally{setStarting(false);}
+      }}>{starting?'准备中…':'试用'}</button>:<span>应用后查看实际效果</span>}<button type="button" disabled={!loaded||starting} onClick={() => { onClose(); onApply(entry); }}>立即应用</button></footer>
   </dialog>, document.body);
 }
 

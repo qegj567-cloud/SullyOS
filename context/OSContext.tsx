@@ -1006,6 +1006,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const errorRoutes = useRef({ apiConfig, apiPresets, memoryPalaceConfig, characters });
   errorRoutes.current = { apiConfig, apiPresets, memoryPalaceConfig, characters };
   const [systemLogs, setSystemLogs] = useState<SystemLog[]>([]);
+
   
   // Sys Operation Status
   const [sysOperation, setSysOperation] = useState<{ status: 'idle' | 'processing', message: string, progress: number }>({ status: 'idle', message: '', progress: 0 });
@@ -5064,7 +5065,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     if (appId === AppID.Date && suspendedDateRef.current) setActiveCharacterId(suspendedDateRef.current.charId);
     setActiveApp(appId);
   };
-  const closeApp = () => setActiveApp(AppID.Launcher);
+  const closeApp = useCallback(() => setActiveApp(AppID.Launcher), []);
   // 从聊天直接进入某角色的见面：切换当前角色 + 标记自动进入 + 打开见面 App
   const openDateWithChar = (charId: string) => {
     // 和这个角色的见面正挂着：回到那场见面，不另开一场。

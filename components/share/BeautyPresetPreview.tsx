@@ -91,7 +91,7 @@ export default memo(forwardRef<BeautyPreviewHandle, Props>(function BeautyPreset
       for (const child of Array.from(parsed.body.children)) body.append(child.cloneNode(true));
       shadow.replaceChildren(style, body);
       if(sample&&isChat&&!compact){
-        cleanup=bindDecorationPreview(body,liveState||{},!!scenes.find(item=>item.id===sceneId)?.expanded,state=>setInteraction({data,scene:sceneId,state}));
+        cleanup=bindDecorationPreview(body,liveState||{},!!scenes.find(item=>item.id===sceneId)?.expanded,state=>setInteraction({data,scene:sceneId,state}),setScene);
         const messages=body.querySelector('.sample-messages');if(messages)messages.scrollTop=scrollTop;
         if(focusAction)Array.from(body.querySelectorAll<HTMLElement>('[data-preview-action]')).find(el=>el.getAttribute('data-preview-action')===focusAction)?.focus({preventScroll:true});
       }

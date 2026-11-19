@@ -28,8 +28,14 @@ export async function prepareEmojiExport(emojis: Pick<Emoji, 'name' | 'url'>[], 
         let blob = isBlobRef(emoji.url) ? await getBlobForRef(emoji.url)
             : await cachedEmojiOriginal(emoji.url).catch(() => undefined);
         if (!blob && !isBlobRef(emoji.url)) {
-            blob = await fetchBlobForShare(emoji.url);
-            if (isRemoteEmoji(emoji.url) && hasEmojiCacheStorage()) {
+            const remote = isRemoteEmoji(emoji.url);
+            try {
+                blob = await fetchBlobForShare(emoji.url, undefined, { __sullyHandlesFailure: remote });
+            } catch (error) {
+                if (!remote) throw error;
+                throw new Error(`未能从表情包图床下载「${emoji.name}」的原图。如果聊天里也一直打不开，可以到私聊 → 笑脸 → 铅笔，选中这张表情包后删除。`, { cause: error });
+            }
+            if (remote && hasEmojiCacheStorage()) {
                 await rememberEmojiOriginal(emoji.url, blob).catch(() => false);
             }
         }

@@ -1,5 +1,5 @@
 import {friendPostImages,friendPostMediaCount} from '../utils/friendFeedImages';
-import React, {useEffect,useRef,useState} from 'react';
+import React, {useEffect,useRef} from 'react';
 import {ArrowClockwise, PencilSimple,ShareNetwork} from '@phosphor-icons/react';
 import type {CharacterProfile, UserProfile} from '../types';
 import type {FriendPost,FriendComment,FriendReplyTarget} from '../utils/friendFeed';
@@ -9,18 +9,18 @@ import FriendFeedImages from './FriendFeedImages';
 import FriendFeedWeiboComments from './FriendFeedWeiboComments';
 import {sourceLabel} from '../utils/friendFeedSource';
 
-export default function FriendFeedPostDetail({post,characters,user,onComment,onProfile,onRefresh,busy,status,replying,onShare,onReply,focusComment,onReadVisible,onEdit,onDelete}: {
+export default function FriendFeedPostDetail({post,characters,user,onComment,onProfile,onRefresh,busy,status,replying,onShare,onReply,focusComment,onReadVisible,onEdit,onDelete,expanded,onExpand}: {
+    expanded: ReadonlySet<string>; onExpand: (rootId: string, open: boolean) => void;
     onEdit?:(comment:FriendComment)=>void;onDelete?:(comment:FriendComment)=>void;
     post?:FriendPost;characters:CharacterProfile[];user:UserProfile;onComment:()=>void;onProfile:(id:string,accountId?:string)=>void;onRefresh:()=>void;busy:boolean;status:string;replying:boolean;onShare?:()=>void;onReply?:(target:FriendReplyTarget)=>void;focusComment?:{id:string};onReadVisible?:(ids:string[])=>void;
 }) {
-    const [expanded,setExpanded]=useState<Set<string>>(()=>new Set());
     const container=useRef<HTMLDivElement>(null),located=useRef<typeof focusComment>();
     const threads=friendCommentThreads(post?.comments||[]);
     useEffect(()=>{
         if(!focusComment||located.current===focusComment)return;
         const thread=threads.find(t=>t.replies.some(c=>c.id===focusComment.id));
-        if(thread)setExpanded(current=>current.has(thread.root.id)?current:new Set([...current,thread.root.id]));
-    },[focusComment,post?.comments]);
+        if(thread && !expanded.has(thread.root.id))onExpand(thread.root.id,true);
+    },[focusComment,post?.comments,expanded,onExpand]);
     useEffect(()=>{
         if(!focusComment||located.current===focusComment)return;
         const target=Array.from(container.current?.querySelectorAll<HTMLElement>('[data-comment-id]')||[]).find(el=>el.dataset.commentId===focusComment.id);
@@ -70,9 +70,7 @@ export default function FriendFeedPostDetail({post,characters,user,onComment,onP
             {threads.map(({root,replies})=><div className="ff-comment-thread" key={root.id}>
                 {renderComment(root)}{!!replies.length&&<div className="ff-thread-replies" aria-label={`${root.authorName}的评论下的回复`}>
                     {(expanded.has(root.id)?replies:replies.slice(0,3)).map(c=>renderComment(c,c.localReply?.id===root.id?2:3))}
-                    {replies.length>3&&<button type="button" className="ff-thread-toggle" aria-expanded={expanded.has(root.id)} onClick={()=>setExpanded(current=>{
-                        const next=new Set(current);if(next.has(root.id))next.delete(root.id);else next.add(root.id);return next;
-                    })}>{expanded.has(root.id)?'收起回复':`查看全部 ${replies.length} 条回复`}</button>}
+                    {replies.length>3&&<button type="button" className="ff-thread-toggle" aria-expanded={expanded.has(root.id)} onClick={()=>onExpand(root.id,!expanded.has(root.id))}>{expanded.has(root.id)?'收起回复':`查看全部 ${replies.length} 条回复`}</button>}
                 </div>}
             </div>)}
         </section>

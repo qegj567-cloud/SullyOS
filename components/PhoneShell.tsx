@@ -10,7 +10,7 @@ import { shouldShowAnniversaryGift, markAnniversaryGiftSeen } from '../utils/ann
 
 
 
-import React, { useState, useEffect, useMemo, useRef, Suspense } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, Suspense } from 'react';
 import { IMPORT_IN_PROGRESS_KEY, useOS } from '../context/OSContext';
 import StatusBar from './os/StatusBar';
 import { SARModuleMonitor } from './sar/SARModuleMonitor';
@@ -131,7 +131,7 @@ import DreamSimIndicator from './os/DreamSimIndicator';
 import ErrorDialog from './os/ErrorDialog';
 import BootSequence from './os/BootSequence';
 import { setAppPayloadWarmer, shouldUseIdleAppPreload } from './os/appPreload';
-import { isBrowserBackGuardState, makeBrowserBackGuardState } from '../utils/browserBackGuard';
+import { isBrowserBackGuardState, listenForAppBrowserBack } from '../utils/browserBackGuard';
 
 /*
 // Internal Error Boundary Component
@@ -798,32 +798,9 @@ const PhoneShell: React.FC = () => {
       };
     }
 
-    const armGuard = () => {
-      try {
-        window.history.pushState(
-          makeBrowserBackGuardState(window.history.state),
-          '',
-          window.location.href,
-        );
-        return true;
-      } catch {
-        return false;
-      }
-    };
-
-    if (!guardIsCurrent && !armGuard()) return;
-
-    const onPopState = (event: PopStateEvent) => {
-      // A nested panel was above the SullyOS guard and handled this back itself.
-      if (isBrowserBackGuardState(event.state)) return;
-
-      // Re-arm before navigating inside the OS so another quick swipe is safe too.
-      armGuard();
+    return listenForAppBrowserBack(window, () => {
       if (!deploymentNotice.blocked) handleBack();
-    };
-
-    window.addEventListener('popstate', onPopState);
-    return () => window.removeEventListener('popstate', onPopState);
+    });
   }, [activeApp, handleBack, deploymentNotice.blocked]);
 
   // Capacitor Native Handling
@@ -846,31 +823,28 @@ const PhoneShell: React.FC = () => {
     };
     initNative();
 
-    // Handle Android Hardware Back Button
-    const setupBackButton = async () => {
-        if (Capacitor.isNativePlatform()) {
-            try {
-                await CapApp.removeAllListeners();
-                CapApp.addListener('backButton', ({ canGoBack }) => {
-                    if (deploymentNotice.blocked) return;
-                    if (isLocked) {
-                        CapApp.exitApp();
-                    } else {
-                        handleBack(); // Delegate to OSContext logic
-                    }
-                });
-            } catch (e) { console.log('Back button listener setup failed'); }
-        }
-    };
+  }, [deploymentNotice.blocked]);
 
-    setupBackButton();
-
+  // Keep one native listener through in-app navigation and provider re-renders.
+  const nativeBack = useRef({isLocked, blocked: deploymentNotice.blocked, handleBack});
+  useLayoutEffect(() => {
+    nativeBack.current = {isLocked, blocked: deploymentNotice.blocked, handleBack};
+  }, [isLocked, deploymentNotice.blocked, handleBack]);
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    let disposed = false;
+    const registration = CapApp.addListener('backButton', () => {
+      const {isLocked, blocked, handleBack} = nativeBack.current;
+      if (disposed || blocked) return;
+      if (isLocked) void CapApp.exitApp();
+      else handleBack();
+    });
+    void registration.catch(() => console.log('Back button listener setup failed'));
     return () => {
-        if (Capacitor.isNativePlatform()) {
-            CapApp.removeAllListeners().catch(() => {});
-        }
+      disposed = true;
+      void registration.then(listener => listener.remove()).catch(() => {});
     };
-  }, [activeApp, isLocked, closeApp, handleBack, deploymentNotice.blocked]);
+  }, []);
 
   // Force scroll to top when app changes to prevent "push up" glitches on iOS
   useEffect(() => {

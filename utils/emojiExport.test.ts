@@ -31,3 +31,7 @@ it('rejects missing assets instead of silently delivering a partial archive', as
     await expect(prepareEmojiExport([{ name: '丢失', url: 'blobref:missing' }])).rejects.toThrow('已丢失');
     await expect(prepareEmojiExport([])).rejects.toThrow('没有');
 });
+it('names the sticker and its host as the source when original download fails', async () => {
+    vi.mocked(fetchBlobForShare).mockRejectedValue(new Error('HTTP 404'));
+    await expect(prepareEmojiExport([{ name: '招手', url: 'https://example.test/wave.gif' }])).rejects.toThrow(/表情包图床.*招手.*删除/);
+});

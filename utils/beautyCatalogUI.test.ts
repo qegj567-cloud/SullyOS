@@ -23,6 +23,13 @@ async function mount(element:React.ReactNode){
 const button=(text:string)=>[...document.querySelectorAll('button')].find(el=>el.textContent?.includes(text))!;
 const click=async(el:HTMLElement)=>act(async()=>{el.click();});
 describe('装扮库与批量协议交互',()=>{
+  it('进入白框目录直接筛选白框，允许继续切换到全部',async()=>{
+    mocks.catalog.mockResolvedValue({entries:[entries[0],{...entries[1],categories:['chat','profile']}]});
+    await mount(React.createElement(BeautyCatalog,{onBack:vi.fn(),onReceive:vi.fn(),initialCategory:'whitebox'}));
+    expect(button('白框').getAttribute('aria-pressed')).toBe('true');
+    expect(document.querySelectorAll('.wardrobe-tile')).toHaveLength(1);
+    await click(button('全部'));expect(document.querySelectorAll('.wardrobe-tile')).toHaveLength(2);
+  });
   it('returns from the preview to the catalog before exiting the catalog',async()=>{
     mocks.catalog.mockResolvedValue({version:1,generatedAt:1,entries});
     const back=vi.fn();await mount(React.createElement(BeautyCatalog,{onBack:back,onReceive:vi.fn()}));

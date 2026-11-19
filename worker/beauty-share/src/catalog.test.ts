@@ -49,6 +49,20 @@ async function fixture(){
   return {db,env,files,pub,api,submit,approve,snapshot,fire,storage};
 }
 describe('公开装扮库：真实 SQL、审批和快照边界',()=>{
+  it.each([false,true])('角色名片按码领取并进入分类，混搭白框 %s',async mixed=>{
+    const f=await fixture();
+    const profile={customCss:'.chat-profile-portrait { border-radius: 50%; }'};
+    const parts={...(mixed ? pack.parts : {}),profile};
+    const submit=await f.api('/submissions','author',{metadata,package:{...pack,parts:{...parts,profile:{...profile,character:'私人资料'}}},catalogCover:cover});
+    expect(submit.status).toBe(201);
+    await f.approve(submit.value.revision);await f.fire();
+    const entry=f.snapshot().entries[0];
+    expect(entry.categories).toEqual(mixed?['chat','whitebox','profile']:['chat','profile']);
+    expect(JSON.parse(f.pub.get(entry.file)!.value as string).parts).toEqual(parts);
+    expect((await f.api('/shares/'+entry.code+'/file?revision='+entry.revision)).value.parts).toEqual(parts);
+    const invalid=await f.api('/submissions','author',{metadata,package:{...pack,parts:{profile:{customCss:'body { color: red }'}}},catalogCover:cover});
+    expect(invalid.status).toBe(400);
+  });
   it.each(['date','story'])('%s 自定义阅读 CSS 经投稿审核与目录导出完整保留',async part=>{
     const f=await fixture();
     const appearance={preset:'night',customCss:'.meeting-reading { --meeting-paper: #112233; }'};

@@ -938,7 +938,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                                         >
                                             <div className="aspect-square w-full">
                                                 {/* 换图仍重建 img，避免新图解码前残留旧位图；分页和懒加载照旧。 */}
-                                                <EmojiImage key={emojiRevision + e.url} value={e.url} loading="lazy" decoding="async" className="sully-emoji-thumb w-full h-full object-contain pointer-events-none" />
+                                                <EmojiImage key={emojiRevision + e.url} value={e.url} alt={e.name} loading="lazy" decoding="async" className="sully-emoji-thumb w-full h-full object-contain pointer-events-none" />
                                             </div>
                                             <span className={`text-[9px] truncate w-full text-center mt-0.5 leading-tight pointer-events-none ${emojiLabelClass}`}>{e.name}</span>
                                             {isSelected && <div className="absolute inset-0 bg-blue-500/20 rounded-2xl pointer-events-none border-2 border-blue-500" />}

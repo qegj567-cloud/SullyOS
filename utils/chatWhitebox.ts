@@ -25,12 +25,12 @@ export const BUBBLE_SELECTOR_GROUPS = [
 
 export const WHITEBOX_SELECTOR_GROUPS = [
   ...PSYCHE_SELECTOR_GROUPS,
-  {label:'所有 App 卡片的统一外壳',selectors:['.sully-chat-card','.sully-chat-card-surface','.sully-chat-card-content']},
+  {label:'App 卡片外壳、卡面与封面',selectors:['.sully-chat-card','.sully-chat-card-surface','.sully-chat-card-content','.sully-chat-card-face','.sully-chat-card-media','.sully-chat-card-banner']},
   {
     label: '整屏与顶栏',
     selectors: [
       '.sully-chat-root', '.sully-chat-messages', '.sully-chat-header', '.sully-chat-back', '.sully-chat-avatar',
-      '.sully-chat-info', '.sully-chat-name', '.sully-chat-status', '.sully-chat-buffs',
+      '.sully-chat-header-row', '.sully-chat-identity', '.sully-chat-info', '.sully-chat-name', '.sully-chat-status', '.sully-chat-buffs',
       '.sully-chat-token', '.sully-chat-trigger',
     ],
   },
@@ -46,7 +46,7 @@ export const WHITEBOX_SELECTOR_GROUPS = [
       '.sully-chat-system', '.sully-chat-interaction', '.sully-chat-message-content', '.sully-chat-message-sender', '.sully-chat-message-avatar-slot',
       '.sully-chat-message-avatar', '.sully-chat-message-avatar-img', '.sully-chat-turn-avatar-slot',
       '.sully-chat-turn-avatar', '.sully-chat-avatar-wrap', '.sully-chat-avatar-frame',
-      '.sully-chat-time-divider', '.sully-chat-timestamp-slot', '.sully-chat-timestamp', '.sully-chat-avatar-timestamp',
+      '.sully-chat-time-divider', '.sully-chat-day-divider', '.sully-chat-timestamp-slot', '.sully-chat-timestamp', '.sully-chat-avatar-timestamp', '.sully-chat-psyche-row',
     ],
   },
   {

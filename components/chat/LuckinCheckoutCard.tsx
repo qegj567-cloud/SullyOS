@@ -122,7 +122,7 @@ const LuckinCheckoutCard: React.FC<{
     const orderId = order?.orderIdStr || order?.orderId;
 
     return (
-        <div className="w-72 rounded-2xl overflow-hidden border border-[#E6DFCF] shadow-sm bg-gradient-to-br from-[#FAF7F0] to-[#F3EFE6]">
+        <div className="sully-chat-card-face w-72 rounded-2xl overflow-hidden border border-[#E6DFCF] shadow-sm bg-gradient-to-br from-[#FAF7F0] to-[#F3EFE6]">
             <div className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-[#0B1F3A] to-[#1E4D8C]">
                 <span className="text-lg">🦌</span>
                 <div className="flex-1 min-w-0">

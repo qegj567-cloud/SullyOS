@@ -1,148 +1,339 @@
-/* 银晕。图形随白框打包，消息、头像、情绪及操作来自当前会话。 */
+/* 银晕原稿为 941 × 1670。单位随聊天舞台缩放，预览、分屏和全屏共用同一比例。 */
 .sully-chat-root, .sully-chat-transfer-compose {
-    --halo-serif: "Times New Roman", "Noto Serif SC", "Songti SC", "SimSun", serif;
-    --halo-ink: #202536;
-    --halo-muted: #606173;
-    --halo-rule: #b8b6c966;
-    --halo-gold: #d4b997;
+    --halo-serif: "Times New Roman", "Noto Serif SC", "Songti SC", "SimSun", "STSong", serif;
+    --halo-ink: #191f31;
+    --halo-muted: #505368;
     font-family: var(--halo-serif);
 }
 .sully-chat-root {
+    container-type: size;
+    isolation: isolate;
+    --halo-u: min(calc(100cqw / 941), .65px);
+    --halo-v: clamp(.24px, calc(100cqh / 1670), .68px);
+    --halo-message-gap: clamp(8px,calc(22 * var(--halo-v)),14px);
+    --sully-chat-day-divider-display: grid;
     color: var(--halo-ink);
-    background: var(--halo-orbits) center / 100% 100% no-repeat,
-        radial-gradient(ellipse at 90% -8%, #bfc0d4, transparent 35%),
-        radial-gradient(ellipse at 14% 88%, #deddea88, transparent 38%),
-        linear-gradient(130deg, #e5e3ee, #efedf5 29%, #eae9f2 65%, #efedf5) !important;
+    background: radial-gradient(ellipse 17% 6% at 52% .6%,#999bb529,transparent),
+        radial-gradient(ellipse 33% 3.4% at 48% 33.4%,#a3a2bd2a,transparent),
+        radial-gradient(ellipse 35% 4% at 45% 85.5%,#9392ae29,transparent),
+        radial-gradient(ellipse 19% 9% at 20% 90.1%,#fff6,transparent),
+        radial-gradient(ellipse 14% 8% at 82% 1%,#a8a8c02c,transparent),
+        var(--halo-orbits) center / 100% 100% no-repeat,
+        radial-gradient(ellipse 24% 10% at 64% -1%,#c3c4d6bf,transparent),
+        radial-gradient(ellipse 28% 17% at 98% 2%,#bcbdd1,transparent),
+        radial-gradient(ellipse 42% 12% at 31% -3%,#d0cfdf 7%,transparent),
+        radial-gradient(ellipse 22% 15% at 98% 83%,#d7d6e6,transparent),
+        radial-gradient(ellipse 35% 9% at 18% 84%,#dddce9,transparent),
+        radial-gradient(ellipse 40% 13% at 61% 69%,#e3e2ee,transparent),
+        radial-gradient(ellipse 33% 12% at 96% 21%,#dddcea,transparent),
+        linear-gradient(130deg,#e5e3ee,#efedf5 27%,#eae9f2 56%,#efedf5 80%,#eae9f2) !important;
 }
 
-/* 标题和头像保留真实图片及名片入口。 */
+/* 顶栏沿用系统状态区、会话切换、用量和闪电按钮。 */
 .sully-chat-root .sully-chat-header {
-    padding-inline: clamp(12px, 4%, 26px);
+    min-height: max(calc(228 * var(--halo-v)), calc(var(--safe-top, 0px) + 54px)) !important;
+    padding: max(var(--safe-top, 0px), calc(55 * var(--halo-v))) 3.65% calc(26 * var(--halo-v));
+    padding-top: max(var(--safe-top, 0px), calc(55 * var(--halo-v))) !important;
     background: transparent !important;
-    border: 0;
-    box-shadow: none;
-    backdrop-filter: none;
+    border: 0; box-shadow: none; backdrop-filter: none;
 }
-.sully-chat-root .sully-chat-header :is(.sully-chat-back,.sully-chat-extra-action,.sully-chat-trigger) {
-    background: transparent; color: #35394b; box-shadow: none;
+.sully-chat-root .sully-chat-header :is(.sully-chat-back,.sully-chat-trigger,.sully-chat-extra-action) {
+    display: grid; place-items: center; flex: none; padding: 0; margin: 0;
+    width: 7.4cqw; min-height: 32px; background: none; color: #383b4d; box-shadow: none;
 }
-.sully-chat-root .sully-chat-avatar {
-    border: 2px solid #f8f6f6; border-radius: 50%;
-    outline: 1px solid #c4ad90; outline-offset: 2px;
-    box-shadow: 0 0 0 5px #eeebf188;
+.sully-chat-root .sully-chat-header :is(.sully-chat-back,.sully-chat-trigger) svg { width: calc(31 * var(--halo-u)); }
+.sully-chat-root .sully-chat-back svg { height: calc(42 * var(--halo-v)); }
+.sully-chat-root .sully-chat-back svg { background: var(--halo-back) center / contain no-repeat; }
+.sully-chat-root .sully-chat-trigger[data-icon="lightning"] svg { height: calc(49 * var(--halo-v)); background: var(--halo-lightning) center / contain no-repeat; }
+.sully-chat-root :is(.sully-chat-back,.sully-chat-trigger[data-icon="lightning"]) svg > * { opacity: 0; }
+.sully-chat-root .sully-chat-header :is(.sully-chat-header-row,.sully-chat-identity) { gap: 0; }
+.sully-chat-root .sully-chat-identity { position: relative; }
+.sully-chat-root .sully-chat-identity::after {
+    content: "···"; margin-inline: auto 2cqw; color: var(--halo-ink);
+    font: bold calc(33 * var(--halo-u))/1 var(--halo-serif);
 }
-.sully-chat-root .sully-chat-name { color: var(--halo-ink); font-size: 18px; font-weight: 500; letter-spacing: .10em; overflow-wrap: anywhere; }
-.sully-chat-root .sully-chat-status :is(.sully-chat-online-status,.sully-chat-custom-status,.sully-chat-token) {
-    color: var(--halo-muted); background: transparent; border-color: var(--halo-rule);
+.sully-chat-root .sully-chat-header-row:has(.sully-chat-extra-action) .sully-chat-identity::after { content: none; }
+.sully-chat-root :is(.sully-chat-avatar,.sully-chat-message-avatar-img) {
+    border-radius: 50%; border: 1px solid #ffffffe6; box-shadow: 0 0 5px 1px #ffffffb3; object-fit: cover;
 }
-.sully-chat-root .sully-chat-online-status > span:empty { background: #74788d; }
+.sully-chat-root .sully-chat-avatar { width: 10cqw; height: 10cqw; flex: none; margin-inline: .7cqw 2.4cqw; }
+.sully-chat-root .sully-chat-name { font: 460 calc(32 * var(--halo-u))/1.25 var(--halo-serif); letter-spacing: .125em; overflow-wrap: anywhere; }
+.sully-chat-root .sully-chat-status { gap: calc(10 * var(--halo-u)); }
+.sully-chat-root .sully-chat-status :is(.sully-chat-online-status,.sully-chat-custom-status) {
+    color: var(--halo-ink); background: transparent; border: 0;
+    font: calc(17 * var(--halo-u))/1.25 var(--halo-serif); letter-spacing: .17em;
+}
+.sully-chat-root .sully-chat-online-status > span:empty { width: 3px; height: 3px; background: #55586a; }
+.sully-chat-root .sully-chat-token {
+    border: 0; background: var(--halo-pulse) center / contain no-repeat;
+    width: calc(98 * var(--halo-u)); min-height: 16px; font-size: 0; padding: 0;
+}
 .sully-chat-root .sully-chat-buffs :is(button,[aria-hidden] span) {
-    background: #f3f1f666 !important; border: 1px solid #c8c5d5 !important; color: #49485a !important;
-    border-radius: 12px; box-shadow: none; padding: 3px 6px; font: 500 10px/1.05 var(--halo-serif);
+    background: linear-gradient(#eeedf440,#e9e8f150) !important; border: 1px solid #cdcadb !important;
+    color: var(--halo-ink) !important; border-radius: 99px; padding: 1px calc(9 * var(--halo-u));
+    font: 550 calc(17 * var(--halo-u))/1.15 var(--halo-serif); letter-spacing: .11em;
 }
-.sully-chat-root .sully-chat-messages {
-    margin-inline: clamp(9px, 4.8%, 26px);
-    border: 1px solid var(--halo-rule);
-    padding-block: 18px 24px;
-    scrollbar-width: none;
-}
-.sully-chat-root .sully-chat-message-ai:not(.sully-chat-message-module)::before {
-    content: ""; position: absolute; pointer-events: none;
-    left: 0; top: 15px; width: 4px; height: 4px; transform: rotate(45deg);
-    border: 1px solid #8b899d; background: #eeedf5;
-}
-.sully-chat-root .sully-chat-avatar-wrap {
-    background: #e7e3e8; overflow: visible; border-radius: 2px;
-    box-shadow: 0 2px 5px #45475812;
-}
-.sully-chat-root .sully-chat-avatar-wrap::before {
-    content: ""; position: absolute; z-index: 1; inset: -1px; pointer-events: none;
-    border: 1px solid #c8b6a37a; border-radius: 2px;
-    background:
-        linear-gradient(var(--halo-gold),var(--halo-gold)) left top / 5px 1px,
-        linear-gradient(var(--halo-gold),var(--halo-gold)) right bottom / 5px 1px;
-    background-repeat: no-repeat;
-}
-.sully-chat-root .sully-chat-message-avatar-img { border: 2px solid #f4f0f0; box-shadow: none; }
-.sully-chat-root .sully-chat-avatar-timestamp { color: #595a6c; font: 400 10px/12px var(--halo-serif); letter-spacing: .035em; }
-.sully-chat-root .sully-chat-message-content { overflow-wrap: anywhere; }
-.sully-chat-root .sully-chat-message-content > div > div { min-width: 0; max-width: 100%; }
-.sully-chat-root .sully-chat-message-content > [aria-hidden="true"] { right: -2rem; }
 
-/* 切角绘在底纹上，长消息、引用和语音字幕可自然撑高。 */
-.sully-chat-root :is(.sully-bubble-ai,.sully-bubble-user) {
+.sully-chat-root .sully-chat-messages {
+    margin: 0; padding: 0 0 calc(36 * var(--halo-v));
+    border: 0; scrollbar-width: none;
+}
+.sully-chat-root .sully-chat-day-divider {
+    position: relative; place-items: center; height: calc(79 * var(--halo-v)); margin-bottom: calc(25 * var(--halo-v));
+    padding-top: calc(12 * var(--halo-v)); color: var(--halo-ink);
+    font: calc(19 * var(--halo-u))/1.2 var(--halo-serif); letter-spacing: .22em;
+}
+.sully-chat-root .sully-chat-day-divider time { border-inline: 1px solid #b7b6cb; padding-inline: calc(23 * var(--halo-u)); }
+.sully-chat-root .sully-chat-day-divider::before {
+    content: ""; position: absolute; left: 5.9%; top: calc(55 * var(--halo-v)); width: calc(15 * var(--halo-u)); aspect-ratio: 1;
+    transform: translate(-50%,-50%); border-radius: 50%; border: 1px solid #f7f6fb; box-shadow: 0 0 0 .5px #555a71; background: #5e6278;
+}
+.sully-chat-root .sully-chat-message:not(.sully-chat-message-module,[data-selecting]) {
+    padding-inline: 0; align-items: flex-start;
+    min-height: max(calc(90 * var(--halo-v)),calc(7.86cqw + 14px)) !important;
+    margin-bottom: var(--halo-message-gap);
+}
+.sully-chat-root .sully-chat-message-ai:not(.sully-chat-message-module,[data-selecting])::before {
+    content: ""; position: absolute; left: 5.90%; top: calc(24 * var(--halo-v));
+    width: calc(7 * var(--halo-u)); aspect-ratio: 1; transform: translateX(-50%) rotate(45deg);
+    border: max(.55px,calc(1.2 * var(--halo-u))) solid #53566a; background: #faf9ff; pointer-events: none;
+}
+.sully-chat-root .sully-chat-message-group-first:not(.sully-chat-message-group-last,[data-selecting]):has(.sully-bubble-ai) {
+    min-height: max(calc(74 * var(--halo-v)),calc(7.01cqw + 10px)) !important;
+}
+.sully-chat-root .sully-chat-message-group-last:not(.sully-chat-message-group-first,[data-selecting]):has(.sully-bubble-ai) {
+    margin-bottom: calc(40 * var(--halo-v));
+}
+.sully-chat-root .sully-chat-message-user:not([data-selecting]):has(.sully-bubble-user) {
+    min-height: max(calc(132 * var(--halo-v)),calc(7.86cqw + 14px)) !important;
+}
+.sully-chat-root .sully-chat-message-ai:not([data-selecting]) > .sully-chat-message-avatar-slot { left: 8.61%; }
+.sully-chat-root .sully-chat-message-user:not([data-selecting]) > .sully-chat-message-avatar-slot { right: 5.59%; }
+.sully-chat-root .sully-chat-message-avatar-slot .sully-chat-avatar-wrap { width: calc(66 * var(--halo-u)); height: calc(66 * var(--halo-u)); }
+.sully-chat-root .sully-chat-message-user .sully-chat-message-avatar-slot .sully-chat-avatar-wrap { width: calc(74 * var(--halo-u)); height: calc(74 * var(--halo-u)); }
+.sully-chat-root .sully-chat-avatar-timestamp { color: #282d42; font: calc(16 * var(--halo-u))/1.2 var(--halo-serif); letter-spacing: .105em; }
+.sully-chat-root .sully-chat-message-content { overflow-wrap: anywhere; }
+.sully-chat-root .sully-chat-message-ai:not([data-selecting]) > .sully-chat-message-content:not(.sully-html-wrap) { margin-left: 17.2157%; max-width: 74%; }
+.sully-chat-root .sully-chat-message-user:not([data-selecting]) > .sully-chat-message-content:not(.sully-html-wrap) { margin-right: 15.09%; max-width: 67%; }
+.sully-chat-root .sully-chat-message-ai:not([data-selecting]) > .sully-chat-message-content:has(.sully-bubble-ai) { max-width: 61.4%; }
+.sully-chat-root .sully-chat-message-content > div > div { min-width: 0; max-width: 100%; }
+
+/* 原稿为短句、连续消息、独立消息及语音各画了一张不同切角的纸面。 */
+.sully-chat-root :is(.sully-bubble-ai,.sully-bubble-user,.sully-voice-bar) {
     background: var(--halo-face) center / 100% 100% no-repeat !important;
     border: 0 !important; border-radius: 0 !important; box-shadow: none !important;
-    padding: 10px 15px;
 }
-.sully-chat-root .sully-bubble-ai { --halo-face: var(--halo-paper); color: var(--halo-ink); }
-.sully-chat-root .sully-bubble-user { --halo-face: var(--halo-night); color: #faf8fb; }
+.sully-chat-root :is(.sully-bubble-ai,.sully-bubble-user) {
+    display: flex; flex-direction: column; justify-content: center;
+    min-height: calc(74 * var(--halo-v)); padding: calc(6 * var(--halo-v)) calc(31 * var(--halo-u));
+    font: 460 calc(26 * var(--halo-u))/1.54 var(--halo-serif); letter-spacing: .055em;
+}
+.sully-chat-root :is(.sully-bubble-ai,.sully-bubble-user) > .select-text { font-size: inherit; line-height: inherit; }
+.sully-chat-root .sully-bubble-ai {
+    --halo-face: var(--halo-paper); min-width: 26.14cqw; color: var(--halo-ink);
+    filter: drop-shadow(0 calc(9 * var(--halo-v)) calc(11 * var(--halo-u)) #66637e20);
+}
+.sully-chat-root .sully-chat-message-ai:not(.sully-chat-message-group-first) .sully-bubble-ai {
+    --halo-face: var(--halo-long); padding-block: calc(18 * var(--halo-v)); padding-right: calc(20 * var(--halo-u));
+}
+.sully-chat-root .sully-chat-message-group-first.sully-chat-message-group-last .sully-bubble-ai {
+    --halo-face: var(--halo-plain); min-width: 23.06cqw;
+}
+.sully-chat-root .sully-bubble-user {
+    --halo-face: var(--halo-night); min-width: 30.82cqw; min-height: calc(78 * var(--halo-v));
+    padding: calc(7 * var(--halo-v)) calc(36 * var(--halo-u)) calc(7 * var(--halo-v)) calc(18 * var(--halo-u));
+    color: #f8f7fc; font-size: calc(24 * var(--halo-u)); font-weight: 400; letter-spacing: .085em;
+    align-items: flex-end; filter: drop-shadow(0 calc(8 * var(--halo-v)) calc(12 * var(--halo-u)) #65637e29);
+}
 .sully-chat-root .sully-voice-bar {
-    max-width: 100%; min-width: 0;
-    background: var(--halo-paper) center / 100% 100% no-repeat !important;
-    color: var(--halo-ink); border: 0 !important; border-radius: 0 !important; box-shadow: none;
+    --halo-face: var(--halo-voice); width: min(46.76cqw,100%); min-width: min(46.76cqw,100%);
+    min-height: calc(74 * var(--halo-v)); padding: calc(6 * var(--halo-v)) calc(22 * var(--halo-u));
+    color: #33394e; gap: calc(20 * var(--halo-u));
+    filter: drop-shadow(0 calc(7 * var(--halo-v)) calc(9 * var(--halo-u)) #69698415);
 }
-.sully-chat-root .sully-voice-bar-button { color: #373c50 !important; background: #e2e1eb !important; }
-.sully-chat-root .sully-voice-bar-wave-segment { background: #666a80 !important; }
-.sully-chat-root .sully-voice-bar-toggle { color: #4b4e62 !important; background: #e5e3ed; }
+.sully-chat-root .sully-voice-bar-shell { width: 46.76cqw; max-width: 100%; }
+.sully-chat-root .sully-voice-bar-button { width: calc(45 * var(--halo-u)); height: calc(45 * var(--halo-u)); color: #373c50 !important; background: #e6e5ee !important; }
+.sully-chat-root .sully-voice-bar-button svg { fill: currentColor; }
+.sully-chat-root .sully-voice-bar-wave { justify-content: space-between; gap: 1px; }
+.sully-chat-root .sully-voice-bar-wave-segment { width: calc(2.5 * var(--halo-u)); background: #575b72 !important; }
+.sully-chat-root .sully-voice-bar-toggle { color: #33394e !important; background: none !important; font: calc(20 * var(--halo-u))/1 var(--halo-serif); }
 .sully-chat-root .sully-voice-bar-transcript { color: #43475e !important; background: #f2f1f7 !important; }
 
-/* 心象的分隔线贴着真实标题，折叠、展开和翻译都可用。 */
+.sully-chat-root .sully-chat-psyche-row { justify-content: flex-start; padding-inline: 14.45% 0; margin-bottom: var(--halo-message-gap); }
+.sully-chat-root .sully-chat-psyche-row > div { width: 71.94cqw; max-width: 100%; }
 .sully-chat-root .sully-psyche-card {
+    min-height: calc(155 * var(--halo-v)); padding: calc(23 * var(--halo-v)) calc(30 * var(--halo-u)) calc(28 * var(--halo-v));
     background: var(--halo-psyche) center / 100% 100% no-repeat !important;
-    border: 0 !important; border-radius: 0 !important; box-shadow: none !important;
-    padding: 12px 17px 14px; color: #f7f5fa;
+    border: 0 !important; border-radius: 0 !important; box-shadow: none !important; color: #f7f5fa;
+    filter: drop-shadow(0 calc(14 * var(--halo-v)) calc(21 * var(--halo-u)) #48496340);
 }
+.sully-chat-root .sully-psyche-card:has(.sully-psyche-body) { min-height: calc(302 * var(--halo-v)); }
 .sully-chat-root .sully-psyche-card > div:has(> .sully-psyche-title) {
-    padding-bottom: 6px; margin-bottom: 8px; border-bottom: 1px solid #d2bb946b;
-}
-.sully-chat-root .sully-psyche-card > div:has(> .sully-psyche-title)::after {
-    content: ""; position: absolute; left: 50%; bottom: -2px; width: 3px; height: 3px;
-    background: #e5cfad; transform: rotate(45deg); pointer-events: none;
+    padding-left: calc(24 * var(--halo-u)); gap: calc(34 * var(--halo-u)); min-height: calc(44 * var(--halo-v));
 }
 .sully-chat-root .sully-psyche-card :is(.sully-psyche-title,.sully-psyche-subtitle,.sully-psyche-status,button) {
     color: #efedf6 !important; font-family: var(--halo-serif) !important; text-shadow: none !important;
 }
+.sully-chat-root .sully-psyche-title { font-size: calc(28 * var(--halo-u)); letter-spacing: .19em; }
+.sully-chat-root .sully-psyche-subtitle { font-size: calc(16 * var(--halo-u)); letter-spacing: .58em; }
+.sully-chat-root .sully-psyche-status { font-size: calc(18 * var(--halo-u)); letter-spacing: .12em; }
 .sully-chat-root .sully-psyche-card :is(.sully-psyche-preview,.sully-psyche-body) {
-    color: #faf7fc !important; font-family: var(--halo-serif) !important; font-style: italic;
-    font-weight: 400; line-height: 1.7; text-shadow: none !important;
+    margin: calc(48 * var(--halo-v)) calc(35 * var(--halo-u)) 0; padding: 0; border: 0;
+    color: #faf7fc !important; font: italic calc(24 * var(--halo-u))/1.55 var(--halo-serif) !important;
+    letter-spacing: .045em; text-shadow: none !important; mask-image: none !important;
 }
-.sully-chat-root .sully-psyche-preview > span { color: #dec8a8 !important; }
-.sully-chat-root .sully-psyche-body { border-color: #d4b99388 !important; mask-image: none !important; }
 .sully-chat-root .sully-psyche-translation-tools { color: #ece7f3 !important; }
 
-/* Sully Pay 保留原金额、币种、备注和处理状态。 */
 .sully-chat-root .sully-chat-transfer-card {
-    width: 236px; max-width: 100%; padding: 12px 18px 12px 54px;
+    width: 48.57cqw; max-width: 100%; min-height: calc(110 * var(--halo-v));
+    padding: calc(18 * var(--halo-v)) 8% calc(13 * var(--halo-v)) 27.6%;
     background: var(--halo-pay) center / 100% 100% no-repeat !important;
     border-radius: 0; color: #faf8fc; box-shadow: none;
+    filter: drop-shadow(0 calc(18 * var(--halo-v)) calc(22 * var(--halo-u)) #52536b39);
 }
 .sully-chat-root .sully-chat-transfer-watermark { display: none; }
 .sully-chat-root .sully-chat-transfer-header { margin: 0; }
 .sully-chat-root .sully-chat-transfer-card .sully-chat-transfer-icon {
-    position: absolute; left: 12px; top: 50%; transform: translateY(-50%); padding: 6px;
-    background: #ffffff0f; border: 1px solid #ebdfd47d; border-radius: 1px;
+    position: absolute; left: 7.9%; top: 20.6%; width: 14.3%; height: 56.5%; display: grid; place-items: center; padding: 0;
+    background: #e9e8f012; border: 1px solid #d1cedb94; border-radius: 2px; box-shadow: inset 0 0 0 2px #a4a6b41f;
 }
-.sully-chat-root .sully-chat-transfer-brand { color: #eeecf4; font: 400 12px/1.4 var(--halo-serif); letter-spacing: .14em; }
-.sully-chat-root .sully-chat-transfer-card .sully-chat-transfer-amount {
-    color: #fcfafd; font: 400 23px/1.2 Garamond, var(--halo-serif); letter-spacing: .045em; overflow-wrap: anywhere;
+.sully-chat-root .sully-chat-transfer-card .sully-chat-transfer-icon svg { width: 52%; height: 52%; }
+.sully-chat-root .sully-chat-transfer-brand { color: #eeecf4; font: calc(19 * var(--halo-u))/1.15 Garamond,var(--halo-serif); letter-spacing: .2em; }
+.sully-chat-root .sully-chat-transfer-card .sully-chat-transfer-amount { margin: 0; color: #fcfafd; font: calc(39 * var(--halo-u))/1.15 Garamond,var(--halo-serif); letter-spacing: .055em; overflow-wrap: anywhere; }
+.sully-chat-root .sully-chat-transfer-card[data-status="pending"]::after {
+    content: "↗"; position: absolute; right: 8%; top: 15%; display: grid; place-items: center;
+    width: calc(27 * var(--halo-u)); aspect-ratio: 1; border: 1px solid #d8d8e3; border-radius: 50%;
+    color: #e4e3ed; font: calc(16 * var(--halo-u))/1 var(--halo-serif); pointer-events: none;
 }
-.sully-chat-root .sully-chat-transfer-card :is(.sully-chat-transfer-note,.sully-chat-transfer-recipient,.sully-chat-transfer-status) { color: #eeedf5; }
+.sully-chat-root .sully-chat-transfer-card :is(.sully-chat-transfer-note,.sully-chat-transfer-recipient,.sully-chat-transfer-status) { color: #eeedf5; font-size: max(8px,calc(16 * var(--halo-u))); }
 .sully-chat-root .sully-chat-transfer-status { backdrop-filter: none; }
 .sully-chat-root .sully-chat-transfer-receipt { border: 0; background: #f3f2f5; box-shadow: none; }
 .sully-chat-root .sully-chat-transfer-receipt .sully-chat-transfer-icon { background: #e6e4e9; color: #66636e; }
 .sully-chat-root .sully-chat-transfer-receipt .sully-chat-transfer-status { color: #524f59; }
 
+/* 分享如银纸，剧场、彼方、跑团等沉浸记录沿用心象的深银。 */
+.sully-chat-root {
+    --halo-card-art: var(--halo-paper); --halo-card-slice: 24% 8%; --halo-card-edge: 6px 7px;
+    --halo-card-width: clamp(166px,52cqw,224px);
+    --halo-card-text: #383b4b; --halo-card-title: #282c40; --halo-card-caption: #5b5d72;
+    --halo-card-rule: #a5a2b542; --halo-card-inset: #b8b6c51a;
+}
+.sully-chat-root :is([data-card-kind="collaboration_file"],[data-card-kind="vr_card"],[data-card-kind="sim_card"],[data-card-kind="phone_card"],
+    [data-card-kind="theater_card"],[data-card-kind="trpg_card"]), .sully-chat-root .sully-chat-packet {
+    --halo-card-art: var(--halo-pay); --halo-card-slice: 40% 10%; --halo-card-edge: 10px 11px;
+    --halo-card-width: clamp(178px,56cqw,240px);
+    --halo-card-text: #f2eff7; --halo-card-title: #fffaff; --halo-card-caption: #dddbea;
+    --halo-card-rule: #dfd6dc36; --halo-card-inset: #e8e4f015;
+}
+.sully-chat-root [data-card-kind="collaboration_file"] { --halo-card-width: clamp(164px,50cqw,216px); }
+.sully-chat-root :is([data-card-kind="vr_card"],[data-card-kind="trpg_card"],[data-card-kind="theater_card"])
+    .sully-chat-card-face > .border-b { position: relative; }
+.sully-chat-root :is([data-card-kind="vr_card"],[data-card-kind="trpg_card"],[data-card-kind="theater_card"])
+    .sully-chat-card-face > .border-b::after {
+    content: ""; position: absolute; bottom: -2px; left: 50%; width: 3px; height: 3px;
+    background: #dac6a9; transform: rotate(45deg); pointer-events: none;
+}
+/* 收窄中间的定宽容器，否则跑团和笔友会仍会把卡面撑出头像栏。 */
+.sully-chat-root .sully-chat-card-content > :has(> .sully-chat-card-face) { max-width: min(100%,var(--halo-card-width)); }
+.sully-chat-root .sully-chat-card-face {
+    position: relative; isolation: isolate; max-width: min(100%,var(--halo-card-width)); min-width: 0; box-sizing: border-box;
+    border: 0 !important; border-radius: 0 !important; background: none !important; box-shadow: none !important;
+    padding: 4px 5px;
+    color: var(--halo-card-text) !important; font-family: var(--halo-serif) !important;
+}
+/* 九宫格只拉伸纸面中间，长卡片仍保留原作角线的尺寸。 */
+.sully-chat-root .sully-chat-card-face::before {
+    content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+    border-image: var(--halo-card-art) var(--halo-card-slice) fill / var(--halo-card-edge) / 0 stretch;
+}
+.sully-chat-root .sully-chat-card-face > :where(div,span,summary):is([class*="px-"],[class*="p-3"],[class*="p-4"]) {
+    padding-inline: 8px; padding-block: 4px;
+}
+.sully-chat-root .sully-chat-card-face > .border-t { padding-block: 3px; font-size: 9px; }
+.sully-chat-root .sully-chat-card-face :is(.text-sm,.text-base) { font-size: clamp(11px,3.05cqw,13px); line-height: 1.4; }
+.sully-chat-root .sully-chat-card-face :is(.font-bold,.font-semibold) { font-weight: 500; }
+.sully-chat-root .sully-chat-card-face .min-w-0:has(> .uppercase + .truncate) {
+    display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap;
+}
+.sully-chat-root .sully-chat-card-face .uppercase:has(+ .truncate) {
+    order: 1; font-size: 8px; line-height: 1.2; letter-spacing: .09em;
+}
+.sully-chat-root .sully-chat-card-face blockquote { margin-top: 5px; padding-left: 6px; border-left-width: 1px; }
+.sully-chat-root .sully-chat-card-face > :is(.sully-chat-card-banner,.sully-chat-card-media) {
+    max-height: clamp(52px,17cqw,76px);
+}
+.sully-chat-root .sully-chat-card-face :where(div,span,p,small,strong,h4,blockquote,button,summary,svg):not(:where(.sully-chat-card-media *, .sully-chat-qr-surface *)) {
+    color: inherit !important; font-family: inherit !important; border-color: var(--halo-card-rule) !important;
+}
+.sully-chat-root .sully-chat-card-face :is(.font-bold,.font-semibold,.font-black,strong,h4):not(:where(.sully-chat-card-media *)) {
+    color: var(--halo-card-title) !important;
+}
+.sully-chat-root .sully-chat-card-face :is(small,.uppercase,.italic,.border-t):not(:where(.sully-chat-card-media *)) {
+    color: var(--halo-card-caption) !important;
+}
+.sully-chat-root :is([data-card-kind="chat_forward"],[data-card-kind="collaboration_file"],[data-card-kind="friend_feed_share_card"],
+    [data-card-kind="friend_feed_card"],[data-card-kind="music_card"],[data-card-kind="webpage_card"],[data-card-kind="xhs_card"],
+    [data-card-kind="social_card"],[data-card-kind="news_card"],[data-card-kind="world_card"],[data-card-kind="room_card"],
+    [data-card-kind="novel_card"],[data-card-kind="mcd_card"],[data-card-kind="luckin_card"],[data-card-kind="life_card"],
+    [data-card-kind="group_topic_card"],[data-card-kind="sully_help_card"],[data-card-kind="score_card"])
+    .sully-chat-card-face :is(.border-t,small) { letter-spacing: .035em; }
+.sully-chat-root .sully-chat-card-face :where(div,span,blockquote,button):is([class*="bg-"],[style*="background"]):not(:where(
+    .sully-chat-card-media,.sully-chat-card-media *,[style*="url("],.sully-chat-qr-surface,.sully-chat-qr-surface *,
+    .sully-chat-swatch-dot,.sully-chat-badge-dot,.sully-chat-page-dot,.sully-chat-meter-fill)) {
+    background: var(--halo-card-inset) !important;
+}
+.sully-chat-root .sully-chat-card-face .absolute.pointer-events-none[style*="radial-gradient"] {
+    background: none !important; box-shadow: none !important;
+}
+.sully-chat-root .sully-chat-card-face :is(button:focus-visible,summary:focus-visible),
+.sully-chat-root .sully-chat-card-face:focus-visible { outline: 2px solid var(--halo-card-caption); outline-offset: -3px; }
+.sully-chat-root .sully-chat-card-face button:not(:disabled):active { box-shadow: inset 0 0 0 1px var(--halo-card-caption); }
+.sully-chat-root .sully-chat-card-face .sully-chat-card-banner {
+    --halo-card-inset: transparent; --halo-card-title: #fffaff;
+    background: linear-gradient(125deg,#494d60,#626579 72%,#76798b) !important; color: #faf8fc !important;
+}
+.sully-chat-root [data-card-kind="music_card"] .sully-chat-card-face .rounded-full:has(> img) {
+    box-shadow: 0 0 0 1px #fff,0 0 5px 2px #fff9 !important;
+}
+.sully-chat-root [data-card-kind="collaboration_file"] .sully-collaboration-file-icon,
+.sully-chat-root [data-card-kind="collaboration_file"] .sully-collaboration-file-action {
+    border: 1px solid var(--halo-card-rule); border-radius: 3px;
+}
+.sully-chat-root .sully-collaboration-file > span:first-child { gap: 7px; padding-block: 6px; }
+.sully-chat-root .sully-collaboration-file-icon { width: 28px; height: 32px; }
+.sully-chat-root .sully-collaboration-file-icon > svg { width: 17px; height: 17px; }
+.sully-chat-root .sully-collaboration-file-icon > span { padding: 0 2px; white-space: nowrap; line-height: 1.1; }
+.sully-chat-root .sully-collaboration-file-action { position: absolute; bottom: 5px; right: 12px; width: 16px; height: 16px; }
+.sully-chat-root .sully-collaboration-file-action > svg { width: 10px; height: 10px; }
+.sully-chat-root .sully-collaboration-file > .border-t { padding-right: 32px; }
+.sully-chat-root .sully-collaboration-file-detail { margin-top: 2px; font-size: 9px; line-height: 1.25; }
+.sully-chat-root .sully-collaboration-file-name { font-size: 12px; }
+.sully-chat-root .sully-chat-card-face:where(.sully-chat-packet,.friend-feed-note) { padding: 8px 12px; }
+.sully-chat-root .sully-chat-card-face.friend-feed-share-card { padding-inline: 12px; }
+.sully-chat-root .sully-chat-card-face :is(.text-red-600,.text-red-700) { color: #924456 !important; }
+.sully-chat-root [data-card-kind="html_card"] .sully-html-source-bar { font-family: var(--halo-serif); color: #494c60; }
+.sully-chat-root [data-card-kind="html_card"] .sully-html-source-bar:has([aria-expanded="true"]) { background: #eeedf4; }
+
 .sully-chat-root .sully-chat-inputbar { background: transparent; box-shadow: none; border: 0; backdrop-filter: none; }
-.sully-chat-root .sully-chat-composer { gap: 4px; align-items: center; padding: 10px 4%; }
-.sully-chat-root :is(.sully-chat-actions-button,.sully-chat-input-wrap,.sully-chat-send-button) { border: 0; border-radius: 0; box-shadow: none; }
-.sully-chat-root .sully-chat-actions-button { background: transparent; color: #34384a; }
-.sully-chat-root .sully-chat-input-wrap { background: var(--halo-input) center / 100% 100% no-repeat; }
-.sully-chat-root .sully-chat-textarea { color: var(--halo-ink); font-family: var(--halo-serif); }
-.sully-chat-root .sully-chat-textarea::placeholder { color: var(--halo-muted); font-style: italic; }
-.sully-chat-root .sully-chat-input-wrap button { color: #515467; }
-.sully-chat-root .sully-chat-send-button { width: 45px; background: var(--halo-send) center / 100% 88% no-repeat; color: #fff; }
-.sully-chat-root .sully-chat-send-button:disabled { opacity: .55; }
+.sully-chat-root .sully-chat-composer {
+    display: grid; grid-template-columns: 8% minmax(0,1fr) 12.3%; align-items: start; gap: 0;
+    min-height: calc(148 * var(--halo-v)); padding: calc(25 * var(--halo-v)) 3.5% calc(20 * var(--halo-v)) 5.3%;
+}
+.sully-chat-root :is(.sully-chat-actions-button,.sully-chat-input-wrap,.sully-chat-send-button) {
+    width: 100%; min-height: calc(71 * var(--halo-v)); border: 0; border-radius: 0; box-shadow: none;
+}
+.sully-chat-root :is(.sully-chat-actions-button,.sully-chat-send-button) { height: calc(71 * var(--halo-v)); padding: 0; }
+.sully-chat-root .sully-chat-actions-button { background: transparent; color: #191f31; }
+.sully-chat-root .sully-chat-actions-button svg { width: calc(40 * var(--halo-u)); }
+.sully-chat-root .sully-chat-input-wrap { padding: 0; background: var(--halo-input) center / 100% 100% no-repeat; }
+.sully-chat-root .sully-chat-textarea { min-height: calc(71 * var(--halo-v)); padding: 2px 0 2px 6%; align-content: center; color: var(--halo-ink); font-family: var(--halo-serif); }
+.sully-chat-root .sully-chat-textarea::placeholder { font: italic calc(23 * var(--halo-u))/1.3 var(--halo-serif); letter-spacing: .24em; color: #30364c; }
+.sully-chat-root .sully-chat-input-wrap button { padding: 0; width: 13.5%; align-self: stretch; display: grid; place-items: center; color: #33394f; }
+.sully-chat-root .sully-chat-input-wrap button svg { width: calc(32 * var(--halo-u)); }
+.sully-chat-root .sully-chat-send-button { background: var(--halo-send) center / 100% 100% no-repeat; color: #f8f8fc; }
+.sully-chat-root .sully-chat-send-button svg { width: calc(33 * var(--halo-u)); }
+.sully-chat-root .sully-chat-send-button:disabled { opacity: .65; }
+
 
 /* 加号保留完整的触控区域，星影仅在图标下面。 */
 .sully-chat-root .sully-chat-panel:has(.sully-chat-action-page) { background: #f1f0f5; border: 0; box-shadow: none; }
@@ -203,12 +394,18 @@
 
 /* 内嵌 SVG 使预设可离线应用及单独导出。 */
 .sully-chat-root {
-    --halo-orbits: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 941 1670%22 preserveAspectRatio=%22none%22%3E%3Cdefs%3E%3ClinearGradient id=%22g%22 x1=%220%22 y1=%220%22 x2=%22.95%22 y2=%22.94%22%3E%3Cstop offset=%220%22 stop-color=%22%23ffffff%22 stop-opacity=%220.58%22/%3E%3Cstop offset=%220.3%22 stop-color=%22%23fff9eb%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.6%22 stop-color=%22%23ffe9c2%22 stop-opacity=%220.95%22/%3E%3Cstop offset=%221%22 stop-color=%22%23fff%22 stop-opacity=%220.04%22/%3E%3C/linearGradient%3E%3ClinearGradient id=%22q%22 x1=%220%22 y1=%22.88%22 x2=%221%22 y2=%22.15%22%3E%3Cstop offset=%220%22 stop-color=%22%23fff9eb%22 stop-opacity=%220.35%22/%3E%3Cstop offset=%220.45%22 stop-color=%22%23f4d6ad%22 stop-opacity=%220.92%22/%3E%3Cstop offset=%220.88%22 stop-color=%22%23fff%22 stop-opacity=%220.98%22/%3E%3Cstop offset=%221%22 stop-color=%22%23fff%22 stop-opacity=%220.24%22/%3E%3C/linearGradient%3E%3ClinearGradient id=%22c%22 x1=%22.12%22 y1=%220%22 x2=%22.78%22 y2=%22.97%22%3E%3Cstop offset=%220%22 stop-color=%22%23ffe7bc%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.32%22 stop-color=%22%23cfab85%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.55%22 stop-color=%22%23fff%22 stop-opacity=%221%22/%3E%3Cstop offset=%221%22 stop-color=%22%23f7e4ce%22 stop-opacity=%220.9%22/%3E%3C/linearGradient%3E%3ClinearGradient id=%22f%22 x2=%221%22 y2=%22.26%22%3E%3Cstop offset=%220%22 stop-color=%22%23aba9c1%22 stop-opacity=%220.82%22/%3E%3Cstop offset=%220.52%22 stop-color=%22%23aaa8bd%22 stop-opacity=%220.87%22/%3E%3Cstop offset=%221%22 stop-color=%22%23b9b8cb%22 stop-opacity=%220.53%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d=%22M208 -9Q394 20 521 132%22 fill=%22none%22 stroke=%22%23fff7%22 stroke-width=%220.75%22/%3E%3Cpath d=%22M410 -6C639 96 785 273 870 550%22 fill=%22none%22 stroke=%22url%28%23g%29%22 stroke-width=%221.45%22/%3E%3Cpath d=%22M958 149C776 124 613 271 565 440%22 fill=%22none%22 stroke=%22url%28%23q%29%22 stroke-width=%221.25%22/%3E%3Cpath d=%22M396 727Q459 650 532 580%22 fill=%22none%22 stroke=%22%23ffffff%22 stroke-width=%221.35%22/%3E%3Cpath d=%22M-20 1362Q76 1466 220 1550%22 fill=%22none%22 stroke=%22%23ffffff%22 stroke-width=%221.05%22/%3E%3Cpath d=%22M486 1670Q705 1494 958 1281%22 fill=%22none%22 stroke=%22%23ffffff%22 stroke-width=%221.2%22/%3E%3Cellipse cx=%22854%22 cy=%221325%22 rx=%22162%22 ry=%22162%22 fill=%22none%22 stroke=%22url%28%23c%29%22 stroke-width=%221.35%22/%3E%3C/svg%3E");
+    --halo-orbits: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 941 1670%22 preserveAspectRatio=%22none%22%3E%3Cdefs%3E%3ClinearGradient id=%22g%22 x1=%220%22 y1=%220%22 x2=%22.95%22 y2=%22.94%22%3E%3Cstop offset=%220%22 stop-color=%22%23ffffff%22 stop-opacity=%220.58%22/%3E%3Cstop offset=%220.3%22 stop-color=%22%23fff9eb%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.6%22 stop-color=%22%23ffe9c2%22 stop-opacity=%220.95%22/%3E%3Cstop offset=%221%22 stop-color=%22%23fff%22 stop-opacity=%220.04%22/%3E%3C/linearGradient%3E%3ClinearGradient id=%22q%22 x1=%220%22 y1=%22.88%22 x2=%221%22 y2=%22.15%22%3E%3Cstop offset=%220%22 stop-color=%22%23fff9eb%22 stop-opacity=%220.35%22/%3E%3Cstop offset=%220.45%22 stop-color=%22%23f4d6ad%22 stop-opacity=%220.92%22/%3E%3Cstop offset=%220.88%22 stop-color=%22%23fff%22 stop-opacity=%220.98%22/%3E%3Cstop offset=%221%22 stop-color=%22%23fff%22 stop-opacity=%220.24%22/%3E%3C/linearGradient%3E%3ClinearGradient id=%22c%22 x1=%22.12%22 y1=%220%22 x2=%22.78%22 y2=%22.97%22%3E%3Cstop offset=%220%22 stop-color=%22%23ffe7bc%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.32%22 stop-color=%22%23cfab85%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.55%22 stop-color=%22%23fff%22 stop-opacity=%221%22/%3E%3Cstop offset=%221%22 stop-color=%22%23f7e4ce%22 stop-opacity=%220.9%22/%3E%3C/linearGradient%3E%3ClinearGradient id=%22f%22 x2=%221%22 y2=%22.26%22%3E%3Cstop offset=%220%22 stop-color=%22%23aba9c1%22 stop-opacity=%220.82%22/%3E%3Cstop offset=%220.52%22 stop-color=%22%23aaa8bd%22 stop-opacity=%220.87%22/%3E%3Cstop offset=%221%22 stop-color=%22%23b9b8cb%22 stop-opacity=%220.53%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d=%22M208 -9Q394 20 521 132%22 fill=%22none%22 stroke=%22%23fff7%22 stroke-width=%220.75%22/%3E%3Cpath d=%22M410 -6C639 96 785 273 870 550%22 fill=%22none%22 stroke=%22url%28%23g%29%22 stroke-width=%221.45%22/%3E%3Cpath d=%22M958 149C776 124 613 271 565 440%22 fill=%22none%22 stroke=%22url%28%23q%29%22 stroke-width=%221.25%22/%3E%3Cpath d=%22M396 727Q459 650 532 580%22 fill=%22none%22 stroke=%22%23ffffff%22 stroke-width=%221.35%22/%3E%3Cpath d=%22M-20 1362Q76 1466 220 1550%22 fill=%22none%22 stroke=%22%23ffffff%22 stroke-width=%221.05%22/%3E%3Cpath d=%22M486 1670Q705 1494 958 1281%22 fill=%22none%22 stroke=%22%23ffffff%22 stroke-width=%221.2%22/%3E%3Cellipse cx=%22854%22 cy=%221325%22 rx=%22162%22 ry=%22162%22 fill=%22none%22 stroke=%22url%28%23c%29%22 stroke-width=%221.35%22/%3E%3Cpath d=%22M55.5 228H888V1522.4H55.5ZM822.6 96V155%22 fill=%22none%22 stroke=%22url%28%23f%29%22 stroke-width=%221%22/%3E%3Cpath fill=%22%2373768c%22 d=%22M55.5 224.6l3.4 3.4-3.4 3.4-3.4-3.4z%22/%3E%3Cpath fill=%22%2373768c%22 d=%22M888 224.6l3.4 3.4-3.4 3.4-3.4-3.4z%22/%3E%3Cpath fill=%22%2373768c%22 d=%22M55.5 1519.0l3.4 3.4-3.4 3.4-3.4-3.4z%22/%3E%3Cpath fill=%22%2373768c%22 d=%22M888 1519.0l3.4 3.4-3.4 3.4-3.4-3.4z%22/%3E%3Cpath fill=%22%238c8999%22 d=%22M709 223.5l4 4-4 4-4-4z%22/%3E%3Cpath fill=%22%2373768c%22 d=%22M888 1161.6l3.9 3.9-3.9 3.9-3.9-3.9z%22/%3E%3Cpath fill=%22%2373768c%22 d=%22M888 1483.7l2.3 2.3-2.3 2.3-2.3-2.3z%22/%3E%3Cpath fill=%22%2373768c%22 d=%22M822.6 154.5l1.5 1.5-1.5 1.5-1.5-1.5z%22/%3E%3C/svg%3E");
     --halo-paper: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 246 74%22 preserveAspectRatio=%22none%22%3E%3Cdefs%3E%3ClinearGradient id=%22p%22 x1=%220%22 y1=%22.7%22 x2=%221%22 y2=%22.15%22%3E%3Cstop offset=%220%22 stop-color=%22%23eeedf3%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.32%22 stop-color=%22%23f4f3f8%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.7%22 stop-color=%22%23f6f5f9%22 stop-opacity=%221%22/%3E%3Cstop offset=%221%22 stop-color=%22%23eae9f1%22 stop-opacity=%221%22/%3E%3C/linearGradient%3E%3CradialGradient id=%22h%22 cx=%22.83%22 cy=%22-.2%22 r=%22.93%22%3E%3Cstop offset=%220%22 stop-color=%22%23fff%22 stop-opacity=%220.58%22/%3E%3Cstop offset=%220.55%22 stop-color=%22%23fff%22 stop-opacity=%220.2%22/%3E%3Cstop offset=%221%22 stop-color=%22%23fff%22 stop-opacity=%220%22/%3E%3C/radialGradient%3E%3ClinearGradient id=%22e%22 x2=%221%22 y2=%22.75%22%3E%3Cstop offset=%220%22 stop-color=%22%23cfccd8%22 stop-opacity=%220.9%22/%3E%3Cstop offset=%220.3%22 stop-color=%22%23e2e0e9%22 stop-opacity=%220.84%22/%3E%3Cstop offset=%220.55%22 stop-color=%22%23fff%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.78%22 stop-color=%22%23d9d6e2%22 stop-opacity=%220.94%22/%3E%3Cstop offset=%221%22 stop-color=%22%23ddd8e2%22 stop-opacity=%221%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d=%22M.8 14L14 .8H245L245.5 59L231 73.2H1Z%22 fill=%22url%28%23p%29%22 stroke=%22url%28%23e%29%22 stroke-width=%221.25%22/%3E%3Cpath d=%22M.8 14L14 .8H245L245.5 59L231 73.2H1Z%22 fill=%22url%28%23h%29%22 stroke=%22none%22 stroke-width=%221%22/%3E%3Cpath d=%22M.8 14L14 .8%22 fill=%22none%22 stroke=%22%23d4bb9e%22 stroke-width=%220.8%22/%3E%3Cpath d=%22M231 73.2l14 -14%22 fill=%22none%22 stroke=%22%23d5b28a%22 stroke-width=%220.95%22/%3E%3Cpath d=%22M233 4h7l2 3v4M4 62v6l3 3h5%22 fill=%22none%22 stroke=%22%23d3cfdd%22 stroke-width=%221.25%22/%3E%3Cpath d=%22M16 2h179%22 fill=%22none%22 stroke=%22%23fff%22 stroke-width=%220.65%22/%3E%3C/svg%3E");
     --halo-night: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 290 78%22 preserveAspectRatio=%22none%22%3E%3Cdefs%3E%3ClinearGradient id=%22n%22 x2=%221%22 y2=%22.012%22%3E%3Cstop offset=%220%22 stop-color=%22%23484c5d%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.22%22 stop-color=%22%23434757%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.55%22 stop-color=%22%23464a5b%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.85%22 stop-color=%22%23585c6d%22 stop-opacity=%221%22/%3E%3Cstop offset=%221%22 stop-color=%22%236c6e7f%22 stop-opacity=%221%22/%3E%3C/linearGradient%3E%3CradialGradient id=%22w%22 cx=%221.04%22 cy=%221.05%22 r=%220.34%22%3E%3Cstop offset=%220%22 stop-color=%22%23f3eef3%22 stop-opacity=%220.96%22/%3E%3Cstop offset=%220.25%22 stop-color=%22%23dcd8e0%22 stop-opacity=%220.78%22/%3E%3Cstop offset=%220.56%22 stop-color=%22%23b6b6c5%22 stop-opacity=%220.49%22/%3E%3Cstop offset=%220.84%22 stop-color=%22%239b9bab%22 stop-opacity=%220.17%22/%3E%3Cstop offset=%221%22 stop-color=%22%23858294%22 stop-opacity=%220%22/%3E%3C/radialGradient%3E%3CradialGradient id=%22l%22 cx=%22.01%22 cy=%221.05%22 r=%220.47%22%3E%3Cstop offset=%220%22 stop-color=%22%23aaa8b5%22 stop-opacity=%220.92%22/%3E%3Cstop offset=%220.4%22 stop-color=%22%239796a6%22 stop-opacity=%220.6%22/%3E%3Cstop offset=%220.78%22 stop-color=%22%23838396%22 stop-opacity=%220.2%22/%3E%3Cstop offset=%221%22 stop-color=%22%2377798a%22 stop-opacity=%220%22/%3E%3C/radialGradient%3E%3ClinearGradient id=%22b%22 x1=%220%22 y1=%22.1%22 x2=%221%22 y2=%22.96%22%3E%3Cstop offset=%220%22 stop-color=%22%23ffe5bd%22 stop-opacity=%220.99%22/%3E%3Cstop offset=%220.2%22 stop-color=%22%23fff%22 stop-opacity=%220.99%22/%3E%3Cstop offset=%220.56%22 stop-color=%22%23a4a4b4%22 stop-opacity=%220.4%22/%3E%3Cstop offset=%220.85%22 stop-color=%22%23fff4e0%22 stop-opacity=%220.93%22/%3E%3Cstop offset=%221%22 stop-color=%22%23e4caa4%22 stop-opacity=%221%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d=%22M1 24V5l4-4h21M270 77h14l5-5V57%22 fill=%22none%22 stroke=%22%23fdf1dd%22 stroke-width=%221.4%22/%3E%3Cpath d=%22M1 21L21 .7H289V61l-17 16H1Z%22 fill=%22url%28%23n%29%22 stroke=%22none%22 stroke-width=%221%22/%3E%3Cpath d=%22M1 21L21 .7H289V61l-17 16H1Z%22 fill=%22url%28%23l%29%22 stroke=%22none%22 stroke-width=%221%22/%3E%3Cpath d=%22M1 21L21 .7H289V61l-17 16H1Z%22 fill=%22url%28%23w%29%22 stroke=%22none%22 stroke-width=%221%22/%3E%3Cpath d=%22M1 21L21 .7H289V61l-17 16H1Z%22 fill=%22none%22 stroke=%22url%28%23b%29%22 stroke-width=%221.15%22/%3E%3Cdefs%3E%3Cfilter id=%22silk%22 x=%220%22 y=%220%22 width=%22100%25%22 height=%22100%25%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%22.015 .024%22 numOctaves=%223%22 seed=%2218%22 stitchTiles=%22stitch%22/%3E%3CfeColorMatrix type=%22matrix%22 values=%22.19 .64 .17 0 0 .19 .64 .17 0 0 .19 .64 .17 0 0 0 0 0 .16 0%22/%3E%3C/filter%3E%3CclipPath id=%22mask%22%3E%3Cpath d=%22M1 21L21 .7H289V61l-17 16H1Z%22 fill=%22%23fff%22 stroke=%22none%22 stroke-width=%221%22/%3E%3C/clipPath%3E%3C/defs%3E%3Cg clip-path=%22url%28%23mask%29%22%3E%3Crect width=%22290%22 height=%2278%22 filter=%22url%28%23silk%29%22 opacity=%22.65%22/%3E%3C/g%3E%3Cpath d=%22M5 15v-10h10M275 5h10v10M5 63v10h10M285 63v10h-10%22 fill=%22none%22 stroke=%22%23e5c595%22 stroke-width=%220.72%22/%3E%3C/svg%3E");
-    --halo-psyche: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 677 302%22 preserveAspectRatio=%22none%22%3E%3Cdefs%3E%3ClinearGradient id=%22n%22 x2=%221%22 y2=%22.012%22%3E%3Cstop offset=%220%22 stop-color=%22%23484c5d%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.22%22 stop-color=%22%23434757%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.55%22 stop-color=%22%23464a5b%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.85%22 stop-color=%22%23585c6d%22 stop-opacity=%221%22/%3E%3Cstop offset=%221%22 stop-color=%22%236c6e7f%22 stop-opacity=%221%22/%3E%3C/linearGradient%3E%3CradialGradient id=%22w%22 cx=%221.04%22 cy=%221.05%22 r=%220.69%22%3E%3Cstop offset=%220%22 stop-color=%22%23f3eef3%22 stop-opacity=%220.96%22/%3E%3Cstop offset=%220.25%22 stop-color=%22%23dcd8e0%22 stop-opacity=%220.78%22/%3E%3Cstop offset=%220.56%22 stop-color=%22%23b6b6c5%22 stop-opacity=%220.49%22/%3E%3Cstop offset=%220.84%22 stop-color=%22%239b9bab%22 stop-opacity=%220.17%22/%3E%3Cstop offset=%221%22 stop-color=%22%23858294%22 stop-opacity=%220%22/%3E%3C/radialGradient%3E%3CradialGradient id=%22l%22 cx=%22.01%22 cy=%221.05%22 r=%220.47%22%3E%3Cstop offset=%220%22 stop-color=%22%23aaa8b5%22 stop-opacity=%220.92%22/%3E%3Cstop offset=%220.4%22 stop-color=%22%239796a6%22 stop-opacity=%220.6%22/%3E%3Cstop offset=%220.78%22 stop-color=%22%23838396%22 stop-opacity=%220.2%22/%3E%3Cstop offset=%221%22 stop-color=%22%2377798a%22 stop-opacity=%220%22/%3E%3C/radialGradient%3E%3ClinearGradient id=%22b%22 x1=%220%22 y1=%22.1%22 x2=%221%22 y2=%22.96%22%3E%3Cstop offset=%220%22 stop-color=%22%23ffe5bd%22 stop-opacity=%220.99%22/%3E%3Cstop offset=%220.2%22 stop-color=%22%23fff%22 stop-opacity=%220.99%22/%3E%3Cstop offset=%220.56%22 stop-color=%22%23a4a4b4%22 stop-opacity=%220.4%22/%3E%3Cstop offset=%220.85%22 stop-color=%22%23fff4e0%22 stop-opacity=%220.93%22/%3E%3Cstop offset=%221%22 stop-color=%22%23e4caa4%22 stop-opacity=%221%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d=%22M1 28V5l4-4h25M652 301h19l5-5V276%22 fill=%22none%22 stroke=%22%23fdf1dd%22 stroke-width=%221.4%22/%3E%3Cpath d=%22M2 279L24 300H2ZM655 301L676 280V301Z%22 fill=%22%23c5c1c9%22 stroke=%22%23f7ead6%22 stroke-width=%220.8%22/%3E%3Cpath d=%22M1 21L25 .7H676V280l-22 21H23L1 280Z%22 fill=%22url%28%23n%29%22 stroke=%22none%22 stroke-width=%221%22/%3E%3Cpath d=%22M1 21L25 .7H676V280l-22 21H23L1 280Z%22 fill=%22url%28%23l%29%22 stroke=%22none%22 stroke-width=%221%22/%3E%3Cpath d=%22M1 21L25 .7H676V280l-22 21H23L1 280Z%22 fill=%22url%28%23w%29%22 stroke=%22none%22 stroke-width=%221%22/%3E%3Cpath d=%22M1 21L25 .7H676V280l-22 21H23L1 280Z%22 fill=%22none%22 stroke=%22url%28%23b%29%22 stroke-width=%221.15%22/%3E%3Cdefs%3E%3Cfilter id=%22silk%22 x=%220%22 y=%220%22 width=%22100%25%22 height=%22100%25%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%22.015 .024%22 numOctaves=%223%22 seed=%2218%22 stitchTiles=%22stitch%22/%3E%3CfeColorMatrix type=%22matrix%22 values=%22.19 .64 .17 0 0 .19 .64 .17 0 0 .19 .64 .17 0 0 0 0 0 .16 0%22/%3E%3C/filter%3E%3CclipPath id=%22mask%22%3E%3Cpath d=%22M1 21L25 .7H676V280l-22 21H23L1 280Z%22 fill=%22%23fff%22 stroke=%22none%22 stroke-width=%221%22/%3E%3C/clipPath%3E%3C/defs%3E%3Cg clip-path=%22url%28%23mask%29%22%3E%3Crect width=%22677%22 height=%22302%22 filter=%22url%28%23silk%29%22 opacity=%22.65%22/%3E%3C/g%3E%3Cpath d=%22M1 278l1 21h22M655 301l21 -21%22 fill=%22none%22 stroke=%22%23fff3df%22 stroke-width=%221.2%22/%3E%3Cpath d=%22M20 35v-15h15M642 20h15v15M20 267v15h15M657 267v15h-15%22 fill=%22none%22 stroke=%22%23e5c595%22 stroke-width=%221%22/%3E%3Cdefs%3E%3ClinearGradient id=%22r%22 gradientUnits=%22userSpaceOnUse%22 x1=%2230%22 x2=%22643%22 y1=%2285%22 y2=%2285%22%3E%3Cstop offset=%220%22 stop-color=%22%23d2b68e%22 stop-opacity=%220.58%22/%3E%3Cstop offset=%220.48%22 stop-color=%22%23f6e0bb%22 stop-opacity=%221%22/%3E%3Cstop offset=%221%22 stop-color=%22%23e4c9a3%22 stop-opacity=%220.15%22/%3E%3C/linearGradient%3E%3ClinearGradient id=%22s%22 gradientUnits=%22userSpaceOnUse%22 x1=%2230%22 x2=%2230%22 y1=%22102%22 y2=%22276%22%3E%3Cstop offset=%220%22 stop-color=%22%23d6bd97%22 stop-opacity=%220%22/%3E%3Cstop offset=%220.24%22 stop-color=%22%23d6bd97%22 stop-opacity=%220.73%22/%3E%3Cstop offset=%220.85%22 stop-color=%22%23dcc19d%22 stop-opacity=%220.6%22/%3E%3Cstop offset=%221%22 stop-color=%22%23dcc19d%22 stop-opacity=%220%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d=%22M517 302Q573 207 677 145%22 fill=%22none%22 stroke=%22%23e4d2ba%22 stroke-width=%221%22/%3E%3C/svg%3E");
+    --halo-psyche: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 677 302%22 preserveAspectRatio=%22none%22%3E%3Cdefs%3E%3ClinearGradient id=%22n%22 x2=%221%22 y2=%22.012%22%3E%3Cstop offset=%220%22 stop-color=%22%23484c5d%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.22%22 stop-color=%22%23434757%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.55%22 stop-color=%22%23464a5b%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.85%22 stop-color=%22%23585c6d%22 stop-opacity=%221%22/%3E%3Cstop offset=%221%22 stop-color=%22%236c6e7f%22 stop-opacity=%221%22/%3E%3C/linearGradient%3E%3CradialGradient id=%22w%22 cx=%221.04%22 cy=%221.05%22 r=%220.69%22%3E%3Cstop offset=%220%22 stop-color=%22%23f3eef3%22 stop-opacity=%220.96%22/%3E%3Cstop offset=%220.25%22 stop-color=%22%23dcd8e0%22 stop-opacity=%220.78%22/%3E%3Cstop offset=%220.56%22 stop-color=%22%23b6b6c5%22 stop-opacity=%220.49%22/%3E%3Cstop offset=%220.84%22 stop-color=%22%239b9bab%22 stop-opacity=%220.17%22/%3E%3Cstop offset=%221%22 stop-color=%22%23858294%22 stop-opacity=%220%22/%3E%3C/radialGradient%3E%3CradialGradient id=%22l%22 cx=%22.01%22 cy=%221.05%22 r=%220.47%22%3E%3Cstop offset=%220%22 stop-color=%22%23aaa8b5%22 stop-opacity=%220.92%22/%3E%3Cstop offset=%220.4%22 stop-color=%22%239796a6%22 stop-opacity=%220.6%22/%3E%3Cstop offset=%220.78%22 stop-color=%22%23838396%22 stop-opacity=%220.2%22/%3E%3Cstop offset=%221%22 stop-color=%22%2377798a%22 stop-opacity=%220%22/%3E%3C/radialGradient%3E%3ClinearGradient id=%22b%22 x1=%220%22 y1=%22.1%22 x2=%221%22 y2=%22.96%22%3E%3Cstop offset=%220%22 stop-color=%22%23ffe5bd%22 stop-opacity=%220.99%22/%3E%3Cstop offset=%220.2%22 stop-color=%22%23fff%22 stop-opacity=%220.99%22/%3E%3Cstop offset=%220.56%22 stop-color=%22%23a4a4b4%22 stop-opacity=%220.4%22/%3E%3Cstop offset=%220.85%22 stop-color=%22%23fff4e0%22 stop-opacity=%220.93%22/%3E%3Cstop offset=%221%22 stop-color=%22%23e4caa4%22 stop-opacity=%221%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d=%22M1 28V5l4-4h25M652 301h19l5-5V276%22 fill=%22none%22 stroke=%22%23fdf1dd%22 stroke-width=%221.4%22/%3E%3Cpath d=%22M2 279L24 300H2ZM655 301L676 280V301Z%22 fill=%22%23c5c1c9%22 stroke=%22%23f7ead6%22 stroke-width=%220.8%22/%3E%3Cpath d=%22M1 21L25 .7H676V280l-22 21H23L1 280Z%22 fill=%22url%28%23n%29%22 stroke=%22none%22 stroke-width=%221%22/%3E%3Cpath d=%22M1 21L25 .7H676V280l-22 21H23L1 280Z%22 fill=%22url%28%23l%29%22 stroke=%22none%22 stroke-width=%221%22/%3E%3Cpath d=%22M1 21L25 .7H676V280l-22 21H23L1 280Z%22 fill=%22url%28%23w%29%22 stroke=%22none%22 stroke-width=%221%22/%3E%3Cpath d=%22M1 21L25 .7H676V280l-22 21H23L1 280Z%22 fill=%22none%22 stroke=%22url%28%23b%29%22 stroke-width=%221.15%22/%3E%3Cdefs%3E%3Cfilter id=%22silk%22 x=%220%22 y=%220%22 width=%22100%25%22 height=%22100%25%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%22.015 .024%22 numOctaves=%223%22 seed=%2218%22 stitchTiles=%22stitch%22/%3E%3CfeColorMatrix type=%22matrix%22 values=%22.19 .64 .17 0 0 .19 .64 .17 0 0 .19 .64 .17 0 0 0 0 0 .16 0%22/%3E%3C/filter%3E%3CclipPath id=%22mask%22%3E%3Cpath d=%22M1 21L25 .7H676V280l-22 21H23L1 280Z%22 fill=%22%23fff%22 stroke=%22none%22 stroke-width=%221%22/%3E%3C/clipPath%3E%3C/defs%3E%3Cg clip-path=%22url%28%23mask%29%22%3E%3Crect width=%22677%22 height=%22302%22 filter=%22url%28%23silk%29%22 opacity=%22.65%22/%3E%3C/g%3E%3Cpath d=%22M1 278l1 21h22M655 301l21 -21%22 fill=%22none%22 stroke=%22%23fff3df%22 stroke-width=%221.2%22/%3E%3Cpath d=%22M20 35v-15h15M642 20h15v15M20 267v15h15M657 267v15h-15%22 fill=%22none%22 stroke=%22%23e5c595%22 stroke-width=%221%22/%3E%3Cdefs%3E%3ClinearGradient id=%22r%22 gradientUnits=%22userSpaceOnUse%22 x1=%2230%22 x2=%22643%22 y1=%2285%22 y2=%2285%22%3E%3Cstop offset=%220%22 stop-color=%22%23d2b68e%22 stop-opacity=%220.58%22/%3E%3Cstop offset=%220.48%22 stop-color=%22%23f6e0bb%22 stop-opacity=%221%22/%3E%3Cstop offset=%221%22 stop-color=%22%23e4c9a3%22 stop-opacity=%220.15%22/%3E%3C/linearGradient%3E%3ClinearGradient id=%22s%22 gradientUnits=%22userSpaceOnUse%22 x1=%2230%22 x2=%2230%22 y1=%22102%22 y2=%22276%22%3E%3Cstop offset=%220%22 stop-color=%22%23d6bd97%22 stop-opacity=%220%22/%3E%3Cstop offset=%220.24%22 stop-color=%22%23d6bd97%22 stop-opacity=%220.73%22/%3E%3Cstop offset=%220.85%22 stop-color=%22%23dcc19d%22 stop-opacity=%220.6%22/%3E%3Cstop offset=%221%22 stop-color=%22%23dcc19d%22 stop-opacity=%220%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d=%22M30 85.5H318M343 85.5H643%22 fill=%22none%22 stroke=%22url%28%23r%29%22 stroke-width=%221.25%22/%3E%3Cpath fill=%22%23f0d5aa%22 d=%22M330.5 80.7l4.8 4.8-4.8 4.8-4.8-4.8z%22/%3E%3Cpath fill=%22%23a09488%22 d=%22M330.5 83.3l2.2 2.2-2.2 2.2-2.2-2.2z%22/%3E%3Cpath fill=%22%23fbe3c4%22 d=%22M330.5 84.5l1 1-1 1-1-1z%22/%3E%3Cpath d=%22M30 102v174%22 fill=%22none%22 stroke=%22url%28%23s%29%22 stroke-width=%221%22/%3E%3Cpath d=%22M517 302Q573 207 677 145%22 fill=%22none%22 stroke=%22%23e4d2ba%22 stroke-width=%221%22/%3E%3C/svg%3E");
     --halo-pay: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 457 110%22 preserveAspectRatio=%22none%22%3E%3Cdefs%3E%3ClinearGradient id=%22n%22 x2=%221%22 y2=%22.012%22%3E%3Cstop offset=%220%22 stop-color=%22%23575b6b%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.22%22 stop-color=%22%23494d5f%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.55%22 stop-color=%22%23484c5d%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.85%22 stop-color=%22%23626578%22 stop-opacity=%221%22/%3E%3Cstop offset=%221%22 stop-color=%22%237c7d91%22 stop-opacity=%221%22/%3E%3C/linearGradient%3E%3CradialGradient id=%22w%22 cx=%221.04%22 cy=%221.05%22 r=%220.69%22%3E%3Cstop offset=%220%22 stop-color=%22%23f3eef3%22 stop-opacity=%220.96%22/%3E%3Cstop offset=%220.25%22 stop-color=%22%23dcd8e0%22 stop-opacity=%220.78%22/%3E%3Cstop offset=%220.56%22 stop-color=%22%23b6b6c5%22 stop-opacity=%220.49%22/%3E%3Cstop offset=%220.84%22 stop-color=%22%239b9bab%22 stop-opacity=%220.17%22/%3E%3Cstop offset=%221%22 stop-color=%22%23858294%22 stop-opacity=%220%22/%3E%3C/radialGradient%3E%3CradialGradient id=%22l%22 cx=%22.01%22 cy=%221.05%22 r=%220.69%22%3E%3Cstop offset=%220%22 stop-color=%22%23aaa8b5%22 stop-opacity=%220.92%22/%3E%3Cstop offset=%220.4%22 stop-color=%22%239796a6%22 stop-opacity=%220.6%22/%3E%3Cstop offset=%220.78%22 stop-color=%22%23838396%22 stop-opacity=%220.2%22/%3E%3Cstop offset=%221%22 stop-color=%22%2377798a%22 stop-opacity=%220%22/%3E%3C/radialGradient%3E%3ClinearGradient id=%22b%22 x1=%220%22 y1=%22.1%22 x2=%221%22 y2=%22.96%22%3E%3Cstop offset=%220%22 stop-color=%22%23ffe5bd%22 stop-opacity=%220.99%22/%3E%3Cstop offset=%220.2%22 stop-color=%22%23fff%22 stop-opacity=%220.99%22/%3E%3Cstop offset=%220.56%22 stop-color=%22%23a4a4b4%22 stop-opacity=%220.4%22/%3E%3Cstop offset=%220.85%22 stop-color=%22%23fff4e0%22 stop-opacity=%220.93%22/%3E%3Cstop offset=%221%22 stop-color=%22%23e4caa4%22 stop-opacity=%221%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d=%22M1 24V5l4-4h21M413 109h38l5-5V65%22 fill=%22none%22 stroke=%22%23fdf1dd%22 stroke-width=%221.4%22/%3E%3Cpath d=%22M2 87L24 108H2ZM416 109L456 69V109Z%22 fill=%22%23c5c1c9%22 stroke=%22%23f7ead6%22 stroke-width=%220.8%22/%3E%3Cpath d=%22M1 21L21 .7H456V69l-41 40H1Z%22 fill=%22url%28%23n%29%22 stroke=%22none%22 stroke-width=%221%22/%3E%3Cpath d=%22M1 21L21 .7H456V69l-41 40H1Z%22 fill=%22url%28%23l%29%22 stroke=%22none%22 stroke-width=%221%22/%3E%3Cpath d=%22M1 21L21 .7H456V69l-41 40H1Z%22 fill=%22url%28%23w%29%22 stroke=%22none%22 stroke-width=%221%22/%3E%3Cpath d=%22M1 21L21 .7H456V69l-41 40H1Z%22 fill=%22none%22 stroke=%22url%28%23b%29%22 stroke-width=%221.15%22/%3E%3Cdefs%3E%3Cfilter id=%22silk%22 x=%220%22 y=%220%22 width=%22100%25%22 height=%22100%25%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%22.015 .024%22 numOctaves=%223%22 seed=%2218%22 stitchTiles=%22stitch%22/%3E%3CfeColorMatrix type=%22matrix%22 values=%22.19 .64 .17 0 0 .19 .64 .17 0 0 .19 .64 .17 0 0 0 0 0 .16 0%22/%3E%3C/filter%3E%3CclipPath id=%22mask%22%3E%3Cpath d=%22M1 21L21 .7H456V69l-41 40H1Z%22 fill=%22%23fff%22 stroke=%22none%22 stroke-width=%221%22/%3E%3C/clipPath%3E%3C/defs%3E%3Cg clip-path=%22url%28%23mask%29%22%3E%3Crect width=%22457%22 height=%22110%22 filter=%22url%28%23silk%29%22 opacity=%22.65%22/%3E%3C/g%3E%3Cpath d=%22M1 86l1 21h22M416 109l40 -40%22 fill=%22none%22 stroke=%22%23fff3df%22 stroke-width=%221.2%22/%3E%3Cpath d=%22M5 15v-10h10M442 5h10v10M5 95v10h10M452 95v10h-10%22 fill=%22none%22 stroke=%22%23e5c595%22 stroke-width=%220.72%22/%3E%3C/svg%3E");
     --halo-input: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 684 71%22 preserveAspectRatio=%22none%22%3E%3Cdefs%3E%3ClinearGradient id=%22g%22 x2=%221%22 y2=%22.3%22%3E%3Cstop offset=%220%22 stop-color=%22%23f4f3f9%22 stop-opacity=%220.42%22/%3E%3Cstop offset=%220.45%22 stop-color=%22%23f7f6fb%22 stop-opacity=%220.72%22/%3E%3Cstop offset=%221%22 stop-color=%22%23efeef6%22 stop-opacity=%220.62%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d=%22M1 .8H683V53L666 70H1Z%22 fill=%22url%28%23g%29%22 stroke=%22%23c8c6d6%22 stroke-width=%221.1%22/%3E%3Cpath d=%22M4 10V4h8M671 4h9v8M4 59v8h10%22 fill=%22none%22 stroke=%22%23d5d1dd%22 stroke-width=%221%22/%3E%3Cpath d=%22M667 70l15-15%22 fill=%22none%22 stroke=%22%23dfc7a7%22 stroke-width=%220.85%22/%3E%3C/svg%3E");
     --halo-send: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 108 71%22 preserveAspectRatio=%22none%22%3E%3Cdefs%3E%3ClinearGradient id=%22g%22 x1=%220%22 y1=%221%22 x2=%221%22 y2=%22.3%22%3E%3Cstop offset=%220%22 stop-color=%22%239695a6%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.45%22 stop-color=%22%23626779%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.78%22 stop-color=%22%23797c8f%22 stop-opacity=%221%22/%3E%3Cstop offset=%221%22 stop-color=%22%23b7b5c0%22 stop-opacity=%221%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d=%22M1 70 27 22 59 1H107L81 70Z%22 fill=%22url%28%23g%29%22 stroke=%22%23e6dfdf%22 stroke-width=%220.8%22/%3E%3Cpath d=%22M26 25 38 2h18M81 70l6-16-17 16%22 fill=%22none%22 stroke=%22%23efd7b2%22 stroke-width=%220.85%22/%3E%3C/svg%3E");
+    --halo-pulse: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 18%22 preserveAspectRatio=%22none%22%3E%3Ccircle cx=%222%22 cy=%229%22 r=%221.1%22 fill=%22%2377778a%22/%3E%3Cpath d=%22M14.0 8.0v2%22 fill=%22none%22 stroke=%22%2367697f%22 stroke-width=%221.3%22/%3E%3Cpath d=%22M17.3 8.0v2%22 fill=%22none%22 stroke=%22%2367697f%22 stroke-width=%221.3%22/%3E%3Cpath d=%22M20.6 7.0v4%22 fill=%22none%22 stroke=%22%2367697f%22 stroke-width=%221.3%22/%3E%3Cpath d=%22M23.9 7.5v3%22 fill=%22none%22 stroke=%22%2367697f%22 stroke-width=%221.3%22/%3E%3Cpath d=%22M27.2 5.0v8%22 fill=%22none%22 stroke=%22%2367697f%22 stroke-width=%221.3%22/%3E%3Cpath d=%22M30.5 7.0v4%22 fill=%22none%22 stroke=%22%2367697f%22 stroke-width=%221.3%22/%3E%3Cpath d=%22M33.8 1.5v15%22 fill=%22none%22 stroke=%22%2367697f%22 stroke-width=%221.3%22/%3E%3Cpath d=%22M37.1 6.0v6%22 fill=%22none%22 stroke=%22%2367697f%22 stroke-width=%221.3%22/%3E%3Cpath d=%22M40.4 3.5v11%22 fill=%22none%22 stroke=%22%2367697f%22 stroke-width=%221.3%22/%3E%3Cpath d=%22M43.7 7.0v4%22 fill=%22none%22 stroke=%22%2367697f%22 stroke-width=%221.3%22/%3E%3Cpath d=%22M47.0 5.5v7%22 fill=%22none%22 stroke=%22%2367697f%22 stroke-width=%221.3%22/%3E%3Cpath d=%22M50.3 7.5v3%22 fill=%22none%22 stroke=%22%2367697f%22 stroke-width=%221.3%22/%3E%3Cpath d=%22M53.6 7.5v3%22 fill=%22none%22 stroke=%22%2367697f%22 stroke-width=%221.3%22/%3E%3Cpath d=%22M56.9 7.5v3%22 fill=%22none%22 stroke=%22%2367697f%22 stroke-width=%221.3%22/%3E%3Cpath d=%22M60.2 3.5v11%22 fill=%22none%22 stroke=%22%2367697f%22 stroke-width=%221.3%22/%3E%3Cpath d=%22M63.5 6.0v6%22 fill=%22none%22 stroke=%22%2367697f%22 stroke-width=%221.3%22/%3E%3Cpath d=%22M66.8 2.5v13%22 fill=%22none%22 stroke=%22%2367697f%22 stroke-width=%221.3%22/%3E%3Cpath d=%22M70.1 6.5v5%22 fill=%22none%22 stroke=%22%2367697f%22 stroke-width=%221.3%22/%3E%3Cpath d=%22M73.4 6.0v6%22 fill=%22none%22 stroke=%22%2367697f%22 stroke-width=%221.3%22/%3E%3Cpath d=%22M76.7 2.0v14%22 fill=%22none%22 stroke=%22%2367697f%22 stroke-width=%221.3%22/%3E%3Cpath d=%22M80.0 6.5v5%22 fill=%22none%22 stroke=%22%2367697f%22 stroke-width=%221.3%22/%3E%3Cpath d=%22M83.3 7.5v3%22 fill=%22none%22 stroke=%22%2367697f%22 stroke-width=%221.3%22/%3E%3Cpath d=%22M86.6 7.0v4%22 fill=%22none%22 stroke=%22%2367697f%22 stroke-width=%221.3%22/%3E%3Cpath d=%22M89.9 7.5v3%22 fill=%22none%22 stroke=%22%2367697f%22 stroke-width=%221.3%22/%3E%3Cpath d=%22M93.2 8.0v2%22 fill=%22none%22 stroke=%22%2367697f%22 stroke-width=%221.3%22/%3E%3Cpath d=%22M96.5 8.0v2%22 fill=%22none%22 stroke=%22%2367697f%22 stroke-width=%221.3%22/%3E%3C/svg%3E");
+    --halo-long: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 578 116%22 preserveAspectRatio=%22none%22%3E%3Cdefs%3E%3ClinearGradient id=%22p%22 x1=%220%22 y1=%22.7%22 x2=%221%22 y2=%22.15%22%3E%3Cstop offset=%220%22 stop-color=%22%23eeedf3%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.32%22 stop-color=%22%23f4f3f8%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.7%22 stop-color=%22%23f6f5f9%22 stop-opacity=%221%22/%3E%3Cstop offset=%221%22 stop-color=%22%23eae9f1%22 stop-opacity=%221%22/%3E%3C/linearGradient%3E%3CradialGradient id=%22h%22 cx=%22.83%22 cy=%22-.2%22 r=%22.93%22%3E%3Cstop offset=%220%22 stop-color=%22%23fff%22 stop-opacity=%220.58%22/%3E%3Cstop offset=%220.55%22 stop-color=%22%23fff%22 stop-opacity=%220.2%22/%3E%3Cstop offset=%221%22 stop-color=%22%23fff%22 stop-opacity=%220%22/%3E%3C/radialGradient%3E%3ClinearGradient id=%22e%22 x2=%221%22 y2=%22.75%22%3E%3Cstop offset=%220%22 stop-color=%22%23cfccd8%22 stop-opacity=%220.9%22/%3E%3Cstop offset=%220.3%22 stop-color=%22%23e2e0e9%22 stop-opacity=%220.84%22/%3E%3Cstop offset=%220.55%22 stop-color=%22%23fff%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.78%22 stop-color=%22%23d9d6e2%22 stop-opacity=%220.94%22/%3E%3Cstop offset=%221%22 stop-color=%22%23ddd8e2%22 stop-opacity=%221%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d=%22M.8 49.88Q7 24 20 .8H577L577.5 101L563 115.2H1Z%22 fill=%22url%28%23p%29%22 stroke=%22url%28%23e%29%22 stroke-width=%221.25%22/%3E%3Cpath d=%22M.8 49.88Q7 24 20 .8H577L577.5 101L563 115.2H1Z%22 fill=%22url%28%23h%29%22 stroke=%22none%22 stroke-width=%221%22/%3E%3Cpath d=%22M.8 49.88Q7 24 20 .8%22 fill=%22none%22 stroke=%22%23dfc9ac%22 stroke-width=%220.8%22/%3E%3Cpath d=%22M563 115.2l14 -14%22 fill=%22none%22 stroke=%22%23d5b28a%22 stroke-width=%220.95%22/%3E%3Cpath d=%22M565 4h7l2 3v4M4 104v6l3 3h5%22 fill=%22none%22 stroke=%22%23d3cfdd%22 stroke-width=%221.25%22/%3E%3Cpath d=%22M22 2h421%22 fill=%22none%22 stroke=%22%23fff%22 stroke-width=%220.65%22/%3E%3C/svg%3E");
+    --halo-plain: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 217 74%22 preserveAspectRatio=%22none%22%3E%3Cdefs%3E%3ClinearGradient id=%22p%22 x1=%220%22 y1=%22.7%22 x2=%221%22 y2=%22.15%22%3E%3Cstop offset=%220%22 stop-color=%22%23eeedf3%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.32%22 stop-color=%22%23f4f3f8%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.7%22 stop-color=%22%23f6f5f9%22 stop-opacity=%221%22/%3E%3Cstop offset=%221%22 stop-color=%22%23eae9f1%22 stop-opacity=%221%22/%3E%3C/linearGradient%3E%3CradialGradient id=%22h%22 cx=%22.83%22 cy=%22-.2%22 r=%22.93%22%3E%3Cstop offset=%220%22 stop-color=%22%23fff%22 stop-opacity=%220.58%22/%3E%3Cstop offset=%220.55%22 stop-color=%22%23fff%22 stop-opacity=%220.2%22/%3E%3Cstop offset=%221%22 stop-color=%22%23fff%22 stop-opacity=%220%22/%3E%3C/radialGradient%3E%3ClinearGradient id=%22e%22 x2=%221%22 y2=%22.75%22%3E%3Cstop offset=%220%22 stop-color=%22%23cfccd8%22 stop-opacity=%220.9%22/%3E%3Cstop offset=%220.3%22 stop-color=%22%23e2e0e9%22 stop-opacity=%220.84%22/%3E%3Cstop offset=%220.55%22 stop-color=%22%23fff%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.78%22 stop-color=%22%23d9d6e2%22 stop-opacity=%220.94%22/%3E%3Cstop offset=%221%22 stop-color=%22%23ddd8e2%22 stop-opacity=%221%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d=%22M.8 31.82Q7 24 20 .8H216L216.5 59L202 73.2H1Z%22 fill=%22url%28%23p%29%22 stroke=%22url%28%23e%29%22 stroke-width=%221.25%22/%3E%3Cpath d=%22M.8 31.82Q7 24 20 .8H216L216.5 59L202 73.2H1Z%22 fill=%22url%28%23h%29%22 stroke=%22none%22 stroke-width=%221%22/%3E%3Cpath d=%22M.8 31.82Q7 24 20 .8%22 fill=%22none%22 stroke=%22%23dfc9ac%22 stroke-width=%220.8%22/%3E%3Cpath d=%22M202 73.2l14 -14%22 fill=%22none%22 stroke=%22%23d5b28a%22 stroke-width=%220.95%22/%3E%3Cpath d=%22M204 4h7l2 3v4M4 62v6l3 3h5%22 fill=%22none%22 stroke=%22%23d3cfdd%22 stroke-width=%221.25%22/%3E%3Cpath d=%22M22 2h158%22 fill=%22none%22 stroke=%22%23fff%22 stroke-width=%220.65%22/%3E%3C/svg%3E");
+    --halo-voice: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 440 74%22 preserveAspectRatio=%22none%22%3E%3Cdefs%3E%3ClinearGradient id=%22p%22 x1=%220%22 y1=%22.7%22 x2=%221%22 y2=%22.15%22%3E%3Cstop offset=%220%22 stop-color=%22%23eeedf3%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.32%22 stop-color=%22%23f4f3f8%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.7%22 stop-color=%22%23f6f5f9%22 stop-opacity=%221%22/%3E%3Cstop offset=%221%22 stop-color=%22%23eae9f1%22 stop-opacity=%221%22/%3E%3C/linearGradient%3E%3CradialGradient id=%22h%22 cx=%22.83%22 cy=%22-.2%22 r=%22.93%22%3E%3Cstop offset=%220%22 stop-color=%22%23fff%22 stop-opacity=%220.58%22/%3E%3Cstop offset=%220.55%22 stop-color=%22%23fff%22 stop-opacity=%220.2%22/%3E%3Cstop offset=%221%22 stop-color=%22%23fff%22 stop-opacity=%220%22/%3E%3C/radialGradient%3E%3ClinearGradient id=%22e%22 x2=%221%22 y2=%22.75%22%3E%3Cstop offset=%220%22 stop-color=%22%23cfccd8%22 stop-opacity=%220.9%22/%3E%3Cstop offset=%220.3%22 stop-color=%22%23e2e0e9%22 stop-opacity=%220.84%22/%3E%3Cstop offset=%220.55%22 stop-color=%22%23fff%22 stop-opacity=%221%22/%3E%3Cstop offset=%220.78%22 stop-color=%22%23d9d6e2%22 stop-opacity=%220.94%22/%3E%3Cstop offset=%221%22 stop-color=%22%23ddd8e2%22 stop-opacity=%221%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d=%22M.8 14L14 .8H439L439.5 59L425 73.2H1Z%22 fill=%22url%28%23p%29%22 stroke=%22url%28%23e%29%22 stroke-width=%221.25%22/%3E%3Cpath d=%22M.8 14L14 .8H439L439.5 59L425 73.2H1Z%22 fill=%22url%28%23h%29%22 stroke=%22none%22 stroke-width=%221%22/%3E%3Cpath d=%22M.8 14L14 .8%22 fill=%22none%22 stroke=%22%23d4bb9e%22 stroke-width=%220.8%22/%3E%3Cpath d=%22M425 73.2l14 -14%22 fill=%22none%22 stroke=%22%23d5b28a%22 stroke-width=%220.95%22/%3E%3Cpath d=%22M427 4h7l2 3v4M4 62v6l3 3h5%22 fill=%22none%22 stroke=%22%23d3cfdd%22 stroke-width=%221.25%22/%3E%3Cpath d=%22M16 2h321%22 fill=%22none%22 stroke=%22%23fff%22 stroke-width=%220.65%22/%3E%3C/svg%3E");
+    --halo-back: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2032%22%20aria-hidden%3D%22true%22%3E%3Cpath%20d%3D%22m17%201-7%2015%206%2014L2%2017l6-2Z%22%20fill%3D%22%23363b4b%22%2F%3E%3Cpath%20d%3D%22m11%2015-9%202%207%201z%22%20fill%3D%22%239297a8%22%2F%3E%3C%2Fsvg%3E");
+    --halo-lightning: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2032%22%20aria-hidden%3D%22true%22%3E%3Cpath%20d%3D%22m19%201-4%209-4%204%204%202L2%2030l6-13-5-1%208-8Z%22%20fill%3D%22%23424653%22%2F%3E%3Cpath%20d%3D%22m11%208%203%202-6%207-5-1z%22%20fill%3D%22%23838496%22%2F%3E%3C%2Fsvg%3E");
     --halo-star: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 40 40%27%3E%3Cpath fill=%27%23968fa4%27 d=%27M20 1Q22 17 39 20Q22 23 20 39Q17 23 1 20Q17 17 20 1Z%27/%3E%3C/svg%3E");
 }

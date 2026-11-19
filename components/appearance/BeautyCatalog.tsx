@@ -6,16 +6,26 @@ import {shuffleCatalog,type BeautyCatalogEntry} from '../../utils/beautyCatalogC
 import {BEAUTY_CATALOG_URL,loadBeautyCatalog,loadCatalogPreview,sameCatalogTerms} from '../../utils/beautyCatalogClient';
 import {beautyRequest,downloadBeauty} from '../../utils/beautyShareClient';
 import type {BeautyShare} from '../../utils/beautyShareContract';
+import {useWardrobeDetailDialog} from '../chat/ChatDecorationTrial';
+import {validateDecoration} from '../../utils/chatDecoration';
 import BeautyPresetPreview from '../share/BeautyPresetPreview';
 import './BeautyWardrobe.css';
 import './BeautyCatalog.css';
 
 function CatalogDetail({entry,onClose,onReceive}:{entry:BeautyCatalogEntry;onClose:()=>void;onReceive:(pack:unknown,share:BeautyShare)=>Promise<void>}){
-  const dialog=useRef<HTMLDialogElement>(null);
+  const {dialog,trial}=useWardrobeDetailDialog();
   const [pack,setPack]=useState<unknown>(null),[busy,setBusy]=useState(false),[error,setError]=useState('');
   const [terms,setTerms]=useState<BeautyShare>(entry),[accepted,setAccepted]=useState(false);
   useLocalBackHandler(()=>{if(!busy)onClose();return true;}, 40);
-  useEffect(()=>{const node=dialog.current;node?.showModal();return()=>node?.close();},[]);
+  const readCurrent = async () => {
+    const latest = await beautyRequest<BeautyShare>(`/shares/${entry.code}`);
+    if (!sameCatalogTerms(terms,latest)) {
+      setTerms(latest); setAccepted(false);
+      throw Error('作者已更新作品或使用规范，请重新阅读并确认。封面与预览仍为目录版本。');
+    }
+    return {latest,data:await downloadBeauty(latest,latest.kind)};
+  };
+  const canTry = trial && entry.kind==='chat-decoration' && !entry.categories.some(category=>['date','story','collaboration','journal','schedule'].includes(category));
   const run=async(work:()=>Promise<void>)=>{setBusy(true);setError('');try{await work();}catch(e){setError(e instanceof Error?e.message:'操作失败，请重试');}finally{setBusy(false);}};
   return createPortal(<dialog ref={dialog} className="wardrobe-detail" aria-label={entry.metadata.name+'装扮详情'} onCancel={e=>{e.preventDefault();if(!busy)onClose();}}>
     <header><button disabled={busy} aria-label="返回装扮库" onClick={onClose}>‹</button><span>装扮预览</span><span className="wardrobe-detail-label">公开作品</span></header>
@@ -29,21 +39,22 @@ function CatalogDetail({entry,onClose,onReceive}:{entry:BeautyCatalogEntry;onClo
         {error&&<p role="alert">{error}</p>}
       </div>
     </div>
-    <footer><span>先收藏，再选择角色应用</span><button disabled={busy||!accepted} onClick={()=>void run(async()=>{
-      const latest=await beautyRequest<BeautyShare>(`/shares/${entry.code}`);
-      if(!sameCatalogTerms(terms,latest)){setTerms(latest);setAccepted(false);throw Error('作者已更新作品或使用规范，请重新阅读并确认。封面与预览仍为目录版本。');}
-      // Never import a cached public preview: fresh retrieval enforces withdrawal/version checks.
-      const data=await downloadBeauty(latest,latest.kind);await onReceive(data,latest);onClose();
+    <footer>{canTry?<button disabled={busy||!accepted} onClick={()=>void run(async()=>{
+      const {data,latest}=await readCurrent();
+      await trial.start(validateDecoration(data),{kind:'imported',share:latest,credit:latest.metadata.credit,allowRemix:latest.metadata.allowRemix,allowRedistribute:latest.metadata.allowRedistribute},async()=>{await readCurrent();});
+    })}>试用</button>:<span>先收藏，再选择角色应用</span>}<button disabled={busy||!accepted} onClick={()=>void run(async()=>{
+      const {data,latest}=await readCurrent();await onReceive(data,latest);onClose();
     })}>{busy?'正在加载…':'领取装扮'}</button></footer>
   </dialog>,document.body);
 }
 
-export default function BeautyCatalog({onBack,onReceive}:{onBack:()=>void;onReceive:(pack:unknown,share:BeautyShare)=>Promise<void>}){
+export default function BeautyCatalog({onBack,onReceive,initialCategory='all'}:{initialCategory?:BeautyCategory;onBack:()=>void;onReceive:(pack:unknown,share:BeautyShare)=>Promise<void>}){
   const [entries,setEntries]=useState<BeautyCatalogEntry[]>([]),[loading,setLoading]=useState(true),[error,setError]=useState(''),[attempt,setAttempt]=useState(0);
-  const [category,setCategory]=useState<BeautyCategory>('all'),[query,setQuery]=useState(''),[search,setSearch]=useState(false),[page,setPage]=useState(0);
+  const [category,setCategory]=useState<BeautyCategory>(initialCategory==='chat'?'all':initialCategory),[query,setQuery]=useState(''),[search,setSearch]=useState(false),[page,setPage]=useState(0);
   const [selected,setSelected]=useState<BeautyCatalogEntry>();
   // Paging scrolls the whole page back to its top; aligning the list itself would tuck it under the sticky header.
   const pageTop=useRef<HTMLDivElement>(null);
+  useEffect(()=>{pageTop.current?.querySelector('.wardrobe-categories [aria-pressed="true"]')?.scrollIntoView?.({block:'nearest',inline:'center'});},[category]);
   useLocalBackHandler(()=>{if(search){setSearch(false);setQuery('');}else onBack();return true;}, 30);
   useEffect(()=>{let alive=true;setLoading(true);setError('');loadBeautyCatalog().then(c=>{if(alive)setEntries(shuffleCatalog(c.entries.filter(e=>belongsInBeautyLibrary(e.categories as BeautyCategory[],'chat'))));}).catch(e=>{if(alive)setError(e instanceof Error?e.message:'装扮库加载失败');}).finally(()=>{if(alive)setLoading(false);});return()=>{alive=false;};},[attempt]);
   const needle=query.trim().toLocaleLowerCase();

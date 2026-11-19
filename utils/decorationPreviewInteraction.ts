@@ -6,7 +6,7 @@ export interface DecorationPreviewState {
  panel?:boolean;
  actionsPage?:number;
 }
-export function bindDecorationPreview(body:HTMLElement,state:DecorationPreviewState,expanded:boolean,update:(next:DecorationPreviewState)=>void){
+export function bindDecorationPreview(body:HTMLElement,state:DecorationPreviewState,expanded:boolean,update:(next:DecorationPreviewState)=>void, selectScene?:(id:string)=>void){
  const bind=(element:Element|null,action:string,label?:string)=>{
   if(!element)return;
   element.setAttribute('data-preview-action',action);
@@ -28,6 +28,10 @@ export function bindDecorationPreview(body:HTMLElement,state:DecorationPreviewSt
   dialog?.setAttribute('role','dialog');dialog?.setAttribute('aria-label','示例转账详情');
   dialog?.querySelectorAll('button').forEach(button=>{if(button.textContent==='关闭')bind(button,'close-transfer');});
  });
+ if(selectScene)body.querySelectorAll<HTMLButtonElement>('.chat-profile-tabs [data-preview-scene]').forEach(button=>{
+  button.setAttribute('data-preview-action','scene:'+button.dataset.previewScene);
+  button.tabIndex=0;
+ });
  bind(body.querySelector('.sully-chat-actions-button'),'panel','聊天功能');
  body.querySelectorAll('button[aria-label]').forEach(button=>{const match=button.getAttribute('aria-label')?.match(/^第 (\d+) 页$/);if(match)bind(button,'page:'+String(Number(match[1])-1));});
  // Inert controls remain visibly previews and never focus/trigger real handlers.
@@ -37,6 +41,7 @@ export function bindDecorationPreview(body:HTMLElement,state:DecorationPreviewSt
  });
  const act=(action:string)=>{
   const [type,id]=action.split(':');
+  if(type==='scene')selectScene?.(id);
   if(type==='psyche')update({...state,psyche:{...state.psyche,[id]:!(state.psyche?.[id]??expanded)}});
   if(type==='transfer')update({...state,transferOpen:id});
   if(type==='accept'||type==='return')update({...state,transferOpen:undefined,transfers:{...state.transfers,[id]:type==='accept'?'accepted':'returned'}});
