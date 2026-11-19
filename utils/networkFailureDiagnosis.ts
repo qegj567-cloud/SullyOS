@@ -644,6 +644,7 @@ const buildAttributionContext = (
 };
 
 export interface BuildFetchFailureSystemLogInput {
+    identity?: NetworkRequestIdentity;
     id?: string;
     timestamp?: number;
     url: string;
@@ -677,7 +678,7 @@ export const buildFetchFailureSystemLog = (input: BuildFetchFailureSystemLogInpu
     const ts = input.timestamp ?? Date.now();
     const id = input.id || `log-${ts}-${Math.random().toString(36).slice(2, 8)}`;
     const method = (input.method || 'GET').toUpperCase();
-    const identity = identifyNetworkRequestSource({
+    const identity = input.identity ?? identifyNetworkRequestSource({
         url: input.url,
         method,
         headers: input.headers,

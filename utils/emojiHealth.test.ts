@@ -48,19 +48,24 @@ it('shares an in-flight fetch and persists original bytes for offline display, s
     expect(network).toHaveBeenCalledTimes(1);
 });
 
-it('keeps display-only links, temporary failures and unreadable local storage out of cleanup', async () => {
+it('separates failed display from display-only links, offline checks and temporary server errors', async () => {
     network.mockRejectedValue(new TypeError('CORS'));
     displayable = source => source === url;
     expect(await checkEmoji(url)).toBe('usable');
     expect(entries.size).toBe(0);
     displayable = () => false;
+    expect(await checkEmoji(url)).toBe('unavailable');
+    vi.stubGlobal('navigator', { onLine: false });
     expect(await checkEmoji(url)).toBe('unknown');
-    for (const status of [403, 429, 503]) {
+    vi.stubGlobal('navigator', { onLine: true });
+    network.mockResolvedValueOnce(new Response(null, { status: 403 }));
+    expect(await checkEmoji(url)).toBe('unavailable');
+    for (const status of [408, 429, 503]) {
         network.mockResolvedValueOnce(new Response(null, { status }));
         expect(await checkEmoji(url)).toBe('unknown');
     }
     network.mockResolvedValueOnce(new Response('<html>missing</html>'));
-    expect(await checkEmoji(url)).toBe('unknown');
+    expect(await checkEmoji(url)).toBe('unavailable');
     expect(entries.size).toBe(0);
     network.mockResolvedValueOnce(new Response(null, { status: 410 }));
     expect(await checkEmoji(url)).toBe('missing');
@@ -108,5 +113,12 @@ it('stopping a scan leaves queued sources untouched', async () => {
 it('keeps local originals when IndexedDB fails to read their bytes', async () => {
     const read = vi.spyOn(DB, 'getBlobAsset').mockRejectedValue(new Error('database temporarily unavailable'));
     try { expect(await checkEmoji('blobref:b_local')).toBe('unknown'); }
+    finally { read.mockRestore(); }
+});
+
+it('offers cleanup for a readable local file that the image decoder rejects', async () => {
+    const read = vi.spyOn(DB, 'getBlobAsset').mockResolvedValue(new Blob(['broken image']));
+    displayable = () => false;
+    try { expect(await checkEmoji('blobref:b_broken')).toBe('unavailable'); }
     finally { read.mockRestore(); }
 });

@@ -64,6 +64,23 @@ describe('sanitizeUrlForLog（隐私脱敏守卫）', () => {
 });
 
 describe('identifyNetworkRequestSource（多来源精确识别）', () => {
+    it('identifies optional external image and font reads without suppressing API or local asset failures', () => {
+        const identify = (url: string, method = 'GET', accept = '*/*') => identifyNetworkRequestSource({
+            url, method, headers: { Accept: accept }, endpoints: baseEndpoints, pageOrigin: 'https://friedsully.com',
+        }).category;
+        expect(identify('https://voice.cdn.test/art.PNG?from=/models')).toBe('external-media');
+        expect(identify('https://raw.githubusercontent.com/example/assets/main/cat.png')).toBe('external-media');
+        expect(identify('https://api.github.com/repos/example/assets/contents/cat.png')).toBe('backup');
+        expect(identify('https://cdn.test/han.woff2', 'HEAD')).toBe('external-media');
+        expect(identify('https://fonts.googleapis.com/css2?family=Example')).toBe('external-media');
+        expect(identify('https://cdn.test/42', 'GET', 'image/avif, image/webp, */*;q=0.5')).toBe('external-media');
+        expect(identify('https://cdn.test/42', 'GET', 'text/html, image/webp')).not.toBe('external-media');
+        expect(identify('https://cdn.test/42')).not.toBe('external-media');
+        expect(identify('https://cdn.test/art.png', 'PUT')).not.toBe('external-media');
+        expect(identify('https://open.selart.cc/v1/models', 'GET', 'image/*')).toBe('llm');
+        expect(identify('https://friedsully.com/assets/build/start.js')).toBe('local-asset');
+        expect(identify('https://cdn.test/voice.mp3')).toBe('audio');
+    });
     it('区分对话模型（带显式用途、模型列表、Anthropic 原生、副模型）', () => {
         const chat = identifyNetworkRequestSource({
             url: 'https://open.selart.cc/v1/chat/completions',

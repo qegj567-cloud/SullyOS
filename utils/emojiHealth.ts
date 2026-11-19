@@ -3,26 +3,30 @@ import { BLOBREF_PREFIX, isBlobRef } from './blobRef';
 import { DB } from './db';
 import { isRemoteEmoji, loadEmojiOriginal, probeEmojiBlob, probeEmojiImage } from './emojiOriginals';
 
-export type EmojiHealth = 'usable' | 'missing' | 'unknown';
+export type EmojiHealth = 'usable' | 'missing' | 'unavailable' | 'unknown';
 export async function checkEmoji(url: string): Promise<EmojiHealth> {
     try {
         if (isBlobRef(url)) {
-            // The display helper returns null on I/O errors too. Only a successful empty read permits removal.
+            // Read directly so an IndexedDB error stays distinct from a missing file.
             const blob = await DB.getBlobAsset(url.slice(BLOBREF_PREFIX.length));
             if (!blob) return 'missing';
-            return await probeEmojiBlob(blob) === 'ok' ? 'usable' : 'unknown';
+            const display = await probeEmojiBlob(blob);
+            if (display === 'error') return 'unavailable';
+            return display === 'ok' ? 'usable' : 'unknown';
         }
-        let missing = false;
+        let displayFailure: EmojiHealth = 'unavailable';
         if (isRemoteEmoji(url)) {
             const original = await loadEmojiOriginal(url, true);
             if (original.blob) return 'usable';
-            missing = !!original.missing;
+            if (original.failure === 'missing') displayFailure = 'missing';
+            if (original.failure === 'retry') displayFailure = 'unknown';
         }
         if (!url) return 'missing';
         // A host can forbid reading the bytes while still serving a normal <img>.
         const display = await probeEmojiImage(url);
         if (display === 'ok') return 'usable';
-        return display === 'error' && missing ? 'missing' : 'unknown';
+        if (display === 'timeout' || (!url.startsWith('data:') && globalThis.navigator?.onLine === false)) return 'unknown';
+        return displayFailure;
     } catch { return 'unknown'; }
 }
 
@@ -35,7 +39,7 @@ export async function scanEmojiLibrary(emojis: Emoji[], signal: AbortSignal, pro
         else grouped.set(emoji.url, [emoji]);
     }
     const queue = grouped.entries();
-    const result: EmojiScan = { usable: [], missing: [], unknown: [] };
+    const result: EmojiScan = { usable: [], missing: [], unavailable: [], unknown: [] };
     let checked = 0;
     async function worker() {
         while (!signal.aborted) {
