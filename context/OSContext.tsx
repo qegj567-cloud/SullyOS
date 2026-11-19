@@ -1290,6 +1290,10 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           let receivedResponseHeaders: ReceivedResponseHeadersInfo | undefined;
           const effectiveHeaders = (sendArgs[1] as RequestInit | undefined)?.headers
               || (sendArgs[0] instanceof Request ? sendArgs[0].headers : undefined);
+          const identifyFailure = () => identifyNetworkRequestSource({
+              url: urlStr, method, headers: effectiveHeaders, body: sendArgs[1]?.body,
+              explicitMeta: explicitMetaAtStart, ambientMeta: ambientMetaAtStart,
+          });
 
           try {
               let response = await fetchLlm(sendArgs[0], sendArgs[1], originalFetch, true);
@@ -1381,14 +1385,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   const requestMeta = explicitMeta || ambientMetaAtStart;
                   const body = (sendArgs[1] as any)?.body;
                   const relayErrorCode = response.headers.get('x-amsg-relay-error') || undefined;
-                  const identity = identifyNetworkRequestSource({
-                      url: urlStr,
-                      method,
-                      headers: effectiveHeaders,
-                      body,
-                      explicitMeta,
-                      ambientMeta: ambientMetaAtStart,
-                  });
+                  const identity = identifyFailure();
+                  if (identity.category === 'external-media') return response;
                   if (shouldLogHttpStatusError({ status: response.status, identity, relayErrorCode })
                       || /(?:\/chat\/completions|\/models|\/messages|\/responses|\/embeddings|\/rerank)(?:[/?#]|$)/.test(urlStr)) {
                       try {
@@ -1455,6 +1453,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   recordApiCall({ requestId: (config as any)?.__sullyApiCallId, url: urlStr, body, ok: false, meta: requestMeta, durationMs });
               }
               if (!isAnalyticsRequestUrl(urlStr) && !handlesFailure) {
+                  const identity = identifyFailure();
+                  if (identity.category === 'external-media') throw err;
                   // 把具体功能来源、配置归属、方法、耗时、前后台切换线索、Resource Timing 一并记齐，
                   // 再异步做一次 no-cors 连通性复检并回填结论（详见 utils/networkFailureDiagnosis.ts）。
                   const visibilityAtEnd = typeof document !== 'undefined' ? document.visibilityState : undefined;
@@ -1471,6 +1471,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                       ? requestErrorAdvice(routesAtStart, urlStr, '', 0, '', requestModel, requestMeta, config?.headers)
                       : undefined;
                   const { log, kind } = buildFetchFailureSystemLog({
+                      identity,
                       url: urlStr,
                       method,
                       headers: effectiveHeaders,

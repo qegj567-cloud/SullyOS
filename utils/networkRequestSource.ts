@@ -949,7 +949,25 @@ export const identifyNetworkRequestSource = (input: IdentifyNetworkRequestInput)
             configSource: `设置 → 云备份 WebDAV (${parsed.host})`,
         };
     }
-    if (hostLower === 'api.github.com' || hostLower === 'uploads.github.com' || hostLower === 'raw.githubusercontent.com') {
+    const isGithubApi = hostLower === 'api.github.com' || hostLower === 'uploads.github.com';
+    // A raw GitHub file or weather CDN icon can be display-only even on a recognized host.
+    const accept = getHeaderValue(input.headers, 'accept').split(',').map(item => item.split(';')[0].trim().toLowerCase());
+    const acceptsVisual = accept.some(type => /^(image|font)\//.test(type))
+        && accept.every(type => type === '*/*' || /^(image|font)\//.test(type));
+    if (!isSameOrigin && !isGithubApi && (method === 'GET' || method === 'HEAD') && /^https?:$/.test(parsed.protocol) && !input.explicitMeta && (
+        /\.(?:apng|avif|bmp|gif|ico|jpe?g|jfif|png|svg|webp|woff2?|ttf|otf|ttc|eot)$/i.test(pathname)
+        || (hostLower === 'fonts.googleapis.com' && /^\/(?:css2?|icon)\/?$/.test(pathname))
+        || acceptsVisual
+    )) {
+        return {
+            source: `外链资源 · 图片/字体 (${parsed.host})`,
+            category: 'external-media',
+            via: 'direct',
+            operation: `${method} ${parsed.host}${pathname}`,
+        };
+    }
+
+    if (isGithubApi || hostLower === 'raw.githubusercontent.com') {
         return {
             source: '云备份 / 资源 · GitHub 直连',
             category: 'backup',
@@ -1073,15 +1091,6 @@ export const identifyNetworkRequestSource = (input: IdentifyNetworkRequestInput)
             via: 'direct',
             operation: `${method} ${parsed.host}${pathname}`,
             impactHint: '音频文件本身加载失败（直链过期、CDN 跨域限制或网络被拦），不等于上游文本生成失败。',
-        };
-    }
-
-    if (/\.(?:png|jpe?g|webp|gif|avif|svg|woff2?|ttf|otf)(?:$|\?)/i.test(pathname)) {
-        return {
-            source: `外链资源 · 图片/字体 (${parsed.host})`,
-            category: 'external-media',
-            via: 'direct',
-            operation: `${method} ${parsed.host}${pathname}`,
         };
     }
 
