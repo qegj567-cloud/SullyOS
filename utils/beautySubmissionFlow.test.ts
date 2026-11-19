@@ -20,6 +20,27 @@ async function mount(read:()=>Promise<unknown>,bindingId?:string,readCurrent?:()
  const click=async(label:string)=>act(async()=>{const button=Array.from(host.querySelectorAll('button')).find(b=>b.textContent?.startsWith(label));expect(button).toBeTruthy();button!.click();});
  return {host,click,close:async()=>{await act(async()=>root.unmount());host.remove();}};
 }
+it('opens the author inbox, refreshes reviewed letters and clears them on logout', async () => {
+ const listing = {submissions: [], total: 0, offset: 0, nextOffset: null, pageSize: 12};
+ mocks.request.mockResolvedValueOnce(listing);
+ const ui = await mount(async () => pack());
+ try {
+  const empty = {repos: [], total: 0, offset: 0, nextOffset: null, pageSize: 12};
+  mocks.request.mockResolvedValueOnce(empty);
+  await ui.click('作者收件箱');
+  expect(mocks.request).toHaveBeenCalledWith('/repo-inbox?offset=0', {token: 'test-token'});
+  expect(ui.host.textContent).toContain('还没有收到 Repo');
+  const letter = {id: 'first', workName: '云朵', signature: '读者', message: '喜欢这套配色', writtenAt: 12};
+  mocks.request.mockResolvedValueOnce({...empty, repos: [letter], total: 1});
+  await ui.click('刷新收件箱');
+  expect(ui.host.querySelector('article')?.textContent).toContain(letter.message);
+  expect(ui.host.textContent).toContain(letter.signature);
+  mocks.request.mockResolvedValueOnce({ok: true});
+  await ui.click('退出登录');
+  expect(ui.host.textContent).not.toContain(letter.message);
+  expect(ui.host.textContent).toContain('用投稿时的作者码和密码登录');
+ } finally { await ui.close(); }
+});
 it('confirms a preview before identity or metadata, and allows choosing again',async()=>{
  mocks.session=null;const ui=await mount(async()=>pack());
  try{expect(ui.host.textContent).toContain('先看看');expect(ui.host.querySelector('input[type=password]')).toBeNull();await ui.click('就是这份');expect(ui.host.textContent).toContain('已确认');expect(ui.host.querySelector('input[type=password]')).not.toBeNull();expect(mocks.request).not.toHaveBeenCalled();await ui.click('重新选择');expect(ui.host.textContent).toContain('就是这份');expect(ui.host.querySelector('input[type=password]')).toBeNull();}finally{await ui.close();}
