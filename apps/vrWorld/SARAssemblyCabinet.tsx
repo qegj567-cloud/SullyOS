@@ -5,6 +5,8 @@ import { BookOpen, CaretLeft, Check, CircleNotch, Eye, Fingerprint, Play, X } fr
 import type { APIConfig, CharacterProfile, CharacterGroup, GroupProfile, RealtimeConfig, SARCharacterCabinetNoteMeta, UserProfile } from '../../types';
 import TokenImg from '../../components/os/TokenImg';
 import { DB } from '../../utils/db';
+import { rewriteCabinetNote, saveCabinetNoteRevision } from '../../utils/vrWorld/sarCabinetNoteEdit';
+import { trackEvent } from '../../utils/analytics';
 import { SARCharacterPicker, SARPageNav } from './SARCharacterPicker';
 import './sar-cabinet-library.css';
 import { readSARSessionTheme, SARSimulationSession, type SARSessionTheme } from './SARSimulationSession';
@@ -182,7 +184,35 @@ const CabinetRecordsView: React.FC<{
     </main>;
 };
 
-const CharacterNoteView: React.FC<{ note: CharacterCabinetNoteRecord; actor?: CharacterProfile }> = ({ note, actor }) => (
+const CharacterNoteView: React.FC<{ note: CharacterCabinetNoteRecord; actor?: CharacterProfile; api: APIConfig; user: UserProfile;
+    onChanged: (note: CharacterCabinetNoteRecord) => void; onDeleted: () => void }> = ({ note, actor, api, user, onChanged, onDeleted }) => {
+    const request = React.useRef<AbortController | null>(null);
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState('');
+    useEffect(() => () => request.current?.abort(), []);
+    const edit = async (remove: boolean) => {
+        if ((!remove && !actor) || request.current) return;
+        if (remove && !window.confirm('删除这篇随笔和聊天里对应的彼方活动卡？')) return;
+        const controller = new AbortController();
+        request.current = controller;
+        setBusy(true); setError('');
+        try {
+            if (remove) {
+                await DB.deleteMessage(note.messageId);
+                trackEvent('删除彼方芯片随笔');
+                if (!controller.signal.aborted) onDeleted();
+            } else if (actor) {
+                const notes = await rewriteCabinetNote(actor, user, api, note, controller.signal);
+                if (controller.signal.aborted) return;
+                await saveCabinetNoteRevision(note.messageId, note, notes);
+                trackEvent('重新生成彼方芯片随笔');
+                if (!controller.signal.aborted) onChanged({ ...note, notes });
+            }
+        } catch (cause) {
+            if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : '操作失败，请重试。');
+        } finally { request.current = null; if (!controller.signal.aborted) setBusy(false); }
+    };
+    return (
     <main className="sarc-note-view">
         <article>
             <header>
@@ -193,10 +223,16 @@ const CharacterNoteView: React.FC<{ note: CharacterCabinetNoteRecord; actor?: Ch
             <blockquote>{note.highlight}</blockquote>
             <section><small>WHAT HAPPENED</small><h3>事情怎么变成这样的</h3><p>{note.story}</p></section>
             <section className="is-handwritten"><small>PRIVATE MARGIN NOTES</small><h3>{note.actorName} 留在柜子里的随笔</h3><p>{note.notes}</p></section>
+            <div className="flex items-center gap-4 flex-wrap">
+                <button type="button" className="sarc-library-retry" disabled={busy || !actor} onClick={() => void edit(false)}>{busy ? '处理中…' : '重新生成随笔'}</button>
+                <button type="button" className="px-2 py-2 text-sm" disabled={busy} onClick={() => void edit(true)}>删除随笔</button>
+            </div>
+            {error && <p role="alert">{error}</p>}
             <footer>这篇记录来自 {note.actorName} 自己的彼方自由活动，不属于与你的五十轮推演史册。</footer>
         </article>
     </main>
-);
+    );
+};
 
 export const SARAssemblyCabinetOverlay: React.FC<{
     onClose: () => void;
@@ -367,7 +403,7 @@ export const SARAssemblyCabinetOverlay: React.FC<{
                 onRunChange={() => setSimulationState(readSARSimulationState())}
                 onThemeChange={setSessionTheme}
                 onBack={handleBack}
-            /> : view === 'card' && activeCard ? <IdentityCardView key={activeCard.id} onDelete={deleteCard} card={activeCard} actor={characters.find(char => char.id === activeCard.charId)} error={error} run={activeRun} onStartRun={startRun} onEnterRun={() => setView('session')} onAssemble={openAssembly} /> : view === 'note' && activeNote ? <CharacterNoteView note={activeNote} actor={characters.find(char => char.id === activeNote.actorId)} /> : view === 'cards' ? <CabinetRecordsView
+            /> : view === 'card' && activeCard ? <IdentityCardView key={activeCard.id} onDelete={deleteCard} card={activeCard} actor={characters.find(char => char.id === activeCard.charId)} error={error} run={activeRun} onStartRun={startRun} onEnterRun={() => setView('session')} onAssemble={openAssembly} /> : view === 'note' && activeNote ? <CharacterNoteView key={activeNote.id} note={activeNote} actor={characters.find(char => char.id === activeNote.actorId)} api={apiConfig} user={userProfile} onChanged={setActiveNote} onDeleted={() => { setActiveNote(null); setView('cards'); }} /> : view === 'cards' ? <CabinetRecordsView
                 shelf={shelf} onShelfChange={setShelf} characters={characters} characterGroups={characterGroups} selectedCharId={selectedCharId} onSelectChar={setSelectedCharId}
                 cards={simulationState.cards} runs={simulationState.runs} notes={characterNotes} notesLoading={notesLoading}
                 notesError={notesError} onRetryNotes={() => setNotesRetry(value => value + 1)}

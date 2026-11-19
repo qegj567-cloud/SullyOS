@@ -1,5 +1,6 @@
 import { deduplicateVoiceText } from './voiceTextDedup';
 import { splitInlineThinking } from './assistantThinking';
+import { SULLY_HELP_COMMAND, SULLY_HELP_PREVIEW } from './sullyHelpCommand';
 import {extractFriendFeedReplyTags} from './friendFeedReplyFormat';
 /**
  * 共享 sanitize 工具 — 零依赖纯字符串处理.
@@ -395,6 +396,7 @@ export function sanitizeForNotification(text: string): string {
   // 4. 反向 emoji tag 先于正向 SEND_EMOJI (反向可能也走 SEND_EMOJI 重写, 但这里直接转最终展示)
   result = replaceEmojiReverseTag(result);
   result = replaceSendEmoji(result);
+  result = result.replace(SULLY_HELP_COMMAND, SULLY_HELP_PREVIEW);
   // 5. 翻译块保留原文剥译文 (先自愈掉格式的标签, 严格提取正则才能命中)
   result = normalizeTranslationTags(result);
   result = extractTranslationOriginal(result);
@@ -487,6 +489,7 @@ interface ProtectedAtomSegment {
   raw: string;
   sanitized: unknown;
   protect: boolean;
+  meta?: unknown;
 }
 
 /**
@@ -529,6 +532,7 @@ export function sanitizeIntoSegments(text: string): Segment[] {
   const atomSegments = segmentTextWithProtectedBlocks(cleaned, {
     splitText: (plainText: string) => [plainText],
     protectedPatterns: [
+      { pattern: SULLY_HELP_COMMAND, preview: SULLY_HELP_PREVIEW, meta: 'sully-help' },
       {
         pattern: /\[html\][\s\S]*?\[\/html\]/i,
         preview: '[HTML 卡片]',
@@ -547,8 +551,13 @@ export function sanitizeIntoSegments(text: string): Segment[] {
       },
     ],
   }) as ProtectedAtomSegment[];
+  let hasSullyHelpCard = false;
   cleaned = atomSegments.map((seg) => {
     if (!seg.protect) return seg.raw;
+    if (seg.meta === 'sully-help') {
+      if (hasSullyHelpCard) return '';
+      hasSullyHelpCard = true;
+    }
     const idx = atomBlocks.length;
     atomBlocks.push({
       raw: seg.raw,

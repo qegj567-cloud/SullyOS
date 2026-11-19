@@ -10,6 +10,7 @@ import { openCollaborationSpace } from '../features/collaboration/store';
 import type { BackupMissingAsset } from './backupMissingAssets';
 import { USER_LOCATION_STORAGE_KEY } from './userLocationPrivacy';
 import { exportUserLocationSettings } from './userLocationBackup';
+import { HELP_HISTORY_KEY } from './sullyHelpBackup';
 
 beforeEach(async () => {
     localStorage.clear();
@@ -346,6 +347,32 @@ describe('space backup and asset ownership', () => {
         expect((await readSpaceStore(await openSpaceDB('u_backup'), 'characters'))[0].memories).toHaveLength(1);
     });
 });
+
+it('restores all consultation text and fills only matching missing attachments from a media backup', async () => {
+    const image = await putSharedImage(new Blob(['desk-image'], { type: 'image/png' }));
+    const rows = Array.from({ length: 203 }, (_, i) => ({
+        id: 'test-' + i, scope: { category: 'app', topic: '音乐' }, characterId: 'a', role: 'user', consultationId: i < 201 ? 'first' : 'next',
+        content: '原话' + i, ...(i < 2 && { attachment: { kind: 'image', name: '旧附件名', url: image } }),
+    }));
+    await DB.saveAssetRaw(HELP_HISTORY_KEY, rows);
+    const archive = async (mode: 'text_only' | 'media_only') => JSZip.loadAsync(await (await exportUserSpaces(mode, 'current')).arrayBuffer());
+    const media = await archive('media_only');
+    const manifest = JSON.parse(await media.file('user-spaces.json')!.async('string'));
+    const mediaPage = await media.file(manifest.spaces[0].stores.assets[0])!.async('string');
+    expect(mediaPage).not.toMatch(/原话|旧附件名/);
+    const text = await archive('text_only');
+    await DB.deleteAsset(HELP_HISTORY_KEY);
+    await importUserSpaces(text);
+    const restored = await DB.getAssetRaw(HELP_HISTORY_KEY);
+    expect(restored).toHaveLength(203);
+    expect(restored[0].attachment.url).toBe('');
+    await DB.saveAssetRaw(HELP_HISTORY_KEY, restored.slice(1).map((row: any) => ({ ...row, content: '更新后的原话' })));
+    await importUserSpaces(media);
+    const merged = await DB.getAssetRaw(HELP_HISTORY_KEY);
+    expect(merged).toHaveLength(202);
+    expect(merged[0]).toMatchObject({ id: 'test-1', content: '更新后的原话', attachment: { name: '旧附件名', url: image } });
+    expect(merged.at(-1).consultationId).toBe('next');
+}, 15000);
 
 it('text backup preserves vector types while stripping nested image strings', async () => {
     await commitSpaceRows(await openSpaceDB('default'), {

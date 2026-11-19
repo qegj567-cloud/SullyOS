@@ -10,7 +10,8 @@ import React, { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallba
 import { createPortal } from 'react-dom';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { Message, GroupProfile, CharacterProfile, MessageType, ChatTheme, BubbleStyle, EmojiCategory } from '../types';
+import { Message, GroupProfile, CharacterProfile, MessageType, ChatTheme, BubbleStyle, EmojiCategory, type OSTheme } from '../types';
+import ChatAvatarTimestamp, { AVATAR_TIMESTAMP_HEIGHT } from '../components/chat/ChatAvatarTimestamp';
 import { safeResponseJson } from '../utils/safeApi';
 import Modal from '../components/os/Modal';
 import DialogueVoicePanel from '../components/voice/DialogueVoicePanel';
@@ -45,6 +46,7 @@ import { loadChatInputPreferences, saveChatInputPreferences } from '../utils/cha
 import ChatInputSettings from '../components/chat/ChatInputSettings';
 import { useChatAutoReply } from '../hooks/useChatAutoReply';
 import TokenImg from '../components/os/TokenImg';
+import EmojiImage from '../components/chat/EmojiImage';
 import { ImageViewer } from '../components/chat/ChatImage';
 import { useBlobRefUrl, migrateDataUrlToRef } from '../utils/blobRef';
 import { buildReplySnapshotContent } from '../utils/applyAssistantPostProcessing';
@@ -153,6 +155,7 @@ const GroupMessageItem = React.memo(({
     messageSpacing = 'default',
     showTimestamp = 'always',
     timestampPosition = 'below',
+    avatarPlacement = 'beside',
     startsTimeSegment = false,
 }: {
     msg: Message,
@@ -179,7 +182,8 @@ const GroupMessageItem = React.memo(({
     bubbleVariant?: 'modern' | 'flat' | 'outline' | 'shadow' | 'wechat' | 'ios',
     messageSpacing?: 'compact' | 'default' | 'spacious',
     showTimestamp?: 'always' | 'hover' | 'never',
-    timestampPosition?: 'below' | 'top_center',
+    timestampPosition?: OSTheme['chatTimestampPosition'],
+    avatarPlacement?: OSTheme['chatAvatarPlacement'],
     startsTimeSegment?: boolean,
 }) => {
     const avatar = isUser ? userAvatar : char?.avatar;
@@ -239,7 +243,8 @@ const GroupMessageItem = React.memo(({
     // Time formatting
     const timeStr = formatChatTimestamp(msg.timestamp);
     const showTopTimeDivider = timestampPosition === 'top_center' && startsTimeSegment && showTimestamp !== 'never';
-    const showBelowTimestamp = timestampPosition !== 'top_center' && isLastInGroup && showTimestamp !== 'never';
+    const showBelowTimestamp = timestampPosition === 'below' && isLastInGroup && showTimestamp !== 'never';
+    const showAvatarTime = timestampPosition === 'below_avatar' && showTimestamp !== 'never';
     const isWechatTopCapsule = bubbleVariant === 'wechat';
 
     const clearLongPressTimer = () => {
@@ -329,29 +334,34 @@ const GroupMessageItem = React.memo(({
         }
     };
 
-    const renderAvatar = (forceVisible = false) => (
-        <div className={`relative ${avatarSizeClass} z-0 sully-chat-message-avatar`}>
-            {(forceVisible || shouldShowAvatar) && (
-                <>
-                    <TokenImg
-                        value={avatar}
-                        style={isAnniversaryFrame(styleConfig.avatarDecoration) ? { borderRadius: "50%" } : undefined}
-                        className={`sully-chat-message-avatar-img w-full h-full ${avatarRadiusClass} object-cover shadow-sm ring-1 ring-black/5 relative z-0`}
-                        alt="avatar"
-                        loading="lazy"
-                        decoding="async"
-                    />
-                    {styleConfig.avatarDecoration && (
+    const renderAvatar = (turnAvatar = false) => (
+        <>
+            <div className={`relative ${avatarSizeClass} z-0 ${turnAvatar || shouldShowAvatar ? 'sully-chat-avatar-wrap' : ''} ${turnAvatar ? 'sully-chat-turn-avatar' : 'sully-chat-message-avatar'}`}>
+                {(turnAvatar || shouldShowAvatar) && (
+                    <>
                         <TokenImg
-                            value={styleConfig.avatarDecoration}
-                            className="absolute pointer-events-none z-10 max-w-none"
-                            style={avatarDecorationImageStyle(styleConfig, avatarSizePx)}
-                            alt=""
+                            value={avatar}
+                            style={isAnniversaryFrame(styleConfig.avatarDecoration) ? { borderRadius: "50%" } : undefined}
+                            className={`sully-chat-message-avatar-img w-full h-full ${avatarRadiusClass} object-cover shadow-sm ring-1 ring-black/5 relative z-0`}
+                            alt="avatar"
+                            loading="lazy"
+                            decoding="async"
                         />
-                    )}
-                </>
+                        {styleConfig.avatarDecoration && (
+                            <TokenImg
+                                value={styleConfig.avatarDecoration}
+                                className="sully-chat-avatar-frame absolute pointer-events-none z-10 max-w-none"
+                                style={avatarDecorationImageStyle(styleConfig, avatarSizePx)}
+                                alt=""
+                            />
+                        )}
+                    </>
+                )}
+            </div>
+            {showAvatarTime && (turnAvatar || shouldShowAvatar) && turnAvatar === (avatarPlacement === 'above_group') && (
+                <ChatAvatarTimestamp timestamp={msg.timestamp} hover={showTimestamp === 'hover'} />
             )}
-        </div>
+        </>
     );
 
     // Special Content Renderers
@@ -368,7 +378,7 @@ const GroupMessageItem = React.memo(({
                 );
             case 'emoji':
                 // 尺寸跟随外观 → 表情包大小（--sully-emoji-size 三挡，默认 96px = 原 w-24）
-                return <TokenImg value={msg.content} className="sully-emoji-msg max-w-[var(--sully-emoji-size,96px)] max-h-[var(--sully-emoji-size,96px)] object-contain drop-shadow-sm hover:scale-110 transition-transform" />;
+                return <EmojiImage value={msg.content} className="sully-emoji-msg max-w-[var(--sully-emoji-size,96px)] max-h-[var(--sully-emoji-size,96px)] object-contain drop-shadow-sm hover:scale-110 transition-transform" />;
             case 'transfer':
                 return (
                     <div onClick={(e) => { if (selectionMode) handleClick(e); }}>
@@ -439,7 +449,11 @@ const GroupMessageItem = React.memo(({
             )}
             <div
                 className={`${themeScopeClass} sully-chat-message ${isUser ? 'sully-chat-message-user justify-end' : 'sully-chat-message-ai justify-start'} ${isFirstInGroup ? 'sully-chat-message-group-first' : ''} ${isLastInGroup ? 'sully-chat-message-group-last' : ''} flex items-end ${spacingClass} px-3 w-full group relative transition-[padding] duration-300 ${selectionMode ? 'pl-12' : ''}`}
-                style={{ '--sully-chat-message-avatar-size': `${avatarSizePx}px` } as React.CSSProperties}
+                style={{
+                    '--sully-chat-message-avatar-size': `${avatarSizePx}px`,
+                    '--sully-chat-avatar-time-space': showAvatarTime ? `${AVATAR_TIMESTAMP_HEIGHT}px` : undefined,
+                    minHeight: showAvatarTime && shouldShowAvatar && avatarPlacement === 'beside' ? avatarSizePx + AVATAR_TIMESTAMP_HEIGHT : undefined,
+                } as React.CSSProperties}
             >
             {selectionMode && (
                 <div className="absolute left-3 top-1/2 -translate-y-1/2 cursor-pointer z-20" onClick={handleClick}>
@@ -1917,7 +1931,7 @@ ${memberTimeline || '(暂无互动记录)'}
                     setVoiceDialogueLines(lines);
                 }}>{selectionMode ? `为所选角色消息配音` : '选择消息配音'}</button>
             </div>}
-            <div className="flex-1 overflow-y-auto overflow-x-hidden pt-6 pb-6 no-scrollbar" ref={scrollRef} onClick={() => { if (inputPreferences.autoReply) setShowPanel('none'); }}>
+            <div className="sully-chat-messages flex-1 overflow-y-auto overflow-x-hidden pt-6 pb-6 no-scrollbar" ref={scrollRef} onClick={() => { if (inputPreferences.autoReply) setShowPanel('none'); }}>
                 {collapsedCount > 0 && activeGroup && (
                     <div className="flex justify-center mb-6">
                         <button onClick={async () => {
@@ -1972,6 +1986,7 @@ ${memberTimeline || '(暂无互动记录)'}
                             messageSpacing={osTheme.chatMessageSpacing}
                             showTimestamp={osTheme.chatShowTimestamp}
                             timestampPosition={osTheme.chatTimestampPosition}
+                            avatarPlacement={osTheme.chatAvatarPlacement}
                             startsTimeSegment={timeSegmentStarts[i]}
                         />
                     );
@@ -2561,7 +2576,7 @@ ${memberTimeline || '(暂无互动记录)'}
             <Modal isOpen={modalType === 'help'} title="群聊记忆规则" onClose={() => setModalType('none')}>
                 <div className="space-y-4 text-sm text-slate-600 leading-relaxed">
                     <div className="rounded-2xl bg-violet-50 border border-violet-100 p-4 text-violet-800">
-                        群聊内容不是排队延迟发送。角色在私聊中“隔天提起”，通常是最近群聊、话题盒或个人群聊记忆被当作本轮话题选中了。
+                        角色隔天在私聊提起群里的事，可能是这轮对话用到了近期群聊或公共话题盒。保留着旧版个人群聊记忆的角色，也可能想起那些旧事。
                     </div>
                     <div>
                         <div className="font-bold text-slate-800 mb-1">最近群聊</div>
@@ -2572,8 +2587,8 @@ ${memberTimeline || '(暂无互动记录)'}
                         <p>群聊积累到一定数量后，较旧内容会被压缩成群成员共享的话题盒，并进入各成员的私聊背景。因此旧话题可能在之后再次被提起。</p>
                     </div>
                     <div>
-                        <div className="font-bold text-slate-800 mb-1">个人群聊记忆</div>
-                        <p>启用群聊记忆宫殿后，较旧群聊会以第三人称分别整理进参与角色的记忆宫殿。它不会要求角色立刻回复，只提供后续回忆依据。</p>
+                        <div className="font-bold text-slate-800 mb-1">在哪里整理？</div>
+                        <p>打开「群设置 → 群聊总结 · 公共话题盒」选择整理方式。已有可归档内容时，点「立即整理当前可归档内容」就会为本群整理一次，摘要卡送到各成员的私聊。</p>
                     </div>
                     <div className="rounded-2xl bg-slate-50 border border-slate-100 p-4 text-xs text-slate-500">
                         模型看到一段记录，不代表必须马上回应；是否主动提起仍会受当前话题和角色性格影响。

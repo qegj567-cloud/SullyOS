@@ -7,7 +7,7 @@ import {portableCssImages} from './cssImageAssets';
 const normalizeImages=(css:string)=>css.replace(/data:image\/svg\+xml(;base64)?,([^"\n]*)/g,(_,base64,body)=>
  'svg:'+JSON.stringify(base64?Buffer.from(body,'base64').toString('utf8'):decodeURIComponent(body)));
 
-describe('bundled star orbit outfits',()=>{
+describe('bundled whitebox outfits',()=>{
  it.each(BUILTIN_WHITEBOX_PRESETS)('$name is portable and applies a complete outfit without changing sounds',async item=>{
   const preset=item.read();
   expect(preset.parts.layout?.chatAvatarSize).toBe('medium');
@@ -21,5 +21,10 @@ describe('bundled star orbit outfits',()=>{
  it('keeps builtins unchanged when a returned copy is edited',()=>{
   const item=BUILTIN_WHITEBOX_PRESETS[0];const p=item.read();p.parts.css='changed';
   expect(item.read().parts.css).not.toBe('changed');
+ });
+ it('applies 银晕 with a timestamp below every visible avatar',async()=>{
+  const preset=BUILTIN_WHITEBOX_PRESETS.find(item=>item.id==='builtin-silver-halo')!.read();
+  const patch=await decorationPatches(preset,['layout'],'character',{id:'sample'} as any,{} as any);
+  expect(patch.character.chatAppearance).toMatchObject({chatAvatarMode:'every_message',chatTimestampPosition:'below_avatar',chatShowTimestamp:'always'});
  });
 });

@@ -69,7 +69,7 @@ const fetchWeatherJson = async (url: string, stage: string, timeoutMs = WEATHER_
     const request = async () => {
         let response: Response;
         try {
-            response = await fetch(url, { signal: controller.signal });
+            response = await fetch(url, { signal: controller.signal, __sullyHandlesFailure: true } as RequestInit);
         } catch {
             throw new Error(`${stage}连接失败，请检查网络或稍后重试`);
         }
@@ -461,8 +461,8 @@ export const fetchHotNews = async (platforms?: string[], perPlatform = 12, total
         const label = HOTNEWS_PLATFORM_LABELS[p] || p;
         try {
             const res = await fetch(`${HOTNEWS_API_BASE_URL}/?platform=${encodeURIComponent(p)}`, {
-                headers: { 'Accept': 'application/json' },
-            });
+                headers: { 'Accept': 'application/json' }, __sullyHandlesFailure: true,
+            } as RequestInit);
             if (!res.ok) {
                 console.warn(`[hot_news] ${label}(${p}) HTTP ${res.status}`);
                 return [];

@@ -1,13 +1,17 @@
+import { ChatLocationPin } from './ChatLocationPin';
+import { SullyHelpCard } from './SullyHelpCard';
+import { BUILTIN_SULLY_ID } from '../../utils/sullyIdentity';
 import { avatarDecorationImageStyle, isAnniversaryFrame } from '../../utils/anniversaryGifts';
 
 
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ChatSendProgress from './ChatSendProgress';
+import ChatAvatarTimestamp, { AVATAR_TIMESTAMP_HEIGHT } from './ChatAvatarTimestamp';
 import type { ChatSendPhase } from '../../utils/chatSendProgress';
 import { createPortal } from 'react-dom';
 const AivenFishSaleReceipt = React.lazy(() => import('../../apps/vrWorld/AivenFishSaleReceipt').then(module => ({ default: module.AivenFishSaleReceipt })));
-import { Message, ChatTheme } from '../../types';
+import { Message, ChatTheme, type OSTheme } from '../../types';
 import { phoneFieldToText } from '../../utils/phoneEvidence';
 import { tryParseLifeSimResetCard } from '../../utils/lifeSimChatCard';
 import { VALID_INTERJECTION_TAGS, cleanVoiceMarkupForDisplay } from '../../utils/minimaxTts';
@@ -22,6 +26,7 @@ import { isImageValue, useBlobRefUrl } from '../../utils/blobRef';
 import { buildReplySnapshotContent } from '../../utils/applyAssistantPostProcessing';
 import { stripLeakedSourceTags } from '../../utils/sanitize';
 import TokenImg from '../os/TokenImg';
+import EmojiImage from './EmojiImage';
 import ChatImage from './ChatImage';
 import { SARSpeechSwitch } from '../sar/SARSpeechSwitch';
 import McdCard from './McdCard';
@@ -563,7 +568,7 @@ const ForwardCard: React.FC<{
                                         <div className="text-[10px] text-slate-400 mb-1 px-1">{senderName} {msg.timestamp ? formatTime(msg.timestamp) : ''}</div>
                                         <div className={`px-4 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-normal [overflow-wrap:anywhere] ${isUser ? 'bg-primary text-white rounded-br-sm' : 'bg-white text-slate-700 rounded-bl-sm shadow-sm border border-slate-100'}`}>
                                             {msg.type === 'image' ? (msg.content ? <TokenImg value={msg.content} className="max-w-[200px] rounded-xl" /> : <span className="italic opacity-60">[图片已丢失]</span>) :
-                                             msg.type === 'emoji' ? (msg.content ? <TokenImg value={msg.content} className="max-w-[100px]" /> : <span className="italic opacity-60">[表情已丢失]</span>) :
+                                             msg.type === 'emoji' ? (msg.content ? <EmojiImage value={msg.content} className="max-w-[100px]" /> : <span className="italic opacity-60">[表情已丢失]</span>) :
                                              msg.content}
                                         </div>
                                     </div>
@@ -766,23 +771,24 @@ const TransferCard: React.FC<{
                 <div className="sully-chat-transfer-overlay fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-center justify-center p-6 animate-fade-in" onClick={(e) => { e.stopPropagation(); setOpen(false); }}>
                     <div
                         className="sully-chat-transfer-dialog w-full max-w-[320px] bg-white text-slate-800 rounded-3xl overflow-hidden shadow-2xl"
+                        role="dialog" aria-modal="true" aria-label="转账详情"
                         onClick={(e) => e.stopPropagation()}
                     >
                         {/* 顶部金额区 */}
-                        <div className="bg-gradient-to-br from-amber-400 to-orange-500 px-6 pt-7 pb-8 text-white relative overflow-hidden">
+                        <div className="sully-chat-transfer-detail-header bg-gradient-to-br from-amber-400 to-orange-500 px-6 pt-7 pb-8 text-white relative overflow-hidden">
                             <div className="absolute -top-4 -right-4 opacity-15"><SullyPayMark className="w-28 h-28" /></div>
                             <div className="flex items-center gap-2 mb-5">
                                 <div className="p-1.5 bg-white/20 rounded-full"><SullyPayMark className="w-4 h-4" /></div>
                                 <span className="text-sm font-medium text-white/90">Sully Pay 转账</span>
                             </div>
                             <div className="text-[11px] text-white/70 mb-1">{isUser ? `你向${charName}转账` : `${charName}向你转账`}</div>
-                            <div className="text-4xl font-bold tracking-tight">₩ {amount}</div>
+                            <div className="sully-chat-transfer-detail-amount text-4xl font-bold tracking-tight">₩ {amount}</div>
                         </div>
 
                         {/* 详情区 */}
-                        <div className="px-6 py-5 space-y-3.5">
+                        <div className="sully-chat-transfer-detail-body px-6 py-5 space-y-3.5">
                             {note && (
-                                <div className="bg-slate-50 rounded-xl px-3.5 py-2.5">
+                                <div className="sully-chat-transfer-detail-note bg-slate-50 rounded-xl px-3.5 py-2.5">
                                     <div className="text-[10px] text-slate-400 mb-0.5">转账留言</div>
                                     <div className="text-sm text-slate-700 break-words">{note}</div>
                                 </div>
@@ -1160,7 +1166,9 @@ interface MessageItemProps {
     isLastInGroup: boolean;
     activeTheme: ChatTheme;
     charAvatar: string;
+    onOpenCharacterProfile?: () => void;
     charName: string;
+    locationPinCharId?: string;
     userAvatar: string;
     /** 当前窗口里的最后一条消息；最新图片需要立即解码，避免移动端懒加载卡在滚动容器底部。 */
     isLatestMessage?: boolean;
@@ -1192,7 +1200,8 @@ interface MessageItemProps {
     bubbleVariant?: 'modern' | 'flat' | 'outline' | 'shadow' | 'wechat' | 'ios';
     messageSpacing?: 'compact' | 'default' | 'spacious';
     showTimestamp?: 'always' | 'hover' | 'never';
-    timestampPosition?: 'below' | 'top_center';
+    timestampPosition?: OSTheme['chatTimestampPosition'];
+    avatarPlacement?: OSTheme['chatAvatarPlacement'];
     startsTimeSegment?: boolean;
     timestampNow?: Date;
     /** Only the user turn being handed to the Worker receives this prop. */
@@ -1230,7 +1239,9 @@ const MessageItem = React.memo(({
     isLastInGroup,
     activeTheme,
     charAvatar,
+    onOpenCharacterProfile,
     charName,
+    locationPinCharId,
     userAvatar,
     isLatestMessage = false,
     onMediaLoad,
@@ -1257,6 +1268,7 @@ const MessageItem = React.memo(({
     messageSpacing = 'default',
     showTimestamp = 'always',
     timestampPosition = 'below',
+    avatarPlacement = 'beside',
     startsTimeSegment = false,
     timestampNow,
     sendPhase,
@@ -1419,7 +1431,8 @@ const MessageItem = React.memo(({
 
     const formatTime = formatChatTimestamp;
     const showTopTimeDivider = timestampPosition === 'top_center' && startsTimeSegment && showTimestamp !== 'never';
-    const showBelowTimestamp = timestampPosition !== 'top_center' && isLastInGroup && showTimestamp !== 'never';
+    const showBelowTimestamp = timestampPosition === 'below' && isLastInGroup && showTimestamp !== 'never';
+    const showAvatarTime = timestampPosition === 'below_avatar' && showTimestamp !== 'never';
     const isWechatTopCapsule = bubbleVariant === 'wechat';
     const timeDividerNode = showTopTimeDivider ? (
         <div className={`sully-chat-time-divider flex justify-center w-full px-3 mt-1.5 mb-3 select-none ${showTimestamp === 'hover' ? 'opacity-0 hover:opacity-100 transition-opacity' : ''}`}>
@@ -1431,33 +1444,39 @@ const MessageItem = React.memo(({
 
     // Render Avatar with potential decoration/frame
     // Removed mb-5 from here, handled via absolute positioning in parent
-    const renderAvatar = (
-        src: string,
-        options?: { visible?: boolean; className?: string },
-    ) => {
-        const visible = options?.visible ?? shouldShowAvatar;
+    const renderAvatar = (src: string, turnAvatar = false) => {
+        const visible = turnAvatar || shouldShowAvatar;
+        const hasCaption = showAvatarTime && visible && turnAvatar === (avatarPlacement === 'above_group');
+        const opensProfile = visible && !isUser && !selectionMode && !!onOpenCharacterProfile;
+        const Wrap = opensProfile ? 'button' : 'div';
         return (
-            <div className={`${visible ? 'sully-chat-avatar-wrap' : ''} relative ${avatarSizeClass} z-0 ${options?.className || ''}`}>
-                {visible && (
-                    <>
-                        <TokenImg
-                            value={src}
-                            style={isAnniversaryFrame(styleConfig.avatarDecoration) ? { borderRadius: "50%" } : undefined}
-                            className={`sully-chat-message-avatar-img w-full h-full ${avatarRadiusClass} object-cover shadow-sm ring-1 ring-black/5 relative z-0`}
-                            alt="avatar"
-                            loading="lazy"
-                            decoding="async"
-                        />
-                        {styleConfig.avatarDecoration && (
+            <>
+                <Wrap type={opensProfile ? 'button' : undefined}
+                    aria-label={opensProfile ? `查看${charName}的角色名片` : undefined}
+                    onClick={opensProfile ? (event: React.MouseEvent) => { event.stopPropagation(); onOpenCharacterProfile?.(); } : undefined}
+                    className={`${visible ? 'sully-chat-avatar-wrap' : ''} ${hasCaption ? 'block' : ''} relative ${avatarSizeClass} z-0 ${turnAvatar ? 'sully-chat-turn-avatar' : 'sully-chat-message-avatar'}`}>
+                    {visible && (
+                        <>
                             <TokenImg
-                                value={styleConfig.avatarDecoration}
-                                className="sully-chat-avatar-frame absolute pointer-events-none z-10 max-w-none"
-                                style={avatarDecorationImageStyle(styleConfig, avatarSizePx)}
+                                value={src}
+                                style={isAnniversaryFrame(styleConfig.avatarDecoration) ? { borderRadius: "50%" } : undefined}
+                                className={`sully-chat-message-avatar-img w-full h-full ${avatarRadiusClass} object-cover shadow-sm ring-1 ring-black/5 relative z-0`}
+                                alt="avatar"
+                                loading="lazy"
+                                decoding="async"
                             />
-                        )}
-                    </>
-                )}
-            </div>
+                            {styleConfig.avatarDecoration && (
+                                <TokenImg
+                                    value={styleConfig.avatarDecoration}
+                                    className="sully-chat-avatar-frame absolute pointer-events-none z-10 max-w-none"
+                                    style={avatarDecorationImageStyle(styleConfig, avatarSizePx)}
+                                />
+                            )}
+                        </>
+                    )}
+                </Wrap>
+                {hasCaption && <ChatAvatarTimestamp timestamp={m.timestamp} hover={showTimestamp === 'hover'} />}
+            </>
         );
     };
 
@@ -1702,7 +1721,7 @@ const MessageItem = React.memo(({
                             </div>
                         </div>
                     )}
-                    {timestampPosition !== 'top_center' && showTimestamp !== 'never' && (
+                    {timestampPosition === 'below' && showTimestamp !== 'never' && (
                         <div className={`sully-chat-timestamp text-[10px] text-slate-400 mb-1 opacity-70 ${showTimestamp === 'hover' ? 'opacity-0 hover:opacity-100 transition-opacity' : ''}`}>{formatTime(m.timestamp)}</div>
                     )}
                     <div className="group relative cursor-pointer active:scale-95 transition-transform" {...interactionProps}>
@@ -1773,7 +1792,12 @@ const MessageItem = React.memo(({
                 `flex items-end ${marginBottom} px-3 group select-none relative transition-[padding] duration-300`,
                 selectionMode ? 'pl-12' : '',
             ].filter(Boolean).join(' ')}
-            style={{ '--sully-chat-message-avatar-size': `${avatarSizePx}px` } as React.CSSProperties}>
+            style={{
+                ...(locationPinCharId ? { marginBottom: 18 } : {}),
+                '--sully-chat-message-avatar-size': `${avatarSizePx}px`,
+                '--sully-chat-avatar-time-space': showAvatarTime ? `${AVATAR_TIMESTAMP_HEIGHT}px` : undefined,
+                minHeight: showAvatarTime && shouldShowAvatar && !isModuleCard && avatarPlacement === 'beside' ? avatarSizePx + AVATAR_TIMESTAMP_HEIGHT : undefined,
+            } as React.CSSProperties}>
                 {selectionMode && (
                     <div className="absolute left-3 top-1/2 -translate-y-1/2 cursor-pointer z-20" onClick={() => onToggleSelect(m.id)}>
                         <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-primary border-primary' : 'border-slate-300 bg-white/80'}`}>
@@ -1785,17 +1809,14 @@ const MessageItem = React.memo(({
                 {/* 白框布局钩子：组首额外挂一份默认隐藏的头像；显示它即可做“每轮一次、头像在气泡上方”。 */}
                 {isFirstInGroup && !isModuleCard && (
                     <div className={`sully-chat-turn-avatar-slot hidden absolute top-0 z-0 ${isUser ? 'right-3' : (selectionMode ? 'left-14' : 'left-3')}`}>
-                        {renderAvatar(isUser ? userAvatar : charAvatar, {
-                            visible: true,
-                            className: 'sully-chat-turn-avatar',
-                        })}
+                        {renderAvatar(isUser ? userAvatar : charAvatar, true)}
                     </div>
                 )}
 
                 {/* HTML / 音乐卡片是独立模块，不继承普通消息外壳的角色头像。卡片内部自己的头像不受影响。 */}
                 {!isUser && !isModuleCard && (
                     <div className={`sully-chat-message-avatar-slot absolute bottom-0 z-0 ${selectionMode ? 'left-14' : 'left-3'} transition-[left] duration-300`}>
-                        {renderAvatar(charAvatar, { className: 'sully-chat-message-avatar' })}
+                        {renderAvatar(charAvatar)}
                     </div>
                 )}
 
@@ -1850,7 +1871,8 @@ const MessageItem = React.memo(({
                 {/* 用户侧若存在导入/历史模块卡，也保持同一条“卡片不带消息外侧头像”规则。 */}
                 {isUser && !isModuleCard && (
                     <div className={`sully-chat-message-avatar-slot absolute right-3 bottom-0 z-0 transition-[left] duration-300`}>
-                        {renderAvatar(userAvatar, { className: 'sully-chat-message-avatar' })}
+                        {renderAvatar(userAvatar)}
+                        {locationPinCharId && <ChatLocationPin charId={locationPinCharId} />}
                     </div>
                 )}
             </div>
@@ -1868,6 +1890,10 @@ const MessageItem = React.memo(({
     }
 
     // --- Music Card Rendering (一起听 / 加入歌单) ---
+    if (m.type === 'sully_help_card' && m.role === 'assistant' && m.charId === BUILTIN_SULLY_ID) {
+        return commonLayout(<SullyHelpCard />);
+    }
+
     if (m.type === 'music_card' && m.metadata?.song) {
         const song = m.metadata.song as { songId: number; name: string; artists: string; albumPic: string };
         const intent = (m.metadata.intent || 'join') as 'join' | 'add' | 'join_and_add';
@@ -3221,7 +3247,7 @@ const MessageItem = React.memo(({
     if (m.type === 'emoji') {
         return commonLayout(
             m.content ? (
-                <TokenImg value={m.content} className="sully-emoji-msg max-w-[var(--sully-emoji-size,96px)] max-h-[var(--sully-emoji-size,96px)] w-auto h-auto object-contain hover:scale-105 transition-transform drop-shadow-md active:scale-95" loading="lazy" decoding="async" />
+                <EmojiImage value={m.content} className="sully-emoji-msg max-w-[var(--sully-emoji-size,96px)] max-h-[var(--sully-emoji-size,96px)] w-auto h-auto object-contain hover:scale-105 transition-transform drop-shadow-md active:scale-95" loading="lazy" decoding="async" />
             ) : (
                 <div className="px-3 py-2 rounded-2xl bg-slate-100 text-slate-400 text-xs italic">[表情已丢失]</div>
             )
@@ -3759,7 +3785,9 @@ const MessageItem = React.memo(({
            prev.isLastInGroup === next.isLastInGroup &&
            prev.activeTheme === next.activeTheme &&
            prev.charAvatar === next.charAvatar &&
+           prev.onOpenCharacterProfile === next.onOpenCharacterProfile &&
            prev.charName === next.charName &&
+           prev.locationPinCharId === next.locationPinCharId &&
            prev.userAvatar === next.userAvatar &&
            prev.isLatestMessage === next.isLatestMessage &&
            prev.onMediaLoad === next.onMediaLoad &&
@@ -3775,6 +3803,7 @@ const MessageItem = React.memo(({
            prev.bubbleVariant === next.bubbleVariant &&
            prev.messageSpacing === next.messageSpacing &&
            prev.showTimestamp === next.showTimestamp &&
+           prev.avatarPlacement === next.avatarPlacement &&
            prev.timestampPosition === next.timestampPosition &&
            prev.startsTimeSegment === next.startsTimeSegment &&
            prev.timestampNow?.getTime() === next.timestampNow?.getTime() &&

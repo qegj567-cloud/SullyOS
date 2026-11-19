@@ -282,20 +282,24 @@ export const injectWorldbookDepthEntries = <T extends WorldbookScanMessage>(
     return result;
 };
 
-export const serializeStandardWorldbook = (books: WorldbookLike[]): string => {
-    const usedUids = new Set<number>();
+export const SULLY_WORLDBOOK_FORMAT = 'sullyos-worldbook';
+
+export function readWorldbookEntries(parsed: Record<string, any>) {
+    const marked = parsed?.format === SULLY_WORLDBOOK_FORMAT;
+    if (marked && parsed.version !== 1) throw new Error('暂不支持此糯米机世界书版本，请更新后重试');
+    const native = marked && 'worldbook' in parsed;
+    return { native, entries: native ? parsed.worldbook?.entries : parsed?.entries };
+}
+
+export const serializeSullyWorldbook = (books: WorldbookLike[]): string => {
     const entries: Record<string, Record<string, unknown>> = {};
 
     books.forEach((book, index) => {
-        let uid = Number.isFinite(book.sourceUid) ? Number(book.sourceUid) : index;
-        while (usedUids.has(uid)) uid += 1;
-        usedUids.add(uid);
-
         const primary = book.key || [];
         const secondary = book.keysecondary || [];
         const position = book.position ?? 1;
         entries[String(index)] = {
-            uid,
+            uid: book.sourceUid,
             key: [...primary],
             keysecondary: [...secondary],
             comment: book.title,
@@ -317,7 +321,7 @@ export const serializeStandardWorldbook = (books: WorldbookLike[]): string => {
         };
     });
 
-    return JSON.stringify({ entries }, null, 2);
+    return JSON.stringify({ format: SULLY_WORLDBOOK_FORMAT, version: 1, worldbook: { entries } }, null, 2);
 };
 
 export const parseStandardWorldbook = (
@@ -326,12 +330,11 @@ export const parseStandardWorldbook = (
     now = Date.now(),
 ): Worldbook[] => {
     const parsed = JSON.parse(rawText);
-    if (!parsed || typeof parsed !== 'object' || !parsed.entries || typeof parsed.entries !== 'object') {
-        throw new Error('不是受支持的标准世界书文件：缺少 entries');
+    const { native, entries } = readWorldbookEntries(parsed);
+    if (!entries || typeof entries !== 'object') {
+        throw new Error('找不到世界书条目，请选择糯米机或酒馆导出的世界书文件');
     }
-    const rawEntries = Array.isArray(parsed.entries)
-        ? parsed.entries
-        : Object.values(parsed.entries);
+    const rawEntries = Object.values(entries);
 
     const books = rawEntries.flatMap((value: any, index: number): Worldbook[] => {
         if (!value || typeof value !== 'object' || typeof value.content !== 'string') return [];
@@ -360,7 +363,8 @@ export const parseStandardWorldbook = (
             scanDepth: value.scanDepth == null ? null : Math.max(0, Math.floor(clamp(value.scanDepth, 0, 999, 4))),
             caseSensitive: value.caseSensitive == null ? null : value.caseSensitive === true,
             matchWholeWords: value.matchWholeWords == null ? null : value.matchWholeWords === true,
-            sourceUid: uid,
+            // Imported editor comments and native entry titles have different prompt semantics.
+            sourceUid: native && !Number.isFinite(value.uid) ? undefined : uid,
         }];
     });
 

@@ -8,6 +8,7 @@ import { useLocalBackHandler } from '../../hooks/useLocalBackHandler';
 import {MEETING_APPEARANCES} from '../../utils/meetingAppearance';
 import {trackBeauty} from '../../utils/beautyAnalytics';
 import {migrateLegacyWhiteboxPresets} from '../../utils/legacyWhiteboxPresets';
+import {trackEvent} from '../../utils/analytics';
 import {BUILTIN_WHITEBOX_PRESETS} from '../../utils/builtinWhitebox';
 import {BUILTIN_APPEARANCE_PRESETS} from '../../utils/builtinAppearance';
 import DecorationGuide from '../chat/DecorationGuide';
@@ -80,7 +81,7 @@ export default function BeautyShareChannel({ presets, onExport, onImport, onBusy
   const [guideStep,setGuideStep]=useState<number|null>(()=>!initialMaker&&targetCharacterId&&needsDecorationGuide()?0:null);
   const endGuide=()=>{finishDecorationGuide();setGuideStep(null);};
   const [saveCurrent,setSaveCurrent]=useState<{preset:DecorationPreset;key:string}|null>(null);
-  const [received, setReceived] = useState<{ kind: 'appearance'; id: string; name: string } | { kind: 'chat-decoration'; preset: DecorationPreset; name: string } | null>(null);
+  const [received, setReceived] = useState<{ kind: 'appearance'; id: string; name: string } | { kind: 'chat-decoration'; preset: DecorationPreset; name: string; builtinSilverHalo?: boolean } | null>(null);
   const [target, setTarget] = useState(targetCharacterId || activeCharacterId || characters[0]?.id || '');
   const targetCharacter = characters.find(character => character.id === target);
   const [collaborationAppearance,setCollaborationAppearance]=useState<CollaborationAppearance>();
@@ -294,6 +295,7 @@ export default function BeautyShareChannel({ presets, onExport, onImport, onBusy
         }
         setNotice(applyAll?`已应用到全部 ${targets.length} 个角色`:`已应用给 ${targets[0].name}`);
       }
+      if (received.kind === 'chat-decoration' && received.builtinSilverHalo) trackEvent('应用内置银晕白框');
       trackBeauty('apply',received.kind==='appearance'?'appearance':received.preset.parts.collaboration?'collaboration':isAppDecoration(received.preset)?(received.preset.parts.schedule?'schedule':'journal'):'chat');
       setReceived(null);
     } catch (error) { setApplyError(error instanceof Error ? error.message : '应用失败，请重试'); }
@@ -331,7 +333,7 @@ export default function BeautyShareChannel({ presets, onExport, onImport, onBusy
           if(sourceKey!==presetKey)await writeDecorationOrigin(presetKey,await readDecorationOrigin(sourceKey));
         }
         setApplyError('');setApplyAll(false);
-        setReceived({ kind: 'chat-decoration', preset, name: preset.name });
+        setReceived({ kind: 'chat-decoration', preset, name: preset.name, builtinSilverHalo: builtinWhitebox.includes(entry) && entry.id === 'builtin-silver-halo' });
       }
     } catch (e) { setError(e instanceof Error ? e.message : '应用失败，请重试'); }
     finally { setBusy(false); onBusyChange(false); }

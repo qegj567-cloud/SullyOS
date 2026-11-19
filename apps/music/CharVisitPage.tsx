@@ -58,6 +58,17 @@ const toPlaylistSong = (s: Song): CharPlaylistSong => ({
   albumPic: s.albumPic, duration: s.duration, fee: s.fee,
 });
 
+function MusicBio({ bio }: { bio?: string }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!bio) return <p className="text-[10px] mt-0.5" style={{ color: C.muted }}>还没写音乐简介</p>;
+  return <button type="button" aria-label={expanded ? '收起音乐简介' : '展开音乐简介'} aria-expanded={expanded}
+    className="flex items-start gap-1 w-full py-1 text-left text-[11px]" style={{ color: C.muted }}
+    onClick={() => { if (!expanded) trackEvent('展开角色音乐简介'); setExpanded(!expanded); }}>
+    <span className={expanded ? 'min-w-0 whitespace-pre-wrap break-words' : 'min-w-0 truncate'}>{bio}</span>
+    <span aria-hidden="true" className="shrink-0">{expanded ? '▴' : '▾'}</span>
+  </button>;
+}
+
 const CharVisitPage: React.FC<Props> = ({ charId, onBack, onOpenPlayer }) => {
   const { characters, updateCharacter, userProfile, apiConfig, addToast } = useOS();
   const {
@@ -373,9 +384,7 @@ const CharVisitPage: React.FC<Props> = ({ charId, onBack, onOpenPlayer }) => {
                 style={{ color: C.text, fontFamily: `'Noto Serif', serif` }}>
                 {char.name}
               </div>
-              <div className="text-[10px] mt-0.5 truncate" style={{ color: C.muted }}>
-                {profile?.bio || '还没写音乐简介'}
-              </div>
+              <MusicBio key={char.id} bio={profile?.bio} />
               <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                 {(profile?.genreTags || []).slice(0, 4).map(tag => (
                   <span key={tag} className="text-[9px] px-2 py-0.5 rounded-full"

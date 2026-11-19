@@ -1199,6 +1199,7 @@ const PhoneShell: React.FC = () => {
          isOpen={!!errorDialog}
          title={errorDialog?.title ?? ''}
          details={errorDialog?.details ?? ''}
+         advice={errorDialog?.advice}
          onClose={dismissError}
        />
 

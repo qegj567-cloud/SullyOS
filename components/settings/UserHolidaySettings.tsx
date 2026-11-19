@@ -1,3 +1,4 @@
+import AwarenessSwitch from './AwarenessSwitch';
 import React, { useEffect, useState } from 'react';
 import { browserHolidayCache, deviceTimeZone, HOLIDAY_COUNTRIES, holidayCountryName, loadHolidayCalendar, renderUserHoliday, type HolidayCalendar, type UserHolidayConfig } from '../../utils/userHolidays';
 import { getLocalDateKey } from '../../utils/localDate';
@@ -24,13 +25,13 @@ export default function UserHolidaySettings({ value, onChange }: { value: UserHo
         : [...new Set(calendar?.days.flatMap(d => d.regions || []) || [])].sort();
     const today = calendar ? renderUserHoliday(value, getLocalDateKey(new Date()), calendar.days) : '';
     const needle = search.trim().toLowerCase();
-    return <section className="bg-amber-50/80 border border-amber-100 rounded-2xl p-4 space-y-3">
+    return <section className="space-y-3">
         <label className="flex items-center justify-between gap-3 text-sm font-bold text-amber-800">
             <span>节假日感知</span>
-            <input type="checkbox" aria-label="开启节假日感知" checked={value.enabled} onChange={e => onChange({ ...value, enabled: e.target.checked })} className="w-5 h-5 accent-amber-600" />
+            <AwarenessSwitch aria-label="开启节假日感知" checked={value.enabled} onChange={e => onChange({ ...value, enabled: e.target.checked })} />
         </label>
-        <p className="text-xs text-amber-800/70 leading-relaxed">选择你生活的国家／地区。假期或调休补班时，在用户信息中加一句提醒，聊天、见面等场景共用；普通日期不额外提示。</p>
         {value.enabled && <>
+            <p className="text-xs text-amber-800/70 leading-relaxed">选择你生活的国家／地区。假期或调休补班时，在用户信息中加一句提醒，聊天、见面等场景共用；普通日期不额外提示。</p>
             <input aria-label="搜索国家或地区" placeholder="搜索国家／地区" value={search} onChange={e => setSearch(e.target.value)} className="w-full bg-white border border-amber-100 rounded-xl px-3 py-2 text-sm" />
             <select aria-label="生活所在国家或地区" value={value.countryCode} onChange={e => onChange({ ...value, countryCode: e.target.value, subdivisionCode: undefined, timeZone: deviceTimeZone() })} className="w-full bg-white border border-amber-100 rounded-xl px-3 py-2 text-sm">
                 <option value="">请选择国家／地区</option>

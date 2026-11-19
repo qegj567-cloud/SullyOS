@@ -31,7 +31,8 @@ export function describeDevicePositionError(error: unknown): string {
     return '没有取得设备坐标，请检查定位权限和系统定位，或在手机上重试。';
 }
 
-const getPositionViaNavigator = (highAccuracy = true, timeout = 8000): Promise<GeoResult> => {
+const getPositionViaNavigator = (highAccuracy = true, timeout = 8000, signal?: AbortSignal): Promise<GeoResult> => {
+    signal?.throwIfAborted();
     if (globalThis.isSecureContext === false) throw new DevicePositionError('需要安全连接', 4);
     type LocationPolicy = { allowsFeature: (feature: string) => boolean };
     const page = typeof document === 'undefined' ? undefined : document as Document & { permissionsPolicy?: LocationPolicy; featurePolicy?: LocationPolicy };
@@ -44,8 +45,10 @@ const getPositionViaNavigator = (highAccuracy = true, timeout = 8000): Promise<G
         let settled = false;
         // Some browser providers fail to invoke either callback. Release the
         // app's pending request, and ignore any result arriving after this limit.
-        const finish = (callback: () => void) => { if (settled) return; settled = true; clearTimeout(timer); callback(); };
+        const finish = (callback: () => void) => { if (settled) return; settled = true; clearTimeout(timer); signal?.removeEventListener('abort', onAbort); callback(); };
+        const onAbort = () => finish(() => reject(signal?.reason));
         const timer = setTimeout(() => finish(() => reject(new DevicePositionError('定位超时', 3))), timeout + 1000);
+        signal?.addEventListener('abort', onAbort, { once: true });
         try {
             navigator.geolocation.getCurrentPosition(
                 pos => finish(() => {
@@ -63,22 +66,26 @@ const getPositionViaNavigator = (highAccuracy = true, timeout = 8000): Promise<G
     });
 };
 
-const getFreshBrowserPosition = async (retry: boolean): Promise<GeoResult> => {
-    try { return await getPositionViaNavigator(true, retry ? 15000 : 8000); }
+const getFreshBrowserPosition = async (retry: boolean, signal?: AbortSignal): Promise<GeoResult> => {
+    try { return await getPositionViaNavigator(true, retry ? 15000 : 8000, signal); }
     catch (error) {
+        signal?.throwIfAborted();
         if (!retry || !(error instanceof DevicePositionError) || ![2, 3].includes(error.code)) throw error;
         // Let the OS provide fresh network/standard positioning when GPS is
         // slow. This is not an app-side IP lookup and never accepts an old fix.
-        return getPositionViaNavigator(false, 8000);
+        return getPositionViaNavigator(false, 8000, signal);
     }
 };
 
-export const getCurrentPositionSmart = async (options?: { quiet?: boolean; retry?: boolean }): Promise<GeoResult> => {
+export const getCurrentPositionSmart = async (options?: { quiet?: boolean; retry?: boolean; signal?: AbortSignal }): Promise<GeoResult> => {
+    options?.signal?.throwIfAborted();
     // 原生: 先用插件弹权限, 取坐标失败再回退 navigator
     if (Capacitor.isNativePlatform()) {
         const { Geolocation } = await import('@capacitor/geolocation');
+        options?.signal?.throwIfAborted();
         try {
             const perm = await Geolocation.checkPermissions();
+            options?.signal?.throwIfAborted();
             if (perm.location !== 'granted' && perm.coarseLocation !== 'granted') {
                 const req = await Geolocation.requestPermissions({ permissions: ['location', 'coarseLocation'] as any });
                 if (req.location !== 'granted' && (req as any).coarseLocation !== 'granted') {
@@ -86,19 +93,23 @@ export const getCurrentPositionSmart = async (options?: { quiet?: boolean; retry
                 }
             }
         } catch (e: any) {
+            options?.signal?.throwIfAborted();
             // checkPermissions/requestPermissions 在个别机型会抛, 不阻塞, 直接尝试取位置
             if (!options?.quiet) console.warn('[geo] 权限检查异常, 继续尝试取位置:', e?.message || e);
         }
+        options?.signal?.throwIfAborted();
         try {
             const pos = await Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
+            options?.signal?.throwIfAborted();
             return { longitude: pos.coords.longitude, latitude: pos.coords.latitude, accuracy: pos.coords.accuracy ?? 99999 };
         } catch (e: any) {
+            options?.signal?.throwIfAborted();
             // 没 GMS 的机器插件取坐标会抛 "Google Play services unavailable" —— 回退 WebView 定位 (走系统 LocationManager)
             if (!options?.quiet) console.warn('[geo] Capacitor 插件取位置失败, 回退 navigator.geolocation:', e?.message || e);
-            return getFreshBrowserPosition(options?.retry === true);
+            return getFreshBrowserPosition(options?.retry === true, options?.signal);
         }
     }
 
     // 浏览器: navigator.geolocation
-    return getFreshBrowserPosition(options?.retry === true);
+    return getFreshBrowserPosition(options?.retry === true, options?.signal);
 };
