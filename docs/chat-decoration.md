@@ -77,7 +77,7 @@ CSS 编辑器的旧预设及分享格式不迁移。CSS 分类保留 body portal
 
 消息时间位置由布局字段 `chatTimestampPosition` 控制，随角色装扮、整套预设导出与装扮预览保存。内置 `WeChat` 布局使用 `top_center`，「银晕」使用 `below_avatar`。
 
-「银晕」以聊天舞台宽高换算 941 × 1670 展示稿的比例，角色短句、连续消息、独立消息和语音各用对应底图，长正文撑高纸面。收发时间在头像下方时，每个用户本地日期的首条对话提供 `.sully-chat-day-divider`，白框可通过 `--sully-chat-day-divider-display: grid` 显示日期。
+「银晕」以聊天舞台宽高换算 941 × 1670 展示稿的比例。双方文字气泡共用字号与上下内边距，短句随内容收窄，长句在消息行宽度的三分之二处换行。角色连续发言、独立消息和语音各用对应底图，文字气泡通过九宫格保留原稿切角。收发时间在头像下方时，每个用户本地日期的首条对话提供 `.sully-chat-day-divider`，白框可通过 `--sully-chat-day-divider-display: grid` 显示日期。
 - `below`（默认）：在同侧连续发言的末条气泡下方 `.sully-chat-timestamp-slot` 中显示 `HH:mm`，与即时对话发送进度 `<ChatSendProgress />` 独立渲染，美化时间样式不影响发送状态提示。
 - `top_center`：按相邻消息绝对时间差（≥ 5 分钟）分段，在每段首条非系统消息上方渲染整行居中的 `.sully-chat-time-divider`（脱离气泡宽度与左滑引用层），跨本地日历日自动附带「昨天 / 月日 / 年月日」（统一使用设备本地时区）；`chatBubbleStyle: 'wechat'`（含内置 `WeChat` 布局预设）默认渲染 4px 小圆角浅灰半透明时间胶囊，其余布局保持无底色灰字以免干扰深色白框。
 - `below_avatar` 在可见的双方头像下居中显示该条消息的收发时间。`.sully-chat-avatar-timestamp` 与头像同处一个槽位，随每条、分组或组首上方头像布局一起移动。独立模块和系统通知沿用其自身布局，发送进度仍在气泡下方。
