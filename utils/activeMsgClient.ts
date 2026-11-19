@@ -38,6 +38,7 @@ import {
 import { getLastRealUserMessageAt } from './amsg2ExpireGuard';
 import { getLastAwayAnchorAt } from './awayMessageCore';
 import { AMSG_BUNDLE_VERSION, compareBundleVersions } from './amsgBundleVersion';
+import { recordRescueFromConfigCheck } from './amsgRescueAlert';
 import { describeD1LimitCode } from './amsgD1Limits';
 import { explainCfTokenRejection, parseAmsgSelfUpdateState, type AmsgSelfUpdateReport } from './amsgSelfUpdateState';
 import { AMSG_AWAY_DELAY_META, AMSG_AWAY_MESSAGE_META, AMSG_DATE_LEAVE_META, AMSG_DATE_LEAVE_DELAY_META, buildAwayTaskInstruction, buildDateLeaveInstruction, buildTaskInstruction, resolveSendAtMs } from './amsgFireSchedule';
@@ -317,6 +318,7 @@ const inspectWorkerConfig = async (config: ActiveMsg2GlobalConfig): Promise<Amsg
   try {
     const { status, body } = await fetchWithAuthRaw('config-check', config, { method: 'GET' }, '配置自检');
     if (status !== 200 || !body?.success) return null;
+    recordRescueFromConfigCheck(body, config.workerUrl);
     // 只认形状对得上的回执。没有这个端点的 worker 回什么的都有（404 只是其中一种），
     // 光看 success 就采信的话，会把一台好 worker 判成「配置缺失」——那比不自检还糟，
     // 用户照着提示改哪儿都改不对。形状不对就当它不支持自检，走原来的流程。
@@ -1961,6 +1963,8 @@ const fetchWithAuthRaw = async (
  * /config-check 的地方都顺手记一笔。存不下只是这一次的结论留不到下次，不影响探测本身。
  */
 const rememberWorkerBundleVersion = async (body: any, checkedWorkerUrl?: string): Promise<void> => {
+  // 救援模式留痕也搭这一趟记下来（按问的那台 Worker 记，不管配置是否已换），见 utils/amsgRescueAlert.ts。
+  recordRescueFromConfigCheck(body, checkedWorkerUrl);
   const deployed = typeof body?.data?.workerVersion === 'string' ? body.data.workerVersion : null;
   try {
     const current = await ActiveMsgStore.getGlobalConfig();
