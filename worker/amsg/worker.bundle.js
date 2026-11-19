@@ -1681,7 +1681,7 @@ function pickStaleStoppedReplyKeys(rows, nowMs = Date.now(), protectKey) {
 // worker/amsg/src/index.ts
 import { DurableObject } from "cloudflare:workers";
 
-// ../../../../../../Documents/GitHub/SullyOS/node_modules/.pnpm/@rei-standard+amsg-server@3.2.0-next.2_@neondatabase+serverless@1.1.0_pg@8.22.0/node_modules/@rei-standard/amsg-server/dist/chunk-R2CRPRKR.mjs
+// node_modules/.pnpm/@rei-standard+amsg-server@3.2.0-next.2_@neondatabase+serverless@1.1.0_pg@8.22.0/node_modules/@rei-standard/amsg-server/dist/chunk-R2CRPRKR.mjs
 var CLEANUP_BATCH_LIMIT = 100;
 var UPDATABLE_COLUMNS = /* @__PURE__ */ new Set([
   "user_id",
@@ -1701,7 +1701,7 @@ var UPDATABLE_COLUMNS = /* @__PURE__ */ new Set([
 var TASK_DELIVERY_COLUMNS = "id, user_id, uuid, encrypted_payload, message_type, next_send_at, retry_after, status, retry_count";
 var TASK_DETAIL_COLUMNS = "id, user_id, uuid, encrypted_payload, message_type, next_send_at, status, retry_count, last_error, created_at, updated_at";
 
-// ../../../../../../Documents/GitHub/SullyOS/node_modules/.pnpm/@rei-standard+amsg-shared@0.5.0-next.0/node_modules/@rei-standard/amsg-shared/dist/index.mjs
+// node_modules/.pnpm/@rei-standard+amsg-shared@0.5.0-next.0/node_modules/@rei-standard/amsg-shared/dist/index.mjs
 var TEXT_ENCODER = new TextEncoder();
 var TEXT_DECODER = new TextDecoder("utf-8", { fatal: false });
 function toUint8(buf) {
@@ -2939,7 +2939,7 @@ function stringifyDecisionForError(value) {
   }
 }
 
-// ../../../../../../Documents/GitHub/SullyOS/node_modules/.pnpm/@rei-standard+amsg-server@3.2.0-next.2_@neondatabase+serverless@1.1.0_pg@8.22.0/node_modules/@rei-standard/amsg-server/dist/chunk-WFKLHUUE.mjs
+// node_modules/.pnpm/@rei-standard+amsg-server@3.2.0-next.2_@neondatabase+serverless@1.1.0_pg@8.22.0/node_modules/@rei-standard/amsg-server/dist/chunk-WFKLHUUE.mjs
 var DAY_MS = 24 * 60 * 60 * 1e3;
 var MAX_LISTED_SKIPPED_OCCURRENCES = 32;
 var MAX_ADJUST_STEPS = 32;
@@ -12226,7 +12226,7 @@ function extractFriendFeedReplyTags(raw, namespace = "FRIEND_FEED_REPLY") {
   return { text: text2 + raw.slice(cursor), actions };
 }
 
-// ../../../../../../Documents/GitHub/SullyOS/node_modules/.pnpm/@rei-standard+amsg-instant@0.12.0-next.0/node_modules/@rei-standard/amsg-instant/dist/index.mjs
+// node_modules/.pnpm/@rei-standard+amsg-instant@0.12.0-next.0/node_modules/@rei-standard/amsg-instant/dist/index.mjs
 var MAX_REQUEST_BODY_BYTES = 32 * 1024 * 1024;
 var WEB_PUSH_MAX_BODY_BYTES2 = 4096;
 var WEB_PUSH_ENCRYPTION_OVERHEAD_BYTES2 = 16 + 4 + 1 + 65 + 1 + 16;
@@ -19365,8 +19365,676 @@ var isFcmConfigured = (env) => Boolean(
   env.FCM_PROJECT_ID?.trim() && env.FCM_SERVICE_ACCOUNT_EMAIL?.trim() && env.FCM_SERVICE_ACCOUNT_PRIVATE_KEY?.trim()
 );
 
+// utils/amsgRescueState.ts
+var AMSG_RESCUE_TOKEN_MIN_LENGTH = 16;
+var AMSG_RESCUE_ALERT_WINDOW_MS = 7 * 24 * 60 * 60 * 1e3;
+var AMSG_RESCUE_RESULT_KIND = "amsg-rescue-alert";
+var toTime = (value) => typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
+var toCount = (value) => typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+var parseAmsgRescueEpisode = (raw) => {
+  const value = raw;
+  if (!value || typeof value !== "object") return null;
+  const firstSeenAt = toTime(value.firstSeenAt);
+  if (typeof value.id !== "string" || !value.id || firstSeenAt === null) return null;
+  return {
+    id: value.id,
+    firstSeenAt,
+    lastSeenAt: toTime(value.lastSeenAt) ?? firstSeenAt,
+    endedAt: toTime(value.endedAt),
+    exportCount: toCount(value.exportCount),
+    lastExportAt: toTime(value.lastExportAt),
+    itemReads: toCount(value.itemReads),
+    lastReadAt: toTime(value.lastReadAt),
+    failedAttempts: toCount(value.failedAttempts),
+    pushedAt: toTime(value.pushedAt),
+    pushTargets: toCount(value.pushTargets),
+    pushDelivered: toCount(value.pushDelivered)
+  };
+};
+
+// worker/amsg/src/rescue.ts
+var RESCUE_EPISODE_KEY = "rescue_episode";
+var RESCUE_FAILURES_KEY = "rescue_failures";
+var SEEN_WRITE_INTERVAL_MS = 6e4;
+var RESCUE_LOCKOUT_FAILURES = 10;
+var RESCUE_LOCKOUT_WINDOW_MS = 15 * 6e4;
+var PUSH_TIMEOUT_MS = 8e3;
+var TABLE_PAGE_ROWS = 100;
+var SEP2 = "";
+var CHUNK_NS_PREFIX2 = `${SEP2}amsg-chunks${SEP2}`;
+var ROOT_MARKER_PREFIX2 = `${SEP2}amsg-chunked${SEP2}v1${SEP2}`;
+var EXPORT_TABLES = {
+  scheduled_messages: { encrypted: ["encrypted_payload"], drop: ["lease_token"] },
+  llm_credentials: { encrypted: ["encrypted_value"] },
+  message_outbox: { encrypted: ["payload"] },
+  push_subscriptions: { encrypted: ["subscription"] },
+  cloud_resource_metadata: { encrypted: ["encrypted_value"] }
+};
+var readRescueToken = (env) => {
+  const token = env.AMSG_RESCUE_TOKEN?.trim() ?? "";
+  if (!token) return { state: "off" };
+  if (token.length < AMSG_RESCUE_TOKEN_MIN_LENGTH) return { state: "too-short", length: token.length };
+  return { state: "on", token };
+};
+var isRescueActive = (env) => readRescueToken(env).state === "on";
+var dbOf = (env) => {
+  const db = env.DB;
+  return typeof db?.prepare === "function" ? db : null;
+};
+var changesOf = (result) => {
+  const changes = result?.meta?.changes;
+  return typeof changes === "number" ? changes : 1;
+};
+var readRescueEpisode = async (db) => {
+  if (!db) return null;
+  const raw = await readDiagnosticValue(db, RESCUE_EPISODE_KEY);
+  if (!raw) return null;
+  try {
+    return parseAmsgRescueEpisode(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+};
+var freshEpisode = (nowMs) => ({
+  id: String(nowMs),
+  firstSeenAt: nowMs,
+  lastSeenAt: nowMs,
+  endedAt: null,
+  exportCount: 0,
+  lastExportAt: null,
+  itemReads: 0,
+  lastReadAt: null,
+  failedAttempts: 0,
+  pushedAt: null,
+  pushTargets: 0,
+  pushDelivered: 0
+});
+var startEpisode = async (db, episode, nowMs) => {
+  await db.prepare(DIAGNOSTICS_TABLE_SQL).run();
+  const result = await db.prepare(
+    `INSERT INTO worker_diagnostics (key, value, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+       WHERE json_valid(worker_diagnostics.value) = 0
+          OR json_extract(worker_diagnostics.value, '$.endedAt') IS NOT NULL`
+  ).bind(RESCUE_EPISODE_KEY, JSON.stringify(episode), nowMs).run();
+  return changesOf(result) > 0;
+};
+var patchEpisode = async (db, nowMs, patch) => {
+  const parts = [];
+  const values = [];
+  for (const field of patch.increments ?? []) {
+    parts.push(`'$.${field}', COALESCE(json_extract(value, '$.${field}'), 0) + 1`);
+  }
+  for (const [field, value] of Object.entries(patch.set ?? {})) {
+    parts.push(`'$.${field}', ?`);
+    values.push(value);
+  }
+  if (!parts.length) return;
+  await db.prepare(
+    `UPDATE worker_diagnostics SET value = json_set(value, ${parts.join(", ")}), updated_at = ?
+       WHERE key = ? AND json_valid(value) = 1${patch.onlyIfOpen ? " AND json_extract(value, '$.endedAt') IS NULL" : ""}`
+  ).bind(...values, nowMs, RESCUE_EPISODE_KEY).run();
+};
+var observeRescue = async (env, deps) => {
+  const db = dbOf(env);
+  if (!db) return null;
+  const nowMs = deps.now?.() ?? Date.now();
+  const active = isRescueActive(env);
+  const current = await readRescueEpisode(db);
+  if (active) {
+    if (!current || current.endedAt !== null) {
+      const episode = freshEpisode(nowMs);
+      if (await startEpisode(db, episode, nowMs)) {
+        await pushRescueAlert(db, env, deps, episode, nowMs);
+      }
+      return readRescueEpisode(db);
+    }
+    if (nowMs - current.lastSeenAt >= SEEN_WRITE_INTERVAL_MS) {
+      await patchEpisode(db, nowMs, { set: { lastSeenAt: nowMs }, onlyIfOpen: true });
+      return { ...current, lastSeenAt: nowMs };
+    }
+    return current;
+  }
+  if (current && current.endedAt === null) {
+    await patchEpisode(db, nowMs, { set: { endedAt: nowMs }, onlyIfOpen: true });
+    return { ...current, endedAt: nowMs };
+  }
+  return current;
+};
+var observeRescueQuietly = async (env, deps) => {
+  try {
+    return await observeRescue(env, deps);
+  } catch (error) {
+    console.warn("[amsg:rescue] \u7559\u75D5\u6CA1\u8BB0\u4E0A", error);
+    return null;
+  }
+};
+var buildRescueReport = async (env, deps) => ({
+  active: isRescueActive(env),
+  episode: await observeRescueQuietly(env, deps)
+});
+var RESCUE_ALERT_TITLE = "SullyOS \u5B89\u5168\u63D0\u9192\uFF1A\u6551\u63F4\u6A21\u5F0F\u5DF2\u5F00\u542F";
+var RESCUE_ALERT_BODY = "\u4F60\u7684\u4E3B\u52A8\u6D88\u606F Worker \u521A\u5F00\u542F\u4E86\u6551\u63F4\u6A21\u5F0F\uFF0C\u53EF\u4EE5\u5BFC\u51FA\u5168\u90E8\u4E91\u7AEF\u6570\u636E\uFF08\u542B API Key\uFF09\u3002\u82E5\u975E\u672C\u4EBA\u64CD\u4F5C\uFF0C\u8BF7\u7ACB\u523B\u66F4\u6362\u91CD\u8981\u51ED\u636E\uFF0C\u5E76\u68C0\u67E5 Cloudflare \u8D26\u53F7\u5B89\u5168\u3002";
+var withTimeout = (promise, ms) => new Promise((resolve, reject) => {
+  const timer = setTimeout(() => reject(new Error(`\u8D85\u8FC7 ${ms}ms \u6CA1\u63A8\u51FA\u53BB`)), ms);
+  promise.then(
+    (value) => {
+      clearTimeout(timer);
+      resolve(value);
+    },
+    (error) => {
+      clearTimeout(timer);
+      reject(error);
+    }
+  );
+});
+var decodeSubscription = async (stored, userKey) => {
+  try {
+    return JSON.parse(await decryptFromStorage(stored, userKey));
+  } catch {
+    return JSON.parse(stored);
+  }
+};
+var pushRescueAlert = async (db, env, deps, episode, nowMs) => {
+  let targets = 0;
+  let delivered = 0;
+  try {
+    const masterKey = env.AMSG_MASTER_KEY?.trim();
+    const { results } = await db.prepare("SELECT user_id, subscription FROM push_subscriptions").all();
+    const rows = (results ?? []).filter((row) => typeof row.subscription === "string" && row.subscription);
+    targets = rows.length;
+    const payload = JSON.stringify({
+      messageKind: "result",
+      resultKind: AMSG_RESCUE_RESULT_KIND,
+      messageId: `rescue_${episode.id}`,
+      timestamp: new Date(nowMs).toISOString(),
+      contactName: "SullyOS \u5B89\u5168\u63D0\u9192",
+      message: RESCUE_ALERT_BODY,
+      notification: {
+        title: RESCUE_ALERT_TITLE,
+        body: RESCUE_ALERT_BODY,
+        show: "always",
+        tag: "sullyos-rescue-alert",
+        renotify: true
+      }
+    });
+    const outcomes = await Promise.allSettled(rows.map(async (row) => {
+      if (!masterKey) throw new Error("\u7F3A AMSG_MASTER_KEY");
+      const userKey = await deriveUserEncryptionKey(row.user_id, masterKey);
+      const subscription = await decodeSubscription(row.subscription, userKey);
+      await withTimeout(Promise.resolve(deps.sendPush(subscription, payload)), PUSH_TIMEOUT_MS);
+    }));
+    delivered = outcomes.filter((outcome) => outcome.status === "fulfilled").length;
+    for (const outcome of outcomes) {
+      if (outcome.status === "rejected") console.warn("[amsg:rescue] \u5F00\u542F\u901A\u77E5\u6709\u4E00\u6761\u6CA1\u63A8\u51FA\u53BB", outcome.reason);
+    }
+  } catch (error) {
+    console.warn("[amsg:rescue] \u5F00\u542F\u901A\u77E5\u6CA1\u63A8\u51FA\u53BB", error);
+  }
+  await patchEpisode(db, nowMs, { set: { pushedAt: nowMs, pushTargets: targets, pushDelivered: delivered } });
+};
+var readFailures = async (db) => {
+  const raw = await readDiagnosticValue(db, RESCUE_FAILURES_KEY);
+  if (!raw) return [];
+  try {
+    const value = JSON.parse(raw);
+    return Array.isArray(value) ? value.filter((at) => typeof at === "number") : [];
+  } catch {
+    return [];
+  }
+};
+var writeFailures = async (db, failures, nowMs) => {
+  await db.prepare(DIAGNOSTICS_TABLE_SQL).run();
+  await db.prepare(
+    `INSERT INTO worker_diagnostics (key, value, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+  ).bind(RESCUE_FAILURES_KEY, JSON.stringify(failures), nowMs).run();
+};
+var rescueLockoutRemainingMs = (failures, nowMs) => {
+  const recent = failures.filter((at) => nowMs - at < RESCUE_LOCKOUT_WINDOW_MS).sort((a, b) => a - b);
+  if (recent.length < RESCUE_LOCKOUT_FAILURES) return 0;
+  const unlockAt = recent[recent.length - RESCUE_LOCKOUT_FAILURES] + RESCUE_LOCKOUT_WINDOW_MS;
+  return Math.max(0, unlockAt - nowMs);
+};
+var checkRescueToken = async (request, db, token, nowMs) => {
+  const failures = await readFailures(db);
+  const lockedMs = rescueLockoutRemainingMs(failures, nowMs);
+  if (lockedMs > 0) {
+    return {
+      ok: false,
+      status: 429,
+      code: "RESCUE_LOCKED",
+      message: `\u53E3\u4EE4\u9519\u8BEF\u6B21\u6570\u592A\u591A\uFF0C\u5DF2\u9501\u5B9A\u3002\u8BF7 ${Math.ceil(lockedMs / 6e4)} \u5206\u949F\u540E\u518D\u8BD5\u3002`
+    };
+  }
+  const provided = request.headers.get("X-Rescue-Token")?.trim() ?? "";
+  if (provided && await constantTimeEqual2(provided, token)) {
+    if (failures.length) await writeFailures(db, [], nowMs);
+    return { ok: true };
+  }
+  const recent = [...failures.filter((at) => nowMs - at < RESCUE_LOCKOUT_WINDOW_MS), nowMs].slice(-RESCUE_LOCKOUT_FAILURES);
+  await writeFailures(db, recent, nowMs);
+  await patchEpisode(db, nowMs, { increments: ["failedAttempts"] });
+  return { ok: false, status: 401, code: "RESCUE_TOKEN_INVALID", message: "\u6551\u63F4\u53E3\u4EE4\u4E0D\u5BF9\u3002" };
+};
+var base64UrlEncode = (text2) => {
+  const bytes = new TextEncoder().encode(text2);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+};
+var base64UrlDecode = (value) => {
+  const padded = value.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - value.length % 4) % 4);
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+};
+var listTables = async (db) => {
+  const { results } = await db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all();
+  return new Set((results ?? []).map((row) => row.name));
+};
+var userKeyCache = (masterKey) => {
+  const cache = /* @__PURE__ */ new Map();
+  return (userId) => {
+    let key = cache.get(userId);
+    if (!key) {
+      key = deriveUserEncryptionKey(userId, masterKey);
+      cache.set(userId, key);
+    }
+    return key;
+  };
+};
+var STORAGE_CIPHERTEXT_RE = /^[0-9a-f]+:[0-9a-f]+:[0-9a-f]*$/i;
+var decodePlaintext = async (text2) => {
+  let unpacked = text2;
+  try {
+    unpacked = await unpackStateValue(text2);
+  } catch {
+    unpacked = text2;
+  }
+  let value;
+  try {
+    value = JSON.parse(unpacked);
+  } catch {
+    return { value: unpacked, format: "text" };
+  }
+  await unpackNestedFirePacks(value);
+  return { value, format: "json" };
+};
+var unpackNestedFirePacks = async (value) => {
+  const holders = [value, value?.taskInput];
+  for (const holder of holders) {
+    if (!holder || typeof holder !== "object") continue;
+    const record2 = holder;
+    if (typeof record2.packedFirePack !== "string") continue;
+    try {
+      record2.packedFirePack = JSON.parse(await unpackStateValue(record2.packedFirePack));
+    } catch {
+    }
+  }
+};
+var decodeCell = async (raw, userKey) => {
+  if (typeof raw !== "string") return { status: "plain", format: "json", value: raw ?? null };
+  if (STORAGE_CIPHERTEXT_RE.test(raw)) {
+    try {
+      return { status: "decrypted", ...await decodePlaintext(await decryptFromStorage(raw, userKey)) };
+    } catch {
+      return { status: "undecryptable" };
+    }
+  }
+  return { status: "plain", ...await decodePlaintext(raw) };
+};
+var buildRescueManifest = async (db, nowMs) => {
+  const tables = await listTables(db);
+  const items = [];
+  if (tables.has("client_state")) {
+    const { results } = await db.prepare(
+      `SELECT user_id, namespace, key, updated_at, length(value) AS bytes, substr(value, 1, ?) = ? AS chunked
+         FROM client_state WHERE substr(namespace, 1, 1) <> ?
+         ORDER BY user_id, namespace, key`
+    ).bind(ROOT_MARKER_PREFIX2.length, ROOT_MARKER_PREFIX2, SEP2).all();
+    for (const row of results ?? []) {
+      items.push({
+        id: `cs:${base64UrlEncode(JSON.stringify([row.user_id, row.namespace, row.key]))}`,
+        source: "client_state",
+        userId: row.user_id,
+        namespace: row.namespace,
+        key: row.key,
+        updatedAt: typeof row.updated_at === "number" ? row.updated_at : null,
+        bytes: typeof row.bytes === "number" ? row.bytes : null,
+        chunked: Boolean(row.chunked)
+      });
+    }
+  }
+  for (const table of Object.keys(EXPORT_TABLES)) {
+    if (!tables.has(table)) continue;
+    const row = await db.prepare(`SELECT COUNT(*) AS n FROM "${table}"`).first();
+    const total = Number(row?.n ?? 0);
+    for (let offset = 0; offset < total; offset += TABLE_PAGE_ROWS) {
+      items.push({
+        id: `t:${table}:${offset}`,
+        source: table,
+        offset,
+        rows: Math.min(TABLE_PAGE_ROWS, total - offset)
+      });
+    }
+  }
+  return { format: "sullyos-amsg-rescue", version: 1, generatedAt: new Date(nowMs).toISOString(), items };
+};
+var readClientStateItem = async (db, keyOf, userId, namespace, key) => {
+  const root = await db.prepare("SELECT value, updated_at FROM client_state WHERE user_id = ? AND namespace = ? AND key = ?").bind(userId, namespace, key).first();
+  if (!root) return { ok: false, status: 404, code: "RESCUE_ITEM_GONE", message: "\u8FD9\u4E00\u6761\u5DF2\u7ECF\u4E0D\u5728\u5E93\u91CC\u4E86\u3002" };
+  const base = { source: "client_state", userId, namespace, key, updatedAt: root.updated_at };
+  const userKey = await keyOf(userId);
+  let sources = [root.value];
+  if (typeof root.value === "string" && root.value.startsWith(ROOT_MARKER_PREFIX2)) {
+    const count2 = Number(root.value.slice(ROOT_MARKER_PREFIX2.length));
+    const prefix = `${key}${SEP2}`;
+    const { results } = await db.prepare("SELECT key, value, updated_at FROM client_state WHERE user_id = ? AND namespace = ? AND substr(key, 1, ?) = ?").bind(userId, `${CHUNK_NS_PREFIX2}${namespace}`, prefix.length, prefix).all();
+    const byKey = new Map((results ?? []).map((row) => [row.key, row]));
+    sources = [];
+    for (let i = 0; i < count2; i += 1) {
+      const chunk = byKey.get(`${prefix}${i}`);
+      if (!chunk || chunk.updated_at !== root.updated_at) break;
+      sources.push(chunk.value);
+    }
+    if (!Number.isInteger(count2) || count2 < 1 || sources.length !== count2) {
+      return { ok: true, data: { ...base, status: "chunks-incomplete", expectedChunks: count2, foundChunks: sources.length } };
+    }
+  }
+  try {
+    const plain = (await Promise.all(sources.map((slice) => decryptFromStorage(slice, userKey)))).join("");
+    return { ok: true, data: { ...base, status: "decrypted", ...await decodePlaintext(plain) } };
+  } catch {
+    return { ok: true, data: { ...base, status: "undecryptable" } };
+  }
+};
+var readTablePage = async (db, keyOf, table, offset) => {
+  const spec = EXPORT_TABLES[table];
+  const { results } = await db.prepare(`SELECT * FROM "${table}" ORDER BY rowid LIMIT ? OFFSET ?`).bind(TABLE_PAGE_ROWS, offset).all();
+  const rows = [];
+  for (const row of results ?? []) {
+    const userId = typeof row.user_id === "string" ? row.user_id : "";
+    const userKey = userId ? await keyOf(userId) : "";
+    const plain = {};
+    const decoded = {};
+    for (const [column, value] of Object.entries(row)) {
+      if (spec.drop?.includes(column)) continue;
+      if (spec.encrypted.includes(column)) decoded[column] = userKey ? await decodeCell(value, userKey) : { status: "undecryptable" };
+      else plain[column] = value;
+    }
+    rows.push({ ...plain, decoded });
+  }
+  return { ok: true, data: { source: table, offset, rows } };
+};
+var readRescueItem = async (db, masterKey, id) => {
+  const keyOf = userKeyCache(masterKey);
+  if (id.startsWith("cs:")) {
+    let parts;
+    try {
+      parts = JSON.parse(base64UrlDecode(id.slice(3)));
+    } catch {
+      parts = null;
+    }
+    if (!Array.isArray(parts) || parts.length !== 3 || !parts.every((part) => typeof part === "string")) {
+      return { ok: false, status: 400, code: "RESCUE_ITEM_INVALID", message: "\u6761\u76EE\u7F16\u53F7\u4E0D\u5BF9\u3002" };
+    }
+    return readClientStateItem(db, keyOf, parts[0], parts[1], parts[2]);
+  }
+  const match = /^t:([a-z_]+):(\d+)$/.exec(id);
+  if (match && Object.prototype.hasOwnProperty.call(EXPORT_TABLES, match[1])) {
+    const tables = await listTables(db);
+    if (!tables.has(match[1])) return { ok: false, status: 404, code: "RESCUE_ITEM_GONE", message: "\u8FD9\u5F20\u8868\u4E0D\u5728\u5E93\u91CC\u3002" };
+    return readTablePage(db, keyOf, match[1], Number(match[2]));
+  }
+  return { ok: false, status: 400, code: "RESCUE_ITEM_INVALID", message: "\u6761\u76EE\u7F16\u53F7\u4E0D\u5BF9\u3002" };
+};
+var RESCUE_SECURITY_HEADERS = {
+  "Cache-Control": "no-store",
+  "Referrer-Policy": "no-referrer",
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY"
+};
+var rescueJson = (status, body) => new Response(JSON.stringify(body), {
+  status,
+  headers: { "Content-Type": "application/json; charset=utf-8", ...RESCUE_SECURITY_HEADERS }
+});
+var rescueError = (status, code, message) => rescueJson(status, { success: false, error: { code, message } });
+var matchRescueRoute = (pathname) => {
+  if (pathname.endsWith("/rescue")) return "page";
+  if (pathname.endsWith("/rescue/manifest")) return "manifest";
+  if (pathname.endsWith("/rescue/item")) return "item";
+  return null;
+};
+var handleRescueRequest = async (request, env, deps, route) => {
+  const tokenState = readRescueToken(env);
+  if (tokenState.state === "off") {
+    return new Response("Not Found", { status: 404, headers: RESCUE_SECURITY_HEADERS });
+  }
+  if (tokenState.state === "too-short") {
+    return route === "page" ? rescuePage(`AMSG_RESCUE_TOKEN \u592A\u77ED\u4E86\uFF08\u73B0\u5728 ${tokenState.length} \u4E2A\u5B57\u7B26\uFF09\uFF0C\u81F3\u5C11\u8981 ${AMSG_RESCUE_TOKEN_MIN_LENGTH} \u4E2A\u3002\u4E3A\u4E86\u9632\u6B62\u53E3\u4EE4\u88AB\u731C\u4E2D\uFF0C\u6551\u63F4\u9875\u4E0D\u4F1A\u5DE5\u4F5C\u3002\u53BB Cloudflare \u9762\u677F\u628A\u5B83\u6362\u6210\u4E00\u4E32\u66F4\u957F\u7684\u968F\u673A\u5B57\u7B26\u3002`) : rescueError(403, "RESCUE_TOKEN_TOO_SHORT", `AMSG_RESCUE_TOKEN \u81F3\u5C11\u8981 ${AMSG_RESCUE_TOKEN_MIN_LENGTH} \u4E2A\u5B57\u7B26\u3002`);
+  }
+  const db = dbOf(env);
+  const masterKey = env.AMSG_MASTER_KEY?.trim();
+  if (!db || !masterKey) {
+    const message = "\u8FD9\u53F0 Worker \u6CA1\u7ED1 D1 \u6570\u636E\u5E93\u6216\u6CA1\u6709 AMSG_MASTER_KEY\uFF0C\u6CA1\u6709\u53EF\u4EE5\u6551\u56DE\u7684\u6570\u636E\u3002";
+    return route === "page" ? rescuePage(message) : rescueError(503, "RESCUE_NOTHING_TO_EXPORT", message);
+  }
+  let episode;
+  try {
+    episode = await observeRescue(env, deps);
+  } catch (error) {
+    console.warn("[amsg:rescue] \u7559\u75D5\u5199\u4E0D\u8FDB\u53BB\uFF0C\u62D2\u7EDD\u5BFC\u51FA", error);
+    episode = null;
+  }
+  if (!episode) {
+    const message = "\u6551\u63F4\u8BB0\u5F55\u5199\u4E0D\u8FDB\u6570\u636E\u5E93\uFF0C\u4E3A\u4E86\u5B89\u5168\u6682\u4E0D\u5BFC\u51FA\u3002\u7A0D\u540E\u518D\u8BD5\uFF0C\u6216\u8005\u68C0\u67E5 D1 \u662F\u5426\u6B63\u5E38\u3002";
+    return route === "page" ? rescuePage(message) : rescueError(503, "RESCUE_AUDIT_UNAVAILABLE", message);
+  }
+  if (route === "page") {
+    if (request.method.toUpperCase() !== "GET") return rescueError(405, "METHOD_NOT_ALLOWED", "/rescue \u53EA\u63A5\u53D7 GET");
+    return rescuePage(null);
+  }
+  if (request.method.toUpperCase() !== "POST") return rescueError(405, "METHOD_NOT_ALLOWED", "\u53EA\u63A5\u53D7 POST");
+  const nowMs = deps.now?.() ?? Date.now();
+  const gate = await checkRescueToken(request, db, tokenState.token, nowMs);
+  if (!gate.ok) return rescueError(gate.status, gate.code, gate.message);
+  if (route === "manifest") {
+    await patchEpisode(db, nowMs, { increments: ["exportCount"], set: { lastExportAt: nowMs } });
+    return rescueJson(200, { success: true, data: await buildRescueManifest(db, nowMs) });
+  }
+  let id;
+  try {
+    id = (await request.json())?.id;
+  } catch {
+    id = void 0;
+  }
+  if (typeof id !== "string" || !id) return rescueError(400, "RESCUE_ITEM_INVALID", '\u8BF7\u6C42\u4F53\u8981\u662F { "id": "\u2026" }');
+  await patchEpisode(db, nowMs, { increments: ["itemReads"], set: { lastReadAt: nowMs } });
+  const result = await readRescueItem(db, masterKey, id);
+  return result.ok ? rescueJson(200, { success: true, data: result.data }) : rescueError(result.status, result.code, result.message);
+};
+var escapeHtml = (text2) => text2.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+var randomNonce = () => {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+};
+var rescuePage = (blockedMessage) => {
+  const nonce = randomNonce();
+  const blocked = blockedMessage ? `<p class="blocked">${escapeHtml(blockedMessage)}</p>` : "";
+  const form = blockedMessage ? "" : `
+  <label for="token">\u6551\u63F4\u53E3\u4EE4\uFF08\u5C31\u662F\u4F60\u586B\u8FDB AMSG_RESCUE_TOKEN \u7684\u90A3\u4E32\uFF09</label>
+  <input id="token" type="password" autocomplete="off" autocapitalize="off" spellcheck="false">
+  <button id="start" type="button">\u5F00\u59CB\u5BFC\u51FA</button>
+  <p id="status" class="status"></p>
+  <p id="download" class="download"></p>
+  <div id="chars"></div>`;
+  const script = blockedMessage ? "" : `<script nonce="${nonce}">${RESCUE_PAGE_SCRIPT}</script>`;
+  const html = `<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>SullyOS \u4E3B\u52A8\u6D88\u606F \xB7 \u6570\u636E\u6551\u63F4</title>
+<style nonce="${nonce}">${RESCUE_PAGE_STYLE}</style></head>
+<body><main>
+  <h1>\u4E3B\u52A8\u6D88\u606F \xB7 \u6570\u636E\u6551\u63F4</h1>
+  <p class="warn">\u8FD9\u4E2A\u9875\u9762\u80FD\u5BFC\u51FA\u8FD9\u53F0 Worker \u91CC\u7684<strong>\u5168\u90E8\u4E91\u7AEF\u6570\u636E\uFF0C\u5305\u62EC API Key \u548C\u5DE5\u5177\u51ED\u636E</strong>\u3002\u5BFC\u51FA\u5B8C\u6210\u540E\uFF0C\u8BF7\u7ACB\u523B\u56DE Cloudflare \u9762\u677F\u5220\u6389 AMSG_RESCUE_TOKEN\uFF0C\u5E76\u59A5\u5584\u4FDD\u7BA1\u4E0B\u8F7D\u7684\u6587\u4EF6\u3002</p>
+  <p class="note">\u80FD\u6551\u56DE\u7684\u53EA\u6709\u4E3B\u52A8\u6D88\u606F 2.0 \u540C\u6B65\u5230\u4E91\u7AEF\u7684\u5185\u5BB9\uFF1A\u6BCF\u4E2A\u89D2\u8272\u7684\u540D\u5B57\u3001\u65E5\u8BB0\u3001\u4E91\u7AEF\u51ED\u636E\u548C\u89D2\u8272\u53D1\u8FC7\u7684\u6D88\u606F\uFF1B\u5F00\u7740\u5B9A\u65F6\u4E3B\u52A8\u6D88\u606F\u6216\u6302\u7740\u6392\u7A0B\u7684\u89D2\u8272\uFF0C\u8FD8\u6709\u6700\u540E\u4E00\u6B21\u540C\u6B65\u65F6\u7684\u63D0\u793A\u8BCD\u5FEB\u7167\uFF08\u89D2\u8272\u5361\u3001\u4E16\u754C\u4E66\u3001\u6708\u5EA6\u603B\u7ED3\u3001\u6700\u8FD1\u4E00\u6BB5\u5BF9\u8BDD\uFF09\u3002\u5B8C\u6574\u804A\u5929\u8BB0\u5F55\u3001\u56FE\u7247\u548C\u5176\u4ED6 App \u7684\u6570\u636E\u4E0D\u5728\u4E91\u7AEF\uFF0C\u6551\u4E0D\u56DE\u6765\u3002</p>
+  <p class="note">\u4E0B\u8F7D\u7684\u6587\u4EF6\u53EF\u4EE5\u76F4\u63A5\u5BFC\u56DE SullyOS\uFF1A\u8BBE\u7F6E \u2192 \u5907\u4EFD\u4E0E\u6062\u590D \u2192 \u300C\u4ECE\u5176\u4ED6\u7F51\u5740 / App \u8FC1\u5165\u72EC\u7ACB\u7528\u6237\u300D\uFF0C\u4F1A\u65B0\u5EFA\u4E00\u4E2A\u7528\u6237\uFF0C\u4E0D\u78B0\u73B0\u6709\u6570\u636E\u3002</p>
+  ${blocked}${form}
+</main>${script}</body></html>`;
+  return new Response(html, {
+    status: blockedMessage ? 503 : 200,
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Content-Security-Policy": `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self'; img-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
+      ...RESCUE_SECURITY_HEADERS
+    }
+  });
+};
+var RESCUE_PAGE_STYLE = `
+:root{color-scheme:light}
+body{margin:0;background:#f6f7f9;color:#1f2933;font:15px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
+main{max-width:720px;margin:0 auto;padding:24px 16px 64px}
+h1{font-size:22px;margin:0 0 16px}
+.warn{background:#fdecea;color:#8a1c12;border:1px solid #f5b5ad;border-radius:10px;padding:12px 14px}
+.note{color:#52606d;font-size:14px}
+.blocked{background:#fff4e5;color:#7a4100;border:1px solid #f7c98b;border-radius:10px;padding:12px 14px}
+label{display:block;margin:20px 0 6px;font-weight:600}
+input{box-sizing:border-box;width:100%;padding:10px 12px;border:1px solid #cbd2d9;border-radius:8px;font-size:15px;background:#fff;color:#1f2933}
+button{margin-top:12px;padding:10px 18px;border:0;border-radius:8px;background:#1f2933;color:#fff;font-size:15px;cursor:pointer}
+button[disabled]{opacity:.5;cursor:default}
+.status{margin-top:14px;white-space:pre-wrap}
+.download a{display:inline-block;margin-top:4px;padding:10px 18px;border-radius:8px;background:#0b6e4f;color:#fff;text-decoration:none}
+.char{background:#fff;border:1px solid #e4e7eb;border-radius:10px;padding:12px 14px;margin-top:12px}
+.char h2{font-size:16px;margin:0 0 4px}
+.char small{color:#7b8794;display:block;margin-bottom:8px;word-break:break-all}
+.char button{margin:6px 8px 0 0;padding:6px 12px;font-size:13px;background:#3e4c59}
+.char textarea{box-sizing:border-box;width:100%;height:220px;margin-top:8px;font:12px/1.5 ui-monospace,Menlo,monospace;border:1px solid #cbd2d9;border-radius:8px;padding:8px;background:#fff;color:#1f2933}
+`;
+var RESCUE_PAGE_SCRIPT = `
+(function(){
+  var $ = function(id){ return document.getElementById(id); };
+  var base = location.pathname.replace(/\\/+$/, '');
+  var token = '';
+  function call(path, body){
+    return fetch(base + path, {
+      method: 'POST', cache: 'no-store',
+      headers: { 'Content-Type': 'application/json', 'X-Rescue-Token': token },
+      body: JSON.stringify(body || {})
+    }).then(function(res){
+      return res.json().catch(function(){ return null; }).then(function(data){
+        if (!res.ok || !data || data.success !== true) {
+          throw new Error((data && data.error && data.error.message) || ('\u8BF7\u6C42\u5931\u8D25\uFF08HTTP ' + res.status + '\uFF09'));
+        }
+        return data.data;
+      });
+    });
+  }
+  function userOf(out, id){
+    if (!out.users[id]) out.users[id] = { clientState: {}, tables: {} };
+    return out.users[id];
+  }
+  function messageText(content){
+    if (typeof content === 'string') return content;
+    if (Array.isArray(content)) return content.map(function(part){ return part && part.type === 'text' ? part.text : '[' + (part && part.type) + ']'; }).join('\\n');
+    return JSON.stringify(content);
+  }
+  function copy(text, area){
+    area.value = text; area.hidden = false;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function(){ area.dataset.copied = '1'; }, function(){});
+    }
+  }
+  function renderChars(out){
+    var box = $('chars'); box.textContent = '';
+    Object.keys(out.users).forEach(function(userId){
+      var cs = out.users[userId].clientState;
+      Object.keys(cs).forEach(function(ns){
+        if (ns.indexOf('amsg:char:') !== 0) return;
+        var entry = cs[ns]; var pack = entry.fire_pack; var tool = entry.tool_pack;
+        var card = document.createElement('div'); card.className = 'char';
+        var title = document.createElement('h2');
+        title.textContent = (tool && tool.charName) || '\u672A\u547D\u540D\u89D2\u8272';
+        var meta = document.createElement('small');
+        meta.textContent = '\u89D2\u8272 ID\uFF1A' + ns.slice('amsg:char:'.length) + (pack && pack.builtAt ? ' \xB7 \u5FEB\u7167\u65F6\u95F4\uFF1A' + new Date(pack.builtAt).toLocaleString() : '');
+        var area = document.createElement('textarea'); area.readOnly = true; area.hidden = true;
+        card.appendChild(title); card.appendChild(meta);
+        if (pack && typeof pack.template === 'string') {
+          var b1 = document.createElement('button'); b1.type = 'button'; b1.textContent = '\u67E5\u770B\u5E76\u590D\u5236\u63D0\u793A\u8BCD\u5FEB\u7167';
+          b1.onclick = function(){ copy(pack.template, area); };
+          card.appendChild(b1);
+        }
+        if (pack && pack.chat && Array.isArray(pack.chat.messages)) {
+          var b2 = document.createElement('button'); b2.type = 'button'; b2.textContent = '\u67E5\u770B\u5E76\u590D\u5236\u6700\u8FD1\u5BF9\u8BDD';
+          b2.onclick = function(){ copy(pack.chat.messages.map(function(m){ return m.role + '\uFF1A' + messageText(m.content); }).join('\\n\\n'), area); };
+          card.appendChild(b2);
+        }
+        if (tool && Array.isArray(tool.memories) && tool.memories.length) {
+          var b3 = document.createElement('button'); b3.type = 'button'; b3.textContent = '\u67E5\u770B\u5E76\u590D\u5236\u65E5\u8BB0';
+          b3.onclick = function(){ copy(JSON.stringify(tool.memories, null, 2), area); };
+          card.appendChild(b3);
+        }
+        card.appendChild(area);
+        box.appendChild(card);
+      });
+    });
+  }
+  $('start').onclick = function(){
+    token = $('token').value.trim();
+    if (!token) { $('status').textContent = '\u5148\u586B\u6551\u63F4\u53E3\u4EE4\u3002'; return; }
+    var button = $('start'); button.disabled = true;
+    $('download').textContent = ''; $('chars').textContent = '';
+    var out = { format: 'sullyos-amsg-rescue', version: 1, exportedAt: new Date().toISOString(), worker: location.host,
+      notice: '\u8FD9\u4EFD\u6587\u4EF6\u542B API Key \u548C\u5DE5\u5177\u51ED\u636E\uFF0C\u8BF7\u59A5\u5584\u4FDD\u7BA1\uFF0C\u4E0D\u8981\u53D1\u7ED9\u522B\u4EBA\u3002', users: {}, errors: [] };
+    $('status').textContent = '\u6B63\u5728\u8BFB\u53D6\u6E05\u5355\u2026';
+    call('/manifest').then(function(manifest){
+      var items = manifest.items || []; var done = 0;
+      function next(){
+        if (done >= items.length) return Promise.resolve();
+        var item = items[done];
+        $('status').textContent = '\u6B63\u5728\u5BFC\u51FA ' + (done + 1) + ' / ' + items.length + '\u2026';
+        return call('/item', { id: item.id }).then(function(data){
+          if (data.source === 'client_state') {
+            var user = userOf(out, data.userId);
+            if (!user.clientState[data.namespace]) user.clientState[data.namespace] = {};
+            user.clientState[data.namespace][data.key] = data.status === 'decrypted' ? data.value : { _rescueStatus: data.status, updatedAt: data.updatedAt };
+            if (data.status !== 'decrypted') out.errors.push({ id: item.id, namespace: data.namespace, key: data.key, status: data.status });
+          } else {
+            (data.rows || []).forEach(function(row){
+              var user = userOf(out, row.user_id || '(unknown)');
+              if (!user.tables[data.source]) user.tables[data.source] = [];
+              user.tables[data.source].push(row);
+            });
+          }
+        }, function(error){
+          out.errors.push({ id: item.id, source: item.source, message: String(error && error.message || error) });
+        }).then(function(){ done += 1; return next(); });
+      }
+      return next().then(function(){
+        var blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
+        var link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = 'sullyos-amsg-rescue-' + new Date().toISOString().slice(0, 10) + '.json';
+        link.textContent = '\u4E0B\u8F7D\u5BFC\u51FA\u6587\u4EF6\uFF08JSON\uFF09';
+        $('download').appendChild(link);
+        $('status').textContent = '\u5BFC\u51FA\u5B8C\u6210\uFF0C\u5171 ' + items.length + ' \u9879' + (out.errors.length ? '\uFF0C\u5176\u4E2D ' + out.errors.length + ' \u9879\u6CA1\u80FD\u5B8C\u6574\u8BFB\u51FA\uFF08\u8BE6\u89C1\u6587\u4EF6\u91CC\u7684 errors\uFF09' : '') + '\u3002\\n\u4E0B\u8F7D\u540E\u8BF7\u56DE Cloudflare \u9762\u677F\u5220\u6389 AMSG_RESCUE_TOKEN\u3002';
+        renderChars(out);
+        link.click();
+      });
+    }).catch(function(error){
+      $('status').textContent = '\u5BFC\u51FA\u5931\u8D25\uFF1A' + (error && error.message || error);
+    }).then(function(){ button.disabled = false; });
+  };
+})();
+`;
+
 // worker/amsg/src/index.ts
 installAnthropicFetch(false);
+var rescueDeps = (env) => ({
+  sendPush: (subscription, payload) => buildWorkerConfig(env).webpush.sendNotification(subscription, payload)
+});
 var getFireStash = (scratch) => scratch?.fire;
 var REPLY_IN_FLIGHT_DEFER_MS = 45e3;
 var AWAY_DUE_TOLERANCE_MS = 6e4;
@@ -21175,6 +21843,16 @@ var inspectWorkerEnv = (env) => {
       message: "\u6CA1\u8BBE AMSG_SERVER_TOKEN\uFF0C\u8FD9\u4E2A Worker \u5730\u5740\u5BF9\u516C\u7F51\u5F00\u653E\uFF0C\u77E5\u9053\u5730\u5740\u7684\u4EBA\u90FD\u80FD\u8BFB\u5199\u4F60\u7684\u4EFB\u52A1\u3002"
     });
   }
+  const rescueToken = env.AMSG_RESCUE_TOKEN?.trim();
+  if (rescueToken) {
+    warnings.push(isRescueActive(env) ? {
+      code: "RESCUE_ACTIVE",
+      message: "\u6551\u63F4\u6A21\u5F0F\u5F00\u7740\uFF08\u8BBE\u4E86 AMSG_RESCUE_TOKEN\uFF09\uFF1A\u51ED\u53E3\u4EE4\u53EF\u4EE5\u5BFC\u51FA\u5168\u90E8\u4E91\u7AEF\u6570\u636E\uFF0C\u5B9A\u65F6\u6D88\u606F\u6682\u505C\u6295\u9012\u3002\u6551\u5B8C\u6570\u636E\u8BF7\u7ACB\u523B\u5220\u6389\u8FD9\u4E2A\u53D8\u91CF\u3002"
+    } : {
+      code: "RESCUE_TOKEN_TOO_SHORT",
+      message: "AMSG_RESCUE_TOKEN \u592A\u77ED\uFF0C\u6551\u63F4\u9875\u4E0D\u4F1A\u5DE5\u4F5C\u3002\u8981\u6551\u6570\u636E\u5C31\u6362\u4E00\u4E32\u81F3\u5C11 16 \u4E2A\u5B57\u7B26\u7684\u968F\u673A\u53E3\u4EE4\uFF0C\u4E0D\u7528\u5C31\u5220\u6389\u5B83\u3002"
+    });
+  }
   return {
     ok: absent.length === 0,
     missing: absent.map((item) => item.key),
@@ -21364,6 +22042,9 @@ var src_default = {
   async fetch(request, env, ctx) {
     const pathname = new URL(request.url).pathname.replace(/\/+$/, "") || "/";
     const method = request.method.toUpperCase();
+    const rescueRoute = matchRescueRoute(pathname);
+    if (rescueRoute) return handleRescueRequest(request, env, rescueDeps(env), rescueRoute);
+    if (isRescueActive(env) && !pathname.endsWith("/config-check")) await observeRescueQuietly(env, rescueDeps(env));
     if (pathname.endsWith("/config-check")) {
       if (method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
       return jsonWithCors(200, {
@@ -21387,7 +22068,10 @@ var src_default = {
           selfUpdate: {
             supported: Boolean(env.CF_API_TOKEN?.trim()),
             state: await readSelfUpdateState(env.DB)
-          }
+          },
+          // 救援模式的开关和留痕（形状见 utils/amsgRescueState.ts）。前端据此强制弹窗警告 7 天。
+          // 这里只有时刻和次数，不含口令或任何数据；不设防是因为警告必须在共享密钥丢了时也看得到。
+          rescue: await buildRescueReport(env, rescueDeps(env))
         }
       });
     }
@@ -21620,12 +22304,17 @@ var src_default = {
       console.error(`[amsg] \u5B9A\u65F6\u4EFB\u52A1\u6574\u8F6E\u8DF3\u8FC7\uFF1A${report.message}`);
       return;
     }
+    await observeRescueQuietly(env, rescueDeps(env));
     await runScheduledAfterUpdate(
       () => runAutoUpdate(env, env.DB, {
         source: "cron",
         scriptName: env.CF_SCRIPT_NAME?.trim() || null
       }),
       async () => {
+        if (isRescueActive(env)) {
+          console.warn("[amsg:rescue] \u6551\u63F4\u6A21\u5F0F\u5F00\u7740\uFF0C\u8FD9\u4E00\u8DF3\u4E0D\u6295\u9012\u3001\u4E0D\u6E05\u7406");
+          return;
+        }
         await ensureSchemaOnce(env.DB, SCHEMA_VERSION, () => upstream.ensureSchema(env));
         const outcome = await upstream.scheduled(event, env);
         await recordTickOutcome(env.DB, outcome);

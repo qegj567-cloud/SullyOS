@@ -283,7 +283,7 @@ export const readRecentFailures = async (
 // ─── 整轮报错 ───
 
 /** worker 自己的诊断表：一行一个键，值是 JSON。跟上游的表分开，上游的 schema 自查不管它。 */
-const DIAGNOSTICS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS worker_diagnostics (
+export const DIAGNOSTICS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS worker_diagnostics (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL,
   updated_at INTEGER NOT NULL
