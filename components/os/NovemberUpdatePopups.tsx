@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useRef } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { ArrowRight, X } from '@phosphor-icons/react';
 import { useLocalBackHandler } from '../../hooks/useLocalBackHandler';
 import { AMSG_RECENT_UPDATE_KEY, HELP_STICKERS_UPDATE_KEY, SULLY_SUPPORT_NOTICE_KEY } from '../../utils/novemberNotices';
@@ -10,12 +10,15 @@ import './NovemberUpdatePopups.css';
 
 type NoticeActions = { onDone: () => void; onVisit: () => void };
 
-function NovemberNotice({ noticeKey, title, eyebrow, visitLabel, children, onDone, onVisit, support = false }: NoticeActions & {
+function NovemberNotice({ noticeKey, title, eyebrow, visitLabel, children, secondPage, onDone, onVisit, support = false }: NoticeActions & {
     noticeKey: string; title: string; eyebrow: string; visitLabel: string; children: React.ReactNode; support?: boolean;
+    secondPage?: { title: string; body: React.ReactNode; onRead: () => void };
 }) {
     const dialog = useRef<HTMLDialogElement>(null);
     const finished = useRef(false);
     const titleId = useId();
+    const [page, setPage] = useState(1);
+    const pageTitle = page === 2 && secondPage ? secondPage.title : title;
     useEffect(() => {
         const node = dialog.current;
         node?.showModal();
@@ -27,19 +30,33 @@ function NovemberNotice({ noticeKey, title, eyebrow, visitLabel, children, onDon
         try { localStorage.setItem(noticeKey, '1'); } catch { /* Storage failure must not trap the user. */ }
         action();
     };
-    useLocalBackHandler(() => { finish(onDone); return true; }, 100);
+    const back = () => {
+        if (page === 2) setPage(1);
+        else finish(onDone);
+        return true;
+    };
+    useLocalBackHandler(back, 100);
     return <dialog ref={dialog} className={`november-notice${support ? ' november-notice--support' : ''}`}
-        aria-labelledby={titleId} onCancel={event => { event.preventDefault(); finish(onDone); }}>
+        aria-labelledby={titleId} onCancel={event => { event.preventDefault(); back(); }}>
         <div className="november-notice-layout">
             <header className="november-notice-heading">
-                <p className="november-notice-eyebrow">{eyebrow}</p>
-                <h2 id={titleId}>{title}</h2>
-                <button type="button" className="november-notice-close" aria-label={`关闭${title}`} onClick={() => finish(onDone)}><X size={20} /></button>
+                <p className="november-notice-eyebrow">{eyebrow}{secondPage && ` · ${page} / 2`}</p>
+                <h2 id={titleId} aria-live={secondPage ? 'polite' : undefined}>{pageTitle}</h2>
+                <button type="button" className="november-notice-close" aria-label={`关闭${pageTitle}`} onClick={() => finish(onDone)}><X size={20} /></button>
             </header>
-            <div className="november-notice-body" tabIndex={0} aria-label={`${title}说明`}>{children}</div>
+            <div key={page} className="november-notice-body" tabIndex={0} aria-label={`${pageTitle}说明`}>{page === 2 ? secondPage?.body : children}</div>
             <footer className="november-notice-actions">
-                <button type="button" onClick={() => finish(onDone)}>知道了</button>
-                <button type="button" className="november-notice-primary" onClick={() => finish(onVisit)}>{visitLabel}<ArrowRight size={16} aria-hidden="true" /></button>
+                {secondPage ? <>
+                    {page === 1
+                        ? <button type="button" onClick={() => finish(onVisit)}>{visitLabel}</button>
+                        : <button type="button" onClick={() => setPage(1)}>上一页</button>}
+                    {page === 1
+                        ? <button type="button" className="november-notice-primary" onClick={() => setPage(2)}>下一页<ArrowRight size={16} aria-hidden="true" /></button>
+                        : <button type="button" className="november-notice-primary" onClick={() => finish(secondPage.onRead)}>知道了</button>}
+                </> : <>
+                    <button type="button" onClick={() => finish(onDone)}>知道了</button>
+                    <button type="button" className="november-notice-primary" onClick={() => finish(onVisit)}>{visitLabel}<ArrowRight size={16} aria-hidden="true" /></button>
+                </>}
             </footer>
         </div>
     </dialog>;
@@ -55,6 +72,10 @@ export function HelpStickersUpdatePopup({ onDone, onVisit }: NoticeActions) {
     }, []);
     return <NovemberNotice noticeKey={HELP_STICKERS_UPDATE_KEY} eyebrow="11 月 19 日 · 小更新"
         title="Sully-11 答疑与表情包更新" visitLabel="问 Sully-11"
+        secondPage={{ title: '新内置白框「银晕」', body: <section>
+            <p>「银晕」给聊天换上深浅两色的切角气泡，每条消息的时间都显示在圆形头像下方。</p>
+            <p>在私聊点「＋」→「聊天装扮」→「白框」，找到「内置白框」里的<strong>银晕</strong>。点「立即应用」，再确认要使用的角色。</p>
+        </section>, onRead: () => { trackEvent('查看更新说明', version); onDone(); } }}
         onDone={() => { trackEvent('跳过本次更新说明', version); onDone(); }}
         onVisit={() => { trackEvent('点立刻体验', version); onVisit(); }}>
         <section>

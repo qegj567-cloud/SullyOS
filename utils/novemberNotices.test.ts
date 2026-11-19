@@ -57,9 +57,21 @@ it('shows both features once, opens the help desk, and respects existing support
 });
 
 it('advances from the recap to support once and preserves two independent global acknowledgements', async () => {
+    const track = vi.spyOn(analytics, 'trackEvent').mockImplementation(() => {});
     const firstClose = await renderQueue();
+    act(() => button('下一页').click());
+    expect(host.querySelector('h2')?.textContent).toBe('新内置白框「银晕」');
+    expect(host.textContent).toContain('「聊天装扮」→「白框」');
+    expect(localStorage.getItem(HELP_STICKERS_UPDATE_KEY)).toBeNull();
+    act(() => button('上一页').click());
+    expect(host.textContent).toContain('问 Sully-11');
+    act(() => button('下一页').click());
     act(() => button('知道了').click());
     expect(firstClose).toHaveBeenCalledOnce();
+    expect(track.mock.calls).toEqual([
+        ['弹出版本更新提醒', { 版本: 'changelog-2026-11-19-help-stickers' }],
+        ['查看更新说明', { 版本: 'changelog-2026-11-19-help-stickers' }],
+    ]);
     await act(async () => root.render(null));
     const close = await renderQueue();
     expect(host.querySelector('h2')?.textContent).toBe('最近的主动消息更新');
