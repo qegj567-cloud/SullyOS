@@ -35,11 +35,16 @@ export async function readHelpDeskSettings(os: SettingsSource, char?: CharacterP
     return {
         主对话: { ...endpointFields(apiConfig), 接口: llmApiType(apiConfig), 流式: !!apiConfig.stream, 输出上限: dialogueMaxTokens(apiConfig) },
         私聊与群聊输入: { 自动回复: input.autoReply, 发送键代替生成: input.sendButtonGenerates, 回车发送: input.enterToSend, 表情联想: input.emojiSuggestions },
-        全局记忆服务: { 副API: endpointFields(memoryPalaceConfig.lightLLM), Embedding: endpointFields(memoryPalaceConfig.embedding), 重排开关: !!memoryPalaceConfig.rerank?.enabled },
+        全局记忆服务: {
+            副API: endpointFields(memoryPalaceConfig.lightLLM), Embedding: endpointFields(memoryPalaceConfig.embedding),
+            重排开关: !!memoryPalaceConfig.rerank?.enabled,
+            重排额外名额: memoryPalaceConfig.rerank?.enabled ? Math.max(1, Math.min(20, memoryPalaceConfig.rerank.topN ?? 5)) : undefined,
+            手动分步维护: memoryPalaceConfig.manualMaintenance === true,
+        },
         实时感知: { 天气开关: !!realtimeConfig.weatherEnabled, 热点开关: !!realtimeConfig.newsEnabled },
         外观: { 深色模式: !!os.theme.darkMode },
         主动消息全局: globalPush ? { 总开关: isAmsg2GloballyEnabled(globalPush), Worker地址已填: !!globalPush.workerUrl?.trim() } : '未能读取',
-        所选排查角色: char ? {
+        指定角色设置: char ? {
             对话来源: char.dialogueApi ? '角色独立 API' : '跟随全局',
             对话配置: { ...endpointFields(chatApi), 接口: llmApiType(chatApi), 流式: !!chatApi.stream, 输出上限: dialogueMaxTokens(chatApi) },
             记忆宫殿: !!char.memoryPalaceEnabled, 全自动记忆开关: !!char.autoArchiveEnabled,
@@ -48,7 +53,7 @@ export async function readHelpDeskSettings(os: SettingsSource, char?: CharacterP
             允许按月查阅: char.monthlyRecallEnabled !== false, 挂载世界书数: char.mountedWorldbooks?.length ?? 0,
             心象显示: !!char.showThinkingChain, 双语: translated ?? '未能读取', HTML卡片: !!char.htmlModeEnabled,
             时间感知: char.timeAwarenessEnabled !== false, 主动消息角色开关: char.activeMsg2Config?.enabled === true,
-        } : '仅全局；要查角色开关，可在答疑输入框上方选择排查角色',
+        } : '本轮只提供所有角色共用的设置。需要查看某个角色的设置时，点「询问配置」里的「指定角色」，再选择角色。',
     };
 }
 

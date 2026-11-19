@@ -327,6 +327,45 @@ function installAnthropicFetch(browser = false) {
   globalThis.fetch = wrapped;
 }
 
+// utils/monthlyRecall.ts
+var isMonthlyRecallEnabled = (char) => char.monthlyRecallEnabled !== false;
+var stripDisabledMonthlyRecall = (text2, char) => isMonthlyRecallEnabled(char) ? text2 : text2.replace(/\[\[RECALL:[^\]]*\]\]/gi, "").trim();
+
+// utils/amsgApiCallRecords.ts
+var INSTANT_API_CALLS_RESULT_KIND = "instant-api-calls";
+var count = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : void 0;
+function modelCallCauses(names) {
+  return [...new Set(names.map((name) => {
+    if (name === "recall") return "recall";
+    if (["schedule_active_message", "cancel_active_message", "renew_active_message", "list_active_messages"].includes(name)) return "schedule";
+    if (name === "web_search") return "search";
+    if (["notion_read_diary", "feishu_read_diary"].includes(name)) return "diary";
+    if (name === "read_note") return "notes";
+    if (name.startsWith("xhs_")) return "xhs";
+    if (name.startsWith("mcp__")) return "mcp";
+    return "tools";
+  }))];
+}
+function makeModelCall(input) {
+  const response = input.response;
+  const usage = input.usage ?? response?.usage ?? response?.usageMetadata;
+  const promptTokens = count(usage?.prompt_tokens ?? usage?.input_tokens ?? usage?.promptTokenCount);
+  const completionTokens = count(usage?.completion_tokens ?? usage?.output_tokens ?? usage?.candidatesTokenCount);
+  return {
+    index: input.index,
+    completedAt: input.completedAt,
+    causes: input.causes,
+    ok: input.ok,
+    ...input.status !== void 0 ? { status: input.status } : {},
+    promptTokens,
+    completionTokens,
+    totalTokens: count(usage?.total_tokens ?? usage?.totalTokenCount) ?? (promptTokens !== void 0 && completionTokens !== void 0 ? promptTokens + completionTokens : void 0),
+    cacheReadTokens: count(usage?.prompt_tokens_details?.cached_tokens ?? usage?.cache_read_input_tokens ?? usage?.cachedContentTokenCount),
+    cacheWriteTokens: count(usage?.cache_creation_input_tokens ?? usage?.prompt_tokens_details?.cache_write_tokens),
+    ...typeof response?.model === "string" && response.model ? { backendModel: response.model.slice(0, 200) } : {}
+  };
+}
+
 // utils/amsgReproduction.ts
 var DIAGNOSTIC_NAMESPACE = "amsg:diagnostic";
 var DIAGNOSTIC_CHAR_ID = "amsg-diagnostic";
@@ -357,7 +396,7 @@ function weatherForCharacter(config, charId) {
 }
 
 // utils/weatherSources.ts
-var normalizeFreeWeatherSource = (value) => value === "wttr" ? "wttr" : "open-meteo";
+var normalizeFreeWeatherSource = (value) => value === "open-meteo" ? "open-meteo" : "wttr";
 var WEATHER_SOURCE_LABELS = {
   "open-meteo": "\u514D\u8D39\u6E90 1 \xB7 Open-Meteo",
   wttr: "\u514D\u8D39\u6E90 2 \xB7 wttr.in",
@@ -676,8 +715,8 @@ var resolveCount = (value, fallback, ceiling) => {
 var resolveMaxUnansweredSends = (value) => resolveCount(value, DEFAULT_MAX_UNANSWERED_SENDS, 99);
 var resolveAmsgLimits = (settings) => {
   const s = settings ?? {};
-  const gap = s.minSendGapMinutes;
-  const gapMinutes = typeof gap === "number" && Number.isFinite(gap) && gap >= 0 ? Math.min(24 * 60, Math.floor(gap)) : DEFAULT_MIN_SEND_GAP_MINUTES;
+  const gap2 = s.minSendGapMinutes;
+  const gapMinutes = typeof gap2 === "number" && Number.isFinite(gap2) && gap2 >= 0 ? Math.min(24 * 60, Math.floor(gap2)) : DEFAULT_MIN_SEND_GAP_MINUTES;
   const tasks = s.maxActiveTasks;
   return {
     maxUnansweredSends: resolveMaxUnansweredSends(s.maxUnansweredSends),
@@ -1561,7 +1600,7 @@ function pickStaleStoppedReplyKeys(rows, nowMs = Date.now(), protectKey) {
 // worker/amsg/src/index.ts
 import { DurableObject } from "cloudflare:workers";
 
-// ../../node_modules/.pnpm/@rei-standard+amsg-server@3_f2a08373d30841ce79e2e19c7fb88ed9/node_modules/@rei-standard/amsg-server/dist/chunk-R2CRPRKR.mjs
+// node_modules/.pnpm/@rei-standard+amsg-server@3_f2a08373d30841ce79e2e19c7fb88ed9/node_modules/@rei-standard/amsg-server/dist/chunk-R2CRPRKR.mjs
 var CLEANUP_BATCH_LIMIT = 100;
 var UPDATABLE_COLUMNS = /* @__PURE__ */ new Set([
   "user_id",
@@ -1581,7 +1620,7 @@ var UPDATABLE_COLUMNS = /* @__PURE__ */ new Set([
 var TASK_DELIVERY_COLUMNS = "id, user_id, uuid, encrypted_payload, message_type, next_send_at, retry_after, status, retry_count";
 var TASK_DETAIL_COLUMNS = "id, user_id, uuid, encrypted_payload, message_type, next_send_at, status, retry_count, last_error, created_at, updated_at";
 
-// ../../node_modules/.pnpm/@rei-standard+amsg-shared@0.5.0-next.0/node_modules/@rei-standard/amsg-shared/dist/index.mjs
+// node_modules/.pnpm/@rei-standard+amsg-shared@0.5.0-next.0/node_modules/@rei-standard/amsg-shared/dist/index.mjs
 var TEXT_ENCODER = new TextEncoder();
 var TEXT_DECODER = new TextDecoder("utf-8", { fatal: false });
 function toUint8(buf) {
@@ -2819,7 +2858,7 @@ function stringifyDecisionForError(value) {
   }
 }
 
-// ../../node_modules/.pnpm/@rei-standard+amsg-server@3_f2a08373d30841ce79e2e19c7fb88ed9/node_modules/@rei-standard/amsg-server/dist/chunk-WFKLHUUE.mjs
+// node_modules/.pnpm/@rei-standard+amsg-server@3_f2a08373d30841ce79e2e19c7fb88ed9/node_modules/@rei-standard/amsg-server/dist/chunk-WFKLHUUE.mjs
 var DAY_MS = 24 * 60 * 60 * 1e3;
 var MAX_LISTED_SKIPPED_OCCURRENCES = 32;
 var MAX_ADJUST_STEPS = 32;
@@ -3950,17 +3989,17 @@ async function resolveClientStateEntries(rows, fetchChunkRows, decryptValue, onU
   };
   const entries = [];
   for (const row of rows) {
-    const count = parseChunkedRootCount(row.value);
+    const count2 = parseChunkedRootCount(row.value);
     let valueSources = [row.value];
-    if (count !== null) {
+    if (count2 !== null) {
       const map = await loadChunks();
       const chunkRows = [];
-      for (let i = 0; i < count; i++) {
+      for (let i = 0; i < count2; i++) {
         const chunk = map.get(chunkKeyFor(row.key, i));
         if (!chunk || chunk.updated_at !== row.updated_at) break;
         chunkRows.push(chunk);
       }
-      if (chunkRows.length !== count) continue;
+      if (chunkRows.length !== count2) continue;
       valueSources = chunkRows.map((chunk) => chunk.value);
     }
     let value;
@@ -10527,8 +10566,8 @@ async function buildCloudDataInventory({
     let value, unreadable = metadataInfo.unreadable;
     try {
       const rootMarker = row.value ?? row.value_prefix ?? "";
-      const count = parseChunkedRootCount(rootMarker);
-      if (count === null) {
+      const count2 = parseChunkedRootCount(rootMarker);
+      if (count2 === null) {
         if (typeof row.value === "string" && (!skipFullDecrypt || row.value.length <= 1024)) {
           value = await decryptFromStorage(row.value, userKey);
         } else if (skipFullDecrypt) {
@@ -10549,12 +10588,12 @@ async function buildCloudDataInventory({
           value = await decryptFromStorage(rawValue, userKey);
         }
       } else {
-        if (count > slices.length) throw new Error("Missing state chunks");
+        if (count2 > slices.length) throw new Error("Missing state chunks");
         const sliceByKey = new Map(
           slices.map((candidate) => [candidate.key, candidate])
         );
         const orderedSlices = [];
-        for (let i = 0; i < count; i++) {
+        for (let i = 0; i < count2; i++) {
           const slice = sliceByKey.get(chunkKeyFor(row.key, i));
           if (!slice || slice.updated_at !== row.updated_at)
             throw new Error("Mismatched state chunks");
@@ -10992,9 +11031,9 @@ async function advanceCleanup(ctx, db, userId, key, operation, { maxEntries = 25
       }
       operation.knownResourceIds = [...known];
       operation.cursor = 0;
-      for (const count of operation.counts)
-        count.remaining = operation.entries.filter(
-          (entry) => entry.resource.type === count.type
+      for (const count2 of operation.counts)
+        count2.remaining = operation.entries.filter(
+          (entry) => entry.resource.type === count2.type
         ).length;
       await save(db, userId, key, "operation", operation, { leaseToken });
     }
@@ -11026,11 +11065,11 @@ async function advanceCleanup(ctx, db, userId, key, operation, { maxEntries = 25
           "\u8D44\u6E90\u5728\u6267\u884C\u524D\u53D8\u5316\uFF0C\u5DF2\u505C\u6B62\u6E05\u7406",
           409
         );
-      const count = operation.counts.find(
+      const count2 = operation.counts.find(
         (c) => c.type === entry.resource.type
       );
-      count.deleted++;
-      count.remaining = Math.max(0, count.remaining - 1);
+      count2.deleted++;
+      count2.remaining = Math.max(0, count2.remaining - 1);
       delete entry.locator;
       operation.cursor++;
       operation.updatedAt = Date.now();
@@ -11048,9 +11087,9 @@ async function advanceCleanup(ctx, db, userId, key, operation, { maxEntries = 25
     const remaining = current.entries.filter(
       (e) => operation.mode === "retire-owner" ? ownerEquals(e.resource.owner, operation.owner) || knownIds.has(e.resource.id) : selected.has(e.resource.id)
     );
-    for (const count of operation.counts)
-      count.remaining = remaining.filter(
-        (e) => e.resource.type === count.type
+    for (const count2 of operation.counts)
+      count2.remaining = remaining.filter(
+        (e) => e.resource.type === count2.type
       ).length;
     if (operation.mode === "purge") {
       const processed = new Set(
@@ -11090,7 +11129,7 @@ async function advanceCleanup(ctx, db, userId, key, operation, { maxEntries = 25
     ];
     operation.nextAttemptAt = Date.now() + Math.min(36e5, 3e4 * 2 ** operation.attempts);
     if (terminal)
-      for (const count of operation.counts) count.failed = count.remaining;
+      for (const count2 of operation.counts) count2.failed = count2.remaining;
   } finally {
     if (!leaseLost) {
       operation.updatedAt = Date.now();
@@ -12007,19 +12046,19 @@ function readAssistantMessage(message) {
   return { content: parts.content, reasoning: [...new Set(reasoning)].join("\n\n") };
 }
 function splitInlineThinking(text2) {
-  const open = /<(think|thinking|thought)(?:\s[^>]*)?>/gi;
+  const open2 = /<(think|thinking|thought)(?:\s[^>]*)?>/gi;
   let content = "", cursor = 0;
   const blocks = [];
   let match;
-  while (match = open.exec(text2)) {
+  while (match = open2.exec(text2)) {
     content += text2.slice(cursor, match.index);
-    const close = new RegExp(`<\\/\\s*${match[1]}\\s*>`, "gi");
-    close.lastIndex = open.lastIndex;
-    const end = close.exec(text2);
-    const block = text2.slice(open.lastIndex, end ? end.index : text2.length).trim();
+    const close2 = new RegExp(`<\\/\\s*${match[1]}\\s*>`, "gi");
+    close2.lastIndex = open2.lastIndex;
+    const end = close2.exec(text2);
+    const block = text2.slice(open2.lastIndex, end ? end.index : text2.length).trim();
     if (block) blocks.push(block);
-    cursor = end ? close.lastIndex : text2.length;
-    open.lastIndex = cursor;
+    cursor = end ? close2.lastIndex : text2.length;
+    open2.lastIndex = cursor;
     if (!end) break;
   }
   return { content: content + text2.slice(cursor), reasoning: blocks.join("\n\n") };
@@ -12047,6 +12086,25 @@ function deduplicateVoiceText(text2) {
   }).join("\n").replace(/\u0002VOICE(\d+)\u0002/g, (_, i) => blocks[Number(i)]).trim();
 }
 
+// utils/sullyHelpCommand.ts
+var SULLY_HELP_PREVIEW = "[\u7CEF\u7C73\u673A\u7B54\u7591 \xB7 Sully-11]";
+var open = /[\[［【]/.source;
+var close = /[\]］】]/.source;
+var find = /[fｆ]\s*[iｉ]\s*[nｎ]\s*[dｄ]/.source;
+var find11 = find + /\s*[:：_-]?\s*[1１]\s*[1１]/.source;
+var opening = `${open}(?:\\s*${open}){0,2}`;
+var closing = `${close}(?:\\s*${close}){0,2}`;
+var gap = /[^\S\r\n]*/.source;
+var bareFind11 = /[fｆ][iｉ][nｎ][dｄ][^\S\r\n]*[1１][1１]/.source;
+var SULLY_HELP_COMMAND = new RegExp([
+  // 有开括号时，接受单层、双层、混用括号；行末截断也能恢复。
+  `${opening}\\s*${find11}(?:\\s*${closing}|${gap}$)`,
+  // 两侧括号都漏掉时，只认独占一行的指令，不从一句话中猜动作。
+  `^${gap}${bareFind11}(?:${gap}${closing})?${gap}$`,
+  // 旧版 find 没有工号，只兼容明确的双括号形式。
+  `${open}\\s*${open}\\s*${find}\\s*${close}\\s*${close}`
+].join("|"), "gim");
+
 // utils/friendFeedReplyFormat.ts
 var FRIEND_FEED_MAIN_PROMPT_PREFIX = "\u3010\u987A\u4FBF\u56DE\u597D\u53CB\u5708\u3011";
 function extractFriendFeedReplyTags(raw, namespace = "FRIEND_FEED_REPLY") {
@@ -12071,13 +12129,13 @@ function extractFriendFeedReplyTags(raw, namespace = "FRIEND_FEED_REPLY") {
         break;
       }
     }
-    const close = end >= 0 ? /^\s*\]\]/.exec(raw.slice(end)) : null;
-    if (close) {
+    const close2 = end >= 0 ? /^\s*\]\]/.exec(raw.slice(end)) : null;
+    if (close2) {
       try {
         actions.push(JSON.parse(raw.slice(start, end)));
       } catch {
       }
-      cursor = end + close[0].length;
+      cursor = end + close2[0].length;
     } else {
       const fallback = raw[start] === "{" && end < 0 ? -1 : raw.indexOf("]]", end >= 0 ? end : start);
       cursor = fallback < 0 ? raw.length : fallback + 2;
@@ -12087,7 +12145,7 @@ function extractFriendFeedReplyTags(raw, namespace = "FRIEND_FEED_REPLY") {
   return { text: text2 + raw.slice(cursor), actions };
 }
 
-// ../../node_modules/.pnpm/@rei-standard+amsg-instant@0.12.0-next.0/node_modules/@rei-standard/amsg-instant/dist/index.mjs
+// node_modules/.pnpm/@rei-standard+amsg-instant@0.12.0-next.0/node_modules/@rei-standard/amsg-instant/dist/index.mjs
 var MAX_REQUEST_BODY_BYTES = 32 * 1024 * 1024;
 var WEB_PUSH_MAX_BODY_BYTES2 = 4096;
 var WEB_PUSH_ENCRYPTION_OVERHEAD_BYTES2 = 16 + 4 + 1 + 65 + 1 + 16;
@@ -12259,14 +12317,14 @@ function normalizeVoiceTags(t) {
   });
   result = repairPairedTag(result, /<\/?[语語]音[^>]*>/g, (tok) => /語/.test(tok) ? "\u8A9E\u97F3" : "\u8BED\u97F3", true);
   result = repairPairedTag(result, /<\/?字幕[^>]*>/g, () => "\u5B57\u5E55", false);
-  result = result.replace(/(<[语語]音[^>]*>)([\s\S]*?)(<\/[语語]音>)/g, (block, open, inner, close) => {
+  result = result.replace(/(<[语語]音[^>]*>)([\s\S]*?)(<\/[语語]音>)/g, (block, open2, inner, close2) => {
     const subtitles = [];
     const speech = inner.replace(/<字幕>([\s\S]*?)<\/字幕>/g, (_m, sub) => {
       if (sub.trim()) subtitles.push(sub.trim());
       return "";
     });
     if (subtitles.length === 0) return block;
-    return `${open}${speech.trim()}${close}
+    return `${open2}${speech.trim()}${close2}
 <\u5B57\u5E55>${subtitles.join("\n")}</\u5B57\u5E55>`;
   });
   return result;
@@ -12320,6 +12378,7 @@ function sanitizeForNotification(text2) {
   result = replaceHtmlBlocks(result);
   result = replaceEmojiReverseTag(result);
   result = replaceSendEmoji(result);
+  result = result.replace(SULLY_HELP_COMMAND, SULLY_HELP_PREVIEW);
   result = normalizeTranslationTags(result);
   result = extractTranslationOriginal(result);
   result = stripTimestamps(result);
@@ -12349,6 +12408,7 @@ function sanitizeIntoSegments(text2) {
   const atomSegments = segmentTextWithProtectedBlocks(cleaned, {
     splitText: (plainText2) => [plainText2],
     protectedPatterns: [
+      { pattern: SULLY_HELP_COMMAND, preview: SULLY_HELP_PREVIEW, meta: "sully-help" },
       {
         pattern: /\[html\][\s\S]*?\[\/html\]/i,
         preview: "[HTML \u5361\u7247]"
@@ -12366,8 +12426,13 @@ function sanitizeIntoSegments(text2) {
       }
     ]
   });
+  let hasSullyHelpCard = false;
   cleaned = atomSegments.map((seg) => {
     if (!seg.protect) return seg.raw;
+    if (seg.meta === "sully-help") {
+      if (hasSullyHelpCard) return "";
+      hasSullyHelpCard = true;
+    }
     const idx = atomBlocks.length;
     atomBlocks.push({
       raw: seg.raw,
@@ -13929,9 +13994,9 @@ var maskSarSurfaceBlocks = (text2) => {
 var ENVELOPE_TAG_RE = /<\/?(?:SAR_MODULE_OUTPUT|CHAR_TRUE|CHAR_SURFACE|USER_SURFACE)>/gi;
 var stripEnvelopeTags = (text2) => text2.replace(ENVELOPE_TAG_RE, "").trim();
 var closeOpenTag = (text2, name, stoppers) => {
-  const open = new RegExp(`<${name}>`, "i").exec(text2);
-  if (!open || new RegExp(`</${name}>`, "i").test(text2)) return text2;
-  const after = open.index + open[0].length;
+  const open2 = new RegExp(`<${name}>`, "i").exec(text2);
+  if (!open2 || new RegExp(`</${name}>`, "i").test(text2)) return text2;
+  const after = open2.index + open2[0].length;
   const stop = new RegExp(stoppers.join("|"), "i").exec(text2.slice(after));
   const at = stop ? after + stop.index : text2.length;
   return `${text2.slice(0, at)}</${name}>${text2.slice(at)}`;
@@ -14645,7 +14710,7 @@ var fetchWeatherJson = async (url, stage, timeoutMs = WEATHER_REQUEST_TIMEOUT_MS
   const request = async () => {
     let response;
     try {
-      response = await fetch(url, { signal: controller.signal });
+      response = await fetch(url, { signal: controller.signal, __sullyHandlesFailure: true });
     } catch {
       throw new Error(`${stage}\u8FDE\u63A5\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u7F51\u7EDC\u6216\u7A0D\u540E\u91CD\u8BD5`);
     }
@@ -15031,7 +15096,8 @@ var fetchHotNews = async (platforms, perPlatform = 12, total = 240) => {
     const label = HOTNEWS_PLATFORM_LABELS[p] || p;
     try {
       const res = await fetch(`${HOTNEWS_API_BASE_URL}/?platform=${encodeURIComponent(p)}`, {
-        headers: { "Accept": "application/json" }
+        headers: { "Accept": "application/json" },
+        __sullyHandlesFailure: true
       });
       if (!res.ok) {
         console.warn(`[hot_news] ${label}(${p}) HTTP ${res.status}`);
@@ -15545,7 +15611,7 @@ var loadWeather = async (cfg, nowMs, globalRows, pendingWrites) => {
     AMSG_WEATHER_SNAPSHOT_KEY,
     (v) => v && typeof v.city === "string" && v.data && typeof v.fetchedAt === "number"
   );
-  const matches = snap && snap.city === city && normalizeFreeWeatherSource(snap.freeSource) === freeSource;
+  const matches = snap && snap.city === city && (snap.freeSource ?? "open-meteo") === freeSource;
   if (matches && nowMs - snap.fetchedAt < WEATHER_TTL_MS) {
     console.log("[amsg:world] \u5929\u6C14\u547D\u4E2D\u5FEB\u7167", { city, ageMin: Math.round((nowMs - snap.fetchedAt) / 6e4) });
     return snap.data;
@@ -18046,6 +18112,7 @@ function resolveXhsConfig(char, realtimeConfig) {
 async function runRecall(args, ctx) {
   const { char } = ctx;
   const targetMonth = `${args.year}-${args.month.padStart(2, "0")}`;
+  if (char.monthlyRecallEnabled === false) return { ok: false, reason: "disabled", yearMonth: targetMonth };
   const alreadyActive = !!char.activeMemoryMonths?.includes(targetMonth);
   if (alreadyActive) {
     return { ok: true, alreadyActive: true, yearMonth: targetMonth, logsText: null };
@@ -19131,6 +19198,7 @@ var buildToolCtx = (pack, config) => {
     name: pack.charName,
     xhsEnabled: pack.xhsEnabled,
     activeMemoryMonths: pack.activeMemoryMonths,
+    monthlyRecallEnabled: pack.monthlyRecallEnabled,
     memories: pack.memories
   };
   return {
@@ -19374,6 +19442,35 @@ var amsgFireSettled = async (info) => {
   if (cancelled) stash.selfLogTexts = null;
   const committed = !cancelled && (info.outboxed === true || stash.actionResultCommitted === true);
   const delivered = committed || (info.sentCount ?? 0) > 0;
+  if (stash.instant && stash.taskUuid && !committed && !stash.modelCallsReceiptSent) {
+    const calls = stash.modelCalls ?? (stash.modelCalls = []);
+    const attempted = typeof info.llmCalls === "number" && Number.isInteger(info.llmCalls) ? Math.min(info.llmCalls, 32) : calls.length;
+    while (calls.length < attempted) {
+      const status = info.error?.llmStatus;
+      calls.push(makeModelCall({
+        index: calls.length + 1,
+        completedAt: Date.now(),
+        causes: stash.nextCallCauses ?? [],
+        ok: false,
+        ...typeof status === "number" ? { status } : {}
+      }));
+    }
+    if (calls.length && info.emitResult) {
+      try {
+        await info.emitResult({
+          resultKind: INSTANT_API_CALLS_RESULT_KIND,
+          charId: stash.charId,
+          charName: stash.toolCtx.char.name,
+          taskUuid: stash.taskUuid,
+          calls,
+          notification: { show: false }
+        });
+        stash.modelCallsReceiptSent = true;
+      } catch (error) {
+        console.warn("[amsg:usage] \u9010\u6B21\u8C03\u7528\u8BB0\u5F55\u5199\u5165\u7ED3\u679C\u7BB1\u5931\u8D25", error);
+      }
+    }
+  }
   const stateWrites = [];
   if (!stash.instant && !stash.dailyCounted) {
     stash.dailyCounted = true;
@@ -19547,7 +19644,7 @@ var condenseToolTrace = (calls) => {
     if (call.ran === false) continue;
     counts.set(call.name, (counts.get(call.name) ?? 0) + 1);
   }
-  return [...counts].map(([name, count]) => ({ name, count }));
+  return [...counts].map(([name, count2]) => ({ name, count: count2 }));
 };
 var EMOTION_EVAL_LATE_REASON = "\u60C5\u7EEA\u8BC4\u4F30\u6CA1\u8D76\u4E0A\u8FD9\u6761\u56DE\u590D\uFF08\u526F API \u592A\u6162\uFF09\uFF0C\u8FD9\u4E00\u8F6E\u5148\u4E0D\u66F4\u65B0";
 var raceEmotionEval = (promise, lateNote = "\u8BC4\u4F30\u6CA1\u8D76\u4E0A\u8FD9\u6761\u56DE\u590D\uFF0C\u5148\u628A\u8BDD\u53D1\u51FA\u53BB\uFF08\u8FD9\u4E00\u8F6E\u4E0D\u66F4\u65B0\u60C5\u7EEA\uFF09") => {
@@ -20271,7 +20368,7 @@ ${buildReplyScopeRule(instant ? "user" : "scheduled")}
 ` : "";
     stash.fireToolNames = new Set(fireTools.map((t) => t?.function?.name).filter((n) => typeof n === "string" && !n.startsWith(MCP_FIRE_NAME_PREFIX)));
     stash.allowedToolNames = /* @__PURE__ */ new Set([
-      ...DATA_TOOL_NAMES,
+      ...DATA_TOOL_NAMES.filter((name) => name !== "recall" || isMonthlyRecallEnabled(stash.toolCtx.char)),
       ...mcpResolve ? [...mcpResolve.keys()].map((name) => `${MCP_FIRE_NAME_PREFIX}${name}`) : [],
       ...canSelfSchedule ? [AMSG_FIRE_SCHEDULE_TOOL] : [],
       ...canManageTasks ? [AMSG_FIRE_CANCEL_TOOL, AMSG_FIRE_RENEW_TOOL] : []
@@ -20387,6 +20484,17 @@ ${userHoliday}` });
     const session = stash.session;
     stash.llmRounds = (stash.llmRounds ?? 0) + 1;
     const roundRawUsage = ctx.usage ?? ctx.llmResponse?.usage;
+    if (stash.instant) {
+      const calls = stash.modelCalls ?? (stash.modelCalls = []);
+      calls.push(makeModelCall({
+        index: calls.length + 1,
+        completedAt: Date.now(),
+        causes: stash.nextCallCauses ?? [],
+        ok: true,
+        usage: roundRawUsage,
+        response: ctx.llmResponse
+      }));
+    }
     if (roundRawUsage && typeof roundRawUsage === "object") {
       const pt = typeof roundRawUsage.prompt_tokens === "number" && Number.isFinite(roundRawUsage.prompt_tokens) ? roundRawUsage.prompt_tokens : void 0;
       const ct = typeof roundRawUsage.completion_tokens === "number" && Number.isFinite(roundRawUsage.completion_tokens) ? roundRawUsage.completion_tokens : void 0;
@@ -20409,7 +20517,7 @@ ${userHoliday}` });
     }
     let decision = processLLMRound(
       session,
-      content,
+      stripDisabledMonthlyRecall(content, stash.toolCtx.char),
       {
         // 名字取 tool_pack 里的那份：它跟着每轮聊天重新上云，改名当天就是新的。
         // ctx.contactName 是排程那一刻冻进任务行的快照，用户改完名字之后，之前排的
@@ -20445,6 +20553,7 @@ ${userHoliday}` });
       stash.maxToolIterations
     );
     if (decision.decision === "tool-request") {
+      stash.nextCallCauses = modelCallCauses(decision.toolCalls.map((tc) => tc.function.name));
       console.log("[amsg:agentic]", {
         type: "tool_request",
         sessionId: ctx.sessionId,
@@ -20500,6 +20609,7 @@ ${userHoliday}` });
         ...stripSarSnapshot(stripEmotionEvalSpec(ctx.metadata)),
         ...decision.sideEffects,
         amsgOccurrenceMs: stash.occurrenceMs,
+        ...stash.instant && stash.modelCalls?.length ? { amsgModelCalls: stash.modelCalls } : {},
         ...stash.scheduledTasks.length ? { amsgSelfScheduled: stash.scheduledTasks } : {},
         ...stash.cancelledTasks.length || stash.renewedTasks.length ? {
           amsgTaskMutations: { cancelled: stash.cancelledTasks, renewed: stash.renewedTasks }
@@ -20627,6 +20737,7 @@ ${userHoliday}` });
       }
       if (stash.instant && payloads.length > 0) {
         const lastMeta = {};
+        if (stash.modelCalls?.length) lastMeta.amsgModelCalls = stash.modelCalls;
         const toolTrace = condenseToolTrace(session.toolCalls);
         if (toolTrace.length > 0) lastMeta.amsgToolTrace = toolTrace;
         const stashUsage = readStashUsage(stash);

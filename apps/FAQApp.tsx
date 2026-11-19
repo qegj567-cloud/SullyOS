@@ -106,7 +106,7 @@ const FAQ_DATA = [
     {
         q: "10. 导入的表情包不显示 / 导入没反应？",
         reason: "通常是格式不对，或者链接无效。",
-        solution: "1. **严格检查格式**：必须是 `名字--URL`，中间是**两个减号**！\n   错误：`滑稽 http://...`\n   正确：`滑稽--http://...`\n2. **检查链接**：必须是图片直链（.jpg/.png/.gif 结尾）。\n3. **一行一个**：不要把所有内容写在一行里。",
+        solution: "在私聊点笑脸，选分类 → 图片格的「＋」，每行填一个 `名字--图片直链`，点「添加至当前分类」。直链打开应直接显示图片，也可以没有文件后缀。\n已经导入却出现破图时，点分类栏最右的铅笔 →「刷新排查」。可以查看失效名单，确认后清除。显示「待重试」的表情会保留。",
         icon: "https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f5bc.png",
         color: "bg-cyan-50 text-cyan-700"
     },
@@ -334,7 +334,7 @@ const FAQApp: React.FC = () => {
                         >
                             更新日志
                         </button>
-                        <button onClick={() => setTab('support')} aria-pressed={tab === 'support'}
+                        <button onClick={() => { if (tab !== 'support') trackEvent('打开 Sully-11', { 入口: '使用帮助' }); setTab('support'); }} aria-pressed={tab === 'support'}
                             className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${tab === 'support' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 active:scale-95'}`}>
                             问 Sully-11
                         </button>

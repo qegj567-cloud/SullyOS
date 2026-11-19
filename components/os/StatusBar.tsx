@@ -1,3 +1,4 @@
+import { trackEvent } from '../../utils/analytics';
 import { selfCheck } from '../../utils/errorSelfCheck';
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -157,7 +158,7 @@ const StatusBar: React.FC = () => {
       {/* Independent Error Indicator - Floating below status bar */}
       {hasError && (
           <button 
-              onClick={() => setShowLogModal(true)} 
+              onClick={() => { trackEvent('打开状态栏报错自检'); setShowLogModal(true); }}
               className="fixed left-1/2 -translate-x-1/2 z-[60] bg-red-500/90 text-white rounded-full px-4 py-1.5 text-[10px] font-bold shadow-lg animate-pulse flex items-center gap-1.5 backdrop-blur-md border border-white/20 pointer-events-auto"
               style={{ top: 'calc(var(--chrome-top) + 1rem)' }}
           >

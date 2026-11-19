@@ -509,6 +509,31 @@ const awarenessGroups = [
   { label: '外部服务', pages: ['notion', 'feishu', 'orders'] },
 ] as const;
 
+function PresetNameButton({ onHold, onClick, ...props }: React.ComponentProps<'button'> & { onHold: () => void }) {
+    const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+    const held = useRef(false);
+    const start = useRef({ x: 0, y: 0 });
+    const cancel = () => clearTimeout(timer.current);
+    useEffect(() => cancel, []);
+    return <button {...props} type="button"
+        onPointerDown={event => {
+            if (event.button !== 0) return;
+            cancel();
+            held.current = false;
+            start.current = { x: event.clientX, y: event.clientY };
+            timer.current = setTimeout(() => { held.current = true; onHold(); }, 550);
+        }}
+        onPointerMove={event => {
+            if (Math.hypot(event.clientX - start.current.x, event.clientY - start.current.y) > 10) cancel();
+        }}
+        onPointerUp={cancel} onPointerCancel={cancel} onPointerLeave={cancel}
+        onContextMenu={event => event.preventDefault()}
+        onClick={event => {
+            if (!held.current || event.detail === 0) onClick?.(event);
+            held.current = false;
+        }} />;
+}
+
 const Settings: React.FC = () => {
   const {
       apiConfig, updateApiConfig, closeApp, availableModels, setAvailableModels,
@@ -587,8 +612,7 @@ const Settings: React.FC = () => {
   const [editPresetStream, setEditPresetStream] = useState(false);
   const [editPresetTemperature, setEditPresetTemperature] = useState(0.85);
   const [editPresetMaxTokens, setEditPresetMaxTokens] = useState(8000);
-  const [holdingDeletePresetId, setHoldingDeletePresetId] = useState<string | null>(null);
-  const presetDeleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [copyingPreset, setCopyingPreset] = useState(false);
   
   // UI States
   const [showSupport, setShowSupport] = useState(false);
@@ -596,6 +620,7 @@ const Settings: React.FC = () => {
   const supportWasOpen = useRef(false);
   useSettingsFocus('support', () => {
       supportEntryRef.current?.scrollIntoView({ block: 'center' });
+      trackEvent('打开打赏 Sully', { 入口: '更新提醒' });
       setShowSupport(true);
   });
   useLocalBackHandler(() => { setShowSupport(false); return true; }, 30, showSupport);
@@ -1002,7 +1027,7 @@ const Settings: React.FC = () => {
   };
 
   const openEditPreset = (preset: typeof apiPresets[0]) => {
-      cancelPresetDeleteHold();
+      setCopyingPreset(false);
       const isActive = activePresetId === preset.id;
       setEditingPresetId(preset.id);
       setEditPresetName(preset.name);
@@ -1042,6 +1067,13 @@ const Settings: React.FC = () => {
           temperature: editPresetTemperature,
           maxTokens: editPresetMaxTokens,
       };
+      if (copyingPreset) {
+          addApiPreset(name, nextConfig, editPresetGroup);
+          trackEvent('保存 API 预设副本');
+          setEditingPresetId(null);
+          addToast(`已保存副本「${name}」`, 'success');
+          return;
+      }
       // 「正在用的就是这条」要在改之前问，改完值就对不上了
       const wasActive = activePresetId === preset.id;
       updateApiPreset(preset.id, name, nextConfig, editPresetGroup);
@@ -1051,48 +1083,22 @@ const Settings: React.FC = () => {
       addToast(wasActive ? `「${name}」已更新，当前配置同步生效` : `「${name}」已更新`, 'success');
   };
 
-  const cancelPresetDeleteHold = useCallback(() => {
-      if (presetDeleteTimerRef.current) {
-          clearTimeout(presetDeleteTimerRef.current);
-          presetDeleteTimerRef.current = null;
-      }
-      setHoldingDeletePresetId(null);
-  }, []);
-
-  useEffect(() => () => {
-      if (presetDeleteTimerRef.current) clearTimeout(presetDeleteTimerRef.current);
-  }, []);
-
-  // 删预设只是把这张「存档卡」扔掉：当前生效的配置是拷贝，不受影响。
-  const deleteApiPreset = (id: string, name: string) => {
-      cancelPresetDeleteHold();
-      const wasActive = activePresetId === id;
-      removeApiPreset(id);
-      setEditingPresetId(current => (current === id ? null : current));
-      addToast(
-          wasActive
-              ? `已删除预设: ${name}（当前生效配置未清空，如需停用请修改下方地址或密钥）`
-              : `已删除预设: ${name}`,
-          'success',
-      );
+  const copyEditedPreset = () => {
+      const base = (editPresetName.trim() || 'API 预设') + ' 副本';
+      const names = new Set(apiPresets.map(preset => preset.name));
+      let name = base;
+      for (let n = 2; names.has(name); n++) name = `${base} ${n}`;
+      setEditPresetName(name);
+      setCopyingPreset(true);
   };
 
-  const beginPresetDeleteHold = (id: string, name: string) => {
-      cancelPresetDeleteHold();
-      setHoldingDeletePresetId(id);
-      presetDeleteTimerRef.current = setTimeout(() => {
-          presetDeleteTimerRef.current = null;
-          setHoldingDeletePresetId(null);
-          const wasActive = activePresetId === id;
-          removeApiPreset(id);
-          setEditingPresetId(current => (current === id ? null : current));
-          addToast(
-              wasActive
-                  ? `已删除预设: ${name}（当前生效配置未清空，如需停用请修改下方地址或密钥）`
-                  : `已删除预设: ${name}`,
-              'success',
-          );
-      }, 700);
+  const deleteEditedPreset = () => {
+      const preset = apiPresets.find(item => item.id === editingPresetId);
+      if (!preset || !window.confirm(`确定删除预设「${preset.name}」？`)) return;
+      removeApiPreset(preset.id);
+      trackEvent('删除 API 预设');
+      setEditingPresetId(null);
+      addToast(`已删除预设「${preset.name}」`, 'success');
   };
 
   const handleSavePreset = () => {
@@ -2513,14 +2519,14 @@ const Settings: React.FC = () => {
                                     ? 'bg-primary/5 border-primary/30'
                                     : 'bg-white border-slate-200'
                             }`}>
-                                <button type="button" onClick={() => applyPreset(preset)}
+                                <PresetNameButton onHold={() => openEditPreset(preset)} onClick={() => applyPreset(preset)}
                                     title={`切换到 ${preset.name}`}
-                                    className={`text-xs font-medium cursor-pointer mr-1.5 transition-colors ${
+                                    className={`select-none text-xs font-medium cursor-pointer mr-1.5 transition-colors ${
                                         activePresetId === preset.id ? 'text-primary' : 'text-slate-600 hover:text-primary'
                                     }`}>
                                     {preset.name}
                                     {activePresetId === preset.id && <span className="ml-1 text-[9px] font-bold">· 使用中</span>}
-                                </button>
+                                </PresetNameButton>
                                 <button
                                     type="button"
                                     aria-label={`编辑预设 ${preset.name}`}
@@ -2529,26 +2535,9 @@ const Settings: React.FC = () => {
                                     className="p-1 rounded-full text-slate-300 hover:bg-primary/10 hover:text-primary transition-colors">
                                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3"><path d="M13.586 3.586a2 2 0 1 1 2.828 2.828l-.793.793-2.828-2.828.793-.793ZM11.379 5.793 3 14.172V17h2.828l8.38-8.379-2.83-2.828Z" /></svg>
                                 </button>
-                                <button
-                                    type="button"
-                                    aria-label={`长按或双击删除预设 ${preset.name}`}
-                                    title="长按或双击删除"
-                                    onPointerDown={(event) => { event.stopPropagation(); beginPresetDeleteHold(preset.id, preset.name); }}
-                                    onPointerUp={cancelPresetDeleteHold}
-                                    onPointerCancel={cancelPresetDeleteHold}
-                                    onPointerLeave={cancelPresetDeleteHold}
-                                    onDoubleClick={(event) => { event.stopPropagation(); deleteApiPreset(preset.id, preset.name); }}
-                                    onContextMenu={(event) => event.preventDefault()}
-                                    className={`p-1 rounded-full transition-colors select-none touch-none ${
-                                        holdingDeletePresetId === preset.id
-                                            ? 'bg-red-100 text-red-500 scale-110'
-                                            : 'text-slate-300 hover:bg-red-50 hover:text-red-400'
-                                    }`}>
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3"><path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" /></svg>
-                                </button>
                             </div>
                         )}</ApiPresetGroups>
-                    <p className="text-[9px] text-slate-300 mt-1.5 pl-1">点名称直接切换并生效；铅笔改这条预设的内容；长按或双击 × 才会删除。</p>
+                    <p className="text-[10px] text-slate-500 mt-1.5 pl-1">点名称切换预设。长按名称或点铅笔，可编辑、复制或删除。</p>
                 </div>
             )}
 
@@ -3279,7 +3268,7 @@ const Settings: React.FC = () => {
         </SettingsSection>
 
         <ActiveMsgSettingsEntry onOpen={openAmsgPage} connected={Boolean(amsgGlobalConfig?.initializedAt && amsgGlobalConfig.workerUrl?.trim())} enabled={amsgGlobalConfig?.workerUrl?.trim() ? isAmsg2GloballyEnabled(amsgGlobalConfig) : undefined} toggling={amsgGlobalToggling} onToggle={next => void handleToggleAmsg2Global(next)} />
-        <SullySupportEntry ref={supportEntryRef} onOpen={() => setShowSupport(true)} />
+        <SullySupportEntry ref={supportEntryRef} onOpen={() => { trackEvent('打开打赏 Sully', { 入口: '设置' }); setShowSupport(true); }} />
 
         {/* 自定义网络代理 — 刻意低调的高级入口。默认折叠，不主动指引基本发现不了。
             普通用户无需配置：默认走作者部署的公共 Worker，所有功能开箱即用。 */}
@@ -3758,11 +3747,18 @@ const Settings: React.FC = () => {
       {/* 编辑预设：只改这条预设本身；正在用它的话，当前配置一并跟着走 */}
       <Modal
           isOpen={!!editingPresetId}
-          title="编辑预设"
+          title={copyingPreset ? '编辑预设副本' : '编辑预设'}
           onClose={() => setEditingPresetId(null)}
-          footer={<button onClick={handleUpdatePreset} className="w-full py-3 bg-primary text-white font-bold rounded-2xl">保存</button>}
+          footer={<>
+              <button type="button" onClick={() => setEditingPresetId(null)} className="px-5 py-3 bg-slate-100 text-slate-600 rounded-2xl">取消</button>
+              <button type="button" onClick={handleUpdatePreset} className="flex-1 py-3 bg-primary text-white font-bold rounded-2xl">{copyingPreset ? '保存副本' : '保存'}</button>
+          </>}
       >
           <div className="space-y-3">
+              {!copyingPreset && <div className="flex items-center justify-between">
+                  <button type="button" onClick={copyEditedPreset} className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700">复制预设</button>
+                  <button type="button" onClick={deleteEditedPreset} className="rounded-xl px-3 py-2 text-sm text-red-600">删除预设</button>
+              </div>}
               <div className="space-y-1.5">
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">名称</label>
                   <input value={editPresetName} onChange={e => setEditPresetName(e.target.value)} placeholder="预设名称" className="w-full bg-slate-100 rounded-xl px-4 py-2.5 text-sm focus:outline-primary" />
@@ -3838,7 +3834,7 @@ const Settings: React.FC = () => {
                   用当前完整配置填入
               </button>
               <p className="text-[10px] text-slate-400 leading-relaxed">
-                  {editingPresetId && activePresetId === editingPresetId
+                  {copyingPreset ? '保存后可在「我的预设」中点名称切换到副本。' : editingPresetId && activePresetId === editingPresetId
                       ? '这条正在使用中，保存后当前配置会一起换成新的值。'
                       : '只改这条预设，当前生效的配置不受影响。'}
               </p>

@@ -26,6 +26,7 @@ import { isImageValue, useBlobRefUrl } from '../../utils/blobRef';
 import { buildReplySnapshotContent } from '../../utils/applyAssistantPostProcessing';
 import { stripLeakedSourceTags } from '../../utils/sanitize';
 import TokenImg from '../os/TokenImg';
+import EmojiImage from './EmojiImage';
 import ChatImage from './ChatImage';
 import { SARSpeechSwitch } from '../sar/SARSpeechSwitch';
 import McdCard from './McdCard';
@@ -567,7 +568,7 @@ const ForwardCard: React.FC<{
                                         <div className="text-[10px] text-slate-400 mb-1 px-1">{senderName} {msg.timestamp ? formatTime(msg.timestamp) : ''}</div>
                                         <div className={`px-4 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-normal [overflow-wrap:anywhere] ${isUser ? 'bg-primary text-white rounded-br-sm' : 'bg-white text-slate-700 rounded-bl-sm shadow-sm border border-slate-100'}`}>
                                             {msg.type === 'image' ? (msg.content ? <TokenImg value={msg.content} className="max-w-[200px] rounded-xl" /> : <span className="italic opacity-60">[图片已丢失]</span>) :
-                                             msg.type === 'emoji' ? (msg.content ? <TokenImg value={msg.content} className="max-w-[100px]" /> : <span className="italic opacity-60">[表情已丢失]</span>) :
+                                             msg.type === 'emoji' ? (msg.content ? <EmojiImage value={msg.content} className="max-w-[100px]" /> : <span className="italic opacity-60">[表情已丢失]</span>) :
                                              msg.content}
                                         </div>
                                     </div>
@@ -1165,6 +1166,7 @@ interface MessageItemProps {
     isLastInGroup: boolean;
     activeTheme: ChatTheme;
     charAvatar: string;
+    onOpenCharacterProfile?: () => void;
     charName: string;
     locationPinCharId?: string;
     userAvatar: string;
@@ -1237,6 +1239,7 @@ const MessageItem = React.memo(({
     isLastInGroup,
     activeTheme,
     charAvatar,
+    onOpenCharacterProfile,
     charName,
     locationPinCharId,
     userAvatar,
@@ -1444,9 +1447,14 @@ const MessageItem = React.memo(({
     const renderAvatar = (src: string, turnAvatar = false) => {
         const visible = turnAvatar || shouldShowAvatar;
         const hasCaption = showAvatarTime && visible && turnAvatar === (avatarPlacement === 'above_group');
+        const opensProfile = visible && !isUser && !selectionMode && !!onOpenCharacterProfile;
+        const Wrap = opensProfile ? 'button' : 'div';
         return (
             <>
-                <div className={`${visible ? 'sully-chat-avatar-wrap' : ''} relative ${avatarSizeClass} z-0 ${turnAvatar ? 'sully-chat-turn-avatar' : 'sully-chat-message-avatar'}`}>
+                <Wrap type={opensProfile ? 'button' : undefined}
+                    aria-label={opensProfile ? `查看${charName}的角色名片` : undefined}
+                    onClick={opensProfile ? (event: React.MouseEvent) => { event.stopPropagation(); onOpenCharacterProfile?.(); } : undefined}
+                    className={`${visible ? 'sully-chat-avatar-wrap' : ''} ${hasCaption ? 'block' : ''} relative ${avatarSizeClass} z-0 ${turnAvatar ? 'sully-chat-turn-avatar' : 'sully-chat-message-avatar'}`}>
                     {visible && (
                         <>
                             <TokenImg
@@ -1466,7 +1474,7 @@ const MessageItem = React.memo(({
                             )}
                         </>
                     )}
-                </div>
+                </Wrap>
                 {hasCaption && <ChatAvatarTimestamp timestamp={m.timestamp} hover={showTimestamp === 'hover'} />}
             </>
         );
@@ -3239,7 +3247,7 @@ const MessageItem = React.memo(({
     if (m.type === 'emoji') {
         return commonLayout(
             m.content ? (
-                <TokenImg value={m.content} className="sully-emoji-msg max-w-[var(--sully-emoji-size,96px)] max-h-[var(--sully-emoji-size,96px)] w-auto h-auto object-contain hover:scale-105 transition-transform drop-shadow-md active:scale-95" loading="lazy" decoding="async" />
+                <EmojiImage value={m.content} className="sully-emoji-msg max-w-[var(--sully-emoji-size,96px)] max-h-[var(--sully-emoji-size,96px)] w-auto h-auto object-contain hover:scale-105 transition-transform drop-shadow-md active:scale-95" loading="lazy" decoding="async" />
             ) : (
                 <div className="px-3 py-2 rounded-2xl bg-slate-100 text-slate-400 text-xs italic">[表情已丢失]</div>
             )
@@ -3777,6 +3785,7 @@ const MessageItem = React.memo(({
            prev.isLastInGroup === next.isLastInGroup &&
            prev.activeTheme === next.activeTheme &&
            prev.charAvatar === next.charAvatar &&
+           prev.onOpenCharacterProfile === next.onOpenCharacterProfile &&
            prev.charName === next.charName &&
            prev.locationPinCharId === next.locationPinCharId &&
            prev.userAvatar === next.userAvatar &&

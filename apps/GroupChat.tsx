@@ -46,6 +46,7 @@ import { loadChatInputPreferences, saveChatInputPreferences } from '../utils/cha
 import ChatInputSettings from '../components/chat/ChatInputSettings';
 import { useChatAutoReply } from '../hooks/useChatAutoReply';
 import TokenImg from '../components/os/TokenImg';
+import EmojiImage from '../components/chat/EmojiImage';
 import { ImageViewer } from '../components/chat/ChatImage';
 import { useBlobRefUrl, migrateDataUrlToRef } from '../utils/blobRef';
 import { buildReplySnapshotContent } from '../utils/applyAssistantPostProcessing';
@@ -377,7 +378,7 @@ const GroupMessageItem = React.memo(({
                 );
             case 'emoji':
                 // 尺寸跟随外观 → 表情包大小（--sully-emoji-size 三挡，默认 96px = 原 w-24）
-                return <TokenImg value={msg.content} className="sully-emoji-msg max-w-[var(--sully-emoji-size,96px)] max-h-[var(--sully-emoji-size,96px)] object-contain drop-shadow-sm hover:scale-110 transition-transform" />;
+                return <EmojiImage value={msg.content} className="sully-emoji-msg max-w-[var(--sully-emoji-size,96px)] max-h-[var(--sully-emoji-size,96px)] object-contain drop-shadow-sm hover:scale-110 transition-transform" />;
             case 'transfer':
                 return (
                     <div onClick={(e) => { if (selectionMode) handleClick(e); }}>
@@ -2575,7 +2576,7 @@ ${memberTimeline || '(暂无互动记录)'}
             <Modal isOpen={modalType === 'help'} title="群聊记忆规则" onClose={() => setModalType('none')}>
                 <div className="space-y-4 text-sm text-slate-600 leading-relaxed">
                     <div className="rounded-2xl bg-violet-50 border border-violet-100 p-4 text-violet-800">
-                        群聊内容不是排队延迟发送。角色在私聊中“隔天提起”，通常是最近群聊、话题盒或个人群聊记忆被当作本轮话题选中了。
+                        角色隔天在私聊提起群里的事，可能是这轮对话用到了近期群聊或公共话题盒。保留着旧版个人群聊记忆的角色，也可能想起那些旧事。
                     </div>
                     <div>
                         <div className="font-bold text-slate-800 mb-1">最近群聊</div>
@@ -2586,8 +2587,8 @@ ${memberTimeline || '(暂无互动记录)'}
                         <p>群聊积累到一定数量后，较旧内容会被压缩成群成员共享的话题盒，并进入各成员的私聊背景。因此旧话题可能在之后再次被提起。</p>
                     </div>
                     <div>
-                        <div className="font-bold text-slate-800 mb-1">个人群聊记忆</div>
-                        <p>启用群聊记忆宫殿后，较旧群聊会以第三人称分别整理进参与角色的记忆宫殿。它不会要求角色立刻回复，只提供后续回忆依据。</p>
+                        <div className="font-bold text-slate-800 mb-1">在哪里整理？</div>
+                        <p>打开「群设置 → 群聊总结 · 公共话题盒」选择整理方式。已有可归档内容时，点「立即整理当前可归档内容」就会为本群整理一次，摘要卡送到各成员的私聊。</p>
                     </div>
                     <div className="rounded-2xl bg-slate-50 border border-slate-100 p-4 text-xs text-slate-500">
                         模型看到一段记录，不代表必须马上回应；是否主动提起仍会受当前话题和角色性格影响。

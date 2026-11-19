@@ -5,7 +5,7 @@ import Modal from '../components/os/Modal';
 import { Check, DiamondsFour, BookOpen, DownloadSimple, Trash, UploadSimple, WarningCircle, X } from '@phosphor-icons/react';
 import {
     parseStandardWorldbook,
-    serializeStandardWorldbook,
+    serializeSullyWorldbook,
     splitWorldbookKeywords,
     WORLDBOOK_POSITION_DESCRIPTIONS,
     WORLDBOOK_POSITION_LABELS,
@@ -204,6 +204,7 @@ const WorldbookApp: React.FC = () => {
             const category = source.name.replace(/\.json$/i, '').trim() || '导入世界书';
             const imported = parseStandardWorldbook(text, category);
             for (const book of imported) await addWorldbook(book);
+            trackEvent('导入世界书文件');
             addToast(`已导入 ${imported.length} 条世界书条目`, 'success');
             setExpandedCategory(category);
         } catch (error: any) {
@@ -220,7 +221,7 @@ const WorldbookApp: React.FC = () => {
 
     const handleExportGroup = async (event: React.MouseEvent, category: string, books: Worldbook[]) => {
         event.stopPropagation();
-        const json = serializeStandardWorldbook(books);
+        const json = serializeSullyWorldbook(books);
         // 导出前明文密钥体检 + 二次确认（世界书正常不含密钥 → 提示「安全，可分享」）。
         if (!(await confirmExportSafety(JSON.parse(json)))) return;
         const safeName = category.replace(/[<>:"/\\|?*\u0000-\u001F]/g, '_').trim() || 'worldbook';
@@ -235,7 +236,7 @@ const WorldbookApp: React.FC = () => {
         if (result === 'cancelled') return;
         const verb = result === 'shared' ? '已调起分享' : '已导出';
         addToast(`${verb}「${category}」共 ${books.length} 条`, 'success');
-        trackEvent('导出分组为标准世界书');
+        trackEvent('导出分组为标准世界书', { 格式: '糯米机 v1' });
     };
 
     const requestDelete = (e: React.MouseEvent, book: Worldbook) => {
@@ -644,7 +645,7 @@ const WorldbookApp: React.FC = () => {
                             <button
                                 onClick={() => { setShowImportConfirm(true); trackEvent('打开导入世界书弹窗'); }}
                                 className="w-9 h-9 bg-white/80 text-indigo-500 border border-white rounded-full shadow-sm flex items-center justify-center active:scale-90 transition-transform"
-                                title="导入标准世界书"
+                                title="导入糯米机、旧版或酒馆世界书"
                             >
                                 <UploadSimple size={18} weight="bold" />
                             </button>
@@ -721,7 +722,7 @@ const WorldbookApp: React.FC = () => {
                             <button
                                 onClick={(event) => handleExportGroup(event, category, books)}
                                 className="ml-auto p-2 -my-2 rounded-full text-slate-400 hover:text-indigo-600 hover:bg-white/70 active:scale-90 transition-all"
-                                title="导出该组为标准世界书"
+                                title="导出该组为糯米机世界书"
                             >
                                 <DownloadSimple size={16} weight="bold" />
                             </button>
@@ -837,7 +838,7 @@ const WorldbookApp: React.FC = () => {
                             onClick={confirmImport}
                             className="flex-1 py-3 bg-indigo-500 text-white font-bold rounded-2xl shadow-lg shadow-indigo-200 active:scale-95 transition-transform hover:bg-indigo-600"
                         >
-                            确定
+                            选择文件
                         </button>
                     </div>
                 }
@@ -849,6 +850,7 @@ const WorldbookApp: React.FC = () => {
                     <p className="text-center leading-6">
                         请注意，如果导入的不是您的作品，请确定该世界书的作者允许该世界书用于免费小手机。
                     </p>
+                    <p className="text-center text-xs leading-5">支持糯米机新版和旧版世界书 JSON、酒馆世界书 JSON，以及糯米机世界书分享图。</p>
                 </div>
             </Modal>
 

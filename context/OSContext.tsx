@@ -11,6 +11,8 @@ import { homeSharedRecipients } from '../utils/homeSharedEvents';
 import { homeRecords } from '../utils/homeRecords';
 import { readFriendFeed } from '../utils/friendFeed';
 import { collectFriendFeedMedia, exportActivityTextAsset, isActivityTextAsset } from '../utils/activityBackup';
+import { HELP_HISTORY_KEY, helpMediaHistory, helpTextHistory } from '../utils/sullyHelpBackup';
+import { collectEmojiBackup, portableEmojiRow } from '../utils/emojiBackup';
 import { retireCloudCharacter } from '../utils/amsgCloudRetirement';
 import { AMSG_OWNER_CHECK_AFTER_IMPORT_LS_KEY } from '../utils/amsgOwnerReconcile';
 import { isAmsg2GloballyEnabled, isAmsg2WorkerActive } from '../utils/amsgGlobalGate';
@@ -3786,6 +3788,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           const backupData: Partial<FullBackupData> = {
               friendFeed: mode === 'text_only' ? stripBackupImages(await readFriendFeed()) : undefined,
               friendFeedMedia: mode === 'media_only' ? collectFriendFeedMedia(await readFriendFeed()) : undefined,
+              helpDeskHistory: mode === 'text_only' ? helpTextHistory(await DB.getAssetRaw(HELP_HISTORY_KEY) ?? []) : undefined,
               contentFavoritesIndex: mode === 'text_only'
                   ? stripBackupImages(await DB.getAssetRaw('content_favorites_index_v1')) : undefined,
               timestamp: Date.now(),
@@ -4150,6 +4153,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               life_record_settings: 'lifeRecordSettings',
           };
           const prewrittenStores: BackupManifest['stores'] = {};
+          const emojiBackup = await collectEmojiBackup(mode === 'text_only' ? [] : (await DB.getEmojis()).map(e => e.url));
           // Vectors retain the existing binary format, read one record at a time.
           let vectorPayload: Awaited<ReturnType<typeof encodeVectorsForBackupChunked>> | undefined;
           // Only voice Blobs reachable from the exported Live2D settings are portable.
@@ -4179,6 +4183,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   prewrittenStores[field] = await streamBackupArrayStore(zip, storeName, field, {
                       onSerialized: collectSerialized,
                       transform: (item, index) => {
+                          item = portableEmojiRow(storeName, item, emojiBackup.tokens);
                           if (storeName === 'characters') {
                               normalizeCharacterRoomAssetsInPlace(item);
                               if (mode !== 'text_only') {
@@ -4189,6 +4194,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                           if (storeName === 'assets') {
                               const id = item?.id;
                               if (mode === 'text_only') return exportActivityTextAsset(item);
+                              if (mode === 'media_only' && id === HELP_HISTORY_KEY) return { id, data: helpMediaHistory(item.data) };
                               if (mode === 'media_only' && typeof id === 'string' && isActivityTextAsset(id)) return undefined;
                               if (typeof id === 'string' && (
                                   isRedundantManagedAssetId(id)
@@ -4308,7 +4314,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               const { missing } = await writeBlobsToZip(
                   zip as unknown as ZipFileWriter,
                   referencedBlobTokens,
-                  getBlobForRef,
+                  async token => emojiBackup.blobs.get(token) ?? await getBlobForRef(token),
                   { onYield: () => new Promise<void>(r => setTimeout(r, 0)) },
               );
               if (missing.length > 0) {

@@ -1,3 +1,4 @@
+import { trackEvent } from '../../utils/analytics';
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useLocalBackHandler } from '../../hooks/useLocalBackHandler';
 import { fetchBlobForShare, shareOrDownloadBlob } from '../../utils/shareExport';
@@ -86,6 +87,9 @@ export default function SullySupportPage({ onClose }: { onClose: () => void }) {
             const result = await shareOrDownloadBlob({ blob: preparedImage.blob,
                 fileName: original ? `Sully-${data.label}-原始码.png` : data.filename,
                 shareTitle: `打赏 Sully · ${data.label}` });
+            if (result === 'downloaded' || result === 'shared') {
+                trackEvent('保存赞赏图片', { 图片: original ? '原始码' : '投喂小票', 方式: result === 'shared' ? '系统分享' : '浏览器下载' });
+            }
             if (generation === request.current) {
                 setStatus(result === 'downloaded' ? '已交给浏览器下载，请在下载记录中查看。'
                     : result === 'shared' ? '请通过系统分享选项保存图片，再到微信中识别。' : '');
@@ -117,7 +121,7 @@ export default function SullySupportPage({ onClose }: { onClose: () => void }) {
                     <p className="team-thanks">感谢你愿意为这份热爱助力。</p>
                     <p className="team-signature">—— 条 &amp; TO 敬上 <SupportIcon name="heart" /></p>
                 </section>
-                <details className="snack-menu">
+                <details className="snack-menu" onToggle={e => { if (e.currentTarget.open) trackEvent('展开投喂参考菜单'); }}>
                     <summary><span><strong>投喂参考菜单</strong><small>七份小小心意，随心挑一份</small></span><span className="menu-toggle" aria-hidden="true">＋</span></summary>
                     <ol className="menu-items">{menu.map(([emoji, price, title, description]) => <li key={price}><span className="menu-emoji" aria-hidden="true">{emoji}</span><div><strong>{title}</strong><p>{description}</p></div><span className="menu-price"><small>¥</small>{price}</span></li>)}</ol>
                     <p className="menu-footnote">金额只是心意参考，可在微信中自由填写。<br />不投喂也欢迎来玩，DC 陪聊照常营业。</p>
@@ -128,10 +132,10 @@ export default function SullySupportPage({ onClose }: { onClose: () => void }) {
                     <div className="ticket"><div className="ticket-top">A LITTLE LOVE, A BIG THANK YOU</div><div className="ticket-main"><div className="qr-crop"><img src={data.image} alt={data.alt} width={data.size} height={data.size} /></div><p className="code-caption">{data.caption}</p></div><div className="ticket-footer"><span>心意我会好好收着。</span><span className="footer-scribble" aria-hidden="true" /></div><img className="ticket-sticker" src={phone} alt="" width="256" height="270" /></div>
                     <button className="save-button" type="button" onClick={() => void saveImage()} disabled={saving || preparing}><SupportIcon name="download" /><span>{saving ? '正在打开保存选项…' : preparing ? '正在准备图片…' : prepareFailed ? '重新准备图片' : '保存投喂小票'}</span></button>
                     <p className="save-help">{data.help}</p>
-                    <button ref={originalTriggerRef} className="original-link" type="button" onClick={() => { setStatus(''); setOriginalOpen(true); }}>{data.fallback} <span aria-hidden="true">↗</span></button>
+                    <button ref={originalTriggerRef} className="original-link" type="button" onClick={() => { trackEvent('查看原始赞赏码'); setStatus(''); setOriginalOpen(true); }}>{data.fallback} <span aria-hidden="true">↗</span></button>
                     <p className="download-status" role="status">{status || (prepareFailed ? '图片暂未准备好，可重试或打开原始码长按保存。' : '')}</p>
                 </section>
-                <div className="gentle-footer"><p>先照顾好自己，有余力再投喂。</p><button type="button" className="pet-button" onClick={() => setPets(value => value + 1)}>摸摸 Sully，也很好 <SupportIcon name="heart" /></button><p className="pet-response" aria-live="polite">{pets ? petMessages[(pets - 1) % petMessages.length] : ''}</p></div>
+                <div className="gentle-footer"><p>先照顾好自己，有余力再投喂。</p><button type="button" className="pet-button" onClick={() => { if (!pets) trackEvent('在打赏页摸摸 Sully'); setPets(value => value + 1); }}>摸摸 Sully，也很好 <SupportIcon name="heart" /></button><p className="pet-response" aria-live="polite">{pets ? petMessages[(pets - 1) % petMessages.length] : ''}</p></div>
             </div></div>
         </div>
         {originalOpen && <section className="original-page" aria-label={`${data.label}原始码`}>

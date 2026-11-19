@@ -3999,6 +3999,7 @@ export interface FullBackupData {
     friendFeedMedia?: import('./utils/activityBackup').FriendFeedMediaBackup;
     /** Text records stored in assets; restore only this allowlisted subset. */
     activityTextAssets?: import('./utils/activityBackup').ActivityTextAsset[];
+    helpDeskHistory?: import('./utils/sullyHelpHistory').HelpRecord[];
     /** 纯文字备份单独携带收藏索引，不覆盖整个资源库。 */
     contentFavoritesIndex?: unknown;
     timestamp: number;

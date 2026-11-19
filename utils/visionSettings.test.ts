@@ -22,6 +22,7 @@ const root = createRoot(container);
 function Harness() {
     const [apiConfig, setApiConfig] = useState(saved);
     context = {
+        isDataLoaded: true,
         apiConfig, updateApiConfig: (patch: Partial<APIConfig>) => {
             saved = { ...saved, ...patch };
             localStorage.setItem('os_api_config', JSON.stringify(saved));
