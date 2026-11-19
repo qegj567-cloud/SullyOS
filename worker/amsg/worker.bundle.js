@@ -832,12 +832,22 @@ var checkSelfScheduleRules = (input) => {
     expirePolicy: input.expirePolicy === "force" && !limits.allowSelfForce ? "expire" : input.expirePolicy
   };
 };
+var buildUnansweredLimitRejectMessage = (opts) => {
+  if (opts.context === "chat") {
+    const canManage = opts.canManageTasks !== false;
+    return canManage ? `\u4F60\u540D\u4E0B\u5DF2\u7ECF\u6392\u7740 ${opts.count} \u6B21\u5F85\u53D1\u7684\u540E\u7EED\u8054\u7CFB\uFF0C\u7528\u6237\u8BBE\u7684\u8FDE\u53D1\u4E0A\u9650\u662F ${opts.limit} \u6B21\u2014\u2014\u60F3\u6539\u65F6\u95F4\u6216\u65B9\u5411\u8BF7\u7528 renew_active_message / cancel_active_message \u8C03\u6574\u73B0\u6709\u7684\uFF0C\u8FD9\u6B21\u4E0D\u8981\u518D\u65B0\u6392\u4E86\u3002` : `\u4F60\u540D\u4E0B\u5DF2\u7ECF\u6392\u7740 ${opts.count} \u6B21\u5F85\u53D1\u7684\u540E\u7EED\u8054\u7CFB\uFF0C\u7528\u6237\u8BBE\u7684\u8FDE\u53D1\u4E0A\u9650\u662F ${opts.limit} \u6B21\u2014\u2014\u5F85\u53D1\u540D\u989D\u5DF2\u6EE1\uFF0C\u8FD9\u6B21\u4E0D\u8981\u518D\u65B0\u6392\u4E86\u3002`;
+  }
+  return `\u5BF9\u65B9\u8FD8\u6CA1\u56DE\u590D\uFF0C\u8FD9\u671F\u95F4\u4F60\u5DF2\u7ECF\u4E3B\u52A8\u627E\u4E86 / \u6392\u4E86 ${opts.count} \u6B21\uFF0C\u7528\u6237\u8BBE\u7684\u8FDE\u53D1\u4E0A\u9650\u662F ${opts.limit} \u6B21\u2014\u2014\u8FD9\u6B21\u522B\u6392\u4E86\uFF0C\u7B49 ta \u56DE\u590D\u518D\u8BF4\u3002`;
+};
 var buildLimitsBrief = (input) => {
   const { limits } = input;
   const lines = [];
   if (Number.isFinite(limits.maxUnansweredSends)) {
     const used = Math.min(limits.maxUnansweredSends, Math.max(0, input.committedSends));
-    lines.push(`- \u5BF9\u65B9\u6CA1\u56DE\u671F\u95F4\u7684\u4E3B\u52A8\u8054\u7CFB\uFF1A\u5DF2\u7528 ${used}/${limits.maxUnansweredSends} \u6B21\uFF08\u4E00\u6B21\u53EF\u4EE5\u8BF4\u597D\u51E0\u53E5\uFF1B\u6392\u597D\u8FD8\u6CA1\u53D1\u7684\u4E5F\u7B97\uFF09` + (used < limits.maxUnansweredSends ? "\u3002" : "\uFF0C\u5DF2\u6EE1\uFF0C\u7B49\u5BF9\u65B9\u56DE\u590D\u540E\u624D\u80FD\u518D\u6392\u3002"));
+    const canManage = input.canManageTasks !== false;
+    lines.push(
+      input.context === "chat" ? `- \u4E0B\u6B21\u5BF9\u65B9\u56DE\u590D\u524D\u53EF\u6302\u7684\u4E3B\u52A8\u8054\u7CFB\uFF1A\u5DF2\u6392 ${used}/${limits.maxUnansweredSends} \u6B21\uFF08\u4E00\u6B21\u53EF\u4EE5\u8BF4\u597D\u51E0\u53E5\uFF09` + (used < limits.maxUnansweredSends ? "\u3002" : canManage ? "\uFF0C\u5DF2\u6EE1\uFF1B\u60F3\u6539\u65F6\u95F4\u6216\u65B9\u5411\u8BF7\u7528 renew / cancel \u8C03\u6574\u73B0\u6709\u7684\uFF0C\u4E0D\u8981\u518D\u65B0\u6392\u3002" : "\uFF0C\u5DF2\u6EE1\uFF0C\u8FD9\u6B21\u4E0D\u8981\u518D\u65B0\u6392\u3002") : `- \u5BF9\u65B9\u6CA1\u56DE\u671F\u95F4\u7684\u4E3B\u52A8\u8054\u7CFB\uFF1A\u5DF2\u7528 ${used}/${limits.maxUnansweredSends} \u6B21\uFF08\u4E00\u6B21\u53EF\u4EE5\u8BF4\u597D\u51E0\u53E5\uFF1B\u6392\u597D\u8FD8\u6CA1\u53D1\u7684\u4E5F\u7B97\uFF09` + (used < limits.maxUnansweredSends ? "\u3002" : "\uFF0C\u5DF2\u6EE1\uFF0C\u7B49\u5BF9\u65B9\u56DE\u590D\u540E\u624D\u80FD\u518D\u6392\u3002")
+    );
   }
   if (limits.minSendGapMs > 0) {
     lines.push(`- \u4E24\u6B21\u4E3B\u52A8\u627E\u5BF9\u65B9\u4E4B\u95F4\u81F3\u5C11\u9694 ${describeMinutes(Math.round(limits.minSendGapMs / 6e4))}` + (input.earliestText ? `\uFF0C\u8FD9\u6B21\u6700\u65E9\u6392\u5230 ${input.earliestText}\u3002` : "\u3002"));
@@ -1671,7 +1681,7 @@ function pickStaleStoppedReplyKeys(rows, nowMs = Date.now(), protectKey) {
 // worker/amsg/src/index.ts
 import { DurableObject } from "cloudflare:workers";
 
-// node_modules/.pnpm/@rei-standard+amsg-server@3_f2a08373d30841ce79e2e19c7fb88ed9/node_modules/@rei-standard/amsg-server/dist/chunk-R2CRPRKR.mjs
+// ../../../../../../Documents/GitHub/SullyOS/node_modules/.pnpm/@rei-standard+amsg-server@3.2.0-next.2_@neondatabase+serverless@1.1.0_pg@8.22.0/node_modules/@rei-standard/amsg-server/dist/chunk-R2CRPRKR.mjs
 var CLEANUP_BATCH_LIMIT = 100;
 var UPDATABLE_COLUMNS = /* @__PURE__ */ new Set([
   "user_id",
@@ -1691,7 +1701,7 @@ var UPDATABLE_COLUMNS = /* @__PURE__ */ new Set([
 var TASK_DELIVERY_COLUMNS = "id, user_id, uuid, encrypted_payload, message_type, next_send_at, retry_after, status, retry_count";
 var TASK_DETAIL_COLUMNS = "id, user_id, uuid, encrypted_payload, message_type, next_send_at, status, retry_count, last_error, created_at, updated_at";
 
-// node_modules/.pnpm/@rei-standard+amsg-shared@0.5.0-next.0/node_modules/@rei-standard/amsg-shared/dist/index.mjs
+// ../../../../../../Documents/GitHub/SullyOS/node_modules/.pnpm/@rei-standard+amsg-shared@0.5.0-next.0/node_modules/@rei-standard/amsg-shared/dist/index.mjs
 var TEXT_ENCODER = new TextEncoder();
 var TEXT_DECODER = new TextDecoder("utf-8", { fatal: false });
 function toUint8(buf) {
@@ -2929,7 +2939,7 @@ function stringifyDecisionForError(value) {
   }
 }
 
-// node_modules/.pnpm/@rei-standard+amsg-server@3_f2a08373d30841ce79e2e19c7fb88ed9/node_modules/@rei-standard/amsg-server/dist/chunk-WFKLHUUE.mjs
+// ../../../../../../Documents/GitHub/SullyOS/node_modules/.pnpm/@rei-standard+amsg-server@3.2.0-next.2_@neondatabase+serverless@1.1.0_pg@8.22.0/node_modules/@rei-standard/amsg-server/dist/chunk-WFKLHUUE.mjs
 var DAY_MS = 24 * 60 * 60 * 1e3;
 var MAX_LISTED_SKIPPED_OCCURRENCES = 32;
 var MAX_ADJUST_STEPS = 32;
@@ -12216,7 +12226,7 @@ function extractFriendFeedReplyTags(raw, namespace = "FRIEND_FEED_REPLY") {
   return { text: text2 + raw.slice(cursor), actions };
 }
 
-// node_modules/.pnpm/@rei-standard+amsg-instant@0.12.0-next.0/node_modules/@rei-standard/amsg-instant/dist/index.mjs
+// ../../../../../../Documents/GitHub/SullyOS/node_modules/.pnpm/@rei-standard+amsg-instant@0.12.0-next.0/node_modules/@rei-standard/amsg-instant/dist/index.mjs
 var MAX_REQUEST_BODY_BYTES = 32 * 1024 * 1024;
 var WEB_PUSH_MAX_BODY_BYTES2 = 4096;
 var WEB_PUSH_ENCRYPTION_OVERHEAD_BYTES2 = 16 + 4 + 1 + 65 + 1 + 16;
@@ -13678,7 +13688,7 @@ var EXPIRE_POLICY_DESCRIPTION = [
   'force\uFF1A\u51C6\u70B9\u7167\u53D1\uFF0C\u4E0D\u7B49\u4E5F\u4E0D\u8BA9\u3002\u7528\u5728\u300C\u5230\u90A3\u4E2A\u70B9\u5FC5\u987B\u8BF4\u8FD9\u4EF6\u5177\u4F53\u7684\u4E8B\u300D\u4E0A\uFF0C\u4E24\u79CD\u6765\u6E90\u90FD\u7B97\u2014\u2014\u7528\u6237\u660E\u786E\u8981\u6C42\u7684\uFF08\u5982"8\u70B9\u53EB\u6211\u8D77\u5E8A"\uFF09\uFF0C\u4EE5\u53CA\u4F60\u81EA\u5DF1\u8BB8\u4E0B\u7684\uFF08\u5982"\u6C64\u7096\u4E0A\u4E86\uFF0C\u4E24\u5C0F\u65F6\u540E\u597D\u4E86\u53EB\u4F60""\u4F60\u90A3\u4E2A\u4F1A\u6211\u5230\u70B9\u63D0\u9192\u4F60"\uFF09\u3002',
   "\u8FD9\u7C7B\u5151\u73B0\u7684\u662F\u4E00\u4E2A\u5177\u4F53\u627F\u8BFA\uFF0C\u7528\u6237\u4E2D\u9014\u56DE\u6765\u804A\u8FC7\u5929\u4E5F\u4E0D\u5F71\u54CD\u5B83\u8BE5\u54CD\u3002"
 ].join("\n");
-var buildScheduleToolDescription = (context) => [
+var buildScheduleToolDescription = (context, maxActiveTasks) => [
   ...context === "chat" ? [
     "\u521B\u5EFA\u5B9A\u65F6\u4E3B\u52A8\u6D88\u606F\uFF1A\u5230\u6307\u5B9A\u65F6\u95F4\u540E\uFF0C\u4F60\u4F1A\u6839\u636E\u6700\u65B0\u804A\u5929\u4E0A\u4E0B\u6587\u751F\u6210\u5E76\u63A8\u9001\u6D88\u606F\u7ED9\u7528\u6237\u3002",
     "\u6B63\u5728\u804A\u5929\u65F6\uFF0C\u4F60\u4E5F\u53EF\u4EE5\u56E0\u4E3A\u60E6\u8BB0\u3001\u60F3\u5206\u4EAB\u81EA\u5DF1\u7684\u751F\u6D3B\u3001\u5151\u73B0\u627F\u8BFA\uFF0C\u7ED9\u672A\u6765\u7684\u81EA\u5DF1\u6392\u4E00\u6B21\u8054\u7CFB\uFF0C\u4E0D\u5FC5\u7B49\u7528\u6237\u660E\u786E\u8981\u6C42\u3002"
@@ -13688,7 +13698,7 @@ var buildScheduleToolDescription = (context) => [
   ],
   "\u6392\u4E0B\u7684\u8FD9\u6761\u5230\u70B9\u65F6\u4F1A\u77E5\u9053\u4F60\u8FD9\u6B21\u8BF4\u4E86\u4EC0\u4E48\uFF0C\u80FD\u63A5\u5F97\u4E0A\uFF0C\u4E0D\u7528\u5728\u53C2\u6570\u91CC\u590D\u8FF0\u3002",
   "send_at \u662F\u5F00\u59CB\u751F\u6210\u7684\u65F6\u95F4\uFF0C\u4E0D\u662F\u9001\u8FBE\u65F6\u95F4\uFF08\u751F\u6210\u6709\u5341\u51E0\u79D2\u5EF6\u8FDF\uFF09\uFF0C\u4E14\u5FC5\u987B\u81F3\u5C11\u6BD4\u73B0\u5728\u665A 1 \u5206\u949F\u3002",
-  `\u4E00\u6B21\u6700\u591A\u6392 ${MAX_FIRE_SCHEDULES} \u6761\uFF1B\u6BCF\u4E2A\u89D2\u8272\u540C\u65F6\u6302\u7684\u4EFB\u52A1\u4E5F\u6709\u4E0A\u9650\uFF0C\u6392\u4E0D\u4E0B\u65F6\u4F1A\u544A\u8BC9\u4F60\u3002`,
+  `\u4E00\u6B21\u6700\u591A\u6392 ${MAX_FIRE_SCHEDULES} \u6761\uFF1B${typeof maxActiveTasks === "number" && Number.isFinite(maxActiveTasks) ? `\u6BCF\u4E2A\u89D2\u8272\u6700\u591A\u540C\u65F6\u6302 ${maxActiveTasks} \u4E2A\u4EFB\u52A1` : "\u6BCF\u4E2A\u89D2\u8272\u540C\u65F6\u6302\u7684\u4EFB\u52A1\u4E5F\u6709\u4E0A\u9650"}\uFF0C\u6392\u4E0D\u4E0B\u65F6\u4F1A\u544A\u8BC9\u4F60\u3002`,
   context === "chat" ? "\u672A\u6765\u90A3\u4E2A\u65F6\u523B\u771F\u7684\u60F3\u8054\u7CFB\u5C31\u6392\uFF0C\u5C0A\u91CD\u7528\u6237\u7684\u751F\u6D3B\u548C\u300C\u522B\u6253\u6270\u300D\uFF0C\u4E0D\u8981\u4E3A\u4E86\u6392\u800C\u6392\u3002" : "\u6CA1\u6709\u300C\u63A5\u7740\u8BF4\u300D\u7684\u5FC5\u8981\u5C31\u522B\u6392\u2014\u2014\u4E3A\u4E86\u6392\u800C\u6392\u51FA\u6765\u7684\u540E\u7EED\uFF0C\u7528\u6237\u8BFB\u8D77\u6765\u5C31\u662F\u6CA1\u8BDD\u627E\u8BDD\u3002"
 ].join("\n");
 var buildScheduleParameters = (opts) => ({
@@ -13730,7 +13740,7 @@ var buildFireScheduleTool = (opts) => ({
   type: "function",
   function: {
     name: AMSG_FIRE_SCHEDULE_TOOL,
-    description: buildScheduleToolDescription(opts.context ?? "fire"),
+    description: buildScheduleToolDescription(opts.context ?? "fire", opts.maxActiveTasks),
     parameters: buildParameters(
       buildSendAtExample(opts.nowMs, opts.tz),
       opts.abilities
@@ -13760,7 +13770,7 @@ var buildFireRenewTool = (opts) => ({
     name: AMSG_FIRE_RENEW_TOOL,
     description: [
       "\u7ED9\u4F60\u6302\u7740\u7684\u4E00\u4E2A\u4EFB\u52A1\u6539\u89E6\u53D1\u65F6\u95F4\uFF1A\u53EA\u6362\u65F6\u95F4\uFF0C\u6CBF\u7528\u539F\u6709\u6A21\u5F0F\u4E0E\u63D0\u793A\u65B9\u5411\u3002",
-      "\u4E00\u6B21\u6027\u4EFB\u52A1 = \u6574\u6761\u6539\u5230\u65B0\u65F6\u95F4\uFF08\u7F16\u53F7\u4E0D\u53D8\uFF09\uFF1B\u5FAA\u73AF\u4EFB\u52A1 = \u53EA\u7ED9\u8FD9\u4E00\u6B21\u8865\u53D1\u4E00\u6761\u4E00\u6B21\u6027\u4EFB\u52A1\uFF0C\u539F\u6765\u7684\u6BCF\u5929/\u6BCF\u5468\u8282\u594F\u4E0D\u52A8\u3002",
+      "\u4E00\u6B21\u6027\u4EFB\u52A1 = \u6574\u6761\u6539\u5230\u65B0\u65F6\u95F4\uFF1B\u5FAA\u73AF\u4EFB\u52A1 = \u53EA\u7ED9\u8FD9\u4E00\u6B21\u8865\u53D1\u4E00\u6761\u4E00\u6B21\u6027\u4EFB\u52A1\uFF0C\u539F\u6765\u7684\u6BCF\u5929/\u6BCF\u5468\u8282\u594F\u4E0D\u52A8\u3002",
       "\u60F3\u6539\u7684\u662F\u5FAA\u73AF\u4EFB\u52A1\u672C\u8EAB\u7684\u65F6\u95F4\u3001\u6216\u8005\u60F3\u8BF4\u7684\u5185\u5BB9\u65B9\u5411\u5DF2\u7ECF\u53D8\u4E86\uFF0C\u6539\u7528 cancel_active_message + schedule_active_message \u91CD\u65B0\u521B\u5EFA\u3002",
       `send_at \u81F3\u5C11\u6BD4\u73B0\u5728\u665A 1 \u5206\u949F\uFF08\u5199\u4F60\u672C\u5730\u7684\u5899\u949F\u65F6\u95F4\uFF0C\u5982 ${buildSendAtExample(opts.nowMs, opts.tz)}\uFF0C\u4E0D\u5E26\u65F6\u533A\u540E\u7F00\uFF09\u3002`
     ].join("\n"),
@@ -13959,6 +13969,76 @@ var extractFireScheduleTextCalls = (content) => {
   return calls;
 };
 
+// utils/amsg2ToolLoop.ts
+var TOOL_ROUND_PLACEHOLDER = "(\u8C03\u7528\u5DE5\u5177\u4E2D)";
+var extractToolRoundLeadIn = (content) => {
+  if (typeof content !== "string") return "";
+  const withoutThinking = splitInlineThinking(content).content;
+  return withoutThinking.split(TOOL_ROUND_PLACEHOLDER).join("").trim();
+};
+var isStructuralTagOnlyLine = (line) => /^(?:<\/?[a-zA-Z][^>]*>|\[\/?html\]|```.*)$/i.test(line.trim());
+var meaningfulCharCount = (text2) => Array.from(text2.replace(/[\s\p{P}\p{S}]/gu, "")).length;
+var isSegmentRepeatedInLater = (earlier, later) => {
+  const subLines = earlier.split("\n").map((l) => l.trim()).filter(Boolean);
+  const laterLines = later.split("\n").map((l) => l.trim()).filter(Boolean);
+  if (subLines.length === 0 || laterLines.length === 0) return false;
+  if (subLines.length <= laterLines.length) {
+    for (let start = 0; start <= laterLines.length - subLines.length; start++) {
+      let allMatch = true;
+      for (let j = 0; j < subLines.length; j++) {
+        if (laterLines[start + j] !== subLines[j]) {
+          allMatch = false;
+          break;
+        }
+      }
+      if (allMatch) return true;
+    }
+  }
+  if (subLines.length === 1 && meaningfulCharCount(subLines[0]) >= 6) {
+    return laterLines.some((line) => line.includes(subLines[0]));
+  }
+  return false;
+};
+var appendWithoutBoundaryOverlap = (accLines, nextText) => {
+  const nextLines = nextText.split("\n");
+  if (accLines.length === 0) {
+    accLines.push(...nextLines);
+    return;
+  }
+  const maxOverlap = Math.min(accLines.length, nextLines.length);
+  let overlap = 0;
+  for (let len = maxOverlap; len >= 1; len--) {
+    if (len === 1 && isStructuralTagOnlyLine(nextLines[0])) continue;
+    let matched = true;
+    for (let i = 0; i < len; i++) {
+      if (accLines[accLines.length - len + i].trim() !== nextLines[i].trim()) {
+        matched = false;
+        break;
+      }
+    }
+    if (matched && nextLines.slice(0, len).some((line) => line.trim().length > 0)) {
+      overlap = len;
+      break;
+    }
+  }
+  accLines.push(...nextLines.slice(overlap));
+};
+var mergeToolRoundLeadIns = (leadIns, finalContent) => {
+  const segments = [...leadIns, finalContent].map(extractToolRoundLeadIn).filter(Boolean);
+  const kept = [];
+  for (let i = 0; i < segments.length; i++) {
+    const text2 = segments[i];
+    if (kept.includes(text2)) continue;
+    if (segments.slice(i + 1).some((later) => isSegmentRepeatedInLater(text2, later))) continue;
+    kept.push(text2);
+  }
+  const mergedLines = [];
+  for (const segment of kept) {
+    appendWithoutBoundaryOverlap(mergedLines, segment);
+  }
+  return mergedLines.join("\n");
+};
+
 // utils/vrWorld/sarEnvelopeCore.ts
 var planFromSARModuleSnapshot = (snapshot) => {
   if (!snapshot || !snapshot.character && !snapshot.user) return null;
@@ -14007,6 +14087,59 @@ var parseSARModuleReply = (raw, plan) => {
     assistantSurface: plan.character?.phase === "active" ? tag(body, "CHAR_SURFACE") : void 0,
     userSurface: plan.user?.phase === "active" ? tag(body, "USER_SURFACE") : void 0,
     enveloped: true
+  };
+};
+var SAR_ENVELOPE_TAG_RE = /<\/?(?:SAR_MODULE_OUTPUT|CHAR_TRUE|CHAR_SURFACE|USER_SURFACE)>/gi;
+var stripSAREnvelopeTags = (text2) => text2.replace(SAR_ENVELOPE_TAG_RE, "").trim();
+var closeOpenSARTag = (text2, name, stoppers) => {
+  const open2 = new RegExp(`<${name}>`, "i").exec(text2);
+  if (!open2 || new RegExp(`</${name}>`, "i").test(text2)) return text2;
+  const after = open2.index + open2[0].length;
+  const stop = new RegExp(stoppers.join("|"), "i").exec(text2.slice(after));
+  const at = stop ? after + stop.index : text2.length;
+  return `${text2.slice(0, at)}</${name}>${text2.slice(at)}`;
+};
+var repairSAREnvelope = (text2) => {
+  let repaired = closeOpenSARTag(text2, "CHAR_TRUE", ["<CHAR_SURFACE>", "<USER_SURFACE>", "</SAR_MODULE_OUTPUT>"]);
+  repaired = closeOpenSARTag(repaired, "CHAR_SURFACE", ["<USER_SURFACE>", "<CHAR_TRUE>", "</SAR_MODULE_OUTPUT>"]);
+  repaired = closeOpenSARTag(repaired, "USER_SURFACE", ["<CHAR_SURFACE>", "<CHAR_TRUE>", "</SAR_MODULE_OUTPUT>"]);
+  return repaired;
+};
+var parseSARModuleReplyRounds = (rounds, plan) => {
+  const texts = rounds.filter((round) => round.trim().length > 0);
+  if (!plan.requiresEnvelope) {
+    return { canonical: texts.join("\n"), enveloped: false, pieces: [] };
+  }
+  const rawPieces = [];
+  let enveloped = false;
+  let userSurface;
+  for (const text2 of texts) {
+    const parsed = parseSARModuleReply(repairSAREnvelope(text2), plan);
+    if (parsed.enveloped) {
+      enveloped = true;
+      if (parsed.userSurface) userSurface = parsed.userSurface;
+    }
+    const canonical = stripSAREnvelopeTags(parsed.canonical);
+    if (!canonical) continue;
+    const surface = parsed.enveloped && parsed.assistantSurface ? stripSAREnvelopeTags(parsed.assistantSurface) : "";
+    rawPieces.push({ canonical, ...surface ? { surface } : {} });
+  }
+  const pieces = [];
+  for (let i = 0; i < rawPieces.length; i++) {
+    const current = rawPieces[i];
+    if (pieces.some((k) => k.canonical === current.canonical)) continue;
+    if (rawPieces.slice(i + 1).some((later) => isSegmentRepeatedInLater(current.canonical, later.canonical))) {
+      continue;
+    }
+    pieces.push(current);
+  }
+  const assistantSurface = pieces.map((p) => p.surface).filter((s) => !!s).join("\n") || void 0;
+  return {
+    canonical: pieces.map((p) => p.canonical).join("\n"),
+    ...assistantSurface ? { assistantSurface } : {},
+    ...userSurface ? { userSurface } : {},
+    enveloped,
+    pieces
   };
 };
 var createSARModuleSurfaceMeta = (state, surface) => {
@@ -14062,44 +14195,13 @@ var maskSarSurfaceBlocks = (text2) => {
     restore: (value) => blocks.length === 0 ? value : value.replace(PLACEHOLDER_RE, (_m, n) => blocks[Number(n)] ?? "")
   };
 };
-var ENVELOPE_TAG_RE = /<\/?(?:SAR_MODULE_OUTPUT|CHAR_TRUE|CHAR_SURFACE|USER_SURFACE)>/gi;
-var stripEnvelopeTags = (text2) => text2.replace(ENVELOPE_TAG_RE, "").trim();
-var closeOpenTag = (text2, name, stoppers) => {
-  const open2 = new RegExp(`<${name}>`, "i").exec(text2);
-  if (!open2 || new RegExp(`</${name}>`, "i").test(text2)) return text2;
-  const after = open2.index + open2[0].length;
-  const stop = new RegExp(stoppers.join("|"), "i").exec(text2.slice(after));
-  const at = stop ? after + stop.index : text2.length;
-  return `${text2.slice(0, at)}</${name}>${text2.slice(at)}`;
-};
-var repairEnvelope = (text2) => {
-  let repaired = closeOpenTag(text2, "CHAR_TRUE", ["<CHAR_SURFACE>", "<USER_SURFACE>", "</SAR_MODULE_OUTPUT>"]);
-  repaired = closeOpenTag(repaired, "CHAR_SURFACE", ["<USER_SURFACE>", "<CHAR_TRUE>", "</SAR_MODULE_OUTPUT>"]);
-  repaired = closeOpenTag(repaired, "USER_SURFACE", ["<CHAR_SURFACE>", "<CHAR_TRUE>", "</SAR_MODULE_OUTPUT>"]);
-  return repaired;
-};
 var parseSarEnvelopeRounds = (rounds, plan) => {
-  const texts = rounds.filter((round) => round.trim().length > 0);
-  if (!plan.requiresEnvelope) return { canonical: texts.join("\n"), enveloped: false, pieces: [] };
-  const pieces = [];
-  let enveloped = false;
-  let userSurface;
-  for (const text2 of texts) {
-    const parsed = parseSARModuleReply(repairEnvelope(text2), plan);
-    if (parsed.enveloped) {
-      enveloped = true;
-      if (parsed.userSurface) userSurface = parsed.userSurface;
-    }
-    const canonical = stripEnvelopeTags(parsed.canonical);
-    if (!canonical) continue;
-    const surface = parsed.enveloped && parsed.assistantSurface ? stripEnvelopeTags(parsed.assistantSurface) : "";
-    pieces.push({ canonical, ...surface ? { surface } : {} });
-  }
+  const parsed = parseSARModuleReplyRounds(rounds, plan);
   return {
-    canonical: pieces.map((p) => p.canonical).join("\n"),
-    enveloped,
-    pieces,
-    ...userSurface ? { userSurface } : {}
+    canonical: parsed.canonical,
+    enveloped: parsed.enveloped,
+    pieces: parsed.pieces,
+    ...parsed.userSurface ? { userSurface: parsed.userSurface } : {}
   };
 };
 var isEmojiSegment = (seg) => /^\[\[SEND_EMOJI[:：]/i.test(seg.raw.trim());
@@ -14274,7 +14376,7 @@ function processLLMRound(state, llmOutputText, build, mcp, schedule, iteration, 
   }
   const thisRound = isToolRound ? "" : restoreSurfaces(scanText);
   const rounds = [...state.narrations, thisRound].filter((part) => part.trim().length > 0);
-  const fullText = rounds.join("\n");
+  const fullText = state.narrations.length > 0 ? mergeToolRoundLeadIns(state.narrations, thisRound) : thisRound;
   const sarParse = sarPlan?.requiresEnvelope ? parseSarEnvelopeRounds(rounds, sarPlan) : null;
   const finalScan = sarParse ? classifyLLMOutput(sarParse.canonical) : fullText === scanText ? result : classifyLLMOutput(fullText);
   const cleanedText = finalScan.kind === "finish" ? finalScan.cleanedText : finalScan.prefix;
@@ -14349,7 +14451,7 @@ function buildScheduledPush(message, build, extraMeta, bannerBody) {
 }
 
 // utils/amsgBundleVersion.ts
-var AMSG_BUNDLE_VERSION = "2026-11-14.3";
+var AMSG_BUNDLE_VERSION = "2026-11-19";
 
 // worker/amsg/src/reproduction.ts
 async function writeDiagnosticStage(writeState, runId, event, fields = {}) {
@@ -17230,6 +17332,10 @@ var feishuGetDiaryByDate = async (appId, appSecret, baseId, tableId, characterNa
   }
 };
 
+// utils/appVersion.ts
+var APP_VERSION = "v3.17 (Mainland Relay)";
+var APP_VERSION_TAG = APP_VERSION.split(" ")[0];
+
 // utils/networkFailureDiagnosis.ts
 var readError = (error) => {
   if (error instanceof Error) return { name: error.name || "Error", message: error.message || String(error) };
@@ -17254,8 +17360,10 @@ var parseTargetUrl = (url, base) => {
 var isLoopbackHost = (host) => /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(host);
 var classifyFetchFailure = (ctx) => {
   const { name, message } = readError(ctx.error);
-  if (name === "TimeoutError" || /timed?\s?out|timeout/i.test(message)) return "timeout";
-  if (name === "AbortError" || /aborted|abort/i.test(message)) return "aborted";
+  const isTimeout = name === "TimeoutError" || /timed?\s?out|timeout/i.test(message);
+  if (!isTimeout && (name === "AbortError" || /aborted|abort/i.test(message))) return "aborted";
+  if (ctx.responseHeadersReceived) return "stream-interrupted";
+  if (isTimeout) return "timeout";
   const target = parseTargetUrl(ctx.url);
   if (!target.ok) return "bad-url";
   const pageProtocol = ctx.pageProtocol ?? (typeof location !== "undefined" ? location.protocol : "");
@@ -18784,10 +18892,11 @@ var buildToolResultMessage = (opts) => {
   return [
     ...head,
     `[\u7CFB\u7EDF: \u672C\u6B21\u5DF2\u7ECF\u7528\u8FC7\u7684\u5DE5\u5177\uFF1A${used.join("\u3001")}\u3002\u7ED3\u679C\u90FD\u5728\u4E0A\u9762\u4E86\uFF0C\u540C\u6837\u7684\u8C03\u7528\u4E0D\u8981\u518D\u6765\u4E00\u904D\u3002`,
-    "\u63A5\u4E0B\u6765\u53EA\u6709\u4E24\u6761\u8DEF\uFF1A\u76F4\u63A5\u628A\u8981\u53D1\u7684\u6D88\u606F\u5199\u51FA\u6765\uFF0C\u6216\u8005\u7528\u4E00\u4E2A\u8FD8\u6CA1\u7528\u8FC7\u7684\u5DE5\u5177\u3002",
+    "\u63A5\u4E0B\u6765\uFF1A\u5982\u679C\u8FD8\u6CA1\u8BF4\u5B8C\uFF0C\u76F4\u63A5\u628A\u8981\u53D1\u7684\u6D88\u606F\u5199\u51FA\u6765\uFF08\u53EA\u6709\u786E\u5B9E\u8FD8\u9700\u8981\u522B\u7684\u5DE5\u5177\u65F6\uFF0C\u624D\u8C03\u7528\u4E00\u4E2A\u8FD8\u6CA1\u7528\u8FC7\u7684\u5DE5\u5177\uFF09\u3002",
     // 「把要发的消息写出来」很容易被读成「从头再写一遍」：模型会把已经说出去的几句连同
-    // 里面的标记一起重抄，下游照着标记再执行一次（转账就会真的发两次）。
-    "\u524D\u9762\u5DF2\u7ECF\u8BF4\u51FA\u53BB\u7684\u5185\u5BB9\u548C\u6807\u7B7E\u4E0D\u8981\u91CD\u5199\uFF0C\u63A5\u7740\u5F80\u4E0B\u5199\u5C31\u884C\u2014\u2014\u91CD\u5199\u4E00\u904D\uFF0C\u7528\u6237\u90A3\u8FB9\u5C31\u4F1A\u518D\u6536\u5230\u4E00\u904D\u3002",
+    // 里面的标记一起重抄，下游照着标记再执行一次（转账就会真的发两次）。同时给「工具轮已经
+    // 把话完整说完」留明确出口，避免没话可补时把前文换词复述一遍。
+    "\u524D\u9762\u5DF2\u7ECF\u8BF4\u51FA\u53BB\u7684\u5185\u5BB9\u548C\u6807\u7B7E\u4E0D\u8981\u91CD\u5199\uFF0C\u63A5\u7740\u5F80\u4E0B\u5199\u5C31\u884C\u2014\u2014\u91CD\u5199\u4E00\u904D\uFF0C\u7528\u6237\u90A3\u8FB9\u5C31\u4F1A\u518D\u6536\u5230\u4E00\u904D\uFF1B\u5982\u679C\u524D\u9762\u7684\u8BDD\u5DF2\u7ECF\u628A\u8981\u8BF4\u7684\u5B8C\u6574\u8868\u8FBE\u5B8C\u4E86\u3001\u4E14\u4E0E\u8FD9\u6B21\u5DE5\u5177\u7ED3\u679C\u4E0D\u51B2\u7A81\uFF0C\u4E0D\u5FC5\u518D\u5199\u8865\u5145\u6587\u5B57\uFF0C\u76F4\u63A5\u7559\u7A7A\u7ED3\u675F\u5373\u53EF\u3002",
     "\u522B\u628A\u5DE5\u5177\u8C03\u7528\u5F53\u6210\u56DE\u7B54\u2014\u2014\u7528\u6237\u7B49\u7684\u662F\u4F60\u8BF4\u7684\u8BDD\u3002]"
   ].join("\n");
 };
@@ -18795,8 +18904,8 @@ var buildDuplicateToolMessage = (name) => [
   `[\u7CFB\u7EDF: \u4F60\u521A\u521A\u5DF2\u7ECF${describeTool(name)}\u8FC7\u4E00\u6B21\u4E86\uFF0C\u53C2\u6570\u5B8C\u5168\u76F8\u540C\uFF0C\u7ED3\u679C\u5C31\u5728\u4E0A\u9762\u3002]`,
   // 说「没有再执行」而不是「没有再去查」：这段话现在也管排程/取消/改期这类不是查询的
   // 工具，说成「查」的话，角色收到的交代跟它刚做的事对不上。
-  "[\u7CFB\u7EDF: \u8FD9\u4E00\u6B21\u6CA1\u6709\u518D\u6267\u884C\u3002\u522B\u518D\u91CD\u590D\u540C\u6837\u7684\u8C03\u7528\u4E86\u2014\u2014\u73B0\u5728\u628A\u8981\u53D1\u7684\u6D88\u606F\u5199\u51FA\u6765\uFF0C",
-  "\u6216\u8005\u6362\u4E00\u4E2A\u8FD8\u6CA1\u7528\u8FC7\u7684\u5DE5\u5177\u3002\u524D\u9762\u5DF2\u7ECF\u8BF4\u51FA\u53BB\u7684\u5185\u5BB9\u548C\u6807\u7B7E\u4E0D\u8981\u91CD\u5199\uFF0C\u63A5\u7740\u5F80\u4E0B\u5199\u5C31\u884C\u3002]"
+  "[\u7CFB\u7EDF: \u8FD9\u4E00\u6B21\u6CA1\u6709\u518D\u6267\u884C\u3002\u522B\u518D\u91CD\u590D\u540C\u6837\u7684\u8C03\u7528\u4E86\u2014\u2014\u5982\u679C\u8FD8\u6CA1\u8BF4\u5B8C\uFF0C\u73B0\u5728\u628A\u8981\u53D1\u7684\u6D88\u606F\u5199\u51FA\u6765\uFF08\u53EA\u6709\u786E\u5B9E\u8FD8\u9700\u8981\u522B\u7684\u5DE5\u5177\u65F6\uFF0C\u624D\u6362\u4E00\u4E2A\u8FD8\u6CA1\u7528\u8FC7\u7684\u5DE5\u5177\uFF09\u3002",
+  "\u524D\u9762\u5DF2\u7ECF\u8BF4\u51FA\u53BB\u7684\u5185\u5BB9\u548C\u6807\u7B7E\u4E0D\u8981\u91CD\u5199\uFF0C\u63A5\u7740\u5F80\u4E0B\u5199\u5C31\u884C\uFF1B\u5982\u679C\u524D\u9762\u5DF2\u7ECF\u5B8C\u6574\u8BF4\u5B8C\u4E86\uFF0C\u76F4\u63A5\u7559\u7A7A\u7ED3\u675F\u5373\u53EF\u3002]"
 ].join("\n");
 
 // utils/emotionEvalCore.ts
@@ -19751,7 +19860,12 @@ var runFireScheduleTool = async (stash, scheduleTask, args, nowMs) => {
     return {
       ok: false,
       reason: "unanswered_limit",
-      message: `\u5BF9\u65B9\u8FD8\u6CA1\u56DE\u590D\uFF0C\u8FD9\u671F\u95F4\u4F60\u5DF2\u7ECF\u4E3B\u52A8\u627E\u4E86 / \u6392\u4E86 ${committedSends} \u6B21\uFF0C\u7528\u6237\u8BBE\u7684\u8FDE\u53D1\u4E0A\u9650\u662F ${unansweredLimit} \u6B21\u2014\u2014\u8FD9\u6B21\u522B\u6392\u4E86\uFF0C\u7B49 ta \u56DE\u590D\u518D\u8BF4\u3002`
+      message: buildUnansweredLimitRejectMessage({
+        count: committedSends,
+        limit: unansweredLimit,
+        context: stash.instant ? "chat" : "fire",
+        canManageTasks: stash.fireToolNames?.has(AMSG_FIRE_CANCEL_TOOL) ?? false
+      })
     };
   }
   if (stash.scheduledTasks.length >= MAX_FIRE_SCHEDULES) {
@@ -20419,7 +20533,9 @@ var amsgHooks = {
         selfScheduleBusyTimes(stash, nowMs)
       ), tz) : void 0,
       // 正在发的这一条（定时触发）发完就占掉今天的一个名额。
-      dailyRemaining: Number.isFinite(limits.dailySendCap) ? Math.max(0, limits.dailySendCap - sentToday - (instant ? 0 : 1)) : void 0
+      dailyRemaining: Number.isFinite(limits.dailySendCap) ? Math.max(0, limits.dailySendCap - sentToday - (instant ? 0 : 1)) : void 0,
+      context: instant ? "chat" : "fire",
+      canManageTasks: canManageTasks && mcpNative
     }) : "";
     const scheduleBlock = canSelfSchedule ? buildFireScheduleBlock(mcpNative ? "native" : "text", {
       nowMs: ctx.now.getTime(),
@@ -20431,7 +20547,13 @@ var amsgHooks = {
     const abilities = { allowRecurring: limits.allowSelfRecurring, allowForce: limits.allowSelfForce };
     const fireTools = [
       ...mcpResolve && mcpNative ? buildMcpFireTools(mcpResolve) : [],
-      ...canSelfSchedule && mcpNative ? [buildFireScheduleTool({ nowMs: ctx.now.getTime(), tz, abilities, context: instant ? "chat" : "fire" })] : [],
+      ...canSelfSchedule && mcpNative ? [buildFireScheduleTool({
+        nowMs: ctx.now.getTime(),
+        tz,
+        abilities,
+        context: instant ? "chat" : "fire",
+        maxActiveTasks: limits.maxActiveTasks
+      })] : [],
       ...canManageTasks && mcpNative ? [buildFireCancelTool(), buildFireRenewTool({ nowMs: ctx.now.getTime(), tz })] : []
     ];
     const replyScopeBlock = fireTools.length > 0 || mcpBlock || scheduleBlock ? `
@@ -20576,7 +20698,9 @@ ${userHoliday}` });
       }
     }
     const roundReasoning = readAssistantThinking(llmMessage && "content" in llmMessage ? llmMessage : { ...llmMessage, content: rawContent });
-    session.finalReasoning = roundReasoning || null;
+    if (content.length > 0 || session.narrations.length === 0) {
+      session.finalReasoning = roundReasoning || null;
+    }
     const rawToolCalls = ctx.llmResponse?.choices?.[0]?.message?.tool_calls;
     const nativeCalls = classifyNativeToolCalls(rawToolCalls, stash.fireToolNames, stash.mcpResolve);
     for (const droppedName of nativeCalls.dropped) {
