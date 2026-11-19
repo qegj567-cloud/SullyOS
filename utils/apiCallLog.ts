@@ -337,13 +337,14 @@ function extractModel(body: unknown): string {
  * 预设结构见 types.ts ApiPreset：{ id, name, config: { baseUrl, apiKey, model } }。
  * 匹配不到（比如用的是没存成预设的临时配置）就回退成 host。
  */
-function resolvePresetName(baseUrl: string, model: string): string {
+export function resolvePresetName(baseUrl: string, model: string, apiKey?: string): string {
     try {
         if (typeof localStorage === 'undefined') return hostOf(baseUrl);
         const raw = localStorage.getItem(PRESETS_STORAGE_KEY);
         if (!raw) return hostOf(baseUrl);
-        const presets = JSON.parse(raw);
-        if (!Array.isArray(presets)) return hostOf(baseUrl);
+        const saved = JSON.parse(raw);
+        if (!Array.isArray(saved)) return hostOf(baseUrl);
+        const presets = apiKey === undefined ? saved : saved.filter(p => p?.config?.apiKey === apiKey);
         const normBase = stripTrailingSlash(baseUrl);
         // 优先 baseUrl + model 都对上；退而求其次只对 baseUrl
         const exact = presets.find((p: any) =>

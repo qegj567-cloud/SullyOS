@@ -67,8 +67,10 @@ import { captureApiRequestOnce, getApiCallAmbientContext, recordApiCall, setApiC
 import { isUserLocationLookupUrl } from '../utils/userLocationPrivacy';
 import { exportUserLocationSettings } from '../utils/userLocationBackup';
 import { isGlobalStreamEnabled, upgradeChatBodyToStream, assembleUpgradedResponse } from '../utils/streamUpgrade';
+import type { LlmRequestInit } from '../utils/llmEndpoint';
 import { rewriteStaleWorkerUrl } from '../utils/proxyWorker';
 import {
+  ApplicationErrorReport,
   buildConsoleErrorSystemLog,
   buildFetchFailureSystemLog,
   buildHttpErrorSystemLog,
@@ -1311,7 +1313,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               // 流式升级的响应归一化：SSE 攒齐拼回标准 chat.completion JSON——
               // 调用方（safeResponseJson / res.json() 均可）拿到与升级前等价的响应。
               if (streamUpgraded && response.ok) {
-                  response = await assembleUpgradedResponse(response);
+                  response = await assembleUpgradedResponse(response, (config as LlmRequestInit | undefined)?.__sullyResponseInfo);
               }
 
               // 「API 调用记录」统一记录入口：所有对话生成接口（裸 fetch + safeFetchJson
@@ -1552,6 +1554,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           const caller = captureCallerHint();
           const ambient = getApiCallAmbientContext();
           const errLog = buildConsoleErrorSystemLog({
+              report: args[0] instanceof ApplicationErrorReport ? args[0] : undefined,
               message: msg,
               stacks,
               caller,
