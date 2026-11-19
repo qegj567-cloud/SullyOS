@@ -221,6 +221,7 @@ describe('verifyToken', () => {
         if (!result.ok) {
             expect(result.code).toBe('TOKEN_INVALID');
             expect(result.message).toContain('API Tokens');
+            expect(result.message).toContain('cfut_');
         }
         // 一次网络都不该发
         expect(paths).toHaveLength(0);
@@ -337,6 +338,21 @@ describe('explainCfError', () => {
     it('token 格式错（多带了空格换行）单独提示', () => {
         const msg = explainCfError(400, { errors: [{ code: 6111, message: 'Invalid format' }] });
         expect(msg).toContain('空格');
+    });
+
+    it('code 1000（Invalid API Token）不能误翻成权限不够，要提示检查粘贴和重新建 cfut_', () => {
+        const msg = explainCfError(
+            401,
+            { errors: [{ code: 1000, message: 'Invalid API Token' }] },
+            'GET /user/tokens/verify',
+        );
+
+        expect(msg).not.toContain('Token 权限不够');
+        expect(msg).toContain('空格');
+        expect(msg).toContain('cfut_');
+        expect(msg).toContain('Invalid API Token');
+        expect(msg).toContain('1000');
+        expect(msg).toContain('GET /user/tokens/verify');
     });
 
     it('认不出来的错至少把 CF 的原话带上', () => {
