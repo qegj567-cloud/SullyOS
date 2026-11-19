@@ -15,7 +15,7 @@ import { HELP_HISTORY_KEY, helpMediaHistory, helpTextHistory } from '../utils/su
 import { collectEmojiBackup, portableEmojiRow } from '../utils/emojiBackup';
 import { retireCloudCharacter } from '../utils/amsgCloudRetirement';
 import { AMSG_OWNER_CHECK_AFTER_IMPORT_LS_KEY } from '../utils/amsgOwnerReconcile';
-import { isAmsg2GloballyEnabled, isAmsg2WorkerActive } from '../utils/amsgGlobalGate';
+import { AMSG_GLOBAL_CONFIG_EVENT, isAmsg2GloballyEnabled, isAmsg2WorkerActive } from '../utils/amsgGlobalGate';
 import {isBuiltinAppearance, readBuiltinAppearance} from '../utils/builtinAppearance';
 import { sameSullyIconSnapshot, SULLY_BIBI_UPGRADE_KEY, upgradeBuiltinSullyBibiIcon } from '../utils/builtinAppearanceUpgrade';
 import { browserHolidayCache, deviceTimeZone, getUserHolidayReminder } from '../utils/userHolidays';
@@ -62,13 +62,25 @@ import { VR_DEFAULT_INTERVAL_MIN } from '../utils/vrWorld/constants';
 import { WorldScheduler, toTickEntries } from '../utils/worldHome/scheduler';
 import { runWorldEpisode, rerollWorldCharBeat } from '../utils/worldHome/engine';
 import { migrateWorldDaySegs } from '../utils/worldHome/prompts';
-import { safeFetchJson } from '../utils/safeApi';
+import { isChatCompletionUrl, safeFetchJson } from '../utils/safeApi';
 import { captureApiRequestOnce, getApiCallAmbientContext, recordApiCall, setApiCallAmbientContext, updateApiRequestCaptureUsage } from '../utils/apiCallLog';
 import { isUserLocationLookupUrl } from '../utils/userLocationPrivacy';
 import { exportUserLocationSettings } from '../utils/userLocationBackup';
 import { isGlobalStreamEnabled, upgradeChatBodyToStream, assembleUpgradedResponse } from '../utils/streamUpgrade';
 import { rewriteStaleWorkerUrl } from '../utils/proxyWorker';
-import { buildFetchFailureDetail, classifyFetchFailure, describeReachabilityProbe, parseTargetUrl, probeOriginReachability, shouldProbeReachability, summarizeFetchRequestBody } from '../utils/networkFailureDiagnosis';
+import {
+  buildConsoleErrorSystemLog,
+  buildFetchFailureSystemLog,
+  buildHttpErrorSystemLog,
+  classifyFetchFailure,
+  describeReachabilityProbe,
+  parseTargetUrl,
+  probeOriginReachability,
+  shouldLogHttpStatusError,
+  shouldProbeReachability,
+  type ReceivedResponseHeadersInfo,
+} from '../utils/networkFailureDiagnosis';
+import { captureCallerHint, identifyNetworkRequestSource, setDiagnosticAmsgWorkerUrl } from '../utils/networkRequestSource';
 import { INSTALLED_APPS, HIDDEN_APP_NAMES } from '../constants';
 import { isAnalyticsRequestUrl, trackEvent, shouldReportSnapshot, trackDataScaleOnce, trackCurrentAppearanceOnce, trackCurrentCharSettingsOnce, trackCurrentFeaturesOnce, trackCurrentSARFeaturesOnce } from '../utils/analytics';
 import { loadChatInputPreferences, saveChatInputPreferences } from '../utils/chatInputPreferences';
@@ -1167,6 +1179,24 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       if (interceptorsInitialized.current) return;
       interceptorsInitialized.current = true;
 
+      // 把主动消息 2.0 的 Worker 地址同步一份只读快照给诊断归属层（不存任何密钥）。
+      const syncAmsgDiagnosticUrl = () => {
+          void ActiveMsgStore.getGlobalConfig()
+              .then(cfg => setDiagnosticAmsgWorkerUrl(cfg?.workerUrl))
+              .catch(() => {});
+      };
+      syncAmsgDiagnosticUrl();
+      window.addEventListener(AMSG_GLOBAL_CONFIG_EVENT, syncAmsgDiagnosticUrl);
+
+      // 记录页面最近一次进入后台/锁屏的时刻：iOS Safari/PWA 切后台掐断 fetch 后，往往等用户
+      // 切回前台才恢复微任务执行，届时 visibilityState 已变回 visible，只看报错那一刻会漏判。
+      let lastDocumentHiddenAt = typeof document !== 'undefined' && document.visibilityState === 'hidden'
+          ? Date.now()
+          : 0;
+      document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'hidden') lastDocumentHiddenAt = Date.now();
+      });
+
       // 1. Monkey Patch Fetch
       const originalFetch = window.fetch;
       // “同一 API 在别的模式刚成功”是排查 CORS 包装错误最有价值的对照证据。
@@ -1195,6 +1225,10 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           // the request as whichever App the user navigated to in the meantime.
           const routesAtStart = errorRoutes.current;
           const ambientMetaAtStart = getApiCallAmbientContext();
+          const explicitMetaAtStart = (config as any)?.__sullyMeta;
+          const visibilityAtStart = typeof document !== 'undefined' ? document.visibilityState : undefined;
+          const callerAtStart = captureCallerHint();
+          const handlesFailure = Boolean((config as RequestInit & { __sullyHandlesFailure?: boolean })?.__sullyHandlesFailure);
           const method = ((config as RequestInit | undefined)?.method
               || (typeof Request !== 'undefined' && resource instanceof Request ? resource.method : 'GET'))
               .toUpperCase();
@@ -1246,13 +1280,24 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           // 用户手动开启的「本次发送统计」：只抢占下一条请求，并在真正发出前立即自动关闭。
           // 取兼容层处理后的 sendArgs，展示内容与本次实际提交给服务端的请求体一致。
           let apiRequestCaptureId: string | null = null;
-          if (urlStr.includes('/chat/completions')) {
+          const isChatCompletion = isChatCompletionUrl(urlStr);
+          if (isChatCompletion) {
               const captureMeta = (sendArgs[1] as any)?.__sullyMeta || ambientMetaAtStart;
               apiRequestCaptureId = captureApiRequestOnce({ url: urlStr, body: (sendArgs[1] as any)?.body, meta: captureMeta });
           }
 
+          let receivedResponseHeaders: ReceivedResponseHeadersInfo | undefined;
+          const effectiveHeaders = (sendArgs[1] as RequestInit | undefined)?.headers
+              || (sendArgs[0] instanceof Request ? sendArgs[0].headers : undefined);
+
           try {
               let response = await fetchLlm(sendArgs[0], sendArgs[1], originalFetch, true);
+              receivedResponseHeaders = {
+                  status: response.status,
+                  headersMs: Date.now() - fetchStartedAt,
+                  contentType: response.headers.get('content-type') || undefined,
+                  streamUpgraded,
+              };
 
               // /chat/completions 是可能已经开始计费的请求。拿到任何 HTTP 响应后都不在
               // 兼容层静默重发：中转站可能在返回错误前已经把任务交给上游，重发会让用户
@@ -1264,19 +1309,21 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   response = await assembleUpgradedResponse(response);
               }
 
-              // 「API 调用记录」统一记录入口：所有 /chat/completions（裸 fetch + safeFetchJson
+              // 「API 调用记录」统一记录入口：所有对话生成接口（裸 fetch + safeFetchJson
               // 内部 fetch 都会经过这里）都记一笔。meta 优先取调用方挂在 init 上的 __sullyMeta
               // （safeFetchJson 传的精确信息），裸 fetch 没有就由 recordApiCall 用环境兜底。
               // ⚠️ 耗时必须在 clone 读完**整个响应体**后再算：fetch 在响应头到达时就 resolve，
               // 流式透传的正文可能再流几十秒——旧版在 headers 处截止，「假流」渠道 6.5s 出头、
               // 正文 44s 才灌完，卡片却记成 6.5s（实测误导排查）。clone 与调用方并行消费同一
               // 条流，text() 完成时刻 ≈ 真实收完时刻。
-              if (urlStr.includes('/chat/completions')) {
-                  const meta = (config as any)?.__sullyMeta || ambientMetaAtStart;
+              if (isChatCompletion) {
+                  const explicitMeta = (sendArgs[1] as any)?.__sullyMeta ?? explicitMetaAtStart;
+                  const meta = explicitMeta || ambientMetaAtStart;
                   const requestId = (config as any)?.__sullyApiCallId;
                   const body = (sendArgs[1] as any)?.body;
                   const status = response.status;
                   const ok = response.ok;
+                  const headersSnapshot = receivedResponseHeaders;
                   // clone 出来异步读 usage，不阻塞调用方拿 response
                   let usageClone: Response | null = null;
                   try { usageClone = response.clone(); } catch { usageClone = null; }
@@ -1290,9 +1337,35 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                           try { parsed = JSON.parse(t); } catch { /* 流式/非 JSON：把原始文本交给 recordApiCall 的 SSE 兜底解析 */ }
                           updateApiRequestCaptureUsage({ captureId: apiRequestCaptureId, ok, response: parsed, responseText: parsed === undefined ? t : undefined });
                           recordApiCall({ requestId, url: urlStr, body, status, ok, response: parsed, responseText: parsed === undefined ? t : undefined, meta, durationMs });
-                      }).catch(() => {
+                      }).catch((streamErr) => {
+                          const durationMs = Date.now() - fetchStartedAt;
                           updateApiRequestCaptureUsage({ captureId: apiRequestCaptureId, ok });
-                          recordApiCall({ requestId, url: urlStr, body, status, ok, meta, durationMs: Date.now() - fetchStartedAt });
+                          recordApiCall({ requestId, url: urlStr, body, status, ok, meta, durationMs });
+                          // 原生流式请求（如私聊/见面 stream:true）在拿到 200 响应头后中途断流时，
+                          // patchedFetch 早已返回，不会进外层 catch；这里补记一条 stream-interrupted 日志（主动停止除外）。
+                          if (ok && !streamUpgraded && !handlesFailure && !isAnalyticsRequestUrl(urlStr)) {
+                              const visibilityAtEnd = typeof document !== 'undefined' ? document.visibilityState : undefined;
+                              const { log, kind } = buildFetchFailureSystemLog({
+                                  url: urlStr,
+                                  method,
+                                  headers: effectiveHeaders,
+                                  body,
+                                  durationMs,
+                                  error: streamErr,
+                                  startedAtPerf: fetchStartedAtPerf,
+                                  explicitMeta,
+                                  ambientMeta: ambientMetaAtStart,
+                                  visibilityAtStart,
+                                  visibilityAtEnd,
+                                  backgroundedDuringRequest: lastDocumentHiddenAt >= fetchStartedAt,
+                                  caller: callerAtStart,
+                                  responseHeadersReceived: headersSnapshot,
+                                  recentSuccessfulSameRequest: recentSuccessfulFetches.get(requestComparisonKey),
+                              });
+                              if (kind !== 'aborted') {
+                                  setSystemLogs(prev => [log, ...prev.slice(0, 49)]);
+                              }
+                          }
                       });
                   } else {
                       // clone 失败时，只有已经在上面完整拼装过的升级流才能确认正文收完。
@@ -1302,44 +1375,68 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   }
               }
 
-              if (!response.ok && !(config as RequestInit & { __sullyHandlesFailure?: boolean })?.__sullyHandlesFailure) {
-                  // Only log if it's likely an API call (contains chat/completions or models)
-                  if (/(?:\/chat\/completions|\/models|\/messages|\/responses|\/embeddings|\/rerank)(?:[/?#]|$)/.test(urlStr)) {
+              if (!response.ok && !handlesFailure && !isAnalyticsRequestUrl(urlStr)) {
+                  const explicitMeta = (sendArgs[1] as any)?.__sullyMeta ?? explicitMetaAtStart;
+                  const requestMeta = explicitMeta || ambientMetaAtStart;
+                  const body = (sendArgs[1] as any)?.body;
+                  const relayErrorCode = response.headers.get('x-amsg-relay-error') || undefined;
+                  const identity = identifyNetworkRequestSource({
+                      url: urlStr,
+                      method,
+                      headers: effectiveHeaders,
+                      body,
+                      explicitMeta,
+                      ambientMeta: ambientMetaAtStart,
+                  });
+                  if (shouldLogHttpStatusError({ status: response.status, identity, relayErrorCode })
+                      || /(?:\/chat\/completions|\/models|\/messages|\/responses|\/embeddings|\/rerank)(?:[/?#]|$)/.test(urlStr)) {
                       try {
                           const clone = response.clone();
                           const text = await clone.text();
-                          // 把发出去的请求体摘要也记上 —— 排查"只有点单(带工具)报错"必须看到 model/参数/tools/消息结构
-                          let requestModel: string | undefined;
-                          let reqSummary = '';
-                          try {
-                              const b = (sendArgs[1] as any)?.body;
-                              if (typeof b === 'string') {
-                                  const j = JSON.parse(b);
-                                  requestModel = typeof j.model === 'string' ? j.model : undefined;
-                                  const toolNames = Array.isArray(j.tools) ? j.tools.map((t: any) => t?.function?.name).filter(Boolean) : [];
-                                  const roles = Array.isArray(j.messages) ? j.messages.map((m: any) => m.role + (m.tool_calls ? '(tool_calls)' : '')).join(',') : '';
-                                  reqSummary = `\n--- Request ---\nmodel: ${j.model}\ntemperature: ${j.temperature} | top_p: ${j.top_p} | reasoning_effort: ${j.reasoning_effort} | thinking: ${j.thinking ? 'on' : 'off'}\ntools(${toolNames.length}): ${toolNames.join(', ')}\nmessages(${(j.messages || []).length}) roles: ${roles}`;
-                              }
-                          } catch { /* 解析不了就算了 */ }
-                          setSystemLogs(prev => [{
-                              id: `log-${Date.now()}`,
-                              timestamp: Date.now(),
-                              type: 'network',
-                              source: 'API Request',
-                              advice: requestErrorAdvice(routesAtStart, urlStr, response.url, response.status, text, requestModel, (config as any)?.__sullyMeta || ambientMetaAtStart, config?.headers),
-                              message: `HTTP ${response.status} Error`,
-                              detail: `URL: ${urlStr}\nResponse: ${text.substring(0, 500)}${reqSummary}`
-                          }, ...prev.slice(0, 49)]); // Keep last 50
-                      } catch (e) {
-                          setSystemLogs(prev => [{
-                              id: `log-${Date.now()}`,
-                              timestamp: Date.now(),
-                              type: 'network',
-                              source: 'API Request',
-                              advice: requestErrorAdvice(routesAtStart, urlStr, response.url, response.status),
-                              message: `HTTP ${response.status} (Unreadable Body)`,
-                              detail: `URL: ${urlStr}`
-                          }, ...prev.slice(0, 49)]);
+                          const routeAdvice = requestErrorAdvice(
+                              routesAtStart,
+                              urlStr,
+                              response.url,
+                              response.status,
+                              text,
+                              identity.model,
+                              requestMeta,
+                              config?.headers,
+                          );
+                          const httpLog = buildHttpErrorSystemLog({
+                              url: urlStr,
+                              method,
+                              headers: effectiveHeaders,
+                              body,
+                              status: response.status,
+                              responseText: text,
+                              relayErrorCode,
+                              durationMs: Date.now() - fetchStartedAt,
+                              explicitMeta,
+                              ambientMeta: ambientMetaAtStart,
+                              caller: callerAtStart,
+                              identity,
+                              advice: routeAdvice,
+                          });
+                          setSystemLogs(prev => [httpLog, ...prev.slice(0, 49)]); // Keep last 50
+                      } catch {
+                          const routeAdvice = requestErrorAdvice(routesAtStart, urlStr, response.url, response.status);
+                          const httpLog = buildHttpErrorSystemLog({
+                              url: urlStr,
+                              method,
+                              headers: effectiveHeaders,
+                              body,
+                              status: response.status,
+                              unreadableBody: true,
+                              relayErrorCode,
+                              durationMs: Date.now() - fetchStartedAt,
+                              explicitMeta,
+                              ambientMeta: ambientMetaAtStart,
+                              caller: callerAtStart,
+                              identity,
+                              advice: routeAdvice,
+                          });
+                          setSystemLogs(prev => [httpLog, ...prev.slice(0, 49)]);
                       }
                   }
               }
@@ -1348,46 +1445,64 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               const requestSignal = (sendArgs[1] as RequestInit | undefined)?.signal || (sendArgs[0] instanceof Request ? sendArgs[0].signal : undefined);
               if (isHomeAssetDisposal(err, requestSignal, urlStr)) throw err;
               // Network Failure
-              if (urlStr.includes('/chat/completions')) {
+              const explicitMeta = (sendArgs[1] as any)?.__sullyMeta ?? explicitMetaAtStart;
+              const requestMeta = explicitMeta || ambientMetaAtStart;
+              const body = (sendArgs[1] as any)?.body;
+              const durationMs = Date.now() - fetchStartedAt;
+              if (isChatCompletion) {
                   updateApiRequestCaptureUsage({ captureId: apiRequestCaptureId, ok: false });
-                  recordApiCall({ requestId: (config as any)?.__sullyApiCallId, url: urlStr, body: (sendArgs[1] as any)?.body, ok: false, meta: (config as any)?.__sullyMeta || ambientMetaAtStart, durationMs: Date.now() - fetchStartedAt });
+                  recordApiCall({ requestId: (config as any)?.__sullyApiCallId, url: urlStr, body, ok: false, meta: requestMeta, durationMs });
               }
-              if (!isAnalyticsRequestUrl(urlStr) && !(config as RequestInit & { __sullyHandlesFailure?: boolean })?.__sullyHandlesFailure) {
-                  // 光秃秃一句 "Failed to fetch" + 一个 URL 排查不了任何东西（社区里这条卡过好几个人）。
-                  // 这里把浏览器肯在 JS 侧交出来的旁证一次性补齐：方法、耗时、在线状态、是否跨域、
-                  // Resource Timing 里那条记录，再给一句初判；随后异步做一次 no-cors 连通性复检，
-                  // 结论回填到同一条日志上——「网络不通」和「网络通但响应被 CORS 拦」要走的排查路
-                  // 完全相反，不分开的话用户只能瞎试。详见 utils/networkFailureDiagnosis.ts。
-                  const logId = `log-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-                  const requestMeta = (sendArgs[1] as any)?.__sullyMeta || ambientMetaAtStart;
-                  const recentSuccess = recentSuccessfulFetches.get(requestComparisonKey);
-                  const baseDetail = buildFetchFailureDetail({
+              if (!isAnalyticsRequestUrl(urlStr) && !handlesFailure) {
+                  // 把具体功能来源、配置归属、方法、耗时、前后台切换线索、Resource Timing 一并记齐，
+                  // 再异步做一次 no-cors 连通性复检并回填结论（详见 utils/networkFailureDiagnosis.ts）。
+                  const visibilityAtEnd = typeof document !== 'undefined' ? document.visibilityState : undefined;
+                  const backgrounded = lastDocumentHiddenAt >= fetchStartedAt;
+                  let requestModel: string | undefined;
+                  if (typeof body === 'string' && body.trim().startsWith('{')) {
+                      try {
+                          const parsedBody = JSON.parse(body);
+                          if (typeof parsedBody?.model === 'string') requestModel = parsedBody.model;
+                      } catch { /* ignore */ }
+                  }
+                  // 切后台中断或流式半途中断优先用具体的连接阶段提示，其余优先生效路由归属提示
+                  const routeAdvice = (!backgrounded && !receivedResponseHeaders)
+                      ? requestErrorAdvice(routesAtStart, urlStr, '', 0, '', requestModel, requestMeta, config?.headers)
+                      : undefined;
+                  const { log, kind } = buildFetchFailureSystemLog({
                       url: urlStr,
                       method,
-                      durationMs: Date.now() - fetchStartedAt,
+                      headers: effectiveHeaders,
+                      body,
+                      durationMs,
                       error: err,
-                      requestSummary: summarizeFetchRequestBody((sendArgs[1] as any)?.body),
-                      requestPurpose: requestMeta?.purpose,
-                      recentSuccessfulSameRequest: recentSuccess,
-                  }, { startedAt: fetchStartedAtPerf });
-                  setSystemLogs(prev => [{
-                      id: logId,
-                      timestamp: Date.now(),
-                      type: 'network',
-                      source: 'Network',
-                      message: err.message || 'Fetch Failed',
-                      advice: requestErrorAdvice(routesAtStart, urlStr, '', 0, '', undefined, requestMeta, config?.headers),
-                      detail: baseDetail,
-                  }, ...prev.slice(0, 49)]);
+                      startedAtPerf: fetchStartedAtPerf,
+                      explicitMeta,
+                      ambientMeta: ambientMetaAtStart,
+                      visibilityAtStart,
+                      visibilityAtEnd,
+                      backgroundedDuringRequest: backgrounded,
+                      caller: callerAtStart,
+                      responseHeadersReceived: receivedResponseHeaders,
+                      recentSuccessfulSameRequest: recentSuccessfulFetches.get(requestComparisonKey),
+                      advice: routeAdvice,
+                  });
+                  const logId = log.id;
+                  setSystemLogs(prev => [log, ...prev.slice(0, 49)]);
 
                   // 复检走 originalFetch，否则它自己失败会再写一条日志滚雪球。
-                  if (shouldProbeReachability(classifyFetchFailure({ url: urlStr, error: err }))) {
+                  if (shouldProbeReachability(kind)) {
                       void (async () => {
                           const verdict = await probeOriginReachability(urlStr, originalFetch);
                           const line = describeReachabilityProbe(verdict, parseTargetUrl(urlStr).host, method);
-                          if (!line) return;
-                          setSystemLogs(prev => prev.map(log => (
-                              log.id === logId ? { ...log, detail: `${log.detail || ''}\n${line}` } : log
+                          setSystemLogs(prev => prev.map(item => (
+                              item.id === logId
+                                  ? {
+                                      ...item,
+                                      context: item.context ? { ...item.context, reachability: verdict } : item.context,
+                                      detail: line ? `${item.detail || ''}\n${line}` : item.detail,
+                                  }
+                                  : item
                           )));
                       })();
                   }
@@ -1432,14 +1547,15 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               .filter(Boolean)
               .join('\n');
           if (msg.includes('Warning:')) return;
-          setSystemLogs(prev => [{
-              id: `log-${Date.now()}-${Math.random()}`,
-              timestamp: Date.now(),
-              type: 'error',
-              source: 'Application',
-              message: msg.substring(0, 100),
-              detail: stacks || msg
-          }, ...prev.slice(0, 49)]);
+          const caller = captureCallerHint();
+          const ambient = getApiCallAmbientContext();
+          const errLog = buildConsoleErrorSystemLog({
+              message: msg,
+              stacks,
+              caller,
+              ambientMeta: ambient,
+          });
+          setSystemLogs(prev => [errLog, ...prev.slice(0, 49)]);
       };
   }, []);
 
