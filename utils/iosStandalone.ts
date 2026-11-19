@@ -196,7 +196,9 @@ export const installIOSStandaloneWorkaround = () => {
     const useStandaloneFixes = isIOSStandaloneWebApp();
     // iOS 全屏 PWA 与安卓浏览器都需要这套键盘避让：可视区一变矮就挂 keyboard 类 + 锁外层滚动。
     // 安卓 Chrome/Edge 弹键盘时会把整页顶起，同样靠这套压回去。
-    const useKeyboardFixes = isIOSDevice() || isAndroidDevice();
+    const ios = isIOSDevice();
+    const useKeyboardFixes = ios || isAndroidDevice();
+    document.documentElement.classList.toggle('sully-ios', ios);
     keyboardFixesEnabled = useKeyboardFixes;
     if (useStandaloneFixes) {
         document.documentElement.classList.add('ios-standalone');
@@ -218,6 +220,14 @@ export const installIOSStandaloneWorkaround = () => {
     // 要等 visualViewport 真的变矮，setViewportVars 才会挂上标记、同时把高度收到键盘上方。
     const handleFocusIn = (event: FocusEvent) => {
         if (!isTextEntryElement(event.target)) return;
+        // WebKit can sample the page behind the native accessory bar before the viewport resizes.
+        const bar = ios && event.target.closest('.sully-chat-inputbar');
+        const stage = bar && bar.closest('.sully-chat-root');
+        if (bar && stage) {
+            const root = document.documentElement.style;
+            root.setProperty('--ios-inputbar-color', window.getComputedStyle(bar).backgroundColor || 'transparent');
+            root.setProperty('--ios-chat-stage-color', window.getComputedStyle(stage).backgroundColor || 'transparent');
+        }
         setViewportVars();
 
         const target = event.target;

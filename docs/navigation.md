@@ -42,6 +42,8 @@
 
 `useChatViewportAnchor` 观察消息列表实际高度：原本接近底部时，软键盘、输入法高度、多行输入及工具栏展开收起均保持最新消息可见；上翻历史时保留位置，选择消息和历史搜索窗口不自动贴底。尺寸变化先触发 scroll 的情况不能误判为用户上翻。外壳继续用统一的键盘高度，不另叠一份键盘 padding。
 
+iOS 私聊和群聊输入时，系统键盘上沿下方的网页底色取自输入栏和聊天舞台。半透明颜色叠在实色上，避免键盘工具栏透出写在 html、body 上的桌面壁纸。页面仍按实际可视高度避让键盘。
+
 主屏幕模式的根页面使用 `--app-visible-height` 裁住安全区溢出；body 的 `--app-height` 仍保留 home 安全区绘制空间，外层不允许回弹。`--app-visible-height` 来自已有的高度脏值保护，不能直接用动画期异常的 visualViewport 高度裁页面。见 `docs/ios-status-bar-edge.md`。
 
 回归：`utils/chatInputInteraction.test.ts`、`utils/useChatViewportAnchor.test.ts`、`utils/iosStandalone.keyboard.test.ts`。模拟视口和 DOM 交互不等同于 iPhone 主屏幕模式实机验收。
