@@ -253,7 +253,7 @@ appendDevDebugMcpLog({ tool, args, result });   // 没勾 mcp 时是空操作，
 `appendDevDebugLog` 自带的保护，调用方都不用操心：
 
 - **门禁**：对应 category 没勾就直接 return，零成本。
-- **脱敏**：`data` 里 key 名命中 `api_key / authorization / bearer / token / secret / endpoint / p256dh / auth` 的字段，值替换成 `<redacted>`（正则见 `SECRET_KEY_PATTERN`）。
+- **脱敏**：`data` 里 key 名命中 `api_key / authorization / bearer / token / secret / endpoint / p256dh / auth / password / cookie / device_key / spt` 等敏感字段时值替换成 `<redacted>`（正则见 `SECRET_KEY_PATTERN`）；HTTP 日志的 `url` 与任意字符串值、`label` 中嵌着的中转路径令牌、敏感查询参数、第三方推送链接与内联凭据也会一并替换为 `<redacted>`。
 - **折叠**：默认把 `data` 里超 10 字的长文本截成「前 10 字 + `...`」再落库（省空间 / 隐私）——所以你新加的捕获类导出默认也是瘦身版，要原文得复现前开「记录完整内容」，详见第九节。
 - **容量**：全局最多最近 100 条、超 1 MB 从头丢，不会撑爆 localStorage。
 - **永不抛**：内部整个包了 try/catch，日志失败不影响主流程。
@@ -411,7 +411,7 @@ SW 跑在自己的 context，没法直接访问 page 的 `localStorage` / `appen
 - **归属隔离（`explicit` vs `ambient`）**：调用点通过 `__sullyMeta` 显式传入归属时记为 `调用归属（调用点显式标记）`；未传显式归属的裸 `fetch` 只记 `当时前台状态（未显式传归属，可能是后台自动任务）`，防止后台记忆或同步报错串标到当前打开的聊天角色。
 - **前后台切换线索（`backgroundedDuringRequest`）**：拦截器记录请求在飞期间页面是否触发过 `visibilityState === 'hidden'`。移动端浏览器（尤其 iOS Safari / PWA）在切后台或锁屏时会挂起、切断进行中的连接，切回前台后才抛出 `Load failed`；日志据此优先提示保持前台重试。
 - **响应头到达后的流式中断（`stream-interrupted`）**：无论是透明流式升级拼包，还是私聊/见面的原生 `stream: true` 读取，只要已收到 HTTP 响应头后在正文读取途中报错，均归入 `stream-interrupted`，明确区分于连接建立前/CORS 阶段的 `blocked`，且不再额外发起 `no-cors` 根路径探测。
-- **URL 凭据脱敏（`sanitizeUrlForLog`）**：入库前将主动消息 2.0 大陆中转路径中的个人令牌（`/t/<令牌>/<worker域名>/...` → `/t/<redacted>/<worker域名>/...`）、敏感查询参数（`key`/`token`/`secret` 等）、`user:pass@` 口令以及 `?url=` / `?target=` 内嵌地址中的敏感参数统一替换为 `<redacted>`，保留目标域名与接口路径。
+- **URL 与文本凭据脱敏（`sanitizeUrlForLog` / `redactRelayTokensInText`）**：入库前将主动消息 2.0 大陆中转路径中的个人令牌（`/t/<令牌>/<worker域名>/...` → `/t/<redacted>/<worker域名>/...`）、路径首段含密钥的第三方推送域名（`api.day.app` / `api.chuckfang.com`）、敏感查询参数（`key`/`token`/`secret`/`appid`/`xsec_token`/`lat`/`lon` 等）、`user:pass@` 口令以及 `?url=` / `?target=` 内嵌地址中的敏感参数统一替换为 `<redacted>`，保留目标域名与接口路径；报错原文、HTTP 响应回显与 `console.error` 日志中夹带的敏感 URL 与内联凭据（`Bearer`、`MUSIC_U`、`SPT_`、`bark:/meow:/wxpusher:`）也会同步打码。
 - **结构化上下文字段（`context` 与 `time`）**：每条日志带本地时区可读时间 `time`、构建版本 `context.build` 及结构化诊断字段，复制日志后无需再追问版本号。
 
 两个关键探针：

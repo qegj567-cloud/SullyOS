@@ -96,9 +96,46 @@ export interface IdentifyNetworkRequestInput {
     endpoints?: ConfiguredEndpointSnapshot;
 }
 
-const SENSITIVE_QUERY_KEY_RE = /^(?:api[-_]?key|apikey|key|token|access[-_]?token|auth|authorization|secret|password|passwd|sig|signature|ticket|cookie|session|x-api-key)$/i;
+const SENSITIVE_QUERY_KEY_RE = /^(?:(?:[a-z0-9]+[-_])*(?:api[-_]?key|apikey|key|token|auth|authorization|secret|password|passwd|sig|signature|ticket|cookie|session)|(?:access|refresh|app|id|xsec)token|clientsecret|devicekey|app[-_]?id|appid|ak|sk|spt|lat|lon|lng|latitude|longitude)$/i;
 const EMBEDDED_URL_QUERY_KEY_RE = /^(?:url|target|redirect|redirect_uri)$/i;
 const AMSG_RELAY_PATH_RE = /^\/t\/([^/]+)(?:\/(.*))?$/;
+// 第三方推送里把设备密钥/昵称直接放在路径首段的常见官方域名。
+const PATH_SECRET_PUSH_HOSTS = new Set(['api.day.app', 'api.chuckfang.com']);
+const PATH_SECRET_PUSH_PUBLIC_ROUTES = new Set(['push', 'ping', 'info', 'register', 'healthz']);
+// 任意日志文本、报错原文或上游回显里嵌着的中转地址与常见凭据（排除全角中文标点、反引号与反斜杠，避免吞掉中文日志或破坏 JSON 转义）。
+const AMSG_RELAY_URL_IN_TEXT_RE = /(https?:\/\/amsg-relay\.friedsully\.com\/t\/)([^/\s"'<>`\\\u3000-\u303F\uFF00-\uFFEF?#]+)/gi;
+const FALLBACK_QUERY_SECRET_RE = /([?&](?:api[-_]?key|apikey|key|token|access[-_]?token|xsec[-_]?token|appid|secret|password|passwd|auth|lat|lon|lng|latitude|longitude)=)([^&#\s"'<>`\\\u3000-\u303F\uFF00-\uFFEF]+)/gi;
+const URL_IN_TEXT_RE = /https?:\/\/[^\s"'<>`\\\u3000-\u303F\uFF00-\uFFEF]+/gi;
+const URL_TRAILING_PUNCT_RE = /[.,;:!?)\]\}，。；：！？（）【】《》「」『』、]+$/;
+const PUSH_SCHEME_SECRET_RE = /\b(bark|meow):(https?:\/\/[^\s"'<>`\\\u3000-\u303F\uFF00-\uFFEF]+)/gi;
+const WXPUSHER_SCHEME_SECRET_RE = /\bwxpusher:([^\s"'<>`\\\u3000-\u303F\uFF00-\uFFEF]+)/gi;
+const INLINE_BEARER_RE = /\b(Bearer\s+)([A-Za-z0-9._~+/=-]{12,})/gi;
+const INLINE_MUSIC_U_RE = /\b(MUSIC_U=)([^;\s"'<>`\\\u3000-\u303F\uFF00-\uFFEF]+)/gi;
+const INLINE_WXPUSHER_SPT_RE = /\bSPT_[A-Za-z0-9_-]{12,}\b/g;
+
+/**
+ * 抹掉任意字符串文本中嵌着的主动消息 2.0 大陆中转令牌、敏感 URL 参数、第三方推送链接与内联凭据，
+ * 同时保留域名、接口路径等排障信息。
+ */
+export const redactRelayTokensInText = (text: string): string => {
+    if (!text || typeof text !== 'string') return String(text ?? '');
+    return text
+        .replace(PUSH_SCHEME_SECRET_RE, (_, scheme: string, innerUrl: string) => {
+            const trailing = innerUrl.match(URL_TRAILING_PUNCT_RE)?.[0] || '';
+            const core = trailing ? innerUrl.slice(0, -trailing.length) : innerUrl;
+            // 自建 Bark / MeoW 域名同样把设备密钥/昵称放在路径首段，按推送伪协议强制脱敏首段。
+            return `${scheme}:${sanitizeUrlForLog(core, 0, { redactFirstPathSegment: true })}${trailing}`;
+        })
+        .replace(WXPUSHER_SCHEME_SECRET_RE, 'wxpusher:<redacted>')
+        .replace(URL_IN_TEXT_RE, (matched) => {
+            const trailing = matched.match(URL_TRAILING_PUNCT_RE)?.[0] || '';
+            const core = trailing ? matched.slice(0, -trailing.length) : matched;
+            return `${sanitizeUrlForLog(core)}${trailing}`;
+        })
+        .replace(INLINE_BEARER_RE, '$1<redacted>')
+        .replace(INLINE_MUSIC_U_RE, '$1<redacted>')
+        .replace(INLINE_WXPUSHER_SPT_RE, '<redacted>');
+};
 
 // 主动消息 2.0 Worker 存放在 IndexedDB（ActiveMsg 库），同步拦截器里不能 await 读库；
 // 由运行时在已知 workerUrl 时顺手喂一份纯内存镜像，僅保留 origin/host 用于归属识别。
@@ -153,7 +190,7 @@ const matchesEndpointPrefix = (targetHrefLower: string, targetOriginLower: strin
  * - 敏感查询参数（key/token/secret 等）值替换为 `<redacted>`
  * - 代理转发参数（`?url=`、`?target=`）内部嵌套的 URL 递归执行同一套脱敏
  */
-export const sanitizeUrlForLog = (rawUrl: string, depth = 0): string => {
+export const sanitizeUrlForLog = (rawUrl: string, depth = 0, opts?: { redactFirstPathSegment?: boolean }): string => {
     if (!rawUrl || typeof rawUrl !== 'string') return String(rawUrl ?? '');
     if (/^(?:blob:|data:)/i.test(rawUrl)) {
         if (/^data:/i.test(rawUrl)) {
@@ -169,7 +206,9 @@ export const sanitizeUrlForLog = (rawUrl: string, depth = 0): string => {
     try {
         parsed = isRelative ? new URL(rawUrl, 'https://relative.invalid') : new URL(rawUrl);
     } catch {
-        return rawUrl;
+        return rawUrl
+            .replace(AMSG_RELAY_URL_IN_TEXT_RE, '$1<redacted>')
+            .replace(FALLBACK_QUERY_SECRET_RE, '$1<redacted>');
     }
 
     const hadAuth = Boolean(parsed.username || parsed.password);
@@ -179,10 +218,16 @@ export const sanitizeUrlForLog = (rawUrl: string, depth = 0): string => {
     }
 
     let pathname = parsed.pathname;
+    const hostLower = parsed.hostname.toLowerCase();
     const relayMatch = pathname.match(AMSG_RELAY_PATH_RE);
-    if (relayMatch && (parsed.hostname.toLowerCase() === 'amsg-relay.friedsully.com' || relayMatch[1].length >= 20)) {
+    if (relayMatch && (hostLower === 'amsg-relay.friedsully.com' || relayMatch[1].length >= 20)) {
         const rest = relayMatch[2] ? `/${relayMatch[2]}` : '';
         pathname = `/t/<redacted>${rest}`;
+    } else if (PATH_SECRET_PUSH_HOSTS.has(hostLower) || opts?.redactFirstPathSegment) {
+        const pushMatch = pathname.match(/^\/([^/]+)(\/.*)?$/);
+        if (pushMatch && !PATH_SECRET_PUSH_PUBLIC_ROUTES.has(pushMatch[1].toLowerCase())) {
+            pathname = `/<redacted>${pushMatch[2] || ''}`;
+        }
     }
 
     let queryChanged = false;
@@ -544,7 +589,7 @@ export const identifyNetworkRequestSource = (input: IdentifyNetworkRequestInput)
             source: `MCP · ${serverLabel}（经代理）`,
             category: 'mcp',
             via: 'mcp-proxy',
-            upstreamTarget: targetParsed?.host || mcpTargetRaw,
+            upstreamTarget: targetParsed?.host || sanitizeUrlForLog(mcpTargetRaw),
             operation: opParts || `${method} MCP 请求`,
             configSource: matchedServer?.name ? `设置 → MCP 服务器「${matchedServer.name}」` : '设置 → MCP 代理转发',
             impactHint: '仅影响该 MCP 外部工具的握手或调用，不影响不带该工具的普通对话与本地存储。',
