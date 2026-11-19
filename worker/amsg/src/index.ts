@@ -93,6 +93,7 @@ import {
   type AmsgDailySends,
   type AmsgLimits,
   buildLimitsBrief,
+  buildUnansweredLimitRejectMessage,
   bumpDailySends,
   checkSelfScheduleRules,
   dayKeyInZone,
@@ -1557,7 +1558,12 @@ export const runFireScheduleTool = async (
     return {
       ok: false,
       reason: 'unanswered_limit',
-      message: `对方还没回复，这期间你已经主动找了 / 排了 ${committedSends} 次，用户设的连发上限是 ${unansweredLimit} 次——这次别排了，等 ta 回复再说。`,
+      message: buildUnansweredLimitRejectMessage({
+        count: committedSends,
+        limit: unansweredLimit,
+        context: stash.instant ? 'chat' : 'fire',
+        canManageTasks: stash.fireToolNames?.has(AMSG_FIRE_CANCEL_TOOL) ?? false,
+      }),
     };
   }
   if (stash.scheduledTasks.length >= MAX_FIRE_SCHEDULES) {
@@ -2578,6 +2584,8 @@ export const amsgHooks = {
         dailyRemaining: Number.isFinite(limits.dailySendCap)
           ? Math.max(0, limits.dailySendCap - sentToday - (instant ? 0 : 1))
           : undefined,
+        context: instant ? 'chat' : 'fire',
+        canManageTasks: canManageTasks && mcpNative,
       })
       : '';
     const scheduleBlock = canSelfSchedule
@@ -2591,7 +2599,13 @@ export const amsgHooks = {
     const fireTools = [
       ...(mcpResolve && mcpNative ? buildMcpFireTools(mcpResolve) : []),
       ...(canSelfSchedule && mcpNative
-        ? [buildFireScheduleTool({ nowMs: ctx.now.getTime(), tz, abilities, context: instant ? 'chat' : 'fire' })]
+        ? [buildFireScheduleTool({
+          nowMs: ctx.now.getTime(),
+          tz,
+          abilities,
+          context: instant ? 'chat' : 'fire',
+          maxActiveTasks: limits.maxActiveTasks,
+        })]
         : []),
       ...(canManageTasks && mcpNative
         ? [buildFireCancelTool(), buildFireRenewTool({ nowMs: ctx.now.getTime(), tz })]
@@ -2791,18 +2805,14 @@ export const amsgHooks = {
     // 不复用上游的 readReasoningContent：它是「原生**或**第一个内联块」，这里要的是
     // 「原生**加**全部内联块」，跟客户端渲染的那份对齐。
     //
-    // 每轮**覆盖**（包括覆盖成空）：留下的必须是产出正文那一轮的思考。中间轮那句
-    // 「我先去查一下」跟用户看到的正文对不上，最后一轮没思考时也不能拿它顶上。
-    //
-    // 包装层不主动开 thinking 参数——该不该开由客户端定：本地那一轮会发的三件套
-    // （thinking / reasoning_effort / extra_body）随 taskPayload 顶层 llmExtraBody
-    // 上云（含 Gemini 让步在内的判定都在 useChatAI 的 shouldSendThinkingParams），
-    // 由上游 buildLlmRequestBody 展开进请求体；上游没认领这个字段时退化为只有
-    // -thinking 模型名后缀生效。这里替客户端多开一份的话，Gemini 系 thinking + tools
-    // 同发直接 400。
+    // 留下的必须是产出正文那一轮的思考：本轮有新正文时按本轮覆盖（最后一轮有正文但无思考时清空，
+    // 不让中间轮「我先去查一下」顶上来）；若前序工具轮已把话完整说完、本轮听从收尾提示直接留空结束，
+    // 则保留前序写出正文那一轮的思考。
     const roundReasoning = readAssistantThinking(llmMessage && 'content' in llmMessage
       ? llmMessage : {...llmMessage, content:rawContent});
-    session.finalReasoning = roundReasoning || null;
+    if (content.length > 0 || session.narrations.length === 0) {
+      session.finalReasoning = roundReasoning || null;
+    }
 
     // native tool_calls：只认声明过的工具（fireToolNames 的管理工具 + mcpResolve 的
     // MCP 名），但认法放宽——模型常把声明名的「姓」搞丢或换家：声明的 mcp__foo 回报成

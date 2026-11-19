@@ -1832,6 +1832,17 @@ describe('云端思考链随首条 push 回客户端', () => {
     }
   });
 
+  it('工具轮已说完话、续写收尾轮留空结束 → 保留真正写出正文那一轮的心象', async () => {
+    const decision = await instantFire([
+      { output: '好呀，早点睡，晚安～\n[[RECALL: 2026-06]]', reasoning: '他困了，先哄他睡。' },
+      { output: '', reasoning: '前面已经说完了，留空结束。' },
+    ]);
+
+    expect(decision.decision).toBe('finish');
+    expect(decision.pushPayloads.map((p: any) => p.message)).toEqual(['好呀，早点睡，晚安～']);
+    expect(decision.pushPayloads[0].metadata.amsgReasoning).toBe('他困了，先哄他睡。');
+  });
+
   // 定时任务这条路的 prompt 是 renderFirePack 现拼的，没有「心象」那段提示词，模型的
   // thinking 就是原始推理腔（「用户三小时没说话了，我应该……」）。那个当心象卡片放出去
   // 是穿帮，所以这道门先只对即时对话开。

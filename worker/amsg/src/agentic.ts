@@ -33,6 +33,7 @@ import {
   AMSG_FIRE_SCHEDULE_TOOL,
   extractFireScheduleTextCalls,
 } from '../../../utils/amsgFireSchedule';
+import { mergeToolRoundLeadIns } from '../../../utils/amsg2ToolLoop';
 // type-only：编译期擦除，不会把 realtimeContext 的浏览器依赖打进 worker bundle。
 import type { XhsNote } from '../../../utils/realtimeContext';
 import {
@@ -455,7 +456,9 @@ export function processLLMRound(
   // 这里再拼一次 llmOutputText 就会重复一段（而且它还带着那个转不出来的数据标签）。
   const thisRound = isToolRound ? '' : restoreSurfaces(scanText);
   const rounds = [...state.narrations, thisRound].filter((part) => part.trim().length > 0);
-  const fullText = rounds.join('\n');
+  const fullText = state.narrations.length > 0
+    ? mergeToolRoundLeadIns(state.narrations, thisRound)
+    : thisRound;
   // SAR 信封在这里拆：旁白本来就一轮一份，逐轮拆、逐轮降级（某一轮没守信封就原文照发），
   // 各轮真意再按顺序拼。之后的 classify / 分段 / directives 全部只认真意；外显绝不 classify。
   const sarParse: SarEnvelopeParse | null = sarPlan?.requiresEnvelope

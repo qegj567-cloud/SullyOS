@@ -336,6 +336,29 @@ describe('processLLMRound — SAR 信封逐轮降级', () => {
     const plain = finishPayloads(processLLMRound(createFireSessionState(), '喜'.repeat(300), baseBuild));
     expect(plain[0].notification.body).toBe('喜'.repeat(300));
   });
+
+  it('多轮工具循环里收尾轮重抄了前序信封真意 → 连同前序外显一起去重；新补充的后轮信封照常拼合', () => {
+    const sar = snapshot();
+    const dupState = createFireSessionState();
+    processLLMRound(
+      dupState,
+      envelope({ truth: '明早叫你起床[[RECALL: 2026-06]]', surface: '爱起不起' }),
+      buildWith(sar),
+      null,
+      null,
+      0,
+    );
+    const dupPayloads = finishPayloads(processLLMRound(
+      dupState,
+      envelope({ truth: '明早叫你起床\n记得定闹钟', surface: '爱起不起\n别迟到' }),
+      buildWith(sar),
+      null,
+      null,
+      1,
+    ));
+    expect(dupPayloads.map((p) => p.message)).toEqual(['明早叫你起床', '记得定闹钟']);
+    expect(dupPayloads.map((p) => p.metadata.amsgSarSurface?.surface)).toEqual(['爱起不起', '别迟到']);
+  });
 });
 
 describe('sarEnvelope 纯函数', () => {

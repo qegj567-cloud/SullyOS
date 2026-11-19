@@ -14,8 +14,9 @@
 
 import {
   consumeSARChatSurfaceChunk,
-  parseSARModuleReply,
+  parseSARModuleReplyRounds,
   type AmsgSarModuleSnapshot,
+  type SARModuleRoundPiece,
   type SARModuleRuntimePlan,
 } from '../../../utils/vrWorld/sarEnvelopeCore';
 import { sanitizeIntoSegments, type Segment } from '../../../utils/sanitize';
@@ -126,13 +127,10 @@ export const maskSarSurfaceBlocks = (text: string): SarSurfaceMask => {
 // ─── 拆信封（逐轮） ───
 
 /** 一轮输出拆出来的真意与它自己的外显（没守信封的那一轮没有外显）。 */
-export interface SarEnvelopePiece {
-  canonical: string;
-  surface?: string;
-}
+export type SarEnvelopePiece = SARModuleRoundPiece;
 
 export interface SarEnvelopeParse {
-  /** 真意全文：各轮真意按顺序换行拼接。directives / 分段 / self_log 都只认它。 */
+  /** 真意全文：各轮真意按顺序换行拼接（跨轮重抄段已去重）。directives / 分段 / self_log 都只认它。 */
   canonical: string;
   /** 至少有一轮守了信封。全都没守时 canonical 就是各轮原文（只剥掉散落的信封标签）。 */
   enveloped: boolean;
@@ -142,70 +140,22 @@ export interface SarEnvelopeParse {
   userSurface?: string;
 }
 
-const ENVELOPE_TAG_RE = /<\/?(?:SAR_MODULE_OUTPUT|CHAR_TRUE|CHAR_SURFACE|USER_SURFACE)>/gi;
-
-/** 散落的信封标签绝不能进推送正文，只剥标签本身、不动内容。 */
-const stripEnvelopeTags = (text: string): string => text.replace(ENVELOPE_TAG_RE, '').trim();
-
-/** 只写了开头没写结尾的块（截断 / 工具轮收尾）在下一个块开始处补上闭合。 */
-const closeOpenTag = (text: string, name: string, stoppers: string[]): string => {
-  const open = new RegExp(`<${name}>`, 'i').exec(text);
-  if (!open || new RegExp(`</${name}>`, 'i').test(text)) return text;
-  const after = open.index + open[0].length;
-  const stop = new RegExp(stoppers.join('|'), 'i').exec(text.slice(after));
-  const at = stop ? after + stop.index : text.length;
-  return `${text.slice(0, at)}</${name}>${text.slice(at)}`;
-};
-
-const repairEnvelope = (text: string): string => {
-  let repaired = closeOpenTag(text, 'CHAR_TRUE', ['<CHAR_SURFACE>', '<USER_SURFACE>', '</SAR_MODULE_OUTPUT>']);
-  repaired = closeOpenTag(repaired, 'CHAR_SURFACE', ['<USER_SURFACE>', '<CHAR_TRUE>', '</SAR_MODULE_OUTPUT>']);
-  repaired = closeOpenTag(repaired, 'USER_SURFACE', ['<CHAR_SURFACE>', '<CHAR_TRUE>', '</SAR_MODULE_OUTPUT>']);
-  return repaired;
-};
-
 /**
- * finish 时逐轮拆信封：工具循环每一轮（state.narrations 里一轮一份，加上本轮正文）
- * 各自补闭合后交给核心的 parseSARModuleReply，每一轮各自决定降级。
- *
+ * finish 时逐轮拆信封（复用前端同一份 `parseSARModuleReplyRounds`）：
  *   - 这一轮守了信封 → 真意是它的 CHAR_TRUE，外显是它的 CHAR_SURFACE（只对齐这一轮的真意段）；
  *   - 这一轮没守（拆不出非空的 CHAR_TRUE）→ 这一轮原文照发、不带外显，只剥散落的信封标签；
- *   - 各轮真意按顺序拼接；用户外显取最后一个给了的那一轮。
- *
- * 不拼好全文再切：模型可能某一轮忘写信封、或者不写外层包裹把 CHAR_SURFACE 写在 CHAR_TRUE
- * 前面，拼起来再按标签切的话，那一轮的纯文本会被划进上一段信封里丢掉，外显也会丢。
- *
- * 不需要信封的轮次（没有模块在生效，只剩余韵）调用方根本不该走到这里；为稳妥起见，
- * 此时原文拼接后一个字节都不动。
+ *   - 后续轮完整重抄前序轮真意时连同前序外显一起去重；用户外显取最后一个给了的那一轮。
  */
 export const parseSarEnvelopeRounds = (
   rounds: string[],
   plan: SARModuleRuntimePlan,
 ): SarEnvelopeParse => {
-  const texts = rounds.filter((round) => round.trim().length > 0);
-  if (!plan.requiresEnvelope) return { canonical: texts.join('\n'), enveloped: false, pieces: [] };
-
-  const pieces: SarEnvelopePiece[] = [];
-  let enveloped = false;
-  let userSurface: string | undefined;
-  for (const text of texts) {
-    const parsed = parseSARModuleReply(repairEnvelope(text), plan);
-    if (parsed.enveloped) {
-      enveloped = true;
-      // 用户外显每轮都是同一句话的改写，留最后一轮（产出最终回复那一轮）写的。
-      if (parsed.userSurface) userSurface = parsed.userSurface;
-    }
-    const canonical = stripEnvelopeTags(parsed.canonical);
-    if (!canonical) continue;
-    const surface = parsed.enveloped && parsed.assistantSurface ? stripEnvelopeTags(parsed.assistantSurface) : '';
-    pieces.push({ canonical, ...(surface ? { surface } : {}) });
-  }
-
+  const parsed = parseSARModuleReplyRounds(rounds, plan);
   return {
-    canonical: pieces.map((p) => p.canonical).join('\n'),
-    enveloped,
-    pieces,
-    ...(userSurface ? { userSurface } : {}),
+    canonical: parsed.canonical,
+    enveloped: parsed.enveloped,
+    pieces: parsed.pieces,
+    ...(parsed.userSurface ? { userSurface: parsed.userSurface } : {}),
   };
 };
 
