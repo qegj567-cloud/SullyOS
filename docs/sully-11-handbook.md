@@ -51,10 +51,10 @@
 
 ## 接口排查 | API | 红色弹窗 | 不回 | 401 | 403 | 429 | 余额 | 超时 | 模型列表 | 白屏 | 连接失败
 能力：报错自检、模型权限、限流、超时、按用途查错
-核对：[api-call-log.md](api-call-log.md)、[character-api.md](character-api.md)、[StatusBar.tsx](../components/os/StatusBar.tsx)、[errorSelfCheck.ts](../utils/errorSelfCheck.ts)
+核对：[api-call-log.md](api-call-log.md)、[character-api.md](character-api.md)、[StatusBar.tsx](../components/os/StatusBar.tsx)、[errorSelfCheck.ts](../utils/errorSelfCheck.ts)、[networkRequestSource.ts](../utils/networkRequestSource.ts)
 
 ### 报错自检
-状态栏「查看报错」→ 打开「报错自检」，先看哪项操作失败、建议查哪套配置；需要原文再展开「技术详情」。查看后本次提醒消失，日志仍可回看；新错误会再次提醒。复制全部日志若失败，可在文本框手动复制。
+状态栏「查看报错」→ 打开「报错自检」，先看哪项操作失败、建议查哪套配置；需要原文再展开「技术详情」（每条日志标明对话模型、记忆宫殿、主动消息 2.0、音乐代理、云备份、语音或 MCP 等具体模块来源及前后台/流式阶段）。查看后本次提醒消失，日志仍可回看；新错误会再次提醒。复制全部日志若失败，可在文本框手动复制。
 
 ### API 调用记录
 发完消息没有触发生成 → 先查输入设置。已经生成过 → 设置 → API 调用记录 → 找对应 App、用途和发生顺序。先区分主回复、副 API、向量化、语音；语音和向量化有自己的接口。

@@ -39,7 +39,7 @@
 | **API 调用记录 / 用途与云端记账** | [`docs/api-call-log.md`](./docs/api-call-log.md) | 新增 `/chat/completions` 调用点、改 `ApiCallMeta` 归属或云端模型用量回传前必读；显式 `meta` 不混入前台环境角色，推送不回传凭据 |
 | **世界书管线、分组与角色绑定** | [`docs/worldbook-management.md`](./docs/worldbook-management.md) | 新增 App／角色生成请求或改世界书前必读；新入口使用 ContextBuilder.buildCharacterRequest，世界书自动随角色装载；绑定按 ID，库与角色缓存同事务更新 |
 | **协同工作私聊衔接与转发** | [`docs/collaboration-chat-bridge.md`](./docs/collaboration-chat-bridge.md) | 改协同读取 ChatApp 范围或转发消息前必读；每轮读 DB，空范围不回退，多选只发当前窗口 |
-| **开发调试面板 / 开关** | [`docs/dev-debug.md`](./docs/dev-debug.md) | 加 dev-only 开关、加调试日志、排查"角色怎么又不说话了"。含逐步指南 |
+| **开发调试面板 / 状态栏报错诊断** | [`docs/dev-debug.md`](./docs/dev-debug.md) | 加 dev-only 开关、加捕获日志，或改顶部「查看报错」日志归属、流式断连分类与 URL 脱敏前必读 |
 | **彼方 · 书库分类与阅读偏好** | [`docs/kanata-library.md`](./docs/kanata-library.md) | 改书籍归类、批量整理、角色选书轮换或书库备份前必读；按分类模式不得回退全书库 |
 | **彼方 · 活动选择与自动范围** | [`docs/kanata-activities.md`](./docs/kanata-activities.md) | 改房间/SAR 随机选取、手动子玩法路由或高级排除设置前必读；自动全禁用不得回退，手动可绕过 |
 | **记忆系统** | [`docs/memory-system-overview.md`](./docs/memory-system-overview.md) | 涉及长期记忆、月度总结、向量化记忆宫殿、情感空间。改记忆相关逻辑前必读；新增拼角色上下文的入口（含云端快照）要在请求副本上自备召回，召回与门牌不落库 |
