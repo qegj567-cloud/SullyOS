@@ -20,10 +20,12 @@ import {JOURNAL_APPEARANCE_PRESETS} from '../../utils/journalAppearance';
 import {belongsInBeautyLibrary,isAppDecoration} from '../../utils/beautyCategories';
 import BeautyImportHub from '../share/BeautyImportHub';
 import {stampBeautyCss,isCssImportCandidate,readLegacyWhiteboxShare} from '../../utils/beautyCssAttribution';
+import {PROFILE_PRESETS} from '../../presets/chat/profilePresets';
 import {PSYCHE_STYLE_LIST} from '../../utils/psycheStyleCatalog';
 import React, { useEffect, useState, useRef, useMemo, lazy, Suspense } from 'react';
 import {createPortal} from 'react-dom';
-import { AppID, type AppearancePreset } from '../../types';
+import {DecorationTrialContext, type ChatDecorationTrial} from '../chat/ChatDecorationTrial';
+import { AppID, type CharacterProfile, type AppearancePreset } from '../../types';
 import { useOS, DEFAULT_PAPER_APPEARANCE, DEFAULT_WALLPAPER } from '../../context/OSContext';
 import { resetChatDecoration } from '../../utils/decorationReset';
 import { DB } from '../../utils/db';
@@ -69,9 +71,10 @@ interface Props {
   onCollaborationApplied?: (appearance: CollaborationAppearance) => void;
   createDraft?: () => Promise<DecorationPreset>;
   onOpenWorkshop?:()=>void;
+  onTrial?: (trial: ChatDecorationTrial) => void; trialActive?: boolean;
   initialMaker?: DecorationWorkshop; initialCategory?: BeautyCategory;
 }
-export default function BeautyShareChannel({ presets, onExport, onImport, onBusyChange, onBack, targetCharacterId, onCustomize, onApplied, onCollaborationApplied, createDraft, onOpenWorkshop, initialMaker, initialCategory }: Props) {
+export default function BeautyShareChannel({ presets, onExport, onImport, onBusyChange, onBack, targetCharacterId, onCustomize, onApplied, onCollaborationApplied, createDraft, onOpenWorkshop, initialMaker, initialCategory, onTrial, trialActive }: Props) {
   const { characters, activeCharacterId, theme, updateTheme, customIcons, setCustomIcon, deleteAppearancePreset, removeCustomTheme, replaceAppearancePreset, customThemes=[], applyAppearancePreset, addCustomTheme, updateCharacter, setActiveCharacterId, openApp, closeApp } = useOS();
   const libraryContext=targetCharacterId||initialCategory==='date'||initialCategory==='story'||initialCategory==='collaboration'?'chat':'appearance';
   const trackedOpen=useRef(false);
@@ -224,6 +227,79 @@ export default function BeautyShareChannel({ presets, onExport, onImport, onBusy
     setApplyAll(false);
     setReceived({ kind: 'chat-decoration', preset, name: preset.name });
   };
+  const prepareForCharacters = (appliedPreset: DecorationPreset, targets: CharacterProfile[], origin: DecorationOrigin, mode: 'trial'|'apply') => {
+    const parts = Object.keys(appliedPreset.parts) as DecorationPart[];
+    const available = [...customThemes,...Object.values(PRESET_THEMES)];
+    return prepareDecorationApplication(appliedPreset,parts,targets,theme,available,origin,
+      id=>customThemes.some(b=>b.id===id)?readDecorationOrigin('bubble-'+id):Promise.resolve({kind:'builtin'}),mode);
+  };
+  const applyToCharacters = async (preset: DecorationPreset, targets: CharacterProfile[], origin: DecorationOrigin, frameTarget: AvatarFrameTarget) => {
+    const appliedPreset=hasAvatarFrameCss(preset)&&!hasSplitAvatarFrames(preset)?withAvatarFrameTarget(preset,frameTarget):preset;
+    const key=await decorationSourceKey(preset);
+    const parts=Object.keys(preset.parts) as DecorationPart[];
+    const {prepared,bubbles,bubbleOrigins}=await prepareForCharacters(appliedPreset,targets,origin,'apply');
+    for(const bubble of bubbles){await addCustomTheme(bubble);await writeDecorationOrigin('bubble-'+bubble.id,bubbleOrigins.get(bubble.id)||origin);}
+    for(const {character,changes} of prepared){
+      await updateCharacter(character.id,changes.character);
+      await DB.saveAsset('decoration_applied_'+character.id,key);
+      const rawSlots=await DB.getAsset('decoration_slots_'+character.id);
+      const slots:Record<string,string>=rawSlots?JSON.parse(rawSlots):{};
+      const css=appliedPreset.parts.css;
+      const componentBlocks=css?[...css.matchAll(/\/\* sully-composer:(avatar|background) \*\/[\s\S]*?\/\* end-sully-composer:\1 \*\//g)]:[];
+      const extraCss=css?css.replace(/\/\* sully-composer:(avatar|background) \*\/[\s\S]*?\/\* end-sully-composer:\1 \*\//g,'').trim():'';
+      const isFullOutfit=Boolean(appliedPreset.parts.layout||extraCss||Object.keys(appliedPreset.parts).filter(k=>k!=='css').length>1);
+      const componentOnly=!isFullOutfit&&componentBlocks.length>0;
+      for(const part of parts){
+        if(part==='css'&&componentOnly){
+          if(componentBlocks.some(block=>block[1]==='background'))slots['css:background']=key;
+          if(componentBlocks.some(block=>block[1]==='avatar')){
+            const frameSlots=readAvatarFrameSlots(css!);
+            if(frameSlots.shared){
+              slots['css:avatar:user']=key;slots['css:avatar:ai']=key;delete slots['css:avatar'];
+            }else{
+              // Migrate any legacy shared slot before overwriting only one side so the other side's attribution survives.
+              if(slots['css:avatar']){slots['css:avatar:user']??=slots['css:avatar'];slots['css:avatar:ai']??=slots['css:avatar'];delete slots['css:avatar'];}
+              if(frameSlots.user)slots['css:avatar:user']=key;
+              if(frameSlots.ai)slots['css:avatar:ai']=key;
+            }
+          }
+        }else{
+          slots[part]=key;
+          if(part==='css'){delete slots['css:avatar'];delete slots['css:avatar:user'];delete slots['css:avatar:ai'];delete slots['css:background'];}
+          if(part==='bubbles'&&!appliedPreset.parts.css&&!appliedPreset.parts.layout&&appliedPreset.parts.bubbles){
+            for(const side of ['user','ai'] as const)if(appliedPreset.parts.bubbles[side].avatarDecoration){
+              if(slots['css:avatar']){slots['css:avatar:user']??=slots['css:avatar'];slots['css:avatar:ai']??=slots['css:avatar'];delete slots['css:avatar'];}
+              delete slots['css:avatar:'+side];
+            }
+          }
+        }
+      }
+      await DB.saveAsset('decoration_slots_'+character.id,JSON.stringify(slots));
+      await startBeautyUsage(key,'chat:'+character.id);
+    }
+  };
+  const live = useRef({characters,applyToCharacters});
+  live.current = {characters,applyToCharacters};
+  const mounted = useRef(false);
+  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
+  const startTrial = async (preset: DecorationPreset, origin: DecorationOrigin, beforeCommit?: () => Promise<void>) => {
+    if (!onTrial || !targetCharacter) throw Error('请选择试用角色');
+    const frameTarget = readAvatarFrameTarget(preset.parts.css || '');
+    const visual = hasAvatarFrameCss(preset)&&!hasSplitAvatarFrames(preset)?withAvatarFrameTarget(preset,frameTarget):preset;
+    const {prepared,bubbles} = await prepareForCharacters(visual,[targetCharacter],origin,'trial');
+    if (!mounted.current) return;
+    const patch = prepared[0].changes.character;
+    onTrial({characterId:targetCharacter.id,patch,bubble:bubbles.find(b=>b.id===patch.bubbleStyle),showProfile:!!preset.parts.profile && Object.keys(preset.parts).length===1,
+      commit: async () => {
+        await beforeCommit?.();
+        const character = live.current.characters.find(item=>item.id===targetCharacter.id);
+        if (!character || !mounted.current) throw Error('试用角色已切换，请重新打开预览');
+        await writeDecorationOrigin(await decorationSourceKey(preset),origin);
+        await live.current.applyToCharacters(preset,[character],origin,frameTarget);
+        trackBeauty('apply','chat');
+      }});
+  };
+  const trialContext = onTrial ? {active:!!trialActive,start:startTrial} : null;
   const applyReceived = async () => {
     if (!received || applying) return;
     setApplying(true); onBusyChange(true); setApplyError('');
@@ -245,54 +321,8 @@ export default function BeautyShareChannel({ presets, onExport, onImport, onBusy
       } else {
         const targets=applyAll?characters:characters.filter(item=>item.id===target);
         if (!targets.length) throw Error('请选择要应用的角色');
-        const key=await decorationSourceKey(received.preset);
-        const parts=Object.keys(received.preset.parts) as DecorationPart[];
-        // Prepare every patch before writing, so malformed input cannot partly apply.
-        const origin=await readDecorationOrigin(key);
-        const customIds=new Set(customThemes.map(item=>item.id));
-        const appliedPreset=hasAvatarFrameCss(received.preset)&&!hasSplitAvatarFrames(received.preset)?withAvatarFrameTarget(received.preset,avatarTarget):received.preset;
-        const {prepared,bubbles,bubbleOrigins}=await prepareDecorationApplication(appliedPreset,parts,targets,theme,
-          [...customThemes,...Object.values(PRESET_THEMES)],origin,
-          id=>customIds.has(id)?readDecorationOrigin('bubble-'+id):Promise.resolve({kind:'builtin'}));
-        for(const bubble of bubbles){await addCustomTheme(bubble);await writeDecorationOrigin('bubble-'+bubble.id,bubbleOrigins.get(bubble.id)||origin);}
-        for(const {character,changes} of prepared){
-          await updateCharacter(character.id,changes.character);
-          await DB.saveAsset('decoration_applied_'+character.id,key);
-          const rawSlots=await DB.getAsset('decoration_slots_'+character.id);
-          const slots:Record<string,string>=rawSlots?JSON.parse(rawSlots):{};
-          const css=appliedPreset.parts.css;
-          const componentBlocks=css?[...css.matchAll(/\/\* sully-composer:(avatar|background) \*\/[\s\S]*?\/\* end-sully-composer:\1 \*\//g)]:[];
-          const extraCss=css?css.replace(/\/\* sully-composer:(avatar|background) \*\/[\s\S]*?\/\* end-sully-composer:\1 \*\//g,'').trim():'';
-          const isFullOutfit=Boolean(appliedPreset.parts.layout||extraCss||Object.keys(appliedPreset.parts).filter(k=>k!=='css').length>1);
-          const componentOnly=!isFullOutfit&&componentBlocks.length>0;
-          for(const part of parts){
-            if(part==='css'&&componentOnly){
-              if(componentBlocks.some(block=>block[1]==='background'))slots['css:background']=key;
-              if(componentBlocks.some(block=>block[1]==='avatar')){
-                const frameSlots=readAvatarFrameSlots(css!);
-                if(frameSlots.shared){
-                  slots['css:avatar:user']=key;slots['css:avatar:ai']=key;delete slots['css:avatar'];
-                }else{
-                  // Migrate any legacy shared slot before overwriting only one side so the other side's attribution survives.
-                  if(slots['css:avatar']){slots['css:avatar:user']??=slots['css:avatar'];slots['css:avatar:ai']??=slots['css:avatar'];delete slots['css:avatar'];}
-                  if(frameSlots.user)slots['css:avatar:user']=key;
-                  if(frameSlots.ai)slots['css:avatar:ai']=key;
-                }
-              }
-            }else{
-              slots[part]=key;
-              if(part==='css'){delete slots['css:avatar'];delete slots['css:avatar:user'];delete slots['css:avatar:ai'];delete slots['css:background'];}
-              if(part==='bubbles'&&!appliedPreset.parts.css&&!appliedPreset.parts.layout&&appliedPreset.parts.bubbles){
-                for(const side of ['user','ai'] as const)if(appliedPreset.parts.bubbles[side].avatarDecoration){
-                  if(slots['css:avatar']){slots['css:avatar:user']??=slots['css:avatar'];slots['css:avatar:ai']??=slots['css:avatar'];delete slots['css:avatar'];}
-                  delete slots['css:avatar:'+side];
-                }
-              }
-            }
-          }
-          await DB.saveAsset('decoration_slots_'+character.id,JSON.stringify(slots));
-          await startBeautyUsage(key,'chat:'+character.id);
-        }
+        const origin=await readDecorationOrigin(await decorationSourceKey(received.preset));
+        await applyToCharacters(received.preset,targets,origin,avatarTarget);
         setNotice(applyAll?`已应用到全部 ${targets.length} 个角色`:`已应用给 ${targets[0].name}`);
       }
       if (received.kind === 'chat-decoration' && received.builtinSilverHalo) trackEvent('应用内置银晕白框');
@@ -311,6 +341,7 @@ export default function BeautyShareChannel({ presets, onExport, onImport, onBusy
   const builtinBubbles: WardrobeEntry[] = Object.values(PRESET_THEMES).map(bubbles=>({id:'builtin-bubble-'+bubbles.id,name:bubbles.name,kind:'chat-decoration',categories:['bubbles'],contents:'聊天气泡',attributionKey:async()=>'',read:async()=>validateDecoration({format:'sullyos-chat-decoration',version:1,name:bubbles.name,parts:{bubbles:structuredClone(bubbles)}})}));
   const builtinSounds:WardrobeEntry[]=[{src:'none',label:'静音（默认）'},...Object.entries(BUILTIN_SOUNDS).map(([src,item])=>({src,label:item.label}))].map(item=>({id:'builtin-sound-'+item.src,name:item.label,kind:'chat-decoration',categories:['sound'],contents:'消息提示音',attributionKey:async()=>'',read:async()=>validateDecoration({format:'sullyos-chat-decoration',version:1,name:item.label,parts:{sound:{src:item.src,volume:.6}}})}));
   const builtinAppearance: WardrobeEntry[] = BUILTIN_APPEARANCE_PRESETS.map(item=>({id:item.id,name:item.name,kind:'appearance',categories:['appearance'],contents:'紫色星光壁纸、桌面图标与小组件，含彼方和热点图标',attributionKey:async()=>'',read:async()=>structuredClone(item)}));
+  const builtinProfiles: WardrobeEntry[] = PROFILE_PRESETS.map(({id,name,customCss})=>({id:'profile-'+id,name,kind:'chat-decoration',categories:['profile'],contents:'角色名片',attributionKey:async()=>'',read:async()=>validateDecoration({format:'sullyos-chat-decoration',version:1,name,parts:{profile:{customCss}}})}));
   const builtinPsyche: WardrobeEntry[] = PSYCHE_STYLE_LIST.filter(style=>style.id!=='custom').map(style=>({id:'psyche-'+style.id,name:style.name,kind:'chat-decoration',categories:['psyche'],contents:style.sub,attributionKey:async()=>'',read:async()=>({format:'sullyos-chat-decoration',version:1,name:style.name,parts:{psyche:{styleId:style.id,customCss:''}}})}));
   const libraryEntries = entries;
   const outfitIds=new Set(saved.filter(p=>p._collection==='outfit').map(p=>p._libraryId));
@@ -372,8 +403,8 @@ export default function BeautyShareChannel({ presets, onExport, onImport, onBusy
     (onBack || closeApp)();
   };
   useLocalBackHandler(() => { goBack(); return true; }, 20);
-  if(page==='catalog')return <Suspense fallback={<p role="status" className="text-slate-700 p-4">正在打开装扮库…</p>}><BeautyCatalog onBack={()=>setPage('library')} onReceive={async(data,share)=>{await receive(data,share);setPage('library');}}/></Suspense>;
-  return <div className="beauty-wardrobe">
+  if(page==='catalog')return <DecorationTrialContext.Provider value={trialContext}><Suspense fallback={<p role="status" className="text-slate-700 p-4">正在打开装扮库…</p>}><BeautyCatalog initialCategory={category} onBack={()=>setPage('library')} onReceive={async(data,share)=>{await receive(data,share);setPage('library');}}/></Suspense></DecorationTrialContext.Provider>;
+  return <DecorationTrialContext.Provider value={trialContext}><div className="beauty-wardrobe">
     <div className="wardrobe-navigation">
       <header className="wardrobe-topline">
         <button className="wardrobe-back" disabled={busy || applying} aria-label={page === 'library' ? initialCategory==='collaboration' ? '返回协同设置' : targetCharacterId ? '返回聊天' : '返回外观设置' : '返回我的装扮'} onClick={goBack}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 4-8 8 8 8"/></svg></button>
@@ -394,8 +425,8 @@ export default function BeautyShareChannel({ presets, onExport, onImport, onBusy
     {page==='library'&&<div className="wardrobe-file-actions">{category==='collaboration'&&<button disabled={busy} onClick={async()=>{setBusy(true);try{const preset=createDraft?await createDraft():{format:'sullyos-chat-decoration' as const,version:1 as const,name:'我的协同工作',parts:{collaboration:validateCollaborationAppearance(await CollaborationStore.loadSettings())}};setSaveCurrent({preset,key:'decoration_global_collaboration'});}catch(e){setError((e as Error).message);}finally{setBusy(false);}}}>保存当前样式</button>}{category!=='all'&&category!=='chat'&&<button disabled={busy||applying|| (!!targetCharacterId&&!targetCharacter)} onClick={()=>void restoreCategory()}>恢复默认</button>}{!targetCharacterId&&(category==='schedule'||category==='journal')&&<button disabled={busy} onClick={()=>setSaveCurrent({preset:makeAppPreset(category,'我的'+(category==='schedule'?'日程表':'交换日记'),category==='schedule'?theme.scheduleCardAppearance:theme.journalAppearance),key:'decoration_global_'+category})}>保存当前样式</button>}{DECORATION_WORKSHOPS.filter(([id])=>id===category&&belongsInBeautyLibrary([id],libraryContext)).map(([id,label])=><button key={id} disabled={busy} onClick={()=>openMaker(id)}>{label}制作器 ＋</button>)}</div>}
     {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
     {notice&&<p role="status">{notice}</p>}
-    {page === 'library' && <fieldset data-dress-guide="collection" disabled={busy} className="border-0 p-0 m-0 min-w-0">{!(['bubbles','psyche','schedule','journal','date','story'].includes(category) && visibleEntries.length===0) && <BeautyWardrobe getUsage={getUsage} key={category} searchOpen={searchOpen} title={category === 'all' ? '我的收藏' : BEAUTY_CATEGORIES.find(([value]) => value === category)?.[1]} entries={visibleEntries} onEdit={editEntry} onDelete={setDeleteEntry} onUpdate={checkUpdate} onShare={entry=>{setShareSource(entry.id);setPage('mine');}} onExport={entry=>exportEntry(entry)} onApply={entry => { void applyLocal(entry); }}/>}</fieldset>}
-    {page==='receive'&&<div data-dress-guide="import-page"><BeautyImportHub key={cssDraft?.text} initialCss={cssDraft} initialCategory={category==='collaboration'||category==='date'||category==='story'?category:undefined} busy={busy} onFile={file=>{void importFile(file);}} onCssBatch={async items=>{await saveLibraryDecorationBatch(items);trackBeauty('import','css');await refreshSaved();setNotice(`已导入 ${items.length} 份白框，请到收藏中选择应用`);}} onCss={async(preset,origin)=>{await saveLibraryDecoration(preset,origin);trackBeauty('import','css');await refreshSaved();setReceived({kind:'chat-decoration',preset,name:preset.name});setApplyAll(false);}} codePanel={<BeautySharePanel key="receiver" surface="receive" kind="appearance" unified embedded defaultOpen initialTab="receive" sources={[]} onBusyChange={value=>{setBusy(value);onBusyChange(value);}} onReceive={receive} receivedMessage="已保存到本机预设，可选择立即应用。"/>}/></div>}
+    {page === 'library' && <fieldset data-dress-guide="collection" disabled={busy} className="border-0 p-0 m-0 min-w-0">{!(['bubbles','psyche','profile','schedule','journal','date','story'].includes(category) && visibleEntries.length===0) && <BeautyWardrobe getUsage={getUsage} key={category} searchOpen={searchOpen} title={category === 'all' ? '我的收藏' : BEAUTY_CATEGORIES.find(([value]) => value === category)?.[1]} entries={visibleEntries} onEdit={editEntry} onDelete={setDeleteEntry} onUpdate={checkUpdate} onShare={entry=>{setShareSource(entry.id);setPage('mine');}} onExport={entry=>exportEntry(entry)} onApply={entry => { void applyLocal(entry); }}/>}</fieldset>}
+    {page==='receive'&&<div data-dress-guide="import-page"><BeautyImportHub key={cssDraft?.text} initialCss={cssDraft} initialCategory={category==='profile'||category==='collaboration'||category==='date'||category==='story'?category:undefined} busy={busy} onFile={file=>{void importFile(file);}} onCssBatch={async items=>{await saveLibraryDecorationBatch(items);trackBeauty('import','css');await refreshSaved();setNotice(`已导入 ${items.length} 份白框，请到收藏中选择应用`);}} onCss={async(preset,origin)=>{await saveLibraryDecoration(preset,origin);trackBeauty('import','css');await refreshSaved();setReceived({kind:'chat-decoration',preset,name:preset.name});setApplyAll(false);}} codePanel={<BeautySharePanel key="receiver" surface="receive" kind="appearance" unified embedded defaultOpen initialTab="receive" sources={[]} onBusyChange={value=>{setBusy(value);onBusyChange(value);}} onReceive={receive} receivedMessage="已保存到本机预设，可选择立即应用。"/>}/></div>}
     {(page==='mine'||page==='submit')&&<section data-dress-guide="share-page" className="wardrobe-share-hub">
       <nav className="wardrobe-share-methods" aria-label="分享方式">{([['file','文件分享'],['image','图片分享'],['code','码分享']] as const).map(([id,label])=><button key={id} disabled={busy} aria-pressed={shareMethod===id} onClick={()=>setShareMethod(id)}>{label}</button>)}</nav>
       {shareMethod==='code'?<BeautySharePanel key="author" surface="author" kind="appearance" unified embedded defaultOpen initialTab="submit" initialSource={shareSource||undefined} onBusyChange={value=>{setBusy(value);onBusyChange(value);}} sources={libraryEntries.map(entry=>({...entry,beforeSubmit:async()=>{const origin=await readDecorationOrigin(await entry.attributionKey());if(origin.allowRedistribute===false)throw Error('作者禁止二次传播，这份作品不能投稿分享');}}))} onReceive={receive}/>:<fieldset disabled={busy} className="beauty-share-panel">
@@ -415,9 +446,10 @@ export default function BeautyShareChannel({ presets, onExport, onImport, onBusy
     {page === 'library' && libraryContext==='appearance' && (category === 'all' || category === 'appearance') && <BeautyWardrobe getUsage={getUsage} entries={builtinAppearance} title="内置桌面主题" onApply={entry=>{void applyLocal(entry);}}/>}
     {page === 'library' && libraryContext==='chat' && (category === 'all' || category === 'bubbles') && <BeautyWardrobe getUsage={getUsage} entries={builtinBubbles} title="内置气泡" onApply={entry=>{void applyLocal(entry);}} onEdit={editEntry}/>}
     {page==='library'&&libraryContext==='chat'&&(category==='all'||category==='sound')&&<BeautyWardrobe getUsage={getUsage} entries={builtinSounds} title="内置提示音" onApply={entry=>void applyLocal(entry)}/>}
+    {page==='library' && libraryContext==='chat' && (category==='profile'||category==='all') && <BeautyWardrobe getUsage={getUsage} entries={builtinProfiles} title="内置角色名片" onApply={entry=>{void applyLocal(entry);}}/>}
     {page === 'library' && libraryContext==='chat' && category === 'psyche' && <BeautyWardrobe getUsage={getUsage} entries={builtinPsyche} title="内置心象" onApply={entry=>{void applyLocal(entry);}}/>}
     {page === 'library' && <><BeautyRepoLibrary/>{targetCharacterId&&<button className="dress-guide-replay" onClick={()=>setGuideStep(0)}>再看一次使用引导</button>}</>}
-    {draft?.maker==='bubbles'?createPortal(<div className="decoration-bubble-maker" role="dialog" aria-modal="true" aria-label="气泡制作器"><Suspense fallback={<p>正在打开气泡制作器…</p>}><BubbleMaker embedded initialTheme={draft.preset.parts.bubbles} onClose={()=>setDraft(null)} onSaveTheme={async bubbles=>{const preset=await portableDecoration({format:'sullyos-chat-decoration',version:1,name:bubbles.name,parts:{bubbles}});if(draft.originalEntryId?.startsWith('bubble-')&&['self','remix'].includes(draft.origin.kind)){await addCustomTheme({...bubbles,id:draft.originalEntryId.slice(7)});await writeDecorationOrigin(draft.originalEntryId,remixOrigin(draft.origin));}else await saveLibraryDecoration(preset,remixOrigin(draft.origin),draft.originalKey&&['self','remix'].includes(draft.origin.kind)?draft.originalKey:undefined);trackBeauty('save','bubbles');await refreshSaved();setDraft(null);setReceived({kind:'chat-decoration',preset,name:preset.name});setApplyAll(false);}}/></Suspense></div>,document.body):draft&&<DecorationDraftEditor getUsage={getUsage} {...draft} outfits={outfitEntries} onOutfitsChange={refreshSaved} characterName={targetCharacter?.name} theme={theme} sources={[...entries.filter(entry=>entry.kind==='chat-decoration'&&!outfitIds.has(entry.id)),...builtinWhitebox,...builtinBubbles,...builtinSounds,...builtinPsyche,...builtinApps,...builtinMeetings]} onOpenWorkshop={()=>openMaker('bubbles')} onClose={()=>{setDraft(null);if(guideStep===2||guideStep===3)setGuideStep(4);}} onApply={async(preset,origin)=>{await writeOrigin(await decorationSourceKey(preset),origin);setDraft(null);if(guideStep===2||guideStep===3)setGuideStep(4);setApplyAll(false);setReceived({kind:'chat-decoration',preset,name:preset.name});}} onShareSaved={async id=>{await refreshSaved();setReceived(null);setShareSource(id);setShareMethod('code');setPage('mine');setDraft(null);}} onSaved={preset=>{setDraft(null);void refreshSaved().catch(()=>setError('预设已保存，列表刷新失败，请重新打开'));setReceived({kind:'chat-decoration',preset,name:preset.name});setApplyAll(false);}}/>}
+    {draft?.maker==='bubbles'?createPortal(<div className="decoration-bubble-maker" role="dialog" aria-modal="true" aria-label="气泡制作器"><Suspense fallback={<p>正在打开气泡制作器…</p>}><BubbleMaker embedded initialTheme={draft.preset.parts.bubbles} onClose={()=>setDraft(null)} onSaveTheme={async bubbles=>{const preset=await portableDecoration({format:'sullyos-chat-decoration',version:1,name:bubbles.name,parts:{bubbles}});if(draft.originalEntryId?.startsWith('bubble-')&&['self','remix'].includes(draft.origin.kind)){await addCustomTheme({...bubbles,id:draft.originalEntryId.slice(7)});await writeDecorationOrigin(draft.originalEntryId,remixOrigin(draft.origin));}else await saveLibraryDecoration(preset,remixOrigin(draft.origin),draft.originalKey&&['self','remix'].includes(draft.origin.kind)?draft.originalKey:undefined);trackBeauty('save','bubbles');await refreshSaved();setDraft(null);setReceived({kind:'chat-decoration',preset,name:preset.name});setApplyAll(false);}}/></Suspense></div>,document.body):draft&&<DecorationDraftEditor getUsage={getUsage} {...draft} outfits={outfitEntries} onOutfitsChange={refreshSaved} characterName={targetCharacter?.name} theme={theme} sources={[...entries.filter(entry=>entry.kind==='chat-decoration'&&!outfitIds.has(entry.id)),...builtinWhitebox,...builtinBubbles,...builtinSounds,...builtinPsyche,...builtinProfiles,...builtinApps,...builtinMeetings]} onOpenWorkshop={()=>openMaker('bubbles')} onClose={()=>{setDraft(null);if(guideStep===2||guideStep===3)setGuideStep(4);}} onApply={async(preset,origin)=>{await writeOrigin(await decorationSourceKey(preset),origin);setDraft(null);if(guideStep===2||guideStep===3)setGuideStep(4);setApplyAll(false);setReceived({kind:'chat-decoration',preset,name:preset.name});}} onShareSaved={async id=>{await refreshSaved();setReceived(null);setShareSource(id);setShareMethod('code');setPage('mine');setDraft(null);}} onSaved={preset=>{setDraft(null);void refreshSaved().catch(()=>setError('预设已保存，列表刷新失败，请重新打开'));setReceived({kind:'chat-decoration',preset,name:preset.name});setApplyAll(false);}}/>}
     </div>
     {catalogNotice && !firstGuideActive && page==='library' && !draft && <BeautyUpdateNotice onClose={()=>setCatalogNotice(false)}/>}
     {!catalogNotice&&guideStep!==null&&!firstGuideActive&&!draft?.maker&&<DecorationGuide step={guideStep} onSkip={endGuide} onNext={()=>{if(guideStep===7)endGuide();else if(guideStep===5){setPage('library');setGuideStep(6);}else setGuideStep(guideStep+1);}}/>}
@@ -459,5 +491,5 @@ export default function BeautyShareChannel({ presets, onExport, onImport, onBusy
         </div>
       </div>
     </div>}
-  </div>;
+  </div></DecorationTrialContext.Provider>;
 }

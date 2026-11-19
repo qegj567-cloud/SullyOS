@@ -39,6 +39,8 @@ export function resetChatDecoration(category: BeautyCategory, char: CharacterPro
         character.chromeCustomCss = stripWhiteboxSoundDirective(char.chromeCustomCss || '');
         character.chatSound = { src: 'none' };
         character.chatSoundBound = false;
+    } else if (category === 'profile') {
+        character.chatProfileAppearance = {customCss:''};
     } else if (category === 'psyche') {
         character.thinkingChainStyle = 'echo';
         character.thinkingChainCustomCss = '';

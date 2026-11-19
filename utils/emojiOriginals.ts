@@ -66,7 +66,8 @@ async function resolveOriginal(url: string, retry: boolean): Promise<Original> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-        const response = await fetch(url, { signal: controller.signal, cache: retry ? 'reload' : 'default' });
+        // A cross-origin byte read can fail while the same URL still displays in an img.
+        const response = await fetch(url, { signal: controller.signal, cache: retry ? 'reload' : 'default', __sullyHandlesFailure: true } as RequestInit);
         if (!response.ok) return { missing: cacheReadable && (response.status === 404 || response.status === 410) };
         const blob = await response.blob();
         return await rememberEmojiOriginal(url, blob) ? { blob } : {};

@@ -55,10 +55,12 @@ import LuckinHelpModal from '../components/luckin/LuckinHelpModal';
 import { PRESET_THEMES, DEFAULT_ARCHIVE_PROMPTS } from '../components/chat/ChatConstants';
 import { resolveChatTheme } from '../utils/groupChat/theme';
 import ChatHeader from '../components/chat/ChatHeaderShell';
+import {useChatTailProfileGesture} from '../hooks/useChatTailProfileGesture';
 import ChatCharacterProfile from '../components/chat/ChatCharacterProfile';
 import CharacterEntryTransition from '../components/chat/CharacterEntryTransition';
 import {resolveDecorationTheme} from '../utils/chatDecoration';
 import {DecorationTab} from '../components/chat/ChatDecorationPanel';
+import {ChatTrialControls, type ChatDecorationTrial} from '../components/chat/ChatDecorationTrial';
 import ChatAppearanceWardrobe from '../components/chat/ChatAppearanceWardrobe';
 import ChatInputArea from '../components/chat/ChatInputArea';
 import ConfirmDialog from '../components/os/ConfirmDialog';
@@ -161,9 +163,14 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
     const osAppearanceFonts = useMemo(() => appearancePresets.flatMap(preset => preset.theme.customFont?.startsWith('data:')
         ? [{ name: preset.name, source: preset.theme.customFont }] : []), [appearancePresets]);
     const { activeApp, characters, activeCharacterId: osActiveCharacterId, setActiveCharacterId, addCharacter, updateCharacter, updateUserProfile, apiConfig, updateApiConfig, apiPresets, availableModels, addApiPreset, closeApp, openApp, customThemes, addCustomTheme, removeCustomTheme, addWorldbook, updateTheme, saveAppearancePreset, addToast, showError, userProfile, lastMsgTimestamp, groups, characterGroups, clearUnread, unreadMessages, realtimeConfig, memoryPalaceConfig, updateMemoryPalaceConfig, remoteVectorConfig, syncEmotionApiToAllCharacters, theme: baseOsTheme, openDateWithChar } = useOS();
-    const activeCharacterId=homePhone?.characterId??osActiveCharacterId;
+    const wardrobeCharacter = characters.find(c=>c.id===osActiveCharacterId) || characters[0];
+    const [trial,setTrial] = useState<(ChatDecorationTrial & {ownerId:string}) | null>(null);
+    const liveTrial = !homePhone && activeApp===AppID.Chat && trial?.ownerId===wardrobeCharacter?.id && characters.some(c=>c.id===trial?.characterId) ? trial : null;
+    const activeCharacterId=homePhone?.characterId??liveTrial?.characterId??osActiveCharacterId;
+    const savedCharacter = characters.find(c=>c.id===activeCharacterId) || characters[0];
+    const char = useMemo(()=>liveTrial && savedCharacter ? {...savedCharacter,...liveTrial.patch} : savedCharacter,[savedCharacter,liveTrial]);
     const sendProgress = useSyncExternalStore(subscribeChatSendProgress, () => getChatSendProgress(activeCharacterId), () => null);
-    const osTheme = useMemo(()=>homePhone?homePhoneAppearance(baseOsTheme):resolveDecorationTheme(baseOsTheme,characters.find(c=>c.id===activeCharacterId)||characters[0]),[baseOsTheme,characters,activeCharacterId,!!homePhone]);
+    const osTheme = useMemo(()=>homePhone?homePhoneAppearance(baseOsTheme):resolveDecorationTheme(baseOsTheme,char),[baseOsTheme,char,!!homePhone]);
     const localDateKey = useLocalDateKey();
 
     // 记忆宫殿高水位（用于清空聊天时的安全检查）
@@ -347,8 +354,8 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
     // Which messages are currently showing "译" version (toggle state only, no API calls)
     const [showingTargetIds, setShowingTargetIds] = useState<Set<number>>(new Set());
 
-    const char = characters.find(c => c.id === activeCharacterId) || characters[0];
-    const profileOpen = !!char && profileCharacterId === char.id;
+    useEffect(()=>{if(trial && (!liveTrial || modalType!=='chrome-css'))setTrial(null);},[trial,liveTrial,modalType]);
+    const profileOpen = !!char && (profileCharacterId === char.id || !!liveTrial?.showProfile);
     const openCharacterProfile = useCallback(() => {
         if (!char?.id) return;
         trackEvent('打开聊天角色名片');
@@ -427,8 +434,8 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
     const currentThemeId = char?.bubbleStyle || osTheme.chatDefaultBubbleStyle || 'default';
     // 解析逻辑抽到 utils/groupChat/theme.ts（群聊共用），行为不变
     const activeTheme = useMemo(
-        () => homePhone?HOME_PHONE_BUBBLES:resolveChatTheme(currentThemeId, customThemes, PRESET_THEMES),
-        [currentThemeId, customThemes,!!homePhone],
+        () => homePhone?HOME_PHONE_BUBBLES:liveTrial?.bubble ?? resolveChatTheme(currentThemeId, customThemes, PRESET_THEMES),
+        [currentThemeId, customThemes,!!homePhone,liveTrial?.bubble],
     );
     const draftKey = `chat_draft_${activeCharacterId}`;
 
@@ -3557,7 +3564,8 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
         return displayMessages.filter(message => !pending.has(message.id));
     }, [displayMessages, streamingBubbles, streamingThinking, streamingHandoverIds, selectionMode]);
 
-    const timeSegmentStarts = useMemo(() => computeTimeSegmentStarts(renderedMessages), [renderedMessages]);
+    const segmentByDay = osTheme.chatTimestampPosition === 'below_avatar';
+    const timeSegmentStarts = useMemo(() => computeTimeSegmentStarts(renderedMessages, segmentByDay), [renderedMessages, segmentByDay]);
     const lastNonSystemRenderedMessage = useMemo(() => {
         for (let i = renderedMessages.length - 1; i >= 0; i--) {
             if (renderedMessages[i].role !== 'system') return renderedMessages[i];
@@ -3666,6 +3674,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
     const mergedFineTune = useMemo(() => mergeChatFineTune(osTheme, homePhone?undefined:char?.chatFineTune), [osTheme, char?.chatFineTune,!!homePhone]);
     const chatFineTuneCss = useMemo(() => buildChatFineTuneCss(mergedFineTune), [mergedFineTune]);
     const selectedAvatarFrameCss=useMemo(()=>avatarFrameLayer([osTheme.chatChromeCustomCss,char?.chromeCustomCss].filter(Boolean).join('\n')),[osTheme.chatChromeCustomCss,char?.chromeCustomCss]);
+    const tailProfileGesture = useChatTailProfileGesture(char?.id, !selectionMode && !profileOpen && modalType === 'none' && showPanel === 'none' && windowedFocusMsgId === null && !isInputFocused && messages.length > 0, openCharacterProfile);
     const locatingChat = isTyping || instantChatPending;
     React.useEffect(() => {
         if (!locatingChat && char?.id) clearLocationPin(char.id);
@@ -3890,7 +3899,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
              />}
 
             <StreamingVoiceBar state={streamingVoice.state} onStop={stopStreamingVoice} />
-            <div ref={scrollRef} onScroll={handleChatScroll} onClick={() => setShowPanel('none')} className="sully-chat-messages flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden overscroll-contain pt-6 pb-6 no-scrollbar" style={{ backgroundImage: activeTheme.type === 'custom' && activeTheme.user.backgroundImage ? 'none' : undefined }}>
+            <div ref={scrollRef} {...tailProfileGesture} onScroll={handleChatScroll} onClick={() => setShowPanel('none')} className="sully-chat-messages flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden overscroll-contain pt-6 pb-6 no-scrollbar" style={{ backgroundImage: activeTheme.type === 'custom' && activeTheme.user.backgroundImage ? 'none' : undefined }}>
                 <ChatSubtitleLayer enabled={translationEnabled && translationExpanded && translationStyle === 'subtitle'} settings={subtitleSettings}>
                 {windowedFocusMsgId !== null && (
                     <div className="sticky top-0 z-20 flex justify-center pb-2 pointer-events-none">
@@ -4077,7 +4086,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
                                     showTimestamp={osTheme.chatShowTimestamp}
                                     timestampPosition={osTheme.chatTimestampPosition}
                                     avatarPlacement={mergedFineTune.chatAvatarPlacement}
-                                    startsTimeSegment={i === 0 && startsNewTimeSegment(lastNonSystemRenderedMessage, { timestamp: Date.now() })}
+                                    startsTimeSegment={i === 0 && startsNewTimeSegment(lastNonSystemRenderedMessage, { timestamp: Date.now() }, segmentByDay)}
                                     thinkingChainOptions={thinkingChainOptions}
                                 />
                             </div>
@@ -4705,8 +4714,9 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
             )}
 
             {char && modalType === 'chrome-css' && <ChatAppearanceWardrobe
-                key={`appearance-wardrobe:${char.id}`}
-                character={char} theme={baseOsTheme} onSaveBubble={addCustomTheme} themes={[...Object.values(PRESET_THEMES), ...customThemes]}
+                key={`appearance-wardrobe:${wardrobeCharacter?.id || char.id}`}
+                trialActive={!!liveTrial} onTrial={homePhone?undefined:next=>setTrial({...next,ownerId:wardrobeCharacter.id})}
+                character={homePhone?char:wardrobeCharacter} theme={baseOsTheme} onSaveBubble={addCustomTheme} themes={[...Object.values(PRESET_THEMES), ...customThemes]}
                 initialTab={decorationTab} updateCharacter={patch=>updateCharacter(char.id,patch)}
                 updateTheme={updateTheme} onBgUpload={handleBgUpload} backgroundUrl={resolvedChatBackground}
                 onOpenWorkshop={()=>{setModalType('none');openApp(AppID.ThemeMaker);}}
@@ -4715,13 +4725,18 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
 
             {/* 情绪设置已嵌入日程 Modal（与日程强制同步开/关），不再单独渲染 */}
 
-            {profileOpen && theaterSlotIdx === null && <ChatCharacterProfile key={`profile:${char.id}`} character={char}
+            {profileOpen && theaterSlotIdx === null && <ChatCharacterProfile key={`profile:${char.id}`} character={char} customCss={(char.chatProfileAppearance ?? osTheme.chatProfileAppearance)?.customCss}
                 initialTab={profileTabOnOpen}
                 schedule={scheduleData?.charId === char.id && scheduleData.date === charDateKey ? scheduleData : null}
                 onClose={() => setProfileCharacterId(null)}
                 onSchedule={() => { setProfileCharacterId(null); setModalType('schedule'); }}
                 onPlayTheater={index => { setProfileTabOnOpen('日程'); handlePlayTheater(index); }}
                 onMemory={() => { setProfileCharacterId(null); setMemoryRepairOpen(true); }} />}
+            {liveTrial && <ChatTrialControls onReturn={()=>setTrial(null)} onScroll={pixels=>scrollRef.current?.scrollBy(0,pixels)} onUse={async()=>{
+                await liveTrial.commit();
+                if(liveTrial.characterId!==osActiveCharacterId)setActiveCharacterId(liveTrial.characterId);
+                setTrial(null);setModalType('none');
+            }}/>}
             {memoryRepairOpen && char && (
                 <MemoryRepairPortal
                     inline={!!homePhone}

@@ -646,7 +646,7 @@ const McdCard: React.FC<McdCardProps> = ({ toolName, args, result, error, rawTex
     // 购物车类型 (用户侧已发送的"想要下单"小卡片)
     if (kind === 'cart' && cartItems && cartItems.length) {
         return (
-            <div className="w-72 rounded-2xl overflow-hidden border border-yellow-200 shadow-sm bg-gradient-to-br from-yellow-50 to-amber-50">
+            <div className="sully-chat-card-face w-72 rounded-2xl overflow-hidden border border-yellow-200 shadow-sm bg-gradient-to-br from-yellow-50 to-amber-50">
                 <div className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-yellow-400 to-amber-400">
                     <span className="text-lg">🛒</span>
                     <div className="flex-1 min-w-0">
@@ -661,7 +661,7 @@ const McdCard: React.FC<McdCardProps> = ({ toolName, args, result, error, rawTex
     // 候选类型 (用户侧"问问 ta 这个"扔过来的单品)
     if (kind === 'candidate' && candidateItem) {
         return (
-            <div className="w-64 rounded-2xl overflow-hidden border border-yellow-200 shadow-sm bg-gradient-to-br from-yellow-50 to-amber-50">
+            <div className="sully-chat-card-face w-64 rounded-2xl overflow-hidden border border-yellow-200 shadow-sm bg-gradient-to-br from-yellow-50 to-amber-50">
                 <div className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-yellow-300 to-amber-300">
                     <span className="text-lg">💭</span>
                     <div className="flex-1 min-w-0">
@@ -714,7 +714,7 @@ const McdCard: React.FC<McdCardProps> = ({ toolName, args, result, error, rawTex
     const itemsHaveDisplayFields = effectiveKind === 'menu' && (specializedHasItems || fallbackMenuHasItems);
 
     return (
-        <div className="w-72 rounded-2xl overflow-hidden border border-yellow-200 shadow-sm bg-gradient-to-br from-yellow-50 to-amber-50">
+        <div className="sully-chat-card-face w-72 rounded-2xl overflow-hidden border border-yellow-200 shadow-sm bg-gradient-to-br from-yellow-50 to-amber-50">
             {/* 头部: 麦当劳红黄条 */}
             <div className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-yellow-400 to-amber-400">
                 <span className="text-lg">🍟</span>

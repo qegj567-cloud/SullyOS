@@ -9,7 +9,7 @@ import { handleLocalBack } from './localBackHandlers';
 const mocks=vi.hoisted(()=>({update:vi.fn(),open:vi.fn(),active:vi.fn(),done:vi.fn(),read:vi.fn<(...args:any[])=>Promise<any>>(async()=>null),share:vi.fn(),wardrobe:vi.fn(),theme:vi.fn()}));
 vi.mock('../context/OSContext',()=>({useOS:()=>({characters:[{id:'a',name:'甲'},{id:'b',name:'乙'}],activeCharacterId:'b',theme:{},updateTheme:mocks.theme,updateCharacter:mocks.update,addCustomTheme:vi.fn(),setActiveCharacterId:mocks.active,openApp:mocks.open,closeApp:vi.fn(),applyAppearancePreset:vi.fn()})}));
 vi.mock('./db',()=>({DB:{getAsset:mocks.read,getAssetRaw:mocks.read,saveAsset:vi.fn()}}));
-vi.mock('./chatDecoration',()=>({validateDecoration:(v:unknown)=>v,decorationPatches:vi.fn(async()=>({character:{thinkingChainStyle:'echo'}}))}));
+vi.mock('./chatDecoration',async importOriginal=>({...await importOriginal<typeof import('./chatDecoration')>(),validateDecoration:(v:unknown)=>v,decorationPatches:vi.fn(async()=>({character:{thinkingChainStyle:'echo'}}))}));
 vi.mock('./beautyUsage',()=>({startBeautyUsage:vi.fn(),decorationSourceKey:async()=>'test',rememberBeautySource:vi.fn()}));
 vi.mock('../components/share/BeautyRepoInvitation',()=>({BeautyRepoLibrary:()=>null}));
 vi.mock('../components/share/BeautySharePanel',()=>({default:(props:any)=>{mocks.share(props);return null;}}));
@@ -37,7 +37,7 @@ it('opens the story category as chat decorations without requiring an entry char
   await act(async()=>root.render(React.createElement(BeautyShareChannel,{presets:[],onExport:vi.fn(),onImport:vi.fn(),onBusyChange:vi.fn(),initialCategory:'story'})));
   expect(host.querySelector('h2')?.textContent).toBe('聊天装扮');
   const tabs=host.querySelector('.wardrobe-categories')!.textContent!;
-  expect(tabs).toContain('提示音见面界面剧情界面');
+  expect(tabs).toMatch(/提示音.*见面界面剧情界面/);
   expect(tabs).not.toContain('桌面主题');
   const entries=mocks.wardrobe.mock.calls.filter(call=>call[1]==='内置剧情美化').at(-1)![0];
   expect(entries.map((entry:any)=>entry.name)).toEqual(['纯小说','旧书纸页','静夜阅读']);

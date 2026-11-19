@@ -8,7 +8,7 @@ import { SULLY_HELP_DESK_AVATAR, SULLY_HELP_DESK_ID } from '../../utils/sullyIde
 export function SullyHelpCard() {
     const { openApp } = useOS();
     return (
-        <button type="button" className="flex items-center gap-3 rounded-2xl bg-white p-3 text-left text-slate-800 shadow-sm"
+        <button type="button" className="sully-chat-card-face flex items-center gap-3 rounded-2xl bg-white p-3 text-left text-slate-800 shadow-sm"
             onClick={() => {
                 trackEvent('打开 Sully-11', { 入口: '聊天转接卡' });
                 appShortcutLaunch.request({ appId: AppID.FAQ, entryId: SULLY_HELP_DESK_ID });

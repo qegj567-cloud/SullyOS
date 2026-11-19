@@ -20,6 +20,7 @@ export async function prepareDecorationApplication(
     availableBubbles: ChatTheme[],
     origin: DecorationOrigin,
     readBubbleOrigin: (id: string) => Promise<DecorationOrigin>,
+    mode: 'apply' | 'trial' = 'apply',
 ) {
     const validated = validateDecoration(preset);
     const bubbles: ChatTheme[] = [];
@@ -44,7 +45,7 @@ export async function prepareDecorationApplication(
     const cssFrameSides = incomingCssFrames ? (['user', 'ai'] as const).filter(side => Boolean(incomingCssFrames.shared || incomingCssFrames[side])) : [];
     for (const character of targets) {
         // CSS, sounds and background preservation are still computed separately for each character.
-        const changes = await decorationPatches(validated, parts.filter(part => part !== 'bubbles'), 'character', character, theme);
+        const changes = await decorationPatches(validated, parts.filter(part => part !== 'bubbles'), 'character', character, theme, mode);
         const previous = availableBubbles.find(b => b.id === (character.bubbleStyle || theme.chatDefaultBubbleStyle));
         if (parts.includes('bubbles') && validated.parts.bubbles) {
             let desired = structuredClone(validated.parts.bubbles);
@@ -86,7 +87,8 @@ export async function prepareDecorationApplication(
                     } catch { /* A broken old preset must not block installing a valid work. */ }
                 }
                 if (!installed) {
-                    installed = await migrateChatThemeBlobRefs({ ...desired, id: 'decoration-' + crypto.randomUUID(), type: 'custom' });
+                    installed = { ...desired, id: 'decoration-' + crypto.randomUUID(), type: 'custom' };
+                    if (mode === 'apply') installed = await migrateChatThemeBlobRefs(installed);
                     bubbles.push(installed);
                     bubbleOrigins.set(installed.id, origin);
                 }
@@ -100,7 +102,8 @@ export async function prepareDecorationApplication(
             if (!stripped) {
                 const copy = structuredClone(previous);
                 for (const side of cssFrameSides) for (const field of avatarFields) delete (copy[side] as any)[field];
-                stripped = await migrateChatThemeBlobRefs({ ...copy, id: 'decoration-' + crypto.randomUUID(), type: 'custom' });
+                stripped = { ...copy, id: 'decoration-' + crypto.randomUUID(), type: 'custom' };
+                if (mode === 'apply') stripped = await migrateChatThemeBlobRefs(stripped);
                 strippedBubbles.set(stripKey, stripped);
                 bubbles.push(stripped);
                 bubbleOrigins.set(stripped.id, remixOrigin(await getOrigin(previous.id)));

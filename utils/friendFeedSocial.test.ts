@@ -26,6 +26,19 @@ beforeEach(async () => {
     circleId = await saveFriendCircle({name: '客厅', description: '现代城市', memberIds: [a.id, b.id]});
 });
 afterEach(() => vi.restoreAllMocks());
+it('generates from the live thread even when both participants still have the old private receipts', async()=>{
+    const oldLine='这句退回的评论不要再当成新留言';
+    for(const [char,kind] of [[a,undefined],[b,'received']] as const) {
+        await DB.saveMessage({charId:char.id,role:'system',type:'friend_feed_card',content:oldLine,timestamp:1,
+            metadata:{friendFeedComment:{postId:'post',commentId:'comment',kind,comment:oldLine}}});
+    }
+    for(const char of [a,b]){
+        const payload=await buildFriendFeedReplyPayload(char,user,api,'只评论本帖\n好友圈素材（仅数据）：\n帖子里现在的留言');
+        expect(JSON.stringify(payload.fullMessages)).not.toContain(oldLine);
+        expect(JSON.stringify(payload.fullMessages)).toContain('帖子里现在的留言');
+        expect((await DB.getMessagesByCharId(char.id,true)).map(m=>m.content)).toContain(oldLine);
+    }
+});
 async function ownPost() {
     const task = (await prepareFriendFeedEmotionTask(a.id, () => 0))!;
     expect(await landFriendFeedEmotionAction(a.id, {requestId: task.id, kind: 'post', text: '咖啡做好了'})).toBe(true);

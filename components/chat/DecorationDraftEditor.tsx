@@ -3,6 +3,7 @@ import {AVATAR_FRAME_TARGETS,setAvatarFrameSlot,type AvatarFrameTarget} from '..
 import type {WardrobeUsageReader} from '../../utils/wardrobeUsage';
 import { useLocalBackHandler } from '../../hooks/useLocalBackHandler';
 import {MEETING_APPEARANCES} from '../../utils/meetingAppearance';
+import {PROFILE_SELECTORS} from '../../utils/chatProfileAppearance';
 import CssCodeEditor from './CssCodeEditor';
 import AvatarFrameImageEditor from './AvatarFrameImageEditor';
 import {trackBeauty} from '../../utils/beautyAnalytics';
@@ -12,7 +13,7 @@ import {JOURNAL_APPEARANCE_PRESETS} from '../../utils/journalAppearance';
 import {SCHEDULE_CARD_PRESETS} from '../../utils/scheduleAppearance';
 import React,{useMemo,useState} from 'react';
 import {createPortal} from 'react-dom';
-import {type DecorationPreset,LAYOUT_DEFAULTS,validateDecoration} from '../../utils/chatDecoration';
+import {type DecorationPreset,DEFAULT_AVATAR_POSITION,LAYOUT_DEFAULTS,validateDecoration} from '../../utils/chatDecoration';
 import {canEditDecoration,remixOrigin,readDecorationOrigin,saveLibraryDecoration,deleteLibraryDecoration,combineDecorationOrigins,type DecorationOrigin} from '../../utils/decorationLibrary';
 import BeautyConfirmDialog from '../share/BeautyConfirmDialog';
 import BeautyPresetPreview from '../share/BeautyPresetPreview';
@@ -61,6 +62,7 @@ export default function DecorationDraftEditor({getUsage,outfits=[],onOutfitsChan
  const setCategoryCss=(css:string)=>setDraft(old=>{
    if(category==='date'||category==='story')return {...old,parts:{[category]:{preset:'novel',...old.parts[category],customCss:css}}};
    if(category==='collaboration')return {...old,parts:{collaboration:{uiTheme:'sully',avatarMode:'theme',avatarStyle:'circle',...old.parts.collaboration,customCss:css}}};
+   if(category==='profile')return {...old,parts:{...old.parts,profile:{customCss:css}}};
    if(category==='journal')return {...old,parts:{...old.parts,journal:{...old.parts.journal,customCss:css}}};
    if(category==='schedule')return {...old,parts:{...old.parts,schedule:{...old.parts.schedule,customCss:css}}};
    if(category==='bubbles')return {...old,parts:{...old.parts,bubbles:{...(old.parts.bubbles||structuredClone(PRESET_THEMES.default)),customCss:css}}};
@@ -88,7 +90,7 @@ export default function DecorationDraftEditor({getUsage,outfits=[],onOutfitsChan
    const nextOrigin=await readDecorationOrigin(await entry.attributionKey());
    if(!canEditDecoration(nextOrigin))throw Error('作者禁止二改，请回到装扮库整套应用这份作品。');
    const next=validateDecoration(await (entry.readLocal || entry.read)());
-   if(shelf==='whitebox'){setDraft(old=>({...old,parts:{...old.parts,...next.parts}}));}
+   if(shelf==='whitebox'){setDraft(old=>({...old,parts:{...old.parts,...next.parts,layout:next.parts.layout?{...LAYOUT_DEFAULTS,...next.parts.layout}:{...old.parts.layout,...DEFAULT_AVATAR_POSITION}}}));}
    else if(shelf==='avatar'){
     const css=workshopCss(next,'avatar');
     const fields=['avatarDecoration','avatarDecorationX','avatarDecorationY','avatarDecorationScale','avatarDecorationRotate'] as const;
@@ -177,6 +179,7 @@ export default function DecorationDraftEditor({getUsage,outfits=[],onOutfitsChan
       <button onClick={async()=>{try{await navigator.clipboard.writeText(workshopPrompt(category));setNotice('已复制当前分类提示词');}catch{setError('复制失败');}}}>复制 AI 提示词</button>
       {category==='avatar'&&<AvatarFrameImageEditor css={categoryCss} disabled={busy} onChange={setCategoryCss} onBusy={setBusy} onError={setError}/>}
       {category==='background'&&<label>选择壁纸<input type="file" accept="image/*" disabled={busy} onChange={async e=>{const file=e.target.files?.[0];if(!file)return;try{if(file.size>12*1024*1024)throw Error('请选择 12 MB 以内的图片');const {blobToDataUrl}=await import('../../utils/blobRef');const image=await blobToDataUrl(file);setDraft(old=>({...old,parts:{...old.parts,background:{image,style:old.parts.background?.style||'plain'}}}));}catch(e){setError(e instanceof Error?e.message:'图片读取失败');}}}/></label>}
+      {category==='profile'&&<details><summary>名片选择器</summary><code style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{PROFILE_SELECTORS.join('\n')}</code></details>}
       <CssCodeEditor disabled={busy} aria-label={`${shelves.find(([id])=>id===category)?.[1]} CSS`} spellCheck={false} value={categoryCss} onChange={setCategoryCss} placeholder={category==='psyche'?'.sully-psyche-card { }':category==='background'?'.sully-chat-root { background: #f5f5f5; }':'在这里编写或粘贴 CSS'}/>
       {category==='whitebox'&&<label>追加 CSS<textarea disabled={busy} aria-label="追加 CSS" spellCheck={false} value={extraCss} onChange={e=>setExtraCss(e.target.value)}/></label>}
      </>}
