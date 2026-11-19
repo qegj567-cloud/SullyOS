@@ -28,6 +28,7 @@ import {
 } from '../../utils/amsgDiagnostics';
 import { ActiveMsgStore, isInstantChatSwitchedOn, maskActiveMsgUserId } from '../../utils/activeMsgStore';
 import { showInstantChatSendHelp } from '../../utils/instantChatSendHelp';
+import { AmsgRescueSettingsBanner } from '../AmsgRescueAlert';
 import { AMSG_GLOBAL_CONFIG_EVENT, isAmsg2GloballyEnabled, isAmsg2WorkerActive } from '../../utils/amsgGlobalGate';
 import { setAmsg2GlobalEnabled } from '../../utils/amsgGlobalSwitch';
 import { formatTaskTime } from '../../utils/amsg2Tasks';
@@ -2625,6 +2626,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
       )}
     >
       <div ref={topRef} className={`space-y-4 text-sm text-slate-600 ${workspaceSection ? 'amsg-modern-content' : ''}`}>
+        <AmsgRescueSettingsBanner />
         {configLoadError ? (
           <div role="alert" className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 text-xs text-amber-700 space-y-2">
             <p>{configLoadError}</p>

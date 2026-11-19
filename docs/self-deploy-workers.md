@@ -70,6 +70,8 @@ Secrets 要等**部署完**再填：Worker 页面 → **Settings** → 最上面
 | Text | `VAPID_EMAIL` | 随便一个 `mailto:你的邮箱` | 否 |
 | Secret | `AMSG_SERVER_TOKEN` | 自己起一个密码，填了就要求所有请求带上它 | 否 |
 
+平时不要设 `AMSG_RESCUE_TOKEN`。它只在本地数据被清空、需要从云端救数据时临时加，用完立刻删掉，见 [主动消息 2.0 · 数据救援](./amsg2-rescue.md)。
+
 填完点右下角 **Deploy**。
 
 > ⚠️ VAPID 那一对**必须和 SullyOS 面板里的是同一对**。整个站点共用一个浏览器推送订阅，Worker 用别的密钥对去签，推送会被浏览器拒掉（403），表现是「一切正常但就是收不到」。
