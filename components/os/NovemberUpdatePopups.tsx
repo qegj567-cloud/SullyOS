@@ -6,19 +6,23 @@ import { SULLY_HELP_DESK_AVATAR } from '../../utils/sullyIdentity';
 import { trackEvent } from '../../utils/analytics';
 import { shouldOfferRelayNotice } from './RelayUpdatePopup';
 import sullyPeeking from '../../assets/sully-support/sully-peeking.webp';
+import silverHaloPreview from '../../assets/presets/silver-halo-preview.webp';
 import './NovemberUpdatePopups.css';
 
 type NoticeActions = { onDone: () => void; onVisit: () => void };
 
-function NovemberNotice({ noticeKey, title, eyebrow, visitLabel, children, secondPage, onDone, onVisit, support = false }: NoticeActions & {
+function NovemberNotice({ noticeKey, title, eyebrow, visitLabel, children, additionalPages = [], onDone, onVisit, onRead = onDone, support = false }: NoticeActions & {
     noticeKey: string; title: string; eyebrow: string; visitLabel: string; children: React.ReactNode; support?: boolean;
-    secondPage?: { title: string; body: React.ReactNode; onRead: () => void };
+    additionalPages?: { title: string; body: React.ReactNode }[];
+    onRead?: () => void;
 }) {
     const dialog = useRef<HTMLDialogElement>(null);
     const finished = useRef(false);
     const titleId = useId();
     const [page, setPage] = useState(1);
-    const pageTitle = page === 2 && secondPage ? secondPage.title : title;
+    const pageCount = 1 + additionalPages.length;
+    const currentPage = additionalPages[page - 2];
+    const pageTitle = currentPage?.title ?? title;
     useEffect(() => {
         const node = dialog.current;
         node?.showModal();
@@ -31,7 +35,7 @@ function NovemberNotice({ noticeKey, title, eyebrow, visitLabel, children, secon
         action();
     };
     const back = () => {
-        if (page === 2) setPage(1);
+        if (page > 1) setPage(page - 1);
         else finish(onDone);
         return true;
     };
@@ -40,19 +44,19 @@ function NovemberNotice({ noticeKey, title, eyebrow, visitLabel, children, secon
         aria-labelledby={titleId} onCancel={event => { event.preventDefault(); back(); }}>
         <div className="november-notice-layout">
             <header className="november-notice-heading">
-                <p className="november-notice-eyebrow">{eyebrow}{secondPage && ` · ${page} / 2`}</p>
-                <h2 id={titleId} aria-live={secondPage ? 'polite' : undefined}>{pageTitle}</h2>
+                <p className="november-notice-eyebrow">{eyebrow}{pageCount > 1 && ` · ${page} / ${pageCount}`}</p>
+                <h2 id={titleId} aria-live={pageCount > 1 ? 'polite' : undefined}>{pageTitle}</h2>
                 <button type="button" className="november-notice-close" aria-label={`关闭${pageTitle}`} onClick={() => finish(onDone)}><X size={20} /></button>
             </header>
-            <div key={page} className="november-notice-body" tabIndex={0} aria-label={`${pageTitle}说明`}>{page === 2 ? secondPage?.body : children}</div>
+            <div key={page} className="november-notice-body" tabIndex={0} aria-label={`${pageTitle}说明`}>{currentPage?.body ?? children}</div>
             <footer className="november-notice-actions">
-                {secondPage ? <>
+                {pageCount > 1 ? <>
                     {page === 1
                         ? <button type="button" onClick={() => finish(onVisit)}>{visitLabel}</button>
-                        : <button type="button" onClick={() => setPage(1)}>上一页</button>}
-                    {page === 1
-                        ? <button type="button" className="november-notice-primary" onClick={() => setPage(2)}>下一页<ArrowRight size={16} aria-hidden="true" /></button>
-                        : <button type="button" className="november-notice-primary" onClick={() => finish(secondPage.onRead)}>知道了</button>}
+                        : <button type="button" onClick={() => setPage(page - 1)}>上一页</button>}
+                    {page < pageCount
+                        ? <button type="button" className="november-notice-primary" onClick={() => setPage(page + 1)}>下一页<ArrowRight size={16} aria-hidden="true" /></button>
+                        : <button type="button" className="november-notice-primary" onClick={() => finish(onRead)}>知道了</button>}
                 </> : <>
                     <button type="button" onClick={() => finish(onDone)}>知道了</button>
                     <button type="button" className="november-notice-primary" onClick={() => finish(onVisit)}>{visitLabel}<ArrowRight size={16} aria-hidden="true" /></button>
@@ -72,10 +76,16 @@ export function HelpStickersUpdatePopup({ onDone, onVisit }: NoticeActions) {
     }, []);
     return <NovemberNotice noticeKey={HELP_STICKERS_UPDATE_KEY} eyebrow="11 月 19 日 · 小更新"
         title="Sully-11 答疑与表情包更新" visitLabel="问 Sully-11"
-        secondPage={{ title: '新内置白框「银晕」', body: <section>
+        additionalPages={[{ title: '新内置白框「银晕」', body: <section>
+            <img className="november-silver-halo-preview" src={silverHaloPreview} width="585" height="1266" alt="银晕聊天实装预览，角色用浅银色气泡，自己的回复用深灰色气泡" />
             <p>「银晕」给聊天换上深浅两色的切角气泡，每条消息的时间都显示在圆形头像下方。</p>
-            <p>在私聊点「＋」→「聊天装扮」→「白框」，找到「内置白框」里的<strong>银晕</strong>。点「立即应用」，再确认要使用的角色。</p>
-        </section>, onRead: () => { trackEvent('查看更新说明', version); onDone(); } }}
+            <p>在私聊点「＋」→「聊天装扮」→「白框」。在「内置白框」里选「银晕」，点「立即应用」，再确认要使用的角色。</p>
+        </section> }, { title: '点头像，看角色心声', body: <section>
+            <p>在私聊里，点<strong>角色消息旁的头像</strong>就能打开名片。手机上也可以滑到最新一条消息，松手，再从<strong>消息区底部向上拉一次</strong>。</p>
+            <p>打开名片后，点「设定」可以改角色资料，点「日程」可以看 TA 今天的安排。</p>
+            <p>想看心声，先为角色开启「日程与情绪」和「情绪感知」。有了心声，就能在名片的「当前」页读到。</p>
+        </section> }]}
+        onRead={() => { trackEvent('查看更新说明', version); onDone(); }}
         onDone={() => { trackEvent('跳过本次更新说明', version); onDone(); }}
         onVisit={() => { trackEvent('点立刻体验', version); onVisit(); }}>
         <section>
