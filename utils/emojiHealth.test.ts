@@ -3,7 +3,8 @@ import { cachedEmojiOriginal, emojiCacheName, loadEmojiOriginal } from './emojiO
 import { checkEmoji, scanEmojiLibrary } from './emojiHealth';
 import { prepareEmojiExport } from './emojiExport';
 import { DB } from './db';
-import { collectEmojiBackup, portableEmojiRow } from './emojiBackup';
+import JSZip from 'jszip';
+import { legacyStickerLinks, portableEmojiRow } from './emojiBackup';
 
 const url = 'https://example.test/cat.gif';
 const bytes = 'GIF89a-animated-original';
@@ -36,15 +37,17 @@ it('shares an in-flight fetch and persists original bytes for offline display, s
     network.mockRejectedValue(new Error('offline'));
     expect(await checkEmoji(url)).toBe('usable');
     expect(await (await loadEmojiOriginal(url)).blob!.text()).toBe(bytes);
-    expect(await (await prepareEmojiExport([{ name: '猫', url }])).blob.text()).toBe(bytes);
+    const zip = await JSZip.loadAsync(await (await prepareEmojiExport([{ name: '猫', url }])).blob.arrayBuffer());
+    expect(Object.keys(zip.files)).toEqual(['sully-stickers.json']);
+    expect(JSON.parse(await zip.file('sully-stickers.json')!.async('string')).items[0].url).toBe(url);
     expect(network).toHaveBeenCalledTimes(1);
     expect(emojiCacheName('u_a')).not.toBe(emojiCacheName('u_b'));
-    const { tokens, blobs } = await collectEmojiBackup([url, url]);
-    const token = tokens.get(url)!;
-    expect(token).toMatch(/^blobref:emoji_/);
-    expect(await blobs.get(token)!.text()).toBe(bytes);
-    expect(portableEmojiRow('messages', { type: 'emoji', content: url }, tokens).content).toBe(token);
-    expect(portableEmojiRow('messages', { type: 'text', content: url }, tokens).content).toBe(url);
+    const token = 'blobref:legacy_cached';
+    const legacy = { name: '猫', url: token, backupSourceUrl: url };
+    const links = legacyStickerLinks([legacy]);
+    expect(portableEmojiRow('emojis', legacy, links).url).toBe(url);
+    expect(portableEmojiRow('messages', { type: 'emoji', content: token }, links).content).toBe(url);
+    expect(portableEmojiRow('messages', { type: 'text', content: token }, links).content).toBe(token);
     expect(network).toHaveBeenCalledTimes(1);
 });
 

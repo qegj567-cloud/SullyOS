@@ -1,5 +1,6 @@
 import { spaceDatabaseName, SESSION_SPACE_ID, DEFAULT_SPACE_ID, createSpaceStorage, rawSpaceStorage, listUserSpaces, assertUserSpaceAvailable } from './userSpaces';
 import { clearEmojiOriginals } from './emojiOriginals';
+import { patchEmojiOriginal, patchSentSticker } from './emojiBackup';
 import { withSharedAssetLock, canCoordinateAssetDeletion } from './sharedAssetLock';
 import { readLocalCursor } from './localRead';
 import { applyFriendFeedMedia, collectFriendFeedMedia, isActivityTextAsset } from './activityBackup';
@@ -129,7 +130,7 @@ export interface ScheduledMessage {
 
 // Built-in Presets
 const SULLY_CATEGORY_ID = 'cat_sully_exclusive';
-const SULLY_PRESET_EMOJIS = [
+export const SULLY_PRESET_EMOJIS = [
     { name: 'Sully晚安', url: 'https://cdn.jsdelivr.net/gh/qegj567-cloud/SullyOS-assets@main/bgm/SULLY/night.png', categoryId: SULLY_CATEGORY_ID },
     { name: 'Sully无语', url: 'https://cdn.jsdelivr.net/gh/qegj567-cloud/SullyOS-assets@main/bgm/SULLY/w.png', categoryId: SULLY_CATEGORY_ID },
     { name: 'Sully偷看', url: 'https://cdn.jsdelivr.net/gh/qegj567-cloud/SullyOS-assets@main/bgm/SULLY/see.png', categoryId: SULLY_CATEGORY_ID },
@@ -1440,7 +1441,7 @@ export const DB = {
 
   // 表情包重命名: name 是主键, 改名 = 删旧键 + 写新键 (保留 url / categoryId)。
   // 新名为空、与旧名相同、或已被占用都会抛错, 让调用方提示用户。
-  renameEmoji: async (oldName: string, newName: string): Promise<void> => {
+  renameEmoji: async (oldName: string, newName: string, expectedUrl?: string): Promise<void> => {
     const trimmed = newName.trim();
     if (!trimmed) throw new Error('表情包名称不能为空');
     if (trimmed === oldName) return;
@@ -1451,7 +1452,7 @@ export const DB = {
       const getReq = store.get(oldName);
       getReq.onsuccess = () => {
         const record = getReq.result as Emoji | undefined;
-        if (!record) { reject(new Error('未找到要重命名的表情包')); return; }
+        if (!record || (expectedUrl !== undefined && record.url !== expectedUrl)) { reject(new Error('原表情已变更，请重新选择')); return; }
         const dupReq = store.get(trimmed);
         dupReq.onsuccess = () => {
           if (dupReq.result) { reject(new Error('已存在同名表情包')); return; }
@@ -1486,6 +1487,10 @@ export const DB = {
       const db = await openDB();
       const transaction = db.transaction(STORE_EMOJI_CATEGORIES, 'readwrite');
       transaction.objectStore(STORE_EMOJI_CATEGORIES).put(category);
+      await new Promise<void>((resolve, reject) => {
+          transaction.oncomplete = () => resolve();
+          transaction.onabort = () => reject(transaction.error);
+      });
   },
 
   deleteEmojiCategory: async (id: string): Promise<void> => {
@@ -1578,7 +1583,7 @@ export const DB = {
           const db = await openDB();
           const tx = db.transaction(STORE_EMOJIS, 'readwrite');
           const store = tx.objectStore(STORE_EMOJIS);
-          SULLY_PRESET_EMOJIS.forEach(emoji => store.put(emoji));
+          SULLY_PRESET_EMOJIS.forEach(emoji => store.put({...emoji,builtIn:true}));
           await new Promise(resolve => { tx.oncomplete = resolve; });
       }
   },
@@ -3966,7 +3971,7 @@ export const DB = {
           data.messages !== undefined,
           data.customThemes !== undefined,
           data.savedEmojis !== undefined,
-          data.emojiCategories !== undefined,
+          !mediaOnly && data.emojiCategories !== undefined,
           data.assets !== undefined,
           data.friendFeed !== undefined && !mediaOnly,
           data.activityTextAssets !== undefined && !mediaOnly,
@@ -4097,7 +4102,15 @@ export const DB = {
               }
               await beforeWrite(chunk, label, restoreAssets);
               await withStore(storeName, store => {
-                  chunk.forEach(item => store.put(storeName === 'memory_links' ? compactMemoryLink(item) : item));
+                  for (const item of chunk) {
+                      if (mediaOnly && storeName === STORE_MESSAGES && item.type === 'emoji') {
+                          const read = store.get(item.id);
+                          read.onsuccess = () => {
+                              const patched = patchSentSticker(read.result, item);
+                              if (patched) store.put(patched);
+                          };
+                      } else store.put(storeName === 'memory_links' ? compactMemoryLink(item) : item);
+                  }
               });
               for (let j = i; j < end; j++) {
                   (items as any[])[j] = undefined;
@@ -4153,10 +4166,10 @@ export const DB = {
           } as CharacterProfile;
       };
 
-      const hasCharacterBackup = Array.isArray(data.characters);
+      const hasCharacterBackup = !mediaOnly && Array.isArray(data.characters);
 
       await runSection('角色资料', data.characters !== undefined || data.mediaAssets !== undefined, async () => {
-          if (data.characters) {
+          if (hasCharacterBackup && data.characters) {
               if (data.mediaAssets) {
                   await beforeWrite(data.mediaAssets, '角色媒体', true);
                   const mediaAssets = data.mediaAssets;
@@ -4207,10 +4220,19 @@ export const DB = {
           data.customThemes = undefined as any;
       }, data.customThemes?.length || 0);
       await runSection('表情包', data.savedEmojis !== undefined, async () => {
-          await mergeStore(STORE_EMOJIS, data.savedEmojis, '表情包', true);
+          if (mediaOnly) {
+              const rows = data.savedEmojis || [];
+              await beforeWrite(rows, '表情包', true);
+              await withStore(STORE_EMOJIS, store => {
+                  for (const row of rows) {
+                      const read = store.get(row.name);
+                      read.onsuccess = () => { const next = patchEmojiOriginal(read.result,row); if (next) store.put(next); };
+                  }
+              });
+          } else await mergeStore(STORE_EMOJIS, data.savedEmojis, '表情包', true);
           data.savedEmojis = undefined as any;
       }, data.savedEmojis?.length || 0);
-      await runSection('表情分类', data.emojiCategories !== undefined, async () => {
+      await runSection('表情分类', !mediaOnly && data.emojiCategories !== undefined, async () => {
           await mergeStore(STORE_EMOJI_CATEGORIES, data.emojiCategories, '表情分类', false);
           data.emojiCategories = undefined as any;
       }, data.emojiCategories?.length || 0);

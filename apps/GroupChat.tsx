@@ -1204,7 +1204,7 @@ const GroupChat: React.FC = () => {
     const handlePanelAction = (type: string, payload?: any) => {
         switch (type) {
             case 'send-emoji':
-                handleSendMessage(payload.url, 'emoji');
+                handleSendMessage(payload.url, 'emoji', {stickerName:payload.name});
                 break;
             case 'select-category':
                 setActiveEmojiCategory(payload);

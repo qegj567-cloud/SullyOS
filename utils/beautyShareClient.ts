@@ -31,7 +31,7 @@ export async function beautyRequest<T>(path: string, options: { method?: string;
     if (!response.ok) throw Error(result.error || `服务返回 ${response.status}`);
     return result as T;
   } catch (error) {
-    if (controller.signal.aborted) throw Error('请求超时，请在「我的提交」刷新确认结果后再重试');
+    if (controller.signal.aborted) throw Error(options.method === 'POST' || options.method === 'DELETE' ? '请求超时，请刷新确认结果后再重试' : '请求超时，请刷新重试');
     throw error;
   } finally { clearTimeout(timer); }
 }

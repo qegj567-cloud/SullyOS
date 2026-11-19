@@ -210,6 +210,7 @@ export function collectCharSettings(
         // ── 开关：默认关的，问有没有人开过 ──
         '3D家园角色数': bucketFewCount(characters.filter(x => x.home3D?.rooms?.length).length),
         记忆宫殿: anyOn(x => x.memoryPalaceEnabled),
+        表情看图: anyOn(x => x.stickerVision),
         聊天显示备注: anyOn(x => x.chatShowRemark === true),
         自动归档: anyOn(x => x.autoArchiveEnabled),
         思考过程: anyOn(x => x.showThinkingChain),

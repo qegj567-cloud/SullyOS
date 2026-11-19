@@ -10,6 +10,12 @@ export async function clearEmojiOriginals(spaceId: string) {
 }
 export const isRemoteEmoji = (url: string) => /^https?:\/\//i.test(url);
 
+/** Older backups may have materialized a cached link as a local blob. */
+export function stickerLink(row: { url: string; backupSourceUrl?: string }): string | undefined {
+    if (isRemoteEmoji(row.url)) return row.url;
+    if (row.backupSourceUrl && isRemoteEmoji(row.backupSourceUrl)) return row.backupSourceUrl;
+}
+
 export async function cachedEmojiOriginal(url: string): Promise<Blob | undefined> {
     if (!isRemoteEmoji(url) || typeof caches === 'undefined') return;
     const cache = await caches.open(emojiCacheName());

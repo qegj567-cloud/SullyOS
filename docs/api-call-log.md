@@ -16,6 +16,8 @@
    - `cloud-plate-consolidate`：记忆宫殿云端后台门牌整理（`utils/memoryPalace/roomPlateCloud.ts` + `worker/amsg/src/plateFire.ts`）
    - `cloud-diagnostic`：主动消息诊断复现测试（`utils/activeMsgRuntime.ts` + `worker/amsg/src/reproduction.ts`）
 
+私聊表情通过独立识图 API 获取描述时记为「表情识图」，图库「一键起名」使用全局主 API，每次提交一组图片记一条「表情看图起名」调用。对话模型直接接收表情图片时仍是原来的聊天请求。
+
 ### 不纳入此面板的接口
 
 向量化与重排（`/embeddings`、`/rerank`）、语音合成与复刻（ElevenLabs / MiniMax / OpenAI TTS）、语音识别、Replicate 音乐合成及外部独立引擎（BrainAgent）使用各自的计费单位（字符数、秒数、生成次数或独立会话），不混入对话 Token 统计面板。固定文案提醒（`messageType: 'fixed'`）在云端直接投递预设文本、不调用大模型，同样不写入调用记录。

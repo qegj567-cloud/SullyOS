@@ -19,7 +19,7 @@ import { CharacterProfile } from '../types';
 export const CARD_STRIPPED_FIELDS = [
   'userPersona',
   // 1) 凭据（含 apiKey，灾难级泄漏）
-  'dialogueApi',
+  'dialogueApi', 'stickerVision',
   'emotionConfig',
   'embeddingConfig',
   'proactiveConfig',         // 已下线的主动消息 1.0，旧数据里可能还带着副 API 凭据

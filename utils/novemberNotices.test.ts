@@ -4,7 +4,10 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { AmsgRecentUpdatePopup, SullySupportNotice } from '../components/os/NovemberUpdatePopups';
 import { UpdateNotificationController, shouldShowUpdateNotification } from '../components/UpdateNotificationEvent';
-import { AMSG_RECENT_UPDATE_KEY, SULLY_SUPPORT_NOTICE_KEY } from './novemberNotices';
+import { AMSG_RECENT_UPDATE_KEY, HELP_STICKERS_UPDATE_KEY, SULLY_SUPPORT_NOTICE_KEY } from './novemberNotices';
+import { appShortcutLaunch } from './appShortcutLaunch';
+import { SULLY_HELP_DESK_ID } from './sullyIdentity';
+import * as analytics from './analytics';
 import { createSpaceStorage } from './userSpaces';
 import { handleLocalBack } from './localBackHandlers';
 import { requestSettingsFocus } from './settingsNavigation';
@@ -29,7 +32,57 @@ const renderQueue = async (onClose = vi.fn()) => {
     return onClose;
 };
 
+it('shows both features once, opens the help desk, and respects existing support acknowledgements', async () => {
+    localStorage.setItem(SULLY_SUPPORT_NOTICE_KEY, '1');
+    const track = vi.spyOn(analytics, 'trackEvent').mockImplementation(() => {});
+    const close = await renderQueue();
+    expect(host.querySelector('h2')?.textContent).toBe('Sully-11 答疑与表情包更新');
+    expect(host.textContent).toContain('图床表情只保存链接');
+    act(() => button('问 Sully-11').click());
+    expect(close).toHaveBeenCalledOnce();
+    expect(openApp).toHaveBeenCalledWith(AppID.FAQ);
+    expect(appShortcutLaunch.consume(AppID.FAQ)).toEqual({ appId: AppID.FAQ, entryId: SULLY_HELP_DESK_ID });
+    expect(track.mock.calls).toEqual([
+        ['弹出版本更新提醒', { 版本: 'changelog-2026-11-19-help-stickers' }],
+        ['点立刻体验', { 版本: 'changelog-2026-11-19-help-stickers' }],
+        ['打开 Sully-11', { 入口: '更新提醒' }],
+    ]);
+    expect(createSpaceStorage(localStorage, 'u_other').getItem(HELP_STICKERS_UPDATE_KEY)).toBe('1');
+    expect(localStorage.getItem(AMSG_RECENT_UPDATE_KEY)).toBeNull();
+    await act(async () => root.render(null));
+    await renderQueue();
+    act(() => button('知道了').click());
+    expect(host.querySelector('dialog')).toBeNull();
+    expect(shouldShowUpdateNotification()).toBe(false);
+});
+
 it('advances from the recap to support once and preserves two independent global acknowledgements', async () => {
+    const track = vi.spyOn(analytics, 'trackEvent').mockImplementation(() => {});
+    const firstClose = await renderQueue();
+    act(() => button('下一页').click());
+    expect(host.querySelector('h2')?.textContent).toBe('新内置白框「银晕」');
+    expect(host.querySelector<HTMLImageElement>('img[alt^="银晕聊天实装预览"]')?.getAttribute('src')).toBeTruthy();
+    expect(host.textContent).toContain('「聊天装扮」→「白框」');
+    expect(localStorage.getItem(HELP_STICKERS_UPDATE_KEY)).toBeNull();
+    act(() => button('上一页').click());
+    expect(host.textContent).toContain('问 Sully-11');
+    act(() => button('下一页').click());
+    act(() => button('下一页').click());
+    expect(host.querySelector('h2')?.textContent).toBe('点头像，看角色心声');
+    expect(host.textContent).toContain('角色消息旁的头像');
+    expect(host.textContent).toContain('消息区底部向上拉一次');
+    expect(host.textContent).toContain('3 / 3');
+    expect(localStorage.getItem(HELP_STICKERS_UPDATE_KEY)).toBeNull();
+    act(() => { expect(handleLocalBack()).toBe(true); });
+    expect(host.querySelector('h2')?.textContent).toBe('新内置白框「银晕」');
+    act(() => button('下一页').click());
+    act(() => button('知道了').click());
+    expect(firstClose).toHaveBeenCalledOnce();
+    expect(track.mock.calls).toEqual([
+        ['弹出版本更新提醒', { 版本: 'changelog-2026-11-19-help-stickers' }],
+        ['查看更新说明', { 版本: 'changelog-2026-11-19-help-stickers' }],
+    ]);
+    await act(async () => root.render(null));
     const close = await renderQueue();
     expect(host.querySelector('h2')?.textContent).toBe('最近的主动消息更新');
     expect(localStorage.getItem(AMSG_RECENT_UPDATE_KEY)).toBeNull();
@@ -44,10 +97,11 @@ it('advances from the recap to support once and preserves two independent global
     for (const key of [AMSG_RECENT_UPDATE_KEY, SULLY_SUPPORT_NOTICE_KEY]) {
         expect(createSpaceStorage(localStorage, 'u_other').getItem(key)).toBe('1');
     }
-    expect(localStorage.length).toBe(2);
+    expect(localStorage.length).toBe(3);
 });
 
 it('navigating to active-message settings leaves support unread for the next launch', async () => {
+    localStorage.setItem(HELP_STICKERS_UPDATE_KEY, '1');
     const close = await renderQueue();
     act(() => button('去主动消息设置').click());
     expect(requestSettingsFocus).toHaveBeenCalledWith('amsg2');
@@ -63,13 +117,7 @@ it('navigating to active-message settings leaves support unread for the next lau
 });
 
 it('does not offer either notice again after acknowledgement, or offer the retired standalone relay notice', async () => {
-    // All historical notices were already read; the superseded relay key remains absent.
-    const getItem = Storage.prototype.getItem;
-    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(function (key) {
-        if ([AMSG_RECENT_UPDATE_KEY, SULLY_SUPPORT_NOTICE_KEY, 'sullyos_update_amsg2_relay_v1_seen'].includes(key)) return getItem.call(this, key);
-        if (key === 'os_realtime_config') return JSON.stringify({ userHolidays: { introChoice: 'declined' } });
-        return '1';
-    });
+    localStorage.setItem(HELP_STICKERS_UPDATE_KEY, '1');
     expect(shouldShowUpdateNotification()).toBe(true);
     localStorage.setItem(AMSG_RECENT_UPDATE_KEY, '1');
     expect(shouldShowUpdateNotification()).toBe(true);

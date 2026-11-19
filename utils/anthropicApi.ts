@@ -1,4 +1,4 @@
-import { isAnthropicEndpoint, nativeRequestUrl } from './llmEndpoint';
+import { isAnthropicEndpoint, nativeRequestUrl, readLlmResponseText, type LlmRequestInit } from './llmEndpoint';
 import { modelRejectsSamplingParams } from './samplingParamCompat';
 
 type Block = Record<string, any>;
@@ -208,7 +208,7 @@ function convertAnthropicStream(response: Response): Response {
 }
 
 /** All transformations are request-local. No credential registry or automatic retry/proxy fallback. */
-export async function fetchLlm(resource: RequestInfo | URL, init?: RequestInit, transport: typeof fetch = globalThis.fetch, browser = typeof window !== 'undefined'): Promise<Response> {
+export async function fetchLlm(resource: RequestInfo | URL, init?: LlmRequestInit, transport: typeof fetch = globalThis.fetch, browser = typeof window !== 'undefined'): Promise<Response> {
     if ((transport as FetchTransport).__sullyAnthropic) return transport(resource,init);
     const inputUrl = typeof resource === 'string' ? resource : resource instanceof URL ? resource.href : resource.url;
     if (!isAnthropicEndpoint(inputUrl)) return transport(resource,init);
@@ -232,12 +232,15 @@ export async function fetchLlm(resource: RequestInfo | URL, init?: RequestInit, 
         options.body=JSON.stringify(toAnthropicRequest(parsed));headers.set('content-type','application/json');headers.delete('content-length');
     }
     const response=await transport(url,options);
+    const info = init?.__sullyResponseInfo;
+    if (info) info.status = response.status;
     if(!response.ok || method!=='POST')return response;
     if(response.headers.get('content-type')?.includes('text/event-stream')) {
         if(!response.body)throw Error('Anthropic 返回了空流');
         return convertAnthropicStream(response);
     }
-    return new Response(JSON.stringify(fromAnthropicMessage(await response.json())),{status:response.status,statusText:response.statusText,headers:{'content-type':'application/json'}});
+    const message = info ? JSON.parse(await readLlmResponseText(response, info)) : await response.json();
+    return new Response(JSON.stringify(fromAnthropicMessage(message)),{status:response.status,statusText:response.statusText,headers:{'content-type':'application/json'}});
 }
 
 export function installAnthropicFetch(browser = false): void {

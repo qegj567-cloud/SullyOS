@@ -8,8 +8,7 @@ import { AppID } from '../../types';
 import { appShortcutLaunch } from '../../utils/appShortcutLaunch';
 import { SULLY_HELP_DESK_ID } from '../../utils/sullyIdentity';
 import { handleLocalBack } from '../../utils/localBackHandlers';
-import { UpdateNotificationController } from '../../components/UpdateNotificationEvent';
-import { AMSG_RECENT_UPDATE_KEY, SULLY_SUPPORT_NOTICE_KEY } from '../../utils/novemberNotices';
+import { UpdateNotificationController, shouldShowUpdateNotification } from '../../components/UpdateNotificationEvent';
 import { requestSettingsFocus } from '../../utils/settingsNavigation';
 
 Object.assign(window, { sullySupportBack: handleLocalBack });
@@ -18,7 +17,7 @@ if (params.has('desk')) appShortcutLaunch.request({ appId: AppID.FAQ, entryId: S
 if (params.has('support')) requestSettingsFocus('support');
 function Fixture() {
     const [notices, setNotices] = useState(() => params.has('notices') &&
-        [AMSG_RECENT_UPDATE_KEY, SULLY_SUPPORT_NOTICE_KEY].some(key => !localStorage.getItem(key)));
+        shouldShowUpdateNotification());
     return <OSProvider>{params.has('desk') ? <FAQApp /> : <Settings />}{notices && <UpdateNotificationController onClose={() => setNotices(false)} />}</OSProvider>;
 }
 createRoot(document.getElementById('root')!).render(<Fixture />);

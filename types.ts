@@ -2835,6 +2835,8 @@ export interface MemoryPalaceWaterlineConfig {
 }
 
 export interface CharacterProfile {
+  /** Include sent stickers in private dialogue as pictures or vision descriptions. */
+  stickerVision?: boolean;
   userPersona?: import('./utils/userPersona').CharacterUserPersona;
   /** Local default for this character's dialogue; absent means follow Settings. Never shared in cards. */
   dialogueApi?: DialogueApiConfig;
@@ -4025,6 +4027,7 @@ export interface Message {
 }
 
 export interface EmojiCategory {
+    personalOnly?: boolean;
     id: string;
     name: string;
     isSystem?: boolean;
@@ -4032,6 +4035,10 @@ export interface EmojiCategory {
 }
 
 export interface Emoji {
+    /** Original link retained when a personal backup replaces a cached URL with a local blob. */
+    backupSourceUrl?: string;
+    contentHash?: string;
+    builtIn?: boolean;
     name: string;
     url: string;
     categoryId?: string; 

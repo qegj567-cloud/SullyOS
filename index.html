@@ -263,6 +263,16 @@
         background: var(--ios-status-bar-color, #0f1115);
       }
 
+      /* The native keyboard can expose the document canvas beyond the resized chat.
+         Override PhoneShell's inline desktop wallpaper on both canvas backgrounds.
+         Blend translucent chat colors over an opaque base without resizing any content. */
+      html.sully-ios:has(.sully-chat-root .sully-chat-inputbar:focus-within, body.ios-keyboard-open .sully-chat-root .sully-chat-inputbar),
+      html.sully-ios:has(.sully-chat-root .sully-chat-inputbar:focus-within, body.ios-keyboard-open .sully-chat-root .sully-chat-inputbar) > body {
+        background: linear-gradient(var(--ios-inputbar-color, transparent), var(--ios-inputbar-color, transparent)),
+                    linear-gradient(var(--ios-chat-stage-color, transparent), var(--ios-chat-stage-color, transparent)),
+                    #e5e5ea !important;
+      }
+
       body.ios-keyboard-open .sully-shell-content {
         bottom: 0 !important;
       }

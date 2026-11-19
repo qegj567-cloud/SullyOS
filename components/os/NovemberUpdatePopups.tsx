@@ -1,19 +1,28 @@
-import React, { useEffect, useId, useRef } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { ArrowRight, X } from '@phosphor-icons/react';
 import { useLocalBackHandler } from '../../hooks/useLocalBackHandler';
-import { AMSG_RECENT_UPDATE_KEY, SULLY_SUPPORT_NOTICE_KEY } from '../../utils/novemberNotices';
+import { AMSG_RECENT_UPDATE_KEY, HELP_STICKERS_UPDATE_KEY, SULLY_SUPPORT_NOTICE_KEY } from '../../utils/novemberNotices';
+import { SULLY_HELP_DESK_AVATAR } from '../../utils/sullyIdentity';
+import { trackEvent } from '../../utils/analytics';
 import { shouldOfferRelayNotice } from './RelayUpdatePopup';
 import sullyPeeking from '../../assets/sully-support/sully-peeking.webp';
+import silverHaloPreview from '../../assets/presets/silver-halo-preview.webp';
 import './NovemberUpdatePopups.css';
 
 type NoticeActions = { onDone: () => void; onVisit: () => void };
 
-function NovemberNotice({ noticeKey, title, eyebrow, visitLabel, children, onDone, onVisit, support = false }: NoticeActions & {
+function NovemberNotice({ noticeKey, title, eyebrow, visitLabel, children, additionalPages = [], onDone, onVisit, onRead = onDone, support = false }: NoticeActions & {
     noticeKey: string; title: string; eyebrow: string; visitLabel: string; children: React.ReactNode; support?: boolean;
+    additionalPages?: { title: string; body: React.ReactNode }[];
+    onRead?: () => void;
 }) {
     const dialog = useRef<HTMLDialogElement>(null);
     const finished = useRef(false);
     const titleId = useId();
+    const [page, setPage] = useState(1);
+    const pageCount = 1 + additionalPages.length;
+    const currentPage = additionalPages[page - 2];
+    const pageTitle = currentPage?.title ?? title;
     useEffect(() => {
         const node = dialog.current;
         node?.showModal();
@@ -25,22 +34,71 @@ function NovemberNotice({ noticeKey, title, eyebrow, visitLabel, children, onDon
         try { localStorage.setItem(noticeKey, '1'); } catch { /* Storage failure must not trap the user. */ }
         action();
     };
-    useLocalBackHandler(() => { finish(onDone); return true; }, 100);
+    const back = () => {
+        if (page > 1) setPage(page - 1);
+        else finish(onDone);
+        return true;
+    };
+    useLocalBackHandler(back, 100);
     return <dialog ref={dialog} className={`november-notice${support ? ' november-notice--support' : ''}`}
-        aria-labelledby={titleId} onCancel={event => { event.preventDefault(); finish(onDone); }}>
+        aria-labelledby={titleId} onCancel={event => { event.preventDefault(); back(); }}>
         <div className="november-notice-layout">
             <header className="november-notice-heading">
-                <p className="november-notice-eyebrow">{eyebrow}</p>
-                <h2 id={titleId}>{title}</h2>
-                <button type="button" className="november-notice-close" aria-label={`关闭${title}`} onClick={() => finish(onDone)}><X size={20} /></button>
+                <p className="november-notice-eyebrow">{eyebrow}{pageCount > 1 && ` · ${page} / ${pageCount}`}</p>
+                <h2 id={titleId} aria-live={pageCount > 1 ? 'polite' : undefined}>{pageTitle}</h2>
+                <button type="button" className="november-notice-close" aria-label={`关闭${pageTitle}`} onClick={() => finish(onDone)}><X size={20} /></button>
             </header>
-            <div className="november-notice-body" tabIndex={0} aria-label={`${title}说明`}>{children}</div>
+            <div key={page} className="november-notice-body" tabIndex={0} aria-label={`${pageTitle}说明`}>{currentPage?.body ?? children}</div>
             <footer className="november-notice-actions">
-                <button type="button" onClick={() => finish(onDone)}>知道了</button>
-                <button type="button" className="november-notice-primary" onClick={() => finish(onVisit)}>{visitLabel}<ArrowRight size={16} aria-hidden="true" /></button>
+                {pageCount > 1 ? <>
+                    {page === 1
+                        ? <button type="button" onClick={() => finish(onVisit)}>{visitLabel}</button>
+                        : <button type="button" onClick={() => setPage(page - 1)}>上一页</button>}
+                    {page < pageCount
+                        ? <button type="button" className="november-notice-primary" onClick={() => setPage(page + 1)}>下一页<ArrowRight size={16} aria-hidden="true" /></button>
+                        : <button type="button" className="november-notice-primary" onClick={() => finish(onRead)}>知道了</button>}
+                </> : <>
+                    <button type="button" onClick={() => finish(onDone)}>知道了</button>
+                    <button type="button" className="november-notice-primary" onClick={() => finish(onVisit)}>{visitLabel}<ArrowRight size={16} aria-hidden="true" /></button>
+                </>}
             </footer>
         </div>
     </dialog>;
+}
+
+export function HelpStickersUpdatePopup({ onDone, onVisit }: NoticeActions) {
+    const version = { 版本: 'changelog-2026-11-19-help-stickers' };
+    const shown = useRef(false);
+    useEffect(() => {
+        if (shown.current) return;
+        shown.current = true;
+        trackEvent('弹出版本更新提醒', { 版本: 'changelog-2026-11-19-help-stickers' });
+    }, []);
+    return <NovemberNotice noticeKey={HELP_STICKERS_UPDATE_KEY} eyebrow="11 月 19 日 · 小更新"
+        title="Sully-11 答疑与表情包更新" visitLabel="问 Sully-11"
+        additionalPages={[{ title: '新内置白框「银晕」', body: <section>
+            <img className="november-silver-halo-preview" src={silverHaloPreview} width="585" height="1266" alt="银晕聊天实装预览，角色用浅银色气泡，自己的回复用深灰色气泡" />
+            <p>「银晕」给聊天换上深浅两色的切角气泡，每条消息的时间都显示在圆形头像下方。</p>
+            <p>在私聊点「＋」→「聊天装扮」→「白框」。在「内置白框」里选「银晕」，点「立即应用」，再确认要使用的角色。</p>
+        </section> }, { title: '点头像，看角色心声', body: <section>
+            <p>在私聊里，点<strong>角色消息旁的头像</strong>就能打开名片。手机上也可以滑到最新一条消息，松手，再从<strong>消息区底部向上拉一次</strong>。</p>
+            <p>打开名片后，点「设定」可以改角色资料，点「日程」可以看 TA 今天的安排。</p>
+            <p>想看心声，先为角色开启「日程与情绪」和「情绪感知」。有了心声，就能在名片的「当前」页读到。</p>
+        </section> }]}
+        onRead={() => { trackEvent('查看更新说明', version); onDone(); }}
+        onDone={() => { trackEvent('跳过本次更新说明', version); onDone(); }}
+        onVisit={() => { trackEvent('点立刻体验', version); onVisit(); }}>
+        <section>
+            <img className="november-help-avatar" src={SULLY_HELP_DESK_AVATAR} width="60" height="60" alt="" />
+            <h3>找不到设置？问问值班猫</h3>
+            <p>在「使用帮助 → 问 Sully-11」写下问题，也可以附上报错截图。点纸飞机发送，再点闪电，11 号就会翻手册帮你找答案。</p>
+        </section>
+        <section>
+            <h3>把相册里的表情带进聊天</h3>
+            <p>在私聊点笑脸，再点铅笔进入表情管理。可以一次选多张图、导入整个 ZIP，或粘贴图床链接。默认沿用文件名，也可以选中一批表情，让主 API 看图起名。</p>
+            <p>按文件夹整理后，可以为每个角色勾选可用的分组。导出时，本地图片随包保存，图床表情只保存链接。</p>
+        </section>
+    </NovemberNotice>;
 }
 
 export function AmsgRecentUpdatePopup(props: NoticeActions) {

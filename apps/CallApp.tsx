@@ -44,7 +44,6 @@ import VRoidBetaWarning from '../components/call/VRoidBetaWarning';
 import UserCameraModePicker, { type UserCameraMode } from '../components/call/UserCameraModePicker';
 import CallSetupGuide, { type CallSetupGuideStep } from '../components/call/CallSetupGuide';
 import CallPreferencesSheet from '../components/call/CallPreferencesSheet';
-import CallUpdateAnnouncement from '../components/call/CallUpdateAnnouncement';
 import { deleteAvatarModel, inspectAvatarFile, saveAvatarModel } from '../utils/avatarModelStore';
 import { getLive2DAIActions, prewarmLive2DModelSource, saveLive2DModelFromFiles, saveLive2DModelFromZip, upgradeLive2DAutoPermissions, type Live2DAvatarConfig } from '../utils/live2dModelStore';
 import { preloadLive2DRuntime } from '../utils/live2dCore';
@@ -78,9 +77,7 @@ import {
 import { CallAudioFeed, shouldKeepNativeCallAudio } from '../utils/callAudioFeed';
 import {
   loadCallPreferences,
-  markCallUpdateAnnouncementSeen,
   saveCallPreferences,
-  shouldShowCallUpdateAnnouncement,
   type CallPreferences,
 } from '../utils/callPreferences';
 import {
@@ -550,7 +547,6 @@ const CallApp: React.FC = () => {
   });
   const [callPreferences, setCallPreferences] = useState<CallPreferences>(loadCallPreferences);
   const [showCallPreferences, setShowCallPreferences] = useState(false);
-  const [showCallUpdateAnnouncement, setShowCallUpdateAnnouncement] = useState(shouldShowCallUpdateAnnouncement);
   useEffect(() => saveCallPreferences(callPreferences), [callPreferences]);
   // 电话 App 独立的浅色主题偏好（覆盖选人页/通话中/视频/记录页）
   const [callTheme, setCallTheme] = useState<'dark' | 'light'>(() => {
@@ -1687,14 +1683,7 @@ const CallApp: React.FC = () => {
     callSetupGuideOpenRef.current = true;
     setShowCallSetupGuide(true);
   };
-  const dismissCallUpdateAnnouncement = () => {
-    markCallUpdateAnnouncementSeen();
-    setShowCallUpdateAnnouncement(false);
-    trackEvent('关闭通话功能更新提示');
-  };
   const openCallPreferencesPanel = () => {
-    markCallUpdateAnnouncementSeen();
-    setShowCallUpdateAnnouncement(false);
     setShowCallPreferences(true);
     trackEvent('打开通话偏好');
   };
@@ -3160,13 +3149,6 @@ ${sentencePlan}`;
         {lightTheme && <style>{CALL_LIGHT_THEME_CSS}</style>}
         {avatarImportOverlay}
         {vroidBetaOverlay}
-        {showCallUpdateAnnouncement && (
-          <CallUpdateAnnouncement
-            accentColor={accentColor}
-            onDismiss={dismissCallUpdateAnnouncement}
-            onOpenSettings={openCallPreferencesPanel}
-          />
-        )}
         {showCallSetupGuide && (
           <CallSetupGuide
             step={callSetupGuideStep}

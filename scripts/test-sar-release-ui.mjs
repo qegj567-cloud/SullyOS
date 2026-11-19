@@ -27,27 +27,13 @@ try {
         assert.equal(await page.evaluate(() => localStorage.getItem('sullyos_update_2026_09_11_sar_seen')),'1');
         // Only obsolete announcements unseen must not bring the queue back.
         await page.evaluate(() => {
-            localStorage.setItem('sullyos_notice_2026_08_network_transit_seen','1');
-            localStorage.setItem('sullyos_update_2026_08_10_live2d_seen','1');
-            localStorage.removeItem('sullyos_update_2026_08_03_amsg2_seen');
-            localStorage.removeItem('sullyos_update_2026_08_30_collaboration_seen');
+            localStorage.setItem('sullyos_update_20261119_help_stickers_seen','1');
+            localStorage.setItem('sullyos_update_20261115_amsg2_seen','1');
+            localStorage.setItem('sullyos_update_20261115_support_seen','1');
+            localStorage.removeItem('sullyos_update_2026_09_11_sar_seen');
         });
         await page.goto(`${base}/test/fixtures/sar-release.html?queue`);
         await page.locator('[data-result="queue-closed"]').waitFor();
-        if (width === 390) {
-            await page.evaluate(() => localStorage.removeItem('sullyos_update_2026_09_11_sar_seen'));
-            await page.reload();
-            await page.getByRole('button',{name:'完整更新说明'}).click();
-            assert.equal(await page.evaluate(() => sessionStorage.getItem('sullyos_faq_target_section')),'changelog-2026-09-11');
-            assert.equal(await page.evaluate(() => window.releaseQA.activeApp),'faq');
-            await page.evaluate(() => localStorage.removeItem('sullyos_update_2026_09_11_sar_seen'));
-            await page.reload();
-            await page.getByRole('button',{name:'下一页',exact:true}).click();
-            await page.getByRole('button',{name:'下一页',exact:true}).click();
-            await page.getByRole('button',{name:'去彼方看看'}).click();
-            assert.equal(await page.evaluate(() => window.releaseQA.activeApp),'vrworld');
-            assert.equal(await page.evaluate(async () => (await import('/utils/sarUpdate.ts')).sarLaunch.peek()),true);
-        }
         results.push({ width, height, pages:3, oldQueueRemoved:true });
         await context.close();
     }

@@ -106,12 +106,13 @@ export async function dispatchMemberActions(actions: DirectorAction[], ctx: Disp
         // Filter emojis by character visibility to prevent using hidden emoji packs
         const charVisibleEmojis = (() => {
             const visibleCats = categories.filter(c => {
+                if (c.personalOnly) return false;
                 if (!c.allowedCharacterIds || c.allowedCharacterIds.length === 0) return true;
                 return c.allowedCharacterIds.includes(targetId);
             });
             const hiddenCatIds = new Set(categories.filter(c => !visibleCats.some(vc => vc.id === c.id)).map(c => c.id));
             if (hiddenCatIds.size === 0) return emojis;
-            return emojis.filter(e => !e.categoryId || !hiddenCatIds.has(e.categoryId));
+            return emojis.filter(e => !hiddenCatIds.has(e.categoryId || 'default'));
         })();
         const emojiRegex = /\[\[SEND_EMOJI:\s*(.*?)\]\]/g;
         let emojiMatch;
