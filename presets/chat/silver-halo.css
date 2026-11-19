@@ -8,7 +8,7 @@
 .sully-chat-root {
     container-type: size;
     isolation: isolate;
-    --halo-scale: 1.3;
+    --halo-scale: 1.2;
     --halo-u: calc(min(100cqw / 941, .65px) * var(--halo-scale));
     --halo-v: clamp(.24px, calc(100cqh / 1670), .68px);
     --halo-message-gap: clamp(8px,calc(22 * var(--halo-v)),14px);
@@ -77,7 +77,7 @@
 
 .sully-chat-root .sully-chat-messages {
     --halo-v: calc(clamp(.24px, 100cqh / 1670, .68px) * var(--halo-scale));
-    margin: 0; padding: 0 0 calc(36 * var(--halo-v));
+    margin: 0; padding: var(--halo-message-gap) 0 max(16px,calc(36 * var(--halo-v)));
     border: 0; scrollbar-width: none;
 }
 .sully-chat-root .sully-chat-day-divider {
@@ -117,37 +117,45 @@
 .sully-chat-root .sully-chat-message-content { overflow-wrap: anywhere; }
 .sully-chat-root .sully-chat-message-ai:not([data-selecting]) > .sully-chat-message-content:not(.sully-html-wrap) { margin-left: calc(8.61% + 82 * var(--halo-u)); max-width: 74%; }
 .sully-chat-root .sully-chat-message-user:not([data-selecting]) > .sully-chat-message-content:not(.sully-html-wrap) { margin-right: calc(5.59% + 90 * var(--halo-u)); max-width: 74%; }
+.sully-chat-root .sully-chat-message:not([data-selecting]) > .sully-chat-message-content:not(.sully-html-wrap):has(.sully-bubble-ai,.sully-bubble-user) {
+    max-width: calc(100% / 3 * 2);
+}
 .sully-chat-root .sully-chat-message-content > div > div { min-width: 0; max-width: 100%; }
 
 /* 原稿为短句、连续消息、独立消息及语音各画了一张不同切角的纸面。 */
 .sully-chat-root :is(.sully-bubble-ai,.sully-bubble-user,.sully-voice-bar) {
-    background: var(--halo-face) center / 100% 100% no-repeat !important;
-    border: 0 !important; border-radius: 0 !important; box-shadow: none !important;
+    border-width: 0 !important; border-radius: 0 !important; box-shadow: none !important;
 }
 .sully-chat-root :is(.sully-bubble-ai,.sully-bubble-user) {
     display: flex; flex-direction: column; justify-content: center;
-    min-height: calc(74 * var(--halo-v)); padding: calc(6 * var(--halo-v)) calc(31 * var(--halo-u));
-    font: 460 calc(26 * var(--halo-u))/1.54 var(--halo-serif); letter-spacing: .055em;
+    width: fit-content; max-width: 100%; box-sizing: border-box; background: none !important;
+    /* 底图直接画在气泡上，伪元素留给尾巴开关。九宫格只拉伸切角之间的纸面。 */
+    border-style: solid;
+    border-image: var(--halo-face) var(--halo-bubble-slice) fill / var(--halo-bubble-edge) / 0 stretch;
+    padding: .62em 1.2em;
+    font: 460 max(12px,calc(26 * var(--halo-u)))/1.54 var(--halo-serif); letter-spacing: .055em;
 }
 .sully-chat-root :is(.sully-bubble-ai,.sully-bubble-user) > .select-text { font-size: inherit; line-height: inherit; }
 .sully-chat-root .sully-bubble-ai {
-    --halo-face: var(--halo-paper); min-width: 26.14cqw; color: var(--halo-ink);
+    --halo-face: var(--halo-paper); --halo-bubble-slice: 26% 8%; --halo-bubble-edge: .73em .76em;
+    color: var(--halo-ink);
     filter: drop-shadow(0 calc(9 * var(--halo-v)) calc(11 * var(--halo-u)) #66637e20);
 }
 .sully-chat-root .sully-chat-message-ai:not(.sully-chat-message-group-first) .sully-bubble-ai {
-    --halo-face: var(--halo-long); padding-block: calc(18 * var(--halo-v)); padding-right: calc(20 * var(--halo-u));
+    --halo-face: var(--halo-long); --halo-bubble-slice: 44% 4% 18%; --halo-bubble-edge: 1.7em .88em .8em;
 }
 .sully-chat-root .sully-chat-message-group-first.sully-chat-message-group-last .sully-bubble-ai {
-    --halo-face: var(--halo-plain); min-width: 23.06cqw;
+    --halo-face: var(--halo-plain); --halo-bubble-slice: 45% 11% 26%; --halo-bubble-edge: 1.2em .92em .73em;
 }
 .sully-chat-root .sully-bubble-user {
-    --halo-face: var(--halo-night); width: fit-content; min-width: 0; max-width: 100%; box-sizing: border-box;
-    min-height: 2.35em; padding: .36em .8em;
-    color: #f8f7fc; font-size: calc(24 * var(--halo-u)); font-weight: 400; letter-spacing: .085em;
+    --halo-face: var(--halo-night); --halo-bubble-slice: 32% 10%; --halo-bubble-edge: .96em 1.1em;
+    min-width: min(4.5em,100%);
+    color: #f8f7fc; font-weight: 400; letter-spacing: .085em;
     align-items: flex-end; filter: drop-shadow(0 calc(8 * var(--halo-v)) calc(12 * var(--halo-u)) #65637e29);
 }
 .sully-chat-root .sully-voice-bar {
     --halo-face: var(--halo-voice); width: min(46.76cqw,100%); min-width: min(46.76cqw,100%);
+    background: var(--halo-face) center / 100% 100% no-repeat !important;
     min-height: calc(74 * var(--halo-v)); padding: calc(6 * var(--halo-v)) calc(22 * var(--halo-u));
     color: #33394e; gap: calc(20 * var(--halo-u));
     filter: drop-shadow(0 calc(7 * var(--halo-v)) calc(9 * var(--halo-u)) #69698415);
