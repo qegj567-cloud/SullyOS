@@ -7,6 +7,7 @@ type Props = {
   connected: boolean;
   active: boolean;
   enabled: boolean;
+  cronPaused?: boolean;
   instantEnabled: boolean;
   busy: boolean;
   instantBlockedReason: string | null;
@@ -14,12 +15,44 @@ type Props = {
   characterGroups: CharacterGroup[];
   onToggleEnabled: () => void;
   onToggleInstant: () => void;
+  onResumeCron?: () => void;
+  onOpenMaintenance?: () => void;
   onConfigureCharacter?: (id: string) => void;
 };
 
-export default function AmsgOverview({ connected, active, enabled, instantEnabled, busy, instantBlockedReason, characters, characterGroups, onToggleEnabled, onToggleInstant, onConfigureCharacter }: Props) {
+export default function AmsgOverview({ connected, active, enabled, cronPaused, instantEnabled, busy, instantBlockedReason, characters, characterGroups, onToggleEnabled, onToggleInstant, onResumeCron, onOpenMaintenance, onConfigureCharacter }: Props) {
   const prefix = useId();
   return <div className="amsg-overview">
+    {connected && enabled && cronPaused ? (
+      <div role="status" className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 space-y-2.5 text-xs leading-relaxed text-amber-800">
+        <div className="font-bold text-amber-950">云端后台任务已被暂停</div>
+        <p>
+          定时主动消息到点暂不触发（已排任务保存在云端，不会丢失；即时对话不受影响）。恢复后将重新按排期处理。
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {onResumeCron ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onResumeCron}
+              className="px-3.5 py-2 rounded-xl bg-amber-500 text-white font-bold active:scale-95 transition-transform disabled:opacity-50"
+            >
+              {busy ? '处理中…' : '立即恢复后台任务'}
+            </button>
+          ) : null}
+          {onOpenMaintenance ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onOpenMaintenance}
+              className="px-3.5 py-2 rounded-xl bg-white border border-amber-300 text-amber-800 font-bold active:scale-95 transition-transform disabled:opacity-50"
+            >
+              前往维护设置
+            </button>
+          ) : null}
+        </div>
+      </div>
+    ) : null}
     <div className="amsg-overview-functions">
     <section aria-label="全局功能" className="amsg-overview-controls" data-paused={connected && !enabled || undefined}>
       <div className="amsg-overview-control">
@@ -37,6 +70,7 @@ export default function AmsgOverview({ connected, active, enabled, instantEnable
       <p id={`${prefix}-master-description`}>主动消息：让 TA 定时来找你。</p>
       <p id={`${prefix}-instant-description`}>即时对话：切后台后继续生成回复。</p>
       {(!connected || !enabled) && <p id={`${prefix}-master-state`} className="amsg-overview-state">{!connected ? '待连接后台' : '全局已暂停 · 聊天在本机生成'}</p>}
+      {connected && enabled && cronPaused && <p className="amsg-overview-blocker">后台定时触发已暂停 · 定时排程暂不发送</p>}
       {connected && enabled && instantBlockedReason && <p className="amsg-overview-blocker">即时对话暂未就绪：{instantBlockedReason}</p>}
     </div>
     </div>

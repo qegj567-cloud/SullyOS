@@ -16,7 +16,12 @@ import {
 } from '../../types';
 import { ActiveMsgClient, getDefaultActiveMsgFirstSendTime } from '../../utils/activeMsgClient';
 import { ActiveMsgStore } from '../../utils/activeMsgStore';
-import { isAmsg2GloballyEnabled, isAmsg2WorkerActive } from '../../utils/amsgGlobalGate';
+import {
+  AMSG_CRON_TRIGGER_EVENT,
+  isAmsg2GloballyEnabled,
+  isAmsg2WorkerActive,
+  isCloudCronPaused,
+} from '../../utils/amsgGlobalGate';
 import { type AmsgLastSkip, describeLastSkip } from '../../utils/amsgFirePack';
 import {
   type AmsgDailySends,
@@ -172,6 +177,20 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
   // 今天主动找了几次（worker 每次发完累加的那份）。null = 没有记录 / 没读到。
   const [dailySends, setDailySends] = useState<AmsgDailySends | null>(null);
   const [globalPaused, setGlobalPaused] = useState(false);
+  const [cloudCronPaused, setCloudCronPaused] = useState(false);
+  const [resumingCron, setResumingCron] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onCronChanged = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ enabled?: boolean }>).detail;
+      if (detail && typeof detail.enabled === 'boolean') {
+        setCloudCronPaused(!detail.enabled);
+      }
+    };
+    window.addEventListener(AMSG_CRON_TRIGGER_EVENT, onCronChanged);
+    return () => window.removeEventListener(AMSG_CRON_TRIGGER_EVENT, onCronChanged);
+  }, [isOpen]);
 
   // 表单值重置：面板打开或切换编辑对象时，用被编辑任务的字段填表单（新建则填默认值）。
   // 角色级共享设置（maxTokens）始终跟随保存值。
@@ -213,6 +232,7 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
     setTimeAwareConfirmOpen(false);
     setKnownRemoteUuids(null);
     setRemoteTaskInfo(null);
+    setCloudCronPaused(false);
 
     // 全局即时对话开没开（现成的读取函数，别自己另读存储）。读失败按没开置灰。
     void isInstantChatReady().then(setGlobalInstantChatOn).catch(() => setGlobalInstantChatOn(false));
@@ -239,8 +259,14 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
         setLastSkip(null);
         setDailySends(null);
         setKnownRemoteUuids(null);
+        setCloudCronPaused(false);
         return;
       }
+
+      // 云端定时触发状态直接向 Worker 查询，不依赖本机存储标记。
+      void ActiveMsgClient.getCronTriggerState().then((state) => {
+        setCloudCronPaused(isCloudCronPaused(state));
+      });
 
       // 防穿帮闸最近拦下了哪次触发、今天主动找了几次。闸是静默的，不说一声的话「让路了」
       // 在用户看来跟「没发出去」一模一样；次数摆出来，用户才知道上限是不是在起作用。
@@ -649,6 +675,27 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
     }
   };
 
+  const handleResumeCloudCron = async () => {
+    if (resumingCron || isSubmitting) return;
+    setResumingCron(true);
+    try {
+      const res = await ActiveMsgClient.setCronTriggerEnabled(true);
+      if (res.ok) {
+        setCloudCronPaused(false);
+        addToast(res.message, 'success');
+        trackEvent('暂停后台任务', { action: 'resume', result: 'ok' });
+      } else {
+        addToast(res.message, 'error');
+        trackEvent('暂停后台任务', { action: 'resume', result: 'failed' });
+      }
+    } catch (error: any) {
+      addToast(error?.message || '网络波动，恢复后台任务失败，请稍后重试。', 'error');
+      trackEvent('暂停后台任务', { action: 'resume', result: 'failed' });
+    } finally {
+      setResumingCron(false);
+    }
+  };
+
   // 「今天」按这台设备的日期（worker 记账用的也是打包设备的时区，两边对得上）。
   const todayCount = dailySends
     && dailySends.day === dayKeyInZone(now, Intl.DateTimeFormat().resolvedOptions().timeZone)
@@ -699,6 +746,21 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
         {globalPaused ? (
           <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 text-xs leading-relaxed text-amber-700">
             系统设置里的「主动消息 2.0」总开关当前处于暂停状态，恢复总开关后才会重新连接云端并生效。
+          </div>
+        ) : cloudCronPaused ? (
+          <div role="status" className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 space-y-2.5 text-xs leading-relaxed text-amber-800">
+            <div className="font-bold text-amber-950">云端后台任务已被暂停</div>
+            <p>
+              定时主动消息到点暂不触发（已排任务保存在云端，不会丢失；即时对话不受影响）。可在此直接恢复，或前往「设置 → 主动消息 2.0 → 功能设置 → 后台地址与维护」恢复。
+            </p>
+            <button
+              type="button"
+              onClick={() => void handleResumeCloudCron()}
+              disabled={resumingCron || isSubmitting}
+              className="px-3.5 py-2 rounded-xl bg-amber-500 text-white font-bold active:scale-95 transition-transform disabled:opacity-50"
+            >
+              {resumingCron ? '恢复中…' : '立即恢复后台任务'}
+            </button>
           </div>
         ) : null}
         <section className="amsg-overview-controls" aria-label="角色功能开关">
@@ -846,6 +908,8 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
                 // 远端记录的「上一次没发出去」——worker 只在失败时写、成功不清，
                 // 文案里带时间就不会把老记录读成「现在还坏着」。
                 const remoteErrorText = describeRemoteLastError(remoteInfo?.lastError, formatTaskTime);
+                const progress = describeTaskProgress(t, knownRemoteUuids, now, remoteInfo?.status, cloudCronPaused);
+                const isPausedProgress = progress === '后台已暂停' || progress === '已暂停·待恢复';
                 return (
                   <div key={t.taskUuid} className={`rounded-2xl border px-4 py-3 text-xs ${editingTaskUuid === t.taskUuid ? 'border-fuchsia-400 bg-fuchsia-50' : 'border-slate-200 bg-white'}`}>
                     {/* 按钮只跟时间共用第一行，下面的标签和内容占满整宽，不被按钮那一列挤窄。
@@ -876,8 +940,8 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
                     {/* 状态拆成可换行的小标签，不截断：「发没发」排最前，是用户最想先看到的。 */}
                     <div className="flex flex-wrap gap-1 mt-1.5 text-[10px]">
                       {(() => {
-                        const progress = describeTaskProgress(t, knownRemoteUuids, now, remoteInfo?.status);
                         const tone = progress === '发送失败' ? 'bg-red-50 text-red-500'
+                          : isPausedProgress ? 'bg-amber-50 text-amber-700'
                           : progress === '待触发' ? 'bg-fuchsia-50 text-fuchsia-600' : 'bg-slate-100 text-slate-500';
                         return <span className={`px-1.5 py-0.5 rounded-md font-bold ${tone}`}>{progress}</span>;
                       })()}
@@ -887,6 +951,13 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
                     </div>
                     {/* 提示方向 / 灵感可能很长，完整换行显示，不截断。 */}
                     <div className="text-slate-500 mt-1.5 leading-relaxed break-words">{describeTaskMode(t)}</div>
+                    {isPausedProgress ? (
+                      <div className="text-amber-700 mt-1 text-[11px] leading-relaxed">
+                        {progress === '已暂停·待恢复'
+                          ? '后台任务已被暂停，因此到点未触发；在上方恢复或前往「设置 → 主动消息 2.0」恢复后台任务后会处理'
+                          : '后台任务已被暂停，恢复前到点不会触发；可在上方直接恢复或前往「设置 → 主动消息 2.0」恢复'}
+                      </div>
+                    ) : null}
                     {missingRemote ? (
                       <div className="text-slate-400 mt-1 text-[11px]">⚠ 云端已无此任务（可能已发送或在别处取消）</div>
                     ) : null}

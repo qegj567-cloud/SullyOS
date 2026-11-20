@@ -68,6 +68,17 @@ describe('getCronTriggerState', () => {
     await expect(ActiveMsgClient.getCronTriggerState()).resolves.toBeNull();
   });
 
+  it('throwOnNetworkError=true 时：断网或 5xx 向上抛出，旧版 404 仍回 null', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('Failed to fetch'); }));
+    await expect(ActiveMsgClient.getCronTriggerState({ throwOnNetworkError: true })).rejects.toThrow();
+
+    workerReplies(502, { success: false });
+    await expect(ActiveMsgClient.getCronTriggerState({ throwOnNetworkError: true })).rejects.toThrow('HTTP 502');
+
+    workerReplies(404, null);
+    await expect(ActiveMsgClient.getCronTriggerState({ throwOnNetworkError: true })).resolves.toBeNull();
+  });
+
   it('读到了：把 supported / enabled 原样带回，请求走 GET /cron-trigger 并带共享密钥', async () => {
     workerReplies(200, { success: true, data: { supported: true, enabled: false } });
     expect(await ActiveMsgClient.getCronTriggerState()).toEqual({ supported: true, enabled: false });

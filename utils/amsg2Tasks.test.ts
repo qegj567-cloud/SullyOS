@@ -279,6 +279,16 @@ describe('describeTaskProgress', () => {
     // 非终态的远端 status（pending 等）不改变原口径。
     expect(describeTaskProgress(fired, new Set([fired.taskUuid]), now, 'pending')).toBe('已到点·待处理');
   });
+
+  it('云端后台任务处于暂停态（cronPaused=true）→ 未消费任务显示暂停态，已触发与发送失败保持原判', () => {
+    expect(describeTaskProgress(pending, new Set([pending.taskUuid]), now, 'pending', true)).toBe('后台已暂停');
+    expect(describeTaskProgress(pending, null, now, undefined, true)).toBe('后台已暂停');
+    expect(describeTaskProgress(fired, new Set([fired.taskUuid]), now, 'pending', true)).toBe('已暂停·待恢复');
+    expect(describeTaskProgress(fired, null, now, undefined, true)).toBe('已暂停·待恢复');
+    // 暂停前已经处理完或终态失败的任务仍按既有事实展示
+    expect(describeTaskProgress(fired, new Set(), now, undefined, true)).toBe('已触发');
+    expect(describeTaskProgress(fired, new Set([fired.taskUuid]), now, 'failed', true)).toBe('发送失败');
+  });
 });
 
 // ─── 远端 lastError（上一次没发出去的原因）的收敛与人话 ───

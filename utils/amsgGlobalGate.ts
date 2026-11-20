@@ -8,6 +8,14 @@
 /** 全局配置写盘后在浏览器内派发的同步事件，供设置页与见面租约实时感知总开关变化。 */
 export const AMSG_GLOBAL_CONFIG_EVENT = 'amsg2-global-config-changed';
 
+/** 云端 Cron 定时触发状态经客户端修改后派发的通知事件，供各设置入口同步刷新展示。 */
+export const AMSG_CRON_TRIGGER_EVENT = 'amsg2-cron-trigger-changed';
+
+/** 云端返回的定时触发状态是否明确处于「已暂停」（即支持查询且当前无 Cron 触发器）。 */
+export const isCloudCronPaused = (
+  state?: { supported?: boolean; enabled?: boolean } | null,
+): boolean => Boolean(state && state.supported === true && state.enabled === false);
+
 /** 总开关关闭时客户端统一抛出的错误码（非网络故障，不计入连接异常统计）。 */
 export const AMSG_GLOBAL_DISABLED_CODE = 'AMSG_GLOBAL_DISABLED';
 
@@ -39,6 +47,9 @@ export const isAmsgGlobalDisabledError = (error: unknown): boolean =>
 /** 记录「云端 Cron 是被本机总开关暂停的」，用于恢复总开关或重连时自动加回定时触发，而不覆盖用户手动暂停的后台任务。 */
 export const MASTER_PAUSED_CRON_LS_KEY = 'amsg2_master_paused_cron';
 
+/** 记录「用户在维护面板显式手动暂停了后台任务」，区分手动暂停与跨设备总开关暂停。 */
+export const MANUAL_PAUSED_CRON_LS_KEY = 'amsg2_manual_paused_cron';
+
 export const readMasterPausedCron = (): boolean => {
   try {
     return localStorage.getItem(MASTER_PAUSED_CRON_LS_KEY) === '1';
@@ -51,6 +62,23 @@ export const writeMasterPausedCron = (paused: boolean): void => {
   try {
     if (paused) localStorage.setItem(MASTER_PAUSED_CRON_LS_KEY, '1');
     else localStorage.removeItem(MASTER_PAUSED_CRON_LS_KEY);
+  } catch {
+    // 隐私模式无法落盘时不阻塞开关本身
+  }
+};
+
+export const readManualPausedCron = (): boolean => {
+  try {
+    return localStorage.getItem(MANUAL_PAUSED_CRON_LS_KEY) === '1';
+  } catch {
+    return false;
+  }
+};
+
+export const writeManualPausedCron = (paused: boolean): void => {
+  try {
+    if (paused) localStorage.setItem(MANUAL_PAUSED_CRON_LS_KEY, '1');
+    else localStorage.removeItem(MANUAL_PAUSED_CRON_LS_KEY);
   } catch {
     // 隐私模式无法落盘时不阻塞开关本身
   }
