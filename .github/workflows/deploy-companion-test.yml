@@ -1,0 +1,61 @@
+name: Deploy companion test site
+
+on:
+  push:
+    branches: [codex/companion-api-guide]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-companion-test
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/codex/companion-api-guide'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: 'true'
+      NODE_OPTIONS: --max-old-space-size=4096
+      CLOUDFLARE_ACCOUNT_ID: 2cd975a0e2a9d667b85119c456d9478f
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Verify isolated test target
+        run: >-
+          node -e "const fs=require('fs');const c=JSON.parse(fs.readFileSync('wrangler.test.jsonc','utf8'));
+          if(c.name!=='sully-os-test'||c.routes?.length!==1||c.routes[0].pattern!=='test.friedsully.com'||!c.routes[0].custom_domain)
+          throw Error('Only the companion test site may be deployed');
+          if(c.main!=='worker/static-site-not-found.ts'||c.assets?.binding||c.assets?.run_worker_first||c.assets?.not_found_handling!=='none')
+          throw Error('Static files must use assets-first routing with real 404s')"
+      - name: Build test site
+        run: pnpm build
+      - name: Restore test-site asset history
+        id: history
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/retained-build-assets-test
+          key: site-assets-companion-test-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: site-assets-companion-test-v1-
+      - name: Keep previous test builds reachable
+        run: node scripts/prepare-retained-build-assets.mjs --dist dist --history .cache/retained-build-assets-test
+      - name: Deploy test.friedsully.com
+        run: pnpm dlx wrangler@4.122.0 deploy --config wrangler.test.jsonc
+      - name: Save deployed asset history
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/retained-build-assets-test
+          key: ${{ steps.history.outputs.cache-primary-key }}

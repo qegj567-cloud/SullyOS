@@ -103,6 +103,8 @@ MP4 首选浏览器默认编码，不强制固定 H.264 profile；空输出或�
 
 测试站使用独立 `wrangler.test.jsonc`（`sully-os-test`），绑定 `test.friedsully.com`，不覆盖正式 `sully-os-site`。静态资源仍走 assets-first、缺失文件返回 404；发布前运行构建资源保留脚本，历史目录使用 `.cache/retained-build-assets-test`，与正式站分开。域名不同，本机存档不会自动从正式站或 localhost 搬来，需要用户自行导入备份。
 
+`.github/workflows/deploy-companion-test.yml` 仅从 `codex/companion-api-guide` 发布此测试站，使用 Node 24、锁定依赖和仓库已有 Cloudflare 凭据。推送该分支会更新测试站；不会触发 master 的正式站或主代理发布流程。主代理仍单独更新，后续正式合入 master 时沿用原有代理工作流。
+
 2026-11-20 线上转发验证：主代理 `sully-n` 已更新，保留原域名及绑定；套餐预检从测试站 Origin 返回 204 并允许 Authorization。固定无效测试 Key 经套餐路由返回火山官方 AuthenticationError，语音 WebSocket 返回上游 `http-401`，证明请求抵达官方鉴权层；不是有效 Key 的识别／视频理解成功证明。新增转发和同行回归通过，生产构建通过。此次未发送私人音视频。
 
 Cloudflare Workers 不支持 Node 的 `redirect: 'error'`，线上两条链路使用 `manual` 并拒绝跳转，不能让 Key 随 Location 去其他主机。主代理兼容日期早于 2026-11-17 时需保留 `enable_request_signal`，使浏览器取消可传递给上游；`worker/wrangler.proxy.toml` 已声明。本地 Node 中继保留原来的 `error` 模式。
