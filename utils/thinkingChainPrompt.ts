@@ -1,4 +1,4 @@
-import type { CharacterProfile } from '../types';
+import type { CharacterProfile, UserProfile } from '../types';
 
 export interface ThinkingChainSettings {
     enabled: boolean;
@@ -6,12 +6,16 @@ export interface ThinkingChainSettings {
     mode?: CharacterProfile['thinkingChainPromptMode'];
 }
 
-export function getThinkingChainSettings(char: CharacterProfile): ThinkingChainSettings {
-    return {
-        enabled: !!char.showThinkingChain,
-        customPrompt: char.thinkingChainCustomPrompt,
-        mode: char.thinkingChainPromptMode,
-    };
+export type ThinkingPromptCharacter = Pick<CharacterProfile,
+    'showThinkingChain' | 'thinkingChainPromptScope' | 'thinkingChainPromptMode' | 'thinkingChainCustomPrompt'>;
+
+export function getThinkingChainSettings(char: ThinkingPromptCharacter, user?: Pick<UserProfile, 'thinkingChainPrompt'>) {
+    const hasLegacyPrompt = !!char.thinkingChainCustomPrompt?.trim() || !!char.thinkingChainPromptMode;
+    const scope = char.thinkingChainPromptScope ?? (hasLegacyPrompt ? 'character' : 'space');
+    const prompt = scope === 'character'
+        ? { mode: char.thinkingChainPromptMode, customPrompt: char.thinkingChainCustomPrompt }
+        : user?.thinkingChainPrompt;
+    return { enabled: !!char.showThinkingChain, scope, mode: prompt?.mode ?? 'append', customPrompt: prompt?.customPrompt ?? '' };
 }
 
 export function buildThinkingChainPrompt(

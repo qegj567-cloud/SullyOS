@@ -92,7 +92,7 @@ CSS 编辑器的旧预设及分享格式不迁移。CSS 分类保留 body portal
 
 - `utils/chatWhitebox.ts`：固定选择器分组、卡片种类、CSS 作用域和完整设计要求的唯一来源。白框编辑器复制给 AI 的提示词与协同工作白框制作共用；协同验证器同样接受 `.sully-psyche*`。
 - `components/chat/ChatCardSurface.tsx`：私聊/群聊共用的卡片边界。外层 `.sully-chat-card`，包含 `.sully-chat-card-surface` 和 `.sully-chat-card-content`。`data-card-kind` 对应 MessageType，`data-card-variant` 标识结算/日记等子类型，`data-role` 区分 user/assistant/system。旧卡片业务组件、操作回调和元数据继续保留，未写新 CSS 时保留原样。
-- `utils/psycheAppearance.ts`：心象样式目录、解析和外观字段白名单。旧 `thinkingChainStyle/CustomColors/CustomCss` 继续读取；全局默认是 `OSTheme.chatPsyche`。角色设置优先于全局。心象设置保留显示开关、手动翻译 API 和追加提示词；内置风格位于个性装扮「心象」，自定义颜色/CSS 在聊天装扮「心象」。翻译凭据、原文及译文不进入装扮分享。
+- `utils/psycheAppearance.ts`：心象样式目录、解析和外观字段白名单。旧 `thinkingChainStyle/CustomColors/CustomCss` 继续读取；全局默认是 `OSTheme.chatPsyche`。角色设置优先于全局。心象设置保留显示开关、手动翻译 API 和可按用户空间共用或角色覆盖的心象提示词；内置风格位于个性装扮「心象」，自定义颜色/CSS 在聊天装扮「心象」。翻译凭据、原文及译文不进入装扮分享。
 - 导出格式仍是 `sullyos-chat-decoration` v1，新增可选 `parts.psyche={styleId,customColors?,customCss?}`。旧文件没有这个字段则不改变现有心象；整套导出包含它；显示开关、追加提示词、角色资料和聊天记录绝不导出。领取并应用心象外观不会开启模型推理。
 - 样式顺序：布局基础 → 心象外观 CSS → 全局白框 → 角色白框 → 气泡 CSS → 关键操作保护。已有气泡 CSS 的覆盖顺序不变，白框现在可以明确覆盖旧心象 CSS。
 

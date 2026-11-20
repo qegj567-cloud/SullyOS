@@ -40,6 +40,7 @@ export const CARD_STRIPPED_FIELDS = [
   'thinkingChainCustomColors',
   'thinkingChainCustomPrompt',
   'thinkingChainPromptMode',
+  'thinkingChainPromptScope',
   'thinkingChainCustomCss',
   'chatCollaborationEnabled', // 用户在本机选择的日常聊天注意力模式
   'chatShowRemark',          // 聊天顶栏显示备注还是名字，由接收方自己决定

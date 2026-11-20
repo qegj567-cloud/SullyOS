@@ -239,23 +239,21 @@ describe('theme contrast & style inheritance boundaries', () => {
         React.createElement(ThinkingChainSettingsModal, {
           isOpen: true,
           onClose: vi.fn(),
-          onChange: vi.fn(),
-          value: {
-            enabled: true,
-            styleId: 'stellar',
-            customColors: { bg: '', accent: '', text: '' },
-            customPrompt: '',
-            customCss: '',
-          },
+          character: { showThinkingChain: true },
+          onChangeCharacter: vi.fn(),
+          onChangeSharedPrompt: vi.fn(),
         }),
       );
     });
 
-    const modalCard = host.querySelector('.bg-white');
-    const textarea = host.querySelector('textarea');
-    expect(modalCard?.className).toContain('text-slate-800');
-    expect(textarea?.className).toContain('text-slate-800');
-    expect(textarea?.className).toContain('placeholder:text-slate-400');
+    const style = document.createElement('style');
+    style.textContent = readRepo('components/chat/thinkingSettings.css');
+    host.append(style);
+    const modalCard = host.querySelector('.thinking-settings-panel')!;
+    expect(getComputedStyle(modalCard).backgroundColor).toBe('rgb(255, 255, 255)');
+    for (const control of modalCard.querySelectorAll('textarea, select')) {
+      expect(getComputedStyle(control).color).toBe('rgb(51, 65, 85)');
+    }
 
     await act(async () => {
       root.render(

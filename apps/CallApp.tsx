@@ -2008,7 +2008,7 @@ ${sentencePlan}`;
         : '';
       const messages = await buildHistoryMessages(input, skipDbId, touchContext);
       const thinkingPrompt = selectedChar
-        ? buildThinkingChainPrompt(selectedChar.name, userName, getThinkingChainSettings(selectedChar), '【用户追加的 THINKING 要求】')
+        ? buildThinkingChainPrompt(selectedChar.name, userName, getThinkingChainSettings(selectedChar, userProfile), '【用户追加的 THINKING 要求】')
         : '';
       // 模型专属动作白名单：Live2D 用用户授权的 actions；VRM 用加载时枚举出的
       // 自定义表情（星星眼/黑脸这类，预设之外的全部可用）。

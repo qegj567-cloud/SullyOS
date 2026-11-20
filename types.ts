@@ -3313,6 +3313,7 @@ export interface CharacterProfile {
   /** 角色自定义心象提示词。未设置模式的角色默认追加。 */
   thinkingChainCustomPrompt?: string;
   thinkingChainPromptMode?: 'append' | 'replace';
+  thinkingChainPromptScope?: 'space' | 'character';
   /**
    * 心象卡片的自定义 CSS（叠加在任意风格之上，机制同气泡工坊 customCss）。
    * 选择器限定以 .sully-psyche 开头（子元素类：-card / -title / -preview / -body），
@@ -3407,6 +3408,8 @@ export interface CharacterExportData extends Omit<CharacterProfile, 'id' | 'memo
 }
 
 export interface UserProfile {
+    /** 这个用户空间中，跟随共用设置的角色使用的心象提示词。 */
+    thinkingChainPrompt?: { mode?: 'append' | 'replace'; customPrompt?: string };
     wardrobeOutfits?: import('./apps/room3d/chibi/outfitLibrary').SavedOutfit[];
     chibiStudio?: { home3D?: HomeFigureSlot };
     name: string;

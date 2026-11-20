@@ -31,7 +31,7 @@ format: docx
 - 本窗口与其它协同窗口互不共享对话，也不会自动写回日常聊天或角色记忆。`;
 
 export const collaborationThinkingPrompt = (char: CharacterProfile, user: UserProfile): string => {
-  const block = buildThinkingChainPrompt(char.name, user.name, getThinkingChainSettings(char), '### 用户追加的心象规则');
+  const block = buildThinkingChainPrompt(char.name, user.name, getThinkingChainSettings(char, user), '### 用户追加的心象规则');
   return block ? `\n\n${block}` : '';
 };
 

@@ -1,3 +1,4 @@
+import { getThinkingChainSettings } from './thinkingChainPrompt';
 import { loadChatInputPreferences } from './chatInputPreferences';
 import { readSARClubState, sarRoomView } from './vrWorld/sarClub';
 import { ANNIVERSARY_SEEN_KEY } from './anniversaryGifts';
@@ -30,7 +31,7 @@ import { readFishingMarketState } from './vrWorld/fishingMarket';
  * 这条硬约束。想知道大家在用什么模型是真的，但收不了。
  */
 
-import type { APIConfig, CloudBackupConfig, CharacterProfile, OSTheme, RealtimeConfig } from '../types';
+import type { APIConfig, CloudBackupConfig, CharacterProfile, UserProfile, OSTheme, RealtimeConfig } from '../types';
 import { PRESET_THEMES } from '../components/chat/ChatConstants';
 import { anyCharToggle, bucketFewCount, presetOrCustom, tweakedOrDefault } from './analytics';
 import { readStorageOverview } from './storageStats';
@@ -201,6 +202,7 @@ function builtinSullyQuality(characters: CharacterProfile[]): string {
 export function collectCharSettings(
     characters: CharacterProfile[],
     activeCharacterId: string | null | undefined,
+    user?: Pick<UserProfile, 'thinkingChainPrompt'>,
 ): Record<string, string> {
     const c = characters.find(x => x.id === activeCharacterId) ?? characters[0];
     const anyOn = (pick: (ch: CharacterProfile) => boolean | undefined, defaultOn = false) =>
@@ -281,7 +283,9 @@ export function collectCharSettings(
             characters.filter(x => x.companionAvatar?.source && x.companionAvatar.source !== 'model').length,
         ),
     };
-    if (c.thinkingChainPromptMode === 'replace') fields.心象提示词模式 = '替换';
+    const thinking = getThinkingChainSettings(c, user);
+    if (thinking.mode === 'replace') fields.心象提示词模式 = '替换';
+    if (thinking.scope === 'character') fields.心象提示词范围 = '仅当前角色';
     return fields;
 }
 

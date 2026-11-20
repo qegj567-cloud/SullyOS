@@ -973,7 +973,7 @@ export const useChatAI = ({
                 musicSnapshot: music,
                 translationConfig,
                 htmlMode: { enabled: !!(char as any).htmlModeEnabled, customPrompt: (char as any).htmlModeCustomPrompt },
-                thinkingChain: getThinkingChainSettings(char),
+                thinkingChain: getThinkingChainSettings(char, userProfile),
                 visionApiConfig: apiConfig.visionApi,
                 mcdMiniSnap: mcdMiniOpen ? mcdMiniSnap : undefined,
                 luckinMiniSnap: luckinMiniOpen ? luckinMiniSnap : undefined,

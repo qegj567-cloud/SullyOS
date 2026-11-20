@@ -1138,8 +1138,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   useEffect(() => {
       if (!isDataLoaded || characters.length === 0) return;
       if (!shouldReportSnapshot('char-settings')) return;
-      trackCurrentCharSettingsOnce(collectCharSettings(characters, activeCharacterId));
-  }, [isDataLoaded, characters, activeCharacterId]);
+      trackCurrentCharSettingsOnce(collectCharSettings(characters, activeCharacterId, userProfile));
+  }, [isDataLoaded, characters, activeCharacterId, userProfile]);
 
   // --- 使用统计：现在开着哪些功能 ---
   // 跟「当前外观」一个道理：外部服务这类配置配一次就长期生效，只看「打开过配置页」

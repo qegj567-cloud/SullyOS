@@ -1,5 +1,6 @@
 import type { useOS } from '../context/OSContext';
 import type { CharacterProfile } from '../types';
+import { getThinkingChainSettings } from './thinkingChainPrompt';
 import { loadChatInputPreferences } from './chatInputPreferences';
 import { clampManualContextLimit, resolveContextRangeMode } from './chatContextRange';
 import { dialogueMaxTokens, resolveDialogueApi } from './characterApi';
@@ -8,7 +9,7 @@ import { resolveMemoryPalaceWaterline } from './memoryPalace/waterline';
 import { ActiveMsgStore } from './activeMsgStore';
 import { isAmsg2GloballyEnabled } from './amsgGlobalGate';
 
-type SettingsSource = Pick<ReturnType<typeof useOS>, 'apiConfig' | 'memoryPalaceConfig' | 'realtimeConfig' | 'theme' | 'isDataLoaded'> & Partial<Pick<ReturnType<typeof useOS>, 'remoteVectorConfig'>>;
+type SettingsSource = Pick<ReturnType<typeof useOS>, 'apiConfig' | 'memoryPalaceConfig' | 'realtimeConfig' | 'theme' | 'isDataLoaded'> & Partial<Pick<ReturnType<typeof useOS>, 'remoteVectorConfig' | 'userProfile'>>;
 type Endpoint = { baseUrl: string; apiKey: string; model: string };
 function endpointFields(config: Endpoint) {
     const name = config.model?.trim() || '';
@@ -26,6 +27,7 @@ export async function readHelpDeskSettings(os: SettingsSource, char?: CharacterP
     const input = loadChatInputPreferences();
     const globalPush = await ActiveMsgStore.getGlobalConfig().catch(() => null);
     const chatApi = resolveDialogueApi(apiConfig, char);
+    const thinking = char && getThinkingChainSettings(char, os.userProfile);
     const mode = char && resolveContextRangeMode(char);
     let translated: boolean | null = null;
     if (char) {
@@ -35,6 +37,7 @@ export async function readHelpDeskSettings(os: SettingsSource, char?: CharacterP
     return {
         主对话: { ...endpointFields(apiConfig), 接口: llmApiType(apiConfig), 流式: !!apiConfig.stream, 输出上限: dialogueMaxTokens(apiConfig) },
         私聊与群聊输入: { 自动回复: input.autoReply, 发送键代替生成: input.sendButtonGenerates, 回车发送: input.enterToSend, 表情联想: input.emojiSuggestions },
+        共用心象提示词模式: os.userProfile?.thinkingChainPrompt?.mode === 'replace' ? '替换默认提示词' : '追加',
         全局记忆服务: {
             副API: endpointFields(memoryPalaceConfig.lightLLM), Embedding: endpointFields(memoryPalaceConfig.embedding),
             重排开关: !!memoryPalaceConfig.rerank?.enabled,
@@ -53,7 +56,8 @@ export async function readHelpDeskSettings(os: SettingsSource, char?: CharacterP
             整理节奏: resolveMemoryPalaceWaterline(char.memoryPalaceWaterline), 小眼睛开启月份数: char.activeMemoryMonths?.length ?? 0,
             允许按月查阅: char.monthlyRecallEnabled !== false, 挂载世界书数: char.mountedWorldbooks?.length ?? 0,
             私聊表情看图: !!char.stickerVision, 心象显示: !!char.showThinkingChain, 双语: translated ?? '未能读取', HTML卡片: !!char.htmlModeEnabled,
-            心象提示词模式: char.thinkingChainPromptMode === 'replace' ? '替换默认提示词' : '追加',
+            心象提示词范围: thinking?.scope === 'character' ? '仅当前角色' : '所有角色（共用）',
+            心象提示词模式: thinking?.mode === 'replace' ? '替换默认提示词' : '追加',
             时间感知: char.timeAwarenessEnabled !== false, 主动消息角色开关: char.activeMsg2Config?.enabled === true,
         } : '本轮只提供所有角色共用的设置。需要查看某个角色的设置时，点「询问配置」里的「指定角色」，再选择角色。',
     };

@@ -919,7 +919,7 @@ export const buildFirePack = async (
     userName: userProfile.name,
     translationConfig: readChatTranslationConfig(char.id),
     htmlMode: { enabled: !!char.htmlModeEnabled, customPrompt: char.htmlModeCustomPrompt },
-    thinkingChain: getThinkingChainSettings(char),
+    thinkingChain: getThinkingChainSettings(char, userProfile),
   });
   const recentTranscript = templateStub ? '' : ChatPrompts.buildMessageHistory(
     recentMessages,
