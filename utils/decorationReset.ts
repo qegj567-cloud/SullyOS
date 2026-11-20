@@ -1,6 +1,8 @@
 import type { CharacterProfile, ChatTheme, OSTheme } from '../types';
 import type { BeautyCategory } from './beautyCategories';
-import { LAYOUT_DEFAULTS } from './chatDecoration';
+import { decorationSelection } from './decorationPriority';
+import { type WhiteboxPart } from './whiteboxParts';
+import { LAYOUT_DEFAULTS, resolveDecorationTheme } from './chatDecoration';
 import { replaceWorkshopCss } from './decorationWorkshop';
 import { resolveActiveSound, stripWhiteboxSoundDirective } from './whiteboxSound';
 
@@ -8,7 +10,7 @@ import { resolveActiveSound, stripWhiteboxSoundDirective } from './whiteboxSound
 export function resetChatDecoration(category: BeautyCategory, char: CharacterProfile, theme: OSTheme, activeBubble: ChatTheme) {
     const character: Partial<CharacterProfile> = {};
     let bubble: ChatTheme | undefined;
-    const effectiveCss = stripWhiteboxSoundDirective([char.chatDecorationCssIsolated ? '' : theme.chatChromeCustomCss, char.chromeCustomCss].filter(Boolean).join('\n'));
+    const effectiveCss = stripWhiteboxSoundDirective([resolveDecorationTheme(theme,char).chatChromeCustomCss, char.chromeCustomCss].filter(Boolean).join('\n'));
     if (category === 'avatar' || category === 'background') {
         character.chatSound = resolveActiveSound(char.chromeCustomCss, char.chatSound, theme.chatChromeCustomCss, theme.chatSound) || { src: 'none' };
         character.chatSoundBound = false;
@@ -53,5 +55,6 @@ export function resetChatDecoration(category: BeautyCategory, char: CharacterPro
         character.chatSound = resolveActiveSound(char.chromeCustomCss, char.chatSound, theme.chatChromeCustomCss, theme.chatSound) || { src: 'none' };
         character.chatSoundBound = false;
     }
-    return { character, bubble };
+    const parts: WhiteboxPart[] = category === 'avatar' ? ['avatar:user','avatar:ai'] : ['background','bubbles','profile','psyche'].includes(category) ? [category as WhiteboxPart] : [];
+    return { character: decorationSelection(char,character,'character',parts,''), bubble };
 }

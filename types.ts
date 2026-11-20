@@ -3034,6 +3034,10 @@ export interface CharacterProfile {
   /** ChatApp visual fields only; filtered through the decoration allowlist. */
   chatAppearance?: Partial<OSTheme>;
   chatDecorationCssIsolated?: boolean;
+  /** Parts this character has selected independently of the global chat whitebox. */
+  chatIndependentParts?: import('./utils/whiteboxParts').WhiteboxPart[];
+  /** Explicitly followed components inside an otherwise isolated outfit. */
+  chatFollowWhiteboxParts?: import('./utils/whiteboxParts').WhiteboxPart[];
   chatBackground?: string;
   contextLimit?: number;
   /**

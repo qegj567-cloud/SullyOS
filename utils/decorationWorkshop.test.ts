@@ -12,7 +12,7 @@ it('applies a profile without moving avatars and resets old positions before app
   const preset=makeWorkshopPreset('profile');preset.parts.profile={customCss:skin.customCss};
   expect(decorationCategories(preset)).toEqual(['chat','profile']);
   const {character}=await decorationPatches(preset,['profile'],'character',char,{} as any);
-  expect(Object.keys(character)).toEqual(['chatProfileAppearance']);
+  expect(character.chatIndependentParts).toEqual(['profile']);
   expect(character.chatProfileAppearance!.customCss).toContain('blobref:');
   expect(await portableCssImages(character.chatProfileAppearance!.customCss)).toBe(skin.customCss);
  }

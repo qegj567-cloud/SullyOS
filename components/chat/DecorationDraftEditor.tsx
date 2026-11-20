@@ -11,6 +11,9 @@ import OutfitCollection from './OutfitCollection';
 import {usePreviewDraft} from '../../hooks/usePreviewDraft';
 import {JOURNAL_APPEARANCE_PRESETS} from '../../utils/journalAppearance';
 import {SCHEDULE_CARD_PRESETS} from '../../utils/scheduleAppearance';
+import {embeddedWhiteboxParts,mergeWhiteboxSelection,withdrawWhiteboxParts,type WhiteboxPart} from '../../utils/whiteboxParts';
+import {keepBubbleFrames} from '../../utils/bubbleAvatarFrames';
+import {parseWhiteboxSound,stripWhiteboxSoundDirective} from '../../utils/whiteboxSound';
 import React,{useMemo,useState} from 'react';
 import {createPortal} from 'react-dom';
 import {type DecorationPreset,DEFAULT_AVATAR_POSITION,LAYOUT_DEFAULTS,validateDecoration} from '../../utils/chatDecoration';
@@ -90,7 +93,27 @@ export default function DecorationDraftEditor({getUsage,outfits=[],onOutfitsChan
    const nextOrigin=await readDecorationOrigin(await entry.attributionKey());
    if(!canEditDecoration(nextOrigin))throw Error('作者禁止二改，请回到装扮库整套应用这份作品。');
    const next=validateDecoration(await (entry.readLocal || entry.read)());
-   if(shelf==='whitebox'){setDraft(old=>({...old,parts:{...old.parts,...next.parts,layout:next.parts.layout?{...LAYOUT_DEFAULTS,...next.parts.layout}:{...old.parts.layout,...DEFAULT_AVATAR_POSITION}}}));}
+   const embedded=embeddedWhiteboxParts(next.parts.css||'');
+   const frameParts=(['user','ai'] as const).filter(side=>(shelf==='whitebox'&&embedded.has(side==='user'?'avatar:user':'avatar:ai')) || next.parts.bubbles?.[side].avatarDecoration);
+   const included=[...Object.keys(next.parts),...embedded];
+   if(shelf==='whitebox'){
+    setDraft(old=>{
+     const parts={...old.parts,...next.parts,layout:next.parts.layout?{...LAYOUT_DEFAULTS,...next.parts.layout}:{...old.parts.layout,...DEFAULT_AVATAR_POSITION}};
+     if(next.parts.css!==undefined){
+      for(const part of embedded){
+       if(part!=='avatar:user'&&part!=='avatar:ai'&&part!=='layout'&&next.parts[part]===undefined)delete parts[part];
+      }
+      const chosen=Object.keys(next.parts).filter(key=>key!=='css'&&key!=='sound') as WhiteboxPart[];
+      const pair=next.parts.layout&&next.parts.bubbles&&frameParts.length>0;
+      parts.css=mergeWhiteboxSelection(stripWhiteboxSoundDirective(old.parts.css),next.parts.css,pair?[...chosen,'avatar:user','avatar:ai']:chosen);
+      const sound=parseWhiteboxSound(next.parts.css);
+      if(sound && next.parts.sound===undefined)parts.sound=sound;
+     }
+     const baseBubble=parts.bubbles || (embedded.has('bubbles') && old.parts.bubbles ? PRESET_THEMES.default : undefined);
+     if(baseBubble) parts.bubbles=keepBubbleFrames(baseBubble,old.parts.bubbles,next.parts.layout&&next.parts.bubbles&&frameParts.length>0?['user','ai']:frameParts);
+     return {...old,parts};
+    });
+   }
    else if(shelf==='avatar'){
     const css=workshopCss(next,'avatar');
     const fields=['avatarDecoration','avatarDecorationX','avatarDecorationY','avatarDecorationScale','avatarDecorationRotate'] as const;
@@ -104,7 +127,7 @@ export default function DecorationDraftEditor({getUsage,outfits=[],onOutfitsChan
       let bubbles=old.parts.bubbles?structuredClone(old.parts.bubbles):undefined;
       if(css.trim()){
        if(bubbles)for(const side of targetSides)for(const field of fields)delete (bubbles[side] as any)[field];
-       return {...old,parts:{...old.parts,...(bubbles?{bubbles}:{}),css:setAvatarFrameSlot(old.parts.css||'',avatarShelfTarget,css)}};
+       return {...old,parts:{...old.parts,...(bubbles?{bubbles}:{}),css:setAvatarFrameSlot(withdrawWhiteboxParts(old.parts.css||'',targetSides.map(side=>side==='user'?'avatar:user':'avatar:ai')),avatarShelfTarget,css)}};
       }
       bubbles=bubbles||structuredClone(PRESET_THEMES.default);
       if(next.parts.bubbles){
@@ -113,16 +136,21 @@ export default function DecorationDraftEditor({getUsage,outfits=[],onOutfitsChan
         for(const field of fields){if(sourceSide[field]!==undefined)(bubbles[side] as any)[field]=sourceSide[field];else delete (bubbles[side] as any)[field];}
        }
       }
-      return {...old,parts:{...old.parts,bubbles,css:setAvatarFrameSlot(old.parts.css||'',avatarShelfTarget,'')}};
+      return {...old,parts:{...old.parts,bubbles,css:setAvatarFrameSlot(withdrawWhiteboxParts(old.parts.css||'',targetSides.map(side=>side==='user'?'avatar:user':'avatar:ai')),avatarShelfTarget,'')}};
      });
     }
    }
    else if(shelf==='background'){
     const cssBlock=(next.parts.css||'').match(backgroundBlock)?.[0];
     if(!next.parts.background&&!cssBlock)throw Error('这份预设没有聊天背景');
-    setDraft(old=>({...old,parts:{...old.parts,...(next.parts.background?{background:next.parts.background}:{}),css:[(old.parts.css||'').replace(backgroundBlock,'').trim(),cssBlock].filter(Boolean).join('\n')}}));
+    setDraft(old=>({...old,parts:{...old.parts,background:next.parts.background||{image:null,style:'plain'},css:[withdrawWhiteboxParts(old.parts.css||'',['background']).trim(),cssBlock].filter(Boolean).join('\n')}}));
    }
-   else {const part=next.parts[shelf];if(part===undefined)throw Error('这份预设没有对应内容');setDraft(old=>({...old,parts:{...old.parts,[shelf]:part}}));}
+   else if(shelf==='bubbles'&&next.parts.bubbles){
+    const input=next.parts.bubbles;
+    const owned:WhiteboxPart[]=['bubbles',...frameParts.map(side=>side==='user'?'avatar:user' as const:'avatar:ai' as const)];
+    setDraft(old=>({...old,parts:{...old.parts,...(old.parts.css?{css:withdrawWhiteboxParts(old.parts.css,owned)}:{}),bubbles:keepBubbleFrames(input,old.parts.bubbles)}}));
+   }
+   else {const part=next.parts[shelf];if(part===undefined)throw Error('这份预设没有对应内容');setDraft(old=>({...old,parts:{...old.parts,...(old.parts.css?{css:shelf==='sound'?stripWhiteboxSoundDirective(old.parts.css):withdrawWhiteboxParts(old.parts.css,[shelf])}:{}),[shelf]:part}}));}
    if(!maker&&shelf==='avatar'){
     setOrigins(old=>{
      const copy={...old};
@@ -136,14 +164,18 @@ export default function DecorationDraftEditor({getUsage,outfits=[],onOutfitsChan
     setLabels(prev=>({...prev,avatar:summary||entry.name}));
    }else{
     setOrigins(old=>{
-     const copy={...old,...Object.fromEntries((shelf==='whitebox'?Object.keys(next.parts):[shelf]).map(key=>[key,nextOrigin]))};
-     if(shelf==='whitebox'&&next.parts.css!==undefined){delete copy['avatar:user'];delete copy['avatar:ai'];delete copy.avatar;delete copy['background:css'];}
+     const copy={...old,...Object.fromEntries((shelf==='whitebox'?included:[shelf]).map(key=>[key,nextOrigin]))};
+     if(shelf==='whitebox'){
+      for(const side of frameParts)copy['avatar:'+side]=nextOrigin;
+      if(frameParts.length===2)delete copy.avatar;
+      if(embedded.has('background')||next.parts.background)delete copy['background:css'];
+     }
      if(shelf==='background')delete copy['background:css'];
      return copy;
     });
     if(shelf==='whitebox'){
-     setAvatarSideLabels({});
-     setLabels(old=>{const copy={...old,whitebox:entry.name};delete copy.avatar;return copy;});
+     setAvatarSideLabels(old=>({...old,...Object.fromEntries(frameParts.map(side=>[side,entry.name]))}));
+     setLabels(old=>({...old,...Object.fromEntries(included.map(part=>[part,entry.name])),...(frameParts.length?{avatar:entry.name}:{}),whitebox:entry.name}));
     }else setLabels(old=>({...old,[shelf]:entry.name}));
    }
    setShelf(null);setNotice('已加入搭配');setSideOpen(false);
@@ -156,7 +188,7 @@ export default function DecorationDraftEditor({getUsage,outfits=[],onOutfitsChan
   <div className="decoration-composer-body"><div className="decoration-composer-preview">
    <BeautyPresetPreview data={renderedPreview} sceneScope={!maker||maker==='whitebox'?'all':'preset'}/>
    {(!maker||maker==='whitebox')&&<button className="decoration-layout-orb" disabled={busy||locked} aria-label="调整布局" aria-expanded={layoutOpen} onClick={()=>setLayoutOpen(!layoutOpen)}><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M4 7h16M4 17h16"/><rect x="7" y="4" width="4" height="6" rx="2"/><rect x="14" y="14" width="4" height="6" rx="2"/></svg><span>布局</span></button>}
-   {layoutOpen&&<aside className="decoration-layout-popover" aria-label="布局浮窗"><header><div><strong>布局微调</strong><small>边调整，边看效果</small></div><button aria-label="收起布局浮窗" onClick={()=>setLayoutOpen(false)}>×</button></header><div className="decoration-layout-fields"><ChatLayoutSettings theme={{...theme,...LAYOUT_DEFAULTS,...draft.parts.layout}} updateTheme={patch=>setDraft(old=>({...old,parts:{...old.parts,layout:{...old.parts.layout,...patch}}}))}/></div></aside>}
+   {layoutOpen&&<aside className="decoration-layout-popover" aria-label="布局浮窗"><header><div><strong>布局微调</strong><small>边调整，边看效果</small></div><button aria-label="收起布局浮窗" onClick={()=>setLayoutOpen(false)}>×</button></header><div className="decoration-layout-fields"><ChatLayoutSettings theme={{...theme,...LAYOUT_DEFAULTS,...draft.parts.layout}} updateTheme={patch=>setDraft(old=>({...old,parts:{...old.parts,...(old.parts.css?{css:withdrawWhiteboxParts(old.parts.css,['layout'])}:{}),layout:{...old.parts.layout,...patch}}}))}/></div></aside>}
   </div>
   {!maker&&<button className="decoration-side-toggle" aria-expanded={sideOpen} onClick={()=>setSideOpen(!sideOpen)}>搭配 <span aria-hidden="true">☷</span></button>}
   {!maker&&<button className="decoration-outfit-toggle" aria-label="打开搭配收藏" aria-expanded={outfitOpen} onClick={()=>{setSideOpen(false);setLayoutOpen(false);setError('');setOutfitOpen(true);}}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M5 4h14v17l-7-4-7 4z"/><path d="M9 8h6"/></svg><span>收藏</span></button>}
@@ -191,7 +223,7 @@ export default function DecorationDraftEditor({getUsage,outfits=[],onOutfitsChan
   {!maker&&outfitOpen&&<OutfitCollection getUsage={getUsage} entries={outfits} busy={busy} error={error} onClose={()=>setOutfitOpen(false)} onChoose={entry=>void loadOutfit(entry)} onDelete={setDeleteOutfit} onSave={()=>setSaveOpen(true)}/> }
   {deleteOutfit&&<BeautyConfirmDialog title="删除这套搭配？" confirm="删除" danger onClose={()=>setDeleteOutfit(null)} onConfirm={async()=>{await deleteLibraryDecoration(deleteOutfit.id);await onOutfitsChange?.();}}><p>只移除搭配收藏，已应用的效果和各部件原件会保留。</p></BeautyConfirmDialog>}
   {saveOpen&&<BeautyConfirmDialog title="保存当前搭配" confirm="保存到搭配栏" onClose={()=>setSaveOpen(false)} onConfirm={async()=>{if(!canEditDecoration(combinedOrigin))throw Error("作者禁止二改");if(!draft.name.trim())throw Error("请填写搭配名称");const result={...preview,name:draft.name.trim()};await saveLibraryDecoration(result,remixOrigin(combinedOrigin),undefined,'outfit');trackBeauty('save','outfit');await onOutfitsChange?.();setNotice('已保存到搭配栏');}}><p>保存这次组合，下次可以整套应用。</p><label>搭配名称<input aria-label="搭配名称" maxLength={60} value={draft.name} onChange={e=>setDraft({...draft,name:e.target.value})}/></label></BeautyConfirmDialog>}
-  {editCurrentPsyche&&<DecorationDraftEditor preset={projectWorkshopPreset({...draft,name:'当前心象'},'psyche')} origin={combinedOrigin} theme={theme} sources={sources} maker="psyche" onOpenWorkshop={onOpenWorkshop} onClose={()=>setEditCurrentPsyche(false)} onSaved={next=>{setDraft(old=>({...old,parts:{...old.parts,psyche:next.parts.psyche}}));setEditCurrentPsyche(false);setShelf(null);void onOutfitsChange?.().catch(()=>setError('心象已保存，预设库刷新失败，请重新打开。'));setNotice('心象已保存到预设库；应用搭配后更新角色。');}}/>}
+  {editCurrentPsyche&&<DecorationDraftEditor preset={projectWorkshopPreset({...draft,name:'当前心象'},'psyche')} origin={combinedOrigin} theme={theme} sources={sources} maker="psyche" onOpenWorkshop={onOpenWorkshop} onClose={()=>setEditCurrentPsyche(false)} onSaved={next=>{setDraft(old=>({...old,parts:{...old.parts,...(old.parts.css?{css:withdrawWhiteboxParts(old.parts.css,['psyche'])}:{}),psyche:next.parts.psyche}}));setEditCurrentPsyche(false);setShelf(null);void onOutfitsChange?.().catch(()=>setError('心象已保存，预设库刷新失败，请重新打开。'));setNotice('心象已保存到预设库；应用搭配后更新角色。');}}/>}
   {shelf&&<div className="decoration-shelf-overlay"><section role="dialog" aria-modal="true" aria-label="选择搭配预设"><header><strong>{shelves.find(([id])=>id===shelf)?.[1]}</strong><button disabled={busy} onClick={()=>setShelf(null)}>关闭</button></header>{!maker&&shelf==='avatar'&&<div className="decoration-avatar-target" role="group" aria-label="头像框给谁用">{AVATAR_FRAME_TARGETS.map(([id,label])=><button key={id} type="button" disabled={busy} aria-pressed={avatarShelfTarget===id} onClick={()=>setAvatarShelfTarget(id)}>{label}</button>)}</div>}{!maker&&shelf==='psyche'&&<button disabled={busy||locked} onClick={()=>setEditCurrentPsyche(true)}>编辑并另存当前心象</button>}<input type="search" aria-label="搜索搭配预设" placeholder="搜索预设名称" value={query} onChange={e=>{setQuery(e.target.value);setPage(0);}}/><div className="decoration-shelf-results decoration-shelf-grid">{matches.slice(currentPage*8,currentPage*8+8).map(entry=><DecorationPresetThumb getUsage={getUsage} key={entry.id} entry={entry} category={shelf} disabled={busy} onChoose={()=>{void choose(entry);}}/>)}{!matches.length&&<p>暂无对应预设，请先在装扮库导入或保存。</p>}</div>{error&&<p role="alert">{error}</p>}<footer><button disabled={busy||currentPage===0} onClick={()=>setPage(currentPage-1)}>上一页</button><span>{currentPage+1} / {pageCount}</span><button disabled={busy||currentPage+1>=pageCount} onClick={()=>setPage(currentPage+1)}>下一页</button></footer></section></div>}
  </div>,document.body);
 }

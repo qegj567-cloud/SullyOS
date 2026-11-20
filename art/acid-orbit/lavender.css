@@ -18,7 +18,7 @@
 .sully-bubble-ai {background:linear-gradient(135deg,#fffcffed,#eee6f7ed) !important;}
 .sully-bubble-user {background:linear-gradient(135deg,#e6d6f8,#d5c1ed) !important;}
 .sully-chat-message-avatar-img {border-color:#fffbff !important;box-shadow:0 0 10px #9275ac24 !important;}
-.sully-chat-card[data-card-kind]:not(:where([data-card-kind="transfer"], [data-card-variant="qixi_event_card"], [data-card-variant="like520_card"])) {--sully-card-background:linear-gradient(125deg,#fbf7ffed,#e5d9f1eb);--sully-card-color:#493958;--sully-card-shadow:inset 0 0 0 1px #fff9,0 3px 12px #9275ac1a;}
+/* @lavender-card-palette */
 .sully-chat-card[data-card-kind]:not(:where([data-card-kind="transfer"], [data-card-kind="html_card"], [data-card-variant="qixi_event_card"], [data-card-variant="like520_card"])) .sully-chat-card-content :is(div,section,article,header,footer,button,a,p,span,h2,h3,h4,h5,small,strong,b,label,li,blockquote,details,summary,pre) {color:#584367 !important;border-color:#a991c03b !important;}
 .sully-chat-card[data-card-kind]:not(:where([data-card-kind="transfer"], [data-card-kind="html_card"], [data-card-variant="qixi_event_card"], [data-card-variant="like520_card"])) .sully-chat-card-content .sully-chat-qr-surface {background-color:#ffffff !important;}
 .sully-chat-card[data-card-kind]:not(:where([data-card-kind="transfer"], [data-card-kind="html_card"], [data-card-variant="qixi_event_card"], [data-card-variant="like520_card"])) .sully-chat-card-content .sully-chat-meter-fill {background-color:#c9b1bd !important;}
