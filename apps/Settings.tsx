@@ -42,6 +42,7 @@ import { getLuckinToken, setLuckinToken as saveLuckinToken, isLuckinEnabled, set
 import { consumeProxyWorkerSettingsFocus, getProxyWorkerUrl, setProxyWorkerUrl, DEFAULT_PROXY_WORKER } from '../utils/proxyWorker';
 import { VOICE_ACTING_GUIDE } from '../utils/minimaxTts';
 import { FISH_VOICE_ACTING_GUIDE } from '../utils/fishAudioTts';
+import { FishVoiceTest } from '../components/companion/FishVoiceTest';
 import {
     DEFAULT_ELEVENLABS_MODEL,
     ELEVENLABS_MODEL_OPTIONS,
@@ -2876,6 +2877,7 @@ const Settings: React.FC = () => {
                             ? '免费版：和 s2.1-pro 同一个模型、$0，但首字延迟和并发稳定性不作保证，适合自用测试。选了立即生效。'
                             : '切换立即生效。角色也可在「角色 → 语音」单独覆盖模型（留空则用这里的全局默认）。'}
                     </p>
+                    <FishVoiceTest api={{ ...apiConfig, fishAudioApiKey: localFishKey, fishAudioModel: localFishModel }} characters={characters}/>
                 </div>
 
                 {/* ElevenLabs —— Voice ID 在角色页配置，这里保存账号、全局模型和通用声音参数。 */}

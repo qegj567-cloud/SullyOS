@@ -12,6 +12,7 @@ import { normalizeApiBaseUrl, normalizeApiCredential, normalizeApiModel } from '
 import { COMPANION_VIDEO_PROVIDERS, COMPANION_ARK_PLAN, isCompanionArkPlan, type CompanionVideoProvider } from '../../utils/companion/videoProviders';
 import { CompanionApiTest, type BeginCompanionTest } from './CompanionApiTest';
 import { testCompanionDialogue, testCompanionImage, testCompanionStt, testCompanionVideo, testCompanionVoice } from '../../utils/companion/apiTests';
+import { FishVoiceTest } from './FishVoiceTest';
 
 function VideoApiFields({ config, save, begin }: { config?: CompanionVideoApiConfig; save?: (config: CompanionVideoApiConfig) => void; begin: BeginCompanionTest }) {
   const [provider, setProvider] = useState<CompanionVideoProvider>(config ? config.provider ?? 'custom' : 'doubao');
@@ -200,8 +201,10 @@ export function CompanionSetupGuide({ char, api, canListen, close, navigate, sav
           {provider === 'minimax' && <ExternalLink href="https://platform.minimax.io/">MiniMax 海外平台</ExternalLink>}</div>
         <p>角色需要填写：{guide.voiceField}。平台网页会员与 API 可用额度以平台说明为准；注册完成后先试听，再回同行测试。</p>
         <div className="companion-setup-actions"><button type="button" onClick={() => navigate('voice')}>配置语音 Key / 引擎</button><button type="button" disabled={!char} onClick={() => navigate('character')}>配置当前角色音色</button></div>
-        <CompanionApiTest label="测试并试听角色音色" description={`使用当前实际引擎 ${COMPANION_VOICE_GUIDES[currentVoice].name} 和角色音色合成固定短句；切换上方平台指引不会更换测试引擎。`} config={{ api, voiceProfile: char?.voiceProfile, charId: char?.id }}
+        {currentVoice !== 'fishaudio' && <CompanionApiTest label="测试并试听角色音色" description={`使用当前实际引擎 ${COMPANION_VOICE_GUIDES[currentVoice].name} 和角色音色合成固定短句；切换上方平台指引不会更换测试引擎。`} config={{ api, voiceProfile: char?.voiceProfile, charId: char?.id }}
           disabled={!voiceReady} begin={begin} run={(signal, progress) => testCompanionVoice(api, char!, signal, progress)}/>
+        }
+        <FishVoiceTest api={api} characters={char ? [char] : []} begin={begin}/>
       </section>
 
       <section aria-label="语音输入接入"><div className="companion-setup-heading"><h3><span>04</span> 听你说话</h3><small>{api.companionStt?.provider === 'doubao' ? api.companionStt.apiKey ? '豆包 Key 已填写' : '豆包待配置' : canListen ? '浏览器支持识别' : '此浏览器不支持'}</small></div>

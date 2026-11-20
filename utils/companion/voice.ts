@@ -14,7 +14,7 @@ export class CompanionVoice {
   }
   close() { void this.context?.close().catch(() => {}); this.context = undefined; }
 
-  async play(text: string, char: CharacterProfile, api: APIConfig, signal: AbortSignal, heard: (text: string) => void, onAudible?: () => void) {
+  async play(text: string, char: CharacterProfile, api: APIConfig, signal: AbortSignal, heard: (text: string) => void, onAudible?: () => void, options?: { skipCache?: boolean }) {
     signal.throwIfAborted();
     let started = false;
     const audible = () => { if (!started && !signal.aborted) { started = true; onAudible?.(); } };
@@ -50,22 +50,24 @@ export class CompanionVoice {
     let completed = '';
     for (const chunk of splitSpeechText(text, 160)) {
       signal.throwIfAborted();
-      const url = await synthesizeSpeech(chunk, char, api);
-      signal.throwIfAborted(); // these providers cannot abort an already submitted synthesis
-      const audio = new Audio(url);
-      await new Promise<void>((resolve, reject) => {
-        const finish = (error?: unknown) => {
-          signal.removeEventListener('abort', abort);
-          audio.onended = null; audio.onerror = null; audio.onplaying = null; audio.pause(); audio.removeAttribute('src');
-          error ? reject(error) : resolve();
-        };
-        const abort = () => finish(new DOMException('已停止', 'AbortError'));
-        audio.onended = () => finish();
-        audio.onplaying = audible;
-        audio.onerror = () => finish(new Error('语音播放失败，请检查音频权限或改用文字模式'));
-        signal.addEventListener('abort', abort, { once: true });
-        void audio.play().catch(finish);
-      });
+      const url = await synthesizeSpeech(chunk, char, api, { ...options, signal });
+      try {
+        signal.throwIfAborted(); // Some providers cannot abort an already submitted synthesis.
+        const audio = new Audio(url);
+        await new Promise<void>((resolve, reject) => {
+          const finish = (error?: unknown) => {
+            signal.removeEventListener('abort', abort);
+            audio.onended = null; audio.onerror = null; audio.onplaying = null; audio.pause(); audio.removeAttribute('src');
+            error ? reject(error) : resolve();
+          };
+          const abort = () => finish(signal.reason ?? new DOMException('已停止', 'AbortError'));
+          audio.onended = () => finish();
+          audio.onplaying = audible;
+          audio.onerror = () => finish(new Error('语音播放失败，请检查音频权限或改用文字模式'));
+          signal.addEventListener('abort', abort, { once: true });
+          void audio.play().catch(finish);
+        });
+      } finally { if (url.startsWith('blob:')) URL.revokeObjectURL(url); }
       signal.throwIfAborted();
       completed += chunk;
       heard(completed);

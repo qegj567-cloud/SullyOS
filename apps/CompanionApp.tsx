@@ -83,10 +83,10 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
     setCamera(false); setCameraPending(false); setObservation(undefined); setObserving(false);
     setAnalysisPaused(false); setAnalysisProblem(''); setAnalysisClip(undefined);
   };
-  const stopAll = () => { session.current?.interrupt(); stopMic(); stopCamera(); };
+  const stopAll = () => { session.current?.interrupt('停止看听、配置或测试'); stopMic(); stopCamera(); };
 
   useEffect(() => {
-    session.current?.interrupt(); session.current = undefined;
+    session.current?.interrupt('切换角色'); session.current = undefined;
     debug.clear();
     stopMic(); stopCamera(); setLines([]); setImageMode('none'); setStatus('在你身边');
     // This editable seed is intentionally short and visibly labelled as an excerpt.
@@ -98,7 +98,7 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
     document.addEventListener('visibilitychange', hidden);
     return () => {
       mounted.current = false;
-      session.current?.interrupt(); stopListening.current?.(); visionAbort.current?.abort();
+      session.current?.interrupt('离开同行'); stopListening.current?.(); visionAbort.current?.abort();
       cameraGeneration.current++; mediaRef.current?.getTracks().forEach(track => track.stop());
       voice.current.close(); document.removeEventListener('visibilitychange', hidden);
     };
@@ -133,7 +133,7 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
     try {
       ensureSession();
       const callbacks: ListeningCallbacks = {
-        speech: () => session.current?.interrupt(), partial: setPartial, final: text => sendRef.current(text),
+        speech: () => session.current?.interrupt('识别到新的语音输入'), partial: setPartial, final: text => sendRef.current(text),
         error: (message: string) => { setError(message); setListening(false); setPartial(''); setMicStatus(''); stopListening.current = undefined; },
         state: setMicStatus, diagnostics: setMicDiagnostics,
       };

@@ -296,7 +296,9 @@ const fishFetchAudio = async (
   payload: any,
   apiKey: string,
   model: string,
+  signal?: AbortSignal,
 ): Promise<Blob> => {
+  signal?.throwIfAborted();
   const jsonHeaders = {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${apiKey}`,
@@ -332,6 +334,7 @@ const fishFetchAudio = async (
   }
   const res = await fetch(url, {
     method: 'POST',
+    signal,
     headers,
     body: JSON.stringify(payload),
   });
@@ -353,8 +356,9 @@ export async function synthesizeSpeechFishDetailed(
   text: string,
   char: CharacterProfile,
   apiConfig: APIConfig,
-  options?: { languageBoost?: string; groupId?: string; emotion?: string },
+  options?: { languageBoost?: string; groupId?: string; emotion?: string; skipCache?: boolean; signal?: AbortSignal },
 ): Promise<TtsResult> {
+  options?.signal?.throwIfAborted();
   const apiKey = resolveFishAudioApiKey(apiConfig);
   if (!apiKey) throw new Error('缺少鱼声 Fish Audio API Key');
   const vp = char.voiceProfile;
@@ -403,13 +407,15 @@ export async function synthesizeSpeechFishDetailed(
     format: payload.format,
     prosody: payload.prosody,
   });
-  const cached = await getCachedTts(cacheKey);
+  const cached = options?.skipCache ? undefined : await getCachedTts(cacheKey);
+  options?.signal?.throwIfAborted();
   if (cached) {
     return { url: URL.createObjectURL(cached), blob: cached };
   }
 
-  const blob = await fishFetchAudio(payload, apiKey, model);
-  saveCachedTts(cacheKey, blob).catch(() => { /* ignore */ });
+  const blob = await fishFetchAudio(payload, apiKey, model, options?.signal);
+  options?.signal?.throwIfAborted();
+  if (!options?.skipCache) saveCachedTts(cacheKey, blob).catch(() => { /* ignore */ });
   return { url: URL.createObjectURL(blob), blob };
 }
 

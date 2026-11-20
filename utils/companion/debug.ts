@@ -28,7 +28,7 @@ export interface CompanionDebugTurn {
   id: number; input: string; origin: number; end?: number; status: Status;
   stages: Partial<Record<CompanionStage, CompanionSpan>>;
   requests: Partial<Record<CompanionPhase, CompanionDebugRequest>>;
-  delivery: Partial<Record<CompanionPhase, { mode?: 'audio' | 'text'; end?: number }>>;
+  delivery: Partial<Record<CompanionPhase, { mode?: 'audio' | 'text'; end?: number; failed?: boolean }>>;
 }
 
 /** Page-local, bounded instrumentation. It never writes storage, logs or credentials. */
@@ -98,6 +98,11 @@ export class CompanionTurnTrace {
     this.end(`${phase}_audio`);
     this.end(`${phase}_tts`, 'skipped', '未收到出声事件');
     this.update(turn => { turn.delivery[phase] = { ...turn.delivery[phase], end: this.elapsed() }; });
+  }
+  deliveryFailed(phase: CompanionPhase) {
+    this.end(`${phase}_tts`, 'error', '语音失败，正文仍展示');
+    this.end(`${phase}_audio`, 'error', '播放失败，正文仍展示');
+    this.update(turn => { turn.delivery[phase] = { ...turn.delivery[phase], end: this.elapsed(), failed: true }; });
   }
   finish(status: 'done' | 'cancelled' | 'error') {
     this.signal.removeEventListener('abort', this.abort);

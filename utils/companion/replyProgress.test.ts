@@ -29,3 +29,13 @@ it('shows concurrent recall, actual full generation, queued playback and cancell
   await act(async () => store.clear()); expect(host.textContent).toBe('');
   await act(async () => root.unmount());
 });
+
+it('shows failed a audio separately while a′ is still generating', async () => {
+  const host = document.createElement('div'), root = createRoot(host), store = new CompanionDebugStore();
+  const trace = store.start(new AbortController().signal, 'A');
+  trace.begin('quick_tts'); trace.deliveryFailed('quick'); trace.begin('full_request');
+  await act(async () => root.render(React.createElement(CompanionReplyProgress, { store })));
+  expect(host.querySelector('[data-phase=quick]')!.textContent).toContain('语音失败，正文已展示');
+  expect(host.querySelector('[data-phase=full]')!.textContent).toContain('正在生成');
+  await act(async () => root.unmount());
+});

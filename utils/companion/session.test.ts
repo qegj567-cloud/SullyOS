@@ -1,5 +1,6 @@
 import { expect, it, vi } from 'vitest';
 import { CompanionSession, type CompanionLine } from './session';
+import { CompanionDebugStore } from './debug';
 
 const deferred = <T>() => { let resolve!: (value: T) => void; let reject!: (error: unknown) => void; const promise = new Promise<T>((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
 const tick = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
@@ -49,13 +50,43 @@ it('barge-in keeps only heard text and rejects late a′, including transports i
   expect(lines.at(-1)?.heard).toBe('b′');
 });
 
-it('a speech failure cancels continuation and reports the real error', async () => {
+it('a speech failure keeps the pending continuation alive, shows its text, and reports the real cause', async () => {
   const error = vi.fn();
+  const continuation = deferred<string>();
+  const debug = new CompanionDebugStore();
+  let lines: CompanionLine[] = [];
   let signal: AbortSignal | undefined;
-  const session = new CompanionSession({ quick: async () => 'a', prepare: async (_, a) => a,
-    full: async (_, s) => { signal = s; return 'a′'; },
-    play: async () => { throw new Error('TTS failed'); }, change: () => {}, error });
-  await session.send('A');
+  const session = new CompanionSession({ debug, quick: async () => 'a', prepare: async (_, a) => a,
+    full: async (_, s) => { signal = s; return continuation.promise; },
+    play: async (text, _, heard, started) => { if (text === 'a') throw new Error('鱼声 HTTP 404'); started('text'); heard(text); },
+    change: next => { lines = next; }, error });
+  const done = session.send('A'); await tick();
+  expect(signal?.aborted).toBe(false);
+  expect(error.mock.calls[0][0].message).toContain('a · 接话语音失败：鱼声 HTTP 404');
+  expect(lines.at(-1)).toMatchObject({ text: 'a', heard: 'a', voiceFailed: true });
+  continuation.resolve('a′'); await done;
   expect(error).toHaveBeenCalledOnce();
-  if (signal) expect(signal.aborted).toBe(true);
+  expect(lines.at(-1)).toMatchObject({ text: 'a′', status: 'done' });
+  expect(debug.getSnapshot()[0].delivery.quick).toMatchObject({ failed: true });
+  expect(debug.getSnapshot()[0].stages.quick_tts?.status).toBe('error');
+});
+
+it('does not cancel audible a when full preparation fails, and labels the failed phase', async () => {
+  const audio = deferred<void>(), error = vi.fn();
+  let signal!: AbortSignal;
+  const session = new CompanionSession({ quick: async () => 'a', prepare: async () => { throw new Error('组装失败'); },
+    full: vi.fn(), play: async (_, s, heard) => { signal = s; await audio.promise; heard('a'); }, change: () => {}, error });
+  const done = session.send('A'); await tick();
+  expect(signal.aborted).toBe(false); expect(error).not.toHaveBeenCalled();
+  audio.resolve(); await done;
+  expect(error.mock.calls[0][0].message).toContain('a′ · 完整回复失败：组装失败');
+});
+
+it('can finish full context after quick generation fails, without inventing an assistant answer', async () => {
+  const error = vi.fn(), play = vi.fn(async () => {}), prepared = vi.fn(async (_history, a) => a);
+  const session = new CompanionSession({ quick: async () => { throw new Error('HTTP 400'); }, prepare: prepared,
+    full: async a => { expect(a).toBe(''); return '完整答复'; }, play, change: () => {}, error });
+  await session.send('A');
+  expect(play).toHaveBeenCalledOnce(); expect(play.mock.calls[0][0]).toBe('完整答复');
+  expect(error.mock.calls[0][0].message).toContain('a · 接话生成失败：HTTP 400');
 });

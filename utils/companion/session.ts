@@ -8,6 +8,7 @@ export interface CompanionLine {
   heard: string;
   at: number;
   phase?: 'quick' | 'full';
+  voiceFailed?: boolean;
   status: 'ready' | 'speaking' | 'done' | 'interrupted';
 }
 
@@ -29,9 +30,9 @@ export class CompanionSession<P> {
 
   private publish(state: string) { this.ports.change(this.lines.map(line => ({ ...line })), state); }
 
-  interrupt() {
+  interrupt(reason = '手动打断') {
     // Abort listeners report the last audible position synchronously before we snapshot.
-    this.controller?.abort();
+    this.controller?.abort(new DOMException(`同行已停止：${reason}`, 'AbortError'));
     this.controller = undefined;
     this.lines.forEach(line => { if (line.status === 'speaking' || line.status === 'ready') line.status = 'interrupted'; });
     this.publish('已停下，听你说');
@@ -39,7 +40,7 @@ export class CompanionSession<P> {
 
   async send(text: string) {
     if (!text.trim()) return;
-    this.interrupt();
+    this.interrupt('收到新一轮输入');
     const controller = new AbortController();
     this.controller = controller;
     const { signal } = controller;
@@ -49,24 +50,32 @@ export class CompanionSession<P> {
     const history = this.lines.filter(line => line.heard.trim()).map(line => ({ ...line, text: line.heard }));
     this.publish('正在接话');
     let playing: Promise<void> | undefined;
-    let quickFinished = false, fullReady = false;
+    let quickFinished = false, fullReady = false, hadFailure = false;
     try {
-      const quick = this.ports.quick(history, signal);
+      const quick = this.ports.quick(history, signal).catch(error => {
+        signal.throwIfAborted();
+        hadFailure = true;
+        this.ports.error(new Error(`a · 接话生成失败：${error instanceof Error ? error.message : '请求失败'}；继续准备 a′。`));
+        // No invented assistant message; recall still completes for this input.
+        return '';
+      });
       // A rejected preparation may finish before quick speech: attach its handler now.
       const prepared = this.ports.prepare(history, quick, signal);
       void prepared.catch(() => {});
       const a = await quick;
       signal.throwIfAborted();
-      playing = this.deliver(a, 'quick', signal).then(() => {
+      playing = this.deliver(a, 'quick', signal).then(failed => {
+        hadFailure ||= failed;
         quickFinished = true;
         if (!fullReady) trace?.begin('wait_full');
       });
       void playing.catch(() => {});
       // Generation starts as soon as recall + a are ready, regardless of audio duration.
-      const payload = await prepared;
-      signal.throwIfAborted();
-      this.publish('接话中 · 正在继续想');
-      const continuation = this.ports.full(payload, signal).then(result => {
+      const continuation = prepared.then(payload => {
+        signal.throwIfAborted();
+        this.publish('接话中 · 正在继续想');
+        return this.ports.full(payload, signal);
+      }).then(result => {
         signal.throwIfAborted(); fullReady = true; trace?.end('wait_full');
         if (!quickFinished) trace?.begin('wait_audio');
         return result;
@@ -78,16 +87,15 @@ export class CompanionSession<P> {
       const full = await continuation;
       signal.throwIfAborted();
       trace?.end('wait_full'); trace?.end('wait_audio');
-      await this.deliver(full, 'full', signal);
+      hadFailure = (await this.deliver(full, 'full', signal)) || hadFailure;
       signal.throwIfAborted();
       this.publish('在你身边');
-      trace?.finish('done');
+      trace?.finish(hadFailure ? 'error' : 'done');
     } catch (error) {
       if (!signal.aborted) {
         trace?.finish('error');
-        // Keep the already audible part, discard dependent continuation on any failure.
-        this.interrupt();
-        this.ports.error(error);
+        this.interrupt('本轮续答失败');
+        this.ports.error(new Error(`a′ · 完整回复失败：${error instanceof Error ? error.message : '请求失败'}`));
       }
     } finally {
       if (this.controller === controller) this.controller = undefined;
@@ -95,21 +103,33 @@ export class CompanionSession<P> {
   }
 
   private async deliver(text: string, phase: 'quick' | 'full', signal: AbortSignal) {
-    if (!text.trim()) return;
+    if (!text.trim()) return false;
     signal.throwIfAborted();
     const line: CompanionLine = { id: ++this.serial, role: 'assistant', text, heard: '', at: Date.now(), phase, status: 'speaking' };
     this.lines.push(line);
     this.publish(phase === 'quick' ? '正在接话' : '正在和你说');
     const trace = this.ports.debug?.get(signal);
     trace?.begin(`${phase}_tts`);
-    await this.ports.play(text, signal, heard => {
-      line.heard = heard;
-      if (!signal.aborted) this.publish(phase === 'quick' ? '接话中 · 同时准备后续' : '正在和你说');
-    }, mode => trace?.deliveryStart(phase, mode));
+    try {
+      await this.ports.play(text, signal, heard => {
+        line.heard = heard;
+        if (!signal.aborted) this.publish(phase === 'quick' ? '接话中 · 同时准备后续' : '正在和你说');
+      }, mode => trace?.deliveryStart(phase, mode));
+    } catch (error) {
+      signal.throwIfAborted();
+      // The full text is already visible in the caption/history. Record it as
+      // displayed, explicitly mark voice failure, and keep the other LLM work alive.
+      line.voiceFailed = true; line.heard = text; line.status = 'done';
+      trace?.deliveryFailed(phase);
+      this.publish('语音失败，正文已展示');
+      this.ports.error(new Error(`${phase === 'quick' ? 'a · 接话' : 'a′ · 完整回复'}语音失败：${error instanceof Error ? error.message : '播放失败'}。正文已保留${phase === 'quick' ? '，a′ 继续生成' : ''}。`));
+      return true;
+    }
     signal.throwIfAborted();
     line.heard = text;
     line.status = 'done';
     trace?.deliveryEnd(phase);
     this.publish(phase === 'quick' ? 'a 已结束 · 继续准备 a′' : '在你身边');
+    return false;
   }
 }

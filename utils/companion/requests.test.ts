@@ -33,6 +33,18 @@ it.each(['none', 'direct', 'helper'] as const)('only attaches matching clip stil
   expect(second).toContain('先看红衣服，再转向蓝外套');
   expect(second).toContain('完整人设标记'); expect(second).toContain('世界书深度标记');
   expect(second.match(/短答关键词/g)).toHaveLength(1);
+  const messages = JSON.parse(second).messages;
+  // Gemini drops system messages from contents: it must still end in a user task.
+  expect(messages.filter((message: any) => message.role !== 'system').at(-1)).toMatchObject({ role: 'user' });
+  expect(messages.at(-1).content).toContain('非用户新增发言');
+  expect(JSON.parse(first).messages.at(-1)).toEqual({ role: 'user', content: 'A' });
+});
+
+it('does not invent an assistant prefill when quick generation has failed', async () => {
+  vi.spyOn(palace, 'injectMemoryPalace').mockResolvedValue({} as any);
+  const requests = createCompanionRequests(context(char('quick-failed')));
+  const payload = await requests.prepare([line('A')], Promise.resolve(''), new AbortController().signal);
+  expect(payload.fullMessages.some(message => message.role === 'assistant' && !message.content.trim())).toBe(false);
 });
 
 it('keeps quick history bounded after lengthy continuations without truncating the current question', () => {

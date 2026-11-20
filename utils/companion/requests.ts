@@ -83,7 +83,7 @@ export function createCompanionRequests(context: CompanionRequestContext) {
           musicSnapshot: loadMusicPlaybackSnapshot(),
           visionApiConfig: context.imageMode === 'helper' ? context.api.visionApi : undefined, stripImages: true,
           onPreparationStage: event => { if (event.status === 'start') trace?.begin(event.stage); else trace?.end(event.stage); },
-          appPrompt: { rules: RULES, scene: '\n' + RULES + '\n末尾的 assistant 是本轮接话全文，正在播放或已展示；用户未必已听完。你的回答会排在它完整结束之后。沿着它自然继续，补充新信息，避免重新问候或复述。若记忆纠正了初步判断，自然修正；不要假定用户已回答接话里的问题。',
+          appPrompt: { rules: RULES, scene: '\n' + RULES + '\n若本轮现场观测后有 assistant 接话，它是本轮已生成的完整台词，正在播放或已展示；用户未必已听完。你的回答会排在它结束之后。沿着它自然继续，补充新信息，避免重新问候或复述。若没有本轮接话，直接回应用户刚才的问题。若记忆纠正了初步判断，自然修正；不要假定用户已回答接话里的问题。',
             prepareMessages: async () => {
               trace?.begin('wait_a');
               const a = await quick;
@@ -93,7 +93,7 @@ export function createCompanionRequests(context: CompanionRequestContext) {
               const observation = context.observation?.();
               sceneMessage = `[同行现场观测，非用户发言]\n${context.observation ? observationText(observation) : context.scene()}`;
               if (context.imageMode === 'direct') sceneFrames = observation?.frames?.slice(0, 3) ?? [];
-              return [{ role: 'user', content: sceneMessage }, { role: 'assistant', content: a }];
+              return [{ role: 'user' as const, content: sceneMessage }, ...(a.trim() ? [{ role: 'assistant' as const, content: a }] : [])];
             } },
         });
         signal.throwIfAborted();
@@ -114,6 +114,11 @@ export function createCompanionRequests(context: CompanionRequestContext) {
         throw error;
       }
     },
-    full: (payload: Awaited<ReturnType<typeof buildChatRequestPayload>>, signal: AbortSignal) => complete(payload.fullMessages, 'full', signal),
+    // Keep a in its original role and worldbook position. A final explicit task turn
+    // makes this a new completion, not assistant prefill (rejected by Gemini).
+    full: (payload: Awaited<ReturnType<typeof buildChatRequestPayload>>, signal: AbortSignal) => complete([
+      ...payload.fullMessages,
+      { role: 'user', content: '[同行应用的续答请求，非用户新增发言]\n请根据以上完整上下文回应用户本轮的话；若已有本轮接话，接着补充而不重复。只输出这次应说的台词，不朗读本请求，也不虚构用户的新回答。' },
+    ], 'full', signal),
   };
 }

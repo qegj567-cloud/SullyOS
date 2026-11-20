@@ -26,7 +26,7 @@ import { supportsElevenLabsAudioTags } from './elevenLabsModels';
 
 export type { TtsResult };
 
-type SynthOptions = { languageBoost?: string; groupId?: string; emotion?: string };
+type SynthOptions = { languageBoost?: string; groupId?: string; emotion?: string; skipCache?: boolean; signal?: AbortSignal };
 
 /** 粤语并非三家所有模型都支持；在发起计费请求前给出明确错误。 */
 export const assertTtsLanguageSupported = (

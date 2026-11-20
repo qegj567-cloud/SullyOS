@@ -64,7 +64,7 @@ export async function testCompanionVoice(api: APIConfig, char: CharacterProfile,
   try {
     await voice.play('这是同行的语音测试，我能陪你一起逛街。', char, api, signal, () => {}, () => {
       audible = true; progress('正在播放当前角色的音色');
-    });
+    }, { skipCache: true });
     signal.throwIfAborted();
     if (!audible) throw new Error('接口已结束，但未检测到音频播放，请检查音色、额度和浏览器音频权限');
     return { summary: '已合成并完成播放', detail: '若仍听不到声音，请检查设备音量和输出设备。' };

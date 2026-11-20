@@ -5,8 +5,10 @@ export const companionReplyLabel = (phase?: CompanionPhase) => phase === 'quick'
 
 function phaseStatus(turn: CompanionDebugTurn, phase: CompanionPhase) {
   const stages = turn.stages, delivery = turn.delivery[phase];
+  if (delivery?.failed) return '语音失败，正文已展示';
   if (delivery?.end !== undefined) return delivery.mode === 'text' ? '已展示（文字模式）' : '已播放';
   const request = stages[`${phase}_request`];
+  if (request?.status === 'error') return '生成失败';
   if (turn.status === 'error') return request?.status === 'error' ? '生成失败' : '本轮出错，已停止';
   if (turn.status === 'cancelled') return request ? '已打断' : '已取消，未开始生成';
   if (stages[`${phase}_audio`]?.status === 'running') return '正在播放';

@@ -750,7 +750,10 @@ export const buildFetchFailureSystemLog = (input: BuildFetchFailureSystemLogInpu
         ...(input.caller ? { caller: input.caller } : {}),
     };
 
-    const resolvedAdvice = input.advice ?? buildIdentityErrorAdvice({
+    // A caller cancellation is not evidence of a provider/network failure.
+    const resolvedAdvice = kind === 'aborted'
+        ? { title: `${identity.source} · 请求已取消`, action: '这次请求由应用主动停止（例如打断、切换页面或同轮其它步骤失败）。请查看当前功能状态及同一时刻的原始错误；这条记录本身不能说明网络或 Key 有问题。' }
+        : input.advice ?? buildIdentityErrorAdvice({
         identity,
         failureKind: kind,
         backgroundedDuringRequest: wasBackgrounded,

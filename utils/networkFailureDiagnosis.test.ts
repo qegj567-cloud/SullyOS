@@ -13,6 +13,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
     NETWORK_SELF_CHECK_STEPS,
     buildFetchFailureDetail,
+    buildFetchFailureSystemLog,
     classifyFetchFailure,
     describeReachabilityProbe,
     parseTargetUrl,
@@ -25,6 +26,16 @@ import {
 } from './networkFailureDiagnosis';
 
 const failedToFetch = () => new TypeError('Failed to fetch');
+
+it('keeps cancellation advice ahead of generic network/provider advice', () => {
+    const { log, kind } = buildFetchFailureSystemLog({ url: 'https://api.example/v1/chat/completions',
+        error: new DOMException('同行已停止：识别到新的语音输入', 'AbortError'), startedAtPerf: 0,
+        advice: { title: 'API 请求失败', action: '请检查网络并联系服务商' } });
+    expect(kind).toBe('aborted');
+    expect(log.advice?.title).toContain('请求已取消');
+    expect(log.advice?.action).not.toContain('联系服务商');
+    expect(log.detail).toContain('识别到新的语音输入');
+});
 
 describe('classifyFetchFailure', () => {
     it('Chrome / Safari / Firefox 三种说法都算「拿不到响应」', () => {

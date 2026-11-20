@@ -41,6 +41,7 @@ it('marks MP3 audible on playing, not synthesis or play() resolving', async () =
     constructor() { audio = this; }
     async play() {} pause() {} removeAttribute() {}
   });
+  URL.revokeObjectURL = vi.fn();
   const started = vi.fn();
   const done = new CompanionVoice().play('a', {} as any, {} as any, new AbortController().signal, () => {}, started);
   await Promise.resolve(); await Promise.resolve();
