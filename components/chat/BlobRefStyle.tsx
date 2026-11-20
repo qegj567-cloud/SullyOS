@@ -1,9 +1,11 @@
-import React, {useEffect, useRef} from 'react';
+import React, {useEffect, useMemo, useRef} from 'react';
 import {applyCssImageUrls, resolveCssImageUrls} from '../../utils/cssImageAssets';
+import {resolveLavenderCardPalette} from '../../utils/lavenderCardPalette';
 
 /** Keep saved CSS and font rules stable while local images finish loading. */
 export default function BlobRefStyle({css}: {css: string}) {
     const styleRef = useRef<HTMLStyleElement>(null);
+    const displayCss = useMemo(() => resolveLavenderCardPalette(css), [css]);
     useEffect(() => {
         if (!css.includes('blobref:')) return;
         let alive = true; let dispose: (() => void) | undefined;
@@ -16,5 +18,5 @@ export default function BlobRefStyle({css}: {css: string}) {
         }).catch(() => { /* Ordinary layout CSS remains usable if the asset store is unavailable. */ });
         return () => {alive = false; dispose?.();};
     }, [css]);
-    return <style ref={styleRef}>{css}</style>;
+    return <style ref={styleRef}>{displayCss}</style>;
 }

@@ -3034,6 +3034,10 @@ export interface CharacterProfile {
   /** ChatApp visual fields only; filtered through the decoration allowlist. */
   chatAppearance?: Partial<OSTheme>;
   chatDecorationCssIsolated?: boolean;
+  /** Parts this character has selected independently of the global chat whitebox. */
+  chatIndependentParts?: import('./utils/whiteboxParts').WhiteboxPart[];
+  /** Explicitly followed components inside an otherwise isolated outfit. */
+  chatFollowWhiteboxParts?: import('./utils/whiteboxParts').WhiteboxPart[];
   chatBackground?: string;
   contextLimit?: number;
   /**
@@ -3310,8 +3314,10 @@ export interface CharacterProfile {
     accent?: string;   // 边框/标题点缀
     text?: string;     // 正文颜色
   };
-  /** 用户追加的思考提示词（不替换原生，只在最后追加一段「用户额外要求」） */
+  /** 角色自定义心象提示词。未设置模式的角色默认追加。 */
   thinkingChainCustomPrompt?: string;
+  thinkingChainPromptMode?: 'append' | 'replace';
+  thinkingChainPromptScope?: 'space' | 'character';
   /**
    * 心象卡片的自定义 CSS（叠加在任意风格之上，机制同气泡工坊 customCss）。
    * 选择器限定以 .sully-psyche 开头（子元素类：-card / -title / -preview / -body），
@@ -3406,6 +3412,8 @@ export interface CharacterExportData extends Omit<CharacterProfile, 'id' | 'memo
 }
 
 export interface UserProfile {
+    /** 这个用户空间中，跟随共用设置的角色使用的心象提示词。 */
+    thinkingChainPrompt?: { mode?: 'append' | 'replace'; customPrompt?: string };
     wardrobeOutfits?: import('./apps/room3d/chibi/outfitLibrary').SavedOutfit[];
     chibiStudio?: { home3D?: HomeFigureSlot };
     name: string;

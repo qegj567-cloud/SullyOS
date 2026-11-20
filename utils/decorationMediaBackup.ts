@@ -1,7 +1,7 @@
 import type {CharacterProfile} from '../types';
 
 const FIELDS = ['bubbleStyle','chatAppearance','chatFineTune','chatBackground',
-  'chromeCustomCss','chatDecorationCssIsolated','chatSound','chatSoundBound','thinkingChainStyle',
+  'chromeCustomCss','chatIndependentParts','chatFollowWhiteboxParts','chatDecorationCssIsolated','chatSound','chatSoundBound','thinkingChainStyle',
   'thinkingChainCustomColors','thinkingChainCustomCss','chatProfileAppearance'] as const satisfies ReadonlyArray<keyof CharacterProfile>;
 export interface DecorationMediaBackup {version:1;values:Partial<Record<typeof FIELDS[number],unknown>>}
 

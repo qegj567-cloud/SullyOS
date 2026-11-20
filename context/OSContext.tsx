@@ -27,6 +27,7 @@ import {exportBeautyAuthorBackup} from '../utils/beautyAuthorBackup';
 import { initializeFirstUseGuide } from '../utils/firstUseGuide';
 import { startBeautyUsage, stopBeautyUsage, stopBeautyForThemeChange } from '../utils/beautyUsage';
 import { FEEDBACK_INVITATION_KEY, hasPriorFeedbackInstallEvidence, initializeFeedbackInvitation, suppressFeedbackInvitation } from '../utils/feedbackInvitation';
+import { decorationSelection } from '../utils/decorationPriority';
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
 import { generateAvatar } from '../utils/defaultAvatar';
 import { buildRescueImportAnalytics, isAmsgRescueExport, rescueExportToBackup } from '../utils/amsgRescueImport';
@@ -1138,8 +1139,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   useEffect(() => {
       if (!isDataLoaded || characters.length === 0) return;
       if (!shouldReportSnapshot('char-settings')) return;
-      trackCurrentCharSettingsOnce(collectCharSettings(characters, activeCharacterId));
-  }, [isDataLoaded, characters, activeCharacterId]);
+      trackCurrentCharSettingsOnce(collectCharSettings(characters, activeCharacterId, userProfile));
+  }, [isDataLoaded, characters, activeCharacterId, userProfile]);
 
   // --- 使用统计：现在开着哪些功能 ---
   // 跟「当前外观」一个道理：外部服务这类配置配一次就长期生效，只看「打开过配置页」
@@ -2789,6 +2790,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   }, [isDataLoaded]);
 
   const updateTheme = async (updates: Partial<OSTheme>) => {
+    updates = decorationSelection(theme, updates, 'global');
     stopBeautyForThemeChange(updates);
     const { wallpaper, lockWallpaper, launcherWidgetImage, launcherWidgets, desktopDecorations, customFont, ...styleUpdates } = updates;
     // Legacy slots are banned — never let them enter state, regardless of caller intent.
@@ -3077,7 +3079,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const updateCharacter = async (id: string, updates: Partial<CharacterProfile> | ((prev: CharacterProfile) => Partial<CharacterProfile>)) => {
     if (typeof updates !== 'function' && Object.keys(updates).some(key => ['chatAppearance','chatFineTune','bubbleStyle','chatBackground','chromeCustomCss','chatSound','chatSoundBound','chatDecorationCssIsolated'].includes(key))) stopBeautyUsage('chat:' + id);
     setCharacters(prev => {
-      const updated = prev.map(c => c.id === id ? normalizeCharacterImpression({ ...c, ...(typeof updates === 'function' ? updates(c) : updates) }) : c);
+      const updated = prev.map(c => c.id === id ? normalizeCharacterImpression({ ...c, ...decorationSelection(c, typeof updates === 'function' ? updates(c) : updates, 'character') }) : c);
       const target = updated.find(c => c.id === id);
       if (target) {
         const before = prev.find(c => c.id === id);

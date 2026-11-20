@@ -1,3 +1,4 @@
+import { getThinkingChainSettings } from './thinkingChainPrompt';
 import { loadChatInputPreferences } from './chatInputPreferences';
 import { readSARClubState, sarRoomView } from './vrWorld/sarClub';
 import { ANNIVERSARY_SEEN_KEY } from './anniversaryGifts';
@@ -30,7 +31,7 @@ import { readFishingMarketState } from './vrWorld/fishingMarket';
  * 这条硬约束。想知道大家在用什么模型是真的，但收不了。
  */
 
-import type { APIConfig, CloudBackupConfig, CharacterProfile, OSTheme, RealtimeConfig } from '../types';
+import type { APIConfig, CloudBackupConfig, CharacterProfile, UserProfile, OSTheme, RealtimeConfig } from '../types';
 import { PRESET_THEMES } from '../components/chat/ChatConstants';
 import { anyCharToggle, bucketFewCount, presetOrCustom, tweakedOrDefault } from './analytics';
 import { readStorageOverview } from './storageStats';
@@ -201,12 +202,13 @@ function builtinSullyQuality(characters: CharacterProfile[]): string {
 export function collectCharSettings(
     characters: CharacterProfile[],
     activeCharacterId: string | null | undefined,
+    user?: Pick<UserProfile, 'thinkingChainPrompt'>,
 ): Record<string, string> {
     const c = characters.find(x => x.id === activeCharacterId) ?? characters[0];
     const anyOn = (pick: (ch: CharacterProfile) => boolean | undefined, defaultOn = false) =>
         anyCharToggle(characters.map(pick), defaultOn);
     const now = Date.now();
-    return {
+    const fields: Record<string, string> = {
         // ── 开关：默认关的，问有没有人开过 ──
         '3D家园角色数': bucketFewCount(characters.filter(x => x.home3D?.rooms?.length).length),
         记忆宫殿: anyOn(x => x.memoryPalaceEnabled),
@@ -281,6 +283,10 @@ export function collectCharSettings(
             characters.filter(x => x.companionAvatar?.source && x.companionAvatar.source !== 'model').length,
         ),
     };
+    const thinking = getThinkingChainSettings(c, user);
+    if (thinking.mode === 'replace') fields.心象提示词模式 = '替换';
+    if (thinking.scope === 'character') fields.心象提示词范围 = '仅当前角色';
+    return fields;
 }
 
 /**

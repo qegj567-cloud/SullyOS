@@ -89,7 +89,7 @@ export const WHITEBOX_LAYOUT_REFERENCE = `【布局说明与设计自由度】
 「布局 → 时间位置」可以选择气泡下方、头像下方或上方居中。气泡下方挂载位为 .sully-chat-timestamp-slot，头像下方的 .sully-chat-avatar-timestamp 紧随可见头像，上方居中的整行容器为 .sully-chat-time-divider。三种模式的时间文字均为 .sully-chat-timestamp。
 不限于换颜色：可设计渐变、图案、图片背景、多层叠加、异形切角、描边、内外阴影、文字层级和伪元素挂饰，重新组织顶栏视觉。静态 blur/backdrop-filter 可用，持续动画仅用 transform/opacity 并尊重 prefers-reduced-motion。
 `;
-export const WHITEBOX_DESIGN_RULES=`白框默认沿用聊天背景、顶栏、输入栏和双方消息与头像的结构，内容样式只要求四类：普通聊天、语音条、转账、心象（折叠/展开）。如果用户只要求其中一部分，就只设计该部分。
+export const WHITEBOX_DESIGN_RULES=`白框默认沿用聊天背景、顶栏、输入栏和双方消息与头像的结构，内容样式只要求四类：普通聊天、语音条、转账、心象（折叠/展开）。如果用户只要求其中一部分，就只设计该部分。各部件使用上方各自的稳定选择器；用户之后单换气泡、头像框、背景或心象时，对应样式会交给新选择。
 其他 App 卡片仅在用户明确点名时增加样式；未点名保留原样，不需要逐项覆盖，也不要主动用通用卡片样式重画它们。点名的卡片可用 .sully-chat-card[data-card-kind="对应类型"] 精确定位，子类型用 data-card-variant；不要依赖 Tailwind 类或 nth-child。HTML 卡片仍不能跨 iframe 修改内容。
 心象使用 .sully-psyche-card/title/preview/body，保留折叠与展开的可读性。图片、表情保持比例。
 转账 data-status 为 pending/accepted/returned，金额与接收/退回操作不可隐藏。语音应覆盖加载、播放与字幕。

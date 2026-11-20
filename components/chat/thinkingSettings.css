@@ -14,6 +14,7 @@
 .thinking-switch span { display: block; width: 17px; height: 17px; border-radius: 50%; background: white; transform: translateX(2px); transition: transform .15s ease; box-shadow: 0 1px 2px #0002; }
 .thinking-switch[aria-checked=true] span { transform: translateX(15px); }
 .thinking-settings-panel textarea, .thinking-api-editor input:not([type=checkbox]), .thinking-api-editor select { box-sizing: border-box; width: 100%; min-width: 0; margin-top: 6px; padding: 9px 10px; border: 1px solid #e8e5ed; border-radius: 8px; background: #faf9fb; color: #334155; font: inherit; font-size: 12px; }
+.thinking-setting-heading select { max-width: 65%; min-height: 32px; padding: 4px 8px; border: 1px solid #e8e5ed; border-radius: 8px; background: #faf9fb; color: #334155; color-scheme: light; font: inherit; font-size: 12px; }
 .thinking-settings-panel textarea { height: 90px; resize: vertical; }
 .thinking-api-editor { margin-top: 14px; }
 .thinking-api-editor label { display: block; margin: 12px 0; color: #77717f; font-size: 11px; }

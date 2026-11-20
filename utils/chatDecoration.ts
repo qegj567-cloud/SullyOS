@@ -8,8 +8,11 @@ import {resolvePsycheAppearance,validatePsycheAppearance,type PsycheAppearance} 
 import type {CharacterProfile,OSTheme,ChatTheme,ScheduleCardAppearance,JournalAppearance} from '../types';
 import {mergeChatFineTune} from './chatFineTuneCss';
 import {resolveActiveSound,stripWhiteboxSoundDirective,decodeSoundShare,parseWhiteboxSound,BUILTIN_SOUNDS} from './whiteboxSound';
+import {resolveLavenderCardPalette} from './lavenderCardPalette';
 import {resolveRefToDataUrl,blobToDataUrl,migrateDataUrlToRef,migrateChatThemeBlobRefs} from './blobRef';
 import {extractShareFromPng,isPng,pngHasShare,SHARE_KINDS} from './pngShare';
+import {decorationSelection} from './decorationPriority';
+import {embeddedWhiteboxParts, followedWhiteboxCss, mergeWhiteboxSelection, withdrawWhiteboxParts, type WhiteboxPart} from './whiteboxParts';
 import {mergeAvatarFrameCss} from './avatarFrameTarget';
 import {replaceWorkshopCss,workshopBlock} from './decorationWorkshop';
 
@@ -34,7 +37,12 @@ export function pickDecorationLayout(value:unknown):DecorationLayout{
  }return result as DecorationLayout;
 }
 export function resolveDecorationTheme(theme:OSTheme,char?:CharacterProfile):OSTheme{
- return {...theme,...pickDecorationLayout(char?.chatFineTune?.enabled===false?{}:char?.chatAppearance||{}),...(['plain','grid','paper','mesh'].includes(char?.chatAppearance?.chatBackgroundStyle||'')?{chatBackgroundStyle:char!.chatAppearance!.chatBackgroundStyle}:{}),...(char?.chatDecorationCssIsolated?{chatChromeCustomCss:undefined}:{})};
+ const effective={...theme,...pickDecorationLayout(char?.chatFineTune?.enabled===false?{}:char?.chatAppearance||{})};
+ const background=char?.chatAppearance?.chatBackgroundStyle;
+ if(background&&['plain','grid','paper','mesh'].includes(background))effective.chatBackgroundStyle=background;
+ if(char?.chatDecorationCssIsolated)effective.chatChromeCustomCss=followedWhiteboxCss(theme.chatChromeCustomCss||'',char.chatFollowWhiteboxParts);
+ else if(theme.chatChromeCustomCss && Array.isArray(char?.chatIndependentParts))effective.chatChromeCustomCss=withdrawWhiteboxParts(theme.chatChromeCustomCss,char.chatIndependentParts);
+ return effective;
 }
 export const PART_LABELS={profile:'角色名片',collaboration:'协同工作（全局）',layout:'布局',bubbles:'气泡',background:'背景',sound:'声音',date:'见面界面',story:'剧情界面（全局）',css:'白框 CSS',psyche:'心象卡片',schedule:'日程表（全局）',journal:'交换日记'} as const;
 export type DecorationPart=keyof typeof PART_LABELS;
@@ -74,7 +82,7 @@ export function validateDecoration(value:unknown):DecorationPreset{
  if(p.bubbles!==undefined)result.parts.bubbles=validateBubble(p.bubbles);
  if(p.background!==undefined){if(!record(p.background)||!['plain','grid','paper','mesh'].includes(p.background.style))throw Error('背景格式无效');result.parts.background={image:p.background.image===null?null:resource(p.background.image),style:p.background.style};}
  if(p.sound!==undefined){if(p.sound===null)result.parts.sound=null;else{if(!record(p.sound)||typeof p.sound.src!=='string')throw Error('提示音格式无效');const src=p.sound.src;if(src!=='none'&&!Object.prototype.hasOwnProperty.call(BUILTIN_SOUNDS,src))resource(src);if(p.sound.volume!==undefined&&(typeof p.sound.volume!=='number'||p.sound.volume<0||p.sound.volume>1))throw Error('音量无效');result.parts.sound={src,volume:p.sound.volume??.6};}}
- if(p.css!==undefined){if(typeof p.css!=='string'||p.css.length>8*1024*1024||/<\/?(?:script|html|iframe)\b/i.test(p.css))throw Error('CSS 内容无效');result.parts.css=p.css;}
+ if(p.css!==undefined){if(typeof p.css!=='string'||p.css.length>8*1024*1024||/<\/?(?:script|html|iframe)\b/i.test(p.css))throw Error('CSS 内容无效');result.parts.css=resolveLavenderCardPalette(p.css);}
  if(!Object.keys(result.parts).length)throw Error('预设中没有可用的装扮内容');
  return result;
 }
@@ -132,7 +140,7 @@ export async function readDecorationFile(file:File):Promise<DecorationImport>{
  if(isPng(bytes)||/^image\/(jpeg|webp|gif|avif|bmp)$/.test(file.type))return {kind:'image',image:await blobToDataUrl(new Blob([bytes],{type:isPng(bytes)?'image/png':file.type})),name:file.name.replace(/\.[^.]+$/,'')};
  return {kind:'preset',preset:parseDecorationText(await file.text(),file.name.replace(/\.[^.]+$/,''))};
 }
-export async function decorationPatches(preset:DecorationPreset,parts:DecorationPart[],scope:'global'|'character',char:CharacterProfile,base:OSTheme,mode:'apply'|'trial'='apply'){
+export async function decorationPatches(preset:DecorationPreset,parts:DecorationPart[],scope:'global'|'character',char:CharacterProfile,base:OSTheme,mode:'apply'|'trial'='apply',installBubble=true){
  const p=validateDecoration(preset).parts,character:Partial<CharacterProfile>={},theme:Partial<OSTheme>={};let bubble:ChatTheme|undefined;
  if(parts.includes('profile')&&p.profile){const value={customCss:mode==='trial'?p.profile.customCss:await localizeCssImages(p.profile.customCss)};if(scope==='global')theme.chatProfileAppearance=value;else character.chatProfileAppearance=value;}
  if(parts.includes('date')&&p.date)character.dateAppearance={...p.date,name:preset.name};
@@ -141,8 +149,10 @@ export async function decorationPatches(preset:DecorationPreset,parts:Decoration
  if(parts.includes('schedule')&&p.schedule)theme.scheduleCardAppearance=p.schedule;
  if(parts.includes('psyche')&&p.psyche){if(scope==='global')theme.chatPsyche=p.psyche;else{character.thinkingChainStyle=p.psyche.styleId;character.thinkingChainCustomColors={bg:'#1f2937',accent:'#fbbf24',text:'#f1f5f9',...p.psyche.customColors};character.thinkingChainCustomCss=p.psyche.customCss||'';}}
  if(parts.includes('layout')&&p.layout){if(scope==='global')Object.assign(theme,LAYOUT_DEFAULTS,p.layout);else{character.chatAppearance={...LAYOUT_DEFAULTS,...p.layout,...(char.chatAppearance?.chatBackgroundStyle?{chatBackgroundStyle:char.chatAppearance.chatBackgroundStyle}:{})};character.chatFineTune={enabled:true};}}
- if(parts.includes('bubbles')&&p.bubbles){bubble={...p.bubbles,id:'decoration-'+crypto.randomUUID(),type:'custom'};if(mode==='apply')bubble=await migrateChatThemeBlobRefs(bubble);if(scope==='global')theme.chatDefaultBubbleStyle=bubble.id;else character.bubbleStyle=bubble.id;}
+ if(installBubble&&parts.includes('bubbles')&&p.bubbles){bubble={...p.bubbles,id:'decoration-'+crypto.randomUUID(),type:'custom'};if(mode==='apply')bubble=await migrateChatThemeBlobRefs(bubble);if(scope==='global')theme.chatDefaultBubbleStyle=bubble.id;else character.bubbleStyle=bubble.id;}
  if(parts.includes('background')&&p.background){const ref=p.background.image?(mode==='trial'?p.background.image:await migrateDataUrlToRef(p.background.image)):'';if(scope==='global'){theme.chatBackground=ref;theme.chatBackgroundStyle=p.background.style;}else{character.chatBackground=ref;character.chatAppearance={...(character.chatAppearance||char.chatAppearance),chatBackgroundStyle:p.background.style};}}
+ const incomingCss=parts.includes('css')?p.css:undefined;
+ const selected=parts.filter((part):part is Exclude<DecorationPart,'css'|'sound'>=>part!=='css'&&part!=='sound'&&p[part]!==undefined) as WhiteboxPart[];
  if(parts.includes('css')&&p.css!==undefined){
   const blocks=[...p.css.matchAll(/\/\* sully-composer:(avatar|background) \*\/\n?([\s\S]*?)\/\* end-sully-composer:\1 \*\//g)];
   const extraCss=p.css.replace(workshopBlock('avatar'),'').replace(workshopBlock('background'),'').trim();
@@ -162,22 +172,32 @@ export async function decorationPatches(preset:DecorationPreset,parts:Decoration
   let appliedCss=p.css;
   if(scopedOnly){
    appliedCss=scope==='global'?base.chatChromeCustomCss||'':char.chromeCustomCss||'';
+   const owned=[...embeddedWhiteboxParts(p.css)];
+   appliedCss=withdrawWhiteboxParts(appliedCss,owned);
    if(blocks.some(block=>block[1]==='avatar'))appliedCss=mergeAvatarFrameCss(appliedCss,p.css);
    for(const block of blocks)if(block[1]==='background')appliedCss=replaceWorkshopCss(appliedCss,'background',block[2]);
   }
+  if(!scopedOnly && p.css.trim()){
+   const before=scope==='global'?base.chatChromeCustomCss:[resolveDecorationTheme(base,char).chatChromeCustomCss,char.chromeCustomCss].filter(Boolean).join('\n');
+   const ownsFramePair=parts.includes('layout')&&parts.includes('bubbles')&&blocks.some(block=>block[1]==='avatar');
+   appliedCss=mergeWhiteboxSelection(stripWhiteboxSoundDirective(before),p.css,ownsFramePair?[...selected,'avatar:user','avatar:ai']:selected);
+  }
   if(mode==='apply')appliedCss=await localizeCssImages(appliedCss);
   // Importing just CSS must not silently change the current sound stored in a CSS comment.
-  const keep=scope==='global'?resolveActiveSound(undefined,undefined,base.chatChromeCustomCss,base.chatSound):resolveActiveSound(char.chromeCustomCss,char.chatSound,base.chatChromeCustomCss,base.chatSound);
+  const keep=(p.sound===undefined ? parseWhiteboxSound(p.css) : null) ?? (scope==='global'?resolveActiveSound(undefined,undefined,base.chatChromeCustomCss,base.chatSound):resolveActiveSound(char.chromeCustomCss,char.chatSound,base.chatChromeCustomCss,base.chatSound));
   if(scope==='global'){theme.chatChromeCustomCss=stripWhiteboxSoundDirective(appliedCss);theme.chatSound=keep||{src:'none'};}
   else{character.chromeCustomCss=stripWhiteboxSoundDirective(appliedCss);if(!scopedOnly)character.chatDecorationCssIsolated=true;character.chatSoundBound=false;character.chatSound=keep||{src:'none'};}
  }
  if(parts.includes('sound')&&p.sound!==undefined){const sound=p.sound||{src:'none'};if(scope==='global'){theme.chatSound=sound;theme.chatChromeCustomCss=stripWhiteboxSoundDirective(theme.chatChromeCustomCss??base.chatChromeCustomCss??'');}else{character.chatSound=sound;character.chatSoundBound=false;character.chromeCustomCss=stripWhiteboxSoundDirective(character.chromeCustomCss??char.chromeCustomCss??'');}}
- return {character,theme,bubble};
+ return scope==='character'
+  ? {character:decorationSelection(char,character,scope,selected,incomingCss) as Partial<CharacterProfile>,theme,bubble}
+  : {character,theme:decorationSelection(base,theme,scope,selected,incomingCss) as Partial<OSTheme>,bubble};
 }
 
 /** Replacing CSS alone must not discard an audio track embedded by older presets. */
 export function decorationCssPatch(value:string,scope:'character'|'global',char:CharacterProfile,theme:OSTheme,reset=false):Partial<CharacterProfile>&Partial<OSTheme>{
  const old=parseWhiteboxSound(scope==='global'?theme.chatChromeCustomCss:char.chromeCustomCss);
  const preserve=old&&!parseWhiteboxSound(value);
- return scope==='global'?{chatChromeCustomCss:value,...(preserve?{chatSound:old}:{})}:{chromeCustomCss:value,...(preserve?{chatSound:old,chatSoundBound:false}:{}),...(reset?{chatDecorationCssIsolated:false}:{})};
+ const patch=scope==='global'?{chatChromeCustomCss:value,...(preserve?{chatSound:old}:{})}:{chromeCustomCss:value,...(preserve?{chatSound:old,chatSoundBound:false}:{}),...(reset?{chatDecorationCssIsolated:false}:{})};
+ return decorationSelection(scope==='global'?theme:char,patch,scope,[],value);
 }

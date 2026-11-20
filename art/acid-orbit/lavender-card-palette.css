@@ -1,0 +1,10 @@
+/* Match the specificity of the inherited dark shell. Decorative cards paint their own surfaces. */
+.sully-chat-card[data-card-kind]:not([data-card-kind="transfer"]):not(:where([data-card-kind="html_card"], [data-card-variant="qixi_event_card"], [data-card-variant="like520_card"])) {
+  --sully-card-background: linear-gradient(125deg, #fbf7ff, #e5d9f1);
+  --sully-card-color: #493958;
+  --sully-card-shadow: inset 0 0 0 1px #fff9, 0 3px 12px #9275ac1a;
+}
+.sully-chat-card[data-card-kind="friend_feed_card"] :is(.friend-feed-note summary > small, .friend-feed-note-detail p > span),
+.sully-chat-card[data-card-kind="friend_feed_share_card"] :is(.ff-share-card-copy > small, .ff-share-card-copy > span, .ff-share-card-expanded small, .ff-share-card-expanded h4) {
+  opacity: .9;
+}

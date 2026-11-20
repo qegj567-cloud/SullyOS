@@ -70,7 +70,7 @@ export default function ChatDecorationPanel({character:char,theme,themes,updateC
       <h3>界面与头像</h3>
       {!global&&<label className="chat-decoration-toggle"><span>为 {char.name} 单独调整布局<small>关闭后跟随全局，已调好的内容会保留。</small></span><input type="checkbox" checked={customized} onChange={()=>updateCharacter({chatFineTune:{...override,enabled:!customized}})}/></label>}
       {(global||customized)?<ChatLayoutSettings theme={effective} updateTheme={patch=>{if(global){void updateTheme(patch);return;}const fine=Object.fromEntries(Object.entries(patch).filter(([key])=>(CHAT_FINE_TUNE_KEYS as readonly string[]).includes(key)));void updateCharacter({chatAppearance:{...char.chatAppearance,...patch},chatFineTune:{...override,...fine,enabled:true}});}}/>:<p className="chat-decoration-note">想一起调整所有聊天，可以在上方切换到「全局默认」。</p>}
-      <p className="chat-decoration-note">{char.chromeCustomCss||theme.chatChromeCustomCss?'当前有进阶 CSS，可能覆盖布局和气泡的部分效果。可在「白框」查看。':'布局调整会实时显示在聊天中。'}</p>
+      <p className="chat-decoration-note">单换部件后，聊天会使用最后选择的样式。</p>
      </>}
      {tab==='bubbles'&&<>
       <h3>气泡主题</h3>

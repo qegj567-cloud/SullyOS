@@ -1922,7 +1922,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
                 break;
             }
             case 'thinking-settings': {
-                // 「展示思考」按钮 → 打开思考链设置 modal（开关 / 卡片风格 / 配色 / 追加提示词）
+                // 「展示思考」按钮 → 打开思考链设置 modal（开关 / 翻译 API / 心象提示词）
                 if (!char) break;
                 setShowThinkingChainModal(true);
                 break;
@@ -4671,26 +4671,12 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
                     apiPresets={apiPresets}
                     onChangeTranslationApi={thinkingTranslationApi => updateApiConfig({ thinkingTranslationApi })}
                     onAddApiPreset={(name, config) => addApiPreset(name, config, '心象翻译')}
-                    value={{
-                        enabled: !!(char as any).showThinkingChain,
-                        styleId: ((char as any).thinkingChainStyle as any) || 'echo',
-                        customColors: {
-                            bg: (char as any).thinkingChainCustomColors?.bg || '#1f2937',
-                            accent: (char as any).thinkingChainCustomColors?.accent || '#fbbf24',
-                            text: (char as any).thinkingChainCustomColors?.text || '#f1f5f9',
-                        },
-                        customPrompt: (char as any).thinkingChainCustomPrompt || '',
-                        customCss: (char as any).thinkingChainCustomCss || '',
-                    }}
-                    onChange={(next) => {
-                        const patch: any = {};
-                        if (next.enabled !== undefined) patch.showThinkingChain = next.enabled;
-                        if (next.styleId !== undefined) patch.thinkingChainStyle = next.styleId;
-                        if (next.customColors !== undefined) patch.thinkingChainCustomColors = next.customColors;
-                        if (next.customPrompt !== undefined) patch.thinkingChainCustomPrompt = next.customPrompt;
-                        if (next.customCss !== undefined) patch.thinkingChainCustomCss = next.customCss;
-                        if (Object.keys(patch).length) updateCharacter(char.id, patch as any);
-                    }}
+                    character={char}
+                    sharedPrompt={userProfile.thinkingChainPrompt}
+                    onChangeCharacter={patch => updateCharacter(char.id, patch)}
+                    onChangeSharedPrompt={patch => updateUserProfile(prev => ({
+                        thinkingChainPrompt: { ...prev.thinkingChainPrompt, ...patch },
+                    }))}
                 />
             )}
 

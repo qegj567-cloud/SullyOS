@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>相册点评验收</title>
+<script src="/vendor/tailwind-3.4.17.js"></script>
+<style>html, body, #root { height: 100%; margin: 0 } .pb-safe { padding-bottom: 16px }</style>
+</head><body><div id="root"></div>
+<script type="module">
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+import Gallery from '../../apps/Gallery';
+import { OSPreviewProvider } from '../../context/OSContext';
+import { putImageBlob } from '../../utils/blobRef';
+import { DB } from '../../utils/db';
+
+const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aPCEAAAAASUVORK5CYII=';
+const url = await putImageBlob(await (await fetch(png)).blob());
+const character = { id: 'gallery-qa', name: '测试角色', avatar: png };
+await DB.saveGalleryImage({ id: 'photo', charId: character.id, url, timestamp: 1,
+    review: ('长点评。' + 'x'.repeat(400) + '\n').repeat(40) + '最后一句',
+    chatContext: Array.from({ length: 80 }, (_, index) => '对话 ' + index) });
+const os = { characters: [character], apiConfig: { model: 'vision-test', baseUrl: '/gallery-test', apiKey: 'fixture' },
+    addToast: message => { document.body.dataset.toast = message; }, closeApp() {} };
+createRoot(document.getElementById('root')).render(React.createElement(OSPreviewProvider, { value: os }, React.createElement(Gallery)));
+</script></body></html>

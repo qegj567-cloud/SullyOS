@@ -29,6 +29,7 @@ import { useOS, DEFAULT_PAPER_APPEARANCE, DEFAULT_WALLPAPER } from '../../contex
 import { resetChatDecoration } from '../../utils/decorationReset';
 import { DB } from '../../utils/db';
 import { validateDecoration, type DecorationPart, type DecorationPreset } from '../../utils/chatDecoration';
+import { embeddedWhiteboxParts } from '../../utils/whiteboxParts';
 import { prepareDecorationApplication } from '../../utils/decorationApplication';
 import { beautyRequest,downloadBeauty,readBeautyPackage } from '../../utils/beautyShareClient';
 import type { BeautyShare } from '../../utils/beautyShareContract';
@@ -263,7 +264,22 @@ export default function BeautyShareChannel({ presets, onExport, onImport, onBusy
           }
         }else{
           slots[part]=key;
-          if(part==='css'){delete slots['css:avatar'];delete slots['css:avatar:user'];delete slots['css:avatar:ai'];delete slots['css:background'];}
+          if(part==='css'){
+            const owned=embeddedWhiteboxParts(css||'');
+            if(slots['css:avatar']){
+              for(const side of ['user','ai'])slots['css:avatar:'+side]??=slots['css:avatar'];
+              delete slots['css:avatar'];
+            }
+            if(appliedPreset.parts.layout && appliedPreset.parts.bubbles && componentBlocks.some(block=>block[1]==='avatar')){
+              delete slots['css:avatar:user'];delete slots['css:avatar:ai'];
+            }
+            for(const part of owned){
+              if(part.startsWith('avatar:'))slots['css:'+part]=key;
+              else if(part==='background'){slots['css:background']=key;slots.background=key;}
+              else slots[part]=key;
+            }
+          }
+          if(part==='background'&&!componentBlocks.some(block=>block[1]==='background')&&!embeddedWhiteboxParts(css||'').has('background'))delete slots['css:background'];
           if(part==='bubbles'&&!appliedPreset.parts.css&&!appliedPreset.parts.layout&&appliedPreset.parts.bubbles){
             for(const side of ['user','ai'] as const)if(appliedPreset.parts.bubbles[side].avatarDecoration){
               if(slots['css:avatar']){slots['css:avatar:user']??=slots['css:avatar'];slots['css:avatar:ai']??=slots['css:avatar'];delete slots['css:avatar'];}
