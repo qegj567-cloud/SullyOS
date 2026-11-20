@@ -85,6 +85,8 @@ export interface CollaborationSession {
   lastMessagePreview?: string;
   /** Focused-mode baseline; live ChatApp rows and task memory are rebuilt per send. */
   contextSnapshot?: string;
+  /** Old focused snapshots contain the thinking rules that applied when the window was created. */
+  focusedSnapshotWithoutThinking?: true;
   /** 旧版本冻结的 ChatApp 上下文，仅为备份兼容保留；新请求会实时重建。 */
   chatContextSnapshot?: CollaborationContextMessage[];
   /** 当前窗口选择的制作类型；只向这个窗口注入对应制作规范。 */

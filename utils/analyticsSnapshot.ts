@@ -206,7 +206,7 @@ export function collectCharSettings(
     const anyOn = (pick: (ch: CharacterProfile) => boolean | undefined, defaultOn = false) =>
         anyCharToggle(characters.map(pick), defaultOn);
     const now = Date.now();
-    return {
+    const fields: Record<string, string> = {
         // ── 开关：默认关的，问有没有人开过 ──
         '3D家园角色数': bucketFewCount(characters.filter(x => x.home3D?.rooms?.length).length),
         记忆宫殿: anyOn(x => x.memoryPalaceEnabled),
@@ -281,6 +281,8 @@ export function collectCharSettings(
             characters.filter(x => x.companionAvatar?.source && x.companionAvatar.source !== 'model').length,
         ),
     };
+    if (c.thinkingChainPromptMode === 'replace') fields.心象提示词模式 = '替换';
+    return fields;
 }
 
 /**

@@ -48,6 +48,14 @@ it('聊天备注快照仅报开关，不含备注或非法开关内容', () => {
     }
 });
 
+it.each([undefined, 'append', 'replace', POISON.key])('心象模式快照仅使用固定枚举', mode => {
+    const char = { id: 'qa', thinkingChainPromptMode: mode, thinkingChainCustomPrompt: POISON.token } as CharacterProfile;
+    const result = collectCharSettings([char], char.id);
+    expect(result.心象提示词模式).toBe(mode === 'replace' ? '替换' : undefined);
+    expect(JSON.stringify(result)).not.toContain(POISON.key);
+    expect(JSON.stringify(result)).not.toContain(POISON.token);
+});
+
 /** 全部字段都塞了毒药的实时感知配置。 */
 function poisonedRealtimeConfig(overrides: Partial<RealtimeConfig> = {}): RealtimeConfig {
     return {

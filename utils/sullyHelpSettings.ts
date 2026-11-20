@@ -53,6 +53,7 @@ export async function readHelpDeskSettings(os: SettingsSource, char?: CharacterP
             整理节奏: resolveMemoryPalaceWaterline(char.memoryPalaceWaterline), 小眼睛开启月份数: char.activeMemoryMonths?.length ?? 0,
             允许按月查阅: char.monthlyRecallEnabled !== false, 挂载世界书数: char.mountedWorldbooks?.length ?? 0,
             私聊表情看图: !!char.stickerVision, 心象显示: !!char.showThinkingChain, 双语: translated ?? '未能读取', HTML卡片: !!char.htmlModeEnabled,
+            心象提示词模式: char.thinkingChainPromptMode === 'replace' ? '替换默认提示词' : '追加',
             时间感知: char.timeAwarenessEnabled !== false, 主动消息角色开关: char.activeMsg2Config?.enabled === true,
         } : '本轮只提供所有角色共用的设置。需要查看某个角色的设置时，点「询问配置」里的「指定角色」，再选择角色。',
     };

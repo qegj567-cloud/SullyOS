@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { ApiPreset, DialogueApiConfig } from '../../types';
+import type { ApiPreset, CharacterProfile, DialogueApiConfig } from '../../types';
 import type { ThinkingChainStyleId } from '../../utils/psycheAppearance';
 import { useLocalBackHandler } from '../../hooks/useLocalBackHandler';
 import ThinkingTranslationSettings from './ThinkingTranslationSettings';
@@ -9,6 +9,7 @@ interface ThinkingChainSettingsValue {
     enabled: boolean;
     styleId: ThinkingChainStyleId;
     customColors: { bg: string; accent: string; text: string };
+    promptMode?: CharacterProfile['thinkingChainPromptMode'];
     customPrompt: string;
     customCss: string;
 }
@@ -66,9 +67,18 @@ const ThinkingChainSettingsModal: React.FC<Props> = ({ isOpen, onClose, value, o
                 {onChangeTranslationApi && dialogueApi && <ThinkingTranslationSettings value={translationApi} dialogueApi={dialogueApi}
                     presets={apiPresets} onChange={onChangeTranslationApi} onAddPreset={onAddApiPreset} />}
                 <section>
-                    <h3>追加提示词</h3>
-                    <p className="thinking-setting-hint">补充你希望的表达方式，留空沿用默认。语言要求不一定会被模型遵循。</p>
-                    <textarea aria-label="心象追加提示词" value={draftPrompt} onChange={event => setDraftPrompt(event.target.value)} onBlur={commitPrompt}
+                    <div className="thinking-setting-heading">
+                        <h3><label htmlFor="thinking-prompt-mode">心象提示词</label></h3>
+                        <select id="thinking-prompt-mode" value={value.promptMode === 'replace' ? 'replace' : 'append'}
+                            onChange={event => onChange({ promptMode: event.target.value === 'replace' ? 'replace' : 'append' })}>
+                            <option value="append">追加</option>
+                            <option value="replace">替换默认提示词</option>
+                        </select>
+                    </div>
+                    <p className="thinking-setting-hint">{value.promptMode === 'replace'
+                        ? '只使用你填写的心象提示词。留空时不发送心象提示词。'
+                        : '把下方内容加在默认心象提示词之后。留空沿用默认。'}</p>
+                    <textarea aria-label="自定义心象提示词" value={draftPrompt} onChange={event => setDraftPrompt(event.target.value)} onBlur={commitPrompt}
                         placeholder="比如：请用中文概括思考，多写一些感官细节…" />
                 </section>
                 <details className="thinking-help" open={helpOpen} onToggle={event => setHelpOpen(event.currentTarget.open)}>
@@ -79,7 +89,7 @@ const ThinkingChainSettingsModal: React.FC<Props> = ({ isOpen, onClose, value, o
                     <h4>开了却没有卡片？</h4>
                     <p>模型或渠道可能没有返回可显示的文字，摘要也可能比实际推理短。同一模型在别处有、这里没有时，可向渠道确认是否分别返回思考和正文。</p>
                     <h4>思考一直是英文？</h4>
-                    <p>语言由模型和渠道决定，追加提示词不保证有效。长按心象可选择「复制全文」或「翻译成中文」；翻译只处理这一条心象，保留原文，不改聊天正文。</p>
+                    <p>语言由模型和渠道决定，自定义提示词不保证有效。长按心象可选择「复制全文」或「翻译成中文」；翻译只处理这一条心象，保留原文，不改聊天正文。</p>
                     <h4>思考出现在聊天气泡里？</h4>
                     <p>先更新页面，再试一次新回复。如仍出现，请反馈完整模型名、是否流式，以及渠道是否将思考混入正文。无需清空历史；关闭心象无法可靠隐藏没有标记的正文。</p>
                 </details>

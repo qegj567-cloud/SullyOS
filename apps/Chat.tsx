@@ -1922,7 +1922,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
                 break;
             }
             case 'thinking-settings': {
-                // 「展示思考」按钮 → 打开思考链设置 modal（开关 / 卡片风格 / 配色 / 追加提示词）
+                // 「展示思考」按钮 → 打开思考链设置 modal（开关 / 翻译 API / 心象提示词）
                 if (!char) break;
                 setShowThinkingChainModal(true);
                 break;
@@ -4679,7 +4679,8 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
                             accent: (char as any).thinkingChainCustomColors?.accent || '#fbbf24',
                             text: (char as any).thinkingChainCustomColors?.text || '#f1f5f9',
                         },
-                        customPrompt: (char as any).thinkingChainCustomPrompt || '',
+                        promptMode: char.thinkingChainPromptMode,
+                        customPrompt: char.thinkingChainCustomPrompt || '',
                         customCss: (char as any).thinkingChainCustomCss || '',
                     }}
                     onChange={(next) => {
@@ -4687,6 +4688,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
                         if (next.enabled !== undefined) patch.showThinkingChain = next.enabled;
                         if (next.styleId !== undefined) patch.thinkingChainStyle = next.styleId;
                         if (next.customColors !== undefined) patch.thinkingChainCustomColors = next.customColors;
+                        if (next.promptMode !== undefined) patch.thinkingChainPromptMode = next.promptMode;
                         if (next.customPrompt !== undefined) patch.thinkingChainCustomPrompt = next.customPrompt;
                         if (next.customCss !== undefined) patch.thinkingChainCustomCss = next.customCss;
                         if (Object.keys(patch).length) updateCharacter(char.id, patch as any);

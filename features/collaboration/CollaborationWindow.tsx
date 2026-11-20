@@ -46,7 +46,7 @@ import {
   fetchCollaborationModels,
   hydrateCollaborationApiSettings,
 } from './api';
-import { buildCollaborationContextSnapshot, buildCollaborationTurnMemoryContext, buildLiveCollaborationChatContext } from './context';
+import { collaborationThinkingPrompt, buildCollaborationContextSnapshot, buildCollaborationTurnMemoryContext, buildLiveCollaborationChatContext } from './context';
 import { runCollaborationTurn, isCollaborationApiConfigured, summarizeCollaborationForMemory } from './engine';
 import { collaborationBlobToDataUrl, extractSourceFile, isCollaborationImageFile, materializeArtifact, parseArtifactBlocks } from './files';
 import { normalizeCollaborationVisibleText, parseCollaborationMarkdown } from './markdown';
@@ -2190,7 +2190,7 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
             ...focusedChatContext.chatContextSnapshot,
           ];
         }
-        if (!contextSnapshot) {
+        if (!contextSnapshot || !sessionAtStart.focusedSnapshotWithoutThinking) {
           contextSnapshot = await buildCollaborationContextSnapshot({
             char: liveHistory.character,
             user,
@@ -2215,6 +2215,7 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
         ...sessionAtStart,
         title: nextTitle,
         contextSnapshot,
+        focusedSnapshotWithoutThinking: sessionAtStart.mode === 'focused' ? true : undefined,
         // Pre-upgrade sessions may contain a frozen transcript. Clear it once
         // touched; the current request uses liveChatContext directly instead.
         chatContextSnapshot: undefined,
@@ -2225,7 +2226,9 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
 
       const reply = await runCollaborationTurn({
         profile,
-        contextSnapshot,
+        contextSnapshot: sessionAtStart.mode === 'focused'
+          ? contextSnapshot + collaborationThinkingPrompt(liveHistory.character, user)
+          : contextSnapshot,
         messages: requestMessages,
         signal: abortController.signal,
         onDelta: setStreamingText,

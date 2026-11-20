@@ -36,6 +36,8 @@ describe('stripSensitiveCardFields', () => {
       chromeCustomCss: '.x{}',
       embeddedTheme: { id: 't1' },
       chatBackground: 'bg',
+      thinkingChainPromptMode: 'replace',
+      thinkingChainCustomPrompt: '私人的心象提示词',
       // 语言
       chatVoiceLang: 'ja',
       dateVoiceLang: 'en',
@@ -59,6 +61,7 @@ describe('stripSensitiveCardFields', () => {
 
     // 全部被剥离
     for (const key of ['bubbleStyle', 'chatFineTune', 'chromeCustomCss', 'embeddedTheme', 'chatBackground',
+      'thinkingChainPromptMode', 'thinkingChainCustomPrompt',
       'chatVoiceLang', 'dateVoiceLang', 'activeBuffs', 'buffInjection', 'phoneState', 'savedDateState',
       'videoCallPerformancePersona', 'videoCallPerformancePersonaGeneratedAt', 'companionTouchSettings']) {
       expect(out).not.toHaveProperty(key);

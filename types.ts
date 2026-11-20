@@ -3310,8 +3310,9 @@ export interface CharacterProfile {
     accent?: string;   // 边框/标题点缀
     text?: string;     // 正文颜色
   };
-  /** 用户追加的思考提示词（不替换原生，只在最后追加一段「用户额外要求」） */
+  /** 角色自定义心象提示词。未设置模式的角色默认追加。 */
   thinkingChainCustomPrompt?: string;
+  thinkingChainPromptMode?: 'append' | 'replace';
   /**
    * 心象卡片的自定义 CSS（叠加在任意风格之上，机制同气泡工坊 customCss）。
    * 选择器限定以 .sully-psyche 开头（子元素类：-card / -title / -preview / -body），

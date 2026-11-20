@@ -1,5 +1,5 @@
 import { buildHtmlPrompt } from './htmlPrompt';
-import { buildThinkingChainPrompt } from './thinkingChainPrompt';
+import { buildThinkingChainPrompt, type ThinkingChainSettings } from './thinkingChainPrompt';
 import { normalizeTranslationLangLabel } from './translationLang';
 
 /** 双语角色开口前最后一眼的格式提醒：格式说明压在长提示词中间，单靠它模型容易漏标签。 */
@@ -11,7 +11,7 @@ export function buildChatOutputStylePrompt(input: {
     userName?: string;
     translationConfig?: { enabled: boolean; sourceLang: string; targetLang: string };
     htmlMode?: { enabled: boolean; customPrompt?: string };
-    thinkingChain?: { enabled: boolean; customPrompt?: string };
+    thinkingChain?: ThinkingChainSettings;
     sarEnvelopeActive?: boolean;
 }) {
     const { translationConfig, htmlMode, thinkingChain, sarEnvelopeActive } = input;
@@ -58,13 +58,10 @@ export function buildChatOutputStylePrompt(input: {
 
     // ── 6. 思考链提示词 ───────────────────────────────────
     const thinkingActive = !!thinkingChain?.enabled;
-    if (thinkingActive) {
+    if (thinkingChain?.enabled) {
         const userName = (userProfile?.name && userProfile.name.trim()) || '用户';
-        prompt += `\n\n${buildThinkingChainPrompt(char.name, userName)}`;
-        const extra = (thinkingChain?.customPrompt || '').trim();
-        if (extra) {
-            prompt += `\n\n## 用户对内心独白的额外要求\n${extra}`;
-        }
+        const block = buildThinkingChainPrompt(char.name, userName, thinkingChain);
+        if (block) prompt += `\n\n${block}`;
     }
 
     return { prompt, bilingualActive, htmlActive, thinkingActive };

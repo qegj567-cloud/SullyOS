@@ -51,6 +51,11 @@ try {
     const toggle = await settings.getByRole('switch', { name: '显示心象' }).boundingBox();
     const help = await settings.locator('.thinking-help').boundingBox();
     assert(toggle.y < help.y, 'switch precedes the long explanation');
+    const mode = settings.getByRole('combobox', { name: '心象提示词', exact: true });
+    const prompt = settings.getByRole('textbox', { name: '自定义心象提示词' });
+    assert.equal(await mode.inputValue(), 'append');
+    await prompt.fill('只写一句角色的心情');
+    await mode.selectOption('replace');
     await page.screenshot({ path: `${output}/settings-first-390.png` });
     await settings.getByRole('button', { name: '配置', exact: true }).click();
     await page.getByLabel('心象翻译 API 预设', { exact: true }).selectOption('cheap');
@@ -66,6 +71,9 @@ try {
     assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('os_api_config')).thinkingTranslationApi.model), 'translator-fixture');
     await settings.getByRole('button', { name: '完成', exact: true }).click();
     await page.getByRole('button', { name: '打开心象设置' }).click();
+    assert.equal(await mode.inputValue(), 'replace');
+    assert.equal(await prompt.inputValue(), '只写一句角色的心情');
+    assert.equal(await settings.getByRole('switch', { name: '显示心象' }).getAttribute('aria-checked'), 'true');
     assert.equal(await settings.locator('.thinking-help').evaluate(el => el.open), false, 'later visits collapse the help');
     await page.screenshot({ path: `${output}/settings-390.png` });
     await page.setViewportSize({ width: 320, height: 640 });

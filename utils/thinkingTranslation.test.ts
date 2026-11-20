@@ -6,7 +6,7 @@ import { safeFetchJson } from './safeApi';
 import { readThinkingTranslation, translateThinkingMessage, parseThinkingTranslation, thinkingTranslationPairs, splitThinkingTranslationSource } from './thinkingTranslation';
 import { exportUserSpaces, importUserSpaces } from './userSpaceBackup';
 import { saveUserSpaces } from './userSpaces';
-import type { Message } from '../types';
+import type { CharacterProfile, Message } from '../types';
 
 vi.mock('./safeApi', () => ({ safeFetchJson: vi.fn(), extractContent: (response: any) => response.choices?.[0]?.message?.content || '' }));
 const api = { baseUrl: 'https://translate.invalid/v1', apiKey: 'translation-key', model: 'cheap-translator' };
@@ -114,10 +114,14 @@ it.each(['text_only', 'full'] as const)('restores translation settings and messa
     localStorage.setItem('os_api_config', JSON.stringify(config));
     vi.mocked(safeFetchJson).mockResolvedValueOnce(completion(JSON.stringify({ translations: [{ id: 0, text: '我想邀请她一起散步。' }] })));
     await translateThinkingMessage(message, api);
+    const char = { id: message.charId, name: '测试角色', thinkingChainPromptMode: 'replace', thinkingChainCustomPrompt: '只写角色的此刻心情' } as CharacterProfile;
+    await DB.saveCharacter(char);
     const zip = await JSZip.loadAsync(await (await exportUserSpaces(mode, 'current')).arrayBuffer());
+    await DB.saveCharacter({ ...char, thinkingChainPromptMode: 'append', thinkingChainCustomPrompt: '' });
     localStorage.removeItem('os_api_config');
     await DB.updateMessageMetadata(message.id, prev => ({ ...prev, thinkingChainTranslation: undefined }));
     await importUserSpaces(zip);
+    expect((await DB.getAllCharacters()).find(item => item.id === char.id)).toMatchObject(char);
     expect(JSON.parse(localStorage.getItem('os_api_config')!).thinkingTranslationApi).toEqual(api);
     const restored = (await DB.getMessageById(message.id))!;
     expect(readThinkingTranslation(restored.metadata.thinkingChain, restored.metadata.thinkingChainTranslation)).toBe('我想邀请她一起散步。');
