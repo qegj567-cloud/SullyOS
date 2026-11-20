@@ -181,7 +181,7 @@ const ObserveSettings: React.FC<ObserveSettingsProps> = ({ char }) => {
                                                     onChange={e => setDraft(d => ({ ...d, [dim.key]: { ...d[dim.key], label: e.target.value } }))}
                                                     onBlur={() => commitField(dim.key, 'label')}
                                                     placeholder={`显示标签（默认「${dim.label}」）`}
-                                                    className="w-full text-[12px] px-2.5 py-1.5 rounded-lg border border-slate-200 focus:border-primary focus:outline-none bg-white"
+                                                    className="w-full text-[12px] px-2.5 py-1.5 rounded-lg border border-slate-200 focus:border-primary focus:outline-none bg-white text-slate-800 placeholder:text-slate-400"
                                                 />
                                                 <textarea
                                                     value={draft[dim.key]?.hint || ''}
@@ -189,7 +189,7 @@ const ObserveSettings: React.FC<ObserveSettingsProps> = ({ char }) => {
                                                     onBlur={() => commitField(dim.key, 'hint')}
                                                     placeholder={`生成提示（默认：${defHint}）`}
                                                     rows={2}
-                                                    className="w-full text-[12px] px-2.5 py-1.5 rounded-lg border border-slate-200 focus:border-primary focus:outline-none bg-white leading-relaxed resize-none"
+                                                    className="w-full text-[12px] px-2.5 py-1.5 rounded-lg border border-slate-200 focus:border-primary focus:outline-none bg-white text-slate-800 placeholder:text-slate-400 leading-relaxed resize-none"
                                                 />
                                             </div>
                                         )}
@@ -224,7 +224,7 @@ const ObserveSettings: React.FC<ObserveSettingsProps> = ({ char }) => {
                                                     onChange={e => setCustomDraft(d => ({ ...d, [c.id]: { ...d[c.id], label: e.target.value } }))}
                                                     onBlur={() => commitCustom(c.id, 'label')}
                                                     placeholder="维度名（如 穿着 / 天气）"
-                                                    className="flex-1 min-w-0 text-[12px] font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 focus:border-primary focus:outline-none bg-white"
+                                                    className="flex-1 min-w-0 text-[12px] font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 focus:border-primary focus:outline-none bg-white text-slate-800 placeholder:text-slate-400"
                                                 />
                                                 <button
                                                     onClick={() => toggleCustom(c.id, !on)}
@@ -243,7 +243,7 @@ const ObserveSettings: React.FC<ObserveSettingsProps> = ({ char }) => {
                                                     onBlur={() => commitCustom(c.id, 'hint')}
                                                     placeholder="生成提示：这一格让 AI 写什么（留空给个通用默认）"
                                                     rows={2}
-                                                    className="w-full text-[12px] px-2.5 py-1.5 rounded-lg border border-slate-200 focus:border-primary focus:outline-none bg-white leading-relaxed resize-none"
+                                                    className="w-full text-[12px] px-2.5 py-1.5 rounded-lg border border-slate-200 focus:border-primary focus:outline-none bg-white text-slate-800 placeholder:text-slate-400 leading-relaxed resize-none"
                                                 />
                                             )}
                                         </div>

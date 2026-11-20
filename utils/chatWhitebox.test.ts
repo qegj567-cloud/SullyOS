@@ -39,10 +39,24 @@ describe('complete whitebox contract',()=>{
   try{const {markup}=renderChatDecorationSample(preset,id);expect(markup).toContain('sully-chat-messages');expect(markup).not.toContain('NaN');expect(fetchSpy).not.toHaveBeenCalled();}finally{fetchSpy.mockRestore();}
  });
  it('includes every message type and expanded psyche and transfer states',()=>{
-  expect(Object.keys(CHAT_TYPE_SAMPLES)).toHaveLength(28);
+  const fullConversation=CHAT_PREVIEW_SCENES.find(scene=>scene.id==='all')!;
+  expect(new Set(fullConversation.messages.map(message=>message.type))).toEqual(new Set(Object.keys(CHAT_TYPE_SAMPLES)));
   expect(renderChatDecorationSample(preset,'psyche-open').markup).toContain('sully-psyche-body');
   expect(renderChatDecorationSample(preset,'music_card').markup).toContain('data-card-kind="music_card"');
   expect(renderChatDecorationSample(preset,'transfer-accepted').markup).toContain('data-status="accepted"');
+ });
+ it('puts the theme on each painted card and leaves collectible artwork and embeds independent',()=>{
+  const chat=document.createElement('div');
+  chat.innerHTML=renderChatDecorationSample(preset,'all').markup;
+  for(const card of chat.querySelectorAll<HTMLElement>('[data-card-kind]')){
+   const dedicated=['transfer','html_card'].includes(card.dataset.cardKind!)
+    || ['like520_card','qixi_event_card'].includes(card.dataset.cardVariant!);
+   expect(card.querySelectorAll('.sully-chat-card-face'),card.dataset.cardVariant || card.dataset.cardKind)
+    .toHaveLength(dedicated ? 0 : 1);
+  }
+  expect(chat.querySelector('[data-card-kind="chat_forward"] .sully-chat-card-face')?.textContent).toContain('点击查看');
+  expect(chat.querySelector('[data-card-kind="collaboration_file"] button.sully-chat-card-face')).toBeTruthy();
+  expect(chat.querySelector('[data-card-kind="friend_feed_share_card"] details.sully-chat-card-face > summary')).toBeTruthy();
  });
  it('keeps appearance separate from reasoning preferences and preserves legacy presets',async()=>{
   const sanitized=validateDecoration({...preset,parts:{psyche:{styleId:'ink',customCss:'',enabled:false,customPrompt:'DO NOT EXPORT',password:'private'}}});

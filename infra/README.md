@@ -8,7 +8,8 @@
 
 | 文件 | 线上位置 | 说明 |
 |---|---|---|
-| `Caddyfile` | `/etc/caddy/Caddyfile` | IP 截断（v4 → /24、v6 → /48）、清掉十几个可伪造的真实-IP 头和 CDN 地理头、日志全部 discard |
+| `Caddyfile` | `/etc/caddy/Caddyfile` | IP 截断（v4 → /24、v6 → /48）、清掉十几个可伪造的真实-IP 头和 CDN 地理头、日志全部 discard；另有主动消息 2.0 的中转站点（见 [`docs/amsg2-relay.md`](../docs/amsg2-relay.md)） |
+| `amsg-relay/` | `/opt/amsg-relay/`、`/etc/systemd/system/amsg-relay.service` | 主动消息 2.0 的中转服务（令牌、白名单、限流、流量记录、Discord 命令），不在配置指纹清单中，部署方式见 [`docs/amsg2-relay.md`](../docs/amsg2-relay.md) |
 | `docker-compose.yml` | `/opt/umami/docker-compose.yml` | `PRIVATE_MODE` / `DISABLE_TELEMETRY` / `DISABLE_UPDATES`、`CLIENT_IP_HEADER=X-Anon-IP`、db 服务下**没有** `ports:` |
 | `assert-privacy.sh` | `/opt/umami/bin/assert-privacy.sh` | 每日自检本体，把承诺逐条变成 SQL / HTTP 断言 |
 | `audit-entry.sh` | `/opt/umami/bin/audit-entry.sh` | CI 那把钥匙唯一能触达的入口，只收一个数字 nonce |

@@ -14,6 +14,7 @@ import {
 } from '../mcpToolBridge';
 import { buildToolResultMessage, normalizeToolCallsForCompat, toolTurnContinuation } from '../toolCallCompat';
 import { toolCallFingerprint } from '../agenticToolFeedback';
+import { formatToolRoundHistoryContent } from '../amsg2ToolLoop';
 import { buildReplyScopeRule } from '../replyScope';
 
 interface GroupMcpCompletionOptions {
@@ -111,7 +112,7 @@ export async function completeGroupChatWithMcp(options: GroupMcpCompletionOption
         if (!toolCalls.length) break;
         conversationMessages.push({
             role: 'assistant',
-            content: data.choices[0].message.content || '(调用工具中)',
+            content: formatToolRoundHistoryContent(data.choices[0].message.content),
             tool_calls: toolCalls,
             ...toolTurnContinuation(data.choices[0].message),
         });

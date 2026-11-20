@@ -131,7 +131,7 @@ const loadWeather = async (
 
   const snap = parseSnapshot<WeatherSnapshot>(globalRows, AMSG_WEATHER_SNAPSHOT_KEY,
     (v) => v && typeof v.city === 'string' && v.data && typeof v.fetchedAt === 'number');
-  const matches = snap && snap.city === city && normalizeFreeWeatherSource(snap.freeSource) === freeSource;
+  const matches = snap && snap.city === city && (snap.freeSource ?? 'open-meteo') === freeSource;
   if (matches && nowMs - snap.fetchedAt < WEATHER_TTL_MS) {
     console.log('[amsg:world] 天气命中快照', { city, ageMin: Math.round((nowMs - snap.fetchedAt) / 60000) });
     return snap.data;

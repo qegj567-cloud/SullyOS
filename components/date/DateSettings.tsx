@@ -345,7 +345,7 @@ const DateSettings: React.FC<DateSettingsProps> = ({ char, onBack }) => {
     };
 
     return (
-        <div ref={pageRef} className="h-full min-h-0 w-full bg-slate-50 flex flex-col overflow-hidden">
+        <div ref={pageRef} className="h-full min-h-0 w-full bg-slate-50 text-slate-800 flex flex-col overflow-hidden">
             <div className="h-16 flex items-center justify-between px-4 border-b border-slate-200 bg-white shrink-0 z-20">
                 <button onClick={onBack} className="p-2 -ml-2 text-slate-600 active:scale-95 transition-transform">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
@@ -505,7 +505,7 @@ const DateSettings: React.FC<DateSettingsProps> = ({ char, onBack }) => {
                             onChange={e => setExtraDraft(e.target.value)}
                             onBlur={saveExtraDraft}
                             placeholder="比如：多写环境互动；不要写心理活动；对话占比多一些……"
-                            className="w-full h-28 px-4 pt-3 pb-11 bg-slate-100 rounded-xl text-sm resize-none focus:ring-1 focus:ring-primary/30 outline-none transition-all leading-relaxed"
+                            className="w-full h-28 px-4 pt-3 pb-11 bg-slate-100 text-slate-800 placeholder:text-slate-400 rounded-xl text-sm resize-none focus:ring-1 focus:ring-primary/30 outline-none transition-all leading-relaxed"
                         />
                         <button type="button" aria-label="展开自定义补充" onClick={() => setExtraEditorOpen(true)}
                             className="absolute bottom-2 right-2 px-3 py-1.5 rounded-lg bg-white text-xs font-semibold text-primary shadow-sm">↗ 展开</button>
@@ -589,7 +589,7 @@ const DateSettings: React.FC<DateSettingsProps> = ({ char, onBack }) => {
                             onChange={e => setNewEmotionName(e.target.value)}
                             onKeyDown={e => { if (e.key === 'Enter') handleAddCustomEmotion(); }}
                             placeholder="输入情绪名 (如 scared, excited...)"
-                            className="flex-1 px-4 py-3 bg-slate-100 rounded-xl text-sm focus:ring-1 focus:ring-primary/30 outline-none transition-all"
+                            className="flex-1 px-4 py-3 bg-slate-100 text-slate-800 placeholder:text-slate-400 rounded-xl text-sm focus:ring-1 focus:ring-primary/30 outline-none transition-all"
                         />
                         <button
                             onClick={handleAddCustomEmotion}
@@ -686,7 +686,7 @@ const DateSettings: React.FC<DateSettingsProps> = ({ char, onBack }) => {
                             onChange={e => setNewSkinName(e.target.value)}
                             onKeyDown={e => { if (e.key === 'Enter') handleCreateSkinSet(); }}
                             placeholder="皮肤名称 (如 冬装、泳装...)"
-                            className="flex-1 px-4 py-3 bg-slate-100 rounded-xl text-sm focus:ring-1 focus:ring-primary/30 outline-none transition-all"
+                            className="flex-1 px-4 py-3 bg-slate-100 text-slate-800 placeholder:text-slate-400 rounded-xl text-sm focus:ring-1 focus:ring-primary/30 outline-none transition-all"
                         />
                         <button
                             onClick={handleCreateSkinSet}
@@ -707,7 +707,7 @@ const DateSettings: React.FC<DateSettingsProps> = ({ char, onBack }) => {
             {/* URL Input Modal */}
             {showUrlModal && (
                 <div className="fixed inset-0 z-[300] bg-black/40 backdrop-blur-sm flex items-center justify-center p-6" onClick={() => setShowUrlModal(false)}>
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
+                    <div className="bg-white text-slate-800 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
                         <div className="p-4 border-b border-slate-100">
                             <h3 className="font-bold text-slate-700 text-sm">通过 URL 添加立绘</h3>
                             <p className="text-[11px] text-slate-400 mt-1">{urlTargetSkinId ? `目标: ${skinSets.find(s => s.id === urlTargetSkinId)?.name}` : '目标: 默认立绘'}</p>
@@ -718,7 +718,7 @@ const DateSettings: React.FC<DateSettingsProps> = ({ char, onBack }) => {
                                 <select
                                     value={skinUrlEmotionKey}
                                     onChange={e => setSkinUrlEmotionKey(e.target.value)}
-                                    className="w-full px-3 py-2.5 bg-slate-100 rounded-xl text-sm outline-none"
+                                    className="w-full px-3 py-2.5 bg-slate-100 text-slate-800 rounded-xl text-sm outline-none"
                                 >
                                     <option value="">选择情绪...</option>
                                     {[...REQUIRED_EMOTIONS, ...(char.customDateSprites || [])].map(k => (
@@ -733,7 +733,7 @@ const DateSettings: React.FC<DateSettingsProps> = ({ char, onBack }) => {
                                     value={skinUrlInput}
                                     onChange={e => setSkinUrlInput(e.target.value)}
                                     placeholder="https://example.com/sprite.png"
-                                    className="w-full px-3 py-2.5 bg-slate-100 rounded-xl text-sm outline-none focus:ring-1 focus:ring-primary/30"
+                                    className="w-full px-3 py-2.5 bg-slate-100 text-slate-800 placeholder:text-slate-400 rounded-xl text-sm outline-none focus:ring-1 focus:ring-primary/30"
                                 />
                             </div>
                             {skinUrlInput && skinUrlInput.startsWith('http') && (

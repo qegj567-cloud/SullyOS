@@ -565,7 +565,7 @@ const MobileGameHome: React.FC = () => {
                     <div className="flex-1 overflow-y-auto no-scrollbar px-5 pb-8" onClick={(e) => e.stopPropagation()}>
                         <div className="grid grid-cols-4 gap-y-5 gap-x-2 place-items-center">
                             {drawerApps.map(app => (
-                                <AppIcon key={app.id} app={app} size="md" onClick={() => { setDrawerOpen(false); openApp(app.id); }} />
+                                <AppIcon key={app.id} app={app} size="md" contentColorOverride={PAL.ink} onClick={() => { setDrawerOpen(false); openApp(app.id); }} />
                             ))}
                         </div>
                     </div>

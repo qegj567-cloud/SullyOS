@@ -26,25 +26,35 @@ beforeEach(() => {
 });
 afterEach(() => { act(() => root.unmount()); host.remove(); });
 const button = (label: string) => [...host.querySelectorAll('button')].find(item => item.textContent?.includes(label))!;
+const openLocation = () => {
+    const toggle = host.querySelector<HTMLInputElement>('[aria-label="开启真实定位"]')!;
+    if (!toggle.checked) act(() => toggle.click());
+    act(() => button('设置与预览').click());
+};
+const selectProvider = (provider: string) => act(() => {
+    const select = host.querySelector<HTMLSelectElement>('[aria-label="定位方式"]')!;
+    select.value = provider;
+    select.dispatchEvent(new Event('change',{bubbles:true}));
+});
 it('provides global street setup, automatically selects a pasted Key and hides it again on return',()=>{
-    act(()=>button('设置与预览').click());expect(host.querySelector('[aria-label="定位方式"]')!.textContent).toContain('全球 · 街道地址');
-    act(()=>button('全球街道 · Geoapify').click());expect(host.textContent).toContain('不用绑信用卡');
+    openLocation();expect(host.querySelector('[aria-label="定位方式"]')!.textContent).toContain('全球 · 街道地址');
+    selectProvider('geoapify');expect(host.textContent).toContain('不用绑信用卡');
     const input=host.querySelector<HTMLInputElement>('[aria-label="Geoapify Key"]')!;
     act(()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'sample-global-key');input.dispatchEvent(new Event('input',{bubbles:true}));});
-    act(()=>button('显示').click());expect(input.type).toBe('text');act(()=>button('返回真实定位').click());
-    expect(host.querySelector<HTMLSelectElement>('[aria-label="定位方式"]')!.value).toBe('geoapify');act(()=>button('全球街道 · Geoapify').click());expect(host.querySelector<HTMLInputElement>('[aria-label="Geoapify Key"]')!.type).toBe('password');
+    act(()=>button('显示').click());expect(input.type).toBe('text');selectProvider('basic');
+    expect(host.querySelector<HTMLSelectElement>('[aria-label="定位方式"]')!.value).toBe('basic');selectProvider('geoapify');expect(host.querySelector<HTMLInputElement>('[aria-label="Geoapify Key"]')!.type).toBe('password');
     expect(getCurrentPositionSmart).not.toHaveBeenCalled();expect(getUserLocationPreview).not.toHaveBeenCalled();
 });
 it('keeps attribution next to an overseas preview and clears it when the provider changes',async()=>{
     vi.mocked(getUserLocationPreview).mockResolvedValueOnce({context:'\n### 小雨当前的位置\n小雨现在的定位在 London · Oxford Street。\n',attribution:'geoapify'});
-    act(()=>host.querySelector<HTMLInputElement>('[aria-label="开启真实定位"]')!.click());act(()=>button('设置与预览').click());await act(async()=>button('定位并预览').click());
+    act(()=>host.querySelector<HTMLInputElement>('[aria-label="开启真实定位"]')!.click());openLocation();await act(async()=>button('定位并预览').click());
     expect(host.textContent).toContain('Powered by');expect(host.querySelector('a[href="https://www.openstreetmap.org/copyright"]')).not.toBeNull();
     const select=host.querySelector<HTMLSelectElement>('[aria-label="定位方式"]')!;act(()=>{select.value='geoapify';select.dispatchEvent(new Event('change',{bubbles:true}));});
     expect(host.textContent).not.toContain('Oxford Street');expect(getUserLocationPreview).toHaveBeenCalledOnce();
 });
 it('can show a Key, switches to AMap when pasted, and hides it again after leaving the page', () => {
-    act(() => button('设置与预览').click());
-    act(() => button('高德 API').click());
+    openLocation();
+    selectProvider('amap');
     const input = host.querySelector<HTMLInputElement>('[aria-label="高德 Key"]')!;
     act(() => {
         Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'test-amap-key');
@@ -53,26 +63,26 @@ it('can show a Key, switches to AMap when pasted, and hides it again after leavi
     expect(input.type).toBe('password');
     act(() => button('显示').click());
     expect(input.type).toBe('text'); expect(input.value).toBe('test-amap-key');
-    act(() => button('返回真实定位').click());
-    expect(host.querySelector<HTMLSelectElement>('[aria-label="定位方式"]')!.value).toBe('amap');
-    act(() => button('高德 API').click());
+    selectProvider('basic');
+    expect(host.querySelector<HTMLSelectElement>('[aria-label="定位方式"]')!.value).toBe('basic');
+    selectProvider('amap');
     expect(host.querySelector<HTMLInputElement>('[aria-label="高德 Key"]')!.type).toBe('password');
     expect(onSave).not.toHaveBeenCalled(); expect(getUserLocationPreview).not.toHaveBeenCalled();
 });
 it('keeps the reason for a failed preview visible outside the folded prompt', async () => {
     vi.mocked(getUserLocationPreview).mockResolvedValueOnce({ context: '\n### 小雨当前的位置\n小雨现在的定位未知。\n', failureHint: '设备定位超时。还没有查询地图。' });
     act(() => host.querySelector<HTMLInputElement>('[aria-label="开启真实定位"]')!.click());
-    act(() => button('设置与预览').click());
+    openLocation();
     await act(async () => button('定位并预览').click());
     expect(host.querySelector('[role="alert"]')!.textContent).toContain('设备定位超时');
     expect(host.querySelector('details')!.open).toBe(false);
 });
-it('does not locate on mount or toggle; captures a circle locally before enabling and previews only after save', async () => {
+it('does not locate on mount or toggle; captures a circle locally before saving and previews only after save', async () => {
     expect(getCurrentPositionSmart).not.toHaveBeenCalled();
     expect(host.textContent).toContain('真实定位');
     expect(host.textContent).not.toContain('API 中转站');
     expect(host.querySelector('[aria-label="定位方式"]')).toBeNull();
-    act(() => button('设置与预览').click());
+    openLocation();
     expect(getUserLocationPreview).not.toHaveBeenCalled();
     expect(host.textContent).toContain('角色能看到什么');
     act(() => button('隐藏地点').click());
@@ -82,7 +92,6 @@ it('does not locate on mount or toggle; captures a circle locally before enablin
     expect(getUserLocationPreview).not.toHaveBeenCalled();
     expect(host.textContent).toContain('位置只存你的设备');
     act(() => button('返回真实定位').click());
-    act(() => host.querySelector<HTMLInputElement>('[aria-label="开启真实定位"]')!.click());
     await act(async () => button('定位并预览').click());
     expect(onSave).toHaveBeenCalledOnce(); expect(getUserLocationPreview).toHaveBeenCalledWith('小雨');
     expect(host.querySelector('[role="status"]')!.textContent).toContain('小雨现在的定位在家附近');
@@ -90,19 +99,19 @@ it('does not locate on mount or toggle; captures a circle locally before enablin
     expect(host.textContent).toContain('已设置 1 个地点');
     act(() => host.querySelector<HTMLInputElement>('[aria-label="开启真实定位"]')!.click());
     expect(host.querySelector('[role="status"]')).toBeNull();
-    expect(host.textContent).toContain('开启真实定位后，可以查看位置预览');
+    expect(host.querySelector('[aria-label="定位方式"]')).toBeNull();
     expect(getUserLocationPreview).toHaveBeenCalledOnce();
 });
 it('validation failure does not perform external lookup', async () => {
     act(() => host.querySelector<HTMLInputElement>('[aria-label="开启真实定位"]')!.click());
-    act(() => button('设置与预览').click());
+    openLocation();
     onSave.mockReturnValue(false);
     await act(async () => button('定位并预览').click());
     expect(getUserLocationPreview).not.toHaveBeenCalled();
 });
 it('does not record a hidden-place center from an imprecise fallback position', async () => {
     vi.mocked(getCurrentPositionSmart).mockResolvedValueOnce({ latitude: 31, longitude: 121, accuracy: 1500 });
-    act(() => button('设置与预览').click());
+    openLocation();
     act(() => button('隐藏地点').click());
     await act(async () => button('把当前位置设为隐藏地点').click());
     expect(host.querySelector('[aria-label="隐私区域 1 名称"]')).toBeNull();
@@ -112,7 +121,7 @@ it('does not record a hidden-place center from an imprecise fallback position', 
     expect(getUserLocationPreview).not.toHaveBeenCalled();
 });
 it('offers optional AMap with the correct Key guide and plain-language hiding examples', async () => {
-    act(() => button('设置与预览').click());
+    openLocation();
     expect(host.textContent).not.toContain('任何形式的 API 中转站');
     act(() => button('定位说明').click());
     expect(host.textContent).toContain('任何形式的 API 中转站');
@@ -123,19 +132,18 @@ it('offers optional AMap with the correct Key guide and plain-language hiding ex
     const select = host.querySelector<HTMLSelectElement>('[aria-label="定位方式"]')!;
     act(() => { select.value = 'amap'; select.dispatchEvent(new Event('change', { bubbles: true })); });
     expect(host.querySelector<HTMLInputElement>('[aria-label="高德 Key"]')!.type).toBe('password');
-    expect(host.querySelector('[aria-label="开启真实定位"]')).toBeNull();
+    expect(host.querySelector('[aria-label="Geoapify Key"]')).toBeNull();
     expect(host.querySelector<HTMLAnchorElement>('a[href*="create-project-and-key"]')).not.toBeNull();
 });
 it('local back returns from subpages with edits intact and no implicit save or lookup', async () => {
-    act(() => button('设置与预览').click());
+    openLocation();
     act(() => button('隐藏地点').click());
     await act(async () => button('把当前位置设为隐藏地点').click());
     act(() => { expect(handleLocalBack()).toBe(true); });
     expect(host.querySelector('[aria-label="隐私区域 1 名称"]')).toBeNull();
     expect(host.textContent).toContain('已设置 1 个地点');
-    act(() => button('高德 API').click());
+    selectProvider('amap');
     expect(host.querySelector('[aria-label="高德 Key"]')).not.toBeNull();
-    act(() => { expect(handleLocalBack()).toBe(true); });
     act(() => button('隐藏地点').click());
     expect(host.querySelector<HTMLInputElement>('[aria-label="隐私区域 1 名称"]')!.value).toBe('家');
     expect(onSave).not.toHaveBeenCalled(); expect(getUserLocationPreview).not.toHaveBeenCalled();
@@ -148,7 +156,7 @@ it('local back returns from subpages with edits intact and no implicit save or l
 it('back is blocked while recording a local point; the handler unregisters on unmount', async () => {
     let resolve!: (value: { latitude: number; longitude: number; accuracy: number }) => void;
     vi.mocked(getCurrentPositionSmart).mockImplementationOnce(() => new Promise(done => { resolve = done; }));
-    act(() => button('设置与预览').click());
+    openLocation();
     act(() => button('隐藏地点').click());
     act(() => button('把当前位置设为隐藏地点').click());
     act(() => { expect(handleLocalBack()).toBe(true); });

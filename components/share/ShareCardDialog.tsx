@@ -36,7 +36,7 @@ function ShareCardDialog({ options, card, onDone }: Props) {
     const tooLarge = options.blob.size > MAX_SHARE_BYTES;
     const design = { kind: card.kind, title, author, restrictions, style };
 
-    const acceptImage = async (blobPromise: Promise<Blob>) => {
+    const acceptImage = async (blobPromise: Promise<Blob>, reportFailure = true) => {
         const request = ++imageRequest.current;
         setLoadingImage(true); setError('');
         let url: string | undefined;
@@ -49,7 +49,7 @@ function ShareCardDialog({ options, card, onDone }: Props) {
             if (next.naturalWidth * next.naturalHeight > 40_000_000) throw new Error('预览图尺寸过大，请缩小后上传');
             if (mounted.current && request === imageRequest.current) setImage(next);
         } catch (e) {
-            if (mounted.current && request === imageRequest.current) setError((e as Error).message || '图片读取失败');
+            if (reportFailure && mounted.current && request === imageRequest.current) setError((e as Error).message || '图片读取失败');
         } finally {
             if (url) URL.revokeObjectURL(url);
             if (mounted.current && request === imageRequest.current) setLoadingImage(false);
@@ -59,7 +59,10 @@ function ShareCardDialog({ options, card, onDone }: Props) {
     useEffect(() => {
         const previousFocus = document.activeElement as HTMLElement | null;
         dialog.current?.showModal();
-        if (card.previewUrl) void acceptImage(fetchBlobForShare(card.previewUrl, 'image/png'));
+        if (card.previewUrl) {
+            const preview = fetchBlobForShare(card.previewUrl, 'image/png', { __sullyHandlesFailure: true });
+            void acceptImage(preview, false);
+        }
         return () => { mounted.current = false; imageRequest.current++; previousFocus?.focus(); };
     }, []);
 

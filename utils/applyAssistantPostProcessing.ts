@@ -1,4 +1,5 @@
 import { withReplyCancellation, type ReplyRun } from './chatReplyCancellation';
+import { stripDisabledMonthlyRecall } from './monthlyRecall';
 import { dialogueMaxTokens } from './characterApi';
 /**
  * applyAssistantPostProcessing — 抽自 hooks/useChatAI.ts 的 sendMessage 后处理管线
@@ -779,6 +780,7 @@ export async function applyAssistantPostProcessing(
         (directives || []).flatMap(d => d.type === 'friend_feed_reply' ? [d.action] : [])));
     let aiContent = replayedTagPrefix ? `${replayedTagPrefix}${rawAiContent}` : rawAiContent;
     aiContent = normalizeAiContent(aiContent);
+    aiContent = stripDisabledMonthlyRecall(aiContent, char);
     // 先于 lead-in / 二轮渲染消费：否则控制标签会作为普通气泡短暂闪给用户看。
     aiContent = await replyStep(async () => consumeScheduleChanges(aiContent, utteranceAt));
     // 在任何 lead-in/二轮渲染之前先剥掉仿卡片文本，防止它被 chunkText 拆成灰色普通气泡。
@@ -843,7 +845,7 @@ export async function applyAssistantPostProcessing(
             await replyStep(async () => typingPause(Math.random() * 500 + 300));
             const foundEmoji = resolveEmojiForSend(name, emojis, ctx.categories);
             if (foundEmoji) {
-                await replyStep(async () => persistMessage({ charId: char.id, role: 'assistant', type: 'emoji', content: foundEmoji.url, metadata: takeMeta(mcdInheritMeta) } as any));
+                await replyStep(async () => persistMessage({ charId: char.id, role: 'assistant', type: 'emoji', content: foundEmoji.url, metadata: { ...takeMeta(mcdInheritMeta), stickerName: foundEmoji.name } } as any));
             } else {
                 console.warn('[emoji] 表情库里没有这个名字，落降级文本气泡', { name, charId: char.id });
                 await replyStep(async () => persistMessage({ charId: char.id, role: 'assistant', type: 'text', content: `[表情：${name}]`, metadata: takeMeta(mcdInheritMeta) } as any));

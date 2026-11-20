@@ -38,7 +38,7 @@ const ColorField: React.FC<{ label: string; value: string; onChange: (v: string)
             type="text"
             value={value}
             onChange={e => onChange(e.target.value)}
-            className="flex-1 px-2 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-[11px] font-mono focus:outline-none focus:border-indigo-300"
+            className="flex-1 px-2 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-[11px] font-mono text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-indigo-300"
             placeholder="#rrggbb 或 css 渐变"
         />
     </label>
@@ -186,7 +186,7 @@ return <div className="space-y-5">                    {/* 2. 卡片风格 */}
                             onBlur={commitCss}
                             spellCheck={false}
                             placeholder={'.sully-psyche-card {\n  border-radius: 16px !important;\n}'}
-                            className={`w-full h-32 bg-slate-50 rounded-xl p-3 text-[11px] font-mono resize-none border focus:outline-none ${cssValidation.isValid ? 'border-slate-200 focus:border-indigo-300' : 'border-red-300 focus:border-red-400'}`}
+                            className={`w-full h-32 bg-slate-50 rounded-xl p-3 text-[11px] font-mono text-slate-800 placeholder:text-slate-400 resize-none border focus:outline-none ${cssValidation.isValid ? 'border-slate-200 focus:border-indigo-300' : 'border-red-300 focus:border-red-400'}`}
                         />
                         {!cssValidation.isValid && (
                             <div className="mt-1 space-y-0.5">

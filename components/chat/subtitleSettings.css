@@ -1,0 +1,38 @@
+.subtitle-settings-page { position: fixed; inset: 0; width: 100%; height: var(--app-visible-height, 100dvh); max-width: none; max-height: 100dvh; margin: 0; padding: 0; border: 0; background: #f7f7f9; color: #30343c; font-family: system-ui, 'PingFang SC', sans-serif; }
+.subtitle-settings-page[open] { display: flex; flex-direction: column; animation: subtitle-settings-enter 140ms ease-out; }
+.subtitle-settings-page::backdrop { background: #f7f7f9; }
+.subtitle-settings-header { flex: none; padding: calc(var(--chrome-top, var(--safe-top, 0px)) + 8px) 16px 8px; display: grid; grid-template-columns: 74px 1fr 74px; align-items: center; border-bottom: 1px solid #e8e8ed; background: #fdfdfd; }
+.subtitle-settings-header h2 { font-size: 15px; font-weight: 600; margin: 0; text-align: center; }
+.subtitle-settings-header button { display: flex; gap: 4px; align-items: center; min-height: 44px; color: #696078; font-size: 13px; background: transparent; border: 0; padding: 0; cursor: pointer; }
+.subtitle-settings-header button span { font-size: 30px; line-height: 1; font-weight: 300; }
+.subtitle-settings-header .subtitle-save-action { justify-content: flex-end; font-weight: 600; color: #796393; }
+.subtitle-settings-page button:disabled { opacity: .45; cursor: default; }
+.subtitle-settings-content { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; width: 100%; max-width: 560px; margin: 0 auto; padding: 22px 20px calc(28px + var(--safe-bottom, 0px)); box-sizing: border-box; }
+.subtitle-settings-caption { margin: 0 0 10px; font-size: 11px; color: #92929d; }
+.subtitle-settings-preview { height: 194px; overflow: auto; position: relative; border-radius: 16px; background: #ebedf1; margin-bottom: 26px; }
+.subtitle-preview-message { width: fit-content; max-width: 78%; margin: 28px 20px 70px; padding: 13px 16px; border-radius: 16px 16px 16px 5px; background: white; font-size: 14px; color: #4b505b; line-height: 1.8; }
+.subtitle-settings-controls { border-radius: 14px; overflow: hidden; background: white; padding: 0 16px; }
+.subtitle-settings-controls > label { min-height: 52px; display: flex; align-items: center; justify-content: space-between; gap: 20px; font-size: 13px; border-bottom: 1px solid #f0f0f3; }
+.subtitle-settings-controls > label:last-child { border-bottom: 0; }
+.subtitle-settings-controls .subtitle-settings-size { display: block; padding: 15px 0; }
+.subtitle-settings-size > span { display: flex; justify-content: space-between; margin-bottom: 12px; }
+.subtitle-settings-size output { color: #7c748a; font-variant-numeric: tabular-nums; }
+.subtitle-settings-size input { width: 100%; accent-color: #8b7aab; height: 18px; display: block; }
+.subtitle-settings-controls select { font: inherit; color: #716b7c; background: #f5f4f7; border: 0; border-radius: 7px; max-width: 65%; padding: 6px 8px; }
+.subtitle-settings-controls input[type=color] { width: 34px; height: 30px; background: none; padding: 2px; border: 1px solid #e8e7ec; border-radius: 7px; cursor: pointer; }
+.subtitle-settings-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; font-size: 10px; color: #98949f; }
+.subtitle-settings-foot button { color: #79698f; font: inherit; min-height: 44px; background: none; border: 0; cursor: pointer; }
+.subtitle-font-import { display: flex; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid #f0f0f3; font-size: 10px; color: #98949f; }
+.subtitle-font-import button { border: 0; background: none; min-height: 44px; color: #79698f; font-size: 12px; padding: 0; cursor: pointer; }
+.subtitle-font-import button:disabled { opacity: .5; }
+.subtitle-font-error { color: #b45050; font-size: 11px; padding: 8px 0; }
+.subtitle-save-prompt { width: min(280px, calc(100% - 40px)); max-height: calc(var(--app-visible-height, 100dvh) - var(--chrome-top, var(--safe-top, 0px)) - var(--safe-bottom, 0px) - 32px); box-sizing: border-box; overflow: auto; margin: auto; padding: 22px 0 0; border: 0; border-radius: 16px; background: #fdfdfd; color: #30343c; text-align: center; font-family: inherit; }
+.subtitle-save-prompt::backdrop { background: rgb(24 23 30 / 26%); }
+.subtitle-save-prompt h3 { font-size: 15px; font-weight: 600; margin: 0 20px 8px; }
+.subtitle-save-prompt p { margin: 0 20px 20px; font-size: 12px; line-height: 1.6; color: #84808c; }
+.subtitle-save-prompt button { display: block; width: 100%; min-height: 46px; border: 0; border-top: 1px solid #ecebf0; background: none; color: #71677e; font-size: 13px; cursor: pointer; }
+.subtitle-save-prompt .subtitle-save-action { font-weight: 600; color: #796393; }
+.subtitle-save-prompt p.subtitle-font-error { color: #b45050; }
+.subtitle-settings-page :focus-visible { outline: 2px solid #9b8bba; outline-offset: 3px; }
+@keyframes subtitle-settings-enter { from { opacity: .5; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .subtitle-settings-page[open] { animation: none; } }

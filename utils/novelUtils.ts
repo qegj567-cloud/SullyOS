@@ -2,6 +2,7 @@
 import { CharacterProfile, NovelBook, NovelSegment, UserProfile } from '../types';
 import { ContextBuilder } from './context';
 import { safeResponseJson } from './safeApi';
+import { injectMemoryPalace } from './memoryPalace/pipeline';
 
 // --- Visual Themes ---
 export const NOVEL_THEMES = [
@@ -192,6 +193,10 @@ export const generateWriterPersonaDeep = async (
 
 **字数要求**：总共400-600字。`;
 
+    // 召回结果只挂在本次请求的副本上：角色对象上不存召回，也不能读别处留下的旧值。
+    const recallChar = { ...char, memoryPalaceInjection: '', roomPlatesInjection: '' };
+    await injectMemoryPalace(recallChar, undefined, undefined, userProfile.name);
+
     try {
         const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
             method: 'POST',
@@ -202,7 +207,7 @@ export const generateWriterPersonaDeep = async (
             body: JSON.stringify({
                 model: apiConfig.model,
                 messages: await ContextBuilder.buildCharacterRequest({
-                    char, user: userProfile,
+                    char: recallChar, user: userProfile,
                     timeOptions: { skipTimeAwareness: true },
                     instructions: `${writerIdentityBoundary(char, userProfile)}\n\n${analysisPrompt}`,
                 }, [{ role: 'user', content: `请分析${char.name}本人的写作风格；${userProfile.name}是共创搭档。` }]),

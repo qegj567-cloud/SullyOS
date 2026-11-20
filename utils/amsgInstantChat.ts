@@ -27,6 +27,7 @@ import { getReplyDisplayIds, isReplyStopped, markReplyStopped, replyAbortError }
 import { ActiveMsg2InboxMessage, CharacterProfile, GroupProfile, RealtimeConfig, UserProfile } from '../types';
 import { ActiveMsgClient, type AmsgOutboxEntry, type InstantChatProbeOutcome } from './activeMsgClient';
 import { ActiveMsgStore, isInstantChatSwitchedOn } from './activeMsgStore';
+import { isAmsg2GloballyEnabled } from './amsgGlobalGate';
 import { trackEvent } from './analytics';
 import {
   cloudApiCallLogId,
@@ -470,6 +471,7 @@ export const resolveInstantChatReadiness = async (
     console.warn(`${HEADER} 全局配置读不出来，这一轮判断不了即时对话开没开（按走不通处理，但这不是「没开」）`, error);
     return { ready: false, reason: 'config-unreadable' };
   }
+  if (!isAmsg2GloballyEnabled(config)) return { ready: false, reason: 'disabled' };
   if (!isInstantChatSwitchedOn(config)) return { ready: false, reason: 'disabled' };
   // 地址排在能力前面：没填地址时那份能力位多半是上一台 Worker 留下的存量，
   // 报「Worker 太旧」会把人指去点一个根本没连上的东西。
@@ -576,6 +578,8 @@ export const sendInstantChatTurn = async (params: {
   userProfile: UserProfile;
   groups: GroupProfile[];
   realtimeConfig: RealtimeConfig;
+  /** 这一轮私聊刚算好的召回与门牌，随行的云端快照直接复用。 */
+  palaceRecall?: import('./memoryPalace/smartContext').PreparedPalaceRecall;
   /**
    * 这一轮的情绪评估，一起交给云端跑（提示词模板 + 副 API 凭据）。
    * 不传就是这一轮不评估（角色没开情绪评估 / 本轮跳过）。
@@ -634,6 +638,7 @@ export const sendInstantChatTurn = async (params: {
       userProfile: params.userProfile,
       groups: params.groups,
       realtimeConfig: params.realtimeConfig,
+      ...(params.palaceRecall ? { palaceRecall: params.palaceRecall } : {}),
       ...(params.emotionEval ? { emotionEval: params.emotionEval } : {}),
       ...(params.sarModule ? { sarModule: params.sarModule } : {}),
       ...(supersedes ? { supersedesUuid: supersedes.uuid } : {}),
@@ -722,22 +727,28 @@ export const sendInstantChatTurn = async (params: {
  * 痕迹（`amsgToolTrace`）都挂在末条上。补收路径拿到的是同一份（账本存的就是推送信封
  * 的副本），所以推送丢了也照样补得上。
  *
- * 云端回传的用量只有**最后一次**模型调用那一份——带工具的一轮会连着调好几次模型，
- * 中间几次的数在云端就没留下。跑过工具就把这笔标成「只算末轮」，让用户知道这个数字
- * 偏小，别拿它去跟账单对齐。
+ * 当前 Worker 通过 amsgModelCalls 回传每次模型请求的独立用量与续答原因；第一条替换
+ * 挂起记录，后续调用各记一条。旧 Worker 没有逐次明细时保留原有整轮记录并提示更新，
+ * 不能根据工具数量猜测每次请求的 Token。
  */
-export const settleInstantChatApiLog = (uuid: string, metadata?: Record<string, any> | null): void => {
+export const settleInstantChatApiLog = async (uuid: string, metadata?: Record<string, any> | null): Promise<void> => {
   const num = (value: unknown): number | undefined =>
     (typeof value === 'number' && Number.isFinite(value) ? value : undefined);
   const usage = metadata?.amsgUsage;
   const toolTrace = metadata?.amsgToolTrace;
   const hasToolTrace = Array.isArray(toolTrace) && toolTrace.length > 0;
-  settleCloudApiCall({
+  const { parseModelCalls } = await import('./amsgApiCallRecords');
+  const calls = parseModelCalls(metadata?.amsgModelCalls);
+  if (calls) {
+    const { settleInstantModelCalls } = await import('./amsgApiCallLog');
+    await settleInstantModelCalls(uuid, calls, metadata ?? undefined);
+  } else settleCloudApiCall({
     id: cloudApiCallLogId(uuid),
     ok: !isReplyStopped(uuid),
     promptTokens: num(usage?.promptTokens),
     completionTokens: num(usage?.completionTokens),
     tokensPartial: metadata?.amsgUsageComplete === true ? false : hasToolTrace,
+    cloudUsageAggregated: hasToolTrace,
   });
   if (metadata?.amsgEmotionPending === true) return;
   if (consumeEmotionEvalInFlight(uuid)) {
@@ -1052,4 +1063,45 @@ export const stopInstantChat = async (charId: string): Promise<void> => {
   const results = await Promise.allSettled([cancel, reconcile]);
   const failed = results.find(result => result.status === 'rejected');
   if (failed?.status === 'rejected') throw failed.reason;
+};
+
+/**
+ * 全局总开关关闭时立即收束本机所有正在等待的即时对话轮次：熄灭输入中与情绪灯、结清调用记录、
+ * 清理未展示的分段，返回待尽力取消的远端任务 UUID 列表（不在此处等待网络）。
+ */
+export const abortAllInstantChatPendingsLocally = async (): Promise<string[]> => {
+  const pendings = listInstantChatPendings();
+  if (pendings.length === 0) return [];
+  const uuids: string[] = [];
+  for (const pending of pendings) {
+    const visibleIds = getReplyDisplayIds(pending.charId);
+    markReplyStopped(pending.uuid);
+    clearInstantChatPending(pending.charId);
+    discardInstantChatExpiredNotices(pending.charId, pending.uuid);
+    void import('./friendFeedEmotion')
+      .then((m) => m.settleFriendFeedCloudTask(pending.charId, pending.uuid, false))
+      .catch(() => {});
+    announceEmotionDone(pending.charId);
+    settleCloudApiCall({ id: cloudApiCallLogId(pending.uuid), ok: false });
+    if (consumeEmotionEvalInFlight(pending.uuid)) {
+      settleCloudApiCall({ id: cloudEmotionApiCallLogId(pending.uuid), ok: false });
+    }
+    uuids.push(pending.uuid);
+    await stageStoppedReplyReceipt(pending.charId, pending.uuid, (async () => {
+      try {
+        const messages = (await DB.getMessagesByCharId(pending.charId)).filter((message) =>
+          (message.metadata as any)?.activeMsg2?.taskUuid === pending.uuid);
+        const kept = messages.filter((message) => !visibleIds || visibleIds.has(message.id));
+        const unseen = messages.filter((message) => visibleIds && !visibleIds.has(message.id));
+        if (unseen.length) await DB.deleteMessages(unseen.map((message) => message.id));
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('active-msg-progress', { detail: { charId: pending.charId } }));
+        }
+        return kept.map((message) => message.content).join('\n');
+      } catch {
+        return '';
+      }
+    })());
+  }
+  return uuids;
 };

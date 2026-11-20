@@ -4,7 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { expect, it } from 'vitest';
 import { requestSettingsFocus, useSettingsFocus } from './settingsNavigation';
 
-it.each(['api', 'vision', 'voice'] as const)('consumes %s focus before mount once and handles repeat navigation without resetting a draft', async target => {
+it.each(['api', 'vision', 'voice', 'support', 'backup'] as const)('consumes %s focus before mount once and handles repeat navigation without resetting a draft', async target => {
   (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
   const host = document.createElement('div'); document.body.append(host);
   const root = createRoot(host);

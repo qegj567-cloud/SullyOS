@@ -32,7 +32,10 @@ export async function buildFriendFeedReplyPayload(char: CharacterProfile, user: 
     const [groups, emojis, categories] = await Promise.all([DB.getGroups(), DB.getEmojis(), DB.getEmojiCategories()]);
     return buildChatRequestPayload({
         char, userProfile: user, groups, emojis, categories,
-        historyMsgs: range.messages, contextLimit: Math.max(1, range.messages.length), contextHighWaterMark: range.hwm,
+        // Dedicated Bibi requests already include the live discussion. Archived comment receipts
+        // can quote deleted text or repeat the same exchange from several participants.
+        historyMsgs: range.messages.filter(m => m.type !== 'friend_feed_card'
+            || ['identity','post','repost'].includes(m.metadata?.friendFeedComment?.kind ?? '')), contextLimit: Math.max(1, range.messages.length), contextHighWaterMark: range.hwm,
         recallEntryPoint: 'chat_payload', recallQueryHint: material,
         realtimeConfig, musicSnapshot: loadMusicPlaybackSnapshot(), visionApiConfig: api.visionApi, stripImages: true,
         appPrompt: {rules: '本次只处理哔哔，不评估或改变情绪，不回复私聊。输出完整 JSON {"friendFeedAction": ...}。',

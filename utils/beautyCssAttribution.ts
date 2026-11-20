@@ -3,7 +3,7 @@ import {makeWorkshopPreset,replaceWorkshopCss,type DecorationWorkshop} from './d
 import type {DecorationOrigin} from './decorationLibrary';
 import {validateMeetingAppearance,type MeetingAppearance} from './meetingAppearance';
 export interface CssAttribution {name:string;credit:string;category:DecorationWorkshop;allowRemix?:boolean;allowRedistribute?:boolean;readingPreset?:MeetingAppearance['preset']}
-const categories=['whitebox','bubbles','avatar','background','psyche','sound','schedule','journal','collaboration','date','story'];
+const categories=['whitebox','bubbles','avatar','background','psyche','profile','sound','schedule','journal','collaboration','date','story'];
 const marker=/\/\* SULLY-BEAUTY-V1 ([^\r\n]*?) \*\//;
 export function readCssAttribution(css:string):CssAttribution|null{
  const match=css.match(marker);if(!match){if(css.includes('SULLY-BEAUTY-V1'))throw Error('CSS 署名标记不完整，请使用原始分享内容');return null;}
@@ -35,6 +35,7 @@ export function cssImportPreset(css:string,name:string,fallbackCategory:Decorati
   else if(category==='journal')preset.parts.journal!.customCss=text;
   else if(category==='schedule')preset.parts.schedule!.customCss=text;
   else if(category==='bubbles')preset.parts.bubbles!.customCss=text;
+  else if(category==='profile')preset.parts.profile!.customCss=text;
   else if(category==='psyche')preset.parts.psyche!.customCss=text;
   else if(category==='avatar'||category==='background')preset.parts={css:replaceWorkshopCss('',category,text)};
   else preset={...checked,name:meta?.name||name};

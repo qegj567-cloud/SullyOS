@@ -7,6 +7,8 @@ import { exportAmsg2GlobalConfig, importAmsg2GlobalConfig } from './activeMsgSto
 import { openCollaborationSpace, deleteCollaborationSpace } from '../features/collaboration/store';
 import { commitSpaceRows, persistSpaceCatalog, assertUniqueSpaceCharacters } from './userSpaceData';
 import { collectFriendFeedMedia, applyFriendFeedMedia, isActivityTextAsset } from './activityBackup';
+import { HELP_HISTORY_KEY, helpMediaHistory, helpTextHistory, restoreHelpMedia } from './sullyHelpBackup';
+import { legacyStickerLinks, portableEmojiRow, patchEmojiOriginal, patchSentSticker } from './emojiBackup';
 import { parseFriendFeed } from './friendFeed';
 import { exportDecorationMedia, restoreDecorationMedia } from './decorationMediaBackup';
 import { shouldIncludeVoiceRelatedAssetInBackup } from './voiceMessageBackup';
@@ -15,6 +17,8 @@ import { collectCharacterCompanionVoiceAssetIds } from './companionPresets';
 import { withSharedAssetLock } from './sharedAssetLock';
 import { backupAssetField, backupAssetSource, recordMissingBackupAsset, writeMissingBackupAssets, type BackupMissingAsset } from './backupMissingAssets';
 import { newImportedSpaceId, newImportedBlobId, remapIndependentUser } from './independentUserImport';
+import { exportUserLocationSettings, validateSpaceLocationBackup, type SpaceLocationBackup } from './userLocationBackup';
+import { USER_LOCATION_STORAGE_KEY } from './userLocationPrivacy';
 
 type Mode = 'full' | 'text_only' | 'media_only';
 interface SpaceArchive {
@@ -22,6 +26,7 @@ interface SpaceArchive {
     spaces: Array<UserSpace & { local: Record<string, string>; stores: Record<string, string[]> }>;
     settings: Record<string, string>;
     backend?: Awaited<ReturnType<typeof exportAmsg2GlobalConfig>>;
+    userLocation?: SpaceLocationBackup;
     blobs: Array<{ id: string; path: string; type: string; size: number }>;
     missingAssets?: BackupMissingAsset[];
 }
@@ -29,12 +34,18 @@ const mediaStores = new Set(['characters', 'user_profile', 'themes', 'emojis', '
 const mediaAsset = (id: string) => id === 'friend_feed_v1' || !isActivityTextAsset(id);
 const privateLocalExcluded = (key: string) => /location|geolocation|latitude|longitude|privacy|user_spaces_catalog|import.*progress/i.test(key);
 export function spaceMediaRow(store: string, row: any) {
+    if (store === 'assets' && row.id === HELP_HISTORY_KEY) return { id: row.id, data: helpMediaHistory(row.data) };
     if (store === 'characters') {
         const keys = ['id', 'avatar', 'sprites', 'dateSkinSets', 'activeSkinSetId', 'customDateSprites', 'spriteConfig', 'chibiStudio', 'videoAvatar', 'videoAvatarWardrobe', 'companionAvatar', 'companionTouchSettings', 'companionBackground', 'videoCallBackground', 'dateBackground', 'roomConfig'];
         const homeKeys = ['version', 'assetVersion', 'roomSizeVersion', 'homePalette', 'rooms'];
         return { ...Object.fromEntries(keys.filter(k => row[k] !== undefined).map(k => [k, row[k]])), ...restoreDecorationMedia(exportDecorationMedia(row)), ...(row.vrState?.chibi ? { vrState: { chibi: row.vrState.chibi } } : {}), ...(row.home3D ? { home3D: Object.fromEntries(homeKeys.filter(k => row.home3D[k] !== undefined).map(k => [k, row.home3D[k]])) } : {}) };
     }
-    if (store === 'messages') return { id: row.id, charId: row.charId, role: row.role, timestamp: row.timestamp, type: row.type, content: row.type === 'image' || row.type === 'emoji' ? row.content : '', metadata: row.metadata?.cameraSnapshotRef || row.metadata?.cameraSnapshotExpired ? { cameraSnapshotRef: row.metadata.cameraSnapshotRef, cameraSnapshotExpired: row.metadata.cameraSnapshotExpired } : undefined };
+    if (store === 'messages') return {
+        id: row.id, charId: row.charId, groupId: row.groupId, role: row.role, timestamp: row.timestamp, type: row.type,
+        content: row.type === 'image' || row.type === 'emoji' ? row.content : '',
+        metadata: row.type === 'emoji' && row.metadata?.stickerName ? { stickerName: row.metadata.stickerName }
+            : row.metadata?.cameraSnapshotRef || row.metadata?.cameraSnapshotExpired ? { cameraSnapshotRef: row.metadata.cameraSnapshotRef, cameraSnapshotExpired: row.metadata.cameraSnapshotExpired } : undefined,
+    };
     if (store === 'user_profile') return { id: row.id, avatar: row.avatar, perCharAvatars: row.perCharAvatars, chibiStudio: row.chibiStudio };
     if (store === 'daily_schedule') return { id: row.id, coverImage: row.coverImage };
     if (store === 'assets' && row.id === 'friend_feed_v1') return { id: row.id, data: JSON.stringify(collectFriendFeedMedia(parseFriendFeed(row.data))) };
@@ -96,6 +107,12 @@ async function exportUserSpacesUnderLease(mode: Mode, scope: 'current' | 'all', 
     };
     for (const space of listUserSpaces().filter(s => scope === 'all' || s.id === SESSION_SPACE_ID)) {
         const db = await openSpaceDB(space.id);
+        const stickerRows = !db.objectStoreNames.contains('emojis') ? [] : await new Promise<import('../types').Emoji[]>((resolve, reject) => {
+            const request = db.transaction('emojis').objectStore('emojis').getAll();
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+        const stickerLinks = legacyStickerLinks(stickerRows);
         const characters = await new Promise<any[]>((resolve, reject) => { const request = db.transaction('characters').objectStore('characters').getAll(); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
         const voiceIds = collectCharacterCompanionVoiceAssetIds(characters);
         const characterNames = new Map<string, string>(characters.map(character => [character.id, character.name]));
@@ -121,7 +138,11 @@ async function exportUserSpacesUnderLease(mode: Mode, scope: 'current' | 'all', 
                     .filter(r => mode !== 'media_only' || store !== 'daily_schedule' || r.coverImage)
                     .filter(r => mode !== 'media_only' || store !== 'messages' || r.type === 'image' || r.type === 'emoji' || r.metadata?.cameraSnapshotRef || r.metadata?.cameraSnapshotExpired);
                 const processed = [];
-                for (const row of rows) processed.push(await pack(mode === 'media_only' ? spaceMediaRow(store, row) : row, '', backupAssetSource(space.name, store, row, characterNames)));
+                for (const row of rows) {
+                    const value = mode === 'media_only' ? spaceMediaRow(store, row)
+                        : mode === 'text_only' && store === 'assets' && row.id === HELP_HISTORY_KEY ? { id: row.id, data: helpTextHistory(row.data) } : row;
+                    processed.push(await pack(portableEmojiRow(store, value, stickerLinks), '', backupAssetSource(space.name, store, row, characterNames)));
+                }
                 const text = JSON.stringify(processed); collectBlobRefs(text, refs);
                 const path = `spaces/${space.id}/${store}.${part++}.json`;
                 zip.file(path, text); entry.stores[store].push(path);
@@ -139,6 +160,15 @@ async function exportUserSpacesUnderLease(mode: Mode, scope: 'current' | 'all', 
     }
     if (mode !== 'text_only') for (const ref of refs) await addAsset(ref.slice('blobref:'.length));
     if (mode !== 'media_only') manifest.backend = await exportAmsg2GlobalConfig({ includeBackendConnection });
+    if (mode !== 'media_only' && rawSpaceStorage) {
+        for (const space of manifest.spaces) {
+            const config = exportUserLocationSettings(createSpaceStorage(rawSpaceStorage, space.id));
+            if (!config) continue;
+            const { characterIds, ...settings } = config;
+            manifest.userLocation ??= { settings, audiences: {} };
+            manifest.userLocation.audiences[space.id] = characterIds ?? null;
+        }
+    }
     const missing = [...missingAssets.values()];
     if (missing.length) manifest.missingAssets = missing;
     writeMissingBackupAssets(zip, missing);
@@ -219,6 +249,8 @@ async function importUserSpacesUnderLease(zip: any, allowBackendConnection: bool
         if (v && typeof v === 'object') { const out: any = Object.create(null); for (const [k, value] of Object.entries(v)) out[k] = await unpack(value); return out; }
         return v;
     };
+    const userLocation = !asNewUsers && manifest.mode !== 'media_only'
+        ? validateSpaceLocationBackup(manifest.userLocation, manifest.spaces.map(space => space.id)) : undefined;
     const prepared = [];
     for (const storedSpace of manifest.spaces) {
         const space = { ...storedSpace, local: await unpack(storedSpace.local) };
@@ -273,11 +305,15 @@ async function importUserSpacesUnderLease(zip: any, allowBackendConnection: bool
     }
     for (const { space, db, tables, collaboration, collabTables } of prepared) {
         if (manifest.mode === 'media_only') {
+            delete tables.emoji_categories;
             for (const [store, rows] of Object.entries(tables)) {
-                if (store !== 'characters' && store !== 'user_profile' && store !== 'messages' && store !== 'assets' && store !== 'daily_schedule') continue;
+                if (store !== 'emojis' && store !== 'characters' && store !== 'user_profile' && store !== 'messages' && store !== 'assets' && store !== 'daily_schedule') continue;
                 tables[store] = await Promise.all(rows.map(async row => {
-                    const existing = await new Promise<any>((resolve, reject) => { const req = db.transaction(store).objectStore(store).get(row.id); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); });
+                    const existing = await new Promise<any>((resolve, reject) => { const req = db.transaction(store).objectStore(store).get(store === 'emojis' ? row.name : row.id); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); });
+                    if (store === 'emojis') return patchEmojiOriginal(existing,row);
+                    if (store === 'messages' && row.type === 'emoji') return patchSentSticker(existing, row);
                     if (store === 'assets') {
+                        if (row.id === HELP_HISTORY_KEY) return existing ? { id: row.id, data: restoreHelpMedia(existing.data, row.data) } : null;
                         if (row.id === 'friend_feed_v1') return { id: row.id, data: JSON.stringify(applyFriendFeedMedia(parseFriendFeed(existing?.data ?? null), JSON.parse(row.data))) };
                         return mediaAsset(row.id) ? row : null;
                     }
@@ -308,6 +344,16 @@ async function importUserSpacesUnderLease(zip: any, allowBackendConnection: bool
     if (!asNewUsers && manifest.mode !== 'media_only') await importAmsg2GlobalConfig(manifest.backend, { allowBackendConnection });
     if (!asNewUsers && manifest.mode !== 'media_only') for (const [key, value] of Object.entries(manifest.settings || {})) {
         if (isSharedSpaceKey(key) && !privateLocalExcluded(key) && typeof value === 'string') rawSpaceStorage?.setItem(key, value);
+    }
+    if (userLocation && rawSpaceStorage) {
+        for (const { space } of prepared) {
+            const audience = userLocation.audiences[space.id];
+            createSpaceStorage(rawSpaceStorage, space.id).setItem(USER_LOCATION_STORAGE_KEY, JSON.stringify({
+                ...userLocation.settings, ...(audience === null ? {} : { characterIds: audience }),
+            }));
+        }
+        // Invalidate any lookup/cache in the current page while keeping its own audience intact.
+        (await import('./userLocation')).invalidateUserLocationContext();
     }
     return prepared.map(({ space }) => ({ id: space.id, name: space.name }));
 }

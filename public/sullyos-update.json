@@ -1,15 +1,15 @@
 {
   "schemaVersion": 1,
-  "versionCode": 30515,
-  "versionName": "3.5.15",
-  "apkUrl": "https://github.com/qegj567-cloud/SullyOS/releases/download/android-v3.5.15/SullyOS-Android-v3.5.15.apk",
-  "sha256": "71bd2f5fe6230fb0280acd129b822b9b9cf4c0a794cd406bc2508e878a2f34f7",
-  "sizeBytes": 99612432,
-  "publishedAt": "2026-11-07T14:24:15Z",
+  "versionCode": 30522,
+  "versionName": "3.5.22",
+  "apkUrl": "https://github.com/qegj567-cloud/SullyOS/releases/download/android-v3.5.22/SullyOS-Android-v3.5.22.apk",
+  "sha256": "e4b940d900b2b945c1a5c81376411be24bcecb598d0ee3997df76e925f672cf6",
+  "sizeBytes": 103758457,
+  "publishedAt": "2026-11-19T12:45:57Z",
   "releaseNotes": [
-    "同步 master 8fdf6935，包含离开后消息和跨网址／App 迁入独立用户",
-    "同步缺失素材备份提示与清单、存储优化锁等修复；云端新能力需按提示更新自有 Worker",
-    "保留水母／经典图标切换、ntfy、PDF、相机、前台定位、Umami 和应用内更新",
-    "沿用固定正式签名，可覆盖升级保留数据"
+    "同步 master 8d8af4b2，包含主动消息记忆召回、工具续写去重、压缩修复和云端数据救援",
+    "同步 Sully-11 帮助、聊天资料与装扮试用、银晕白框、时间位置、导出和报错脱敏改进",
+    "保留既有通知渠道、图标切换、PDF、相机、前台定位、Umami 和应用内更新；固定签名可覆盖升级保留数据",
+    "主动消息 2.0 用户请在应用设置单独更新后台；APK 不会自动部署 Worker 或开启救援模式"
   ]
 }

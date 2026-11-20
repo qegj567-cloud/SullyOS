@@ -35,7 +35,7 @@ it('keeps the preview mounted, combines a permitted preset, and rejects a locked
  try{
   await act(async()=>root.render(React.createElement(DecorationDraftEditor,{preset:{format:'sullyos-chat-decoration',version:1,name:'测试组合',parts:{css:''}},origin:{kind:'self'},theme:{} as any,sources:[source('allowed','允许作品'),source('locked','锁定作品')],onClose:()=>{},onOpenWorkshop:()=>{},onSaved:()=>{}})));
   expect(document.querySelector('textarea')).toBeNull();
-  expect(document.querySelectorAll('.decoration-current-grid>button')).toHaveLength(6);
+  expect(Array.from(document.querySelectorAll('.decoration-current-grid>button strong'), el=>el.textContent)).toEqual(['白框','气泡','头像框','聊天背景','心象','角色名片','提示音']);
   const preview=document.querySelector('[data-testid=preview]');
   expect(preview?.getAttribute('data-scope')).toBe('all');
   await click('心象');await click('锁定作品');

@@ -70,5 +70,13 @@ describe('portable chat decoration',()=>{
   const applied={...char,...result.character};expect(resolveDecorationTheme(base,applied).chatHeaderStyle).toBe('minimal');expect(resolveDecorationTheme(base,{...applied,chatFineTune:{enabled:false}}).chatHeaderStyle).toBe('telegram');expect(applied.chatBackground).toBe('');expect(base.chatHeaderStyle).toBe('telegram');
  });
  it('layout-only application preserves the unselected character background style',async()=>{const result=await decorationPatches(validateDecoration(wrap({layout:{chatHeaderStyle:'minimal'}})),['layout'],'character',{...char,chatAppearance:{chatBackgroundStyle:'mesh'}},base);expect(result.character.chatAppearance?.chatBackgroundStyle).toBe('mesh');});
+ it('validates and round-trips chatTimestampPosition across character overrides and presets',async()=>{
+  expect(()=>validateDecoration(wrap({layout:{chatTimestampPosition:'invalid'}}))).toThrow('chatTimestampPosition');
+  const preset=await exportDecoration('WeChat time',{...base,chatTimestampPosition:'top_center'},undefined,PRESET_THEMES.default);
+  expect(preset.parts.layout?.chatTimestampPosition).toBe('top_center');
+  const patch=await decorationPatches(preset,['layout'],'character',char,base);
+  expect(patch.character.chatAppearance?.chatTimestampPosition).toBe('top_center');
+  expect(resolveDecorationTheme(base,{...char,...patch.character}).chatTimestampPosition).toBe('top_center');
+ });
  it('isolated imported CSS does not re-add recipient global CSS on export',async()=>{const p=await exportDecoration('x',base,{...char,chatDecorationCssIsolated:true},PRESET_THEMES.default);expect(p.parts.css).toBe(char.chromeCustomCss);});
 });

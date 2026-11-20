@@ -12,6 +12,7 @@ it('沉浸式协同只调用专用 API；已有云端私聊仍属于私聊，不
     const char = { id:'cowork-route',name:'角色',avatar:'',description:'',systemPrompt:'角色核心设定',memories:[],
         contextRangeMode:'manual',contextRangePolicyVersion:1,contextLimit:20,timeAwarenessEnabled:false,
         scheduleFeatureEnabled:false,memoryPalaceEnabled:false,showThinkingChain:true,
+        thinkingChainPromptMode:'replace',thinkingChainCustomPrompt:'仅写当前角色的心情',
         activeMsg2Config:{enabled:true},dialogueApi:{baseUrl:'https://chat.example/v1',apiKey:'chat-key',model:'chat-model'} } as CharacterProfile;
     const history = [
         {id:1,charId:char.id,role:'assistant',type:'text',content:'之前面对面谈过贺卡',timestamp:1,metadata:{source:'date'}},
@@ -32,6 +33,8 @@ it('沉浸式协同只调用专用 API；已有云端私聊仍属于私聊，不
     const body = JSON.parse(options.body as string);
     expect(body.model).toBe('cowork-model');
     const text = JSON.stringify(body.messages);
+    expect(text.split('仅写当前角色的心情')).toHaveLength(2);
+    expect(text).not.toContain('【以下规则仅适用于 THINKING 阶段】');
     expect(text).toContain('角色核心设定');
     expect(text).toContain('吹风机只有 50W');
     expect(text).toContain('设计贺卡网页');

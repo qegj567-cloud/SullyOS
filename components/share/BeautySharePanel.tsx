@@ -1,6 +1,7 @@
 import BeautyShareContents from './BeautyShareContents';
 import {DEFAULT_SHARE_SELECTION,selectBeautyShareContents,type BeautyShareSelection} from '../../utils/beautyShareContents';
-import {trackBeauty} from '../../utils/beautyAnalytics';
+import {trackBeauty, trackBeautyInbox} from '../../utils/beautyAnalytics';
+import BeautyRepoInbox from './BeautyRepoInbox';
 import {readRememberedBeautyAuthor,rememberBeautyAuthor,forgetBeautyAuthor} from '../../utils/beautyAuthorBackup';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocalBackHandler } from '../../hooks/useLocalBackHandler';
@@ -10,7 +11,6 @@ import { beautyRequest, downloadBeauty, normalizeBeautyPackage, readBeautyPackag
 import { confirmExportSafety } from '../../utils/exportGuard';
 import { shareOrDownloadFile } from '../../utils/shareExport';
 import BeautyConfirmDialog from './BeautyConfirmDialog';
-import BeautyUpdateNotice, { BEAUTY_AUTHOR_NOTICE, needsBeautyNotice } from './BeautyUpdateNotice';
 import {beautyFingerprint,readBeautyBinding,bindBeautySource} from '../../utils/beautySourceBinding';
 import BeautyPresetPicker from './BeautyPresetPicker';
 import BeautyPresetPreview from './BeautyPresetPreview';
@@ -47,7 +47,7 @@ function Terms({ metadata: m }: { metadata: BeautyMetadata }) {
 
 export default function BeautySharePanel({ kind, sources, onReceive, onBusyChange, defaultOpen = false, initialTab = 'receive', receivedMessage, embedded = false, unified = false, onOpenReceiver, surface, initialSource }: Props) {
   const [open, setOpen] = useState(defaultOpen);
-  const [tab, setTab] = useState<'receive' | 'submit' | 'mine'>(initialTab);
+  const [tab, setTab] = useState<'receive' | 'submit' | 'mine' | 'inbox'>(initialTab);
   const [session, setSession] = useState(readBeautySession);
   const [remembered,setRemembered]=useState(readRememberedBeautyAuthor);
   const [remember,setRemember]=useState(!!remembered);
@@ -67,7 +67,6 @@ export default function BeautySharePanel({ kind, sources, onReceive, onBusyChang
   const [file, setFile] = useState<File | null>(null);
   const [editing, setEditing] = useState<BeautySubmission | null>(null);
   const [submissions, setSubmissions] = useState<BeautySubmission[]>([]);
-  const [authorNotice, setAuthorNotice] = useState(false);
   const [selectedTerms,setSelectedTerms]=useState<BeautySubmission[]>([]);
   const [termsItems,setTermsItems]=useState<BeautySubmission[]|null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -90,7 +89,6 @@ export default function BeautySharePanel({ kind, sources, onReceive, onBusyChang
     if(deleteId)setDeleteId(null);
     else if(updateCandidate)setUpdateCandidate(null);
     else if(termsItems)setTermsItems(null);
-    else if(authorNotice)setAuthorNotice(false);
     else if(confirmedWork)setConfirmedWork(null);
     else if(editing)setEditing(null);
     else if(previewPack)setPreviewPack(null);
@@ -119,7 +117,6 @@ export default function BeautySharePanel({ kind, sources, onReceive, onBusyChang
     if (!auth) return;
     const result = await beautyRequest<{ submissions: BeautySubmission[]; total: number; offset: number; pageSize: number; nextOffset: number | null }>(`/submissions?offset=${offset}&status=${status}&q=${encodeURIComponent(search)}`, { token: auth.token });
     setSubmissions(result.submissions); setPage(result); setLoaded(true); setDeleteId(null);
-    if (result.submissions.length && needsBeautyNotice(BEAUTY_AUTHOR_NOTICE)) setAuthorNotice(true);
   };
   const authenticate = () => run(async () => {
     validateBeautyPassword(password);
@@ -160,10 +157,19 @@ export default function BeautySharePanel({ kind, sources, onReceive, onBusyChang
   });
   useEffect(() => { if (open && session && surface !== 'receive') void run(() => refresh(session, 0)); }, [open]);
   return <section className="beauty-share-panel">
-    {authorNotice && open && surface !== 'receive' && <BeautyUpdateNotice author onClose={()=>setAuthorNotice(false)}/>}
     {!embedded && <button type="button" className="beauty-share-heading" disabled={busy} aria-expanded={open} onClick={() => setOpen(v => !v)}>美化分享码 <span>{open ? '收起' : '导出 / 领取 / 我的提交'}</span></button>}
     {open && <>
-      {surface!=='receive'&&<nav aria-label="美化分享">{surface!=='author'&&<button disabled={busy} aria-pressed={tab === 'receive'} onClick={() => onOpenReceiver ? onOpenReceiver() : setTab('receive')}>用码领取</button>}<button disabled={busy} aria-pressed={tab === 'submit'} onClick={() => setTab('submit')}>投稿获取分享码</button><button disabled={busy} aria-pressed={tab === 'mine'} onClick={() => { setTab('mine'); void run(() => refresh()); }}>我的提交</button></nav>}
+      {surface !== 'receive' && <nav aria-label="美化分享">
+        {surface !== 'author' && <button disabled={busy} aria-pressed={tab === 'receive'} onClick={() => onOpenReceiver ? onOpenReceiver() : setTab('receive')}>用码领取</button>}
+        <button disabled={busy} aria-pressed={tab === 'submit'} onClick={() => setTab('submit')}>投稿获取分享码</button>
+        <button disabled={busy} aria-pressed={tab === 'mine'} onClick={() => { setTab('mine'); void run(() => refresh()); }}>我的提交</button>
+        <button disabled={busy} aria-pressed={tab === 'inbox'} onClick={() => {
+          if (tab === 'inbox') return;
+          setError(''); setNotice(''); setTab('inbox');
+          if (!session) setLoginMode(true);
+          trackBeautyInbox('open');
+        }}>作者收件箱</button>
+      </nav>}
       {error && <p role="alert" className="beauty-share-error">{error}</p>}{notice && <p role="status">{notice}</p>}
       <fieldset disabled={busy}>
         {tab === 'submit' && <div className="beauty-submit-flow" ref={flowRef} tabIndex={-1}>
@@ -189,7 +195,7 @@ export default function BeautySharePanel({ kind, sources, onReceive, onBusyChang
           {share && <><Terms metadata={share.metadata}/>{previewPack ? <BeautyPresetPreview data={previewPack}/> : <button onClick={() => run(async () => { setPreviewPack(await downloadBeauty(share, unified ? share.kind : kind)); })}>预览效果</button>}<label className="beauty-share-check"><input type="checkbox" checked={accepted} onChange={e => setAccepted(e.target.checked)}/>我已阅读作者的使用规范</label><button disabled={!accepted} onClick={() => run(async () => { const pack = await downloadBeauty(share, unified ? share.kind : kind); await onReceive(pack, share); trackBeauty('import','code'); setNotice(receivedMessage || (kind === 'appearance' ? '已存入外观预设，可在预设列表中选择应用。' : '已载入，请在装扮确认区选择需要应用的部分。')); })}>领取并载入预设</button></>}
         </> : (tab!=='submit'||confirmedWork) && <>
           {!session ? <div>
-            <p>首次提交建立作者身份，当前浏览器会记住登录。换设备时，用作者码和密码恢复。</p>
+            <p>{tab === 'inbox' ? '用投稿时的作者码和密码登录，即可查看读者给你作品的 Repo。' : '首次提交建立作者身份，当前浏览器会记住登录。换设备时，用作者码和密码恢复。'}</p>
             <div className="beauty-share-actions"><button aria-pressed={!loginMode} onClick={() => setLoginMode(false)}>首次使用</button><button aria-pressed={loginMode} onClick={() => setLoginMode(true)}>恢复作者身份</button></div>
             {loginMode && <label>作者码<input value={authorCode} maxLength={20} autoComplete="username" onChange={e => setAuthorCode(e.target.value)}/></label>}
             <label>密码（12–128 字符）<input type="password" value={password} minLength={12} maxLength={128} autoComplete={loginMode ? 'current-password' : 'new-password'} onChange={e => setPassword(e.target.value)}/></label>
@@ -198,10 +204,10 @@ export default function BeautySharePanel({ kind, sources, onReceive, onBusyChang
             <button onClick={authenticate}>{loginMode ? '登录' : '建立作者身份'}</button>
           </div> : <>
             <p>作者码：<strong className="beauty-share-code">{session.authorCode}</strong></p>
-            <div className="beauty-share-actions"><button onClick={() => run(async () => { await shareOrDownloadFile({ content: `糯米机美化作者码：${session.authorCode}\n请另行妥善保存您设置的密码。恢复身份需要作者码和密码；本文件不是美化分享码。`, fileName: '糯米机-作者码.txt', mimeType: 'text/plain' }); })}>保存作者码</button><button onClick={() => run(async () => { await beautyRequest('/auth/logout', { method: 'POST', token: session.token }); saveBeautySession(null);forgetBeautyAuthor();setRemembered(null);setRemember(false);setPassword('');setAuthorCode(''); setSession(null); setSubmissions([]); setLoaded(false); setMustSave(false); })}>退出登录</button></div>
+            <div className="beauty-share-actions"><button onClick={() => run(async () => { await shareOrDownloadFile({ content: `糯米机美化作者码：${session.authorCode}\n请另行妥善保存您设置的密码。恢复身份需要作者码和密码；本文件不是美化分享码。`, fileName: '糯米机-作者码.txt', mimeType: 'text/plain' }); })}>保存作者码</button><button onClick={() => run(async () => { await beautyRequest('/auth/logout', { method: 'POST', token: session.token }); saveBeautySession(null);forgetBeautyAuthor();setRemembered(null);setRemember(false);setPassword('');setAuthorCode(''); setSession(null); if (tab === 'inbox') setLoginMode(true); setSubmissions([]); setLoaded(false); setMustSave(false); })}>退出登录</button></div>
             <details className="beauty-author-backup"><summary>作者身份与搬家</summary>{remembered?.authorCode===session.authorCode?<><p>已记住作者身份。个人完整备份会携带作者码和密码，导入后可直接登录，原投稿绑定也会保留。</p><button onClick={()=>{forgetBeautyAuthor();setRemembered(null);setRemember(false);}}>不再随备份保存身份</button></>:<><p>首次开启请验证一次密码。仅写入本机及个人完整备份，不会出现在美化分享文件里。</p><label>验证作者密码<input type="password" maxLength={128} autoComplete="current-password" value={memoryPassword} onChange={e=>setMemoryPassword(e.target.value)}/></label><button onClick={()=>run(async()=>{validateBeautyPassword(memoryPassword);const next=await beautyRequest<BeautySession>('/auth/login',{method:'POST',body:{authorCode:session.authorCode,password:memoryPassword}});rememberBeautyAuthor(next.authorCode,memoryPassword);saveBeautySession(next);setSession(next);setRemembered(readRememberedBeautyAuthor());setMemoryPassword('');setNotice('已开启作者身份搬家');})}>验证并记住身份</button></>}</details>
             {mustSave && <label className="beauty-share-check"><input type="checkbox" checked={false} onChange={() => setMustSave(false)}/>我已妥善保存作者码和密码（清缓存或换设备后需要使用）</label>}
-            {tab === 'submit' ? <>
+            {tab === 'inbox' ? <BeautyRepoInbox key={session.token} token={session.token}/> : tab === 'submit' ? <>
               {editing && <><h3>更新：{editing.metadata.name}</h3><button onClick={() => { setEditing(null);setConfirmedWork(null);setSubmissionPreview(null); setMetadata(initialMetadata()); }}>取消更新，改为新投稿</button></>}
               <label>美化名<input value={metadata.name} maxLength={80} onChange={e => field('name', e.target.value)}/></label>
               <label>署名<input value={metadata.credit} maxLength={60} onChange={e => field('credit', e.target.value)}/></label>

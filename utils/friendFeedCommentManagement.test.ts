@@ -41,3 +41,28 @@ it('invalidates a browsing snapshot after an unrelated comment was edited',async
     await editFriendComment(postId,'n','改过的讨论','好看吗');
     expect(await landFriendFeedEmotionAction(char.id,{requestId:task.id,postId,kind:'comment',comment:'根据旧评论接话'})).toBe(false);
 });
+
+it.each(['existing','deleted','edited'])('skips an old generated reply (%s) but keeps a fresh NPC and its receipt',async mode=>{
+    if(mode==='deleted') await deleteFriendComment(postId,'c','我也看了');
+    if(mode==='edited') await editFriendComment(postId,'c','昨天看的','我也看了');
+    const before=(await readFriendFeed()).posts[0].comments;
+    const task=(await prepareFriendFeedEmotionTask(char.id,()=>0))!;
+    const landed=await landFriendFeedEmotionAction(char.id,{
+        requestId:task.id,postId,kind:'comment',comment:'我 也看了！',
+        npcActions:[{kind:'comment',postId,name:'夜场观众',text:'片尾的钢琴是谁弹的？'}],
+    });
+    expect(landed).toBe(true);
+    const comments=(await readFriendFeed()).posts[0].comments;
+    expect(comments.slice(before.length).map(c=>c.text)).toEqual(['片尾的钢琴是谁弹的？']);
+});
+
+it('skips the same long line across authors and drops only replies to the skipped batch item',async()=>{
+    const line='电影散场以后我还在回想最后那段对白';
+    const task=(await prepareFriendFeedEmotionTask(char.id,()=>0))!;
+    expect(await landFriendFeedEmotionAction(char.id,{requestId:task.id,postId,kind:'comment',comment:line,npcActions:[
+        {kind:'comment',postId,name:'晚场',text:line+'！'},
+        {kind:'comment',postId,name:'早餐',text:'你说哪一段？',replyToNpcIndex:0},
+        {kind:'comment',postId,name:'围观',text:'片尾还有彩蛋。'},
+    ]})).toBe(true);
+    expect((await readFriendFeed()).posts[0].comments.slice(2).map(c=>c.text)).toEqual([line,'片尾还有彩蛋。']);
+});

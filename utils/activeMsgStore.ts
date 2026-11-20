@@ -3,6 +3,7 @@ import {
   ActiveMsg2InboxMessage,
   Amsg2ExpiredNoticeRecord,
 } from '../types';
+import { AMSG_GLOBAL_CONFIG_EVENT } from './amsgGlobalGate';
 
 const DB_NAME = 'ActiveMsg';
 // MUST be kept in sync with worker/sw-keep-alive.ts:ACTIVE_MSG_DB_VERSION.
@@ -235,6 +236,30 @@ export const isInstantChatSwitchedOn = (
 ): boolean => config.instantChatEnabled ?? Boolean(config.initializedAt && config.workerUrl?.trim());
 
 export const ActiveMsgStore = {
+  /** Deployment recovery only; never stores the Cloudflare API Token. */
+  async getReplacementPlan<T>(accountId: string, scriptName: string): Promise<T | null> {
+    return getKv<T>(`replacement-plan:${JSON.stringify([accountId, scriptName])}`);
+  },
+  async saveReplacementPlan(accountId: string, scriptName: string, plan: unknown): Promise<void> {
+    const db = await openDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_KV, 'readwrite'), store = tx.objectStore(STORE_KV);
+      tx.oncomplete = () => resolve();
+      tx.onerror = tx.onabort = () => reject(tx.error || new Error('保存重配进度失败'));
+      store.put({ id: `replacement-plan:${JSON.stringify([accountId, scriptName])}`, value: plan });
+      if (plan) store.put({ id: 'replacement-hint', value: { accountId, scriptName } });
+      else {
+        const request = store.get('replacement-hint');
+        request.onsuccess = () => {
+          const hint = request.result?.value;
+          if (hint?.accountId === accountId && hint?.scriptName === scriptName) store.delete('replacement-hint');
+        };
+      }
+    });
+  },
+  async getReplacementHint(): Promise<{ accountId: string; scriptName: string } | null> {
+    return getKv('replacement-hint');
+  },
   /** 纯动作可以没有聊天产物，需单独保留完成回执，防止补收/ACK 重试重放动作。 */
   async hasAppliedActionResult(charId: string, messageId: string): Promise<boolean> {
     const val = await getKv<boolean | { savedAt?: number }>(`${ACTION_RESULT_APPLIED_PREFIX}${JSON.stringify([charId, messageId])}`);
@@ -336,6 +361,11 @@ export const ActiveMsgStore = {
       updatedAt: Date.now(),
     };
     await setKv(GLOBAL_CONFIG_KEY, next);
+    if (typeof window !== 'undefined' && typeof CustomEvent === 'function') {
+      try {
+        window.dispatchEvent(new CustomEvent(AMSG_GLOBAL_CONFIG_EVENT, { detail: next }));
+      } catch { /* 非浏览器环境 */ }
+    }
     return next;
   },
 
@@ -519,7 +549,9 @@ export const ActiveMsgStore = {
  * 读得到哪一份数据（数据按它分区），共享密钥是端点的门禁。少一样都连不成，所以要摘
  * 就得一起摘。
  */
-const BACKEND_CONNECTION_KEYS = ['workerUrl', 'serverToken', 'masterKey', 'userId', 'pushMode', 'thirdPartyPush'] as const;
+// 中转令牌绑着领取人的 Discord 账号和流量记录，分享出去的备份不能带；中转开关与本机总开关
+// 跟着一起摘，免得导入别人的角色备份时跳过数据边界提醒或悄悄关掉接收方自己的 2.0 连接。
+const BACKEND_CONNECTION_KEYS = ['enabled', 'workerUrl', 'serverToken', 'masterKey', 'userId', 'pushMode', 'thirdPartyPush', 'useRelay', 'relayToken'] as const;
 
 /** 这份备份里带着后端连接吗（带了的话，谁拿到这个文件谁就能连上那台 Worker）。 */
 export const backupHasBackendConnection = (
@@ -535,7 +567,7 @@ export const backupHasBackendConnection = (
  * **后端连接默认不带走。** 备份文件是会被分享出去的——发一份角色合集给朋友，就等于把
  * 自己那台 Worker 的钥匙一起发了：对方的 App 会静默连上去，把 ta 的 API 凭据和聊天上
  * 下文写进你的 D1，而 ta 手里的主密钥能解开你那台机器上的所有密文。换设备恢复自己的
- * 备份才需要这几样，那是用户明确知道的场景，让 ta 自己勾。
+ * 文件备份才需要这几样时由用户勾选；个人云备份调用方会显式开启，避免丢掉换机所需的身份。
  *
  * 程序分不清「自己的备份」和「别人的备份」：文件里没有可信的身份标记，换新设备时用户
  * id 本来就跟备份里的对不上——而那恰恰是最正当的自己人。能判断的只有拿着文件的人，
@@ -554,8 +586,8 @@ export async function exportAmsg2GlobalConfig(
     // 白跑一段、还在日志里留一条「主动消息配置」的假账。
     return Object.keys(stripped).length > 0 ? stripped : undefined;
   } catch (e) {
-    console.warn('[amsg2] 读取全局配置失败，备份将不含这一项', e);
-    return undefined;
+    console.warn('[amsg2] 读取全局配置失败，已停止备份', e);
+    throw new Error('读取主动消息 2.0 配置失败，本次备份已中止，请稍后重试。');
   }
 }
 
@@ -580,6 +612,9 @@ export async function importAmsg2GlobalConfig(
     anthropicMessagesSupported: _droppedAnthropic, anthropicMessagesWorkerUrl: _droppedAnthropicUrl, ...restorable } = config;
   if (!options.allowBackendConnection) {
     for (const key of BACKEND_CONNECTION_KEYS) delete restorable[key];
+  } else if (backupHasBackendConnection(config)) {
+    // 历史开启态备份里 enabled 常为缺省（JSON 不含该键）；本机若正处在暂停态，还原连接时需一并按备份恢复为开启。
+    restorable.enabled = restorable.enabled !== false;
   }
   if (Object.keys(restorable).length === 0) return;
   await ActiveMsgStore.saveGlobalConfig({ ...restorable, instantChatSupported: undefined, workerBundleVersion: undefined,

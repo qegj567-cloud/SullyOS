@@ -820,6 +820,7 @@ export function analyzeConversationEngagement(
     messages: Message[],
     charName?: string,
     userName?: string,
+    options?: { persist?: boolean },
 ): ConversationEngagementAnalysis {
     const result = advanceConversationEngagement(
         charId,
@@ -828,7 +829,8 @@ export function analyzeConversationEngagement(
         charName,
         userName,
     );
-    saveConversationEngagementState(result.state);
+    // 主动消息打包会被同步重试反复调用，只读取/推演同一份语境，不推进聊天状态。
+    if (options?.persist !== false) saveConversationEngagementState(result.state);
     return result.analysis;
 }
 

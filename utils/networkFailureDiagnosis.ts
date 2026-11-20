@@ -16,15 +16,37 @@
 // ⚠️ 探测必须用**未被拦截的原生 fetch**（拦截器里的 originalFetch），否则探测自己失败会
 // 再写一条日志，一条网络错误滚成一屏。
 
+import type { SystemLog, SystemLogContext } from '../types';
+import type { ApiCallMeta } from './apiCallLog';
+import {
+    buildIdentityErrorAdvice,
+    formatDiagnosticTimestamp,
+    identifyApplicationErrorSource,
+    identifyNetworkRequestSource,
+    readCompactBuildString,
+    redactRelayTokensInText,
+    sanitizeUrlForLog,
+    type ConfiguredEndpointSnapshot,
+    type NetworkRequestIdentity,
+} from './networkRequestSource';
+
 /** 连接失败的粗分类。用于选那句初判，也用于决定要不要做 no-cors 复检。 */
 export type FetchFailureKind =
-    | 'aborted'        // 调用方主动取消（页面/组件卸载、用户点停）
-    | 'timeout'        // AbortSignal.timeout() 到点掐的：连接挂住不返回，跟「被拒」是两回事
-    | 'offline'        // navigator.onLine === false，浏览器自己知道没网
-    | 'mixed-content'  // https 页面打 http 地址，被浏览器直接拦
-    | 'bad-url'        // 地址本身就不合法（拼错、少了协议头）
-    | 'blocked'        // 拿不到响应：代理/DNS/扩展/CORS 四选一，靠复检再分
+    | 'aborted'             // 调用方主动取消（页面/组件卸载、用户点停）
+    | 'timeout'             // AbortSignal.timeout() 到点掐的：连接挂住不返回，跟「被拒」是两回事
+    | 'stream-interrupted'  // 已收到 HTTP 响应头，在读取正文或 SSE 流式传输中途断开
+    | 'offline'             // navigator.onLine === false，浏览器自己知道没网
+    | 'mixed-content'       // https 页面打 http 地址，被浏览器直接拦
+    | 'bad-url'             // 地址本身就不合法（拼错、少了协议头）
+    | 'blocked'             // 拿不到响应：代理/DNS/扩展/CORS 四选一，靠复检再分
     | 'unknown';
+
+export interface ReceivedResponseHeadersInfo {
+    status: number;
+    headersMs: number;
+    contentType?: string;
+    streamUpgraded?: boolean;
+}
 
 export interface FetchFailureContext {
     url: string;
@@ -41,6 +63,20 @@ export interface FetchFailureContext {
     requestSummary?: FetchRequestSummary;
     /** 调用方显式标注的用途，例如“剧情见面生成”。 */
     requestPurpose?: string;
+    /** 调用方显式传入的完整归属（`__sullyMeta`）。 */
+    explicitMeta?: ApiCallMeta;
+    /** 发起时刻的前台界面快照（无显式归属时作参考）。 */
+    ambientMeta?: ApiCallMeta;
+    /** 识别出的具体功能来源（模块、转发链路、配置归属、模型名等）。 */
+    identity?: NetworkRequestIdentity;
+    /** 发起时与报错时的页面可见性，以及期间是否进入过后台/锁屏。 */
+    visibilityAtStart?: string;
+    visibilityAtEnd?: string;
+    backgroundedDuringRequest?: boolean;
+    /** 精简调用栈线索。 */
+    caller?: string;
+    /** 若请求在拿到响应头后、读取响应体/流中途才抛错，传入当时已收到的响应头信息。 */
+    responseHeadersReceived?: ReceivedResponseHeadersInfo;
     /** 同一 method + URL 在本页面生命周期内最近一次成功读完整个响应正文的记录。 */
     recentSuccessfulSameRequest?: { timestamp: number; status: number };
 }
@@ -133,8 +169,13 @@ export const classifyFetchFailure = (ctx: FetchFailureContext): FetchFailureKind
     // AbortSignal.timeout() 抛的是 TimeoutError（"signal timed out"），跟用户/组件主动
     // abort 抛的 AbortError 不是一回事：前者说明连接挂住了，必须继续往下查；后者到此为止。
     // 先按 TimeoutError 判，再判 AbortError——顺序反了会把超时吞进「主动取消」。
-    if (name === 'TimeoutError' || /timed?\s?out|timeout/i.test(message)) return 'timeout';
-    if (name === 'AbortError' || /aborted|abort/i.test(message)) return 'aborted';
+    const isTimeout = name === 'TimeoutError' || /timed?\s?out|timeout/i.test(message);
+    if (!isTimeout && (name === 'AbortError' || /aborted|abort/i.test(message))) return 'aborted';
+
+    // 已经拿到 HTTP 响应头、在读取正文或 SSE 流式传输中途抛错：说明 DNS、握手和 CORS
+    // 响应头都已经过了，不能再混进 blocked 让人去查 DNS 或跨域头。
+    if (ctx.responseHeadersReceived) return 'stream-interrupted';
+    if (isTimeout) return 'timeout';
 
     const target = parseTargetUrl(ctx.url);
     if (!target.ok) return 'bad-url';
@@ -159,6 +200,10 @@ const VERDICTS: Record<FetchFailureKind, { verdict: string; causes: string }> = 
         verdict: '请求超时：在截止时间前未完成。仅凭超时无法判断是连接、上游处理还是响应传输阶段。',
         causes: '代理/梯子接下了连接但上游是黑洞 · 这个域名没走代理、直连被拦截丢包 · 解析到的 IP 不可达 · 对方服务器无响应',
     },
+    'stream-interrupted': {
+        verdict: '已收到服务端响应头，但在读取响应正文或流式传输途中连接断开（DNS、跨域头和初始握手均已通过）。',
+        causes: '上游生成耗时过长被网关/中转空闲掐断 · 流式传输中途网络或代理抖动 · 请求期间切后台/锁屏被系统中断连接 · 上游提前关闭了流',
+    },
     offline: {
         verdict: '浏览器自己报告当前离线，请求根本没发出去。',
         causes: '网络断了 · 梯子刚切换/掉线 · 设备进了飞行模式',
@@ -179,6 +224,48 @@ const VERDICTS: Record<FetchFailureKind, { verdict: string; causes: string }> = 
         verdict: '请求失败，且不符合已知的几种失败形态。',
         causes: '看下面的错误原文',
     },
+};
+
+const formatVisibilityLabel = (state?: string): string => {
+    if (state === 'hidden') return '后台/锁屏(hidden)';
+    if (state === 'visible') return '前台(visible)';
+    return state || '未知';
+};
+
+/**
+ * 生成写进 `SystemLog.message` 的单行摘要：不用点开 detail 也能一眼看出「哪个接口、什么动作、为什么失败」。
+ */
+export const formatFetchFailureHeadline = (ctx: FetchFailureContext): string => {
+    const { message } = readError(ctx.error);
+    const kind = classifyFetchFailure(ctx);
+    const method = (ctx.method || 'GET').toUpperCase();
+    const safeUrl = sanitizeUrlForLog(ctx.url);
+    const parsed = parseTargetUrl(safeUrl);
+    let compactTarget = safeUrl;
+    if (parsed.ok) {
+        try {
+            const u = new URL(parsed.href);
+            compactTarget = ctx.identity?.via === 'amsg-relay' && ctx.identity.upstreamTarget
+                ? `中转→${ctx.identity.upstreamTarget}${u.pathname.replace(/^\/t\/<redacted>\/[^/]+/, '') || '/'}`
+                : `${u.host}${u.pathname}`;
+        } catch {
+            compactTarget = parsed.host || safeUrl;
+        }
+    }
+    const kindLabel: Record<FetchFailureKind, string> = {
+        aborted: '已取消',
+        timeout: '超时',
+        'stream-interrupted': `流式读取中断(HTTP ${ctx.responseHeadersReceived?.status ?? 200})`,
+        offline: '当前离线',
+        'mixed-content': '混合内容拦截',
+        'bad-url': '地址格式错误',
+        blocked: '连接/跨域失败',
+        unknown: '请求异常',
+    };
+    const dur = typeof ctx.durationMs === 'number' ? ` · ${ctx.durationMs}ms` : '';
+    const bgTag = ctx.backgroundedDuringRequest && kind !== 'aborted' ? ' · 期间切过后台' : '';
+    const rawMsg = redactRelayTokensInText(message || 'Fetch Failed');
+    return `${method} ${compactTarget} ${kindLabel[kind]}: ${rawMsg}${dur}${bgTag}`;
 };
 
 /**
@@ -260,35 +347,91 @@ export const buildFetchFailureDetail = (
     const { name, message } = readError(ctx.error);
     const kind = classifyFetchFailure(ctx);
     const target = parseTargetUrl(ctx.url);
+    const safeUrl = sanitizeUrlForLog(ctx.url);
     const pageOrigin = ctx.pageOrigin ?? (typeof location !== 'undefined' ? location.origin : '');
     const online = ctx.online ?? (typeof navigator !== 'undefined' ? navigator.onLine : true);
     const method = (ctx.method || 'GET').toUpperCase();
+    const id = ctx.identity;
 
     const lines: string[] = [];
-    lines.push(`URL: ${ctx.url}`);
+    if (id?.source) lines.push(`模块来源: ${id.source}`);
+    if (id?.operation && id.operation !== id.source) lines.push(`具体操作: ${id.operation}`);
+    if (id?.configSource) lines.push(`配置归属: ${id.configSource}`);
+    if (id?.via && id.via !== 'direct' && id.via !== 'same-origin') {
+        const viaLabel = id.via === 'amsg-relay'
+            ? '主动消息 2.0 大陆中转 (amsg-relay)'
+            : id.via === 'proxy-worker'
+                ? 'SullyOS 网络代理 Worker'
+                : 'MCP 代理转发';
+        lines.push(`转发链路: ${viaLabel}${id.upstreamTarget ? ` → ${id.upstreamTarget}` : ''}`);
+    }
+    if (id?.model) lines.push(`请求模型: ${id.model}`);
+
+    lines.push(`URL: ${safeUrl}`);
     const durationText = typeof ctx.durationMs === 'number' ? ` · 失败于 ${ctx.durationMs}ms` : '';
     lines.push(`请求: ${method}${durationText}`);
-    lines.push(`错误: ${name}: ${message}`);
+    lines.push(`错误: ${name}: ${redactRelayTokensInText(message)}`);
+    if (ctx.responseHeadersReceived) {
+        const hdr = ctx.responseHeadersReceived;
+        const ctText = hdr.contentType ? ` (${hdr.contentType})` : '';
+        const upgText = hdr.streamUpgraded ? ' · 透明流式升级传输' : '';
+        lines.push(`响应阶段: 已于 ${hdr.headersMs}ms 收到 HTTP ${hdr.status} 响应头${ctText}${upgText}，读取响应正文途中中断`);
+    }
     if (target.ok) {
         const crossOrigin = pageOrigin && target.origin !== pageOrigin;
         lines.push(`目标域名: ${target.host}${crossOrigin ? '（跨域请求，受 CORS 约束）' : '（同源）'}`);
     }
     if (pageOrigin) lines.push(`本页来源: ${pageOrigin}`);
     lines.push(`浏览器联网状态: ${online === false ? '离线' : '在线'}`);
-    if (ctx.requestPurpose) lines.push(`调用用途: ${ctx.requestPurpose}`);
+
+    const wasBackgrounded = Boolean(
+        ctx.backgroundedDuringRequest
+        || ctx.visibilityAtStart === 'hidden'
+        || ctx.visibilityAtEnd === 'hidden',
+    );
+    if (wasBackgrounded) {
+        const visRange = (ctx.visibilityAtStart || ctx.visibilityAtEnd)
+            ? `（发起时${formatVisibilityLabel(ctx.visibilityAtStart)} → 结束时${formatVisibilityLabel(ctx.visibilityAtEnd)}）`
+            : '';
+        lines.push(`页面状态: 请求期间进入过后台/锁屏${visRange} → 移动端浏览器（尤其 iOS Safari/PWA）常会在后台挂起或掐断进行中的网络连接`);
+    } else if (ctx.visibilityAtStart || ctx.visibilityAtEnd) {
+        lines.push(`页面状态: 全程前台 (${ctx.visibilityAtStart || 'visible'} → ${ctx.visibilityAtEnd || 'visible'})`);
+    }
+
+    const purpose = ctx.requestPurpose || ctx.explicitMeta?.purpose;
+    if (purpose) lines.push(`调用用途: ${purpose}`);
+    if (ctx.explicitMeta && (ctx.explicitMeta.appName || ctx.explicitMeta.charName)) {
+        const parts = [
+            ctx.explicitMeta.appName ? `App=${ctx.explicitMeta.appName}` : '',
+            ctx.explicitMeta.charName ? `角色=${ctx.explicitMeta.charName}` : '',
+        ].filter(Boolean);
+        lines.push(`调用归属: ${parts.join(' · ')}（调用点显式标记）`);
+    } else if (ctx.ambientMeta && (ctx.ambientMeta.appName || ctx.ambientMeta.charName)) {
+        const parts = [
+            ctx.ambientMeta.appName ? `界面=${ctx.ambientMeta.appName}` : '',
+            ctx.ambientMeta.charName ? `当前角色=${ctx.ambientMeta.charName}` : '',
+        ].filter(Boolean);
+        lines.push(`当时前台状态: ${parts.join(' · ')}（未显式传归属，可能是后台自动任务）`);
+    }
+    if (ctx.caller) {
+        lines.push(`调用入口: ${ctx.caller}`);
+    }
+
     if (ctx.requestSummary) {
         const requestParts = [`${ctx.requestSummary.bodyBytes} bytes`];
         if (typeof ctx.requestSummary.messageCount === 'number') requestParts.push(`messages=${ctx.requestSummary.messageCount}`);
         if (typeof ctx.requestSummary.contentChars === 'number') requestParts.push(`消息内容=${ctx.requestSummary.contentChars} 字符`);
-        if (ctx.requestSummary.lastMessageRole) requestParts.push(`末条 role=${ctx.requestSummary.lastMessageRole}`);
+        if (typeof ctx.requestSummary.lastMessageRole) requestParts.push(`末条 role=${ctx.requestSummary.lastMessageRole}`);
         if (typeof ctx.requestSummary.stream === 'boolean') requestParts.push(`stream=${ctx.requestSummary.stream}`);
         lines.push(`请求体摘要: ${requestParts.join(' · ')}`);
         if (ctx.requestSummary.optionalParams?.length) {
             lines.push(`额外参数: ${ctx.requestSummary.optionalParams.join(', ')}`);
         }
     }
-    const timing = readResourceTimingHint(target.href, { startedAt: opts.startedAt, perf: opts.perf });
-    if (timing) lines.push(timing);
+    if (!ctx.responseHeadersReceived) {
+        const timing = readResourceTimingHint(target.href, { startedAt: opts.startedAt, perf: opts.perf });
+        if (timing) lines.push(timing);
+    }
     const stall = readStallHint(ctx.durationMs, kind);
     if (stall) lines.push(stall);
     const now = opts.now ?? Date.now();
@@ -301,14 +444,20 @@ export const buildFetchFailureDetail = (
         const ageSeconds = Math.max(1, Math.round(successAgeMs / 1000));
         lines.push(`同接口对照: ${ageSeconds} 秒前，同一个 ${method} 已成功返回 HTTP ${recentSuccess.status}`);
         lines.push('初判: 同一接口刚刚成功过，基本排除域名整体不可达、DNS 错误或代理把整个域名拦掉；这是当前请求/响应特有的失败。');
-        if (ctx.requestPurpose === '剧情见面生成') {
+        if (purpose === '剧情见面生成') {
             lines.push('更可能原因: 剧情上下文或请求体更大 · 服务商不接受末条 assistant 预填充或额外参数 · 上游生成/流式传输中途断开 · 上游错误页漏了 CORS 响应头');
         } else {
             lines.push('更可能原因: 当前请求体或响应与刚才成功的请求不同 · 上游限流或临时故障 · 生成/传输中途断开 · 上游错误页漏了 CORS 响应头');
         }
+    } else if (kind === 'blocked' && wasBackgrounded) {
+        lines.push('初判: 请求期间页面进入过后台或锁屏，移动端浏览器大概率直接挂起并切断了这条连接；其次才是代理/跨域问题。');
+        lines.push(`可能原因: 切后台/锁屏导致浏览器中断连接（优先保持前台重试一次） · ${VERDICTS.blocked.causes}`);
     } else {
         lines.push(`初判: ${VERDICTS[kind].verdict}`);
         lines.push(`可能原因: ${VERDICTS[kind].causes}`);
+    }
+    if (id?.impactHint) {
+        lines.push(`影响范围: ${id.impactHint}`);
     }
     return lines.join('\n');
 };
@@ -399,3 +548,420 @@ export const NETWORK_SELF_CHECK_STEPS: string[] = [
     '换一个浏览器或换手机热点各试一次，能定位到是「这台设备」还是「这个网络」',
     '如果只有部分功能报错，去设置里看对应的服务地址是不是填错了（少 https://、多空格、多结尾斜杠）',
 ];
+
+/**
+ * 终端顶部是否展示「网络连接失败？按这个顺序自查」折叠卡片：
+ * 只在确实存在连接层失败（不含 HTTP 4xx/5xx 业务报错与主动取消）时展示。
+ * 兼容旧结构（没有 `context.failureKind` 时回退认 `source === 'Network'`）。
+ */
+export const shouldShowNetworkSelfCheck = (logs: SystemLog[]): boolean => logs.some((log) => {
+    if (log.type !== 'network') return false;
+    const kind = log.context?.failureKind;
+    if (kind) return kind !== 'http-status' && kind !== 'aborted';
+    return log.source === 'Network';
+});
+
+const RELAY_ERROR_DESCRIPTIONS: Record<string, string> = {
+    unofficial_client: '当前来源不是官方网址或官方签名 APK，官方中转拒绝放行（403）',
+    invalid_token: '中转令牌无效、超过 30 天未用或已在群里重置，请重新复制粘贴令牌（401）',
+    not_relayable: '请求目标或接口路径不在主动消息 2.0 中转白名单内',
+    rate_limited: '触发中转请求频率限制，请稍后重试（429）',
+    quota_exceeded: '今日经中转流量已超过单账号 1 GB 上限（429）',
+    upstream_unreachable: '中转服务器连不上你的 Cloudflare Worker，请检查 Worker 地址是否正确（502）',
+};
+
+/**
+ * 判断哪些非 2xx HTTP 响应应当主动写进 `systemLogs`（点亮顶部 SYSTEM ERROR）：
+ * - 对话模型（OpenAI `/chat/completions`、Anthropic `/messages`、`/models`）、Embedding、Rerank：任何非 2xx 都是明确报错；
+ * - 主动消息 2.0 大陆中转明确返回 `X-Amsg-Relay-Error` 或网关级错误（401/403/429/5xx）：用户很难从表象分辨是中转还是 Worker 拒了，直接记上；
+ * - 其它接口（如 WebDAV PROPFIND 404 探目录、GitHub 404 探文件、MiniMax 本地代理 404 回退）属于正常控制流，不误报。
+ */
+export const shouldLogHttpStatusError = (input: {
+    status: number;
+    identity: NetworkRequestIdentity;
+    relayErrorCode?: string;
+}): boolean => {
+    const { category, via } = input.identity;
+    if (category === 'llm' || category === 'embedding' || category === 'rerank') return true;
+    if (input.relayErrorCode) return true;
+    if (via === 'amsg-relay' && (input.status === 401 || input.status === 403 || input.status === 429 || input.status >= 500)) {
+        return true;
+    }
+    return false;
+};
+
+const extractShortHttpErrorMessage = (responseText: string | undefined, status: number): string => {
+    const trimmed = (responseText || '').trim();
+    if (!trimmed) return `HTTP ${status}`;
+    if (trimmed.startsWith('<')) {
+        const titleMatch = trimmed.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+        const title = titleMatch?.[1]?.replace(/\s+/g, ' ').trim();
+        return title ? `HTML 错误页 (${title.slice(0, 80)})` : `HTML 错误页`;
+    }
+    if (trimmed.startsWith('{')) {
+        try {
+            const parsed = JSON.parse(trimmed);
+            const err = parsed?.error;
+            if (typeof err === 'string' && err.trim()) return err.trim().slice(0, 140);
+            if (err && typeof err === 'object') {
+                const msg = typeof err.message === 'string' ? err.message.trim() : '';
+                const code = err.code != null ? String(err.code).trim() : '';
+                const type = typeof err.type === 'string' ? err.type.trim() : '';
+                const tag = [code, type && type !== code ? type : ''].filter(Boolean).join('/');
+                if (msg) return `${msg}${tag ? ` [${tag}]` : ''}`.slice(0, 160);
+                if (tag) return tag;
+            }
+            const top = [parsed?.message, parsed?.msg, parsed?.detail]
+                .find(v => typeof v === 'string' && v.trim()) as string | undefined;
+            if (top) return top.trim().slice(0, 140);
+        } catch { /* 非标准 JSON 原样截断 */ }
+    }
+    return trimmed.replace(/\s+/g, ' ').slice(0, 140);
+};
+
+const buildAttributionContext = (
+    explicitMeta?: ApiCallMeta,
+    ambientMeta?: ApiCallMeta,
+): Pick<SystemLogContext, 'attributionMode' | 'appName' | 'charName' | 'purpose'> => {
+    const hasExplicit = Boolean(
+        explicitMeta && Object.values(explicitMeta).some(v => v != null && v !== ''),
+    );
+    if (hasExplicit && explicitMeta) {
+        return {
+            attributionMode: 'explicit',
+            ...(explicitMeta.appName ? { appName: explicitMeta.appName } : {}),
+            ...(explicitMeta.charName ? { charName: explicitMeta.charName } : {}),
+            ...(explicitMeta.purpose ? { purpose: explicitMeta.purpose } : {}),
+        };
+    }
+    if (ambientMeta && (ambientMeta.appName || ambientMeta.charName)) {
+        return {
+            attributionMode: 'ambient',
+            ...(ambientMeta.appName ? { appName: ambientMeta.appName } : {}),
+            ...(ambientMeta.charName ? { charName: ambientMeta.charName } : {}),
+        };
+    }
+    return {};
+};
+
+export interface BuildFetchFailureSystemLogInput {
+    identity?: NetworkRequestIdentity;
+    id?: string;
+    timestamp?: number;
+    url: string;
+    method?: string;
+    headers?: HeadersInit;
+    body?: unknown;
+    durationMs?: number;
+    error: unknown;
+    startedAtPerf: number;
+    explicitMeta?: ApiCallMeta;
+    ambientMeta?: ApiCallMeta;
+    visibilityAtStart?: string;
+    visibilityAtEnd?: string;
+    backgroundedDuringRequest?: boolean;
+    caller?: string;
+    responseHeadersReceived?: ReceivedResponseHeadersInfo;
+    recentSuccessfulSameRequest?: { timestamp: number; status: number };
+    advice?: { title: string; action: string };
+    endpoints?: ConfiguredEndpointSnapshot;
+    pageOrigin?: string;
+    pageProtocol?: string;
+    online?: boolean;
+    perf?: { getEntriesByName?: (name: string, type?: string) => any[] };
+}
+
+export const buildFetchFailureSystemLog = (input: BuildFetchFailureSystemLogInput): {
+    log: SystemLog;
+    kind: FetchFailureKind;
+    identity: NetworkRequestIdentity;
+} => {
+    const ts = input.timestamp ?? Date.now();
+    const id = input.id || `log-${ts}-${Math.random().toString(36).slice(2, 8)}`;
+    const method = (input.method || 'GET').toUpperCase();
+    const identity = input.identity ?? identifyNetworkRequestSource({
+        url: input.url,
+        method,
+        headers: input.headers,
+        body: input.body,
+        explicitMeta: input.explicitMeta,
+        ambientMeta: input.ambientMeta,
+        pageOrigin: input.pageOrigin,
+        endpoints: input.endpoints,
+    });
+
+    const wasBackgrounded = Boolean(
+        input.backgroundedDuringRequest
+        || input.visibilityAtStart === 'hidden'
+        || input.visibilityAtEnd === 'hidden',
+    );
+    const diagCtx: FetchFailureContext = {
+        url: input.url,
+        method,
+        durationMs: input.durationMs,
+        error: input.error,
+        online: input.online,
+        pageOrigin: input.pageOrigin,
+        pageProtocol: input.pageProtocol,
+        requestSummary: summarizeFetchRequestBody(input.body),
+        requestPurpose: input.explicitMeta?.purpose,
+        explicitMeta: input.explicitMeta,
+        ambientMeta: input.ambientMeta,
+        identity,
+        visibilityAtStart: input.visibilityAtStart,
+        visibilityAtEnd: input.visibilityAtEnd,
+        backgroundedDuringRequest: wasBackgrounded,
+        caller: input.caller,
+        responseHeadersReceived: input.responseHeadersReceived,
+        recentSuccessfulSameRequest: input.recentSuccessfulSameRequest,
+    };
+
+    const kind = classifyFetchFailure(diagCtx);
+    const safeUrl = sanitizeUrlForLog(input.url);
+    const parsedTarget = parseTargetUrl(safeUrl);
+    const detail = buildFetchFailureDetail(diagCtx, {
+        startedAt: input.startedAtPerf,
+        perf: input.perf,
+        now: ts,
+    });
+
+    const context: SystemLogContext = {
+        build: readCompactBuildString(),
+        category: identity.category,
+        failureKind: kind,
+        ...(identity.operation ? { operation: identity.operation } : {}),
+        method,
+        url: safeUrl,
+        ...(parsedTarget.host ? { host: parsedTarget.host } : {}),
+        via: identity.via,
+        ...(identity.upstreamTarget ? { upstreamTarget: identity.upstreamTarget } : {}),
+        ...(identity.configSource ? { configSource: identity.configSource } : {}),
+        ...(identity.model ? { model: identity.model } : {}),
+        ...(input.responseHeadersReceived ? {
+            httpStatus: input.responseHeadersReceived.status,
+            headersMs: input.responseHeadersReceived.headersMs,
+        } : {}),
+        ...(typeof input.durationMs === 'number' ? { durationMs: input.durationMs } : {}),
+        ...buildAttributionContext(input.explicitMeta, input.ambientMeta),
+        ...(input.visibilityAtStart || input.visibilityAtEnd
+            ? { visibility: `${input.visibilityAtStart || 'unknown'} -> ${input.visibilityAtEnd || 'unknown'}` }
+            : {}),
+        backgroundedDuringRequest: wasBackgrounded,
+        ...(input.caller ? { caller: input.caller } : {}),
+    };
+
+    const resolvedAdvice = input.advice ?? buildIdentityErrorAdvice({
+        identity,
+        failureKind: kind,
+        backgroundedDuringRequest: wasBackgrounded,
+    });
+
+    return {
+        kind,
+        identity,
+        log: {
+            ...(resolvedAdvice ? { advice: resolvedAdvice } : {}),
+            id,
+            timestamp: ts,
+            time: formatDiagnosticTimestamp(ts),
+            type: 'network',
+            source: identity.source,
+            message: formatFetchFailureHeadline(diagCtx),
+            context,
+            detail,
+        },
+    };
+};
+
+export interface BuildHttpErrorSystemLogInput {
+    id?: string;
+    timestamp?: number;
+    url: string;
+    method?: string;
+    headers?: HeadersInit;
+    body?: unknown;
+    status: number;
+    responseText?: string;
+    unreadableBody?: boolean;
+    relayErrorCode?: string;
+    durationMs?: number;
+    explicitMeta?: ApiCallMeta;
+    ambientMeta?: ApiCallMeta;
+    caller?: string;
+    identity?: NetworkRequestIdentity;
+    advice?: { title: string; action: string };
+    endpoints?: ConfiguredEndpointSnapshot;
+    pageOrigin?: string;
+}
+
+export const buildHttpErrorSystemLog = (input: BuildHttpErrorSystemLogInput): SystemLog => {
+    const ts = input.timestamp ?? Date.now();
+    const id = input.id || `log-${ts}-${Math.random().toString(36).slice(2, 8)}`;
+    const method = (input.method || 'GET').toUpperCase();
+    const identity = input.identity ?? identifyNetworkRequestSource({
+        url: input.url,
+        method,
+        headers: input.headers,
+        body: input.body,
+        explicitMeta: input.explicitMeta,
+        ambientMeta: input.ambientMeta,
+        pageOrigin: input.pageOrigin,
+        endpoints: input.endpoints,
+    });
+    const safeUrl = sanitizeUrlForLog(input.url);
+    const parsedTarget = parseTargetUrl(safeUrl);
+    const displayHost = identity.via === 'amsg-relay' && identity.upstreamTarget
+        ? `中转→${identity.upstreamTarget}`
+        : (parsedTarget.host || safeUrl);
+
+    const relayNote = input.relayErrorCode
+        ? (RELAY_ERROR_DESCRIPTIONS[input.relayErrorCode] || `中转错误码 ${input.relayErrorCode}`)
+        : '';
+    const shortErr = input.unreadableBody
+        ? '响应体无法读取'
+        : redactRelayTokensInText(relayNote || extractShortHttpErrorMessage(input.responseText, input.status));
+    const modelPart = identity.model ? ` · ${identity.model}` : '';
+    const durPart = typeof input.durationMs === 'number' ? ` · ${input.durationMs}ms` : '';
+
+    const detailLines: string[] = [];
+    detailLines.push(`模块来源: ${identity.source}`);
+    if (identity.operation && identity.operation !== identity.source) detailLines.push(`具体操作: ${identity.operation}`);
+    if (identity.configSource) detailLines.push(`配置归属: ${identity.configSource}`);
+    detailLines.push(`URL: ${safeUrl}`);
+    detailLines.push(`请求: ${method} → HTTP ${input.status}${durPart}`);
+    if (input.relayErrorCode) {
+        detailLines.push(`中转错误码: ${input.relayErrorCode}（${relayNote}）`);
+    }
+    if (input.explicitMeta && (input.explicitMeta.appName || input.explicitMeta.charName || input.explicitMeta.purpose)) {
+        const parts = [
+            input.explicitMeta.appName ? `App=${input.explicitMeta.appName}` : '',
+            input.explicitMeta.purpose ? `用途=${input.explicitMeta.purpose}` : '',
+            input.explicitMeta.charName ? `角色=${input.explicitMeta.charName}` : '',
+        ].filter(Boolean);
+        detailLines.push(`调用归属: ${parts.join(' · ')}（调用点显式标记）`);
+    } else if (input.ambientMeta && (input.ambientMeta.appName || input.ambientMeta.charName)) {
+        const parts = [
+            input.ambientMeta.appName ? `界面=${input.ambientMeta.appName}` : '',
+            input.ambientMeta.charName ? `当前角色=${input.ambientMeta.charName}` : '',
+        ].filter(Boolean);
+        detailLines.push(`当时前台状态: ${parts.join(' · ')}（未显式传归属，可能是后台自动任务）`);
+    }
+    if (input.caller) detailLines.push(`调用入口: ${input.caller}`);
+
+    if (!input.unreadableBody && input.responseText !== undefined) {
+        detailLines.push(`Response: ${redactRelayTokensInText(input.responseText).slice(0, 600)}`);
+    }
+
+    if (typeof input.body === 'string' && input.body.trim().startsWith('{')) {
+        try {
+            const j = JSON.parse(input.body);
+            if (Array.isArray(j.messages)) {
+                const toolNames = Array.isArray(j.tools) ? j.tools.map((t: any) => t?.function?.name || t?.name).filter(Boolean) : [];
+                const roles = j.messages.map((m: any) => m.role + (m.tool_calls ? '(tool_calls)' : '')).join(',');
+                detailLines.push(
+                    `--- Request ---\nmodel: ${j.model}\ntemperature: ${j.temperature} | top_p: ${j.top_p} | reasoning_effort: ${j.reasoning_effort} | thinking: ${j.thinking ? 'on' : 'off'}\ntools(${toolNames.length}): ${toolNames.join(', ')}\nmessages(${j.messages.length}) roles: ${roles}`,
+                );
+            } else if (j.model || Array.isArray(j.input)) {
+                const batchLen = Array.isArray(j.input) ? j.input.length : (typeof j.input === 'string' ? 1 : undefined);
+                detailLines.push(
+                    `--- Request ---\nmodel: ${j.model || 'unknown'}${batchLen != null ? ` | inputCount: ${batchLen}` : ''}${j.dimensions ? ` | dimensions: ${j.dimensions}` : ''}`,
+                );
+            }
+        } catch { /* ignore */ }
+    }
+
+    if (identity.impactHint) {
+        detailLines.push(`影响范围: ${identity.impactHint}`);
+    }
+
+    const context: SystemLogContext = {
+        build: readCompactBuildString(),
+        category: identity.category,
+        failureKind: 'http-status',
+        httpStatus: input.status,
+        ...(identity.operation ? { operation: identity.operation } : {}),
+        method,
+        url: safeUrl,
+        ...(parsedTarget.host ? { host: parsedTarget.host } : {}),
+        via: identity.via,
+        ...(identity.upstreamTarget ? { upstreamTarget: identity.upstreamTarget } : {}),
+        ...(identity.configSource ? { configSource: identity.configSource } : {}),
+        ...(identity.model ? { model: identity.model } : {}),
+        ...(typeof input.durationMs === 'number' ? { durationMs: input.durationMs } : {}),
+        ...buildAttributionContext(input.explicitMeta, input.ambientMeta),
+        ...(input.caller ? { caller: input.caller } : {}),
+    };
+
+    const resolvedAdvice = input.advice
+        ?? (input.relayErrorCode && relayNote
+            ? { title: `${identity.source} 请求被拒`, action: relayNote }
+            : buildIdentityErrorAdvice({ identity, failureKind: 'http-status', status: input.status }));
+
+    return {
+        ...(resolvedAdvice ? { advice: resolvedAdvice } : {}),
+        id,
+        timestamp: ts,
+        time: formatDiagnosticTimestamp(ts),
+        type: 'network',
+        source: identity.source,
+        message: `HTTP ${input.status} (${displayHost}${modelPart}): ${shortErr}${durPart}`,
+        context,
+        detail: detailLines.join('\n'),
+    };
+};
+
+/** A caller with known attribution can supply a safe message for the self-check and its export. */
+export class ApplicationErrorReport {
+    constructor(
+        readonly source: string,
+        readonly advice: NonNullable<SystemLog['advice']>,
+        readonly context: SystemLogContext,
+    ) {}
+    toString() { return this.advice.title + '\n' + this.advice.action; }
+}
+
+export const buildConsoleErrorSystemLog = (input: {
+    id?: string;
+    timestamp?: number;
+    message: string;
+    stacks?: string;
+    caller?: string;
+    ambientMeta?: ApiCallMeta;
+    report?: ApplicationErrorReport;
+    advice?: { title: string; action: string };
+}): SystemLog => {
+    const ts = input.timestamp ?? Date.now();
+    const id = input.id || `log-${ts}-${Math.random().toString(36).slice(2, 8)}`;
+    const source = input.report?.source ?? identifyApplicationErrorSource(input.message, input.ambientMeta, input.caller);
+    const detailParts: string[] = [];
+    if (!input.report && input.ambientMeta && (input.ambientMeta.appName || input.ambientMeta.charName)) {
+        const where = [
+            input.ambientMeta.appName ? `界面=${input.ambientMeta.appName}` : '',
+            input.ambientMeta.charName ? `当前角色=${input.ambientMeta.charName}` : '',
+        ].filter(Boolean).join(' · ');
+        detailParts.push(`当时前台状态: ${where}`);
+    }
+    if (input.caller) {
+        detailParts.push(`调用入口: ${input.caller}`);
+    }
+    const safeMessage = redactRelayTokensInText(input.message);
+    const safeStacks = input.stacks ? redactRelayTokensInText(input.stacks) : undefined;
+    detailParts.push(safeStacks || safeMessage);
+
+    return {
+        advice: input.report?.advice ?? input.advice,
+        id,
+        timestamp: ts,
+        time: formatDiagnosticTimestamp(ts),
+        type: 'error',
+        source,
+        message: safeMessage.slice(0, 160),
+        context: {
+            build: readCompactBuildString(),
+            failureKind: 'console-error',
+            ...(input.report?.context ?? buildAttributionContext(undefined, input.ambientMeta)),
+            ...(input.caller ? { caller: input.caller } : {}),
+        },
+        detail: detailParts.join('\n'),
+    };
+};

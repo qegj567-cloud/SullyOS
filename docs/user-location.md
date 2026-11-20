@@ -4,19 +4,21 @@
 
 用户选用的地图 API 必须保持：成功时使用该服务返回的地址，失败时在位置预览显示服务名称与固定原因；不静默切换免费地区服务或另一家 API，不用旧地址掩盖当前失败。设备取坐标的普通精度重试不改变所选地图服务，取得新坐标后仍查询该 API。隐藏地点规则优先。此约定由 `userLocation.test.ts` 的 Key／额度／网络／空响应失败及旧地址不兜底案例验证。
 
+选择定位方式后，下方仅显示该服务的 Key 设置。感知调用详细设定可关闭地址缓存，或选 10 分钟、30 分钟、3 小时、6 小时、12 小时。聊天末条用户消息的大头针显示本轮定位进度与脱敏位置，可在详情或设定中关闭。手动重取会跳过地址缓存，结果只在内存暂存，供同一角色下一轮聊天使用一次。
+
 定位方式新增「全球 · 街道地址，Geoapify 免费 Key」，原有「免费 · 全球大概地区」与高德保留。海外用户无需开 Google 结算账户：在 [Geoapify MyProjects](https://myprojects.geoapify.com/) 注册、创建项目、复制 API Keys 中自动生成的 Key，再粘贴到「全球街道 · Geoapify」页并保存。免费计划无需信用卡，额度与价格以 [官方页面](https://www.geoapify.com/pricing/) 为准。Key 可按网站 Origin 限制，见 [Key 设置说明](https://myprojects.geoapify.com/help/api-keys/)；使用自己的账户额度，不内置共用 Key。
 
 街道详情取决于当地地图数据，不承诺识别所有商店或楼层。免 Key 的 BigDataCloud 仍适合只需国家、城市、区镇的用户。公共 Nominatim 不作为应用默认服务，其限额按全部用户流量合计，见 [使用政策](https://operations.osmfoundation.org/policies/nominatim/)。
 
 Geoapify 同样先检查设备定位与隐藏地点；命中隐私圈或边界精度不确定时零地图请求。圈外设备直连固定 `https://api.geoapify.com/v1/geocode/reverse`，使用 WGS84、CORS、`credentials: omit`、`cache: no-store` 与 AbortSignal，不用 Worker／代理、不加载第三方地图脚本。配置修改、切后台或超时取消；失败只输出固定错误，未授权／额度不足不回退其他服务。
 
-响应仅选国家、省市、区镇、街道、门牌及地点名称文字；不使用 `formatted` 兜底，不读取经纬度、邮编、Plus Code、电话、place_id 或完整原始数据。实际查到的 Geoapify 地址在位置提示词中标明来源，预览同一信息框显示 Geoapify 与 OpenStreetMap 链接；隐藏地点别名不标成地图查询结果。`geoapifyKey` 与隐私配置同存 `os_user_location_privacy_v1`，不进角色卡、备份、云端或 localStorage 镜像。
+响应仅选国家、省市、区镇、街道、门牌及地点名称文字；不使用 `formatted` 兜底，不读取经纬度、邮编、Plus Code、电话、place_id 或完整原始数据。实际查到的 Geoapify 地址在位置提示词中标明来源，预览同一信息框显示 Geoapify 与 OpenStreetMap 链接；隐藏地点别名不标成地图查询结果。`geoapifyKey` 与隐私配置同存 `os_user_location_privacy_v1`，随个人备份迁移，不进角色卡、Worker 状态或 localStorage 镜像。
 
-`isUserLocationLookupUrl` 对 Geoapify 固定接口直接透传原 fetch，避免坐标及 Key 进入 API 抓取、请求比较缓存和失败诊断。短缓存仍只在内存保留五分钟，复用前必须重新取定位并检查隐藏地点。没有新增定位埋点、后台轮询或轨迹。
+`isUserLocationLookupUrl` 对 Geoapify 固定接口直接透传原 fetch，避免坐标及 Key 进入 API 抓取、请求比较缓存和失败诊断。短缓存仍只在内存保留所选时长（默认十分钟），复用前必须重新取定位并检查隐藏地点。没有新增定位埋点、后台轮询或轨迹。
 
 验证：`geoapifyUserLocation.test.ts` 检查直连接口与响应过滤；`userLocation.test.ts` 覆盖海外地址、圈内及边界零请求、服务切换、新增隐私圈时取消旧响应、失败不回退；`userLocationSettings.test.ts` 检查 Key 自动选用、遮罩和预览来源。`test/fixtures/user-location.html` 的 5192 端口模拟 Geoapify 与旧服务，不发送真实坐标或真实 Key。实际服务连通性和地区覆盖仍须用用户自有 Key 在目标设备复测。
 
-实时感知主页面只放「真实定位」开关和「设置与预览」入口。进入真实定位子页后，才能选定位方式、打开「隐藏地点」「高德 API」「定位说明」以及查看位置预览；隐私说明和隐藏前后的例子都在「定位说明」中。预览按钮先保存当前定位设置，再取得本次位置；使用实际 user 名称和真实请求共用的位置提示词，默认只展示位置句，完整提示词折叠显示。修改定位设置或 user 名称后清除旧预览；进入页面本身不触发定位。
+实时感知主页面只放「真实定位」开关和「设置与预览」入口。进入真实定位子页后，才能选定位方式、打开「隐藏地点」「感知调用详细设定」「定位说明」以及查看位置预览；隐私说明和隐藏前后的例子都在「定位说明」中。预览按钮先保存当前定位设置，再取得本次位置；使用实际 user 名称和真实请求共用的位置提示词，默认只展示位置句，完整提示词折叠显示。修改定位设置或 user 名称后清除旧预览；进入页面本身不触发定位。
 
 子页面暂时隐藏其它实时感知设置；高德页提供直达官方控制台申请 Key 的按钮、图文说明链接和三步指引。「返回真实定位」保留草稿，「保存并返回」校验并保存本机定位配置。全局返回／浏览器和 Android 返回先从隐藏地点等子页退到真实定位，再退到实时感知；正在取得位置时暂时禁止返回，避免丢掉正在记录的地点。
 
@@ -28,13 +30,15 @@ Geoapify 同样先检查设备定位与隐藏地点；命中隐私圈或边界�
 
 ## 设备定位超时与 PWA 权限
 
+前台对话的位置准备总共最多等待 **5 秒**，从调用开始计时，设备取坐标、普通精度重试和地图查地址共用这份预算（高德、Geoapify、免费地区均适用）。到时直接省略本轮位置段，让模型请求继续；取消设备等待与地图请求，迟到结果不查询地图、不写地址缓存，也不用旧地址兜底。同一用途的并发请求共用截止时间，后加入的请求不延长等待。设置页主动点击预览独立使用下面的完整设备重试预算，地图查询仍最多 5 秒，慢预览不会拖住对话。此上限仅限制定位准备，不包含其它实时感知或模型生成耗时。
+
 浏览器安装到桌面的 PWA 仍走浏览器 `navigator.geolocation`，不能套用 Capacitor APK 的权限／GMS 插件兜底。检查系统对浏览器的定位权限以及当前网站的位置信息权限，见 [Chrome 官方指引](https://support.google.com/chrome/answer/142065?hl=zh-Hans&co=GENIE.Platform%3DAndroid)。Android 定位精度服务可利用 Wi-Fi／蓝牙扫描改善室内结果，蓝牙不是糯米机的必需权限，见 [系统定位说明](https://support.google.com/accounts/answer/3467281?hl=zh-Hans)。未知机型不能直接判断是系统服务、网络还是权限问题。
 
 真实定位与记录隐藏地点使用 `getCurrentPositionSmart({ quiet: true, retry: true })`：首次高精度请求 15 秒，只有设备不可用／超时（错误 2／3）才重试一次普通精度 8 秒，两次均 `maximumAge: 0`。每次另设超时后一秒的应用等待上限，浏览器不回调时也释放等待并忽略迟到结果；约 25 秒内结束设备等待。权限拒绝、安全连接或页面策略禁止不重试。其它定位调用保留默认单次 8 秒。普通精度仍由浏览器／系统取得当前位置，应用不新增 IP 查询或接受旧坐标。
 
 预览区分别显示设备权限、设备定位、地图网络／Key 错误；设备超时尚未查询任何地图，换地图 Key 无法修复这一层。只展示固定说明，不写原始错误或坐标。普通精度结果仍先检查隐藏地点与误差范围，圈外精度超过 1 公里不查地图；记录隐藏地点也拒绝该低精度中心，避免把保护圈设错位置。安全连接要求及选项含义见 [Geolocation 接口文档](https://developer.mozilla.org/en-US/docs/Web/API/Geolocation/getCurrentPosition)。
 
-`geo.test.ts` 覆盖有界重试、拒绝权限不重试、浏览器不回调和迟到结果、安全连接／权限策略、无效坐标、原生静默兜底。实际手机的系统定位可用性仍需目标设备复测。
+`geo.test.ts` 覆盖有界重试、取消后不再重试／回退、拒绝权限不重试、浏览器不回调和迟到结果、安全连接／权限策略、无效坐标、原生静默兜底；`userLocationDeadline.test.ts` 覆盖整条定位流程的五秒预算、三种地图服务超时、迟到结果不缓存、并发合并、配置／前后台变化以及预览独立等待。实际手机的系统定位可用性仍需目标设备复测。
 
 ## 数据流与边界
 
@@ -45,11 +49,13 @@ Geoapify 同样先检查设备定位与隐藏地点；命中隐私圈或边界�
 
 高德模式同样先匹配本机隐藏地点，圈内不会加载查询 iframe。圈外通过其 `/v3/geocode/regeo` 的 callback（JSONP）接口直接查询，不经过 Worker／代理、不加载完整地图 SDK。查询脚本在只有 `allow-scripts`、没有 `allow-same-origin` 的 iframe 中运行，不能读取父页面的 localStorage、隐藏中心点或聊天；内层 CSP 仅允许查询高德，禁止 connect/img/form。消息回程同时校验 frame.contentWindow 和本次随机 token，成功、失败或取消后清除 frame 与监听器。
 
-手机 WGS84 坐标只在本机近似转换为高德 GCJ02 坐标，隐藏距离判断仍使用转换前的 WGS84。转换算法改编自 MIT 的 [coordtransform](https://github.com/wandergis/coordtransform)，授权声明保留在 `amapCoordinates.ts`。返回只读取 formatted_address／地址文字与 100 米内最近 POI 名称，不读取电话、经纬度、ID；位置仅作参考，具体以 user 的说明为准。Key 仅存在本机并直接提交高德，不进入角色提示词、共享配置或备份。高德查不到／Key 无效／网络阻断时位置未知，不自动切换免费服务。
+手机 WGS84 坐标只在本机近似转换为高德 GCJ02 坐标，隐藏距离判断仍使用转换前的 WGS84。转换算法改编自 MIT 的 [coordtransform](https://github.com/wandergis/coordtransform)，授权声明保留在 `amapCoordinates.ts`。返回只读取 formatted_address／地址文字与 100 米内最近 POI 名称，不读取电话、经纬度、ID；位置仅作参考，具体以 user 的说明为准。Key 保存在本机，查询时直接提交高德，并随个人备份迁移；不进入角色提示词或 Worker 状态。高德查不到／Key 无效／网络阻断时位置未知，不自动切换免费服务。
 
 BigDataCloud 会收到区域外坐标及请求 IP，并将它们用于改进其 IP 定位数据。设置里明确展示这个用途及说明链接：[服务说明](https://www.bigdatacloud.com/docs/article/why-is-reverse-geocoding-api-free)、[客户端接口](https://www.bigdatacloud.com/free-api/free-reverse-geocode-to-city-api)、[使用政策](https://www.bigdatacloud.com/docs/article/fair-use-policy-for-free-client-side-reverse-geocoding-api)。仅设备直接请求当前授权取得的位置；不在服务端调用、不自动兜底其它地图接口。
 
-隐私配置单独保存在 `os_user_location_privacy_v1`，不进入 RealtimeConfig、角色卡、整机／云端备份或 localStorage 镜像；导入备份保留本机已有定位设置，新设备导入后仍默认关闭，需重新设置隐藏地点与 Key。当前设备坐标不落库，区域外地点查询短缓存只在内存中保留最多五分钟，且每次复用前必须取得新定位并再次判断隐私圈；距旧查询位置超过 50 米则重新查询。定位请求本身并发合并，不做后台轮询或轨迹记录。
+隐私配置单独保存在 `os_user_location_privacy_v1`，不进入 RealtimeConfig、角色卡、Worker 状态或 localStorage 镜像。个人整合／文字备份（包括云端）包含开关、地图服务与 Key、隐藏地点的名称／中心／半径，以及各用户自己的可见角色范围。当前设备坐标不落库、不备份；区域外地点查询短缓存只在内存中保留最多所选时长（默认十分钟），每次复用前必须取得新定位并再次判断隐私圈；距旧查询位置超过 50 米则重新查询。定位请求本身并发合并，不做后台轮询或轨迹记录。
+
+备份专用路径 `userLocationBackup.ts` 只导出校验后的设置白名单，未知的实时定位或查询缓存字段不会带走。单用户写入 `userLocationSettings`，多用户写入 `user-spaces.json.userLocation`，共享设置与按空间的授权分开保存；`null` 表示该空间全部角色，空数组表示无人，缺失或损坏范围不能放宽成全部。导入在任何数据写入前校验，恢复后取消旧定位请求并清内存缓存；系统定位权限仍由新设备授权，不复制旧设备当前位置。仅媒体包、没有该字段的旧包、迁入独立用户均保留目的地定位设置；旧包的缺失内容需要从原设备重新备份。设置读取失败中止导出，不能静默生成缺项备份。
 
 Umami 只在 `当前功能启用` 冷启动快照中报告「真实定位」开关（开／关／读取失败），不收位置、隐藏地点、半径或 Key，不在定位或保存时逐次打点。本地开发照常不发送统计。
 
@@ -84,7 +90,7 @@ Umami 只在 `当前功能启用` 冷启动快照中报告「真实定位」开�
 
 ## 按角色授权与天气城市（2026-10-31）
 
-真实定位 → 可见角色：可选「所有角色」或「仅选中的角色」，支持头像列表、搜索、全选和清空。旧配置不带 characterIds 时保持所有角色可见；切到仅选中时初始为空，空列表表示无人可见，新角色不会自动得到授权。列表按角色 ID 保存，损坏的范围配置按未授权处理。范围与隐私圈一起只保存在本机 `os_user_location_privacy_v1`，不进备份、云端或角色卡。
+真实定位 → 可见角色：可选「所有角色」或「仅选中的角色」，支持头像列表、搜索、全选和清空。旧配置不带 characterIds 时保持所有角色可见；切到仅选中时初始为空，空列表表示无人可见，新角色不会自动得到授权。列表按角色 ID 保存，损坏的范围配置按未授权处理。范围与隐私圈一起保存在本机 `os_user_location_privacy_v1`，随个人备份按用户恢复，不进入 Worker 状态或角色卡。
 
 聊天本地／即时对话、电话和见面在发起设备定位前检查目标角色，并在结果返回后再检查一次。未授权时不定位、不查询地图、不注入“位置未知”。后台模板也按角色控制“位置未知”，始终不包含真实位置；本机预览仍由用户主动发起，可独立于授权范围查看。所有原有隐私圈、直连地图与失败不回退规则保留。
 
@@ -94,7 +100,7 @@ Umami 只在 `当前功能启用` 冷启动快照中报告「真实定位」开�
 
 ### 免费天气双源与故障切换
 
-天气 Key 留空时可选择首选免费源：**免费源 1 · Open-Meteo（默认）**、**免费源 2 · wttr.in**。偏好 `weatherFreeSource` 随实时配置保存并同步至后台 `tool_config`，旧配置或未知值按源 1。两源都查询手填的城市，与设备真实定位无关，不读取 GPS、不走公共代理。源 2 直接按城市查询，不依赖源 1 的城市接口；拒绝空路径及特殊路径，避免 wttr.in 回退按 IP 定位。接口与 JSON 格式见 [wttr.in 官方文档](https://github.com/chubin/wttr.in#json-output)，天气码按 [WorldWeatherOnline 码表](https://www.worldweatheronline.com/weather-api/api/docs/weather-icons.aspx)转换为中文，未知码保留服务商文字。
+天气 Key 留空时可选择首选免费源：**免费源 1 · Open-Meteo**、**免费源 2 · wttr.in（默认）**。偏好 `weatherFreeSource` 随实时配置保存并同步至后台 `tool_config`，首次加载旧配置时，无天气 Key 的用户迁移到源 2；之后手动选回源 1 会保留。两源都查询手填的城市，与设备真实定位无关，不读取 GPS、不走公共代理。源 2 直接按城市查询，不依赖源 1 的城市接口；拒绝空路径及特殊路径，避免 wttr.in 回退按 IP 定位。接口与 JSON 格式见 [wttr.in 官方文档](https://github.com/chubin/wttr.in#json-output)，天气码按 [WorldWeatherOnline 码表](https://www.worldweatheronline.com/weather-api/api/docs/weather-icons.aspx)转换为中文，未知码保留服务商文字。
 
 「测试源 1」「测试源 2」各自只测对应服务，结果互不覆盖，单源最多等 8 秒（城市与天气共用预算，含响应体），不把另一源的成功伪装成测试成功。「预览天气（自动切换）」与聊天共用 `fetchWeatherOrThrow` 路由：所选免费源失败、超时或数据无效后尝试另一个，每源最多 4 秒；有 OWM Key 时先测 OWM，再按免费源偏好回落，每源最多 3 秒。自动流程分别最多 8/9 秒，留在后台 10 秒取数预算内。实际来源与自动切换显示在预览中；全失败保留各源原因，聊天按无天气处理，缺失数值不当成 0°C。更改城市、Key 或首选源后清除旧测试状态，忽略在途旧结果。
 

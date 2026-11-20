@@ -7,6 +7,7 @@ import {
 import type { ActiveMsg2InboxMessage } from '../types';
 import { ActiveMsgClient, NATIVE_PUSH_TOKEN_STORAGE_KEY } from './activeMsgClient';
 import { ActiveMsgStore } from './activeMsgStore';
+import { isAmsg2WorkerActive } from './amsgGlobalGate';
 import { flushInboxToChat } from './activeMsgRuntime';
 
 const RECEIVED_IDS_KEY = 'amsg2_native_received_ids_v1';
@@ -78,6 +79,8 @@ const registerToken = async (token: Token) => {
   if (!value) return;
   localStorage.setItem(NATIVE_PUSH_TOKEN_STORAGE_KEY, value);
   try {
+    const config = await ActiveMsgStore.getGlobalConfig();
+    if (!isAmsg2WorkerActive(config)) return;
     await ActiveMsgClient.registerNativePushToken(value);
   } catch (error) {
     console.info('[ActiveMsg:native] token 已保存，等待 Worker 连接后补登记', error);

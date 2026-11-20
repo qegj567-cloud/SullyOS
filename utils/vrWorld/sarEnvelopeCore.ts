@@ -7,6 +7,7 @@
  * 带商品目录 / 存储的部分留在 sarModuleRuntime.ts（它 re-export 这里的一切）。
  */
 import type { SARModuleRuntimeState } from '../../types';
+import { isSegmentRepeatedInLater } from '../amsg2ToolLoop';
 
 export interface SARModuleRuntimePlan {
     character?: SARModuleRuntimeState;
@@ -167,6 +168,91 @@ export const parseSARModuleReply = (
         assistantSurface: plan.character?.phase === 'active' ? tag(body, 'CHAR_SURFACE') : undefined,
         userSurface: plan.user?.phase === 'active' ? tag(body, 'USER_SURFACE') : undefined,
         enveloped: true,
+    };
+};
+
+export interface SARModuleRoundPiece {
+    canonical: string;
+    surface?: string;
+}
+
+export interface SARModuleRoundsParse extends SARModuleParsedReply {
+    pieces: SARModuleRoundPiece[];
+}
+
+const SAR_ENVELOPE_TAG_RE = /<\/?(?:SAR_MODULE_OUTPUT|CHAR_TRUE|CHAR_SURFACE|USER_SURFACE)>/gi;
+
+const stripSAREnvelopeTags = (text: string): string => text.replace(SAR_ENVELOPE_TAG_RE, '').trim();
+
+const closeOpenSARTag = (text: string, name: string, stoppers: string[]): string => {
+    const open = new RegExp(`<${name}>`, 'i').exec(text);
+    if (!open || new RegExp(`</${name}>`, 'i').test(text)) return text;
+    const after = open.index + open[0].length;
+    const stop = new RegExp(stoppers.join('|'), 'i').exec(text.slice(after));
+    const at = stop ? after + stop.index : text.length;
+    return `${text.slice(0, at)}</${name}>${text.slice(at)}`;
+};
+
+const repairSAREnvelope = (text: string): string => {
+    let repaired = closeOpenSARTag(text, 'CHAR_TRUE', ['<CHAR_SURFACE>', '<USER_SURFACE>', '</SAR_MODULE_OUTPUT>']);
+    repaired = closeOpenSARTag(repaired, 'CHAR_SURFACE', ['<USER_SURFACE>', '<CHAR_TRUE>', '</SAR_MODULE_OUTPUT>']);
+    repaired = closeOpenSARTag(repaired, 'USER_SURFACE', ['<CHAR_SURFACE>', '<CHAR_TRUE>', '</SAR_MODULE_OUTPUT>']);
+    return repaired;
+};
+
+/**
+ * 多轮工具循环输出逐轮拆解 SAR 信封并去重（本地与云端共用）：
+ * - 每轮独立补闭合后交给 `parseSARModuleReply`，守信封的取 `CHAR_TRUE` / `CHAR_SURFACE`，未守的降级保留原文；
+ * - 若前序某轮的 `canonical` 已被后续轮完整重抄（`isSegmentRepeatedInLater`），连同该轮外显一并跳过，
+ *   保证真意与外显段数对齐，同时避免拼成双信封后只读到第一轮。
+ */
+export const parseSARModuleReplyRounds = (
+    rounds: string[],
+    plan: SARModuleRuntimePlan,
+): SARModuleRoundsParse => {
+    const texts = rounds.filter((round) => round.trim().length > 0);
+    if (!plan.requiresEnvelope) {
+        return { canonical: texts.join('\n'), enveloped: false, pieces: [] };
+    }
+
+    const rawPieces: SARModuleRoundPiece[] = [];
+    let enveloped = false;
+    let userSurface: string | undefined;
+    for (const text of texts) {
+        const parsed = parseSARModuleReply(repairSAREnvelope(text), plan);
+        if (parsed.enveloped) {
+            enveloped = true;
+            if (parsed.userSurface) userSurface = parsed.userSurface;
+        }
+        const canonical = stripSAREnvelopeTags(parsed.canonical);
+        if (!canonical) continue;
+        const surface = parsed.enveloped && parsed.assistantSurface
+            ? stripSAREnvelopeTags(parsed.assistantSurface)
+            : '';
+        rawPieces.push({ canonical, ...(surface ? { surface } : {}) });
+    }
+
+    const pieces: SARModuleRoundPiece[] = [];
+    for (let i = 0; i < rawPieces.length; i++) {
+        const current = rawPieces[i];
+        if (pieces.some((k) => k.canonical === current.canonical)) continue;
+        if (rawPieces.slice(i + 1).some((later) => isSegmentRepeatedInLater(current.canonical, later.canonical))) {
+            continue;
+        }
+        pieces.push(current);
+    }
+
+    const assistantSurface = pieces
+        .map((p) => p.surface)
+        .filter((s): s is string => !!s)
+        .join('\n') || undefined;
+
+    return {
+        canonical: pieces.map((p) => p.canonical).join('\n'),
+        ...(assistantSurface ? { assistantSurface } : {}),
+        ...(userSurface ? { userSurface } : {}),
+        enveloped,
+        pieces,
     };
 };
 

@@ -1,8 +1,10 @@
 import CharacterLinkActions from '../components/character/CharacterLinkActions';
 import CharacterApiPanel from '../components/character/CharacterApiPanel';
 import CharacterSettingsSection from '../components/character/CharacterSettingsSection';
+import ProfileTextField from '../components/character/ProfileTextField';
 import CharacterStatsPanel from '../components/character/CharacterStatsPanel';
 import { characterRemark } from '../utils/characterRemark';
+import { useLocalBackHandler } from '../hooks/useLocalBackHandler';
 import { loadCharacterContextMessages } from '../utils/chatContextRange';
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
@@ -18,10 +20,10 @@ import { DEFAULT_ARCHIVE_PROMPTS } from '../components/chat/ChatConstants';
 import ImpressionPanel from '../components/character/ImpressionPanel';
 import RoomPlatePanel from '../components/character/RoomPlatePanel';
 import MemoryArchivist from '../components/character/MemoryArchivist';
+import MonthlyRecallSetting, { MemoryEyeHelpButton } from '../components/character/MonthlyRecallSetting';
 import { resolveLinkedArchives, useLinkedArchives } from '../utils/memoryPalace/linkedArchive';
 import { updateStoredMemoryNode } from '../utils/memoryPalace/vectorStore';
 import { MemoryNodeDB } from '../utils/memoryPalace/db';
-import { applyLinkedArchiveDeletion, LINKED_ARCHIVE_DELETED, type LinkedArchiveDeletionDetail } from '../utils/memoryPalace/linkedArchiveDeletion';
 import ChibiStudio, { ChibiShelfPanel } from '../components/character/ChibiStudio';
 import TokenImg from '../components/os/TokenImg';
 import { resolveBlobRefsDeep, migrateDataUrlToRef } from '../utils/blobRef';
@@ -35,6 +37,11 @@ import { normalizeUserImpression } from '../utils/impression';
 import { parseGeneratedImpression } from '../utils/impressionGeneration';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { COMMON_TIMEZONES } from '../utils/timezone';
+import {
+    clearTimeAwarenessOverride,
+    disableCharacterAmsg2Schedule,
+    shouldPromptDisableAmsg2OnTimeAwarenessOff,
+} from '../utils/amsg2TimeAwarenessGate';
 import { toMountedWorldbook } from '../utils/worldbook';
 import { stripSensitiveCardFields } from '../utils/characterCard';
 import { shareOrDownloadFile } from '../utils/shareExport';
@@ -102,10 +109,10 @@ const CharacterCard: React.FC<{
     </div>
 );
 
-const Character: React.FC = () => {
+const Character: React.FC<{ profileCharacterId?: string }> = ({ profileCharacterId }) => {
   const { closeApp, openApp, characters, activeCharacterId, setActiveCharacterId, addCharacter, updateCharacter, deleteCharacter, characterGroups, createCharacterGroup, renameCharacterGroup, deleteCharacterGroup, apiConfig, addToast, userProfile, worldbooks, addWorldbook } = useOS();
-  const launchIntent = characterLaunch.peek();
-  const [view, setView] = useState<'list' | 'detail'>(() => launchIntent ? 'detail' : 'list');
+  const launchIntent = profileCharacterId ? null : characterLaunch.peek();
+  const [view, setView] = useState<'list' | 'detail'>(() => profileCharacterId || launchIntent ? 'detail' : 'list');
   const [charPage, setCharPage] = useState(0); // 角色列表分页（每页 6 个，仅未建分组时）
   // 分组展开状态：存"已展开"的分组 id（未记录 = 收起）。跨会话记住，key 见下
   const [expandedGroups, setExpandedGroups] = useState<string[]>(() => {
@@ -128,23 +135,11 @@ const Character: React.FC = () => {
   const [detailTab, setDetailTab] = useState<'identity' | 'memory' | 'impression' | 'plates' | 'chibi' | 'stats'>(() => launchIntent?.openChibiStudio ? 'chibi' : 'identity');
   // QQ捏人工坊（手办柜）全屏覆盖层
   const [showChibiStudio, setShowChibiStudio] = useState(() => !!launchIntent?.openChibiStudio);
-  const [editingId, setEditingId] = useState<string | null>(() => launchIntent?.charId || null);
-  const [formData, setFormData] = useState<CharacterProfile | null>(null);
-  const memoryCharacter = characters.find(character => character.id === formData?.id) || formData;
-  const linkedMemoryEnabled = !!memoryCharacter?.memoryPalaceEnabled;
-  const archiveMemories = useLinkedArchives(formData?.id, formData?.memories, linkedMemoryEnabled);
+  const [editingId, setEditingId] = useState<string | null>(() => profileCharacterId || launchIntent?.charId || null);
+  const formData = characters.find(character => character.id === editingId);
+  const linkedMemoryEnabled = !!formData?.memoryPalaceEnabled;
+  const archiveMemories = useLinkedArchives(formData?.id, formData?.memories, !profileCharacterId && linkedMemoryEnabled);
   const { memoryPalaceConfig, remoteVectorConfig } = useOS();
-  useEffect(() => {
-      const applyDeletion = (event: Event) => {
-          const detail = (event as CustomEvent<LinkedArchiveDeletionDetail>).detail;
-          if (!detail?.nodeId || !['delete', 'keep'].includes(detail.choice)) return;
-          setFormData(previous => previous?.id === detail.charId
-              ? { ...previous, memories: applyLinkedArchiveDeletion(previous.memories || [], detail.nodeId, detail.choice) }
-              : previous);
-      };
-      window.addEventListener(LINKED_ARCHIVE_DELETED, applyDeletion);
-      return () => window.removeEventListener(LINKED_ARCHIVE_DELETED, applyDeletion);
-  }, []);
   const [expandedMountedBookIds, setExpandedMountedBookIds] = useState<Set<string>>(new Set());
   const [isCompressing, setIsCompressing] = useState(false);
   // 头像 URL 输入的 draft, 不逐字 commit 到 formData.avatar —— 否则每输入一个字符,
@@ -159,6 +154,7 @@ const Character: React.FC = () => {
           .catch(() => {});
   }, []);
   useEffect(() => {
+      if (profileCharacterId) return;
       const apply = () => {
           const intent = characterLaunch.consume();
           if (!intent) return;
@@ -169,7 +165,7 @@ const Character: React.FC = () => {
       };
       apply();
       return characterLaunch.subscribe(apply);
-  }, [characters]);
+  }, [characters, profileCharacterId]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cardImportRef = useRef<HTMLInputElement>(null);
   
@@ -185,7 +181,14 @@ const Character: React.FC = () => {
   const [cloudCleanupFailTarget, setCloudCleanupFailTarget] = useState<string | null>(null);
   // 删除要先 await 云端任务取消（名下有 amsg2 任务时），期间锁住按钮防连点。
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showTimeAwareAmsgModal, setShowTimeAwareAmsgModal] = useState(false);
+  const [isDisablingAmsgFromTimeAware, setIsDisablingAmsgFromTimeAware] = useState(false);
   const [showWorldbookModal, setShowWorldbookModal] = useState(false); // New Modal
+  useLocalBackHandler(() => {
+      if (showWorldbookModal) setShowWorldbookModal(false);
+      else if (!isDisablingAmsgFromTimeAware) setShowTimeAwareAmsgModal(false);
+      return true;
+  }, 45, !!profileCharacterId && (showTimeAwareAmsgModal || showWorldbookModal));
   // 挂载世界书弹窗：搜索词 + 当前展开的分组（分组默认折叠，避免全量条目一次性渲染卡爆）
   const [wbModalSearch, setWbModalSearch] = useState('');
   const [wbModalExpandedCategory, setWbModalExpandedCategory] = useState<string | null>(null);
@@ -318,60 +321,14 @@ const Character: React.FC = () => {
   // Sync Ref with State
   useEffect(() => {
       editingIdRef.current = editingId;
+      setShowTimeAwareAmsgModal(false);
   }, [editingId]);
 
-  // CRITICAL FIX: Breaking the render loop.
-  // We only sync from global 'characters' to local 'formData' when:
-  // 1. We enter edit mode (view becomes detail)
-  // 2. We switch character IDs
+  // 草稿只跟随已保存的头像，输入中的 URL 等到失焦再提交。
   useEffect(() => {
-    if (editingId && view === 'detail') {
-        // Only if formData is not set OR the ID doesn't match
-        if (!formData || formData.id !== editingId) {
-            const target = characters.find(c => c.id === editingId);
-            if (target) setFormData(target);
-        }
-    }
-  }, [editingId, view]);
-
-  // 切换角色时把 URL draft 同步成该角色当前 https 头像 (若有), 否则清空.
-  // 不监听 formData.avatar 的每次变化 —— 文件上传走 data URL 路径时 draft 应保持原样.
-  useEffect(() => {
-    if (!editingId) return;
-    const target = characters.find(c => c.id === editingId);
-    const av = target?.avatar || '';
+    const av = formData?.avatar || '';
     setAvatarUrlDraft(/^https?:\/\/.+/i.test(av) ? av : '');
-  }, [editingId]);
-
-  // EXTERNAL-UPDATE SYNC: pull in memories/refinedMemories written by other apps
-  // (e.g. Chat archive calling updateCharacter) so stale formData doesn't overwrite them.
-  useEffect(() => {
-    if (!editingId || !formData || formData.id !== editingId) return;
-    const latest = characters.find(c => c.id === editingId);
-    if (!latest) return;
-    const latestMemCount = latest.memories?.length ?? 0;
-    const localMemCount = formData.memories?.length ?? 0;
-    const latestRefKeys = Object.keys(latest.refinedMemories || {}).length;
-    const localRefKeys = Object.keys(formData.refinedMemories || {}).length;
-    if (latestMemCount > localMemCount || latestRefKeys > localRefKeys) {
-        setFormData(prev => prev && prev.id === editingId
-            ? { ...prev, memories: latest.memories, refinedMemories: latest.refinedMemories }
-            : prev);
-    }
-  }, [characters, editingId]);
-
-  // Auto-save Effect with Safety Guard
-  useEffect(() => {
-    if (formData && editingId) {
-        // SAFETY GUARD: Only save if the formData ID matches the currently active editing ID.
-        // This prevents overwriting Character B with Character A's data if a delayed async call updates formData.
-        if (formData.id === editingId) {
-            updateCharacter(editingId, formData);
-        } else {
-            console.warn(`Race condition prevented: Tried to save data for ${formData.id} into slot ${editingId}`);
-        }
-    }
-  }, [formData]);
+  }, [editingId, formData?.avatar]);
 
   const handleBack = () => {
       if (view === 'detail') {
@@ -391,23 +348,68 @@ const Character: React.FC = () => {
       setNewGroupName('');
   };
 
-  // 新建角色：建完直接进「设定」编辑页（而非停在列表往未分组里塞一张空白卡，
-  // 那样反直觉——用户点新建就是想马上填人设）。editingId 一设，下方 sync effect
-  // 会从 characters 里找到这张新卡填进 formData。
+  // 新建后直接进入这位角色的「设定」。
   const handleAddCharacter = async () => {
       const created = await addCharacter();
       setEditingId(created.id);
-      setFormData(created); // 直接填好，避免跳转瞬间 characters 还没同步导致详情页闪白
       setDetailTab('identity');
       setView('detail');
   };
 
   const handleChange = (field: keyof CharacterProfile, value: any) => {
-      // Functional update to prevent stale state issues in simple closures
-      setFormData(prev => {
-          if (!prev) return null;
-          return { ...prev, [field]: value };
-      });
+      if (editingId) updateCharacter(editingId, { [field]: value });
+  };
+
+  // 关闭「聊天 · 时间感知强化」时：主动消息 2.0 依赖现实时间调度与作息，若当前角色正开着 2.0，
+  // 默认引导一并停用并清远端排期；用户必须主动点确认才能保留 2.0。
+  const handleToggleChatTimeAwareness = () => {
+      if (!formData) return;
+      if (formData.timeAwarenessEnabled === false) {
+          updateCharacter(formData.id, prev => ({
+              timeAwarenessEnabled: true,
+              activeMsg2Config: clearTimeAwarenessOverride(prev.activeMsg2Config),
+          }));
+          return;
+      }
+      if (shouldPromptDisableAmsg2OnTimeAwarenessOff(formData)) {
+          setShowTimeAwareAmsgModal(true);
+          return;
+      }
+      handleChange('timeAwarenessEnabled', false);
+  };
+
+  const confirmDisableTimeAwarenessAndAmsg2 = async () => {
+      if (!formData || isDisablingAmsgFromTimeAware) return;
+      const targetChar = characters.find(c => c.id === formData.id) ?? formData;
+      const targetId = targetChar.id;
+      setIsDisablingAmsgFromTimeAware(true);
+      try {
+          const outcome = await disableCharacterAmsg2Schedule(targetChar);
+          if (outcome.cleanupFailed) {
+              addToast('ta 在云端的聊天上下文没能清掉，可以稍后进主动消息 2.0 面板再关一次。', 'error');
+          }
+          updateCharacter(targetId, prev => ({
+              timeAwarenessEnabled: false,
+              activeMsg2Config: outcome.applyToConfig(prev.activeMsg2Config),
+          }));
+          addToast(`已关闭聊天时间感知。${outcome.toastMessage}`, outcome.toastType);
+          setShowTimeAwareAmsgModal(false);
+      } finally {
+          setIsDisablingAmsgFromTimeAware(false);
+      }
+  };
+
+  const confirmKeepAmsg2WithoutTimeAwareness = () => {
+      if (!formData || isDisablingAmsgFromTimeAware) return;
+      updateCharacter(formData.id, prev => ({
+          timeAwarenessEnabled: false,
+          activeMsg2Config: {
+              ...(prev.activeMsg2Config ?? { enabled: true }),
+              allowWithoutTimeAwareness: true,
+          },
+      }));
+      setShowTimeAwareAmsgModal(false);
+      addToast('已关闭聊天时间感知并保留主动消息 2.0（主动消息仍按现实时间运行）。', 'info');
   };
 
   // Worldbook Logic
@@ -511,10 +513,6 @@ const Character: React.FC = () => {
               // 头像存令牌，二进制单独躺在 blob_assets 里（省掉 base64 那 ~33% 的膨胀）。
               // 同一张图之前存过就复用它的令牌；转不动时原样还回这条 data URL，图不会丢。
               handleChange('avatar', await migrateDataUrlToRef(processedBase64));
-              // 清空 URL draft, 否则用户之后再触发 URL input 的 onBlur 会用脏旧 URL
-              // 把刚上传的 data URL 头像盖掉. 不走 effect 监听 avatar 的方案 —— 那会
-              // 在用户正在打 URL 时吃掉 draft.
-              setAvatarUrlDraft('');
               addToast('头像上传成功', 'success');
           } catch (error: any) { 
               addToast(error.message || '图片处理失败', 'error'); 
@@ -613,11 +611,7 @@ const Character: React.FC = () => {
       // In traditional mode an edit becomes an independent archive; re-enabling must not undo it.
       const update = (memories: MemoryFragment[]) => memories.map(item => item.id === id
           ? { ...item, summary: newSummary, palaceMemoryId: linkedMemoryEnabled ? item.palaceMemoryId : undefined } : item);
-      if (editingIdRef.current === targetId) setFormData(previous => previous?.id === targetId ? { ...previous, memories: update(previous.memories || []) } : previous);
-      else {
-          const latest = (await DB.getAllCharacters()).find(character => character.id === targetId);
-          if (latest) updateCharacter(targetId, { memories: update(latest.memories || []) });
-      }
+      updateCharacter(targetId, previous => ({ memories: update(previous.memories || []) }));
       addToast('记忆已更新', 'success');
   };
 
@@ -1212,7 +1206,7 @@ ${isInitialGeneration ? `
   };
 
   return (
-    <div className="h-full w-full bg-slate-50/30 font-light relative">
+    <div className={profileCharacterId ? 'w-full relative' : 'h-full w-full bg-slate-50/30 font-light relative'}>
        {view === 'list' ? (
            <div className="flex flex-col h-full animate-fade-in relative"
                 style={{ background: 'linear-gradient(180deg, #f5f2fb 0%, #ece6f6 100%)' }}>
@@ -1340,14 +1334,14 @@ ${isInitialGeneration ? `
                </div>
            </div>
        ) : formData && (
-           <div className="flex flex-col h-full animate-fade-in bg-slate-50/50 relative">
+           <div className={profileCharacterId ? 'relative' : 'flex flex-col h-full animate-fade-in bg-slate-50/50 relative'}>
                {/* safe-area: OUTER 保留渐变背景 + 模糊 + sticky，刘海高度由 paddingTop 让位；
                    INNER 不再用 h-32 沉底——那是老的「做高栏 + 内容沉底」状态栏预留写法，会和 safe-top 叠加出一大块空白。
                    改为内容自然高度、直接贴在 safe-top 下方。 */}
                {/* 顶栏 paddingTop 用 max(2.75rem, safe-top) 保底：--safe-top 为 0 的环境
                    （无刘海/某些 WebView）下也留出状态栏高度，避免「列表/发消息」贴到状态栏。
                    与列表页及全项目 detail 顶栏惯例（max(rem, var(--safe-top))）一致。 */}
-               <div className="bg-gradient-to-b from-white/90 to-transparent backdrop-blur-sm shrink-0 z-40 sticky top-0" style={{ paddingTop: 'max(2.75rem, var(--safe-top))' }}>
+               {!profileCharacterId && <div className="bg-gradient-to-b from-white/90 to-transparent backdrop-blur-sm shrink-0 z-40 sticky top-0" style={{ paddingTop: 'max(2.75rem, var(--safe-top))' }}>
                  <div className="flex flex-col px-5 pt-2 pb-2">
                    <div className="flex justify-between items-center mb-3">
                        <button onClick={handleBack} className="p-2 -ml-2 rounded-full hover:bg-white/60 flex items-center gap-1 text-slate-600"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg><span className="text-sm font-medium">列表</span></button>
@@ -1362,8 +1356,8 @@ ${isInitialGeneration ? `
                        <button onClick={() => setDetailTab('stats')} className={`pb-2 transition-colors relative ${detailTab === 'stats' ? 'text-slate-800' : ''}`}>角色统计{detailTab === 'stats' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-primary rounded-full" />}</button>
                    </div>
                  </div>
-               </div>
-               <div className="flex-1 overflow-y-auto p-5 no-scrollbar pb-10">
+               </div>}
+               <div className={profileCharacterId ? 'py-3' : 'flex-1 overflow-y-auto p-5 no-scrollbar pb-10'}>
                    {detailTab === 'identity' && (
                        <div className="space-y-6 animate-fade-in">
                            <div className="flex items-center gap-5">
@@ -1459,12 +1453,12 @@ ${isInitialGeneration ? `
 
                            <div>
                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block">核心指令 (System Prompt)</label>
-                               <textarea value={formData.systemPrompt} onChange={(e) => handleChange('systemPrompt', e.target.value)} className="w-full h-40 bg-white rounded-3xl p-5 text-sm shadow-sm resize-none focus:ring-1 focus:ring-primary/20 transition-all vr-reader-scroll" placeholder="设定..." />
+                               <ProfileTextField label="核心指令" expandable={!!profileCharacterId} value={formData.systemPrompt} onChange={(e) => handleChange('systemPrompt', e.target.value)} className="w-full h-40 bg-white rounded-3xl p-5 text-sm shadow-sm resize-none focus:ring-1 focus:ring-primary/20 transition-all vr-reader-scroll" placeholder="设定..." />
                            </div>
 
                            <div>
                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block">世界观 / 设定补充 (Worldview & Lore)</label>
-                               <textarea
+                               <ProfileTextField label="世界观 / 设定补充" expandable={!!profileCharacterId}
                                     value={formData.worldview || ''}
                                     onChange={(e) => handleChange('worldview', e.target.value)}
                                     className="w-full h-24 bg-white rounded-3xl p-5 text-sm shadow-sm resize-none focus:ring-1 focus:ring-primary/20 transition-all vr-reader-scroll"
@@ -1488,12 +1482,17 @@ ${isInitialGeneration ? `
                                            <p className="text-[10px] text-slate-400 mt-0.5 leading-relaxed">默认开。开启后角色会知道现实时间和你们多久没聊；关掉后不再提供现实时间与消息时间戳，更适合架空剧情。</p>
                                        </div>
                                        <button
-                                           onClick={() => handleChange('timeAwarenessEnabled', formData.timeAwarenessEnabled === false)}
+                                           onClick={handleToggleChatTimeAwareness}
                                            className={`w-12 h-7 rounded-full transition-colors relative shrink-0 ${formData.timeAwarenessEnabled !== false ? 'bg-primary' : 'bg-slate-200'}`}
                                        >
                                            <div className={`absolute top-0.5 w-6 h-6 bg-white rounded-full shadow-md transition-transform ${formData.timeAwarenessEnabled !== false ? 'translate-x-5' : 'translate-x-0.5'}`}></div>
                                        </button>
                                    </div>
+                                   {formData.timeAwarenessEnabled === false && formData.activeMsg2Config?.enabled === true && (
+                                       <p className="mt-2 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-[11px] leading-relaxed text-amber-800">
+                                           当前仍开着主动消息 2.0：后台定时与角色作息继续按现实时间（或角色时区）运行，可能与架空剧情时段不一致。
+                                       </p>
+                                   )}
                                </div>
 
                                {/* 2. 自定义时区（异国恋等） */}
@@ -1797,7 +1796,7 @@ ${isInitialGeneration ? `
                                                <div className="px-4 pb-3">
                                                    <div className="mb-2 flex justify-end"><button type="button" onClick={() => {
                                                        const ids = new Set(books.map(book => book.id));
-                                                       setFormData(prev => prev ? { ...prev, mountedWorldbooks: (prev.mountedWorldbooks || []).filter(book => !ids.has(book.id)) } : prev);
+                                                       updateCharacter(formData.id, prev => ({ mountedWorldbooks: (prev.mountedWorldbooks || []).filter(book => !ids.has(book.id)) }));
                                                    }} className="py-1 text-[11px] text-rose-400">整组取消挂载</button></div>
                                                    {books.map(wb => <div key={wb.id} className="flex items-start gap-2 border-t border-slate-100 py-2">
                                                        <details className="min-w-0 flex-1" onToggle={event => {
@@ -1840,10 +1839,11 @@ ${isInitialGeneration ? `
                        <div className="space-y-4 animate-fade-in">
                            <details className="rounded-2xl border border-slate-100 bg-white shadow-sm">
                                <summary className="cursor-pointer px-4 py-3 text-xs font-semibold text-slate-600">记忆设置</summary>
+                               <MonthlyRecallSetting enabled={formData.monthlyRecallEnabled} onChange={enabled => handleChange('monthlyRecallEnabled', enabled)} />
                                <label className="flex items-center justify-between gap-4 border-t border-slate-100 px-4 py-3">
                                <span className="min-w-0">
                                    <span className="block text-sm font-semibold text-slate-700">隐藏 RECALL 指令提示</span>
-                                   <span className="mt-1 block text-xs leading-relaxed text-slate-400">聊天时不再提示角色按月份调阅旧版记忆。使用记忆宫殿时可保持开启。</span>
+                                   <span className="mt-1 block text-xs leading-relaxed text-slate-400">只隐藏聊天里的指令提示，不禁止调用。要停用按月查阅，请关闭上方开关。</span>
                                </span>
                                <span className="shrink-0">
                                    <input type="checkbox" role="switch" aria-label="隐藏 RECALL 指令提示" checked={formData.hideMonthlyRecallPrompt !== false} onChange={e => handleChange('hideMonthlyRecallPrompt', e.target.checked)} className="peer sr-only" />
@@ -1851,6 +1851,7 @@ ${isInitialGeneration ? `
                                </span>
                                </label>
                            </details>
+                           <div className="flex justify-end"><MemoryEyeHelpButton /></div>
                            <div className="flex justify-center gap-2 mb-4">
                                <button onClick={() => { setShowBatchModal(true); trackEvent('打开批量记忆总结弹窗'); }} className="px-4 py-2 bg-white rounded-full text-xs font-semibold text-slate-500 shadow-sm border border-slate-100">批量总结（可指定日期）</button>
                                <button onClick={() => setShowImportModal(true)} className="px-4 py-2 bg-white rounded-full text-xs font-semibold text-slate-500 shadow-sm border border-slate-100">导入/清洗</button>
@@ -1904,11 +1905,7 @@ ${isInitialGeneration ? `
        {showChibiStudio && formData && (
            <ChibiStudio
                charId={formData.id}
-               onClose={() => {
-                   setShowChibiStudio(false);
-                   const latest = characters.find(c => c.id === formData.id);
-                   if (latest) setFormData(latest);
-               }}
+               onClose={() => setShowChibiStudio(false)}
            />
        )}
 
@@ -2189,6 +2186,43 @@ ${isInitialGeneration ? `
                 <span className="text-xs text-red-400 font-bold">选「仍然删除」的话，残留的任务之后可能仍会到点推送</span>
                 <span className="text-xs text-slate-400">——可以去设置 → 主动消息 2.0 → 云端数据管理继续检查。</span>
             </p>
+        </Modal>
+
+        <Modal
+            isOpen={showTimeAwareAmsgModal}
+            title="关闭时间感知将停用主动消息 2.0"
+            onClose={() => { if (!isDisablingAmsgFromTimeAware) setShowTimeAwareAmsgModal(false); }}
+            footer={<div className="flex flex-col gap-2 w-full">
+                <button
+                    type="button"
+                    onClick={() => void confirmDisableTimeAwarenessAndAmsg2()}
+                    disabled={isDisablingAmsgFromTimeAware}
+                    className="w-full py-3 bg-primary text-white font-bold rounded-2xl active:scale-95 transition-transform disabled:opacity-50"
+                >{isDisablingAmsgFromTimeAware ? '停用中...' : '关闭时间感知并停用 2.0'}</button>
+                <div className="flex gap-2 w-full">
+                    <button
+                        type="button"
+                        onClick={() => setShowTimeAwareAmsgModal(false)}
+                        disabled={isDisablingAmsgFromTimeAware}
+                        className="flex-1 py-2.5 bg-slate-100 text-slate-600 rounded-2xl text-xs font-bold active:scale-95 transition-transform disabled:opacity-50"
+                    >取消</button>
+                    <button
+                        type="button"
+                        onClick={confirmKeepAmsg2WithoutTimeAwareness}
+                        disabled={isDisablingAmsgFromTimeAware}
+                        className="flex-[1.6] py-2.5 bg-amber-50 border border-amber-200 text-amber-800 rounded-2xl text-xs font-bold active:scale-95 transition-transform disabled:opacity-50"
+                    >我知道自己在做什么，保留 2.0</button>
+                </div>
+            </div>}
+        >
+            <div className="space-y-2.5 py-2 text-sm text-slate-600 leading-relaxed">
+                <p>
+                    主动消息 2.0 按现实时间（或角色时区）定时触发、读取当日作息并安排后续联系，无法跟随架空剧情里的虚拟时间推进。
+                </p>
+                <p className="text-xs text-slate-500">
+                    关闭「聊天 · 时间感知强化」后，默认会一并停用该角色的主动消息 2.0 并取消待发排期；强行保留可能出现早晚问候、作息与剧情时段错乱等问题。
+                </p>
+            </div>
         </Modal>
     </div>
   );

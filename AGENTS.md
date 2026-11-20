@@ -6,32 +6,45 @@
 
 > 包管理器统一用 **pnpm**：装依赖 `pnpm install`、跑测试 `pnpm vitest run`、跑脚本 `pnpm <script>`。别用 npm / yarn（仓库里是 `pnpm-lock.yaml`）。
 
+## 每次改动的联动检查
+
+按以下顺序检查改动影响。已有机制覆盖时复用原路径，收尾说明实际改动与验证结果。
+
+1. **Umami 使用统计**。核对新入口、实际完成的动作与失败信号，先查已有事件，按同一口径计数。设置使用率进冷启动快照。属性只用显式白名单里的固定值，同时更新事件清单和隐私回归。[使用统计](./docs/analytics.md)
+2. **导入、导出与迁移**。逐项确认新增数据归属、文字／媒体／整合范围、单用户／全部用户、迁入为独立用户、云备份、旧文件和单项分享。用实际导出的数据恢复一次；媒体补图仅更新匹配记录。App 内的文件导出统一经 `shareOrDownloadBlob` 或 `shareOrDownloadFile` 拉起系统文件分享，大文件启用分块，网页「下载」可直接保存。区分成功、取消和失败。[用户空间](./docs/user-spaces.md) · [分享实现](./utils/shareExport.ts)
+3. **Sully-11**。入口、按键、可调范围、存储边界或失败处理有变化时，更新对应手册区；涉及用户实际配置时核对设置摘要。[十一号手册](./docs/sully-11-handbook.md)
+4. **协同工作制作提示词**。美化改动核对复制给 AI 的说明、选择器、预览和安装器。世界书等可制作格式改动同时检查制作提示词示例、校验、预览、安装、导出和旧作品加载；用新示例沿实际路径验收。[制作器](./features/collaboration/makers.ts) · [美化契约](./docs/chat-decoration.md)
+
 ## 文档地图
 
 同行独立 App、轻量接话 / 完整上下文续答、持续看听和打断：先读 [`docs/companion-demo.md`](./docs/companion-demo.md)。不接入 CallApp 管线；长回复复用 ChatApp 组装器与公共上下文范围。
+
+使用帮助里的 Sully-11 使用[操作手册](./docs/sully-11-handbook.md)和[Discord 社区规则](./docs/sully-11-discord.md)。改用户操作时同步对应功能区：二级标题列 App / 系统与别名，首行「能力」供检索，「核对」链接到实现，三级标题直接构成可查阅目录。社区规则每个二级标题为一区。每轮提供短目录，按需读区；应用和系统的实时设置由 `utils/sullyHelpSettings.ts` 投影。本机按用户空间保留完整咨询记录，每段仅最近 200 条可参与本轮上下文。20 分钟无互动或手动新建后归档，历史可续聊。
 
 静态资源、Service Worker 缓存、离线启动或网页更新：先读 [`docs/static-resource-cache.md`](./docs/static-resource-cache.md)。不得注销推送 SW、清应用数据库或按整个 `/assets/` 目录设置 immutable。
 
 | 主题 | 文档 | 什么时候看 |
 |------|------|-----------|
-| **用户空间 / 角色继承 / 共享素材** | [`docs/user-spaces.md`](./docs/user-spaces.md) | 改用户切换、角色专属用户资料、跨空间继承、备份范围或素材删除前必读；会话固定所属空间、配置独立文件共用、继承不带经历、定位隐私不备份 |
+| **用户空间 / 角色继承 / 共享素材** | [`docs/user-spaces.md`](./docs/user-spaces.md) | 改用户切换、角色专属用户资料、跨空间继承、备份范围或素材删除前必读；会话固定所属空间、配置独立文件共用、继承不带经历；定位设置随个人备份，实时坐标不备份 |
 | **悬浮球、全局返回与聊天输入栏收起** | [`docs/navigation.md`](./docs/navigation.md) | 改快捷导航开关、拖动安全区、浏览器／Android 返回、美化子页退出、聊天工具栏外部收起或选图挂载前必读 |
 | **iOS 27 主屏幕顶部白雾 / 状态栏底色** | [`docs/ios-status-bar-edge.md`](./docs/ios-status-bar-edge.md) | 改顶部取色、viewport 或 iOS 门禁前必读；manifest standalone 使用 contain，零安全区不回退 44px，异步高度收缩要重建基线；纯色接合不等于壁纸贯穿 |
 | **3D 小屋 · 布局与功能分区** | [`docs/room3d-layout.md`](./docs/room3d-layout.md) | 设计或重排任何房间/样板房、自动摆家具前必读；先划功能区，再按家具组合摆放，保留连续动线，不能逐件随机找空位；本轮统一黑 × 绿 × 白 |
 | **美化分享码与人工审核** | [`docs/beauty-share.md`](./docs/beauty-share.md) | 改美化投稿、作者身份、分享码领取或 `worker/beauty-share` 前必读；未审文件保持私有，更新通过后才替换已发布指针，仅作者明确授权且已审作品进入公开静态装扮库，未授权旧作不公开 |
+| **ChatApp 装扮、白框与深浅色对比度边界** | [`docs/chat-decoration.md`](./docs/chat-decoration.md) | 改 `.sully-chat-root` 挂载范围、消息时间位置/选择器、白框选择器、心象/装扮弹窗或深浅色表单控件前必读；弹窗与迷你应用挂载在 `.sully-chat-root` 外并带显式深字/浅底边界，深底 `<select>`／日期时间控件配 `[color-scheme:dark]` 与 `[&_option]`，白框用 `:not(:where(...))` 排除色板点/二维码白底/进度条/`qixi_event_card`/`like520_card` |
 | **角色默认对话 API** | [`docs/character-api.md`](./docs/character-api.md) | 改角色独立 API、API 预设分组或对话模型路由前必读；App 优先，单角色回复才使用角色默认，凭据整套选择 |
 | **Anthropic 原生接口 / Prompt Caching** | [`docs/anthropic-messages.md`](./docs/anthropic-messages.md) | 改 Messages 转换、SSE、缓存或 amsg 原生模型调用前必读；原生端点随整套凭据保存，不新增代理，旧 Worker 先更新并验证能力 |
 | **心象 / 思考摘要与正文分离** | [`docs/thinking-response.md`](./docs/thinking-response.md) | 改 thinking 解析、心象显示或排查思考漏进气泡前必读；只按明确字段和标签分流，不凭语言猜测，空正文不得用思考补齐 |
 | **聊天译文样式 / 外挂字幕** | [`docs/chat-translation.md`](./docs/chat-translation.md) | 改双语展示或字幕定位前必读；默认保留气泡内译文，外挂字幕独立浮层贴原文末行，样式按角色保存 |
 | **ElevenLabs 角色语音** | [`docs/elevenlabs-tts.md`](./docs/elevenlabs-tts.md) | 改 v4 / Turbo 语音、Audio Tags、模型参数或字幕前必读；v4 保留开放式标签，只发送稳定度与相似度，不自动降级 |
+| **网易云音乐代理与播放直链** | [`docs/netease-music-proxy.md`](./docs/netease-music-proxy.md) | 改音乐 App 播放直链、`worker/index.js` `/netease/*`、风控降级或缓存规则前必读；320k 内直走 `weapi`、高解析度失败降级，边缘缓存按凭据摘要分桶且不缓存试听或空直链 |
 | **角色统计 / 上下文字数与 Token 估算** | [`docs/character-statistics.md`](./docs/character-statistics.md) | 改神经链接角色统计前必读；可读范围不等于实际请求，概率预览不得抽签，宫殿缓存单列 |
 | **API 调用记录 / 用途与云端记账** | [`docs/api-call-log.md`](./docs/api-call-log.md) | 新增 `/chat/completions` 调用点、改 `ApiCallMeta` 归属或云端模型用量回传前必读；显式 `meta` 不混入前台环境角色，推送不回传凭据 |
 | **世界书管线、分组与角色绑定** | [`docs/worldbook-management.md`](./docs/worldbook-management.md) | 新增 App／角色生成请求或改世界书前必读；新入口使用 ContextBuilder.buildCharacterRequest，世界书自动随角色装载；绑定按 ID，库与角色缓存同事务更新 |
 | **协同工作私聊衔接与转发** | [`docs/collaboration-chat-bridge.md`](./docs/collaboration-chat-bridge.md) | 改协同读取 ChatApp 范围或转发消息前必读；每轮读 DB，空范围不回退，多选只发当前窗口 |
-| **开发调试面板 / 开关** | [`docs/dev-debug.md`](./docs/dev-debug.md) | 加 dev-only 开关、加调试日志、排查"角色怎么又不说话了"。含逐步指南 |
+| **开发调试面板 / 状态栏报错诊断** | [`docs/dev-debug.md`](./docs/dev-debug.md) | 加 dev-only 开关、加捕获日志，或改顶部「查看报错」日志归属、流式断连分类与 URL 脱敏前必读 |
 | **彼方 · 书库分类与阅读偏好** | [`docs/kanata-library.md`](./docs/kanata-library.md) | 改书籍归类、批量整理、角色选书轮换或书库备份前必读；按分类模式不得回退全书库 |
 | **彼方 · 活动选择与自动范围** | [`docs/kanata-activities.md`](./docs/kanata-activities.md) | 改房间/SAR 随机选取、手动子玩法路由或高级排除设置前必读；自动全禁用不得回退，手动可绕过 |
-| **记忆系统** | [`docs/memory-system-overview.md`](./docs/memory-system-overview.md) | 涉及长期记忆、月度总结、向量化记忆宫殿、情感空间。改记忆相关逻辑前必读 |
+| **记忆系统** | [`docs/memory-system-overview.md`](./docs/memory-system-overview.md) | 涉及长期记忆、月度总结、向量化记忆宫殿、情感空间。改记忆相关逻辑前必读；新增拼角色上下文的入口（含云端快照）要在请求副本上自备召回，召回与门牌不落库 |
 | **查手机 · 人际关系系统** | [`docs/relationship-system.md`](./docs/relationship-system.md) | 改「查手机」聊天/通讯录、角色联系人/好感、真假甄别、真角色双向对话、虚构 NPC 约束前必读 |
 | **好友圈 · 独立 App 与家园手机** | [`docs/friend-feed.md`](./docs/friend-feed.md)、[`docs/friend-feed-weibo.md`](./docs/friend-feed-weibo.md) | 改好友圈入口、生活圈、动态评论、微博或备份前必读；双入口共用数据，角色按 ID 分圈；绑定微博按 RP 身份混排，同步不写记忆；通知提供文本操作格式，微博复用设置代理 |
 | **查手机 · 人格模拟与生活记录** | [`docs/persona-sim.md`](./docs/persona-sim.md) | 改「用 TA 的手机活一次」生成、保存、断点续播或完成效果前必读；生成即归档，通知不是唯一剧本，首次到结尾才加情绪效果 |
@@ -42,11 +55,13 @@
 | **QQ捏人工坊（神经链接手办柜）** | [`docs/chibi-studio.md`](./docs/chibi-studio.md) | 改小小窝/彼方/520 三处 Q 版形象、捏人器 savedState 还原、`chibiStudio` 字段前必读 |
 | **3D 小人 · 服装与衣橱** | [`docs/chibi-clothing-assets.md`](./docs/chibi-clothing-assets.md) | 改 3D 服装建模、肩袖/领口、蒙皮遮挡、版型参数、分类与缩略图前必读；使用当前 48 骨素体，复用认可母版，先查参考再局部制作，保留用户确定的窄肩/A 字袖规则 |
 | **3D 小屋 · 家具素材与交互** | [`docs/room3d-furniture-assets.md`](./docs/room3d-furniture-assets.md)、[`docs/room3d-seating-assets.md`](./docs/room3d-seating-assets.md)、[`docs/room3d.md`](./docs/room3d.md) | 导入 GLB / 其他家具、改配色/优化/坐位/浇水前必读；清理图片贴图，自行上色，统一项目木色，拆分桌上摆件并验收 chibi 空间 |
-| **角色自定义时区** | [`docs/character-timezone.md`](./docs/character-timezone.md) | **写任何跟时间有关的代码前先扫一眼**：prompt 里的「现在是」、角色作息/夜间判断、日期 key、界面上的钟。分清「角色那边几点」和「用户自己的时间」，别自己手搓时差。文末列了还没接时区的几处（主动消息 + 几块界面上的钟），**正式发版前记得过一遍** |
+| **角色自定义时区** | [`docs/character-timezone.md`](./docs/character-timezone.md) | **写任何跟时间有关的代码前先扫一眼**：prompt 里的「现在是」、角色作息/夜间判断、日期 key、界面上的钟。分清「角色那边几点」和「用户自己的时间」，别自己手搓时差；关闭聊天时间感知默认停用主动消息 2.0（需显式确认才放行）。文末列了还没接时区的几处（主动消息 + 几块界面上的钟），**正式发版前记得过一遍** |
 | **通用 MCP 工具服务器** | [`docs/mcp-client.md`](./docs/mcp-client.md)（开发者）、[`docs/mcp-user-guide.md`](./docs/mcp-user-guide.md)（用户教程，设置「?」弹窗跳转的就是它，改接入行为要同步） | 改用户自配 MCP 接入（设置板块、握手/session、工具循环、`?target=` 代理约定、worker/mcp-proxy）或排查「工具连不上/角色不调工具」前必读；主动消息 2.0 的后台 MCP 路径（配置上云 / fire 时注入 / worker 直连执行）也在这份 |
 | **云端数据管理 / 角色删除** | [`plans/amsg2-cloud-data-management-contract.md`](./plans/amsg2-cloud-data-management-contract.md) | 改云端清单、按项清理、删除角色、停用与恢复前必读；清单以服务端实际资源为准，删除由云端持久操作执行，旧请求不可随恢复获得新代次 |
-| **主动消息 2.0 · 设置页的引导与面板** | [`docs/amsg2-settings-guide.md`](./docs/amsg2-settings-guide.md) | 改全局设置弹窗的排版、往里加新板块或改引导文案前必读；没连上后端走引导、连上走面板，两边摆同一份内容；板块只自动展开不自动收起；数据去向在动手装之前说 |
-| **主动消息 2.0 · 即时对话** | [`plans/amsg2-instant-chat.md`](./plans/amsg2-instant-chat.md)（设计与取舍）、[`plans/amsg2-instant-chat-contract.md`](./plans/amsg2-instant-chat-contract.md)(端点/信封/fire_pack v7 契约) | 改「聊天在用户自己的 CF Worker 上生成」这条路（`POST /instant-chat`、`utils/amsgInstantChat.ts`、fire_pack 的 `chat` 段、chat_outbox 补收、「正在输入」超时）前必读 |
+| **主动消息 2.0 · 数据救援（救援模式）** | [`docs/amsg2-rescue.md`](./docs/amsg2-rescue.md) | 改 `/rescue` 导出、`AMSG_RESCUE_TOKEN`、救援留痕、前端强制警告或救援文件导回 App 前必读；救援文件一律迁入为新用户，按提示词小标题拆回角色字段，改小标题会挂测试；只读导出，留痕写不进去就拒绝导出，首次开启先推送再放行；警告看满 10 秒才能确认、本地副本保留 7 天；这层留痕只防不会写代码的人，可信记录在 Cloudflare 审计日志 |
+| **主动消息 2.0 · 设置页的引导与面板** | [`docs/amsg2-settings-guide.md`](./docs/amsg2-settings-guide.md) | 改全局设置弹窗的排版、全局总开关（`enabled`）、往里加新板块或改引导文案前必读；没连上后端走引导、连上走面板，两边摆同一份内容；总开关关闭时保留配置并切断全部 Worker/中转自动请求；板块只自动展开不自动收起；数据去向在动手装之前说 |
+| **主动消息 2.0 · 中转连接** | [`docs/amsg2-relay.md`](./docs/amsg2-relay.md) | 改请求 Worker 的地址拼接、新增 Worker 接口、动 `infra/amsg-relay/` 中转服务、Discord 中转命令或 Caddyfile 中转站点前必读；存盘地址不变只换请求地址，只给官方渠道用（客户端复用二改判定、服务端按 Origin），令牌按 Discord 账号发且只留本机，只连 Cloudflare，路径白名单由测试对照实际路由，只按账号按天记流量 |
+| **主动消息 2.0 · 即时对话** | [`plans/amsg2-instant-chat.md`](./plans/amsg2-instant-chat.md)（设计与取舍）、[`plans/amsg2-instant-chat-contract.md`](./plans/amsg2-instant-chat-contract.md)(端点/信封/fire_pack v7 契约) | 改「聊天在用户自己的 CF Worker 上生成」这条路（`POST /instant-chat`、`utils/amsgInstantChat.ts`、fire_pack 的 `chat` 段、上行 gzip 校验与 `fflate` 兜底、chat_outbox 补收、「正在输入」超时）前必读 |
 | **主动消息 2.0 · 后台任务（不说话的活儿）** | [`plans/amsg2-expansion.md`](./plans/amsg2-expansion.md) | 改「页面关着也能跑完」的后台活儿前必读：`metadata.amsgKind` → handler 注册表（`worker/amsg/src/fireKinds.ts`）、一次性输入的 `amsg:job` 命名空间与 TTL、`ctx.emitResult` 的结果回程与客户端分发（`utils/amsgResults.ts`）。文首「现状」是实况，正文是「还有哪些调用点值得搬、哪些不该搬」的取舍 |
 | **见面挂起与离开提醒** | [`docs/date-leave-reminder.md`](./docs/date-leave-reminder.md) | 改见面挂起恢复、「见面中」顶部条、离开提醒或它的云端任务前必读；主动结束不挂起，提醒进入对话时就备好、按见面租约推迟，不受连发和每日上限拦且不给排程工具 |
 | **离开后消息** | [`docs/away-message.md`](./docs/away-message.md) | 改「用户多久没说话角色就来找」前必读；开着 2.0 的角色走云端推送、其余本地上线时补，不叠加；云端到点必发且计入连发上限，一次离开只找一次 |
@@ -57,7 +72,7 @@
 
 > README 的「给想二改的人」区域信息量很大（数据流、ContextBuilder、sfworker 清单），动后端 / 加功能前先扫一遍。
 
-用户定位、隐私区域、地点查询与位置提示词：先读 [`docs/user-location.md`](./docs/user-location.md)。中心坐标仅本机；命中隐私圈不得查地图；不得通过 Worker／代理转发定位，也不得把原始坐标写入提示词、日志、备份或云端状态。
+用户定位、隐私区域、地点查询与位置提示词：先读 [`docs/user-location.md`](./docs/user-location.md)。命中隐私圈不得查地图；定位请求不得通过 Worker／代理转发；原始坐标不进提示词、日志或 Worker 状态。个人备份包含已保存的隐藏地点中心、地图 Key 与按用户的角色授权，不包含设备实时坐标或查询缓存。
 
 ## 什么时候改版本号
 

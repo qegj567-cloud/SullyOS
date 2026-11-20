@@ -162,8 +162,8 @@ const LocationStep: React.FC<{ onPick: (lng: number, lat: number) => void }> = (
             <details className="text-[11px] text-slate-500">
                 <summary className="cursor-pointer text-[#16386F]">手动输入经纬度</summary>
                 <div className="flex gap-2 mt-2">
-                    <input value={lng} onChange={e => setLng(e.target.value)} placeholder="经度 lng" className="flex-1 bg-white border border-[#E6DFCF] rounded-lg px-2 py-1.5 text-[12px]" />
-                    <input value={lat} onChange={e => setLat(e.target.value)} placeholder="纬度 lat" className="flex-1 bg-white border border-[#E6DFCF] rounded-lg px-2 py-1.5 text-[12px]" />
+                    <input value={lng} onChange={e => setLng(e.target.value)} placeholder="经度 lng" className="flex-1 bg-white border border-[#E6DFCF] rounded-lg px-2 py-1.5 text-[12px] text-slate-800 placeholder:text-slate-400" />
+                    <input value={lat} onChange={e => setLat(e.target.value)} placeholder="纬度 lat" className="flex-1 bg-white border border-[#E6DFCF] rounded-lg px-2 py-1.5 text-[12px] text-slate-800 placeholder:text-slate-400" />
                     <button onClick={submitManual} className="px-3 bg-[#0B1F3A] text-white rounded-lg text-[12px] font-bold active:scale-95">查</button>
                 </div>
             </details>
@@ -206,7 +206,7 @@ const StoreStep: React.FC<{ loc: { lng: number; lat: number }; onPick: (ctx: Ord
             <div className="p-2 flex gap-2 border-b border-[#EFE9DC]">
                 <input value={kw} onChange={e => setKw(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') reload(kw.trim() || undefined); }}
-                    placeholder="按门店名筛选 (可选)" className="flex-1 bg-white border border-[#E6DFCF] rounded-lg px-2.5 py-1.5 text-[12px]" />
+                    placeholder="按门店名筛选 (可选)" className="flex-1 bg-white border border-[#E6DFCF] rounded-lg px-2.5 py-1.5 text-[12px] text-slate-800 placeholder:text-slate-400" />
                 <button onClick={() => reload(kw.trim() || undefined)} className="px-3 bg-[#0B1F3A] text-white rounded-lg text-[12px] font-bold active:scale-95">查</button>
             </div>
             <div className="flex-1 overflow-y-auto luckin-scroll p-2 space-y-2">
@@ -282,7 +282,7 @@ const ProductSheet: React.FC<{
 
     return (
         <div className="fixed inset-0 z-[60] bg-black/40 flex items-end justify-center" onClick={onClose}>
-            <div className="bg-gradient-to-b from-[#FAF7F0] to-[#F2EEE3] w-full sm:max-w-md rounded-t-2xl shadow-2xl flex flex-col" style={{ maxHeight: '75vh' }} onClick={e => e.stopPropagation()}>
+            <div className="bg-gradient-to-b from-[#FAF7F0] to-[#F2EEE3] text-[#1c1917] w-full sm:max-w-md rounded-t-2xl shadow-2xl flex flex-col" style={{ maxHeight: '75vh' }} onClick={e => e.stopPropagation()}>
                 <div className="flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-[#0B1F3A] to-[#1E4D8C] rounded-t-2xl shrink-0">
                     <div className="w-12 h-12 rounded-lg bg-white/20 overflow-hidden shrink-0 flex items-center justify-center text-2xl">
                         {working?.pictureUrl ? <img src={working.pictureUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" onError={(e: any) => { e.target.style.display = 'none'; }} /> : luckinItemEmoji(working?.productName)}
@@ -442,7 +442,7 @@ const MenuStep: React.FC<{
                 <div className="flex gap-2">
                     <input value={query} onChange={e => setQuery(e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter') search(query); }}
-                        placeholder="搜咖啡 / 饮品 (如 拿铁)" className="flex-1 bg-white border border-[#E6DFCF] rounded-lg px-2.5 py-1.5 text-[12px]" />
+                        placeholder="搜咖啡 / 饮品 (如 拿铁)" className="flex-1 bg-white border border-[#E6DFCF] rounded-lg px-2.5 py-1.5 text-[12px] text-slate-800 placeholder:text-slate-400" />
                     <button onClick={() => search(query)} className="px-3 bg-[#0B1F3A] text-white rounded-lg text-[12px] font-bold active:scale-95">搜</button>
                 </div>
                 <div className="flex gap-1.5 flex-wrap">
@@ -898,7 +898,7 @@ const InAppChat: React.FC<{
                             }}
                             placeholder={`问问 ${charName}...`}
                             rows={1}
-                            className="flex-1 resize-none bg-[#FAF7F0]/70 border border-[#E6DFCF] rounded-xl px-3 py-1.5 text-[12px] focus:outline-none focus:border-[#C6A15B] max-h-20"
+                            className="flex-1 resize-none bg-[#FAF7F0]/70 border border-[#E6DFCF] rounded-xl px-3 py-1.5 text-[12px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#C6A15B] max-h-20"
                         />
                         <button
                             onClick={send}
@@ -1030,7 +1030,7 @@ const LuckinMiniApp: React.FC<LuckinMiniAppProps> = ({ open, onClose, char, mess
     if (!isLuckinConfigured()) {
         return (
             <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
-                <div className="bg-white rounded-2xl p-6 max-w-sm w-full text-center" onClick={(e: any) => e.stopPropagation()}>
+                <div className="bg-white text-slate-800 rounded-2xl p-6 max-w-sm w-full text-center" onClick={(e: any) => e.stopPropagation()}>
                     <div className="text-3xl mb-2">☕</div>
                     <div className="font-bold text-slate-800 mb-2">瑞幸还没开启</div>
                     <div className="text-[12px] text-slate-500 mb-4 leading-relaxed">请到设置 → 瑞幸填入 MCP token 并开启功能</div>
@@ -1050,7 +1050,7 @@ const LuckinMiniApp: React.FC<LuckinMiniAppProps> = ({ open, onClose, char, mess
                 .luckin-scroll { scrollbar-width: thin; scrollbar-color: rgba(37, 99, 235, 0.25) transparent; }
             `}</style>
             <div
-                className="bg-gradient-to-b from-[#FAF7F0] to-[#F2EEE3] w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl shadow-2xl overflow-hidden flex flex-col"
+                className="bg-gradient-to-b from-[#FAF7F0] to-[#F2EEE3] text-[#1c1917] w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl shadow-2xl overflow-hidden flex flex-col"
                 style={{ height: '85vh', maxHeight: '85vh' }}
                 onClick={(e: any) => e.stopPropagation()}
             >

@@ -128,7 +128,7 @@ const ScheduleAppearanceButton: React.FC<{ compact?: boolean }> = ({ compact = f
         ),
         [draft.customCss],
     );
-    const preview = resolveScheduleCardPalette(draft, theme.hue, theme.contentColor || '#ffffff');
+    const preview = resolveScheduleCardPalette(draft, theme.hue, '#ffffff');
 
     const stop: React.MouseEventHandler = event => {
         event.preventDefault();
@@ -201,7 +201,7 @@ const ScheduleAppearanceButton: React.FC<{ compact?: boolean }> = ({ compact = f
                                 const palette = resolveScheduleCardPalette(
                                     { ...draft, preset: preset.id },
                                     theme.hue,
-                                    theme.contentColor || '#ffffff',
+                                    '#ffffff',
                                 );
                                 return (
                                     <button

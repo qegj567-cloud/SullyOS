@@ -1,8 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
+import SettingsDetailPage from './SettingsDetailPage';
 import Modal from '../os/Modal';
+import { useLocalBackHandler } from '../../hooks/useLocalBackHandler';
 import ConfirmDialog from '../os/ConfirmDialog';
 import type { CharacterProfile } from '../../types';
 import { ActiveMsgClient } from '../../utils/activeMsgClient';
+import { ActiveMsgStore } from '../../utils/activeMsgStore';
 import {
   CloudDataError, CLOUD_RESOURCE_LABELS, cloudResourceIdentity, describeCloudOperation, mergeCloudResourcePage, readCloudPageSummary,
   type CloudDataSession, type CloudResource, type CloudResourceType, type CloudDataGap,
@@ -11,6 +14,7 @@ import {
 import { collectCloudInventory, formatCloudSize, type CloudInventory } from '../../utils/amsgCloudInventory';
 import { pendingCloudRetirements, retireCloudCharacter } from '../../utils/amsgCloudRetirement';
 import { readDetachedWorkers } from '../../utils/amsgDetachedWorkers';
+import { AMSG_GLOBAL_CONFIG_EVENT, isAmsg2GloballyEnabled } from '../../utils/amsgGlobalGate';
 
 interface Props {
   isOpen: boolean;
@@ -66,6 +70,8 @@ const AmsgCloudDataModal: React.FC<Props> = ({ isOpen, onClose, characters, addT
   const [pendingRetirements, setPendingRetirements] = useState<Array<{ id: string; name: string }>>([]);
   const [lookupId, setLookupId] = useState('');
   const [detached, setDetached] = useState<string[]>([]);
+  const [globallyPaused, setGloballyPaused] = useState(false);
+  const [pausedWorkerUrl, setPausedWorkerUrl] = useState('');
   const epoch = useRef(0);
   const executing = useRef(false);
   const requestId = useRef('');
@@ -92,7 +98,22 @@ const AmsgCloudDataModal: React.FC<Props> = ({ isOpen, onClose, characters, addT
     setBusy(true); setComplete(false); setGaps([]); setPendingRetirements([]); setError(''); setUnsupported(false); setLegacy(null); setSession(null);
     setResources([]); setSelected(new Set()); setFilter(''); setSelectedOwner(null); setOwnerState(null); setKnownOwners([]);
     setSummary(null); setOperations([]); setOperationError(''); setPlan(null); setRestore(null); setCursor(null);
+    setGloballyPaused(false); setPausedWorkerUrl('');
     try {
+      const globalConfig = await ActiveMsgStore.getGlobalConfig();
+      if (epoch.current !== requestEpoch) return;
+      if (globalConfig.workerUrl?.trim() && globalConfig.userId) {
+        try {
+          setPendingRetirements(pendingCloudRetirements({ workerUrl: globalConfig.workerUrl, userId: globalConfig.userId }));
+        } catch {
+          setError('本机的未确认请求记录无法读取，云端清单仍可查看和管理。');
+        }
+      }
+      if (!isAmsg2GloballyEnabled(globalConfig)) {
+        setGloballyPaused(true);
+        setPausedWorkerUrl(globalConfig.workerUrl?.trim() || '');
+        return;
+      }
       const current = await ActiveMsgClient.openCloudDataSession();
       if (epoch.current !== requestEpoch) return;
       setSession(current);
@@ -119,7 +140,16 @@ const AmsgCloudDataModal: React.FC<Props> = ({ isOpen, onClose, characters, addT
   };
 
   useEffect(() => {
-    if (isOpen) { setDetached(readDetachedWorkers().map(row => row.url)); void open(); }
+    if (isOpen) {
+      setDetached(readDetachedWorkers().map(row => row.url));
+      void open();
+      const onGlobalCfg = () => { void open(); };
+      window.addEventListener(AMSG_GLOBAL_CONFIG_EVENT, onGlobalCfg);
+      return () => {
+        epoch.current += 1;
+        window.removeEventListener(AMSG_GLOBAL_CONFIG_EVENT, onGlobalCfg);
+      };
+    }
     return () => { epoch.current += 1; };
   }, [isOpen]);
 
@@ -229,16 +259,36 @@ const AmsgCloudDataModal: React.FC<Props> = ({ isOpen, onClose, characters, addT
     ...(selectedOwner ? [selectedOwner] : []),
   ].map(owner => [ownerKey(owner), owner])).values()];
   const close = () => { if (!executing.current) onClose(); };
+  useLocalBackHandler(() => { if (!busy) { setPlan(null); setRestore(null); setError(''); } return true; }, 60, isOpen && Boolean(plan || restore));
   const allGaps = [...gaps, ...(summary?.gaps ?? []), ...(summary && !summary.complete && !summary.gaps.length ? [{ source: 'summary', code: 'INCOMPLETE', message: '云端汇总尚未确认完整。' }] : [])];
 
   return <>
-    <Modal isOpen={isOpen && !plan && !restore} title="云端数据管理" onClose={close} footer={<div className="flex w-full gap-2">
+    <SettingsDetailPage isOpen={isOpen} hidden={Boolean(plan || restore)} title="云端数据管理" onClose={close} footer={<div className="flex w-full gap-2">
       <button type="button" onClick={close} disabled={busy} className={`${buttonClass} flex-1`}>关闭</button>
       {session && <button type="button" disabled={busy || !selected.size} onClick={() => void preview()} className="flex-1 rounded-xl bg-rose-600 px-3 py-3 text-xs font-bold text-white disabled:opacity-40">预览清理 ({selected.size})</button>}
     </div>}>
       <div className="space-y-4 text-xs leading-relaxed">
         <p className="text-slate-600">直接查看这台 Worker 为当前用户存下的数据。本机找不到的角色也会显示；其他设备可能仍在使用，请按实际需要选择。</p>
         {session && <p className="break-all border-l-2 border-violet-300 pl-3 text-slate-500">当前连接：{session.workerUrl}</p>}
+        {globallyPaused && (
+          <div role="status" className="space-y-1.5 rounded-xl border border-amber-200 bg-amber-50 p-3 text-amber-800">
+            <p className="font-semibold">主动消息 2.0 总开关已暂停</p>
+            <p>暂停期间不向 Worker 发起查询或清理请求。要查看或清理云端清单，请先在设置中恢复总开关。</p>
+            {pausedWorkerUrl ? <p className="break-all text-[11px] text-amber-700/80">已保存连接：{pausedWorkerUrl}</p> : null}
+          </div>
+        )}
+        {globallyPaused && !!pendingRetirements.length && (
+          <div className="space-y-2 rounded-xl bg-amber-50 p-3 text-amber-800">
+            <p className="font-semibold">本机待补送的删除请求</p>
+            <p>以下角色在暂停期间已在本地删除，恢复总开关后会自动补送云端停用清理。</p>
+            {pendingRetirements.map(character => (
+              <div key={character.id} className="flex items-center justify-between gap-2">
+                <span className="min-w-0 break-all">{character.name}（{character.id}）</span>
+                <button type="button" disabled className={`${buttonClass} shrink-0`}>待恢复后补送</button>
+              </div>
+            ))}
+          </div>
+        )}
         {error && <div role="alert" className="rounded-xl bg-rose-50 p-3 text-rose-700">{error}<button type="button" className={`${buttonClass} mt-2 block bg-white`} disabled={busy} onClick={() => void open()}>重新连接</button></div>}
         {busy && <p role="status" className="text-slate-500">正在向云端确认…</p>}
         {unsupported && <div className="space-y-2"><p className="text-amber-800">旧版清单不包含所有结果和未知归属数据，只能作为线索。完整管理需要更新 Worker。</p><button type="button" className={buttonClass} disabled={busy} onClick={() => void readLegacy()}>查看旧版有限清单</button></div>}
@@ -276,7 +326,7 @@ const AmsgCloudDataModal: React.FC<Props> = ({ isOpen, onClose, characters, addT
         </>}
         {!!detached.length && <details className="border-t border-slate-100 pt-3 text-slate-500"><summary className="cursor-pointer">以前断开的 Worker</summary><p className="py-2">当前清单不包含这些连接。需要管理时，在配置里重新连接对应地址。</p>{detached.map(url => <p key={url} className="break-all">{url}</p>)}</details>}
       </div>
-    </Modal>
+    </SettingsDetailPage>
     <Modal isOpen={isOpen && !!plan} title={plan?.mode === 'retire-owner' ? '确认彻底移除' : '确认清理范围'} onClose={() => { if (!busy) { setPlan(null); setError(''); } }} footer={<div className="flex w-full gap-2"><button type="button" disabled={busy} onClick={() => { setPlan(null); setError(''); }} className={`${buttonClass} flex-1`}>返回</button><button type="button" disabled={busy || !plan?.complete || !!plan.gaps.length} onClick={() => void execute()} className="flex-1 rounded-xl bg-rose-600 px-3 py-3 text-xs font-bold text-white disabled:opacity-40">{busy ? '正在提交…' : '确认清理'}</button></div>}>
       {plan && <div className="space-y-3 text-xs leading-relaxed text-slate-600"><p>以下范围由云端确认，共 {plan.count} 项。</p>{plan.counts.map(row => <p key={row.type}>{CLOUD_RESOURCE_LABELS[row.type]}：{row.count} 项</p>)}{!!plan.resources.length && <details><summary className="cursor-pointer font-semibold">查看具体数据</summary><div className="mt-2 max-h-48 space-y-2 overflow-y-auto">{plan.resources.map(resource => <p key={resource.id} className="break-all">{cloudResourceIdentity(resource, characters).name} · {CLOUD_RESOURCE_LABELS[resource.type]}：{resource.label}</p>)}</div></details>}<p className="break-all">当前连接：{session?.workerUrl}</p>{plan.owner && <p className="break-all">归属：{plan.owner.label ?? plan.owner.id}（{plan.owner.id}）</p>}<p className="font-semibold text-rose-700">{plan.mode === 'retire-owner' ? '先停用此角色，再清除执行时它名下的全部云端数据。之后必须明确允许重新使用，才可继续上传；已发出的通知无法撤回。归属未知的记录需要单独检查。' : '只删除预览中选定的数据，不会删除本地记录。后续聊天可能重新上传；清除上下文或凭据可能使相关任务失败。'}</p>{plan.impacts.map((impact, index) => <p key={index}>{impact}</p>)}<Gaps gaps={plan.gaps} /><p>已清除的数据无法撤销。</p>{error && <p role="alert" className="text-rose-700">{error}</p>}</div>}
     </Modal>

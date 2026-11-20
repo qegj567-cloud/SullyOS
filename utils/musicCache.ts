@@ -149,6 +149,18 @@ if (typeof window !== 'undefined') {
 const makeKey = (path: string, body: any, cookie?: string) =>
   `${cookieSalt(cookie)}|${path}|${stableStringify(body ?? {})}`;
 
+const shouldStoreCache = (path: string, res: any): boolean => {
+  if (!res || typeof res !== 'object') return false;
+  // 业务异常码（如 -460 风控、301 未登录、400 参数错误）即使以 HTTP 200 返回也不进本地缓存，
+  // 防止单次偶发失败把后续正常请求锁死在整个 TTL 窗口内（歌词 TTL 长达 24h）。
+  if (typeof res.code === 'number' && res.code !== 200) return false;
+  if (path === '/song/url') {
+    const first = Array.isArray(res.data) ? res.data[0] : null;
+    if (!first?.url) return false;
+  }
+  return true;
+};
+
 /**
  * 包装实际请求。不在缓存规则里的 path → 直接打网络。
  */
@@ -173,9 +185,11 @@ export async function cachedCall<T = any>(
 
   const p = doCall().then(
     (res) => {
-      MEM.set(key, { data: res, expires: Date.now() + ttl });
       INFLIGHT.delete(key);
-      schedulePersist();
+      if (shouldStoreCache(path, res)) {
+        MEM.set(key, { data: res, expires: Date.now() + ttl });
+        schedulePersist();
+      }
       return res;
     },
     (err) => {

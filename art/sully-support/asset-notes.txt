@@ -1,0 +1,25 @@
+Sully 微信赞赏 · CSS 视觉与 App 实装
+
+设置 App 最下方（版本信息之后）进入打赏 Sully；只保留微信赞赏。
+正式组件：components/settings/SullySupportEntry.tsx、SullySupportPage.tsx、SullySupport.css。
+生产素材位于 assets/sully-support，随 Vite 生成带 hash 的资源地址；详情页按需加载。
+页面顺序：主视觉 → 用途与自愿说明 → 可展开的参考菜单 → 公开署名规则 → 微信赞赏码。
+金额只作参考，实际金额在微信内填写；单次上限 ¥200。没有预填金额或支付回调。
+
+保存复用 shareOrDownloadBlob：提前准备 Blob，点击时同步进入原生／浏览器分享，保留用户手势；取消不显示保存成功。
+原始赞赏码保留备用入口，支持保存或长按。返回时恢复设置页滚动、入口焦点及未保存草稿。
+
+素材由用户提供的 S2.png、wait.png、see.png 与原始微信赞赏码组成。
+挂件白边、挂环、格纹、纸票与排版均为 CSS；没有使用 AI 生图。
+微信码从原图 (330,166) 裁出 550×550，仅替换原图 (509,345) 的 192×192 中心头像；外围码点与留白不变。
+用户已使用微信实扫统一头像小票，确认能进入原赞赏页；没有进行实际付款。
+微信赞赏码不属于通用 QR 解码器支持的格式，不能把自动检查当成微信实扫。
+
+码图源：code-art.html；小票源：code-card.html；界面原型：preview.html。
+横图源：readme-banner.html；脚本：scripts/export-sully-readme-banner.mjs。
+横图导出：exports/readme-support-1600x860.png、exports/dc-support-1600x860.png。
+两份均为微信单码版，保留公开署名、自愿赞赏与无额外权益／更新承诺／优先服务说明；README 另提供完整微信小票链接。
+小红书图原本就仅含微信赞赏码。
+
+浏览器回归：pnpm exec node scripts/test-sully-support-ui.mjs。
+用独立浏览器验证微信小票下载字节、分享手势、原始码、逐层返回、未保存草稿与 320/390/900px 布局；不使用用户浏览器资料或真实付款。

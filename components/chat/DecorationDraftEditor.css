@@ -38,7 +38,7 @@
 .decoration-current-image{display:block;aspect-ratio:1;overflow:hidden;background:#efedf2;border-radius:14px}
 .decoration-current-grid>button:first-child{grid-row:span 2;grid-column:span 2}.decoration-current-grid>button:first-child .decoration-current-image{aspect-ratio:3/4}
 .decoration-current-grid small,.decoration-current-grid strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.decoration-current-grid small{font-size:10px;color:#999;margin-top:6px}.decoration-current-grid strong{font-size:13px;font-weight:500;margin-top:2px}.decoration-current-character{color:#888;font-size:12px;margin:6px 0 10px}
-.decoration-bubble-maker{position:fixed;inset:0;z-index:12000;height:var(--visual-viewport-height,100dvh);background:#f8fafc;padding-bottom:env(safe-area-inset-bottom,0px)}
+.decoration-bubble-maker{position:fixed;inset:0;z-index:12000;height:var(--visual-viewport-height,100dvh);background:#f8fafc;color:#1e293b;padding-bottom:env(safe-area-inset-bottom,0px)}
 .wardrobe-character-context select{background:transparent;border:0;font:inherit;font-weight:550;max-width:200px;padding:8px;outline-offset:3px}
 
 /* The outfit viewer keeps its full height; browsing lives beside it. */

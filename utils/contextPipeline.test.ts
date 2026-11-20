@@ -72,3 +72,27 @@ it('异步上下文必须等待完成，不能把 Promise 拼进提示词或请�
     }
     expect(violations).toEqual([]);
 });
+
+// 召回结果不挂在角色对象上（进出库都剥掉，见 utils/db.ts withoutRuntimeRecall）。
+// 直接拿角色拼上下文的入口必须自己在副本上跑召回，或显式传清空召回的副本——
+// 否则读到的是别的 App 刚留在共享对象上的召回。下列文件是已审计的例外。
+const recallExemptions: Record<string, string> = {
+    'utils/chatPrompts.ts': '被调用的那一层，召回由上游调用方准备',
+    'components/date/story/StoryTheaterSession.tsx': '用 retrieveMemories 自算召回后显式挂到副本上',
+    'apps/MemoryPalaceApp.tsx': '记忆诊断输出序列化文本，不是角色对话',
+    'utils/memoryPalace/memoryRepair.ts': '记忆修复的序列化文本契约',
+    'utils/memoryPalace/roomPlates.ts': '后台门牌整理的序列化文本契约',
+};
+
+it('直接拼角色上下文的入口必须自备召回，不能读共享角色对象上留下的召回', () => {
+    const builders = /ContextBuilder\.(buildCharacterRequest|buildCoreContext|buildCharacterContext|buildVolatileCoreState)\(|ChatPrompts\.buildSystemPrompt(Parts)?\(/;
+    const recallReady = /injectMemoryPalace\(|buildChatRequestPayload\(|memoryPalaceInjection: ''/;
+    const root = process.cwd();
+    const violations: string[] = [];
+    for (const path of ['apps', 'components', 'utils', 'features', 'hooks', 'context'].flatMap(dir => sourceFiles(join(root, dir)))) {
+        const name = relative(root, path).replace(/\\/g, '/');
+        const source = readFileSync(path, 'utf8');
+        if (builders.test(source) && !recallReady.test(source) && !recallExemptions[name]) violations.push(name);
+    }
+    expect(violations).toEqual([]);
+});

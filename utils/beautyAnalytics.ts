@@ -16,3 +16,10 @@ export function trackBeauty(action: string, category: unknown) {
   if (!Object.prototype.hasOwnProperty.call(events, action) || typeof category !== 'string' || !Object.prototype.hasOwnProperty.call(categories, category)) return;
   trackEvent(events[action as keyof typeof events], {分类: categories[category as keyof typeof categories]});
 }
+
+export function trackBeautyInbox(action: 'open' | 'success' | 'failure') {
+  if (action === 'open') trackEvent('打开美化作者收件箱');
+  if (action === 'success' || action === 'failure') {
+    trackEvent('拉取美化作者收件箱', {结果: action === 'success' ? '成功' : '失败'});
+  }
+}

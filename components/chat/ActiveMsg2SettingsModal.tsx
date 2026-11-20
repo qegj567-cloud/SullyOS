@@ -1,5 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { useLocalBackHandler } from '../../hooks/useLocalBackHandler';
 import Modal from '../os/Modal';
+import SettingsDetailPage from '../settings/SettingsDetailPage';
 import {
   ActiveMsg2CharacterConfig,
   ActiveMsg2ExpirePolicy,
@@ -14,6 +16,7 @@ import {
 } from '../../types';
 import { ActiveMsgClient, getDefaultActiveMsgFirstSendTime } from '../../utils/activeMsgClient';
 import { ActiveMsgStore } from '../../utils/activeMsgStore';
+import { isAmsg2GloballyEnabled, isAmsg2WorkerActive } from '../../utils/amsgGlobalGate';
 import { type AmsgLastSkip, describeLastSkip } from '../../utils/amsgFirePack';
 import {
   type AmsgDailySends,
@@ -25,8 +28,13 @@ import {
 } from '../../utils/amsgLimits';
 import ActiveMsg2PacingModal from './ActiveMsg2PacingModal';
 import { isInstantChatReady } from '../../utils/amsgInstantChat';
+import { showInstantChatSendHelp } from '../../utils/instantChatSendHelp';
 import { syncAmsgLlmCredentials } from '../../utils/amsgStateSync';
-import { disableScheduleCharPurge, purgeCharCloudState } from '../../utils/amsg2CharCleanup';
+import {
+  disableCharacterAmsg2Schedule,
+  isChatTimeAwarenessOff,
+  needsAmsg2TimeAwarenessOverride,
+} from '../../utils/amsg2TimeAwarenessGate';
 import { buildUserCancelledNotices } from '../../utils/amsg2TaskContext';
 import { trackEvent } from '../../utils/analytics';
 import {
@@ -43,18 +51,17 @@ import {
   isAmsg2EnabledForChar,
   isPendingTask,
   isRemoteMissingTask,
-  keepUncancelledTasks,
   pruneFiredTasks,
   reconcileTasksWithRemote,
   resolveExpirePolicy,
   type RemoteTaskLastError,
   type RemoteTaskProjection,
-  shortTaskId,
   toDatetimeLocalValue,
 } from '../../utils/amsg2Tasks';
 
 interface ActiveMsg2SettingsModalProps {
   isOpen: boolean;
+  fullPage?: boolean;
   onClose: () => void;
   char: CharacterProfile;
   apiConfig: APIConfig;
@@ -76,9 +83,9 @@ interface ActiveMsg2SettingsModalProps {
 }
 
 const MODE_OPTIONS = [
-  { id: 'fixed', label: '固定', desc: '到点直接发你写好的内容' },
-  { id: 'auto', label: '自动', desc: '用当前角色设定和聊天快照自己生成' },
-  { id: 'prompted', label: '提示词', desc: '围绕你写的方向生成主动消息' },
+  { id: 'fixed', label: '固定内容', desc: '到点直接发送你写好的内容，不经过 AI 生成。' },
+  { id: 'prompted', label: '指定话题', desc: '到点结合最新的聊天上下文和角色设定，围绕你指定的话题生成消息。' },
+  { id: 'auto', label: '自由发挥', desc: '到点结合最新的聊天上下文、角色设定和当前时间，由 TA 自己决定聊什么。' },
 ] as const;
 
 const RECURRENCE_OPTIONS = [
@@ -92,7 +99,7 @@ const describePacingSummary = (config: AmsgPacingSettings | undefined): string =
   const limits = resolveAmsgLimits(config);
   const gapMinutes = Math.round(limits.minSendGapMs / 60_000);
   return [
-    Number.isFinite(limits.maxUnansweredSends) ? `没回最多连发 ${limits.maxUnansweredSends} 次` : '没回也不限次数',
+    Number.isFinite(limits.maxUnansweredSends) ? `未回复时主动联系 ${limits.maxUnansweredSends} 次` : '未回复时主动联系不限次数',
     gapMinutes > 0 ? `至少隔 ${describeMinutes(gapMinutes)}` : '间隔不限',
     Number.isFinite(limits.dailySendCap) ? `每天最多 ${limits.dailySendCap} 次` : '每天不限',
   ].join(' · ');
@@ -100,6 +107,7 @@ const describePacingSummary = (config: AmsgPacingSettings | undefined): string =
 
 const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
   isOpen,
+  fullPage = false,
   onClose,
   char,
   apiConfig,
@@ -133,6 +141,20 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   // editingTaskUuid=null → 新建；非 null → 编辑该任务（保存时 replaceTaskUuid）。
   const [editingTaskUuid, setEditingTaskUuid] = useState<string | null>(null);
+  const [taskEditorOpen, setTaskEditorOpen] = useState(false);
+  const [timeAwareConfirmOpen, setTimeAwareConfirmOpen] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const closeTaskEditor = () => { if (!isSubmitting) setTaskEditorOpen(false); };
+  useLocalBackHandler(() => { closeTaskEditor(); return true; }, 45, isOpen && taskEditorOpen && !pacingOpen);
+  useEffect(() => { if (!isOpen) { setTaskEditorOpen(false); setEditingTaskUuid(null); setTimeAwareConfirmOpen(false); } }, [isOpen]);
+  useEffect(() => {
+    const scroll = contentRef.current?.closest('.amsg-detail-scroll') ?? contentRef.current?.parentElement;
+    const frame = requestAnimationFrame(() => {
+      scroll?.scrollTo?.({ top: 0 });
+      if (taskEditorOpen) contentRef.current?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [taskEditorOpen]);
   const [expirePolicy, setExpirePolicy] = useState<ActiveMsg2ExpirePolicy>('expire');
   // 远端对账底账：打开面板时拉一次全量任务，只留归属本角色的 uuid。null = 没对上账
   // （读失败/未拉完），此时不显示「远端不存在」徽标，免得半个清单误伤。
@@ -149,6 +171,7 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
   const [lastSkip, setLastSkip] = useState<AmsgLastSkip | null>(null);
   // 今天主动找了几次（worker 每次发完累加的那份）。null = 没有记录 / 没读到。
   const [dailySends, setDailySends] = useState<AmsgDailySends | null>(null);
+  const [globalPaused, setGlobalPaused] = useState(false);
 
   // 表单值重置：面板打开或切换编辑对象时，用被编辑任务的字段填表单（新建则填默认值）。
   // 角色级共享设置（maxTokens）始终跟随保存值。
@@ -187,6 +210,7 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
     // 「主动频率」那一页每次都从关着开始，别带着上回没关的状态直接弹出来。放在这个只认
     // 「打开」的 effect 里：放进上面那个的话，角色在聊天里排一条任务都会把它关掉。
     setPacingOpen(false);
+    setTimeAwareConfirmOpen(false);
     setKnownRemoteUuids(null);
     setRemoteTaskInfo(null);
 
@@ -196,7 +220,9 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
     void (async () => {
       const globalConfig = await ActiveMsgClient.getGlobalConfig();
       const pushStatus = await ActiveMsgClient.getPushStatus();
-      setGlobalReady(Boolean(globalConfig.workerUrl));
+      const active = isAmsg2WorkerActive(globalConfig);
+      setGlobalReady(active);
+      setGlobalPaused(Boolean(globalConfig.workerUrl?.trim()) && !isAmsg2GloballyEnabled(globalConfig));
       const permLabel = pushStatus.permission === 'granted'
         ? '已允许'
         : pushStatus.permission === 'denied'
@@ -209,53 +235,59 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
             ? `权限：${permLabel} / 订阅：${pushStatus.hasSubscription ? '已就绪' : '未创建'}`
             : '当前环境不支持 Web Push（可在全局设置改用第三方推送 App）',
       );
-    })();
-
-    // 防穿帮闸最近拦下了哪次触发、今天主动找了几次。闸是静默的，不说一声的话「让路了」
-    // 在用户看来跟「没发出去」一模一样；次数摆出来，用户才知道上限是不是在起作用。
-    setDailySends(null);
-    void (async () => {
-      const status = await ActiveMsgClient.readPanelStatus(char.id);
-      setLastSkip(status.lastSkip);
-      setDailySends(status.dailySends);
-    })();
-
-    void (async () => {
-      let remote: Set<string>;
-      let remoteTasks: RemoteTaskProjection[];
-      try {
-        // 全量投影一次拉齐：uuid 当对账底账，status / lastError 给任务卡片说明
-        // 「上次到点为什么没发出去」，nextSendAt 给循环任务显示真正会响的时刻。
-        remoteTasks = await ActiveMsgClient.listRemoteTasksForChar(char.id);
-        remote = new Set(remoteTasks.map((t) => t.uuid));
-        setRemoteTaskInfo(new Map(remoteTasks.map((t) => [
-          t.uuid, { status: t.status, lastError: t.lastError },
-        ])));
-      } catch {
-        // 对账失败不打扰：null 让「远端不存在」徽标整体不显示，也不清任何任务。
+      if (!active) {
+        setLastSkip(null);
+        setDailySends(null);
         setKnownRemoteUuids(null);
         return;
       }
-      setKnownRemoteUuids(remote);
 
-      // 对账两个方向都走：把已经走完的一次性任务清出列表（不然发过的任务会一直堆在
-      // 这儿，得手动一条条取消），同时把远端有、本地没有的接回来——角色自排的任务是
-      // 随 push 认领的，那条 push 推失败或被防穿帮闸吞掉，本地就永远不知道它存在，
-      // 而它照常到点触发。先拿渲染时这份探一下有没有变化，避免每次开面板都写一次库。
-      // 真正落盘时在 updater 里用最新的 prev 重算——面板保存要 await 网络请求，
-      // 这期间角色可能在聊天里用工具排了新任务。
-      const settle = (tasks: ActiveMsg2TaskRecord[]) =>
-        pruneFiredTasks(reconcileTasksWithRemote(tasks, remoteTasks), remote, Date.now());
-      const current = char.activeMsg2Config?.tasks ?? [];
-      const settled = settle(current);
-      const changed = settled.length !== current.length
-        || settled.some((t, i) => t !== current[i]);
-      if (changed) {
-        onSave((prev) => ({
-          ...(prev ?? { enabled: true, tasks: [] }),
-          tasks: settle(prev?.tasks ?? []),
-        }));
-      }
+      // 防穿帮闸最近拦下了哪次触发、今天主动找了几次。闸是静默的，不说一声的话「让路了」
+      // 在用户看来跟「没发出去」一模一样；次数摆出来，用户才知道上限是不是在起作用。
+      setDailySends(null);
+      void (async () => {
+        const status = await ActiveMsgClient.readPanelStatus(char.id);
+        setLastSkip(status.lastSkip);
+        setDailySends(status.dailySends);
+      })();
+
+      void (async () => {
+        let remote: Set<string>;
+        let remoteTasks: RemoteTaskProjection[];
+        try {
+          // 全量投影一次拉齐：uuid 当对账底账，status / lastError 给任务卡片说明
+          // 「上次到点为什么没发出去」，nextSendAt 给循环任务显示真正会响的时刻。
+          remoteTasks = await ActiveMsgClient.listRemoteTasksForChar(char.id);
+          remote = new Set(remoteTasks.map((t) => t.uuid));
+          setRemoteTaskInfo(new Map(remoteTasks.map((t) => [
+            t.uuid, { status: t.status, lastError: t.lastError },
+          ])));
+        } catch {
+          // 对账失败不打扰：null 让「远端不存在」徽标整体不显示，也不清任何任务。
+          setKnownRemoteUuids(null);
+          return;
+        }
+        setKnownRemoteUuids(remote);
+
+        // 对账两个方向都走：把已经走完的一次性任务清出列表（不然发过的任务会一直堆在
+        // 这儿，得手动一条条取消），同时把远端有、本地没有的接回来——角色自排的任务是
+        // 随 push 认领的，那条 push 推失败或被防穿帮闸吞掉，本地就永远不知道它存在，
+        // 而它照常到点触发。先拿渲染时这份探一下有没有变化，避免每次开面板都写一次库。
+        // 真正落盘时在 updater 里用最新的 prev 重算——面板保存要 await 网络请求，
+        // 这期间角色可能在聊天里用工具排了新任务。
+        const settle = (tasks: ActiveMsg2TaskRecord[]) =>
+          pruneFiredTasks(reconcileTasksWithRemote(tasks, remoteTasks), remote, Date.now());
+        const current = char.activeMsg2Config?.tasks ?? [];
+        const settled = settle(current);
+        const changed = settled.length !== current.length
+          || settled.some((t, i) => t !== current[i]);
+        if (changed) {
+          onSave((prev) => ({
+            ...(prev ?? { enabled: true, tasks: [] }),
+            tasks: settle(prev?.tasks ?? []),
+          }));
+        }
+      })();
     })();
     // char.activeMsg2Config 只在函数体里读当前值当探针，不进依赖——清理落盘会改它，
     // 进了依赖就是「清理 → 重跑 → 再清理」的自激循环。
@@ -276,6 +308,7 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
     // 开关以已保存的为准：关着 2.0 时任务列表照样列出来、照样能单独取消，取消完落盘
     // 不能顺手把 2.0 又打开。要开 / 要关的地方各自经 extra 显式给。
     enabled: prev ? prev.enabled : true,
+    ...(prev?.allowWithoutTimeAwareness ? { allowWithoutTimeAwareness: true } : {}),
     tasks: tasksOf(prev?.tasks ?? []),
     // 「主动频率」那几项由它自己那一页保存，这里原样带着最新的，别被表单盖掉。
     ...pickPacingSettings(prev),
@@ -286,6 +319,26 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
     ...extra,
   });
 
+  const confirmEnableWithoutTimeAwareness = () => {
+    setTimeAwareConfirmOpen(false);
+    if (!enabled) setEnabled(!enabled);
+    // 顺手把面板上其它角色级设置（maxTokens）一起带上，与
+    // buildConfig 的口径一致：这几项本来就只有面板会写。
+    const extra: Partial<ActiveMsg2CharacterConfig> = {
+      enabled: true,
+      allowWithoutTimeAwareness: true,
+    };
+    onSave((prev) => buildConfig(prev, (list) => list, extra));
+    // 上次关 2.0 时云端那份「频率与额度」被写成了关，这里立刻改回开。不等也不报错：
+    // 真到要用它的时候（排任务 / 云端聊天）每次都会连同上下文再传一份。
+    if (globalReady) {
+      void ActiveMsgClient.putCharLimits({
+        ...char,
+        activeMsg2Config: { ...(char.activeMsg2Config ?? { enabled: true }), ...extra },
+      }).catch((error) => console.warn('[ActiveMsg2Settings] 打开 2.0 时同步主动频率失败（下次上传会带上）', error));
+    }
+  };
+
   /**
    * 拨开关本身就算一次保存。
    *
@@ -293,23 +346,33 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
    * activeMsg2Config 还是空的（= 关）：聊天里不注入排程工具、fire_pack 的
    * selfScheduleEnabled 上传 false、重开面板开关又显示成「关」，全程一句提示都没有。
    *
-   * 只有「开」这一侧就地落盘。「关」要走底部那颗「关闭 2.0」按钮：关掉的同时得把该
-   * 角色在远端的任务全部取消，这里就地写一个 enabled:false，远端任务没人管，会变成
-   * 面板看不见却照样到点触发的幽灵任务。
+   * 只有「开」这一侧就地落盘（但若角色关着「聊天 · 时间感知强化」且未经显式覆盖确认，
+   * 默认拦住并展开风险确认卡片，防止现实定时与架空剧情时间打架）。
+   * 「关」要走底部那颗「关闭 2.0」按钮：关掉的同时得把该角色在远端的任务全部取消，
+   * 这里就地写一个 enabled:false，远端任务没人管，会变成面板看不见却照样到点触发的幽灵任务。
    */
   const handleToggleEnabled = () => {
     const turningOn = !enabled;
+    if (turningOn && needsAmsg2TimeAwarenessOverride(char)) {
+      setTimeAwareConfirmOpen(true);
+      return;
+    }
+    setTimeAwareConfirmOpen(false);
     setEnabled(!enabled);
     // 顺手把面板上其它角色级设置（maxTokens）一起带上，与
     // buildConfig 的口径一致：这几项本来就只有面板会写。
     if (turningOn) {
-      onSave((prev) => buildConfig(prev, (list) => list, { enabled: true }));
+      const extra: Partial<ActiveMsg2CharacterConfig> = {
+        enabled: true,
+        ...(isChatTimeAwarenessOff(char) ? { allowWithoutTimeAwareness: true } : {}),
+      };
+      onSave((prev) => buildConfig(prev, (list) => list, extra));
       // 上次关 2.0 时云端那份「频率与额度」被写成了关，这里立刻改回开。不等也不报错：
       // 真到要用它的时候（排任务 / 云端聊天）每次都会连同上下文再传一份。
       if (globalReady) {
         void ActiveMsgClient.putCharLimits({
           ...char,
-          activeMsg2Config: { ...(char.activeMsg2Config ?? { enabled: true }), enabled: true },
+          activeMsg2Config: { ...(char.activeMsg2Config ?? { enabled: true }), ...extra },
         }).catch((error) => console.warn('[ActiveMsg2Settings] 打开 2.0 时同步主动频率失败（下次上传会带上）', error));
       }
     }
@@ -347,22 +410,26 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
     }
 
     const failed = new Set<string>();
-    for (const t of toCancel) {
-      try { await ActiveMsgClient.cancelTask(t.taskUuid); } catch { failed.add(t.taskUuid); }
-    }
-    if (toCancel.length) {
-      const cancelled = toCancel.filter((t) => !failed.has(t.taskUuid));
-      await writeCancelledNotices(cancelled);
-      setKnownRemoteUuids((prev) => applyRemoteTaskDelta(prev, { gone: cancelled.map((t) => t.taskUuid) }));
-      onSave((prev) => buildConfig(prev, (list) => list
-        .filter((x) => !cancelled.some((c) => c.taskUuid === x.taskUuid))
-        .map((x) => (failed.has(x.taskUuid) ? { ...x, lastError: '远端取消失败，可重试' } : x))));
+    if (globalReady) {
+      for (const t of toCancel) {
+        try { await ActiveMsgClient.cancelTask(t.taskUuid); } catch { failed.add(t.taskUuid); }
+      }
+      if (toCancel.length) {
+        const cancelled = toCancel.filter((t) => !failed.has(t.taskUuid));
+        await writeCancelledNotices(cancelled);
+        setKnownRemoteUuids((prev) => applyRemoteTaskDelta(prev, { gone: cancelled.map((t) => t.taskUuid) }));
+        onSave((prev) => buildConfig(prev, (list) => list
+          .filter((x) => !cancelled.some((c) => c.taskUuid === x.taskUuid))
+          .map((x) => (failed.has(x.taskUuid) ? { ...x, lastError: '远端取消失败，可重试' } : x))));
+      }
     }
 
     if (failed.size) {
       addToast(`主动频率已保存，但 TA 排的重复消息有 ${failed.size} 次没能取消，可以在任务列表里单独取消。`, 'error');
     } else if (!synced) {
       addToast('主动频率已保存在本机，这次没同步到云端，下次同步时会自动带上。', 'error');
+    } else if (!globalReady && toCancel.length) {
+      addToast('主动频率已保存在本机；已排过的重复消息可在恢复全局连接后于列表中取消。', 'info');
     } else {
       addToast(toCancel.length
         ? `主动频率已保存，TA 排过的 ${toCancel.length} 次重复消息已经取消。`
@@ -386,6 +453,7 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
       // 开着存 undefined（= 跟随全局默认开），只有显式关掉才落 false。
       instantChatEnabled: next ? undefined : false,
     }));
+    if (next) showInstantChatSendHelp('cloud', true);
   };
 
   /**
@@ -406,6 +474,15 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
   };
 
   const handleCancelTask = async (t: ActiveMsg2TaskRecord) => {
+    if (!globalReady) {
+      addToast(
+        globalPaused
+          ? '全局总开关当前处于暂停状态，恢复总开关后再取消远端任务。'
+          : '请先去系统设置里完成“主动消息 2.0”的全局配置。',
+        'info',
+      );
+      return;
+    }
     // alreadyGone = 远端本来就没有这一条（一次性任务发完就删行）。这也是取消成功，
     // 只是文案上说清楚，免得用户以为自己刚刚拦下了一条还没发的消息。
     let alreadyGone = false;
@@ -416,7 +493,7 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
       console.warn('[ActiveMsg2Modal] 远端取消失败（保留记录待重试）', e);
       onSave((prev) => buildConfig(prev, (list) =>
         list.map((x) => x.taskUuid === t.taskUuid ? { ...x, lastError: '远端取消失败，可重试' } : x)));
-      addToast(`任务 [${shortTaskId(t.taskUuid)}] 取消失败（远端未确认），稍后重试。`, 'error');
+      addToast('任务取消失败（远端未确认），稍后重试。', 'error');
       // 排程有埋点、取消没有的话，任务生命周期只记了一半。三个结果各有各的含义：
       // failed = 远端照发但面板以为拦下了，是对账不平里最难受的一种。
       trackEvent('取消定时消息', { result: 'failed' });
@@ -434,70 +511,54 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
       { lastSyncedAt: Date.now() },
     ));
     addToast(alreadyGone
-      ? `任务 [${shortTaskId(t.taskUuid)}] 在远端已不存在（多半已经发过了），已从列表移除。`
-      : `任务 [${shortTaskId(t.taskUuid)}] 已取消。`, 'info');
+      ? '这条任务在远端已不存在（多半已经发过了），已从列表移除。'
+      : '任务已取消。', 'info');
     trackEvent('取消定时消息', { result: alreadyGone ? '远端已不存在' : 'ok' });
   };
 
-  const handleSubmit = async () => {
+  const runDisableAmsg2 = async (closeAfter: boolean) => {
     setIsSubmitting(true);
     try {
-      if (!enabled) {
-        // 第一件事：告诉云端这个角色关了。下面逐条取消要花几秒，这期间正在跑的那一轮
-        // （尤其是即时对话——它不在取消范围里）还可能顺手给自己排一条；云端先知道「关了」，
-        // 这种漏网的到点就会被直接跳过。传不上去也照样往下关：取消本身才是主线。
-        if (globalReady) {
-          try {
-            await ActiveMsgClient.putCharLimits({
-              ...char,
-              activeMsg2Config: { ...(char.activeMsg2Config ?? { enabled: false }), enabled: false },
-            });
-          } catch (error) {
-            console.warn('[ActiveMsg2Settings] 关闭 2.0 时没能先通知云端（照常取消任务）', error);
-          }
-        }
-        // 关闭 2.0 = 取消该角色全部远端任务（远端清单优先的口径见 cancelAllTasksForChar，
-        // 与删角色共用一份）。取消失败的保留在本地清单里，下次重开面板可重试。
-        const { targets, failed } = await ActiveMsgClient.cancelAllTasksForChar(
-          char.id,
-          tasks.map((t) => t.taskUuid),
-        );
-        const attempted = new Set(targets);
-        // 真被取消掉的那些（试过且没失败）要给角色一句交代，否则关掉 2.0 之后它还挂着
-        // 一堆没人会兑现的承诺。留在清单里的（取消失败 / 期间新出现的）不写——它们还会响。
-        await writeCancelledNotices(tasks.filter((t) =>
-          attempted.has(t.taskUuid) && !failed.has(t.taskUuid)));
-        // 任务取消掉了，云端还留着这个角色的上下文（fire_pack 是完整角色卡加最近
-        // 30 条对话原文，一个角色 32KB 起步）和那行主动消息用的 API 凭据。不清的话
-        // 它们会永久留在 D1 里：关掉之后打脏那道门（见 amsgStateSync 的 hasActiveAiTask）
-        // 把这个角色永久挡在外面，既不会再刷新，也不会再被清掉，永远冻在此刻这份原文上。
-        //
-        // 清多少要看还有谁在用：即时对话还生效的话，云端那份上下文每轮聊天都会重写，
-        // 这时候清只是白清一次；记忆宫殿的后台活儿走的是另一条路，它那行凭据不能动。
-        const cleanup = await purgeCharCloudState(
-          char,
-          disableScheduleCharPurge(globalInstantChatOn && instantChatOn),
-        );
-        if (cleanup.status === 'failed') {
-          console.warn('[ActiveMsg2Settings] 关闭 2.0 时清云端上下文失败', cleanup.error);
-          addToast('ta 在云端的聊天上下文没能清掉，可以稍后重开面板再关一次。', 'error');
-        }
-        onSave((prev) => buildConfig(
-          prev,
-          (list) => keepUncancelledTasks(list, attempted, failed, {
-            failed: '关闭时远端取消失败，可重试',
-            appeared: '关闭主动消息时新出现，未被取消，请单独处理',
-          }),
-          { enabled: false, lastSyncedAt: Date.now() },
-        ));
-        addToast(failed.size
-          ? `主动消息 2.0 已关闭，但有 ${failed.size} 个任务远端取消失败，请稍后重开面板重试。`
-          : '主动消息 2.0 已关闭，全部任务已取消。', failed.size ? 'error' : 'info');
-        onClose();
-        return;
+      const outcome = await disableCharacterAmsg2Schedule(char, {
+        globalState: { globalReady, globalPaused, globalInstantChatOn },
+        instantChatEnabled: instantChatOn,
+      });
+      if (outcome.cleanupFailed) {
+        addToast('ta 在云端的聊天上下文没能清掉，可以稍后重开面板再关一次。', 'error');
       }
+      onSave((prev) => outcome.applyToConfig(prev, {
+        instantChatEnabled: instantChatOn ? undefined : false,
+        maxTokens: maxTokens.trim() ? Number(maxTokens) : undefined,
+      }));
+      if (enabled) setEnabled(!enabled);
+      setTimeAwareConfirmOpen(false);
+      addToast(outcome.toastMessage, outcome.toastType);
+      if (closeAfter) onClose();
+    } catch (error: any) {
+      const message = error?.message || '主动消息 2.0 保存失败。';
+      onSave((prev) => buildConfig(prev, (list) => list, { lastError: message }));
+      addToast(message, 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
-      if (!globalReady) throw new Error('请先去系统设置里完成“主动消息 2.0”的全局配置。');
+  const handleSubmit = async () => {
+    if (!enabled) {
+      await runDisableAmsg2(true);
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+
+      if (!globalReady) {
+        if (globalPaused) {
+          addToast('全局「主动消息 2.0」总开关当前已暂停，请先到系统设置里重新开启后再新建或修改任务。', 'info');
+          return;
+        }
+        throw new Error('请先去系统设置里完成“主动消息 2.0”的全局配置。');
+      }
 
       // 时间框里的是用户桌上的钟，先折成绝对时刻再往下传。裸墙钟交出去的话，排程接口
       // 会按角色时区解释它（那条规则是给角色自己排程用的），角色一开自定义时区就差一个
@@ -553,13 +614,12 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
         isEdit: editingTaskUuid ? 'yes' : 'no',
       });
       setEditingTaskUuid(null);
-      // 编辑走的是「先建新的再取消旧的」，编号必然换一个——只说「已更新」的话，
-      // 用户会以为列表里那条陌生编号是多出来的。
+      setTaskEditorOpen(false);
       addToast(result.replacedCancelFailed
         ? '新任务已创建，但旧任务取消失败，请稍后重试。'
         : (editingTaskUuid
-          ? `任务已更新，编号换成 [${shortTaskId(result.uuid)}]。`
-          : `任务已创建 [${shortTaskId(result.uuid)}]。`),
+          ? '任务已更新。'
+          : '任务已创建。'),
       result.replacedCancelFailed ? 'error' : 'success');
 
       // 同步主 API，并为存量任务补刷凭据。失败只提示，不把已成功排程标成失败。
@@ -601,73 +661,148 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
   const selfRecurringTaskCount = tasks.filter((t) => t.source === 'character'
     && t.recurrenceType !== 'none' && isPendingTask(t, now)).length;
 
+  const hintInput = (
+    <textarea
+      aria-label={mode === 'prompted' ? '这次想聊什么' : '补充灵感'}
+      value={promptHint}
+      onChange={(event) => setPromptHint(event.target.value)}
+      placeholder={mode === 'prompted' ? '例如：问问我今天的考试怎么样' : '例如：今天下雨，想聊一点轻松的'}
+      className="w-full h-24 bg-white border border-slate-200 rounded-2xl px-4 py-3 text-sm resize-none"
+    />
+  );
+
+  const Panel = fullPage ? SettingsDetailPage : Modal;
   return (
     <>
-    <Modal
+    <Panel
       isOpen={isOpen}
-      title="主动消息 2.0"
-      onClose={onClose}
+      hidden={fullPage && pacingOpen}
+      title={taskEditorOpen ? (editingTaskUuid ? '编辑定时任务' : '手动安排消息') : fullPage ? `${char.name} · 主动消息` : '主动消息 2.0'}
+      onClose={() => { if (isSubmitting) return; if (taskEditorOpen) closeTaskEditor(); else onClose(); }}
       footer={(
         <>
-          <button onClick={onClose} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl active:scale-95 transition-transform">
-            取消
+          <button onClick={taskEditorOpen ? closeTaskEditor : onClose} disabled={isSubmitting} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl active:scale-95 transition-transform">
+            {taskEditorOpen ? '返回角色设置' : '完成'}
           </button>
-          <button onClick={handleSubmit} disabled={isSubmitting} className="flex-1 py-3 bg-fuchsia-500 text-white font-bold rounded-2xl active:scale-95 transition-transform disabled:opacity-50">
+          {(taskEditorOpen || !enabled) && <button
+            onClick={handleSubmit}
+            disabled={isSubmitting || (enabled && globalPaused)}
+            className="amsg-character-save flex-1 py-3 bg-fuchsia-500 text-white font-bold rounded-2xl active:scale-95 transition-transform disabled:opacity-50"
+          >
             {isSubmitting ? '保存中...' : !enabled ? '关闭 2.0' : (editingTaskUuid ? '保存修改' : '新建任务')}
-          </button>
+          </button>}
         </>
       )}
     >
-      <div className="space-y-4 text-sm text-slate-600">
-        <p className="text-xs leading-relaxed text-slate-500">
-          打开后，TA 可以在 App 关着的时候来找你：到点由你的云端后端把话写好，再用通知送过来。任务用的是保存那一刻的角色设定和最近聊天，长期重复的任务在剧情变化后重新保存一次。
-        </p>
-
-        <div className="flex items-center justify-between bg-fuchsia-50 border border-fuchsia-100 rounded-2xl p-4">
-          <div>
-            <div className="font-bold text-slate-700">启用主动消息 2.0</div>
-            <div className="text-xs text-fuchsia-600 mt-1">{pushSummary || '正在检查 Push 状态...'}</div>
+      <div ref={contentRef} tabIndex={-1} className="space-y-4 text-sm text-slate-600 amsg-character-settings">
+        {!taskEditorOpen && <>
+        {globalPaused ? (
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 text-xs leading-relaxed text-amber-700">
+            系统设置里的「主动消息 2.0」总开关当前处于暂停状态，恢复总开关后才会重新连接云端并生效。
           </div>
+        ) : null}
+        <section className="amsg-overview-controls" aria-label="角色功能开关">
+        <div className="amsg-overview-control">
+          <h4>启用主动消息 2.0</h4>
           <button
+            role="switch"
+            aria-label="角色主动消息"
+            aria-checked={enabled}
             onClick={handleToggleEnabled}
-            className={`w-12 h-7 rounded-full transition-colors relative ${enabled ? 'bg-fuchsia-500' : 'bg-slate-200'}`}
+            disabled={isSubmitting}
+            className="amsg-overview-switch"
           >
-            <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow transition-all duration-200 ${enabled ? 'translate-x-5' : 'translate-x-0'}`} />
+            <span />
           </button>
         </div>
-
-        {/* 关着的时候面板下面整块都是空的，不说一句的话，用户看不出这个开关是按角色算的，
-            也不知道打开它能换来什么。 */}
-        {!enabled ? (
-          <p className="text-xs leading-relaxed text-slate-400 pl-1">
-            主动消息 2.0 按角色单独开启。打开这个开关，TA 才能在聊天里给你排定时消息，到点由云端发出；你也可以在这里手动建任务。
-          </p>
-        ) : null}
 
         {/* 即时对话按角色单独关，和上面的排程开关互相独立（只排程不即时、只即时不排程
             都行），所以不裹在 enabled 里。全局那道门没开时这里只置灰说明，不代替它。 */}
-        <div className={`flex items-center justify-between rounded-2xl p-4 border ${globalInstantChatOn ? 'bg-white border-slate-200' : 'bg-slate-50 border-slate-100'}`}>
-          <div className="min-w-0 pr-3">
-            <div className={`font-bold ${globalInstantChatOn ? 'text-slate-700' : 'text-slate-400'}`}>即时对话</div>
-            <div className="text-xs text-slate-400 mt-1 leading-relaxed">
-              {globalInstantChatOn
-                ? '不是秒回：回复照样由模型现写，只是换到云端后端去写，写好了用通知送回来，所以发完就算把 App 杀后台也收得到。关掉的话这个角色回到本机生成。'
-                : '需要先在全局设置里开启即时对话，才能按角色单独调。'}
+        <div className="amsg-character-instant"><div className="amsg-overview-control">
+          <h4>即时对话</h4>
+          <button
+            role="switch"
+            aria-label="角色即时对话"
+            aria-checked={globalInstantChatOn && instantChatOn}
+            onClick={handleToggleInstantChat}
+            disabled={!globalInstantChatOn || isSubmitting}
+            className="amsg-overview-switch"
+          >
+            <span />
+          </button>
+        </div></div>
+        </section>
+        <div className="amsg-overview-footnote">
+          <p>仅调整 {char.name}，与系统设置中的角色开关同步。</p>
+          {!globalInstantChatOn && <p>即时对话需先开启系统总开关。</p>}
+          {!globalReady && <p>{pushSummary || '正在检查后台连接…'}</p>}
+          {!enabled && isAmsg2EnabledForChar(char) && <p>关闭尚未保存，请点击下方「关闭 2.0」。</p>}
+        </div>
+
+        {/* 角色关了聊天时间感知时，主动消息 2.0 仍按现实时间触发和读取作息；默认拦下开启，
+            要求用户显式确认已知时间错乱风险才放行，存量已开未确认的也在此引导处理。 */}
+        {!enabled && timeAwareConfirmOpen && isChatTimeAwarenessOff(char) ? (
+          <div role="region" aria-label="时间感知冲突确认" className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-3 text-xs leading-relaxed text-amber-900">
+            <div className="font-bold text-amber-950">当前角色已关闭「聊天 · 时间感知强化」</div>
+            <p className="text-amber-800">
+              主动消息 2.0 固定按现实时间（或角色时区）定时触发、读取当日作息并安排后续联系，无法跟随架空剧情里的虚拟时段推进。强行开启后，可能出现早晚问候、作息状态与剧情时间错乱等问题。
+            </p>
+            <div className="flex flex-wrap gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setTimeAwareConfirmOpen(false)}
+                className="px-3.5 py-2 rounded-xl bg-amber-900 text-white font-bold active:scale-95 transition-transform"
+              >
+                保持关闭
+              </button>
+              <button
+                type="button"
+                onClick={confirmEnableWithoutTimeAwareness}
+                className="px-3.5 py-2 rounded-xl bg-white border border-amber-300 text-amber-800 font-bold active:scale-95 transition-transform"
+              >
+                我知道自己在做什么，仍然开启
+              </button>
             </div>
           </div>
-          <button
-            onClick={handleToggleInstantChat}
-            disabled={!globalInstantChatOn}
-            className={`w-12 h-7 rounded-full transition-colors relative shrink-0 ${globalInstantChatOn && instantChatOn ? 'bg-fuchsia-500' : 'bg-slate-200'} ${!globalInstantChatOn ? 'opacity-50' : ''}`}
-          >
-            <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow transition-all duration-200 ${globalInstantChatOn && instantChatOn ? 'translate-x-5' : 'translate-x-0'}`} />
-          </button>
-        </div>
+        ) : null}
+
+        {enabled && isChatTimeAwarenessOff(char) ? (
+          saved?.allowWithoutTimeAwareness === true ? (
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 text-xs leading-relaxed text-amber-800">
+              当前角色已关闭聊天时间感知；主动消息 2.0 仍按现实时间（或角色时区）运行，可能与架空剧情时段不一致。
+            </div>
+          ) : (
+            <div role="region" aria-label="时间感知冲突提示" className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-3 text-xs leading-relaxed text-amber-900">
+              <div className="font-bold text-amber-950">当前角色已关闭「聊天 · 时间感知强化」</div>
+              <p className="text-amber-800">
+                主动消息 2.0 固定按现实时间（或角色时区）定时触发、读取当日作息并安排后续联系，无法跟随架空剧情时段，容易出现早晚问候或作息错乱。建议停用主动消息 2.0。
+              </p>
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={() => void runDisableAmsg2(false)}
+                  className="px-3.5 py-2 rounded-xl bg-amber-900 text-white font-bold active:scale-95 transition-transform disabled:opacity-50"
+                >
+                  {isSubmitting ? '停用中…' : '停用主动消息 2.0'}
+                </button>
+                <button
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={confirmEnableWithoutTimeAwareness}
+                  className="px-3.5 py-2 rounded-xl bg-white border border-amber-300 text-amber-800 font-bold active:scale-95 transition-transform disabled:opacity-50"
+                >
+                  我知道自己在做什么，继续使用
+                </button>
+              </div>
+            </div>
+          )
+        ) : null}
 
         {/* 「主动频率」：几条上限集中在自己那一页改、自己那一页存，这里只放一行摘要。
             今天主动找了几次摆在摘要下面——上限是不是在起作用，用户一眼能看到。 */}
         {enabled ? (
-          <div className="flex items-center justify-between bg-white border border-slate-200 rounded-2xl p-4">
+          <section aria-label="主动频率" className="amsg-character-pacing">
             <div className="min-w-0 pr-3">
               <div className="font-bold text-slate-700">主动频率</div>
               <div className="text-xs text-slate-400 mt-1 leading-relaxed">{describePacingSummary(saved)}</div>
@@ -676,14 +811,14 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
                   这些到点会被跳过。不替用户删，说清楚两条路让用户自己选。 */}
               {selfRecurringTaskCount > 0 && !resolveAmsgLimits(saved).allowSelfRecurring ? (
                 <div className="text-xs text-amber-600 mt-1 leading-relaxed">
-                  TA 之前排过 {selfRecurringTaskCount} 次重复消息，之后都不会再发了。想留着，就在「调整」里打开「可以排每天、每周重复的消息」；不要了，可以在下面的列表里取消。
+                  TA 之前排过 {selfRecurringTaskCount} 次重复消息，之后都不会再发了。想留着，就在「调整」里打开「允许每天／每周重复」；不要了，可以在下面的列表里取消。
                 </div>
               ) : null}
             </div>
             <button onClick={() => setPacingOpen(true)} className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 font-bold text-xs shrink-0">
               调整
             </button>
-          </div>
+          </section>
         ) : null}
 
         {/* 闸拦下一次触发时不发任何推送，远端那行任务却照样被消费掉——不说一声的话，
@@ -696,11 +831,11 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
 
         {/* 关着 2.0 也照样列出来：关闭时没取消掉的任务还会响，藏起来的话用户只能对着
             一个空面板盲点「关闭 2.0」重试。关着时只给「取消」，不给编辑。 */}
-        {tasks.length > 0 ? (
-          <div>
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block pl-1">
-              任务列表（{tasks.length}）
-            </label>
+          <section className="amsg-character-schedule" aria-label="消息排期">
+            <div className="amsg-schedule-heading"><h4>消息排期</h4><span>{tasks.length} 项</span></div>
+            {tasks.length === 0 && <div className="amsg-schedule-empty">
+              <p>暂无排期</p><span>TA 或你安排的消息会显示在这里。</span>
+            </div>}
             {/* 一次 render 内所有任务用同一个 now，免得同屏卡片踩在不同的时刻上判定。 */}
             <div className="space-y-2">
               {tasks.map((t) => {
@@ -713,79 +848,98 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
                 const remoteErrorText = describeRemoteLastError(remoteInfo?.lastError, formatTaskTime);
                 return (
                   <div key={t.taskUuid} className={`rounded-2xl border px-4 py-3 text-xs ${editingTaskUuid === t.taskUuid ? 'border-fuchsia-400 bg-fuchsia-50' : 'border-slate-200 bg-white'}`}>
-                    <div className="flex items-center justify-between">
-                      <div className="min-w-0">
-                        <div className="font-bold text-slate-700 truncate">
-                          [{shortTaskId(t.taskUuid)}] {formatTaskTime(occurrenceMs ?? t.firstSendTime)} · {describeRecurrence(t.recurrenceType)}
-                        </div>
-                        {/* 进度排最前：这一行会被截断，而「发没发」是用户最想先看到的一条，
-                            排在末尾的话（模式描述可能很长）它永远看不见。 */}
-                        <div className="text-slate-400 mt-0.5 truncate">
-                          {describeTaskProgress(t, knownRemoteUuids, now, remoteInfo?.status)} · {describeTaskMode(t)}
-                          · {describeExpirePolicy(t.expirePolicy)}
-                          · {t.source === 'character' ? '角色创建' : '手动创建'}
-                        </div>
-                        {missingRemote ? (
-                          <div className="text-slate-400 mt-1 text-[11px]">⚠ 云端已无此任务（可能已发送或在别处取消）</div>
-                        ) : null}
-                        {remoteErrorText ? (
-                          <div className="text-amber-600 mt-1 text-[11px]">⚠ {remoteErrorText}</div>
-                        ) : null}
-                        {/* 上面那行只留得下原因的关键半句，状态码和上游原话的其余部分都截掉了。
-                            原文收在这里，排查或者截图问人时点开就能看到全文。stale 是个机器词，没有原文可看。 */}
-                        {remoteErrorText && remoteInfo?.lastError?.reason && remoteInfo.lastError.reason !== 'stale' ? (
-                          <details className="mt-0.5">
-                            <summary className="cursor-pointer text-[10px] font-bold text-slate-400">原文</summary>
-                            <pre className="mt-1 whitespace-pre-wrap break-all font-mono text-[10px] leading-relaxed text-slate-500 bg-slate-50 rounded-lg p-2 select-text">
-                              {remoteInfo.lastError.reason}
-                            </pre>
-                          </details>
-                        ) : null}
-                        {t.lastError ? (
-                          <div className="text-red-500 mt-1 text-[11px]">{t.lastError}</div>
-                        ) : null}
+                    {/* 按钮只跟时间共用第一行，下面的标签和内容占满整宽，不被按钮那一列挤窄。
+                        卡片不显示短编号：用户靠时间和内容认任务，编号只在给角色看的清单里有用。 */}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="font-bold text-slate-700 text-[13px] min-w-0">
+                        {formatTaskTime(occurrenceMs ?? t.firstSendTime)}
                       </div>
-                      <div className="flex gap-2 shrink-0 ml-2">
+                      <div className="flex gap-2 shrink-0">
                         {enabled ? (
-                          <button onClick={() => setEditingTaskUuid(t.taskUuid)} className="px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-600 font-bold">编辑</button>
+                          <button
+                            onClick={() => { setEditingTaskUuid(t.taskUuid); setTaskEditorOpen(true); }}
+                            disabled={!globalReady}
+                            className="px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-600 font-bold disabled:opacity-40"
+                          >
+                            编辑
+                          </button>
                         ) : null}
-                        <button onClick={() => void handleCancelTask(t)} className="px-2.5 py-1.5 rounded-lg bg-red-50 text-red-500 font-bold">取消</button>
+                        <button
+                          onClick={() => void handleCancelTask(t)}
+                          disabled={!globalReady}
+                          className="px-2.5 py-1.5 rounded-lg bg-red-50 text-red-500 font-bold disabled:opacity-40"
+                        >
+                          取消
+                        </button>
                       </div>
                     </div>
+                    {/* 状态拆成可换行的小标签，不截断：「发没发」排最前，是用户最想先看到的。 */}
+                    <div className="flex flex-wrap gap-1 mt-1.5 text-[10px]">
+                      {(() => {
+                        const progress = describeTaskProgress(t, knownRemoteUuids, now, remoteInfo?.status);
+                        const tone = progress === '发送失败' ? 'bg-red-50 text-red-500'
+                          : progress === '待触发' ? 'bg-fuchsia-50 text-fuchsia-600' : 'bg-slate-100 text-slate-500';
+                        return <span className={`px-1.5 py-0.5 rounded-md font-bold ${tone}`}>{progress}</span>;
+                      })()}
+                      {[describeRecurrence(t.recurrenceType), describeExpirePolicy(t.expirePolicy), t.source === 'character' ? '角色创建' : '手动创建'].map((label) => (
+                        <span key={label} className="px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-500">{label}</span>
+                      ))}
+                    </div>
+                    {/* 提示方向 / 灵感可能很长，完整换行显示，不截断。 */}
+                    <div className="text-slate-500 mt-1.5 leading-relaxed break-words">{describeTaskMode(t)}</div>
+                    {missingRemote ? (
+                      <div className="text-slate-400 mt-1 text-[11px]">⚠ 云端已无此任务（可能已发送或在别处取消）</div>
+                    ) : null}
+                    {remoteErrorText ? (
+                      <div className="text-amber-600 mt-1 text-[11px]">⚠ {remoteErrorText}</div>
+                    ) : null}
+                    {/* 上面那行只留得下原因的关键半句，状态码和上游原话的其余部分都截掉了。
+                        原文收在这里，排查或者截图问人时点开就能看到全文。stale 是个机器词，没有原文可看。 */}
+                    {remoteErrorText && remoteInfo?.lastError?.reason && remoteInfo.lastError.reason !== 'stale' ? (
+                      <details className="mt-0.5">
+                        <summary className="cursor-pointer text-[10px] font-bold text-slate-400">原文</summary>
+                        <pre className="mt-1 whitespace-pre-wrap break-all font-mono text-[10px] leading-relaxed text-slate-500 bg-slate-50 rounded-lg p-2 select-text">
+                          {remoteInfo.lastError.reason}
+                        </pre>
+                      </details>
+                    ) : null}
+                    {t.lastError ? (
+                      <div className="text-red-500 mt-1 text-[11px]">{t.lastError}</div>
+                    ) : null}
                   </div>
                 );
               })}
             </div>
-            {editingTaskUuid ? (
-              <button onClick={() => setEditingTaskUuid(null)} className="mt-2 text-xs text-fuchsia-500 font-bold pl-1">
-                ＋ 放弃编辑，改为新建任务
-              </button>
-            ) : null}
-          </div>
-        ) : null}
-
-        {enabled ? (
+          </section>
+        {enabled && <section className="amsg-character-manual" aria-label="手动安排">
+          <div><h4>手动安排 <small>可选</small></h4><p>指定时间或内容时使用，不是开启功能的必填项。</p></div>
+          <button type="button" className="amsg-button-secondary" disabled={!globalReady || globalPaused || isSubmitting} onClick={() => { setEditingTaskUuid(null); setTaskEditorOpen(true); }}>新建定时任务 <span aria-hidden>→</span></button>
+        </section>}
+        </>}
+        {enabled && taskEditorOpen ? (
           <>
             <div>
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block pl-1">
-                {editingTaskUuid ? '编辑任务' : '新建任务'}
-              </label>
-              <div className="space-y-2">
+              <p className="amsg-caption mb-3">选择发送方式，再设置时间。</p>
+              <div className="amsg-task-modes" aria-label="发送方式">
                 {MODE_OPTIONS.map((option) => (
                   <button
                     key={option.id}
+                    type="button"
+                    aria-pressed={mode === option.id}
                     onClick={() => {
                       setMode(option.id);
                       // fixed 进不了 worker 闸（taskNeedsLlm=false），策略统一钉成 force。
                       if (option.id === 'fixed') setExpirePolicy('force');
                     }}
-                    className={`w-full text-left rounded-2xl border px-4 py-3 transition-all ${mode === option.id ? 'bg-fuchsia-500 text-white border-fuchsia-500' : 'bg-white border-slate-200 text-slate-600'}`}
+                    className="amsg-task-mode"
                   >
-                    <div className="font-bold">{option.label}</div>
-                    <div className={`text-xs mt-1 ${mode === option.id ? 'text-fuchsia-50' : 'text-slate-400'}`}>{option.desc}</div>
+                    {option.label}
                   </button>
                 ))}
               </div>
+              <p className="amsg-caption mt-2" aria-live="polite">
+                {mode === 'fixed' ? <>到点直接发送你写好的内容，<strong>不经过 AI 生成。</strong></> : MODE_OPTIONS.find(option => option.id === mode)?.desc}
+              </p>
             </div>
 
             <div>
@@ -843,23 +997,21 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
                 <textarea
                   value={userMessage}
                   onChange={(event) => setUserMessage(event.target.value)}
-                  placeholder="到点后直接推送这段消息"
+                  placeholder="写下要发送的原文，TA 不会用 AI 改写"
                   className="w-full h-28 bg-white border border-slate-200 rounded-2xl px-4 py-3 text-sm resize-none"
                 />
               </div>
             ) : (
               <>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">
-                    {mode === 'prompted' ? '额外提示词' : '补充灵感 (可选)'}
-                  </label>
-                  <textarea
-                    value={promptHint}
-                    onChange={(event) => setPromptHint(event.target.value)}
-                    placeholder={mode === 'prompted' ? '例如：晚安前撒娇一下，但别太油' : '例如：今天下雨、想找我聊一点轻松的'}
-                    className="w-full h-24 bg-white border border-slate-200 rounded-2xl px-4 py-3 text-sm resize-none"
-                  />
-                </div>
+                {mode === 'prompted' ? <div>
+                  <label className="text-[10px] font-bold text-slate-400 mb-1.5 block pl-1">这次想聊什么</label>
+                  {hintInput}
+                  <p className="amsg-caption mt-1">写话题或要求，具体消息由 AI 生成。</p>
+                </div> : <details key={editingTaskUuid || 'new'} open={promptHint ? true : undefined}>
+                  <summary className="cursor-pointer text-xs text-slate-500 py-2">补充灵感（可选）</summary>
+                  <p className="amsg-caption mb-2">仅供参考，TA 仍可自行选择话题。</p>
+                  {hintInput}
+                </details>}
 
                 <div>
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">单次回复长度上限 (可选)</label>
@@ -875,17 +1027,18 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
               </>
             )}
 
-            <p className="pt-1 border-t border-slate-100 text-xs text-slate-400">
-              主动消息使用当前聊天主 API，调用费用也由主 API 承担。
-            </p>
+            {mode !== 'fixed' && <p className="pt-1 border-t border-slate-100 text-xs text-slate-400">
+              聊天内容以最近成功同步到后台的为准。AI 生成使用当前聊天主 API，费用由该 API 承担。
+            </p>}
           </>
         ) : null}
       </div>
-    </Modal>
+    </Panel>
     {/* 跟主面板并排渲染而不是塞进它里面：Modal 的卡片带进场动画（transform），嵌在里面的
         fixed 浮层会被困在卡片里、跟着裁掉。后渲染的这个自然盖在上面。 */}
     <ActiveMsg2PacingModal
       isOpen={isOpen && pacingOpen}
+      fullPage={fullPage}
       onClose={() => setPacingOpen(false)}
       initial={pickPacingSettings(saved)}
       selfRecurringTaskCount={selfRecurringTaskCount}

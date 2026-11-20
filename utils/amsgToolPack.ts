@@ -32,6 +32,8 @@ export interface AmsgToolPack {
   charName: string;
   xhsEnabled: boolean;
   activeMemoryMonths: string[];
+  /** 缺省兼容旧快照：允许自主查阅指定月份。 */
+  monthlyRecallEnabled?: boolean;
   memories: AgenticToolMemory[];
   /**
    * 角色的「时间感知」开关。关掉的角色不该知道今天几号，所以到点注入的实时世界里
@@ -113,6 +115,7 @@ export const buildToolPack = (char: CharacterProfile): AmsgToolPack => ({
   charName: char.name,
   xhsEnabled: !!char.xhsEnabled,
   activeMemoryMonths: char.activeMemoryMonths || [],
+  monthlyRecallEnabled: char.monthlyRecallEnabled !== false,
   // id 等工具用不到的字段不上云；runRecall 只读 date / mood / summary。
   memories: (char.memories || []).map((mem) => ({
     date: mem.date,

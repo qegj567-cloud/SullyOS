@@ -374,6 +374,31 @@ function isLegacyVec(vec: unknown): boolean {
 
 // ─── MemoryVector CRUD ────────────────────────────────
 
+/** Snapshot keys only. Read each upload page with its matching nodes in a single transaction. */
+export async function getUploadKeys(): Promise<IDBValidKey[]> {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const req = db.transaction(STORE_MEMORY_VECTORS).objectStore(STORE_MEMORY_VECTORS).getAllKeys();
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export async function getUploadPage(keys: IDBValidKey[]): Promise<(MemoryVector & { node: MemoryNode })[]> {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction([STORE_MEMORY_VECTORS, STORE_MEMORY_NODES]);
+        const pairs = keys.map(key => ({
+            vector: tx.objectStore(STORE_MEMORY_VECTORS).get(key),
+            node: tx.objectStore(STORE_MEMORY_NODES).get(key),
+        }));
+        tx.oncomplete = () => resolve(pairs.flatMap(({ vector, node }) =>
+            vector.result && node.result && (!vector.result.charId || vector.result.charId === node.result.charId)
+                ? [{ ...vector.result, node: node.result, charId: node.result.charId }] : []));
+        tx.onabort = () => reject(tx.error || new Error('读取本地向量失败'));
+    });
+}
+
 export const MemoryVectorDB = {
     save: async (vec: MemoryVector) => {
         const stored = { ...vec, vector: vecForStorage(vec.vector) };

@@ -137,7 +137,7 @@ export default function AmsgReproductionPanel({ apiConfig, apiPresets }: { apiCo
           <p className="text-xs text-slate-700 mb-3">{shownReport.summary}</p>
           <ol>
             {stages.map(([event, label], index) => {
-              const reached = shownReport.events.some(entry => entry.event === event);
+              const reached = shownReport.events.some(entry => entry.event === event || (event === 'sw-received' && entry.event === 'native-received'));
               return <li key={event} className="relative flex items-center gap-3 pb-3 last:pb-0 text-xs">
                 {index < stages.length - 1 && <span className="absolute left-[4.5px] top-3 bottom-0 w-px bg-slate-200" />}
                 <span className={`relative w-2.5 h-2.5 rounded-full shrink-0 ${reached ? 'bg-emerald-500' : 'bg-white ring-1 ring-slate-300'}`} />

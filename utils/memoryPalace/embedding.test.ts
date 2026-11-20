@@ -157,9 +157,7 @@ describe('getEmbeddings 批量 400 自动降级为逐条', () => {
             out.forEach((v, i) => expect(v[0]).toBe(i));
             // 1 次批量(400) + 3 次单条——批量 400 没有被重试第二遍
             expect(batchSizes).toEqual([3, 1, 1, 1]);
-            // 降级成功必须在日志面板昭告"已恢复、结果完整"，否则用户只看到 400 会以为记忆丢了
-            const logged = errorSpy.mock.calls.map(c => c.join(' ')).join('\n');
-            expect(logged).toContain('全部成功');
+            expect(errorSpy).not.toHaveBeenCalled();
         } finally {
             errorSpy.mockRestore();
         }

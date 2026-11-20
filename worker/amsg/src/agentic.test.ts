@@ -775,4 +775,26 @@ describe('processLLMRound — 排程池混入 cancel / renew', () => {
     expect(d.toolCalls).toEqual([nativeSchedule]);
     expect(state.narrations.join('')).not.toContain(`${AMSG_FIRE_SCHEDULE_TOOL}(`);
   });
+
+  it('多轮工具循环里收尾轮原样复读了前序旁白 → 去重不发两遍；不同内容照常拼合', () => {
+    const dupState = createFireSessionState();
+    const nativeSchedule = rawCall(AMSG_FIRE_SCHEDULE_TOOL, '{"send_at":"2026-07-22 09:00"}');
+    processLLMRound(dupState, '好呀，明早九点叫你起床～', build, null, { nativeToolCalls: [nativeSchedule] });
+    const dupFinish = processLLMRound(dupState, '好呀，明早九点叫你起床～', build);
+    expect(dupFinish.decision).toBe('finish');
+    if (dupFinish.decision === 'finish') {
+      expect(dupFinish.pushPayloads.map((p) => p.message)).toEqual(['好呀，明早九点叫你起床～']);
+    }
+
+    const contState = createFireSessionState();
+    processLLMRound(contState, '好的，我去整。', build, null, { nativeToolCalls: [nativeSchedule] });
+    const contFinish = processLLMRound(contState, '哎呀没排上，你先自己定个闹钟哈。', build);
+    expect(contFinish.decision).toBe('finish');
+    if (contFinish.decision === 'finish') {
+      expect(contFinish.pushPayloads.map((p) => p.message)).toEqual([
+        '好的，我去整。',
+        '哎呀没排上，你先自己定个闹钟哈。',
+      ]);
+    }
+  });
 });

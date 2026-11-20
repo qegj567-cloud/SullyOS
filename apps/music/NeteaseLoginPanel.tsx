@@ -6,7 +6,7 @@
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useOS } from '../../context/OSContext';
-import { useMusic, musicApi } from '../../context/MusicContext';
+import { useMusic, musicApi, normalizeCookie } from '../../context/MusicContext';
 import { C, Sparkle, MizuHeader, BokehBg } from './MusicUI';
 import { trackEvent } from '../../utils/analytics';
 
@@ -271,8 +271,8 @@ const NeteaseLoginPanel: React.FC<Props> = ({ onBack, onLoggedIn }) => {
             </div>
             <button
               onClick={() => {
-                const v = manualCookie.trim(); if (!v) return;
-                const final = v.toUpperCase().startsWith('MUSIC_U=') ? v : `MUSIC_U=${v}`;
+                const final = normalizeCookie(manualCookie);
+                if (!final) return;
                 trackEvent('手动粘贴 Cookie 登录网易云');
                 onLoggedIn(final);
               }}

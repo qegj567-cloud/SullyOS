@@ -36,6 +36,9 @@ describe('stripSensitiveCardFields', () => {
       chromeCustomCss: '.x{}',
       embeddedTheme: { id: 't1' },
       chatBackground: 'bg',
+      thinkingChainPromptMode: 'replace',
+      thinkingChainPromptScope: 'character',
+      thinkingChainCustomPrompt: '私人的心象提示词',
       // 语言
       chatVoiceLang: 'ja',
       dateVoiceLang: 'en',
@@ -59,6 +62,7 @@ describe('stripSensitiveCardFields', () => {
 
     // 全部被剥离
     for (const key of ['bubbleStyle', 'chatFineTune', 'chromeCustomCss', 'embeddedTheme', 'chatBackground',
+      'thinkingChainPromptMode', 'thinkingChainPromptScope', 'thinkingChainCustomPrompt',
       'chatVoiceLang', 'dateVoiceLang', 'activeBuffs', 'buffInjection', 'phoneState', 'savedDateState',
       'videoCallPerformancePersona', 'videoCallPerformancePersonaGeneratedAt', 'companionTouchSettings']) {
       expect(out).not.toHaveProperty(key);
@@ -91,7 +95,7 @@ it('角色分享卡不携带家园私人数据或同步版本，也不修改本�
 });
 
 it('角色分享卡不携带聊天备注与 RECALL 提示开关，备注内容照常保留', () => {
-  const card = { name: '小明', description: '一段很长的角色介绍', chatShowRemark: true, hideMonthlyRecallPrompt: false };
+  const card = { name: '小明', description: '一段很长的角色介绍', chatShowRemark: true, hideMonthlyRecallPrompt: false, monthlyRecallEnabled: false };
   const out = stripSensitiveCardFields(card);
   expect(out).toEqual({ name: '小明', description: '一段很长的角色介绍' });
 });

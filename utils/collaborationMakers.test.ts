@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { parseStandardWorldbook, serializeSullyWorldbook } from './worldbook';
 import {
   COLLABORATION_MAKER_MAP,
   buildInstallablePreviewDocument,
@@ -9,6 +10,18 @@ import {
 } from '../features/collaboration/makers';
 
 describe('collaboration installable makers', () => {
+  it('installs the worldbook example exactly as prompted and round-trips it with native titles', () => {
+    const [artifact] = parseInstallableArtifactBlocks(COLLABORATION_MAKER_MAP.worldbook.prompt).artifacts;
+    expect(artifact.payload).toMatchObject({ format: 'sullyos-worldbook', version: 1 });
+    expect(validateInstallableArtifact(artifact)).toEqual([]);
+    const books = installableToWorldbooks(artifact);
+    expect(books[0]).toMatchObject({ title: '条目标题', content: '完整设定正文', category: '世界书分类名' });
+    expect(books[0].sourceUid).toBeUndefined();
+    const exported = serializeSullyWorldbook(books);
+    expect(JSON.parse(exported).worldbook.entries['0'].comment).toBe('条目标题');
+    expect(parseStandardWorldbook(exported, '复原')[0].sourceUid).toBeUndefined();
+    expect(validateInstallableArtifact({ ...artifact, payload: { ...artifact.payload, version: 333 } }).join()).toContain('暂不支持');
+  });
   it('whitebox defaults to core content while accepting optional card styles',()=>{
     const css='.sully-psyche-body{color:#345!important}.sully-chat-card[data-card-kind="world_card"] .sully-chat-card-surface{border-radius:12px}';
     expect(validateInstallableArtifact({kind:'whitebox-css',title:'完整白框',payload:{css}})).toEqual([]);
@@ -55,9 +68,9 @@ title: 夜航日记
     const patch = installableToThemePatch({
       kind: 'appearance-preset',
       title: '清晨',
-      payload: { theme: { hue: 32, darkMode: false, chatHeaderStyle: 'minimal', apiKey: 'must-not-pass' } },
+      payload: { theme: { hue: 32, darkMode: false, chatHeaderStyle: 'minimal', chatTimestampPosition: 'top_center', apiKey: 'must-not-pass' } },
     });
-    expect(patch).toEqual({ hue: 32, darkMode: false, chatHeaderStyle: 'minimal' });
+    expect(patch).toEqual({ hue: 32, darkMode: false, chatHeaderStyle: 'minimal', chatTimestampPosition: 'top_center' });
     expect(JSON.stringify(patch)).not.toContain('apiKey');
 
     const worldbooks = installableToWorldbooks({
@@ -116,6 +129,8 @@ title: 夜航日记
     const psychePrompt = COLLABORATION_MAKER_MAP['psyche-css'].prompt;
     expect(bubblePrompt).toContain('.sully-voice-bar-wave-segment');
     expect(whiteboxPrompt).toContain('.sully-chat-turn-avatar-slot');
+    expect(whiteboxPrompt).toContain('.sully-chat-time-divider');
+    expect(whiteboxPrompt).toContain('.sully-chat-timestamp');
     expect(whiteboxPrompt).toContain('.sully-collaboration-file-action');
     for (const part of ['card', 'receipt', 'header', 'icon', 'brand', 'watermark', 'amount', 'note', 'recipient', 'status', 'overlay', 'dialog', 'accept', 'return']) {
       expect(whiteboxPrompt).toContain(`.sully-chat-transfer-${part}`);

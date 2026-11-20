@@ -15,7 +15,8 @@ vi.mock('../features/collaboration/chatBridge', () => ({
     loadCollaborationChatHistory: async (character: any) => ({ character, messages: [] }),
     selectCollaborationTransfer: vi.fn(),
 }));
-vi.mock('../features/collaboration/context', () => ({
+vi.mock('../features/collaboration/context', async importOriginal => ({
+    ...await importOriginal<typeof import('../features/collaboration/context')>(),
     buildCollaborationModelMessages: (context: string, messages: any[]) => [{ role: 'system', content: context }, ...messages],
     buildCollaborationContextSnapshot: async () => '角色背景',
     buildCollaborationTurnMemoryContext: async () => '',
@@ -104,6 +105,21 @@ it('中度窗口打开对应模式，修改模型后保存、发送及重新打�
     expect((await send()).model).toBe('gemini-model');
     await click('[aria-label="协同设置"]');
     expect(host.querySelector<HTMLSelectElement>('[aria-label="中度协同模型"]')?.value).toBe('gemini-model');
+});
+
+it('中度窗口下一轮按新模式发送心象提示词', async () => {
+    props.character = { ...props.character, showThinkingChain: true, thinkingChainCustomPrompt: '只写当下心情' };
+    await chooseFocused();
+    const first = JSON.stringify((await send()).messages);
+    expect(first).toContain('【以下规则仅适用于 THINKING 阶段】');
+    expect(first).toContain('只写当下心情');
+    props.character = { ...props.character, thinkingChainPromptMode: 'replace', thinkingChainCustomPrompt: '换成一句话' };
+    await render();
+    vi.mocked(safeFetchJson).mockClear();
+    const next = JSON.stringify((await send()).messages);
+    expect(next).toContain('换成一句话');
+    expect(next).not.toContain('只写当下心情');
+    expect(next).not.toContain('【以下规则仅适用于 THINKING 阶段】');
 });
 
 it.each(['chat', 'preset'] as const)('保持窗口挂载时更新 %s 连接，下一轮发送新地址、Key 和模型', async source => {

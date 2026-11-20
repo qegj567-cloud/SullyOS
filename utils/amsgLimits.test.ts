@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildAmsgLimitsRecord,
   buildLimitsBrief,
+  buildUnansweredLimitRejectMessage,
   bumpDailySends,
   checkSelfScheduleRules,
   dayKeyInZone,
@@ -185,5 +186,40 @@ describe('buildLimitsBrief', () => {
     expect(loose).not.toContain('至少隔');
     expect(loose).not.toContain('只能排一次性的');
     expect(loose).not.toContain('到点必发');
+  });
+
+  it('聊天语境（正在回复用户）按待发排程说明上限，不说「对方还没回复」', () => {
+    const chatFull = buildLimitsBrief({
+      limits: resolveAmsgLimits({ maxUnansweredSends: 1 }),
+      committedSends: 1,
+      activeTasks: 1,
+      context: 'chat',
+    });
+    expect(chatFull).toContain('已排 1/1 次');
+    expect(chatFull).toContain('renew / cancel');
+    expect(chatFull).not.toContain('等对方回复后才能再排');
+
+    const chatReject = buildUnansweredLimitRejectMessage({ count: 1, limit: 1, context: 'chat' });
+    expect(chatReject).toContain('连发上限是 1 次');
+    expect(chatReject).toContain('renew_active_message');
+    expect(chatReject).not.toContain('对方还没回复');
+
+    const chatNoManageBrief = buildLimitsBrief({
+      limits: resolveAmsgLimits({ maxUnansweredSends: 1 }),
+      committedSends: 1,
+      activeTasks: 1,
+      context: 'chat',
+      canManageTasks: false,
+    });
+    expect(chatNoManageBrief).not.toContain('renew');
+    expect(chatNoManageBrief).toContain('不要再新排');
+
+    const chatNoManageReject = buildUnansweredLimitRejectMessage({
+      count: 1, limit: 1, context: 'chat', canManageTasks: false,
+    });
+    expect(chatNoManageReject).not.toContain('renew_active_message');
+
+    const fireReject = buildUnansweredLimitRejectMessage({ count: 1, limit: 1, context: 'fire' });
+    expect(fireReject).toContain('对方还没回复');
   });
 });

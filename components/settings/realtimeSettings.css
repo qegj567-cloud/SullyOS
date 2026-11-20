@@ -1,0 +1,41 @@
+.amsg-detail-page.realtime-design {
+  --rt-ink: #2c2533;
+  --rt-muted: #756b7e;
+  --rt-accent: #8a699c;
+  --rt-line: rgba(140,105,158,.14);
+  color: var(--rt-ink);
+  background: radial-gradient(circle at 85% 0%,#f5e8f1,transparent 40%),
+    radial-gradient(circle at 10% 10%,#ece5f5,transparent 42%),#f6f3f8;
+}
+.realtime-design > .amsg-detail-header,
+.realtime-design .amsg-sidebar,
+.realtime-design > .amsg-detail-footer {
+  background: rgba(246,243,248,.85);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-color: var(--rt-line);
+}
+.realtime-design > .amsg-detail-header { border-bottom: 0 }
+.realtime-design .amsg-sidebar { padding: 2px 16px 10px }
+.realtime-design > .amsg-detail-header .amsg-detail-header-inner {
+  max-width: 640px; min-height: 46px; padding: 0 12px;
+}
+.realtime-design > .amsg-detail-header .amsg-back { color: var(--rt-accent); font-size: 15px }
+.realtime-groups { display: flex; margin: auto; max-width: 608px; padding: 3px; border-radius: 10px; background: rgba(138,105,156,.08) }
+.realtime-groups button { flex: 1; min-height: 30px; border-radius: 8px; color: var(--rt-muted); font-size: 13px }
+.realtime-groups button[aria-current="page"] { background: white; color: var(--rt-accent); font-weight: 600; box-shadow: 0 1px 4px #60447018 }
+.realtime-design .amsg-detail-content { max-width: 640px; padding: 14px 16px 36px }
+.realtime-items { display: flex; flex-wrap: wrap; gap: 7px }
+.realtime-items button { min-height: 29px; padding: 0 12px; border-radius: 99px; border: 1px solid var(--rt-line); background: #ffffffad; color: var(--rt-muted); font-size: 12.5px }
+.realtime-items button[aria-current="page"] { background: white; color: var(--rt-accent); border-color: #8a699c59; box-shadow: 0 1px 5px #8a699c19; font-weight: 600 }
+.realtime-design .realtime-card { margin-top: 14px; padding: 14px 16px 16px; background: white; border-radius: 16px; box-shadow: 0 2px 10px #60447009 }
+.realtime-design .realtime-card :is(select,textarea,input[type="text"],input[type="password"],input[type="number"],input:not([type])) {
+  min-height: 38px; color: var(--rt-ink); background: #faf8fc; border: 1px solid #8a699c33; border-radius: 10px; font-size: 13.5px;
+}
+.realtime-design .realtime-card :is(input,select,textarea):focus-visible { outline: 2px solid var(--rt-accent); outline-offset: 1px }
+.realtime-card input[type="checkbox"] { accent-color: var(--rt-accent) }
+.realtime-design .realtime-card summary { color: var(--rt-muted); cursor: pointer }
+.realtime-design .realtime-card .text-sm.font-bold { color: var(--rt-ink); font-size: 15.5px }
+.realtime-design > .amsg-detail-footer { padding: 9px 16px calc(11px + var(--safe-bottom,0px)) }
+.realtime-design > .amsg-detail-footer > div { max-width: 608px }
+.realtime-design > .amsg-detail-footer button { height: 41px; padding: 0 14px; border-radius: 12px; background: var(--rt-accent); font-size: 14.5px; box-shadow: 0 2px 8px #8a699c38 }

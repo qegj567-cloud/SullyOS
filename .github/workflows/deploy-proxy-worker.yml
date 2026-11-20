@@ -1,0 +1,47 @@
+name: Deploy proxy Worker to Cloudflare
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'worker/index.js'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'deploy 更新主代理 / list 只读列出账号下现有 Workers 与域名'
+        required: false
+        default: 'deploy'
+        type: choice
+        options:
+          - deploy
+          - list
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-proxy-worker-production
+  cancel-in-progress: false
+
+jobs:
+  deploy-proxy:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      PROXY_CF_API_TOKEN: ${{ secrets.PROXY_CF_API_TOKEN }}
+      PROXY_CF_ACCOUNT_ID: ${{ secrets.PROXY_CF_ACCOUNT_ID }}
+      PROXY_CF_SCRIPT_NAME: ${{ secrets.PROXY_CF_SCRIPT_NAME }}
+      PROXY_DEPLOY_MODE: ${{ inputs.mode || 'deploy' }}
+    steps:
+      - name: Checkout master
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Locate and update existing proxy Worker
+        run: node scripts/deploy-proxy-worker.mjs

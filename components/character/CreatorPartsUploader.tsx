@@ -145,9 +145,9 @@ const CreatorPartsUploader: React.FC<{ onClose: () => void }> = ({ onClose }) =>
                                     <div className="flex-1 min-w-0 space-y-1.5">
                                         <div className="flex gap-1.5">
                                             <select value={p.categoryKey || ''} onChange={e => updatePsdPart(idx, { categoryKey: e.target.value || null })}
-                                                className={`text-[10.5px] rounded px-1.5 py-1 bg-white/10 outline-none ${p.categoryKey ? 'text-white' : 'text-red-300 border border-red-400/50'}`}>
-                                                <option value="">类目?</option>
-                                                {CC_CATEGORIES.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+                                                className={`text-[10.5px] rounded px-1.5 py-1 bg-white/10 [color-scheme:dark] outline-none ${p.categoryKey ? 'text-white' : 'text-red-300 border border-red-400/50'}`}>
+                                                <option value="" className="bg-slate-900 text-white">类目?</option>
+                                                {CC_CATEGORIES.map(c => <option key={c.key} value={c.key} className="bg-slate-900 text-white">{c.label}</option>)}
                                             </select>
                                             <input value={p.name} onChange={e => updatePsdPart(idx, { name: e.target.value })}
                                                 className="flex-1 min-w-0 text-[10.5px] rounded px-1.5 py-1 bg-white/10 text-white outline-none" />

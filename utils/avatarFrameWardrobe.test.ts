@@ -50,6 +50,7 @@ describe('dual avatar frame wardrobe & outfit workflow', () => {
         const host = document.createElement('div');
         document.body.append(host);
         const root = createRoot(host);
+        vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
         vi.stubGlobal('IntersectionObserver', class {
             cb: any;
             constructor(cb: any) { this.cb = cb; }

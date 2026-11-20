@@ -2414,7 +2414,7 @@ const LetterView: React.FC<{ text: string; onNext: () => void; onClose: () => vo
             // backgroundColor 用 wrapper 顶部的颜色 —— html2canvas 渲染不出
             // radial-gradient 时会拿这个色填整块 wrapper，挑顶端色能让"上面那一节"
             // 不再突变
-            const canvas = await html2canvas(target, { backgroundColor: '#fefbf4', scale: 2, useCORS: true });
+            const canvas = await html2canvas(target, { backgroundColor: '#fefbf4', scale: 2, useCORS: true, logging: false });
             const blob = await new Promise<Blob>((resolve, reject) => {
                 canvas.toBlob((result: Blob | null) => result ? resolve(result) : reject(new Error('信件图片生成失败')), 'image/png');
             });

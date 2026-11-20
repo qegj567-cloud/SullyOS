@@ -9,7 +9,8 @@
 // 重置走 ActiveMsgClient 的 amsg2 路径——退订、按 worker 自己的 VAPID 重订、再覆盖
 // 登记回 worker。三步缺一不可，少了最后一步就是把这个面板要治的病再犯一遍。
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { AmsgIcon } from './AmsgArtwork';
 import {
   ActiveMsgClient,
   compareRemotePushSubscription,
@@ -17,13 +18,15 @@ import {
   readAmsgFailKind,
   type AmsgPushRegistrationState,
   type AmsgRemotePushSubscription,
+  type ActiveMsg2PushStatus,
 } from '../../utils/activeMsgClient';
 import {
   judgePushDeliveryFailure,
   type AmsgPushDeliveryProbe,
 } from '../../utils/amsgDiagnostics';
 import { catchUpMissedPushesManually } from '../../utils/activeMsgRuntime';
-import { readBrowserPushState, type BrowserPushState } from '../../utils/pushSubscribeShared';
+import { AMSG_GLOBAL_CONFIG_EVENT, isAmsg2GloballyEnabled, isAmsg2WorkerActive } from '../../utils/amsgGlobalGate';
+import { detectCapacitorNative, readBrowserPushState, type BrowserPushState } from '../../utils/pushSubscribeShared';
 import {
   describeElapsed,
   describePermission,
@@ -44,15 +47,19 @@ import {
 
 interface PushSubscriptionPanelProps {
   addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
+  onOpenSettings?: () => void;
+  active?: boolean;
+  workspace?: boolean;
+  testResult?: 'idle' | 'sending' | 'sent' | 'failed';
 }
 
 /** 连续几次僵尸失败之后，「重置订阅」升级成「深度重置」。 */
 const DEEP_RESET_THRESHOLD = 3;
 
-const Row: React.FC<{ label: string; value: string; bad?: boolean }> = ({ label, value, bad }) => (
-  <div className="flex items-start justify-between gap-3">
-    <span className="text-slate-500 shrink-0">{label}</span>
-    <span className={`text-right font-medium ${bad ? 'text-rose-600' : 'text-slate-700'}`}>{value}</span>
+const Row: React.FC<{ label: string; value: string; bad?: boolean; warning?: boolean }> = ({ label, value, bad, warning }) => (
+  <div className="amsg-status-row flex items-start justify-between gap-3">
+    <span className="amsg-status-label text-slate-500 shrink-0"><AmsgIcon name={label.includes('权限') || label.includes('本机') ? 'device' : label.includes('环境') ? 'signal' : label.includes('投递') ? 'clock' : label.includes('测试') ? 'bell' : 'link'} />{label}</span>
+    <span className={`amsg-status-value text-right font-medium break-words min-w-0 ${bad ? 'text-rose-600' : warning ? 'text-amber-700' : value === '已授权' || value === '已连接' ? 'amsg-status-ok' : 'text-slate-700'}`}>{value}</span>
   </div>
 );
 
@@ -65,7 +72,11 @@ const REGISTRATION_TEXT: Record<AmsgPushRegistrationState, { value: string; bad:
   matched: { value: '已登记（就是这台设备）', bad: false },
 };
 
-const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast }) => {
+const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast, onOpenSettings, active = true, workspace = false, testResult }) => {
+  const native = detectCapacitorNative();
+  const [nativeStatus, setNativeStatus] = useState<ActiveMsg2PushStatus | null>(null);
+  const [readError, setReadError] = useState('');
+  const requestId = useRef(0);
   const [browser, setBrowser] = useState<BrowserPushState | null>(null);
   const [remote, setRemote] = useState<AmsgRemotePushSubscription | null>(null);
   const [pushMode, setPushMode] = useState<'web-push' | 'third-party'>('web-push');
@@ -74,6 +85,7 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
   // null = 还没问到（没填 Worker / 连不上），那时这一行照实说「没查到」。
   const [delivery, setDelivery] = useState<AmsgPushDeliveryProbe | null>(null);
   const [workerConfigured, setWorkerConfigured] = useState(false);
+  const [globallyPaused, setGloballyPaused] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [catchingUp, setCatchingUp] = useState(false);
@@ -81,27 +93,47 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
   const [zombieStreak, setZombieStreak] = useState(0);
 
   const refresh = useCallback(async () => {
+    const id = ++requestId.current;
     setRefreshing(true);
+    setReadError('');
     try {
-      const browserState = await readBrowserPushState();
-      setBrowser(browserState);
-      // 没填 Worker 地址就别去问了——问也是白问，还会在控制台留一串没用的报错。
-      const config = await ActiveMsgClient.getGlobalConfig().catch(() => null);
+      const config = await ActiveMsgClient.getGlobalConfig();
       const configured = Boolean(config?.workerUrl?.trim());
-      setPushMode(config?.pushMode === 'third-party' ? 'third-party' : 'web-push');
+      const workerActive = isAmsg2WorkerActive(config);
+      setGloballyPaused(configured && !isAmsg2GloballyEnabled(config));
+      const thirdParty = config?.pushMode === 'third-party';
+      // APK 与配置页共用原生通道读数，不能拿 WebView 缺少浏览器接口当作故障。
+      // 各项独立失败；原生桥查不到时仍可以查看云端结果，也不伪装成「没订阅」。
+      const [local, remoteResult, diagnostic] = await Promise.allSettled([
+        thirdParty ? Promise.resolve(null) : native ? ActiveMsgClient.getPushStatus() : readBrowserPushState(),
+        workerActive ? ActiveMsgClient.getRemotePushSubscription() : Promise.resolve(null),
+        workerActive ? fetchWorkerDiagnostics() : Promise.resolve(null),
+      ]);
+      if (id !== requestId.current) return;
+      setBrowser(!native && local.status === 'fulfilled' ? local.value as BrowserPushState | null : null);
+      setNativeStatus(native && local.status === 'fulfilled' ? local.value as ActiveMsg2PushStatus | null : null);
+      if (local.status === 'rejected') setReadError('暂时无法读取这台设备的通知状态，请刷新重试。');
+      setPushMode(thirdParty ? 'third-party' : 'web-push');
       setThirdPartyConfig(config?.thirdPartyPush ?? null);
       setWorkerConfigured(configured);
-      setRemote(configured ? await ActiveMsgClient.getRemotePushSubscription() : null);
+      setRemote(remoteResult.status === 'fulfilled' ? remoteResult.value : null);
       // 「推送有没有真的送出去」是 Worker 那侧算好的（见 /debug 的 pushDelivery）。
       // 这一行和体检面板读的是同一份，不会一个说红一个说绿。
-      const probe = configured ? await fetchWorkerDiagnostics() : null;
+      const probe = diagnostic.status === 'fulfilled' ? diagnostic.value : null;
       setDelivery(probe?.reachable ? probe.report.storage.pushDelivery ?? null : null);
+    } catch {
+      if (id === requestId.current) setReadError('暂时无法读取通知配置，请刷新重试。');
     } finally {
-      setRefreshing(false);
+      if (id === requestId.current) setRefreshing(false);
     }
-  }, []);
+  }, [native]);
 
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => { if (active) void refresh(); return () => { requestId.current += 1; }; }, [refresh, active]);
+  useEffect(() => {
+    const onGlobalCfg = () => { if (active) void refresh(); };
+    window.addEventListener(AMSG_GLOBAL_CONFIG_EVENT, onGlobalCfg);
+    return () => window.removeEventListener(AMSG_GLOBAL_CONFIG_EVENT, onGlobalCfg);
+  }, [refresh, active]);
 
   const isThirdParty = pushMode === 'third-party';
   const tpValidation = isThirdParty ? validateThirdPartyPushConfig(thirdPartyConfig) : null;
@@ -114,7 +146,7 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
     : null;
   const thirdPartyMeta = isThirdParty ? getThirdPartyPushProviderMeta(thirdPartyConfig?.provider) : null;
 
-  const deepMode = !isThirdParty && zombieStreak >= DEEP_RESET_THRESHOLD;
+  const deepMode = !native && !isThirdParty && zombieStreak >= DEEP_RESET_THRESHOLD;
 
   const handleReset = async () => {
     if (resetting) return;
@@ -176,7 +208,7 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
         // 账本上有行，但没一条是该上屏的聊天内容（思维链、工具请求这些不进聊天流）。
         addToast('云端暂存里没有未收到的聊天消息。', 'info');
       } else {
-        addToast('云端没有漏收的消息——当前推送连接正常。', 'info');
+        addToast('云端暂时没有可补收的消息。', 'info');
       }
     } catch (error: any) {
       addToast(error?.message || '读取云端暂存消息失败，请稍后再试。', 'error');
@@ -185,17 +217,22 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
     }
   };
 
-  const effectiveLocalEndpoint = isThirdParty ? thirdPartyEndpoint : browser?.endpoint;
-  const registration: AmsgPushRegistrationState = workerConfigured
+  const effectiveLocalEndpoint = isThirdParty ? thirdPartyEndpoint : native ? nativeStatus?.localEndpoint : browser?.endpoint;
+  const registration: AmsgPushRegistrationState = workerConfigured && !globallyPaused
     ? compareRemotePushSubscription(effectiveLocalEndpoint, remote)
     : 'worker-unset';
-  const registrationText = REGISTRATION_TEXT[registration];
+  const registrationText = globallyPaused
+    ? { value: '总开关已暂停（不连接 Worker）', bad: false }
+    : REGISTRATION_TEXT[registration];
 
   // 上一次推送到底送没送到。判定跟体检面板共用 judgePushDeliveryFailure——两处各写一套的话，
   // 用户会看到一个红一个绿，而这正是他判断该不该重置订阅的唯一依据。
   const deliveryVerdict = judgePushDeliveryFailure(delivery);
-  const deliveryText: { value: string; bad: boolean } = !workerConfigured || !delivery
-    ? { value: '没查到（要先连上 Worker）', bad: false }
+  const deliveryText: { value: string; bad: boolean } = globallyPaused
+    ? { value: '总开关已暂停', bad: false }
+    : !workerConfigured
+    ? { value: '尚未配置后台', bad: false }
+    : !delivery ? { value: '暂时无法读取投递记录', bad: false }
     : !delivery.probed
       ? { value: delivery.reason === 'unsupported' ? '这台 Worker 还不查' : '没查成', bad: false }
       : delivery.gone && deliveryVerdict
@@ -210,19 +247,21 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
       : (deepMode ? '深度重置' : '重置订阅');
 
   return (
-    <div>
+    <div className={workspace ? 'amsg-status-workspace' : undefined}>
       <p className="text-xs text-slate-500 mb-3 leading-relaxed">
-        主动消息到点靠推送通道送到你手上。这条链路上任意一环断了，表现都是「任务建得成、到点没消息」，
-        界面上不会有任何异常。这里把每一环摊开给你看。
+        {native && !isThirdParty
+          ? '这里检查 App 的通知权限、通道与云端登记。是否实际收到通知，请用测试通知确认。'
+          : '查看当前通知通道是否登记到你的 Worker；如果有遗漏，也可以在这里补收消息。'}
       </p>
+      {readError && <p role="status" className="mb-3 text-xs leading-relaxed text-amber-700">{readError}</p>}
 
-      <div className="bg-slate-50/70 rounded-2xl p-4 border border-slate-100">
+      <div className="amsg-status-box bg-slate-50/70 rounded-2xl p-4 border border-slate-100">
         <div className="flex items-center justify-between mb-3">
-          <p className="text-xs font-semibold text-slate-600">链路状态</p>
+          <p className="text-xs font-semibold text-slate-600">{workspace ? '当前连接' : '链路状态'}</p>
           <button
             onClick={() => {
               // 全是浏览器/设备状态的固定枚举，不含端点地址、也不含任何用户配置值
-              trackEvent('刷新 Web Push 诊断', browser ? {
+              if (browser && !native && !isThirdParty) trackEvent('刷新 Web Push 诊断', {
                 permission: browser.permission,
                 subscription: !browser.endpoint ? 'none' : browser.endpointDead ? 'dead' : 'active',
                 swState: browser.swState === 'activated' ? 'activated' : browser.swState === 'none' ? 'none' : 'other',
@@ -236,7 +275,7 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
                 delivery: !delivery || !delivery.probed ? 'unknown'
                   : delivery.gone && deliveryVerdict ? 'gone'
                     : delivery.gone ? 'recovered' : 'clean',
-              } : undefined);
+              });
               void refresh();
             }}
             disabled={refreshing || resetting}
@@ -267,6 +306,21 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
                 Worker 上还没有登记这条推送通道，点下面的「重新登记到 Worker」登记即可。
               </div>
             )}
+          </div>
+        ) : native ? (
+          <div className="space-y-3 text-xs">
+            {nativeStatus && <Row label="系统通知权限" value={nativeStatus.permission === 'granted' ? '已授权' : nativeStatus.permission === 'denied' ? '未允许 · 请到系统设置开启' : nativeStatus.permission === 'unsupported' ? '暂时无法确认' : '尚未授权'} warning={nativeStatus.permission !== 'granted'} />}
+            <Row label="运行环境" value="Android App" />
+            <Row label="通知通道" value={nativeStatus?.transport === 'unified-push' ? '第三方接收 · UnifiedPush / ntfy' : '第三方接收（App）'} />
+            {nativeStatus ? <>
+              <Row label="本机通道" value={nativeStatus.hasSubscription ? '已连接' : nativeStatus.needsDistributor ? '等待连接 ntfy' : '尚未连接'} warning={!nativeStatus.hasSubscription} />
+              <Row label="云端登记" value={registrationText.value} warning={registrationText.bad} />
+              {testResult && <Row label="本次通知测试" value={{ idle: '尚未测试', sending: '正在发送…', sent: '已发出 · 请查看通知栏', failed: '发送失败，请重试' }[testResult]} warning={testResult === 'failed'} />}
+              <Row label="上次投递" value={deliveryText.value} bad={deliveryText.bad} />
+              {nativeStatus.detail && <p className="pt-3 border-t border-slate-200 text-slate-500 leading-relaxed">{nativeStatus.detail}</p>}
+              {registration === 'other-endpoint' && <p className="text-amber-700 leading-relaxed">云端登记的是其他通知通道。若要由这台 App 接收，请在配置里重新开启通知。</p>}
+              {nativeStatus.permission === 'denied' && <p className="text-amber-700 leading-relaxed">系统没有允许 App 显示通知，可以在手机的应用设置中开启。</p>}
+            </> : <p role="status" className="text-slate-500">{refreshing ? '正在读取 App 通知状态…' : '状态尚未确认，请刷新或打开通知配置检查。'}</p>}
           </div>
         ) : browser ? (
           <div className="space-y-1.5 text-[11px]">
@@ -362,21 +416,18 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
                 iOS 的网页推送必须先「添加到主屏幕」、再从主屏图标打开才能用；或者去「主动消息 2.0」设置里改用「第三方推送 App」。
               </div>
             )}
-            {browser.capacitorNative && (
-              <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg text-[10px] text-amber-700 leading-relaxed">
-                你现在用的是<b>打包好的 App</b>，不是浏览器网页。可在「主动消息 2.0」设置中开启「第三方推送 App（WxPusher 推荐）」或使用内置推送通道。
-              </div>
-            )}
           </div>
         ) : (
-          <p className="text-[10px] text-slate-400">读取中…</p>
+          <p className="text-xs text-slate-400">{refreshing ? '读取中…' : '状态尚未确认，请刷新重试。'}</p>
         )}
 
-        <button
-          disabled={resetting || refreshing || (!isThirdParty && browser?.capacitorNative)}
+        {native && !isThirdParty ? (
+          onOpenSettings && <button type="button" onClick={onOpenSettings} className="mt-4 w-full py-3 rounded-xl text-xs font-semibold bg-white border border-slate-200 text-violet-700">打开配置与通知测试</button>
+        ) : <><button
+          disabled={globallyPaused || resetting || refreshing || (!isThirdParty && browser?.capacitorNative)}
           onClick={() => void handleReset()}
           className={`mt-4 w-full py-2 rounded-xl text-xs font-bold border ${
-            resetting || refreshing || (!isThirdParty && browser?.capacitorNative)
+            globallyPaused || resetting || refreshing || (!isThirdParty && browser?.capacitorNative)
               ? 'bg-slate-100 text-slate-400 border-slate-200'
               : deepMode || (!isThirdParty && browser?.endpointDead) || registrationText.bad || deliveryText.bad
                 ? 'bg-rose-500 text-white border-rose-500 hover:bg-rose-600'
@@ -391,6 +442,7 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
             : '「重置订阅」会清掉现在这条、重建一条，再登记到 Worker 上。换了浏览器、换了 Worker、或者订阅被吊销之后点它。'}
           {deepMode && <><br/>连着几次都没成，已经切到「深度重置」——它会把 Service Worker 整个装一遍，更彻底。</>}
         </p>
+        </>}
 
         {/* 上面那条链路修好了也追不回已经丢掉的消息——那些还在云端账本上躺着，得有人去拿。
             平时冷启动和回到前台会自动捞一次，这个按钮是给「我确实少收了东西」的时候用的：
@@ -399,10 +451,10 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
         {workerConfigured && (
           <>
             <button
-              disabled={catchingUp || resetting || refreshing}
+              disabled={globallyPaused || catchingUp || resetting || refreshing}
               onClick={() => void handleCatchUp()}
               className={`mt-3 w-full py-2 rounded-xl text-xs font-bold border ${
-                catchingUp || resetting || refreshing
+                globallyPaused || catchingUp || resetting || refreshing
                   ? 'bg-slate-100 text-slate-400 border-slate-200'
                   : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
               }`}

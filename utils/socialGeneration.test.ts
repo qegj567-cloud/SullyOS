@@ -68,4 +68,13 @@ describe('Spark author attribution', () => {
         expect(resolveSparkAuthor({ author: '小花园' }, [a, b], chars, duplicate, [])).toBeNull();
         expect(resolveSparkAuthor({ author: '小花园', charId: 'b-id' }, [a, b], chars, duplicate, [])?.character).toBe(b);
     });
+
+    it('does not reuse recall left on the shared character object', async () => {
+        const stale = { ...a, memoryPalaceEnabled: true, memoryPalaceInjection: 'STALE_RECALL', roomPlatesInjection: 'STALE_PLATES' } as CharacterProfile;
+        const context = await buildSparkGenerationContext([stale], user, social, handles);
+        expect(context).not.toContain('STALE_RECALL');
+        expect(context).not.toContain('STALE_PLATES');
+        // 本次召回只写在副本上，调用方传进来的角色对象保持原样
+        expect(stale.memoryPalaceInjection).toBe('STALE_RECALL');
+    });
 });

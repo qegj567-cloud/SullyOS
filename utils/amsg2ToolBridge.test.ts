@@ -342,14 +342,19 @@ describe('同名同参的调用不重复执行', () => {
     expect(second).toContain('不要');
   });
 
-  it('list 不拦：同一轮里排完再查，清单本来就该变', async () => {
+  it('list：清单变化后再次查询照常放行；清单未变原地重查按重复打回，且回话带收尾引导', async () => {
     const { deps } = makeSession();
-    const empty = await executeAmsg2Tool('list_active_messages', {}, deps);
+    const empty = await executeAmsg2ToolWithOutcome('list_active_messages', {}, deps);
+    const dupEmpty = await executeAmsg2ToolWithOutcome('list_active_messages', {}, deps);
     await executeAmsg2Tool('schedule_active_message', { send_at: future(1) }, deps);
-    const afterSchedule = await executeAmsg2Tool('list_active_messages', {}, deps);
+    const afterSchedule = await executeAmsg2ToolWithOutcome('list_active_messages', {}, deps);
 
-    expect(empty).toContain('没有任何定时主动消息任务');
-    expect(afterSchedule).toContain(shortOf(UUIDS[0]));
+    expect(empty.text).toContain('没有任何定时主动消息任务');
+    expect(empty.text).toContain('直接留空结束即可');
+    expect(empty.outcome.status).toBe('done');
+    expect(dupEmpty.outcome.status).toBe('duplicate');
+    expect(afterSchedule.text).toContain(shortOf(UUIDS[0]));
+    expect(afterSchedule.outcome.status).toBe('done');
   });
 
   it('排程成功的回话末尾带收尾引导（软的那层）', async () => {
@@ -451,22 +456,37 @@ describe('连发上限·本地排程闸', () => {
     expect(lastTasks(persisted).find((t: any) => t.taskUuid !== 'u1')?.source).toBe('user');
   });
 
-  it('工具签名跟着设置走：默认没有 recurrence / expire_policy，任务名额写实数', () => {
-    const locked = buildAmsg2Tools(resolveAmsgLimits({ maxActiveTasks: 3 }))[0].function;
+  it('工具签名与云端即时对话对齐：3 个工具、动态时区示例、克制指引，参数随设置隐藏', () => {
+    const tools = buildAmsg2Tools(resolveAmsgLimits({ maxActiveTasks: 3 }), {
+      nowMs: Date.parse('2026-11-19T12:00:00Z'),
+      tz: { tzId: 'Asia/Tokyo' },
+    });
+    expect(tools.map((t) => t.function.name)).toEqual([
+      'schedule_active_message',
+      'cancel_active_message',
+      'renew_active_message',
+    ]);
+    const locked = tools[0].function;
     expect(locked.parameters.properties).not.toHaveProperty('recurrence');
     expect(locked.parameters.properties).not.toHaveProperty('expire_policy');
     expect(locked.description).toContain('最多同时挂 3 个任务');
+    expect(locked.description).toContain('不要为了排而排');
+    expect(locked.parameters.properties.send_at.description).toContain('2026-11-20T21:00:00');
+    expect(locked.parameters.properties.send_at.description).toContain('有时差');
+
     const open = buildAmsg2Tools(resolveAmsgLimits({ allowSelfRecurring: true, allowSelfForce: true }))[0].function;
     expect(open.parameters.properties).toHaveProperty('recurrence');
     expect(open.parameters.properties).toHaveProperty('expire_policy');
   });
 
-  it('用户把上限设成 1 → 第一条自排就打回第二条', async () => {
+  it('用户把上限设成 1 → 第一条自排就打回第二条，且按聊天语境引导改现有任务', async () => {
     const { deps } = makeSession({
       activeMsg2Config: { enabled: true, maxUnansweredSends: 1, tasks: [selfTask('u1')] },
     });
     const reply = await executeAmsg2Tool('schedule_active_message', { send_at: future(1) }, deps);
     expect(reply).toContain('连发上限是 1 次');
+    expect(reply).toContain('renew_active_message');
+    expect(reply).not.toContain('对方还没回复');
     expect(ActiveMsgClient.scheduleCharacterTask).not.toHaveBeenCalled();
   });
 });
@@ -523,10 +543,33 @@ describe('工具调用的结局', () => {
     expect(failed.outcome).toEqual({ tool: 'schedule_active_message', status: 'error', message: '名额满了' });
   });
 
-  it('上一次的打回原因不会串到下一次成功的调用上', async () => {
+  it('上一次的打回原因不会串到下一次成功的调用上；远端取消失败记 rejected 且更新签名', async () => {
     const { deps } = makeSession({
-      activeMsg2Config: { enabled: true, tasks: [{ ...selfTask('u1'), source: 'user' }] },
+      activeMsg2Config: {
+        enabled: true,
+        tasks: [
+          { ...selfTask('u1'), source: 'user' },
+          // 过点 >48h 的陈旧任务：persistTasks 会顺手清掉它，但失败的 cancel 仍必须判为 rejected
+          { ...selfTask('stale999', -72), firstSendTime: new Date(Date.now() - 72 * 3600_000).toISOString() },
+        ],
+      },
     });
+    const listedBefore = await executeAmsg2ToolWithOutcome('list_active_messages', {}, deps);
+    expect(listedBefore.outcome.status).toBe('done');
+
+    (ActiveMsgClient.cancelTask as any).mockRejectedValueOnce(new Error('worker 503'));
+    const cancelFailed = await executeAmsg2ToolWithOutcome('cancel_active_message', { task_id: 'u1' }, deps);
+    expect(cancelFailed.outcome).toEqual({
+      tool: 'cancel_active_message',
+      status: 'rejected',
+      reason: 'remote_cancel_failed',
+    });
+
+    // lastError 已写入，再调 list 不应被当成与失败前完全相同的签名拦掉
+    const listedAfterFail = await executeAmsg2ToolWithOutcome('list_active_messages', {}, deps);
+    expect(listedAfterFail.outcome.status).toBe('done');
+    expect(listedAfterFail.text).toContain('远端取消失败');
+
     const nearby = new Date(Date.now() + 3600_000 + 5 * 60_000).toISOString();
     await executeAmsg2ToolWithOutcome('schedule_active_message', { send_at: nearby }, deps);
     const ok = await executeAmsg2ToolWithOutcome('schedule_active_message', { send_at: future(3) }, deps);

@@ -7,7 +7,7 @@ export const DIAGNOSTIC_PROTOCOL = 1;
 
 export interface DiagnosticEvent {
   runId: string;
-  side: 'page' | 'sw' | 'worker';
+  side: 'page' | 'sw' | 'worker' | 'native';
   event: string;
   ts: string;
   [key: string]: unknown;

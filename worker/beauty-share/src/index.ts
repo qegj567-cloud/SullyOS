@@ -333,6 +333,18 @@ async function route(request: Request, env: Env): Promise<Response> {
     const saved = await env.DB.prepare('SELECT id FROM beauty_repos WHERE request_key=?').bind(requestKey).first();
     return json({ id: saved?.id, received: true }, 201);
   }
+  if (path === '/api/repo-inbox' && method === 'GET') {
+    const author = await principal(request, env, 'author');
+    const from = ` FROM submissions s JOIN beauty_repos f ON f.submission_id=s.id
+      WHERE s.author_code=? AND f.inbox_delivered_at IS NOT NULL AND f.status='sent'`;
+    const count = await env.DB.prepare('SELECT count(*) AS n' + from).bind(author.code).first();
+    const total = Number(count?.n || 0);
+    const offset = Math.min(pageOffset(url), Math.max(0, Math.ceil(total / PAGE_SIZE) - 1) * PAGE_SIZE);
+    const { results } = await env.DB.prepare(`SELECT f.id, f.signature, f.message,
+      json_extract(f.metadata,'$.name') AS workName, f.created_at AS writtenAt` + from +
+      ' ORDER BY f.inbox_delivered_at DESC, f.created_at DESC, f.id DESC LIMIT ? OFFSET ?').bind(author.code, PAGE_SIZE, offset).all();
+    return json({ repos: results, total, offset, pageSize: PAGE_SIZE, nextOffset: offset + PAGE_SIZE < total ? offset + PAGE_SIZE : null });
+  }
   if (path === '/api/admin/repos' && method === 'GET') {
     await principal(request, env, 'admin');
     const status = url.searchParams.get('status') || 'pending';
@@ -344,14 +356,27 @@ async function route(request: Request, env: Env): Promise<Response> {
     const from = ' FROM beauty_repos f JOIN submissions s ON s.id=f.submission_id WHERE ' + clauses.join(' AND ');
     const count = await env.DB.prepare('SELECT count(*) AS n' + from).bind(...args).first();
     const total = Number(count?.n || 0); const offset = Math.min(pageOffset(url), Math.max(0, Math.ceil(total / PAGE_SIZE) - 1) * PAGE_SIZE);
-    const { results } = await env.DB.prepare('SELECT f.id,f.signature,f.message,f.status,f.created_at,f.metadata,s.author_code,s.share_code' + from + ' ORDER BY f.created_at DESC,f.id DESC LIMIT ? OFFSET ?').bind(...args, PAGE_SIZE, offset).all();
+    const { results } = await env.DB.prepare('SELECT f.id,f.signature,f.message,f.status,f.created_at,f.inbox_delivered_at,f.metadata,s.author_code,s.share_code' + from + ' ORDER BY f.created_at DESC,f.id DESC LIMIT ? OFFSET ?').bind(...args, PAGE_SIZE, offset).all();
     return json({ repos: results.map(row => ({ ...row, metadata: JSON.parse(row.metadata) })), total, offset, pageSize: PAGE_SIZE, nextOffset: offset + PAGE_SIZE < total ? offset + PAGE_SIZE : null });
   }
   const repoStatus = path.match(/^\/api\/admin\/repos\/([a-f0-9]{32})$/);
   if (repoStatus && method === 'POST') {
     await principal(request, env, 'admin'); const body = await readJson(request, 1024);
+    if (body.action === 'deliver') {
+      const deliveredAt = now();
+      const updated = await env.DB.prepare(`UPDATE beauty_repos SET status='sent', handled_at=?, inbox_delivered_at=?
+        WHERE id=? AND status='pending'`).bind(deliveredAt, deliveredAt, repoStatus[1]).run();
+      if (!updated.meta.changes) {
+        const row = await env.DB.prepare('SELECT inbox_delivered_at FROM beauty_repos WHERE id=?').bind(repoStatus[1]).first();
+        if (!row) fail(404, 'Repo 不存在');
+        if (!row.inbox_delivered_at) fail(409, '请先将这份 Repo 恢复为待审核，再投递');
+      }
+      return json({ ok: true });
+    }
     if (!['pending', 'sent', 'archived'].includes(body.status)) fail(400, '状态无效');
-    const result = await env.DB.prepare('UPDATE beauty_repos SET status=?,handled_at=? WHERE id=?').bind(body.status, body.status === 'pending' ? null : now(), repoStatus[1]).run();
+    const result = await env.DB.prepare(`UPDATE beauty_repos SET status=?,handled_at=?,
+      inbox_delivered_at=CASE WHEN ?='sent' THEN inbox_delivered_at ELSE NULL END WHERE id=?`)
+      .bind(body.status, body.status === 'pending' ? null : now(), body.status, repoStatus[1]).run();
     if (!result.meta.changes) fail(404, 'Repo 不存在');
     return json({ ok: true });
   }

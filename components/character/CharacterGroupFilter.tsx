@@ -69,7 +69,7 @@ export const CharacterGroupFilterBar: React.FC<FilterBarProps> = ({ characters, 
         : 'bg-white/70 text-slate-500 border-slate-200';
     const active = dark
         ? 'bg-white/90 text-slate-900 border-white'
-        : 'bg-slate-700 text-white border-slate-700';
+        : 'keep-white bg-slate-700 text-white border-slate-700';
 
     return (
         <div className={`flex gap-1.5 overflow-x-auto no-scrollbar ${className || ''}`}>

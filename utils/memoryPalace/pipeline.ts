@@ -76,7 +76,7 @@ import { vectorizeAndStore, checkModelConsistency, rebuildAllVectors } from './v
 import { buildLinks, strengthenCoActivated } from './links';
 import { hybridSearch } from './hybridSearch';
 import { getEmbeddings } from './embedding';
-import { isRemoteSearchBroken } from './vectorSearch';
+import { canSearchRemote } from './vectorSearch';
 import { spreadActivation } from './activation';
 import { applyPriming, checkRumination } from './priming';
 import { expandAndFormat } from './formatter';
@@ -645,9 +645,7 @@ export async function retrieveMemories(
                 ...(contextQueryTrimmed ? [contextQuery] : []),
                 ...(doRerank ? [joinedUserQuery] : []),
             ];
-            const useRemoteVector = !!(
-                remoteVectorConfig?.enabled && remoteVectorConfig.initialized && !isRemoteSearchBroken()
-            );
+            const useRemoteVector = await canSearchRemote(remoteVectorConfig, charId);
             const [queryVectors, allNodes, allVectors, allEventBoxes] = await Promise.all([
                 tRetrieve(`getEmbeddings(${queriesToEmbed.length})`, 'NET', getEmbeddings(queriesToEmbed, embeddingConfig)),
                 tRetrieve('MemoryNodeDB.getByCharId', 'IDB', MemoryNodeDB.getByCharId(charId)),
@@ -815,9 +813,7 @@ export async function retrieveMemories(
             console.log(`🏰 [Retrieve] 多路检索汇总：${effectiveSpikes.length} 个原始 spike + ${routerSpikes.length} 个 Resolver 补救 query + ${contextResults.length > 0 ? 'context' : '无 context'} → 合并 top ${results.length}`);
         } else {
             // 冷启动兜底：仅用 fallback 单 query
-            const useRemoteVector = !!(
-                remoteVectorConfig?.enabled && remoteVectorConfig.initialized && !isRemoteSearchBroken()
-            );
+            const useRemoteVector = await canSearchRemote(remoteVectorConfig, charId);
             // 先 fire fallback 主搜 + rerank pipeline，两个独立管线并行
             const fallbackSearchPromise = hybridSearch(fallbackQuery, charId, embeddingConfig, FINAL_TOP_K, remoteVectorConfig);
             if (doRerank) {
@@ -1214,7 +1210,17 @@ export async function injectMemoryPalace(
     }
 
     let explicitEntityAnalysis: ExplicitEntityAnalysis | undefined;
-    const interactiveRecall = isChatConversationEntry(trace.entryPoint) || trace.entryPoint === 'collaboration';
+    const proactiveRecall = trace.entryPoint === 'proactive_chat';
+    const interactiveRecall = isChatConversationEntry(trace.entryPoint) || trace.entryPoint === 'collaboration' || proactiveRecall;
+    // 主动消息通常在角色已经回复后打包。只为分析回看最后一轮真实用户发言；
+    // 检索和最终历史仍使用完整可见范围，不丢掉角色回复，也不回读水位线外原文。
+    let analysisMessages = recentMessages || [];
+    if (proactiveRecall) {
+        let end = analysisMessages.length - 1;
+        while (end >= 0 && (analysisMessages[end].role !== 'user'
+            || analysisMessages[end].metadata?.proactiveHint)) end -= 1;
+        analysisMessages = analysisMessages.slice(0, end + 1);
+    }
     if (!trace.featureFlagsSnapshot.recallRouter) {
         trace.explicitEntityRecall = { status: 'disabled' };
         trace.eventBoxMetadataRecall = { status: 'disabled' };
@@ -1226,7 +1232,7 @@ export async function injectMemoryPalace(
     } else {
         trace.eventBoxMetadataRecall = { status: 'no_query' };
         const explicitStartedAt = performance.now();
-        explicitEntityAnalysis = analyzeExplicitEntitySignals(recentMessages || [], char.name, userName);
+        explicitEntityAnalysis = analyzeExplicitEntitySignals(analysisMessages, char.name, userName);
         trace.stages.push({
             name: 'explicit_signal',
             durationMs: Math.round(performance.now() - explicitStartedAt),
@@ -1245,7 +1251,7 @@ export async function injectMemoryPalace(
 
         const analyzerStartedAt = performance.now();
         const analysis = analyzeLocalContext(
-            recentMessages || [],
+            analysisMessages,
             char.name,
             userName,
             explicitEntityAnalysis.hasSignals,
@@ -1278,7 +1284,7 @@ export async function injectMemoryPalace(
     } else {
         const interactionStartedAt = performance.now();
         const interaction = analyzeUserInteraction(
-            recentMessages || [],
+            analysisMessages,
             char.interactionAccommodation,
             char.name,
             userName,
@@ -1311,14 +1317,14 @@ export async function injectMemoryPalace(
         let depth: ReturnType<typeof analyzeDeepEngagement> | ReturnType<typeof analyzeConversationEngagement>;
         try {
             depth = legacyRequested
-                ? analyzeDeepEngagement(recentMessages || [], char.name, userName)
-                : analyzeConversationEngagement(char.id, recentMessages || [], char.name, userName);
+                ? analyzeDeepEngagement(analysisMessages, char.name, userName)
+                : analyzeConversationEngagement(char.id, analysisMessages, char.name, userName, { persist: !proactiveRecall });
         } catch (error) {
             // M3 是质量增强层。v2 状态损坏或边界输入出错时，当轮回退旧分析，不能阻断聊天。
             console.warn('[ConversationEngagement] v2 failed, falling back to legacy depth:', error);
-            clearConversationEngagementState(char.id);
+            if (!proactiveRecall) clearConversationEngagementState(char.id);
             engine = 'legacy_depth';
-            depth = analyzeDeepEngagement(recentMessages || [], char.name, userName);
+            depth = analyzeDeepEngagement(analysisMessages, char.name, userName);
         }
         trace.deepEngagement = {
             status: depth.analyzable ? 'observed' : 'no_signal',

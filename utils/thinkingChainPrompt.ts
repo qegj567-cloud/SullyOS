@@ -1,17 +1,42 @@
+import type { CharacterProfile, UserProfile } from '../types';
+
+export interface ThinkingChainSettings {
+    enabled: boolean;
+    customPrompt?: string;
+    mode?: CharacterProfile['thinkingChainPromptMode'];
+}
+
+export type ThinkingPromptCharacter = Pick<CharacterProfile,
+    'showThinkingChain' | 'thinkingChainPromptScope' | 'thinkingChainPromptMode' | 'thinkingChainCustomPrompt'>;
+
+export function getThinkingChainSettings(char: ThinkingPromptCharacter, user?: Pick<UserProfile, 'thinkingChainPrompt'>) {
+    const hasLegacyPrompt = !!char.thinkingChainCustomPrompt?.trim() || !!char.thinkingChainPromptMode;
+    const scope = char.thinkingChainPromptScope ?? (hasLegacyPrompt ? 'character' : 'space');
+    const prompt = scope === 'character'
+        ? { mode: char.thinkingChainPromptMode, customPrompt: char.thinkingChainCustomPrompt }
+        : user?.thinkingChainPrompt;
+    return { enabled: !!char.showThinkingChain, scope, mode: prompt?.mode ?? 'append', customPrompt: prompt?.customPrompt ?? '' };
+}
+
+export function buildThinkingChainPrompt(
+    charName: string, userName: string, settings: ThinkingChainSettings,
+    extraHeading = '## 用户对内心独白的额外要求',
+): string {
+    if (!settings.enabled) return '';
+    const custom = settings.customPrompt?.trim() || '';
+    if (settings.mode === 'replace') return custom;
+    const base = buildDefaultThinkingChainPrompt(charName, userName);
+    return custom ? `${base}\n\n${extraHeading}\n${custom}` : base;
+}
+
 /**
- * Thinking-chain prompt builder.
+ * Default thinking-chain prompt.
  *
  * Returns the system-prompt block that steers the model's thinking phase
  * (reasoning_content / <think> tags) into being {charName}'s in-character
  * mental activity rather than AI reasoning.
- *
- * Used by both the main chat flow (hooks/useChatAI.ts) and the proactive
- * message flow (context/OSContext.tsx) so the prompt stays in one place.
- *
- * The caller is responsible for the showThinkingChain gate and for
- * appending any user-supplied thinkingChainCustomPrompt.
  */
-export function buildThinkingChainPrompt(charName: string, userName: string): string {
+function buildDefaultThinkingChainPrompt(charName: string, userName: string): string {
     return `═══════════════════════════════════════════
 【以下规则仅适用于 THINKING 阶段】
 (\`<think>\` 标签内 / reasoning channel)

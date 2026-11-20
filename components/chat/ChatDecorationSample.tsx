@@ -9,15 +9,18 @@ import type {DecorationPreviewState} from '../../utils/decorationPreviewInteract
 import {renderToStaticMarkup} from 'react-dom/server';
 import MessageItem,{ThinkingChainBlock} from './MessageItem';
 import type {DecorationThumbnailPart} from '../../utils/decorationPreviewScenes';
+import ChatCharacterProfile from './ChatCharacterProfile';
+import profileCss from './ChatCharacterProfile.css?raw';
 import ChatHeaderShell from './ChatHeaderShell';
 import ChatInputArea from './ChatInputArea';
 import {PRESET_THEMES} from './ChatConstants';
 import ScheduleChangeNotice from './ScheduleChangeNotice';
 import {validateDecoration} from '../../utils/chatDecoration';
 import {buildChatFineTuneCss} from '../../utils/chatFineTuneCss';
+import {computeTimeSegmentStarts} from '../../utils/chatMessageGrouping';
 import {CHAT_PREVIEW_SCENES} from '../../utils/chatPreviewFixtures';
 import {BEAUTY_PREVIEW_AVATAR} from '../../utils/beautyPreviewAssets';
-import type {CharacterBuff} from '../../types';
+import type {CharacterBuff,CharacterProfile} from '../../types';
 import baseCss from './chatPreview.generated.css?inline';
 import noticeCompatCss from './ChatNoticeCompat.css?inline';
 import cardCss from './ChatCardSurface.css?inline';
@@ -27,14 +30,21 @@ import sarCss from '../sar/sar-speech.css?inline';
 const noop=()=>{};
 // Fictional fixture states only; never read or update a real character's emotions.
 const previewBuffs:CharacterBuff[]=[
- {id:'preview-calm',name:'preview_calm',label:'安心',emoji:'🍃',color:'#059669',intensity:2},
- {id:'preview-anticipation',name:'preview_anticipation',label:'期待见面',emoji:'✨',color:'#d97706',intensity:2},
+ {id:'preview-calm',name:'preview_calm',label:'安心',description:'一起待在店里，心慢慢静了下来。',emoji:'🍃',color:'#059669',intensity:2},
+ {id:'preview-anticipation',name:'preview_anticipation',label:'期待见面',description:'想在下次见面时，把刚读完的书带给你。',emoji:'✨',color:'#d97706',intensity:2},
 ];
 const defaultBubble=PRESET_THEMES.default;
 
 /** Static rendering intentionally never mounts effects or binds actual message actions. */
 export function renderChatDecorationSample(value:unknown,sceneId:string,thumbnailPart?:DecorationThumbnailPart,state:DecorationPreviewState={}) {
  const p=validateDecoration(value).parts,l=p.layout||{};
+ if(thumbnailPart==='profile'||sceneId.startsWith('profile-')){
+  const tab=sceneId==='profile-settings'?'设定':sceneId==='profile-schedule'?'日程':'当前';
+  const character={id:'profile-preview',name:'林遥',avatar:BEAUTY_PREVIEW_AVATAR,description:'旧书店的朋友',scheduleFeatureEnabled:true,emotionConfig:{enabled:true},activeBuffs:previewBuffs} as CharacterProfile;
+  const schedule={id:'preview',charId:character.id,date:'2026-09-26',generatedAt:0,slots:[{startTime:'09:00',activity:'整理书架',innerThought:'把靠窗的位置留给你。'},{startTime:'14:00',activity:'河边散步'}]};
+  const markup=renderToStaticMarkup(<ChatCharacterProfile preview character={character} schedule={schedule} initialTab={tab} onClose={noop} onSchedule={noop} onPlayTheater={noop} onMemory={noop}/>);
+  return {markup,css:baseCss+'\n'+profileCss+'\n.beauty-preview-body{display:grid;place-items:center;width:360px;height:'+ (thumbnailPart?'360':'600')+'px;background:#e8e5eb}.beauty-preview-body .chat-profile-dialog{position:relative;inset:auto;max-height:95%}\n'+(p.profile?.customCss||'')};
+ }
  if(p.collaboration)return renderCollaborationBeautySample(p.collaboration,!!thumbnailPart);
  if(p.date||p.story){
   const style=meetingAppearance(p.date||p.story);
@@ -59,6 +69,8 @@ export function renderChatDecorationSample(value:unknown,sceneId:string,thumbnai
  }
  const scene=CHAT_PREVIEW_SCENES.find(item=>item.id===sceneId)||CHAT_PREVIEW_SCENES[0];
   const messages=scene.messages.flatMap(message=>{const status=state.transfers?.[message.id];if(!status||message.type!=='transfer'||message.metadata?.receipt)return [message];return [{...message,metadata:{...message.metadata,status}},{...message,id:-message.id,role:'user' as const,metadata:{amount:message.metadata?.amount,receipt:status}}];});
+  const timeSegmentStarts=computeTimeSegmentStarts(messages,l.chatTimestampPosition==='below_avatar');
+  const previewTimestampNow=new Date(1790386860000);
   const cssSlots=readAvatarFrameSlots(p.css||'');
   const hasUserFrame=Boolean(cssSlots.shared||cssSlots.user||p.bubbles?.user.avatarDecoration);
   const hasAiFrame=Boolean(cssSlots.shared||cssSlots.ai||p.bubbles?.ai.avatarDecoration);
@@ -74,7 +86,7 @@ export function renderChatDecorationSample(value:unknown,sceneId:string,thumbnai
   <ChatHeaderShell selectionMode={false} selectedCount={0} onCancelSelection={noop} activeCharacter={{id:'whitebox-preview',name:'示例角色',avatar:BEAUTY_PREVIEW_AVATAR,activeBuffs:previewBuffs}} isTyping={false} isSummarizing={false} lastTokenUsage={1200} statusText="在线" onClose={noop} onTriggerAI={noop} onShowCharsPanel={noop} hideBuffs={l.chatHideHeaderBuffs??false} headerStyle={l.chatHeaderStyle} avatarShape={l.chatAvatarShape} headerAlign={l.chatHeaderAlign} headerDensity={l.chatHeaderDensity} statusStyle={l.chatStatusStyle} chromeStyle={l.chatChromeStyle}/>
   <div className="sully-chat-messages sample-messages">
    {(scene.id==='schedule'||scene.id==='all') && <ScheduleChangeNotice onDone={noop} detail={{eventId:'preview',charId:'whitebox-preview',date:'2026-09-26',schedule:{} as any,changes:[{startTime:'18:00',before:'整理房间',after:'一起散步'},{startTime:'20:00',before:'看书',after:'一起看电影'}]}}/>}
-   {messages.map((message,index)=><div key={message.id} data-preview-message={message.id} style={{display:"contents"}}><MessageItem msg={message} isFirstInGroup={index===0||messages[index-1].role!==message.role} isLastInGroup={index===messages.length-1||messages[index+1].role!==message.role} activeTheme={p.bubbles||defaultBubble} charAvatar={BEAUTY_PREVIEW_AVATAR} userAvatar={BEAUTY_PREVIEW_AVATAR} charName="示例角色" onLongPress={noop} onReply={noop} selectionMode={false} isSelected={false} onToggleSelect={noop} avatarShape={l.chatAvatarShape} avatarSize={l.chatAvatarSize} avatarMode={l.chatAvatarMode} bubbleVariant={l.chatBubbleStyle} messageSpacing={l.chatMessageSpacing} showTimestamp={l.chatShowTimestamp} moduleAlign={l.chatModuleAlign} suppressEntranceAnimation thinkingChainOptions={p.psyche} previewExpanded={state.psyche?.[message.id]??scene.expanded} previewTransferOpen={state.transferOpen===String(message.id)} onResolveTransfer={noop} voiceData={scene.voicePlaying?{url:'data:audio/wav;base64,',originalText:'晚安，明天见。',spokenText:'晚安，明天见。'}:undefined} voiceLoading={scene.voiceLoading} isVoicePlaying={scene.voicePlaying} translationEnabled translationExpanded/></div>) }
+   {messages.map((message,index)=><div key={message.id} data-preview-message={message.id} style={{display:"contents"}}><MessageItem msg={message} isFirstInGroup={index===0||messages[index-1].role!==message.role} isLastInGroup={index===messages.length-1||messages[index+1].role!==message.role} activeTheme={p.bubbles||defaultBubble} charAvatar={BEAUTY_PREVIEW_AVATAR} userAvatar={BEAUTY_PREVIEW_AVATAR} charName="示例角色" onLongPress={noop} onReply={noop} selectionMode={false} isSelected={false} onToggleSelect={noop} avatarShape={l.chatAvatarShape} avatarSize={l.chatAvatarSize} avatarMode={l.chatAvatarMode} bubbleVariant={l.chatBubbleStyle} messageSpacing={l.chatMessageSpacing} showTimestamp={l.chatShowTimestamp} timestampPosition={l.chatTimestampPosition} avatarPlacement={l.chatAvatarPlacement} startsTimeSegment={timeSegmentStarts[index]} timestampNow={previewTimestampNow} moduleAlign={l.chatModuleAlign} suppressEntranceAnimation thinkingChainOptions={p.psyche} previewExpanded={state.psyche?.[message.id]??scene.expanded} previewTransferOpen={state.transferOpen===String(message.id)} onResolveTransfer={noop} voiceData={scene.voicePlaying?{url:'data:audio/wav;base64,',originalText:'晚安，明天见。',spokenText:'晚安，明天见。'}:undefined} voiceLoading={scene.voiceLoading} isVoicePlaying={scene.voicePlaying} translationEnabled translationExpanded/></div>) }
   </div>
   <ChatInputArea input="" setInput={noop} isTyping={false} selectionMode={false} showPanel={state.panel?"actions":"none"} previewActionsPage={state.actionsPage} setShowPanel={noop} onSend={noop} onDeleteSelected={noop} selectedCount={0} emojis={[]} onPanelAction={noop} onImageSelect={noop} isSummarizing={false} onReroll={noop} canReroll={false} inputStyle={l.chatInputStyle} sendButtonStyle={l.chatSendButtonStyle} chromeStyle={l.chatChromeStyle}/>
  </main>);

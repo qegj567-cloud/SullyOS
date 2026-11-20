@@ -19,6 +19,8 @@ import { PLATE_CONSOLIDATE_RESULT_KIND } from './amsgPlateJob';
 import { listUserSpaces } from './userSpaces';
 import { SCHEDULE_CHANGE_RESULT_KIND } from './amsgScheduleResult';
 import { FIRE_SKIP_RESULT_KIND } from './amsgFireSkipResult';
+import { INSTANT_API_CALLS_RESULT_KIND } from './amsgApiCallRecords';
+import { AMSG_RESCUE_RESULT_KIND } from './amsgRescueState';
 
 const HEADER = '[amsg2:result]';
 
@@ -128,6 +130,18 @@ const dispatchOne = async (payload: unknown, context?: AmsgResultContext): Promi
       case FIRE_SKIP_RESULT_KIND: {
         const { applyFireSkipResult } = await import('./amsgFireSkipResultApply');
         return await applyFireSkipResult(payload, context);
+      }
+      case INSTANT_API_CALLS_RESULT_KIND: {
+        const { applyInstantApiCallResult } = await import('./amsgApiCallLog');
+        return await applyInstantApiCallResult(payload);
+      }
+      case AMSG_RESCUE_RESULT_KIND: {
+        // Worker 发现救援模式刚被打开时推给所有设备的那条。立刻去问一次留痕、弹警告；
+        // 问不到也记下「那时它开着」。消化一次就够，后面靠 /config-check 的留痕，所以总能销账。
+        const { handleRescuePush } = await import('./amsgRescueProbe');
+        const sentAt = typeof (payload as any)?.timestamp === 'number' ? (payload as any).timestamp : undefined;
+        await handleRescuePush(context?.createdAt ?? sentAt ?? Date.now());
+        return true;
       }
       default:
         // 认不出来的多半是**前端比 worker 旧**：worker 可以脱开前端单独更新（fork 的

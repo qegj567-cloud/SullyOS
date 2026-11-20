@@ -4,9 +4,13 @@ import MessageItem from '../../components/chat/MessageItem';
 import ChatRuntimeStyle from '../../components/chat/ChatRuntimeStyle';
 import { ChatSubtitleLayer } from '../../components/chat/ChatSubtitleLayer';
 import TranslationStylePicker from '../../components/chat/TranslationStylePicker';
-import { readChatTranslationStyle, type ChatTranslationStyle } from '../../utils/chatTranslationStyle';
+import { readChatTranslationStyle, readSubtitleSettings, saveSubtitleSettings, type ChatTranslationStyle } from '../../utils/chatTranslationStyle';
+import SubtitleSettingsDialog from '../../components/chat/SubtitleSettingsDialog';
 import { PRESET_THEMES } from '../../components/chat/ChatConstants';
 import type { Message } from '../../types';
+import { DB } from '../../utils/db';
+import { handleLocalBack } from '../../utils/localBackHandlers';
+Object.assign(window, { subtitleQA: { DB, handleLocalBack } });
 
 const noop = () => {};
 const avatar = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" rx="18" fill="#b7cbdc"/><text x="32" y="44" text-anchor="middle" font-size="38">☺</text></svg>')}`;
@@ -18,6 +22,8 @@ const examples = [
 function App() {
     const [charId, setCharId] = useState('qa-a');
     const [style, setStyle] = useState<ChatTranslationStyle>(() => readChatTranslationStyle(charId));
+    const [subtitleSettings, setSubtitleSettings] = useState(() => readSubtitleSettings(charId));
+    const [settingsOpen, setSettingsOpen] = useState(false);
     const [theme, setTheme] = useState('plain');
     const [expanded, setExpanded] = useState(true);
     const [enabled, setEnabled] = useState(true);
@@ -34,18 +40,19 @@ function App() {
                 <select aria-label="测试气泡" value={theme} onChange={e => setTheme(e.target.value)}>
                     <option value="plain">默认气泡</option><option value="clipped">裁切与装饰</option><option value="flat">无框美化</option><option value="dark">深色气泡</option>
                 </select>
-                <select aria-label="测试角色" value={charId} onChange={e => { setCharId(e.target.value); setStyle(readChatTranslationStyle(e.target.value)); }}>
+                <select aria-label="测试角色" value={charId} onChange={e => { setCharId(e.target.value); setStyle(readChatTranslationStyle(e.target.value)); setSubtitleSettings(readSubtitleSettings(e.target.value)); }}>
                     <option value="qa-a">角色 A</option><option value="qa-b">角色 B</option>
                 </select>
             </div>
             <label><input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} /> 消息翻译</label>
-            <label><input type="checkbox" checked={expanded} onChange={e => setExpanded(e.target.checked)} /> 同时展开</label>
-            {enabled && expanded && <TranslationStylePicker value={style} onChange={v => { setStyle(v); localStorage.setItem(`chat_translate_style_${charId}`, v); }} />}
+            {enabled && <TranslationStylePicker value={expanded ? style : 'collapsed'} onChange={v => { setExpanded(v !== 'collapsed'); const next = v === 'subtitle' ? 'subtitle' : 'bubble'; setStyle(next); localStorage.setItem(`chat_translate_style_${charId}`, next); }} />}
+            {enabled && expanded && style === 'subtitle' && <button onClick={() => setSettingsOpen(true)}>字幕设置与预览</button>}
+            {settingsOpen && <SubtitleSettingsDialog value={subtitleSettings} onClose={() => setSettingsOpen(false)} onChange={settings => { saveSubtitleSettings(charId, settings); setSubtitleSettings(settings); }} />}
             <button onClick={() => setGrown(v => !v)}>改变上方内容高度</button>
             <button onClick={() => setAppendCount(v => v + 1)}>追加双语消息</button>
         </div>
         <div className="scroll" ref={scrollRef} onClick={() => setClicked(v => v + 1)}>
-            <ChatSubtitleLayer enabled={enabled && expanded && style === 'subtitle'}>
+            <ChatSubtitleLayer enabled={enabled && expanded && style === 'subtitle'} settings={subtitleSettings}>
                 <div data-spacer="" style={{ height: grown ? 120 : 0 }} />
                 {[...examples, ...examples, ...Array.from({ length: appendCount }, () => ['うん。', '好呀，我们一起去海边。'.repeat(12)])].map(([source, translation], index) => {
                     const msg = { id: index + 1, charId, role: 'assistant', type: 'text', timestamp: 1794630000000,

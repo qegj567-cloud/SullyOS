@@ -1,3 +1,4 @@
+import { HELP_HISTORY_KEY, helpTextHistory } from './sullyHelpBackup';
 import type { FullBackupData } from '../types';
 import { blobToDataUrl } from './blobRef';
 import { readBlobsIndex } from './backupBlobs';
@@ -109,6 +110,7 @@ export async function importLegacyAsIndependentUser(data: FullBackupData, zip: a
     const assets = new Map((tables.assets || []).map(row => [row.id, row]));
     const saveAsset = (id: string, value: any, json = false) => { if (value !== undefined) assets.set(id, { id, data: json ? JSON.stringify(value) : value }); };
     for (const row of data.activityTextAssets || []) assets.set(row.id, row);
+    if (data.helpDeskHistory !== undefined) saveAsset(HELP_HISTORY_KEY, helpTextHistory(data.helpDeskHistory));
     saveAsset('friend_feed_v1', data.friendFeed, true);
     saveAsset('content_favorites_index_v1', data.contentFavoritesIndex);
     saveAsset('spark_social_profile', data.socialAppData?.userProfile, true);
@@ -147,6 +149,7 @@ export async function importLegacyAsIndependentUser(data: FullBackupData, zip: a
         chatTranslateTargetLangByChar: 'chat_translate_lang_',
     };
     for (const [field, prefix] of Object.entries(perCharacterFields)) for (const [id, value] of Object.entries((data as any)[field] || {})) put(prefix + id, value);
+    for (const [id, value] of Object.entries(data.chatSubtitleByChar || {})) put('chat_translate_subtitle_' + id, value, true);
     put('spark_char_handles', data.socialAppData?.charHandles, true);
     put('spark_user_id', data.socialAppData?.userId);
     put(STORY_THEATER_APPEARANCE_STORAGE_KEY, data.storyTheaterAppearance);

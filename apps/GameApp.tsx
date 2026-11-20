@@ -1520,7 +1520,7 @@ Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆
             <div className={`border-b ${theme.border} shrink-0 bg-opacity-90 backdrop-blur z-20 relative`} style={{ paddingTop: 'var(--safe-top)' }}>
                 <div className="flex items-center justify-between px-4 py-3">
                     <div className="flex items-center gap-2">
-                        <button onClick={handleLeave} className={`p-2 -ml-2 rounded hover:bg-white/10 active:scale-95 transition-transform`}>
+                        <button onClick={handleLeave} className={`p-2 -ml-2 rounded ${activeGame.theme === 'modern' ? 'hover:bg-black/5' : 'hover:bg-white/10'} active:scale-95 transition-transform`}>
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
                         </button>
                         <div className="flex flex-col mb-0.5">
@@ -1537,10 +1537,10 @@ Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆
 
                     <div className="flex gap-1 mb-1">
                         {/* Toggle Party HUD */}
-                        <button onClick={() => setShowParty(!showParty)} className={`p-2 rounded hover:bg-white/10 active:scale-95 transition-transform ${showParty ? theme.accent : 'opacity-50'}`}>
+                        <button onClick={() => setShowParty(!showParty)} className={`p-2 rounded ${activeGame.theme === 'modern' ? 'hover:bg-black/5' : 'hover:bg-white/10'} active:scale-95 transition-transform ${showParty ? theme.accent : 'opacity-50'}`}>
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M18 18.72a9.094 9.094 0 0 0 3.741-.479 3 3 0 0 0-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0 1 12 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 0 1 6 18.719m12 0a5.971 5.971 0 0 0-.941-3.197m0 0A5.995 5.995 0 0 0 12 12.75a5.995 5.995 0 0 0-5.058 2.772m0 0a3 3 0 0 0-4.681 2.72 8.986 8.986 0 0 0 3.74.477m.94-3.197a5.971 5.971 0 0 0-.94 3.197M15 6.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm6 3a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Zm-13.5 0a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Z" /></svg>
                         </button>
-                        <button onClick={() => { setShowSystemMenu(true); trackEvent('打开跑团系统菜单'); }} className={`p-2 -mr-2 rounded hover:bg-white/10 active:scale-95 transition-transform`}>
+                        <button onClick={() => { setShowSystemMenu(true); trackEvent('打开跑团系统菜单'); }} className={`p-2 -mr-2 rounded ${activeGame.theme === 'modern' ? 'hover:bg-black/5' : 'hover:bg-white/10'} active:scale-95 transition-transform`}>
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" /></svg>
                         </button>
                     </div>
@@ -1549,50 +1549,50 @@ Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆
 
             {/* --- NEW: Party HUD (Collapsible) --- */}
             {showParty && (
-                <div className={`flex gap-4 p-3 overflow-x-auto no-scrollbar border-b ${theme.border} bg-black/20 backdrop-blur-sm z-10 shrink-0 animate-slide-down`}>
+                <div className={`flex gap-4 p-3 overflow-x-auto no-scrollbar border-b ${theme.border} ${activeGame.theme === 'modern' ? 'bg-slate-100/90' : 'bg-black/20'} backdrop-blur-sm z-10 shrink-0 animate-slide-down`}>
                     {/* User Avatar */}
                     <div className="relative group shrink-0">
-                        <TokenImg value={userProfile.avatar} className="w-10 h-10 rounded-full border-2 border-white/20 object-cover shadow-sm" />
+                        <TokenImg value={userProfile.avatar} className={`w-10 h-10 rounded-full border-2 ${activeGame.theme === 'modern' ? 'border-slate-300' : 'border-white/20'} object-cover shadow-sm`} />
                         <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 bg-black/60 text-white text-[8px] px-1.5 rounded-full backdrop-blur-sm whitespace-nowrap">YOU</div>
                     </div>
                     {/* Teammates */}
                     {activePlayers.map(p => (
                         <div key={p.id} className="relative group shrink-0 cursor-pointer active:scale-95 transition-transform">
-                            <TokenImg value={p.avatar} className="w-10 h-10 rounded-full border-2 border-white/20 object-cover shadow-sm group-hover:border-white/50 transition-colors" />
+                            <TokenImg value={p.avatar} className={`w-10 h-10 rounded-full border-2 ${activeGame.theme === 'modern' ? 'border-slate-300 group-hover:border-slate-400' : 'border-white/20 group-hover:border-white/50'} object-cover shadow-sm transition-colors`} />
                             <div className="absolute inset-0 rounded-full ring-2 ring-transparent group-hover:ring-green-400/50 transition-all"></div>
                             {/* Simple Status Indicator (Green Dot) */}
-                            <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-black/50 shadow-sm animate-pulse"></div>
+                            <div className={`absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 rounded-full border-2 ${activeGame.theme === 'modern' ? 'border-white' : 'border-black/50'} shadow-sm animate-pulse`}></div>
                         </div>
                     ))}
                 </div>
             )}
 
             {/* Stats HUD */}
-            <div className={`px-4 py-2 border-b ${theme.border} bg-black/10 backdrop-blur-sm z-10 shrink-0`}>
+            <div className={`px-4 py-2 border-b ${theme.border} ${activeGame.theme === 'modern' ? 'bg-white/80' : 'bg-black/10'} backdrop-blur-sm z-10 shrink-0`}>
                 <div className="grid grid-cols-3 gap-2">
-                    <div className="flex flex-col items-center bg-red-500/20 rounded p-1 border border-red-500/30">
-                        <span className="text-[8px] text-red-300 font-bold uppercase">HP (生命)</span>
-                        <span className="text-xs font-mono font-bold text-red-100">{activeGame.status.health || 100}</span>
+                    <div className={`flex flex-col items-center rounded p-1 border ${activeGame.theme === 'modern' ? 'bg-red-50 border-red-200' : 'bg-red-500/20 border-red-500/30'}`}>
+                        <span className={`text-[8px] font-bold uppercase ${activeGame.theme === 'modern' ? 'text-red-500' : 'text-red-300'}`}>HP (生命)</span>
+                        <span className={`text-xs font-mono font-bold ${activeGame.theme === 'modern' ? 'text-red-700' : 'text-red-100'}`}>{activeGame.status.health || 100}</span>
                     </div>
                     <div
                         onClick={toggleSanityLock}
-                        className={`flex flex-col items-center bg-blue-500/20 rounded p-1 border cursor-pointer active:scale-95 transition-all ${sanityLocked ? 'border-blue-400 ring-1 ring-blue-400/50' : 'border-blue-500/30'}`}
+                        className={`flex flex-col items-center rounded p-1 border cursor-pointer active:scale-95 transition-all ${activeGame.theme === 'modern' ? `bg-blue-50 ${sanityLocked ? 'border-blue-500 ring-1 ring-blue-400/50' : 'border-blue-200'}` : `bg-blue-500/20 ${sanityLocked ? 'border-blue-400 ring-1 ring-blue-400/50' : 'border-blue-500/30'}`}`}
                     >
-                        <span className="text-[8px] text-blue-300 font-bold uppercase flex items-center gap-1">
-                            SAN (理智) {sanityLocked && <LockSimple size={10} weight="fill" className="text-blue-400 inline" />}
+                        <span className={`text-[8px] font-bold uppercase flex items-center gap-1 ${activeGame.theme === 'modern' ? 'text-blue-500' : 'text-blue-300'}`}>
+                            SAN (理智) {sanityLocked && <LockSimple size={10} weight="fill" className={`${activeGame.theme === 'modern' ? 'text-blue-500' : 'text-blue-400'} inline`} />}
                         </span>
-                        <span className="text-xs font-mono font-bold text-blue-100">{activeGame.status.sanity || 100}</span>
+                        <span className={`text-xs font-mono font-bold ${activeGame.theme === 'modern' ? 'text-blue-700' : 'text-blue-100'}`}>{activeGame.status.sanity || 100}</span>
                     </div>
-                    <div className="flex flex-col items-center bg-yellow-500/20 rounded p-1 border border-yellow-500/30">
-                        <span className="text-[8px] text-yellow-300 font-bold uppercase">GOLD (金币)</span>
-                        <span className="text-xs font-mono font-bold text-yellow-100">{activeGame.status.gold || 0}</span>
+                    <div className={`flex flex-col items-center rounded p-1 border ${activeGame.theme === 'modern' ? 'bg-amber-50 border-amber-200' : 'bg-yellow-500/20 border-yellow-500/30'}`}>
+                        <span className={`text-[8px] font-bold uppercase ${activeGame.theme === 'modern' ? 'text-amber-600' : 'text-yellow-300'}`}>GOLD (金币)</span>
+                        <span className={`text-xs font-mono font-bold ${activeGame.theme === 'modern' ? 'text-amber-800' : 'text-yellow-100'}`}>{activeGame.status.gold || 0}</span>
                     </div>
                 </div>
                 {/* Token Statistics */}
                 {lastTokenUsage && (
-                    <div className="mt-1.5 flex items-center justify-between bg-white/5 rounded px-2 py-1 border border-white/10">
-                        <span className="text-[8px] text-white/40 font-mono inline-flex items-center gap-0.5"><Lightning size={10} weight="fill" /> 上下文: {lastTokenUsage.prompt ?? '?'} | 回复: {lastTokenUsage.completion ?? '?'} | 本次: {lastTokenUsage.total}</span>
-                        <span className="text-[8px] text-white/40 font-mono">∑ {totalTokensUsed}</span>
+                    <div className={`mt-1.5 flex items-center justify-between rounded px-2 py-1 border ${activeGame.theme === 'modern' ? 'bg-slate-100 border-slate-200' : 'bg-white/5 border-white/10'}`}>
+                        <span className={`text-[8px] font-mono inline-flex items-center gap-0.5 ${activeGame.theme === 'modern' ? 'text-slate-500' : 'text-white/40'}`}><Lightning size={10} weight="fill" /> 上下文: {lastTokenUsage.prompt ?? '?'} | 回复: {lastTokenUsage.completion ?? '?'} | 本次: {lastTokenUsage.total}</span>
+                        <span className={`text-[8px] font-mono ${activeGame.theme === 'modern' ? 'text-slate-500' : 'text-white/40'}`}>∑ {totalTokensUsed}</span>
                     </div>
                 )}
             </div>
@@ -1696,7 +1696,7 @@ Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆
                                     <div className="absolute -top-3 left-4 bg-inherit px-2 text-[10px] font-bold uppercase tracking-widest opacity-80 border border-inherit rounded">Game Master</div>
                                     <GameMarkdown content={log.content} theme={theme} customStyle={uiSettings} />
                                 </div>
-                                <button onClick={() => handleRollbackLog(i)} className="absolute top-2 right-2 text-[9px] bg-red-900/50 text-red-200 px-2 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-800">Rollback</button>
+                                <button onClick={() => handleRollbackLog(i)} className={`absolute top-2 right-2 text-[9px] px-2 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity ${activeGame.theme === 'modern' ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-red-900/50 text-red-200 hover:bg-red-800'}`}>Rollback</button>
                             </div>
                         );
                     } else if (isCharacter && charInfo) {
@@ -1719,7 +1719,7 @@ Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆
                                 <div className="flex items-center gap-2 mb-1">
                                     <span className={`text-[10px] font-bold opacity-60`}>{log.speakerName}</span>
                                     {log.diceRoll && (
-                                        <span className="text-[10px] bg-white/20 px-1.5 rounded text-yellow-500 font-mono">
+                                        <span className={`text-[10px] px-1.5 rounded font-mono ${activeGame.theme === 'modern' ? 'bg-amber-100 text-amber-700' : 'bg-white/20 text-yellow-500'}`}>
                                             <DiceFive size={12} weight="fill" className="inline" /> {log.diceRoll.result}
                                         </span>
                                     )}
@@ -1742,10 +1742,10 @@ Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆
                             onPointerCancel={cancelLogPress}
                             onClick={() => { if (selectMode) toggleSelectLog(log.id); }}
                             onContextMenu={(e) => { if (selectMode) e.preventDefault(); }}
-                            className={`relative ${selectMode ? `cursor-pointer rounded-xl px-1 transition-all ${selected ? 'ring-2 ring-purple-400 bg-purple-500/10' : 'hover:bg-white/[0.03]'}` : ''}`}
+                            className={`relative ${selectMode ? `cursor-pointer rounded-xl px-1 transition-all ${selected ? 'ring-2 ring-purple-400 bg-purple-500/10' : activeGame.theme === 'modern' ? 'hover:bg-slate-900/[0.04]' : 'hover:bg-white/[0.03]'}` : ''}`}
                         >
                             {selectMode && (
-                                <div className={`absolute left-0 top-1/2 -translate-y-1/2 z-30 w-5 h-5 rounded-full border-2 flex items-center justify-center ${selected ? 'bg-purple-500 border-purple-400' : 'border-white/40 bg-black/40'}`}>
+                                <div className={`absolute left-0 top-1/2 -translate-y-1/2 z-30 w-5 h-5 rounded-full border-2 flex items-center justify-center ${selected ? 'bg-purple-500 border-purple-400' : activeGame.theme === 'modern' ? 'border-slate-400 bg-white/90' : 'border-white/40 bg-black/40'}`}>
                                     {selected && <svg viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 text-white"><path fillRule="evenodd" d="M16.7 5.3a1 1 0 0 1 0 1.4l-7.5 7.5a1 1 0 0 1-1.4 0l-3.5-3.5a1 1 0 1 1 1.4-1.4l2.8 2.79 6.8-6.79a1 1 0 0 1 1.4 0Z" clipRule="evenodd"/></svg>}
                                 </div>
                             )}
@@ -1762,9 +1762,9 @@ Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆
 
             {/* 多选转发操作栏 */}
             {selectMode && (
-                <div className={`p-4 pb-[calc(1rem+var(--safe-bottom,0px))] border-t ${theme.border} bg-black/50 backdrop-blur shrink-0 z-20 flex items-center gap-3 animate-slide-down`}>
-                    <button onClick={exitSelectMode} className="px-4 h-11 rounded-xl border border-white/15 text-sm font-bold text-white/70 active:scale-95 transition-transform">取消</button>
-                    <span className="text-xs text-white/50 flex-1 text-center">已选 {selectedLogIds.size} 条 · 长按可多选剧情</span>
+                <div className={`p-4 pb-[calc(1rem+var(--safe-bottom,0px))] border-t ${theme.border} ${activeGame.theme === 'modern' ? 'bg-white/95' : 'bg-black/50'} backdrop-blur shrink-0 z-20 flex items-center gap-3 animate-slide-down`}>
+                    <button onClick={exitSelectMode} className={`px-4 h-11 rounded-xl border text-sm font-bold active:scale-95 transition-transform ${activeGame.theme === 'modern' ? 'border-slate-300 text-slate-600' : 'border-white/15 text-white/70'}`}>取消</button>
+                    <span className={`text-xs flex-1 text-center ${activeGame.theme === 'modern' ? 'text-slate-500' : 'text-white/50'}`}>已选 {selectedLogIds.size} 条 · 长按可多选剧情</span>
                     <button
                         onClick={handleForwardToChat}
                         disabled={selectedLogIds.size === 0 || isForwarding}
@@ -1809,7 +1809,7 @@ Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆
                             {!activeGame.diceDisabled && lastRoll !== null && <span className="font-mono font-bold no-underline">上次 {lastRoll}</span>}
                         </span>
                         {['调查', '攻击', '交涉', '潜行', '逃跑'].map(action => (
-                            <button key={action} disabled={isTyping} onClick={() => handleAction(action)} className={`flex-1 px-3 py-2 rounded border ${theme.border} hover:bg-white/10 text-xs font-bold transition-colors active:scale-95 disabled:opacity-40`}>{action}</button>
+                            <button key={action} disabled={isTyping} onClick={() => handleAction(action)} className={`flex-1 px-3 py-2 rounded border ${theme.border} ${activeGame.theme === 'modern' ? 'hover:bg-slate-100' : 'hover:bg-white/10'} text-xs font-bold transition-colors active:scale-95 disabled:opacity-40`}>{action}</button>
                         ))}
                     </div>
                 )}
@@ -1818,7 +1818,7 @@ Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆
                     {/* Toggle Tools Button */}
                     <button 
                         onClick={() => setShowTools(!showTools)}
-                        className={`p-3 h-12 rounded-xl border ${theme.border} hover:bg-white/10 active:scale-95 transition-transform flex items-center justify-center ${showTools ? 'bg-white/20' : ''}`}
+                        className={`p-3 h-12 rounded-xl border ${theme.border} ${activeGame.theme === 'modern' ? 'hover:bg-slate-100' : 'hover:bg-white/10'} active:scale-95 transition-transform flex items-center justify-center ${showTools ? (activeGame.theme === 'modern' ? 'bg-slate-200/80' : 'bg-white/20') : ''}`}
                     >
                         <Toolbox size={22} />
                     </button>
@@ -1827,7 +1827,7 @@ Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆
                     {!isTyping && activeGame.logs.length > 0 && (
                         <button 
                             onClick={handleReroll}
-                            className={`p-3 h-12 rounded-xl border ${theme.border} hover:bg-white/10 active:scale-95 transition-transform flex items-center justify-center`}
+                            className={`p-3 h-12 rounded-xl border ${theme.border} ${activeGame.theme === 'modern' ? 'hover:bg-slate-100' : 'hover:bg-white/10'} active:scale-95 transition-transform flex items-center justify-center`}
                             title="重新生成上一轮"
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 opacity-70"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>
@@ -1839,9 +1839,9 @@ Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆
                         onChange={e => setUserInput(e.target.value)} 
                         // Removed onKeyDown Enter submission
                         placeholder="你打算做什么..." 
-                        className={`flex-1 bg-black/20 border ${theme.border} rounded-xl px-3 py-3 outline-none text-sm placeholder-opacity-30 placeholder-current resize-none h-12 leading-tight focus:bg-black/40 transition-colors`}
+                        className={`flex-1 border ${theme.border} rounded-xl px-3 py-3 outline-none text-sm resize-none h-12 leading-tight transition-colors ${activeGame.theme === 'modern' ? 'bg-white text-slate-800 placeholder:text-slate-400 focus:bg-white focus:ring-2 focus:ring-blue-200' : 'bg-black/20 placeholder-opacity-30 placeholder-current focus:bg-black/40'}`}
                     />
-                    <button onClick={() => handleAction(userInput)} className={`${theme.accent} font-bold text-sm px-4 h-12 bg-white/10 rounded-xl hover:bg-white/20 active:scale-95 transition-all flex items-center justify-center`}>
+                    <button onClick={() => handleAction(userInput)} className={`${theme.accent} font-bold text-sm px-4 h-12 rounded-xl active:scale-95 transition-all flex items-center justify-center ${activeGame.theme === 'modern' ? 'bg-blue-50 hover:bg-blue-100' : 'bg-white/10 hover:bg-white/20'}`}>
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5" /></svg>
                     </button>
                 </div>

@@ -1074,7 +1074,7 @@ const InAppChat: React.FC<{
                             }}
                             placeholder={`问问 ${charName}...`}
                             rows={1}
-                            className="flex-1 resize-none bg-yellow-50/60 border border-yellow-200 rounded-xl px-3 py-1.5 text-[12px] focus:outline-none focus:border-yellow-400 max-h-20"
+                            className="flex-1 resize-none bg-yellow-50/60 border border-yellow-200 rounded-xl px-3 py-1.5 text-[12px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-yellow-400 max-h-20"
                         />
                         <button
                             onClick={send}
@@ -1286,7 +1286,7 @@ const McdMiniApp: React.FC<McdMiniAppProps> = ({ open, onClose, char, userProfil
     if (!isMcdConfigured()) {
         return (
             <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
-                <div className="bg-white rounded-2xl p-6 max-w-sm w-full text-center" onClick={(e: any) => e.stopPropagation()}>
+                <div className="bg-white text-slate-800 rounded-2xl p-6 max-w-sm w-full text-center" onClick={(e: any) => e.stopPropagation()}>
                     <div className="text-3xl mb-2">🍔</div>
                     <div className="font-bold text-slate-800 mb-2">麦当劳还没开启</div>
                     <div className="text-[12px] text-slate-500 mb-4 leading-relaxed">请到设置 → 麦当劳填入 MCP token 并开启功能</div>
@@ -1306,7 +1306,7 @@ const McdMiniApp: React.FC<McdMiniAppProps> = ({ open, onClose, char, userProfil
                 .mcd-scroll { scrollbar-width: thin; scrollbar-color: rgba(202, 138, 4, 0.25) transparent; }
             `}</style>
             <div
-                className="bg-gradient-to-b from-yellow-50 to-amber-50 w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl shadow-2xl overflow-hidden flex flex-col"
+                className="bg-gradient-to-b from-yellow-50 to-amber-50 text-slate-800 w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl shadow-2xl overflow-hidden flex flex-col"
                 style={{ height: '85vh', maxHeight: '85vh' }}
                 onClick={(e: any) => e.stopPropagation()}
             >

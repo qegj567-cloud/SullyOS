@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { Blob as CloneableBlob } from 'node:buffer';
 import ChatInputArea from '../components/chat/ChatInputArea';
 import type { Emoji } from '../types';
 import { DB } from './db';
@@ -27,6 +28,7 @@ function Panel({ emojis, showPanel = 'emojis' }: { emojis: Emoji[]; showPanel?: 
         showPanel, setShowPanel: () => {}, onSend: () => {},
         onDeleteSelected: () => {}, selectedCount: 0,
         emojis: emojis.filter(e => e.categoryId === activeCategory), suggestionEmojis: emojis, categories, activeCategory,
+        fullEmojiLibrary: emojis, onRemoveInvalidEmojis: DB.deleteScannedEmojis,
         onPanelAction: (action, payload) => {
             if (action === 'select-category') setActiveCategory(payload);
             onPanelAction(action, payload);
@@ -52,6 +54,8 @@ async function render(emojis: Emoji[]) {
 }
 
 beforeEach(() => {
+    // fake-indexeddb uses Node's structuredClone; jsdom's Blob loses its bytes there.
+    vi.stubGlobal('Blob', CloneableBlob);
     vi.clearAllMocks();
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -61,9 +65,59 @@ afterEach(() => {
     act(() => root.unmount());
     container.remove();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
 });
 
 describe('表情面板的记录身份与图片复用', () => {
+    it('从排查结果批量清理跨域破图，复查时跳过已恢复、仍可显示和服务暂时故障的图片', async ({ onTestFinished }) => {
+        const items = ['broken', 'recovered', 'display-only', 'busy'].map((name, index) => ({
+            name, url: 'https://cdn.test/' + name, categoryId: index === 0 ? 'a' : 'b',
+        }));
+        onTestFinished(() => DB.deleteScannedEmojis(items).then(() => {}));
+        for (const item of items) await DB.saveEmoji(item.name, item.url, item.categoryId);
+        vi.stubGlobal('caches', undefined);
+        vi.stubGlobal('fetch', async (url: string) => {
+            if (url.endsWith('/busy')) return new Response(null, { status: 503 });
+            throw new TypeError('CORS');
+        });
+        const visible = new Set([items[2].url]);
+        vi.stubGlobal('Image', class {
+            onload?: () => void;
+            onerror?: () => void;
+            set src(url: string) { queueMicrotask(() => visible.has(url) ? this.onload?.() : this.onerror?.()); }
+            removeAttribute() {}
+        });
+        await render(items);
+        clickLabel('批量管理表情');
+        await act(async () => clickLabel('刷新与排查全部表情包'));
+        const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+        const button = (label: string) => Array.from(dialog.querySelectorAll('button')).find(b => b.textContent === label)!;
+        expect(dialog.textContent).toContain('可用 1 张 · 可清理 2 张 · 待重试 1 张');
+        act(() => button('一键清理（2 张）').click());
+        act(() => button('返回').click());
+        expect(await DB.getEmojis()).toEqual(expect.arrayContaining(items));
+        visible.add(items[1].url);
+        act(() => button('一键清理（2 张）').click());
+        await act(async () => {
+            button('确认清除 2 张').click();
+            await vi.waitFor(async () => expect((await DB.getEmojis()).some(e => e.name === 'broken')).toBe(false));
+        });
+        expect(dialog.textContent).toContain('已从表情库清除 1 张。其余 1 张已跳过。');
+        expect(await DB.getEmojis()).toEqual(expect.arrayContaining(items.slice(1)));
+    });
+    it.each([true, false])('图床整批失效时就地占位（缓存可用 %s）', async cacheEnabled => {
+        vi.stubGlobal('caches', cacheEnabled ? {open: async () => ({match: async () => undefined})} : undefined);
+        const fetchImage = vi.fn().mockRejectedValue(new TypeError('CORS'));
+        vi.stubGlobal('fetch', fetchImage);
+        const url = 'https://example.test/cat.gif';
+        await render([{name:'猫猫',url,categoryId:'a'}, {name:'狗狗',url:url+'?dog',categoryId:'a'}]);
+        const images = thumbnails();
+        await vi.waitFor(() => expect(images[0].src).toBe(url));
+        if (cacheEnabled) expect(fetchImage).toHaveBeenCalledWith(url, expect.objectContaining({__sullyHandlesFailure:true}));
+        await act(async () => { for (const image of images) image.dispatchEvent(new Event('error')); });
+        expect(images.every(image => image.src.startsWith('data:image/svg+xml'))).toBe(true);
+        expect(images.map(image => image.alt)).toEqual(['猫猫','狗狗']);
+    });
     it('首次打开才加载，关闭再打开或切加号不重建图片，退出聊天仍释放引用', async () => {
         const ref = await putImageBlob(dataUrlToBlob(PNG));
         const emojis = [{name: '缓存', url: ref, categoryId: 'a'}];

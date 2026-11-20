@@ -1,11 +1,25 @@
-import { buildChatOutputStylePrompt, readChatTranslationConfig } from './chatOutputStylePrompt';
+import { getThinkingChainSettings } from './thinkingChainPrompt';
+import { BILINGUAL_TAIL_REMINDER, buildChatOutputStylePrompt, readChatTranslationConfig } from './chatOutputStylePrompt';
 import { buildReproductionTask, DIAGNOSTIC_NAMESPACE, diagnosticRunId, type DiagnosticEvent } from './amsgReproduction';
 import { resolveDialogueApi } from './characterApi';
+import { isMonthlyRecallEnabled } from './monthlyRecall';
 import { isAnthropicEndpoint } from './llmEndpoint';
 import { ackStoppedReplyReceipts, stoppedReplyStateEntries } from './amsgStoppedReplyClient';
 import { loadCharacterContextMessages } from './chatContextRange';
+import { expandHomeContextHistory } from './homeContextSegments';
+import { protectPendingChatTurn } from './storyTheaterTimeline';
+import { canReusePalaceRecall, renderSmartContextGuidance, type PreparedPalaceRecall } from './memoryPalace/smartContext';
+import { readRecallRuntimeSnapshot, type RecallTrace } from './memoryPalace/trace';
 import { ReiClient, classifyClientStateWrite } from '@rei-standard/amsg-client';
 import { createCloudDataSession } from './amsgCloudData';
+import {
+  createAmsgGlobalDisabledError,
+  isAmsg2GloballyEnabled,
+  isAmsg2WorkerActive,
+  readMasterPausedCron,
+  writeMasterPausedCron,
+} from './amsgGlobalGate';
+import { resolveWorkerFetchBase } from './amsgRelay';
 import { captureCloudOwnerGenerations, rememberCloudOwnerGeneration, stampCloudWrite, captureCloudWriteCheck, invalidateCloudOwnerWrites } from './amsgCloudOwnerGeneration';
 import {
   ActiveMsg2CharacterConfig,
@@ -25,6 +39,7 @@ import {
 import { getLastRealUserMessageAt } from './amsg2ExpireGuard';
 import { getLastAwayAnchorAt } from './awayMessageCore';
 import { AMSG_BUNDLE_VERSION, compareBundleVersions } from './amsgBundleVersion';
+import { recordRescueFromConfigCheck } from './amsgRescueAlert';
 import { describeD1LimitCode } from './amsgD1Limits';
 import { explainCfTokenRejection, parseAmsgSelfUpdateState, type AmsgSelfUpdateReport } from './amsgSelfUpdateState';
 import { AMSG_AWAY_DELAY_META, AMSG_AWAY_MESSAGE_META, AMSG_DATE_LEAVE_META, AMSG_DATE_LEAVE_DELAY_META, buildAwayTaskInstruction, buildDateLeaveInstruction, buildTaskInstruction, resolveSendAtMs } from './amsgFireSchedule';
@@ -93,8 +108,10 @@ import {
   type AmsgFirePackChatContent,
   type AmsgLastSkip,
   amsgStateNamespace,
+  compressGzipBytes,
   packStateValue,
   parseLastSkip,
+  registerGzipFallbackCompressor,
 } from './amsgFirePack';
 import {
   AMSG_BACKGROUND_JOB_SUBTYPE,
@@ -219,13 +236,11 @@ const REMOTE_TASK_NOT_FOUND_CODE = 'TASK_NOT_FOUND';
 /** 行还在、但已经跑完出清（sent / failed）时回的错误码（HTTP 409）。 */
 const REMOTE_TASK_ALREADY_COMPLETED_CODE = 'TASK_ALREADY_COMPLETED';
 
-// 单用户模式：所有请求打到用户自部署的 Cloudflare Worker（config.workerUrl）。
+// 单用户模式：所有请求打到用户自部署的 Cloudflare Worker（config.workerUrl），开了中转就经中转转发。
 // 配了 serverToken 就每次带 X-Client-Token；worker 端配了就强制校验，缺/错回 401。
-const normalizeWorkerBase = (workerUrl: string) => workerUrl.trim().replace(/\/+$/, '');
-
-const createClient = (config: Pick<ActiveMsg2GlobalConfig, 'userId' | 'workerUrl' | 'serverToken'>) => {
+const createClient = (config: Pick<ActiveMsg2GlobalConfig, 'userId' | 'workerUrl' | 'serverToken' | 'useRelay' | 'relayToken'>) => {
   const client = new ReiClient({
-    baseUrl: normalizeWorkerBase(config.workerUrl),
+    baseUrl: resolveWorkerFetchBase(config.workerUrl, config.useRelay, config.relayToken),
     userId: config.userId,
     serverToken: config.serverToken || undefined,
   });
@@ -304,6 +319,7 @@ const inspectWorkerConfig = async (config: ActiveMsg2GlobalConfig): Promise<Amsg
   try {
     const { status, body } = await fetchWithAuthRaw('config-check', config, { method: 'GET' }, '配置自检');
     if (status !== 200 || !body?.success) return null;
+    recordRescueFromConfigCheck(body, config.workerUrl);
     // 只认形状对得上的回执。没有这个端点的 worker 回什么的都有（404 只是其中一种），
     // 光看 success 就采信的话，会把一台好 worker 判成「配置缺失」——那比不自检还糟，
     // 用户照着提示改哪儿都改不对。形状不对就当它不支持自检，走原来的流程。
@@ -480,10 +496,13 @@ const ensureGlobalReady = async (): Promise<ActiveMsg2GlobalConfig> => {
   return { ...config, userId };
 };
 
-const ensureWorkerReady = async () => {
+const ensureWorkerReady = async (options?: { allowWhenDisabled?: boolean }) => {
   const config = await ensureGlobalReady();
   if (!config.workerUrl.trim()) {
     throw withFailKind(new Error('请先在系统设置里填写「主动消息 2.0」的 Worker 地址。'), '地址没填');
+  }
+  if (!options?.allowWhenDisabled && !isAmsg2GloballyEnabled(config)) {
+    throw createAmsgGlobalDisabledError();
   }
   return config;
 };
@@ -571,7 +590,8 @@ const createAndInitClient = async (config: ActiveMsg2GlobalConfig) => {
 };
 
 const initializeClient = (config: ActiveMsg2GlobalConfig) => {
-  const key = `${config.workerUrl}|${config.userId}|${config.serverToken ?? ''}`;
+  // 实际请求地址进键：中转开关或令牌一变，就换一条按新地址发请求的 client
+  const key = `${config.workerUrl}|${config.userId}|${config.serverToken ?? ''}|${resolveWorkerFetchBase(config.workerUrl, config.useRelay, config.relayToken)}`;
   if (cachedClientEntry?.key === key) return cachedClientEntry.promise;
   const promise = createAndInitClient(config);
   cachedClientEntry = { key, promise };
@@ -639,6 +659,7 @@ export const isLlmCredentialsReady = async (): Promise<boolean> => {
 export const requireAnthropicWorker = async (urls: string[]): Promise<void> => {
   if (!urls.some(isAnthropicEndpoint)) return;
   let config = await ActiveMsgStore.getGlobalConfig();
+  if (!isAmsg2GloballyEnabled(config)) throw createAmsgGlobalDisabledError();
   if (config.anthropicMessagesSupported === true && config.anthropicMessagesWorkerUrl === config.workerUrl) return;
   // An automatic deployment can finish after the startup probe. Recheck the
   // current Worker instead of making users reconnect to clear a stale negative.
@@ -715,6 +736,15 @@ const formatHistoryLine =(role: string, content: any, char: CharacterProfile, us
   return `【${speaker}】\n${text.trim()}`;
 };
 
+/**
+ * 召回正文里的「（今天）」「（距今约 3 天）」「（剩余 2 天）」按召回那一刻算，模板到点才渲染，
+ * 隔夜触发就会把昨天的事说成今天。只去掉这层相对距离，绝对日期保留——
+ * 到点由 worker 填当前时间，角色自己能算出隔了多久。格式见 formatMemoryDateWithDistance。
+ */
+const stripRecallDayDistance = (text: string): string => text
+  .replace(/(\d{4}年\d{1,2}月\d{1,2}日)（(?:今天|距今约\d+天|约\d+天后)）/g, '$1')
+  .replace(/（剩余 \d+ 天）/g, '');
+
 const buildTimeGapHint = async (charId: string) => {
   // includeProcessed=true：最近的互动刚被自动归档进记忆宫殿时，锚点时间戳也不能丢。
   const recentMessages = await DB.getRecentMessagesByCharId(charId, 200, true);
@@ -777,15 +807,14 @@ export const buildFirePack = async (
      * 即时 fire 自己要读它们（sceneSong、锚点、任务清单块）。
      */
     templateStub?: boolean;
+    /** 即时对话本轮的召回、门牌和智能语境分析；同输入同配置时复用。 */
+    palaceRecall?: PreparedPalaceRecall;
   },
 ): Promise<AmsgFirePack> => {
   const templateStub = opts?.templateStub === true;
-  // 请求内副本：门牌常驻但内容会变，每次从本机重读，不能沿用 UI 挂着的旧注入。
-  char = { ...char, roomPlatesInjection: '' };
-  if (!templateStub && char.memoryPalaceEnabled) {
-    const { buildRoomPlatesInjection } = await import('./memoryPalace/roomPlates');
-    char.roomPlatesInjection = await buildRoomPlatesInjection(char.id, userProfile.name);
-  }
+  // 请求内副本：召回与门牌只认这次现算（或本轮私聊刚算）的，角色对象上挂着的可能是
+  // 别的 App、甚至很久以前的召回，一律不用。
+  char = { ...char, memoryPalaceInjection: '', roomPlatesInjection: '' };
   const [{ lastUserMessageAt, lastAwayAnchorAt }, recentMessages, library, schedule] = await Promise.all([
     buildTimeGapHint(char.id),
     templateStub ? Promise.resolve([]) : loadCharacterContextMessages(char),
@@ -802,6 +831,27 @@ export const buildFirePack = async (
         })
       : Promise.resolve(null),
   ]);
+  const recallMessages = protectPendingChatTurn(expandHomeContextHistory(recentMessages));
+  const smartFlags = readRecallRuntimeSnapshot().featureFlagsSnapshot;
+  const smartContextEnabled = smartFlags.recallRouter || smartFlags.interactionAdaptation || smartFlags.deepEngagement;
+  let recallTrace: RecallTrace | undefined;
+  if (!templateStub) {
+    if (canReusePalaceRecall(opts?.palaceRecall, char, recallMessages, userProfile.name)) {
+      // 只复制两段正文；Trace 和输入指纹只在请求内使用，不挂到角色或上传。
+      if (char.memoryPalaceEnabled) {
+        char.memoryPalaceInjection = opts.palaceRecall.memoryPalaceInjection || '';
+        char.roomPlatesInjection = opts.palaceRecall.roomPlatesInjection || '';
+      }
+      recallTrace = opts.palaceRecall.trace;
+    } else if (char.memoryPalaceEnabled || smartContextEnabled) {
+      // 自适应上下文的原文只到宫殿水位为止，刚归档的内容（比如一场见面）只能靠召回取回；
+      // 不跑这一步，云端角色对刚归档的事一无所知。查询用的就是下面要烘进模板的同一份近史。
+      const { injectMemoryPalace } = await import('./memoryPalace/pipeline');
+      // 智能语境独立于宫殿开关；没有启用宫殿时仍需本地语境分析。
+      recallTrace = await injectMemoryPalace(char, recallMessages, undefined, userProfile.name, { entryPoint: 'proactive_chat' });
+    }
+    char.memoryPalaceInjection = stripRecallDayDistance(char.memoryPalaceInjection || '');
+  }
   // 角色的时间参照系：开了自定义时区用角色的，没开用设备的。worker 渲染一切给角色看的
   // 时间（当前时间、日程日期、排程清单）都按它来。
   const charTz = resolveCharTimeZone(char);
@@ -869,7 +919,7 @@ export const buildFirePack = async (
     userName: userProfile.name,
     translationConfig: readChatTranslationConfig(char.id),
     htmlMode: { enabled: !!char.htmlModeEnabled, customPrompt: char.htmlModeCustomPrompt },
-    thinkingChain: { enabled: !!char.showThinkingChain, customPrompt: char.thinkingChainCustomPrompt },
+    thinkingChain: getThinkingChainSettings(char, userProfile),
   });
   const recentTranscript = templateStub ? '' : ChatPrompts.buildMessageHistory(
     recentMessages,
@@ -877,6 +927,10 @@ export const buildFirePack = async (
     char,
     userProfile,
     emojis,
+    undefined,
+    // 模板里放不下原图，有识图描述就用描述（与私聊同一份），没有就明说别猜；
+    // 剧情副本错序兜底也与私聊一致。
+    { useVisionDescriptions: true, protectPendingChatTurn: true },
   ).apiMessages
     .map((message) => formatHistoryLine(message.role, message.content, char, userProfile))
     .join('\n\n');
@@ -884,7 +938,7 @@ export const buildFirePack = async (
   // 记忆库里有哪些月份查得到 —— 提示词一直在教角色用 [[RECALL: 年-月]]，却没说过
   // 哪些月份有东西。不报菜单的话它多半不查，直接凭空编一段「回忆」出来。
   // 只写进下面这段主动消息自己的规则里，不动 chatPrompts 那条所有角色每轮都走的主链路。
-  const recallableMonths = listRecallableMonths(char.memories);
+  const recallableMonths = isMonthlyRecallEnabled(char) ? listRecallableMonths(char.memories) : [];
   const recallHint = recallableMonths.length > 0
     ? `- 你的记忆库里存着这些月份的经历：${recallableMonths.join('、')}。想聊起其中某段时，先输出 [[RECALL: 年-月]] 把细节取回来再写，别凭印象编。`
     : null;
@@ -899,7 +953,7 @@ export const buildFirePack = async (
     '- 可以用换行拆成多个聊天气泡，但不要写时间戳、名字前缀、系统提示。',
     '- 不要出现“作为AI”“系统提示”等元话语。',
     '- 语气更像真人突然想起对方时发来的私聊，不要像在完成任务。',
-    '- 角色设定里描述的查记忆、读日记、联网搜索、逛小红书等能力照常可用：需要时正常输出对应标签，系统会取回结果后让你继续写。',
+    `- 角色设定里描述的${isMonthlyRecallEnabled(char) ? '查记忆、' : ''}读日记、联网搜索、逛小红书等能力照常可用：需要时正常输出对应标签，系统会取回结果后让你继续写。`,
     ...(recallHint ? [recallHint] : []),
     '',
     '【角色系统设定】',
@@ -911,6 +965,7 @@ export const buildFirePack = async (
     // 输出跟没这个槽位一模一样；有内容时那段自带前导空行，见 renderSelfLogBlock。
     `${recentTranscript || '（暂时没有最近聊天记录）'}${AMSG_SLOT_SELF_LOG}`,
     '',
+    renderSmartContextGuidance(recallTrace, true),
     // 「此刻在做什么」紧跟当前时间：日程时段本来就要对着钟读，挨在一起才对得上。
     // 没日程的角色 worker 填空串，这一行连带消失（那段自带前导空行，见 renderFireSceneBlock）。
     // 时区那两行也挨着钟：静态说明打包时就烤好，「对方那边现在几点」由 worker 到点现算——
@@ -936,6 +991,8 @@ export const buildFirePack = async (
     // 到点说不说由角色自己判（见 amsgFirePack 的 BEFORE_SPEAK_LINES）。
     ...BEFORE_SPEAK_LINES,
     '',
+    // 双语格式说明在【角色系统设定】中段，私聊靠末尾提醒兜住，这里同样补在人声锚之前。
+    ...(outputStyle.bilingualActive ? [BILINGUAL_TAIL_REMINDER, ''] : []),
     // recency 末位人声锚：上面【角色系统设定】里已带「回到你自己」钢印，但被任务说明压在后面、
     // 失了 recency。这里在最后一句把它拎回来，让主动消息也从「你这个人」长出来，而不是滑回均值腔。
     `（开口前回到你自己：这条得是 ${char.name} 会发的那一条——语气、用词、节奏都只属于你。哪怕只是随口一句，也要是你。）`,
@@ -1803,6 +1860,29 @@ const resubscribeAndRegister = async (client: ReiClient): Promise<void> => {
  */
 const REQUEST_GZIP_THRESHOLD_BYTES = 16 * 1024;
 
+let fflateGzipPromise: Promise<((data: Uint8Array) => Uint8Array) | null> | null = null;
+
+/**
+ * 原生 CompressionStream 缺失、报错或产出截断 gzip 时的前端纯 JS 兜底。
+ * 按需加载 vendor-fflate 分包，健康浏览器零额外下载；同一时刻并发请求共用一次加载；
+ * 断网导致分包暂时拉不下来时清掉失败缓存并返回 null，交给上层按明文发送。
+ */
+const compressWithLazyFflate = async (rawBytes: Uint8Array): Promise<Uint8Array | null> => {
+  if (!fflateGzipPromise) {
+    fflateGzipPromise = import('fflate')
+      .then((mod) => mod.gzipSync)
+      .catch((error) => {
+        fflateGzipPromise = null;
+        console.warn(`${ACTIVE_MSG_RUNTIME_HEADER} 按需加载 fflate 失败，本次回退明文`, error);
+        return null;
+      });
+  }
+  const gzipSync = await fflateGzipPromise;
+  return gzipSync ? gzipSync(rawBytes) : null;
+};
+
+registerGzipFallbackCompressor(compressWithLazyFflate);
+
 /**
  * 超阈值的请求体先 gzip 再上网线。
  *
@@ -1815,8 +1895,8 @@ const REQUEST_GZIP_THRESHOLD_BYTES = 16 * 1024;
  * 自己的 `/instant-chat` 由 readMaybeGzippedBody 解。两边都按 gzip 魔数判断，所以
  * 中途被边缘节点替我们解开、头还留着的那种情形也接得住。
  *
- * 压不动就退回明文：老 Safari 没有 CompressionStream，压缩本身出错也一样——这条路
- * 只是省流量，绝不能变成发不出去的理由。
+ * 与 packStateValue 共用 compressGzipBytes：原生流压缩经过头尾 CRC32 + 原始长度核对，
+ * 原生缺失或产出不完整时自动切换纯 JS gzip，纯 JS 分包也不可用时退回明文——省流量不能变成发不出去的理由。
  *
  * export 只为单测。
  */
@@ -1829,13 +1909,17 @@ export const maybeGzipRequestBody = async (
   // **不成立**——「字符数不到阈值」推不出「字节数不到阈值」，一段六千字的中文就是
   // 六千字符、一万八千字节。绝大多数请求都在这条线以下，一次 encode 都不用做。
   if (body.length * 3 < REQUEST_GZIP_THRESHOLD_BYTES) return { body, gzipped: false };
-  if (typeof CompressionStream !== 'function') return { body, gzipped: false };
   try {
     const raw = new TextEncoder().encode(body);
     // 到这儿才量得准。压缩要用的也是这份字节，没有多算。
     if (raw.byteLength < REQUEST_GZIP_THRESHOLD_BYTES) return { body, gzipped: false };
-    const stream = new Response(raw).body!.pipeThrough(new CompressionStream('gzip'));
-    return { body: await new Response(stream).arrayBuffer(), gzipped: true };
+    const gz = await compressGzipBytes(raw);
+    if (!gz || gz.byteLength >= raw.byteLength) return { body, gzipped: false };
+    // 纯 JS 压缩器常返回共享大缓冲上的子视图，切成精确长度的 ArrayBuffer 再交给 fetch。
+    const exactBuffer = gz.byteOffset === 0 && gz.byteLength === gz.buffer.byteLength
+      ? (gz.buffer as ArrayBuffer)
+      : gz.slice().buffer;
+    return { body: exactBuffer, gzipped: true };
   } catch (error) {
     console.warn(`${ACTIVE_MSG_RUNTIME_HEADER} 请求体压缩失败，这一次照常发明文`, error);
     return { body, gzipped: false };
@@ -1861,7 +1945,7 @@ const fetchWithAuthRaw = async (
   if (gzipped) headers.set('Content-Encoding', 'gzip');
 
   try {
-    const response = await fetch(`${normalizeWorkerBase(config.workerUrl)}/${path}`, {
+    const response = await fetch(`${resolveWorkerFetchBase(config.workerUrl, config.useRelay, config.relayToken)}/${path}`, {
       ...init,
       headers,
       body,
@@ -1880,6 +1964,8 @@ const fetchWithAuthRaw = async (
  * /config-check 的地方都顺手记一笔。存不下只是这一次的结论留不到下次，不影响探测本身。
  */
 const rememberWorkerBundleVersion = async (body: any, checkedWorkerUrl?: string): Promise<void> => {
+  // 救援模式留痕也搭这一趟记下来（按问的那台 Worker 记，不管配置是否已换），见 utils/amsgRescueAlert.ts。
+  recordRescueFromConfigCheck(body, checkedWorkerUrl);
   const deployed = typeof body?.data?.workerVersion === 'string' ? body.data.workerVersion : null;
   try {
     const current = await ActiveMsgStore.getGlobalConfig();
@@ -2216,7 +2302,9 @@ export const ActiveMsgClient = {
 
   async sendTestPush(): Promise<{ sent: boolean }> {
     const config = await ensureWorkerReady();
-    const signal = typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(15000) : undefined;
+    // amsg-shared Web Push waits up to 30s. Leave room for that upstream result,
+    // encryption and transport; a 15s client abort hides the actual push error.
+    const signal = typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(45_000) : undefined;
     const { status, body } = await fetchWithAuthRaw(
       'test-push',
       config,
@@ -2378,6 +2466,7 @@ export const ActiveMsgClient = {
    */
   async reconcilePushSubscription(): Promise<'registered' | 'skipped' | 'failed'> {
     const globalConfig = await ensureGlobalReady();
+    if (!isAmsg2WorkerActive(globalConfig)) return 'skipped';
     if (globalConfig.pushMode === 'third-party') {
       if (!validateThirdPartyPushConfig(globalConfig.thirdPartyPush).ok) return 'skipped';
       try {
@@ -2430,7 +2519,9 @@ export const ActiveMsgClient = {
   // （Dashboard 粘贴部署的用户不用碰 SQL），再拿一次 user key 验证地址与鉴权都通，
   // 最后把推送订阅补登记上去（换 worker 后云端那份是空的，见 reconcilePushSubscription）。
   async connect() {
-    const config = await ensureWorkerReady();
+    const config = await ensureWorkerReady({ allowWhenDisabled: true });
+    const wasDisabled = !isAmsg2GloballyEnabled(config);
+    const hadMasterPausedCron = readMasterPausedCron();
 
     // 先问 worker 配齐了没：缺 D1 绑定或 master key 的话，下面的 init-tenant 必然失败，
     // 而那一步只能按 HTTP 状态猜个大概（三种原因共用「建表失败」）。自检能直接说出
@@ -2468,13 +2559,31 @@ export const ActiveMsgClient = {
       anthropicMessagesWorkerUrl: _staleAnthropicWorkerUrl,
       ...handshakeConfig
     } = config;
-    await ActiveMsgStore.saveGlobalConfig({ ...handshakeConfig, initializedAt: Date.now() });
+    await ActiveMsgStore.saveGlobalConfig({ ...handshakeConfig, enabled: true, initializedAt: Date.now() });
+    if (wasDisabled) {
+      void this.probeInstantChatSupport().catch(() => {});
+    }
+    if (hadMasterPausedCron) {
+      try {
+        const cronRes = await this.setCronTriggerEnabled(true, { timeoutMs: 6_000 });
+        if (cronRes.ok || cronRes.code === 'CF_TOKEN_MISSING' || cronRes.code === 'NOT_FOUND') {
+          writeMasterPausedCron(false);
+        }
+      } catch {
+        // 恢复定时触发失败不拦住连接本身，保留标记供后续开关或面板继续补恢复
+      }
+    }
     // 「重新连接并验证」是用户显式的一次对表，按特性位存的能力位也当场探准，别等下次握手。
     // 排在保存之后：上面那句写的是握手前的配置快照，探测结论放它前面会被原样盖回去。
     await this.probeWorkerFeatures();
     await this.reconcilePushSubscription();
     const nativeToken = config.pushMode === 'third-party' ? '' : readNativePushToken();
     if (nativeToken) await this.registerNativePushToken(nativeToken);
+    if (wasDisabled || hadMasterPausedCron) {
+      void import('./amsgGlobalSwitch')
+        .then((mod) => mod.flushAmsg2AfterReenable())
+        .catch(() => {});
+    }
     // warnings 是「连上了，但有一块功能是哑的」——比如 VAPID 没配齐，任务能建、到点
     // 却一条都推不出去。连接本身算成功，交给调用方提示，别拦住流程。
     return { ok: true, userId: config.userId, warnings: report?.warnings ?? [] };
@@ -2557,10 +2666,17 @@ export const ActiveMsgClient = {
    * 成红色的「远端取消失败，可重试」，其实没有任何东西需要重试。
    * 其余错误（鉴权、D1 挂了、网络）照常抛，别一起吞掉。
    */
-  async cancelTask(taskUuid: string): Promise<{ uuid: string; alreadyGone: boolean }> {
-    const config = await ensureWorkerReady();
+  async cancelTask(
+    taskUuid: string,
+    options?: { allowWhenDisabled?: boolean; timeoutMs?: number },
+  ): Promise<{ uuid: string; alreadyGone: boolean }> {
+    const config = await ensureWorkerReady({ allowWhenDisabled: options?.allowWhenDisabled });
+    const signal = typeof options?.timeoutMs === 'number' && options.timeoutMs > 0 && typeof AbortSignal?.timeout === 'function'
+      ? AbortSignal.timeout(options.timeoutMs)
+      : undefined;
     const response = await fetchWithAuth(`cancel-message?id=${encodeURIComponent(taskUuid)}`, config, {
       method: 'DELETE',
+      ...(signal ? { signal } : {}),
     }, '取消任务');
 
     if (!response?.success) {
@@ -3182,6 +3298,8 @@ export const ActiveMsgClient = {
     userProfile: UserProfile;
     groups: GroupProfile[];
     realtimeConfig: RealtimeConfig;
+    /** 本轮私聊的召回、门牌和智能语境分析；主动消息模板在同输入同配置时复用。 */
+    palaceRecall?: PreparedPalaceRecall;
     /**
      * 这一轮的情绪评估（副 API 提示词 + 凭据），交给云端跑。
      * 走 taskPayload —— 那份是端到端加密的信封，凭据不会以明文出门。
@@ -3215,7 +3333,7 @@ export const ActiveMsgClient = {
     const templateStub = !isAmsg2EnabledForChar(char)
       && (char.activeMsg2Config?.tasks?.length ?? 0) === 0;
     const firePack: AmsgFirePack = {
-      ...(await buildFirePack(char, userProfile, groups, realtimeConfig, undefined, { templateStub })),
+      ...(await buildFirePack(char, userProfile, groups, realtimeConfig, undefined, { templateStub, palaceRecall: params.palaceRecall })),
       // 先还原图片令牌再算体积预算——反过来会让一份「看着没超」的包在云端胀成几 MB，
       // 而 worker 那边根本解不开令牌（见 resolveChatMessagesForUpload）。
       chat: {
@@ -3847,10 +3965,20 @@ export const ActiveMsgClient = {
    * 回 null 表示问不到：旧版 Worker 没有这个端点（404）、没填地址、或者这一次没连上。
    * 三种都按「不支持」处理——设置页不显示那个按钮，也不报错。
    */
-  async getCronTriggerState(): Promise<AmsgCronTriggerState | null> {
+  async getCronTriggerState(
+    options?: { allowWhenDisabled?: boolean; timeoutMs?: number },
+  ): Promise<AmsgCronTriggerState | null> {
     try {
-      const config = await ensureWorkerReady();
-      const { status, body } = await fetchWithAuthRaw('cron-trigger', config, { method: 'GET' }, '后台任务状态');
+      const config = await ensureWorkerReady({ allowWhenDisabled: options?.allowWhenDisabled });
+      const signal = typeof options?.timeoutMs === 'number' && options.timeoutMs > 0 && typeof AbortSignal?.timeout === 'function'
+        ? AbortSignal.timeout(options.timeoutMs)
+        : undefined;
+      const { status, body } = await fetchWithAuthRaw(
+        'cron-trigger',
+        config,
+        { method: 'GET', ...(signal ? { signal } : {}) },
+        '后台任务状态',
+      );
       // 旧 worker 没有这个端点：可能回 404，也可能被上游当成未知路由回一段自己的 JSON。
       if (status === 404 || body?.error?.code === 'NOT_FOUND') return null;
       if (status === 200 && body?.success === true) {
@@ -3881,17 +4009,29 @@ export const ActiveMsgClient = {
    * 成功和失败都带一句能直接显示的话；code 是 worker 报的代号，缺 CF_API_TOKEN 时
    * 面板据此露出补钥匙那一块。网络层面的失败照常抛（跟 selfUpdateWorker 一样），调用方兜。
    */
-  async setCronTriggerEnabled(enabled: boolean): Promise<{ ok: boolean; message: string; code?: string }> {
-    const config = await ensureWorkerReady();
+  async setCronTriggerEnabled(
+    enabled: boolean,
+    options?: { allowWhenDisabled?: boolean; timeoutMs?: number },
+  ): Promise<{ ok: boolean; message: string; code?: string }> {
+    const config = await ensureWorkerReady({ allowWhenDisabled: options?.allowWhenDisabled });
+    const signal = typeof options?.timeoutMs === 'number' && options.timeoutMs > 0 && typeof AbortSignal?.timeout === 'function'
+      ? AbortSignal.timeout(options.timeoutMs)
+      : undefined;
     const { status, body } = await fetchWithAuthRaw(
       'cron-trigger',
       config,
-      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }) },
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+        ...(signal ? { signal } : {}),
+      },
       enabled ? '恢复后台任务' : '暂停后台任务',
     );
     if (status === 404 || body?.error?.code === 'NOT_FOUND') {
       return {
         ok: false,
+        code: 'NOT_FOUND',
         message: '这台 Worker 还是旧版本，没有暂停后台任务的能力。先点「更新 Worker」，之后就能在这儿点了。',
       };
     }
@@ -4115,6 +4255,9 @@ export const ActiveMsgClient = {
 
     const uuids = getPendingTasks(char.activeMsg2Config, Date.now()).map((t) => t.taskUuid);
     if (uuids.length === 0) return { status: 'no-tasks', updated: 0, failed: 0 };
+    if (!isAmsg2WorkerActive(await ensureGlobalReady())) {
+      return { status: 'no-tasks', updated: 0, failed: 0 };
+    }
 
     const { updated, failed } = await this.updatePendingTasksRemote(uuids, updates);
     return { status: failed.length ? 'partial' : 'ok', updated, failed: failed.length };
@@ -4288,5 +4431,11 @@ export const ActiveMsgClient = {
       toolConfigRestored = false;
     }
     return { deleted, toolConfigRestored };
+  },
+
+  /** 总开关切换时清空内存中的握手与后台能力缓存，避免复用暂停前的会话状态。 */
+  resetSessionCache(): void {
+    invalidateClientCache();
+    forgetBackgroundJobProbe();
   },
 };

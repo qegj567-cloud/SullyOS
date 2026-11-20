@@ -221,6 +221,8 @@ export default defineConfig({
             if (/[\\/]node_modules[\\/]animal-island-ui[\\/]/.test(id)) return 'vendor-island';
             if (/[\\/]node_modules[\\/]ag-psd[\\/]/.test(id)) return 'vendor-psd';
             if (/[\\/]node_modules[\\/]pdfjs-dist[\\/]/.test(id)) return 'vendor-pdf';
+            // Pure-JS gzip fallback is loaded on demand only when native CompressionStream is unavailable or produces incomplete output.
+            if (/[\\/]node_modules[\\/]fflate[\\/]/.test(id)) return 'vendor-fflate';
             // BVH imports Three: leaving it in common vendor pulls the 3D engine
             // back into desktop startup, even when application imports are lazy.
             // VRM/Three 用于按需打开的 3D 小屋及通话。单独成包，避免 3D 引擎

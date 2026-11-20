@@ -623,7 +623,7 @@ const VRMVideoCallStage: React.FC<VRMVideoCallStageProps> = ({
           </button>
 
           {stageToolsOpen && (
-            <div className="mt-2 w-[13.5rem] overflow-hidden rounded-2xl border border-white/10 bg-[#090a10]/90 px-3 py-2.5 shadow-2xl backdrop-blur-xl">
+            <div className="sully-stage-dark mt-2 w-[13.5rem] overflow-hidden rounded-2xl border border-white/10 bg-[#090a10]/90 px-3 py-2.5 text-white shadow-2xl backdrop-blur-xl">
               <div className="flex items-center justify-between border-b border-white/[0.07] pb-2">
                 <div>
                   <div className="text-[10px] font-medium text-white/75">舞台工具</div>

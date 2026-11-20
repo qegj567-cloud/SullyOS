@@ -42,7 +42,7 @@ const PayQr: React.FC<{ payUrl?: string; qrImageUrl?: string; size?: number }> =
 
     return (
         <div className="flex flex-col items-center gap-1.5">
-            <div className="bg-white p-2 rounded-xl border border-[#E6DFCF]" style={{ width: size + 16, height: size + 16 }}>
+            <div className="sully-chat-qr-surface bg-white p-2 rounded-xl border border-[#E6DFCF]" style={{ width: size + 16, height: size + 16 }}>
                 <img src={imgSrc} alt="支付二维码" className="w-full h-full object-contain" referrerPolicy="no-referrer"
                     onError={() => { if (dataUrl && imgSrc !== dataUrl) { /* already on fallback */ } else if (qrImageUrl) setGenFailed(true); }} />
             </div>

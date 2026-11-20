@@ -1,6 +1,8 @@
 import { withReplyCancellation, type ReplyRun } from './chatReplyCancellation';
 
 import { DB } from './db';
+import { BUILTIN_SULLY_ID } from './sullyIdentity';
+import { SULLY_HELP_COMMAND, SULLY_HELP_PREVIEW } from './sullyHelpCommand';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { CharacterProfile, CharPlaylistSong } from '../types';
 import { sanitizeForBubble } from './sanitize';
@@ -174,6 +176,16 @@ export const ChatParser = {
             // 卡片自己的字段优先，inheritMeta 只补它没有的键（两边键名本来就不重叠，这里是防御）
             ...(inheritMeta ? { metadata: { ...inheritMeta, ...(msg.metadata || {}) } } : {}),
         });
+
+        const withoutHandoff = content.replace(SULLY_HELP_COMMAND, '');
+        if (withoutHandoff !== content) {
+            content = withoutHandoff.trim();
+            if (charId === BUILTIN_SULLY_ID) {
+                await replyStep(() => persist({
+                    charId, role: 'assistant', type: 'sully_help_card', content: SULLY_HELP_PREVIEW,
+                }));
+            }
+        }
 
         // COLLAB_FILE — current-chat collaboration mode can hand the user an
         // existing file from the sidecar cabinet. The chat message stores only

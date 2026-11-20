@@ -48,6 +48,7 @@ export function createWardrobeUsageReader(theme: OSTheme, char: CharacterProfile
   bubbles:bubble(activeBubble),background:{image:(char?.chatBackground??theme.chatBackground)||null,style:effective.chatBackgroundStyle||'plain'},
   sound:sound(resolveActiveSound(char?.chromeCustomCss,char?.chatSound,effective.chatChromeCustomCss,theme.chatSound)),
   css:[effective.chatChromeCustomCss,char?.chromeCustomCss].filter(Boolean).join('\n'),
+  profile:char?.chatProfileAppearance || theme.chatProfileAppearance || {customCss:''},
   psyche:psyche(resolvePsycheAppearance(theme,char)),date:app(char?.dateAppearance,'none'),story:app(theme.storyAppearance,'none'),
   ...(collaborationAppearance?{collaboration:validateCollaborationAppearance(collaborationAppearance)}:{}),
   schedule:app(theme.scheduleCardAppearance,'original'),journal:app(theme.journalAppearance,'original'),

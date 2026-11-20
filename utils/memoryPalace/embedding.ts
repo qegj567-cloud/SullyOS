@@ -82,7 +82,12 @@ export async function getEmbeddings(texts: string[], config: EmbeddingConfig): P
         const window = chunks.slice(i, i + MAX_CONCURRENCY);
         const windowResults = await Promise.all(
             window.map(chunk => callEmbeddingAPI(chunk, config)),
-        );
+        ).catch(error => {
+            let host = '';
+            try { host = new URL(config.baseUrl).hostname; } catch { /* nonstandard endpoint */ }
+            console.error(/^(?:ai|api)\.siliconflow\.(?:cn|com)$/.test(host) ? '[记忆宫殿·硅基流动]' : '[Embedding]', error);
+            throw error;
+        });
         // Promise.all 保序：windowResults[j] 对应 window[j]，按序展开
         for (const batchResult of windowResults) {
             results.push(...batchResult.map(v => new Float32Array(v)));
@@ -132,14 +137,13 @@ async function callEmbeddingAPI(
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${config.apiKey}`,
             },
-            body: JSON.stringify(body),
-        });
+            body: JSON.stringify(body), __sullyHandlesFailure: true,
+        } as RequestInit);
 
         if (!response.ok) {
             const errorText = await response.text().catch(() => 'Unknown error');
-            // 完整响应 + 请求形状落日志（设置里的日志面板抓 console.error）——
-            // 400 类排查全靠这条：能看出是哪一批、每条多长
-            console.error(
+            // 保留本次尝试的诊断，最终失败时才发出系统提醒。
+            console.warn(
                 `❌ [Embedding] API ${response.status} (model=${config.model}, batch=${input.length} 条, 各条字符数=[${input.map(s => s.length).join(', ')}])`,
                 errorText,
             );
@@ -185,10 +189,7 @@ async function callEmbeddingAPI(
                     );
                 }
             }
-            // 降级成功也走 error 通道昭告一声：日志面板里紧挨着上面那条 400，
-            // 用户才知道"报了 400 但已自动恢复、结果完整"，不然只看到 400 会
-            // 以为这轮记忆丢了。频繁出现则说明有异常输入或服务商校验变严。
-            console.error(
+            console.info(
                 `⚠️ [Embedding] 上面的批量 400 已自动降级为逐条向量化并全部成功，本次结果完整无缺。若频繁出现，请把日志里 400 那条的完整响应反馈给开发者`,
             );
             return results;

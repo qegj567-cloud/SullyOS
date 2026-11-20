@@ -1,3 +1,4 @@
+import { getThinkingChainSettings } from './thinkingChainPrompt';
 import { loadChatInputPreferences } from './chatInputPreferences';
 import { readSARClubState, sarRoomView } from './vrWorld/sarClub';
 import { ANNIVERSARY_SEEN_KEY } from './anniversaryGifts';
@@ -30,7 +31,7 @@ import { readFishingMarketState } from './vrWorld/fishingMarket';
  * 这条硬约束。想知道大家在用什么模型是真的，但收不了。
  */
 
-import type { APIConfig, CloudBackupConfig, CharacterProfile, OSTheme, RealtimeConfig } from '../types';
+import type { APIConfig, CloudBackupConfig, CharacterProfile, UserProfile, OSTheme, RealtimeConfig } from '../types';
 import { PRESET_THEMES } from '../components/chat/ChatConstants';
 import { anyCharToggle, bucketFewCount, presetOrCustom, tweakedOrDefault } from './analytics';
 import { readStorageOverview } from './storageStats';
@@ -42,6 +43,7 @@ import { getLuckinToken, isLuckinEnabled } from './luckinMcpClient';
 import { getMcdToken, isMcdEnabled } from './mcdMcpClient';
 import { getPendingTasks, isAmsg2EnabledForChar } from './amsg2Tasks';
 import { ActiveMsgStore, isInstantChatSwitchedOn } from './activeMsgStore';
+import { isAmsg2GloballyEnabled } from './amsgGlobalGate';
 import { getVRApi } from './vrWorld/vrApi';
 import { isBuiltinSullyLive2D } from './builtinSullyLive2D';
 import { loadUserLocationConfig } from './userLocationPrivacy';
@@ -101,6 +103,7 @@ export function collectAppearance(
     theme: OSTheme,
     activeChar: CharacterProfile | undefined,
 ): Record<string, string> {
+    const timePosition = (activeChar?.chatFineTune?.enabled !== false && activeChar?.chatAppearance?.chatTimestampPosition) || theme.chatTimestampPosition;
     return {
         // ── 桌面 ──
         桌面皮肤: presetOrCustom(theme.skin ?? 'default', ['default','animalcrossing','mobilegame','tamagotchi','companion','homely']),
@@ -122,6 +125,7 @@ export function collectAppearance(
         输入栏样式: theme.chatInputStyle ?? 'default',
         聊天背景: theme.chatBackgroundStyle ?? 'plain',
         消息间距: theme.chatMessageSpacing ?? 'default',
+        消息时间位置: enumOrCustom(timePosition, ['below', 'below_avatar', 'top_center'], 'below'),
         时间戳显示: theme.chatShowTimestamp ?? 'always',
         顶栏对齐: theme.chatHeaderAlign ?? 'left',
         顶栏密度: theme.chatHeaderDensity ?? 'default',
@@ -198,15 +202,17 @@ function builtinSullyQuality(characters: CharacterProfile[]): string {
 export function collectCharSettings(
     characters: CharacterProfile[],
     activeCharacterId: string | null | undefined,
+    user?: Pick<UserProfile, 'thinkingChainPrompt'>,
 ): Record<string, string> {
     const c = characters.find(x => x.id === activeCharacterId) ?? characters[0];
     const anyOn = (pick: (ch: CharacterProfile) => boolean | undefined, defaultOn = false) =>
         anyCharToggle(characters.map(pick), defaultOn);
     const now = Date.now();
-    return {
+    const fields: Record<string, string> = {
         // ── 开关：默认关的，问有没有人开过 ──
         '3D家园角色数': bucketFewCount(characters.filter(x => x.home3D?.rooms?.length).length),
         记忆宫殿: anyOn(x => x.memoryPalaceEnabled),
+        表情看图: anyOn(x => x.stickerVision),
         聊天显示备注: anyOn(x => x.chatShowRemark === true),
         自动归档: anyOn(x => x.autoArchiveEnabled),
         思考过程: anyOn(x => x.showThinkingChain),
@@ -277,6 +283,10 @@ export function collectCharSettings(
             characters.filter(x => x.companionAvatar?.source && x.companionAvatar.source !== 'model').length,
         ),
     };
+    const thinking = getThinkingChainSettings(c, user);
+    if (thinking.mode === 'replace') fields.心象提示词模式 = '替换';
+    if (thinking.scope === 'character') fields.心象提示词范围 = '仅当前角色';
+    return fields;
 }
 
 /**
@@ -444,7 +454,7 @@ export interface FeatureSources {
      * 只看「地址填没填」「连接成功过没有」「即时对话开没开」三位，
      * Worker 地址和共享密钥本身不进上报。
      */
-    amsg2Global: { workerUrl?: string; initializedAt?: number; instantChatEnabled?: boolean };
+    amsg2Global: { enabled?: boolean; workerUrl?: string; initializedAt?: number; instantChatEnabled?: boolean };
     /** 协同 sidecar 只用 count() 取出的行数，不读取窗口标题、消息、文件名或 Blob。 */
     collaborationUsage: { sessions: number; messages: number; assets: number };
 }
@@ -540,7 +550,7 @@ export function collectFeatureFlags(src: FeatureSources): Record<string, string>
         彼方独立线路: src.vrIndependentApi ? '配了' : '没配',
 
         // ── 主动消息 2.0 ──
-        // 四态（见 amsg2Stage）：三关里卡在哪一关，要修的引导完全不是一回事。
+        // 四态（见 amsg2Stage）衡量配置漏斗走到哪一关，不随总开关临时暂停退回：三关里卡在哪一关，要修的引导完全不是一回事。
         '主动消息2.0': amsg2Stage(
             Boolean(src.amsg2Global.workerUrl?.trim()),
             Boolean(src.amsg2Global.initializedAt),
@@ -550,8 +560,8 @@ export function collectFeatureFlags(src: FeatureSources): Record<string, string>
         // 好几个才说明真的用起来了。
         '开了2.0的角色数': bucketFewCount(amsg2ActiveChars.length),
         // 聊天主路径搬没搬上云端。只有开/关：配置到哪一步由上面那格四态回答，
-        // 这一格问的是「配好了的人里有多少真把聊天切过去了」。
-        即时对话: onOff(isInstantChatSwitchedOn(src.amsg2Global)),
+        // 这一格问的是「配好了的人里有多少真把聊天切过去了」。全局总开关暂停时实际不走云端，记为关。
+        即时对话: onOff(isAmsg2GloballyEnabled(src.amsg2Global) && isInstantChatSwitchedOn(src.amsg2Global)),
         // 全局开着、却在某几个角色上单独关掉的有多少。角色级开关是「跟随全局」缺省，
         // 只有显式关才落 false——这一格数的就是这种显式关，回答「按角色区分有没有人用」。
         // 一个都没有的话这个开关可以从角色面板收掉。

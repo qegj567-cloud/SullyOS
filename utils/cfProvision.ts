@@ -14,6 +14,8 @@
 
 import { getProxyWorkerUrl } from './proxyWorker';
 import { generateVapidKeyPair, generateClientToken } from './vapidGen';
+import { ActiveMsgStore } from './activeMsgStore';
+import { guardAmsgRedeployment, readRedeployMarker, redeployMarkerBinding, REDEPLOY_STOP_WORKER, type RedeploySettings } from './amsgRedeployGuard';
 
 /** 部署出来的 Worker / D1 默认叫这个，跟 worker/amsg/wrangler.toml 对齐。 */
 export const AMSG_SCRIPT_NAME = 'sullyos-amsg';
@@ -61,6 +63,7 @@ export type ProvisionStepId =
   | 'database'
   | 'subdomain'
   | 'bundle'
+  | 'stop'
   | 'upload'
   | 'cron'
   | 'expose'
@@ -98,7 +101,39 @@ export interface ProvisionInput {
    * 传了就在上传前把库里的数据清空，新密钥从一张白纸开始写。
    */
   resetExistingDatabase?: boolean;
+  /** Explicitly confirmed replacement. The plan stays in memory for retries. */
+  replacement?: AmsgReplacementPlan;
   onProgress?: (p: ProvisionProgress) => void;
+}
+
+export interface AmsgReplacementPlan {
+  operationId: string;
+  credentialId: string;
+  accountId: string;
+  scriptName: string;
+  workerUrl?: string;
+  databaseName: string;
+  /** Set only after this operation creates its own database; never an old binding. */
+  databaseId?: string;
+  secrets: AmsgSecrets;
+}
+
+export async function createAmsgReplacementPlan(backend: ExistingAmsgBackend): Promise<AmsgReplacementPlan> {
+  const saved = await ActiveMsgStore.getReplacementPlan<AmsgReplacementPlan>(backend.account.id, backend.scriptName);
+  if (saved?.operationId && saved.accountId === backend.account.id && saved.scriptName === backend.scriptName && saved.secrets?.AMSG_MASTER_KEY) {
+    const current = await ActiveMsgStore.getGlobalConfig();
+    const completed = current.initializedAt && current.serverToken === saved.secrets.AMSG_SERVER_TOKEN && current.masterKey === saved.secrets.AMSG_MASTER_KEY;
+    if (!completed) return saved;
+  }
+  const plan: AmsgReplacementPlan = {
+    operationId: crypto.randomUUID(),
+    credentialId: crypto.randomUUID(),
+    accountId: backend.account.id, scriptName: backend.scriptName, workerUrl: backend.urls[0],
+    databaseName: `${backend.scriptName.slice(0, 20)}-restart-${crypto.randomUUID().replace(/-/g, '')}`,
+    secrets: await generateAmsgSecrets(),
+  };
+  await ActiveMsgStore.saveReplacementPlan(plan.accountId, plan.scriptName, plan);
+  return plan;
 }
 
 export type ProvisionFailureCode =
@@ -116,6 +151,8 @@ export type ProvisionFailureCode =
   | 'UPLOAD_FAILED'
   | 'CF_ERROR'
   | 'DATABASE_KEY_MISSING'
+  | 'REPLACEMENT_DRAINING'
+  | 'REPLACEMENT_COMPLETED_ELSEWHERE'
   | 'NETWORK';
 
 export interface ProvisionFailure {
@@ -124,6 +161,7 @@ export interface ProvisionFailure {
   message: string;
   /** ACCOUNT_AMBIGUOUS 时给界面挑。 */
   accounts?: CfAccount[];
+  retryAfterSeconds?: number;
 }
 
 export interface ProvisionSuccess {
@@ -300,6 +338,15 @@ export function explainCfError(status: number, body: unknown, request?: string):
 
   const explain = (): string => {
     if (code === 6003 || code === 6111) return 'Token 格式不对，多半是复制时多带了空格或换行。';
+    // /user/tokens/verify 不校验权限，回 401 + code 1000 代表令牌本身不被认可；
+    // 必须挡在 401 兜底之前，否则会被翻成「权限不够」误导用户反复去加权限。
+    if (code === 1000) {
+      return (
+        'Cloudflare 不认这枚 Token。'
+        + '检查粘贴时有没有多出空格或换行、漏掉开头或结尾的字符，或贴成了别的密钥／已失效的旧令牌；'
+        + '确认无误的话，去 Cloudflare 重新建一枚用户 API Token（cfut_ 开头）再试。'
+      );
+    }
     if (code === 9109 || code === 10000 || status === 401 || status === 403) return PERMISSION_HINT;
     if (code === 10016) return 'Worker 名字不合法。';
     if (code === 10027) return 'Worker 代码超过 Cloudflare 的体积上限，装不上去。';
@@ -485,7 +532,7 @@ export async function verifyToken(
       code: 'TOKEN_INVALID',
       message:
         '这是一枚账号令牌（cfat_ 开头），这里用不了。'
-        + '去 Cloudflare 右上角头像 → My Profile → API Tokens 建一枚普通的 API Token，'
+        + '去 Cloudflare 右上角头像 → My Profile → API Tokens 建一枚普通的用户 API Token（cfut_ 开头），'
         + '建的时候在 Account Resources 里选上你要装到的那个账号就行。',
     };
   }
@@ -528,6 +575,50 @@ async function findUsableAccounts(token: string): Promise<CfResponse<CfAccount[]
     if (probe.ok) usable.push({ id: acc.id, name: acc.name });
   }
   return { ok: true, status: 200, body: usable };
+}
+
+export interface ExistingAmsgBackend {
+  account: CfAccount;
+  scriptName: string;
+  urls: string[];
+  redeploying?: boolean;
+}
+
+/** Management-token discovery is read-only. CF does not return stored secret values. */
+export async function discoverAmsgBackends(tokenInput: string, scriptName = AMSG_SCRIPT_NAME): Promise<{
+  backends: ExistingAmsgBackend[]; warnings: string[];
+}> {
+  const token = tokenInput.trim();
+  if (!token) throw new Error('先粘贴 Cloudflare API Token。');
+  if (!/^[a-zA-Z0-9_-]{1,63}$/.test(scriptName)) throw new Error('Worker 名称格式不正确。');
+  const verified = await verifyToken(token);
+  if (!verified.ok) throw new Error(verified.message);
+  const accounts = await findUsableAccounts(token);
+  if (!accounts.ok || !accounts.body?.length) throw new Error(accounts.error || '这枚 Token 没有可读取的账号，请确认账号范围和 Workers Scripts 权限。');
+  const backends: ExistingAmsgBackend[] = [];
+  const warnings: string[] = [];
+  for (const account of accounts.body) {
+    const base = `/accounts/${account.id}/workers`;
+    const settings = await cfApi<CfItemEnvelope<RedeploySettings>>(token, `${base}/scripts/${encodeURIComponent(scriptName)}/settings`);
+    if (!settings.ok) {
+      if (settings.status !== 404) warnings.push(`${account.name}：暂时无法检查 ${scriptName}，请确认权限或稍后重试。`);
+      continue;
+    }
+    if (!settings.body?.result?.bindings?.some(binding => binding.name === 'AMSG_MASTER_KEY')) {
+      warnings.push(`${account.name} 的同名 Worker 无法确认为主动消息后台，未连接或覆盖。`);
+      continue;
+    }
+    const [domains, subdomain, enabled] = await Promise.all([
+      cfApi<CfListEnvelope<{ hostname: string; service: string; environment?: string }>>(token, `${base}/domains?service=${encodeURIComponent(scriptName)}`),
+      cfApi<CfItemEnvelope<{ subdomain?: string }>>(token, `${base}/subdomain`),
+      cfApi<CfItemEnvelope<{ enabled?: boolean }>>(token, `${base}/scripts/${encodeURIComponent(scriptName)}/subdomain`),
+    ]);
+    const urls = (domains.body?.result ?? []).filter(domain => domain.service === scriptName && (!domain.environment || domain.environment === 'production')).map(domain => `https://${domain.hostname}`);
+    if (enabled.body?.result?.enabled && subdomain.body?.result?.subdomain) urls.push(deriveWorkerUrl(scriptName, subdomain.body.result.subdomain));
+    if (!domains.ok) warnings.push(`${account.name}：自定义域名暂时无法读取，可以沿用连接码里的地址。`);
+    backends.push({ account, scriptName, urls: [...new Set(urls)], ...(readRedeployMarker(settings.body.result!)?.phase === 'draining' ? { redeploying: true } : {}) });
+  }
+  return { backends, warnings };
 }
 
 async function ensureDatabase(
@@ -760,7 +851,11 @@ export async function waitForWorkerReady(workerUrl: string, timeoutMs = 90_000):
   while (Date.now() < deadline) {
     try {
       const res = await fetch(`${workerUrl}/config-check`, { method: 'GET', cache: 'no-store' });
-      streak = res.headers.get('content-type')?.includes('json') ? streak + 1 : 0;
+      const isJson = res.headers.get('content-type')?.includes('json');
+      // During propagation the previous maintenance version can still answer.
+      // A JSON 503 from that version is not a ready replacement.
+      const stillPaused = isJson && res.status === 503 && (await res.json())?.code === 'AMSG_REDEPLOY_PAUSED';
+      streak = isJson && !stillPaused ? streak + 1 : 0;
       if (streak >= NEEDED_STREAK) return true;
     } catch {
       streak = 0;
@@ -907,11 +1002,23 @@ export async function attachUpdateCapability(input: {
  * 但每一步都是「先查后建」，把同样的参数再跑一遍能接着往下走，不会建出第二份。
  */
 export async function provisionAmsgBackend(input: ProvisionInput): Promise<ProvisionResult> {
+  if (input.replacement && typeof navigator !== 'undefined' && navigator.locks) {
+    return navigator.locks.request(`amsg-redeploy:${input.replacement.accountId}:${input.replacement.scriptName}`, { ifAvailable: true }, lock =>
+      lock ? provisionAmsgBackendUnlocked(input) : Promise.resolve({ ok: false as const, code: 'CF_ERROR' as const, message: '另一个页面正在操作这个后台，请等它完成后再继续。' }));
+  }
+  return provisionAmsgBackendUnlocked(input);
+}
+
+async function provisionAmsgBackendUnlocked(input: ProvisionInput): Promise<ProvisionResult> {
   const scriptName = input.scriptName?.trim() || AMSG_SCRIPT_NAME;
   const databaseName = input.databaseName?.trim() || AMSG_D1_NAME;
   const token = input.token.trim();
   const report = (step: ProvisionStepId, message: string) => input.onProgress?.({ step, message });
   const warnings: string[] = [];
+  const replacement = input.replacement;
+  if (replacement && (input.accountId !== replacement.accountId || scriptName !== replacement.scriptName || input.resetExistingDatabase)) {
+    return { ok: false, code: 'CF_ERROR', message: '重新部署的目标与确认时不一致，请重新选择后台。' };
+  }
 
   report('relay', '检查中转是否可用…');
   if (!(await checkRelayAvailable())) {
@@ -958,8 +1065,80 @@ export async function provisionAmsgBackend(input: ProvisionInput): Promise<Provi
     accountId = usable[0].id;
   }
 
+  // A new device must not overwrite an existing installation before it has recovered its identity.
+  const existingScript = await cfApi<CfListEnvelope<{ id: string }>>(token, `/accounts/${accountId}/workers/scripts`);
+  if (!existingScript.ok || !Array.isArray(existingScript.body?.result)) return { ok: false, code: 'CF_ERROR', message: '无法确认账号里是否已有后台，请稍后重试。尚未创建或更改任何资源。' };
+  const scriptExists = existingScript.body.result.some(script => script.id === scriptName);
+  if (scriptExists && !replacement) {
+    return { ok: false, code: 'SCRIPT_EXISTS', message: '这个账号已经部署过主动消息后台。请返回「已有后台／换设备」，在原设备复制连接码接回原来的身份；日常更新请用「更新 Worker」。本次没有覆盖后台或清空数据库。' };
+  }
+
+  let replacementBundle: Awaited<ReturnType<typeof fetchBundle>> | undefined;
+  let replacementSubdomain: Awaited<ReturnType<typeof ensureSubdomain>> | undefined;
+  if (replacement) {
+    if (!scriptExists) return { ok: false, code: 'SCRIPT_NOT_FOUND', message: '刚才选中的后台已不存在，请重新查找。尚未修改任何资源。' };
+    const current = await cfApi<CfItemEnvelope<RedeploySettings>>(token, `/accounts/${accountId}/workers/scripts/${encodeURIComponent(scriptName)}/settings`);
+    if (!current.ok || !current.body?.result?.bindings?.some(binding => binding.name === 'AMSG_MASTER_KEY')) {
+      return { ok: false, code: 'CF_ERROR', message: '无法确认所选 Worker 仍是主动消息后台，尚未覆盖它。请重新查找。' };
+    }
+    // Validate code and address before creating anything. Replacement always uses
+    // a new database, so shared old databases are never cleared or rebound by name.
+    replacementBundle = await fetchBundle();
+    if (!replacementBundle.ok) return { ok: false, code: 'BUNDLE_INVALID', message: replacementBundle.error };
+    replacementSubdomain = await ensureSubdomain(token, accountId, input.desiredSubdomain);
+    if (!replacementSubdomain.ok) return { ok: false, code: replacementSubdomain.code, message: replacementSubdomain.error };
+    const marker = readRedeployMarker(current.body.result!);
+    if (marker?.phase === 'active' && marker.operationId === replacement.operationId && marker.credentialId !== replacement.credentialId) {
+      await ActiveMsgStore.saveReplacementPlan(accountId, scriptName, null);
+      return { ok: false, code: 'REPLACEMENT_COMPLETED_ELSEWHERE', message: '这个后台已在另一台设备完成重新配置。本次没有覆盖它，请用连接码或备份接回；也可以重新选择重建。' };
+    }
+    if (marker?.phase === 'draining') {
+      if (marker.accountId !== accountId || marker.scriptName !== scriptName
+        || !current.body.result?.bindings?.some(binding => binding.type === 'd1' && binding.id === marker.databaseId)) {
+        return { ok: false, code: 'CF_ERROR', message: '重配记录与当前后台不一致，请检查 Cloudflare 中的部署，尚未启用新后台。' };
+      }
+      // Resuming on a different device is safe while the maintenance Worker is
+      // active: it never creates user data in this database. Fresh keys are fine.
+      replacement.operationId = marker.operationId;
+      replacement.databaseId = marker.databaseId;
+      replacement.databaseName = marker.databaseName;
+    }
+    if (!replacement.operationId) replacement.operationId = crypto.randomUUID();
+    if (!replacement.credentialId) replacement.credentialId = crypto.randomUUID();
+    try { await ActiveMsgStore.saveReplacementPlan(accountId, scriptName, replacement); }
+    catch { return { ok: false, code: 'CF_ERROR', message: '无法保存重配进度，本次未继续操作。请先检查本机存储空间。' }; }
+    if (!replacement.databaseId) {
+      report('database', '为重新部署创建独立数据库…');
+      const created = await cfApi<CfItemEnvelope<{ uuid?: string }>>(token, `/accounts/${accountId}/d1/database`, {
+        method: 'POST', body: JSON.stringify({ name: replacement.databaseName }), contentType: 'application/json',
+      });
+      if (!created.ok || !created.body?.result?.uuid) return { ok: false, code: 'CF_ERROR', message: created.error || '新数据库创建失败，原后台尚未替换。' };
+      replacement.databaseId = created.body.result.uuid;
+    }
+    try {
+      // Save the new ID and secrets before changing the existing Worker.
+      await ActiveMsgStore.saveReplacementPlan(accountId, scriptName, replacement);
+      report('stop', '暂停旧后台并检查正在执行的任务…');
+      const stopped = await guardAmsgRedeployment({
+        plan: replacement, settings: current.body.result!,
+        api: (path, init) => cfApi(token, path, init),
+        stop: () => uploadWorkerScript(token, accountId, scriptName, {
+          main_module: MAIN_MODULE, compatibility_date: replacementBundle!.ok ? replacementBundle!.config.compatibilityDate : FALLBACK_CONFIG.compatibilityDate,
+          bindings: [...buildBindings(replacementBundle!.ok ? replacementBundle!.config.d1Binding : 'DB', replacement.databaseId!, replacement.secrets), redeployMarkerBinding(replacement, 'draining')],
+          migrations: INSTANT_TICK_MIGRATIONS,
+          code_update_strategy: { mode: 'immediate' },
+        }, REDEPLOY_STOP_WORKER),
+      });
+      if (!stopped.ready) return { ok: false, code: 'REPLACEMENT_DRAINING', retryAfterSeconds: stopped.remainingSeconds,
+        message: `旧后台已暂停。为等旧任务结束，还需约 ${Math.ceil(stopped.remainingSeconds / 60)} 分钟；新后台尚未启动。可以关闭页面，稍后用同一个 Token 查找后台并继续。已交给推送服务的通知仍可能晚到。` };
+    } catch (error) {
+      return { ok: false, code: 'CF_ERROR', message: error instanceof Error ? error.message : '无法确认旧后台已停止，请重试。' };
+    }
+    warnings.push('旧后台已停用并完成等待，现已切换到独立数据库。旧库保留；此前已发出的通知无法撤回。');
+  }
+
   report('database', '准备数据库…');
-  const db = await ensureDatabase(token, accountId, databaseName);
+  const db = replacement ? { ok: true as const, id: replacement.databaseId!, reused: false } : await ensureDatabase(token, accountId, databaseName);
   if (!db.ok) return { ok: false, code: 'CF_ERROR', message: db.error };
   if (db.reused) {
     const guarded = await guardReusedDatabase({
@@ -977,15 +1156,15 @@ export async function provisionAmsgBackend(input: ProvisionInput): Promise<Provi
   }
 
   report('subdomain', '确认 workers.dev 地址…');
-  const sub = await ensureSubdomain(token, accountId, input.desiredSubdomain);
+  const sub = replacementSubdomain || await ensureSubdomain(token, accountId, input.desiredSubdomain);
   if (!sub.ok) return { ok: false, code: sub.code, message: sub.error };
 
   report('bundle', '下载最新的后端代码…');
-  const bundle = await fetchBundle();
+  const bundle = replacementBundle || await fetchBundle();
   if (!bundle.ok) return { ok: false, code: 'BUNDLE_INVALID', message: bundle.error };
 
   report('upload', '上传 Worker…');
-  const secrets = await generateAmsgSecrets(input.secrets);
+  const secrets = replacement?.secrets || await generateAmsgSecrets(input.secrets);
   const metadata = {
     main_module: MAIN_MODULE,
     compatibility_date: bundle.config.compatibilityDate,
@@ -996,6 +1175,7 @@ export async function provisionAmsgBackend(input: ProvisionInput): Promise<Provi
       CF_API_TOKEN: token,
       CF_SCRIPT_NAME: scriptName,
     }),
+    ...(replacement ? { code_update_strategy: { mode: 'immediate' } } : {}),
     // 实时日志（面板上的 Workers Logs）默认是关的，amsg 排障全靠它。
     // 官方的 multipart-upload-metadata 文档没把 observability 列进合法字段，但实测是认的
     // ——上传 enabled:false 能关掉、true 能开起来、不带就没有，三向都验过。
@@ -1005,6 +1185,16 @@ export async function provisionAmsgBackend(input: ProvisionInput): Promise<Provi
     // 一个对象，不是 wrangler.toml 里那种数组——传数组会被 10021 顶回来。
     migrations: INSTANT_TICK_MIGRATIONS,
   };
+  if (replacement) metadata.bindings.push(redeployMarkerBinding(replacement, 'active'));
+  if (replacement) {
+    const latest = await cfApi<CfItemEnvelope<RedeploySettings>>(token, `/accounts/${accountId}/workers/scripts/${encodeURIComponent(scriptName)}/settings`);
+    const marker = latest.body?.result && readRedeployMarker(latest.body.result);
+    if (!latest.ok || marker?.operationId !== replacement.operationId || marker.databaseId !== replacement.databaseId
+      || (marker.phase === 'active' && marker.credentialId !== replacement.credentialId)
+      || !latest.body?.result?.bindings?.some(binding => binding.type === 'd1' && binding.id === replacement.databaseId)) {
+      return { ok: false, code: 'CF_ERROR', message: '后台在检查后又被其他操作修改，本次没有继续启用。请重新查找后继续。' };
+    }
+  }
   const uploaded = await uploadWorkerScript(token, accountId, scriptName, metadata, bundle.code);
   if (!uploaded.ok) {
     return { ok: false, code: 'UPLOAD_FAILED', message: uploaded.error || '上传 Worker 失败。' };
@@ -1049,7 +1239,7 @@ export async function provisionAmsgBackend(input: ProvisionInput): Promise<Provi
   report('done', '部署完成。');
   return {
     ok: true,
-    workerUrl: deriveWorkerUrl(scriptName, sub.subdomain),
+    workerUrl: replacement?.workerUrl || deriveWorkerUrl(scriptName, sub.subdomain),
     scriptName,
     accountId,
     databaseId: db.id,

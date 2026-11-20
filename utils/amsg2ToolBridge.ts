@@ -21,6 +21,7 @@ import {
 } from '../types';
 import { ActiveMsgClient } from './activeMsgClient';
 import { ActiveMsgStore } from './activeMsgStore';
+import { isAmsg2WorkerActive } from './amsgGlobalGate';
 import { buildDuplicateToolMessage, toolCallFingerprint, type ToolCallRecord } from './agenticToolFeedback';
 import { trackEvent } from './analytics';
 import {
@@ -28,8 +29,13 @@ import {
   describeTaskMode, describeTaskProgress, findTaskByShortId, formatTaskTime,
   getPendingTasks, isPendingTask, pruneStaleTasks, resolveExpirePolicy, shortTaskId,
 } from './amsg2Tasks';
-import { type AmsgLimits, checkSelfScheduleRules, resolveAmsgLimits } from './amsgLimits';
-import { buildScheduleParameters, MIN_SCHEDULE_LEAD_MS, resolveSendAtMs } from './amsgFireSchedule';
+import {
+  type AmsgLimits, buildUnansweredLimitRejectMessage, checkSelfScheduleRules, resolveAmsgLimits,
+} from './amsgLimits';
+import {
+  buildFireCancelTool, buildFireRenewTool, buildFireScheduleTool,
+  type FireScheduleTimeOpts, MIN_SCHEDULE_LEAD_MS, resolveSendAtMs,
+} from './amsgFireSchedule';
 import { resolveCharTimeZone } from './timezone';
 
 // ─── OpenAI tools schema ───
@@ -40,81 +46,40 @@ interface OpenAITool {
 }
 
 /**
- * 前台聊天里给角色的四个工具。排程那个的签名跟着用户的设置走：没放开「每天/每周重复」
- * 就不给 recurrence 参数，没放开「到点必发」就不给 expire_policy——摆在那儿等于邀请模型
- * 去选，选了再被打回白费一轮。任务名额也是用户定的，描述里写实数。
+ * 前台聊天里给角色的排程管理工具，与云端即时对话共用同一份定义（schedule / cancel / renew）。
+ *
+ * 待触发任务清单已由 `withAmsg2TaskContext` 每轮现算注入系统上下文，无需向模型额外声明
+ * `list_active_messages`（避免引诱模型为了查询清单多走一轮续写）；执行器仍保留对
+ * `list_active_messages` 的兼容处理。
  */
-export const buildAmsg2Tools = (limits: AmsgLimits): OpenAITool[] => [
-  {
-    type: 'function',
-    function: {
-      name: 'schedule_active_message',
-      description: [
-        '创建定时主动消息：到指定时间后，你（角色）会根据最新聊天上下文自动生成并推送一条消息给用户。',
-        '重要：send_at 是 worker 开始生成消息的请求时间，不是最终送达时间（中间有推理延迟，通常 10-30 秒）。',
-        '如果要"卡点"送达（比如整点），建议提前 1 分钟。',
-        '推荐使用 mode=auto：角色根据最新聊天内容自动决定说什么，后续聊天会自动同步至上下文。',
-        'mode=prompted：给角色一个提示方向（如"问问对方吃了没"），角色围绕这个方向生成。',
-        `每个角色最多同时挂 ${limits.maxActiveTasks} 个任务`
-          + (limits.allowSelfForce ? '；到点怎么处理由 expire_policy 决定。' : '；到点时你会先看最新的对话，再决定这条说不说。'),
-      ].join('\n'),
-      parameters: buildScheduleParameters({
-        // 只教裸墙钟：角色照着自己那边的钟写，系统按角色时区还原成绝对时刻
-        // （跟 worker 到点解析 send_at 同一份规则）。教它写 +08:00 这种偏移的话，
-        // 纽约角色会照抄示例里的东八区，说出来的「明早九点」实际差一个时差。
-        sendAtDescription: '开始生成消息的时间，写你本地的墙钟时间，格式 YYYY-MM-DDTHH:mm:ss（如 2026-07-20T20:00:00），不要带时区后缀。必须晚于当前时间。',
-        modeDescription: '生成模式。auto=根据最新聊天自动生成（推荐）；prompted=围绕 prompt_hint 方向生成。默认 auto。',
-        promptHintDescription: '仅 mode=prompted 时有效。给角色的提示方向，如"问问对方晚饭吃了没"。',
-        recurrenceDescription: '重复类型。none=一次性（默认）；daily=每天同一时间；weekly=每周同一天同一时间。',
-        abilities: { allowRecurring: limits.allowSelfRecurring, allowForce: limits.allowSelfForce },
-      }),
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'cancel_active_message',
-      description: '取消当前角色的一个定时主动消息任务。多个任务并存时必须用 task_id（排程现状/任务列表里的短 id）指定；只有一个待触发任务时可省略。',
-      parameters: {
-        type: 'object',
-        properties: {
-          task_id: { type: 'string', description: '要取消的任务短 id（8 位）。' },
-        },
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'renew_active_message',
-      description: [
-        '给一个任务续期：只换触发时间，沿用原有模式与提示方向（含到点没发的任务）。',
-        '一次性任务 = 整条改到新时间；循环任务 = 只给这一次补发一条一次性任务，原来的每天/每周节奏和编号都不动。',
-        '想改的是循环任务本身的时间，或者想说的内容、方向已经变了，都不要用 renew，改用 cancel_active_message + schedule_active_message 重新创建。',
-      ].join('\n'),
-      parameters: {
-        type: 'object',
-        properties: {
-          send_at: { type: 'string', description: '新的触发时间，写你本地的墙钟时间，格式 YYYY-MM-DDTHH:mm:ss，不带时区后缀。必须晚于当前时间。' },
-          task_id: { type: 'string', description: '要续期的任务短 id（8 位）。只有一个任务时可省略。' },
-        },
-        required: ['send_at'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'list_active_messages',
-      description: '查看当前角色的定时主动消息任务列表（短 id、时间、模式、状态）。',
-      parameters: { type: 'object', properties: {} },
-    },
-  },
-];
+export const buildAmsg2Tools = (
+  limits: AmsgLimits,
+  timeOpts?: FireScheduleTimeOpts,
+): OpenAITool[] => {
+  const resolvedTime: FireScheduleTimeOpts = timeOpts ?? {
+    nowMs: Date.now(),
+    tz: { tzId: Intl.DateTimeFormat().resolvedOptions().timeZone },
+  };
+  const abilities = {
+    allowRecurring: limits.allowSelfRecurring,
+    allowForce: limits.allowSelfForce,
+  };
+  return [
+    buildFireScheduleTool({
+      ...resolvedTime,
+      abilities,
+      context: 'chat',
+      maxActiveTasks: limits.maxActiveTasks,
+    }) as OpenAITool,
+    buildFireCancelTool() as OpenAITool,
+    buildFireRenewTool(resolvedTime) as OpenAITool,
+  ];
+};
 
-export const AMSG2_TOOL_NAMES = new Set(
-  buildAmsg2Tools(resolveAmsgLimits(undefined)).map((t) => t.function.name),
-);
+export const AMSG2_TOOL_NAMES = new Set([
+  ...buildAmsg2Tools(resolveAmsgLimits(undefined)).map((t) => t.function.name),
+  'list_active_messages',
+]);
 
 // ─── 执行器 ───
 
@@ -188,8 +153,8 @@ const MUTATING_TOOLS = new Set([
  */
 const TOOL_FOLLOW_UP = [
   '[系统: 这一次调用已经处理完了，结果就在上面。同样的调用不要再来一遍——',
-  '现在把要对用户说的话写出来，或者用一个还没用过的工具。',
-  '前面已经说出去的内容不要重写，接着往下写就行。]',
+  '如果还没对用户说完，现在接着把剩下的话补完（只有确实还需要别的工具时，才调用一个还没用过的工具）。',
+  '前面已经说出去的内容和标签不要重写，重写一遍用户就会收到两遍；如果前面已经把对用户说的话完整表达完了、且与这次工具结果不冲突，不需要再补充任何文字，直接留空结束即可。]',
 ].join('\n');
 
 /**
@@ -221,7 +186,18 @@ const reject = (deps: Amsg2ToolDeps, reason: string, text: string): string => {
 };
 
 const taskSignature = (deps: Amsg2ToolDeps): string =>
-  (deps.getConfig()?.tasks ?? []).map((t) => `${t.taskUuid}:${t.status}`).join('|');
+  pruneStaleTasks(deps.getConfig()?.tasks ?? [], Date.now())
+    .map((t) => [
+      t.taskUuid,
+      t.status,
+      t.firstSendTime,
+      t.recurrenceType,
+      t.mode,
+      t.expirePolicy,
+      t.promptHint ?? '',
+      t.lastError ?? '',
+    ].join(':'))
+    .join('|');
 
 /** 执行一次工具调用，连同结局一起返回（工具循环用这个；只要回话的用 executeAmsg2Tool）。 */
 export const executeAmsg2ToolWithOutcome = async (
@@ -231,14 +207,19 @@ export const executeAmsg2ToolWithOutcome = async (
 ): Promise<{ text: string; outcome: Amsg2ToolOutcome }> => {
   deps.signal?.throwIfAborted();
   const mutating = MUTATING_TOOLS.has(toolName);
+  const isKnownAmsg2Tool = AMSG2_TOOL_NAMES.has(toolName);
+  const before = taskSignature(deps);
   // 同名同参第二次直接打回，一次网络请求都不发。上面那段软提示挡不住时靠它兜底，
-  // 与 worker 的 fire 循环同一道闸。只拦**完全一样**的调用——换时间、换方向照常放行，
-  // 多轮能力一点不减。
-  const fingerprint = mutating ? toolCallFingerprint(toolName, args) : '';
-  if (mutating && deps.seenCalls.some((r) => r.fingerprint === fingerprint)) {
+  // 与 worker 的 fire 循环同一道闸。只拦完全一样的调用——换时间、换方向照常放行；
+  // 兼容保留的 list 按当前清单签名记账：排完再查放行，清单未变原地重查按重复打回。
+  const fingerprint = mutating
+    ? toolCallFingerprint(toolName, args)
+    : toolName === 'list_active_messages'
+      ? `list_active_messages:${before}`
+      : '';
+  if (fingerprint && deps.seenCalls.some((r) => r.fingerprint === fingerprint)) {
     return { text: buildDuplicateToolMessage(toolName), outcome: { tool: toolName, status: 'duplicate' } };
   }
-  const before = mutating ? taskSignature(deps) : '';
   rejectionReasons.delete(deps);
   try {
     const result = await (() => {
@@ -257,16 +238,17 @@ export const executeAmsg2ToolWithOutcome = async (
     })();
     // 记账放在跑完之后：抛错的那次等于没跑成（远端没建出东西），把它记下来的话，
     // 角色连一次原样重试的机会都没有。
-    if (mutating) deps.seenCalls.push({ name: toolName, fingerprint });
+    if (fingerprint) deps.seenCalls.push({ name: toolName, fingerprint });
     const reason = rejectionReasons.get(deps);
     rejectionReasons.delete(deps);
-    // 会改清单的工具看清单变没变：回话是给模型读的散文，拿它判成败靠不住。
+    // 会改清单的工具先看是否显式打回，再看清单变没变：避免失败分支顺手清理过期旧任务时误判为 done。
     let outcome: Amsg2ToolOutcome;
-    if (toolName === 'list_active_messages') outcome = { tool: toolName, status: 'done' };
+    if (reason) outcome = { tool: toolName, status: 'rejected', reason };
+    else if (toolName === 'list_active_messages') outcome = { tool: toolName, status: 'done' };
     else if (!mutating) outcome = { tool: toolName, status: 'rejected', reason: 'unknown_tool' };
     else if (taskSignature(deps) !== before) outcome = { tool: toolName, status: 'done' };
-    else outcome = { tool: toolName, status: 'rejected', reason: reason ?? 'no_change' };
-    return { text: mutating ? `${result}\n${TOOL_FOLLOW_UP}` : result, outcome };
+    else outcome = { tool: toolName, status: 'rejected', reason: 'no_change' };
+    return { text: isKnownAmsg2Tool ? `${result}\n${TOOL_FOLLOW_UP}` : result, outcome };
   } catch (e: any) {
     deps.signal?.throwIfAborted();
     rejectionReasons.delete(deps);
@@ -326,7 +308,11 @@ async function handleSchedule(args: Record<string, any>, deps: Amsg2ToolDeps): P
       .filter((t) => t.source === 'character' && isPendingTask(t, Date.now()))
       .length;
     if (plannedSelfSends + 1 > unansweredLimit) {
-      return reject(deps, 'unanswered_limit', `对方还没回复，这期间你已经排了 ${plannedSelfSends} 次后续，用户设的连发上限是 ${unansweredLimit} 次——这次别排了，等 ta 回复再说。`);
+      return reject(deps, 'unanswered_limit', buildUnansweredLimitRejectMessage({
+        count: plannedSelfSends,
+        limit: unansweredLimit,
+        context: 'chat',
+      }));
     }
   }
   // 回话里的时间按角色的钟写：到点 worker 渲染排程清单用的也是角色时区，两边对不上的话
@@ -443,7 +429,7 @@ const resolveTargetTask = (
   const tasks = config.tasks;
   if (typeof taskIdArg === 'string' && taskIdArg.trim()) {
     const task = findTaskByShortId(tasks, taskIdArg.trim());
-    return task ? { task } : { error: `没有找到短 id 为 ${taskIdArg} 的任务，请先用 list_active_messages 查看。` };
+    return task ? { task } : { error: `没有找到短 id 为 ${taskIdArg} 的任务，请核对排程现状里的任务短 id。` };
   }
   const pending = getPendingTasks(config, Date.now());
   if (pending.length === 1) return { task: pending[0] };
@@ -453,9 +439,9 @@ const resolveTargetTask = (
 
 async function handleCancel(args: Record<string, any>, deps: Amsg2ToolDeps): Promise<string> {
   const config = readConfig(deps);
-  if (!config.tasks.length) return '当前角色没有排程中的主动消息任务。';
+  if (!config.tasks.length) return reject(deps, 'no_tasks', '当前角色没有排程中的主动消息任务。');
   const { task, error } = resolveTargetTask(config, args.task_id);
-  if (!task) return error!;
+  if (!task) return reject(deps, 'task_not_found', error!);
 
   try {
     await ActiveMsgClient.cancelTask(task.taskUuid);
@@ -465,7 +451,7 @@ async function handleCancel(args: Record<string, any>, deps: Amsg2ToolDeps): Pro
     console.warn('[amsg2ToolBridge] cancel remote task failed（保留本地记录待重试）', e);
     persistTasks(deps, config, config.tasks.map((t) =>
       t.taskUuid === task.taskUuid ? { ...t, lastError: '远端取消失败，任务可能仍会触发' } : t));
-    return `取消任务 [${shortTaskId(task.taskUuid)}] 失败（远端未确认），稍后可重试。`;
+    return reject(deps, 'remote_cancel_failed', `取消任务 [${shortTaskId(task.taskUuid)}] 失败（远端未确认），稍后可重试。`);
   }
   persistTasks(deps, config, config.tasks.filter((t) => t.taskUuid !== task.taskUuid));
   return `已取消任务 [${shortTaskId(task.taskUuid)}]。`;
@@ -473,10 +459,10 @@ async function handleCancel(args: Record<string, any>, deps: Amsg2ToolDeps): Pro
 
 async function handleRenew(args: Record<string, any>, deps: Amsg2ToolDeps): Promise<string> {
   const config = readConfig(deps);
-  if (!config.tasks.length) return '当前角色没有可续期的任务，请用 schedule_active_message 新建。';
+  if (!config.tasks.length) return reject(deps, 'no_tasks', '当前角色没有可续期的任务，请用 schedule_active_message 新建。');
   const { task, error } = resolveTargetTask(config, args.task_id);
-  if (!task) return error!;
-  if (task.mode === 'fixed') return '固定消息任务请在设置面板调整。';
+  if (!task) return reject(deps, 'task_not_found', error!);
+  if (task.mode === 'fixed') return reject(deps, 'fixed_task', '固定消息任务请在设置面板调整。');
   // 循环任务的续期只补当次：整条改期的话，一条「每天 9:00 的早安」被角色顺手续到
   // 11:00「晚点补上」，从明天起就永久变成 11:00 了，编号还跟着换一个。所以这里改成
   // 建一条一次性的补发任务，原序列原样留着继续按自己的节奏响。
@@ -515,7 +501,7 @@ async function handleList(deps: Amsg2ToolDeps): Promise<string> {
 export const isAmsg2GlobalReady = async (): Promise<boolean> => {
   try {
     const config = await ActiveMsgStore.getGlobalConfig();
-    return !!config.workerUrl?.trim();
+    return isAmsg2WorkerActive(config);
   } catch {
     return false;
   }

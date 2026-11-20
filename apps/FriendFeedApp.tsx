@@ -52,7 +52,22 @@ type Panel = {kind: 'post'; circleId: string}
     | {kind:'weibo-detail';post:FriendFeedSource} | {kind:'weibo-home'}
     | {kind:'cover';ownerId:string}
     | {kind:'edit-comment'|'delete-comment';postId:string;commentId:string;original:string;authorName:string}
-    | {kind: 'comment'; postId: string; replyTarget?:FriendReplyTarget} | {kind:'share';postId:string} | {kind:'detail';postId:string;focusComment?:{id:string}} | {kind: 'delete'; postId: string} | {kind: 'settings'; section?: PreferenceSection} | {kind:'inbox'} | {kind:'api'} | {kind: 'weibo'} | {kind:'sources'} | {kind:'following'} | {kind:'relations'};
+    | {kind: 'comment'; postId: string; replyTarget?:FriendReplyTarget} | {kind:'share';postId:string} | {kind:'detail';postId:string;focusComment?:{id:string};expanded?:ReadonlySet<string>} | {kind: 'delete'; postId: string} | {kind: 'settings'; section?: PreferenceSection} | {kind:'inbox'} | {kind:'api'} | {kind: 'weibo'} | {kind:'sources'} | {kind:'following'} | {kind:'relations'};
+
+const collapsedThreads: ReadonlySet<string> = new Set();
+type ReadingPosition = {top: number; anchors: {id: string; offset: number}[]};
+
+function rememberReadingPosition(scroller: HTMLElement | null, detail: boolean): ReadingPosition {
+    const position: ReadingPosition = {top: scroller?.scrollTop ?? 0, anchors: []};
+    if (!scroller || !detail || position.top <= 0) return position;
+    const viewport = scroller.getBoundingClientRect();
+    for (const row of scroller.querySelectorAll<HTMLElement>('[data-comment-id]')) {
+        const rect = row.getBoundingClientRect();
+        if (rect.top >= viewport.bottom || position.anchors.length === 2) break;
+        if (rect.bottom > viewport.top) position.anchors.push({id: row.dataset.commentId!, offset: rect.top - viewport.top});
+    }
+    return position;
+}
 
 export default function FriendFeedApp({embedded = false, initialCharacterId, onBack}: FriendFeedProps) {
     const {characters, characterGroups = [], userProfile, closeApp, openApp, apiConfig, realtimeConfig} = useOS();
@@ -65,8 +80,8 @@ export default function FriendFeedApp({embedded = false, initialCharacterId, onB
     const [appApi,setAppApi]=useState<DialogueApiConfig|null>(null);
     const [settingsSection,setSettingsSection]=useState('');
     const [returnToInbox,setReturnToInbox]=useState(false);
-    const panelHistory = useRef<{panel?: Panel; profileId: string; showSetup: boolean; section: string; scrollTop: number}[]>([]);
-    const restoredScroll = useRef<number>();
+    const panelHistory = useRef<{panel?: Panel; profileId: string; showSetup: boolean; section: string; position: ReadingPosition}[]>([]);
+    const restoredScroll = useRef<ReadingPosition>();
     const [profileFromFollowing,setProfileFromFollowing]=useState(false);
     const [followingUserAccount,setFollowingUserAccount]=useState('main');
     const profileFromPanel = useRef(false);
@@ -111,7 +126,7 @@ export default function FriendFeedApp({embedded = false, initialCharacterId, onB
     const displayCharacters=characters.map(c=>({...c,name:settings.identities[c.id]?.nickname||c.name}));
     const userAccounts=friendAccounts(resolveFriendFeedSettings(feed.settings),{id:'user',name:userProfile.name||'我'});
     const selectedUserAccount=userAccounts.find(a=>a.id===speakingAccount);
-    const composerUser={...displayUser,name:selectedUserAccount?.name||displayUser.name,avatar:speakingAccount==='main'?displayUser.avatar:undefined};
+    const composerUser={...displayUser,name:selectedUserAccount?.name||displayUser.name,avatar:speakingAccount==='main'?displayUser.avatar:''};
     const theme = embedded ? 'island' : settings.theme;
     const social=theme==='weibo'||theme==='twitter';
     const [postFilter,setPostFilter]=useState<'all'|'photos'>('all');
@@ -121,6 +136,24 @@ export default function FriendFeedApp({embedded = false, initialCharacterId, onB
     const [error, setError] = useState(''), [busy, setBusy] = useState(false);
     const alive = useRef(true), saving = useRef(false), loadVersion = useRef(0), actionButton = useRef<HTMLButtonElement>(null);
     const scroller = useRef<HTMLDivElement>(null);
+    const lastTitleTap = useRef<number>();
+    const scrollDetailToTop = (event: React.MouseEvent<HTMLButtonElement>) => {
+        const previous = lastTitleTap.current;
+        if (event.detail === 0 || (previous !== undefined && event.timeStamp - previous <= 350)) {
+            if (scroller.current) scroller.current.scrollTop = 0;
+            lastTitleTap.current = undefined;
+        } else {
+            lastTitleTap.current = event.timeStamp;
+        }
+    };
+    const setThreadExpanded = useCallback((id: string, open: boolean) => {
+        setPanel(current => {
+            if (current?.kind !== 'detail' || !!current.expanded?.has(id) === open) return current;
+            const expanded = new Set(current.expanded);
+            if (open) expanded.add(id); else expanded.delete(id);
+            return {...current, expanded};
+        });
+    }, []);
     const pullDistance=useFriendFeedPullRefresh(scroller,loaded&&(!panel&&!profileId||panel?.kind==='detail')&&(!refreshing&&!(feed.refreshLease&&feed.refreshLease.until>Date.now())||!panel&&!profileId&&!!hasWeiboSources),()=>void refreshHome(panel?.kind==='detail'?panel.postId:undefined));
     const navigateProfile=(id:string)=>{
         if(!id&&!profileId&&!panel)void refreshHome();
@@ -171,9 +204,23 @@ export default function FriendFeedApp({embedded = false, initialCharacterId, onB
     const profileBio=profileOwner==='user'?userAccounts.find(a=>a.id===profileAccount)?.bio:characters.some(c=>c.id===profileOwner)?friendAccounts(settings,{id:profileOwner,name:profileName}).find(a=>a.id===profileAccount)?.bio:undefined;
     useEffect(() => {setLimit(5);}, [circle?.id]);
     useLayoutEffect(() => {
-        if (scroller.current) scroller.current.scrollTop = restoredScroll.current ?? 0;
+        const node = scroller.current;
+        const position = restoredScroll.current;
+        if (node) {
+            node.scrollTop = position?.top ?? 0;
+            if (position?.anchors.length) {
+                const rows = new Map(Array.from(node.querySelectorAll<HTMLElement>('[data-comment-id]'), row => [row.dataset.commentId, row] as const));
+                for (const {id, offset} of position.anchors) {
+                    const row = rows.get(id);
+                    if (!row) continue;
+                    node.scrollTop += row.getBoundingClientRect().top - node.getBoundingClientRect().top - offset;
+                    break;
+                }
+            }
+        }
         restoredScroll.current = undefined;
-    }, [circle?.id, panel?.kind, preferenceSection, profileId, showSetup]);
+        lastTitleTap.current = undefined;
+    }, [circle?.id, panel?.kind, panel?.kind === 'detail' ? panel.postId : undefined, preferenceSection, profileId, showSetup]);
     useLayoutEffect(()=>{if(panel?.kind!=='settings'||!settingsSection)return;
         const target=scroller.current?.querySelector<HTMLElement>(`[data-setup-section="${settingsSection}"]`);
         target?.scrollIntoView?.({block:'start'});target?.focus({preventScroll:true});
@@ -182,11 +229,14 @@ export default function FriendFeedApp({embedded = false, initialCharacterId, onB
     useEffect(() => {setLimit(5);}, [profileId]);
     useEffect(()=>{setPostFilter('all');},[profileId,circle?.id]);
     useEffect(()=>{setProfileId('');},[circle?.id]);
-    const rememberPage = () => panelHistory.current.push({panel, profileId, showSetup, section: settingsSection, scrollTop: scroller.current?.scrollTop ?? 0});
+    const rememberPage = () => panelHistory.current.push({
+        panel: panel?.kind === 'detail' ? {...panel, focusComment: undefined} : panel,
+        profileId, showSetup, section: settingsSection, position: rememberReadingPosition(scroller.current, panel?.kind === 'detail'),
+    });
     const restorePage = () => {
         const previous = panelHistory.current.pop();
         if (!previous) return false;
-        restoredScroll.current = previous.scrollTop;
+        restoredScroll.current = previous.position;
         setPanel(previous.panel); setProfileId(previous.profileId); setShowSetup(previous.showSetup);
         setSettingsSection(previous.section); setError('');
         return true;
@@ -287,7 +337,7 @@ export default function FriendFeedApp({embedded = false, initialCharacterId, onB
         {social&&!panel ? <SocialHeader notifications={inboxButton} theme={theme} profileId={profileId} profileName={profileName} count={profilePosts.length}
             onBack={back} onProfile={navigateProfile} onSettings={()=>open({kind:'settings'})}/> : !panel ? <ClassicHeader backLabel={profileId || showSetup ? '返回上一级' : undefined} notifications={inboxButton} theme={theme as 'island'|'moments'|'insta'|'journal'} onBack={back} onSettings={()=>open({kind:'settings'})} onProfile={()=>navigateProfile('user')} onHome={()=>navigateProfile('')}/> : <header className={`friend-feed-header${settingsPageTitle?' ff-preferences-header':''}`}>
             <button type="button" aria-label="返回上一级" onClick={back} disabled={busy}><ArrowLeft size={21}/></button>
-            <div>{settingsPageTitle?<h1>{settingsPageTitle}</h1>:<><h1><BibiIcon size={28}/>{panel.kind==='inbox'?'互动提醒':panel.kind==='detail'?'动态':panel.kind==='following'?'我的关注':'哔哔'}</h1><span>{panel.kind === 'inbox' ? '回复与留言' : panel.kind === 'detail' ? '评论区' : panel.kind === 'following' ? '角色与微博账号' : panel.kind === 'share' ? '分享给角色' : panel.kind === 'comment' ? '回应这条动态' : panel.kind === 'edit-comment' ? '编辑评论' : panel.kind === 'delete-comment' ? '删除评论' : panel.kind === 'delete' ? '删除动态' : '记录日常'}</span></>}</div>
+            <div>{panel.kind==='detail'?<h1><button type="button" className="ff-detail-title" aria-label="动态，回到评论区顶部" title="双击回到顶部" onClick={scrollDetailToTop}>动态</button></h1>:settingsPageTitle?<h1>{settingsPageTitle}</h1>:<><h1><BibiIcon size={28}/>{panel.kind==='inbox'?'互动提醒':panel.kind==='following'?'我的关注':'哔哔'}</h1><span>{panel.kind === 'inbox' ? '回复与留言' : panel.kind === 'following' ? '角色与微博账号' : panel.kind === 'share' ? '分享给角色' : panel.kind === 'comment' ? '回应这条动态' : panel.kind === 'edit-comment' ? '编辑评论' : panel.kind === 'delete-comment' ? '删除评论' : panel.kind === 'delete' ? '删除动态' : '记录日常'}</span></>}</div>
             <div className="friend-feed-header-actions">{panel.kind!=='inbox'&&inboxButton}{!panel && loaded && <>
                 <button type="button" aria-label="哔哔设置" onClick={() => open({kind: 'settings'})}><GearSix size={21}/></button>
                 <button ref={actionButton} type="button" aria-label="发布新动态" disabled={!circle} onClick={() => circle&&open({kind: 'post',circleId:circle.id})}><Plus size={21}/></button>
@@ -303,7 +353,7 @@ export default function FriendFeedApp({embedded = false, initialCharacterId, onB
                 onApi={()=>open({kind:'api'})} onCharacters={()=>openApp(AppID.Character)}
                 onPreferences={section=>{open({kind:'settings',section});setSettingsSection(section);}} onWeibo={()=>open({kind:'weibo'})} onDone={()=>void finishSetup()}/>}
             {panel?.kind==='inbox'?<FriendFeedInbox feed={feed} onOpen={(postId,commentId)=>open({kind:'detail',postId,focusComment:{id:commentId}})} onReadAll={ids=>{void markFriendInboxRead(ids).catch(e=>setError(e instanceof Error?e.message:'标记已读失败'));}}/>
-            : panel?.kind==='detail'?<FriendFeedPostDetail onReadVisible={readVisibleComments} key={panel.postId} focusComment={panel.focusComment} post={feed.posts.find(p=>p.id===panel.postId&&syncedPostEnabled(feed,p)&&(!settings.hideRealPosts||sourceFilter==='weibo'||!(p.synced||p.authorKind==='external')))} characters={displayCharacters} user={displayUser}
+            : panel?.kind==='detail'?<FriendFeedPostDetail expanded={panel.expanded ?? collapsedThreads} onExpand={setThreadExpanded} onReadVisible={readVisibleComments} key={panel.postId} focusComment={panel.focusComment} post={feed.posts.find(p=>p.id===panel.postId&&syncedPostEnabled(feed,p)&&(!settings.hideRealPosts||sourceFilter==='weibo'||!(p.synced||p.authorKind==='external')))} characters={displayCharacters} user={displayUser}
                 onProfile={(id,accountId)=>{if(openRealProfile(id))return;setProfileReturnPost(panel.postId);setProfileId(accountProfile(id,accountId));setPanel(undefined);}} onComment={()=>open({kind:'comment',postId:panel.postId})}
                 onShare={()=>open({kind:'share',postId:panel.postId})}
                 onEdit={comment=>{open({kind:'edit-comment',postId:panel.postId,commentId:comment.id,original:comment.text,authorName:comment.authorName});setBody(comment.text);}}
@@ -365,7 +415,7 @@ export default function FriendFeedApp({embedded = false, initialCharacterId, onB
                     {!profileId&&postFilter==='all'&&<SocialComposer theme={theme} user={composerUser} onCompose={()=>open({kind:'post',circleId:circle.id})}/>}</>
                 : profileId ? <ClassicProfile theme={theme} name={profileName} avatar={profileAvatar} posts={profilePosts} onSettings={()=>open({kind:'sources'})} coverImage={settings.coverImages?.[profileOwner]} onEditCover={profileOwner==='user'||circle.memberIds.includes(profileOwner)?()=>open({kind:'cover',ownerId:profileOwner}):undefined} {...followingProps}/>
                 : <ClassicCover theme={theme} user={displayUser} count={profilePosts.length} onProfile={()=>navigateProfile('user')} coverImage={settings.coverImages?.user} onEditCover={()=>open({kind:'cover',ownerId:'user'})}/>}
-                {!social&&(!profileId||profileOwner==='user') && <ClassicComposer user={profileOwner==='user'?{...displayUser,name:profileName,avatar:profileAvatar}:composerUser} onCompose={()=>open({kind:'post',circleId:circle.id})}/>}
+                {!social&&(!profileId||profileOwner==='user') && <ClassicComposer user={profileOwner==='user'?{...displayUser,name:profileName,avatar:profileAvatar ?? ''}:composerUser} onCompose={()=>open({kind:'post',circleId:circle.id})}/>}
                 {profileOwner==='user'&&profileAccount==='main'&&<FriendFeedMyWeibo feed={feed} circleId={circle.id} scroller={scroller} onSettings={()=>open({kind:'sources'})}/>}
                 {!profileId&&<nav className="ff-weibo-home-entry"><button className="ff-setting-link" onClick={()=>open({kind:'weibo-home'})}>微博首页 <span>›</span></button></nav>}
                 <nav className="ff-source-filter" aria-label="动态来源显示筛选" title="仅筛选页面显示，不改变角色阅读范围">{([['all','全部'],['weibo','真实微博'],['local','本地动态']] as const).map(([value,label])=><button key={value} type="button" aria-pressed={sourceFilter===value} onClick={()=>{setSourceFilter(value);setLimit(5);}}>{label}</button>)}</nav>

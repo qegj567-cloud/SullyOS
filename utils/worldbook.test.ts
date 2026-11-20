@@ -5,7 +5,7 @@ import {
     isWorldbookEntryActive,
     parseStandardWorldbook,
     resolveWorldbookEntries,
-    serializeStandardWorldbook,
+    serializeSullyWorldbook,
     splitWorldbookSections,
     toMountedWorldbook,
     upsertMountedWorldbooks,
@@ -104,7 +104,19 @@ describe('standard worldbook import', () => {
         });
     });
 
-    it('exports a whole group as a standard worldbook that can be imported again', () => {
+    it('reads legacy arrays and keeps their imported entry settings through a native export', () => {
+        const legacy = { entries: [{ uid: 42, comment: '旧条目', content: '内容', key: ['春'], disable: true }] };
+        const books = parseStandardWorldbook(JSON.stringify(legacy), '旧书');
+        const [restored] = parseStandardWorldbook(serializeSullyWorldbook(books), '新书');
+        expect(restored).toMatchObject({ sourceUid: 42, title: '旧条目', key: ['春'], disable: true });
+    });
+
+    it('reports an unsupported native version before interpreting its entries', () => {
+        const futureBook = { format: 'sullyos-worldbook', version: 2, worldbook: { entries: {} } };
+        expect(() => parseStandardWorldbook(JSON.stringify(futureBook), '测试')).toThrow('暂不支持此糯米机世界书版本');
+    });
+
+    it('exports a distinct SullyOS document and preserves local titles and imported metadata on round trip', () => {
         const source = [{
             ...book({
                 id: 'export-1',
@@ -121,9 +133,11 @@ describe('standard worldbook import', () => {
             updatedAt: 1,
         }];
 
-        const json = serializeStandardWorldbook(source);
+        const json = serializeSullyWorldbook([...source, { ...source[0], sourceUid: 73 }]);
         const raw = JSON.parse(json);
-        expect(raw.entries['0']).toMatchObject({
+        expect(raw).toMatchObject({ format: 'sullyos-worldbook', version: 1 });
+        expect(raw).not.toHaveProperty('entries');
+        expect(raw.worldbook.entries['0']).toMatchObject({
             comment: '导出条目',
             key: ['导出'],
             position: 4,
@@ -132,6 +146,8 @@ describe('standard worldbook import', () => {
         });
 
         const imported = parseStandardWorldbook(json, '重新导入', 2);
+        expect(imported[0].sourceUid).toBeUndefined();
+        expect(imported[1].sourceUid).toBe(73);
         expect(imported[0]).toMatchObject({
             title: '导出条目',
             content: '导出内容',

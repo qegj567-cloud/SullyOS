@@ -35,7 +35,7 @@ const THEMES: Record<ThemeMode, any> = {
         iconDone: 'text-green-500',
         decoLine: 'bg-slate-800',
         modalBg: 'bg-[#0f172a] border border-cyan-500',
-        input: 'bg-slate-800 text-white border-none rounded-none',
+        input: 'bg-slate-800 text-white [color-scheme:dark] placeholder:text-slate-400 border-none rounded-none',
         label: 'QUEST LOG',
         eventLabel: 'SERVER EVENTS'
     },
@@ -588,7 +588,7 @@ const ScheduleApp: React.FC = () => {
                             {filterCharactersByGroup(characters, characterGroups, supervisorGroupId).map(c => (
                                 <button key={c.id} onClick={() => setNewTaskSupervisor(c.id)} className={`flex flex-col items-center gap-2 p-2 rounded-lg border transition-all min-w-[60px] ${newTaskSupervisor === c.id ? `${currentThemeMode === 'minimal' ? 'shadow-[inset_2px_2px_5px_#d1d9e6,inset_-2px_-2px_5px_#ffffff]' : 'border-current'}` : 'border-transparent opacity-50'}`}>
                                     <TokenImg value={c.avatar} className="w-10 h-10 rounded-md object-cover" />
-                                    <span className={`text-[10px] font-bold whitespace-nowrap ${theme.text}`}>{c.name}</span>
+                                    <span className="text-[10px] font-bold whitespace-nowrap text-slate-700">{c.name}</span>
                                 </button>
                             ))}
                         </div>
@@ -611,7 +611,7 @@ const ScheduleApp: React.FC = () => {
                             {filterCharactersByGroup(characters, characterGroups, anniCharGroupId).map(c => (
                                 <button key={c.id} onClick={() => setNewAnniChar(c.id)} className={`flex flex-col items-center gap-2 p-2 rounded-lg border transition-all min-w-[60px] ${newAnniChar === c.id ? `${currentThemeMode === 'minimal' ? 'shadow-[inset_2px_2px_5px_#d1d9e6,inset_-2px_-2px_5px_#ffffff]' : 'border-current'}` : 'border-transparent opacity-50'}`}>
                                     <TokenImg value={c.avatar} className="w-10 h-10 rounded-md object-cover" />
-                                    <span className={`text-[10px] font-bold whitespace-nowrap ${theme.text}`}>{c.name}</span>
+                                    <span className="text-[10px] font-bold whitespace-nowrap text-slate-700">{c.name}</span>
                                 </button>
                             ))}
                         </div>

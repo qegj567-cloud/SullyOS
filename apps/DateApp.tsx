@@ -26,6 +26,7 @@ import { markAmsgStateDirty, startAmsgChatPresence, stopAmsgChatPresence } from 
 import { hasActiveAiTask } from '../utils/amsg2Tasks';
 import { collectInPersonNotices } from '../utils/amsg2TaskContext';
 import { ActiveMsgStore } from '../utils/activeMsgStore';
+import { AMSG_GLOBAL_CONFIG_EVENT, isAmsg2GloballyEnabled } from '../utils/amsgGlobalGate';
 import { armDateLeaveReminder, disarmDateLeaveReminder, startLocalDateLeaveTimer } from '../utils/dateLeaveReminder';
 import { syncCloudAwayTaskFromRecent } from '../utils/awayMessage';
 import StoryTheater from '../components/date/story/StoryTheater';
@@ -194,12 +195,28 @@ const DateApp: React.FC = () => {
     // 页面被隐藏（切出 SullyOS、锁屏）时也停：桌面浏览器的后台标签计时器只是变慢、不会停，
     // 不停的话租约会断断续续续上，云端以为人还在面前，见面离开提醒就一直发不出去。
     const [pageVisible, setPageVisible] = useState(() => document.visibilityState === 'visible');
+    const [amsgGlobalEnabled, setAmsgGlobalEnabled] = useState(true);
     useEffect(() => {
         const onVisibility = () => setPageVisible(document.visibilityState === 'visible');
         document.addEventListener('visibilitychange', onVisibility);
         return () => document.removeEventListener('visibilitychange', onVisibility);
     }, []);
-    const inPersonLeaseCharId = pageVisible && (mode === 'peek' || mode === 'session')
+    useEffect(() => {
+        let alive = true;
+        void ActiveMsgStore.getGlobalConfig()
+            .then((cfg) => { if (alive) setAmsgGlobalEnabled(isAmsg2GloballyEnabled(cfg)); })
+            .catch(() => {});
+        const onGlobalCfg = (ev: Event) => {
+            const detail = (ev as CustomEvent).detail;
+            setAmsgGlobalEnabled(isAmsg2GloballyEnabled(detail));
+        };
+        window.addEventListener(AMSG_GLOBAL_CONFIG_EVENT, onGlobalCfg);
+        return () => {
+            alive = false;
+            window.removeEventListener(AMSG_GLOBAL_CONFIG_EVENT, onGlobalCfg);
+        };
+    }, []);
+    const inPersonLeaseCharId = pageVisible && amsgGlobalEnabled && (mode === 'peek' || mode === 'session')
         && char?.activeMsg2Config?.enabled && hasActiveAiTask(char.activeMsg2Config)
         ? char.id : undefined;
     useEffect(() => {
@@ -907,7 +924,7 @@ const DateApp: React.FC = () => {
                         <button onClick={() => setMeetSurface('story')} className='rounded-lg py-2 text-xs font-bold text-[#8f7bb5]'>剧情</button>
                     </div>
                     {/* 分组筛选（没建分组时不渲染）。切组后回到第一页 */}
-                    <CharacterGroupFilterBar characters={characters} groups={characterGroups} dark
+                    <CharacterGroupFilterBar characters={characters} groups={characterGroups}
                         value={selectGroupId}
                         onChange={(id) => { setSelectGroupId(id); setSelectPage(0); pagerRef.current?.scrollTo({ left: 0 }); }}
                         className="px-4 mb-3" />

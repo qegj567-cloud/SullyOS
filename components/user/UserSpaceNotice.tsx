@@ -26,11 +26,11 @@ export default function UserSpaceNotice() {
     const needsSelection = characters.length > 0 && (location?.enabled || realtimeConfig.weatherEnabled)
         || characters.length + groups.length > 0 && servers.some(s => s.enabled);
     return createPortal(<div role="dialog" aria-modal="true" aria-label="用户空间感知设置" className="fixed inset-0 z-[250] bg-black/40 flex items-center justify-center p-5">
-        <div className="bg-white rounded-2xl p-5 max-w-sm w-full space-y-3 max-h-[80vh] overflow-y-auto">
+        <div className="bg-white text-slate-800 rounded-2xl p-5 max-w-sm w-full space-y-3 max-h-[80vh] overflow-y-auto">
             <h2 className="font-bold">已切换为 {userProfile.name}</h2>
             <p className="text-sm text-slate-500">角色和记录已切换，系统设置不用重配。</p>
             {location?.enabled && characters.length > 0 && <><p className="text-sm font-medium">允许哪些角色感知你的位置？</p>{characters.map(c => <label key={c.id} className="flex gap-2 py-1 text-sm"><input type="checkbox" checked={ids.includes(c.id)} onChange={e => setIds(old => e.target.checked ? [...old, c.id] : old.filter(id => id !== c.id))} />{c.name}</label>)}<p className="text-xs text-slate-400">未选择时，所有角色都看不到位置。</p></>}
-            {realtimeConfig.weatherEnabled && characters.length > 0 && <details><summary className="text-sm">角色天气城市</summary>{characters.map(c => <label key={c.id} className="block text-xs my-2">{c.name}<input aria-label={`${c.name}的天气城市`} className="w-full border rounded-lg p-2 mt-1" value={cities[c.id] || ''} placeholder={realtimeConfig.weatherCity || '沿用系统城市'} onChange={e => setCities(old => ({ ...old, [c.id]: e.target.value }))} /></label>)}</details>}
+            {realtimeConfig.weatherEnabled && characters.length > 0 && <details><summary className="text-sm">角色天气城市</summary>{characters.map(c => <label key={c.id} className="block text-xs my-2">{c.name}<input aria-label={`${c.name}的天气城市`} className="w-full border rounded-lg p-2 mt-1 text-slate-800 placeholder:text-slate-400 bg-white" value={cities[c.id] || ''} placeholder={realtimeConfig.weatherCity || '沿用系统城市'} onChange={e => setCities(old => ({ ...old, [c.id]: e.target.value }))} /></label>)}</details>}
             {servers.filter(s => s.enabled && characters.length + groups.length > 0).map(server => <details key={server.id}><summary className="text-sm">工具：{server.name}</summary>
                 <p className="text-xs text-slate-400 my-2">选择可使用此工具的聊天；不选择则不可用。</p>
                 {[...characters, ...groups].map(c => <label key={c.id} className="flex gap-2 py-1 text-xs"><input type="checkbox" checked={!server.charIds?.length || server.charIds.includes(c.id)} onChange={e => setServers(all => all.map(s => {

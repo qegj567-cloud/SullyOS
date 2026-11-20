@@ -3,5 +3,6 @@ module.exports = {
   theme: {extend:{
     fontFamily:{sans:['var(--app-font, system-ui)','sans-serif']},
     colors:{primary:'hsl(var(--primary-hue), var(--primary-sat), var(--primary-lightness))','primary-focus':'hsl(var(--primary-hue), var(--primary-sat), calc(var(--primary-lightness) - 10%))','primary-light':'hsl(var(--primary-hue), var(--primary-sat), 92%)',surface:'rgba(255,255,255,.75)','surface-glass':'rgba(255,255,255,.35)'},
+    opacity:Object.fromEntries(Array.from({length:101},(_,i)=>[i,String(i/100)])),
   }},
 };

@@ -18,7 +18,7 @@ export default function FriendFeedShareCard({share}:{share:FriendFeedShareSnapsh
     const localCover=typeof local==='string'&&(isBlobRef(local)||local.startsWith('data:image/'))?local:undefined;
     const coverValue=failed===0&&localCover?localCover:failed===0?safeCover:failed===1&&safeCover?getProxyWorkerUrl().replace(/\/+$/,'')+'/weibo-image?url='+encodeURIComponent(safeCover):undefined;
     const source=share.source?.platform==='weibo'?'微博':'哔哔';
-    return <details className="friend-feed-share-card">
+    return <details className="sully-chat-card-face friend-feed-share-card">
         <summary><div className="ff-share-card-copy"><small>{source} · {share.authorName}</small><p>{share.text||share.imageCards?.[0]?.caption||'配图'}</p>
             <span><ChatCircle size={13}/>{share.comments.length} 条讨论{share.originalComments.length>0&&` · ${share.originalComments.length} 条原评论`}<ArrowUpRight size={14}/></span></div>
             {coverValue&&<TokenImg alt="分享帖子的封面" referrerPolicy="no-referrer" loading="lazy" value={coverValue} onError={()=>setFailed(n=>n+1)}/>}

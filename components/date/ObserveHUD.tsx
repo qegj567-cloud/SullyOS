@@ -19,6 +19,8 @@ interface ObserveHUDProps {
     variant?: 'hud' | 'card';
     charName?: string;
     config?: DateObserveConfig;
+    /** 浅色阅读底（daylight / parchment）下 crystal 卡片改用深字亮底。 */
+    lightSurface?: boolean;
 }
 
 // ── 样式主题 ─────────────────────────────────────────────────────────
@@ -180,6 +182,32 @@ const THEMES: Record<DateObserveStyleId, Theme> = {
     },
 };
 
+// 浅色阅读卡底上的水晶皮肤使用深紫墨字色，避免白字压在浅底上发虚
+const CRYSTAL_LIGHT_CARD_THEME: Theme = {
+    container: {
+        background: 'linear-gradient(135deg,rgba(253,242,248,0.88),rgba(243,232,255,0.84) 55%,rgba(224,242,254,0.86))',
+        border: '1px solid rgba(192,132,252,0.42)',
+        boxShadow: '0 8px 24px rgba(168,85,247,0.12), inset 0 1px 0 rgba(255,255,255,0.85)',
+        backdropFilter: 'blur(10px)',
+        WebkitBackdropFilter: 'blur(10px)',
+    },
+    containerClass: 'rounded-2xl',
+    fontClass: '',
+    topLineClass: 'bg-gradient-to-r from-transparent via-fuchsia-300/70 to-transparent',
+    corners: false, scanline: false, pulse: true,
+    headerLabel: 'OBSERVE',
+    headerLabelClass: 'text-fuchsia-800/90 tracking-[0.3em]',
+    headerSubClass: 'text-purple-700/60',
+    headerBorderClass: 'border-fuchsia-200/70',
+    dotClass: 'bg-fuchsia-500',
+    glyphClass: 'text-fuchsia-600/90',
+    enClass: 'text-purple-700/70',
+    cnClass: 'text-purple-900/65',
+    valueClass: 'text-slate-800',
+    btnClass: 'text-purple-700/75 hover:text-purple-900 hover:bg-purple-500/10',
+    cornerClasses: ['border-fuchsia-300/60', 'border-fuchsia-300/60', 'border-fuchsia-300/60', 'border-fuchsia-300/60'],
+};
+
 const getTheme = (id?: DateObserveStyleId): Theme => THEMES[id || 'hologram'] || THEMES.hologram;
 
 /** 合并默认维度 + 自定义维度，按字段顺序产出渲染行（仅保留有值的） */
@@ -232,12 +260,14 @@ const PanelHeader: React.FC<{ theme: Theme; charName?: string; right?: React.Rea
     </div>
 );
 
-const ObserveHUD: React.FC<ObserveHUDProps> = ({ observation, variant = 'hud', charName, config }) => {
+const ObserveHUD: React.FC<ObserveHUDProps> = ({ observation, variant = 'hud', charName, config, lightSurface = false }) => {
     // Hooks 必须无条件、且在任何 early-return 之前调用（React Rules of Hooks）。
     const [collapsed, setCollapsed] = useState(false);
     const [expanded, setExpanded] = useState(false); // 独立全屏查看
 
-    const theme = getTheme(config?.style);
+    const theme = variant === 'card' && lightSurface && config?.style === 'crystal'
+        ? CRYSTAL_LIGHT_CARD_THEME
+        : getTheme(config?.style);
     const rows = buildRows(observation, config, charName);
     if (rows.length === 0) return null;
 

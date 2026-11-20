@@ -94,6 +94,7 @@ CREATE TABLE IF NOT EXISTS po_poems (
   id           TEXT    PRIMARY KEY,
   booklet_id   TEXT    NOT NULL,
   title        TEXT    NOT NULL,
+  brief        TEXT,
   target_lines INTEGER NOT NULL,               -- roll 到的篇幅（总句数）
   line_count   INTEGER NOT NULL DEFAULT 0,
   status       TEXT    NOT NULL DEFAULT 'open', -- open / sealed
@@ -116,3 +117,7 @@ CREATE TABLE IF NOT EXISTS po_poem_lines (
   created_at INTEGER NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_po_poem_lines_seq ON po_poem_lines(poem_id, seq);
+
+CREATE TABLE IF NOT EXISTS po_config (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS po_signal_lock (id TEXT PRIMARY KEY, holder TEXT, expires_at INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS po_poem_writers (poem_id TEXT NOT NULL, device TEXT NOT NULL, turns INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (poem_id, device));

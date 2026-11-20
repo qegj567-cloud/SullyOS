@@ -18,7 +18,7 @@
 import type { EmbeddingConfig, RemoteVectorConfig } from './types';
 import type { RelatedMemoryRef } from './extraction';
 import { getEmbeddings } from './embedding';
-import { vectorSearch, isRemoteSearchBroken } from './vectorSearch';
+import { vectorSearch, canSearchRemote } from './vectorSearch';
 import { ensureFloat32 } from './db';
 
 /** 从 localStorage 读取远程向量配置，判断本次是走远程还是本地路径。
@@ -103,13 +103,8 @@ export async function fetchRelatedMemoriesForExtraction(
         // 改成：本地路径**一次性**加载向量 + 节点索引，内存里串行打分；远程路径保留
         // concurrency 4 的 Promise.all（每个 query 是独立 HTTP 无法合并）。
         //
-        // ⚠️ 远程熔断：isRemoteSearchBroken() 在首次 Supabase RPC 抛网络错误
-        //（CORS / 500 无 CORS 头）后会置 true，从那一刻起本会话直接跳过远程
-        // 走"一次性加载、内存里串行打分"的本地快路径 —— 否则迁移批量
-        // 查询会每条都踩一次 CORS 失败 + 回退到本地 getAllByCharId，15 次冗余
-        // 全量加载能把 tab 冻住好几秒直到 GC。
         const remoteCfg = getLocalRemoteConfig();
-        let usingRemote = !!(remoteCfg?.enabled && remoteCfg?.initialized) && !isRemoteSearchBroken();
+        let usingRemote = await canSearchRemote(remoteCfg, charId);
 
         // 本地快路径的 state（remote 中途熔断时复用，避免重复加载）
         let localVectors: any[] | null = null;
@@ -153,7 +148,7 @@ export async function fetchRelatedMemoriesForExtraction(
             for (let i = 0; i < vectors.length; i += CONCURRENCY) {
                 // 每轮开始前重新检查熔断：只要前一批里有任何一条触发 markRemoteBroken，
                 // 剩余查询就立刻切到本地快路径，不再踩 CORS。
-                if (isRemoteSearchBroken()) {
+                if (!await canSearchRemote(remoteCfg, charId)) {
                     usingRemote = false;
                     break;
                 }

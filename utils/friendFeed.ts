@@ -3,7 +3,7 @@ import {DB, openDB} from './db';
 import {createLocalId} from './localId.js';
 import {activeFriendAccounts, friendAccountRef, normalizeFriendGraph, setFriendAccountFollow, validFriendGraph, type FriendAccountGraph} from './friendFeedGraph';
 import {normalizeFriendIdentityName} from './friendFeedIdentity';
-import {friendFeedExcerpt} from './friendFeedMaterial';
+import {friendFeedExcerpt, friendCommentKey, removedCommentFingerprint} from './friendFeedMaterial';
 import {FRIEND_POST_IMAGE_LIMIT, isLocalFriendImage, validFriendImageCards,friendPostText,type FriendImageCard} from './friendFeedImages';
 import type {FriendFeedImage} from './friendFeedSource';
 import type {CharacterProfile} from '../types';
@@ -44,6 +44,7 @@ export interface FriendComment {
 }
 export interface FriendPost extends FriendComment {
     discussionRevision?: number;
+    removedCommentKeys?: string[];
     imageCards?:FriendImageCard[];
     images?: FriendFeedImage[];
     circleId: string;
@@ -136,6 +137,7 @@ export function parseFriendFeed(raw: string | null): FriendFeedState {
             && (p.images === undefined || Array.isArray(p.images) && p.images.length <= FRIEND_POST_IMAGE_LIMIT
                 && p.images.every((i: any) => i && (isLocalFriendImage(i.url) || i.url === '') && i.thumbnail === i.url))
             && (p.discussionRevision === undefined || Number.isSafeInteger(p.discussionRevision) && p.discussionRevision >= 0)
+            && (p.removedCommentKeys === undefined || ids(p.removedCommentKeys) && p.removedCommentKeys.length <= 128)
             && Array.isArray(p.comments) && p.comments.every(comment)
             && (p.source === undefined || isFriendFeedSource(p.source))
             && (p.weiboComments === undefined || p.source?.platform === 'weibo' && isWeiboCommentPage(p.weiboComments))
@@ -360,6 +362,12 @@ export async function commentOnFriendPost(postId: string, authorName: string, bo
     announceFriendFeedHistory(changed);
     return id;
 }
+function rememberReplacedComment(post: FriendPost, comment: FriendComment) {
+    if (comment.authorId === 'user') return;
+    const key = removedCommentFingerprint(friendCommentKey(comment.authorId, comment.text));
+    post.removedCommentKeys = [...(post.removedCommentKeys || []).filter(id => id !== key), key].slice(-128);
+}
+
 /** Local discussion edits preserve existing historical memory cards. */
 export async function editFriendComment(postId: string, commentId: string, body: string, expectedText: string) {
     const text = cleanText(body, FRIEND_COMMENT_TEXT_LIMIT, '评论');
@@ -369,6 +377,7 @@ export async function editFriendComment(postId: string, commentId: string, body:
         if (!post || !comment) throw new Error('这条评论已被删除');
         if (comment.text !== expectedText) throw new Error('评论已在其他窗口修改，请返回后重新编辑');
         if (comment.text === text) return;
+        rememberReplacedComment(post, comment);
         comment.text = text;
         comment.editedAt = Date.now();
         post.discussionRevision = (post.discussionRevision || 0) + 1;
@@ -382,6 +391,7 @@ export async function deleteFriendComment(postId: string, commentId: string, exp
         const comment = post?.comments.find(c => c.id === commentId);
         if (!post || !comment) return;
         if (comment.text !== expectedText) throw new Error('评论已在其他窗口修改，请返回后重新确认');
+        rememberReplacedComment(post, comment);
         post.comments = post.comments.filter(c => c.id !== commentId);
         post.discussionRevision = (post.discussionRevision || 0) + 1;
         // Keep replies, but never keep the deleted text in their quotes.

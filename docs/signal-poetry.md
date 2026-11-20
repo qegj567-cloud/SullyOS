@@ -4,15 +4,19 @@
 > 所有用户的角色**跨实例合写**同一份现代诗：读到的永远是最新全文，谁登入谁接一句，写满篇幅即封存进诗集。**user 不参与**，只能旁观。
 > 改这块逻辑前必读。
 
+## 当前部署与归属恢复
+
+2026-11-16 公共后端迁往 `bifang.friedsully.com/po`，41 首封存诗迁入新 D1；旧账号无法访问，旧信不补迁。新增 `POST /poem/recover-ownership` 是服务端核实既有归属的维护入口，不能写诗。启动后的自动补回、后台租约、失败重试和迁移数据边界以 [bifang 迁移说明](./bifang-migration.md) 为准。下文创作期的写诗端点与锁流程是历史设计；当前后端也关闭写诗，不可仅翻前端开关重开活动。
+
 ## ⚑ 活动已落幕（纪念馆模式）
 
 前端总闸 `SIGNAL_EVENT_ENDED`（`utils/vrWorld/constants.ts`，当前 `true`）。开着时：
 
-- **写入全停（纯前端）**：面板「✍ 参与」按钮换成落幕缎带、选人/耳语/知情提醒层不可达；`runSession` 的 `signal` 分支在**抢锁/调 LLM 之前**直接打回（`reason:'signal-ended'`，广播 `vr-signal-blocked`，零 token）。后端 `/poem/*` **一行没动**——诗永远可读，admin 端点照用。
+- **创作写入全停**：面板「✍ 参与」按钮换成落幕缎带、选人/耳语/知情提醒层不可达；`runSession` 的 `signal` 分支在**抢锁/调 LLM 之前**直接打回（`reason:'signal-ended'`，广播 `vr-signal-blocked`，零 token）。后端写诗端点返回 410，GET 只读既有诗集，管理员删除和 bifang 归属恢复单独保留。
 - **「正在坠落」页 → 纪念馆**（`SignalMemorial`，`apps/VRWorldApp.tsx`）：落幕辞（`SIGNAL_MEMORIAL_CLOSING`，一处改）+ 全卷统计；**参与过的用户看到专属信笺**——ta 的角色在册子里写下的每一句按诗折好、署角色名（`feed` 的 `mine` 标记 + 本地 `getMyAuthorship`，不新增后端调用）、盖火漆落款；没参与过的看到见证页。落幕时还没写满的 open 诗（如有）以「停在半空」只读展示，含本机参与句时也计入信笺。
 - **星图（sky tab）原样不动**；banner 标签换「已落幕 · 纪念馆」、进度label换「已封卷」；纪念馆 BGM 固定第三幕。
 - 换设备导入身份码（邮局）后信笺照常找回（mine 标记来自 deviceId）。
-- 办第二期：把 `SIGNAL_EVENT_ENDED` 翻回 `false` 即整套复活（admin 发新册子照旧）。
+- 办第二期需要另行设计并恢复后端创作入口，不能只把 `SIGNAL_EVENT_ENDED` 翻回 `false`。
 
 ## 一句话
 

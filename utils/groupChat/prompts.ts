@@ -34,11 +34,12 @@ export function buildEmojiContextStr(
 
     // Filter categories: include if no restriction, or if at least one group member is allowed
     const visibleCats = categories.filter(c => {
+        if (c.personalOnly) return false;
         if (!c.allowedCharacterIds || c.allowedCharacterIds.length === 0) return true;
         return c.allowedCharacterIds.some(id => memberIds.includes(id));
     });
     const hiddenCatIds = new Set(categories.filter(c => !visibleCats.some(vc => vc.id === c.id)).map(c => c.id));
-    const visibleEmojis = hiddenCatIds.size === 0 ? emojis : emojis.filter(e => !e.categoryId || !hiddenCatIds.has(e.categoryId));
+    const visibleEmojis = hiddenCatIds.size === 0 ? emojis : emojis.filter(e => !hiddenCatIds.has(e.categoryId || 'default'));
 
     const grouped: Record<string, string[]> = {};
     const catMap: Record<string, string> = { 'default': '通用' };
@@ -146,7 +147,7 @@ export function buildGroupHistoryBlock(
                 content = '[图片]';
             }
         } else if (m.type === 'emoji') {
-            content = `[表情包: ${stickerNameFromUrl(emojis, rawText.trim())}]`;
+            content = `[表情包: ${m.metadata?.stickerName || stickerNameFromUrl(emojis, rawText.trim())}]`;
         } else if (m.type === 'transfer') {
             // 回执行自带完整句子（[系统: X 领取了 Y 的红包]），不加名字前缀
             if (m.metadata?.packetReceipt) { lines.push(`${timePrefix}${packetHistoryLine(m, nameOf, now)}`); return; }

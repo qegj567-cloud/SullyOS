@@ -6,6 +6,7 @@ import type {BeautyShare} from './beautyShareContract';
 async function localPreset(preset:DecorationPreset):Promise<DecorationPreset>{
  const next=validateDecoration(preset);
  if(next.parts.collaboration)next.parts.collaboration.customCss=await localizeCssImages(next.parts.collaboration.customCss);
+ if(next.parts.profile)next.parts.profile.customCss=await localizeCssImages(next.parts.profile.customCss);
  if(next.parts.css!==undefined)next.parts.css=await localizeCssImages(next.parts.css);
  return next;
 }

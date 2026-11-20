@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 360" preserveAspectRatio="none">
+  <defs>
+    <linearGradient id="page" x2=".77" y2="1"><stop stop-color="#ebd8cd"/><stop offset=".35" stop-color="#f9efea"/><stop offset=".71" stop-color="#fff8ed"/><stop offset="1" stop-color="#f1deca"/></linearGradient>
+    <linearGradient id="petal" x2=".7" y2="1"><stop stop-color="#fff7dc"/><stop offset=".7" stop-color="#eccca1"/><stop offset="1" stop-color="#ca9a75"/></linearGradient>
+    <linearGradient id="flap" x2=".6" y2="1"><stop stop-color="#fdf3dc"/><stop offset=".68" stop-color="#f0d9ce"/><stop offset="1" stop-color="#d6b5a7"/></linearGradient>
+    <radialGradient id="wax" cx=".35" cy=".27" r=".9"><stop stop-color="#d6a98c"/><stop offset=".5" stop-color="#bb8667"/><stop offset=".8" stop-color="#9c674c"/><stop offset="1" stop-color="#d6ae84"/></radialGradient>
+    <pattern id="grid" width="9" height="9" patternUnits="userSpaceOnUse"><path d="M9 0H0v9" fill="none" stroke="#bf9e70" opacity=".38" stroke-width=".6"/></pattern>
+    <g id="bloom"><g id="one"><path d="M0 0Q-5-2-4-6Q-2-8 0-6Q3-8 4-5Q4-2 0 0Z" fill="url(#petal)" stroke="#edc89e" stroke-width=".3"/></g><use href="#one" transform="rotate(72)"/><use href="#one" transform="rotate(144)"/><use href="#one" transform="rotate(216)"/><use href="#one" transform="rotate(288)"/><circle r="1.4" fill="#b68751"/></g>
+    <g id="branch"><g fill="none" stroke="#aa7854" stroke-linecap="round"><path d="M368-5Q326 28 273 30" stroke-width="2.2"/><path d="M335 15q-3 14-16 26m-14-15q-7-4-15-4m31-1q-5-10-13-13m43-2q-5 17-2 23" stroke-width="1.2"/></g><g fill="#cfa970"><path d="M285 29q-13-3-18 3 12 5 18-3m39-14q2-11 10-13-2 9-10 13m-8 24q-9 0-16 8 13 0 16-8"/></g><use href="#bloom" x="332" y="17"/><use href="#bloom" x="307" y="26"/><use href="#bloom" transform="translate(293 22) scale(.68)"/><use href="#bloom" transform="translate(319 38) rotate(26) scale(.77)"/><use href="#bloom" transform="translate(348 26) scale(.61)"/></g>
+    <filter id="soft"><feGaussianBlur stdDeviation="1.7"/></filter>
+  </defs>
+  <path fill="url(#page)" d="M0 0h360v360H0z"/>
+  <g fill="none" stroke="#fff9de"><path d="M1 163C65 77 31 2 112-12M-8 65Q40 41 52-10" stroke-width=".75"/><path d="M3 304q71 28 144 53" stroke-width=".5"/></g>
+  <use href="#branch" transform="translate(17 15) rotate(5 340 0)" opacity=".18" filter="url(#soft)"/><use href="#branch"/>
+  <g transform="rotate(10 30 350)"><path d="M-5 322H105v48H-5z" fill="#f8edda" stroke="#cdb898" stroke-width=".75"/><path d="M-5 326H101v40H-5z" fill="url(#grid)"/></g>
+  <g transform="rotate(-12 293 347)"><rect x="206" y="310" width="161" height="75" rx="1.6" fill="#f9edde" stroke="#caa88e" stroke-width=".8"/><path d="m207 311 73 48 86-47" fill="url(#flap)" stroke="#c2a08a" stroke-width=".9"/><path d="m209 380 52-34m51 0 53 34" fill="none" stroke="#d0b59f" stroke-width=".8"/><path d="m205 342 164 2" stroke="#b5895d" stroke-width="1.8"/><path d="m205 341 164 2" stroke="#f8d397" stroke-width=".72"/>
+  <g transform="translate(283 345)"><path d="M-12-3Q-12-12-5-12Q1-16 7-11Q13-10 13-3Q16 4 9 10Q4 16-3 12Q-13 13-13 5Z" fill="url(#wax)" stroke="#ae795d" stroke-width="1"/><circle r="9.3" fill="none" stroke="#e6bd97" stroke-width=".8"/><g fill="none" stroke="#f0caa8" stroke-width=".8"><path id="pet" d="M0 0C-6-2-3-9 0-5Q3-8 3-5Q3-2 0 0Z"/><use href="#pet" transform="rotate(72)"/><use href="#pet" transform="rotate(144)"/><use href="#pet" transform="rotate(216)"/><use href="#pet" transform="rotate(288)"/></g></g></g>
+</svg>

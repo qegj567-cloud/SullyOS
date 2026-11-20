@@ -1,5 +1,7 @@
 import { INSTANT_INPUT_NAMESPACE, INSTANT_INPUT_TTL_DAYS, parseInstantInputEnvelope, parseInstantInputRef } from './instantInput';
 import { installAnthropicFetch } from '../../../utils/anthropicApi';
+import { isMonthlyRecallEnabled, stripDisabledMonthlyRecall } from '../../../utils/monthlyRecall';
+import { INSTANT_API_CALLS_RESULT_KIND, makeModelCall, modelCallCauses, type AmsgModelCall, type AmsgCallCause } from '../../../utils/amsgApiCallRecords';
 
 // Stateless endpoint adapter also covers the upstream SDK's private LLM transport.
 // No request/tenant credentials are retained in the isolate.
@@ -91,6 +93,7 @@ import {
   type AmsgDailySends,
   type AmsgLimits,
   buildLimitsBrief,
+  buildUnansweredLimitRejectMessage,
   bumpDailySends,
   checkSelfScheduleRules,
   dayKeyInZone,
@@ -218,6 +221,7 @@ import { buildTickReport, readOverdueTasks, recordTickOutcome, type TickReportDb
 import type { ActiveMsg2TaskRecord } from '../../../types';
 import { createHybridPushTransport, isFcmConfigured, type NativeFcmEnv } from './nativeFcm';
 import { configureSkipDiagnostics, isDebugFlagOn, logSkipDiagnostic } from './skipDiagnostics';
+import { buildRescueReport, handleRescueRequest, isRescueActive, matchRescueRoute, observeRescueQuietly, type RescueDeps } from './rescue';
 
 interface Env extends NativeFcmEnv {
   AMSG_MASTER_KEY: string;
@@ -244,7 +248,17 @@ interface Env extends NativeFcmEnv {
    * 那种情况由 /instant-chat 明确报「需要更新 Worker」，见 instantChat.kickInstantTick。
    */
   INSTANT_TICK?: InstantTickNamespace;
+  /**
+   * 救援口令。设了（且够长）就开启 /rescue：凭它把云端数据解密导出，给本地数据被清空、
+   * 没有备份的人临时取数据用。开着期间会留痕、推送提醒、暂停 cron 投递。见 ./rescue。
+   */
+  AMSG_RESCUE_TOKEN?: string;
 }
+
+/** 救援模块要的推送通道：跟 /test-push 同一份 transport。 */
+const rescueDeps = (env: Env): RescueDeps => ({
+  sendPush: (subscription, payload) => buildWorkerConfig(env).webpush.sendNotification(subscription as never, payload),
+});
 
 // ─── 满血 fire-time hooks（amsg-server 2.6.0-next.4+：含 ctx.scratch / 存储层大值分块） ───
 //
@@ -567,6 +581,10 @@ interface FireStash {
   llmRoundsWithUsage?: number;
   promptTokensAcc?: number;
   completionTokensAcc?: number;
+  /** 即时对话每次模型请求独立用量；nextCallCauses 说明下一次为什么需要继续请求。 */
+  modelCalls?: AmsgModelCall[];
+  nextCallCauses?: AmsgCallCause[];
+  modelCallsReceiptSent?: boolean;
 }
 
 const getFireStash = (scratch: Record<string, unknown> | undefined): FireStash | undefined =>
@@ -608,6 +626,7 @@ const buildToolCtx = (
     name: pack.charName,
     xhsEnabled: pack.xhsEnabled,
     activeMemoryMonths: pack.activeMemoryMonths,
+    monthlyRecallEnabled: pack.monthlyRecallEnabled,
     memories: pack.memories,
   };
 
@@ -1120,6 +1139,7 @@ export const amsgFireSettled = async (
      * 老版本上没有——那样每日计数里就只有「发了几次」，没有「调了几次模型」。
      */
     llmCalls?: unknown;
+    emitResult?: EmitResult;
     /**
      * 这一批有没有整批落进服务端收件箱（上游 amsg-server 新版才报）。落进去了就说明内容
      * 已经定了：推送这一跳就算没成，上游重试时只会原样补推、不会重新生成，客户端上线
@@ -1140,6 +1160,28 @@ export const amsgFireSettled = async (
   if (cancelled) stash.selfLogTexts = null;
   const committed = !cancelled && (info.outboxed === true || stash.actionResultCommitted === true);
   const delivered = committed || (info.sentCount ?? 0) > 0;
+
+  // 成功正文/动作已在末条带上逐次用量。失败、取消、空回复也要留下已发生的调用，
+  // 走可靠结果箱补收；不把「工具失败」或「推送失败」冒充一次新的模型请求。
+  // 取消后的 emitResult 仍受 SDK 租约约束，禁止写入时只能保留未知，不绕过门禁。
+  if (stash.instant && stash.taskUuid && !committed && !stash.modelCallsReceiptSent) {
+    const calls = stash.modelCalls ?? (stash.modelCalls = []);
+    const attempted = typeof info.llmCalls === 'number' && Number.isInteger(info.llmCalls)
+      ? Math.min(info.llmCalls, 32) : calls.length;
+    while (calls.length < attempted) {
+      const status = (info.error as { llmStatus?: unknown } | null)?.llmStatus;
+      calls.push(makeModelCall({ index: calls.length + 1, completedAt: Date.now(), causes: stash.nextCallCauses ?? [], ok: false,
+        ...(typeof status === 'number' ? { status } : {}),
+      }));
+    }
+    if (calls.length && info.emitResult) {
+      try {
+        await info.emitResult({ resultKind: INSTANT_API_CALLS_RESULT_KIND, charId: stash.charId,
+          charName: stash.toolCtx.char.name, taskUuid: stash.taskUuid, calls, notification: { show: false } });
+        stash.modelCallsReceiptSent = true;
+      } catch (error) { console.warn('[amsg:usage] 逐次调用记录写入结果箱失败', error); }
+    }
+  }
 
   // 这一轮往云端回写的条目攒在一起，收尾一次写完。
   const stateWrites: Array<{ key: string; value: string | null }> = [];
@@ -1527,7 +1569,12 @@ export const runFireScheduleTool = async (
     return {
       ok: false,
       reason: 'unanswered_limit',
-      message: `对方还没回复，这期间你已经主动找了 / 排了 ${committedSends} 次，用户设的连发上限是 ${unansweredLimit} 次——这次别排了，等 ta 回复再说。`,
+      message: buildUnansweredLimitRejectMessage({
+        count: committedSends,
+        limit: unansweredLimit,
+        context: stash.instant ? 'chat' : 'fire',
+        canManageTasks: stash.fireToolNames?.has(AMSG_FIRE_CANCEL_TOOL) ?? false,
+      }),
     };
   }
   if (stash.scheduledTasks.length >= MAX_FIRE_SCHEDULES) {
@@ -2548,6 +2595,8 @@ export const amsgHooks = {
         dailyRemaining: Number.isFinite(limits.dailySendCap)
           ? Math.max(0, limits.dailySendCap - sentToday - (instant ? 0 : 1))
           : undefined,
+        context: instant ? 'chat' : 'fire',
+        canManageTasks: canManageTasks && mcpNative,
       })
       : '';
     const scheduleBlock = canSelfSchedule
@@ -2561,7 +2610,13 @@ export const amsgHooks = {
     const fireTools = [
       ...(mcpResolve && mcpNative ? buildMcpFireTools(mcpResolve) : []),
       ...(canSelfSchedule && mcpNative
-        ? [buildFireScheduleTool({ nowMs: ctx.now.getTime(), tz, abilities, context: instant ? 'chat' : 'fire' })]
+        ? [buildFireScheduleTool({
+          nowMs: ctx.now.getTime(),
+          tz,
+          abilities,
+          context: instant ? 'chat' : 'fire',
+          maxActiveTasks: limits.maxActiveTasks,
+        })]
         : []),
       ...(canManageTasks && mcpNative
         ? [buildFireCancelTool(), buildFireRenewTool({ nowMs: ctx.now.getTime(), tz })]
@@ -2579,7 +2634,7 @@ export const amsgHooks = {
     // 而上游只有内部默认值、没导出常量，各写各的迟早对不上。
     // tools 由 amsg-server 带 agentic-fire-tools feature 的版本起透传给每轮 LLM 请求。
     stash.allowedToolNames = new Set([
-      ...DATA_TOOL_NAMES,
+      ...DATA_TOOL_NAMES.filter(name => name !== 'recall' || isMonthlyRecallEnabled(stash.toolCtx.char)),
       ...(mcpResolve ? [...mcpResolve.keys()].map(name => `${MCP_FIRE_NAME_PREFIX}${name}`) : []),
       ...(canSelfSchedule ? [AMSG_FIRE_SCHEDULE_TOOL] : []),
       ...(canManageTasks ? [AMSG_FIRE_CANCEL_TOOL, AMSG_FIRE_RENEW_TOOL] : []),
@@ -2739,6 +2794,11 @@ export const amsgHooks = {
     stash.llmRounds = (stash.llmRounds ?? 0) + 1;
     const roundRawUsage = (ctx as { usage?: Record<string, unknown> | null }).usage
       ?? ((ctx.llmResponse as { usage?: Record<string, unknown> | null } | null)?.usage);
+    if (stash.instant) {
+      const calls = stash.modelCalls ?? (stash.modelCalls = []);
+      calls.push(makeModelCall({ index: calls.length + 1, completedAt: Date.now(), causes: stash.nextCallCauses ?? [],
+        ok: true, usage: roundRawUsage, response: ctx.llmResponse }));
+    }
     if (roundRawUsage && typeof roundRawUsage === 'object') {
       const pt = typeof roundRawUsage.prompt_tokens === 'number' && Number.isFinite(roundRawUsage.prompt_tokens)
         ? roundRawUsage.prompt_tokens : undefined;
@@ -2756,18 +2816,14 @@ export const amsgHooks = {
     // 不复用上游的 readReasoningContent：它是「原生**或**第一个内联块」，这里要的是
     // 「原生**加**全部内联块」，跟客户端渲染的那份对齐。
     //
-    // 每轮**覆盖**（包括覆盖成空）：留下的必须是产出正文那一轮的思考。中间轮那句
-    // 「我先去查一下」跟用户看到的正文对不上，最后一轮没思考时也不能拿它顶上。
-    //
-    // 包装层不主动开 thinking 参数——该不该开由客户端定：本地那一轮会发的三件套
-    // （thinking / reasoning_effort / extra_body）随 taskPayload 顶层 llmExtraBody
-    // 上云（含 Gemini 让步在内的判定都在 useChatAI 的 shouldSendThinkingParams），
-    // 由上游 buildLlmRequestBody 展开进请求体；上游没认领这个字段时退化为只有
-    // -thinking 模型名后缀生效。这里替客户端多开一份的话，Gemini 系 thinking + tools
-    // 同发直接 400。
+    // 留下的必须是产出正文那一轮的思考：本轮有新正文时按本轮覆盖（最后一轮有正文但无思考时清空，
+    // 不让中间轮「我先去查一下」顶上来）；若前序工具轮已把话完整说完、本轮听从收尾提示直接留空结束，
+    // 则保留前序写出正文那一轮的思考。
     const roundReasoning = readAssistantThinking(llmMessage && 'content' in llmMessage
       ? llmMessage : {...llmMessage, content:rawContent});
-    session.finalReasoning = roundReasoning || null;
+    if (content.length > 0 || session.narrations.length === 0) {
+      session.finalReasoning = roundReasoning || null;
+    }
 
     // native tool_calls：只认声明过的工具（fireToolNames 的管理工具 + mcpResolve 的
     // MCP 名），但认法放宽——模型常把声明名的「姓」搞丢或换家：声明的 mcp__foo 回报成
@@ -2787,7 +2843,7 @@ export const amsgHooks = {
       });
     }
 
-    let decision = processLLMRound(session, content, {
+    let decision = processLLMRound(session, stripDisabledMonthlyRecall(content, stash.toolCtx.char), {
       // 名字取 tool_pack 里的那份：它跟着每轮聊天重新上云，改名当天就是新的。
       // ctx.contactName 是排程那一刻冻进任务行的快照，用户改完名字之后，之前排的
       // 任务推送出来横幅还顶着旧名字（上游 update-message 也不让改这个字段）。
@@ -2824,6 +2880,7 @@ export const amsgHooks = {
     stash.maxToolIterations);
 
     if (decision.decision === 'tool-request') {
+      stash.nextCallCauses = modelCallCauses(decision.toolCalls.map(tc => tc.function.name));
       console.log('[amsg:agentic]', {
         type: 'tool_request',
         sessionId: ctx.sessionId,
@@ -2888,6 +2945,7 @@ export const amsgHooks = {
         ...stripSarSnapshot(stripEmotionEvalSpec(ctx.metadata)),
         ...decision.sideEffects,
         amsgOccurrenceMs: stash.occurrenceMs,
+        ...(stash.instant && stash.modelCalls?.length ? { amsgModelCalls: stash.modelCalls } : {}),
         ...(stash.scheduledTasks.length ? { amsgSelfScheduled: stash.scheduledTasks } : {}),
         ...((stash.cancelledTasks.length || stash.renewedTasks.length) ? {
           amsgTaskMutations: { cancelled: stash.cancelledTasks, renewed: stash.renewedTasks },
@@ -3061,6 +3119,7 @@ export const amsgHooks = {
       // 两样都排在旁路存储之前，装不下时才能连它们一起挪走。
       if (stash.instant && payloads.length > 0) {
         const lastMeta: Record<string, unknown> = {};
+        if (stash.modelCalls?.length) lastMeta.amsgModelCalls = stash.modelCalls;
         const toolTrace = condenseToolTrace(session.toolCalls);
         if (toolTrace.length > 0) lastMeta.amsgToolTrace = toolTrace;
         // 整轮模型调用的累加 token 用量（只挑两个数、不透传供应商私有字段）。
@@ -3415,6 +3474,18 @@ export const inspectWorkerEnv = (env: Env): WorkerEnvReport => {
       code: 'SERVER_TOKEN_MISSING',
       message: '没设 AMSG_SERVER_TOKEN，这个 Worker 地址对公网开放，知道地址的人都能读写你的任务。',
     });
+  }
+  const rescueToken = env.AMSG_RESCUE_TOKEN?.trim();
+  if (rescueToken) {
+    warnings.push(isRescueActive(env)
+      ? {
+        code: 'RESCUE_ACTIVE',
+        message: '救援模式开着（设了 AMSG_RESCUE_TOKEN）：凭口令可以导出全部云端数据，定时消息暂停投递。救完数据请立刻删掉这个变量。',
+      }
+      : {
+        code: 'RESCUE_TOKEN_TOO_SHORT',
+        message: 'AMSG_RESCUE_TOKEN 太短，救援页不会工作。要救数据就换一串至少 16 个字符的随机口令，不用就删掉它。',
+      });
   }
 
   return {
@@ -3820,6 +3891,7 @@ const readServerVersion = async (request: Request, env: Env) => {
  *   POST /self-update   自己去取最新代码覆盖自己（见 ./selfUpdate，要共享密钥 + CF_API_TOKEN）
  *   POST /self-update/check  App 冷启动时顺手问一句「该更新了没」，有节流（见 ./autoUpdate，认证同上）
  *   GET/POST /cron-trigger  查看 / 暂停 / 恢复自己的 cron trigger（见 ./cronTrigger，认证同上）
+ *   GET  /rescue  POST /rescue/manifest  POST /rescue/item  救援导出（见 ./rescue，只在设了 AMSG_RESCUE_TOKEN 时存在）
  *   其它请求            配置不全时直接 503 + 说明缺什么，不进上游
  */
 // fetch 收第三个参数 ctx 只为 /self-update/check 一条路：它回 202 之后在 waitUntil 里把检查跑完
@@ -3830,6 +3902,14 @@ export default {
   async fetch(request: Request, env: Env, ctx?: { waitUntil(promise: Promise<unknown>): void }): Promise<Response> {
     const pathname = new URL(request.url).pathname.replace(/\/+$/, '') || '/';
     const method = request.method.toUpperCase();
+
+    // 救援页排在一切之前：它自己判断开没开、自己验口令，不吃共享密钥那道门
+    // （来救数据的人手里正是什么都没有了）。没开时回 404，等于这条路不存在。
+    const rescueRoute = matchRescueRoute(pathname);
+    if (rescueRoute) return handleRescueRequest(request, env, rescueDeps(env), rescueRoute);
+    // 开着救援模式时，任何请求路过都刷新一下留痕（首次发现会推送提醒）。config-check
+    // 自己会做这一步，不重复。没开时什么都不做，正常请求不多读一次库。
+    if (isRescueActive(env) && !pathname.endsWith('/config-check')) await observeRescueQuietly(env, rescueDeps(env));
 
     if (pathname.endsWith('/config-check')) {
       if (method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
@@ -3872,6 +3952,9 @@ export default {
             supported: Boolean(env.CF_API_TOKEN?.trim()),
             state: await readSelfUpdateState(env.DB as TickReportDb | undefined),
           },
+          // 救援模式的开关和留痕（形状见 utils/amsgRescueState.ts）。前端据此强制弹窗警告 7 天。
+          // 这里只有时刻和次数，不含口令或任何数据；不设防是因为警告必须在共享密钥丢了时也看得到。
+          rescue: await buildRescueReport(env, rescueDeps(env)),
         },
       });
     }
@@ -4141,6 +4224,8 @@ export default {
       console.error(`[amsg] 定时任务整轮跳过：${report.message}`);
       return;
     }
+    // 救援模式的开关每分钟核对一次：关掉之后要在这里记下结束时刻，下次再开才算新的一次。
+    await observeRescueQuietly(env, rescueDeps(env));
     // 更新检查先走，数据库维护失败时仍有机会换上修复包。
     await runScheduledAfterUpdate(
       () => runAutoUpdate(env, env.DB as TickReportDb, {
@@ -4148,6 +4233,12 @@ export default {
         scriptName: env.CF_SCRIPT_NAME?.trim() || null,
       }),
       async () => {
+        // 救援模式开着时不投递、不清理：导出的应当是开启那一刻的样子，过期清理和到点消费
+        // 都会让还没导出的数据消失。删掉 AMSG_RESCUE_TOKEN 后下一跳自动恢复。
+        if (isRescueActive(env)) {
+          console.warn('[amsg:rescue] 救援模式开着，这一跳不投递、不清理');
+          return;
+        }
         // 新版需要的表和索引只补一次，自动更新后的第一跳也能补齐。
         await ensureSchemaOnce(env.DB as TickReportDb | undefined, SCHEMA_VERSION, () => upstream.ensureSchema(env));
         const outcome = await upstream.scheduled(event, env);

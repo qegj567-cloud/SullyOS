@@ -124,9 +124,11 @@ export async function materializeVisionDescriptions(
   messages: Message[],
   config?: VisionApiConfig | null,
   meta?: ApiCallMeta,
+  stickerVision = false,
 ): Promise<Message[]> {
   if (config?.enabled !== true) return messages;
   if (!isVisionApiReady(config)) {
+    if (messages.every(m => m.type !== 'image' && m.type !== 'friend_feed_share_card')) return messages;
     throw new Error('识图 API 已开启，但 URL、Key 或 Model 尚未填写完整');
   }
 
@@ -134,6 +136,17 @@ export async function materializeVisionDescriptions(
   const prepared: Message[] = [];
 
   for (const message of messages) {
+    if (stickerVision && message.type === 'emoji' && message.role === 'user' && canDescribeImage(message.content) && !readVisionDescription(message)) {
+      try {
+        const description = descriptionByImage.get(message.content) || await describeImageWithVisionApi(
+          message.content, config, { ...meta, purpose: '表情识图' },
+        );
+        descriptionByImage.set(message.content, description);
+        await DB.updateMessageMetadata(message.id, prev => ({ ...prev, visionDescription: description }));
+        prepared.push({ ...message, metadata: { ...message.metadata, visionDescription: description } });
+      } catch { prepared.push(message); }
+      continue;
+    }
     if(message.type==='friend_feed_share_card') {
       const share=message.metadata?.friendFeedShare;
       if(!share?.imagesEnabled || !Array.isArray(share.imageRefs) || readVisionDescription(message)) {prepared.push(message);continue;}

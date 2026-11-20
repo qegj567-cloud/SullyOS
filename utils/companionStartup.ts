@@ -8,6 +8,7 @@ import type {
 import { ContextBuilder } from './context';
 import { DB } from './db';
 import { ChatPrompts } from './chatPrompts';
+import { injectMemoryPalace } from './memoryPalace/pipeline';
 import { extractContent, safeFetchJson } from './safeApi';
 import {
   normalizeCompanionDialogue,
@@ -274,7 +275,11 @@ export const requestCompanionStartupDraft = async (options: {
   const recentMessages = allMessages
     .filter(message => message.role === 'user' || message.role === 'assistant');
   const eventText = `[陪伴桌面开机演出设置] ${user.name || '用户'}希望你为每次回到陪伴主界面准备一句符合本人性格的短开场。`;
-  const characterContextInput = { char: character, user, includeDetailedMemories: true, timeOptions: {
+  // 召回结果只挂在本次请求的副本上：角色对象上不存召回，也不能读别处留下的旧值。
+  // 上面已按聊天范围读过消息，直接交给召回，省一次重复读库。
+  const recallChar = { ...character, memoryPalaceInjection: '', roomPlatesInjection: '' };
+  await injectMemoryPalace(recallChar, allMessages, undefined, user.name);
+  const characterContextInput = { char: recallChar, user, includeDetailedMemories: true, timeOptions: {
       lastInteractionTs: recentMessages[recentMessages.length - 1]?.timestamp,
       worldbookMessages: [
         ...recentMessages.map(message => ({ role: message.role, content: message.content })),

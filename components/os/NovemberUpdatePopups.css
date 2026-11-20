@@ -1,0 +1,78 @@
+.november-notice {
+    width: min(460px, calc(100vw - 28px));
+    max-width: none;
+    max-height: calc(100dvh - 32px);
+    margin: auto;
+    padding: 0;
+    border: 1px solid #fff;
+    border-radius: 26px;
+    overflow: hidden;
+    background: #faf9f6;
+    color: #454440;
+    box-shadow: 0 24px 80px #25314030;
+    font-family: inherit;
+    text-align: left;
+    animation: november-notice-enter 180ms ease-out;
+}
+.november-notice::backdrop { background: #232b3a80; backdrop-filter: blur(5px); }
+.november-notice-layout { display: flex; flex-direction: column; max-height: calc(100dvh - 34px); }
+.november-notice-heading { position: relative; flex-shrink: 0; padding: 26px 52px 19px 24px; border-bottom: 1px solid #e4e3de; }
+.november-notice-eyebrow { margin: 0 0 8px; color: #697d89; font-size: 10px; font-weight: 700; letter-spacing: .13em; }
+.november-notice h2 { margin: 0; font-size: 22px; line-height: 1.4; font-weight: 800; letter-spacing: -.025em; }
+.november-notice-close { position: absolute; top: 18px; right: 12px; display: grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: 50%; background: transparent; color: #747873; cursor: pointer; }
+.november-notice-body { padding: 22px 24px 24px; overflow-y: auto; overscroll-behavior: contain; min-height: 0; scrollbar-width: thin; font-size: 13px; line-height: 1.85; }
+.november-notice-body section + section { margin-top: 23px; padding-top: 21px; border-top: 1px dashed #dcd9d2; }
+.november-notice h3 { margin: 0 0 8px; font-size: 15px; font-weight: 750; line-height: 1.6; }
+.november-notice-body p { margin: 0 0 11px; }
+.november-notice-body p:last-child { margin-bottom: 0; }
+.november-notice-body ul { margin: 10px 0 14px; padding-left: 19px; list-style: disc; }
+.november-notice-body li + li { margin-top: 7px; }
+.november-notice-body strong { font-weight: 750; }
+.november-silver-halo-preview {
+    display: block;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 585 / 382;
+    object-fit: cover;
+    object-position: center 40%;
+    margin-bottom: 16px;
+    border-radius: 12px;
+}
+.november-notice .november-notice-hint { color: #74726e; font-size: 11px; line-height: 1.8; }
+.november-notice-date-bar { display: flex; align-items: center; gap: 6px; padding: 10px 13px; margin: 12px 0 7px; border-radius: 12px; background: #f8e6ed; color: #9d4a6e; font-size: 12px; font-weight: 650; }
+.november-notice-date-bar svg { margin-left: auto; }
+.november-notice-worker { border-left: 3px solid #b6cfdf; padding: 4px 0 4px 13px; font-size: 12px; }
+.november-notice-worker p { margin-top: 5px; color: #696963; }
+.november-notice-actions { display: grid; grid-template-columns: .7fr 1.3fr; gap: 10px; flex-shrink: 0; padding: 14px 20px 18px; border-top: 1px solid #e4e3de; background: #faf9f6; }
+.november-notice-actions button { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 46px; padding: 10px 9px; border: 0; border-radius: 14px; background: #ecebe6; color: #66635f; font-size: 12px; font-weight: 700; cursor: pointer; transition: transform 130ms ease, background 130ms ease; }
+.november-notice-actions .november-notice-primary { background: #ccdee8; color: #37586b; }
+.november-notice button:hover { filter: brightness(.97); }
+.november-notice button:active { transform: scale(.98); }
+.november-notice button:focus-visible, .november-notice-body:focus-visible { outline: 2px solid #638ba1; outline-offset: -3px; }
+.november-notice-support-intro { display: flex; align-items: center; gap: 8px; margin-bottom: 22px; }
+.november-notice-support-intro > div { flex: 1; }
+.november-notice .november-notice-thanks { margin-bottom: 11px; font-size: 23px; line-height: 1.5; font-weight: 800; letter-spacing: -.045em; }
+.november-notice-support-intro img { width: 31%; max-width: 118px; height: auto; object-fit: contain; }
+.november-notice-support-intro > div > p:last-child { color: #77736b; font-size: 12px; }
+.november-notice-letter { padding-top: 20px; border-top: 1px dashed #cec9be; }
+.november-notice-signature { text-align: right; padding-top: 4px; color: #82766b; }
+.november-notice-support-detail { margin-top: 23px; padding-top: 18px; border-top: 1px dashed #cec9be; color: #75716a; font-size: 11px; }
+.november-notice .november-notice-gentle { color: #6b8492; }
+@keyframes november-notice-enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 350px) {
+    .november-notice-heading { padding-left: 20px; }
+    .november-notice h2 { font-size: 20px; }
+    .november-notice-body { padding: 18px 20px 20px; }
+    .november-notice .november-notice-thanks { font-size: 20px; }
+    .november-notice-actions { padding-inline: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .november-notice { animation: none; }
+    .november-notice button { transition: none; }
+}
+.november-help-avatar {
+    float: right;
+    object-fit: cover;
+    border-radius: 50%;
+    margin: 0 0 8px 12px;
+}

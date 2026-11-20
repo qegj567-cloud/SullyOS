@@ -1,12 +1,14 @@
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { DailySchedule, ScheduleSlot, CharacterProfile, OSTheme } from '../../types';
 import { getCurrentScheduleSlotIndex, getScheduleWallClock } from '../../utils/scheduleTime';
+import { useTickingNow } from '../../hooks/useTickingNow';
 import { resolveCharTimeZone, tzShortLabel } from '../../utils/timezone';
 import { useOS } from '../../context/OSContext';
 import { resolveScheduleCardPalette } from '../../utils/scheduleAppearance';
 import ScheduleAppearanceButton, { ScheduleCustomCssStyle } from './ScheduleAppearanceButton';
 import TokenImg from '../os/TokenImg';
+import ScheduleTheaterButton from './ScheduleTheaterButton';
 import {homePositionLabel} from '../../utils/homeSchedule';
 
 import { putImageBlob } from '../../utils/blobRef';
@@ -32,20 +34,6 @@ const formatDate = (now: Date): string => {
 
 const formatClock = (now: Date): string =>
     `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-
-/**
- * 每分钟走一次的「此刻」。卡片可能一直开着，不刷新的话顶部的钟会停，
- * NOW 标记也不会随着时间推进挪到下一个时段。
- */
-const useTickingNow = (fixed?:Date): Date => {
-    const [now, setNow] = useState(() => fixed || new Date());
-    useEffect(() => {
-        if(fixed)return;
-        const id = window.setInterval(() => setNow(new Date()), 30_000);
-        return () => window.clearInterval(id);
-    }, [fixed]);
-    return fixed||now;
-};
 
 export const ScheduleCardView: React.FC<ScheduleCardProps & {theme:OSTheme;previewNow?:Date}> = ({
     theme,previewNow,
@@ -74,15 +62,6 @@ export const ScheduleCardView: React.FC<ScheduleCardProps & {theme:OSTheme;previ
     const longPressTimerRef = useRef<number | null>(null);
     const longPressTriggeredRef = useRef(false);
     const LONG_PRESS_MS = 500;
-
-    // 点了「还没到的时段」的播放按钮 → 在该按钮上方冒一个一闪而过的小提示
-    const [lockedHintIdx, setLockedHintIdx] = useState<number | null>(null);
-    const lockedHintTimerRef = useRef<number | null>(null);
-    const showLockedHint = (idx: number) => {
-        if (lockedHintTimerRef.current) window.clearTimeout(lockedHintTimerRef.current);
-        setLockedHintIdx(idx);
-        lockedHintTimerRef.current = window.setTimeout(() => setLockedHintIdx(null), 1800);
-    };
 
     const startLongPress = (idx: number) => {
         longPressTriggeredRef.current = false;
@@ -156,6 +135,14 @@ export const ScheduleCardView: React.FC<ScheduleCardProps & {theme:OSTheme;previ
     const accentHsl = palette.accent;
     const accentBg = palette.accentSoft;
     const cardBg = palette.base;
+    const isDarkScheduleSurface = (() => {
+        if (palette.preset === 'cream' || palette.preset === 'sakura' || palette.preset === 'mint') return false;
+        if (palette.preset === 'original' || palette.preset === 'twilight' || palette.preset === 'midnight') return true;
+        const m = /^#([0-9a-f]{6})$/i.exec(palette.text.trim());
+        if (!m) return true;
+        const v = Number.parseInt(m[1], 16);
+        return (0.299 * ((v >> 16) & 255) + 0.587 * ((v >> 8) & 255) + 0.114 * (v & 255)) > 140;
+    })();
     const scheduleVars = {
         '--schedule-bg': palette.background,
         '--schedule-text': palette.text,
@@ -266,7 +253,7 @@ export const ScheduleCardView: React.FC<ScheduleCardProps & {theme:OSTheme;previ
                 <div className="sully-schedule-list px-5 pb-5 pt-1 space-y-1 min-w-0">
                     {isGenerating && !schedule ? (
                         <div className="py-12 text-center">
-                            <div className="inline-block w-6 h-6 border-2 border-white/20 border-t-white/60 rounded-full animate-spin mb-3"></div>
+                            <div className="inline-block w-6 h-6 border-2 rounded-full animate-spin mb-3" style={{ borderColor: palette.line, borderTopColor: accentHsl }}></div>
                             <p className="text-xs opacity-40">正在生成日程...</p>
                         </div>
                     ) : schedule && schedule.slots.length > 0 ? (
@@ -284,31 +271,35 @@ export const ScheduleCardView: React.FC<ScheduleCardProps & {theme:OSTheme;previ
                                                 type="time"
                                                 value={editTime}
                                                 onChange={e => setEditTime(e.target.value)}
-                                                className="bg-white/10 rounded-lg px-2 py-1 text-xs font-mono w-24 border border-white/10 focus:outline-none"
+                                                style={{ background: cardBg, color: palette.text, borderColor: palette.line, colorScheme: isDarkScheduleSurface ? 'dark' : 'light' }}
+                                                className="rounded-lg px-2 py-1 text-xs font-mono w-24 border focus:outline-none"
                                             />
                                             <input
                                                 value={editEmoji}
                                                 onChange={e => setEditEmoji(e.target.value)}
                                                 placeholder="emoji"
-                                                className="bg-white/10 rounded-lg px-2 py-1 text-xs w-14 border border-white/10 focus:outline-none text-center"
+                                                style={{ background: cardBg, color: palette.text, borderColor: palette.line }}
+                                                className="rounded-lg px-2 py-1 text-xs w-14 border focus:outline-none text-center placeholder:text-current placeholder:opacity-45"
                                             />
                                         </div>
                                         <input
                                             value={editActivity}
                                             onChange={e => setEditActivity(e.target.value)}
                                             placeholder="活动"
-                                            className="w-full bg-white/10 rounded-lg px-2 py-1 text-sm font-bold mb-1 border border-white/10 focus:outline-none"
+                                            style={{ background: cardBg, color: palette.text, borderColor: palette.line }}
+                                            className="w-full rounded-lg px-2 py-1 text-sm font-bold mb-1 border focus:outline-none placeholder:text-current placeholder:opacity-45"
                                         />
                                         <input
                                             value={editDesc}
                                             onChange={e => setEditDesc(e.target.value)}
                                             placeholder="描述 (可选)"
-                                            className="w-full bg-white/10 rounded-lg px-2 py-1 text-xs border border-white/10 focus:outline-none opacity-70"
+                                            style={{ background: cardBg, color: palette.text, borderColor: palette.line }}
+                                            className="w-full rounded-lg px-2 py-1 text-xs border focus:outline-none opacity-80 placeholder:text-current placeholder:opacity-45"
                                         />
-                                        {!!character?.home3D?.rooms.length && <select aria-label="日程所在房间" value={editHomePosition} onChange={event => setEditHomePosition(event.target.value)} className="w-full text-slate-800 bg-white rounded-lg px-2 py-2 text-xs mt-2"><option value="">位置待补全</option><option value="__away">外出</option>{character.home3D.rooms.map(room => <option key={room.id} value={room.id}>{room.name}</option>)}</select>}
+                                        {!!character?.home3D?.rooms.length && <select aria-label="日程所在房间" value={editHomePosition} onChange={event => setEditHomePosition(event.target.value)} style={{ background: cardBg, color: palette.text, borderColor: palette.line, colorScheme: isDarkScheduleSurface ? 'dark' : 'light' }} className={`w-full rounded-lg border px-2 py-2 text-xs mt-2 focus:outline-none ${isDarkScheduleSurface ? '[&_option]:bg-[#161428] [&_option]:text-white' : '[&_option]:bg-white [&_option]:text-slate-800'}`}><option value="">位置待补全</option><option value="__away">外出</option>{character.home3D.rooms.map(room => <option key={room.id} value={room.id}>{room.name}</option>)}</select>}
                                         <div className="flex gap-2 mt-2">
-                                            <button onClick={saveEdit} className="text-[10px] font-bold px-3 py-1 rounded-lg bg-white/20 hover:bg-white/30 transition-colors">保存</button>
-                                            <button onClick={() => setEditingIdx(null)} className="text-[10px] font-bold px-3 py-1 rounded-lg bg-white/10 hover:bg-white/20 transition-colors opacity-60">取消</button>
+                                            <button onClick={saveEdit} style={{ background: cardBg, color: palette.text, borderColor: palette.line }} className="text-[10px] font-bold px-3 py-1 rounded-lg border hover:opacity-90 transition-opacity">保存</button>
+                                            <button onClick={() => setEditingIdx(null)} style={{ background: cardBg, color: palette.text, borderColor: palette.line }} className="text-[10px] font-bold px-3 py-1 rounded-lg border opacity-75 hover:opacity-100 transition-opacity">取消</button>
                                         </div>
                                     </div>
                                 );
@@ -385,33 +376,8 @@ export const ScheduleCardView: React.FC<ScheduleCardProps & {theme:OSTheme;previ
                                     {/* 小剧场播放按钮：全程都在，已过去/正在进行的可点（▶ 生成 / ↻ 重看）；
                                         还没到的时段灰着，点了冒个「还没到这个时间哦」的小提示。 */}
                                     {!compact && onPlayTheater && (
-                                        <div className="relative flex-shrink-0 mt-0.5">
-                                            <button
-                                                className={`w-7 h-7 rounded-full flex items-center justify-center text-xs transition-all ${isFuture ? 'cursor-not-allowed' : 'active:scale-90'}`}
-                                                style={{
-                                                    background: isFuture ? 'color-mix(in srgb, var(--schedule-text) 6%, transparent)' : (slot.theater ? accentHsl : 'color-mix(in srgb, var(--schedule-text) 12%, transparent)'),
-                                                    color: isFuture ? 'color-mix(in srgb, var(--schedule-text) 28%, transparent)' : (slot.theater ? cardBg : contentColor),
-                                                }}
-                                                title={isFuture ? '还没到这个时间哦' : (slot.theater ? '重看小剧场' : '窥视这一刻')}
-                                                onPointerDown={(e) => { e.stopPropagation(); cancelLongPress(); }}
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    longPressTriggeredRef.current = false;
-                                                    if (isFuture) { showLockedHint(idx); return; }
-                                                    onPlayTheater(idx);
-                                                }}
-                                            >
-                                                {slot.theater && !isFuture ? '↻' : '▶'}
-                                            </button>
-                                            {lockedHintIdx === idx && (
-                                                <div
-                                                    className="absolute right-0 bottom-full mb-1.5 z-20 whitespace-nowrap px-2 py-1 rounded-lg text-[10px] font-bold animate-fade-in pointer-events-none"
-                                                    style={{ background: 'rgba(20,16,30,0.96)', color: '#fff', border: '1px solid rgba(255,255,255,0.15)', boxShadow: '0 4px 14px rgba(0,0,0,0.4)' }}
-                                                >
-                                                    还没到这个时间哦
-                                                </div>
-                                            )}
-                                        </div>
+                                        <ScheduleTheaterButton slot={slot} future={isFuture} onPress={cancelLongPress}
+                                            onPlay={() => { longPressTriggeredRef.current = false; onPlayTheater(idx); }} />
                                     )}
                                 </div>
                             );
@@ -445,7 +411,7 @@ export const ScheduleCardView: React.FC<ScheduleCardProps & {theme:OSTheme;previ
                     onClick={() => setActionIdx(null)}
                 >
                     <div
-                        className="w-full sm:w-64 bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden"
+                        className="w-full sm:w-64 bg-white text-slate-800 rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden"
                         onClick={(e) => e.stopPropagation()}
                     >
                         <div className="px-4 py-3 border-b border-slate-100">

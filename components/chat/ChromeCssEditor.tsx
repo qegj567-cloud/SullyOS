@@ -320,7 +320,7 @@ const ChromeCssEditor: React.FC<{ value: string; onChange: (css: string) => void
             {exportNotice&&<p role="status">{exportNotice}</p>}
             {exportMode&&<BeautyConfirmDialog title="带上作者署名" confirm={exportMode==='batch'?'复制预设':'分享 CSS'} onClose={()=>setExportMode(null)} onConfirm={confirmShare}><p>已有署名会原样保留。为没有署名的样式填写作者名称。</p><label>作者署名<input maxLength={60} value={exportCredit} onChange={e=>setExportCredit(e.target.value)}/></label></BeautyConfirmDialog>}
 
-            <details className="mb-4" onToggle={event=>setPreviewOpen(event.currentTarget.open)}><summary className="cursor-pointer text-sm py-2">预览完整聊天 · 虚构示例</summary>{previewOpen&&<BeautyPresetPreview data={previewPack}/>}</details>
+            <details className="mb-4 text-slate-600" onToggle={event=>setPreviewOpen(event.currentTarget.open)}><summary className="cursor-pointer text-sm text-slate-600 py-2">预览完整聊天 · 虚构示例</summary>{previewOpen&&<BeautyPresetPreview data={previewPack}/>}</details>
             {/* 需要灵感：复制提示词给 AI */}
             <button onClick={handleCopyPrompt}
                 className="flex w-full items-center gap-2.5 rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-50 to-violet-50 px-3.5 py-3 text-left transition-all hover:from-indigo-100 hover:to-violet-100 active:scale-[0.99]">
@@ -401,7 +401,7 @@ const ChromeCssEditor: React.FC<{ value: string; onChange: (css: string) => void
                     className="w-full resize-y rounded-2xl border border-slate-700 bg-slate-900 p-4 font-mono text-xs leading-relaxed text-slate-200 outline-none focus:border-primary/50 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                 />
                 <div className="mt-1.5 text-[10px] leading-relaxed text-slate-400">
-                    可用选择器：<code className="rounded bg-slate-100 px-1 text-slate-500">.sully-chat-header / -avatar / -name / -buffs / -token / -trigger / -back / -status / -inputbar / -panel / -root</code>
+                    可用选择器：<code className="rounded bg-slate-100 px-1 text-slate-500">.sully-chat-header / -avatar / -name / -buffs / -token / -trigger / -back / -status / -time-divider / -timestamp / -inputbar / -panel / -root</code>
                 </div>
                 <div className="mt-1 text-[10px] leading-relaxed text-slate-400">
                     日程修改动效：<code className="rounded bg-slate-100 px-1 text-slate-500">.sully-schedule-change / -head / -mark / -kicker / -list / -row / -time / -before / -arrow / -after / -shine</code>
