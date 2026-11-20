@@ -1995,7 +1995,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         try {
             const rvConfig = JSON.parse(localStorage.getItem('os_remote_vector_config') || '{}');
             if (rvConfig.enabled && rvConfig.initialized && rvConfig.supabaseUrl) {
-                const { getVectorCount } = await import('../utils/memoryPalace/supabaseVector');
+                const { getVectorCount, readUpgrade } = await import('../utils/memoryPalace/supabaseVector');
+                if (!readUpgrade(rvConfig).done) return; // The automatic check already reports migration progress.
                 const remoteCount = await getVectorCount(rvConfig);
                 // 本地向量数量
                 const localDb = await import('../utils/db').then(m => m.openDB());
@@ -2005,7 +2006,9 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                     req.onsuccess = () => res(req.result);
                     req.onerror = () => res(0);
                 });
-                if (localCount > 0 && remoteCount < localCount * 0.5) {
+                if (localCount > 0 && remoteCount === null) {
+                    setTimeout(() => addToast('远程向量数量暂时无法查询，可在记忆宫殿设置中测试连接。', 'info'), 3000);
+                } else if (remoteCount !== null && remoteCount < localCount) {
                     setTimeout(() => addToast(`本地有 ${localCount} 条向量，远程仅 ${remoteCount} 条。建议去设置页同步到远程。`, 'info'), 3000);
                 }
             }

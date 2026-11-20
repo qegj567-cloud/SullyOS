@@ -1,3 +1,4 @@
+import RemoteVectorUpgradeNotice from './components/RemoteVectorUpgradeNotice';
 import UserSpaceNotice from './components/user/UserSpaceNotice';
 
 import React from 'react';
@@ -51,6 +52,7 @@ const App: React.FC = () => {
             <WebUpdateNotice />
             <AmsgOwnerConflictNotice />
             <UserSpaceNotice />
+            <RemoteVectorUpgradeNotice />
           </OSProvider>
         </div>
       </div>
