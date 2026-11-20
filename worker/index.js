@@ -2793,12 +2793,77 @@ async function handleDoubaoAsr(request) {
   const pair = new WebSocketPair();
   const client = pair[0], server = pair[1]; server.binaryType = 'arraybuffer'; server.accept();
   attachDoubaoAsrRelay(server, async (headers, signal) => {
-    const response = await fetch('https://openspeech.bytedance.com/api/v3/sauc/bigmodel_async', { headers: { ...headers, Upgrade: 'websocket' }, redirect: 'error', signal });
+    const response = await fetch('https://openspeech.bytedance.com/api/v3/sauc/bigmodel_async', { headers: { ...headers, Upgrade: 'websocket' }, redirect: 'manual', signal });
     if (!response.webSocket) throw Object.assign(new Error('ASR handshake failed'), { status: response.status });
     const socket = response.webSocket; socket.binaryType = 'arraybuffer'; socket.accept();
     return socket;
   });
   return new Response(null, { status: 101, webSocket: client });
+}
+
+// Fixed Agent Plan video relay. Credentials/body stay in memory; no storage, logs or retries.
+export async function handleCompanionArkPlan(request, transport = fetch) {
+  const headers = {
+    ...corsHeaders(request.headers.get('Origin') || '*'),
+    'Vary': 'Origin', 'Cache-Control': 'no-store', 'Content-Type': 'application/json; charset=utf-8',
+  };
+  const fail = (status, message) => new Response(JSON.stringify({ error: { message } }), { status, headers });
+  if (new URL(request.url).search) return fail(400, '视频转发不接受查询参数');
+  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
+  if (request.method !== 'POST') return fail(405, '视频转发仅支持 POST');
+  const authorization = request.headers.get('Authorization') || '';
+  if (!/^Bearer\s+\S+$/i.test(authorization) || authorization.length > 4096) return fail(401, '请填写 Agent Plan 专属 API Key');
+  if (!request.headers.get('Content-Type')?.toLowerCase().startsWith('application/json')) return fail(415, '需要 JSON 请求');
+  const maxBytes = 12 * 1024 * 1024;
+  if (Number(request.headers.get('Content-Length')) > maxBytes) return fail(413, '视频请求超过 12 MiB 转发上限');
+  const abort = new AbortController();
+  const cancel = () => abort.abort();
+  request.signal.addEventListener('abort', cancel, { once: true });
+  if (request.signal.aborted) cancel();
+  const timeout = setTimeout(cancel, 60_000);
+  const readText = async (stream, limit) => {
+    if (!stream) return '';
+    const reader = stream.getReader(), decoder = new TextDecoder();
+    let size = 0, text = '';
+    const stopReading = () => { void reader.cancel().catch(() => {}); };
+    abort.signal.addEventListener('abort', stopReading, { once: true });
+    try {
+      while (true) {
+        abort.signal.throwIfAborted();
+        const { done, value } = await reader.read();
+        abort.signal.throwIfAborted();
+        if (done) return text + decoder.decode();
+        size += value.byteLength;
+        if (size > limit) { await reader.cancel(); throw Object.assign(new Error('body-limit'), { status: 413 }); }
+        text += decoder.decode(value, { stream: true });
+      }
+    } finally { abort.signal.removeEventListener('abort', stopReading); reader.releaseLock(); }
+  };
+  try {
+    const body = await readText(request.body, maxBytes);
+    let parsed;
+    try { parsed = JSON.parse(body); } catch { return fail(400, '无效 JSON'); }
+    if (!parsed || typeof parsed.model !== 'string' || !parsed.model.trim() || !Array.isArray(parsed.messages) || parsed.stream !== false) {
+      return fail(400, '需要非流式模型请求');
+    }
+    const response = await transport('https://ark.cn-beijing.volces.com/api/plan/v3/chat/completions', {
+      method: 'POST', redirect: 'manual', signal: abort.signal,
+      headers: { 'Content-Type': 'application/json', Authorization: authorization }, body,
+    });
+    // Workers supports manual/follow, not redirect:error. Never forward credentials to a redirect.
+    if (response.status >= 300 && response.status < 400) {
+      await response.body?.cancel();
+      return fail(502, '火山套餐接口返回重定向，已停止转发');
+    }
+    // Bound the upstream response too, and never reflect a provider-echoed credential.
+    const result = (await readText(response.body, 2 * 1024 * 1024))
+      .split(authorization.replace(/^Bearer\s+/i, '')).join('[已隐藏凭据]');
+    return new Response([204, 205, 304].includes(response.status) ? null : result, { status: response.status, headers });
+  } catch (error) {
+    if (abort.signal.aborted) return fail(504, '套餐请求超时或已取消');
+    if (error?.status === 413) return fail(413, '视频请求或响应超过转发上限');
+    return fail(502, '主代理无法连接火山套餐接口，请稍后重试');
+  } finally { clearTimeout(timeout); request.signal.removeEventListener('abort', cancel); }
 }
 
 export default {
@@ -2807,6 +2872,7 @@ export default {
     const origin = request.headers.get("Origin") || "*";
 
     if (url.pathname === '/doubao/asr') return handleDoubaoAsr(request);
+    if (url.pathname === '/api/companion/ark-plan/chat/completions') return handleCompanionArkPlan(request);
 
     // CORS preflight
     if (request.method === "OPTIONS") {

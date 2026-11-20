@@ -81,7 +81,7 @@ MP4 首选浏览器默认编码，不强制固定 H.264 profile；空输出或�
 浏览器 WebSocket 不能自行设置豆包要求的鉴权请求头，因此使用固定上游的无存储转发：浏览器首帧携带 Key / 规格，转发端添加 `X-Api-Key` 等请求头，音频与响应按二进制传递。Key 不进入 URL；不写文件、数据库、对象存储或内容日志，不生成录音链接。音频和 Key 会经过该转发端，再送给豆包；不能称为完全本地识别或承诺服务商零留存。用户自己的 Key 保存在本机设置，并随系统配置备份。
 
 - **本地开发与预览**：Vite 的 `/doubao/asr` WebSocket 入口由 `server/doubao-asr-middleware.ts` 提供，只接受当前监听地址的同源浏览器连接；升级代码后需重启 Vite。用户不填任何服务地址。
-- **线上**：复用 `getProxyWorkerUrl()` 选中的主代理。维护者需更新 `worker/index.js`（可用 `pnpm build:proxy` 生成单文件），不新增 Worker、Bucket 或持久凭据。旧代理没有此路由时明确报错，不偷偷切回浏览器识别；本轮未部署线上代理。
+- **线上**：复用 `getProxyWorkerUrl()` 选中的主代理 `/doubao/asr`。维护者需更新 `worker/index.js`（可用 `pnpm build:proxy` 生成单文件），不新增语音专用 Worker、Bucket 或持久凭据。旧代理没有此路由时明确报错，不偷偷切回浏览器识别。语音 Key 只在连接首帧发送，Worker 添加官方要求的鉴权头后连接固定上游。
 - **停止与失败**：暂停、离开、换角色、切后台、保存识别设置会停止麦克风和连接；用户取消后才返回的权限流也立即释放。连接超时、积压、服务错误或断线均停止并提示，不自动重试产生费用。单连接上限 30 分钟，到时手动重新开启。
 - **回声与环境**：浏览器请求回声消除、降噪与自动增益，但不能保证消除角色外放声音，建议戴耳机。真实识别准确率、弱网和移动端后台行为需带 Key 实测。
 
@@ -89,13 +89,23 @@ MP4 首选浏览器默认编码，不强制固定 H.264 profile；空输出或�
 
 ### 三家视频协议
 
-#### 已购 Agent Plan（本地预览）
+#### 已购 Agent Plan（本地预览与线上）
 
 2026-11-18 实测：Agent Plan Small 的 `doubao-seed-2.1-pro`，在 `https://ark.cn-beijing.volces.com/api/plan/v3/chat/completions` 接收完整 MP4 Base64，返回 HTTP 200，并按正确顺序描述红色圆形变为蓝色正方形。一次接口耗时约 2.8 秒，仅代表该次小样片；不能推断真实街景质量或所有账号额度。视频理解属于 Seed 多模态输入，不是 Seedance 视频生成。无需 Files API、文件 ID 或临时存储。
 
 同行视频设置新增「豆包接入方式」：普通模型 API 与已购 Agent Plan 分开选择；套餐填写专属 Key 与不带日期的模型别名，不能混用普通 `/api/v3` 的凭据与计费入口。切换只改草稿并清空 Key，不购买、升级套餐或开启超额后付费。官方入口：[套餐配置](https://ark.volcengine.com/region:cn-beijing/subscription/agent-plan)、[兼容工具说明](https://docs.volcengine.com/docs/ark/agent-plan-personal-other-tools?lang=zh)、[套餐使用范围与额度](https://docs.volcengine.com/docs/ark/agent-plan-personal-plan-overview?lang=zh)。技术实测通过不等于扩大平台规定的套餐用途。
 
-本机浏览器直连失败，而本机服务直连同一接口成功，因此 Vite dev / preview 加入 `server/companion-ark-middleware.ts`：仅在 localhost 页面、精确匹配官方套餐地址时，同行的视频测试与正式视频观察统一走同源 `/api/companion/ark-plan/chat/completions`。转发目标固定为官方套餐 API，检查 Origin、POST、Key、JSON 和 12 MiB 上限，60 秒超时，无重试、无重定向、无文件存储或日志，也不回退普通 API。取消下游会取消上游请求。其它模型与 App 的请求不改。线上部署尚未添加该中继，不能宣称线上浏览器同样可用。
+本机浏览器直连失败，而本机服务直连同一接口成功，因此 Vite dev / preview 加入 `server/companion-ark-middleware.ts`：仅在 localhost 页面、精确匹配官方套餐地址时，同行的视频测试与正式视频观察统一走同源 `/api/companion/ark-plan/chat/completions`。本地转发检查同源 Origin。
+
+2026-11-20 补齐线上同名路由：精确匹配官方套餐地址后，视频测试与观察统一使用 `getProxyWorkerUrl()` 选中的 HTTPS 主代理；用户自定义代理也跟随，不能把套餐 Key 转给普通 API。普通火山 `/api/v3` 实测预检允许 `Authorization`，仍直连；套餐 `/api/plan/v3` 预检没有放行此头，需转发。其他平台、自定义模型地址与其他 App 不改。
+
+本地和线上转发目标均固定为官方套餐 Chat API，检查 POST、Key、JSON、非流式请求和 12 MiB 上限，60 秒超时，无重试、无重定向、无文件存储或内容日志，也不回退普通 API。线上还限制响应不超过 2 MiB，返回上游状态并隐藏可能被回显的 Key；所有响应带 `no-store` 与 CORS 头。浏览器取消通过请求信号终止上游；音视频与 Key 会经过所选转发端，再送给火山，不能称为不经过服务器。入口仍传完整 MP4 Base64，不上传到对象存储或创建文件 ID。
+
+测试站使用独立 `wrangler.test.jsonc`（`sully-os-test`），绑定 `test.friedsully.com`，不覆盖正式 `sully-os-site`。静态资源仍走 assets-first、缺失文件返回 404；发布前运行构建资源保留脚本，历史目录使用 `.cache/retained-build-assets-test`，与正式站分开。域名不同，本机存档不会自动从正式站或 localhost 搬来，需要用户自行导入备份。
+
+2026-11-20 线上转发验证：主代理 `sully-n` 已更新，保留原域名及绑定；套餐预检从测试站 Origin 返回 204 并允许 Authorization。固定无效测试 Key 经套餐路由返回火山官方 AuthenticationError，语音 WebSocket 返回上游 `http-401`，证明请求抵达官方鉴权层；不是有效 Key 的识别／视频理解成功证明。新增转发和同行回归通过，生产构建通过。此次未发送私人音视频。
+
+Cloudflare Workers 不支持 Node 的 `redirect: 'error'`，线上两条链路使用 `manual` 并拒绝跳转，不能让 Key 随 Location 去其他主机。主代理兼容日期早于 2026-11-17 时需保留 `enable_request_signal`，使浏览器取消可传递给上游；`worker/wrangler.proxy.toml` 已声明。本地 Node 中继保留原来的 `error` 模式。
 
 本轮验证：同行回归 62 项通过；新增中继 2 项与套餐选择 1 项后定向复测通过（合计 65 项），覆盖跨站拦截、缺 Key、固定目标、失败不改计费入口、完整视频载荷和凭据分离。Vite 构建通过，5175 保留旧资源更新并重启；同行界面真实点击「测试视频 API」，约 4.3 秒返回「红色圆形变为蓝色正方形」。配置作为草稿留给用户点击保存；未将凭据写入代码或诊断文件。截图 `output/companion-setup/companion-agent-plan-passed.jpg`；首次隔离实测的脱敏返回 `output/companion-setup/agent-plan-video-result.json`。本轮没有测试用户摄像头、STT 或角色对话质量。
 

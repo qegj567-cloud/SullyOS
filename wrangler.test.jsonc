@@ -1,0 +1,13 @@
+{
+  "name": "sully-os-test",
+  "main": "worker/static-site-not-found.ts",
+  "compatibility_date": "2026-08-13",
+  "workers_dev": true,
+  "preview_urls": false,
+  "routes": [{ "pattern": "test.friedsully.com", "custom_domain": true, "zone_id": "885bee8d9b60e69f405c65430546aee6" }],
+  "observability": { "enabled": false },
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "none"
+  }
+}

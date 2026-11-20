@@ -1,4 +1,5 @@
 import type { CompanionVideoApiConfig } from '../../types';
+import { getProxyWorkerUrl } from '../proxyWorker';
 
 export type CompanionVideoProvider = NonNullable<CompanionVideoApiConfig['provider']>;
 export const COMPANION_ARK_PLAN = {
@@ -12,8 +13,14 @@ export function companionVideoEndpoint(api: Pick<CompanionVideoApiConfig, 'baseU
   const direct = `${api.baseUrl.trim().replace(/\/+$/, '')}/chat/completions`;
   if (!isCompanionArkPlan(api.baseUrl) || !origin) return direct;
   const page = new URL(origin);
-  return ['127.0.0.1', 'localhost', '[::1]'].includes(page.hostname)
-    ? `${page.origin}/api/companion/ark-plan/chat/completions` : direct;
+  if (['127.0.0.1', 'localhost', '[::1]'].includes(page.hostname)) {
+    return `${page.origin}/api/companion/ark-plan/chat/completions`;
+  }
+  const proxy = new URL(getProxyWorkerUrl());
+  if (proxy.protocol !== 'https:' || proxy.username || proxy.password || proxy.search || proxy.hash) {
+    throw new Error('豆包套餐视频需要 HTTPS 应用主代理，请检查设置中的网络代理地址');
+  }
+  return `${proxy.href.replace(/\/+$/, '')}/api/companion/ark-plan/chat/completions`;
 }
 // Official contracts checked 2026-11-17. Defaults are editable, never model capability detection.
 export const COMPANION_VIDEO_PROVIDERS = {

@@ -8,6 +8,7 @@ import { llmApiType } from './llmEndpoint';
 import { resolveMemoryPalaceWaterline } from './memoryPalace/waterline';
 import { ActiveMsgStore } from './activeMsgStore';
 import { isAmsg2GloballyEnabled } from './amsgGlobalGate';
+import { isCompanionArkPlan } from './companion/videoProviders';
 
 type SettingsSource = Pick<ReturnType<typeof useOS>, 'apiConfig' | 'memoryPalaceConfig' | 'realtimeConfig' | 'theme' | 'isDataLoaded'> & Partial<Pick<ReturnType<typeof useOS>, 'remoteVectorConfig' | 'userProfile'>>;
 type Endpoint = { baseUrl: string; apiKey: string; model: string };
@@ -36,6 +37,12 @@ export async function readHelpDeskSettings(os: SettingsSource, char?: CharacterP
     }
     return {
         主对话: { ...endpointFields(apiConfig), 接口: llmApiType(apiConfig), 流式: !!apiConfig.stream, 输出上限: dialogueMaxTokens(apiConfig) },
+        同行: {
+            语音识别: apiConfig.companionStt?.provider === 'doubao' ? '豆包' : '浏览器',
+            语音密钥已填: !!apiConfig.companionStt?.apiKey?.trim(),
+            视频配置: apiConfig.companionVideoApi ? endpointFields(apiConfig.companionVideoApi) : '未配置',
+            视频计费入口: isCompanionArkPlan(apiConfig.companionVideoApi?.baseUrl || '') ? '已购 Agent Plan' : '普通或自定义 API',
+        },
         私聊与群聊输入: { 自动回复: input.autoReply, 发送键代替生成: input.sendButtonGenerates, 回车发送: input.enterToSend, 表情联想: input.emojiSuggestions },
         共用心象提示词模式: os.userProfile?.thinkingChainPrompt?.mode === 'replace' ? '替换默认提示词' : '追加',
         全局记忆服务: {

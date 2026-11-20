@@ -90,6 +90,7 @@ xiaohongshu-skills/
 
 # Local generated previews, browser QA and isolated build artifacts.
 /output/
+/.cache/retained-build-assets-test/
 
 # Keep the standalone clothing workbench's runtime dependencies reviewable.
 # Original uploads, intake galleries and QA screenshots remain local output.

@@ -18,6 +18,15 @@ var parseInstantInputEnvelope = (value) => {
 };
 
 // utils/llmEndpoint.ts
+async function readLlmResponseText(response, info) {
+  if (info) {
+    info.status = response.status;
+    info.bodyRead = false;
+  }
+  const text2 = await response.text();
+  if (info) info.bodyRead = true;
+  return text2;
+}
 function isAnthropicEndpoint(value) {
   try {
     return /\/messages(?:\/(?:chat\/completions|models))?\/?$/.test(new URL(value).pathname);
@@ -312,12 +321,15 @@ async function fetchLlm(resource, init, transport = globalThis.fetch, browser = 
     headers.delete("content-length");
   }
   const response = await transport(url, options);
+  const info = init?.__sullyResponseInfo;
+  if (info) info.status = response.status;
   if (!response.ok || method !== "POST") return response;
   if (response.headers.get("content-type")?.includes("text/event-stream")) {
     if (!response.body) throw Error("Anthropic \u8FD4\u56DE\u4E86\u7A7A\u6D41");
     return convertAnthropicStream(response);
   }
-  return new Response(JSON.stringify(fromAnthropicMessage(await response.json())), { status: response.status, statusText: response.statusText, headers: { "content-type": "application/json" } });
+  const message = info ? JSON.parse(await readLlmResponseText(response, info)) : await response.json();
+  return new Response(JSON.stringify(fromAnthropicMessage(message)), { status: response.status, statusText: response.statusText, headers: { "content-type": "application/json" } });
 }
 function installAnthropicFetch(browser = false) {
   if (globalThis.fetch.__sullyAnthropic) return;
@@ -1681,7 +1693,7 @@ function pickStaleStoppedReplyKeys(rows, nowMs = Date.now(), protectKey) {
 // worker/amsg/src/index.ts
 import { DurableObject } from "cloudflare:workers";
 
-// node_modules/.pnpm/@rei-standard+amsg-server@3.2.0-next.2_@neondatabase+serverless@1.1.0_pg@8.22.0/node_modules/@rei-standard/amsg-server/dist/chunk-R2CRPRKR.mjs
+// node_modules/.pnpm/@rei-standard+amsg-server@3_f2a08373d30841ce79e2e19c7fb88ed9/node_modules/@rei-standard/amsg-server/dist/chunk-R2CRPRKR.mjs
 var CLEANUP_BATCH_LIMIT = 100;
 var UPDATABLE_COLUMNS = /* @__PURE__ */ new Set([
   "user_id",
@@ -2939,7 +2951,7 @@ function stringifyDecisionForError(value) {
   }
 }
 
-// node_modules/.pnpm/@rei-standard+amsg-server@3.2.0-next.2_@neondatabase+serverless@1.1.0_pg@8.22.0/node_modules/@rei-standard/amsg-server/dist/chunk-WFKLHUUE.mjs
+// node_modules/.pnpm/@rei-standard+amsg-server@3_f2a08373d30841ce79e2e19c7fb88ed9/node_modules/@rei-standard/amsg-server/dist/chunk-WFKLHUUE.mjs
 var DAY_MS = 24 * 60 * 60 * 1e3;
 var MAX_LISTED_SKIPPED_OCCURRENCES = 32;
 var MAX_ADJUST_STEPS = 32;
