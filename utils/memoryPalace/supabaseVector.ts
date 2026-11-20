@@ -35,14 +35,81 @@ function rpcUrl(config: RemoteVectorConfig, fn: string): string {
 // ─── 公共 API ────────────────────────────────────────
 
 const LEGACY_NODE_COLUMNS = 'memory_id,char_id,content,room,importance,tags,mood,valence,arousal,created_at,last_accessed_at,access_count,pinned_until,source_id,origin,archived,is_summary,event_box_id';
-const NODE_COLUMNS = LEGACY_NODE_COLUMNS + ',entities,relative_time_anchor,group_id,group_name,digested_at';
+const EXTRA_COLUMNS = ['entities', 'relative_time_anchor', 'group_id', 'group_name', 'digested_at'] as const;
+const NODE_COLUMNS = LEGACY_NODE_COLUMNS + ',' + EXTRA_COLUMNS.join(',');
+const LEGACY_MODEL_PREFIX = 'sully-vector-meta-v1:';
+type Layout = 'native' | 'legacy';
+const layouts = new Map<string, Promise<Layout>>();
+function layoutHint(config: RemoteVectorConfig): Layout | null {
+    try {
+        const hint = localStorage.getItem('palace_vector_layout_v1:' + projectKey(config));
+        return hint === 'legacy' || hint === 'native' ? hint : null;
+    } catch { return null; }
+}
+
+async function missingColumn(res: Response) {
+    if (res.status !== 400) return false;
+    const body = await res.clone().json().catch(() => null);
+    return body?.code === '42703' || body?.code === 'PGRST204';
+}
+
+// The original table has a model text column. Preserve the model name inside
+// a versioned envelope; older clients still see ordinary tags, text and vectors.
+function unpackExtra(model: unknown): Record<string, unknown> {
+    if (typeof model !== 'string' || !model.startsWith(LEGACY_MODEL_PREFIX)) return {};
+    try {
+        const data = JSON.parse(model.slice(LEGACY_MODEL_PREFIX.length)).extra;
+        return Object.fromEntries(EXTRA_COLUMNS.filter(k => data?.[k] != null).map(k => [k, data[k]]));
+    } catch { return {}; }
+}
+
+function compatibleRow(row: ReturnType<typeof uploadRow>, layout: Layout) {
+    if (layout === 'native') return row;
+    const { entities, relative_time_anchor, group_id, group_name, digested_at, ...legacy } = row;
+    const extra = { entities, relative_time_anchor, group_id, group_name, digested_at };
+    if (EXTRA_COLUMNS.some(k => extra[k] != null)) {
+        legacy.model = LEGACY_MODEL_PREFIX + JSON.stringify({ model: row.model, extra });
+    }
+    return legacy;
+}
+
+async function detectLayout(config: RemoteVectorConfig): Promise<Layout> {
+    for (const layout of ['native', 'legacy'] as const) {
+        const columns = layout === 'native' ? NODE_COLUMNS : LEGACY_NODE_COLUMNS;
+        const res = await fetch(restUrl(config, `/memory_vectors?select=${columns},dimensions,model,vector&limit=0`), {
+            headers: headers(config), signal: AbortSignal.timeout(15000),
+        });
+        if (res.ok) return layout;
+        if (layout === 'legacy' || !await missingColumn(res)) throw new Error(await failureMessage(res));
+    }
+    throw new Error('无法识别云表结构');
+}
+
+function getLayout(config: RemoteVectorConfig, refresh = false): Promise<Layout> {
+    const key = ownerKey(config, '');
+    let pending = layouts.get(key);
+    if (!pending || refresh) {
+        const hint = !refresh && layoutHint(config);
+        pending = hint ? Promise.resolve(hint) : detectLayout(config).then(layout => {
+            try { localStorage.setItem('palace_vector_layout_v1:' + projectKey(config), layout); } catch { /* cache only */ }
+            return layout;
+        });
+        layouts.set(key, pending);
+        pending.catch(() => { if (layouts.get(key) === pending) layouts.delete(key); });
+    }
+    return pending;
+}
+
+function idFilter(ids: string[]) {
+    return 'in.(' + ids.map(id => JSON.stringify(id)).join(',') + ')';
+}
 
 async function failureMessage(res: Response): Promise<string> {
     const error = await res.json().catch(() => null);
     const code = typeof error?.code === 'string' && /^[A-Z0-9]{5,9}$/.test(error.code) ? error.code : '';
     const prefix = `HTTP ${res.status}${code ? ' · ' + code : ''}`;
     if (['PGRST202', 'PGRST204', 'PGRST205', '42703', '42P01', '42883'].includes(code) || res.status === 404)
-        return `${prefix}：表、列或检索函数未就绪，请运行设置里的升级 SQL 并重新测试`;
+        return `${prefix}：云表或检索函数不可用，请检查项目是否已完成初次配置`;
     if (res.status === 401 || res.status === 403 || code === '42501') return `${prefix}：请检查项目密钥和表的读写权限`;
     if (/dimension/i.test(error?.message || '')) return `${prefix}：向量实际维度与云表不符，请核对模型和云表维度`;
     if (res.status === 429) return `${prefix}：服务限流，请稍后重试`;
@@ -57,19 +124,15 @@ function networkFailure(error: unknown): string {
 
 export async function testConnection(config: RemoteVectorConfig) {
     try {
-        const res = await fetch(restUrl(config, `/memory_vectors?select=${NODE_COLUMNS},dimensions,model,vector&limit=0`), {
-            headers: headers(config), signal: AbortSignal.timeout(15000),
-        });
-        if (!res.ok) return { ok: false, tableExists: false, message: await failureMessage(res) };
-        // Verify the returned columns even on an empty project, without reading private memories.
-        const probe = await fetch(rpcUrl(config, 'match_vectors') + '?select=' + NODE_COLUMNS, {
+        const layout = await getLayout(config, true);
+        const probe = await fetch(rpcUrl(config, 'match_vectors') + '?select=memory_id,similarity', {
             method: 'POST', headers: headers(config), signal: AbortSignal.timeout(15000),
             body: JSON.stringify({ query_embedding: null, match_char_id: '', match_count: 0 }),
         });
         if (!probe.ok) return { ok: false, tableExists: true, message: await failureMessage(probe) };
-        return { ok: true, tableExists: true, message: '云表与检索函数已就绪，写入结果见同步进度' };
+        return { ok: true, tableExists: true, message: layout === 'legacy' ? '原有云表可直接使用，已启用兼容同步' : '云表与检索函数已就绪，写入结果见同步进度' };
     } catch (error) {
-        return { ok: false, tableExists: false, message: networkFailure(error) };
+        return { ok: false, tableExists: false, message: error instanceof Error && error.message.startsWith('HTTP ') ? error.message : networkFailure(error) };
     }
 }
 
@@ -125,22 +188,24 @@ function uploadRow({ memoryId, charId, vector, node, model }: VectorUpload) {
     };
 }
 
-async function writeBatch(config: RemoteVectorConfig, items: VectorUpload[]): Promise<string | null> {
-    let body: string;
+async function writeBatch(config: RemoteVectorConfig, items: VectorUpload[], insertOnly = false): Promise<string | null> {
+    let rows: ReturnType<typeof uploadRow>[];
+    try { rows = items.map(uploadRow); } catch { return '本地向量数据无效，无法上传'; }
+    const send = (layout: Layout) => fetch(restUrl(config, '/memory_vectors'), {
+        method: 'POST', signal: AbortSignal.timeout(30000),
+        headers: { ...headers(config), 'Prefer': `resolution=${insertOnly ? 'ignore' : 'merge'}-duplicates,return=minimal` },
+        body: JSON.stringify(rows.map(row => compatibleRow(row, layout))),
+    });
     try {
-        body = JSON.stringify(items.map(uploadRow));
-    } catch {
-        return '本地向量数据无效，无法上传';
-    }
-    try {
-        const res = await fetch(restUrl(config, '/memory_vectors'), {
-            method: 'POST', signal: AbortSignal.timeout(30000),
-            headers: { ...headers(config), 'Prefer': 'resolution=merge-duplicates,return=minimal' },
-            body,
-        });
+        const layout = await (layouts.get(ownerKey(config, '')) ?? layoutHint(config) ?? 'native');
+        let res = await send(layout);
+        if (layout === 'native' && await missingColumn(res)) {
+            const detected = await getLayout(config, true);
+            if (detected === 'legacy') res = await send(detected);
+        }
         return res.ok ? null : await failureMessage(res);
     } catch (error) {
-        return networkFailure(error);
+        return error instanceof Error && error.message.startsWith('HTTP ') ? error.message : networkFailure(error);
     }
 }
 
@@ -207,10 +272,26 @@ export async function searchVectors(
     }
 
     const data = await res.json();
-    return (data || []).map((row: any) => ({ node: remoteNode(row), similarity: row.similarity }));
+    if (!Array.isArray(data) || !data.length) return [];
+    // A historical matcher ranks the same vectors but doesn't return the extra fields.
+    if (data.some(row => !('entities' in row) || (!('model' in row) && EXTRA_COLUMNS.every(k => row[k] == null)))) {
+        const layout = await getLayout(config);
+        const params = new URLSearchParams({
+            select: (layout === 'legacy' ? 'memory_id' : 'memory_id,' + EXTRA_COLUMNS.join(',')) + ',model',
+            memory_id: idFilter(data.map(row => row.memory_id)), char_id: 'eq.' + charId,
+        });
+        const meta = await fetch(restUrl(config, '/memory_vectors?' + params), {
+            headers: headers(config), signal: AbortSignal.timeout(15000),
+        });
+        if (!meta.ok) throw new Error(await failureMessage(meta));
+        const extras = new Map<string, object>((await meta.json()).map((row: any) => [row.memory_id, row]));
+        for (const row of data) Object.assign(row, extras.get(row.memory_id));
+    }
+    return data.map((row: any) => ({ node: remoteNode(row), similarity: row.similarity }));
 }
 
 function remoteNode(row: any): MemoryNode {
+    for (const [key, value] of Object.entries(unpackExtra(row.model))) row[key] ??= value;
     return {
         id: row.memory_id,
         charId: row.char_id,
@@ -253,8 +334,9 @@ export async function fetchRemoteByRoom(
     limit: number = 50,
 ): Promise<MemoryNode[]> {
     try {
+        const known = layoutHint(config);
         const params = new URLSearchParams({
-            select: NODE_COLUMNS,
+            select: (known === 'legacy' ? LEGACY_NODE_COLUMNS : NODE_COLUMNS) + ',model',
             char_id: `eq.${charId}`,
             room: `eq.${room}`,
             archived: 'eq.false',
@@ -268,7 +350,7 @@ export async function fetchRemoteByRoom(
         if (res.status === 400) {
             const error = await res.json().catch(() => null);
             if (error?.code !== '42703' && error?.code !== 'PGRST204') return [];
-            params.set('select', LEGACY_NODE_COLUMNS);
+            params.set('select', LEGACY_NODE_COLUMNS + ',model');
             res = await readRoom();
         }
         if (!res.ok) return [];
@@ -463,6 +545,12 @@ if (typeof window !== 'undefined') {
     });
 }
 
+function clearIncomplete(config: RemoteVectorConfig, token: string) {
+    if (incompleteToken(config) !== token) return;
+    incomplete.delete(incompleteKey(config));
+    try { localStorage.removeItem(incompleteKey(config)); } catch { /* unavailable */ }
+}
+
 export interface VectorSyncProgress {
     running: boolean;
     total: number;
@@ -519,9 +607,9 @@ export async function syncLocalToRemote(config: RemoteVectorConfig): Promise<Vec
             }
             publish();
         }
-        if (!progress.failed && incompleteToken(config) === token) {
-            incomplete.delete(incompleteKey(config));
-            try { localStorage.removeItem(incompleteKey(config)); } catch { /* unavailable */ }
+        if (!progress.failed) {
+            clearIncomplete(config, token);
+            try { localStorage.setItem(upgradeKey(config), '{"done":true}'); } catch { /* optional receipt */ }
         }
     } catch {
         progress.reason = '读取本地向量失败，本次同步已停止';
@@ -532,4 +620,96 @@ export async function syncLocalToRemote(config: RemoteVectorConfig): Promise<Vec
         publish();
     }
     return progress;
+}
+
+/** One release migration per project in the device's current user space.
+ * Resume only confirmed pages. Manual sync remains the explicit overwrite path. */
+export const upgradeKey = (config: RemoteVectorConfig) => 'palace_vector_upgrade_v1:' + projectKey(config);
+export interface UpgradeReceipt { last?: string; done?: boolean; divergent?: boolean }
+export function readUpgrade(config: RemoteVectorConfig): UpgradeReceipt {
+    try { return JSON.parse(localStorage.getItem(upgradeKey(config)) || '{}') || {}; } catch { return {}; }
+}
+
+async function upgradePage(config: RemoteVectorConfig, items: VectorUpload[], layout: Layout, signal: AbortSignal) {
+    if (!items.length) return false;
+    signal.throwIfAborted();
+    const select = 'memory_id,char_id,content,model,dimensions,created_at' + (layout === 'native' ? ',' + EXTRA_COLUMNS.join(',') : '');
+    const params = new URLSearchParams({ select, memory_id: idFilter(items.map(i => i.memoryId)) });
+    const res = await fetch(restUrl(config, '/memory_vectors?' + params), { headers: headers(config), signal: AbortSignal.timeout(15000) });
+    if (!res.ok) throw new Error(await failureMessage(res));
+    const existing = new Map<string, any>((await res.json()).map((r: any) => [r.memory_id, r]));
+    const absent = items.filter(item => !existing.has(item.memoryId));
+    if (absent.length) {
+        signal.throwIfAborted();
+        const failure = await writeBatch(config, absent, true);
+        if (failure) throw new Error(failure);
+    }
+
+    let divergent = false;
+    for (const item of items) {
+        signal.throwIfAborted();
+        const row = existing.get(item.memoryId);
+        if (!row) continue;
+        if (row.char_id !== item.charId || row.content !== item.node.content) { divergent = true; continue; }
+        const extra = {
+            entities: item.node.entities, relative_time_anchor: item.node.relativeTimeAnchor,
+            group_id: item.node.groupId, group_name: item.node.groupName, digested_at: item.node.digestedAt,
+        };
+        const stored = unpackExtra(row.model);
+        const missing = EXTRA_COLUMNS.filter(k => extra[k] != null && row[k] == null && stored[k] == null);
+        if (!missing.length) continue;
+        const patch = Object.fromEntries(missing.map(k => [k, extra[k]]));
+        const where = new URLSearchParams({ select: 'memory_id', memory_id: 'eq.' + item.memoryId, char_id: 'eq.' + item.charId });
+        // Never replace existing remote content, vector, model choice or another client's metadata.
+        let body: object = patch;
+        if (layout === 'legacy') {
+            // An existing envelope already belongs to another writer. Never put its private payload in a URL.
+            if (typeof row.model === 'string' && row.model.startsWith(LEGACY_MODEL_PREFIX)) { divergent = true; continue; }
+            where.set('model', row.model == null ? 'is.null' : 'eq.' + row.model);
+            body = { model: LEGACY_MODEL_PREFIX + JSON.stringify({ model: row.model, extra: patch }) };
+        } else {
+            for (const field of missing) where.set(field, 'is.null');
+        }
+        const patched = await fetch(restUrl(config, '/memory_vectors?' + where), {
+            method: 'PATCH', headers: { ...headers(config), Prefer: 'return=representation' }, body: JSON.stringify(body), signal: AbortSignal.timeout(15000),
+        });
+        if (!patched.ok) throw new Error(await failureMessage(patched));
+        if (!(await patched.json()).some((r: any) => r.memory_id === item.memoryId)) {
+            throw new Error('云端未确认元数据更新，请检查写入权限或稍后重试');
+        }
+    }
+    return divergent;
+}
+
+export async function upgradeRemoteVectors(config: RemoteVectorConfig, signal: AbortSignal,
+    onProgress: (checked: number, total: number) => void) {
+    if (!config.enabled || !config.initialized || !config.supabaseUrl || !config.supabaseAnonKey) return;
+    const receipt = readUpgrade(config);
+    if (receipt.done) return;
+    const { getUploadKeys, getUploadPage } = await import('./db');
+    const keys = await getUploadKeys();
+    signal.throwIfAborted();
+    if (keys.length) {
+        const token = setIncomplete(config);
+        invalidateRemoteCoverage();
+        let i = receipt.last ? keys.findIndex(k => indexedDB.cmp(k, receipt.last!) > 0) : 0;
+        if (i < 0) i = keys.length;
+        onProgress(i, keys.length);
+        const layout = await getLayout(config);
+        while (i < keys.length) {
+            signal.throwIfAborted();
+            const page = keys.slice(i, i + 50);
+            const divergent = await withWriteOrder(config, page, async () =>
+                upgradePage(config, await getUploadPage(page), layout, signal));
+            signal.throwIfAborted();
+            receipt.divergent ||= divergent;
+            receipt.last = String(page[page.length - 1]);
+            localStorage.setItem(upgradeKey(config), JSON.stringify(receipt));
+            i += page.length;
+            onProgress(i, keys.length);
+        }
+        if (!receipt.divergent) clearIncomplete(config, token);
+        invalidateRemoteCoverage();
+    }
+    localStorage.setItem(upgradeKey(config), JSON.stringify({ done: true, divergent: receipt.divergent }));
 }

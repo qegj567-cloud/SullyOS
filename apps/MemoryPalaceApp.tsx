@@ -1738,7 +1738,14 @@ export default function MemoryPalaceApp() {
     };
     useAppShortcut(ShortcutAppID.MemoryPalace, (intent, isCurrent) => {
         setSelectedRoom(null); setSelectedNode(null); setShowCharPicker(false);
-        if (intent.entryId === 'globalSettings') { setView('globalSettings'); return; }
+        if (intent.entryId === 'globalSettings') {
+            setView('globalSettings');
+            if (intent.resourceId === 'remoteVector') requestAnimationFrame(() => {
+                const section = document.querySelector<HTMLDetailsElement>('[data-remote-vector-settings]');
+                if (section) { section.open = true; section.scrollIntoView({ block: 'start' }); }
+            });
+            return;
+        }
         const target = characters.find(c => c.id === intent.characterId);
         if (!target) { setView('picker'); return; }
         setActiveCharacterId(target.id);
@@ -3954,7 +3961,7 @@ export default function MemoryPalaceApp() {
                 </details>
 
                 {/* 远程向量存储（Supabase，可选）— 默认折叠 */}
-                <details style={{ marginTop: 16, background: '#faf5ff', borderRadius: 16, padding: 16, border: '1px solid #e9d5ff' }}>
+                <details data-remote-vector-settings style={{ marginTop: 16, background: '#faf5ff', borderRadius: 16, padding: 16, border: '1px solid #e9d5ff' }}>
                     <summary style={{ cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span style={{ fontSize: 12, fontWeight: 700, color: '#7c3aed', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                             <Icon name="cloud" size={14} />
@@ -4007,7 +4014,7 @@ export default function MemoryPalaceApp() {
 
                     {/* 3 步操作提示 */}
                     <div style={{ marginTop: 12, padding: 12, borderRadius: 12, background: '#f5f3ff', fontSize: 11, color: '#5b21b6', lineHeight: 1.8 }}>
-                        <b>3 步搞定：</b><br/>
+                        <b>首次创建项目：</b><br/>
                         1. 注册 Supabase（GitHub 一键登录，见上方教程）<br/>
                         2. 在 Supabase SQL Editor 里运行下方初始化 SQL<br/>
                         3. 填入 Project URL 和 anon key，点测试连接
@@ -4044,7 +4051,7 @@ export default function MemoryPalaceApp() {
                                 overflow: 'auto', maxHeight: 200, lineHeight: 1.6, whiteSpace: 'pre-wrap',
                             }}>{INIT_SQL}</pre>
                         )}
-                        <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 4 }}>新旧项目均可复制到 Supabase SQL Editor 运行。旧项目保留已有向量，运行后测试连接并同步一次，即可用本地原向量补齐新字段。默认云表为 1024 维。</div>
+                        <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 4 }}>已配置的项目由 SullyOS 自动适配。首次建库可复制这份 SQL，默认向量维度为 1024。</div>
                     </div>
 
                     {/* Project URL & anon key */}

@@ -1995,7 +1995,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         try {
             const rvConfig = JSON.parse(localStorage.getItem('os_remote_vector_config') || '{}');
             if (rvConfig.enabled && rvConfig.initialized && rvConfig.supabaseUrl) {
-                const { getVectorCount } = await import('../utils/memoryPalace/supabaseVector');
+                const { getVectorCount, readUpgrade } = await import('../utils/memoryPalace/supabaseVector');
+                if (!readUpgrade(rvConfig).done) return; // The automatic check already reports migration progress.
                 const remoteCount = await getVectorCount(rvConfig);
                 // 本地向量数量
                 const localDb = await import('../utils/db').then(m => m.openDB());

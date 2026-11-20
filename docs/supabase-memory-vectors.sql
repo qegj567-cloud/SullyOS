@@ -1,5 +1,5 @@
 -- SullyOS 记忆宫殿：在 Supabase SQL Editor 中整份运行，可重复运行。
--- 升级后在保有原记忆的设备点「同步本地向量到远程」，复用已有向量补齐节点字段。
+-- 首次建库或选择原生扩展列时使用。已配置的历史项目由客户端自动兼容。
 begin;
 set local search_path = public, extensions;
 
@@ -104,7 +104,8 @@ returns table (
   relative_time_anchor jsonb,
   group_id text,
   group_name text,
-  digested_at bigint
+  digested_at bigint,
+  model text
 )
 language sql stable
 set search_path = public, extensions
@@ -133,7 +134,8 @@ as $$
     mv.relative_time_anchor,
     mv.group_id,
     mv.group_name,
-    mv.digested_at
+    mv.digested_at,
+    mv.model
   from memory_vectors mv
   where mv.char_id = match_char_id
     and coalesce(mv.archived, false) = false  -- 过滤已归档节点

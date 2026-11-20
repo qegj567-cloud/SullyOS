@@ -208,13 +208,13 @@ it('远程设置保留上传进度、错误原因和未尝试数量，统计只�
     await act(async () => { await vi.waitFor(() => expect(http).toHaveBeenCalledTimes(2)); });
     expect(host.querySelector('[role="status"]')?.textContent).toContain('成功 50 · 失败 0 · 上传中 50 · 尚未尝试 1');
     await act(async () => {
-        rejectPage(Response.json({ code: 'PGRST204', message: '隐私正文' }, { status: 400 }));
+        rejectPage(Response.json({ code: '42501', message: '隐私正文' }, { status: 403 }));
         await vi.waitFor(() => expect(addToast).toHaveBeenCalledWith(expect.stringContaining('同步结束'), 'error'));
     });
     const summary = host.querySelector('[role="status"]')?.textContent;
     expect(summary).toContain('成功 50 · 失败 50 · 尚未尝试 1');
-    expect(summary).toContain('PGRST204');
-    expect(summary).toContain('升级 SQL');
+    expect(summary).toContain('42501');
+    expect(summary).toContain('读写权限');
     expect(trackEvent.mock.calls.filter(([name]) => name.includes('记忆向量'))).toEqual([
         ['同步记忆向量到云端'], ['记忆向量同步结果', { 结果: '部分完成' }],
     ]);

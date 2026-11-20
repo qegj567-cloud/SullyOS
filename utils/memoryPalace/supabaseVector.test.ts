@@ -4,7 +4,7 @@ import { MemoryNodeDB } from './db';
 import { vectorSearch } from './vectorSearch';
 import {
     fetchRemoteByRoom, getVectorCount, getVectorSyncProgress, invalidateRemoteCoverage,
-    remoteCoversLocal, subscribeVectorSync, syncLocalToRemote, testConnection, upsertVectorBatch,
+    readUpgrade, remoteCoversLocal, searchVectors, subscribeVectorSync, upgradeRemoteVectors, syncLocalToRemote, testConnection, upsertVectorBatch,
 } from './supabaseVector';
 import type { MemoryNode } from './types';
 
@@ -48,11 +48,11 @@ describe('远程向量', () => {
         for (let i = 0; i < 3; i++) expect(await getVectorCount(config)).toBeNull();
     });
 
-    it('表可读但 RPC 缺字段时提示升级', async () => {
+    it('表可读但检索函数缺失时准确报告', async () => {
         const http = vi.fn().mockResolvedValueOnce(Response.json([]))
             .mockResolvedValueOnce(Response.json({ code: '42703' }, { status: 400 }));
         vi.stubGlobal('fetch', http);
-        expect(await testConnection(config)).toMatchObject({ ok: false, message: expect.stringContaining('升级 SQL') });
+        expect(await testConnection(config)).toMatchObject({ ok: false, message: expect.stringContaining('检索函数不可用') });
         expect(http.mock.calls[1][0]).toContain('/rpc/match_vectors?select=');
     });
 
@@ -62,7 +62,7 @@ describe('远程向量', () => {
         const remote = new Map<string, any>();
         vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
             expect(url).toBe(config.supabaseUrl + '/rest/v1/memory_vectors');
-            if (++writes === 2) return Response.json({ code: 'PGRST204', message: 'private text' }, { status: 400 });
+            if (++writes === 2) return Response.json({ code: '42501', message: 'private text' }, { status: 403 });
             for (const row of JSON.parse(String(init.body))) remote.set(row.memory_id, row);
             return new Response(null, { status: 201 });
         }));
@@ -70,7 +70,7 @@ describe('远程向量', () => {
         const unsub = subscribeVectorSync(() => ack.push(getVectorSyncProgress(config)!.synced));
         try {
             expect(await syncLocalToRemote(config)).toMatchObject({
-                running: false, total: 101, synced: 50, failed: 50, reason: expect.stringContaining('PGRST204'),
+                running: false, total: 101, synced: 50, failed: 50, reason: expect.stringContaining('42501'),
             });
             expect(ack).toContain(50);
             expect(getVectorSyncProgress(config)?.reason).not.toContain('private text');
@@ -112,5 +112,75 @@ describe('远程向量', () => {
         expect(await upsertVectorBatch(config, [{ ...item.vector, node: item.node }])).toBe(false);
         expect(await remoteCoversLocal(config, 'char')).toBe(false);
         expect(await remoteCoversLocal({ ...config, supabaseUrl: 'https://other.invalid' }, 'char')).toBe(true);
+    });
+});
+
+describe('零操作兼容原版 Supabase', () => {
+    it('使用旧表和旧 RPC 回填与召回扩展字段，保留已有模型、向量和其他设备的修改', async () => {
+        const cfg = { ...config, supabaseUrl: 'https://legacy.invalid' };
+        const existing = { memory_id: 'old', char_id: 'char', content: node.content, model: 'remote-model', vector: '[0.1,0.2]' };
+        const rows = new Map<string, any>([['old', existing], ['edited', { ...existing, memory_id: 'edited', content: '其他设备的新正文' }]]);
+        await MemoryNodeDB.saveVectorizedMany(['old', 'edited', 'missing'].map(entry));
+        const http = vi.fn(async (url: string, init: RequestInit = {}) => {
+            const u = new URL(url), fields = u.searchParams.get('select') || '';
+            if (u.pathname.includes('/rpc/')) {
+                if (fields) return Response.json([]);
+                return Response.json([{ memory_id: 'old', char_id: 'char', content: node.content, similarity: 1 }]);
+            }
+            if (fields.includes('entities')) return Response.json({ code: '42703' }, { status: 400 });
+            if (u.searchParams.get('limit') === '0') return Response.json([]);
+            if (init.method === 'PATCH') {
+                expect(u.searchParams.get('memory_id')).toBe('eq.old');
+                const patch = JSON.parse(String(init.body));
+                expect(Object.keys(patch)).toEqual(['model']);
+                Object.assign(existing, patch);
+                return Response.json([{ memory_id: 'old' }]);
+            }
+            if (init.method === 'POST') {
+                const batch = JSON.parse(String(init.body));
+                for (const r of batch) {
+                    expect(r).not.toHaveProperty('entities');
+                    expect(r.tags).toEqual(node.tags);
+                    rows.set(r.memory_id, r);
+                }
+                return new Response(null, { status: 201 });
+            }
+            return Response.json([...rows.values()]);
+        });
+        vi.stubGlobal('fetch', http);
+        expect(await testConnection(cfg)).toMatchObject({ ok: true, message: expect.stringContaining('兼容') });
+        const progress = vi.fn();
+        await upgradeRemoteVectors(cfg, new AbortController().signal, progress);
+        expect(progress).toHaveBeenLastCalledWith(3, 3);
+        expect(readUpgrade(cfg)).toMatchObject({ done: true, divergent: true });
+        expect(rows.get('old').vector).toBe('[0.1,0.2]');
+        expect(rows.get('old').model).toContain('remote-model');
+        expect(rows.get('edited').content).toBe('其他设备的新正文');
+        expect(rows.get('missing').vector).toBe('[0.25,0.5]');
+        const hits = await searchVectors(cfg, [1, 0], 'char');
+        expect(hits[0].node).toMatchObject({ entities: node.entities, groupName: node.groupName,
+            relativeTimeAnchor: node.relativeTimeAnchor, digestedAt: 123 });
+        const calls = http.mock.calls.length;
+        await upgradeRemoteVectors(cfg, new AbortController().signal, progress);
+        expect(http).toHaveBeenCalledTimes(calls);
+    });
+
+    it('从上次已确认页继续，停用时不发请求', async () => {
+        const cfg = { ...config, supabaseUrl: 'https://resume.invalid' };
+        const ids = Array.from({ length: 101 }, (_, i) => 'resume-' + String(i).padStart(3, '0'));
+        await MemoryNodeDB.saveVectorizedMany(ids.map(entry));
+        const batches: string[][] = [];
+        const http = vi.fn(async (url: string, init: RequestInit = {}) => {
+            if (init.method !== 'POST') return Response.json([]);
+            batches.push(JSON.parse(String(init.body)).map((r: any) => r.memory_id));
+            return new Response(null, { status: batches.length === 2 ? 503 : 201 });
+        });
+        vi.stubGlobal('fetch', http);
+        await upgradeRemoteVectors({ ...cfg, enabled: false }, new AbortController().signal, vi.fn());
+        expect(http).not.toHaveBeenCalled();
+        await expect(upgradeRemoteVectors(cfg, new AbortController().signal, vi.fn())).rejects.toThrow('503');
+        expect(readUpgrade(cfg)).toMatchObject({ last: 'resume-049' });
+        await upgradeRemoteVectors(cfg, new AbortController().signal, vi.fn());
+        expect(batches.map(b => b[0])).toEqual(['resume-000','resume-050','resume-050','resume-100']);
     });
 });
