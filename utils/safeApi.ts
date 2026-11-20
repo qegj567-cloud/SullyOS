@@ -456,9 +456,9 @@ export async function safeFetchJson(
                 // 串联外部 signal：外部 abort 也触发内部
                 if (options.signal.aborted) {
                     clearTimeout(timeoutHandle);
-                    throw new Error('aborted');
+                    throw options.signal.reason ?? new DOMException('aborted', 'AbortError');
                 }
-                options.signal.addEventListener('abort', () => ac.abort(), { once: true });
+                options.signal.addEventListener('abort', () => ac.abort(options.signal!.reason), { once: true });
             }
             attemptOptions = { ...attemptOptions, signal: ac.signal };
         }
