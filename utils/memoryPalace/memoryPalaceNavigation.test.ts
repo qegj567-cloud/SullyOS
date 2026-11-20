@@ -7,6 +7,9 @@ import { MemoryNodeDB } from './db';
 import type { MemoryNode } from './types';
 
 const addToast = vi.fn();
+const remoteConfig = { enabled: false, initialized: false, supabaseUrl: 'https://private-project.invalid', supabaseAnonKey: 'private-key' };
+const { trackEvent } = vi.hoisted(() => ({ trackEvent: vi.fn() }));
+vi.mock('../analytics', async importOriginal => ({ ...await importOriginal<typeof import('../analytics')>(), trackEvent }));
 const mockChar = {
     id: 'char_nav_test',
     name: '阿泽',
@@ -31,7 +34,7 @@ vi.mock('../../context/OSContext', () => ({
             relativeTimeAnnotations: false,
         },
         updateMemoryPalaceConfig: vi.fn(),
-        remoteVectorConfig: { enabled: false, initialized: false, supabaseUrl: '', supabaseAnonKey: '' },
+        remoteVectorConfig: remoteConfig,
         updateRemoteVectorConfig: vi.fn(),
         addToast,
         apiConfig: { baseUrl: '', apiKey: '', model: '' },
@@ -86,6 +89,8 @@ beforeEach(() => {
 afterEach(() => {
     act(() => root.unmount());
     host.remove();
+    remoteConfig.enabled = remoteConfig.initialized = false;
+    vi.unstubAllGlobals();
 });
 
 describe('MemoryPalaceApp list scroll preservation and return sync', () => {
@@ -185,4 +190,32 @@ describe('MemoryPalaceApp list scroll preservation and return sync', () => {
         expect(restoredPalace!.scrollTop).toBe(260);
         expect(host.textContent).toContain('阿泽 的记忆宫殿');
     });
+});
+
+it('远程设置保留上传进度、错误原因和未尝试数量，统计只发送固定结果', async () => {
+    remoteConfig.enabled = remoteConfig.initialized = true;
+    await MemoryNodeDB.saveVectorizedMany(Array.from({ length: 101 }, (_, index) => {
+        const node = makeNode('upload-' + index, '隐私正文', 1000);
+        return { node, vector: { memoryId: node.id, charId: node.charId, vector: [1, 0], dimensions: 2 } };
+    }));
+    let rejectPage!: (res: Response) => void;
+    const pendingPage = new Promise<Response>(resolve => { rejectPage = resolve; });
+    const http = vi.fn().mockResolvedValueOnce(new Response(null, { status: 201 })).mockReturnValueOnce(pendingPage);
+    vi.stubGlobal('fetch', http);
+    await act(async () => { root.render(React.createElement(MemoryPalaceApp)); });
+    act(() => host.querySelector<HTMLElement>('[title="记忆宫殿全局配置（API 等）"]')!.click());
+    act(() => findClickableByText('同步本地向量到远程').click());
+    await act(async () => { await vi.waitFor(() => expect(http).toHaveBeenCalledTimes(2)); });
+    expect(host.querySelector('[role="status"]')?.textContent).toContain('成功 50 · 失败 0 · 上传中 50 · 尚未尝试 1');
+    await act(async () => {
+        rejectPage(Response.json({ code: 'PGRST204', message: '隐私正文' }, { status: 400 }));
+        await vi.waitFor(() => expect(addToast).toHaveBeenCalledWith(expect.stringContaining('同步结束'), 'error'));
+    });
+    const summary = host.querySelector('[role="status"]')?.textContent;
+    expect(summary).toContain('成功 50 · 失败 50 · 尚未尝试 1');
+    expect(summary).toContain('PGRST204');
+    expect(summary).toContain('升级 SQL');
+    expect(trackEvent.mock.calls.filter(([name]) => name.includes('记忆向量'))).toEqual([
+        ['同步记忆向量到云端'], ['记忆向量同步结果', { 结果: '部分完成' }],
+    ]);
 });

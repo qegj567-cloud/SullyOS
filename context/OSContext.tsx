@@ -2005,7 +2005,9 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                     req.onsuccess = () => res(req.result);
                     req.onerror = () => res(0);
                 });
-                if (localCount > 0 && remoteCount < localCount * 0.5) {
+                if (localCount > 0 && remoteCount === null) {
+                    setTimeout(() => addToast('远程向量数量暂时无法查询，可在记忆宫殿设置中测试连接。', 'info'), 3000);
+                } else if (remoteCount !== null && remoteCount < localCount) {
                     setTimeout(() => addToast(`本地有 ${localCount} 条向量，远程仅 ${remoteCount} 条。建议去设置页同步到远程。`, 'info'), 3000);
                 }
             }

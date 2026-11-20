@@ -8,7 +8,7 @@ import { resolveMemoryPalaceWaterline } from './memoryPalace/waterline';
 import { ActiveMsgStore } from './activeMsgStore';
 import { isAmsg2GloballyEnabled } from './amsgGlobalGate';
 
-type SettingsSource = Pick<ReturnType<typeof useOS>, 'apiConfig' | 'memoryPalaceConfig' | 'realtimeConfig' | 'theme' | 'isDataLoaded'>;
+type SettingsSource = Pick<ReturnType<typeof useOS>, 'apiConfig' | 'memoryPalaceConfig' | 'realtimeConfig' | 'theme' | 'isDataLoaded'> & Partial<Pick<ReturnType<typeof useOS>, 'remoteVectorConfig'>>;
 type Endpoint = { baseUrl: string; apiKey: string; model: string };
 function endpointFields(config: Endpoint) {
     const name = config.model?.trim() || '';
@@ -39,6 +39,7 @@ export async function readHelpDeskSettings(os: SettingsSource, char?: CharacterP
             副API: endpointFields(memoryPalaceConfig.lightLLM), Embedding: endpointFields(memoryPalaceConfig.embedding),
             重排开关: !!memoryPalaceConfig.rerank?.enabled,
             重排额外名额: memoryPalaceConfig.rerank?.enabled ? Math.max(1, Math.min(20, memoryPalaceConfig.rerank.topN ?? 5)) : undefined,
+            远程向量: os.remoteVectorConfig?.enabled ? (os.remoteVectorConfig.initialized ? '已配置' : '待验证') : '关闭',
             手动分步维护: memoryPalaceConfig.manualMaintenance === true,
         },
         实时感知: { 天气开关: !!realtimeConfig.weatherEnabled, 热点开关: !!realtimeConfig.newsEnabled },
