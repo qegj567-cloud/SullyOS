@@ -141,7 +141,7 @@ sullyos.devDebug.log.v1.<branch>        ← 分类捕获日志（各类混存，
 
 ### 一次性工具：OPFS 探针
 
-面板里的「OPFS 探针」按钮在真机上核对 OPFS 的建文件、写入、读回校验、配额和删除，结果是一段可复制的 JSON，带 UA、协议和页面是否被 Service Worker 接管。实现在 `utils/opfsProbe.ts`，用途见 [`backup-pipeline.md`](./backup-pipeline.md) 第零期。
+面板里的「OPFS 探针」按钮在真机上核对 OPFS 的建文件、写入、读回校验、配额和删除，结果是一段可复制的 JSON，带 UA、协议和页面是否被 Service Worker 接管。实现在 `utils/opfsProbe.ts`，用途见 [`backup-pipeline.md`](./backup-pipeline.md) 第零期。结果里的 `appendWrites` 是往同一个文件连续追加写 16 次、每次 1MB，记下前后浏览器报的用量：涨 16MB 左右是正常记账，涨到一百多 MB 说明浏览器每写一次都把整个文件重新算了一遍。
 
 要顺便核对 WebKit 319985（落盘的文件上传时发出 0 字节），有两种上传方式：
 

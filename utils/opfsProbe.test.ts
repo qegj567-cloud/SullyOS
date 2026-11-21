@@ -58,6 +58,7 @@ describe('runOpfsProbe', () => {
         expect(result.readBack.ok).toBe(true);
         expect((result.upload as ProbeStep).skipped).toBe(true);
         expect(result.backupTmp.entries).toEqual([{ name: 'download-1-abc.tmp', size: 5 }]);
+        expect(result.appendWrites).toMatchObject({ ok: true, writes: 16, written: 16 * 1024 * 1024, usageBefore: 10, usageAfterRemove: 10 });
         expect(fetchSpy).not.toHaveBeenCalled();
     });
 

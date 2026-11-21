@@ -5,6 +5,8 @@ import type { CloudBackupConfig } from '../types';
 const PROBE_FILE = 'sullyos-opfs-probe';
 const PROBE_SIZE = 4 * 1024 * 1024;
 const PARTIAL_SIZE = 1024 * 1024;
+const APPEND_FILE = `${PROBE_FILE}-append`;
+const APPEND_COUNT = 16;
 const UPLOAD_TIMEOUT_MS = 60_000;
 
 export interface ProbeStep {
@@ -22,6 +24,11 @@ export interface OpfsProbeResult {
     createFile: ProbeStep;
     write: ProbeStep;
     readBack: ProbeStep;
+    /**
+     * 往同一个文件连续追加写，记下前后报的用量。用量按写入量涨（约 16MB）是正常记账；
+     * 涨到一百多 MB 说明每写一次都把整个文件重新算了一遍，分很多次写的大文件会把用量虚报到远超实际。
+     */
+    appendWrites: ProbeStep;
     estimate: ProbeStep;
     /** 备份临时目录里现存的文件：恢复或下载结束后应当是空的。 */
     backupTmp: ProbeStep;
@@ -111,6 +118,7 @@ export async function runOpfsProbe(uploader?: OpfsProbeUploader): Promise<OpfsPr
         createFile: skipped('未执行'),
         write: skipped('未执行'),
         readBack: skipped('未执行'),
+        appendWrites: skipped('未执行'),
         estimate: skipped('未执行'),
         backupTmp: skipped('未执行'),
         upload: skipped('未选择上传方式'),
@@ -191,6 +199,28 @@ export async function runOpfsProbe(uploader?: OpfsProbeUploader): Promise<OpfsPr
     } else {
         result.readBack = skipped('写入没成功');
     }
+
+    result.appendWrites = !result.write.ok ? skipped('写入没成功') : await attempt(async () => {
+        const usage = async () => (typeof storage.estimate === 'function' ? (await storage.estimate()).usage ?? null : null);
+        const chunk = expected.subarray(0, PARTIAL_SIZE);
+        const usageBefore = await usage();
+        const appendHandle = await dir!.getFileHandle(APPEND_FILE, { create: true });
+        const writable = await appendHandle.createWritable();
+        try {
+            for (let i = 0; i < APPEND_COUNT; i++) await writable.write(chunk);
+        } finally {
+            await writable.close();
+        }
+        const usageAfterWrites = await usage();
+        await dir!.removeEntry(APPEND_FILE);
+        return {
+            writes: APPEND_COUNT,
+            written: APPEND_COUNT * PARTIAL_SIZE,
+            usageBefore,
+            usageAfterWrites,
+            usageAfterRemove: await usage(),
+        };
+    });
 
     if (uploader && file) {
         const source = file;
