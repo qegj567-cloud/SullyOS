@@ -11,7 +11,7 @@ import {
 describe('API config normalization', () => {
   it('restores the camera preference, original video config and separate speech key after a ZIP export', async () => {
     const original = { baseUrl: '', model: '', apiKey: '', minimaxApiKey: 'fixture-minimax',
-      companionQuickReply: true, sttProvider: 'doubao' as const,
+      companionQuickReply: true, companionBargeIn: false, sttProvider: 'doubao' as const,
       companionVideoApi: { provider: 'doubao' as const, baseUrl: 'https://ark.cn-beijing.volces.com/api/plan/v3',
         model: 'doubao-seed-2.1-pro', apiKey: 'fixture-plan', preferSharedMiniMax: true as const },
       companionStt: { provider: 'doubao' as const, apiKey: 'fixture-speech', resourceId: 'volc.seedasr.sauc.duration' as const } };

@@ -34,13 +34,14 @@ export interface CompanionSurfaceProps {
   navigateSetup?(target: CompanionSetupTarget, charId?: string): void;
   saveVideoApi?(config: CompanionVideoApiConfig): void;
   saveQuickReply?(enabled: boolean): void;
+  saveBargeIn?(enabled: boolean): void;
   editAvatar?: boolean;
   /** Fixture injection only; production always uses the shared request pipeline. */
   requestFactory?: RequestFactory;
   videoObserver?: typeof observeCompanionVideo;
 }
 
-export function CompanionSurface({ characters, user, api, realtimeConfig, close, navigateSetup, saveVideoApi, saveQuickReply, editAvatar, requestFactory = createCompanionRequests, videoObserver = observeCompanionVideo }: CompanionSurfaceProps) {
+export function CompanionSurface({ characters, user, api, realtimeConfig, close, navigateSetup, saveVideoApi, saveQuickReply, saveBargeIn, editAvatar, requestFactory = createCompanionRequests, videoObserver = observeCompanionVideo }: CompanionSurfaceProps) {
   const [charId, setCharId] = useState(characters[0]?.id || '');
   const char = characters.find(item => item.id === charId);
   const [style, setStyle] = useState('');
@@ -54,6 +55,7 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
   const [error, setError] = useState('');
   const [input, setInput] = useState('');
   const [partial, setPartial] = useState('');
+  const [pendingInput, setPendingInput] = useState('');
   const [listening, setListening] = useState(false);
   const [micStatus, setMicStatus] = useState('');
   const [micDiagnostics, setMicDiagnostics] = useState<ListeningDiagnostics>();
@@ -61,6 +63,10 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
   const [streetMain, setStreetMain] = useState(false);
   const [localQuickReply, setLocalQuickReply] = useState(api.companionQuickReply === true);
   const quickEnabled = saveQuickReply ? api.companionQuickReply === true : localQuickReply;
+  const [localBargeIn, setLocalBargeIn] = useState(api.companionBargeIn !== false);
+  const bargeIn = saveBargeIn ? api.companionBargeIn !== false : localBargeIn;
+  const bargeInRef = useRef(bargeIn);
+  bargeInRef.current = bargeIn;
   const [cameraPending, setCameraPending] = useState(false);
   const [cameraDeviceId, setCameraDeviceId] = useState('');
   const [cameraLabel, setCameraLabel] = useState('');
@@ -87,7 +93,7 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
   const voice = useRef(new CompanionVoice());
   const session = useRef<CompanionSession<any>>();
   const voiceOn = useRef(voiceEnabled); voiceOn.current = voiceEnabled;
-  const sendRef = useRef<(text: string) => void>(() => {});
+  const sendRef = useRef<(text: string, fromSpeech?: boolean) => void>(() => {});
   const mounted = useRef(true);
   const canVoice = !!char && canSynthesizeSpeech(char, api);
   const latest = lines.at(-1);
@@ -98,7 +104,7 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
   const videoApi = useMemo(() => resolveCompanionVideoApi(savedVideo, domesticKey), [savedVideo, domesticKey]);
   const miniMaxDirect = isOfficialCompanionMiniMax(videoApi);
 
-  const stopMic = () => { stopListening.current?.(); stopListening.current = undefined; setListening(false); setPartial(''); setMicStatus(''); setMicDiagnostics(undefined); };
+  const stopMic = () => { stopListening.current?.(); stopListening.current = undefined; session.current?.speechEnded(); setListening(false); setPartial(''); setMicStatus(''); setMicDiagnostics(undefined); };
   const stopCamera = () => {
     cameraGeneration.current++;
     visionAbort.current?.abort();
@@ -142,15 +148,22 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
           await voice.current.play(text, char, api, signal, heard, () => started('audio'));
         },
         change: (next, state) => { if (mounted.current) { setLines(next); setStatus(state); } },
+        pendingInput: text => { if (mounted.current) setPendingInput(text); },
         error: err => { if (mounted.current) setError(err instanceof Error ? err.message : '本轮没有完成，请重试'); },
       });
     }
     return session.current;
   };
-  const send = (text: string) => {
+  const send = (text: string, fromSpeech = false) => {
     if (!text.trim() || !char) return;
-    setError(''); setInput(''); voice.current.prime();
-    try { void ensureSession().send(text, quickEnabled); } catch (err) { setError((err as Error).message); }
+    setError('');
+    if (!fromSpeech) setInput('');
+    voice.current.prime();
+    try {
+      const current = ensureSession();
+      void current.send(text, quickEnabled, bargeInRef.current ? 'interrupt' : 'queue');
+      if (fromSpeech) void current.speechEnded();
+    } catch (err) { setError((err as Error).message); }
   };
   sendRef.current = send;
 
@@ -159,10 +172,11 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
     if (useDoubao && !api.companionStt?.apiKey.trim()) { setError('请先填写豆包语音 API Key'); setSetupOpen(true); return; }
     setError(''); setMicDiagnostics(undefined); voice.current.prime();
     try {
-      ensureSession();
+      const current = ensureSession();
       const callbacks: ListeningCallbacks = {
-        speech: () => session.current?.interrupt('识别到新的语音输入'), partial: setPartial, final: text => sendRef.current(text),
-        error: (message: string) => { setError(message); setListening(false); setPartial(''); setMicStatus(''); stopListening.current = undefined; },
+        speech: () => current.speechStarted(bargeInRef.current), partial: setPartial,
+        final: text => sendRef.current(text, true), speechEnded: () => { void current.speechEnded(); },
+        error: (message: string) => { void current.speechEnded(); setError(message); setListening(false); setPartial(''); setMicStatus(''); stopListening.current = undefined; },
         state: setMicStatus, diagnostics: setMicDiagnostics,
       };
       stopListening.current = useDoubao ? startDoubaoListening(api.companionStt!, callbacks) : startCompanionListening(callbacks);
@@ -264,6 +278,11 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
           if (saveQuickReply) saveQuickReply(enabled); else setLocalQuickReply(enabled);
         }}/>短接话 a</label>
         <p>从下一句话生效。关闭时直接准备完整上下文，只生成和播放 a′。</p>
+        <label className="companion-quick-toggle"><input type="checkbox" checked={bargeIn} onChange={event => {
+          const enabled = event.target.checked;
+          if (saveBargeIn) saveBargeIn(enabled); else setLocalBargeIn(enabled);
+        }}/>插话打断</label>
+        <p>开启时，识别到你说话就打断角色。关闭后，说完的话和发出的文字会等角色讲完，再合成下一轮发送。</p>
         {quickEnabled && <label>接话设定<textarea value={style} maxLength={2400} disabled={!!session.current} onChange={event => setStyle(event.target.value)}/></label>}
         <p>连续听：{useDoubao ? '豆包流式语音识别 2.0' : '浏览器识别'}。在「设置 → 其他 API」中配置；建议戴耳机避免识别到角色的外放声音。</p>
         <p>镜头开启后始终显示完整实时画面。后台录制约 8 秒的无声视频片段交给视频理解 API；绿色边框表示正在分析已录完的片段。分析失败会暂停理解，实时预览保留。主模型默认只收视频摘要；补充截图在 API 接入中选择。视频和截图不存档，本次对话离开后清空。</p>
@@ -289,13 +308,14 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
       {!companionDialogueReady(api, char) && <button type="button" className="companion-setup-hint" onClick={() => setSetupOpen(true)}>还没配置对话模型？从这里开始 →</button>}
       {error && <div className="companion-error" role="alert">{error}<button aria-label="关闭提示" onClick={() => setError('')}>×</button></div>}
       <div className="companion-sensing"><span>{partial || (listening ? micStatus || '在听，直接开口就好' : '可输入文字，或开启连续听')}</span><button aria-label="本次记录" onClick={() => setHistoryOpen(!historyOpen)}><ChatsCircle size={20}/></button></div>
+      {pendingInput && <div className="companion-pending" role="status" aria-label="下一轮待发送"><strong>下一轮待发送</strong> {pendingInput}</div>}
       <CompanionMicMeter data={micDiagnostics} active={listening}/>
       <form onSubmit={event => { event.preventDefault(); send(input); }}><input aria-label="对同行伙伴说" placeholder="你看，这件怎么样？" value={input} onChange={event => setInput(event.target.value)}/><button type="submit" aria-label="发送" disabled={!input.trim() || !char}><ArrowUp size={22}/></button></form>
       <div className="companion-actions">
         <button aria-pressed={camera} onClick={() => void toggleCamera()} disabled={!char}>{camera ? <Camera size={23}/> : <CameraSlash size={23}/>}<span>{cameraPending ? '取消开启' : camera ? '关闭镜头' : miniMaxDirect ? '开启镜头 · MiniMax 直连' : '开启镜头'}</span></button>
         <button aria-pressed={listening} onClick={toggleMic} disabled={!char || !canListen}>{listening ? <Microphone size={23}/> : <MicrophoneSlash size={23}/>}<span>{listening ? '暂停聆听' : '连续听'}</span></button>
-        <button aria-pressed={voiceEnabled && canVoice} onClick={() => { session.current?.interrupt(); voice.current.prime(); setVoiceEnabled(!voiceEnabled); }} disabled={!canVoice}>{voiceEnabled && canVoice ? <SpeakerHigh size={23}/> : <SpeakerSlash size={23}/>}<span>{canVoice ? voiceEnabled ? '角色语音' : '文字模式' : '未配音色'}</span></button>
-        <button onClick={() => session.current?.interrupt()}><Stop size={23}/><span>打断</span></button>
+        <button aria-pressed={voiceEnabled && canVoice} onClick={() => { voiceOn.current = !voiceEnabled; setVoiceEnabled(!voiceEnabled); voice.current.prime(); void session.current?.skipReply(); }} disabled={!canVoice}>{voiceEnabled && canVoice ? <SpeakerHigh size={23}/> : <SpeakerSlash size={23}/>}<span>{canVoice ? voiceEnabled ? '角色语音' : '文字模式' : '未配音色'}</span></button>
+        <button onClick={() => { void session.current?.skipReply(); }}><Stop size={23}/><span>打断</span></button>
         <button type="button" className="companion-hangup" onClick={() => { stopAll(); close(); }}><PhoneDisconnect size={23} weight="fill"/><span>结束同行</span></button>
       </div>
       {observation && <details className="companion-observation"><summary>最近理解的视频</summary><p>{observationText(observation)}</p>{observation.imageNote && <p>{observation.imageNote}</p>}</details>}
@@ -320,5 +340,6 @@ export default function CompanionApp() {
   const { characters, userProfile, apiConfig, updateApiConfig, realtimeConfig, closeApp, openApp } = useOS();
   return <CompanionSurface editAvatar characters={characters} user={userProfile} api={apiConfig} realtimeConfig={realtimeConfig} close={closeApp}
     navigateSetup={(target, charId) => openCompanionSetupTarget(target, charId, openApp)} saveVideoApi={config => updateApiConfig({ companionVideoApi: config })}
-    saveQuickReply={enabled => updateApiConfig({ companionQuickReply: enabled })}/>;
+    saveQuickReply={enabled => updateApiConfig({ companionQuickReply: enabled })}
+    saveBargeIn={enabled => updateApiConfig({ companionBargeIn: enabled })}/>;
 }

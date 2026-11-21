@@ -548,6 +548,7 @@ export function collectFeatureFlags(src: FeatureSources): Record<string, string>
             ? enumOrCustom(src.apiConfig.ttsProvider, TTS_PROVIDERS, 'minimax')
             : '没配',
         同行短接话: onOff(src.apiConfig.companionQuickReply === true),
+        同行插话打断: onOff(src.apiConfig.companionBargeIn !== false),
         API线路预设数: bucketFewCount(src.apiPresetCount),
         自习室独立线路: hasLocalJsonConfig('study_api_config') ? '配了' : '没配',
         彼方独立线路: src.vrIndependentApi ? '配了' : '没配',

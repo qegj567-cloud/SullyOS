@@ -19,6 +19,7 @@ export interface CompanionPorts<P> {
   play(text: string, signal: AbortSignal, heard: (text: string) => void, started: (mode: 'audio' | 'text') => void): Promise<void>;
   debug?: CompanionDebugStore;
   change(lines: CompanionLine[], state: string): void;
+  pendingInput?(text: string): void;
   error(error: unknown): void;
 }
 
@@ -26,21 +27,78 @@ export class CompanionSession<P> {
   private controller?: AbortController;
   private serial = 0;
   private lines: CompanionLine[] = [];
+  private pending: string[] = [];
+  private pendingQuickEnabled = true;
+  private recognizing = false;
   constructor(private ports: CompanionPorts<P>) {}
 
   private publish(state: string) { this.ports.change(this.lines.map(line => ({ ...line })), state); }
 
-  interrupt(reason = '手动打断') {
+  private abortReply(reason: string) {
+    if (!this.controller || this.controller.signal.aborted) return;
     // Abort listeners report the last audible position synchronously before we snapshot.
-    this.controller?.abort(new DOMException(`同行已停止：${reason}`, 'AbortError'));
-    this.controller = undefined;
+    this.controller.abort(new DOMException(`同行已停止：${reason}`, 'AbortError'));
     this.lines.forEach(line => { if (line.status === 'speaking' || line.status === 'ready') line.status = 'interrupted'; });
     this.publish('已停下，听你说');
   }
 
-  async send(text: string, quickEnabled = true) {
-    if (!text.trim()) return;
-    this.interrupt('收到新一轮输入');
+  /** Leaving or reconfiguring the session discards unsent speech as well as the active turn. */
+  interrupt(reason = '手动打断') {
+    this.recognizing = false;
+    this.takePending();
+    this.abortReply(reason);
+  }
+
+  speechStarted(allowInterruption: boolean) {
+    this.recognizing = true;
+    if (allowInterruption) this.abortReply('识别到新的语音输入');
+  }
+
+  speechEnded() {
+    this.recognizing = false;
+    return this.dispatchPending();
+  }
+
+  skipReply() {
+    this.abortReply('手动打断');
+    return this.dispatchPending();
+  }
+
+  async send(text: string, quickEnabled = true, mode: 'queue' | 'interrupt' = 'interrupt') {
+    const input = text.trim();
+    if (!input) return;
+    if (mode === 'interrupt') {
+      this.recognizing = false;
+      this.abortReply('收到新一轮输入');
+    }
+    this.pending.push(input);
+    this.pendingQuickEnabled = quickEnabled;
+    if (this.waitingForTurn) {
+      this.ports.pendingInput?.(this.pending.join('\n'));
+      return;
+    }
+    return this.dispatchPending();
+  }
+
+  private takePending() {
+    const text = this.pending.join('\n');
+    if (this.pending.length) {
+      this.pending = [];
+      this.ports.pendingInput?.('');
+    }
+    return text;
+  }
+
+  private get waitingForTurn() {
+    return this.recognizing || Boolean(this.controller && !this.controller.signal.aborted);
+  }
+
+  private dispatchPending() {
+    if (this.waitingForTurn || !this.pending.length) return;
+    return this.runTurn(this.takePending(), this.pendingQuickEnabled);
+  }
+
+  private async runTurn(text: string, quickEnabled: boolean): Promise<void> {
     const controller = new AbortController();
     this.controller = controller;
     const { signal } = controller;
@@ -98,11 +156,14 @@ export class CompanionSession<P> {
     } catch (error) {
       if (!signal.aborted) {
         trace?.finish('error');
-        this.interrupt('本轮续答失败');
+        this.abortReply('本轮续答失败');
         this.ports.error(new Error(`a′ · 完整回复失败：${error instanceof Error ? error.message : '请求失败'}`));
       }
     } finally {
-      if (this.controller === controller) this.controller = undefined;
+      if (this.controller === controller) {
+        this.controller = undefined;
+        void this.dispatchPending();
+      }
     }
   }
 

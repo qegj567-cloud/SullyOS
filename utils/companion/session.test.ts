@@ -5,6 +5,60 @@ import { CompanionDebugStore } from './debug';
 const deferred = <T>() => { let resolve!: (value: T) => void; let reject!: (error: unknown) => void; const promise = new Promise<T>((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
 const tick = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
 
+it('combines confirmed inputs only after both replies have played and the user finishes speaking', async () => {
+  const quickAudio = deferred<void>(), fullAudio = deferred<void>(), fullResult = deferred<string>();
+  const prepare = vi.fn(async (history: CompanionLine[]) => history.at(-1)!.text);
+  const quick = vi.fn(async () => '短接话');
+  const play = vi.fn(async (text: string) => {
+    if (text === '短接话') await quickAudio.promise;
+    if (text === '完整回答') await fullAudio.promise;
+  });
+  const pendingInput = vi.fn();
+  const session = new CompanionSession({ quick, prepare, full: input => input === 'A' ? fullResult.promise : Promise.resolve('下一轮回答'),
+    play, pendingInput, change: () => {}, error: error => { throw error; } });
+  const first = session.send('A');
+  await tick();
+  session.speechStarted(false);
+  await session.send('先看袖子', false, 'queue');
+  session.speechEnded();
+  expect(pendingInput).toHaveBeenLastCalledWith('先看袖子');
+  fullResult.resolve('完整回答');
+  await tick();
+  expect(play.mock.calls.map(call => call[0])).toEqual(['短接话']);
+  quickAudio.resolve();
+  await tick();
+  expect(play.mock.calls.map(call => call[0])).toEqual(['短接话', '完整回答']);
+  await session.send('还有衣领', false, 'queue');
+  session.speechStarted(false);
+  fullAudio.resolve();
+  await first;
+  expect(prepare).toHaveBeenCalledTimes(1);
+  await session.send('最后看口袋', false, 'queue');
+  await session.speechEnded();
+  expect(prepare).toHaveBeenCalledTimes(2);
+  expect(prepare.mock.calls[1][0].map(line => line.text)).toEqual(['A', '短接话', '完整回答', '先看袖子\n还有衣领\n最后看口袋']);
+  expect(quick).toHaveBeenCalledOnce();
+  expect(pendingInput).toHaveBeenLastCalledWith('');
+});
+
+it.each(['skip', 'leave', 'failure'] as const)('handles pending input exactly once after %s', async reason => {
+  const old = deferred<string>(), error = vi.fn();
+  const prepare = vi.fn(async (history: CompanionLine[]) => history.at(-1)!.text);
+  const full = vi.fn((input: string) => input === 'A' ? old.promise : Promise.resolve('收到'));
+  const play = vi.fn();
+  const session = new CompanionSession({ quick: vi.fn(), prepare, full, play, change: () => {}, error });
+  const first = session.send('A', false); await tick();
+  await session.send('B', false, 'queue');
+  expect(prepare).toHaveBeenCalledOnce();
+  if (reason === 'leave') session.interrupt('切换角色');
+  if (reason === 'skip') await session.skipReply();
+  if (reason === 'failure') old.reject(new Error('暂时失败')); else old.resolve('旧结果');
+  await first; await tick();
+  expect(full.mock.calls.map(call => call[0])).toEqual(reason === 'leave' ? ['A'] : ['A', 'B']);
+  expect(play.mock.calls.map(call => call[0])).toEqual(reason === 'leave' ? [] : ['收到']);
+  expect(error).toHaveBeenCalledTimes(reason === 'failure' ? 1 : 0);
+});
+
 it('recalls beside a, generates a′ during 40s audio, and never overlaps the two utterances', async () => {
   const quick = deferred<string>(), recall = deferred<string>(), audio = deferred<void>();
   const order: string[] = [];

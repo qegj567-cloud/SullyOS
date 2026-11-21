@@ -42,6 +42,7 @@ export async function readHelpDeskSettings(os: SettingsSource, char?: CharacterP
         电话听写: getSttProviderLabel(resolveSttProvider(apiConfig)),
         同行: {
             短接话: apiConfig.companionQuickReply === true,
+            插话打断: apiConfig.companionBargeIn !== false,
             语音识别: apiConfig.companionStt?.provider === 'doubao' ? '豆包' : '浏览器',
             语音密钥已填: !!apiConfig.companionStt?.apiKey?.trim(),
             视频配置: videoApi ? endpointFields(videoApi) : '未配置',

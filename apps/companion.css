@@ -100,6 +100,7 @@
 .companion-app .companion-sensing, .companion-app .companion-note, .companion-app .companion-observation { color: var(--call-muted); }
 .companion-app .companion-controls form { border-color: var(--call-line); padding: 2px 0; }
 .companion-app .companion-controls form input { color: #fff; }
+.companion-pending { color: #e3d8ef; font-size: 12px; line-height: 1.5; white-space: pre-line; overflow-wrap: anywhere; max-height: 4.5em; overflow-y: auto; }
 .companion-app .companion-controls form input::placeholder { color: #bcb4c5; }
 .companion-app .companion-setup-hint, .companion-app .companion-sensing button { color: #d7cae9; }
 .companion-app .companion-actions { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 3px; padding-top: 7px; }

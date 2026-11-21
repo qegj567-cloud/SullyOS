@@ -11,6 +11,7 @@ export interface ListeningDiagnostics {
 }
 export interface ListeningCallbacks {
   speech(): void; partial(text: string): void; final(text: string): void; error(message: string): void;
+  speechEnded?(): void;
   state?(message: string): void;
   diagnostics?(data: ListeningDiagnostics): void;
 }
@@ -32,7 +33,10 @@ export function startCompanionListening(callbacks: ListeningCallbacks) {
   const flush = () => {
     clearTimeout(finalize);
     const text = pending.trim(); pending = '';
-    if (!stopped && text) { callbacks.partial(''); callbacks.final(text); }
+    if (stopped) return;
+    callbacks.partial('');
+    if (text) callbacks.final(text);
+    else callbacks.speechEnded?.();
   };
   // speechstart may be triggered by ambient noise. Interrupt on actual recognized
   // partial text, before finalization, rather than treating all noise as a user turn.
@@ -46,6 +50,7 @@ export function startCompanionListening(callbacks: ListeningCallbacks) {
     }
     if ((pending + interim).trim()) callbacks.speech();
     callbacks.partial(pending + interim);
+    if (!pending && !interim) callbacks.speechEnded?.();
     clearTimeout(finalize);
     if (pending && !interim) finalize = setTimeout(flush, 650);
   };

@@ -115,6 +115,7 @@ export function startDoubaoListening(config: CompanionSttConfig, callbacks: List
           callbacks.partial(update.partial);
           // Several definite segments from one snapshot are a single user turn.
           if (update.finals.length) callbacks.final(update.finals.join(''));
+          else if (!update.partial) callbacks.speechEnded?.();
         }).catch(error => fail(error instanceof Error ? error.message : '豆包识别响应未能解析'));
       };
       socket.onerror = () => fail('豆包识别连接失败；本地请重启预览，线上需更新应用主代理');

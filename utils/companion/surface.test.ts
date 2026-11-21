@@ -155,6 +155,55 @@ it('uses selected Doubao independently of browser recognition and stops listenin
   expect(stop).toHaveBeenCalledOnce(); expect(host.textContent).toContain('已暂停');
 });
 
+it('changes barge-in while the mic is live, keeps typing intact and shows queued speech until the next turn', async () => {
+  const firstReply = deferred<string>(), secondReply = deferred<string>();
+  const signals: AbortSignal[] = [];
+  const prepare = vi.fn(async (history: { text: string }[]) => history.at(-1)!.text);
+  const full = vi.fn((text: string, signal: AbortSignal) => {
+    signals.push(signal);
+    return text === '第一句' ? firstReply.promise : secondReply.promise;
+  });
+  const saved = vi.fn();
+  function Fixture() {
+    const [enabled, setEnabled] = React.useState(true);
+    return React.createElement(CompanionSurface, { ...props,
+      api: { companionBargeIn: enabled, companionStt: { provider: 'doubao', apiKey: 'test', resourceId: 'volc.seedasr.sauc.duration' } },
+      saveBargeIn: (value: boolean) => { saved(value); setEnabled(value); },
+      requestFactory: () => ({ quick: vi.fn(), prepare, full }),
+    });
+  }
+  await act(async () => root.render(React.createElement(Fixture)));
+  await click('连续听');
+  const mic = vi.mocked(startDoubaoListening).mock.calls.at(-1)![1];
+  await act(async () => mic.final('第一句'));
+  await click('同行设置');
+  const toggle = [...host.querySelectorAll('label')].find(label => label.textContent === '插话打断')!.querySelector('input')!;
+  expect(toggle.checked).toBe(true);
+  await act(async () => toggle.click());
+  expect(saved).toHaveBeenCalledWith(false);
+  const input = host.querySelector<HTMLInputElement>('[aria-label="对同行伙伴说"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, '我也想看蓝色');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    mic.speech(); mic.partial('还有');
+  });
+  expect(signals[0].aborted).toBe(false);
+  expect(host.querySelector('[aria-label="下一轮待发送"]')).toBeNull();
+  await act(async () => { mic.partial(''); mic.final('还有红色'); });
+  expect(input.value).toBe('我也想看蓝色');
+  await click('发送');
+  expect(host.querySelector('[aria-label="下一轮待发送"]')?.textContent).toContain('还有红色\n我也想看蓝色');
+  expect(prepare).toHaveBeenCalledOnce();
+  await act(async () => firstReply.resolve('说完第一句'));
+  expect(prepare.mock.calls[1][0].map(line => line.text)).toEqual(['第一句', '说完第一句', '还有红色\n我也想看蓝色']);
+  expect(host.querySelector('[aria-label="下一轮待发送"]')).toBeNull();
+  await act(async () => toggle.click());
+  await act(async () => mic.speech());
+  expect(signals[1].aborted).toBe(true);
+  await act(async () => secondReply.resolve('晚到的答复'));
+  expect(host.textContent).not.toContain('晚到的答复');
+});
+
 it('renders the independent surface, shows both replies and discards a continuation after interruption', async () => {
   const later = deferred<string>();
   const full = vi.fn(() => later.promise);

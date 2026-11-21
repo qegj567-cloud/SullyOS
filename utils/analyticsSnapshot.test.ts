@@ -222,6 +222,7 @@ describe('当前功能启用 · 不泄漏配置内容', () => {
         expect(flags.云端备份服务商).toBe('custom');
         expect(flags.语音合成).toBe('custom');
         expect(flags.同行短接话).toBe('关');
+        expect(flags.同行插话打断).toBe('开');
     });
 
     it('ElevenLabs 是受支持的语音服务商枚举', () => {
@@ -232,6 +233,7 @@ describe('当前功能启用 · 不泄漏配置内容', () => {
                 model: '',
                 ttsProvider: 'elevenlabs',
                 companionQuickReply: true,
+                companionBargeIn: false,
                 sttProvider: 'doubao',
                 companionStt: { provider: 'doubao', apiKey: POISON.key, resourceId: 'volc.seedasr.sauc.duration' },
                 elevenLabsApiKey: POISON.key,
@@ -239,6 +241,7 @@ describe('当前功能启用 · 不泄漏配置内容', () => {
         }));
         expect(flags.语音合成).toBe('elevenlabs');
         expect(flags.同行短接话).toBe('开');
+        expect(flags.同行插话打断).toBe('关');
         const input = collectSARFeatureFlags({ sttProvider: 'doubao', companionStt: { provider: 'doubao', apiKey: POISON.key, resourceId: 'volc.seedasr.sauc.duration' } });
         expect(input.豆包连续听).toBe('开'); expect(input.豆包电话听写).toBe('开');
         expectNoLeak(input);
@@ -636,7 +639,7 @@ describe('快照事件的属性宽度', () => {
     });
 
     it('当前功能启用', () => {
-        expect(Object.keys(collectFeatureFlags(poisonedSources())).length).toBeLessThanOrEqual(35);
+        expect(Object.keys(collectFeatureFlags(poisonedSources())).length).toBeLessThanOrEqual(36);
     });
 });
 
