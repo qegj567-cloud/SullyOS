@@ -241,6 +241,7 @@ Blob 是否真的占内存，取决于浏览器引擎，而且两家的行为都
 - **OPFS**：
   - Safari 15.2 起支持 `getFile()` 和 Worker 里的同步写法；Safari 26.0 起支持在页面里用 `createWritable()` 直接写（[MDN 兼容数据](https://github.com/mdn/browser-compat-data/blob/main/api/FileSystemFileHandle.json)、[Safari 26 发布说明](https://developer.apple.com/documentation/safari-release-notes/safari-26-release-notes)）。
   - 配额：浏览器里每个网站最多可用磁盘的 60%；加到主屏幕的网页应用和 Safari 一样；其他 WebKit 应用（包括原生壳）每个网站 15%（[WebKit 存储策略](https://webkit.org/blog/14403/updates-to-storage-policy/)）。
+  - 真机（iPhone 17 Pro，Safari 27.2）：Safari 标签页和加到主屏幕后打开两种环境下，页面里用 `createWritable()` 写 4MB 再读回，内容一致；两种环境报的配额相同，约 41GB。原生壳没有测。
 - **WebKit 319985**：在 iOS / macOS Safari 26.5 到 27.x 上，把一个落在磁盘上的 File（文件选择器选来的、从 IndexedDB 读回的、从文件 App 拖进来的）直接交给 XHR 或 fetch 上传，实际发出去的是 0 字节，页面这边没有任何报错。
   - 修复 2026-10-10 合入主干，并挑进了 safari-7626 分支（[bug 319985](https://bugs.webkit.org/show_bug.cgi?id=319985)）。
   - 绕法：上传前做一次 `slice()`，不复制数据。
@@ -248,6 +249,20 @@ Blob 是否真的占内存，取决于浏览器引擎，而且两家的行为都
   - 页面没法检测自己是否受影响，所以这个绕法一直保留。
   - 本项目的 `sw-keep-alive` 会接管所有页面（`clients.claim()`），正好符合最早那份报告里的触发条件。
 - **CapacitorHttp 传二进制**：直接调用 `CapacitorHttp.request` 时，参数经 `JSON.stringify` 交给原生层，ArrayBuffer 会变成 `{}`。Android 原生层在请求既不是 JSON、也没标 `dataType: 'file'` 时，把这段文字原样写进请求体（`@capacitor/android` 6.2.1 的 `CapacitorHttpUrlConnection.setRequestBody`）。所以二进制必须转成 base64 并标上 `dataType: 'file'`。Android 8 以下不解码 base64，会写出空请求体，靠上传后的大小核对拦下。iOS 原生实现不在本仓库依赖里，没有核对。
+- **GitHub 附件的上传和下载在网页里都必须走中转**（2026-11 用 curl 模拟浏览器请求实测）：
+  - 下载：`GET /releases/assets/{id}` 先回 302，跳到 `release-assets.githubusercontent.com`（Azure Blob）上的签名地址。第一跳带 `Access-Control-Allow-Origin: *`，第二跳不带任何 CORS 头，预检请求回 405。
+  - 上传：`uploads.github.com` 把预检的 OPTIONS 当普通请求处理，回 400，不带 CORS 头。上传请求带 `Authorization`，一定会触发预检。
+  - `api.github.com` 正常回应预检，所以列表、建发布、测试令牌可以直连。
+  - 结果是网页端直连时，令牌测试和列表都通过，一到传附件就失败，和网络无关。网页端只能经应用内的 Cloudflare 中转；原生壳走系统网络栈，不受这条限制，这一点没有在真机上验证。
+  - 所以网页端在「测试并连接」时就询问是否开启中转，说明令牌和备份会经过 Worker。中转不自动开启：令牌要经过第三方转发，必须由用户点头；拒绝后仍可连接，结果里注明网页端暂时无法备份和恢复。
+  - 中转是必要条件，不是充分条件：本机到中转这一段照样可能不通（实测不开梯子时经中转也下载不下来）。所以询问、设置页说明和经中转失败时的提示都写明「能不能成功取决于本机网络，传不动先开梯子」。
+- **iOS 挂起页面会中止写库事务**（iPhone 17 Pro，Safari 27.2 实测）：恢复途中切走几秒再回来，恢复照常继续；切走约一分钟，进行中的 IndexedDB 事务被中止，`transaction.error` 为空，恢复以「IndexedDB transaction aborted」失败，数据停在写了一半的状态。屏幕常亮锁管不到切后台。
+- **WebKit 的 `navigator.storage.estimate()` 不能当磁盘占用读**（iPhone 17 Pro，Safari 27.2 实测）：
+  - 经 GitHub 下载一份 1.1GB 的备份（36 片，同一个 OPFS 文件连续写 36 次）并恢复后，报的用量是 22.7GB，配额从约 41GB 变成约 82GB，临时目录是空的。彻底关掉浏览器重开，用量回到 207MB，配额回到约 41GB。
+  - 所以这个用量是浏览器进程里的累计记账，不是磁盘上的实际大小，重启后才按实际重算。
+  - 22.7GB 的来历是推测：假设每写一次都按写完后的整个文件大小记一笔，36 片累计是 21.95GB，和观测值接近。调试面板 OPFS 探针里的 `appendWrites` 用来在真机上核实这一点。
+  - 这件事要在第四期之前弄清。导出落盘会对同一个文件写成千上万次，如果记账确实按整个文件累加，虚报的用量可能先撞上配额，让写入被拒绝。浏览器在快到配额时会不会按磁盘实际大小重算，没有核实。
+  - 配额预判用它只能当粗略参考。
 - **流式请求体**（边生成边上传）：Chrome 要求 HTTP/2 和 `duplex: 'half'`；Safari 到 27.3 beta 才支持（[Safari 27.3 发布说明](https://developer.apple.com/documentation/safari-release-notes/safari-27_3-release-notes)）。本方案不依赖它。
 - **zip.js**：
   - `ZipReader` 接到 Blob 或 File 时按需读，接到流时把整个流缓冲进内存（[ZipReader 文档](https://github.com/gildas-lormeau/zip.js/blob/master/docs/classes/ZipReader.md)）。
@@ -287,7 +302,7 @@ Blob 是否真的占内存，取决于浏览器引擎，而且两家的行为都
 
 ### 第零期：止血与探明
 
-代码已完成，真机探明项待跑。
+代码已完成。OPFS 探针在 iPhone 的 Safari 和主屏幕应用里已跑通（结果见「平台事实」），原生壳和「上传 OPFS 文件切片」两项待跑。
 
 - **原生壳 WebDAV 上传**：二进制转成 base64 并标上 `dataType: 'file'`，和 GitHub 的做法一致。
 - **WebDAV 上传后核对远端大小**：
@@ -303,7 +318,7 @@ Blob 是否真的占内存，取决于浏览器引擎，而且两家的行为都
 
 ### 第一期：临时文件模块与按需读包（不改格式）
 
-代码已完成，真机验收待做。
+代码已完成，真机验收做了一部分，见本节末尾。
 
 - **临时文件模块**（`utils/backupTempFile.ts`）：Web Lock、启动清理、配额预判、出错收场、屏幕常亮。
 - **zip.js 读取适配层**（`utils/backupZipReader.ts`），打开 `checkSignature`，`importSystem` 和 `importUserSpaces` 都经它读包。
@@ -325,11 +340,21 @@ Blob 是否真的占内存，取决于浏览器引擎，而且两家的行为都
   - WebDAV 上传后的大小核对，在坚果云、AList、Nextcloud、群晖上各试一次，确认不会误判。
   - 两个标签页：一个在下载或恢复时，另一个启动不会清掉它的临时文件；崩溃后重启会清掉残留。
   - 长时间恢复期间锁屏或切后台，页面会不会被挂起。
+- **已验**（iPhone 17 Pro，Safari 27.2，全程亮屏停在前台）：
+  - 从文件 App 的本机位置恢复 1.1GB 的第三代旧格式备份（20 万条消息、1850 张图），约 28 秒完成，没有崩溃或重载，恢复后临时目录为空。
+  - 第一代、第二代旧格式的小包各约 2 秒。
+  - 有一张图片损坏的包照常恢复，重启后提示有 1 份素材被跳过。
+  - 文字数据损坏的包在写库前被拒绝，本机数据不变，重启后没有「导入中断」的提示。
+  - 从 GitHub 经应用内中转下载 1.1GB 的备份并恢复，成功，恢复后临时目录为空。下载很慢（没有计时），恢复速度和本地文件差不多。
+  - 多空间格式的包导入成功。
+  - 恢复途中切后台：见「平台事实」。
+- **没有测、判断为少见的**：从 iCloud 云盘选包、恢复途中删掉源文件。WebDAV 没有可用的服务，未测。
 - **留给后面的**：原生壳上小于 8MB 的 WebDAV 备份、以及分段失败后的整包下载，仍然整包进内存（第五期）。
 
 ### 第二期：多空间格式逐页恢复
 
 - `importUserSpaces` 按「恢复：逐页写库」的五步改写。
+- 写库事务被系统中止、又没有给出原因时（见「平台事实」里 iOS 挂起页面那一条），等页面回到前台后重写当前这一页，不让整次恢复失败。逐页写库之前做不到这一点：旧格式的恢复是一张表一个大事务，中止后没有可以重来的小单位，所以现在只在进度框里提示停在页面上，失败后说明原因。
 - **测试**：
   - 写入钩子记录同时在内存里的页数，断言不超过 1；
   - 缺条目时，在写库前拒绝，数据库不变；
