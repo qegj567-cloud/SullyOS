@@ -11,7 +11,7 @@ import { companionVideoReady, type CompanionImageMode } from '../../utils/compan
 import { normalizeApiBaseUrl, normalizeApiCredential, normalizeApiModel } from '../../utils/apiConfigNormalize';
 import { COMPANION_VIDEO_PROVIDERS, COMPANION_ARK_PLAN, isCompanionArkPlan, type CompanionVideoProvider } from '../../utils/companion/videoProviders';
 import { CompanionApiTest, type BeginCompanionTest } from './CompanionApiTest';
-import { testCompanionDialogue, testCompanionImage, testCompanionStt, testCompanionVideo, testCompanionVoice } from '../../utils/companion/apiTests';
+import { testCompanionDialogue, testCompanionImage, testCompanionStt, testCompanionVideo, testCompanionVoice, testMiniMaxReferenceVideo } from '../../utils/companion/apiTests';
 import { FishVoiceTest } from './FishVoiceTest';
 import { companionVideoRouteLabel, testCompanionVideoDirect } from '../../utils/companion/videoConnection';
 
@@ -68,11 +68,11 @@ function VideoApiFields({ config, domesticMiniMaxKey, save, begin }: { config?: 
     <div className="companion-setup-actions"><button type="submit" disabled={!save}>保存视频 API</button></div>
     <CompanionApiTest label="检查浏览器直连" successLabel="检查完成" description="不录制、不上传视频；带当前填写的 Key 向所填地址发送空请求，检查此浏览器能否读取响应。不会调用模型、验证 Key 或更改配置。" config={draft}
       disabled={!save || !draft.baseUrl} begin={begin} run={signal => testCompanionVideoDirect(draft, signal)}/>
-    <CompanionApiTest label="测试视频 API" description="测试当前填写内容，不自动保存。发送 2 秒图形样片（红色圆形 → 蓝色方形），不开摄像头。" config={draft}
+    <CompanionApiTest label="测试视频 API" successLabel="已收到回复" description="测试当前填写内容，不自动保存。发送 2 秒图形样片（红色圆形 → 蓝色方形），不开摄像头。" config={draft}
       disabled={!save || !draft.baseUrl || !draft.model} begin={begin} run={(signal, progress) => testCompanionVideo(draft, signal, progress)}/>
-    {save && savedMiniMaxTest && <CompanionApiTest label="用已存 MiniMax Key 测样片"
-      description="用「其他 API」已保存的国内 MiniMax Key，向 api.minimax.cn 发送同一段 2 秒图形样片。仅用于本次测试。"
-      config={savedMiniMaxTest} disabled={!draft.model} begin={begin} run={(signal, progress) => testCompanionVideo(savedMiniMaxTest, signal, progress)}/>}
+    {save && savedMiniMaxTest && <CompanionApiTest label="用已存 MiniMax Key 测样片" successLabel="已收到回复"
+      description="用「其他 API」已保存的国内 MiniMax Key，向 api.minimax.cn 发送 8 秒标准样片。前 4 秒是左侧红圆，后 4 秒是右侧蓝方块。"
+      config={savedMiniMaxTest} disabled={!draft.model} begin={begin} run={(signal, progress) => testMiniMaxReferenceVideo(savedMiniMaxTest, signal, progress)}/>}
     {!save && <small>模拟页不保存真实 API，请在主应用的同行中配置。</small>}
     {message && <p role="status">{message}</p>}
   </form>;

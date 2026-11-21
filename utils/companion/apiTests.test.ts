@@ -5,7 +5,7 @@ import { companionTestImage, companionTestVideo } from './testMedia';
 import { startDoubaoListening } from './doubaoListening';
 import { startCompanionListening } from './listening';
 import { CompanionVoice } from './voice';
-import { redactCompanionTestText, testCompanionDialogue, testCompanionImage, testCompanionStt, testCompanionVideo, testCompanionVoice } from './apiTests';
+import { redactCompanionTestText, testCompanionDialogue, testCompanionImage, testCompanionStt, testCompanionVideo, testCompanionVoice, testMiniMaxReferenceVideo } from './apiTests';
 
 vi.mock('../safeApi', () => ({ safeFetchJson: vi.fn(async () => ({ choices: [{ message: { content: '返回的正文' } }] })), extractContent: (data: any) => data.choices?.[0]?.message?.content || '' }));
 vi.mock('./testMedia', () => ({ companionTestImage: vi.fn(() => 'data:image/png;base64,TEST'), companionTestVideo: vi.fn(async () => ({ blob: new Blob(['synthetic-video'], { type: 'video/mp4' }), from: 0, to: 2000 })) }));
@@ -38,6 +38,23 @@ it('sends a complete MP4 through the selected video protocol, independently from
   expect(JSON.parse(String(vi.mocked(safeFetchJson).mock.calls[1][1].body)).messages[0].content[1].type).toBe('image_url');
   await testCompanionImage({ baseUrl: 'https://main.test', model: 'reasoning-main', apiKey: 'main-key', maxTokens: 8000, stream: true } as any, signal(), undefined, true);
   expect(JSON.parse(String(vi.mocked(safeFetchJson).mock.calls[2][1].body))).toMatchObject({ model: 'reasoning-main', max_tokens: 8000, stream: true });
+});
+
+it('sends the bundled reference without giving the model the answer or allowing redirects', async () => {
+  const api = { provider: 'minimax', baseUrl: 'https://api.minimax.cn/v1', model: 'MiniMax-M3.1-Flash', apiKey: 'sample-key' } as const;
+  const loadAsset = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+    ok: true, blob: async () => new Blob(['mp4 sample'], { type: 'video/mp4' }),
+  } as Response);
+  await expect(testMiniMaxReferenceVideo({ ...api, baseUrl: 'https://other.test/v1' }, signal(), vi.fn())).rejects.toThrow('官方视频地址');
+  expect(loadAsset).not.toHaveBeenCalled();
+  await testMiniMaxReferenceVideo(api, signal(), vi.fn());
+  expect(loadAsset).toHaveBeenCalledWith(expect.stringContaining('reference-shapes'), { signal: expect.any(AbortSignal) });
+  const [url, options] = vi.mocked(safeFetchJson).mock.calls[0];
+  expect(url).toBe('https://api.minimax.cn/v1/chat/completions');
+  expect(options.redirect).toBe('error');
+  const [video, prompt] = JSON.parse(String(options.body)).messages[0].content;
+  expect(video.video_url.url).toMatch(/^data:video\/mp4;base64,/);
+  expect(prompt.text).not.toMatch(/红|蓝|圆|方块|左|右/);
 });
 
 it('does not count an empty model response or an aborted sample as success', async () => {

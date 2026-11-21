@@ -7,7 +7,7 @@ import { companionDialogueReady, openCompanionSetupTarget } from './setup';
 import { characterLaunch } from '../characterLaunch';
 import { useSettingsFocus } from '../settingsNavigation';
 import { AppID } from '../../types';
-import { testCompanionDialogue, testCompanionVideo, testCompanionStt } from './apiTests';
+import { testCompanionDialogue, testCompanionVideo, testCompanionStt, testMiniMaxReferenceVideo } from './apiTests';
 import { testCompanionVideoDirect } from './videoConnection';
 vi.mock('./videoConnection', async original => ({ ...await original<typeof import('./videoConnection')>(),
   testCompanionVideoDirect: vi.fn(async () => ({ summary: '直连响应可读，仅检查跨域' })),
@@ -15,6 +15,7 @@ vi.mock('./videoConnection', async original => ({ ...await original<typeof impor
 vi.mock('./apiTests', async original => ({ ...await original<typeof import('./apiTests')>(),
   testCompanionDialogue: vi.fn(async () => ({ summary: '收到对话正文' })),
   testCompanionVideo: vi.fn(async () => ({ summary: '收到视频描述' })),
+  testMiniMaxReferenceVideo: vi.fn(async () => ({ summary: '收到标准样片描述' })),
   testCompanionStt: vi.fn(async () => ({ summary: '收到识别结果' })),
 }));
 
@@ -28,9 +29,9 @@ it('only uses the saved domestic MiniMax key after an explicit sample test at th
   const button = () => [...host.querySelectorAll('button')].find(el => el.textContent === '用已存 MiniMax Key 测样片');
   try {
     await render('overseas'); expect(button()).toBeUndefined();
-    await render('domestic'); expect(testCompanionVideo).not.toHaveBeenCalled();
+    await render('domestic'); expect(testMiniMaxReferenceVideo).not.toHaveBeenCalled();
     await act(async () => button()!.click());
-    expect(testCompanionVideo).toHaveBeenCalledWith({ ...api.companionVideoApi, apiKey: 'saved-minimax-key' }, expect.any(AbortSignal), expect.any(Function));
+    expect(testMiniMaxReferenceVideo).toHaveBeenCalledWith({ ...api.companionVideoApi, apiKey: 'saved-minimax-key' }, expect.any(AbortSignal), expect.any(Function));
     const address = host.querySelector<HTMLInputElement>('[aria-label="视频 API Base URL"]')!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(address, 'https://custom.test/v1');

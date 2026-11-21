@@ -4,6 +4,7 @@ import { safeFetchJson, extractContent } from '../safeApi';
 import { blobDataUrl } from './capture';
 import { COMPANION_VIDEO_PROVIDERS, companionVideoEndpoint, videoRequestParameters } from './videoProviders';
 import { companionTestImage, companionTestVideo } from './testMedia';
+import referenceClipUrl from './reference-shapes.mp4?url';
 import { CompanionVoice } from './voice';
 import { startCompanionListening, type ListeningCallbacks, type ListeningDiagnostics } from './listening';
 import { startDoubaoListening } from './doubaoListening';
@@ -48,14 +49,33 @@ export async function testCompanionImage(api: APIConfig | VisionApiConfig, signa
 export async function testCompanionVideo(api: CompanionVideoApiConfig, signal: AbortSignal, progress: (text: string) => void, char?: CharacterProfile) {
   progress('正在生成 2 秒图形样片，不使用摄像头');
   const clip = await companionTestVideo(signal), url = await blobDataUrl(clip.blob, signal);
-  signal.throwIfAborted(); progress('样片已生成，正在请求视频模型');
+  progress('样片已生成，正在请求视频模型');
+  return sendVideoTest(api, signal, url, clip.blob.size, char);
+}
+
+export async function testMiniMaxReferenceVideo(api: CompanionVideoApiConfig, signal: AbortSignal, progress: (text: string) => void) {
+  if (api.provider !== 'minimax' || api.baseUrl !== COMPANION_VIDEO_PROVIDERS.minimax.baseUrl) {
+    throw new Error('已存的国内 MiniMax Key 仅用于官方视频地址');
+  }
+  // The bundled H.264 clip has four seconds per scene and regular keyframes.
+  signal.throwIfAborted();
+  const response = await fetch(referenceClipUrl, { signal });
+  if (!response.ok) throw new Error('无法读取标准样片，请刷新测试站后重试');
+  const clip = await response.blob();
+  const url = await blobDataUrl(clip.slice(0, clip.size, 'video/mp4'), signal);
+  progress('正在向 MiniMax 发送 8 秒标准样片');
+  return sendVideoTest(api, signal, url, clip.size);
+}
+
+async function sendVideoTest(api: CompanionVideoApiConfig, signal: AbortSignal, url: string, bytes: number, char?: CharacterProfile) {
+  signal.throwIfAborted();
   const endpoint = companionVideoEndpoint(api);
   const checkMiniMax = api.provider === 'minimax' && api.baseUrl === COMPANION_VIDEO_PROVIDERS.minimax.baseUrl;
   const started = performance.now();
   const receipt = () => {
     if (!checkMiniMax) return '';
     const observed = performance.getEntriesByName?.(endpoint, 'resource').some(entry => entry.startTime >= started);
-    return `样片 ${clip.blob.size} 字节 · ${observed ? '浏览器网络记录' : '请求目标（浏览器未提供网络记录）'} api.minimax.cn · 禁止重定向`;
+    return `样片 ${bytes} 字节 · ${observed ? '浏览器网络记录' : '请求目标（浏览器未提供网络记录）'} api.minimax.cn · 禁止重定向`;
   };
   let detail: string;
   try { detail = await probe(api, { stream: false, ...videoRequestParameters(api), messages: [{ role: 'user', content: [
