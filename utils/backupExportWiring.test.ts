@@ -300,13 +300,21 @@ describe('GitHub 备份连接时的中转询问', () => {
     const source = readFileSync(path.resolve(__dirname, '../apps/Settings.tsx'), 'utf8');
     const handler = source.slice(source.indexOf('const handleTestGithub'), source.indexOf('const handleGithubProxyToggle'));
 
-    it('网页端没开中转时，先询问再连接，连接和保存都用询问后的结果', () => {
-        const ask = handler.indexOf('window.confirm(');
-        expect(ask).toBeGreaterThan(handler.indexOf('!useProxy && !Capacitor.isNativePlatform()'));
-        expect(ask).toBeLessThan(handler.indexOf('testConnection({'));
-        // 同意要立即持久化，和手动勾选走同一条路
-        expect(handler).toContain('if (useProxy) handleGithubProxyToggle(true)');
+    it('网页端没开中转时先弹应用内询问，不直接连接', () => {
+        const ask = handler.indexOf('setGhRelayAsk(true);');
+        expect(ask).toBeGreaterThan(handler.indexOf('!ghUseProxy && !Capacitor.isNativePlatform()'));
+        expect(handler.slice(ask, handler.indexOf('await connectGithub(ghUseProxy)'))).toContain('return;');
+        expect(handler).not.toContain('window.confirm(');
+    });
+
+    it('同意后立即保存中转并连接；取消不连接，说明功能保持关闭', () => {
+        const accept = handler.slice(handler.indexOf('const acceptGithubRelay'), handler.indexOf('const declineGithubRelay'));
+        expect(accept).toContain('handleGithubProxyToggle(true)');
+        expect(accept).toContain('connectGithub(true)');
+        const decline = handler.slice(handler.indexOf('const declineGithubRelay'), handler.indexOf('const connectGithub'));
+        expect(decline).not.toContain('connectGithub(');
+        expect(decline).toContain('保持关闭');
+        // 连接和保存都用传进来的线路，不读可能还没更新的勾选状态
         expect(handler.match(/githubUseProxy: useProxy,/g)).toHaveLength(2);
-        expect(handler).not.toContain('githubUseProxy: ghUseProxy');
     });
 });

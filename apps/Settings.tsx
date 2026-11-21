@@ -707,6 +707,7 @@ const Settings: React.FC = () => {
   );
   const [ghShowAdvanced, setGhShowAdvanced] = useState(false);
   const [ghTesting, setGhTesting] = useState(false);
+  const [ghRelayAsk, setGhRelayAsk] = useState(false);
   const [ghTestResult, setGhTestResult] = useState<string>('');
 
   // 主代理 Worker 地址（联网搜索 / 备份代理 / Notion / 飞书 / MCD·瑞幸 MCP / 网页抓取 / 出图都走它）。
@@ -1747,18 +1748,27 @@ const Settings: React.FC = () => {
           return;
       }
       // 网页里直连 GitHub 传不了附件（GitHub 的附件服务器不回应网页的跨域请求，见 docs/backup-pipeline.md
-      // 「平台事实」），令牌测试却能通过。所以连接时就把中转问清楚，不等第一次备份失败。中转仍要用户点头才开。
-      let useProxy = ghUseProxy;
-      if (!useProxy && !Capacitor.isNativePlatform()) {
-          useProxy = window.confirm(
-              '在网页里使用 GitHub 备份，需要经过应用内的 Cloudflare 中转。\n\n'
-              + 'GitHub 的附件服务器不允许网页直接上传和下载，和网络、梯子无关。不开中转的话，连接能成功，但备份和恢复都会失败。\n\n'
-              + '开启后，Token 和备份文件会经过所选 Worker 转发，项目不会主动留存。\n\n'
-              + '中转只是让网页能传，能不能传成功还要看你的网络连不连得上中转；传不动时请开梯子再试。\n\n'
-              + '点「确定」开启中转并连接；点「取消」保持直连。',
-          );
-          if (useProxy) handleGithubProxyToggle(true);
+      // 「平台事实」），令牌测试却能通过。所以连接前先把中转问清楚：中转要用户点头才开，不点头就不连，连上也用不了。
+      if (!ghUseProxy && !Capacitor.isNativePlatform()) {
+          setGhRelayAsk(true);
+          return;
       }
+      await connectGithub(ghUseProxy);
+  };
+
+  const acceptGithubRelay = () => {
+      setGhRelayAsk(false);
+      handleGithubProxyToggle(true);
+      void connectGithub(true);
+  };
+
+  const declineGithubRelay = () => {
+      setGhRelayAsk(false);
+      trackEvent('测试并连接 GitHub', { result: '失败', failure_stage: 'relay_declined' });
+      setGhTestResult('✗ 没有开启中转，网页里的 GitHub 备份无法运行，保持关闭');
+  };
+
+  const connectGithub = async (useProxy: boolean) => {
       setGhTesting(true);
       setGhTestResult('');
       try {
@@ -1770,10 +1780,7 @@ const Settings: React.FC = () => {
               githubUseProxy: useProxy,
               githubProxyConsentVersion: useProxy ? 1 : undefined,
           });
-          const directOnWeb = !useProxy && !Capacitor.isNativePlatform();
-          setGhTestResult(result.ok
-              ? `✓ ${result.message}${directOnWeb ? '。未开启中转，网页里暂时无法备份和恢复，可随时在高级选项里开启' : ''}`
-              : `✗ ${result.message}`);
+          setGhTestResult(result.ok ? `✓ ${result.message}` : `✗ ${result.message}`);
           // 失败时只报卡在哪一步：token 校验没过 → 没有 login，仓库准备没过 → 有 login
           trackEvent('测试并连接 GitHub', result.ok
               ? { result: '成功' }
@@ -1806,7 +1813,9 @@ const Settings: React.FC = () => {
       });
       trackEvent('切换 GitHub 备份线路', { route: enabled ? 'cloudflare_worker' : 'direct' });
       addToast(
-          enabled ? '已改用应用内 Cloudflare 中转，下次备份立即生效' : '已改为直连 GitHub 附件域名',
+          enabled ? '已改用应用内 Cloudflare 中转，下次备份立即生效'
+              : Capacitor.isNativePlatform() ? '已改为直连 GitHub 附件域名'
+              : '已关闭中转。网页里 GitHub 备份将无法运行，重新勾选即可恢复',
           'info',
       );
   };
@@ -2518,7 +2527,7 @@ const Settings: React.FC = () => {
 
             <p className="text-[10px] text-slate-400 px-1 mt-3 leading-relaxed">
                 备份始终存放在你自己的 WebDAV 或 GitHub 账号中，项目不建立用户备份数据库。
-                网页 WebDAV 因跨域限制需要中转；GitHub 默认直连，网络受限时可自行开启中转。
+                网页里 WebDAV 和 GitHub 都因跨域限制需要中转；GitHub 的中转在连接时征求你的同意后才开启。
             </p>
         </SettingsSection>
 
@@ -3618,6 +3627,25 @@ const Settings: React.FC = () => {
       </Modal>
 
       {/* Cloud Restore Modal */}
+      <Modal
+          isOpen={ghRelayAsk}
+          title="需要开启应用内中转"
+          onClose={declineGithubRelay}
+          footer={
+              <div className="flex gap-2 w-full">
+                  <button onClick={declineGithubRelay} className="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-2xl">取消</button>
+                  <button onClick={acceptGithubRelay} className="flex-1 py-3 bg-primary text-white font-bold rounded-2xl">开启中转并连接</button>
+              </div>
+          }
+      >
+          <div className="space-y-3 text-sm text-slate-600 leading-relaxed">
+              <p>在网页里，GitHub 备份要经过应用内的 Cloudflare 中转才能运行。GitHub 存放附件的服务器不允许网页直接上传和下载，和网络、梯子无关。</p>
+              <p>开启后，Token 和备份文件会经过所选 Worker 转发，项目不会主动留存。</p>
+              <p>中转只是让网页能传，能不能传成功还要看你的网络连不连得上中转；传不动时请开梯子再试。</p>
+              <p className="text-xs text-slate-400">不开启的话，这个功能无法运行，将保持关闭。</p>
+          </div>
+      </Modal>
+
       <Modal isOpen={showCloudRestoreModal} title="从云端恢复" onClose={() => setShowCloudRestoreModal(false)}>
           <div className="space-y-2 p-1">
               {cloudBackupListState === 'loading' ? (
