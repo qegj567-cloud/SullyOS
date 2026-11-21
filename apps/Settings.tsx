@@ -42,6 +42,7 @@ import { getLuckinToken, setLuckinToken as saveLuckinToken, isLuckinEnabled, set
 import { consumeProxyWorkerSettingsFocus, getProxyWorkerUrl, setProxyWorkerUrl, DEFAULT_PROXY_WORKER } from '../utils/proxyWorker';
 import { VOICE_ACTING_GUIDE } from '../utils/minimaxTts';
 import { FISH_VOICE_ACTING_GUIDE } from '../utils/fishAudioTts';
+import { DoubaoSpeechSettings, useDoubaoSpeechDraft } from '../components/settings/DoubaoSpeechSettings';
 import { FishVoiceTest } from '../components/companion/FishVoiceTest';
 import {
     DEFAULT_ELEVENLABS_MODEL,
@@ -77,6 +78,7 @@ import { configFromPreset, findActivePresetId, presetDiffersFromConfig, type Pre
 import type { APIConfig, TtsProvider, SttProvider } from '../types';
 import {
     STT_PROVIDER_OPTIONS,
+    sttProviderSelection,
     isSttProviderConfigured,
     resolveSttProvider,
     getSttProviderLabel,
@@ -159,8 +161,17 @@ const SettingsSection: React.FC<{
     useSettingsFocus(title === 'API 配置' ? 'api' : title === '识图 API' ? 'vision' : title === '其他 API' ? 'voice' : title === '备份与恢复 (ZIP)' ? 'backup' : undefined, () => {
         setOpen(true); setFocusRequest(value => value + 1);
     });
+    const focusStt = useRef(false);
+    useSettingsFocus(title === '其他 API' ? 'stt' : undefined, () => {
+        focusStt.current = true; setOpen(true); setFocusRequest(value => value + 1);
+    });
     useEffect(() => {
         if (!focusRequest) return;
+        if (focusStt.current) {
+            focusStt.current = false;
+            sectionRef.current?.querySelector('[data-doubao-stt]')?.scrollIntoView({ block: 'start' });
+            return;
+        }
         const restore = sectionRef.current?.querySelector<HTMLButtonElement>('[data-amsg-backup-restore]');
         if (restore) { restore.scrollIntoView({ block: 'center' }); restore.focus({ preventScroll: true }); }
         else sectionRef.current?.scrollIntoView({ block: 'start' });
@@ -578,6 +589,7 @@ const Settings: React.FC = () => {
       ? apiConfig.ttsProvider
       : 'minimax'
   );
+  const doubaoSpeech = useDoubaoSpeechDraft(apiConfig.companionStt);
   const [localSttProvider, setLocalSttProvider] = useState<SttProvider | undefined>(apiConfig.sttProvider);
   const [localFishKey, setLocalFishKey] = useState(apiConfig.fishAudioApiKey || '');
   const [localFishModel, setLocalFishModel] = useState(apiConfig.fishAudioModel || 's2.1-pro');
@@ -1299,7 +1311,8 @@ const Settings: React.FC = () => {
       minimaxRegion: localMiniMaxRegion,
       aceStepApiKey: localAceStepKey,
       ttsProvider: localTtsProvider,
-      sttProvider: localSttProvider,
+      sttProvider: doubaoSpeech.edited && !doubaoSpeech.configDraft.apiKey && localSttProvider === 'doubao' ? 'browser' : localSttProvider,
+      ...(doubaoSpeech.edited ? { companionStt: doubaoSpeech.configDraft } : {}),
       fishAudioApiKey: localFishKey,
       fishAudioModel: localFishModel,
       elevenLabsApiKey: localElevenLabsKey,
@@ -1325,11 +1338,13 @@ const Settings: React.FC = () => {
       fishAudioApiKey: localFishKey,
       elevenLabsApiKey: localElevenLabsKey,
       ttsProvider: localTtsProvider,
-      sttProvider: localSttProvider,
+      sttProvider: doubaoSpeech.edited && !doubaoSpeech.configDraft.apiKey && localSttProvider === 'doubao' ? 'browser' : localSttProvider,
+      ...(doubaoSpeech.edited ? { companionStt: doubaoSpeech.configDraft } : {}),
   };
 
   const handleSaveOtherApis = () => {
     updateApiConfig(buildOtherApiConfig());
+    doubaoSpeech.reset();
     setOtherStatusMsg('已保存');
     setTimeout(() => setOtherStatusMsg(''), 2000);
   };
@@ -1351,7 +1366,7 @@ const Settings: React.FC = () => {
       return;
     }
     setLocalSttProvider(provider);
-    updateApiConfig(buildOtherApiConfig({ sttProvider: provider }));
+    updateApiConfig(buildOtherApiConfig(sttProviderSelection(provider, draftSttLookupConfig)));
     addToast(`语音转文字已切到 ${getSttProviderLabel(provider)}`, 'success');
   };
 
@@ -2982,12 +2997,20 @@ const Settings: React.FC = () => {
                     </div>
                 </div>
 
-                {/* 通话语音转文字（你开口说话 → 转文字）四选一 —— 可与角色发声平台自由搭配，填了 Key 才能选对应平台 */}
+                {/* 通话语音转文字（你开口说话 → 转文字） —— 可与角色发声平台自由搭配，填了 Key 才能选对应平台 */}
                 <div className="group rounded-2xl border border-slate-200/70 bg-slate-50/60 p-3">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">语音转文字 · 通话麦克风（四选一）</label>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">语音转文字 · 通话麦克风</label>
                     <p className="text-[11px] text-slate-400 mb-2.5">
-                        电话里点麦克风说话走哪条路转成文字。可与上方角色发声平台分开搭配（比如语音用 MiniMax、识别用 ElevenLabs 或鱼声）；填好对应官方 Key 后即可切换。
+                        电话听写可选下方任一平台。选择豆包或浏览器时，同行连续听也跟随切换。选择录音转写平台时，同行保留上次的连续听方式。
                     </p>
+                    <div data-doubao-stt className="mb-3">
+                        <DoubaoSpeechSettings form={doubaoSpeech} save={config => {
+                            const provider = config.apiKey ? 'doubao' : localSttProvider === 'doubao' ? 'browser' : localSttProvider;
+                            setLocalSttProvider(provider);
+                            updateApiConfig(buildOtherApiConfig({ companionStt: config, sttProvider: provider }));
+                            addToast(config.apiKey ? '已保存，电话和同行均使用豆包识别' : '已移除豆包语音 Key', 'success');
+                        }}/>
+                    </div>
                     <div className="space-y-2">
                         {STT_PROVIDER_OPTIONS.map((opt) => {
                             const configured = isSttProviderConfigured(opt.id, draftSttLookupConfig);

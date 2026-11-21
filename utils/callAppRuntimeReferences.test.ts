@@ -48,7 +48,9 @@ describe('CallApp runtime references', () => {
     const preferenceSource = readFileSync(path.resolve(__dirname, './callPreferences.ts'), 'utf8');
     const preferenceSheetSource = readFileSync(path.resolve(__dirname, '../components/call/CallPreferencesSheet.tsx'), 'utf8');
 
-    expect(source).toContain("onFinal: (t) => setDraftInput(t)");
+    const dictation = source.slice(source.indexOf('onFinal: (t) => {'), source.indexOf('onTranscribing: (busy)'));
+    expect(dictation).toContain('setDraftInput(draftPrefix + t)');
+    expect(dictation).not.toContain('requestAssistantReply');
     expect(source).toContain("await requestAssistantReply(input, userDbId, pendingTouchesForTurn, true, userCameraSnapshotForTurn)");
     expect(source).toContain("{sendingBusy ? '…' : '发送'}");
     expect(source).toMatch(/const beginSelectedCall[\s\S]*?setViewMode\('in-call'\);\s+setCallStartedAt\(Date\.now\(\)\);\s+setCallState\('listening'\);/);
@@ -203,7 +205,7 @@ describe('CallApp runtime references', () => {
     expect(exportSource).toContain('collectBlobRefs(s, referencedBlobTokens)');
     expect(exportSource).toContain('await writeBlobsToZip(');
     expect(exportSource).toContain("metadata.cameraSnapshotExpired = true");
-    expect(exportSource).toContain("|| !!m.metadata?.cameraSnapshotRef");
+    expect(exportSource).toContain("|| item.metadata?.cameraSnapshotRef");
     expect(exportSource).toContain("companionAvatar: c.companionAvatar");
   });
 
@@ -216,7 +218,7 @@ describe('CallApp runtime references', () => {
     expect(source).toContain("openCallSetupGuide(hasSelectedVideoVisual ? 'camera' : 'model')");
     expect(source).toContain('beginSelectedCall(setupCameraMode)');
     expect(source).toContain('onChooseFakeImage={() => chooseFakeUserCameraImage(false)}');
-    expect(source).toContain('const chooseStaticAvatarImage = () =>');
+    expect(source).toContain('useCallAvatarSetup(selectedChar');
     expect(source).toContain("selectedVisualSource !== 'model'");
     expect(source).toContain('staticPortraitValue={staticVideoPortrait}');
     expect(guideSource).toContain('data-testid="call-setup-guide"');
@@ -231,7 +233,7 @@ describe('CallApp runtime references', () => {
   });
 
   it('stores static companion imports as the original File in blob_assets from both entry points', () => {
-    const callSource = readFileSync(path.resolve(__dirname, '../apps/CallApp.tsx'), 'utf8');
+    const callSource = readFileSync(path.resolve(__dirname, '../components/call/useCallAvatarSetup.tsx'), 'utf8');
     const appearanceSource = readFileSync(path.resolve(__dirname, '../apps/Appearance.tsx'), 'utf8');
     const callImport = callSource.slice(
       callSource.indexOf('const chooseStaticAvatarImage = () =>'),
@@ -249,7 +251,7 @@ describe('CallApp runtime references', () => {
   });
 
   it('requires explicit acknowledgement before saving a VRM test import', () => {
-    const source = readFileSync(path.resolve(__dirname, '../apps/CallApp.tsx'), 'utf8');
+    const source = readFileSync(path.resolve(__dirname, '../components/call/useCallAvatarSetup.tsx'), 'utf8');
     const warningSource = readFileSync(path.resolve(__dirname, '../components/call/VRoidBetaWarning.tsx'), 'utf8');
 
     expect(source).toContain('setPendingVRoidImport({ file, characterId: character.id, projectFile: false })');

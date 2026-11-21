@@ -44,6 +44,112 @@ const CAMERA_OPTIONS: Array<{
   { id: 'snapshot', index: '3', title: '每轮快照', detail: '点击发送时截一帧；本地记录只保留最近 3 轮', data: '旧图显示 [图片]' },
 ];
 
+type AvatarOptionsProps = Pick<CallSetupGuideProps,
+  'modelName' | 'modelFormat' | 'avatarSource' | 'staticImageName' | 'hasDatePortraits' | 'dateOutfitName' | 'accentColor' |
+  'onChooseModelFile' | 'onChooseLive2DFolder' | 'onChooseAvatarSource' | 'onChooseStaticImage' | 'onManageDatePortraits' | 'onConfigureLive2D'> & { muted: string; line: string };
+
+export function CallAvatarOptions({ modelName, modelFormat, avatarSource, staticImageName, hasDatePortraits, dateOutfitName,
+  accentColor, onChooseModelFile, onChooseLive2DFolder, onChooseAvatarSource, onChooseStaticImage, onManageDatePortraits,
+  onConfigureLive2D, muted, line }: AvatarOptionsProps) {
+  const visualAvailable = avatarSource === 'model' ? Boolean(modelName) : avatarSource === 'upload' ? Boolean(staticImageName) : hasDatePortraits;
+  const visualName = avatarSource === 'upload'
+    ? staticImageName || '尚未导入静态图片'
+    : avatarSource === 'date'
+      ? dateOutfitName || '尚未准备见面立绘'
+      : modelName || '尚未绑定动态模型';
+  const visualDetail = avatarSource === 'upload'
+    ? 'PNG / GIF · 单图保持原样'
+    : avatarSource === 'date'
+      ? '见面立绘 · 按通话情绪切换同套表情'
+      : modelFormat === 'live2d'
+        ? 'Live2D · 可校准构图、动作与衣橱'
+        : modelFormat === 'vrm' ? 'VRM · 测试支持' : '支持 Live2D ZIP / 文件夹与 VRM';
+
+  return (
+    <>
+      <section className="px-5 py-4">
+        <div className="flex items-center gap-3">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border" style={{ borderColor: `${accentColor}66`, color: accentColor, background: `${accentColor}12` }}>
+            <Cube size={20} weight="fill" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="text-[9px] font-semibold tracking-[0.2em]" style={{ color: muted }}>CURRENT CAST</div>
+            <div className="mt-1 truncate text-[14px] font-medium">{visualName}</div>
+            <div className="mt-0.5 text-[10px]" style={{ color: muted }}>{visualDetail}</div>
+          </div>
+          {visualAvailable && <Check size={17} weight="bold" style={{ color: accentColor }} />}
+        </div>
+      </section>
+
+      <section className="border-t" style={{ borderColor: line }}>
+        <div className="grid grid-cols-3 gap-1.5 border-b p-2" style={{ borderColor: line }}>
+          {([
+            ['model', '动态模型'],
+            ['upload', '静态图片'],
+            ['date', '见面立绘'],
+          ] as const).map(([source, label]) => {
+            const active = avatarSource === source;
+            return (
+              <button
+                key={source}
+                type="button"
+                aria-pressed={active}
+                onClick={() => onChooseAvatarSource(source)}
+                className="rounded-xl border px-2 py-2 text-[10px] font-medium transition active:scale-[.98]"
+                style={{ borderColor: active ? `${accentColor}88` : line, color: active ? accentColor : muted, background: active ? `${accentColor}12` : undefined }}
+              >
+                {active && <Check size={10} weight="bold" className="mr-1 inline" />}{label}
+              </button>
+            );
+          })}
+        </div>
+
+        {avatarSource === 'model' ? (
+          <>
+            <button type="button" onClick={onChooseModelFile} className="grid w-full grid-cols-[2.5rem_1fr_auto] items-center gap-3 border-b px-5 py-3.5 text-left active:bg-current/[.035]" style={{ borderColor: line }}>
+              <FileZip size={18} style={{ color: accentColor }} />
+              <span><span className="block text-[13px] font-medium">模型文件</span><span className="mt-0.5 block text-[10px]" style={{ color: muted }}>Live2D ZIP 或 VRM；.vroid 会提示先导出</span></span>
+              <ArrowRight size={14} style={{ color: muted }} />
+            </button>
+            <button type="button" onClick={onChooseLive2DFolder} className="grid w-full grid-cols-[2.5rem_1fr_auto] items-center gap-3 border-b px-5 py-3.5 text-left active:bg-current/[.035]" style={{ borderColor: line }}>
+              <FolderOpen size={18} style={{ color: accentColor }} />
+              <span><span className="block text-[13px] font-medium">Live2D 完整文件夹</span><span className="mt-0.5 block text-[10px]" style={{ color: muted }}>选择包含 model3.json 的整个目录</span></span>
+              <ArrowRight size={14} style={{ color: muted }} />
+            </button>
+            {modelFormat === 'live2d' && onConfigureLive2D && (
+              <button type="button" onClick={onConfigureLive2D} className="grid w-full grid-cols-[2.5rem_1fr_auto] items-center gap-3 px-5 py-3.5 text-left active:bg-current/[.035]">
+                <Gear size={18} style={{ color: accentColor }} />
+                <span><span className="block text-[13px] font-medium">校准构图、动作与真·衣橱</span><span className="mt-0.5 block text-[10px]" style={{ color: muted }}>预览保持常驻，动作与参数在悬浮设置窗里调整</span></span>
+                <ArrowRight size={14} style={{ color: muted }} />
+              </button>
+            )}
+          </>
+        ) : avatarSource === 'upload' ? (
+          <button type="button" onClick={onChooseStaticImage} className="grid w-full grid-cols-[2.5rem_1fr_auto] items-center gap-3 px-5 py-4 text-left active:bg-current/[.035]">
+            <ImageSquare size={18} style={{ color: accentColor }} />
+            <span><span className="block text-[13px] font-medium">{staticImageName ? '更换 PNG / GIF' : '导入 PNG / GIF'}</span><span className="mt-0.5 block text-[10px]" style={{ color: muted }}>同一张图会同时用于陪伴桌面与视频通话</span></span>
+            <ArrowRight size={14} style={{ color: muted }} />
+          </button>
+        ) : (
+          <button type="button" onClick={onManageDatePortraits} className="grid w-full grid-cols-[2.5rem_1fr_auto] items-center gap-3 px-5 py-4 text-left active:bg-current/[.035]">
+            <ImageSquare size={18} style={{ color: accentColor }} />
+            <span><span className="block text-[13px] font-medium">{hasDatePortraits ? '管理见面立绘表情' : '添加见面立绘'}</span><span className="mt-0.5 block text-[10px]" style={{ color: muted }}>沿用见面模式的服装与表情；AI 只按通话情绪切同套表情</span></span>
+            <ArrowRight size={14} style={{ color: muted }} />
+          </button>
+        )}
+      </section>
+
+      <p className="border-t px-5 py-3 text-[10px] leading-5" style={{ borderColor: line, color: muted }}>
+        {avatarSource === 'model'
+          ? '导入 Live2D 后会自动进入动作与衣橱设置。衣橱动作强制仅手动；VRM 目前仍是测试功能。'
+          : avatarSource === 'date'
+            ? '见面立绘会随通话情绪切换静态立绘，不会触发 Live2D 动作；服装仍由你手动选择。'
+            : '单张 PNG / GIF 不切换表情；需要情绪表情时可选择见面立绘。'}
+      </p>
+    </>
+  );
+}
+
 const CallSetupGuide: React.FC<CallSetupGuideProps> = ({
   step,
   characterName,
@@ -85,19 +191,6 @@ const CallSetupGuide: React.FC<CallSetupGuideProps> = ({
   }, [onClose]);
 
   const fakeImageMissing = cameraMode === 'fake' && !hasFakeImage;
-  const visualAvailable = avatarSource === 'model' ? Boolean(modelName) : avatarSource === 'upload' ? Boolean(staticImageName) : hasDatePortraits;
-  const visualName = avatarSource === 'upload'
-    ? staticImageName || '尚未导入静态图片'
-    : avatarSource === 'date'
-      ? dateOutfitName || '尚未准备见面立绘'
-      : modelName || '尚未绑定动态模型';
-  const visualDetail = avatarSource === 'upload'
-    ? 'PNG / GIF · 单图保持原样'
-    : avatarSource === 'date'
-      ? '见面立绘 · 按通话情绪切换同套表情'
-      : modelFormat === 'live2d'
-        ? 'Live2D · 可校准构图、动作与衣橱'
-        : modelFormat === 'vrm' ? 'VRM · 测试支持' : '支持 Live2D ZIP / 文件夹与 VRM';
 
   return (
     <div className="absolute inset-0 z-[80] flex items-end bg-[#08050f]/72 backdrop-blur-sm" data-testid="call-setup-guide">
@@ -145,87 +238,13 @@ const CallSetupGuide: React.FC<CallSetupGuideProps> = ({
 
         <div className="max-h-[56vh] overflow-y-auto border-y no-scrollbar" style={{ borderColor: line }}>
           {step === 'model' ? (
-            <>
-              <section className="px-5 py-4">
-                <div className="flex items-center gap-3">
-                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border" style={{ borderColor: `${accentColor}66`, color: accentColor, background: `${accentColor}12` }}>
-                    <Cube size={20} weight="fill" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[9px] font-semibold tracking-[0.2em]" style={{ color: muted }}>CURRENT CAST</div>
-                    <div className="mt-1 truncate text-[14px] font-medium">{visualName}</div>
-                    <div className="mt-0.5 text-[10px]" style={{ color: muted }}>{visualDetail}</div>
-                  </div>
-                  {visualAvailable && <Check size={17} weight="bold" style={{ color: accentColor }} />}
-                </div>
-              </section>
-
-              <section className="border-t" style={{ borderColor: line }}>
-                <div className="grid grid-cols-3 gap-1.5 border-b p-2" style={{ borderColor: line }}>
-                  {([
-                    ['model', '动态模型'],
-                    ['upload', '静态图片'],
-                    ['date', '见面立绘'],
-                  ] as const).map(([source, label]) => {
-                    const active = avatarSource === source;
-                    return (
-                      <button
-                        key={source}
-                        type="button"
-                        aria-pressed={active}
-                        onClick={() => onChooseAvatarSource(source)}
-                        className="rounded-xl border px-2 py-2 text-[10px] font-medium transition active:scale-[.98]"
-                        style={{ borderColor: active ? `${accentColor}88` : line, color: active ? accentColor : muted, background: active ? `${accentColor}12` : undefined }}
-                      >
-                        {active && <Check size={10} weight="bold" className="mr-1 inline" />}{label}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {avatarSource === 'model' ? (
-                  <>
-                    <button type="button" onClick={onChooseModelFile} className="grid w-full grid-cols-[2.5rem_1fr_auto] items-center gap-3 border-b px-5 py-3.5 text-left active:bg-current/[.035]" style={{ borderColor: line }}>
-                      <FileZip size={18} style={{ color: accentColor }} />
-                      <span><span className="block text-[13px] font-medium">模型文件</span><span className="mt-0.5 block text-[10px]" style={{ color: muted }}>Live2D ZIP 或 VRM；.vroid 会提示先导出</span></span>
-                      <ArrowRight size={14} style={{ color: muted }} />
-                    </button>
-                    <button type="button" onClick={onChooseLive2DFolder} className="grid w-full grid-cols-[2.5rem_1fr_auto] items-center gap-3 border-b px-5 py-3.5 text-left active:bg-current/[.035]" style={{ borderColor: line }}>
-                      <FolderOpen size={18} style={{ color: accentColor }} />
-                      <span><span className="block text-[13px] font-medium">Live2D 完整文件夹</span><span className="mt-0.5 block text-[10px]" style={{ color: muted }}>选择包含 model3.json 的整个目录</span></span>
-                      <ArrowRight size={14} style={{ color: muted }} />
-                    </button>
-                    {modelFormat === 'live2d' && onConfigureLive2D && (
-                      <button type="button" onClick={onConfigureLive2D} className="grid w-full grid-cols-[2.5rem_1fr_auto] items-center gap-3 px-5 py-3.5 text-left active:bg-current/[.035]">
-                        <Gear size={18} style={{ color: accentColor }} />
-                        <span><span className="block text-[13px] font-medium">校准构图、动作与真·衣橱</span><span className="mt-0.5 block text-[10px]" style={{ color: muted }}>预览保持常驻，动作与参数在悬浮设置窗里调整</span></span>
-                        <ArrowRight size={14} style={{ color: muted }} />
-                      </button>
-                    )}
-                  </>
-                ) : avatarSource === 'upload' ? (
-                  <button type="button" onClick={onChooseStaticImage} className="grid w-full grid-cols-[2.5rem_1fr_auto] items-center gap-3 px-5 py-4 text-left active:bg-current/[.035]">
-                    <ImageSquare size={18} style={{ color: accentColor }} />
-                    <span><span className="block text-[13px] font-medium">{staticImageName ? '更换 PNG / GIF' : '导入 PNG / GIF'}</span><span className="mt-0.5 block text-[10px]" style={{ color: muted }}>同一张图会同时用于陪伴桌面与视频通话</span></span>
-                    <ArrowRight size={14} style={{ color: muted }} />
-                  </button>
-                ) : (
-                  <button type="button" onClick={onManageDatePortraits} className="grid w-full grid-cols-[2.5rem_1fr_auto] items-center gap-3 px-5 py-4 text-left active:bg-current/[.035]">
-                    <ImageSquare size={18} style={{ color: accentColor }} />
-                    <span><span className="block text-[13px] font-medium">{hasDatePortraits ? '管理见面立绘表情' : '添加见面立绘'}</span><span className="mt-0.5 block text-[10px]" style={{ color: muted }}>沿用见面模式的服装与表情；AI 只按通话情绪切同套表情</span></span>
-                    <ArrowRight size={14} style={{ color: muted }} />
-                  </button>
-                )}
-              </section>
-
-              <p className="border-t px-5 py-3 text-[10px] leading-5" style={{ borderColor: line, color: muted }}>
-                {avatarSource === 'model'
-                  ? '导入 Live2D 后会自动进入动作与衣橱设置。衣橱动作强制仅手动；VRM 目前仍是测试功能。'
-                  : avatarSource === 'date'
-                    ? '见面立绘会随通话情绪切换静态立绘，不会触发 Live2D 动作；服装仍由你手动选择。'
-                    : '单张 PNG / GIF 不切换表情；需要情绪表情时可选择见面立绘。'}
-              </p>
-            </>
+            <CallAvatarOptions
+              modelName={modelName} modelFormat={modelFormat} avatarSource={avatarSource}
+              staticImageName={staticImageName} hasDatePortraits={hasDatePortraits} dateOutfitName={dateOutfitName}
+              accentColor={accentColor} onChooseModelFile={onChooseModelFile} onChooseLive2DFolder={onChooseLive2DFolder}
+              onChooseAvatarSource={onChooseAvatarSource} onChooseStaticImage={onChooseStaticImage} onManageDatePortraits={onManageDatePortraits}
+              onConfigureLive2D={onConfigureLive2D}
+              muted={muted} line={line}/>
           ) : (
             <section>
               {CAMERA_OPTIONS.map(option => {

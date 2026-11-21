@@ -2,6 +2,7 @@
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { expect, it, vi } from 'vitest';
+import { DoubaoSpeechSettings, useDoubaoSpeechDraft } from '../../components/settings/DoubaoSpeechSettings';
 import { CompanionSetupGuide } from '../../components/companion/CompanionSetupGuide';
 import { companionDialogueReady, openCompanionSetupTarget } from './setup';
 import { characterLaunch } from '../characterLaunch';
@@ -84,9 +85,9 @@ it('selects the paid plan credentials separately without calling or saving an AP
     expect(testCompanionVideo).toHaveBeenLastCalledWith(expect.objectContaining({ apiKey: '', model: 'doubao-seed-2.1-pro' }), expect.any(AbortSignal), expect.any(Function));
   } finally { act(() => root.unmount()); host.remove(); vi.clearAllMocks(); }
 });
-it('tests video and STT drafts without saving them and cancels a running test before starting another', async () => {
+it('tests the video draft and shared speech settings without saving them and cancels a running test before starting another', async () => {
   const host = document.createElement('div'), root = createRoot(host); document.body.append(host);
-  const saveVideoApi = vi.fn(), saveStt = vi.fn(), beforeTest = vi.fn();
+  const saveVideoApi = vi.fn(), navigate = vi.fn(), beforeTest = vi.fn();
   const api = { baseUrl: 'https://chat.test', model: 'chat', apiKey: 'chat-key', companionStt: { provider: 'doubao', apiKey: 'old-key', resourceId: 'volc.seedasr.sauc.duration' } } as any;
   const click = async (text: string) => act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === text)!.click());
   const fill = async (label: string, value: string) => act(async () => {
@@ -95,13 +96,15 @@ it('tests video and STT drafts without saving them and cancels a running test be
     input.dispatchEvent(new Event('input', { bubbles: true }));
   });
   try {
-    await act(async () => root.render(React.createElement(CompanionSetupGuide, { api, canListen: true, navigate: vi.fn(), close: vi.fn(), saveVideoApi, saveStt, beforeTest })));
+    await act(async () => root.render(React.createElement(CompanionSetupGuide, { api, canListen: true, navigate, close: vi.fn(), saveVideoApi, beforeTest })));
     expect(testCompanionDialogue).not.toHaveBeenCalled(); expect(testCompanionStt).not.toHaveBeenCalled();
     await fill('视频 API Key', 'draft-video-key'); await click('测试视频 API');
     expect(testCompanionVideo).toHaveBeenLastCalledWith(expect.objectContaining({ apiKey: 'draft-video-key', provider: 'minimax' }), expect.any(AbortSignal), expect.any(Function));
-    await fill('豆包语音 API Key', 'draft-speech-key'); await click('测试语音识别');
-    expect(testCompanionStt).toHaveBeenLastCalledWith(expect.objectContaining({ apiKey: 'draft-speech-key', provider: 'doubao' }), expect.any(AbortSignal), expect.any(Function));
-    expect(saveVideoApi).not.toHaveBeenCalled(); expect(saveStt).not.toHaveBeenCalled(); expect(beforeTest).toHaveBeenCalledTimes(2);
+    expect(host.querySelector('[aria-label="豆包语音 API Key"]')).toBeNull();
+    await click('去设置语音识别'); expect(navigate).toHaveBeenCalledWith('stt');
+    await click('测试语音识别');
+    expect(testCompanionStt).toHaveBeenLastCalledWith(expect.objectContaining({ apiKey: 'old-key', provider: 'doubao' }), expect.any(AbortSignal), expect.any(Function));
+    expect(saveVideoApi).not.toHaveBeenCalled(); expect(beforeTest).toHaveBeenCalledTimes(2);
     let firstSignal!: AbortSignal;
     vi.mocked(testCompanionDialogue).mockImplementationOnce((_api, _char, signal) => { firstSignal = signal; return new Promise(() => {}); });
     await click('测试对话 API'); expect(firstSignal.aborted).toBe(false);
@@ -116,7 +119,8 @@ it('configures Doubao STT separately, keeps a saved key hidden and supplies dire
     companionStt: { provider: 'doubao', apiKey: 'speech-secret', resourceId: 'volc.seedasr.sauc.duration' } } as any;
   const snapshot = JSON.stringify(api);
   try {
-    await act(async () => root.render(React.createElement(CompanionSetupGuide, { api, canListen: true, navigate: vi.fn(), close: vi.fn(), saveStt })));
+    function Settings() { return React.createElement(DoubaoSpeechSettings, { form: useDoubaoSpeechDraft(api.companionStt), save: saveStt }); }
+    await act(async () => root.render(React.createElement(Settings)));
     const key = host.querySelector<HTMLInputElement>('[aria-label="豆包语音 API Key"]')!;
     expect(key.type).toBe('password'); expect(key.value).toBe('');
     expect(host.textContent).not.toMatch(/speech-secret|chat-secret/);
@@ -127,7 +131,7 @@ it('configures Doubao STT separately, keeps a saved key hidden and supplies dire
       const select = host.querySelector<HTMLSelectElement>('[aria-label="豆包识别服务规格"]')!;
       select.value = 'volc.seedasr.sauc.concurrent'; select.dispatchEvent(new Event('change', { bubbles: true }));
     });
-    const submit = async () => act(async () => key.form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+    const submit = async () => act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === '保存并使用豆包')!.click());
     await submit(); expect(saveStt).toHaveBeenLastCalledWith({ provider: 'doubao', apiKey: 'speech-secret', resourceId: 'volc.seedasr.sauc.concurrent' });
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(key, ' new-speech-key ');
@@ -135,6 +139,10 @@ it('configures Doubao STT separately, keeps a saved key hidden and supplies dire
     });
     await submit(); expect(saveStt).toHaveBeenLastCalledWith(expect.objectContaining({ apiKey: 'new-speech-key' }));
     expect(key.value).toBe(''); expect(JSON.stringify(api)).toBe(snapshot);
+    await act(async () => host.querySelector<HTMLInputElement>('input[type=checkbox]')!.click());
+    const remove = [...host.querySelectorAll('button')].find(button => button.textContent === '确认移除豆包 Key')!;
+    await act(async () => remove.click());
+    expect(saveStt).toHaveBeenLastCalledWith(expect.objectContaining({ provider: 'browser', apiKey: '' }));
   } finally { act(() => root.unmount()); host.remove(); }
 });
 it('uses the character route atomically and leaves a keyless proxy usable', () => {
@@ -170,13 +178,14 @@ it('shows official registration links and current route without exposing keys or
 
 it('routes to the intended settings section or selected character without touching configuration', async () => {
   const host = document.createElement('div'), root = createRoot(host);
-  const vision = vi.fn(), voice = vi.fn(), api = vi.fn(), open = vi.fn();
-  function Sections() { useSettingsFocus('vision', vision); useSettingsFocus('voice', voice); useSettingsFocus('api', api); return null; }
+  const vision = vi.fn(), voice = vi.fn(), stt = vi.fn(), api = vi.fn(), open = vi.fn();
+  function Sections() { useSettingsFocus('vision', vision); useSettingsFocus('voice', voice); useSettingsFocus('stt', stt); useSettingsFocus('api', api); return null; }
   try {
     openCompanionSetupTarget('vision', 'c', open);
     await act(async () => root.render(React.createElement(Sections)));
     expect(vision).toHaveBeenCalledOnce(); expect(voice).not.toHaveBeenCalled();
     act(() => openCompanionSetupTarget('voice', 'c', open)); expect(voice).toHaveBeenCalledOnce();
+    act(() => openCompanionSetupTarget('stt', 'c', open)); expect(stt).toHaveBeenCalledOnce();
     act(() => openCompanionSetupTarget('api', 'c', open)); expect(api).toHaveBeenCalledOnce();
     expect(open).toHaveBeenLastCalledWith(AppID.Settings);
     openCompanionSetupTarget('character', 'selected-character', open);

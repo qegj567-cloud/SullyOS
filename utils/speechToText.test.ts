@@ -1,9 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import * as doubao from './companion/doubaoListening';
 import {
   isOfficialMiniMaxBaseUrl,
   resolveMiniMaxSttApiKey,
   isSttProviderConfigured,
   resolveSttProvider,
+  startStt,
+  sttProviderSelection,
   encodeWavFromFloat32,
   cleanFishAsrText,
   transcribeAudioWithProvider,
@@ -77,6 +80,53 @@ describe('speechToText provider resolution & strict key guards', () => {
         ttsProvider: 'minimax',
       }),
     ).toBe('browser');
+  });
+});
+
+describe('Doubao call dictation', () => {
+  const saved = { provider: 'doubao', apiKey: 'saved-speech-key', resourceId: 'volc.seedasr.sauc.concurrent' } as const;
+  afterEach(() => vi.restoreAllMocks());
+
+  it('switches both streaming inputs together while a file provider only changes the phone', () => {
+    expect(sttProviderSelection('browser', { companionStt: saved })).toEqual({ sttProvider: 'browser', companionStt: { ...saved, provider: 'browser' } });
+    expect(sttProviderSelection('doubao', { companionStt: saved })).toEqual({ sttProvider: 'doubao', companionStt: saved });
+    expect(sttProviderSelection('fishaudio', { companionStt: saved })).toEqual({ sttProvider: 'fishaudio' });
+  });
+
+  it('keeps the old companion key and combines pauses into one editable result', async () => {
+    const release = vi.fn();
+    const stream = vi.spyOn(doubao, 'startDoubaoListening').mockReturnValue(release);
+    const cb = { onPartial: vi.fn(), onFinal: vi.fn(), onEnd: vi.fn(), onError: vi.fn() };
+    const session = await startStt('zh-CN', cb, { sttProvider: 'doubao', companionStt: saved, apiKey: 'unrelated-chat-key' });
+    const [credentials, events] = stream.mock.calls[0];
+    expect(credentials).toEqual(saved);
+    events.partial('看看');
+    events.partial('');
+    events.final('看看袖口。');
+    events.partial('再看颜色');
+    expect(cb.onPartial).toHaveBeenLastCalledWith('看看袖口。再看颜色');
+    expect(cb.onFinal).not.toHaveBeenCalled();
+    session.stop();
+    events.final('过期结果');
+    session.stop();
+    expect(release).toHaveBeenCalledOnce();
+    expect(cb.onFinal).toHaveBeenCalledOnce();
+    expect(cb.onFinal).toHaveBeenCalledWith('看看袖口。再看颜色');
+    expect(cb.onEnd).toHaveBeenCalledOnce();
+  });
+
+  it('reports stream errors once and never uses a dialogue key for speech', async () => {
+    const stream = vi.spyOn(doubao, 'startDoubaoListening').mockReturnValue(vi.fn());
+    const cb = { onError: vi.fn(), onEnd: vi.fn(), onFinal: vi.fn() };
+    await expect(startStt('zh-CN', cb, { sttProvider: 'doubao', apiKey: 'unrelated-chat-key' })).rejects.toThrow('豆包语音 Key');
+    expect(stream).not.toHaveBeenCalled();
+    const session = await startStt('zh-CN', cb, { sttProvider: 'doubao', companionStt: saved });
+    stream.mock.calls[0][1].error('连接已断开');
+    session.stop();
+    expect(cb.onError).toHaveBeenCalledOnce();
+    expect(cb.onError).toHaveBeenCalledWith('连接已断开');
+    expect(cb.onEnd).toHaveBeenCalledOnce();
+    expect(cb.onFinal).not.toHaveBeenCalled();
   });
 });
 

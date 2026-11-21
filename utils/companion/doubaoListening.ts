@@ -12,13 +12,14 @@ export function doubaoRelayUrl(location = window.location) {
 }
 
 export function canUseDoubaoListening() {
-  return typeof navigator.mediaDevices?.getUserMedia === 'function' && typeof window.AudioContext === 'function'
+  return typeof navigator !== 'undefined' && typeof window !== 'undefined'
+    && typeof navigator.mediaDevices?.getUserMedia === 'function' && typeof window.AudioContext === 'function'
     && typeof window.AudioWorkletNode === 'function' && typeof window.WebSocket === 'function';
 }
 
 /** Returns disposal immediately, including while microphone permission or the WS handshake is pending. */
 export function startDoubaoListening(config: CompanionSttConfig, callbacks: ListeningCallbacks) {
-  if (!config.apiKey.trim()) throw new Error('请先在同行 API 接入中填写豆包语音 Key');
+  if (!config.apiKey.trim()) throw new Error('请先在「设置 → 其他 API」填写豆包语音 Key');
   if (!canUseDoubaoListening()) throw new Error('此浏览器不支持豆包连续收音，请使用新版浏览器或文字输入');
   let stopped = false, ready = false;
   let stream: MediaStream | undefined, socket: WebSocket | undefined, node: AudioWorkletNode | undefined;

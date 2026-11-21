@@ -82,42 +82,6 @@ function ExternalLink({ href, children }: { href: string; children: React.ReactN
   return <a href={href} target="_blank" rel="noopener noreferrer">{children}<ArrowUpRight size={13} aria-hidden="true"/></a>;
 }
 
-function SttApiFields({ config, save, begin }: { config?: CompanionSttConfig; save?: (config: CompanionSttConfig) => void; begin: BeginCompanionTest }) {
-  const [provider, setProvider] = useState<CompanionSttConfig['provider']>(config?.provider ?? 'browser');
-  const [resourceId, setResourceId] = useState<CompanionSttConfig['resourceId']>(config?.resourceId ?? 'volc.seedasr.sauc.duration');
-  const [key, setKey] = useState(''), [clearKey, setClearKey] = useState(false), [message, setMessage] = useState('');
-  const draft: CompanionSttConfig = { provider, resourceId, apiKey: normalizeApiCredential(key) || (!clearKey ? config?.apiKey ?? '' : '') };
-  return <form className="companion-video-fields" onSubmit={event => {
-    event.preventDefault(); if (!save) return;
-    const apiKey = normalizeApiCredential(key) || (!clearKey ? config?.apiKey ?? '' : '');
-    if (provider === 'doubao' && !apiKey) { setMessage('请填写豆包语音控制台的 API Key'); return; }
-    save({ provider, resourceId, apiKey }); setKey(''); setClearKey(false); setMessage('已保存语音识别设置，返回同行后重新开启连续听。');
-  }}>
-    <label className="companion-setup-provider">语音识别引擎<select aria-label="语音识别引擎" value={provider} onChange={event => { setProvider(event.target.value as CompanionSttConfig['provider']); setMessage(''); }}>
-      <option value="browser">浏览器识别</option><option value="doubao">豆包流式语音识别 2.0</option>
-    </select></label>
-    {provider === 'browser' ? <p>无需 API Key，使用浏览器提供的语音识别。可用性因浏览器而异；不支持时可切换豆包或输入文字。</p> : <>
-      <p>边说边识别，临时文字触发打断；一句话确认后才交给角色。豆包只听写，不更换你的对话模型或角色音色。</p>
-      <ol><li>进入豆包语音控制台，开通「豆包流式语音识别模型 2.0」，选择小时版或已购买的并发版。</li>
-        <li>在新版控制台「API Key 管理」创建语音 Key，填到下方。它和方舟聊天 / 视频 Key 不同。</li>
-        <li>保存后返回同行，点击「连续听」并允许麦克风。建议戴耳机，避免把角色外放的声音识别成你的话。</li></ol>
-      <div className="companion-setup-links"><ExternalLink href="https://console.volcengine.com/speech/new/overview">注册 / 登录豆包语音</ExternalLink><ExternalLink href="https://console.volcengine.com/speech/new/setting/apikeys?projectName=default">获取豆包语音 Key</ExternalLink><ExternalLink href="https://docs.volcengine.com/docs/doubao-voice/quick-start-new-console?lang=zh">开通指引</ExternalLink><ExternalLink href="https://docs.volcengine.com/docs/doubao-voice/bidirectional-streaming-automatic-speech-recognition-websocket?lang=zh">流式识别文档</ExternalLink></div>
-      <label>豆包语音 API Key<input aria-label="豆包语音 API Key" type="password" autoComplete="off" value={key} onChange={event => setKey(event.target.value)} placeholder={config?.apiKey && !clearKey ? '已保存，留空保留原 Key' : '新版语音控制台的 API Key'}/></label>
-      {config?.apiKey && <label className="companion-image-choice"><input type="checkbox" checked={clearKey} onChange={event => setClearKey(event.target.checked)}/>保存时移除旧语音 Key</label>}
-      <label className="companion-setup-provider">服务规格<select aria-label="豆包识别服务规格" value={resourceId} onChange={event => setResourceId(event.target.value as CompanionSttConfig['resourceId'])}>
-        <option value="volc.seedasr.sauc.duration">小时版 · 按识别时长计费</option><option value="volc.seedasr.sauc.concurrent">并发版 · 需已购买并发资源</option>
-      </select></label>
-      <small>开启连续听后，音频及语音 Key 经应用的语音转发入口发送给豆包；本地预览经本机，线上沿用应用主代理，无需另填服务地址。转发不保存录音或 Key，不创建录音链接；豆包的数据处理以其服务条款为准。关闭、离开或切到后台即停止收音。</small>
-      <small>Key 保存在本机设置，并随系统配置备份。当前连接最多 30 分钟，到时提示重新开启；识别失败会停止，不自动切换服务商。</small>
-    </>}
-    <div className="companion-setup-actions"><button type="submit" disabled={!save}>保存语音识别设置</button></div>
-    <CompanionApiTest label="测试语音识别" description="测试当前填写内容，不自动保存。开启麦克风，请说一句话并停顿；显示最终识别结果后停止，最长 30 秒，不交给角色生成回复。" config={draft}
-      disabled={!save || (provider === 'doubao' && !draft.apiKey)} begin={begin} run={(signal, progress) => testCompanionStt(draft, signal, progress)}/>
-    {!save && <small>模拟页不保存凭据，请在主应用配置。</small>}
-    {message && <p role="status">{message}</p>}
-  </form>;
-}
-
 function CopyValue({ label, value }: { label: string; value: string }) {
   const [message, setMessage] = useState('');
   return <div className="companion-setup-value"><span>{label}</span><code>{value}</code>
@@ -128,10 +92,9 @@ function CopyValue({ label, value }: { label: string; value: string }) {
   </div>;
 }
 
-export function CompanionSetupGuide({ char, api, canListen, close, navigate, saveVideoApi, saveStt, imageMode = 'none', changeImageMode, beforeTest }: {
+export function CompanionSetupGuide({ char, api, canListen, close, navigate, saveVideoApi, imageMode = 'none', changeImageMode, beforeTest }: {
   char?: CharacterProfile; api: APIConfig; canListen: boolean; close(): void; navigate(target: CompanionSetupTarget): void;
   saveVideoApi?: (config: CompanionVideoApiConfig) => void;
-  saveStt?: (config: CompanionSttConfig) => void;
   beforeTest?: () => void;
   imageMode?: CompanionImageMode; changeImageMode?: (mode: CompanionImageMode) => void;
 }) {
@@ -139,6 +102,7 @@ export function CompanionSetupGuide({ char, api, canListen, close, navigate, sav
   const previousFocus = useRef<HTMLElement | null>(null);
   const runningTest = useRef<() => void>();
   const begin: BeginCompanionTest = cancel => { runningTest.current?.(); runningTest.current = cancel; beforeTest?.(); };
+  const speech: CompanionSttConfig = api.companionStt ?? { provider: 'browser', apiKey: '', resourceId: 'volc.seedasr.sauc.duration' };
   const currentVoice = resolveTtsProvider(api);
   const [provider, setProvider] = useState<TtsProvider>(currentVoice);
   const guide = COMPANION_VOICE_GUIDES[provider];
@@ -233,7 +197,10 @@ export function CompanionSetupGuide({ char, api, canListen, close, navigate, sav
       </section>
 
       <section aria-label="语音输入接入"><div className="companion-setup-heading"><h3><span>04</span> 听你说话</h3><small>{api.companionStt?.provider === 'doubao' ? api.companionStt.apiKey ? '豆包 Key 已填写' : '豆包待配置' : canListen ? '浏览器支持识别' : '此浏览器不支持'}</small></div>
-        <SttApiFields config={api.companionStt} save={saveStt} begin={begin}/>
+        <p>连续听沿用「设置 → 其他 API」的语音识别配置。豆包流式语音识别 2.0 可在你开口时打断角色。</p>
+        <div className="companion-setup-actions"><button type="button" onClick={() => navigate('stt')}>去设置语音识别</button></div>
+        <CompanionApiTest label="测试语音识别" description="用已保存的设置听一句话，停顿后显示文字并关闭麦克风。" config={speech}
+          disabled={speech.provider === 'doubao' ? !speech.apiKey : !canListen} begin={begin} run={(signal, progress) => testCompanionStt(speech, signal, progress)}/>
       </section>
       <p className="companion-setup-note">长回复继续沿用当前角色的上下文条数、自动记忆与记忆宫殿配置，无需为同行重复创建一套记忆 API。</p>
       <button type="button" className="companion-setup-primary" onClick={close}>返回同行，开始测试</button>

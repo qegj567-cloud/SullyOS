@@ -1,3 +1,4 @@
+import { getSttProviderLabel, resolveSttProvider } from './speechToText';
 import type { useOS } from '../context/OSContext';
 import type { CharacterProfile } from '../types';
 import { getThinkingChainSettings } from './thinkingChainPrompt';
@@ -38,6 +39,7 @@ export async function readHelpDeskSettings(os: SettingsSource, char?: CharacterP
     }
     return {
         主对话: { ...endpointFields(apiConfig), 接口: llmApiType(apiConfig), 流式: !!apiConfig.stream, 输出上限: dialogueMaxTokens(apiConfig) },
+        电话听写: getSttProviderLabel(resolveSttProvider(apiConfig)),
         同行: {
             短接话: apiConfig.companionQuickReply === true,
             语音识别: apiConfig.companionStt?.provider === 'doubao' ? '豆包' : '浏览器',

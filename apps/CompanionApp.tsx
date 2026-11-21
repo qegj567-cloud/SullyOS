@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, ArrowUp, ArrowsOutSimple, Camera, CameraSlash, Microphone, MicrophoneSlash, PhoneDisconnect, SpeakerHigh, SpeakerSlash, Stop, SlidersHorizontal, ChatsCircle } from '@phosphor-icons/react';
 import { useOS } from '../context/OSContext';
-import type { APIConfig, CharacterProfile, CompanionVideoApiConfig, CompanionSttConfig, RealtimeConfig, UserProfile } from '../types';
+import type { APIConfig, CharacterProfile, CompanionVideoApiConfig, RealtimeConfig, UserProfile } from '../types';
 import { CompanionSession, type CompanionLine } from '../utils/companion/session';
 import { createCompanionRequests } from '../utils/companion/requests';
 import { CompanionVoice } from '../utils/companion/voice';
@@ -25,24 +25,27 @@ import { CompanionSetupGuide } from '../components/companion/CompanionSetupGuide
 import { companionDialogueReady, openCompanionSetupTarget, type CompanionSetupTarget } from '../utils/companion/setup';
 import './companion.css';
 
+const AvatarSettings = React.lazy(() => import('../components/companion/CompanionAvatarSettings'));
+
 type RequestFactory = typeof createCompanionRequests;
 export interface CompanionSurfaceProps {
   characters: CharacterProfile[]; user: UserProfile; api: APIConfig; realtimeConfig?: RealtimeConfig;
   close(): void;
   navigateSetup?(target: CompanionSetupTarget, charId?: string): void;
   saveVideoApi?(config: CompanionVideoApiConfig): void;
-  saveStt?(config: CompanionSttConfig): void;
   saveQuickReply?(enabled: boolean): void;
+  editAvatar?: boolean;
   /** Fixture injection only; production always uses the shared request pipeline. */
   requestFactory?: RequestFactory;
   videoObserver?: typeof observeCompanionVideo;
 }
 
-export function CompanionSurface({ characters, user, api, realtimeConfig, close, navigateSetup, saveVideoApi, saveStt, saveQuickReply, requestFactory = createCompanionRequests, videoObserver = observeCompanionVideo }: CompanionSurfaceProps) {
+export function CompanionSurface({ characters, user, api, realtimeConfig, close, navigateSetup, saveVideoApi, saveQuickReply, editAvatar, requestFactory = createCompanionRequests, videoObserver = observeCompanionVideo }: CompanionSurfaceProps) {
   const [charId, setCharId] = useState(characters[0]?.id || '');
   const char = characters.find(item => item.id === charId);
   const [style, setStyle] = useState('');
   const [settings, setSettings] = useState(false);
+  const [avatarSettings, setAvatarSettings] = useState(false);
   const [setupOpen, setSetupOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [debug] = useState(() => new CompanionDebugStore());
@@ -235,7 +238,7 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
     </header>
     <div ref={stageRef} className={`companion-stage${camera ? ' has-camera' : ''}`} data-main={streetMain && camera ? 'street' : 'character'} data-vision={analysisPaused ? 'paused' : observing ? 'analyzing' : 'recording'}>
       <div className="companion-call-pane character">
-        <CompanionCharacterView char={char} motion={latest?.role === 'assistant' && latest.status === 'speaking' ? 'speaking' : listening ? 'listening' : 'idle'}/>
+        {!avatarSettings && <CompanionCharacterView key={char?.id} char={char} spokenText={latest?.role === 'assistant' && latest.status !== 'interrupted' ? latest.text : undefined} motion={latest?.role === 'assistant' && latest.status === 'speaking' ? 'speaking' : listening ? 'listening' : 'idle'}/>}
       </div>
       <div className="companion-call-pane street" hidden={!camera && !cameraPending}>
         <video ref={videoRef} muted playsInline onLoadedMetadata={updateStreetAspect} onResize={updateStreetAspect}
@@ -253,6 +256,7 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
       </div>}
       {settings && <div className="companion-settings">
         <header>同行设置<button onClick={() => setSettings(false)}>完成</button></header>
+        {editAvatar && <button type="button" className="companion-reset" disabled={!char} onClick={() => { stopAll(); setAvatarSettings(true); }}>角色形象</button>}
         <button type="button" className="companion-reset" onClick={() => setSetupOpen(true)}>API 配置与注册引导</button>
         <p>上下文：{char && resolveContextRangeMode(char) === 'adaptive' ? '跟随自动记忆' : `最近 ${clampManualContextLimit(char?.contextLimit)} 条`}。与消息 App 共用角色设置。</p>
         <label className="companion-quick-toggle"><input type="checkbox" checked={quickEnabled} onChange={event => {
@@ -261,7 +265,7 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
         }}/>短接话 a</label>
         <p>从下一句话生效。关闭时直接准备完整上下文，只生成和播放 a′。</p>
         {quickEnabled && <label>接话设定<textarea value={style} maxLength={2400} disabled={!!session.current} onChange={event => setStyle(event.target.value)}/></label>}
-        <p>连续听：{useDoubao ? '豆包流式语音识别 2.0' : '浏览器识别'}。在 API 接入中切换和配置；建议戴耳机避免识别到角色的外放声音。</p>
+        <p>连续听：{useDoubao ? '豆包流式语音识别 2.0' : '浏览器识别'}。在「设置 → 其他 API」中配置；建议戴耳机避免识别到角色的外放声音。</p>
         <p>镜头开启后始终显示完整实时画面。后台录制约 8 秒的无声视频片段交给视频理解 API；绿色边框表示正在分析已录完的片段。分析失败会暂停理解，实时预览保留。主模型默认只收视频摘要；补充截图在 API 接入中选择。视频和截图不存档，本次对话离开后清空。</p>
         <button className="companion-reset" onClick={() => { stopAll(); session.current = undefined; debug.clear(); setLines([]); setStatus('已结束本次同行'); }}>结束本次同行</button>
       </div>}
@@ -295,14 +299,15 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
         <button type="button" className="companion-hangup" onClick={() => { stopAll(); close(); }}><PhoneDisconnect size={23} weight="fill"/><span>结束同行</span></button>
       </div>
       {observation && <details className="companion-observation"><summary>最近理解的视频</summary><p>{observationText(observation)}</p>{observation.imageNote && <p>{observation.imageNote}</p>}</details>}
-      {!canListen && <small className="companion-note">此浏览器不支持当前识别方式，可在 API 接入中切换，或输入文字。</small>}
+      {!canListen && <small className="companion-note">此浏览器不支持当前识别方式。可输入文字，或通过「API 接入 → 去设置语音识别」选择其他方式。</small>}
     </footer>
+    {avatarSettings && char && <React.Suspense fallback={<div className="companion-settings" role="status">正在打开角色形象…</div>}>
+      <AvatarSettings key={char.id} char={char} close={() => setAvatarSettings(false)}/>
+    </React.Suspense>}
     {setupOpen && <CompanionSetupGuide char={char} api={api} beforeTest={stopAll} imageMode={imageMode} changeImageMode={mode => {
       stopAll(); session.current = undefined; debug.clear(); setImageMode(mode); setStatus('截图方式已更新，可重新开启同行');
     }} saveVideoApi={saveVideoApi ? config => {
       stopAll(); session.current = undefined; debug.clear(); saveVideoApi(config); setStatus('视频 API 已保存，可重新开启镜头');
-    } : undefined} saveStt={saveStt ? config => {
-      stopAll(); session.current = undefined; debug.clear(); saveStt(config); setStatus('语音识别已更新，可重新开启连续听');
     } : undefined} canListen={canListenContinuously()} close={() => setSetupOpen(false)} navigate={target => {
       if (!navigateSetup) { setError('此模拟页不进入真实配置，请在主应用打开同行后配置。'); setSetupOpen(false); return; }
       stopAll(); session.current = undefined; setSetupOpen(false);
@@ -313,7 +318,7 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
 
 export default function CompanionApp() {
   const { characters, userProfile, apiConfig, updateApiConfig, realtimeConfig, closeApp, openApp } = useOS();
-  return <CompanionSurface characters={characters} user={userProfile} api={apiConfig} realtimeConfig={realtimeConfig} close={closeApp}
+  return <CompanionSurface editAvatar characters={characters} user={userProfile} api={apiConfig} realtimeConfig={realtimeConfig} close={closeApp}
     navigateSetup={(target, charId) => openCompanionSetupTarget(target, charId, openApp)} saveVideoApi={config => updateApiConfig({ companionVideoApi: config })}
-    saveStt={config => updateApiConfig({ companionStt: config })} saveQuickReply={enabled => updateApiConfig({ companionQuickReply: enabled })}/>;
+    saveQuickReply={enabled => updateApiConfig({ companionQuickReply: enabled })}/>;
 }

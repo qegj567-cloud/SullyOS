@@ -1170,8 +1170,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
   useEffect(() => {
       if (!isDataLoaded || !shouldReportSnapshot('sar')) return;
-      trackCurrentSARFeaturesOnce(collectSARFeatureFlags());
-  }, [isDataLoaded]);
+      trackCurrentSARFeaturesOnce(collectSARFeatureFlags(apiConfig));
+  }, [isDataLoaded, apiConfig]);
 
   // --- Global Error Interception ---
   useEffect(() => {

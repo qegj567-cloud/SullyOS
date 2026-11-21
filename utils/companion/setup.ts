@@ -3,7 +3,7 @@ import { resolveDialogueApi } from '../characterApi';
 import { characterLaunch } from '../characterLaunch';
 import { requestSettingsFocus } from '../settingsNavigation';
 
-export type CompanionSetupTarget = 'api' | 'vision' | 'voice' | 'character';
+export type CompanionSetupTarget = 'api' | 'vision' | 'voice' | 'stt' | 'character';
 
 export function openCompanionSetupTarget(target: CompanionSetupTarget, charId: string | undefined, openApp: (app: AppID) => void) {
   if (target === 'character') {

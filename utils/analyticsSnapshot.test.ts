@@ -232,11 +232,16 @@ describe('当前功能启用 · 不泄漏配置内容', () => {
                 model: '',
                 ttsProvider: 'elevenlabs',
                 companionQuickReply: true,
+                sttProvider: 'doubao',
+                companionStt: { provider: 'doubao', apiKey: POISON.key, resourceId: 'volc.seedasr.sauc.duration' },
                 elevenLabsApiKey: POISON.key,
             } as APIConfig,
         }));
         expect(flags.语音合成).toBe('elevenlabs');
         expect(flags.同行短接话).toBe('开');
+        const input = collectSARFeatureFlags({ sttProvider: 'doubao', companionStt: { provider: 'doubao', apiKey: POISON.key, resourceId: 'volc.seedasr.sauc.duration' } });
+        expect(input.豆包连续听).toBe('开'); expect(input.豆包电话听写).toBe('开');
+        expectNoLeak(input);
     });
 });
 
@@ -627,7 +632,7 @@ describe('快照事件的属性宽度', () => {
     });
 
     it('SAR 发布功能保持小快照', () => {
-        expect(Object.keys(collectSARFeatureFlags()).length).toBeLessThanOrEqual(10);
+        expect(Object.keys(collectSARFeatureFlags()).length).toBeLessThanOrEqual(12);
     });
 
     it('当前功能启用', () => {

@@ -419,11 +419,13 @@ function collectSARDialogueCounts(): Record<string, string> {
 }
 
 /** SAR 发布功能单独参与冷启动轮转，不加宽原有功能快照。 */
-export function collectSARFeatureFlags(): Record<string, string> {
+export function collectSARFeatureFlags(api?: Partial<APIConfig>): Record<string, string> {
     const input = loadChatInputPreferences();
     const sar = readSARClubState();
     return {
         // ── SAR / 输入习惯 / 周年赠礼：只上报固定状态 ──
+        豆包连续听: onOff(api?.companionStt?.provider === 'doubao'),
+        豆包电话听写: onOff(api?.sttProvider === 'doubao'),
         发送键生成: onOff(input.sendButtonGenerates),
         回车发送: onOff(input.enterToSend),
         自动回复: onOff(input.autoReply),

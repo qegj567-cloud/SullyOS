@@ -1,10 +1,11 @@
 /**
  * Unified speech-to-text (STT) — used by the Call app for voice input.
  *
- * Supports four user-selectable STT routes:
+ * Supports file transcription, Doubao streaming, and browser/system recognition:
  *   - 'minimax'    → MiniMax official ASR (`POST /v1/speech_to_text`, model `asr-1.0`)
  *   - 'fishaudio'  → Fish Audio official ASR (`POST /v1/asr`, model `transcribe-1-pro`)
  *   - 'elevenlabs' → ElevenLabs official Scribe (`POST /v1/speech-to-text`, model `scribe_v2`)
+ *   - 'doubao'     → shared Doubao streaming WebSocket
  *   - 'browser'    → Browser `SpeechRecognition` / Capacitor native speech recognition (free)
  *
  * Strict policy:
@@ -12,6 +13,7 @@
  *     API Key is configured.
  *   - Never fall back to unrelated third-party dialogue LLM endpoints or non-MiniMax keys.
  */
+import { canUseDoubaoListening, startDoubaoListening } from './companion/doubaoListening';
 import { Capacitor } from '@capacitor/core';
 import type { APIConfig, SttProvider } from '../types';
 import { normalizeApiKey } from './minimaxApiKey';
@@ -66,6 +68,10 @@ export const STT_PROVIDER_OPTIONS: SttProviderOption[] = [
     shortLabel: 'ElevenLabs',
     desc: '官方 Scribe v2 · 90+ 语种高精度语音转写',
     keyHint: '需先填写 ElevenLabs API Key',
+  },
+  {
+    id: 'doubao', label: '豆包流式语音识别 2.0', shortLabel: '豆包',
+    desc: '边说边显示文字，电话和同行共用豆包语音 Key', keyHint: '请先填写豆包语音 Key',
   },
   {
     id: 'browser',
@@ -128,6 +134,7 @@ export const isSttProviderConfigured = (
   apiConfig?: Partial<APIConfig> | null,
 ): boolean => {
   if (provider === 'browser') return true;
+  if (provider === 'doubao') return Boolean(apiConfig?.companionStt?.apiKey.trim());
   if (provider === 'minimax') return Boolean(resolveMiniMaxSttApiKey(apiConfig));
   if (provider === 'fishaudio') return Boolean(resolveFishAudioSttApiKey(apiConfig));
   if (provider === 'elevenlabs') return Boolean(resolveElevenLabsSttApiKey(apiConfig));
@@ -142,7 +149,7 @@ export const getConfiguredApiSttProviders = (
 };
 
 export const hasAnyApiSttConfigured = (apiConfig?: Partial<APIConfig> | null): boolean =>
-  getConfiguredApiSttProviders(apiConfig).length > 0;
+  isSttProviderConfigured('doubao', apiConfig) || getConfiguredApiSttProviders(apiConfig).length > 0;
 
 /**
  * Resolve the active STT provider:
@@ -153,7 +160,7 @@ export const hasAnyApiSttConfigured = (apiConfig?: Partial<APIConfig> | null): b
  */
 export const resolveSttProvider = (apiConfig?: Partial<APIConfig> | null): SttProvider => {
   const explicit = apiConfig?.sttProvider;
-  if (explicit === 'browser') return 'browser';
+  if (explicit === 'browser' || explicit === 'doubao') return explicit;
   if (explicit && isSttProviderConfigured(explicit, apiConfig)) {
     return explicit;
   }
@@ -170,6 +177,14 @@ export const resolveSttProvider = (apiConfig?: Partial<APIConfig> | null): SttPr
 
   return 'browser';
 };
+
+/** File transcription is a phone preference. Only streaming providers can also serve continuous listening. */
+export function sttProviderSelection(provider: SttProvider, config: Partial<APIConfig>): Partial<APIConfig> {
+  if (config.companionStt && (provider === 'browser' || provider === 'doubao')) {
+    return { sttProvider: provider, companionStt: { ...config.companionStt, provider } };
+  }
+  return { sttProvider: provider };
+}
 
 export const getSttProviderLabel = (provider: SttProvider): string =>
   STT_PROVIDER_OPTIONS.find((o) => o.id === provider)?.shortLabel || provider;
@@ -188,6 +203,7 @@ export const isAudioRecordingSupported = (): boolean =>
 
 /** Whether voice input is usable in the current environment. */
 export const isSttSupported = (apiConfig?: Partial<APIConfig> | null): boolean => {
+  if (resolveSttProvider(apiConfig) === 'doubao') return canUseDoubaoListening();
   if (hasAnyApiSttConfigured(apiConfig) && isAudioRecordingSupported()) return true;
   return isBrowserSttSupported() || isAudioRecordingSupported();
 };
@@ -195,7 +211,7 @@ export const isSttSupported = (apiConfig?: Partial<APIConfig> | null): boolean =
 const friendlyBrowserError = (raw: string, hasPaidConfigured: boolean): string => {
   const suffix = hasPaidConfigured
     ? '可在「通话偏好」或「设置 → 其他 API」切换为已配置的付费语音识别'
-    : '可在「设置 → 其他 API」配置 ElevenLabs、鱼声 Fish 或 MiniMax Key 开启高精度语音转文字';
+    : '可在「设置 → 其他 API」配置豆包、ElevenLabs、鱼声 Fish 或 MiniMax 语音识别';
   if (/not-allowed|permission|denied/i.test(raw)) return '麦克风权限被拒绝，请在浏览器或系统设置里放行';
   if (/no-speech/i.test(raw)) return '没听清，再试一次？';
   if (/audio-capture/i.test(raw)) return '找不到可用麦克风';
@@ -615,7 +631,7 @@ const startWeb = (lang: string, cb: SttCallbacks, hasPaidConfigured: boolean): S
   if (!Ctor) {
     const hint = hasPaidConfigured
       ? '当前浏览器不支持自带语音识别，请在「通话偏好」或「设置 → 其他 API」切换为已配置的付费语音转文字'
-      : '当前浏览器不支持自带语音识别，可在「设置 → 其他 API」配置 ElevenLabs、鱼声 Fish 或 MiniMax Key 开启高精度语音转文字';
+      : '当前浏览器不支持自带语音识别，可在「设置 → 其他 API」配置豆包、ElevenLabs、鱼声 Fish 或 MiniMax 语音识别';
     cb.onError?.(hint);
     cb.onEnd?.();
     return { stop: () => {} };
@@ -718,7 +734,7 @@ const startNative = async (lang: string, cb: SttCallbacks, hasPaidConfigured: bo
 };
 
 /**
- * Start a speech-to-text session using the resolved provider (`minimax`, `fishaudio`, `elevenlabs`, or `browser`).
+ * Start a call dictation session using the selected streaming, file, or browser provider.
  */
 export const startStt = async (
   lang: string,
@@ -727,6 +743,31 @@ export const startStt = async (
 ): Promise<SttSession> => {
   const language = lang || 'zh-CN';
   const provider = resolveSttProvider(apiConfig);
+  if (provider === 'doubao') {
+    if (!apiConfig?.companionStt?.apiKey.trim()) throw new Error('请先在「设置 → 其他 API」填写豆包语音 Key');
+    // The call microphone is push-to-talk. Keep confirmed segments plus the current
+    // partial in one editable draft until the user stops, including between pauses.
+    let confirmed = '';
+    let partial = '';
+    let ended = false;
+    const publish = () => cb.onPartial?.(confirmed + partial);
+    const release = startDoubaoListening(apiConfig.companionStt, {
+      speech() {},
+      partial(text) { if (!ended) { partial = text; publish(); } },
+      final(text) { if (!ended) { confirmed += text; publish(); } },
+      error(message) {
+        if (ended) return;
+        ended = true; cb.onError?.(message); cb.onEnd?.();
+      },
+    });
+    return { stop() {
+      if (ended) return;
+      ended = true; release();
+      const text = (confirmed + partial).trim();
+      if (text) cb.onFinal?.(text);
+      cb.onEnd?.();
+    } };
+  }
   if (provider === 'minimax' || provider === 'fishaudio' || provider === 'elevenlabs') {
     return startApiStt(provider, language, apiConfig, cb);
   }

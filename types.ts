@@ -316,7 +316,7 @@ export type MinimaxRegion = 'domestic' | 'overseas';
 export type TtsProvider = 'minimax' | 'fishaudio' | 'elevenlabs';
 
 // 语音转文字（STT）服务商。电话麦克风收音可选任意已配置 Key 的平台（与 TTS 独立），或浏览器自带免费识别。
-export type SttProvider = 'minimax' | 'fishaudio' | 'elevenlabs' | 'browser';
+export type SttProvider = 'minimax' | 'fishaudio' | 'elevenlabs' | 'doubao' | 'browser';
 
 /** 同行专用：本地完整 MP4 Base64 直传，与识图/对话配置分开。 */
 export interface CompanionVideoApiConfig {

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 
-export type SettingsFocusTarget = 'api' | 'vision' | 'voice' | 'navigation' | 'location' | 'amsg2' | 'support' | 'backup';
+export type SettingsFocusTarget = 'api' | 'vision' | 'voice' | 'stt' | 'navigation' | 'location' | 'amsg2' | 'support' | 'backup';
 let pending: SettingsFocusTarget | null = null;
 const listeners = new Map<SettingsFocusTarget, () => void>();
 

@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 describe('静态陪伴与视频快照 Umami 埋点', () => {
   const appearance = readFileSync(path.resolve(__dirname, '../apps/Appearance.tsx'), 'utf8');
   const companion = readFileSync(path.resolve(__dirname, '../components/os/CompanionHome.tsx'), 'utf8');
+  const importer = readFileSync(path.resolve(__dirname, '../components/call/useCallAvatarSetup.tsx'), 'utf8');
   const call = readFileSync(path.resolve(__dirname, '../apps/CallApp.tsx'), 'utf8');
 
   it('覆盖静态形象和桌面触碰功能', () => {
@@ -52,17 +53,17 @@ describe('静态陪伴与视频快照 Umami 埋点', () => {
       "{ 来源: 'Live2D 文件夹', 结果: '失败' }",
       "{ 来源: 'Live2D 文件夹', 结果: '体积超限' }",
     ]) {
-      expect(call, `导入通话形象少了这一处：${payload}`).toContain(payload);
+      expect(importer, `导入通话形象少了这一处：${payload}`).toContain(payload);
     }
     // 三道体积上限（ZIP 200MB / VRM 80MB / 文件夹 250MB）各挡各的。
     // 前两道的 payload 文本一模一样，只能靠数个数把它们分开。
-    expect(call.split("结果: '体积超限'").length - 1, '三道体积上限有一处没记').toBe(3);
+    expect(importer.split("结果: '体积超限'").length - 1, '三道体积上限有一处没记').toBe(3);
     // 来源判定没了的话，ZIP 和 VRM 的失败会混成一格，分不出是哪条路劝退的
-    expect(call, 'ZIP 与 VRM 的来源判定没了').toContain("? 'Live2D ZIP' : 'VRM'");
+    expect(importer, 'ZIP 与 VRM 的来源判定没了').toContain("? 'Live2D ZIP' : 'VRM'");
   });
 
   it('埋点参数不包含文本、角色名、文件名或 Blob 引用', () => {
-    const analyticsLines = [appearance, companion, call]
+    const analyticsLines = [appearance, companion, call, importer]
       .flatMap(source => source.split('\n'))
       .filter(line => line.includes('trackEvent(') || line.includes('来源:') || line.includes('形象:') || line.includes('模式:'));
     const payload = analyticsLines.join('\n');
