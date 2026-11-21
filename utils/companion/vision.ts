@@ -1,7 +1,7 @@
 import type { CompanionVideoApiConfig, VisionApiConfig } from '../../types';
 import { safeFetchJson, extractContent } from '../safeApi';
 import { blobDataUrl, extractCompanionFrames, MAX_CLIP_BYTES, type CompanionClip, type CompanionFrame } from './capture';
-import { companionVideoEndpoint, videoRequestParameters } from './videoProviders';
+import { companionVideoEndpoint, isOfficialCompanionMiniMax, videoRequestParameters } from './videoProviders';
 
 export type CompanionImageMode = 'none' | 'direct' | 'helper';
 export interface CompanionObservation { text: string; from: number; to: number; frames?: CompanionFrame[]; imageNote?: string }
@@ -38,7 +38,7 @@ export async function observeCompanionVideo(clip: CompanionClip, api: CompanionV
   const videoUrl = await blobDataUrl(clip.blob, signal);
   signal.throwIfAborted();
   const response = await safeFetchJson(companionVideoEndpoint(api), {
-    method: 'POST', signal,
+    method: 'POST', signal, ...(isOfficialCompanionMiniMax(api) ? { redirect: 'error' as const } : {}),
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${api.apiKey}` },
     body: JSON.stringify({ model: api.model, stream: false, ...videoRequestParameters(api),
       messages: [{ role: 'user', content: [

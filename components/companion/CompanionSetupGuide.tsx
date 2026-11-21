@@ -9,16 +9,17 @@ import { useLocalBackHandler } from '../../hooks/useLocalBackHandler';
 import { COMPANION_SETUP_LINKS as links, COMPANION_VOICE_GUIDES, companionDialogueReady, type CompanionSetupTarget } from '../../utils/companion/setup';
 import { companionVideoReady, type CompanionImageMode } from '../../utils/companion/vision';
 import { normalizeApiBaseUrl, normalizeApiCredential, normalizeApiModel } from '../../utils/apiConfigNormalize';
-import { COMPANION_VIDEO_PROVIDERS, COMPANION_ARK_PLAN, isCompanionArkPlan, type CompanionVideoProvider } from '../../utils/companion/videoProviders';
+import { COMPANION_VIDEO_PROVIDERS, COMPANION_ARK_PLAN, DEFAULT_COMPANION_VIDEO, domesticMiniMaxVideoKey, isCompanionArkPlan, isOfficialCompanionMiniMax, resolveCompanionVideoApi, type CompanionVideoProvider } from '../../utils/companion/videoProviders';
 import { CompanionApiTest, type BeginCompanionTest } from './CompanionApiTest';
 import { testCompanionDialogue, testCompanionImage, testCompanionStt, testCompanionVideo, testCompanionVoice, testMiniMaxReferenceVideo } from '../../utils/companion/apiTests';
 import { FishVoiceTest } from './FishVoiceTest';
 import { companionVideoRouteLabel, testCompanionVideoDirect } from '../../utils/companion/videoConnection';
 
-function VideoApiFields({ config, domesticMiniMaxKey, save, begin }: { config?: CompanionVideoApiConfig; domesticMiniMaxKey?: string; save?: (config: CompanionVideoApiConfig) => void; begin: BeginCompanionTest }) {
-  const [provider, setProvider] = useState<CompanionVideoProvider>(config ? config.provider ?? 'custom' : 'doubao');
-  const [baseUrl, setBaseUrl] = useState(config?.baseUrl ?? COMPANION_VIDEO_PROVIDERS.doubao.baseUrl);
-  const [model, setModel] = useState(config?.model ?? COMPANION_VIDEO_PROVIDERS.doubao.model);
+function VideoApiFields({ config, domesticMiniMaxKey, save, begin }: { config?: CompanionVideoApiConfig; domesticMiniMaxKey: string; save?: (config: CompanionVideoApiConfig) => void; begin: BeginCompanionTest }) {
+  const initial = config ?? DEFAULT_COMPANION_VIDEO;
+  const [provider, setProvider] = useState<CompanionVideoProvider>(initial.provider ?? 'custom');
+  const [baseUrl, setBaseUrl] = useState(initial.baseUrl);
+  const [model, setModel] = useState(initial.model);
   const [key, setKey] = useState('');
   const [clearKey, setClearKey] = useState(false);
   const [message, setMessage] = useState('');
@@ -27,10 +28,10 @@ function VideoApiFields({ config, domesticMiniMaxKey, save, begin }: { config?: 
   const sameEndpoint = normalizeApiBaseUrl(baseUrl) === config?.baseUrl && provider === (config?.provider ?? 'custom');
   const draft: CompanionVideoApiConfig = { provider, baseUrl: normalizeApiBaseUrl(baseUrl), model: normalizeApiModel(model),
     apiKey: normalizeApiCredential(key) || (!clearKey && sameEndpoint ? config?.apiKey ?? '' : '') };
-  const miniMax = COMPANION_VIDEO_PROVIDERS.minimax;
-  const savedMiniMaxTest = provider === 'minimax' && draft.baseUrl === miniMax.baseUrl && domesticMiniMaxKey?.trim()
-    ? { provider: 'minimax' as const, baseUrl: miniMax.baseUrl, model: draft.model, apiKey: domesticMiniMaxKey.trim() }
-    : undefined;
+  const officialMiniMax = isOfficialCompanionMiniMax(draft);
+  const testConfig = resolveCompanionVideoApi(draft, domesticMiniMaxKey);
+  const useSharedKey = officialMiniMax && !draft.apiKey && !!domesticMiniMaxKey;
+  const savedMiniMaxTest = officialMiniMax && domesticMiniMaxKey ? { ...draft, apiKey: domesticMiniMaxKey } : undefined;
   return <form className="companion-video-fields" onSubmit={event => {
     event.preventDefault();
     if (!save) return;
@@ -38,16 +39,15 @@ function VideoApiFields({ config, domesticMiniMaxKey, save, begin }: { config?: 
     try {
       const parsed = new URL(url);
       if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error('请填写有效的 HTTP(S) Base URL');
-      const normalizedModel = normalizeApiModel(model);
-      if (!normalizedModel) throw new Error('请填写支持视频输入的模型 ID');
-      save({ provider, baseUrl: url, model: normalizedModel, apiKey: normalizeApiCredential(key) || (!clearKey && sameEndpoint ? config?.apiKey ?? '' : '') });
+      if (!draft.model) throw new Error('请填写支持视频输入的模型 ID');
+      save(draft);
       setKey(''); setClearKey(false); setMessage('已保存。返回同行开启镜头后，才会录制并发送视频。');
     } catch (error) { setMessage(error instanceof Error ? error.message : '保存失败'); }
   }}>
     <label className="companion-setup-provider">视频服务商<select aria-label="视频服务商" value={provider} onChange={event => {
       const next = event.target.value as CompanionVideoProvider;
       setProvider(next); setBaseUrl(COMPANION_VIDEO_PROVIDERS[next].baseUrl); setModel(COMPANION_VIDEO_PROVIDERS[next].model);
-      setKey(''); setClearKey(true); setMessage('已切换草稿，请填写对应凭据并保存。');
+      setKey(''); setClearKey(true); setMessage('已切换草稿，保存后用于镜头。');
     }}>{Object.entries(COMPANION_VIDEO_PROVIDERS).map(([id, item]) => <option key={id} value={id}>{item.name}</option>)}</select></label>
     {provider === 'doubao' && <label>豆包接入方式<select aria-label="豆包接入方式" value={arkPlan ? 'plan' : 'standard'} onChange={event => {
       const next = event.target.value === 'plan' ? COMPANION_ARK_PLAN : COMPANION_VIDEO_PROVIDERS.doubao;
@@ -60,16 +60,16 @@ function VideoApiFields({ config, domesticMiniMaxKey, save, begin }: { config?: 
     <div className="companion-setup-links"><ExternalLink href={arkPlan ? COMPANION_ARK_PLAN.keys : guide.signup}>{arkPlan ? '打开已购套餐' : `注册 / 登录${guide.name}`}</ExternalLink><ExternalLink href={arkPlan ? COMPANION_ARK_PLAN.keys : guide.keys}>{arkPlan ? '获取套餐专属 Key' : '获取视频模型 Key'}</ExternalLink><ExternalLink href={guide.docs}>视频输入文档</ExternalLink></div>
     <label>视频 API Base URL<input aria-label="视频 API Base URL" type="url" required value={baseUrl} onChange={event => setBaseUrl(event.target.value)} placeholder="填写平台的 OpenAI 兼容地址"/></label>
     <label>视频模型 ID<input aria-label="视频模型 ID" required value={model} onChange={event => setModel(event.target.value)} placeholder="账号已开通的视频理解模型"/></label>
-    <label>视频 API Key<input aria-label="视频 API Key" type="password" autoComplete="off" value={key} onChange={event => setKey(event.target.value)} placeholder={config?.apiKey && sameEndpoint && !clearKey ? '已保存，留空保留原 Key' : '粘贴 Key；无 Key 代理可留空'}/></label>
-    {config?.apiKey && <label className="companion-image-choice"><input type="checkbox" checked={clearKey} onChange={event => setClearKey(event.target.checked)}/>保存时移除旧 Key</label>}
-    <small>只用于同行视频理解。切换服务商或修改地址时不会复用旧 Key；请同时填写对应凭据。模型 ID 可修改，需选支持视频输入的型号。配置保存在本机，随系统配置备份。</small>
+    <label>视频 API Key<input aria-label="视频 API Key" type="password" autoComplete="off" value={key} onChange={event => setKey(event.target.value)} placeholder={useSharedKey ? '已沿用「其他 API」的国内 MiniMax Key' : config?.apiKey && sameEndpoint && !clearKey ? '已保存，留空保留原 Key' : '填写此地址的 Key'}/></label>
+    {config?.apiKey && sameEndpoint && <label className="companion-image-choice"><input type="checkbox" checked={clearKey} onChange={event => setClearKey(event.target.checked)}/>保存时移除视频专用 Key</label>}
+    <small>{officialMiniMax ? (useSharedKey ? '开镜头和测试都使用「其他 API」里已保存的国内 MiniMax Key。在那里换 Key 后，镜头会跟随更新。' : '可填写视频专用 Key，或在「其他 API」保存国内 MiniMax Key 后沿用。') : '仅使用为当前视频地址填写的凭据。无 Key 的自定义代理可留空。'}</small>
     <p role="note"><strong>视频发送路径：</strong>{companionVideoRouteLabel(draft)}</p>
     <small>{arkPlan ? '套餐接口目前不放行浏览器携带鉴权头直连，因此实际视频仍需上方转发。下面的直连检查不会改变这条路径。普通 API 是另一套凭据与计费，请勿混用。' : '请求直接发到你填写的地址；该地址若本身是第三方中转，视频也会经过对方。跨域失败不会自动改走应用 Worker。'}</small>
     <div className="companion-setup-actions"><button type="submit" disabled={!save}>保存视频 API</button></div>
-    <CompanionApiTest label="检查浏览器直连" successLabel="检查完成" description="不录制、不上传视频；带当前填写的 Key 向所填地址发送空请求，检查此浏览器能否读取响应。不会调用模型、验证 Key 或更改配置。" config={draft}
-      disabled={!save || !draft.baseUrl} begin={begin} run={signal => testCompanionVideoDirect(draft, signal)}/>
-    <CompanionApiTest label="测试视频 API" successLabel="已收到回复" description="测试当前填写内容，不自动保存。发送 2 秒图形样片（红色圆形 → 蓝色方形），不开摄像头。" config={draft}
-      disabled={!save || !draft.baseUrl || !draft.model} begin={begin} run={(signal, progress) => testCompanionVideo(draft, signal, progress)}/>
+    <CompanionApiTest label="检查浏览器直连" successLabel="检查完成" description="向所填地址发送空请求，检查此浏览器能否读取响应。" config={testConfig ?? draft}
+      disabled={!save || !draft.baseUrl} begin={begin} run={signal => testCompanionVideoDirect(testConfig ?? draft, signal)}/>
+    <CompanionApiTest label="测试视频 API" successLabel="已收到回复" description="测试当前填写内容，不自动保存。发送 2 秒图形样片（红色圆形 → 蓝色方形），不开摄像头。" config={testConfig ?? draft}
+      disabled={!save || !testConfig || !draft.baseUrl || !draft.model} begin={begin} run={(signal, progress) => testCompanionVideo(testConfig ?? draft, signal, progress)}/>
     {save && savedMiniMaxTest && <CompanionApiTest label="用已存 MiniMax Key 测样片" successLabel="已收到回复"
       description="用「其他 API」已保存的国内 MiniMax Key，向 api.minimax.cn 发送 8 秒标准样片。前 4 秒是左侧红圆，后 4 秒是右侧蓝方块。"
       config={savedMiniMaxTest} disabled={!draft.model} begin={begin} run={(signal, progress) => testMiniMaxReferenceVideo(savedMiniMaxTest, signal, progress)}/>}
@@ -145,7 +145,8 @@ export function CompanionSetupGuide({ char, api, canListen, close, navigate, sav
   const selectedApi = resolveDialogueApi(api, char);
   const dialogueReady = companionDialogueReady(api, char);
   const visionReady = isVisionApiReady(api.visionApi);
-  const videoReady = companionVideoReady(api.companionVideoApi);
+  const domesticKey = domesticMiniMaxVideoKey(api);
+  const videoReady = companionVideoReady(resolveCompanionVideoApi(api.companionVideoApi, domesticKey));
   const voiceReady = !!char && canSynthesizeSpeech(char, api);
   const hasVoice = !!char && characterHasVoice(char, api);
   useLocalBackHandler(() => { close(); return true; }, 30);
@@ -188,7 +189,7 @@ export function CompanionSetupGuide({ char, api, canListen, close, navigate, sav
       <section aria-label="视频理解接入"><div className="companion-setup-heading"><h3><span>02</span> 理解一段视频</h3><small>{videoReady ? '已填写' : '待配置'} · 开镜头时需要</small></div>
         <p>摄像头录制约 8 秒的完整无声视频，由独立视频模型理解动作、镜头变化和先后关系，再把文字摘要交给对话模型。下一段录制与分析并行；慢请求只保留最新待分析片段。</p>
         <p>完整视频从本机内存随 API 请求发送，具体路径见下方；豆包套餐需要转发，普通 API 直接请求所填地址。只在开启镜头或主动测试样片后发送，按平台用量计费。同行不另存录像、不创建公开视频链接，无需上传存储服务；服务商的数据保留规则以其条款为准。</p>
-        <VideoApiFields config={api.companionVideoApi} domesticMiniMaxKey={api.minimaxRegion !== 'overseas' ? api.minimaxApiKey : undefined} save={saveVideoApi} begin={begin}/>
+        <VideoApiFields config={api.companionVideoApi} domesticMiniMaxKey={domesticKey} save={saveVideoApi} begin={begin}/>
         <details open><summary>给主模型的补充截图 · 可选</summary>
           <p>视频理解完成后，才从同一段视频中提取 1–3 张相关截图。默认只发送摘要文字；对话模型是否支持图片由你确认，不根据模型名称猜测。</p>
           <label className="companion-image-choice"><input type="checkbox" checked={imageMode === 'direct'} disabled={!changeImageMode} onChange={event => changeImageMode?.(event.target.checked ? 'direct' : 'none')}/>主对话模型支持图片，向长回复附带截图</label>

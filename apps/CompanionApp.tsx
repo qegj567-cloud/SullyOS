@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, ArrowUp, Camera, CameraSlash, Microphone, MicrophoneSlash, SpeakerHigh, SpeakerSlash, Stop, SlidersHorizontal, ChatsCircle, Compass } from '@phosphor-icons/react';
 import { useOS } from '../context/OSContext';
 import type { APIConfig, CharacterProfile, CompanionVideoApiConfig, CompanionSttConfig, RealtimeConfig, UserProfile } from '../types';
@@ -10,6 +10,7 @@ import { CompanionMicMeter } from '../components/companion/CompanionMicMeter';
 import { canUseDoubaoListening, startDoubaoListening } from '../utils/companion/doubaoListening';
 import { observeCompanionVideo, observationText, companionVideoReady, type CompanionImageMode, type CompanionObservation } from '../utils/companion/vision';
 import { createCompanionClipRecorder, startCompanionVideoLoop } from '../utils/companion/capture';
+import { DEFAULT_COMPANION_VIDEO, domesticMiniMaxVideoKey, isOfficialCompanionMiniMax, resolveCompanionVideoApi } from '../utils/companion/videoProviders';
 import { canSynthesizeSpeech } from '../utils/ttsRouter';
 import { resolveContextRangeMode, clampManualContextLimit } from '../utils/chatContextRange';
 import { CompanionDebugStore } from '../utils/companion/debug';
@@ -77,6 +78,9 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
   const latest = lines.at(-1);
   const useDoubao = api.companionStt?.provider === 'doubao';
   const canListen = useDoubao ? canUseDoubaoListening() : canListenContinuously();
+  const domesticKey = domesticMiniMaxVideoKey(api);
+  const videoApi = useMemo(() => resolveCompanionVideoApi(api.companionVideoApi, domesticKey), [api.companionVideoApi, domesticKey]);
+  const miniMaxDirect = isOfficialCompanionMiniMax(videoApi);
 
   const stopMic = () => { stopListening.current?.(); stopListening.current = undefined; setListening(false); setPartial(''); setMicStatus(''); setMicDiagnostics(undefined); };
   const stopCamera = () => {
@@ -172,7 +176,7 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
   };
 
   useEffect(() => {
-    if (!camera || analysisPaused || !char || !companionVideoReady(api.companionVideoApi) || !mediaRef.current) return;
+    if (!camera || analysisPaused || !char || !companionVideoReady(videoApi) || !mediaRef.current) return;
     const abort = new AbortController(); visionAbort.current = abort;
     const stream = mediaRef.current;
     const failAnalysis = (err: unknown, fatal: boolean) => {
@@ -193,13 +197,13 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
       record,
       observe: async clip => {
         setObserving(true); setAnalysisClip({ from: clip.from, to: clip.to });
-        try { publish(await videoObserver(clip, api.companionVideoApi!, char.id, char.name, abort.signal, { mode: imageMode, helper: api.visionApi }, publish)); }
+        try { publish(await videoObserver(clip, videoApi, char.id, char.name, abort.signal, { mode: imageMode, helper: api.visionApi }, publish)); }
         finally { if (!abort.signal.aborted && mounted.current) { setObserving(false); setAnalysisClip(undefined); } }
       },
       error: failAnalysis,
     });
     return () => abort.abort();
-  }, [camera, analysisPaused, charId, api.companionVideoApi, api.visionApi, imageMode, videoObserver]);
+  }, [camera, analysisPaused, charId, videoApi, api.visionApi, imageMode, videoObserver]);
 
   const caption = latest && !historyOpen && <div className="companion-caption" key={latest.id}>
     <small>{latest.role === 'user' ? user.name : char?.name}{latest.phase && <b className="companion-reply-label">{companionReplyLabel(latest.phase)}</b>}{latest.status === 'interrupted' ? ' · 已打断' : ''}</small>
@@ -241,7 +245,12 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
     <CompanionCameraSource selected={cameraDeviceId} active={camera} activeLabel={cameraLabel} change={deviceId => {
       session.current?.interrupt('切换摄像头'); stopCamera(); setCameraDeviceId(deviceId); setError('');
     }}/>
-    <CompanionVideoStatus active={camera} analyzing={observing} paused={analysisPaused} configured={companionVideoReady(api.companionVideoApi)}
+    {!camera && !cameraPending && api.companionVideoApi && !miniMaxDirect && domesticKey && saveVideoApi &&
+      <div className="companion-video-status"><button type="button" onClick={() => {
+        saveVideoApi({ ...DEFAULT_COMPANION_VIDEO });
+        setStatus('已切换到 MiniMax 直连，可开启镜头');
+      }}>切换到 MiniMax 直连</button></div>}
+    <CompanionVideoStatus active={camera} analyzing={observing} paused={analysisPaused} configured={companionVideoReady(videoApi)}
       clip={analysisClip} lastSeen={observation?.to} problem={analysisProblem}
       retry={() => { setAnalysisProblem(''); setAnalysisPaused(false); }} configure={() => setSetupOpen(true)}/>
     {camera && <div className="companion-camera-caption">{caption}</div>}
@@ -254,7 +263,7 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
       <CompanionMicMeter data={micDiagnostics} active={listening}/>
       <form onSubmit={event => { event.preventDefault(); send(input); }}><input aria-label="对同行伙伴说" placeholder="你看，这件怎么样？" value={input} onChange={event => setInput(event.target.value)}/><button type="submit" aria-label="发送" disabled={!input.trim() || !char}><ArrowUp size={22}/></button></form>
       <div className="companion-actions">
-        <button aria-pressed={camera} onClick={() => void toggleCamera()} disabled={!char}>{camera ? <Camera size={23}/> : <CameraSlash size={23}/>}<span>{cameraPending ? '取消开启' : camera ? '关闭镜头' : '开启镜头'}</span></button>
+        <button aria-pressed={camera} onClick={() => void toggleCamera()} disabled={!char}>{camera ? <Camera size={23}/> : <CameraSlash size={23}/>}<span>{cameraPending ? '取消开启' : camera ? '关闭镜头' : miniMaxDirect ? '开启镜头 · MiniMax 直连' : '开启镜头'}</span></button>
         <button aria-pressed={listening} onClick={toggleMic} disabled={!char || !canListen}>{listening ? <Microphone size={23}/> : <MicrophoneSlash size={23}/>}<span>{listening ? '暂停聆听' : '连续听'}</span></button>
         <button aria-pressed={voiceEnabled && canVoice} onClick={() => { session.current?.interrupt(); voice.current.prime(); setVoiceEnabled(!voiceEnabled); }} disabled={!canVoice}>{voiceEnabled && canVoice ? <SpeakerHigh size={23}/> : <SpeakerSlash size={23}/>}<span>{canVoice ? voiceEnabled ? '角色语音' : '文字模式' : '未配音色'}</span></button>
         <button onClick={() => session.current?.interrupt()}><Stop size={23}/><span>打断</span></button>

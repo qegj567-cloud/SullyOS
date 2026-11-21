@@ -2,6 +2,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import * as transport from '../safeApi';
 import * as capture from './capture';
+import { DEFAULT_COMPANION_VIDEO, resolveCompanionVideoApi } from './videoProviders';
 import { companionVideoReady, observeCompanionVideo, parseVideoObservation } from './vision';
 
 vi.mock('./capture', async importOriginal => ({ ...await importOriginal<typeof import('./capture')>(), extractCompanionFrames: vi.fn(async () => [{ image: 'data:image/jpeg;base64,STILL', at: 5000 }]) }));
@@ -25,6 +26,22 @@ it('submits the entire video via video_url and never calls image understanding b
   expect(meta).toMatchObject({ appId: 'companion', purpose: '视频片段理解' });
   expect(result.text).toBe('镜头从红衣移到蓝衣'); expect(result.frames).toBeUndefined();
   expect(capture.extractCompanionFrames).not.toHaveBeenCalled();
+});
+
+it('posts camera bytes only to MiniMax with the effective key and refuses a redirect', async () => {
+  const transportCall = vi.spyOn(transport, 'safeFetchJson').mockResolvedValue(response('街景'));
+  const explicit = { ...DEFAULT_COMPANION_VIDEO, apiKey: 'camera-only' };
+  expect(resolveCompanionVideoApi(explicit, 'global')).toEqual(explicit);
+  for (const baseUrl of ['https://api.minimax.cn.example/v1', 'https://custom.example/v1', 'https://api.minimax.cn/v1?path=other']) {
+    expect(resolveCompanionVideoApi({ ...DEFAULT_COMPANION_VIDEO, baseUrl }, 'global')?.apiKey).toBe('');
+  }
+  const selected = resolveCompanionVideoApi(undefined, 'global')!;
+  await observeCompanionVideo(clip(), selected, 'c', 'C', new AbortController().signal);
+  expect(transportCall).toHaveBeenCalledOnce();
+  const [endpoint, init] = transportCall.mock.calls[0];
+  expect(endpoint).toBe('https://api.minimax.cn/v1/chat/completions');
+  expect(init).toMatchObject({ method: 'POST', redirect: 'error', headers: { Authorization: 'Bearer global' } });
+  expect(JSON.parse(String(init.body)).messages[0].content[0].video_url).toMatchObject({ url: expect.stringMatching(/^data:video\/mp4;base64,/), fps: 1 });
 });
 
 it.each(['direct', 'helper'] as const)('extracts video-selected stills only after video understanding: %s', async mode => {

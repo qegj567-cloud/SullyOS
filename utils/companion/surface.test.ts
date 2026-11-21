@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { beforeEach, afterEach, expect, it, vi } from 'vitest';
 import { CompanionSurface } from '../../apps/CompanionApp';
 import { startDoubaoListening } from './doubaoListening';
+import { DEFAULT_COMPANION_VIDEO } from './videoProviders';
 import { createCompanionClipRecorder, startCompanionVideoLoop } from './capture';
 import { isCompanionPresent } from './presence';
 
@@ -177,6 +178,37 @@ it('stops a camera stream whose permission resolves after the user has cancelled
   await act(async () => permission.resolve({ getTracks: () => [track] } as any));
   expect(track.stop).toHaveBeenCalledOnce();
   expect(host.textContent).toContain('镜头关闭');
+});
+
+it('uses the stored domestic key for real camera observations and switches an existing provider only on demand', async () => {
+  const track = { stop: vi.fn() }, stream = { getTracks: () => [track], getVideoTracks: () => [track] };
+  vi.stubGlobal('navigator', { mediaDevices: { getUserMedia: vi.fn(async () => stream) } });
+  vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+  const observe = vi.fn(async () => ({ text: '街景', from: 0, to: 8000 }));
+  const save = vi.fn();
+  const render = (api: object) => act(async () => root.render(React.createElement(CompanionSurface, { ...props, api, videoObserver: observe, saveVideoApi: save })));
+  const currentLoop = () => vi.mocked(startCompanionVideoLoop).mock.calls.at(-1)![0];
+  const clip = { blob: new Blob(['clip'], { type: 'video/mp4' }), from: 0, to: 8000 };
+  const ark = { provider: 'doubao', baseUrl: 'https://ark.cn-beijing.volces.com/api/plan/v3', apiKey: 'plan-key', model: 'old-model' };
+  await render({ companionVideoApi: ark, minimaxApiKey: 'shared-key' });
+  await click('切换到 MiniMax 直连');
+  expect(save).toHaveBeenCalledWith(DEFAULT_COMPANION_VIDEO);
+  expect(save.mock.calls[0][0].apiKey).toBe('');
+  expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled();
+  // Starting with no saved video API is the other normal entry into the same camera loop.
+  await render({ minimaxApiKey: 'shared-key' });
+  await click('开启镜头 · MiniMax 直连');
+  const first = currentLoop();
+  await act(async () => { await first.observe(clip); });
+  expect(observe).toHaveBeenLastCalledWith(clip, { ...DEFAULT_COMPANION_VIDEO, apiKey: 'shared-key' }, 'c', '同行伙伴', first.signal, expect.anything(), expect.any(Function));
+  await render({ minimaxApiKey: 'rotated-key', companionVideoApi: DEFAULT_COMPANION_VIDEO });
+  expect(first.signal.aborted).toBe(true);
+  const next = currentLoop();
+  await act(async () => { await next.observe(clip); });
+  expect(observe).toHaveBeenLastCalledWith(clip, { ...DEFAULT_COMPANION_VIDEO, apiKey: 'rotated-key' }, 'c', '同行伙伴', next.signal, expect.anything(), expect.any(Function));
+  await render({ minimaxRegion: 'overseas', minimaxApiKey: 'overseas-key', companionVideoApi: DEFAULT_COMPANION_VIDEO });
+  expect(next.signal.aborted).toBe(true);
+  expect(host.textContent).toContain('仅实时预览');
 });
 
 it('keeps the same live preview through recording, analysis failure and retry; closing alone releases camera', async () => {

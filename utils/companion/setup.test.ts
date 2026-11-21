@@ -32,12 +32,20 @@ it('only uses the saved domestic MiniMax key after an explicit sample test at th
     await render('domestic'); expect(testMiniMaxReferenceVideo).not.toHaveBeenCalled();
     await act(async () => button()!.click());
     expect(testMiniMaxReferenceVideo).toHaveBeenCalledWith({ ...api.companionVideoApi, apiKey: 'saved-minimax-key' }, expect.any(AbortSignal), expect.any(Function));
+    const testVideo = () => [...host.querySelectorAll('button')].find(el => el.textContent === '测试视频 API')!;
+    await act(async () => testVideo().click());
+    expect(testCompanionVideo).toHaveBeenLastCalledWith({ ...api.companionVideoApi, apiKey: 'saved-minimax-key' }, expect.any(AbortSignal), expect.any(Function));
+    await act(async () => { host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); });
+    expect(save).toHaveBeenLastCalledWith(api.companionVideoApi);
+    save.mockClear();
     const address = host.querySelector<HTMLInputElement>('[aria-label="视频 API Base URL"]')!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(address, 'https://custom.test/v1');
       address.dispatchEvent(new Event('input', { bubbles: true }));
     });
     expect(button()).toBeUndefined(); expect(save).not.toHaveBeenCalled();
+    await act(async () => testVideo().click());
+    expect(testCompanionVideo).toHaveBeenLastCalledWith(expect.objectContaining({ baseUrl: 'https://custom.test/v1', apiKey: '' }), expect.any(AbortSignal), expect.any(Function));
     expect(host.querySelector<HTMLInputElement>('[aria-label="视频 API Key"]')?.value).toBe('');
   } finally { act(() => root.unmount()); host.remove(); vi.clearAllMocks(); }
 });
@@ -90,7 +98,7 @@ it('tests video and STT drafts without saving them and cancels a running test be
     await act(async () => root.render(React.createElement(CompanionSetupGuide, { api, canListen: true, navigate: vi.fn(), close: vi.fn(), saveVideoApi, saveStt, beforeTest })));
     expect(testCompanionDialogue).not.toHaveBeenCalled(); expect(testCompanionStt).not.toHaveBeenCalled();
     await fill('视频 API Key', 'draft-video-key'); await click('测试视频 API');
-    expect(testCompanionVideo).toHaveBeenLastCalledWith(expect.objectContaining({ apiKey: 'draft-video-key', provider: 'doubao' }), expect.any(AbortSignal), expect.any(Function));
+    expect(testCompanionVideo).toHaveBeenLastCalledWith(expect.objectContaining({ apiKey: 'draft-video-key', provider: 'minimax' }), expect.any(AbortSignal), expect.any(Function));
     await fill('豆包语音 API Key', 'draft-speech-key'); await click('测试语音识别');
     expect(testCompanionStt).toHaveBeenLastCalledWith(expect.objectContaining({ apiKey: 'draft-speech-key', provider: 'doubao' }), expect.any(AbortSignal), expect.any(Function));
     expect(saveVideoApi).not.toHaveBeenCalled(); expect(saveStt).not.toHaveBeenCalled(); expect(beforeTest).toHaveBeenCalledTimes(2);

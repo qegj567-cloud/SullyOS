@@ -1,4 +1,5 @@
-import type { CompanionVideoApiConfig } from '../../types';
+import type { APIConfig, CompanionVideoApiConfig } from '../../types';
+import { normalizeApiBaseUrl, normalizeApiCredential } from '../apiConfigNormalize';
 import { getProxyWorkerUrl } from '../proxyWorker';
 
 export type CompanionVideoProvider = NonNullable<CompanionVideoApiConfig['provider']>;
@@ -52,6 +53,27 @@ export const COMPANION_VIDEO_PROVIDERS = {
     note: '保留原有 MP4 Base64 video_url 接法，可填写百炼等兼容平台的地址。请自行确认视频输入能力、地域、Key 和模型 ID；仅识图或视频生成模型不适用。',
   },
 } as const;
+
+const miniMax = COMPANION_VIDEO_PROVIDERS.minimax;
+export const DEFAULT_COMPANION_VIDEO: CompanionVideoApiConfig = {
+  provider: 'minimax', baseUrl: miniMax.baseUrl, model: miniMax.model, apiKey: '',
+};
+
+export function domesticMiniMaxVideoKey(api: Pick<APIConfig, 'minimaxRegion' | 'minimaxApiKey'>) {
+  return api.minimaxRegion === 'overseas' ? '' : normalizeApiCredential(api.minimaxApiKey);
+}
+
+export function isOfficialCompanionMiniMax(api?: CompanionVideoApiConfig) {
+  return api?.provider === 'minimax' && normalizeApiBaseUrl(api.baseUrl) === miniMax.baseUrl;
+}
+
+/** Resolve for this request only. Persist the user's draft, never the inherited key. */
+export function resolveCompanionVideoApi(config: CompanionVideoApiConfig | undefined, domesticKey: string) {
+  const selected = config ?? DEFAULT_COMPANION_VIDEO;
+  if (!isOfficialCompanionMiniMax(selected)) return selected;
+  const apiKey = normalizeApiCredential(selected.apiKey) || domesticKey;
+  return apiKey ? { ...selected, baseUrl: miniMax.baseUrl, apiKey } : undefined;
+}
 
 export function videoRequestParameters(api: CompanionVideoApiConfig): Record<string, unknown> {
   switch (api.provider) {
