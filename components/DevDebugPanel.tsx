@@ -18,7 +18,7 @@ import {
 import { BUILD_LABEL } from '../utils/buildInfo';
 import { trackEvent } from '../utils/analytics';
 import { runBlobGc } from '../utils/blobGc';
-import { runOpfsAppendStress, runOpfsProbe, urlProbeUploader, webdavProbeUploader } from '../utils/opfsProbe';
+import { measureFileReads, runOpfsAppendStress, runOpfsProbe, urlProbeUploader, webdavProbeUploader } from '../utils/opfsProbe';
 import type { DevDebugCaptureCategory, DevDebugFlags, DevDebugFloatingPosition } from '../utils/devDebug';
 import { shareOrDownloadFile } from '../utils/shareExport';
 
@@ -172,6 +172,7 @@ const DevDebugPanel: React.FC = () => {
     const [floatingPosition, setFloatingPosition] = useState<DevDebugFloatingPosition>(getDefaultFloatingPosition);
     const [viewport, setViewport] = useState(getViewportSize);
     const panelRef = useRef<HTMLElement>(null);
+    const fileReadInputRef = useRef<HTMLInputElement>(null);
     const [panelSize, setPanelSize] = useState({ width: PANEL_WIDTH, height: PANEL_ESTIMATED_HEIGHT });
     const dragStateRef = useRef<{
         pointerId: number;
@@ -326,6 +327,17 @@ const DevDebugPanel: React.FC = () => {
         try {
             const result = await runOpfsAppendStress(2048, done => setOpfsProbeText(`已写 ${done} / 2048 次…`));
             setOpfsProbeText(JSON.stringify(result, null, 2));
+        } finally {
+            setOpfsProbeRunning(false);
+        }
+    };
+    const handleFileReadProbe = async (file: File | undefined) => {
+        if (!file || opfsProbeRunning) return;
+        setOpfsProbeRunning(true);
+        setOpfsProbeCopy('复制结果');
+        setOpfsProbeText('正在读取…');
+        try {
+            setOpfsProbeText(JSON.stringify(await measureFileReads(file), null, 2));
         } finally {
             setOpfsProbeRunning(false);
         }
@@ -654,6 +666,21 @@ const DevDebugPanel: React.FC = () => {
                                     disabled={opfsProbeRunning}
                                     icon={<HardDrives size={13} weight="bold" />}
                                     label="追加写压力测试（写 2GB 后删除）"
+                                />
+                                <input
+                                    ref={fileReadInputRef}
+                                    type="file"
+                                    className="hidden"
+                                    onChange={event => {
+                                        void handleFileReadProbe(event.target.files?.[0]);
+                                        event.target.value = '';
+                                    }}
+                                />
+                                <LogActionButton
+                                    onClick={() => fileReadInputRef.current?.click()}
+                                    disabled={opfsProbeRunning}
+                                    icon={<HardDrives size={13} weight="bold" />}
+                                    label="选文件测读取速度"
                                 />
                                 {opfsProbeText && !opfsProbeRunning && (
                                     <LogActionButton

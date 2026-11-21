@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { runOpfsAppendStress, runOpfsProbe, type ProbeStep } from './opfsProbe';
+import { measureFileReads, runOpfsAppendStress, runOpfsProbe, type ProbeStep } from './opfsProbe';
 
 function fakeStorage(readBack: (written: Uint8Array<ArrayBuffer>) => Blob) {
     let written = new Uint8Array();
@@ -101,5 +101,26 @@ describe('runOpfsProbe', () => {
         const refused = await runOpfsAppendStress(5);
         expect(refused).toMatchObject({ ok: false, writes: 2, fileSize: 2 });
         expect(refused.writeError).toContain('QuotaExceededError');
+    });
+});
+
+describe('measureFileReads', () => {
+    it('读文件末尾、八个位置的正反两遍和开头的顺序读，各段读到的字节数如实记录', async () => {
+        const size = 40 * 1024 * 1024;
+        const result = await measureFileReads(new Blob([new Uint8Array(size)]));
+        expect(result).toMatchObject({ ok: true, size, tail: { offset: size - 65536, bytes: 65536 } });
+        const forward = result.forward as Array<{ offset: number; bytes: number }>;
+        const backward = result.backward as Array<{ offset: number; bytes: number }>;
+        expect(forward.map(read => read.offset)).toEqual(Array.from({ length: 8 }, (_, i) => (size * i) / 8));
+        expect(forward.every(read => read.bytes === 1024 * 1024)).toBe(true);
+        expect(backward[0].offset).toBe(forward[7].offset + 1024 * 1024);
+        expect(result.sequential).toMatchObject({ bytes: 32 * 1024 * 1024 });
+    });
+
+    it('文件读不了时不抛错，记下原因', async () => {
+        const broken = { size: 10, slice: () => ({ arrayBuffer: async () => { throw new DOMException('gone', 'NotReadableError'); } }) };
+        const result = await measureFileReads(broken as unknown as Blob);
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('NotReadableError');
     });
 });

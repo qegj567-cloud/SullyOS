@@ -293,3 +293,38 @@ export async function runOpfsAppendStress(count = 2048, onProgress?: (done: numb
         return { ok: !writeError && !closeError, target: count, writes: done, fileSize, writeError, closeError, samples };
     });
 }
+
+/**
+ * 选来的文件按范围读要多久：读文件末尾 64KB，再在 8 个位置由前到后、由后到前各读 1MB，最后顺序读开头 32MB。
+ * 耗时和位置无关，说明文件能直接跳到任意位置读；越靠后越慢，说明每次读都要从文件开头跳过去，
+ * 这类文件上按需读包会比整个读进内存还慢。不读文件名，也不保留读到的内容。
+ */
+export async function measureFileReads(file: Blob): Promise<ProbeStep> {
+    return attempt(async () => {
+        const timed = async (offset: number, length: number) => {
+            const started = performance.now();
+            const bytes = (await file.slice(offset, Math.min(file.size, offset + length)).arrayBuffer()).byteLength;
+            return { offset, bytes, ms: Math.round(performance.now() - started) };
+        };
+        const tail = await timed(Math.max(0, file.size - 64 * 1024), 64 * 1024);
+        const spots = Array.from({ length: 8 }, (_, i) => Math.floor((file.size * i) / 8));
+        const forward: Array<Awaited<ReturnType<typeof timed>>> = [];
+        for (const offset of spots) forward.push(await timed(offset, PARTIAL_SIZE));
+        // 往回读时错开 1MB，不重复读刚读过的那一段
+        const backward: typeof forward = [];
+        for (const offset of [...spots].reverse()) backward.push(await timed(offset + PARTIAL_SIZE, PARTIAL_SIZE));
+        const started = performance.now();
+        let bytes = 0;
+        for (let offset = 0; offset < Math.min(file.size, 32 * PARTIAL_SIZE); offset += PARTIAL_SIZE) {
+            bytes += (await file.slice(offset, offset + PARTIAL_SIZE).arrayBuffer()).byteLength;
+        }
+        return {
+            userAgent: globalThis.navigator?.userAgent ?? '',
+            size: file.size,
+            tail,
+            forward,
+            backward,
+            sequential: { bytes, ms: Math.round(performance.now() - started) },
+        };
+    });
+}
