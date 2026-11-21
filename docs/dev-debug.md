@@ -141,7 +141,9 @@ sullyos.devDebug.log.v1.<branch>        ← 分类捕获日志（各类混存，
 
 ### 一次性工具：OPFS 探针
 
-面板里的「OPFS 探针」按钮在真机上核对 OPFS 的建文件、写入、读回校验、配额和删除，结果是一段可复制的 JSON，带 UA、协议和页面是否被 Service Worker 接管。实现在 `utils/opfsProbe.ts`，用途见 [`backup-pipeline.md`](./backup-pipeline.md) 第零期。结果里的 `appendWrites` 是往同一个文件连续追加写 16 次、每次 1MB，记下前后浏览器报的用量：涨 16MB 左右是正常记账，涨到一百多 MB 说明浏览器每写一次都把整个文件重新算了一遍。
+面板里的「OPFS 探针」按钮在真机上核对 OPFS 的建文件、写入、读回校验、配额和删除，结果是一段可复制的 JSON，带 UA、协议和页面是否被 Service Worker 接管。实现在 `utils/opfsProbe.ts`，用途见 [`backup-pipeline.md`](./backup-pipeline.md) 第零期。结果里的 `appendWrites` 是往同一个文件连续追加写 16 次、每次 1MB，记下文件实际大小（`fileSize`）和浏览器报的用量涨了多少（`usageGrowth`）。做两遍：`exact` 每次传一块刚好 1MB 的独立缓冲，`view` 每次传一块 4MB 缓冲上的 1MB 视图。用量涨 16MB 左右是正常记账，远超这个数说明浏览器每写一次都把整个文件重新算了一遍；`view` 的文件大小不是 16MB，说明浏览器把视图背后的整块缓冲都写了进去。
+
+「追加写压力测试」往同一个 OPFS 文件连续追加写 1MB，写满 2048 次（2GB）或写入被拒绝为止，然后删掉，实现是 `runOpfsAppendStress`。它回答的问题是：浏览器报的用量随写入次数成平方增长，账面远超配额、磁盘实际还空着的时候，写入会不会被拒绝。结果里每 128 次有一组用量和配额，被拒绝时带上是第几次和报错原文。
 
 要顺便核对 WebKit 319985（落盘的文件上传时发出 0 字节），有两种上传方式：
 

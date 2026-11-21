@@ -25,8 +25,10 @@ export interface OpfsProbeResult {
     write: ProbeStep;
     readBack: ProbeStep;
     /**
-     * 往同一个文件连续追加写，记下前后报的用量。用量按写入量涨（约 16MB）是正常记账；
-     * 涨到一百多 MB 说明每写一次都把整个文件重新算了一遍，分很多次写的大文件会把用量虚报到远超实际。
+     * 往同一个文件连续追加写 16 次、每次 1MB，记下文件实际大小和浏览器报的用量涨了多少。做两遍：
+     * exact 每次传一块刚好 1MB 的独立缓冲；view 每次传一块 4MB 缓冲上的 1MB 视图。
+     * 用量按写入量涨（约 16MB）是正常记账；远超这个数说明每写一次都把整个文件重新算了一遍。
+     * view 的文件大小不是 16MB，说明浏览器把视图背后的整块缓冲都写了进去。
      */
     appendWrites: ProbeStep;
     estimate: ProbeStep;
@@ -202,23 +204,25 @@ export async function runOpfsProbe(uploader?: OpfsProbeUploader): Promise<OpfsPr
 
     result.appendWrites = !result.write.ok ? skipped('写入没成功') : await attempt(async () => {
         const usage = async () => (typeof storage.estimate === 'function' ? (await storage.estimate()).usage ?? null : null);
-        const chunk = expected.subarray(0, PARTIAL_SIZE);
-        const usageBefore = await usage();
-        const appendHandle = await dir!.getFileHandle(APPEND_FILE, { create: true });
-        const writable = await appendHandle.createWritable();
-        try {
-            for (let i = 0; i < APPEND_COUNT; i++) await writable.write(chunk);
-        } finally {
-            await writable.close();
-        }
-        const usageAfterWrites = await usage();
-        await dir!.removeEntry(APPEND_FILE);
+        const run = async (chunk: Uint8Array<ArrayBuffer>) => {
+            const usageBefore = await usage();
+            const appendHandle = await dir!.getFileHandle(APPEND_FILE, { create: true });
+            const writable = await appendHandle.createWritable();
+            try {
+                for (let i = 0; i < APPEND_COUNT; i++) await writable.write(chunk);
+            } finally {
+                await writable.close();
+            }
+            const fileSize = (await appendHandle.getFile()).size;
+            const usageAfter = await usage();
+            await dir!.removeEntry(APPEND_FILE);
+            return { fileSize, usageGrowth: usageBefore === null || usageAfter === null ? null : usageAfter - usageBefore };
+        };
         return {
             writes: APPEND_COUNT,
             written: APPEND_COUNT * PARTIAL_SIZE,
-            usageBefore,
-            usageAfterWrites,
-            usageAfterRemove: await usage(),
+            exact: await run(expected.slice(0, PARTIAL_SIZE)),
+            view: await run(expected.subarray(0, PARTIAL_SIZE)),
         };
     });
 
@@ -241,4 +245,51 @@ export async function runOpfsProbe(uploader?: OpfsProbeUploader): Promise<OpfsPr
         return {};
     });
     return result;
+}
+
+const STRESS_FILE = `${PROBE_FILE}-stress`;
+
+/**
+ * 往同一个文件连续追加写 1MB，直到写满 count 次或写入被拒绝，然后删掉。
+ * 浏览器报的用量会随写入次数成平方增长（见 docs/backup-pipeline.md「平台事实」），这里看的是：
+ * 账面用量远超配额、磁盘实际还空着的时候，写入会不会被拒绝。每 128 次记一次用量和配额。
+ */
+export async function runOpfsAppendStress(count = 2048, onProgress?: (done: number) => void): Promise<ProbeStep> {
+    return attempt(async () => {
+        const storage = globalThis.navigator.storage;
+        const dir = await storage.getDirectory();
+        const handle = await dir.getFileHandle(STRESS_FILE, { create: true });
+        const writable = await handle.createWritable();
+        const chunk = probeBytes(PARTIAL_SIZE);
+        const samples: Array<{ writes: number; usage: number | null; quota: number | null }> = [];
+        let done = 0;
+        const sample = async () => {
+            const { usage, quota } = await storage.estimate();
+            samples.push({ writes: done, usage: usage ?? null, quota: quota ?? null });
+        };
+        let writeError: string | undefined;
+        let closeError: string | undefined;
+        try {
+            await sample();
+            while (done < count) {
+                await writable.write(chunk);
+                done++;
+                if (done % 128 === 0) {
+                    await sample();
+                    onProgress?.(done);
+                }
+            }
+        } catch (error) {
+            writeError = describe(error);
+        }
+        try {
+            await writable.close();
+        } catch (error) {
+            closeError = describe(error);
+        }
+        const fileSize = await handle.getFile().then(f => f.size, () => null);
+        await sample();
+        await dir.removeEntry(STRESS_FILE).catch(() => undefined);
+        return { ok: !writeError && !closeError, target: count, writes: done, fileSize, writeError, closeError, samples };
+    });
 }

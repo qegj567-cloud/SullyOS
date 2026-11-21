@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { runOpfsProbe, type ProbeStep } from './opfsProbe';
+import { runOpfsAppendStress, runOpfsProbe, type ProbeStep } from './opfsProbe';
 
 function fakeStorage(readBack: (written: Uint8Array<ArrayBuffer>) => Blob) {
     let written = new Uint8Array();
@@ -58,7 +58,7 @@ describe('runOpfsProbe', () => {
         expect(result.readBack.ok).toBe(true);
         expect((result.upload as ProbeStep).skipped).toBe(true);
         expect(result.backupTmp.entries).toEqual([{ name: 'download-1-abc.tmp', size: 5 }]);
-        expect(result.appendWrites).toMatchObject({ ok: true, writes: 16, written: 16 * 1024 * 1024, usageBefore: 10, usageAfterRemove: 10 });
+        expect(result.appendWrites).toMatchObject({ ok: true, writes: 16, written: 16 * 1024 * 1024, exact: { usageGrowth: 0 }, view: { usageGrowth: 0 } });
         expect(fetchSpy).not.toHaveBeenCalled();
     });
 
@@ -80,5 +80,26 @@ describe('runOpfsProbe', () => {
         expect(upload.file.ok).toBe(false);
         expect(upload.sliceWhole.ok).toBe(true);
         expect(result.uploadVia).toBe('fake');
+    });
+
+    it('压力测试写满指定次数后删掉文件；写入被拒绝时停下并记下原因', async () => {
+        const { storage, removeEntry } = fakeStorage((written) => new Blob([written]));
+        vi.stubGlobal('navigator', { userAgent: 'test', storage });
+        const full = await runOpfsAppendStress(3);
+        expect(full).toMatchObject({ ok: true, writes: 3, target: 3 });
+        expect(removeEntry).toHaveBeenCalledWith('sullyos-opfs-probe-stress');
+
+        let calls = 0;
+        const handle = {
+            createWritable: async () => ({
+                write: async () => { if (++calls > 2) throw new DOMException('quota', 'QuotaExceededError'); },
+                close: async () => undefined,
+            }),
+            getFile: async () => new Blob(['ab']),
+        };
+        vi.stubGlobal('navigator', { userAgent: 'test', storage: { ...storage, getDirectory: async () => ({ getFileHandle: async () => handle, removeEntry }) } });
+        const refused = await runOpfsAppendStress(5);
+        expect(refused).toMatchObject({ ok: false, writes: 2, fileSize: 2 });
+        expect(refused.writeError).toContain('QuotaExceededError');
     });
 });

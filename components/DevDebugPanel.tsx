@@ -18,7 +18,7 @@ import {
 import { BUILD_LABEL } from '../utils/buildInfo';
 import { trackEvent } from '../utils/analytics';
 import { runBlobGc } from '../utils/blobGc';
-import { runOpfsProbe, urlProbeUploader, webdavProbeUploader } from '../utils/opfsProbe';
+import { runOpfsAppendStress, runOpfsProbe, urlProbeUploader, webdavProbeUploader } from '../utils/opfsProbe';
 import type { DevDebugCaptureCategory, DevDebugFlags, DevDebugFloatingPosition } from '../utils/devDebug';
 import { shareOrDownloadFile } from '../utils/shareExport';
 
@@ -166,6 +166,7 @@ const DevDebugPanel: React.FC = () => {
     const [opfsProbeUrl, setOpfsProbeUrl] = useState('');
     const [opfsProbeRunning, setOpfsProbeRunning] = useState(false);
     const [opfsProbeText, setOpfsProbeText] = useState('');
+    const [opfsProbeCopy, setOpfsProbeCopy] = useState('复制结果');
     // 位置不持久化：每次出现都回默认角，拖动只在本次会话内有效（prod 刷新=失效=类似关闭，没必要存）。
     // 浮球和展开的面板共用这一个左上角坐标，各自渲染时再按自己的尺寸约束回屏幕内。
     const [floatingPosition, setFloatingPosition] = useState<DevDebugFloatingPosition>(getDefaultFloatingPosition);
@@ -307,12 +308,24 @@ const DevDebugPanel: React.FC = () => {
         if (opfsProbeRunning) return;
         setOpfsProbeRunning(true);
         setOpfsProbeText('');
+        setOpfsProbeCopy('复制结果');
         try {
             const webdavConfig = viaWebdav ? readWebdavBackupConfig() : null;
             const uploader = webdavConfig
                 ? webdavProbeUploader(webdavConfig)
                 : opfsProbeUrl.trim() ? urlProbeUploader(opfsProbeUrl.trim()) : undefined;
             setOpfsProbeText(JSON.stringify(await runOpfsProbe(uploader), null, 2));
+        } finally {
+            setOpfsProbeRunning(false);
+        }
+    };
+    const handleOpfsStress = async () => {
+        if (opfsProbeRunning) return;
+        setOpfsProbeRunning(true);
+        setOpfsProbeCopy('复制结果');
+        try {
+            const result = await runOpfsAppendStress(2048, done => setOpfsProbeText(`已写 ${done} / 2048 次…`));
+            setOpfsProbeText(JSON.stringify(result, null, 2));
         } finally {
             setOpfsProbeRunning(false);
         }
@@ -636,12 +649,24 @@ const DevDebugPanel: React.FC = () => {
                                         label="探针 + 传到已配置的 WebDAV"
                                     />
                                 )}
-                                {opfsProbeText && (
+                                <LogActionButton
+                                    onClick={() => { void handleOpfsStress(); }}
+                                    disabled={opfsProbeRunning}
+                                    icon={<HardDrives size={13} weight="bold" />}
+                                    label="追加写压力测试（写 2GB 后删除）"
+                                />
+                                {opfsProbeText && !opfsProbeRunning && (
                                     <LogActionButton
-                                        onClick={() => { void navigator.clipboard.writeText(opfsProbeText); }}
+                                        // 复制失败时剪贴板里还是上一次的内容，不说一声会让人贴出旧结果
+                                        onClick={() => {
+                                            navigator.clipboard.writeText(opfsProbeText).then(
+                                                () => setOpfsProbeCopy('已复制'),
+                                                () => setOpfsProbeCopy('复制失败，请长按文本框手动复制'),
+                                            );
+                                        }}
                                         disabled={false}
                                         icon={<ClipboardText size={13} weight="bold" />}
-                                        label="复制结果"
+                                        label={opfsProbeCopy}
                                     />
                                 )}
                             </div>
