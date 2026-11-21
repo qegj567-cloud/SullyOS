@@ -8,7 +8,7 @@ import { llmApiType } from './llmEndpoint';
 import { resolveMemoryPalaceWaterline } from './memoryPalace/waterline';
 import { ActiveMsgStore } from './activeMsgStore';
 import { isAmsg2GloballyEnabled } from './amsgGlobalGate';
-import { domesticMiniMaxVideoKey, isCompanionArkPlan, resolveCompanionVideoApi } from './companion/videoProviders';
+import { domesticMiniMaxVideoKey, isCompanionArkPlan, resolveCompanionVideoApi, selectedCompanionVideoConfig } from './companion/videoProviders';
 
 type SettingsSource = Pick<ReturnType<typeof useOS>, 'apiConfig' | 'memoryPalaceConfig' | 'realtimeConfig' | 'theme' | 'isDataLoaded'> & Partial<Pick<ReturnType<typeof useOS>, 'remoteVectorConfig' | 'userProfile'>>;
 type Endpoint = { baseUrl: string; apiKey: string; model: string };
@@ -28,7 +28,7 @@ export async function readHelpDeskSettings(os: SettingsSource, char?: CharacterP
     const input = loadChatInputPreferences();
     const globalPush = await ActiveMsgStore.getGlobalConfig().catch(() => null);
     const chatApi = resolveDialogueApi(apiConfig, char);
-    const videoApi = resolveCompanionVideoApi(apiConfig.companionVideoApi, domesticMiniMaxVideoKey(apiConfig)) ?? apiConfig.companionVideoApi;
+    const videoApi = resolveCompanionVideoApi(apiConfig.companionVideoApi, domesticMiniMaxVideoKey(apiConfig)) ?? selectedCompanionVideoConfig(apiConfig.companionVideoApi);
     const thinking = char && getThinkingChainSettings(char, os.userProfile);
     const mode = char && resolveContextRangeMode(char);
     let translated: boolean | null = null;

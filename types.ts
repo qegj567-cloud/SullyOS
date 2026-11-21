@@ -320,6 +320,8 @@ export type SttProvider = 'minimax' | 'fishaudio' | 'elevenlabs' | 'browser';
 
 /** 同行专用：本地完整 MP4 Base64 直传，与识图/对话配置分开。 */
 export interface CompanionVideoApiConfig {
+  /** Use the shared domestic MiniMax route while keeping these previous video settings available. */
+  preferSharedMiniMax?: true;
   /** Omitted on older configurations: retain the generic Base64 video protocol. */
   provider?: 'doubao' | 'minimax' | 'zhipu' | 'custom';
   baseUrl: string;

@@ -33,6 +33,7 @@ export function normalizeApiConfig(config: APIConfig): APIConfig {
     } } : {}),
     // Whitelist current video settings: retired upload addresses/tokens never survive load/import/save.
     ...(videoApi ? { companionVideoApi: {
+      ...(videoApi.preferSharedMiniMax === true ? { preferSharedMiniMax: true as const } : {}),
       ...(videoApi.provider ? { provider: videoApi.provider } : {}),
       baseUrl: normalizeApiBaseUrl(videoApi.baseUrl),
       apiKey: normalizeApiCredential(videoApi.apiKey),

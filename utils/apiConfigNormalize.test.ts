@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import JSZip from 'jszip';
+import { createBackupArchive } from './backupArchive';
+import { assembleV2Backup, writeV2Backup } from './backupFormat';
 import {
   normalizeApiBaseUrl,
   normalizeApiConfig,
@@ -6,6 +9,18 @@ import {
 } from './apiConfigNormalize';
 
 describe('API config normalization', () => {
+  it('restores the camera preference, original video config and separate speech key after a ZIP export', async () => {
+    const original = { baseUrl: '', model: '', apiKey: '', minimaxApiKey: 'fixture-minimax',
+      companionVideoApi: { provider: 'doubao' as const, baseUrl: 'https://ark.cn-beijing.volces.com/api/plan/v3',
+        model: 'doubao-seed-2.1-pro', apiKey: 'fixture-plan', preferSharedMiniMax: true as const },
+      companionStt: { provider: 'doubao' as const, apiKey: 'fixture-speech', resourceId: 'volc.seedasr.sauc.duration' as const } };
+    const archive = createBackupArchive();
+    await writeV2Backup(archive, { apiConfig: original });
+    const zip = await JSZip.loadAsync(await (await archive.generateBlob()).arrayBuffer());
+    const restored = await assembleV2Backup(zip, JSON.parse(await zip.file('manifest.json')!.async('string')));
+    expect(normalizeApiConfig(restored.apiConfig)).toEqual(original);
+    expect(JSON.stringify(restored.apiConfig.companionVideoApi)).not.toContain(original.minimaxApiKey);
+  });
   it('normalizes independent STT credentials and restores the supported default service on import', () => {
     const input = { baseUrl: 'https://chat.test', model: 'chat', apiKey: 'chat-key',
       companionStt: { provider: 'doubao', apiKey: ' \u200Bspeech-key ', resourceId: 'legacy', url: 'https://discard.test' } } as any;

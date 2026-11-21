@@ -10,7 +10,7 @@ import { CompanionMicMeter } from '../components/companion/CompanionMicMeter';
 import { canUseDoubaoListening, startDoubaoListening } from '../utils/companion/doubaoListening';
 import { observeCompanionVideo, observationText, companionVideoReady, type CompanionImageMode, type CompanionObservation } from '../utils/companion/vision';
 import { createCompanionClipRecorder, startCompanionVideoLoop } from '../utils/companion/capture';
-import { DEFAULT_COMPANION_VIDEO, domesticMiniMaxVideoKey, isOfficialCompanionMiniMax, resolveCompanionVideoApi } from '../utils/companion/videoProviders';
+import { domesticMiniMaxVideoKey, isOfficialCompanionMiniMax, resolveCompanionVideoApi } from '../utils/companion/videoProviders';
 import { canSynthesizeSpeech } from '../utils/ttsRouter';
 import { resolveContextRangeMode, clampManualContextLimit } from '../utils/chatContextRange';
 import { CompanionDebugStore } from '../utils/companion/debug';
@@ -79,7 +79,8 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
   const useDoubao = api.companionStt?.provider === 'doubao';
   const canListen = useDoubao ? canUseDoubaoListening() : canListenContinuously();
   const domesticKey = domesticMiniMaxVideoKey(api);
-  const videoApi = useMemo(() => resolveCompanionVideoApi(api.companionVideoApi, domesticKey), [api.companionVideoApi, domesticKey]);
+  const savedVideo = api.companionVideoApi;
+  const videoApi = useMemo(() => resolveCompanionVideoApi(savedVideo, domesticKey), [savedVideo, domesticKey]);
   const miniMaxDirect = isOfficialCompanionMiniMax(videoApi);
 
   const stopMic = () => { stopListening.current?.(); stopListening.current = undefined; setListening(false); setPartial(''); setMicStatus(''); setMicDiagnostics(undefined); };
@@ -245,9 +246,9 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
     <CompanionCameraSource selected={cameraDeviceId} active={camera} activeLabel={cameraLabel} change={deviceId => {
       session.current?.interrupt('切换摄像头'); stopCamera(); setCameraDeviceId(deviceId); setError('');
     }}/>
-    {!camera && !cameraPending && api.companionVideoApi && !miniMaxDirect && domesticKey && saveVideoApi &&
+    {!camera && !cameraPending && savedVideo && !miniMaxDirect && domesticKey && saveVideoApi &&
       <div className="companion-video-status"><button type="button" onClick={() => {
-        saveVideoApi({ ...DEFAULT_COMPANION_VIDEO });
+        saveVideoApi({ ...savedVideo, preferSharedMiniMax: true });
         setStatus('已切换到 MiniMax 直连，可开启镜头');
       }}>切换到 MiniMax 直连</button></div>}
     <CompanionVideoStatus active={camera} analyzing={observing} paused={analysisPaused} configured={companionVideoReady(videoApi)}

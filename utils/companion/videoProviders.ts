@@ -68,8 +68,12 @@ export function isOfficialCompanionMiniMax(api?: CompanionVideoApiConfig) {
 }
 
 /** Resolve for this request only. Persist the user's draft, never the inherited key. */
+export function selectedCompanionVideoConfig(config?: CompanionVideoApiConfig) {
+  return config?.preferSharedMiniMax ? DEFAULT_COMPANION_VIDEO : config;
+}
+
 export function resolveCompanionVideoApi(config: CompanionVideoApiConfig | undefined, domesticKey: string) {
-  const selected = config ?? DEFAULT_COMPANION_VIDEO;
+  const selected = selectedCompanionVideoConfig(config) ?? DEFAULT_COMPANION_VIDEO;
   if (!isOfficialCompanionMiniMax(selected)) return selected;
   const apiKey = normalizeApiCredential(selected.apiKey) || domesticKey;
   return apiKey ? { ...selected, baseUrl: miniMax.baseUrl, apiKey } : undefined;
