@@ -107,7 +107,7 @@ it('tracks the actual companion role and releases its presence on switching or u
       return new Promise<string>((_, reject) => s.addEventListener('abort', () => reject(s.reason), { once: true }));
     }, prepare: async (_: any, a: Promise<string>) => a, full: async () => 'a′' };
   });
-  await act(async () => root.render(React.createElement(CompanionSurface, { ...props, api: { stream: false },
+  await act(async () => root.render(React.createElement(CompanionSurface, { ...props, api: { stream: false, companionQuickReply: true },
     characters: [...props.characters, { id: 'other', name: '另一位' }], requestFactory: factory })));
   expect(isCompanionPresent('c')).toBe(true); expect(isCompanionPresent('other')).toBe(false);
   await act(async () => {
@@ -135,11 +135,19 @@ it('uses selected Doubao independently of browser recognition and stops listenin
   await click('连续听');
   const callbacks = vi.mocked(startDoubaoListening).mock.calls.at(-1)![1];
   await act(async () => callbacks.final('看看这件'));
-  expect(quick).toHaveBeenCalledOnce(); expect(full).toHaveBeenCalledOnce();
+  expect(quick).not.toHaveBeenCalled(); expect(full).toHaveBeenCalledOnce();
   expect(host.querySelector('.companion-caption')!.textContent).toContain('a′ · 完整回复');
   await click('本次记录');
   const history = host.querySelector('[aria-label="本次同行记录"]')!;
-  expect(history.textContent).toContain('a · 接话'); expect(history.textContent).toContain('a′ · 完整回复');
+  expect(history.textContent).not.toContain('a · 接话'); expect(history.textContent).toContain('a′ · 完整回复');
+  await click('收起');
+  await click('同行设置');
+  const toggle = host.querySelector<HTMLInputElement>('.companion-quick-toggle input')!;
+  expect(toggle.checked).toBe(false);
+  await act(async () => { toggle.click(); });
+  await click('完成');
+  await act(async () => callbacks.final('现在看看另一件'));
+  expect(quick).toHaveBeenCalledOnce(); expect(full).toHaveBeenCalledTimes(2);
   await act(async () => {
     vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
     document.dispatchEvent(new Event('visibilitychange'));
@@ -151,6 +159,7 @@ it('renders the independent surface, shows both replies and discards a continuat
   const later = deferred<string>();
   const full = vi.fn(() => later.promise);
   await act(async () => root.render(React.createElement(CompanionSurface, { ...props,
+    api: { companionQuickReply: true },
     requestFactory: () => ({ quick: async () => '先看看肩线。', prepare: async (_: any, quick: any) => quick, full }),
   })));
   expect(host.textContent).toContain('未配音色');
@@ -177,7 +186,8 @@ it('stops a camera stream whose permission resolves after the user has cancelled
   await click('开启镜头'); await click('取消开启');
   await act(async () => permission.resolve({ getTracks: () => [track] } as any));
   expect(track.stop).toHaveBeenCalledOnce();
-  expect(host.textContent).toContain('镜头关闭');
+  expect(host.querySelector('.companion-call-pane.street')?.hasAttribute('hidden')).toBe(true);
+  expect(host.querySelector('video')!.srcObject).toBeNull();
 });
 
 it('uses the stored domestic key for real camera observations and switches an existing provider only on demand', async () => {
@@ -230,6 +240,16 @@ it('keeps the same live preview through recording, analysis failure and retry; c
   const video = host.querySelector('video')!;
   expect(video.srcObject).toBe(stream); expect(video.classList.contains('is-on')).toBe(true);
   const loop = vi.mocked(startCompanionVideoLoop).mock.calls.at(-1)![0];
+  const stage = host.querySelector<HTMLElement>('.companion-stage')!;
+  expect(stage.dataset.main).toBe('character');
+  await click('将街景切到主画面');
+  expect(stage.dataset.main).toBe('street');
+  expect(host.querySelector('video')).toBe(video);
+  await click('将角色切到主画面');
+  expect(stage.dataset.main).toBe('character');
+  expect(video.srcObject).toBe(stream);
+  expect(loop.signal.aborted).toBe(false);
+  expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledOnce();
   await act(async () => loop.error(new Error('浏览器录制结果为 0 字节'), true));
   expect(loop.signal.aborted).toBe(true);
   expect(host.textContent).toContain('视频理解已暂停'); expect(host.textContent).toContain('实时预览仍保留');
@@ -262,7 +282,7 @@ it('opens the setup guide without generating, and stops a live turn before navig
   let signal: AbortSignal | undefined;
   const later = deferred<string>(), navigateSetup = vi.fn();
   const quick = vi.fn(async (_history, s: AbortSignal) => { signal = s; return later.promise; });
-  await act(async () => root.render(React.createElement(CompanionSurface, { ...props, navigateSetup,
+  await act(async () => root.render(React.createElement(CompanionSurface, { ...props, navigateSetup, api: { companionQuickReply: true },
     requestFactory: () => ({ quick, prepare: async (_: any, a: any) => a, full: async () => 'a′' }),
   })));
   await click('API 接入');

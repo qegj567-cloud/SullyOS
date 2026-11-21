@@ -5,6 +5,7 @@ export const companionReplyLabel = (phase?: CompanionPhase) => phase === 'quick'
 
 function phaseStatus(turn: CompanionDebugTurn, phase: CompanionPhase) {
   const stages = turn.stages, delivery = turn.delivery[phase];
+  if (phase === 'quick' && !turn.quickEnabled) return '本轮已关闭';
   if (delivery?.failed) return '语音失败，正文已展示';
   if (delivery?.end !== undefined) return delivery.mode === 'text' ? '已展示（文字模式）' : '已播放';
   const request = stages[`${phase}_request`];
@@ -20,7 +21,7 @@ function phaseStatus(turn: CompanionDebugTurn, phase: CompanionPhase) {
       : transport.headers.streaming ? '已连接，等待首段正文' : '已连接，等待完整回复';
     return '请求已提交，等待 API 响应';
   }
-  if (request?.status === 'done') return phase === 'full' ? '已生成，等待 a 播完' : '已生成';
+  if (request?.status === 'done') return phase === 'full' && turn.quickEnabled && turn.delivery.quick?.end === undefined ? '已生成，等待 a 播完' : '已生成';
   if (phase === 'quick') return '正在准备接话';
   if (stages.memory?.status === 'running') return '正在召回记忆，尚未开始生成';
   if (stages.wait_a?.status === 'running') return '等待 a 全文，尚未开始生成';

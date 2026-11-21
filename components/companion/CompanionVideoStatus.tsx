@@ -18,7 +18,7 @@ export function CompanionVideoStatus({ active, analyzing, paused, configured, cl
       {configured && paused && <button type="button" onClick={retry}>重试视频理解</button>}
       {!configured && <button type="button" onClick={configure}>配置视频 API</button>}
     </div>
-    <small>{analyzing && clip ? `分析中的片段：${Math.max(1, Math.round((clip.to - clip.from) / 1000))} 秒，结束于 ${age(clip.to)} 秒前。` : '上方一直是当前摄像头画面。'}
+    <small>{analyzing && clip ? `分析中的片段：${Math.max(1, Math.round((clip.to - clip.from) / 1000))} 秒，结束于 ${age(clip.to)} 秒前。` : '点小窗可互换角色与街景。'}
       {lastSeen !== undefined ? ` 最近已理解的画面结束于 ${age(lastSeen)} 秒前${age(lastSeen) > 20 ? '，可能已过时' : ''}。` : ' 尚无视频理解结果。'}</small>
     {problem && <p role="alert">{problem} 实时预览仍保留。</p>}
   </div>;

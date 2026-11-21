@@ -55,8 +55,9 @@ createRoot(document.getElementById('root')!).render(<>
     <span id="clip-proof">等待开始录制</span>
     <span id="codec-proof"/>
   </div>
-  <CompanionSurface characters={[{ id: 'fixture', name: '林间', systemPrompt: '温柔、自然', contextLimit: 50 } as any]}
-    user={{ name: '小雨' } as any} api={{ companionVideoApi: { baseUrl: 'https://unused.invalid', model: 'fixture', apiKey: '' } } as any}
+  <CompanionSurface characters={[{ id: 'fixture', name: '林间', avatar: '/sar-portraits/Aiven/normal.webp', systemPrompt: '温柔、自然', contextLimit: 50 } as any]}
+    user={{ name: '小雨' } as any} api={{ baseUrl: 'https://unused.invalid', model: 'fixture', apiKey: 'fixture',
+      companionVideoApi: { baseUrl: 'https://unused.invalid', model: 'fixture', apiKey: '' } } as any}
     close={() => { document.title = '同行已关闭'; }} videoObserver={observer}
     requestFactory={() => ({ quick: async () => '先把镜头对准袖口，我在听你说。', prepare: async (_, a) => a as any, full: async () => '这是固定示例回复。实时预览应该始终显示在上方。' })}/>
 </>);

@@ -221,6 +221,7 @@ describe('当前功能启用 · 不泄漏配置内容', () => {
         }));
         expect(flags.云端备份服务商).toBe('custom');
         expect(flags.语音合成).toBe('custom');
+        expect(flags.同行短接话).toBe('关');
     });
 
     it('ElevenLabs 是受支持的语音服务商枚举', () => {
@@ -230,10 +231,12 @@ describe('当前功能启用 · 不泄漏配置内容', () => {
                 apiKey: '',
                 model: '',
                 ttsProvider: 'elevenlabs',
+                companionQuickReply: true,
                 elevenLabsApiKey: POISON.key,
             } as APIConfig,
         }));
         expect(flags.语音合成).toBe('elevenlabs');
+        expect(flags.同行短接话).toBe('开');
     });
 });
 

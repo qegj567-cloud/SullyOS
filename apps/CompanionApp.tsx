@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ArrowUp, Camera, CameraSlash, Microphone, MicrophoneSlash, SpeakerHigh, SpeakerSlash, Stop, SlidersHorizontal, ChatsCircle, Compass } from '@phosphor-icons/react';
+import { ArrowLeft, ArrowUp, ArrowsOutSimple, Camera, CameraSlash, Microphone, MicrophoneSlash, PhoneDisconnect, SpeakerHigh, SpeakerSlash, Stop, SlidersHorizontal, ChatsCircle } from '@phosphor-icons/react';
 import { useOS } from '../context/OSContext';
 import type { APIConfig, CharacterProfile, CompanionVideoApiConfig, CompanionSttConfig, RealtimeConfig, UserProfile } from '../types';
 import { CompanionSession, type CompanionLine } from '../utils/companion/session';
@@ -17,6 +17,7 @@ import { CompanionDebugStore } from '../utils/companion/debug';
 import { holdCompanionPresence } from '../utils/companion/presence';
 import { companionCameraConstraints, companionCameraError } from '../utils/companion/cameraSource';
 import { CompanionCameraSource } from '../components/companion/CompanionCameraSource';
+import { CompanionCharacterView } from '../components/companion/CompanionCharacterView';
 import { CompanionDebugPanel } from '../components/companion/CompanionDebugPanel';
 import { CompanionReplyProgress, companionReplyLabel } from '../components/companion/CompanionReplyProgress';
 import { CompanionVideoStatus } from '../components/companion/CompanionVideoStatus';
@@ -31,12 +32,13 @@ export interface CompanionSurfaceProps {
   navigateSetup?(target: CompanionSetupTarget, charId?: string): void;
   saveVideoApi?(config: CompanionVideoApiConfig): void;
   saveStt?(config: CompanionSttConfig): void;
+  saveQuickReply?(enabled: boolean): void;
   /** Fixture injection only; production always uses the shared request pipeline. */
   requestFactory?: RequestFactory;
   videoObserver?: typeof observeCompanionVideo;
 }
 
-export function CompanionSurface({ characters, user, api, realtimeConfig, close, navigateSetup, saveVideoApi, saveStt, requestFactory = createCompanionRequests, videoObserver = observeCompanionVideo }: CompanionSurfaceProps) {
+export function CompanionSurface({ characters, user, api, realtimeConfig, close, navigateSetup, saveVideoApi, saveStt, saveQuickReply, requestFactory = createCompanionRequests, videoObserver = observeCompanionVideo }: CompanionSurfaceProps) {
   const [charId, setCharId] = useState(characters[0]?.id || '');
   const char = characters.find(item => item.id === charId);
   const [style, setStyle] = useState('');
@@ -53,6 +55,9 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
   const [micStatus, setMicStatus] = useState('');
   const [micDiagnostics, setMicDiagnostics] = useState<ListeningDiagnostics>();
   const [camera, setCamera] = useState(false);
+  const [streetMain, setStreetMain] = useState(false);
+  const [localQuickReply, setLocalQuickReply] = useState(api.companionQuickReply === true);
+  const quickEnabled = saveQuickReply ? api.companionQuickReply === true : localQuickReply;
   const [cameraPending, setCameraPending] = useState(false);
   const [cameraDeviceId, setCameraDeviceId] = useState('');
   const [cameraLabel, setCameraLabel] = useState('');
@@ -64,6 +69,13 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
   const [analysisClip, setAnalysisClip] = useState<{ from: number; to: number }>();
   const [imageMode, setImageMode] = useState<CompanionImageMode>('none');
   const videoRef = useRef<HTMLVideoElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const updateStreetAspect = () => {
+    const video = videoRef.current;
+    if (video?.videoWidth && video.videoHeight) {
+      stageRef.current?.style.setProperty('--street-aspect', `${video.videoWidth} / ${video.videoHeight}`);
+    }
+  };
   const mediaRef = useRef<MediaStream>();
   const cameraGeneration = useRef(0);
   const observationRef = useRef<CompanionObservation>();
@@ -90,7 +102,7 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
     mediaRef.current?.getTracks().forEach(track => track.stop()); mediaRef.current = undefined;
     observationRef.current = undefined;
     if (videoRef.current) videoRef.current.srcObject = null;
-    setCamera(false); setCameraPending(false); setObservation(undefined); setObserving(false);
+    setCamera(false); setStreetMain(false); setCameraPending(false); setObservation(undefined); setObserving(false);
     setCameraLabel('');
     setAnalysisPaused(false); setAnalysisProblem(''); setAnalysisClip(undefined);
   };
@@ -135,7 +147,7 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
   const send = (text: string) => {
     if (!text.trim() || !char) return;
     setError(''); setInput(''); voice.current.prime();
-    try { void ensureSession().send(text); } catch (err) { setError((err as Error).message); }
+    try { void ensureSession().send(text, quickEnabled); } catch (err) { setError((err as Error).message); }
   };
   sendRef.current = send;
 
@@ -214,19 +226,26 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
   return <section className={`companion-app${camera ? ' camera-on' : ''}`} aria-label="同行">
     <header className="companion-header">
       <button className="companion-icon" aria-label="返回桌面" onClick={() => { stopAll(); close(); }}><ArrowLeft size={22}/></button>
-      <div className="companion-title"><strong>同行<span>DEMO</span></strong><small>{status}</small></div>
+      <div className="companion-title"><select aria-label="同行角色" value={charId} onChange={event => setCharId(event.target.value)}>
+        {!characters.length && <option value="">请先添加角色</option>}
+        {characters.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+      </select><small>{status}</small></div>
       <button type="button" className="companion-setup-entry" onClick={() => setSetupOpen(true)}>API 接入</button>
       <button className="companion-icon" aria-label="同行设置" onClick={() => setSettings(!settings)}><SlidersHorizontal size={22}/></button>
     </header>
-    <div className={`companion-stage${camera ? ' has-camera' : ''}`} data-vision={analysisPaused ? 'paused' : observing ? 'analyzing' : 'recording'}>
-      <video ref={videoRef} muted playsInline aria-label="摄像头实时画面" className={camera ? 'is-on' : ''}/>
-      {!camera && <div className="companion-empty"><Compass size={68} weight="thin"/><h1>一起，看看眼前。</h1><p>打开镜头，或直接说说你看到的。</p></div>}
-      <div className="companion-topline"><label><span className="companion-dot"/>
-        <select aria-label="同行角色" value={charId} onChange={event => setCharId(event.target.value)}>
-          {!characters.length && <option value="">请先添加角色</option>}
-          {characters.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-        </select></label><span>{camera ? '实时预览' : cameraPending ? '正在打开镜头' : '镜头关闭'}</span></div>
-      {!camera && caption}
+    <div ref={stageRef} className={`companion-stage${camera ? ' has-camera' : ''}`} data-main={streetMain && camera ? 'street' : 'character'} data-vision={analysisPaused ? 'paused' : observing ? 'analyzing' : 'recording'}>
+      <div className="companion-call-pane character">
+        <CompanionCharacterView char={char} motion={latest?.role === 'assistant' && latest.status === 'speaking' ? 'speaking' : listening ? 'listening' : 'idle'}/>
+      </div>
+      <div className="companion-call-pane street" hidden={!camera && !cameraPending}>
+        <video ref={videoRef} muted playsInline onLoadedMetadata={updateStreetAspect} onResize={updateStreetAspect}
+          aria-label="摄像头实时画面" className={camera || cameraPending ? 'is-on' : ''}/>
+      </div>
+      {camera && <button type="button" className="companion-swap" onClick={() => setStreetMain(value => !value)}
+        aria-label={streetMain ? '将角色切到主画面' : '将街景切到主画面'}>
+        <span>{streetMain ? char?.name : '街景'} <ArrowsOutSimple size={13}/></span>
+      </button>}
+    </div>
       {historyOpen && <div className="companion-history" aria-label="本次同行记录">
         <header>本次同行<button onClick={() => setHistoryOpen(false)}>收起</button></header>
         {!lines.length && <p>从一句话开始。</p>}
@@ -236,16 +255,21 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
         <header>同行设置<button onClick={() => setSettings(false)}>完成</button></header>
         <button type="button" className="companion-reset" onClick={() => setSetupOpen(true)}>API 配置与注册引导</button>
         <p>上下文：{char && resolveContextRangeMode(char) === 'adaptive' ? '跟随自动记忆' : `最近 ${clampManualContextLimit(char?.contextLimit)} 条`}。与消息 App 共用角色设置。</p>
-        <label>接话设定<textarea value={style} maxLength={2400} disabled={!!session.current} onChange={event => setStyle(event.target.value)}/></label>
-        <p>默认摘取人设开头，可在开始前改成语气、称呼和关系要点。续答使用完整人设和记忆。</p>
+        <label className="companion-quick-toggle"><input type="checkbox" checked={quickEnabled} onChange={event => {
+          const enabled = event.target.checked;
+          if (saveQuickReply) saveQuickReply(enabled); else setLocalQuickReply(enabled);
+        }}/>短接话 a</label>
+        <p>从下一句话生效。关闭时直接准备完整上下文，只生成和播放 a′。</p>
+        {quickEnabled && <label>接话设定<textarea value={style} maxLength={2400} disabled={!!session.current} onChange={event => setStyle(event.target.value)}/></label>}
         <p>连续听：{useDoubao ? '豆包流式语音识别 2.0' : '浏览器识别'}。在 API 接入中切换和配置；建议戴耳机避免识别到角色的外放声音。</p>
         <p>镜头开启后始终显示完整实时画面。后台录制约 8 秒的无声视频片段交给视频理解 API；绿色边框表示正在分析已录完的片段。分析失败会暂停理解，实时预览保留。主模型默认只收视频摘要；补充截图在 API 接入中选择。视频和截图不存档，本次对话离开后清空。</p>
         <button className="companion-reset" onClick={() => { stopAll(); session.current = undefined; debug.clear(); setLines([]); setStatus('已结束本次同行'); }}>结束本次同行</button>
       </div>}
-    </div>
-    <CompanionCameraSource selected={cameraDeviceId} active={camera} activeLabel={cameraLabel} change={deviceId => {
+    {caption && <div className="companion-camera-caption">{caption}</div>}
+    <div className="companion-call-info">
+    <details className="companion-devices"><summary>摄像头来源</summary><CompanionCameraSource selected={cameraDeviceId} active={camera} activeLabel={cameraLabel} change={deviceId => {
       session.current?.interrupt('切换摄像头'); stopCamera(); setCameraDeviceId(deviceId); setError('');
-    }}/>
+    }}/></details>
     {!camera && !cameraPending && savedVideo && !miniMaxDirect && domesticKey && saveVideoApi &&
       <div className="companion-video-status"><button type="button" onClick={() => {
         saveVideoApi({ ...savedVideo, preferSharedMiniMax: true });
@@ -254,9 +278,9 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
     <CompanionVideoStatus active={camera} analyzing={observing} paused={analysisPaused} configured={companionVideoReady(videoApi)}
       clip={analysisClip} lastSeen={observation?.to} problem={analysisProblem}
       retry={() => { setAnalysisProblem(''); setAnalysisPaused(false); }} configure={() => setSetupOpen(true)}/>
-    {camera && <div className="companion-camera-caption">{caption}</div>}
     <CompanionReplyProgress store={debug}/>
     <CompanionDebugPanel store={debug}/>
+    </div>
     <footer className="companion-controls">
       {!companionDialogueReady(api, char) && <button type="button" className="companion-setup-hint" onClick={() => setSetupOpen(true)}>还没配置对话模型？从这里开始 →</button>}
       {error && <div className="companion-error" role="alert">{error}<button aria-label="关闭提示" onClick={() => setError('')}>×</button></div>}
@@ -268,6 +292,7 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
         <button aria-pressed={listening} onClick={toggleMic} disabled={!char || !canListen}>{listening ? <Microphone size={23}/> : <MicrophoneSlash size={23}/>}<span>{listening ? '暂停聆听' : '连续听'}</span></button>
         <button aria-pressed={voiceEnabled && canVoice} onClick={() => { session.current?.interrupt(); voice.current.prime(); setVoiceEnabled(!voiceEnabled); }} disabled={!canVoice}>{voiceEnabled && canVoice ? <SpeakerHigh size={23}/> : <SpeakerSlash size={23}/>}<span>{canVoice ? voiceEnabled ? '角色语音' : '文字模式' : '未配音色'}</span></button>
         <button onClick={() => session.current?.interrupt()}><Stop size={23}/><span>打断</span></button>
+        <button type="button" className="companion-hangup" onClick={() => { stopAll(); close(); }}><PhoneDisconnect size={23} weight="fill"/><span>结束同行</span></button>
       </div>
       {observation && <details className="companion-observation"><summary>最近理解的视频</summary><p>{observationText(observation)}</p>{observation.imageNote && <p>{observation.imageNote}</p>}</details>}
       {!canListen && <small className="companion-note">此浏览器不支持当前识别方式，可在 API 接入中切换，或输入文字。</small>}
@@ -290,5 +315,5 @@ export default function CompanionApp() {
   const { characters, userProfile, apiConfig, updateApiConfig, realtimeConfig, closeApp, openApp } = useOS();
   return <CompanionSurface characters={characters} user={userProfile} api={apiConfig} realtimeConfig={realtimeConfig} close={closeApp}
     navigateSetup={(target, charId) => openCompanionSetupTarget(target, charId, openApp)} saveVideoApi={config => updateApiConfig({ companionVideoApi: config })}
-    saveStt={config => updateApiConfig({ companionStt: config })}/>;
+    saveStt={config => updateApiConfig({ companionStt: config })} saveQuickReply={enabled => updateApiConfig({ companionQuickReply: enabled })}/>;
 }

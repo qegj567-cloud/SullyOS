@@ -59,7 +59,7 @@ export function createCompanionRequests(context: CompanionRequestContext) {
       char: context.char, user: context.user, style: context.style,
       scene: context.scene(), history: history.slice(-7).map(line => ({ role: line.role, content: line.text })),
     }), 'quick', signal),
-    prepare: async (history: CompanionLine[], quick: Promise<string>, signal: AbortSignal) => {
+    prepare: async (history: CompanionLine[], quick: Promise<string>, signal: AbortSignal, quickEnabled = true) => {
       const trace = context.debug?.get(signal);
       trace?.begin('full_prepare'); trace?.begin('history');
       try {
@@ -83,12 +83,15 @@ export function createCompanionRequests(context: CompanionRequestContext) {
           musicSnapshot: loadMusicPlaybackSnapshot(),
           visionApiConfig: context.imageMode === 'helper' ? context.api.visionApi : undefined, stripImages: true,
           onPreparationStage: event => { if (event.status === 'start') trace?.begin(event.stage); else trace?.end(event.stage); },
-          appPrompt: { rules: RULES, scene: '\n' + RULES + '\n若本轮现场观测后有 assistant 接话，它是本轮已生成的完整台词，正在播放或已展示；用户未必已听完。你的回答会排在它结束之后。沿着它自然继续，补充新信息，避免重新问候或复述。若没有本轮接话，直接回应用户刚才的问题。若记忆纠正了初步判断，自然修正；不要假定用户已回答接话里的问题。',
+          appPrompt: { rules: RULES, scene: '\n' + RULES + (quickEnabled ? '\n若本轮现场观测后有 assistant 接话，它是本轮已生成的完整台词，正在播放或已展示；用户未必已听完。你的回答会排在它结束之后。沿着它自然继续，补充新信息，避免重新问候或复述。若没有本轮接话，直接回应用户刚才的问题。若记忆纠正了初步判断，自然修正；不要假定用户已回答接话里的问题。' : '\n结合现场观测与完整上下文，直接回应用户本轮的话。'),
             prepareMessages: async () => {
-              trace?.begin('wait_a');
-              const a = await quick;
+              let a = '';
+              if (quickEnabled) {
+                trace?.begin('wait_a');
+                a = await quick;
+                trace?.end('wait_a');
+              }
               signal.throwIfAborted();
-              trace?.end('wait_a');
               // The observation is scene material, not an invented statement by the user.
               const observation = context.observation?.();
               sceneMessage = `[同行现场观测，非用户发言]\n${context.observation ? observationText(observation) : context.scene()}`;
@@ -116,9 +119,9 @@ export function createCompanionRequests(context: CompanionRequestContext) {
     },
     // Keep a in its original role and worldbook position. A final explicit task turn
     // makes this a new completion, not assistant prefill (rejected by Gemini).
-    full: (payload: Awaited<ReturnType<typeof buildChatRequestPayload>>, signal: AbortSignal) => complete([
+    full: (payload: Awaited<ReturnType<typeof buildChatRequestPayload>>, signal: AbortSignal, quickEnabled = true) => complete([
       ...payload.fullMessages,
-      { role: 'user', content: '[同行应用的续答请求，非用户新增发言]\n请根据以上完整上下文回应用户本轮的话；若已有本轮接话，接着补充而不重复。只输出这次应说的台词，不朗读本请求，也不虚构用户的新回答。' },
+      { role: 'user', content: quickEnabled ? '[同行应用的续答请求，非用户新增发言]\n请根据以上完整上下文回应用户本轮的话；若已有本轮接话，接着补充而不重复。只输出这次应说的台词，不朗读本请求，也不虚构用户的新回答。' : '[同行应用的回复请求，非用户新增发言]\n请根据以上完整上下文，直接回答用户本轮的话。只输出应说的台词。' },
     ], 'full', signal),
   };
 }

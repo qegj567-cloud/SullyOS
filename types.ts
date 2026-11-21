@@ -357,6 +357,8 @@ export interface APIConfig {
   visionApi?: VisionApiConfig;
   companionVideoApi?: CompanionVideoApiConfig;
   companionStt?: CompanionSttConfig;
+  /** When enabled, generate a short acknowledgement alongside full-context preparation. */
+  companionQuickReply?: boolean;
   /** 心象手动翻译专用；全局共用，未配置时不自动调用对话 API。 */
   thinkingTranslationApi?: DialogueApiConfig;
   minimaxApiKey?: string;

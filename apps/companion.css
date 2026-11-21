@@ -33,3 +33,83 @@
 .companion-app.camera-on{overflow-y:auto;overscroll-behavior:contain}.companion-stage.has-camera{flex:1 0 190px;min-height:190px;background:#101c18;position:sticky;top:0;z-index:2;box-shadow:inset 0 0 0 2px #768f80;transition:box-shadow .2s}.companion-stage.has-camera video{object-fit:contain}.companion-stage.has-camera:after{background:linear-gradient(180deg,#0006,transparent 55px);border:3px solid transparent;border-radius:inherit;box-sizing:border-box}.companion-stage.has-camera[data-vision=analyzing]:after{border-color:#69d99c}.companion-stage.has-camera[data-vision=paused]:after{border-color:#d9ae69}.companion-video-status{flex:none;margin:8px 18px;color:#4d6256;font-size:11px;line-height:1.65}.companion-video-status>div{display:flex;justify-content:space-between;gap:8px;align-items:center}.companion-video-status strong{font-weight:600;color:#286d55}.companion-video-status[data-state=paused] strong,.companion-video-status p{color:#8a4225}.companion-video-status p{margin:5px 0}.companion-video-status button{border:1px solid #9ab29e;color:#286d55;background:transparent;padding:4px 8px;border-radius:6px;white-space:nowrap}.companion-camera-caption{flex:none;margin:0 18px}.companion-camera-caption .companion-caption{position:static;max-height:110px;margin:2px 0 8px;padding:8px 10px;background:#e9eee3;border-radius:8px;color:#172b25}.companion-camera-caption .companion-caption small{color:#4d6256}.companion-camera-caption .companion-caption p{font-size:14px;line-height:1.65;text-shadow:none;margin-top:4px}.companion-app.camera-on .companion-debug{flex-shrink:0}
 .companion-stage.has-camera{flex-basis:230px;min-height:230px}.companion-stage.has-camera video{top:42px;left:8px;right:8px;bottom:8px;width:calc(100% - 16px);height:calc(100% - 50px)}.companion-stage.has-camera:after{background:transparent}.companion-stage.has-camera .companion-topline{top:14px}
 .companion-camera-source{flex:none;margin:8px 18px;font-size:11px;line-height:1.65;color:#4d6256}.companion-camera-source>div{display:flex;align-items:flex-end;gap:8px}.companion-camera-source label{flex:1;min-width:0}.companion-camera-source select{display:block;width:100%;min-width:0;border:1px solid #b7c8b5;border-radius:6px;padding:7px;background:#f4f5ef;color:#172b25;color-scheme:light}.companion-camera-source option{color:#172b25;background:#f4f5ef}.companion-camera-source button{flex:none;min-height:34px;border:1px solid #9ab29e;background:transparent;color:#286d55;border-radius:6px;padding:5px 8px}.companion-camera-source p{margin:5px 0;overflow-wrap:anywhere}.companion-camera-source summary{cursor:pointer;margin-top:5px}.companion-camera-source details p{font-size:11px}
+.companion-app[aria-label="同行"] {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: linear-gradient(165deg, #292638, #17151f 48%, #131219);
+  color: #f6f3fa;
+  --call-muted: #c0bacb;
+  --call-line: #ffffff27;
+}
+.companion-app .companion-header { padding: 9px 16px; gap: 8px; }
+.companion-app .companion-title { min-width: 0; text-align: center; }
+.companion-app .companion-title select { max-width: 100%; padding: 2px 4px; font: 600 1.22rem/1.25 Georgia, serif; color: #fff; background: transparent; border: 0; color-scheme: dark; }
+.companion-app .companion-title option { background: #282531; color: #fff; }
+.companion-app .companion-title small { display: block; color: var(--call-muted); font-size: 11px; }
+.companion-app .companion-header .companion-icon, .companion-app .companion-setup-entry { color: #eee9fa; }
+.companion-app .companion-setup-entry { background: transparent; border: 1px solid var(--call-line); }
+.companion-app .companion-stage, .companion-app .companion-stage.has-camera {
+  --pip-width: clamp(78px, 24%, 150px);
+  position: relative; top: auto; z-index: 0; flex: 1 1 0; min-height: 110px;
+  margin: 0 12px; overflow: hidden; border-radius: 18px; border: 1px solid var(--call-line);
+  background: radial-gradient(ellipse at 50% 42%, #494159 0%, #322d41 40%, #211f2c 85%); box-shadow: none;
+}
+.companion-app .companion-stage::after { display: none; }
+.companion-call-pane { position: absolute; inset: 0; overflow: hidden; }
+.companion-call-pane.street { background: #111217; }
+.companion-app .companion-stage .street video { inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.companion-call-avatar, .companion-no-partner { position: absolute; inset: 0; display: grid; place-items: center; color: #e8e0f4; margin: 0; }
+.companion-call-avatar img, .companion-call-avatar span { width: min(37%, 156px); aspect-ratio: 1; border: 1px solid #ffffff42; border-radius: 50%; box-shadow: 0 10px 65px #10092252; }
+.companion-call-avatar img { object-fit: cover; }
+.companion-call-avatar span { display: grid; place-items: center; background: #51495e; font-size: clamp(22px, 5vh, 48px); font-family: Georgia, serif; }
+.companion-call-background { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.companion-stage[data-main="street"] .character { background: #302a40; }
+.companion-stage[data-main="street"] .character .companion-call-avatar span { font-size: 20px; }
+.companion-stage[data-main="character"] .street, .companion-stage[data-main="street"] .character, .companion-app button.companion-swap {
+  position: absolute; inset: 10px 10px auto auto; z-index: 1; width: var(--pip-width); height: auto; aspect-ratio: var(--pip-aspect); max-height: calc(100% - 20px);
+  border-radius: 11px; border: 1px solid #ffffff60; box-sizing: border-box; overflow: hidden;
+}
+.companion-stage.has-camera .street { outline: 2px solid transparent; outline-offset: -2px; }
+.companion-stage[data-main="character"] { --pip-aspect: var(--street-aspect, 4 / 3); }
+.companion-stage[data-main="street"] { --pip-aspect: 3 / 4; }
+.companion-stage.has-camera[data-vision="analyzing"] .street { outline-color: #6bddaa; }
+.companion-stage.has-camera[data-vision="paused"] .street { outline-color: #dfb972; }
+.companion-app button.companion-swap { z-index: 2; display: flex; align-items: flex-end; justify-content: flex-end; padding: 0; color: white; background: transparent; border: 0; }
+.companion-swap span { display: flex; align-items: center; gap: 4px; max-width: 100%; padding: 3px 6px; border-radius: 6px 0 0 0; font-size: 10px; background: #121018bf; }
+.companion-app .companion-history, .companion-app .companion-settings { z-index: 5; }
+.companion-quick-toggle { display: flex !important; align-items: center; gap: 9px; font-weight: 600; }
+.companion-quick-toggle input { width: 18px; height: 18px; accent-color: #286d55; }
+.companion-app .companion-camera-caption { flex: 0 1 auto; min-height: 0; max-height: 19%; overflow: auto; margin: 4px 14px 0; }
+.companion-app .companion-camera-caption .companion-caption { max-height: none; margin: 0; color: #f7f5fa; background: #ffffff0c; }
+.companion-app .companion-camera-caption .companion-caption small { color: #d5cce4; }
+.companion-app .companion-camera-caption .companion-reply-label { background: #ddd5ed; color: #352f42; }
+.companion-call-info { flex: 0 1 auto; min-height: 26px; max-height: 31%; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.companion-devices, .companion-call-info .companion-debug { margin: 2px 16px; font-size: 11px; color: var(--call-muted); }
+.companion-devices > summary { padding: 6px 0; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.companion-call-info .companion-debug { max-height: none; border-color: var(--call-line); }
+.companion-call-info .companion-debug > summary { background: #201d29; color: var(--call-muted); }
+.companion-call-info .companion-debug > summary span { color: var(--call-muted); }
+.companion-call-info .companion-debug-body { background: #f4f5ef; color: #172b25; padding: 8px; }
+.companion-call-info .companion-camera-source, .companion-call-info .companion-video-status, .companion-call-info .companion-video-status strong { color: #c9dfd1; }
+.companion-call-info .companion-video-status button, .companion-call-info .companion-camera-source button { color: #c9dfd1; }
+.companion-call-info .companion-video-status p { color: #ffcca0; }
+.companion-call-info .companion-reply-progress { background: #282531; color: #eee8f6; border-color: var(--call-line); }
+.companion-call-info .companion-reply-progress strong, .companion-call-info .companion-reply-progress span { color: #dcd3ec; }
+.companion-app .companion-controls { padding: 3px 16px max(7px, env(safe-area-inset-bottom)); }
+.companion-app .companion-sensing, .companion-app .companion-note, .companion-app .companion-observation { color: var(--call-muted); }
+.companion-app .companion-controls form { border-color: var(--call-line); padding: 2px 0; }
+.companion-app .companion-controls form input { color: #fff; }
+.companion-app .companion-controls form input::placeholder { color: #bcb4c5; }
+.companion-app .companion-setup-hint, .companion-app .companion-sensing button { color: #d7cae9; }
+.companion-app .companion-actions { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 3px; padding-top: 7px; }
+.companion-app .companion-actions button { min-width: 0; padding: 0; color: #e8e2ef; gap: 4px; }
+.companion-app .companion-actions button > svg { box-sizing: content-box; padding: 9px; border-radius: 50%; border: 1px solid var(--call-line); background: #ffffff0b; }
+.companion-app .companion-actions button[aria-pressed="true"] > svg { color: #e2d6ff; background: #cbb4f429; border-color: #cbb4f47a; }
+.companion-app .companion-actions .companion-hangup > svg { color: #ffc4cd; border-color: #f080945e; background: #f16b8626; }
+.companion-app .companion-actions span { line-height: 1.2; text-align: center; }
+@media (max-height: 550px) {
+  .companion-app .companion-header { padding-block: 2px; }
+  .companion-app .companion-stage, .companion-app .companion-stage.has-camera { min-height: 75px; }
+  .companion-call-info { max-height: 21%; }
+}

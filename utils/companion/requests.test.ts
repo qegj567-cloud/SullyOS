@@ -40,6 +40,25 @@ it.each(['none', 'direct', 'helper'] as const)('only attaches matching clip stil
   expect(JSON.parse(first).messages.at(-1)).toEqual({ role: 'user', content: 'A' });
 });
 
+it('sends one direct full-context answer without waiting for a or adding an assistant turn', async () => {
+  const recall = vi.spyOn(palace, 'injectMemoryPalace').mockImplementation(async c => { c.memoryPalaceInjection = '本轮召回'; return {} as any; });
+  const transport = vi.spyOn(api, 'safeFetchJson').mockResolvedValue({ choices: [{ message: { content: '完整回答' } }] });
+  const debug = new CompanionDebugStore(), signal = new AbortController().signal;
+  const requests = createCompanionRequests({ ...context(char('direct-full')), debug });
+  debug.start(signal, '这件呢', false);
+  const payload = await requests.prepare([line('这件呢')], new Promise<string>(() => {}), signal, false);
+  expect(await requests.full(payload, signal, false)).toBe('完整回答');
+  expect(transport).toHaveBeenCalledOnce();
+  expect(recall).toHaveBeenCalledOnce();
+  const body = JSON.parse(String(transport.mock.calls[0][1].body));
+  expect(body.model).toBe('same-model');
+  expect(body.messages.filter((m: any) => m.role === 'assistant')).toEqual([]);
+  expect(body.messages.at(-1)).toMatchObject({ role: 'user', content: expect.stringContaining('直接回答') });
+  expect(JSON.stringify(body.messages)).toContain('完整人设标记');
+  expect(JSON.stringify(body.messages)).toContain('本轮召回');
+  expect(debug.getSnapshot()[0].stages.wait_a).toBeUndefined();
+});
+
 it('does not invent an assistant prefill when quick generation has failed', async () => {
   vi.spyOn(palace, 'injectMemoryPalace').mockResolvedValue({} as any);
   const requests = createCompanionRequests(context(char('quick-failed')));

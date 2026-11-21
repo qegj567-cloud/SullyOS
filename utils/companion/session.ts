@@ -14,8 +14,8 @@ export interface CompanionLine {
 
 export interface CompanionPorts<P> {
   quick(history: CompanionLine[], signal: AbortSignal): Promise<string>;
-  prepare(history: CompanionLine[], quick: Promise<string>, signal: AbortSignal): Promise<P>;
-  full(payload: P, signal: AbortSignal): Promise<string>;
+  prepare(history: CompanionLine[], quick: Promise<string>, signal: AbortSignal, quickEnabled?: boolean): Promise<P>;
+  full(payload: P, signal: AbortSignal, quickEnabled?: boolean): Promise<string>;
   play(text: string, signal: AbortSignal, heard: (text: string) => void, started: (mode: 'audio' | 'text') => void): Promise<void>;
   debug?: CompanionDebugStore;
   change(lines: CompanionLine[], state: string): void;
@@ -38,52 +38,56 @@ export class CompanionSession<P> {
     this.publish('已停下，听你说');
   }
 
-  async send(text: string) {
+  async send(text: string, quickEnabled = true) {
     if (!text.trim()) return;
     this.interrupt('收到新一轮输入');
     const controller = new AbortController();
     this.controller = controller;
     const { signal } = controller;
-    const trace = this.ports.debug?.start(signal, text.trim());
+    const trace = this.ports.debug?.start(signal, text.trim(), quickEnabled);
     this.lines.push({ id: ++this.serial, role: 'user', text: text.trim(), heard: text.trim(), at: Date.now(), status: 'done' });
     // Unheard drafts never become history in a new turn.
     const history = this.lines.filter(line => line.heard.trim()).map(line => ({ ...line, text: line.heard }));
-    this.publish('正在接话');
+    this.publish(quickEnabled ? '正在接话' : '正在准备完整回复');
     let playing: Promise<void> | undefined;
     let quickFinished = false, fullReady = false, hadFailure = false;
     try {
-      const quick = this.ports.quick(history, signal).catch(error => {
+      const quick = quickEnabled ? this.ports.quick(history, signal).catch(error => {
         signal.throwIfAborted();
         hadFailure = true;
         this.ports.error(new Error(`a · 接话生成失败：${error instanceof Error ? error.message : '请求失败'}；继续准备 a′。`));
         // No invented assistant message; recall still completes for this input.
         return '';
-      });
+      }) : Promise.resolve('');
       // A rejected preparation may finish before quick speech: attach its handler now.
-      const prepared = this.ports.prepare(history, quick, signal);
+      const prepared = this.ports.prepare(history, quick, signal, quickEnabled);
       void prepared.catch(() => {});
-      const a = await quick;
-      signal.throwIfAborted();
-      playing = this.deliver(a, 'quick', signal).then(failed => {
-        hadFailure ||= failed;
-        quickFinished = true;
-        if (!fullReady) trace?.begin('wait_full');
-      });
-      void playing.catch(() => {});
+      if (quickEnabled) {
+        const a = await quick;
+        signal.throwIfAborted();
+        playing = this.deliver(a, 'quick', signal).then(failed => {
+          hadFailure ||= failed;
+          quickFinished = true;
+          if (!fullReady) trace?.begin('wait_full');
+        });
+        void playing.catch(() => {});
+      }
       // Generation starts as soon as recall + a are ready, regardless of audio duration.
       const continuation = prepared.then(payload => {
         signal.throwIfAborted();
-        this.publish('接话中 · 正在继续想');
-        return this.ports.full(payload, signal);
+        this.publish(quickEnabled ? '接话中 · 正在继续想' : '正在生成完整回复');
+        return this.ports.full(payload, signal, quickEnabled);
       }).then(result => {
         signal.throwIfAborted(); fullReady = true; trace?.end('wait_full');
-        if (!quickFinished) trace?.begin('wait_audio');
+        if (quickEnabled && !quickFinished) trace?.begin('wait_audio');
         return result;
       });
       void continuation.catch(() => {});
-      await playing;
-      signal.throwIfAborted();
-      this.publish('正在继续想');
+      if (playing) {
+        await playing;
+        signal.throwIfAborted();
+        this.publish('正在继续想');
+      }
       const full = await continuation;
       signal.throwIfAborted();
       trace?.end('wait_full'); trace?.end('wait_audio');

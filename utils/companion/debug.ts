@@ -26,7 +26,7 @@ export interface CompanionDebugRequest {
   headers?: { at: number; status: number; streaming: boolean };
 }
 export interface CompanionDebugTurn {
-  id: number; input: string; origin: number; end?: number; status: Status;
+  id: number; input: string; origin: number; end?: number; status: Status; quickEnabled: boolean;
   stages: Partial<Record<CompanionStage, CompanionSpan>>;
   requests: Partial<Record<CompanionPhase, CompanionDebugRequest>>;
   delivery: Partial<Record<CompanionPhase, { mode?: 'audio' | 'text'; end?: number; failed?: boolean }>>;
@@ -44,8 +44,8 @@ export class CompanionDebugStore {
   private publish = () => { for (const listener of this.listeners) listener(); };
   clear() { this.turns = []; this.publish(); }
   get(signal: AbortSignal) { return this.bySignal.get(signal); }
-  start(signal: AbortSignal, input: string) {
-    const turn: CompanionDebugTurn = { id: ++this.serial, input, origin: this.now(), status: 'running', stages: {}, requests: {}, delivery: {} };
+  start(signal: AbortSignal, input: string, quickEnabled = true) {
+    const turn: CompanionDebugTurn = { id: ++this.serial, input, origin: this.now(), status: 'running', quickEnabled, stages: {}, requests: {}, delivery: {} };
     this.turns = [...this.turns.slice(-4), turn];
     const trace = new CompanionTurnTrace(turn, signal, this.now, next => {
       if (!this.turns.some(item => item.id === next.id)) return;

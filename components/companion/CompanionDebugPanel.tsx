@@ -44,10 +44,10 @@ function TurnDetails({ turn, elapsed }: { turn: CompanionDebugTurn; elapsed: num
   const unavailableAudio = textMode ? '不适用（文字模式）' : turn.status === 'running' ? '等待实际出声' : '未完成两段语音播放';
   return <>
     <p className="companion-debug-input">{turn.input}</p>
-    <p className="companion-debug-metrics">短回复 × 召回重叠：{turn.stages.memory?.status === 'skipped' ? '召回已跳过' : recallOverlap === undefined ? '尚未观测到两阶段' : seconds(recallOverlap)}<br/>
+    {turn.quickEnabled ? <p className="companion-debug-metrics">短回复 × 召回重叠：{turn.stages.memory?.status === 'skipped' ? '召回已跳过' : recallOverlap === undefined ? '尚未观测到两阶段' : seconds(recallOverlap)}<br/>
       a 播放 × a′ 生成重叠：{audioOverlap === undefined ? unavailableAudio : seconds(audioOverlap)}<br/>
       两段语音衔接空隙：{audioGap === undefined ? unavailableAudio : seconds(audioGap)}
-    </p>
+    </p> : <p className="companion-debug-metrics">本轮只生成完整回复 a′。</p>}
     <p className="companion-debug-note">统一从本轮开始计时。横条按同一时间轴对齐；父阶段包含子阶段，耗时不能相加。未执行的阶段不会画成 0 秒。</p>
     <div className="companion-debug-table-wrap">
       <table className="companion-debug-table"><caption>本轮时间线 · 0 → {seconds(total)} · {statusText[turn.status]}</caption>
@@ -68,7 +68,7 @@ function TurnDetails({ turn, elapsed }: { turn: CompanionDebugTurn; elapsed: num
     </div>
     {!turn.stages.memory && <p className="companion-debug-note">记忆召回：{turn.status === 'running' ? '尚未进入' : '本轮未进入'}。</p>}
     <p className="companion-debug-note">请求快照取自提交给共享传输层的同一份请求体，未重新拼装。原生接口仍由共享适配器转换；这里不是底层 HTTP 抓包。未记录地址、请求头或凭据。</p>
-    <RequestPrompt key={`quick-${turn.id}`} request={turn.requests.quick} title="短回复 a"/>
+    {turn.quickEnabled && <RequestPrompt key={`quick-${turn.id}`} request={turn.requests.quick} title="短回复 a"/>}
     <RequestPrompt key={`full-${turn.id}`} request={turn.requests.full} title="长回复 a′"/>
     <p className="companion-debug-note">出声由播放器事件测量，PCM 约有 80ms 采样误差。文字模式不计作语音；被打断轮次保留截至打断的耗时，迟到结果不再更新。仅本页内存保留最近 5 轮，离开或换角色清空。</p>
   </>;
@@ -93,7 +93,7 @@ export function CompanionDebugPanel({ store }: { store: CompanionDebugStore }) {
         <option value="latest">跟随最新一轮</option>
         {[...turns].reverse().map(item => <option key={item.id} value={item.id}>第 {item.id} 轮 · {statusText[item.status]} · {item.input.slice(0, 20)}</option>)}
       </select></label>}
-      {turn ? <TurnDetails turn={turn} elapsed={Math.max(0, now - turn.origin, store.now() - turn.origin)}/> : <p>发一句话后，这里会显示并行时间线和两次实际请求。展开面板不会额外调用模型。</p>}
+      {turn ? <TurnDetails turn={turn} elapsed={Math.max(0, now - turn.origin, store.now() - turn.origin)}/> : <p>发一句话后可查看本轮耗时和实际请求。</p>}
     </div>}
   </details>;
 }

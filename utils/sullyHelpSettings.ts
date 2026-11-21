@@ -39,6 +39,7 @@ export async function readHelpDeskSettings(os: SettingsSource, char?: CharacterP
     return {
         主对话: { ...endpointFields(apiConfig), 接口: llmApiType(apiConfig), 流式: !!apiConfig.stream, 输出上限: dialogueMaxTokens(apiConfig) },
         同行: {
+            短接话: apiConfig.companionQuickReply === true,
             语音识别: apiConfig.companionStt?.provider === 'doubao' ? '豆包' : '浏览器',
             语音密钥已填: !!apiConfig.companionStt?.apiKey?.trim(),
             视频配置: videoApi ? endpointFields(videoApi) : '未配置',

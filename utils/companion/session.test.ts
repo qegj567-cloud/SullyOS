@@ -25,6 +25,27 @@ it('recalls beside a, generates a′ during 40s audio, and never overlaps the tw
   expect(order).toEqual(['quick', 'recall', 'recalled', 'play:a', 'generate:a', 'play:a′']);
 });
 
+it('can interrupt full-only generation and only play the newest answer', async () => {
+  const late = deferred<string>(), quick = vi.fn(), play = vi.fn(), debug = new CompanionDebugStore();
+  const full = vi.fn(async (input: string) => input === '第一件' ? late.promise : '第二件的回答');
+  const session = new CompanionSession({
+    quick, prepare: async history => history.at(-1)!.text, full, play,
+    debug, change: () => {}, error: error => { throw error; },
+  });
+  const first = session.send('第一件', false);
+  await tick();
+  await session.send('第二件', false);
+  late.resolve('过期回答'); await first;
+  expect(quick).not.toHaveBeenCalled();
+  expect(full).toHaveBeenCalledTimes(2);
+  expect(play.mock.calls.map(call => call[0])).toEqual(['第二件的回答']);
+  for (const turn of debug.getSnapshot()) {
+    expect(turn.quickEnabled).toBe(false);
+    expect(turn.stages.quick_tts).toBeUndefined();
+    expect(turn.stages.wait_audio).toBeUndefined();
+  }
+});
+
 it('barge-in keeps only heard text and rejects late a′, including transports ignoring abort', async () => {
   const late = deferred<string>();
   let lines: CompanionLine[] = [];

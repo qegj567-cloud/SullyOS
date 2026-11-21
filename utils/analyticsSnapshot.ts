@@ -545,6 +545,7 @@ export function collectFeatureFlags(src: FeatureSources): Record<string, string>
         语音合成: src.apiConfig.apiKey || src.apiConfig.minimaxApiKey || src.apiConfig.fishAudioApiKey || src.apiConfig.elevenLabsApiKey
             ? enumOrCustom(src.apiConfig.ttsProvider, TTS_PROVIDERS, 'minimax')
             : '没配',
+        同行短接话: onOff(src.apiConfig.companionQuickReply === true),
         API线路预设数: bucketFewCount(src.apiPresetCount),
         自习室独立线路: hasLocalJsonConfig('study_api_config') ? '配了' : '没配',
         彼方独立线路: src.vrIndependentApi ? '配了' : '没配',
