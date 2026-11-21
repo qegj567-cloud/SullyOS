@@ -12,6 +12,7 @@ import { shouldShowAnniversaryGift, markAnniversaryGiftSeen } from '../utils/ann
 
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, Suspense } from 'react';
 import { IMPORT_IN_PROGRESS_KEY, useOS } from '../context/OSContext';
+import { RestoreDamagedAssetsStartupNotice } from './BackupMissingAssetsNotice';
 import StatusBar from './os/StatusBar';
 import { SARModuleMonitor } from './sar/SARModuleMonitor';
 import Launcher from '../apps/Launcher';
@@ -131,6 +132,7 @@ import DreamSimIndicator from './os/DreamSimIndicator';
 import ErrorDialog from './os/ErrorDialog';
 import BootSequence from './os/BootSequence';
 import { setAppPayloadWarmer, shouldUseIdleAppPreload } from './os/appPreload';
+import { errorDetails } from '../utils/errorSelfCheck';
 import { isBrowserBackGuardState, listenForAppBrowserBack } from '../utils/browserBackGuard';
 
 /*
@@ -172,7 +174,7 @@ class AppErrorBoundary extends Component<{ children: React.ReactNode, onCloseApp
     };
 
     private handleCopy = async () => {
-        const errText = this.state.error?.stack || this.state.error?.message || 'Unknown Error';
+        const errText = errorDetails(this.state.error);
 
         try {
             if (navigator.clipboard?.writeText) {
@@ -1198,6 +1200,9 @@ const PhoneShell: React.FC = () => {
            onReimport={handleReimportFromRecovery}
          />
        )}
+
+       {/* 上次恢复跳过了备份包里已损坏的素材：重启后在这里提示一次 */}
+       <RestoreDamagedAssetsStartupNotice blocked={startupNoticesBlocked || showImportRecoveryPrompt} />
 
        {/* 见面 · 剧情首映：解锁后一次性出现 */}
        {!anniversaryHasPriority && !showDisclaimer && !showImportRecoveryPrompt && !showAuthorLetter && showUpdateNotification && (

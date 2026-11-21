@@ -5,6 +5,8 @@ export interface BackupMissingAsset {
     /** 最多保留五处引用，不保留聊天正文、配置值或图片内容。 */
     locations: string[];
     moreLocations?: boolean;
+    /** 不写就是原文件缺失；damaged 是文件在，但内容读出来校验不过。 */
+    reason?: 'damaged';
 }
 
 /** 文件导出沿用备份偏好；个人云端备份显式携带完整后台连接。 */
@@ -63,12 +65,16 @@ export function recordMissingBackupAsset(items: Map<string, BackupMissingAsset>,
 export const missingBackupAssetsSummary = (items: readonly BackupMissingAsset[]): string =>
     `备份已生成，但有 ${items.length} 份素材原文件缺失；其余数据已打包，缺失项见包内「缺失素材清单.txt」。`;
 
+/** 恢复时跳过了备份包里已损坏的素材，其余数据照常恢复。 */
+export const damagedBackupAssetsSummary = (items: readonly BackupMissingAsset[], total = items.length): string =>
+    `恢复已完成，但备份包里有 ${total} 份图片或素材文件已损坏、已跳过；其余数据已恢复，这些位置会显示为空。`;
+
 export function writeMissingBackupAssets(zip: ZipFileWriter, items: readonly BackupMissingAsset[]): void {
     if (!items.length) return;
     zip.file('diagnostics/missing-assets.json', JSON.stringify({ version: 1, items }, null, 2));
     zip.file('缺失素材清单.txt', [
         missingBackupAssetsSummary(items),
         '原存档与素材引用未修改。缺失的文件无法从这份备份还原，可从原图或较早的完整备份补回。',
-        ...items.map(item => `\n素材：${item.id}\n${item.locations.length ? item.locations.map(location => `  ${location}`).join('\n') : '  此导出路径未记录具体位置'}${item.moreLocations ? '\n  另有其他引用（最多列出五处）' : ''}`),
+        ...items.map(item => `\n素材：${item.id}${item.reason === 'damaged' ? '（文件损坏）' : ''}\n${item.locations.length ? item.locations.map(location => `  ${location}`).join('\n') : '  此导出路径未记录具体位置'}${item.moreLocations ? '\n  另有其他引用（最多列出五处）' : ''}`),
     ].join('\n'));
 }

@@ -2,8 +2,10 @@ import { describe, it, expect } from 'vitest';
 import JSZip from 'jszip';
 import {
     createV2ArrayFieldWriter, writeV2Backup, assembleV2Backup, shardFileName,
+    openLegacyBackup, readBackupField, detectBackupFileKind, isZipFile, VECTOR_INDEX_FILE,
     BACKUP_FORMAT_VERSION, type BackupManifest, type ShardLimits,
 } from './backupFormat';
+import { readBlobsIndex, BLOBS_INDEX_FILE } from './backupBlobs';
 
 // 这组用例锁住 v2 分片格式的「写 → 读」往返与各档校验。核心契约：
 //   导入端拼出的 data 必须与导出端喂进去的 backupData 逐字段一致（数组照旧、非数组照旧），
@@ -376,5 +378,103 @@ describe('backupFormat v2 真实 JSZip 二进制往返', () => {
         ]);
         const back2 = new Float32Array(data.memoryVectors[1].vector.buffer, data.memoryVectors[1].vector.byteOffset, 4);
         expect(Array.from(back2)).toEqual([1, 2, 3, 4]);
+    });
+});
+
+describe('读文件失败、内存不足不改写成「备份损坏」', () => {
+    /** 读 name 这一项时，前 okReads 次照常，之后抛 error。 */
+    const failing = (zip: FakeZip, name: string, error: unknown, okReads = 0) => ({
+        file: (n: string) => {
+            const file = zip.file(n);
+            if (!file || n !== name) return file;
+            return { async: (type: any) => (okReads-- > 0 ? file.async(type) : Promise.reject(error)) };
+        },
+    });
+    const build = async () => {
+        const zip = new FakeZip();
+        const manifest = await writeV2Backup(zip, sampleBackup() as any, {
+            vectors: makeVectorPayload([{ memoryId: 'm1', charId: 'c1', values: [1, 2] }]),
+        });
+        zip.file(BLOBS_INDEX_FILE, '[]');
+        return { zip, manifest };
+    };
+    const errors = [
+        ['DOMException', () => new DOMException('file is gone', 'NotReadableError')],
+        ['RangeError', () => new RangeError('Invalid string length')],
+    ] as const;
+
+    for (const [kind, makeError] of errors) {
+        it.each(['manifest.json', 'metadata.json', shardFileName('messages', 0), VECTOR_INDEX_FILE])(`读 %s 时抛 ${kind}：抛出的还是原错误`, async name => {
+            const { zip } = await build();
+            const error = makeError();
+            await expect(openLegacyBackup(failing(zip, name, error) as any)).rejects.toBe(error);
+        });
+
+        it(`读 blobs/index.json 时抛 ${kind}：抛出的还是原错误`, async () => {
+            const { zip } = await build();
+            const error = makeError();
+            await expect(readBlobsIndex(failing(zip, BLOBS_INDEX_FILE, error) as any)).rejects.toBe(error);
+        });
+
+        it(`写库途中懒加载读向量索引时抛 ${kind}：抛出的还是原错误`, async () => {
+            const { zip } = await build();
+            const error = makeError();
+            const data = await openLegacyBackup(failing(zip, VECTOR_INDEX_FILE, error, 1) as any);
+            await expect(readBackupField(data.memoryVectors)).rejects.toBe(error);
+        });
+    }
+
+    it('内容确实解析不了时仍报损坏；「数据未改动」只在写库前那一遍说', async () => {
+        const { zip } = await build();
+        const broken = new FakeZip();
+        for (const [name, content] of zip.files) broken.file(name, name === 'metadata.json' ? '{oops' : content);
+        await expect(openLegacyBackup(broken)).rejects.toThrow('metadata.json 解析失败，已中止导入（数据未改动）');
+
+        // 校验那一遍读到的是好分片，写库途中再读时内容变了：这时库已经在写，不能再说数据未改动。
+        const name = shardFileName('messages', 0);
+        let reads = 0;
+        const flaky = { file: (n: string) => (n === name ? { async: async (type: any) => (reads++ > 0 ? '{"not":"array"}' : zip.file(n)!.async(type)) } : zip.file(n)) };
+        const data = await openLegacyBackup(flaky as any);
+        const error = await readBackupField(data.messages).catch(e => e);
+        expect(error.message).toContain(`${name} 不是数组，恢复已中断，请重新导入这份备份`);
+        expect(error.message).not.toContain('数据未改动');
+        // 同样的坏分片在校验阶段遇到时，库还没动。
+        const early = { file: (n: string) => (n === name ? { async: async () => '{"not":"array"}' } : zip.file(n)) };
+        await expect(openLegacyBackup(early as any)).rejects.toThrow(`${name} 不是数组，已中止导入（数据未改动）`);
+    });
+});
+
+describe('备份文件格式判断', () => {
+    const zipBytes = async () => {
+        const zip = new JSZip();
+        zip.file('data.json', '{}');
+        return zip.generateAsync({ type: 'arraybuffer' });
+    };
+    /** 只允许读前 4 个字节：整包读法走 arrayBuffer / text / stream，都会让测试挂。 */
+    class HeadOnlyFile extends File {
+        slice(start?: number, end?: number, contentType?: string): Blob {
+            expect([start, end]).toEqual([0, 4]);
+            return super.slice(start, end, contentType);
+        }
+        arrayBuffer(): Promise<ArrayBuffer> { throw new Error('whole file read'); }
+        text(): Promise<string> { throw new Error('whole file read'); }
+    }
+
+    it('云端下载落盘的临时文件名字不带 .zip、类型为空，按文件头认出是压缩包，只读前 4 个字节', async () => {
+        const file = new HeadOnlyFile([await zipBytes()], 'download-1700000000000-abc123.tmp');
+        expect(file.type).toBe('');
+        expect(await isZipFile(file)).toBe(true);
+        expect(await detectBackupFileKind(file)).toBe('zip');
+    });
+
+    it('JSON 内容按 JSON 读，不管叫什么名字；空压缩包也认', async () => {
+        expect(await detectBackupFileKind(new File(['{"characters":[]}'], 'backup.json'))).toBe('json');
+        expect(await detectBackupFileKind(new File(['{"characters":[]}'], 'download-1-abc.tmp'))).toBe('json');
+        expect(await detectBackupFileKind(new File([''], 'empty.json'))).toBe('json');
+        expect(await isZipFile(new Blob([await new JSZip().generateAsync({ type: 'arraybuffer' })]))).toBe(true);
+    });
+
+    it('名字叫 .zip 但文件头不是 PK：仍按压缩包读（由读包那一步报不是 zip），不会整个读进内存当 JSON', async () => {
+        expect(await detectBackupFileKind(new HeadOnlyFile(['{"characters":[]}'], 'backup.zip'))).toBe('zip');
     });
 });

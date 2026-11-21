@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { matchErrorRoute, requestErrorAdvice, textErrorAdvice, type ErrorRoutes } from './errorSelfCheck';
+import { errorDetails, matchErrorRoute, requestErrorAdvice, textErrorAdvice, type ErrorRoutes } from './errorSelfCheck';
 
 const c = (name: string, baseUrl: string, model='m') => ({name,config:{baseUrl,model}});
 it('matches paths, changed domain suffixes and redirected hosts without trusting generic prefixes', () => {
@@ -29,4 +29,15 @@ it('scopes SiliconFlow guidance to palace operations and recognizes known balanc
     expect(requestErrorAdvice(routes,cfg.baseUrl+'/embeddings','',402)?.action).toContain('硅基流动账号的余额');
     expect(requestErrorAdvice(routes,cfg.baseUrl+'/chat/completions','',401)?.title).toContain('主 API');
     expect(textErrorAdvice('[记忆宫殿·硅基流动]', 'Embedding API error 401')?.action).toContain('Key');
+});
+it('keeps the error message in front of a Safari-style stack and names a corrupt backup in plain words',()=>{
+    const safari=Object.assign(new Error('损坏的备份包：stores/messages.003.json'),{stack:'@https://x/main.js:2683:14064\nasync h@https://x/a.js:1:2193'});
+    expect(errorDetails(safari).startsWith('损坏的备份包：stores/messages.003.json\n')).toBe(true);
+    expect(errorDetails(safari)).toContain('main.js:2683');
+    const chrome=new Error('boom');
+    expect(errorDetails(chrome)).toBe(chrome.stack);
+    expect(errorDetails('纯文本')).toBe('纯文本');
+    expect(textErrorAdvice('导入失败',errorDetails(safari))?.title).toBe('这份备份文件损坏了');
+    expect(textErrorAdvice('云端恢复失败','恢复失败: IndexedDB transaction aborted')?.action).toContain('不要切走');
+    expect(textErrorAdvice('保存失败','IndexedDB transaction aborted')).toBeUndefined();
 });

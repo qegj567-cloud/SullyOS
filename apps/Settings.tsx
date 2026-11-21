@@ -1,5 +1,6 @@
 import AwarenessSwitch from '../components/settings/AwarenessSwitch';
 import { listUserSpaces } from '../utils/userSpaces';
+import { errorDetails } from '../utils/errorSelfCheck';
 import { BackupMissingAssetsNotice } from '../components/BackupMissingAssetsNotice';
 import type { BackupMissingAsset } from '../utils/backupMissingAssets';
 import { readBackupPreferences, updateBackupPreferences } from '../utils/backupPreferences';
@@ -69,7 +70,7 @@ import StorageUsagePanel from '../components/settings/StorageUsagePanel';
 import WebCacheControl from '../components/settings/WebCacheControl';
 import McpConnectionConsole from '../components/settings/McpConnectionConsole';
 import { DB } from '../utils/db';
-import { getBackupReminderState, setBackupReminderIntervalDays, daysSinceLastBackup, BACKUP_REMINDER_MIN_DAYS, BACKUP_REMINDER_MAX_DAYS } from '../utils/backupReminder';
+import { getBackupReminderState, markBackupDone, setBackupReminderIntervalDays, daysSinceLastBackup, BACKUP_REMINDER_MIN_DAYS, BACKUP_REMINDER_MAX_DAYS } from '../utils/backupReminder';
 import {
     createAvatarModelBackup,
     getAvatarModelBackupInventory,
@@ -712,6 +713,7 @@ const Settings: React.FC = () => {
   );
   const [ghShowAdvanced, setGhShowAdvanced] = useState(false);
   const [ghTesting, setGhTesting] = useState(false);
+  const [ghRelayAsk, setGhRelayAsk] = useState(false);
   const [ghTestResult, setGhTestResult] = useState<string>('');
 
   // 主代理 Worker 地址（联网搜索 / 备份代理 / Notion / 飞书 / MCD·瑞幸 MCP / 网页抓取 / 出图都走它）。
@@ -950,6 +952,13 @@ const Settings: React.FC = () => {
   // 用 ref 跟住当前的 object URL，关弹窗 / 重新导出 / 卸载时都能 revoke 到最新那个，
   // 不受 state 闭包过期影响。
   const downloadUrlRef = useRef<string>('');
+  // 这次导出还没记过备份时间：分享成功和点手动下载链接都从这里取，同一次导出只记一次。
+  const backupRecordPendingRef = useRef(false);
+  const recordBackupOnce = useCallback(() => {
+      if (!backupRecordPendingRef.current) return;
+      backupRecordPendingRef.current = false;
+      markBackupDone();
+  }, []);
   const revokeDownloadUrl = useCallback(() => {
       if (downloadUrlRef.current) {
           URL.revokeObjectURL(downloadUrlRef.current);
@@ -1484,6 +1493,7 @@ const Settings: React.FC = () => {
           // Trigger export (Context handles loading state UI)
           setExportMissingAssets([]);
           const blob = await exportSystem(mode, { userScope: exportUserScope, onMissingAssets: setExportMissingAssets });
+          backupRecordPendingRef.current = true;
           
           const fileName = `Sully_Backup_${mode}_${new Date().toISOString().slice(0, 10)}.zip`;
           if (!Capacitor.isNativePlatform()) {
@@ -1502,6 +1512,8 @@ const Settings: React.FC = () => {
               nativeChunked: true,
           });
           if (result === 'cancelled') return;
+          // 分享面板和浏览器下载都无从得知用户是否真的存下了文件，交出文件就算备份过。
+          recordBackupOnce();
       } catch (e: any) {
           // 只报导出档位，错误文案是动态串不能进属性
           trackEvent('导出备份失败', { mode });
@@ -1536,7 +1548,7 @@ const Settings: React.FC = () => {
                   : /JSON 格式错误/.test(rawMessage) ? 'json_syntax'
                   : 'other',
           });
-          const details = err?.stack || err?.message || String(err || '未知错误');
+          const details = errorDetails(err);
           showError('导入失败', details);
           addToast('导入失败，错误信息已展开', 'error');
       });
@@ -1547,6 +1559,7 @@ const Settings: React.FC = () => {
 
   const deliverStandaloneBackup = async (blob: Blob, fileName: string, shareTitle: string) => {
       setExportMissingAssets([]);
+      backupRecordPendingRef.current = false; // 模型备份不算系统备份
       if (!Capacitor.isNativePlatform()) {
           if (downloadUrlRef.current) URL.revokeObjectURL(downloadUrlRef.current);
           const url = URL.createObjectURL(blob);
@@ -1568,7 +1581,7 @@ const Settings: React.FC = () => {
           await deliverStandaloneBackup(blob, fileName, 'Sully 模型备份');
           addToast(`模型备份已生成（${formatBackupBytes(blob.size)}）`, 'success');
       } catch (error: any) {
-          const details = error?.stack || error?.message || String(error || '未知错误');
+          const details = errorDetails(error);
           showError('模型备份导出失败', details);
           addToast(error?.message || '模型备份导出失败', 'error');
       } finally {
@@ -1609,7 +1622,7 @@ const Settings: React.FC = () => {
               skipped > 0 ? 'info' : 'success',
           );
       } catch (error: any) {
-          const details = error?.stack || error?.message || String(error || '未知错误');
+          const details = errorDetails(error);
           showError('模型备份导入失败', details);
           addToast(restored > 0 ? `已恢复 ${restored} 个模型后中断` : '模型备份导入失败', 'error');
       } finally {
@@ -1756,7 +1769,7 @@ const Settings: React.FC = () => {
               provider: cloudBackupConfig.provider === 'github' ? 'github' : 'webdav',
               stage: /^恢复失败/.test(String(err?.message || '')) ? 'import' : 'download',
           });
-          const details = err?.stack || err?.message || String(err || '未知错误');
+          const details = errorDetails(err);
           showError('云端恢复失败', details);
       }
   };
@@ -1769,6 +1782,28 @@ const Settings: React.FC = () => {
           setGhTestResult('✗ 请先粘贴 Token');
           return;
       }
+      // 网页里直连 GitHub 传不了附件（GitHub 的附件服务器不回应网页的跨域请求，见 docs/backup-pipeline.md
+      // 「平台事实」），令牌测试却能通过。所以连接前先把中转问清楚：中转要用户点头才开，不点头就不连，连上也用不了。
+      if (!ghUseProxy && !Capacitor.isNativePlatform()) {
+          setGhRelayAsk(true);
+          return;
+      }
+      await connectGithub(ghUseProxy);
+  };
+
+  const acceptGithubRelay = () => {
+      setGhRelayAsk(false);
+      handleGithubProxyToggle(true);
+      void connectGithub(true);
+  };
+
+  const declineGithubRelay = () => {
+      setGhRelayAsk(false);
+      trackEvent('测试并连接 GitHub', { result: '失败', failure_stage: 'relay_declined' });
+      setGhTestResult('✗ 没有开启中转，网页里的 GitHub 备份无法运行，保持关闭');
+  };
+
+  const connectGithub = async (useProxy: boolean) => {
       setGhTesting(true);
       setGhTestResult('');
       try {
@@ -1777,8 +1812,8 @@ const Settings: React.FC = () => {
               ...cloudBackupConfig,
               githubToken: ghToken.trim(),
               githubRepo: ghRepo.trim() || 'sully-backup',
-              githubUseProxy: ghUseProxy,
-              githubProxyConsentVersion: ghUseProxy ? 1 : undefined,
+              githubUseProxy: useProxy,
+              githubProxyConsentVersion: useProxy ? 1 : undefined,
           });
           setGhTestResult(result.ok ? `✓ ${result.message}` : `✗ ${result.message}`);
           // 失败时只报卡在哪一步：token 校验没过 → 没有 login，仓库准备没过 → 有 login
@@ -1792,8 +1827,8 @@ const Settings: React.FC = () => {
                   githubToken: ghToken.trim(),
                   githubOwner: result.login,
                   githubRepo: ghRepo.trim() || 'sully-backup',
-                  githubUseProxy: ghUseProxy,
-                  githubProxyConsentVersion: ghUseProxy ? 1 : undefined,
+                  githubUseProxy: useProxy,
+                  githubProxyConsentVersion: useProxy ? 1 : undefined,
               });
           }
       } catch (e: any) {
@@ -1813,7 +1848,9 @@ const Settings: React.FC = () => {
       });
       trackEvent('切换 GitHub 备份线路', { route: enabled ? 'cloudflare_worker' : 'direct' });
       addToast(
-          enabled ? '已改用应用内 Cloudflare 中转，下次备份立即生效' : '已改为直连 GitHub 附件域名',
+          enabled ? '已改用应用内 Cloudflare 中转，下次备份立即生效'
+              : Capacitor.isNativePlatform() ? '已改为直连 GitHub 附件域名'
+              : '已关闭中转。网页里 GitHub 备份将无法运行，重新勾选即可恢复',
           'info',
       );
   };
@@ -2103,6 +2140,8 @@ const Settings: React.FC = () => {
                           <div className="h-full bg-primary transition-all duration-300" style={{ width: `${sysOperation.progress}%` }}></div>
                       </div>
                   )}
+                  {/* 手机系统会挂起离开太久的页面并中止写库，恢复和导出都会因此失败 */}
+                  <div className="text-[10px] text-slate-400 text-center leading-relaxed">请停在这个页面，离开太久会被系统中断</div>
               </div>
           </div>
       )}
@@ -2523,7 +2562,7 @@ const Settings: React.FC = () => {
 
             <p className="text-[10px] text-slate-400 px-1 mt-3 leading-relaxed">
                 备份始终存放在你自己的 WebDAV 或 GitHub 账号中，项目不建立用户备份数据库。
-                网页 WebDAV 因跨域限制需要中转；GitHub 默认直连，网络受限时可自行开启中转。
+                网页里 WebDAV 和 GitHub 都因跨域限制需要中转；GitHub 的中转在连接时征求你的同意后才开启。
             </p>
         </SettingsSection>
 
@@ -3530,7 +3569,7 @@ const Settings: React.FC = () => {
                       className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 font-mono focus:border-slate-500 focus:ring-1 focus:ring-slate-300 outline-none"
                   />
                   <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
-                      Token 保存在本机配置中。GitHub 默认直连；如果附件域名不通，可在下方高级选项开启应用内中转。
+                      Token 保存在本机配置中。GitHub 默认直连；在网页里备份和恢复都需要在下方高级选项开启应用内中转（GitHub 的附件服务器不允许网页直接上传和下载，和梯子无关）。中转本身也要你的网络连得上，开了仍然传不动时请开梯子再试。
                       仅在你手动开启后，Token 才会随 GitHub 请求经过所选 Worker，项目不会主动留存。
                   </p>
               </div>
@@ -3623,6 +3662,25 @@ const Settings: React.FC = () => {
       </Modal>
 
       {/* Cloud Restore Modal */}
+      <Modal
+          isOpen={ghRelayAsk}
+          title="需要开启应用内中转"
+          onClose={declineGithubRelay}
+          footer={
+              <div className="flex gap-2 w-full">
+                  <button onClick={declineGithubRelay} className="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-2xl">取消</button>
+                  <button onClick={acceptGithubRelay} className="flex-1 py-3 bg-primary text-white font-bold rounded-2xl">开启中转并连接</button>
+              </div>
+          }
+      >
+          <div className="space-y-3 text-sm text-slate-600 leading-relaxed">
+              <p>在网页里，GitHub 备份要经过应用内的 Cloudflare 中转才能运行。GitHub 存放附件的服务器不允许网页直接上传和下载，和网络、梯子无关。</p>
+              <p>开启后，Token 和备份文件会经过所选 Worker 转发，项目不会主动留存。</p>
+              <p>中转只是让网页能传，能不能传成功还要看你的网络连不连得上中转；传不动时请开梯子再试。</p>
+              <p className="text-xs text-slate-400">不开启的话，这个功能无法运行，将保持关闭。</p>
+          </div>
+      </Modal>
+
       <Modal isOpen={showCloudRestoreModal} title="从云端恢复" onClose={() => setShowCloudRestoreModal(false)}>
           <div className="space-y-2 p-1">
               {cloudBackupListState === 'loading' ? (
@@ -3911,7 +3969,7 @@ const Settings: React.FC = () => {
               <p className="text-sm font-bold text-slate-700">备份文件已生成！</p>
               <div className="text-left"><BackupMissingAssetsNotice items={exportMissingAssets} /></div>
               <p className="text-xs text-slate-500">如果浏览器没有自动下载，请点击下方链接。</p>
-              {downloadUrl && <a href={downloadUrl} download={downloadFileName} className="text-primary text-sm underline block py-2">点击手动下载 .zip</a>}
+              {downloadUrl && <a href={downloadUrl} download={downloadFileName} onClick={recordBackupOnce} className="text-primary text-sm underline block py-2">点击手动下载 .zip</a>}
           </div>
       </Modal>
 

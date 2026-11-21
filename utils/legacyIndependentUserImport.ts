@@ -2,10 +2,11 @@ import { HELP_HISTORY_KEY, helpTextHistory } from './sullyHelpBackup';
 import type { FullBackupData } from '../types';
 import { blobToDataUrl } from './blobRef';
 import { readBlobsIndex } from './backupBlobs';
+import { createDamagedPictureGuard, loadAllBackupFields } from './backupFormat';
 import { restoreVoiceMessageBlobs } from './voiceMessageBackup';
 import { restoreSARLocalBackup } from './vrWorld/sarBackup';
 import { canMigrateLocalKey } from './independentUserImport';
-import { importUserSpaces } from './userSpaceBackup';
+import { importUserSpaces, type ImportUserSpacesOptions } from './userSpaceBackup';
 import { STORY_THEATER_APPEARANCE_STORAGE_KEY } from './storyTheaterBackup';
 import { restoreDecorationMedia } from './decorationMediaBackup';
 import { createLocalId } from './localId';
@@ -30,14 +31,23 @@ const tableFields: Partial<Record<keyof FullBackupData, string>> = {
 };
 
 /** Read-only adapter: prepare an in-memory archive, then use the shared validated migration path. */
-export async function importLegacyAsIndependentUser(data: FullBackupData, zip: any | null) {
+export async function importLegacyAsIndependentUser(data: FullBackupData, zip: any | null, hooks: Pick<ImportUserSpacesOptions, 'onBeforeWrite' | 'onRolledBack' | 'onDamagedAsset'> = {}) {
     if (data.collaborationBackupMode === 'media_only' || !Array.isArray(data.characters)) {
         throw new Error('独立用户迁入需要整合或文字备份，媒体补图包不包含完整存档');
     }
+    // 迁入要给整份存档重新编号，各表得同时在手：分片字段在这里全部读进来。
+    await loadAllBackupFields(data);
     const files = new Map<string, string | Uint8Array>();
     let binaryCount = 0;
     const addBinary = (bytes: Uint8Array) => {
         const path = `shared/legacy_${binaryCount++}.bin`; files.set(path, bytes); return path;
+    };
+    // 图片在包里坏了按缺图处理并上报；读文件失败、内存不足照常中止。
+    const skipDamaged = zip ? createDamagedPictureGuard(zip) : null;
+    const readPicture = async (path: string, id: string) => {
+        const bytes = await skipDamaged!<any>(() => zip.file(path).async('uint8array'));
+        if (bytes === null) hooks.onDamagedAsset?.(id);
+        return bytes;
     };
     const imageCache = new Map<string, string>();
     const encode = async (value: any): Promise<any> => {
@@ -63,7 +73,9 @@ export async function importLegacyAsIndependentUser(data: FullBackupData, zip: a
             if (!file) return value;
             const extension = value.split('.').pop()?.toLowerCase();
             const type = extension === 'jpg' || extension === 'jpeg' ? 'image/jpeg' : extension === 'gif' ? 'image/gif' : extension === 'webp' ? 'image/webp' : 'image/png';
-            const restored = await blobToDataUrl(new Blob([await file.async('uint8array')], { type }));
+            const bytes = await readPicture(value, value);
+            if (!bytes) { imageCache.set(value, value); return value; }
+            const restored = await blobToDataUrl(new Blob([bytes], { type }));
             imageCache.set(value, restored); return restored;
         }
         if (Array.isArray(value)) { const out = []; for (const item of value) out.push(await encode(item)); return out; }
@@ -168,7 +180,8 @@ export async function importLegacyAsIndependentUser(data: FullBackupData, zip: a
     }
     const blobs = [];
     if (zip) for (const entry of await readBlobsIndex(zip)) {
-        const bytes = await zip.file(`blobs/${entry.id}`).async('uint8array');
+        const bytes = await readPicture(`blobs/${entry.id}`, entry.id);
+        if (!bytes) continue;
         if (bytes.byteLength !== entry.size) throw new Error('备份图片文件不完整');
         blobs.push({ ...entry, path: addBinary(bytes) });
     }
@@ -182,5 +195,5 @@ export async function importLegacyAsIndependentUser(data: FullBackupData, zip: a
             return type === 'string' ? typeof value === 'string' ? value : new TextDecoder().decode(value)
                 : typeof value === 'string' ? new TextEncoder().encode(value) : value;
         },
-    } : null }, false, { asNewUsers: true });
+    } : null }, false, { ...hooks, asNewUsers: true });
 }

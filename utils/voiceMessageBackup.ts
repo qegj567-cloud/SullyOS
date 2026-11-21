@@ -144,10 +144,10 @@ export async function restoreVoiceMessageBlobs(
         const marker = asset.data.blob;
         const bytes = await readFile(marker.path);
         if (!bytes) {
-            throw new Error(`损坏的备份包：缺少语音文件 ${marker.path}，已中止导入（数据未改动）。`);
+            throw new Error(`损坏的备份包：缺少语音文件 ${marker.path}，已中止导入。`);
         }
         if (bytes.byteLength !== marker.size) {
-            throw new Error(`损坏的备份包：语音文件 ${marker.path} 大小不符，已中止导入（数据未改动）。`);
+            throw new Error(`损坏的备份包：语音文件 ${marker.path} 大小不符，已中止导入。`);
         }
         // Copy into a fresh ArrayBuffer: TS 5.7 models an arbitrary Uint8Array's
         // backing store as ArrayBufferLike (possibly SharedArrayBuffer), while

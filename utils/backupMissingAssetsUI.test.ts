@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import Settings from '../apps/Settings';
 
 const context = vi.hoisted(() => ({
+    isDataLoaded: true, // 设置页要等数据读完才渲染
     apiConfig: { baseUrl: '', apiKey: '', model: '' }, theme: {}, realtimeConfig: {}, cloudBackupConfig: {}, characters: [], groups: [], userProfile: {},
     apiPresets: [], availableModels: [], sysOperation: { status: 'idle' }, addToast: vi.fn(), exportSystem: vi.fn(), importSystem: vi.fn(),
 }));

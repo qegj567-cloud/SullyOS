@@ -1,4 +1,5 @@
 import React, { Component, ErrorInfo } from 'react';
+import { errorDetails } from '../../utils/errorSelfCheck';
 import { isChunkLoadError, tryAutoReloadForChunkError } from '../../utils/chunkLoadRecovery';
 import { trackEvent } from '../../utils/analytics';
 import { INSTALLED_APPS, HIDDEN_APP_NAMES } from '../../constants';
@@ -117,7 +118,7 @@ class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorBoundary
     };
 
     private handleCopy = async () => {
-        const errText = this.state.error?.stack || this.state.error?.message || 'Unknown Error';
+        const errText = errorDetails(this.state.error);
 
         try {
             if (navigator.clipboard?.writeText) {

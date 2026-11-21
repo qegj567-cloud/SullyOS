@@ -53,6 +53,8 @@ describe('GitHub 备份代理安全默认', () => {
         expect(message).toContain('api.github.com');
         expect(message).toContain('开着梯子');
         expect(message).toContain('应用内 Cloudflare 中转');
+        // 网页端直连上传必然失败，提示要说明是 GitHub 不允许网页访问
+        expect(message).toContain('不允许网页访问');
     });
 
     it('中转失败时说明当前走的是独立 Worker 线路', () => {
@@ -64,6 +66,7 @@ describe('GitHub 备份代理安全默认', () => {
         expect(message).toContain('应用内 Cloudflare 中转');
         expect(message).toContain('proxy.friedsully.com');
         expect(message).toContain('自定义网络代理 (Worker)');
+        expect(message).toContain('请先开梯子再试');
     });
 });
 
@@ -96,7 +99,7 @@ describe('GitHub 备份下载错误', () => {
     const file = {
         name: 'Sully_Backup_full_1.zip',
         href: '123:512999539',
-        size: 1024,
+        size: 3,
         lastModified: Date.now(),
     };
 
@@ -104,9 +107,9 @@ describe('GitHub 备份下载错误', () => {
         const directFetch = vi.fn().mockResolvedValue(new Response(new Uint8Array([1, 2, 3]), { status: 200 }));
         vi.stubGlobal('fetch', directFetch);
 
-        const blob = await downloadBackup(config, file);
+        const backup = await downloadBackup(config, file);
 
-        expect(blob?.size).toBe(3);
+        expect(backup?.blob.size).toBe(3);
         expect(String(directFetch.mock.calls[0][0])).toBe(
             'https://api.github.com/repos/owner/sully-backup/releases/assets/512999539',
         );
@@ -116,14 +119,99 @@ describe('GitHub 备份下载错误', () => {
         vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
 
         await expect(downloadBackup(config, file)).rejects.toThrow(
-            '手动开启 Cloudflare 中转后重试；应用不会自动开启',
+            '手动开启应用内 Cloudflare 中转后重试；应用不会自动开启',
         );
+        // 提示要说清这不是用户网络的问题
+        await expect(downloadBackup(config, file)).rejects.toThrow('开着梯子也一样');
+    });
+
+    it('开着中转仍然连不上时，说明还要看本机网络', async () => {
+        vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Load failed')));
+        const viaRelay = { ...config, githubUseProxy: true, githubProxyConsentVersion: 1 };
+        await expect(downloadBackup(viaRelay, file)).rejects.toThrow('请先开梯子再试');
     });
 
     it('GitHub 返回权限错误时保留 HTTP 状态和处理建议', async () => {
         vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 403 })));
 
         await expect(downloadBackup(config, file)).rejects.toThrow('HTTP 403');
+    });
+});
+
+describe('GitHub 分片下载核对', () => {
+    const config = {
+        enabled: true,
+        provider: 'github' as const,
+        webdavUrl: '',
+        username: '',
+        password: '',
+        remotePath: '/',
+        githubToken: 'github_pat_test',
+        githubOwner: 'owner',
+        githubRepo: 'sully-backup',
+        githubUseProxy: false,
+    };
+    const sha256 = async (bytes: Uint8Array) =>
+        'sha256:' + Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes as Uint8Array<ArrayBuffer>)),
+            b => b.toString(16).padStart(2, '0')).join('');
+
+    /** 一个三片的事务式备份：列表里每片带 digest（传 null 表示 GitHub 没给），下载按附件 id 回字节。 */
+    const stubRelease = async (releaseId: number, digestOf: (bytes: Uint8Array, index: number) => Promise<string | null>) => {
+        const parts = [new Uint8Array([1, 2, 3]), new Uint8Array([4, 5, 6]), new Uint8Array([7])];
+        const assets = await Promise.all(parts.map(async (bytes, index) => ({
+            id: releaseId * 10 + index + 1,
+            name: `Sully_Backup_full_${releaseId}.part${index + 1}of3.zip`,
+            size: bytes.byteLength,
+            state: 'uploaded',
+            digest: await digestOf(bytes, index),
+            updated_at: '2026-11-15T00:00:00Z',
+        })));
+        assets.push({
+            id: releaseId * 10 + 9,
+            name: `Sully_Backup_full_${releaseId}.sully-backup.json`,
+            size: 20,
+            state: 'uploaded',
+            digest: null,
+            updated_at: '2026-11-15T00:00:00Z',
+        });
+        const release = { id: releaseId, tag_name: `sully-backup-v2-${releaseId}`, draft: false, assets };
+        const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+            const url = String(input);
+            const assetMatch = /\/releases\/assets\/(\d+)$/.exec(url);
+            if (assetMatch) {
+                const index = Number(assetMatch[1]) - releaseId * 10 - 1;
+                return new Response(parts[index].slice(), { status: 200 });
+            }
+            return new Response(JSON.stringify([release]), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        });
+        vi.stubGlobal('fetch', fetchMock);
+        const [file] = await listBackups(config);
+        return { file, fetchMock };
+    };
+
+    it('多分片下载后拼出的字节与原始一致', async () => {
+        const { file } = await stubRelease(40, bytes => sha256(bytes));
+        const backup = await downloadBackup(config, file);
+
+        expect(Array.from(new Uint8Array(await backup!.blob.arrayBuffer()))).toEqual([1, 2, 3, 4, 5, 6, 7]);
+        await backup!.dispose();
+    });
+
+    it('某一片内容与 digest 不符时失败，并写明是哪一片', async () => {
+        // 第 2 片的 digest 记的是别的内容，大小照样对得上，只核对大小发现不了。
+        const { file, fetchMock } = await stubRelease(50, (bytes, index) =>
+            sha256(index === 1 ? new Uint8Array([9, 9, 9]) : bytes));
+
+        await expect(downloadBackup(config, file)).rejects.toThrow('GitHub 备份第 2/3 片校验和不符');
+        // 沿用分片下载的重试：同一片拉了三次才放弃。
+        expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/releases/assets/502'))).toHaveLength(3);
+    }, 10_000);
+
+    it('digest 缺失时只核对大小，照常成功', async () => {
+        const { file } = await stubRelease(60, async () => null);
+        const backup = await downloadBackup(config, file);
+
+        expect(backup!.blob.size).toBe(7);
     });
 });
 

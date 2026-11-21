@@ -1,5 +1,7 @@
 # 备份链路流式化改造方案（v2 格式）
 
+> 二代分片格式的设计记录。之后的内存有界改造（落盘、按需读包、逐页恢复、统一格式）见 [`docs/backup-pipeline.md`](../docs/backup-pipeline.md)。
+
 ## 1. 背景与目标
 
 SullyOS 是 local-first 的浏览器虚拟手机，全部数据存在 IndexedDB（主库 `AetherOS_Data`，50+ store）。
