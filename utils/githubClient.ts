@@ -132,7 +132,15 @@ export const describeGithubUploadTransportFailure = (
         try { workerHost = new URL(workerHost).host; } catch { /* keep the configured URL */ }
         return `${prefix}。当前走应用内 Cloudflare 中转（${workerHost}），说明这台设备到中转、`
             + '中转到 GitHub、或大文件传输中的某一段未打通。能打开 github.com、Token 测试通过或开着梯子，'
-            + '都不能证明这条上传线路可用；请到「自定义网络代理 (Worker)」检查或更换 Worker，也可关闭中转改试直连。';
+            + '都不能证明这条上传线路可用。中转能不能连上取决于本机网络：没开梯子的话，请先开梯子再试；'
+            + '开着仍然失败，请到「自定义网络代理 (Worker)」检查或更换 Worker'
+            + (isNative() ? '，也可关闭中转改试直连。' : '。');
+    }
+    // uploads.github.com 不回应浏览器的 CORS 预检，网页直连上传必然失败；原生壳走系统网络栈，直连失败才是线路问题
+    if (!isNative()) {
+        return `${prefix}。网页里不能直连 GitHub 的附件上传域名 uploads.github.com：它不允许网页访问，`
+            + '能打开 github.com、api.github.com 测试通过或开着梯子都一样。请到「GitHub 备份 → 高级选项」'
+            + '开启“应用内 Cloudflare 中转”后重试。';
     }
     return `${prefix}。当前正在直连 GitHub 附件域名 uploads.github.com；它与 github.com、api.github.com 是不同线路。`
         + '能打开 GitHub、Token 测试通过或开着梯子，都不代表附件域名已被代理接管；请到「GitHub 备份 → 高级选项」'
@@ -1050,8 +1058,20 @@ export const downloadBackup = async (
             && (error instanceof TypeError || /failed to fetch/i.test(String(error?.message || '')))
         ) {
             throw new Error(
-                '浏览器直连 GitHub 的备份附件被网络或跨域限制拦截。'
-                + '请到「云端备份 → GitHub → 高级选项」手动开启 Cloudflare 中转后重试；应用不会自动开启。',
+                // 附件下载会被重定向到 release-assets.githubusercontent.com，那边不带 CORS 头，网页直连必然读不到
+                '网页里不能直接下载 GitHub 的备份附件：GitHub 存放附件的服务器不允许网页读取，开着梯子也一样。'
+                + '请到「云端备份 → GitHub → 高级选项」手动开启应用内 Cloudflare 中转后重试；应用不会自动开启。',
+            );
+        }
+        // 中转只解决「网页不能直连」，本机到中转这一段照样可能不通
+        if (
+            shouldUseGithubProxy(config)
+            && (error instanceof TypeError || /failed to fetch/i.test(String(error?.message || '')))
+        ) {
+            throw new Error(
+                '经应用内 Cloudflare 中转下载 GitHub 备份失败：这台设备没连上中转，或者传输中途断了。'
+                + '中转能不能连上取决于本机网络：没开梯子的话，请先开梯子再试；'
+                + '开着仍然失败，请到「自定义网络代理 (Worker)」检查或更换 Worker。',
             );
         }
         if (error instanceof Error) throw error;

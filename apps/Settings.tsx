@@ -1746,6 +1746,19 @@ const Settings: React.FC = () => {
           setGhTestResult('✗ 请先粘贴 Token');
           return;
       }
+      // 网页里直连 GitHub 传不了附件（GitHub 的附件服务器不回应网页的跨域请求，见 docs/backup-pipeline.md
+      // 「平台事实」），令牌测试却能通过。所以连接时就把中转问清楚，不等第一次备份失败。中转仍要用户点头才开。
+      let useProxy = ghUseProxy;
+      if (!useProxy && !Capacitor.isNativePlatform()) {
+          useProxy = window.confirm(
+              '在网页里使用 GitHub 备份，需要经过应用内的 Cloudflare 中转。\n\n'
+              + 'GitHub 的附件服务器不允许网页直接上传和下载，和网络、梯子无关。不开中转的话，连接能成功，但备份和恢复都会失败。\n\n'
+              + '开启后，Token 和备份文件会经过所选 Worker 转发，项目不会主动留存。\n\n'
+              + '中转只是让网页能传，能不能传成功还要看你的网络连不连得上中转；传不动时请开梯子再试。\n\n'
+              + '点「确定」开启中转并连接；点「取消」保持直连。',
+          );
+          if (useProxy) handleGithubProxyToggle(true);
+      }
       setGhTesting(true);
       setGhTestResult('');
       try {
@@ -1754,10 +1767,13 @@ const Settings: React.FC = () => {
               ...cloudBackupConfig,
               githubToken: ghToken.trim(),
               githubRepo: ghRepo.trim() || 'sully-backup',
-              githubUseProxy: ghUseProxy,
-              githubProxyConsentVersion: ghUseProxy ? 1 : undefined,
+              githubUseProxy: useProxy,
+              githubProxyConsentVersion: useProxy ? 1 : undefined,
           });
-          setGhTestResult(result.ok ? `✓ ${result.message}` : `✗ ${result.message}`);
+          const directOnWeb = !useProxy && !Capacitor.isNativePlatform();
+          setGhTestResult(result.ok
+              ? `✓ ${result.message}${directOnWeb ? '。未开启中转，网页里暂时无法备份和恢复，可随时在高级选项里开启' : ''}`
+              : `✗ ${result.message}`);
           // 失败时只报卡在哪一步：token 校验没过 → 没有 login，仓库准备没过 → 有 login
           trackEvent('测试并连接 GitHub', result.ok
               ? { result: '成功' }
@@ -1769,8 +1785,8 @@ const Settings: React.FC = () => {
                   githubToken: ghToken.trim(),
                   githubOwner: result.login,
                   githubRepo: ghRepo.trim() || 'sully-backup',
-                  githubUseProxy: ghUseProxy,
-                  githubProxyConsentVersion: ghUseProxy ? 1 : undefined,
+                  githubUseProxy: useProxy,
+                  githubProxyConsentVersion: useProxy ? 1 : undefined,
               });
           }
       } catch (e: any) {
@@ -3509,7 +3525,7 @@ const Settings: React.FC = () => {
                       className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 font-mono focus:border-slate-500 focus:ring-1 focus:ring-slate-300 outline-none"
                   />
                   <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
-                      Token 保存在本机配置中。GitHub 默认直连；如果附件域名不通，可在下方高级选项开启应用内中转。
+                      Token 保存在本机配置中。GitHub 默认直连；在网页里备份和恢复都需要在下方高级选项开启应用内中转（GitHub 的附件服务器不允许网页直接上传和下载，和梯子无关）。中转本身也要你的网络连得上，开了仍然传不动时请开梯子再试。
                       仅在你手动开启后，Token 才会随 GitHub 请求经过所选 Worker，项目不会主动留存。
                   </p>
               </div>

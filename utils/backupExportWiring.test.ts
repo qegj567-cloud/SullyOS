@@ -295,3 +295,18 @@ describe('local export', () => {
         expect(markBackupDone).toHaveBeenCalledTimes(2);
     });
 });
+
+describe('GitHub 备份连接时的中转询问', () => {
+    const source = readFileSync(path.resolve(__dirname, '../apps/Settings.tsx'), 'utf8');
+    const handler = source.slice(source.indexOf('const handleTestGithub'), source.indexOf('const handleGithubProxyToggle'));
+
+    it('网页端没开中转时，先询问再连接，连接和保存都用询问后的结果', () => {
+        const ask = handler.indexOf('window.confirm(');
+        expect(ask).toBeGreaterThan(handler.indexOf('!useProxy && !Capacitor.isNativePlatform()'));
+        expect(ask).toBeLessThan(handler.indexOf('testConnection({'));
+        // 同意要立即持久化，和手动勾选走同一条路
+        expect(handler).toContain('if (useProxy) handleGithubProxyToggle(true)');
+        expect(handler.match(/githubUseProxy: useProxy,/g)).toHaveLength(2);
+        expect(handler).not.toContain('githubUseProxy: ghUseProxy');
+    });
+});

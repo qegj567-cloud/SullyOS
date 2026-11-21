@@ -53,6 +53,8 @@ describe('GitHub 备份代理安全默认', () => {
         expect(message).toContain('api.github.com');
         expect(message).toContain('开着梯子');
         expect(message).toContain('应用内 Cloudflare 中转');
+        // 网页端直连上传必然失败，提示要说明是 GitHub 不允许网页访问
+        expect(message).toContain('不允许网页访问');
     });
 
     it('中转失败时说明当前走的是独立 Worker 线路', () => {
@@ -64,6 +66,7 @@ describe('GitHub 备份代理安全默认', () => {
         expect(message).toContain('应用内 Cloudflare 中转');
         expect(message).toContain('proxy.friedsully.com');
         expect(message).toContain('自定义网络代理 (Worker)');
+        expect(message).toContain('请先开梯子再试');
     });
 });
 
@@ -116,8 +119,16 @@ describe('GitHub 备份下载错误', () => {
         vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
 
         await expect(downloadBackup(config, file)).rejects.toThrow(
-            '手动开启 Cloudflare 中转后重试；应用不会自动开启',
+            '手动开启应用内 Cloudflare 中转后重试；应用不会自动开启',
         );
+        // 提示要说清这不是用户网络的问题
+        await expect(downloadBackup(config, file)).rejects.toThrow('开着梯子也一样');
+    });
+
+    it('开着中转仍然连不上时，说明还要看本机网络', async () => {
+        vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Load failed')));
+        const viaRelay = { ...config, githubUseProxy: true, githubProxyConsentVersion: 1 };
+        await expect(downloadBackup(viaRelay, file)).rejects.toThrow('请先开梯子再试');
     });
 
     it('GitHub 返回权限错误时保留 HTTP 状态和处理建议', async () => {
