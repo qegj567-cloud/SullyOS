@@ -13,6 +13,7 @@ import { COMPANION_VIDEO_PROVIDERS, COMPANION_ARK_PLAN, isCompanionArkPlan, type
 import { CompanionApiTest, type BeginCompanionTest } from './CompanionApiTest';
 import { testCompanionDialogue, testCompanionImage, testCompanionStt, testCompanionVideo, testCompanionVoice } from '../../utils/companion/apiTests';
 import { FishVoiceTest } from './FishVoiceTest';
+import { companionVideoRouteLabel, testCompanionVideoDirect } from '../../utils/companion/videoConnection';
 
 function VideoApiFields({ config, save, begin }: { config?: CompanionVideoApiConfig; save?: (config: CompanionVideoApiConfig) => void; begin: BeginCompanionTest }) {
   const [provider, setProvider] = useState<CompanionVideoProvider>(config ? config.provider ?? 'custom' : 'doubao');
@@ -58,7 +59,11 @@ function VideoApiFields({ config, save, begin }: { config?: CompanionVideoApiCon
     <label>视频 API Key<input aria-label="视频 API Key" type="password" autoComplete="off" value={key} onChange={event => setKey(event.target.value)} placeholder={config?.apiKey && sameEndpoint && !clearKey ? '已保存，留空保留原 Key' : '粘贴 Key；无 Key 代理可留空'}/></label>
     {config?.apiKey && <label className="companion-image-choice"><input type="checkbox" checked={clearKey} onChange={event => setClearKey(event.target.checked)}/>保存时移除旧 Key</label>}
     <small>只用于同行视频理解。切换服务商或修改地址时不会复用旧 Key；请同时填写对应凭据。模型 ID 可修改，需选支持视频输入的型号。配置保存在本机，随系统配置备份。</small>
+    <p role="note"><strong>视频发送路径：</strong>{companionVideoRouteLabel(draft)}</p>
+    <small>{arkPlan ? '套餐接口目前不放行浏览器携带鉴权头直连，因此实际视频仍需上方转发。下面的直连检查不会改变这条路径。普通 API 是另一套凭据与计费，请勿混用。' : '请求直接发到你填写的地址；该地址若本身是第三方中转，视频也会经过对方。跨域失败不会自动改走应用 Worker。'}</small>
     <div className="companion-setup-actions"><button type="submit" disabled={!save}>保存视频 API</button></div>
+    <CompanionApiTest label="检查浏览器直连" successLabel="检查完成" description="不录制、不上传视频；带当前填写的 Key 向所填地址发送空请求，检查此浏览器能否读取响应。不会调用模型、验证 Key 或更改配置。" config={draft}
+      disabled={!save || !draft.baseUrl} begin={begin} run={signal => testCompanionVideoDirect(draft, signal)}/>
     <CompanionApiTest label="测试视频 API" description="测试当前填写内容，不自动保存。发送 2 秒图形样片（红色圆形 → 蓝色方形），不开摄像头。" config={draft}
       disabled={!save || !draft.baseUrl || !draft.model} begin={begin} run={(signal, progress) => testCompanionVideo(draft, signal, progress)}/>
     {!save && <small>模拟页不保存真实 API，请在主应用的同行中配置。</small>}
@@ -175,7 +180,7 @@ export function CompanionSetupGuide({ char, api, canListen, close, navigate, sav
 
       <section aria-label="视频理解接入"><div className="companion-setup-heading"><h3><span>02</span> 理解一段视频</h3><small>{videoReady ? '已填写' : '待配置'} · 开镜头时需要</small></div>
         <p>摄像头录制约 8 秒的完整无声视频，由独立视频模型理解动作、镜头变化和先后关系，再把文字摘要交给对话模型。下一段录制与分析并行；慢请求只保留最新待分析片段。</p>
-        <p>完整视频从本机内存随 API 请求直接发给所选服务商，只在开启镜头后发送，按平台用量计费。同行不另存录像、不创建可公开访问的视频链接，无需部署上传服务。服务商的数据保留规则以其条款为准。</p>
+        <p>完整视频从本机内存随 API 请求发送，具体路径见下方；豆包套餐需要转发，普通 API 直接请求所填地址。只在开启镜头或主动测试样片后发送，按平台用量计费。同行不另存录像、不创建公开视频链接，无需上传存储服务；服务商的数据保留规则以其条款为准。</p>
         <VideoApiFields config={api.companionVideoApi} save={saveVideoApi} begin={begin}/>
         <details open><summary>给主模型的补充截图 · 可选</summary>
           <p>视频理解完成后，才从同一段视频中提取 1–3 张相关截图。默认只发送摘要文字；对话模型是否支持图片由你确认，不根据模型名称猜测。</p>

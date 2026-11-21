@@ -8,6 +8,10 @@ import { characterLaunch } from '../characterLaunch';
 import { useSettingsFocus } from '../settingsNavigation';
 import { AppID } from '../../types';
 import { testCompanionDialogue, testCompanionVideo, testCompanionStt } from './apiTests';
+import { testCompanionVideoDirect } from './videoConnection';
+vi.mock('./videoConnection', async original => ({ ...await original<typeof import('./videoConnection')>(),
+  testCompanionVideoDirect: vi.fn(async () => ({ summary: '直连响应可读，仅检查跨域' })),
+}));
 vi.mock('./apiTests', async original => ({ ...await original<typeof import('./apiTests')>(),
   testCompanionDialogue: vi.fn(async () => ({ summary: '收到对话正文' })),
   testCompanionVideo: vi.fn(async () => ({ summary: '收到视频描述' })),
@@ -15,6 +19,25 @@ vi.mock('./apiTests', async original => ({ ...await original<typeof import('./ap
 }));
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+it('shows the GLM direct route and only checks the unsaved draft after a click', async () => {
+  const host = document.createElement('div'), root = createRoot(host); document.body.append(host);
+  const saveVideoApi = vi.fn();
+  try {
+    await act(async () => root.render(React.createElement(CompanionSetupGuide, { api: {} as any, canListen: false, navigate: vi.fn(), close: vi.fn(), saveVideoApi })));
+    await act(async () => {
+      const select = host.querySelector<HTMLSelectElement>('[aria-label="视频服务商"]')!;
+      select.value = 'zhipu'; select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(host.textContent).toContain('浏览器 → open.bigmodel.cn（不经应用 Worker）');
+    expect(host.textContent).toContain('兼容性仍待实测');
+    expect(testCompanionVideoDirect).not.toHaveBeenCalled();
+    expect(testCompanionVideo).not.toHaveBeenCalled();
+    await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === '检查浏览器直连')!.click());
+    expect(testCompanionVideoDirect).toHaveBeenCalledWith(expect.objectContaining({ provider: 'zhipu', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', apiKey: '' }), expect.any(AbortSignal));
+    expect(host.textContent).toContain('检查完成 · 直连响应可读'); expect(host.textContent).not.toContain('测试通过');
+    expect(saveVideoApi).not.toHaveBeenCalled(); expect(testCompanionVideo).not.toHaveBeenCalled();
+  } finally { act(() => root.unmount()); host.remove(); vi.clearAllMocks(); }
+});
 it('selects the paid plan credentials separately without calling or saving an API automatically', async () => {
   const host = document.createElement('div'), root = createRoot(host); document.body.append(host);
   const saveVideoApi = vi.fn();
@@ -186,7 +209,7 @@ it('switches provider drafts without carrying keys and configures Zhipu direct t
     await select('zhipu');
     expect(host.querySelector('[aria-label="临时上传服务地址"]')).toBeNull();
     expect(host.querySelector('[aria-label="临时上传口令"]')).toBeNull();
-    expect(host.textContent).toContain('国内接口是否接收仍需实测');
+    expect(host.textContent).toContain('国内接口的本地 MP4 Base64 兼容性仍待实测');
     await fill('视频 API Key', 'zhipu-key'); await submit();
     expect(saveVideoApi).toHaveBeenCalledWith({ provider: 'zhipu', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-5.3-flash', apiKey: 'zhipu-key' });
     expect(api.companionVideoApi.apiKey).toBe('old-secret');

@@ -15,6 +15,12 @@
 
 ### 实时预览与后台视频理解
 
+画面下方「摄像头来源」可选择浏览器列出的实体或虚拟设备，并通过「刷新设备」重读列表。默认保留自动选择／手机优先后摄；显式选择使用精确 deviceId，不再附加后摄偏好，不因设备占用、消失或报错自动改用别的镜头。帧率仅给 12 fps 偏好，不用 15 fps 硬上限拒绝固定帧率的虚拟源。切换来源先停止旧轮回复、预览和分析、清掉旧观察，再由用户点「开启镜头」；旧权限请求迟到时释放其流，不覆盖新镜头。开启后显示视频轨道报告的实际设备名称。
+
+VTS 需要安装并开启 `Activate Virtual Webcam`，设备通常名为 `VTubeStudioCam`；OBS 则先启动虚拟摄像机。只启动 VTS 不等于已经输出虚拟摄像头。设备列表受浏览器权限限制，缺设备／名称时先允许相机并刷新；首次安装驱动后可能要重启浏览器。`Device in use` 提示检查所选来源、占用和虚拟输出状态，不据此断言服务商 API 出错。设备名称、ID 和当前选择只留本页内存，不进提示词、日志、统计、备份或用户空间设置；Sully-11 设置摘要不推断此临时选择。没有新增埋点或制作格式。
+
+官方参考：[VTube Studio 虚拟摄像头](https://github.com/DenchiSoft/VTubeStudio/wiki/FAQ#what-is-the-virtual-webcam-feature)。组件回归覆盖占用后手选虚拟源、设备消失不回退、切换时旧权限迟到释放；实际 VTS 驱动与 Edge 输出仍需设备实测。
+
 预览 `<video>` 始终绑定当前摄像头的同一条 MediaStream；录制和模型分析不会替换成已录片段，也不等待模型后才显示。等比完整显示，避免 `object-fit: cover` 裁掉模型实际收到的画面边缘；角色名／状态与字幕不遮挡取景画幅。小屏可滚动下方操作区，取景区域保持在顶部。
 
 录制与理解并行；理解未结束时只保留最近一段完整待处理视频，不无限堆积。模型得到的是过去的一段，实时取景是现在，二者有时差，不能称作同帧同步理解。状态文字与绿色边框一起提示分析，显示本段范围和上一份理解的时效；不会因为视频分析自动生成角色台词。
@@ -47,11 +53,24 @@ MP4 首选浏览器默认编码，不强制固定 H.264 profile；空输出或�
 
 ### 逐项测试
 
+2026-11-21：视频表单新增实际发送路径和「检查浏览器直连」。路径与样片／真实视频共用 `companionVideoEndpoint`：普通 API（包括 GLM）不自动经应用 Worker，只有精确匹配的官方 Agent Plan 入口沿用本机／主代理。自填地址若本身是中转仍会经过该中转。直连检查始终绕开套餐转发路由，带草稿 Key、空 JSON 请求体、不指定模型，以 `mode: cors`、`credentials: omit`、`redirect: error` 请求所填地址；15 秒超时、支持取消，不重试、不降级。它不使用摄像头或媒体、不验证凭据／模型／视频能力，也不改变正式视频路由；HTTP 错误可读也只报告响应可读。失败不武断归因 CORS。凭据和响应正文不展示，既有调用归属标为同行／测试连接，预计的 HTTP 失败由本测试区处理，不额外冒充模型故障。
+
+对 `Origin: https://test.friedsully.com` 的无凭据 OPTIONS 检查（POST，`authorization,content-type`）：普通 Ark 200，允许该 Origin 与两种请求头；Ark Plan 204，允许 Origin 但允许的头不含 Authorization；BigModel 标准接口 200，未返回 Access-Control-Allow-Origin／Headers。额外用固定无效凭据、空 JSON 做 POST：两个 Ark 401 响应未带 Allow-Origin，BigModel 401 带该 Origin。**这些只是服务器响应头检查，不能证明有效 Key 的浏览器视频调用成功；预检与实际响应都须通过 CORS。** UI 检查使用用户主动填写的草稿 Key，是为了避免将无效鉴权路径的跨域表现当成所有请求的表现。
+
+豆包官方[视频理解文档](https://docs.volcengine.com/docs/ark/video-understanding?lang=zh)提供完整 MP4 Base64 的 Chat API 示例，不必先创建 Files 存储。智谱[GLM-5.3-Flash](https://docs.bigmodel.cn/cn/guide/models/vlm/glm-5.3-flash)明确支持视频输入，但国内[对话接口](https://docs.bigmodel.cn/api-reference/模型-api/对话补全)的 video_url 字段仅明确视频 URL，不能借图片的 Base64 说明推断视频同样保证支持；现有完整视频 Base64 接法继续标试用。无有效凭据视频验收，不宣传国内静态站已可用。
+
+本轮未修改或部署代理服务，未新增持久化设置、导出格式、备份字段、设置摘要维度、制作格式或统计事件。设备列表、选择和直连测试状态仅在本页内存；不会上报设备名、ID、域名、Key 或媒体。无需新增迁移，原系统配置备份范围不变。
+
+隐私与免费版边界：检查 `attachDoubaoAsrRelay`／`handleCompanionArkPlan`，二者没有音视频或凭据的持久化／内容日志写入；转发端仍能访问明文内容，不能称作端到端加密或保证 Cloudflare／供应商零留存。2026-11-21 核对 [Workers 计费](https://developers.cloudflare.com/workers/platform/pricing/)与[限制](https://developers.cloudflare.com/workers/platform/limits/)：Free 账户共用每日 100,000 请求，WebSocket 只按建立连接计请求，音频消息不逐包计数；Worker 子请求不另计入账单，转发带宽不另收费。按每 8 秒一次估算，视频每人每小时约 450 个 POST，另有预检／重连／其他 App 请求，慢分析会降低实际发送次数。免费版 HTTP 每次 CPU 10ms、每 isolate 128MB；等待上游不算 CPU，但现有视频整包 JSON 解析会消耗 CPU／内存，尚未进行线上大并发或接近 8MiB 上限的免费版性能验收，不能保证公共多用户持续视频容量。模型平台费用独立。本轮不为此修改已工作的主代理。
+
+本轮验证：摄像头、录制、视频协议／路由、接入草稿与测试生命周期共 8 文件／53 项通过；隔离 Vite 生产构建通过。直连检查取消／超时／失败不转发、GLM 草稿不自动提交、设备消失不换镜头均有回归。VTS 驱动实际输出和有效 Key 的视频理解仍需现场测试，不以模拟设备／无效凭据响应代替验收。
+
 每个配置区有独立的测试按钮，点击后暂停当前同行；同一时刻只跑一项测试，启动另一项会取消上一项。不会因打开引导、切换平台、填写或保存配置而自动调用服务商。测试可能产生服务商用量，不读取角色人设、聊天记录或记忆，也不把测试回复接入同行会话。
 
 | 测试 | 配置与实际操作 | 通过条件 |
 | --- | --- | --- |
 | 对话 API | 使用已保存的实际角色 / 全局 API，沿用共享协议适配器，发送固定问候 | 收到非空正文；仅有思考或 HTTP 200 空正文不算通过 |
+| 浏览器直连 | 当前视频地址与草稿 Key，空 POST，不指定模型／不发视频，不经应用转发 | 仅报告响应可读；HTTP 错误不等于 Key 有效，须另测视频能力 |
 | 视频 API | 测试表单当前草稿，留空 Key 保留规则与保存一致；生成约 2 秒的完整 MP4（红色圆形 → 蓝色方形），使用所选平台的视频协议 | 收到视频描述，并显示给用户核对顺序；不凭非空响应宣称识别准确 |
 | 主模型识图 | 仅在用户勾选主模型支持图片后出现，发送白底红圆测试图 | 收到描述，显示结果供用户核对 |
 | 独立识图 API | 使用已保存的独立识图配置发送同一测试图；不改变截图发送开关 | 收到非空图片描述 |
@@ -69,7 +88,7 @@ MP4 首选浏览器默认编码，不强制固定 H.264 profile；空输出或�
 | 用途 | 填写位置 | 引导行为 |
 | --- | --- | --- |
 | 短回复与长回复 | 设置 → API 配置，或神经链接 → 当前角色 → 设定 → 独立 API | 显示实际使用的模型和配置来源；角色有独立 API 时，主按钮打开该角色，不误导用户修改全局配置 |
-| 视频理解 | 同行 → API 接入 → 理解一段视频 | 可选豆包 / MiniMax / 智谱 / 自定义，每家独立协议、默认地址、模型示例和官方注册链接；均直接发送 MP4 Base64；智谱标为直传试用，未验证国内接口实际兼容性 |
+| 视频理解 | 同行 → API 接入 → 理解一段视频 | 可选豆包 / MiniMax / 智谱 / 自定义，每家独立协议、默认地址、模型示例和官方注册链接；均以 MP4 Base64 随请求发送，套餐经转发；智谱标为直传试用，未验证国内接口实际兼容性 |
 | 补充截图 | 同行内选择直发主模型，或设置 → 识图 API | 默认不发图。主模型支持图片由用户显式确认；辅助识图只处理视频分析后的截图，不能代替视频理解 |
 | 角色语音 | 设置 → 其他 API；神经链接 → 当前角色 → 设定 | 自动展开语音设置；按 ElevenLabs / MiniMax / Fish 提供注册、Key、音色字段和保存步骤 |
 | 连续语音输入 | 同行 → API 接入 → 听你说话 | 浏览器识别无需 Key；豆包提供注册、开通、语音 Key 管理入口，以及小时版 / 并发版选择；独立保存到 `APIConfig.companionStt` |
@@ -84,6 +103,8 @@ MP4 首选浏览器默认编码，不强制固定 H.264 profile；空输出或�
 - 豆包视频：[方舟控制台](https://console.volcengine.com/ark/)、[模型 API Keys](https://ark.volcengine.com/region:cn-beijing/apikey)、[视频理解文档](https://console.volcengine.com/ark/region:cn-beijing/docs/video-understanding)。与下方豆包语音是两套能力，不能混填 Key。
 
 ### 豆包连续语音识别
+
+这条实时 STT 使用 `wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async`。官方在 WebSocket 握手要求 `X-Api-Key`、`X-Api-Resource-Id` 等自定义头，而标准浏览器 `new WebSocket(url, protocols)` 无法设置这些头；障碍不是 HTTP fetch 的 CORS 预检。当前纯静态网页因此沿用本机／Worker 转发，音频和 Key 都经过转发端；不是只有 CF 能承担该功能，但本项目没有额外安装本地服务或原生连接的免转发路径。不能通过把 Key 随意挪到 URL／子协议来声称兼容官方鉴权。
 
 官方依据：[流式识别 WebSocket](https://docs.volcengine.com/docs/doubao-voice/bidirectional-streaming-automatic-speech-recognition-websocket?lang=zh)、[二进制协议](https://www.volcengine.com/docs/6561/1354869)、[新版控制台开通指引](https://docs.volcengine.com/docs/doubao-voice/quick-start-new-console?lang=zh)。这是开放平台的 STT 接口，不能保证与豆包输入法使用同一模型或得到完全相同的识别效果。
 

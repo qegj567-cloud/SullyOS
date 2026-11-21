@@ -27,6 +27,75 @@ const click = async (label: string) => act(async () => {
   const button = [...host.querySelectorAll('button')].find(b => b.getAttribute('aria-label') === label || b.textContent?.trim() === label);
   expect(button).toBeTruthy(); button!.click();
 });
+const chooseCamera = async (id: string) => act(async () => {
+  const select = host.querySelector('select[aria-label="摄像头来源"]') as HTMLSelectElement;
+  select.value = id; select.dispatchEvent(new Event('change', { bubbles: true }));
+});
+const cameraDevices = [
+  { kind: 'videoinput', deviceId: 'physical', label: '实体摄像头' },
+  { kind: 'videoinput', deviceId: 'vts', label: 'VTubeStudioCam' },
+  { kind: 'audioinput', deviceId: 'microphone', label: '麦克风' },
+];
+
+it('recovers from a busy automatic camera by explicitly selecting the virtual source', async () => {
+  const track = { stop: vi.fn(), onended: null, label: 'VTubeStudioCam' };
+  const stream = { getTracks: () => [track], getVideoTracks: () => [track] };
+  const getUserMedia = vi.fn().mockRejectedValueOnce(new DOMException('Device in use', 'NotReadableError')).mockResolvedValue(stream);
+  vi.stubGlobal('navigator', { mediaDevices: { getUserMedia, enumerateDevices: vi.fn(async () => cameraDevices) } });
+  vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+  await act(async () => root.render(React.createElement(CompanionSurface, props)));
+  expect(getUserMedia).not.toHaveBeenCalled();
+  expect(host.querySelector('select[aria-label="摄像头来源"]')?.textContent).not.toContain('麦克风');
+  await click('开启镜头');
+  expect(host.textContent).toContain('可能被占用或驱动尚未就绪');
+  expect(getUserMedia).toHaveBeenCalledOnce();
+  await chooseCamera('vts');
+  expect(getUserMedia).toHaveBeenCalledOnce();
+  await click('开启镜头');
+  expect(getUserMedia.mock.calls[1][0]).toEqual({ audio: false, video: {
+    deviceId: { exact: 'vts' }, width: { ideal: 640 }, frameRate: { ideal: 12 },
+  } });
+  expect(host.querySelector('video')!.srcObject).toBe(stream);
+  expect(host.textContent).toContain('当前输入：VTubeStudioCam');
+  expect(host.querySelector('[role=alert]')).toBeNull();
+});
+
+it('keeps a disconnected explicit source selected and never falls back to the physical camera', async () => {
+  const media = Object.assign(new EventTarget(), {
+    enumerateDevices: vi.fn(async () => cameraDevices),
+    getUserMedia: vi.fn().mockRejectedValue(new DOMException('missing', 'NotFoundError')),
+  });
+  vi.stubGlobal('navigator', { mediaDevices: media });
+  await act(async () => root.render(React.createElement(CompanionSurface, props)));
+  await chooseCamera('vts');
+  media.enumerateDevices.mockResolvedValue([cameraDevices[0]]);
+  await act(async () => { media.dispatchEvent(new Event('devicechange')); });
+  const select = host.querySelector('select[aria-label="摄像头来源"]') as HTMLSelectElement;
+  expect(select.value).toBe('vts'); expect(select.textContent).toContain('所选设备暂不可见');
+  await click('开启镜头');
+  expect(media.getUserMedia).toHaveBeenCalledOnce();
+  expect(media.getUserMedia.mock.calls[0][0].video.deviceId).toEqual({ exact: 'vts' });
+  expect(host.textContent).toContain('没有找到所选摄像头');
+});
+
+it('releases a late old camera after changing source without replacing the new virtual preview', async () => {
+  const old = deferred<any>(), oldTrack = { stop: vi.fn(), onended: null };
+  const nextTrack = { stop: vi.fn(), onended: null, label: 'VTubeStudioCam' };
+  const nextStream = { getTracks: () => [nextTrack], getVideoTracks: () => [nextTrack] };
+  const getUserMedia = vi.fn().mockReturnValueOnce(old.promise).mockResolvedValue(nextStream);
+  vi.stubGlobal('navigator', { mediaDevices: { getUserMedia, enumerateDevices: vi.fn(async () => cameraDevices) } });
+  vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+  await act(async () => root.render(React.createElement(CompanionSurface, props)));
+  await chooseCamera('physical'); await click('开启镜头');
+  await chooseCamera('vts'); await click('开启镜头');
+  await act(async () => old.resolve({ getTracks: () => [oldTrack], getVideoTracks: () => [oldTrack] }));
+  expect(oldTrack.stop).toHaveBeenCalledOnce(); expect(nextTrack.stop).not.toHaveBeenCalled();
+  expect(host.querySelector('video')!.srcObject).toBe(nextStream);
+  await chooseCamera('physical');
+  expect(nextTrack.stop).toHaveBeenCalledOnce(); expect(getUserMedia).toHaveBeenCalledTimes(2);
+  expect(host.querySelector('video')!.srcObject).toBeNull();
+  expect(host.textContent).not.toContain('当前输入：VTubeStudioCam');
+});
 
 it('tracks the actual companion role and releases its presence on switching or unmount', async () => {
   let captured: any, signal!: AbortSignal;

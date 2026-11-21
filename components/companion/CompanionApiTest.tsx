@@ -6,8 +6,8 @@ import './CompanionApiTest.css';
 
 export type BeginCompanionTest = (cancel: () => void) => void;
 
-export function CompanionApiTest({ label, description, config, disabled, begin, run }: {
-  label: string; description: string; config: unknown; disabled?: boolean; begin: BeginCompanionTest; run: CompanionTestRun;
+export function CompanionApiTest({ label, description, config, disabled, begin, run, successLabel = '测试通过' }: {
+  label: string; description: string; config: unknown; disabled?: boolean; begin: BeginCompanionTest; run: CompanionTestRun; successLabel?: string;
 }) {
   // Includes credentials only in local memory; never rendered or persisted. Editing invalidates the result.
   const scope = JSON.stringify(config);
@@ -69,7 +69,7 @@ export function CompanionApiTest({ label, description, config, disabled, begin, 
       {state === 'running' && <button type="button" onClick={cancel}>取消测试</button>}
       {state !== 'idle' && <span className="companion-test-time">{(elapsed / 1000).toFixed(1)} 秒</span>}
     </div>
-    <div role="status" aria-live="polite"><strong>{state === 'success' ? '测试通过 · ' : state === 'error' ? '测试失败 · ' : ''}{message}</strong>{detail && <pre>{detail}</pre>}</div>
+    <div role="status" aria-live="polite"><strong>{state === 'success' ? `${successLabel} · ` : state === 'error' ? '测试失败 · ' : ''}{message}</strong>{detail && <pre>{detail}</pre>}</div>
     <CompanionMicMeter data={micDiagnostics} active={state === 'running'}/>
   </div>;
 }

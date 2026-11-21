@@ -9,8 +9,11 @@ export const COMPANION_ARK_PLAN = {
 export function isCompanionArkPlan(baseUrl: string) {
   return baseUrl.trim().replace(/\/+$/, '') === COMPANION_ARK_PLAN.baseUrl;
 }
+export function companionVideoDirectEndpoint(api: Pick<CompanionVideoApiConfig, 'baseUrl'>) {
+  return `${api.baseUrl.trim().replace(/\/+$/, '')}/chat/completions`;
+}
 export function companionVideoEndpoint(api: Pick<CompanionVideoApiConfig, 'baseUrl'>, origin = typeof window !== 'undefined' ? window.location.origin : '') {
-  const direct = `${api.baseUrl.trim().replace(/\/+$/, '')}/chat/completions`;
+  const direct = companionVideoDirectEndpoint(api);
   if (!isCompanionArkPlan(api.baseUrl) || !origin) return direct;
   const page = new URL(origin);
   if (['127.0.0.1', 'localhost', '[::1]'].includes(page.hostname)) {
@@ -37,10 +40,10 @@ export const COMPANION_VIDEO_PROVIDERS = {
     note: '使用国内开放平台的模型 API Key，并确认账号已开通 M3.1 Flash 或 M3 视频输入。录像直接发送；M3.1 Flash 必须开启思考，这里使用 low 强度，不向它发送禁用思考参数。',
   },
   zhipu: {
-    name: '智谱 · 直传试用', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-5.3-flash',
+    name: '智谱 GLM · 视频直传试用', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-5.3-flash',
     signup: 'https://open.bigmodel.cn/', keys: 'https://bigmodel.cn/usercenter/proj-mgmt/apikeys',
     docs: 'https://docs.bigmodel.cn/cn/guide/models/vlm/glm-5.3-flash',
-    note: '使用模型标准 API Key，默认 GLM-5.3-Flash。参考官方 ZCode 的视频直传方式，国内接口是否接收仍需实测，旧型号也不保证支持；当前标为试用。只发送完整视频，不提供临时图床或云存储。该默认模型不能关闭思考。',
+    note: '使用模型标准 API Key，默认 GLM-5.3-Flash，支持视频理解。国内接口的本地 MP4 Base64 兼容性仍待实测；2026-11-21 检查时，官方接口未放行测试站的鉴权跨域预检。请先检查直连，再测试图形样片；失败不会自动转发或上传到临时存储。该默认模型不能关闭思考。',
   },
   custom: {
     name: '自定义兼容接口', baseUrl: '', model: '',

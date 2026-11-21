@@ -14,6 +14,8 @@ import { canSynthesizeSpeech } from '../utils/ttsRouter';
 import { resolveContextRangeMode, clampManualContextLimit } from '../utils/chatContextRange';
 import { CompanionDebugStore } from '../utils/companion/debug';
 import { holdCompanionPresence } from '../utils/companion/presence';
+import { companionCameraConstraints, companionCameraError } from '../utils/companion/cameraSource';
+import { CompanionCameraSource } from '../components/companion/CompanionCameraSource';
 import { CompanionDebugPanel } from '../components/companion/CompanionDebugPanel';
 import { CompanionReplyProgress, companionReplyLabel } from '../components/companion/CompanionReplyProgress';
 import { CompanionVideoStatus } from '../components/companion/CompanionVideoStatus';
@@ -51,6 +53,8 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
   const [micDiagnostics, setMicDiagnostics] = useState<ListeningDiagnostics>();
   const [camera, setCamera] = useState(false);
   const [cameraPending, setCameraPending] = useState(false);
+  const [cameraDeviceId, setCameraDeviceId] = useState('');
+  const [cameraLabel, setCameraLabel] = useState('');
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [observation, setObservation] = useState<CompanionObservation>();
   const [observing, setObserving] = useState(false);
@@ -82,6 +86,7 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
     observationRef.current = undefined;
     if (videoRef.current) videoRef.current.srcObject = null;
     setCamera(false); setCameraPending(false); setObservation(undefined); setObserving(false);
+    setCameraLabel('');
     setAnalysisPaused(false); setAnalysisProblem(''); setAnalysisClip(undefined);
   };
   const stopAll = () => { session.current?.interrupt('停止看听、配置或测试'); stopMic(); stopCamera(); };
@@ -151,7 +156,8 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
     setError(''); setCameraPending(true);
     const generation = ++cameraGeneration.current;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 640 }, frameRate: { ideal: 12, max: 15 } }, audio: false });
+      if (!navigator.mediaDevices?.getUserMedia) throw new Error('当前浏览器无法使用摄像头，请通过 HTTPS 页面打开');
+      const stream = await navigator.mediaDevices.getUserMedia(companionCameraConstraints(cameraDeviceId));
       if (generation !== cameraGeneration.current || !mounted.current) { stream.getTracks().forEach(track => track.stop()); return; }
       mediaRef.current = stream;
       for (const track of stream.getVideoTracks()) track.onended = () => {
@@ -159,9 +165,9 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
       };
       if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play(); }
       if (generation !== cameraGeneration.current) return;
-      setCamera(true);
+      setCameraLabel(stream.getVideoTracks()[0]?.label || ''); setCamera(true);
     } catch (err) {
-      if (generation === cameraGeneration.current) { stopCamera(); setError(`摄像头未能开启：${(err as Error).message}`); }
+      if (generation === cameraGeneration.current) { stopCamera(); setError(companionCameraError(err)); }
     } finally { if (generation === cameraGeneration.current) setCameraPending(false); }
   };
 
@@ -232,6 +238,9 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
         <button className="companion-reset" onClick={() => { stopAll(); session.current = undefined; debug.clear(); setLines([]); setStatus('已结束本次同行'); }}>结束本次同行</button>
       </div>}
     </div>
+    <CompanionCameraSource selected={cameraDeviceId} active={camera} activeLabel={cameraLabel} change={deviceId => {
+      session.current?.interrupt('切换摄像头'); stopCamera(); setCameraDeviceId(deviceId); setError('');
+    }}/>
     <CompanionVideoStatus active={camera} analyzing={observing} paused={analysisPaused} configured={companionVideoReady(api.companionVideoApi)}
       clip={analysisClip} lastSeen={observation?.to} problem={analysisProblem}
       retry={() => { setAnalysisProblem(''); setAnalysisPaused(false); }} configure={() => setSetupOpen(true)}/>
