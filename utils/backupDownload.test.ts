@@ -5,6 +5,7 @@ const temp = vi.hoisted(() => ({
     supported: true,
     space: null as { enough: boolean; available: number } | null,
     quotaFull: false,
+    extraBytes: 0, // 模拟浏览器往文件里多写了数据
     files: [] as Array<{ chunks: Uint8Array[]; closed: boolean; removed: boolean }>,
     onPersist: undefined as (() => void) | undefined,
 }));
@@ -29,7 +30,7 @@ vi.mock('./backupTempFile', () => ({
             },
             async getFile() {
                 if (!state.closed) throw new Error('getFile before close');
-                return new File(state.chunks as BlobPart[], 'download-test.tmp');
+                return new File([...state.chunks, new Uint8Array(temp.extraBytes)] as BlobPart[], 'download-test.tmp');
             },
             async remove() { state.removed = true; },
         };
@@ -48,6 +49,7 @@ beforeEach(() => {
     temp.supported = true;
     temp.space = null;
     temp.quotaFull = false;
+    temp.extraBytes = 0;
     temp.files = [];
     temp.onPersist = undefined;
 });
@@ -112,6 +114,20 @@ describe('receiveBackupDownload 配额', () => {
 
         expect(temp.files).toHaveLength(0);
         expect(await bytesOf(backup.blob)).toEqual([1, 2, 3, 4, 5, 6]);
+    });
+
+    it('估算说放不下、但文件大到内存里放不下时，仍然写磁盘', async () => {
+        temp.space = { enough: false, available: 2 };
+        const size = 300 * 1024 * 1024;
+        // 只核对走了哪条路：写入内容对不上总大小会报错，临时文件已经建出来就说明选的是磁盘
+        await expect(receiveBackupDownload(writeAll, size)).rejects.toThrow('大小不符');
+        expect(temp.files).toHaveLength(1);
+    });
+
+    it('落盘后的文件比收到的字节多时报错并删除临时文件', async () => {
+        temp.extraBytes = 3;
+        await expect(receiveBackupDownload(writeAll, 6)).rejects.toThrow('落盘的备份大小不符（应为 6 字节，实际 9 字节）');
+        expect(temp.files[0].removed).toBe(true);
     });
 
     it('配额估算未知时照样写磁盘', async () => {

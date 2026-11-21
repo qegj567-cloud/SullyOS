@@ -20,12 +20,15 @@ export class BackupSpaceError extends Error {
     }
 }
 
+/** 估算说磁盘放不下时，不超过这个大小的下载才退回内存。 */
+const MEMORY_FALLBACK_LIMIT = 256 * 1024 * 1024;
+
 const sizeMismatch = (label: string, expected: number, actual: number) =>
     new Error(`${label}大小不符（应为 ${expected} 字节，实际 ${actual} 字节）。`);
 
 /**
  * 开一个下载汇交给 fill 顺序写入，写完核对总字节数（给了 expectedSize 才核对）。
- * 写磁盘还是写内存在开始前定好：OPFS 不可用、或已知大小且明确放不下时写内存；
+ * 写磁盘还是写内存在开始前定好：OPFS 不可用、或文件不大且估算放不下时写内存；
  * fill 或核对失败时删掉临时文件、丢掉已收的字节，再把错误抛出去。
  */
 export async function receiveBackupDownload(
@@ -39,9 +42,13 @@ export async function receiveBackupDownload(
         }
     };
 
-    // 配额估算未知时照样写磁盘：估算只是预判，写到一半不够会在下面按空间不足报错。
+    // 配额估算只用来把小文件挪进内存：估算说放不下、文件又小到内存里放得下时才写内存。
+    // 估算不能用来拦大文件：Safari 报的用量是随写入次数虚增的账面数（见 docs/backup-pipeline.md「平台事实」），
+    // 信了它会把上 GB 的下载退回内存。大文件一律写磁盘，真放不下会在下面按空间不足报错。
     const useDisk = await isBackupTempFileSupported()
-        && (expectedSize === undefined || (await checkBackupSpace(expectedSize))?.enough !== false);
+        && (expectedSize === undefined
+            || expectedSize > MEMORY_FALLBACK_LIMIT
+            || (await checkBackupSpace(expectedSize))?.enough !== false);
     if (!useDisk) {
         const parts: Uint8Array<ArrayBuffer>[] = [];
         await fill({
@@ -66,7 +73,10 @@ export async function receiveBackupDownload(
         // 先核对再关流：对不上就不提交，remove() 会中止这条流。
         checkTotal();
         await writer.close();
-        return { blob: await temp.getFile(), dispose: () => temp.remove() };
+        // 以磁盘上的实际大小为准：浏览器的写入实现出过把多余数据写进文件的问题，只数收到的字节发现不了。
+        const file = await temp.getFile();
+        if (file.size !== received) throw sizeMismatch('落盘的备份', received, file.size);
+        return { blob: file, dispose: () => temp.remove() };
     } catch (error: any) {
         await temp.remove().catch(() => undefined);
         throw error?.name === 'QuotaExceededError' ? new BackupSpaceError() : error;

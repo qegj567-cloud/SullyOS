@@ -20,6 +20,16 @@ const lockName = (name: string) => `${DIR}/${name}`;
 const hasOpfsAndLocks = () =>
     typeof navigator !== 'undefined' && !!navigator.storage?.getDirectory && !!navigator.locks?.request;
 
+/**
+ * Safari 27.2 把 TypedArray 视图写进 OPFS 时，写出去的是视图背后的整块缓冲，不管视图的偏移和长度（真机实测，
+ * 见 docs/backup-pipeline.md「平台事实」）。只占缓冲一部分的视图先拷成独立的一块再写。
+ */
+export function exactWriteChunk<T extends BufferSource | Blob>(chunk: T): T | Uint8Array<ArrayBuffer> {
+    if (!ArrayBuffer.isView(chunk)) return chunk;
+    if (chunk.byteOffset === 0 && chunk.byteLength === chunk.buffer.byteLength) return chunk;
+    return new Uint8Array(chunk.buffer as ArrayBuffer, chunk.byteOffset, chunk.byteLength).slice();
+}
+
 let support: Promise<boolean> | undefined;
 
 /** 页面里能否写 OPFS 临时文件：实际建、写、读、删一个小文件。结果在页面生命周期内缓存。 */
@@ -80,7 +90,7 @@ async function createTempFile(prefix: string): Promise<BackupTempFile> {
             const own = writer;
             // 自己握着底层 writer：zip.js 会锁住交给它的流，任务在别处失败时只有这样还能 abort 掉它、放开文件。
             return new WritableStream<BufferSource | Blob>({
-                write: chunk => own.write(chunk),
+                write: chunk => own.write(exactWriteChunk(chunk)),
                 close: () => own.close(),
                 abort: reason => own.abort(reason),
             });

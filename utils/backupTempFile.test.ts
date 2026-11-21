@@ -34,7 +34,8 @@ class FakeFileHandle {
                     file.openWriters--;
                     throw domError('QuotaExceededError');
                 }
-                pending.push(chunk);
+                // 像 Safari 27.2 那样：收到视图就把背后的整块缓冲写出去
+                pending.push(new Uint8Array(chunk.buffer));
             },
             close() {
                 file.data = pending;
@@ -182,6 +183,17 @@ describe('createBackupTempFile', () => {
         afterFileCreated = () => mod.cleanupBackupTempFiles();
         const temp = await mod.createBackupTempFile('download');
         expect(tmpDir().files.has(temp.name)).toBe(true);
+        await temp.remove();
+    });
+
+    it('writes exactly the bytes of a view, not the whole buffer behind it', async () => {
+        const temp = await mod.createBackupTempFile('download');
+        const writer = (await temp.openWritable()).getWriter();
+        const big = new Uint8Array([9, 9, 1, 2, 3, 9, 9, 9]);
+        await writer.write(big.subarray(2, 5));
+        await writer.write(new Uint8Array([4, 5]));
+        await writer.close();
+        expect(Array.from(new Uint8Array(await (await temp.getFile()).arrayBuffer()))).toEqual([1, 2, 3, 4, 5]);
         await temp.remove();
     });
 
