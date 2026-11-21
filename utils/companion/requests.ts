@@ -43,7 +43,7 @@ export function createCompanionRequests(context: CompanionRequestContext) {
         body,
       }, 0, 180_000, { appId: 'companion', appName: '同行', charId: context.char.id, charName: context.char.name,
         purpose: phase === 'quick' ? '轻量接话' : '完整上下文续答' },
-        { onFirstDelta: () => trace?.firstDelta(phase) });
+        { onResponseHeaders: info => trace?.responseHeaders(phase, info), onFirstDelta: () => trace?.firstDelta(phase) });
       signal.throwIfAborted();
       const text = extractContent(data).trim();
       if (!text) throw new Error('模型没有返回可朗读的正文');

@@ -23,6 +23,7 @@ export interface CompanionSpan { start: number; end?: number; status: Status; no
 export interface CompanionDebugRequest {
   /** The exact serialized body handed to safeFetchJson, without URL or headers. */
   body: string; submitted: number; firstDelta?: number; response?: string;
+  headers?: { at: number; status: number; streaming: boolean };
 }
 export interface CompanionDebugTurn {
   id: number; input: string; origin: number; end?: number; status: Status;
@@ -85,6 +86,10 @@ export class CompanionTurnTrace {
   }
   firstDelta(phase: CompanionPhase) {
     this.update(turn => { const request = turn.requests[phase]; if (request && request.firstDelta === undefined) turn.requests[phase] = { ...request, firstDelta: this.elapsed() }; });
+  }
+  responseHeaders(phase: CompanionPhase, info: { status: number; streaming: boolean }) {
+    this.update(turn => { const request = turn.requests[phase]; if (request) turn.requests[phase] = { ...request,
+      headers: { ...info, at: this.elapsed() } }; });
   }
   response(phase: CompanionPhase, response: string) {
     this.update(turn => { const request = turn.requests[phase]; if (request) turn.requests[phase] = { ...request, response }; });

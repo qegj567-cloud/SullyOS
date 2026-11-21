@@ -72,14 +72,15 @@ it('a speech failure keeps the pending continuation alive, shows its text, and r
 });
 
 it('does not cancel audible a when full preparation fails, and labels the failed phase', async () => {
-  const audio = deferred<void>(), error = vi.fn();
+  const audio = deferred<void>(), error = vi.fn(), full = vi.fn();
   let signal!: AbortSignal;
   const session = new CompanionSession({ quick: async () => 'a', prepare: async () => { throw new Error('组装失败'); },
-    full: vi.fn(), play: async (_, s, heard) => { signal = s; await audio.promise; heard('a'); }, change: () => {}, error });
+    full, play: async (_, s, heard) => { signal = s; await audio.promise; heard('a'); }, change: () => {}, error });
   const done = session.send('A'); await tick();
   expect(signal.aborted).toBe(false); expect(error).not.toHaveBeenCalled();
   audio.resolve(); await done;
   expect(error.mock.calls[0][0].message).toContain('a′ · 完整回复失败：组装失败');
+  expect(full).not.toHaveBeenCalled();
 });
 
 it('can finish full context after quick generation fails, without inventing an assistant answer', async () => {

@@ -26,6 +26,7 @@ import { resolveDialogueApi } from './characterApi';
 import { extractContent, safeFetchJson } from './safeApi';
 import { buildLocalAwayHint } from './awayMessagePrompt';
 import { loadMusicPlaybackSnapshot } from '../context/MusicContext';
+import { isCompanionPresent, subscribeCompanionPresence } from './companion/presence';
 
 /** 失败后这么久内不再试，免得每次切回前台都白调一次。 */
 const FAILURE_COOLDOWN_MS = 10 * 60_000;
@@ -189,13 +190,23 @@ export const runLocalAwayMessages = async (deps: LocalAwayDeps): Promise<void> =
   localRunning = true;
   try {
     for (const char of deps.getCharacters().filter(c => c.awayMessage?.enabled)) {
-      if ((localCooldownUntil.get(char.id) ?? 0) > Date.now() || deps.isBusyWith(char.id)) continue;
+      if ((localCooldownUntil.get(char.id) ?? 0) > Date.now() || deps.isBusyWith(char.id) || isCompanionPresent(char.id)) continue;
+      const controller = new AbortController();
+      const unsubscribe = subscribeCompanionPresence(charId => {
+        if (charId === char.id && isCompanionPresent(charId)) {
+          controller.abort(new DOMException('已进入同行，停止同角色的离开后消息', 'AbortError'));
+        }
+      });
       try {
         if (await isAwayCloudRoute(char)) continue;
-        await generateLocalAwayMessages(char, deps);
+        controller.signal.throwIfAborted();
+        await generateLocalAwayMessages(char, deps, controller.signal);
       } catch (error) {
+        if (controller.signal.aborted) continue;
         console.warn(`[AwayMessage] ${char.name} 的离开后消息生成失败`, error);
         localCooldownUntil.set(char.id, Date.now() + FAILURE_COOLDOWN_MS);
+      } finally {
+        unsubscribe();
       }
     }
   } finally {
@@ -203,10 +214,11 @@ export const runLocalAwayMessages = async (deps: LocalAwayDeps): Promise<void> =
   }
 };
 
-const generateLocalAwayMessages = async (char: CharacterProfile, deps: LocalAwayDeps): Promise<void> => {
+const generateLocalAwayMessages = async (char: CharacterProfile, deps: LocalAwayDeps, signal: AbortSignal): Promise<void> => {
   const delayMs = resolveAwayDelayMinutes(char) * 60_000;
   const now = Date.now();
   const recent = await DB.getRecentMessagesByCharId(char.id, 50, true);
+  signal.throwIfAborted();
   const lastUserAt = findAwayGapStart(recent, delayMs, now);
   if (lastUserAt == null) return;
   const userProfile = deps.getUserProfile();
@@ -218,6 +230,7 @@ const generateLocalAwayMessages = async (char: CharacterProfile, deps: LocalAway
   const userName = userProfile.name || '对方';
 
   await runLocalProactiveTurn(char, {
+    signal,
     apiConfig: deps.getApiConfig(),
     userProfile,
     groups: deps.getGroups(),
@@ -228,14 +241,18 @@ const generateLocalAwayMessages = async (char: CharacterProfile, deps: LocalAway
     meta: { awayMessage: true },
     place: text => splitAwaySegments(text, slots.length).map((segment, i) => ({ text: segment, at: slots[i] })),
     // 生成期间对方回来说了话：这段离开已经结束，补的消息作废。
-    stillWanted: async () =>
-      findAwayGapStart(await DB.getRecentMessagesByCharId(char.id, 50, true), delayMs, Date.now()) === lastUserAt,
+    stillWanted: async () => {
+      const recent = await DB.getRecentMessagesByCharId(char.id, 50, true);
+      return !signal.aborted && !deps.isBusyWith(char.id) && !isCompanionPresent(char.id)
+        && findAwayGapStart(recent, delayMs, Date.now()) === lastUserAt;
+    },
   });
 };
 
 // ─── 本地生成一轮角色主动找人的私聊（离开后消息、见面离开提醒共用） ───
 
 export interface LocalProactiveTurn {
+  signal?: AbortSignal;
   apiConfig: APIConfig;
   userProfile: UserProfile;
   groups: GroupProfile[];
@@ -254,6 +271,7 @@ export interface LocalProactiveTurn {
 
 /** 用聊天同一套上下文生成并落库，返回有没有真的发出去。 */
 export const runLocalProactiveTurn = async (char: CharacterProfile, turn: LocalProactiveTurn): Promise<boolean> => {
+  turn.signal?.throwIfAborted();
   const api = resolveDialogueApi(turn.apiConfig, char);
   if (!api.baseUrl) return false;
   const { userProfile, groups, realtimeConfig } = turn;
@@ -261,9 +279,10 @@ export const runLocalProactiveTurn = async (char: CharacterProfile, turn: LocalP
   const range = await loadCharacterContextRange(char);
   const { emojis, categories } = ChatPrompts.filterVisibleEmojis(await DB.getEmojis(), await DB.getEmojiCategories(), char.id);
   const payload = await buildChatRequestPayload({
-    char, userProfile, groups, emojis, categories,
+    char, userProfile, groups, emojis, categories, signal: turn.signal,
     historyMsgs: range.messages,
     contextLimit: Math.max(1, range.messages.length),
+    contextHighWaterMark: range.hwm,
     recallEntryPoint: 'proactive_chat',
     realtimeConfig,
     musicSnapshot: loadMusicPlaybackSnapshot(),
@@ -279,10 +298,12 @@ export const runLocalProactiveTurn = async (char: CharacterProfile, turn: LocalP
 
   const baseUrl = api.baseUrl.replace(/\/+$/, '');
   const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${api.apiKey || 'sk-none'}` };
+  turn.signal?.throwIfAborted();
   const data = await safeFetchJson(`${baseUrl}/chat/completions`, {
-    method: 'POST', headers,
+    method: 'POST', headers, signal: turn.signal,
     body: JSON.stringify({ model: api.model, messages: payload.fullMessages, temperature: api.temperature ?? 0.85, stream: false }),
   }, 2, 0, { appName: '消息', charId: char.id, charName: char.name, purpose: turn.purpose });
+  turn.signal?.throwIfAborted();
   const placed = turn.place(extractContent(data)).filter(p => p.text.trim());
   if (!placed.length || !await turn.stillWanted()) return false;
 

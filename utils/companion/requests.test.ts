@@ -126,3 +126,63 @@ it.each(['manual', 'adaptive'])('respects %s range and passes exactly the select
   expect(recall.mock.calls[0][1]!.at(-1)?.content).toBe('当前A');
   expect(text.match(/当前A/g)).toHaveLength(1);
 });
+
+it.each([true, false])('preserves the selected API transport setting for both requests: %s', async stream => {
+  vi.spyOn(palace, 'injectMemoryPalace').mockResolvedValue({} as any);
+  const calls = vi.spyOn(api, 'safeFetchJson').mockResolvedValue({ choices: [{ message: { content: '短答关键词' } }] });
+  const ctx = context(char('stream-setting-' + stream));
+  ctx.api.stream = stream;
+  const requests = createCompanionRequests(ctx);
+  const signal = new AbortController().signal;
+  const quick = requests.quick([line('A')], signal);
+  await requests.full(await requests.prepare([line('A')], quick, signal), signal);
+  expect(calls.mock.calls.map(call => JSON.parse(String(call[1].body)).stream)).toEqual([stream, stream]);
+  expect(ctx.api.stream).toBe(stream);
+  expect(JSON.parse(String(calls.mock.calls[1][1].body)).messages.at(-1).role).toBe('user');
+});
+
+it('observes headers and first text from the real streaming parser before a′ has completed', async () => {
+  vi.spyOn(palace, 'injectMemoryPalace').mockResolvedValue({} as any);
+  const debug = new CompanionDebugStore(), signal = new AbortController().signal;
+  const trace = debug.start(signal, 'A');
+  let finish!: () => void, firstText!: () => void;
+  const first = new Promise<void>(resolve => { firstText = resolve; });
+  const seenFirst = vi.spyOn(trace, 'firstDelta').mockImplementation(phase => {
+    // Keep actual trace mutation while signalling the test after the first chunk.
+    Object.getPrototypeOf(trace).firstDelta.call(trace, phase);
+    firstText();
+  });
+  const transport = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+    expect(JSON.parse(String(init!.body)).stream).toBe(true);
+    return new Response(new ReadableStream({ start(controller) {
+      controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"我记得"}}]}\n\n'));
+      finish = () => {
+        controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"你的偏好。"},"finish_reason":"stop"}]}\n\n'));
+        controller.close();
+      };
+    } }), { headers: { 'content-type': 'text/event-stream' } });
+  });
+  const ctx = context(char('real-stream')); ctx.api.stream = true;
+  const requests = createCompanionRequests({ ...ctx, debug });
+  const payload = await requests.prepare([line('A')], Promise.resolve('短答关键词'), signal);
+  const result = requests.full(payload, signal);
+  await first;
+  expect(debug.getSnapshot()[0].requests.full?.headers).toMatchObject({ status: 200, streaming: true });
+  expect(debug.getSnapshot()[0].requests.full?.firstDelta).toBeDefined();
+  expect(debug.getSnapshot()[0].requests.full?.response).toBeUndefined();
+  finish(); expect(await result).toBe('我记得你的偏好。');
+  expect(seenFirst).toHaveBeenCalledOnce(); expect(transport).toHaveBeenCalledOnce();
+});
+
+it('records an actual 524 without retrying generation or claiming the connection produced text', async () => {
+  const debug = new CompanionDebugStore(), signal = new AbortController().signal;
+  debug.start(signal, 'A');
+  const transport = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(
+    '{"error":{"message":"openai_error"}}', { status: 524, headers: { 'content-type': 'application/json' } }));
+  const requests = createCompanionRequests({ ...context(char('timeout')), debug });
+  await expect(requests.full({ fullMessages: [{ role: 'user', content: 'A' }] } as any, signal)).rejects.toThrow('524');
+  expect(debug.getSnapshot()[0].requests.full?.headers?.status).toBe(524);
+  expect(debug.getSnapshot()[0].requests.full?.firstDelta).toBeUndefined();
+  expect(debug.getSnapshot()[0].stages.full_request?.status).toBe('error');
+  expect(transport).toHaveBeenCalledOnce();
+});

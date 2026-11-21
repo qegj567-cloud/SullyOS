@@ -232,8 +232,10 @@ class SseAssembler {
     }
 }
 
-/** safeFetchJson 的可选流式钩子（只在响应确实是 SSE 流时触发） */
+/** safeFetchJson 的可选观测钩子；正文增量仅在响应确实是 SSE 流时触发。 */
 export interface StreamHooks {
+    /** Transport response only, not proof that any model text has arrived. */
+    onResponseHeaders?: (info: { status: number; streaming: boolean }) => void;
     /**
      * 每收到一段正文增量时回调。fullText 是**本次尝试**累计的完整正文——
      * safeFetchJson 内部重试会重新开一条流，fullText 从空串重新累计，
@@ -468,6 +470,9 @@ export async function safeFetchJson(
             if (timeoutHandle) clearTimeout(timeoutHandle);
             lastStatus = response.status;
             const headersMs = Date.now() - attemptStartedAt;
+            try { streamHooks?.onResponseHeaders?.({ status: response.status,
+                streaming: response.headers.get('content-type')?.toLowerCase().includes('text/event-stream') === true }); }
+            catch { /* Observation must not interrupt the request. */ }
 
             if (!response.ok) {
                 // For retryable status codes, retry before giving up

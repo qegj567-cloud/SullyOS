@@ -6,12 +6,19 @@ const statusText = { running: '进行中', done: '结束', cancelled: '已打断
 
 function RequestPrompt({ request, title }: { request?: CompanionDebugRequest; title: string }) {
   const body = useMemo(() => request ? JSON.parse(request.body) : undefined, [request?.body]);
+  const counts = useMemo(() => body ? {
+    bytes: new TextEncoder().encode(request!.body).length,
+    text: body.messages.reduce((sum: number, message: { content: unknown }) => sum + (typeof message.content === 'string'
+      ? message.content.length : Array.isArray(message.content) ? message.content.reduce((n: number, part: any) => n + (part.type === 'text' ? String(part.text ?? '').length : 0), 0) : 0), 0),
+  } : undefined, [body]);
   const [copied, setCopied] = useState('');
   useEffect(() => setCopied(''), [request?.body]);
   if (!request) return <p className="companion-debug-note">{title}：尚未提交请求。</p>;
   return <details className="companion-debug-prompt">
     <summary>{title} · 实际请求提示词 · {body.messages.length} 条</summary>
     <p>模型：{body.model} · {body.stream ? '流式' : '整包'} · temperature {body.temperature} · max_tokens {body.max_tokens ?? '未指定'}</p>
+    <p>文本 {counts!.text.toLocaleString()} 字符 · 请求体 {(counts!.bytes / 1024).toFixed(1)} KiB（含附图编码；不是 Token 数）</p>
+    <p>传输层响应：{request.headers ? `提交后 ${seconds(request.headers.at - request.submitted)} · HTTP ${request.headers.status} · ${request.headers.streaming ? '流式响应' : '整包响应'}` : '尚未收到响应头'}；收到响应头不代表已生成正文。</p>
     <p>提交于 +{seconds(request.submitted)}；首段正文：{request.firstDelta === undefined ? '未观测到（不推算首字耗时）' : `提交后 ${seconds(request.firstDelta - request.submitted)}`}</p>
     <button type="button" onClick={async () => {
       try { await navigator.clipboard.writeText(request.body); setCopied('已复制请求体'); }

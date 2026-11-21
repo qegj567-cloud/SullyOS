@@ -13,6 +13,7 @@ import { createCompanionClipRecorder, startCompanionVideoLoop } from '../utils/c
 import { canSynthesizeSpeech } from '../utils/ttsRouter';
 import { resolveContextRangeMode, clampManualContextLimit } from '../utils/chatContextRange';
 import { CompanionDebugStore } from '../utils/companion/debug';
+import { holdCompanionPresence } from '../utils/companion/presence';
 import { CompanionDebugPanel } from '../components/companion/CompanionDebugPanel';
 import { CompanionReplyProgress, companionReplyLabel } from '../components/companion/CompanionReplyProgress';
 import { CompanionVideoStatus } from '../components/companion/CompanionVideoStatus';
@@ -84,6 +85,8 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
     setAnalysisPaused(false); setAnalysisProblem(''); setAnalysisClip(undefined);
   };
   const stopAll = () => { session.current?.interrupt('停止看听、配置或测试'); stopMic(); stopCamera(); };
+
+  useEffect(() => charId ? holdCompanionPresence(charId) : undefined, [charId]);
 
   useEffect(() => {
     session.current?.interrupt('切换角色'); session.current = undefined;

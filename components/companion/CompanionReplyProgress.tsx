@@ -13,7 +13,13 @@ function phaseStatus(turn: CompanionDebugTurn, phase: CompanionPhase) {
   if (turn.status === 'cancelled') return request ? '已打断' : '已取消，未开始生成';
   if (stages[`${phase}_audio`]?.status === 'running') return '正在播放';
   if (stages[`${phase}_tts`]?.status === 'running') return '正在准备语音';
-  if (request?.status === 'running') return '正在生成';
+  if (request?.status === 'running') {
+    const transport = turn.requests[phase];
+    if (transport?.firstDelta !== undefined) return '已收到正文，正在生成';
+    if (transport?.headers) return transport.headers.status >= 400 ? `请求失败（HTTP ${transport.headers.status}）`
+      : transport.headers.streaming ? '已连接，等待首段正文' : '已连接，等待完整回复';
+    return '请求已提交，等待 API 响应';
+  }
   if (request?.status === 'done') return phase === 'full' ? '已生成，等待 a 播完' : '已生成';
   if (phase === 'quick') return '正在准备接话';
   if (stages.memory?.status === 'running') return '正在召回记忆，尚未开始生成';

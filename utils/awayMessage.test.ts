@@ -8,6 +8,7 @@ import { runLocalAwayMessages, syncCloudAwayTaskFromRecent } from './awayMessage
 import { safeFetchJson } from './safeApi';
 import { applyAssistantPostProcessing } from './applyAssistantPostProcessing';
 import * as devDebug from './devDebug';
+import { holdCompanionPresence } from './companion/presence';
 
 // Keep the actual context-range and chat-payload pipelines; only external generation/delivery is stubbed.
 vi.mock('./activeMsgClient', () => ({
@@ -90,6 +91,52 @@ it('skips away generation while character is busy (active or suspended meeting/c
     isBusyWith: id => id === char.id,
   });
   expect(safeFetchJson).not.toHaveBeenCalled();
+});
+
+const localDeps = () => ({
+  getCharacters: () => [char],
+  getApiConfig: () => ({ baseUrl: 'https://fixture.invalid/v1', apiKey: '', model: 'fixture' }),
+  getUserProfile: () => ({ name: '小明' } as any), getGroups: () => [], getRealtimeConfig: () => ({} as any),
+  isBusyWith: () => false,
+});
+
+it('does not start a local away request for a character currently in companion', async () => {
+  const release = holdCompanionPresence(char.id);
+  try {
+    await runLocalAwayMessages(localDeps());
+    expect(safeFetchJson).not.toHaveBeenCalled();
+  } finally { release(); }
+  // Leaving does not silently disable the setting or install a failure cooldown.
+  await runLocalAwayMessages(localDeps());
+  expect(safeFetchJson).toHaveBeenCalledOnce();
+});
+
+it('aborts a pending away request on companion entry and ignores a late response after leaving', async () => {
+  let complete!: (value: any) => void, started!: () => void;
+  let signal!: AbortSignal;
+  const ready = new Promise<void>(resolve => { started = resolve; });
+  vi.mocked(safeFetchJson).mockImplementationOnce(async (_url, init) => {
+    signal = init.signal!; started();
+    return new Promise(resolve => { complete = resolve; });
+  });
+  const task = runLocalAwayMessages(localDeps());
+  await ready;
+  const release = holdCompanionPresence(char.id);
+  try {
+    expect(signal.aborted).toBe(true);
+    expect(signal.reason.message).toContain('已进入同行');
+  } finally { release(); }
+  complete({ choices: [{ message: { content: '迟到的离开后消息' } }] });
+  await task;
+  expect(applyAssistantPostProcessing).not.toHaveBeenCalled();
+  await runLocalAwayMessages(localDeps());
+  expect(safeFetchJson).toHaveBeenCalledTimes(2);
+});
+
+it('does not suppress away requests for another character in the same page', async () => {
+  const release = holdCompanionPresence('different-character');
+  try { await runLocalAwayMessages(localDeps()); expect(safeFetchJson).toHaveBeenCalledOnce(); }
+  finally { release(); }
 });
 
 it('does not trigger away generation when recent meeting prose exists without user turns', async () => {

@@ -5,6 +5,7 @@ import { beforeEach, afterEach, expect, it, vi } from 'vitest';
 import { CompanionSurface } from '../../apps/CompanionApp';
 import { startDoubaoListening } from './doubaoListening';
 import { createCompanionClipRecorder, startCompanionVideoLoop } from './capture';
+import { isCompanionPresent } from './presence';
 
 vi.mock('./doubaoListening', () => ({ canUseDoubaoListening: () => true, startDoubaoListening: vi.fn(() => vi.fn()) }));
 
@@ -25,6 +26,33 @@ afterEach(() => { act(() => root.unmount()); host.remove(); vi.restoreAllMocks()
 const click = async (label: string) => act(async () => {
   const button = [...host.querySelectorAll('button')].find(b => b.getAttribute('aria-label') === label || b.textContent?.trim() === label);
   expect(button).toBeTruthy(); button!.click();
+});
+
+it('tracks the actual companion role and releases its presence on switching or unmount', async () => {
+  let captured: any, signal!: AbortSignal;
+  const factory = vi.fn(ctx => {
+    captured = ctx;
+    return { quick: async (_: any, s: AbortSignal) => {
+      signal = s;
+      return new Promise<string>((_, reject) => s.addEventListener('abort', () => reject(s.reason), { once: true }));
+    }, prepare: async (_: any, a: Promise<string>) => a, full: async () => 'a′' };
+  });
+  await act(async () => root.render(React.createElement(CompanionSurface, { ...props, api: { stream: false },
+    characters: [...props.characters, { id: 'other', name: '另一位' }], requestFactory: factory })));
+  expect(isCompanionPresent('c')).toBe(true); expect(isCompanionPresent('other')).toBe(false);
+  await act(async () => {
+    const input = host.querySelector('input[aria-label="对同行伙伴说"]')!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'A');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await click('发送');
+  expect(captured.api.stream).toBe(false);
+  const select = host.querySelector('select[aria-label="同行角色"]') as HTMLSelectElement;
+  await act(async () => { select.value = 'other'; select.dispatchEvent(new Event('change', { bubbles: true })); });
+  expect(signal.aborted).toBe(true);
+  expect(isCompanionPresent('c')).toBe(false); expect(isCompanionPresent('other')).toBe(true);
+  await act(async () => root.render(null));
+  expect(isCompanionPresent('other')).toBe(false);
 });
 
 it('uses selected Doubao independently of browser recognition and stops listening when the page becomes hidden', async () => {

@@ -14,9 +14,16 @@ it('shows concurrent recall, actual full generation, queued playback and cancell
   await act(async () => root.render(React.createElement(CompanionReplyProgress, { store })));
   const quick = () => host.querySelector('[data-phase=quick]')!.textContent;
   const full = () => host.querySelector('[data-phase=full]')!.textContent;
-  expect(quick()).toContain('正在生成'); expect(full()).toContain('正在召回记忆，尚未开始生成');
+  expect(quick()).toContain('等待 API 响应'); expect(full()).toContain('正在召回记忆，尚未开始生成');
   await act(async () => { trace.end('quick_request'); trace.deliveryStart('quick', 'audio'); trace.end('memory'); trace.end('full_prepare'); trace.begin('full_request'); });
-  expect(quick()).toContain('正在播放'); expect(full()).toContain('正在生成');
+  expect(quick()).toContain('正在播放'); expect(full()).toContain('等待 API 响应');
+  await act(async () => {
+    trace.request('full', '{"messages":[]}');
+    trace.responseHeaders('full', { status: 200, streaming: true });
+  });
+  expect(full()).toContain('已连接，等待首段正文');
+  await act(async () => trace.firstDelta('full'));
+  expect(full()).toContain('已收到正文，正在生成');
   await act(async () => trace.end('full_request'));
   expect(full()).toContain('已生成，等待 a 播完');
   await act(async () => controller.abort());
@@ -25,7 +32,7 @@ it('shows concurrent recall, actual full generation, queued playback and cancell
     const next = store.start(new AbortController().signal, '下一轮'); next.begin('quick_request'); next.begin('full_prepare');
     trace.deliveryStart('full', 'audio'); // Late old-turn event must not revive its UI.
   });
-  expect(quick()).toContain('正在生成'); expect(full()).toContain('尚未开始生成');
+  expect(quick()).toContain('等待 API 响应'); expect(full()).toContain('尚未开始生成');
   await act(async () => store.clear()); expect(host.textContent).toBe('');
   await act(async () => root.unmount());
 });
@@ -36,6 +43,6 @@ it('shows failed a audio separately while a′ is still generating', async () =>
   trace.begin('quick_tts'); trace.deliveryFailed('quick'); trace.begin('full_request');
   await act(async () => root.render(React.createElement(CompanionReplyProgress, { store })));
   expect(host.querySelector('[data-phase=quick]')!.textContent).toContain('语音失败，正文已展示');
-  expect(host.querySelector('[data-phase=full]')!.textContent).toContain('正在生成');
+  expect(host.querySelector('[data-phase=full]')!.textContent).toContain('等待 API 响应');
   await act(async () => root.unmount());
 });
