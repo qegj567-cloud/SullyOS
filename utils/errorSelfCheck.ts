@@ -52,8 +52,22 @@ export function matchErrorRoute(destinations: string[], candidates: Candidate[],
 function advice(title: string, action: string): ErrorAdvice { return {title, action}; }
 const builtIn = (feature: string) => advice('这次没取到' + feature, '可以先在实时感知里关闭' + feature + '。超过 12 小时仍有问题，请反馈给糯米机作者。');
 
+/** 报错弹窗和「复制报错」用的文本：报错原文在前，调用栈在后。Safari 的 stack 不带报错原文，只给 stack 会让人看到一屏代码位置。 */
+export function errorDetails(error: unknown): string {
+    const e = error as { message?: unknown; stack?: unknown } | null | undefined;
+    const message = String(e?.message || error || '未知错误');
+    const stack = typeof e?.stack === 'string' ? e.stack : '';
+    if (!stack) return message;
+    return stack.includes(message) ? stack : `${message}\n\n${stack}`;
+}
+
 export function textErrorAdvice(message: string, detail = ''): ErrorAdvice | undefined {
     const text = message + '\n' + detail;
+    if (/损坏的备份包/.test(text)) return advice('这份备份文件损坏了', '请换一份备份，或者重新导出、重新下载后再导入。');
+    // iOS 把页面挂起后会中止进行中的写库事务，中止时不带原因（真机实测：恢复途中切走约一分钟）
+    if (/^(导入失败|云端恢复失败)$/.test(message) && /IndexedDB transaction aborted/.test(detail)) {
+        return advice('恢复被系统打断了', '通常是恢复途中离开这个页面太久，系统中断了写入，数据只恢复了一部分。请重新恢复一次，过程中保持亮屏、不要切走。');
+    }
     if (/backing store|indexeddb\.open/i.test(text)) return advice('浏览器暂时打不开本地数据', '请先保留浏览器数据，重启设备后再打开糯米机。');
     if (/Failed to fetch weather:/i.test(message)) {
         if (/OpenWeatherMap[^\n]*?HTTP 401/.test(text)) return advice('这次没取到天气', '请检查天气设置里的 OpenWeatherMap Key。');

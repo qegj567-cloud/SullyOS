@@ -132,6 +132,7 @@ import DreamSimIndicator from './os/DreamSimIndicator';
 import ErrorDialog from './os/ErrorDialog';
 import BootSequence from './os/BootSequence';
 import { setAppPayloadWarmer, shouldUseIdleAppPreload } from './os/appPreload';
+import { errorDetails } from '../utils/errorSelfCheck';
 import { isBrowserBackGuardState, makeBrowserBackGuardState } from '../utils/browserBackGuard';
 
 /*
@@ -173,7 +174,7 @@ class AppErrorBoundary extends Component<{ children: React.ReactNode, onCloseApp
     };
 
     private handleCopy = async () => {
-        const errText = this.state.error?.stack || this.state.error?.message || 'Unknown Error';
+        const errText = errorDetails(this.state.error);
 
         try {
             if (navigator.clipboard?.writeText) {

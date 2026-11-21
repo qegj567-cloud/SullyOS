@@ -1,5 +1,6 @@
 import AwarenessSwitch from '../components/settings/AwarenessSwitch';
 import { listUserSpaces } from '../utils/userSpaces';
+import { errorDetails } from '../utils/errorSelfCheck';
 import { BackupMissingAssetsNotice } from '../components/BackupMissingAssetsNotice';
 import type { BackupMissingAsset } from '../utils/backupMissingAssets';
 import { readBackupPreferences, updateBackupPreferences } from '../utils/backupPreferences';
@@ -1511,7 +1512,7 @@ const Settings: React.FC = () => {
                   : /JSON 格式错误/.test(rawMessage) ? 'json_syntax'
                   : 'other',
           });
-          const details = err?.stack || err?.message || String(err || '未知错误');
+          const details = errorDetails(err);
           showError('导入失败', details);
           addToast('导入失败，错误信息已展开', 'error');
       });
@@ -1544,7 +1545,7 @@ const Settings: React.FC = () => {
           await deliverStandaloneBackup(blob, fileName, 'Sully 模型备份');
           addToast(`模型备份已生成（${formatBackupBytes(blob.size)}）`, 'success');
       } catch (error: any) {
-          const details = error?.stack || error?.message || String(error || '未知错误');
+          const details = errorDetails(error);
           showError('模型备份导出失败', details);
           addToast(error?.message || '模型备份导出失败', 'error');
       } finally {
@@ -1585,7 +1586,7 @@ const Settings: React.FC = () => {
               skipped > 0 ? 'info' : 'success',
           );
       } catch (error: any) {
-          const details = error?.stack || error?.message || String(error || '未知错误');
+          const details = errorDetails(error);
           showError('模型备份导入失败', details);
           addToast(restored > 0 ? `已恢复 ${restored} 个模型后中断` : '模型备份导入失败', 'error');
       } finally {
@@ -1732,7 +1733,7 @@ const Settings: React.FC = () => {
               provider: cloudBackupConfig.provider === 'github' ? 'github' : 'webdav',
               stage: /^恢复失败/.test(String(err?.message || '')) ? 'import' : 'download',
           });
-          const details = err?.stack || err?.message || String(err || '未知错误');
+          const details = errorDetails(err);
           showError('云端恢复失败', details);
       }
   };
@@ -2079,6 +2080,8 @@ const Settings: React.FC = () => {
                           <div className="h-full bg-primary transition-all duration-300" style={{ width: `${sysOperation.progress}%` }}></div>
                       </div>
                   )}
+                  {/* 手机系统会挂起离开太久的页面并中止写库，恢复和导出都会因此失败 */}
+                  <div className="text-[10px] text-slate-400 text-center leading-relaxed">请停在这个页面，离开太久会被系统中断</div>
               </div>
           </div>
       )}
