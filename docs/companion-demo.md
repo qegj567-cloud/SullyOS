@@ -53,6 +53,8 @@ MP4 首选浏览器默认编码，不强制固定 H.264 profile；空输出或�
 
 ### 逐项测试
 
+MiniMax 国内入口在固定官方地址额外提供「用已存 MiniMax Key 测样片」，只在主动点击时读取当前空间“其他 API”的国内 MiniMax 专用 Key。空 Key、海外账号和自填地址没有该入口。草稿、已存视频配置和全局语音设置均不修改。正式样片测试禁止重定向到其他地址，并用对应 URL 的本轮 Resource Timing 记录标明网络目标；浏览器缺少记录时明确标注。无新增统计、持久化项目或备份字段。
+
 2026-11-21：视频表单新增实际发送路径和「检查浏览器直连」。路径与样片／真实视频共用 `companionVideoEndpoint`：普通 API（包括 GLM）不自动经应用 Worker，只有精确匹配的官方 Agent Plan 入口沿用本机／主代理。自填地址若本身是中转仍会经过该中转。直连检查始终绕开套餐转发路由，带草稿 Key、空 JSON 请求体、不指定模型，以 `mode: cors`、`credentials: omit`、`redirect: error` 请求所填地址；15 秒超时、支持取消，不重试、不降级。它不使用摄像头或媒体、不验证凭据／模型／视频能力，也不改变正式视频路由；HTTP 错误可读也只报告响应可读。失败不武断归因 CORS。凭据和响应正文不展示，既有调用归属标为同行／测试连接，预计的 HTTP 失败由本测试区处理，不额外冒充模型故障。
 
 对 `Origin: https://test.friedsully.com` 的无凭据 OPTIONS 检查（POST，`authorization,content-type`）：普通 Ark 200，允许该 Origin 与两种请求头；Ark Plan 204，允许 Origin 但允许的头不含 Authorization；BigModel 标准接口 200，未返回 Access-Control-Allow-Origin／Headers。额外用固定无效凭据、空 JSON 做 POST：两个 Ark 401 响应未带 Allow-Origin，BigModel 401 带该 Origin。**这些只是服务器响应头检查，不能证明有效 Key 的浏览器视频调用成功；预检与实际响应都须通过 CORS。** UI 检查使用用户主动填写的草稿 Key，是为了避免将无效鉴权路径的跨域表现当成所有请求的表现。

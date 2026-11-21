@@ -2,7 +2,7 @@ import type { APIConfig, CharacterProfile, CompanionSttConfig, CompanionVideoApi
 import { dialogueMaxTokens, resolveDialogueApi } from '../characterApi';
 import { safeFetchJson, extractContent } from '../safeApi';
 import { blobDataUrl } from './capture';
-import { companionVideoEndpoint, videoRequestParameters } from './videoProviders';
+import { COMPANION_VIDEO_PROVIDERS, companionVideoEndpoint, videoRequestParameters } from './videoProviders';
 import { companionTestImage, companionTestVideo } from './testMedia';
 import { CompanionVoice } from './voice';
 import { startCompanionListening, type ListeningCallbacks, type ListeningDiagnostics } from './listening';
@@ -18,7 +18,8 @@ async function probe(api: Endpoint, body: object, signal: AbortSignal, char?: Ch
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('请填写有效的 HTTP(S) API 地址');
   if (!api.model.trim()) throw new Error('请填写模型 ID');
   const response = await safeFetchJson(endpoint ?? `${api.baseUrl.trim().replace(/\/+$/, '')}/chat/completions`, {
-    method: 'POST', signal, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${api.apiKey}` },
+    method: 'POST', signal, ...(endpoint === companionVideoEndpoint(COMPANION_VIDEO_PROVIDERS.minimax) ? { redirect: 'error' as const } : {}),
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${api.apiKey}` },
     body: JSON.stringify({ model: api.model, ...body }),
   }, 0, 60_000, { appId: 'companion', appName: '同行', charId: char?.id, charName: char?.name, purpose: '测试连接' });
   signal.throwIfAborted();
@@ -48,11 +49,25 @@ export async function testCompanionVideo(api: CompanionVideoApiConfig, signal: A
   progress('正在生成 2 秒图形样片，不使用摄像头');
   const clip = await companionTestVideo(signal), url = await blobDataUrl(clip.blob, signal);
   signal.throwIfAborted(); progress('样片已生成，正在请求视频模型');
-  const detail = await probe(api, { stream: false, ...videoRequestParameters(api), messages: [{ role: 'user', content: [
+  const endpoint = companionVideoEndpoint(api);
+  const checkMiniMax = api.provider === 'minimax' && api.baseUrl === COMPANION_VIDEO_PROVIDERS.minimax.baseUrl;
+  const started = performance.now();
+  const receipt = () => {
+    if (!checkMiniMax) return '';
+    const observed = performance.getEntriesByName?.(endpoint, 'resource').some(entry => entry.startTime >= started);
+    return `样片 ${clip.blob.size} 字节 · ${observed ? '浏览器网络记录' : '请求目标（浏览器未提供网络记录）'} api.minimax.cn · 禁止重定向`;
+  };
+  let detail: string;
+  try { detail = await probe(api, { stream: false, ...videoRequestParameters(api), messages: [{ role: 'user', content: [
     { type: 'video_url', video_url: { url, ...(['doubao', 'minimax'].includes(api.provider ?? '') ? { fps: 1 } : {}) } },
     { type: 'text', text: '请按先后顺序，简短描述这段视频中形状和颜色的变化。' },
-  ] }] }, signal, char, companionVideoEndpoint(api));
-  return { summary: '已收到视频描述，请核对是否为红色圆形 → 蓝色方形', detail };
+  ] }] }, signal, char, endpoint); }
+  catch (error) {
+    signal.throwIfAborted();
+    if (!checkMiniMax) throw error;
+    throw new Error(`${error instanceof Error ? error.message : '视频请求失败'} · ${receipt()}`);
+  }
+  return { summary: '已收到视频描述，请核对是否为红色圆形 → 蓝色方形', detail: [detail, receipt()].filter(Boolean).join('\n\n') };
 }
 
 export async function testCompanionVoice(api: APIConfig, char: CharacterProfile, signal: AbortSignal, progress: (text: string) => void) {

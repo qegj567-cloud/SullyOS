@@ -15,7 +15,7 @@ import { testCompanionDialogue, testCompanionImage, testCompanionStt, testCompan
 import { FishVoiceTest } from './FishVoiceTest';
 import { companionVideoRouteLabel, testCompanionVideoDirect } from '../../utils/companion/videoConnection';
 
-function VideoApiFields({ config, save, begin }: { config?: CompanionVideoApiConfig; save?: (config: CompanionVideoApiConfig) => void; begin: BeginCompanionTest }) {
+function VideoApiFields({ config, domesticMiniMaxKey, save, begin }: { config?: CompanionVideoApiConfig; domesticMiniMaxKey?: string; save?: (config: CompanionVideoApiConfig) => void; begin: BeginCompanionTest }) {
   const [provider, setProvider] = useState<CompanionVideoProvider>(config ? config.provider ?? 'custom' : 'doubao');
   const [baseUrl, setBaseUrl] = useState(config?.baseUrl ?? COMPANION_VIDEO_PROVIDERS.doubao.baseUrl);
   const [model, setModel] = useState(config?.model ?? COMPANION_VIDEO_PROVIDERS.doubao.model);
@@ -27,6 +27,10 @@ function VideoApiFields({ config, save, begin }: { config?: CompanionVideoApiCon
   const sameEndpoint = normalizeApiBaseUrl(baseUrl) === config?.baseUrl && provider === (config?.provider ?? 'custom');
   const draft: CompanionVideoApiConfig = { provider, baseUrl: normalizeApiBaseUrl(baseUrl), model: normalizeApiModel(model),
     apiKey: normalizeApiCredential(key) || (!clearKey && sameEndpoint ? config?.apiKey ?? '' : '') };
+  const miniMax = COMPANION_VIDEO_PROVIDERS.minimax;
+  const savedMiniMaxTest = provider === 'minimax' && draft.baseUrl === miniMax.baseUrl && domesticMiniMaxKey?.trim()
+    ? { provider: 'minimax' as const, baseUrl: miniMax.baseUrl, model: draft.model, apiKey: domesticMiniMaxKey.trim() }
+    : undefined;
   return <form className="companion-video-fields" onSubmit={event => {
     event.preventDefault();
     if (!save) return;
@@ -66,6 +70,9 @@ function VideoApiFields({ config, save, begin }: { config?: CompanionVideoApiCon
       disabled={!save || !draft.baseUrl} begin={begin} run={signal => testCompanionVideoDirect(draft, signal)}/>
     <CompanionApiTest label="测试视频 API" description="测试当前填写内容，不自动保存。发送 2 秒图形样片（红色圆形 → 蓝色方形），不开摄像头。" config={draft}
       disabled={!save || !draft.baseUrl || !draft.model} begin={begin} run={(signal, progress) => testCompanionVideo(draft, signal, progress)}/>
+    {save && savedMiniMaxTest && <CompanionApiTest label="用已存 MiniMax Key 测样片"
+      description="用「其他 API」已保存的国内 MiniMax Key，向 api.minimax.cn 发送同一段 2 秒图形样片。仅用于本次测试。"
+      config={savedMiniMaxTest} disabled={!draft.model} begin={begin} run={(signal, progress) => testCompanionVideo(savedMiniMaxTest, signal, progress)}/>}
     {!save && <small>模拟页不保存真实 API，请在主应用的同行中配置。</small>}
     {message && <p role="status">{message}</p>}
   </form>;
@@ -181,7 +188,7 @@ export function CompanionSetupGuide({ char, api, canListen, close, navigate, sav
       <section aria-label="视频理解接入"><div className="companion-setup-heading"><h3><span>02</span> 理解一段视频</h3><small>{videoReady ? '已填写' : '待配置'} · 开镜头时需要</small></div>
         <p>摄像头录制约 8 秒的完整无声视频，由独立视频模型理解动作、镜头变化和先后关系，再把文字摘要交给对话模型。下一段录制与分析并行；慢请求只保留最新待分析片段。</p>
         <p>完整视频从本机内存随 API 请求发送，具体路径见下方；豆包套餐需要转发，普通 API 直接请求所填地址。只在开启镜头或主动测试样片后发送，按平台用量计费。同行不另存录像、不创建公开视频链接，无需上传存储服务；服务商的数据保留规则以其条款为准。</p>
-        <VideoApiFields config={api.companionVideoApi} save={saveVideoApi} begin={begin}/>
+        <VideoApiFields config={api.companionVideoApi} domesticMiniMaxKey={api.minimaxRegion !== 'overseas' ? api.minimaxApiKey : undefined} save={saveVideoApi} begin={begin}/>
         <details open><summary>给主模型的补充截图 · 可选</summary>
           <p>视频理解完成后，才从同一段视频中提取 1–3 张相关截图。默认只发送摘要文字；对话模型是否支持图片由你确认，不根据模型名称猜测。</p>
           <label className="companion-image-choice"><input type="checkbox" checked={imageMode === 'direct'} disabled={!changeImageMode} onChange={event => changeImageMode?.(event.target.checked ? 'direct' : 'none')}/>主对话模型支持图片，向长回复附带截图</label>

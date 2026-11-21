@@ -19,6 +19,27 @@ vi.mock('./apiTests', async original => ({ ...await original<typeof import('./ap
 }));
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+it('only uses the saved domestic MiniMax key after an explicit sample test at the official address', async () => {
+  const host = document.createElement('div'), root = createRoot(host);
+  document.body.append(host);
+  const save = vi.fn();
+  const api = { minimaxApiKey: 'saved-minimax-key', companionVideoApi: { provider: 'minimax', baseUrl: 'https://api.minimax.cn/v1', model: 'MiniMax-M3.1-Flash', apiKey: '' } } as any;
+  const render = (region: string) => act(async () => root.render(React.createElement(CompanionSetupGuide, { api: { ...api, minimaxRegion: region }, canListen: false, close: vi.fn(), navigate: vi.fn(), saveVideoApi: save })));
+  const button = () => [...host.querySelectorAll('button')].find(el => el.textContent === '用已存 MiniMax Key 测样片');
+  try {
+    await render('overseas'); expect(button()).toBeUndefined();
+    await render('domestic'); expect(testCompanionVideo).not.toHaveBeenCalled();
+    await act(async () => button()!.click());
+    expect(testCompanionVideo).toHaveBeenCalledWith({ ...api.companionVideoApi, apiKey: 'saved-minimax-key' }, expect.any(AbortSignal), expect.any(Function));
+    const address = host.querySelector<HTMLInputElement>('[aria-label="视频 API Base URL"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(address, 'https://custom.test/v1');
+      address.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(button()).toBeUndefined(); expect(save).not.toHaveBeenCalled();
+    expect(host.querySelector<HTMLInputElement>('[aria-label="视频 API Key"]')?.value).toBe('');
+  } finally { act(() => root.unmount()); host.remove(); vi.clearAllMocks(); }
+});
 it('shows the GLM direct route and only checks the unsaved draft after a click', async () => {
   const host = document.createElement('div'), root = createRoot(host); document.body.append(host);
   const saveVideoApi = vi.fn();
