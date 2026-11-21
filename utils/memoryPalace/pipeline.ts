@@ -76,7 +76,7 @@ import { vectorizeAndStore, checkModelConsistency, rebuildAllVectors } from './v
 import { buildLinks, strengthenCoActivated } from './links';
 import { hybridSearch } from './hybridSearch';
 import { getEmbeddings } from './embedding';
-import { isRemoteSearchBroken } from './vectorSearch';
+import { canSearchRemote } from './vectorSearch';
 import { spreadActivation } from './activation';
 import { applyPriming, checkRumination } from './priming';
 import { expandAndFormat } from './formatter';
@@ -645,9 +645,7 @@ export async function retrieveMemories(
                 ...(contextQueryTrimmed ? [contextQuery] : []),
                 ...(doRerank ? [joinedUserQuery] : []),
             ];
-            const useRemoteVector = !!(
-                remoteVectorConfig?.enabled && remoteVectorConfig.initialized && !isRemoteSearchBroken()
-            );
+            const useRemoteVector = await canSearchRemote(remoteVectorConfig, charId);
             const [queryVectors, allNodes, allVectors, allEventBoxes] = await Promise.all([
                 tRetrieve(`getEmbeddings(${queriesToEmbed.length})`, 'NET', getEmbeddings(queriesToEmbed, embeddingConfig)),
                 tRetrieve('MemoryNodeDB.getByCharId', 'IDB', MemoryNodeDB.getByCharId(charId)),
@@ -815,9 +813,7 @@ export async function retrieveMemories(
             console.log(`🏰 [Retrieve] 多路检索汇总：${effectiveSpikes.length} 个原始 spike + ${routerSpikes.length} 个 Resolver 补救 query + ${contextResults.length > 0 ? 'context' : '无 context'} → 合并 top ${results.length}`);
         } else {
             // 冷启动兜底：仅用 fallback 单 query
-            const useRemoteVector = !!(
-                remoteVectorConfig?.enabled && remoteVectorConfig.initialized && !isRemoteSearchBroken()
-            );
+            const useRemoteVector = await canSearchRemote(remoteVectorConfig, charId);
             // 先 fire fallback 主搜 + rerank pipeline，两个独立管线并行
             const fallbackSearchPromise = hybridSearch(fallbackQuery, charId, embeddingConfig, FINAL_TOP_K, remoteVectorConfig);
             if (doRerank) {

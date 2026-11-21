@@ -226,7 +226,7 @@ export const ChatPrompts = {
     // 按角色可见性过滤表情包分类与表情。
     // 规则与 Chat.tsx 的 visibleCategories / aiVisibleEmojis 保持一致：
     // 分类未设 allowedCharacterIds（或为空）= 所有角色可见；否则只有名单内角色可见。
-    // 表情若属于一个对该角色不可见的分类，则一并隐藏（无 categoryId 的表情始终可见）。
+    // 表情若属于一个对该角色不可见的分类，则一并隐藏（无 categoryId 的旧表情归入默认组）。
     // 主动消息（proactive）等不经过 Chat.tsx UI 的路径必须复用本函数，
     // 否则角色会在主动消息里用到不属于自己范围的表情包。
     filterVisibleEmojis: (
@@ -235,6 +235,7 @@ export const ChatPrompts = {
         charId: string,
     ): { emojis: Emoji[]; categories: EmojiCategory[] } => {
         const visibleCategories = categories.filter(cat => {
+            if (cat.personalOnly) return false;
             if (!cat.allowedCharacterIds || cat.allowedCharacterIds.length === 0) return true;
             return cat.allowedCharacterIds.includes(charId);
         });
@@ -243,7 +244,7 @@ export const ChatPrompts = {
         );
         const visibleEmojis = hiddenIds.size === 0
             ? emojis
-            : emojis.filter(e => !e.categoryId || !hiddenIds.has(e.categoryId));
+            : emojis.filter(e => !hiddenIds.has(e.categoryId || 'default'));
         return { emojis: visibleEmojis, categories: visibleCategories };
     },
 
@@ -1114,6 +1115,7 @@ ${voiceActingGuide()}`;
         processedExcludeIds?: Set<number>,
         options?: {
             useVisionDescriptions?: boolean;
+            stickerVision?: boolean;
             contextHighWaterMark?: number;
             /** 默认使用聊天时间感知；见面入口传线下开关，控制时间戳与互动间隔。 */
             timeAwarenessEnabled?: boolean;
@@ -1390,8 +1392,15 @@ ${voiceActingGuide()}`;
                     }
                 }
                 else if (m.type === 'emoji') {
-                     const stickerName = stickerNameFromUrl(emojis, m.content);
+                     const stickerName = m.metadata?.stickerName || stickerNameFromUrl(emojis, m.content);
                      content = `${timeStr} [${m.role === 'user' ? '用户' : '你'} 发送了表情包: ${stickerName}]`;
+                     if (options?.stickerVision && m.role === 'user') {
+                         if (options.useVisionDescriptions) {
+                             if (m.metadata?.visionDescription) content += ` ${m.metadata.visionDescription}`;
+                         } else if (isBlobRef(m.content) || /^(?:data:image\/|https?:\/\/)/i.test(m.content)) {
+                             return { role: m.role, content: [{ type: 'text', text: content.trim() }, { type: 'image_url', image_url: { url: m.content } }] };
+                         }
+                     }
                 }
                 else if ((m.type as string) === 'chat_forward') {
                     try {

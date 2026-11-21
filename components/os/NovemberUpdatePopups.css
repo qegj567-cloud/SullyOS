@@ -28,6 +28,16 @@
 .november-notice-body ul { margin: 10px 0 14px; padding-left: 19px; list-style: disc; }
 .november-notice-body li + li { margin-top: 7px; }
 .november-notice-body strong { font-weight: 750; }
+.november-silver-halo-preview {
+    display: block;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 585 / 382;
+    object-fit: cover;
+    object-position: center 40%;
+    margin-bottom: 16px;
+    border-radius: 12px;
+}
 .november-notice .november-notice-hint { color: #74726e; font-size: 11px; line-height: 1.8; }
 .november-notice-date-bar { display: flex; align-items: center; gap: 6px; padding: 10px 13px; margin: 12px 0 7px; border-radius: 12px; background: #f8e6ed; color: #9d4a6e; font-size: 12px; font-weight: 650; }
 .november-notice-date-bar svg { margin-left: auto; }
@@ -59,4 +69,10 @@
 @media (prefers-reduced-motion: reduce) {
     .november-notice { animation: none; }
     .november-notice button { transition: none; }
+}
+.november-help-avatar {
+    float: right;
+    object-fit: cover;
+    border-radius: 50%;
+    margin: 0 0 8px 12px;
 }

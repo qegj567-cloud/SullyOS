@@ -9,7 +9,7 @@ import { openCollaborationSpace, deleteCollaborationSpace } from '../features/co
 import { commitSpaceRows, persistSpaceCatalog, assertUniqueSpaceCharacters } from './userSpaceData';
 import { collectFriendFeedMedia, applyFriendFeedMedia, isActivityTextAsset } from './activityBackup';
 import { HELP_HISTORY_KEY, helpMediaHistory, helpTextHistory, restoreHelpMedia } from './sullyHelpBackup';
-import { collectEmojiBackup, portableEmojiRow } from './emojiBackup';
+import { legacyStickerLinks, portableEmojiRow, patchEmojiOriginal, patchSentSticker } from './emojiBackup';
 import { parseFriendFeed } from './friendFeed';
 import { exportDecorationMedia, restoreDecorationMedia } from './decorationMediaBackup';
 import { shouldIncludeVoiceRelatedAssetInBackup } from './voiceMessageBackup';
@@ -41,7 +41,12 @@ export function spaceMediaRow(store: string, row: any) {
         const homeKeys = ['version', 'assetVersion', 'roomSizeVersion', 'homePalette', 'rooms'];
         return { ...Object.fromEntries(keys.filter(k => row[k] !== undefined).map(k => [k, row[k]])), ...restoreDecorationMedia(exportDecorationMedia(row)), ...(row.vrState?.chibi ? { vrState: { chibi: row.vrState.chibi } } : {}), ...(row.home3D ? { home3D: Object.fromEntries(homeKeys.filter(k => row.home3D[k] !== undefined).map(k => [k, row.home3D[k]])) } : {}) };
     }
-    if (store === 'messages') return { id: row.id, charId: row.charId, role: row.role, timestamp: row.timestamp, type: row.type, content: row.type === 'image' || row.type === 'emoji' ? row.content : '', metadata: row.metadata?.cameraSnapshotRef || row.metadata?.cameraSnapshotExpired ? { cameraSnapshotRef: row.metadata.cameraSnapshotRef, cameraSnapshotExpired: row.metadata.cameraSnapshotExpired } : undefined };
+    if (store === 'messages') return {
+        id: row.id, charId: row.charId, groupId: row.groupId, role: row.role, timestamp: row.timestamp, type: row.type,
+        content: row.type === 'image' || row.type === 'emoji' ? row.content : '',
+        metadata: row.type === 'emoji' && row.metadata?.stickerName ? { stickerName: row.metadata.stickerName }
+            : row.metadata?.cameraSnapshotRef || row.metadata?.cameraSnapshotExpired ? { cameraSnapshotRef: row.metadata.cameraSnapshotRef, cameraSnapshotExpired: row.metadata.cameraSnapshotExpired } : undefined,
+    };
     if (store === 'user_profile') return { id: row.id, avatar: row.avatar, perCharAvatars: row.perCharAvatars, chibiStudio: row.chibiStudio };
     if (store === 'daily_schedule') return { id: row.id, coverImage: row.coverImage };
     if (store === 'assets' && row.id === 'friend_feed_v1') return { id: row.id, data: JSON.stringify(collectFriendFeedMedia(parseFriendFeed(row.data))) };
@@ -103,13 +108,12 @@ async function exportUserSpacesUnderLease(mode: Mode, scope: 'current' | 'all', 
     };
     for (const space of listUserSpaces().filter(s => scope === 'all' || s.id === SESSION_SPACE_ID)) {
         const db = await openSpaceDB(space.id);
-        const emojiUrls = mode === 'text_only' || !db.objectStoreNames.contains('emojis') ? [] : await new Promise<string[]>((resolve, reject) => {
+        const stickerRows = !db.objectStoreNames.contains('emojis') ? [] : await new Promise<import('../types').Emoji[]>((resolve, reject) => {
             const request = db.transaction('emojis').objectStore('emojis').getAll();
-            request.onsuccess = () => resolve(request.result.map(row => row.url));
+            request.onsuccess = () => resolve(request.result);
             request.onerror = () => reject(request.error);
         });
-        const emojiBackup = await collectEmojiBackup(emojiUrls, space.id);
-        for (const [token, blob] of emojiBackup.blobs) await addAsset(token.slice('blobref:'.length), undefined, blob);
+        const stickerLinks = legacyStickerLinks(stickerRows);
         const characters = await new Promise<any[]>((resolve, reject) => { const request = db.transaction('characters').objectStore('characters').getAll(); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
         const voiceIds = collectCharacterCompanionVoiceAssetIds(characters);
         const characterNames = new Map<string, string>(characters.map(character => [character.id, character.name]));
@@ -138,7 +142,7 @@ async function exportUserSpacesUnderLease(mode: Mode, scope: 'current' | 'all', 
                 for (const row of rows) {
                     const value = mode === 'media_only' ? spaceMediaRow(store, row)
                         : mode === 'text_only' && store === 'assets' && row.id === HELP_HISTORY_KEY ? { id: row.id, data: helpTextHistory(row.data) } : row;
-                    processed.push(await pack(portableEmojiRow(store, value, emojiBackup.tokens), '', backupAssetSource(space.name, store, row, characterNames)));
+                    processed.push(await pack(portableEmojiRow(store, value, stickerLinks), '', backupAssetSource(space.name, store, row, characterNames)));
                 }
                 const text = JSON.stringify(processed); collectBlobRefs(text, refs);
                 const path = `spaces/${space.id}/${store}.${part++}.json`;
@@ -324,10 +328,13 @@ async function importUserSpacesUnderLease(zip: any, allowBackendConnection: bool
     }
     for (const { space, db, tables, collaboration, collabTables } of prepared) {
         if (manifest.mode === 'media_only') {
+            delete tables.emoji_categories;
             for (const [store, rows] of Object.entries(tables)) {
-                if (store !== 'characters' && store !== 'user_profile' && store !== 'messages' && store !== 'assets' && store !== 'daily_schedule') continue;
+                if (store !== 'emojis' && store !== 'characters' && store !== 'user_profile' && store !== 'messages' && store !== 'assets' && store !== 'daily_schedule') continue;
                 tables[store] = await Promise.all(rows.map(async row => {
-                    const existing = await new Promise<any>((resolve, reject) => { const req = db.transaction(store).objectStore(store).get(row.id); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); });
+                    const existing = await new Promise<any>((resolve, reject) => { const req = db.transaction(store).objectStore(store).get(store === 'emojis' ? row.name : row.id); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); });
+                    if (store === 'emojis') return patchEmojiOriginal(existing,row);
+                    if (store === 'messages' && row.type === 'emoji') return patchSentSticker(existing, row);
                     if (store === 'assets') {
                         if (row.id === HELP_HISTORY_KEY) return existing ? { id: row.id, data: restoreHelpMedia(existing.data, row.data) } : null;
                         if (row.id === 'friend_feed_v1') return { id: row.id, data: JSON.stringify(applyFriendFeedMedia(parseFriendFeed(existing?.data ?? null), JSON.parse(row.data))) };

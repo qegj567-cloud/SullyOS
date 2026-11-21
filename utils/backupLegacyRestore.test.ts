@@ -421,7 +421,8 @@ describe('懒加载与一次读全写出的库完全一致', () => {
         });
         expect(lazy).toEqual(eager);
         expect(lazy.characters).toEqual([{ id: 'c1', name: '本机角色甲', systemPrompt: '文字不动', avatar: PNG_DATA_URL }, { id: 'c2', name: '本机角色乙', avatar: PNG_DATA_URL }]);
-        expect(lazy.messages.map(row => row.id)).toEqual([1, 2, 3, 4]);
+        // 表情消息只补到本机已有的同一条上，本机没有的 3 号不写入。
+        expect(lazy.messages.map(row => row.id)).toEqual([1, 2, 4]);
         expect(lazy.assets.map(row => row.id).sort()).toEqual(['friend_feed_v1', 'icon_chat', 'old-asset', 'wallpaper']);
         expect(lazy.themes).toHaveLength(3);
         // 哔哔只补图片，正文留本机的。

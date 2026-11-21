@@ -20,6 +20,8 @@
 
 自由组合主预览使用 `sceneScope="all"`，提供完整聊天记录、表情包、图片以及全部卡片场景，未定制的部分按默认样式展示。收藏详情和选择预设的缩略图继续按预设内容筛选；增加预览场景不扩大 AI 提示词的默认生成范围。
 
+聊天装扮打开公开装扮库时继承当前分类。本机及公开聊天作品的详情提供「试用」，通过当前会话临时渲染所选角色的外观，使用前不写入角色、素材或使用记录。中央使用和返回操作位于 Shadow DOM 的原生顶层对话框内，系统返回也可退出；取消后保留原详情与浏览位置。公开作品在试用与确认使用时校验最新作品和作者条款。
+
 批量展示与独立预览分开：白框/整套缩略图保留完整聊天；气泡仅展示双方对话气泡，背景仅展示壁纸，心象仅展示卡片。分类选择器明确指定缩略图部件，收藏列表对单一部件自动识别，混合作品保留整套。独立详情及自由组合主预览仍显示聊天顶栏、情绪栏和输入栏。所有样例均为虚构静态渲染。
 
 独立预览支持本机交互演示：点击心象展开/折叠，点击转账卡查看详情、接收/退回并生成虚构回执，点击聊天加号展开/收起真实菜单及翻页。使用 `decorationPreviewInteraction.ts` 的内存状态重新静态渲染，不挂载真实聊天副作用，不写 DB、不发消息、不调用支付、音频或其他 App。非演示菜单操作保持不可用，缩略图仍不可交互。切换场景或点击「重置演示」清空演示状态；导出只截取当前外观，不把演示状态写入预设。
@@ -27,6 +29,12 @@
 聊天库顶部由导航栏统一消费安全区，外层不重复留白；详情与草稿编辑器使用 visual viewport 高度及上下安全区，输入文字至少 16px，避免 iOS 聚焦缩放。
 
 聊天「＋」→「聊天装扮」统一布局、气泡、背景、声音和进阶 CSS（原白框）。旧 `chrome-css`、`fine-tune`、`chrome-sound` action 保持兼容。面板支持角色专属 / 全局默认、背景透明度和完整聊天预览。
+
+私聊停在最新消息后，从消息区底部向上再拉一次可打开角色名片。单指净上移须达到消息区高度的 18%（96–128 CSS px），明显斜划、回拉、选择消息、从历史滚到底的同一次触摸均不触发。
+
+角色名片是独立聊天部件 `profile`。三栏共用 `.chat-profile-dialog` 和 `.chat-profile-sheet`，制作器列出当前、设定、日程的各区选择器。名片单项只替换名片样式。应用含布局的白框先以默认布局打底；旧白框只有 CSS 时先归位头像位置、对齐和上下偏移，再套用 CSS。头像框和背景单项继续按部件合并。
+
+聊天装扮按部件记录当前选择。应用带有气泡、头像框、背景或心象的白框会接管相应部件，之后单换其中一项会撤下白框对该项的样式。制作白框时使用部件的稳定选择器，头像框与背景也可使用制作器的命名 CSS 块。角色单选只影响该角色，选择跟随全局可恢复继承。搭配、试用和导出使用生效后的样式。
 
 ## 导入 / 分享流程
 
@@ -70,6 +78,8 @@ CSS 编辑器的旧预设及分享格式不迁移。CSS 分类保留 body portal
 消息头像通用容器 `.sully-chat-avatar-wrap` 仅在该头像可见时提供，含普通消息头像及组首头像。用它的 `::after` 配合透明背景图绘制外框，设置 `pointer-events:none`；容器保持 overflow:visible，图片形状单独通过 `.sully-chat-message-avatar-img` 的圆角或 clip-path 控制。气泡工坊已有框图是 `.sully-chat-avatar-frame`，可按需隐藏以避免叠加。以上 CSS 随原有 CSS 预设保存、分享和切换，不要求额外配置气泡贴图。
 
 消息时间位置由布局字段 `chatTimestampPosition` 控制，随角色装扮、整套预设导出与装扮预览保存。内置 `WeChat` 布局使用 `top_center`，「银晕」使用 `below_avatar`。
+
+「银晕」以聊天舞台宽高换算 941 × 1670 展示稿的比例。双方文字气泡共用字号与上下内边距，短句随内容收窄，长句在消息行宽度的三分之二处换行。角色连续发言、独立消息和语音各用对应底图，文字气泡通过九宫格保留原稿切角。收发时间在头像下方时，每个用户本地日期的首条对话提供 `.sully-chat-day-divider`，白框可通过 `--sully-chat-day-divider-display: grid` 显示日期。
 - `below`（默认）：在同侧连续发言的末条气泡下方 `.sully-chat-timestamp-slot` 中显示 `HH:mm`，与即时对话发送进度 `<ChatSendProgress />` 独立渲染，美化时间样式不影响发送状态提示。
 - `top_center`：按相邻消息绝对时间差（≥ 5 分钟）分段，在每段首条非系统消息上方渲染整行居中的 `.sully-chat-time-divider`（脱离气泡宽度与左滑引用层），跨本地日历日自动附带「昨天 / 月日 / 年月日」（统一使用设备本地时区）；`chatBubbleStyle: 'wechat'`（含内置 `WeChat` 布局预设）默认渲染 4px 小圆角浅灰半透明时间胶囊，其余布局保持无底色灰字以免干扰深色白框。
 - `below_avatar` 在可见的双方头像下居中显示该条消息的收发时间。`.sully-chat-avatar-timestamp` 与头像同处一个槽位，随每条、分组或组首上方头像布局一起移动。独立模块和系统通知沿用其自身布局，发送进度仍在气泡下方。
@@ -84,7 +94,7 @@ CSS 编辑器的旧预设及分享格式不迁移。CSS 分类保留 body portal
 
 - `utils/chatWhitebox.ts`：固定选择器分组、卡片种类、CSS 作用域和完整设计要求的唯一来源。白框编辑器复制给 AI 的提示词与协同工作白框制作共用；协同验证器同样接受 `.sully-psyche*`。
 - `components/chat/ChatCardSurface.tsx`：私聊/群聊共用的卡片边界。外层 `.sully-chat-card`，包含 `.sully-chat-card-surface` 和 `.sully-chat-card-content`。`data-card-kind` 对应 MessageType，`data-card-variant` 标识结算/日记等子类型，`data-role` 区分 user/assistant/system。旧卡片业务组件、操作回调和元数据继续保留，未写新 CSS 时保留原样。
-- `utils/psycheAppearance.ts`：心象样式目录、解析和外观字段白名单。旧 `thinkingChainStyle/CustomColors/CustomCss` 继续读取；全局默认是 `OSTheme.chatPsyche`。角色设置优先于全局。心象设置保留显示开关、手动翻译 API 和追加提示词；内置风格位于个性装扮「心象」，自定义颜色/CSS 在聊天装扮「心象」。翻译凭据、原文及译文不进入装扮分享。
+- `utils/psycheAppearance.ts`：心象样式目录、解析和外观字段白名单。旧 `thinkingChainStyle/CustomColors/CustomCss` 继续读取；全局默认是 `OSTheme.chatPsyche`。角色设置优先于全局。心象设置保留显示开关、手动翻译 API 和可按用户空间共用或角色覆盖的心象提示词；内置风格位于个性装扮「心象」，自定义颜色/CSS 在聊天装扮「心象」。翻译凭据、原文及译文不进入装扮分享。
 - 导出格式仍是 `sullyos-chat-decoration` v1，新增可选 `parts.psyche={styleId,customColors?,customCss?}`。旧文件没有这个字段则不改变现有心象；整套导出包含它；显示开关、追加提示词、角色资料和聊天记录绝不导出。领取并应用心象外观不会开启模型推理。
 - 样式顺序：布局基础 → 心象外观 CSS → 全局白框 → 角色白框 → 气泡 CSS → 关键操作保护。已有气泡 CSS 的覆盖顺序不变，白框现在可以明确覆盖旧心象 CSS。
 
@@ -116,13 +126,15 @@ HTML 卡片仍在独立 iframe 沙盒中；白框控制其外壳和排版，不�
 .sully-psyche-card { border-radius: 18px !important; }
 ```
 
+普通卡片将 `.sully-chat-card-face` 挂在真正绘制底色的元素上，系统卡也只标记居中的卡面。银晕用这个入口绘制银纸、深银底和金色切角。带有原作配色的封面及图片上的控件用 `.sully-chat-card-media`，可换色的标题横幅用 `.sully-chat-card-banner`。转账沿用专属入口，七夕、520 和 HTML 作品保留各自的画面。
+
 外壳变量不强制抹除各卡片原有的内部背景；需要重画内容区时使用 `.sully-chat-card-content` 的后代选择器并覆盖相应内联样式。不要隐藏转账金额、状态、接收/退回、文件打开或返回/发送按钮。图片和表情保持比例，长文字能换行，避免持续模糊动画。
 
 回归：`pnpm vitest run utils/chatWhitebox.test.ts utils/chatDecoration.test.ts utils/collaborationMakers.test.ts utils/beautyShare.test.ts`；另做手机宽度下的心象、转账、长卡片、滚动和旧预设验证。
 
 内置白框「星轨 · 深空」「星轨 · 雾紫」「银晕」在聊天装扮的全部/白框分类和「我的搭配」选择器中展示。入口由 `utils/builtinWhitebox.ts` 注册，使用本地静态素材，应用沿用角色选择确认流程。「银晕」的布局与配色在 `presets/chat/silver-halo.ts`，可导出的完整白框样式在同目录 `silver-halo.css`。图标下的淡星影只作用于加号功能页，发起转账的独立表单通过 `.sully-chat-transfer-compose` 定向适配。
 
-两款星轨的源文件与构建脚本在 `art/acid-orbit`。依次执行 `build-lace.mjs`、`build.mjs`、`build-builtins.mjs`、`build-preview.mjs` 可同步 CSS、导入文件和内置包。蕾丝为用户提供的 CC0 scallop2（来源见 `art/acid-orbit/SCALLOP-LICENSE.txt`）。
+两款星轨的源文件与构建脚本在 `art/acid-orbit`。依次执行 `build-lace.mjs`、`build.mjs`、`build-builtins.mjs`、`build-preview.mjs` 可同步 CSS、导入文件和内置包。雾紫的小卡片使用 `lavender-card-palette.css` 的浅色卡底和深色文字。已有角色和全局白框显示时会识别旧雾紫的原始卡底规则，原位替换后仍按原顺序应用用户后续添加的 CSS。蕾丝为用户提供的 CC0 scallop2（来源见 `art/acid-orbit/SCALLOP-LICENSE.txt`）。
 
 ### 舞台隔离与深浅色对比度边界
 

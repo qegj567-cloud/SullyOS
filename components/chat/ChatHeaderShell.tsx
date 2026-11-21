@@ -427,7 +427,7 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
                         {renderCenteredInfo()}
                     </div>
 
-                    {!hideTrigger && <button data-guide="generate" onClick={onTriggerAI} className={`sully-chat-trigger absolute right-0 bottom-2 p-2 ${actionButtonClass}`} title={triggerIcon === 'stop' ? '停止生成' : '触发 AI'}>
+                    {!hideTrigger && <button data-guide="generate" data-icon={triggerIcon} onClick={onTriggerAI} className={`sully-chat-trigger absolute right-0 bottom-2 p-2 ${actionButtonClass}`} title={triggerIcon === 'stop' ? '停止生成' : '触发 AI'}>
                         {triggerIconNode}
                     </button>}
                     {extraAction && (
@@ -438,12 +438,12 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
 
                 </div>
             ) : (
-                <div className="flex items-center gap-3 w-full">
+                <div className="sully-chat-header-row flex items-center gap-3 w-full">
                     <button onClick={onClose} className={`sully-chat-back p-2 -ml-2 ${iconButtonClass}`}>
                         <CaretLeft className="w-5 h-5" weight="bold" />
                     </button>
 
-                    <div onClick={onShowCharsPanel} className="flex-1 min-w-0 flex items-center gap-3 cursor-pointer">
+                    <div onClick={onShowCharsPanel} className="sully-chat-identity flex-1 min-w-0 flex items-center gap-3 cursor-pointer">
                         {renderStandardInfo()}
                     </div>
 
@@ -452,7 +452,7 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
                             {extraAction.icon}
                         </button>
                     )}
-                    {!hideTrigger && <button data-guide="generate" onClick={onTriggerAI} className={`sully-chat-trigger p-2 ${extraAction ? '' : 'ml-auto'} ${actionButtonClass}`} title={triggerIcon === 'stop' ? '停止生成' : '触发 AI'}>
+                    {!hideTrigger && <button data-guide="generate" data-icon={triggerIcon} onClick={onTriggerAI} className={`sully-chat-trigger p-2 ${extraAction ? '' : 'ml-auto'} ${actionButtonClass}`} title={triggerIcon === 'stop' ? '停止生成' : '触发 AI'}>
                         {triggerIconNode}
                     </button>}
                 </div>

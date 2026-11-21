@@ -225,7 +225,8 @@ export function SullyHelpDesk({ knowledge }: { knowledge: ReturnType<typeof buil
         </div><img src={SULLY_HELP_DESK_AVATAR} alt="戴墨镜的 11 号黑猫" />
     </div>;
 
-    return <section className="s11" aria-label="Sully-11 答疑" onPointerDownCapture={touch} onInputCapture={touch}>
+    // Let controlled fields update their values before activity tracking can re-render them.
+    return <section className="s11" aria-label="Sully-11 答疑" onPointerDownCapture={touch} onChange={touch}>
         <div className="s11-bar">
             <button type="button" disabled={busy || !ready} onClick={() => panel ? setPanel(null) : browse(scope.category)}>
                 {panel ? <ArrowLeft /> : <Compass />} {panel ? '返回咨询' : '功能目录'}

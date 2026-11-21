@@ -278,10 +278,13 @@ describe('主动消息 2.0 全局总开关（amsgGlobalSwitch）', () => {
       restoreOwner: vi.fn(),
       getOperation: vi.fn(),
     } as any);
-    vi.spyOn(ActiveMsgClient, 'setCronTriggerEnabled').mockResolvedValue({ ok: true, message: 'ok' });
+    vi.spyOn(ActiveMsgClient, 'getCronTriggerState').mockResolvedValue({ supported: true, enabled: false });
+    const resumeSpy = vi.spyOn(ActiveMsgClient, 'setCronTriggerEnabled').mockResolvedValue({ ok: true, message: 'ok' });
 
     const toggleOn = await setAmsg2GlobalEnabled(true);
+    expect(toggleOn.ok).toBe(true);
     expect(toggleOn.enabled).toBe(true);
+    expect(resumeSpy).toHaveBeenCalledWith(true, expect.objectContaining({ allowWhenDisabled: true }));
     await new Promise((r) => setTimeout(r, 40));
 
     expect(openSessionSpy).toHaveBeenCalled();
@@ -302,12 +305,92 @@ describe('主动消息 2.0 全局总开关（amsgGlobalSwitch）', () => {
     });
 
     const offRes = await setAmsg2GlobalEnabled(false);
-    expect(offRes).toEqual({ enabled: false, cronPaused: true });
+    expect(offRes).toEqual({ ok: true, enabled: false, cronPaused: true });
     expect(setCronSpy).not.toHaveBeenCalled();
 
     const onRes = await setAmsg2GlobalEnabled(true);
+    expect(onRes.ok).toBe(true);
     expect(onRes.enabled).toBe(true);
     expect(setCronSpy).not.toHaveBeenCalled();
+  });
+
+  it('开启总开关时若网络抖动或恢复云端定时触发失败：拒绝开启、保持关闭态并返回明确报错', async () => {
+    // 先关闭总开关（云端 Cron 已被摘除）
+    vi.spyOn(ActiveMsgClient, 'getCronTriggerState').mockResolvedValueOnce({ supported: true, enabled: true });
+    vi.spyOn(ActiveMsgClient, 'setCronTriggerEnabled').mockResolvedValueOnce({ ok: true, message: 'paused' });
+    const offRes = await setAmsg2GlobalEnabled(false);
+    expect(offRes.ok).toBe(true);
+    expect(offRes.enabled).toBe(false);
+
+    // 场景 1：开启时查询云端状态就遇到网络断连
+    vi.spyOn(ActiveMsgClient, 'getCronTriggerState').mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    const netFailRes = await setAmsg2GlobalEnabled(true);
+    expect(netFailRes.ok).toBe(false);
+    expect(netFailRes.enabled).toBe(false);
+    expect(netFailRes.errorMessage).toContain('网络波动');
+    expect((await ActiveMsgStore.getGlobalConfig()).enabled).toBe(false);
+
+    // 场景 2：查询到云端处于暂停态，但恢复请求因网络超时抛错
+    vi.spyOn(ActiveMsgClient, 'getCronTriggerState').mockResolvedValueOnce({ supported: true, enabled: false });
+    vi.spyOn(ActiveMsgClient, 'setCronTriggerEnabled').mockRejectedValueOnce(new DOMException('Timeout', 'TimeoutError'));
+    const resumeTimeoutRes = await setAmsg2GlobalEnabled(true);
+    expect(resumeTimeoutRes.ok).toBe(false);
+    expect(resumeTimeoutRes.enabled).toBe(false);
+    expect(resumeTimeoutRes.errorMessage).toContain('网络波动');
+    expect((await ActiveMsgStore.getGlobalConfig()).enabled).toBe(false);
+
+    // 场景 3：恢复请求返回 CF_ERROR 失败
+    vi.spyOn(ActiveMsgClient, 'getCronTriggerState').mockResolvedValueOnce({ supported: true, enabled: false });
+    vi.spyOn(ActiveMsgClient, 'setCronTriggerEnabled').mockResolvedValueOnce({
+      ok: false,
+      code: 'CF_ERROR',
+      message: 'Cloudflare 接口超时',
+    });
+    const cfFailRes = await setAmsg2GlobalEnabled(true);
+    expect(cfFailRes.ok).toBe(false);
+    expect(cfFailRes.enabled).toBe(false);
+    expect(cfFailRes.errorMessage).toContain('未能恢复云端后台定时触发');
+    expect((await ActiveMsgStore.getGlobalConfig()).enabled).toBe(false);
+
+    // 场景 4：网络恢复后重试开启，成功恢复 Cron 并落盘 enabled: true
+    vi.spyOn(ActiveMsgClient, 'getCronTriggerState').mockResolvedValueOnce({ supported: true, enabled: false });
+    vi.spyOn(ActiveMsgClient, 'setCronTriggerEnabled').mockResolvedValueOnce({ ok: true, message: 'resumed' });
+    const retryOkRes = await setAmsg2GlobalEnabled(true);
+    expect(retryOkRes).toEqual({ ok: true, enabled: true, cronResumed: true });
+    expect((await ActiveMsgStore.getGlobalConfig()).enabled).toBe(true);
+  });
+
+  it('快速连点「关 → 开」时：关闭在途摘除的 Cron 会被紧随其后的开启步骤可靠恢复', async () => {
+    let cloudCronEnabled = true;
+    let resolvePause!: (value: { ok: boolean; message: string }) => void;
+    vi.spyOn(ActiveMsgClient, 'getCronTriggerState').mockImplementation(async () => ({
+      supported: true,
+      enabled: cloudCronEnabled,
+    }));
+    const setCronSpy = vi.spyOn(ActiveMsgClient, 'setCronTriggerEnabled').mockImplementation((enabled) => {
+      if (!enabled) {
+        return new Promise((resolve) => {
+          resolvePause = (val) => {
+            cloudCronEnabled = false;
+            resolve(val);
+          };
+        });
+      }
+      cloudCronEnabled = true;
+      return Promise.resolve({ ok: true, message: 'resumed' });
+    });
+
+    const offPromise = setAmsg2GlobalEnabled(false);
+    // 等关闭进入 setCronTriggerEnabled(false) 在途状态后，立刻触发开启
+    await new Promise((r) => setTimeout(r, 10));
+    const onPromise = setAmsg2GlobalEnabled(true);
+    resolvePause({ ok: true, message: 'paused' });
+
+    const [, onRes] = await Promise.all([offPromise, onPromise]);
+    expect(onRes.ok).toBe(true);
+    expect(onRes.enabled).toBe(true);
+    expect(cloudCronEnabled).toBe(true);
+    expect(setCronSpy).toHaveBeenCalledWith(true, expect.objectContaining({ source: 'master' }));
   });
 
   it('备份导出与导入：不含后端连接的分享包不携带 enabled:false，还原开启态备份可恢复开启', async () => {

@@ -33,6 +33,7 @@ vi.mock('../../components/call/Live2DAvatarCanvas', () => ({
 }));
 
 import ThinkingChainSettingsModal from '../../components/chat/ThinkingChainSettingsModal';
+import BlobRefStyle from '../../components/chat/BlobRefStyle';
 import ChatHeaderShell from '../../components/chat/ChatHeaderShell';
 import { ChatCardSurface } from '../../components/chat/ChatCardSurface';
 import ConfirmDialog from '../../components/os/ConfirmDialog';
@@ -231,6 +232,23 @@ afterEach(async () => {
 });
 
 describe('theme contrast & style inheritance boundaries', () => {
+  it('keeps the lavender card palette on existing whiteboxes and preserves later user overrides', async () => {
+    const bundled = JSON.parse(readRepo('presets/chat/acid-orbit-lavender.json')).parts.css as string;
+    const palette = readRepo('art/acid-orbit/lavender-card-palette.css').trim().replace(/\r\n/g, '\n');
+    const oldRule = '.sully-chat-card[data-card-kind]:not(:where([data-card-kind="transfer"], [data-card-variant="qixi_event_card"], [data-card-variant="like520_card"])) {--sully-card-background:linear-gradient(125deg,#fbf7ffed,#e5d9f1eb);--sully-card-color:#493958;--sully-card-shadow:inset 0 0 0 1px #fff9,0 3px 12px #9275ac1a;}';
+    expect(bundled).toContain(palette);
+    const personalCss = '\n.sully-bubble-user {color: navy !important;}';
+    const saved = bundled.replace(palette, oldRule) + personalCss;
+    await act(async () => { root.render(React.createElement(BlobRefStyle, {css: saved})); });
+    expect(host.querySelector('style')?.textContent).toBe(bundled + personalCss);
+    for (const kind of ['vr_card', 'friend_feed_card', 'friend_feed_share_card']) {
+      const card = document.createElement('div');
+      card.className = 'sully-chat-card';
+      card.dataset.cardKind = kind;
+      expect(resolveW3cCascade(saved, card, ['--sully-card-background'])).toContain('#303850');
+      expect(resolveW3cCascade(bundled, card, ['--sully-card-background'])).toContain('#fbf7ff');
+    }
+  });
   it('keeps ThinkingChainSettingsModal and ConfirmDialog readable under dark inherited text color', async () => {
     host.style.color = '#f0edff';
 
@@ -239,23 +257,21 @@ describe('theme contrast & style inheritance boundaries', () => {
         React.createElement(ThinkingChainSettingsModal, {
           isOpen: true,
           onClose: vi.fn(),
-          onChange: vi.fn(),
-          value: {
-            enabled: true,
-            styleId: 'stellar',
-            customColors: { bg: '', accent: '', text: '' },
-            customPrompt: '',
-            customCss: '',
-          },
+          character: { showThinkingChain: true },
+          onChangeCharacter: vi.fn(),
+          onChangeSharedPrompt: vi.fn(),
         }),
       );
     });
 
-    const modalCard = host.querySelector('.bg-white');
-    const textarea = host.querySelector('textarea');
-    expect(modalCard?.className).toContain('text-slate-800');
-    expect(textarea?.className).toContain('text-slate-800');
-    expect(textarea?.className).toContain('placeholder:text-slate-400');
+    const style = document.createElement('style');
+    style.textContent = readRepo('components/chat/thinkingSettings.css');
+    host.append(style);
+    const modalCard = host.querySelector('.thinking-settings-panel')!;
+    expect(getComputedStyle(modalCard).backgroundColor).toBe('rgb(255, 255, 255)');
+    for (const control of modalCard.querySelectorAll('textarea, select')) {
+      expect(getComputedStyle(control).color).toBe('rgb(51, 65, 85)');
+    }
 
     await act(async () => {
       root.render(

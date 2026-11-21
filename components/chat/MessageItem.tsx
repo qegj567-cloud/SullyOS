@@ -7,7 +7,7 @@ import { avatarDecorationImageStyle, isAnniversaryFrame } from '../../utils/anni
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ChatSendProgress from './ChatSendProgress';
-import ChatAvatarTimestamp, { AVATAR_TIMESTAMP_HEIGHT } from './ChatAvatarTimestamp';
+import ChatAvatarTimestamp, { AVATAR_TIMESTAMP_HEIGHT, ChatDayDivider } from './ChatAvatarTimestamp';
 import type { ChatSendPhase } from '../../utils/chatSendProgress';
 import { createPortal } from 'react-dom';
 const AivenFishSaleReceipt = React.lazy(() => import('../../apps/vrWorld/AivenFishSaleReceipt').then(module => ({ default: module.AivenFishSaleReceipt })));
@@ -524,7 +524,7 @@ const ForwardCard: React.FC<{
     return (
         <>
             {commonLayout(
-                <div ref={cardRef} className="w-64 bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-100 active:scale-[0.98] transition-transform cursor-pointer" onClick={handleCardClick}>
+                <div ref={cardRef} className="sully-chat-card-face w-64 bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-100 active:scale-[0.98] transition-transform cursor-pointer" onClick={handleCardClick}>
                     <div className="px-4 pt-3 pb-2 border-b border-slate-50">
                         <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4 text-primary"><path strokeLinecap="round" strokeLinejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 0 1 .865-.501 48.172 48.172 0 0 0 3.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0 0 12 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z" /></svg>
@@ -624,7 +624,7 @@ const LifeRecordCard: React.FC<{
     })();
 
     return commonLayout(
-        <div className="w-64 rounded-2xl overflow-hidden shadow-sm border border-white/70" style={{ background: style.bg }}>
+        <div className="sully-chat-card-face w-64 rounded-2xl overflow-hidden shadow-sm border border-white/70" style={{ background: style.bg }}>
             <div className="px-3.5 pt-3 pb-2.5">
                 <div className="flex items-center gap-2.5">
                     <div className="shrink-0 w-9 h-9 rounded-full bg-white/80 flex items-center justify-center text-lg shadow-sm"
@@ -1068,7 +1068,7 @@ const LifeSimResetCardView: React.FC<{ card: any }> = ({ card }) => {
 
     return (
         <div
-            className="w-72 overflow-hidden"
+            className="sully-chat-card-face w-72 overflow-hidden"
             style={{
                 border: '2px solid #8f674a',
                 borderRadius: 2,
@@ -1440,7 +1440,7 @@ const MessageItem = React.memo(({
                 {formatChatTimeDivider(m.timestamp, timestampNow)}
             </span>
         </div>
-    ) : null;
+    ) : showAvatarTime && startsTimeSegment ? <ChatDayDivider timestamp={m.timestamp} now={timestampNow} /> : null;
 
     // Render Avatar with potential decoration/frame
     // Removed mb-5 from here, handled via absolute positioning in parent
@@ -1535,7 +1535,7 @@ const MessageItem = React.memo(({
                             </div>
                         )}
                         <div className="w-full px-4 my-3" {...interactionProps}>
-                            <div className="w-72 mx-auto rounded-2xl overflow-hidden shadow-md" style={{ border: '1.5px solid rgba(217,180,120,0.35)', background: 'linear-gradient(180deg, #fff9ec 0%, #fffdf6 35%, #fdf2dc 100%)' }}>
+                            <div className="sully-chat-card-face w-72 mx-auto rounded-2xl overflow-hidden shadow-md" style={{ border: '1.5px solid rgba(217,180,120,0.35)', background: 'linear-gradient(180deg, #fff9ec 0%, #fffdf6 35%, #fdf2dc 100%)' }}>
                                 {/* Header — date stamp + char avatar */}
                                 <div className="px-4 pt-3 pb-2.5 flex items-center gap-2.5" style={{ borderBottom: '1px dashed rgba(200,160,100,0.3)', background: 'linear-gradient(135deg, rgba(245,210,150,0.25), rgba(240,195,130,0.15))' }}>
                                     {scoreData.charAvatar ? (
@@ -1602,7 +1602,7 @@ const MessageItem = React.memo(({
                             </div>
                         )}
                         <div className="w-full px-4 my-3" {...interactionProps}>
-                            <div className="w-72 mx-auto rounded-2xl overflow-hidden shadow-md" style={{ border: '1.5px solid rgba(200,185,190,0.4)', background: 'linear-gradient(180deg, #f0ebe8 0%, #fff 25%, #ece6e9 100%)' }}>
+                            <div className="sully-chat-card-face w-72 mx-auto rounded-2xl overflow-hidden shadow-md" style={{ border: '1.5px solid rgba(200,185,190,0.4)', background: 'linear-gradient(180deg, #f0ebe8 0%, #fff 25%, #ece6e9 100%)' }}>
                                 {/* Header */}
                                 <div className="px-4 pt-3 pb-2 flex items-center gap-2.5" style={{ borderBottom: '1px solid rgba(200,185,190,0.2)', background: 'linear-gradient(135deg, rgba(200,185,190,0.2), rgba(190,175,195,0.15))' }}>
                                     {scoreData.charAvatar ? (
@@ -1670,7 +1670,7 @@ const MessageItem = React.memo(({
                         </div>
                     )}
                     <div className="w-full px-5 my-3" {...interactionProps}>
-                        <div className="rounded-3xl bg-gradient-to-br from-slate-50 to-slate-100/80 border border-slate-200/50 p-4 shadow-sm">
+                        <div className="sully-chat-card-face rounded-3xl bg-gradient-to-br from-slate-50 to-slate-100/80 border border-slate-200/50 p-4 shadow-sm">
                             <div className="flex items-center gap-3">
                                 <TokenImg value={memoAvatar} alt={memoTitle} className="h-9 w-9 rounded-full object-cover ring-1 ring-slate-200/80" loading="lazy" decoding="async" />
                                 <div className="min-w-0 flex-1">
@@ -1777,11 +1777,11 @@ const MessageItem = React.memo(({
         <>
             {timeDividerNode}
             {centerModules && thinkingChainNode && (
-                <div className="px-3 flex justify-center">
+                <div className="sully-chat-psyche-row px-3 flex justify-center">
                     <div className="w-[72%] max-w-[72%]">{thinkingChainNode}</div>
                 </div>
             )}
-            <div className={[
+            <div data-selecting={selectionMode || undefined} className={[
                 'sully-chat-message',
                 isUser
                     ? 'sully-chat-message-user justify-end'
@@ -1933,7 +1933,7 @@ const MessageItem = React.memo(({
         );
 
         return commonLayout(
-            <div className="w-64 rounded-2xl overflow-hidden shadow-sm border cursor-pointer active:opacity-90 transition-opacity"
+            <div className="sully-chat-card-face w-64 rounded-2xl overflow-hidden shadow-sm border cursor-pointer active:opacity-90 transition-opacity"
                 style={{
                     borderColor: '#f3d9e6',
                     background: 'linear-gradient(135deg, #fff2f7 0%, #f5edff 55%, #eaf1ff 100%)',
@@ -1980,7 +1980,7 @@ const MessageItem = React.memo(({
                 )}
 
                 {/* Cover */}
-                <div className="relative w-full h-28 overflow-hidden">
+                <div className="sully-chat-card-banner relative w-full h-28 overflow-hidden">
                     {song.albumPic ? (
                         <TokenImg
                             value={song.albumPic}
@@ -2045,10 +2045,10 @@ const MessageItem = React.memo(({
             || navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
         return commonLayout(
             <a href={noteUrl} target="_blank" rel="noopener noreferrer"
-                className="block no-underline w-64 bg-white rounded-xl overflow-hidden shadow-sm border border-slate-100 cursor-pointer active:opacity-90 transition-opacity">
+                className="sully-chat-card-face block no-underline w-64 bg-white rounded-xl overflow-hidden shadow-sm border border-slate-100 cursor-pointer active:opacity-90 transition-opacity">
                 {/* Cover image */}
                 {note.coverUrl ? (
-                    <div className="relative w-full h-36 bg-slate-100 overflow-hidden">
+                    <div className="sully-chat-card-media relative w-full h-36 bg-slate-100 overflow-hidden">
                         <img
                             src={note.coverUrl}
                             alt=""
@@ -2078,7 +2078,7 @@ const MessageItem = React.memo(({
                         )}
                     </div>
                 ) : (
-                    <div className="h-14 bg-gradient-to-r from-red-400 to-pink-500 flex items-center justify-center">
+                    <div className="sully-chat-card-banner h-14 bg-gradient-to-r from-red-400 to-pink-500 flex items-center justify-center">
                         <span className="text-white/80 text-xs font-medium tracking-wide">小红书笔记</span>
                     </div>
                 )}
@@ -2132,10 +2132,10 @@ const MessageItem = React.memo(({
         return commonLayout(
             <div
                 onClick={openPage}
-                className="w-64 bg-white rounded-2xl overflow-hidden border border-slate-200/80 shadow-[0_2px_10px_rgba(0,0,0,0.05)] cursor-pointer active:opacity-90 transition-opacity">
+                className="sully-chat-card-face w-64 bg-white rounded-2xl overflow-hidden border border-slate-200/80 shadow-[0_2px_10px_rgba(0,0,0,0.05)] cursor-pointer active:opacity-90 transition-opacity">
                 {/* 封面图（og:image / 正文首图 / 视频封面），加载失败自动隐藏 */}
                 {wp.image && (
-                    <div className="relative w-full h-32 bg-slate-100 overflow-hidden">
+                    <div className="sully-chat-card-media relative w-full h-32 bg-slate-100 overflow-hidden">
                         <img
                             src={wp.image}
                             alt=""
@@ -2208,7 +2208,7 @@ const MessageItem = React.memo(({
                 ? `「${meta.mcdCandidate.name}」`
                 : '';
             return commonLayout(
-                <div className="w-60 rounded-2xl overflow-hidden border border-yellow-200 shadow-sm bg-gradient-to-br from-yellow-50 to-amber-50 select-none">
+                <div className="sully-chat-card-face w-60 rounded-2xl overflow-hidden border border-yellow-200 shadow-sm bg-gradient-to-br from-yellow-50 to-amber-50 select-none">
                     <div className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-yellow-300 to-amber-300">
                         <span className="text-lg">🍟</span>
                         <div className="flex-1 min-w-0">
@@ -2259,7 +2259,7 @@ const MessageItem = React.memo(({
                 ? `「${meta.luckinCandidate.name}」`
                 : '';
             return commonLayout(
-                <div className="w-60 rounded-2xl overflow-hidden border border-blue-200 shadow-sm bg-gradient-to-br from-blue-50 to-sky-50 select-none">
+                <div className="sully-chat-card-face w-60 rounded-2xl overflow-hidden border border-blue-200 shadow-sm bg-gradient-to-br from-blue-50 to-sky-50 select-none">
                     <div className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-blue-600 to-sky-500">
                         <span className="text-lg">🦌</span>
                         <div className="flex-1 min-w-0">
@@ -2317,7 +2317,7 @@ const MessageItem = React.memo(({
         if (sarNote?.id) {
             const card = (
                 <div className="w-72 max-w-[82vw]">
-                    <div className="relative overflow-hidden border border-stone-400/65 shadow-[4px_6px_0_rgba(86,78,66,.18)]" style={{ background: '#f4eddf', color: '#3f4744' }}>
+                    <div className="sully-chat-card-face relative overflow-hidden border border-stone-400/65 shadow-[4px_6px_0_rgba(86,78,66,.18)]" style={{ background: '#f4eddf', color: '#3f4744' }}>
                         <div className="absolute inset-y-0 left-0 w-1.5 bg-gradient-to-b from-teal-700/80 via-slate-500/60 to-rose-700/70" />
                         <div className="px-4 pl-5 pt-3 pb-2.5 flex items-start gap-2 border-b border-stone-400/45">
                             <span className="mt-0.5 text-[15px] text-teal-700">✦</span>
@@ -2353,7 +2353,7 @@ const MessageItem = React.memo(({
         const card = (
             <div className="w-64">
                 <div
-                    className="rounded-xl overflow-hidden border border-indigo-300/40 shadow-[0_4px_16px_rgba(60,40,120,0.22)]"
+                    className="sully-chat-card-face rounded-xl overflow-hidden border border-indigo-300/40 shadow-[0_4px_16px_rgba(60,40,120,0.22)]"
                     style={{ background: 'linear-gradient(155deg,#2a2350 0%,#1b1838 100%)' }}
                 >
                     {/* 头部：彼方 · 房间 */}
@@ -2415,7 +2415,7 @@ const MessageItem = React.memo(({
         const accent = '#b89bff';
         const card = (
             <div className="w-64">
-                <div className="relative rounded-2xl overflow-hidden border shadow-[0_8px_28px_rgba(40,30,70,0.45)]"
+                <div className="sully-chat-card-face relative rounded-2xl overflow-hidden border shadow-[0_8px_28px_rgba(40,30,70,0.45)]"
                     style={{ borderColor: 'rgba(184,155,255,0.3)', background: 'linear-gradient(160deg,#221c33 0%,#171327 55%,#100d1c 100%)' }}>
                     <div className="absolute -top-7 -right-5 w-24 h-24 rounded-full pointer-events-none" style={{ background: 'radial-gradient(circle,rgba(184,155,255,.4),transparent 70%)' }} />
                     <div className="absolute inset-0 pointer-events-none opacity-50" style={{ backgroundImage: 'radial-gradient(1px 1px at 22% 24%,#c9b8ec,transparent),radial-gradient(1px 1px at 62% 18%,#e7c9f0,transparent),radial-gradient(1px 1px at 42% 36%,#bcd0f0,transparent)' }} />
@@ -2454,7 +2454,7 @@ const MessageItem = React.memo(({
     if (m.type === 'group_topic_card') {
         const box: any = m.metadata?.groupTopicBox || {};
         const card = (
-            <div className="w-72 rounded-2xl overflow-hidden border border-violet-200/70 bg-gradient-to-br from-violet-50 via-white to-indigo-50 shadow-sm">
+            <div className="sully-chat-card-face w-72 rounded-2xl overflow-hidden border border-violet-200/70 bg-gradient-to-br from-violet-50 via-white to-indigo-50 shadow-sm">
                 <div className="px-4 pt-3 pb-2 border-b border-violet-100 flex items-center gap-2">
                     <span className="w-8 h-8 rounded-xl bg-violet-100 text-violet-600 flex items-center justify-center">💬</span>
                     <div className="min-w-0 flex-1">
@@ -2503,7 +2503,7 @@ const MessageItem = React.memo(({
             const card = (
                 <div className="w-64">
                     {/* 用原生 <details> 折叠：默认收起，点头部展开（无需 React state，避免在分支里用 hook） */}
-                    <details className="group relative rounded-2xl overflow-hidden border shadow-[0_8px_24px_rgba(10,12,20,0.5)] [&_summary]:list-none [&::-webkit-details-marker]:hidden"
+                    <details className="sully-chat-card-face group relative rounded-2xl overflow-hidden border shadow-[0_8px_24px_rgba(10,12,20,0.5)] [&_summary]:list-none [&::-webkit-details-marker]:hidden"
                         style={{ borderColor: `${mm.accent}44`, background: mm.bg }}>
                         <div className="absolute -top-8 -right-6 w-28 h-28 rounded-full blur-2xl pointer-events-none" style={{ background: `radial-gradient(circle, ${mm.accent}55, transparent 70%)` }} />
                         <summary className="relative px-3 pt-2.5 pb-2 flex items-center gap-2 border-b cursor-pointer select-none" style={{ borderColor: `${mm.accent}22` }}>
@@ -2533,7 +2533,7 @@ const MessageItem = React.memo(({
             const rAccent = isBlock ? '#fca5a5' : '#fb7185';
             const card = (
                 <div className="w-64">
-                    <div className="relative rounded-2xl overflow-hidden border shadow-[0_8px_24px_rgba(45,20,30,0.45)]"
+                    <div className="sully-chat-card-face relative rounded-2xl overflow-hidden border shadow-[0_8px_24px_rgba(45,20,30,0.45)]"
                         style={{ borderColor: 'rgba(251,113,133,0.3)', background: 'linear-gradient(160deg,#2a1620 0%,#1d1018 55%,#130a0f 100%)' }}>
                         <div className="absolute -top-7 -right-5 w-24 h-24 rounded-full pointer-events-none" style={{ background: 'radial-gradient(circle,rgba(251,113,133,.3),transparent 70%)' }} />
                         <div className="relative px-3 pt-2.5 pb-2 flex items-center gap-2 border-b" style={{ borderColor: 'rgba(251,113,133,0.18)' }}>
@@ -2565,7 +2565,7 @@ const MessageItem = React.memo(({
         const isChat = pc.kind === 'chat';
         const card = (
             <div className="w-64">
-                <div className="relative rounded-2xl overflow-hidden border shadow-[0_8px_24px_rgba(20,30,45,0.4)]"
+                <div className="sully-chat-card-face relative rounded-2xl overflow-hidden border shadow-[0_8px_24px_rgba(20,30,45,0.4)]"
                     style={{ borderColor: 'rgba(125,211,252,0.28)', background: 'linear-gradient(160deg,#10202b 0%,#0d1822 55%,#0a1019 100%)' }}>
                     <div className="absolute -top-7 -right-5 w-24 h-24 rounded-full pointer-events-none" style={{ background: 'radial-gradient(circle,rgba(125,211,252,.3),transparent 70%)' }} />
                     {/* 头部 */}
@@ -2614,7 +2614,7 @@ const MessageItem = React.memo(({
         };
         const card = (
             <div className="w-64">
-                <div className="relative rounded-2xl overflow-hidden border shadow-[0_8px_28px_rgba(30,18,48,0.5)]"
+                <div className="sully-chat-card-face relative rounded-2xl overflow-hidden border shadow-[0_8px_28px_rgba(30,18,48,0.5)]"
                     style={{ borderColor: `hsla(${HUE},55%,55%,0.32)`, background: `linear-gradient(160deg,hsl(${HUE},38%,20%) 0%,hsl(${HUE},42%,13%) 58%,#0f0a18 100%)` }}>
                     <div className="absolute -top-7 -right-5 w-24 h-24 rounded-full pointer-events-none" style={{ background: `radial-gradient(circle,hsla(${HUE},70%,60%,.35),transparent 70%)` }} />
                     <div className="absolute inset-0 pointer-events-none opacity-50" style={{ backgroundImage: 'radial-gradient(1px 1px at 22% 30%,rgba(200,180,255,.4),transparent),radial-gradient(1px 1px at 78% 18%,rgba(220,200,255,.35),transparent)' }} />
@@ -2669,7 +2669,7 @@ const MessageItem = React.memo(({
         const card = (
             <div className="w-56">
                 <div
-                    className="relative rounded-2xl overflow-hidden border border-amber-200/70 shadow-[0_4px_14px_rgba(200,160,90,0.18)]"
+                    className="sully-chat-card-face relative rounded-2xl overflow-hidden border border-amber-200/70 shadow-[0_4px_14px_rgba(200,160,90,0.18)]"
                     style={{ background: 'linear-gradient(160deg,#fffcf5 0%,#fdf6e8 60%,#faf0dc 100%)' }}
                 >
                     <div className="relative px-3 pt-2 pb-1.5 flex items-center gap-2 border-b border-amber-200/50">
@@ -2698,7 +2698,7 @@ const MessageItem = React.memo(({
         const card = (
             <div className="w-64">
                 <div
-                    className="relative rounded-2xl overflow-hidden border border-violet-200/70 shadow-[0_6px_20px_rgba(150,130,200,0.22)]"
+                    className="sully-chat-card-face relative rounded-2xl overflow-hidden border border-violet-200/70 shadow-[0_6px_20px_rgba(150,130,200,0.22)]"
                     style={{ background: 'linear-gradient(160deg,#fbf7ff 0%,#f1ebfa 55%,#eae3f6 100%)' }}
                 >
                     {/* 顶部淡紫光晕 + 月亮 + 星点（浅色系，和彼方的深色拉开差异） */}
@@ -2765,7 +2765,7 @@ const MessageItem = React.memo(({
         const card = (
             <div className="w-72">
                 <div
-                    className="rounded-2xl overflow-hidden border border-purple-300/30 shadow-[0_6px_20px_rgba(70,40,110,0.28)]"
+                    className="sully-chat-card-face rounded-2xl overflow-hidden border border-purple-300/30 shadow-[0_6px_20px_rgba(70,40,110,0.28)]"
                     style={{ background: 'linear-gradient(155deg,#2c1c44 0%,#1a1230 100%)' }}
                 >
                     {/* 头部 */}
@@ -2813,7 +2813,7 @@ const MessageItem = React.memo(({
         const card = (
             <div className="w-72">
                 <div
-                    className="rounded-2xl overflow-hidden border border-amber-300/40 shadow-[0_6px_20px_rgba(120,80,20,0.22)]"
+                    className="sully-chat-card-face rounded-2xl overflow-hidden border border-amber-300/40 shadow-[0_6px_20px_rgba(120,80,20,0.22)]"
                     style={{ background: 'linear-gradient(155deg,#fdf6e3 0%,#f5e9cf 100%)' }}
                 >
                     {/* 头部 */}
@@ -2862,7 +2862,7 @@ const MessageItem = React.memo(({
                 style={{ fontFamily: `'Noto Serif','Songti SC','Georgia',serif` }}
             >
                 <div
-                    className="rounded-lg overflow-hidden border border-stone-400/70 shadow-[0_3px_12px_rgba(60,50,30,0.18)]"
+                    className="sully-chat-card-face rounded-lg overflow-hidden border border-stone-400/70 shadow-[0_3px_12px_rgba(60,50,30,0.18)]"
                     style={{ background: 'linear-gradient(170deg,#faf6ec 0%,#f3ecdb 100%)' }}
                 >
                     {/* 报头 */}
@@ -2939,8 +2939,8 @@ const MessageItem = React.memo(({
             } catch {}
         }
         return commonLayout(
-            <div className="w-64 bg-white rounded-xl overflow-hidden shadow-sm border border-slate-100 cursor-pointer active:opacity-90 transition-opacity">
-                <div className="h-32 w-full flex items-center justify-center text-6xl relative overflow-hidden" style={{ background: post.bgStyle || '#fce7f3' }}>
+            <div className="sully-chat-card-face w-64 bg-white rounded-xl overflow-hidden shadow-sm border border-slate-100 cursor-pointer active:opacity-90 transition-opacity">
+                <div className="sully-chat-card-media h-32 w-full flex items-center justify-center text-6xl relative overflow-hidden" style={{ background: post.bgStyle || '#fce7f3' }}>
                     {displayImage || <img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4c4.png" alt="document" className="w-12 h-12" />}
                     <div className="absolute bottom-0 left-0 w-full p-2 bg-gradient-to-t from-black/30 to-transparent">
                         <div className="text-white text-xs font-bold line-clamp-1">{post.title}</div>
@@ -2978,7 +2978,7 @@ const MessageItem = React.memo(({
             const diff = scoreData.finalAffinity - scoreData.initialAffinity;
             const isPositive = diff > 0;
             return commonLayout(
-                <div className="w-72 rounded-2xl overflow-hidden shadow-md" style={{ border: '1.5px solid rgba(200,185,190,0.4)', background: 'linear-gradient(180deg, #f0ebe8 0%, #fff 25%, #ece6e9 100%)' }} {...interactionProps}>
+                <div className="sully-chat-card-face w-72 rounded-2xl overflow-hidden shadow-md" style={{ border: '1.5px solid rgba(200,185,190,0.4)', background: 'linear-gradient(180deg, #f0ebe8 0%, #fff 25%, #ece6e9 100%)' }} {...interactionProps}>
                     {/* Header bar */}
                     <div className="px-4 pt-3 pb-2 flex items-center gap-2.5" style={{ borderBottom: '1px solid rgba(200,185,190,0.2)', background: 'linear-gradient(135deg, rgba(200,185,190,0.2), rgba(190,175,195,0.15))' }}>
                         {scoreData.charAvatar ? (
@@ -3039,7 +3039,7 @@ const MessageItem = React.memo(({
         if (scoreData?.type === 'whiteday_card') {
             const passed = scoreData.passed;
             return commonLayout(
-                <div className="w-72 rounded-2xl overflow-hidden shadow-md" style={{ background: 'linear-gradient(180deg, #fff8f0 0%, #fff 30%, #fdf3e8 100%)', border: '1.5px solid rgba(251,191,110,0.4)' }} {...interactionProps}>
+                <div className="sully-chat-card-face w-72 rounded-2xl overflow-hidden shadow-md" style={{ background: 'linear-gradient(180deg, #fff8f0 0%, #fff 30%, #fdf3e8 100%)', border: '1.5px solid rgba(251,191,110,0.4)' }} {...interactionProps}>
                     {/* Header */}
                     <div className="px-4 pt-3 pb-2.5 flex items-center gap-2.5" style={{ background: 'linear-gradient(135deg, rgba(251,191,110,0.25), rgba(249,168,96,0.15))', borderBottom: '1px solid rgba(251,191,110,0.2)' }}>
                         {scoreData.charAvatar ? (
@@ -3102,8 +3102,8 @@ const MessageItem = React.memo(({
             const pct = scoreData.scorePercent || 0;
             const gradientClass = pct === 100 ? 'from-emerald-400 to-teal-500' : pct >= 60 ? 'from-amber-400 to-orange-500' : 'from-red-400 to-rose-500';
             return commonLayout(
-                <div className="w-64 bg-white rounded-xl overflow-hidden shadow-sm border border-slate-100" {...interactionProps}>
-                    <div className={`h-24 w-full bg-gradient-to-br ${gradientClass} flex flex-col items-center justify-center text-white relative`}>
+                <div className="sully-chat-card-face w-64 bg-white rounded-xl overflow-hidden shadow-sm border border-slate-100" {...interactionProps}>
+                    <div className={`sully-chat-card-banner h-24 w-full bg-gradient-to-br ${gradientClass} flex flex-col items-center justify-center text-white relative`}>
                         <div className="text-3xl font-bold">{scoreData.score}<span className="text-lg opacity-70">/{scoreData.total}</span></div>
                         <div className="text-[10px] opacity-80 mt-1">{pct}%</div>
                     </div>
@@ -3136,8 +3136,8 @@ const MessageItem = React.memo(({
             };
             const gradient = coverGradients[scoreData.coverStyle] || coverGradients.sunset;
             return commonLayout(
-                <div className="w-64 bg-white rounded-xl overflow-hidden shadow-sm border border-slate-100 cursor-pointer active:opacity-90 transition-opacity" {...interactionProps}>
-                    <div className={`h-28 w-full bg-gradient-to-br ${gradient} flex flex-col items-center justify-center text-white relative`}>
+                <div className="sully-chat-card-face w-64 bg-white rounded-xl overflow-hidden shadow-sm border border-slate-100 cursor-pointer active:opacity-90 transition-opacity" {...interactionProps}>
+                    <div className={`sully-chat-card-media h-28 w-full bg-gradient-to-br ${gradient} flex flex-col items-center justify-center text-white relative`}>
                         <div className="text-3xl mb-1">{scoreData.genreIcon || <img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f3b5.png" alt="music" className="w-8 h-8" />}</div>
                         <div className="font-bold text-sm">{scoreData.title}</div>
                         {scoreData.subtitle && <div className="text-[10px] opacity-80">{scoreData.subtitle}</div>}
@@ -3211,7 +3211,7 @@ const MessageItem = React.memo(({
                 type="button"
                 onClick={openFile}
                 disabled={openingCollaborationFile && !selectionMode}
-                className="sully-collaboration-file group w-[min(276px,72vw)] overflow-hidden rounded-[18px] border border-slate-200/90 bg-white text-left shadow-[0_8px_24px_rgba(15,23,42,0.08)] transition-[transform,box-shadow,opacity] duration-150 active:scale-[0.985] disabled:opacity-70"
+                className="sully-chat-card-face sully-collaboration-file group w-[min(276px,72vw)] overflow-hidden rounded-[18px] border border-slate-200/90 bg-white text-left shadow-[0_8px_24px_rgba(15,23,42,0.08)] transition-[transform,box-shadow,opacity] duration-150 active:scale-[0.985] disabled:opacity-70"
                 aria-label={`打开文件 ${fileName}`}
             >
                 <span className="flex min-w-0 items-center gap-3.5 px-3.5 py-3.5">
@@ -3723,19 +3723,19 @@ const MessageItem = React.memo(({
                             >
                                 <button
                                     onClick={(e) => { e.stopPropagation(); e.preventDefault(); onPlayVoice?.(m.id); }}
-                                    className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center active:scale-[0.92] transition-transform"
+                                    className="sully-voice-bar-button shrink-0 w-7 h-7 rounded-full flex items-center justify-center active:scale-[0.92] transition-transform"
                                     style={{ backgroundColor: vbBg ? 'rgba(255,255,255,0.25)' : 'rgba(148,163,184,0.2)' }}
                                 >
                                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill={vbBtn || '#64748b'} className="w-3 h-3 ml-0.5"><path d="M6.3 2.84A1.5 1.5 0 0 0 4 4.11v11.78a1.5 1.5 0 0 0 2.3 1.27l9.344-5.891a1.5 1.5 0 0 0 0-2.538L6.3 2.841Z" /></svg>
                                 </button>
-                                <div className="flex-1 flex items-center gap-[3px] h-5 overflow-hidden">
+                                <div className="sully-voice-bar-wave flex-1 flex items-center gap-[3px] h-5 overflow-hidden">
                                     {[4, 10, 6, 14, 8, 12, 5, 11, 7, 13, 4, 9, 6, 11, 5, 8, 10, 7, 12, 6].map((h, i) => (
-                                        <div key={i} className="w-[2.5px] rounded-full" style={{ height: `${Math.max(2, h * 0.4)}px`, backgroundColor: vbWave ? vbWave + '60' : `rgba(148, 163, 184, ${0.25 + (h / 14) * 0.35})` }} />
+                                        <div key={i} className="sully-voice-bar-wave-segment w-[2.5px] rounded-full" style={{ height: `${Math.max(2, h * 0.4)}px`, backgroundColor: vbWave ? vbWave + '60' : `rgba(148, 163, 184, ${0.25 + (h / 14) * 0.35})` }} />
                                     ))}
                                 </div>
                                 {(voiceTagText || displayContent) ? (
                                     <div
-                                        className={`shrink-0 ml-0.5 px-1.5 py-0.5 rounded-lg text-[9px] font-medium transition-all ${showVoiceText ? 'ring-1 ring-current/20' : ''}`}
+                                        className={`sully-voice-bar-toggle shrink-0 ml-0.5 px-1.5 py-0.5 rounded-lg text-[9px] font-medium transition-all ${showVoiceText ? 'ring-1 ring-current/20' : ''}`}
                                         style={{
                                             color: vbText || 'rgba(100,116,139,0.7)',
                                             backgroundColor: showVoiceText ? 'rgba(0,0,0,0.08)' : 'rgba(0,0,0,0.04)',

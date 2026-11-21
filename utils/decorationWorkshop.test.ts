@@ -1,7 +1,27 @@
 import {expect,it} from 'vitest';
 import {makeWorkshopPreset,projectWorkshopPreset,replaceWorkshopCss,checkWorkshopCss} from './decorationWorkshop';
 import {decorationPatches} from './chatDecoration';
+import {portableCssImages} from './cssImageAssets';
 import {decorationCategories} from './beautyCategories';
+import {PROFILE_PRESETS} from '../presets/chat/profilePresets';
+
+it('applies a profile without moving avatars and resets old positions before applying a standalone whitebox',async()=>{
+ const char={id:'sample',chatFineTune:{enabled:true,chatAvatarPlacement:'above_group',chatAvatarAlign:'top',chatAvatarOffsetY:12,chatBubbleIndent:9},
+  chatAppearance:{chatAvatarPlacement:'above_group',chatHeaderAlign:'center'}} as any;
+ for(const skin of PROFILE_PRESETS){
+  const preset=makeWorkshopPreset('profile');preset.parts.profile={customCss:skin.customCss};
+  expect(decorationCategories(preset)).toEqual(['chat','profile']);
+  const {character}=await decorationPatches(preset,['profile'],'character',char,{} as any);
+  expect(character.chatIndependentParts).toEqual(['profile']);
+  expect(character.chatProfileAppearance!.customCss).toContain('blobref:');
+  expect(await portableCssImages(character.chatProfileAppearance!.customCss)).toBe(skin.customCss);
+ }
+ const legacy=makeWorkshopPreset('whitebox');legacy.parts.css='.sully-chat-header{color:tan}';
+ const patch=(await decorationPatches(legacy,['css'],'character',char,{} as any)).character;
+ expect(patch.chatAppearance).toMatchObject({chatAvatarPlacement:'beside',chatAvatarAlign:'bottom',chatAvatarOffsetY:0,chatHeaderAlign:'center'});
+ expect(patch.chatFineTune).toEqual({enabled:true,chatBubbleIndent:9});
+ expect((await decorationPatches(legacy,['css'],'character',{...char,...patch},{} as any)).character).toEqual(patch);
+});
 
 it('category makers export only their own content and never clear unrelated CSS',async()=>{
  const preset=makeWorkshopPreset('background');preset.parts.css='.sully-chat-header{color:red}';

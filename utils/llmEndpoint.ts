@@ -1,5 +1,24 @@
 export type LlmApiType = 'openai' | 'anthropic';
 
+/** Per-call observations, including reads performed inside a transport adapter. */
+export interface LlmResponseInfo {
+    status?: number;
+    bodyRead?: boolean;
+}
+export interface LlmRequestInit extends RequestInit {
+    __sullyResponseInfo?: LlmResponseInfo;
+}
+
+export async function readLlmResponseText(response: Response, info?: LlmResponseInfo): Promise<string> {
+    if (info) {
+        info.status = response.status;
+        info.bodyRead = false;
+    }
+    const text = await response.text();
+    if (info) info.bodyRead = true;
+    return text;
+}
+
 /** Native endpoints are self-describing, including in the legacy three-field amsg credential. */
 export function isAnthropicEndpoint(value: string): boolean {
     try { return /\/messages(?:\/(?:chat\/completions|models))?\/?$/.test(new URL(value).pathname); }

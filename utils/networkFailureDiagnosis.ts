@@ -645,6 +645,7 @@ const buildAttributionContext = (
 };
 
 export interface BuildFetchFailureSystemLogInput {
+    identity?: NetworkRequestIdentity;
     id?: string;
     timestamp?: number;
     url: string;
@@ -678,7 +679,7 @@ export const buildFetchFailureSystemLog = (input: BuildFetchFailureSystemLogInpu
     const ts = input.timestamp ?? Date.now();
     const id = input.id || `log-${ts}-${Math.random().toString(36).slice(2, 8)}`;
     const method = (input.method || 'GET').toUpperCase();
-    const identity = identifyNetworkRequestSource({
+    const identity = input.identity ?? identifyNetworkRequestSource({
         url: input.url,
         method,
         headers: input.headers,
@@ -909,6 +910,16 @@ export const buildHttpErrorSystemLog = (input: BuildHttpErrorSystemLogInput): Sy
     };
 };
 
+/** A caller with known attribution can supply a safe message for the self-check and its export. */
+export class ApplicationErrorReport {
+    constructor(
+        readonly source: string,
+        readonly advice: NonNullable<SystemLog['advice']>,
+        readonly context: SystemLogContext,
+    ) {}
+    toString() { return this.advice.title + '\n' + this.advice.action; }
+}
+
 export const buildConsoleErrorSystemLog = (input: {
     id?: string;
     timestamp?: number;
@@ -916,13 +927,14 @@ export const buildConsoleErrorSystemLog = (input: {
     stacks?: string;
     caller?: string;
     ambientMeta?: ApiCallMeta;
+    report?: ApplicationErrorReport;
     advice?: { title: string; action: string };
 }): SystemLog => {
     const ts = input.timestamp ?? Date.now();
     const id = input.id || `log-${ts}-${Math.random().toString(36).slice(2, 8)}`;
-    const source = identifyApplicationErrorSource(input.message, input.ambientMeta, input.caller);
+    const source = input.report?.source ?? identifyApplicationErrorSource(input.message, input.ambientMeta, input.caller);
     const detailParts: string[] = [];
-    if (input.ambientMeta && (input.ambientMeta.appName || input.ambientMeta.charName)) {
+    if (!input.report && input.ambientMeta && (input.ambientMeta.appName || input.ambientMeta.charName)) {
         const where = [
             input.ambientMeta.appName ? `界面=${input.ambientMeta.appName}` : '',
             input.ambientMeta.charName ? `当前角色=${input.ambientMeta.charName}` : '',
@@ -937,7 +949,7 @@ export const buildConsoleErrorSystemLog = (input: {
     detailParts.push(safeStacks || safeMessage);
 
     return {
-        ...(input.advice ? { advice: input.advice } : {}),
+        advice: input.report?.advice ?? input.advice,
         id,
         timestamp: ts,
         time: formatDiagnosticTimestamp(ts),
@@ -947,7 +959,7 @@ export const buildConsoleErrorSystemLog = (input: {
         context: {
             build: readCompactBuildString(),
             failureKind: 'console-error',
-            ...buildAttributionContext(undefined, input.ambientMeta),
+            ...(input.report?.context ?? buildAttributionContext(undefined, input.ambientMeta)),
             ...(input.caller ? { caller: input.caller } : {}),
         },
         detail: detailParts.join('\n'),

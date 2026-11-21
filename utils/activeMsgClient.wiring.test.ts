@@ -49,12 +49,13 @@ describe('③ 凭据变更重传接线', () => {
 });
 
 describe('③ 失败可见化接线（远端 lastError 上卡片）', () => {
-  it('面板对账改拉全量投影 listRemoteTasksForChar，并用 describeRemoteLastError 渲染', () => {
+  it('面板对账改拉全量投影 listRemoteTasksForChar 与云端定时触发状态，并用 describeRemoteLastError 渲染', () => {
     const src = read('../components/chat/ActiveMsg2SettingsModal.tsx');
     expect(src).toContain('ActiveMsgClient.listRemoteTasksForChar(');
+    expect(src).toContain('ActiveMsgClient.getCronTriggerState(');
     expect(src).toContain('describeRemoteLastError(');
-    // 进度文案吸收远端 status（failed 终态不再谎报「待处理」）。
-    expect(src).toMatch(/describeTaskProgress\(t, knownRemoteUuids, now, remoteInfo\?\.status\)/);
+    // 进度文案同时吸收远端 status 与云端后台任务暂停态（cloudCronPaused）。
+    expect(src).toMatch(/describeTaskProgress\(t, knownRemoteUuids, now, remoteInfo\?\.status, cloudCronPaused\)/);
   });
 });
 

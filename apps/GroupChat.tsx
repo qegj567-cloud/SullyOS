@@ -11,7 +11,7 @@ import { createPortal } from 'react-dom';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
 import { Message, GroupProfile, CharacterProfile, MessageType, ChatTheme, BubbleStyle, EmojiCategory, type OSTheme } from '../types';
-import ChatAvatarTimestamp, { AVATAR_TIMESTAMP_HEIGHT } from '../components/chat/ChatAvatarTimestamp';
+import ChatAvatarTimestamp, { AVATAR_TIMESTAMP_HEIGHT, ChatDayDivider } from '../components/chat/ChatAvatarTimestamp';
 import { safeResponseJson } from '../utils/safeApi';
 import Modal from '../components/os/Modal';
 import DialogueVoicePanel from '../components/voice/DialogueVoicePanel';
@@ -88,7 +88,7 @@ const GroupPacketCard = ({ msg, nameOf, onOpen }: {
     if (meta?.packetReceipt) {
         const claimed = meta.packetReceipt === 'claimed';
         return (
-            <div className={`px-3 py-2 rounded-xl border text-[11px] flex items-center gap-2 ${claimed ? 'bg-emerald-50 border-emerald-100 text-emerald-600' : 'bg-slate-50 border-slate-200 text-slate-500'}`}>
+            <div className={`sully-chat-card-face px-3 py-2 rounded-xl border text-[11px] flex items-center gap-2 ${claimed ? 'bg-emerald-50 border-emerald-100 text-emerald-600' : 'bg-slate-50 border-slate-200 text-slate-500'}`}>
                 <span>🧧</span>
                 <span>{meta.claimantName} {claimed ? '领取了' : '退回了'} {meta.senderName} 的红包{claimed && meta.amount != null ? ` ¥${meta.amount}` : ''}</span>
             </div>
@@ -98,7 +98,7 @@ const GroupPacketCard = ({ msg, nameOf, onOpen }: {
     // 旧数据（无 packet 判别字段）：legacy 简卡，渲染不变语义
     if (!meta?.packet) {
         return (
-            <div className="w-60 bg-[#fb923c] text-white p-3 rounded-xl flex items-center gap-3 shadow-md relative overflow-hidden">
+            <div className="sully-chat-packet sully-chat-card-face w-60 bg-[#fb923c] text-white p-3 rounded-xl flex items-center gap-3 shadow-md relative overflow-hidden">
                 <div className="text-2xl">🧧</div>
                 <div className="z-10">
                     <div className="font-bold text-sm tracking-wide">红包 / 转账</div>
@@ -118,7 +118,7 @@ const GroupPacketCard = ({ msg, nameOf, onOpen }: {
     return (
         <div
             onClick={() => onOpen?.(msg)}
-            className={`w-60 p-3 rounded-xl flex items-center gap-3 shadow-md relative overflow-hidden active:scale-95 transition-transform cursor-pointer text-white ${opened ? 'bg-[#f0b48c]' : 'bg-gradient-to-br from-[#fb923c] to-[#f43f5e]'}`}
+            className={`sully-chat-packet sully-chat-card-face w-60 p-3 rounded-xl flex items-center gap-3 shadow-md relative overflow-hidden active:scale-95 transition-transform cursor-pointer text-white ${opened ? 'bg-[#f0b48c]' : 'bg-gradient-to-br from-[#fb923c] to-[#f43f5e]'}`}
         >
             <div className="text-3xl drop-shadow-sm">🧧</div>
             <div className="z-10 min-w-0 flex-1 pb-3">
@@ -440,6 +440,7 @@ const GroupMessageItem = React.memo(({
 
     return (
         <>
+            {showAvatarTime && startsTimeSegment && <ChatDayDivider timestamp={msg.timestamp} />}
             {showTopTimeDivider && (
                 <div className={`sully-chat-time-divider flex justify-center w-full px-3 mt-1.5 mb-3 select-none ${showTimestamp === 'hover' ? 'opacity-0 hover:opacity-100 transition-opacity' : ''}`}>
                     <span className={`sully-chat-timestamp text-[11px] leading-tight font-normal whitespace-nowrap ${isWechatTopCapsule ? 'bg-black/[0.05] text-[#7f7f7f] px-2.5 py-[3px] rounded-[4px]' : 'text-slate-400 px-2 py-0.5 rounded-md'}`}>
@@ -448,6 +449,7 @@ const GroupMessageItem = React.memo(({
                 </div>
             )}
             <div
+                data-selecting={selectionMode || undefined}
                 className={`${themeScopeClass} sully-chat-message ${isUser ? 'sully-chat-message-user justify-end' : 'sully-chat-message-ai justify-start'} ${isFirstInGroup ? 'sully-chat-message-group-first' : ''} ${isLastInGroup ? 'sully-chat-message-group-last' : ''} flex items-end ${spacingClass} px-3 w-full group relative transition-[padding] duration-300 ${selectionMode ? 'pl-12' : ''}`}
                 style={{
                     '--sully-chat-message-avatar-size': `${avatarSizePx}px`,
@@ -1202,7 +1204,7 @@ const GroupChat: React.FC = () => {
     const handlePanelAction = (type: string, payload?: any) => {
         switch (type) {
             case 'send-emoji':
-                handleSendMessage(payload.url, 'emoji');
+                handleSendMessage(payload.url, 'emoji', {stickerName:payload.name});
                 break;
             case 'select-category':
                 setActiveEmojiCategory(payload);
@@ -1821,7 +1823,7 @@ ${memberTimeline || '(暂无互动记录)'}
                 }
                 : { backgroundImage: 'none' };
     const groupFineTuneCss = buildChatFineTuneCss(osTheme);
-    const timeSegmentStarts = computeTimeSegmentStarts(displayMessages);
+    const timeSegmentStarts = computeTimeSegmentStarts(displayMessages, osTheme.chatTimestampPosition === 'below_avatar');
     const finalGroupRootClass = acnh
         ? 'h-full w-full flex flex-col overflow-hidden font-sans relative transition-[background-color] duration-500'
         : groupChatRootClass;

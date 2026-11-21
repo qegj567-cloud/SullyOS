@@ -1,3 +1,4 @@
+import { INIT_SQL, getVectorSyncProgress, subscribeVectorSync, syncLocalToRemote, testConnection } from '../utils/memoryPalace/supabaseVector';
 import { ContextBuilder } from '../utils/context';
 
 import MemoryMaintenancePanel from '../components/chat/MemoryMaintenancePanel';
@@ -1033,7 +1034,10 @@ export default function MemoryPalaceApp() {
     const [rvKey, setRvKey] = useState(remoteVectorConfig.supabaseAnonKey);
     const [rvTestResult, setRvTestResult] = useState('');
     const [rvTesting, setRvTesting] = useState(false);
-    const [rvSyncing, setRvSyncing] = useState(false);
+    const rvSync = React.useSyncExternalStore(subscribeVectorSync, () => getVectorSyncProgress(remoteVectorConfig));
+    const rvSyncing = !!rvSync?.running;
+    const rvTestAttempt = useRef(0);
+    const rvCredentialsSaved = rvUrl === remoteVectorConfig.supabaseUrl && rvKey === remoteVectorConfig.supabaseAnonKey;
     const [showInitSQL, setShowInitSQL] = useState(false);
 
     // 全局配置变更时同步到本地状态
@@ -1734,7 +1738,14 @@ export default function MemoryPalaceApp() {
     };
     useAppShortcut(ShortcutAppID.MemoryPalace, (intent, isCurrent) => {
         setSelectedRoom(null); setSelectedNode(null); setShowCharPicker(false);
-        if (intent.entryId === 'globalSettings') { setView('globalSettings'); return; }
+        if (intent.entryId === 'globalSettings') {
+            setView('globalSettings');
+            if (intent.resourceId === 'remoteVector') requestAnimationFrame(() => {
+                const section = document.querySelector<HTMLDetailsElement>('[data-remote-vector-settings]');
+                if (section) { section.open = true; section.scrollIntoView({ block: 'start' }); }
+            });
+            return;
+        }
         const target = characters.find(c => c.id === intent.characterId);
         if (!target) { setView('picker'); return; }
         setActiveCharacterId(target.id);
@@ -1947,21 +1958,21 @@ export default function MemoryPalaceApp() {
 
     // 远程向量：测试连接
     const handleTestRemoteVector = async () => {
+        const attempt = ++rvTestAttempt.current;
         setRvTesting(true);
         setRvTestResult('');
         try {
-            const { testConnection } = await import('../utils/memoryPalace/supabaseVector');
             const result = await testConnection({ enabled: true, supabaseUrl: rvUrl, supabaseAnonKey: rvKey, initialized: false });
+            if (attempt !== rvTestAttempt.current) return;
             if (result.ok && result.tableExists) setRvTestResult('[ok]' + result.message);
-            else if (result.ok) setRvTestResult('[warn]' + result.message);
             else setRvTestResult('[err]' + result.message);
-        } catch (e: any) { setRvTestResult('[err]' + e.message); }
-        setRvTesting(false);
+        } catch (e: any) { if (attempt === rvTestAttempt.current) setRvTestResult('[err]' + e.message); }
+        if (attempt === rvTestAttempt.current) setRvTesting(false);
     };
 
     // 远程向量：保存配置
     const handleSaveRemoteVector = () => {
-        const initialized = rvTestResult.startsWith('[ok]');
+        const initialized = rvTestResult.startsWith('[ok]') || (!rvTestResult && rvCredentialsSaved && remoteVectorConfig.initialized);
         updateRemoteVectorConfig({ enabled: true, supabaseUrl: rvUrl, supabaseAnonKey: rvKey, initialized });
         addToast('远程向量存储配置已保存', 'success');
     };
@@ -1974,46 +1985,31 @@ export default function MemoryPalaceApp() {
 
     // 远程向量：同步本地到远程
     const handleSyncToRemote = async () => {
-        setRvSyncing(true);
         trackEvent('同步记忆向量到云端');
         try {
-            const { syncLocalToRemote } = await import('../utils/memoryPalace/supabaseVector');
-            const { MemoryNodeDB } = await import('../utils/memoryPalace/db');
-            const result = await syncLocalToRemote(
-                remoteVectorConfig,
-                async () => {
-                    const allVectors = await (await import('../utils/db')).openDB().then(db => new Promise<any[]>((resolve, reject) => {
-                        const tx = db.transaction('memory_vectors', 'readonly');
-                        const req = tx.objectStore('memory_vectors').getAll();
-                        req.onsuccess = () => resolve(req.result || []);
-                        req.onerror = () => reject(req.error);
-                    }));
-                    const items = [];
-                    for (const v of allVectors) {
-                        const node = await MemoryNodeDB.getById(v.memoryId);
-                        if (node) items.push({ memoryId: v.memoryId, charId: node.charId, vector: v.vector, node, dimensions: v.dimensions, model: v.model });
-                    }
-                    return items;
-                },
-                () => {},
-            );
-            addToast(`同步完成: ${result.synced} 条成功, ${result.failed} 条失败`, result.failed > 0 ? 'error' : 'success');
-        } catch (e: any) { addToast(`同步失败: ${e.message}`, 'error'); }
-        setRvSyncing(false);
+            const result = await syncLocalToRemote(remoteVectorConfig);
+            trackEvent('记忆向量同步结果', { 结果: result.reason ? (result.synced ? '部分完成' : '失败') : '完成' });
+            const summary = `同步结束：成功 ${result.synced} 条，失败 ${result.failed} 条`;
+            addToast(result.reason ? `${summary}。${result.reason}` : summary, result.reason ? 'error' : 'success');
+        } catch (error) {
+            addToast(error instanceof Error ? error.message : '同步未启动', 'error');
+        }
     };
 
     // 远程向量：复制初始化 SQL
     const handleCopyInitSQL = async () => {
         try {
-            const { INIT_SQL } = await import('../utils/memoryPalace/supabaseVector');
-            await navigator.clipboard.writeText(INIT_SQL).catch(() => {
+            try {
+                await navigator.clipboard.writeText(INIT_SQL);
+            } catch {
                 const ta = document.createElement('textarea');
                 ta.value = INIT_SQL;
                 document.body.appendChild(ta);
                 ta.select();
-                document.execCommand('copy');
-                document.body.removeChild(ta);
-            });
+                try {
+                    if (!document.execCommand('copy')) throw new Error('复制失败');
+                } finally { ta.remove(); }
+            }
             addToast('SQL 已复制到剪贴板', 'success');
         } catch { addToast('复制失败', 'error'); }
     };
@@ -3965,7 +3961,7 @@ export default function MemoryPalaceApp() {
                 </details>
 
                 {/* 远程向量存储（Supabase，可选）— 默认折叠 */}
-                <details style={{ marginTop: 16, background: '#faf5ff', borderRadius: 16, padding: 16, border: '1px solid #e9d5ff' }}>
+                <details data-remote-vector-settings style={{ marginTop: 16, background: '#faf5ff', borderRadius: 16, padding: 16, border: '1px solid #e9d5ff' }}>
                     <summary style={{ cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span style={{ fontSize: 12, fontWeight: 700, color: '#7c3aed', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                             <Icon name="cloud" size={14} />
@@ -3977,7 +3973,7 @@ export default function MemoryPalaceApp() {
                                 color: remoteVectorConfig.initialized ? '#15803d' : '#92400e',
                                 background: remoteVectorConfig.initialized ? '#dcfce7' : '#fef3c7',
                             }}>
-                                {remoteVectorConfig.initialized ? '已连接' : '待初始化'}
+                                {remoteVectorConfig.initialized ? '已配置' : '待验证'}
                             </span>
                         )}
                     </summary>
@@ -4018,7 +4014,7 @@ export default function MemoryPalaceApp() {
 
                     {/* 3 步操作提示 */}
                     <div style={{ marginTop: 12, padding: 12, borderRadius: 12, background: '#f5f3ff', fontSize: 11, color: '#5b21b6', lineHeight: 1.8 }}>
-                        <b>3 步搞定：</b><br/>
+                        <b>首次创建项目：</b><br/>
                         1. 注册 Supabase（GitHub 一键登录，见上方教程）<br/>
                         2. 在 Supabase SQL Editor 里运行下方初始化 SQL<br/>
                         3. 填入 Project URL 和 anon key，点测试连接
@@ -4034,7 +4030,7 @@ export default function MemoryPalaceApp() {
                     {/* 初始化 SQL */}
                     <div style={{ marginTop: 12 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                            <span style={{ fontSize: 11, color: '#6b7280', fontWeight: 600 }}>初始化 SQL</span>
+                            <span style={{ fontSize: 11, color: '#6b7280', fontWeight: 600 }}>初始化 / 升级 SQL</span>
                             <div style={{ display: 'flex', gap: 8 }}>
                                 <button onClick={() => setShowInitSQL(!showInitSQL)} style={{
                                     fontSize: 10, color: '#7c3aed', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer',
@@ -4053,38 +4049,27 @@ export default function MemoryPalaceApp() {
                             <pre style={{
                                 background: '#0f172a', color: '#86efac', fontSize: 9, padding: 12, borderRadius: 10,
                                 overflow: 'auto', maxHeight: 200, lineHeight: 1.6, whiteSpace: 'pre-wrap',
-                            }}>{`create extension if not exists vector;
-create table if not exists memory_vectors (
-  memory_id text primary key, char_id text not null,
-  content text not null default '', vector vector(1024),
-  dimensions int default 1024, model text, room text,
-  importance int default 5, tags text[] default '{}',
-  mood text default '',
-  created_at bigint default (extract(epoch from now()) * 1000)::bigint,
-  last_accessed_at bigint default 0,
-  access_count int default 0
-);
--- 完整 SQL 请点"复制"按钮获取`}</pre>
+                            }}>{INIT_SQL}</pre>
                         )}
-                        <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 4 }}>复制此 SQL → Supabase Dashboard → SQL Editor → 运行</div>
+                        <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 4 }}>已配置的项目由 SullyOS 自动适配。首次建库可复制这份 SQL，默认向量维度为 1024。</div>
                     </div>
 
                     {/* Project URL & anon key */}
                     <div style={{ marginTop: 12 }}>
                         <label className={labelClass}>PROJECT URL</label>
-                        <input type="url" value={rvUrl} onChange={e => setRvUrl(e.target.value)}
+                        <input type="url" value={rvUrl} onChange={e => { ++rvTestAttempt.current; setRvTesting(false); setRvTestResult(''); setRvUrl(e.target.value); }}
                             placeholder="https://xxxxx.supabase.co" className={inputClass} />
                         <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2, paddingLeft: 4 }}>Settings → API → Project URL</div>
                     </div>
                     <div style={{ marginTop: 10 }}>
                         <label className={labelClass}>ANON / PUBLIC KEY</label>
-                        <input type="password" value={rvKey} onChange={e => setRvKey(e.target.value)}
+                        <input type="password" value={rvKey} onChange={e => { ++rvTestAttempt.current; setRvTesting(false); setRvTestResult(''); setRvKey(e.target.value); }}
                             placeholder="eyJhbGciOiJIUzI1NiIs..." className={inputClass} />
                         <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2, paddingLeft: 4 }}>Settings → API → anon public key</div>
                     </div>
 
                     {/* 测试 + 保存 */}
-                    <button onClick={handleTestRemoteVector} disabled={rvTesting || !rvUrl || !rvKey}
+                    <button onClick={handleTestRemoteVector} disabled={rvSyncing || rvTesting || !rvUrl || !rvKey}
                         style={{
                             width: '100%', marginTop: 12, padding: '10px 0', borderRadius: 12,
                             border: '1px solid #e5e7eb', fontWeight: 600, fontSize: 12,
@@ -4108,7 +4093,7 @@ create table if not exists memory_vectors (
                             <StatusMessage msg={rvTestResult} />
                         </div>
                     )}
-                    <button onClick={handleSaveRemoteVector} disabled={!rvUrl || !rvKey}
+                    <button onClick={handleSaveRemoteVector} disabled={rvSyncing || rvTesting || !rvUrl || !rvKey}
                         style={{
                             width: '100%', marginTop: 8, padding: '10px 0', borderRadius: 12,
                             border: 'none', fontWeight: 700, fontSize: 13, color: 'white',
@@ -4120,7 +4105,7 @@ create table if not exists memory_vectors (
                     </button>
 
                     {/* 已启用后的操作 */}
-                    {remoteVectorConfig.enabled && remoteVectorConfig.initialized && (
+                    {rvCredentialsSaved && remoteVectorConfig.enabled && remoteVectorConfig.initialized && (
                         <button onClick={handleSyncToRemote} disabled={rvSyncing}
                             style={{
                                 width: '100%', marginTop: 8, padding: '10px 0', borderRadius: 12,
@@ -4138,8 +4123,15 @@ create table if not exists memory_vectors (
                             )}
                         </button>
                     )}
+                    {rvCredentialsSaved && rvSync && (
+                        <div role="status" aria-live="polite" style={{ marginTop: 8, fontSize: 12, lineHeight: 1.6 }}>
+                            <div>{rvSyncing ? '本次上传进度' : '最近一次上传'} · {rvSync.synced + rvSync.failed} / {rvSync.total} 条</div>
+                            <div>成功 {rvSync.synced} · 失败 {rvSync.failed} {rvSync.uploading > 0 && `· 上传中 ${rvSync.uploading} `}· 尚未尝试 {rvSync.total - rvSync.synced - rvSync.failed - rvSync.uploading}</div>
+                            {rvSync.reason && <div style={{ color: '#b91c1c' }}>{rvSync.reason}。修复后可重新同步，已写入的记录按原 ID 更新。</div>}
+                        </div>
+                    )}
                     {remoteVectorConfig.enabled && (
-                        <button onClick={handleDisableRemoteVector}
+                        <button onClick={handleDisableRemoteVector} disabled={rvSyncing}
                             style={{
                                 width: '100%', marginTop: 8, padding: '8px 0',
                                 border: 'none', background: 'none',

@@ -9,6 +9,8 @@ import type {DecorationPreviewState} from '../../utils/decorationPreviewInteract
 import {renderToStaticMarkup} from 'react-dom/server';
 import MessageItem,{ThinkingChainBlock} from './MessageItem';
 import type {DecorationThumbnailPart} from '../../utils/decorationPreviewScenes';
+import ChatCharacterProfile from './ChatCharacterProfile';
+import profileCss from './ChatCharacterProfile.css?raw';
 import ChatHeaderShell from './ChatHeaderShell';
 import ChatInputArea from './ChatInputArea';
 import {PRESET_THEMES} from './ChatConstants';
@@ -18,7 +20,7 @@ import {buildChatFineTuneCss} from '../../utils/chatFineTuneCss';
 import {computeTimeSegmentStarts} from '../../utils/chatMessageGrouping';
 import {CHAT_PREVIEW_SCENES} from '../../utils/chatPreviewFixtures';
 import {BEAUTY_PREVIEW_AVATAR} from '../../utils/beautyPreviewAssets';
-import type {CharacterBuff} from '../../types';
+import type {CharacterBuff,CharacterProfile} from '../../types';
 import baseCss from './chatPreview.generated.css?inline';
 import noticeCompatCss from './ChatNoticeCompat.css?inline';
 import cardCss from './ChatCardSurface.css?inline';
@@ -28,14 +30,21 @@ import sarCss from '../sar/sar-speech.css?inline';
 const noop=()=>{};
 // Fictional fixture states only; never read or update a real character's emotions.
 const previewBuffs:CharacterBuff[]=[
- {id:'preview-calm',name:'preview_calm',label:'安心',emoji:'🍃',color:'#059669',intensity:2},
- {id:'preview-anticipation',name:'preview_anticipation',label:'期待见面',emoji:'✨',color:'#d97706',intensity:2},
+ {id:'preview-calm',name:'preview_calm',label:'安心',description:'一起待在店里，心慢慢静了下来。',emoji:'🍃',color:'#059669',intensity:2},
+ {id:'preview-anticipation',name:'preview_anticipation',label:'期待见面',description:'想在下次见面时，把刚读完的书带给你。',emoji:'✨',color:'#d97706',intensity:2},
 ];
 const defaultBubble=PRESET_THEMES.default;
 
 /** Static rendering intentionally never mounts effects or binds actual message actions. */
 export function renderChatDecorationSample(value:unknown,sceneId:string,thumbnailPart?:DecorationThumbnailPart,state:DecorationPreviewState={}) {
  const p=validateDecoration(value).parts,l=p.layout||{};
+ if(thumbnailPart==='profile'||sceneId.startsWith('profile-')){
+  const tab=sceneId==='profile-settings'?'设定':sceneId==='profile-schedule'?'日程':'当前';
+  const character={id:'profile-preview',name:'林遥',avatar:BEAUTY_PREVIEW_AVATAR,description:'旧书店的朋友',scheduleFeatureEnabled:true,emotionConfig:{enabled:true},activeBuffs:previewBuffs} as CharacterProfile;
+  const schedule={id:'preview',charId:character.id,date:'2026-09-26',generatedAt:0,slots:[{startTime:'09:00',activity:'整理书架',innerThought:'把靠窗的位置留给你。'},{startTime:'14:00',activity:'河边散步'}]};
+  const markup=renderToStaticMarkup(<ChatCharacterProfile preview character={character} schedule={schedule} initialTab={tab} onClose={noop} onSchedule={noop} onPlayTheater={noop} onMemory={noop}/>);
+  return {markup,css:baseCss+'\n'+profileCss+'\n.beauty-preview-body{display:grid;place-items:center;width:360px;height:'+ (thumbnailPart?'360':'600')+'px;background:#e8e5eb}.beauty-preview-body .chat-profile-dialog{position:relative;inset:auto;max-height:95%}\n'+(p.profile?.customCss||'')};
+ }
  if(p.collaboration)return renderCollaborationBeautySample(p.collaboration,!!thumbnailPart);
  if(p.date||p.story){
   const style=meetingAppearance(p.date||p.story);
@@ -60,7 +69,7 @@ export function renderChatDecorationSample(value:unknown,sceneId:string,thumbnai
  }
  const scene=CHAT_PREVIEW_SCENES.find(item=>item.id===sceneId)||CHAT_PREVIEW_SCENES[0];
   const messages=scene.messages.flatMap(message=>{const status=state.transfers?.[message.id];if(!status||message.type!=='transfer'||message.metadata?.receipt)return [message];return [{...message,metadata:{...message.metadata,status}},{...message,id:-message.id,role:'user' as const,metadata:{amount:message.metadata?.amount,receipt:status}}];});
-  const timeSegmentStarts=computeTimeSegmentStarts(messages);
+  const timeSegmentStarts=computeTimeSegmentStarts(messages,l.chatTimestampPosition==='below_avatar');
   const previewTimestampNow=new Date(1790386860000);
   const cssSlots=readAvatarFrameSlots(p.css||'');
   const hasUserFrame=Boolean(cssSlots.shared||cssSlots.user||p.bubbles?.user.avatarDecoration);

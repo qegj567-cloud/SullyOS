@@ -55,7 +55,13 @@ import { loadMcpServers, saveMcpServers, createMcpServer, testMcpConnection, res
 import { syncAmsgLlmCredentials, syncAmsgToolConfig, syncAmsgToolConfigAndPrompts } from '../utils/amsgStateSync';
 import { ActiveMsgClient } from '../utils/activeMsgClient';
 import { ActiveMsgStore } from '../utils/activeMsgStore';
-import { AMSG_GLOBAL_CONFIG_EVENT, isAmsg2GloballyEnabled } from '../utils/amsgGlobalGate';
+import {
+    AMSG_CRON_TRIGGER_EVENT,
+    AMSG_GLOBAL_CONFIG_EVENT,
+    isAmsg2GloballyEnabled,
+    isAmsg2WorkerActive,
+    isCloudCronPaused,
+} from '../utils/amsgGlobalGate';
 import { flushAmsg2AfterReenable, setAmsg2GlobalEnabled } from '../utils/amsgGlobalSwitch';
 import VersionInfo from '../components/settings/VersionInfo';
 import SullySupportEntry, { SupportIcon } from '../components/settings/SullySupportEntry';
@@ -812,6 +818,7 @@ const Settings: React.FC = () => {
   const [rtXhsNickname, setRtXhsNickname] = useState(realtimeConfig.xhsMcpConfig?.loggedInNickname || '');
   const [rtXhsUserId, setRtXhsUserId] = useState(realtimeConfig.xhsMcpConfig?.loggedInUserId || '');
   const [rtXhsCookie, setRtXhsCookie] = useState(realtimeConfig.xhsMcpConfig?.cookie || '');
+  const [showRtXhsCookie, setShowRtXhsCookie] = useState(false);
   const [rtXhsPlatform, setRtXhsPlatform] = useState<'xhs' | 'rednote' | undefined>(realtimeConfig.xhsMcpConfig?.platform);
   const [rtXhsGuideOpen, setRtXhsGuideOpen] = useState(false);
   const [rtTestStatuses, setRtTestStatuses] = useState<Record<string, string>>({});
@@ -847,6 +854,7 @@ const Settings: React.FC = () => {
   useSettingsFocus('amsg2', () => openAmsgPage('config'));
   const [amsgGlobalConfig, setAmsgGlobalConfig] = useState<{ workerUrl: string; enabled?: boolean; initializedAt?: number } | null>(null);
   const [amsgGlobalToggling, setAmsgGlobalToggling] = useState(false);
+  const [amsgCloudCronPaused, setAmsgCloudCronPaused] = useState(false);
 
   useEffect(() => {
       let alive = true;
@@ -862,12 +870,32 @@ const Settings: React.FC = () => {
               if (!isAmsg2GloballyEnabled(detail)) flushMcpToolConfigSync();
           }
       };
+      const onCronChanged = (ev: Event) => {
+          const detail = (ev as CustomEvent<{ enabled?: boolean }>).detail;
+          if (detail && typeof detail.enabled === 'boolean') {
+              setAmsgCloudCronPaused(!detail.enabled);
+          }
+      };
       window.addEventListener(AMSG_GLOBAL_CONFIG_EVENT, onGlobalCfg);
+      window.addEventListener(AMSG_CRON_TRIGGER_EVENT, onCronChanged);
       return () => {
           alive = false;
           window.removeEventListener(AMSG_GLOBAL_CONFIG_EVENT, onGlobalCfg);
+          window.removeEventListener(AMSG_CRON_TRIGGER_EVENT, onCronChanged);
       };
   }, []);
+
+  useEffect(() => {
+      if (!amsgGlobalConfig?.initializedAt || !isAmsg2WorkerActive(amsgGlobalConfig)) {
+          setAmsgCloudCronPaused(false);
+          return;
+      }
+      let alive = true;
+      void ActiveMsgClient.getCronTriggerState().then((state) => {
+          if (alive) setAmsgCloudCronPaused(isCloudCronPaused(state));
+      });
+      return () => { alive = false; };
+  }, [amsgGlobalConfig?.workerUrl, amsgGlobalConfig?.initializedAt, amsgGlobalConfig?.enabled, amsgPage]);
 
   const handleToggleAmsg2Global = async (next: boolean) => {
       if (amsgGlobalToggling) return;
@@ -880,6 +908,13 @@ const Settings: React.FC = () => {
               realtimeConfig,
               apiConfig,
           });
+          if (!result.ok) {
+              addToast(
+                  result.errorMessage || '网络波动，未成功开启主动消息 2.0，请稍后重试。',
+                  'error',
+              );
+              return;
+          }
           if (!next) {
               addToast(
                   result.cronNotice || '已暂停主动消息 2.0，云端连接与角色配置均已保留。',
@@ -3306,7 +3341,7 @@ const Settings: React.FC = () => {
             })()}
         </SettingsSection>
 
-        <ActiveMsgSettingsEntry onOpen={openAmsgPage} connected={Boolean(amsgGlobalConfig?.initializedAt && amsgGlobalConfig.workerUrl?.trim())} enabled={amsgGlobalConfig?.workerUrl?.trim() ? isAmsg2GloballyEnabled(amsgGlobalConfig) : undefined} toggling={amsgGlobalToggling} onToggle={next => void handleToggleAmsg2Global(next)} />
+        <ActiveMsgSettingsEntry onOpen={openAmsgPage} connected={Boolean(amsgGlobalConfig?.initializedAt && amsgGlobalConfig.workerUrl?.trim())} enabled={amsgGlobalConfig?.workerUrl?.trim() ? isAmsg2GloballyEnabled(amsgGlobalConfig) : undefined} cronPaused={amsgCloudCronPaused} toggling={amsgGlobalToggling} onToggle={next => void handleToggleAmsg2Global(next)} />
         <SullySupportEntry ref={supportEntryRef} onOpen={() => { trackEvent('打开打赏 Sully', { 入口: '设置' }); setShowSupport(true); }} />
 
         {/* 自定义网络代理 — 刻意低调的高级入口。默认折叠，不主动指引基本发现不了。
@@ -4236,8 +4271,34 @@ const Settings: React.FC = () => {
                           </p>
                           <p className="text-[10px] text-amber-700 leading-relaxed bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">{XHS_RISK_TEXT}</p>
                           <div>
-                              <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">小红书 Cookie</label>
-                              <textarea value={rtXhsCookie} onChange={e => { setRtXhsCookie(e.target.value); setRtXhsPlatform(undefined); }} rows={2} className="w-full bg-white/80 border border-rose-200 rounded-xl px-3 py-2 text-[10px] font-mono resize-y" placeholder="a1=...; web_session=...; （从浏览器登录后复制完整 cookie）" />
+                              <div className="flex items-center justify-between mb-1">
+                                  <label className="text-[10px] font-bold text-slate-400 uppercase block">小红书 Cookie</label>
+                                  {rtXhsCookie.trim() && showRtXhsCookie ? (
+                                      <button type="button" onClick={() => setShowRtXhsCookie(false)} className="text-[10px] font-medium text-rose-500 hover:text-rose-700">
+                                          隐藏
+                                      </button>
+                                  ) : null}
+                              </div>
+                              {rtXhsCookie.trim() && !showRtXhsCookie ? (
+                                  <div className="w-full bg-white/80 border border-rose-200 rounded-xl px-3 py-2 text-[11px] text-slate-500 flex items-center justify-between">
+                                      <span>已填写（{rtXhsCookie.trim().length} 字符，已隐藏防截屏泄露）</span>
+                                      <button type="button" onClick={() => setShowRtXhsCookie(true)} className="text-[10px] font-bold text-rose-500 shrink-0 ml-2">显示 / 编辑</button>
+                                  </div>
+                              ) : (
+                                  <textarea
+                                      value={rtXhsCookie}
+                                      onFocus={() => setShowRtXhsCookie(true)}
+                                      onChange={e => {
+                                          const next = e.target.value;
+                                          setRtXhsCookie(next);
+                                          setRtXhsPlatform(undefined);
+                                          setShowRtXhsCookie(Boolean(next.trim()));
+                                      }}
+                                      rows={2}
+                                      className="w-full bg-white/80 border border-rose-200 rounded-xl px-3 py-2 text-[10px] font-mono resize-y"
+                                      placeholder="a1=...; web_session=...; （从浏览器登录后复制完整 cookie）"
+                                  />
+                              )}
                           </div>
                           <button onClick={testXhsMcp} className="w-full py-2 bg-rose-100 text-rose-600 text-xs font-bold rounded-xl active:scale-95 transition-transform">测试连接</button>
                           {renderRtTestStatus('xhs-lite')}

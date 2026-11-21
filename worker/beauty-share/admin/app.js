@@ -77,15 +77,21 @@ function renderRepo(item) {
   const head = element('div', '', article); head.className = 'item-heading';
   const label = element('label', '', head); label.className = 'select-repo'; const check = document.createElement('input'); check.type = 'checkbox'; check.setAttribute('aria-label', '选择 Repo：' + m.name + ' / ' + item.signature); label.append(check);
   check.onchange = () => { if (check.checked) selected.add(item.id); else selected.delete(item.id); $('export-selected').textContent = `生成所选 Repo 合集卡（${selected.size}）`; };
-  element('h2', m.name, head); badge(({ pending: '待转达', sent: '已转达', archived: '已归档' })[item.status], item.status, head);
+  element('h2', m.name, head); badge(({ pending: '待审核', sent: item.inbox_delivered_at ? '已投递收件箱' : '已手动转达', archived: '已归档' })[item.status], item.status, head);
   element('small', `作者：${m.credit} · ${item.author_code} · ${item.share_code}`, article);
   element('p', `${m.platforms.join(' / ')}${m.contact ? ' · ' + m.contact : ''}`, article);
   const quote = element('blockquote', item.message, article); element('footer', '— ' + item.signature, quote);
-  element('small', '收到于 ' + new Date(item.created_at).toLocaleString() + ' · 私密，仅供人工转达', article);
+  element('small', '收到于 ' + new Date(item.created_at).toLocaleString(), article);
   const actions = element('div', '', article); actions.className = 'actions';
-  action('生成 Repo 卡片', () => exportCards([item]), actions, 'primary');
+  if (item.status === 'pending') {
+    action('审核通过并投递', async () => {
+      await api(`admin/repos/${item.id}`, { method: 'POST', body: JSON.stringify({ action: 'deliver' }) });
+      await load(); notice('已投递到这份作品的作者收件箱。');
+    }, actions, 'primary');
+  }
+  action('生成 Repo 卡片', () => exportCards([item]), actions);
   action('只看这位作者', async () => { $('search').value = item.author_code; query = item.author_code; offset = 0; await load(); }, actions);
-  for (const [status, label] of [['sent', '标记已转达'], ['archived', '归档'], ['pending', '恢复待转达']]) {
+  for (const [status, label] of [['sent', '标记已手动转达'], ['archived', item.inbox_delivered_at ? '从收件箱撤回并归档' : '归档'], ['pending', item.inbox_delivered_at ? '从收件箱撤回重审' : '恢复待审核']]) {
     if (item.status === status) continue;
     action(label, async () => { await api(`admin/repos/${item.id}`, { method: 'POST', body: JSON.stringify({ status }) }); await load(); notice('Repo 状态已更新。'); }, actions, 'quiet');
   }
@@ -136,8 +142,8 @@ function switchView(next) {
   view = next; offset = 0; query = ''; $('search').value = '';
   $('tab-submissions').setAttribute('aria-pressed', String(view === 'submissions')); $('tab-repos').setAttribute('aria-pressed', String(view === 'repos'));
   $('filter').replaceChildren();
-  for (const [value, label] of view === 'repos' ? [['pending','待转达'],['sent','已转达'],['archived','已归档'],['all','全部']] : [['pending','审核中'],['approved','已通过'],['rejected','已退回'],['all','全部']]) { const option = element('option', label, $('filter')); option.value = value; }
-  $('scope-note').textContent = view === 'repos' ? '仅管理员可见。按作者整理，最多选 3 份生成一张合集卡；发完 QQ 后再标记已转达。' : '文件内容请下载后人工检查，不直接执行投稿中的 CSS。';
+  for (const [value, label] of view === 'repos' ? [['pending','待审核'],['sent','已转达'],['archived','已归档'],['all','全部']] : [['pending','审核中'],['approved','已通过'],['rejected','已退回'],['all','全部']]) { const option = element('option', label, $('filter')); option.value = value; }
+  $('scope-note').textContent = view === 'repos' ? '审核后点「审核通过并投递」，作者刷新收件箱即可看到。通过 QQ 转交的请点「标记已手动转达」。同一位作者的 Repo 最多可选 3 份生成合集卡。' : '文件内容请下载后人工检查，不直接执行投稿中的 CSS。';
   return load();
 }
 $('login').onsubmit = event => { event.preventDefault(); void busy(async () => {

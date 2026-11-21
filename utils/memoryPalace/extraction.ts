@@ -9,6 +9,10 @@ import type { Message } from '../../types';
 import type { MemoryEntity, MemoryNode, MemoryRoom } from './types';
 import type { LightLLMConfig } from './pipeline';
 import { safeFetchJson } from '../safeApi';
+import { resolvePresetName } from '../apiCallLog';
+import { ApplicationErrorReport } from '../networkFailureDiagnosis';
+import type { LlmResponseInfo } from '../llmEndpoint';
+import { readConfiguredEndpointsSnapshot } from '../networkRequestSource';
 import { safeParseJsonArray } from './jsonUtils';
 import { buildSARMemoryBoundaryInstruction, formatMessageForPrompt } from '../messageFormat';
 import { readRecallRuntimeSnapshot } from './trace';
@@ -403,6 +407,48 @@ export interface BufferExtractionResult {
 
 // ─── 缓冲区提取：直接从消息提取记忆，不依赖 TopicBox ───
 
+function extractionFailureReport(
+    config: LightLLMConfig, response: LlmResponseInfo, messageCount: number, charName: string, error: unknown,
+) {
+    let host: string | undefined;
+    try { host = new URL(config.baseUrl).host; } catch { /* Invalid endpoint, no safe host to display. */ }
+    const preset = host ? resolvePresetName(config.baseUrl, config.model, config.apiKey) : undefined;
+    const endpoints = readConfiguredEndpointsSnapshot();
+    const base = config.baseUrl.trim().replace(/\/+$/, '');
+    const matchesLight = !!base && base === endpoints.lightLlmBaseUrl?.replace(/\/+$/, '');
+    const matchesMain = !!base && base === endpoints.mainApiBaseUrl?.replace(/\/+$/, '');
+    const apiLabels = [];
+    if (matchesLight !== matchesMain) apiLabels.push(matchesLight ? '记忆宫殿副 API' : '全局主 API');
+    if (preset && preset !== host) apiLabels.push(preset);
+    apiLabels.push(host || '地址无效');
+    const api = apiLabels.join(' / ');
+    const model = config.model || '未填写';
+    const status = response.status;
+    const httpFailure = status !== undefined && (status < 200 || status >= 300);
+    let stage = 'API 请求失败';
+    if (!httpFailure && response.bodyRead) stage = '收到回复后解析失败';
+    else if (!httpFailure && status !== undefined) stage = '已收到响应，但读取正文失败';
+
+    const details = [`API：${api}`, `请求模型：${model}`];
+    if (status) details.push(`HTTP ${status}`);
+    // Response previews can contain the prompt or private memory. Only expose known, safe reasons.
+    const message = error instanceof Error ? error.message : '';
+    if (message.startsWith('记忆提取输出被截断')) details.push('模型输出被截断');
+    else if (message.startsWith('记忆提取未返回有效 JSON') || message.startsWith('API返回了无效JSON') || error instanceof SyntaxError) details.push('回复格式不是有效的 JSON');
+    else if (message.startsWith('API返回了HTML')) details.push('接口返回了 HTML 页面');
+    else if (message.startsWith('API返回了空响应')) details.push('响应正文为空');
+    else if (/^(Type error|Failed to fetch|Load failed|NetworkError|aborted|timeout \d+ms)$/i.test(message)) details.push(message);
+
+    return new ApplicationErrorReport('记忆宫殿 · 记忆提取', {
+        title: `缓冲区提取失败（${messageCount} 条消息）· ${stage}`,
+        action: details.join(' · '),
+    }, {
+        attributionMode: 'explicit', appName: '记忆宫殿', purpose: '记忆提取', charName,
+        category: 'llm', operation: stage, method: 'POST', host, configSource: api, model,
+        ...(status ? { httpStatus: status } : {}),
+    });
+}
+
 /**
  * 从消息缓冲区直接提取记忆节点。
  * 用于缓冲区机制：积累的聊天消息达到阈值后，一次 LLM 调用提取记忆。
@@ -495,10 +541,12 @@ date 必填，按该记忆实际发生当天填（参考消息行首的时间戳
 pinDays 仅在需要置顶时才写，大多数记忆不需要。
 如果对话过于琐碎无值得记忆的内容，返回空数组 []。`;
 
+    const responseInfo: LlmResponseInfo = {};
     try {
         const data = await safeFetchJson(
             `${llmConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`,
             {
+                __sullyResponseInfo: responseInfo,
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -520,6 +568,7 @@ pinDays 仅在需要置顶时才写，大多数记忆不需要。
             2, 180_000, { appId: 'memorypalace', appName: '记忆宫殿', charId, charName, purpose: '记忆提取' }
         );
 
+        responseInfo.bodyRead = true;
         const reply = data.choices?.[0]?.message?.content || '';
         if (['length', 'max_tokens'].includes(data.choices?.[0]?.finish_reason)) {
             throw new Error('记忆提取输出被截断，请降低每批原文数量后重试');
@@ -583,8 +632,8 @@ pinDays 仅在需要置顶时才写，大多数记忆不需要。
 
         return { memories, crossTimeLinks, eventBoxHints, unpinIds, corrections };
 
-    } catch (err: any) {
-        console.error(`❌ [Extraction] 缓冲区提取失败 (${messages.length} 条消息):`, err.message);
+    } catch (err) {
+        console.error(extractionFailureReport(llmConfig, responseInfo, messages.length, charName, err));
         throw err;
     }
 }

@@ -15,7 +15,7 @@ import { getApiCallAmbientContext, recordApiCall, type ApiCallMeta } from './api
 import { resolveBlobRefsInRequestBody } from './apiBlobRefs';
 import { waitForPalaceRequest } from './memoryPalace/maintenanceMode';
 import { fetchLlm } from './anthropicApi';
-import { isAnthropicEndpoint } from './llmEndpoint';
+import { isAnthropicEndpoint, readLlmResponseText, type LlmRequestInit, type LlmResponseInfo } from './llmEndpoint';
 import { normalizeAssistantCompletion, readAssistantMessage, splitInlineThinking } from './assistantThinking';
 
 const log = makeDebugLogger('api', 'SafeAPI');
@@ -25,8 +25,8 @@ export function isChatCompletionUrl(url: string): boolean {
 }
 
 /** Parse a fetch Response as JSON safely (text-first, then JSON.parse) */
-export async function safeResponseJson(response: Response): Promise<any> {
-    const text = await response.text();
+export async function safeResponseJson(response: Response, info?: LlmResponseInfo): Promise<any> {
+    const text = await readLlmResponseText(response, info);
     return parseRawBodyText(text, response.status, response.headers.get('content-type'));
 }
 
@@ -411,7 +411,7 @@ export function formatApiErrorPayload(data: any, status: number): string {
  */
 export async function safeFetchJson(
     url: string,
-    options: RequestInit,
+    options: LlmRequestInit,
     maxRetries: number = 2,
     timeoutMs: number = 0,
     /** 可选：补充「哪个 App / 哪个角色 / 用途」到 API 调用记录（设置 → API 调用记录）。 */
@@ -478,7 +478,7 @@ export async function safeFetchJson(
                     continue;
                 }
                 // Non-retryable or last attempt: parse body for error details
-                const data = await safeResponseJson(response);
+                const data = await safeResponseJson(response, options.__sullyResponseInfo);
                 // If we somehow got valid JSON with error info, wrap it
                 const errMsg = formatApiErrorPayload(data, response.status);
                 throw new Error(`API Error ${response.status}: ${errMsg}`);
@@ -487,7 +487,7 @@ export async function safeFetchJson(
             const timing: { firstDeltaMs?: number } = {};
             const data = streamHooks
                 ? await readBodyWithStreaming(response, streamHooks, timing, attemptStartedAt)
-                : await safeResponseJson(response);
+                : await safeResponseJson(response, options.__sullyResponseInfo);
             if (isChatCompletionUrl(urlStr)) {
                 // TTFT 拆分埋点：headers = 首包响应头到达（≈排队+prefill 起点），
                 // firstDelta = 第一段正文增量（≈真正的 TTFT，仅流式路径有），

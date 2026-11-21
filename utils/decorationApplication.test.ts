@@ -22,6 +22,25 @@ const preset = (bubble = PRESET_THEMES.dream, more = {}) => validateDecoration({
 beforeEach(() => vi.clearAllMocks());
 
 describe('装扮应用共享气泡', () => {
+    it('旧版气泡和 CSS 在试用时保留原角色与素材，确认时使用同一套视觉设置', async () => {
+        const old = { ...structuredClone(PRESET_THEMES.default), id:'old-frame' };
+        old.user.avatarDecoration='data:image/png;base64,AA==';
+        const character={...chars[0],bubbleStyle:old.id};
+        const original=structuredClone(character);
+        const work=preset();
+        const trial=await prepareDecorationApplication(work,['bubbles'],[character],base,[old],self,readSelf,'trial');
+        expect(migrateChatThemeBlobRefs).not.toHaveBeenCalled();
+        expect(character).toEqual(original);
+        expect(trial.bubbles[0].user.avatarDecoration).toBe(old.user.avatarDecoration);
+        const applied=await prepareDecorationApplication(work,['bubbles'],[character],base,[old],self,readSelf);
+        expect({...trial.bubbles[0],id:''}).toEqual({...applied.bubbles[0],id:''});
+        const whitebox=validateDecoration({format:'sullyos-chat-decoration',version:1,name:'旧白框',parts:{css:'button { color: red; }'}});
+        const preview=await prepareDecorationApplication(whitebox,['css'],[character],base,[old],self,readSelf,'trial');
+        const saved=await prepareDecorationApplication(whitebox,['css'],[character],base,[old],self,readSelf);
+        expect(preview.prepared[0].changes.character).toEqual(saved.prepared[0].changes.character);
+        expect(character).toEqual(original);
+    });
+
     it('12 个角色只安装一份，重复应用和另一个角色继续复用同一 ID', async () => {
         const first = await prepareDecorationApplication(preset(), ['bubbles'], chars, base, [], self, readSelf);
         expect(first.bubbles).toHaveLength(1);

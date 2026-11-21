@@ -96,6 +96,23 @@ describe('iOS 全屏 PWA 键盘态', () => {
         vi.restoreAllMocks();
     });
 
+    it('takes the keyboard backing from the actual chat colors before resizing, without changing the saved wallpaper', async () => {
+        const root = document.documentElement;
+        document.body.style.backgroundImage = 'url("home.png")';
+        document.body.innerHTML = '<div class="sully-chat-root" style="background-color:rgb(40, 42, 62)"><div class="sully-chat-inputbar" style="background-color:rgba(20, 22, 30, 0.8)"><textarea></textarea></div></div>';
+        await install();
+        document.querySelector('textarea')!.focus();
+        expect(root.classList.contains('sully-ios')).toBe(true);
+        expect(root.style.getPropertyValue('--ios-inputbar-color')).toBe('rgba(20, 22, 30, 0.8)');
+        expect(root.style.getPropertyValue('--ios-chat-stage-color')).toBe('rgb(40, 42, 62)');
+        expect(inKeyboardMode()).toBe(false);
+        emitViewportResize(SCREEN_H - KEYBOARD_H);
+        expect(visibleAppHeight()).toBe(`${SCREEN_H - KEYBOARD_H}px`);
+        emitViewportResize(SCREEN_H);
+        expect(document.body.style.backgroundImage).toContain('home.png');
+        document.body.style.removeProperty('background-image');
+    });
+
     it('键盘态允许输入框内部滑动与选区，同时继续拦截外层拖动', async () => {
         await install();
         const textarea = focusTextarea();

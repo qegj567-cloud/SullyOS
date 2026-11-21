@@ -49,6 +49,7 @@ export default function FirstUseGuide() {
         setTargetReady(false);
         let current: Element | null = null;
         let hint = '';
+        let scrollFrame = 0;
         const placeHint = () => {
             if (!current) { setTargetHint(null); return; }
             const rect = current.getBoundingClientRect();
@@ -60,9 +61,22 @@ export default function FirstUseGuide() {
             const top = below ? Math.min(rect.bottom + 10, window.innerHeight - 42) : rect.top - 42;
             setTargetHint({ text: hint, left: Math.max(104, Math.min(rect.left + rect.width / 2, window.innerWidth - 104)), top: Math.max(guideBottom + 4, top), below });
         };
+        const revealTarget = () => {
+            if (!current) return;
+            if (step === 0) {
+                // Settings is lazy-mounted. Its runtime styles must lay out the scroll pane first.
+                cancelAnimationFrame(scrollFrame);
+                scrollFrame = requestAnimationFrame(() => {
+                    current?.scrollIntoView({ block: 'center', inline: 'nearest' });
+                    placeHint();
+                });
+            } else {
+                current.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+            }
+        };
         const highlight = () => {
             let selector = '';
-            if (step === 0) { selector = '[data-guide="api"]'; hint = '在这里填写并保存 API'; }
+            if (step === 0) { selector = '[data-guide="api"] [data-api-field="base-url"]'; hint = '从这里填写主 API 地址'; }
             if (step === 1) {
                 selector = hasGuideApi(memoryPalaceConfig.lightLLM) ? '[data-guide="embedding"]' : '[data-guide="use-main-api"]';
                 hint = hasGuideApi(memoryPalaceConfig.lightLLM) ? '配置向量记忆，或选择跳过' : '可点这里，暂时沿用主 API';
@@ -87,7 +101,7 @@ export default function FirstUseGuide() {
             current = next;
             setTargetReady(!!next);
             current?.classList.add('first-use-highlight');
-            current?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+            revealTarget();
             placeHint();
         };
         const observer = new MutationObserver(highlight);
@@ -95,11 +109,14 @@ export default function FirstUseGuide() {
         observer.observe(pageRoot, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-guide', 'checked', 'disabled'] });
         const resize = new ResizeObserver(placeHint);
         resize.observe(pageRoot);
+        window.addEventListener('sully:guide-navigate', revealTarget);
         window.addEventListener('resize', placeHint);
         document.addEventListener('scroll', placeHint, true);
         highlight();
         return () => {
             observer.disconnect(); resize.disconnect(); current?.classList.remove('first-use-highlight');
+            cancelAnimationFrame(scrollFrame);
+            window.removeEventListener('sully:guide-navigate', revealTarget);
             window.removeEventListener('resize', placeHint);
             document.removeEventListener('scroll', placeHint, true);
         };

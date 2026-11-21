@@ -28,8 +28,6 @@ interface ChatModalsProps {
     setTransferAmt: (v: string) => void;
     transferNote: string;
     setTransferNote: (v: string) => void;
-    emojiImportText: string;
-    setEmojiImportText: (v: string) => void;
     settingsContextLimit: number;
     setSettingsContextLimit: (v: number) => void;
     settingsContextRangeMode: ContextRangeMode;
@@ -74,7 +72,6 @@ interface ChatModalsProps {
 
     // Handlers
     onTransfer: () => void;
-    onImportEmoji: () => void;
     onSaveSettings: () => void;
     onOpenHistoryCleanup?: () => void;
     onArchive: () => void;
@@ -253,7 +250,6 @@ const ChatModals: React.FC<ChatModalsProps> = ({
     modalType, setModalType, compactHome=false,
     transferAmt, setTransferAmt,
     transferNote, setTransferNote,
-    emojiImportText, setEmojiImportText,
     settingsContextLimit, setSettingsContextLimit,
     settingsContextRangeMode, setSettingsContextRangeMode,
     settingsHideSysLogs, setSettingsHideSysLogs,
@@ -267,7 +263,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
     selectedMessage, selectedEmoji, selectedCategory, activeCharacter, messages,
     allHistoryMessages = [],
     contextRangeSnapshot,
-    onTransfer, onImportEmoji, onSaveSettings,
+    onTransfer, onSaveSettings,
     onOpenHistoryCleanup,
     onArchive, onCreatePrompt, onEditPrompt, onSavePrompt, onDeletePrompt,
     onSetHistoryStart, onRestoreAdaptiveContext, onJumpToMessageInChat, onEnterSelectionMode, onReplyMessage, onEditMessageStart, onConfirmEditMessage, onDeleteMessage, onCopyMessage, onToggleMessageFavorite, messageFavorited, onDeleteEmoji, onDeleteCategory, onRenameCategory, onDownloadCategory,
@@ -386,16 +382,6 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                     className="w-full bg-slate-100 rounded-2xl px-5 py-4 text-base font-bold focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all text-slate-700" 
                     autoFocus 
                 />
-            </Modal>
-
-            <Modal 
-                isOpen={modalType === 'emoji-import'} title="表情注入" onClose={() => setModalType('none')}
-                footer={<button onClick={onImportEmoji} className="w-full py-4 bg-primary text-white font-bold rounded-2xl">添加至当前分类</button>}
-            >
-                <div className="space-y-3">
-                    <p className="text-xs text-slate-400">表情将导入到你当前选中的分类。</p>
-                    <textarea value={emojiImportText} onChange={e => setEmojiImportText(e.target.value)} placeholder="Name--URL (每行一个)" className="w-full h-40 bg-slate-100 text-slate-800 placeholder:text-slate-400 rounded-2xl p-4 resize-none" />
-                </div>
             </Modal>
 
             <Modal 
@@ -1108,7 +1094,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
             {/* Category Options Modal (shown on long-press) */}
             <Modal isOpen={modalType === 'category-options'} title="分类操作" onClose={() => setModalType('none')}>
                 <div className="space-y-3">
-                    <button onClick={onDownloadCategory} className="w-full py-3 bg-slate-50 text-slate-700 rounded-2xl">下载分类全部原图</button>
+                    <button onClick={onDownloadCategory} className="w-full py-3 bg-slate-50 text-slate-700 rounded-2xl">导出整个分类</button>
                     {selectedCategory && !selectedCategory.isSystem && selectedCategory.id !== 'default' && <button onClick={() => { setNewCategoryName(selectedCategory.name); setModalType('rename-category'); }} className="w-full py-3 bg-slate-50 text-slate-700 rounded-2xl">重命名分类</button>}
                     <button onClick={openVisibilityModal} className="w-full py-3 bg-slate-50 text-slate-700 font-medium rounded-2xl active:bg-slate-100 transition-colors flex items-center justify-center gap-2">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">

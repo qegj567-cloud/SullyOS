@@ -20,6 +20,7 @@
  */
 
 import { isSseResponseText, parseSseToCompletion } from './safeApi';
+import { readLlmResponseText, type LlmResponseInfo } from './llmEndpoint';
 
 const API_CONFIG_KEY = 'os_api_config';
 
@@ -57,8 +58,8 @@ export function upgradeChatBodyToStream(bodyStr: string): string | null {
  *   - 已是 JSON（代理无视 stream）/ 其他文本 → 原文重新包装（body 已被消费，必须重包）
  * 只在响应 ok 时调用；错误响应由调用方原样透传给业务层的错误处理。
  */
-export async function assembleUpgradedResponse(response: Response): Promise<Response> {
-    const text = await response.text();
+export async function assembleUpgradedResponse(response: Response, info?: LlmResponseInfo): Promise<Response> {
+    const text = await readLlmResponseText(response, info);
     if (isSseResponseText(text, response.headers.get('content-type'))) {
         const assembled = parseSseToCompletion(text);
         if (assembled) {

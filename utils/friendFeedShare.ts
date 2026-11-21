@@ -17,7 +17,8 @@ async function downloadShareImage(url:string,proxy:string):Promise<Blob> {
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),8000);
     try{
         const response=await fetch(proxy.replace(/\/+$/,'')+'/weibo-image?url='+encodeURIComponent(url),{
-            credentials:'omit',cache:'no-store',redirect:'error',referrerPolicy:'no-referrer',signal:controller.signal});
+            credentials:'omit',cache:'no-store',redirect:'error',referrerPolicy:'no-referrer',signal:controller.signal,
+            __sullyHandlesFailure:true} as RequestInit);
         const mime=(response.headers.get('content-type')||'').split(';')[0];
         if(!response.ok||!['image/jpeg','image/png','image/webp','image/gif','image/avif'].includes(mime))throw Error('配图无法读取');
         const reader=response.body?.getReader();if(!reader)throw Error('配图为空');

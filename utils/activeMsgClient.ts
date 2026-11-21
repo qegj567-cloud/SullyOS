@@ -1,3 +1,4 @@
+import { getThinkingChainSettings } from './thinkingChainPrompt';
 import { BILINGUAL_TAIL_REMINDER, buildChatOutputStylePrompt, readChatTranslationConfig } from './chatOutputStylePrompt';
 import { buildReproductionTask, DIAGNOSTIC_NAMESPACE, diagnosticRunId, type DiagnosticEvent } from './amsgReproduction';
 import { resolveDialogueApi } from './characterApi';
@@ -12,10 +13,12 @@ import { readRecallRuntimeSnapshot, type RecallTrace } from './memoryPalace/trac
 import { ReiClient, classifyClientStateWrite } from '@rei-standard/amsg-client';
 import { createCloudDataSession } from './amsgCloudData';
 import {
+  AMSG_CRON_TRIGGER_EVENT,
   createAmsgGlobalDisabledError,
   isAmsg2GloballyEnabled,
   isAmsg2WorkerActive,
   readMasterPausedCron,
+  writeManualPausedCron,
   writeMasterPausedCron,
 } from './amsgGlobalGate';
 import { resolveWorkerFetchBase } from './amsgRelay';
@@ -918,7 +921,7 @@ export const buildFirePack = async (
     userName: userProfile.name,
     translationConfig: readChatTranslationConfig(char.id),
     htmlMode: { enabled: !!char.htmlModeEnabled, customPrompt: char.htmlModeCustomPrompt },
-    thinkingChain: { enabled: !!char.showThinkingChain, customPrompt: char.thinkingChainCustomPrompt },
+    thinkingChain: getThinkingChainSettings(char, userProfile),
   });
   const recentTranscript = templateStub ? '' : ChatPrompts.buildMessageHistory(
     recentMessages,
@@ -2558,19 +2561,22 @@ export const ActiveMsgClient = {
       anthropicMessagesWorkerUrl: _staleAnthropicWorkerUrl,
       ...handshakeConfig
     } = config;
+    if (hadMasterPausedCron) {
+      let cronRes: { ok: boolean; message: string; code?: string };
+      try {
+        cronRes = await this.setCronTriggerEnabled(true, { allowWhenDisabled: true, timeoutMs: 10_000 });
+      } catch {
+        throw new Error('网络波动，未能连上云端恢复后台定时触发，暂未启用主动消息 2.0，请稍后重试。');
+      }
+      if (cronRes.ok || cronRes.code === 'CF_TOKEN_MISSING' || cronRes.code === 'NOT_FOUND') {
+        writeMasterPausedCron(false);
+      } else {
+        throw new Error(`未能恢复云端后台定时触发（${cronRes.message}），暂未启用主动消息 2.0，请稍后重试。`);
+      }
+    }
     await ActiveMsgStore.saveGlobalConfig({ ...handshakeConfig, enabled: true, initializedAt: Date.now() });
     if (wasDisabled) {
       void this.probeInstantChatSupport().catch(() => {});
-    }
-    if (hadMasterPausedCron) {
-      try {
-        const cronRes = await this.setCronTriggerEnabled(true, { timeoutMs: 6_000 });
-        if (cronRes.ok || cronRes.code === 'CF_TOKEN_MISSING' || cronRes.code === 'NOT_FOUND') {
-          writeMasterPausedCron(false);
-        }
-      } catch {
-        // 恢复定时触发失败不拦住连接本身，保留标记供后续开关或面板继续补恢复
-      }
     }
     // 「重新连接并验证」是用户显式的一次对表，按特性位存的能力位也当场探准，别等下次握手。
     // 排在保存之后：上面那句写的是握手前的配置快照，探测结论放它前面会被原样盖回去。
@@ -3965,7 +3971,7 @@ export const ActiveMsgClient = {
    * 三种都按「不支持」处理——设置页不显示那个按钮，也不报错。
    */
   async getCronTriggerState(
-    options?: { allowWhenDisabled?: boolean; timeoutMs?: number },
+    options?: { allowWhenDisabled?: boolean; timeoutMs?: number; throwOnNetworkError?: boolean },
   ): Promise<AmsgCronTriggerState | null> {
     try {
       const config = await ensureWorkerReady({ allowWhenDisabled: options?.allowWhenDisabled });
@@ -3980,6 +3986,9 @@ export const ActiveMsgClient = {
       );
       // 旧 worker 没有这个端点：可能回 404，也可能被上游当成未知路由回一段自己的 JSON。
       if (status === 404 || body?.error?.code === 'NOT_FOUND') return null;
+      if (options?.throwOnNetworkError && status >= 500) {
+        throw new Error(`HTTP ${status}`);
+      }
       if (status === 200 && body?.success === true) {
         const data = body.data ?? {};
         if (data.supported === true && typeof data.enabled === 'boolean') {
@@ -3996,7 +4005,8 @@ export const ActiveMsgClient = {
         code: typeof body?.error?.code === 'string' ? body.error.code : undefined,
         message: formatAmsgServerError(body, `HTTP ${status}`),
       };
-    } catch {
+    } catch (error) {
+      if (options?.throwOnNetworkError) throw error;
       return null;
     }
   },
@@ -4010,7 +4020,7 @@ export const ActiveMsgClient = {
    */
   async setCronTriggerEnabled(
     enabled: boolean,
-    options?: { allowWhenDisabled?: boolean; timeoutMs?: number },
+    options?: { allowWhenDisabled?: boolean; timeoutMs?: number; source?: 'manual' | 'master' },
   ): Promise<{ ok: boolean; message: string; code?: string }> {
     const config = await ensureWorkerReady({ allowWhenDisabled: options?.allowWhenDisabled });
     const signal = typeof options?.timeoutMs === 'number' && options.timeoutMs > 0 && typeof AbortSignal?.timeout === 'function'
@@ -4035,6 +4045,16 @@ export const ActiveMsgClient = {
       };
     }
     if (status === 200 && body?.success === true) {
+      if (enabled) {
+        writeManualPausedCron(false);
+        writeMasterPausedCron(false);
+      } else if (options?.source !== 'master') {
+        writeManualPausedCron(true);
+        writeMasterPausedCron(false);
+      }
+      if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+        window.dispatchEvent(new CustomEvent(AMSG_CRON_TRIGGER_EVENT, { detail: { enabled } }));
+      }
       return {
         ok: true,
         message: enabled

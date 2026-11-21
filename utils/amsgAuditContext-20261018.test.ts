@@ -2,6 +2,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { DB } from './db';
 import { ActiveMsgClient, buildFirePack } from './activeMsgClient';
+import { getThinkingChainSettings } from './thinkingChainPrompt';
 import { buildChatRequestPayload } from './chatRequestPayload';
 import { ActiveMsgStore } from './activeMsgStore';
 import { catchUpMissedPushes, flushInboxToChat } from './activeMsgRuntime';
@@ -12,14 +13,20 @@ import { RoomPlateDB } from './memoryPalace/db';
 
 afterEach(() => { vi.restoreAllMocks(); });
 
-it('scheduled fire packs preserve configured bilingual, HTML, and inner-monologue instructions', async () => {
+it.each([
+  { mode: undefined, custom: 'AUDIT_THINKING_CUSTOM_RULE', enabled: true, hasDefault: true },
+  { mode: 'append', custom: '', enabled: true, hasDefault: true },
+  { mode: 'replace', custom: 'AUDIT_THINKING_CUSTOM_RULE', enabled: true, hasDefault: false },
+  { mode: 'replace', custom: '   ', enabled: true, hasDefault: false },
+  { mode: 'replace', custom: 'AUDIT_THINKING_CUSTOM_RULE', enabled: false, hasDefault: false },
+])('applies thinking mode $mode (enabled=$enabled, custom="$custom") to instant and scheduled prompts', async ({ mode, custom, enabled, hasDefault }) => {
   const char = {
     id: 'audit-context-char', name: '角色', memories: [], memoryPalaceEnabled: false,
     htmlModeEnabled: true, htmlModeCustomPrompt: 'AUDIT_HTML_CUSTOM_RULE',
-    showThinkingChain: true, thinkingChainCustomPrompt: 'AUDIT_THINKING_CUSTOM_RULE',
+    showThinkingChain: enabled, thinkingChainCustomPrompt: custom, thinkingChainPromptMode: mode,
     activeMsg2Config: { enabled: true, tasks: [] },
   } as any;
-  const userProfile = { name: '用户' } as any;
+  const userProfile = { name: '用户', thinkingChainPrompt: { mode: 'replace', customPrompt: 'SPACE_RULE' } } as any;
   localStorage.setItem(`chat_translate_enabled_${char.id}`, 'true');
   localStorage.setItem(`chat_translate_source_lang_${char.id}`, '日语');
   localStorage.setItem(`chat_translate_lang_${char.id}`, '中文');
@@ -28,13 +35,38 @@ it('scheduled fire packs preserve configured bilingual, HTML, and inner-monologu
     timelyByWorker: true,
     translationConfig: { enabled: true, sourceLang: '日语', targetLang: '中文' },
     htmlMode: { enabled: char.htmlModeEnabled, customPrompt: char.htmlModeCustomPrompt },
-    thinkingChain: { enabled: char.showThinkingChain, customPrompt: char.thinkingChainCustomPrompt },
+    thinkingChain: getThinkingChainSettings(char, userProfile),
   });
   const fire = await buildFirePack(char, userProfile, [], undefined, { all: [], categories: [] });
   const instantText = JSON.stringify(chat.fullMessages);
-  for (const instruction of ['双语输出模式', 'AUDIT_HTML_CUSTOM_RULE', 'AUDIT_THINKING_CUSTOM_RULE']) {
-    expect(instantText).toContain(instruction);
-    expect(fire.template).toContain(instruction);
+  expect(chat.flags.thinkingActive).toBe(enabled);
+  expect(fire.thinkingChainEnabled).toBe(enabled);
+  for (const prompt of [instantText, fire.template]) {
+    expect(prompt).not.toContain('SPACE_RULE');
+    expect(prompt).toContain('双语输出模式');
+    expect(prompt).toContain('AUDIT_HTML_CUSTOM_RULE');
+    expect(prompt.includes('【以下规则仅适用于 THINKING 阶段】')).toBe(hasDefault);
+    expect(prompt.includes('AUDIT_THINKING_CUSTOM_RULE')).toBe(enabled && !!custom.trim());
+    expect(prompt.includes('## 用户对内心独白的额外要求')).toBe(hasDefault && !!custom.trim());
+  }
+});
+
+it('uses this space’s shared prompt unless the character has its own rules', async () => {
+  const user = { name: '用户', thinkingChainPrompt: { mode: 'replace', customPrompt: 'SPACE_RULE' } } as const;
+  const char = { id: 'shared-qa', name: '角色', memories: [], showThinkingChain: true } as any;
+  const legacy = { ...char, thinkingChainCustomPrompt: 'OLD_RULE' };
+  expect(getThinkingChainSettings(legacy, user)).toMatchObject({ scope: 'character', mode: 'append', customPrompt: 'OLD_RULE' });
+  expect(getThinkingChainSettings(char, {})).toMatchObject({ scope: 'space', mode: 'append', customPrompt: '' });
+  for (const follower of [char, { ...legacy, thinkingChainPromptScope: 'space' }]) {
+    const thinkingChain = getThinkingChainSettings(follower, user);
+    const input = { char: follower, userProfile: { ...user, bio: '', avatar: '' }, groups: [], emojis: [], categories: [], historyMsgs: [], contextLimit: 20 };
+    const chat = await buildChatRequestPayload({ ...input, thinkingChain });
+    const scheduled = await buildFirePack(follower, input.userProfile, [], undefined);
+    for (const text of [JSON.stringify(chat.fullMessages), scheduled.template]) {
+      expect(text).toContain('SPACE_RULE');
+      expect(text).not.toContain('OLD_RULE');
+      expect(text).not.toContain('【以下规则仅适用于 THINKING 阶段】');
+    }
   }
 });
 

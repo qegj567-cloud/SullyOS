@@ -13,7 +13,7 @@
 import type { MemoryNode, MemoryVector, RemoteVectorConfig } from './types';
 import { MemoryNodeDB, MemoryVectorDB, ensureFloat32 } from './db';
 import { cosineSimilarity } from './embedding';
-import { searchVectors as remoteSearch } from './supabaseVector';
+import { remoteCoversLocal, searchVectors as remoteSearch } from './supabaseVector';
 
 export interface VectorSearchResult {
     node: MemoryNode;
@@ -24,10 +24,13 @@ export interface VectorSearchResult {
 let worker: Worker | null = null;
 let workerFailed = false;
 
-// 远程向量搜索会话级熔断：一旦 Supabase RPC 抛网络错误（CORS / fetch TypeError / 500
-// 无 CORS 头）就关闭整个会话的远程路径，避免后续每条查询都踩一遍 CORS 然后回退本地，
-// 15 次冗余加载全量向量库把 V8 typed-array arena 撕碎。
-let remoteSearchBroken = false;
+const rpcCooldown = new Map<string, number>();
+const configKey = (config: RemoteVectorConfig) => JSON.stringify([config.supabaseUrl, config.supabaseAnonKey]);
+
+export async function canSearchRemote(config: RemoteVectorConfig | undefined, charId: string): Promise<boolean> {
+    if (!config?.enabled || !config.initialized || (rpcCooldown.get(configKey(config)) ?? 0) > Date.now()) return false;
+    return remoteCoversLocal(config, charId);
+}
 
 /** 把 worker 标记为坏掉并终止，确保不再被 getWorker() 拿到。 */
 function markWorkerBroken(reason: string): void {
@@ -41,17 +44,6 @@ function markWorkerBroken(reason: string): void {
     // 同时清空等待中的 worker 请求，免得 Promise 挂死
     for (const resolve of workerPending.values()) resolve([]);
     workerPending.clear();
-}
-
-/** 供 relatedMemories 等上层快速判断本会话是否该跳过远程路径。 */
-export function isRemoteSearchBroken(): boolean {
-    return remoteSearchBroken;
-}
-
-function markRemoteBroken(reason: string): void {
-    if (remoteSearchBroken) return;
-    console.warn(`[vectorSearch] disabling remote search for this session: ${reason}`);
-    remoteSearchBroken = true;
 }
 
 // Worker 多路复用：以 requestId 分发响应，避免并发时后一个 onmessage
@@ -112,43 +104,12 @@ export async function vectorSearch(
 ): Promise<VectorSearchResult[]> {
     // ─── 远程路径：Supabase pgvector ─────────────────
     // 注意：远程 RPC 已内置 archived=false 过滤
-    if (remoteConfig?.enabled && remoteConfig.initialized && !remoteSearchBroken) {
+    if (remoteConfig && await canSearchRemote(remoteConfig, charId)) {
         try {
-            const remoteResults = await remoteSearch(remoteConfig, queryVector, charId, threshold, topK);
-            if (remoteResults.length > 0) {
-                // 远程结果已包含内容，构建轻量 MemoryNode（带 EventBox 字段 + Russell 情感 + 置顶 + 衍生来源）
-                return remoteResults.map(r => ({
-                    node: {
-                        id: r.memoryId,
-                        charId,
-                        content: r.content,
-                        room: r.room as any,
-                        tags: r.tags,
-                        importance: r.importance,
-                        mood: r.mood,
-                        valence: r.valence ?? undefined,
-                        arousal: r.arousal ?? undefined,
-                        embedded: true,
-                        createdAt: r.createdAt || Date.now(),
-                        lastAccessedAt: r.lastAccessedAt || r.createdAt || Date.now(),
-                        accessCount: r.accessCount || 0,
-                        pinnedUntil: r.pinnedUntil,
-                        sourceId: r.sourceId,
-                        origin: (r.origin as any) ?? undefined,
-                        eventBoxId: r.eventBoxId,
-                        archived: r.archived,
-                        isBoxSummary: r.isSummary,
-                    },
-                    similarity: r.similarity,
-                }));
-            }
-            // 远程正常但这次没命中：直接返回空，不要再跑一遍本地（避免双倍耗时）。
-            return [];
-        } catch (e: any) {
-            // 远程坏了（CORS / 500 无 CORS 头 / DNS 等网络错）：熔断整个会话的远程路径
-            const msg = e?.message || String(e);
-            markRemoteBroken(msg);
-            // 本次查询回退到本地
+            return await remoteSearch(remoteConfig, queryVector, charId, threshold, topK);
+        } catch (error) {
+            rpcCooldown.set(configKey(remoteConfig), Date.now() + 60000);
+            console.warn('[vectorSearch] 远程检索暂不可用，本次使用本地向量', error);
         }
     }
 

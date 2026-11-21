@@ -22,7 +22,12 @@ export async function embedBeautyCaptureImages(root: HTMLElement, signal?: Abort
       let loaded = false;
       let httpStatus: number | undefined;
       try {
-        const response = await waitForBeautyCapture(fetch(url.href, { signal: controller.signal, credentials: 'omit' }), controller.signal);
+        const request: RequestInit & { __sullyHandlesFailure: boolean } = {
+          signal: controller.signal,
+          credentials: 'omit',
+          __sullyHandlesFailure: /^https?:$/.test(url.protocol) && url.origin !== location.origin,
+        };
+        const response = await waitForBeautyCapture(fetch(url.href, request), controller.signal);
         if (!response.ok) { httpStatus = response.status; throw Error('图片下载失败'); }
         const blob = await waitForBeautyCapture(response.blob(), controller.signal);
         loaded = true;

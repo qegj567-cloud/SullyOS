@@ -2,7 +2,7 @@ import type {DecorationPreset} from './chatDecoration';
 import {cssRuleSelectors,maskCssComments} from './cssRuleSelectors';
 import {CHAT_PREVIEW_SCENES,type ChatPreviewScene} from './chatPreviewFixtures';
 
-export type DecorationThumbnailPart = 'bubbles'|'background'|'psyche'|'avatar'|'schedule'|'journal'|'date'|'story'|'collaboration';
+export type DecorationThumbnailPart = 'bubbles'|'background'|'psyche'|'profile'|'avatar'|'schedule'|'journal'|'date'|'story'|'collaboration';
 /** Only unambiguous single-part works get an isolated catalog thumbnail. */
 export function decorationThumbnailPart(value:unknown):DecorationThumbnailPart|undefined {
  const parts=(value as Partial<DecorationPreset>|null)?.parts;
@@ -15,7 +15,7 @@ export function decorationThumbnailPart(value:unknown):DecorationThumbnailPart|u
   if(blocks.every(block=>block[1]===kind)&&Object.keys(parts).every(key=>key==='css'||key===kind))return kind;
   return;
  }
- const present=(['bubbles','background','psyche','sound','schedule','journal','date','story','collaboration'] as const).filter(key=>parts[key]!=null);
+ const present=(['bubbles','background','psyche','profile','sound','schedule','journal','date','story','collaboration'] as const).filter(key=>parts[key]!=null);
  return present.length===1&&present[0]!=='sound'?present[0]:undefined;
 }
 
@@ -28,7 +28,10 @@ export function decorationPreviewScenes(value: unknown, scope: 'preset'|'all' = 
   if((value as Partial<DecorationPreset>|null)?.parts?.journal)return [{id:'journal-app',label:'交换日记',messages:[]}];
   const scheduleScene={id:'schedule-card',label:'日程表',messages:[]};
   const hasSchedule=!!(value as Partial<DecorationPreset>|null)?.parts?.schedule;
-  if (scope === 'all') return hasSchedule?[...CHAT_PREVIEW_SCENES,scheduleScene]:CHAT_PREVIEW_SCENES;
+  const profileScenes=['当前','设定','日程'].map((label,i)=>({id:'profile-'+['current','settings','schedule'][i],label:'名片 · '+label,messages:[]}));
+  const withProfile=!!(value as Partial<DecorationPreset>|null)?.parts?.profile;
+  if(withProfile&&Object.keys((value as DecorationPreset).parts).length===1)return profileScenes;
+  if (scope === 'all') return [...CHAT_PREVIEW_SCENES,...(hasSchedule?[scheduleScene]:[]),...(withProfile?profileScenes:[])];
   const p = (value as Partial<DecorationPreset> | null)?.parts || {};
   const css = [p.css, p.bubbles?.customCss, p.psyche?.customCss].filter(Boolean).join('\n');
   // Ignore comments and declaration values (including URLs and textual examples).
@@ -58,5 +61,5 @@ export function decorationPreviewScenes(value: unknown, scope: 'preset'|'all' = 
    }
   }
   if (!ids.size&&!hasSchedule) add('conversation');
-  return [...CHAT_PREVIEW_SCENES.filter(scene => ids.has(scene.id)),...(hasSchedule?[scheduleScene]:[])];
+  return [...CHAT_PREVIEW_SCENES.filter(scene => ids.has(scene.id)),...(hasSchedule?[scheduleScene]:[]),...(withProfile?profileScenes:[])];
 }

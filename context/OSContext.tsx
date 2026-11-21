@@ -12,7 +12,7 @@ import { homeRecords } from '../utils/homeRecords';
 import { readFriendFeed } from '../utils/friendFeed';
 import { collectFriendFeedMedia, exportActivityTextAsset, isActivityTextAsset } from '../utils/activityBackup';
 import { HELP_HISTORY_KEY, helpMediaHistory, helpTextHistory } from '../utils/sullyHelpBackup';
-import { collectEmojiBackup, portableEmojiRow } from '../utils/emojiBackup';
+import { legacyStickerLinks, portableEmojiRow } from '../utils/emojiBackup';
 import { retireCloudCharacter } from '../utils/amsgCloudRetirement';
 import { AMSG_OWNER_CHECK_AFTER_IMPORT_LS_KEY } from '../utils/amsgOwnerReconcile';
 import { AMSG_GLOBAL_CONFIG_EVENT, isAmsg2GloballyEnabled, isAmsg2WorkerActive } from '../utils/amsgGlobalGate';
@@ -27,6 +27,7 @@ import {exportBeautyAuthorBackup} from '../utils/beautyAuthorBackup';
 import { initializeFirstUseGuide } from '../utils/firstUseGuide';
 import { startBeautyUsage, stopBeautyUsage, stopBeautyForThemeChange } from '../utils/beautyUsage';
 import { FEEDBACK_INVITATION_KEY, hasPriorFeedbackInstallEvidence, initializeFeedbackInvitation, suppressFeedbackInvitation } from '../utils/feedbackInvitation';
+import { decorationSelection } from '../utils/decorationPriority';
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
 import { generateAvatar } from '../utils/defaultAvatar';
 import { buildRescueImportAnalytics, isAmsgRescueExport, rescueExportToBackup } from '../utils/amsgRescueImport';
@@ -70,8 +71,10 @@ import { captureApiRequestOnce, getApiCallAmbientContext, recordApiCall, setApiC
 import { isUserLocationLookupUrl } from '../utils/userLocationPrivacy';
 import { exportUserLocationSettings } from '../utils/userLocationBackup';
 import { isGlobalStreamEnabled, upgradeChatBodyToStream, assembleUpgradedResponse } from '../utils/streamUpgrade';
+import type { LlmRequestInit } from '../utils/llmEndpoint';
 import { rewriteStaleWorkerUrl } from '../utils/proxyWorker';
 import {
+  ApplicationErrorReport,
   buildConsoleErrorSystemLog,
   buildFetchFailureSystemLog,
   buildHttpErrorSystemLog,
@@ -988,6 +991,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const errorRoutes = useRef({ apiConfig, apiPresets, memoryPalaceConfig, characters });
   errorRoutes.current = { apiConfig, apiPresets, memoryPalaceConfig, characters };
   const [systemLogs, setSystemLogs] = useState<SystemLog[]>([]);
+
   
   // Sys Operation Status
   const [sysOperation, setSysOperation] = useState<{ status: 'idle' | 'processing', message: string, progress: number }>({ status: 'idle', message: '', progress: 0 });
@@ -1110,8 +1114,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   useEffect(() => {
       if (!isDataLoaded || characters.length === 0) return;
       if (!shouldReportSnapshot('char-settings')) return;
-      trackCurrentCharSettingsOnce(collectCharSettings(characters, activeCharacterId));
-  }, [isDataLoaded, characters, activeCharacterId]);
+      trackCurrentCharSettingsOnce(collectCharSettings(characters, activeCharacterId, userProfile));
+  }, [isDataLoaded, characters, activeCharacterId, userProfile]);
 
   // --- 使用统计：现在开着哪些功能 ---
   // 跟「当前外观」一个道理：外部服务这类配置配一次就长期生效，只看「打开过配置页」
@@ -1259,6 +1263,10 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           let receivedResponseHeaders: ReceivedResponseHeadersInfo | undefined;
           const effectiveHeaders = (sendArgs[1] as RequestInit | undefined)?.headers
               || (sendArgs[0] instanceof Request ? sendArgs[0].headers : undefined);
+          const identifyFailure = () => identifyNetworkRequestSource({
+              url: urlStr, method, headers: effectiveHeaders, body: sendArgs[1]?.body,
+              explicitMeta: explicitMetaAtStart, ambientMeta: ambientMetaAtStart,
+          });
 
           try {
               let response = await fetchLlm(sendArgs[0], sendArgs[1], originalFetch, true);
@@ -1276,7 +1284,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               // 流式升级的响应归一化：SSE 攒齐拼回标准 chat.completion JSON——
               // 调用方（safeResponseJson / res.json() 均可）拿到与升级前等价的响应。
               if (streamUpgraded && response.ok) {
-                  response = await assembleUpgradedResponse(response);
+                  response = await assembleUpgradedResponse(response, (config as LlmRequestInit | undefined)?.__sullyResponseInfo);
               }
 
               // 「API 调用记录」统一记录入口：所有对话生成接口（裸 fetch + safeFetchJson
@@ -1350,14 +1358,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   const requestMeta = explicitMeta || ambientMetaAtStart;
                   const body = (sendArgs[1] as any)?.body;
                   const relayErrorCode = response.headers.get('x-amsg-relay-error') || undefined;
-                  const identity = identifyNetworkRequestSource({
-                      url: urlStr,
-                      method,
-                      headers: effectiveHeaders,
-                      body,
-                      explicitMeta,
-                      ambientMeta: ambientMetaAtStart,
-                  });
+                  const identity = identifyFailure();
+                  if (identity.category === 'external-media') return response;
                   if (shouldLogHttpStatusError({ status: response.status, identity, relayErrorCode })
                       || /(?:\/chat\/completions|\/models|\/messages|\/responses|\/embeddings|\/rerank)(?:[/?#]|$)/.test(urlStr)) {
                       try {
@@ -1424,6 +1426,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   recordApiCall({ requestId: (config as any)?.__sullyApiCallId, url: urlStr, body, ok: false, meta: requestMeta, durationMs });
               }
               if (!isAnalyticsRequestUrl(urlStr) && !handlesFailure) {
+                  const identity = identifyFailure();
+                  if (identity.category === 'external-media') throw err;
                   // 把具体功能来源、配置归属、方法、耗时、前后台切换线索、Resource Timing 一并记齐，
                   // 再异步做一次 no-cors 连通性复检并回填结论（详见 utils/networkFailureDiagnosis.ts）。
                   const visibilityAtEnd = typeof document !== 'undefined' ? document.visibilityState : undefined;
@@ -1440,6 +1444,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                       ? requestErrorAdvice(routesAtStart, urlStr, '', 0, '', requestModel, requestMeta, config?.headers)
                       : undefined;
                   const { log, kind } = buildFetchFailureSystemLog({
+                      identity,
                       url: urlStr,
                       method,
                       headers: effectiveHeaders,
@@ -1520,6 +1525,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           const caller = captureCallerHint();
           const ambient = getApiCallAmbientContext();
           const errLog = buildConsoleErrorSystemLog({
+              report: args[0] instanceof ApplicationErrorReport ? args[0] : undefined,
               message: msg,
               stacks,
               caller,
@@ -1967,7 +1973,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         try {
             const rvConfig = JSON.parse(localStorage.getItem('os_remote_vector_config') || '{}');
             if (rvConfig.enabled && rvConfig.initialized && rvConfig.supabaseUrl) {
-                const { getVectorCount } = await import('../utils/memoryPalace/supabaseVector');
+                const { getVectorCount, readUpgrade } = await import('../utils/memoryPalace/supabaseVector');
+                if (!readUpgrade(rvConfig).done) return; // The automatic check already reports migration progress.
                 const remoteCount = await getVectorCount(rvConfig);
                 // 本地向量数量
                 const localDb = await import('../utils/db').then(m => m.openDB());
@@ -1977,7 +1984,9 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                     req.onsuccess = () => res(req.result);
                     req.onerror = () => res(0);
                 });
-                if (localCount > 0 && remoteCount < localCount * 0.5) {
+                if (localCount > 0 && remoteCount === null) {
+                    setTimeout(() => addToast('远程向量数量暂时无法查询，可在记忆宫殿设置中测试连接。', 'info'), 3000);
+                } else if (remoteCount !== null && remoteCount < localCount) {
                     setTimeout(() => addToast(`本地有 ${localCount} 条向量，远程仅 ${remoteCount} 条。建议去设置页同步到远程。`, 'info'), 3000);
                 }
             }
@@ -2758,6 +2767,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   }, [isDataLoaded]);
 
   const updateTheme = async (updates: Partial<OSTheme>) => {
+    updates = decorationSelection(theme, updates, 'global');
     stopBeautyForThemeChange(updates);
     const { wallpaper, lockWallpaper, launcherWidgetImage, launcherWidgets, desktopDecorations, customFont, ...styleUpdates } = updates;
     // Legacy slots are banned — never let them enter state, regardless of caller intent.
@@ -3054,7 +3064,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const updateCharacter = async (id: string, updates: Partial<CharacterProfile> | ((prev: CharacterProfile) => Partial<CharacterProfile>)) => {
     if (typeof updates !== 'function' && Object.keys(updates).some(key => ['chatAppearance','chatFineTune','bubbleStyle','chatBackground','chromeCustomCss','chatSound','chatSoundBound','chatDecorationCssIsolated'].includes(key))) stopBeautyUsage('chat:' + id);
     setCharacters(prev => {
-      const updated = prev.map(c => c.id === id ? normalizeCharacterImpression({ ...c, ...(typeof updates === 'function' ? updates(c) : updates) }) : c);
+      const updated = prev.map(c => c.id === id ? normalizeCharacterImpression({ ...c, ...decorationSelection(c, typeof updates === 'function' ? updates(c) : updates, 'character') }) : c);
       const target = updated.find(c => c.id === id);
       if (target) {
         const before = prev.find(c => c.id === id);
@@ -4248,7 +4258,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               life_record_settings: 'lifeRecordSettings',
           };
           const prewrittenStores: BackupManifest['stores'] = {};
-          const emojiBackup = await collectEmojiBackup(mode === 'text_only' ? [] : (await DB.getEmojis()).map(e => e.url));
+          const stickerLinks = legacyStickerLinks(await DB.getEmojis());
           // Vectors retain the existing binary format, read one record at a time.
           let vectorPayload: Awaited<ReturnType<typeof encodeVectorsForBackupChunked>> | undefined;
           // Only voice Blobs reachable from the exported Live2D settings are portable.
@@ -4278,7 +4288,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   prewrittenStores[field] = await streamBackupArrayStore(zip, storeName, field, {
                       onSerialized: collectSerialized,
                       transform: (item, index) => {
-                          item = portableEmojiRow(storeName, item, emojiBackup.tokens);
+                          item = portableEmojiRow(storeName, item, stickerLinks);
                           if (storeName === 'characters') {
                               normalizeCharacterRoomAssetsInPlace(item);
                               if (mode !== 'text_only') {
@@ -4409,7 +4419,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               const { missing } = await writeBlobsToZip(
                   zip as unknown as ZipFileWriter,
                   referencedBlobTokens,
-                  async token => emojiBackup.blobs.get(token) ?? await getBlobForRef(token),
+                  getBlobForRef,
                   { onYield: () => new Promise<void>(r => setTimeout(r, 0)) },
               );
               if (missing.length > 0) {
@@ -5111,7 +5121,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     if (appId === AppID.Date && suspendedDateRef.current) setActiveCharacterId(suspendedDateRef.current.charId);
     setActiveApp(appId);
   };
-  const closeApp = () => setActiveApp(AppID.Launcher);
+  const closeApp = useCallback(() => setActiveApp(AppID.Launcher), []);
   // 从聊天直接进入某角色的见面：切换当前角色 + 标记自动进入 + 打开见面 App
   const openDateWithChar = (charId: string) => {
     // 和这个角色的见面正挂着：回到那场见面，不另开一场。

@@ -11,7 +11,8 @@ export function startsNewMessageGroup(previous: Pick<Message, 'role' | 'timestam
 /**
  * 微信式顶部时间条分段：只按相邻消息的绝对时间差（≥ 5 分钟）切分，不因双方轮流发言切碎对话段。
  */
-export function startsNewTimeSegment(previous: Pick<Message, 'timestamp'> | null, current: Pick<Message, 'timestamp'>): boolean {
+export function startsNewTimeSegment(previous: Pick<Message, 'timestamp'> | null, current: Pick<Message, 'timestamp'>, byDay = false): boolean {
+    if (byDay && previous) return getLocalDateKey(new Date(previous.timestamp)) !== getLocalDateKey(new Date(current.timestamp));
     return !previous || Math.abs(current.timestamp - previous.timestamp) >= CHAT_TIME_SEGMENT_GAP_MS;
 }
 
@@ -19,13 +20,13 @@ export function startsNewTimeSegment(previous: Pick<Message, 'timestamp'> | null
  * 计算整串消息里哪些条目需要在顶部渲染独立时间条。
  * 系统提示（role === 'system'）自带独立版式，本身不挂对话时间条，也不吞掉其后首条对话的时间条。
  */
-export function computeTimeSegmentStarts(messages: ReadonlyArray<Pick<Message, 'role' | 'timestamp'>>): boolean[] {
+export function computeTimeSegmentStarts(messages: ReadonlyArray<Pick<Message, 'role' | 'timestamp'>>, byDay = false): boolean[] {
     const starts: boolean[] = new Array(messages.length).fill(false);
     let lastNonSystem: Pick<Message, 'role' | 'timestamp'> | null = null;
     for (let i = 0; i < messages.length; i++) {
         const msg = messages[i];
         if (msg.role === 'system') continue;
-        starts[i] = startsNewTimeSegment(lastNonSystem, msg);
+        starts[i] = startsNewTimeSegment(lastNonSystem, msg, byDay);
         lastNonSystem = msg;
     }
     return starts;

@@ -10,6 +10,12 @@ export async function clearEmojiOriginals(spaceId: string) {
 }
 export const isRemoteEmoji = (url: string) => /^https?:\/\//i.test(url);
 
+/** Older backups may have materialized a cached link as a local blob. */
+export function stickerLink(row: { url: string; backupSourceUrl?: string }): string | undefined {
+    if (isRemoteEmoji(row.url)) return row.url;
+    if (row.backupSourceUrl && isRemoteEmoji(row.backupSourceUrl)) return row.backupSourceUrl;
+}
+
 export async function cachedEmojiOriginal(url: string): Promise<Blob | undefined> {
     if (!isRemoteEmoji(url) || typeof caches === 'undefined') return;
     const cache = await caches.open(emojiCacheName());
@@ -54,7 +60,7 @@ export async function rememberEmojiOriginal(url: string, blob: Blob): Promise<bo
     return true;
 }
 
-type Original = { blob?: Blob; missing?: boolean };
+type Original = { blob?: Blob; failure?: 'missing' | 'retry' };
 const pending = new Map<string, Promise<Original>>();
 
 async function resolveOriginal(url: string, retry: boolean): Promise<Original> {
@@ -66,12 +72,18 @@ async function resolveOriginal(url: string, retry: boolean): Promise<Original> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-        const response = await fetch(url, { signal: controller.signal, cache: retry ? 'reload' : 'default' });
-        if (!response.ok) return { missing: cacheReadable && (response.status === 404 || response.status === 410) };
+        // A cross-origin byte read can fail while the same URL still displays in an img.
+        const response = await fetch(url, { signal: controller.signal, cache: retry ? 'reload' : 'default', __sullyHandlesFailure: true } as RequestInit);
+        if (!response.ok) {
+            if (!cacheReadable || response.status === 408 || response.status === 429 || response.status >= 500) return { failure: 'retry' };
+            if (response.status === 404 || response.status === 410) return { failure: 'missing' };
+            return {};
+        }
         const blob = await response.blob();
-        return await rememberEmojiOriginal(url, blob) ? { blob } : {};
-    } catch { return {}; }
+        if (await rememberEmojiOriginal(url, blob)) return { blob };
+    } catch { /* A separate display probe can still succeed when a host refuses CORS. */ }
     finally { clearTimeout(timer); }
+    return !cacheReadable || controller.signal.aborted ? { failure: 'retry' } : {};
 }
 
 export function loadEmojiOriginal(url: string, retry = false): Promise<Original> {

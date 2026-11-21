@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import JSZip from 'jszip';
-import { emojiExtension, prepareEmojiExport } from './emojiExport';
+import { emojiExtension, prepareEmojiExport, packManifest } from './emojiExport';
 import { getBlobForRef } from './blobRef';
 import { fetchBlobForShare } from './shareExport';
 vi.mock('./blobRef', () => ({ isBlobRef: (s: string) => s.startsWith('blobref:'), getBlobForRef: vi.fn() }));
@@ -23,11 +23,24 @@ it('archives original formats with safe unique names, supporting remote and loca
     expect(result.fileName).toBe('分类.zip');
     const names = Object.keys(zip.files);
     expect(names).toHaveLength(2);
-    expect(names.every(n => !n.includes('/') && n.endsWith('.gif'))).toBe(true);
-    for (const name of names) expect(await zip.file(name)!.async('string')).toBe('GIF89a-original');
+    const manifest = JSON.parse(await zip.file(packManifest)!.async('string'));
+    const [local, link] = manifest.items;
+    expect(link).toEqual({ name: '../同名', group: '默认', url: 'https://example.com/a' });
+    expect(local.path).not.toContain('/');
+    expect(await zip.file(local.path)!.async('string')).toBe('GIF89a-original');
+    expect(fetchBlobForShare).not.toHaveBeenCalled();
 });
 it('rejects missing assets instead of silently delivering a partial archive', async () => {
     vi.mocked(getBlobForRef).mockResolvedValue(null);
     await expect(prepareEmojiExport([{ name: '丢失', url: 'blobref:missing' }])).rejects.toThrow('已丢失');
     await expect(prepareEmojiExport([])).rejects.toThrow('没有');
+});
+it('exports the link alone even when an old backup materialized its cached original', async () => {
+    const url = 'https://example.test/wave.gif';
+    const result = await prepareEmojiExport([{ name: '招手', url: 'blobref:old-cache', backupSourceUrl: url }]);
+    const zip = await JSZip.loadAsync(await result.blob.arrayBuffer());
+    expect(Object.keys(zip.files)).toEqual([packManifest]);
+    expect(JSON.parse(await zip.file(packManifest)!.async('string')).items[0].url).toBe(url);
+    expect(getBlobForRef).not.toHaveBeenCalled();
+    expect(fetchBlobForShare).not.toHaveBeenCalled();
 });

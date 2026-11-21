@@ -1,5 +1,6 @@
 import {validateCollaborationAppearance} from '../features/collaboration/appearance';
 import {validateMeetingAppearance} from './meetingAppearance';
+import {validateProfileAppearance} from './chatProfileAppearance';
 /** Shared wire format; no browser, database or model dependencies. */
 export const BEAUTY_MAX_BYTES = 20 * 1024 * 1024;
 export const BEAUTY_PLATFORMS = ['糯米机美化群', '糯米机官方DC'] as const;
@@ -86,7 +87,8 @@ export function validateBeautyPackage(value: unknown): { kind: BeautyKind; data:
   if (value.format === 'sullyos-chat-decoration' && value.version === 1 && isRecord(value.parts)) {
     const parts = { ...value.parts };
     const keys = Object.keys(value.parts);
-    if (!keys.length || keys.some(key => !['layout', 'bubbles', 'background', 'sound', 'css', 'psyche', 'schedule', 'journal', 'date', 'story', 'collaboration'].includes(key))) throw Error('聊天装扮包含未知内容');
+    if (!keys.length || keys.some(key => !['layout', 'bubbles', 'background', 'sound', 'css', 'psyche', 'profile', 'schedule', 'journal', 'date', 'story', 'collaboration'].includes(key))) throw Error('聊天装扮包含未知内容');
+    if (keys.includes('profile')) parts.profile = validateProfileAppearance(parts.profile);
     if (keys.includes('collaboration')) {
       if (keys.length !== 1) throw Error('协同工作美化请单独提交');
       parts.collaboration = validateCollaborationAppearance(value.parts.collaboration);
@@ -100,7 +102,9 @@ export function validateBeautyPackage(value: unknown): { kind: BeautyKind; data:
     return { kind: 'chat-decoration', data: { format: value.format, version: 1, name: value.name, parts } };
   }
   if (value.type === 'sully_appearance_preset' && value.version === 1 && isRecord(value.theme)) {
-    const data: Record<string, any> = { type: value.type, version: 1, name: value.name, theme: value.theme };
+    const theme = { ...value.theme };
+    if (theme.chatProfileAppearance != null) theme.chatProfileAppearance = validateProfileAppearance(theme.chatProfileAppearance);
+    const data: Record<string, any> = { type: value.type, version: 1, name: value.name, theme };
     for (const key of ['customIcons', 'chatThemes', 'chatLayout']) if (value[key] !== undefined) data[key] = value[key];
     return { kind: 'appearance', data };
   }

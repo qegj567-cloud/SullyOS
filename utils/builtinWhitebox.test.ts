@@ -10,12 +10,13 @@ const normalizeImages=(css:string)=>css.replace(/data:image\/svg\+xml(;base64)?,
 describe('bundled whitebox outfits',()=>{
  it.each(BUILTIN_WHITEBOX_PRESETS)('$name is portable and applies a complete outfit without changing sounds',async item=>{
   const preset=item.read();
-  expect(preset.parts.layout?.chatAvatarSize).toBe('medium');
+  const avatarSize=item.id==='builtin-silver-halo'?'small':'medium';
+  expect(preset.parts.layout?.chatAvatarSize).toBe(avatarSize);
   expect(preset.parts.css).toContain('data:image/svg+xml');
   expect(preset.parts.css).not.toMatch(/url\(["']?https?:/);
   const patch=await decorationPatches(preset,['layout','bubbles','background','psyche','css'],'character',{id:'sample',chatSound:{src:'ding'}} as any,{} as any);
   expect(patch.character.chromeCustomCss).toContain('blobref:');expect(normalizeImages(await portableCssImages(patch.character.chromeCustomCss!))).toBe(normalizeImages(preset.parts.css!));
-  expect(patch.character.chatAppearance?.chatAvatarSize).toBe('medium');
+  expect(patch.character.chatAppearance?.chatAvatarSize).toBe(avatarSize);
   expect(patch.character.chatSound).toEqual({src:'ding'});
  });
  it('keeps builtins unchanged when a returned copy is edited',()=>{
@@ -25,6 +26,6 @@ describe('bundled whitebox outfits',()=>{
  it('applies 银晕 with a timestamp below every visible avatar',async()=>{
   const preset=BUILTIN_WHITEBOX_PRESETS.find(item=>item.id==='builtin-silver-halo')!.read();
   const patch=await decorationPatches(preset,['layout'],'character',{id:'sample'} as any,{} as any);
-  expect(patch.character.chatAppearance).toMatchObject({chatAvatarMode:'every_message',chatTimestampPosition:'below_avatar',chatShowTimestamp:'always'});
+  expect(patch.character.chatAppearance).toMatchObject({chatAvatarMode:'every_message',chatTimestampPosition:'below_avatar',chatShowTimestamp:'always',chatHeaderDensity:'compact',chatBubbleFontSize:0,chatBubbleLineHeight:0});
  });
 });

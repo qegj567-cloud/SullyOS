@@ -421,6 +421,10 @@ SW 跑在自己的 context，没法直接访问 page 的 `localStorage` / `appen
 
 ### 现在记什么
 
+记忆宫殿的「缓冲区提取失败」由提取调用点标注。自检卡和导出的同一条日志显示批次、失败阶段、API 域名、匹配的预设名及请求模型。收到响应头后保留实际 HTTP 状态，读完正文后才进入解析阶段。诊断信息随单次请求传递，覆盖 OpenAI 兼容、Anthropic 原生与自动流式转换。正文、认证头和 URL 查询参数不进入这张卡。
+
+日常展示的外链表情、图片和字体读取失败时沿用各自的占位图或备用字体。全局 fetch 拦截器对已识别的跨站图片、字体读取跳过系统报错和域名复检，原响应或异常仍交给调用方。表情原图缓存、分享卡预览、装扮封面取图和微博配图下载通过 `__sullyHandlesFailure` 处理无扩展名图床及图片代理。手动排查、导出或分享的结果在各自操作界面显示。
+
 `utils/networkRequestSource.ts` 负责识别请求所属的具体业务子系统并对 URL 脱敏，`utils/networkFailureDiagnosis.ts` 负责把连接层与流式阶段的旁证补齐，`context/OSContext.tsx` 的全局拦截器统一组装为 `SystemLog`：
 
 - **业务模块来源（`source`、`context.category` 与自检提示）**：按协议头、接口路径和本机已配置的服务端点（仅比对域名/路径前缀，不读密钥）区分对话模型（OpenAI `/chat/completions`、`/responses`、Anthropic `/messages`、`/models`）、记忆宫殿（Embedding / Rerank / Supabase 向量库）、主动消息 2.0（直连 Worker 或经大陆中转 `amsg-relay`）、主代理 Worker 各子路由（网易云 `/netease/*`、微博 `/weibo`、WebDAV `/webdav`、GitHub `/github`、点单 MCP、Notion、飞书、小红书、Replicate、网页抓取等）、语音 TTS/STT（MiniMax / ElevenLabs / Fish Audio）、通用 MCP（直连或 `?target=` 代理）、彼方邮局与合写诗、装扮服务及本机静态资源。旁路服务附带 `影响范围` 提示，标明该报错是否与主对话或主动消息推送无关。

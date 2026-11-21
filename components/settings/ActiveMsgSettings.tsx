@@ -19,10 +19,15 @@ const SECTIONS: { id: AmsgSettingsPage; label: string }[] = [
   { id: 'features', label: '功能设置' },
 ];
 
-export function ActiveMsgSettingsEntry({ onOpen, connected = false, enabled, toggling, onToggle }: { onOpen: (page: AmsgSettingsPage) => void; connected?: boolean; enabled?: boolean; toggling?: boolean; onToggle?: (enabled: boolean) => void }) {
+export function ActiveMsgSettingsEntry({ onOpen, connected = false, enabled, cronPaused = false, toggling, onToggle }: { onOpen: (page: AmsgSettingsPage) => void; connected?: boolean; enabled?: boolean; cronPaused?: boolean; toggling?: boolean; onToggle?: (enabled: boolean) => void }) {
   return <div className="amsg-settings-entry-row"><button type="button" className="amsg-settings-entry" data-has-toggle={enabled !== undefined || undefined} onClick={() => onOpen(connected ? 'overview' : 'config')}>
     <span className="amsg-entry-icon"><SectionIcon name="config" /></span>
-    <span className="min-w-0 flex-1 text-left text-sm font-semibold text-slate-600 tracking-wider">主动消息 2.0</span>
+    <span className="min-w-0 flex-1 text-left">
+      <span className="block text-sm font-semibold text-slate-600 tracking-wider">主动消息 2.0</span>
+      {connected && enabled !== false && cronPaused ? (
+        <span className="mt-0.5 inline-block rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">后台任务已暂停</span>
+      ) : null}
+    </span>
     <svg className="amsg-entry-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="m9 6 6 6-6 6" /></svg>
   </button>{enabled !== undefined && <button type="button" role="switch" aria-label="主动消息 2.0 总开关" aria-checked={enabled} disabled={toggling} onClick={() => onToggle?.(!enabled)} className="amsg-entry-switch"><span /></button>}</div>;
 }

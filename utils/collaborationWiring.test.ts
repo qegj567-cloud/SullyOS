@@ -275,7 +275,7 @@ describe('collaboration sidecar wiring', () => {
     const engine = read('features/collaboration/engine.ts');
     const windowSource = read('features/collaboration/CollaborationWindow.tsx');
     expect(context).toContain("from '../../utils/thinkingChainPrompt'");
-    expect(context).toContain('buildThinkingChainPrompt(char.name, user.name)');
+    expect(context).toContain('buildThinkingChainPrompt(char.name, user.name, getThinkingChainSettings(char, user)');
     expect(engine).toContain("requestBody.reasoning_effort = 'medium'");
     expect(engine).toContain("requestBody.thinking = { type: 'enabled', budget_tokens: 4000 }");
     expect(windowSource).toContain('CollaborationThinkingBlock');

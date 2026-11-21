@@ -251,6 +251,7 @@ export interface OSTheme {
    *  可换色 / 贴图 / 改外形 / 挪位；稳定选择器清单见 ChromeCssEditor。 */
   chatChromeCustomCss?: string;
   /** 心象外观的全局默认值；不包含显示开关或生成提示词。 */
+  chatProfileAppearance?: import('./utils/chatProfileAppearance').ChatProfileAppearance;
   chatPsyche?: import('./utils/psycheAppearance').PsycheAppearance;
   /** 全局默认「白框提示音」：某角色未单独设提示音时回落到这里。src 同角色版（内置 key / 音频直链 / data:audio）。 */
   chatSound?: { src: string; volume?: number };
@@ -2834,6 +2835,8 @@ export interface MemoryPalaceWaterlineConfig {
 }
 
 export interface CharacterProfile {
+  /** Include sent stickers in private dialogue as pictures or vision descriptions. */
+  stickerVision?: boolean;
   userPersona?: import('./utils/userPersona').CharacterUserPersona;
   /** Local default for this character's dialogue; absent means follow Settings. Never shared in cards. */
   dialogueApi?: DialogueApiConfig;
@@ -3031,6 +3034,10 @@ export interface CharacterProfile {
   /** ChatApp visual fields only; filtered through the decoration allowlist. */
   chatAppearance?: Partial<OSTheme>;
   chatDecorationCssIsolated?: boolean;
+  /** Parts this character has selected independently of the global chat whitebox. */
+  chatIndependentParts?: import('./utils/whiteboxParts').WhiteboxPart[];
+  /** Explicitly followed components inside an otherwise isolated outfit. */
+  chatFollowWhiteboxParts?: import('./utils/whiteboxParts').WhiteboxPart[];
   chatBackground?: string;
   contextLimit?: number;
   /**
@@ -3060,6 +3067,7 @@ export interface CharacterProfile {
   spriteConfig?: SpriteConfig;
   customDateSprites?: string[]; // User-added custom emotion names for date mode (per-character)
   dateLightReading?: boolean;   // Light reading mode for novel/text view in date
+  chatProfileAppearance?: import('./utils/chatProfileAppearance').ChatProfileAppearance;
   dateAppearance?: import('./utils/meetingAppearance').MeetingAppearance;
   dateReadingShowAvatars?: boolean; // Show both participants' avatars beside messages in date reading mode
   dateSkinSets?: SkinSet[];     // Multiple skin sets for portrait mode
@@ -3306,8 +3314,10 @@ export interface CharacterProfile {
     accent?: string;   // 边框/标题点缀
     text?: string;     // 正文颜色
   };
-  /** 用户追加的思考提示词（不替换原生，只在最后追加一段「用户额外要求」） */
+  /** 角色自定义心象提示词。未设置模式的角色默认追加。 */
   thinkingChainCustomPrompt?: string;
+  thinkingChainPromptMode?: 'append' | 'replace';
+  thinkingChainPromptScope?: 'space' | 'character';
   /**
    * 心象卡片的自定义 CSS（叠加在任意风格之上，机制同气泡工坊 customCss）。
    * 选择器限定以 .sully-psyche 开头（子元素类：-card / -title / -preview / -body），
@@ -3402,6 +3412,8 @@ export interface CharacterExportData extends Omit<CharacterProfile, 'id' | 'memo
 }
 
 export interface UserProfile {
+    /** 这个用户空间中，跟随共用设置的角色使用的心象提示词。 */
+    thinkingChainPrompt?: { mode?: 'append' | 'replace'; customPrompt?: string };
     wardrobeOutfits?: import('./apps/room3d/chibi/outfitLibrary').SavedOutfit[];
     chibiStudio?: { home3D?: HomeFigureSlot };
     name: string;
@@ -4023,6 +4035,7 @@ export interface Message {
 }
 
 export interface EmojiCategory {
+    personalOnly?: boolean;
     id: string;
     name: string;
     isSystem?: boolean;
@@ -4030,6 +4043,10 @@ export interface EmojiCategory {
 }
 
 export interface Emoji {
+    /** Original link retained when a personal backup replaces a cached URL with a local blob. */
+    backupSourceUrl?: string;
+    contentHash?: string;
+    builtIn?: boolean;
     name: string;
     url: string;
     categoryId?: string; 

@@ -12,6 +12,7 @@ import {resolvePsycheAppearance} from '../utils/psycheAppearance';
 import { translateThinkingMessage } from '../utils/thinkingTranslation';
 import { resolveDialogueApi } from '../utils/characterApi';
 import { computeTimeSegmentStarts, startsNewMessageGroup, startsNewTimeSegment } from '../utils/chatMessageGrouping';
+import StickerLibrary from '../components/chat/StickerLibrary';
 import EmojiExportDialog from '../components/chat/EmojiExportDialog';
 import BlobRefStyle from '../components/chat/BlobRefStyle';
 import React, { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallback, useSyncExternalStore } from 'react';
@@ -55,10 +56,12 @@ import LuckinHelpModal from '../components/luckin/LuckinHelpModal';
 import { PRESET_THEMES, DEFAULT_ARCHIVE_PROMPTS } from '../components/chat/ChatConstants';
 import { resolveChatTheme } from '../utils/groupChat/theme';
 import ChatHeader from '../components/chat/ChatHeaderShell';
+import {useChatTailProfileGesture} from '../hooks/useChatTailProfileGesture';
 import ChatCharacterProfile from '../components/chat/ChatCharacterProfile';
 import CharacterEntryTransition from '../components/chat/CharacterEntryTransition';
 import {resolveDecorationTheme} from '../utils/chatDecoration';
 import {DecorationTab} from '../components/chat/ChatDecorationPanel';
+import {ChatTrialControls, type ChatDecorationTrial} from '../components/chat/ChatDecorationTrial';
 import ChatAppearanceWardrobe from '../components/chat/ChatAppearanceWardrobe';
 import ChatInputArea from '../components/chat/ChatInputArea';
 import ConfirmDialog from '../components/os/ConfirmDialog';
@@ -161,9 +164,14 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
     const osAppearanceFonts = useMemo(() => appearancePresets.flatMap(preset => preset.theme.customFont?.startsWith('data:')
         ? [{ name: preset.name, source: preset.theme.customFont }] : []), [appearancePresets]);
     const { activeApp, characters, activeCharacterId: osActiveCharacterId, setActiveCharacterId, addCharacter, updateCharacter, updateUserProfile, apiConfig, updateApiConfig, apiPresets, availableModels, addApiPreset, closeApp, openApp, customThemes, addCustomTheme, removeCustomTheme, addWorldbook, updateTheme, saveAppearancePreset, addToast, showError, userProfile, lastMsgTimestamp, groups, characterGroups, clearUnread, unreadMessages, realtimeConfig, memoryPalaceConfig, updateMemoryPalaceConfig, remoteVectorConfig, syncEmotionApiToAllCharacters, theme: baseOsTheme, openDateWithChar } = useOS();
-    const activeCharacterId=homePhone?.characterId??osActiveCharacterId;
+    const wardrobeCharacter = characters.find(c=>c.id===osActiveCharacterId) || characters[0];
+    const [trial,setTrial] = useState<(ChatDecorationTrial & {ownerId:string}) | null>(null);
+    const liveTrial = !homePhone && activeApp===AppID.Chat && trial?.ownerId===wardrobeCharacter?.id && characters.some(c=>c.id===trial?.characterId) ? trial : null;
+    const activeCharacterId=homePhone?.characterId??liveTrial?.characterId??osActiveCharacterId;
+    const savedCharacter = characters.find(c=>c.id===activeCharacterId) || characters[0];
+    const char = useMemo(()=>liveTrial && savedCharacter ? {...savedCharacter,...liveTrial.patch} : savedCharacter,[savedCharacter,liveTrial]);
     const sendProgress = useSyncExternalStore(subscribeChatSendProgress, () => getChatSendProgress(activeCharacterId), () => null);
-    const osTheme = useMemo(()=>homePhone?homePhoneAppearance(baseOsTheme):resolveDecorationTheme(baseOsTheme,characters.find(c=>c.id===activeCharacterId)||characters[0]),[baseOsTheme,characters,activeCharacterId,!!homePhone]);
+    const osTheme = useMemo(()=>homePhone?homePhoneAppearance(baseOsTheme):resolveDecorationTheme(baseOsTheme,char),[baseOsTheme,char,!!homePhone]);
     const localDateKey = useLocalDateKey();
 
     // 记忆宫殿高水位（用于清空聊天时的安全检查）
@@ -202,6 +210,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
     const [activeCategory, setActiveCategory] = useState<string>('default');
     const [newCategoryName, setNewCategoryName] = useState('');
     const [emojiExport, setEmojiExport] = useState<{ emojis: Emoji[]; title: string } | null>(null);
+    const [stickerManager, setStickerManager] = useState<{startImport?:string}|null>(null);
     const [newEmojiName, setNewEmojiName] = useState(''); // 表情包重命名输入框
 
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -236,7 +245,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
     // Reply Logic
     const [replyTarget, setReplyTarget] = useState<Message | null>(null);
 
-    const [modalType, setModalType] = useState<'none' | 'transfer' | 'emoji-import' | 'chat-settings' | 'message-options' | 'edit-message' | 'delete-emoji' | 'delete-category' | 'add-category' | 'history-manager' | 'archive-settings' | 'archive-legacy-warning' | 'prompt-editor' | 'category-options' | 'category-visibility' | 'emoji-options' | 'rename-emoji' | 'rename-category' | 'schedule' | 'chrome-css' | 'chrome-sound' | 'memory-vectorize-confirm' | 'memory-vectorize-result'>('none');
+    const [modalType, setModalType] = useState<'none' | 'transfer' | 'chat-settings' | 'message-options' | 'edit-message' | 'delete-emoji' | 'delete-category' | 'add-category' | 'history-manager' | 'archive-settings' | 'archive-legacy-warning' | 'prompt-editor' | 'category-options' | 'category-visibility' | 'emoji-options' | 'rename-emoji' | 'rename-category' | 'schedule' | 'chrome-css' | 'chrome-sound' | 'memory-vectorize-confirm' | 'memory-vectorize-result'>('none');
     // 「聊天装扮」悬浮态：不走全屏 modal——圆气泡挂在聊天上，点开小面板边看真聊天边调。
     const [decorationTab, setDecorationTab] = useState<DecorationTab>('layout');
     // 切换角色时收掉装扮气泡：定制是 per-character 的，避免误改到下一个角色
@@ -252,7 +261,6 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
     const [allHistoryMessages, setAllHistoryMessages] = useState<Message[]>([]);
     const [transferAmt, setTransferAmt] = useState('');
     const [transferNote, setTransferNote] = useState('');
-    const [emojiImportText, setEmojiImportText] = useState('');
     const [settingsContextLimit, setSettingsContextLimit] = useState(500);
     const [settingsContextRangeMode, setSettingsContextRangeMode] = useState<ContextRangeMode>('manual');
     const [settingsHideSysLogs, setSettingsHideSysLogs] = useState(false);
@@ -347,8 +355,8 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
     // Which messages are currently showing "译" version (toggle state only, no API calls)
     const [showingTargetIds, setShowingTargetIds] = useState<Set<number>>(new Set());
 
-    const char = characters.find(c => c.id === activeCharacterId) || characters[0];
-    const profileOpen = !!char && profileCharacterId === char.id;
+    useEffect(()=>{if(trial && (!liveTrial || modalType!=='chrome-css'))setTrial(null);},[trial,liveTrial,modalType]);
+    const profileOpen = !!char && (profileCharacterId === char.id || !!liveTrial?.showProfile);
     const openCharacterProfile = useCallback(() => {
         if (!char?.id) return;
         trackEvent('打开聊天角色名片');
@@ -427,8 +435,8 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
     const currentThemeId = char?.bubbleStyle || osTheme.chatDefaultBubbleStyle || 'default';
     // 解析逻辑抽到 utils/groupChat/theme.ts（群聊共用），行为不变
     const activeTheme = useMemo(
-        () => homePhone?HOME_PHONE_BUBBLES:resolveChatTheme(currentThemeId, customThemes, PRESET_THEMES),
-        [currentThemeId, customThemes,!!homePhone],
+        () => homePhone?HOME_PHONE_BUBBLES:liveTrial?.bubble ?? resolveChatTheme(currentThemeId, customThemes, PRESET_THEMES),
+        [currentThemeId, customThemes,!!homePhone,liveTrial?.bubble],
     );
     const draftKey = `chat_draft_${activeCharacterId}`;
 
@@ -439,9 +447,9 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
     }), [categories, activeCharacterId]);
 
     const aiVisibleEmojis = useMemo(() => {
-        const hiddenIds = new Set(categories.filter(c => !visibleCategories.some(vc => vc.id === c.id)).map(c => c.id));
+        const hiddenIds = new Set(categories.filter(c => c.personalOnly || !visibleCategories.some(vc => vc.id === c.id)).map(c => c.id));
         if (hiddenIds.size === 0) return emojis;
-        return emojis.filter(e => !e.categoryId || !hiddenIds.has(e.categoryId));
+        return emojis.filter(e => !hiddenIds.has(e.categoryId || 'default'));
     }, [emojis, categories, visibleCategories]);
 
 
@@ -1865,8 +1873,8 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
             case 'chrome-css': setShowPanel('none'); setDecorationTab('library'); setModalType('chrome-css'); break;
             case 'chrome-sound': setShowPanel('none'); setDecorationTab('sound'); setModalType('chrome-css'); break;
             case 'fine-tune': setShowPanel('none'); setDecorationTab('layout'); setModalType('chrome-css'); break;
-            case 'emoji-import': setModalType('emoji-import'); break;
-            case 'send-emoji': if (payload) handleSendText(payload.url, 'emoji'); break;
+            case 'emoji-import': setStickerManager({startImport:activeCategory}); break;
+            case 'send-emoji': if (payload) handleSendText(payload.url, 'emoji', {stickerName:payload.name}); break;
             case 'delete-emoji-req': setSelectedEmoji(payload); setModalType('delete-emoji'); break;
             case 'emoji-options': setSelectedEmoji(payload); setModalType('emoji-options'); break;
             case 'add-category': setModalType('add-category'); break;
@@ -1914,7 +1922,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
                 break;
             }
             case 'thinking-settings': {
-                // 「展示思考」按钮 → 打开思考链设置 modal（开关 / 卡片风格 / 配色 / 追加提示词）
+                // 「展示思考」按钮 → 打开思考链设置 modal（开关 / 翻译 API / 心象提示词）
                 if (!char) break;
                 setShowThinkingChainModal(true);
                 break;
@@ -2353,31 +2361,6 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
         addToast('分类创建成功', 'success');
     };
 
-    const handleImportEmoji = async () => {
-        if (!emojiImportText.trim()) return;
-        const lines = emojiImportText.split('\n');
-        const targetCatId = activeCategory === 'default' ? undefined : activeCategory;
-
-        for (const line of lines) {
-            const parts = line.split('--');
-            if (parts.length >= 2) {
-                const name = parts[0].trim();
-                const url = parts.slice(1).join('--').trim();
-                if (name && url) {
-                    // 粘进来的可能是 data: 图（复制粘贴的图片），也可能是图床外链。
-                    // 前者转成令牌只留二进制，后者是别人服务器上的地址，原样存。
-                    const stored = url.startsWith('data:') ? await migrateDataUrlToRef(url) : url;
-                    await DB.saveEmoji(name, stored, targetCatId);
-                }
-            }
-        }
-        await loadEmojiData();
-        markEmojiLibraryChanged();
-        setModalType('none');
-        setEmojiImportText('');
-        addToast('表情包导入成功', 'success');
-    };
-
     const handleRenameCategory = async () => {
         if (!selectedCategory || selectedCategory.isSystem || selectedCategory.id === 'default') return;
         const name = newCategoryName.trim();
@@ -2411,7 +2394,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
     const handleSaveCategoryVisibility = async (categoryId: string, allowedCharacterIds: string[] | undefined) => {
         const cat = categories.find(c => c.id === categoryId);
         if (!cat) return;
-        await DB.saveEmojiCategory({ ...cat, allowedCharacterIds });
+        await DB.saveEmojiCategory({ ...cat, personalOnly:false, allowedCharacterIds });
         await loadEmojiData();
         markEmojiLibraryChanged();
         setSelectedCategory(null);
@@ -3557,7 +3540,8 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
         return displayMessages.filter(message => !pending.has(message.id));
     }, [displayMessages, streamingBubbles, streamingThinking, streamingHandoverIds, selectionMode]);
 
-    const timeSegmentStarts = useMemo(() => computeTimeSegmentStarts(renderedMessages), [renderedMessages]);
+    const segmentByDay = osTheme.chatTimestampPosition === 'below_avatar';
+    const timeSegmentStarts = useMemo(() => computeTimeSegmentStarts(renderedMessages, segmentByDay), [renderedMessages, segmentByDay]);
     const lastNonSystemRenderedMessage = useMemo(() => {
         for (let i = renderedMessages.length - 1; i >= 0; i--) {
             if (renderedMessages[i].role !== 'system') return renderedMessages[i];
@@ -3638,10 +3622,11 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
     }, [visibleCategories, activeCategory]);
 
     // Suggestions span all visible categories; the picker still uses its selected tab.
-    const filteredEmojis = useMemo(() => aiVisibleEmojis.filter(e => {
+    const pickerEmojis = useMemo(() => emojis.filter(e => visibleCategories.some(g => g.id === (e.categoryId || 'default'))), [emojis,visibleCategories]);
+    const filteredEmojis = useMemo(() => pickerEmojis.filter(e => {
         if (activeCategory === 'default') return !e.categoryId || e.categoryId === 'default';
         return e.categoryId === activeCategory;
-    }), [aiVisibleEmojis, activeCategory]);
+    }), [pickerEmojis, activeCategory]);
 
     // Memoize ChatInputArea callbacks
     const handleSendCallback = useCallback(() => handleSendText(), [char, input, replyTarget, inputPreferences]);
@@ -3666,6 +3651,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
     const mergedFineTune = useMemo(() => mergeChatFineTune(osTheme, homePhone?undefined:char?.chatFineTune), [osTheme, char?.chatFineTune,!!homePhone]);
     const chatFineTuneCss = useMemo(() => buildChatFineTuneCss(mergedFineTune), [mergedFineTune]);
     const selectedAvatarFrameCss=useMemo(()=>avatarFrameLayer([osTheme.chatChromeCustomCss,char?.chromeCustomCss].filter(Boolean).join('\n')),[osTheme.chatChromeCustomCss,char?.chromeCustomCss]);
+    const tailProfileGesture = useChatTailProfileGesture(char?.id, !selectionMode && !profileOpen && modalType === 'none' && showPanel === 'none' && windowedFocusMsgId === null && !isInputFocused && messages.length > 0, openCharacterProfile);
     const locatingChat = isTyping || instantChatPending;
     React.useEffect(() => {
         if (!locatingChat && char?.id) clearLocationPin(char.id);
@@ -3890,7 +3876,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
              />}
 
             <StreamingVoiceBar state={streamingVoice.state} onStop={stopStreamingVoice} />
-            <div ref={scrollRef} onScroll={handleChatScroll} onClick={() => setShowPanel('none')} className="sully-chat-messages flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden overscroll-contain pt-6 pb-6 no-scrollbar" style={{ backgroundImage: activeTheme.type === 'custom' && activeTheme.user.backgroundImage ? 'none' : undefined }}>
+            <div ref={scrollRef} {...tailProfileGesture} onScroll={handleChatScroll} onClick={() => setShowPanel('none')} className="sully-chat-messages flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden overscroll-contain pt-6 pb-6 no-scrollbar" style={{ backgroundImage: activeTheme.type === 'custom' && activeTheme.user.backgroundImage ? 'none' : undefined }}>
                 <ChatSubtitleLayer enabled={translationEnabled && translationExpanded && translationStyle === 'subtitle'} settings={subtitleSettings}>
                 {windowedFocusMsgId !== null && (
                     <div className="sticky top-0 z-20 flex justify-center pb-2 pointer-events-none">
@@ -4077,7 +4063,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
                                     showTimestamp={osTheme.chatShowTimestamp}
                                     timestampPosition={osTheme.chatTimestampPosition}
                                     avatarPlacement={mergedFineTune.chatAvatarPlacement}
-                                    startsTimeSegment={i === 0 && startsNewTimeSegment(lastNonSystemRenderedMessage, { timestamp: Date.now() })}
+                                    startsTimeSegment={i === 0 && startsNewTimeSegment(lastNonSystemRenderedMessage, { timestamp: Date.now() }, segmentByDay)}
                                     thinkingChainOptions={thinkingChainOptions}
                                 />
                             </div>
@@ -4199,7 +4185,8 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
                     selectedCount={selectedMsgIds.size + Array.from(selectedThinkingMsgIds).filter(id => !selectedMsgIds.has(id)).length}
                     emojis={filteredEmojis}
                     emojiSuggestionsEnabled={inputPreferences.emojiSuggestions}
-                    suggestionEmojis={aiVisibleEmojis}
+                    suggestionEmojis={pickerEmojis}
+                    onManageEmojis={()=>setStickerManager({})}
                     fullEmojiLibrary={emojis}
                     onRemoveInvalidEmojis={async items => {
                         const count = await DB.deleteScannedEmojis(items);
@@ -4348,7 +4335,12 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
             )}
 
             {showHistoryCleanup && <ChatHistoryCleanupModal key={`history-cleanup:${char.id}`} character={char} onClose={() => setShowHistoryCleanup(false)} onDeleted={handleHistoryCleanupDone} />}
-            {emojiExport && <EmojiExportDialog {...emojiExport} onClose={() => setEmojiExport(null)} />}
+            {stickerManager && <StickerLibrary key={`sticker-library-${char.id}`} emojis={emojis} groups={categories} characters={characters} characterId={char.id}
+                api={apiConfig} startImport={stickerManager.startImport} onClose={()=>setStickerManager(null)}
+                characterGroups={characterGroups}
+                onVision={async(id,enabled)=>{await updateCharacter(id,{stickerVision:enabled});}}
+                onChange={async()=>{await loadEmojiData();markEmojiLibraryChanged();}}/>}
+            {emojiExport && <EmojiExportDialog {...emojiExport} groups={categories} onClose={() => setEmojiExport(null)} />}
             <ConfirmDialog isOpen={linkCardQuestion !== null}
                 title={linkCardQuestion === 'xhsCards' ? '小红书链接解析' : '分享链接解析'}
                 message="检测到分享链接，要关闭自动转卡片吗？关闭后，本条及之后的链接会按原文发送，方便角色用你配置的 MCP 读取。保留卡片也会带上原链接。两类解析可在加号 → 设置中分别调整。"
@@ -4359,7 +4351,6 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
                 modalType={modalType} setModalType={setModalType}
                 transferAmt={transferAmt} setTransferAmt={setTransferAmt}
                 transferNote={transferNote} setTransferNote={setTransferNote}
-                emojiImportText={emojiImportText} setEmojiImportText={setEmojiImportText}
                 settingsContextLimit={settingsContextLimit} setSettingsContextLimit={setSettingsContextLimit}
                 settingsContextRangeMode={settingsContextRangeMode} setSettingsContextRangeMode={setSettingsContextRangeMode}
                 settingsHideSysLogs={settingsHideSysLogs} setSettingsHideSysLogs={setSettingsHideSysLogs}
@@ -4383,7 +4374,6 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
                 selectedCategory={selectedCategory}
 
                 onTransfer={() => { if(transferAmt) handleSendText(`[转账]`, 'transfer', { amount: transferAmt, note: transferNote.trim() || undefined, status: 'pending' }); setTransferNote(''); setModalType('none'); }}
-                onImportEmoji={handleImportEmoji}
                 onSaveSettings={saveSettings}
                 onOpenHistoryCleanup={() => { setModalType('none'); setShowHistoryCleanup(true); }} onArchive={handleFullArchive}
                 onCreatePrompt={createNewPrompt} onEditPrompt={editSelectedPrompt} onSavePrompt={handleSavePrompt} onDeletePrompt={handleDeletePrompt}
@@ -4681,32 +4671,19 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
                     apiPresets={apiPresets}
                     onChangeTranslationApi={thinkingTranslationApi => updateApiConfig({ thinkingTranslationApi })}
                     onAddApiPreset={(name, config) => addApiPreset(name, config, '心象翻译')}
-                    value={{
-                        enabled: !!(char as any).showThinkingChain,
-                        styleId: ((char as any).thinkingChainStyle as any) || 'echo',
-                        customColors: {
-                            bg: (char as any).thinkingChainCustomColors?.bg || '#1f2937',
-                            accent: (char as any).thinkingChainCustomColors?.accent || '#fbbf24',
-                            text: (char as any).thinkingChainCustomColors?.text || '#f1f5f9',
-                        },
-                        customPrompt: (char as any).thinkingChainCustomPrompt || '',
-                        customCss: (char as any).thinkingChainCustomCss || '',
-                    }}
-                    onChange={(next) => {
-                        const patch: any = {};
-                        if (next.enabled !== undefined) patch.showThinkingChain = next.enabled;
-                        if (next.styleId !== undefined) patch.thinkingChainStyle = next.styleId;
-                        if (next.customColors !== undefined) patch.thinkingChainCustomColors = next.customColors;
-                        if (next.customPrompt !== undefined) patch.thinkingChainCustomPrompt = next.customPrompt;
-                        if (next.customCss !== undefined) patch.thinkingChainCustomCss = next.customCss;
-                        if (Object.keys(patch).length) updateCharacter(char.id, patch as any);
-                    }}
+                    character={char}
+                    sharedPrompt={userProfile.thinkingChainPrompt}
+                    onChangeCharacter={patch => updateCharacter(char.id, patch)}
+                    onChangeSharedPrompt={patch => updateUserProfile(prev => ({
+                        thinkingChainPrompt: { ...prev.thinkingChainPrompt, ...patch },
+                    }))}
                 />
             )}
 
             {char && modalType === 'chrome-css' && <ChatAppearanceWardrobe
-                key={`appearance-wardrobe:${char.id}`}
-                character={char} theme={baseOsTheme} onSaveBubble={addCustomTheme} themes={[...Object.values(PRESET_THEMES), ...customThemes]}
+                key={`appearance-wardrobe:${wardrobeCharacter?.id || char.id}`}
+                trialActive={!!liveTrial} onTrial={homePhone?undefined:next=>setTrial({...next,ownerId:wardrobeCharacter.id})}
+                character={homePhone?char:wardrobeCharacter} theme={baseOsTheme} onSaveBubble={addCustomTheme} themes={[...Object.values(PRESET_THEMES), ...customThemes]}
                 initialTab={decorationTab} updateCharacter={patch=>updateCharacter(char.id,patch)}
                 updateTheme={updateTheme} onBgUpload={handleBgUpload} backgroundUrl={resolvedChatBackground}
                 onOpenWorkshop={()=>{setModalType('none');openApp(AppID.ThemeMaker);}}
@@ -4715,13 +4692,18 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
 
             {/* 情绪设置已嵌入日程 Modal（与日程强制同步开/关），不再单独渲染 */}
 
-            {profileOpen && theaterSlotIdx === null && <ChatCharacterProfile key={`profile:${char.id}`} character={char}
+            {profileOpen && theaterSlotIdx === null && <ChatCharacterProfile key={`profile:${char.id}`} character={char} customCss={(char.chatProfileAppearance ?? osTheme.chatProfileAppearance)?.customCss}
                 initialTab={profileTabOnOpen}
                 schedule={scheduleData?.charId === char.id && scheduleData.date === charDateKey ? scheduleData : null}
                 onClose={() => setProfileCharacterId(null)}
                 onSchedule={() => { setProfileCharacterId(null); setModalType('schedule'); }}
                 onPlayTheater={index => { setProfileTabOnOpen('日程'); handlePlayTheater(index); }}
                 onMemory={() => { setProfileCharacterId(null); setMemoryRepairOpen(true); }} />}
+            {liveTrial && <ChatTrialControls onReturn={()=>setTrial(null)} onScroll={pixels=>scrollRef.current?.scrollBy(0,pixels)} onUse={async()=>{
+                await liveTrial.commit();
+                if(liveTrial.characterId!==osActiveCharacterId)setActiveCharacterId(liveTrial.characterId);
+                setTrial(null);setModalType('none');
+            }}/>}
             {memoryRepairOpen && char && (
                 <MemoryRepairPortal
                     inline={!!homePhone}

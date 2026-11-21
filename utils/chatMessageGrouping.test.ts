@@ -28,6 +28,17 @@ it('保留相隔十四分钟的头像和时间边界，同批短消息仍合组'
 });
 
 describe('chatMessageGrouping & timestamp position', () => {
+    it('starts a date label at local midnight even for messages a minute apart', () => {
+        const midnight = new Date(2026, 10, 19).getTime();
+        const messages: Array<Pick<Message, 'role' | 'timestamp'>> = [
+            { role: 'assistant', timestamp: midnight - 60_000 },
+            { role: 'system', timestamp: midnight },
+            { role: 'user', timestamp: midnight },
+            { role: 'assistant', timestamp: midnight + 3600_000 },
+        ];
+        expect(computeTimeSegmentStarts(messages, true)).toEqual([true, false, true, false]);
+        expect(computeTimeSegmentStarts(messages)).toEqual([true, false, false, true]);
+    });
     it('segments top time dividers by 5-minute gaps across speakers while skipping system messages', () => {
         const t0 = new Date(2026, 10, 17, 14, 0, 0).getTime();
         const messages: Array<Pick<Message, 'role' | 'timestamp'>> = [

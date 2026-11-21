@@ -658,7 +658,7 @@ const UnrecognizedDiag: React.FC<{ data: any; rawText?: string; toolName: string
 const LuckinCard: React.FC<LuckinCardProps> = ({ toolName, args, result, error, rawText, kind = 'generic', onSendCart, onCandidate, cartItems, candidateItem }) => {
     if (kind === 'cart' && cartItems && cartItems.length) {
         return (
-            <div className="w-72 rounded-2xl overflow-hidden border border-[#E6DFCF] shadow-sm bg-gradient-to-br from-[#FAF7F0] to-[#F2EEE3]">
+            <div className="sully-chat-card-face w-72 rounded-2xl overflow-hidden border border-[#E6DFCF] shadow-sm bg-gradient-to-br from-[#FAF7F0] to-[#F2EEE3]">
                 <div className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-[#0B1F3A] to-[#1E4D8C]">
                     <span className="text-lg">🛒</span>
                     <div className="flex-1 min-w-0">
@@ -672,7 +672,7 @@ const LuckinCard: React.FC<LuckinCardProps> = ({ toolName, args, result, error, 
     }
     if (kind === 'candidate' && candidateItem) {
         return (
-            <div className="w-64 rounded-2xl overflow-hidden border border-[#E6DFCF] shadow-sm bg-gradient-to-br from-[#FAF7F0] to-[#F2EEE3]">
+            <div className="sully-chat-card-face w-64 rounded-2xl overflow-hidden border border-[#E6DFCF] shadow-sm bg-gradient-to-br from-[#FAF7F0] to-[#F2EEE3]">
                 <div className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-[#0B1F3A] to-[#1E4D8C]">
                     <span className="text-lg">💭</span>
                     <div className="flex-1 min-w-0">
@@ -723,7 +723,7 @@ const LuckinCard: React.FC<LuckinCardProps> = ({ toolName, args, result, error, 
     const itemsHaveDisplayFields = effectiveKind === 'menu' && (specializedHasItems || fallbackMenuHasItems);
 
     return (
-        <div className="w-72 rounded-2xl overflow-hidden border border-[#E6DFCF] shadow-sm bg-gradient-to-br from-[#FAF7F0] to-[#F2EEE3]">
+        <div className="sully-chat-card-face w-72 rounded-2xl overflow-hidden border border-[#E6DFCF] shadow-sm bg-gradient-to-br from-[#FAF7F0] to-[#F2EEE3]">
             {/* 头部: 瑞幸蓝条 */}
             <div className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-[#0B1F3A] to-[#1E4D8C]">
                 <span className="text-lg">🦌</span>

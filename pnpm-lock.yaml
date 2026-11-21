@@ -110,6 +110,9 @@ importers:
       pixi.js:
         specifier: ^8.19.0
         version: 8.19.0
+      postcss:
+        specifier: 8.5.14
+        version: 8.5.14
       qrcode:
         specifier: ^1.5.4
         version: 1.5.4

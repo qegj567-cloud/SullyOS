@@ -1,3 +1,4 @@
+import {PROFILE_SCOPE,PROFILE_SELECTORS} from './chatProfileAppearance';
 import {mergeAvatarFrameCss} from './avatarFrameTarget';
 import {validateCollaborationCss} from '../features/collaboration/appearance';
 import {MEETING_CSS_SCOPE, MEETING_CSS_HINT, MEETING_CSS_PROMPT} from './meetingAppearance';
@@ -8,10 +9,11 @@ import {PRESET_THEMES} from '../components/chat/ChatConstants';
 import {validateScopedCss} from './scopedCss';
 import {WHITEBOX_AI_PROMPT,WHITEBOX_SCOPE_REGEX,WHITEBOX_SCOPE_HINT} from './chatWhitebox';
 
-export const DECORATION_WORKSHOPS=[['whitebox','白框'],['bubbles','气泡'],['avatar','头像框'],['background','聊天背景'],['psyche','心象'],['sound','提示音'],['collaboration','协同工作'],['date','见面界面'],['story','剧情界面'],['schedule','日程表'],['journal','交换日记']] as const;
+export const DECORATION_WORKSHOPS=[['whitebox','白框'],['bubbles','气泡'],['avatar','头像框'],['background','聊天背景'],['psyche','心象'],['profile','角色名片'],['sound','提示音'],['collaboration','协同工作'],['date','见面界面'],['story','剧情界面'],['schedule','日程表'],['journal','交换日记']] as const;
 export type DecorationWorkshop=typeof DECORATION_WORKSHOPS[number][0];
 export const workshopBlock=(category:'avatar'|'background')=>new RegExp(`/\\* sully-composer:${category} \\*/\\n?([\\s\\S]*?)/\\* end-sully-composer:${category} \\*/`,'g');
 export function workshopCss(preset:DecorationPreset,category:DecorationWorkshop){
+ if(category==='profile')return preset.parts.profile?.customCss||'';
  if(category==='date'||category==='story')return preset.parts[category]?.customCss||'';
  if(category==='collaboration')return preset.parts.collaboration?.customCss||'';
  if(category==='journal')return preset.parts.journal?.customCss||'';
@@ -23,7 +25,7 @@ export function workshopCss(preset:DecorationPreset,category:DecorationWorkshop)
 }
 export function replaceWorkshopCss(base:string,category:'avatar'|'background',css:string){return [base.replace(workshopBlock(category),'').trim(),css.trim()?`/* sully-composer:${category} */\n${css}\n/* end-sully-composer:${category} */`:''].filter(Boolean).join('\n');}
 export function makeWorkshopPreset(category:DecorationWorkshop):DecorationPreset{
- const parts:DecorationPreset['parts']=category==='collaboration'?{collaboration:{uiTheme:'sully',customCss:'',avatarMode:'theme',avatarStyle:'circle'}}:category==='date'?{date:{preset:'novel'}}:category==='story'?{story:{preset:'novel'}}:category==='journal'?{journal:{preset:'original',customCss:''}}:category==='schedule'?{schedule:{preset:'original',customCss:''}}:category==='bubbles'?{bubbles:{...structuredClone(PRESET_THEMES.default),type:'custom'}}:category==='psyche'?{psyche:{styleId:'echo',customCss:''}}:category==='background'?{background:{image:null,style:'plain'}}:category==='sound'?{sound:null}:{css:''};
+ const parts:DecorationPreset['parts']=category==='profile'?{profile:{customCss:''}}:category==='collaboration'?{collaboration:{uiTheme:'sully',customCss:'',avatarMode:'theme',avatarStyle:'circle'}}:category==='date'?{date:{preset:'novel'}}:category==='story'?{story:{preset:'novel'}}:category==='journal'?{journal:{preset:'original',customCss:''}}:category==='schedule'?{schedule:{preset:'original',customCss:''}}:category==='bubbles'?{bubbles:{...structuredClone(PRESET_THEMES.default),type:'custom'}}:category==='psyche'?{psyche:{styleId:'echo',customCss:''}}:category==='background'?{background:{image:null,style:'plain'}}:category==='sound'?{sound:null}:{css:''};
  return {format:'sullyos-chat-decoration',version:1,name:`我的${DECORATION_WORKSHOPS.find(([id])=>id===category)![1]}`,parts};
 }
 export function projectWorkshopPreset(preset:DecorationPreset,category:DecorationWorkshop):DecorationPreset{
@@ -38,6 +40,7 @@ export function projectWorkshopPreset(preset:DecorationPreset,category:Decoratio
  return out;
 }
 const scopes={
+ profile:[PROFILE_SCOPE,PROFILE_SELECTORS.join('、')],
  date:[MEETING_CSS_SCOPE,MEETING_CSS_HINT],
  story:[MEETING_CSS_SCOPE,MEETING_CSS_HINT],
  collaboration:[/^\.collab-ui-root\b/,'.collab-ui-root 及其子元素'],

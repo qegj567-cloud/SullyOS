@@ -54,9 +54,9 @@ const base64ToBlob = (value: string, mimeType: string): Blob => {
 };
 
 /** Fetch a downloadable blob, using native HTTP as a CORS-free fallback in Capacitor. */
-export async function fetchBlobForShare(sourceUrl: string, fallbackMimeType = 'application/octet-stream'): Promise<Blob> {
+export async function fetchBlobForShare(sourceUrl: string, fallbackMimeType = 'application/octet-stream', options?: RequestInit & { __sullyHandlesFailure?: boolean }): Promise<Blob> {
     try {
-        const response = await fetch(sourceUrl);
+        const response = await fetch(sourceUrl, options);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const blob = await response.blob();
         if (!blob.size) throw new Error('文件为空');

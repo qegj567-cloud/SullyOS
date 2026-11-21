@@ -40,6 +40,29 @@ beforeEach(() => {
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe('first-use memory guide', () => {
+    it('reveals the main API address after lazy mount and again on return, without scrolling while editing', async () => {
+        setGuideStep(0);
+        await render();
+        await render(); // Commit the mocked navigation to Settings before its lazy content mounts.
+        const section = document.createElement('section');
+        section.dataset.guide = 'api';
+        const address = document.createElement('label');
+        address.dataset.apiField = 'base-url';
+        section.append(address);
+        const scroll = vi.spyOn(address, 'scrollIntoView');
+        const nextFrame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+        await act(async () => { host.append(section); await nextFrame(); await nextFrame(); });
+        expect(address.classList.contains('first-use-highlight')).toBe(true);
+        expect(scroll).toHaveBeenLastCalledWith({ block: 'center', inline: 'nearest' });
+        scroll.mockClear();
+        await act(async () => { address.append(document.createElement('input')); await nextFrame(); });
+        expect(scroll).not.toHaveBeenCalled();
+        await click('回到本步页面');
+        await act(nextFrame);
+        expect(scroll).toHaveBeenCalledOnce();
+        expect(document.activeElement).not.toBe(address.firstElementChild);
+    });
+
     it.each([0, 1, 2, 3, 4, 5, 6])('can directly skip step %s without changing configuration or navigating', async step => {
         setGuideStep(step); await render();
         await click('收起');
