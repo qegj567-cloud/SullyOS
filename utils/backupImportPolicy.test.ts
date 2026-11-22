@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-    assertSupportedSullyBackup, createImportProgressMarker, IMPORT_IN_PROGRESS_KEY,
+    assertSupportedSullyBackup, createImportProgressMarker, IMPORT_IN_PROGRESS_KEY, readImportMarkerReport,
     RESTORE_DAMAGED_ASSETS_KEY, saveRestoreDamagedAssets, readRestoreDamagedAssets, clearRestoreDamagedAssets,
 } from './backupImportPolicy';
 import { isSharedSpaceKey } from './userSpaces';
@@ -76,6 +76,29 @@ describe('import-in-progress marker', () => {
         expect(JSON.parse(store.items.get(IMPORT_IN_PROGRESS_KEY)!)).toMatchObject({ phase: 'error', startedAt: written.startedAt, error: '写入失败' });
         marker.clear();
         expect(store.items.has(IMPORT_IN_PROGRESS_KEY)).toBe(false);
+    });
+
+    afterEach(() => { vi.unstubAllGlobals(); });
+
+    it('reads back as log text after the page vanished mid-write: step, user · table, page and build, but not the file name', () => {
+        vi.stubGlobal('__APP_BUILD_ID__', 'build-test');
+        const store = { ...storage(), getItem: (k: string) => store.items.get(k) ?? null };
+        const marker = createImportProgressMarker('小明的备份.zip', store);
+        marker.beginWrite();
+        marker.update('database', { sourceSize: 3 * 1024 * 1024, stage: '正在写入', current: '小明 · memory_links', itemDone: 37, itemTotal: 1000 });
+        // 页面在这里没了：没有 clear()，也没有 error。
+        const report = readImportMarkerReport(store)!;
+        expect(report.title).toBe('上次备份恢复没有完成');
+        expect(report.detail.split('\n')).toEqual(expect.arrayContaining([
+            '停在：写入数据库 · 正在写入', '当前部分：小明 · memory_links', '进度：37 / 1000', '备份文件大小：3.0 MB', '构建：build-test',
+        ]));
+        expect(report.detail).not.toContain('小明的备份');
+        // 只读不删：重新导入的弹窗还要用它。
+        expect(store.items.has(IMPORT_IN_PROGRESS_KEY)).toBe(true);
+        marker.update('error', { current: '小明 · memory_links', error: '写入失败' });
+        expect(readImportMarkerReport(store)).toMatchObject({ title: '上次备份恢复失败了', detail: expect.stringContaining('报错：写入失败') });
+        marker.clear();
+        expect(readImportMarkerReport(store)).toBeNull();
     });
 
     it('stays cleared when the failure is reported after a clean rollback', () => {

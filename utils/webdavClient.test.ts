@@ -28,6 +28,12 @@ vi.mock('./backupTempFile', () => ({
 }));
 
 import { uploadBackup, cleanupOldBackups, listBackups, downloadBackup } from './webdavClient';
+import { consumeTaskTrace, STEP_TRACE_KINDS } from './taskTrace';
+
+// 中断留痕：只有走不到收尾时才该留下。测试里在请求发出的那一刻读，等同于「这时页面没了」。
+const UPLOAD_TRACE = STEP_TRACE_KINDS.find(kind => kind.key.includes('cloud_upload'))!;
+const DOWNLOAD_TRACE = STEP_TRACE_KINDS.find(kind => kind.key.includes('cloud_download'))!;
+const traceNow = (key: string) => JSON.parse(localStorage.getItem(key) || 'null');
 
 const config: CloudBackupConfig = {
     webdavUrl: 'https://example.invalid/dav',
@@ -73,7 +79,9 @@ class FakeXhr {
     private url = '';
     open(_method: string, url: string) { this.url = url; }
     setRequestHeader() {}
+    static traces: any[] = [];
     send() {
+        FakeXhr.traces.push(traceNow(UPLOAD_TRACE.key));
         FakeXhr.calls.push({ method: 'PUT', url: decodeURIComponent(this.url) });
         this.status = 201;
         queueMicrotask(() => this.onload?.());
@@ -86,6 +94,7 @@ beforeEach(() => {
     tmp.removed = 0;
     cap.request.mockReset();
     FakeXhr.calls = [];
+    FakeXhr.traces = [];
     vi.stubGlobal('XMLHttpRequest', FakeXhr);
 });
 afterEach(() => {
@@ -137,6 +146,7 @@ describe('uploadBackup 上传后核对远端大小（网页端）', () => {
         const deletes = calls.filter(c => c.method === 'DELETE');
         expect(deletes).toHaveLength(1);
         expect(deletes[0].url).toContain('/dav/backups/Sully_Backup_full_1.zip');
+        expect(localStorage.getItem(UPLOAD_TRACE.key)).toBeNull();
     });
 
     it('远端大小一致：上传成功，不删任何文件', async () => {
@@ -147,6 +157,15 @@ describe('uploadBackup 上传后核对远端大小（网页端）', () => {
 
         expect(res.ok).toBe(true);
         expect(calls.some(c => c.method === 'DELETE')).toBe(false);
+        expect(FakeXhr.traces[0]).toMatchObject({ step: '上传', done: 0, total: 5, facts: { 云端: 'WebDAV', 备份大小: '5 B' } });
+        expect(localStorage.getItem(UPLOAD_TRACE.key)).toBeNull();
+    });
+
+    it('上传后核对大小时页面没了：留痕留下来，下次启动读得出停在核对这一步', async () => {
+        vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {}))); // PROPFIND 永远等不到回应
+        void uploadBackup(config, new Blob(['hello']), 'Sully_Backup_full_9.zip');
+        await vi.waitFor(() => expect(traceNow(UPLOAD_TRACE.key)?.step).toBe('核对云端大小'));
+        expect(consumeTaskTrace(UPLOAD_TRACE)!.detail).toContain('停在：核对云端大小\n云端：WebDAV\n备份大小：5 B');
     });
 
     it('刚传完先报 0 字节：重读到一致大小就算成功，不删文件', async () => {
@@ -314,11 +333,25 @@ describe('downloadBackup 网页端', () => {
         expect(wholeRead).not.toHaveBeenCalled();
         expect(await bytesOf(backup!.blob)).toEqual([1, 2, 3, 4]);
         await backup!.dispose();
+        expect(localStorage.getItem(DOWNLOAD_TRACE.key)).toBeNull();
     });
 
     it('服务器报的大小与实际不符时失败', async () => {
         stubStreamedGet([1, 2, 3, 4]);
         await expect(downloadBackup(config, file(6))).rejects.toThrow('应为 6 字节，实际 4 字节');
+        expect(localStorage.getItem(DOWNLOAD_TRACE.key)).toBeNull();
+    });
+
+    it('下载途中页面没了：留痕留下来，下次启动读得出收到多少、写在哪', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => ({
+            status: 200,
+            body: new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(new Uint8Array([1, 2])); } }), // 收到两字节后断在半路
+        })));
+        void downloadBackup(config, file(4));
+        await vi.waitFor(() => expect(traceNow(DOWNLOAD_TRACE.key)?.done).toBe(2));
+        const report = consumeTaskTrace(DOWNLOAD_TRACE)!;
+        expect(report.title).toBe('上次云端备份下载没有完成');
+        expect(report.detail).toContain('停在：整包下载\n进度：2 B / 4 B\n云端：WebDAV\n备份大小：4 B\n写到：内存');
     });
 
     it('服务器没报大小时不核对，照常成功', async () => {

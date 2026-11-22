@@ -70,6 +70,7 @@ import { commitSpaceRows, readSpaceStore } from './userSpaceData';
 import { exportUserSpaces, importUserSpaces, lastUserSpaceExport } from './userSpaceBackup';
 import { PAGE_BYTE_BUDGET } from './backupPageReader';
 import { EXPORT_TRACE_KEY, type ExportTrace } from './backupExportTrace';
+import { TASK_TRACE_KINDS } from './taskTraceReport';
 import { canMigrateLocalKey } from './independentUserRemap';
 
 const messages = (count: number, content = (i: number) => `第 ${i} 句`) =>
@@ -307,6 +308,9 @@ it('leaves a readable trace behind when the export disappears midway without rea
 it('keeps the trace out of every space-local and shared setting in the archive, and out of migration', async () => {
     saveUserSpaces([{ id: 'default', name: '小明' }, { id: 'u_second', name: '小明二号' }]);
     writeSpaceLocal('u_second', { chat_bg: 'blue' });
+    // 其余长任务的留痕和这份一样是本机状态：假装它们也还在，同样不能进包。
+    const otherKeys = TASK_TRACE_KINDS.map(kind => kind.key).filter(key => key !== EXPORT_TRACE_KEY);
+    for (const key of otherKeys) localStorage.setItem(key, '{"version":1,"step":"测试"}');
     let presentDuringExport = false;
     writer.onAdded = () => { presentDuringExport ||= localStorage.getItem(EXPORT_TRACE_KEY) !== null; };
     const zip = await JSZip.loadAsync(await (await exportUserSpaces('full', 'all')).arrayBuffer());
@@ -314,9 +318,12 @@ it('keeps the trace out of every space-local and shared setting in the archive, 
     expect(presentDuringExport).toBe(true);
     const manifest = await manifestOf(zip);
     expect(manifest.spaces).toHaveLength(2);
-    expect(Object.keys(manifest.settings)).not.toContain(EXPORT_TRACE_KEY);
-    for (const space of manifest.spaces) expect(Object.keys(space.local)).not.toContain(EXPORT_TRACE_KEY);
-    expect(await (await exportUserSpaces('full', 'all')).text()).not.toContain(EXPORT_TRACE_KEY);
+    for (const key of [EXPORT_TRACE_KEY, ...otherKeys]) {
+        expect(Object.keys(manifest.settings)).not.toContain(key);
+        for (const space of manifest.spaces) expect(Object.keys(space.local)).not.toContain(key);
+    }
+    const text = await (await exportUserSpaces('full', 'all')).text();
+    expect(text).not.toContain('_progress_v1');
     expect(canMigrateLocalKey(EXPORT_TRACE_KEY)).toBe(false);
 });
 

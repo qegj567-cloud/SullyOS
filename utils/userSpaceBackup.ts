@@ -3,6 +3,7 @@ import { DB, openSpaceDB } from './db';
 import { openBackupArchiveWriter, type BackupArchiveFile, type BackupArchiveWriter } from './backupArchiveWriter';
 import { forEachStorePage } from './backupPageReader';
 import { createExportTrace, type ExportTraceWriter } from './backupExportTrace';
+import { isTaskTraceKey } from './taskTrace';
 import { compactMemoryLink } from './memoryPalace/linkPrecision';
 import type { Emoji } from '../types';
 import { collectBlobRefs } from './backupBlobs';
@@ -38,8 +39,8 @@ interface SpaceArchive {
 }
 const mediaStores = new Set(['characters', 'user_profile', 'themes', 'emojis', 'emoji_categories', 'journal_stickers', 'gallery', 'cc_custom_parts', 'pixel_home_assets', 'pixel_home_layouts', 'messages', 'assets', 'collab_assets', 'daily_schedule', 'bank_data']);
 const mediaAsset = (id: string) => id === 'friend_feed_v1' || !isActivityTextAsset(id);
-// (im|ex)port.*progress：导入中标记和导出留痕（backupExportTrace.ts）都是本机进度，不进备份。
-const privateLocalExcluded = (key: string) => /location|geolocation|latitude|longitude|privacy|user_spaces_catalog|(?:im|ex)port.*progress/i.test(key);
+// 导入中标记（(im|ex)port.*progress）和各项长任务的中断留痕（taskTrace.ts 的 isTaskTraceKey）都是本机进度，不进备份。
+const privateLocalExcluded = (key: string) => isTaskTraceKey(key) || /location|geolocation|latitude|longitude|privacy|user_spaces_catalog|(?:im|ex)port.*progress/i.test(key);
 export function spaceMediaRow(store: string, row: any) {
     if (store === 'assets' && row.id === HELP_HISTORY_KEY) return { id: row.id, data: helpMediaHistory(row.data) };
     if (store === 'characters') {

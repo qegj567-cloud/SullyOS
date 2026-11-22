@@ -102,6 +102,7 @@ import { collectUnmergeableRefs, buildMergePlan, rewriteBlobRefs } from './blobD
 import { creatorPartToBlobRefs } from './creatorPartsBlob';
 import { tryAcquireMaintenanceLock, releaseMaintenanceLock, currentMaintenanceHolder } from './maintenanceLock';
 import { withSharedAssetLock } from './sharedAssetLock';
+import { startStepTrace } from './taskTrace';
 import type { AppearancePreset, ChatTheme, CharacterProfile, CustomCreatorPart, Emoji, GalleryImage, Message, SongSheet } from '../types';
 
 /** 本工具会写的表。守卫测试断言它 ⊆ blobGc 的 REF_SOURCE_STORES（转出的 Blob 必须在 GC 视野内）。 */
@@ -181,11 +182,18 @@ export interface OptimizeResult {
 }
 
 export async function optimizeResourceStorage(
-    onProgress?: (p: OptimizeProgress) => void,
+    reportProgress?: (p: OptimizeProgress) => void,
 ): Promise<OptimizeResult> {
     if (!tryAcquireMaintenanceLock('优化资源存储')) {
         throw new Error(`另一项存储维护（${currentMaintenanceHolder()}）正在进行，请稍后再试。`);
     }
+    // 中断留痕（utils/taskTrace.ts）：每次进度都报给它，正常结束、报错结束都在 finally 删掉，只有页面中途没了才留下。
+    // label 是固定的面名（「系统外观」「合并重复图片」「压缩记忆向量」…），不带行内容。
+    const trace = startStepTrace('optimize');
+    const onProgress = (p: OptimizeProgress) => {
+        trace.step(p.label, p.done, p.total, '项');
+        reportProgress?.(p);
+    };
     const run = async (): Promise<OptimizeResult> => {
         const result: OptimizeResult = {
             converted: 0, uniqueBlobs: 0, bytesBefore: 0, bytesAfter: 0, failed: 0,
@@ -774,6 +782,7 @@ export async function optimizeResourceStorage(
         // 不能让换图清理或另一页面的 GC 把它删掉；共享池锁跨标签页协调。
         return await withSharedAssetLock('exclusive', run);
     } finally {
+        trace.clear();
         releaseMaintenanceLock();
     }
 }

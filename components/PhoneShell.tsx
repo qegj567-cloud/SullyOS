@@ -12,6 +12,7 @@ import { shouldShowAnniversaryGift, markAnniversaryGiftSeen } from '../utils/ann
 
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, Suspense } from 'react';
 import { IMPORT_IN_PROGRESS_KEY, useOS } from '../context/OSContext';
+import { importPhaseLabel, type ImportProgressMarker } from '../utils/backupImportPolicy';
 import { RestoreDamagedAssetsStartupNotice } from './BackupMissingAssetsNotice';
 import StatusBar from './os/StatusBar';
 import { SARModuleMonitor } from './sar/SARModuleMonitor';
@@ -244,21 +245,7 @@ class AppErrorBoundary extends Component<{ children: React.ReactNode, onCloseApp
 
 const DISCLAIMER_KEY = 'sullyos_disclaimer_accepted';
 
-type ImportRecoveryMarker = {
-  startedAt?: number;
-  updatedAt?: number;
-  phase?: string;
-  source?: string;
-  sourceSize?: number;
-  current?: string;
-  currentFile?: string;
-  currentFileSize?: number;
-  assetDone?: number;
-  assetTotal?: number;
-  itemDone?: number;
-  itemTotal?: number;
-  error?: string;
-};
+type ImportRecoveryMarker = ImportProgressMarker;
 
 const getPendingImportMarker = (): ImportRecoveryMarker | null => {
   try {
@@ -269,16 +256,7 @@ const getPendingImportMarker = (): ImportRecoveryMarker | null => {
   }
 };
 
-const getImportPhaseLabel = (phase?: string) => {
-  switch (phase) {
-    case 'parsing': return '解析备份文件';
-    case 'assets': return '恢复备份素材';
-    case 'database': return '写入数据库';
-    case 'settings': return '恢复系统设置';
-    case 'error': return '导入报错';
-    default: return '导入流程';
-  }
-};
+const getImportPhaseLabel = importPhaseLabel;
 
 
 
@@ -372,7 +350,7 @@ const ImportRecoveryPopup: React.FC<{
             </div>
           )}
           <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 text-[12px] text-amber-700 leading-relaxed">
-            <div>中断阶段：{phaseLabel}</div>
+            <div>中断阶段：{phaseLabel}{marker.stage ? ` · ${marker.stage}` : ''}</div>
             {marker.current && <div>当前部分：{marker.current}</div>}
             {hasItemProgress && <div>条目进度：{marker.itemDone || 0}/{marker.itemTotal}</div>}
             {hasAssetProgress && <div>素材进度：{marker.assetDone || 0}/{marker.assetTotal}</div>}

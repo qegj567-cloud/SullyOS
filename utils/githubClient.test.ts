@@ -8,6 +8,12 @@ import {
     shouldUseGithubProxy,
     uploadBackup,
 } from './githubClient';
+import { consumeTaskTrace, STEP_TRACE_KINDS } from './taskTrace';
+
+// 中断留痕：只有走不到收尾时才该留下。测试里在请求发出的那一刻读，等同于「这时页面没了」。
+const UPLOAD_TRACE = STEP_TRACE_KINDS.find(kind => kind.key.includes('cloud_upload'))!;
+const DOWNLOAD_TRACE = STEP_TRACE_KINDS.find(kind => kind.key.includes('cloud_download'))!;
+const traceNow = (key: string) => JSON.parse(localStorage.getItem(key) || 'null');
 
 afterEach(() => {
     vi.unstubAllGlobals();
@@ -156,7 +162,9 @@ describe('GitHub 分片下载核对', () => {
             b => b.toString(16).padStart(2, '0')).join('');
 
     /** 一个三片的事务式备份：列表里每片带 digest（传 null 表示 GitHub 没给），下载按附件 id 回字节。 */
+    let tracesSeen: any[] = [];
     const stubRelease = async (releaseId: number, digestOf: (bytes: Uint8Array, index: number) => Promise<string | null>) => {
+        tracesSeen = [];
         const parts = [new Uint8Array([1, 2, 3]), new Uint8Array([4, 5, 6]), new Uint8Array([7])];
         const assets = await Promise.all(parts.map(async (bytes, index) => ({
             id: releaseId * 10 + index + 1,
@@ -180,6 +188,7 @@ describe('GitHub 分片下载核对', () => {
             const assetMatch = /\/releases\/assets\/(\d+)$/.exec(url);
             if (assetMatch) {
                 const index = Number(assetMatch[1]) - releaseId * 10 - 1;
+                tracesSeen.push(traceNow(DOWNLOAD_TRACE.key));
                 return new Response(parts[index].slice(), { status: 200 });
             }
             return new Response(JSON.stringify([release]), { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -195,6 +204,17 @@ describe('GitHub 分片下载核对', () => {
 
         expect(Array.from(new Uint8Array(await backup!.blob.arrayBuffer()))).toEqual([1, 2, 3, 4, 5, 6, 7]);
         await backup!.dispose();
+        // 下载途中留痕在，记着第几片、已收多少；正常结束后删掉。
+        expect(tracesSeen[2]).toMatchObject({ step: '下载第 3 / 3 片', done: 6, total: 7, unit: 'B', facts: { 云端: 'GitHub', 分片数: 3, 写到: '内存' } });
+        expect(localStorage.getItem(DOWNLOAD_TRACE.key)).toBeNull();
+    });
+
+    it('下载途中页面没了：留痕留下来，下次启动读得出停在第几片', async () => {
+        const { file } = await stubRelease(45, bytes => sha256(bytes));
+        vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {}))); // 第一片永远等不到
+        void downloadBackup(config, file);
+        await vi.waitFor(() => expect(traceNow(DOWNLOAD_TRACE.key)?.step).toBe('下载第 1 / 3 片'));
+        expect(consumeTaskTrace(DOWNLOAD_TRACE)!.detail).toContain('停在：下载第 1 / 3 片\n进度：0 B / 7 B');
     });
 
     it('某一片内容与 digest 不符时失败，并写明是哪一片', async () => {
@@ -203,6 +223,8 @@ describe('GitHub 分片下载核对', () => {
             sha256(index === 1 ? new Uint8Array([9, 9, 9]) : bytes));
 
         await expect(downloadBackup(config, file)).rejects.toThrow('GitHub 备份第 2/3 片校验和不符');
+        expect(tracesSeen.length).toBeGreaterThan(0);
+        expect(localStorage.getItem(DOWNLOAD_TRACE.key)).toBeNull();
         // 沿用分片下载的重试：同一片拉了三次才放弃。
         expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/releases/assets/502'))).toHaveLength(3);
     }, 10_000);
@@ -382,8 +404,9 @@ describe('GitHub 事务式上传', () => {
             open() {}
             setRequestHeader() {}
             getAllResponseHeaders() { return ''; }
-            send() { this.onload?.(); }
+            send() { traceDuringSend = traceNow(UPLOAD_TRACE.key); this.onload?.(); }
         }
+        let traceDuringSend: any = null;
         vi.stubGlobal('XMLHttpRequest', FailedUploadXhr as any);
 
         const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
@@ -406,6 +429,8 @@ describe('GitHub 事务式上传', () => {
 
         expect(result.ok).toBe(false);
         expect(result.message).toContain('草稿已清理');
+        expect(traceDuringSend).toMatchObject({ step: '上传第 1 / 1 片', facts: { 云端: 'GitHub', 分片数: 1 } });
+        expect(localStorage.getItem(UPLOAD_TRACE.key)).toBeNull();
         expect(fetchMock.mock.calls.some(([url, init]) =>
             String(url).endsWith('/releases/77') && init?.method === 'DELETE')).toBe(true);
         expect(fetchMock.mock.calls.some(([url, init]) =>
@@ -470,8 +495,18 @@ describe('GitHub 事务式上传', () => {
 
         expect(result).toMatchObject({ ok: true });
         expect(uploadedNames).toContain('Sully_Backup_full_2.zip');
+        expect(localStorage.getItem(UPLOAD_TRACE.key)).toBeNull();
         expect(uploadedNames.some(name => name.endsWith('.sully-backup.json'))).toBe(true);
         expect(fetchMock.mock.calls.some(([url, init]) =>
             String(url).endsWith('/releases/88') && init?.method === 'PATCH')).toBe(true);
+    });
+
+    it('上传途中页面没了：留痕留下来，下次启动读得出停在哪一步', async () => {
+        vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {}))); // 创建草稿永远等不到回应
+        void uploadBackup(config, new Blob(['zip']), 'Sully_Backup_full_3.zip');
+        await vi.waitFor(() => expect(traceNow(UPLOAD_TRACE.key)?.step).toBe('创建备份草稿'));
+        const report = consumeTaskTrace(UPLOAD_TRACE)!;
+        expect(report.title).toBe('上次云端备份上传没有完成');
+        expect(report.detail).toContain('停在：创建备份草稿\n云端：GitHub\n备份大小：3 B');
     });
 });

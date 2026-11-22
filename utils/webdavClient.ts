@@ -16,6 +16,7 @@ import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import { CloudBackupConfig, CloudBackupFile } from '../types';
 import { BackupSpaceError, DownloadedBackup, receiveBackupDownload } from './backupDownload';
 import { getProxyWorkerUrl } from './proxyWorker';
+import { formatTraceBytes, startStepTrace, type StepTraceWriter } from './taskTrace';
 import { blobToBase64 } from './githubClient';
 
 // 经 CF Worker 代理上传（web 路径）的请求体上限。Cloudflare Worker 免费版单次请求体约 100MB，
@@ -202,8 +203,29 @@ export const uploadBackup = async (
     onProgress?: (percent: number) => void,
 ): Promise<{ ok: boolean; message: string }> => {
     const remotePath = config.remotePath.replace(/\/+$/, '') + '/' + filename;
+    // 中断留痕（utils/taskTrace.ts）：只有上传途中页面没了才留下来，正常结束、报错结束都在 finally 删掉。
+    const trace = startStepTrace('cloudUpload', { 云端: 'WebDAV', 备份大小: formatTraceBytes(blob.size) });
+    try {
+        trace.step('上传', 0, blob.size, 'B');
+        return await uploadAndVerify(config, blob, remotePath, (percent) => {
+            onProgress?.(percent);
+            trace.step('上传', Math.floor(blob.size * percent / 100), blob.size, 'B');
+        }, trace);
+    } finally {
+        trace.clear();
+    }
+};
+
+const uploadAndVerify = async (
+    config: CloudBackupConfig,
+    blob: Blob,
+    remotePath: string,
+    onProgress: (percent: number) => void,
+    trace: StepTraceWriter,
+): Promise<{ ok: boolean; message: string }> => {
     const result = await putBackup(config, blob, remotePath, onProgress);
     if (!result.ok) return result;
+    trace.step('核对云端大小');
 
     // 服务端可能回 201 却存下 0 字节或垃圾内容，只有回读远端大小才能确认这份备份能用。
     let remoteSize = await probeRemoteSize(config, remotePath);
@@ -419,15 +441,32 @@ export const downloadBackup = async (
     // 没报大小的服务器 size 记为 0，无从核对。
     const total = file.size > 0 ? file.size : undefined;
 
+    // 中断留痕（utils/taskTrace.ts）：只有下载途中页面没了才留下来。
+    const trace = startStepTrace('cloudDownload', { 云端: 'WebDAV', 备份大小: formatTraceBytes(file.size) });
+    try {
+        return await downloadWithTrace(config, file, total, trace, onProgress);
+    } finally {
+        trace.clear();
+    }
+};
+
+const downloadWithTrace = async (
+    config: CloudBackupConfig,
+    file: CloudBackupFile,
+    total: number | undefined,
+    trace: StepTraceWriter,
+    onProgress?: (percent: number) => void,
+): Promise<DownloadedBackup | null> => {
     if (file.size > CHUNK_SIZE) {
         try {
             const backup = await receiveBackupDownload(async sink => {
                 for (let start = 0; start < file.size; start += CHUNK_SIZE) {
                     const end = Math.min(start + CHUNK_SIZE - 1, file.size - 1);
+                    trace.step('分段下载', start, file.size, 'B');
                     await sink.write(await fetchChunk(config, file.href, start, end));
                     onProgress?.(Math.min(99, Math.floor(((end + 1) / file.size) * 100)));
                 }
-            }, total);
+            }, total, trace);
             onProgress?.(100);
             return backup;
         } catch (e) {
@@ -442,6 +481,7 @@ export const downloadBackup = async (
     }
 
     // Small / unknown size, or chunked fallback — single GET
+    trace.step('整包下载：等待服务器响应');
     const res = await webdavRequest(config, file.href, 'GET');
     if (res.status !== 200 && res.status !== 206) return null;
     const backup = await receiveBackupDownload(async sink => {
@@ -459,6 +499,7 @@ export const downloadBackup = async (
                 if (done) break;
                 await sink.write(value);
                 received += value.byteLength;
+                trace.step('整包下载', received, total, 'B');
                 if (total) onProgress?.(Math.min(99, Math.floor((received / total) * 100)));
             }
         } catch (error) {
@@ -466,7 +507,7 @@ export const downloadBackup = async (
             await reader.cancel().catch(() => undefined);
             throw error;
         }
-    }, total);
+    }, total, trace);
     onProgress?.(100);
     return backup;
 };

@@ -118,6 +118,34 @@ describe('import-in-progress marker', () => {
             expect(calls[0].arguments.some(arg => arg.getText(sourceFile).includes('userSpaceWriteHooks')), entry).toBe(true);
         }
     });
+
+    it('multi-space restore hands its step (clearing / writing) to the marker, not only the table and page', () => {
+        const hooks = findVariable('userSpaceWriteHooks') as ts.ObjectLiteralExpression;
+        const onProgress = hooks.properties.find(p => ts.isPropertyAssignment(p) && p.name.getText(sourceFile) === 'onProgress')!;
+        expect(onProgress.getText(sourceFile)).toMatch(/stage: p\.stage, current: p\.current/);
+    });
+});
+
+// 中断留痕的行为（正常结束删、报错删、中途没了留下）由 taskTrace.test.ts 钉住；exportSystem 跑不起来，这里钉它的接线。
+describe('interrupt traces', () => {
+    it('single-space export opens its trace after the multi-space branch returns and clears it in the outer finally', () => {
+        const exportSystem = findVariable('exportSystem');
+        const starts = callsIn(exportSystem, 'startStepTrace');
+        expect(starts.map(call => call.arguments[0].getText(sourceFile))).toEqual(["'singleExport'"]);
+        expect(starts[0].getStart()).toBeGreaterThan(callsIn(exportSystem, 'exportUserSpaces')[0].getStart());
+        expect(starts[0].getStart()).toBeLessThan(callsIn(exportSystem, 'createBackupArchive')[0].getStart());
+        let outer: ts.TryStatement | undefined;
+        const visit = (node: ts.Node) => { if (!outer && ts.isTryStatement(node)) outer = node; else ts.forEachChild(node, visit); };
+        visit(exportSystem);
+        expect(starts[0].getStart()).toBeGreaterThan(outer!.tryBlock.getStart());
+        expect(starts[0].getEnd()).toBeLessThan(outer!.tryBlock.getEnd());
+        expect(outer!.finallyBlock?.getText(sourceFile)).toContain('exportTrace?.clear()');
+    });
+
+    it('startup reads every leftover trace through one call', () => {
+        expect(callsIn(sourceFile, 'collectStartupTraceReports')).toHaveLength(1);
+        expect(callsIn(sourceFile, 'consumeExportTrace')).toHaveLength(0);
+    });
 });
 
 describe('backup package reading', () => {

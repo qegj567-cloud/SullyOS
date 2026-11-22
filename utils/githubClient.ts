@@ -21,6 +21,7 @@ import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import { CloudBackupConfig, CloudBackupFile } from '../types';
 import { DownloadedBackup, receiveBackupDownload, verifyBackupPart } from './backupDownload';
 import { getProxyWorkerUrl } from './proxyWorker';
+import { formatTraceBytes, startStepTrace } from './taskTrace';
 
 const API_HOST = 'https://api.github.com';
 const UPLOAD_HOST = 'https://uploads.github.com';
@@ -695,8 +696,11 @@ export const uploadBackup = async (
 
     let releaseId = 0;
     let tag = '';
+    // 中断留痕（utils/taskTrace.ts）：只有上传途中页面没了才留下来，正常结束、报错结束都在 finally 删掉。
+    const trace = startStepTrace('cloudUpload', { 云端: 'GitHub', 备份大小: formatTraceBytes(blob.size) });
     try {
         onProgress?.(2);
+        trace.step('创建备份草稿');
         const ts = Date.now();
         tag = `${TRANSACTIONAL_TAG_PREFIX}${ts}`;
         const releaseName = `${RELEASE_NAME_PREFIX}${new Date(ts).toISOString()}`;
@@ -720,6 +724,7 @@ export const uploadBackup = async (
 
         onProgress?.(5);
         const totalParts = Math.max(1, Math.ceil(blob.size / MAX_PART_SIZE));
+        trace.note({ 分片数: totalParts });
         const baseName = filename.replace(/\.zip$/i, '');
         const padWidth = String(totalParts).length;
         const span = 86 / Math.max(1, totalParts);
@@ -734,8 +739,11 @@ export const uploadBackup = async (
                 : `${baseName}.part${String(i + 1).padStart(padWidth, '0')}of${String(totalParts).padStart(padWidth, '0')}.zip`;
 
             const base = 5 + i * span;
+            const partStep = `上传第 ${i + 1} / ${totalParts} 片`;
+            trace.step(partStep, start, blob.size, 'B');
             const result = await uploadAssetWithRetry(config, releaseId, partBlob, partName, (frac) => {
                 onProgress?.(Math.min(91, Math.floor(base + frac * span)));
+                trace.step(partStep, start + Math.floor(frac * (end - start)), blob.size, 'B');
             });
             if (!result.ok || !result.asset) {
                 throw new Error(`第 ${i + 1}/${totalParts} 片失败：${result.message}`);
@@ -759,6 +767,7 @@ export const uploadBackup = async (
         };
         const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
         const manifestName = `${baseName}${MANIFEST_SUFFIX}`;
+        trace.step('写入完成标记');
         const manifestResult = await uploadAssetWithRetry(
             config,
             releaseId,
@@ -771,6 +780,7 @@ export const uploadBackup = async (
             throw new Error(`写入完成标记失败：${manifestResult.message}`);
         }
 
+        trace.step('发布备份');
         const publish = await ghRequest(
             config,
             `${API_HOST}/repos/${owner}/${repo}/releases/${releaseId}`,
@@ -802,6 +812,8 @@ export const uploadBackup = async (
             };
         }
         return { ok: false, message: `上传失败：${reason}` };
+    } finally {
+        trace.clear();
     }
 };
 
@@ -1027,6 +1039,7 @@ export const downloadBackup = async (
         throw new Error('这个备份缺少有效的 GitHub 附件标识，请刷新备份列表后重试。');
     }
 
+    const trace = startStepTrace('cloudDownload', { 云端: 'GitHub', 备份大小: formatTraceBytes(Number(file.size) || 0), 分片数: assetIds.length });
     try {
         onProgress?.(2);
         let downloadedBytes = 0;
@@ -1036,7 +1049,10 @@ export const downloadBackup = async (
             for (let i = 0; i < assetIds.length; i++) {
                 const completedBeforePart = downloadedBytes;
                 const label = `GitHub 备份第 ${i + 1}/${assetIds.length} 片`;
+                const partStep = `下载第 ${i + 1} / ${assetIds.length} 片`;
+                trace.step(partStep, downloadedBytes, totalBytes || undefined, 'B');
                 const bytes = await downloadAssetPart(config, assetIds[i], file.partSizes?.[i], file.partDigests?.[i], label, (partLoadedBytes) => {
+                    trace.step(partStep, completedBeforePart + partLoadedBytes, totalBytes || undefined, 'B');
                     if (totalBytes > 0) {
                         const byteFraction = Math.min(1, (completedBeforePart + partLoadedBytes) / totalBytes);
                         onProgress?.(Math.min(98, Math.max(2, Math.floor(2 + byteFraction * 96))));
@@ -1048,7 +1064,7 @@ export const downloadBackup = async (
                     ? Math.min(99, Math.floor(2 + Math.min(1, downloadedBytes / totalBytes) * 96))
                     : Math.min(99, Math.floor(2 + (i + 1) * span)));
             }
-        }, totalBytes || undefined);
+        }, totalBytes || undefined, trace);
         onProgress?.(100);
         return backup;
     } catch (error: any) {
@@ -1076,6 +1092,8 @@ export const downloadBackup = async (
         }
         if (error instanceof Error) throw error;
         throw new Error(`GitHub 附件下载失败：${String(error || '未知错误')}`);
+    } finally {
+        trace.clear();
     }
 };
 
