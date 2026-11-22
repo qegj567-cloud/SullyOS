@@ -1,4 +1,4 @@
-import React from 'react';
+import React, {useEffect, useState} from 'react';
 import type {CharacterGroup, CharacterProfile} from '../types';
 import FriendFeedAccounts from './FriendFeedAccounts';
 import {FriendFeedTikHubSettings} from './FriendFeedTikHub';
@@ -8,6 +8,8 @@ import type {PreferenceSection} from './FriendFeedSettingsMenu';
 export default function FriendFeedPreferences({value, onChange, disabled, embedded = false, characters = [], groups = [], section}: {
     value: FriendFeedSettings; onChange: (next: FriendFeedSettings) => void; disabled: boolean; embedded?: boolean; characters?: CharacterProfile[]; groups?: CharacterGroup[]; section: PreferenceSection;
 }) {
+    const [confirmingAction, setConfirmingAction] = useState<null | 'npcPrompt' | 'all'>(null);
+    useEffect(() => { setConfirmingAction(null); }, [section]);
     const change = (patch: Partial<FriendFeedSettings>) => onChange({...value, ...patch});
     return <div className="ff-preferences">
         {section === 'appearance' && <section className="ff-preferences-section" aria-label="外观与阅读">
@@ -61,7 +63,14 @@ export default function FriendFeedPreferences({value, onChange, disabled, embedd
         <details className="ff-npc-prompt"><summary>路人提示词</summary>
             <p className="friend-feed-settings-hint">专门控制网友的口吻、长短和参与方式。可以只发个表情，也可以认真聊几句。留空使用默认提示词。</p>
             <label className="ff-setting-field">路人怎么说话<textarea value={value.npcPrompt} disabled={disabled} rows={9} maxLength={3000} placeholder={DEFAULT_FRIEND_NPC_PROMPT} onChange={e=>change({npcPrompt:e.target.value})}/></label>
-            <button type="button" disabled={disabled} onClick={()=>change({npcPrompt:DEFAULT_FRIEND_NPC_PROMPT})}>恢复默认路人口吻</button>
+            {confirmingAction === 'npcPrompt' ? (
+                <div className="ff-setting-actions">
+                    <button type="button" className="ff-setting-button ff-setting-secondary" disabled={disabled} onClick={()=>{setConfirmingAction(null);change({npcPrompt:DEFAULT_FRIEND_NPC_PROMPT});}}>确认恢复默认口吻</button>
+                    <button type="button" className="ff-setting-link" disabled={disabled} onClick={()=>setConfirmingAction(null)}>取消</button>
+                </div>
+            ) : (
+                <button type="button" className="ff-setting-link" disabled={disabled} onClick={()=>setConfirmingAction('npcPrompt')}>恢复默认路人口吻</button>
+            )}
         </details>
         </section>}
         {section === 'content' && <section className="ff-preferences-section" aria-label="真实内容权限">
@@ -71,7 +80,14 @@ export default function FriendFeedPreferences({value, onChange, disabled, embedd
         </section>}
         {(section === 'profile' || section === 'weights' || section === 'accounts') && <FriendFeedAccounts section={section} value={value} onChange={onChange} characters={characters} groups={groups} disabled={disabled}/>}
         {section === 'advanced' && <><FriendFeedTikHubSettings/>
-        <button type="button" className="friend-feed-reset" disabled={disabled} onClick={() => onChange({...defaultFriendFeedSettings(),userNickname:value.userNickname,userBio:value.userBio,userAccounts:value.userAccounts,weiboProfile:value.weiboProfile,identities:value.identities,coverImages:value.coverImages, ...(embedded ? {theme: value.theme} : {})})}>恢复默认设置</button>
+        {confirmingAction === 'all' ? (
+            <div className="ff-setting-actions">
+                <button type="button" className="ff-setting-button ff-setting-secondary" disabled={disabled} onClick={() => { setConfirmingAction(null); onChange({...defaultFriendFeedSettings(),userNickname:value.userNickname,userBio:value.userBio,userAccounts:value.userAccounts,weiboProfile:value.weiboProfile,identities:value.identities,coverImages:value.coverImages, ...(embedded ? {theme: value.theme} : {})}); }}>确认恢复默认设置</button>
+                <button type="button" className="ff-setting-link" disabled={disabled} onClick={() => setConfirmingAction(null)}>取消</button>
+            </div>
+        ) : (
+            <button type="button" className="friend-feed-reset" disabled={disabled} onClick={() => setConfirmingAction('all')}>恢复默认设置</button>
+        )}
         <p className="friend-feed-settings-hint">恢复外观与互动默认值，保留网名和小号。点击保存后生效。</p></>}
     </div>;
 }

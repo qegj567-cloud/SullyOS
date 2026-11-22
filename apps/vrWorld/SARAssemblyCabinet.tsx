@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { BookOpen, CaretLeft, Check, CircleNotch, Eye, Fingerprint, Play, X } from '@phosphor-icons/react';
 import type { APIConfig, CharacterProfile, CharacterGroup, GroupProfile, RealtimeConfig, SARCharacterCabinetNoteMeta, UserProfile } from '../../types';
 import TokenImg from '../../components/os/TokenImg';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 import { DB } from '../../utils/db';
 import { rewriteCabinetNote, saveCabinetNoteRevision } from '../../utils/vrWorld/sarCabinetNoteEdit';
 import { trackEvent } from '../../utils/analytics';
@@ -186,13 +187,27 @@ const CabinetRecordsView: React.FC<{
 
 const CharacterNoteView: React.FC<{ note: CharacterCabinetNoteRecord; actor?: CharacterProfile; api: APIConfig; user: UserProfile;
     onChanged: (note: CharacterCabinetNoteRecord) => void; onDeleted: () => void }> = ({ note, actor, api, user, onChanged, onDeleted }) => {
+    const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
     const request = React.useRef<AbortController | null>(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
     useEffect(() => () => request.current?.abort(), []);
     const edit = async (remove: boolean) => {
-        if ((!remove && !actor) || request.current) return;
-        if (remove && !window.confirm('删除这篇随笔和聊天里对应的彼方活动卡？')) return;
+        if ((!remove && !actor) || busy || request.current) return;
+        const confirmed = remove
+            ? await requestConfirm({
+                title: '删除这篇随笔？',
+                message: '将一并删除这篇随笔和聊天里对应的彼方活动卡，无法恢复。',
+                confirmText: '确认删除',
+                variant: 'danger',
+            })
+            : await requestConfirm({
+                title: '重新生成随笔？',
+                message: '将根据这次经历重新书写随笔，并覆盖当前已保存的随笔内容。',
+                confirmText: '重新生成',
+                variant: 'warning',
+            });
+        if (!confirmed) return;
         const controller = new AbortController();
         request.current = controller;
         setBusy(true); setError('');
@@ -230,6 +245,7 @@ const CharacterNoteView: React.FC<{ note: CharacterCabinetNoteRecord; actor?: Ch
             {error && <p role="alert">{error}</p>}
             <footer>这篇记录来自 {note.actorName} 自己的彼方自由活动，不属于与你的五十轮推演史册。</footer>
         </article>
+        {confirmDialog}
     </main>
     );
 };

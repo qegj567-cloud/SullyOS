@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import Modal from '../os/Modal';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 import { DB } from '../../utils/db';
 import {
     API_REQUEST_CAPTURE_EVENT,
@@ -45,6 +46,7 @@ function formatTime(ts: number): { day: string; time: string } {
 }
 
 const ApiCallLogModal: React.FC<ApiCallLogModalProps> = ({ isOpen, onClose }) => {
+    const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
     const [entries, setEntries] = useState<ApiCallLogEntry[]>([]);
     const [loading, setLoading] = useState(false);
     const [showHelp, setShowHelp] = useState(false);
@@ -94,11 +96,17 @@ const ApiCallLogModal: React.FC<ApiCallLogModalProps> = ({ isOpen, onClose }) =>
     }, []);
 
     const handleClear = useCallback(async () => {
-        if (!window.confirm('确定清空所有 API 调用记录吗？此操作不可撤销。')) return;
+        const ok = await requestConfirm({
+            title: '清空 API 调用记录？',
+            message: '将清空所有本地 API 调用记录，此操作不可撤销。',
+            confirmText: '确认清空',
+            variant: 'danger',
+        });
+        if (!ok) return;
         await DB.clearApiCallLog();
         setEntries([]);
         trackEvent('清空 API 调用记录');
-    }, []);
+    }, [requestConfirm]);
 
     const handleCaptureToggle = useCallback(() => {
         setApiRequestCaptureArmed(!captureArmed);
@@ -106,12 +114,19 @@ const ApiCallLogModal: React.FC<ApiCallLogModalProps> = ({ isOpen, onClose }) =>
     }, [captureArmed]);
 
     const handleCaptureClear = useCallback(async () => {
-        if (!window.confirm('确定清除这一次的完整发送内容吗？')) return;
+        const ok = await requestConfirm({
+            title: '清除本次发送统计？',
+            message: '将清除已抓取的这一次完整发送内容。',
+            confirmText: '确认清除',
+            variant: 'danger',
+        });
+        if (!ok) return;
         await DB.clearApiRequestCapture();
         setCapture(null);
-    }, []);
+    }, [requestConfirm]);
 
     return (
+        <>
         <Modal
             isOpen={isOpen}
             title="API 调用记录"
@@ -338,6 +353,8 @@ const ApiCallLogModal: React.FC<ApiCallLogModalProps> = ({ isOpen, onClose }) =>
                 </div>
             )}
         </Modal>
+        {confirmDialog}
+        </>
     );
 };
 

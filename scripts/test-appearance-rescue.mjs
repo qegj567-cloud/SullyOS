@@ -27,9 +27,9 @@ try {
     assert.equal(await page.locator('section').first().innerText(), await section.innerText(), 'rescue stays first');
     const before = await read();
     const chrome = button('一键还原全部聊天白框美化（救援）');
-    page.once('dialog', dialog => dialog.dismiss()); await chrome.click();
+    await chrome.click(); await button('取消').click();
     assert.deepEqual(await read(), before, 'cancel chrome reset changes nothing');
-    page.once('dialog', dialog => dialog.accept()); await chrome.click();
+    await chrome.click(); await button('确认还原').click();
     await page.waitForFunction(async () => { const { DB } = await import('/utils/db.ts'); return !(await DB.getAllCharacters()).find(c => c.id === 'qa-rescue').chromeCustomCss; });
     const cleared = await read();
     assert.equal(cleared.theme.chatChromeCustomCss, ''); assert.equal(cleared.theme.hue, 123);

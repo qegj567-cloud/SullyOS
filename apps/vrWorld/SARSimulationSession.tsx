@@ -43,7 +43,7 @@ export const SARSimulationSession: React.FC<{
     useEffect(() => { trackSARFeature('simulation'); }, []);
     const [messages, setMessages] = useState<Message[]>([]);
     const [draft, setDraft] = useState('');
-    const [replyAction, setReplyAction] = useState<{ message: Message; mode: 'menu' | 'edit' | 'delete' } | null>(null);
+    const [replyAction, setReplyAction] = useState<{ message: Message; mode: 'menu' | 'edit' | 'delete' | 'regenerate' } | null>(null);
     const [editText, setEditText] = useState('');
     const [editNarration, setEditNarration] = useState('');
     const busyRef = useRef(false);
@@ -310,16 +310,19 @@ export const SARSimulationSession: React.FC<{
             </section>}
             {replyAction&&<div className="sars-confirm" role="dialog" aria-modal="true" aria-label="回复操作"><section>
                 <button type="button" className="sars-confirm-close" aria-label="关闭回复操作" disabled={sending} onClick={()=>setReplyAction(null)}><X size={18}/></button>
-                <h2>{messageScene(replyAction.message)} · {replyAction.message.role==='user'?(replyAction.mode==='edit'?'修改我的消息':'我的消息操作'):replyAction.mode==='edit'?'修改回复':replyAction.mode==='delete'?'删除回复？':'回复操作'}</h2>
+                <h2>{messageScene(replyAction.message)} · {replyAction.message.role==='user'?(replyAction.mode==='edit'?'修改我的消息':'我的消息操作'):replyAction.mode==='edit'?'修改回复':replyAction.mode==='delete'?'删除回复？':replyAction.mode==='regenerate'?'重新生成回复？':'回复操作'}</h2>
                 {replyAction.mode==='menu'?<div className="sars-reply-actions">
                     <button type="button" onClick={()=>void copyReply(replyAction.message)}>复制</button>
                     <button type="button" onClick={()=>{setEditText(replyAction.message.content);setEditNarration(getSARWorldNarration(replyAction.message));setReplyAction({...replyAction,mode:'edit'});}}>修改</button>
-                    {replyAction.message.role==='assistant'&&<><button type="button" disabled={!char} onClick={()=>void send(replyAction.message.id)}>重新生成</button>
+                    {replyAction.message.role==='assistant'&&<><button type="button" disabled={!char} onClick={()=>setReplyAction({...replyAction,mode:'regenerate'})}>重新生成</button>
                     <button type="button" onClick={()=>setReplyAction({...replyAction,mode:'delete'})}>删除</button></>}
                 </div>:replyAction.mode==='edit'?<>
                     {replyAction.message.role==='assistant'&&<label className="sars-edit-label">世界旁白<textarea aria-label="修改世界旁白" value={editNarration} maxLength={2400} disabled={sending} onChange={e=>setEditNarration(e.target.value)}/></label>}
                     <label className="sars-edit-label">{replyAction.message.role==='user'?'我的消息':'角色回复'}<textarea aria-label={replyAction.message.role==='user'?'修改我的消息':'修改角色回复'} value={editText} maxLength={replyAction.message.role==='user'?4000:12000} disabled={sending} onChange={e=>setEditText(e.target.value)}/></label>
                     <p>后续已有剧情不会自动改写。</p><button type="button" className="sars-reply-submit" disabled={sending||!editText.trim()} onClick={()=>void saveReply()}>保存修改</button>
+                </>:replyAction.mode==='regenerate'?<>
+                    <p>重新生成这一幕的回复与旁白，会覆盖当前的回复内容。后续已有剧情保留。</p>
+                    <div><button type="button" disabled={sending} onClick={()=>setReplyAction(null)}>取消</button><button type="button" disabled={sending||!char} onClick={()=>void send(replyAction.message.id)}>确认重新生成</button></div>
                 </>:<><p>删除这一幕的回复与旁白，保留你的输入。之后点生成会重试这一幕，后续已有剧情保留。</p><button type="button" className="sars-reply-submit" disabled={sending} onClick={()=>void saveReply(true)}>确认删除回复</button></>}
                 {error&&<p role="alert" className="sars-error">{error}</p>}
             </section></div>}

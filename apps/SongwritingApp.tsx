@@ -54,6 +54,7 @@ import {
 import { useMusic, type Song as MusicSong } from '../context/MusicContext';
 import { CharacterGroupFilterBar, filterCharactersByGroup, GROUP_FILTER_ALL } from '../components/character/CharacterGroupFilter';
 import { trackEvent } from '../utils/analytics';
+import { useConfirmDialog } from '../hooks/useConfirmDialog';
 
 // --- Helper Components ---
 
@@ -229,6 +230,7 @@ const SongwritingApp: React.FC = () => {
     const [pendingLines, setPendingLines] = useState<SongLine[]>([]);
 
     // Modals
+    const { requestConfirm, confirmDialog: confirmHookDialog } = useConfirmDialog({ portal: true });
     const [confirmDialog, setConfirmDialog] = useState<{ isOpen: boolean; title: string; message: string; variant: 'danger' | 'warning' | 'info'; confirmText?: string; onConfirm: () => void } | null>(null);
     const [showPreviewModal, setShowPreviewModal] = useState(false);
     const [completionReview, setCompletionReview] = useState('');
@@ -696,8 +698,15 @@ const SongwritingApp: React.FC = () => {
     };
 
     // --- Delete Feedback Group (comments) ---
-    const handleDeleteFeedback = (groupId: string) => {
+    const handleDeleteFeedback = async (groupId: string) => {
         if (!activeSong) return;
+        const confirmed = await requestConfirm({
+            title: '删除这条讨论消息？',
+            message: '确定删除这条创作讨论吗？删除后无法恢复。',
+            confirmText: '删除',
+            variant: 'danger',
+        });
+        if (!confirmed) return;
         // Remove all comments whose id starts with `cmt-{groupId}-`
         const newComments = activeSong.comments.filter(c => {
             const match = c.id.match(/^cmt-(\d+)-/);
@@ -826,6 +835,16 @@ const SongwritingApp: React.FC = () => {
             addToast('请先在设置里配置 AI 模型。', 'error');
             return;
         }
+        const existingLine = (lineDrafts[slot.index] ?? lineAtSlot(activeSong, slot.index)?.content ?? '').trim();
+        if (existingLine) {
+            const confirmed = await requestConfirm({
+                title: `重写第 ${slot.index + 1} 句歌词？`,
+                message: `当前第 ${slot.index + 1} 句已有内容（「${existingLine.length > 24 ? `${existingLine.slice(0, 24)}…` : existingLine}」），重新生成后将被覆盖。`,
+                confirmText: '重写',
+                variant: 'warning',
+            });
+            if (!confirmed) return;
+        }
 
         setGeneratingSlotIndex(slot.index);
         try {
@@ -910,7 +929,7 @@ const SongwritingApp: React.FC = () => {
         }
     }, [
         activeSong, collaborator, generatingSlotIndex, apiConfig, addToast, lineDrafts,
-        lineAtSlot, currentSection, userProfile, saveNotebookLine,
+        lineAtSlot, currentSection, userProfile, saveNotebookLine, requestConfirm,
     ]);
 
     const updateCustomTemplateSection = (
@@ -1554,8 +1573,15 @@ const SongwritingApp: React.FC = () => {
     };
 
     /** Remove the song from local album (un-like). Closes modal. */
-    const handleRemoveFromAlbum = () => {
+    const handleRemoveFromAlbum = async () => {
         if (!activeSong) return;
+        const confirmed = await requestConfirm({
+            title: '移出「一起写的歌」？',
+            message: `确定把《${activeSong.title || '未命名'}》从音乐 App 的「一起写的歌」专辑中移除吗？写歌本里的歌词和音频会保留。`,
+            confirmText: '移除',
+            variant: 'danger',
+        });
+        if (!confirmed) return;
         const localId = localSongIdFor(activeSong.id);
         removeLocalSong(localId);
         setShowCoverConfirm(false);
@@ -3200,6 +3226,7 @@ const SongwritingApp: React.FC = () => {
 
                     </div>
                 </Modal>
+                {confirmHookDialog}
             </div>
         );
     }
@@ -3580,7 +3607,7 @@ const SongwritingApp: React.FC = () => {
                                     const details = group.details.filter(detail => detail.id !== lead.id);
                                     const expanded = !!expandedFeedbackIds[group.id];
                                     return (
-                                        <div key={group.id} className={`flex gap-2.5 ${isUserMessage ? 'justify-end' : 'justify-start'}`}>
+                                        <div key={group.id} className={`group flex gap-2.5 ${isUserMessage ? 'justify-end' : 'justify-start'}`}>
                                             {!isUserMessage && collaborator && <TokenImg value={collaborator.avatar} className="w-7 h-7 rounded-full object-cover shrink-0 mt-1" alt="" />}
                                             <div className={`max-w-[82%] ${isUserMessage ? 'items-end' : 'items-start'} flex flex-col`}>
                                                 <div
@@ -3604,7 +3631,7 @@ const SongwritingApp: React.FC = () => {
                                                             {expanded ? '收起' : `展开 ${details.length} 条细节`}
                                                         </button>
                                                     )}
-                                                    <button onClick={() => handleDeleteFeedback(group.id)} className="text-[9px] opacity-0 group-hover:opacity-100" style={{ color: paper.muted }}>删除</button>
+                                                    <button onClick={() => void handleDeleteFeedback(group.id)} className="text-[9px] opacity-60 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity" style={{ color: paper.muted }}>删除</button>
                                                 </div>
                                             </div>
                                         </div>
@@ -3670,6 +3697,7 @@ const SongwritingApp: React.FC = () => {
                         )}
                     </div>
                 </Modal>
+                {confirmHookDialog}
             </div>
         );
     }

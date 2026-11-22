@@ -140,6 +140,7 @@ import {
   saveCompanionTouchPreset,
 } from '../../utils/companionPresets';
 import { deleteCompanionVoiceBlob } from '../../utils/companionVoiceAssets';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 
 // ── 时段氛围：陪伴桌面按虚拟时间换天色（晨曦 / 白日 / 黄昏 / 夜晚）──
 interface DayPeriod {
@@ -483,6 +484,7 @@ const CompanionHome: React.FC = () => {
   const [touchRegionEditingZone, setTouchRegionEditingZone] = useState<AvatarTouchZone>('face');
   const [cropDraft, setCropDraft] = useState<AvatarStageCrop>(() => character?.videoAvatar?.companionCrop || DEFAULT_STAGE_CROP);
   const [frameStyle, setFrameStyle] = useState<CompanionFrameStyleId>(loadCompanionFrameStyle);
+  const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
   const editingRef = useRef(false);
   editingRef.current = editing;
   const busyRef = useRef(false);
@@ -1254,9 +1256,18 @@ const CompanionHome: React.FC = () => {
     setFrameStyle(nextStyle);
     saveCompanionFrameStyle(nextStyle);
   };
-  const applyCompanionBackground = async (value?: string) => {
+  const applyCompanionBackground = async (value?: string, skipConfirm = false) => {
     if (!character) return;
     const previous = character.companionBackground;
+    if (!skipConfirm && previous && isBlobRef(previous) && previous !== value) {
+      const ok = await requestConfirm({
+        title: value ? '替换自定义舞台背景？' : '移除自定义舞台背景？',
+        message: '当前的本地背景图片将被删除，且无法恢复。',
+        confirmText: value ? '确认替换' : '确认移除',
+        variant: 'danger',
+      });
+      if (!ok) return;
+    }
     updateCharacter(character.id, { companionBackground: value });
     // 背景令牌只被这个字段引用，替换/清除后旧 Blob 直接删掉，不留孤儿
     if (previous && isBlobRef(previous) && previous !== value) await deleteBlobRef(previous);
@@ -1277,7 +1288,7 @@ const CompanionHome: React.FC = () => {
           addToast('图片超过 20 MB，请压缩后再用作背景', 'error');
           return;
         }
-        await applyCompanionBackground(await putImageBlob(file));
+        await applyCompanionBackground(await putImageBlob(file), true);
         addToast('桌面背景已更新', 'success');
       } catch (error: any) {
         addToast(error?.message || '背景导入失败', 'error');
@@ -1408,10 +1419,17 @@ const CompanionHome: React.FC = () => {
     addToast(`已切换触摸预设「${preset.name}」`, 'success');
   };
 
-  const deleteStartupPreset = () => {
+  const deleteStartupPreset = async () => {
     if (!character || !selectedStartupPresetId || settingsGenerating) return;
     const preset = character.companionTouchSettings?.startupPresets?.find(item => item.id === selectedStartupPresetId);
-    if (!preset || !window.confirm(`删除开场预设「${preset.name}」？`)) return;
+    if (!preset) return;
+    const ok = await requestConfirm({
+      title: `删除开场预设「${preset.name}」？`,
+      message: '将删除这条已保存的开场预设，当前编辑器里的草稿内容仍会保留。',
+      confirmText: '确认删除',
+      variant: 'danger',
+    });
+    if (!ok) return;
     const before = companionTouchSettingsBase();
     const after = removeCompanionStartupPreset(before, selectedStartupPresetId);
     updateCharacter(character.id, { companionTouchSettings: after });
@@ -1421,10 +1439,17 @@ const CompanionHome: React.FC = () => {
     addToast('开场预设已删除；当前草稿仍保留', 'success');
   };
 
-  const deleteTouchPreset = () => {
+  const deleteTouchPreset = async () => {
     if (!character || !selectedTouchPresetId || settingsGenerating) return;
     const preset = character.companionTouchSettings?.touchPresets?.find(item => item.id === selectedTouchPresetId);
-    if (!preset || !window.confirm(`删除触摸预设「${preset.name}」？`)) return;
+    if (!preset) return;
+    const ok = await requestConfirm({
+      title: `删除触摸预设「${preset.name}」？`,
+      message: '将删除这条已保存的触摸预设，当前反馈配置仍会保留。',
+      confirmText: '确认删除',
+      variant: 'danger',
+    });
+    if (!ok) return;
     const before = companionTouchSettingsBase();
     const after = removeCompanionTouchPreset(before, selectedTouchPresetId);
     updateCharacter(character.id, { companionTouchSettings: after });
@@ -3882,6 +3907,7 @@ const CompanionHome: React.FC = () => {
         </>
       )}
       </div>
+      {confirmDialog}
     </div>
   );
 };

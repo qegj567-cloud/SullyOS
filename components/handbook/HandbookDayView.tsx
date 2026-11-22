@@ -25,7 +25,7 @@ interface DayViewProps {
     onSavePage: (pageId: string, content: string, paperStyle?: string) => void;
     onCancelEdit: () => void;
     onToggleExclude: (pageId: string) => void;
-    onDeletePage: (pageId: string) => void;
+    onDeletePage: (pageId: string) => Promise<boolean> | void;
     onRegenerateLifestream: (page: HandbookPage) => void;
     /** 翻页索引由父级控制(顶部悬浮 bar 也要切),非受控时内部维护 */
     paperIdx?: number;
@@ -93,7 +93,7 @@ const HandbookDayView: React.FC<DayViewProps> = ({
                     onClose={onCancelEdit}
                     onSave={(content, paperStyle) => onSavePage(editingPage.id, content, paperStyle)}
                     onToggleExclude={() => onToggleExclude(editingPage.id)}
-                    onDelete={() => { onDeletePage(editingPage.id); onCancelEdit(); }}
+                    onDelete={async () => { const deleted = await onDeletePage(editingPage.id); if (deleted !== false) onCancelEdit(); }}
                     onRegenerate={editingPage.type === 'character_life'
                         ? () => onRegenerateLifestream(editingPage)
                         : undefined}

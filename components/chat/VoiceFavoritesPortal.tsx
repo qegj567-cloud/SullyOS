@@ -34,6 +34,7 @@ import { normalizeChatSearchText, searchableChatMessageText } from '../../utils/
 import TokenImg from '../os/TokenImg';
 import { shareOrDownloadBlob } from '../../utils/shareExport';
 import { trackEvent } from '../../utils/analytics';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 
 const PAGE_SIZE = 10;
 type FavoriteTab = 'chat' | 'voice' | 'image';
@@ -75,6 +76,7 @@ const messageTypeLabel = (type?: string): string => ({
 }[type || ''] || '聊天消息');
 
 const FavoritesPortal: React.FC<FavoritesPortalProps> = ({ onClose, onJumpToMessage, inline=false }) => {
+    const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: !inline });
     const [tab, setTab] = useState<FavoriteTab>('chat');
     const [contentItems, setContentItems] = useState<ContentFavorite[]>([]);
     const [voiceItems, setVoiceItems] = useState<VoiceFavorite[]>([]);
@@ -245,13 +247,21 @@ const FavoritesPortal: React.FC<FavoritesPortalProps> = ({ onClose, onJumpToMess
         }
     };
 
+    const confirmUnfavorite = () => requestConfirm({
+        title: '取消收藏这条内容？',
+        message: '取消后如果原消息已删除或来自通话/见面，收藏里保留的快照与音频将无法找回。',
+        confirmText: '取消收藏',
+    });
+
     const removeVoice = async (item: VoiceFavorite) => {
+        if (!(await confirmUnfavorite())) return;
         if (playingId === item.id) stopPlayback();
         await removeVoiceFavoriteById(item.id);
         setVoiceItems(previous => previous.filter(candidate => candidate.id !== item.id));
     };
 
     const removeContent = async (item: ContentFavorite) => {
+        if (!(await confirmUnfavorite())) return;
         await removeContentFavoriteById(item.id);
         setContentItems(previous => previous.filter(candidate => candidate.id !== item.id));
         setResolvedItems(previous => {
@@ -535,7 +545,12 @@ const FavoritesPortal: React.FC<FavoritesPortalProps> = ({ onClose, onJumpToMess
         </div>
     );
 
-    return inline?portal:createPortal(portal, document.body);
+    return (
+        <>
+            {inline ? portal : createPortal(portal, document.body)}
+            {confirmDialog}
+        </>
+    );
 };
 
 export default FavoritesPortal;

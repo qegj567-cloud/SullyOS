@@ -2359,8 +2359,25 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
     const requestMessages = messages.slice(0, lastUserIndex + 1);
     const latestUserMessage = requestMessages[lastUserIndex];
     const replacedMessages = messages.slice(lastUserIndex + 1);
+    const hasReplyAttachments = replacedMessages.some(m => (m.attachments?.length ?? 0) > 0);
+    const choice = await requestActionDialog({
+      title: '重新生成上一轮回复？',
+      description: hasReplyAttachments
+        ? `上一轮的 ${replacedMessages.length} 条回复及其中生成的文件与作品将从「协同文件与作品」移除，并重新生成。`
+        : replacedMessages.length > 0
+          ? `将删除上一轮的 ${replacedMessages.length} 条回复并重新生成。`
+          : '将基于最后一条用户消息重新发起一次回复生成。',
+      detail: hasReplyAttachments
+        ? '已发到 ChatApp 的附件仍可打开；此操作不可撤销。'
+        : undefined,
+      confirmLabel: '重新生成',
+      cancelLabel: '取消',
+      tone: hasReplyAttachments ? 'danger' : 'warning',
+    });
+    if (choice !== 'confirm') return;
     await CollaborationStore.deleteMessages(replacedMessages.map(message => message.id));
     setMessages(requestMessages);
+    if (libraryOpen && hasReplyAttachments) void refreshLibrary();
     trackEvent('重新生成协同回复', {
       上次结果: replacedMessages.some(message => message.role === 'assistant') ? '已完成' : replacedMessages.length > 0 ? '失败或停止' : '无回复',
     });
@@ -2393,12 +2410,25 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
       notify('这条消息已经不存在了', 'error');
       return;
     }
+    const droppedMessages = editingMessage.role === 'user' ? messages.slice(messageIndex + 1) : [];
+    if (droppedMessages.length > 0) {
+      const choice = await requestActionDialog({
+        title: '保存修改并重新生成？',
+        description: `此条之后的 ${droppedMessages.length} 条对话及相关生成文件将被永久移除。`,
+        detail: droppedMessages.some(m => (m.attachments?.length ?? 0) > 0)
+          ? '其中生成的文件与作品会从「协同文件与作品」移除；已发到 ChatApp 的附件仍可打开。此操作不可撤销。'
+          : '此操作不可撤销。',
+        confirmLabel: '确认重新生成',
+        cancelLabel: '继续编辑',
+        tone: 'danger',
+      });
+      if (choice !== 'confirm') return;
+    }
     setEditSaving(true);
     try {
       const updatedMessage: CollaborationMessage = { ...editingMessage, content };
       await CollaborationStore.saveMessage(updatedMessage);
       if (updatedMessage.role === 'user') {
-        const droppedMessages = messages.slice(messageIndex + 1);
         await CollaborationStore.deleteMessages(droppedMessages.map(message => message.id));
         const requestMessages = [...messages.slice(0, messageIndex), updatedMessage];
         setMessages(requestMessages);

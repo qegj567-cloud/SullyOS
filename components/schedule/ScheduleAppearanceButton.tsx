@@ -21,6 +21,7 @@ import {
     runCssRenderabilityCheck,
     validateScopedCss,
 } from '../../utils/scopedCss';
+import BeautyConfirmDialog from '../share/BeautyConfirmDialog';
 
 const CSS_TEMPLATES = [
     {
@@ -107,6 +108,7 @@ const ScheduleAppearanceButton: React.FC<{ compact?: boolean }> = ({ compact = f
         defaultDraft(theme.scheduleCardAppearance)
     );
     const [copied, setCopied] = useState(false);
+    const [confirmReset, setConfirmReset] = useState(false);
 
     useEffect(() => {
         if (!open) return;
@@ -346,7 +348,7 @@ const ScheduleAppearanceButton: React.FC<{ compact?: boolean }> = ({ compact = f
                 <div className="sticky bottom-0 flex gap-2 px-5 pt-3 pb-1 bg-[#fbfafc]/95 backdrop-blur border-t border-slate-200/70">
                     <button
                         className="h-12 px-4 rounded-2xl bg-slate-100 text-slate-500 font-bold text-xs flex items-center gap-2"
-                        onClick={reset}
+                        onClick={() => setConfirmReset(true)}
                     >
                         <ArrowCounterClockwise size={15} />
                         还原
@@ -390,6 +392,17 @@ const ScheduleAppearanceButton: React.FC<{ compact?: boolean }> = ({ compact = f
                 <GearSix size={compact ? 13 : 15} weight="bold" />
             </button>
             {panel}
+            {confirmReset && (
+                <BeautyConfirmDialog
+                    title="还原日程卡片默认样式？"
+                    confirm="还原"
+                    danger
+                    onClose={() => setConfirmReset(false)}
+                    onConfirm={reset}
+                >
+                    <p>将恢复为原版日程卡片配色并清除自定义 CSS，当前未保存的修改也会丢弃。</p>
+                </BeautyConfirmDialog>
+            )}
         </>
     );
 };

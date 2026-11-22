@@ -12,6 +12,7 @@ import ScheduleTheaterButton from './ScheduleTheaterButton';
 import {homePositionLabel} from '../../utils/homeSchedule';
 
 import { putImageBlob } from '../../utils/blobRef';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 
 interface ScheduleCardProps {
     schedule: DailySchedule | null;
@@ -48,6 +49,7 @@ export const ScheduleCardView: React.FC<ScheduleCardProps & {theme:OSTheme;previ
     onPlayTheater,
     isGenerating = false,
 }) => {
+    const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
     const [editingIdx, setEditingIdx] = useState<number | null>(null);
     const [editTime, setEditTime] = useState('');
     const [editActivity, setEditActivity] = useState('');
@@ -199,7 +201,18 @@ export const ScheduleCardView: React.FC<ScheduleCardProps & {theme:OSTheme;previ
                     )}
                     {!compact && onReroll && (
                         <button
-                            onClick={onReroll}
+                            onClick={async () => {
+                                if (schedule?.slots?.length) {
+                                    const confirmed = await requestConfirm({
+                                        title: '重新生成今日日程？',
+                                        message: `当前的 ${schedule.slots.length} 条日程安排将被覆盖。`,
+                                        confirmText: '重新生成',
+                                        variant: 'warning',
+                                    });
+                                    if (!confirmed) return;
+                                }
+                                onReroll();
+                            }}
                             disabled={isGenerating}
                             className="text-[10px] font-bold px-2 py-0.5 rounded-full border transition-all active:scale-95 disabled:opacity-30"
                             style={{ background: accentBg, borderColor: palette.line }}
@@ -432,10 +445,21 @@ export const ScheduleCardView: React.FC<ScheduleCardProps & {theme:OSTheme;previ
                         </button>
                         <button
                             className="w-full py-3 text-sm font-bold text-red-500 border-t border-slate-100 hover:bg-red-50 transition-colors"
-                            onClick={() => {
+                            onClick={async () => {
                                 const i = actionIdx;
                                 setActionIdx(null);
-                                if (i !== null && onDelete) onDelete(i);
+                                if (i !== null && onDelete) {
+                                    const targetSlot = schedule.slots[i];
+                                    const confirmed = await requestConfirm({
+                                        title: '删除这条日程？',
+                                        message: targetSlot
+                                            ? `确定删除「${targetSlot.startTime} · ${targetSlot.activity}」吗？`
+                                            : '确定删除这条日程安排吗？',
+                                        confirmText: '删除',
+                                        variant: 'danger',
+                                    });
+                                    if (confirmed) onDelete(i);
+                                }
                             }}
                         >
                             删除
@@ -459,6 +483,7 @@ export const ScheduleCardView: React.FC<ScheduleCardProps & {theme:OSTheme;previ
             <div className="absolute bottom-2 left-5 opacity-5 pointer-events-none text-[8px] font-mono tracking-widest">
                 DESIGN: NOI
             </div>
+            {confirmDialog}
         </div>
     );
 };

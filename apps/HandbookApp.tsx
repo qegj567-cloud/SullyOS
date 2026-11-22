@@ -31,9 +31,11 @@ import TrackerCreateSheet from '../components/handbook/TrackerCreateSheet';
 import { PAPER_TONES, SERIF_STACK, dayOfWeekZh, monthEn, dayNum } from '../components/handbook/paper';
 import { trackEvent } from '../utils/analytics';
 import { CaretLeft, Plus, Sparkle } from '@phosphor-icons/react';
+import { useConfirmDialog } from '../hooks/useConfirmDialog';
 
 const HandbookApp: React.FC = () => {
     const { closeApp, characters, apiConfig, userProfile, addToast } = useOS();
+    const { requestConfirm, confirmDialog } = useConfirmDialog();
 
     type View = 'list' | 'day';
     const [view, setView] = useState<View>('list');
@@ -125,11 +127,20 @@ const HandbookApp: React.FC = () => {
     const [genProgress, setGenProgress] = useState<{ name: string; i: number; n: number } | null>(null);
 
     const runGenerate = async () => {
-        setShowCharPicker(false);
         if (!apiConfig.apiKey || !apiConfig.baseUrl) {
             addToast('请先在设置里配置主 API', 'error');
             return;
         }
+        if (activeEntry?.pages.some(p => p.generatedBy === 'llm')) {
+            const confirmed = await requestConfirm({
+                title: '重新生成今日 AI 手账？',
+                message: '今天已生成的 AI 手账页将被替换。',
+                confirmText: '重新生成',
+                variant: 'warning',
+            });
+            if (!confirmed) return;
+        }
+        setShowCharPicker(false);
         setGenerating(true);
         setGenProgress(null);
         trackEvent('生成今日手账');
@@ -238,14 +249,21 @@ const HandbookApp: React.FC = () => {
         trackEvent('保存手账页编辑');
     };
 
-    const handleDeletePage = async (pageId: string) => {
-        if (!confirm('撕掉这页?')) return;
+    const handleDeletePage = async (pageId: string): Promise<boolean> => {
+        const confirmed = await requestConfirm({
+            title: '撕掉这页？',
+            message: '撕掉后这一页的内容将从当天手账移除，无法恢复。',
+            confirmText: '撕掉',
+            variant: 'danger',
+        });
+        if (!confirmed) return false;
         await upsertEntry(activeDate, prev => {
             const newPages = prev.pages.filter(p => p.id !== pageId);
             const layouts = recomputeLayouts(prev.layouts, newPages);
             return { ...prev, pages: newPages, layouts };
         });
         trackEvent('撕掉一页手账');
+        return true;
     };
 
     const handleToggleExclude = async (pageId: string) => {
@@ -608,6 +626,7 @@ const HandbookApp: React.FC = () => {
                 depth={lifestreamDepth}
                 onDepthChange={updateLifestreamDepth}
             />
+            {confirmDialog}
         </div>
     );
 };

@@ -33,6 +33,7 @@ import { safeFetchJson } from '../utils/safeApi';
 import { WORLD_API_KEY, WORLD_CUSTOM_STYLE_KEY } from '../utils/worldHome/localBackup';
 import { CharacterGroupFilterBar, filterCharactersByGroup, GROUP_FILTER_ALL } from '../components/character/CharacterGroupFilter';
 import { trackEvent } from '../utils/analytics';
+import { useConfirmDialog } from '../hooks/useConfirmDialog';
 import type { WorldProfile, WorldEpisode, WorldHomeMode, WorldTimeMode, WorldHouse, WorldThread, WorldChatMessage, WorldNarrativeStyle, CharacterProfile, WorldCharBeat, APIConfig, ApiPreset } from '../types';
 
 /**
@@ -242,6 +243,7 @@ const PhoneModal: React.FC<{
     /** 编辑/删除生成内容（动态/备忘/聊天）；newText=null 表示删除 */
     onEditContent?: (target: WHEditTarget, newText: string | null) => void | Promise<void>;
 }> = ({ ownerId, world, episodes, members, initialTab, onClose, onEditContent }) => {
+    const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
     const [tab, setTab] = useState<'feed' | 'dm' | 'group' | 'memo'>(initialTab || 'feed');
     const owner = members.find(m => m.id === ownerId);
     const ownerName = owner?.name || '?';
@@ -402,7 +404,15 @@ const PhoneModal: React.FC<{
                                                                         <div key={ci} className="group flex items-start gap-1">
                                                                             <p className="flex-1 text-[10.5px] leading-snug text-slate-600"><span className="font-bold text-slate-700">{c.from}</span>：{c.text}</p>
                                                                             {onEditContent && (
-                                                                                <button onClick={() => onEditContent({ type: 'comment', key: f.key, idx: ci }, null)}
+                                                                                <button onClick={async () => {
+                                                                                    const ok = await requestConfirm({
+                                                                                        title: `删除 ${c.from} 的这条评论？`,
+                                                                                        message: '删除后无法恢复。',
+                                                                                        confirmText: '确认删除',
+                                                                                        variant: 'danger',
+                                                                                    });
+                                                                                    if (ok) await onEditContent({ type: 'comment', key: f.key, idx: ci }, null);
+                                                                                }}
                                                                                     className="shrink-0 mt-px text-slate-300 active:text-rose-500 active:scale-90 transition" title="删除这条评论">
                                                                                     <X size={11} weight="bold" />
                                                                                 </button>
@@ -570,6 +580,7 @@ const PhoneModal: React.FC<{
                     </div>
                 </div>
             </div>
+            <div style={{ display: 'contents' }} onClick={e => e.stopPropagation()}>{confirmDialog}</div>
         </div>
     );
 };
@@ -587,6 +598,7 @@ const WorldEditor: React.FC<{
     onCancel: () => void;
     onDelete?: () => void;
 }> = ({ draft, characters, apiConfig, addToast, onSave, onCancel, onDelete }) => {
+    const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
     const [w, setW] = useState<WorldProfile>(draft);
     const upd = (updates: Partial<WorldProfile>) => setW(prev => ({ ...prev, ...updates }));
     // 「住进这个世界的角色」多选的分组筛选（只影响显示哪些可选项，已选成员不受影响）
@@ -638,7 +650,15 @@ const WorldEditor: React.FC<{
         setSavedStyles(next); persistSavedStyles(next);
         addToast('文风已收藏，下次创建世界能直接选', 'success');
     };
-    const removeSavedStyle = (txt: string) => {
+    const removeSavedStyle = async (txt: string) => {
+        const preview = txt.length > 24 ? `${txt.slice(0, 24)}…` : txt;
+        const ok = await requestConfirm({
+            title: '删除这条收藏文风？',
+            message: `「${preview}」将从常用文风中移除（不影响当前编辑区已填的文字）。`,
+            confirmText: '确认删除',
+            variant: 'danger',
+        });
+        if (!ok) return;
         const next = savedStyles.filter(s => s !== txt);
         setSavedStyles(next); persistSavedStyles(next);
     };
@@ -819,7 +839,7 @@ const WorldEditor: React.FC<{
                                 {savedStyles.map((s, i) => (
                                     <span key={i} className={`group flex items-center gap-1 max-w-full text-[10.5px] px-2 py-1 rounded-full border transition-all ${w.narrativeStyleCustom === s ? 'bg-stone-900 border-stone-900 text-white' : 'bg-white border-stone-200 text-stone-600'}`}>
                                         <button onClick={() => upd({ narrativeStyleCustom: s })} className="truncate max-w-[180px] text-left">{s.slice(0, 28)}{s.length > 28 ? '…' : ''}</button>
-                                        <button onClick={() => removeSavedStyle(s)} className="opacity-50 hover:opacity-100 shrink-0"><X size={11} weight="bold" /></button>
+                                        <button onClick={() => void removeSavedStyle(s)} className="opacity-50 hover:opacity-100 shrink-0"><X size={11} weight="bold" /></button>
                                     </span>
                                 ))}
                             </div>
@@ -984,6 +1004,7 @@ const WorldEditor: React.FC<{
                     保存世界
                 </button>
             </div>
+            {confirmDialog}
         </div>
     );
 };
@@ -1895,6 +1916,7 @@ const WorldView: React.FC<{
 // ============================================================
 const WorldHomeApp: React.FC<{ embedded?: boolean; launchWorldId?: string; onLaunchConsumed?: () => void; onFullscreen?: (full: boolean) => void }> = ({ embedded, launchWorldId, onLaunchConsumed, onFullscreen }) => {
     const { closeApp, characters, addToast, apiConfig, apiPresets } = useOS();
+    const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
     const [worlds, setWorlds] = useState<WorldProfile[]>([]);
     const [worldsLoaded, setWorldsLoaded] = useState(false);
     const appliedLaunch = useRef(false);
@@ -1957,6 +1979,14 @@ const WorldHomeApp: React.FC<{ embedded?: boolean; launchWorldId?: string; onLau
     };
 
     const deleteWorld = async (id: string) => {
+        const target = worlds.find(w => w.id === id);
+        const ok = await requestConfirm({
+            title: `删除世界「${target?.name || '未命名世界'}」？`,
+            message: '该世界及其全部演绎历史、角色手机记录都将一并删除，无法恢复。',
+            confirmText: '确认删除',
+            variant: 'danger',
+        });
+        if (!ok) return;
         await DB.deleteWorld(id);
         const all = await DB.getWorlds();
         WorldScheduler.reconcile(toTickEntries(all));
@@ -2113,6 +2143,7 @@ const WorldHomeApp: React.FC<{ embedded?: boolean; launchWorldId?: string; onLau
                     topSafe={!!embedded}
                 />
             )}
+            {confirmDialog}
         </div>
     );
 };

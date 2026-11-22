@@ -18,6 +18,7 @@ import { processImage } from '../../utils/file';
 import { pixelizeImage, removeBackground } from '../../utils/pixelizer';
 import { trackEvent } from '../../utils/analytics';
 import TokenImg from '../../components/os/TokenImg';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 
 interface Props {
   charId: string;
@@ -81,6 +82,7 @@ function isRugAsset(f: PlacedFurniture, assets: PixelAsset[]): boolean {
 }
 
 const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userName, roomId, layout, assets, onUpdate, onOpenLibrary }) => {
+  const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
   const [furniture, setFurniture] = useState<PlacedFurniture[]>(layout.furniture);
   const [wallColor, setWallColor] = useState(layout.wallColor);
   const [floorColor, setFloorColor] = useState(layout.floorColor);
@@ -480,19 +482,46 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
     });
   }, [saveLayout]);
 
-  const deleteFurniture = useCallback((slotId: string) => {
+  const deleteFurniture = useCallback(async (slotId: string) => {
+    const target = furniture.find(f => f.slotId === slotId);
+    const assetName = target?.assetId ? assets.find(a => a.id === target.assetId)?.name : '';
+    const ok = await requestConfirm({
+      title: assetName ? `删除「${assetName}」？` : '删除这件家具？',
+      message: '将从当前房间移除这件自由放置的家具（仓库里的原素材会保留）。',
+      confirmText: '确认删除',
+      variant: 'danger',
+    });
+    if (!ok) return;
     setFurniture(prev => { const next = prev.filter(f => f.slotId !== slotId); saveLayout(next); return next; });
     setSelectedSlot(null);
     trackEvent('删除一件像素家具');
-  }, [saveLayout]);
+  }, [furniture, assets, saveLayout, requestConfirm]);
+
+  const resetFurnitureSlot = useCallback(async (slotId: string) => {
+    const slotName = slotDefs.find(s => s.id === slotId)?.name || '该槽位';
+    const ok = await requestConfirm({
+      title: `还原「${slotName}」？`,
+      message: '将清空该默认槽位中放置的家具素材，恢复为空槽位。',
+      confirmText: '确认还原',
+      variant: 'warning',
+    });
+    if (!ok) return;
+    updateFurniture(slotId, { assetId: null });
+  }, [slotDefs, updateFurniture, requestConfirm]);
 
   /** 一键清空：移除所有用户自由放置家具 + 把默认槽位的素材都清空 */
-  const clearAllFurniture = useCallback(() => {
+  const clearAllFurniture = useCallback(async () => {
     const userCount = furniture.filter(f => f.isDefault === false).length;
     const filledDefaults = furniture.filter(f => f.isDefault !== false && f.assetId).length;
     const total = userCount + filledDefaults;
     if (total === 0) return;
-    if (!window.confirm(`确定清空这个房间里的 ${total} 件家具吗？（自由放置的 ${userCount} 件会被删除，默认槽位的 ${filledDefaults} 件会恢复为空）`)) return;
+    const ok = await requestConfirm({
+      title: `清空房间里的 ${total} 件家具？`,
+      message: `自由放置的 ${userCount} 件会被删除，默认槽位的 ${filledDefaults} 件会恢复为空，无法撤销。`,
+      confirmText: '确认清空',
+      variant: 'danger',
+    });
+    if (!ok) return;
 
     setFurniture(prev => {
       const next = prev
@@ -503,7 +532,7 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
     });
     setSelectedSlot(null);
     trackEvent('清空像素房间的家具');
-  }, [furniture, saveLayout]);
+  }, [furniture, saveLayout, requestConfirm]);
 
   const getFurnitureImage = useCallback((f: PlacedFurniture): string | null => {
     if (f.assetId) {
@@ -585,7 +614,15 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
   }, [texturePreview, textureUseOriginal, furniture, saveLayout]);
 
   // 还原默认纹理
-  const resetTexture = useCallback((target: 'wall' | 'floor') => {
+  const resetTexture = useCallback(async (target: 'wall' | 'floor') => {
+    const label = target === 'wall' ? '墙纸' : '地砖';
+    const ok = await requestConfirm({
+      title: `移除当前自定义${label}？`,
+      message: `将恢复${target === 'wall' ? '默认墙面' : '默认地板'}纹理。`,
+      confirmText: '确认还原',
+      variant: 'warning',
+    });
+    if (!ok) return;
     if (target === 'wall') {
       setCustomWall(null); setWallColor('');
       setWallFillMode('tile'); setWallOffsetX(50); setWallOffsetY(50);
@@ -595,7 +632,7 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
       setFloorFillMode('tile'); setFloorOffsetX(50); setFloorOffsetY(50);
       saveLayout(furniture, { floorColor: '', floorFillMode: 'tile', floorOffsetX: 50, floorOffsetY: 50 });
     }
-  }, [furniture, saveLayout]);
+  }, [furniture, saveLayout, requestConfirm]);
 
   // 加载记忆
   const loadMemories = useCallback(async () => {
@@ -872,7 +909,7 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
                 </label>
               );
             })()}
-            {customWall && <ToolBtn label="×墙" color="bg-violet-900" onClick={() => resetTexture('wall')} />}
+            {customWall && <ToolBtn label="×墙" color="bg-violet-900" onClick={() => void resetTexture('wall')} />}
             <ToolBtn label="地砖" color="bg-amber-800" onClick={() => floorInputRef.current?.click()} />
             {(() => {
               const d = decodeColorField(floorColor);
@@ -891,8 +928,8 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
                 </label>
               );
             })()}
-            {customFloor && <ToolBtn label="×地" color="bg-amber-950" onClick={() => resetTexture('floor')} />}
-            <ToolBtn label="清空" color="bg-red-700" onClick={clearAllFurniture} />
+            {customFloor && <ToolBtn label="×地" color="bg-amber-950" onClick={() => void resetTexture('floor')} />}
+            <ToolBtn label="清空" color="bg-red-700" onClick={() => void clearAllFurniture()} />
           </div>
         </div>
 
@@ -1004,11 +1041,11 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
               <button onClick={() => onOpenLibrary(selectedSlot)}
                 className="flex-1 py-1.5 bg-amber-600 text-white text-[10px] font-bold rounded-lg active:scale-95">替换素材</button>
               {selectedFurniture.isDefault === false && (
-                <button onClick={() => deleteFurniture(selectedSlot!)}
+                <button onClick={() => void deleteFurniture(selectedSlot!)}
                   className="px-3 py-1.5 bg-red-600 text-white text-[10px] font-bold rounded-lg active:scale-95">删除</button>
               )}
               {selectedFurniture.assetId && selectedFurniture.isDefault !== false && (
-                <button onClick={() => updateFurniture(selectedSlot!, { assetId: null })}
+                <button onClick={() => void resetFurnitureSlot(selectedSlot!)}
                   className="px-3 py-1.5 bg-slate-600 text-slate-200 text-[10px] font-bold rounded-lg active:scale-95">还原</button>
               )}
             </div>
@@ -1062,6 +1099,7 @@ const PixelRoomEditor: React.FC<Props> = ({ charId, charName, charSprite, userNa
           </div>
         )}
       </div>
+      <div style={{ display: 'contents' }} onClick={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()}>{confirmDialog}</div>
     </div>
   );
 };

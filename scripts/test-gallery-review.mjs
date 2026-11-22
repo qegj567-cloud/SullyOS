@@ -40,9 +40,11 @@ try {
         await review.evaluate(el => { el.scrollTop = 0; });
     }
     await regenerate.tap();
+    await page.getByRole('dialog').getByRole('button', { name: '确认', exact: true }).tap();
     await page.waitForFunction(() => document.body.dataset.toast?.includes('没有返回点评正文'));
     assert((await review.innerText()).includes('最后一句'));
     await regenerate.tap();
+    await page.getByRole('dialog').getByRole('button', { name: '确认', exact: true }).tap();
     await review.getByText('"新的点评。"').waitFor();
     assert.equal(requests, 2);
     console.log('PASS: long review scrolls, context expands, retry preserves the original, a valid review replaces it.');

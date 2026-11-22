@@ -608,6 +608,14 @@ const CheckPhone: React.FC = () => {
         addToast('记录已删除', 'success');
     };
 
+    const confirmDeleteRecord = (record: PhoneEvidence) => askConfirm({
+        title: '删除这条记录？',
+        desc: '删除后不可恢复，聊天里同步的卡片也会一并移除。',
+        confirmLabel: '删除',
+        danger: true,
+        onConfirm: () => { void handleDeleteRecord(record); },
+    });
+
     // 一键清空 Messages 归档里的全部聊天记录（含其在角色私聊里落的卡片）
     const handleClearAllChats = async () => {
         if (!targetChar) return;
@@ -672,11 +680,23 @@ const CheckPhone: React.FC = () => {
 
     const handleDeleteApp = (appId: string) => {
         if (!targetChar) return;
-        const newApps = (targetChar.phoneState?.customApps || []).filter(a => a.id !== appId);
-        updateCharacter(targetChar.id, {
-            phoneState: { records: targetChar.phoneState?.records || [], ...targetChar.phoneState, customApps: newApps }
+        const app = (targetChar.phoneState?.customApps || []).find(a => a.id === appId);
+        askConfirm({
+            title: `卸载「${app?.name || '该应用'}」？`,
+            desc: '将删除这个自定义应用及其设定。',
+            confirmLabel: '卸载',
+            danger: true,
+            onConfirm: () => {
+                updateCharacter(targetChar.id, (cur) => ({
+                    phoneState: {
+                        records: cur.phoneState?.records || [],
+                        ...cur.phoneState,
+                        customApps: (cur.phoneState?.customApps || []).filter(a => a.id !== appId),
+                    },
+                }));
+                addToast('App 已卸载', 'success');
+            },
         });
-        addToast('App 已卸载', 'success');
     };
 
     const openCustomAppEditor = (app?: PhoneCustomApp) => {
@@ -1673,6 +1693,27 @@ ${olderText}
         }
     };
 
+    const confirmRebindContact = (
+        contact: PhoneContact,
+        target: { kind: 'npc' } | { kind: 'real'; charId: string },
+    ) => {
+        if (!targetChar) return;
+        const targetCharName = target.kind === 'real' ? characters.find(c => c.id === target.charId)?.name : undefined;
+        const desc = target.kind === 'npc'
+            ? `将「${contact.name}」转为虚构联系人后，原绑定角色手机里的镜像记录与相关卡片将被清除（当前对话、备注、了解与好感会保留）。`
+            : `将「${contact.name}」绑定到「${targetCharName || ''}」后，原错绑角色的镜像记录与卡片将被清除，新绑定角色手机中已有的对应记录也可能被覆盖。`;
+        askConfirm({
+            title: '确认更改绑定关系？',
+            desc,
+            confirmLabel: '确认更改',
+            danger: true,
+            onConfirm: () => {
+                setShowRebindModal(false);
+                void handleRebindContact(contact, target);
+            },
+        });
+    };
+
     const handleCreateContact = () => {
         if (!targetChar) return;
         let name = ncName.trim();
@@ -2397,7 +2438,7 @@ ${olderText}
                                     {r.detail && <div className="text-[10.5px] text-white/30 mt-1 italic truncate">“{r.detail}”</div>}
                                 </div>
                                 <span className="text-[10px] text-white/30 tabular-nums shrink-0">{fmtClock(r.timestamp)}</span>
-                                <DelBtn onDelete={() => handleDeleteRecord(r)} />
+                                <DelBtn onDelete={() => confirmDeleteRecord(r)} />
                             </div>
                         );
                     })}
@@ -2442,7 +2483,7 @@ ${olderText}
                                     <span className="text-[9px] px-2 py-0.5 rounded-full bg-white/[0.06] text-white/50 tracking-wider flex items-center gap-0.5">已下单 <CaretRight size={10} /></span>
                                 </div>
                             </div>
-                            <DelBtn onDelete={() => handleDeleteRecord(r)} />
+                            <DelBtn onDelete={() => confirmDeleteRecord(r)} />
                         </div>
                     ))}
                 </div>
@@ -2477,7 +2518,7 @@ ${olderText}
                             <div className="text-[11.5px] text-white/50 mt-2.5 leading-relaxed pl-1 border-l-2" style={{ borderColor: `${accent}55` }}>
                                 <span className="pl-2">{r.detail}</span>
                             </div>
-                            <DelBtn onDelete={() => handleDeleteRecord(r)} />
+                            <DelBtn onDelete={() => confirmDeleteRecord(r)} />
                         </div>
                     ))}
                 </div>
@@ -2513,7 +2554,7 @@ ${olderText}
                                 <span className="flex items-center gap-1.5 text-[11px]"><ChatCircle size={14} /> {1 + (r.id.length % 9)}</span>
                                 <span className="ml-auto flex items-center gap-0.5 text-[10px]" style={{ color: accent }}>查看详情 <CaretRight size={10} /></span>
                             </div>
-                            <DelBtn onDelete={() => handleDeleteRecord(r)} />
+                            <DelBtn onDelete={() => confirmDeleteRecord(r)} />
                         </div>
                     ))}
                 </div>
@@ -3172,7 +3213,13 @@ ${olderText}
                                 <div className="flex items-center justify-between mb-1.5">
                                     <span className="text-[10px] tracking-[0.2em] uppercase text-white/40">了解 · {targetChar.name} 眼中的 TA</span>
                                     {c.learned && c.learned.trim() && (
-                                        <button onClick={() => mutateContacts(cs => cs.map(x => x.id === c.id ? { ...x, learned: '' } : x))}
+                                        <button onClick={() => askConfirm({
+                                            title: '清空对 TA 的了解？',
+                                            desc: '已记录的关系印象内容将被清空。',
+                                            confirmLabel: '清空',
+                                            danger: true,
+                                            onConfirm: () => mutateContacts(cs => cs.map(x => x.id === c.id ? { ...x, learned: '' } : x)),
+                                        })}
                                             className="text-white/40 active:scale-90 transition" aria-label="清空了解"><Trash size={13} weight="bold" /></button>
                                     )}
                                 </div>
@@ -3256,7 +3303,7 @@ ${olderText}
                                 <span className="text-[9px] px-2 py-0.5 rounded-full bg-white/[0.06] text-white/50 tracking-wider">已下单</span>
                             </div>
                         </div>
-                        <DelBtn onDelete={() => handleDeleteRecord(r)} />
+                        <DelBtn onDelete={() => confirmDeleteRecord(r)} />
                     </div>
                 );
             case 'feed':
@@ -3275,7 +3322,7 @@ ${olderText}
                             <span className="flex items-center gap-1.5 text-[11px]"><Heart size={14} weight="fill" style={{ color: accent }} /> {3 + (r.id.length % 30)}</span>
                             <span className="flex items-center gap-1.5 text-[11px]"><ChatCircle size={14} /> {1 + (r.id.length % 9)}</span>
                         </div>
-                        <DelBtn onDelete={() => handleDeleteRecord(r)} />
+                        <DelBtn onDelete={() => confirmDeleteRecord(r)} />
                     </div>
                 );
             case 'forum':
@@ -3292,7 +3339,7 @@ ${olderText}
                             <span>· {1 + (r.id.length % 200)} 回复</span>
                             <span>· {fmtClock(r.timestamp)}</span>
                         </div>
-                        <DelBtn onDelete={() => handleDeleteRecord(r)} />
+                        <DelBtn onDelete={() => confirmDeleteRecord(r)} />
                     </div>
                 );
             case 'novel':
@@ -3306,7 +3353,7 @@ ${olderText}
                             <span>{r.value || '连载中'}</span>
                             <span className="tabular-nums">{fmtClock(r.timestamp)}</span>
                         </div>
-                        <DelBtn onDelete={() => handleDeleteRecord(r)} />
+                        <DelBtn onDelete={() => confirmDeleteRecord(r)} />
                     </div>
                 );
             default:
@@ -3319,7 +3366,7 @@ ${olderText}
                         </div>
                         <div className="text-[12px] text-white/55 leading-relaxed whitespace-pre-wrap">{r.detail}</div>
                         <div className="text-[9.5px] text-white/25 mt-2 text-right tabular-nums">{fmtClock(r.timestamp)}</div>
-                        <DelBtn onDelete={() => handleDeleteRecord(r)} />
+                        <DelBtn onDelete={() => confirmDeleteRecord(r)} />
                     </div>
                 );
         }
@@ -4054,7 +4101,7 @@ ${olderText}
                         </p>
                         {/* 转为虚构 */}
                         <button
-                            onClick={() => handleRebindContact(selectedContact, { kind: 'npc' })}
+                            onClick={() => confirmRebindContact(selectedContact, { kind: 'npc' })}
                             disabled={selectedContact.kind === 'npc'}
                             className={`w-full flex items-center gap-2.5 rounded-xl p-3 border text-left transition ${selectedContact.kind === 'npc' ? 'border-slate-200 bg-slate-100 opacity-50' : 'border-slate-200 bg-slate-50 active:scale-[0.99]'}`}>
                             <span className="w-8 h-8 rounded-lg bg-slate-200 flex items-center justify-center text-slate-500 shrink-0"><User size={16} weight="bold" /></span>
@@ -4074,7 +4121,7 @@ ${olderText}
                                     const current = selectedContact.kind === 'real' && selectedContact.linkedCharId === rc.id;
                                     return (
                                         <button key={rc.id}
-                                            onClick={() => handleRebindContact(selectedContact, { kind: 'real', charId: rc.id })}
+                                            onClick={() => confirmRebindContact(selectedContact, { kind: 'real', charId: rc.id })}
                                             disabled={current}
                                             className={`w-full flex items-center gap-2.5 rounded-xl p-2.5 border text-left transition ${current ? 'border-pink-300 bg-pink-50' : 'border-slate-200 bg-slate-50 active:scale-[0.99]'}`}>
                                             <TokenImg value={rc.avatar} alt="" className="w-8 h-8 rounded-lg object-cover shrink-0" />
@@ -4095,9 +4142,17 @@ ${olderText}
                     <div className="flex gap-2">
                         <button onClick={() => {
                             const { contactId, topicId } = topicEdit;
-                            mutateContacts(cs => cs.map(c => c.id === contactId ? { ...c, topicBox: (c.topicBox || []).filter(t => t.id !== topicId) } : c));
-                            setTopicEdit(null);
-                            addToast('已删除该条记忆', 'success');
+                            askConfirm({
+                                title: '删除这段聊天记忆？',
+                                desc: '这段已总结的对话记忆删除后不可恢复。',
+                                confirmLabel: '删除',
+                                danger: true,
+                                onConfirm: () => {
+                                    mutateContacts(cs => cs.map(c => c.id === contactId ? { ...c, topicBox: (c.topicBox || []).filter(t => t.id !== topicId) } : c));
+                                    setTopicEdit(null);
+                                    addToast('已删除该条记忆', 'success');
+                                },
+                            });
                         }} className="px-4 py-3 bg-rose-500 text-white font-bold rounded-2xl">删除</button>
                         <button onClick={() => {
                             const { contactId, topicId, text } = topicEdit;

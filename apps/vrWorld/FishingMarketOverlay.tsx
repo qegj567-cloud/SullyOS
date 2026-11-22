@@ -23,6 +23,7 @@ import { flushMarketReceipts } from '../../utils/vrWorld/fishingCharacter';
 import { flushFishingDeliveries } from '../../utils/vrWorld/fishingDelivery';
 import { FishingGame } from './FishingGame';
 import { FishArt } from './FishArt';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 import './fishing.css';
 import './fishingBoard.css';
 
@@ -62,6 +63,7 @@ function tripError(result:{reason?:string;detail?:string}) {
     }
 }
 export const FishingMarketOverlay:React.FC<Props> = ({initialEntry='water',apiConfig,characters,userProfile,realtimeConfig,addToast,onClose,onOpenGarden,onCharacterTrip}) => {
+    const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
     const actors=useMemo(()=>listMarketActors(userProfile,characters),[userProfile.name,characters]);
     const user=actors[0];
     const [state,setState]=useState<FishingMarketState>(()=>{try{return ensureMarketDay(readFishingMarketState());}catch{return createFishingMarketState();}});
@@ -310,6 +312,32 @@ export const FishingMarketOverlay:React.FC<Props> = ({initialEntry='water',apiCo
         {saleReceipt&&<Sheet title={sarNpcContentEnabled()?'艾文的收鱼摊':'鱼获回收'} onClose={()=>setSaleReceipt(null)}><AivenFishSaleReceipt sale={saleReceipt} sellerName={user.name}/></Sheet>}
         {selectedCatch&&(()=>{const c=state.inventory.find(item=>item.id===selectedCatch.id);if(!c)return null;const f=speciesById(c.speciesId)!;const mine=c.ownerId==='user';const free=availableCatches(state,'user').some(item=>item.id===c.id);
             const collectionAct=(action:'sell'|'release'|'display'|'study'|'incubate')=>void act(s=>handleCollection(s,user,c.id,action),()=>setSelectedCatch(null));
+            // 1–2★ 无节日帽的普通/罕见鱼在单次钓鱼后会频繁清仓，保留单击直卖避免打断节奏；高星、稀有以上、带帽或时空遗物以及 0 金币放生需二次确认防误触
+            const needsSaleConfirm = c.quality >= 3 || f.rarity === 'rare' || f.rarity === 'epic' || f.rarity === 'relic' || Boolean(c.halloweenHat) || f.category === 'time-relic';
+            const onSellClick = async () => {
+                if (busy || saleInFlight.current || actionInFlight.current) return;
+                if (needsSaleConfirm) {
+                    const ok = await requestConfirm({
+                        title: `卖出「${f.name}」？`,
+                        message: '这是高星或珍稀藏品，卖出后无法赎回。',
+                        confirmText: '确认卖出',
+                        variant: 'warning',
+                    });
+                    if (!ok) return;
+                }
+                if (f.category === 'fish') void sellToAiven(c.id);
+                else collectionAct('sell');
+            };
+            const onReleaseClick = async () => {
+                if (busy || actionInFlight.current) return;
+                const ok = await requestConfirm({
+                    title: `放生「${f.name}」？`,
+                    message: '放生没有鳞币收益，且这尾鱼获不会再回来。',
+                    confirmText: '确认放生',
+                });
+                if (!ok) return;
+                collectionAct('release');
+            };
             return <Sheet title={f.name} onClose={()=>setSelectedCatch(null)}>
                 <div className="flex justify-center py-2"><FishArt speciesId={c.speciesId} halloweenHat={c.halloweenHat} size={240} animated/></div>
                 <div className="text-center text-[13px]">{rarityLabel[f.rarity]} · {c.sizeCm} cm · {'✦'.repeat(c.quality)}</div><p className="fish-note mt-2 text-center">{f.blurb}</p>
@@ -317,12 +345,12 @@ export const FishingMarketOverlay:React.FC<Props> = ({initialEntry='water',apiCo
                 {error&&<p role="alert" className="mt-2 text-[12px] text-amber-100">{error}</p>}
                 {mine&&<p className="fish-note mt-3">今日回收额度 {remainingSARBuyback(state.buybackBudgets, 'user', now)} / {SAR_DAILY_BUYBACK} 鳞币 · 次日恢复</p>}
                 {mine&&<div className="mt-4 flex flex-wrap gap-2">
-                    <button disabled={busy||!free||catchValue(state,c)>remainingSARBuyback(state.buybackBudgets,'user',now)} className="fish-action primary" onClick={()=>f.category==='fish'?void sellToAiven(c.id):collectionAct('sell')}>{f.category==='fish'&&sarNpcContentEnabled()?'卖给艾文':'按行情卖出'} · {catchValue(state,c)} 鳞币</button>
+                    <button disabled={busy||!free||catchValue(state,c)>remainingSARBuyback(state.buybackBudgets,'user',now)} className="fish-action primary" onClick={()=>void onSellClick()}>{f.category==='fish'&&sarNpcContentEnabled()?'卖给艾文':'按行情卖出'} · {catchValue(state,c)} 鳞币</button>
                     <button disabled={busy||!free} className="fish-action" onClick={()=>{setSelectedCatch(null);beginPost('listing',c.id);}}>自己定价挂板</button>
                     <button disabled={busy||!free} className="fish-action" onClick={()=>collectionAct('display')}>{c.displayed?'收起陈列':'放进陈列'}</button>
                     {f.category==='time-relic'&&<button disabled={busy||!free||c.studied} className="fish-action" onClick={()=>collectionAct('study')}>{c.studied?'已记录观察':'制作观察记录'}</button>}
                     {c.speciesId==='dinosaur-egg'&&(c.incubatingUntil?<button disabled={busy||c.incubatingUntil>now} className="fish-action" onClick={()=>void act(s=>hatchEgg(s,user,c.id),()=>setSelectedCatch(null))}>{c.incubatingUntil>now?'孵化剩余 '+countdown(c.incubatingUntil,now):'揭晓孵化结果'}</button>:<button disabled={busy||!free} className="fish-action" onClick={()=>collectionAct('incubate')}>孵化 · 6 小时</button>)}
-                    {f.category==='fish'&&<button disabled={busy||!free} className="fish-action" onClick={()=>collectionAct('release')}>放生</button>}
+                    {f.category==='fish'&&<button disabled={busy||!free} className="fish-action" onClick={()=>void onReleaseClick()}>放生</button>}
                 </div>}
                 {c.displayed&&<p className="fish-note mt-3">已放在自己的水域陈列架。</p>}
             </Sheet>;
@@ -370,10 +398,12 @@ export const FishingMarketOverlay:React.FC<Props> = ({initialEntry='water',apiCo
                 </div>}
                 <div className="board-detail-actions">
                 {ownerId(activePost)!=='user'&&<button disabled={busy||!!needsSpecimen&&!fulfillmentCatches.some(c=>c.id===fulfillmentCatchId)} className="fish-action primary" onClick={()=>void act(s=>'price' in activePost?buyListing(s,activePost.id,user):fulfillRequest(s,activePost.id,user,postText,Date.now(),fulfillmentCatchId))}>{activePost.encounter?('price' in activePost?(activePost.price?`支付 ${activePost.price} 鳞币，参与`:'去看看'):activePost.offer?`接下这份活 · 酬谢 ${activePost.offer} 鳞币`:'接受邀请'):'price' in activePost?`支付 ${activePost.price} 鳞币，买下`:activePost.kind==='tip'?`赠予 ${activePost.offer} 鳞币`:activePost.kind==='favor'?(isFreeNote(activePost)?'提交回应并完成':`提交并领取 ${activePost.offer} 鳞币`):`交付并领取 ${activePost.offer} 鳞币`}</button>}
+                {/* 撤下并存档仅将便笺收入往期便笺、不删除内容，保留单击完成 */}
                 <div className="flex justify-between gap-3"><button disabled={busy||!postText.trim()} className="board-text-button" onClick={()=>void act(s=>commentOnPost(s,activePost.id,user,postText),()=>setPostText(''))}>{isFreeNote(activePost)?'回复':'仅回复'}</button>{ownerId(activePost)==='user'&&<button disabled={busy} className="board-text-button" onClick={()=>void act(s=>removeMarketPost(s,activePost.id,'user'))}>撤下并存档</button>}</div></div></>}
             {error&&<p role="alert" className="mt-3 text-[12px] text-amber-100">{error}</p>}
             {activePost.alias&&ownerId(activePost)==='user'&&<p className="fish-note mt-3">你的匿名发帖；在这张便笺下回复会沿用「{activePost.alias}」。</p>}
         </BoardPage>}
+        {confirmDialog}
     </div>;
 };
 const BoardPage:React.FC<{title:string;label?:string;onClose:()=>void;children:React.ReactNode}> = ({title,label,onClose,children})=>{

@@ -309,7 +309,7 @@ const NovelWriter: React.FC<NovelWriterProps> = ({
         await runGeneration(selectedChar, userPrompt, currentSegments);
     };
 
-    const handleReroll = async () => {
+    const handleReroll = () => {
         if (!targetCharId) return;
         const selectedChar = characters.find(c => c.id === targetCharId);
         if (!selectedChar) return;
@@ -321,10 +321,19 @@ const NovelWriter: React.FC<NovelWriterProps> = ({
             if (last.authorId !== 'user') { newSegments.pop(); deletedCount++; } else { break; }
         }
         if (deletedCount === 0) { addToast('没有可重随的 AI 内容', 'info'); return; }
-        setSegments(newSegments);
-        updateNovel(activeBook.id, { segments: newSegments });
-        addToast('正在重随...', 'info');
-        await runGeneration(selectedChar, "", newSegments);
+        setConfirmDialog({
+            isOpen: true,
+            title: '重新生成最后一段？',
+            message: `将删除末尾的 ${deletedCount} 段 AI 内容，并让 ${selectedChar.name} 重新生成。`,
+            variant: 'warning',
+            onConfirm: () => {
+                setConfirmDialog(null);
+                setSegments(newSegments);
+                updateNovel(activeBook.id, { segments: newSegments });
+                addToast('正在重随...', 'info');
+                void runGeneration(selectedChar, "", newSegments);
+            }
+        });
     };
 
     const handleEditSegment = (seg: NovelSegment) => {

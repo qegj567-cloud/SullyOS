@@ -12,6 +12,7 @@ import { DATE_STYLE_PRESETS } from '../../utils/datePrompts';
 import ObserveSettings from './ObserveSettings';
 import DateExtraPresets from './DateExtraPresets';
 import DateExtraEditor from './DateExtraEditor';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 import { isAwayCloudRoute } from '../../utils/awayMessage';
 import {
     DATE_LEAVE_MAX_MINUTES, DATE_LEAVE_MIN_MINUTES, disarmDateLeaveReminder, resolveDateLeaveDelayMinutes,
@@ -103,6 +104,7 @@ const LeaveReminderSection: React.FC<{ char: CharacterProfile }> = ({ char }) =>
 
 const DateSettings: React.FC<DateSettingsProps> = ({ char, onBack }) => {
     const { updateCharacter, addToast, userProfile } = useOS();
+    const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
     const fileInputRef = useRef<HTMLInputElement>(null);
     const pageRef = useRef<HTMLDivElement>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -267,7 +269,15 @@ const DateSettings: React.FC<DateSettingsProps> = ({ char, onBack }) => {
         addToast(`皮肤 [${name}] 已创建`, 'success');
     };
 
-    const handleDeleteSkinSet = (skinId: string) => {
+    const handleDeleteSkinSet = async (skinId: string) => {
+        const target = skinSets.find(s => s.id === skinId);
+        const ok = await requestConfirm({
+            title: `删除皮肤「${target?.name || '未命名'}」？`,
+            message: '该皮肤下的所有表情立绘配置都会移除，无法恢复。',
+            confirmText: '确认删除',
+            variant: 'danger',
+        });
+        if (!ok) return;
         const updated = skinSets.filter(s => s.id !== skinId);
         const patch: Partial<CharacterProfile> = { dateSkinSets: updated };
         if (activeSkinId === skinId) patch.activeSkinSetId = undefined;
@@ -334,7 +344,14 @@ const DateSettings: React.FC<DateSettingsProps> = ({ char, onBack }) => {
         addToast(`已添加自定义情绪 [${key}]`, 'success');
     };
 
-    const handleDeleteCustomEmotion = (key: string) => {
+    const handleDeleteCustomEmotion = async (key: string) => {
+        const ok = await requestConfirm({
+            title: `删除自定义情绪 [${key}]？`,
+            message: '对应的默认立绘图片也会一并移除，无法恢复。',
+            confirmText: '确认删除',
+            variant: 'danger',
+        });
+        if (!ok) return;
         const updated = customEmotions.filter(e => e !== key);
         updateCharacter(char.id, { customDateSprites: updated });
         // Also remove the sprite image for this emotion
@@ -570,7 +587,7 @@ const DateSettings: React.FC<DateSettingsProps> = ({ char, onBack }) => {
                                     <div className="text-center flex items-center justify-center gap-1">
                                         <div className="text-xs font-bold text-slate-600 capitalize truncate">{key}</div>
                                         <button
-                                            onClick={(e) => { e.stopPropagation(); handleDeleteCustomEmotion(key); }}
+                                            onClick={(e) => { e.stopPropagation(); void handleDeleteCustomEmotion(key); }}
                                             className="text-slate-300 hover:text-red-400 transition-colors shrink-0"
                                         >
                                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
@@ -642,7 +659,7 @@ const DateSettings: React.FC<DateSettingsProps> = ({ char, onBack }) => {
                                         <button onClick={() => setEditingSkinId(editingSkinId === skin.id ? null : skin.id)} className="text-[10px] text-slate-500 px-2 py-1 rounded-lg hover:bg-slate-100 transition-colors">
                                             {editingSkinId === skin.id ? '收起' : '编辑'}
                                         </button>
-                                        <button onClick={() => handleDeleteSkinSet(skin.id)} className="text-slate-300 hover:text-red-400 transition-colors p-1">
+                                        <button onClick={() => void handleDeleteSkinSet(skin.id)} className="text-slate-300 hover:text-red-400 transition-colors p-1">
                                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
                                         </button>
                                     </div>
@@ -756,6 +773,7 @@ const DateSettings: React.FC<DateSettingsProps> = ({ char, onBack }) => {
                 </button>
             </div>
             </div>
+            {confirmDialog}
         </div>
     );
 };

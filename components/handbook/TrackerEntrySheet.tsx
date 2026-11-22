@@ -17,6 +17,7 @@ import { Tracker, TrackerEntry, TrackerField } from '../../types';
 import { PAPER_TONES, SERIF_STACK, CUTE_STACK, WashiTape } from './paper';
 import { HeartSticker, StarSticker } from './stickers';
 import { Trash, X, FloppyDisk } from '@phosphor-icons/react';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 
 interface Props {
     visible: boolean;
@@ -31,6 +32,7 @@ interface Props {
 const TrackerEntrySheet: React.FC<Props> = ({
     visible, tracker, date, existingEntry, onCancel, onSave, onDelete,
 }) => {
+    const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
     const [values, setValues] = useState<Record<string, any>>({});
 
     useEffect(() => {
@@ -279,8 +281,14 @@ const TrackerEntrySheet: React.FC<Props> = ({
                 >
                     {existingEntry && onDelete && (
                         <button
-                            onClick={() => {
-                                if (confirm('删除这天的打卡?')) onDelete();
+                            onClick={async () => {
+                                const confirmed = await requestConfirm({
+                                    title: '删除这天的打卡？',
+                                    message: `确定要删除 ${date}「${tracker.name}」的打卡记录吗？`,
+                                    confirmText: '删除',
+                                    variant: 'danger',
+                                });
+                                if (confirmed) onDelete();
                             }}
                             className="px-3 py-3 rounded-full active:scale-95 transition"
                             style={{
@@ -320,6 +328,7 @@ const TrackerEntrySheet: React.FC<Props> = ({
                     </button>
                 </div>
             </div>
+            {confirmDialog}
         </div>
     );
 };

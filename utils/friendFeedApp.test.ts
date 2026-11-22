@@ -337,7 +337,7 @@ it('opens an alias profile without mixing the owner main posts and retains accou
     ];});await new Promise(r=>setTimeout(r,30));});
     await click(host,'查看半夜吃面的主页');
     expect(host.querySelector('.friend-feed-posts')?.textContent).toContain('深夜的面');expect(host.querySelector('.friend-feed-posts')?.textContent).not.toContain('白天的工作');
-    await click(host,'哔哔设置');await click(host,'更多设置');await click(host,'恢复默认设置');await click(host,'保存设置');
+    await click(host,'哔哔设置');await click(host,'更多设置');await click(host,'恢复默认设置');await click(host,'确认恢复默认设置');await click(host,'保存设置');
     expect((await readFriendFeed()).settings?.identities[m.chars[1].id].accounts[0].name).toBe('半夜吃面');
 });
 afterEach(() => {act(() => roots.forEach(r => r.unmount())); hosts.forEach(h => h.remove()); vi.unstubAllGlobals(); vi.clearAllMocks();});
@@ -640,11 +640,11 @@ it('previews settings locally, discards cancelled edits and shares saved prefere
     expect((await readFriendFeed()).settings?.theme).toBe('moments');
     await click(embedded, '哔哔设置');await click(embedded, '外观与阅读');
     expect(embedded.querySelector('input[name=feed-theme]')).toBeNull();
-    await click(embedded, '取消');await click(embedded, '更多设置');await click(embedded, '恢复默认设置');
+    await click(embedded, '取消');await click(embedded, '更多设置');await click(embedded, '恢复默认设置');await click(embedded, '确认恢复默认设置');
     await click(embedded, '保存设置');
     expect((await readFriendFeed()).settings?.theme).toBe('moments');
     expect(desktop.querySelector('.friend-feed')?.getAttribute('data-theme')).toBe('moments');
-    await click(desktop, '更多设置'); await click(desktop, '恢复默认设置'); await click(desktop, '保存设置');
+    await click(desktop, '更多设置'); await click(desktop, '恢复默认设置'); await click(desktop, '确认恢复默认设置'); await click(desktop, '保存设置');
     await settle(embedded);
     expect((await readFriendFeed()).settings?.layout).toBe('paper');
     expect(embedded.querySelector('.friend-feed')?.getAttribute('data-layout')).toBe('paper');
@@ -710,7 +710,8 @@ it('hides paid import controls while keeping imported sources readable and old k
     await click(host, '更多设置');
     expect(host.querySelector('input[type=password]')).toBeNull();
     expect(host.textContent).not.toContain('注册 TikHub');
-    await click(host, '移除旧 Key'); expect(readTikHubKey()).toBe('');
+    await click(host, '移除旧 Key'); expect(readTikHubKey()).toBe('test-only-key');
+    await click(host, '确认移除旧 Key'); expect(readTikHubKey()).toBe('');
     expect(fetcher).not.toHaveBeenCalled(); expect((await readFriendFeed()).posts).toHaveLength(1);
 });
 it('mixes bound Weibo and local posts chronologically and filters the same entries into profiles',async()=>{

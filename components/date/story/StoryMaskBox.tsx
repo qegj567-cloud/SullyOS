@@ -3,6 +3,7 @@ import { ArrowLeft, FloppyDisk, Plus, Trash, UserCircle } from '@phosphor-icons/
 import type { CharacterProfile, StoryTheaterMask, StoryTheaterMaskSelection, UserProfile } from '../../../types';
 import { createStoryTheaterMaskDraft } from '../../../utils/storyTheater';
 import TokenImg from '../../os/TokenImg';
+import { useConfirmDialog } from '../../../hooks/useConfirmDialog';
 
 interface Props {
     user: UserProfile;
@@ -19,6 +20,7 @@ interface Props {
 const StoryMaskBox: React.FC<Props> = ({ user, characters, masks, selected, onSelect, onSave, onDelete, onBack, locked = false }) => {
     const [draft, setDraft] = useState<StoryTheaterMask | null>(null);
     const [saving, setSaving] = useState(false);
+    const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
     const imageInput = useRef<HTMLInputElement>(null);
     const patch = (updates: Partial<StoryTheaterMask>) => setDraft(current => current ? { ...current, ...updates, updatedAt: Date.now() } : current);
 
@@ -72,7 +74,7 @@ const StoryMaskBox: React.FC<Props> = ({ user, characters, masks, selected, onSe
                 </section>
 
                 {draft && <section className='mt-8 pt-6 border-t border-slate-200'>
-                    <div className='flex items-center justify-between'><div><div className='text-[9px] tracking-[.2em] uppercase font-bold text-violet-500'>Custom mask</div><h2 className='text-lg font-semibold'>{masks.some(mask => mask.id === draft.id) ? '编辑原创人物' : '新建原创人物'}</h2></div>{masks.some(mask => mask.id === draft.id) && <button onClick={async () => { await onDelete(draft); if (selected.type === 'custom' && selected.id === draft.id) onSelect({ type: 'user' }); setDraft(null); }} className='w-9 h-9 rounded-full grid place-items-center text-rose-500'><Trash size={17} /></button>}</div>
+                    <div className='flex items-center justify-between'><div><div className='text-[9px] tracking-[.2em] uppercase font-bold text-violet-500'>Custom mask</div><h2 className='text-lg font-semibold'>{masks.some(mask => mask.id === draft.id) ? '编辑原创人物' : '新建原创人物'}</h2></div>{masks.some(mask => mask.id === draft.id) && <button onClick={async () => { const target = draft; const ok = await requestConfirm({ title: `删除原创人物「${target.name.trim() || '未命名'}」？`, message: '删除后该身份将从面具箱移除，无法恢复（已开始的剧情仍保留既有文本）。', confirmText: '确认删除', variant: 'danger' }); if (!ok) return; await onDelete(target); if (selected.type === 'custom' && selected.id === target.id) onSelect({ type: 'user' }); setDraft(null); }} className='w-9 h-9 rounded-full grid place-items-center text-rose-500'><Trash size={17} /></button>}</div>
                     <div className='mt-4 grid grid-cols-[72px_1fr] gap-4 items-start'>
                         <button onClick={() => imageInput.current?.click()} className='w-[72px] h-[72px] rounded-full overflow-hidden bg-white border border-slate-200 grid place-items-center'>{draft.avatar ? <TokenImg value={draft.avatar} alt='' className='w-full h-full object-cover' /> : <UserCircle size={36} className='text-slate-300' />}</button>
                         <div className='space-y-3'><input value={draft.name} onChange={event => patch({ name: event.target.value })} placeholder='人物名字' className='w-full px-3 py-2.5 rounded-xl bg-white border border-slate-200 text-sm outline-none' /><input value={draft.description} onChange={event => patch({ description: event.target.value })} placeholder='身份、外貌、与其他人的关系' className='w-full px-3 py-2.5 rounded-xl bg-white border border-slate-200 text-xs outline-none' /></div>
@@ -84,6 +86,7 @@ const StoryMaskBox: React.FC<Props> = ({ user, characters, masks, selected, onSe
                 </section>}
             </div>
         </main>
+        {confirmDialog}
     </div>;
 };
 

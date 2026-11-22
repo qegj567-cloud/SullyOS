@@ -22,6 +22,7 @@ import { getDailyScheduleForChar } from '../../utils/dailySchedule';
 import { useLocalDateKey } from '../../hooks/useLocalDateKey';
 import { resolveCharTimeZone } from '../../utils/timezone';
 import { getCurrentScheduleSlotIndex, getScheduleWallClock } from '../../utils/scheduleTime';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 
 // ===== 电子宠物主题（tamagotchi skin）=====
 // 桌面不再是「放图标的手机」，而是一台华丽丽的二次元养成机：屏幕主体是角色
@@ -779,6 +780,7 @@ const DockBtn: React.FC<{ glyph: React.ReactNode; cn: string; en: string; badge?
 // ─── 主组件 ───────────────────────────────────────────────────
 const TamagotchiHome: React.FC = () => {
     const { openApp, characters, activeCharacterId, setActiveCharacterId, virtualTime, unreadMessages, isDataLoaded, lastMsgTimestamp, addToast, userProfile, apiConfig } = useOS();
+    const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
     const char: CharacterProfile | null = useMemo(
         () => characters.find(c => c.id === activeCharacterId) || characters[0] || null,
         [characters, activeCharacterId]
@@ -817,11 +819,18 @@ const TamagotchiHome: React.FC = () => {
             addToast(err?.message || '图片处理失败', 'error');
         }
     }, [addToast, char?.id]);
-    const clearBoardImg = useCallback(() => {
+    const clearBoardImg = useCallback(async () => {
+        const ok = await requestConfirm({
+            title: '恢复默认看板？',
+            message: '将清除当前自定义的直播看板图片，恢复为默认样式。',
+            confirmText: '确认恢复',
+            variant: 'warning',
+        });
+        if (!ok) return;
         setBoardImg('');
         if (char) try { localStorage.removeItem(`tama_board_img_${char.id}`); } catch { /* ignore */ }
         // 旧 blob 不主动删（见 blobRef 注释的防碎图策略），交给后续 GC
-    }, [char?.id]);
+    }, [char?.id, requestConfirm]);
     // 看板排版层文字色（有自定义图时生效，默认白）：原生取色器，选完即存
     const boardColorRef = useRef<HTMLInputElement>(null);
     const [boardFg, setBoardFg] = useState(''); // 空=自动（暗板白字/浅板深字）
@@ -1163,7 +1172,7 @@ const TamagotchiHome: React.FC = () => {
                                         style={{ background: PAL.card, border: `1.5px solid ${PAL.frameSoft}` }}>
                                         <span className="w-3.5 h-3.5 rounded-full" style={{ background: boardFg || (style.dark ? '#ffffff' : 'var(--tg-grape)'), boxShadow: '0 0 0 1.5px var(--tg-frame-a30)' }} />
                                     </button>
-                                    <button onClick={clearBoardImg} aria-label="恢复默认看板"
+                                    <button onClick={() => void clearBoardImg()} aria-label="恢复默认看板"
                                         className="w-[2.4rem] py-2 rounded-xl flex items-center justify-center active:scale-95 transition-transform"
                                         style={{ background: PAL.card, border: `1.5px solid ${PAL.frameSoft}`, color: PAL.fade }}>
                                         <svg viewBox="0 0 24 24" className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" d="M6 6l12 12M18 6L6 18" /></svg>
@@ -1289,6 +1298,7 @@ const TamagotchiHome: React.FC = () => {
                     </div>
                 </div>
             )}
+            {confirmDialog}
         </div>
     );
 };

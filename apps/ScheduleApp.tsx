@@ -14,6 +14,7 @@ import { getCalendarDayDifference, getLocalDateKey } from '../utils/localDate';
 import { useLocalDateKey } from '../hooks/useLocalDateKey';
 import { trackEvent } from '../utils/analytics';
 import TokenImg from '../components/os/TokenImg';
+import { useConfirmDialog } from '../hooks/useConfirmDialog';
 
 const TWEMOJI_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72';
 const twemojiUrl = (codepoint: string) => `${TWEMOJI_BASE}/${codepoint}.png`;
@@ -79,6 +80,7 @@ const THEMES: Record<ThemeMode, any> = {
 
 const ScheduleApp: React.FC = () => {
     const { closeApp, characters, activeCharacterId, apiConfig, addToast, userProfile, characterGroups } = useOS();
+    const { requestConfirm, confirmDialog } = useConfirmDialog();
     const localDateKey = useLocalDateKey();
     const [tasks, setTasks] = useState<Task[]>([]);
     const [anniversaries, setAnniversaries] = useState<Anniversary[]>([]);
@@ -346,6 +348,14 @@ const ScheduleApp: React.FC = () => {
     };
 
     const handleDeleteTask = async (id: string) => {
+        const task = tasks.find(t => t.id === id);
+        const confirmed = await requestConfirm({
+            title: '删除任务？',
+            message: task ? `确定删除任务「${task.title}」吗？` : '确定删除这条任务吗？',
+            confirmText: '删除',
+            variant: 'danger',
+        });
+        if (!confirmed) return;
         await DB.deleteTask(id);
         setTasks(prev => prev.filter(t => t.id !== id));
     };
@@ -368,6 +378,14 @@ const ScheduleApp: React.FC = () => {
     };
 
     const handleDeleteAnni = async (id: string) => {
+        const anni = anniversaries.find(a => a.id === id);
+        const confirmed = await requestConfirm({
+            title: '删除纪念日？',
+            message: anni ? `确定删除纪念日「${anni.title}」吗？` : '确定删除这条纪念日吗？',
+            confirmText: '删除',
+            variant: 'danger',
+        });
+        if (!confirmed) return;
         await DB.deleteAnniversary(id);
         setAnniversaries(prev => prev.filter(a => a.id !== id));
     };
@@ -618,6 +636,7 @@ const ScheduleApp: React.FC = () => {
                     </div>
                 </div>
             </Modal>
+            {confirmDialog}
         </div>
     );
 };

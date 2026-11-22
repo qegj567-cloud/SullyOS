@@ -31,6 +31,7 @@ import {
 } from '@phosphor-icons/react';
 import TokenImg from '../components/os/TokenImg';
 import type { ApiCallMeta } from '../utils/apiCallLog';
+import { useConfirmDialog } from '../hooks/useConfirmDialog';
 
 // --- Helper: Generate ID ---
 const genId = () => Math.random().toString(36).slice(2, 10);
@@ -598,6 +599,7 @@ const SessionCard: React.FC<{
 // ===== MAIN APP =====
 const GuidebookApp: React.FC = () => {
     const { closeApp, characters, userProfile, apiConfig, addToast, updateCharacter } = useOS();
+    const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
 
     // View State
     const [view, setView] = useState<'lobby' | 'setup' | 'opening' | 'playing' | 'replay'>('lobby');
@@ -920,11 +922,20 @@ const GuidebookApp: React.FC = () => {
     // --- Regenerate from round ---
     const handleRegenerateFrom = async (roundIdx: number) => {
         if (!session || !selectedChar) return;
-        trackEvent('从某回合重新生成');
+        const targetRound = session.rounds[roundIdx];
+        const roundLabel = targetRound?.roundNumber || roundIdx + 1;
+        const laterCount = session.rounds.length - roundIdx;
         setContextMenuRound(null);
+        const confirmed = await requestConfirm({
+            title: `从第 ${roundLabel} 回合重新生成？`,
+            message: `第 ${roundLabel} 回合${laterCount > 1 ? `及之后共 ${laterCount} 个回合` : ''}的当前剧情将被清空并回到该回合输入状态。`,
+            confirmText: '重新生成',
+            variant: 'warning',
+        });
+        if (!confirmed) return;
+        trackEvent('从某回合重新生成');
 
         // Restore input fields from the round being regenerated
-        const targetRound = session.rounds[roundIdx];
         if (targetRound) {
             setOptionTexts(targetRound.options.map(o => o.text));
             setOptionScores(targetRound.options.map(o => o.affinity));
@@ -947,11 +958,20 @@ const GuidebookApp: React.FC = () => {
     // --- Delete round ---
     const handleDeleteFrom = async (roundIdx: number) => {
         if (!session) return;
-        trackEvent('删掉某回合之后的内容');
+        const targetRound = session.rounds[roundIdx];
+        const roundLabel = targetRound?.roundNumber || roundIdx + 1;
+        const laterCount = session.rounds.length - roundIdx;
         setContextMenuRound(null);
+        const confirmed = await requestConfirm({
+            title: `删除第 ${roundLabel} 回合及之后内容？`,
+            message: `将永久删除第 ${roundLabel} 回合${laterCount > 1 ? `及之后的共 ${laterCount} 个回合` : ''}，无法恢复。`,
+            confirmText: '删除',
+            variant: 'danger',
+        });
+        if (!confirmed) return;
+        trackEvent('删掉某回合之后的内容');
 
         // Restore input fields from the deleted round
-        const targetRound = session.rounds[roundIdx];
         if (targetRound) {
             setOptionTexts(targetRound.options.map(o => o.text));
             setOptionScores(targetRound.options.map(o => o.affinity));
@@ -1916,14 +1936,14 @@ const GuidebookApp: React.FC = () => {
                             第 {(session?.rounds[contextMenuRound]?.roundNumber) || '?'} 回合
                         </div>
                         <button
-                            onClick={() => handleRegenerateFrom(contextMenuRound)}
+                            onClick={() => void handleRegenerateFrom(contextMenuRound)}
                             className="w-full py-3.5 text-sm font-bold transition-colors" style={{ color: '#5a4a50' }}
                         >
                             从这里重新生成
                         </button>
                         <div className="h-px" style={{ background: 'rgba(200,185,190,0.2)' }} />
                         <button
-                            onClick={() => handleDeleteFrom(contextMenuRound)}
+                            onClick={() => void handleDeleteFrom(contextMenuRound)}
                             className="w-full py-3.5 text-sm text-red-400 font-bold transition-colors"
                         >
                             删除此回合及之后的内容
@@ -1938,6 +1958,7 @@ const GuidebookApp: React.FC = () => {
                     </Card>
                 </div>
             )}
+            {confirmDialog}
         </GameFrame>
     );
 };

@@ -10,6 +10,7 @@ import {
     WarningCircle,
 } from '@phosphor-icons/react';
 import { useOS } from '../../context/OSContext';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 import { trackEvent } from '../../utils/analytics';
 import {
     createMcpServer,
@@ -80,6 +81,7 @@ const McpConnectionConsole: React.FC<{
     onMcpConfigChanged?: () => void;
 }> = ({ addToast, onMcpConfigChanged }) => {
     const { characters, groups } = useOS();
+    const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
     const [servers, setServers] = useState<McpServerConfig[]>(() => loadMcpServers());
     const [expandedId, setExpandedId] = useState<string | null>(() => {
         try {
@@ -133,10 +135,21 @@ const McpConnectionConsole: React.FC<{
         trackEvent('添加 MCP 服务器');
     };
 
-    const removeServer = (server: McpServerConfig) => {
-        if (!window.confirm(`删除「${server.name || '未命名服务器'}」？\n\n本机保存的 URL、凭据和工具清单会一并删除。`)) return;
+    const removeServer = async (server: McpServerConfig) => {
+        const ok = await requestConfirm({
+            title: `删除「${server.name || '未命名服务器'}」？`,
+            message: '本机保存的 URL、凭据和工具清单会一并删除。',
+            confirmText: '确认删除',
+            variant: 'danger',
+        });
+        if (!ok) return;
         resetMcpSession(server.id);
-        persist(servers.filter(item => item.id !== server.id));
+        setServers(prev => {
+            const next = prev.filter(item => item.id !== server.id);
+            saveMcpServers(next);
+            return next;
+        });
+        onMcpConfigChanged?.();
         setExpandedId(current => current === server.id ? null : current);
         trackEvent('删除 MCP 服务器');
     };
@@ -327,7 +340,12 @@ const McpConnectionConsole: React.FC<{
                                                         placeholder="value"
                                                         aria-label={`自定义请求头 ${index + 1} 值`}
                                                     />
-                                                    <button type="button" onClick={() => update(server.id, { customHeaders: (server.customHeaders || []).filter((_, itemIndex) => itemIndex !== index) })} className="rounded-xl border border-slate-200 text-slate-400" aria-label={`删除请求头 ${index + 1}`}>×</button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => update(server.id, { customHeaders: (server.customHeaders || []).filter((_, itemIndex) => itemIndex !== index) })}
+                                                        className="rounded-xl border border-slate-200 text-slate-400"
+                                                        aria-label={`删除请求头 ${index + 1}`}
+                                                    >×</button>
                                                 </div>
                                             ))}
                                             <button type="button" onClick={() => update(server.id, { customHeaders: [...(server.customHeaders || []), { name: '', value: '' }] })} className="text-[10px] font-bold text-violet-600">+ 添加自定义请求头</button>
@@ -423,6 +441,7 @@ const McpConnectionConsole: React.FC<{
             <footer className="border-t border-slate-100 bg-slate-50/60 px-4 py-3 text-[9px] leading-relaxed text-slate-400">
                 URL、Token 与自定义请求头保存在本机。使用自己的代理时，请求只经过你指定的转接点。
             </footer>
+            {confirmDialog}
         </div>
     );
 };

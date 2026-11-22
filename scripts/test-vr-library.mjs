@@ -77,7 +77,7 @@ try {
     assert.equal(backup.categories.categories.find(x=>x.id===snapshot.categories[0].id).name,'网络小说');
     assert.equal(backup.book.categoryId,backup.char.vrState.preferredNovelCategoryIds[0]);
     // Removing a category moves its books to Uncategorized and never widens reading scope.
-    await btn('分类').click();await page.locator('.vrl-category-row').filter({hasText:'网络小说'}).getByRole('button',{name:'移除分类'}).click();
+    await btn('分类').click();await page.locator('.vrl-category-row').filter({hasText:'网络小说'}).getByRole('button',{name:'移除分类'}).click();await page.getByRole('dialog').getByRole('button',{name:'移除分类',exact:true}).click();
     await page.waitForFunction(async()=>{const {DB}=await import('/utils/db.ts');return !(await DB.getVRLibraryCategories()).some(c=>c.name==='网络小说');});
     const empty=await page.evaluate(async()=>{const {DB}=await import('/utils/db.ts'),{readableNovels}=await import('/utils/vrWorld/library.ts');return readableNovels(await DB.getVRNovels(),(await DB.getAllCharacters()).find(c=>c.id==='qa-reader')).length;});assert.equal(empty,0);
     assert.deepEqual(errors,[]);

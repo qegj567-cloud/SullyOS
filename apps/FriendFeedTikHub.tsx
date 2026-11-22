@@ -4,13 +4,22 @@ import {sourceLabel, type FriendFeedSource} from '../utils/friendFeedSource';
 
 export function FriendFeedTikHubSettings() {
     const [hasKey, setHasKey] = useState(() => !!readTikHubKey()), [status, setStatus] = useState('');
+    const [confirmingClear, setConfirmingClear] = useState(false);
     return <details className="friend-feed-advanced">
         <summary>旧版导入<span>兼容设置</span></summary>
         <p>TikHub 付费接入已停用，已导入的帖子仍可查看和参与圈内讨论。微博连接和绑定请在主页设置或首页「微博同步」中管理。</p>
-        {hasKey && <button type="button" onClick={() => {
-            try {saveTikHubKey(''); setHasKey(false); setStatus('已移除本机旧 Key');}
-            catch {setStatus('移除失败，请检查浏览器存储权限');}
-        }}>移除旧 Key</button>}
+        {hasKey && (confirmingClear ? (
+            <div className="ff-setting-actions">
+                <button type="button" className="ff-setting-button ff-setting-secondary" onClick={() => {
+                    setConfirmingClear(false);
+                    try {saveTikHubKey(''); setHasKey(false); setStatus('已移除本机旧 Key');}
+                    catch {setStatus('移除失败，请检查浏览器存储权限');}
+                }}>确认移除旧 Key</button>
+                <button type="button" className="ff-setting-link" onClick={() => setConfirmingClear(false)}>取消</button>
+            </div>
+        ) : (
+            <button type="button" className="ff-setting-link" onClick={() => setConfirmingClear(true)}>移除旧 Key</button>
+        ))}
         {status && <p role="status">{status}</p>}
     </details>;
 }

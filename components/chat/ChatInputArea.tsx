@@ -747,7 +747,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                         </button>
                     )}
                     <button
-                        onClick={() => { onDeleteSelected(); trackEvent('批量删除选中的消息'); }}
+                        onClick={onDeleteSelected}
                         className={`${onForwardSelected ? 'flex-1' : 'w-full'} py-3 bg-red-500 text-white font-bold rounded-xl shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2`}
                     >
                         <Trash className="w-5 h-5" weight="bold" />

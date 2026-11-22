@@ -20,6 +20,7 @@ import { assetMirrors, attachAudioMirrorFallback } from '../utils/assetUrl';
 import { shareOrDownloadBlob } from '../utils/shareExport';
 import TokenImg from './os/TokenImg';
 import { dataUrlToBlob, isImageValue, putImageBlob } from '../utils/blobRef';
+import { useConfirmDialog } from '../hooks/useConfirmDialog';
 import {
     runLike520CallA,
     runLike520CallB,
@@ -150,6 +151,9 @@ const CHAR_CREATOR_URL = (((import.meta as any).env?.BASE_URL ?? '/') + 'like520
 
 export const CreatorIframe: React.FC<CreatorIframeProps> = ({ mode, charName, presets, savedState, isSully, draftKey, title, subtitle, onConfirm }) => {
     const iframeRef = useRef<HTMLIFrameElement>(null);
+    const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true, zIndex: 10010 });
+    const requestConfirmRef = useRef(requestConfirm);
+    requestConfirmRef.current = requestConfirm;
     // 自定义部件（开发模式上传）—— 异步从 DB 读出
     const extraItemsRef = useRef<any[]>([]);
     const readyRef = useRef(false);
@@ -240,19 +244,39 @@ export const CreatorIframe: React.FC<CreatorIframeProps> = ({ mode, charName, pr
                 // 捏人器界面内上传的自定义部件 → 落库（IndexedDB），刷新/换 app 都还在。
                 // 落库前把 base64 src/shadowSrc 转成 Blob 令牌（省配额）；内存里仍留 base64 喂 iframe。
                 const p = e.data.payload.part;
+                const item = {
+                    categoryKey: p.categoryKey, id: p.id, name: p.name,
+                    src: p.src, tintable: !!p.tintable, shadowSrc: p.shadowSrc,
+                };
+                if (!extraItemsRef.current.some(x => x.id === p.id)) {
+                    extraItemsRef.current = [...extraItemsRef.current, item];
+                }
                 const part = {
                     id: p.id, categoryKey: p.categoryKey, name: p.name,
                     src: p.src, tintable: !!p.tintable, shadowSrc: p.shadowSrc, createdAt: Date.now(),
                 };
                 creatorPartToBlobRefs(part)
                     .then(stored => DB.saveCustomCreatorPart(stored))
-                    .then(() => { extraItemsRef.current = [...extraItemsRef.current, { categoryKey: p.categoryKey, id: p.id, name: p.name, src: p.src, tintable: !!p.tintable, shadowSrc: p.shadowSrc }]; })
                     .catch(() => { /* 落库失败：内存里仍可用，仅本次会话有效 */ });
             } else if (e.data.type === 'like520_delete_custom_part' && e.data.payload?.id) {
-                const id = e.data.payload.id;
-                DB.deleteCustomCreatorPart(id)
-                    .then(() => { extraItemsRef.current = extraItemsRef.current.filter(x => x.id !== id); })
-                    .catch(() => {});
+                const { id, categoryKey, name } = e.data.payload;
+                const target = extraItemsRef.current.find(x => x.id === id);
+                const resolvedName = (typeof name === 'string' && name.trim()) ? name.trim() : target?.name;
+                const partName = resolvedName ? `「${resolvedName}」` : '这个自定义部件';
+                void requestConfirmRef.current({
+                    title: '删除自定义部件？',
+                    message: `确定从素材库永久删除${partName}吗？删除后捏人器里将无法再选用。`,
+                    confirmText: '确认删除',
+                    variant: 'danger',
+                }).then(ok => {
+                    if (!ok) return;
+                    extraItemsRef.current = extraItemsRef.current.filter(x => x.id !== id);
+                    iframeRef.current?.contentWindow?.postMessage(
+                        { type: 'like520_confirm_delete_custom_part', payload: { categoryKey: categoryKey || target?.categoryKey, id } },
+                        '*',
+                    );
+                    DB.deleteCustomCreatorPart(id).catch(() => {});
+                });
             }
         };
         window.addEventListener('message', handleMessage);
@@ -260,15 +284,18 @@ export const CreatorIframe: React.FC<CreatorIframeProps> = ({ mode, charName, pr
     }, []);
 
     return (
-        <iframe
-            ref={iframeRef}
-            src={CHAR_CREATOR_URL}
-            onLoad={connectImageExport}
-            allow="web-share"
-            title={mode === 'char' ? '捏 char chibi' : '捏 user chibi'}
-            className="w-full h-full border-0"
-            style={{ background: 'linear-gradient(180deg, #FFF1E6 0%, #FFE4EC 100%)' }}
-        />
+        <>
+            <iframe
+                ref={iframeRef}
+                src={CHAR_CREATOR_URL}
+                onLoad={connectImageExport}
+                allow="web-share"
+                title={mode === 'char' ? '捏 char chibi' : '捏 user chibi'}
+                className="w-full h-full border-0"
+                style={{ background: 'linear-gradient(180deg, #FFF1E6 0%, #FFE4EC 100%)' }}
+            />
+            {confirmDialog}
+        </>
     );
 };
 
@@ -3129,6 +3156,7 @@ type SessionMode = 'fresh' | 'replay' | 'skip-to-letter';
 
 export const Like520Session: React.FC<SessionProps> = ({ charId, onClose }) => {
     const { characters, userProfile, apiConfig, updateCharacter, addToast } = useOS();
+    const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true, zIndex: 10010 });
     const char = characters.find(c => c.id === charId);
 
     // 已有完成记录？拿出来判断要不要弹回放选择卡
@@ -3353,8 +3381,15 @@ export const Like520Session: React.FC<SessionProps> = ({ charId, onClose }) => {
 
     // 有完成记录但用户还没在选择卡上选模式：先弹回放选择卡
     if (hasExisting && sessionMode === null) {
-        const pickMode = (mode: SessionMode) => {
+        const pickMode = async (mode: SessionMode) => {
             if (mode === 'fresh') {
+                const ok = await requestConfirm({
+                    title: '重新开始 520 特别活动？',
+                    message: '将清掉当前角色已保存的 520 记录，重新捏人并生成一段新的下午记忆。',
+                    confirmText: '确认重来',
+                    variant: 'danger',
+                });
+                if (!ok) return;
                 // 重来：清掉记录
                 const prev = char.specialMomentRecords || {};
                 const updated = { ...prev };
@@ -3379,15 +3414,15 @@ export const Like520Session: React.FC<SessionProps> = ({ charId, onClose }) => {
                                 <h3>这个下午已经度过过</h3>
                                 <div className="sub">— Your Treasured Moment —</div>
                             </div>
-                            <button className="l520-choice-row" onClick={() => pickMode('replay')}>
+                            <button className="l520-choice-row" onClick={() => void pickMode('replay')}>
                                 <span className="num">I</span>
                                 <span className="text">重 看 — 把那个下午再过一遍</span>
                             </button>
-                            <button className="l520-choice-row" onClick={() => pickMode('skip-to-letter')}>
+                            <button className="l520-choice-row" onClick={() => void pickMode('skip-to-letter')}>
                                 <span className="num">II</span>
                                 <span className="text">看 信 — 直接打开 ta 写的信</span>
                             </button>
-                            <button className="l520-choice-row" onClick={() => pickMode('fresh')}>
+                            <button className="l520-choice-row" onClick={() => void pickMode('fresh')}>
                                 <span className="num">III</span>
                                 <span className="text">重 来 — 清掉记录，重新做一次</span>
                             </button>
@@ -3412,6 +3447,7 @@ export const Like520Session: React.FC<SessionProps> = ({ charId, onClose }) => {
                         </div>
                     </div>
                 </div>
+                {confirmDialog}
             </div>
         );
     }

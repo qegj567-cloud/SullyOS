@@ -3,6 +3,7 @@ import { BookOpen, Check, Plus, X } from '@phosphor-icons/react';
 import type { CharacterProfile, VRLibraryCategory, VRWorldCharState, VRWorldNovelSummary } from '../../types';
 import { novelReadingMode, readingPreferenceLabel, type LibraryEdit } from '../../utils/vrWorld/library';
 import { getBookmark } from '../../utils/vrWorld/novel';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 import './vr-library.css';
 
 export function LibraryView({ novels, categories, characters, onOpen, onAdd, onDelete, onEdit, onPreference }: {
@@ -10,6 +11,7 @@ export function LibraryView({ novels, categories, characters, onOpen, onAdd, onD
     onOpen: (book: VRWorldNovelSummary) => void; onAdd: (categoryId?: string) => void; onDelete: (id: string) => Promise<void>;
     onEdit: (edit: LibraryEdit) => Promise<void>; onPreference: (char: CharacterProfile) => void;
 }) {
+    const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
     const [filter, setFilter] = useState('all'), [query, setQuery] = useState('');
     const [manage, setManage] = useState(false), [organize, setOrganize] = useState(false);
     const [selected, setSelected] = useState<string[]>([]), [target, setTarget] = useState('');
@@ -34,7 +36,7 @@ export function LibraryView({ novels, categories, characters, onOpen, onAdd, onD
             {[{id:'all',name:'全部'}, {id:'uncategorized',name:'未分类'}, ...categories].map(c => <button key={c.id} aria-pressed={filter === c.id} onClick={() => { setFilter(c.id); setPage(0); }}>{c.name}<small>{c.id === 'all' ? novels.length : novels.filter(n => c.id === 'uncategorized' ? !categoryMap.has(n.categoryId || '') : n.categoryId === c.id).length}</small></button>)}
         </nav>
         {manage && <section className="vrl-manage" aria-label="管理书籍分类"><p>重命名不会改变角色的阅读偏好。移除分类会把书放回未分类。</p><form onSubmit={e => { e.preventDefault(); void run(async () => { await onEdit(rename ? {kind:'rename',id:rename,name} : {kind:'create',id:crypto.randomUUID(),name}); setName(''); setRename(''); }); }}><input aria-label="分类名称" placeholder="如：网文、严肃文学" value={name} maxLength={24} onChange={e => setName(e.target.value)}/><button disabled={busy || !name.trim()}>{rename ? '保存名称' : '新建分类'}</button>{rename && <button type="button" onClick={() => {setRename('');setName('');}}>取消</button>}</form>
-            {categories.map(c => <div className="vrl-category-row" key={c.id}><span>{c.name}</span><button disabled={busy} onClick={() => {setRename(c.id);setName(c.name);}}>重命名</button><button disabled={busy} onClick={() => void run(async () => {await onEdit({kind:'remove',id:c.id}); if(filter === c.id)setFilter('uncategorized'); if(rename === c.id){setRename('');setName('');} if(target === c.id)setTarget('');})}>移除分类</button></div>)}
+            {categories.map(c => <div className="vrl-category-row" key={c.id}><span>{c.name}</span><button disabled={busy} onClick={() => {setRename(c.id);setName(c.name);}}>重命名</button><button disabled={busy} onClick={async () => {if (busy) return; if (!await requestConfirm({ title: `移除分类「${c.name}」？`, message: '该分类下的书籍会恢复为未分类。', confirmText: '移除分类' })) return; await run(async () => {await onEdit({kind:'remove',id:c.id}); if(filter === c.id)setFilter('uncategorized'); if(rename === c.id){setRename('');setName('');} if(target === c.id)setTarget('');});}}>移除分类</button></div>)}
         </section>}
         {organize && <section className="vrl-organize" aria-label="批量整理书籍"><div><span>已选 {selected.length} 本</span><button onClick={() => setSelected(s => [...new Set([...s,...visible.map(n => n.id)])])}>选择本页</button><button onClick={() => setSelected([])}>清空</button></div><div><select aria-label="移入分类" value={target} onChange={e => setTarget(e.target.value)}><option value="">未分类</option>{categories.map(c => <option value={c.id} key={c.id}>{c.name}</option>)}</select><button className="vrl-primary" disabled={busy || !selected.length} onClick={() => void run(async () => {await onEdit({kind:'assign',novelIds:selected,categoryId:target || undefined});setSelected([]);})}>移入分类</button></div></section>}
         {error && <p role="alert" className="vrl-error">{error}</p>}
@@ -43,11 +45,12 @@ export function LibraryView({ novels, categories, characters, onOpen, onAdd, onD
             {visible.map(n => { const reading = characters.filter(c => getBookmark(c.vrState?.novelBookmarks,n.id) > 0); return <article key={n.id} className="vrl-book">
                 {organize ? <input type="checkbox" aria-label={`选择《${n.title}》`} checked={selected.includes(n.id)} onChange={e => setSelected(s => e.target.checked ? [...s,n.id] : s.filter(id => id !== n.id))}/> : <BookOpen size={24} weight="light"/>}
                 <div className="vrl-book-copy"><button className="vrl-book-title" onClick={() => onOpen(n)}>{n.title}</button><p>{n.author || '佚名'} · {categoryMap.get(n.categoryId || '') || '未分类'}</p><small>{n.totalChars.toLocaleString()} 字{reading.length ? ` · ${reading.map(c => c.name).slice(0,3).join('、')}${reading.length > 3 ? ` 等 ${reading.length} 人` : ''}读过` : ' · 等待翻开'}</small></div>
-                {organize ? <button className="vrl-delete" disabled={busy} onClick={() => {if(window.confirm(`下架《${n.title}》？这本书的批注也会删除。`))void run(async () => {await onDelete(n.id);setSelected(s => s.filter(id => id !== n.id));});}}>下架</button> : <button aria-label={`阅读《${n.title}》的批注`} onClick={() => onOpen(n)}>翻开</button>}
+                {organize ? <button className="vrl-delete" disabled={busy} onClick={async () => {if (busy) return; if (!await requestConfirm({ title: `下架《${n.title}》？`, message: '这本书连同所有批注都会一并删除，无法恢复。', confirmText: '下架' })) return; await run(async () => {await onDelete(n.id);setSelected(s => s.filter(id => id !== n.id));});}}>下架</button> : <button aria-label={`阅读《${n.title}》的批注`} onClick={() => onOpen(n)}>翻开</button>}
             </article>; })}
         </div>
         {pages > 1 && <div className="vrl-pagination"><button disabled={!currentPage} onClick={() => setPage(currentPage - 1)}>上一页</button><span>{currentPage + 1} / {pages}</span><button disabled={currentPage === pages - 1} onClick={() => setPage(currentPage + 1)}>下一页</button></div>}
         <details className="vrl-readers"><summary>谁来读这些书 <span>角色阅读偏好</span></summary><p>选择分类后，新归入的书也会自动进入 ta 的阅读范围。</p><input aria-label="查找阅读角色" placeholder="查找角色" value={readerQuery} onChange={e => setReaderQuery(e.target.value)}/><div className="vrl-reader-list">{readers.map(c => <button key={c.id} onClick={() => onPreference(c)}><span>{c.name}</span><small>{readingPreferenceLabel(c)} ›</small></button>)}{!readers.length && <p>没有找到角色。</p>}</div></details>
+        {confirmDialog}
     </section>;
 }
 

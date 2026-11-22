@@ -241,7 +241,6 @@ describe('local export', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
-        vi.spyOn(window, 'confirm').mockReturnValue(true);
         vi.stubGlobal('URL', class extends URL {
             static createObjectURL = () => 'blob:backup';
             static revokeObjectURL = vi.fn();
@@ -252,11 +251,17 @@ describe('local export', () => {
     afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
     const exportButton = () => Array.from(host.querySelectorAll('button')).find(node => node.textContent?.includes('整合导出 (文字+媒体)'))!;
+    const confirmExport = async () => {
+        const confirmBtn = Array.from(host.querySelectorAll('button')).find(node => node.textContent?.trim() === '继续导出')!;
+        expect(confirmBtn).toBeTruthy();
+        await act(async () => confirmBtn.click());
+    };
     const exportFull = async () => {
         await act(async () => root.render(createElement(Settings)));
         const section = Array.from(host.querySelectorAll('section')).find(node => node.querySelector('h2')?.textContent === '备份与恢复 (ZIP)')!;
         await act(async () => section.querySelector('button')!.click());
         await act(async () => exportButton().click());
+        await confirmExport();
     };
     const clickManualDownload = async () => {
         const link = Array.from(host.querySelectorAll('a')).find(node => node.textContent?.includes('点击手动下载'))!;
@@ -276,6 +281,7 @@ describe('local export', () => {
         await exportFull();
         share.mockRejectedValue(new Error('无法拉起系统文件分享'));
         await act(async () => exportButton().click());
+        await confirmExport();
         expect(share).toHaveBeenCalledTimes(2);
         expect(markBackupDone).not.toHaveBeenCalled();
     });
@@ -290,6 +296,7 @@ describe('local export', () => {
 
         share.mockResolvedValue('downloaded');
         await act(async () => exportButton().click());
+        await confirmExport();
         expect(markBackupDone).toHaveBeenCalledTimes(2);
         await clickManualDownload();
         expect(markBackupDone).toHaveBeenCalledTimes(2);

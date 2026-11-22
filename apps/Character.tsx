@@ -12,6 +12,7 @@ import { useOS } from '../context/OSContext';
 import { AppID, CharacterProfile, CharacterExportData, UserImpression, MemoryFragment } from '../types';
 import { SlidersHorizontal, SpeakerHigh, Books, BookOpen } from '@phosphor-icons/react';
 import Modal from '../components/os/Modal';
+import { useConfirmDialog } from '../hooks/useConfirmDialog';
 import { processImage } from '../utils/file';
 import { DB } from '../utils/db';
 import { ContextBuilder } from '../utils/context';
@@ -111,6 +112,7 @@ const CharacterCard: React.FC<{
 
 const Character: React.FC<{ profileCharacterId?: string }> = ({ profileCharacterId }) => {
   const { closeApp, openApp, characters, activeCharacterId, setActiveCharacterId, addCharacter, updateCharacter, deleteCharacter, characterGroups, createCharacterGroup, renameCharacterGroup, deleteCharacterGroup, apiConfig, addToast, userProfile, worldbooks, addWorldbook } = useOS();
+  const { requestConfirm, confirmDialog } = useConfirmDialog();
   const launchIntent = profileCharacterId ? null : characterLaunch.peek();
   const [view, setView] = useState<'list' | 'detail'>(() => profileCharacterId || launchIntent ? 'detail' : 'list');
   const [charPage, setCharPage] = useState(0); // 角色列表分页（每页 6 个，仅未建分组时）
@@ -1950,7 +1952,20 @@ ${isInitialGeneration ? `
                                <div className="flex gap-1.5">
                                    <button onClick={(e) => { e.stopPropagation(); setEditingPrompt(p); setShowPromptEditor(true); }} className="text-[10px] text-slate-400 hover:text-indigo-500 px-2 py-0.5 rounded bg-slate-100 hover:bg-indigo-50">查看</button>
                                    {!p.id.startsWith('preset_') && (
-                                       <button onClick={(e) => { e.stopPropagation(); const next = archivePrompts.filter(ap => ap.id !== p.id); setArchivePrompts(next); localStorage.setItem('chat_archive_prompts', JSON.stringify(next.filter(ap => !ap.id.startsWith('preset_')))); if (selectedPromptId === p.id) setSelectedPromptId('preset_rational'); }} className="text-[10px] text-red-300 hover:text-red-500 px-1.5 py-0.5 rounded hover:bg-red-50">x</button>
+                                       <button onClick={async (e) => {
+                                           e.stopPropagation();
+                                           const ok = await requestConfirm({
+                                               title: `删除模板「${p.name}」？`,
+                                               message: '删除后该自定义总结提示词无法恢复。',
+                                               confirmText: '确认删除',
+                                               variant: 'danger',
+                                           });
+                                           if (!ok) return;
+                                           const next = archivePrompts.filter(ap => ap.id !== p.id);
+                                           setArchivePrompts(next);
+                                           localStorage.setItem('chat_archive_prompts', JSON.stringify(next.filter(ap => !ap.id.startsWith('preset_'))));
+                                           if (selectedPromptId === p.id) setSelectedPromptId('preset_rational');
+                                       }} className="text-[10px] text-red-300 hover:text-red-500 px-1.5 py-0.5 rounded hover:bg-red-50">x</button>
                                    )}
                                </div>
                            </div>
@@ -2133,7 +2148,17 @@ ${isInitialGeneration ? `
                                 />
                                 <span className="text-xs text-slate-400 tabular-nums shrink-0">{characters.filter(c => c.groupId === g.id).length} 个角色</span>
                                 <button
-                                    onClick={() => { deleteCharacterGroup(g.id); addToast(`分组「${g.name}」已删除，组内角色回到未分组`, 'info'); }}
+                                    onClick={async () => {
+                                        const ok = await requestConfirm({
+                                            title: `删除分组「${g.name}」？`,
+                                            message: '分组内的角色不会被删除，只会移回「未分组」。',
+                                            confirmText: '删除分组',
+                                            variant: 'danger',
+                                        });
+                                        if (!ok) return;
+                                        deleteCharacterGroup(g.id);
+                                        addToast(`分组「${g.name}」已删除，组内角色回到未分组`, 'info');
+                                    }}
                                     className="p-1.5 rounded-full text-slate-300 hover:bg-red-50 hover:text-red-400 transition-all shrink-0"
                                 >
                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
@@ -2224,6 +2249,7 @@ ${isInitialGeneration ? `
                 </p>
             </div>
         </Modal>
+        {confirmDialog}
     </div>
   );
 };

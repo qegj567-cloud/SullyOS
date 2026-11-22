@@ -12,11 +12,12 @@ import {FriendFeedGroupedList} from './FriendFeedGroupedList';
 export function FriendFeedWeiboConnection({circleId,onTimeline}:{circleId?:string;onTimeline?:()=>void}={}) {
     const [connection,setConnection]=useState(readWeiboConnection),[proxy,setProxy]=useState(getProxyWorkerUrl);
     const [accepted,setAccepted]=useState(false),[image,setImage]=useState(''),[status,setStatus]=useState(''),[busy,setBusy]=useState(false);
+    const [confirmingDisconnect,setConfirmingDisconnect]=useState(false);
     const controller=useRef<AbortController>(), timer=useRef<ReturnType<typeof setTimeout>>();
     useEffect(()=>{
-        const clear=()=>{controller.current?.abort();clearTimeout(timer.current);setImage('');setBusy(false);};
+        const clear=()=>{controller.current?.abort();clearTimeout(timer.current);setImage('');setBusy(false);setConfirmingDisconnect(false);};
         const changed=()=>{clear();setProxy(getProxyWorkerUrl());setConnection(readWeiboConnection());setAccepted(false);};
-        const connected=()=>setConnection(readWeiboConnection());
+        const connected=()=>{setConnection(readWeiboConnection());setConfirmingDisconnect(false);};
         window.addEventListener(PROXY_WORKER_CHANGED_EVENT,changed);window.addEventListener(WEIBO_CONNECTION_CHANGED,connected);
         return ()=>{controller.current?.abort();clearTimeout(timer.current);window.removeEventListener(PROXY_WORKER_CHANGED_EVENT,changed);window.removeEventListener(WEIBO_CONNECTION_CHANGED,connected);};
     },[]);
@@ -60,7 +61,14 @@ export function FriendFeedWeiboConnection({circleId,onTimeline}:{circleId?:strin
         {connection?<>
             <button type="button" className="ff-setting-button ff-setting-primary ff-full-width" disabled={busy||!circleId} onClick={()=>{controller.current?.abort();const abort=new AbortController();controller.current=abort;void readMine(abort);}}>{busy?'正在读取微博…':'同步微博首页'}</button>
             {onTimeline&&<button type="button" className="ff-setting-link ff-full-width" onClick={onTimeline}>查看动态<ArrowRight size={17} aria-hidden="true"/></button>}
-            <button type="button" className="ff-setting-button ff-setting-secondary ff-full-width" onClick={()=>{controller.current?.abort();clearTimeout(timer.current);setBusy(false);disconnectWeibo();setStatus('已断开，已同步内容保留');}}>断开连接</button>
+            {confirmingDisconnect?(
+                <div className="ff-setting-actions">
+                    <button type="button" className="ff-setting-button ff-setting-secondary" onClick={()=>{controller.current?.abort();clearTimeout(timer.current);setBusy(false);setConfirmingDisconnect(false);disconnectWeibo();setStatus('已断开，已同步内容保留');}}>确认断开连接</button>
+                    <button type="button" className="ff-setting-link" onClick={()=>setConfirmingDisconnect(false)}>取消</button>
+                </div>
+            ):(
+                <button type="button" className="ff-setting-button ff-setting-secondary ff-full-width" onClick={()=>setConfirmingDisconnect(true)}>断开连接</button>
+            )}
         </>:<>
             <label className="friend-feed-cover-option ff-consent"><input type="checkbox" checked={accepted} onChange={e=>setAccepted(e.target.checked)} disabled={busy}/>
                 <span>我了解登录凭据和读取内容会经过上述代理，愿意连接</span></label>

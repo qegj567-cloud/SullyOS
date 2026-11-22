@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle } f
 import { CharacterProfile, Message, DateState, DialogueItem, UserProfile, DateObservation } from '../../types';
 import Modal from '../../components/os/Modal';
 import { useOS } from '../../context/OSContext';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 
 import DateSettings from './DateSettings';
 import ObserveHUD from './ObserveHUD';
@@ -203,6 +204,7 @@ const DateSession: React.FC<DateSessionProps> = ({
     onSettings
 }) => {
     const { addToast, registerBackHandler, apiConfig, updateCharacter } = useOS();
+    const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
     
     const readingStyle = meetingAppearance(char.dateAppearance);
     const decoratedReading = readingStyle.id !== 'none';
@@ -838,6 +840,13 @@ const DateSession: React.FC<DateSessionProps> = ({
 
     const handleRerollClick = async () => {
         if (isTyping) return;
+        const ok = await requestConfirm({
+            title: '重新生成上一条回复？',
+            message: '将替换当前最后一条回复并重新生成，本次会重新发起一次 API 请求。',
+            confirmText: '重新生成',
+            variant: 'warning',
+        });
+        if (!ok || isTyping) return;
         setIsTyping(true);
         try {
             const aiContent = await onReroll();
@@ -932,6 +941,13 @@ const DateSession: React.FC<DateSessionProps> = ({
 
     const handleBatchDelete = async () => {
         if (selectedMsgIds.size === 0) return;
+        const ok = await requestConfirm({
+            title: `删除选中的 ${selectedMsgIds.size} 条记录？`,
+            message: '删除后无法恢复。',
+            confirmText: '确认删除',
+            variant: 'danger',
+        });
+        if (!ok) return;
         await onDeleteMessages(Array.from(selectedMsgIds));
         exitBatchMode();
     };
@@ -1397,9 +1413,21 @@ const DateSession: React.FC<DateSessionProps> = ({
                         setModalType('none');
                     }} className="w-full py-3 bg-slate-50 text-slate-700 font-medium rounded-2xl">复制文本</button>
                     <button onClick={() => { onEditMessage(selectedMessage!); setModalType('none'); }} className="w-full py-3 bg-slate-50 text-slate-700 font-medium rounded-2xl">编辑内容</button>
-                    <button onClick={() => { onDeleteMessage(selectedMessage!); setModalType('none'); }} className="w-full py-3 bg-red-50 text-red-500 font-medium rounded-2xl">删除记录</button>
+                    <button onClick={async () => {
+                        const target = selectedMessage;
+                        setModalType('none');
+                        if (!target) return;
+                        const ok = await requestConfirm({
+                            title: '删除这条见面记录？',
+                            message: '删除后无法恢复。',
+                            confirmText: '确认删除',
+                            variant: 'danger',
+                        });
+                        if (ok) onDeleteMessage(target);
+                    }} className="w-full py-3 bg-red-50 text-red-500 font-medium rounded-2xl">删除记录</button>
                 </div>
             </Modal>
+            <div style={{ display: 'contents' }} onClick={e => e.stopPropagation()}>{confirmDialog}</div>
         </div>
     );
 };

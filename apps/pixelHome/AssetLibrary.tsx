@@ -12,6 +12,7 @@ import { PixelAssetDB } from './pixelHomeDb';
 import PixelAssetGenerator from './PixelAssetGenerator';
 import { trackEvent } from '../../utils/analytics';
 import { shareOrDownloadBlob } from '../../utils/shareExport';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 
 interface Props {
   assets: PixelAsset[];
@@ -45,6 +46,7 @@ const ROOM_OPTIONS: Array<{ id: MemoryRoom | 'all_rooms'; label: string; tag: st
 ];
 
 const AssetLibrary: React.FC<Props> = ({ assets, onChanged, onSelectAsset, isSelecting }) => {
+  const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
   /** 顶部大 tab：仓库浏览 vs 像素工坊（合并自底部入口，避免混淆） */
   const [subView, setSubView] = useState<'library' | 'workshop'>('library');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -157,12 +159,20 @@ const AssetLibrary: React.FC<Props> = ({ assets, onChanged, onSelectAsset, isSel
 
   // 删除选中
   const handleDeleteSelected = useCallback(async () => {
+    if (selectedIds.size === 0) return;
+    const ok = await requestConfirm({
+      title: `删除选中的 ${selectedIds.size} 件像素素材？`,
+      message: '删除后无法恢复；房间内使用这些素材的家具也会失去对应图像。',
+      confirmText: '确认删除',
+      variant: 'danger',
+    });
+    if (!ok) return;
     for (const id of selectedIds) await PixelAssetDB.delete(id);
     setSelectedIds(new Set());
     setSelectMode(false);
     onChanged();
     trackEvent('批量删除像素素材');
-  }, [selectedIds, onChanged]);
+  }, [selectedIds, onChanged, requestConfirm]);
 
   // 导出
   const handleExportZip = useCallback(async () => {
@@ -298,7 +308,7 @@ const AssetLibrary: React.FC<Props> = ({ assets, onChanged, onSelectAsset, isSel
           {selectMode && selectedIds.size > 0 && (
             <>
               <BatchTagBtn onAdd={batchAddTag} />
-              <button onClick={handleDeleteSelected}
+              <button onClick={() => void handleDeleteSelected()}
                 className="px-2 py-1 rounded text-[10px] font-bold bg-red-700 text-white active:scale-95">删除</button>
             </>
           )}
@@ -401,6 +411,7 @@ const AssetLibrary: React.FC<Props> = ({ assets, onChanged, onSelectAsset, isSel
           })}
         </div>
       </div>
+      {confirmDialog}
     </div>
   );
 };

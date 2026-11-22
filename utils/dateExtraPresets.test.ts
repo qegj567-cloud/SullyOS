@@ -35,7 +35,8 @@ it('applies, duplicates, updates and deletes presets without clearing the curren
         expect(saved).toHaveLength(3); expect(saved[2].content).toBe('新的生活细节');
         await choose('b'); expect(draft).toBe('加快节奏');
         await act(async () => edit('放慢节奏'));
-        await click('更新所选预设'); expect(saved[1].content).toBe('放慢节奏');
+        await click('更新所选预设'); expect(saved[1].content).toBe('加快节奏');
+        await click('确认覆盖所选预设'); expect(saved[1].content).toBe('放慢节奏');
         await click('删除预设'); expect(saved).toHaveLength(3);
         await click('确认删除预设（保留当前补充）');
         expect(saved).toHaveLength(2); expect(draft).toBe('放慢节奏');

@@ -26,6 +26,7 @@ import { isBlobRef } from '../../utils/blobRef';
 import { useLocalDateKey } from '../../hooks/useLocalDateKey';
 import { resolveCharTimeZone } from '../../utils/timezone';
 import { trackEvent } from '../../utils/analytics';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 
 interface Props {
   charId: string;
@@ -71,6 +72,7 @@ function MusicBio({ bio }: { bio?: string }) {
 
 const CharVisitPage: React.FC<Props> = ({ charId, onBack, onOpenPlayer }) => {
   const { characters, updateCharacter, userProfile, apiConfig, addToast } = useOS();
+  const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
   const {
     cfg, playSong,
     current, playing, togglePlay, nextSong, prevSong,
@@ -185,9 +187,12 @@ const CharVisitPage: React.FC<Props> = ({ charId, onBack, onOpenPlayer }) => {
   /** 清掉旧档案重新走一次 LLM —— 给旧版保底生成的"告五人"账号用。 */
   const doRegenerate = useCallback(async () => {
     if (!char || initializing) return;
-    const ok = typeof window !== 'undefined'
-      ? window.confirm(`清空 ${char.name} 现有的音乐人格，重新让 LLM 生成？\n（歌单里已填的歌也会丢）`)
-      : true;
+    const ok = await requestConfirm({
+      title: '重新生成音乐人格？',
+      message: `清空 ${char.name} 现有的音乐人格，重新让 LLM 生成？（歌单里已填的歌也会丢失）`,
+      confirmText: '重新生成',
+      variant: 'warning',
+    });
     if (!ok) return;
     setInitializing(true);
     try {
@@ -200,7 +205,7 @@ const CharVisitPage: React.FC<Props> = ({ charId, onBack, onOpenPlayer }) => {
     } finally {
       setInitializing(false);
     }
-  }, [char, initializing, userProfile, apiConfig, updateCharacter, addToast]);
+  }, [char, initializing, requestConfirm, userProfile, apiConfig, updateCharacter, addToast]);
 
   const togglePlaylist = (plId: string) => {
     setExpandedPl(prev => (prev === plId ? null : plId));
@@ -208,12 +213,15 @@ const CharVisitPage: React.FC<Props> = ({ charId, onBack, onOpenPlayer }) => {
   };
 
   /** 把当前选中的歌从歌单里一起删掉（弹一次确认） */
-  const deleteSelected = (pl: CharPlaylist) => {
+  const deleteSelected = async (pl: CharPlaylist) => {
     if (!char || !profile || selectedSongIds.size === 0) return;
     const n = selectedSongIds.size;
-    const ok = typeof window !== 'undefined'
-      ? window.confirm(`从《${pl.title}》移除选中的 ${n} 首歌？`)
-      : true;
+    const ok = await requestConfirm({
+      title: '移除选中歌曲？',
+      message: `确定从《${pl.title}》移除选中的 ${n} 首歌吗？`,
+      confirmText: '移除',
+      variant: 'danger',
+    });
     if (!ok) return;
     const nextPlaylists = removeSongsFromPlaylist(profile.playlists, pl.id, selectedSongIds, Date.now());
     updateCharacter(char.id, {
@@ -335,6 +343,7 @@ const CharVisitPage: React.FC<Props> = ({ charId, onBack, onOpenPlayer }) => {
         <div className="flex-1 flex items-center justify-center text-sm" style={{ color: C.muted }}>
           找不到这个角色。
         </div>
+        {confirmDialog}
       </div>
     );
   }
@@ -721,6 +730,7 @@ const CharVisitPage: React.FC<Props> = ({ charId, onBack, onOpenPlayer }) => {
           onNext={nextSong}
         />
       )}
+      {confirmDialog}
     </div>
   );
 };

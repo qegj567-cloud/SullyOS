@@ -105,9 +105,73 @@ import {createHome,validateHome,addRoom,findPlace,placementError,clone,PALETTE,S
 import {homeRecords as readHomeRecords,makeHomeRecord} from '../../utils/homeRecords';
 import {assignHomeTurns} from '../../utils/homeTurns';
 import {stampHomeSceneRecords} from '../../utils/homeSharedEvents';
+import {registerLocalBackHandler} from '../../utils/localBackHandlers';
 
 const esc=v=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const colors=new Set(['lavender','purple','pink','blush','peri','rug']);
+function confirmWithDialog({title,message,confirmText='确认',cancelText='取消',signal}={}){
+ return new Promise(resolve=>{
+  if(typeof document==='undefined'||!document.body||signal?.aborted){resolve(false);return;}
+  const dlg=document.createElement('dialog');
+  dlg.setAttribute('aria-modal','true');
+  Object.assign(dlg.style,{
+   padding:'0',border:'1px solid rgba(148,163,184,0.22)',borderRadius:'18px',
+   background:'#ffffff',color:'#1e293b',boxShadow:'0 20px 50px rgba(15,23,42,0.25)',
+   maxWidth:'340px',width:'calc(100% - 32px)',margin:'auto',
+   fontFamily:'system-ui,-apple-system,sans-serif',overflow:'hidden',
+  });
+  const body=document.createElement('div');
+  Object.assign(body.style,{padding:'20px 20px 16px'});
+  const heading=document.createElement('h3');
+  heading.textContent=title||'';
+  Object.assign(heading.style,{margin:'0 0 8px',fontSize:'16px',fontWeight:'700',lineHeight:'1.4',color:'#1e293b'});
+  const msg=document.createElement('p');
+  msg.textContent=message||'';
+  Object.assign(msg.style,{margin:'0',fontSize:'13px',lineHeight:'1.6',color:'#64748b'});
+  body.append(heading,msg);
+  const actions=document.createElement('div');
+  Object.assign(actions.style,{
+   display:'flex',justifyContent:'flex-end',gap:'10px',padding:'12px 20px',
+   background:'#f8fafc',borderTop:'1px solid #f1f5f9',
+  });
+  const cancelBtn=document.createElement('button');
+  cancelBtn.type='button';cancelBtn.textContent=cancelText;
+  Object.assign(cancelBtn.style,{
+   padding:'8px 16px',borderRadius:'12px',border:'1px solid #e2e8f0',
+   background:'#ffffff',color:'#475569',fontSize:'13px',fontWeight:'600',cursor:'pointer',
+  });
+  const okBtn=document.createElement('button');
+  okBtn.type='button';okBtn.textContent=confirmText;
+  Object.assign(okBtn.style,{
+   padding:'8px 16px',borderRadius:'12px',border:'none',
+   background:'#ef4444',color:'#ffffff',fontSize:'13px',fontWeight:'700',cursor:'pointer',
+  });
+  actions.append(cancelBtn,okBtn);
+  dlg.append(body,actions);
+  let settled=false,unregisterBack=null;
+  const finish=result=>{
+   if(settled)return;settled=true;
+   signal?.removeEventListener('abort',onAbort);
+   try{unregisterBack?.();}catch{}
+   try{if(dlg.open&&typeof dlg.close==='function')dlg.close();}catch{}
+   dlg.remove();
+   resolve(result);
+  };
+  const onAbort=()=>finish(false);
+  cancelBtn.addEventListener('click',()=>finish(false));
+  okBtn.addEventListener('click',()=>finish(true));
+  dlg.addEventListener('cancel',e=>{e.preventDefault();finish(false);});
+  dlg.addEventListener('close',()=>finish(false));
+  dlg.addEventListener('click',e=>{if(e.target===dlg)finish(false);});
+  signal?.addEventListener('abort',onAbort,{once:true});
+  document.body.append(dlg);
+  unregisterBack=registerLocalBackHandler(()=>{finish(false);return true;},120);
+  const openFallback=()=>{Object.assign(dlg.style,{position:'fixed',inset:'0',zIndex:'10000'});dlg.setAttribute('open','');};
+  if(typeof dlg.showModal==='function'){try{dlg.showModal();}catch{openFallback();}}
+  else openFallback();
+  cancelBtn.focus?.();
+ });
+}
 export async function mountHomeEditor(host,{assetBase,initialState,onChange,onBack,onMenu,storageKey,signal,timeZone,thumbnailExport,firstPerson=false}={}){
  const knownHomeRecords=new Map(readHomeRecords(initialState).map(record=>[record.id,record]));
  host.classList.add('home3d');host.innerHTML='<div class="h3-stage"></div><div class="h3-ui"></div><div class="h3-loading">正在把家具搬进来…</div>';
@@ -1694,7 +1758,7 @@ export async function mountHomeEditor(host,{assetBase,initialState,onChange,onBa
   if(['room-palette','room-style-preset','house-theme'].includes(d.action)&&hasFixedRoomPalette(current())){notify('万圣节小屋保留主题原色，不支持一键染色');return;}
   if(d.action==='home-palette'){commit(()=>{for(const room of state.rooms)applyRoomPalette(room,d.value,catalog);state.homePalette=d.value;message=state.rooms.some(hasFixedRoomPalette)?'配色已更新，万圣节小屋保留原色':'全屋配色已更新';});return;}
   if(d.action==='room-palette'){commit(()=>{applyRoomPalette(current(),d.value,catalog);message='已应用'+ROOM_PALETTES[d.value].name;});return;}
-  if(d.action==='reset-room-layout'){const source=defaultRoomLayout(state,current(),catalog);if(!source){notify('这间房没有初始模板',true);return;}if(!confirm('恢复当前房间的初始家具与配色？房间名字和收纳箱会保留，可以撤销。'))return;commit(()=>{const room=current();source.name=room.name;const template=room.defaultTemplate;state=applyRoomLayout(state,room.id,source,catalog);if(template)current().defaultTemplate=template;selected=null;panel=null;rotationPreview=null;message='已恢复当前房间初始布局，可撤销';},{templateUpgrade:true});return;}
+  if(d.action==='reset-room-layout'){const targetRoomId=current().id,source=defaultRoomLayout(state,current(),catalog);if(!source){notify('这间房没有初始模板',true);return;}void (async()=>{const ok=await confirmWithDialog({title:'恢复当前房间初始布局？',message:'恢复当前房间的初始家具与配色？房间名字和收纳箱会保留，可以撤销。',confirmText:'确认恢复',signal:abort.signal});if(!ok||destroyed)return;const room=state.rooms.find(r=>r.id===targetRoomId);if(!room)return;const freshSource=defaultRoomLayout(state,room,catalog);if(!freshSource){notify('这间房没有初始模板',true);return;}commit(()=>{freshSource.name=room.name;const template=room.defaultTemplate;state=applyRoomLayout(state,room.id,freshSource,catalog);if(template)room.defaultTemplate=template;selected=null;panel=null;rotationPreview=null;message='已恢复当前房间初始布局，可撤销';},{templateUpgrade:true});})();return;}
   if(d.action==='room-style-preset'){commit(()=>applyShowroomStyle(current(),d.value));return;}
   if(d.action==='room-finish'){const options=d.part==='floorStyle'?FLOOR_STYLES:d.part==='wallStyle'?WALL_STYLES:null;if(options&&Object.prototype.hasOwnProperty.call(options,d.value))commit(()=>{current()[d.part]=d.value});return}
   if(d.action==='style-room'){activateRoom(state.rooms.find(r=>r.id===d.id));selected=null;persist();rebuild();renderUI();return}

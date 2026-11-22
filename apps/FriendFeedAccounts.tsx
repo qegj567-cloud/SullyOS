@@ -10,6 +10,7 @@ export default function FriendFeedAccounts({value, onChange, characters, groups 
     value: FriendFeedSettings; onChange: (next: FriendFeedSettings) => void; characters: CharacterProfile[]; groups?: CharacterGroup[]; disabled: boolean; section: 'profile' | 'weights' | 'accounts';
 }) {
     const [selected, setSelected] = useState(characters[0]?.id || '');
+    const [confirmingRemoveId, setConfirmingRemoveId] = useState<string | null>(null);
     const char = characters.find(c => c.id === selected) || characters[0];
     const identity = value.identities[char?.id] || {tags: [], accounts: []};
     const update = (patch: Partial<FriendIdentity>) => char && onChange({...value, identities: {...value.identities, [char.id]: {...identity, ...patch}}});
@@ -31,7 +32,7 @@ export default function FriendFeedAccounts({value, onChange, characters, groups 
         </section>}
         {section === 'accounts' && <section className="ff-preferences-section" data-setup-section="accounts" tabIndex={-1} aria-label="角色账号">
             <p className="friend-feed-settings-hint">每位角色有一个主号、最多三个小号。填写各账号的用途，角色会自己选用；发帖和评论都记到原角色的上下文。</p>
-            {char && <><FriendFeedCharacterPicker characters={characters} groups={groups} label="编辑角色账号" value={char.id} onChange={setSelected} disabled={disabled}/>
+            {char && <><FriendFeedCharacterPicker characters={characters} groups={groups} label="编辑角色账号" value={char.id} onChange={(id) => { setSelected(id); setConfirmingRemoveId(null); }} disabled={disabled}/>
                 <label className="ff-setting-field">主号网名<input aria-label="角色主号网名" value={identity.nickname||''} maxLength={40} disabled={disabled} placeholder={char.name} onChange={e=>update({nickname:e.target.value})}/></label>
                 <label className="ff-setting-field">主号公开简介<textarea value={identity.bio||''} maxLength={1000} rows={2} disabled={disabled} placeholder="所有看到这个账号的网友都能读到。" onChange={e=>update({bio:e.target.value})}/></label>
                 <label className="ff-setting-field">主号用途与身份<textarea value={identity.purpose||''} maxLength={300} rows={2} disabled={disabled} placeholder="仅告诉角色本人，指导这个账号的发言。" onChange={e=>update({purpose:e.target.value})}/></label>
@@ -45,7 +46,14 @@ export default function FriendFeedAccounts({value, onChange, characters, groups 
                     <label className="ff-setting-field">公开简介<textarea value={account.bio||''} maxLength={1000} rows={2} placeholder="给网友看的介绍；上面的用途与身份只给本人。" onChange={e=>update({accounts:identity.accounts.map(a=>a.id===account.id?{...a,bio:e.target.value}:a)})}/></label>
                     <label className="ff-setting-field">标签<input key={account.tags.join(',')} defaultValue={account.tags.join('，')} maxLength={240} placeholder="用逗号分开"
                         onBlur={e => update({accounts: identity.accounts.map(a => a.id === account.id ? {...a, tags: tags(e.target.value)} : a)})}/></label>
-                    <button className="ff-setting-link" type="button" onClick={() => update({accounts: identity.accounts.filter(a => a.id !== account.id)})}>移除这个小号</button>
+                    {confirmingRemoveId === account.id ? (
+                        <div className="ff-setting-actions">
+                            <button className="ff-setting-button ff-setting-secondary" type="button" onClick={() => { setConfirmingRemoveId(null); update({accounts: identity.accounts.filter(a => a.id !== account.id)}); }}>确认移除小号</button>
+                            <button className="ff-setting-link" type="button" onClick={() => setConfirmingRemoveId(null)}>取消</button>
+                        </div>
+                    ) : (
+                        <button className="ff-setting-link" type="button" onClick={() => setConfirmingRemoveId(account.id)}>移除这个小号</button>
+                    )}
                 </fieldset>)}
                 <button className="ff-setting-button ff-setting-secondary" type="button" disabled={disabled || identity.accounts.length >= 3}
                     onClick={() => update({accounts: [...identity.accounts, {id: createLocalId(), name: `未命名账号 ${identity.accounts.length + 1}`, purpose: '', tags: []}]})}>添加小号 · {identity.accounts.length}/3</button>

@@ -22,6 +22,7 @@ import TokenImg from '../../components/os/TokenImg';
 import { CreatorIframe } from '../../components/Like520Event';
 import type { VRScript, VRStagedPlay, VRCastAssign, VRActorNote, VRStageMode, VRPlayRole, Emoji, EmojiCategory, CharacterProfile } from '../../types';
 import { shareOrDownloadFile } from '../../utils/shareExport';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 
 const tid = (p: string) => `${p}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 const SERIF = `'Noto Serif SC',serif`;
@@ -96,6 +97,7 @@ type View = 'list' | 'script' | 'stage' | 'play';
 
 const TheaterPanel: React.FC<{ addToast?: (m: string, t?: any) => void }> = ({ addToast }) => {
     const { characters, userProfile, groups, apiConfig } = useOS();
+    const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
     const [tab, setTab] = useState<'scripts' | 'history'>('scripts');
     const [scripts, setScripts] = useState<VRScript[]>([]);
     const [plays, setPlays] = useState<VRStagedPlay[]>([]);
@@ -201,7 +203,7 @@ const TheaterPanel: React.FC<{ addToast?: (m: string, t?: any) => void }> = ({ a
                         )
                     )}
 
-                    {view === 'script' && cur && <ScriptView script={cur} onBack={() => setView('list')} onStage={() => setView('stage')} onDelete={async () => { await DB.deleteVRScript(cur.id); await reload(); setView('list'); addToast?.('已删除', 'success'); }} />}
+                    {view === 'script' && cur && <ScriptView script={cur} onBack={() => setView('list')} onStage={() => setView('stage')} onDelete={async () => { const target = cur; const ok = await requestConfirm({ title: `删除剧本《${target.title}》？`, message: '删除后无法恢复（已上演的历史舞台剧演出会保留）。', confirmText: '确认删除', variant: 'danger' }); if (!ok) return; await DB.deleteVRScript(target.id); await reload(); setView('list'); addToast?.('已删除', 'success'); }} />}
                     {view === 'stage' && cur && <StageView script={cur} ctx={ctx} apiConfig={apiConfig} addToast={addToast} onBack={() => setView('list')} onPolished={(body) => setCur({ ...cur, body })} onStaged={async (play) => { await DB.saveVRStagedPlay(play); await reload(); setCurPlay(play); setView('play'); }} />}
                     {view === 'play' && curPlay && <PlaybackView play={curPlay} characters={characters} onBack={() => { setView('list'); setTab('history'); }} onDelete={async () => { await DB.deleteVRStagedPlay(curPlay.id); await reload(); setView('list'); setTab('history'); addToast?.('已删除这场演出', 'success'); }} />}
                 </div>
@@ -209,6 +211,7 @@ const TheaterPanel: React.FC<{ addToast?: (m: string, t?: any) => void }> = ({ a
 
             <WriteScriptModal open={writeOpen} onClose={() => setWriteOpen(false)} onSave={async (p) => { const s: VRScript = { id: tid('scr'), ...p, authorId: 'user', authorName: userProfile?.name || '我', source: 'user', createdAt: Date.now() }; await DB.saveVRScript(s); await reload(); setWriteOpen(false); addToast?.(`已投稿《${s.title}》`, 'success'); }} />
             <LLMScriptModal open={llmOpen} onClose={() => setLlmOpen(false)} apiConfig={apiConfig} addToast={addToast} onSaved={async () => { await reload(); setLlmOpen(false); }} />
+            {confirmDialog}
         </>
     );
 };
@@ -587,6 +590,7 @@ const PlaybackView: React.FC<{ play: VRStagedPlay; characters: CharacterProfile[
 // 自带"自定义预设"的增删，自管理 customPresets，并通过 'vr-presets-changed' 事件互相同步。
 // onChange 同时把选中预设的完整 prompt 抛给父组件（含自定义的）。
 const PresetChips: React.FC<{ value: string; onChange: (key: string, prompt: string) => void }> = ({ value, onChange }) => {
+    const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
     const [custom, setCustom] = useState<WritingPreset[]>([]);
     const [editing, setEditing] = useState(false);
     const [name, setName] = useState(''); const [prompt, setPrompt] = useState('');
@@ -607,9 +611,16 @@ const PresetChips: React.FC<{ value: string; onChange: (key: string, prompt: str
         setEditing(false); setName(''); setPrompt('');
         await load(); window.dispatchEvent(new CustomEvent('vr-presets-changed'));
     };
-    const del = async (key: string) => {
-        await DB.deleteVRPreset(key);
-        if (value === key) onChange('', '');
+    const del = async (preset: WritingPreset) => {
+        const ok = await requestConfirm({
+            title: `删除风格预设「${preset.name}」？`,
+            message: '删除后无法恢复。',
+            confirmText: '确认删除',
+            variant: 'danger',
+        });
+        if (!ok) return;
+        await DB.deleteVRPreset(preset.key);
+        if (value === preset.key) onChange('', '');
         await load(); window.dispatchEvent(new CustomEvent('vr-presets-changed'));
     };
 
@@ -623,7 +634,7 @@ const PresetChips: React.FC<{ value: string; onChange: (key: string, prompt: str
                     return (
                         <span key={p.key} onClick={() => onChange(on ? '' : p.key, on ? '' : p.prompt)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 999, fontSize: 11, cursor: 'pointer', border: `1px solid ${on ? TH.gold : TH.line}`, background: on ? 'rgba(216,178,113,.16)' : TH.bg3, color: on ? TH.gold : TH.sub }}>
                             {p.name}{isCustom && <span style={{ fontSize: 8.5, opacity: .6 }}>·我的</span>}
-                            {isCustom && <span onClick={(e) => { e.stopPropagation(); void del(p.key); }} style={{ marginLeft: 1, fontSize: 12, lineHeight: 1, color: TH.crimson }}>×</span>}
+                            {isCustom && <span onClick={(e) => { e.stopPropagation(); void del(p); }} style={{ marginLeft: 1, fontSize: 12, lineHeight: 1, color: TH.crimson }}>×</span>}
                         </span>
                     );
                 })}
@@ -640,6 +651,7 @@ const PresetChips: React.FC<{ value: string; onChange: (key: string, prompt: str
                     </div>
                 </TModal>
             )}
+            <div style={{ display: 'contents' }} onClick={e => e.stopPropagation()}>{confirmDialog}</div>
         </div>
     );
 };

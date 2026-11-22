@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 import { useLocalBackHandler } from '../../hooks/useLocalBackHandler';
 import Modal from '../os/Modal';
 import SettingsDetailPage from '../settings/SettingsDetailPage';
@@ -148,6 +149,7 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
   const [editingTaskUuid, setEditingTaskUuid] = useState<string | null>(null);
   const [taskEditorOpen, setTaskEditorOpen] = useState(false);
   const [timeAwareConfirmOpen, setTimeAwareConfirmOpen] = useState(false);
+  const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
   const contentRef = useRef<HTMLDivElement>(null);
   const closeTaskEditor = () => { if (!isSubmitting) setTaskEditorOpen(false); };
   useLocalBackHandler(() => { closeTaskEditor(); return true; }, 45, isOpen && taskEditorOpen && !pacingOpen);
@@ -509,6 +511,11 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
       );
       return;
     }
+    if (!(await requestConfirm({
+      title: '取消这条主动消息排程？',
+      message: '取消后角色不会在原定时间发送这条消息。',
+      confirmText: '确认取消',
+    }))) return;
     // alreadyGone = 远端本来就没有这一条（一次性任务发完就删行）。这也是取消成功，
     // 只是文案上说清楚，免得用户以为自己刚刚拦下了一条还没发的消息。
     let alreadyGone = false;
@@ -1115,6 +1122,7 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
       selfRecurringTaskCount={selfRecurringTaskCount}
       onSubmit={handleSavePacing}
     />
+    {confirmDialog}
     </>
   );
 };

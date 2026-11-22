@@ -26,6 +26,7 @@ import { isAnalyticsConfigured, isAnalyticsEnabled, setAnalyticsEnabled, trackEv
 import '../components/settings/realtimeSettings.css';
 import SettingsDetailPage from '../components/settings/SettingsDetailPage';
 import Modal from '../components/os/Modal';
+import { useConfirmDialog } from '../hooks/useConfirmDialog';
 import UserHolidaySettings from '../components/settings/UserHolidaySettings';
 import UserLocationSettings, { awarenessSections, USER_LOCATION_PAGE_TITLES, getUserLocationParentPage, type UserLocationSettingsPage } from '../components/settings/UserLocationSettings';
 import { useLocalBackHandler } from '../hooks/useLocalBackHandler';
@@ -554,6 +555,7 @@ const Settings: React.FC = () => {
       cloudBackupConfig, updateCloudBackupConfig,
       cloudBackupToWebDAV, cloudRestoreFromWebDAV, listCloudBackups,
   } = useOS();
+  const { requestConfirm, confirmDialog } = useConfirmDialog();
   
   const [localKey, setLocalKey] = useState(apiConfig.apiKey);
   const [localUrl, setLocalUrl] = useState(apiConfig.baseUrl);
@@ -683,7 +685,13 @@ const Settings: React.FC = () => {
   };
   // 一键还原全部「聊天白框自定义 CSS」：清掉全局 + 每个角色自带的。
   // 兼作救援：单角色的坏 CSS 把聊天界面整崩、进不去该角色设置时，从这里一键全清即可恢复。
-  const resetAllChromeCss = () => {
+  const resetAllChromeCss = async () => {
+    const ok = await requestConfirm({
+      title: '还原全部聊天白框美化？',
+      message: '将清除全局与所有角色的聊天白框 CSS，聊天记录、角色设定与预设收藏均会保留。',
+      confirmText: '确认还原',
+    });
+    if (!ok) return;
     let n = 0;
     if (theme.chatChromeCustomCss) { updateTheme({ chatChromeCustomCss: '' }); n++; }
     (characters || []).forEach((c: any) => {
@@ -693,6 +701,12 @@ const Settings: React.FC = () => {
   };
 
   const handleJournalAppearanceEmergencyReset = async () => {
+    const ok = await requestConfirm({
+      title: '重置交换日记美化？',
+      message: '将清除交换日记的自定义样式与 CSS，恢复原版样式。',
+      confirmText: '确认重置',
+    });
+    if (!ok) return;
     await updateTheme({ journalAppearance: undefined });
     addToast('已从系统设置还原交换日记原版样式', 'success');
   };
@@ -1136,9 +1150,15 @@ const Settings: React.FC = () => {
       setCopyingPreset(true);
   };
 
-  const deleteEditedPreset = () => {
+  const deleteEditedPreset = async () => {
       const preset = apiPresets.find(item => item.id === editingPresetId);
-      if (!preset || !window.confirm(`确定删除预设「${preset.name}」？`)) return;
+      if (!preset) return;
+      const ok = await requestConfirm({
+          title: `确定删除预设「${preset.name}」？`,
+          message: '删除后需要重新填写配置才能加回。',
+          confirmText: '确认删除',
+      });
+      if (!ok) return;
       removeApiPreset(preset.id);
       trackEvent('删除 API 预设');
       setEditingPresetId(null);
@@ -1460,7 +1480,18 @@ const Settings: React.FC = () => {
               scan.removedEmojiCount > 0 ? `• 删除 ${scan.removedEmojiCount} 个随分类失效/无主的表情` : '',
               scan.fixedCategories.length > 0 ? `• 修复 ${scan.fixedCategories.length} 个分类里指向已删角色的绑定：${scan.fixedCategories.map(c => `「${c.name}」`).join('、')}` : '',
           ].filter(Boolean).join('\n');
-          if (!window.confirm(`扫描到以下残留（角色已删除但表情包还在）：\n\n${lines}\n\n点「确定」清理，此操作不可撤销。`)) return;
+          const ok = await requestConfirm({
+              title: '清理无主表情分类？',
+              message: (
+                  <div className="space-y-2">
+                      <p>扫描到以下残留（角色已删除但表情包还在）：</p>
+                      <div className="whitespace-pre-line text-xs text-slate-600 bg-slate-50 rounded-xl p-2.5">{lines}</div>
+                      <p className="text-xs text-rose-500">此操作不可撤销。</p>
+                  </div>
+              ),
+              confirmText: '确认清理',
+          });
+          if (!ok) return;
           const report = await DB.cleanupEmojiResidue(validIds);
           addToast(`清理完成：删除 ${report.removedCategories.length} 个分类、${report.removedEmojiCount} 个表情${report.fixedCategories.length > 0 ? `，修复 ${report.fixedCategories.length} 处绑定` : ''}`, 'success');
       } catch (err) {
@@ -1476,18 +1507,23 @@ const Settings: React.FC = () => {
       try {
           // 二次确认：整包备份（full / text_only）本就包含你的 API 密钥等设置——这是预期行为，
           // 但绝不能发给别人。media_only 只有媒体、不含密钥，视为可分享。
-          if (typeof window !== 'undefined' && typeof window.confirm === 'function') {
-              const includesSettings = mode !== 'media_only';
-              const includesBackend = includesSettings && exportBackendConnection;
-              const msg = includesBackend
-                  ? '该导出数据包含了明文密钥，以及主动消息 2.0 的后端连接（Worker 地址与主密钥）。拿到这个文件的人可以连上你那台 Worker，请不要发送给任何人'
-                  : includesSettings
-                  ? '该导出数据包含了明文密钥，请不要发送给任何人'
-                  : '该导出内容安全，可以用于分享';
-              if (!window.confirm(`${msg}\n\n点「确定」继续导出，「取消」中止。`)) {
-                  trackEvent('取消导出前的密钥确认', { mode });
-                  return;
-              }
+          const includesSettings = mode !== 'media_only';
+          const includesBackend = includesSettings && exportBackendConnection;
+          const msg = includesBackend
+              ? '该导出数据包含了明文密钥，以及主动消息 2.0 的后端连接（Worker 地址与主密钥）。拿到这个文件的人可以连上你那台 Worker，请不要发送给任何人'
+              : includesSettings
+              ? '该导出数据包含了明文密钥，请不要发送给任何人'
+              : '该导出内容安全，可以用于分享';
+          const ok = await requestConfirm({
+              title: includesSettings ? '导出前安全提醒' : '确认导出媒体包',
+              message: msg,
+              confirmText: '继续导出',
+              cancelText: '取消',
+              variant: includesSettings ? 'warning' : 'info',
+          });
+          if (!ok) {
+              trackEvent('取消导出前的密钥确认', { mode });
+              return;
           }
 
           // Trigger export (Context handles loading state UI)
@@ -1523,19 +1559,42 @@ const Settings: React.FC = () => {
 
   // 本地导入和云端恢复共用。备份里带着 Worker 后端连接时问一句：程序分不清这份文件是自己的
   // 还是别人的（换新设备时用户 id 本来就对不上），只有拿着文件的人知道，所以把话问出去。
-  const confirmBackendRestore = (workerUrl: string) => window.confirm(
-      `这份备份里带着一个主动消息 2.0 的后端连接：\n\n${workerUrl}\n\n`
-      + '如果这是你自己导出的备份，点「确定」连上它。\n\n'
-      + '如果是别人给你的，点「取消」——连上去的话，你的 API 密钥和聊天记录会被写进对方那台服务器。\n\n'
-      + '（不连也不影响其它数据导入，之后可以在设置里手动填。）',
-  );
+  const confirmBackendRestore = (workerUrl: string) => requestConfirm({
+      title: '连上备份里的主动消息后端？',
+      message: (
+          <div className="space-y-2">
+              <p>这份备份里带着一个主动消息 2.0 的后端连接：</p>
+              <p className="font-mono text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 break-all text-slate-700">{workerUrl}</p>
+              <p>如果这是你自己导出的备份，点「连上后端」。</p>
+              <p>如果是别人给你的，点「不连，仅导数据」——连上去的话，你的 API 密钥和聊天记录会被写进对方那台服务器。</p>
+              <p className="text-xs text-slate-400">（不连也不影响其它数据导入，之后可以在设置里手动填。）</p>
+          </div>
+      ),
+      confirmText: '连上后端',
+      cancelText: '不连，仅导数据',
+      variant: 'warning',
+  });
 
-  const handleImport = (e: React.ChangeEvent<HTMLInputElement>, asNewUsers = false) => {
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>, asNewUsers = false) => {
       const file = e.target.files?.[0];
+      if (importInputRef.current) importInputRef.current.value = '';
+      if (independentImportInputRef.current) independentImportInputRef.current.value = '';
       if (!file) return;
 
+      if (!asNewUsers) {
+          const ok = await requestConfirm({
+              title: '用备份文件覆盖当前数据？',
+              message: `将导入「${file.name}」并覆盖当前用户空间数据（主动消息 2.0 救援文件会自动迁入独立用户；如需保留现有数据，请取消并改用「从其他网址 / App 迁入独立用户」）。`,
+              confirmText: '确认覆盖',
+              variant: 'danger',
+          });
+          if (!ok) return;
+      }
+
       // Pass the File object directly to importSystem
-      importSystem(file, { asNewUsers, confirmBackendRestore }).catch(err => {
+      try {
+          await importSystem(file, { asNewUsers, confirmBackendRestore });
+      } catch (err: any) {
           console.error(err);
           // 只上报归类后的固定枚举：报错原文（可能含文件路径/内容片段）只留在 console
           const rawMessage = String(err?.message || '');
@@ -1551,10 +1610,7 @@ const Settings: React.FC = () => {
           const details = errorDetails(err);
           showError('导入失败', details);
           addToast('导入失败，错误信息已展开', 'error');
-      });
-      
-      if (importInputRef.current) importInputRef.current.value = '';
-      if (independentImportInputRef.current) independentImportInputRef.current.value = '';
+      }
   };
 
   const deliverStandaloneBackup = async (blob: Blob, fileName: string, shareTitle: string) => {
@@ -1760,6 +1816,13 @@ const Settings: React.FC = () => {
           addToast(file.statusMessage || '这个备份上传未完成，暂时不能恢复', 'error');
           return;
       }
+      const ok = await requestConfirm({
+          title: '用云端备份覆盖当前数据？',
+          message: `将下载并导入「${file.name}」，覆盖当前用户空间的聊天、角色与设置数据，完成后页面会自动刷新。`,
+          confirmText: '确认恢复',
+          variant: 'danger',
+      });
+      if (!ok) return;
       setShowCloudRestoreModal(false);
       try {
           await cloudRestoreFromWebDAV(file, { confirmBackendRestore });
@@ -2189,7 +2252,7 @@ const Settings: React.FC = () => {
             <div className="mt-4 border-t border-slate-100 pt-4">
                 <p className="text-xs text-slate-500 leading-relaxed">聊天白框 CSS 导致界面异常、无法进入角色设置时，还原全局及全部角色的白框美化，其他聊天外观设置不受影响。</p>
                 <button type="button"
-                    onClick={() => { if (window.confirm('确定还原全部聊天白框美化？将清空「全局」以及「每个角色」的自定义 CSS（其它聊天外观设置不受影响）。')) resetAllChromeCss(); }}
+                    onClick={() => void resetAllChromeCss()}
                     className="mt-3 w-full rounded-xl bg-amber-600 px-4 py-3 text-xs font-bold text-white shadow-sm transition active:scale-[.98]">
                     一键还原全部聊天白框美化（救援）
                 </button>
@@ -4262,7 +4325,20 @@ const Settings: React.FC = () => {
                           <span className="text-sm font-bold text-rose-700">小红书 Lite</span>
                           <span className="text-[9px] bg-rose-100 text-rose-500 px-1.5 py-0.5 rounded-full">推荐</span>
                       </div>
-                      <AwarenessSwitch aria-label="启用小红书 Lite" checked={rtXhsMcpEnabled && rtXhsMode === 'lite'} onChange={e => { if (e.target.checked) { if (!window.confirm(XHS_RISK_TEXT + '\n\n确定要开启吗？')) return; setRtXhsMcpEnabled(true); setRtXhsEnabled(true); setRtXhsMode('lite'); } else { setRtXhsMcpEnabled(false); setRtXhsEnabled(false); } }} />
+                      <AwarenessSwitch aria-label="启用小红书 Lite" checked={rtXhsMcpEnabled && rtXhsMode === 'lite'} onChange={async e => {
+                          if (e.target.checked) {
+                              const ok = await requestConfirm({
+                                  title: '启用小红书 Lite 风险提示',
+                                  message: XHS_RISK_TEXT,
+                                  confirmText: '确认开启',
+                                  variant: 'warning',
+                              });
+                              if (!ok) return;
+                              setRtXhsMcpEnabled(true); setRtXhsEnabled(true); setRtXhsMode('lite');
+                          } else {
+                              setRtXhsMcpEnabled(false); setRtXhsEnabled(false);
+                          }
+                      }} />
                   </div>
                   {rtXhsMcpEnabled && rtXhsMode === 'lite' && (
                       <div className="space-y-2">
@@ -4575,6 +4651,7 @@ const Settings: React.FC = () => {
         onReenabledAfterConnect={() => void flushAmsg2AfterReenable({ characters, userProfile, groups, realtimeConfig, apiConfig })}
       />}
 
+      {confirmDialog}
     </div>
   );
 };

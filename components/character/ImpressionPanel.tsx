@@ -1,6 +1,7 @@
 import React from 'react';
 import { UserImpression } from '../../types';
 import { normalizeUserImpression } from '../../utils/impression';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 
 const TagGroup: React.FC<{ title: string; tags: string[]; color: string; onRemove?: (t: string) => void }> = ({ title, tags, color, onRemove }) => (
     <div className="mb-4">
@@ -51,6 +52,7 @@ interface ImpressionPanelProps {
 }
 
 const ImpressionPanel: React.FC<ImpressionPanelProps> = ({ impression, isGenerating, onGenerate, onUpdateImpression, onDelete }) => {
+    const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
     const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
     const safeImpression = React.useMemo(() => normalizeUserImpression(impression), [impression]);
 
@@ -114,7 +116,15 @@ const ImpressionPanel: React.FC<ImpressionPanelProps> = ({ impression, isGenerat
                 </div>
                 <div className="flex gap-2">
                     {onDelete && <button onClick={() => setShowDeleteConfirm(true)} className="px-3 py-1.5 text-xs font-bold text-red-400 bg-red-50 rounded-lg hover:bg-red-100">删除</button>}
-                    <button onClick={() => onGenerate('initial')} className="px-3 py-1.5 text-xs font-bold text-slate-400 bg-slate-50 rounded-lg hover:bg-slate-100">重置</button>
+                    <button onClick={async () => {
+                        const ok = await requestConfirm({
+                            title: '重置印象档案？',
+                            message: '将重新进行深度分析，现有的核心印象、MBTI 侧写与标签会被全部覆盖。',
+                            confirmText: '确认重置',
+                            variant: 'danger',
+                        });
+                        if (ok) onGenerate('initial');
+                    }} className="px-3 py-1.5 text-xs font-bold text-slate-400 bg-slate-50 rounded-lg hover:bg-slate-100">重置</button>
                     <button onClick={() => onGenerate('update')} className="px-4 py-1.5 text-xs font-bold text-white bg-indigo-500 rounded-lg shadow-md shadow-indigo-200 hover:bg-indigo-600 active:scale-95 transition-all">追加/更新</button>
                 </div>
             </div>
@@ -233,6 +243,7 @@ const ImpressionPanel: React.FC<ImpressionPanelProps> = ({ impression, isGenerat
                     </div>
                 </div>
             )}
+            {confirmDialog}
         </div>
     );
 };

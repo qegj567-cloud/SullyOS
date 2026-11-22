@@ -9,6 +9,7 @@ import { buildSparkCommentHistory, buildSparkGenerationContext, resolveSparkAuth
 import { processImageToBlob } from '../utils/file';
 import { putImageBlob } from '../utils/blobRef';
 import Modal from '../components/os/Modal';
+import { useConfirmDialog } from '../hooks/useConfirmDialog';
 import { extractContent, safeResponseJson } from '../utils/safeApi';
 import { CharacterGroupFilterBar, filterCharactersByGroup, GROUP_FILTER_ALL } from '../components/character/CharacterGroupFilter';
 import { House, User, Package, Warning } from '@phosphor-icons/react';
@@ -156,6 +157,7 @@ const Icons = {
 
 const SocialApp: React.FC = () => {
     const { closeApp, characters, updateCharacter, apiConfig, addToast, userProfile, groups, characterGroups } = useOS();
+    const { requestConfirm, confirmDialog } = useConfirmDialog();
     const [feed, setFeed] = useState<SocialPost[]>([]);
     // Modes: 'home' (Feed) | 'me' (Profile) | 'create' (Modal Overlay)
     const [activeTab, setActiveTab] = useState<'home' | 'me'>('home');
@@ -355,10 +357,18 @@ const SocialApp: React.FC = () => {
         }));
     };
 
-    const deleteSubAccount = (charId: string, acctId: string) => {
+    const deleteSubAccount = async (charId: string, acctId: string) => {
+        const acct = (characterHandles[charId] || []).find(a => a.id === acctId);
+        const ok = await requestConfirm({
+            title: `删除角色马甲「${acct?.handle || ''}」？`,
+            message: '删除后会立即从列表移除并保存。',
+            confirmText: '删除',
+            variant: 'danger',
+        });
+        if (!ok) return;
         setCharacterHandles(prev => ({
             ...prev,
-            [charId]: prev[charId].filter(a => a.id !== acctId)
+            [charId]: (prev[charId] || []).filter(a => a.id !== acctId)
         }));
     };
 
@@ -784,7 +794,18 @@ ${buildSparkCommentHistory(post)}
         addToast('发布成功', 'success');
     };
 
-    const handleDeletePost = (postId: string) => { removePostFromFeed(postId); addToast('帖子已删除', 'success'); trackEvent('删除一条帖子'); };
+    const handleDeletePost = async (postId: string) => {
+        const ok = await requestConfirm({
+            title: '删除这条帖子？',
+            message: '帖子及所有评论删除后不可恢复。',
+            confirmText: '删除',
+            variant: 'danger',
+        });
+        if (!ok) return;
+        removePostFromFeed(postId);
+        addToast('帖子已删除', 'success');
+        trackEvent('删除一条帖子');
+    };
     const handleLike = (e: any, post: SocialPost) => {
         e.stopPropagation();
         updatePostInFeed(post.id, current => ({
@@ -831,7 +852,14 @@ ${buildSparkCommentHistory(post)}
         setSelectedPost(null);
     };
 
-    const handleClearFeed = () => {
+    const handleClearFeed = async () => {
+        const ok = await requestConfirm({
+            title: '清空全部动态？',
+            message: '将永久清空全部推荐流动态，包括你自己发布的笔记和收藏的帖子！',
+            confirmText: '确认清空',
+            variant: 'danger',
+        });
+        if (!ok) return;
         refreshRequestRef.current?.abort();
         commentRequestRef.current?.controller.abort();
         replyRequestRef.current?.controller.abort();
@@ -877,7 +905,7 @@ ${buildSparkCommentHistory(post)}
                     </div>
                 </div>
             </div>
-            <button onClick={(e) => { e.stopPropagation(); handleDeletePost(post.id); }} className="absolute top-2 right-2 z-20 w-6 h-6 bg-black/20 text-white rounded-full flex items-center justify-center text-xs backdrop-blur-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500/80">×</button>
+            <button onClick={(e) => { e.stopPropagation(); void handleDeletePost(post.id); }} className="absolute top-2 right-2 z-20 w-6 h-6 bg-black/20 text-white rounded-full flex items-center justify-center text-xs backdrop-blur-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500/80">×</button>
         </div>
     );
 
@@ -1020,7 +1048,7 @@ ${buildSparkCommentHistory(post)}
                                                     />
                                                 </div>
                                                 <button 
-                                                    onClick={() => deleteSubAccount(c.id, acct.id)}
+                                                    onClick={() => void deleteSubAccount(c.id, acct.id)}
                                                     className="text-slate-300 hover:text-red-400 p-1"
                                                     title="删除"
                                                 >
@@ -1046,7 +1074,7 @@ ${buildSparkCommentHistory(post)}
                         ))}
                     </div>
                     <div className="flex gap-3 pt-2">
-                        <button onClick={handleClearFeed} className="flex-1 py-3 bg-white border border-slate-200 text-slate-500 font-bold rounded-xl text-xs active:bg-slate-50">清空推荐流</button>
+                        <button onClick={() => void handleClearFeed()} className="flex-1 py-3 bg-white border border-slate-200 text-slate-500 font-bold rounded-xl text-xs active:bg-slate-50">清空推荐流</button>
                         <button onClick={() => setShowSettings(false)} className="flex-1 py-3 bg-[#ff2442] text-white font-bold rounded-xl text-xs shadow-lg shadow-red-200 active:scale-95 transition-transform">完成</button>
                     </div>
                 </div>
@@ -1281,6 +1309,7 @@ ${buildSparkCommentHistory(post)}
             </div>
 
             {selectedPost && renderDetail()}
+            {confirmDialog}
         </div>
     );
 };

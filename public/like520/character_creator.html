@@ -762,6 +762,8 @@ if (IS_EMBEDDED) {
     } else if (e.data.type === 'like520_add_items') {
       // 仅合并自定义部件，不重新初始化（不会重置当前选择）
       mergeExtraItems(e.data.payload && e.data.payload.extraItems);
+    } else if (e.data.type === 'like520_confirm_delete_custom_part' && e.data.payload) {
+      performDeleteCustomPart(e.data.payload.categoryKey, e.data.payload.id);
     } else if (e.data.type === 'like520_roll') {
       // 「彼方·剧院」headless 随机生成一个 NPC 立绘
       rollAndExport();
@@ -2632,7 +2634,7 @@ function saveCustomPart() {
   toast('已加入「' + ccLabelOf(part.categoryKey) + '」♥');
 }
 
-function deleteCustomPart(categoryKey, id) {
+function performDeleteCustomPart(categoryKey, id) {
   const cat = PARTS.find(p => p.key === categoryKey);
   if (cat) {
     const idx = cat.items.findIndex(x => x.id === id);
@@ -2647,12 +2649,19 @@ function deleteCustomPart(categoryKey, id) {
   } else if (sel === id) {
     state.selected[categoryKey] = null;
   }
-  if (IS_EMBEDDED) {
-    window.parent.postMessage({ type: 'like520_delete_custom_part', payload: { id } }, '*');
-  }
   renderTabs(); renderPanel(); renderCharacter();
   renderCcList();
   toast('已删除');
+}
+
+function deleteCustomPart(categoryKey, id) {
+  if (IS_EMBEDDED) {
+    const cat = PARTS.find(p => p.key === categoryKey);
+    const item = cat && Array.isArray(cat.items) ? cat.items.find(x => x.id === id) : null;
+    window.parent.postMessage({ type: 'like520_delete_custom_part', payload: { categoryKey, id, name: item ? item.name : '' } }, '*');
+    return;
+  }
+  performDeleteCustomPart(categoryKey, id);
 }
 
 /* 导出半透明 body 当描线模板：取当前/默认 skin 层，按原生分辨率降透明度导出 */

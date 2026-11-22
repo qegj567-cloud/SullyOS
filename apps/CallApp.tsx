@@ -132,6 +132,7 @@ import { useStreamingVoice } from '../hooks/useStreamingVoice';
 import { IncrementalCallSpeech } from '../utils/incrementalCallSpeech';
 import { streamElevenLabsSpeech, type StreamedVoice } from '../utils/elevenLabsStream';
 import { getVoiceFavorite, removeVoiceFavorite, saveVoiceFavorite } from '../utils/voiceFavorites';
+import { useConfirmDialog } from '../hooks/useConfirmDialog';
 type CallState = 'idle' | 'connecting' | 'listening' | 'thinking' | 'speaking' | 'ended' | 'error';
 type CallMode = 'voice' | 'video';
 type VideoCallLayout = 'stage' | 'story' | 'mini';
@@ -524,6 +525,7 @@ ${currentVoiceActingGuide()}
 };
 const CallApp: React.FC = () => {
   const { closeApp, openApp, characters, activeCharacterId, addToast, apiConfig, updateApiConfig, userProfile: baseUserProfile, customThemes, suspendCall, suspendedCall, clearSuspendedCall, updateCharacter, characterGroups, groups, realtimeConfig, memoryPalaceConfig } = useOS();
+  const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
 
   const [viewMode, setViewMode] = useState<ViewMode>('role-select');
   useAppShortcut(ShortcutAppID.Call, intent => {
@@ -779,6 +781,13 @@ const CallApp: React.FC = () => {
     input.click();
   };
   const removeFakeUserCameraImage = async () => {
+    const confirmed = await requestConfirm({
+      title: '移除虚拟摄像头图片？',
+      message: '确定移除当前保存的虚拟摄像头静态图片吗？',
+      confirmText: '移除',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
     const previous = fakeUserCameraRef;
     setFakeUserCameraRef('');
     try { localStorage.removeItem(FAKE_USER_CAMERA_IMAGE_KEY); } catch { /* private WebView */ }
@@ -975,8 +984,39 @@ const CallApp: React.FC = () => {
     audioFeedRef.current = null;
   }, []);
 
-  const bindVideoAvatar = (character: CharacterProfile, videoAvatar: NonNullable<CharacterProfile['videoAvatar']>) => {
+  const hasOppositeVideoAvatarFormat = (character: CharacterProfile, nextFormat: 'live2d' | 'vrm') =>
+    Boolean(
+      (character.videoAvatar && character.videoAvatar.format !== nextFormat)
+      || (character.videoAvatarWardrobe || []).some(model => model.format !== nextFormat),
+    );
+
+  const confirmModelFormatSwitch = async (character: CharacterProfile, nextFormat: 'live2d' | 'vrm'): Promise<boolean> => {
+    if (!hasOppositeVideoAvatarFormat(character, nextFormat)) return true;
+    const prevLabel = nextFormat === 'vrm' ? 'Live2D' : 'VRM';
+    const nextLabel = nextFormat === 'vrm' ? 'VRM' : 'Live2D';
+    return requestConfirm({
+      title: '切换模型格式将清除原模型？',
+      message: `当前角色已有 ${prevLabel} 模型。导入 ${nextLabel} 模型后，原有的 ${prevLabel} 模型文件、衣橱与动作权限将被永久删除，无法恢复。`,
+      confirmText: '确认切换',
+      variant: 'danger',
+    });
+  };
+
+  const bindVideoAvatar = async (
+    character: CharacterProfile,
+    videoAvatar: NonNullable<CharacterProfile['videoAvatar']>,
+    options?: { formatSwitchConfirmed?: boolean },
+  ): Promise<boolean> => {
     const previous = character.videoAvatar;
+    if (hasOppositeVideoAvatarFormat(character, videoAvatar.format) && !options?.formatSwitchConfirmed) {
+      const confirmed = await confirmModelFormatSwitch(character, videoAvatar.format);
+      if (!confirmed) {
+        if (previous?.assetId !== videoAvatar.assetId) {
+          void deleteAvatarModel(videoAvatar).catch(() => { /* orphan GC can clean later */ });
+        }
+        return false;
+      }
+    }
     const modelPatch = previous?.format === videoAvatar.format
       ? addCompanionModelOutfit(character, videoAvatar)
       : {
@@ -1006,6 +1046,7 @@ const CallApp: React.FC = () => {
     if (previous?.assetId !== videoAvatar.assetId && previous?.format !== videoAvatar.format) {
       void deleteAvatarModel(previous).catch(() => { /* orphan GC can clean later */ });
     }
+    return true;
   };
 
   const chooseStaticAvatarImage = () => {
@@ -1143,8 +1184,9 @@ const CallApp: React.FC = () => {
             return;
           }
           void preloadLive2DRuntime().catch(() => { /* loading UI will surface a retryable error */ });
+          if (!(await confirmModelFormatSwitch(character, 'live2d'))) return;
           setAvatarImportStatus('正在打开 Live2D ZIP，请耐心等待…');
-          bindVideoAvatar(character, await saveLive2DModelFromZip(file, setAvatarImportStatus));
+          await bindVideoAvatar(character, await saveLive2DModelFromZip(file, setAvatarImportStatus), { formatSwitchConfirmed: true });
           trackEvent('导入通话形象', { 来源: source, 结果: '成功' });
           return;
         }
@@ -1188,11 +1230,15 @@ const CallApp: React.FC = () => {
       addToast('原角色已不存在，已取消导入', 'error');
       return;
     }
+    if (!(await confirmModelFormatSwitch(character, 'vrm'))) {
+      setPendingVRoidImport(null);
+      return;
+    }
     setVRoidImportBusy(true);
     setAvatarImportStatus('正在保存 VRM 测试模型…');
     try {
       const videoAvatar = await saveAvatarModel(pending.file);
-      bindVideoAvatar(character, videoAvatar);
+      await bindVideoAvatar(character, videoAvatar, { formatSwitchConfirmed: true });
       trackEvent('导入通话形象', { 来源: 'VRM', 结果: '成功' });
       setPendingVRoidImport(null);
     } catch (error: any) {
@@ -1230,8 +1276,9 @@ const CallApp: React.FC = () => {
           addToast('Live2D 文件夹超过 250 MB，请先压缩纹理尺寸或删掉无关文件', 'error');
           return;
         }
+        if (!(await confirmModelFormatSwitch(character, 'live2d'))) return;
         setAvatarImportStatus(`已选择 ${files.length} 个文件，正在扫描模型…`);
-        bindVideoAvatar(character, await saveLive2DModelFromFiles(files, setAvatarImportStatus));
+        await bindVideoAvatar(character, await saveLive2DModelFromFiles(files, setAvatarImportStatus), { formatSwitchConfirmed: true });
         trackEvent('导入通话形象', { 来源: 'Live2D 文件夹', 结果: '成功' });
       } catch (error: any) {
         trackEvent('导入通话形象', { 来源: 'Live2D 文件夹', 结果: '失败' });
@@ -2896,6 +2943,13 @@ ${sentencePlan}`;
     if (idx <= 0) return;
     const prevUser = bubbles[idx - 1];
     if (!prevUser || prevUser.role !== 'user') return;
+    const confirmed = await requestConfirm({
+      title: '换个说法？',
+      message: '将重新生成这句回复，并覆盖当前的台词和语音。',
+      confirmText: '重新生成',
+      variant: 'warning',
+    });
+    if (!confirmed) return;
     try {
       setRerollingBubbleId(bubble.id);
       setCallState('thinking');
@@ -3477,6 +3531,7 @@ ${sentencePlan}`;
             />
           </div>
         )}
+        {confirmDialog}
       </div>
     );
   }
@@ -4150,7 +4205,21 @@ ${sentencePlan}`;
               <button onClick={() => void applyBgUrlInput()} className="keep-white shrink-0 px-4 rounded-xl text-sm font-medium text-white transition active:scale-95" style={{ backgroundColor: accentColor }}>使用</button>
             </div>
             {selectedChar?.videoCallBackground && (
-              <button onClick={() => { void applyStageBackground(undefined); setShowBgPicker(false); addToast('已恢复默认背景', 'success'); }} className="w-full py-2 text-xs text-white/45 transition active:opacity-60">
+              <button
+                onClick={async () => {
+                  const confirmed = await requestConfirm({
+                    title: '恢复默认背景？',
+                    message: '将移除当前自定义视频通话背景并恢复默认画面。',
+                    confirmText: '恢复默认',
+                    variant: 'warning',
+                  });
+                  if (!confirmed) return;
+                  await applyStageBackground(undefined);
+                  setShowBgPicker(false);
+                  addToast('已恢复默认背景', 'success');
+                }}
+                className="w-full py-2 text-xs text-white/45 transition active:opacity-60"
+              >
                 恢复默认背景
               </button>
             )}
@@ -4248,6 +4317,7 @@ ${sentencePlan}`;
         </div>
       )}
       </div>
+      {confirmDialog}
     </div>
   );
 };

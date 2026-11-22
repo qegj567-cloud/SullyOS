@@ -8,6 +8,7 @@ import {
 import type { PlateEntry, PlateRoom, RoomPlate } from '../../utils/memoryPalace/types';
 import { PLATE_ROOMS, PLATE_TITLES, PLATE_ENTRY_CAPS, PLATE_ENTRY_HARD_MAX_CHARS } from '../../utils/memoryPalace/types';
 import { ROOM_PLATES_UPDATED_EVENT, RoomPlateDB, mutatePlate } from '../../utils/memoryPalace/db';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 
 /**
  * 房间门牌面板（神经链接 · 底色认知）— 淡紫梦境皮肤
@@ -69,6 +70,7 @@ interface RoomPlatePanelProps {
 }
 
 const RoomPlatePanel: React.FC<RoomPlatePanelProps> = ({ charId, userName }) => {
+    const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
     const [plates, setPlates] = useState<Map<PlateRoom, RoomPlate>>(new Map());
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState<{ room: PlateRoom; entryId: string; draft: string } | null>(null);
@@ -160,11 +162,23 @@ const RoomPlatePanel: React.FC<RoomPlatePanelProps> = ({ charId, userName }) => 
         return write;
     };
 
-    const removeEntry = (room: PlateRoom, entryId: string) => {
+    const removeEntry = async (room: PlateRoom, entry: PlateEntry) => {
         setMenuEntryId(null);
+        const ok = await requestConfirm({
+            title: '删除门牌记录？',
+            message: (
+                <div className="space-y-2">
+                    <p>删除后这条常驻认知不会再出现在每轮对话中：</p>
+                    <p className="text-xs text-slate-600 bg-slate-50 border border-slate-100 rounded-xl p-2.5 leading-relaxed">{entry.text}</p>
+                </div>
+            ),
+            confirmText: '确认删除',
+            variant: 'danger',
+        });
+        if (!ok) return;
         void editPlate(room, plate => (
-            plate.entries.some(e => e.id === entryId)
-                ? { ...plate, entries: plate.entries.filter(e => e.id !== entryId), updatedAt: Date.now() }
+            plate.entries.some(e => e.id === entry.id)
+                ? { ...plate, entries: plate.entries.filter(e => e.id !== entry.id), updatedAt: Date.now() }
                 : null
         ));
     };
@@ -331,7 +345,7 @@ const RoomPlatePanel: React.FC<RoomPlatePanelProps> = ({ charId, userName }) => 
                                                         <PencilSimple size={12} weight="bold" /> 改写
                                                     </button>
                                                     <button
-                                                        onClick={() => removeEntry(room, e.id)}
+                                                        onClick={() => void removeEntry(room, e)}
                                                         className="flex items-center gap-1 text-[11px] font-bold text-rose-400 bg-rose-50 border border-rose-100 rounded-xl px-3 py-1.5"
                                                     >
                                                         <Trash size={12} weight="bold" /> 删除
@@ -346,6 +360,7 @@ const RoomPlatePanel: React.FC<RoomPlatePanelProps> = ({ charId, userName }) => 
                     </React.Fragment>
                 );
             })}
+            {confirmDialog}
         </div>
     );
 };

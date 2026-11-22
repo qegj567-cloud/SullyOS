@@ -55,6 +55,7 @@ const TheaterPlayer: React.FC<TheaterPlayerProps> = ({
     const [shownCount, setShownCount] = useState(0);     // 已完成打字的行数
     const [typed, setTyped] = useState('');              // 当前行已打出的文本
     const [finished, setFinished] = useState(false);
+    const [confirmingReplay, setConfirmingReplay] = useState(false);
     const scrollRef = useRef<HTMLDivElement>(null);
     const timerRef = useRef<number | null>(null);
 
@@ -71,6 +72,7 @@ const TheaterPlayer: React.FC<TheaterPlayerProps> = ({
         setShownCount(0);
         setTyped('');
         setFinished(false);
+        setConfirmingReplay(false);
     }, [lines]);
 
     // 打字机：逐字推进当前行，打完停顿后进入下一行
@@ -302,12 +304,33 @@ const TheaterPlayer: React.FC<TheaterPlayerProps> = ({
                     ) : (
                         <div className="flex flex-col items-center gap-2.5">
                             {/* 换一段重演 */}
-                            <button
-                                onClick={onReplay}
-                                className="text-[11px] font-bold text-white/50 hover:text-white/85 transition-colors active:scale-95"
-                            >
-                                ↻ 换一段重演
-                            </button>
+                            {confirmingReplay ? (
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[11px] text-white/60">将覆盖当前小剧场：</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => { setConfirmingReplay(false); onReplay(); }}
+                                        className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-amber-500/90 text-white active:scale-95 transition-transform"
+                                    >
+                                        确认重演
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setConfirmingReplay(false)}
+                                        className="text-[11px] font-bold px-2.5 py-1 rounded-full border border-white/15 bg-white/8 text-white/75 active:scale-95 transition-transform"
+                                    >
+                                        取消
+                                    </button>
+                                </div>
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={() => setConfirmingReplay(true)}
+                                    className="text-[11px] font-bold text-white/50 hover:text-white/85 transition-colors active:scale-95"
+                                >
+                                    ↻ 换一段重演
+                                </button>
+                            )}
                             {/* 两态都把这一刻「留痕」进聊天，角色都记得自己干了啥；
                                 区别只在 TA 知不知道你看了。主按钮=暴露，次按钮=不暴露。 */}
                             {onSendCard && (

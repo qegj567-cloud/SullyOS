@@ -1,3 +1,4 @@
+import BeautyConfirmDialog from '../share/BeautyConfirmDialog';
 import BeautyPresetPreview from '../share/BeautyPresetPreview';
 import React,{useEffect,useMemo,useState} from 'react';
 import {PsycheDecor} from './MessageItem';
@@ -111,6 +112,7 @@ const StylePreview: React.FC<{ styleId: ThinkingChainStyleId; customColors: Thin
 export default function PsycheAppearanceEditor({appearance,onChange}:{appearance:PsycheAppearance;onChange:(patch:Partial<PsycheAppearance>)=>void}){
 const value={...appearance,customColors:{bg:'#1f2937',accent:'#fbbf24',text:'#f1f5f9',...appearance.customColors}};
 const [draftCss,setDraftCss]=useState(value.customCss||'');
+const [confirmClearOpen,setConfirmClearOpen]=useState(false);
 useEffect(()=>setDraftCss(value.customCss||''),[value.customCss]);
 const cssValidation=useMemo(()=>validateScopedCss(draftCss,PSYCHE_SELECTOR_REGEX,PSYCHE_SCOPE_HINT),[draftCss]);
 const commitCss=()=>{if(cssValidation.isValid)onChange({customCss:draftCss});};
@@ -203,9 +205,16 @@ return <div className="space-y-5">                    {/* 2. 卡片风格 */}
                             >
                                 填入示例
                             </button>
-                            {value.customCss && (
+                            {(draftCss.trim() || value.customCss) && (
                                 <button
-                                    onClick={() => { setDraftCss(''); onChange({ customCss: '' }); }}
+                                    onClick={() => {
+                                        if (draftCss.trim() || value.customCss) {
+                                            setConfirmClearOpen(true);
+                                        } else {
+                                            setDraftCss('');
+                                            onChange({ customCss: '' });
+                                        }
+                                    }}
                                     className="text-[10px] px-2 py-1 rounded-lg bg-slate-100 text-slate-500 active:scale-95 transition"
                                 >
                                     清空还原
@@ -214,6 +223,20 @@ return <div className="space-y-5">                    {/* 2. 卡片风格 */}
                             <span className="text-[9px] text-slate-300 ml-auto">留空 = 不做额外美化</span>
                         </div>
                     </section>
+                    {confirmClearOpen && (
+                        <BeautyConfirmDialog
+                            title="清空并还原心象样式？"
+                            confirm="清空还原"
+                            danger
+                            onClose={() => setConfirmClearOpen(false)}
+                            onConfirm={async () => {
+                                setDraftCss('');
+                                onChange({ customCss: '' });
+                            }}
+                        >
+                            <p>心象卡片的自定义 CSS 将被清空，恢复只使用所选卡片风格。</p>
+                        </BeautyConfirmDialog>
+                    )}
 
 
 </div>;
