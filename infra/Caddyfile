@@ -74,8 +74,8 @@ stats.friedsully.com, stats.palm.cdsv.cc {
 # 设计与取舍见 docs/amsg2-relay.md。域名同样必须是灰云，否则流量又绕回 CF。
 # 这个站点刻意不写日志指令：Caddy 默认不记访问日志，运行时日志由上方全局块统一丢弃；
 # 写了反而会让 assert-privacy.sh 的计数断言对不上。
-# 令牌、路径白名单、限流、流量记录和「只连 Cloudflare」都在本机的中转服务里（infra/amsg-relay/relay.py），
-# 这里只管 HTTPS 和几道粗筛。
+# 中转服务已搬到单独的中转机（配置副本 infra/amsg-relay/Caddyfile）。DNS 缓存还没过期的客户端仍会连到这台，
+# 这里原样转给中转机；等没人再连这里，整段删掉。
 amsg-relay.friedsully.com {
 	header -Server
 
@@ -92,8 +92,12 @@ amsg-relay.friedsully.com {
 	}
 
 	handle @amsg_relay {
-		reverse_proxy 127.0.0.1:8787 {
-			# 中转服务本身也不看用户 IP：在这一跳就去掉，它和 Worker 都拿不到
+		reverse_proxy https://68.164.12.186 {
+			transport http {
+				tls_server_name amsg-relay.friedsully.com
+			}
+			header_up Host amsg-relay.friedsully.com
+			# 用户 IP 在这一跳就去掉，中转机、中转服务和 Worker 都拿不到
 			header_up -X-Forwarded-For
 			header_up -X-Forwarded-Proto
 			header_up -X-Forwarded-Host

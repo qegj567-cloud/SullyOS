@@ -71,24 +71,36 @@ DROP_RESPONSE_HEADERS = {"connection", "keep-alive", "transfer-encoding", "upgra
 API = "https://discord.com/api/v10"
 GATEWAY = "wss://gateway.discord.gg/?v=10&encoding=json"
 USER_AGENT = "DiscordBot (https://sullyos.invalid, 1.0)"
-ADMINISTRATOR = 1 << 3
 FATAL_GATEWAY_CLOSE = {4004, 4010, 4011, 4012, 4013, 4014}
 
 _GUILD_ONLY = {"type": 1, "contexts": [0], "integration_types": [0]}
+# 管理命令对所有人可见（default_member_permissions 留空），由 handle_command 按「中转管理」身份组放行：
+# 维护者不是服务器管理员，按 Discord 权限隐藏的话维护者自己就看不到
+_ADMIN = {**_GUILD_ONLY, "default_member_permissions": None}
 COMMANDS = [
     {**_GUILD_ONLY, "name": "中转令牌", "description": "领取或重置主动消息 2.0 的中转令牌（旧令牌立即作废）"},
     {**_GUILD_ONLY, "name": "中转流量", "description": "查看自己最近经中转用了多少流量"},
-    {**_GUILD_ONLY, "name": "中转吊销", "description": "（管理员）吊销某人的中转令牌",
-     "default_member_permissions": str(ADMINISTRATOR), "options": [
+    {**_ADMIN, "name": "中转吊销", "description": "（管理员）吊销某人的中转令牌", "options": [
          {"type": 6, "name": "用户", "description": "要吊销的人", "required": True},
          {"type": 5, "name": "禁止重新领取", "description": "打开后此人不能再领令牌", "required": False},
      ]},
-    {**_GUILD_ONLY, "name": "中转解封", "description": "（管理员）允许被禁止的人重新领取中转令牌",
-     "default_member_permissions": str(ADMINISTRATOR), "options": [
+    {**_ADMIN, "name": "中转解封", "description": "（管理员）允许被禁止的人重新领取中转令牌", "options": [
          {"type": 6, "name": "用户", "description": "要解封的人", "required": True},
      ]},
+    {**_ADMIN, "name": "中转统计", "description": "（管理员）看中转的使用人数和总流量"},
+    {**_ADMIN, "name": "中转面板", "description": "（管理员）在当前频道发一条带「领令牌」「查流量」按钮的消息"},
 ]
 COMMAND_NAMES = {c["name"] for c in COMMANDS}
+# 面板按钮的 custom_id → 等同的命令。点按钮不需要频道的「使用应用命令」权限
+BUTTON_ACTIONS = {"amsg_relay:token": "中转令牌", "amsg_relay:usage": "中转流量"}
+PANEL_MESSAGE = {
+    "content": "**主动消息 2.0 · 中转令牌**\n"
+               "点下面的按钮领取令牌或查看流量，回复只有你自己看得到。再领一次就是重置，旧令牌立即作废。",
+    "components": [{"type": 1, "components": [
+        {"type": 2, "style": 1, "label": "领取 / 重置令牌", "custom_id": "amsg_relay:token"},
+        {"type": 2, "style": 2, "label": "查看流量", "custom_id": "amsg_relay:usage"},
+    ]}],
+}
 
 
 def today() -> date:
@@ -124,10 +136,13 @@ class PinnedCloudflareResolver(AbstractResolver):
 
 
 class Relay:
-    def __init__(self, db_path: str, *, guild_id: str, verified_role_id: str, bot_token: str = "",
+    def __init__(self, db_path: str, *, guild_id: str, verified_role_ids: str, admin_role_id: str,
+                 bot_token: str = "",
                  upstream_scheme: str = "https", upstream_resolver: AbstractResolver | None = None):
         self.guild_id = guild_id
-        self.verified_role_id = verified_role_id
+        # 逗号分隔，有其中任意一个身份组就能领令牌
+        self.verified_role_ids = {r.strip() for r in verified_role_ids.split(",") if r.strip()}
+        self.admin_role_id = admin_role_id
         self.bot_token = bot_token
         self.upstream_scheme = upstream_scheme
         self._upstream_resolver = upstream_resolver
@@ -229,6 +244,19 @@ class Relay:
                 "last30": self.usage_since(user_id, 30),
                 "issuedDay": row[0] if row else None, "lastUsedDay": row[1] if row else None}
 
+    def overall_stats(self) -> dict:
+        """全体的粗略数字，不带任何人的 ID。"""
+        q = lambda sql, *a: self.db.execute(sql, a).fetchone()
+        out = {"holders": q("SELECT COUNT(*) FROM tokens")[0],
+               "issuedToday": q("SELECT COUNT(*) FROM tokens WHERE issued_day=?", today().isoformat())[0],
+               "banned": q("SELECT COUNT(*) FROM banned")[0]}
+        for key, days in (("today", 1), ("last7", 7), ("last30", 30)):
+            since = (today() - timedelta(days=days - 1)).isoformat()
+            users, up, down, req = q("SELECT COUNT(DISTINCT user_id), COALESCE(SUM(up),0), COALESCE(SUM(down),0), "
+                                     "COALESCE(SUM(requests),0) FROM usage WHERE day>=?", since)
+            out[key] = {"users": users, "up": up, "down": down, "requests": req}
+        return out
+
     def prune(self):
         t = today()
         self.db.execute("DELETE FROM tokens WHERE last_used_day<?",
@@ -249,7 +277,7 @@ class Relay:
                 if r.status != 200:
                     return
                 member = await r.json()
-            if self.verified_role_id not in member.get("roles", []):
+            if self.verified_role_ids.isdisjoint(member.get("roles", [])):
                 self.revoke(user_id)
                 return
             self.db.execute("UPDATE tokens SET checked_day=? WHERE user_id=?", (today().isoformat(), user_id))
@@ -334,17 +362,23 @@ class Relay:
 
     # ---------- Discord ----------
 
-    async def reply(self, it: dict, content: str):
+    async def reply(self, it: dict, content: str | dict):
+        """字符串回成只有本人看得到的消息；dict 原样作为公开消息发出（面板）。"""
+        data = content if isinstance(content, dict) else {"content": content, "flags": 64}
         async with self.discord.post(f"{API}/interactions/{it['id']}/{it['token']}/callback",
-                                     json={"type": 4, "data": {"content": content, "flags": 64}}) as r:
+                                     json={"type": 4, "data": data}) as r:
             if r.status >= 300:
                 log.warning("interaction reply failed: %s", r.status)
 
-    def handle_command(self, it: dict) -> str | None:
-        """返回要回给用户的话；不是本服务的命令返回 None（留给同一机器人的其他进程处理）。"""
-        if it.get("type") != 2 or it.get("data", {}).get("name") not in COMMAND_NAMES:
+    def handle_command(self, it: dict) -> str | dict | None:
+        """返回要回给用户的话；不是本服务的命令或按钮返回 None（留给同一机器人的其他进程处理）。"""
+        data = it.get("data", {})
+        if it.get("type") == 2 and data.get("name") in COMMAND_NAMES:
+            name = data["name"]
+        elif it.get("type") == 3 and data.get("custom_id") in BUTTON_ACTIONS:
+            name = BUTTON_ACTIONS[data["custom_id"]]
+        else:
             return None
-        name = it["data"]["name"]
         member = it.get("member")
         if it.get("guild_id") != self.guild_id or not member:
             return "这个命令只能在 SullyOS 的群里用。"
@@ -353,24 +387,33 @@ class Relay:
         if name == "中转令牌":
             if self.is_banned(user_id):
                 return "你的中转权限已被管理员停用。"
-            if self.verified_role_id not in member.get("roles", []):
+            if self.verified_role_ids.isdisjoint(member.get("roles", [])):
                 return "要先完成群里的验证（拿到「已验证」身份组）才能领中转令牌。"
             token = self.issue_token(user_id)
             return ("你的中转令牌（只显示这一次，之前的令牌已作废）：\n"
                     f"```\n{token}\n```\n"
                     "复制到 SullyOS → 设置 → 主动消息 2.0 → 中转令牌。"
-                    f"连续 {TOKEN_IDLE_DAYS} 天没用会自动失效；不小心泄露了就再发一次 /中转令牌 重置。")
+                    f"连续 {TOKEN_IDLE_DAYS} 天没用会自动失效；不小心泄露了就再领一次，旧的会作废。")
 
         if name == "中转流量":
             s = self.usage_summary(user_id)
             lines = [f"{label}：上传 {format_bytes(v['up'])} · 下载 {format_bytes(v['down'])} · {v['requests']} 次请求"
                      for label, v in (("今天", s["today"]), ("近 7 天", s["last7"]), ("近 30 天", s["last30"]))]
             status = (f"令牌领取于 {s['issuedDay']}，最近使用 {s['lastUsedDay']}。" if s["issuedDay"]
-                      else "你现在没有有效的中转令牌，发 /中转令牌 领一个。")
+                      else "你现在没有有效的中转令牌，点面板上的「领取 / 重置令牌」或发 /中转令牌 领一个。")
             return "\n".join(lines + [status, f"按北京时间切日，记录保留 {USAGE_KEEP_DAYS} 天。"])
 
-        if not int(member.get("permissions", "0")) & ADMINISTRATOR:
+        if self.admin_role_id not in member.get("roles", []):
             return "只有管理员能用这个命令。"
+        if name == "中转面板":
+            return PANEL_MESSAGE
+        if name == "中转统计":
+            s = self.overall_stats()
+            lines = [f"持有令牌 {s['holders']} 人（今天新领 {s['issuedToday']} 个），禁止领取 {s['banned']} 人。"]
+            lines += [f"{label}：{v['users']} 人用过 · 上传 {format_bytes(v['up'])} · 下载 {format_bytes(v['down'])} · "
+                      f"{v['requests']} 次请求"
+                      for label, v in (("今天", s["today"]), ("近 7 天", s["last7"]), ("近 30 天", s["last30"]))]
+            return "\n".join(lines + ["按北京时间切日。"])
         options = {o["name"]: o["value"] for o in it["data"].get("options", [])}
         target = options["用户"]
         if name == "中转吊销":
@@ -399,9 +442,15 @@ class Relay:
             app_id = (await r.json())["id"]
         # 全局命令逐条 upsert：同一机器人的另一个进程会整份覆盖「群命令」清单，碰不到这里
         for cmd in COMMANDS:
-            async with self.discord.post(f"{API}/applications/{app_id}/commands", headers=auth, json=cmd) as r:
-                if r.status >= 300:
-                    log.error("register %s failed: %s %s", cmd["name"], r.status, (await r.text())[:200])
+            # 连发几条就会撞 429，按 Discord 给的 retry_after 等一下再发，不然排在后面的命令会被跳过
+            for _ in range(5):
+                async with self.discord.post(f"{API}/applications/{app_id}/commands", headers=auth, json=cmd) as r:
+                    if r.status == 429:
+                        await asyncio.sleep(float((await r.json()).get("retry_after", 1)) + 0.2)
+                        continue
+                    if r.status >= 300:
+                        log.error("register %s failed: %s %s", cmd["name"], r.status, (await r.text())[:200])
+                    break
 
     async def gateway_loop(self):
         backoff = 1
@@ -466,8 +515,8 @@ class Relay:
 async def main():
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     relay = Relay(os.environ.get("RELAY_DB", "/var/lib/amsg-relay/relay.db"),
-                  guild_id=os.environ["DISCORD_GUILD_ID"], verified_role_id=os.environ["DISCORD_VERIFIED_ROLE_ID"],
-                  bot_token=os.environ["DISCORD_TOKEN"])
+                  guild_id=os.environ["DISCORD_GUILD_ID"], verified_role_ids=os.environ["DISCORD_VERIFIED_ROLE_ID"],
+                  admin_role_id=os.environ["DISCORD_ADMIN_ROLE_ID"], bot_token=os.environ["DISCORD_TOKEN"])
     await relay.start()
     # 服务日志只有启动、gateway 状态和不带用户信息的错误类型
     runner = relay.make_runner()
