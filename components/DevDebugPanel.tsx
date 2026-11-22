@@ -342,6 +342,29 @@ const DevDebugPanel: React.FC = () => {
             setOpfsProbeRunning(false);
         }
     };
+    // 记忆关联测试数据：真机上复现「关联表很大时导出备份」，见 docs/backup-pipeline.md。
+    const handleSeedLinks = async (amount: number | 'clear') => {
+        if (opfsProbeRunning) return;
+        setOpfsProbeRunning(true);
+        setOpfsProbeCopy('复制结果');
+        setOpfsProbeText(amount === 'clear' ? '正在清除测试关联…' : '正在写入测试关联…');
+        try {
+            const { seedMemoryLinks, clearSeededMemoryLinks } = await import('../utils/devSeedMemoryLinks');
+            const result = amount === 'clear' ? await clearSeededMemoryLinks()
+                : await seedMemoryLinks(amount, written => setOpfsProbeText(`已写入 ${written} / ${amount} 条…`));
+            setOpfsProbeText(JSON.stringify({ step: amount === 'clear' ? 'clear-seeded-links' : 'seed-links', ...result }, null, 2));
+        } catch (error: any) {
+            setOpfsProbeText(`测试关联操作失败：${error?.message || error}`);
+        } finally {
+            setOpfsProbeRunning(false);
+        }
+    };
+    const showLastSpaceBackup = async (kind: 'export' | 'restore') => {
+        const { lastUserSpaceExport, lastUserSpaceRestore } = await import('../utils/userSpaceBackup');
+        const stats = kind === 'export' ? lastUserSpaceExport() : lastUserSpaceRestore();
+        setOpfsProbeCopy('复制结果');
+        setOpfsProbeText(JSON.stringify({ step: `last-space-${kind}`, ...(stats ?? { none: true }) }, null, 2));
+    };
     const copyLog = async () => {
         const text = formatDevDebugLog();
         if (!text) return;
@@ -681,6 +704,30 @@ const DevDebugPanel: React.FC = () => {
                                     disabled={opfsProbeRunning}
                                     icon={<HardDrives size={13} weight="bold" />}
                                     label="选文件测读取速度"
+                                />
+                                <LogActionButton
+                                    onClick={() => { void handleSeedLinks(1000000); }}
+                                    disabled={opfsProbeRunning}
+                                    icon={<HardDrives size={13} weight="bold" />}
+                                    label="塞 100 万条测试关联"
+                                />
+                                <LogActionButton
+                                    onClick={() => { void handleSeedLinks('clear'); }}
+                                    disabled={opfsProbeRunning}
+                                    icon={<HardDrives size={13} weight="bold" />}
+                                    label="清掉测试关联"
+                                />
+                                <LogActionButton
+                                    onClick={() => { void showLastSpaceBackup('export'); }}
+                                    disabled={opfsProbeRunning}
+                                    icon={<HardDrives size={13} weight="bold" />}
+                                    label="上次多用户导出的统计"
+                                />
+                                <LogActionButton
+                                    onClick={() => { void showLastSpaceBackup('restore'); }}
+                                    disabled={opfsProbeRunning}
+                                    icon={<HardDrives size={13} weight="bold" />}
+                                    label="上次多用户恢复的统计"
                                 />
                                 {opfsProbeText && !opfsProbeRunning && (
                                     <LogActionButton
