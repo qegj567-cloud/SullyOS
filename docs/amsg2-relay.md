@@ -15,10 +15,17 @@
 
 | 环节 | 说明 |
 |---|---|
-| 中转服务器 | 洛杉矶的 DMIT 机器，与统计服务（umami）同机。Caddy 配置副本在 [`infra/Caddyfile`](../infra/Caddyfile)，中转服务在 [`infra/amsg-relay/`](../infra/amsg-relay/) |
+| 中转服务器 | 洛杉矶 PPFlight 的一台小机器（LAX02），只跑中转，跟统计服务（umami）不在同一台。Caddy 配置副本在 [`infra/amsg-relay/Caddyfile`](../infra/amsg-relay/Caddyfile)，中转服务也在 [`infra/amsg-relay/`](../infra/amsg-relay/) |
 | 为什么不放在大陆 | 大陆机房用域名提供 HTTPS 需要备案，而且大陆机器同样连不上 `workers.dev`，还得再接一跳 |
 | Discord 机器人 | 复用 Sully Connect，中转服务自己连 gateway 处理几条全局命令 |
 | 推送 | 不经过中转。消息由 Worker 经推送服务（APNs / FCM 等）送到设备，跟这条连接无关 |
+
+### 为什么是这台机器
+
+- 用户发出去的流量约是收到的 6 倍（状态同步、提示词都是上行），所以最要紧的是晚高峰「大陆 → 机器」这个方向的线路。这台的去程和回程都走三网精品线路（电信 CN2 GIA、联通 9929、移动 CMIN2）。
+- 2026-11 用 Globalping 的国内家宽节点做过一晚高峰对比（北京时间 20:00–23:40，每 20 分钟一轮）：这台三网平均丢包都在 1% 以内，延迟约 150ms；之前与统计服务同机的那台，三网平均丢包约 12%，移动延迟到 370ms 以上。ping 用的是小包，测不出上传吞吐。
+- 没放香港：便宜的香港机普遍是联通好、电信和移动晚高峰看运气，三网都好的起步约 $20/月。另外 D1 的主库建在创建它时离请求最近的地区，用户的库不一定在亚洲，从香港进 Cloudflare 对这部分用户反而多绕一段。
+- 商家条款（AUP 第 5 条）允许合法的私人代理用途，禁止的是开放代理和 Tor 出口。商家不做备份。
 
 ## 客户端怎么接
 
@@ -32,11 +39,12 @@
 
 ## 令牌
 
-- 在 SullyOS 的 Discord 群里发 `/中转令牌`，有「已验证」身份组才能领。机器人回一条只有本人看得到的消息，令牌只显示这一次；再发一次就是重置，旧的立即作废。
+- 在 SullyOS 的 Discord 群里点 #中转令牌 频道那条面板消息上的「领取 / 重置令牌」按钮（或者发 `/中转令牌`），有「已验证」或另外放行的身份组才能领（服务器上 `DISCORD_VERIFIED_ROLE_ID` 用逗号写多个 ID，有任意一个就行，每天复查时也按同一份名单）。机器人回一条只有本人看得到的消息，令牌只显示这一次；再领一次就是重置，旧的立即作废。
+- 面板消息由管理员在频道里发 `/中转面板` 生成，发一次就一直在。按钮比命令好用：点按钮不需要频道开「使用应用命令」权限，用户也不用记命令名。按钮和命令走同一段处理逻辑，按钮的 `custom_id` 带 `amsg_relay:` 前缀；中转服务只回这个前缀的按钮，同一机器人的其他进程也要只回自己的按钮，否则两边会抢着回同一次点击。
 - 不在应用里用 Discord 登录：大陆打不开 discord.com，用户在群里领最稳。
 - 连续 30 天没用自动失效。
 - 退群或者没了「已验证」：令牌被使用时，如果当天还没核对过，就顺手查一次这个人还在不在群里、身份组还在不在，不在就作废。用的是「查单个成员」接口，不需要 Server Members 权限，也不监听退群事件；每人每天最多查一次。查询失败不动令牌。
-- 管理员命令：`/中转吊销`（可选「禁止重新领取」）、`/中转解封`，只有管理员看得到。
+- 管理命令：`/中转吊销`（可选「禁止重新领取」）、`/中转解封`、`/中转面板`、`/中转统计`，只认「中转管理」身份组，服务器管理员权限不算。维护者不是服务器管理员，所以这几条命令对所有人可见（不按 Discord 权限隐藏），没有这个身份组的人点了只会收到「只有管理员能用」。
 - 打开前的提醒里写明：中转只允许正常主动消息使用，恶意滥用会被禁止使用中转，严重的会被移出社区。令牌绑着 Discord 账号，这句话才执行得了。
 - 数据库只存令牌的 sha256，拿到数据库也还原不出令牌。
 
@@ -71,7 +79,8 @@
 
 - 每个 Discord 账号每天一行：上行字节数、下行字节数、请求次数。按北京时间切日，保留 90 天。
 - 不记路径、目标 Worker、来源 IP，也不记几点几分。按账号而不是按令牌记，重置令牌后历史还在。
-- 用户自己查：群里发 `/中转流量`（今天 / 近 7 天 / 近 30 天），或者在应用的中转设置里看近 30 天那一行（应用用自己的令牌请求 `/t/<令牌>/_usage`）。
+- 管理员看全体：`/中转统计` 回持有令牌人数、今天新领数、禁止领取人数，以及今天 / 近 7 天 / 近 30 天的使用人数和流量合计。只有数字，不列出是谁。
+- 用户自己查：点面板上的「查看流量」或在群里发 `/中转流量`（今天 / 近 7 天 / 近 30 天），或者在应用的中转设置里看近 30 天那一行（应用用自己的令牌请求 `/t/<令牌>/_usage`）。
 
 ## 隐私
 
@@ -84,14 +93,22 @@
 ## 运维
 
 - `amsg-relay.friedsully.com` 在 Cloudflare 上必须是灰云（DNS only）。走橙云的话流量又绕回 Cloudflare，中转就白做了。
-- 中转服务：`/opt/amsg-relay/relay.py`，systemd 单元 `amsg-relay`（副本 [`infra/amsg-relay/amsg-relay.service`](../infra/amsg-relay/amsg-relay.service)），只听 `127.0.0.1:8787`。依赖用发行版的 `python3-aiohttp`。机器人令牌、群 ID、「已验证」身份组 ID 在 `/etc/amsg-relay/env`（root 600，不进仓库），数据库在 `/var/lib/amsg-relay/relay.db`。内存约 40 MB，上限 150 MB。
-- 改了 `relay.py`：先跑 `python3 -m unittest infra/amsg-relay/test_relay.py`，再 `scp` 到 `/opt/amsg-relay/`，`systemctl restart amsg-relay`。重启时命令会重新 upsert 一遍。
-- 线上 Caddy 开着 `admin off`，`systemctl reload caddy` 会失败（旧配置照常运行），改完 Caddyfile 要 `caddy validate` 后 `systemctl restart caddy`，所有站点会断一两秒。
-- 线上 `/etc/caddy/Caddyfile` 与仓库 `infra/Caddyfile` 每天由隐私审计 CI 比对指纹，改了一边要在同一天同步另一边并合进 master，否则 CI 会红。`relay.py` 不在指纹清单里。
-- Caddy 中转站点里不要写日志指令，也别在注释里写出那个字面量：`assert-privacy.sh` 靠数这一行的出现次数来判断日志有没有被打开，多一处就会误判。
-- 固定连的 Cloudflare IP 列在 `relay.py` 的 `CF_IPS`。不是所有 CF 的 IP 都通用（比如 `104.16.132.229` 对所有域名都回 403），换之前在 dmit 上用 `curl --resolve <worker 域名>:443:<IP>` 实测一遍。
-- dmit 的网络会阵发性丢包（几分钟一阵，严重时丢一半以上），DNS 也直连 1.1.1.1、跟着一起丢。中转偶发 502、机器人偶发「应用程序没有响应」时先在机器上 `ping -c 40 -i 0.25 1.1.1.1` 看是不是这个。为此机器人对 Discord 的 DNS 缓存了 6 小时（`DISCORD_DNS_TTL`）：回复 interaction 只有 3 秒，不能每次现查 DNS。
-- 中转和统计服务、以及机器上其他服务共用一个 IP。这个 IP 或 `friedsully.com` 被封的话会一起受影响。
+- 中转机：Ubuntu 24.04，SSH 只认密钥，自动安全更新开着。商家装机时屏蔽了系统更新的定时器和服务、允许 root 用密码登录，装机后已改回。商家的 SSH 配置在 `/etc/ssh/ppflight-login.conf`，主配置第一行就引入它，比 `sshd_config.d/` 先读，要改 SSH 设置就改这份。Caddy 从官方 apt 源装（发行版自带的版本太旧）。
+- 中转服务：`/opt/amsg-relay/relay.py`，systemd 单元 `amsg-relay`（副本 [`infra/amsg-relay/amsg-relay.service`](../infra/amsg-relay/amsg-relay.service)），只听 `127.0.0.1:8787`。依赖用发行版的 `python3-aiohttp`。机器人令牌、群 ID、能领令牌的身份组 ID（逗号分隔）和「中转管理」身份组的 ID 在 `/etc/amsg-relay/env`（root 600，不进仓库），数据库在 `/var/lib/amsg-relay/relay.db`。内存约 40 MB，上限 150 MB。
+- 改了 `relay.py`：先在装了 aiohttp 的机器上跑 `python3 -m unittest test_relay.py`（中转机上就有），再 `scp` 到中转机的 `/opt/amsg-relay/`，`systemctl restart amsg-relay`。重启时命令会重新 upsert 一遍。
+- 两台机器的 Caddy 都开着 `admin off`，`systemctl reload caddy` 会失败（旧配置照常运行），改完 Caddyfile 要 `caddy validate` 后 `systemctl restart caddy`，所有站点会断一两秒。
+- 统计服务器的 `/etc/caddy/Caddyfile` 与仓库 `infra/Caddyfile` 每天由隐私审计 CI 比对指纹，改了一边要在同一天同步另一边并合进 master，否则 CI 会红。中转机的 Caddyfile、`relay.py` 都不在指纹清单里，审计 CI 也不连中转机，改了要手动同步仓库副本。
+- 统计服务器的 Caddyfile 里还留着一段中转站点，把 DNS 缓存还没过期、仍连到那边的客户端原样转给中转机。等没人再连那边就整段删掉，删的时候同样要当天同步 `infra/Caddyfile` 并合进 master。这段里不要写日志指令，也别在注释里写出那个字面量：`assert-privacy.sh` 靠数这一行的出现次数来判断日志有没有被打开，多一处就会误判。
+- 固定连的 Cloudflare IP 列在 `relay.py` 的 `CF_IPS`。不是所有 CF 的 IP 都通用（比如 `104.16.132.229` 对所有域名都回 403），换之前在中转机上用 `curl --resolve <worker 域名>:443:<IP>` 实测一遍。
+- 机器人对 Discord 的 DNS 缓存 6 小时（`DISCORD_DNS_TTL`）：回复 interaction 只有 3 秒，机器网络抖一下、现查 DNS 就会超时。中转偶发 502、机器人偶发「应用程序没有响应」时，先在中转机上 `ping -c 40 -i 0.25 1.1.1.1` 看是不是线路。
+- 数据库只在中转机本地，商家不做备份。机器没了的后果是所有人重新领令牌，库里只有令牌哈希和流量表。
+
+### 换机器
+
+- 两台机器不能同时跑中转服务：用的是同一个机器人，同时在线时一次点击会被回两遍。切换时先停旧机的服务，用 SQLite 的 backup 接口导出一致快照，传到新机再启动；中间中转断开几十秒。
+- 证书可以直接从旧机 Caddy 的存储目录（`/var/lib/caddy/.local/share/caddy/certificates/<签发方>/amsg-relay.friedsully.com/`）拷到新机，DNS 改之前新机就能提供 HTTPS。
+- DNS 改动的时间不受控时，先让新机的 Caddy 把中转请求原样转回旧机（`tls_server_name` 填中转域名），切换后反过来让旧机转给新机。这样 DNS 什么时候改、各地缓存多久都不会断。
+- 用 DynamicUser 跑的服务，数据库文件用 root 拷进 `/var/lib/private/amsg-relay/` 即可，服务启动时 systemd 会把属主改成临时用户。
 
 ## 不在范围内
 

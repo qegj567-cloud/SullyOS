@@ -19,7 +19,7 @@ from yarl import URL
 sys.path.insert(0, os.path.dirname(__file__))
 import relay as R  # noqa: E402
 
-GUILD, ROLE = "100", "200"
+GUILD, ROLE, ROLE2, ADMIN_ROLE = "100", "200", "201", "300"
 
 
 class LocalResolver(AbstractResolver):
@@ -62,7 +62,7 @@ class RelayTest(unittest.IsolatedAsyncioTestCase):
         up_port = up_site._server.sockets[0].getsockname()[1]
 
         self.tmp = tempfile.TemporaryDirectory()
-        self.relay = R.Relay(os.path.join(self.tmp.name, "r.db"), guild_id=GUILD, verified_role_id=ROLE,
+        self.relay = R.Relay(os.path.join(self.tmp.name, "r.db"), guild_id=GUILD, verified_role_ids=f"{ROLE}, {ROLE2}", admin_role_id=ADMIN_ROLE,
                              upstream_scheme="http", upstream_resolver=LocalResolver(up_port))
         await self.relay.start()
         self.runner = self.relay.make_runner()
@@ -184,13 +184,89 @@ class RelayTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("只能在", h(self.command("中转令牌", guild="999")))
         self.issue(user="7")
         self.assertIn("只有管理员", h(self.command("中转吊销", options=[{"name": "用户", "value": "7"}])))
-        admin = str(R.ADMINISTRATOR)
-        h(self.command("中转吊销", permissions=admin,
+        h(self.command("中转吊销", roles=(ROLE, ADMIN_ROLE),
                        options=[{"name": "用户", "value": "7"}, {"name": "禁止重新领取", "value": True}]))
         self.assertIn("停用", h(self.command("中转令牌", user="7")))
-        h(self.command("中转解封", permissions=admin, options=[{"name": "用户", "value": "7"}]))
+        h(self.command("中转解封", roles=(ROLE, ADMIN_ROLE), options=[{"name": "用户", "value": "7"}]))
         self.assertIn("```", h(self.command("中转令牌", user="7")))
         self.assertIn("近 30 天", h(self.command("中转流量", user="7")))
+
+    async def test_panel_buttons_act_like_commands(self):
+        h = self.relay.handle_command
+        self.assertIn("只有管理员", h(self.command("中转面板")))
+        # 服务器管理员权限不算数，只认「中转管理」身份组
+        self.assertIn("只有管理员", h(self.command("中转面板", permissions=str(1 << 3))))
+        panel = h(self.command("中转面板", roles=(ROLE, ADMIN_ROLE)))
+        ids = [b["custom_id"] for row in panel["components"] for b in row["components"]]
+        self.assertEqual(set(ids), set(R.BUTTON_ACTIONS))
+        self.assertNotIn("flags", panel)  # 面板是公开消息，不能是只有本人可见
+
+        def click(custom_id, **kw):
+            it = self.command("", **kw)
+            it.update(type=3, data={"custom_id": custom_id, "component_type": 2})
+            return h(it)
+
+        self.assertIn("```", click("amsg_relay:token", user="9"))
+        self.assertIsNotNone(self.relay.db.execute("SELECT 1 FROM tokens WHERE user_id='9'").fetchone())
+        self.assertIn("已验证", click("amsg_relay:token", user="8", roles=()))
+        self.assertIn("```", click("amsg_relay:token", user="6", roles=(ROLE2,)))  # 第二个身份组也能领
+        self.assertIn("近 30 天", click("amsg_relay:usage", user="9"))
+        self.assertIsNone(click("someone_else:button"))  # 别的进程的按钮不回
+
+    async def test_overall_stats_admin_only_and_counts_distinct_users(self):
+        h = self.relay.handle_command
+        self.assertIn("只有管理员", h(self.command("中转统计")))
+        self.issue(user="1")
+        self.issue(user="2")
+        self.relay.record_usage("1", 100, 200)
+        self.relay.record_usage("1", 100, 200)  # 同一人多次只算一人
+        self.relay.record_usage("2", 1, 1)
+        old = (R.today() - timedelta(days=10)).isoformat()
+        self.relay.db.execute("INSERT INTO usage VALUES('3', ?, 5, 5, 1)", (old,))
+        s = self.relay.overall_stats()
+        self.assertEqual((s["holders"], s["issuedToday"]), (2, 2))
+        self.assertEqual(s["today"]["users"], 2)
+        self.assertEqual(s["last7"]["users"], 2)
+        self.assertEqual(s["last30"]["users"], 3)
+        self.assertEqual(s["today"]["up"], 201)
+        text = h(self.command("中转统计", roles=(ROLE, ADMIN_ROLE)))
+        self.assertIn("持有令牌 2 人", text)
+        self.assertNotIn("<@", text)  # 只有数字，不点名
+
+    async def test_register_commands_retries_after_rate_limit(self):
+        class Resp:
+            def __init__(self, status, body):
+                self.status, self.body = status, body
+
+            async def json(self):
+                return self.body
+
+            async def text(self):
+                return ""
+
+            def raise_for_status(self):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+        posted, limited = [], {"left": 2}
+
+        def post(url, json=None, **kw):
+            if limited["left"]:
+                limited["left"] -= 1
+                return Resp(429, {"retry_after": 0.01})
+            posted.append(json["name"])
+            return Resp(200, {})
+
+        with mock.patch.object(self.relay.discord, "get", return_value=Resp(200, {"id": "app"})), \
+                mock.patch.object(self.relay.discord, "post", side_effect=post), \
+                mock.patch.object(R.asyncio, "sleep", new=mock.AsyncMock()):
+            await self.relay.register_commands()
+        self.assertEqual(posted, [c["name"] for c in R.COMMANDS])  # 撞了 429 的那条也补上了
 
     async def test_member_recheck_revokes_when_left_or_role_lost(self):
         self.relay.bot_token = "x"
@@ -213,6 +289,26 @@ class RelayTest(unittest.IsolatedAsyncioTestCase):
             with mock.patch.object(self.relay.discord, "get", return_value=Resp()):
                 await self.relay.recheck_member("1")
             self.assertIsNone(self.relay.db.execute("SELECT 1 FROM tokens WHERE user_id='1'").fetchone())
+
+    async def test_member_recheck_keeps_token_with_second_role(self):
+        self.relay.bot_token = "x"
+        self.issue()
+
+        class Resp:
+            status = 200
+
+            async def json(self):
+                return {"roles": [ROLE2]}
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+        with mock.patch.object(self.relay.discord, "get", return_value=Resp()):
+            await self.relay.recheck_member("1")
+        self.assertIsNotNone(self.relay.db.execute("SELECT 1 FROM tokens WHERE user_id='1'").fetchone())
 
 
 if __name__ == "__main__":
