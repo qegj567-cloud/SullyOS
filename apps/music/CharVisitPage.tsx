@@ -697,7 +697,7 @@ const CharVisitPage: React.FC<Props> = ({ charId, onBack, onOpenPlayer }) => {
                 }}
                 className="w-3 h-3"
               />
-              允许 {char.name} 翻阅你的网易云数据（最近在听 / 歌单）
+              聊天时让 {char.name} 知道你正在听的歌
             </label>
             <div>
               <button
