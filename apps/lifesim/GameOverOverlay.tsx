@@ -7,7 +7,7 @@ import React from 'react';
 import { Buildings, ArrowCounterClockwise } from '@phosphor-icons/react';
 
 const GameOverOverlay: React.FC<{ reason?: string; onRestart: () => void }> = ({ reason, onRestart }) => (
-    <div className="absolute inset-0 flex items-center justify-center z-50 px-4"
+    <div className="absolute inset-0 flex items-center justify-center z-[45] px-4"
         style={{ background: 'rgba(0,0,0,0.4)' }}>
         <div className="retro-window w-full" style={{
             maxWidth: 280,

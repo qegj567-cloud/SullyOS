@@ -18,6 +18,7 @@ import { CharacterGroupFilterBar, filterCharactersByGroup, GROUP_FILTER_ALL } fr
 import { trackEvent } from '../utils/analytics';
 import JournalAppearanceButton, { JournalAppearanceStyle } from '../components/journal/JournalAppearanceEditor';
 import JournalThemeArtwork from '../components/journal/JournalThemeArtwork';
+import { useConfirmDialog } from '../hooks/useConfirmDialog';
 
 
 const TWEMOJI_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72';
@@ -69,6 +70,7 @@ const getLocalDateStr = () => {
 
 const JournalApp: React.FC = () => {
     const { closeApp, characters, activeCharacterId, apiConfig, addToast, userProfile, updateCharacter, memoryPalaceConfig, characterGroups, theme } = useOS();
+    const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
     // 预览草稿只活在当前 JournalApp 会话里，不写 theme/localStorage。状态放在
     // App 顶层，才能在选择页、列表页与书写页之间切换时继续预览同一套 CSS。
     const [previewJournalAppearance, setPreviewJournalAppearance] = useState<JournalAppearance | undefined>();
@@ -443,6 +445,15 @@ const JournalApp: React.FC = () => {
         }
 
         const isRewrite = Boolean(currentEntry.charPage);
+        if (isRewrite) {
+            const confirmed = await requestConfirm({
+                title: '重新写角色日记？',
+                message: '现有的角色日记回复与上面贴的贴纸将被覆盖。',
+                confirmText: '重新写',
+                variant: 'warning',
+            });
+            if (!confirmed) return;
+        }
         setIsThinking(true);
         addToast(isRewrite ? `正在请 ${selectedChar.name} 重新写这篇日记…` : `正在请 ${selectedChar.name} 写交换日记…`, 'info');
         trackEvent(isRewrite ? '重新生成角色日记' : '邀请角色交换日记');
@@ -979,6 +990,7 @@ ${charPart}
                         </div>
                     ))}
                 </div>
+                {confirmDialog}
             </div>
         );
     }
@@ -1060,6 +1072,7 @@ ${charPart}
                         确定删除 {deletingDiary?.date} 的日记吗？删除后无法恢复。
                     </p>
                 </Modal>
+                {confirmDialog}
             </div>
         );
     }
@@ -1273,6 +1286,7 @@ ${charPart}
                     <p className="text-sm text-slate-600">确定要删除这个贴纸素材吗？(不会影响已使用的日记)</p>
                 </div>
             </Modal>
+            {confirmDialog}
         </div>
     );
 };

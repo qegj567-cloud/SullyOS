@@ -11,6 +11,7 @@ import type { AmsgConnection } from '../../utils/amsgConnectionCode';
 import { detectCapacitorNative } from '../../utils/pushSubscribeShared';
 import { AmsgIcon } from './AmsgArtwork';
 import { useLocalBackHandler } from '../../hooks/useLocalBackHandler';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 import ConfirmDialog from '../os/ConfirmDialog';
 import AmsgIntroDemo from './AmsgIntroDemo';
 import { ActiveMsg2GlobalConfig, CharacterGroup, CharacterProfile, RealtimeConfig } from '../../types';
@@ -309,6 +310,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
   onReenabledAfterConnect,
   onOpenPushStatus,
 }) => {
+  const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
   const [config, setConfig] = useState<ActiveMsg2GlobalConfig | null>(null);
   const [configLoadError, setConfigLoadError] = useState('');
   const configRequestIdRef = useRef(0);
@@ -683,7 +685,19 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
    * 再没有别的地方记得它，用户想回去清都找不到门。
    */
   const confirmDetachWorker = async (previousUrl: string): Promise<boolean> => {
-    const ok = confirm(`清空 Worker 地址之后，那台 Worker 上已经排好的定时任务不会被取消——它们仍会按时触发、照常推送，只是这边管不到了。\n\n地址：${previousUrl}\n\n想连任务一起停掉的话，请先用下面「高级信息」里的「清空云端数据」清一遍，再回来清空地址。\n\n仍然清空吗？`);
+    const ok = await requestConfirm({
+      title: '清空 Worker 地址？',
+      message: (
+        <div className="space-y-2">
+          <p>清空 Worker 地址之后，那台 Worker 上已经排好的定时任务不会被取消——它们仍会按时触发、照常推送，只是这边管不到了。</p>
+          <p className="font-mono text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 break-all text-slate-700">{previousUrl}</p>
+          <p>想连任务一起停掉的话，请先用下面「高级信息」里的「清空云端数据」清一遍，再回来清空地址。</p>
+        </div>
+      ),
+      confirmText: '仍然清空',
+      cancelText: '保留地址',
+      variant: 'warning',
+    });
     if (!ok) return false;
     rememberDetachedWorker(previousUrl);
     addToast('地址已清空，云端那份没动。想清的话把地址填回来，用「清空云端数据」清一遍。', 'info');
@@ -1330,7 +1344,21 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
     addToast(next ? '已开启全局即时对话，角色各自关闭的设置会保留。' : '已关闭全局即时对话，所有角色的聊天回到本机生成。', 'success');
   };
 
-  const handleGenerateServerToken = () => {
+  const handleGenerateServerToken = async () => {
+    const hasExisting = Boolean(
+      config?.serverToken?.trim()
+      || savedServerTokenRef.current.trim()
+      || (config?.initializedAt && config?.workerUrl?.trim()),
+    );
+    if (hasExisting) {
+      const ok = await requestConfirm({
+        title: '重新生成共享密钥？',
+        message: '生成新密钥会覆盖当前共享密钥。在把新密钥同步更新到 Cloudflare Worker 的 AMSG_SERVER_TOKEN 之前，现有 Worker 的请求都会返回 401。',
+        confirmText: '确认重新生成',
+        variant: 'warning',
+      });
+      if (!ok) return;
+    }
     const token = generateClientToken();
     patchConfig({ serverToken: token });
     trackEvent('生成 2.0 Worker 密钥', { which: 'server_token' });
@@ -1600,8 +1628,14 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
             <button
               type="button"
               disabled={provisioning || !cfToken.trim()}
-              onClick={() => {
-                if (!confirm('旧数据库里的数据会全部清掉（已排的主动消息、云端保存的角色状态和凭据），清了找不回来。\n\n确定清空并继续部署吗？')) return;
+              onClick={async () => {
+                const ok = await requestConfirm({
+                  title: '清空旧数据库并继续部署？',
+                  message: '旧数据库里的数据会全部清掉（已排的主动消息、云端保存的角色状态和凭据），清了找不回来。',
+                  confirmText: '清空并部署',
+                  variant: 'danger',
+                });
+                if (!ok) return;
                 void handleOneClickDeploy(staleDatabase.accountId, true);
               }}
               className="w-full py-2.5 rounded-xl text-xs font-bold bg-white border border-rose-300 text-rose-600 active:scale-95 transition-transform disabled:opacity-50"
@@ -2720,6 +2754,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
       }}
       onCancel={() => setRelayConfirmOpen(false)}
     />
+    {confirmDialog}
     </>
   );
 };

@@ -9,6 +9,7 @@ import { extractContent, extractJson } from '../utils/safeApi';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { trackEvent } from '../utils/analytics';
 import Modal from '../components/os/Modal';
+import { useConfirmDialog } from '../hooks/useConfirmDialog';
 import { CharacterGroupFilterBar, filterCharactersByGroup, GROUP_FILTER_ALL } from '../components/character/CharacterGroupFilter';
 import { Planet, RocketLaunch, Lightning, LockSimple, DiceFive, Toolbox, FloppyDisk, ArrowsClockwise, DoorOpen } from '@phosphor-icons/react';
 import TokenImg from '../components/os/TokenImg';
@@ -200,6 +201,7 @@ const GameMarkdown: React.FC<{ content: string, theme: any, customStyle?: { font
 
 const GameApp: React.FC = () => {
     const { closeApp, characters, userProfile, apiConfig, addToast, updateCharacter, characterGroups } = useOS();
+    const { requestConfirm, confirmDialog } = useConfirmDialog();
     const [view, setView] = useState<'lobby' | 'create' | 'play'>('lobby');
     const [games, setGames] = useState<GameSession[]>([]);
     const [activeGame, setActiveGame] = useState<GameSession | null>(null);
@@ -961,6 +963,13 @@ ${logText}
             return;
         }
 
+        if (!await requestConfirm({
+            title: '重新生成上一轮？',
+            message: '上一轮的旁白与角色行动将被删除并重新生成。',
+            confirmText: '重新生成',
+            variant: 'warning',
+        })) return;
+
         // Keep logs up to and including the last user input
         const contextLogs = logs.slice(0, lastUserIndex + 1);
         
@@ -975,7 +984,12 @@ ${logText}
 
     const handleRollbackLog = async (index: number) => {
         if (!activeGame) return;
-        if (!confirm("回退到此条记录？\n(注意：此操作将删除该条记录之后的所有内容，但不会自动重置HP/物品状态，请手动调整)")) return;
+        if (!await requestConfirm({
+            title: '回退到此条记录？',
+            message: '此操作将删除该条记录之后的所有内容，但不会自动重置 HP / 物品状态，请手动调整。',
+            confirmText: '确认回退',
+            variant: 'danger',
+        })) return;
         
         const newLogs = activeGame.logs.slice(0, index + 1);
         const updated = { ...activeGame, logs: newLogs };
@@ -987,7 +1001,12 @@ ${logText}
 
     const handleRestart = async () => {
         if (!activeGame) return;
-        if (!confirm('确定要重置当前游戏吗？所有进度将丢失。')) return;
+        if (!await requestConfirm({
+            title: '重置当前游戏？',
+            message: '当前游戏的全部进度、剧情记录与背包状态都将被清空，无法恢复。',
+            confirmText: '确认重置',
+            variant: 'danger',
+        })) return;
 
         const initialLog: GameLog = {
             id: 'init',
@@ -1937,6 +1956,7 @@ Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆
                     <span className="text-[11px] opacity-50 font-mono leading-relaxed">归档剧情 · 提炼起因经过结果 · 记录人物关系变化</span>
                 </div>
             )}
+            {confirmDialog}
         </div>
     );
 };

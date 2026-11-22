@@ -41,6 +41,7 @@ import { confirmExportSafety } from '../utils/exportGuard';
 import type { CharacterAccommodationPolicy, CharacterProfile, MemoryPalaceWaterlinePreset, Message } from '../types';
 import { CharacterGroupFilterBar, filterCharactersByGroup, GROUP_FILTER_ALL } from '../components/character/CharacterGroupFilter';
 import TokenImg from '../components/os/TokenImg';
+import { useConfirmDialog } from '../hooks/useConfirmDialog';
 import {
     CONTEXT_RANGE_POLICY_VERSION,
     DEFAULT_MANUAL_CONTEXT_LIMIT,
@@ -755,6 +756,7 @@ const MemoryWaterlineEditor: React.FC<{
 export default function MemoryPalaceApp() {
     const guideStep = useFirstUseGuideStep();
     const { activeCharacterId, characters, updateCharacter, setActiveCharacterId, closeApp, apiPresets, userProfile, memoryPalaceConfig, updateMemoryPalaceConfig, remoteVectorConfig, updateRemoteVectorConfig, addToast, apiConfig, characterGroups, groups, realtimeConfig } = useOS();
+    const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
     const char = characters.find(c => c.id === activeCharacterId);
     const [selectGroupId, setSelectGroupId] = useState(GROUP_FILTER_ALL); // 选角色页的分组筛选
 
@@ -1245,7 +1247,13 @@ export default function MemoryPalaceApp() {
 
     const handleDeleteAnticipation = async () => {
         if (!editingAnticipation) return;
-        if (!window.confirm('确定删除这条窗台期盼吗？删除后不会自动恢复。')) return;
+        const confirmed = await requestConfirm({
+            title: '删除窗台期盼？',
+            message: '确定删除这条窗台期盼吗？删除后不会自动恢复。',
+            confirmText: '删除',
+            variant: 'danger',
+        });
+        if (!confirmed) return;
         setSavingAnticipation(true);
         try {
             await AnticipationDB.delete(editingAnticipation.id);
@@ -1383,11 +1391,17 @@ export default function MemoryPalaceApp() {
             addToast('盒内没有可用于重新整合的原始记忆', 'error');
             return;
         }
-        if (!window.confirm(
-            `重新整合「${box.name || '未命名事件'}」？\n\n`
-            + `副 API 会重新读取盒内全部 ${sourceCount} 条原始记忆，不使用当前整合回忆；`
-            + `随后重新生成记忆索引。成功后，本次参与整合的近期片段会合入总结（保留原文），累计合入满 12 条会封盒；失败则保持原样。`,
-        )) return;
+        const confirmed = await requestConfirm({
+            title: `重新整合「${box.name || '未命名事件'}」？`,
+            message: (
+                <span className="whitespace-pre-line">
+                    {`副 API 会重新读取盒内全部 ${sourceCount} 条原始记忆，不使用当前整合回忆；随后重新生成记忆索引。\n\n成功后，本次参与整合的近期片段会合入总结（保留原文），累计合入满 12 条会封盒；失败则保持原样。`}
+                </span>
+            ),
+            confirmText: '重新整合',
+            variant: 'warning',
+        });
+        if (!confirmed) return;
 
         setRegeneratingBoxId(box.id);
         try {
@@ -1431,11 +1445,17 @@ export default function MemoryPalaceApp() {
         if (!char) return;
         const liveCount = box.liveMemoryIds.length;
         if (liveCount === 0) return;
-        if (!confirm(
-            `把「${box.name || '未命名'}」里的 ${liveCount} 条近期片段全部移出？\n\n`
-            + `这些记忆不会被删除，只是脱离当前事件盒、变回普通独立记忆。\n`
-            + `整合回忆和已合入总结的旧片段保持不动。`
-        )) return;
+        const confirmed = await requestConfirm({
+            title: '一键移出近期片段？',
+            message: (
+                <span className="whitespace-pre-line">
+                    {`把「${box.name || '未命名'}」里的 ${liveCount} 条近期片段全部移出？\n\n这些记忆不会被删除，只是脱离当前事件盒、变回普通独立记忆。整合回忆和已合入总结的旧片段保持不动。`}
+                </span>
+            ),
+            confirmText: '全部移出',
+            variant: 'warning',
+        });
+        if (!confirmed) return;
         try {
             await unbindAllLiveMemories(box.id);
             // 刷新 allBoxes + 展开态（盒可能已被整个删掉）
@@ -2268,6 +2288,13 @@ export default function MemoryPalaceApp() {
     /** 批量删除选中的记忆 */
     const handleBatchDelete = async () => {
         if (selectedIds.size === 0 || !char) return;
+        const confirmed = await requestConfirm({
+            title: '批量删除记忆？',
+            message: `确定删除选中的 ${selectedIds.size} 条记忆吗？删除后无法恢复。`,
+            confirmText: '删除',
+            variant: 'danger',
+        });
+        if (!confirmed) return;
         setDeleting(true);
         try {
             const deletedIds = new Set<string>();
@@ -2336,8 +2363,20 @@ export default function MemoryPalaceApp() {
             : '即将清空【本地】所有记忆宫殿数据（云端保留）。\n\n' +
               '包括所有角色的记忆节点、向量、关联、事件盒、高水位标记。\n\n' +
               '此操作不可撤销。确定继续？';
-        if (!confirm(firstPrompt)) return;
-        if (!confirm('再次确认：真的要清空？')) return;
+        const firstConfirmed = await requestConfirm({
+            title: includeRemote ? '清空本地与云端记忆宫殿？' : '清空本地记忆宫殿？',
+            message: <span className="whitespace-pre-line">{firstPrompt}</span>,
+            confirmText: '继续',
+            variant: 'danger',
+        });
+        if (!firstConfirmed) return;
+        const secondConfirmed = await requestConfirm({
+            title: '再次确认清空',
+            message: '再次确认：真的要清空？此操作不可撤销。',
+            confirmText: '确定清空',
+            variant: 'danger',
+        });
+        if (!secondConfirmed) return;
 
         setWiping(true);
         setWipeResult(null);
@@ -2427,12 +2466,17 @@ export default function MemoryPalaceApp() {
             }
             const totalNodes = data.characters.reduce((s, c) => s + (c.nodes?.length || 0), 0);
             const hadVectors = data.includeVectors;
-            if (!confirm(
-                `即将把文件里的 ${totalNodes} 条记忆合并进【${char.name}】的记忆宫殿。\n\n`
-                + `· 不会覆盖现有记忆，是追加合并（重复导入会得到多份副本）。\n`
-                + (hadVectors ? '· 文件含向量，将一并导入。\n' : '· 文件不含向量，导入后这些记忆需重建向量才能被语义检索。\n')
-                + `\n确定继续？`
-            )) return;
+            const confirmed = await requestConfirm({
+                title: `导入 ${totalNodes} 条记忆？`,
+                message: (
+                    <span className="whitespace-pre-line">
+                        {`即将把文件里的 ${totalNodes} 条记忆合并进【${char.name}】的记忆宫殿。\n\n· 不会覆盖现有记忆，是追加合并（重复导入会得到多份副本）。\n${hadVectors ? '· 文件含向量，将一并导入。' : '· 文件不含向量，导入后这些记忆需重建向量才能被语义检索。'}`}
+                    </span>
+                ),
+                confirmText: '导入合并',
+                variant: 'warning',
+            });
+            if (!confirmed) return;
 
             const result = await importMemoryPalace(data, char.id);
             trackEvent('导入记忆宫殿备份');
@@ -2548,6 +2592,7 @@ export default function MemoryPalaceApp() {
         });
     };
 
+    const renderView = () => {
     // ─── 入口页：选角色（picker）─ view='picker' 或未选择 activeCharacterId 时渲染 ─────
     //     退出按钮在这里才真正关闭 App；其它 view 的"← 返回"只回到这一层
 
@@ -4732,9 +4777,15 @@ export default function MemoryPalaceApp() {
                     </button>
 
                     <button
-                        onClick={() => {
-                            if (confirm('确定清除所有从旧版总结迁移过来的记忆吗？（平时聊天产生的记忆不受影响）')) {
-                                handleClearMigrated();
+                        onClick={async () => {
+                            const confirmed = await requestConfirm({
+                                title: '清除已迁移数据？',
+                                message: '确定清除所有从旧版总结迁移过来的记忆吗？（平时聊天产生的记忆不受影响）',
+                                confirmText: '清除',
+                                variant: 'danger',
+                            });
+                            if (confirmed) {
+                                void handleClearMigrated();
                             }
                         }}
                         disabled={deleting}
@@ -6553,14 +6604,26 @@ export default function MemoryPalaceApp() {
                                                 onClick={async () => {
                                                     if (isLegacy) {
                                                         // 遗留 causal link 删除
-                                                        if (confirm('解除这条早期关联？（不会删除记忆本身）')) {
+                                                        const confirmed = await requestConfirm({
+                                                            title: '解除早期关联？',
+                                                            message: '确定解除这条早期关联吗？（不会删除记忆本身）',
+                                                            confirmText: '解除',
+                                                            variant: 'warning',
+                                                        });
+                                                        if (confirmed) {
                                                             await MemoryLinkDB.delete(id);
                                                             setLinkedMemories(prev => prev.filter(l => l.id !== id));
                                                         }
                                                     } else if (isSummary) {
                                                         alert('整合回忆是事件盒的压缩产物，不能单独解除；若要重建请删除事件盒所有成员。');
                                                     } else {
-                                                        if (confirm('把这条记忆移出事件盒？（记忆本身不删，会变回普通独立记忆）')) {
+                                                        const confirmed = await requestConfirm({
+                                                            title: '移出事件盒？',
+                                                            message: '确定把这条记忆移出事件盒吗？（记忆本身不删，会变回普通独立记忆）',
+                                                            confirmText: '移出',
+                                                            variant: 'warning',
+                                                        });
+                                                        if (confirmed) {
                                                             await removeMemoryFromBox(linkedNode.id);
                                                             await loadLinkedMemories(selectedNode!.id);
                                                         }
@@ -6587,9 +6650,15 @@ export default function MemoryPalaceApp() {
 
                             {/* 删除按钮 */}
                             <button
-                                onClick={() => {
-                                    if (confirm('确定删除这条记忆？（删除后无法恢复）')) {
-                                        handleDeleteSingle(selectedNode.id);
+                                onClick={async () => {
+                                    const confirmed = await requestConfirm({
+                                        title: '删除这条记忆？',
+                                        message: '确定删除这条记忆吗？（删除后无法恢复）',
+                                        confirmText: '删除',
+                                        variant: 'danger',
+                                    });
+                                    if (confirmed) {
+                                        void handleDeleteSingle(selectedNode.id);
                                     }
                                 }}
                                 disabled={deleting}
@@ -6616,6 +6685,14 @@ export default function MemoryPalaceApp() {
     }
 
     return null;
+    };
+
+    return (
+        <>
+            {renderView()}
+            {confirmDialog}
+        </>
+    );
 }
 import { useAppShortcut } from '../utils/appShortcutLaunch';
 import { AppID as ShortcutAppID } from '../types';

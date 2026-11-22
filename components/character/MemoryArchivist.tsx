@@ -2,6 +2,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { MemoryFragment } from '../../types';
 import Modal from '../../components/os/Modal';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 import { DEFAULT_REFINE_PROMPTS } from '../../components/chat/ChatConstants';
 import { buildMemoryArchiveIndex } from '../../utils/memoryArchiveIndex';
 
@@ -29,6 +30,7 @@ interface MemoryArchivistProps {
 }
 
 const MemoryArchivist: React.FC<MemoryArchivistProps> = ({ memories, refinedMemories, activeMemoryMonths, charName, userName, onRefine, onDeleteMemories, onUpdateMemory, linkedMemoryEnabled, onToggleActiveMonth, onUpdateRefinedMemory, onDeleteRefinedMemory, onForceArchiveDate, forceArchiveTemplates, forceArchiveDefaultPromptId }) => {
+    const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
     // 每个日期的"强制重总结"运行状态
     const [forcingDate, setForcingDate] = useState<string | null>(null);
     // 重总结前弹出模板选择器：把 date 存起来打开 modal
@@ -116,6 +118,16 @@ const MemoryArchivist: React.FC<MemoryArchivistProps> = ({ memories, refinedMemo
 
     const triggerRefine = async () => {
         if (!viewState.selectedYear || !viewState.selectedMonth) return;
+        const monthKey = `${viewState.selectedYear}-${viewState.selectedMonth}`;
+        if (refinedMemories?.[monthKey]) {
+            const ok = await requestConfirm({
+                title: '重新精炼本月核心记忆？',
+                message: '现有的月度核心记忆及手动修改将被覆盖。',
+                confirmText: '确认精炼',
+                variant: 'warning',
+            });
+            if (!ok) return;
+        }
         setIsRefining(true);
         const monthMems = tree[viewState.selectedYear][viewState.selectedMonth];
         const combinedText = monthMems.map(m => `${m.date}: ${m.summary} (${m.mood || '无'})`).join('\n');
@@ -460,6 +472,7 @@ const MemoryArchivist: React.FC<MemoryArchivistProps> = ({ memories, refinedMemo
                     </div>
                 </div>
             </Modal>
+            {confirmDialog}
         </div>
     );
 };

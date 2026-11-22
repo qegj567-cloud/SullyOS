@@ -12,6 +12,7 @@ import { DEFAULT_HOME_THEME, decodeColorField } from './types';
 import type { MemoryRoom } from '../../utils/memoryPalace/types';
 import { ROOM_META, ROOM_SIZES } from './roomTemplates';
 import TokenImg from '../../components/os/TokenImg';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 
 interface Props {
   homeState: PixelHomeState;
@@ -65,6 +66,7 @@ const WALL_BORDER_LIGHT_FALLBACK = DEFAULT_HOME_THEME.wallBorderLight;
 const BG_COLOR_FALLBACK = DEFAULT_HOME_THEME.bgColor;
 
 const PixelHomeMap: React.FC<Props> = ({ homeState, assets, charSprite, userName, onEnterRoom, onUpdateTheme }) => {
+  const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
   const theme = homeState.theme || DEFAULT_HOME_THEME;
   const WALL_BORDER = theme.wallBorder || WALL_BORDER_FALLBACK;
   const WALL_BORDER_LIGHT = theme.wallBorderLight || WALL_BORDER_LIGHT_FALLBACK;
@@ -261,7 +263,15 @@ const PixelHomeMap: React.FC<Props> = ({ homeState, assets, charSprite, userName
               <ThemeRow label="墙体高光" value={WALL_BORDER_LIGHT} onChange={v => updateTheme({ wallBorderLight: v })} />
               <ThemeRow label="画布背景" value={BG_COLOR} onChange={v => updateTheme({ bgColor: v })} />
               <ThemeRow label="楼梯亮条" value={CORRIDOR_STEP} onChange={v => updateTheme({ corridorStep: v })} />
-              <button onClick={() => updateTheme(DEFAULT_HOME_THEME)}
+              <button onClick={async () => {
+                const ok = await requestConfirm({
+                  title: '还原默认家园主题配色？',
+                  message: '外围墙体、墙体高光、画布背景与楼梯亮条将恢复默认颜色。',
+                  confirmText: '确认还原',
+                  variant: 'warning',
+                });
+                if (ok) updateTheme(DEFAULT_HOME_THEME);
+              }}
                 className="w-full py-1.5 rounded-md bg-slate-700 hover:bg-slate-600 text-slate-300">
                 还原默认
               </button>
@@ -470,6 +480,7 @@ const PixelHomeMap: React.FC<Props> = ({ homeState, assets, charSprite, userName
           <Corridor x={4} y1={21} y2={22} border={WALL_BORDER} step={CORRIDOR_STEP} />
         </div>
       </div>
+      <div style={{ display: 'contents' }} onClick={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()}>{confirmDialog}</div>
     </div>
   );
 };

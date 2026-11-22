@@ -25,6 +25,7 @@ import { shareOrDownloadBlob } from '../utils/shareExport';
 import { readShareFile } from '../utils/pngShare';
 import BeautyShareChannel from '../components/appearance/BeautyShareChannel';
 import { hasBeautyReceiveRequest,hasBeautyLibraryRequest } from '../utils/beautyNavigation';
+import { useConfirmDialog } from '../hooks/useConfirmDialog';
 
 const CustomIconImage: React.FC<{ value: string; alt: string; preserveOutline?: boolean }> = ({ value, alt, preserveOutline = false }) => {
     const url = useBlobRefUrl(value);
@@ -489,6 +490,7 @@ const PresetManager: React.FC<PresetManagerProps> = ({ presets, onSave, onApply,
 
 const Appearance: React.FC = () => {
   const { theme, updateTheme, closeApp, openApp, setCustomIcon, customIcons, addToast, appearancePresets, saveAppearancePreset, applyAppearancePreset, deleteAppearancePreset, renameAppearancePreset, exportAppearancePreset, importAppearancePreset, characters, activeCharacterId, updateCharacter } = useOS();
+  const { requestConfirm, confirmDialog } = useConfirmDialog();
   const [activeTab, setActiveTab] = useState<'theme' | 'icons' | 'presets' | 'sharing'>(() => (hasBeautyReceiveRequest()||hasBeautyLibraryRequest()) ? 'sharing' : 'theme');
   useAppShortcut(ShortcutAppID.Appearance, intent => setActiveTab((intent.entryId || 'theme') as typeof activeTab));
   const [shareBusy, setShareBusy] = useState(false);
@@ -603,6 +605,13 @@ const Appearance: React.FC = () => {
 
   const removeCompanionUpload = async () => {
       if (!appearanceCharacter?.companionAvatar?.imageRef) return;
+      const ok = await requestConfirm({
+          title: '移除已导入图片？',
+          message: '将移除当前桌面静态形象图片并切回动态模型或见面立绘；若未保存在衣柜中，原图片也会一并删除。',
+          confirmText: '确认移除',
+          variant: 'danger',
+      });
+      if (!ok) return;
       const previousRef = appearanceCharacter.companionAvatar.imageRef;
       updateCharacter(appearanceCharacter.id, {
           companionAvatar: {
@@ -673,11 +682,18 @@ const Appearance: React.FC = () => {
     updateTheme({ desktopDecorations: next });
   }, [decorations, updateTheme]);
 
-  const removeDecoration = useCallback((id: string) => {
+  const removeDecoration = useCallback(async (id: string) => {
+    const ok = await requestConfirm({
+      title: '删除这个装饰贴纸？',
+      message: '将从桌面移除该装饰贴纸。',
+      confirmText: '确认删除',
+      variant: 'danger',
+    });
+    if (!ok) return;
     const next = decorations.filter(d => d.id !== id);
     updateTheme({ desktopDecorations: next });
     if (editingDecoId === id) setEditingDecoId(null);
-  }, [decorations, updateTheme, editingDecoId]);
+  }, [decorations, updateTheme, editingDecoId, requestConfirm]);
 
   const handleDecoUpload = async (file: File) => {
     try {
@@ -760,10 +776,18 @@ const Appearance: React.FC = () => {
       }
   };
 
-  const removeWidget = (slot: string) => {
+  const removeWidget = async (slot: string, label = '小组件') => {
+      const ok = await requestConfirm({
+          title: `移除${label}？`,
+          message: `将从桌面移除该${label}图片，之后可以随时重新上传。`,
+          confirmText: '确认移除',
+          variant: 'danger',
+      });
+      if (!ok) return false;
       const current = { ...(theme.launcherWidgets || {}) };
       delete current[slot];
       updateTheme({ launcherWidgets: Object.keys(current).length > 0 ? current : undefined });
+      return true;
   };
 
   const handleFontUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1287,6 +1311,13 @@ const Appearance: React.FC = () => {
                                 addToast('当前已是默认壁纸', 'info');
                                 return;
                             }
+                            const ok = await requestConfirm({
+                                title: '恢复默认手机壁纸？',
+                                message: '将把当前桌面壁纸恢复为系统默认壁纸。',
+                                confirmText: '恢复默认',
+                                variant: 'warning',
+                            });
+                            if (!ok) return;
                             await updateTheme({ wallpaper: DEFAULT_WALLPAPER });
                             addToast('已恢复默认壁纸', 'success');
                         }}
@@ -1413,9 +1444,8 @@ const Appearance: React.FC = () => {
                                 <LongPressArea
                                     className={`w-40 aspect-square rounded-2xl overflow-hidden relative cursor-pointer transition-transform active:scale-95 ${img ? 'shadow-sm' : 'border-2 border-dashed border-slate-200 bg-white flex items-center justify-center'}`}
                                     onClick={() => { setActiveWidgetSlot(slot); widgetInputRef.current?.click(); }}
-                                    onLongPress={() => {
-                                        if (img) {
-                                            removeWidget(slot);
+                                    onLongPress={async () => {
+                                        if (img && await removeWidget(slot, '首页方图')) {
                                             addToast('已移除方图', 'success');
                                         }
                                     }}
@@ -1453,9 +1483,8 @@ const Appearance: React.FC = () => {
                                         key={slot}
                                         className={`flex-1 aspect-square rounded-xl overflow-hidden relative cursor-pointer transition-transform active:scale-95 ${img ? 'shadow-sm' : 'border-2 border-dashed border-slate-200 bg-white flex items-center justify-center'}`}
                                         onClick={() => { setActiveWidgetSlot(slot); widgetInputRef.current?.click(); }}
-                                        onLongPress={() => {
-                                            if (img) {
-                                                removeWidget(slot);
+                                        onLongPress={async () => {
+                                            if (img && await removeWidget(slot, '小组件图片')) {
                                                 addToast('已移除小组件', 'success');
                                             }
                                         }}
@@ -1484,9 +1513,8 @@ const Appearance: React.FC = () => {
                                 <LongPressArea
                                     className={`w-full h-20 rounded-xl overflow-hidden relative cursor-pointer transition-transform active:scale-[0.98] ${img ? 'shadow-sm' : 'border-2 border-dashed border-slate-200 bg-white flex items-center justify-center'}`}
                                     onClick={() => { setActiveWidgetSlot(slot); widgetInputRef.current?.click(); }}
-                                    onLongPress={() => {
-                                        if (img) {
-                                            removeWidget(slot);
+                                    onLongPress={async () => {
+                                        if (img && await removeWidget(slot, '桌面横幅')) {
                                             addToast('已移除横幅', 'success');
                                         }
                                     }}
@@ -1621,7 +1649,7 @@ const Appearance: React.FC = () => {
                                             <div className="text-xs font-bold text-slate-600">装饰 #{idx + 1}</div>
                                             <div className="text-[9px] text-slate-400">位置 ({Math.round(deco.x)}, {Math.round(deco.y)}) · {deco.scale}x · {deco.rotation}°</div>
                                         </div>
-                                        <button onClick={(e) => { e.stopPropagation(); removeDecoration(deco.id); }} className="p-1.5 text-red-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                                        <button onClick={(e) => { e.stopPropagation(); void removeDecoration(deco.id); }} className="p-1.5 text-red-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
                                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>
                                         </button>
                                         <div className={`w-5 h-5 flex items-center justify-center transition-transform ${editingDecoId === deco.id ? 'rotate-180' : ''}`}>
@@ -1710,7 +1738,17 @@ const Appearance: React.FC = () => {
                                 </div>
                             ))}
                             {/* Clear all button */}
-                            <button onClick={() => { updateTheme({ desktopDecorations: [] }); setEditingDecoId(null); }}
+                            <button onClick={async () => {
+                                const ok = await requestConfirm({
+                                    title: '清空所有桌面装饰？',
+                                    message: `将移除全部 ${decorations.length} 个桌面装饰贴纸，此操作不可撤销。`,
+                                    confirmText: '确认清空',
+                                    variant: 'danger',
+                                });
+                                if (!ok) return;
+                                updateTheme({ desktopDecorations: [] });
+                                setEditingDecoId(null);
+                            }}
                                 className="w-full py-2 text-xs font-bold text-red-400 bg-red-50 rounded-xl hover:bg-red-100 transition-colors mt-2">
                                 清空所有装饰
                             </button>
@@ -1761,7 +1799,15 @@ const Appearance: React.FC = () => {
                              </div>
                              <span className="text-[10px] text-slate-500 font-medium">{app.name}</span>
                              {customUrl && (
-                                 <button onClick={() => setCustomIcon(app.id, undefined)} className="text-[10px] text-red-400">重置</button>
+                                 <button onClick={async () => {
+                                     const ok = await requestConfirm({
+                                         title: `重置「${app.name}」图标？`,
+                                         message: '将清除自定义图标，恢复为系统默认图标。',
+                                         confirmText: '确认重置',
+                                         variant: 'warning',
+                                     });
+                                     if (ok) await setCustomIcon(app.id, undefined);
+                                 }} className="text-[10px] text-red-400">重置</button>
                              )}
                         </div>
                     );
@@ -1786,6 +1832,7 @@ const Appearance: React.FC = () => {
             <BeautyShareChannel presets={appearancePresets} onExport={exportAppearancePreset} onImport={importAppearancePreset} onBusyChange={setShareBusy} onBack={() => setActiveTab('theme')}/>
         ) : null}
       </div>
+      {confirmDialog}
     </div>
   );
 };

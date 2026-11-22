@@ -23,6 +23,7 @@ import type { PixelCharConfig } from './pixelCharGenerator';
 import { ensurePixelChar } from './pixelCharGenerator';
 import { DB } from '../../utils/db';
 import { trackEvent } from '../../utils/analytics';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 
 // 内置角色的默认像素形象（用户未自定义时使用）
 const PIXEL_CHAR_BASE = ((import.meta as any).env?.BASE_URL ?? '/') + 'pixel-char/';
@@ -41,6 +42,7 @@ interface Props {
 
 const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName, onBack, navigation }) => {
   const { addToast, apiConfig, characters, userProfile, remoteVectorConfig } = useOS();
+  const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
   const char = characters.find(c => c.id === charId);
   const [viewMode, setViewMode] = useState<PixelHomeViewMode>('map');
   const [homeState, setHomeState] = useState<PixelHomeState | null>(null);
@@ -188,6 +190,25 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
   const handleImportFile = useCallback(async (file: File) => {
     try {
       const json = await readFileAsText(file);
+      let parsed: any;
+      try {
+        parsed = JSON.parse(json);
+      } catch {
+        addToast?.('导入失败: 无效的预设文件格式', 'error');
+        return;
+      }
+      if (!parsed?.version || !Array.isArray(parsed?.rooms)) {
+        addToast?.('无效的预设文件格式', 'error');
+        return;
+      }
+      const presetTitle = typeof parsed.name === 'string' && parsed.name.trim() ? `「${parsed.name.trim()}」` : '';
+      const ok = await requestConfirm({
+        title: `导入预设${presetTitle}并覆盖当前角色全部房间布局？`,
+        message: `将用预设里的 ${parsed.rooms.length} 个房间布局覆盖 ${charName} 当前所有房间的家具与装修；新增素材会追加到仓库。`,
+        confirmText: '确认导入',
+        variant: 'warning',
+      });
+      if (!ok) return;
       const result = await importPreset(json, charId);
       if (result.success) {
         await handleRoomUpdate();
@@ -201,7 +222,7 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
     } catch (err: any) {
       addToast?.('导入失败: ' + err.message, 'error');
     }
-  }, [charId, handleRoomUpdate, addToast]);
+  }, [charId, charName, handleRoomUpdate, addToast, requestConfirm]);
 
   const handleAssetsChanged = useCallback(async () => {
     setAssets(await PixelAssetDB.getAll());
@@ -368,9 +389,10 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
             <BottomTab label="导入" onClick={() => importInputRef.current?.click()} />
           </div>
           <input ref={importInputRef} type="file" accept=".json,.png,application/json,image/png" className="hidden"
-            onChange={e => { if (e.target.files?.[0]) { handleImportFile(e.target.files[0]); e.target.value = ''; } }} />
+            onChange={e => { if (e.target.files?.[0]) { void handleImportFile(e.target.files[0]); e.target.value = ''; } }} />
         </div>
       )}
+      {confirmDialog}
     </div>
   );
 };

@@ -659,13 +659,13 @@ const LifeRecordCard: React.FC<{
                 ) : canResolve ? (
                     <div className="mt-2.5 flex gap-2">
                         <button
-                            onClick={(e) => { e.stopPropagation(); onResolveLifeRecord?.(m, 'confirmed'); trackEvent('处理角色代记的生活记录', { result: 'confirmed' }); }}
+                            onClick={(e) => { e.stopPropagation(); onResolveLifeRecord?.(m, 'confirmed'); }}
                             className="flex-1 py-1.5 rounded-xl bg-white/85 text-emerald-600 text-[11px] font-bold shadow-sm active:scale-95 transition-transform"
                         >
                             ✓ 确认
                         </button>
                         <button
-                            onClick={(e) => { e.stopPropagation(); onResolveLifeRecord?.(m, 'rejected'); trackEvent('处理角色代记的生活记录', { result: 'rejected' }); }}
+                            onClick={(e) => { e.stopPropagation(); onResolveLifeRecord?.(m, 'rejected'); }}
                             className="flex-1 py-1.5 rounded-xl bg-white/60 text-slate-500 text-[11px] font-bold shadow-sm active:scale-95 transition-transform"
                         >
                             ✗ 否决

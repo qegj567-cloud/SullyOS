@@ -65,6 +65,7 @@ import {ChatTrialControls, type ChatDecorationTrial} from '../components/chat/Ch
 import ChatAppearanceWardrobe from '../components/chat/ChatAppearanceWardrobe';
 import ChatInputArea from '../components/chat/ChatInputArea';
 import ConfirmDialog from '../components/os/ConfirmDialog';
+import { useConfirmDialog } from '../hooks/useConfirmDialog';
 import { loadChatInputPreferences, saveChatInputPreferences } from '../utils/chatInputPreferences';
 import InstantChatRouteNotice from '../components/chat/InstantChatRouteNotice';
 import MemoryRepairPortal from '../components/chat/MemoryRepairPortal';
@@ -317,6 +318,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
     const [showActiveMsg2Modal, setShowActiveMsg2Modal] = useState(false);
     const [showAwayMessageModal, setShowAwayMessageModal] = useState(false);
     const [showThinkingChainModal, setShowThinkingChainModal] = useState(false);
+    const { requestConfirm, confirmDialog } = useConfirmDialog();
 
     // Archive Prompts State
     const [archivePrompts, setArchivePrompts] = useState<{id: string, name: string, content: string}[]>(DEFAULT_ARCHIVE_PROMPTS);
@@ -505,6 +507,8 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
         updateCharacter,
         updateUserProfile,
     });
+    const isTypingRef = useRef(isTyping);
+    isTypingRef.current = isTyping;
 
     // --- Voice TTS for chat messages ---
     interface VoiceData { url: string; originalText: string; spokenText?: string; lang?: string; favorite?: boolean; recording?: StreamedVoice; }
@@ -1758,17 +1762,25 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
         if (!char) return;
         // 只处理仍待复核的卡片，避免重复点击。
         if (msg.metadata?.reviewStatus && msg.metadata.reviewStatus !== 'active') return;
+        if (action === 'rejected') {
+            if (!(await requestConfirm({
+                title: '否决这条代记记录？',
+                message: '否决后对应的账本流水也会一并删除，无法恢复。',
+                confirmText: '确认否决',
+            }))) return;
+        }
         try {
             await resolveLifeRecordCard(msg, action);
             // 否决会把这条记录踢出注入摘要、回滚银行流水，生活记录是注入给所有开了开关的
             // 角色的共享素材，所以逐个打脏（同表情库）。
             markAmsgStateDirtyForAll({ characters, userProfile, groups, realtimeConfig });
+            trackEvent('处理角色代记的生活记录', { result: action });
             addToast(action === 'confirmed' ? '已确认记录' : '已否决，记录撤销', action === 'confirmed' ? 'success' : 'info');
         } catch (e) {
             console.error('[LifeRecord] resolve failed:', e);
         }
         await reloadMessages(visibleCountRef.current);
-    }, [char, reloadMessages, addToast, characters, userProfile, groups, realtimeConfig]);
+    }, [char, reloadMessages, addToast, characters, userProfile, groups, realtimeConfig, requestConfirm]);
 
     // 顶栏 ⚡ 手动触发（也是「发完后自动生成」到点时调的那一下）。
     const handleManualTrigger = () => {
@@ -1786,8 +1798,8 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
     };
 
     const handleReroll = async () => {
+        if (!canReroll) return;
         if (isTyping || messages.length === 0) return;
-        autoReply.cancel();
 
         const lastMsg = messages[messages.length - 1];
         if (lastMsg.role !== 'assistant') return;
@@ -1801,6 +1813,15 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
 
         if (toDeleteIds.length === 0) return;
 
+        if (!(await requestConfirm({
+            title: '重新生成上一轮回复？',
+            message: '当前最后一轮角色回复（及已合成的语音）将被删除并重新生成。',
+            confirmText: '重新生成',
+            variant: 'warning',
+        }))) return;
+        if (isTyping || isTypingRef.current) return;
+
+        autoReply.cancel();
         await DB.deleteMessages(toDeleteIds);
         discardVoiceForMessages(toDeleteIds);
         // 重 roll 也删了消息：正常路径下这轮生成结束会再打脏一次，这里先打是兜住
@@ -2283,6 +2304,14 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
 
     const handleScheduleStyleChange = async (style: 'lifestyle' | 'mindful') => {
         if (!char) return;
+        if (scheduleData?.slots?.length && char.scheduleStyle !== style) {
+            if (!(await requestConfirm({
+                title: '切换日程风格并重新生成？',
+                message: '今日已生成的日程将被替换。',
+                confirmText: '确认切换',
+                variant: 'warning',
+            }))) return;
+        }
         // 与情绪/意识流强制同步：启用日程时自动启用情绪感知
         const prevEmotion = char.emotionConfig;
         const nextEmotion = { ...(prevEmotion || {}), enabled: true };
@@ -2422,11 +2451,17 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
         setEditingPrompt(null);
     };
 
-    const handleDeletePrompt = (id: string) => {
+    const handleDeletePrompt = async (id: string) => {
         if (id.startsWith('preset_')) {
             addToast('默认预设不可删除', 'error');
             return;
         }
+        const target = archivePrompts.find(p => p.id === id);
+        if (!(await requestConfirm({
+            title: `删除归档提示词「${target?.name || ''}」？`,
+            message: '删除后不可恢复。',
+            confirmText: '删除',
+        }))) return;
         setArchivePrompts(prev => {
             const next = prev.filter(p => p.id !== id);
             const customOnly = next.filter(p => !p.id.startsWith('preset_'));
@@ -3012,6 +3047,11 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
     const handleDeleteMessage = async () => {
         if (!selectedMessage) return;
         const deletedId = selectedMessage.id;
+        if (!(await requestConfirm({
+            title: '删除这条消息？',
+            message: '删除后不可恢复，关联的合成语音也会一并清除。',
+            confirmText: '删除',
+        }))) return;
         await DB.deleteMessage(deletedId);
         discardVoiceForMessages([deletedId]);
         // 满血主动消息：云端 fire_pack 里带最近对话原文，删了消息不打脏的话，角色到点
@@ -3144,6 +3184,20 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
         });
         if (msgIdsToDelete.size === 0 && thinkingIdsToClear.size === 0) return;
 
+        const summaryParts: string[] = [];
+        if (msgIdsToDelete.size > 0) summaryParts.push(`删除选中的 ${msgIdsToDelete.size} 条消息`);
+        if (thinkingIdsToClear.size > 0) summaryParts.push(`清除选中的 ${thinkingIdsToClear.size} 条思维链`);
+        const confirmMessage = msgIdsToDelete.size > 0 && thinkingIdsToClear.size > 0
+            ? `将永久删除选中的 ${msgIdsToDelete.size} 条消息，并清除选中的 ${thinkingIdsToClear.size} 条思维链，操作后不可恢复。`
+            : msgIdsToDelete.size > 0
+                ? `将永久删除选中的 ${msgIdsToDelete.size} 条消息，关联的合成语音也会一并清除，操作后不可恢复。`
+                : `将清除选中的 ${thinkingIdsToClear.size} 条思维链，操作后不可恢复。`;
+        if (!(await requestConfirm({
+            title: `确认${summaryParts.join('并')}？`,
+            message: confirmMessage,
+            confirmText: '确认删除',
+        }))) return;
+
         // 删消息时，如果它身上的思维链没被勾选，就尝试迁移到同一轮里下一条 assistant 消息上，
         // 让"只想删第一条输出，但想留思维链"成立
         const sorted = [...messages].sort((a, b) => a.id - b.id);
@@ -3202,6 +3256,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
         if (msgIdsToDelete.size > 0) parts.push(`已删除 ${msgIdsToDelete.size} 条消息`);
         if (thinkingIdsToClear.size > 0) parts.push(`已清除 ${thinkingIdsToClear.size} 条思维链`);
         addToast(parts.join('，'), 'success');
+        trackEvent('批量删除选中的消息');
 
         setSelectionMode(false);
         setSelectedMsgIds(new Set());
@@ -4346,6 +4401,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
                 message="检测到分享链接，要关闭自动转卡片吗？关闭后，本条及之后的链接会按原文发送，方便角色用你配置的 MCP 读取。保留卡片也会带上原链接。两类解析可在加号 → 设置中分别调整。"
                 confirmText="关闭，发送原文" cancelText="保留卡片"
                 onConfirm={() => answerLinkCard(false)} onCancel={() => answerLinkCard(true)} />
+            {confirmDialog}
             <ChatModals
                 compactHome={!!homePhone}
                 modalType={modalType} setModalType={setModalType}

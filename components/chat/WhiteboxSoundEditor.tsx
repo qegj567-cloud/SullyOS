@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react';
+import BeautyConfirmDialog from '../share/BeautyConfirmDialog';
 import { readShareText } from '../../utils/pngShare';
 import { shareOrDownloadFile } from '../../utils/shareExport';
 import {
@@ -62,13 +63,24 @@ const WhiteboxSoundEditor: React.FC<Props> = ({ sound, onChangeSound, showBind =
 
     const [urlDraft, setUrlDraft] = useState(isCustom && /^https?:/i.test(src) ? src : '');
     const [busy, setBusy] = useState(false);
+    const [pendingOverwrite, setPendingOverwrite] = useState<
+        null | { kind: 'clear' } | { kind: 'replace'; next: { src: string; volume: number } }
+    >(null);
     const fileRef = useRef<HTMLInputElement>(null);
 
-    const pickBuiltin = (key: string) => {
+    const applyNextSound = (next: { src: string; volume: number }) => {
         unlockWhiteboxAudio();
-        const next = { src: key, volume };
         onChangeSound(next);
         playWhiteboxSound(next); // 点一下即试听
+    };
+
+    const pickBuiltin = (key: string) => {
+        const next = { src: key, volume };
+        if (isUpload) {
+            setPendingOverwrite({ kind: 'replace', next });
+            return;
+        }
+        applyNextSound(next);
     };
 
     const setVolume = (v: number) => {
@@ -103,10 +115,12 @@ const WhiteboxSoundEditor: React.FC<Props> = ({ sound, onChangeSound, showBind =
         const u = urlDraft.trim();
         if (!u) return;
         if (!/^https?:\/\//i.test(u)) { window.alert('请填写 http(s):// 开头的音频直链。'); return; }
-        unlockWhiteboxAudio();
         const next = { src: u, volume };
-        onChangeSound(next);
-        playWhiteboxSound(next);
+        if (isUpload) {
+            setPendingOverwrite({ kind: 'replace', next });
+            return;
+        }
+        applyNextSound(next);
     };
 
     const clearSound = () => { onChangeSound(null); setUrlDraft(''); };
@@ -197,13 +211,35 @@ const WhiteboxSoundEditor: React.FC<Props> = ({ sound, onChangeSound, showBind =
                         className="rounded-xl bg-indigo-500 px-4 py-1.5 text-[11px] font-bold text-white hover:bg-indigo-600 disabled:opacity-40"
                     >▶ 试听</button>
                     {src && (
-                        <button onClick={clearSound} className="rounded-xl px-3 py-1.5 text-[11px] font-semibold text-rose-400 hover:bg-rose-50 hover:text-rose-500">关闭提示音</button>
+                        <button onClick={() => { if (isUpload) setPendingOverwrite({ kind: 'clear' }); else clearSound(); }} className="rounded-xl px-3 py-1.5 text-[11px] font-semibold text-rose-400 hover:bg-rose-50 hover:text-rose-500">关闭提示音</button>
                     )}
                     <span className="ml-auto text-[10px] text-slate-400">
                         {src ? (isBuiltin ? '当前：内置音效' : '当前：自定义音频') : '当前：无'}
                     </span>
                 </div>
             </div>
+
+            {pendingOverwrite !== null && (
+                <BeautyConfirmDialog
+                    title={pendingOverwrite.kind === 'clear' ? '关闭并清除当前提示音？' : '替换当前上传的提示音？'}
+                    confirm={pendingOverwrite.kind === 'clear' ? '确认清除' : '确认替换'}
+                    danger
+                    onClose={() => setPendingOverwrite(null)}
+                    onConfirm={async () => {
+                        if (pendingOverwrite.kind === 'clear') {
+                            clearSound();
+                        } else {
+                            applyNextSound(pendingOverwrite.next);
+                        }
+                    }}
+                >
+                    <p>
+                        {pendingOverwrite.kind === 'clear'
+                            ? '当前内嵌上传的音频将被清除，之后如需恢复需要重新上传音频文件。'
+                            : '当前内嵌上传的音频将被替换并丢失，之后如需恢复需要重新上传音频文件。'}
+                    </p>
+                </BeautyConfirmDialog>
+            )}
 
             {/* 绑定到进阶样式 开关（全局默认版不显示） */}
             {showBind && (

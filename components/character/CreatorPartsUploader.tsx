@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useOS } from '../../context/OSContext';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 import { CaretLeft, FileArrowUp, Trash, Warning } from '@phosphor-icons/react';
 import { DB } from '../../utils/db';
 import { CC_CATEGORIES, labelOfCategory } from '../../utils/creatorCategories';
@@ -14,6 +15,7 @@ import type { ParsedPsdPart } from '../../utils/psdCreatorImport';
  */
 const CreatorPartsUploader: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     const { addToast } = useOS();
+    const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
     const [parts, setParts] = useState<CustomCreatorPart[]>([]);
     const [showRules, setShowRules] = useState(false);
     const [psdParsing, setPsdParsing] = useState(false);
@@ -76,8 +78,15 @@ const CreatorPartsUploader: React.FC<{ onClose: () => void }> = ({ onClose }) =>
         }
     };
 
-    const removePart = async (id: string) => {
-        try { await DB.deleteCustomCreatorPart(id); await load(); addToast('已删除', 'success'); }
+    const removePart = async (part: CustomCreatorPart) => {
+        const ok = await requestConfirm({
+            title: `删除自定义部件「${part.name}」？`,
+            message: '删除后该部件将从捏人器里移除，此操作不可撤销。',
+            confirmText: '确认删除',
+            variant: 'danger',
+        });
+        if (!ok) return;
+        try { await DB.deleteCustomCreatorPart(part.id); await load(); addToast('已删除', 'success'); }
         catch (e) { addToast('删除失败：' + String((e as Error)?.message || e), 'error'); }
     };
 
@@ -185,7 +194,7 @@ const CreatorPartsUploader: React.FC<{ onClose: () => void }> = ({ onClose }) =>
                                             style={{ background: 'repeating-conic-gradient(#ffffff10 0% 25%, transparent 0% 50%) 50% / 14px 14px' }}>
                                             <img src={p.src} alt={p.name} className="max-h-full max-w-full object-contain" />
                                             <span className="absolute bottom-0 inset-x-0 bg-black/60 text-[8px] text-white/90 px-1 py-0.5 truncate">{p.name}{p.tintable ? ' ·色' : ''}</span>
-                                            <button onClick={() => void removePart(p.id)} className="absolute top-1 right-1 bg-red-500/90 rounded-full p-1 active:scale-90 text-white"><Trash size={10} weight="bold" /></button>
+                                            <button onClick={() => void removePart(p)} className="absolute top-1 right-1 bg-red-500/90 rounded-full p-1 active:scale-90 text-white"><Trash size={10} weight="bold" /></button>
                                         </div>
                                     ))}
                                 </div>
@@ -197,6 +206,7 @@ const CreatorPartsUploader: React.FC<{ onClose: () => void }> = ({ onClose }) =>
                     </p>
                 </div>
             </div>
+            {confirmDialog}
         </div>
     );
 };

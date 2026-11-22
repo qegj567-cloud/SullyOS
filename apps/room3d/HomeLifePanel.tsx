@@ -35,7 +35,8 @@ export default function HomeLifePanel({editor,character,user,api,conversationCon
  useEffect(()=>()=>onBusyChange?.(false),[onBusyChange]);
  const [draft,setDraft]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[filter,setFilter]=useState('all'),[limit,setLimit]=useState(40),[revision,refresh]=useState(0);
  useEffect(()=>{onBusyChange?.(busy);},[busy,onBusyChange]);
- const [editing,setEditing]=useState<string>(),[editText,setEditText]=useState(''),[removed,setRemoved]=useState<{record:HomeRecord;index:number}>();
+ const [editing,setEditing]=useState<string>(),[editText,setEditText]=useState(''),[removed,setRemoved]=useState<{record:HomeRecord;index:number}>(),[confirmingRetryId,setConfirmingRetryId]=useState<string|null>(null);
+ useEffect(()=>{setConfirmingRetryId(null);},[panel,character?.id]);
  const controller=useRef<AbortController>(),alive=useRef(true),list=useRef<HTMLDivElement>(null),sheet=useRef<HTMLElement>(null);
  const automaticRequest=useRef(false);
  const conversationEnd=useRef<((seconds?:number)=>void)>();
@@ -71,6 +72,7 @@ export default function HomeLifePanel({editor,character,user,api,conversationCon
   if(!input)return;
   const snapshot=editor.getResidentScene?.(character.id)??editor.getHomeScene();
   if(!replyId&&!snapshot.present){setError('到角色所在的房间，再当面聊聊吧');return;}
+  setConfirmingRetryId(null);
   const abort=new AbortController();automaticRequest.current=input.automatic===true;controller.current=abort;setBusy(true);setError('');setRetry(undefined);
   conversationEnd.current?.();const endConversation=replyId?undefined:editor.beginHomeConversation?.();conversationEnd.current=endConversation;let speakingSeconds=0;
   let timeout:ReturnType<typeof setTimeout>|undefined;
@@ -153,10 +155,13 @@ export default function HomeLifePanel({editor,character,user,api,conversationCon
      {entries.map(e=><article key={e.id} className={`home-record home-record-${e.kind} home-record-${e.actor}`}>
       <div className="home-record-meta"><span>{e.kind!=='message'&&<span className="home-event-mark" aria-label="行动">◇ </span>}{e.actorName||(e.actor==='user'?user?.name||'你':character?.name||'TA')}{panel==='journal'?` · ${sourceName[e.source]}`:''}{e.editedAt?' · 已编辑':''}</span><time>{new Date(e.at).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})} · {e.roomName}</time></div>
       {editing===e.id?<form onSubmit={event=>{event.preventDefault();if(!editText.trim())return;controller.current?.abort(new DOMException('家园记录已修改，取消旧回复','AbortError'));update(editHomeRecord(current(),e.id,editText));setEditing(undefined);}}><textarea aria-label="编辑记录" value={editText} maxLength={8000} onChange={event=>setEditText(event.target.value)}/><div className="home-record-edit-actions"><button type="button" onClick={()=>setEditing(undefined)}>取消</button><button type="submit"><Check/>保存</button></div></form>:<p>{e.text}</p>}
-      <details className="home-record-menu"><summary aria-label="记录操作"><DotsThree size={22}/></summary><div>
-       <button disabled={busy} onClick={()=>{setEditing(e.id);setEditText(e.text);}}><PencilSimple/>编辑</button>
-       <button disabled={busy} onClick={()=>remove(e)}><Trash/>删除</button>
-       {e.kind==='message'&&e.actor==='character'&&(!e.actorId||e.actorId===character?.id)&&e.replyTo&&records.some(r=>r.id===e.replyTo)&&<button disabled={busy||!api} title="重写回复，不重放动作" onClick={()=>void reply(e.replyTo!,e.id)}><ArrowCounterClockwise/>重新回复</button>}
+      <details className="home-record-menu" onToggle={event=>{if(!event.currentTarget.open&&confirmingRetryId===e.id)setConfirmingRetryId(null);}}><summary aria-label="记录操作"><DotsThree size={22}/></summary><div>
+       <button disabled={busy} onClick={()=>{setConfirmingRetryId(null);setEditing(e.id);setEditText(e.text);}}><PencilSimple/>编辑</button>
+       <button disabled={busy} onClick={()=>{setConfirmingRetryId(null);remove(e);}}><Trash/>删除</button>
+       {e.kind==='message'&&e.actor==='character'&&(!e.actorId||e.actorId===character?.id)&&e.replyTo&&records.some(r=>r.id===e.replyTo)&&(confirmingRetryId===e.id?<>
+        <button disabled={busy||!api} onClick={()=>{setConfirmingRetryId(null);void reply(e.replyTo!,e.id);}} style={{color:'#c2410c',fontWeight:600}}><ArrowCounterClockwise/>确认重写</button>
+        <button type="button" onClick={()=>setConfirmingRetryId(null)}><X/>取消</button>
+       </>:<button disabled={busy||!api} title="重写回复，不重放动作" onClick={()=>setConfirmingRetryId(e.id)}><ArrowCounterClockwise/>重新回复</button>)}
        {e.kind==='message'&&e.actor==='user'&&!records.some(r=>r.replyTo===e.id)&&<button disabled={busy||!api||!scene.present} onClick={()=>void reply(e.id)}><ArrowCounterClockwise/>补回回复</button>}
       </div></details>
      </article>)}

@@ -3,6 +3,7 @@ import { useOS } from '../../context/OSContext';
 import { CharacterProfile, DateObservation, DateObserveConfig, DateObserveStyleId } from '../../types';
 import { OBSERVE_DIMENSIONS } from '../../utils/datePrompts';
 import ObserveHUD, { OBSERVE_STYLES } from './ObserveHUD';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 
 /**
  * 见面设置里的「观测协议 OBSERVE」配置块（默认折叠）：
@@ -46,6 +47,7 @@ const buildCustomDraft = (char: CharacterProfile): FieldDraft => {
 
 const ObserveSettings: React.FC<ObserveSettingsProps> = ({ char }) => {
     const { updateCharacter, addToast } = useOS();
+    const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
     const enabled = !!char.dateObserve?.enabled;
     const style = char.dateObserve?.style || 'hologram';
     const fields = char.dateObserve?.fields || {};
@@ -75,7 +77,18 @@ const ObserveSettings: React.FC<ObserveSettingsProps> = ({ char }) => {
         patchObserve({ custom: [...customs, { id, label: '', hint: '', enabled: true }] });
         setCustomDraft(d => ({ ...d, [id]: { label: '', hint: '' } }));
     };
-    const delCustom = (id: string) => patchObserve({ custom: customs.filter(c => c.id !== id) });
+    const delCustom = async (id: string) => {
+        const target = customs.find(c => c.id === id);
+        const label = (target?.label || '').trim();
+        const ok = await requestConfirm({
+            title: label ? `删除自定义维度「${label}」？` : '删除这个自定义维度？',
+            message: '删除后该维度的显示标签与生成提示将一并清除。',
+            confirmText: '确认删除',
+            variant: 'danger',
+        });
+        if (!ok) return;
+        patchObserve({ custom: customs.filter(c => c.id !== id) });
+    };
     const toggleCustom = (id: string, on: boolean) => patchObserve({ custom: customs.map(c => c.id === id ? { ...c, enabled: on } : c) });
     const commitCustom = (id: string, which: 'label' | 'hint') => {
         const cur = customs.find(c => c.id === id);
@@ -85,7 +98,14 @@ const ObserveSettings: React.FC<ObserveSettingsProps> = ({ char }) => {
         patchObserve({ custom: customs.map(c => c.id === id ? { ...c, [which]: which === 'label' ? v : (v || undefined) } : c) });
     };
 
-    const resetAll = () => {
+    const resetAll = async () => {
+        const ok = await requestConfirm({
+            title: '重置观测协议设置？',
+            message: '将清除所有自定义标题、生成提示词与自定义维度，面板样式恢复默认（总开关状态保留）。',
+            confirmText: '确认重置',
+            variant: 'warning',
+        });
+        if (!ok) return;
         updateCharacter(char.id, { dateObserve: { enabled: char.dateObserve?.enabled, style: undefined, fields: undefined, custom: undefined } });
         setDraft(buildFieldDraft({ ...char, dateObserve: { enabled } }));
         setCustomDraft({});
@@ -127,7 +147,7 @@ const ObserveSettings: React.FC<ObserveSettingsProps> = ({ char }) => {
                     <div>
                         <div className="flex items-center justify-between mb-2">
                             <h4 className="text-[11px] font-bold text-slate-500">面板样式</h4>
-                            <button onClick={resetAll} className="text-[10px] font-bold text-primary/80 hover:text-primary px-2 py-0.5 rounded-full bg-primary/5 active:scale-95 transition-transform">一键重置</button>
+                            <button onClick={() => void resetAll()} className="text-[10px] font-bold text-primary/80 hover:text-primary px-2 py-0.5 rounded-full bg-primary/5 active:scale-95 transition-transform">一键重置</button>
                         </div>
                         <div className="grid grid-cols-5 gap-1.5">
                             {OBSERVE_STYLES.map(s => (
@@ -232,7 +252,7 @@ const ObserveSettings: React.FC<ObserveSettingsProps> = ({ char }) => {
                                                 >
                                                     <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${on ? 'translate-x-4' : 'translate-x-0.5'}`}></div>
                                                 </button>
-                                                <button onClick={() => delCustom(c.id)} title="删除" className="text-slate-300 hover:text-red-400 transition-colors shrink-0 p-0.5">
+                                                <button onClick={() => void delCustom(c.id)} title="删除" className="text-slate-300 hover:text-red-400 transition-colors shrink-0 p-0.5">
                                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
                                                 </button>
                                             </div>
@@ -255,6 +275,7 @@ const ObserveSettings: React.FC<ObserveSettingsProps> = ({ char }) => {
                 </div>
                 )
             )}
+            {confirmDialog}
         </section>
     );
 };

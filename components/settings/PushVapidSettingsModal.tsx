@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import SettingsDetailPage from './SettingsDetailPage';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 import { generateVapidKeyPair } from '../../utils/vapidGen';
 import { loadPushVapid, savePushVapid, clearPushVapid } from '../../utils/pushVapid';
 import { trackEvent } from '../../utils/analytics';
@@ -19,6 +20,7 @@ interface PushVapidSettingsModalProps {
  * 私钥也存 localStorage 方便复制到 CF Worker env, 这里不当成一次性密钥处理.
  */
 export const PushVapidSettingsModal: React.FC<PushVapidSettingsModalProps> = ({ open, onClose, addToast }) => {
+  const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
 
   const [publicKey, setPublicKey] = useState('');
   const [privateKey, setPrivateKey] = useState('');
@@ -38,6 +40,19 @@ export const PushVapidSettingsModal: React.FC<PushVapidSettingsModalProps> = ({ 
   };
 
   const handleGenerate = async () => {
+    const saved = loadPushVapid();
+    const hasExisting = Boolean(
+      publicKey.trim() || privateKey.trim() || saved.vapidPublicKey.trim() || saved.vapidPrivateKey.trim(),
+    );
+    if (hasExisting) {
+      const ok = await requestConfirm({
+        title: '重新生成 VAPID 密钥对？',
+        message: '新密钥对会覆盖现有密钥并立即保存。重新部署 Worker 后，旧设备的推送订阅都会失效，需要重新开启推送。',
+        confirmText: '确认重新生成',
+        variant: 'warning',
+      });
+      if (!ok) return;
+    }
     setGenerating(true);
     try {
       const kp = await generateVapidKeyPair();
@@ -58,8 +73,14 @@ export const PushVapidSettingsModal: React.FC<PushVapidSettingsModalProps> = ({ 
     }
   };
 
-  const handleClear = () => {
-    if (!confirm('确定清空 VAPID 密钥对？之后重新部署的 Worker 会换成新的一对，推送订阅需要重建。')) {
+  const handleClear = async () => {
+    const ok = await requestConfirm({
+      title: '清空 VAPID 密钥对？',
+      message: '之后重新部署的 Worker 会换成新的一对密钥，旧设备的推送订阅需要重建。',
+      confirmText: '确认清空',
+      variant: 'danger',
+    });
+    if (!ok) {
       trackEvent('清空 VAPID 密钥对', { confirmed: false });
       return;
     }
@@ -119,6 +140,7 @@ export const PushVapidSettingsModal: React.FC<PushVapidSettingsModalProps> = ({ 
     : '';
 
   return (
+    <>
     <SettingsDetailPage
       isOpen={open}
       title="推送凭据 (VAPID)"
@@ -247,7 +269,7 @@ export const PushVapidSettingsModal: React.FC<PushVapidSettingsModalProps> = ({ 
           <div className="text-center">
             <button
               type="button"
-              onClick={handleClear}
+              onClick={() => void handleClear()}
               className="text-[11px] text-rose-500 hover:text-rose-600 font-medium underline-offset-2 hover:underline"
             >
               清空 VAPID（重新部署后推送订阅要重建）
@@ -256,5 +278,7 @@ export const PushVapidSettingsModal: React.FC<PushVapidSettingsModalProps> = ({ 
         )}
       </div>
     </SettingsDetailPage>
+    {confirmDialog}
+    </>
   );
 };

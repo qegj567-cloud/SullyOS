@@ -8,6 +8,7 @@ import { trackEvent } from '../utils/analytics';
 import type { CustomCreatorPart } from '../types';
 import type { ParsedPsdPart } from '../utils/psdCreatorImport';
 import { shareOrDownloadBlob } from '../utils/shareExport';
+import { useConfirmDialog } from '../hooks/useConfirmDialog';
 
 // 与捏人器 character_creator.html 里 PARTS 的 key 一一对应
 const CC_CATEGORIES: { key: string; label: string; multi?: boolean }[] = [
@@ -27,6 +28,7 @@ const labelOf = (key: string) => CC_CATEGORIES.find(c => c.key === key)?.label |
 
 const CharCreatorDevApp: React.FC = () => {
     const { closeApp, addToast } = useOS();
+    const { requestConfirm, confirmDialog } = useConfirmDialog();
     const [parts, setParts] = useState<CustomCreatorPart[]>([]);
     const [categoryKey, setCategoryKey] = useState('fronthair');
     const [name, setName] = useState('');
@@ -71,8 +73,15 @@ const CharCreatorDevApp: React.FC = () => {
         addToast?.(`已加入「${labelOf(categoryKey)}」`, 'success');
     };
 
-    const remove = async (id: string) => {
-        await DB.deleteCustomCreatorPart(id);
+    const remove = async (part: CustomCreatorPart) => {
+        const ok = await requestConfirm({
+            title: `删除部件「${part.name}」？`,
+            message: '将从自定义捏人器部件库移除，无法恢复。',
+            confirmText: '确认删除',
+            variant: 'danger',
+        });
+        if (!ok) return;
+        await DB.deleteCustomCreatorPart(part.id);
         await load();
         addToast?.('已删除', 'success');
     };
@@ -320,7 +329,7 @@ const CharCreatorDevApp: React.FC = () => {
                                             style={{ background: 'repeating-conic-gradient(#ffffff10 0% 25%, transparent 0% 50%) 50% / 14px 14px' }}>
                                             <img src={p.src} alt={p.name} className="max-h-full max-w-full object-contain" />
                                             <span className="absolute bottom-0 inset-x-0 bg-black/60 text-[8.5px] text-white/90 px-1 py-0.5 truncate">{p.name}{p.tintable ? ' ·色' : ''}{p.shadowSrc ? ' ·影' : ''}</span>
-                                            <button onClick={() => remove(p.id)} className="absolute top-1 right-1 bg-red-500/90 rounded-full p-1 active:scale-90"><Trash size={11} weight="bold" /></button>
+                                            <button onClick={() => void remove(p)} className="absolute top-1 right-1 bg-red-500/90 rounded-full p-1 active:scale-90"><Trash size={11} weight="bold" /></button>
                                         </div>
                                     ))}
                                 </div>
@@ -329,6 +338,7 @@ const CharCreatorDevApp: React.FC = () => {
                     </div>
                 )}
             </div>
+            {confirmDialog}
         </div>
     );
 };

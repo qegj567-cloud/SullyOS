@@ -23,7 +23,7 @@ try{
     await page.screenshot({path:out+'/edit-dialog.png'});
     await btn('保存修改').click();await page.getByText('修改已保存',{exact:true}).waitFor();
     await open();assert(await page.getByText('我修改后的回复',{exact:true}).isVisible());
-    fail=true;await btn('第 1 幕回复操作').click();await btn('重新生成').click();
+    fail=true;await btn('第 1 幕回复操作').click();await btn('重新生成').click();await btn('确认重新生成').click();
     await page.getByRole('alert').waitFor();assert(await page.getByText('我修改后的回复',{exact:true}).isVisible());
     fail=false;await btn('第 1 幕回复操作').click();await btn('删除').click();await btn('确认删除回复').click();
     await btn('生成').waitFor();await open();await btn('生成').click();

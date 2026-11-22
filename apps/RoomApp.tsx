@@ -11,6 +11,7 @@ import { processImageToBlob } from '../utils/file';
 import { putImageBlob, useBlobRefUrl, isBlobRef, migrateDataUrlToRef, resolveBlobRefsDeep } from '../utils/blobRef';
 import TokenImg from '../components/os/TokenImg';
 import Modal from '../components/os/Modal';
+import { useConfirmDialog } from '../hooks/useConfirmDialog';
 import { safeResponseJson, extractJson } from '../utils/safeApi';
 import { Door, Sparkle, Image, GearSix, Camera, MoonStars, ArrowUUpLeft, ArrowUUpRight, CopySimple, Images, Eye, EyeSlash } from '@phosphor-icons/react';
 import { FURNITURE_ICONS } from '../utils/furnitureIcons';
@@ -312,6 +313,7 @@ const renderNotebookContent = (text: string) => {
 
 const RoomApp: React.FC = () => {
     const { activeApp, closeApp, openApp, characters, characterGroups, activeCharacterId, setActiveCharacterId, updateCharacter, apiConfig, addToast, userProfile } = useOS();
+    const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
 
     // 桌面主题的「进小屋意图」：惰性读取（不清空，consume 在下方 effect），首帧就落到
     // 目标视图，避免闪一下 select 页。真正的应用（进房间/开梦境/切角色）在 effect 里做。
@@ -983,6 +985,14 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
     // --- Deletion Handlers (Point 5) ---
     const handleDeleteTodo = async (index: number) => {
         if (!todaysTodo) return;
+        const item = todaysTodo.items[index];
+        const ok = await requestConfirm({
+            title: '删除这条今日计划？',
+            message: item ? `「${item.text}」将被移除。` : '该条计划将被移除。',
+            confirmText: '确认删除',
+            variant: 'danger',
+        });
+        if (!ok) return;
         const newItems = todaysTodo.items.filter((_, i) => i !== index);
         const newTodo = { ...todaysTodo, items: newItems };
         setTodaysTodo(newTodo);
@@ -992,11 +1002,22 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
 
     const handleDeleteNote = async (id: string) => {
         const note = notebookEntries.find(n => n.id === id);
+        const ok = await requestConfirm({
+            title: '删除这页私密记事？',
+            message: note?.relatedMessageId
+                ? '将同时清除关联的对话记录，彻底粉碎后无法恢复。'
+                : '彻底粉碎后这页记事将无法恢复。',
+            confirmText: '确认删除',
+            variant: 'danger',
+        });
+        if (!ok) return;
         if (note && note.relatedMessageId) {
             await DB.deleteMessage(note.relatedMessageId);
         }
         await DB.deleteRoomNote(id);
-        setNotebookEntries(prev => prev.filter(n => n.id !== id));
+        const nextEntries = notebookEntries.filter(n => n.id !== id);
+        setNotebookEntries(nextEntries);
+        setNotebookPage(p => Math.min(p, Math.max(0, nextEntries.length - 1)));
         addToast('笔记已彻底粉碎 (相关记录已清除)', 'success');
     };
 
@@ -1237,7 +1258,15 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
 
     const deleteEditingAsset = async () => {
         if (!editingAsset) return;
-        const filtered = allCustomAssets.filter(a => a.id !== editingAsset.id);
+        const target = editingAsset;
+        const ok = await requestConfirm({
+            title: `删除自定义素材「${target.name}」？`,
+            message: '将从家具素材库永久移除，无法恢复。',
+            confirmText: '确认删除',
+            variant: 'danger',
+        });
+        if (!ok) return;
+        const filtered = allCustomAssets.filter(a => a.id !== target.id);
         await persistAssets(filtered);
         setEditingAsset(null);
         addToast('素材已删除', 'success');
@@ -1252,8 +1281,15 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
     };
 
     // New: Reset Sully
-    const resetSullyRoom = () => {
+    const resetSullyRoom = async () => {
         if (!char) return;
+        const ok = await requestConfirm({
+            title: '还原 Sully 的初始样板房？',
+            message: '当前房间内的家具布置将被替换为默认样板房布局。',
+            confirmText: '确认还原',
+            variant: 'warning',
+        });
+        if (!ok) return;
         saveRoom(SULLY_FURNITURE);
         setShowSettingsModal(false);
         addToast('Sully 的房间已还原', 'success');
@@ -2065,7 +2101,7 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
                                         {item.done && <svg className="w-3 h-3 text-white" viewBox="0 0 20 20" fill="currentColor"><path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/></svg>}
                                     </div>
                                     <span onClick={() => handleToggleTodo(idx)} className={`text-sm leading-relaxed transition-all flex-1 cursor-pointer ${item.done ? 'text-slate-300 line-through decoration-slate-300' : 'text-slate-700 font-medium'}`}>{item.text}</span>
-                                    <button onClick={() => handleDeleteTodo(idx)} className="text-slate-300 hover:text-red-400 px-1 opacity-0 group-hover:opacity-100 transition-opacity">×</button>
+                                    <button onClick={() => void handleDeleteTodo(idx)} className="text-slate-300 hover:text-red-400 px-1 opacity-0 group-hover:opacity-100 transition-opacity">×</button>
                                 </li>
                             ))}</ul> : <div className="text-center py-10 text-slate-400 text-xs">生成中...</div>}
                             <div className="mt-8 p-4 bg-yellow-50 rounded-xl border border-yellow-100 text-xs text-yellow-800 leading-relaxed italic relative"><span className="absolute -top-3 left-4"><img src={twemojiUrl('1f4cc')} alt="pin" className="w-6 h-6" /></span>这是 {char?.name} 今天的自动行程表。虽然你不能帮TA做，但可以监督TA哦。</div>
@@ -2097,7 +2133,7 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
                                         <span>#{notebookEntries.length - notebookPage}</span>
                                         <div className="flex gap-2 items-center">
                                             <span>{new Date(notebookEntries[notebookPage].timestamp).toLocaleString()}</span>
-                                            <button onClick={() => handleDeleteNote(notebookEntries[notebookPage].id)} className="text-red-300 hover:text-red-500 font-bold px-1" title="删除此页">×</button>
+                                            <button onClick={() => void handleDeleteNote(notebookEntries[notebookPage].id)} className="text-red-300 hover:text-red-500 font-bold px-1" title="删除此页">×</button>
                                         </div>
                                     </div>
                                     <div className="flex-1 ml-6 text-slate-700 text-sm whitespace-pre-wrap leading-relaxed">{renderNotebookContent(notebookEntries[notebookPage].content)}</div>
@@ -2332,7 +2368,7 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
 
             {/* Custom Asset Edit Modal */}
             <Modal isOpen={!!editingAsset} title="编辑家具" onClose={() => setEditingAsset(null)}
-                footer={<div className="flex gap-2 w-full"><button onClick={deleteEditingAsset} className="px-4 py-3 bg-red-50 text-red-500 rounded-2xl font-bold text-xs">删除</button><button onClick={saveEditingAsset} className="flex-1 py-3 bg-blue-500 text-white rounded-2xl font-bold text-xs">保存</button></div>}
+                footer={<div className="flex gap-2 w-full"><button onClick={() => void deleteEditingAsset()} className="px-4 py-3 bg-red-50 text-red-500 rounded-2xl font-bold text-xs">删除</button><button onClick={saveEditingAsset} className="flex-1 py-3 bg-blue-500 text-white rounded-2xl font-bold text-xs">保存</button></div>}
             >
                 {editingAsset && (
                     <div className="space-y-3">
@@ -2453,7 +2489,7 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
                     {isSully && (
                         <div className="pt-4 border-t border-slate-100">
                             <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Sully 专属维护</h4>
-                            <button onClick={resetSullyRoom} className="w-full py-3 bg-red-50 text-red-500 font-bold rounded-2xl border border-red-100 flex items-center justify-center gap-2 active:scale-95 transition-transform">
+                            <button onClick={() => void resetSullyRoom()} className="w-full py-3 bg-red-50 text-red-500 font-bold rounded-2xl border border-red-100 flex items-center justify-center gap-2 active:scale-95 transition-transform">
                                 <img src={twemojiUrl('1f9f9')} alt="broom" className="w-5 h-5" /> 还原初始样板房
                             </button>
                             <p className="text-[9px] text-slate-400 mt-2 text-center">如果不小心弄乱了房间，点此可一键恢复默认布局。</p>
@@ -2560,6 +2596,7 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
                 </div>
             </Modal>
 
+            {confirmDialog}
         </div>
     );
 };

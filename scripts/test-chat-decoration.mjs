@@ -21,7 +21,7 @@ try{
  await tab('进阶').click();await page.screenshot({path:out+'/css.png'});await page.getByRole('button',{name:'还原全局 CSS',exact:true}).click();assert((await state()).char.chromeCustomCss.includes('letter-spacing'));
  await panel.getByRole('group',{name:'正在设置'}).getByRole('button',{name:'Sully专属',exact:true}).click();await page.getByRole('button',{name:'还原此角色 CSS',exact:true}).click();assert.equal((await state()).char.chromeCustomCss,'');assert.equal((await state()).char.chatSound.src,'chime');
  await tab('背景').click();await panel.getByLabel('选择背景图片').setInputFiles('public/icons/jellyfish-192.png');assert((await state()).char.chatBackground.startsWith('blob:'));
- await panel.getByRole('button',{name:'移除专属背景，跟随全局'}).click();assert.equal((await state()).char.chatBackground,undefined);
+ await panel.getByRole('button',{name:'移除专属背景，跟随全局'}).click();await page.getByRole('dialog').getByRole('button',{name:'确认移除',exact:true}).click();assert.equal((await state()).char.chatBackground,undefined);
  await panel.getByRole('button',{name:'看效果',exact:true}).click();assert.equal(await panel.isVisible(),false);await page.getByRole('textbox',{name:'预览消息'}).fill('完整的聊天预览');await page.getByRole('button',{name:'发送预览消息'}).click();await page.getByText('完整的聊天预览',{exact:true}).waitFor();await page.screenshot({path:out+'/full-preview.png'});await page.getByRole('button',{name:'返回装扮',exact:true}).click();await tab('布局').click();
  await page.setViewportSize({width:320,height:568});await page.screenshot({path:out+'/small.png'});const bounds=await panel.boundingBox();assert(bounds.x>=0&&bounds.x+bounds.width<=321&&bounds.y>=0);
  await panel.getByRole('button',{name:'完成',exact:true}).click();assert.equal(await panel.count(),0);

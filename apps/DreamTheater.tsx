@@ -12,6 +12,7 @@ import { useDreamSim, dreamSimStore } from '../utils/dreamSimStore';
 import { safeResponseJson } from '../utils/safeApi';
 import CdnImg from '../components/os/CdnImg';
 import { trackEvent } from '../utils/analytics';
+import { useConfirmDialog } from '../hooks/useConfirmDialog';
 import {
     CaretLeft, MoonStars, ArrowClockwise, X, Eye, Sparkle, Lock, Question, Trash,
 } from '@phosphor-icons/react';
@@ -577,6 +578,7 @@ const DREAM_DAILY_TYPE_CAP = 3;
 
 const DreamTheater: React.FC<{ char: CharacterProfile; onExit: () => void }> = ({ char, onExit }) => {
     const { apiConfig, userProfile, updateCharacter, addToast } = useOS();
+    const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
 
     const [phase, setPhase] = useState<Phase>('idle');
     const [script, setScript] = useState<DreamScript | null>(null);
@@ -741,6 +743,18 @@ const DreamTheater: React.FC<{ char: CharacterProfile; onExit: () => void }> = (
         savedRef.current = true; // 重看不再写库 / 不再叠 buff / 不再抽盲盒
         setBoxReveal(null);
         setScript(s); setRevealed(1); setPhase('play');
+    };
+
+    // ----- 播放中提前点左上角离开（未保存为残页前需二次确认） -----
+    const handlePlayExit = async () => {
+        if (savedRef.current) { onExit(); return; }
+        const ok = await requestConfirm({
+            title: '放弃本次生成的梦境？',
+            message: '离开后这段梦境将不会保留。',
+            confirmText: '确认离开',
+            variant: 'warning',
+        });
+        if (ok) onExit();
     };
 
     // ----- 删除一页「梦的残页」（长按触发，走自定义确认弹窗，不用原生 confirm）-----
@@ -1138,7 +1152,7 @@ const DreamTheater: React.FC<{ char: CharacterProfile; onExit: () => void }> = (
             <Ambient kind={theme.ambient} accent={theme.accent} />
 
             {/* exit（放弃，不收束） */}
-            <button onClick={onExit} className="absolute top-0 left-0 m-3 w-9 h-9 rounded-full flex items-center justify-center text-white/40 bg-white/[0.04] border border-white/[0.06] active:scale-90 transition z-30"
+            <button onClick={() => void handlePlayExit()} className="absolute top-0 left-0 m-3 w-9 h-9 rounded-full flex items-center justify-center text-white/40 bg-white/[0.04] border border-white/[0.06] active:scale-90 transition z-30"
                 style={{ marginTop: 'max(0.75rem, calc(env(safe-area-inset-top, 0px) + 0.5rem))' }}>
                 <X size={16} />
             </button>
@@ -1172,6 +1186,7 @@ const DreamTheater: React.FC<{ char: CharacterProfile; onExit: () => void }> = (
                     <span className="text-[10px] text-white/25 tabular-nums">{Math.min(revealed, frags.length)}/{frags.length}</span>
                 </div>
             </div>
+            {confirmDialog}
         </Shell>
     );
 };

@@ -243,6 +243,9 @@ const ChromeCssEditor: React.FC<{ value: string; onChange: (css: string) => void
     const signedCss=(css:string,name:string)=>{const old=readCssAttribution(css);if(old?.allowRedistribute===false)throw Error('作者禁止二次传播');return stampBeautyCss(css,old||{name,credit:exportCredit,category:'whitebox'});};
     const [copied, setCopied] = useState(false);
     const [custom, setCustom] = useState<Preset[]>([]);
+    const [pendingDeletePreset, setPendingDeletePreset] = useState<Preset | null>(null);
+    const [pendingApply, setPendingApply] = useState<Preset | null>(null);
+    const [confirmClearOpen, setConfirmClearOpen] = useState(false);
     const presetImageRef = useRef<HTMLInputElement>(null);
     const [previewOpen,setPreviewOpen]=useState(false);
     const previewPack=React.useMemo(()=>({format:'sullyos-chat-decoration',version:1,name:'白框预览',parts:{css:value}}),[value]);
@@ -264,7 +267,14 @@ const ChromeCssEditor: React.FC<{ value: string; onChange: (css: string) => void
         if (!name) return;
         commitCustom([...custom.filter((p) => p.name !== name), { name, code: value }]);
     };
-    const handleDeletePreset = (name: string) => commitCustom(custom.filter((p) => p.name !== name));
+    const handleDeletePreset = (preset: Preset) => setPendingDeletePreset(preset);
+    const applyPreset = (presetName: string, targetCss: string) => {
+        if (value.trim() && value.trim() !== targetCss.trim()) {
+            setPendingApply({ name: presetName, code: targetCss });
+            return;
+        }
+        onChange(targetCss);
+    };
 
     const handleTxtImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
@@ -319,6 +329,44 @@ const ChromeCssEditor: React.FC<{ value: string; onChange: (css: string) => void
         <div className="space-y-4">
             {exportNotice&&<p role="status">{exportNotice}</p>}
             {exportMode&&<BeautyConfirmDialog title="带上作者署名" confirm={exportMode==='batch'?'复制预设':'分享 CSS'} onClose={()=>setExportMode(null)} onConfirm={confirmShare}><p>已有署名会原样保留。为没有署名的样式填写作者名称。</p><label>作者署名<input maxLength={60} value={exportCredit} onChange={e=>setExportCredit(e.target.value)}/></label></BeautyConfirmDialog>}
+            {pendingDeletePreset && (
+                <BeautyConfirmDialog
+                    title={`删除预设「${pendingDeletePreset.name}」？`}
+                    confirm="删除"
+                    danger
+                    onClose={() => setPendingDeletePreset(null)}
+                    onConfirm={async () => {
+                        commitCustom(custom.filter((p) => p.name !== pendingDeletePreset.name));
+                    }}
+                >
+                    <p>删除后无法从「我的预设」恢复。</p>
+                </BeautyConfirmDialog>
+            )}
+            {pendingApply && (
+                <BeautyConfirmDialog
+                    title={`套用「${pendingApply.name}」覆盖当前 CSS？`}
+                    confirm="覆盖套用"
+                    onClose={() => setPendingApply(null)}
+                    onConfirm={async () => {
+                        onChange(pendingApply.code);
+                    }}
+                >
+                    <p>当前编辑器里的白框 CSS 将被这套预设替换。</p>
+                </BeautyConfirmDialog>
+            )}
+            {confirmClearOpen && (
+                <BeautyConfirmDialog
+                    title="清空当前白框 CSS？"
+                    confirm="清空"
+                    danger
+                    onClose={() => setConfirmClearOpen(false)}
+                    onConfirm={async () => {
+                        onChange('');
+                    }}
+                >
+                    <p>编辑器里当前的白框 CSS 代码将被清空。</p>
+                </BeautyConfirmDialog>
+            )}
 
             <details className="mb-4 text-slate-600" onToggle={event=>setPreviewOpen(event.currentTarget.open)}><summary className="cursor-pointer text-sm text-slate-600 py-2">预览完整聊天 · 虚构示例</summary>{previewOpen&&<BeautyPresetPreview data={previewPack}/>}</details>
             {/* 需要灵感：复制提示词给 AI */}
@@ -336,7 +384,7 @@ const ChromeCssEditor: React.FC<{ value: string; onChange: (css: string) => void
                 <div className="mb-2 text-[11px] font-bold text-slate-500">内置风格 <span className="font-normal text-slate-400">· 点一下套用</span></div>
                 <div className="flex flex-wrap gap-2">
                     {PRESETS.map((p) => (
-                        <button key={p.name} onClick={() => onChange(p.code)} title={p.name} className={cardCls}>
+                        <button key={p.name} onClick={() => applyPreset(p.name, p.code)} title={p.name} className={cardCls}>
                             <span className="absolute inset-0" style={{ background: p.swatch }} />
                             <span className={cardLabelCls} style={{ background: 'linear-gradient(to top, rgba(0,0,0,.5), transparent)' }}>{p.name}</span>
                         </button>
@@ -366,11 +414,11 @@ const ChromeCssEditor: React.FC<{ value: string; onChange: (css: string) => void
                 <div className="flex flex-wrap gap-2">
                     {custom.map((p) => (
                         <div key={p.name} className={cardCls}>
-                            <button onClick={() => onChange(p.code)} title={p.name} className="absolute inset-0">
+                            <button onClick={() => applyPreset(p.name, p.code)} title={p.name} className="absolute inset-0">
                                 <span className="absolute inset-0" style={{ background: extractSwatch(p.code) }} />
                                 <span className={cardLabelCls} style={{ background: 'linear-gradient(to top, rgba(0,0,0,.5), transparent)' }}>{p.name}</span>
                             </button>
-                            <button onClick={() => handleDeletePreset(p.name)} title="删除"
+                            <button onClick={() => handleDeletePreset(p)} title="删除"
                                 className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-black/45 text-[10px] leading-none text-white opacity-80 hover:bg-rose-500">×</button>
                         </div>
                     ))}
@@ -389,7 +437,7 @@ const ChromeCssEditor: React.FC<{ value: string; onChange: (css: string) => void
                     <div className="flex items-center gap-1">
                         <FileOrImageImport onChange={handleTxtImport} className="rounded-lg px-2 py-1 text-[10px] font-semibold text-indigo-500 hover:bg-indigo-50" />
                         <button onClick={handleTxtExport} disabled={!value.trim()} className={`rounded-lg px-2 py-1 text-[10px] font-semibold ${value.trim() ? 'text-indigo-500 hover:bg-indigo-50' : 'text-slate-300'}`}>导出分享</button>
-                        {value && <button onClick={() => onChange('')} className="rounded-lg px-2 py-1 text-[10px] font-semibold text-rose-400 hover:bg-rose-50 hover:text-rose-500">清空</button>}
+                        {value && <button onClick={() => setConfirmClearOpen(true)} className="rounded-lg px-2 py-1 text-[10px] font-semibold text-rose-400 hover:bg-rose-50 hover:text-rose-500">清空</button>}
                     </div>
                 </div>
                 <textarea

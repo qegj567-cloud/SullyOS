@@ -1,4 +1,5 @@
 import { useLocalBackHandler } from '../../hooks/useLocalBackHandler';
+import BeautyConfirmDialog from '../share/BeautyConfirmDialog';
 import PsycheAppearanceEditor from './PsycheAppearanceEditor';
 import {resolvePsycheAppearance} from '../../utils/psycheAppearance';
 import React, {useState} from 'react';
@@ -31,6 +32,7 @@ export default function ChatDecorationPanel({character:char,theme,themes,updateC
  const [collapsed,setCollapsed]=useState(false);
  const [presetBusy,setPresetBusy]=useState(false);
  const [panelOpacity,setPanelOpacity]=useState(100);
+ const [confirmAction,setConfirmAction]=useState<'resetPsyche'|'removeBackground'|null>(null);
  useLocalBackHandler(()=>{if(!presetBusy)onClose();return true;}, 20);
  const global=scope==='global';
  const override=char.chatFineTune;
@@ -83,9 +85,9 @@ export default function ChatDecorationPanel({character:char,theme,themes,updateC
       {global&&<label className="chat-decoration-field">默认背景底纹<select value={theme.chatBackgroundStyle||'plain'} onChange={e=>updateTheme({chatBackgroundStyle:e.target.value as OSTheme['chatBackgroundStyle']})}>{[['plain','纯色'],['grid','网格'],['paper','纸张'],['mesh','柔光']].map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label>}
        {displayedBackground?<img className="chat-decoration-background" src={displayedBackground} alt="当前聊天背景"/>:<p className="chat-decoration-note">当前使用全局背景；可以为这个角色换一张图片。</p>}
        <label className="chat-decoration-upload">选择背景图片<input aria-label="选择背景图片" type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f){if(global)void putImageBlob(f).then(ref=>updateTheme({chatBackground:ref}));else onBgUpload(f);}e.target.value='';}}/></label>
-       {(global?theme.chatBackground:char.chatBackground!==undefined)&&<button className="chat-decoration-link" onClick={()=>global?updateTheme({chatBackground:undefined}):updateCharacter({chatBackground:undefined})}>{global?'移除全局背景图片':'移除专属背景，跟随全局'}</button>}
+       {(global?theme.chatBackground:char.chatBackground!==undefined)&&<button className="chat-decoration-link" onClick={()=>setConfirmAction('removeBackground')}>{global?'移除全局背景图片':'移除专属背景，跟随全局'}</button>}
      </>}
-     {tab==='psyche'&&<> {!global&&<button className="chat-decoration-link" onClick={()=>updateCharacter({thinkingChainStyle:undefined,thinkingChainCustomColors:undefined,thinkingChainCustomCss:undefined})}>跟随全局心象</button>}<PsycheAppearanceEditor appearance={resolvePsycheAppearance(theme,global?undefined:char)} onChange={patch=>{const next={...resolvePsycheAppearance(theme,global?undefined:char),...patch};if(global)void updateTheme({chatPsyche:next});else void updateCharacter({thinkingChainStyle:next.styleId,thinkingChainCustomColors:{bg:'#1f2937',accent:'#fbbf24',text:'#f1f5f9',...next.customColors},thinkingChainCustomCss:next.customCss||''});}}/></>}
+     {tab==='psyche'&&<> {!global&&<button className="chat-decoration-link" onClick={()=>{if(char?.thinkingChainStyle||char?.thinkingChainCustomColors||char?.thinkingChainCustomCss){setConfirmAction('resetPsyche');}else{void updateCharacter({thinkingChainStyle:undefined,thinkingChainCustomColors:undefined,thinkingChainCustomCss:undefined});}}}>跟随全局心象</button>}<PsycheAppearanceEditor appearance={resolvePsycheAppearance(theme,global?undefined:char)} onChange={patch=>{const next={...resolvePsycheAppearance(theme,global?undefined:char),...patch};if(global)void updateTheme({chatPsyche:next});else void updateCharacter({thinkingChainStyle:next.styleId,thinkingChainCustomColors:{bg:'#1f2937',accent:'#fbbf24',text:'#f1f5f9',...next.customColors},thinkingChainCustomCss:next.customCss||''});}}/></>}
      {tab==='sound'&&<>
       <h3>消息提示音</h3>
       <WhiteboxSoundEditor key={scope} sound={sound} bound={bound} showBind={!global} onChangeSound={changeSound} onChangeBound={changeBound} hint={global?'未设置专属提示音的角色会使用这里的声音。':'角色的新回复到达时响一次。不设置则跟随全局提示音。'}/>
@@ -99,6 +101,32 @@ export default function ChatDecorationPanel({character:char,theme,themes,updateC
     </div>
    </>}
   </aside>
+  {confirmAction === 'resetPsyche' && (
+   <BeautyConfirmDialog
+    title="恢复跟随全局心象？"
+    confirm="确认恢复"
+    danger
+    onClose={() => setConfirmAction(null)}
+    onConfirm={async () => {
+     await updateCharacter({ thinkingChainStyle: undefined, thinkingChainCustomColors: undefined, thinkingChainCustomCss: undefined });
+    }}
+   >
+    <p>将清除 {char.name} 的专属心象风格、配色和自定义 CSS，改用全局默认设置。</p>
+   </BeautyConfirmDialog>
+  )}
+  {confirmAction === 'removeBackground' && (
+   <BeautyConfirmDialog
+    title="移除聊天背景？"
+    confirm="确认移除"
+    danger
+    onClose={() => setConfirmAction(null)}
+    onConfirm={async () => {
+     await (global ? updateTheme({ chatBackground: undefined }) : updateCharacter({ chatBackground: undefined }));
+    }}
+   >
+    <p>{global ? '全局默认聊天背景图片将被移除。' : `${char.name} 的专属背景图片将被移除，恢复跟随全局背景。`}</p>
+   </BeautyConfirmDialog>
+  )}
   {tab==='css'&&<>
    <style>{`#sully-safe-reset{position:fixed!important;top:calc(var(--safe-top,0px) + 6px)!important;left:50%!important;transform:translateX(-50%)!important;visibility:visible!important;opacity:1!important;pointer-events:auto!important;display:flex!important;z-index:2147483647!important;}`}</style>
    <button id="sully-safe-reset" style={{padding:'7px 12px',borderRadius:20,background:'#272537',color:'#fff',border:'1px solid #fff6',fontSize:11}} onClick={()=>setCss('',true)}>还原{global?'全局':'此角色'} CSS</button>

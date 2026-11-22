@@ -11,6 +11,7 @@ import {
 import { useLocalDateKey } from '../../hooks/useLocalDateKey';
 import { markAmsgStateDirtyForAll } from '../../utils/amsgStateSync';
 import { formatMoney, sumMoney } from '../../utils/format';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 
 /**
  * 档案 App「生活记录」面板 —— 复古优雅浅色系，但四个模块各有独立版式：
@@ -261,6 +262,7 @@ const ModuleTab: React.FC<{
 
 const LifeRecordPanel: React.FC = () => {
     const { addToast, characters, userProfile, groups, realtimeConfig } = useOS();
+    const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
     const [tab, setTab] = useState<LifeRecordModule>('period');
     const [records, setRecords] = useState<LifeRecord[]>([]);
     const [plans, setPlans] = useState<MedPlan[]>([]);
@@ -348,6 +350,18 @@ const LifeRecordPanel: React.FC = () => {
     };
 
     const removeRecord = async (rec: LifeRecord) => {
+        const label = rec.module === 'med'
+            ? (rec.payload?.name || '这条用药记录')
+            : rec.module === 'exercise'
+                ? `${fmtCN(rec.date)} · ${rec.payload?.activity || '这条锻炼记录'}`
+                : '这条记录';
+        const confirmed = await requestConfirm({
+            title: '删除这条记录？',
+            message: `确定删除「${label}」吗？`,
+            confirmText: '删除',
+            variant: 'danger',
+        });
+        if (!confirmed) return;
         if (rec.bankTxId) await DB.deleteTransaction(rec.bankTxId).catch(() => {});
         await DB.deleteLifeRecord(rec.id);
         await reload();
@@ -405,6 +419,13 @@ const LifeRecordPanel: React.FC = () => {
         addToast(`已补记：${fmtCN(date)} 生理期${kind === 'start' ? '开始' : '结束'}`, 'success');
     };
     const clearPeriodDay = async (date: string) => {
+        const confirmed = await requestConfirm({
+            title: '清除生理期记录？',
+            message: `确定清除 ${fmtCN(date)} 的生理期记录吗？`,
+            confirmText: '清除',
+            variant: 'danger',
+        });
+        if (!confirmed) return;
         const hits = records.filter(r => r.module === 'period' && r.date === date);
         for (const h of hits) await DB.deleteLifeRecord(h.id);
         await reload();
@@ -502,7 +523,20 @@ const LifeRecordPanel: React.FC = () => {
             >
                 {p.enabled ? '启用' : '停用'}
             </button>
-            <button onClick={async () => { await DB.deleteMedPlan(p.id); await reload(); }} className="px-1 text-slate-300 hover:text-rose-400 shrink-0">✕</button>
+            <button
+                onClick={async () => {
+                    const confirmed = await requestConfirm({
+                        title: '移除这项用药计划？',
+                        message: `确定从药盒移除「${p.name}」吗？已打卡的历史记录会保留。`,
+                        confirmText: '移除',
+                        variant: 'danger',
+                    });
+                    if (!confirmed) return;
+                    await DB.deleteMedPlan(p.id);
+                    await reload();
+                }}
+                className="px-1 text-slate-300 hover:text-rose-400 shrink-0"
+            >✕</button>
         </div>
     );
 
@@ -921,7 +955,18 @@ const LifeRecordPanel: React.FC = () => {
                                         <span className="flex-1 truncate" style={{ color: INK }}>{t.note || '未备注'}</span>
                                         <span className="font-bold tabular-nums" style={{ color: isExpense(t) ? THEMES.expense.accent : '#388667' }}>{isExpense(t) ? '支出 −' : '收入 +'}{formatMoney(t.amount)}</span>
                                         <button
-                                            onClick={async () => { await DB.deleteTransaction(t.id); await reload(); addToast('记录已删除', 'success'); }}
+                                            onClick={async () => {
+                                                const confirmed = await requestConfirm({
+                                                    title: '删除这条账目？',
+                                                    message: `确定删除「${t.note || '未备注'}」（${formatMoney(t.amount)}）吗？`,
+                                                    confirmText: '删除',
+                                                    variant: 'danger',
+                                                });
+                                                if (!confirmed) return;
+                                                await DB.deleteTransaction(t.id);
+                                                await reload();
+                                                addToast('记录已删除', 'success');
+                                            }}
                                             className="px-1 text-slate-300 hover:text-rose-400"
                                         >✕</button>
                                     </div>
@@ -1153,6 +1198,7 @@ const LifeRecordPanel: React.FC = () => {
                     </div>
                 </div>
             )}
+            {confirmDialog}
         </div>
     );
 };

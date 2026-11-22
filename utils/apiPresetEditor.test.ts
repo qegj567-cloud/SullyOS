@@ -29,6 +29,11 @@ it('copies the edit form into a separate preset and only deletes through the edi
     const root = createRoot(host);
     const click = async (button: HTMLButtonElement) => act(async () => { button.click(); });
     const button = (label: string) => Array.from(host.querySelectorAll('button')).find(el => el.textContent?.trim() === label)!;
+    const topDialogButton = (label: string) => {
+        const dialogs = host.querySelectorAll('[role="dialog"]');
+        const top = dialogs[dialogs.length - 1]!;
+        return Array.from(top.querySelectorAll('button')).find(el => el.textContent?.trim() === label)!;
+    };
     const pencil = () => host.querySelector<HTMLButtonElement>('[aria-label="编辑预设 写作"]')!;
     try {
         await act(async () => root.render(createElement(Settings)));
@@ -61,11 +66,11 @@ it('copies the edit form into a separate preset and only deletes through the edi
         expect(os.updateApiPreset).not.toHaveBeenCalled();
         expect(os.updateApiConfig).not.toHaveBeenCalled();
         await click(pencil());
-        const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
         await click(button('删除预设'));
+        await click(topDialogButton('取消'));
         expect(os.removeApiPreset).not.toHaveBeenCalled();
         await click(button('删除预设'));
-        expect(confirm).toHaveBeenCalledWith('确定删除预设「写作」？');
+        await click(topDialogButton('确认删除'));
         expect(os.removeApiPreset).toHaveBeenCalledWith('one');
         expect(os.updateApiConfig).not.toHaveBeenCalled();
     } finally {

@@ -1,5 +1,6 @@
 import {readLibraryDecorations,saveLibraryDecoration,deleteLibraryDecoration,type LibraryDecoration} from '../../utils/decorationLibrary';
 import React,{useEffect,useRef,useState} from 'react';
+import BeautyConfirmDialog from '../share/BeautyConfirmDialog';
 import BeautySharePanel from '../share/BeautySharePanel';
 import { useOS } from '../../context/OSContext';
 import { AppID } from '../../types';
@@ -15,7 +16,7 @@ const STORE='chat_decoration_presets_v1';
 interface Props{onBusyChange:(busy:boolean)=>void;target:string;scope:'character'|'global';currentBubble:ChatTheme;exportCurrent:(name:string)=>Promise<DecorationPreset>;onApply:(preset:DecorationPreset,parts:DecorationPart[])=>Promise<void>}
 export default function ChatDecorationPresets({target,scope,currentBubble,exportCurrent,onApply,onBusyChange}:Props){
  const { openApp } = useOS();
- const [name,setName]=useState('我的聊天装扮');const [saved,setSaved]=useState<LibraryDecoration[]>([]);const [pending,setPending]=useState<DecorationImport|null>(null);const [parts,setParts]=useState<DecorationPart[]>([]);const [imageUse,setImageUse]=useState<'background'|'user'|'ai'>('background');const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [notice,setNotice]=useState('');const saveReady=useRef(false);
+ const [name,setName]=useState('我的聊天装扮');const [saved,setSaved]=useState<LibraryDecoration[]>([]);const [pending,setPending]=useState<DecorationImport|null>(null);const [parts,setParts]=useState<DecorationPart[]>([]);const [imageUse,setImageUse]=useState<'background'|'user'|'ai'>('background');const [deletingPreset,setDeletingPreset]=useState<LibraryDecoration|null>(null);const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [notice,setNotice]=useState('');const saveReady=useRef(false);
  useEffect(()=>{let alive=true;readLibraryDecorations().then(list=>{if(!alive)return;setSaved(list);saveReady.current=true;}).catch(()=>{if(alive)setError('预设列表读取失败，请重新打开后再保存。');});return()=>{alive=false;};},[]);
  const run=async(work:()=>Promise<void>)=>{setBusy(true);onBusyChange(true);setError('');setNotice('');try{await work();}catch(e){setError(e instanceof Error?e.message:'操作失败，请重试');}finally{setBusy(false);onBusyChange(false);}};
  const stage=(item:DecorationImport)=>{setPending(item);setError('');setNotice('');if(item.kind==='preset')setParts(Object.keys(item.preset.parts) as DecorationPart[]);else setImageUse('background');};
@@ -44,6 +45,29 @@ export default function ChatDecorationPresets({target,scope,currentBubble,export
    <div className="chat-decoration-preset-actions"><button disabled={busy||(pending.kind==='preset'&&!parts.length)} onClick={apply}>{busy?'处理中…':'确认应用'}</button><button disabled={busy} onClick={()=>setPending(null)}>取消</button></div>
   </section>}
   <section className="chat-decoration-preset-save"><h3>保存当前整套装扮</h3><label className="chat-decoration-field">预设名称<input value={name} maxLength={60} onChange={e=>setName(e.target.value)} aria-label="装扮预设名称"/></label><p className="chat-decoration-note">包含当前布局、气泡、背景、声音和 CSS。本地图片会打包进文件，外链素材仍需联网。</p><div className="chat-decoration-preset-actions"><button disabled={busy} onClick={save}>存为预设</button><button disabled={busy} onClick={share}>导出分享</button></div></section>
-  <section className="chat-decoration-preset-save"><h3>我的预设</h3>{saved.length?saved.map((preset,index)=><div key={index} className="chat-decoration-saved"><button disabled={busy} onClick={()=>stage({kind:'preset',preset})}>{preset.name}<small>查看并应用 →</small></button><button aria-label={`删除预设 ${preset.name}`} disabled={busy} onClick={()=>run(async()=>{await deleteLibraryDecoration(preset._libraryId);setSaved(await readLibraryDecorations());})}>删除</button></div>):<p className="chat-decoration-note">保存喜欢的搭配，下次可以整套换上。</p>}</section>
+  <section className="chat-decoration-preset-save"><h3>我的预设</h3>{saved.length?saved.map((preset,index)=><div key={index} className="chat-decoration-saved"><button disabled={busy} onClick={()=>stage({kind:'preset',preset})}>{preset.name}<small>查看并应用 →</small></button><button aria-label={`删除预设 ${preset.name}`} disabled={busy} onClick={()=>setDeletingPreset(preset)}>删除</button></div>):<p className="chat-decoration-note">保存喜欢的搭配，下次可以整套换上。</p>}</section>
+  {deletingPreset && (
+   <BeautyConfirmDialog
+    title="删除这套预设？"
+    confirm="删除"
+    danger
+    onClose={() => setDeletingPreset(null)}
+    onConfirm={async () => {
+     onBusyChange(true);
+     setBusy(true);
+     setError('');
+     setNotice('');
+     try {
+      await deleteLibraryDecoration(deletingPreset._libraryId);
+      setSaved(await readLibraryDecorations());
+     } finally {
+      setBusy(false);
+      onBusyChange(false);
+     }
+    }}
+   >
+    <p>将从「我的预设」中删除「{deletingPreset.name}」，删除后不可恢复。</p>
+   </BeautyConfirmDialog>
+  )}
  </div>;
 }

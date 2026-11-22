@@ -6,6 +6,7 @@ import React, { useState, useRef, useCallback } from 'react';
 import NativeAppIconEditor from './NativeAppIconEditor';
 import { isAndroidAppIcon } from '../../utils/nativeAppIcon';
 import { useOS } from '../../context/OSContext';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 import { processImageToBlob } from '../../utils/file';
 import { putImageBlob, useBlobRefUrl } from '../../utils/blobRef';
 import { isStandaloneDisplayMode } from '../../utils/iosStandalone';
@@ -15,7 +16,9 @@ type Mode = 'upload' | 'url';
 
 const PwaAppIconEditor: React.FC = () => {
   const { customIcons, setCustomIcon, addToast } = useOS();
+  const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
   const currentValue: string | undefined = customIcons[PWA_ICON_APP_ID];
+  const hasCustomUpload = Boolean(currentValue && currentValue !== PWA_CLASSIC_ICON_VALUE);
 
   const [mode, setMode] = useState<Mode>('upload');
   const [urlInput, setUrlInput] = useState('');
@@ -98,18 +101,44 @@ const PwaAppIconEditor: React.FC = () => {
 
   // ── 重置 ───────────────────────────────────────────────────
 
-  const handleReset = useCallback(async () => {
+  const performReset = useCallback(async () => {
     await setCustomIcon(PWA_ICON_APP_ID, undefined);
     clearPwaIcon();
     addToast('PWA 图标已恢复默认', 'info');
   }, [setCustomIcon, addToast]);
 
+  const handleReset = useCallback(async () => {
+    if (!hasCustomUpload) {
+      await performReset();
+      return;
+    }
+    const ok = await requestConfirm({
+      title: '恢复默认 PWA 图标？',
+      message: '将清除当前自定义或已选的 PWA 图标，恢复为默认水母图标。',
+      confirmText: '确认重置',
+      variant: 'warning',
+    });
+    if (!ok) return;
+    await performReset();
+  }, [hasCustomUpload, requestConfirm, performReset]);
+
   const chooseBuiltin = async (classic: boolean) => {
     if (processing) return;
+    if (!classic && !currentValue) return;
+    if (classic && currentValue === PWA_CLASSIC_ICON_VALUE) return;
+    if (hasCustomUpload) {
+      const ok = await requestConfirm({
+        title: `切换为「${classic ? '经典' : '水母'}」图标？`,
+        message: '将清除当前上传的自定义 PWA 图标。',
+        confirmText: '确认切换',
+        variant: 'warning',
+      });
+      if (!ok) return;
+    }
     setProcessing(true);
     try {
       if (classic) await saveIcon(PWA_CLASSIC_ICON_VALUE);
-      else await handleReset();
+      else await performReset();
     } catch { addToast('图标保存失败，请重试', 'error'); }
     finally { setProcessing(false); }
   };
@@ -156,7 +185,7 @@ const PwaAppIconEditor: React.FC = () => {
           </div>
           {currentValue && (
             <button
-              onClick={handleReset}
+              onClick={() => void handleReset()}
               className="text-xs text-red-400 hover:text-red-500 mt-1"
               disabled={processing}
             >
@@ -265,6 +294,7 @@ const PwaAppIconEditor: React.FC = () => {
           </div>
         </div>
       )}
+      {confirmDialog}
     </section>
   );
 };

@@ -15,6 +15,7 @@ import { getRoomLabel } from '../utils/memoryPalace/types';
 import { safeResponseJson, extractContent } from '../utils/safeApi';
 import Modal from '../components/os/Modal';
 import TokenImg from '../components/os/TokenImg';
+import { useConfirmDialog } from '../hooks/useConfirmDialog';
 import DateSession from '../components/date/DateSession';
 import DateSettings from '../components/date/DateSettings';
 import { clearDateResumeAttempt } from '../utils/dateSessionRecovery';
@@ -55,6 +56,7 @@ import {
 
 const DateApp: React.FC = () => {
     const { closeApp, openApp, characters, activeCharacterId, setActiveCharacterId, apiConfig, addToast, updateCharacter, updateUserProfile, virtualTime, userProfile, memoryPalaceConfig, dateAutoStartCharId, consumeDateAutoStart, characterGroups, groups, realtimeConfig, suspendedDate, suspendDate, takeSuspendedDate } = useOS();
+    const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
 
     // 从挂起恢复：对话中途走开时见面留在了内存里，打开见面就回到原来的画面（见 docs/date-leave-reminder.md）。
     // 打开见面的入口会把当前角色一起切回去，所以角色对不上的只能是别处另开了一场见面，那就不恢复。
@@ -736,10 +738,17 @@ const DateApp: React.FC = () => {
     }, []);
 
     const handleHistoryDelete = async (msg: Message) => {
+        setHistoryMenuMsg(null);
+        const ok = await requestConfirm({
+            title: '删除这条见面记录？',
+            message: '删除后无法恢复，对应对话片段也会从见面记录里移除。',
+            confirmText: '确认删除',
+            variant: 'danger',
+        });
+        if (!ok) return;
         await DB.deleteMessage(msg.id);
         setHistoryMessages(prev => prev.filter(m => m.id !== msg.id));
         markDateTurnDirty(char, { syncAway: false });
-        setHistoryMenuMsg(null);
         addToast('已删除', 'success');
         trackEvent('删除见面记录里的一条消息');
     };
@@ -1149,6 +1158,7 @@ const DateApp: React.FC = () => {
                         className="w-full h-48 p-3 border border-slate-200 rounded-xl text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-300"
                     />
                 </Modal>
+                {confirmDialog}
             </div>
         );
     }

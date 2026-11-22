@@ -19,6 +19,7 @@ import {
     FloppyDisk, X,
 } from '@phosphor-icons/react';
 import TokenImg from '../os/TokenImg';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 
 interface Props {
     page: HandbookPage;
@@ -27,8 +28,8 @@ interface Props {
     onClose: () => void;
     onSave: (newContent: string, newPaperStyle?: string) => void;
     onToggleExclude: () => void;
-    onDelete: () => void;
-    onRegenerate?: () => void;
+    onDelete: () => void | Promise<void>;
+    onRegenerate?: () => void | Promise<void>;
 }
 
 const PAPER_OPTIONS: { kind: keyof typeof PAPERS; label: string }[] = [
@@ -46,6 +47,7 @@ const JournalPageEditor: React.FC<Props> = ({
     page, char, isRegenerating, onClose, onSave,
     onToggleExclude, onDelete, onRegenerate,
 }) => {
+    const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState(page.content);
     const [draftPaper, setDraftPaper] = useState<string>(page.paperStyle || 'plain');
@@ -276,7 +278,15 @@ const JournalPageEditor: React.FC<Props> = ({
                             </button>
                             {onRegenerate && (
                                 <button
-                                    onClick={onRegenerate}
+                                    onClick={async () => {
+                                        const confirmed = await requestConfirm({
+                                            title: '再写一次这一页？',
+                                            message: `将重新生成${char ? ` ${char.name}` : '这一页'}的今日手账内容，当前这一页会被替换。`,
+                                            confirmText: '再写一次',
+                                            variant: 'warning',
+                                        });
+                                        if (confirmed) void onRegenerate();
+                                    }}
                                     disabled={isRegenerating}
                                     className="px-3 py-2 rounded-full text-[12px] active:scale-95 transition disabled:opacity-50 flex items-center gap-1.5"
                                     style={{ ...CUTE_STACK, color: PAPER_TONES.ink, background: '#fff', border: `1.5px solid ${PAPER_TONES.spine}` }}
@@ -309,6 +319,7 @@ const JournalPageEditor: React.FC<Props> = ({
                     )}
                 </div>
             </div>
+            {confirmDialog}
         </div>
     );
 };

@@ -22,6 +22,7 @@ import { addLocalDays, getLocalDateKey } from '../utils/localDate';
 import { roundMoney, sumMoney } from '../utils/format';
 import { useLocalDateKey } from '../hooks/useLocalDateKey';
 import { trackEvent } from '../utils/analytics';
+import { useConfirmDialog } from '../hooks/useConfirmDialog';
 
 const INITIAL_STATE: BankFullState = {
     config: {
@@ -60,6 +61,7 @@ const INITIAL_STATE: BankFullState = {
 
 const BankApp: React.FC = () => {
     const { closeApp, characters, addToast, apiConfig, userProfile } = useOS();
+    const { requestConfirm, confirmDialog } = useConfirmDialog();
     const localDateKey = useLocalDateKey();
     const [state, setState] = useState<BankFullState>(INITIAL_STATE);
     const [transactions, setTransactions] = useState<BankTransaction[]>([]);
@@ -354,6 +356,13 @@ const BankApp: React.FC = () => {
     const handleDeleteTransaction = async (id: string) => {
         const tx = transactions.find(t => t.id === id);
         if (!tx) return;
+        const confirmed = await requestConfirm({
+            title: '删除这条账目？',
+            message: `确定删除「${tx.note || '未备注'}」（${stateRef.current.config.currencySymbol}${tx.amount}）吗？删除后无法恢复。`,
+            confirmText: '删除',
+            variant: 'danger',
+        });
+        if (!confirmed) return;
         await DB.deleteTransaction(id);
         trackEvent('删除一笔账');
 
@@ -475,9 +484,17 @@ const BankApp: React.FC = () => {
     const handleDeleteFiredStaff = async (staffId: string) => {
         const cur = stateRef.current;
         const staff = (cur.firedStaff || []).find(s => s.id === staffId);
-        const updatedFired = (cur.firedStaff || []).filter(s => s.id !== staffId);
+        const confirmed = await requestConfirm({
+            title: '彻底删除前员工？',
+            message: `确定彻底删除「${staff?.name || '该员工'}」的档案吗？删除后无法重新入职。`,
+            confirmText: '删除',
+            variant: 'danger',
+        });
+        if (!confirmed) return;
+        const latest = stateRef.current;
+        const updatedFired = (latest.firedStaff || []).filter(s => s.id !== staffId);
 
-        const newState = { ...cur, firedStaff: updatedFired };
+        const newState = { ...latest, firedStaff: updatedFired };
         stateRef.current = newState;
         setState(newState);
         await DB.saveBankState(newState);
@@ -648,8 +665,15 @@ ${previousGuestbook}
 
     // --- Guestbook Deletion ---
     const handleDeleteGuestbookEntry = async (entryId: string) => {
-        const entry = (state.shop.guestbook || []).find(g => g.id === entryId);
+        const entry = (stateRef.current.shop.guestbook || []).find(g => g.id === entryId);
         if (!entry) return;
+        const confirmed = await requestConfirm({
+            title: '删除这条留言？',
+            message: `确定删除「${entry.authorName}」的这条店铺留言吗？`,
+            confirmText: '删除',
+            variant: 'danger',
+        });
+        if (!confirmed) return;
 
         // Delete linked system message from chat history
         if (entry.systemMessageId) {
@@ -863,6 +887,14 @@ ${previousGuestbook}
                             onUpdateConfig={handleConfigUpdate}
                             onAddGoal={() => { setShowGoalModal(true); trackEvent('打开新增心愿弹窗'); }}
                             onDeleteGoal={async (id) => {
+                                const goal = stateRef.current.goals.find(g => g.id === id);
+                                const confirmed = await requestConfirm({
+                                    title: '删除存钱心愿？',
+                                    message: goal ? `确定删除心愿「${goal.name}」吗？` : '确定删除这个存钱心愿吗？',
+                                    confirmText: '删除',
+                                    variant: 'danger',
+                                });
+                                if (!confirmed) return;
                                 await persistStateUpdate(prev => ({
                                     ...prev,
                                     goals: prev.goals.filter(g => g.id !== id)
@@ -1180,6 +1212,7 @@ ${previousGuestbook}
                 </div>
             </Modal>
 
+            {confirmDialog}
         </div>
     );
 };

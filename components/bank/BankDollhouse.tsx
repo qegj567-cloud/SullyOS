@@ -14,6 +14,7 @@ import { DB } from '../../utils/db';
 import { processImage } from '../../utils/file';
 import { Armchair, PaintBucket, SquaresFour, Image as ImageIcon, HouseSimple, PencilSimple } from '@phosphor-icons/react';
 import type { Icon as PhosphorIcon } from '@phosphor-icons/react';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 
 const ROOM_UNLOCK_COSTS: Record<string, number> = {
     'room-1f-left': 0,
@@ -69,6 +70,7 @@ const BankDollhouse: React.FC<Props> = ({
     shopState, dollhouseState, onDollhouseChange, characters, updateState, onStaffClick, onOpenGuestbook
 }) => {
     const { addToast } = useOS();
+    const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
     const [showUnlockConfirm, setShowUnlockConfirm] = useState<string | null>(null);
     const [renameTarget, setRenameTarget] = useState<DollhouseRoom | null>(null);
     const [renameValue, setRenameValue] = useState('');
@@ -656,8 +658,16 @@ const BankDollhouse: React.FC<Props> = ({
         addToast('自定义家具已保存', 'success');
     };
 
-    const handleDeleteCustomAsset = (id: string) => {
-        void persistCustomAssets(customAssets.filter(a => a.id !== id));
+    const handleDeleteCustomAsset = async (id: string) => {
+        const asset = customAssets.find(a => a.id === id);
+        const confirmed = await requestConfirm({
+            title: '删除自定义家具？',
+            message: asset ? `确定删除「${asset.name}」吗？（已摆进房间的不会消失）` : '确定删除这个自定义家具吗？',
+            confirmText: '删除',
+            variant: 'danger',
+        });
+        if (!confirmed) return;
+        await persistCustomAssets(customAssets.filter(a => a.id !== id));
         addToast('已删除自定义家具', 'success');
     };
 
@@ -1295,6 +1305,13 @@ const BankDollhouse: React.FC<Props> = ({
                                                 </div>
                                                 <button
                                                     onClick={async () => {
+                                                        const confirmed = await requestConfirm({
+                                                            title: '清除全屋贴图？',
+                                                            message: `确定清除「${activeRoom.name}」当前的全屋贴图吗？`,
+                                                            confirmText: '清除',
+                                                            variant: 'danger',
+                                                        });
+                                                        if (!confirmed) return;
                                                         await saveDollhouse(prev => ({ ...prev, rooms: prev.rooms.map(r => r.id === activeRoom.id ? { ...r, roomTextureUrl: undefined, roomTextureScale: 1 } : r) }));
                                                         addToast('已清除全屋贴图', 'success');
                                                     }}
@@ -1696,6 +1713,7 @@ const BankDollhouse: React.FC<Props> = ({
                     </div>
                 </div>
             )}
+            {confirmDialog}
         </div>
     );
 };

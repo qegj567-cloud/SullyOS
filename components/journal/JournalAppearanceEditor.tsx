@@ -28,6 +28,7 @@ import { runCssRenderabilityCheck, validateScopedCss } from '../../utils/scopedC
 import { shareOrDownloadFile } from '../../utils/shareExport';
 import { readShareText } from '../../utils/pngShare';
 import { JournalThemeThumbnail } from './JournalThemeArtwork';
+import BeautyConfirmDialog from '../share/BeautyConfirmDialog';
 
 const CSS_SNIPPETS = [
     {
@@ -115,6 +116,7 @@ const JournalAppearanceButton: React.FC<JournalAppearanceButtonProps> = ({
     const [copied, setCopied] = useState(false);
     const appearanceButtonRef = useRef<HTMLButtonElement>(null);
     const [savedStyleBlocksButton, setSavedStyleBlocksButton] = useState(false);
+    const [confirmReset, setConfirmReset] = useState(false);
     const [draft, setDraft] = useState<JournalAppearance>(() =>
         normalizeAppearance(theme.journalAppearance)
     );
@@ -458,7 +460,7 @@ const JournalAppearanceButton: React.FC<JournalAppearanceButtonProps> = ({
 
                 <div className="sticky bottom-0 grid grid-cols-[auto_1fr_1fr] gap-2 border-t border-stone-200/80 bg-[#fbfaf8]/95 px-5 pb-1 pt-3 backdrop-blur">
                     <button
-                        onClick={reset}
+                        onClick={() => setConfirmReset(true)}
                         className="flex h-12 items-center gap-1.5 rounded-2xl bg-stone-100 px-3 text-[11px] font-bold text-stone-500"
                     >
                         <ArrowCounterClockwise size={15} />
@@ -598,6 +600,17 @@ const JournalAppearanceButton: React.FC<JournalAppearanceButtonProps> = ({
             {panel}
             {previewRescue}
             {savedStyleRescue}
+            {confirmReset && (
+                <BeautyConfirmDialog
+                    title="恢复交换日记原版样式？"
+                    confirm="恢复默认"
+                    danger
+                    onClose={() => setConfirmReset(false)}
+                    onConfirm={reset}
+                >
+                    <p>将恢复为默认主题并清除自定义 CSS，当前未保存的样式修改也会丢弃。</p>
+                </BeautyConfirmDialog>
+            )}
         </>
     );
 };

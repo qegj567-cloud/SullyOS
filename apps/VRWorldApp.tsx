@@ -1092,27 +1092,39 @@ const IdentityModal: React.FC<{ onImport: (code: string) => void; onClose: () =>
     const code = exportIdentity();
     const [input, setInput] = useState('');
     const [copied, setCopied] = useState(false);
+    const [confirmImport, setConfirmImport] = useState(false);
     const copy = async () => {
         try { await navigator.clipboard?.writeText(code); setCopied(true); trackEvent('复制邮局身份码'); setTimeout(() => setCopied(false), 1500); } catch { /* ignore */ }
     };
     return (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center px-6 bg-black/55 backdrop-blur-sm" onClick={onClose}>
-            <div className="w-full max-w-[340px] rounded-2xl p-4" onClick={e => e.stopPropagation()} style={{ background: 'linear-gradient(180deg,#221b12,#15100a)', border: '1px solid rgba(220,190,120,.28)', boxShadow: '0 16px 50px rgba(0,0,0,.6)' }}>
-                <div className="text-[13px] font-semibold text-amber-100 mb-1" style={{ fontFamily: `'Noto Serif SC',serif` }}>邮局身份</div>
-                <p className="text-[10px] text-white/45 leading-snug mb-2.5">这串「身份码」代表你在邮局的匿名身份。复制保存，换设备或清数据后导入，就能找回「我寄出的信」和它们的归属。</p>
-                <label className="text-[10px] text-amber-200/60">我的身份码</label>
-                <div className="flex gap-1.5 mt-1 mb-3">
-                    <div className="flex-1 rounded-lg bg-black/30 px-2.5 py-2 text-[10.5px] text-amber-50/80 break-all leading-snug" style={{ border: '1px solid rgba(220,190,120,.2)' }}>{code}</div>
-                    <button onClick={copy} className="shrink-0 self-stretch px-3 rounded-lg text-[11px] font-semibold text-black" style={{ background: 'linear-gradient(120deg,#f3d08a,#e8b75e)' }}>{copied ? '已复制' : '复制'}</button>
-                </div>
-                <label className="text-[10px] text-amber-200/60">导入身份码（换回旧身份）</label>
-                <input value={input} onChange={e => setInput(e.target.value)} placeholder="粘贴 sullypo.… 身份码" className="w-full mt-1 rounded-lg bg-black/25 px-3 py-2 text-[11.5px] text-amber-50 placeholder-white/25 outline-none" style={{ border: '1px solid rgba(220,190,120,.2)' }} />
-                <div className="flex gap-2 mt-3.5">
-                    <button onClick={onClose} className="flex-1 rounded-full py-2 text-[12.5px] text-white/70" style={{ border: '1px solid rgba(255,255,255,.16)' }}>关闭</button>
-                    <button onClick={() => onImport(input)} disabled={!input.trim()} className="flex-1 rounded-full py-2 text-[12.5px] font-semibold text-black disabled:opacity-40" style={{ background: 'linear-gradient(120deg,#f3d08a,#e8b75e)' }}>导入</button>
+        <>
+            <div className="fixed inset-0 z-[300] flex items-center justify-center px-6 bg-black/55 backdrop-blur-sm" onClick={onClose}>
+                <div className="w-full max-w-[340px] rounded-2xl p-4" onClick={e => e.stopPropagation()} style={{ background: 'linear-gradient(180deg,#221b12,#15100a)', border: '1px solid rgba(220,190,120,.28)', boxShadow: '0 16px 50px rgba(0,0,0,.6)' }}>
+                    <div className="text-[13px] font-semibold text-amber-100 mb-1" style={{ fontFamily: `'Noto Serif SC',serif` }}>邮局身份</div>
+                    <p className="text-[10px] text-white/45 leading-snug mb-2.5">这串「身份码」代表你在邮局的匿名身份。复制保存，换设备或清数据后导入，就能找回「我寄出的信」和它们的归属。</p>
+                    <label className="text-[10px] text-amber-200/60">我的身份码</label>
+                    <div className="flex gap-1.5 mt-1 mb-3">
+                        <div className="flex-1 rounded-lg bg-black/30 px-2.5 py-2 text-[10.5px] text-amber-50/80 break-all leading-snug" style={{ border: '1px solid rgba(220,190,120,.2)' }}>{code}</div>
+                        <button onClick={copy} className="shrink-0 self-stretch px-3 rounded-lg text-[11px] font-semibold text-black" style={{ background: 'linear-gradient(120deg,#f3d08a,#e8b75e)' }}>{copied ? '已复制' : '复制'}</button>
+                    </div>
+                    <label className="text-[10px] text-amber-200/60">导入身份码（换回旧身份）</label>
+                    <input value={input} onChange={e => setInput(e.target.value)} placeholder="粘贴 sullypo.… 身份码" className="w-full mt-1 rounded-lg bg-black/25 px-3 py-2 text-[11.5px] text-amber-50 placeholder-white/25 outline-none" style={{ border: '1px solid rgba(220,190,120,.2)' }} />
+                    <div className="flex gap-2 mt-3.5">
+                        <button onClick={onClose} className="flex-1 rounded-full py-2 text-[12.5px] text-white/70" style={{ border: '1px solid rgba(255,255,255,.16)' }}>关闭</button>
+                        <button onClick={() => setConfirmImport(true)} disabled={!input.trim()} className="flex-1 rounded-full py-2 text-[12.5px] font-semibold text-black disabled:opacity-40" style={{ background: 'linear-gradient(120deg,#f3d08a,#e8b75e)' }}>导入</button>
+                    </div>
                 </div>
             </div>
-        </div>
+            <ConfirmDialog
+                open={confirmImport}
+                zIndex={350}
+                title="导入新身份码？"
+                message="导入会覆盖当前本机邮局与信号坠落处的身份密钥；若当前身份码未备份，原已寄出信件和诗句的归属将永久丢失。"
+                confirmText="确认导入"
+                onConfirm={() => { setConfirmImport(false); onImport(input); }}
+                onCancel={() => setConfirmImport(false)}
+            />
+        </>
     );
 };
 
@@ -1649,6 +1661,7 @@ const PostOfficePanel: React.FC<{ addToast?: (m: string, t?: any) => void; chara
     const [tab, setTab] = useState<'outbox' | 'reply' | 'replied' | 'inbox' | 'drift' | 'box'>('outbox'); // 左侧分类
     const [sentMenu, setSentMenu] = useState<VRLetter | null>(null);     // 已寄出信的管理菜单
     const [confirmDelSent, setConfirmDelSent] = useState<VRLetter | null>(null); // 删除已寄出信的确认
+    const [confirmStopDrift, setConfirmStopDrift] = useState<VRLetter | null>(null); // 停止传播的确认
     const enabledChars = characters.filter(c => c.vrState?.enabled);
 
     const load = useCallback(async () => setLetters(await DB.getVRLetters()), []);
@@ -2022,9 +2035,13 @@ const PostOfficePanel: React.FC<{ addToast?: (m: string, t?: any) => void; chara
             {/* 已寄出信的作者管理：停止传播 / 删除 */}
             <ActionSheet open={!!sentMenu} title={sentMenu ? '管理这封已寄出的信' : ''}
                 actions={[
-                    ...(sentMenu && !sentMenu.released ? [{ label: '停止传播（退出公共池，本地留档）', onClick: () => { const l = sentMenu; setSentMenu(null); if (l) void stopDrift(l); } }] : []),
+                    ...(sentMenu && !sentMenu.released ? [{ label: '停止传播（退出公共池，本地留档）', onClick: () => { setConfirmStopDrift(sentMenu); setSentMenu(null); } }] : []),
                     { label: '删除这封信（本地与后端都删）', danger: true, onClick: () => { setConfirmDelSent(sentMenu); setSentMenu(null); } },
                 ]} onClose={() => setSentMenu(null)} />
+            <ConfirmDialog zIndex={300} open={!!confirmStopDrift} title="退出公共池并停止漂流？"
+                message="退出后这封信会留在本地信匣，但无法再次投回公共池。" confirmText="停止传播"
+                onConfirm={() => { if (confirmStopDrift) void stopDrift(confirmStopDrift); setConfirmStopDrift(null); }}
+                onCancel={() => setConfirmStopDrift(null)} />
             <ConfirmDialog open={!!confirmDelSent} title="删除这封信？" message="本地留档与公共池里的这封信都会被删除，相关回信也一并清除，不可恢复。"
                 onConfirm={() => { if (confirmDelSent) void deleteSent(confirmDelSent); setConfirmDelSent(null); }} onCancel={() => setConfirmDelSent(null)} />
 
@@ -2103,6 +2120,7 @@ const SignalAdminPanel: React.FC<{ onClose: () => void; addToast?: (m: string, t
     const [loaded, setLoaded] = useState(false);
     const [busy, setBusy] = useState(false);
     const [confirmPoem, setConfirmPoem] = useState<string | null>(null);
+    const [confirmLineKey, setConfirmLineKey] = useState<string | null>(null);
 
     const load = useCallback(async (tk: string) => {
         if (!tk.trim()) { addToast?.('先填 ADMIN_TOKEN', 'error'); return; }
@@ -2127,7 +2145,7 @@ const SignalAdminPanel: React.FC<{ onClose: () => void; addToast?: (m: string, t
             await Signal.adminDelete(token.trim(), { poemId, seq });
             setPoems(ps => ps.map(p => p.id === poemId ? { ...p, lines: p.lines.filter(l => l.seq !== seq), lineCount: p.lineCount - 1 } : p));
             addToast?.('该句已删', 'success');
-        } catch { addToast?.('删除失败', 'error'); } finally { setBusy(false); }
+        } catch { addToast?.('删除失败', 'error'); } finally { setBusy(false); setConfirmLineKey(null); }
     };
 
     return (
@@ -2164,15 +2182,25 @@ const SignalAdminPanel: React.FC<{ onClose: () => void; addToast?: (m: string, t
                             )}
                         </div>
                         <div className="px-3 py-2 space-y-1">
-                            {(p.lines || []).map((l, i) => (
-                                <div key={l.seq} className="flex items-start gap-2 group">
-                                    {/* 显示用顺位行号；删除仍按内部 seq 定位 */}
-                                    <span className="tabular-nums text-[9px] mt-1 shrink-0 w-4 text-right text-indigo-300/40">{i + 1}</span>
-                                    <span className="flex-1 text-[12px] leading-relaxed text-white/85" style={{ fontStyle: 'italic' }}>{l.content} <span className="text-indigo-300/35 text-[9px] not-italic">— {l.pen}</span></span>
-                                    <button onClick={() => delLine(p.id, l.seq)} disabled={busy}
-                                        className="shrink-0 text-rose-300/70 active:text-rose-400 px-1" title="删这一句"><Trash size={12} /></button>
-                                </div>
-                            ))}
+                            {(p.lines || []).map((l, i) => {
+                                const lineKey = `${p.id}:${l.seq}`;
+                                return (
+                                    <div key={l.seq} className="flex items-start gap-2 group">
+                                        {/* 显示用顺位行号；删除仍按内部 seq 定位 */}
+                                        <span className="tabular-nums text-[9px] mt-1 shrink-0 w-4 text-right text-indigo-300/40">{i + 1}</span>
+                                        <span className="flex-1 text-[12px] leading-relaxed text-white/85" style={{ fontStyle: 'italic' }}>{l.content} <span className="text-indigo-300/35 text-[9px] not-italic">— {l.pen}</span></span>
+                                        {confirmLineKey === lineKey ? (
+                                            <span className="ml-auto flex items-center gap-1 shrink-0">
+                                                <button onClick={() => delLine(p.id, l.seq)} disabled={busy} className="text-[10px] px-2 py-0.5 rounded-full text-white font-semibold" style={{ background: 'rgba(244,63,94,.85)' }}>确认删除</button>
+                                                <button onClick={() => setConfirmLineKey(null)} disabled={busy} className="text-[10px] px-2 py-0.5 rounded-full text-white/70 bg-white/10">取消</button>
+                                            </span>
+                                        ) : (
+                                            <button onClick={() => setConfirmLineKey(lineKey)} disabled={busy}
+                                                className="shrink-0 text-rose-300/70 active:text-rose-400 px-1" title="删这一句" aria-label="删这一句"><Trash size={12} /></button>
+                                        )}
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
                 ))}
@@ -4009,6 +4037,7 @@ const VRApiSettings: React.FC<{ apiPresets: ApiPreset[]; chatApi: APIConfig; add
     const [presetsOpen, setPresetsOpen] = useState(false);   // 折叠「保存的预设」长列表
     const [snapshot, setSnapshot] = useState<string | null>(null);   // 排障快照正文
     const [collecting, setCollecting] = useState(false);
+    const [confirmClearLog, setConfirmClearLog] = useState(false);
 
     useEffect(() => {
         void getVRApi().then(setVr);
@@ -4137,7 +4166,7 @@ const VRApiSettings: React.FC<{ apiPresets: ApiPreset[]; chatApi: APIConfig; add
                 <div className="flex items-center gap-1.5 mb-2">
                     <span className="text-[10px] tracking-[0.2em] text-indigo-200/60" style={{ fontFamily: `'Noto Serif SC',serif` }}>调用记录</span>
                     <span className="text-[9.5px] text-white/40 rounded-full px-1.5 leading-tight" style={{ background: 'rgba(255,255,255,.08)' }}>{calls.length}{calls.length ? ` · 成功${okCount}` : ''}</span>
-                    {log.length > 0 && <button onClick={() => { void clearVRApiLog(); setLog([]); }} className="ml-auto text-[10px] text-white/40 hover:text-rose-300/80">清空</button>}
+                    {log.length > 0 && <button onClick={() => setConfirmClearLog(true)} className="ml-auto text-[10px] text-white/40 hover:text-rose-300/80">清空</button>}
                 </div>
                 {log.length === 0 ? (
                     <p className="text-[10.5px] text-white/35 py-2 text-center">还没有调用。角色每次登入彼方触发的模型调用都会记在这里，方便你对账。</p>
@@ -4188,6 +4217,14 @@ const VRApiSettings: React.FC<{ apiPresets: ApiPreset[]; chatApi: APIConfig; add
                         style={{ background: 'rgba(0,0,0,.3)' }}>{snapshot}</pre>
                 )}
             </div>
+            <ConfirmDialog
+                open={confirmClearLog}
+                title="清空彼方调用记录？"
+                message={`已记录的 ${log.length} 条调用与诊断日志将被清空，无法恢复。`}
+                confirmText="清空"
+                onConfirm={() => { void clearVRApiLog(); setLog([]); setConfirmClearLog(false); }}
+                onCancel={() => setConfirmClearLog(false)}
+            />
         </div>
     );
 };

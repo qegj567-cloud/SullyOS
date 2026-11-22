@@ -21,6 +21,7 @@ beforeEach(()=>{
 });
 afterEach(()=>{act(()=>root.unmount());host.remove();});
 const button=(text:string)=>Array.from(host.querySelectorAll('button')).find(b=>b.textContent?.includes(text))!;
+const confirmButton=(text:string)=>Array.from(document.body.querySelectorAll('[role="dialog"] button')).find(b=>b.textContent?.trim()===text) as HTMLButtonElement;
 const fill=(label:string,value:string)=>act(()=>{const input=host.querySelector<HTMLInputElement>(`[aria-label="${label}"]`)!;Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,value);input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));});
 function mount(){function App(){const [value,setValue]=useState(entry);return React.createElement(StoryArchivePanel,{entry:value,masks:[],onUpdated:setValue,onBack:()=>{}});}act(()=>root.render(React.createElement(App)));}
 it('requires selecting a box and supplying a date before conversion; exports only checked summaries',async()=>{
@@ -48,6 +49,8 @@ it('regenerates one box without selection or a memory date, disables actions whi
  vi.mocked(regenerateStoryArchiveSummary).mockImplementationOnce(()=>new Promise(resolve=>{release=resolve;}));
  mount();const regenerateButton=host.querySelector<HTMLButtonElement>('[aria-label="重新总结事件盒 1"]')!;
  await act(async()=>regenerateButton.click());
+ expect(regenerateStoryArchiveSummary).not.toHaveBeenCalled();
+ await act(async()=>confirmButton('重新总结').click());
  expect(regenerateStoryArchiveSummary).toHaveBeenCalledWith('story','one',expect.objectContaining({model:'test'}));
  expect(regenerateButton.disabled).toBe(true);expect(button('导出选中').disabled).toBe(true);expect(host.querySelector<HTMLButtonElement>('[aria-label="返回剧情"]')!.disabled).toBe(true);
  expect(convertStoryArchiveToMemory).not.toHaveBeenCalled();
@@ -58,6 +61,7 @@ it('retains summary after a failed regeneration, and exposes empty boxes for rec
  entry.archives[1].summary='';vi.mocked(regenerateStoryArchiveSummary).mockRejectedValueOnce(new Error('模型没有返回事件盒正文'));
  mount();expect(host.querySelector('[aria-label="重新总结事件盒 2"]')).not.toBeNull();
  await act(async()=>host.querySelector<HTMLButtonElement>('[aria-label="重新总结事件盒 1"]')!.click());
+ await act(async()=>confirmButton('重新总结').click());
  expect(host.querySelector('[role="alert"]')!.textContent).toContain('没有返回事件盒正文');expect(host.textContent).toContain('雨夜等待的完整摘要');
  expect(host.querySelector<HTMLButtonElement>('[aria-label="重新总结事件盒 1"]')!.disabled).toBe(false);
 });

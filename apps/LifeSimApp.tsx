@@ -1268,17 +1268,6 @@ const LifeSimApp: React.FC = () => {
                 />
             )}
 
-            {showResetDialog && (
-                <ResetCityDialog
-                    participantCount={participantChars.length}
-                    mainPlotCount={gameState.actionLog.filter(action => action.storyKind === 'main_plot').length}
-                    processing={isResetting}
-                    onCancel={() => setShowResetDialog(false)}
-                    onArchiveAndReset={handleArchiveAndReset}
-                    onDirectReset={handleDirectReset}
-                />
-            )}
-
             {/* ── 回放弹窗 ── */}
             {showReplay && gameState.replayPending && gameState.replayPending.length > 0 && (
                 <NarrativeReplayOverlay
@@ -1290,7 +1279,19 @@ const LifeSimApp: React.FC = () => {
 
             {/* ── 游戏结束 ── */}
             {showGameOver && (
-                <GameOverOverlay reason={gameState.gameOverReason} onRestart={resetGame} />
+                <GameOverOverlay reason={gameState.gameOverReason} onRestart={() => setShowResetDialog(true)} />
+            )}
+
+            {/* 置底渲染 + GameOverOverlay z-[45]，确保游戏结束时点重建城市能正常弹出重置确认框 */}
+            {showResetDialog && (
+                <ResetCityDialog
+                    participantCount={participantChars.length}
+                    mainPlotCount={gameState.actionLog.filter(action => action.storyKind === 'main_plot').length}
+                    processing={isResetting}
+                    onCancel={() => setShowResetDialog(false)}
+                    onArchiveAndReset={handleArchiveAndReset}
+                    onDirectReset={handleDirectReset}
+                />
             )}
         </div>
     );

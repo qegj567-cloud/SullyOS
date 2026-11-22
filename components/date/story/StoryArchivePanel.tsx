@@ -7,9 +7,11 @@ import {convertStoryArchiveToMemory,storyMemoryDate} from '../../../utils/storyT
 import {shareOrDownloadFile} from '../../../utils/shareExport';
 import {StoryAppearanceButton} from './StoryTheaterTheme';
 import {regenerateStoryArchiveSummary} from '../../../utils/storyTheaterArchive';
+import {useConfirmDialog} from '../../../hooks/useConfirmDialog';
 
 export default function StoryArchivePanel({entry,masks,onBack,onUpdated}:{entry:StoryTheaterEntry;masks:StoryTheaterMask[];onBack:()=>void;onUpdated:(entry:StoryTheaterEntry)=>void}){
  const {characters,userProfile,apiConfig,memoryPalaceConfig,remoteVectorConfig,addToast}=useOS();
+ const {requestConfirm,confirmDialog}=useConfirmDialog({portal:true});
  const actors=characters.filter(char=>entry.characterIds.includes(char.id));
  const [charId,setCharId]=useState(actors[0]?.id??'');
  const [selected,setSelected]=useState<string[]>([]),[dates,setDates]=useState<Record<string,string>>({});
@@ -24,6 +26,16 @@ export default function StoryArchivePanel({entry,masks,onBack,onUpdated}:{entry:
  const toggle=(id:string)=>setSelected(current=>current.includes(id)?current.filter(x=>x!==id):[...current,id]);
  const regenerate=async(id:string)=>{
   if(running.current)return;
+  const target=boxes.find(b=>b.id===id);
+  if(target?.summary.trim()){
+   const ok=await requestConfirm({
+    title:`重新总结事件盒 ${boxes.indexOf(target)+1}？`,
+    message:'将从该事件盒的原文重新提炼摘要，成功后会替换当前摘要并消耗一次 API 调用（失败时保留原内容）。',
+    confirmText:'重新总结',
+    variant:'warning',
+   });
+   if(!ok||running.current)return;
+  }
   running.current=true;setBusy(true);setRegeneratingId(id);setError('');setStatus('正在从这个事件盒的原文重新总结…');
   try{
    const updated=await regenerateStoryArchiveSummary(entry.id,id,apiConfig);
@@ -89,5 +101,6 @@ export default function StoryArchivePanel({entry,masks,onBack,onUpdated}:{entry:
    <button disabled={busy||!selected.length} onClick={()=>void exportSelected()} className='min-h-[44px] px-4 rounded-xl border border-slate-300 flex items-center gap-2 text-xs disabled:opacity-30'><DownloadSimple size={17}/>导出选中</button>
    <button disabled={busy||!char||!chosen.length||chosen.some(box=>!dateValid(dates[box.id]))} onClick={()=>void convert()} className='min-h-[44px] flex-1 px-4 rounded-xl bg-violet-700 text-white text-xs font-semibold disabled:opacity-30'>{busy?(regeneratingId?'正在重新总结…':'正在转化…'):`一键转为记忆${chosen.length?`（${chosen.length} 个）`:''}`}</button>
   </footer>}
+  {confirmDialog}
  </div>;
 }

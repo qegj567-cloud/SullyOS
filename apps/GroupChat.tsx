@@ -42,6 +42,7 @@ import { CharacterGroupFilterBar, filterCharactersByGroup, GROUP_FILTER_ALL } fr
 import { UsersThree, Money, GearSix, Image as ImageIcon, ArrowsClockwise, PaintBrush, BellSimpleRinging, Code, Question } from '@phosphor-icons/react';
 import ChatHeaderShell from '../components/chat/ChatHeaderShell';
 import ChatInputArea from '../components/chat/ChatInputArea';
+import { useConfirmDialog } from '../hooks/useConfirmDialog';
 import { loadChatInputPreferences, saveChatInputPreferences } from '../utils/chatInputPreferences';
 import ChatInputSettings from '../components/chat/ChatInputSettings';
 import { useChatAutoReply } from '../hooks/useChatAutoReply';
@@ -575,6 +576,8 @@ const GroupChat: React.FC = () => {
     // 闭包里的 messages 是触发那一刻的旧值，长度会越算越小
     const messagesRef = useRef<Message[]>([]);
     messagesRef.current = messages;
+    const isTypingRef = useRef(isTyping);
+    isTypingRef.current = isTyping;
 
     // 群里的动静会进每个成员私聊 prompt 的【群聊背景】块，话题盒成盒时还直接往成员私聊
     // 历史里写卡片 —— 两者都是主动消息 2.0 云端快照（fire_pack）的素材。群里有事就给成员
@@ -606,6 +609,7 @@ const GroupChat: React.FC = () => {
     const [editingTopicBoxId, setEditingTopicBoxId] = useState<string | null>(null);
     const [topicTitleDraft, setTopicTitleDraft] = useState('');
     const [topicSummaryDraft, setTopicSummaryDraft] = useState('');
+    const { requestConfirm, confirmDialog } = useConfirmDialog();
 
     // Context limit (like Chat app's settingsContextLimit)
     const [contextLimit, setContextLimit] = useState<number>(() => {
@@ -790,8 +794,14 @@ const GroupChat: React.FC = () => {
 
     const handleDeleteSingleMessage = async () => {
         if (!selectedMessage) return;
-        await DB.deleteMessage(selectedMessage.id);
-        setMessages(prev => prev.filter(m => m.id !== selectedMessage.id));
+        const targetId = selectedMessage.id;
+        if (!(await requestConfirm({
+            title: '删除这条群消息？',
+            message: '删除后不可恢复。',
+            confirmText: '删除',
+        }))) return;
+        await DB.deleteMessage(targetId);
+        setMessages(prev => prev.filter(m => m.id !== targetId));
         setModalType('none');
         setSelectedMessage(null);
         addToast('消息已删除', 'success');
@@ -825,16 +835,23 @@ const GroupChat: React.FC = () => {
 
     const deleteSelectedMessages = async () => {
         if (selectedMsgIds.size === 0) return;
-        await DB.deleteMessages(Array.from(selectedMsgIds));
-        setMessages(prev => prev.filter(m => !selectedMsgIds.has(m.id)));
+        const ids = Array.from(selectedMsgIds);
+        if (!(await requestConfirm({
+            title: `删除选中的 ${ids.length} 条群消息？`,
+            message: '删除后不可恢复。',
+            confirmText: '确认删除',
+        }))) return;
+        await DB.deleteMessages(ids);
+        const deletedSet = new Set(ids);
+        setMessages(prev => prev.filter(m => !deletedSet.has(m.id)));
         setSelectionMode(false);
         setSelectedMsgIds(new Set());
-        addToast(`已删除 ${selectedMsgIds.size} 条消息`, 'success');
+        addToast(`已删除 ${ids.length} 条消息`, 'success');
+        trackEvent('批量删除选中的消息');
     };
 
     const handleReroll = async () => {
         if (!canReroll) return;
-        autoReply.cancel();
         
         const lastMsg = messages[messages.length - 1];
         if (lastMsg.role !== 'assistant') return;
@@ -849,6 +866,15 @@ const GroupChat: React.FC = () => {
 
         if (toDeleteIds.length === 0) return;
 
+        if (!(await requestConfirm({
+            title: '重新生成上一轮群聊回复？',
+            message: '当前最后一轮成员回复将被删除并重新生成。',
+            confirmText: '重新生成',
+            variant: 'warning',
+        }))) return;
+        if (!canReroll || isTyping || isTypingRef.current) return;
+
+        autoReply.cancel();
         await DB.deleteMessages(toDeleteIds);
         const newHistory = messages.slice(0, index + 1);
         setMessages(newHistory);
@@ -917,6 +943,12 @@ const GroupChat: React.FC = () => {
     };
 
     const handleDeleteGroup = async (id: string) => {
+        const targetGroup = groups.find(g => g.id === id);
+        if (!(await requestConfirm({
+            title: `解散群聊「${targetGroup?.name || ''}」？`,
+            message: '群消息、群记忆以及成员私聊里关联的话题盒卡片都会被永久清除。',
+            confirmText: '解散群聊',
+        }))) return;
         // 清理旧版本可能留下的群记忆副本，以及公共话题盒投递到成员私聊的卡片。
         try {
             const result = await deleteGroupMemoriesByGroupId(id);
@@ -926,7 +958,6 @@ const GroupChat: React.FC = () => {
         } catch (err) {
             console.warn('🗑️ [GroupChat] 清理群记忆失败（不影响解散）:', err);
         }
-        const targetGroup = groups.find(g => g.id === id);
         if (targetGroup) {
             // 扫全部角色而非只扫当前成员：已经退群的人也可能留有早期成盒卡片。
             await Promise.all(characters.map(async ({ id: memberId }) => {
@@ -936,6 +967,7 @@ const GroupChat: React.FC = () => {
             }));
         }
         await deleteGroup(id);
+        setModalType('none');
         if (activeGroup?.id === id) setView('list');
         addToast('群聊已解散', 'success');
     };
@@ -947,17 +979,21 @@ const GroupChat: React.FC = () => {
         const allGroupMsgs = await DB.getGroupMessages(activeGroup.id);
 
         let msgsToDelete = allGroupMsgs;
-        let keepCount = 0;
 
         if (preserveContext) {
             msgsToDelete = allGroupMsgs.slice(0, -10);
-            keepCount = Math.min(allGroupMsgs.length, 10);
         }
 
         if (msgsToDelete.length === 0) {
             addToast('消息太少，无需清理', 'info');
             return;
         }
+
+        if (!(await requestConfirm({
+            title: '清空群聊记录？',
+            message: `将永久删除 ${msgsToDelete.length} 条群消息${preserveContext ? '（保留最近 10 条）' : ''}。`,
+            confirmText: '确认清空',
+        }))) return;
 
         await DB.deleteMessages(msgsToDelete.map(m => m.id));
 
@@ -1430,6 +1466,11 @@ ${memberTimeline || '(暂无互动记录)'}
 
     const deleteTopicBox = async (boxId: string) => {
         if (!activeGroup) return;
+        if (!(await requestConfirm({
+            title: '删除这个公共话题盒？',
+            message: '成员私聊里同步的话题盒卡片也会一并移除。',
+            confirmText: '删除',
+        }))) return;
         const nextBoxes = (activeGroup.topicBoxes || []).filter(box => box.id !== boxId);
         await updateGroup(activeGroup.id, { topicBoxes: nextBoxes });
         setActiveGroup({ ...activeGroup, topicBoxes: nextBoxes });
@@ -2513,13 +2554,20 @@ ${memberTimeline || '(暂无互动记录)'}
                             <style>{`#sully-safe-reset{position:fixed!important;top:calc(var(--safe-top) + 6px)!important;left:50%!important;transform:translateX(-50%)!important;visibility:visible!important;opacity:1!important;pointer-events:auto!important;display:flex!important;z-index:2147483647!important;}`}</style>
                             <button
                                 id="sully-safe-reset"
-                                onClick={() => { updateGroup(activeGroup.id, { chromeCustomCss: '' }); setActiveGroup({ ...activeGroup, chromeCustomCss: '' }); addToast('已还原本群白框', 'success'); }}
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    updateGroup(activeGroup.id, { chromeCustomCss: '' });
+                                    setActiveGroup({ ...activeGroup, chromeCustomCss: '' });
+                                    addToast('已还原本群白框', 'success');
+                                }}
                                 style={{
                                     position: 'fixed', top: 'calc(var(--safe-top) + 6px)', left: '50%', transform: 'translateX(-50%)',
                                     zIndex: 2147483647, display: 'flex', alignItems: 'center', gap: '4px',
                                     padding: '5px 12px', borderRadius: '999px',
                                     background: 'rgba(15,23,42,0.62)', color: '#fff', fontSize: '11px', fontWeight: 700,
                                     border: '1px solid rgba(255,255,255,0.3)', cursor: 'pointer', boxShadow: '0 2px 10px rgba(0,0,0,0.35)',
+                                    whiteSpace: 'nowrap',
                                 }}
                             >⟲ 还原本群白框</button>
                         </>,
@@ -2614,6 +2662,7 @@ ${memberTimeline || '(暂无互动记录)'}
                 </div>
             </Modal>
 
+            {confirmDialog}
         </div>
     );
 };

@@ -24,7 +24,6 @@ let host: HTMLDivElement, root: Root;
 beforeEach(() => {
     vi.clearAllMocks();
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     vi.stubGlobal('URL', class extends URL {
         static createObjectURL = () => 'blob:backup';
         static revokeObjectURL = vi.fn();
@@ -33,6 +32,12 @@ beforeEach(() => {
     host = document.createElement('div'); document.body.append(host); root = createRoot(host);
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+const clickButton = async (label: string) => {
+    const target = Array.from(host.querySelectorAll('button')).find(node => node.textContent?.trim() === label)!;
+    expect(target).toBeTruthy();
+    await act(async () => target.click());
+};
 
 it('keeps the missing-file warning visible after sharing is cancelled and clears it for the next healthy backup', async () => {
     const file = new Blob(['zip']);
@@ -45,6 +50,7 @@ it('keeps the missing-file warning visible after sharing is cancelled and clears
     await act(async () => section.querySelector('button')!.click());
     const button = Array.from(host.querySelectorAll('button')).find(node => node.textContent?.includes('整合导出 (文字+媒体)'))!;
     await act(async () => button.click());
+    await clickButton('继续导出');
     expect(share).toHaveBeenCalledWith(expect.objectContaining({ blob: file }));
     expect(host.textContent).toContain('备份已生成，但有 1 份素材原文件缺失');
     const details = Array.from(host.querySelectorAll('details')).find(node => node.textContent?.includes('img_missing'))!;
@@ -53,6 +59,7 @@ it('keeps the missing-file warning visible after sharing is cancelled and clears
     expect(details.textContent).toContain('用户「甲」 → 角色「小夏」 → 头像');
     context.exportSystem.mockImplementation(async (_mode, options) => { options.onMissingAssets([]); return file; });
     await act(async () => button.click());
+    await clickButton('继续导出');
     expect(host.textContent).not.toContain('img_missing');
 });
 
@@ -73,5 +80,7 @@ it('offers independent migration explicitly while the original import button kee
     expect(normal.type).toBe('file');
     Object.defineProperty(normal, 'files', { value: [file], configurable: true });
     await act(async () => normal.dispatchEvent(new Event('change', { bubbles: true })));
+    expect(context.importSystem).toHaveBeenCalledTimes(1);
+    await clickButton('确认覆盖');
     expect(context.importSystem).toHaveBeenLastCalledWith(file, expect.objectContaining({ asNewUsers: false }));
 });
