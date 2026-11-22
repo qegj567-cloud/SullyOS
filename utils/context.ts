@@ -40,6 +40,21 @@ const stripMemoryPalaceDateStamps = (text: string): string => text
     .replace(/（剩余 \d+ 天）/g, '');
 
 export interface EmotionContextOptions { surface?: 'chat' | 'home'; innerState?: string }
+
+/**
+ * 角色这一轮能不能知道用户正在放哪首歌。歌名块和音乐互动工具都按这一个判断走，
+ * 否则会出现「工具说对方在听这首、却不告诉是哪首」，模型只能编。
+ * 一起听算用户主动分享，开关关着也让角色知道。
+ */
+export function canCharSeeUserListening(
+    char: CharacterProfile,
+    userListening: { songName: string } | null | undefined,
+    isListeningTogether?: boolean,
+): boolean {
+    if (!userListening?.songName) return false;
+    return (char.musicProfile?.canReadUserMusic ?? true) || !!isListeningTogether;
+}
+
 function characterInstructions(char: CharacterProfile): string {
     const persona = char.systemPrompt || '你是一个温柔、拟人化的AI伴侣。';
     return char.id === BUILTIN_SULLY_ID ? persona + '\n\n' + BUILTIN_SULLY_IDENTITY : persona;
@@ -363,7 +378,7 @@ export const ContextBuilder = {
 
     /**
      * 音乐氛围注入：
-     * 1) user 此刻真的在播放音乐 + char.canReadUserMusic 开 → 注入"对方正在听 X + 当前歌词窗口（前2当前后2）"
+     * 1) user 此刻真的在播放音乐 + canCharSeeUserListening 放行 → 注入"对方正在听 X + 当前歌词窗口（前2当前后2）"
      *    + 同曲歌单命中提示（该歌也在 char 某个歌单里）
      * 2) char 自己此刻在听（Schedule 听歌时段） → 注入"你此刻在听 Y"（不含歌词，char 知道自己听什么）
      *
@@ -403,8 +418,8 @@ export const ContextBuilder = {
         const lines: string[] = [];
 
         // —— 块 1: user 正在听什么 ——
-        const canRead = char.musicProfile?.canReadUserMusic ?? true;
-        if (canRead && userListening && userListening.songName) {
+        const seesUserListening = canCharSeeUserListening(char, userListening, isListeningTogether);
+        if (seesUserListening && userListening) {
             lines.push(`### 【此刻的对话氛围】`);
             if (isListeningTogether) {
                 lines.push(`你正在和 ${userName || '对方'} 一起听《${userListening.songName}》— ${userListening.artists}`);
@@ -469,7 +484,7 @@ export const ContextBuilder = {
         // 只在**有音乐上下文**（user 在听 OR char 自己在 schedule 里听）时注入。
         // 没音乐上下文时不往 prompt 里塞这段 — 避免普通聊天被无关信息污染、
         // 也避免 LLM 在没提示 add 语法的场合主动联想去操作歌单。
-        const hasMusicContext = !!(userListening && userListening.songName) || !!charListening?.songName;
+        const hasMusicContext = seesUserListening || !!charListening?.songName;
         const profile = char.musicProfile;
         if (hasMusicContext && profile && profile.playlists.length > 0) {
             lines.push(`### 【你的歌单】`);

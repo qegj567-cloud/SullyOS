@@ -11,7 +11,7 @@ import { kanataTitleContext } from './vrWorld/kanataTitle';
 import { selectCharacterContextMessages } from './chatContextRange';
 
 import { CharacterProfile, UserProfile, Message, Emoji, EmojiCategory, GroupProfile, RealtimeConfig, DailySchedule } from '../types';
-import { ContextBuilder } from './context';
+import { ContextBuilder, canCharSeeUserListening } from './context';
 import { BUILTIN_SULLY_ID, SULLY_CHAT_HANDOFF } from './sullyIdentity';
 import { DB } from './db';
 import { formatLifeSimResetCardForContext } from './lifeSimChatCard';
@@ -609,7 +609,7 @@ ${groupLogStr}\n`;
             );
             if (musicBlock) {
                 volatileState += `\n${musicBlock}\n`;
-                if (userListeningContext && promptOptions?.appRules === undefined) {
+                if (canCharSeeUserListening(char, userListeningContext, isListeningTogether) && promptOptions?.appRules === undefined) {
                     volatileState += `\n${ContextBuilder.buildMusicActionGuide(isListeningTogether)}\n`;
                 }
             }
