@@ -69,12 +69,19 @@ export const missingBackupAssetsSummary = (items: readonly BackupMissingAsset[])
 export const damagedBackupAssetsSummary = (items: readonly BackupMissingAsset[], total = items.length): string =>
     `恢复已完成，但备份包里有 ${total} 份图片或素材文件已损坏、已跳过；其余数据已恢复，这些位置会显示为空。`;
 
+/** 缺失素材清单的两个文件（名字、内容）；没有缺失时为空。顺序写入的归档按项 await 加入。 */
+export function missingBackupAssetFiles(items: readonly BackupMissingAsset[]): Array<[name: string, text: string]> {
+    if (!items.length) return [];
+    return [
+        ['diagnostics/missing-assets.json', JSON.stringify({ version: 1, items }, null, 2)],
+        ['缺失素材清单.txt', [
+            missingBackupAssetsSummary(items),
+            '原存档与素材引用未修改。缺失的文件无法从这份备份还原，可从原图或较早的完整备份补回。',
+            ...items.map(item => `\n素材：${item.id}${item.reason === 'damaged' ? '（文件损坏）' : ''}\n${item.locations.length ? item.locations.map(location => `  ${location}`).join('\n') : '  此导出路径未记录具体位置'}${item.moreLocations ? '\n  另有其他引用（最多列出五处）' : ''}`),
+        ].join('\n')],
+    ];
+}
+
 export function writeMissingBackupAssets(zip: ZipFileWriter, items: readonly BackupMissingAsset[]): void {
-    if (!items.length) return;
-    zip.file('diagnostics/missing-assets.json', JSON.stringify({ version: 1, items }, null, 2));
-    zip.file('缺失素材清单.txt', [
-        missingBackupAssetsSummary(items),
-        '原存档与素材引用未修改。缺失的文件无法从这份备份还原，可从原图或较早的完整备份补回。',
-        ...items.map(item => `\n素材：${item.id}${item.reason === 'damaged' ? '（文件损坏）' : ''}\n${item.locations.length ? item.locations.map(location => `  ${location}`).join('\n') : '  此导出路径未记录具体位置'}${item.moreLocations ? '\n  另有其他引用（最多列出五处）' : ''}`),
-    ].join('\n'));
+    for (const [name, text] of missingBackupAssetFiles(items)) zip.file(name, text);
 }

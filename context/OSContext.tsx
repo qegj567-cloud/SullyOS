@@ -86,7 +86,8 @@ import {
   shouldProbeReachability,
   type ReceivedResponseHeadersInfo,
 } from '../utils/networkFailureDiagnosis';
-import { captureCallerHint, identifyNetworkRequestSource, setDiagnosticAmsgWorkerUrl } from '../utils/networkRequestSource';
+import { captureCallerHint, formatDiagnosticTimestamp, identifyNetworkRequestSource, readCompactBuildString, setDiagnosticAmsgWorkerUrl } from '../utils/networkRequestSource';
+import { consumeExportTrace } from '../utils/backupExportTrace';
 import { INSTALLED_APPS, HIDDEN_APP_NAMES } from '../constants';
 import { isAnalyticsRequestUrl, trackEvent, shouldReportSnapshot, trackDataScaleOnce, trackCurrentAppearanceOnce, trackCurrentCharSettingsOnce, trackCurrentFeaturesOnce, trackCurrentSARFeaturesOnce } from '../utils/analytics';
 import { loadChatInputPreferences, saveChatInputPreferences } from '../utils/chatInputPreferences';
@@ -1778,6 +1779,17 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         void cleanupInstantPushLegacyData();
         // 上次导出、下载中途崩溃留下的临时文件会一直占着配额，没被锁住的都删掉。
         void import('../utils/backupTempFile').then(mod => mod.cleanupBackupTempFiles()).catch(() => {});
+        // 上次多空间导出闪退或被系统杀掉时留下的进度留痕：记进系统调试终端给用户复制，读完即删。
+        const exportTrace = consumeExportTrace();
+        if (exportTrace) {
+            const ts = Date.now();
+            setSystemLogs(prev => [{
+                id: `log-${ts}-export-trace`, timestamp: ts, time: formatDiagnosticTimestamp(ts), type: 'system', source: '备份导出',
+                message: exportTrace.title, detail: exportTrace.detail, context: { build: readCompactBuildString(), category: 'backup' },
+                advice: { title: exportTrace.title, action: '可能是导出途中页面被系统关掉了。请把下方技术详情里的这条日志复制发给开发者，再导出一次前建议先刷新页面。' },
+            }, ...prev.slice(0, 49)]);
+            setTimeout(() => addToast('上次备份导出没有完成，诊断信息已记入系统调试终端，可以复制发给开发者', 'info'), 2500);
+        }
 
         await loadSettings();
 
@@ -3702,10 +3714,10 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
           if (listUserSpaces().length > 1) {
               const { exportUserSpaces } = await import('../utils/userSpaceBackup');
-              const result = await exportUserSpaces(mode, exportOptions.userScope || 'current', message => setSysOperation({ status: 'processing', message, progress: 30 }), includeBackendConnection, items => {
+              const result = await withScreenAwake(() => exportUserSpaces(mode, exportOptions.userScope || 'current', message => setSysOperation({ status: 'processing', message, progress: 30 }), includeBackendConnection, items => {
                   exportOptions.onMissingAssets?.(items);
                   if (items.length) addToast(missingBackupAssetsSummary(items), 'info');
-              });
+              }));
               setSysOperation({ status: 'idle', message: '', progress: 0 });
               return result;
           }
@@ -4553,6 +4565,10 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           },
           onRolledBack: () => importMarker.clear(),
           onDamagedAsset: (id: string) => noteDamagedAsset(id),
+          // 检查阶段也会回调；importMarker.update 在 beginWrite 之前什么都不写，所以不会提前留下「导入中」标记。
+          onProgress: (p: import('../utils/userSpaceBackup').UserSpaceRestoreProgress) => {
+              showImportProgress('database', `${p.stage}...`, Math.round(2 + p.ratio * 96), { current: p.current ?? '', itemDone: p.done, itemTotal: p.total });
+          },
       };
 
       const countZipAssetFiles = (zip: BackupZipReader) => (

@@ -41,6 +41,43 @@ export function commitSpaceRows(db: IDBDatabase, tables: Record<string, any[]>, 
         } catch (error) { tx.abort(); reject(error); }
     });
 }
+/**
+ * 替换模式下清空一张表。keepIds 是本机专属、导出时被滤掉的行（如 assets 的 ls_mirror_v1、user_spaces_catalog_v1），
+ * 和清空放在同一个事务里补回去：之后逐页写入时中途失败，这些行也还在。
+ */
+export function clearSpaceTable(db: IDBDatabase, table: string, keepIds: string[] = []): Promise<void> {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(table, 'readwrite'), store = tx.objectStore(table);
+        // 请求按发出顺序执行：先读出要留的行，清空完成后再写回。
+        const kept = keepIds.map(id => store.get(id));
+        store.clear().onsuccess = () => { for (const req of kept) if (req.result !== undefined) store.put(req.result); };
+        tx.oncomplete = () => resolve(); tx.onerror = tx.onabort = () => reject(tx.error || new Error('用户空间保存失败'));
+    });
+}
+const waitUntilVisible = (doc: Document) => new Promise<void>(resolve => {
+    if (doc.visibilityState !== 'hidden') { resolve(); return; }
+    const onChange = () => { if (doc.visibilityState !== 'hidden') { doc.removeEventListener('visibilitychange', onChange); resolve(); } };
+    doc.addEventListener('visibilitychange', onChange);
+});
+/**
+ * iOS 挂起切到后台约一分钟的页面时，进行中的写库事务会被中止且不给原因（docs/backup-pipeline.md「平台事实」）。
+ * 这次尝试期间页面进过后台、失败又不是带名字的数据库错误（配额满、数据无效等），就等页面回到前台再整个重做一次。
+ * 只用于可以原样重做的写入（按主键覆盖的一页、清空并补回、只增的图片）。页面一直在前台时的失败照常抛出，不会无限重试。
+ */
+export async function retryAfterSuspend<T>(write: () => Promise<T>, onRetry?: () => void): Promise<T> {
+    const doc = typeof document === 'undefined' ? undefined : document;
+    for (;;) {
+        let wentHidden = doc?.visibilityState === 'hidden';
+        const onChange = () => { if (doc?.visibilityState === 'hidden') wentHidden = true; };
+        doc?.addEventListener('visibilitychange', onChange);
+        try { return await write(); }
+        catch (error) {
+            if (!doc || !wentHidden || (error instanceof DOMException && error.name !== 'AbortError')) throw error;
+        } finally { doc?.removeEventListener('visibilitychange', onChange); }
+        await waitUntilVisible(doc);
+        onRetry?.();
+    }
+}
 export async function createUserSpace(name: string): Promise<UserSpace> {
     return withSharedAssetLock('exclusive', () => createUserSpaceUnderLease(name));
 }
