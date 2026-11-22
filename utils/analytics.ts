@@ -70,6 +70,8 @@ export function isAnalyticsEnabled(): boolean {
 }
 
 export function setAnalyticsEnabled(enabled: boolean): void {
+  // 关掉时把还没发出去的排队事件一起扔掉，不留到脚本加载完再发。
+  if (!enabled && pendingEvents) pendingEvents = [];
   try {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify({ enabled }));
   } catch {
@@ -143,6 +145,19 @@ function isLocalHostname(): boolean {
 let loadAttempted = false;
 
 /**
+ * 脚本已插进页面、还没执行完的这段时间里发生的事件。
+ *
+ * 冷启动时本地数据加载完和统计脚本就绪几乎同时发生，先到的那一半事件以前会被
+ * `window.umami?.track` 静默丢掉（实测冷启动快照只覆盖了约一半的页面访问）。
+ * 这里先记下，脚本加载完先发页面访问、再按顺序补发。
+ *
+ * 只在内存里：不落 localStorage / IndexedDB，标签页一关就没了。脚本加载失败、
+ * 用户关掉开关时整队清空。设上限是因为加载卡住时不该无限攒。
+ */
+let pendingEvents: Array<[string, Record<string, string | number | boolean> | undefined]> | null = null;
+const MAX_PENDING_EVENTS = 50;
+
+/**
  * 挂上统计脚本并发一次页面访问。在 index.tsx 里启动时调用一次。
  *
  * 下面任意一条成立就直接返回，什么都不做也什么都不创建：
@@ -197,8 +212,19 @@ export function initAnalytics(): void {
     payload: unknown
   ) => (isAnalyticsEnabled() ? payload : null);
   script.setAttribute('data-before-send', BEFORE_SEND_HOOK);
+  pendingEvents = [];
   script.addEventListener('load', () => {
+    const queued = pendingEvents ?? [];
+    pendingEvents = null;
     window.umami?.track();
+    // 排队期间开关可能被关掉；每一条都再问一次，tracker 内部还有 before-send 闸门兜底。
+    for (const [name, data] of queued) {
+      if (!isAnalyticsEnabled()) break;
+      window.umami?.track(name, data);
+    }
+  });
+  script.addEventListener('error', () => {
+    pendingEvents = null;
   });
   document.head.appendChild(script);
 }
@@ -222,7 +248,14 @@ export function trackEvent(
   // 变成 ReferenceError。`window.umami?.` 只挡得住 umami 没加载，挡不住 window 不存在。
   if (typeof window === 'undefined') return;
   if (!isAnalyticsEnabled()) return;
-  window.umami?.track(name, data);
+  if (window.umami) {
+    window.umami.track(name, data);
+    return;
+  }
+  // 脚本还在路上就先排队；没在加载（没配、关着、DNT、本地开发、加载失败）时队列是 null，照旧空调用。
+  if (pendingEvents && pendingEvents.length < MAX_PENDING_EVENTS) {
+    pendingEvents.push([name, data]);
+  }
 }
 
 // ===== 数据规模档位 =====

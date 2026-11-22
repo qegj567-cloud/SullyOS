@@ -230,6 +230,64 @@ describe('tracker 标签', () => {
     });
 });
 
+describe('脚本就绪前的事件', () => {
+    /** 模拟 tracker 执行完：window.umami 出现，再触发 load。 */
+    function scriptLoaded() {
+        (globalThis as any).window.umami = {
+            track: (name?: string, data?: unknown) => { tracked.push([name, data]); },
+        };
+        appended[0].fire('load');
+    }
+
+    it('脚本加载前触发的事件，加载完按顺序补发，页面访问排在最前', async () => {
+        // 冷启动时本地数据常比统计脚本先就绪，以前这一半事件会被静默丢掉。
+        const a = await loadModule(true);
+        a.initAnalytics();
+        a.trackEvent('数据规模', { 角色数: '1-3' });
+        a.trackEvent('打开见面');
+        expect(tracked).toHaveLength(0);
+
+        scriptLoaded();
+        expect(tracked).toEqual([
+            [undefined, undefined],
+            ['数据规模', { 角色数: '1-3' }],
+            ['打开见面', undefined],
+        ]);
+    });
+
+    it('排队期间关掉开关，排着的事件一条都不补发', async () => {
+        const a = await loadModule(true);
+        a.initAnalytics();
+        a.trackEvent('打开见面');
+        a.setAnalyticsEnabled(false);
+        a.trackEvent('打开记忆宫殿');
+
+        scriptLoaded();
+        expect(tracked.filter(([name]) => name !== undefined)).toEqual([]);
+    });
+
+    it('脚本加载失败就清空队列，之后也不再攒', async () => {
+        const a = await loadModule(true);
+        a.initAnalytics();
+        a.trackEvent('打开见面');
+        appended[0].fire('error');
+        a.trackEvent('打开记忆宫殿');
+
+        scriptLoaded();
+        expect(tracked).toEqual([[undefined, undefined]]);
+    });
+
+    it('加载卡住时最多攒 50 条', async () => {
+        const a = await loadModule(true);
+        a.initAnalytics();
+        for (let i = 0; i < 60; i++) a.trackEvent(`事件${i}`);
+
+        scriptLoaded();
+        expect(tracked).toHaveLength(1 + 50);
+        expect(tracked[50][0]).toBe('事件49');
+    });
+});
+
 describe('用户关掉开关', () => {
     it('关掉之后启动，脚本压根不加载', async () => {
         const a = await loadModule(true);
