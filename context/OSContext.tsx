@@ -87,7 +87,8 @@ import {
   type ReceivedResponseHeadersInfo,
 } from '../utils/networkFailureDiagnosis';
 import { captureCallerHint, formatDiagnosticTimestamp, identifyNetworkRequestSource, readCompactBuildString, setDiagnosticAmsgWorkerUrl } from '../utils/networkRequestSource';
-import { consumeExportTrace } from '../utils/backupExportTrace';
+import { collectStartupTraceReports } from '../utils/taskTraceReport';
+import { startStepTrace, type StepTraceWriter } from '../utils/taskTrace';
 import { INSTALLED_APPS, HIDDEN_APP_NAMES } from '../constants';
 import { isAnalyticsRequestUrl, trackEvent, shouldReportSnapshot, trackDataScaleOnce, trackCurrentAppearanceOnce, trackCurrentCharSettingsOnce, trackCurrentFeaturesOnce, trackCurrentSARFeaturesOnce } from '../utils/analytics';
 import { loadChatInputPreferences, saveChatInputPreferences } from '../utils/chatInputPreferences';
@@ -146,7 +147,7 @@ import { exportMcdLocal } from '../utils/mcdMcpClient';
 import { exportMcpLocal } from '../utils/mcpClient';
 import { exportHome3DLocal } from '../utils/home3DBackup';
 import { exportDesktopSkinLocal } from '../utils/desktopSkinBackup';
-import { assertSupportedSullyBackup, createImportProgressMarker, saveRestoreDamagedAssets } from '../utils/backupImportPolicy';
+import { assertSupportedSullyBackup, createImportProgressMarker, IMPORT_IN_PROGRESS_KEY, saveRestoreDamagedAssets } from '../utils/backupImportPolicy';
 import { createBuiltinSullyLive2DConfig, isBuiltinSullyLive2D, upgradeBuiltinSullyLive2DDefaults } from '../utils/builtinSullyLive2D';
 import { normalizeCharacterRoomAssetsInPlace } from '../utils/roomTemplateAssets';
 
@@ -189,6 +190,8 @@ let jszipCtorPromise: Promise<JSZipCtorLike> | null = null;
 export { IMPORT_IN_PROGRESS_KEY } from '../utils/backupImportPolicy';
 
 type ImportProgressUpdate = {
+  /** 多用户恢复的步骤（「正在清空」「正在写入」…），只记进「导入中」标记 */
+  stage?: string;
   sourceSize?: number;
   assetDone?: number;
   assetTotal?: number;
@@ -1779,16 +1782,21 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         void cleanupInstantPushLegacyData();
         // 上次导出、下载中途崩溃留下的临时文件会一直占着配额，没被锁住的都删掉。
         void import('../utils/backupTempFile').then(mod => mod.cleanupBackupTempFiles()).catch(() => {});
-        // 上次多空间导出闪退或被系统杀掉时留下的进度留痕：记进系统调试终端给用户复制，读完即删。
-        const exportTrace = consumeExportTrace();
-        if (exportTrace) {
+        // 上次导出、恢复、云端上传下载、一键优化闪退或被系统杀掉时留下的进度留痕：每项一条记进系统调试终端给用户复制。
+        // 留痕读完即删；「导入中」标记只读不删，重新导入的弹窗还要用它。
+        const traceReports = collectStartupTraceReports();
+        if (traceReports.length) {
             const ts = Date.now();
-            setSystemLogs(prev => [{
-                id: `log-${ts}-export-trace`, timestamp: ts, time: formatDiagnosticTimestamp(ts), type: 'system', source: '备份导出',
-                message: exportTrace.title, detail: exportTrace.detail, context: { build: readCompactBuildString(), category: 'backup' },
-                advice: { title: exportTrace.title, action: '可能是导出途中页面被系统关掉了。请把下方技术详情里的这条日志复制发给开发者，再导出一次前建议先刷新页面。' },
-            }, ...prev.slice(0, 49)]);
-            setTimeout(() => addToast('上次备份导出没有完成，诊断信息已记入系统调试终端，可以复制发给开发者', 'info'), 2500);
+            setSystemLogs(prev => [...traceReports.map((report, index) => ({
+                id: `log-${ts}-trace-${index}`, timestamp: ts, time: formatDiagnosticTimestamp(ts), type: 'system' as const, source: report.source,
+                message: report.title, detail: report.detail, context: { build: readCompactBuildString(), category: 'backup' },
+                advice: { title: report.title, action: report.advice },
+            })), ...prev].slice(0, 50));
+            // 恢复中断另有弹窗，不再弹提示条。
+            const fresh = traceReports.filter(report => report.key !== IMPORT_IN_PROGRESS_KEY);
+            if (fresh.length) setTimeout(() => addToast(fresh.length === 1
+                ? `${fresh[0].title}，诊断信息已记入系统调试终端，可以复制发给开发者`
+                : `上次有 ${fresh.length} 项任务没有完成，诊断信息已分别记入系统调试终端，可以复制发给开发者`, 'info'), 2500);
         }
 
         await loadSettings();
@@ -3707,6 +3715,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       mode: 'text_only' | 'media_only' | 'full',
       exportOptions: BackupExportOptions = {},
   ): Promise<Blob> => {
+      // 单用户导出的中断留痕：正常结束、报错结束都在 finally 删掉，只有闪退、被系统杀掉时留下（utils/taskTrace.ts）。
+      let exportTrace: StepTraceWriter | undefined;
       try {
           setSysOperation({ status: 'processing', message: '正在初始化打包引擎...', progress: 0 });
           // 文件导出由用户选择是否带连接；个人云备份显式要求完整恢复配置。
@@ -3721,6 +3731,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               setSysOperation({ status: 'idle', message: '', progress: 0 });
               return result;
           }
+          exportTrace = startStepTrace('singleExport', { 导出样式: ({ full: '整合备份', text_only: '纯文字备份', media_only: '媒体与美化素材' } as const)[mode] ?? mode });
+          exportTrace.step('读取外观与设置');
           const zip = createBackupArchive();
           const assetsFolder = zip.folder("assets");
           let assetCount = 0;
@@ -4279,6 +4291,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
           for (const storeName of storesToProcess) {
               currentStep++;
+              const traceStep = `打包第 ${currentStep} / ${storesToProcess.length} 张表 · ${storeName}`;
+              exportTrace.step(traceStep);
               setSysOperation({
                   status: 'processing',
                   message: `正在打包: ${storeName} ...`,
@@ -4300,6 +4314,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   prewrittenStores[field] = await streamBackupArrayStore(zip, storeName, field, {
                       onSerialized: collectSerialized,
                       transform: (item, index) => {
+                          exportTrace?.step(traceStep, index + 1, undefined, '条');
                           item = portableEmojiRow(storeName, item, stickerLinks);
                           if (storeName === 'characters') {
                               normalizeCharacterRoomAssetsInPlace(item);
@@ -4399,6 +4414,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           // 进度条停在 70% 让用户看到接下来的"压缩中 X%"实际推进，而不是卡在 95% 干等。
           // ZIP 逐文件压缩，统一 level 6；媒体原字节 STORE。
           setSysOperation({ status: 'processing', message: '正在生成压缩包...', progress: 70 });
+          exportTrace.step('写出分片');
 
           // --- v2 分片序列化（替代老的单根 data.json）---
           // 不再把所有数据拼成一根 data.json：单根字符串逼近 ~512M 会确定性 RangeError。
@@ -4428,6 +4444,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           // 恢复端渲染为空，与 v2 置空串的用户可见结果等价。
           if (collectSerialized && referencedBlobTokens.size > 0) {
               setSysOperation({ status: 'processing', message: '正在打包图片二进制...', progress: 70 });
+              exportTrace.step('打包图片二进制', 0, referencedBlobTokens.size, '张');
               const { missing } = await writeBlobsToZip(
                   zip as unknown as ZipFileWriter,
                   referencedBlobTokens,
@@ -4459,6 +4476,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           const content = await zip.generateBlob(
               (metadata) => {
                   const p = metadata.percent;
+                  exportTrace?.step('压缩', Math.floor(p), 100, '%');
                   if (p - lastReportedPercent >= 5 || p >= 99) {
                       lastReportedPercent = p;
                       setSysOperation({
@@ -4483,6 +4501,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           console.error("Export Failed", e);
           setSysOperation({ status: 'idle', message: '', progress: 0 });
           throw new Error("导出失败: " + e.message);
+      } finally {
+          exportTrace?.clear();
       }
   };
 
@@ -4567,7 +4587,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           onDamagedAsset: (id: string) => noteDamagedAsset(id),
           // 检查阶段也会回调；importMarker.update 在 beginWrite 之前什么都不写，所以不会提前留下「导入中」标记。
           onProgress: (p: import('../utils/userSpaceBackup').UserSpaceRestoreProgress) => {
-              showImportProgress('database', `${p.stage}...`, Math.round(2 + p.ratio * 96), { current: p.current ?? '', itemDone: p.done, itemTotal: p.total });
+              showImportProgress('database', `${p.stage}...`, Math.round(2 + p.ratio * 96), { stage: p.stage, current: p.current ?? '', itemDone: p.done, itemTotal: p.total });
           },
       };
 

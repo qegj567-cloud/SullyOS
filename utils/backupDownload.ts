@@ -1,6 +1,7 @@
 // 云端备份下载的落盘：字节顺序写进临时文件（OPFS 不可用时留在内存），GitHub 与 WebDAV 共用。
 // 设计见 docs/backup-pipeline.md「传输：一个上传器，两种底层传输」里的「下载」。
 import { checkBackupSpace, createBackupTempFile, isBackupTempFileSupported } from './backupTempFile';
+import type { StepTraceWriter } from './taskTrace';
 
 /** 一份下载好的备份。blob 可能是磁盘上临时文件的 File，也可能是内存里的 Blob（降级时）。用完必须 dispose。 */
 export interface DownloadedBackup {
@@ -30,10 +31,12 @@ const sizeMismatch = (label: string, expected: number, actual: number) =>
  * 开一个下载汇交给 fill 顺序写入，写完核对总字节数（给了 expectedSize 才核对）。
  * 写磁盘还是写内存在开始前定好：OPFS 不可用、或文件不大且估算放不下时写内存；
  * fill 或核对失败时删掉临时文件、丢掉已收的字节，再把错误抛出去。
+ * trace 是调用方开的下载留痕，这里只往上补一句写到了磁盘还是内存。
  */
 export async function receiveBackupDownload(
     fill: (sink: BackupDownloadSink) => Promise<void>,
     expectedSize?: number,
+    trace?: StepTraceWriter,
 ): Promise<DownloadedBackup> {
     let received = 0;
     const checkTotal = () => {
@@ -49,6 +52,7 @@ export async function receiveBackupDownload(
         && (expectedSize === undefined
             || expectedSize > MEMORY_FALLBACK_LIMIT
             || (await checkBackupSpace(expectedSize))?.enough !== false);
+    trace?.note({ 写到: useDisk ? '磁盘上的临时文件' : '内存' });
     if (!useDisk) {
         const parts: Uint8Array<ArrayBuffer>[] = [];
         await fill({

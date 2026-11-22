@@ -5,6 +5,7 @@ import { optimizeResourceStorage, OPTIMIZE_TARGET_STORES } from './storageOptimi
 import { REF_SOURCE_STORES, runBlobGc } from './blobGc';
 import { isBlobRef, getBlobForRef, dataUrlToBlob, putImageBlob, clearContentMemo } from './blobRef';
 import { blobStore } from './blobStore';
+import { consumeTaskTrace, STEP_TRACE_KINDS } from './taskTrace';
 import { tryAcquireMaintenanceLock, releaseMaintenanceLock } from './maintenanceLock';
 import { ChatPrompts } from './chatPrompts';
 import { buildGroupHistoryBlock } from './groupChat/prompts';
@@ -56,6 +57,42 @@ async function blobBytes(token: string): Promise<Uint8Array> {
     expect(blob).not.toBeNull();
     return new Uint8Array(await blob!.arrayBuffer());
 }
+
+describe('一键优化的中断留痕', () => {
+    const TRACE = STEP_TRACE_KINDS.find(kind => kind.key.includes('optimize'))!;
+    const traceNow = () => JSON.parse(localStorage.getItem(TRACE.key) || 'null');
+
+    it('正常跑完删掉留痕；途中每一步都留着，记的是哪一面、第几项', async () => {
+        await DB.saveAsset('wallpaper', TINY_PNG);
+        const seen: any[] = [];
+        await optimizeResourceStorage(p => { if (p.label === '系统外观') seen.push(traceNow()); });
+        expect(seen[0]).toMatchObject({ step: '系统外观', done: 1, unit: '项' });
+        expect(localStorage.getItem(TRACE.key)).toBeNull();
+    });
+
+    it('报错结束也删掉留痕', async () => {
+        const spy = vi.spyOn(DB, 'countStoreRows').mockRejectedValue(new Error('读不出行数'));
+        await expect(optimizeResourceStorage()).rejects.toThrow('读不出行数').finally(() => spy.mockRestore());
+        expect(localStorage.getItem(TRACE.key)).toBeNull();
+    });
+
+    it('途中页面没了：留痕留下来，下次启动读得出停在哪一面', async () => {
+        await DB.saveAsset('wallpaper', TINY_PNG);
+        let reached!: () => void, resume!: () => void;
+        const stuck = new Promise<void>(resolve => { reached = resolve; });
+        const gate = new Promise<void>(resolve => { resume = resolve; });
+        const save = DB.saveAsset.bind(DB);
+        const spy = vi.spyOn(DB, 'saveAsset').mockImplementation(async (...args) => { reached(); await gate; return save(...args); });
+        const optimizing = optimizeResourceStorage();
+        await stuck;
+        // 停在写回壁纸这一行时去读，等同于此刻页面没了。
+        const report = consumeTaskTrace(TRACE)!;
+        expect(report.title).toBe('上次一键优化没有完成');
+        expect(report.detail).toMatch(/^停在：系统外观\n进度：1 项 \/ \d+ 项$/m);
+        resume();
+        await optimizing.finally(() => spy.mockRestore());
+    });
+});
 
 describe('优化资源存储（一次性批量迁移）', () => {
     it('合并提交前并发清理保留图，不会把正常引用改成缺图', async () => {
