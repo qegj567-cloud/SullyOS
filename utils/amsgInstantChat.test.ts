@@ -910,7 +910,7 @@ describe('开关', () => {
       storeState.config = { ...storeState.config, instantChatSupported: true, workerBundleVersion: undefined };
       resetInstantChatReprobeCooldown();
       return vi.spyOn(ActiveMsgClient, 'probeWorkerVersion').mockResolvedValue({
-        state, deployed: state === 'current' ? AMSG_BUNDLE_VERSION : null, expected: AMSG_BUNDLE_VERSION, autoUpdate: null,
+        state, deployed: state === 'current' ? AMSG_BUNDLE_VERSION : null, expected: AMSG_BUNDLE_VERSION, autoUpdate: null, channel: null,
       });
     };
 

@@ -150,6 +150,7 @@ import { exportDesktopSkinLocal } from '../utils/desktopSkinBackup';
 import { assertSupportedSullyBackup, createImportProgressMarker, IMPORT_IN_PROGRESS_KEY, saveRestoreDamagedAssets } from '../utils/backupImportPolicy';
 import { createBuiltinSullyLive2DConfig, isBuiltinSullyLive2D, upgradeBuiltinSullyLive2DDefaults } from '../utils/builtinSullyLive2D';
 import { normalizeCharacterRoomAssetsInPlace } from '../utils/roomTemplateAssets';
+import { consumeCanaryFallbackNotice } from '../utils/releaseChannel';
 
 
 type JSZipFileLike = {
@@ -1776,6 +1777,11 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                 VRScheduler.resume();
             }
             setTimeout(() => addToast(`检测到本地设置曾被浏览器清除，已自动恢复 ${healedKeys.length} 项（主题 / API 等）`, 'info'), 2500);
+        }
+        // canary 连续两次没启动成功，正式版的跳转脚本已把通道改回来（docs/canary-channel.md）。
+        if (consumeCanaryFallbackNotice()) {
+            trackEvent('canary 自动退回');
+            setTimeout(() => addToast('canary 连续两次没能启动，已回到正式版', 'info'), 2500);
         }
 
         // 清掉 Instant Push 留在本机的旧配置和缓存（含 Worker 令牌、API Key 副本），只跑一次。

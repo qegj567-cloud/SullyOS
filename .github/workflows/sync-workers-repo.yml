@@ -36,22 +36,31 @@ on:
       - 'scripts/worker-bundle-options.mjs'
       - '.github/workflows/sync-workers-repo.yml'
   workflow_dispatch:
+  # deploy-canary.yml 调用它把包推到部署仓库的 canary 分支（见 docs/canary-channel.md）。
+  # 调用方用 secrets: inherit，下面 guard 读的 WORKERS_REPO_TOKEN 不用在这里声明。
+  workflow_call:
+    inputs:
+      target_branch:
+        type: string
+        default: main
 
 permissions:
   contents: read
-
-concurrency:
-  group: sync-workers-repo
-  cancel-in-progress: true
 
 # 部署仓库的 owner/name 全写：它跟本仓库不在同一个账号下，
 # 界面和文档里给用户的 fork 链接指的也是这个地址。
 env:
   TARGET_REPO: Tosd0/sullyos-workers
+  # push / 手动触发时没有 inputs，落到 main。
+  TARGET_BRANCH: ${{ inputs.target_branch || 'main' }}
 
 jobs:
   sync:
     runs-on: ubuntu-latest
+    # 放在 job 级：被调用时也一定生效。按目标分支分组，canary 和 main 互不取消。
+    concurrency:
+      group: sync-workers-repo-${{ inputs.target_branch || 'main' }}
+      cancel-in-progress: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -139,7 +148,15 @@ jobs:
         run: |
           set -euo pipefail
           target="https://x-access-token:${TOKEN}@github.com/${TARGET_REPO}.git"
-          git clone --depth 1 "$target" deploy-repo
+          # 目标分支还不存在（比如第一次同步 canary）就从默认分支建出来。
+          created=false
+          if git ls-remote --exit-code --heads "$target" "$TARGET_BRANCH" > /dev/null; then
+            git clone --depth 1 --branch "$TARGET_BRANCH" "$target" deploy-repo
+          else
+            git clone --depth 1 "$target" deploy-repo
+            git -C deploy-repo checkout -B "$TARGET_BRANCH"
+            created=true
+          fi
           # 先清掉旧内容再铺新的：worker 被删除/改名时目标仓库不该留残骸。
           # .git 之外全清；用户 fork 后自己改的 wrangler.toml 不受影响（那是他们仓库的事）。
           find deploy-repo -mindepth 1 -maxdepth 1 -not -name .git -exec rm -rf {} +
@@ -149,8 +166,13 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           if git diff --cached --quiet; then
+            if [ "$created" = true ]; then
+              # 内容和默认分支一样也得把新分支推上去，否则 Worker 按通道拉包会 404。
+              git push origin "HEAD:refs/heads/$TARGET_BRANCH"
+              exit 0
+            fi
             echo "worker bundle 没有变化，不产生空提交。"
             exit 0
           fi
           git commit -m "chore: sync worker bundles from ${{ github.repository }}@${GITHUB_SHA::7}"
-          git push
+          git push origin "HEAD:refs/heads/$TARGET_BRANCH"

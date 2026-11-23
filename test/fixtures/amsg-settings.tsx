@@ -23,7 +23,7 @@ ActiveMsgStore.saveGlobalConfig = async patch => { Object.assign(fixtureConfig, 
 ActiveMsgClient.getPushStatus = async () => ({ supported: true, permission: 'granted', hasSubscription: true, vapidConfigured: true, transport: native ? 'unified-push' : 'web-push', localEndpoint: 'https://ntfy.example.invalid/device', distributor: native ? 'io.heckel.ntfy' : undefined });
 ActiveMsgClient.getRemotePushSubscription = async () => ({ exists: true, endpoint: 'https://ntfy.example.invalid/device', updatedAt: 1 });
 ActiveMsgClient.getCapabilities = async () => { throw new Error('Preview does not probe a real Worker'); };
-ActiveMsgClient.probeWorkerVersion = async () => ({ state: 'unknown', deployed: null, expected: 'preview', autoUpdate: null });
+ActiveMsgClient.probeWorkerVersion = async () => ({ state: 'unknown', deployed: null, expected: 'preview', autoUpdate: null, channel: null });
 ActiveMsgClient.probeInstantChatSupport = async () => true;
 ActiveMsgClient.getCronTriggerState = async () => null;
 ActiveMsgClient.sendTestPush = async () => ({ sent: true });

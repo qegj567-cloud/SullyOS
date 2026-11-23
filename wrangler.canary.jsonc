@@ -1,0 +1,16 @@
+{
+  // canary 静态站，独立于 sully-os-site 部署（见 docs/canary-channel.md）。
+  // 同一主机名上，路由 Worker 先于自定义域名上的 Worker 运行，所以 /canary* 落到这里，其余路径仍归正式站。
+  "name": "sully-os-canary",
+  "main": "worker/static-site-not-found.ts",
+  "compatibility_date": "2026-08-13",
+  // 只在 friedsully.com 上提供 canary，不让 workers.dev 多出一个非官方网址的副本。
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "friedsully.com/canary*", "zone_name": "friedsully.com" }],
+  "assets": {
+    // 静态资源按完整请求路径查找，所以产物放在 dist-canary/canary/ 下。
+    "directory": "./dist-canary",
+    "not_found_handling": "none"
+  }
+}

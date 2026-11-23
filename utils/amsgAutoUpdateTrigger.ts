@@ -20,6 +20,7 @@ import { ActiveMsgClient, type AmsgWorkerVersionProbe } from './activeMsgClient'
 import { ActiveMsgStore } from './activeMsgStore';
 import { isAmsg2WorkerActive } from './amsgGlobalGate';
 import { BUILD_LABEL } from './buildInfo';
+import { consumeChannelArrival, isChannelChoiceSettled, RELEASE_CHANNEL, type ReleaseChannel } from './releaseChannel';
 
 /** 同一个构建下，两次敲门至少隔这么久。 */
 export const STARTUP_UPDATE_CHECK_MIN_INTERVAL_MS = 6 * 60 * 60_000;
@@ -66,10 +67,26 @@ const writeStartupUpdateCheckMarker = (marker: StartupUpdateCheckMarker): void =
   }
 };
 
-/** 探完版本之后该走哪条路。纯函数，方便钉住这条判断。 */
+const reregisterPushAfterChannelSwitch = async (): Promise<void> => {
+  try {
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+    await ActiveMsgClient.registerPushSubscription();
+  } catch (error) {
+    console.warn('[ActiveMsg] 切换通道后补登记推送订阅没成功', error);
+  }
+};
+
+/**
+ * 探完版本之后该走哪条路。纯函数，方便钉住这条判断。
+ *
+ * 通道先于版本号：Worker 跟的通道和这份前端不一样，就直接带上前端的通道更新一次
+ * （docs/canary-channel.md「冷启动对齐」）。不认通道的老 Worker 报 null，只看版本号。
+ */
 export const pickStartupUpdateAction = (
-  probe: Pick<AmsgWorkerVersionProbe, 'state' | 'autoUpdate'>,
+  probe: Pick<AmsgWorkerVersionProbe, 'state' | 'autoUpdate'> & { channel?: AmsgWorkerVersionProbe['channel'] },
+  buildChannel: ReleaseChannel = RELEASE_CHANNEL,
 ): 'self-update' | 'check' | 'none' => {
+  if (probe.channel && probe.channel !== buildChannel) return 'self-update';
   if (probe.state === 'outdated') return 'self-update';
   if (probe.state === 'current' && probe.autoUpdate?.supported) return 'check';
   return 'none';
@@ -96,6 +113,11 @@ export const requestStartupUpdateCheck = async (
   } catch {
     return 'worker-unset';
   }
+  // 本地选的通道跟这份前端不一致 = 页面马上要跳到另一个通道去了。这时动 Worker 会把它
+  // 拉向正要离开的这一边，交给到达那一边去对齐。
+  if (!isChannelChoiceSettled()) return 'skipped';
+  // 刚切过通道：两个前端的 SW 各有一份推送订阅，把这一边的登记上去，主动消息才推得到这里。
+  if (consumeChannelArrival()) void reregisterPushAfterChannelSwitch();
   if (!shouldRequestStartupUpdateCheck(readStartupUpdateCheckMarker(), buildLabel, nowMs)) return 'throttled';
   writeStartupUpdateCheckMarker({ buildLabel, atMs: nowMs });
 
