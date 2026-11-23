@@ -138,6 +138,7 @@ const NeteaseLoginPanel: React.FC<Props> = ({ onBack, onLoggedIn }) => {
 
   /* ── 手动 Cookie ── */
   const [manualCookie, setManualCookie] = useState('');
+  const [showManualCookie, setShowManualCookie] = useState(false);
 
   const statusText: Record<string, string> = {
     idle: '准备中...', waiting: '请用网易云 App 扫描上方二维码',
@@ -158,7 +159,7 @@ const NeteaseLoginPanel: React.FC<Props> = ({ onBack, onLoggedIn }) => {
           { k: 'phone' as const, label: '手机号' },
           { k: 'manual' as const, label: 'Cookie' },
         ]).map(t => (
-          <button key={t.k} onClick={() => setMode(t.k)}
+          <button key={t.k} onClick={() => { setMode(t.k); setShowManualCookie(false); }}
             className="flex-1 py-1.5 rounded-full text-[11px] tracking-wider transition-all"
             style={{
               background: mode === t.k ? `linear-gradient(135deg, ${C.primary}, ${C.accent})` : 'transparent',
@@ -256,14 +257,28 @@ const NeteaseLoginPanel: React.FC<Props> = ({ onBack, onLoggedIn }) => {
         {mode === 'manual' && (
           <div className="space-y-3 max-w-[320px] mx-auto">
             <div className="rounded-2xl p-3 shizuku-glass">
-              <div className="text-[10px] mb-1.5 tracking-wider" style={{ color: C.muted }}>MUSIC_U Cookie</div>
-              <textarea
-                className="w-full rounded-xl px-3 py-2 outline-none text-[10px] shizuku-glass"
-                rows={4}
-                style={{ color: C.text, fontFamily: 'monospace', resize: 'none' }}
+              <div className="flex items-center justify-between mb-1.5">
+                <div className="text-[10px] tracking-wider" style={{ color: C.muted }}>MUSIC_U Cookie</div>
+                {manualCookie ? (
+                  <button type="button" onClick={() => setShowManualCookie(v => !v)} className="text-[10px] underline" style={{ color: C.primary }}>
+                    {showManualCookie ? '隐藏' : '显示'}
+                  </button>
+                ) : null}
+              </div>
+              <input
+                type={showManualCookie ? 'text' : 'password'}
+                name="netease-music-cookie"
+                autoComplete="new-password"
+                spellCheck={false}
+                className="w-full rounded-xl px-3 py-2.5 outline-none text-[10px] shizuku-glass"
+                style={{ color: C.text, fontFamily: 'monospace' }}
                 placeholder="MUSIC_U=xxx... 或直接粘贴 cookie 值"
                 value={manualCookie}
-                onChange={e => setManualCookie(e.target.value)}
+                onChange={e => {
+                  const next = e.target.value;
+                  setManualCookie(next);
+                  if (!next) setShowManualCookie(false);
+                }}
               />
               <div className="text-[9px] mt-1.5 italic" style={{ color: C.faint }}>
                 music.163.com 登录 → F12 → Application → Cookies → 复制 MUSIC_U
