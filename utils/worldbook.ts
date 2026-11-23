@@ -179,13 +179,98 @@ export const isWorldbookEntryActive = (
         if (!secondaryConditionPasses(book, text, caseSensitive, wholeWords)) return false;
     }
 
-    if (book.useProbability) {
-        const probability = clamp(book.probability, 0, 100, 100);
-        if (probability <= 0) return false;
-        if (probability < 100 && Math.random() * 100 >= probability) return false;
-    }
+    // 打包给云端的条目这一次不抽，到点由 worker 用同一个 rollWorldbookProbability 抽。
+    if (book.useProbability && !deferredRollBooks.has(book)
+        && !rollWorldbookProbability(clamp(book.probability, 0, 100, 100))) return false;
 
     return true;
+};
+
+/**
+ * 按概率触发的世界书条目抽一次签（概率按 0–100）。本地每轮构建上下文时抽，云端定时类
+ * 每次到点由 worker 抽（renderWorldbookRolls），两边用这同一个函数。
+ * 这份文件只依赖类型，会被打进 worker bundle。
+ */
+export const rollWorldbookProbability = (probability: number, random: () => number = Math.random): boolean => {
+    if (probability <= 0) return false;
+    if (probability >= 100) return true;
+    return random() * 100 < probability;
+};
+
+// ─── 云端定时类：打包时推迟抽签 ───
+// fire_pack 的模板在最后一次聊天时打好、到点才渲染。概率条目要是在打包时抽一次签，到下次
+// 重新打包前每次到点都是同一个结果；本地却是每轮都重抽。所以打包时概率条目一律按「抽中」
+// 渲染，外面包上占位标记，概率随 fire_pack 带上（worldbookRolls），worker 到点逐条现抽，
+// 没抽中的连同标记一起去掉。整段 / 同一分类都只剩没抽中的条目时，标题行跟着消失，
+// 与本地那一轮没有这些条目时的渲染逐字一致。
+
+/** 被推迟抽签的条目副本（按对象身份认，不往条目上加字段）。 */
+const deferredRollBooks = new WeakSet<object>();
+
+const ROLL_CLOSE = '{{/AMSG_WB_IF}}';
+// 含推迟条目的段里，段标题和分类标题各打一个记号：中间的条目没抽中时，前后两个同名分类
+// 标题会挨在一起，渲染时按本地「分类变了才写标题」的规则合并掉。
+const ROLL_SECTION = '{{AMSG_WB_SEC}}';
+const ROLL_CATEGORY = '{{AMSG_WB_CAT}}';
+const ROLL_HEADER_RE = /\{\{AMSG_WB_SEC\}\}|\{\{AMSG_WB_CAT\}\}(#### \[[^\n]*\]\n)/g;
+const rollOpen = (ids: string[]) => `{{AMSG_WB_IF:${ids.map(encodeURIComponent).join(',')}}}`;
+const ROLL_BLOCK_RE = /\{\{AMSG_WB_IF:([^}]*)\}\}((?:(?!\{\{AMSG_WB_IF:)[\s\S])*?)\{\{\/AMSG_WB_IF\}\}/;
+
+/** fire_pack 里随包带上的一条概率条目。 */
+export interface WorldbookRoll {
+    id: string;
+    probability: number;
+}
+
+/** 打包用：返回一份条目副本，概率在 0–100 之间（不含两端）的条目这一次不抽签、渲染时包上标记。 */
+export const deferWorldbookRolls = <T extends WorldbookLike>(books: T[] = []): T[] => books.map(book => {
+    if (!book.useProbability) return book;
+    const probability = clamp(book.probability, 0, 100, 100);
+    if (probability <= 0 || probability >= 100) return book;
+    const copy = { ...book };
+    deferredRollBooks.add(copy);
+    return copy;
+});
+
+/** deferWorldbookRolls 推迟过的条目及其概率，原样放进 fire_pack。 */
+export const collectDeferredWorldbookRolls = (books: WorldbookLike[] = []): WorldbookRoll[] => books
+    .filter(book => deferredRollBooks.has(book))
+    .map(book => ({ id: String(book.id), probability: clamp(book.probability, 0, 100, 100) }));
+
+/** 这段文本里有没有这条推迟条目的标记（打包时只把真渲染进去的那几条带上云）。 */
+export const hasWorldbookRollMarker = (text: string, id: string): boolean => {
+    const encoded = encodeURIComponent(id);
+    return [...text.matchAll(/\{\{AMSG_WB_IF:([^}]*)\}\}/g)].some(m => m[1].split(',').includes(encoded));
+};
+
+/** 去掉全部推迟标记、推迟的条目一律按抽中保留（救援导回本地时用：内容宁留勿丢）。 */
+export const keepAllWorldbookRolls = (text: string): string => renderWorldbookRolls(
+    text,
+    [...text.matchAll(/\{\{AMSG_WB_IF:([^}]*)\}\}/g)]
+        .flatMap(m => m[1].split(',').map(decodeURIComponent))
+        .map(id => ({ id, probability: 100 })),
+);
+
+/** 到点渲染：每条概率条目现抽一次，抽中的去掉标记保留原文，没抽中的整块去掉。 */
+export const renderWorldbookRolls = (
+    template: string,
+    rolls: WorldbookRoll[],
+    random: () => number = Math.random,
+): string => {
+    const hit = new Map(rolls.map(roll => [roll.id, rollWorldbookProbability(roll.probability, random)]));
+    let out = template;
+    // 由内向外：标题那一层包着里面的条目块。
+    for (let m = ROLL_BLOCK_RE.exec(out); m; m = ROLL_BLOCK_RE.exec(out)) {
+        const keep = m[1].split(',').some(id => hit.get(decodeURIComponent(id)) === true);
+        out = out.slice(0, m.index) + (keep ? m[2] : '') + out.slice(m.index + m[0].length);
+    }
+    let lastCategory: string | null = null;
+    return out.replace(ROLL_HEADER_RE, (_whole, categoryLine?: string) => {
+        if (categoryLine === undefined) { lastCategory = null; return ''; }
+        if (categoryLine === lastCategory) return '';
+        lastCategory = categoryLine;
+        return categoryLine;
+    });
 };
 
 export const expandWorldbookMacros = (content: string, charName: string, userName: string): string => {
@@ -238,21 +323,42 @@ export const formatWorldbookSection = (
     heading: string,
 ): string => {
     if (entries.length === 0) return '';
-    let output = `### ${heading}\n`;
+    // 推迟抽签的条目（见 deferWorldbookRolls）各自包上标记；标题行只依赖推迟条目时也包上，
+    // 条件是「其中任一条抽中」。没有推迟条目时输出与原来逐字一致。
+    const rollId = (entry: ResolvedWorldbookEntry) => (deferredRollBooks.has(entry.book) ? String(entry.book.id) : null);
+    const guard = (ids: Array<string | null>, text: string) =>
+        (ids.length === 0 || ids.some(id => id === null) ? text : `${rollOpen(ids as string[])}${text}${ROLL_CLOSE}`);
+    // 每个分类标题管到下一个分类标题之前的那几条带标题的条目。
+    const categoryRuns: Array<Array<string | null>> = [];
     let lastLegacyCategory = '';
     for (const entry of entries) {
+        if (entry.book.sourceUid !== undefined) continue;
+        const category = entry.book.category || '通用设定 (General)';
+        if (category !== lastLegacyCategory) {
+            categoryRuns.push([]);
+            lastLegacyCategory = category;
+        }
+        categoryRuns[categoryRuns.length - 1].push(rollId(entry));
+    }
+    const hasDeferred = entries.some(entry => rollId(entry) !== null);
+    let output = `${hasDeferred ? ROLL_SECTION : ''}### ${heading}\n`;
+    lastLegacyCategory = '';
+    let run = -1;
+    for (const entry of entries) {
+        let block = '';
         // SillyTavern comments are editor-only and are not part of the prompt.
         if (entry.book.sourceUid === undefined) {
             const category = entry.book.category || '通用设定 (General)';
             if (category !== lastLegacyCategory) {
-                output += `#### [${category}]\n`;
+                run += 1;
+                output += guard(categoryRuns[run], `${hasDeferred ? ROLL_CATEGORY : ''}#### [${category}]\n`);
                 lastLegacyCategory = category;
             }
-            output += `**Title: ${entry.book.title}**\n`;
+            block += `**Title: ${entry.book.title}**\n`;
         }
-        output += `${entry.content.trim()}\n---\n`;
+        output += guard([rollId(entry)], `${block}${entry.content.trim()}\n---\n`);
     }
-    return `${output}\n`;
+    return guard(entries.map(rollId), `${output}\n`);
 };
 
 export const injectWorldbookDepthEntries = <T extends WorldbookScanMessage>(

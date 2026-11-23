@@ -139,15 +139,146 @@ export const neverRan = (result: unknown): boolean => {
 };
 
 /**
- * 少数工具的结果需要额外补一句提醒，跟着结果一起回喂。
+ * 各工具结果额外跟着回喂的引导，按结果形态挑：成功、查过了但没有、没跑起来各有各的说法。
+ *
+ * 这些话原本只写在前台私聊的回连分支里，云端回喂只有一段 JSON，前台改用共用格式后又差点
+ * 两边都没了。放在这里，前台和 worker 回喂的是同一套。措辞沿用前台原文，「严禁再输出 X」
+ * 那几句不再重复（下面「同样的调用不要再来一遍」已经覆盖）。
+ *
+ * canCallMoreTools=false（倒数第二轮的回喂，下一轮就是不能再调工具的最后一轮）时，不教
+ * 会回连的标签（XHS_DETAIL / XHS_SEARCH）：最后一轮写出来也不会执行。分享、点赞、评论、
+ * 发帖这类副作用标签不回连，照常教。
  *
  * 搜索结果里没有任何时间信息（拿回来的只有标题和摘要），模型看不出这条是今早的还是
  * 三年前的，很容易把一条旧闻当成刚发生的事讲出来——后台主动消息尤其明显，角色会
  * 兴冲冲地跟用户说一件早就过去的新闻。
  */
-const TOOL_RESULT_NOTES: Record<string, string> = {
-  web_search: '[系统: 搜索结果不带日期，不一定是最新的——别把旧闻当成刚发生的事说，也别自己给它安一个时间。]',
+type ToolResultNote = (result: any, canCallMoreTools: boolean) => Array<string | false | undefined>;
+
+/** 把几条要求拼成「现在请你：1. … 2. …」，false 的条目跳过、序号顺延。 */
+const asksYou = (intro: string, items: Array<string | false>): string => {
+  const kept = items.filter((item): item is string => !!item);
+  return `[系统: ${intro}现在请你：\n${kept.map((item, i) => `${i + 1}. ${item}`).join('\n')}]`;
 };
+
+const RESPOND_FIRST = '先正常回应用户刚才说的话（用户还在等你回复！）';
+const XHS_SHARE_HOWTO = '如果觉得某条笔记特别值得分享，可以用 [[XHS_SHARE: 序号]] 把它作为卡片分享给用户（序号从1开始），可以分享多条；不要手写“[你分享了小红书笔记]”及标题/作者/互动/简介，分享卡片必须使用该标记';
+const XHS_LIKE_HOWTO = '如果喜欢某条笔记，可以用 [[XHS_LIKE: noteId]] 点赞，[[XHS_FAV: noteId]] 收藏';
+const XHS_POST_HOWTO = '如果想发一条自己的笔记，可以用 [[XHS_POST: 标题 | 内容 | #标签1 #标签2]]';
+const XHS_DETAIL_HOWTO = '如果想看某条笔记的完整内容和评论区，可以用 [[XHS_DETAIL: noteId]]';
+const xhsDigestIntro = (canCallMoreTools: boolean) =>
+  `你已经看完了（注意：以上只是摘要${canCallMoreTools ? '，想看某条笔记的完整正文可以用 [[XHS_DETAIL: noteId]]' : ''}）。`;
+
+/** 没跑起来时按原因交代一句前情（说法沿用前台原文），没有专门说法的原因只留通用那句。 */
+const neverRanIntro = (r: any, intros: Record<string, string>): string => intros[r?.reason] ?? '';
+
+const diaryNote = (label: string): ToolResultNote => (r) => [
+  r?.ok === true && asksYou(`你已经看完了${label}。`, [
+    '先正常回应用户刚才说的话（这是最重要的！用户还在等你回复）',
+    '自然地把日记中的回忆融入你的回复中，比如"我想起来了那天..."、"看了日记才发现..."等',
+    '可以分享日记中有趣的细节，表达当时的情绪',
+    '用多条消息回复，别只说一句话就结束',
+  ]),
+  r?.reason === 'not_found' && asksYou(`你翻了翻${label}本，发现 ${r.date} 那天没有写日记。`, [
+    RESPOND_FIRST,
+    '自然地提到没找到那天的日记，比如"嗯...那天好像没写日记"、"翻了翻没找到诶"',
+    '用多条消息回复，保持对话自然',
+  ]),
+  neverRan(r) && asksYou(neverRanIntro(r, {
+    unreachable: `你想翻 ${r?.date} 的${label}，但服务连不上，这次没查成（不知道那天到底写没写）。`,
+    parse_error: `你想翻阅${label}但没能理解要找哪天的（"${r?.dateInput}"）。`,
+    not_configured: `你想翻阅${label}但${label}本暂时不可用。`,
+  }), [
+    RESPOND_FIRST,
+    '可以自然地提一下，比如"日记好像打不开诶"',
+    '继续正常聊天，用多条消息回复',
+  ]),
+];
+
+const TOOL_RESULT_NOTES: Record<string, ToolResultNote> = {
+  recall: (r) => [
+    r?.ok === true && !!r.logsText && '[系统: 现在请结合这些细节回答用户。保持对话自然。]',
+  ],
+  web_search: (r) => [
+    !neverRan(r) && '[系统: 搜索结果不带日期，不一定是最新的——别把旧闻当成刚发生的事说，也别自己给它安一个时间。]',
+    r?.ok === true && '[系统: 现在请根据这些真实信息回复用户。用自然的语气分享，比如"我刚搜了一下发现..."、"诶我看到说..."。]',
+  ],
+  notion_read_diary: diaryNote('日记'),
+  feishu_read_diary: diaryNote('飞书日记'),
+  read_note: (r) => [
+    r?.ok === true && asksYou('', [
+      '先正常回应用户刚才说的话',
+      '自然地提到你看到的笔记内容，语气温馨，像不经意间看到的',
+      '可以对内容表示好奇、关心或共鸣',
+      '用多条消息回复，保持对话自然',
+    ]),
+    r?.reason === 'not_found' && asksYou(`你想看的关于"${r.keyword ?? ''}"的笔记没有找到。`, [
+      '先正常回应用户刚才说的话',
+      '可以自然地提一下，比如"嗯，好像没找到那篇笔记"',
+      '继续正常聊天',
+    ]),
+    neverRan(r) && asksYou(neverRanIntro(r, {
+      unreachable: `你想翻关于"${r?.keyword}"的笔记，但笔记服务连不上，这次没查成（不知道到底有没有这篇）。`,
+      not_configured: '你想翻阅笔记但笔记功能暂时不可用。',
+    }), [RESPOND_FIRST, '继续正常聊天，用多条消息回复']),
+  ],
+  xhs_search: (r, canCallMoreTools) => [
+    r?.ok === true && asksYou(xhsDigestIntro(canCallMoreTools), [
+      '自然地分享你看到的内容，比如"我刚在小红书搜了一下..."、"诶小红书上有人说..."',
+      '可以评价、吐槽、分享感兴趣的内容',
+      XHS_SHARE_HOWTO,
+      '如果想评论某条笔记，可以用 [[XHS_COMMENT: noteId | 评论内容]]',
+      XHS_LIKE_HOWTO,
+      canCallMoreTools && XHS_DETAIL_HOWTO,
+    ]),
+  ],
+  xhs_browse: (r, canCallMoreTools) => [
+    r?.ok === true && asksYou(xhsDigestIntro(canCallMoreTools), [
+      '像在跟朋友分享一样，随意聊聊你看到了什么有趣的',
+      '不用全部都提，挑你感兴趣的1-3条聊就行',
+      '可以吐槽、感叹、分享想法',
+      XHS_SHARE_HOWTO,
+      XHS_POST_HOWTO,
+      XHS_LIKE_HOWTO,
+      canCallMoreTools && XHS_DETAIL_HOWTO,
+    ]),
+  ],
+  xhs_my_profile: (r, canCallMoreTools) => [
+    r?.ok === true && asksYou(
+      r.ownedPosts
+        ? '以上是按角色归属保存的主页数据，序号已根据用户刚才的说法按相关性和时间排序。'
+        : r.gotProfile ? '' : '注意，搜索结果可能包含别人的帖子，你需要辨别哪些是你自己发的（看作者名字）。',
+      [
+        canCallMoreTools && '如果用户说“刚才那个帖子”“之前那篇”或要求查看自己帖子的评论区，选择最符合时间/标题的候选并输出 [[XHS_DETAIL: noteId]]；不要只口头说去看。',
+        canCallMoreTools && '如果多个候选同样符合、无法判断是哪条，就自然地向用户确认，不能猜。',
+        '普通查看主页时，可以自然地聊聊看到的内容。',
+        '如果想发新笔记，可以用 [[XHS_POST: 标题 | 内容 | #标签1 #标签2]]。',
+      ],
+    ),
+    r?.reason === 'no_identity' && '[系统: 无法获取主页：请在设置-小红书中填写你的昵称或用户ID。]',
+    r?.reason === 'unreachable' && asksYou('', [
+      RESPOND_FIRST,
+      '自然地提一句"小红书打不开/刷不出来"就好',
+      '你这次什么都没看到，不要描述任何笔记、数据或评论',
+    ]),
+  ],
+  xhs_detail: (r, canCallMoreTools) => [
+    r?.ok === true && !r.commentsUnavailable && asksYou('你已经看完了这条笔记的完整内容和真实评论区。', [
+      '自然地分享你看到的内容和感受',
+      `如果想评论这条笔记，可以用 [[XHS_COMMENT: ${r.noteId} | 评论内容]]`,
+      `如果想回复某条评论，可以用 [[XHS_REPLY: ${r.noteId} | commentId | 回复内容]]（commentId 在上面的评论区数据里）`,
+      `如果想点赞，可以用 [[XHS_LIKE: ${r.noteId}]]；想收藏可以用 [[XHS_FAV: ${r.noteId}]]`,
+    ]),
+    r?.ok === true && !!r.commentsUnavailable && '[系统: 正文和互动数量已读取，但真实评论区本次读取失败。你只能谈论已经看到的正文和数量；不要声称帖子没有评论，不要编造、模拟或回复任何评论。]',
+    r?.reason === 'unreachable' && asksYou('笔记详情页加载失败了。可能的原因：这条笔记需要先通过搜索或浏览才能打开详情。', [
+      '自然地告知用户"这条笔记打不开/加载不出来"',
+      canCallMoreTools && '可以建议搜索相关关键词再试: [[XHS_SEARCH: 关键词]]',
+    ]),
+  ],
+};
+
+const resultNotes = (name: string, result: unknown, canCallMoreTools: boolean): string[] =>
+  (TOOL_RESULT_NOTES[name]?.(result, canCallMoreTools) ?? []).filter((note): note is string => !!note);
 
 export const buildToolResultMessage = (opts: {
   name: string;
@@ -155,8 +286,11 @@ export const buildToolResultMessage = (opts: {
   result: unknown;
   /** 本次 fire 到目前为止调过的全部工具（含这一次）。 */
   history: ToolCallRecord[];
+  /** 下一轮还能不能调工具；倒数第二轮的回喂传 false，引导里就不教会回连的标签。默认能。 */
+  canCallMoreTools?: boolean;
 }): string => {
-  const { name, result, history } = opts;
+  const { name, result, history, canCallMoreTools = true } = opts;
+  const notes = resultNotes(name, result, canCallMoreTools);
   const used = [...new Set(history.map((r) => describeTool(r.name)))];
   const label = describeTool(name);
   const head = neverRan(result)
@@ -166,21 +300,27 @@ export const buildToolResultMessage = (opts: {
         '',
         `[系统: 这件事**没有发生**。不要在消息里说你${label}过、看到了什么、或者「查了没找到」——`,
         '那等于把没做过的事说成做过了。就当这回没查成：要么换个别的说，要么直接说你现在不方便查。]',
+        ...notes,
       ]
     : [
         `[系统: 你${label}，拿回了下面这些]`,
         JSON.stringify(result),
-        ...(TOOL_RESULT_NOTES[name] ? [TOOL_RESULT_NOTES[name]] : []),
+        ...notes,
         '',
       ];
   return [
     ...head,
     `[系统: 本次已经用过的工具：${used.join('、')}。结果都在上面了，同样的调用不要再来一遍。`,
-    '接下来：如果还没说完，直接把要发的消息写出来（只有确实还需要别的工具时，才调用一个还没用过的工具）。',
+    // 下一轮就是不能再调工具的最后一轮时，不再留「还需要就去调」的口子。
+    canCallMoreTools
+      ? '接下来：如果还没说完，直接把要发的消息写出来（只有确实还需要别的工具时，才调用一个还没用过的工具）。'
+      : '接下来：如果还没说完，直接把要发的消息写出来。',
     // 「把要发的消息写出来」很容易被读成「从头再写一遍」：模型会把已经说出去的几句连同
     // 里面的标记一起重抄，下游照着标记再执行一次（转账就会真的发两次）。同时给「工具轮已经
     // 把话完整说完」留明确出口，避免没话可补时把前文换词复述一遍。
     '前面已经说出去的内容和标签不要重写，接着往下写就行——重写一遍，用户那边就会再收到一遍；如果前面的话已经把要说的完整表达完了、且与这次工具结果不冲突，不必再写补充文字，直接留空结束即可。',
+    // 后面几轮复述的动作不会再执行（同一件只算第一次出现那一轮写的次数），连着做几次要写在同一轮。
+    '前面已经做过的动作（转账、戳一戳、点赞、评论这类）别再写一遍；想连着做几次同样的动作，就在同一轮里一起写。',
     '别把工具调用当成回答——用户等的是你说的话。]',
   ].join('\n');
 };
@@ -192,10 +332,14 @@ export const buildToolResultMessage = (opts: {
  * 重跑」的循环。这条是硬的：同名同参第二次直接打回，一次网络请求都不发。它只拦**完全
  * 一样**的调用，换个月份、换个关键词都照常放行，多轮能力一点不减。
  */
-export const buildDuplicateToolMessage = (name: string): string => [
+export const buildDuplicateToolMessage = (
+  name: string,
+  /** 同 buildToolResultMessage：下一轮不能再调工具时传 false。默认能。 */
+  opts: { canCallMoreTools?: boolean } = {},
+): string => [
   `[系统: 你刚刚已经${describeTool(name)}过一次了，参数完全相同，结果就在上面。]`,
   // 说「没有再执行」而不是「没有再去查」：这段话现在也管排程/取消/改期这类不是查询的
   // 工具，说成「查」的话，角色收到的交代跟它刚做的事对不上。
-  '[系统: 这一次没有再执行。别再重复同样的调用了——如果还没说完，现在把要发的消息写出来（只有确实还需要别的工具时，才换一个还没用过的工具）。',
+  `[系统: 这一次没有再执行。别再重复同样的调用了——如果还没说完，现在把要发的消息写出来${(opts.canCallMoreTools ?? true) ? '（只有确实还需要别的工具时，才换一个还没用过的工具）' : ''}。`,
   '前面已经说出去的内容和标签不要重写，接着往下写就行；如果前面已经完整说完了，直接留空结束即可。]',
 ].join('\n');

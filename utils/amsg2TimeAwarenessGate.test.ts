@@ -115,12 +115,12 @@ describe('amsg2TimeAwarenessGate', () => {
     const cleared = clearTimeAwarenessOverride({
       enabled: true,
       allowWithoutTimeAwareness: true,
-      maxTokens: 150,
+      maxUnansweredSends: 4,
       tasks: [],
     });
     expect(cleared).toEqual({
       enabled: true,
-      maxTokens: 150,
+      maxUnansweredSends: 4,
       tasks: [],
     });
     expect('allowWithoutTimeAwareness' in (cleared ?? {})).toBe(false);
@@ -152,7 +152,9 @@ describe('amsg2TimeAwarenessGate', () => {
         allowWithoutTimeAwareness: true,
         maxUnansweredSends: 4,
         tasks: [taskA, taskB],
-      },
+        // 存量数据里可能还留着 2.0 单独的输出上限；它已不再使用，停用时不再往下带。
+        maxTokens: 120,
+      } as any,
     });
 
     const res = await disableCharacterAmsg2Schedule(char);
@@ -168,6 +170,7 @@ describe('amsg2TimeAwarenessGate', () => {
     expect(next.enabled).toBe(false);
     expect(next.allowWithoutTimeAwareness).toBeUndefined();
     expect(next.maxUnansweredSends).toBe(4);
+    expect(next).not.toHaveProperty('maxTokens');
     // 已成功取消的 uuid-a 出列，远端取消失败的 uuid-b 保留在清单里避免变成幽灵任务
     expect(next.tasks?.map((t) => t.taskUuid)).toEqual(['uuid-b']);
     expect(next.tasks?.[0].lastError).toContain('远端取消失败');

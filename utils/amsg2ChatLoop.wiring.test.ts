@@ -32,7 +32,8 @@ describe('排程现状块每轮现算', () => {
   it('工具循环的后续请求也现算一次（本轮刚排的任务立刻进清单）', () => {
     // 收尾路径还要往这份消息里追加「停止调用工具」，所以先落局部变量再放进 body；
     // 仍必须保证局部变量来自每轮现算，而不是复用首轮旧快照。
-    expect(src).toMatch(/const followMessages = withAmsg2TaskContext\(loopMessages\)/);
+    // 第二个参数是「这一跳是不是最后一轮」（最后一轮不教正文语法），清单照样现算。
+    expect(src).toMatch(/const followMessages = withAmsg2TaskContext\(loopMessages, forceWrapUp\)/);
     expect(src).toMatch(/messages:\s*followMessages/);
   });
 
@@ -60,8 +61,10 @@ describe('工具循环的消息起点', () => {
   it('工具轮回塞历史先剥内联思考、收尾提示区分前序是否已开口、额度说明用聊天语境、保留说话轮心象', () => {
     expect(src).toContain('formatToolRoundHistoryContent(data.choices[0].message.content)');
     expect(src).not.toContain("data.choices[0].message.content || '(调用工具中)'");
-    expect(src).toContain('buildAmsg2WrapUpPrompt(amsg2LeadIns.length > 0 || displayedMcpLeadIns.size > 0)');
-    expect(src).toContain('displayedMcpLeadIns.size === 0');
+    // 收尾提示由 resolveToolLoopWrapUp 选，是否已开口经 hasLeadIn 传进去。
+    expect(src).toContain('hasLeadIn: amsg2LeadIns.length > 0 || displayedMcpLeadIns.size > 0');
+    // 空回补救把 MCP 已落库的开场白也算作「开过口」。
+    expect(src).toContain('leadInCount: amsg2LeadIns.length + displayedMcpLeadIns.size');
     expect(src).toContain('effectivePostProcessData');
     expect(src).toContain('parseSARModuleReplyRounds');
     expect(src).toMatch(/buildLimitsBrief\(\{[\s\S]{0,360}context:\s*'chat'/);

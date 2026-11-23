@@ -79,6 +79,15 @@ describe('useChatAI 的分流接缝', () => {
     expect(routing).toContain('reason: skipReason');
   });
 
+  it('小红书服务器 Worker 够不着时否决这一轮上云（同 MCP 那条：上云会让角色掉工具）', () => {
+    // 上云的工具配置（buildToolConfig）把 Worker 够不着的小红书整个去掉，本地提示词却照教。
+    // 这一轮上云的话，角色以为自己能搜小红书，实际每次调用都失败。
+    const routing = routingSrc();
+    expect(routing).toContain('hasWorkerUnreachableXhs(char, realtimeConfig)');
+    expect(routing).toContain("'xhs-worker-unreachable'");
+    expect(routing).toContain("skipReason === 'xhs-worker-unreachable'");
+  });
+
   it('全局配置读不出来单独留一条 trace（它不是「用户没开」）', () => {
     // 读失败时 instantChatOn 天然为假，veto 那条 trace 的条件够不到它。不单独留痕的话，
     // 这一轮悄悄退回本地直连生成，用户按完发送锁屏就什么都收不到，观察窗里还查无此事。

@@ -10,7 +10,7 @@
  */
 
 import { getEnabledMcpServers, type McpServerConfig, type McpToolDef } from './mcpClient';
-import { buildMcpNameMap, type FakedMcpCall as FakedMcpCallCore, type McpResolvedToolCore } from './mcpFireCore';
+import { buildMcpNameMap, MCP_TAIL_REMINDER, type FakedMcpCall as FakedMcpCallCore, type McpResolvedToolCore } from './mcpFireCore';
 
 // 结果格式化和正文假调用解析都是纯逻辑，住在 mcpFireCore 里给浏览器和 amsg
 // worker 共用；这里按原名转出来，调用方的引用路径不用动。
@@ -19,6 +19,7 @@ export {
     formatMcpToolResult,
     stripTextFakedMcpCalls,
     extractTextFakedMcpCalls,
+    MCP_TAIL_REMINDER,
 } from './mcpFireCore';
 
 export interface OpenAIMcpTool {
@@ -107,9 +108,6 @@ ${lines.join('\n')}
 `;
 };
 
-/** 尾部小提醒（注入 messages 末尾，防长对话把纪律冲掉） */
-export const MCP_TAIL_REMINDER = `[MCP 工具 ON · 永远用角色语气回复别空回; 工具只能走 function calling 接口、严禁写成正文文字; 工具结果别复读 JSON; 用户最新消息里已明确要求的操作视为已确认，否则副作用操作先确认]`;
-
 // ========== 掉格式容错: 正文里的"假工具调用"（解析本体见 mcpFireCore） ==========
 
 /**
@@ -142,7 +140,10 @@ export const buildMcpTextFallbackBody = (baseReqBody: any, messages: any[]): any
 
 /** tools 被中转拒绝时，把最小 schema 仅作为本轮兼容说明交给正文调用兜底。 */
 export const buildMcpRejectedToolsFallbackBody = (baseReqBody: any): any => {
-    const followBody = buildMcpTextFallbackBody(baseReqBody, baseReqBody.messages || []);
+    // 末尾提醒写着「严禁写成正文」，跟下面教的正文协议冲突，进兼容模式就拿掉。
+    // 用户关掉原生 tools 和中转运行时拒 tools 两个入口都经过这里，后续正文循环沿用这份 messages。
+    const messages = (baseReqBody.messages || []).filter((m: any) => m?.content !== MCP_TAIL_REMINDER);
+    const followBody = buildMcpTextFallbackBody(baseReqBody, messages);
     const signatures = (baseReqBody.tools || []).map((tool: any) => {
         const fn = tool?.function || {};
         const schema = fn.parameters || {};

@@ -480,3 +480,103 @@ describe('删凭据行', () => {
     expect(reiClient.putLlmCredentials).toHaveBeenCalledTimes(1);
   });
 });
+
+// 回归守卫（T1–T3）：定时类云端生成与本地私聊用同一套采样温度、输出上限和思考参数。
+// 不传温度时上游会落到供应商默认值；输出上限曾读 2.0 设置里单独那一项；思考参数一项都不带，
+// 靠请求体参数开思考的渠道到点就没有心象。
+describe('排程任务的模型参数与本地私聊一致', () => {
+  it('温度与输出上限跟随 API 设置（默认 0.85 / 8000），不读 2.0 设置里的 maxTokens', async () => {
+    await schedule({ enabled: true, tasks: [], maxTokens: 120 });
+    expect(scheduledTask()).toMatchObject({ temperature: 0.85, maxTokens: 8000 });
+    expect(scheduledTask()).not.toHaveProperty('llmExtraBody');
+
+    await schedule(undefined, { ...CHAR, dialogueApi: { baseUrl: 'https://role.example/v1', apiKey: 'k', model: 'm', temperature: 0.4, maxTokens: 3000 } });
+    expect(scheduledTask()).toMatchObject({ temperature: 0.4, maxTokens: 3000 });
+  });
+
+  it('开了思考过程展示：带思考三件套、不带温度（与本地同一个门）', async () => {
+    await schedule(undefined, { ...CHAR, showThinkingChain: true });
+    const task = scheduledTask();
+    expect(task).not.toHaveProperty('temperature');
+    expect(task.maxTokens).toBe(8000);
+    expect(task.llmExtraBody).toEqual({
+      thinking: { type: 'enabled', budget_tokens: 4000 },
+      reasoning_effort: 'medium',
+      extra_body: { thinking: { type: 'enabled', budget_tokens: 4000 } },
+    });
+  });
+
+  it('Gemini 在 2.0 开着时让步：不带思考参数，温度照传', async () => {
+    await schedule(undefined, { ...CHAR, showThinkingChain: true, dialogueApi: { baseUrl: 'https://g.example/v1', apiKey: 'k', model: 'gemini-2.5-pro' } });
+    expect(scheduledTask()).toMatchObject({ temperature: 0.85 });
+    expect(scheduledTask()).not.toHaveProperty('llmExtraBody');
+  });
+
+  it('改了 API 设置后刷新存量任务时，模型参数一起改成新值', async () => {
+    const update = vi.spyOn(ActiveMsgClient, 'updatePendingTasksRemote').mockResolvedValue({ updated: 1, failed: [] });
+    await ActiveMsgClient.refreshCharPendingAiTaskCredentials({
+      char: { ...CHAR, showThinkingChain: true }, config: CHAR.activeMsg2Config, apiConfig: { ...API, temperature: 0.3, maxTokens: 2000 },
+      tasks: [{ taskUuid: 'u1', mode: 'auto' } as any], remoteTasks: [{ uuid: 'u1', credRefs: { chat: `char:${CHAR_ID}/chat` } }],
+    });
+    expect(update.mock.calls[0][1]).toMatchObject({
+      temperature: null,
+      maxTokens: 2000,
+      llmExtraBody: { reasoning_effort: 'medium' },
+    });
+  });
+});
+
+// 回归守卫（T7）：定时类到点也跑情绪评估，副 API 凭据走 credRefs.emotion 那一行。
+describe('排程任务带上情绪评估的副 API 引用', () => {
+  const EMO_CHAR = { ...CHAR, scheduleFeatureEnabled: true, emotionConfig: { enabled: true, api: { baseUrl: 'https://eval.example/v1', apiKey: 'sk-eval', model: 'eval-mini' } } };
+
+  it('开了情绪评估：任务带 emotion 引用，那一行先登记好', async () => {
+    await schedule(undefined, EMO_CHAR);
+    expect(scheduledTask().credRefs).toEqual({ chat: `char:${CHAR_ID}/chat`, emotion: `char:${CHAR_ID}/emotion` });
+    expect(putRows().find((r: any) => r.credId === `char:${CHAR_ID}/emotion`)?.value)
+      .toEqual({ apiUrl: 'https://eval.example/v1/chat/completions', apiKey: 'sk-eval', primaryModel: 'eval-mini' });
+  });
+
+  it('没开情绪评估：只带聊天引用', async () => {
+    await schedule();
+    expect(scheduledTask().credRefs).toEqual({ chat: `char:${CHAR_ID}/chat` });
+  });
+});
+
+// 定时类的模型名跟即时对话同一条 -thinking 后缀规则：chat 这一行只有定时类在用，后缀就写在这一行。
+describe('chat 凭据行的模型名带思考后缀', () => {
+  const RELAY = { baseUrl: 'https://relay.example/v1', apiKey: 'k', model: 'claude-sonnet-4' };
+  const chatRow = () => putRows().find((r: any) => r.credId === `char:${CHAR_ID}/chat`);
+
+  it('中转 + claude 系 + 开了思考 → 带 -thinking', async () => {
+    await schedule(undefined, { ...CHAR, showThinkingChain: true, dialogueApi: RELAY });
+    expect(chatRow().value.primaryModel).toBe('claude-sonnet-4-thinking');
+  });
+
+  it('没开思考或原生 Anthropic → 保留原模型名', async () => {
+    await schedule(undefined, { ...CHAR, dialogueApi: RELAY });
+    expect(chatRow().value.primaryModel).toBe('claude-sonnet-4');
+    reiClient.putLlmCredentials.mockClear();
+    forgetAllCredIds();
+    globalConfig.anthropicMessagesSupported = true;
+    globalConfig.anthropicMessagesWorkerUrl = globalConfig.workerUrl;
+    await schedule(undefined, { ...CHAR, showThinkingChain: true, dialogueApi: { ...RELAY, baseUrl: 'https://api.anthropic.com/v1/messages', apiType: 'anthropic' } });
+    expect(chatRow().value.primaryModel).toBe('claude-sonnet-4');
+  });
+});
+
+// #7 内联凭据（老 Worker）的任务：primaryModel 也带思考后缀，和 llmExtraBody 对齐。
+describe('内联凭据任务的模型名', () => {
+  const RELAY = { baseUrl: 'https://relay.example/v1', apiKey: 'k', model: 'claude-sonnet-4' };
+  it('排程与凭据刷新都写带后缀的模型名', async () => {
+    globalConfig.llmCredentialsSupported = false;
+    await schedule(undefined, { ...CHAR, showThinkingChain: true, dialogueApi: RELAY });
+    expect(scheduledTask().primaryModel).toBe('claude-sonnet-4-thinking');
+    const update = vi.spyOn(ActiveMsgClient, 'updatePendingTasksRemote').mockResolvedValue({ updated: 1, failed: [] });
+    await ActiveMsgClient.refreshCharPendingAiTaskCredentials({
+      char: { ...CHAR, showThinkingChain: true, dialogueApi: RELAY }, config: CHAR.activeMsg2Config, apiConfig: API,
+      tasks: [{ taskUuid: 'u1', mode: 'auto' } as any], remoteTasks: [{ uuid: 'u1' }],
+    });
+    expect(update.mock.calls[0][1]).toMatchObject({ primaryModel: 'claude-sonnet-4-thinking' });
+  });
+});

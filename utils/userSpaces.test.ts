@@ -18,6 +18,16 @@ describe('user spaces', () => {
         b.clear(); expect(a.getItem('os_dream_collection')).toBe('late old response');
         expect(b.getItem('os_api_config')).toContain('shared');
     });
+    // 上云的 MCP 清单是全局一份，决定它的开关不能随用户空间各存各的。
+    it('MCP 的原生 tools 和云端破坏性工具开关在各用户空间读到同一个值', () => {
+        const a = createSpaceStorage(localStorage, 'default'), b = createSpaceStorage(localStorage, 'u_b');
+        for (const key of ['aetheros.mcp.useNativeTools', 'aetheros.mcp.allowCloudDestructive']) {
+            b.setItem(key, '1');
+            expect(a.getItem(key)).toBe('1');
+            a.setItem(key, '0');
+            expect(b.getItem(key)).toBe('0');
+        }
+    });
     it('keeps role audiences private, including legacy all vs explicit none', () => {
         const a = createSpaceStorage(localStorage, 'default'), b = createSpaceStorage(localStorage, 'u_b');
         localStorage.setItem('os_user_location_privacy_v1', JSON.stringify({ enabled: true, regions: [], characterIds: ['old'] }));

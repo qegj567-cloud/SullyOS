@@ -12,6 +12,8 @@ import {
     isMcpChatAvailable,
     getMcpUseNativeTools,
     setMcpUseNativeTools,
+    getMcpAllowCloudDestructive,
+    setMcpAllowCloudDestructive,
     collectMcpFireServers,
     callMcpTool,
     normalizeMcpToolArguments,
@@ -45,6 +47,7 @@ const mkServer = (over: Partial<McpServerConfig>): McpServerConfig => ({
 beforeEach(() => {
     localStorage.removeItem('aetheros.mcp.servers');
     localStorage.removeItem('aetheros.mcp.useNativeTools');
+    localStorage.removeItem('aetheros.mcp.allowCloudDestructive');
 });
 
 afterEach(() => {
@@ -191,6 +194,19 @@ describe('服务器配置持久化', () => {
         importMcpLocal(dump);
         expect(getMcpUseNativeTools()).toBe(false);
     });
+
+    it('云端执行破坏性工具的开关默认关闭，可持久化并随 MCP 备份导入导出', () => {
+        expect(getMcpAllowCloudDestructive()).toBe(false);
+        setMcpAllowCloudDestructive(true);
+        expect(getMcpAllowCloudDestructive()).toBe(true);
+        const dump = exportMcpLocal();
+        localStorage.removeItem('aetheros.mcp.allowCloudDestructive');
+        expect(getMcpAllowCloudDestructive()).toBe(false);
+        importMcpLocal(dump);
+        expect(getMcpAllowCloudDestructive()).toBe(true);
+        setMcpAllowCloudDestructive(false);
+        expect(getMcpAllowCloudDestructive()).toBe(false);
+    });
 });
 
 describe('buildMcpOpenAITools', () => {
@@ -267,6 +283,21 @@ describe('MCP 多步任务策略', () => {
         expect(block).toContain('不要反复读取同一份说明或状态');
         expect(block).toContain('在最新消息里已经明确要求执行，即视为已经确认');
         expect(MCP_TAIL_REMINDER).toContain('最新消息里已明确要求的操作视为已确认');
+    });
+
+    // 末尾提醒写着「严禁写成正文」，跟正文兼容协议冲突：原生模式保留，进兼容模式就拿掉。
+    it('MCP 末尾提醒只留在原生 function calling 模式，正文兼容模式不带', () => {
+        const nativeBody = {
+            messages: [{ role: 'user', content: '查仓库' }, { role: 'system', content: MCP_TAIL_REMINDER }],
+            tools: [{ type: 'function', function: { name: 'search_repo', parameters: { type: 'object', properties: {} } } }],
+            tool_choice: 'auto',
+        };
+        expect(nativeBody.messages.some((m: any) => m.content === MCP_TAIL_REMINDER)).toBe(true);
+        const textBody = buildMcpRejectedToolsFallbackBody(nativeBody);
+        expect(textBody.messages.some((m: any) => m.content === MCP_TAIL_REMINDER)).toBe(false);
+        expect(textBody.messages[0]).toEqual({ role: 'user', content: '查仓库' });
+        expect(textBody.messages.at(-1).content).toContain('MCP 兼容模式');
+        expect(nativeBody.messages).toHaveLength(2);
     });
 
     it('文字兼容提示允许按结果继续下一步，但要求每次只输出一个调用', () => {
@@ -619,6 +650,25 @@ describe('collectMcpFireServers', () => {
         const out = collectMcpFireServers();
         expect(out.map(server => server.id)).toEqual(['guarded']);
         expect(out[0].tools?.map(tool => tool.name)).toEqual(['read_note']);
+    });
+
+    it('用户允许云端执行破坏性工具后，这类工具带着标注上云；关掉又滤掉', () => {
+        saveMcpServers([
+            mkServer({
+                id: 'guarded',
+                tools: [
+                    { name: 'read_note', annotations: { readOnlyHint: true } },
+                    { name: 'delete_note', annotations: { destructiveHint: true } },
+                ],
+            }),
+            mkServer({ id: 'only-destructive', tools: [{ name: 'drop_all', annotations: { destructiveHint: true } }] }),
+        ]);
+        setMcpAllowCloudDestructive(true);
+        const allowed = collectMcpFireServers();
+        expect(allowed.map(server => server.id)).toEqual(['guarded', 'only-destructive']);
+        expect(allowed[0].tools?.find(tool => tool.name === 'delete_note')?.annotations?.destructiveHint).toBe(true);
+        setMcpAllowCloudDestructive(false);
+        expect(collectMcpFireServers().map(server => server.id)).toEqual(['guarded']);
     });
 
     it('其余 worker 够不着的地址一并挡掉（链路本地 / 占位地址 / 局域网域名 / IPv6 ULA）', () => {

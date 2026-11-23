@@ -186,6 +186,15 @@ describe('当前功能启用 · 不泄漏配置内容', () => {
         localStorage.setItem(USER_LOCATION_STORAGE_KEY, JSON.stringify({ ...location, enabled: false }));
         expect(collectFeatureFlags(poisonedSources()).真实定位).toBe('关');
     });
+    it('云端执行破坏性 MCP 工具只报开/关，默认关', () => {
+        localStorage.removeItem('aetheros.mcp.allowCloudDestructive');
+        expect(collectFeatureFlags(poisonedSources()).MCP云端破坏性工具).toBe('关');
+        localStorage.setItem('aetheros.mcp.allowCloudDestructive', '1');
+        const flags = collectFeatureFlags(poisonedSources());
+        expect(flags.MCP云端破坏性工具).toBe('开');
+        expectNoLeak(flags);
+        localStorage.removeItem('aetheros.mcp.allowCloudDestructive');
+    });
     it('没有定位配置记关，坏配置记读取失败，不透传任何字段', () => {
         expect(collectFeatureFlags(poisonedSources()).真实定位).toBe('关');
         localStorage.setItem(USER_LOCATION_STORAGE_KEY, '{broken');

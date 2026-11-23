@@ -40,6 +40,7 @@ import { dispatchAmsgResult } from './amsgResults';
 import { DB } from './db';
 import type { AmsgEmotionEvalSpec } from '../worker/amsg/src/emotionEval';
 import { AMSG_BUNDLE_VERSION, compareBundleVersions } from './amsgBundleVersion';
+import { isWorkerReachableUrl } from './amsgToolPack';
 import type { AmsgSarModuleSnapshot } from './vrWorld/sarEnvelopeCore';
 
 const HEADER = '[AmsgInstantChat]';
@@ -303,10 +304,20 @@ export interface InstantChatReadiness {
   workerBundleCurrent?: boolean;
 }
 
-/** 存量里那台 Worker 的 bundle 版本是否不旧于当前这一版；没探过（undefined）返回 undefined。 */
-const resolveWorkerBundleCurrent = (
-  config: { workerBundleVersion?: string | null },
-): boolean | undefined => {
+type BundleVersionConfig = {
+  workerBundleVersion?: string | null;
+  workerUrl?: string;
+  /** 体检记下版本时一并写的那台 Worker 地址（activeMsgClient 的 rememberWorkerBundleVersion）。 */
+  anthropicMessagesWorkerUrl?: string;
+};
+
+/**
+ * 存量里那台 Worker 的 bundle 版本是否不旧于当前这一版；没探过（undefined）返回 undefined。
+ * 只认记给当前 Worker 地址的那份（与 activeMsgClient 判模板标记同一条件）：换了地址、还没重新
+ * 体检时存量是旧那台的，按没探到版本处理。
+ */
+const resolveWorkerBundleCurrent = (config: BundleVersionConfig): boolean | undefined => {
+  if (!config.workerUrl || config.anthropicMessagesWorkerUrl !== config.workerUrl) return undefined;
   const deployed = config.workerBundleVersion;
   if (deployed === undefined) return undefined;
   if (deployed === null) return false;
@@ -416,7 +427,7 @@ const probeBundleCurrentNow = async (): Promise<boolean | undefined> => {
 
 /** 存量优先；存量为空且调用方要求时，当场现探一次。 */
 const resolveBundleCurrent = async (
-  config: { workerBundleVersion?: string | null },
+  config: BundleVersionConfig,
   ensureBundleVersion: boolean,
 ): Promise<boolean | undefined> => {
   const stored = resolveWorkerBundleCurrent(config);
@@ -501,6 +512,21 @@ export const resolveInstantChatReadiness = async (
     return { ready: false, reason: 'worker-unreachable' };
   }
   return readyWithBundle(await resolveBundleCurrent(config, ensureBundleVersion));
+};
+
+/**
+ * 这一轮会用到小红书、而 Worker 够不着那台小红书服务器吗。
+ *
+ * 「会用到」与本地提示词教小红书的条件一致（角色开关 + 小红书 MCP 配置开着 + 填了地址）。
+ * 上云的工具配置（buildToolConfig）会把够不着的小红书整个去掉，这一轮上云角色就掉了
+ * 这项能力，所以由调用方作为否决、留在本地生成。
+ */
+export const hasWorkerUnreachableXhs = (
+  char: Pick<CharacterProfile, 'xhsEnabled'>,
+  realtimeConfig: RealtimeConfig | undefined,
+): boolean => {
+  const xhs = realtimeConfig?.xhsMcpConfig;
+  return !!(char.xhsEnabled && xhs?.enabled && xhs.serverUrl && !isWorkerReachableUrl(xhs.serverUrl));
 };
 
 /** 只关心「走不走得通」的调用点用这个（设置页的互斥门）。要区分原因走上面那个。 */

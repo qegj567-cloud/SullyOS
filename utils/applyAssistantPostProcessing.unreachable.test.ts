@@ -134,7 +134,7 @@ describe('日记 / 笔记：连不上 ≠ 那天没写', () => {
         expect(prompt).not.toContain('但没有找到');
     });
 
-    it('真的 not_found 时仍然说「那天没写」（不回归）', async () => {
+    it('真的 not_found 时按查过了交回（不回归）', async () => {
         vi.spyOn(agenticTools, 'runReadDiary').mockResolvedValue({
             ok: false, reason: 'not_found', date: '2026-08-01',
         } as any);
@@ -144,12 +144,17 @@ describe('日记 / 笔记：连不上 ≠ 那天没写', () => {
             makeCtx({ id: `c-rd-nf-${Date.now()}`, name: '阿一' }, { realtimeConfig: notionConfig }),
         );
 
-        expect(lastSystemPrompt()).toContain('没有写日记');
+        // 查过了、确实没有：按「跑过了」交回结果，不套「没跑成」那句
+        const prompt = lastSystemPrompt();
+        expect(prompt).toContain('拿回了下面这些');
+        expect(prompt).toContain('"reason":"not_found"');
+        expect(prompt).not.toContain('没能跑起来');
+        expect(prompt).toContain('没有写日记');
     });
 });
 
 describe('小红书：连不上时别当无事发生', () => {
-    it('XHS_DETAIL unreachable → 走「这条笔记打不开」的圆场，而不是只删标记', async () => {
+    it('XHS_DETAIL unreachable → 交回「没跑起来」，而不是只删标记', async () => {
         vi.spyOn(agenticTools, 'runXhsDetail').mockResolvedValue({
             ok: false, reason: 'unreachable', noteId: 'note-1', message: '连接被拒绝',
         } as any);
@@ -165,6 +170,7 @@ describe('小红书：连不上时别当无事发生', () => {
         // 修复前: ok:false 直接删标记, 一次二轮都不发, 角色说完"我看看这条"就没下文了
         expect(fetchCalls.length).toBe(1);
         const prompt = lastSystemPrompt();
+        expect(prompt).toContain('没能跑起来');
         expect(prompt).toContain('加载失败');
         expect(prompt).toContain('note-1');
     });
@@ -188,7 +194,8 @@ describe('小红书：连不上时别当无事发生', () => {
         // 修复前: 静默丢标记, 零二轮
         expect(fetchCalls.length).toBe(1);
         const prompt = lastSystemPrompt();
-        expect(prompt).toContain('连不上');
+        expect(prompt).toContain('没能跑起来');
+        expect(prompt).toContain('看到了什么');
         expect(prompt).toContain('不要描述任何笔记');
     });
 });

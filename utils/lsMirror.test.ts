@@ -126,3 +126,8 @@ describe('localStorage IndexedDB 镜像 (lsMirror)', () => {
         expect(localStorage.getItem('mp_lastMsgId_char-b')).toBe('1200');
     });
 });
+
+it('MCP 的两个开关都在镜像名单里', () => {
+    expect(MIRRORED_KEYS).toContain('aetheros.mcp.useNativeTools');
+    expect(MIRRORED_KEYS).toContain('aetheros.mcp.allowCloudDestructive');
+});

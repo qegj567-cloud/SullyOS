@@ -85,6 +85,7 @@ export interface McpServerConfig {
 
 const MCP_SERVERS_KEY = 'aetheros.mcp.servers';
 const MCP_USE_NATIVE_TOOLS_KEY = 'aetheros.mcp.useNativeTools';
+const MCP_ALLOW_CLOUD_DESTRUCTIVE_KEY = 'aetheros.mcp.allowCloudDestructive';
 
 // ========== 服务器配置 (持久化在 localStorage) ==========
 
@@ -108,6 +109,19 @@ export const getMcpUseNativeTools = (): boolean => {
 
 export const setMcpUseNativeTools = (enabled: boolean): void => {
     try { localStorage.setItem(MCP_USE_NATIVE_TOOLS_KEY, enabled ? '1' : '0'); } catch { /* ignore */ }
+};
+
+/**
+ * 是否允许云端（主动消息 2.0 的 Worker）执行服务端标了 destructiveHint 的工具。默认关：
+ * 本地调这类工具前会弹窗确认，云端没有这一步，所以要用户自己明确打开。
+ */
+export const getMcpAllowCloudDestructive = (): boolean => {
+    try { return localStorage.getItem(MCP_ALLOW_CLOUD_DESTRUCTIVE_KEY) === '1'; }
+    catch { return false; }
+};
+
+export const setMcpAllowCloudDestructive = (enabled: boolean): void => {
+    try { localStorage.setItem(MCP_ALLOW_CLOUD_DESTRUCTIVE_KEY, enabled ? '1' : '0'); } catch { /* ignore */ }
 };
 
 export const createMcpServer = (name: string, url: string): McpServerConfig => ({
@@ -159,13 +173,16 @@ export const hasWorkerUnreachableMcpServer = (charId?: string): boolean =>
  * amsg worker（不是项目方服务器，与文件头「不走中心 sfworker」的原则不冲突），
  * 与 notion/飞书凭据同一信任模型。
  */
-export const collectMcpFireServers = (): McpFireServer[] =>
-    loadMcpServers()
+export const collectMcpFireServers = (): McpFireServer[] => {
+    // 云端执行前没法弹窗确认：服务端标成 destructive 的工具默认只留在前台（调用前询问），
+    // 用户打开「允许云端执行破坏性工具」后才上云，即时对话和定时 / 后台任务都不再确认。
+    const allowDestructive = getMcpAllowCloudDestructive();
+    return loadMcpServers()
         .filter((s) => s.enabled && s.url && (s.tools?.length || 0) > 0 && isWorkerReachableUrl(s.url))
         .map((s) => {
-            // 无人值守的后台没有确认弹窗：服务端明确标成 destructive 的工具只留在
-            // 前台并自动询问，不把提示词当权限系统，也不额外暴露用户配置项。
-            const backgroundTools = (s.tools || []).filter((t) => t.annotations?.destructiveHint !== true);
+            const backgroundTools = allowDestructive
+                ? (s.tools || [])
+                : (s.tools || []).filter((t) => t.annotations?.destructiveHint !== true);
             return {
                 id: s.id, name: s.name, url: s.url,
                 ...(s.token ? { token: s.token } : {}),
@@ -182,6 +199,7 @@ export const collectMcpFireServers = (): McpFireServer[] =>
             };
         })
         .filter((s) => s.tools.length > 0);
+};
 
 // ── 备份用：随「设置 → 导出/导入备份」一起带走（存 localStorage） ──
 export function exportMcpLocal(): Record<string, string> | undefined {
@@ -189,8 +207,10 @@ export function exportMcpLocal(): Record<string, string> | undefined {
         const out: Record<string, string> = {};
         const servers = localStorage.getItem(MCP_SERVERS_KEY);
         const useNativeTools = localStorage.getItem(MCP_USE_NATIVE_TOOLS_KEY);
+        const allowCloudDestructive = localStorage.getItem(MCP_ALLOW_CLOUD_DESTRUCTIVE_KEY);
         if (servers) out[MCP_SERVERS_KEY] = servers;
         if (useNativeTools) out[MCP_USE_NATIVE_TOOLS_KEY] = useNativeTools;
+        if (allowCloudDestructive) out[MCP_ALLOW_CLOUD_DESTRUCTIVE_KEY] = allowCloudDestructive;
         return Object.keys(out).length ? out : undefined;
     } catch { return undefined; }
 }
@@ -199,6 +219,7 @@ export function importMcpLocal(data: Record<string, string> | null | undefined):
     try {
         if (typeof data[MCP_SERVERS_KEY] === 'string') localStorage.setItem(MCP_SERVERS_KEY, data[MCP_SERVERS_KEY]);
         if (typeof data[MCP_USE_NATIVE_TOOLS_KEY] === 'string') localStorage.setItem(MCP_USE_NATIVE_TOOLS_KEY, data[MCP_USE_NATIVE_TOOLS_KEY]);
+        if (typeof data[MCP_ALLOW_CLOUD_DESTRUCTIVE_KEY] === 'string') localStorage.setItem(MCP_ALLOW_CLOUD_DESTRUCTIVE_KEY, data[MCP_ALLOW_CLOUD_DESTRUCTIVE_KEY]);
     } catch { /* ignore */ }
 }
 

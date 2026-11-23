@@ -389,6 +389,8 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
             history: cleanedApiMessages,
             timelyByWorker: input.timelyByWorker === true,
             includeUserLocation: isChatConversationEntry(input.recallEntryPoint),
+            // 「对方那边几点」只给隔着手机的私聊；家园手机是同一个家里拿手机聊，跟家园、彼方一样不带。
+            includeUserClock: input.recallEntryPoint === 'chat_app' && !input.homePhoneContext,
             returningFromMode: returningFromMode || undefined,
             appRules: input.appPrompt?.rules,
         },

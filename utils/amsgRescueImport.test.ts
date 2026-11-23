@@ -172,3 +172,21 @@ it('走「迁入为独立用户」导入：新建空间，原有数据不动', a
     expect((await readSpaceStore(spaceDb, 'worldbooks')).length).toBe(1);
     expect(await DB.getCharacter('c1')).toMatchObject({ name: '原角色' });
 });
+
+// 定时模板里的世界书概率标记、chat 凭据行上的 -thinking 后缀、图片别猜的提示，都是云端那一侧加的，
+// 救回本地时要还原，不能写进人设、世界书和对话正文。
+it('救回时去掉云端专用的标记、思考后缀和图片提示', async () => {
+    const file: any = await rescueFile();
+    const pack = file.users.u1.clientState['amsg:char:c1'].fire_pack;
+    pack.template = pack.template
+        .replace('港口每晚十点关灯。\n---\n', '{{AMSG_WB_IF:w1}}港口每晚十点关灯。\n---\n{{/AMSG_WB_IF}}')
+        .replace('【小明】\n[图片]', '【小明】\n[图片]（配图描述暂不可用，请不要猜测。）');
+    expect(pack.template).toContain('AMSG_WB_IF');
+    file.users.u1.tables.llm_credentials[0].decoded.encrypted_value = decoded({ apiUrl: 'https://relay.example.com/v1/chat/completions', apiKey: 'sk-c1', primaryModel: 'claude-sonnet-4-thinking' });
+    const { backup } = rescueExportToBackup(file, BUILT_AT + 7_200_000);
+    const c1 = backup.characters!.find((c) => c.id === 'c1')!;
+    expect(JSON.stringify(backup.worldbooks)).not.toContain('AMSG_WB');
+    expect(JSON.stringify(backup.worldbooks)).toContain('港口每晚十点关灯。');
+    expect(c1.dialogueApi?.model).toBe('claude-sonnet-4');
+    expect(backup.messages!.filter((m) => m.charId === 'c1').map((m) => m.content)).toContain('[图片]');
+});

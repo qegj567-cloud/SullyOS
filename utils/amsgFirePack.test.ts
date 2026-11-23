@@ -1004,3 +1004,39 @@ describe('renderFirePack — 把 includeClock 透传给场景块', () => {
     expect(out).not.toContain('22:00');
   });
 });
+
+// 见面离开提醒的方向是「对方刚从见面里走开」，模板里通用的「突然想起对方 / 别催问在干嘛」
+// 那几句跟它冲突，到点渲染时整段拿掉。存量包的原文同样要认得出来。
+describe('renderFirePack · 见面离开提醒拿掉冲突的通用提示', () => {
+  const legacyHint = [
+    '【1.0 风格主动消息提示】',
+    `现在是 ${AMSG_SLOT_CURRENT_TIME}。`,
+    '这不是 小明 正在和你聊天，而是你突然想起了 小明，想主动发条消息给他/她。',
+    '关心别变成查岗：不催问 小明 在干嘛、怎么还不回；喝水、早睡这类叮嘱偶尔一句是心意，回回都发就成了说教。',
+  ].join('\n');
+  const pack: AmsgFirePack = {
+    v: FIRE_PACK_VERSION, builtAt: 1, pendingTasks: [], scene: null, selfScheduleEnabled: true,
+    template: [
+      '【重要规则】',
+      '- 像真实聊天一样简短自然，优先 1 到 2 句，最多 3 句。',
+      '- 语气更像真人突然想起对方时发来的私聊，不要像在完成任务。',
+      '', legacyHint, '', '【本次任务】', AMSG_SLOT_TASK_INSTRUCTION,
+    ].join('\n'),
+    lastUserMessageAt: null, tzId: 'UTC', userTzId: 'UTC', targetName: '小明',
+  };
+
+  it('dateLeave 时去掉 1.0 风格提示整段和「突然想起对方」那条规则', () => {
+    const out = renderFirePack(pack, Date.UTC(2026, 6, 17, 8), '任务', { dateLeave: true });
+    expect(out).not.toContain('突然想起');
+    expect(out).not.toContain('不催问');
+    expect(out).not.toContain('1.0 风格');
+    expect(out).toContain('最多 3 句');
+    expect(out).toContain('【本次任务】\n任务');
+  });
+
+  it('其他任务照旧保留', () => {
+    const out = renderFirePack(pack, Date.UTC(2026, 6, 17, 8), '任务');
+    expect(out).toContain('突然想起了 小明');
+    expect(out).toContain('语气更像真人突然想起对方');
+  });
+});

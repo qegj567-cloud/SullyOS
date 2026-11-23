@@ -76,6 +76,7 @@ const limitsRow = (settings: Record<string, unknown> = {}, selfScheduleEnabled =
 import { isAmsgServerVersionAtLeast } from '../../../utils/amsgWorkerVersion';
 import { AMSG_TASK_KIND_KEY } from '../../../utils/amsgTaskKinds';
 import { PLATE_CONSOLIDATE_KIND } from '../../../utils/amsgPlateJob';
+import { TOOL_LOOP_FINAL_ROUND_PROMPT } from '../../../utils/toolLoopFinalRound';
 
 const CHAR_ID = 'preset-nyah';
 const TASK_UUID = '3637dae1-1461-4444-a747-34e406f67acc';
@@ -1091,13 +1092,14 @@ describe('频率与额度（到点兜底闸）', () => {
     fired(await amsgHooks.onBeforeFire(alarm.ctx));
   });
 
-  // 见面离开提醒：用户为这次见面设的一次性提醒，必发、不受连发和每日上限拦，也不给排程工具；
+  // 见面离开提醒：用户为这次见面设的一次性提醒，必发、不受连发和每日上限拦；这一轮照样给排程工具
+  // （排出来的子任务不带豁免，见 fireParity.test.ts）；
   // 人还在见面里就按租约往后推，走开后在私聊里开过口就作废（见 docs/date-leave-reminder.md）。
   const dateLeaveMeta = { amsgDateLeave: true, amsgDateLeaveDelayMinutes: 5, amsgExpirePolicy: 'force' };
   // 见面里续的租约不带开口时刻（DateApp 传 null）。
   const dateLease = (activeAt: number) => presenceValue(activeAt, { scene: 'date', lastUserMessageAt: null });
 
-  it('见面离开提醒：连发和每日上限都已满 → 照发，而且没有【开口之前】、不给排程工具', async () => {
+  it('见面离开提醒：连发和每日上限都已满 → 照发，而且没有【开口之前】', async () => {
     const { ctx } = makeCtx({
       metadata: dateLeaveMeta,
       charRows: rows({
@@ -1110,7 +1112,6 @@ describe('频率与额度（到点兜底闸）', () => {
     ctx.scheduleTask = vi.fn();
     const result = fired(await amsgHooks.onBeforeFire(ctx));
     expect(result.messages[0].content).not.toContain('【开口之前】');
-    expect(result.tools?.some((t) => t.function.name === AMSG_FIRE_SCHEDULE_TOOL)).toBeFalsy();
   });
 
   it('见面离开提醒：对照组——同样的额度下普通自排任务被连发上限拦下', async () => {
@@ -1616,13 +1617,14 @@ describe('executeToolCalls 的工具编排', () => {
 
   // 轮次快用完了还在请求工具，上游会抛 AGENTIC_LOOP_EXCEEDED：这次攒的旁白全丢、任务
   // 不出清、下一分钟整条从头重跑。先在回喂里说一声，模型自己收尾最省。
-  it('倒数第二轮的回喂末尾加一句「这是最后一轮」', async () => {
+  // 收尾提示与本地工具循环共用同一句（utils/toolLoopFinalRound.ts）。
+  it('倒数第二轮的回喂末尾加上共用的收尾提示', async () => {
     const session = await readySession();
     const [out] = await amsgHooks.executeToolCalls(
       [toolCall('c1', 'recall', { year: '2026', month: '06' })],
       { ...session, iteration: DEFAULT_TOOL_ITERATIONS - 2 },
     );
-    expect(out.content).toContain('最后一轮');
+    expect(out.content.endsWith(`\n${TOOL_LOOP_FINAL_ROUND_PROMPT}`)).toBe(true);
   });
 
   it('还早的轮次不加那句话（别一上来就催着收尾）', async () => {
@@ -1631,7 +1633,7 @@ describe('executeToolCalls 的工具编排', () => {
       [toolCall('c1', 'recall', { year: '2026', month: '06' })],
       { ...session, iteration: 0 },
     );
-    expect(out.content).not.toContain('最后一轮');
+    expect(out.content).not.toContain(TOOL_LOOP_FINAL_ROUND_PROMPT);
   });
 });
 
@@ -4725,7 +4727,9 @@ describe('onBeforeFire — 即时对话分支', () => {
     // ctx.scheduleTask 存在才教「给自己排下一条」
     (ctx as any).scheduleTask = async () => ({ created: true, id: 1, uuid: 'u', nextSendAt: 'x' });
     const result = fired(await amsgHooks.onBeforeFire(ctx));
-    const appended = result.messages[result.messages.length - 1].content;
+    // 有 MCP 工具时最后一条是本地同款的末尾提醒，时效块在它前面。
+    expect(result.messages[result.messages.length - 1].content).toContain('[MCP 工具 ON');
+    const appended = result.messages[result.messages.length - 2].content;
     expect(appended).toContain('【外部工具');         // MCP 说明块
     expect(appended).toContain('search_memory');
     expect(appended).toContain('给自己排下一条');      // 排程说明块
