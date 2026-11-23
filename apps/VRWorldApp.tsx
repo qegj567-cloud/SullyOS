@@ -4076,6 +4076,7 @@ const VRApiSettings: React.FC<{ apiPresets: ApiPreset[]; chatApi: APIConfig; add
     // 手机上没有控制台，「界面全关了记录还在涨」这类问题光靠截图说不清。
     // 一次把该看的都收齐，复制走即可；收的全是状态，不含名字、聊天和 key。
     const exportSnapshot = async () => {
+        trackEvent('生成彼方排障快照');
         setCollecting(true);
         try {
             const text = await collectVRDiagnostics(characters, chatApi);

@@ -4,6 +4,7 @@ import { describeNavigationShortcut, type ShortcutCharacter, type ShortcutWorld,
 import { useSettingsFocus } from '../../utils/settingsNavigation';
 import { useOS } from '../../context/OSContext';
 import { AppID } from '../../types';
+import { trackEvent } from '../../utils/analytics';
 const NavigationSlotPicker = React.lazy(() => import('./NavigationSlotPicker'));
 // Only mounted when a slot is being edited. Project titles, never message/book bodies.
 function SlotPickerWithResources(props: React.ComponentProps<typeof NavigationSlotPicker>) {
@@ -54,7 +55,7 @@ export default function NavigationBallSettings({ characters = [], loadWorlds, re
       </button>
     </div>
     <div className="mt-4 border-t border-slate-100 pt-4">
-      <button type="button" onClick={() => { resetNavigationBallPosition(); setPositionReset(true); }}
+      <button type="button" onClick={() => { resetNavigationBallPosition(); setPositionReset(true); trackEvent('点悬浮球复位抢救'); }}
         className="rounded-xl bg-slate-100 px-4 py-2.5 text-xs font-medium text-slate-600 hover:bg-slate-200">悬浮球复位抢救</button>
       <p className="mt-2 text-[11px] leading-relaxed text-slate-400" role="status">{positionReset ? '位置已复位，开关和快捷入口均已保留。' : '找不到悬浮球或位置不顺手时，可恢复默认位置。快捷入口会保留。'}</p>
     </div>

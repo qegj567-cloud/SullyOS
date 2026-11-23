@@ -2123,6 +2123,7 @@ export default function MemoryPalaceApp() {
 
     const handleMigrate = async () => {
         if (!char || migrating) return;
+        trackEvent('迁移旧记忆到记忆宫殿');
         const emb = memoryPalaceConfig.embedding;
         if (!emb?.baseUrl || !emb?.apiKey) {
             setMigrationResult('[err]请先配置 Embedding API');
@@ -2569,6 +2570,7 @@ export default function MemoryPalaceApp() {
 
     const handleClearMigrated = async () => {
         if (!char) return;
+        trackEvent('清除已迁移的旧记忆');
         setDeleting(true);
         try {
             const allNodes = await MemoryNodeDB.getByCharId(char.id);
