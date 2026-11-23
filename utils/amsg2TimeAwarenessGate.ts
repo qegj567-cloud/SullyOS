@@ -91,7 +91,6 @@ const buildDisabledBaseConfig = (
     tasks: tasksOf(prev?.tasks ?? []),
     ...pickPacingSettings(prev),
     instantChatEnabled: prev?.instantChatEnabled,
-    maxTokens: prev?.maxTokens,
     lastSyncedAt: prev?.lastSyncedAt,
     ...overrides,
   };

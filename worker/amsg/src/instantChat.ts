@@ -29,7 +29,7 @@ import {
   formatFireTimeFull,
   type AmsgTzRef,
 } from '../../../utils/amsgFirePack';
-import { TIME_FRAMING_CONVERSATIONAL } from '../../../utils/timeFramingNote';
+import { TIME_AWARENESS_NOTE, TIME_FRAMING_CONVERSATIONAL } from '../../../utils/timeFramingNote';
 
 // ─── 时间参数 ───
 
@@ -79,12 +79,15 @@ export const buildInstantTimelyBlock = (args: {
   const head = args.timeAwarenessEnabled
     ? [
         '【此刻的系统信息·仅你可见】',
-        `现在是 ${formatFireTimeFull(args.nowMs, args.tz)}。`,
+        `现在是 ${formatFireTimeFull(args.nowMs, args.tz)}。${TIME_AWARENESS_NOTE}`,
         // 报时后面跟那句语境框定，跟前台聊天引的是同一份常量。这一轮是用户刚按下发送、
         // 正等着回复，所以「对方还在跟你说话」是真的；少了它，深夜的那行钟就够让角色
         // 每轮都往「快睡吧、明天见」上收——本地那条路修好了、云端没修的话，同一个角色
         // 在两条路上的分寸会不一样。
         TIME_FRAMING_CONVERSATIONAL,
+        // 「你身处 X 时区」那句不在这里：worker 不知道角色开没开自定义时区，而那句是
+        // 不随时间变的静态文案，由前端烤在紧随其后的「实时状态」段开头（见 chatPrompts
+        // 的 timelyByWorker 分支）。
         // buildUserClockHint 自带前导换行，没时差时返回空串。
         buildUserClockHint(args.nowMs, args.tz, { tzId: args.userTzId }, args.targetName),
       ].join('\n')

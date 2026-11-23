@@ -543,6 +543,27 @@ describe('工具调用的结局', () => {
     expect(failed.outcome).toEqual({ tool: 'schedule_active_message', status: 'error', message: '名额满了' });
   });
 
+  // 结果会喂给工具循环的最后一轮（那一轮不再给工具），所以另备一份不提「下一个工具」的版本。
+  it('执行器给出最后一轮用的结果：不再提「还没用过的工具」，其余交代照旧', async () => {
+    const { deps } = makeSession();
+    const args = { send_at: future(2) };
+    const done = await executeAmsg2ToolWithOutcome('schedule_active_message', args, deps);
+    expect(done.text).toContain('才调用一个还没用过的工具');
+    expect(done.finalRoundText).not.toContain('还没用过的工具');
+    expect(done.finalRoundText).toContain('直接留空结束');
+    expect(done.finalRoundText.split('\n')[0]).toBe(done.text.split('\n')[0]);
+
+    const dup = await executeAmsg2ToolWithOutcome('schedule_active_message', { ...args }, deps);
+    expect(dup.outcome.status).toBe('duplicate');
+    expect(dup.text).toContain('还没用过的工具');
+    expect(dup.finalRoundText).not.toContain('还没用过的工具');
+    expect(dup.finalRoundText).toContain('没有再执行');
+
+    (ActiveMsgClient.scheduleCharacterTask as any).mockRejectedValueOnce(new Error('名额满了'));
+    const failed = await executeAmsg2ToolWithOutcome('schedule_active_message', { send_at: future(4) }, deps);
+    expect(failed.finalRoundText).toBe(failed.text);
+  });
+
   it('上一次的打回原因不会串到下一次成功的调用上；远端取消失败记 rejected 且更新签名', async () => {
     const { deps } = makeSession({
       activeMsg2Config: {

@@ -9,12 +9,13 @@
  */
 
 import type { CharacterProfile, FullBackupData, MemoryFragment, Message, UserProfile, Worldbook } from '../types';
-import { AMSG2_INSTANT_STUB_TEMPLATE, AMSG_SLOT_SELF_LOG } from './amsgFirePack';
+import { AMSG2_INSTANT_STUB_TEMPLATE, AMSG_SLOT_SELF_LOG, TEMPLATE_IMAGE_PLACEHOLDER, renderSentNotices } from './amsgFirePack';
+import { withoutThinkingModelSuffix } from './dialogueLlmParams';
 import { CONTEXT_RANGE_POLICY_VERSION, DEFAULT_MANUAL_CONTEXT_LIMIT } from './chatContextRange';
 import { generateAvatar } from './defaultAvatar';
 import { isAnthropicEndpoint } from './llmEndpoint';
 import { wallClockToTimestamp } from './timezone';
-import { toMountedWorldbook } from './worldbook';
+import { keepAllWorldbookRolls, toMountedWorldbook } from './worldbook';
 
 export const AMSG_RESCUE_FORMAT = 'sullyos-amsg-rescue';
 
@@ -292,8 +293,15 @@ const collectSources = (file: AnyRecord): Map<string, CharSources> => {
     return byChar;
 };
 
+/**
+ * 模板里云端专用的东西先还原：到点标记（世界书概率条目、回执块）和「图片别猜」那句提示。
+ * 推迟抽签的世界书条目一律按抽中保留——导回来会合成一条常驻条目、概率本来就留不住，
+ * 内容宁留勿丢，用户再自己删。
+ */
 const usableTemplate = (pack: AnyRecord | undefined): string | null =>
-    pack && typeof pack.template === 'string' && pack.template !== AMSG2_INSTANT_STUB_TEMPLATE ? pack.template : null;
+    pack && typeof pack.template === 'string' && pack.template !== AMSG2_INSTANT_STUB_TEMPLATE
+        ? keepAllWorldbookRolls(renderSentNotices(pack.template, [])).split(TEMPLATE_IMAGE_PLACEHOLDER).join('[图片]')
+        : null;
 
 export interface RescueImportSummary {
     characters: number;
@@ -343,7 +351,7 @@ export const rescueExportToBackup = (file: AnyRecord, nowMs = Date.now()): { bac
         const useInstant = !!instant && instantAt >= templateAt;
         const turns = useInstant
             ? parseChatMessages(instant!.chat.messages, tzId)
-            : templatePack ? parseTemplateTranscript(templatePack.template, name, targetName, tzId) : [];
+            : templatePack ? parseTemplateTranscript(usableTemplate(templatePack) ?? '', name, targetName, tzId) : [];
         const snapshotAt = (useInstant ? instantAt : templateAt) || nowMs;
         const charMessages: Array<Omit<Message, 'id'>> = assignTimestamps(turns, snapshotAt)
             .map((turn) => ({ charId, role: turn.role, type: 'text', content: turn.content, timestamp: turn.timestamp }));
@@ -384,7 +392,9 @@ export const rescueExportToBackup = (file: AnyRecord, nowMs = Date.now()): { bac
                 ...(m.mood ? { mood: String(m.mood) } : {}),
             }));
 
-        const chatApi = credToApi(src.creds.chat);
+        // chat 那一行的模型名是请求终值（开思考时带 -thinking），写回角色设置前去掉。
+        const rawChatApi = credToApi(src.creds.chat);
+        const chatApi = rawChatApi ? { ...rawChatApi, model: withoutThinkingModelSuffix(rawChatApi.model, rawChatApi.baseUrl) } : null;
         const emotionApi = credToApi(src.creds.emotion);
         const userTzId = src.firePack?.userTzId ?? instant?.userTzId;
 

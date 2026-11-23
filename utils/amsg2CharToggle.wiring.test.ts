@@ -41,6 +41,6 @@ describe('角色级开关只有一处判定', () => {
   });
 
   it('工具注入门走同一个判定', () => {
-    expect(chatAI).toMatch(/amsg2ToolsInjected = isAmsg2EnabledForChar\(char\)/);
+    expect(chatAI).toMatch(/amsg2ScheduleEnabled = isAmsg2EnabledForChar\(char\)/);
   });
 });

@@ -15,6 +15,7 @@
 
 import {
   classifyLLMOutput,
+  dropCrossRoundRepeats,
   type Directive,
   type MusicActionSong,
   type ToolCall,
@@ -34,6 +35,7 @@ import {
   extractFireScheduleTextCalls,
 } from '../../../utils/amsgFireSchedule';
 import { mergeToolRoundLeadIns } from '../../../utils/amsg2ToolLoop';
+import { TOOL_LOOP_FINAL_ROUND_PROMPT } from '../../../utils/toolLoopFinalRound';
 // type-only：编译期擦除，不会把 realtimeContext 的浏览器依赖打进 worker bundle。
 import type { XhsNote } from '../../../utils/realtimeContext';
 import {
@@ -127,6 +129,22 @@ export const MCP_MAX_TOOL_ITERATIONS = 12;
 /** 当前 fire 的工具预算：接了 MCP 才使用长预算，普通内置工具维持原成本。 */
 export const resolveToolIterationBudget = (hasMcp: boolean): number =>
   hasMcp ? MCP_MAX_TOOL_ITERATIONS : DEFAULT_TOOL_ITERATIONS;
+
+/**
+ * 倒数第二轮的工具结果喂进去之后就是最后一轮：在最后一条 tool 消息末尾挂收尾提示
+ * （离模型下一次输出最近，不逐条重复）。提示与本地工具循环共用一句，最后一轮行为才对得上。
+ * iteration 是执行工具那一轮的序号（0-based），拿不到（老部署）时不提示。上游每轮带
+ * 同一份 tools，最后一轮没法不给工具，只能靠这句话加 processLLMRound 的硬收尾两层兜住。
+ */
+export const appendFinalRoundNotice = <T extends { content: string }>(
+  results: T[],
+  iteration: number | undefined,
+  maxToolIterations: number,
+): T[] => {
+  if (typeof iteration !== 'number' || iteration < maxToolIterations - 2 || results.length === 0) return results;
+  const last = results[results.length - 1];
+  return [...results.slice(0, -1), { ...last, content: `${last.content}\n${TOOL_LOOP_FINAL_ROUND_PROMPT}` }];
+};
 
 /** 判本轮旁白里有没有 [[XHS_SHARE: n]]（与 classifier 的模式同口径，非全局免得带 lastIndex）。 */
 const XHS_SHARE_TAG_RE = /\[\[XHS_SHARE:\s*\d+\]\]/;
@@ -340,7 +358,8 @@ export const classifyNativeToolCalls = (
  *     全程无正文 → skip-push（这轮有没有副作用都不发，理由见分支处注释）。
  *
  * 还有一条穿透收尾：模型卡在同一个工具上出不来、或者已经是最后一轮时，本轮的工具请求
- * 不再放行，直接拿之前几轮的内容收尾；这一轮那句「等我查查」会被丢掉（它永远没有下文）。
+ * 不再放行，直接收尾。重复调用穿透时这一轮那句「等我查查」会被丢掉（它永远没有下文）；
+ * 最后一轮则保留剥掉调用语法后的正文当最终回复，并留一条 final_round_tool_dropped 日志。
  *
  * 通用 MCP 的调用识别是两层（native tool_calls + 正文协议），与前台同构，见函数体开头。
  *
@@ -419,12 +438,12 @@ export function processLLMRound(
 
   const result = classifyLLMOutput(scanText);
   const isToolRound = result.kind === 'tool-request' || extraToolCalls.length > 0;
+  // prefix = 旁白 + 可能只写了一半的副作用标签块。这里不剥不结构化——
+  // 等 finish 拼回全文统一扫（见 FireSessionState.narrations 注释）。
+  // MCP-only 轮没有数据标签，整段剥净后的文本都是旁白（与 tag 轮的 prefix 同角色）。
+  const narration = result.kind === 'tool-request' ? result.prefix : scanText;
 
   if (isToolRound) {
-    // prefix = 旁白 + 可能只写了一半的副作用标签块。这里不剥不结构化——
-    // 等 finish 拼回全文统一扫（见 FireSessionState.narrations 注释）。
-    // MCP-only 轮没有数据标签，整段剥净后的文本都是旁白（与 tag 轮的 prefix 同角色）。
-    const narration = result.kind === 'tool-request' ? result.prefix : scanText;
     // 还能不能再转一轮：连着打回这么多次重复调用 = 模型卡在同一个工具上出不来；到最后一轮
     // 再返回 tool-request 则会被上游抛 AGENTIC_LOOP_EXCEEDED。两种情况都不再给下一轮，
     // 直接用手上的内容收尾——整条任务失败重跑的话，用户一个字都收不到。
@@ -442,9 +461,23 @@ export function processLLMRound(
         toolCalls: result.kind === 'tool-request' ? [...result.toolCalls, ...extraToolCalls] : extraToolCalls,
       };
     }
-    // 穿透收尾：这一轮的旁白是「等我翻翻记录哈」这种半句，而它请求的工具永远不会跑了。
-    // 发出去用户收到的最后一条就是一句没有下文的话，比少说这句更假——丢掉，只发之前
-    // 几轮已经说完的内容。
+    // 穿透收尾（重复调用到阈值）：这一轮的旁白是「等我翻翻记录哈」这种半句，而它请求的
+    // 工具永远不会跑了。发出去用户收到的最后一条就是一句没有下文的话，比少说这句更假——
+    // 丢掉，只发之前几轮已经说完的内容。
+    // 最后一轮不同：模型已被告知不能再调工具、没说完的接着说，这一轮的正文是回复的收尾，
+    // 只剥掉调用语法、照常收尾（与本地循环取最后一轮正文同口径）。调用不执行，留日志免得
+    // 静默吞掉。这一轮什么都没补时，下面照样拿前几轮的旁白收尾，不算空生成。
+    if (isFinalRound) {
+      console.warn('[amsg:agentic]', {
+        type: 'final_round_tool_dropped',
+        taskId: build.taskId,
+        iteration,
+        tools: [
+          ...(result.kind === 'tool-request' ? result.toolCalls : []),
+          ...extraToolCalls,
+        ].map((tc) => tc.function.name),
+      });
+    }
   }
 
   // 拼回全文再扫一次。中间轮 prefix 里不含数据标签（prefix 定义即「首个数据标签
@@ -452,9 +485,10 @@ export function processLLMRound(
   // 落 finish；万一未来 classifier 语义变化落了 tool-request，取其 prefix 兜底，
   // 不让 fire 链在 finish 关头断掉。
   // 没有旁白（一轮直出，最常见）时全文就是本轮正文，同样的输入不必再扫一遍。
-  // 从上面 tool-request 分支穿透下来收尾时，本轮的正文已经进过 narrations 了，
-  // 这里再拼一次 llmOutputText 就会重复一段（而且它还带着那个转不出来的数据标签）。
-  const thisRound = isToolRound ? '' : restoreSurfaces(scanText);
+  // 重复调用穿透下来的那一轮正文整句丢掉；最后一轮只取剥掉调用后的旁白（不含数据标签）。
+  const thisRound = !isToolRound
+    ? restoreSurfaces(scanText)
+    : isFinalRound ? restoreSurfaces(narration) : '';
   const rounds = [...state.narrations, thisRound].filter((part) => part.trim().length > 0);
   const fullText = state.narrations.length > 0
     ? mergeToolRoundLeadIns(state.narrations, thisRound)
@@ -472,10 +506,18 @@ export function processLLMRound(
     : (fullText === scanText ? result : classifyLLMOutput(fullText));
   const cleanedText = finalScan.kind === 'finish' ? finalScan.cleanedText : finalScan.prefix;
   // 角色写了 MUSIC_ACTION 的话，把 prompt 里那句「你此刻在听」的那首歌冻进去（见 attachSceneSong）。
-  const directives = attachSceneSong(
-    finalScan.kind === 'finish' ? finalScan.directives : [],
-    build.sceneSong,
-  );
+  // 全文分类时同 type 同参数的 directive 可能来自不同轮：同一轮里的照写几次留几个，
+  // 后面几轮复述前面做过的那件才去掉（见 dropCrossRoundRepeats）。轮的边界就是 rounds。
+  const roundTexts = sarParse?.pieces.length ? sarParse.pieces.map((piece) => piece.canonical) : rounds;
+  const finalDirectives = finalScan.kind !== 'finish'
+    ? []
+    : roundTexts.length > 1
+      ? dropCrossRoundRepeats(finalScan.directives, roundTexts.map((text) => {
+          const scan = classifyLLMOutput(text);
+          return scan.kind === 'finish' ? scan.directives : [];
+        }))
+      : finalScan.directives;
+  const directives = attachSceneSong(finalDirectives, build.sceneSong);
 
   // XHS 引用的笔记/token 与 directives 挂同一条 push（最后一条），客户端先落库再重放。
   // 笔记列表优先用「说要分享那一轮」定格的快照，没定格过（分享和搜索同一轮或压根没搜过）

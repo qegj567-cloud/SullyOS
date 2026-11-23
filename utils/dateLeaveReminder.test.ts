@@ -4,6 +4,7 @@ import type { CharacterProfile } from '../types';
 import { DB } from './db';
 import { ActiveMsgClient } from './activeMsgClient';
 import { isAwayCloudRoute, runLocalProactiveTurn } from './awayMessage';
+import { buildDateLeaveInstruction } from './amsgFireSchedule';
 import {
   armDateLeaveReminder, disarmDateLeaveReminder, resolveDateLeaveDelayMinutes, startLocalDateLeaveTimer,
 } from './dateLeaveReminder';
@@ -98,6 +99,8 @@ it('没开 2.0：在 SullyOS 里走开 5 分钟后本地生成一条', async () 
   await flush();
   expect(runLocalProactiveTurn).toHaveBeenCalledOnce();
   expect(vi.mocked(runLocalProactiveTurn).mock.calls[0][1]).toMatchObject({ purpose: '见面离开提醒', meta: { dateLeaveReminder: true } });
+  // 本地版和云端任务用同一份纯指令，外面不再包本地提示。
+  expect(vi.mocked(runLocalProactiveTurn).mock.calls[0][1].hint).toBe(buildDateLeaveInstruction());
 });
 
 it('没开 2.0：页面隐藏后不再计时，回来也不补', async () => {

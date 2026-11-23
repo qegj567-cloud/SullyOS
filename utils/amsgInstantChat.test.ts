@@ -82,6 +82,7 @@ import {
   failInstantChatPending,
   getInstantChatPending,
   getStagedInstantChatExpiredNotices,
+  hasWorkerUnreachableXhs,
   isInstantChatReady,
   INSTANT_CHAT_REPROBE_TIMEOUT_MS,
   resetInstantChatReprobeCooldown,
@@ -139,6 +140,8 @@ beforeEach(() => {
   storeState.config = {
     userId: TEST_USER_ID,
     workerUrl: 'https://amsg.example.workers.dev',
+    // 存量版本是记给哪台 Worker 的（体检时一并写下）；默认就是当前这台。
+    anthropicMessagesWorkerUrl: 'https://amsg.example.workers.dev',
     serverToken: '',
     instantChatEnabled: true,
   };
@@ -894,6 +897,25 @@ describe('开关', () => {
     expect(await resolveInstantChatReadiness()).toEqual({ ready: true, workerBundleCurrent: true });
   });
 
+  // 换了 Worker 地址、还没重新体检时，存量版本是旧那台的，不能拿来给新地址下结论。
+  it('存量版本记给的不是当前 Worker 地址 → 按没探到版本处理；需要信封时现探', async () => {
+    storeState.config = {
+      ...storeState.config, instantChatSupported: true, workerBundleVersion: AMSG_BUNDLE_VERSION,
+      anthropicMessagesWorkerUrl: 'https://old.example.workers.dev',
+    };
+    const readiness = await resolveInstantChatReadiness();
+    expect(readiness.ready).toBe(true);
+    expect(readiness).not.toHaveProperty('workerBundleCurrent');
+
+    resetInstantChatReprobeCooldown();
+    const probe = vi.spyOn(ActiveMsgClient, 'probeWorkerVersion').mockResolvedValue({
+      state: 'outdated', deployed: null, expected: AMSG_BUNDLE_VERSION, autoUpdate: null,
+    });
+    expect(await resolveInstantChatReadiness(undefined, { ensureBundleVersion: true }))
+      .toEqual({ ready: true, workerBundleCurrent: false });
+    expect(probe).toHaveBeenCalledTimes(1);
+  });
+
   it('从没探过版本（undefined）→ 不给结论，调用方放行', async () => {
     storeState.config = { ...storeState.config, instantChatSupported: true, workerBundleVersion: undefined };
     const readiness = await resolveInstantChatReadiness();
@@ -1531,5 +1553,26 @@ describe('AI 复现排程', () => {
     const calls = mockInstantChatFetch(200, { success: true, data: { backgroundJobs: true } });
     await expect(ActiveMsgClient.scheduleReproduction('55555555-5555-4555-8555-555555555555', API, 60)).rejects.toThrow('更新');
     expect(calls.some(c => c.url.endsWith('/schedule-message'))).toBe(false);
+  });
+});
+
+describe('小红书服务器 Worker 够不着时否决上云', () => {
+  const xhsChar = { id: 'c1', name: '小明', xhsEnabled: true } as any;
+  const rc = (serverUrl: string, enabled = true) => ({ xhsMcpConfig: { enabled, serverUrl } }) as any;
+
+  it('角色开着小红书、服务器在本机/内网 → 否决（上云清单会把它去掉，角色这轮掉工具）', () => {
+    expect(hasWorkerUnreachableXhs(xhsChar, rc('http://localhost:18060'))).toBe(true);
+    expect(hasWorkerUnreachableXhs(xhsChar, rc('http://192.168.1.5:18060/mcp'))).toBe(true);
+  });
+
+  it('服务器地址 Worker 够得着 → 不否决，照常上云', () => {
+    expect(hasWorkerUnreachableXhs(xhsChar, rc('https://xhs.example.com/mcp'))).toBe(false);
+  });
+
+  it('这一轮本来就用不到小红书（角色没开 / 配置关着 / 没填地址）→ 不否决', () => {
+    expect(hasWorkerUnreachableXhs({ ...xhsChar, xhsEnabled: false }, rc('http://localhost:18060'))).toBe(false);
+    expect(hasWorkerUnreachableXhs(xhsChar, rc('http://localhost:18060', false))).toBe(false);
+    expect(hasWorkerUnreachableXhs(xhsChar, rc(''))).toBe(false);
+    expect(hasWorkerUnreachableXhs(xhsChar, undefined)).toBe(false);
   });
 });

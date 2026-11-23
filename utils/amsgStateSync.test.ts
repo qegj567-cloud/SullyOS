@@ -832,21 +832,35 @@ describe('LLM 凭据行的后台重传', () => {
     expect(ActiveMsgClient.putLlmCredentials).toHaveBeenLastCalledWith([{
       credId: 'char:char-cred-sync/chat',
       value: { apiUrl: roleApi.baseUrl + '/chat/completions', apiKey: roleApi.apiKey, primaryModel: roleApi.model },
-    }]);
+    }], { force: true });
     vi.mocked(DB.getAllCharacters).mockResolvedValue([CHAR] as any);
     syncAmsgLlmCredentials({ ...API });
     await vi.advanceTimersByTimeAsync(0);
     expect(ActiveMsgClient.putLlmCredentials).toHaveBeenLastCalledWith([{
       credId: 'char:char-cred-sync/chat',
       value: { apiUrl: API.baseUrl + '/chat/completions', apiKey: API.apiKey, primaryModel: API.model },
-    }]);
+    }], { force: true });
   });
 
-  it('这次保存没动 API → 值没变，不白发一次请求', async () => {
+  // 底账只记本机传过什么，云端那行可能被别的入口改过（Safari 与主屏 App 存储分开、换过 Worker）。
+  // 信底账跳过的话，云端会一直用旧模型，所以用户亲手保存一律覆盖。
+  it('亲手保存时底账说没变 → 照样强制覆盖云端', async () => {
     (isLlmCredentialsReady as any).mockResolvedValue(true);
     rememberCredRows([buildCharChatCredRow(CHAR as any, CHAR.activeMsg2Config as any, API)!]);
 
     syncAmsgLlmCredentials(API);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(ActiveMsgClient.putLlmCredentials).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(ActiveMsgClient.putLlmCredentials).mock.calls[0][1]).toEqual({ force: true });
+    expect(localStorage.getItem(AMSG2_PENDING_CRED_SYNC_LS_KEY)).toBeNull();
+  });
+
+  it('启动补传（onlyIfChanged）时值没变 → 不白发一次请求', async () => {
+    (isLlmCredentialsReady as any).mockResolvedValue(true);
+    rememberCredRows([buildCharChatCredRow(CHAR as any, CHAR.activeMsg2Config as any, API)!]);
+
+    syncAmsgLlmCredentials(API, { onlyIfChanged: true });
     await vi.advanceTimersByTimeAsync(0);
 
     expect(ActiveMsgClient.putLlmCredentials).not.toHaveBeenCalled();
@@ -902,7 +916,7 @@ describe('LLM 凭据行的后台重传', () => {
     expect(ActiveMsgClient.putLlmCredentials).toHaveBeenCalledWith([{
       credId: 'char:char-cred-sync/chat',
       value: { apiUrl: 'https://api.example.dev/v1/chat/completions', apiKey: 'sk-new', primaryModel: 'gpt-x' },
-    }]);
+    }], { force: true });
   });
 
   it('升级启动没有欠账标记也会替换旧副 API，并刷新存量任务', async () => {
@@ -954,7 +968,7 @@ describe('LLM 凭据行的后台重传', () => {
 
     expect(ActiveMsgClient.putLlmCredentials).toHaveBeenCalledWith([
       expect.objectContaining({ credId: 'char:char-cred-sync/chat' }),
-    ]);
+    ], { force: true });
     expect(localStorage.getItem(AMSG2_PENDING_CRED_SYNC_LS_KEY), '重试也过不去，不该留欠账').toBeNull();
     expect(warn.mock.calls.flat().join(' ')).toContain('小明（char-retired）');
     expect(onConflict, '要叫对账弹窗出来问用户').toHaveBeenCalledTimes(1);

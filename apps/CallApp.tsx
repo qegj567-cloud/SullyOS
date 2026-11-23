@@ -2078,7 +2078,8 @@ ${sentencePlan}`;
       const snapshotHistory = prepareUserCameraSnapshot(messages, userCameraSnapshot);
       const characterContext = selectedChar ? (await ContextBuilder.buildCharacterContext({
         char: selectedChar, user: userProfile, history: snapshotHistory.messages,
-        timeOptions: { conversational: true, includeUserLocation: true },
+        // 通话隔着手机，跟私聊一样带「对方那边几点」。
+        timeOptions: { conversational: true, includeUserLocation: true, includeUserClock: true },
         instructions: core => buildCallPrompt(userName, selectedChar.name, core, voiceLang || undefined, callMode, resolveCharTimeZone(selectedChar)),
       })) : null;
       const baseCallPrompt = characterContext?.coreContext

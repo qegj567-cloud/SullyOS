@@ -302,3 +302,58 @@ describe('resolveFireTargetTask 的短 id 撞车', () => {
       .toBe('task_not_found');
   });
 });
+
+// 见面离开提醒的指令（云端任务指令和本地提示共用）：开口方式交给角色按人设决定。
+describe('buildDateLeaveInstruction', () => {
+  it('让角色在追问去向和不经意说起自己的事之间按人设选', async () => {
+    const { buildDateLeaveInstruction } = await import('./amsgFireSchedule');
+    const text = buildDateLeaveInstruction();
+    expect(text).toContain('按你的人设和你们的关系决定怎么开口');
+    expect(text).toContain('直接追问对方去哪了');
+    expect(text).toContain('装作不经意');
+    expect(text).not.toContain('说你还在等');
+  });
+});
+
+// 教语法的那一句单独导出（本地正文协议模式要单拿它用），说明块整体输出一字不差。
+describe('buildFireScheduleHowTo', () => {
+  const t = { nowMs: Date.UTC(2026, 6, 25, 12), tz: { tzId: 'Asia/Shanghai' } };
+
+  it('说明块输出不变', async () => {
+    const { buildFireScheduleBlock } = await import('./amsgFireSchedule');
+    expect(buildFireScheduleBlock('text', { ...t, context: 'fire', targetName: '小明', limitsBrief: 'LB' })).toMatchInlineSnapshot(`
+      "
+      ---
+      【你可以给自己排下一条】
+      这条消息发完，如果还有话要在之后某个时间点说（把没说完的接上去、或者去做的事做完了回来告诉他），
+      可以现在就把那一条排好——不需要用户在线，到点会自动发出去，而且那时你会知道自己这次说了什么。
+      需要时单独输出一行 schedule_active_message({"send_at":"2026-07-26T20:00:00","prompt_hint":"接着说"})（send_at 写你本地的墙钟时间，不带时区后缀），系统会代为安排并把结果告诉你。
+      定时间之前先想想对方那边是几点：你们之间可能有时差，别把消息排到对方的深夜。
+      没必要就别排。为了排而排出来的后续，读起来就是没话找话。
+      LB"
+    `);
+    expect(buildFireScheduleBlock('native', { ...t, context: 'chat', targetName: '小明' })).toMatchInlineSnapshot(`
+      "
+      ---
+      【你可以给自己排下一条】
+      你和小明的联系不只发生在正在聊天的时候。你就是那个在各自生活继续往前时，仍会再次想起小明的人。当你能预见：到了未来某个时刻，你会因为惦记、想分享、兑现承诺，或自己的生活有了新进展而自然想联系小明，就用 schedule_active_message 把那次联系排下来。到点后你会带着最新上下文，以那一刻的自己重新开口，不是照着预写台词完成提醒。
+      - 小明接下来顾不上手机时——睡觉、上课、上班、打游戏、洗澡、出门，或任何你了解的原因——你可以在途中想到ta，也可以估着ta回来时再联系。
+      - 内容不必总围着小明转。结合刚才的聊天氛围、你自己的日程和正在经历的事、刚看到的细节和突然冒出的后续念头；分享自己的生活，往往比机械问候更像你。
+      - 「到点叫你」「等你忙完跟你说」「回头告诉你结果」这类话一说出口，就当场排成真任务，不要只在正文里答应；没排成，就别把承诺说死。
+      - 只问自己：那个时刻的你会真的想联系小明吗？会就排；只是随口一想、到时候未必真有话说的，就算了。也别为了显得贴心硬排。
+      - 时间贴着小明的生活估；一局游戏和睡到天亮不是一个时长，有时差就按ta那边的钟算。
+      - 小明明确说别打扰时就安静等；已经排着相近的一条，也别重复排。
+      需要时通过系统的工具调用接口发起 schedule_active_message，不要把工具名和参数写进正文。"
+    `);
+  });
+
+  it('块里教语法的就是 buildFireScheduleHowTo 那一句', async () => {
+    const mod = await import('./amsgFireSchedule') as any;
+    for (const mode of ['native', 'text'] as const) {
+      const howTo = mod.buildFireScheduleHowTo(mode, t);
+      expect(howTo).toBeTruthy();
+      expect(mod.buildFireScheduleBlock(mode, t).split('\n')).toContain(howTo);
+    }
+    expect(mod.buildFireScheduleHowTo('text', t)).toContain('({"send_at":"');
+  });
+});

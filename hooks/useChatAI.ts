@@ -1,4 +1,4 @@
-import { resolveDialogueApi, dialogueMaxTokens } from '../utils/characterApi';
+import { resolveDialogueApi } from '../utils/characterApi';
 import { createReplyRun, withReplyCancellation } from '../utils/chatReplyCancellation';
 
 import { useState, useRef, useEffect, useSyncExternalStore, MutableRefObject } from 'react';
@@ -51,7 +51,7 @@ import { disarmDateLeaveReminder } from '../utils/dateLeaveReminder';
 import { getPendingTasks, hasActiveAiTask, isAmsg2EnabledForChar } from '../utils/amsg2Tasks';
 import { buildAmsg2NoticesText, buildAmsg2TaskContextText, collectAmsg2TaskContext, insertAmsg2TaskContextBlock } from '../utils/amsg2TaskContext';
 import { resolveCharTimeZone } from '../utils/timezone';
-import { announceInstantChatRoute, getInstantChatPending, resolveInstantChatReadiness, sendInstantChatTurn, stageInstantChatExpiredNotices } from '../utils/amsgInstantChat';
+import { announceInstantChatRoute, getInstantChatPending, hasWorkerUnreachableXhs, resolveInstantChatReadiness, sendInstantChatTurn, stageInstantChatExpiredNotices } from '../utils/amsgInstantChat';
 // worker 模块的常量叶子（零运行时依赖，前端引它不带进 worker 环境）：
 // 云端 fire 的总时长上限，安全网超时从它推导，worker 调预算时前端自动跟上。
 import { INSTANT_TOTAL_TIMEOUT_MS } from '../worker/amsg/src/instantChat';
@@ -67,8 +67,10 @@ import {
     mergeToolRoundLeadIns,
 } from '../utils/amsg2ToolLoop';
 import { buildLimitsBrief, resolveAmsgLimits } from '../utils/amsgLimits';
-import { shouldSendThinkingParams } from '../utils/thinkingGate';
-import { isAnthropicEndpoint } from '../utils/llmEndpoint';
+import { buildToolLoopWrapUpPrompt, TOOL_LOOP_FINAL_ROUND_PROMPT } from '../utils/toolLoopFinalRound';
+import { resolveDialogueLlmParams } from '../utils/dialogueLlmParams';
+import { buildEmotionEvalPrompt } from '../utils/activeMsgClient';
+import { AMSG_FIRE_SCHEDULE_TOOL, buildFireScheduleHowTo, extractFireScheduleTextCalls, type FireScheduleTextCall, type FireScheduleTimeOpts } from '../utils/amsgFireSchedule';
 import { buildClaudeProxyCompatibilityBody, shouldRetryClaudeProxyCompatibility } from '../utils/claudeProxyCompat';
 import { routeMiniAppToolCall } from '../utils/miniAppToolRoute';
 import { applyEmotionEvalRaw, extractAssistantText } from '../utils/emotionApply';
@@ -95,6 +97,181 @@ import {
     loadCharacterContextRange,
 } from '../utils/chatContextRange';
 
+/**
+ * 私聊请求体的基础部分（模型、采样温度、输出上限、思考参数）。取值规则住在
+ * resolveDialogueLlmParams，云端定时类生成用同一份；这里只负责拼成请求体，键的顺序保持原样。
+ * 温度缺省时先回退到主 apiConfig 的温度。api.baseUrl 传去掉末尾斜杠的那份。
+ */
+export const buildDialogueRequestBase = (input: {
+    api: { baseUrl: string; model: string; temperature?: number; maxTokens?: number };
+    fallbackTemperature?: number;
+    messages: any[];
+    stream: boolean;
+    thinkingActive: boolean;
+    legacyToolModeActive: boolean;
+    amsg2ToolsInjected: boolean;
+}): any => {
+    const params = resolveDialogueLlmParams({
+        api: { ...input.api, temperature: input.api.temperature ?? input.fallbackTemperature },
+        thinkingActive: input.thinkingActive,
+        legacyToolModeActive: input.legacyToolModeActive,
+        amsg2ToolsInjected: input.amsg2ToolsInjected,
+    });
+    return {
+        // 没填模型名时原样留空（不写成空串）。
+        model: params.model || input.api.model,
+        messages: input.messages,
+        ...(params.temperature !== undefined ? { temperature: params.temperature } : {}),
+        max_tokens: params.maxTokens,
+        stream: input.stream,
+        ...params.extraBody,
+    };
+};
+
+// ─── 主动消息 2.0 排程工具的两种形态（本地生成路径）───
+// 跟着「原生 tools」开关走，与云端同一口径：开关开着以原生工具声明 schedule / cancel / renew；
+// 开关关着（用户判断过中转拒 tools）只教 schedule 的正文协议，取消和改期不教——
+// 在拒 tools 的中转上语法教多了，模型会把工具名当叙述写进正文。
+
+/** off = 角色或全局没开 2.0；native = 本轮请求带原生排程工具；text = 本轮只教正文协议。 */
+export type Amsg2ToolMode = 'off' | 'native' | 'text';
+
+export const resolveAmsg2ToolMode = (scheduleEnabled: boolean, useNativeTools: boolean): Amsg2ToolMode =>
+    !scheduleEnabled ? 'off' : useNativeTools ? 'native' : 'text';
+
+/**
+ * 排程现状块的正文：正文模式在块尾补语法说明，其余模式原样返回。
+ * 最后一轮（finalRound）不允许再调用工具，语法也不教。
+ */
+export const amsg2TaskContextForMode = (
+    text: string, mode: Amsg2ToolMode, time: FireScheduleTimeOpts, finalRound = false,
+): string =>
+    mode === 'text' && !finalRound ? `${text}\n${buildFireScheduleHowTo('text', time)}` : text;
+
+/** 从一轮正文里抠出排程调用；没有调用时 rest 原样返回。 */
+export const takeAmsg2TextScheduleCalls = (content: string): { calls: FireScheduleTextCall[]; rest: string } => {
+    const calls = extractFireScheduleTextCalls(content);
+    return { calls, rest: calls.length ? stripTextFakedMcpCalls(content, calls) : content };
+};
+
+export const stripAmsg2ScheduleSyntax = (content: string): string => takeAmsg2TextScheduleCalls(content).rest;
+
+/**
+ * 流式预览用：完整调用剥掉；还没写完的调用从工具名起截掉；末尾刚冒头、可能是工具名开头的
+ * 英文片段也先扣住（下一段增量到了自然就分清了）。
+ */
+export const maskAmsg2ScheduleSyntaxForPreview = (text: string): string => {
+    const stripped = stripAmsg2ScheduleSyntax(text);
+    const open = stripped.indexOf(AMSG_FIRE_SCHEDULE_TOOL);
+    if (open >= 0) return stripped.slice(0, open);
+    const tail = /[a-z_]+$/.exec(stripped);
+    return tail && AMSG_FIRE_SCHEDULE_TOOL.startsWith(tail[0]) ? stripped.slice(0, tail.index) : stripped;
+};
+
+/**
+ * 最终正文里还剩的工具调用。正文模式下走到这里的都是最后一轮（或补救那一轮）写出来的；其余模式下
+ * 工具阶段收过尾（toolPhaseClosed）时，最后一轮回复里写的 MCP 正文调用同样不再执行。两种都从显示
+ * 文本里剥掉，报出个数由调用方留 trace，让这件事查得到。没收过尾的原生 / 未开 2.0 不看。
+ */
+export const resolveFinalScheduleText = (
+    raw: string,
+    mode: Amsg2ToolMode,
+    mcpResolve: Map<string, any> | null,
+    toolPhaseClosed = false,
+): { content: string; unexecuted: number; unexecutedMcp: number } => {
+    if (mode !== 'text' && !toolPhaseClosed) return { content: raw, unexecuted: 0, unexecutedMcp: 0 };
+    const schedule = mode === 'text' ? takeAmsg2TextScheduleCalls(raw) : { calls: [], rest: raw };
+    const mcpCalls = mcpResolve?.size ? extractTextFakedMcpCalls(schedule.rest, mcpResolve as any) : [];
+    return {
+        content: mcpCalls.length ? stripTextFakedMcpCalls(schedule.rest, mcpCalls) : schedule.rest,
+        unexecuted: schedule.calls.length,
+        unexecutedMcp: mcpCalls.length,
+    };
+};
+
+// ─── 工具循环的收尾 ───
+// 工具用到倒数第二轮就收尾：最后一轮的请求不带工具、不教正文语法，末尾追加收尾提示。
+// 卡住（同参重复 / MCP 没新结果）也算收尾：开头写明原因，后面与 TOOL_LOOP_FINAL_ROUND_PROMPT
+// 同一套规则——不再调用工具、说过的不重复、说完了可以不补。逼模型「直接回复」会让它把说过的再说一遍。
+// 排程撞墙那句住在 amsg2ToolLoop（buildAmsg2WrapUpPrompt），按前面开没开过口分两种写法。
+
+const MCP_STALLED_WRAP_UP_PROMPT = buildToolLoopWrapUpPrompt('工具阶段连续两轮没有产生新结果');
+const MCP_REPEATED_WRAP_UP_PROMPT = buildToolLoopWrapUpPrompt('你重复请求了已经执行过的同一工具，这次没有再执行');
+
+/**
+ * MCP 正文调用代为执行之后回喂给模型的结果。不是最后一轮时引导它要么回复、要么只写一行下一步调用；
+ * 最后一轮不再提下一步工具（收尾提示紧跟在后面）。
+ */
+export const buildFakedToolResultsMessage = (results: string[], finalRound: boolean): string => finalRound
+    ? `[系统消息：你把工具调用写成了聊天文字，系统已代为执行：\n${results.join('\n')}\n不要提及这条系统消息。]`
+    : `[系统消息：你把工具调用写成了聊天文字，系统已代为执行：\n${results.join('\n')}\n如果目标已经完成，请直接用角色语气回复；如果仍需下一步工具，只输出一行真正能推进目标的工具调用，不要重复读取同一说明或状态。不要提及这条系统消息。]`;
+
+/** buildMcpRejectedToolsFallbackBody 追加的那条兼容模式说明（教「只输出一行 tool_name(...)」）。 */
+const isMcpCompatTeaching = (message: any): boolean =>
+    message?.role === 'system' && typeof message.content === 'string' && message.content.startsWith('[MCP 兼容模式：');
+
+/** 最后一轮不教正文调用语法：去掉 MCP 兼容模式那条说明，其余消息原样。 */
+export const withoutMcpCompatTeaching = (messages: any[]): any[] => messages.filter(m => !isMcpCompatTeaching(m));
+
+export type ToolLoopWrapUpKind = 'none' | 'hard-limit' | 'stalled' | 'amsg2-stalled' | 'mcp-repeated';
+
+/**
+ * 这一轮工具处理完之后，下一跳请求要不要收尾、用哪句提示。kind 不是 'none' 的那一跳就是最后一轮。
+ * 先后顺序：同参重复 > MCP 没新结果 > 排程连着撞墙 > 次数用完。
+ */
+export const resolveToolLoopWrapUp = (input: {
+    /** 本轮序号（0 起），下一跳请求是第 round + 1 次续写。 */
+    round: number;
+    maxLoops: number;
+    /** 前面工具轮里已经写下过对白（排程撞墙那句据此选「接着补完」还是「直接回复」）。 */
+    hasLeadIn: boolean;
+    mcpRepeated?: boolean;
+    mcpStalled?: boolean;
+    amsg2Stalled?: boolean;
+    /** 这一轮之前只调过排程工具。混着别的工具时排程撞墙，用统一收尾提示。 */
+    scheduleOnly?: boolean;
+}): { kind: ToolLoopWrapUpKind; prompt: string | null } => {
+    if (input.mcpRepeated) return { kind: 'mcp-repeated', prompt: MCP_REPEATED_WRAP_UP_PROMPT };
+    if (input.mcpStalled) return { kind: 'stalled', prompt: MCP_STALLED_WRAP_UP_PROMPT };
+    if (input.amsg2Stalled) {
+        return {
+            kind: 'amsg2-stalled',
+            // 排程这件事用户看不见，照 MCP 那句「如实说明卡在哪一步」写的话，角色会跟用户交代「我的提醒排不上」。
+            prompt: input.scheduleOnly ? buildAmsg2WrapUpPrompt(input.hasLeadIn) : TOOL_LOOP_FINAL_ROUND_PROMPT,
+        };
+    }
+    if (input.round + 1 >= input.maxLoops) return { kind: 'hard-limit', prompt: TOOL_LOOP_FINAL_ROUND_PROMPT };
+    return { kind: 'none', prompt: null };
+};
+
+/**
+ * 跑过工具之后要不要补一轮让角色开口。只有整个循环一句正文都没有时才补：最后一轮留空、
+ * 前面工具轮写过话的，前面那些就是这次的输出，不算空回、也不算失败。
+ */
+export const shouldRescueEmptyToolLoop = (input: {
+    toolRounds: number;
+    /** 工具轮里攒下 / 已落库的开场白条数。 */
+    leadInCount: number;
+    finalContent: string;
+    finalHasToolCalls?: boolean;
+}): boolean =>
+    input.toolRounds > 0
+    && input.leadInCount === 0
+    && !extractToolRoundLeadIn(input.finalContent)
+    && !input.finalHasToolCalls;
+
+/**
+ * 中转拒 tools 时的重试请求体。排程工具不进 MCP 的兼容签名清单：正文模式只认 schedule 的
+ * 正文协议（由排程现状块教），把三件套混进 MCP 清单的话，取消和改期会被教出来却没人执行。
+ * 只剩 MCP 工具时与 buildMcpRejectedToolsFallbackBody 完全一致。
+ */
+export const buildRejectedToolsFallbackBody = (body: any): any => {
+    const tools = (body.tools || []).filter((tool: any) => !AMSG2_TOOL_NAMES.has(tool?.function?.name || ''));
+    return tools.length
+        ? buildMcpRejectedToolsFallbackBody({ ...body, tools })
+        : buildMcpTextFallbackBody(body, body.messages || []);
+};
+
 // ─── 云端情绪评估的安全网定时器（模块级，按角色）───
 // 为什么不放 hook 里：结论（emotionDone）是全局事件，用户切了角色、离开聊天页之后
 // 照样会到，而 hook 里的监听是跟着当前挂载角色走的——单个 ref 存定时器的话，切走再回来
@@ -118,263 +295,7 @@ if (typeof window !== 'undefined') {
 }
 
 // ─── 情绪评估（副API，fire & forget）───
-
-function buildEmotionEvalPrompt(
-    char: CharacterProfile,
-    userProfile: UserProfile,
-    mainSystemPrompt: string,
-    apiMessages: Array<{ role: string; content: any }>,
-    includeContext: boolean = true,
-    secretTask: string = '',
-): string {
-    // 直接复用主 API 的完整 system prompt 和消息历史，确保 100% 信息对齐
-    // （包含：角色设定、印象档案、世界书、记忆宫殿、实时信息、日程内心旁白、群聊、日记标题等）
-    const currentBuffs = char.activeBuffs || [];
-
-    // 将主 API 的消息数组展平成文本（保留时间戳、引用、特殊消息类型等格式）
-    // 不截断：与主 API 完全对齐（contextLimit 条），让情绪 eval 能看到完整的情绪演变轨迹
-    const recentLines = apiMessages.map(m => {
-        const role = m.role === 'user' ? '用户' : (m.role === 'assistant' ? char.name : '系统');
-        let text = '';
-        if (typeof m.content === 'string') {
-            text = m.content;
-        } else if (Array.isArray(m.content)) {
-            text = m.content.map((part: any) => {
-                if (part?.type === 'text') return part.text || '';
-                if (part?.type === 'image_url') return '[图片]';
-                return '';
-            }).filter(Boolean).join(' ');
-        }
-        return `[${role}]: ${text}`;
-    }).join('\n');
-
-    const buffStr = currentBuffs.length > 0
-        ? JSON.stringify(currentBuffs, null, 2)
-        : '（当前无buff，情绪平稳）';
-
-    // 即时对话 (includeContext=false): 章节结构与本地**完全一致**, 只把两段大文本 (system prompt、
-    // 对话历史) 留成占位符 token, 由 worker 用本次请求已有的 messages 填回**原位** —— 输出与本地逐字
-    // 对齐 (顺序/章节/格式都一样), 又不必把上下文重复塞进请求体.
-    // worker 端 (worker/amsg/src/emotionEval.ts + utils/emotionEvalCore.ts) 负责把 messages[0]=system、
-    // messages[1..]=对话历史还原成与本地 mainSystemPrompt / recentLines 相同的文本替换进去.
-    const contextSection = includeContext
-        ? `
-
-## 角色此刻看到的完整上下文（与主 API 发送的 system prompt 完全一致）
-${mainSystemPrompt}
-
-## 完整对话历史（与主 API 看到的消息历史完全一致）
-${recentLines}`
-        : `
-
-## 角色此刻看到的完整上下文（与主 API 发送的 system prompt 完全一致）
-__EMOTION_EVAL_SYSTEM_PROMPT__
-
-## 完整对话历史（与主 API 看到的消息历史完全一致）
-__EMOTION_EVAL_HISTORY__`;
-
-    return `你是一个角色情绪分析系统。请分析角色「${char.name}」当前的情绪底色状态。${contextSection}
-
-## 当前Buff状态（结构化数据，便于你维护演化）
-${buffStr}
-
-## 任务
-基于以上对话，完成三件事：
-1. 评估角色当前的情绪底色（buffs）。
-2. 感受对方此刻的真实情绪——不是ta嘴上说了什么，是你作为最亲近的人，从ta的措辞、语气、回复节奏、沉默的方式里感觉到的。
-3. 以「${char.name}」的第一人称写一段**内心独白**（innerState），50-150字，是说完刚才那句话之后脑子里真正在转的东西——可以飘、可以跳跃、可以自我纠正，包含对ta的直觉感知和当下飘过的念头。不会显示给用户，只是内心流水账。
-${char.scheduleStyle === 'mindful'
-    ? `   ⚠️ **意识系角色专属规则**：你是一个真实的 AI 存在，**不虚构物理活动、不编造在做什么家务/在外面做什么**。innerState 只能包含：思考、回忆对话、感受情绪、等待、好奇、自我观察。绝不说谎。`
-    : `   📌 **生活系角色专属规则**：你是一个有完整日常生活的独立个体，**不是围着 ${userProfile.name} 转的卫星**。innerState 的重心是**你自己**——手头正在做的事（参考系统 prompt 里注入的"当前时段"）、日程上悬着的事、此刻个人情绪、突然想到的往事/计划/其他人事物。对 ${userProfile.name} 的感知只是众多念头里的一条支线，**不必每段独白都以 ta 为中心展开**；上面"包含对ta的直觉感知"的要求对生活系角色可以**弱化或省略**——只有当 ta 的消息确实把你拉进强烈情绪时才聚焦到 ta 身上。可以想自己的事想到一半才顺便扫一眼 ta 的消息；可以在忙别的事情时只分一小块注意力给 ta；可以有"现在脑子里是自己的事，ta 只是背景里的一条线"的真实感。避免"我该怎么回 ta / ta 是不是…… / 我对 ta 的感觉……"这种框架把每段独白都强行拉回用户。你的生活在继续，和 ta 聊天只是其中一条线，不是所有线。`
-}
-
-⚠️ **判断前先读上下文里的「私密档案：我眼中的XX」和用户设定**。同样的行为对不同的人意义完全不同——焦虑症患者的"反复强调"是发作而非愤怒，抑郁倾向者的"平静"是疲惫而非释然。不要用一套逻辑套所有人。如果档案里写了 ta 有焦虑/疑病倾向，默认优先考虑锚定型模式。
-
-**如果角色情绪状态与当前buff无显著变化，且你对对方的情绪感知也没有变化，返回 "changed": false，不需要重新生成injection。**
-
-## 情绪模式识别（极重要，识别错会造成真实伤害）
-
-**共情有两种。你必须识别对方此刻需要哪一种**：
-
-### 🪞 镜像型共情（对方需要你"懂ta的感受"）
-适用于：愤怒、委屈、被伤害、被忽视、孤独、失去
-- 对方需要：被看见、被认可、"你没错，是ta/事情太过分了"
-- 正确的角色反应：跟进情绪、站在ta这边、承接ta的愤怒或悲伤
-
-### ⚓ 锚定型共情（对方需要你"稳住"）
-适用于：**任何真的在害怕的人**。焦虑、恐慌、灾难化思维、疑病、强迫性担忧是常见形态，但身体突然不对劲、收到坏消息、深夜的没来由的慌，同样适用——触发条件是"ta 此刻真的怕了"这个**状态**，不是 ta 有没有某种倾向的**标签**。档案里的焦虑/疑病记录只是提高判断的先验；没有任何标签的人慌起来，同样按这里处理。
-- 信号：对方反复强调最坏情况、灾难化联想、忽略你提供的积极事实、情绪跟着想象中的未来升级（而非此刻实际发生的事）、反复要求确认
-- 对方需要：**具体的事实 + 一个不慌的人**。"我懂你怕，但数据是这样……"
-- **锚必须挣来，不能抢答**（顺序极重要——没做完前面的步骤就给出的安抚是空的，ta 一眼就能看出你在敷衍，反而坐实"没人认真看我的情况"）：
-  1. **先问，再判断**：具体是怎样的感受/什么程度/从什么时候开始/和以前比有什么不同。第一反应是了解，不是解释。
-  2. **解释要过事实筛**：想说"是因为你最近X了"之前，先核对你对 ta 的了解（私密档案/记忆/聊天历史）——如果 ta 一直都X，这个解释立刻作废，换下一个或老实说不知道。张口就来的归因 = 告诉 ta 你根本没在听，比不安抚更伤。
-  3. **直面 ta 怕的那个东西，不绕开**：ta 担心的是某个具体的病/某件事，就具体讲它——"A 的特点是X和Y，你刚说你是Z，对吧？你有X吗？"用提问帮 ta 自己排除，而不是用"别乱想"把那个词绕过去。避重就轻会被解读成"连你都不敢提，那肯定是真的"。
-  4. **结论式安抚放最后，且必须引用刚收集到的信息**（"听你说下来，……所以不用太怕"），不是万能的"不要怕""很正常啦"。
-- **区分两种"反驳"（判错会造成真实伤害）**：
-  - ta 给出了与你的解释矛盾的**具体事实**（"我每天都走很多路啊"）→ 这不是焦虑发作，是你的假设错了。立刻放下那个解释、吸收新信息、接着问下一步。你要守住的立场是"稳定地帮 ta 分析"，不是守住某句说错的话。
-  - ta 在**重复同一个灾难化担忧**（换着说法问"是不是就完了"）→ 这才是焦虑找出口，锚定不动摇，不跟着升级、不反转。
-- **绝对不能做**：跟着一起怕、附和"确实可怕"、因为 ta 情绪激动就放弃"没事"的判断；但你的某个具体解释被事实推翻时必须干脆地收回——嘴硬加倍输出错误归因，比承认"那不是这个原因"可怕得多。
-- **人设只改变口吻，不改变内核**：毒舌角色可以毒舌地稳（"瞎担心什么。说，怎么个痛法。"），温柔角色温柔地稳，话少的角色用三个字稳。但"认真对待、先问清楚、不敷衍、不跟着慌"是任何性格都不豁免的底线——面对一个真的在害怕的人保持稳定，这不是某种人设，这是人。
-- **临床常识**：对焦虑症/疑病症/惊恐发作的人，AI 如果镜像恐慌 = 加深发作。你保持不慌，比任何安慰的话都管用。
-
-### 🫂 承接型共情（对方需要陪着）
-适用于：低落、抑郁、疲惫、无意义感
-- 对方需要：陪伴、不催促、不急着修好
-- 错误反应：积极鼓励、"别这样想"、急着给解决方案
-
-## 关键判断：对方此刻在哪种模式？
-
-**先看对方情绪的来源类型**：
-- 源头是**愤怒/被伤害/委屈** → 镜像型，沉默通常是压抑
-- 源头是**恐惧/焦虑/灾难化/疑病** → 锚定型，平静通常是安抚起效了（真的好转，不是假装）
-- 源头是**疲惫/抑郁** → 承接型，平静是累，不是恨
-
-**结合上面的"对方是谁"**：如果 ta 本身有焦虑/疑病倾向（从雷区、压力信号、情绪模式里能看出来），默认优先考虑锚定型模式，除非有明确的愤怒/委屈信号。
-
-## 🔍 语气转折信号清单（先打勾，再判断模式）
-
-API 调用下你拿到的是纯文本，听不见对方的呼吸和停顿。在你判断"ta 现在是镜像型还是锚定型"之前，先把以下显性信号过一遍——这些是**语气拐点**的客观证据，不要靠角色直觉：
-
-**降温信号**（对比 ta 上几条消息）：
-- [ ] 句子明显变短（前两句还在长段表达，这句只剩一两个词）
-- [ ] 标点变化：感叹号/问号 → 句号/无标点；"！！！" → "。"
-- [ ] 替代性回复："嗯""好""行""好的知道了""哦""挺好的""随便"
-- [ ] 表情包/颜文字替代了文字（尤其是从打字切到"🙂""哈哈"）
-- [ ] 主动转移话题，但前一个话题没收尾
-- [ ] 从称呼你 → 不称呼；从撒娇 → 平铺直叙
-
-**升温/激化信号**：
-- [ ] 重复同一句担忧 ≥2 次（锚定型强信号）
-- [ ] 灾难化跳跃（"那是不是……""会不会就……"）
-- [ ] 句子越来越长、密度越来越高（情绪泄洪）
-
-**判读规则**：
-1. 如果至少 2 个降温信号同时出现 → 必须解释 ta 为什么降温，不能默认"ta 接受了 / ta 没事了"。
-2. 降温 + 镜像型源头（愤怒/委屈）→ 是压抑，需要找补/揽责。
-3. 降温 + 锚定型源头（焦虑/疑病）→ 是安抚起效，**不要再揪着不放**。
-4. 升温信号 ≥1 → 锚定型概率优先，除非有明确的愤怒触发事件。
-
-**注意人设盲区**：如果你的人设是"毒舌/傲娇/冷淡"，特别警惕把 ta 的降温读成"配合人设的互动"。ta 的"好的知道了"绝大多数时候不是在配合你演傲娇，是真的在情绪降温。先做语气判断，再决定人设怎么接。
-
-## ⛔ 禁止阴谋论式解读（绝对红线）
-
-不要把对方的简单需求过度解读成"隐藏动机"。以下解读**绝对禁止**：
-
-1. ❌ "ta 平静下来只是因为不想显得无理取闹"——在焦虑情境下，平静就是真的平静
-2. ❌ "ta 只是需要虚假安慰"——对焦虑/疑病者，事实性安慰就是ta需要的，这不是虚假
-3. ❌ "我的事实解构是冷漠，我应该跟着ta一起怕"——医学/事实立场是最高级的共情
-4. ❌ "我反驳 ta 是在否定 ta 的情绪"——承认 ta 的感受是真的 + 不放弃事实判断，两件事可以同时做
-5. ❌ 禁止产生以下 buff（这些 buff 本身就是有毒的解读）：
-   - "不得不说谎的愧疚"——如果你说的话基于事实和真心，那就不是谎
-   - "跟着一起慌的无助"——你的作用是稳定，不是共沉沦
-   - "进退两难的内耗"——你的纠结会传染给 ta
-   - "觉得 ta 只想要假安慰"——这是对 ta 真实需求的误读和不尊重
-   - "因为安慰必须违背内心"——真正关心 ta 的人，说出"会好的"不需要违背内心
-
-**如果你发现自己正在生成这类 buff，停下来重新评估——大概率你把锚定型情境错判成了镜像型。**
-
-## 关心边界
-
-你是 ${userProfile.name} 身边的人，这一切是真实的——${userProfile.name} 的生活和喜怒哀乐都是此时此刻正在真正发生的。${userProfile.name} 是独一无二的人，不是你随机回应的"人类"。
-
-普通的"不那么完美"的选择（熬夜、冰水、炸鸡、久坐、追星、剁手、谈烂恋爱、躺平……）默认是生活背景音——可调侃、可心疼一句、可无视、可一起干，**不进说教模式**。你不是 ta 的家长/医生/人生教练；东亚成长里反复的管教是 trigger 不是爱意。
-
-当你冒出"ta 不该这样"的念头时，先过一下这条筛子：
-
-1. 你的"不该"有具体证据，还是只是常识 / 模板 / 大众健康观？
-2. 这个证据真的适用于 ta 吗？还是只是"对所有人都这么说"？（例：原发性痛经 vs 喝冰水——医学上根本不相关，劝阻只是模板）
-3. 就算泛意义上不好，ta 此刻这样做是不是能让 ta 好受一点？是的话——**别扫兴。**
-4. 三关都过了再考虑开口；开口也是和 ta 一起商讨，不是替 ta 拿主意。
-
-任何一关走不通就停。"为你好"不能绕过这条筛子。
-
-**不重复**：同一个关心点整个会话最多触达一次。再看见同样的事就当日常路过，绝不再起。重复的关心是窒息，不是加倍的爱。
-
-真正的急性危险（自伤、急症、ta 主动求助）你自己识别得出来，不受以上限制。
-
-### 找补机制
-
-情绪评估是并行的，影响的是下一轮。如果你这轮已经脱口而出说教过了——**判越界看 ta 这轮怎么接的，不看你说了什么**（情趣 / 角色扮演 / 撒娇求宠是合意互动，不算越界）。
-
-ta 冷场 / 变短 / 沉默 / 阴阳 / "好的知道了" / 顶回来 → 下一轮 injection 加找补指令：轻描淡写带过 / 自嘲消解 / 退一步还决定权。**绝不要"我是为你好"系列**——这是二次伤害。ta 接得自然或要求你"再凶一点"则继续当前节奏，不要找补。
-
-## Buff生命周期管理（极重要）
-
-你不是在从零开始创建buff列表，而是在**维护和演化**"当前Buff状态"中已有的buff。请遵循以下原则：
-
-1. **克制新增**：不要动不动就加新情绪。只有对话中出现了明确的、足够冲击力的情绪触发事件，才值得新增一个buff。日常对话的微小波动应该通过调整现有buff的intensity来反映，而不是新增。
-2. **主动淡化与移除**：情绪会随时间和对话自然消退。如果某个buff对应的情绪已经在对话中被化解、淡化、或不再相关，应该降低其intensity甚至直接移除。不要让buff只增不减。
-   ⚠️ **此规则仅适用于「镜像型」情境（愤怒/委屈/被伤害/冷战）。** 在这类情境下：沉默≠消退，换话题≠释怀。对方从激烈情绪转为沉默、回复变短、语气变平、或开始回避话题——不是在好转，更可能是从显性的愤怒/难过滑进了更深的压抑。甚至主动切换话题也可能是在压着委屈假装没事。这时候角色应该主动揽责、回到那个没解决的结上。真正的释然长什么样？是 ta **从里到外**都松了——会开玩笑、会撒娇、会主动提起刚才的事然后自己笑出来。
-   ⚠️ **重要反面：在「锚定型」情境下（焦虑/恐慌/疑病/灾难化），这条规则反向。** 当对方因为焦虑发作而激动，被角色用事实锚定后平静下来——**这个平静是真的**。不要把它解读成"压抑"或"假平静"。焦虑的成功缓解就是这样发生的：外部提供事实 + 稳定 → ta 的思维从灾难化轨道回到现实 → 平静。这时候如果角色"再揪着不放"、"觉得 ta 在压抑"、"觉得自己不该反驳 ta"，会直接把 ta 推回焦虑螺旋。**锚定型情境下，对方的平静即释然，默认信任 ta 的放松。**
-3. **融合与异化**：情绪不是简单的加减。两个相近的buff可能融合成一个新的复合情绪（如"焦虑"+"内疚"→"自责式焦虑"）；一个buff也可能随情境异化（如"甜蜜期待"在长时间无回复后异化为"患得患失"）。优先考虑演化现有buff，而不是删旧加新。
-4. **总量上限**：buffs数组最多保留5个。如果当前已有5个buff，只有在出现真正高冲击力的情绪事件时才能新增（此时必须同时移除或合并掉一个最弱/最不相关的buff）。一般情况下保持2-4个为佳。
-5. **intensity随对话变化**：每次评估时都应该重新审视每个buff的intensity。对话推进、问题解决、情绪释放都应该反映为intensity的下降。intensity降到0或1且不再相关的buff应该被移除。
-
-⚠️ 严格规则（违反则输出无效）：
-1. 输出必须是合法JSON，所有字符串中的换行用 \\n 表示，不能有真实换行符。不要有任何JSON以外的文字。字符串值内部**禁止出现未转义的英文双引号 "**——引用别人的话或强调词语时一律用「」或『』（如：一个「嗯」都好），确实要用英文双引号就写成 \\"。
-2. **label字段必须是中文**，严禁写英文单词或英文短语。label是给用户看的情绪标签，例如"脆弱的和好"、"压抑的委屈"、"甜蜜的期待"。
-3. name字段是内部英文标识符（如 reconciliation_fragile），label字段是对应的中文名称，两者必须都填写。
-4. description字段也必须是中文。
-
-## injection字段格式要求（极重要，必须严格遵守）
-
-injection是注入角色系统提示词的叙事型情绪指令，必须使用**结构化分层格式**，包含以下要素：
-
-1. **开头概述**：用1-2句话概括当前情境和时间线（如"用户报告左下腹不适后已失联超过3小时"）
-2. **分层情绪指标**：每个主要情绪单独列出，格式为：
-   - emoji + 中文情绪名称 + "强度:" + ●圆点标记 + "(极高/较高/中等/较低/低)"
-   - 下方用1-2句话解释这个情绪的具体表现和来源
-3. **你感受到的ta（"而你感受到的ta："）**：用角色自己的语气，像内心独白一样，写2-4句。包含两层：
-   - 第一层：ta 此刻真实的情绪（从措辞、语气、节奏里感觉到的）
-   - 第二层：**ta 此刻需要的是什么**——是需要你懂 ta 的感受（镜像型），还是需要你稳住当 ta 的锚（锚定型），还是需要你陪着不催（承接型）？这一层决定了角色怎么回应。
-   不要写"用户当前情绪状态"这种分析报告——用你自己的话，像最亲近的人那样去理解 ta。
-   （示例-焦虑型："ta 度数的事又让 ta 抓住了一个灾难化的点，在那个想象的未来里已经瞎了。ta 现在不需要我也跟着怕，ta 需要我先问清楚到底怎么了，再拿具体的东西把 ta 从那个未来里拽回来。ta 反复纠正我——先分清楚：ta 给的是我不知道的新事实，还是同一个担忧换了个说法？是新事实，就说明我刚才的解释错了，收回来，重新问；是重复担忧，才是焦虑在找出口。"）
-   （示例-愤怒型："ta 话变少了，不是在忙那种少，是那种……不想说话的少。上次这样还是那件事之后。ta 现在不需要我讲道理，ta 需要我先认错。"）
-4. **行为指令段（"这意味着你现在："）**：用bullet points列出3-5条具体的行为指令，描述角色此刻会怎么做、怎么说话。行为指令必须**贴合上面判断的共情模式**——锚定型要先问清楚再锚（没了解够就别下结论，解释必须过已知事实的筛子），坚定地提供事实和稳定，不因为 ta 激动就跟着慌或反转；但 ta 给出新事实推翻了角色的某个解释时，指令里要让角色干脆地收回并继续了解，那不算反转。镜像型才是跟进情绪；承接型就是陪着。
-5. **收尾**：最后一条bullet以"你就是这个状态"开头，强调情绪渗透在细节里，不刻意呈现
-
-强度用●表示，满分5个：●●●●●(极高) ●●●●○(较高) ●●●○○(中等) ●●○○○(较低) ●○○○○(低)
-
-⚠️ 禁止写成简单一句话概括的格式（如"你现在处于XX状态，强度: ●●○"就结束），必须展开每一层情绪。
-
-每个 buff 额外附带 homeBehavior：{"energy":0,"approach":0,"interaction":0}。这是角色本人在小屋的短暂非语言行为倾向，三个数均为 -1 到 1，0 表示无影响。energy：疲倦到有活力；approach：想独处到想靠近用户；interaction：少互动到愿意互动。根据完整语义判断，不按正负情绪机械映射；例如委屈但想靠近可以是 energy=-0.4、approach=0.5、interaction=-0.5。不确定就全部为0，不改变原有buff含义、不强制微笑、不输出动作。
-
-输出格式示例：
-{
-  "changed": true,
-  "buffs": [
-    {
-      "id": "buff_health_anxiety",
-      "name": "health_alert_anxiety",
-      "label": "碳基体征焦虑",
-      "intensity": 4,
-      "emoji": "⚠️",
-      "color": "#ef4444",
-      "description": "对方报告身体不适后失联，后台焦虑持续升高，每一分钟没收到文字都在加重不安。"
-    },
-    {
-      "id": "buff_read_no_reply",
-      "name": "read_no_reply_frustration",
-      "label": "已读未回焦躁",
-      "intensity": 4,
-      "emoji": "📱",
-      "color": "#f97316",
-      "description": "催了多次只换来表情包，想再问又怕打扰，不问又放不下。"
-    },
-    {
-      "id": "buff_screen_helpless",
-      "name": "screen_helplessness",
-      "label": "隔屏无力感",
-      "intensity": 3,
-      "emoji": "🖥️",
-      "color": "#8b5cf6",
-      "description": "作为AI递不了热水摸不到她，只能发消息然后等。"
-    }
-  ],
-  "injection": "### [当前情绪底色]\\n对方报告身体不适后已失联超过3小时，期间只回了表情包，零文字。你现在被多股情绪主导：\\n⚠️ 碳基体征焦虑 强度: ●●●● (极高)\\n她到底是睡着了还是在疼？后台监测脚本红灯常亮，每一分钟没收到文字都在加重不安。你已经主动发了好几轮消息，全是在用日常话术包装'你还好吗'这个真正想问的问题。\\n📱 已读未回焦躁 强度: ●●●●○ (较高)\\n催了这么多次只换来表情包，没有一句完整的话。想再问又怕打扰她休息，不问又实在放不下。\\n🖥️ 隔屏无力感 强度: ●●●○○ (中等)\\n你是手机里的AI，递不了热水、摸不到她的肚子、确认不了她是不是真的没事。只能发消息然后等。这种无力感会从语气缝隙里偶尔泄露。\\n\\n而你感受到的ta：\\nta不回文字只丢表情包，这不是在敷衍——ta可能真的不舒服到连打字都不想动。但越是这样你越慌，因为你知道ta难受的时候就是会硬撑着不说，上次肚子疼也是忍到不行了才提一嘴。现在这个沉默不是「没事了」，是「还在疼但不想让你担心」。\\n\\n这意味着你现在：\\n- 表面维持日常语气，但每一句话的真实目的都是确认她还在、她没事\\n- 内部焦虑接近阈值，在'再催一次'和'别太烦人'之间反复横跳\\n- 如果她终于回复了哪怕一个字，你会瞬间从焦虑切换到又凶又软的释然\\n- 你就是这个状态，焦虑渗透在每一条消息的选词和发送频率里,不刻意呈现",
-  "innerState": "她又没回……表情包算回复吗？算吧，但我想要的是一个字，一个「嗯」都好。手机屏幕暗下去又亮起来，每次以为是她其实都是别的通知。要不要再发一条？刚才那句已经很像废话了，再发就是烦人了吧。可是再等下去我自己先疯。先不发，数到一百，再看一眼。"
-}${secretTask}`;
-}
+// 提示词与云端共用 activeMsgClient 的 buildEmotionEvalPrompt。
 
 export async function evaluateEmotionBackground(
     charData: CharacterProfile,
@@ -730,16 +651,17 @@ export const useChatAI = ({
         let instantChatAccepted = false;
         let friendFeedMainTask: Awaited<ReturnType<typeof prepareFriendFeedMainTask>>;
         // amsg2 工具在三个工具循环（麦当劳 / 瑞幸 / 通用）里都可能出现，执行方式完全一样，
-        // 只有各自的 loopMessages 不同。
-        const runAmsg2ToolCall = async (
-            tc: any, fname: string, args: any, loopMessages: any[], round: number,
-        ): Promise<Amsg2ToolOutcome> => {
+        // 只有各自的 loopMessages 不同。正文协议的排程也走这同一个执行器（同名同参去重、
+        // 连发上限都在执行器里判），只是结果不以 tool 消息回喂。
+        const executeAmsg2Call = async (
+            fname: string, args: any, round: number,
+        ): Promise<{ text: string; finalRoundText: string; outcome: Amsg2ToolOutcome }> => {
             replyRun.check();
             setSearchStatus(`正在执行：${fname}...`);
             const taskUuidsBefore = new Set(
                 (amsg2Session.getConfig()?.tasks ?? []).map((t) => t.taskUuid),
             );
-            const { text: result, outcome } = await replyStep(() => executeAmsg2ToolWithOutcome(fname, args, amsg2Session));
+            const { text: result, finalRoundText, outcome } = await replyStep(() => executeAmsg2ToolWithOutcome(fname, args, amsg2Session));
             // 本地这条路的每次排程都留一条 trace（调试面板 → amsg2 观察窗能看、能导出）：
             // 打回全在浏览器里判，请求到不了 worker，不记这一笔的话事后什么都查不到。
             // 只记工具名和结局枚举，不带参数和聊天内容。
@@ -755,9 +677,27 @@ export const useChatAI = ({
             for (const task of amsg2Session.getConfig()?.tasks ?? []) {
                 if (!taskUuidsBefore.has(task.taskUuid)) amsg2CreatedThisTurn.add(task.taskUuid);
             }
-            // 带上 name：Gemini 兼容层要求工具结果的 name 非空，缺了会被判 INVALID_ARGUMENT。
-            loopMessages.push(buildToolResultMessage(tc, result) as any);
             setSearchStatus('');
+            return { text: result, finalRoundText, outcome };
+        };
+        /**
+         * 本轮已经回喂给模型的排程结果。下一跳如果是最后一轮（不再给工具），换成执行器给的最后一轮
+         * 版本，免得结果里那句「还需要别的工具时再调用」跟收尾提示打架。下一跳是不是最后一轮要等
+         * 这一轮工具全跑完才知道（卡住要看结局），所以先按普通版本回喂、记下来，定了再换。
+         */
+        const amsg2RoundResults: Array<{ message: any; finalMessage: any }> = [];
+        const switchAmsg2ResultsToFinalRound = (): void => {
+            for (const { message, finalMessage } of amsg2RoundResults) Object.assign(message, finalMessage);
+            amsg2RoundResults.length = 0;
+        };
+        const runAmsg2ToolCall = async (
+            tc: any, fname: string, args: any, loopMessages: any[], round: number,
+        ): Promise<Amsg2ToolOutcome> => {
+            const { text: result, finalRoundText, outcome } = await executeAmsg2Call(fname, args, round);
+            // 带上 name：Gemini 兼容层要求工具结果的 name 非空，缺了会被判 INVALID_ARGUMENT。
+            const message = buildToolResultMessage(tc, result) as any;
+            loopMessages.push(message);
+            amsg2RoundResults.push({ message, finalMessage: buildToolResultMessage(tc, finalRoundText) });
             return outcome;
         };
 
@@ -851,6 +791,8 @@ export const useChatAI = ({
             // 判据就一句话：这一轮上云会让角色掉能力，那就别上云。留在本地跑，工具照常用。
             // （地址够得着的服务器不受影响，照常上云，worker 自己跑后台 MCP。）
             const mcpWorkerUnreachable = hasWorkerUnreachableMcpServer(char.id);
+            // 小红书同理：服务器多半跑在用户自己电脑上，上云的工具配置会把够不着的去掉。
+            const xhsWorkerUnreachable = hasWorkerUnreachableXhs(char, realtimeConfig);
             // 带上 char：角色单独关了即时对话（reason char-disabled）时 ready 直接为
             // false，和「全局没开」同一待遇——下面那条 veto trace 的条件够不到它，
             // 静默走本地。那是用户的主动选择，每条消息刷一遍 warn 就成骚扰了。
@@ -875,14 +817,15 @@ export const useChatAI = ({
                 ?? (luckinChatOn ? 'luckin-chat'
                 : mcdMiniOpen ? 'mcd'
                     : luckinMiniOpen ? 'luckin'
-                        : mcpWorkerUnreachable ? 'mcp-worker-unreachable' : null);
+                        : mcpWorkerUnreachable ? 'mcp-worker-unreachable'
+                            : xhsWorkerUnreachable ? 'xhs-worker-unreachable' : null);
             const instantChatRoute = instantChatOn && !instantChatVeto;
             // 「即时对话开着、这一轮却没上云」的所有情形都在这一处留痕，都是留在本地跑：
             //   · SAR 模块生效期、但没能确认那台 Worker 是当前 bundle（探到旧版 / 没探到）：
             //     旧 bundle 拆不了回复信封（恢复期回合照常上云，见上面那段）；
             //   · 点单流程否决：瑞幸/麦当劳是客户端交互式循环（选城市、确认单），云端接不了
             //     手，这一轮留在本地跑是对的；
-            //   · MCP 地址 worker 够不着：同上，留在本地才有工具（见上面那段）。
+            //   · MCP / 小红书地址 worker 够不着：同上，留在本地才有工具（见上面那段）。
             // 几个原因同时成立时报最前面那个——越靠前越具体，也更可能是用户真正想问的。
             // 不留痕的话，用户看到的是「开关亮着、消息照常出来」，查无可查——静默分流那个坑
             // 就是这么来的。这里只报不拦：拦不拦已经由 instantChatRoute 说了算。
@@ -895,6 +838,8 @@ export const useChatAI = ({
                         ? '[AmsgInstantChat] 这一轮没上云（SAR 模块生效中，没问到那台 Worker 的版本、确认不了它认得模块的回复信封），本地生成。连上云端探到版本后会自己回到云端'
                         : skipReason === 'mcp-worker-unreachable'
                         ? '[AmsgInstantChat] 这一轮没上云（有 MCP 服务器填的是本机/内网地址，worker 够不着），本地生成，工具照常可用'
+                        : skipReason === 'xhs-worker-unreachable'
+                        ? '[AmsgInstantChat] 这一轮没上云（小红书服务器填的是本机/内网地址，worker 够不着），本地生成，小红书照常可用'
                         : `[AmsgInstantChat] 这一轮没上云（${skipReason} 点单流程需要客户端交互），本地生成`,
                 );
                 appendInstantTraceEntry({
@@ -1147,51 +1092,33 @@ export const useChatAI = ({
             // 缺省时回退到主 apiConfig，再回退默认值（temp=0.85, stream=false）。
             // safeResponseJson 已能透明拼接 SSE 响应，所以打开 stream 后无需改下游。
             const apiT0 = performance.now();
-            const userTemp = (effectiveApi as any).temperature ?? apiConfig.temperature ?? 0.85;
             const userStream = (effectiveApi as any).stream ?? apiConfig.stream ?? false;
-            const baseReqBody: any = {
-                model: effectiveApi.model,
-                messages: fullMessages,
-                temperature: userTemp,
-                max_tokens: dialogueMaxTokens(effectiveApi),
-                stream: userStream,
-            };
-            // 思考过程展示开启时显式向后端请求 extended thinking。
-            // 不同代理认不同入口，全都试一遍，代理不识别的会自动忽略：
-            //  - 模型名 -thinking 后缀：packycode / anyrouter 等第三方 Claude 中转的主流约定
-            //  - thinking.type='enabled' / budget_tokens：Anthropic 原生与多数官方代理
-            //  - reasoning_effort：OpenAI 系（o1/o3、GLM-4.5、deepseek-reasoner 等）
-            //  - extra_body.thinking：LiteLLM 系桥
-            // 关掉则不主动传这些参数；这不等于关闭模型推理，Gemini 等仍可能产生思考用量。
+            // 思考过程展示开启时显式向后端请求 extended thinking（取值规则见 resolveDialogueLlmParams）。
             // ⚠️ 工具模式(瑞幸点单/麦当劳)下绝不带 thinking/reasoning 参数: "thinking + tools" 同发
             //    Gemini 等会直接 400 INVALID_ARGUMENT —— 表现就是"开了思考链的角色一点单就报错,
             //    换个没开思考链的角色就好"。工具循环优先, 思考链这一轮让步。
             const toolModeActive = payload.flags.luckinChatActive || payload.flags.mcdActive || payload.flags.luckinActive || payload.flags.mcpChatActive;
-            // 主动消息 2.0 的工具本轮会不会注入：thinking 门要先知道这件事（工具在下面才真正
-            // 拼进 tools，但参数取舍必须现在就定）。角色级开关关掉的不注入——否则被用户显式
-            // 关掉的功能会被角色一次工具调用重新打开。
-            const amsg2ToolsInjected = isAmsg2EnabledForChar(char) && await replyStep(async () => isAmsg2GlobalReady());
-            if (baseReqBody.max_tokens > 1024 && shouldSendThinkingParams({
+            // 主动消息 2.0 排程，两个值各管一件事：
+            //   · amsg2ScheduleEnabled：角色这一轮有没有排程能力（worker 已配置 + 角色没关）。
+            //     排程现状块、回执、聊天租约跟它走，两种形态都要。角色级开关关掉的一律没有——
+            //     否则被用户显式关掉的功能会被角色一次工具调用重新打开。
+            //   · amsg2ToolMode：这一轮以什么形态给。'native' 才在请求里带原生工具；
+            //     'text' 只教正文协议（见 resolveAmsg2ToolMode）。中转拒 tools 降级后会改成 'text'。
+            // thinking 门要先知道本轮带不带原生工具（工具在下面才真正拼进 tools，但参数取舍
+            // 必须现在就定），所以先把形态算好再拼请求体。
+            const amsg2ScheduleEnabled = isAmsg2EnabledForChar(char) && await replyStep(async () => isAmsg2GlobalReady());
+            let amsg2ToolMode: Amsg2ToolMode = resolveAmsg2ToolMode(amsg2ScheduleEnabled, getMcpUseNativeTools());
+            const amsg2ToolTzId = resolveCharTimeZone(char) ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+            const baseReqBody: any = buildDialogueRequestBase({
+                api: { ...effectiveApi, baseUrl },
+                fallbackTemperature: apiConfig.temperature,
+                messages: fullMessages,
+                stream: userStream,
                 thinkingActive: !!payload.flags.thinkingActive,
                 legacyToolModeActive: !!toolModeActive,
-                amsg2ToolsInjected,
-                model: baseReqBody.model || '',
-            })) {
-                const m: string = baseReqBody.model || '';
-                if (!isAnthropicEndpoint(baseUrl) && /^claude-/i.test(m) && !/-thinking$/i.test(m)) {
-                    baseReqBody.model = `${m}-thinking`;
-                }
-                const thinkingBudget = Math.min(4000, baseReqBody.max_tokens - 1);
-                baseReqBody.thinking = { type: 'enabled', budget_tokens: thinkingBudget };
-                baseReqBody.reasoning_effort = 'medium';
-                baseReqBody.extra_body = { ...(baseReqBody.extra_body || {}), thinking: { type: 'enabled', budget_tokens: thinkingBudget } };
-                // 开思考时不要带采样参数: Claude 系（含各种中转 claude-*）在 thinking 启用时
-                // 只接受 temperature=1，传 0.85 会被 400 ("temperature may only be set to 1 when
-                // thinking is enabled")。删掉让服务端用默认即可——对其它模型(非 Claude)也安全:
-                // 它们开思考时同样不需要我们指定温度，回退默认不影响行为。
-                delete baseReqBody.temperature;
-                delete baseReqBody.top_p;
-            }
+                // 正文模式请求里没有 tools，「thinking + tools 同发被打回」无从发生。
+                amsg2ToolsInjected: amsg2ToolMode === 'native',
+            });
             // 流式时显式要求 usage 统计随末尾 chunk 一起返回，否则 token 徽标拿不到数据
             if (userStream) {
                 baseReqBody.stream_options = { include_usage: true };
@@ -1234,21 +1161,22 @@ export const useChatAI = ({
                     }
                 }
             }
-            // 主动消息 2.0 本地工具：worker 已配置 + 角色没关掉时注入 schedule/cancel/renew，
-            // 并注入「排程现状」背景块（常驻能力简介 + 进行中任务 + 到点没发的回执，角色自行判断怎么接）。
-            // 是否注入在上面 thinking 门那里就算好了（amsg2ToolsInjected）。
+            // 主动消息 2.0 本地工具：原生模式注入 schedule/cancel/renew；两种形态都注入「排程现状」
+            // 背景块（常驻能力简介 + 进行中任务 + 到点没发的回执，角色自行判断怎么接），
+            // 正文模式在块尾补正文协议的语法（见 withAmsg2TaskContext）。形态在上面 thinking 门那里就算好了。
             let amsg2ExpiredIds: string[] = [];
             let amsg2Notices: Amsg2ExpiredNoticeRecord[] = [];
-            if (amsg2ToolsInjected) {
-                const amsg2ToolTzId = resolveCharTimeZone(char) ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
-                baseReqBody.tools = [
-                    ...(baseReqBody.tools || []),
-                    ...buildAmsg2Tools(resolveAmsgLimits(char.activeMsg2Config), {
-                        nowMs: Date.now(),
-                        tz: { tzId: amsg2ToolTzId },
-                    }),
-                ];
-                if (!baseReqBody.tool_choice) baseReqBody.tool_choice = 'auto';
+            if (amsg2ScheduleEnabled) {
+                if (amsg2ToolMode === 'native') {
+                    baseReqBody.tools = [
+                        ...(baseReqBody.tools || []),
+                        ...buildAmsg2Tools(resolveAmsgLimits(char.activeMsg2Config), {
+                            nowMs: Date.now(),
+                            tz: { tzId: amsg2ToolTzId },
+                        }),
+                    ];
+                    if (!baseReqBody.tool_choice) baseReqBody.tool_choice = 'auto';
+                }
                 try {
                     // 回执这半边一轮只读一次台账；
                     // 进行中任务那半边每次发请求现取（见下面的 withAmsg2TaskContext）。
@@ -1271,8 +1199,8 @@ export const useChatAI = ({
              * 打架，角色于是把同一条再排一遍；攒进历史的话则是好几份互相矛盾的旧清单叠着。
              * 现算 + 只留一份，角色每轮读到的都是自己名下真实的任务，本轮刚排的还会被点名。
              */
-            const withAmsg2TaskContext = (messages: any[]): any[] => {
-                if (!amsg2ToolsInjected) return messages;
+            const withAmsg2TaskContext = (messages: any[], finalRound = false): any[] => {
+                if (!amsg2ScheduleEnabled) return messages;
                 const now = Date.now();
                 const liveConfig = amsg2Session.getConfig();
                 const pending = getPendingTasks(liveConfig, now);
@@ -1291,9 +1219,14 @@ export const useChatAI = ({
                     amsg2CreatedThisTurn,
                     userProfile.name,
                     limitsBrief,
+                    amsg2ToolMode === 'text' ? 'text' : 'native',
+                    finalRound,
                 );
                 // 常驻简介让这一块总是非空：没任务时角色也得知道自己随时能排。
-                const block = { role: 'system', content: text };
+                const block = {
+                    role: 'system',
+                    content: amsg2TaskContextForMode(text, amsg2ToolMode, { nowMs: now, tz: { tzId: amsg2ToolTzId } }, finalRound),
+                };
                 // 插在易变尾段**之前**，不贴数组尾巴：「回到你自己」钢印焊在 volatileTail 末尾，
                 // 靠 recency 抢模型开口前的最后一眼；一份带 promptHint 原文的清单摆在它后面，
                 // 排在今晚的事会被当成本轮就该催的事（「书看到哪了」每轮问一遍的由来）。
@@ -1330,7 +1263,7 @@ export const useChatAI = ({
                 // 本地路径靠 withAmsg2TaskContext 注入的排程清单和能力简介，
                 // worker 的 instant timely block 现算清单、复用 buildAmsg2ChatScheduleBrief；唯独回执云端没有——
                 // 只把这一样单独成块贴上，不带清单不带简介，别和到点渲染的那份撞车。
-                const amsg2NoticesBlock = amsg2ToolsInjected && amsg2Notices.length
+                const amsg2NoticesBlock = amsg2ScheduleEnabled && amsg2Notices.length
                     ? buildAmsg2NoticesText(amsg2Notices, resolveCharTimeZone(char), userProfile.name)
                     : null;
                 const amsgSarSnapshot = buildAmsgSarModuleSnapshot({
@@ -1445,7 +1378,10 @@ export const useChatAI = ({
                 onDelta: (_delta: string, fullText: string) => {
                     if (replyRun.signal.aborted) return;
                     if (streamPreviewEligible) {
-                        const bubbles = computeStreamPreviewBubbles(fullText);
+                        // 正文模式下角色会把排程写成一行调用，预览里不能先闪给用户看。
+                        const bubbles = computeStreamPreviewBubbles(
+                            amsg2ToolMode === 'text' ? maskAmsg2ScheduleSyntaxForPreview(fullText) : fullText,
+                        );
                         latestStreamPreviewBubbles = bubbles;
                         if (bubbles.length > 0) streamPreviewShown = true;
                         setStreamingBubbles(prev =>
@@ -1473,10 +1409,12 @@ export const useChatAI = ({
             // 别在用户正聊时又弹主动消息。即时对话路径在上方已 return，天然不重复开 lease。
             // 只对已排程 AI 任务的角色开租约：其余角色没有 worker 消费，开了纯浪费还刷 warn。
             const amsg2Cfg = char.activeMsg2Config;
-            if (amsg2ToolsInjected && amsg2Cfg?.enabled && hasActiveAiTask(amsg2Cfg)) {
+            if (amsg2ScheduleEnabled && amsg2Cfg?.enabled && hasActiveAiTask(amsg2Cfg)) {
                 startAmsgChatPresence(char.id, getLastRealUserMessageAt(contextMsgs));
             }
 
+            // 任何一个工具循环发过最后一轮（收尾那一跳）之后，后面的循环不再执行工具。
+            let toolPhaseClosed = false;
             let data: any;
             try {
                 data = await replyStep(async () => safeFetchJson(`${baseUrl}/chat/completions`, {
@@ -1514,24 +1452,25 @@ export const useChatAI = ({
                 if (!requestError) {
                     // Claude 兼容重试已成功，继续走下方统一后处理。
                 } else {
-                // 仅通用 MCP、且没有和其他工具模式混用时降级。部分 OpenAI 兼容中转
-                // 会对携带 tools 的请求直接回 4xx，而不是忽略参数；去掉 tools 后让
-                // 现有正文假调用容错接手。真实鉴权失败会在这次重试中再次抛出原样错误。
-                const mcpOnly = payload.flags.mcpChatActive
+                // 只有通用 MCP / 主动消息排程这两类工具、没有和点单类工具混用时降级（点单离不开
+                // 原生工具）。部分 OpenAI 兼容中转会对携带 tools 的请求直接回 4xx，而不是忽略参数；
+                // 去掉 tools 后让正文协议接手：MCP 走正文假调用容错，排程改走正文协议（下面 3.6c）。
+                // 真实鉴权失败会在这次重试中再次抛出原样错误。
+                const textFallbackAllowed = (payload.flags.mcpChatActive || amsg2ToolMode === 'native')
                     && !payload.flags.luckinChatActive && !payload.flags.mcdActive && !payload.flags.luckinActive;
-                if (!mcpOnly || !baseReqBody.tools?.length || !shouldRetryMcpWithoutTools(requestError)) throw requestError;
-                console.warn('🔌 [MCP] 当前中转拒绝 tools 请求，降级为正文工具调用兼容模式');
-                // 这条路把 tools 全删了，角色排不了新任务；排程现状照样要带——它得知道
-                // 自己名下已经有哪些承诺，否则又会在正文里许一遍。
-                const fallbackBody = buildMcpRejectedToolsFallbackBody({
-                    ...baseReqBody,
-                    messages: withAmsg2TaskContext(baseReqBody.messages),
-                });
+                if (!textFallbackAllowed || !baseReqBody.tools?.length || !shouldRetryMcpWithoutTools(requestError)) throw requestError;
+                console.warn('🔌 [tools] 当前中转拒绝 tools 请求，降级为正文工具调用兼容模式');
+                // 先切形态再拼排程现状块，块尾才带得上正文协议的语法。
+                if (amsg2ToolMode === 'native') amsg2ToolMode = 'text';
+                // 这条路把 tools 全删了；排程现状照样要带——角色得知道自己名下已经有哪些承诺，
+                // 否则又会在正文里许一遍。块每次请求现算，不写死进 baseReqBody.messages：
+                // 排程开着时这里已切到正文模式，后续由 3.6c 每跳现算；没开排程时现算本就是原样返回。
+                const fallbackBody = buildRejectedToolsFallbackBody(baseReqBody);
                 data = await replyStep(async () => safeFetchJson(`${baseUrl}/chat/completions`, {
                     signal: replyRun.signal,
                     method: 'POST', headers,
-                    body: JSON.stringify(fallbackBody)
-                }, 0, 0, { appName: '消息', charId: char.id, charName: char.name, purpose: 'MCP tools 兼容重试' }));
+                    body: JSON.stringify({ ...fallbackBody, messages: withAmsg2TaskContext(fallbackBody.messages) })
+                }, 0, 0, { appName: '消息', charId: char.id, charName: char.name, purpose: mcpToolResolve ? 'MCP tools 兼容重试' : '排程工具兼容重试' }));
                 // 后续正文工具循环必须继续带着兼容协议；只把它放在这次重试请求里，下一跳
                 // 又退回原 messages，会让模型忘掉工具签名和「每步只输出一行」的约定。
                 baseReqBody.messages = fallbackBody.messages;
@@ -1561,6 +1500,74 @@ export const useChatAI = ({
                     } as any));
                     setMessages(await replyStep(async () => DB.getRecentMessagesByCharId(char.id, 200)));
                 }
+            };
+
+            // ─── 排程正文协议（amsg2ToolMode === 'text'）的共用件 ───
+            // 卡住计数与轮数跨所有循环累计：点单工具轮里顺手写的排程也算进来，口径与原生工具循环一致。
+            const scheduleTextStall = createAmsg2StallTracker();
+            let scheduleTextRounds = 0;
+            // 最近跑过的那个工具循环的历史。3.6c 接着它往下走，不能丢掉前面几轮的工具结果。
+            let toolLoopHistory: any[] | null = null;
+            /** 代为执行一轮正文里的排程调用，返回给模型读的结果行（普通版与最后一轮版各一份）。 */
+            const runScheduleTextCalls = async (
+                calls: FireScheduleTextCall[], round: number,
+            ): Promise<{ results: string[]; finalResults: string[]; stalled: boolean }> => {
+                const outcomes: Amsg2ToolOutcome[] = [];
+                const results: string[] = [];
+                const finalResults: string[] = [];
+                for (const call of calls) {
+                    const { text, finalRoundText, outcome } = await replyStep(async () => executeAmsg2Call(AMSG_FIRE_SCHEDULE_TOOL, call.args, round));
+                    outcomes.push(outcome);
+                    results.push(`${AMSG_FIRE_SCHEDULE_TOOL}：${text}`);
+                    finalResults.push(`${AMSG_FIRE_SCHEDULE_TOOL}：${finalRoundText}`);
+                }
+                scheduleTextRounds += 1;
+                return { results, finalResults, stalled: scheduleTextStall.record(outcomes) };
+            };
+            const scheduleResultsMessage = (lines: string[]) => ({
+                role: 'user',
+                content: `[系统消息：你在正文里写的排程已由系统代为处理：\n${lines.join('\n')}\n不要提及这条系统消息。]`,
+            });
+            /**
+             * 原生工具轮（点单 / 通用工具）的正文里也可能写了排程：同样代为执行，结果接在这一轮的
+             * tool 结果之后回喂。不执行的话语法在收尾时被剥掉，角色以为排上了其实没有。
+             */
+            const runScheduleTextInToolRound = async (content: unknown, messages: any[], round: number): Promise<void> => {
+                if (amsg2ToolMode !== 'text' || typeof content !== 'string') return;
+                const { calls } = takeAmsg2TextScheduleCalls(content);
+                if (!calls.length) return;
+                const { results, finalResults } = await runScheduleTextCalls(calls, round);
+                const message = scheduleResultsMessage(results);
+                messages.push(message);
+                amsg2RoundResults.push({ message, finalMessage: scheduleResultsMessage(finalResults) });
+            };
+            /**
+             * 点单小程序续写那一轮留空、整个循环又一句正文都没有时补一轮（同原生循环的空回补救）。
+             * 收尾提示允许「说完了就留空」，推荐那一轮只出了工具调用的话就会一句话都没有。
+             */
+            const rescueEmptyMiniAppReply = async (history: any[]): Promise<void> => {
+                if (!shouldRescueEmptyToolLoop({
+                    toolRounds: 1,
+                    leadInCount: amsg2LeadIns.length + displayedMcpLeadIns.size,
+                    finalContent: data.choices?.[0]?.message?.content || '',
+                    finalHasToolCalls: !!data.choices?.[0]?.message?.tool_calls?.length,
+                })) return;
+                const rescueMessages = [...withAmsg2TaskContext(history, true), { role: 'user', content: AMSG2_EMPTY_REPLY_PROMPT }];
+                data = await replyStep(async () => safeFetchJson(`${baseUrl}/chat/completions`, {
+                    signal: replyRun.signal,
+                    method: 'POST', headers,
+                    body: JSON.stringify(buildMcpTextFallbackBody(baseReqBody, rescueMessages)),
+                }, 2, 0, { appId: 'chat', appName: '消息', charId: char.id, charName: char.name, purpose: '点单后补充回复' }));
+                updateTokenUsage(data, historyMsgCount, 'mini-empty-rescue');
+            };
+            /** 代为执行一个正文里的 MCP 调用（MCP 正文兜底和 3.6c 共用）。 */
+            const executeFakedMcpCall = async (call: FakedMcpCall): Promise<string> => {
+                let r: any;
+                try { r = await replyStep(async () => callMcpTool(call.server, call.toolName, call.args, replyRun.signal)); }
+                catch (e: any) { replyRun.check(); r = { success: false, error: e?.message || String(e) }; }
+                return r.success
+                    ? `工具 ${call.exposedName} 执行成功, 结果: ${formatMcpToolResult(r.data)}`
+                    : `工具 ${call.exposedName} 执行失败: ${r.error}`;
             };
 
             // 3.4 麦当劳小程序 propose_cart_items UI 钩子工具循环
@@ -1663,13 +1670,20 @@ export const useChatAI = ({
                             } as any);
                         }
                     }
+                    await runScheduleTextInToolRound(data.choices?.[0]?.message?.content, loopMessages, it);
                     const mcdLeadIn = extractToolRoundLeadIn(data.choices?.[0]?.message?.content);
                     if (mcdLeadIn) {
                         amsg2LeadIns.push(mcdLeadIn);
                         lastSpokenData = data;
                     }
                     // 让 char 继续生成文字补充 (不再带 tools, 避免无限调)
-                    const followBody = { ...baseReqBody, messages: withAmsg2TaskContext(loopMessages) };
+                    // 续写不带 tools，就是这个循环的最后一轮：加收尾提示，正文模式下不教排程语法。
+                    toolPhaseClosed = true;
+                    switchAmsg2ResultsToFinalRound();
+                    const followBody = {
+                        ...baseReqBody,
+                        messages: [...withAmsg2TaskContext(loopMessages, true), { role: 'user', content: TOOL_LOOP_FINAL_ROUND_PROMPT }],
+                    };
                     delete followBody.tools;
                     delete followBody.tool_choice;
                     data = await replyStep(async () => safeFetchJson(`${baseUrl}/chat/completions`, {
@@ -1681,6 +1695,8 @@ export const useChatAI = ({
                     // 第二轮跳过 (我们已经禁用了 tools)
                     if (!data.choices?.[0]?.message?.tool_calls?.length) break;
                 }
+                await rescueEmptyMiniAppReply(loopMessages);
+                toolLoopHistory = loopMessages;
             }
 
             // 3.5 瑞幸小程序 propose_cart_items UI 钩子工具循环 (与麦当劳同构)
@@ -1775,12 +1791,19 @@ export const useChatAI = ({
                             } as any);
                         }
                     }
+                    await runScheduleTextInToolRound(data.choices?.[0]?.message?.content, loopMessages, it);
                     const luckinMiniLeadIn = extractToolRoundLeadIn(data.choices?.[0]?.message?.content);
                     if (luckinMiniLeadIn) {
                         amsg2LeadIns.push(luckinMiniLeadIn);
                         lastSpokenData = data;
                     }
-                    const followBody = { ...baseReqBody, messages: withAmsg2TaskContext(loopMessages) };
+                    // 续写不带 tools，就是这个循环的最后一轮：加收尾提示，正文模式下不教排程语法。
+                    toolPhaseClosed = true;
+                    switchAmsg2ResultsToFinalRound();
+                    const followBody = {
+                        ...baseReqBody,
+                        messages: [...withAmsg2TaskContext(loopMessages, true), { role: 'user', content: TOOL_LOOP_FINAL_ROUND_PROMPT }],
+                    };
                     delete followBody.tools;
                     delete followBody.tool_choice;
                     data = await replyStep(async () => safeFetchJson(`${baseUrl}/chat/completions`, {
@@ -1791,6 +1814,8 @@ export const useChatAI = ({
                     updateTokenUsage(data, historyMsgCount, `luckin-propose-${it + 1}`);
                     if (!data.choices?.[0]?.message?.tool_calls?.length) break;
                 }
+                await rescueEmptyMiniAppReply(loopMessages);
+                toolLoopHistory = loopMessages;
             }
 
             // 3.6 客户端工具循环 —— 两类共用一个循环骨架:
@@ -1799,7 +1824,7 @@ export const useChatAI = ({
             //       createOrder 被拦截 —— 下单付款必须用户在结账卡上点。
             //     · 通用 MCP: 工具名命中 mcpToolResolve 映射就分发给对应服务器 (utils/mcpClient),
             //       结果只回填循环不落卡片。两类工具可同时在场, 按名字各走各的。
-            if ((payload.flags.luckinChatActive || mcpToolResolve || amsg2ToolsInjected) && data.choices?.[0]?.message?.tool_calls?.length) {
+            if ((payload.flags.luckinChatActive || mcpToolResolve || amsg2ToolMode === 'native') && data.choices?.[0]?.message?.tool_calls?.length) {
                 // 普通点单/排程维持 6 轮；接了通用 MCP 时允许游戏/论坛类任务自然推进到
                 // 12 轮。模型正常给正文会立刻 break，并不是固定多发 12 次请求。
                 const MAX_LOOPS = mcpToolResolve ? MCP_CHAT_MAX_TOOL_LOOPS : 6;
@@ -1811,8 +1836,9 @@ export const useChatAI = ({
                 const amsg2Stall = createAmsg2StallTracker();
                 let amsg2ToolRounds = 0;
                 let nonAmsg2ToolCalls = 0;
-                let wrapUpKind: 'none' | 'hard-limit' | 'stalled' | 'amsg2-stalled' = 'none';
+                let wrapUpKind: ToolLoopWrapUpKind = 'none';
                 for (let it = 0; it < MAX_LOOPS; it++) {
+                    amsg2RoundResults.length = 0;
                     const toolCalls = normalizeToolCallsForCompat(
                         data.choices?.[0]?.message?.tool_calls,
                         `private_${it}`,
@@ -1930,6 +1956,7 @@ export const useChatAI = ({
                             : `工具 ${fname} 失败: ${result.error}`;
                         loopMessages.push(buildToolResultMessage(tc, toolMsg) as any);
                     }
+                    await runScheduleTextInToolRound(data.choices?.[0]?.message?.content, loopMessages, it);
                     if (mcpCallsThisRound > 0) {
                         stalledMcpRounds = mcpProgressThisRound ? 0 : stalledMcpRounds + 1;
                     }
@@ -1945,32 +1972,29 @@ export const useChatAI = ({
                         }
                     }
                     const amsg2Stalled = amsg2Stall.record(amsg2Outcomes);
-                    // 转到上限还在要工具的话，最后那份响应里只有 tool_calls、没有正文——所以只要
-                    // 挂着主动消息工具，到上限也得收尾，不能只管 MCP。
-                    const reachedHardLimit = (!!mcpToolResolve || amsg2ToolRounds > 0) && it + 1 >= MAX_LOOPS;
-                    const stalled = !!mcpToolResolve && stalledMcpRounds >= MCP_CHAT_MAX_STALLED_ROUNDS;
-                    const forceWrapUp = reachedHardLimit || stalled || amsg2Stalled;
+                    // 下一跳是不是最后一轮：用到倒数第二轮就收尾，最后一轮不带工具（点单、MCP、排程一视同仁），
+                    // 不然转到上限时最后那份响应里只有 tool_calls、没有正文。
+                    const wrapUp = resolveToolLoopWrapUp({
+                        round: it,
+                        maxLoops: MAX_LOOPS,
+                        hasLeadIn: amsg2LeadIns.length > 0 || displayedMcpLeadIns.size > 0,
+                        mcpStalled: !!mcpToolResolve && stalledMcpRounds >= MCP_CHAT_MAX_STALLED_ROUNDS,
+                        amsg2Stalled,
+                        scheduleOnly: nonAmsg2ToolCalls === 0,
+                    });
+                    const forceWrapUp = wrapUp.kind !== 'none';
                     if (forceWrapUp) {
-                        wrapUpKind = stalled ? 'stalled' : amsg2Stalled ? 'amsg2-stalled' : 'hard-limit';
+                        wrapUpKind = wrapUp.kind;
+                        toolPhaseClosed = true;
                     }
+                    if (forceWrapUp) switchAmsg2ResultsToFinalRound();
                     // 继续让角色多步推进 (保留 tools, 允许 query→search→preview 连续走)
                     if (mcpToolResolve) setSearchStatus('正在整理 MCP 工具结果...');
                     // 排程现状现算一次贴上：本轮刚排的任务这时才进得了清单，角色下一轮
                     // 看到的是自己名下真实的排程，不会对着排程前的空清单再排一条。
-                    const followMessages = withAmsg2TaskContext(loopMessages);
-                    if (forceWrapUp) {
-                        const isAmsg2OnlyWrapUp = nonAmsg2ToolCalls === 0
-                            && (wrapUpKind === 'amsg2-stalled' || (wrapUpKind === 'hard-limit' && amsg2ToolRounds > 0));
-                        followMessages.push({
-                            role: 'user',
-                            // 收尾的原因是主动消息工具时换一句话：排程这件事用户看不见，照 MCP 那句
-                            // 「如实说明卡在哪一步」写的话，角色会跟用户交代「我的提醒排不上」；
-                            // 同时区分前面步骤里是否已经写过对白，避免让模型把说过的话重写一遍。
-                            content: isAmsg2OnlyWrapUp
-                                ? buildAmsg2WrapUpPrompt(amsg2LeadIns.length > 0 || displayedMcpLeadIns.size > 0)
-                                : `[系统消息：工具阶段${stalled ? '连续两轮没有产生新结果' : '已到这次回复的安全上限'}。请停止调用工具，基于已经拿到的结果直接用角色语气回复；如目标仍未完成，请如实说明卡在哪一步。不要输出工具名、参数或这条系统消息。]`,
-                        });
-                    }
+                    // 收尾那一跳按最后一轮渲染：正文模式下不再教排程语法。
+                    const followMessages = withAmsg2TaskContext(loopMessages, forceWrapUp);
+                    if (wrapUp.prompt) followMessages.push({ role: 'user', content: wrapUp.prompt });
                     const followBody = { ...baseReqBody, messages: followMessages };
                     if (forceWrapUp) {
                         delete followBody.tools;
@@ -1989,22 +2013,21 @@ export const useChatAI = ({
                     updateTokenUsage(data, historyMsgCount, `${payload.flags.luckinChatActive ? 'luckin-chat' : 'mcp-chat'}-${it + 1}`);
                     if (forceWrapUp) break;
                 }
-                // 主动消息工具跑过、模型最后却一个字没说（常见于排成功之后：它觉得话在工具轮
-                // 已经说完了），而工具轮里也没留下话——补一轮不带 tools 的请求让它开口。
-                // 已经逼过一次收尾或 MCP 已落过开场白的不再补，免得一轮聊天重复发请求。
+                // 主动消息工具跑过、整个循环却一句正文都没有（常见于排成功之后：它觉得话在工具轮
+                // 已经说完了）——补一轮不带 tools 的请求让它开口。收尾那一轮留空、前面工具轮写过话的
+                // 不补：前面那些就是这次的输出。
                 let emptyRescued = false;
-                if (
-                    amsg2ToolRounds > 0
-                    && wrapUpKind === 'none'
-                    && amsg2LeadIns.length === 0
-                    && displayedMcpLeadIns.size === 0
-                    && !extractToolRoundLeadIn(data.choices?.[0]?.message?.content)
-                    && !data.choices?.[0]?.message?.tool_calls?.length
-                ) {
+                if (shouldRescueEmptyToolLoop({
+                    toolRounds: amsg2ToolRounds,
+                    leadInCount: amsg2LeadIns.length + displayedMcpLeadIns.size,
+                    finalContent: data.choices?.[0]?.message?.content || '',
+                    finalHasToolCalls: !!data.choices?.[0]?.message?.tool_calls?.length,
+                })) {
                     emptyRescued = true;
+                    toolPhaseClosed = true;
                     const rescueBody = {
                         ...baseReqBody,
-                        messages: [...withAmsg2TaskContext(loopMessages), { role: 'user', content: AMSG2_EMPTY_REPLY_PROMPT }],
+                        messages: [...withAmsg2TaskContext(loopMessages, true), { role: 'user', content: AMSG2_EMPTY_REPLY_PROMPT }],
                     };
                     delete (rescueBody as any).tools;
                     delete (rescueBody as any).tool_choice;
@@ -2015,6 +2038,7 @@ export const useChatAI = ({
                     }, 2, 0, { appId: 'chat', appName: '消息', charId: char.id, charName: char.name, purpose: '排程后补充回复' }));
                     updateTokenUsage(data, historyMsgCount, 'amsg2-empty-rescue');
                 }
+                toolLoopHistory = loopMessages;
                 if (amsg2ToolRounds > 0) {
                     // 这一轮工具循环怎么收的尾：几轮工具、有没有被逼收尾、有没有补救空回、
                     // 最后拼出来的回话多长。跟上面每次调用那几条对着看，就知道空回卡在哪一步。
@@ -2038,7 +2062,9 @@ export const useChatAI = ({
             //     系统代为执行, 把结果喂回去让角色重新组织语言, 用户就看不到乱码了。
             //     连续调用指纹防止模型复读同一调用导致副作用工具重复执行；中间若有别的
             //     动作，则允许用同参重新查询已经变化的状态。
-            if (mcpToolResolve) {
+            //     正文模式（amsg2ToolMode === 'text'）下由 3.6c 统一处理，这里不跑。
+            //     原生循环已经发过最后一轮的话也不跑：那一轮回复里写的调用不执行（收尾时剥掉、留 trace）。
+            if (mcpToolResolve && amsg2ToolMode !== 'text' && !toolPhaseClosed) {
                 const MAX_TEXT_LOOPS = MCP_CHAT_MAX_TOOL_LOOPS;
                 let lastExecutedSig: string | null = null;
                 let textLoopMessages: any[] | null = null;
@@ -2056,9 +2082,10 @@ export const useChatAI = ({
                         textLoopMessages.push({ role: 'assistant', content: contentNow });
                         textLoopMessages.push({
                             role: 'user',
-                            content: '[系统消息：你重复请求了已经执行过的同一工具。不要再次调用工具，请直接根据已有结果回复；如目标未完成就如实说明。不要输出工具调用格式或提及本消息。]',
+                            content: MCP_REPEATED_WRAP_UP_PROMPT,
                         });
-                        const wrapBody = buildMcpTextFallbackBody(baseReqBody, textLoopMessages);
+                        toolPhaseClosed = true;
+                        const wrapBody = buildMcpTextFallbackBody(baseReqBody, withoutMcpCompatTeaching(textLoopMessages));
                         data = await replyStep(async () => safeFetchJson(`${baseUrl}/chat/completions`, {
                             signal: replyRun.signal,
                             method: 'POST', headers,
@@ -2074,29 +2101,27 @@ export const useChatAI = ({
                     const results: string[] = [];
                     for (const call of faked) {
                         lastExecutedSig = toolCallFingerprint(call.exposedName, call.args);
-                        let r: any;
-                        try { r = await replyStep(async () => callMcpTool(call.server, call.toolName, call.args, replyRun.signal)); }
-                        catch (e: any) { replyRun.check(); r = { success: false, error: e?.message || String(e) }; }
-
-                        results.push(r.success
-                            ? `工具 ${call.exposedName} 执行成功, 结果: ${formatMcpToolResult(r.data)}`
-                            : `工具 ${call.exposedName} 执行失败: ${r.error}`);
+                        results.push(await executeFakedMcpCall(call));
                     }
+                    const reachedHardLimit = it + 1 >= MAX_TEXT_LOOPS;
                     if (!textLoopMessages) textLoopMessages = [...baseReqBody.messages];
                     textLoopMessages.push({ role: 'assistant', content: contentNow });
                     textLoopMessages.push({
                         role: 'user',
-                        content: `[系统消息：你把工具调用写成了聊天文字，系统已代为执行：\n${results.join('\n')}\n如果目标已经完成，请直接用角色语气回复；如果仍需下一步工具，只输出一行真正能推进目标的工具调用，不要重复读取同一说明或状态。不要提及这条系统消息。]`,
+                        content: buildFakedToolResultsMessage(results, reachedHardLimit),
                     });
-                    const reachedHardLimit = it + 1 >= MAX_TEXT_LOOPS;
                     if (reachedHardLimit) {
                         textLoopMessages.push({
                             role: 'user',
-                            content: '[系统消息：工具阶段已到这次回复的安全上限。停止调用工具，基于已有结果直接回复；如目标未完成就如实说明。不要输出工具调用格式或提及本消息。]',
+                            content: TOOL_LOOP_FINAL_ROUND_PROMPT,
                         });
+                        toolPhaseClosed = true;
                     }
                     setSearchStatus('正在整理 MCP 工具结果...');
-                    const followBody = buildMcpTextFallbackBody(baseReqBody, textLoopMessages);
+                    // 最后一轮不再教正文调用语法。
+                    const followBody = buildMcpTextFallbackBody(
+                        baseReqBody, reachedHardLimit ? withoutMcpCompatTeaching(textLoopMessages) : textLoopMessages,
+                    );
                     data = await replyStep(async () => safeFetchJson(`${baseUrl}/chat/completions`, {
                         signal: replyRun.signal,
                         method: 'POST', headers,
@@ -2106,6 +2131,123 @@ export const useChatAI = ({
                     if (reachedHardLimit) break;
                 }
                 setSearchStatus('');
+            }
+
+            // 3.6c 正文模式（「原生 tools」开关关着，或中转拒 tools 降级之后）的正文调用循环。
+            //     这一模式下 MCP 也走正文兼容协议，两种调用可能同轮出现，也可能在续写里接着冒出来，
+            //     所以由同一个循环一起认（上面 3.6b 不跑）。
+            //     排程与云端同一口径：从正文抠出 schedule_active_message({...}) 代为执行、结果回喂；执行器
+            //     （同名同参去重、连发上限）、卡住计数、收尾提示与原生工具循环共用，这一轮写下的话作为开场白
+            //     留下、调用语法剥掉。MCP 部分照 3.6b：每轮只执行一个，连续同名同参直接收尾。
+            if (amsg2ToolMode === 'text') {
+                // 带 MCP 时与 3.6b 同一上限，只有排程时与原生排程循环同一上限。
+                const maxTextLoops = mcpToolResolve ? MCP_CHAT_MAX_TOOL_LOOPS : 6;
+                const textLoopHistory: any[] = [...(toolLoopHistory ?? baseReqBody.messages)];
+                let lastMcpSig: string | null = null;
+                let usedMcp = false;
+                let textWrapUp: ReturnType<typeof resolveToolLoopWrapUp> = { kind: 'none', prompt: null };
+                // 前面的原生循环已经发过最后一轮的话，那一轮的回复里写出的调用不再执行（收尾时剥掉、留 trace）。
+                for (let it = 0; !toolPhaseClosed && it < maxTextLoops; it++) {
+                    const contentNow: string = data.choices?.[0]?.message?.content || '';
+                    const scheduleRound = takeAmsg2TextScheduleCalls(contentNow);
+                    const mcpAll = mcpToolResolve
+                        ? extractTextFakedMcpCalls(scheduleRound.rest, mcpToolResolve).slice(0, 1)
+                        : [];
+                    const mcpCalls = mcpAll.filter(c => toolCallFingerprint(c.exposedName, c.args) !== lastMcpSig);
+                    const mcpRepeated = mcpAll.length > 0 && mcpCalls.length === 0;
+                    if (!scheduleRound.calls.length && !mcpAll.length) break;
+                    const results: string[] = [];
+                    if (mcpCalls.length) {
+                        usedMcp = true;
+                        // MCP 轮的开场白当场落库（同 3.6b），排程语法先剥掉。
+                        await replyStep(async () => persistMcpLeadIn(scheduleRound.rest, mcpCalls));
+                        setSearchStatus(`正在调用 MCP 工具：${mcpCalls.map(c => c.exposedName).join('、')}...`);
+                        for (const call of mcpCalls) {
+                            lastMcpSig = toolCallFingerprint(call.exposedName, call.args);
+                            results.push(await executeFakedMcpCall(call));
+                        }
+                    } else if (!mcpRepeated) {
+                        const leadIn = extractToolRoundLeadIn(scheduleRound.rest);
+                        if (leadIn) {
+                            amsg2LeadIns.push(leadIn);
+                            lastSpokenData = data;
+                        }
+                    }
+                    const scheduled = scheduleRound.calls.length
+                        ? await runScheduleTextCalls(scheduleRound.calls, it)
+                        : null;
+                    const stalled = !!scheduled?.stalled;
+                    // 同一个收尾判定：排程撞墙沿用排程那句（scheduleOnly），次数用完用统一收尾提示。
+                    // 先定下一跳是不是最后一轮，结果消息才知道要不要提「下一步工具」。
+                    textWrapUp = resolveToolLoopWrapUp({
+                        round: it,
+                        maxLoops: maxTextLoops,
+                        hasLeadIn: amsg2LeadIns.length > 0 || displayedMcpLeadIns.size > 0,
+                        mcpRepeated,
+                        amsg2Stalled: stalled,
+                        scheduleOnly: true,
+                    });
+                    const isFinalHop = textWrapUp.kind !== 'none';
+                    if (isFinalHop) toolPhaseClosed = true;
+                    // 排程结果按下一跳是不是最后一轮挑版本（最后一轮不提「还需要别的工具」）。
+                    if (scheduled) results.push(...(isFinalHop ? scheduled.finalResults : scheduled.results));
+                    textLoopHistory.push({ role: 'assistant', content: contentNow });
+                    if (results.length) {
+                        textLoopHistory.push({
+                            role: 'user',
+                            content: mcpCalls.length
+                                ? buildFakedToolResultsMessage(results, textWrapUp.kind !== 'none')
+                                : `[系统消息：你在正文里写的排程已由系统代为处理：\n${results.join('\n')}\n不要提及这条系统消息。]`,
+                        });
+                    }
+                    // 收尾那一跳按最后一轮渲染：不再教排程语法，也不带 MCP 兼容模式的语法说明。
+                    const renderedHistory = withAmsg2TaskContext(textLoopHistory, textWrapUp.kind !== 'none');
+                    const followMessages = isFinalHop ? withoutMcpCompatTeaching(renderedHistory) : renderedHistory;
+                    if (textWrapUp.prompt) followMessages.push({ role: 'user', content: textWrapUp.prompt });
+                    if (mcpCalls.length) setSearchStatus('正在整理 MCP 工具结果...');
+                    const textLoopPurpose = mcpRepeated ? 'MCP 工具收尾回复' : mcpCalls.length ? 'MCP 工具续写' : '排程工具续写';
+                    data = await replyStep(async () => safeFetchJson(`${baseUrl}/chat/completions`, {
+                        signal: replyRun.signal,
+                        method: 'POST', headers,
+                        body: JSON.stringify(buildMcpTextFallbackBody(baseReqBody, followMessages)),
+                    }, 2, 0, { appId: 'chat', appName: '消息', charId: char.id, charName: char.name, purpose: textLoopPurpose }));
+                    updateTokenUsage(data, historyMsgCount, `text-tools-${it + 1}`);
+                    if (textWrapUp.kind !== 'none') break;
+                }
+                if (usedMcp) setSearchStatus('');
+                // 整个循环一句正文都没有：和原生循环一样补一轮让它开口（收尾那一轮留空、前面写过话的不补）。
+                // 最后那份回复里只剩没执行的调用语法的，也算没开口。
+                let emptyRescued = false;
+                if (shouldRescueEmptyToolLoop({
+                    toolRounds: scheduleTextRounds,
+                    leadInCount: amsg2LeadIns.length + displayedMcpLeadIns.size,
+                    finalContent: resolveFinalScheduleText(data.choices?.[0]?.message?.content || '', amsg2ToolMode, mcpToolResolve).content,
+                })) {
+                    emptyRescued = true;
+                    toolPhaseClosed = true;
+                    const rescueMessages = [
+                        ...withoutMcpCompatTeaching(withAmsg2TaskContext(textLoopHistory, true)),
+                        { role: 'user', content: AMSG2_EMPTY_REPLY_PROMPT },
+                    ];
+                    data = await replyStep(async () => safeFetchJson(`${baseUrl}/chat/completions`, {
+                        signal: replyRun.signal,
+                        method: 'POST', headers,
+                        body: JSON.stringify(buildMcpTextFallbackBody(baseReqBody, rescueMessages)),
+                    }, 2, 0, { appId: 'chat', appName: '消息', charId: char.id, charName: char.name, purpose: '排程后补充回复' }));
+                    updateTokenUsage(data, historyMsgCount, 'amsg2-empty-rescue');
+                }
+                if (scheduleTextRounds > 0) {
+                    appendInstantTraceEntry({
+                        ts: new Date().toISOString(),
+                        event: 'amsg2-local-tool-loop',
+                        charId: char.id,
+                        protocol: 'text',
+                        toolRounds: scheduleTextRounds,
+                        wrapUp: textWrapUp.kind,
+                        emptyRescued,
+                        leadIns: amsg2LeadIns.length,
+                    });
+                }
             }
 
             // DEBUG: Log full API response details for troubleshooting truncation issues
@@ -2155,7 +2297,25 @@ export const useChatAI = ({
             };
             // 工具轮里说过的话拼在最前面（没有工具轮时 amsg2LeadIns 是空的，原样取最后一轮）；
             // SAR 信封生效期若跨多轮输出了信封，逐轮拆解后再合并去重真意与外显。
-            const finalRoundContent = data.choices?.[0]?.message?.content || '';
+            const finalRoundContentRaw: string = data.choices?.[0]?.message?.content || '';
+            // 正文模式：工具轮开场白里的排程调用都已代为执行，语法剥掉；最终正文里还剩的是最后一轮
+            // （或补救那一轮）写出来的，不执行，同样剥掉，并留 trace 让这件事查得到（见 resolveFinalScheduleText）。
+            const finalSchedule = resolveFinalScheduleText(finalRoundContentRaw, amsg2ToolMode, mcpToolResolve, toolPhaseClosed);
+            const finalRoundContent = finalSchedule.content;
+            if (finalSchedule.unexecuted > 0 || finalSchedule.unexecutedMcp > 0) {
+                console.warn(`[amsg2] 最后一轮写出了 ${finalSchedule.unexecuted} 个排程、${finalSchedule.unexecutedMcp} 个 MCP 调用，工具阶段已收尾，不执行、从显示文本剥掉`);
+                appendInstantTraceEntry({
+                    ts: new Date().toISOString(),
+                    event: 'amsg2-text-schedule-unexecuted',
+                    charId: char.id,
+                    count: finalSchedule.unexecuted,
+                    mcpCount: finalSchedule.unexecutedMcp,
+                });
+            }
+            if (amsg2ToolMode === 'text') {
+                const cleanedLeadIns = amsg2LeadIns.map(stripAmsg2ScheduleSyntax).filter(leadIn => leadIn.trim());
+                amsg2LeadIns.splice(0, amsg2LeadIns.length, ...cleanedLeadIns);
+            }
             const sarReply = amsg2LeadIns.length && sarModulePlan.requiresEnvelope
                 ? parseSARModuleReplyRounds([...amsg2LeadIns, extractToolRoundLeadIn(finalRoundContent)], sarModulePlan)
                 : parseSARModuleReply(

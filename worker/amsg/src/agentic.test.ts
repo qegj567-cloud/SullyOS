@@ -10,8 +10,9 @@
  *  4. 全程无正文：无副作用 → skip-push，有副作用 → 单条空正文 push 携带 directives。
  */
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  appendFinalRoundNotice,
   buildXhsSessionPayload,
   classifyNativeToolCalls,
   createFireSessionState,
@@ -27,6 +28,7 @@ import {
   AMSG_FIRE_SCHEDULE_TOOL,
 } from '../../../utils/amsgFireSchedule';
 import type { XhsNote } from '../../../utils/realtimeContext';
+import { TOOL_LOOP_FINAL_ROUND_PROMPT } from '../../../utils/toolLoopFinalRound';
 
 const build: PushBuildInput = {
   contactName: '小鹿',
@@ -516,20 +518,95 @@ describe('processLLMRound — 穿透收尾丢掉悬空的「我去查查」', ()
 // 上游在最后一轮遇到 tool-request 会直接抛 AGENTIC_LOOP_EXCEEDED：这次攒下的旁白全丢、
 // 任务不出清、下一分钟整条从头重跑再烧一遍 LLM，而用户一个字都收不到。
 describe('processLLMRound — 最后一轮不再放行工具请求', () => {
-  it('最后一轮还想调工具 → 拿之前几轮的内容收尾', () => {
+  afterEach(() => vi.restoreAllMocks());
+  const FINAL = DEFAULT_TOOL_ITERATIONS - 1;
+  const droppedLogs = (spy: ReturnType<typeof vi.spyOn>) =>
+    spy.mock.calls.filter((args) => args[0] === '[amsg:agentic]'
+      && (args[1] as { type?: string })?.type === 'final_round_tool_dropped');
+
+  it('最后一轮还写数据标签 → 不执行，剥掉调用、保留这轮正文，留日志', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const state = createFireSessionState();
     processLLMRound(state, '我想想六月发生了什么。\n[[RECALL: 2026-06]]', build, null, null, 0);
     processLLMRound(state, '顺便看看天气。\n[[SEARCH: 明天 天气]]', build, null, null, 1);
 
     const decision = processLLMRound(
-      state, '还得再查一次。\n[[RECALL: 2026-07]]', build, null, null, DEFAULT_TOOL_ITERATIONS - 1);
+      state, '六月那次真的好开心。\n[[RECALL: 2026-07]]', build, null, null, FINAL);
     expect(decision.decision).toBe('finish');
     if (decision.decision !== 'finish') return;
     const text = decision.pushPayloads.map((p) => p.message).join('\n');
     expect(text).toContain('我想想六月发生了什么');
     expect(text).toContain('顺便看看天气');
-    expect(text).not.toContain('还得再查一次');
+    expect(text).toContain('六月那次真的好开心');
     expect(text).not.toContain('RECALL');
+    const logs = droppedLogs(warn);
+    expect(logs).toHaveLength(1);
+    expect((logs[0][1] as { tools: string[] }).tools).toEqual(['recall']);
+  });
+
+  it('最后一轮数据标签夹在正文中间 → 只剥标签，前后正文都留', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const decision = processLLMRound(
+      createFireSessionState(),
+      '六月那次真的好开心。\n[[RECALL: 2026-07]]\n下次还想再去一趟。\n[[SEARCH: 明天 天气]] 你那边冷不冷？',
+      build, null, null, FINAL);
+    expect(decision.decision).toBe('finish');
+    if (decision.decision !== 'finish') return;
+    const text = decision.pushPayloads.map((p) => p.message).join('\n');
+    expect(text).toContain('六月那次真的好开心');
+    expect(text).toContain('下次还想再去一趟');
+    expect(text).toContain('你那边冷不冷');
+    expect(text).not.toMatch(/RECALL|SEARCH/);
+  });
+
+  it('最后一轮写出 MCP / 排程调用 → 不执行、语法剥净，日志列出被丢的调用', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const resolve = buildMcpNameMap([{
+      id: 's1', name: '探针', url: 'https://probe.example.com',
+      tools: [{ name: 'get_secret', inputSchema: { type: 'object', properties: {} } }],
+    }]);
+    const decision = processLLMRound(
+      createFireSessionState(),
+      '那就先这样啦。\nschedule_active_message({"delay_minutes": 30, "intent": "问问"})',
+      build,
+      { resolve, nativeToolCalls: [{ id: 'c1', type: 'function', function: { name: 'mcp__get_secret', arguments: '{}' } }] },
+      { nativeToolCalls: [] },
+      FINAL,
+    );
+    expect(decision.decision).toBe('finish');
+    if (decision.decision !== 'finish') return;
+    const text = decision.pushPayloads.map((p) => p.message).join('\n');
+    expect(text).toContain('那就先这样啦');
+    expect(text).not.toContain('schedule_active_message');
+    const logs = droppedLogs(warn);
+    expect(logs).toHaveLength(1);
+    expect((logs[0][1] as { tools: string[] }).tools)
+      .toEqual(['mcp__get_secret', AMSG_FIRE_SCHEDULE_TOOL]);
+  });
+
+  it('最后一轮什么都没补 → 拿前几轮的正文收尾，不算空生成', () => {
+    const state = createFireSessionState();
+    processLLMRound(state, '今天路过那家店了。\n[[RECALL: 2026-06]]', build, null, null, FINAL - 1);
+    const decision = processLLMRound(state, '', build, null, null, FINAL);
+    expect(decision.decision).toBe('finish');
+    if (decision.decision !== 'finish') return;
+    expect(decision.pushPayloads.map((p) => p.message).join('\n')).toContain('今天路过那家店了');
+  });
+
+  it('最后一轮只写了调用、前面也没正文 → 仍按空生成处理', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const state = createFireSessionState();
+    processLLMRound(state, '[[RECALL: 2026-06]]', build, null, null, FINAL - 1);
+    const decision = processLLMRound(state, '[[RECALL: 2026-07]]', build, null, null, FINAL);
+    expect(decision).toMatchObject({ decision: 'skip-push', reason: 'empty-generation' });
+  });
+
+  it('非最后一轮照常放行，不留丢弃日志', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const decision = processLLMRound(
+      createFireSessionState(), '查一下。\n[[SEARCH: 天气]]', build, null, null, FINAL - 1);
+    expect(decision.decision).toBe('tool-request');
+    expect(droppedLogs(warn)).toHaveLength(0);
   });
 
   it('倒数第二轮照常给工具机会', () => {
@@ -541,6 +618,32 @@ describe('processLLMRound — 最后一轮不再放行工具请求', () => {
   it('不传轮次（拿不到 ctx.iteration 的老部署）行为不变', () => {
     const decision = processLLMRound(createFireSessionState(), '查一下。\n[[SEARCH: 天气]]', build);
     expect(decision.decision).toBe('tool-request');
+  });
+});
+
+// 进最后一轮前，工具结果末尾挂上与本地共用的收尾提示；更早的轮次不挂。
+describe('appendFinalRoundNotice — 喂给最后一轮的工具结果带收尾提示', () => {
+  const results = () => [
+    { tool_call_id: 'a', role: 'tool' as const, content: '结果一' },
+    { tool_call_id: 'b', role: 'tool' as const, content: '结果二' },
+  ];
+
+  it('倒数第二轮执行的工具：只在最后一条结果末尾追加提示', () => {
+    const out = appendFinalRoundNotice(results(), DEFAULT_TOOL_ITERATIONS - 2, DEFAULT_TOOL_ITERATIONS);
+    expect(out[0].content).toBe('结果一');
+    expect(out[1].content).toBe(`结果二\n${TOOL_LOOP_FINAL_ROUND_PROMPT}`);
+  });
+
+  it('更早的轮次、拿不到轮次、没有结果时原样返回', () => {
+    expect(appendFinalRoundNotice(results(), DEFAULT_TOOL_ITERATIONS - 3, DEFAULT_TOOL_ITERATIONS)).toEqual(results());
+    expect(appendFinalRoundNotice(results(), undefined, DEFAULT_TOOL_ITERATIONS)).toEqual(results());
+    expect(appendFinalRoundNotice([], DEFAULT_TOOL_ITERATIONS - 2, DEFAULT_TOOL_ITERATIONS)).toEqual([]);
+  });
+
+  it('MCP 长预算按 12 轮算：第 5 轮不提示，第 11 轮才提示', () => {
+    expect(appendFinalRoundNotice(results(), DEFAULT_TOOL_ITERATIONS - 2, MCP_MAX_TOOL_ITERATIONS)).toEqual(results());
+    expect(appendFinalRoundNotice(results(), MCP_MAX_TOOL_ITERATIONS - 2, MCP_MAX_TOOL_ITERATIONS)[1].content)
+      .toContain(TOOL_LOOP_FINAL_ROUND_PROMPT);
   });
 });
 
@@ -796,5 +899,36 @@ describe('processLLMRound — 排程池混入 cancel / renew', () => {
         '哎呀没排上，你先自己定个闹钟哈。',
       ]);
     }
+  });
+});
+
+// 副作用的去重口径：同一轮里写了几次就执行几次（角色可能故意连转几笔一分钱），
+// 跨轮复述前一轮已经写过的那件事才去掉。
+describe('processLLMRound — 副作用只去跨轮的复述', () => {
+  const transfersOf = (decision: ReturnType<typeof processLLMRound>) => {
+    if (decision.decision !== 'finish') return [];
+    const last = decision.pushPayloads[decision.pushPayloads.length - 1];
+    return ((last.metadata as any).directives ?? []).filter((d: any) => d.type === 'transfer');
+  };
+
+  it('同一轮两笔一模一样的转账 → 两个 directive', () => {
+    const decision = processLLMRound(createFireSessionState(), '给你转一分[[ACTION:TRANSFER:0.01]]\n再来一分[[ACTION:TRANSFER:0.01]]', build);
+    expect(transfersOf(decision)).toHaveLength(2);
+  });
+
+  it('第二轮复述第一轮的那笔 → 只有一个', () => {
+    const state = createFireSessionState();
+    expect(processLLMRound(state, '转你啦[[ACTION:TRANSFER:520]]\n[[RECALL: 2026-05]]', build, null, null, 0).decision).toBe('tool-request');
+    const decision = processLLMRound(state, '刚刚转了[[ACTION:TRANSFER:520]]', build, null, null, 1);
+    expect(transfersOf(decision)).toEqual([{ type: 'transfer', amount: 520 }]);
+  });
+
+  it('第一轮写了两笔、第二轮又复述两笔 → 仍是两个；金额不同的照常留', () => {
+    const state = createFireSessionState();
+    processLLMRound(state, '一笔[[ACTION:TRANSFER:1]]\n两笔[[ACTION:TRANSFER:1]]\n[[RECALL: 2026-05]]', build, null, null, 0);
+    const decision = processLLMRound(state, '复述[[ACTION:TRANSFER:1]][[ACTION:TRANSFER:1]]\n另一笔[[ACTION:TRANSFER:2]]', build, null, null, 1);
+    expect(transfersOf(decision)).toEqual([
+      { type: 'transfer', amount: 1 }, { type: 'transfer', amount: 1 }, { type: 'transfer', amount: 2 },
+    ]);
   });
 });

@@ -1,5 +1,7 @@
 # instant chat 实施契约（给施工 agent）
 
+目标与红线见 [主动消息 2.0 总纲](../docs/amsg2-overview.md)。
+
 设计动机与取舍见 [`amsg2-instant-chat.md`](./amsg2-instant-chat.md)，本文件是拍板后的实现契约：
 端点形状、数据格式、必须先验证的上游行为、分工边界。施工前先通读两份。
 
@@ -9,8 +11,8 @@
 
 - 业务实现放在本仓库的 `worker/amsg/src/`（包装层）、`utils/` 和前端。
   2026-10-19 审计修复依赖上游通用能力：任务输入、任务查询、工具执行白名单、不可变附件和条件写结果。
-  当前精确依赖 `amsg-client@2.10.0-next.0` 与 `amsg-server@3.1.0-next.0` 已包含这些能力，
-  已移除先前的本地补丁；不要手改安装目录，升级包时须重跑真实 SDK 集成测试。
+  `package.json` 里锁定的 `@rei-standard/amsg-client` 与 `@rei-standard/amsg-server` 精确版本已包含这些能力，
+  不需要本地补丁；不要手改安装目录，升级包时须重跑真实 SDK 集成测试。
 - 防双跑复用上游 `claimTask` 的 `lease_until` 条件更新；每分钟 cron 是兜底捡漏者。
 - 任务行型：`message_type = 'auto'` + `messageSubtype: 'instant-chat'`
   + `metadata: { amsgMode: 'instant', amsgInstantChat: true, charId }`。
@@ -20,8 +22,9 @@
   客户端拿它做面板对账的过滤判据：即时对话的行不补进任务清单（连同
   `status = 'failed'` 的行一起排除），否则用户正等着的这一轮会显示成待触发的
   排程任务、还可能被「取消全部」顺手掐掉。
-- **durability 原则**：202 之前任务行必须已落 D1。`ctx.waitUntil` 只负责快，
-  cron 负责稳。isolate 死了 → lease 过期 → cron 重跑，消息不丢。
+- **durability 原则**：202 之前任务行必须已落 D1。受理后唤醒的 `InstantTickDO`
+  alarm 负责快，cron 负责稳。alarm 没跑成或中途被回收 → lease 过期 → cron 重跑，消息不丢。
+  生成不挂在 `ctx.waitUntil` 上（它只有 30 秒，从响应发出或客户端断开时算起）。
 
 ## 新端点 `POST /instant-chat`（包装层路由）
 
@@ -63,15 +66,22 @@
   4. 转发 `POST /schedule-message`，成功拿到 uuid 才返回
      `202 {status:'accepted',uuid}`；顶替旧任务由上游事务完成。凭据成功覆盖时再带
      `credentialsSynced:true`。之前落下但没有任务引用的输入由 TTL 清理。
-  5. 唤醒按租户分组的 `InstantTickDO`，alarm 点名执行已落库的 uuid；每分钟 cron 继续兜底。
+  5. 唤醒 `InstantTickDO`（实例名即任务 uuid，一条任务一个实例），alarm 用 `runTask(uuid)`
+     点名执行已落库的这一条；每分钟 cron 继续兜底。
 
-  独立输入保留 7 天，按角色归属参与云端清理。大值继续走 client_state 的 5 MiB 分块能力，
+  独立输入在这一轮结束（送达、跳过、取消，或失败且不再重试）后由 `onFireSettled` 立刻删除；
+  命名空间上配的 7 天 TTL 只兜删除失败或这一轮一直没结束的情况。独立输入按角色归属参与云端清理。
+  大值继续走 client_state 的 5 MiB 分块能力，
   不受任务行约 996 KB 明文容量限制，现有 `chat.messages` 2 MiB 预算保持不变。
   Worker 使用 `readState(namespace,{key})` 定点读取，不能扫描同命名空间下的全部历史输入。
-- `export default` 的 `fetch` / `scheduled` 签名补上第三个参数 `ctx`
-  （上游签名只收两个参数，多传无害；`index.ts:1509-1510` 的注释要同步改）。
-- `/config-check` 的返回里加包装层能力标志（如 `instantChat: true`），设置页
-  用它做唯一版本门槛（开发期规矩：门槛只留一处，不做逐调用 capability 预检）。
+- `export default` 的 `fetch` 收第三个参数 `ctx`，只给 `/self-update/check` 在 `waitUntil`
+  里跑几秒的检查用；`/instant-chat` 不用它，`scheduled` 只收 `(event, env)`。
+- 能力判断只在 `/config-check` 一处做（开发期规矩：门槛只留一处，不做逐调用 capability 预检）。
+  它回 `instantTick`（运行时有没有 `INSTANT_TICK` 起跳器绑定）和 `workerVersion`（这份 bundle
+  的版本，与前端 `utils/amsgBundleVersion.ts` 的 `AMSG_BUNDLE_VERSION` 比较）。连接时探一次存进
+  全局配置，发消息时读存量：`instantTick` 决定这台 Worker 跑不跑得动即时对话，bundle 版本决定
+  要不要提示更新、以及需要新协议的轮次能不能上云。`instantChat: true` 只说明代码里有这条路由，
+  不作门槛：自更新由旧代码执行，代码和版本号新了，绑定可能还没接上。
 
 ## 必须先验证的上游行为（读 chunk-RRWCPPOY.mjs，结论写进报告）
 
@@ -118,6 +128,34 @@
     也能排未来消息，这个能力对话里同样要有）。
   - `pack.chat` 缺失而 metadata 标了 instant → 按失败处理（防止拿主动消息模板
     错答聊天）。
+
+### 模板的可选字段
+
+下面这些都是可选字段，不改 `FIRE_PACK_VERSION`，旧包缺省时 worker 照旧行为走。除 `userBioLength` 外只给定时类
+（定时主动消息、离开后消息、见面离开提醒）用。
+
+| 字段 | 内容 | worker 怎么用 | 缺省时 |
+|---|---|---|---|
+| `awayAnchor` | 离开计时起点是哪种在场互动：`{ source, lastDateAt }`（`source` 为 `date` / `call` / `call-end-popup`，线上发言为 null；`lastDateAt` 是最后一条真实记录为见面正文时的时刻） | 离开后消息到点用 `buildAwayFireInstruction` 现算「本次任务」，和本地同一份说法（见 [`away-message.md`](../docs/away-message.md)） | 用任务 metadata 里排程时写好的通用指令 |
+| `emotionEval` | `{ prompt }`，情绪评估提示词模板 | 与主生成并行评估，副 API 走任务的 `credRefs.emotion`；等结论再推送 | 这一轮不评估 |
+| `noticeIds` | 模板里带进去的「上次排的没发出去」回执的 id | 发出后记账，随最后一条推送带回 `amsgNoticeIds` | 不记账、不销账 |
+| `worldbookRolls` | 模板里按概率触发、打包时没抽签的世界书条目及其概率（模板里用 `{{AMSG_WB_IF:…}}` 标记包着） | 每次到点用 `renderWorldbookRolls` 现抽，和本地私聊每轮都抽一致 | 模板里没有标记，按打包时的结果 |
+| `userBioLength` | 「互动对象」段里 bio 的字符数（没填时按「无」算） | 插用户所在地节日时跳过 bio，插到和本地同一个位置；即时对话也用 | 插在段标题下面 |
+
+**情绪评估**：角色开了情绪评估、且这台 Worker 支持凭据存表（capabilities 含 `llm-credentials`）时，打包才带
+`emotionEval`，老 Worker 上取不到副 API 凭据。到点取不到副 API 凭据时安静跳过，只留日志，推送上不挂任何评估
+标记，客户端不弹失败。主生成结束后等评估的时长取 60 秒和「这次 fire 剩余预算减 10 秒」里小的那个，等满就不带
+结论照发并留日志。改角色的情绪开关或情绪 API 时，客户端刷新还会响的任务凭据：开着评估时补上 `credRefs.emotion` 并更新那一行凭据；关掉时引用留着，打包不再带 `emotionEval`，到点就不评估。
+
+**回执**：模板里的回执块和每条回执各自包着编号标记。worker 发出后把这些 id 记进按角色的一行 `sent_notices`
+（`AMSG_SENT_NOTICES_KEY`，最多留 100 条），之后到点渲染时把发过的那条去掉，一组都发过时连标题一起去掉。
+这样客户端一直不上线时，同一条回执也不会每次到点都重提。客户端收到带 `amsgNoticeIds` 的定时消息落地时，把这些
+回执标成已告知，重新打包后就不再带；本地版离开后消息、见面离开提醒发出去后同样销账，口径与本地私聊回复成功后
+销账相同。
+
+**到点标记的版本门槛**：`worldbookRolls` 和回执的编号标记只在这台 Worker 的 bundle 版本 ≥ `2026-11-23`、且这次
+打包是要上云的时候才出（`buildFirePack` 的 `forCloud`）。版本读的是 `/config-check` 体检时记下的那份，只认记给当前
+Worker 地址的；换了地址、还没体检的按不支持处理，模板里不放标记，概率条目照旧在打包时抽签。
 
 ### 输入隔离与定时上下文
 
@@ -167,13 +205,17 @@ Trace 和输入指纹；同输入同配置时直接复用，否则重新构建�
 - 发侧（任务 metadata，走加密信封）：`amsgEmotionEval`（评估模板 + 副 API 凭据；worker
   在 `onBeforeFire` 捕获后就地删除，喂给 push 构建前再剥一层——凭据绝不进任何 push/outbox）。
 - 回程（push metadata）：`amsgEmotionUpdate` / `amsgEmotionDone` / `amsgEmotionError`
-  （评估结果 / 熄灯信号 / 脱敏后的失败原因）、`amsgReasoning`（思考链，只挂第一条 push、
+  （评估结果 / 熄灯信号 / 脱敏后的失败原因；定时类带了 `fire_pack.emotionEval` 时也回这几个键）、
+  `amsgNoticeIds`（定时类模板里带过的回执 id，只挂末条 push，见上文「模板的可选字段」）、`amsgReasoning`（思考链，只挂第一条 push、
   即时对话或开启内心独白的定时轮）、`amsgToolTrace`（`[{name,count}]`，只数真跑过的调用、只挂末条 push、
-  只在即时对话轮）、`amsgUsage`（`{promptTokens, completionTokens}`，同样只挂末条 push、
-  只在即时对话轮）。
-- `amsgUsage` 的去处：客户端把它补进「设置 → API 调用记录」里那笔云端调用（发出时先落
-  一笔 pending，收到末条推送时回填 Token）。它是**最后一次**模型调用的用量——带工具的
-  一轮会连着调好几次模型，中间几次的数云端没留，所以跑过工具时那笔记录会标「只算末轮」。
+  只在即时对话轮）、`amsgUsage`（`{promptTokens, completionTokens}`，只挂末条 push，即时对话和定时类都带）。
+- `amsgUsage` 是这一轮所有模型调用累加的用量。即时对话轮跑了多轮工具、且每一轮都报了用量时，
+  另挂 `amsgUsageComplete`；定时类轮同时挂 `amsgProactiveKind`（`away` / `dateLeave` / `self` /
+  `scheduled`，区分离开后消息、见面离开提醒、角色自排和其余定时消息），有某一轮没报用量时挂
+  `amsgTokensPartial`。这三个键都只在拿到用量时才挂。
+- `amsgUsage` 的去处：客户端把它补进「设置 → API 调用记录」里那笔云端调用。即时对话发出时先落
+  一笔 pending，收到末条推送时回填 Token；跑过工具又没有 `amsgUsageComplete` 时标「用量不完整」。
+  定时类在消息落地时记一笔，用途按 `amsgProactiveKind` 分，带 `amsgTokensPartial` 时同样标「用量不完整」。
 - 超限旁路：新 Worker 用 `ctx.storeAttachment` 写入 `amsg:attachments`，metadata 携带
   `amsgEmotionAttachment`、`amsgReasoningAttachment`、`xhsSessionAttachment` 等对象引用。
   引用含 `version:1`、随机 key、`taskUuid`、`occurrenceMs`、`expiresAt`，写入时绑定角色 owner。
@@ -288,7 +330,8 @@ fire 时的处理规则：
   能力 → 尽力补发一条 `messageKind: 'error'`（SW 已有该分轨）。拿不到就算了，
   别为此改上游。
 - POST `/instant-chat` 任何一步 await 失败 → 客户端收到明确错误 → 界面报
-  发送失败可重试。**绝不静默转回本地生成**。
+  发送失败可重试。**绝不静默转回本地生成**。用户自己没开 2.0 时直接走本地；云端跑不了
+  这一轮时转本地，界面标明「本机生成」并留 trace。认哪几种情况见[总纲「回退本地」](../docs/amsg2-overview.md#回退本地)。
 
 ## 只有动作的回复
 

@@ -22,7 +22,7 @@ import {
 import { ActiveMsgClient } from './activeMsgClient';
 import { ActiveMsgStore } from './activeMsgStore';
 import { isAmsg2WorkerActive } from './amsgGlobalGate';
-import { buildDuplicateToolMessage, toolCallFingerprint, type ToolCallRecord } from './agenticToolFeedback';
+import { buildDuplicateToolMessage, describeTool, toolCallFingerprint, type ToolCallRecord } from './agenticToolFeedback';
 import { trackEvent } from './analytics';
 import {
   applyScheduledTask, currentOccurrenceMs, describeExpirePolicy, describeRecurrence,
@@ -158,6 +158,23 @@ const TOOL_FOLLOW_UP = [
 ].join('\n');
 
 /**
+ * 工具循环最后一轮用的版本：那一轮请求不再带工具，「还需要别的工具时再调用」那半句会跟收尾提示
+ * 打架，所以去掉，其余交代不变。
+ */
+const TOOL_FOLLOW_UP_FINAL_ROUND = [
+  '[系统: 这一次调用已经处理完了，结果就在上面。同样的调用不要再来一遍——',
+  '如果还没对用户说完，现在接着把剩下的话补完。',
+  '前面已经说出去的内容和标签不要重写，重写一遍用户就会收到两遍；如果前面已经把对用户说的话完整表达完了、且与这次工具结果不冲突，不需要再补充任何文字，直接留空结束即可。]',
+].join('\n');
+
+/** 同名同参被打回时、最后一轮用的版本（buildDuplicateToolMessage 去掉「换一个还没用过的工具」）。 */
+const buildDuplicateFinalRoundMessage = (name: string): string => [
+  `[系统: 你刚刚已经${describeTool(name)}过一次了，参数完全相同，结果就在上面。]`,
+  '[系统: 这一次没有再执行。如果还没说完，接着把要发的消息写完；',
+  '前面已经说出去的内容和标签不要重写，接着往下写就行；如果前面已经完整说完了，直接留空结束即可。]',
+].join('\n');
+
+/**
  * 一次工具调用的结局，给工具循环判断「这一轮有没有进展」、也给 trace 留痕用。
  *
  * 不带任何聊天内容：
@@ -204,7 +221,12 @@ export const executeAmsg2ToolWithOutcome = async (
   toolName: string,
   args: Record<string, any>,
   deps: Amsg2ToolDeps,
-): Promise<{ text: string; outcome: Amsg2ToolOutcome }> => {
+): Promise<{
+  text: string;
+  /** 结果要喂给工具循环最后一轮（不再给工具）时用这份：不提「还需要别的工具」。 */
+  finalRoundText: string;
+  outcome: Amsg2ToolOutcome;
+}> => {
   deps.signal?.throwIfAborted();
   const mutating = MUTATING_TOOLS.has(toolName);
   const isKnownAmsg2Tool = AMSG2_TOOL_NAMES.has(toolName);
@@ -218,7 +240,11 @@ export const executeAmsg2ToolWithOutcome = async (
       ? `list_active_messages:${before}`
       : '';
   if (fingerprint && deps.seenCalls.some((r) => r.fingerprint === fingerprint)) {
-    return { text: buildDuplicateToolMessage(toolName), outcome: { tool: toolName, status: 'duplicate' } };
+    return {
+      text: buildDuplicateToolMessage(toolName),
+      finalRoundText: buildDuplicateFinalRoundMessage(toolName),
+      outcome: { tool: toolName, status: 'duplicate' },
+    };
   }
   rejectionReasons.delete(deps);
   try {
@@ -248,12 +274,18 @@ export const executeAmsg2ToolWithOutcome = async (
     else if (!mutating) outcome = { tool: toolName, status: 'rejected', reason: 'unknown_tool' };
     else if (taskSignature(deps) !== before) outcome = { tool: toolName, status: 'done' };
     else outcome = { tool: toolName, status: 'rejected', reason: 'no_change' };
-    return { text: isKnownAmsg2Tool ? `${result}\n${TOOL_FOLLOW_UP}` : result, outcome };
+    return {
+      text: isKnownAmsg2Tool ? `${result}\n${TOOL_FOLLOW_UP}` : result,
+      finalRoundText: isKnownAmsg2Tool ? `${result}\n${TOOL_FOLLOW_UP_FINAL_ROUND}` : result,
+      outcome,
+    };
   } catch (e: any) {
     deps.signal?.throwIfAborted();
     rejectionReasons.delete(deps);
+    const failure = `操作失败：${e?.message || String(e)}`;
     return {
-      text: `操作失败：${e?.message || String(e)}`,
+      text: failure,
+      finalRoundText: failure,
       // 报错原文只留一小截：多半是这边自己写的话（名额满了、没填地址），排障时一眼能认出是哪道。
       outcome: { tool: toolName, status: 'error', message: String(e?.message || e).slice(0, 120) },
     };

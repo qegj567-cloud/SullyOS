@@ -38,7 +38,7 @@ import { readStorageOverview } from './storageStats';
 import { BUILTIN_SOUNDS } from './whiteboxSound';
 import { DB } from './db';
 import { isStandaloneDisplayMode } from './iosStandalone';
-import { loadMcpServers, getMcpUseNativeTools } from './mcpClient';
+import { loadMcpServers, getMcpUseNativeTools, getMcpAllowCloudDestructive } from './mcpClient';
 import { getLuckinToken, isLuckinEnabled } from './luckinMcpClient';
 import { getMcdToken, isMcdEnabled } from './mcdMcpClient';
 import { getPendingTasks, isAmsg2EnabledForChar } from './amsg2Tasks';
@@ -511,6 +511,8 @@ export function collectFeatureFlags(src: FeatureSources): Record<string, string>
         连通的MCP服务器: bucketFewCount(mcpServers.filter(s => (s.tools?.length ?? 0) > 0).length),
         // 关掉了就是退回文字兼容模式，本身是「模型不支持 function calling」的信号。
         MCP原生工具调用: getMcpUseNativeTools() ? '开' : '关',
+        // 用户有没有放开「云端不经确认执行破坏性工具」。
+        MCP云端破坏性工具: onOff(getMcpAllowCloudDestructive()),
         QQ桥接: triState(hasLocalValue('qqBridge:wsUrl'), isLocalFlagOn('qqBridge:enabled', '1')),
 
         // ── 数据与备份 ──

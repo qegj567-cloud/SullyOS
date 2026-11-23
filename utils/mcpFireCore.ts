@@ -886,6 +886,12 @@ export const buildMcpFireTools = <S extends McpFireServer>(
 };
 
 /**
+ * MCP 模式的末尾小提醒（注入 messages 末尾，防长对话把纪律冲掉）。
+ * 前台聊天和 worker 拼的请求共用这一份，两边末尾读到的是同一句。
+ */
+export const MCP_TAIL_REMINDER = `[MCP 工具 ON · 永远用角色语气回复别空回; 工具只能走 function calling 接口、严禁写成正文文字; 工具结果别复读 JSON; 用户最新消息里已明确要求的操作视为已确认，否则副作用操作先确认]`;
+
+/**
  * 后台 fire 的 MCP 工具说明块（worker 到点拼进 user prompt 尾部）。
  *
  * native 模式（默认）：tools 参数已随请求声明，这里只列来源和纪律——与前台
@@ -896,7 +902,15 @@ export const buildMcpFireTools = <S extends McpFireServer>(
  */
 export const buildMcpFireBlock = <S extends McpFireServer>(
     resolve: Map<string, McpResolvedToolCore<S>>,
-    opts: { mode: 'native' | 'text'; userName?: string },
+    opts: {
+        mode: 'native' | 'text';
+        userName?: string;
+        /**
+         * chat = 即时对话：这一轮是用户在等回复，抬头不提主动消息。
+         * 缺省按 fire（定时 / 后台任务）写，旧调用点行为不变。
+         */
+        context?: 'chat' | 'fire';
+    },
 ): string => {
     if (!resolve.size) return '';
     const userName = opts.userName || '用户';
@@ -921,7 +935,7 @@ export const buildMcpFireBlock = <S extends McpFireServer>(
     return [
         '',
         '---',
-        `【外部工具 —— ${userName} 在设置里给你连了 MCP 工具服务器，主动消息里也可以用】`,
+        `【外部工具 —— ${userName} 在设置里给你连了 MCP 工具服务器${opts.context === 'chat' ? '' : '，主动消息里也可以用'}】`,
         howTo,
         '纪律：不需要就别硬调；没收到系统返回前不要声称工具成功，也不要编造结果；工具失败就换个方式或如实带过；结果只挑相关部分用角色语气转述，别复读 JSON。',
         '多步任务：先做必要检查，随后立刻调用能推进目标的动作工具；不要反复读取同一份说明或状态。执行动作后可以再次检查新状态，并继续到目标完成或工具明确失败。',

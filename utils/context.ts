@@ -12,7 +12,10 @@ import {buildHomePetContext} from './homePetContext';
 import { buildHomeDefinitionContext } from './homeDefinitionContext';
 import { isScheduleFeatureOn } from './scheduleFeature';
 import { buildScheduleInjection as buildScheduleInjectionText } from './scheduleInjection';
-import { TIME_FRAMING_CONVERSATIONAL } from './timeFramingNote';
+import { TIME_AWARENESS_NOTE, TIME_FRAMING_CONVERSATIONAL } from './timeFramingNote';
+import { buildUserClockHint } from './amsgFirePack';
+
+const DEVICE_TZ = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 import { resolveCharTimeZone, nowInTimeZone, tzAwarenessNote, interactionGapNote } from './timezone';
 import {
     isWorldbookEntryActive,
@@ -220,6 +223,13 @@ export const ContextBuilder = {
              * 手册 / 小剧场这些生成器同样走 buildCoreContext，但那边并没有人在对话。
              */
             conversational?: boolean;
+            /** 「对方那边现在几点」那一行里对方的称呼；不传写「对方」。 */
+            userName?: string;
+            /**
+             * 带不带「对方那边现在几点」。只有隔着手机的线上交流（私聊、群聊）要它；见面是
+             * 两个人在同一个地方，各类生成器也没有「对方」在这个点说话，默认不带。
+             */
+            includeUserClock?: boolean;
         },
     ): string => {
         // skipTimeAwareness：见面纯架空时由调用方传入，彻底抑制时间注入（修「线下时间感知」关掉后仍漏时间）。
@@ -236,7 +246,7 @@ export const ContextBuilder = {
         const dateStr = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日`;
         const timeStr = `${h.toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
         let context = `### 当前时间 (Now)\n`;
-        context += `现在是 ${dateStr} ${dayNames[now.getDay()]} ${timeOfDay} ${timeStr}。请据此自然地拥有真实的时间观念（早晚作息、工作日/周末、距离上次互动多久等），不要凭空假设时间。\n`;
+        context += `现在是 ${dateStr} ${dayNames[now.getDay()]} ${timeOfDay} ${timeStr}。${TIME_AWARENESS_NOTE}\n`;
         // 报时后面那句语境框定（这句话本身和「为什么只在对话时给」都在
         // utils/timeFramingNote.ts）。即时对话走的是云端那条路，时间由 worker 到点补，
         // 那边引的是同一份常量——同一句话不抄两遍，免得两条路上的角色分寸不一样。
@@ -245,6 +255,11 @@ export const ContextBuilder = {
         }
         const tzNote = tzAwarenessNote(charTz);
         if (tzNote) context += `${tzNote.trim()}\n`;
+        // 对方那边几点：与即时对话云端时效块同一个函数，两个时区相同时不出。
+        const userClock = timeOptions?.includeUserClock ? buildUserClockHint(
+            Date.now(), { tzId: charTz ?? DEVICE_TZ() }, { tzId: DEVICE_TZ() }, timeOptions?.userName || '',
+        ).trim() : '';
+        if (userClock) context += `${userClock}\n`;
         // 距离上次联系多久（统一口径）：传了 lastInteractionTs 才注入。
         // 让查手机/人际关系等无内联消息流的路径，也像聊天一样知道「用户多久没联系我了」。
         const gapNote = interactionGapNote(timeOptions?.lastInteractionTs);
@@ -269,7 +284,7 @@ export const ContextBuilder = {
             /** 仅本次请求共用的读取结果；不缓存到下一轮，null 也不重复查询。 */
             scheduleSnapshot?: Promise<DailySchedule | null>;
             memoryPalaceContext?: string;
-            timeOptions?: { lastInteractionTs?: number; skipTimeAwareness?: boolean; conversational?: boolean };
+            timeOptions?: { lastInteractionTs?: number; skipTimeAwareness?: boolean; conversational?: boolean; userName?: string; includeUserClock?: boolean };
         },
     ): Promise<string> => {
         let context = ContextBuilder.buildTimeAwarenessBlock(char, options?.timeOptions);
@@ -572,6 +587,8 @@ const renderCoreContext = async (
             skipTimeAwareness?: boolean;
             /** 正有人在跟角色实时对话（私聊 / 见面）。见 buildTimeAwarenessBlock 同名字段。 */
             conversational?: boolean;
+            /** 带「对方那边现在几点」，只给线上聊天。见 buildTimeAwarenessBlock 同名字段。 */
+            includeUserClock?: boolean;
             /** Cloud requests fill this user's date-dependent line at generation time. */
             skipUserHoliday?: boolean;
             userHolidays?: UserHolidayConfig;
@@ -608,7 +625,7 @@ const renderCoreContext = async (
         // deferVolatile 时不在这里输出（时间精确到分钟、每轮都变，会打断 prompt 前缀缓存），
         // 改由调用方经 buildVolatileCoreState 放到消息数组末尾。
         if (!layout?.deferVolatile) {
-            context += ContextBuilder.buildTimeAwarenessBlock(char, timeOptions);
+            context += ContextBuilder.buildTimeAwarenessBlock(char, { ...timeOptions, userName: user.name });
         }
 
         // 1b. 自我领悟词条 (Self Insights) — 消化过程中反刍产生的常驻自我认知

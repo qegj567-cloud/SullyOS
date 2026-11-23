@@ -999,7 +999,8 @@ describe('buildFirePack 的时区参照系与模板（①）', () => {
 
   it('关闭自主月度查阅时，主动消息模板不再提示查月份，记忆仍保留', async () => {
     const memories = [{ id: 'recall-toggle', date: '2026-06-12', mood: 'happy', summary: '六月一起看过日落' }];
-    const enabled = await pack(baseChar({ memories }));
+    // 月份清单跟随「隐藏调取记忆提示」开关，显式关掉隐藏才出现。
+    const enabled = await pack(baseChar({ memories, hideMonthlyRecallPrompt: false }));
     expect(enabled.template).toContain('[[RECALL: 年-月]]');
     const char = baseChar({ memories, monthlyRecallEnabled: false, activeMemoryMonths: ['2026-06'] });
     const before = JSON.stringify(char);
@@ -1499,6 +1500,9 @@ describe('ActiveMsgClient.connect（连接后补登记推送订阅）', () => {
   });
 });
 
+// 凭据刷新时模型参数跟着刷（温度 / 输出上限 / 思考参数，见 dialogueLlmParams）；这些角色都没开思考。
+const LLM_UPDATES = { temperature: 0.85, maxTokens: 8000, llmExtraBody: null };
+
 describe('ActiveMsgClient.refreshApiCredentialsForPendingTasks（③ 凭据变更重传）', () => {
   const API = { baseUrl: 'https://api.example.com/v1', apiKey: 'new-key', model: 'gpt-x' } as any;
 
@@ -1534,11 +1538,13 @@ describe('ActiveMsgClient.refreshApiCredentialsForPendingTasks（③ 凭据变�
       apiUrl: 'https://api.example.com/v1/chat/completions',
       apiKey: 'new-key',
       primaryModel: 'gpt-x',
+      ...LLM_UPDATES,
     });
     expect(byUuid.get('c1')).toEqual({
       apiUrl: 'https://api.example.com/v1/chat/completions',
       apiKey: 'new-key',
       primaryModel: 'gpt-x',
+      ...LLM_UPDATES,
     });
   });
 
@@ -1572,9 +1578,9 @@ describe('ActiveMsgClient.refreshApiCredentialsForPendingTasks（③ 凭据变�
       const result = await ActiveMsgClient.refreshApiCredentialsForPendingTasks(API);
       expect(result).toEqual({ status: 'ok', updated: 3, failed: 0 });
       expect(reiClient.updateMessage.mock.calls).toEqual([
-        ['ref', { credRefs: { chat: 'char:char-a/chat', emotion: 'char:char-a/emotion' } }],
-        ['inline', { apiUrl: 'https://api.example.com/v1/chat/completions', apiKey: 'new-key', primaryModel: 'gpt-x' }],
-        ['instant-child', { credRefs: { chat: 'char:char-a/chat' } }],
+        ['ref', { credRefs: { chat: 'char:char-a/chat', emotion: 'char:char-a/emotion' }, ...LLM_UPDATES }],
+        ['inline', { apiUrl: 'https://api.example.com/v1/chat/completions', apiKey: 'new-key', primaryModel: 'gpt-x', ...LLM_UPDATES }],
+        ['instant-child', { credRefs: { chat: 'char:char-a/chat' }, ...LLM_UPDATES }],
       ]);
       expect(ActiveMsgClient.putLlmCredentials).toHaveBeenCalledWith([{
         credId: 'char:char-a/chat',
@@ -1637,6 +1643,7 @@ describe('ActiveMsgClient.refreshCharPendingAiTaskCredentials（③ 面板保存
       apiUrl: 'https://api.example.com/chat/completions',
       apiKey: 'k',
       primaryModel: 'm',
+      ...LLM_UPDATES,
     });
   });
 

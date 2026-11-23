@@ -15,9 +15,11 @@ import {
     sanitizeMcpToolName,
     stripTextFakedMcpCalls,
     withMcpDedupeSuffix,
+    MCP_TAIL_REMINDER,
     type McpFireServer,
     type McpTransportTarget,
 } from './mcpFireCore';
+import { MCP_TAIL_REMINDER as LOCAL_MCP_TAIL_REMINDER } from './mcpToolBridge';
 
 const srv = (over: Partial<McpFireServer>): McpFireServer => ({
     id: 's1', name: '服务器A', url: 'https://a.example.com/mcp',
@@ -324,6 +326,24 @@ describe('buildMcpFireBlock / buildMcpFireTools', () => {
         const block = buildMcpFireBlock(map, { mode: 'text' });
         expect(block).toContain('get_weather(city*:string, days:number)');
         expect(block).toContain('tool_name({"参数":"值"})');
+    });
+
+    it('抬头写的是传进来的用户名，没传才退回「用户」', () => {
+        expect(buildMcpFireBlock(map, { mode: 'native', userName: '小明' })).toContain('小明 在设置里给你连了');
+        expect(buildMcpFireBlock(map, { mode: 'native' })).toContain('用户 在设置里给你连了');
+    });
+
+    // 即时对话这一轮是用户在等回复，抬头不该说「主动消息里也可以用」；定时任务照旧。
+    it('即时对话（context=chat）抬头不提主动消息，缺省按定时任务写', () => {
+        expect(buildMcpFireBlock(map, { mode: 'native', context: 'chat' })).not.toContain('主动消息');
+        expect(buildMcpFireBlock(map, { mode: 'text', context: 'chat' })).not.toContain('主动消息');
+        expect(buildMcpFireBlock(map, { mode: 'native' })).toContain('主动消息里也可以用');
+        expect(buildMcpFireBlock(map, { mode: 'native', context: 'fire' })).toContain('主动消息里也可以用');
+    });
+
+    it('末尾提醒跟前台是同一份常量', () => {
+        expect(MCP_TAIL_REMINDER).toBe(LOCAL_MCP_TAIL_REMINDER);
+        expect(MCP_TAIL_REMINDER).toContain('MCP 工具 ON');
     });
 
     it('空映射返回空串（不往 prompt 里塞空壳）', () => {
