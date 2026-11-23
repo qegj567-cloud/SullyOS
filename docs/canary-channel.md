@@ -38,7 +38,9 @@ canary 前端挂在 `friedsully.com/canary/`，和正式版同一个网址。浏
 
 ### 加入与退出
 
-入口在设置底部的版本信息区。加入入口要先连点 5 下版本号、解锁调试面板后才出现，让人数保持在少量；退出入口在 canary 里一直显示，不藏。两边都用 `useConfirmDialog` 二次确认。
+入口是设置底部版本信息下方的「正式版 | canary」标签。正式版上要先连点 5 下版本号、解锁调试面板后才出现，让人数保持在少量；在 canary 里一直显示，退出不藏。切换都用 `useConfirmDialog` 二次确认。确认加入后，屏幕边缘亮起黄光、一道光从底部扫到顶部，直到页面跳走；Worker 换得再快也至少扫完一遍（1.4 秒）。系统开了减弱动态效果时只亮不扫。
+
+canary 构建不挂开发角标（分支@提交号那三行），改在右下角放一个小黄点。设置底部可以取消「右下角显示 canary 黄点」，偏好存在 localStorage 的 `sullyos_canary_dot_hidden`，只属于这台设备，不进备份。预览页 `test/fixtures/canary-channel.html`（`?glow` 看加入动画）。
 
 以下情况不能加入，按钮置灰并写明原因：
 
@@ -59,7 +61,7 @@ iOS 主屏幕 PWA 没有地址栏，canary 如果白屏，用户连设置都进�
 
 - 正式版每次往 canary 跳之前，把 `sullyos_canary_boot_attempts` 加一；canary 挂载完成后清零。
 - 正式版准备跳时发现这个数已经到 2（连续两次跳过去都没启动成功），就不再跳，把通道改回正式版，并在启动后提示一次「canary 连续两次没能启动，已回到正式版」。之后的 Worker 降级由冷启动对齐完成。
-- 手动后门：打开 `https://friedsully.com/?channel=stable` 会强制回到正式版，清掉计数。
+- 手动后门：打开 `https://friedsully.com/?channel=stable` 会强制回到正式版，清掉计数。只对同一个浏览器里的数据有效：iOS 主屏幕 App 和 Safari 的存储是分开的（2026-11 真机确认），在 Safari 里打开这个网址改不到主屏幕 App，主屏幕 App 只能靠自动退回或设置里的标签切回。
 
 ### 推送订阅
 

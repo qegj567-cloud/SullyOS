@@ -6,6 +6,7 @@ import { OSProvider } from './context/OSContext';
 import { MusicProvider } from './context/MusicContext';
 import PhoneShell from './components/PhoneShell';
 import BuildBadge from './components/BuildBadge';
+import CanaryDot from './components/CanaryDot';
 import DevDebugPanel from './components/DevDebugPanel';
 import Amsg2DebugPanel from './components/Amsg2DebugPanel';
 import VRBroadcast from './components/VRBroadcast';
@@ -57,6 +58,7 @@ const App: React.FC = () => {
         </div>
       </div>
       <BuildBadge />
+      <CanaryDot />
       <DevDebugPanel />
       <VRBroadcast />
       <WorldBroadcast />

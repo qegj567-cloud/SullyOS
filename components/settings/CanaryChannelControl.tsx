@@ -1,18 +1,58 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Capacitor } from '@capacitor/core';
 import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 import { trackEvent } from '../../utils/analytics';
-import { RELEASE_CHANNEL, describeCanaryJoinBlocker } from '../../utils/releaseChannel';
+import {
+  RELEASE_CHANNEL,
+  describeCanaryJoinBlocker,
+  readCanaryDotHidden,
+  writeCanaryDotHidden,
+} from '../../utils/releaseChannel';
 import { joinCanary, leaveCanary, loadCanaryJoinContext } from '../../utils/releaseChannelSwitch';
 
+/** canary 经典黄。 */
+const CANARY_YELLOW = '#FACC15';
+/** 加入动画扫一遍的时长；跳走前至少扫完一遍，Worker 换得再快也看得见。 */
+const SWEEP_MS = 1400;
+
+const GLOW_CSS = `
+@keyframes canary-sweep { from { transform: translateY(100%); } to { transform: translateY(-100%); } }
+.canary-glow-ring { position: absolute; inset: 0; padding: 9px; overflow: hidden; background: rgba(250,204,21,0.22);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); filter: blur(1.5px); }
+.canary-glow-bloom { position: absolute; inset: 0; overflow: hidden; opacity: 0.28; filter: blur(32px); }
+.canary-glow-band { position: absolute; inset: 0; animation: canary-sweep ${SWEEP_MS}ms cubic-bezier(.45,0,.25,1) infinite;
+  background: linear-gradient(to top, transparent 22%, ${CANARY_YELLOW} 44%, #FFF6C2 50%, ${CANARY_YELLOW} 56%, transparent 78%); }
+@media (prefers-reduced-motion: reduce) { .canary-glow-band { animation: none; opacity: 0.6; } }
+`;
+
 /**
- * 设置底部版本信息下面的 canary 入口（docs/canary-channel.md）。
- * 在 canary 里一直显示「回到正式版」；正式版上要先连点版本号解锁调试面板才出现「加入 canary」。
+ * 加入 canary 时盖在整个屏幕上的黄光：屏幕边缘一圈光带，一道亮光从底部往顶部扫，
+ * 中间一层很淡的泛光跟着走。不拦点击，一直扫到页面跳走。
+ */
+export const CanaryJoinGlow: React.FC = () => createPortal(
+    <div aria-hidden className="fixed inset-0 pointer-events-none" style={{ zIndex: 2147483647 }}>
+        <style>{GLOW_CSS}</style>
+        <div className="canary-glow-bloom"><div className="canary-glow-band" /></div>
+        <div className="canary-glow-ring"><div className="canary-glow-band" /></div>
+    </div>,
+    document.body,
+);
+
+const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, ms)));
+
+/**
+ * 设置底部版本信息下面的通道切换（docs/canary-channel.md）。
+ * 在 canary 里一直显示；正式版上要先连点版本号解锁调试面板才出现。
  */
 const CanaryChannelControl: React.FC<{ unlocked: boolean }> = ({ unlocked }) => {
     const { requestConfirm, confirmDialog } = useConfirmDialog();
     const [busy, setBusy] = useState(false);
+    const [glowing, setGlowing] = useState(false);
     const [note, setNote] = useState<string | null>(null);
+    const [dotHidden, setDotHidden] = useState(readCanaryDotHidden);
+    const inCanary = RELEASE_CHANNEL === 'canary';
 
     const leave = async () => {
         const confirmed = await requestConfirm({
@@ -35,35 +75,76 @@ const CanaryChannelControl: React.FC<{ unlocked: boolean }> = ({ unlocked }) => 
             if (blocker) { setNote(blocker); return; }
             const confirmed = await requestConfirm({
                 title: '加入 canary',
-                message: 'canary 是还没正式发布的新版本，和正式版共用同一份数据，新版本的问题可能碰到你的真实数据。加入前请先在「设置 → 备份」导出一份备份。开着主动消息 2.0 的话，Worker 会先换成 canary 版本。',
+                message: 'canary 类似测试版。通常情况下加入不会导致数据损坏，但仍然推荐勤备份。此版本能给我们对新功能的开发带来更宝贵的真实测试反馈。开着主动消息 2.0 的话，Worker 会先换成 canary 版本。',
                 confirmText: '加入',
                 variant: 'warning',
                 confirmDelaySeconds: 3,
             });
             if (!confirmed) return;
-            const result = await joinCanary(() => trackEvent('加入 canary'));
-            if (!result.ok) setNote(result.message);
+            setGlowing(true);
+            const startedAt = Date.now();
+            const result = await joinCanary(async () => {
+                trackEvent('加入 canary');
+                await wait(startedAt + SWEEP_MS - Date.now());
+            });
+            if (!result.ok) { setGlowing(false); setNote(result.message); }
         } finally {
             setBusy(false);
         }
     };
 
-    if (RELEASE_CHANNEL === 'canary') {
+    if (!inCanary && (!unlocked || Capacitor.isNativePlatform())) return null;
+
+    const tab = (channel: 'stable' | 'canary', label: React.ReactNode) => {
+        const active = (channel === 'canary') === inCanary;
         return (
-            <div className="flex items-center gap-2 text-[10px] text-amber-600">
-                <span>当前是 canary</span>
-                <button type="button" disabled={busy} onClick={leave} className="underline disabled:opacity-50">回到正式版</button>
-                {confirmDialog}
-            </div>
-        );
-    }
-    if (!unlocked || Capacitor.isNativePlatform()) return null;
-    return (
-        <div className="flex flex-col items-center gap-1 text-[10px] text-slate-400">
-            <button type="button" disabled={busy} onClick={join} className="underline disabled:opacity-50">
-                {busy ? '检查中…' : '加入 canary'}
+            <button
+                type="button"
+                role="tab"
+                aria-selected={active}
+                disabled={busy}
+                onClick={active ? undefined : channel === 'canary' ? join : leave}
+                className={`relative z-10 flex items-center justify-center gap-1.5 rounded-full transition-colors disabled:opacity-60 ${active ? 'text-slate-800' : 'text-slate-400'}`}
+            >
+                {label}
             </button>
-            {note && <span className="max-w-xs text-center text-amber-600">{note}</span>}
+        );
+    };
+
+    return (
+        <div className="flex flex-col items-center gap-2 pt-1">
+            <div role="tablist" aria-label="版本通道" className="relative grid grid-cols-2 w-60 h-10 p-1 rounded-full bg-slate-200/70 text-sm font-medium">
+                <span
+                    aria-hidden
+                    className="absolute top-1 bottom-1 left-1 rounded-full shadow-sm transition-all duration-300"
+                    style={{
+                        width: 'calc(50% - 4px)',
+                        transform: inCanary ? 'translateX(100%)' : 'none',
+                        background: inCanary ? CANARY_YELLOW : '#fff',
+                    }}
+                />
+                {tab('stable', '正式版')}
+                {tab('canary', <>
+                    {!inCanary && <span className="w-1.5 h-1.5 rounded-full" style={{ background: CANARY_YELLOW }} />}
+                    {busy && !inCanary ? '切换中…' : 'canary'}
+                </>)}
+            </div>
+            {inCanary && (
+                <label className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                    <input
+                        type="checkbox"
+                        checked={!dotHidden}
+                        onChange={(event) => {
+                            const hidden = !event.target.checked;
+                            writeCanaryDotHidden(hidden);
+                            setDotHidden(hidden);
+                        }}
+                    />
+                    右下角显示 canary 黄点
+                </label>
+            )}
+            {note && <span className="max-w-xs text-center text-[11px] text-amber-600">{note}</span>}
+            {glowing && <CanaryJoinGlow />}
             {confirmDialog}
         </div>
     );

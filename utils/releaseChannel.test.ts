@@ -105,3 +105,14 @@ describe('analyticsTag', () => {
     expect(analyticsTag('canary')).toBe(`${APP_VERSION_TAG}-canary`);
   });
 });
+
+describe('canary 黄点开关', () => {
+  it('写入后读得到，取消隐藏会删掉这条偏好', async () => {
+    const { readCanaryDotHidden, writeCanaryDotHidden, CANARY_DOT_HIDDEN_KEY } = await import('./releaseChannel');
+    writeCanaryDotHidden(true);
+    expect(readCanaryDotHidden()).toBe(true);
+    writeCanaryDotHidden(false);
+    expect(readCanaryDotHidden()).toBe(false);
+    expect(localStorage.getItem(CANARY_DOT_HIDDEN_KEY)).toBeNull();
+  });
+});

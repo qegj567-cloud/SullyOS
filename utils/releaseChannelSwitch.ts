@@ -44,8 +44,11 @@ const goTo = (channel: ReleaseChannel): void => {
   globalThis.location.replace(channelHomeUrl(channel));
 };
 
-/** 加入 canary。Worker 换不成 canary 包就不加入。beforeRedirect 在真正跳走前调用（埋点用）。 */
-export const joinCanary = async (beforeRedirect?: () => void): Promise<ChannelSwitchResult> => {
+/**
+ * 加入 canary。Worker 换不成 canary 包就不加入。
+ * beforeRedirect 在真正跳走前调用并等它结束：埋点，以及让加入动画至少扫完一遍。
+ */
+export const joinCanary = async (beforeRedirect?: () => void | Promise<void>): Promise<ChannelSwitchResult> => {
   const context = await loadCanaryJoinContext();
   const blocker = describeCanaryJoinBlocker(context);
   if (blocker) return { ok: false, message: blocker };
@@ -55,7 +58,7 @@ export const joinCanary = async (beforeRedirect?: () => void): Promise<ChannelSw
     }));
     if (!result.ok) return { ok: false, message: `Worker 没能换成 canary 版本，这次没有加入：${result.message}` };
   }
-  beforeRedirect?.();
+  await beforeRedirect?.();
   goTo('canary');
   return { ok: true };
 };
