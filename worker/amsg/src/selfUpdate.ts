@@ -21,21 +21,31 @@
  */
 
 import { constantTimeEqual } from './instantChat';
-import { cfTokenRejectedMessage, findCfTokenRejection } from '../../../utils/amsgSelfUpdateState';
+import {
+  cfTokenRejectedMessage,
+  findCfTokenRejection,
+  parseAmsgBundleChannel,
+  type AmsgBundleChannel,
+} from '../../../utils/amsgSelfUpdateState';
 
 const CF_API = 'https://api.cloudflare.com/client/v4';
 
-/** 官方成品代码。跟代配脚本、手册附录指的是同一份。 */
-const BUNDLE_URL =
-  'https://raw.githubusercontent.com/Tosd0/sullyos-workers/main/amsg/worker.bundle.js';
+/**
+ * 官方成品代码，按通道分两条线：正式版跟部署仓库 main 分支（跟代配脚本、手册附录指的是同一份），
+ * canary 跟同仓库的 canary 分支（志愿者先试的那版，见 docs/canary-channel.md）。
+ */
+const BUNDLE_URLS: Record<AmsgBundleChannel, string> = {
+  stable: 'https://raw.githubusercontent.com/Tosd0/sullyos-workers/main/amsg/worker.bundle.js',
+  canary: 'https://raw.githubusercontent.com/Tosd0/sullyos-workers/canary/amsg/worker.bundle.js',
+};
 
 /**
- * 成品包从哪儿取：默认官方那份；配了 AMSG_BUNDLE_URL 就取那儿（自己维护成品包的 fork、
- * 或者拿一台测试 Worker 试新代码时用）。只认 https，别的一律回落到默认。
+ * 这台 Worker 自己指定的成品包地址（AMSG_BUNDLE_URL，自己维护成品包的 fork、或者拿一台
+ * 测试 Worker 试新代码时用）。只认 https；没配或配得不对返回 null，按官方那两条线走。
  */
-export function resolveBundleUrl(env: Pick<SelfUpdateEnv, 'AMSG_BUNDLE_URL'>): string {
+export function customBundleUrl(env: Pick<SelfUpdateEnv, 'AMSG_BUNDLE_URL'>): string | null {
   const configured = env.AMSG_BUNDLE_URL?.trim();
-  if (!configured) return BUNDLE_URL;
+  if (!configured) return null;
   try {
     const url = new URL(configured);
     if (url.protocol === 'https:') return url.toString();
@@ -43,7 +53,18 @@ export function resolveBundleUrl(env: Pick<SelfUpdateEnv, 'AMSG_BUNDLE_URL'>): s
     // 不是个能解析的地址，按默认走
   }
   console.warn('[amsg:self-update] AMSG_BUNDLE_URL 不是 https 地址，改用默认成品包');
-  return BUNDLE_URL;
+  return null;
+}
+
+/**
+ * 成品包从哪儿取：配了 AMSG_BUNDLE_URL 就取那儿，通道不起作用（那是自己维护包的人，
+ * 包里是什么由他说了算）；否则按通道取官方那条线。
+ */
+export function resolveBundleUrl(
+  env: Pick<SelfUpdateEnv, 'AMSG_BUNDLE_URL'>,
+  channel: AmsgBundleChannel = 'stable',
+): string {
+  return customBundleUrl(env) ?? BUNDLE_URLS[channel];
 }
 
 /** 上传时用的模块名，同时也是 metadata.main_module，两处必须一致。 */
@@ -80,6 +101,8 @@ export interface SelfUpdateResult {
   bundleHash?: string;
   bundleBytes?: number;
   scriptName?: string;
+  /** 装上的这份是哪条线的；只在成功时带。调用方据此把通道记进诊断表。 */
+  channel?: AmsgBundleChannel;
 }
 
 const fail = (code: string, message: string): SelfUpdateResult & { ok: false } => ({ ok: false, code, message });
@@ -255,10 +278,11 @@ export function bundleFetchUrl(base: string, nowMs = Date.now()): string {
  */
 export async function fetchLatestBundle(
   env: Pick<SelfUpdateEnv, 'AMSG_BUNDLE_URL'> = {},
+  channel: AmsgBundleChannel = 'stable',
 ): Promise<{ ok: true; bundle: FetchedBundle } | { ok: false; message: string }> {
   let res: Response;
   try {
-    res = await fetch(bundleFetchUrl(resolveBundleUrl(env)), {
+    res = await fetch(bundleFetchUrl(resolveBundleUrl(env, channel)), {
       headers: { 'User-Agent': 'sullyos-amsg-self-update' },
       cache: 'no-store',
     });
@@ -471,13 +495,52 @@ export async function performSelfUpdate(
   };
 }
 
-/** `POST /self-update`：点了就装，不比指纹——手动点的人多半正是想强行重刷一遍。 */
+/**
+ * 从 `/self-update` 的请求体里认出要装哪条线。
+ *
+ * 空体、不是 JSON、没有 channel → 返回 null，由调用方沿用已存的通道：老前端照旧不带体调用，
+ * 不能把 canary 用户的 Worker 拉回正式版。带了 channel 但值不认识 → 'invalid'，要拒绝，
+ * 不能悄悄按已存通道装一遍让人以为切成功了。
+ */
+const readRequestedChannel = async (request: Request): Promise<AmsgBundleChannel | null | 'invalid'> => {
+  let body: unknown;
+  try {
+    body = JSON.parse(await request.text());
+  } catch {
+    return null;
+  }
+  if (!body || typeof body !== 'object' || !('channel' in body)) return null;
+  const raw = (body as { channel?: unknown }).channel;
+  if (raw === undefined) return null;
+  return parseAmsgBundleChannel(raw) ?? 'invalid';
+};
+
+/**
+ * `POST /self-update`：点了就装，不比指纹——手动点的人多半正是想强行重刷一遍。
+ *
+ * `storedChannel` 是诊断表里记着的通道（调用方读好传进来）。请求体可以带 `{ channel }` 换线；
+ * 换线成不成以装没装上为准，写回通道也是调用方在成功后做（结果里带着 channel）。
+ */
 export async function handleSelfUpdate(
   request: Request,
   env: SelfUpdateEnv,
+  storedChannel: AmsgBundleChannel = 'stable',
 ): Promise<SelfUpdateResult> {
   const gate = await authorizeSelfUpdate(request, env);
   if (!gate.ok) return gate;
+
+  const requested = await readRequestedChannel(request);
+  if (requested === 'invalid') {
+    return fail('INVALID_CHANNEL', '通道只能是 stable 或 canary。');
+  }
+  const channel = requested ?? storedChannel;
+  // 自己指定了成品包地址的 Worker 换不了线：照样会从那个地址拉包，App 却以为加入了 canary。
+  if (channel !== storedChannel && customBundleUrl(env)) {
+    return fail(
+      'CUSTOM_BUNDLE_URL',
+      '这台 Worker 用 AMSG_BUNDLE_URL 指定了自己的成品包地址，更新只从那里拉，切换不了通道。要跟官方通道走，先删掉这条变量。',
+    );
+  }
 
   const scriptName = resolveScriptName(env, request.url);
   if (!scriptName) {
@@ -488,8 +551,9 @@ export async function handleSelfUpdate(
   }
 
   // ③ 新代码先拿到手并验明正身，再碰线上的东西。
-  const fetched = await fetchLatestBundle(env);
+  const fetched = await fetchLatestBundle(env, channel);
   if (!fetched.ok) return fail('BUNDLE_INVALID', fetched.message);
 
-  return performSelfUpdate(env, gate.token, scriptName, fetched.bundle);
+  const result = await performSelfUpdate(env, gate.token, scriptName, fetched.bundle);
+  return result.ok ? { ...result, channel } : result;
 }

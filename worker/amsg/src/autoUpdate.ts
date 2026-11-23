@@ -21,8 +21,13 @@
  * 建表，后台自动换了代码时页面多半没开着，不自己补的话 cron 会因为缺表缺列每分钟静默挂。
  */
 
-import type { AmsgSelfUpdateOutcome, AmsgSelfUpdateSource, AmsgSelfUpdateState } from '../../../utils/amsgSelfUpdateState';
-import { parseAmsgSelfUpdateState } from '../../../utils/amsgSelfUpdateState';
+import type {
+  AmsgBundleChannel,
+  AmsgSelfUpdateOutcome,
+  AmsgSelfUpdateSource,
+  AmsgSelfUpdateState,
+} from '../../../utils/amsgSelfUpdateState';
+import { parseAmsgBundleChannel, parseAmsgSelfUpdateState } from '../../../utils/amsgSelfUpdateState';
 import {
   fetchLatestBundle,
   performSelfUpdate,
@@ -55,9 +60,10 @@ export async function runScheduledAfterUpdate<T>(update: () => Promise<unknown>,
   return tick();
 }
 
-/** 诊断表里的两个键。 */
+/** 诊断表里的三个键。 */
 const SELF_UPDATE_KEY = 'self_update';
 const SCHEMA_ENSURED_KEY = 'schema_ensured';
+const BUNDLE_CHANNEL_KEY = 'bundle_channel';
 
 /** 表结构自查失败后隔这么久再试，别每分钟都去数一遍表。 */
 const SCHEMA_ENSURE_RETRY_MS = 60 * 60_000;
@@ -85,6 +91,13 @@ export const readSelfUpdateState = async (db: TickReportDb | undefined): Promise
     return null;
   }
 };
+
+/**
+ * 这台 Worker 跟哪条线拉包。没记过、读不到（D1 没绑 / 表没建）、值不认识都当正式版：
+ * 存量 Worker 从没写过这一条，它们本来就在正式版上。
+ */
+export const readBundleChannel = async (db: TickReportDb | undefined): Promise<AmsgBundleChannel> =>
+  parseAmsgBundleChannel(await readDiagnosticValue(db, BUNDLE_CHANNEL_KEY)) ?? 'stable';
 
 const writeSelfUpdateState = async (db: TickReportDb, state: AmsgSelfUpdateState, nowMs: number): Promise<void> => {
   await writeDiagnosticValue(db, SELF_UPDATE_KEY, JSON.stringify(state), nowMs);
@@ -139,6 +152,9 @@ export const recordManualSelfUpdate = async (
 ): Promise<void> => {
   if (typeof db?.prepare !== 'function') return;
   try {
+    // 通道只在真装上了才写，失败时保持原样，不会落在「记着 canary、跑着正式版」的半切换状态。
+    // 排在最前：它决定之后自动更新拉哪条线，比下面的近况记录要紧。
+    if (result.ok && result.channel) await writeDiagnosticValue(db, BUNDLE_CHANNEL_KEY, result.channel, nowMs);
     const previous = await readSelfUpdateState(db);
     await writeSelfUpdateState(db, applySelfUpdateResult(previous, 'manual', result, nowMs), nowMs);
     if (result.ok) await markSchemaUnverified(db, nowMs);
@@ -196,7 +212,8 @@ export const runAutoUpdate = async (
     });
   }
 
-  const fetched = await fetchLatestBundle(env);
+  // 按记着的那条线拉：加入 canary 之后，定时检查得继续跟 canary 走，不能每六小时被拉回正式版。
+  const fetched = await fetchLatestBundle(env, await readBundleChannel(db));
   if (!fetched.ok) return settle({ ok: false, code: 'BUNDLE_INVALID', message: fetched.message });
 
   // 跟上次装的是同一份、运行时该有的绑定也都在 → 不动。

@@ -95,6 +95,7 @@
 - 没发布的功能不做旧数据兼容。真实运行时会遇到的情况照样要防：网络重试、浏览器差异、数据损坏。
 - 新增 Worker 接口时同步中转的路径白名单，有测试对照实际路由。
 - master 上的 Worker 改动等于已经发布：用户的 Worker 会按 bundle 指纹自动跟上 master。
+- 较大的 Worker 改动先走 canary 分支：加入 canary 的用户，Worker 跟部署仓库的 `canary` 分支拉包，前后端按通道配对。见 [`canary-channel.md`](./canary-channel.md)。
 
 ### 架构边界
 
@@ -138,6 +139,7 @@
 | 云端数据管理与角色删除 | [`../plans/amsg2-cloud-data-management-contract.md`](../plans/amsg2-cloud-data-management-contract.md) | 改云端清单、按项清理、删角色、停用与恢复前 |
 | 数据救援 | [`amsg2-rescue.md`](./amsg2-rescue.md) | 改 `/rescue` 导出、救援留痕、强制警告或把救援文件导回 App 前 |
 | 中转连接 | [`amsg2-relay.md`](./amsg2-relay.md) | 改请求 Worker 的地址拼接、新增 Worker 接口、动 `infra/amsg-relay/` 或 Caddyfile 前 |
+| canary 版本通道 | [`canary-channel.md`](./canary-channel.md) | 改 Worker 的 `bundle_channel`、`/self-update` 的通道参数、冷启动通道对齐或 `deploy-canary.yml` 前 |
 | 后台 MCP | [`mcp-client.md`](./mcp-client.md) 的主动消息 2.0 一节 | 改后台工具的配置上云、执行时注入、Worker 直连执行前 |
 | Service Worker 的推送存储 | [`amsg-sw-idb-resilience-spec.md`](./amsg-sw-idb-resilience-spec.md) | 改推送接收端的 IndexedDB 连接和送达确认前 |
 | 时区 | [`character-timezone.md`](./character-timezone.md) | 主动消息里还有几处没接角色时区，正式发版前过一遍 |

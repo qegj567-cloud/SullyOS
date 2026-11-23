@@ -31,6 +31,11 @@
  */
 
 import { APP_VERSION_TAG } from './buildInfo';
+import { RELEASE_CHANNEL, type ReleaseChannel } from './releaseChannel';
+
+/** 统计标签：版本号那半截，canary 构建加后缀。取值只有这两种，同一版同一通道的人完全一样。 */
+export const analyticsTag = (channel: ReleaseChannel = RELEASE_CHANNEL): string =>
+  channel === 'canary' ? `${APP_VERSION_TAG}-canary` : APP_VERSION_TAG;
 
 // ===== 构建时开关 =====
 // 两个都配齐才会加载统计脚本。官方部署在构建环境里配，自部署默认没有。
@@ -205,7 +210,8 @@ export function initAnalytics(): void {
   // 性能数字尤其需要这个轴——两个版本的数据混在一起，「这次优化到底有没有让首屏变快」
   // 就问不出来了。值写死在 buildInfo 里，同一版的所有人是同一个字符串，不带个人特征，
   // 也就不会给 docs/analytics.md「这是假名，不是匿名」里说的那个关联窗口添新维度。
-  script.setAttribute('data-tag', APP_VERSION_TAG);
+  // canary 构建挂 `v3.7-canary`，所有数据都能按通道切开（docs/canary-channel.md）。
+  script.setAttribute('data-tag', analyticsTag());
   // 出站前的最后一道闸门，见文件头第 4 条。要在脚本插进 DOM 之前挂好。
   (window as unknown as Record<string, unknown>)[BEFORE_SEND_HOOK] = (
     _type: string,
