@@ -18,6 +18,15 @@ var parseInstantInputEnvelope = (value) => {
 };
 
 // utils/llmEndpoint.ts
+async function readLlmResponseText(response, info) {
+  if (info) {
+    info.status = response.status;
+    info.bodyRead = false;
+  }
+  const text2 = await response.text();
+  if (info) info.bodyRead = true;
+  return text2;
+}
 function isAnthropicEndpoint(value) {
   try {
     return /\/messages(?:\/(?:chat\/completions|models))?\/?$/.test(new URL(value).pathname);
@@ -312,12 +321,15 @@ async function fetchLlm(resource, init, transport = globalThis.fetch, browser = 
     headers.delete("content-length");
   }
   const response = await transport(url, options);
+  const info = init?.__sullyResponseInfo;
+  if (info) info.status = response.status;
   if (!response.ok || method !== "POST") return response;
   if (response.headers.get("content-type")?.includes("text/event-stream")) {
     if (!response.body) throw Error("Anthropic \u8FD4\u56DE\u4E86\u7A7A\u6D41");
     return convertAnthropicStream(response);
   }
-  return new Response(JSON.stringify(fromAnthropicMessage(await response.json())), { status: response.status, statusText: response.statusText, headers: { "content-type": "application/json" } });
+  const message = info ? JSON.parse(await readLlmResponseText(response, info)) : await response.json();
+  return new Response(JSON.stringify(fromAnthropicMessage(message)), { status: response.status, statusText: response.statusText, headers: { "content-type": "application/json" } });
 }
 function installAnthropicFetch(browser = false) {
   if (globalThis.fetch.__sullyAnthropic) return;
