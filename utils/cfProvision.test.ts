@@ -330,9 +330,9 @@ describe('explainCfError', () => {
     it('权限不够时把要勾的三项列出来，而不是干说 Unauthorized', () => {
         const msg = explainCfError(403, { errors: [{ code: 9109, message: 'Unauthorized' }] });
 
-        expect(msg).toContain('Workers Scripts:Edit');
-        expect(msg).toContain('D1:Edit');
-        expect(msg).toContain('Account Settings:Read');
+        expect(msg).toContain('Workers Scripts 的 Read 和 Edit');
+        expect(msg).toContain('D1 的 Read 和 Edit');
+        expect(msg).toContain('Account Settings 的 Read');
     });
 
     it('token 格式错（多带了空格换行）单独提示', () => {

@@ -50,7 +50,7 @@ export const findCfTokenRejection = (text: string): string | null =>
 
 export const cfTokenRejectedMessage = (detail: string, hasAccountId: boolean): string =>
   `Cloudflare 不认这枚 CF_API_TOKEN（${detail}），多半已经过期或被删了。` +
-  '去 Cloudflare 新建一枚（只勾 Workers Scripts → Edit），替换 Worker 里的 CF_API_TOKEN。' +
+  '去 Cloudflare 新建一枚（只给 Workers Scripts 权限，Read 和 Edit 都勾），替换 Worker 里的 CF_API_TOKEN。' +
   (hasAccountId ? '' : '如果它是 cfat_ 开头的账号令牌，换成普通 API Token，或者给 Worker 加一条 CF_ACCOUNT_ID。');
 
 /** token 失效的 Worker 更新不了，会一直报旧提示，所以界面这边按原话再换一次。 */
