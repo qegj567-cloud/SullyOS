@@ -67,7 +67,8 @@ describe('private chat input controls', () => {
     it('keeps toolbar buttons usable and only removes its own outside listener when closed', () => {
         renderInput({ showPanel: 'actions' });
         const action = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('戳一戳'))!;
-        expect(action).toBeDefined();
+        expect(action.querySelector('svg')).toBeTruthy();
+        expect(action.querySelector('img')).toBeNull();
         pointerdown(action);
         expect(props.setShowPanel).not.toHaveBeenCalled();
         act(() => action.click());
@@ -76,6 +77,18 @@ describe('private chat input controls', () => {
         vi.mocked(props.setShowPanel).mockClear();
         pointerdown(container);
         expect(props.setShowPanel).not.toHaveBeenCalled();
+    });
+
+    it('puts the away status dot on the same icon tile the theme paints', () => {
+        renderInput({ showPanel: 'actions', previewActionsPage: 1 });
+        const action = Array.from(container.querySelectorAll('button')).find(button => button.textContent === '离开后消息')!;
+        const tile = action.firstElementChild!;
+        expect(tile.querySelector(':scope > svg')).toBeTruthy();
+        expect(tile.querySelector('.sully-chat-badge-dot')).toBeNull();
+        renderInput({ awayMessageOn: true });
+        expect(tile.querySelector(':scope > .sully-chat-badge-dot')).toBeTruthy();
+        act(() => action.click());
+        expect(props.onPanelAction).toHaveBeenCalledWith('away-message');
     });
 
     it.each(['emojis', 'chars'] as const)('also dismisses the %s panel when a nested message stops bubbling', showPanel => {

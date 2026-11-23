@@ -97,7 +97,8 @@ await writeFile(path,css+`/* ACID GOTHIC LACE */
 }
 .sully-chat-header .sully-chat-back {border:0 !important;background:none !important;box-shadow:none !important;}
 .sully-chat-header .sully-chat-name {font-size:16px !important;letter-spacing:.08em !important;}
-.sully-chat-inputbar {background:#1c2036 !important;border-top-color:#b9abd363 !important;}
+.sully-chat-inputbar {background:#1c2036 !important;border:0 !important;box-shadow:none !important;}
+.sully-chat-panel {border-top:0 !important;}
 .sully-chat-transfer-card {
   width:218px !important;max-width:100% !important;padding:12px !important;
   border-radius:16px !important;background:linear-gradient(125deg,#252a44,#39344f) !important;

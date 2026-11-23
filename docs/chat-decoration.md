@@ -134,7 +134,7 @@ HTML 卡片仍在独立 iframe 沙盒中；白框控制其外壳和排版，不�
 
 内置白框「星轨 · 深空」「星轨 · 雾紫」「银晕」在聊天装扮的全部/白框分类和「我的搭配」选择器中展示。入口由 `utils/builtinWhitebox.ts` 注册，使用本地静态素材，应用沿用角色选择确认流程。「银晕」的布局与配色在 `presets/chat/silver-halo.ts`，可导出的完整白框样式在同目录 `silver-halo.css`。图标下的淡星影只作用于加号功能页，发起转账的独立表单通过 `.sully-chat-transfer-compose` 定向适配。
 
-两款星轨的源文件与构建脚本在 `art/acid-orbit`。依次执行 `build-lace.mjs`、`build.mjs`、`build-builtins.mjs`、`build-preview.mjs` 可同步 CSS、导入文件和内置包。雾紫的小卡片使用 `lavender-card-palette.css` 的浅色卡底和深色文字。已有角色和全局白框显示时会识别旧雾紫的原始卡底规则，原位替换后仍按原顺序应用用户后续添加的 CSS。蕾丝为用户提供的 CC0 scallop2（来源见 `art/acid-orbit/SCALLOP-LICENSE.txt`）。
+两款星轨的源文件与构建脚本在 `art/acid-orbit`。依次执行 `build-lace.mjs`、`build.mjs`、`build-builtins.mjs`、`build-preview.mjs` 可同步 CSS、导入文件和内置包。雾紫的小卡片使用 `lavender-card-palette.css` 的浅色卡底和深色文字。已有角色和全局白框显示时会识别旧雾紫的原始卡底规则，原位替换后仍按原顺序应用用户后续添加的 CSS。两款星轨的输入栏外壳和功能面板交界处不画边线，输入框保留描边。已经套用旧星轨的角色和全局装扮在显示时同样生效。蕾丝为用户提供的 CC0 scallop2（来源见 `art/acid-orbit/SCALLOP-LICENSE.txt`）。
 
 ### 舞台隔离与深浅色对比度边界
 

@@ -1,11 +1,11 @@
 import React, {useEffect, useMemo, useRef} from 'react';
 import {applyCssImageUrls, resolveCssImageUrls} from '../../utils/cssImageAssets';
-import {resolveLavenderCardPalette} from '../../utils/lavenderCardPalette';
+import {resolveAcidOrbitCss} from '../../utils/acidOrbitCompatibility';
 
 /** Keep saved CSS and font rules stable while local images finish loading. */
 export default function BlobRefStyle({css}: {css: string}) {
     const styleRef = useRef<HTMLStyleElement>(null);
-    const displayCss = useMemo(() => resolveLavenderCardPalette(css), [css]);
+    const displayCss = useMemo(() => resolveAcidOrbitCss(css), [css]);
     useEffect(() => {
         if (!css.includes('blobref:')) return;
         let alive = true; let dispose: (() => void) | undefined;
