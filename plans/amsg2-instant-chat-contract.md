@@ -129,6 +129,34 @@
   - `pack.chat` 缺失而 metadata 标了 instant → 按失败处理（防止拿主动消息模板
     错答聊天）。
 
+### 模板的可选字段
+
+下面这些都是可选字段，不改 `FIRE_PACK_VERSION`，旧包缺省时 worker 照旧行为走。除 `userBioLength` 外只给定时类
+（定时主动消息、离开后消息、见面离开提醒）用。
+
+| 字段 | 内容 | worker 怎么用 | 缺省时 |
+|---|---|---|---|
+| `awayAnchor` | 离开计时起点是哪种在场互动：`{ source, lastDateAt }`（`source` 为 `date` / `call` / `call-end-popup`，线上发言为 null；`lastDateAt` 是最后一条真实记录为见面正文时的时刻） | 离开后消息到点用 `buildAwayFireInstruction` 现算「本次任务」，和本地同一份说法（见 [`away-message.md`](../docs/away-message.md)） | 用任务 metadata 里排程时写好的通用指令 |
+| `emotionEval` | `{ prompt }`，情绪评估提示词模板 | 与主生成并行评估，副 API 走任务的 `credRefs.emotion`；等结论再推送 | 这一轮不评估 |
+| `noticeIds` | 模板里带进去的「上次排的没发出去」回执的 id | 发出后记账，随最后一条推送带回 `amsgNoticeIds` | 不记账、不销账 |
+| `worldbookRolls` | 模板里按概率触发、打包时没抽签的世界书条目及其概率（模板里用 `{{AMSG_WB_IF:…}}` 标记包着） | 每次到点用 `renderWorldbookRolls` 现抽，和本地私聊每轮都抽一致 | 模板里没有标记，按打包时的结果 |
+| `userBioLength` | 「互动对象」段里 bio 的字符数（没填时按「无」算） | 插用户所在地节日时跳过 bio，插到和本地同一个位置；即时对话也用 | 插在段标题下面 |
+
+**情绪评估**：角色开了情绪评估、且这台 Worker 支持凭据存表（capabilities 含 `llm-credentials`）时，打包才带
+`emotionEval`，老 Worker 上取不到副 API 凭据。到点取不到副 API 凭据时安静跳过，只留日志，推送上不挂任何评估
+标记，客户端不弹失败。主生成结束后等评估的时长取 60 秒和「这次 fire 剩余预算减 10 秒」里小的那个，等满就不带
+结论照发并留日志。改角色的情绪开关或情绪 API 时，客户端刷新还会响的任务凭据：开着评估时补上 `credRefs.emotion` 并更新那一行凭据；关掉时引用留着，打包不再带 `emotionEval`，到点就不评估。
+
+**回执**：模板里的回执块和每条回执各自包着编号标记。worker 发出后把这些 id 记进按角色的一行 `sent_notices`
+（`AMSG_SENT_NOTICES_KEY`，最多留 100 条），之后到点渲染时把发过的那条去掉，一组都发过时连标题一起去掉。
+这样客户端一直不上线时，同一条回执也不会每次到点都重提。客户端收到带 `amsgNoticeIds` 的定时消息落地时，把这些
+回执标成已告知，重新打包后就不再带；本地版离开后消息、见面离开提醒发出去后同样销账，口径与本地私聊回复成功后
+销账相同。
+
+**到点标记的版本门槛**：`worldbookRolls` 和回执的编号标记只在这台 Worker 的 bundle 版本 ≥ `2026-11-23`、且这次
+打包是要上云的时候才出（`buildFirePack` 的 `forCloud`）。版本读的是 `/config-check` 体检时记下的那份，只认记给当前
+Worker 地址的；换了地址、还没体检的按不支持处理，模板里不放标记，概率条目照旧在打包时抽签。
+
 ### 输入隔离与定时上下文
 
 新即时任务只使用自己的输入引用；引用缺失、损坏或角色不匹配时明确失败，不能偷偷改用共享
@@ -177,13 +205,17 @@ Trace 和输入指纹；同输入同配置时直接复用，否则重新构建�
 - 发侧（任务 metadata，走加密信封）：`amsgEmotionEval`（评估模板 + 副 API 凭据；worker
   在 `onBeforeFire` 捕获后就地删除，喂给 push 构建前再剥一层——凭据绝不进任何 push/outbox）。
 - 回程（push metadata）：`amsgEmotionUpdate` / `amsgEmotionDone` / `amsgEmotionError`
-  （评估结果 / 熄灯信号 / 脱敏后的失败原因）、`amsgReasoning`（思考链，只挂第一条 push、
+  （评估结果 / 熄灯信号 / 脱敏后的失败原因；定时类带了 `fire_pack.emotionEval` 时也回这几个键）、
+  `amsgNoticeIds`（定时类模板里带过的回执 id，只挂末条 push，见上文「模板的可选字段」）、`amsgReasoning`（思考链，只挂第一条 push、
   即时对话或开启内心独白的定时轮）、`amsgToolTrace`（`[{name,count}]`，只数真跑过的调用、只挂末条 push、
-  只在即时对话轮）、`amsgUsage`（`{promptTokens, completionTokens}`，同样只挂末条 push、
-  只在即时对话轮）。
-- `amsgUsage` 的去处：客户端把它补进「设置 → API 调用记录」里那笔云端调用（发出时先落
-  一笔 pending，收到末条推送时回填 Token）。它是**最后一次**模型调用的用量——带工具的
-  一轮会连着调好几次模型，中间几次的数云端没留，所以跑过工具时那笔记录会标「只算末轮」。
+  只在即时对话轮）、`amsgUsage`（`{promptTokens, completionTokens}`，只挂末条 push，即时对话和定时类都带）。
+- `amsgUsage` 是这一轮所有模型调用累加的用量。即时对话轮跑了多轮工具、且每一轮都报了用量时，
+  另挂 `amsgUsageComplete`；定时类轮同时挂 `amsgProactiveKind`（`away` / `dateLeave` / `self` /
+  `scheduled`，区分离开后消息、见面离开提醒、角色自排和其余定时消息），有某一轮没报用量时挂
+  `amsgTokensPartial`。这三个键都只在拿到用量时才挂。
+- `amsgUsage` 的去处：客户端把它补进「设置 → API 调用记录」里那笔云端调用。即时对话发出时先落
+  一笔 pending，收到末条推送时回填 Token；跑过工具又没有 `amsgUsageComplete` 时标「用量不完整」。
+  定时类在消息落地时记一笔，用途按 `amsgProactiveKind` 分，带 `amsgTokensPartial` 时同样标「用量不完整」。
 - 超限旁路：新 Worker 用 `ctx.storeAttachment` 写入 `amsg:attachments`，metadata 携带
   `amsgEmotionAttachment`、`amsgReasoningAttachment`、`xhsSessionAttachment` 等对象引用。
   引用含 `version:1`、随机 key、`taskUuid`、`occurrenceMs`、`expiresAt`，写入时绑定角色 owner。

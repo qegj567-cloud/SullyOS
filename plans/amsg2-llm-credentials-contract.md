@@ -176,7 +176,7 @@ purpose」的组合，会产出既无引用可解析、又无内联凭据的空�
 
 ## SullyOS 侧落地（2026-08-10 完成）
 
-- 凭据行分用途：`char:<id>/chat`（排程任务，使用当前聊天主 API）、
+- 凭据行分用途：`char:<id>/chat`（定时类任务：定时主动消息、离开后消息、见面离开提醒；取角色默认对话 API，没设时用聊天主 API；真的发思考参数时模型名带 `-thinking` 后缀，即 `utils/dialogueLlmParams.ts` 的 `withThinkingModelSuffix`，原生 Anthropic 端点保留真实模型 ID；走内联凭据的老任务，`primaryModel` 按同一规则带后缀）、
   `char:<id>/instant`（即时对话，当轮请求终值，含思考模式的 `-thinking` 模型名）、
   `char:<id>/emotion`（情绪评估，`emotionConfig.api` 缺省时回落主 API）、
   `char:<id>/memory`（门牌整理这类记忆宫殿后台活儿，用记忆宫殿副 API
@@ -193,8 +193,8 @@ purpose」的组合，会产出既无引用可解析、又无内联凭据的空�
 - 情绪评估新任务的 `metadata.amsgEmotionEval` 只剩 `{ prompt }`，凭据走
   `credRefs.emotion`；存量任务 metadata 里的 `api` 继续认，两道 strip 防线保留到
   存量消亡。
-- `emotion` 行是懒创建的：第一次跑「带情绪评估的即时对话」时才随指纹门控 PUT 上表，
-  在那之前表里只有 `chat` / `instant` 两行——排查时见不到 `emotion` 行属正常，
+- `emotion` 行是懒创建的：角色开着情绪评估时，第一次跑即时对话、排定时类任务或补刷任务凭据时
+  才 PUT 上表，在那之前表里只有 `chat` / `instant` 两行——排查时见不到 `emotion` 行属正常，
   不代表没实现。
 - 「重置全部数据」的云端善后（`wipeAmsgCloudDataForReset`）里，第四样是
   `deleteLlmCredentials({ all: true })`，与前三样互不短路。设置页没有组合的「清空云端数据」按钮，
@@ -206,6 +206,18 @@ purpose」的组合，会产出既无引用可解析、又无内联凭据的空�
   云端那份可能已被别的入口改过（Safari 与主屏 App 存储分开、换过 Worker）。由
   `utils/amsgStateSync.test.ts` 钉住。
   即使没有本地凭据指纹底账，也为启用角色同步 chat 行，覆盖旧副 API。
+- 定时类任务的采样温度、输出上限和思考参数与本地私聊同一套（`resolveScheduledLlmParams`），
+  排程时冻在任务行上（`temperature`、`maxTokens`、`llmExtraBody`），不随凭据行走：开了思考时
+  不带温度，没开思考时不带思考参数，补刷时用 null 清掉旧值。2.0 设置里没有单独的最大输出长度。
+- 思考门和本地私聊、即时对话用同一套判定。这个角色到点会带上云端 MCP 工具时按工具模式算，思考让步，
+  模型名也不加后缀；排程工具只在「原生 tools」开着时随请求带上，正文模式按本地口径算。到点的工具环境
+  读的是浏览器里的 MCP 设置，由 `activeMsgClient` 注册给 `registerScheduledToolEnv`；没注册时按
+  「没有 MCP、原生 tools」处理。
+- 这些值和凭据一起刷新：用户亲手保存 API，角色的默认对话 API、思考开关、情绪开关或情绪 API 变了，
+  以及启动补传凭据时，补刷函数把还会响的定时类任务行一并改掉，下一次到点就用新值。
+- 情绪评估：角色开着情绪评估时，排程和补刷都给定时类任务挂上 `credRefs.emotion`（任务排下之后
+  才打开评估的，补刷时补上），worker 到点按 `fire_pack.emotionEval` 评估。打包只在这台 Worker
+  支持凭据存表时才带 `emotionEval`；到点取不到副 API 凭据时安静跳过，客户端不弹失败。
 - 补刷函数同时读取本地任务和远端清单，覆盖页面关闭期间的自排任务。
   内联任务更新主 API 三字段；引用任务先登记主 API 行，再更新 chat 引用，保留其它 purpose。
   继承 `instant-chat` 标签的自排任务通过详情的 `amsgSelfScheduled` 确认；真正的即时回复、
