@@ -71,6 +71,18 @@ export const consumeCanaryFallbackNotice = (): boolean => consumeFlag(CANARY_FAL
 /** 切到另一个通道时去哪：保留当前路径之外的部分没有意义，回到各自的首页。 */
 export const channelHomeUrl = (channel: ReleaseChannel): string => (channel === 'canary' ? CANARY_BASE : '/');
 
+/** canary 里右下角的小黄点藏不藏。这台设备的偏好，不进备份。 */
+export const CANARY_DOT_HIDDEN_KEY = 'sullyos_canary_dot_hidden';
+/** 设置里切换开关时通知黄点重新读取。 */
+export const CANARY_DOT_CHANGED_EVENT = 'sullyos-canary-dot-changed';
+
+export const readCanaryDotHidden = (): boolean => readKey(CANARY_DOT_HIDDEN_KEY) === '1';
+
+export const writeCanaryDotHidden = (hidden: boolean): void => {
+  writeKey(CANARY_DOT_HIDDEN_KEY, hidden ? '1' : null);
+  globalThis.dispatchEvent?.(new Event(CANARY_DOT_CHANGED_EVENT));
+};
+
 /** canary 挂载后稳住这么久才算启动成功：React 渲染阶段崩掉会把整棵树卸掉。 */
 export const CANARY_HEALTHY_AFTER_MS = 5000;
 

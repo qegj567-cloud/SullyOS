@@ -73,6 +73,8 @@ const isReleaseBranch = RELEASE_BRANCHES.has(gitInfo.branch);
 let showBuildBadge = !isReleaseBranch;
 if (process.env.VITE_HIDE_BUILD_BADGE === '1') showBuildBadge = false;
 if (process.env.VITE_SHOW_BUILD_BADGE === '1') showBuildBadge = true;
+// canary 构建不挂开发角标，改由右下角的小黄点标明（components/CanaryDot.tsx）。
+if (process.env.RELEASE_CHANNEL === 'canary') showBuildBadge = false;
 
 // canary 通道：canary 分支以 RELEASE_CHANNEL=canary 构建，挂在 friedsully.com/canary/（docs/canary-channel.md）。
 const releaseChannel = process.env.RELEASE_CHANNEL === 'canary' ? 'canary' : 'stable';
