@@ -1,0 +1,93 @@
+/* canary 小金丝雀：翅膀动画、飞行路线、落地。见 docs/canary-channel.md「小金丝雀」。 */
+
+.canary-bird { display: block; overflow: visible; }
+.canary-bird-wing { transform-origin: 17px 16px; }
+.canary-bird-body { transform-origin: 20px 28px; }
+
+/* fly：一直扑腾 */
+.canary-bird[data-mode='fly'] .canary-bird-wing { animation: canary-bird-flap 0.22s ease-in-out infinite; }
+.canary-bird[data-mode='fly'] .canary-bird-legs { display: none; }
+
+/* idle：站着，隔一会儿扇两下翅膀、点一下头 */
+.canary-bird[data-mode='idle'] .canary-bird-wing { animation: canary-bird-idle-flap 3.6s ease-in-out infinite; }
+.canary-bird[data-mode='idle'] .canary-bird-body { animation: canary-bird-bob 3.6s ease-in-out infinite; }
+
+@keyframes canary-bird-flap {
+  0%, 100% { transform: rotate(8deg); }
+  50% { transform: rotate(-48deg) scaleY(0.85); }
+}
+@keyframes canary-bird-idle-flap {
+  0%, 70%, 100% { transform: rotate(0); }
+  74%, 82% { transform: rotate(-40deg) scaleY(0.88); }
+  78%, 86% { transform: rotate(6deg); }
+}
+@keyframes canary-bird-bob {
+  0%, 40%, 52%, 100% { transform: translateY(0) rotate(0); }
+  44% { transform: translateY(1.5px) rotate(6deg); }
+  48% { transform: translateY(0) rotate(-2deg); }
+}
+
+/* 加入：跟着黄光从底部飞到顶部，左右轻轻摆 */
+.canary-bird-rise { position: absolute; left: 50%; top: 0; animation: canary-bird-rise var(--canary-rise-ms, 1400ms) cubic-bezier(.45,0,.25,1) infinite; }
+.canary-bird-sway { animation: canary-bird-sway 0.7s ease-in-out infinite alternate; }
+@keyframes canary-bird-rise {
+  from { transform: translate(-50%, calc(100vh + 40px)); }
+  to { transform: translate(-50%, -80px); }
+}
+@keyframes canary-bird-sway {
+  from { transform: translateX(-18px) rotate(-8deg); }
+  to { transform: translateX(18px) rotate(4deg); }
+}
+
+/* 扑腾掉下来的羽毛 */
+.canary-feather { position: absolute; width: 7px; height: 14px; border-radius: 50% 50% 50% 50% / 70% 70% 30% 30%; background: #FDE68A;
+  box-shadow: inset -1px 0 0 #EAB308; animation: canary-feather-fall 2.4s ease-in infinite; opacity: 0; }
+@keyframes canary-feather-fall {
+  0% { opacity: 0; transform: translate(0, 0) rotate(0); }
+  15% { opacity: 0.9; }
+  100% { opacity: 0; transform: translate(28px, 46vh) rotate(260deg); }
+}
+
+/* 退出：往左上角飞走 */
+.canary-bird-leave { position: absolute; left: 50%; bottom: 18vh; animation: canary-bird-leave var(--canary-leave-ms, 1100ms) cubic-bezier(.5,0,.75,.4) forwards; }
+@keyframes canary-bird-leave {
+  0% { transform: translate(-50%, 0) scaleX(-1); opacity: 1; }
+  100% { transform: translate(-60vw, -90vh) scaleX(-1) rotate(-12deg); opacity: 0.2; }
+}
+
+/* 刚进 canary：从左上飞进来，落到右下角黄点的位置，叫一声，再缩成黄点 */
+.canary-arrival { position: fixed; pointer-events: none; z-index: 2147483647;
+  bottom: calc(var(--safe-bottom, 0px) + 6px); right: calc(env(safe-area-inset-right, 0px) + 4px); }
+.canary-arrival[data-phase='fly'] { animation: canary-arrive 1.5s cubic-bezier(.3,.7,.4,1) both; }
+.canary-arrival[data-phase='shrink'] { animation: canary-shrink 0.5s ease-in forwards; transform-origin: 85% 90%; }
+@keyframes canary-arrive {
+  0% { transform: translate(-75vw, -85vh) rotate(-10deg); }
+  60% { transform: translate(-14vw, -18vh) rotate(6deg); }
+  100% { transform: translate(0, 0) rotate(0); }
+}
+@keyframes canary-shrink { to { transform: scale(0.12); opacity: 0; } }
+.canary-arrival-bubble { position: absolute; right: 34px; bottom: 40px; white-space: nowrap; padding: 3px 9px; border-radius: 10px 10px 2px 10px;
+  background: #fff; color: #854D0E; font: 600 12px/1.5 system-ui, sans-serif; box-shadow: 0 2px 10px rgba(161,98,7,.25);
+  animation: canary-bubble-pop 0.3s cubic-bezier(.3,1.6,.5,1) both; }
+@keyframes canary-bubble-pop { from { transform: scale(0.4); opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .canary-bird *, .canary-bird-rise, .canary-bird-sway, .canary-feather, .canary-bird-leave,
+  .canary-arrival, .canary-arrival-bubble { animation: none !important; }
+  .canary-bird-rise { transform: translate(-50%, 45vh); }
+  .canary-bird-leave { transform: translateX(-50%); }
+  .canary-feather { display: none; }
+}
+
+/* 加入时跟着小鸟往上飘的各国叫法 */
+.canary-hello { position: absolute; bottom: -2em; white-space: nowrap; color: #A16207; font: 600 14px/1 system-ui, sans-serif;
+  text-shadow: 0 0 8px #FEF9C3, 0 0 2px #fff; opacity: 0; animation: canary-hello-rise 2.6s ease-out infinite; }
+@keyframes canary-hello-rise {
+  0% { opacity: 0; transform: translateY(0) scale(0.9); }
+  20% { opacity: 0.85; }
+  75% { opacity: 0.6; }
+  100% { opacity: 0; transform: translateY(-62vh) scale(1.05); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .canary-hello { animation: none !important; opacity: 0.55; bottom: auto; top: var(--canary-hello-top, 50%); }
+}

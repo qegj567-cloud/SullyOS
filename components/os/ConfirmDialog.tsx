@@ -135,7 +135,7 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
         >
             <div className="absolute inset-0 bg-black/30 backdrop-blur-sm transition-opacity" onClick={onCancel}></div>
             {/* 限高 + 正文内滚：长提醒在小屏上也看得到底部按钮 */}
-            <div className="relative bg-white text-slate-800 rounded-2xl shadow-2xl w-full max-w-sm max-h-full flex flex-col overflow-hidden animate-pop-in transform transition-all">
+            <div className="sully-system-ui relative bg-white text-slate-800 rounded-2xl shadow-2xl w-full max-w-sm max-h-full flex flex-col overflow-hidden animate-pop-in transform transition-all">
                 <div className="p-6 min-h-0 overflow-y-auto">
                     <div className="flex gap-4">
                         {getIcon()}

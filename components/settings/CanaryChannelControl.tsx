@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Capacitor } from '@capacitor/core';
 import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 import { trackEvent } from '../../utils/analytics';
+import { CANARY_NAMES, CanaryBird } from '../CanaryBird';
 import {
   RELEASE_CHANNEL,
   describeCanaryJoinBlocker,
@@ -15,6 +16,8 @@ import { joinCanary, leaveCanary, loadCanaryJoinContext } from '../../utils/rele
 const CANARY_YELLOW = '#FACC15';
 /** 加入动画扫一遍的时长；跳走前至少扫完一遍，Worker 换得再快也看得见。 */
 const SWEEP_MS = 1400;
+/** 退出时小鸟飞走的时长，飞完才切回正式版。 */
+const LEAVE_MS = 1100;
 
 const GLOW_CSS = `
 @keyframes canary-sweep { from { transform: translateY(100%); } to { transform: translateY(-100%); } }
@@ -27,15 +30,48 @@ const GLOW_CSS = `
 @media (prefers-reduced-motion: reduce) { .canary-glow-band { animation: none; opacity: 0.6; } }
 `;
 
+/** 各国叫法在屏幕上的横向位置和出场错开，取一半就够热闹。 */
+const RISING_HELLOS = CANARY_NAMES.slice(0, 8).map((text, index) => ({
+    text,
+    left: `${8 + ((index * 37) % 84)}%`,
+    delay: `${(index * 0.33).toFixed(2)}s`,
+    top: `${18 + ((index * 23) % 64)}%`,
+}));
+
 /**
  * 加入 canary 时盖在整个屏幕上的黄光：屏幕边缘一圈光带，一道亮光从底部往顶部扫，
- * 中间一层很淡的泛光跟着走。不拦点击，一直扫到页面跳走。
+ * 中间一层很淡的泛光跟着走；小金丝雀跟着光往上飞，身边飘起它在各国语言里的名字。
+ * 不拦点击，一直扫到页面跳走。
  */
 export const CanaryJoinGlow: React.FC = () => createPortal(
-    <div aria-hidden className="fixed inset-0 pointer-events-none" style={{ zIndex: 2147483647 }}>
+    <div aria-hidden className="fixed inset-0 pointer-events-none overflow-hidden" style={{ zIndex: 2147483647 }}>
         <style>{GLOW_CSS}</style>
         <div className="canary-glow-bloom"><div className="canary-glow-band" /></div>
         <div className="canary-glow-ring"><div className="canary-glow-band" /></div>
+        {RISING_HELLOS.map((hello) => (
+            <span
+                key={hello.text}
+                className="canary-hello"
+                style={{ left: hello.left, animationDelay: hello.delay, ['--canary-hello-top' as string]: hello.top }}
+            >
+                {hello.text}
+            </span>
+        ))}
+        <div className="canary-bird-rise" style={{ ['--canary-rise-ms' as string]: `${SWEEP_MS}ms` }}>
+            <div className="canary-bird-sway"><CanaryBird size={56} mode="fly" /></div>
+            <span className="canary-feather" style={{ left: 6, top: 30 }} />
+            <span className="canary-feather" style={{ left: 34, top: 24, animationDelay: '0.8s' }} />
+        </div>
+    </div>,
+    document.body,
+);
+
+/** 退出 canary 时小金丝雀往左上角飞走。 */
+const CanaryLeaveFlight: React.FC = () => createPortal(
+    <div aria-hidden className="fixed inset-0 pointer-events-none overflow-hidden" style={{ zIndex: 2147483647 }}>
+        <div className="canary-bird-leave" style={{ ['--canary-leave-ms' as string]: `${LEAVE_MS}ms` }}>
+            <CanaryBird size={48} mode="fly" />
+        </div>
     </div>,
     document.body,
 );
@@ -50,6 +86,7 @@ const CanaryChannelControl: React.FC<{ unlocked: boolean }> = ({ unlocked }) => 
     const { requestConfirm, confirmDialog } = useConfirmDialog();
     const [busy, setBusy] = useState(false);
     const [glowing, setGlowing] = useState(false);
+    const [leaving, setLeaving] = useState(false);
     const [note, setNote] = useState<string | null>(null);
     const [dotHidden, setDotHidden] = useState(readCanaryDotHidden);
     const inCanary = RELEASE_CHANNEL === 'canary';
@@ -63,7 +100,9 @@ const CanaryChannelControl: React.FC<{ unlocked: boolean }> = ({ unlocked }) => 
         });
         if (!confirmed) return;
         setBusy(true);
+        setLeaving(true);
         trackEvent('退出 canary');
+        await wait(LEAVE_MS);
         await leaveCanary();
     };
 
@@ -125,7 +164,7 @@ const CanaryChannelControl: React.FC<{ unlocked: boolean }> = ({ unlocked }) => 
                 />
                 {tab('stable', '正式版')}
                 {tab('canary', <>
-                    {!inCanary && <span className="w-1.5 h-1.5 rounded-full" style={{ background: CANARY_YELLOW }} />}
+                    <CanaryBird size={18} mode={busy ? 'fly' : inCanary ? 'idle' : 'still'} />
                     {busy && !inCanary ? '切换中…' : 'canary'}
                 </>)}
             </div>
@@ -145,6 +184,7 @@ const CanaryChannelControl: React.FC<{ unlocked: boolean }> = ({ unlocked }) => 
             )}
             {note && <span className="max-w-xs text-center text-[11px] text-amber-600">{note}</span>}
             {glowing && <CanaryJoinGlow />}
+            {leaving && <CanaryLeaveFlight />}
             {confirmDialog}
         </div>
     );

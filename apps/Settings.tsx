@@ -2213,7 +2213,7 @@ const Settings: React.FC = () => {
   };
 
   return (
-    <div className="h-full w-full bg-[#f3f4f8] flex flex-col font-light relative isolate">
+    <div className="sully-system-ui h-full w-full bg-[#f3f4f8] flex flex-col font-light relative isolate">
 
       {/* GLOBAL PROGRESS OVERLAY */}
       {sysOperation.status === 'processing' && (

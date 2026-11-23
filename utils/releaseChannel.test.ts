@@ -116,3 +116,32 @@ describe('canary 黄点开关', () => {
     expect(localStorage.getItem(CANARY_DOT_HIDDEN_KEY)).toBeNull();
   });
 });
+
+describe('releaseUpdateVersion（网页更新要不要弹提示）', () => {
+  it('正式版只看版本号那半截，同一版的不同构建不打扰', async () => {
+    const { releaseUpdateVersion } = await import('./releaseChannel');
+    expect(releaseUpdateVersion('v3.17', 'stable', 'build-a')).toBe('v3.17');
+    expect(releaseUpdateVersion('v3.17', 'stable', 'build-b')).toBe('v3.17');
+  });
+
+  /** 回归守卫：canary 每个构建都要算新版本，否则志愿者刷不出新构建。 */
+  it('canary 每个构建都算新版本', async () => {
+    const { releaseUpdateVersion } = await import('./releaseChannel');
+    expect(releaseUpdateVersion('v3.17', 'canary', 'build-a')).not.toBe(releaseUpdateVersion('v3.17', 'canary', 'build-b'));
+  });
+});
+
+describe('canary 落地动画标记', () => {
+  /** 回归守卫：加入发生在正式版，正式版旧代码不写专门的标记，canary 要靠切换通道时都会写的那条。 */
+  it('只凭切换通道写下的标记就放一遍，之后不重复，再切一次通道又能放', async () => {
+    const { takeCanaryWelcome, writeChosenChannel } = await import('./releaseChannel');
+    localStorage.clear();
+    expect(takeCanaryWelcome()).toBe(false);
+    writeChosenChannel('canary');
+    expect(takeCanaryWelcome()).toBe(true);
+    expect(takeCanaryWelcome()).toBe(false);
+    writeChosenChannel('stable');
+    writeChosenChannel('canary');
+    expect(takeCanaryWelcome()).toBe(true);
+  });
+});

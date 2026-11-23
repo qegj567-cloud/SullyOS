@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>2026 年 11 月 24 日更新说明 · 主动消息 2.0 · 同一个人</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400&family=Noto+Serif+SC:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #14202b;
+    --ink-soft: #2f3f4f;
+    --ink-mute: #5b6d80;
+    --ink-faint: #93a2b3;
+    --paper: #eff3f8;
+    --paper-warm: #e0e8f2;
+    --rule: #cfdae6;
+    --accent: #3b5ba8;
+    --accent-soft: #7088c9;
+    --highlight: #d6e0f5;
+    --note-bg: #e0e8f2;
+    --tip-bg: #e3eee9;
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+    --serif: 'Fraunces', 'Noto Serif SC', Georgia, serif;
+    --cn: 'Noto Serif SC', 'Fraunces', serif;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    margin: 0;
+    padding: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--cn);
+    font-size: 17px;
+    line-height: 1.85;
+    font-feature-settings: "palt" 1, "kern" 1;
+    -webkit-font-smoothing: antialiased;
+    background-image:
+      radial-gradient(circle at 18% 8%, rgba(112, 136, 201, 0.08) 0%, transparent 42%),
+      radial-gradient(circle at 88% 92%, rgba(59, 91, 168, 0.06) 0%, transparent 42%);
+  }
+
+  .wrap { position: relative; z-index: 1; max-width: 760px; margin: 0 auto; padding: 80px 32px 120px; }
+
+  header.page { border-bottom: 1px solid var(--rule); padding-bottom: 48px; margin-bottom: 56px; }
+
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--accent); margin-bottom: 24px; display: flex; align-items: center; gap: 12px; }
+  .eyebrow::after { content: ''; flex: 1; height: 1px; background: var(--rule); }
+
+  h1 { font-family: var(--cn); font-weight: 600; font-size: 44px; line-height: 1.25; margin: 0 0 20px; letter-spacing: -0.01em; }
+  h1 .en { display: block; font-family: var(--serif); font-style: italic; font-weight: 400; font-size: 22px; color: var(--ink-mute); margin-top: 12px; letter-spacing: 0; }
+
+  .lede { font-size: 18px; color: var(--ink-soft); max-width: 600px; margin-top: 28px; line-height: 1.75; }
+
+  .meta { display: flex; gap: 32px; margin-top: 36px; font-family: var(--mono); font-size: 12px; color: var(--ink-faint); letter-spacing: 0.05em; flex-wrap: wrap; }
+  .meta span strong { color: var(--ink-soft); font-weight: 500; margin-right: 8px; }
+
+  .overview { background: white; border: 1px solid var(--rule); border-radius: 4px; padding: 24px 28px; margin-bottom: 64px; }
+  .overview h4 { font-family: var(--mono); font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-mute); margin: 0 0 14px; font-weight: 500; }
+  .overview ol { margin: 0; padding-left: 0; list-style: none; counter-reset: ov; }
+  .overview li { counter-increment: ov; padding: 6px 0 6px 36px; position: relative; color: var(--ink-soft); font-size: 15px; }
+  .overview li::before { content: counter(ov, decimal-leading-zero); position: absolute; left: 0; top: 6px; font-family: var(--serif); font-style: italic; color: var(--accent); font-weight: 600; }
+
+  .item { margin-bottom: 56px; scroll-margin-top: 40px; }
+  .item-head { display: flex; align-items: baseline; gap: 20px; margin-bottom: 14px; padding-bottom: 18px; border-bottom: 1px dashed var(--rule); }
+  .item-num { font-family: var(--serif); font-style: italic; font-weight: 600; font-size: 52px; line-height: 1; color: var(--accent); flex-shrink: 0; }
+  .item-title h2 { font-family: var(--cn); font-weight: 600; font-size: 26px; line-height: 1.3; margin: 0 0 6px; color: var(--ink); }
+  .item-title .sub { font-family: var(--serif); font-style: italic; color: var(--ink-mute); font-size: 15px; }
+
+  .tag-pill { display: inline-block; font-family: var(--mono); font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent); background: var(--paper-warm); border: 1px solid var(--rule); padding: 2px 10px; border-radius: 999px; margin-left: 4px; vertical-align: middle; }
+
+  p { margin: 0 0 18px; color: var(--ink-soft); }
+  strong { color: var(--ink); font-weight: 600; }
+  em { font-family: var(--serif); font-style: italic; color: var(--accent); font-weight: 500; }
+  mark { background: linear-gradient(180deg, transparent 55%, var(--highlight) 55%); color: var(--ink); padding: 0 2px; }
+
+  .path { font-family: var(--mono); font-size: 13px; background: var(--paper-warm); padding: 3px 10px; border-radius: 3px; color: var(--ink); border: 1px solid var(--rule); display: inline-block; line-height: 1.6; }
+
+  ul.clean { list-style: none; padding: 0; margin: 14px 0; }
+  ul.clean li { padding: 5px 0 5px 22px; position: relative; color: var(--ink-soft); font-size: 15.5px; }
+  ul.clean li::before { content: '—'; position: absolute; left: 0; color: var(--accent); font-weight: 600; }
+
+  .note { background: var(--note-bg); border-left: 3px solid var(--ink-mute); padding: 18px 22px; border-radius: 3px; margin: 22px 0; }
+  .note .label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.25em; text-transform: uppercase; color: var(--ink-mute); margin-bottom: 6px; font-weight: 500; }
+  .note p:last-child { margin-bottom: 0; }
+
+  .tip { background: var(--tip-bg); border-radius: 3px; padding: 18px 22px; margin: 22px 0; border: 1px dashed #7fa395; }
+  .tip .label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.25em; text-transform: uppercase; color: #3f6858; margin-bottom: 6px; font-weight: 600; }
+  .tip p:last-child { margin-bottom: 0; }
+
+  .finale { margin-top: 48px; background: white; border: 1px solid var(--rule); border-radius: 4px; padding: 30px 34px; text-align: center; }
+  .finale .big { font-family: var(--cn); font-size: 22px; font-weight: 600; color: var(--ink); margin-bottom: 8px; }
+  .finale .small { color: var(--ink-mute); font-size: 15px; margin-bottom: 0; }
+
+  footer.page { margin-top: 72px; padding-top: 32px; border-top: 1px solid var(--rule); text-align: center; font-family: var(--serif); font-style: italic; color: var(--ink-faint); font-size: 15px; }
+  footer.page .ornament { font-size: 20px; color: var(--accent); margin-bottom: 12px; letter-spacing: 8px; }
+
+  @media (max-width: 640px) {
+    .wrap { padding: 48px 20px 80px; }
+    h1 { font-size: 32px; }
+    h1 .en { font-size: 17px; }
+    .item-head { flex-direction: column; gap: 4px; align-items: flex-start; }
+    .item-num { font-size: 42px; }
+    .item-title h2 { font-size: 22px; }
+    .meta { flex-direction: column; gap: 6px; }
+    .finale { padding: 22px 20px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <header class="page">
+    <div class="eyebrow">November 24, 2026 · Feature Update</div>
+    <h1>
+      主动消息 2.0 · 同一个人
+      <span class="en">The one who writes from the cloud is the one you chat with.</span>
+    </h1>
+    <p class="lede">
+      这一批改动都围着一件事：在云端给你发消息的角色，和你在私聊里聊着的角色，应该是<em>同一个人</em>。说话的长短和分寸、看到的聊天记录、心情的起伏，两边现在是对得上的。顺带把时间感、工具调用和几处细节也一起理了一遍。
+    </p>
+    <div class="meta">
+      <span><strong>主题</strong>主动消息 2.0 · 离开后消息 · MCP</span>
+      <span><strong>类型</strong>体验改进</span>
+      <span><strong>阅读</strong>约 4 分钟</span>
+    </div>
+  </header>
+
+  <div class="overview">
+    <h4>本次更新概览</h4>
+    <ol>
+      <li><strong>说话的分寸跟私聊一样</strong>：温度、回复长度、心象开关都跟着 API 设置走。</li>
+      <li><strong>看到的聊天记录更准</strong>：译文、表情、世界书都按私聊的方式处理。</li>
+      <li><strong>发完之后</strong>：心情跟着更新，没发出去的那条只提一次。</li>
+      <li><strong>离开后消息和见面离开提醒</strong>：分得清你是怎么走开的。</li>
+      <li><strong>时间感</strong>：隔着手机说话时，角色知道你那边几点。</li>
+      <li><strong>工具</strong>：破坏性工具的云端开关、连不到时自动转本机、查东西更顺。</li>
+      <li><strong>没开 2.0 的离开后消息</strong>：也能查记忆，你回来它就停。</li>
+      <li><strong>换了 API，云端马上跟上。</strong></li>
+    </ol>
+  </div>
+
+  <!-- 1 -->
+  <section class="item" id="i-params">
+    <div class="item-head">
+      <div class="item-num">01</div>
+      <div class="item-title">
+        <h2>说话的分寸，跟私聊一样</h2>
+        <div class="sub">云端和本地，用的是同一套参数。</div>
+      </div>
+    </div>
+    <p>
+      定时主动消息、离开后消息、见面离开提醒，这几种由云端生成的消息，现在用的<mark>温度</mark>、<mark>回复长度上限</mark>，以及<mark>思考（心象）开不开</mark>，都和私聊是同一套：角色设了自己的对话 API 就跟角色的，没设就跟 API 设置里的全局配置。同一个角色在两边说话的长短和风格是一致的。
+    </p>
+    <p>
+      所以 2.0 设置里不再单独设「最大输出长度」，统一跟随 API 设置。<strong>你不需要重新设置什么。</strong>
+    </p>
+  </section>
+
+  <!-- 2 -->
+  <section class="item" id="i-history">
+    <div class="item-head">
+      <div class="item-num">02</div>
+      <div class="item-title">
+        <h2>看到的聊天记录更准</h2>
+        <div class="sub">云端读到的，就是私聊里读到的那份。</div>
+      </div>
+    </div>
+    <p>云端生成消息前会先翻一遍你们最近的聊天。这份记录现在和私聊用同一种整理方式：</p>
+    <ul class="clean">
+      <li>开过<strong>双语翻译</strong>的，记录里只留原文，译文不会混进去。</li>
+      <li>开了<strong>表情识图</strong>的，角色能读到你发的表情是什么意思，不只看到一个名字。</li>
+      <li><strong>世界书</strong>按和私聊一样的文本去找关键词，条目更容易在你预期的时候触发。</li>
+      <li>设了<strong>触发概率</strong>的世界书条目，每次到点都会重新抽一次。</li>
+    </ul>
+  </section>
+
+  <!-- 3 -->
+  <section class="item" id="i-after">
+    <div class="item-head">
+      <div class="item-num">03</div>
+      <div class="item-title">
+        <h2>发完之后</h2>
+        <div class="sub">心情会变，旧账只翻一次。</div>
+      </div>
+    </div>
+    <p>
+      私聊里角色每回一句，心情和内心想法都会跟着更新。现在定时消息也一样：角色开着<strong>情绪 buff</strong> 时，云端发出消息的同时会评估一次，结果随推送一起回来。
+    </p>
+    <p>
+      角色之前排的某条消息如果没能发出去，下一次开口时它会知道这件事。这件事<strong>只提一次</strong>：说过之后就算告诉过了，后面几条消息里不会翻来覆去地讲。
+    </p>
+  </section>
+
+  <!-- 4 -->
+  <section class="item" id="i-away">
+    <div class="item-head">
+      <div class="item-num">04</div>
+      <div class="item-title">
+        <h2>离开后消息和见面离开提醒</h2>
+        <div class="sub">你怎么走开的，它是知道的。</div>
+      </div>
+    </div>
+    <ul class="clean">
+      <li><strong>离开后消息</strong>会分清你是刚见完面、刚挂了电话，还是线上聊着聊着走开的，开口的说法各不相同。刚见完面没多久时，它会按刚分开的语气来说。</li>
+      <li><strong>见面离开提醒</strong>里，角色会按自己的性格决定怎么开口：可能直接问你去哪了，也可能装作不经意，先说说自己这会儿在做什么。</li>
+      <li>开了 2.0 的角色，这时候还可以<strong>顺势约下一次</strong>。约出来的消息照样算进你给角色定的频率上限，不会越约越多。</li>
+    </ul>
+  </section>
+
+  <!-- 5 -->
+  <section class="item" id="i-time">
+    <div class="item-head">
+      <div class="item-num">05</div>
+      <div class="item-title">
+        <h2>时间感更准</h2>
+        <div class="sub">两个人，两块表。</div>
+      </div>
+    </div>
+    <p>
+      给角色设了自定义时区、而且和你不在同一个时区时，私聊、群聊和语音视频通话里，角色既知道自己这边几点，也知道<mark>你那边现在几点</mark>，不会拿自己的钟去猜你这会儿醒着还是睡着。云端的即时对话和定时消息也一样。
+    </p>
+    <p>
+      见面这类当面相处的场合不受影响：两个人本来就在一起，用不着报你那边的时间。
+    </p>
+  </section>
+
+  <!-- 6 -->
+  <section class="item" id="i-tools">
+    <div class="item-head">
+      <div class="item-num">06</div>
+      <div class="item-title">
+        <h2>工具用得更稳 <span class="tag-pill">NEW</span></h2>
+        <div class="sub">MCP、排程，还有查东西。</div>
+      </div>
+    </div>
+    <p>
+      <strong>新开关：允许云端执行破坏性工具。</strong>MCP 服务器标为破坏性的工具（比如删除），在本机调用前会先弹窗问你；云端没法弹窗，所以这类工具默认不会在云端用。只有你主动打开这个开关，即时对话和定时主动消息里才会直接调用它们，本机聊天照旧先问你。默认关闭。
+    </p>
+    <p><span class="path">设置 → 扩展连接 → MCP 页签 → 管理服务器 → 允许云端执行破坏性工具</span></p>
+    <p>
+      <strong>云端连不到服务器时，自动改在本机生成。</strong>如果你的 MCP 服务器或小红书服务器装在自己电脑上、云端访问不到，这一轮即时对话会改在本机生成，输入框上方会出现一条提示，写明原因。服务器要能从公网访问，云端才用得上它。
+    </p>
+    <p>
+      <strong>排程更稳。</strong>关掉「原生 tools 工具调用」开关以后，角色照样能安排主动消息，改用文字写法。本机聊天时如果中转站不支持工具调用，会自动换成文字写法再试一次，不会直接报错；云端那边，用这类中转站时把这个开关关掉就行。
+    </p>
+    <p><strong>查记忆、搜索、翻日记、看小红书</strong>也顺了一些：</p>
+    <ul class="clean">
+      <li>同一轮里要查好几样东西，会一起去查，第二件不会漏掉。</li>
+      <li>查到最后一轮会自然收尾，前面说过的不用再说一遍，不会硬凑一句重复的话。</li>
+      <li>角色查完回来接着说时，不会把前面已经做过的转账、评论又做一遍。如果是故意在同一句里连着做几次，比如连发好几个一分钱红包，会照做。</li>
+      <li>连着查好几轮时，中间那几轮说的话也会显示出来，不会被下一轮盖掉；查东西之前那句里的戳一戳、转账这类动作也照常生效。</li>
+    </ul>
+  </section>
+
+  <!-- 7 -->
+  <section class="item" id="i-local">
+    <div class="item-head">
+      <div class="item-num">07</div>
+      <div class="item-title">
+        <h2>没开 2.0 时的离开后消息</h2>
+        <div class="sub">本机补的那几条，也更像样了。</div>
+      </div>
+    </div>
+    <p>
+      没开主动消息 2.0 的角色，离开后消息是你下次打开 App 时在本机补上的。现在补的时候，角色会真的去<strong>查记忆</strong>、搜索、翻日记，和私聊里一样。
+    </p>
+    <p>
+      补到一半你回来开口了，它就<strong>停下</strong>，已经写好的那几条留着，后面的不再冒出来，不会出现你说完话它又补一句的情况。
+    </p>
+  </section>
+
+  <!-- 8 -->
+  <section class="item" id="i-api">
+    <div class="item-head">
+      <div class="item-num">08</div>
+      <div class="item-title">
+        <h2>换了 API，云端马上跟上</h2>
+        <div class="sub">你亲手改的，以你为准。</div>
+      </div>
+    </div>
+    <p>
+      在设置里亲手保存 API、或者切换 API 预设之后，云端会立刻改用新的配置，下一条主动消息用的就是你刚选的模型。
+    </p>
+  </section>
+
+  <!-- 9 -->
+  <section class="item" id="i-todo">
+    <div class="item-head">
+      <div class="item-num">09</div>
+      <div class="item-title">
+        <h2>需要你做的</h2>
+        <div class="sub">多数时候什么都不用做。</div>
+      </div>
+    </div>
+    <p>
+      这些改动有不少落在你自己的 Worker 上。用「在 SullyOS 里装」装的 Worker，或者已经补过更新钥匙的，会<strong>自己定期更新</strong>，打开 App 时也会顺手查一次，一般什么都不用做。
+    </p>
+    <div class="tip">
+      <div class="label">没看到新表现时</div>
+      <p>手动部署、还没补更新钥匙的，或者想马上换上新版的，去 <span class="path">设置 → 主动消息 2.0 → 功能设置 → 后台地址与维护</span>，点一下更新按钮。有新版时它是绿色的，写着「更新 Worker 到 …」；平时是浅色的「重新检查并更新 Worker」。</p>
+    </div>
+  </section>
+
+  <div class="finale">
+    <div class="big">不管从哪边来，都是 ta。</div>
+    <div class="small">有 Bug 或想法，欢迎反馈。</div>
+  </div>
+
+  <footer class="page">
+    <div class="ornament">· · ·</div>
+    SullyOS·糯米机 Changelog · 2026.11.24
+  </footer>
+
+</div>
+
+</body>
+</html>

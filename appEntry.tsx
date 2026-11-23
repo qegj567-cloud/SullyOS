@@ -16,7 +16,7 @@ import { installIOSStatusBarEdge } from './utils/iosStatusBarEdge';
 import { installReducedBlurPolicy } from './utils/blurPolicy';
 import { initAnalytics } from './utils/analytics';
 import { Capacitor } from '@capacitor/core';
-import { watchCanaryBootHealth } from './utils/releaseChannel';
+import { RELEASE_CHANNEL, watchCanaryBootHealth } from './utils/releaseChannel';
 
 // Prepare storage and the SW in parallel. Only background writers wait for both;
 // DatabaseGuard shares this read check and never waits for the SW/offline downloads.
@@ -65,6 +65,8 @@ if (!rootElement) {
   throw new Error("Could not find root element to mount to");
 }
 
+// 全局样式按通道切换配色（index.html 里的 canary 金黄主题）。
+document.documentElement.dataset.releaseChannel = RELEASE_CHANNEL;
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
