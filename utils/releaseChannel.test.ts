@@ -116,3 +116,17 @@ describe('canary 黄点开关', () => {
     expect(localStorage.getItem(CANARY_DOT_HIDDEN_KEY)).toBeNull();
   });
 });
+
+describe('releaseUpdateVersion（网页更新要不要弹提示）', () => {
+  it('正式版只看版本号那半截，同一版的不同构建不打扰', async () => {
+    const { releaseUpdateVersion } = await import('./releaseChannel');
+    expect(releaseUpdateVersion('v3.17', 'stable', 'build-a')).toBe('v3.17');
+    expect(releaseUpdateVersion('v3.17', 'stable', 'build-b')).toBe('v3.17');
+  });
+
+  /** 回归守卫：canary 每个构建都要算新版本，否则志愿者刷不出新构建。 */
+  it('canary 每个构建都算新版本', async () => {
+    const { releaseUpdateVersion } = await import('./releaseChannel');
+    expect(releaseUpdateVersion('v3.17', 'canary', 'build-a')).not.toBe(releaseUpdateVersion('v3.17', 'canary', 'build-b'));
+  });
+});

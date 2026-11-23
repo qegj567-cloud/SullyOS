@@ -11,7 +11,13 @@
 | Worker 成品包 | 部署仓库 `main` 分支 | 部署仓库 `canary` 分支 |
 | 谁在用 | 所有人 | 解锁调试面板后手动加入的人 |
 
-发版流程：dev 上某一版可以给志愿者试了，就把 `canary` 分支快进到那个提交（或开 PR dev→canary）。push 之后，CI 先把 Worker 包同步到部署仓库的 `canary` 分支，再部署 canary 前端。确认没问题后照常走 dev→master。
+发版流程：dev 上某一版可以给志愿者试了，就把 `canary` 分支快进到那个提交（或开 PR dev→canary）。push 之后，CI 先把 Worker 包同步到部署仓库的 `canary` 分支，再部署 canary 前端。确认没问题后照常走 dev→master。合进 dev 不会自动发到 canary，不快进 `canary` 分支，线上 canary 就一直是上一次发布的构建。
+
+```bash
+git fetch origin && git push origin origin/dev:refs/heads/canary
+```
+
+canary 每次发布都会给正打开着的页面弹「新版本已准备好」。网页更新只在版本号（`APP_VERSION` 的前半截）变了时才弹提示，同一版本号内的构建要等下次打开或刷新才悄悄换上；canary 构建的更新版本号拼上了构建号（`releaseUpdateVersion`，SW 清单与页面用同一个式子），每个构建都算新版本。统计标签不受影响，仍是 `v3.x-canary`。
 
 ## 前端
 

@@ -11,6 +11,14 @@ export type ReleaseChannel = 'stable' | 'canary';
 export const RELEASE_CHANNEL: ReleaseChannel =
   typeof __RELEASE_CHANNEL__ !== 'undefined' && __RELEASE_CHANNEL__ === 'canary' ? 'canary' : 'stable';
 
+/**
+ * 网页更新拿来判断「要不要弹提示」的版本号（SW 清单的 appVersion 与页面两边用同一个式子算）。
+ * 正式版就是 APP_VERSION 那半截，只有大版本才打扰正在用的人；canary 拼上构建号，每次发布都弹，
+ * 志愿者刷不出新构建就测不到新东西。
+ */
+export const releaseUpdateVersion = (appVersionTag: string, channel: ReleaseChannel, buildId: string): string =>
+  channel === 'canary' ? `${appVersionTag}-canary.${buildId}` : appVersionTag;
+
 /** 只有这个网址提供 canary：数据按网址隔离，别的官方站点去不了 /canary/。 */
 export const CANARY_HOST = 'friedsully.com';
 export const CANARY_BASE = '/canary/';

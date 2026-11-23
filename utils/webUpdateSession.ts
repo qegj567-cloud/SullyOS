@@ -1,4 +1,5 @@
 import { APP_VERSION_TAG } from './appVersion';
+import { RELEASE_CHANNEL, releaseUpdateVersion } from './releaseChannel';
 
 export interface ResourceCacheStats {
   buildId: string;
@@ -238,9 +239,11 @@ function serviceWorkerContainer(): ServiceWorkerContainer | undefined {
   try { return typeof navigator !== 'undefined' ? navigator.serviceWorker : undefined; }
   catch { return undefined; }
 }
+const pageBuildId = typeof __APP_BUILD_ID__ === 'undefined' ? 'development' : __APP_BUILD_ID__;
 export const webUpdateSession = createWebUpdateSession({
-  buildId: typeof __APP_BUILD_ID__ === 'undefined' ? 'development' : __APP_BUILD_ID__,
-  appVersion: APP_VERSION_TAG,
+  buildId: pageBuildId,
+  // 与 vite.config.ts 写进 SW 清单的同一个式子：canary 每个构建都算新版本，会弹更新提示。
+  appVersion: releaseUpdateVersion(APP_VERSION_TAG, RELEASE_CHANNEL, pageBuildId),
   container: serviceWorkerContainer(),
   reload: () => window.location.reload(), canReload: () => runningRequests === 0, request: requestResourceCache,
 });
