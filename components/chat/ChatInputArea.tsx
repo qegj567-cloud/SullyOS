@@ -3,7 +3,7 @@ import EmojiHealthDialog from './EmojiHealthDialog';
 import EmojiImage from './EmojiImage';
 import ChatCamera from './ChatCamera';
 import React, { useRef, useState, useEffect, useMemo } from 'react';
-import { ShareNetwork, Trash, Plus, Smiley, PaperPlaneTilt, Lightning, Money, BookOpenText, GearSix, Image, Lock, ArrowsClockwise, CalendarBlank, ForkKnife, Coffee, Code, Brain, PencilSimple, BellSimpleRinging, Alarm, ChatCircleDots, Sparkle, FadersHorizontal, LinkSimple, Star, Briefcase } from '@phosphor-icons/react';
+import { ShareNetwork, Trash, Plus, Smiley, PaperPlaneTilt, Lightning, Money, BookOpenText, GearSix, Image, Lock, ArrowsClockwise, CalendarBlank, ForkKnife, Coffee, Code, Brain, PencilSimple, BellSimpleRinging, Alarm, HandTap, ChatCircleDots, Sparkle, FadersHorizontal, LinkSimple, Star, Briefcase } from '@phosphor-icons/react';
 import { CharacterProfile, ChatTheme, EmojiCategory, Emoji } from '../../types';
 import { PRESET_THEMES } from './ChatConstants';
 import TokenImg from '../os/TokenImg';
@@ -508,6 +508,8 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
 
     const selectedEmojiNames = emojiSelectionMode ? new Set(selectedEmojis.map(se => se.name)) : new Set();
 
+    const awayBadge = awayMessageOn && <span className="sully-chat-badge-dot absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border-2 bg-violet-500 border-white" />;
+
     // Keep one ordered list so removed or added entries cannot leave holes between pages.
     const actionTiles = [
         <button key="collaboration" onClick={() => onPanelAction('collaboration')} className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${acnh ? 'text-[#725d42]' : isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}>
@@ -531,7 +533,9 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
         </button>,
         <button key="poke" onClick={() => onPanelAction('poke')} className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${acnh ? 'text-[#725d42]' : isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}>
             {acnh ? <AcnhActionTile kind="poke" /> : (
-            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border ${isDiscordStyle ? 'bg-slate-800 border-sky-400/20' : 'bg-sky-50 border-sky-100'}`}><img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f449.png" alt="poke" className="w-6 h-6" /></div>)}
+            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border ${isDiscordStyle ? 'bg-slate-800 text-sky-300 border-sky-400/20' : 'bg-sky-50 text-sky-500 border-sky-100'}`}>
+                <HandTap className="w-6 h-6" weight="bold" />
+            </div>)}
             <span className="text-xs font-bold">戳一戳</span>
         </button>,
         <button key="image" onClick={() => setCameraOpen(true)} className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${acnh ? 'text-[#725d42]' : isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}>
@@ -562,13 +566,12 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
             <span className="text-xs font-bold">日程/情绪</span>
         </button>,
         <button key="away-message" onClick={() => onPanelAction('away-message')} className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${acnh ? 'text-[#725d42]' : isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}>
-            <div className="relative">
-                {acnh ? <AcnhActionTile kind="proactive" /> : (
-                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border ${isDiscordStyle ? 'bg-slate-800 text-violet-300 border-violet-400/20' : 'bg-violet-50 text-violet-500 border-violet-100'}`}>
+            {acnh ? <div className="relative"><AcnhActionTile kind="proactive" />{awayBadge}</div> : (
+                <div className={`relative w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border ${isDiscordStyle ? 'bg-slate-800 text-violet-300 border-violet-400/20' : 'bg-violet-50 text-violet-500 border-violet-100'}`}>
                     <ChatCircleDots className="w-6 h-6" weight="bold" />
-                </div>)}
-                {awayMessageOn && <span className="sully-chat-badge-dot absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border-2 bg-violet-500 border-white" />}
-            </div>
+                    {awayBadge}
+                </div>
+            )}
             <span className="text-xs font-bold">离开后消息</span>
         </button>,
         <button key="active-msg-2" onClick={() => onPanelAction('active-msg-2')} className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${acnh ? 'text-[#725d42]' : isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}>

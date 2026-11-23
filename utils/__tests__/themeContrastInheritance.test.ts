@@ -232,6 +232,17 @@ afterEach(async () => {
 });
 
 describe('theme contrast & style inheritance boundaries', () => {
+  it.each(['acid-orbit', 'acid-orbit-lavender'])('repairs saved %s input bar edges in place', async name => {
+    const bundled = JSON.parse(readRepo(`presets/chat/${name}.json`)).parts.css as string;
+    const oldRule = '.sully-chat-inputbar {background:#1c2036 !important;border-top-color:#b9abd363 !important;}';
+    const newRule = '.sully-chat-inputbar {background:#1c2036 !important;border:0 !important;box-shadow:none !important;}\n.sully-chat-panel {border-top:0 !important;}';
+    const personalCss = '\n.sully-chat-inputbar {border-bottom:2px solid navy !important;}';
+    expect(bundled).toContain(newRule);
+    const saved = bundled.replace(newRule, oldRule) + personalCss;
+    await act(async () => { root.render(React.createElement(BlobRefStyle, {css: saved})); });
+    expect(host.querySelector('style')?.textContent).toBe(bundled + personalCss);
+  });
+
   it('keeps the lavender card palette on existing whiteboxes and preserves later user overrides', async () => {
     const bundled = JSON.parse(readRepo('presets/chat/acid-orbit-lavender.json')).parts.css as string;
     const palette = readRepo('art/acid-orbit/lavender-card-palette.css').trim().replace(/\r\n/g, '\n');

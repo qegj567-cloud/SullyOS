@@ -1,5 +1,5 @@
 import {readFile, writeFile} from 'node:fs/promises';
-const css = await readFile(new URL('./acid-orbit.css', import.meta.url), 'utf8');
+const css = (await readFile(new URL('./acid-orbit.css', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
 const bubble = (textColor, backgroundColor) => ({textColor, backgroundColor, borderRadius:21, opacity:1, tailMode:'none',voiceBarBg:'#292b41',voiceBarActiveBg:'#47405f',voiceBarBtnColor:'#c4b0ff',voiceBarWaveColor:'#e2d6ff',voiceBarTextColor:'#f4efff'});
 const preset = {
   format:'sullyos-chat-decoration',version:1,name:'ACID ORBIT · 酸性星轨',
