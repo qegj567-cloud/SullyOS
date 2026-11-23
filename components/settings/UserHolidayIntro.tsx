@@ -22,7 +22,7 @@ export default function UserHolidayIntro({ onDone, onExit }: { onDone: () => voi
         <div className="space-y-4 text-sm leading-relaxed text-slate-600">
             <p>选择你生活的国家／地区，假期或调休补班当天，在你的用户信息里添一句提醒。聊天、见面等共用这份信息的场景都能感知。</p>
             <div className="rounded-2xl bg-violet-50 p-4 text-violet-800">例如：今天是{userProfile.name || '你'}所在地的中秋假期，实际休息以自己的日程为准。</div>
-            <p>普通日期不额外提示，也不会默认你一定放假。不需要的话可以直接关闭，以后仍可在「设置 → 实时感知」开启。</p>
+            <p>普通日期不额外提示，也不会默认你一定放假。不需要的话可以直接关闭，以后仍可在「设置 → 扩展连接 → 实时感知」开启。</p>
         </div>
     </Modal>;
 }

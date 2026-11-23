@@ -367,7 +367,7 @@ export interface APIConfig {
   //   留空 → 用内置默认（minimaxTts.VOICE_ACTING_GUIDE / fishAudioTts.FISH_VOICE_ACTING_GUIDE）。
   // dateVoice：见面（DateApp）专用的 [v:xxx] 语音情绪规则，与服务商无关、单独一份；
   //   留空 → 用内置默认（datePrompts.DATE_VOICE_GUIDE）。
-  // 在「设置 → 其他 API → 语音提示词」里二次编辑，存 localStorage（随 apiConfig）。
+  // 在「设置 → 语音与写歌 → 语音提示词」里二次编辑，存 localStorage（随 apiConfig）。
   voicePrompts?: {
     minimax?: string;
     fishaudio?: string;

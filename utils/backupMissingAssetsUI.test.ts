@@ -46,7 +46,7 @@ it('keeps the missing-file warning visible after sharing is cancelled and clears
         return file;
     });
     await act(async () => root.render(createElement(Settings)));
-    const section = Array.from(host.querySelectorAll('section')).find(node => node.querySelector('h2')?.textContent === '备份与恢复 (ZIP)')!;
+    const section = Array.from(host.querySelectorAll('section')).find(node => node.querySelector('h2')?.textContent === '备份与恢复')!;
     await act(async () => section.querySelector('button')!.click());
     const button = Array.from(host.querySelectorAll('button')).find(node => node.textContent?.includes('整合导出 (文字+媒体)'))!;
     await act(async () => button.click());
@@ -66,7 +66,7 @@ it('keeps the missing-file warning visible after sharing is cancelled and clears
 it('offers independent migration explicitly while the original import button keeps normal restore behavior', async () => {
     context.importSystem.mockResolvedValue(undefined);
     await act(async () => root.render(createElement(Settings)));
-    const section = Array.from(host.querySelectorAll('section')).find(node => node.querySelector('h2')?.textContent === '备份与恢复 (ZIP)')!;
+    const section = Array.from(host.querySelectorAll('section')).find(node => node.querySelector('h2')?.textContent === '备份与恢复')!;
     await act(async () => section.querySelector('button')!.click());
     const independent = host.querySelector<HTMLInputElement>('input[aria-label="迁入独立用户备份"]')!;
     const picker = vi.spyOn(independent, 'click');

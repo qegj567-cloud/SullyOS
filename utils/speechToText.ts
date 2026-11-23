@@ -194,8 +194,8 @@ export const isSttSupported = (apiConfig?: Partial<APIConfig> | null): boolean =
 
 const friendlyBrowserError = (raw: string, hasPaidConfigured: boolean): string => {
   const suffix = hasPaidConfigured
-    ? '可在「通话偏好」或「设置 → 其他 API」切换为已配置的付费语音识别'
-    : '可在「设置 → 其他 API」配置 ElevenLabs、鱼声 Fish 或 MiniMax Key 开启高精度语音转文字';
+    ? '可在「通话偏好」或「设置 → 语音与写歌」切换为已配置的付费语音识别'
+    : '可在「设置 → 语音与写歌」配置 ElevenLabs、鱼声 Fish 或 MiniMax Key 开启高精度语音转文字';
   if (/not-allowed|permission|denied/i.test(raw)) return '麦克风权限被拒绝，请在浏览器或系统设置里放行';
   if (/no-speech/i.test(raw)) return '没听清，再试一次？';
   if (/audio-capture/i.test(raw)) return '找不到可用麦克风';
@@ -334,7 +334,7 @@ const formatSttHttpError = (providerLabel: string, status: number, rawText: stri
   const detail = extractApiErrorDetail(rawText);
   const lower = detail.toLowerCase();
   if (status === 401 || lower.includes('invalid api key') || lower.includes('unauthorized') || lower.includes('authorized_error')) {
-    return `${providerLabel} API Key 无效或未开通语音识别权限，请前往「设置 → 其他 API」检查`;
+    return `${providerLabel} API Key 无效或未开通语音识别权限，请前往「设置 → 语音与写歌」检查`;
   }
   if (status === 402 || lower.includes('insufficient_balance') || lower.includes('quota') || lower.includes('credits') || lower.includes('payment')) {
     return `${providerLabel} 账户余额或配额不足`;
@@ -368,7 +368,7 @@ export async function transcribeAudioWithProvider(
   if (provider === 'minimax') {
     const apiKey = resolveMiniMaxSttApiKey(apiConfig);
     if (!apiKey) {
-      throw new Error('未配置官方 MiniMax API Key，请在「设置 → 其他 API」填写，或切换至 ElevenLabs / 鱼声 Fish');
+      throw new Error('未配置官方 MiniMax API Key，请在「设置 → 语音与写歌」填写，或切换至 ElevenLabs / 鱼声 Fish');
     }
     const region = normalizeMinimaxRegion(apiConfig?.minimaxRegion || getMinimaxRegion());
     const headers: Record<string, string> = {
@@ -415,7 +415,7 @@ export async function transcribeAudioWithProvider(
   if (provider === 'fishaudio') {
     const apiKey = resolveFishAudioSttApiKey(apiConfig);
     if (!apiKey) {
-      throw new Error('未配置鱼声 Fish Audio API Key，请在「设置 → 其他 API」填写');
+      throw new Error('未配置鱼声 Fish Audio API Key，请在「设置 → 语音与写歌」填写');
     }
     const model = 'transcribe-1-pro';
     const res = await postSttMultipart(
@@ -454,7 +454,7 @@ export async function transcribeAudioWithProvider(
   // provider === 'elevenlabs'
   const apiKey = resolveElevenLabsSttApiKey(apiConfig);
   if (!apiKey) {
-    throw new Error('未配置 ElevenLabs API Key，请在「设置 → 其他 API」填写');
+    throw new Error('未配置 ElevenLabs API Key，请在「设置 → 语音与写歌」填写');
   }
 
   const res = await postSttMultipart(
@@ -614,8 +614,8 @@ const startWeb = (lang: string, cb: SttCallbacks, hasPaidConfigured: boolean): S
   const Ctor = getWebCtor();
   if (!Ctor) {
     const hint = hasPaidConfigured
-      ? '当前浏览器不支持自带语音识别，请在「通话偏好」或「设置 → 其他 API」切换为已配置的付费语音转文字'
-      : '当前浏览器不支持自带语音识别，可在「设置 → 其他 API」配置 ElevenLabs、鱼声 Fish 或 MiniMax Key 开启高精度语音转文字';
+      ? '当前浏览器不支持自带语音识别，请在「通话偏好」或「设置 → 语音与写歌」切换为已配置的付费语音转文字'
+      : '当前浏览器不支持自带语音识别，可在「设置 → 语音与写歌」配置 ElevenLabs、鱼声 Fish 或 MiniMax Key 开启高精度语音转文字';
     cb.onError?.(hint);
     cb.onEnd?.();
     return { stop: () => {} };
@@ -678,7 +678,7 @@ const startWeb = (lang: string, cb: SttCallbacks, hasPaidConfigured: boolean): S
     cb.onError?.(
       hasPaidConfigured
         ? '浏览器自带语音识别无响应，可在「通话偏好」切换为 ElevenLabs / 鱼声 Fish / MiniMax 语音识别'
-        : '浏览器自带语音服务无响应，建议在「设置 → 其他 API」配置 ElevenLabs、鱼声 Fish 或 MiniMax Key 使用付费语音转文字'
+        : '浏览器自带语音服务无响应，建议在「设置 → 语音与写歌」配置 ElevenLabs、鱼声 Fish 或 MiniMax Key 使用付费语音转文字'
     );
   }, SILENT_HANG_WATCHDOG_MS);
 

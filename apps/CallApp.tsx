@@ -1548,7 +1548,7 @@ const CallApp: React.FC = () => {
       return;
     }
     if (!sttSupported) {
-      addToast('当前环境不支持语音输入，可在「设置 → 其他 API」配置 ElevenLabs / 鱼声 Fish / MiniMax Key', 'info');
+      addToast('当前环境不支持语音输入，可在「设置 → 语音与写歌」配置 ElevenLabs / 鱼声 Fish / MiniMax Key', 'info');
       return;
     }
     try {
@@ -3237,7 +3237,7 @@ ${sentencePlan}`;
             onSttProviderChange={provider => {
               if (!isSttProviderConfigured(provider, apiConfig)) {
                 const opt = STT_PROVIDER_OPTIONS.find(o => o.id === provider);
-                addToast(`${opt?.keyHint || '请先填写对应 Key'}（可在「设置 → 其他 API」配置）`, 'info');
+                addToast(`${opt?.keyHint || '请先填写对应 Key'}（可在「设置 → 语音与写歌」配置）`, 'info');
                 return;
               }
               updateApiConfig({ sttProvider: provider });

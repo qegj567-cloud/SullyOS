@@ -11,7 +11,7 @@
 
 **部署（运营方做一次）：** 像平时一样重新部署 `worker/index.js` 即可，URL 不变。
 
-**用户侧（不需要电脑/部署）：** SullyOS → 设置 → 实时感知 → 小红书：
+**用户侧（不需要电脑/部署）：** SullyOS → 设置 → 扩展连接 → 实时感知 → 小红书：
 - 服务器 URL 已默认 `https://proxy.friedsully.com/api`，一般无需改。
 - 粘贴浏览器登录 `xiaohongshu.com` 或 `rednote.com` 后的完整 cookie（含 `a1` 和
   `web_session`），点测试连接。Lite 会分别探测国内与全球后端并自动选择，不依赖

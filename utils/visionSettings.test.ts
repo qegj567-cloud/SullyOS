@@ -35,10 +35,13 @@ function Harness() {
     return createElement(Settings);
 }
 function visionSection() {
-    return Array.from(container.querySelectorAll('section')).find(section => section.querySelector('h2')?.textContent === '识图 API')!;
+    return Array.from(container.querySelectorAll('section')).find(section => section.querySelector('h2')?.textContent === 'API 配置')!;
 }
 async function openVision() {
-    await act(async () => { visionSection().querySelector('button')!.click(); });
+    // 识图是「API 配置」卡片里的一个页签；卡片可能已被首次引导展开
+    if (!visionSection().querySelector('[role="tab"]')) await act(async () => { visionSection().querySelector('button')!.click(); });
+    const tab = Array.from(visionSection().querySelectorAll<HTMLButtonElement>('[role="tab"]')).find(node => node.textContent?.startsWith('识图'))!;
+    await act(async () => { tab.click(); });
 }
 afterEach(async () => { await act(async () => { root.render(null); }); vi.restoreAllMocks(); });
 

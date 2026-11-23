@@ -755,7 +755,7 @@ const XhsFreeRoamApp: React.FC = () => {
                 <div className="mx-4 mt-3 bg-amber-50 border border-amber-200 rounded-2xl p-3">
                     <p className="text-xs text-amber-700 font-medium">小红书 MCP 未开启</p>
                     <p className="text-[10px] text-amber-500 mt-1">
-                        请前往 设置 → 实时感知 → 小红书 MCP，开启并配置 Server URL。
+                        请前往 设置 → 扩展连接 → 实时感知 → 小红书 MCP，开启并配置 Server URL。
                     </p>
                 </div>
             )}

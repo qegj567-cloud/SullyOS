@@ -37,11 +37,11 @@ export const assertTtsLanguageSupported = (
   if ((languageBoost || '').trim().toLowerCase() !== 'yue') return;
   const provider = resolveTtsProvider(apiConfig);
   if (provider === 'elevenlabs' && !supportsElevenLabsAudioTags(resolveElevenLabsModel(apiConfig))) {
-    throw new Error('ElevenLabs 粤语需要 Eleven v3 / v4 / v4 Turbo，请先在「设置 → 其他 API」切换模型');
+    throw new Error('ElevenLabs 粤语需要 Eleven v3 / v4 / v4 Turbo，请先在「设置 → 语音与写歌」切换模型');
   }
   const fishModel = (char.voiceProfile?.fishModel || apiConfig.fishAudioModel || 's2.1-pro').trim().toLowerCase();
   if (provider === 'fishaudio' && fishModel === 's1') {
-    throw new Error('鱼声粤语需要 S2 系列，请先在「设置 → 其他 API」切换到 S2.1 Pro 或 S2 Pro');
+    throw new Error('鱼声粤语需要 S2 系列，请先在「设置 → 语音与写歌」切换到 S2.1 Pro 或 S2 Pro');
   }
 };
 

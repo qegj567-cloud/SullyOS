@@ -35,7 +35,7 @@ wrangler secret put PROXY_KEY   # 或在 Dashboard 的 Settings → Variables �
 
 ## 在 SullyOS 里使用
 
-设置 → MCP 服务器 → 「代理 URL」填你的 Worker 地址（「代理密钥」按需填写）。
+设置 → 扩展连接 → MCP 服务器 → 「代理 URL」填你的 Worker 地址（「代理密钥」按需填写）。
 前端会自动把请求包装成 `<代理URL>?target=<MCP服务器URL>` 转发。
 
 ## 请求协议

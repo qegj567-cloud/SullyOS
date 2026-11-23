@@ -113,7 +113,7 @@ pnpm dev
 | **API Key** | 你的密钥，别告诉别人 |
 | **Model** | 模型名，如 `gpt-4o-mini`、`claude-3-sonnet`、`deepseek-chat` |
 
-**TTS（可选）**：语音支持 MiniMax、Fish Audio、ElevenLabs 三选一。在「设置 → 其他 API」填写所选服务的 Key 和模型，再到角色的语音设置填写对应音色 ID；未配置时仍可正常使用文字聊天。
+**TTS（可选）**：语音支持 MiniMax、Fish Audio、ElevenLabs 三选一。在「设置 → 语音与写歌」填写所选服务的 Key 和模型，再到角色的语音设置填写对应音色 ID；未配置时仍可正常使用文字聊天。
 
 ElevenLabs 新配置默认使用 Eleven v4，也可选择 v4 Turbo。聊天、电话与见面保留 v4 的情绪、音效、节奏 Audio Tags 和 IPA 发音；v4 不支持数值语速、Style、Speaker Boost 或 SSML，当前仍等待完整音频后播放。接入能力与限制见 [ElevenLabs 语音说明](docs/elevenlabs-tts.md)。
 
