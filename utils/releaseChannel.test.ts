@@ -132,11 +132,16 @@ describe('releaseUpdateVersion（网页更新要不要弹提示）', () => {
 });
 
 describe('canary 落地动画标记', () => {
-  it('加入时写下，canary 启动读一次就清掉，只放一遍', async () => {
-    const { markCanaryWelcome, consumeCanaryWelcome } = await import('./releaseChannel');
-    expect(consumeCanaryWelcome()).toBe(false);
-    markCanaryWelcome();
-    expect(consumeCanaryWelcome()).toBe(true);
-    expect(consumeCanaryWelcome()).toBe(false);
+  /** 回归守卫：加入发生在正式版，正式版旧代码不写专门的标记，canary 要靠切换通道时都会写的那条。 */
+  it('只凭切换通道写下的标记就放一遍，之后不重复，再切一次通道又能放', async () => {
+    const { takeCanaryWelcome, writeChosenChannel } = await import('./releaseChannel');
+    localStorage.clear();
+    expect(takeCanaryWelcome()).toBe(false);
+    writeChosenChannel('canary');
+    expect(takeCanaryWelcome()).toBe(true);
+    expect(takeCanaryWelcome()).toBe(false);
+    writeChosenChannel('stable');
+    writeChosenChannel('canary');
+    expect(takeCanaryWelcome()).toBe(true);
   });
 });

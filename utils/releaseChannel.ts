@@ -64,6 +64,7 @@ export const writeChosenChannel = (channel: ReleaseChannel): void => {
   writeKey(RELEASE_CHANNEL_STORAGE_KEY, channel);
   writeKey(CANARY_BOOT_ATTEMPTS_KEY, null);
   writeKey(CHANNEL_ARRIVAL_KEY, '1');
+  writeKey(CANARY_WELCOMED_KEY, null);
 };
 
 /** 读一次就清掉的标记。 */
@@ -75,10 +76,17 @@ const consumeFlag = (key: string): boolean => {
 
 export const consumeChannelArrival = (): boolean => consumeFlag(CHANNEL_ARRIVAL_KEY);
 
-/** 刚加入 canary：canary 第一次启动时放一遍小金丝雀落地动画。 */
-export const CANARY_WELCOME_KEY = 'sullyos_canary_welcome';
-export const markCanaryWelcome = (): void => writeKey(CANARY_WELCOME_KEY, '1');
-export const consumeCanaryWelcome = (): boolean => consumeFlag(CANARY_WELCOME_KEY);
+/**
+ * 刚到 canary 时放一遍小金丝雀落地动画。看「刚切过通道」标记：加入发生在正式版那一侧，
+ * 正式版不一定有新代码，这条是新旧版本都会写的。只读不清，推送补登记还要用它；
+ * 没开 2.0 的人这条一直没人清，所以另记「这次欢迎过了」，下次切换通道时清掉。
+ */
+export const CANARY_WELCOMED_KEY = 'sullyos_canary_welcomed';
+export const takeCanaryWelcome = (): boolean => {
+  if (readKey(CHANNEL_ARRIVAL_KEY) !== '1' || readKey(CANARY_WELCOMED_KEY) === '1') return false;
+  writeKey(CANARY_WELCOMED_KEY, '1');
+  return true;
+};
 export const consumeCanaryFallbackNotice = (): boolean => consumeFlag(CANARY_FALLBACK_NOTICE_KEY);
 
 /** 切到另一个通道时去哪：保留当前路径之外的部分没有意义，回到各自的首页。 */

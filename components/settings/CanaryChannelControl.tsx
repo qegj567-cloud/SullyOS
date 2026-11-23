@@ -7,7 +7,6 @@ import { CANARY_NAMES, CanaryBird } from '../CanaryBird';
 import {
   RELEASE_CHANNEL,
   describeCanaryJoinBlocker,
-  markCanaryWelcome,
   readCanaryDotHidden,
   writeCanaryDotHidden,
 } from '../../utils/releaseChannel';
@@ -125,7 +124,6 @@ const CanaryChannelControl: React.FC<{ unlocked: boolean }> = ({ unlocked }) => 
             const startedAt = Date.now();
             const result = await joinCanary(async () => {
                 trackEvent('加入 canary');
-                markCanaryWelcome();
                 await wait(startedAt + SWEEP_MS - Date.now());
             });
             if (!result.ok) { setGlowing(false); setNote(result.message); }

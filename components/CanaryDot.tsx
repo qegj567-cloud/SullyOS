@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { CANARY_DOT_CHANGED_EVENT, RELEASE_CHANNEL, consumeCanaryWelcome, readCanaryDotHidden } from '../utils/releaseChannel';
+import { CANARY_DOT_CHANGED_EVENT, RELEASE_CHANNEL, takeCanaryWelcome, readCanaryDotHidden } from '../utils/releaseChannel';
 import { CanaryArrival } from './CanaryBird';
 
 /**
@@ -7,8 +7,8 @@ import { CanaryArrival } from './CanaryBird';
  * 设置底部可以把它藏起来（docs/canary-channel.md）。正式版不渲染。
  * 刚加入后的第一次启动，先放一遍小金丝雀飞进来落地、缩成黄点的动画。
  */
-// 模块加载时读一次就清：StrictMode 下 useState 初始化会跑两遍，放里面会被第二遍读空。
-const WELCOME_ON_BOOT = RELEASE_CHANNEL === 'canary' && consumeCanaryWelcome();
+// 模块加载时判断一次：StrictMode 下 useState 初始化会跑两遍，放里面第二遍会读到「已欢迎」。
+const WELCOME_ON_BOOT = RELEASE_CHANNEL === 'canary' && takeCanaryWelcome();
 
 const CanaryDot: React.FC = () => {
     const [hidden, setHidden] = useState(readCanaryDotHidden);
