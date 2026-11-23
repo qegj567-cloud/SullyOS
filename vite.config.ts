@@ -7,7 +7,7 @@ import { homeResourcePacksPlugin } from './scripts/home-resource-packs.mjs';
 import { startupRecoveryPlugin } from './scripts/startup-recovery-plugin';
 import { pageBuildMetadataPlugin } from './scripts/build-metadata';
 import { APP_VERSION_TAG } from './utils/appVersion';
-import { CANARY_BASE, CANARY_HOST } from './utils/releaseChannel';
+import { CANARY_BASE, CANARY_HOST, releaseUpdateVersion } from './utils/releaseChannel';
 import { tikhubMiddleware } from './server/tikhub-middleware';
 
 // MiniMax 国服 / 海外是两套域名，前端每个请求都带 X-MiniMax-Region 头说明走哪边。
@@ -97,7 +97,7 @@ export default defineConfig({
     startupRecoveryPlugin(appBuildId, releaseChannel, CANARY_HOST),
     pageBuildMetadataPlugin({ buildId: appBuildId, branch: gitInfo.branch, commit: gitInfo.commit, time: buildTime }),
     react(),
-    staticCachePlugin({ buildId: appBuildId, appVersion: APP_VERSION_TAG }),
+    staticCachePlugin({ buildId: appBuildId, appVersion: releaseUpdateVersion(APP_VERSION_TAG, releaseChannel, appBuildId) }),
     {
       name: 'bake-voice-middleware',
       configureServer(server) {
