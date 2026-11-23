@@ -5,6 +5,7 @@ import {
   AUTO_UPDATE_CRON_INTERVAL_MS,
   applySelfUpdateResult,
   ensureSchemaOnce,
+  readBundleChannel,
   readSelfUpdateState,
   recordManualSelfUpdate,
   runAutoUpdate,
@@ -125,6 +126,23 @@ describe.skipIf(!sqlite)('runAutoUpdate', () => {
     expect(run.action).toBe('unsupported');
     expect(calls).toHaveLength(0);
     expect(await readSelfUpdateState(db)).toBeNull();
+  });
+
+  it('按记着的通道拉包：加入 canary 之后定时检查跟 canary 那条线走，没记过就是正式版', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const pulledFrom = (calls: Array<{ url: string }>) =>
+      calls.filter((c) => c.url.includes('raw.githubusercontent.com')).map((c) => new URL(c.url).pathname);
+
+    const fresh = createD1();
+    const stableCalls = stubNetwork(bundleWith('a'));
+    await runAutoUpdate(FULL_ENV, fresh, { source: 'cron', scriptName: 'sullyos-amsg', nowMs: NOW });
+    expect(pulledFrom(stableCalls)).toEqual(['/Tosd0/sullyos-workers/main/amsg/worker.bundle.js']);
+
+    const canary = createD1();
+    await recordManualSelfUpdate(canary, { ok: true, code: 'UPDATED', message: '', bundleHash: 'abc', channel: 'canary' }, NOW);
+    const canaryCalls = stubNetwork(bundleWith('b'));
+    await runAutoUpdate(FULL_ENV, canary, { source: 'cron', scriptName: 'sullyos-amsg', nowMs: NOW + AUTO_UPDATE_CRON_INTERVAL_MS });
+    expect(pulledFrom(canaryCalls)).toEqual(['/Tosd0/sullyos-workers/canary/amsg/worker.bundle.js']);
   });
 
   it('从没查过 → 拉包、上传、把指纹和时刻记下来', async () => {
@@ -346,6 +364,24 @@ describe.skipIf(!sqlite)('recordManualSelfUpdate', () => {
 
   it('没绑 D1 时静默跳过，不抛', async () => {
     await expect(recordManualSelfUpdate(undefined, { ok: true, code: 'UPDATED', message: '' })).resolves.toBeUndefined();
+  });
+
+  it('装成功才写通道；失败保持原样，不会落在半切换的状态', async () => {
+    const db = createD1();
+    expect(await readBundleChannel(db)).toBe('stable');
+    await recordManualSelfUpdate(db, { ok: true, code: 'UPDATED', message: '', channel: 'canary' }, NOW);
+    expect(await readBundleChannel(db)).toBe('canary');
+    // 想退回正式版但没装上：还记着 canary
+    await recordManualSelfUpdate(db, { ok: false, code: 'UPLOAD_FAILED', message: '上传失败' }, NOW + HOUR);
+    expect(await readBundleChannel(db)).toBe('canary');
+  });
+
+  it('通道读不到、值不认识都当正式版', async () => {
+    expect(await readBundleChannel(undefined)).toBe('stable');
+    const db = createD1();
+    await recordManualSelfUpdate(db, { ok: true, code: 'UPDATED', message: '', channel: 'canary' }, NOW);
+    db.raw.prepare("UPDATE worker_diagnostics SET value = 'beta' WHERE key = 'bundle_channel'").run();
+    expect(await readBundleChannel(db)).toBe('stable');
   });
 });
 

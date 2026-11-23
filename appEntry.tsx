@@ -16,6 +16,7 @@ import { installIOSStatusBarEdge } from './utils/iosStatusBarEdge';
 import { installReducedBlurPolicy } from './utils/blurPolicy';
 import { initAnalytics } from './utils/analytics';
 import { Capacitor } from '@capacitor/core';
+import { watchCanaryBootHealth } from './utils/releaseChannel';
 
 // Prepare storage and the SW in parallel. Only background writers wait for both;
 // DatabaseGuard shares this read check and never waits for the SW/offline downloads.
@@ -70,3 +71,5 @@ root.render(
     <DatabaseGuard readiness={databaseReady}><App /></DatabaseGuard>
   </React.StrictMode>
 );
+// canary 挂载稳住了就清掉启动计数，否则正式版会以为它打不开而自动退回（docs/canary-channel.md）。
+watchCanaryBootHealth(rootElement);

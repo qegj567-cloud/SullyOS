@@ -290,6 +290,110 @@ describe('resolveBundleUrl', () => {
     expect(resolveBundleUrl({ AMSG_BUNDLE_URL: 'http://example.com/w.js' })).toBe(official);
     expect(resolveBundleUrl({ AMSG_BUNDLE_URL: 'not a url' })).toBe(official);
   });
+
+  it('按通道取官方那条线：正式版跟 main，canary 跟 canary 分支', () => {
+    expect(resolveBundleUrl({}, 'stable')).toBe(official);
+    expect(resolveBundleUrl({}, 'canary')).toBe(
+      'https://raw.githubusercontent.com/Tosd0/sullyos-workers/canary/amsg/worker.bundle.js',
+    );
+  });
+
+  it('配了 AMSG_BUNDLE_URL 就只认它，通道不起作用', () => {
+    const custom = 'https://example.com/x/worker.bundle.js';
+    expect(resolveBundleUrl({ AMSG_BUNDLE_URL: custom }, 'canary')).toBe(custom);
+    expect(resolveBundleUrl({ AMSG_BUNDLE_URL: custom }, 'stable')).toBe(custom);
+  });
+});
+
+describe('handleSelfUpdate 的通道', () => {
+  const FAKE_BUNDLE = `// src_default as default\n${'x'.repeat(200 * 1024)}`;
+  const ENV = {
+    AMSG_SERVER_TOKEN: 'shared',
+    CF_API_TOKEN: 'cf-token',
+    CF_SCRIPT_NAME: 'sullyos-amsg',
+    CF_ACCOUNT_ID: 'acc-1',
+  } as any;
+
+  /** 记下取包去了哪条线、有没有上传；body 是 /self-update 的请求体（不传就是老前端那样空体）。 */
+  const run = async (body?: string, options: { env?: any; stored?: 'stable' | 'canary' } = {}) => {
+    const pulled: string[] = [];
+    let uploads = 0;
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: any, init: any = {}) => {
+      const url = String(input);
+      if (url.includes('raw.githubusercontent.com') || url.includes('example.com')) {
+        pulled.push(url.split('?')[0]);
+        return new Response(FAKE_BUNDLE);
+      }
+      if ((init.method ?? 'GET') === 'PUT') uploads += 1;
+      if (url.endsWith('/settings')) return Response.json({ success: true, result: { bindings: [] } });
+      return Response.json({ success: true, result: {} });
+    }) as typeof fetch;
+    try {
+      const result = await handleSelfUpdate(
+        new Request('https://amsg.test.workers.dev/self-update', {
+          method: 'POST',
+          headers: { 'X-Client-Token': 'shared' },
+          body,
+        }),
+        options.env ?? ENV,
+        options.stored,
+      );
+      return { result, pulled, uploads };
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  };
+  const CANARY = 'https://raw.githubusercontent.com/Tosd0/sullyos-workers/canary/amsg/worker.bundle.js';
+  const STABLE = 'https://raw.githubusercontent.com/Tosd0/sullyos-workers/main/amsg/worker.bundle.js';
+
+  it('带 canary 就从 canary 那条线拉包，成功的结果里带上通道', async () => {
+    const { result, pulled, uploads } = await run(JSON.stringify({ channel: 'canary' }));
+    expect(result.ok).toBe(true);
+    expect(result.channel).toBe('canary');
+    expect(pulled).toEqual([CANARY]);
+    expect(uploads).toBe(1);
+  });
+
+  it('不带 channel（空体 / 非 JSON / 没这个键）就沿用记着的通道，老前端不会把 canary 拉回正式版', async () => {
+    for (const body of [undefined, 'not json', '{}']) {
+      const { result, pulled } = await run(body, { stored: 'canary' });
+      expect(result.ok).toBe(true);
+      expect(result.channel).toBe('canary');
+      expect(pulled).toEqual([CANARY]);
+    }
+    const plain = await run(undefined);
+    expect(plain.result.channel).toBe('stable');
+    expect(plain.pulled).toEqual([STABLE]);
+  });
+
+  it('通道值不认识 → INVALID_CHANNEL，不拉包不上传', async () => {
+    for (const channel of ['beta', 'Canary', null, 1]) {
+      const { result, pulled, uploads } = await run(JSON.stringify({ channel }));
+      expect(result.ok).toBe(false);
+      expect(result.code).toBe('INVALID_CHANNEL');
+      expect(pulled).toEqual([]);
+      expect(uploads).toBe(0);
+    }
+  });
+
+  it('自己指定了成品包地址的 Worker 要换线 → CUSTOM_BUNDLE_URL；不换线照常从那个地址装', async () => {
+    const env = { ...ENV, AMSG_BUNDLE_URL: 'https://example.com/w.js' };
+    const switched = await run(JSON.stringify({ channel: 'canary' }), { env, stored: 'stable' });
+    expect(switched.result.ok).toBe(false);
+    expect(switched.result.code).toBe('CUSTOM_BUNDLE_URL');
+    expect(switched.result.message).toContain('AMSG_BUNDLE_URL');
+    expect(switched.pulled).toEqual([]);
+
+    const same = await run(JSON.stringify({ channel: 'stable' }), { env, stored: 'stable' });
+    expect(same.result.ok).toBe(true);
+    expect(same.pulled).toEqual(['https://example.com/w.js']);
+  });
+
+  it('没过授权就不读请求体，照旧回 UNAUTHORIZED', async () => {
+    const { result } = await run(JSON.stringify({ channel: 'beta' }), { env: { ...ENV, AMSG_SERVER_TOKEN: 'other' } });
+    expect(result.code).toBe('UNAUTHORIZED');
+  });
 });
 
 describe('bundleFetchUrl', () => {

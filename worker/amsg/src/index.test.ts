@@ -5216,6 +5216,96 @@ describe('即时对话的接线', () => {
     expect(body.data.selfUpdate.state).toBeNull();
   });
 
+  describe('/self-update 的通道（canary 加入 / 退出走这条）', () => {
+    /** 只认诊断表那两句 SQL 的小桩：够 readDiagnosticValue / writeDiagnosticValue 用。 */
+    const diagnosticsDb = () => {
+      const rows = new Map<string, string>();
+      const statement = (sql: string, params: unknown[] = []) => ({
+        bind: (...values: unknown[]) => statement(sql, values),
+        first: async () => (sql.startsWith('SELECT value') && rows.has(String(params[0])) ? { value: rows.get(String(params[0])) } : null),
+        run: async () => {
+          if (sql.includes('INSERT INTO worker_diagnostics')) rows.set(String(params[0]), String(params[1]));
+          return { success: true };
+        },
+      });
+      return { prepare: (sql: string) => statement(sql), rows };
+    };
+    const BUNDLE = `// src_default as default\n${'x'.repeat(200 * 1024)}`;
+    const env = (db: any, extra: Record<string, unknown> = {}) => ({
+      ...fullEnv, DB: db, AMSG_SERVER_TOKEN: 'shared', CF_API_TOKEN: 'cf', CF_SCRIPT_NAME: 'w', CF_ACCOUNT_ID: 'acc', ...extra,
+    });
+    const realFetch = globalThis.fetch;
+    let pulled: string[] = [];
+    let uploadOk = true;
+    afterEach(() => { globalThis.fetch = realFetch; });
+    const stub = () => {
+      pulled = [];
+      globalThis.fetch = (async (input: any, init: any = {}) => {
+        const url = String(input);
+        if (url.includes('raw.githubusercontent.com')) { pulled.push(new URL(url).pathname); return new Response(BUNDLE); }
+        if ((init.method ?? 'GET') === 'PUT' && !uploadOk) {
+          return Response.json({ success: false, errors: [{ code: 10000, message: 'boom' }] }, { status: 400 });
+        }
+        if (url.endsWith('/settings')) return Response.json({ success: true, result: { bindings: [] } });
+        return Response.json({ success: true, result: {} });
+      }) as typeof fetch;
+    };
+    const post = (workerEnv: any, body?: string) =>
+      (worker as any).fetch(
+        new Request('https://w.example/self-update', { method: 'POST', headers: { 'X-Client-Token': 'shared' }, body }),
+        workerEnv,
+        { waitUntil: () => {} },
+      );
+
+    it('/config-check 报 bundleChannel：没记过、D1 读不了都是 stable', async () => {
+      const body = await (await call('https://w.example/config-check')).json();
+      expect(body.data.bundleChannel).toBe('stable');
+    });
+
+    it('带 canary 装成功 → 记下通道，/config-check 跟着报 canary；之后不带通道的调用继续拉 canary', async () => {
+      stub();
+      uploadOk = true;
+      const db = diagnosticsDb();
+      const response = await post(env(db), JSON.stringify({ channel: 'canary' }));
+      expect(response.status).toBe(200);
+      expect((await response.json()).data.channel).toBe('canary');
+      expect(db.rows.get('bundle_channel')).toBe('canary');
+      expect(pulled).toEqual(['/Tosd0/sullyos-workers/canary/amsg/worker.bundle.js']);
+
+      const check = await (await call('https://w.example/config-check', {}, env(db))).json();
+      expect(check.data.bundleChannel).toBe('canary');
+
+      stub();
+      await post(env(db));
+      expect(pulled).toEqual(['/Tosd0/sullyos-workers/canary/amsg/worker.bundle.js']);
+    });
+
+    it('装失败不写通道', async () => {
+      stub();
+      uploadOk = false;
+      const db = diagnosticsDb();
+      const response = await post(env(db), JSON.stringify({ channel: 'canary' }));
+      uploadOk = true;
+      expect(response.status).toBe(400);
+      expect((await response.json()).error.code).toBe('UPLOAD_FAILED');
+      expect(db.rows.has('bundle_channel')).toBe(false);
+    });
+
+    it('通道值不认识 → 400 INVALID_CHANNEL；自定义成品包地址要换线 → 400 CUSTOM_BUNDLE_URL', async () => {
+      stub();
+      const db = diagnosticsDb();
+      const invalid = await post(env(db), JSON.stringify({ channel: 'beta' }));
+      expect(invalid.status).toBe(400);
+      expect((await invalid.json()).error.code).toBe('INVALID_CHANNEL');
+
+      const custom = await post(env(db, { AMSG_BUNDLE_URL: 'https://example.com/w.js' }), JSON.stringify({ channel: 'canary' }));
+      expect(custom.status).toBe(400);
+      expect((await custom.json()).error.code).toBe('CUSTOM_BUNDLE_URL');
+      expect(pulled).toEqual([]);
+      expect(db.rows.has('bundle_channel')).toBe(false);
+    });
+  });
+
   describe('/self-update/check（冷启动顺手问一句该更新了没）', () => {
     const checkEnv = { ...fullEnv, AMSG_SERVER_TOKEN: 'shared', CF_API_TOKEN: 'cf', CF_SCRIPT_NAME: 'w' };
     const post = (env: any, headers: Record<string, string> = { 'X-Client-Token': 'shared' }, ctx?: any) =>

@@ -47,7 +47,8 @@ import { getLastAwayAnchorAt } from './awayMessageCore';
 import { AMSG_BUNDLE_VERSION, compareBundleVersions } from './amsgBundleVersion';
 import { recordRescueFromConfigCheck } from './amsgRescueAlert';
 import { describeD1LimitCode } from './amsgD1Limits';
-import { explainCfTokenRejection, parseAmsgSelfUpdateState, type AmsgSelfUpdateReport } from './amsgSelfUpdateState';
+import { explainCfTokenRejection, parseAmsgBundleChannel, parseAmsgSelfUpdateState, type AmsgBundleChannel, type AmsgSelfUpdateReport } from './amsgSelfUpdateState';
+import { RELEASE_CHANNEL } from './releaseChannel';
 import { AMSG_AWAY_DELAY_META, AMSG_AWAY_MESSAGE_META, AMSG_DATE_LEAVE_META, AMSG_DATE_LEAVE_DELAY_META, buildAwayTaskInstruction, buildDateLeaveInstruction, buildTaskInstruction, resolveSendAtMs } from './amsgFireSchedule';
 import {
   getPendingTasks, isAmsg2EnabledForChar,
@@ -435,6 +436,8 @@ export interface AmsgWorkerVersionProbe {
   expected: string;
   /** 自动更新：有没有这个能力 + 最近一次检查。老 bundle 不报这一段就是 null。 */
   autoUpdate: AmsgSelfUpdateReport | null;
+  /** 那台 Worker 跟哪个通道拉包（docs/canary-channel.md）；不认通道的老 bundle 是 null。 */
+  channel: AmsgBundleChannel | null;
 }
 
 const parseSelfUpdateReport = (raw: unknown): AmsgSelfUpdateReport | null => {
@@ -4255,16 +4258,17 @@ export const ActiveMsgClient = {
         timer = setTimeout(() => controller.abort(), timeoutMs);
       }
       const { status, body } = await fetchWithAuthRaw('config-check', config, init, '后端版本探测');
-      if (status !== 200 || body?.success !== true) return { state: 'unknown', deployed: null, expected, autoUpdate: null };
+      if (status !== 200 || body?.success !== true) return { state: 'unknown', deployed: null, expected, autoUpdate: null, channel: null };
       await rememberWorkerBundleVersion(body, config.workerUrl);
       const deployed = typeof body?.data?.workerVersion === 'string' ? body.data.workerVersion : null;
       const autoUpdate = parseSelfUpdateReport(body?.data?.selfUpdate);
-      if (!deployed) return { state: 'outdated', deployed: null, expected, autoUpdate };
-      if (deployed === expected) return { state: 'current', deployed, expected, autoUpdate };
+      const channel = parseAmsgBundleChannel(body?.data?.bundleChannel);
+      if (!deployed) return { state: 'outdated', deployed: null, expected, autoUpdate, channel };
+      if (deployed === expected) return { state: 'current', deployed, expected, autoUpdate, channel };
       const order = compareBundleVersions(deployed, expected);
-      return { state: order !== null && order > 0 ? 'ahead' : 'outdated', deployed, expected, autoUpdate };
+      return { state: order !== null && order > 0 ? 'ahead' : 'outdated', deployed, expected, autoUpdate, channel };
     } catch {
-      return { state: 'unknown', deployed: null, expected, autoUpdate: null };
+      return { state: 'unknown', deployed: null, expected, autoUpdate: null, channel: null };
     } finally {
       if (timer) clearTimeout(timer);
     }
@@ -4303,10 +4307,17 @@ export const ActiveMsgClient = {
    *
    * 更新成功那一刻代码就换了，但本次响应仍由旧代码发出——所以这个方法拿到的是「旧代码
    * 报告更新已完成」，不是新代码的自我介绍。想确认新版本真跑起来了，看返回的 bundleHash。
+   *
+   * 一律带上通道（默认是这份前端自己的）：Worker 跟着正在用的前端走，前后端才配得上对
+   * （docs/canary-channel.md）。不认通道的老 Worker 会忽略它，照旧装正式版。
    */
-  async selfUpdateWorker(): Promise<AmsgSelfUpdateResult> {
+  async selfUpdateWorker(channel: AmsgBundleChannel = RELEASE_CHANNEL): Promise<AmsgSelfUpdateResult> {
     const config = await ensureWorkerReady();
-    const { status, body } = await fetchWithAuthRaw('self-update', config, { method: 'POST' }, '后端自更新');
+    const { status, body } = await fetchWithAuthRaw('self-update', config, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel }),
+    }, '后端自更新');
 
     // 旧 worker 没有这个端点。它可能回 404，也可能被上游当成未知路由回一段自己的 JSON，
     // 两种都归到「不支持」——让面板去说「先用老办法更新一次」，而不是报一个看不懂的错。

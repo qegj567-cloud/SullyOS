@@ -47,3 +47,16 @@ describe('pickStartupUpdateAction', () => {
     expect(pickStartupUpdateAction({ state: 'unknown', autoUpdate: null })).toBe('none');
   });
 });
+
+describe('pickStartupUpdateAction · 通道（docs/canary-channel.md）', () => {
+  /** 回归守卫：Worker 跟的通道和前端不一样就更新，哪怕版本号对得上或 Worker 更新。 */
+  it('通道对不上 → 直接更新，排在版本号前面', () => {
+    expect(pickStartupUpdateAction({ state: 'current', autoUpdate: { supported: true, state: null }, channel: 'canary' }, 'stable')).toBe('self-update');
+    expect(pickStartupUpdateAction({ state: 'ahead', autoUpdate: null, channel: 'stable' }, 'canary')).toBe('self-update');
+  });
+
+  it('通道对得上 / 老 Worker 不报通道 → 照旧只看版本号', () => {
+    expect(pickStartupUpdateAction({ state: 'current', autoUpdate: { supported: true, state: null }, channel: 'canary' }, 'canary')).toBe('check');
+    expect(pickStartupUpdateAction({ state: 'ahead', autoUpdate: null, channel: null }, 'canary')).toBe('none');
+  });
+});
