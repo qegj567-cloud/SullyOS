@@ -51,7 +51,7 @@ export function helpMessageText(message: HelpDeskMessage, limit: number): string
 }
 
 export class HelpImageError extends Error {}
-export const helpVisionSettings = '设置 → 识图 API → 测试识图';
+export const helpVisionSettings = '设置 → API 配置 → 识图 → 测试识图';
 
 /** Resolve just this batch of unsolved images once, including when the desk reads a second manual page. */
 export async function prepareHelpImages(turns: HelpDeskMessage[], api: APIConfig, signal: AbortSignal, textOnly: boolean) {

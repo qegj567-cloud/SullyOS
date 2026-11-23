@@ -127,9 +127,11 @@ describe('secondary confirmation regression guards', () => {
         });
 
         const backupSection = Array.from(host.querySelectorAll('section')).find(
-            node => node.querySelector('h2')?.textContent === '备份与恢复 (ZIP)',
+            node => node.querySelector('h2')?.textContent === '备份与恢复',
         )!;
         await act(async () => backupSection.querySelector('button')!.click());
+        // 云端已连接时卡片默认打开云端页签，本地导入在「本地文件」页签
+        await act(async () => findButton(backupSection, '本地文件')!.click());
 
         const normalInput = host.querySelector<HTMLInputElement>('input[aria-label="迁入独立用户备份"]')!
             .previousElementSibling?.previousElementSibling as HTMLInputElement;
@@ -147,10 +149,7 @@ describe('secondary confirmation regression guards', () => {
         await act(async () => topDialogButton(host, '确认覆盖')!.click());
         expect(settingsContext.importSystem).toHaveBeenCalledWith(file, expect.objectContaining({ asNewUsers: false }));
 
-        const cloudSection = Array.from(host.querySelectorAll('section')).find(
-            node => node.querySelector('h2')?.textContent === '云端备份',
-        )!;
-        await act(async () => cloudSection.querySelector('button')!.click());
+        await act(async () => findButton(backupSection, '云端')!.click());
         await act(async () => findButton(host, '从云端恢复')!.click());
 
         const backupItem = Array.from(host.querySelectorAll('button')).find(btn => btn.textContent?.includes('backup-1.zip'))!;

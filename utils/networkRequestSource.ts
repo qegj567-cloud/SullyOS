@@ -591,7 +591,7 @@ export const identifyNetworkRequestSource = (input: IdentifyNetworkRequestInput)
             via: 'mcp-proxy',
             upstreamTarget: targetParsed?.host || sanitizeUrlForLog(mcpTargetRaw),
             operation: opParts || `${method} MCP 请求`,
-            configSource: matchedServer?.name ? `设置 → MCP 服务器「${matchedServer.name}」` : '设置 → MCP 代理转发',
+            configSource: matchedServer?.name ? `设置 → 扩展连接 → MCP 服务器「${matchedServer.name}」` : '设置 → 扩展连接 → MCP 代理转发',
             impactHint: '仅影响该 MCP 外部工具的握手或调用，不影响不带该工具的普通对话与本地存储。',
         };
     }
@@ -941,7 +941,7 @@ export const identifyNetworkRequestSource = (input: IdentifyNetworkRequestInput)
             via: isSameOrigin ? 'same-origin' : 'direct',
             operation: opParts || `${method} ${pathname}`,
             configSource: matchedMcpDirect?.name
-                ? `设置 → MCP 服务器「${matchedMcpDirect.name}」（直连）`
+                ? `设置 → 扩展连接 → MCP 服务器「${matchedMcpDirect.name}」（直连）`
                 : `MCP 服务器直连 (${parsed.host})`,
             impactHint: '浏览器直连远程 MCP 服务器常因对方未配 CORS 响应头而报 Failed to fetch / Load failed；可在 MCP 设置里配置代理地址。',
         };
@@ -1029,7 +1029,7 @@ export const identifyNetworkRequestSource = (input: IdentifyNetworkRequestInput)
             category: 'realtime',
             via: 'direct',
             operation: `${method} ${parsed.host}${pathname}`,
-            configSource: '设置 → 实时感知（天气）',
+            configSource: '设置 → 扩展连接 → 实时感知（天气）',
             impactHint: '仅影响环境天气背景信息注入，不影响对话主流程。',
         };
     }

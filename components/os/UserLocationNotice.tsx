@@ -26,7 +26,7 @@ export default function UserLocationNotice({ onDone, onConfigure }: { onDone: ()
     <div className="navigation-ball-notice-symbol" aria-hidden="true"><MapPin size={30} color="white" /></div>
     <p className="navigation-ball-notice-eyebrow">糯米机 · 实时感知</p>
     <h2 id={titleId}>真实定位来了</h2>
-    <p>让角色知道你现在在哪。默认关闭，可在「设置 → 实时感知 → 真实定位」开启。</p>
+    <p>让角色知道你现在在哪。默认关闭，可在「设置 → 扩展连接 → 实时感知 → 真实定位」开启。</p>
     <ul>
       <li>不用 Key 也能定位到区镇；想显示街道、附近地点，可配置高德 Key，申请时请选择 <strong>Web服务</strong>。</li>
       <li>API 中转站理论上能看到你发给角色的聊天内容。地址不想发出去，就设置隐藏地点：<br /><b>具体地址 → 在家附近</b>。</li>

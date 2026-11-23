@@ -63,7 +63,7 @@ export type ApiMessage = { role: string; content: any };
  * 见面（DateApp）专用的「语音情绪」格式规则（VN 模式下、char.dateVoiceEnabled 时注入）。
  * 与聊天/电话的 VOICE_ACTING_GUIDE 不同：见面台词走 VN 散文，只在台词行末用 [v:xxx] 单独标语音情绪，
  * 与立绘 [emotion] 解耦、不引入 <#秒#> 停顿/语气声标签。开头编号 4. 是承接 VN 规则列表第 1~3 条。
- * 用户可在「设置 → 其他 API → 语音提示词」自定义；留空则用这份内置默认。
+ * 用户可在「设置 → 语音与写歌 → 语音提示词」自定义；留空则用这份内置默认。
  */
 export const DATE_VOICE_GUIDE = `4. **语音情绪（跟立绘分开）**: \`[emotion]\` 只管**立绘表情**。台词会被朗读成真实语音，而立绘的夸张表情 ≠ 语音里的情绪——立绘 happy 是个灿烂笑脸，语音 happy 却会变成过度上扬的腔调，常常不对味。所以**语音情绪要单独标**：在台词行末尾加 \`[v:xxx]\`，xxx 仅限 happy/sad/angry/fearful/disgusted/surprised/calm。
    - 不是每句都要标——情绪平淡、自然说话时**不标**（默认更真实），只在台词确实有明显情绪、且和立绘强度不一致时才标。

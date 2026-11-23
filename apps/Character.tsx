@@ -273,7 +273,7 @@ const Character: React.FC<{ profileCharacterId?: string }> = ({ profileCharacter
           return;
       }
       if (!apiConfig.elevenLabsApiKey?.trim()) {
-          addToast('请先在设置 → 其他 API 保存 ElevenLabs Key', 'info');
+          addToast('请先在设置 → 语音与写歌 保存 ElevenLabs Key', 'info');
           return;
       }
       setIsTestingElevenLabsVoice(true);
@@ -1680,7 +1680,7 @@ ${isInitialGeneration ? `
                                    />
                                </div>
 
-                               {/* 鱼声 Fish Audio 音色：仅当全局语音服务商切到鱼声时生效（设置 → 其他 API） */}
+                               {/* 鱼声 Fish Audio 音色：仅当全局语音服务商切到鱼声时生效（设置 → 语音与写歌） */}
                                <div className="rounded-2xl border border-sky-200/60 bg-sky-50/40 p-2.5 space-y-1.5">
                                    <div className="text-[10px] font-bold text-sky-600 uppercase tracking-widest">鱼声 Fish 音色</div>
                                    <input

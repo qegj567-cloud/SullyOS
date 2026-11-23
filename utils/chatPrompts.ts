@@ -42,7 +42,7 @@ import { normalizeVoiceTags } from './sanitize';
 
 // 语音格式指导按当前 TTS 服务商二选一：用 MiniMax 才注入 MiniMax 那套（含 <#秒#> 停顿标记），
 // 用鱼声则注入鱼声版（去掉 MiniMax 专属标记，改用标点 / 省略号控制停顿）。
-// 用户在「设置 → 其他 API → 语音提示词」里自定义过该服务商的指南时，优先用用户那份；留空则回退内置默认。
+// 用户在「设置 → 语音与写歌 → 语音提示词」里自定义过该服务商的指南时，优先用用户那份；留空则回退内置默认。
 const voiceActingGuide = (): string => {
   const provider = getTtsProvider();
   const custom = getVoicePromptOverride(provider);

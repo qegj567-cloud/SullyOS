@@ -286,7 +286,7 @@ describe('local export', () => {
     };
     const exportFull = async () => {
         await act(async () => root.render(createElement(Settings)));
-        const section = Array.from(host.querySelectorAll('section')).find(node => node.querySelector('h2')?.textContent === '备份与恢复 (ZIP)')!;
+        const section = Array.from(host.querySelectorAll('section')).find(node => node.querySelector('h2')?.textContent === '备份与恢复')!;
         await act(async () => section.querySelector('button')!.click());
         await act(async () => exportButton().click());
         await confirmExport();
@@ -328,6 +328,23 @@ describe('local export', () => {
         expect(markBackupDone).toHaveBeenCalledTimes(2);
         await clickManualDownload();
         expect(markBackupDone).toHaveBeenCalledTimes(2);
+    });
+
+    it('jumping to restore switches the backup card to the local tab even when cloud is the default', async () => {
+        const { requestSettingsFocus } = await import('./settingsNavigation');
+        context.cloudBackupConfig = { enabled: true, provider: 'webdav' } as typeof context.cloudBackupConfig;
+        const proto = HTMLElement.prototype as { scrollIntoView?: () => void };
+        proto.scrollIntoView = () => {}; // jsdom 没有实现
+        try {
+            await act(async () => root.render(createElement(Settings)));
+            expect(host.querySelector('[data-amsg-backup-restore]')).toBeNull();
+            await act(async () => requestSettingsFocus('backup'));
+            expect(host.querySelector('#settings-backup-tab-local')?.getAttribute('aria-selected')).toBe('true');
+            expect(document.activeElement).toBe(host.querySelector('[data-amsg-backup-restore]'));
+        } finally {
+            context.cloudBackupConfig = {};
+            delete proto.scrollIntoView;
+        }
     });
 });
 
