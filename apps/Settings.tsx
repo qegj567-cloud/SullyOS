@@ -694,6 +694,7 @@ const Settings: React.FC = () => {
   const [resettingAppearance, setResettingAppearance] = useState(false);
   const handleAppearanceEmergencyReset = async () => {
     setResettingAppearance(true);
+    trackEvent('使用外观急救', { 操作: '还原初始外观' });
     try { await resetAppearance(); }
     finally { setResettingAppearance(false); setConfirmAppearanceReset(false); }
   };
@@ -706,6 +707,7 @@ const Settings: React.FC = () => {
       confirmText: '确认还原',
     });
     if (!ok) return;
+    trackEvent('使用外观急救', { 操作: '还原全部聊天白框' });
     let n = 0;
     if (theme.chatChromeCustomCss) { updateTheme({ chatChromeCustomCss: '' }); n++; }
     (characters || []).forEach((c: any) => {
@@ -721,6 +723,7 @@ const Settings: React.FC = () => {
       confirmText: '确认重置',
     });
     if (!ok) return;
+    trackEvent('使用外观急救', { 操作: '重置交换日记美化' });
     await updateTheme({ journalAppearance: undefined });
     addToast('已从系统设置还原交换日记原版样式', 'success');
   };
@@ -1486,6 +1489,7 @@ const Settings: React.FC = () => {
   const [isCleaningResidue, setIsCleaningResidue] = useState(false);
   const handleCleanupResidue = async () => {
       if (isCleaningResidue) return;
+      trackEvent('一键清理表情包残留');
       setIsCleaningResidue(true);
       try {
           const validIds = (await DB.getAllCharacters()).map(c => c.id);
