@@ -6,3 +6,11 @@
 .sully-web-update button + button { background: #f3eff5; color: #776b84; }
 .sully-web-update button:disabled { opacity: .5; cursor: wait; }
 .sully-web-update button:focus-visible { outline: 2px solid #9870c9; outline-offset: 3px; }
+/* canary 里卡片顶上站着一只小金丝雀（docs/canary-channel.md「小金丝雀」） */
+.sully-web-update-bird { position: absolute; top: -27px; right: 26px; }
+/* canary 版本主题：白底金边，亮金主按钮配深棕字 */
+.sully-web-update[data-channel='canary'] { border-color: #F5E2A0; background: linear-gradient(180deg, #FFFDF5 0%, #FFFFFF 70%); color: #5C3D0B; box-shadow: 0 12px 48px rgba(161,98,7,.18); }
+.sully-web-update[data-channel='canary'] p { color: #8A6A3A; }
+.sully-web-update[data-channel='canary'] button { background: #FACC15; color: #422006; font-weight: 600; }
+.sully-web-update[data-channel='canary'] button + button { background: #FEF7DC; color: #8A6A3A; font-weight: 400; }
+.sully-web-update[data-channel='canary'] button:focus-visible { outline-color: #CA8A04; }

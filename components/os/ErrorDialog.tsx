@@ -41,7 +41,7 @@ const ErrorDialog: React.FC<ErrorDialogProps> = ({ isOpen, title, details, advic
     };
 
     return (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 animate-fade-in" style={{ zIndex: 10000 }}>
+        <div className="sully-system-ui fixed inset-0 z-[110] flex items-center justify-center p-4 animate-fade-in" style={{ zIndex: 10000 }}>
             <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
             <div className="relative bg-white text-slate-800 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-pop-in">
                 <div className="p-5 pb-3">

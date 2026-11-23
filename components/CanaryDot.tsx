@@ -1,12 +1,19 @@
-import React, { useEffect, useState } from 'react';
-import { CANARY_DOT_CHANGED_EVENT, RELEASE_CHANNEL, readCanaryDotHidden } from '../utils/releaseChannel';
+import React, { useCallback, useEffect, useState } from 'react';
+import { CANARY_DOT_CHANGED_EVENT, RELEASE_CHANNEL, consumeCanaryWelcome, readCanaryDotHidden } from '../utils/releaseChannel';
+import { CanaryArrival } from './CanaryBird';
 
 /**
  * canary 构建右下角的小黄点：一眼认出自己在 canary 里，又不挡内容。
  * 设置底部可以把它藏起来（docs/canary-channel.md）。正式版不渲染。
+ * 刚加入后的第一次启动，先放一遍小金丝雀飞进来落地、缩成黄点的动画。
  */
+// 模块加载时读一次就清：StrictMode 下 useState 初始化会跑两遍，放里面会被第二遍读空。
+const WELCOME_ON_BOOT = RELEASE_CHANNEL === 'canary' && consumeCanaryWelcome();
+
 const CanaryDot: React.FC = () => {
     const [hidden, setHidden] = useState(readCanaryDotHidden);
+    const [arriving, setArriving] = useState(WELCOME_ON_BOOT);
+    const finishArrival = useCallback(() => setArriving(false), []);
 
     useEffect(() => {
         const sync = () => setHidden(readCanaryDotHidden());
@@ -18,7 +25,9 @@ const CanaryDot: React.FC = () => {
         };
     }, []);
 
-    if (RELEASE_CHANNEL !== 'canary' || hidden) return null;
+    if (RELEASE_CHANNEL !== 'canary') return null;
+    if (arriving) return <CanaryArrival onDone={finishArrival} />;
+    if (hidden) return null;
     return (
         <div
             aria-hidden

@@ -74,6 +74,11 @@ const consumeFlag = (key: string): boolean => {
 };
 
 export const consumeChannelArrival = (): boolean => consumeFlag(CHANNEL_ARRIVAL_KEY);
+
+/** 刚加入 canary：canary 第一次启动时放一遍小金丝雀落地动画。 */
+export const CANARY_WELCOME_KEY = 'sullyos_canary_welcome';
+export const markCanaryWelcome = (): void => writeKey(CANARY_WELCOME_KEY, '1');
+export const consumeCanaryWelcome = (): boolean => consumeFlag(CANARY_WELCOME_KEY);
 export const consumeCanaryFallbackNotice = (): boolean => consumeFlag(CANARY_FALLBACK_NOTICE_KEY);
 
 /** 切到另一个通道时去哪：保留当前路径之外的部分没有意义，回到各自的首页。 */

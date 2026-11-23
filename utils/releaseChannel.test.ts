@@ -130,3 +130,13 @@ describe('releaseUpdateVersion（网页更新要不要弹提示）', () => {
     expect(releaseUpdateVersion('v3.17', 'canary', 'build-a')).not.toBe(releaseUpdateVersion('v3.17', 'canary', 'build-b'));
   });
 });
+
+describe('canary 落地动画标记', () => {
+  it('加入时写下，canary 启动读一次就清掉，只放一遍', async () => {
+    const { markCanaryWelcome, consumeCanaryWelcome } = await import('./releaseChannel');
+    expect(consumeCanaryWelcome()).toBe(false);
+    markCanaryWelcome();
+    expect(consumeCanaryWelcome()).toBe(true);
+    expect(consumeCanaryWelcome()).toBe(false);
+  });
+});

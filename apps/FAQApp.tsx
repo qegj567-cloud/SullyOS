@@ -131,6 +131,14 @@ interface ChangelogEntry {
 
 const CHANGELOG_ENTRIES: ChangelogEntry[] = [
     {
+        id: 'changelog-2026-11-24',
+        title: '2026 年 11 月 24 日 · 主动消息 2.0 · 同一个人',
+        subtitle: '云端消息的温度、回复长度、心象跟随 API 设置 · 云端看到的聊天记录更准（译文、表情识图、世界书）· 定时消息后心情跟着更新 · 离开后消息与见面离开提醒分清你怎么走开 · 隔着手机也知道你那边几点 · MCP 破坏性工具的云端开关 · 换 API 云端马上跟上',
+        date: '2026-11-24',
+        src: 'changelogs/2026-11-24.html',
+        accent: 'from-sky-100 to-violet-100 border-sky-200',
+    },
+    {
         id: HOME_CHANGELOG,
         title: '3D 家园测试版 · 住进同一个日常',
         subtitle: '当面聊天接入上下文 · 小手机线上私聊 · 说话邀请与自动开口图解',

@@ -151,6 +151,7 @@ import { assertSupportedSullyBackup, createImportProgressMarker, IMPORT_IN_PROGR
 import { createBuiltinSullyLive2DConfig, isBuiltinSullyLive2D, upgradeBuiltinSullyLive2DDefaults } from '../utils/builtinSullyLive2D';
 import { normalizeCharacterRoomAssetsInPlace } from '../utils/roomTemplateAssets';
 import { consumeCanaryFallbackNotice } from '../utils/releaseChannel';
+import { resolveDisplayAccent } from '../utils/canaryTheme';
 
 
 type JSZipFileLike = {
@@ -2027,10 +2028,12 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   useEffect(() => {
       const root = document.documentElement;
       // Default fallback values match index.html
-      const h = theme.hue ?? 245;
-      const s = theme.saturation ?? 25;
-      const l = theme.lightness ?? 65;
-      
+      // canary 里还在用出厂强调色的，显示成版本主题金色（utils/canaryTheme.ts）。
+      const { hue: h, saturation: s, lightness: l } = resolveDisplayAccent(
+          { hue: theme.hue ?? 245, saturation: theme.saturation ?? 25, lightness: theme.lightness ?? 65 },
+          DEFAULT_PAPER_APPEARANCE,
+      );
+
       root.style.setProperty('--primary-hue', String(h));
       root.style.setProperty('--primary-sat', `${s}%`);
       root.style.setProperty('--primary-lightness', `${l}%`);
