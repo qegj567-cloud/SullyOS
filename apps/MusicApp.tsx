@@ -32,7 +32,7 @@ const MusicApp: React.FC = () => {
     current, playing, progress, duration, loadingSong,
     lyric, tlyric, activeLyricIdx,
     profile, playSong, togglePlay, nextSong, prevSong, seek,
-    liked, toggleLike, setToastHandler,
+    liked, likesStatus, toggleLike, retryAccount, setAccountViewOpen, setToastHandler,
     listeningTogetherWith, removeListeningPartner,
     addLocalSong, removeLocalSong, localAlbumSongs,
     playMode, setPlayMode,
@@ -95,6 +95,11 @@ const MusicApp: React.FC = () => {
   useEffect(() => { setToastHandler(addToast); }, [addToast, setToastHandler]);
 
   const [view, setView] = useState<View>('profile');
+  const needsAccount = view !== 'settings';
+  useEffect(() => {
+    setAccountViewOpen(needsAccount);
+    return () => setAccountViewOpen(false);
+  }, [needsAccount, setAccountViewOpen]);
   // ── 手动对轴 modal state ──
   const [showLyricSync, setShowLyricSync] = useState(false);
   const [syncDraft, setSyncDraft] = useState<number[]>([]);
@@ -437,7 +442,11 @@ const MusicApp: React.FC = () => {
           <div className="shrink-0 mt-3 w-full">
             <SubActions
               liked={liked}
-              onLike={() => { toggleLike(); trackEvent('收藏或取消收藏当前歌', { action: liked ? 'unlike' : 'like' }); }}
+              likeStatus={current.local || !cfg.cookie ? 'ready' : likesStatus}
+              onLike={async () => {
+                if (!current.local && cfg.cookie && likesStatus === 'error') { retryAccount(); return; }
+                if (await toggleLike()) trackEvent('收藏或取消收藏当前歌', { action: liked ? 'unlike' : 'like' });
+              }}
               showSync={!!(current.local && current.localLyrics && lyric.length > 0)}
               onSync={() => {
                 setSyncDraft(lyric.map(l => l.t));

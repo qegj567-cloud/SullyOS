@@ -185,6 +185,8 @@ export async function cachedCall<T = any>(
 
   const p = doCall().then(
     (res) => {
+      // 清缓存后旧代理的响应可能晚于新请求返回，不能回填或移除新请求。
+      if (INFLIGHT.get(key) !== p) return res;
       INFLIGHT.delete(key);
       if (shouldStoreCache(path, res)) {
         MEM.set(key, { data: res, expires: Date.now() + ttl });
@@ -193,7 +195,7 @@ export async function cachedCall<T = any>(
       return res;
     },
     (err) => {
-      INFLIGHT.delete(key);
+      if (INFLIGHT.get(key) === p) INFLIGHT.delete(key);
       throw err;
     },
   );

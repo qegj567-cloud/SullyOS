@@ -155,7 +155,7 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
   const { addToast, characters, userProfile } = useOS();
   const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
   const {
-    cfg, setCfg, profile, refreshProfile, playSong,
+    cfg, setCfg, profile, profileLoading, retryAccount, playSong,
     current, playing, togglePlay, nextSong, prevSong,
     listeningTogetherWith, removeListeningPartner,
     localAlbumSongs, removeLocalSong,
@@ -321,21 +321,25 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
     setCfg({ ...curCfg, cookie: '' });
     toastRef.current('已退出', 'success');
     trackEvent('退出网易云登录');
-    await refreshProfile();
-  }, [setCfg, refreshProfile]);
+  }, [setCfg]);
 
   // 未登录 → 默认展示「一起写的歌」本地专辑 + 网易云登录入口；
   // 没本地专辑 → 直接进登录面板（保持原来体验）。
   // ⚠️ 所有 hooks 必须在这个 early-return **之前** 声明完。
+  if (profileLoading) return (
+    <div className="flex flex-col h-full">
+      <MizuHeader title="My Cloud" onBack={onBack} />
+      <p role="status" className="m-auto text-sm" style={{ color: C.muted }}>正在读取网易云账号…</p>
+    </div>
+  );
   if (!cfg.cookie || !profile) {
     if (localAlbumSongs.length === 0 || showNeteaseLogin) {
       return (
         <NeteaseLoginPanel
           onBack={localAlbumSongs.length > 0 ? () => setShowNeteaseLogin(false) : onBack}
-          onLoggedIn={async (cookie) => {
+          onLoggedIn={(cookie) => {
+            if (cookie === cfgRef.current.cookie) retryAccount();
             setCfg({ ...cfgRef.current, cookie });
-            await new Promise(r => setTimeout(r, 300));
-            await refreshProfile();
             toastRef.current('登录成功', 'success');
             setShowNeteaseLogin(false);
           }}
