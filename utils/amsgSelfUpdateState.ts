@@ -25,6 +25,17 @@ export interface AmsgSelfUpdateState {
   lastError: { code: string; message: string } | null;
 }
 
+/**
+ * 这台 Worker 跟哪条线拉成品包：正式版（部署仓库 main 分支）或 canary（同仓库 canary 分支）。
+ * Worker 记在诊断表的 `bundle_channel` 里，`GET /config-check` 报成 `bundleChannel`，
+ * 前端拿它跟自己的通道比，对不上就带着自己的通道调一次 `/self-update`。
+ */
+export type AmsgBundleChannel = 'stable' | 'canary';
+
+/** 只认这两个字符串；别的（含大小写不对、带空格）一律当没有，由调用方决定回落还是拒绝。 */
+export const parseAmsgBundleChannel = (raw: unknown): AmsgBundleChannel | null =>
+  raw === 'stable' || raw === 'canary' ? raw : null;
+
 /** `GET /config-check` 里那一段：这台 Worker 有没有自更新能力，以及它最近一次检查的结果。 */
 export interface AmsgSelfUpdateReport {
   /** 配了 CF_API_TOKEN 才有（一键部署装的、或者后来补过钥匙的）。 */

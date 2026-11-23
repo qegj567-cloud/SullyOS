@@ -14463,7 +14463,7 @@ function buildScheduledPush(message, build, extraMeta, bannerBody) {
 }
 
 // utils/amsgBundleVersion.ts
-var AMSG_BUNDLE_VERSION = "2026-11-19";
+var AMSG_BUNDLE_VERSION = "2026-11-24";
 
 // worker/amsg/src/reproduction.ts
 async function writeDiagnosticStage(writeState, runId, event, fields = {}) {
@@ -16209,6 +16209,7 @@ var handleInstantChat = async (args) => {
 };
 
 // utils/amsgSelfUpdateState.ts
+var parseAmsgBundleChannel = (raw) => raw === "stable" || raw === "canary" ? raw : null;
 var findCfTokenRejection = (text2) => /\d+: invalid (access|api) token/i.exec(text2)?.[0] ?? null;
 var cfTokenRejectedMessage = (detail, hasAccountId) => `Cloudflare \u4E0D\u8BA4\u8FD9\u679A CF_API_TOKEN\uFF08${detail}\uFF09\uFF0C\u591A\u534A\u5DF2\u7ECF\u8FC7\u671F\u6216\u88AB\u5220\u4E86\u3002\u53BB Cloudflare \u65B0\u5EFA\u4E00\u679A\uFF08\u53EA\u52FE Workers Scripts \u2192 Edit\uFF09\uFF0C\u66FF\u6362 Worker \u91CC\u7684 CF_API_TOKEN\u3002` + (hasAccountId ? "" : "\u5982\u679C\u5B83\u662F cfat_ \u5F00\u5934\u7684\u8D26\u53F7\u4EE4\u724C\uFF0C\u6362\u6210\u666E\u901A API Token\uFF0C\u6216\u8005\u7ED9 Worker \u52A0\u4E00\u6761 CF_ACCOUNT_ID\u3002");
 var OUTCOMES = /* @__PURE__ */ new Set(["updated", "up_to_date", "failed"]);
@@ -16231,17 +16232,23 @@ var parseAmsgSelfUpdateState = (raw) => {
 
 // worker/amsg/src/selfUpdate.ts
 var CF_API = "https://api.cloudflare.com/client/v4";
-var BUNDLE_URL = "https://raw.githubusercontent.com/Tosd0/sullyos-workers/main/amsg/worker.bundle.js";
-function resolveBundleUrl(env) {
+var BUNDLE_URLS = {
+  stable: "https://raw.githubusercontent.com/Tosd0/sullyos-workers/main/amsg/worker.bundle.js",
+  canary: "https://raw.githubusercontent.com/Tosd0/sullyos-workers/canary/amsg/worker.bundle.js"
+};
+function customBundleUrl(env) {
   const configured = env.AMSG_BUNDLE_URL?.trim();
-  if (!configured) return BUNDLE_URL;
+  if (!configured) return null;
   try {
     const url = new URL(configured);
     if (url.protocol === "https:") return url.toString();
   } catch {
   }
   console.warn("[amsg:self-update] AMSG_BUNDLE_URL \u4E0D\u662F https \u5730\u5740\uFF0C\u6539\u7528\u9ED8\u8BA4\u6210\u54C1\u5305");
-  return BUNDLE_URL;
+  return null;
+}
+function resolveBundleUrl(env, channel = "stable") {
+  return customBundleUrl(env) ?? BUNDLE_URLS[channel];
 }
 var MAIN_MODULE = "worker.bundle.js";
 var FALLBACK_COMPATIBILITY_DATE = "2026-01-01";
@@ -16336,10 +16343,10 @@ function bundleFetchUrl(base, nowMs = Date.now()) {
   url.searchParams.set("t", String(nowMs));
   return url.toString();
 }
-async function fetchLatestBundle(env = {}) {
+async function fetchLatestBundle(env = {}, channel = "stable") {
   let res;
   try {
-    res = await fetch(bundleFetchUrl(resolveBundleUrl(env)), {
+    res = await fetch(bundleFetchUrl(resolveBundleUrl(env, channel)), {
       headers: { "User-Agent": "sullyos-amsg-self-update" },
       cache: "no-store"
     });
@@ -16467,9 +16474,32 @@ async function performSelfUpdate(env, token, scriptName, bundle) {
     scriptName
   };
 }
-async function handleSelfUpdate(request, env) {
+var readRequestedChannel = async (request) => {
+  let body;
+  try {
+    body = JSON.parse(await request.text());
+  } catch {
+    return null;
+  }
+  if (!body || typeof body !== "object" || !("channel" in body)) return null;
+  const raw = body.channel;
+  if (raw === void 0) return null;
+  return parseAmsgBundleChannel(raw) ?? "invalid";
+};
+async function handleSelfUpdate(request, env, storedChannel = "stable") {
   const gate = await authorizeSelfUpdate(request, env);
   if (!gate.ok) return gate;
+  const requested = await readRequestedChannel(request);
+  if (requested === "invalid") {
+    return fail("INVALID_CHANNEL", "\u901A\u9053\u53EA\u80FD\u662F stable \u6216 canary\u3002");
+  }
+  const channel = requested ?? storedChannel;
+  if (channel !== storedChannel && customBundleUrl(env)) {
+    return fail(
+      "CUSTOM_BUNDLE_URL",
+      "\u8FD9\u53F0 Worker \u7528 AMSG_BUNDLE_URL \u6307\u5B9A\u4E86\u81EA\u5DF1\u7684\u6210\u54C1\u5305\u5730\u5740\uFF0C\u66F4\u65B0\u53EA\u4ECE\u90A3\u91CC\u62C9\uFF0C\u5207\u6362\u4E0D\u4E86\u901A\u9053\u3002\u8981\u8DDF\u5B98\u65B9\u901A\u9053\u8D70\uFF0C\u5148\u5220\u6389\u8FD9\u6761\u53D8\u91CF\u3002"
+    );
+  }
   const scriptName = resolveScriptName(env, request.url);
   if (!scriptName) {
     return fail(
@@ -16477,9 +16507,10 @@ async function handleSelfUpdate(request, env) {
       "\u8BA4\u4E0D\u51FA\u8FD9\u4E2A Worker \u53EB\u4EC0\u4E48\uFF08\u591A\u534A\u662F\u5957\u4E86\u4EE3\u7406\u57DF\u540D\uFF09\u3002\u7ED9\u5B83\u52A0\u4E00\u6761 CF_SCRIPT_NAME \u53D8\u91CF\uFF0C\u503C\u586B Worker \u7684\u540D\u5B57\u3002"
     );
   }
-  const fetched = await fetchLatestBundle(env);
+  const fetched = await fetchLatestBundle(env, channel);
   if (!fetched.ok) return fail("BUNDLE_INVALID", fetched.message);
-  return performSelfUpdate(env, gate.token, scriptName, fetched.bundle);
+  const result = await performSelfUpdate(env, gate.token, scriptName, fetched.bundle);
+  return result.ok ? { ...result, channel } : result;
 }
 
 // utils/amsgTickReport.ts
@@ -16798,6 +16829,7 @@ async function runScheduledAfterUpdate(update, tick) {
 }
 var SELF_UPDATE_KEY = "self_update";
 var SCHEMA_ENSURED_KEY = "schema_ensured";
+var BUNDLE_CHANNEL_KEY = "bundle_channel";
 var SCHEMA_ENSURE_RETRY_MS = 60 * 6e4;
 var readSelfUpdateState = async (db) => {
   const raw = await readDiagnosticValue(db, SELF_UPDATE_KEY);
@@ -16808,6 +16840,7 @@ var readSelfUpdateState = async (db) => {
     return null;
   }
 };
+var readBundleChannel = async (db) => parseAmsgBundleChannel(await readDiagnosticValue(db, BUNDLE_CHANNEL_KEY)) ?? "stable";
 var writeSelfUpdateState = async (db, state, nowMs) => {
   await writeDiagnosticValue(db, SELF_UPDATE_KEY, JSON.stringify(state), nowMs);
 };
@@ -16838,6 +16871,7 @@ var applySelfUpdateResult = (previous, source, result, nowMs) => {
 var recordManualSelfUpdate = async (db, result, nowMs = Date.now()) => {
   if (typeof db?.prepare !== "function") return;
   try {
+    if (result.ok && result.channel) await writeDiagnosticValue(db, BUNDLE_CHANNEL_KEY, result.channel, nowMs);
     const previous = await readSelfUpdateState(db);
     await writeSelfUpdateState(db, applySelfUpdateResult(previous, "manual", result, nowMs), nowMs);
     if (result.ok) await markSchemaUnverified(db, nowMs);
@@ -16876,7 +16910,7 @@ var runAutoUpdate = async (env, db, options) => {
       message: "\u8BA4\u4E0D\u51FA\u8FD9\u4E2A Worker \u53EB\u4EC0\u4E48\u3002\u7ED9\u5B83\u52A0\u4E00\u6761 CF_SCRIPT_NAME \u53D8\u91CF\uFF0C\u503C\u586B Worker \u7684\u540D\u5B57\uFF0C\u81EA\u52A8\u66F4\u65B0\u624D\u77E5\u9053\u8BE5\u66F4\u65B0\u8C01\u3002"
     });
   }
-  const fetched = await fetchLatestBundle(env);
+  const fetched = await fetchLatestBundle(env, await readBundleChannel(db));
   if (!fetched.ok) return settle({ ok: false, code: "BUNDLE_INVALID", message: fetched.message });
   const bindingsComplete = Boolean(env.INSTANT_TICK);
   if (previous?.bundleHash === fetched.bundle.hash && bindingsComplete) {
@@ -22081,6 +22115,9 @@ var src_default = {
             supported: Boolean(env.CF_API_TOKEN?.trim()),
             state: await readSelfUpdateState(env.DB)
           },
+          // 这台 Worker 跟哪条线拉成品包（stable / canary，读不到就是 stable）。老 bundle 没有
+          // 这个字段，前端据此认出「还不认通道」，先让它更新再谈加入 canary。
+          bundleChannel: await readBundleChannel(env.DB),
           // 救援模式的开关和留痕（形状见 utils/amsgRescueState.ts）。前端据此强制弹窗警告 7 天。
           // 这里只有时刻和次数，不含口令或任何数据；不设防是因为警告必须在共享密钥丢了时也看得到。
           rescue: await buildRescueReport(env, rescueDeps(env))
@@ -22144,8 +22181,9 @@ var src_default = {
           error: { code: "METHOD_NOT_ALLOWED", message: "/self-update \u53EA\u63A5\u53D7 POST" }
         });
       }
-      const result = await handleSelfUpdate(request, env);
-      await recordManualSelfUpdate(env.DB, result);
+      const db = env.DB;
+      const result = await handleSelfUpdate(request, env, await readBundleChannel(db));
+      await recordManualSelfUpdate(db, result);
       return jsonWithCors(result.ok ? 200 : 400, {
         success: result.ok,
         data: result.ok ? result : void 0,

@@ -152,7 +152,14 @@ import {
 import { buildRealtimeWorldBlock, buildUserHolidayBlock } from './realtimeWorld';
 import { insertUserHolidayInProfile } from '../../../utils/userHolidays';
 import { authorizeSelfUpdate, handleSelfUpdate, resolveScriptName } from './selfUpdate';
-import { ensureSchemaOnce, readSelfUpdateState, recordManualSelfUpdate, runAutoUpdate, runScheduledAfterUpdate } from './autoUpdate';
+import {
+  ensureSchemaOnce,
+  readBundleChannel,
+  readSelfUpdateState,
+  recordManualSelfUpdate,
+  runAutoUpdate,
+  runScheduledAfterUpdate,
+} from './autoUpdate';
 import { handleCronTriggerRead, handleCronTriggerWrite, isCronTriggerAuthFailure } from './cronTrigger';
 import {
   buildMcpDirectHeaders,
@@ -3952,6 +3959,9 @@ export default {
             supported: Boolean(env.CF_API_TOKEN?.trim()),
             state: await readSelfUpdateState(env.DB as TickReportDb | undefined),
           },
+          // 这台 Worker 跟哪条线拉成品包（stable / canary，读不到就是 stable）。老 bundle 没有
+          // 这个字段，前端据此认出「还不认通道」，先让它更新再谈加入 canary。
+          bundleChannel: await readBundleChannel(env.DB as TickReportDb | undefined),
           // 救援模式的开关和留痕（形状见 utils/amsgRescueState.ts）。前端据此强制弹窗警告 7 天。
           // 这里只有时刻和次数，不含口令或任何数据；不设防是因为警告必须在共享密钥丢了时也看得到。
           rescue: await buildRescueReport(env, rescueDeps(env)),
@@ -4026,9 +4036,11 @@ export default {
       }
       // 排在下面那道配置门之前：配置缺了一半正是想更新一版试试的时候，
       // 被门挡住反而没法自救。它自己校验共享密钥，不吃这道门的豁免。
-      const result = await handleSelfUpdate(request, env);
+      // 请求体不带通道就沿用记着的那条线；装成功后连同通道一起记下（见 recordManualSelfUpdate）。
+      const db = env.DB as TickReportDb | undefined;
+      const result = await handleSelfUpdate(request, env, await readBundleChannel(db));
       // 装上的那份指纹是之后自动检查的比对基准；换了代码也要让新代码下一跳重新查表。
-      await recordManualSelfUpdate(env.DB as TickReportDb | undefined, result);
+      await recordManualSelfUpdate(db, result);
       return jsonWithCors(result.ok ? 200 : 400, {
         success: result.ok,
         data: result.ok ? result : undefined,
