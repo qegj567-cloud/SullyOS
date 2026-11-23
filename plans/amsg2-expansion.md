@@ -1,5 +1,7 @@
 # 主动消息 2.0 · 把更多 LLM 调用搬到云端
 
+目标与红线见 [主动消息 2.0 总纲](../docs/amsg2-overview.md)。
+
 聊天和情绪评估已经跑在用户自己的 CF Worker 上了。这份记的是「还有哪些 LLM 调用点值得搬上去、按什么顺序搬、哪些不该搬」。
 
 > **现状（2026-08-15，dev）**：路已经修好，第一个调用点（门牌整理）跑通了。
@@ -65,29 +67,29 @@
 
 ## 先修路
 
-在接任何新调用点之前要铺的东西。铺完之后下面那批基本是填表。
+接新调用点之前要铺的东西，已经铺好（见文首「现状」），下面那批基本是填表。
 
 ### SullyOS 这边
 
-**`kind → handler` 注册表。** 上游只给 `onBeforeFire` 一个入口，所有 LLM 类任务都从这里进。先立一张 `kind → handler` 的表按 `metadata.kind` 分派，别让它长成大 switch。
+**`kind → handler` 注册表**（`worker/amsg/src/fireKinds.ts`）。上游只给 `onBeforeFire` 一个入口，所有 LLM 类任务都从这里进。这张表按 `metadata.amsgKind` 分派，不让它长成大 switch。
 
 这是业务分派，不该放上游 —— 上游只需要知道「有个 hook」，不需要知道「有种任务叫日程生成」。
 
 ### 上游（ReiStandard / `@rei-standard/amsg-server`）
 
-三件通用基础设施，建议攒成一次发版一起推。改动都不大，但每推一次所有用户都要重新部署 Worker，分三回不划算。
+三件通用基础设施，攒在同一次发版里推了（见文首「现状」）。改动都不大，但每推一次所有用户都要重新部署 Worker，所以合成一回。
 
-| | 做什么 | 为什么放上游 |
+| | 做了什么 | 为什么放上游 |
 |---|---|---|
-| client_state 的 TTL | run-tick 顺手清过期 key，按 `updatedAt` 判、按 namespace 配保留天数 | 库现在明说不做 TTL 也不回收，每天一份日程一年就是 365 个 key 躺着。run-tick 里已经在清 outbox（已 ack 留 7 天、全部留 28 天），加一个清 client_state 完全同构 |
-| 请求体 gzip 自动解压 | `parseBodyAsObject` 前面加 `Content-Encoding: gzip` 判断，用 `DecompressionStream` | 宿主自己做不干净：能拦的只有自己前置的端点，而大 body 恰恰走上游的 `PUT /client-state`。上游做一次所有端点全通 |
-| `ctx.emitResult(payload)` | 把「往 outbox 塞一条自定义结果」变成正式能力 | 现在 `appendPushesToOutbox` 没导出，宿主要塞非聊天的结果只能拿 `db.appendOutboxMessages` + `encryptForStorage` 手工拼，无文档无测试。收编之后客户端直接吃现成的 `GET /outbox?since=` 补收，不用为每个 kind 写一套轮询 |
+| client_state 的 TTL | run-tick 顺手清过期 key，按 `updatedAt` 判、按 namespace 配保留天数（宿主用 `clientStateTtl` 配） | 不清的话每天一份日程一年就是 365 个 key 躺着。run-tick 里本来就在清 outbox（已 ack 留 7 天、全部留 28 天），清 client_state 完全同构 |
+| 请求体 gzip 自动解压 | `parseBodyAsObject` 前面判断 `Content-Encoding: gzip`，用 `DecompressionStream` 解压 | 宿主自己做不干净：能拦的只有自己前置的端点，而大 body 恰恰走上游的 `PUT /client-state`。上游做一次所有端点全通 |
+| `ctx.emitResult(payload)` | 把「往 outbox 塞一条自定义结果」变成正式能力 | 没有它的话，宿主要塞非聊天的结果只能拿 `db.appendOutboxMessages` + `encryptForStorage` 手工拼，无文档无测试。有了它客户端直接吃现成的 `GET /outbox?since=` 补收，不用为每个 kind 写一套轮询 |
 
-**TTL 那条别加列。** `client_state` 表已经有 `updatedAt`，按它判就行。加列会撞上「升级后老表不加列 → cron 每分钟静默挂、界面一切正常」那条最贵的坑。
+**TTL 不加列。** `client_state` 表已经有 `updatedAt`，按它判。加列会撞上「升级后老表不加列 → cron 每分钟静默挂、界面一切正常」那条最贵的坑。
 
 **两件建议别顺手做：**
 
-- 给 `message_type` 加新枚举值。D1 上是 `CHECK` 约束，改约束等于改表，同样撞上面那条坑。用 `metadata.kind` 区分业务类型完全够。
+- 给 `message_type` 加新枚举值。D1 上是 `CHECK` 约束，改约束等于改表，同样撞上面那条坑。用 `metadata.amsgKind` 区分业务类型完全够。
 - 给建 / 改 / 删任务加生命周期 hook。这轮上云一个都用不上。
 
 ---
@@ -206,7 +208,7 @@
 | client_state 单条 value | 默认 5 MB，>200KB 自动透明分块 |
 | `chat.messages` 请求体 | 2 MiB。超了先降级图片，还超就整轮明确报错 |
 | 手机上行 | 大 body 走手机上行会撞 ~42s 上行超时，往往在服务端来得及判超时之前就被掐掉 |
-| 单次 fire 总超时 | 默认 240s，`onBeforeFire` 返回值里可按次放宽（要同步调 `claimLeaseMs`） |
+| 单次 fire 总超时 | 默认 240s，`onBeforeFire` 返回值里可按次放宽（要同步调 `claimLeaseMs`）。即时对话放宽到 600s（`worker/amsg/src/instantChat.ts` 的 `INSTANT_TOTAL_TIMEOUT_MS`） |
 | 工具循环 | 默认 5 轮 |
 | `ctx.waitUntil` | 只有 30 秒，且从响应发出就倒计时。后台生成一律走 DO alarm / cron |
 | 单次 fire 建任务 | 默认 2 条 |
@@ -234,15 +236,15 @@
 
 ## 上游能力速查
 
-调研的是 `@rei-standard/amsg-server` 2.6.0-next.20。结论：**当前需求现成能力全覆盖，不动上游也能做**，上面列的三件是为了让 SullyOS 这边逻辑更少。
+这份调研基于当时的 `@rei-standard/amsg-server` 2.6.0-next.20，当前依赖的版本以 `package.json` 为准。结论：**当前需求现成能力全覆盖，不动上游也能做**，上面列的三件是为了让 SullyOS 这边逻辑更少。
 
 宿主可以自由做的：
 
-- 加自定义 HTTP 端点 —— 在自己的 `export default.fetch` 里前置拦截，兜底转 `upstream.fetch`（`worker/amsg/src/index.ts:2861` 的 `/instant-chat` 就是范例）
+- 加自定义 HTTP 端点 —— 在自己的 `export default.fetch` 里前置拦截，兜底转 `upstream.fetch`（`worker/amsg/src/index.ts` 里的 `/instant-chat` 路由就是范例）
 - 加自己的 D1 表 / 列 / 索引 —— `initSchema` 不碰宿主的表，`getSchemaVersion` 只查缺不查多
 - 存任意业务数据 —— `readState` / `writeState`（per-user、自动加密、自动分块）
 - 推自定义（非聊天）消息 —— `pushPayloads` 里的字段原样透传，`messageSubtype` 是自由字符串
-- 定义自己的任务种类 —— `messageType:'auto'` + `metadata.kind`，在 `onBeforeFire` 分派。调度器（cron 每分钟 + 租约 + 心跳 + 分组串行 + 重试退避 + `tzId` 感知的 daily/weekly）照常工作，它不关心任务在语义上是不是聊天
+- 定义自己的任务种类 —— `messageType:'auto'` + `metadata.amsgKind`，在 `onBeforeFire` 分派。调度器（cron 每分钟 + 租约 + 心跳 + 分组串行 + 重试退避 + `tzId` 感知的 daily/weekly）照常工作，它不关心任务在语义上是不是聊天
 - 单次 fire 超 240s —— `onBeforeFire` 返回 `{totalTimeoutMs}` 按次放宽
 
 必须动上游才能做的：

@@ -1,11 +1,13 @@
 # Spec: `@rei-standard/amsg-sw` IndexedDB 连接韧性修复
 
-> ✅ **已实现并发版**：`@rei-standard/amsg-sw@2.3.0`（Gap 1 = onclose + 事务级 InvalidStateError 重开兜底，dedupe / queue / multipart 库全覆盖；Gap 2 = DELIVER ack 新增可选 `businessError` 字段，并把失败持久化到 dedupe 记录上，重复包也带 businessError）。SullyOS 侧已 bump 到 2.3.0、重打 bundle、`SW_VERSION` → 1.15.0，并在 `utils/instantPushClient.ts` 接入 `businessError` 让超时诊断更精确。下文保留为设计记录。
+目标与红线见 [主动消息 2.0 总纲](./amsg2-overview.md)。
+
+> ✅ **已实现并发版**：Gap 1（onclose + 事务级 InvalidStateError 重开兜底，dedupe / queue / multipart 库全覆盖）和 Gap 2（DELIVER ack 新增可选 `businessError` 字段，并把失败持久化到 dedupe 记录上，重复包也带 businessError）从 `@rei-standard/amsg-sw@2.3.0` 起提供。SullyOS 当前用 `@rei-standard/amsg-sw@2.4.0`、`amsg-shared@0.5.0-next.0`，`worker/sw-keep-alive.ts` 的 `SW_VERSION` 为 1.23.0。下文保留为设计记录。
 
 > 交接给 amsg-sw 包维护方。本文描述两个**包内**的 IndexedDB 韧性缺口，给出修复方案与验收标准。
 > SullyOS 侧的根因（主库连接风暴）已在 SullyOS 仓库自行修复（见文末「分工」），这里只列需要包升级才能解决的部分。
 >
-> 当前 SullyOS 锁的版本：`@rei-standard/amsg-sw@2.2.0`、`amsg-shared@0.2.0`。
+> 写这份 spec 时 SullyOS 锁的版本：`@rei-standard/amsg-sw@2.2.0`、`amsg-shared@0.2.0`。
 > 下面引用的行号均指 `amsg-sw@2.2.0` 的 `dist/index.mjs`（发布产物），供你对照包源码定位。
 
 ---
@@ -185,7 +187,7 @@ if (businessWork) await businessWork;   // :186 已经 catch 过, 永不 reject
 
 | 侧 | 改什么 | 状态 |
 |----|--------|------|
-| **amsg-sw 包** | 本 spec 的 Gap 1（必修）、Gap 2（建议） | 待这边 agent 实现 + 发版 |
+| **amsg-sw 包** | 本 spec 的 Gap 1（必修）、Gap 2（建议） | ✅ 已实现，随 2.3.0 发版 |
 | **SullyOS** | 主库 `utils/db.ts`、`utils/activeMsgStore.ts`、SW `worker/sw-keep-alive.ts` 的 IDB 连接全部改单例复用 + `onversionchange`/`onclose` 失效自愈 + `onblocked` 统一清缓存重试；另把 `apps/pixelHome/pixelHomeDb.ts`（之前自带一个裸开同一个 `AetherOS_Data` 的 `openDB`）并到共享单例。这是连接风暴的**根因**，消除后 backing store 不再被撑爆，Gap 1 的强关诱因基本消失，Gap 1 退化为「极少数其它原因强关」的兜底 | ✅ 已修 |
 
 **发版后 SullyOS 侧动作**：bump `package.json` 里 `@rei-standard/amsg-sw` 版本 → `pnpm install` → `pnpm run build:workers`（bundle 自动带上修好的包）→ bump `worker/sw-keep-alive.ts` 的 `SW_VERSION`（触发字节比较让浏览器重装 SW）。

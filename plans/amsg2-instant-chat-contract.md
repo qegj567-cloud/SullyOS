@@ -1,5 +1,7 @@
 # instant chat 实施契约（给施工 agent）
 
+目标与红线见 [主动消息 2.0 总纲](../docs/amsg2-overview.md)。
+
 设计动机与取舍见 [`amsg2-instant-chat.md`](./amsg2-instant-chat.md)，本文件是拍板后的实现契约：
 端点形状、数据格式、必须先验证的上游行为、分工边界。施工前先通读两份。
 
@@ -9,8 +11,8 @@
 
 - 业务实现放在本仓库的 `worker/amsg/src/`（包装层）、`utils/` 和前端。
   2026-10-19 审计修复依赖上游通用能力：任务输入、任务查询、工具执行白名单、不可变附件和条件写结果。
-  当前精确依赖 `amsg-client@2.10.0-next.0` 与 `amsg-server@3.1.0-next.0` 已包含这些能力，
-  已移除先前的本地补丁；不要手改安装目录，升级包时须重跑真实 SDK 集成测试。
+  `package.json` 里锁定的 `@rei-standard/amsg-client` 与 `@rei-standard/amsg-server` 精确版本已包含这些能力，
+  不需要本地补丁；不要手改安装目录，升级包时须重跑真实 SDK 集成测试。
 - 防双跑复用上游 `claimTask` 的 `lease_until` 条件更新；每分钟 cron 是兜底捡漏者。
 - 任务行型：`message_type = 'auto'` + `messageSubtype: 'instant-chat'`
   + `metadata: { amsgMode: 'instant', amsgInstantChat: true, charId }`。
@@ -20,8 +22,9 @@
   客户端拿它做面板对账的过滤判据：即时对话的行不补进任务清单（连同
   `status = 'failed'` 的行一起排除），否则用户正等着的这一轮会显示成待触发的
   排程任务、还可能被「取消全部」顺手掐掉。
-- **durability 原则**：202 之前任务行必须已落 D1。`ctx.waitUntil` 只负责快，
-  cron 负责稳。isolate 死了 → lease 过期 → cron 重跑，消息不丢。
+- **durability 原则**：202 之前任务行必须已落 D1。受理后唤醒的 `InstantTickDO`
+  alarm 负责快，cron 负责稳。alarm 没跑成或中途被回收 → lease 过期 → cron 重跑，消息不丢。
+  生成不挂在 `ctx.waitUntil` 上（它只有 30 秒，从响应发出或客户端断开时算起）。
 
 ## 新端点 `POST /instant-chat`（包装层路由）
 
@@ -63,15 +66,22 @@
   4. 转发 `POST /schedule-message`，成功拿到 uuid 才返回
      `202 {status:'accepted',uuid}`；顶替旧任务由上游事务完成。凭据成功覆盖时再带
      `credentialsSynced:true`。之前落下但没有任务引用的输入由 TTL 清理。
-  5. 唤醒按租户分组的 `InstantTickDO`，alarm 点名执行已落库的 uuid；每分钟 cron 继续兜底。
+  5. 唤醒 `InstantTickDO`（实例名即任务 uuid，一条任务一个实例），alarm 用 `runTask(uuid)`
+     点名执行已落库的这一条；每分钟 cron 继续兜底。
 
-  独立输入保留 7 天，按角色归属参与云端清理。大值继续走 client_state 的 5 MiB 分块能力，
+  独立输入在这一轮结束（送达、跳过、取消，或失败且不再重试）后由 `onFireSettled` 立刻删除；
+  命名空间上配的 7 天 TTL 只兜删除失败或这一轮一直没结束的情况。独立输入按角色归属参与云端清理。
+  大值继续走 client_state 的 5 MiB 分块能力，
   不受任务行约 996 KB 明文容量限制，现有 `chat.messages` 2 MiB 预算保持不变。
   Worker 使用 `readState(namespace,{key})` 定点读取，不能扫描同命名空间下的全部历史输入。
-- `export default` 的 `fetch` / `scheduled` 签名补上第三个参数 `ctx`
-  （上游签名只收两个参数，多传无害；`index.ts:1509-1510` 的注释要同步改）。
-- `/config-check` 的返回里加包装层能力标志（如 `instantChat: true`），设置页
-  用它做唯一版本门槛（开发期规矩：门槛只留一处，不做逐调用 capability 预检）。
+- `export default` 的 `fetch` 收第三个参数 `ctx`，只给 `/self-update/check` 在 `waitUntil`
+  里跑几秒的检查用；`/instant-chat` 不用它，`scheduled` 只收 `(event, env)`。
+- 能力判断只在 `/config-check` 一处做（开发期规矩：门槛只留一处，不做逐调用 capability 预检）。
+  它回 `instantTick`（运行时有没有 `INSTANT_TICK` 起跳器绑定）和 `workerVersion`（这份 bundle
+  的版本，与前端 `utils/amsgBundleVersion.ts` 的 `AMSG_BUNDLE_VERSION` 比较）。连接时探一次存进
+  全局配置，发消息时读存量：`instantTick` 决定这台 Worker 跑不跑得动即时对话，bundle 版本决定
+  要不要提示更新、以及需要新协议的轮次能不能上云。`instantChat: true` 只说明代码里有这条路由，
+  不作门槛：自更新由旧代码执行，代码和版本号新了，绑定可能还没接上。
 
 ## 必须先验证的上游行为（读 chunk-RRWCPPOY.mjs，结论写进报告）
 
@@ -288,7 +298,8 @@ fire 时的处理规则：
   能力 → 尽力补发一条 `messageKind: 'error'`（SW 已有该分轨）。拿不到就算了，
   别为此改上游。
 - POST `/instant-chat` 任何一步 await 失败 → 客户端收到明确错误 → 界面报
-  发送失败可重试。**绝不静默转回本地生成**。
+  发送失败可重试。**绝不静默转回本地生成**。用户自己没开 2.0 时直接走本地；云端跑不了
+  这一轮时转本地，界面标明「本机生成」并留 trace。认哪几种情况见[总纲「回退本地」](../docs/amsg2-overview.md#回退本地)。
 
 ## 只有动作的回复
 

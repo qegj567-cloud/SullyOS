@@ -1,7 +1,9 @@
 # LLM 凭据引用（credRefs）实施契约（给施工 agent）
 
-上游（ReiStandard / `@rei-standard/amsg-server` 等）的改动契约。SullyOS 侧接入是后续另一轮，
-文末留档，本轮不做。
+目标与红线见 [主动消息 2.0 总纲](../docs/amsg2-overview.md)。
+
+上游（ReiStandard / `@rei-standard/amsg-server` 等）的改动契约。SullyOS 侧接入已经落地，
+实况见文末「SullyOS 侧落地」。
 
 **基线**：ReiStandard 仓库 `feat/amsg-llm-credentials` 分支（自 origin/main `784a295` 切出，
 server 2.6.0-next.16）。文中行号是探查时（next.15 工作区）的参考值，以当前代码为准。
@@ -176,7 +178,9 @@ purpose」的组合，会产出既无引用可解析、又无内联凭据的空�
 
 - 凭据行分用途：`char:<id>/chat`（排程任务，使用当前聊天主 API）、
   `char:<id>/instant`（即时对话，当轮请求终值，含思考模式的 `-thinking` 模型名）、
-  `char:<id>/emotion`（情绪评估，`emotionConfig.api` 缺省时回落主 API）。
+  `char:<id>/emotion`（情绪评估，`emotionConfig.api` 缺省时回落主 API）、
+  `char:<id>/memory`（门牌整理这类记忆宫殿后台活儿，用记忆宫殿副 API
+  `memoryPalaceConfig.lightLLM`；没配副 API 就不建这一行、这类活儿不上云，不回落主 API）。
   chat / instant 仍分行，避免配置同步覆盖正在生成的即时回复。
   **2026-10-02：主动消息单独 API 已下线**，旧角色 / 旧备份的副 API 字段不再生效。
   页面内定时主动消息（1.0）同时移除独立 API 开关，使用实时的聊天主 API。
@@ -192,8 +196,15 @@ purpose」的组合，会产出既无引用可解析、又无内联凭据的空�
 - `emotion` 行是懒创建的：第一次跑「带情绪评估的即时对话」时才随指纹门控 PUT 上表，
   在那之前表里只有 `chat` / `instant` 两行——排查时见不到 `emotion` 行属正常，
   不代表没实现。
-- 「清空云端数据」第四样 `deleteLlmCredentials({ all: true })`，与前三样互不短路。
+- 「重置全部数据」的云端善后（`wipeAmsgCloudDataForReset`）里，第四样是
+  `deleteLlmCredentials({ all: true })`，与前三样互不短路。设置页没有组合的「清空云端数据」按钮，
+  按项清理和删角色走云端数据管理（见 [`amsg2-cloud-data-management-contract.md`](./amsg2-cloud-data-management-contract.md)）。
 - 启动和主 API 切换都走凭据同步队列，失败退避重试、保留跨会话欠账。
+- 用户亲手保存 API（设置页保存或切换预设、2.0 设置里保存任务、改角色独立 API、在云端恢复角色）时，
+  `syncAmsgLlmCredentials` 默认绕过本地指纹底账，直接用本机配置覆盖云端；只有启动补传传
+  `onlyIfChanged: true`，按底账跳过没变的行，免得每次打开都多发一次请求。底账只记本机传过什么，
+  云端那份可能已被别的入口改过（Safari 与主屏 App 存储分开、换过 Worker）。由
+  `utils/amsgStateSync.test.ts` 钉住。
   即使没有本地凭据指纹底账，也为启用角色同步 chat 行，覆盖旧副 API。
 - 补刷函数同时读取本地任务和远端清单，覆盖页面关闭期间的自排任务。
   内联任务更新主 API 三字段；引用任务先登记主 API 行，再更新 chat 引用，保留其它 purpose。

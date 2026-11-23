@@ -1,5 +1,7 @@
 # 主动消息 2.0 · 数据救援（救援模式）
 
+目标与红线见 [主动消息 2.0 总纲](./amsg2-overview.md)。
+
 本地数据被清空、又没有备份时，主动消息 2.0 的 Worker 里可能还留着一部分云端数据。救援模式让账号主人凭一枚临时口令，把这台 Worker 里的全部云端数据解密导出成 JSON。
 
 实现：[`worker/amsg/src/rescue.ts`](../worker/amsg/src/rescue.ts)（导出与留痕）、[`utils/amsgRescueState.ts`](../utils/amsgRescueState.ts)（两端共用的留痕形状）、[`utils/amsgRescueAlert.ts`](../utils/amsgRescueAlert.ts)（前端警告）、[`utils/amsgRescueImport.ts`](../utils/amsgRescueImport.ts)（导回 SullyOS）。回归测试：[`worker/amsg/src/rescue.test.ts`](../worker/amsg/src/rescue.test.ts)、[`utils/amsgRescueImport.test.ts`](../utils/amsgRescueImport.test.ts)。
@@ -12,11 +14,11 @@
 |---|---|
 | 角色名、日记、角色发过的消息（最多 28 天） | 完整聊天记录 |
 | 开着定时主动消息或挂着排程的角色：最后一次同步时的提示词快照（角色卡、世界书、月度总结、最近一段对话混在一起） | 本地上传的头像、壁纸等图片 |
-| 正在进行或刚失败的那一轮即时对话：结构化的对话消息（用完即删，最多留 7 天） | 记忆宫殿、其他 App 的数据、设置与美化 |
+| 还没结束的那一轮即时对话：结构化的对话消息（这一轮结束后立刻删除；删除失败或这一轮一直没结束时，最多留 7 天） | 记忆宫殿、其他 App 的数据、设置与美化 |
 | 排程任务、还没收取的消息 | |
 | 云端保存的 API Key、工具凭据、推送订阅 | |
 
-没开定时主动消息、也没有排程的角色，云端的快照只是一句占位符：即时对话每轮把完整内容临时传上去，用完就删。这类角色能救回的只有名字、日记、API 配置和角色发过的消息。
+没开定时主动消息、也没有排程的角色，云端的快照只是一句占位符：即时对话每轮把完整内容临时传上去，这一轮结束后立刻删除。这类角色能救回的只有名字、日记、API 配置和角色发过的消息。
 
 角色快照不设过期时间，不会自己消失，不必抢时间。
 
