@@ -155,8 +155,6 @@
         --sully-system-tint-600: 166 108 10; --sully-system-tint-700: 135 87 11; --sully-system-tint-800: 110 71 14;
         --sully-system-tint-900: 89 58 16; --sully-system-tint-950: 54 34 8;
       }
-      /* 开机水母整片从紫转到金 */
-      html[data-release-channel='canary'] .sully-boot-scene { filter: hue-rotate(155deg) saturate(1.25); }
       /* 动森风格皮肤：拉丁/数字用 Nunito（圆润），中文用 ZCOOL KuaiLe（可爱），保留 Noto Sans SC 兜底。
          选择 html[data-skin] 而非 :root，优先级更高，能盖过运行时注入的 --app-font。 */
       html[data-skin="animalcrossing"] {
