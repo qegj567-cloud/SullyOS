@@ -333,8 +333,8 @@ export function explainCfError(status: number, body: unknown, request?: string):
     || (typeof payload?.error === 'string' ? payload.error : '');
 
   const PERMISSION_HINT =
-    'Token 权限不够。建 token 时这三项都要勾上：Account → Workers Scripts:Edit、'
-    + 'Account → D1:Edit、Account → Account Settings:Read。';
+    'Token 权限不够。建 token 时这三项都要勾上：Workers Scripts 的 Read 和 Edit、'
+    + 'D1 的 Read 和 Edit、Account Settings 的 Read。';
 
   const explain = (): string => {
     if (code === 6003 || code === 6111) return 'Token 格式不对，多半是复制时多带了空格或换行。';
@@ -533,7 +533,7 @@ export async function verifyToken(
       message:
         '这是一枚账号令牌（cfat_ 开头），这里用不了。'
         + '去 Cloudflare 右上角头像 → My Profile → API Tokens 建一枚普通的用户 API Token（cfut_ 开头），'
-        + '建的时候在 Account Resources 里选上你要装到的那个账号就行。',
+        + '建的时候 Policies 选 Start with an Account policy，账号范围包含你要装到的那个账号就行。',
     };
   }
 
@@ -549,7 +549,7 @@ export async function verifyToken(
       code: 'TOKEN_NOT_YET_VALID',
       message:
         `这枚 Token 还没到生效时间，现在用不了。${notYet.message ? `\nCloudflare 说：${notYet.message}` : ''}`
-        + '\n重新建一枚，把「Start Date」留空或设成今天。',
+        + '\n重新建一枚，有效期（Token expiration）保持默认的 No expiration。',
     };
   }
   const status = res.body?.result?.status;
@@ -1051,7 +1051,7 @@ async function provisionAmsgBackendUnlocked(input: ProvisionInput): Promise<Prov
         code: 'NO_USABLE_ACCOUNT',
         message:
           '这枚 token 在你名下任何一个账号里都没有 Workers 权限。'
-          + '重新建一枚，把 Account → Workers Scripts:Edit 勾上。',
+          + '重新建一枚，把 Workers Scripts 的 Read 和 Edit 都勾上。',
       };
     }
     if (usable.length > 1) {

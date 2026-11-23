@@ -196,6 +196,8 @@ const MANUAL_SETUP_TUTORIAL_URL = 'https://discord.com/channels/1487742660314923
 const DIRECT_CONNECT_TUTORIAL_URL = 'https://discord.com/channels/1487742660314923100/1536968535727677450';
 /** 一键部署要的那枚 API Token 在这里建。 */
 const CF_TOKEN_URL = 'https://dash.cloudflare.com/profile/api-tokens';
+/** 建这枚 Token 的逐步截图（Discord 帖子），Cloudflare 改版时跟着帖子一起更新。 */
+const CF_TOKEN_TUTORIAL_URL = 'https://discord.com/channels/1487742660314923100/1535999029090066512/1570821906456645696';
 
 // 浏览器的 SW ready 和存储读取都可能一直不返回，不能让配置入口跟着消失。
 const SETTINGS_CHECK_TIMEOUT_MS = 10_000;
@@ -1549,21 +1551,38 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
           </p>
 
           <div className="amsg-permissions space-y-1.5">
-            <p className="text-[11px] font-bold text-slate-600">建 Token 时这三项权限都要勾上</p>
+            <p className="text-[11px] leading-relaxed text-slate-500">
+              <strong>Create Token</strong> → Policies 里点 <strong>Start from scratch</strong> → <strong>Start with an Account policy</strong>，
+              账号保持 All accounts，在搜索框里依次搜出下面三项勾上：
+            </p>
             <ul className="text-[11px] leading-relaxed text-slate-500 space-y-0.5 list-disc list-outside pl-4">
-              <li>Account → <code className="font-mono">Workers Scripts</code> : Edit</li>
-              <li>Account → <code className="font-mono">D1</code> : Edit</li>
-              <li>Account → <code className="font-mono">Account Settings</code> : Read</li>
+              <li><code className="font-mono">Workers Scripts</code> : Read 和 Edit 都勾</li>
+              <li><code className="font-mono">D1</code> : Read 和 Edit 都勾</li>
+              <li><code className="font-mono">Account Settings</code> : 只勾 Read</li>
             </ul>
-            <a
-              href={CF_TOKEN_URL}
-              target="_blank"
-              rel="noreferrer"
-              onClick={() => trackEvent('打开 2.0 部署外链', { target: 'CF面板' })}
-              className="inline-block mt-1 text-[11px] font-bold text-violet-600"
-            >
-              ↗ 去 Cloudflare 建 Token
-            </a>
+            <p className="text-[11px] leading-relaxed text-slate-500">
+              有效期和 IP 限制不用动，点 <strong>Continue to summary</strong>，确认列出这五项后 <strong>Create Token</strong>，复制那串（只显示一次）。
+            </p>
+            <div className="flex flex-wrap gap-x-4 mt-1">
+              <a
+                href={CF_TOKEN_URL}
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => trackEvent('打开 2.0 部署外链', { target: 'CF面板' })}
+                className="inline-block text-[11px] font-bold text-violet-600"
+              >
+                ↗ 去 Cloudflare 建 Token
+              </a>
+              <a
+                href={CF_TOKEN_TUTORIAL_URL}
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => trackEvent('打开 2.0 部署外链', { target: 'Token图文教程' })}
+                className="inline-block text-[11px] font-bold text-violet-600"
+              >
+                ↗ 图文教程
+              </a>
+            </div>
           </div>
 
           </>}
@@ -1977,8 +1996,8 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
                 <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 space-y-2.5">
                   <p className="text-[11px] font-bold text-slate-600">给这台后端补一把更新用的钥匙</p>
                   <p className="text-[11px] leading-relaxed text-slate-500">
-                    建一枚只勾 <strong>Account → Workers Scripts : Edit</strong> 的 Cloudflare API Token
-                    粘进来（<strong>Start Date 留空</strong>），SullyOS·糯米机 会把它写进你这台 Worker。
+                    建一枚只有 <strong>Workers Scripts</strong> 权限（Read 和 Edit 都勾）的 Cloudflare API Token
+                    粘进来，SullyOS·糯米机 会把它写进你这台 Worker。
                     做完一次以后更新就都是点上面那个按钮了。
                   </p>
                   <a

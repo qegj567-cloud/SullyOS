@@ -25,21 +25,21 @@
 
 ### 第 1 步 · 建一枚 API Token
 
-打开 <https://dash.cloudflare.com/profile/api-tokens> → **Create Token** → 最下面的 **Custom token** → **Get started**。
+打开 <https://dash.cloudflare.com/profile/api-tokens> → 右上角蓝色按钮 **Create Token**。逐步截图见 Discord 的[图文教程](https://discord.com/channels/1487742660314923100/1535999029090066512/1570821906456645696)。
 
-**Permissions** 这三行都要加上（点 *+ Add more* 加行）：
+**Token name** 随便填一个认得出的名字。
 
-| 类型 | 名称 | 权限 |
+**Policies** 里点 **Start from scratch**，在弹出的菜单里选 **Start with an Account policy**。账号那一栏保持默认的 **All accounts**，然后在搜索框里依次搜出下面三项，把对应的框勾上：
+
+| 搜索 | 找到这一行 | 勾选 |
 |---|---|---|
-| Account | Workers Scripts | Edit |
-| Account | D1 | Edit |
-| Account | Account Settings | Read |
+| `script` | Workers Scripts | Read、Edit 都勾 |
+| `d1` | D1 | Read、Edit 都勾 |
+| `account settings` | Account Settings | 只勾 Read |
 
-**Account Resources** 选你要把后端装进去的那个账号。
+**Token expiration** 和 **Client IP address filtering** 保持默认，不用改。
 
-**TTL** 那两个日期框：**Start Date 留空**。填了未来的日期，这枚 Token 要到那天才生效，在那之前用会一直被 Cloudflare 拒掉。
-
-点 **Continue to summary** → **Create Token**，把生成的那串复制下来（**它只显示这一次**）。
+点 **Continue to summary**，确认 Permission policies 里列出了这五项：Workers Scripts 的 Read 和 Edit、D1 的 Read 和 Edit、Account Settings 的 Read。然后点 **Create Token**，把生成的那串复制下来（**它只显示这一次**）。生成 Token 的那一页别截图发给别人，排障用不到它，截了就等于把 Token 交出去了。
 
 ### 第 2 步 · 粘进 SullyOS
 
@@ -51,7 +51,7 @@
 
 ### 中途可能会问你两件事
 
-**「这枚 Token 能用在多个账号上，装到哪个？」** —— 你的 Cloudflare 名下不止一个账号时会问。点一下要装的那个就继续了。（建 Token 时在 Account Resources 里只选一个账号的话，这一步不会出现。）
+**「这枚 Token 能用在多个账号上，装到哪个？」** —— 你的 Cloudflare 名下不止一个账号时会问。点一下要装的那个就继续了。（建 Token 时把账号那一栏从 All accounts 换成某一个账号的话，这一步不会出现。）
 
 **「给这个账号起一个 workers.dev 子域名」** —— 全新的 Cloudflare 账号才会遇到。这个名字全 Cloudflare 唯一，定了之后是这个账号所有 Worker 共用的，起一个自己认得的就行，之后后端地址会长成 `sullyos-amsg.你填的.workers.dev`。
 
@@ -343,9 +343,9 @@ env.DB (sullyos-amsg)   D1 Database
 
 另外两条路装的，第一次点更新会提示缺一把钥匙，同一块地方就能补上（做一次就够）：
 
-1. 打开 <https://dash.cloudflare.com/profile/api-tokens> → **Create Token** → 拉到最下面的 **Custom token** → **Get started**
-2. **Permissions** 只加一行：`Account` / `Workers Scripts` / `Edit`
-3. **Account Resources** 选你的账号；**Start Date 留空**，然后 **Continue to summary** → **Create Token**，复制显示出来的那串
+1. 打开 <https://dash.cloudflare.com/profile/api-tokens> → **Create Token**
+2. **Policies** 里点 **Start from scratch** → **Start with an Account policy**，账号保持 **All accounts**，搜 `script`，把 **Workers Scripts** 的 Read 和 Edit 都勾上，别的不用加
+3. 有效期保持默认，点 **Continue to summary** → **Create Token**，复制显示出来的那串
 4. 回到 SullyOS 的这一块，把它粘进 **给这台后端补一把更新用的钥匙**，点 **装上钥匙**
 
 装上钥匙之后，这台后端也会自己定期更新，跟「在 SullyOS 里装」的一样；想立刻更新就点上面那个按钮。
