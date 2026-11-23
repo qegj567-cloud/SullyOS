@@ -412,22 +412,6 @@ export function classifyLLMOutput(text: string): ClassificationResult {
     }
   }
 
-  // 2.5 同一件事只出一个 directive.
-  // 复述型模型经常把整条消息重写一遍 (先说一遍、再"总结"一遍), 同一个 [[ACTION:TRANSFER:520]]
-  // 就会出现两次; 客户端重放没有去重, 放过去就是同一笔钱转两次账、同一篇日记写两遍。
-  // 判据是 type + 参数**完全一致**: 金额不同 / 笔记 id 不同的两条仍是两件事, 照常都留。
-  const dedupedDirectives: Directive[] = [];
-  const seenDirectives = new Set<string>();
-  for (const d of directives) {
-    const key = JSON.stringify(d);
-    if (seenDirectives.has(key)) {
-      console.warn('[classifier] 同一条消息里重复的副作用, 只保留第一个:', key);
-      continue;
-    }
-    seenDirectives.add(key);
-    dedupedDirectives.push(d);
-  }
-
   // 3. 不管 directives 有没有, 都剥光所有标签 (数据 + 副作用) 出干净文本.
   let cleanedText = textAfterSchedule;
   for (const spec of DATA_TAGS) cleanedText = cleanedText.replace(spec.re, '');
@@ -435,5 +419,37 @@ export function classifyLLMOutput(text: string): ClassificationResult {
   cleanedText = cleanedText.trim();
   const sanitizedBody = sanitizeForNotification(cleanedText);
 
-  return { kind: 'finish', cleanedText, sanitizedBody, directives: dedupedDirectives };
+  return { kind: 'finish', cleanedText, sanitizedBody, directives };
+}
+
+/**
+ * 去掉跨轮复述的副作用。classifyLLMOutput 只看一段文字，同一轮里写了几次就出几个
+ * （角色可能故意连转几笔一分钱，不能合并）；工具循环把各轮拼成全文再分类时，模型在后面
+ * 几轮把前面做过的动作复述一遍，那一次不该再执行。
+ *
+ * 判据是整条 directive 完全一致（type + 参数）。每件事最多保留「第一次出现的那一轮里写的
+ * 次数」，多出来的按出现顺序从后往前去掉。不在任何单独一轮里出现的 directive（跨轮拼起来
+ * 的长日记块）原样保留。前台本地回连链按同一口径逐轮执行（applyAssistantPostProcessing）。
+ *
+ * @param all 全文分类出来的 directives
+ * @param rounds 每一轮各自分类出来的 directives，按轮的顺序
+ */
+export function dropCrossRoundRepeats(all: Directive[], rounds: Directive[][]): Directive[] {
+  const keyOf = (d: Directive) => JSON.stringify(d);
+  const firstRoundCount = new Map<string, number>();
+  for (const round of rounds) {
+    const counts = new Map<string, number>();
+    for (const d of round) counts.set(keyOf(d), (counts.get(keyOf(d)) ?? 0) + 1);
+    for (const [key, count] of counts) if (!firstRoundCount.has(key)) firstRoundCount.set(key, count);
+  }
+  const kept = new Map<string, number>();
+  return all.filter((d) => {
+    const key = keyOf(d);
+    const cap = firstRoundCount.get(key);
+    if (cap === undefined) return true;
+    const n = (kept.get(key) ?? 0) + 1;
+    kept.set(key, n);
+    if (n > cap) console.warn('[classifier] 后面几轮复述了前面已经写过的副作用，这一次不执行:', key);
+    return n <= cap;
+  });
 }

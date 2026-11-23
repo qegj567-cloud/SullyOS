@@ -38,6 +38,15 @@ describe('③ 凭据变更重传接线', () => {
       .toContain('commitApiConfig(configFromPreset(preset))');
   });
 
+  // 思考参数冻在任务行上：只改角色的「思考过程展示」开关时也要刷，不然下一次到点还按旧的发。
+  it('OSContext 保存角色：思考开关变了也走凭据与任务参数刷新', () => {
+    const src = read('../context/OSContext.tsx');
+    const block = sliceBetween(src, 'JSON.stringify(before?.dialogueApi)', 'syncAmsgLlmCredentials(');
+    expect(block).toContain('showThinkingChain');
+    // 情绪开关或情绪 API 变了：任务的 emotion 引用和那一行凭据要跟着刷。
+    expect(block).toContain('emotionConfig');
+  });
+
   it('ActiveMsg2SettingsModal.handleSubmit：面板保存后刷同角色其余 pending AI 任务', () => {
     const src = read('../components/chat/ActiveMsg2SettingsModal.tsx');
     const fn = sliceBetween(src, 'const handleSubmit', 'return (');

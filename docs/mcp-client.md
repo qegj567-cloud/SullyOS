@@ -129,7 +129,11 @@ function calling（例如携带 `tools` 就报 401），关闭它后首轮会直
   地址的服务器（含 token/customHeaders，剥代理字段）与「聊天模型支持工具调用」
   开关一起，作为 `tool_config.mcpServers` / `mcpUseNativeTools` 随 client_state
   加密通道上云（`activeMsgClient.buildToolConfigEntry` 是三条上传路径的唯一咽喉）。
-  被服务端标成 destructive 的工具会从后台清单剔除，因为无人值守环境不能弹确认窗。
+  被服务端标成 destructive 的工具默认从后台清单剔除：前台调用这类工具前会弹窗确认，
+  Worker 上执行没有这一步。用户在 MCP 设置里打开「允许云端执行破坏性工具」
+  （`aetheros.mcp.allowCloudDestructive`，默认关，随 MCP 备份走）后，这类工具带着
+  annotations 照常上云，即时对话和定时 / 后台任务都能调，且不经确认。改开关会重传
+  tool_config。前台路径不受这个开关影响，照旧弹确认。
 - **提示词与 tools**：worker 在 onBeforeFire 用 `mcpFireCore.buildMcpFireBlock` /
   `buildMcpFireTools` 从 tool_config 现场生成——与凭据同源，不经过 fire_pack，
   没有陈旧窗口。amsg-server 带 `agentic-fire-tools` feature 的版本起，fire 循环

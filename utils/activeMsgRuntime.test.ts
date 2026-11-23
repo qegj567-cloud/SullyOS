@@ -972,6 +972,65 @@ describe('flushInboxToChat 落库时间戳（走真库）', () => {
       expect((await assistantMsgs(charId)).length).toBeGreaterThan(0);
     }, 20000);
 
+    // 定时类主动消息到点也由 worker 跑评估（T7），结论挂在最后一条，收侧走同一条链落 buff。
+    it('定时主动消息带回来的评估结论同样落 buff', async () => {
+      const charId = 'char-emotion-scheduled';
+      await DB.saveCharacter({ id: charId, name: '定时角色' } as any);
+      await ActiveMsgStore.saveInboxMessage(inboxMsg({
+        messageId: 'msg_task_3@1700000000000_hook_0',
+        charId,
+        charName: '定时角色',
+        messageType: 'auto',
+        // 带上任务 uuid：缺了它会被当成即时对话那一轮（getInstantChatPending 的 uuid 也是 undefined）。
+        taskUuid: 'scheduled-emotion-uuid',
+        metadata: {
+          charId,
+          amsgMode: 'auto',
+          amsgEmotionDone: true,
+          amsgEmotionUpdate: JSON.stringify({ changed: true, buffs: [{ label: '想念', emoji: '🌙', intensity: 2 }], injection: '你有点想他。', innerState: '' }),
+        },
+      }));
+      await flushInboxToChat('SW通知');
+      const updated = (await DB.getAllCharacters()).find((c) => c.id === charId)!;
+      expect(updated.activeBuffs?.map((b: any) => b.label)).toContain('想念');
+    }, 20000);
+
+    // 打包时带进模板的回执，定时消息真的落地了才算告知过（与本地私聊回复成功后销账同一口径）。
+    it('定时主动消息落地后把带过的回执标成已告知', async () => {
+      const charId = 'char-notice-scheduled';
+      await DB.saveCharacter({ id: charId, name: '回执角色' } as any);
+      await ActiveMsgStore.upsertExpiredNotices(charId, [
+        { id: 'n-1', charId, occurrenceMs: 1, mode: 'auto', recurrenceType: 'none', reason: 'min-gap', createdAt: Date.now() },
+        { id: 'n-2', charId, occurrenceMs: 2, mode: 'auto', recurrenceType: 'none', reason: 'min-gap', createdAt: Date.now() },
+      ] as any);
+      await ActiveMsgStore.saveInboxMessage(inboxMsg({
+        messageId: 'msg_task_5@1700000000000_hook_0',
+        charId, charName: '回执角色', messageType: 'auto', taskUuid: 'scheduled-task-uuid',
+        metadata: { charId, amsgMode: 'auto', amsgNoticeIds: ['n-1'] },
+      }));
+      await flushInboxToChat('SW通知');
+      const notices = await ActiveMsgStore.getExpiredNotices(charId);
+      expect(notices.find((r) => r.id === 'n-1')?.notifiedAt).toBeTruthy();
+      expect(notices.find((r) => r.id === 'n-2')?.notifiedAt).toBeFalsy();
+    }, 20000);
+
+    // 没带任务 uuid 的推送，不能因为「当前没有欠着的即时对话（uuid 也是 undefined）」就被当成即时对话那一轮。
+    it('没带 taskUuid 的推送不会被当成即时对话那一轮', async () => {
+      const charId = 'char-no-task-uuid';
+      await DB.saveCharacter({ id: charId, name: '无编号角色' } as any);
+      await ActiveMsgStore.upsertExpiredNotices(charId, [
+        { id: 'n-x', charId, occurrenceMs: 1, mode: 'auto', recurrenceType: 'none', reason: 'min-gap', createdAt: Date.now() },
+      ] as any);
+      await ActiveMsgStore.saveInboxMessage(inboxMsg({
+        messageId: 'msg_task_6@1700000000000_hook_0',
+        charId, charName: '无编号角色', messageType: 'auto',
+        metadata: { charId, amsgMode: 'auto', amsgNoticeIds: ['n-x'] },
+      }));
+      await flushInboxToChat('SW通知');
+      // 定时消息那一支才销账；被误判成即时对话就走不到这里。
+      expect((await ActiveMsgStore.getExpiredNotices(charId))[0]?.notifiedAt).toBeTruthy();
+    }, 20000);
+
     it('云端评估没跑出东西 → 照样熄灯，并把 worker 捎回来的原因原样给用户看', async () => {
       const charId = 'char-emotion-empty';
       await DB.saveCharacter({ id: charId, name: '空评估角色' } as any);

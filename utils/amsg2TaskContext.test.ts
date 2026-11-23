@@ -191,6 +191,50 @@ describe('buildAmsg2TaskContextText', () => {
   });
 });
 
+describe('buildAmsg2TaskContextText 最后一轮', () => {
+  // 最后一轮的请求不带工具、不教语法，清单里那句「怎么改 / 怎么再排」也不能出现，
+  // 否则同一份 prompt 一边说不能再调用工具，一边教角色再排一条。
+  it('finalRound：两种形态都不说怎么改、怎么再排，清单照列', () => {
+    for (const mode of ['text', 'native'] as const) {
+      const text = buildAmsg2TaskContextText([pendingTask], [], Date.now(), undefined, undefined, '小明', undefined, mode, true);
+      expect(text).toContain('[aabbccdd]');
+      expect(text).toContain('（这几条这一轮改不了。');
+      expect(text).not.toContain('还想再排就按正文排程的写法另写一条');
+      expect(text).not.toContain('schedule/cancel/renew');
+    }
+  });
+
+  it('finalRound：回执段不再教「新排一条 / 重新排一条」，就地消化和放弃两条照旧', () => {
+    const cancelled: Amsg2ExpiredNoticeRecord = { ...expired, id: `${expired.id}:cancelled`, kind: 'user-cancelled' };
+    const text = buildAmsg2TaskContextText([], [expired, cancelled], Date.now(), undefined, undefined, '小明', undefined, 'text', true);
+    expect(text).not.toContain('另约时间');
+    expect(text).not.toContain('重新排一条');
+    expect(text).toContain('二选一');
+    expect(text).toContain('1. 就地消化');
+    expect(text).toContain('2. 放弃');
+    expect(text).toContain('不必向用户求证');
+    const normal = buildAmsg2TaskContextText([], [expired, cancelled], Date.now(), undefined, undefined, '小明', undefined, 'text');
+    expect(normal).toContain('三选一');
+    expect(normal).toContain('2. 另约时间');
+    expect(normal).toContain('重新排一条');
+  });
+
+  it('finalRound：常驻能力简介换成一句「这一轮排不了新的」，整块不再出现排程工具名', () => {
+    const cancelled: Amsg2ExpiredNoticeRecord = { ...expired, id: `${expired.id}:cancelled`, kind: 'user-cancelled' };
+    const text = buildAmsg2TaskContextText([pendingTask], [expired, cancelled], Date.now(), undefined, undefined, '小明', undefined, 'text', true);
+    expect(text).not.toContain(buildAmsg2ChatScheduleBrief('小明'));
+    expect(text).not.toContain('schedule_active_message');
+    expect(text.split('\n')[1]).toBe('这一轮排不了新的主动消息了。');
+  });
+
+  it('不是最后一轮：与原来一字不差', () => {
+    for (const mode of ['text', 'native'] as const) {
+      expect(buildAmsg2TaskContextText([pendingTask], [], 1_800_000_000_000, undefined, undefined, '小明', undefined, mode, false))
+        .toBe(buildAmsg2TaskContextText([pendingTask], [], 1_800_000_000_000, undefined, undefined, '小明', undefined, mode));
+    }
+  });
+});
+
 describe('buildUserCancelledNotices', () => {
   const now = Date.now();
 
@@ -279,5 +323,35 @@ describe('collectInPersonNotices', () => {
     const result = await collectInPersonNotices('c1');
     expect(result.text).toBeNull();
     expect(result.ids).toEqual(['date-auto']);
+  });
+});
+
+// 正文协议模式（中转拒 tools）不教取消和改期，与云端一致；不传模式时保持原样。
+describe('buildAmsg2TaskContextText 按排程模式写调整方式', () => {
+  it('text 模式只说正文排程，不提 cancel / renew', () => {
+    const text = buildAmsg2TaskContextText([pendingTask], [], Date.now(), undefined, undefined, undefined, undefined, 'text');
+    expect(text).not.toContain('cancel');
+    expect(text).not.toContain('renew');
+    expect(text).toContain('正文');
+  });
+
+  it('不传或 native 模式保持原样', () => {
+    for (const mode of [undefined, 'native'] as const) {
+      expect(buildAmsg2TaskContextText([pendingTask], [], Date.now(), undefined, undefined, undefined, undefined, mode))
+        .toContain('想调整就用 schedule/cancel/renew 工具');
+    }
+  });
+});
+
+// 回执块每条带编号：发过的那条去掉、没发过的留下，渲染结果与只剩没发过那条时一字不差。
+describe('回执按条过滤', () => {
+  it('块里一条发过、一条没发过 → 只留没发过的那条', async () => {
+    const { renderSentNotices, wrapNoticesBlock } = await import('./amsgFirePack');
+    const a = { ...expired, id: 'n-a', promptHint: '问问考试结果' };
+    const b = { ...expired, id: 'n-b', promptHint: '提醒带伞', occurrenceMs: expired.occurrenceMs - H };
+    const marked = wrapNoticesBlock(['n-a', 'n-b'], (buildAmsg2NoticesText as any)([a, b], undefined, '条条', { marked: true }));
+    expect(renderSentNotices(marked, ['n-a'])).toBe(buildAmsg2NoticesText([b], undefined, '条条'));
+    expect(renderSentNotices(marked, [])).toBe(buildAmsg2NoticesText([a, b], undefined, '条条'));
+    expect(renderSentNotices(marked, ['n-a', 'n-b'])).toBe('');
   });
 });

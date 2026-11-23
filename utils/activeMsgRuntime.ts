@@ -1672,7 +1672,8 @@ const flushInboxToChatImpl = async (trigger: FlushTrigger, charId?: string): Pro
     }
     const isInstantReply = message.source === 'instant'
       || (message.metadata as any)?.amsgInstantChat === true
-      || getInstantChatPending(message.charId)?.uuid === message.taskUuid;
+      // 两边都没有 uuid（没欠着即时对话、推送也没带任务编号）不算对上。
+      || (!!message.taskUuid && getInstantChatPending(message.charId)?.uuid === message.taskUuid);
     const replyRun = isInstantReply && message.taskUuid
       ? createReplyRun(message.charId, message.taskUuid) : undefined;
     const replyStep = <T>(operation: () => Promise<T>) => withReplyCancellation(replyRun, operation);
@@ -1995,6 +1996,14 @@ const flushInboxToChatImpl = async (trigger: FlushTrigger, charId?: string): Pro
         }
       } else if (!isInstantReply && isLastSegment) {
         void recordProactiveCloudApiLog(message);
+        // 打包时带进模板的回执，这条定时消息落地了才算告知过，下一次定时消息不再重提
+        // （与本地私聊回复成功后 markExpiredNoticesNotified 同一口径）。
+        const noticeIds = (message.metadata as any)?.amsgNoticeIds;
+        if (Array.isArray(noticeIds) && noticeIds.length) {
+          await replyStep(async () => ActiveMsgStore.markExpiredNoticesNotified(
+            message.charId, noticeIds.filter((id: unknown): id is string => typeof id === 'string'),
+          ));
+        }
       }
     } catch (stageErr) {
       if (replyRun?.signal.aborted || isReplyStopped(message.taskUuid)) continue;

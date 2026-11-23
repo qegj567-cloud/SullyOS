@@ -3110,7 +3110,12 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               if(participant)markAmsgStateDirty({char:participant,userProfile,groups,realtimeConfig});
             }).catch(error=>console.warn('[Home3D] 共享经历快照刷新失败',error));
           }
-          if (JSON.stringify(before?.dialogueApi) !== JSON.stringify(target.dialogueApi)) {
+          // 思考过程展示开关决定定时任务带不带思考参数（冻在远端任务行上），变了也要刷一遍。
+          // 情绪开关和情绪 API 决定定时任务带不带 emotion 引用、那一行凭据是什么，变了同样要刷。
+          if (JSON.stringify(before?.dialogueApi) !== JSON.stringify(target.dialogueApi)
+            || !!before?.showThinkingChain !== !!target.showThinkingChain
+            || !!before?.emotionConfig?.enabled !== !!target.emotionConfig?.enabled
+            || JSON.stringify(before?.emotionConfig?.api) !== JSON.stringify(target.emotionConfig?.api)) {
             // Fresh snapshot also distinguishes consecutive role-only changes during an upload.
             syncAmsgLlmCredentials({ ...apiConfig });
           }

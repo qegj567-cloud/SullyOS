@@ -181,13 +181,13 @@ const spokeSince = async (charId: string, since: number): Promise<boolean> =>
 const fireLocal = async (deps: DateLeaveDeps, leftAt: number) => {
   const { char, userProfile } = deps;
   if (!userProfile || document.visibilityState !== 'visible' || await spokeSince(char.id, leftAt)) return;
-  const userName = userProfile.name || '对方';
   await runLocalProactiveTurn(char, {
     apiConfig: deps.apiConfig,
     userProfile,
     groups: deps.groups,
     realtimeConfig: deps.realtimeConfig,
-    hint: `[系统提示（非${userName}发言）: ${buildDateLeaveInstruction()}\n只写你发出去的消息本身，不要写时间、序号或旁白。]`,
+    // 与云端任务同一份纯指令，模板里已有「只写消息本身」的同义规则。
+    hint: buildDateLeaveInstruction(),
     purpose: '见面离开提醒',
     meta: { dateLeaveReminder: true },
     place: text => [{ text: text.trim(), at: Date.now() }],

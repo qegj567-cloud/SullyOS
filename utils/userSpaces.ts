@@ -62,7 +62,7 @@ const sharedKeys = new Set([
     'sully_proxy_worker_url', 'sully_proxy_worker_url_v1', 'push_vapid_v1', 'study_api_config', 'check_phone_api',
     'sully_music_cfg_v1', 'os_first_use_memory_guide_v1', 'os_first_use_skip_vector_v1', 'sullyos_backup_reminder', 'os_thinking_help_seen_v1',
     'world_home_api', 'browser_brave_key', 'browser_use_real_search', 'sully_firecrawl_api_key',
-    'aetheros.mcp.servers', 'aetheros.mcp.useNativeTools', 'aetheros.luckin.mcpToken',
+    'aetheros.mcp.servers', 'aetheros.mcp.useNativeTools', 'aetheros.mcp.allowCloudDestructive', 'aetheros.luckin.mcpToken',
     'aetheros.luckin.mcpEnabled', 'aetheros.mcd.mcpToken', 'aetheros.mcd.mcpEnabled',
     'sullyos_disclaimer_accepted', 'sullyos_chat_input_preferences_v1',
     'sullyos_deployment_notice_v1_accepted', 'sullyos_user_holidays_intro_v1',

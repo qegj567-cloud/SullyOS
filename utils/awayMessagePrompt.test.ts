@@ -1,72 +1,64 @@
 import { describe, expect, it } from 'vitest';
-import type { CharacterProfile, Message } from '../types';
-import { buildLocalAwayHint } from './awayMessagePrompt';
+import { buildAwayFireInstruction, isJustMetOffline, readAwayAnchorInfo } from './awayMessagePrompt';
 
 const MIN = 60_000;
 const NOW = Date.parse('2026-11-07T12:00:00Z');
-const char = { id: 'away', name: '阿一', customTimezoneEnabled: true, customTimezone: 'Asia/Tokyo' } as CharacterProfile;
-const lastUserAt = NOW - 240 * MIN;
-const slots = [NOW - 150 * MIN, NOW - 60 * MIN];
-const hint = (recent: Partial<Message>[] = [], overrides: Partial<CharacterProfile> = {}) =>
-  buildLocalAwayHint({ ...char, ...overrides }, '小明', lastUserAt, slots, recent as Message[], NOW);
 
-it('restores casual life sharing without making every segment a demand for a reply', () => {
-  const text = hint();
-  expect(text).toContain('拿起手机主动找对方');
-  expect(text).toContain('分享随手拍的照片');
-  expect(text).toContain('刚看到的趣事');
-  expect(text).toContain('不要刻意汇报近况');
-  expect(text).toContain('不必次次围着“没回复”打转');
-  expect(text).toContain('请把这 2 次按时间先后分别写出来');
-  expect(text).toContain('[[NEXT]]');
+// 云端离开后消息到点现算说法，与本地同一份逻辑（起点类型、刚分开语境、时间感知开关）。
+describe('buildAwayFireInstruction', () => {
+  const fire = (over: Partial<Parameters<typeof buildAwayFireInstruction>[0]> = {}) => buildAwayFireInstruction({
+    userName: '小明', anchor: { source: null, lastDateAt: null }, anchorAt: NOW - 120 * MIN,
+    nowMs: NOW, showClock: true, tzId: 'Asia/Tokyo', ...over,
+  });
+
+  it('按起点类型换说法：线上 / 见面 / 通话', () => {
+    expect(fire()).toContain('小明最后一次在线上给你发消息是在 11月7日 19:00');
+    expect(fire({ anchor: { source: 'date', lastDateAt: NOW - 240 * MIN } })).toContain('上一次在线下互动是在');
+    expect(fire({ anchor: { source: 'call-end-popup', lastDateAt: null } })).toContain('上一次通话是在');
+  });
+
+  it('3 小时内见过面切到刚分开的语境，超过就回到日常分享', () => {
+    expect(fire({ anchor: { source: 'date', lastDateAt: NOW - 30 * MIN } })).toContain('刚刚在线下见过面');
+    expect(fire({ anchor: { source: 'date', lastDateAt: NOW - 181 * MIN } })).not.toContain('刚刚在线下见过面');
+  });
+
+  it('关掉时间感知时既不报钟也不报隔了多少分钟', () => {
+    const text = fire({ showClock: false });
+    expect(text).not.toMatch(/\d{1,2}:\d{2}/);
+    expect(text).not.toMatch(/超过 \d+ 分钟/);
+    expect(text).toContain('这段时间小明没有再在线上给你发消息');
+  });
+
+  it('见面恰好过去 180 分钟就不再算刚分开', () => {
+    expect(fire({ anchor: { source: 'date', lastDateAt: NOW - 180 * MIN } })).not.toContain('刚刚在线下见过面');
+    expect(fire({ anchor: { source: 'date', lastDateAt: NOW - 179 * MIN } })).toContain('刚刚在线下见过面');
+  });
+
+  it('见面时间戳在未来（设备时钟跑偏）时不算刚分开', () => {
+    expect(isJustMetOffline({ source: 'date', lastDateAt: NOW + 5 * MIN }, NOW)).toBe(false);
+    expect(fire({ anchor: { source: 'date', lastDateAt: NOW + 5 * MIN } })).not.toContain('刚刚在线下见过面');
+  });
 });
 
-describe('recent offline meeting', () => {
-  it('uses the after-meeting mood and ignores a later legacy hidden hint without copying archived prose', () => {
-    const text = hint([
-      { role: 'assistant', timestamp: NOW - 30 * MIN, content: '不可重新送入的归档原文', metadata: { source: 'date' } },
-      { role: 'user', timestamp: NOW - MIN, metadata: { proactiveHint: true } },
+describe('readAwayAnchorInfo', () => {
+  const m = (role: string, timestamp: number, metadata?: Record<string, unknown>) => ({ role, timestamp, metadata }) as any;
+
+  it('起点取最后一次在场互动的来源；线上发言为 null', () => {
+    expect(readAwayAnchorInfo([m('user', 1), m('assistant', 2)])).toEqual({ source: null, lastDateAt: null });
+    expect(readAwayAnchorInfo([m('user', 1), m('assistant', 2, { source: 'call-end-popup' })]).source).toBe('call-end-popup');
+  });
+
+  it('最后一条真实记录是见面正文时带上它的时刻，之后角色又在线上说过话就不带', () => {
+    expect(readAwayAnchorInfo([m('user', 1), m('assistant', 2, { source: 'date' })])).toEqual({ source: 'date', lastDateAt: 2 });
+    expect(readAwayAnchorInfo([m('assistant', 2, { source: 'date' }), m('assistant', 3)]).lastDateAt).toBeNull();
+  });
+
+  it('隐藏提示 proactiveHint 和系统消息不算真实记录', () => {
+    const info = readAwayAnchorInfo([
+      m('assistant', 2, { source: 'date' }),
+      m('user', 3, { proactiveHint: true }),
+      m('system', 4),
     ]);
-    expect(text).toContain('刚刚在线下见过面，现在暂时分开了');
-    expect(text).toContain('上一次在线下互动是在');
-    expect(text).not.toContain('最后一次在线上给你发消息是在');
-    expect(text).toContain('补一句当时没说出口的话');
-    expect(text).toContain('不要表现得像很久没联系');
-    expect(text).toContain('如果具体细节已不在可见上下文里，不要编造');
-    expect(text).not.toContain('不可重新送入的归档原文');
-    expect(text).not.toContain('之后一直没再找你');
+    expect(info).toEqual({ source: 'date', lastDateAt: 2 });
   });
-
-  it.each([180, 181, -1])('does not call a meeting %s minutes ago just finished', minutes => {
-    expect(hint([{ role: 'assistant', timestamp: NOW - minutes * MIN, metadata: { source: 'date' } }]))
-      .not.toContain('刚刚在线下见过面');
-  });
-
-  it('uses ordinary sharing after the conversation has already moved on', () => {
-    const text = hint([
-      { role: 'assistant', timestamp: NOW - 30 * MIN, metadata: { source: 'date' } },
-      { role: 'user', timestamp: NOW - 20 * MIN },
-    ]);
-    expect(text).not.toContain('刚刚在线下见过面');
-    expect(text).toContain('最后一次在线上给你发消息是在');
-  });
-
-  it('describes call hangup accurately when the latest interaction was a call', () => {
-    const text = hint([{ role: 'system', timestamp: NOW - 120 * MIN, metadata: { source: 'call-end-popup' } }]);
-    expect(text).toContain('上一次通话是在');
-    expect(text).not.toContain('最后一次在线上给你发消息是在');
-  });
-});
-
-it('formats target moments in the character timezone and omits clocks when time awareness is off', () => {
-  expect(hint()).toContain('17:00');
-  expect(hint()).toContain('18:30');
-  expect(hint()).toContain('20:00');
-  expect(hint([], { timeAwarenessEnabled: false })).not.toMatch(/\d{1,2}:\d{2}/);
-  expect(hint([{ role: 'assistant', timestamp: NOW - MIN, metadata: { source: 'date' } }], { timeAwarenessEnabled: false }))
-    .toContain('刚刚在线下见过面');
-});
-
-it('does not request a separator for a single message occasion', () => {
-  expect(buildLocalAwayHint(char, '小明', lastUserAt, [slots[0]], [], NOW)).not.toContain('[[NEXT]]');
 });

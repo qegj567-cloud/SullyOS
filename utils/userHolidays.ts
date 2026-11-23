@@ -113,13 +113,26 @@ export function getCachedUserHolidayReminder(userName?: string, config = readUse
     return renderUserHoliday(config, date, today, userName);
 }
 
-/** Insert at the common user-profile heading, preserving old cloud templates without that heading. */
-export function insertUserHolidayInProfile(prompt: string, reminder: string): string {
+/**
+ * 云端现取的用户所在地节日，插到「互动对象」段 bio 后面，与本地 buildCoreContext 同位同格式。
+ *
+ * bio 里可能有空行，光找「之后第一个空行」会插进 bio 中间，所以打包时带上 bio 的长度
+ * （fire_pack.userBioLength）按长度跳过。旧包没带长度时退回插在段标题下面。
+ * 找不到「互动对象」段就不插：本地那种情形（群聊共享场景之类）也没有这一行，追加到整串
+ * 末尾只会排到「回到你自己」之后。
+ */
+export function insertUserHolidayInProfile(prompt: string, reminder: string, userBioLength?: number): string {
     if (!reminder) return prompt;
     const heading = '### 互动对象 (User)\n';
-    return prompt.includes(heading)
-        ? prompt.replace(heading, `${heading}- ${reminder}\n`)
-        : `${prompt}\n\n### 互动对象信息补充\n${reminder}\n`;
+    const headingAt = prompt.indexOf(heading);
+    if (headingAt < 0) return prompt;
+    const bioLabel = '- 设定/备注: ';
+    const bioAt = prompt.indexOf(bioLabel, headingAt);
+    const bioEnd = bioAt >= 0 && typeof userBioLength === 'number' ? bioAt + bioLabel.length + userBioLength : -1;
+    if (bioEnd >= 0 && prompt.startsWith('\n\n', bioEnd)) {
+        return `${prompt.slice(0, bioEnd + 2)}- ${reminder}\n\n${prompt.slice(bioEnd + 2)}`;
+    }
+    return prompt.replace(heading, `${heading}- ${reminder}\n`);
 }
 
 export async function loadHolidayCalendar(country: string, year: number, cache?: HolidayCache, now = Date.now()): Promise<HolidayCalendar | null> {

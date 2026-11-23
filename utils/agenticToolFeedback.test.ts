@@ -215,3 +215,79 @@ describe('buildDuplicateToolMessage', () => {
     expect(buildDuplicateToolMessage('recall')).toContain('前面已经说出去的内容和标签不要重写');
   });
 });
+
+// 各工具结果的专用引导：原本只有前台私聊回连时带，现在前台和 worker 回喂同一套。
+describe('结果引导（前台与云端共用）', () => {
+  const feedback = (name: string, result: unknown, canCallMoreTools?: boolean) => buildToolResultMessage({
+    name, result, history: [{ name, fingerprint: toolCallFingerprint(name, {}) }], canCallMoreTools,
+  });
+
+  const cases: Array<[string, string, unknown, string[]]> = [
+    ['召回成功', 'recall', { ok: true, alreadyActive: false, yearMonth: '2026-05', logsText: '[2026-05-01] 去海边' }, ['现在请结合这些细节回答用户']],
+    ['搜索成功', 'web_search', { ok: true, query: '猫', resultsText: '1. 猫', rawResultCount: 1 }, ['我刚搜了一下发现', '搜索结果不带日期']],
+    ['日记读到了', 'notion_read_diary', { ok: true, date: '2026-05-01', diaryText: '晴', entryCount: 1 }, ['先正常回应用户刚才说的话（这是最重要的！', '我想起来了那天']],
+    ['日记那天没写', 'notion_read_diary', { ok: false, reason: 'not_found', date: '2026-05-01' }, ['发现 2026-05-01 那天没有写日记', '先正常回应用户刚才说的话']],
+    ['日记连不上', 'notion_read_diary', { ok: false, reason: 'unreachable', date: '2026-05-01' }, ['这次没查成', '先正常回应用户刚才说的话（用户还在等你回复！）']],
+    ['日记日期看不懂', 'notion_read_diary', { ok: false, reason: 'parse_error', dateInput: '那天' }, ['没能理解要找哪天的（"那天"）']],
+    ['日记没配置', 'notion_read_diary', { ok: false, reason: 'not_configured', dateInput: '今天' }, ['日记本暂时不可用']],
+    ['飞书日记读到了', 'feishu_read_diary', { ok: true, date: '2026-05-01', diaryText: '晴', entryCount: 1 }, ['你已经看完了飞书日记', '先正常回应用户刚才说的话']],
+    ['笔记读到了', 'read_note', { ok: true, keyword: '旅行', noteText: '大理', entryCount: 1 }, ['像不经意间看到的', '先正常回应用户刚才说的话']],
+    ['笔记没找到', 'read_note', { ok: false, reason: 'not_found', keyword: '旅行' }, ['好像没找到那篇笔记']],
+    ['笔记连不上', 'read_note', { ok: false, reason: 'unreachable', keyword: '旅行' }, ['笔记服务连不上，这次没查成', '先正常回应用户刚才说的话']],
+    ['笔记没配置', 'read_note', { ok: false, reason: 'not_configured', keyword: '旅行' }, ['笔记功能暂时不可用']],
+    ['小红书搜索', 'xhs_search', { ok: true, keyword: '猫', notesText: '1. 猫', notes: [] }, ['[[XHS_SHARE: 序号]]', '不要手写“[你分享了小红书笔记]”', '[[XHS_COMMENT: noteId | 评论内容]]', '[[XHS_DETAIL: noteId]]']],
+    ['刷小红书', 'xhs_browse', { ok: true, notesText: '1. 猫', notes: [] }, ['挑你感兴趣的1-3条聊就行', '[[XHS_SHARE: 序号]]', '[[XHS_POST: 标题 | 内容 | #标签1 #标签2]]', '[[XHS_DETAIL: noteId]]']],
+    ['角色主页', 'xhs_my_profile', { ok: true, nickname: 'a', userId: '', profileStr: '', feedsStr: '', gotProfile: true, notes: [], ownedPosts: true }, ['按角色归属保存的主页数据', '“刚才那个帖子”', '向用户确认，不能猜']],
+    ['真实账号搜昵称', 'xhs_my_profile', { ok: true, nickname: 'a', userId: '', profileStr: '', feedsStr: '', gotProfile: false, notes: [] }, ['搜索结果可能包含别人的帖子']],
+    ['主页没填昵称', 'xhs_my_profile', { ok: false, reason: 'no_identity' }, ['请在设置-小红书中填写你的昵称或用户ID']],
+    ['主页连不上', 'xhs_my_profile', { ok: false, reason: 'unreachable' }, ['小红书打不开/刷不出来', '不要描述任何笔记、数据或评论']],
+    ['笔记详情', 'xhs_detail', { ok: true, noteId: 'n1', detailText: '猫', commentsUnavailable: false }, ['[[XHS_REPLY: n1 | commentId | 回复内容]]', '[[XHS_COMMENT: n1 | 评论内容]]', '[[XHS_LIKE: n1]]']],
+    ['评论区没读到', 'xhs_detail', { ok: true, noteId: 'n1', detailText: '猫', commentsUnavailable: true }, ['不要声称帖子没有评论，不要编造、模拟或回复任何评论']],
+    ['详情打不开', 'xhs_detail', { ok: false, reason: 'unreachable', noteId: 'n1' }, ['这条笔记打不开/加载不出来', '[[XHS_SEARCH: 关键词]]']],
+  ];
+
+  it.each(cases)('%s → 带上对应引导', (_label, name, result, expected) => {
+    const msg = feedback(name, result);
+    for (const text of expected) expect(msg).toContain(text);
+  });
+
+  it('评论区读到了时不带「别编评论」，读失败时不教回复评论', () => {
+    expect(feedback('xhs_detail', { ok: true, noteId: 'n1', commentsUnavailable: false })).not.toContain('不要编造');
+    expect(feedback('xhs_detail', { ok: true, noteId: 'n1', commentsUnavailable: true })).not.toContain('XHS_REPLY');
+  });
+
+  it('下一轮不能再调工具时，不教会回连的标签，副作用标签照常教', () => {
+    const search = feedback('xhs_search', { ok: true, notes: [] }, false);
+    expect(search).not.toContain('XHS_DETAIL');
+    expect(search).toContain('[[XHS_SHARE: 序号]]');
+    const profile = feedback('xhs_my_profile', { ok: true, gotProfile: true, ownedPosts: true }, false);
+    expect(profile).not.toContain('XHS_DETAIL');
+    expect(profile).toContain('[[XHS_POST:');
+    expect(feedback('xhs_detail', { ok: false, reason: 'unreachable', noteId: 'n1' }, false)).not.toContain('XHS_SEARCH');
+  });
+
+  it('没有专用引导的工具，回喂跟原来一字不差', () => {
+    const msg = feedback('mcp__get_secret', { ok: true, data: 'x' });
+    expect(msg.split('\n').slice(0, 3)).toEqual(['[系统: 你调用「get_secret」，拿回了下面这些]', '{"ok":true,"data":"x"}', '']);
+  });
+});
+
+describe('副作用重复的引导与收尾半句', () => {
+  const history = [{ name: 'web_search', fingerprint: 'f' }];
+
+  it('回喂里提醒：做过的动作别再写，想连着做就在同一轮里写', () => {
+    const msg = buildToolResultMessage({ name: 'web_search', result: { ok: true }, history });
+    expect(msg).toContain('前面已经做过的动作');
+    expect(msg).toContain('就在同一轮里');
+  });
+
+  it('下一轮不能再调工具时，两段回喂都不再说「还需要别的工具就去调」', () => {
+    expect(buildToolResultMessage({ name: 'web_search', result: { ok: true }, history, canCallMoreTools: false })).not.toContain('还没用过的工具');
+    expect(buildDuplicateToolMessage('web_search', { canCallMoreTools: false })).not.toContain('还没用过的工具');
+  });
+
+  it('默认照旧带这半句', () => {
+    expect(buildToolResultMessage({ name: 'web_search', result: { ok: true }, history })).toContain('还没用过的工具');
+    expect(buildDuplicateToolMessage('web_search')).toContain('还没用过的工具');
+  });
+});

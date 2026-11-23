@@ -18,6 +18,8 @@
 import type { ActiveMsg2TaskRecord } from '../types';
 import { renderFireSceneBlock, type AmsgFireScene } from './amsgFireScene';
 import { DEFAULT_MAX_UNANSWERED_SENDS } from './amsgLimits';
+import type { AwayAnchorInfo } from './awayMessagePrompt';
+import type { WorldbookRoll } from './worldbook';
 
 // 连发上限的默认值与解析搬进了 amsgLimits（和其余几项上限住在一起），这里转出去给老调用方。
 export { DEFAULT_MAX_UNANSWERED_SENDS, resolveMaxUnansweredSends } from './amsgLimits';
@@ -38,6 +40,55 @@ export const AMSG_FIRE_PACK_KEY = 'fire_pack';
  * 靠 basePackAt 对不上号自动作废，下一次 fire 直接覆盖成新的一份。
  */
 export const AMSG_SELF_LOG_KEY = 'self_log';
+
+/**
+ * 已经随某次定时 fire 发出去的「没发出去」回执 id（按角色一行，{ v: 1, ids }）。
+ *
+ * 回执烤在按角色共用的模板里，客户端落地时才销账、重新打包后才不带；客户端一直不在线的话，
+ * 下一次到点照样会再提一遍。worker 自己记住发过哪几条，渲染时把整块都发过的回执去掉。
+ */
+export const AMSG_SENT_NOTICES_KEY = 'sent_notices';
+
+/** 模板近史里没有识图描述的图片写成这样（照本地私聊那句明说别猜）；救援导回本地时还原成「[图片]」。 */
+export const TEMPLATE_IMAGE_PLACEHOLDER = '[图片]（配图描述暂不可用，请不要猜测。）';
+/** 记账封顶，旧的先丢（回执本身 48 小时就过期）。 */
+const SENT_NOTICES_MAX = 100;
+
+const NOTICES_CLOSE = '{{/AMSG_NOTICES}}';
+// 分组（整块、各段）可以嵌套，渲染时由内向外处理；单条回执的标记不嵌套。
+const NOTICES_BLOCK_RE = /\{\{AMSG_NOTICES:([^}]*)\}\}((?:(?!\{\{AMSG_NOTICES:)[\s\S])*?)\{\{\/AMSG_NOTICES\}\}/;
+const NOTICE_LINE_RE = /\{\{AMSG_NOTICE:([^}]*)\}\}([\s\S]*?)\{\{\/AMSG_NOTICE\}\}/g;
+
+/** 打包用：一组回执（整块或其中一段）包上编号标记，组里都发过时整组去掉。 */
+export const wrapNoticesBlock = (ids: string[], text: string): string =>
+  `{{AMSG_NOTICES:${ids.map(encodeURIComponent).join(',')}}}${text}${NOTICES_CLOSE}`;
+
+/** 打包用：单条回执那一行包上它的编号，发过的那条渲染时单独去掉。 */
+export const wrapNoticeLine = (id: string, text: string): string =>
+  `{{AMSG_NOTICE:${encodeURIComponent(id)}}}${text}{{/AMSG_NOTICE}}`;
+
+export const parseSentNotices = (value: string | undefined | null): string[] => {
+  try {
+    const parsed = JSON.parse(value || 'null');
+    return Array.isArray(parsed?.ids) ? parsed.ids.filter((id: unknown): id is string => typeof id === 'string') : [];
+  } catch { return []; }
+};
+
+export const appendSentNotices = (existing: string[], ids: string[]): string =>
+  JSON.stringify({ v: 1, ids: [...new Set([...existing, ...ids])].slice(-SENT_NOTICES_MAX) });
+
+/** 到点渲染：发过的那条回执去掉、没发过的留下；一组里都发过了，连标题和引导一起去掉。 */
+export const renderSentNotices = (template: string, sentIds: Iterable<string>): string => {
+  const sent = new Set(sentIds);
+  let out = template.replace(NOTICE_LINE_RE, (_whole, id: string, body: string) =>
+    (sent.has(decodeURIComponent(id)) ? '' : body));
+  for (let m = NOTICES_BLOCK_RE.exec(out); m; m = NOTICES_BLOCK_RE.exec(out)) {
+    const list = m[1].split(',').filter(Boolean).map(decodeURIComponent);
+    const drop = list.length > 0 && list.every((id) => sent.has(id));
+    out = out.slice(0, m.index) + (drop ? '' : m[2]) + out.slice(m.index + m[0].length);
+  }
+  return out;
+};
 
 /**
  * 大内容旁路：一条 push 塞不下的 XHS 会话数据（笔记详情 + xsecToken）存这个 key，
@@ -514,6 +565,15 @@ export const BEFORE_SPEAK_LINES: readonly string[] = [
 export const LIVE_CHAT_WINDOW_MS = 10 * 60_000;
 
 /**
+ * 模板里「突然想起对方、主动来找」口吻的那两处：【1.0 风格主动消息提示】整段和【重要规则】里的
+ * 一条。见面离开提醒的方向是「对方刚从见面里走开、角色在私聊里找人」，这两处跟它冲突，
+ * 到点渲染时拿掉（见 renderFirePack 的 dateLeave）。模板是按角色打一份、所有任务共用的，
+ * 所以只能在渲染时按任务去掉；打包和剥离共用这两个常量，存量包的原文也认得出。
+ */
+export const LEGACY_PROACTIVE_HINT_HEADING = '【1.0 风格主动消息提示】';
+export const LEGACY_PROACTIVE_TONE_RULE = '- 语气更像真人突然想起对方时发来的私聊，不要像在完成任务。';
+
+/**
  * 「即时对话」这一轮要发给模型的对话消息。
  *
  * 和 template 是两条路，不混用：template 是「到点主动找人说话」的提示词，
@@ -559,6 +619,33 @@ export interface AmsgFirePack {
    * （见 utils/awayMessageCore.ts）。可选字段，不改 FIRE_PACK_VERSION，旧包缺省退回 lastUserMessageAt。
    */
   lastAwayAnchorAt?: number | null;
+  /**
+   * 离开计时起点是哪种在场互动（见 awayMessagePrompt）。worker 到点据此现算离开后消息的说法；
+   * 可选字段，不改 FIRE_PACK_VERSION，旧包缺省时用任务 metadata 里排程时写好的那份指令。
+   */
+  awayAnchor?: AwayAnchorInfo;
+  /**
+   * 情绪评估提示词模板（buildEmotionEvalPrompt 的 includeContext=false 形态）。角色开了情绪
+   * 评估时才带，worker 到点与主生成并行跑一次，结果随最后一条推送回去。可选字段，旧包缺省
+   * 不评估。副 API 凭据走任务的 credRefs.emotion。
+   */
+  emotionEval?: { prompt: string };
+  /**
+   * 模板里带进去的「没发出去」回执的 id。worker 发出后随最后一条推送带回（amsgNoticeIds），
+   * 客户端落地时按它销账，口径同本地私聊回复成功后销账。可选字段，旧包缺省不销账。
+   */
+  noticeIds?: string[];
+  /**
+   * 模板里按概率触发、打包时没抽签的世界书条目（{{AMSG_WB_IF:…}} 标记包着）及其概率。
+   * worker 到点用 worldbook.renderWorldbookRolls 现抽，与本地每轮都抽一致。
+   * 可选字段，旧包缺省时模板里也没有标记，行为不变。
+   */
+  worldbookRolls?: WorldbookRoll[];
+  /**
+   * 「互动对象」段里 bio 的字符数（没填时按「无」算）。worker 插用户所在地节日时按它跳过 bio，
+   * 插到与本地同一个位置（见 userHolidays.insertUserHolidayInProfile）。可选，旧包退回插在段标题下。
+   */
+  userBioLength?: number;
   /**
    * 角色的 IANA 时区 id（角色开了自定义时区用角色的，没开用打包设备的）。
    * worker 渲染一切给角色看的时间都以它为参照系（Intl 处理夏令时）。必填：
@@ -1049,6 +1136,8 @@ export const renderFirePack = (
     lastUserMessageAt?: number | null;
     /** 到点必发、不给角色选择不说（离开后消息）：模板里【开口之前】那段整个拿掉。 */
     mustSpeak?: boolean;
+    /** 见面离开提醒：拿掉「突然想起对方」口吻的通用提示（见 LEGACY_PROACTIVE_HINT_HEADING）。 */
+    dateLeave?: boolean;
   },
 ): string => {
   const tz: AmsgTzRef = { tzId: pack.tzId };
@@ -1064,6 +1153,13 @@ export const renderFirePack = (
 
   let out = pack.template;
   if (extras?.mustSpeak) out = out.split(`${BEFORE_SPEAK_LINES.join('\n')}\n`).join('');
+  if (extras?.dateLeave) {
+    // 1.0 提示整段到下一个空行为止（段内没有空行），连同段后那个空行一起去掉。
+    const start = out.indexOf(LEGACY_PROACTIVE_HINT_HEADING);
+    const end = start >= 0 ? out.indexOf('\n\n', start) : -1;
+    if (start >= 0 && end >= 0) out = out.slice(0, start) + out.slice(end + 2);
+    out = out.split(`${LEGACY_PROACTIVE_TONE_RULE}\n`).join('');
+  }
   out = fillSlot(out, AMSG_SLOT_CURRENT_TIME, currentTime);
   // 对方那边的钟：跟上面那行是两个主体各自的时间，文案里各自写清主语（见 buildUserClockHint）。
   out = fillSlot(out, AMSG_SLOT_USER_CLOCK, buildUserClockHint(nowMs, tz, { tzId: pack.userTzId }, pack.targetName));

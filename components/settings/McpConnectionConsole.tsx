@@ -14,10 +14,12 @@ import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 import { trackEvent } from '../../utils/analytics';
 import {
     createMcpServer,
+    getMcpAllowCloudDestructive,
     getMcpUseNativeTools,
     loadMcpServers,
     resetMcpSession,
     saveMcpServers,
+    setMcpAllowCloudDestructive,
     setMcpUseNativeTools,
     testMcpConnection,
     type McpConnectionStage,
@@ -96,6 +98,7 @@ const McpConnectionConsole: React.FC<{
     const [testingId, setTestingId] = useState<string | null>(null);
     const [testStates, setTestStates] = useState<Record<string, TestState>>({});
     const [useNativeTools, setUseNativeToolsState] = useState(() => getMcpUseNativeTools());
+    const [allowCloudDestructive, setAllowCloudDestructiveState] = useState(() => getMcpAllowCloudDestructive());
 
     const summary = useMemo(() => {
         const live = servers.filter(server => server.enabled && (server.tools?.length || 0) > 0);
@@ -247,6 +250,25 @@ const McpConnectionConsole: React.FC<{
                         setMcpUseNativeTools(next);
                         onMcpConfigChanged?.();
                         trackEvent('切换原生工具调用', { state: next ? 'on' : 'off' });
+                    }}
+                />
+            </section>
+
+            <section className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
+                <div className="min-w-0">
+                    <div className="text-[11px] font-bold">允许云端执行破坏性工具</div>
+                    <p className="mt-0.5 text-[9px] leading-relaxed text-slate-400">
+                        服务器标为破坏性（如删除）的工具，本机调用前会弹窗问你。主动消息 2.0 在云端执行，没法弹窗问你，所以默认不上云。打开后，即时对话和定时主动消息里角色可以直接调用，不再确认。
+                    </p>
+                </div>
+                <PortToggle
+                    label="允许云端执行破坏性工具"
+                    checked={allowCloudDestructive}
+                    onChange={next => {
+                        setAllowCloudDestructiveState(next);
+                        setMcpAllowCloudDestructive(next);
+                        // 上云的工具清单随 tool_config 重传，开关改了要立刻同步。
+                        onMcpConfigChanged?.();
                     }}
                 />
             </section>

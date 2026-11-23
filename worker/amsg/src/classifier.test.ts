@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyLLMOutput } from './classifier';
+import { classifyLLMOutput, dropCrossRoundRepeats } from './classifier';
 
 describe('classifyLLMOutput', () => {
   it('D1 finish 干净文本 → sanitize 不改字符', () => {
@@ -326,51 +326,40 @@ describe('classifyLLMOutput — LIFE / NEWS_CARD', () => {
   });
 });
 
-// 复述型模型经常把整条消息重写一遍 (先说一遍再"总结"一遍), 同一个标签就出现两次。
-// 客户端重放不去重, 放过去就是同一笔钱转两次账。
-describe('classifyLLMOutput — 同一条消息里重复的副作用只出一个 directive', () => {
-  it('两个一模一样的转账标签 → 只出一个 transfer directive', () => {
+// 一次分类只看一轮正文：同一轮里写了几次就出几个 directive（角色可能故意连转几笔一分钱）。
+// 跨轮复述的去重在 dropCrossRoundRepeats，由 processLLMRound 按轮的边界调用。
+describe('classifyLLMOutput — 同一轮里重复的副作用照写几次出几个', () => {
+  it('两个一模一样的转账标签 → 两个 transfer directive', () => {
     const r = classifyLLMOutput('给你买奶茶[[ACTION:TRANSFER:520]]\n刚刚给你转了[[ACTION:TRANSFER:520]]');
     expect(r.kind).toBe('finish');
     if (r.kind === 'finish') {
-      expect(r.directives).toEqual([{ type: 'transfer', amount: 520 }]);
+      expect(r.directives).toEqual([{ type: 'transfer', amount: 520 }, { type: 'transfer', amount: 520 }]);
     }
   });
 
-  it('金额不同的两笔仍然是两件事, 都留', () => {
-    const r = classifyLLMOutput('[[ACTION:TRANSFER:520]][[ACTION:TRANSFER:1314]]');
-    expect(r.kind).toBe('finish');
-    if (r.kind === 'finish') {
-      expect(r.directives).toEqual([
-        { type: 'transfer', amount: 520 },
-        { type: 'transfer', amount: 1314 },
-      ]);
-    }
-  });
-
-  it('重复的日程 / 生活记录同样只留第一个', () => {
-    const r = classifyLLMOutput(
-      '[[ACTION:ADD_EVENT|面试|2026-08-03]][[LIFE:MED|布洛芬]]\n'
-      + '再说一遍：[[ACTION:ADD_EVENT|面试|2026-08-03]][[LIFE:MED|布洛芬]]',
-    );
-    expect(r.kind).toBe('finish');
-    if (r.kind === 'finish') {
-      expect(r.directives).toEqual([
-        { type: 'add_event', title: '面试', date: '2026-08-03' },
-        { type: 'life_record', body: 'MED|布洛芬' },
-      ]);
-    }
-  });
-
-  it('参数不同的小红书动作不会被误吞', () => {
+  it('参数不同的小红书动作各自保留', () => {
     const r = classifyLLMOutput('[[XHS_LIKE: n1]][[XHS_LIKE: n1]][[XHS_LIKE: n2]]');
     expect(r.kind).toBe('finish');
     if (r.kind === 'finish') {
       expect(r.directives).toEqual([
         { type: 'xhs_like', noteId: 'n1' },
+        { type: 'xhs_like', noteId: 'n1' },
         { type: 'xhs_like', noteId: 'n2' },
       ]);
     }
+  });
+});
+
+describe('dropCrossRoundRepeats', () => {
+  const t = (amount: number) => ({ type: 'transfer' as const, amount });
+
+  it('后面几轮复述的那件事去掉，次数以第一次出现那一轮为准', () => {
+    expect(dropCrossRoundRepeats([t(1), t(1), t(1), t(2)], [[t(1)], [t(1), t(1), t(2)]])).toEqual([t(1), t(2)]);
+  });
+
+  it('不在任何单独一轮里出现的（跨轮拼出来的日记块）原样保留', () => {
+    const diary = { type: 'notion_write_diary' as const, title: 'a', content: 'b' };
+    expect(dropCrossRoundRepeats([diary, t(1)], [[t(1)], []])).toEqual([diary, t(1)]);
   });
 });
 

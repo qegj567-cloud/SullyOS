@@ -15,6 +15,7 @@ import { ActiveMsg2TaskRecord, Amsg2ExpiredNoticeRecord, CharacterProfile } from
 import { ActiveMsgStore } from './activeMsgStore';
 import { resolveCharTimeZone } from './timezone';
 import { buildAmsg2ChatScheduleBrief } from './amsgFireSchedule';
+import { wrapNoticeLine, wrapNoticesBlock } from './amsgFirePack';
 import {
   AMSG2_SCHEDULE_NOT_YET_NOTE, AMSG2_SCHEDULE_SECRECY_NOTE, currentOccurrenceMs, describeExpirePolicy,
   describeRecurrence, describeTaskMode, formatTaskTime, getPendingTasks, isPendingTask,
@@ -91,34 +92,59 @@ const describeNoticeLine = (
  * 补上，后者是用户不要了），分成两段说。
  * 完整排程现状块和「回执单独成块」（即时对话云端路径）共用这一份文案。
  */
+/** 一段（标题、各条、引导）包成一组：段里都发过时连标题和引导一起去掉。回执行已自带换行。 */
+const markedSection = (records: Amsg2ExpiredNoticeRecord[], sectionParts: string[]): string => {
+  const [heading, ...rest] = sectionParts;
+  const guide = rest.pop() ?? '';
+  return wrapNoticesBlock(records.map((r) => r.id), `${heading}\n${rest.join('')}${guide}\n`);
+};
+
 const buildNoticeSections = (
   expired: Amsg2ExpiredNoticeRecord[],
   charTz: string | undefined,
   target: string,
+  /** 工具循环最后一轮：那一轮不能再调用工具，「新排一条」的出路不提。 */
+  finalRound = false,
+  /**
+   * 给云端模板用：每条回执行、每一段各包上编号标记（见 amsgFirePack.renderSentNotices），
+   * worker 把发过的那几条去掉。这时每个元素自带结尾换行，调用方用空串拼。
+   */
+  marked = false,
 ): string[] => {
   const parts: string[] = [];
+  const lineOf = (r: Amsg2ExpiredNoticeRecord) => (marked
+    ? wrapNoticeLine(r.id, `${describeNoticeLine(r, charTz, target)}\n`)
+    : describeNoticeLine(r, charTz, target));
   const skipped = expired.filter((r) => r.kind !== 'user-cancelled');
   const userCancelled = expired.filter((r) => r.kind === 'user-cancelled');
 
   if (skipped.length) {
+    const start = parts.length;
     parts.push('到点没发出去：');
     for (const r of skipped) {
-      parts.push(describeNoticeLine(r, charTz, target));
+      parts.push(lineOf(r));
     }
+    const options = [
+      '就地消化：只在当前时间与话题都合适时自然带进对话——先想「现在提这个还合不合适」（早安任务拖到晚上就别再道早安），不要因为看到这份回执就强行转移当前话题。',
+      ...(finalRound ? [] : ['另约时间：这些回执不是待执行任务。还想之后专门说，用 schedule_active_message 新排一条一次性任务；循环任务的后续节奏照旧，不要拿回执编号改期或取消。']),
+      '放弃：已经没意义就只字不提。',
+    ];
     parts.push([
-      '这几条的处理由你判断，三选一：',
-      '1. 就地消化：只在当前时间与话题都合适时自然带进对话——先想「现在提这个还合不合适」（早安任务拖到晚上就别再道早安），不要因为看到这份回执就强行转移当前话题。',
-      '2. 另约时间：这些回执不是待执行任务。还想之后专门说，用 schedule_active_message 新排一条一次性任务；循环任务的后续节奏照旧，不要拿回执编号改期或取消。',
-      '3. 放弃：已经没意义就只字不提。',
+      `这几条的处理由你判断，${options.length === 3 ? '三' : '二'}选一：`,
+      ...options.map((option, i) => `${i + 1}. ${option}`),
     ].join('\n'));
+    if (marked) parts.splice(start, parts.length - start, markedSection(skipped, parts.slice(start)));
   }
 
   if (userCancelled.length) {
+    const start = parts.length;
     parts.push('已被手动取消：');
     for (const r of userCancelled) {
-      parts.push(describeNoticeLine(r, charTz, target));
+      parts.push(lineOf(r));
     }
-    parts.push('这几条是用户直接取消的，相关约定不再生效，自然接受即可、不必向用户求证，也别再拿它们许诺。还想在别的时间说的话，用 schedule_active_message 重新排一条。');
+    parts.push('这几条是用户直接取消的，相关约定不再生效，自然接受即可、不必向用户求证，也别再拿它们许诺。'
+      + (finalRound ? '' : '还想在别的时间说的话，用 schedule_active_message 重新排一条。'));
+    if (marked) parts.splice(start, parts.length - start, markedSection(userCancelled, parts.slice(start)));
   }
 
   return parts;
@@ -135,14 +161,17 @@ export function buildAmsg2NoticesText(
   expired: Amsg2ExpiredNoticeRecord[],
   charTz: string | undefined,
   targetName?: string,
+  /** 云端模板用：每条、每段带编号标记，worker 按条去掉发过的（见 buildNoticeSections 的 marked）。 */
+  opts: { marked?: boolean } = {},
 ): string | null {
   if (!expired.length) return null;
   const target = targetName?.trim() || '对方';
-  return [
-    '【你的主动消息排程·仅你可见】',
-    ...buildNoticeSections(expired, charTz, target),
-    AMSG2_SCHEDULE_SECRECY_NOTE.replace('用户', target),
-  ].join('\n');
+  const heading = '【你的主动消息排程·仅你可见】';
+  const secrecy = AMSG2_SCHEDULE_SECRECY_NOTE.replace('用户', target);
+  if (opts.marked) {
+    return `${heading}\n${buildNoticeSections(expired, charTz, target, false, true).join('')}${secrecy}`;
+  }
+  return [heading, ...buildNoticeSections(expired, charTz, target), secrecy].join('\n');
 }
 
 /** 纯拼文案，方便单测。常驻简介总在，进行中/回执两段有料才各自出现。 */
@@ -167,11 +196,26 @@ export function buildAmsg2TaskContextText(
   targetName?: string,
   /** 「用户给你定的规矩」（amsgLimits.buildLimitsBrief），紧跟常驻简介。 */
   limitsBrief?: string,
+  /**
+   * 排程走原生 tools 还是正文协议。text（中转拒 tools）时不教取消和改期：云端同样只在
+   * native 模式给那两个工具，正文协议只教排程一种写法。不传按 native 写。
+   */
+  mode?: 'native' | 'text',
+  /**
+   * 工具循环的最后一轮：请求不带工具、不教语法，清单后面那句「怎么改 / 怎么再排」也不说，
+   * 免得同一份 prompt 一边说不能再调用工具、一边教角色再排一条。不传按非最后一轮写。
+   */
+  finalRound?: boolean,
 ): string {
   const target = targetName?.trim() || '对方';
   const isNewThisTurn = (taskUuid: string) => !!createdThisTurn?.has(taskUuid);
   const hasNewThisTurn = pending.some((t) => isNewThisTurn(t.taskUuid));
-  const parts: string[] = ['【你的主动消息排程·仅你可见】', buildAmsg2ChatScheduleBrief(target)];
+  // 最后一轮不能再调用工具，常驻简介（教「什么时候排、怎么排」）换成一句说明；进行中清单和回执照列，
+  // 角色仍要知道自己名下有哪些承诺，别在正文里许一遍。
+  const parts: string[] = [
+    '【你的主动消息排程·仅你可见】',
+    finalRound ? '这一轮排不了新的主动消息了。' : buildAmsg2ChatScheduleBrief(target),
+  ];
   if (limitsBrief) parts.push(limitsBrief);
 
   if (pending.length) {
@@ -184,14 +228,18 @@ export function buildAmsg2TaskContextText(
         + ` · ${describeTaskMode(t)} · ${describeExpirePolicy(t.expirePolicy)}`
         + (isNewThisTurn(t.taskUuid) ? ' · 本轮刚排的' : ''));
     }
-    parts.push('（想调整就用 schedule/cancel/renew 工具；内容方向变了用 cancel + schedule 重建。'
+    parts.push((finalRound
+      ? '（这几条这一轮改不了。'
+      : mode === 'text'
+      ? '（这几条这一轮改不了；还想再排就按正文排程的写法另写一条。'
+      : '（想调整就用 schedule/cancel/renew 工具；内容方向变了用 cancel + schedule 重建。')
       + (hasNewThisTurn ? '标着「本轮刚排的」是你这次回复里已经排好的，别再排一条一样的。' : '')
       + '）');
     // 只在有任务时说：一条都没排的时候没有可催的事，白占一行还提醒模型「催」这件事存在。
     parts.push(AMSG2_SCHEDULE_NOT_YET_NOTE);
   }
 
-  parts.push(...buildNoticeSections(expired, charTz, target));
+  parts.push(...buildNoticeSections(expired, charTz, target, finalRound));
 
   // 约束放在块尾，管住上面每一种形态。挂在某一段里的话，只有进行中任务的那次就是裸奔的：
   // 短 id、「到点看情况」这些系统腔会被角色当成可以复述的内容念出来。

@@ -77,6 +77,7 @@ export const MIRRORED_KEYS: readonly string[] = [
     'aetheros.mcd.mcpEnabled',
     'aetheros.mcp.servers',
     'aetheros.mcp.useNativeTools',
+    'aetheros.mcp.allowCloudDestructive',
     // 音乐登录、播放队列与自创专辑
     'sully_music_cfg_v1',
     'sully_music_state_v1',

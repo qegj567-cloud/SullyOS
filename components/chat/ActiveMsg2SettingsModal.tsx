@@ -139,7 +139,6 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
   const [recurrenceType, setRecurrenceType] = useState<ActiveMsg2Recurrence>('none');
   const [userMessage, setUserMessage] = useState('');
   const [promptHint, setPromptHint] = useState('');
-  const [maxTokens, setMaxTokens] = useState(String(saved?.maxTokens ?? ''));
   // 「主动频率」那一页开没开（它自带保存按钮，见 ActiveMsg2PacingModal）。
   const [pacingOpen, setPacingOpen] = useState(false);
   const [globalReady, setGlobalReady] = useState(false);
@@ -195,7 +194,6 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
   }, [isOpen]);
 
   // 表单值重置：面板打开或切换编辑对象时，用被编辑任务的字段填表单（新建则填默认值）。
-  // 角色级共享设置（maxTokens）始终跟随保存值。
   useEffect(() => {
     if (!isOpen) return;
 
@@ -205,7 +203,6 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
     // 工具注入门分家（见 isAmsg2EnabledForChar 的注释）。
     setEnabled(isAmsg2EnabledForChar(char));
     setInstantChatOn(config?.instantChatEnabled !== false);
-    setMaxTokens(config?.maxTokens ? String(config.maxTokens) : '');
 
     const editing = editingTaskUuid ? list.find((t) => t.taskUuid === editingTaskUuid) : undefined;
     if (editing) {
@@ -324,7 +321,6 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
 
   /**
    * 拼一份要落盘的 config：
-   *   - 角色级共享设置（maxTokens）以面板表单为准——只有面板编辑它们；
    *   - 任务清单以「落盘那一刻的最新清单」为准，面板只通过 tasksOf 声明自己动了哪一条。
    * 别把渲染时的 tasks 整份传下去，原因见 onSave 的注释。
    */
@@ -342,7 +338,6 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
     ...pickPacingSettings(prev),
     // 开着就存 undefined（= 跟随全局默认开），只有显式关掉才落 false。
     instantChatEnabled: instantChatOn ? undefined : false,
-    maxTokens: maxTokens.trim() ? Number(maxTokens) : undefined,
     lastSyncedAt: prev?.lastSyncedAt,
     ...extra,
   });
@@ -350,7 +345,7 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
   const confirmEnableWithoutTimeAwareness = () => {
     setTimeAwareConfirmOpen(false);
     if (!enabled) setEnabled(!enabled);
-    // 顺手把面板上其它角色级设置（maxTokens）一起带上，与
+    // 顺手把面板上其它角色级设置（即时对话开关）一起带上，与
     // buildConfig 的口径一致：这几项本来就只有面板会写。
     const extra: Partial<ActiveMsg2CharacterConfig> = {
       enabled: true,
@@ -387,7 +382,7 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
     }
     setTimeAwareConfirmOpen(false);
     setEnabled(!enabled);
-    // 顺手把面板上其它角色级设置（maxTokens）一起带上，与
+    // 顺手把面板上其它角色级设置（即时对话开关）一起带上，与
     // buildConfig 的口径一致：这几项本来就只有面板会写。
     if (turningOn) {
       const extra: Partial<ActiveMsg2CharacterConfig> = {
@@ -561,7 +556,6 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
       }
       onSave((prev) => outcome.applyToConfig(prev, {
         instantChatEnabled: instantChatOn ? undefined : false,
-        maxTokens: maxTokens.trim() ? Number(maxTokens) : undefined,
       }));
       if (enabled) setEnabled(!enabled);
       setTimeAwareConfirmOpen(false);
@@ -1090,18 +1084,6 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
                   <p className="amsg-caption mb-2">仅供参考，TA 仍可自行选择话题。</p>
                   {hintInput}
                 </details>}
-
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">单次回复长度上限 (可选)</label>
-                  <input
-                    type="number"
-                    min={1}
-                    value={maxTokens}
-                    onChange={(event) => setMaxTokens(event.target.value)}
-                    placeholder="例如 120"
-                    className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-sm"
-                  />
-                </div>
               </>
             )}
 
