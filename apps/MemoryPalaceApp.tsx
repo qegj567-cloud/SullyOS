@@ -2601,7 +2601,7 @@ export default function MemoryPalaceApp() {
             <div
                 style={{
                     paddingLeft: 20, paddingRight: 20, paddingBottom: 28, paddingTop: SAFE_PAD_TOP,
-                    maxHeight: '100%', overflowY: 'auto',
+                    maxHeight: '100%', overflowY: 'auto', overflowX: 'hidden',
                     background: 'linear-gradient(180deg, #faf5ff 0%, #f5f3ff 40%, #ffffff 100%)',
                     minHeight: '100%',
                     position: 'relative',
