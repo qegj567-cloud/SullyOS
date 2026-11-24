@@ -113,6 +113,7 @@ import { Like520Controller, shouldShowLike520Popup } from './Like520Event';
 import { QixiLaunchPopup } from './QixiLaunchPopup';
 import { shouldShowQixiLaunchPopup } from '../utils/qixiLaunchPopup';
 import { UpdateNotificationController, shouldShowUpdateNotification } from './UpdateNotificationEvent';
+import CanaryChangelog, { CANARY_CHANGELOG_ON_BOOT } from './CanaryChangelog';
 import { BackupReminderController } from './BackupReminderEvent';
 import { shouldShowBackupReminder, markBackupReminderShown, daysSinceLastBackup } from '../utils/backupReminder';
 import { formatBytes } from '../utils/format';
@@ -739,6 +740,17 @@ const PhoneShell: React.FC = () => {
     }
   }, [anniversaryHasPriority, startupNoticesBlocked, showImportRecoveryPrompt, showAuthorLetter, showUpdateNotification, showQixiLaunchPopup, showLike520Popup, isDataLoaded, isLocked]);
 
+  // canary 更新日志：排在启动提醒的最后，正式版里永远是空的（docs/canary-channel.md「更新日志」）。
+  const [showCanaryChangelog, setShowCanaryChangelog] = useState(false);
+  const canaryChangelogAsked = useRef(false);
+  useEffect(() => {
+    if (canaryChangelogAsked.current || CANARY_CHANGELOG_ON_BOOT.length === 0) return;
+    if (anniversaryHasPriority || startupNoticesBlocked || showImportRecoveryPrompt || showAuthorLetter || showUpdateNotification || shouldShowUpdateNotification() || showQixiLaunchPopup || showLike520Popup || showBackupReminder) return;
+    if (!isDataLoaded || isLocked) return;
+    canaryChangelogAsked.current = true;
+    setShowCanaryChangelog(true);
+  }, [anniversaryHasPriority, startupNoticesBlocked, showImportRecoveryPrompt, showAuthorLetter, showUpdateNotification, showQixiLaunchPopup, showLike520Popup, showBackupReminder, isDataLoaded, isLocked]);
+
   const dismissBackupReminder = () => {
     markBackupReminderShown();
     setShowBackupReminder(false);
@@ -1201,12 +1213,12 @@ const PhoneShell: React.FC = () => {
 
        <FeedbackInvitation
          ready={isDataLoaded && !isLocked && (bootDone || !bootAnimationEnabled)}
-         blocked={activeApp !== AppID.Launcher || !!suspendedCall || !!suspendedDate || !!errorDialog || sysOperation.status !== 'idle' || anniversaryHasPriority || showDisclaimer || showImportRecoveryPrompt || showAuthorLetter || showUpdateNotification || shouldShowUpdateNotification() || showQixiLaunchPopup || showLike520Popup || showBackupReminder}
+         blocked={activeApp !== AppID.Launcher || !!suspendedCall || !!suspendedDate || !!errorDialog || sysOperation.status !== 'idle' || anniversaryHasPriority || showDisclaimer || showImportRecoveryPrompt || showAuthorLetter || showUpdateNotification || shouldShowUpdateNotification() || showQixiLaunchPopup || showLike520Popup || showBackupReminder || showCanaryChangelog}
        />
 
        <BeautyRepoInvitation
          ready={isDataLoaded && !isLocked && (bootDone || !bootAnimationEnabled)}
-         blocked={activeApp !== AppID.Launcher || !!suspendedCall || !!suspendedDate || !!errorDialog || sysOperation.status !== 'idle' || anniversaryHasPriority || showDisclaimer || showImportRecoveryPrompt || showAuthorLetter || showUpdateNotification || shouldShowUpdateNotification() || showQixiLaunchPopup || showLike520Popup || showBackupReminder}
+         blocked={activeApp !== AppID.Launcher || !!suspendedCall || !!suspendedDate || !!errorDialog || sysOperation.status !== 'idle' || anniversaryHasPriority || showDisclaimer || showImportRecoveryPrompt || showAuthorLetter || showUpdateNotification || shouldShowUpdateNotification() || showQixiLaunchPopup || showLike520Popup || showBackupReminder || showCanaryChangelog}
        />
        {/* 「该备份啦」提醒（local-first 数据只在本机，隔 N 天没导出弹一次） */}
        {!anniversaryHasPriority && !showDisclaimer && !showImportRecoveryPrompt && !showAuthorLetter && !showUpdateNotification && !showQixiLaunchPopup && !showLike520Popup && showBackupReminder && (
@@ -1214,6 +1226,9 @@ const PhoneShell: React.FC = () => {
            onDismiss={dismissBackupReminder}
            onGoBackup={goBackupFromReminder}
          />
+       )}
+       {showCanaryChangelog && (
+         <CanaryChangelog days={CANARY_CHANGELOG_ON_BOOT} onClose={() => setShowCanaryChangelog(false)} />
        )}
     </div>
   );

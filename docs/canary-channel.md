@@ -11,7 +11,7 @@
 | Worker 成品包 | 部署仓库 `main` 分支 | 部署仓库 `canary` 分支 |
 | 谁在用 | 所有人 | 解锁调试面板后手动加入的人 |
 
-发版流程：dev 上某一版可以给志愿者试了，就把 `canary` 分支快进到那个提交（或开 PR dev→canary）。push 之后，CI 先把 Worker 包同步到部署仓库的 `canary` 分支，再部署 canary 前端。确认没问题后照常走 dev→master。合进 dev 不会自动发到 canary，不快进 `canary` 分支，线上 canary 就一直是上一次发布的构建。
+发版流程：dev 上某一版可以给志愿者试了，就把 `canary` 分支快进到那个提交（或开 PR dev→canary）。快进之前先在 `utils/canaryChangelog.ts` 里补当天的更新日志（见下文「更新日志」）。push 之后，CI 先把 Worker 包同步到部署仓库的 `canary` 分支，再部署 canary 前端。确认没问题后照常走 dev→master。合进 dev 不会自动发到 canary，不快进 `canary` 分支，线上 canary 就一直是上一次发布的构建。
 
 ```bash
 git fetch origin && git push origin origin/dev:refs/heads/canary
@@ -46,7 +46,7 @@ canary 前端挂在 `friedsully.com/canary/`，和正式版同一个网址。浏
 
 入口是设置底部版本信息下方的「正式版 | canary」标签。正式版上要先连点 5 下版本号、解锁调试面板后才出现，让人数保持在少量；在 canary 里一直显示，退出不藏。切换都用 `useConfirmDialog` 二次确认。确认加入后，屏幕边缘亮起黄光、一道光从底部扫到顶部，直到页面跳走；Worker 换得再快也至少扫完一遍（1.4 秒）。系统开了减弱动态效果时只亮不扫。
 
-canary 构建不挂开发角标（分支@提交号那三行），改在右下角放一个小黄点。设置底部可以取消「右下角显示 canary 黄点」，偏好存在 localStorage 的 `sullyos_canary_dot_hidden`，只属于这台设备，不进备份。预览页 `test/fixtures/canary-channel.html`（`?glow` 看加入动画，`?arrive` 看落地动画，`?update` 看更新卡片）。
+canary 构建不挂开发角标（分支@提交号那三行），改在右下角放一个小黄点。设置底部可以取消「右下角显示 canary 黄点」，偏好存在 localStorage 的 `sullyos_canary_dot_hidden`，只属于这台设备，不进备份。预览页 `test/fixtures/canary-channel.html`（`?glow` 看加入动画，`?arrive` 看落地动画，`?update` 看更新卡片，`?changelog` 看更新日志）。
 
 ### 小金丝雀
 
@@ -95,6 +95,17 @@ iOS 主屏幕 PWA 没有地址栏，canary 如果白屏，用户连设置都进�
 ### 推送订阅
 
 推送订阅挂在 Service Worker 注册上，两个前端各有一份。切换通道后到达的那一边，如果开着 2.0 且已授权通知，会调用一次 `registerPushSubscription()`，把自己的订阅登记到 Worker 上，否则主动消息会推到另一边的 SW。
+
+### 更新日志
+
+canary 更新得勤、每次改动小，不做正式版那种整页更新说明，只在更新后第一次打开时弹一个小卡片，按天列出没看过的条目。
+
+- **内容手写**，在 `utils/canaryChangelog.ts` 的 `CANARY_CHANGELOG` 里。每次快进 `canary` 分支之前，在最上面补当天的条目，同一天发几次就往当天追加。写给志愿者看：这次能试什么、修了什么，一条一句，不写提交信息原文。忘了写就不弹，不影响发布。
+- **按条目认已读**。每条以「日期 + 原文」为准，关掉卡片时把日志里现有的条目全部记进 localStorage 的 `sullyos_canary_changelog_seen`（设备状态，不进备份）。改了某条的措辞会被当成新条目再弹一次；删掉的旧条目从记录里一起消失，记录不会越攒越大。
+- **刚加入那次不弹**，把现有条目直接记成看过：那次启动有小金丝雀落地动画，而且加入不是一次更新，之前的条目对新人没意义。
+- **排在启动提醒最后**：正式版的更新公告、活动弹窗、「该备份啦」都处理完才轮到它，桌面上的邀请卡片给它让路。正式版公告里点了「立刻体验」跳走、剩下几条没看完时，这次启动不弹，下次再弹。
+- 读不出存储时不弹，免得每次开机都弹。
+- 预览：`test/fixtures/canary-channel.html?changelog`（示例条目，不写已读）。
 
 ## Worker
 
