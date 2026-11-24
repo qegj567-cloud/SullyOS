@@ -4,6 +4,7 @@ import { CLOUD_GEN_PURPOSE_META, type CloudGenJobRecord, type CloudGenPurpose } 
 import { dismissCloudGenJob, listCloudGenJobs, subscribeCloudGenJobs, sweepStaleCloudGenJobs } from '../../utils/cloudGen/registry';
 import { isCloudGenHintOff, openCloudGenSheet, subscribeCloudGenSheet } from '../../utils/cloudGen/hint';
 import { loadCloudGenLander } from '../../utils/cloudGen/landers';
+import { trackCloudGenHint } from '../../utils/cloudGen/analytics';
 
 /** 人格模拟、梦境写好后的「… · 进入」用各自原来的胶囊（PersonaSimIndicator / DreamSimIndicator），这里只管日程的。 */
 const OWN_READY_PILL_PURPOSES: ReadonlySet<CloudGenPurpose> = new Set<CloudGenPurpose>(['persona-sim', 'dream']);
@@ -100,6 +101,7 @@ const CloudGenIndicator: React.FC = () => {
         try {
             const lander = await loadCloudGenLander(pill.record.purpose);
             lander.open?.(pill.record);
+            trackCloudGenHint(pill.record.purpose, 'enter');
             dismissCloudGenJob(pill.record.jobId);
         } catch (error) {
             // 落地代码没加载出来：胶囊留着，可以再点一次。

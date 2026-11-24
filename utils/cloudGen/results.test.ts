@@ -7,6 +7,7 @@ const h = vi.hoisted(() => ({
   readAttachment: vi.fn(),
   getRemoteTaskStatus: vi.fn(),
   settleCloudApiCall: vi.fn(),
+  trackEvent: vi.fn(),
   lander: {
     land: vi.fn(),
     onFailed: vi.fn(async () => {}),
@@ -21,13 +22,14 @@ vi.mock('../apiCallLog', () => ({
   cloudApiCallLogId: (id: string) => `cloud-${id}`,
   settleCloudApiCall: h.settleCloudApiCall,
 }));
-vi.mock('../analytics', () => ({ trackEvent: vi.fn() }));
+vi.mock('../analytics', () => ({ trackEvent: h.trackEvent }));
 vi.mock('./landers', () => ({ loadCloudGenLander: async () => h.lander }));
 
 import { dispatchAmsgResult } from '../amsgResults';
 import { applyCloudGenResult } from './results';
 import {
-  CLOUD_GEN_STALE_MS, getCloudGenJobById, isCloudGenJobDone, listCloudGenJobs, putCloudGenJob, sweepStaleCloudGenJobs,
+  CLOUD_GEN_STALE_MS, cloudGenJobLeftPage, getCloudGenJobById, isCloudGenJobDone, listCloudGenJobs,
+  markRunningCloudGenJobsLeft, putCloudGenJob, sweepStaleCloudGenJobs,
 } from './registry';
 
 const REF = { version: 1, namespace: 'amsg:attachments', key: 'k', taskUuid: 'tu', occurrenceMs: 1, expiresAt: 2 };
@@ -47,6 +49,7 @@ beforeEach(() => {
   h.readAttachment.mockReset().mockResolvedValue(OUTPUT);
   h.getRemoteTaskStatus.mockReset();
   h.settleCloudApiCall.mockClear();
+  h.trackEvent.mockClear();
   h.lander.land.mockReset().mockResolvedValue('landed');
   h.lander.onFailed.mockClear();
   h.lander.acceptsOrphanResults = false;
@@ -162,5 +165,74 @@ describe('点名兜底', () => {
   it('超过一天的记录不论状态都清掉，免得一直挡着这个功能', () => {
     putCloudGenJob(record({ submittedAt: Date.now() - 25 * 60 * 60_000 }));
     expect(listCloudGenJobs()).toEqual([]);
+  });
+});
+
+describe('埋点：用时、期间离开过、失败与丢弃原因', () => {
+  const tracked = () => h.trackEvent.mock.calls.filter(([name]) => name === '云端生成').map(([, data]) => data);
+
+  it('结果带着 Worker 落账时刻 → 按它算用时', async () => {
+    const submittedAt = Date.now();
+    putCloudGenJob(record({ submittedAt }));
+    await applyCloudGenResult(okResult(), { createdAt: submittedAt + 200_000 });
+    expect(tracked()).toEqual([{ 功能: '人格模拟', 结果: '已落地', 云端用时: '3-5分钟', 期间离开过: '否' }]);
+  });
+
+  it('推送直达没带落账时刻：页面一直开着按现在算，离开过就报未知', async () => {
+    putCloudGenJob(record());
+    await applyCloudGenResult(okResult());
+    putCloudGenJob(record({ jobId: 'job-2', charId: 'c2' }));
+    markRunningCloudGenJobsLeft();
+    await applyCloudGenResult(okResult('job-2'));
+    expect(tracked()).toEqual([
+      { 功能: '人格模拟', 结果: '已落地', 云端用时: '1分钟内', 期间离开过: '否' },
+      { 功能: '人格模拟', 结果: '已落地', 云端用时: '未知', 期间离开过: '是' },
+    ]);
+  });
+
+  it('早于这次页面加载交出的算离开过（页面被杀后重开）', () => {
+    const before = record({ submittedAt: performance.timeOrigin - 1 });
+    expect(cloudGenJobLeftPage(before)).toBe(true);
+    expect(cloudGenJobLeftPage(record())).toBe(false);
+  });
+
+  it('进后台只给在飞的记上离开过', () => {
+    putCloudGenJob(record());
+    putCloudGenJob(record({ jobId: 'landed', charId: 'c2', status: 'landed', settledAt: Date.now() }));
+    markRunningCloudGenJobsLeft();
+    expect(getCloudGenJobById('job-1')?.leftPage).toBe(true);
+    expect(getCloudGenJobById('landed')?.leftPage).toBeUndefined();
+  });
+
+  it('查不到登记直接丢掉的那份也报：已丢弃 / 查不到登记，不带离开过', async () => {
+    await applyCloudGenResult(okResult('stranger'), { createdAt: Date.now() });
+    expect(tracked()).toEqual([{ 功能: '人格模拟', 结果: '已丢弃', 云端用时: '未知', 原因: '查不到登记' }]);
+  });
+
+  it('落地函数说不要了 → 已丢弃 / 现场变了', async () => {
+    putCloudGenJob(record());
+    h.lander.land.mockResolvedValue('discarded');
+    await applyCloudGenResult(okResult());
+    expect(tracked()).toEqual([{ 功能: '人格模拟', 结果: '已丢弃', 云端用时: '1分钟内', 期间离开过: '否', 原因: '现场变了' }]);
+  });
+
+  it('云端报失败：码按白名单映射，毒药串只会报出「其他」', async () => {
+    putCloudGenJob(record());
+    const poison = 'sk-POISON https://x';
+    await applyCloudGenResult({ ...okResult(), ok: false, attachment: undefined, error: { code: poison, message: poison } });
+    putCloudGenJob(record({ jobId: 'job-2', charId: 'c2' }));
+    await applyCloudGenResult({ ...okResult('job-2'), ok: false, attachment: undefined, error: { code: 'LLM_CALL_FAILED', message: '429' } });
+    expect(tracked()).toEqual([
+      { 功能: '人格模拟', 结果: '失败', 云端用时: '1分钟内', 期间离开过: '否', 原因: '其他' },
+      { 功能: '人格模拟', 结果: '失败', 云端用时: '1分钟内', 期间离开过: '否', 原因: '模型报错' },
+    ]);
+    expect(JSON.stringify(h.trackEvent.mock.calls)).not.toMatch(/POISON|https|429|小明|c1/);
+  });
+
+  it('点名兜底标失败：用时未知，原因照码映射', async () => {
+    putCloudGenJob(record({ uuid: 'u-gone', submittedAt: Date.now() - CLOUD_GEN_STALE_MS - 1000 }));
+    h.getRemoteTaskStatus.mockResolvedValue({ state: 'gone' });
+    await sweepStaleCloudGenJobs();
+    expect(tracked()).toEqual([{ 功能: '人格模拟', 结果: '失败', 云端用时: '未知', 期间离开过: '是', 原因: '任务丢失' }]);
   });
 });

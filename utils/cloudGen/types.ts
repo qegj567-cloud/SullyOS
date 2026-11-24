@@ -57,6 +57,8 @@ export interface CloudGenJobRecord {
    * 上传那几秒里切走照样会断；答复丢了、不知道交没交上的那种也不写，免得叫用户放心离开。
    */
   acceptedAt?: number;
+  /** 在飞期间页面进过后台（只用于埋点的「期间离开过」，见 registry.ts 的 cloudGenJobLeftPage）。 */
+  leftPage?: boolean;
   status: 'running' | 'landed' | 'failed';
   error?: { code: string; message: string };
   /** 完成时有没有发通知（这个功能的「完成时通知」开关）。 */

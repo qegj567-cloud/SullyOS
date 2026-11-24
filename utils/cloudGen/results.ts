@@ -12,6 +12,7 @@ import type { AmsgResultContext } from '../amsgResults';
 import { trackCloudGenOutcome } from './analytics';
 import { loadCloudGenLander } from './landers';
 import {
+  cloudGenJobLeftPage,
   getCloudGenJobById,
   isCloudGenJobDone,
   markCloudGenJobDone,
@@ -70,6 +71,11 @@ export const applyCloudGenResult = async (payload: unknown, context?: AmsgResult
       jobId, purpose, charId: result.charId,
       ...(context?.createdAt ? { createdAt: context.createdAt } : {}),
     };
+    // 埋点的用时：createdAt 是 Worker 把结果写进结果箱的时刻，紧跟在模型返回之后；推送直达不带它，
+    // 这时页面一直开着才拿现在当生成完的时刻，离开过就不知道结果在路上躺了多久。
+    const leftPage = record ? cloudGenJobLeftPage(record) : undefined;
+    const finishedAt = context?.createdAt || (leftPage === false ? Date.now() : undefined);
+    const timing = record ? { leftPage, ...(finishedAt ? { elapsedMs: finishedAt - record.submittedAt } : {}) } : {};
     const lander = await loadCloudGenLander(purpose);
 
     // 失败收尾：云端报失败、附件取不回、落地函数判这份结果不合格，三条路同一个出口。
@@ -77,7 +83,7 @@ export const applyCloudGenResult = async (payload: unknown, context?: AmsgResult
       settleLog(jobId, false, result.usage);
       const failed = record ? markCloudGenJobFailed(jobId, error) : null;
       if (failed) {
-        trackCloudGenOutcome(purpose, 'failed');
+        trackCloudGenOutcome(purpose, 'failed', { ...timing, error });
         try { await lander.onFailed?.(failed, error); } catch (hookError) {
           console.warn(`${HEADER} ${purpose} 失败收尾出错（不影响销账）`, hookError);
         }
@@ -96,6 +102,7 @@ export const applyCloudGenResult = async (payload: unknown, context?: AmsgResult
       console.warn(`${HEADER} ${purpose} 结果在登记表里查不到（job ${jobId}），丢弃`);
       settleLog(jobId, false, result.usage);
       markCloudGenJobDone(jobId);
+      trackCloudGenOutcome(purpose, 'discarded', { discardReason: 'unregistered' });
       return true;
     }
 
@@ -116,7 +123,7 @@ export const applyCloudGenResult = async (payload: unknown, context?: AmsgResult
     }
     markCloudGenJobDone(jobId);
     settleLog(jobId, outcome === 'landed', result.usage);
-    trackCloudGenOutcome(purpose, outcome);
+    trackCloudGenOutcome(purpose, outcome, { ...timing, ...(outcome === 'discarded' ? { discardReason: 'stale' as const } : {}) });
     if (outcome === 'landed') updateCloudGenJob(jobId, { status: 'landed', settledAt: Date.now() });
     else removeCloudGenJob(jobId);
     return true;

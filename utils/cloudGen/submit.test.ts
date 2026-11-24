@@ -39,7 +39,7 @@ vi.mock('../analytics', () => ({ trackEvent: h.trackEvent }));
 
 import { trySubmitCloudGeneration } from './submit';
 import { getCloudGenJob, getCloudGenJobById, isCloudGenJobDone, putCloudGenJob } from './registry';
-import { buildCloudGenAnalytics } from './analytics';
+import { bucketCloudGenElapsed, buildCloudGenAnalytics, trackCloudGenSwitch } from './analytics';
 import { CLOUD_GEN_NAMESPACE } from '../amsgCloudGenJob';
 
 const API = { baseUrl: 'https://api.example/v1', apiKey: 'sk-test', model: 'some-model' };
@@ -208,7 +208,37 @@ describe('埋点只报写死的枚举', () => {
     expect(buildCloudGenAnalytics('schedule', 'local', 'feature-off')).toBeNull();
     expect(buildCloudGenAnalytics('schedule', 'local', 'no-credentials')).toBeNull();
     expect(buildCloudGenAnalytics('dream', 'local', 'kick-failed')).toEqual({ 功能: '梦境', 结果: '转本机', 原因: '没能开跑' });
-    expect(buildCloudGenAnalytics('persona-sim', 'landed')).toEqual({ 功能: '人格模拟', 结果: '已落地' });
+    expect(buildCloudGenAnalytics('persona-sim', 'landed')).toEqual({ 功能: '人格模拟', 结果: '已落地', 云端用时: '未知' });
+  });
+
+  it('用时分档的边界', () => {
+    expect([0, 59_999, 60_000, 179_999, 180_000, 299_999, 300_000, 3_600_000].map(bucketCloudGenElapsed))
+      .toEqual(['1分钟内', '1分钟内', '1-3分钟', '1-3分钟', '3-5分钟', '3-5分钟', '5分钟以上', '5分钟以上']);
+    // 没有、算不出来、钟没对齐成负数，都是未知。
+    expect([undefined, NaN, Infinity, -1].map(bucketCloudGenElapsed)).toEqual(['未知', '未知', '未知', '未知']);
+  });
+
+  it('收尾带用时和期间离开过；查不到登记时不报离开过', () => {
+    expect(buildCloudGenAnalytics('schedule', 'landed', { elapsedMs: 90_000, leftPage: false }))
+      .toEqual({ 功能: '日程', 结果: '已落地', 云端用时: '1-3分钟', 期间离开过: '否' });
+    expect(buildCloudGenAnalytics('dream', 'discarded', { leftPage: true, discardReason: 'stale' }))
+      .toEqual({ 功能: '梦境', 结果: '已丢弃', 云端用时: '未知', 期间离开过: '是', 原因: '现场变了' });
+    expect(buildCloudGenAnalytics('dream', 'discarded', { discardReason: 'unregistered' }))
+      .toEqual({ 功能: '梦境', 结果: '已丢弃', 云端用时: '未知', 原因: '查不到登记' });
+  });
+
+  it('失败原因按白名单从错误码映射；单次调用撞 5 分钟上限靠超时字样认出来', () => {
+    const reasonOf = (code: string, message = '') => buildCloudGenAnalytics('schedule', 'failed', { error: { code, message } })?.原因;
+    expect(reasonOf('AGENTIC_TOTAL_TIMEOUT')).toBe('超时');
+    expect(reasonOf('llm-timeout')).toBe('超时');
+    expect(reasonOf('generation-failed', 'The operation was aborted due to timeout')).toBe('超时');
+    expect(reasonOf('generation-failed', 'runtime output broken')).toBe('其他');
+    expect(reasonOf('LLM_CALL_FAILED', 'AI API error: 504 Gateway Timeout')).toBe('模型报错');
+    expect(reasonOf('invalid-output')).toBe('结果不合格');
+    expect(reasonOf('attachment-missing')).toBe('结果取不回');
+    expect(reasonOf('lost')).toBe('任务丢失');
+    expect(reasonOf('input-missing')).toBe('输入丢失');
+    expect(buildCloudGenAnalytics('schedule', 'failed')?.原因).toBe('其他');
   });
 
   it('运行时字符串混进来也不会出现在上报里', () => {
@@ -216,6 +246,33 @@ describe('埋点只报写死的枚举', () => {
     expect(buildCloudGenAnalytics(poison as any, 'submitted')).toBeNull();
     expect(buildCloudGenAnalytics('schedule', poison as any)).toBeNull();
     expect(buildCloudGenAnalytics('schedule', 'local', poison as any)).toBeNull();
+    // 原型链上的名字也不算命中。
+    expect(buildCloudGenAnalytics('schedule', 'constructor' as any)).toBeNull();
+    expect(buildCloudGenAnalytics('schedule', 'local', 'constructor' as any)).toBeNull();
+  });
+
+  it('错误码和报错原文塞毒药串，失败原因只会是「其他」，原文不进上报', () => {
+    const poison = 'sk-POISON https://x';
+    for (const error of [
+      { code: poison, message: poison },
+      { code: poison, message: `${poison} timed out` },
+      { code: 'constructor', message: poison },
+      { code: 'generation-failed', message: poison },
+    ]) {
+      const data = buildCloudGenAnalytics('persona-sim', 'failed', { error, discardReason: poison as any, leftPage: false });
+      expect(data).toEqual({ 功能: '人格模拟', 结果: '失败', 云端用时: '未知', 期间离开过: '否', 原因: '其他' });
+    }
+    expect(buildCloudGenAnalytics('dream', 'discarded', { discardReason: poison as any })).toEqual({ 功能: '梦境', 结果: '已丢弃', 云端用时: '未知' });
+  });
+
+  it('切换云端生成：改了哪个开关报哪个，认不出的功能不报', () => {
+    trackCloudGenSwitch('dream', { enabled: false });
+    trackCloudGenSwitch('schedule', { notify: true });
+    trackCloudGenSwitch('POISON' as any, { enabled: true });
+    expect(h.trackEvent.mock.calls).toEqual([
+      ['切换云端生成', { 功能: '梦境', 开关: '云端生成', 动作: '关' }],
+      ['切换云端生成', { 功能: '日程', 开关: '完成时通知', 动作: '开' }],
+    ]);
   });
 
   it('一次成功提交只发一条，属性里没有角色、模型或地址', async () => {

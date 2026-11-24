@@ -544,3 +544,51 @@ export function noteMessageSent(): void {
   });
 }
 
+// ===== 本次会话即时对话 =====
+// 给两条只报失败的即时对话事件补分母，口径同上；云端任务失败可能是刷新后才查到的上次会话那轮，所以「轮数 0、失败 1」正常。
+
+let instantChatRounds = 0;
+let instantChatFailures = 0;
+let lastReportedInstantChatBuckets: string | null = null;
+let instantChatReporterInstalled = false;
+
+/** 单次会话即时对话失败轮数档位。 */
+export function bucketInstantChatFailures(count: number): string {
+  if (count <= 0) return '0';
+  if (count === 1) return '1';
+  if (count <= 5) return '2-5';
+  return '6+';
+}
+
+function reportInstantChatSession(): void {
+  const props = {
+    轮数: bucketSessionMessages(instantChatRounds),
+    失败轮数: bucketInstantChatFailures(instantChatFailures),
+  };
+  const buckets = `${props.轮数}|${props.失败轮数}`;
+  if (buckets === lastReportedInstantChatBuckets) return;
+  lastReportedInstantChatBuckets = buckets;
+  trackEvent('本次会话即时对话', props);
+}
+
+function installInstantChatReporter(): void {
+  if (instantChatReporterInstalled) return;
+  if (typeof document === 'undefined') return;
+  instantChatReporterInstalled = true;
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') reportInstantChatSession();
+  });
+}
+
+/** 记一轮交给云端的即时对话（受理成功或发送失败都算）。只加内存计数，不发请求。 */
+export function noteInstantChatRound(): void {
+  instantChatRounds += 1;
+  installInstantChatReporter();
+}
+
+/** 记一次即时对话失败（发送失败或云端任务失败）。只加内存计数，不发请求。 */
+export function noteInstantChatFailure(): void {
+  instantChatFailures += 1;
+  installInstantChatReporter();
+}
+

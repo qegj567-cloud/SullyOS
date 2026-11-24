@@ -28,7 +28,7 @@ import { ActiveMsg2InboxMessage, CharacterProfile, GroupProfile, RealtimeConfig,
 import { ActiveMsgClient, type AmsgOutboxEntry, type InstantChatProbeOutcome } from './activeMsgClient';
 import { ActiveMsgStore, isInstantChatSwitchedOn } from './activeMsgStore';
 import { isAmsg2GloballyEnabled } from './amsgGlobalGate';
-import { trackEvent } from './analytics';
+import { noteInstantChatFailure, noteInstantChatRound, trackEvent } from './analytics';
 import { appendInstantTraceEntry } from './instantTraceLog';
 import { formatUnknownError } from './errorSelfCheck';
 import { redactRelayTokensInText } from './networkRequestSource';
@@ -709,6 +709,7 @@ export const sendInstantChatTurn = async (params: {
         settleCloudApiCall({ id: cloudEmotionApiCallLogId(supersedes.uuid), ok: true, superseded: true });
       }
     }
+    noteInstantChatRound();
     return { ok: true, uuid };
   } catch (error: any) {
     if (params.signal?.aborted) {
@@ -719,6 +720,8 @@ export const sendInstantChatTurn = async (params: {
     // 只报失败、只有事件名（跟送达端那几条同一条口径）：失败原因里带着 HTTP 状态和
     // 上游报文，不进上报。用户侧同一时刻已经有明确的报错提示，这里只记「发生过」。
     trackEvent('即时对话发送失败');
+    noteInstantChatRound();
+    noteInstantChatFailure();
     // 没交上去的这一轮同样进记录：界面上那句报错关掉就没了，而日志里留得住——
     // 交不上去往往跟这次要发的东西有多大有关，输入构成就在这条记录里。
     recordCloudApiCall({
@@ -1049,6 +1052,8 @@ export const failInstantChatPending = async (
   // 只报失败、只有事件名：云端点名说这一轮没成（或回复取不回来）。这一格涨起来说明
   // 云端生成或推送链路在掉队，比用户来报「一直在输入」早得多。
   trackEvent('即时对话云端任务失败');
+  // 同一 uuid 不会重复计：上面先核对再销账（同步、中间没有 await），第二次进来已经对不上了。
+  noteInstantChatFailure();
   // 「API 调用记录」里那笔挂着的也收尾，否则它会一直写着「云端生成中」直到被裁掉。
   settleCloudApiCall({ id: cloudApiCallLogId(uuid), ok: false });
   if (consumeEmotionEvalInFlight(uuid)) {

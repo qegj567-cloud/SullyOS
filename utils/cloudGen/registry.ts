@@ -90,8 +90,38 @@ if (typeof window !== 'undefined') {
   });
 }
 
+// ─── 期间离开过页面（只给埋点用） ─────────────────────
+
+// 这次页面加载的起点；比它早交出的，中间页面一定关过或被杀过。
+const PAGE_STARTED_AT = (typeof performance !== 'undefined' && performance.timeOrigin) || Date.now();
+
+/** 页面进后台时给在飞的记上「离开过」。同步写：页面随时可能被杀，等不到下一拍。 */
+export const markRunningCloudGenJobsLeft = (): void => {
+  const all = readAll();
+  let changed = false;
+  for (const r of all) {
+    if (r.status === 'running' && !r.leftPage) { r.leftPage = true; changed = true; }
+  }
+  if (changed) writeAll(all);
+};
+
+let leaveWatchInstalled = false;
+const installLeaveWatch = (): void => {
+  if (leaveWatchInstalled || typeof window === 'undefined' || typeof document === 'undefined') return;
+  leaveWatchInstalled = true;
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') markRunningCloudGenJobsLeft();
+  });
+  window.addEventListener('pagehide', markRunningCloudGenJobsLeft);
+};
+
+/** 交出之后页面进没进过后台。 */
+export const cloudGenJobLeftPage = (record: CloudGenJobRecord): boolean =>
+  record.leftPage === true || record.submittedAt < PAGE_STARTED_AT;
+
 /** 新交一份：同一角色同一功能的旧记录一并顶掉。 */
 export const putCloudGenJob = (record: CloudGenJobRecord): void => {
+  installLeaveWatch();
   writeAll([
     ...readAll().filter((r) => r.jobId !== record.jobId && !(r.charId === record.charId && r.purpose === record.purpose)),
     record,
@@ -170,7 +200,8 @@ export const sweepStaleCloudGenJobs = async (now = Date.now()): Promise<void> =>
     const failed = markCloudGenJobFailed(record.jobId, error);
     if (failed) {
       settleCloudApiCall({ id: cloudApiCallLogId(record.jobId), ok: false });
-      trackCloudGenOutcome(record.purpose, 'failed');
+      // 点名时不知道云端是什么时候结束的，用时报「未知」。
+      trackCloudGenOutcome(record.purpose, 'failed', { error, leftPage: cloudGenJobLeftPage(failed) });
       // 跟云端报失败走同一个收尾：用户发起的功能要靠它弹失败提示，不然小条悄悄消失。
       try {
         const { loadCloudGenLander } = await import('./landers');

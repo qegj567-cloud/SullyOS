@@ -69,6 +69,7 @@ import { runWorldEpisode, rerollWorldCharBeat } from '../utils/worldHome/engine'
 import { migrateWorldDaySegs } from '../utils/worldHome/prompts';
 import { extractSseStreamError, isChatCompletionUrl, isSseResponseText, safeFetchJson } from '../utils/safeApi';
 import { captureApiRequestOnce, getApiCallAmbientContext, recordApiCall, setApiCallAmbientContext, updateApiRequestCaptureUsage } from '../utils/apiCallLog';
+import { beginLocalGen, endLocalGen } from '../utils/localGenInterruption';
 import { isUserLocationLookupUrl } from '../utils/userLocationPrivacy';
 import { exportUserLocationSettings } from '../utils/userLocationBackup';
 import { isGlobalStreamEnabled, upgradeChatBodyToStream, assembleUpgradedResponse } from '../utils/streamUpgrade';
@@ -1286,6 +1287,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               url: urlStr, method, headers: effectiveHeaders, body: sendArgs[1]?.body,
               explicitMeta: explicitMetaAtStart, ambientMeta: ambientMetaAtStart,
           });
+          const localGen = isChatCompletion ? beginLocalGen({ url: urlStr, method, purpose: (explicitMetaAtStart || ambientMetaAtStart)?.purpose }) : undefined;
 
           try {
               let response = await fetchLlm(sendArgs[0], sendArgs[1], originalFetch, true);
@@ -1326,6 +1328,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   try { usageClone = response.clone(); } catch { usageClone = null; }
                   if (usageClone) {
                       usageClone.text().then((t) => {
+                          endLocalGen(localGen);
                           const durationMs = Date.now() - fetchStartedAt;
                           const inStreamErr = ok && isSseResponseText(t, response.headers.get('content-type'))
                               ? extractSseStreamError(t)
@@ -1360,6 +1363,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                               setSystemLogs(prev => [httpLog, ...prev.slice(0, 49)]);
                           }
                       }).catch((streamErr) => {
+                          endLocalGen(localGen, streamErr);
                           const durationMs = Date.now() - fetchStartedAt;
                           // 流读取抛错代表响应并未成功完成，调用记录必须记为 ok: false
                           updateApiRequestCaptureUsage({ captureId: apiRequestCaptureId, ok: false });
@@ -1417,6 +1421,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                           }
                       });
                   } else {
+                      endLocalGen(localGen);
                       // clone 失败时，只有已经在上面完整拼装过的升级流才能确认正文收完。
                       if (ok && streamUpgraded) recentSuccessfulFetches.set(requestComparisonKey, { timestamp: Date.now(), status });
                       updateApiRequestCaptureUsage({ captureId: apiRequestCaptureId, ok });
@@ -1516,6 +1521,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               }
               return response;
           } catch (err: any) {
+              endLocalGen(localGen, err);
               const requestSignal = (sendArgs[1] as RequestInit | undefined)?.signal || (sendArgs[0] instanceof Request ? sendArgs[0].signal : undefined);
               if (isHomeAssetDisposal(err, requestSignal, urlStr)) throw err;
               // Network Failure

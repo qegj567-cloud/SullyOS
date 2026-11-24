@@ -15,6 +15,7 @@ import { installIOSStandaloneWorkaround } from './utils/iosStandalone';
 import { installIOSStatusBarEdge } from './utils/iosStatusBarEdge';
 import { installReducedBlurPolicy } from './utils/blurPolicy';
 import { initAnalytics } from './utils/analytics';
+import { installLocalGenInterruptionWatch } from './utils/localGenInterruption';
 import { Capacitor } from '@capacitor/core';
 import { RELEASE_CHANNEL, watchCanaryBootHealth } from './utils/releaseChannel';
 
@@ -55,6 +56,7 @@ if (import.meta.hot) {
 // 使用统计。构建时没配 VITE_UMAMI_* 就整个不生效，自部署实例默认如此。
 // 用户关掉开关、或浏览器开了 DNT，同样在这里就返回，连脚本都不会挂上去。
 initAnalytics();
+installLocalGenInterruptionWatch(); // 排在 initAnalytics 之后：上次在后台被关的补报要进得了统计脚本的排队
 
 // 浏览器自动翻译 (Chrome/Edge 等) 会改动 React 托管的 DOM，导致 reconcile 时
 // insertBefore/removeChild 抛 NotFoundError 白屏。挂载前先打护栏。详见该 util 注释。

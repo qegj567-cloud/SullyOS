@@ -153,6 +153,18 @@ describe('代跑失败一定送回客户端', () => {
     expect(writeState).toHaveBeenCalledWith(CLOUD_GEN_NAMESPACE, [{ key: cloudGenJobKey(JOB_ID), value: null }]);
   });
 
+  it('单次模型调用撞上 5 分钟上限（原样的 TimeoutError）→ 补一条 llm-timeout', async () => {
+    const { ctx, scratch, writeState } = await makeFireCtx();
+    await amsgHooks.onBeforeFire(ctx);
+    const emitResult = vi.fn(async () => ({}));
+    await amsgFireSettled({
+      status: 'failed', willRetry: false, metadata: ctx.task.metadata,
+      error: new DOMException('The operation was aborted due to timeout', 'TimeoutError'),
+      scratch, writeState, emitResult,
+    } as any);
+    expect(emitResult).toHaveBeenCalledWith(expect.objectContaining({ ok: false, error: expect.objectContaining({ code: 'llm-timeout' }) }));
+  });
+
   it('beforeFire 就失败（还没挂上下文）也能靠任务 metadata 认出来', async () => {
     const { ctx, writeState } = await makeFireCtx({ value: await packStateValue('坏的') });
     await expect(amsgHooks.onBeforeFire(ctx)).rejects.toThrow();

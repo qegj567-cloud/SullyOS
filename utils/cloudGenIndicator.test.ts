@@ -4,6 +4,7 @@
 //   2. 「本功能不再提醒」之后在飞的不再提示；人格模拟、梦境有自己的胶囊，这里不重复显示。
 //   3. 同一功能几位角色合成一颗胶囊；落地后点「进入」交给落地函数打开，再收走记录；失败的直接收走。
 //   4. 说明页只有「这次会发通知」且「这台设备收得到」时才说会弹通知。
+//   5. 埋点：点开说明、不再提醒、进入各报一次「云端生成提示」；页面进后台时在飞的记上「离开过」。
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -12,11 +13,13 @@ const lander = vi.hoisted(() => ({ open: vi.fn() }));
 vi.mock('./cloudGen/landers', () => ({ loadCloudGenLander: vi.fn(async () => ({ land: vi.fn(), open: lander.open })) }));
 const push = vi.hoisted(() => ({ getPushStatus: vi.fn() }));
 vi.mock('./activeMsgClient', () => ({ ActiveMsgClient: push }));
+const track = vi.hoisted(() => vi.fn());
+vi.mock('./analytics', async (importOriginal) => ({ ...(await importOriginal<typeof import('./analytics')>()), trackEvent: track }));
 
 import CloudGenIndicator, { pickCloudGenPill } from '../components/os/CloudGenIndicator';
 import CloudGenSheet, { cloudGenSheetCopy } from '../components/os/CloudGenSheet';
 import { CLOUD_GEN_JOBS_KEY, type CloudGenJobRecord, type CloudGenPurpose } from './cloudGen/types';
-import { listCloudGenJobs } from './cloudGen/registry';
+import { getCloudGenJobById, listCloudGenJobs, putCloudGenJob } from './cloudGen/registry';
 import { closeCloudGenSheet, isCloudGenHintOff, openCloudGenSheet, setCloudGenHintOff } from './cloudGen/hint';
 
 const job = (over: Partial<CloudGenJobRecord> & { jobId: string }): CloudGenJobRecord => ({
@@ -78,6 +81,7 @@ beforeEach(() => {
   localStorage.clear();
   lander.open.mockReset();
   push.getPushStatus.mockReset();
+  track.mockClear();
   closeCloudGenSheet();
   host = document.createElement('div');
   document.body.append(host);
@@ -190,5 +194,46 @@ describe('CloudGenSheet', () => {
     expect(isCloudGenHintOff('dream')).toBe(true);
     expect(isCloudGenHintOff('schedule')).toBe(false);
     expect(host.textContent).toBe('');
+  });
+});
+
+describe('埋点', () => {
+  const hintEvents = () => track.mock.calls.filter(([name]) => name === '云端生成提示').map(([, data]) => data);
+
+  it('点开说明、本功能不再提醒各报一次', async () => {
+    seed([job({ jobId: 'a', acceptedAt: 1 })]);
+    await render(React.createElement(React.Fragment, null, React.createElement(CloudGenIndicator), React.createElement(CloudGenSheet)));
+    push.getPushStatus.mockResolvedValue({ hasSubscription: true, permission: 'granted' });
+    await act(async () => { buttonByText('云端生成 · 日程')!.click(); });
+    await act(async () => { buttonByText('本功能不再提醒')!.click(); });
+    expect(hintEvents()).toEqual([{ 功能: '日程', 动作: '点开说明' }, { 功能: '日程', 动作: '不再提醒' }]);
+  });
+
+  it('日程「好了 · 进入」报一次进入', async () => {
+    seed([job({ jobId: 'done', status: 'landed', settledAt: Date.now() })]);
+    await render(React.createElement(CloudGenIndicator));
+    await act(async () => { buttonByText('日程好了 · 进入')!.click(); });
+    await flush();
+    expect(hintEvents()).toEqual([{ 功能: '日程', 动作: '进入' }]);
+  });
+
+  it('页面进后台（visibilitychange 变 hidden、pagehide）时在飞的记上离开过，已落地的不动', () => {
+    putCloudGenJob(job({ jobId: 'run' }));
+    putCloudGenJob(job({ jobId: 'landed', status: 'landed', settledAt: Date.now() }));
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(getCloudGenJobById('run')?.leftPage).toBeUndefined();
+
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+    try {
+      document.dispatchEvent(new Event('visibilitychange'));
+    } finally {
+      delete (document as { visibilityState?: unknown }).visibilityState;
+    }
+    expect(getCloudGenJobById('run')?.leftPage).toBe(true);
+    expect(getCloudGenJobById('landed')?.leftPage).toBeUndefined();
+
+    putCloudGenJob(job({ jobId: 'run2' }));
+    window.dispatchEvent(new Event('pagehide'));
+    expect(getCloudGenJobById('run2')?.leftPage).toBe(true);
   });
 });

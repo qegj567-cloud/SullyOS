@@ -139,6 +139,8 @@ export interface CloudGenSettleInfo {
 const errorCodeOf = (info: CloudGenSettleInfo): string => {
   const code = (info.error as { code?: unknown } | null)?.code;
   if (typeof code === 'string' && /^[A-Za-z0-9_.-]{1,64}$/.test(code)) return code;
+  // 上游单轮 5 分钟上限是 AbortSignal.timeout，抛出原样的 TimeoutError（code 是数字 23），不给它单独的码就认不出撞线。
+  if ((info.error as { name?: unknown } | null)?.name === 'TimeoutError') return 'llm-timeout';
   if (info.status === 'skipped') return 'input-missing';
   return 'generation-failed';
 };

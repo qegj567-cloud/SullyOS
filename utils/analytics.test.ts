@@ -709,6 +709,66 @@ describe('会话内发送条数', () => {
         goHidden();
         expect(tracked).toHaveLength(0);
     });
+
+    it('即时对话：失败档位边界', async () => {
+        const a = await loadModule(true);
+        expect(a.bucketInstantChatFailures(0)).toBe('0');
+        expect(a.bucketInstantChatFailures(1)).toBe('1');
+        expect(a.bucketInstantChatFailures(2)).toBe('2-5');
+        expect(a.bucketInstantChatFailures(5)).toBe('2-5');
+        expect(a.bucketInstantChatFailures(6)).toBe('6+');
+    });
+
+    it('即时对话：计数本身不发请求，切到后台才报一次档位', async () => {
+        installFakeDom({ withUmami: true });
+        const a = await loadModule(true);
+        const goHidden = withVisibility();
+
+        for (let i = 0; i < 12; i++) a.noteInstantChatRound();
+        a.noteInstantChatFailure();
+        expect(tracked).toHaveLength(0);
+
+        goHidden();
+        expect(tracked).toEqual([['本次会话即时对话', { 轮数: '11-50', 失败轮数: '1' }]]);
+    });
+
+    it('即时对话：两个档位都没变不重报，任一跨档会再报', async () => {
+        installFakeDom({ withUmami: true });
+        const a = await loadModule(true);
+        const goHidden = withVisibility();
+
+        a.noteInstantChatRound();
+        goHidden();
+        a.noteInstantChatRound();
+        goHidden();
+        expect(tracked).toEqual([['本次会话即时对话', { 轮数: '1-10', 失败轮数: '0' }]]);
+
+        // 轮数没跨档、失败跨档，照样再报
+        a.noteInstantChatFailure();
+        goHidden();
+        expect(tracked).toHaveLength(2);
+        expect(tracked[1]).toEqual(['本次会话即时对话', { 轮数: '1-10', 失败轮数: '1' }]);
+    });
+
+    it('即时对话：只有上次会话遗留的云端失败时，轮数报 0', async () => {
+        installFakeDom({ withUmami: true });
+        const a = await loadModule(true);
+        const goHidden = withVisibility();
+
+        a.noteInstantChatFailure();
+        goHidden();
+        expect(tracked).toEqual([['本次会话即时对话', { 轮数: '0', 失败轮数: '1' }]]);
+    });
+
+    it('即时对话：一次都没发生过的会话不产生事件，私聊条数也不串进来', async () => {
+        installFakeDom({ withUmami: true });
+        const a = await loadModule(true);
+        const goHidden = withVisibility();
+
+        a.noteMessageSent();
+        goHidden();
+        expect(tracked).toEqual([['私聊会话发送条数', { 条数: '1-10' }]]);
+    });
 });
 
 describe('上报出口', () => {

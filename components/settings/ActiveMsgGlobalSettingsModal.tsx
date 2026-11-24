@@ -8,6 +8,7 @@ import AmsgOverview from './AmsgOverview';
 import AmsgCloudGenSettings, { mergeCloudGenSwitch } from './AmsgCloudGenSettings';
 import type { CloudGenPurpose } from '../../utils/cloudGen/types';
 import type { CloudGenFeatureSwitches } from '../../utils/cloudGen/settings';
+import { trackCloudGenSwitch } from '../../utils/cloudGen/analytics';
 import AmsgConnectionGate from './AmsgConnectionGate';
 import AmsgVisitedPanel from './AmsgVisitedPanel';
 import type { AmsgConnection } from '../../utils/amsgConnectionCode';
@@ -1357,6 +1358,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
    * saveGlobalConfig 只做浅合并，所以把整份 cloudGen 合好再写，别的功能的开关原样带上。
    */
   const handleCloudGenChange = async (purpose: CloudGenPurpose, patch: Partial<CloudGenFeatureSwitches>) => {
+    trackCloudGenSwitch(purpose, patch);
     const next = mergeCloudGenSwitch(config?.cloudGen, purpose, patch);
     patchConfig({ cloudGen: next });
     await ActiveMsgStore.saveGlobalConfig({ cloudGen: next });

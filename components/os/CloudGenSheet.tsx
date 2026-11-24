@@ -9,6 +9,7 @@ import {
     subscribeCloudGenSheet,
     type CloudGenSheetRequest,
 } from '../../utils/cloudGen/hint';
+import { trackCloudGenHint } from '../../utils/cloudGen/analytics';
 import type { ActiveMsg2PushStatus } from '../../utils/activeMsgClient';
 
 /**
@@ -53,7 +54,7 @@ const CloudGenSheet: React.FC = () => {
             footer={<>
                 <button
                     type="button"
-                    onClick={() => { setCloudGenHintOff(req.purpose, true); closeCloudGenSheet(); }}
+                    onClick={() => { setCloudGenHintOff(req.purpose, true); trackCloudGenHint(req.purpose, 'mute'); closeCloudGenSheet(); }}
                     className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl active:scale-95 transition-transform"
                 >
                     本功能不再提醒

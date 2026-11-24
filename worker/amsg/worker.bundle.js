@@ -14896,6 +14896,7 @@ var cloudGenHandler = {
 var errorCodeOf = (info) => {
   const code = info.error?.code;
   if (typeof code === "string" && /^[A-Za-z0-9_.-]{1,64}$/.test(code)) return code;
+  if (info.error?.name === "TimeoutError") return "llm-timeout";
   if (info.status === "skipped") return "input-missing";
   return "generation-failed";
 };

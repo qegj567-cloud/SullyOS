@@ -6,6 +6,7 @@
  * 上挂的那一份。不再提醒是这台设备上的偏好，按功能记，不进备份（见 types.ts 的 isCloudGenStorageKey）。
  */
 
+import { trackCloudGenHint } from './analytics';
 import { CLOUD_GEN_HINT_OFF_KEY, type CloudGenPurpose } from './types';
 
 const readHintOff = (): CloudGenPurpose[] => {
@@ -43,7 +44,12 @@ function notifySheet() {
   for (const cb of listeners) { try { cb(current); } catch { /* 一个订阅者出错不连累别的 */ } }
 }
 
-export const openCloudGenSheet = (req: CloudGenSheetRequest): void => { current = req; notifySheet(); };
+// 只有用户点小条时才调它，「点开说明」就记在这一个口子上。
+export const openCloudGenSheet = (req: CloudGenSheetRequest): void => {
+  current = req;
+  notifySheet();
+  trackCloudGenHint(req.purpose, 'open');
+};
 export const closeCloudGenSheet = (): void => { current = null; notifySheet(); };
 export const getCloudGenSheet = (): CloudGenSheetRequest | null => current;
 
