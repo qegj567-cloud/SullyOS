@@ -74,6 +74,7 @@ import { TASK_TRACE_KINDS } from './taskTraceReport';
 import { canMigrateLocalKey } from './independentUserRemap';
 import { CLOUD_GEN_DONE_KEY, CLOUD_GEN_JOBS_KEY } from './cloudGen/types';
 import { RESTORE_DAMAGED_ASSETS_KEY } from './backupImportPolicy';
+import { AMSG_RESCUE_ALERT_LS_KEY } from './amsgRescueAlert';
 
 const messages = (count: number, content = (i: number) => `第 ${i} 句`) =>
     Array.from({ length: count }, (_, i) => ({ id: i + 1, charId: 'c', role: 'user', type: 'text', timestamp: 1_700_000_000_000 + i, content: content(i) }));
@@ -344,15 +345,19 @@ it('keeps the cloud generation registry and done ledger out of the archive and o
     }
 });
 
-it('keeps the damaged-picture list from the last restore out of the shared settings', async () => {
+it('keeps device-state shared keys (last restore\'s damaged pictures, rescue alert) out of the shared settings', async () => {
     saveUserSpaces([{ id: 'default', name: '小明' }, { id: 'u_second', name: '小明二号' }]);
-    // 这份清单描述的是这台设备上一次恢复，重启提示一次就清掉；同样是共用键的普通设置照常进包，证明共享设置确实收集过。
-    localStorage.setItem(RESTORE_DAMAGED_ASSETS_KEY, '{"total":1,"items":[{"id":"b1","locations":[],"reason":"damaged"}]}');
+    // 坏图清单描述的是这台设备上一次恢复；救援警告带着这台设备的「已确认」，新设备会自己去问 Worker。
+    // 同样是共用键的普通设置照常进包，证明共享设置确实收集过。
+    const deviceKeys = [RESTORE_DAMAGED_ASSETS_KEY, AMSG_RESCUE_ALERT_LS_KEY];
+    for (const key of deviceKeys) localStorage.setItem(key, '{"version":1}');
     localStorage.setItem('os_api_config', '{"model":"m"}');
     const manifest = await manifestOf(await JSZip.loadAsync(await (await exportUserSpaces('full', 'all')).arrayBuffer()));
     expect(manifest.settings.os_api_config).toBe('{"model":"m"}');
-    expect(Object.keys(manifest.settings)).not.toContain(RESTORE_DAMAGED_ASSETS_KEY);
-    for (const space of manifest.spaces) expect(Object.keys(space.local)).not.toContain(RESTORE_DAMAGED_ASSETS_KEY);
+    for (const key of deviceKeys) {
+        expect(Object.keys(manifest.settings)).not.toContain(key);
+        for (const space of manifest.spaces) expect(Object.keys(space.local)).not.toContain(key);
+    }
 });
 
 it.each([
