@@ -8,9 +8,11 @@
 // 也是「同一件活儿的一部分」，同样要从叶子里取、同样要送到云端那条路上。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { scheduleBackgroundJob, probeBackgroundJobSupportDetailed, plateStore, charStore } = vi.hoisted(() => ({
+const { scheduleBackgroundJob, probeBackgroundJobSupportDetailed, getCronTriggerState, plateStore, charStore } = vi.hoisted(() => ({
   scheduleBackgroundJob: vi.fn(async () => ({ uuid: 'remote-uuid' })),
   probeBackgroundJobSupportDetailed: vi.fn(async () => 'supported' as string),
+  /** 「后台任务」开关（Worker 的 cron）：默认开着；null 是问不到。 */
+  getCronTriggerState: vi.fn(async (): Promise<{ supported: boolean; enabled?: boolean } | null> => ({ supported: true, enabled: true })),
   /** 假门牌库：落地那半截要读要写，node 上没有 IndexedDB。 */
   plateStore: { plates: new Map<string, any>(), saveError: null as Error | null },
   /** 假角色库：落地前要确认这个角色还在。 */
@@ -19,7 +21,7 @@ const { scheduleBackgroundJob, probeBackgroundJobSupportDetailed, plateStore, ch
 /** 「这条任务可能已经在远端建起来了」的标记，跟真身同款（见 activeMsgClient）。 */
 const MAYBE_CREATED = '__amsgBackgroundJobMaybeCreated';
 vi.mock('../activeMsgClient', () => ({
-  ActiveMsgClient: { scheduleBackgroundJob, probeBackgroundJobSupportDetailed },
+  ActiveMsgClient: { scheduleBackgroundJob, probeBackgroundJobSupportDetailed, getCronTriggerState },
   mayHaveCreatedBackgroundJob: (error: unknown) =>
     (error as Record<string, unknown> | null)?.['__amsgBackgroundJobMaybeCreated'] === true,
 }));
@@ -101,6 +103,7 @@ const submit = (over: Record<string, unknown> = {}) => submitPlateConsolidation(
 beforeEach(() => {
   scheduleBackgroundJob.mockClear().mockResolvedValue({ uuid: 'remote-uuid' });
   probeBackgroundJobSupportDetailed.mockClear().mockResolvedValue('supported');
+  getCronTriggerState.mockClear().mockResolvedValue({ supported: true, enabled: true });
   vi.mocked(settleCloudApiCall).mockClear();
   vi.mocked(recordCloudApiCall).mockClear();
   vi.mocked(RoomPlateDB.save).mockClear();
@@ -270,6 +273,30 @@ describe('同一角色同时只许一份整理在飞', () => {
     probeBackgroundJobSupportDetailed.mockResolvedValue('unknown');
 
     expect(await gate()).toBe('local');
+  });
+
+  // 回归守卫：后台任务只靠 cron 捞，用户在功能总览关掉「后台任务」之后，交上去的整理一直
+  // 躺着不跑，在飞记号又让接下来半小时都 skip——整个暂停期间门牌一次都不整理。
+  it('后台任务（cron）暂停着 → 不交云端，在本地整理', async () => {
+    getCronTriggerState.mockResolvedValue({ supported: true, enabled: false });
+
+    expect(await gate(), '交上去也不会跑').toBe('local');
+  });
+
+  it('后台任务（cron）暂停着 → 就算有一份在飞也退回本地', async () => {
+    await submit();
+    getCronTriggerState.mockResolvedValue({ supported: true, enabled: false });
+
+    expect(await gate(), '在飞那份要等恢复才跑，skip 的话门牌整个暂停期间都不更新').toBe('local');
+  });
+
+  it('问不到 cron 状态不算暂停：在飞的照旧 skip，没在飞的照旧交云端', async () => {
+    getCronTriggerState.mockResolvedValue(null);
+    expect(await gate()).toBe('submit');
+
+    getCronTriggerState.mockResolvedValue({ supported: false });
+    await submit();
+    expect(await gate(), '一次没问到就退本地，会跟在飞那份撞车').toBe('skip');
   });
 });
 
