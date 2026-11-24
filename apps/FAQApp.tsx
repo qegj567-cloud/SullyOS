@@ -30,6 +30,27 @@ import { trackEvent } from '../utils/analytics';
 
 const FAQ_DATA = [
     {
+        q: '记忆链接去哪了？私聊里露出了标签、排程提示或错位的译文怎么办？',
+        reason: '原来的「记忆链接」已改名为「对话校准」。记忆修补、格式修复和本轮重写都在这里。',
+        solution: '私聊点「＋ → 对话校准」，或长按任意气泡选「对话校准」。打开「修复格式」，写明哪句不对，也可以留空直接点「检查并修复本轮」。模型只校对最近一轮的待修回复。对照原版，满意后点「采用新版」。若是角色记错了事实，选「记忆修补」。',
+        icon: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4ac.png',
+        color: 'bg-violet-50 text-violet-700',
+    },
+    {
+        q: '重新生成本轮回复后，角色还会记得旧版吗？',
+        reason: '生成的候选先留在预览里，聊天记录在确认前仍是原版。',
+        solution: '私聊点「＋ → 重新生成」，可填重写方向和原因，再点「生成候选回复」。展开「查看原版」进行对照。「保留原版」或退出会丢弃候选；点「采用新版」才替换气泡，以后的聊天上下文使用定稿。如果预览期间来了新消息、原文有改动或这一轮已归档，需要重新核对。',
+        icon: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4ac.png',
+        color: 'bg-blue-50 text-blue-700',
+    },
+    {
+        q: 'iPhone 上怎么退出见面的浅色阅读和头像设置？',
+        reason: '「当前美化」「浅色阅读模式」「阅读模式显示头像」都在见面的「场景布置」页。',
+        solution: '点状态栏下方左上角的返回箭头。若旧页面的箭头仍贴着系统状态栏，重新打开糯米机或刷新网页，载入更新后再进入场景布置。',
+        icon: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4f1.png',
+        color: 'bg-teal-50 text-teal-700',
+    },
+    {
         q: '角色的记忆如何互通？自动与手动整理怎么选？',
         reason: '聊天、通话、见面与其他 App 的记忆说明。',
         solution: MEMORY_GUIDE_SECTIONS.map(([title, text]) => '**' + title + '**\n' + text).join('\n\n'),

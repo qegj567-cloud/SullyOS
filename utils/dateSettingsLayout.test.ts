@@ -26,6 +26,7 @@ it('opens settings from an active date without measuring the entrance animation 
         const scroll = host.querySelector('[data-testid="date-settings-scroll"]')!;
         expect((scroll.parentElement as HTMLElement).style.maxHeight).toBe('800px');
         expect(scroll.textContent).toContain('当前美化');
+        expect(host.querySelector('button[aria-label="返回"]')?.closest('header')?.style.paddingTop).toBe('var(--chrome-top)');
         await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent?.includes('保存当前布置'))!.click());
         expect(host.querySelector('[data-testid="date-settings-scroll"]')).toBeNull();
     } finally { act(() => root.unmount()); host.remove(); vi.unstubAllGlobals(); vi.restoreAllMocks(); }

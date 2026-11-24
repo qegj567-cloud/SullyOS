@@ -230,7 +230,7 @@ useHomeEmotion 监听原 emotion-updated 事件及角色属性更新，过日程
 
 ### 家园小手机
 
-右下角新增独立绘制的手机入口：首页只有信息、拍照。信息直接嵌入 apps/Chat.tsx 的 homePhone 模式，不复写聊天引擎，不建立另一份消息历史。固定当前家园角色，复用 ChatInputArea、ChatModals、useChatAI、buildChatRequestPayload 与原有存储/召回/归档/情绪处理；功能菜单仅转账、戳一戳、相册、重新生成、记忆链接、收藏。记忆链接与收藏在手机容器内呈现，长按消息只留收藏入口。
+右下角新增独立绘制的手机入口：首页只有信息、拍照。信息直接嵌入 apps/Chat.tsx 的 homePhone 模式，不复写聊天引擎，不建立另一份消息历史。固定当前家园角色，复用 ChatInputArea、ChatModals、useChatAI、buildChatRequestPayload 与原有存储/召回/归档/情绪处理；功能菜单仅转账、戳一戳、相册、重新生成、对话校准、收藏。对话校准与收藏在手机容器内呈现，长按消息可进入收藏或对话校准。
 
 家园背景通过请求级 homePhoneContext 追加到实时状态段；主请求和副 API 情绪评估都读取，客户端与即时对话 worker 路径共用，关闭手机后正式私聊不携带此字段。家园角色不在当前房间时不宣称双方同房。此入口是私聊，不使用家园当面 JSON 动作协议。
 

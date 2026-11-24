@@ -144,7 +144,7 @@ export default function ChatCharacterProfile({ character, schedule, initialTab =
                     </section>}
                 </>}
             </div>
-            {tab === '设定' && <button type="button" className="chat-profile-memory" onClick={onMemory}><LinkSimple size={15} />记忆链接<CaretRight size={12} /></button>}
+            {tab === '设定' && <button type="button" className="chat-profile-memory" onClick={onMemory}><LinkSimple size={15} />对话校准<CaretRight size={12} /></button>}
         </div>
     </dialog>;
 }

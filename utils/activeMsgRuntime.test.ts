@@ -920,6 +920,21 @@ describe('flushInboxToChat 落库时间戳（走真库）', () => {
     expect((await assistantMsgs(charId)).length, '第二次到达不能再上屏').toBe(first.length);
   }, 20000);
 
+  it.each([0, 2])('采用校准后归档，迟到的推送（已尝试 %i 次）不会恢复被舍弃的回复', async attempts => {
+    const charId = `calibrated-cloud-${attempts}`;
+    const messageId = 'msg_task_15@89_hook_0';
+    await DB.saveCharacter({ id: charId, name: '测试角色' } as any);
+    await DB.saveMessage({ charId, role: 'assistant', type: 'text', content: '误发的旧回复',
+      metadata: { source: 'active_msg_2', activeMsg2: {messageId} } });
+    const { loadRevisionTurn, acceptRevision } = await import('./chatTurnRevision');
+    await acceptRevision({ originals: await loadRevisionTurn(charId), mode: 'reroll', bubbles: [{ type: 'text', content: '确认的新版' }] });
+    const [accepted] = await DB.getRecentMessagesByCharId(charId, 10, true);
+    localStorage.setItem(`mp_lastMsgId_${charId}`, String(accepted.id));
+    await ActiveMsgStore.saveInboxMessage(inboxMsg({ charId, messageId, body: '误发的旧回复', processAttempts: attempts }));
+    await flushInboxToChat('SW通知');
+    expect((await DB.getRecentMessagesByCharId(charId, 10, true)).map(row => row.content)).toEqual(['确认的新版']);
+  });
+
   // 即时对话的情绪评估在 worker 里跟主回复并行跑，结果挂在最后一条推送的 metadata 上。
   // 收侧得跟单独一条 emotion_update 消息走同一条链：同一个 applyEmotionEvalRaw 落 buff、
   // 同一个 'instant-emotion-done' 熄灯。漏了这一段，用户看到的是「回复来了、情绪永远不更新、

@@ -88,6 +88,7 @@ interface ChatModalsProps {
     onConfirmEditMessage: () => void;
     onDeleteMessage: () => void;
     onCopyMessage: () => void;
+    onCalibrateTurn?: () => void;
     onToggleMessageFavorite?: () => void;
     messageFavorited?: boolean;
     onDeleteEmoji: () => void;
@@ -266,7 +267,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
     onTransfer, onSaveSettings,
     onOpenHistoryCleanup,
     onArchive, onCreatePrompt, onEditPrompt, onSavePrompt, onDeletePrompt,
-    onSetHistoryStart, onRestoreAdaptiveContext, onJumpToMessageInChat, onEnterSelectionMode, onReplyMessage, onEditMessageStart, onConfirmEditMessage, onDeleteMessage, onCopyMessage, onToggleMessageFavorite, messageFavorited, onDeleteEmoji, onDeleteCategory, onRenameCategory, onDownloadCategory,
+    onSetHistoryStart, onRestoreAdaptiveContext, onJumpToMessageInChat, onEnterSelectionMode, onReplyMessage, onEditMessageStart, onConfirmEditMessage, onDeleteMessage, onCopyMessage, onCalibrateTurn, onToggleMessageFavorite, messageFavorited, onDeleteEmoji, onDeleteCategory, onRenameCategory, onDownloadCategory,
     allCharacters = [], onSaveCategoryVisibility,
     translationEnabled, onToggleTranslation, translationExpanded, onSetTranslationMode, translationStyle = 'bubble', subtitleSettings = DEFAULT_SUBTITLE_SETTINGS, onSetSubtitleSettings, translateSourceLang, translateTargetLang, onSetTranslateSourceLang, onSetTranslateLang,
     appearanceFonts, xhsEnabled, onToggleXhs,
@@ -961,7 +962,9 @@ const ChatModals: React.FC<ChatModalsProps> = ({
             </Modal>
 
             <Modal isOpen={modalType === 'message-options'} title="消息操作" onClose={() => setModalType('none')}>
-                <div className="space-y-3">{compactHome?<button className="w-full py-3 rounded-2xl bg-amber-50 text-amber-800" onClick={()=>{onToggleMessageFavorite?.();setModalType('none');}}>{messageFavorited?'取消收藏':'收藏这条消息'}</button>:<>
+                <div className="space-y-3">
+                    {onCalibrateTurn && <button onClick={onCalibrateTurn} className="w-full py-3 bg-violet-50 text-violet-800 font-medium rounded-2xl">对话校准</button>}
+                    {compactHome?<button className="w-full py-3 rounded-2xl bg-amber-50 text-amber-800" onClick={()=>{onToggleMessageFavorite?.();setModalType('none');}}>{messageFavorited?'取消收藏':'收藏这条消息'}</button>:<>
                     <button onClick={onEnterSelectionMode} className="w-full py-3 bg-slate-50 text-slate-700 font-medium rounded-2xl active:bg-slate-100 transition-colors flex items-center justify-center gap-2">
                         多选 / 批量删除
                     </button>

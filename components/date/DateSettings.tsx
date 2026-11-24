@@ -363,14 +363,15 @@ const DateSettings: React.FC<DateSettingsProps> = ({ char, onBack }) => {
 
     return (
         <div ref={pageRef} className="h-full min-h-0 w-full bg-slate-50 text-slate-800 flex flex-col overflow-hidden">
-            <div className="h-16 flex items-center justify-between px-4 border-b border-slate-200 bg-white shrink-0 z-20">
-                <button onClick={onBack} className="p-2 -ml-2 text-slate-600 active:scale-95 transition-transform">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
-                </button>
-                <span className="font-bold text-slate-700">场景布置</span>
-                <div className="w-8"></div>
-            </div>
-            
+            <header className="bg-white shrink-0 z-20" style={{ paddingTop: 'var(--chrome-top)' }}>
+                <div className="h-16 flex items-center justify-between px-4 border-b border-slate-200">
+                    <button aria-label="返回" onClick={onBack} className="min-h-11 min-w-11 p-2 -ml-2 text-slate-600 active:scale-95 transition-transform">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
+                    </button>
+                    <span className="font-bold text-slate-700">场景布置</span>
+                    <div className="w-8"></div>
+                </div>
+            </header>
             <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain" data-testid="date-settings-scroll">
             <MeetingAppearanceControl surface="date" characterId={char.id} />
             <button type="button" onClick={() => setPreviewOpen(open => !open)} aria-expanded={previewOpen}

@@ -1,3 +1,4 @@
+import { calibratedDeliveryKey } from './chatDeliveryReceipts';
 import { diagnosticRunId } from './amsgReproduction';
 import { subscribePageForeground } from './pageForeground';
 import { listUserSpaces } from './userSpaces';
@@ -1610,16 +1611,16 @@ const flushInboxToChatImpl = async (trigger: FlushTrigger, charId?: string): Pro
   // 不重放 directives。只对首次处理（processAttempts=0）做——重试那几条的半成品
   // 气泡刚被 prepareInboxRetry 清场，近史里查到的正是「该重跑」的证据，不能误杀。
   const persistedIdsByChar = new Map<string, Set<string>>();
-  const isAlreadyPersisted = async (charId: string, messageId: string): Promise<boolean> => {
+  const isAlreadyPersisted = async (charId: string, messageId: string, retry = false): Promise<boolean> => {
     if (!messageId) return false;
+    // An accepted calibration is final, even after the chat window or archive waterline has moved.
+    if (await DB.getAssetRaw(calibratedDeliveryKey(charId, messageId))) return true;
+    if (retry) return false;
     let ids = persistedIdsByChar.get(charId);
     if (!ids) {
       const recent = await DB.getRecentMessagesByCharId(charId, 200);
-      ids = new Set(
-        recent
-          .map((m: any) => m?.metadata?.activeMsg2?.messageId)
-          .filter((id: unknown): id is string => typeof id === 'string' && !!id),
-      );
+      ids = new Set(recent.map(row => row.metadata?.activeMsg2?.messageId)
+        .filter((id): id is string => typeof id === 'string' && !!id));
       persistedIdsByChar.set(charId, ids);
     }
     return ids.has(messageId);
@@ -1715,10 +1716,10 @@ const flushInboxToChatImpl = async (trigger: FlushTrigger, charId?: string): Pro
 
       // 见上面 isAlreadyPersisted 的注释：这条已经在聊天记录里了（补收先到、真推送迟到，
       // 或重试重跑的重叠段），第二份原样丢弃。
-      if (!(message.processAttempts && message.processAttempts > 0)
-        && await replyStep(async () => ((message.metadata as any)?.amsgActionResult === true
+      if (await replyStep(async () => (!(message.processAttempts && message.processAttempts > 0)
+          && (message.metadata as any)?.amsgActionResult === true
           && await ActiveMsgStore.hasAppliedActionResult(message.charId, message.messageId))
-          || await isAlreadyPersisted(message.charId, message.messageId))) {
+          || await isAlreadyPersisted(message.charId, message.messageId, (message.processAttempts ?? 0) > 0))) {
         log.warn('这条消息已在聊天记录里（补收先到/重试重跑的第二份），丢弃', { messageId: message.messageId, charId: message.charId });
         activeMsgTrace('runtime-inbox-duplicate-dropped', { messageId: message.messageId, charId: message.charId });
         continue;
