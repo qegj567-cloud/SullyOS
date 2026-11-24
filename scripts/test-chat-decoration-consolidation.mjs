@@ -32,7 +32,7 @@ try{
    const bounds=await grid.boundingBox();if(!first)first=bounds;else{assert.equal(bounds.height,first.height);assert.equal(bounds.y,first.y);}
    assert.equal(await grid.evaluate(el=>el.scrollWidth>el.clientWidth),false);
    if(i===2){await grid.getByRole('button',{name:'聊天装扮',exact:true}).waitFor();await grid.getByRole('button',{name:'相册',exact:true}).waitFor();}
-   if(i===3){await grid.getByRole('button',{name:'记忆链接',exact:true}).waitFor();await grid.getByRole('button',{name:'收藏',exact:true}).waitFor();}
+   if(i===3){await grid.getByRole('button',{name:'对话校准',exact:true}).waitFor();await grid.getByRole('button',{name:'收藏',exact:true}).waitFor();}
    await page.screenshot({path:'output/chat-decoration/actions-'+width+'-'+i+'.png'});
   }
  }

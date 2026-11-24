@@ -38,7 +38,7 @@ interface SpaceArchive {
     missingAssets?: BackupMissingAsset[];
 }
 const mediaStores = new Set(['characters', 'user_profile', 'themes', 'emojis', 'emoji_categories', 'journal_stickers', 'gallery', 'cc_custom_parts', 'pixel_home_assets', 'pixel_home_layouts', 'messages', 'assets', 'collab_assets', 'daily_schedule', 'bank_data']);
-const mediaAsset = (id: string) => id === 'friend_feed_v1' || !isActivityTextAsset(id);
+const mediaAsset = (id: string) => !id.startsWith('chat_empty_deliveries:') && (id === 'friend_feed_v1' || !isActivityTextAsset(id));
 // 导入中标记（(im|ex)port.*progress）和各项长任务的中断留痕（taskTrace.ts 的 isTaskTraceKey）都是本机进度，不进备份。
 const privateLocalExcluded = (key: string) => isTaskTraceKey(key) || /location|geolocation|latitude|longitude|privacy|user_spaces_catalog|(?:im|ex)port.*progress/i.test(key);
 export function spaceMediaRow(store: string, row: any) {

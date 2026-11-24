@@ -68,7 +68,13 @@ import ConfirmDialog from '../components/os/ConfirmDialog';
 import { useConfirmDialog } from '../hooks/useConfirmDialog';
 import { loadChatInputPreferences, saveChatInputPreferences } from '../utils/chatInputPreferences';
 import InstantChatRouteNotice from '../components/chat/InstantChatRouteNotice';
-import MemoryRepairPortal from '../components/chat/MemoryRepairPortal';
+import { loadMusicPlaybackSnapshot } from '../context/MusicContext';
+import { acquireChatReply } from '../utils/chatReplyLock';
+import { getThinkingChainSettings } from '../utils/thinkingChainPrompt';
+import { recordRecallReceipt } from '../utils/memoryPalace/recallReceipts';
+import { acceptRevision, type TurnPreview } from '../utils/chatTurnRevision';
+import { previewTurnRevision } from '../utils/chatTurnGeneration';
+import MemoryRepairPortal, {type CalibrationTab} from '../components/chat/MemoryRepairPortal';
 import FavoritesPortal from '../components/chat/VoiceFavoritesPortal';
 import ChatModals from '../components/chat/ChatModals';
 import ChatHistoryCleanupModal from '../components/chat/ChatHistoryCleanupModal';
@@ -200,6 +206,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
     const [showPanel, setShowPanel] = useState<'none' | 'actions' | 'emojis' | 'chars'>('none');
     const [collaborationOpen, setCollaborationOpen] = useState(false);
     const [collaborationPreviewAssetId, setCollaborationPreviewAssetId] = useState<string | null>(null);
+    const [calibrationTab, setCalibrationTab] = useState<CalibrationTab>('memory');
     const [memoryRepairOpen, setMemoryRepairOpen] = useState(false);
     const [profileCharacterId, setProfileCharacterId] = useState<string | null>(null);
     const [profileTabOnOpen, setProfileTabOnOpen] = useState<'当前' | '日程'>('当前');
@@ -562,15 +569,16 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
     /** Whether this character can synthesize real voice under the active TTS provider (key + a voice profile). */
     const isTtsReady = useCallback(() => canSynthesizeSpeech(char, apiConfig), [char, apiConfig]);
 
-    const persistVoice = async (msgId: number, url: string, blob: Blob | null, originalText: string, spokenText: string | undefined, lang: string | undefined, recording?: StreamedVoice) => {
+    const persistVoice = async (msg: Message, url: string, blob: Blob | null, originalText: string, spokenText: string | undefined, lang: string | undefined, recording?: StreamedVoice) => {
         try {
             const stored: StoredVoice = blob
                 ? { blob, originalText, spokenText, lang, favorite: false }
                 : { remoteUrl: url, originalText, spokenText, lang, favorite: false };
             if (recording) stored.recording = recording;
-            await DB.saveAssetRaw(voiceAssetKey(msgId), stored);
+            return await DB.saveMessageVoiceIfCurrent(msg, stored);
         } catch (e) {
             console.warn('[Chat] persist voice failed', e);
+            return true; // A storage failure can still play the freshly synthesized audio.
         }
     };
 
@@ -800,8 +808,8 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
             const storedSpokenText = voiceTagContent ? displaySpoken : (voiceLang ? displaySpoken : undefined);
             const storedLang = voiceLang || undefined;
             // Persist so the voice bar survives leaving and re-entering the chat.
-            persistVoice(msg.id, blobUrl, blob, originalText, storedSpokenText, storedLang, recording);
-            if (!voiceMountedRef.current || activeCharIdRef.current !== msg.charId) {
+            const current = await persistVoice(msg, blobUrl, blob, originalText, storedSpokenText, storedLang, recording);
+            if (!current || !voiceMountedRef.current || activeCharIdRef.current !== msg.charId) {
                 if (blobUrl.startsWith('blob:')) URL.revokeObjectURL(blobUrl);
                 return null;
             }
@@ -1797,43 +1805,42 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
         triggerAI(messages);
     };
 
-    const handleReroll = async () => {
-        if (!canReroll) return;
-        if (isTyping || messages.length === 0) return;
+    const openCalibration = (tab: CalibrationTab = 'memory') => {
+        setModalType('none');
+        setShowPanel('none');
+        setCalibrationTab(tab);
+        setMemoryRepairOpen(true);
+        trackEvent('打开对话校准');
+    };
 
-        const lastMsg = messages[messages.length - 1];
-        if (lastMsg.role !== 'assistant') return;
+    const handleReroll = () => { if (canReroll) openCalibration('reroll'); };
 
-        const toDeleteIds: number[] = [];
-        let index = messages.length - 1;
-        while (index >= 0 && messages[index].role === 'assistant') {
-            toDeleteIds.push(messages[index].id);
-            index--;
+    const applyCalibration = async (preview: TurnPreview) => {
+        if (activeCharIdRef.current !== char.id || isTypingRef.current || getInstantChatPending(char.id) || isSummarizing) {
+            throw new Error('当前对话正在变化，请稍后重试。');
         }
-
-        if (toDeleteIds.length === 0) return;
-
-        if (!(await requestConfirm({
-            title: '重新生成上一轮回复？',
-            message: '当前最后一轮角色回复（及已合成的语音）将被删除并重新生成。',
-            confirmText: '重新生成',
-            variant: 'warning',
-        }))) return;
-        if (isTyping || isTypingRef.current) return;
-
-        autoReply.cancel();
-        await DB.deleteMessages(toDeleteIds);
-        discardVoiceForMessages(toDeleteIds);
-        // 重 roll 也删了消息：正常路径下这轮生成结束会再打脏一次，这里先打是兜住
-        // 「触发失败没走到生成收尾」的路径，云端 fire_pack 不能停在删除前。
-        markAmsgStateDirty({ char, userProfile, groups, realtimeConfig });
-        const newHistory = messages.slice(0, index + 1);
-        setMessages(newHistory);
-        addToast('回溯对话中...', 'info');
-        trackEvent('重新生成回复');
-
-        // 重 roll：不注入上一轮残留的情绪 buff 与意识流（innerState），两边独立重新生成。
-        triggerAI(newHistory, undefined, { skipEmotionInjection: true });
+        const release = acquireChatReply(char.id);
+        if (!release) throw new Error('角色正在回复，请稍后重试。');
+        try {
+            const changed = await acceptRevision(preview);
+            if (preview.recalledIds) recordRecallReceipt(char.id, preview.recalledIds, { replaceEmpty: true });
+            markAmsgStateDirty({ char, userProfile, groups, realtimeConfig }, 'invalidate');
+            trackEvent(preview.mode === 'format' ? '采用本轮格式修复' : '重新生成回复');
+            if (activeCharIdRef.current === char.id) {
+                setAllHistoryMessages([]);
+                if (playingMsgId != null && changed.includes(playingMsgId)) {
+                    stopStreamingVoice();
+                    if (chatAudioRef.current) stopVoiceAudio(chatAudioRef.current);
+                }
+                for (const id of changed) {
+                    voiceStreamAborts.current.get(id)?.abort();
+                    voiceFailedRef.current.delete(id);
+                }
+                setReplyTarget(previous => previous && changed.includes(previous.id) ? null : previous);
+                discardVoiceForMessages(changed, false);
+                await reloadMessages(visibleCountRef.current);
+            }
+        } finally { release(); }
     };
 
     const handleImageSelect = async (file: File) => {
@@ -1885,7 +1892,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
         switch (type) {
             case 'export-chat': void handleExportChat(); break;
             case 'collaboration': setShowPanel('none'); setCollaborationOpen(true); break;
-            case 'memory-link': setShowPanel('none'); setMemoryRepairOpen(true); break;
+            case 'memory-link': openCalibration(); break;
             case 'favorites': setShowPanel('none'); setFavoritesOpen(true); break;
             case 'transfer': setModalType('transfer'); break;
             case 'poke': handleSendText('[戳一戳]', 'interaction'); break;
@@ -4435,7 +4442,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
                 onCreatePrompt={createNewPrompt} onEditPrompt={editSelectedPrompt} onSavePrompt={handleSavePrompt} onDeletePrompt={handleDeletePrompt}
                 onSetHistoryStart={handleSetHistoryStart} onRestoreAdaptiveContext={restoreAdaptiveContext} onJumpToMessageInChat={handleJumpToMessageInChat} onEnterSelectionMode={handleEnterSelectionMode}
                 onReplyMessage={handleReplyMessage} onEditMessageStart={() => { if (selectedMessage) { setEditContent(selectedMessage.content); setModalType('edit-message'); } }}
-                onConfirmEditMessage={confirmEditMessage} onDeleteMessage={handleDeleteMessage} onCopyMessage={handleCopyMessage}
+                onConfirmEditMessage={confirmEditMessage} onDeleteMessage={handleDeleteMessage} onCopyMessage={handleCopyMessage} onCalibrateTurn={() => openCalibration()}
                 messageFavorited={!!(selectedMessage && contentFavoriteIds.has(contentFavoriteIdForMessage(selectedMessage)))}
                 onToggleMessageFavorite={selectedMessage ? () => handleToggleContentFavorite(selectedMessage) : undefined}
                 onDeleteEmoji={handleDeleteEmoji} onDeleteCategory={handleDeleteCategory} onRenameCategory={handleRenameCategory} onDownloadCategory={handleDownloadCategory}
@@ -4754,14 +4761,24 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
                 onClose={() => setProfileCharacterId(null)}
                 onSchedule={() => { setProfileCharacterId(null); setModalType('schedule'); }}
                 onPlayTheater={index => { setProfileTabOnOpen('日程'); handlePlayTheater(index); }}
-                onMemory={() => { setProfileCharacterId(null); setMemoryRepairOpen(true); }} />}
+                onMemory={() => { setProfileCharacterId(null); openCalibration(); }} />}
             {liveTrial && <ChatTrialControls onReturn={()=>setTrial(null)} onScroll={pixels=>scrollRef.current?.scrollBy(0,pixels)} onUse={async()=>{
                 await liveTrial.commit();
                 if(liveTrial.characterId!==osActiveCharacterId)setActiveCharacterId(liveTrial.characterId);
                 setTrial(null);setModalType('none');
             }}/>}
             {memoryRepairOpen && char && (
-                <MemoryRepairPortal
+                <MemoryRepairPortal key={char.id}
+                    initialTab={calibrationTab}
+                    canRevise={canReroll && !instantChatPending && !isSummarizing}
+                    onPreview={(mode, guidance, signal) => previewTurnRevision({
+                        char, apiConfig, userProfile, groups, emojis: aiVisibleEmojis, categories: visibleCategories,
+                        realtimeConfig, musicSnapshot: loadMusicPlaybackSnapshot() ?? undefined, homePhoneContext: homePhone?.getContext?.(),
+                        translationConfig: { enabled: translationEnabled, sourceLang: translateSourceLang, targetLang: translateTargetLang },
+                        htmlMode: { enabled: !!char.htmlModeEnabled, customPrompt: char.htmlModeCustomPrompt },
+                        thinkingChain: getThinkingChainSettings(char, userProfile), visionApiConfig: apiConfig.visionApi,
+                    }, mode, guidance, signal)}
+                    onAccept={applyCalibration}
                     inline={!!homePhone}
                     char={char}
                     user={userProfile}

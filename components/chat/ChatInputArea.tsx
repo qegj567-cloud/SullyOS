@@ -670,7 +670,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
           <span className={`w-14 h-14 rounded-2xl grid place-items-center shadow-sm border ${acnh ? 'bg-white/70 border-[#e6dab4] text-[#8f674a]' : isDiscordStyle ? 'bg-slate-800 text-purple-300 border-purple-400/20' : 'bg-purple-50 text-purple-500 border-purple-100'}`}>
             <LinkSimple className="w-6 h-6" weight="bold" />
           </span>
-          <span className="text-xs font-bold">记忆链接</span>
+          <span className="text-xs font-bold">对话校准</span>
         </button>,
         <button key="favorites"
           onClick={() => onPanelAction('favorites')}

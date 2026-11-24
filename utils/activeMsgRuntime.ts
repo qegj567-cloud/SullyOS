@@ -1,3 +1,4 @@
+import { deliveryReceipts, emptyDeliveryKey } from './chatDeliveryReceipts';
 import { diagnosticRunId } from './amsgReproduction';
 import { subscribePageForeground } from './pageForeground';
 import { listUserSpaces } from './userSpaces';
@@ -528,7 +529,7 @@ export const findInboxArtifacts = <T extends { role: string; metadata?: any }>(
   messages: T[],
   messageId: string,
 ): T[] => messages.filter((m) =>
-  m.role === 'assistant' && m.metadata?.activeMsg2?.messageId === messageId);
+  m.role === 'assistant' && deliveryReceipts(m.metadata).includes(messageId));
 
 /**
  * 清场时可以删的消息类型——只有「渲染型气泡」：正文、表情包、HTML 卡片。
@@ -1610,19 +1611,20 @@ const flushInboxToChatImpl = async (trigger: FlushTrigger, charId?: string): Pro
   // 不重放 directives。只对首次处理（processAttempts=0）做——重试那几条的半成品
   // 气泡刚被 prepareInboxRetry 清场，近史里查到的正是「该重跑」的证据，不能误杀。
   const persistedIdsByChar = new Map<string, Set<string>>();
-  const isAlreadyPersisted = async (charId: string, messageId: string): Promise<boolean> => {
+  const calibratedIdsByChar = new Map<string, Set<string>>();
+  const isAlreadyPersisted = async (charId: string, messageId: string, retry = false): Promise<boolean> => {
     if (!messageId) return false;
     let ids = persistedIdsByChar.get(charId);
     if (!ids) {
       const recent = await DB.getRecentMessagesByCharId(charId, 200);
-      ids = new Set(
-        recent
-          .map((m: any) => m?.metadata?.activeMsg2?.messageId)
-          .filter((id: unknown): id is string => typeof id === 'string' && !!id),
-      );
+      ids = new Set(recent.flatMap(row => deliveryReceipts(row.metadata)));
       persistedIdsByChar.set(charId, ids);
+      const emptyReceipts = await DB.getAssetRaw(emptyDeliveryKey(charId));
+      const calibrated = new Set<string>(recent.flatMap(row => row.metadata?.calibratedDeliveryIds || []));
+      if (Array.isArray(emptyReceipts)) for (const id of emptyReceipts) { calibrated.add(id); ids.add(id); }
+      calibratedIdsByChar.set(charId, calibrated);
     }
-    return ids.has(messageId);
+    return retry ? !!calibratedIdsByChar.get(charId)?.has(messageId) : ids.has(messageId);
   };
   try {
   // consumeInboxMessages 是 "先 ack 后处理" 语义 —— inbox 已经原子地清空。
@@ -1715,10 +1717,10 @@ const flushInboxToChatImpl = async (trigger: FlushTrigger, charId?: string): Pro
 
       // 见上面 isAlreadyPersisted 的注释：这条已经在聊天记录里了（补收先到、真推送迟到，
       // 或重试重跑的重叠段），第二份原样丢弃。
-      if (!(message.processAttempts && message.processAttempts > 0)
-        && await replyStep(async () => ((message.metadata as any)?.amsgActionResult === true
+      if (await replyStep(async () => (!(message.processAttempts && message.processAttempts > 0)
+          && (message.metadata as any)?.amsgActionResult === true
           && await ActiveMsgStore.hasAppliedActionResult(message.charId, message.messageId))
-          || await isAlreadyPersisted(message.charId, message.messageId))) {
+          || await isAlreadyPersisted(message.charId, message.messageId, (message.processAttempts ?? 0) > 0))) {
         log.warn('这条消息已在聊天记录里（补收先到/重试重跑的第二份），丢弃', { messageId: message.messageId, charId: message.charId });
         activeMsgTrace('runtime-inbox-duplicate-dropped', { messageId: message.messageId, charId: message.charId });
         continue;

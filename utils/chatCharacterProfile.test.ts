@@ -98,10 +98,10 @@ it('ends the current page at emotion and mounts settings and the full schedule o
     expect(tab('当前').getAttribute('aria-selected')).toBe('true');
     expect(panel.querySelector('.chat-profile-current')?.lastElementChild?.getAttribute('aria-label')).toBe('当前情绪');
     expect(panel.textContent).not.toMatch(/日程|整理书架|关店|角色设定/);
-    expect(host.textContent).not.toContain('记忆链接');
+    expect(host.textContent).not.toContain('对话校准');
     await act(async () => { tab('设定').click(); });
     expect(panel.querySelector('textarea')?.dataset.character).toBe(character.id);
-    expect(host.textContent).toContain('记忆链接');
+    expect(host.textContent).toContain('对话校准');
     expect(panel.textContent).not.toMatch(/心声|安心|整理书架|关店/);
     act(() => tab('日程').click());
     expect(tab('日程').getAttribute('aria-selected')).toBe('true');
@@ -109,7 +109,7 @@ it('ends the current page at emotion and mounts settings and the full schedule o
     expect(panel.textContent).toContain('日程与情绪设置');
     expect(panel.querySelector('[aria-current="time"]')).not.toBeNull();
     expect(panel.querySelector('textarea')).toBeNull();
-    expect(host.textContent).not.toMatch(/记忆链接|安心/);
+    expect(host.textContent).not.toMatch(/对话校准|安心/);
     act(() => { tab('日程').dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true })); });
     expect(document.activeElement).toBe(tab('当前'));
     expect(panel.textContent).toContain('安心');

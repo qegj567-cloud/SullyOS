@@ -205,7 +205,7 @@ it('gives the selected memory system current storage, reading and recall rules e
     expect(text).toContain('额外名额默认 5，可设 1–20');
     expect(text).toContain('活跃片段达到 ' + EVENT_BOX_COMPRESSION_THRESHOLD + ' 条');
     expect(text).toContain('累计事件片段达到 ' + EVENT_BOX_SEAL_THRESHOLD + ' 条');
-    expect(text).toContain('私聊「＋ → 记忆链接」');
+    expect(text).toContain('私聊「＋ → 对话校准」');
     expect(text).not.toMatch(/finalScore|hybridSearch|pipeline\.ts/);
 });
 

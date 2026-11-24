@@ -16,6 +16,7 @@ import { toMountedWorldbook } from './worldbook';
 import { persistCharacterWithHomeMessages } from './homeMessageBridge';
 import { buildPhoneEvidenceChatCard, phoneEvidenceDeliveryId, applyPhoneEvidenceChatLink, PHONE_EVIDENCE_SYNCED } from './phoneEvidence';
 import { mergePhoneGeneration, PHONE_GENERATION_COMMITTED, type PhoneGeneration } from './phoneGeneration';
+import { deliveryReceipts, emptyDeliveryKey } from './chatDeliveryReceipts';
 import {deleteSecretNotesForIds, announceSecretNotesChanged} from './secretNote';
 import { ensureStoryTimelineRepair, invalidateStoryTimelineRepair } from './storyTheaterTimeline';
 
@@ -775,16 +776,19 @@ export const DB = {
     if (remaining.size === 0) return found;
     const db = await openDB();
     return new Promise((resolve, reject) => {
-      const transaction = db.transaction(STORE_MESSAGES, 'readonly');
+      const transaction = db.transaction([STORE_MESSAGES, STORE_ASSETS], 'readonly');
+      const empty = transaction.objectStore(STORE_ASSETS).get(emptyDeliveryKey(charId));
+      empty.onsuccess = () => {
+        for (const id of empty.result?.data ?? []) if (remaining.delete(id)) found.add(id);
+      };
       const request = transaction.objectStore(STORE_MESSAGES).index('charId')
         .openCursor(IDBKeyRange.only(charId), 'prev');
       request.onsuccess = () => {
         const cursor = request.result;
         if (!cursor) return;
         const message = cursor.value as Message;
-        const messageId = message.metadata?.activeMsg2?.messageId;
-        if (!message.groupId && typeof messageId === 'string' && remaining.delete(messageId)) {
-          found.add(messageId);
+        if (!message.groupId) for (const id of deliveryReceipts(message.metadata)) {
+          if (remaining.delete(id)) found.add(id);
         }
         if (remaining.size > 0) cursor.continue();
       };
@@ -811,7 +815,7 @@ export const DB = {
   },
 
   // Performance: Load only the most recent N messages for a character
-  getRecentMessagesByCharId: async (charId: string, limit: number, includeProcessed: boolean = false): Promise<Message[]> => {
+  getRecentMessagesByCharId: async (charId: string, limit: number, includeProcessed: boolean = false, beforeId?: number): Promise<Message[]> => {
     const db = await openDB();
     await ensureStoryTimelineRepair(db);
     const hwm = includeProcessed ? 0 : (() => {
@@ -825,6 +829,11 @@ export const DB = {
       const cursorReq = index.openCursor(IDBKeyRange.only(charId), 'prev');
       cursorReq.onsuccess = () => {
           const cursor = cursorReq.result;
+          if (cursor && beforeId !== undefined && Number(cursor.primaryKey) >= beforeId) {
+              if (Number(cursor.primaryKey) > beforeId) cursor.continuePrimaryKey(charId, beforeId);
+              else cursor.continue();
+              return;
+          }
           // Duplicate charId index keys are ordered by primary message ID. Once the reverse
           // cursor reaches the archive boundary, every remaining row is archived too. Do not
           // scan years of history just because the unarchived tail contains fewer than limit.
@@ -1675,6 +1684,24 @@ export const DB = {
           request.onsuccess = () => resolve(request.result?.data ?? null);
           request.onerror = () => reject(request.error);
       });
+  },
+
+  /** A late TTS response cannot attach old audio to an edited or replaced bubble. */
+  saveMessageVoiceIfCurrent: async (message: Message, data: unknown): Promise<boolean> => {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction([STORE_MESSAGES, STORE_ASSETS], 'readwrite');
+      let matched = false;
+      const read = tx.objectStore(STORE_MESSAGES).get(message.id);
+      read.onsuccess = () => {
+        const row = read.result as Message | undefined;
+        if (row?.charId !== message.charId || row.type !== message.type || row.content !== message.content) return;
+        matched = true;
+        tx.objectStore(STORE_ASSETS).put({ id: `voice_msg_${message.id}`, data });
+      };
+      tx.oncomplete = () => resolve(matched);
+      tx.onabort = () => reject(tx.error || new Error('语音缓存保存失败'));
+    });
   },
 
   saveAssetRaw: async (id: string, data: any): Promise<void> => {
