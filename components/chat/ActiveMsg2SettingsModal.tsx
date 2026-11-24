@@ -752,7 +752,7 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
           <div role="status" className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 space-y-2.5 text-xs leading-relaxed text-amber-800">
             <div className="font-bold text-amber-950">云端后台任务已被暂停</div>
             <p>
-              定时主动消息到点暂不触发（已排任务保存在云端，不会丢失；即时对话不受影响）。可在此直接恢复，或前往「设置 → 主动消息 2.0 → 功能设置 → 后台地址与维护」恢复。
+              定时主动消息到点不会发，即时对话不受影响。恢复后只补发晚到一小时以内的，更早的作废，重复任务跳到下一次。可在此直接恢复，或前往「设置 → 主动消息 2.0 → 功能设置 → 后台地址与维护」恢复。
             </p>
             <button
               type="button"

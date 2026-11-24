@@ -500,7 +500,7 @@ const describeTickTask = (task: AmsgTickReportTask, ctx: TickTaskContext): AmsgD
   } else if (task.stuck) {
     parts.push(lastErrorLine ? `${lastErrorLine}之后到了重试时间，也一直没开始发。` : '到点后一直没开始发。');
     parts.push(ctx.cronPaused
-      ? '后台任务暂停着，恢复后会一起补发。'
+      ? '后台任务暂停着。恢复后晚到一小时以内的会补发，更早的作废。'
       : ctx.tickFailureOngoing
         ? '原因见下面那条整轮报错。'
         : `Worker ${lastErrorLine ? '那之后' : ''}没留下任何报错，${TICK_TRIGGER_MISSING_HINT}`);
@@ -650,8 +650,8 @@ const buildTickRow = (debugReport: AmsgDebugReport, input: AmsgDiagnosticsInput)
   const lateText = stalledMinutes === null ? '' : ` ${stalledMinutes} 分钟`;
   const detail = pausedWithTasks
     ? (storageOverdue || listedTasks.length
-      ? `后台任务暂停中，有 ${overdue} 条到点的任务等恢复后一起补发。`
-      : `后台任务暂停中，${storage.pendingTasks ?? 0} 条待发任务到点了也先攒着，恢复后一起补发。`)
+      ? `后台任务暂停中，有 ${overdue} 条任务到点了没发。恢复后晚到一小时以内的会补发，更早的作废。`
+      : `后台任务暂停中，${storage.pendingTasks ?? 0} 条待发任务到点也不会发。恢复后晚到一小时以内的会补发，更早的作废。`)
     : tickBlocked
       ? (overdue
         ? `Worker 每分钟那一跳在报错，有 ${overdue} 条任务到点还没发出去。报错原话和逐条情况在下面。`

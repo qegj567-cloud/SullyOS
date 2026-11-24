@@ -1183,7 +1183,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
   /**
    * 暂停 / 恢复后台任务：让 Worker 摘掉或加回自己的 cron trigger（见 worker/amsg/src/cronTrigger.ts）。
    *
-   * 暂停期间到点的任务在 D1 里排着，不会丢；恢复后的第一跳一起补发。
+   * 暂停期间到点的任务不发。恢复后晚到一小时以内的补发，超过的作废或跳到下一次，阈值是上游 amsg-server 的过期判定（STALE_AFTER_MS，60 分钟）。
    * 走 GitHub 的 Sync fork 重新部署会按 wrangler.toml 把 cron 加回来，所以这不是永久开关。
    */
   const applyCronTrigger = async (enabled: boolean) => {
@@ -1987,7 +1987,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
                         : '暂停后台任务'}
                   </button>
                   <p className="text-xs leading-relaxed text-slate-500">
-                    暂停会摘掉 Worker 的定时触发，到点的主动消息和定时消息先攒在云端，不会丢；恢复后一起补发。
+                    暂停会摘掉 Worker 的定时触发，期间到点的主动消息、离开后消息和见面提醒都不发。恢复后只补发晚到一小时以内的，更早的作废，每天或每周重复的跳到下一次。
                   </p>
                 </>
               ) : null}
@@ -2512,6 +2512,12 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
   // ── 面板 ────────────────────────────────────────────────────────────────────
 
   const cronPaused = cronState?.kind === 'known' && !cronState.enabled;
+  // 功能总览能力表：Worker 以体检探测为准（这一刻连不连得上），旧 Worker 没有体检端点也算版本过旧。
+  const capabilityWorker = !diagnosticsProbe ? 'checking' as const
+    : diagnosticsProbe.reachable ? (workerOutdated || workerVersion?.state === 'outdated' ? 'outdated' as const : 'ok' as const)
+      : diagnosticsProbe.unsupported ? 'outdated' as const : 'unreachable' as const;
+  const capabilityPush = checkingPush || (!pushStatus && !pushCheckError) ? 'checking' as const
+    : pushCheckError ? 'error' as const : pushStatus?.hasSubscription ? 'ok' as const : 'none' as const;
   const panelTabs = [
     { id: 'worker', label: '后端连接', attention: !isConnected || workerOutdated || workerVersion?.state === 'outdated' || cronPaused },
     { id: 'push', label: '通知设置', attention: Boolean(pushCheckError) || nativePermissionMissing || Boolean(pushStatus && !pushStatus.hasSubscription) },
@@ -2556,7 +2562,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
   const panelContent = (
     <>
       {globalSwitchCard}
-      {!globallyPaused && cronPaused && <p className="text-xs leading-relaxed text-amber-700">后台任务已暂停，到点的消息先攒着，恢复后一起补发。</p>}
+      {!globallyPaused && cronPaused && <p className="text-xs leading-relaxed text-amber-700">后台任务已暂停，到点的消息不会发。恢复后只补发晚到一小时以内的。</p>}
       <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
         <span className={isConnected ? 'text-slate-500' : 'text-amber-700'}>后端{globallyPaused ? '已暂停' : isConnected ? '已连接' : '未连接'}</span>
         <span className={pushStatusClass}>通知{pushStatusText}</span>
@@ -2639,9 +2645,14 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
     <div hidden={workspaceSection !== 'overview'} className="amsg-section-body">
       <AmsgVisitedPanel active={isOpen && workspaceSection === 'overview'}>
       <AmsgConnectionGate connected={isConnected} onConnect={() => onSelectWorkspace?.('config')}>
-        <AmsgOverview connected={isConnected} active={isOpen && !covered && workspaceSection === 'overview'} enabled={globallyEnabled} cronPaused={cronPaused} instantEnabled={instantChatOn} busy={loading || provisioning} instantBlockedReason={instantChatBlockedReason}
+        <AmsgOverview connected={isConnected} active={isOpen && !covered && workspaceSection === 'overview'} enabled={globallyEnabled} cronEnabled={cronState ? cronState.kind === 'token-missing' || cronState.enabled : null} instantEnabled={instantChatOn} busy={loading || provisioning} instantBlockedReason={instantChatBlockedReason}
+          worker={capabilityWorker} push={capabilityPush} instantCapabilityBlocked={instantChatBlocker === 'Worker太旧' ? '后台版本还不支持，需要更新' : ''} onOpenPush={() => onSelectWorkspace?.('push')}
           characters={characters} characterGroups={characterGroups} onConfigureCharacter={isConnected ? onConfigureCharacter : undefined} onToggleEnabled={() => void handleToggleMasterSwitch()} onToggleInstant={() => void handleToggleInstantChat()}
-          onResumeCron={() => void applyCronTrigger(true)} onOpenMaintenance={() => { setFeatureTab('maintenance'); onSelectWorkspace?.('features'); }} />
+          onToggleCron={() => {
+            // 缺钥匙时补钥匙的表单在维护页，带用户过去。
+            if (cronState?.kind === 'token-missing') { setFeatureTab('maintenance'); onSelectWorkspace?.('features'); }
+            handleCronTriggerClick();
+          }} onOpenMaintenance={() => { setFeatureTab('maintenance'); onSelectWorkspace?.('features'); }} />
       </AmsgConnectionGate>
       </AmsgVisitedPanel>
     </div>
@@ -2742,7 +2753,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
     <ConfirmDialog
       isOpen={pauseConfirmOpen}
       title="暂停后台任务"
-      message="暂停后，到点的主动消息和定时消息会先攒着，不会丢。点「恢复后台任务」之后，攒下的会一起补发。"
+      message="暂停后，到点的主动消息、离开后消息和见面提醒都不发，即时对话照常。恢复后只补发晚到一小时以内的，更早的作废，每天或每周重复的跳到下一次。"
       confirmText="暂停"
       variant="warning"
       onConfirm={() => void applyCronTrigger(false)}
