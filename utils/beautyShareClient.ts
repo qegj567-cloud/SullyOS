@@ -1,6 +1,8 @@
 import { BEAUTY_MAX_BYTES, validateBeautyPackage, type BeautyKind, type BeautyShare } from './beautyShareContract';
 import { readShareFile } from './pngShare';
 import { validateDecoration } from './chatDecoration';
+import { formatUnknownError } from './errorSelfCheck';
+import { summarizeHtmlErrorBody } from './networkFailureDiagnosis';
 
 // Deployments can override this at build time; authors never enter a server URL.
 import {BEAUTY_SHARE_URL} from './beautyShareConfig';
@@ -17,6 +19,21 @@ export function saveBeautySession(value: BeautySession | null) {
   if (value) localStorage.setItem(SESSION_KEY, JSON.stringify(value));
   else localStorage.removeItem(SESSION_KEY);
 }
+function parseBeautyErrorText(rawText: string, status: number, fallback: string): string {
+  const trimmed = (rawText || '').trim();
+  if (!trimmed) return `${fallback} (HTTP ${status})`;
+  if (/^\s*<(?:!doctype|html|head|body)\b/i.test(trimmed)) {
+    const summary = summarizeHtmlErrorBody(trimmed).headline;
+    return `${fallback} (HTTP ${status}${summary ? ` · ${summary}` : ''})`;
+  }
+  try {
+    const parsed = JSON.parse(trimmed);
+    const msg = formatUnknownError(parsed?.error ?? parsed, '');
+    if (msg) return msg;
+  } catch { /* non-json */ }
+  return `${fallback} (HTTP ${status} · ${trimmed.slice(0, 120)})`;
+}
+
 export async function beautyRequest<T>(path: string, options: { method?: string; body?: unknown; token?: string } = {}): Promise<T> {
   if (!BEAUTY_SHARE_URL) throw Error('此版本尚未配置美化分享服务');
   const controller = new AbortController();
@@ -27,9 +44,13 @@ export async function beautyRequest<T>(path: string, options: { method?: string;
       headers: { ...(options.body === undefined ? {} : { 'Content-Type': 'application/json' }), ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}) },
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
     });
-    const result = await response.json();
-    if (!response.ok) throw Error(result.error || `服务返回 ${response.status}`);
-    return result as T;
+    const rawText = await response.text();
+    if (!response.ok) throw Error(parseBeautyErrorText(rawText, response.status, '美化分享服务异常'));
+    try {
+      return JSON.parse(rawText) as T;
+    } catch {
+      throw Error(parseBeautyErrorText(rawText, response.status, '美化分享服务返回非 JSON 响应'));
+    }
   } catch (error) {
     if (controller.signal.aborted) throw Error(options.method === 'POST' || options.method === 'DELETE' ? '请求超时，请刷新确认结果后再重试' : '请求超时，请刷新重试');
     throw error;
@@ -81,7 +102,10 @@ export async function downloadBeauty(share: BeautyShare, kind: BeautyKind) {
   const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 60_000);
   try {
     const response = await fetch(`${BEAUTY_SHARE_URL}/api/shares/${share.code}/file?revision=${share.revision}`, { signal: controller.signal, credentials: 'omit', cache: 'no-store' });
-    if (!response.ok) { const result = await response.json(); throw Error(result.error || '下载失败'); }
+    if (!response.ok) {
+      const rawText = await response.text().catch(() => '');
+      throw Error(parseBeautyErrorText(rawText, response.status, '下载失败'));
+    }
     const reader = response.body?.getReader(); if (!reader) throw Error('文件内容为空');
     const chunks: ArrayBuffer[] = []; let size = 0;
     for (;;) {

@@ -6,6 +6,8 @@
  */
 
 import { BIFANG_BASE, migratePostOfficeBase } from './bifangConfig';
+import { formatUnknownError } from '../errorSelfCheck';
+import { summarizeHtmlErrorBody } from '../networkFailureDiagnosis';
 
 const DEFAULT_BASE = BIFANG_BASE;
 const BASE_KEY = 'vr_po_base';
@@ -71,9 +73,14 @@ async function call<T>(path: string, opts: RequestInit & { query?: Record<string
         headers: { ...(opts.body ? { 'Content-Type': 'application/json' } : {}), ...(opts.headers as Record<string, string> || {}) },
         body: opts.body,
     });
-    const data = await res.json().catch(() => ({}));
+    const rawText = await res.text().catch(() => '');
+    let data: any = {};
+    try { data = rawText ? JSON.parse(rawText) : {}; } catch { /* non-json */ }
     if (!res.ok || (data && data.ok === false)) {
-        throw new Error((data && data.error) || `HTTP ${res.status}`);
+        const msg = formatUnknownError(data?.error ?? data, '')
+            || (/^\s*<(?:!doctype|html|head|body)\b/i.test(rawText) ? summarizeHtmlErrorBody(rawText).headline : rawText.trim().slice(0, 160))
+            || `HTTP ${res.status}`;
+        throw new Error(msg);
     }
     return data as T;
 }

@@ -1069,7 +1069,7 @@ async function callLike520LLM<T>(opts: CallOptions<T>): Promise<T> {
         }
     }
 
-    console.error(`[520][${opts.label}] all attempts failed. last raw response:`, lastRawResponse);
+    console.error(`[520][${opts.label}] 重试全部失败 (rawLength=${String(lastRawResponse || '').length}):`, lastErr?.message || '调用失败');
     throw lastErr || new Error(`${opts.label} 调用失败`);
 }
 

@@ -248,7 +248,35 @@
     if (event.message) capture(event.message + (event.filename ? '\n' + event.filename.split('?')[0] + ':' + event.lineno : ''), 'runtime-error', event.filename, event.lineno);
     else if (target && target.tagName === 'SCRIPT') capture('启动脚本加载失败：' + (target.src || '').split('?')[0], 'script-load', target.src);
   }, true);
-  window.addEventListener('unhandledrejection', function (event) { capture(event.reason && event.reason.message || event.reason, 'unhandled-rejection'); });
+  function formatRejectionReason(reason) {
+    try {
+      if (!reason) return '未说明原因的异步启动异常';
+      if (typeof reason === 'string') return reason;
+      if (typeof reason === 'object') {
+        var name = typeof reason.name === 'string' && reason.name ? reason.name : '';
+        var msg = typeof reason.message === 'string' ? reason.message : '';
+        if (msg) return name && msg.indexOf(name) !== 0 ? name + ': ' + msg : msg;
+        if (typeof Event !== 'undefined' && reason instanceof Event) {
+          var target = reason.target;
+          var src = target && (target.src || target.href);
+          var safeSrc = src ? (/^(?:data|blob):/i.test(String(src)) ? String(src).split(':')[0] + ':<inline>' : String(src).split('?')[0].split('#')[0]) : '';
+          return '资源加载事件失败 (' + (reason.type || 'error') + (safeSrc ? ': ' + safeSrc : '') + ')';
+        }
+        if (reason.code !== undefined || reason.error !== undefined) {
+          var parts = [];
+          if (typeof reason.code === 'string' || typeof reason.code === 'number') parts.push('code=' + reason.code);
+          if (typeof reason.error === 'string') parts.push(reason.error);
+          if (parts.length) return parts.join(' ');
+        }
+        if (name) return name;
+        return '未知启动异常对象';
+      }
+      return String(reason);
+    } catch (_) {
+      return '未说明原因的异步启动异常';
+    }
+  }
+  window.addEventListener('unhandledrejection', function (event) { capture(formatRejectionReason(event.reason), 'unhandled-rejection'); });
   function watchRoot() {
     if (hideIfReady()) return;
     var root = document.getElementById('root');

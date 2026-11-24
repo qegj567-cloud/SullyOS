@@ -216,7 +216,7 @@ export async function generateSlotTheater(
         const content = extractContent(data);
         const lines = parseTheaterLines(content);
         if (lines.length === 0) {
-            console.error('[Theater] Generation failed: 无法解析出演出行:', content.slice(0, 200));
+            console.warn('[Theater] 无法从模型输出解析出演出行', { length: content.length });
             return null;
         }
 

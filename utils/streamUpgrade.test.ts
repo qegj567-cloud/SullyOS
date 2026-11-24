@@ -67,4 +67,51 @@ describe('assembleUpgradedResponse', () => {
         const out = await assembleUpgradedResponse(upstream);
         expect((await out.json()).choices[0].message.content).toBe('整包');
     });
+
+    it('上游用 200 SSE 返回内嵌 error 事件时，还原为非 2xx JSON 响应供诊断与调用方识别', async () => {
+        const sse = [
+            'data: {"error":{"message":"Model overloaded","type":"server_error","code":503}}',
+            'data: [DONE]',
+            '',
+        ].join('\n');
+        const upstream = new Response(sse, { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+        const out = await assembleUpgradedResponse(upstream);
+        expect(out.ok).toBe(false);
+        expect(out.status).toBe(503);
+        const body = await out.json();
+        expect(body.error.message).toContain('Model overloaded');
+    });
+
+    it('网关在正常流式 chunk 上附带空占位 error 对象（message 为空、code 为 null/0）时不误判为报错', async () => {
+        const sse = [
+            'data: {"id":"c3","error":{"message":"","type":"","param":null,"code":null},"choices":[{"delta":{"content":"正常正文"}}]}',
+            'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}',
+            'data: [DONE]',
+            '',
+        ].join('\n');
+        const upstream = new Response(sse, { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+        const out = await assembleUpgradedResponse(upstream);
+        expect(out.ok).toBe(true);
+        const body = await out.json();
+        expect(body.choices[0].message.content).toBe('正常正文');
+    });
+
+    it('底层流式读取抛出 __sullyUpstreamStreamError 时还原为非 2xx JSON 响应而非流中断异常', async () => {
+        const errStream = new ReadableStream({
+            start(controller) {
+                controller.error(Object.assign(new Error('API Error: Overloaded [overloaded_error]'), {
+                    __sullyUpstreamStreamError: true,
+                    httpStatus: 529,
+                }));
+            },
+        });
+        const upstream = new Response(errStream, { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+        const info: { status?: number } = { status: 200 };
+        const out = await assembleUpgradedResponse(upstream, info);
+        expect(out.ok).toBe(false);
+        expect(out.status).toBe(529);
+        expect(info.status).toBe(529);
+        const body = await out.json();
+        expect(body.error.message).toContain('Overloaded');
+    });
 });

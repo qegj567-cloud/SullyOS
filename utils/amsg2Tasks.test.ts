@@ -357,6 +357,14 @@ describe('describeRemoteLastError', () => {
     expect(text).not.toContain('Request URL');
   });
 
+  it('上游破折号后是 HTML 网关错误页时保留状态码与标题摘要，不把 <!DOCTYPE html> 糊上卡片', () => {
+    const reason = 'AI API error: 502 Bad Gateway. Request URL: https://api.example.com/v1/chat/completions\n'
+      + '  — <!DOCTYPE html><html><head><title>502: Bad gateway</title></head><body>Cloudflare</body></html>';
+    const text = describeRemoteLastError({ reason }, fmt)!;
+    expect(text).toContain('502 Bad Gateway');
+    expect(text).not.toContain('<!DOCTYPE');
+  });
+
   it('推送订阅失效（pushStatus 410 / 404）说该去重置订阅，不报原始错误', () => {
     const text = describeRemoteLastError(
       { reason: 'Web Push delivery failed: 410 Gone — …', pushStatus: 410 }, fmt,

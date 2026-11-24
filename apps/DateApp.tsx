@@ -12,7 +12,8 @@ import { processNewMessagesWithAutoArchive } from '../utils/memoryPalace/autoArc
 import type { PipelineResult } from '../utils/memoryPalace/pipeline';
 import { incrementDigestRound, runCognitiveDigestion } from '../utils/memoryPalace';
 import { getRoomLabel } from '../utils/memoryPalace/types';
-import { safeResponseJson, extractContent } from '../utils/safeApi';
+import { safeResponseJson, extractContent, formatApiErrorPayload } from '../utils/safeApi';
+import { formatUnknownError } from '../utils/errorSelfCheck';
 import Modal from '../components/os/Modal';
 import TokenImg from '../components/os/TokenImg';
 import { useConfirmDialog } from '../hooks/useConfirmDialog';
@@ -315,8 +316,10 @@ const DateApp: React.FC = () => {
             }),
             __sullyMeta: { appId: 'date', appName: '见面', charId: speaker?.id, charName: speaker?.name, purpose },
         } as RequestInit);
-        if (!response.ok) throw new Error(`API Error ${response.status}`);
         const data = await safeResponseJson(response);
+        if (!response.ok) {
+            throw new Error(`API Error ${response.status}: ${formatApiErrorPayload(data, response.status)}`);
+        }
         // 思考型渠道会把正文塞进 reasoning_content、content 留空——直接取 content
         // 会拿到空串且不报错：感知页黑屏卡死（无按钮可退），会话里则落库空消息。
         const content = extractContent(data);
@@ -427,7 +430,7 @@ const DateApp: React.FC = () => {
             if (requestId === peekRequestRef.current) setPeekStatus(content);
 
         } catch (e: any) {
-            if (requestId === peekRequestRef.current) addToast(`开场生成失败：${e.message}`, 'error');
+            if (requestId === peekRequestRef.current) addToast(`开场生成失败：${formatUnknownError(e, '请求异常')}`, 'error');
         } finally {
             if (requestId === peekRequestRef.current) setPeekLoading(false);
         }

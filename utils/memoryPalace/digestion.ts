@@ -430,8 +430,8 @@ ${material.recentEpisodes.length > 0 ? `
         });
 
     } catch (err: any) {
-        console.warn('⚡ [Digest] LLM call failed:', err.message);
-        return [];
+        console.warn('⚡ [Digest] LLM call failed:', err?.message || err);
+        throw err;
     }
 }
 
@@ -896,9 +896,16 @@ export async function runCognitiveDigestion(
 
     console.log(`🧠 [Digest] Starting cognitive digestion for ${charName}: ${material.atticNodes.length} attic, ${material.anticipations.length} anticipations, ${material.studyNodes.length} study, ${material.userRoomNodes.length} user, ${material.selfRoomNodes.length} self, ${material.recentEpisodes.length} episodes(回看)`);
 
-    // LLM 统一消化
+    // LLM 统一消化：失败时不能把送审候选误标成 digestedAt（当作“看过了”永久退场），
+    // 手动触发直接向上抛错展示失败原因，后台自动触发则静默结束等待下一个 50 轮周期。
     onProgress?.('正在审视记忆…');
-    const actions = await callDigestLLM(charId, charName, charPersona, material, llmConfig, userName);
+    let actions: Awaited<ReturnType<typeof callDigestLLM>>;
+    try {
+        actions = await callDigestLLM(charId, charName, charPersona, material, llmConfig, userName);
+    } catch (err) {
+        if (manualTrigger) throw err;
+        return null;
+    }
 
     // 执行动作：状态机改现有节点；概括类产出汇集为门牌蒸馏候选
     const { result, plateSubmissions } = await executeActions(actions, charId, material);

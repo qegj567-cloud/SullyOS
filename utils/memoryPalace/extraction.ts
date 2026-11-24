@@ -429,15 +429,21 @@ function extractionFailureReport(
     if (!httpFailure && response.bodyRead) stage = '收到回复后解析失败';
     else if (!httpFailure && status !== undefined) stage = '已收到响应，但读取正文失败';
 
-    const details = [`API：${api}`, `请求模型：${model}`];
+    const details = [`角色：${charName}`, `API：${api}`, `请求模型：${model}`];
     if (status) details.push(`HTTP ${status}`);
     // Response previews can contain the prompt or private memory. Only expose known, safe reasons.
     const message = error instanceof Error ? error.message : '';
     if (message.startsWith('记忆提取输出被截断')) details.push('模型输出被截断');
     else if (message.startsWith('记忆提取未返回有效 JSON') || message.startsWith('API返回了无效JSON') || error instanceof SyntaxError) details.push('回复格式不是有效的 JSON');
     else if (message.startsWith('API返回了HTML')) details.push('接口返回了 HTML 页面');
-    else if (message.startsWith('API返回了空响应')) details.push('响应正文为空');
-    else if (/^(Type error|Failed to fetch|Load failed|NetworkError|aborted|timeout \d+ms)$/i.test(message)) details.push(message);
+    else if (message.startsWith('API返回了空响应') || message.startsWith('API流式响应未返回有效数据')) details.push('响应正文为空');
+    else if (status === 401 || status === 403 || /invalid[_ ]api[_ ]key|unauthorized/i.test(message)) details.push('API 密钥无效或无权限');
+    else if (status === 402 || /insufficient[_ ](?:quota|balance)|余额不足/i.test(message)) details.push('账户余额或配额不足');
+    else if (status === 429 || /rate[_ ]limit|too many requests/i.test(message)) details.push('触发请求频率限制');
+    else if (/model[_ ]not[_ ]found|does not exist/i.test(message)) details.push('模型名称不存在或不可用');
+    else if (/context[_ ]length|maximum context|token.*limit/i.test(message)) details.push('上下文长度超出模型上限');
+    else if (/Anthropic 流式连接提前结束/.test(message)) details.push('流式传输提前断开');
+    else if (/^(Type error|Failed to fetch|Load failed|NetworkError(?: when attempting to fetch resource\.?)?|aborted|timeout \d+ms)$/i.test(message)) details.push(message.slice(0, 80));
 
     return new ApplicationErrorReport('记忆宫殿 · 记忆提取', {
         title: `缓冲区提取失败（${messageCount} 条消息）· ${stage}`,

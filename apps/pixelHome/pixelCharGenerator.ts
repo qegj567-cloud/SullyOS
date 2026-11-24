@@ -93,7 +93,11 @@ function loadImage(src: string): Promise<HTMLImageElement> {
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => resolve(img);
-    img.onerror = (e) => reject(new Error(`Failed to load ${src}: ${e}`));
+    img.onerror = () => {
+      imgCache.delete(src);
+      const safeSrc = src.startsWith('data:') ? 'data:[base64]' : src.startsWith('blob:') ? 'blob:[local]' : src.slice(0, 120);
+      reject(new Error(`像素部件加载失败: ${safeSrc}`));
+    };
     img.src = src;
   });
   imgCache.set(src, p);

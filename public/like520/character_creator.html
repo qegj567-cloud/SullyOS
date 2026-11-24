@@ -2081,7 +2081,7 @@ function renderTintedLayer(layerEl, src, tint) {
     if(Object.keys(tintCache).length>=48)delete tintCache[Object.keys(tintCache)[0]];
     tintCache[key] = out;
     appendCanvas(layerEl, out);
-  });
+  }).catch(err => { console.warn('[520][cc] layer load failed:', err && err.message ? err.message : err); });
 }
 
 /* ===== 眼睛染色（左右独立），同时画到主层 + overlay 层 ===== */
@@ -2099,7 +2099,7 @@ function renderEyesLayer(mainEl, overlayEl, src, tintL, tintR) {
     if(Object.keys(tintCache).length>=48)delete tintCache[Object.keys(tintCache)[0]];
     tintCache[key] = out;
     apply(out);
-  });
+  }).catch(err => { console.warn('[520][cc] eyes layer load failed:', err && err.message ? err.message : err); });
 }
 
 /* 图片对象缓存 — 避免每次染色都重新解码 base64 */
@@ -2109,12 +2109,17 @@ function loadImage(src) {
     if (imgCache[src] instanceof Promise) return imgCache[src];
     return Promise.resolve(imgCache[src]);
   }
-  const p = new Promise((resolve) => {
+  const p = new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => {
       imgCache[src] = img;
       resolve(img);
+    };
+    img.onerror = () => {
+      delete imgCache[src];
+      const safeSrc = typeof src === "string" && src.startsWith("data:") ? "data:[base64]" : String(src || "").slice(0, 120);
+      reject(new Error("贴图图层加载失败: " + safeSrc));
     };
     img.src = src;
   });

@@ -29,6 +29,9 @@ import { ActiveMsgClient, type AmsgOutboxEntry, type InstantChatProbeOutcome } f
 import { ActiveMsgStore, isInstantChatSwitchedOn } from './activeMsgStore';
 import { isAmsg2GloballyEnabled } from './amsgGlobalGate';
 import { trackEvent } from './analytics';
+import { appendInstantTraceEntry } from './instantTraceLog';
+import { formatUnknownError } from './errorSelfCheck';
+import { redactRelayTokensInText } from './networkRequestSource';
 import {
   cloudApiCallLogId,
   cloudEmotionApiCallLogId,
@@ -739,7 +742,14 @@ export const sendInstantChatTurn = async (params: {
         sendFailed: true,
       });
     }
-    return { ok: false, error: error?.message || String(error) };
+    const formattedErr = formatUnknownError(error, '即时对话发送失败');
+    appendInstantTraceEntry({
+      ts: new Date().toISOString(),
+      event: 'instant-chat-send-failed',
+      charId: params.char.id,
+      reason: redactRelayTokensInText(formattedErr).slice(0, 240),
+    });
+    return { ok: false, error: formattedErr };
   } finally {
     params.signal?.removeEventListener('abort', stopSending);
     if (inFlightSends.get(params.char.id) === sendToken) inFlightSends.delete(params.char.id);

@@ -17,6 +17,7 @@ import { htmlToText } from './htmlPrompt';
 import { getProxyWorkerUrl } from './proxyWorker';
 import { getVideoParseKey } from './videoParser';
 import { getFirecrawlApiKey, scrapeWebpageWithFirecrawl } from './firecrawl';
+import { formatUnknownError } from './errorSelfCheck';
 
 // sfworker：项目自带的通用代理 Worker（小红书签名 / 网易云 weapi / Brave 搜索 / WebDAV /
 // 网页抓取都走它，代码见 worker/index.js）。地址走中心配置 utils/proxyWorker.ts，
@@ -230,8 +231,8 @@ export async function expandShortUrl(url: string): Promise<string> {
   let parsed: any = null;
   try { parsed = text ? JSON.parse(text) : null; } catch { /* non-json */ }
   if (!res.ok || !parsed?.success) {
-    const err = parsed?.error;
-    throw new Error((err && (err.message || err)) || `短链展开失败 (HTTP ${res.status})`);
+    const errMsg = formatUnknownError(parsed?.error ?? parsed, '');
+    throw new Error(errMsg || `短链展开失败 (HTTP ${res.status})`);
   }
   return String(parsed?.data?.finalUrl || url);
 }
@@ -258,9 +259,8 @@ async function fetchViaWorker(url: string): Promise<WorkerFetchResult> {
 
   if (!res.ok || !parsed?.success) {
     // sfworker 失败返回 { error: '中文说明' }（字符串）；也兼容 { error: { message } }。
-    const err = parsed?.error;
-    const msg = (err && (err.message || err)) || `网页抓取失败 (HTTP ${res.status})`;
-    throw new Error(typeof msg === 'string' ? msg : '网页抓取失败');
+    const msg = formatUnknownError(parsed?.error ?? parsed, '');
+    throw new Error(msg || `网页抓取失败 (HTTP ${res.status})`);
   }
   const data = parsed?.data || {};
   if (data.mode === 'reader' && typeof data.content === 'string' && data.content.trim()) {
@@ -426,6 +426,7 @@ async function extractViaApizero(url: string): Promise<ExtractedWebpage> {
  * 抓取失败（CORS / worker 报错 / 网络）时抛错，调用方负责给用户 toast。
  */
 export async function extractWebpageContent(url: string): Promise<ExtractedWebpage> {
+  const upstreamFailures: string[] = [];
   // 主路径：apizero 正文提取。失败（服务挂 / SPA 壳 / 配额）降级到 sfworker/Jina 老链路。
   const viaApizero = await extractViaApizero(url).catch((e) => {
     console.warn('[webpageExtractor] apizero extract failed, fallback to worker/Jina:', e);
@@ -437,6 +438,7 @@ export async function extractWebpageContent(url: string): Promise<ExtractedWebpa
   // 客户端直连 Firecrawl，不经过公共 Worker，也不会挤作者的共享额度。
   if (getFirecrawlApiKey()) {
     const viaFirecrawl = await scrapeWebpageWithFirecrawl(url).catch((e) => {
+      upstreamFailures.push(`Firecrawl: ${formatUnknownError(e, '抓取失败')}`);
       console.warn('[webpageExtractor] Firecrawl failed, fallback to worker/Jina:', e);
       return null;
     });
@@ -462,6 +464,7 @@ export async function extractWebpageContent(url: string): Promise<ExtractedWebpa
 
   const viaWorker = await fetchViaWorker(url).catch((e) => {
     // sfworker 抓取报错：记录后让直连兜底再试一把。
+    upstreamFailures.push(`代理抓取: ${formatUnknownError(e, '失败')}`);
     console.warn('[webpageExtractor] sfworker fetch failed, will try direct:', e);
     return null;
   });
@@ -493,8 +496,16 @@ export async function extractWebpageContent(url: string): Promise<ExtractedWebpa
     html = viaWorker.html;
     finalUrl = viaWorker.finalUrl;
   } else {
-    const direct = await fetchHtmlDirect(url); // 失败直接抛给调用方
-    html = direct.html;
+    try {
+      const direct = await fetchHtmlDirect(url);
+      html = direct.html;
+    } catch (directErr) {
+      const directMsg = formatUnknownError(directErr, '直连抓取失败');
+      if (upstreamFailures.length > 0) {
+        throw new Error(`${upstreamFailures.join('；')}（浏览器直连兜底亦失败：${directMsg}）`);
+      }
+      throw directErr;
+    }
   }
 
   const parsed = parseWebpageHtml(html, finalUrl || url);

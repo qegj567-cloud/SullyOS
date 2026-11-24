@@ -144,10 +144,24 @@ const sendFcmNotification = async (env: NativeFcmEnv, token: string, payload: st
     },
   );
   if (!response.ok) {
-    const detail = await response.text().catch(() => '');
-    throw new Error(`FCM_SEND_FAILED (${response.status}): ${detail.slice(0, 500)}`);
+    const detail = summarizePushErrorText(await response.text().catch(() => ''));
+    throw createPushChannelError('FCM_SEND_FAILED', response.status, `FCM_SEND_FAILED (${response.status}): ${detail || `HTTP ${response.status}`}`);
   }
 };
+
+const summarizePushErrorText = (raw: string): string => {
+  const trimmed = String(raw || '').trim();
+  if (!trimmed) return '';
+  if (/^(?:<!doctype\s+html|<html\b|<head\b|<body\b|<title\b|<!--)/i.test(trimmed)) {
+    const titleMatch = trimmed.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    const title = titleMatch?.[1]?.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    return title ? `HTML 错误页 (${title.slice(0, 80)})` : 'HTML 错误页';
+  }
+  return trimmed.replace(/\s+/g, ' ').slice(0, 300);
+};
+
+const createPushChannelError = (code: string, status: number, message: string): Error =>
+  Object.assign(new Error(message), { code, statusCode: status });
 
 const isSilentPushPayload = (payload: Record<string, any>): boolean => {
   const show = payload.notification?.show;
@@ -271,8 +285,8 @@ const sendThirdPartyNotification = async (
     const code = typeof json?.code === 'number' ? json.code : undefined;
     const ok = response.ok && (code === undefined || code === 1000) && json?.success !== false;
     if (!ok) {
-      const msg = String(json?.msg || text || `HTTP ${response.status}`).slice(0, 300);
-      throw new Error(`WXPUSHER_SEND_FAILED (${code ?? response.status}): ${msg}`);
+      const msg = summarizePushErrorText(String(json?.msg || text || `HTTP ${response.status}`));
+      throw createPushChannelError('WXPUSHER_SEND_FAILED', response.status, `WXPUSHER_SEND_FAILED (${code ?? response.status}): ${msg}`);
     }
     return { ok: true, provider: 'wxpusher' };
   }
@@ -281,16 +295,16 @@ const sendThirdPartyNotification = async (
     const code = typeof json?.code === 'number' ? json.code : undefined;
     const ok = response.ok && (code === undefined || code === 200);
     if (!ok) {
-      const msg = String(json?.message || text || `HTTP ${response.status}`).slice(0, 300);
-      throw new Error(`BARK_SEND_FAILED (${code ?? response.status}): ${msg}`);
+      const msg = summarizePushErrorText(String(json?.message || text || `HTTP ${response.status}`));
+      throw createPushChannelError('BARK_SEND_FAILED', response.status, `BARK_SEND_FAILED (${code ?? response.status}): ${msg}`);
     }
     return { ok: true, provider: 'bark' };
   }
 
   const ok = response.ok && json?.status !== 500 && json?.status !== 400;
   if (!ok) {
-    const msg = String(json?.message || json?.msg || text || `HTTP ${response.status}`).slice(0, 300);
-    throw new Error(`MEOW_SEND_FAILED (${response.status}): ${msg}`);
+    const msg = summarizePushErrorText(String(json?.message || json?.msg || text || `HTTP ${response.status}`));
+    throw createPushChannelError('MEOW_SEND_FAILED', response.status, `MEOW_SEND_FAILED (${response.status}): ${msg}`);
   }
   return { ok: true, provider: 'meow' };
 };

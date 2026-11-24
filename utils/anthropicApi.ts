@@ -128,8 +128,15 @@ export function anthropicUsage(usage: any = {}): any {
     return {...usage,prompt_tokens:input+read+write,completion_tokens:usage.output_tokens || 0,total_tokens:input+read+write+(usage.output_tokens || 0),prompt_tokens_details:{cached_tokens:read},cache_creation_input_tokens:write};
 }
 
+const formatAnthropicErrorPayload = (err: any, fallback: string): string => {
+    const msg = typeof err?.message === 'string' ? err.message.trim() : '';
+    const type = typeof err?.type === 'string' ? err.type.trim() : '';
+    if (msg && type && !msg.includes(type)) return `${msg} [${type}]`;
+    return msg || type || fallback;
+};
+
 export function fromAnthropicMessage(message: any): any {
-    if (message.type === 'error') throw Error(message.error?.message || 'Anthropic 返回错误');
+    if (message.type === 'error') throw Error(formatAnthropicErrorPayload(message.error, 'Anthropic 返回错误'));
     if (message.type !== 'message' || !Array.isArray(message.content)) throw Error('Anthropic 返回了无效 Messages 响应');
     const text = message.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('');
     const thinking = message.content.filter((b: any) => b.type === 'thinking' || b.type === 'redacted_thinking');
@@ -151,7 +158,12 @@ function convertAnthropicStream(response: Response): Response {
         if (stopped) {eventData=[];return;}
         if (!eventData.length) return;
         const event = JSON.parse(eventData.join('\n')); eventData = [];
-        if (event.type === 'error') throw Error(event.error?.message || 'Anthropic 流式错误');
+        if (event.type === 'error') {
+            throw Object.assign(
+                Error(`API Error: ${formatAnthropicErrorPayload(event.error, 'Anthropic 流式错误')}`),
+                { __sullyUpstreamStreamError: true },
+            );
+        }
         let delta: any = {}, end: string | null = null;
         if (event.type === 'message_start') {id=event.message.id;model=event.message.model;usage={...event.message.usage};delta.role='assistant';}
         else if (event.type === 'content_block_start') {
@@ -239,7 +251,26 @@ export async function fetchLlm(resource: RequestInfo | URL, init?: LlmRequestIni
         if(!response.body)throw Error('Anthropic 返回了空流');
         return convertAnthropicStream(response);
     }
-    const message = info ? JSON.parse(await readLlmResponseText(response, info)) : await response.json();
+    const rawText = await readLlmResponseText(response, info);
+    let message: any;
+    try {
+        message = JSON.parse(rawText);
+    } catch {
+        return new Response(rawText, {
+            status: response.status,
+            statusText: response.statusText,
+            headers: response.headers,
+        });
+    }
+    if (message?.type === 'error' || (message?.error && !message?.content)) {
+        const syntheticStatus = 502;
+        if (info) info.status = syntheticStatus;
+        return new Response(rawText, {
+            status: syntheticStatus,
+            statusText: 'Anthropic Upstream Error',
+            headers: { 'content-type': 'application/json' },
+        });
+    }
     return new Response(JSON.stringify(fromAnthropicMessage(message)),{status:response.status,statusText:response.statusText,headers:{'content-type':'application/json'}});
 }
 

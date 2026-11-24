@@ -16,6 +16,8 @@ import { resolveMiniMaxApiKey } from './minimaxApiKey';
 import { minimaxFetch } from './minimaxEndpoint';
 import { convertHexAudioToBlob, fetchRemoteAudioBlob } from './minimaxTts';
 import { DB } from './db';
+import { formatUnknownError } from './errorSelfCheck';
+import { summarizeHtmlErrorBody } from './networkFailureDiagnosis';
 
 // ── Types ──
 
@@ -233,7 +235,11 @@ export async function synthesizeSongMinimax(
   });
   const data = await res.json();
   if (!res.ok) {
-    throw new Error(data?.error || data?.base_resp?.status_msg || `Music API 失败 (HTTP ${res.status})`);
+    const rawStr = typeof data === 'string' ? data : (typeof data?.error === 'string' ? data.error : '');
+    const errMsg = /^\s*<(?:!doctype|html|head|body)\b/i.test(rawStr)
+      ? summarizeHtmlErrorBody(rawStr).headline
+      : formatUnknownError(data, '');
+    throw new Error(errMsg || `Music API 失败 (HTTP ${res.status})`);
   }
 
   // MiniMax often returns HTTP 200 with a non-zero base_resp status for

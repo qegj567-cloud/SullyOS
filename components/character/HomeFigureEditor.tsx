@@ -11,6 +11,7 @@ import {HairEditor} from '../../experiments/chibi/HairEditor';
 import {loadCreatorPartsForRender} from '../../utils/creatorPartsBlob';
 import type {HomeFigureSlot, CharacterProfile, CustomCreatorPart} from '../../types';
 import {flipHomeFigurePart,selectHomeFigurePart} from '../../utils/homeFigureParts';
+import {formatUnknownError} from '../../utils/errorSelfCheck';
 import './homeFigureEditor.css';
 import {useFigurePreview} from '../../experiments/chibi/useFigurePreview';
 
@@ -44,7 +45,7 @@ export default function HomeFigureEditor({paletteId, name, ownerId, value, seedS
     type Snapshot = {hair: HairSettings; state: unknown; image: string};
     const [past, setPast] = useState<Snapshot[]>([]), [future, setFuture] = useState<Snapshot[]>([]);
     const group = useRef(false), recorded = useRef(false), alive = useRef(true), revision = useRef(0);
-    useEffect(() => {alive.current = true; loadCreatorPartsForRender().then(rows => {if (alive.current) setItems(rows);}).catch(e => {if (alive.current) setError(String(e));}); return () => {alive.current = false; revision.current++;};}, []);
+    useEffect(() => {alive.current = true; loadCreatorPartsForRender().then(rows => {if (alive.current) setItems(rows);}).catch(e => {if (alive.current) setError(formatUnknownError(e, '自定义素材读取失败'));}); return () => {alive.current = false; revision.current++;};}, []);
     useEffect(()=>{
         const end=()=>{if(group.current){group.current=false;setAdjusting(false);}};
         window.addEventListener('pointerup',end);window.addEventListener('pointercancel',end);window.addEventListener('blur',end);
@@ -67,7 +68,7 @@ export default function HomeFigureEditor({paletteId, name, ownerId, value, seedS
     const [renderParts, setRenderParts] = useState<Parts>();
     useEffect(() => {let cancelled = false; if (!parts) return;
         Promise.all(preview.extras.filter(item => item.src).map(async item => {const img = new Image(); img.src = item.src!; await img.decode(); return [item.source, img] as const;}))
-            .then(extras => {if (!cancelled) setRenderParts({...parts, ...Object.fromEntries(extras)});}).catch(e => {if (!cancelled) setError(String(e));});
+            .then(extras => {if (!cancelled) setRenderParts({...parts, ...Object.fromEntries(extras)});}).catch(e => {if (!cancelled) setError(formatUnknownError(e, '部件贴图解码失败'));});
         return () => {cancelled = true;};
     }, [parts, preview.extras]);
     const confirmBase = (result: ChibiResult) => {setReady(false); setError(''); setParts(undefined); setRenderParts(undefined); setState(result.state); setImage(result.transparentDataUrl); setEditingBase(false);};
@@ -106,7 +107,7 @@ export default function HomeFigureEditor({paletteId, name, ownerId, value, seedS
                 onRedo={() => {const last = future.at(-1); if (last) {setPast(rows => [...rows, {hair,state,image}]); setFuture(rows => rows.slice(0, -1)); restore(last);}}}
                 onReset={() => change({layers: {}, extras: [], bodyShape: hair.bodyShape})} onEditAppearance={() => {setReady(false); revision.current++; setEditingBase(true);}} appearanceImage={image} /> : <p className="p-8">正在还原 3D 形象…</p>}
         </div>}
-        {state && !editingBase && <CreatorRollBridge key={JSON.stringify(state)} request={ready && items ? 1 : 0} savedState={state} extraItems={items} onReady={() => setReady(true)} onResult={result => {const token = ++revision.current; decodeParts(result).then(next => {if (alive.current && token === revision.current) {setParts(next); setSourceEyeColors(result.eyeColors); setSourceEyeTints(result.eyeTints); setImage(result.image); setRebuilding(false);}}).catch(e => {if (alive.current) setError(String(e));});}} onError={setError} />}
+        {state && !editingBase && <CreatorRollBridge key={JSON.stringify(state)} request={ready && items ? 1 : 0} savedState={state} extraItems={items} onReady={() => setReady(true)} onResult={result => {const token = ++revision.current; decodeParts(result).then(next => {if (alive.current && token === revision.current) {setParts(next); setSourceEyeColors(result.eyeColors); setSourceEyeTints(result.eyeTints); setImage(result.image); setRebuilding(false);}}).catch(e => {if (alive.current) setError(formatUnknownError(e, '3D 形象解码失败'));});}} onError={setError} />}
         {error && <p role="alert" className="p-3 text-sm text-red-700">{error} 请返回后重试。</p>}
     </div>;
 }

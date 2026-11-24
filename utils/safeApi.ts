@@ -17,6 +17,7 @@ import { waitForPalaceRequest } from './memoryPalace/maintenanceMode';
 import { fetchLlm } from './anthropicApi';
 import { isAnthropicEndpoint, readLlmResponseText, type LlmRequestInit, type LlmResponseInfo } from './llmEndpoint';
 import { normalizeAssistantCompletion, readAssistantMessage, splitInlineThinking } from './assistantThinking';
+import { summarizeHtmlErrorBody } from './networkFailureDiagnosis';
 
 const log = makeDebugLogger('api', 'SafeAPI');
 
@@ -52,11 +53,9 @@ function parseRawBodyText(text: string, status: number, contentType?: string | n
     // Detect HTML / XML responses
     const trimmed = text.trimStart();
     if (trimmed.startsWith('<')) {
-        // Extract useful info from HTML error pages
-        const titleMatch = trimmed.match(/<title>(.*?)<\/title>/i);
-        const hint = titleMatch ? titleMatch[1] : trimmed.slice(0, 120);
+        const { headline } = summarizeHtmlErrorBody(trimmed);
         throw new Error(
-            `API返回了HTML而非JSON (HTTP ${status}): ${hint}`
+            `API返回了HTML而非JSON (HTTP ${status}): ${headline}`
         );
     }
 
@@ -70,21 +69,68 @@ function parseRawBodyText(text: string, status: number, contentType?: string | n
     if (isSseResponseText(text, contentType)) {
         const assembled = parseSseToCompletion(text);
         if (assembled) return assembled;
-        const preview = text.slice(0, 200);
+        const nonHeartbeatPreview = text
+            .split(/\r?\n/)
+            .map(line => line.trim())
+            .filter(line => line.length > 0 && !line.startsWith(':'))
+            .join(' ')
+            .slice(0, 160);
         throw new Error(
-            `API流式响应未返回有效数据 (HTTP ${status}): ${preview}`
+            nonHeartbeatPreview
+                ? `API流式响应未返回有效数据 (HTTP ${status}): ${nonHeartbeatPreview}`
+                : `API流式响应未返回有效数据 (HTTP ${status})：仅收到连接心跳或空流`
         );
     }
 
     try {
         return normalizeAssistantCompletion(JSON.parse(text));
     } catch (e) {
-        // Show a snippet of what we got for debugging
-        const preview = text.slice(0, 200);
+        if (/^(?:import\s|export\s|\(function\b|!function\b|var\s+[A-Za-z_$]|const\s+[A-Za-z_$]|\/\*!)/.test(trimmed)) {
+            throw new Error(
+                `API返回了无效JSON (HTTP ${status})：收到的是前端脚本代码，请检查 API 地址是否填成了网页地址`
+            );
+        }
+        const preview = trimmed.replace(/\s+/g, ' ').slice(0, 160);
         throw new Error(
             `API返回了无效JSON (HTTP ${status}): ${preview}`
         );
     }
+}
+
+export interface SseStreamErrorInfo {
+    message: string;
+    status?: number;
+    rawError?: any;
+}
+
+function hasMeaningfulSseError(val: unknown, depth = 0): boolean {
+    if (val == null || val === false || val === '' || val === 0) return false;
+    if (typeof val === 'string') return val.trim().length > 0;
+    if (typeof val === 'object') {
+        if (depth > 3) return false;
+        if (Array.isArray(val)) return val.some((item) => hasMeaningfulSseError(item, depth + 1));
+        const rec = val as Record<string, unknown>;
+        const entries = Object.entries(rec);
+        if (entries.length === 0) return false;
+        if ((rec.code === 0 || rec.code === '0') && !hasMeaningfulSseError(rec.message, depth + 1) && !hasMeaningfulSseError(rec.msg, depth + 1) && !hasMeaningfulSseError(rec.detail, depth + 1) && !hasMeaningfulSseError(rec.error, depth + 1)) {
+            return false;
+        }
+        return entries.some(([k, v]) => {
+            if ((k === 'code' || k === 'status') && (v === 0 || v === '0' || v === 200 || v === '200')) return false;
+            return hasMeaningfulSseError(v, depth + 1);
+        });
+    }
+    return true;
+}
+
+/**
+ * 扫描原始 SSE 文本中是否包含上游在 `200 OK` 流内下发的错误帧（如 `data: {"error": ...}` 或 `event: error`）。
+ * 只要流未产生正常的 `finish_reason` 结束信号且确有明确错误帧，即判定为流内接口失败，用于升级流重包与拦截器诊断归因。
+ */
+export function extractSseStreamError(raw: string): SseStreamErrorInfo | null {
+    const asm = new SseAssembler();
+    for (const line of raw.split(/\r?\n/)) asm.feedLine(line);
+    return !asm.hasNormalFinish ? asm.streamErrorInfo : null;
 }
 
 /**
@@ -135,28 +181,78 @@ class SseAssembler {
     // 且 extractContent / extractAssistantText 的 reasoning 兜底全部失效(思考模型把全部
     // 输出塞进 reasoning 时表现为空回复→重试→巨慢)。2026-07 全局流式上线后被放大成必现。
     private reasoning = '';
-    // 取证探针: 记录本条流里 delta 出现过的字段名。渠道的思考字段形状五花八门,
-    // 与其一轮一轮猜, 不如把名单打出来(finish() 附带 + 控制台一行)一次看清。
     private deltaKeys = new Set<string>();
+    private nextEventIsError = false;
+    private streamError: SseStreamErrorInfo | null = null;
+
+    get streamErrorInfo(): SseStreamErrorInfo | null {
+        return this.streamError;
+    }
+
+    get hasNormalFinish(): boolean {
+        return Boolean(this.finishReason);
+    }
 
     /** 喂一行 SSE 文本，分别返回正文与思考增量（没有则为空串）。 */
     feedLine(line: string): SseFeedDelta {
+        const trimmedLine = line.trim();
+        if (!trimmedLine) {
+            this.nextEventIsError = false;
+            return { content: '', reasoning: '', done: false };
+        }
+        if (trimmedLine.startsWith('event:')) {
+            this.nextEventIsError = trimmedLine.slice(6).trim().toLowerCase() === 'error';
+            return { content: '', reasoning: '', done: false };
+        }
         if (!line.startsWith('data:')) return { content: '', reasoning: '', done: false };
+        const isErrorEvent = this.nextEventIsError;
+        this.nextEventIsError = false;
         const payload = line.slice(5).trim();
         if (!payload) return { content: '', reasoning: '', done: false };
         if (payload === '[DONE]') return { content: '', reasoning: '', done: true };
         let chunk: any;
-        try { chunk = JSON.parse(payload); } catch { return { content: '', reasoning: '', done: false }; }
-        return this.feedChunk(chunk);
+        try {
+            chunk = JSON.parse(payload);
+        } catch {
+            if (isErrorEvent) {
+                this.streamError = { message: payload.slice(0, 240) };
+                return { content: '', reasoning: '', done: true };
+            }
+            return { content: '', reasoning: '', done: false };
+        }
+        return this.feedChunk(chunk, isErrorEvent);
     }
 
-    feedChunk(chunk: any): SseFeedDelta {
+    feedChunk(chunk: any, isErrorEvent = false): SseFeedDelta {
+        const choice = chunk?.choices?.[0];
+        // OpenRouter / OneAPI / LiteLLM / DeepSeek 等中转常在 HTTP 200 流内下发 `{"error": ...}` 或 `event: error`；
+        // 注意排除部分网关在正常 chunk 上附带的 `"error": ""` / `"error": {}` / `"error": {"code": 0}` 占位字段。
+        if (isErrorEvent || chunk?.type === 'error' || hasMeaningfulSseError(chunk?.error) || hasMeaningfulSseError(choice?.error)) {
+            const rawErr = chunk?.error ?? choice?.error ?? chunk;
+            const rawStatus = Number(
+                (rawErr && typeof rawErr === 'object' ? (rawErr.status ?? rawErr.http_status ?? rawErr.code) : undefined)
+                ?? chunk?.status,
+            );
+            const inferredStatus = Number.isInteger(rawStatus) && rawStatus >= 400 && rawStatus <= 599
+                ? rawStatus
+                : undefined;
+            const message = formatApiErrorPayload(
+                typeof rawErr === 'object' && rawErr !== null && rawErr !== chunk && !('error' in rawErr) ? { error: rawErr } : rawErr,
+                inferredStatus || 502,
+            );
+            this.streamError = {
+                message,
+                ...(inferredStatus ? { status: inferredStatus } : {}),
+                rawError: rawErr,
+            };
+            return { content: '', reasoning: '', done: true };
+        }
+        if (!choice && !chunk?.usage) return { content: '', reasoning: '', done: false };
         this.gotAnyChunk = true;
         if (!this.firstChunk) this.firstChunk = chunk;
         // OpenAI 流式 usage 在最后一个 chunk（include_usage=true 时），也可能出现在中途；
         // 始终取最后一个非空的 usage，兼容各家代理。
         if (chunk.usage) this.usage = chunk.usage;
-        const choice = chunk.choices?.[0];
         if (!choice) return { content: '', reasoning: '', done: false };
         let delta = '';
         let reasoningDelta = '';
@@ -201,6 +297,14 @@ class SseAssembler {
     }
 
     finish(): any | null {
+        // 流内明确收到上游错误且未产出完整正常结束（无 finish_reason）：直接抛出带标记的 API 错误，防止截断半截文本或空回复被误当成功入库
+        if (this.streamError && !this.finishReason) {
+            const statusPart = this.streamError.status ? ` ${this.streamError.status}` : '';
+            throw Object.assign(
+                new Error(`API Error${statusPart}: ${this.streamError.message}`),
+                { __sullyUpstreamStreamError: true, httpStatus: this.streamError.status },
+            );
+        }
         if (!this.gotAnyChunk) return null;
         // 取证探针: 思考没抓到时把渠道实际用的 delta 字段名单打出来, 下一轮排查直接看名单。
         // (开思考的请求思考却为空 = 大概率又是没见过的字段形状)
@@ -347,29 +451,62 @@ export function formatApiErrorPayload(data: any, status: number): string {
     if (typeof data === 'string') return data.trim() || `HTTP ${status}`;
     if (typeof data !== 'object') return String(data) || `HTTP ${status}`;
 
+    // 兼容 Google Gemini / Vertex 等返回顶层 JSON 数组 `[{"error": {...}}]` 的接口
+    if (Array.isArray(data)) {
+        const parts = data
+            .slice(0, 3)
+            .map(item => formatApiErrorPayload(item, status))
+            .filter(text => Boolean(text) && text !== `HTTP ${status}`);
+        return parts.join('; ') || `HTTP ${status}`;
+    }
+
     const stringifyExtra = (val: unknown): string => {
         if (val == null || val === '') return '';
-        if (typeof val === 'string') return val.trim();
+        if (typeof val === 'string') return val.trim().slice(0, 300);
         if (typeof val === 'number' || typeof val === 'boolean') return String(val);
+        if (Array.isArray(val)) {
+            const items = val
+                .slice(0, 4)
+                .map((item: any) => {
+                    if (item && typeof item === 'object') {
+                        const msg = typeof item.msg === 'string' ? item.msg.trim()
+                            : typeof item.message === 'string' ? item.message.trim() : '';
+                        const loc = Array.isArray(item.loc) ? item.loc.map(String).join('.') : '';
+                        if (msg) return loc ? `${loc}: ${msg}` : msg;
+                    }
+                    return typeof item === 'string' ? item.trim() : '';
+                })
+                .filter(Boolean);
+            if (items.length > 0) return items.join('; ').slice(0, 300);
+        }
         try {
-            return JSON.stringify(val);
+            return JSON.stringify(val).slice(0, 300);
         } catch {
-            return String(val);
+            return '';
         }
     };
 
     const err = data.error;
     if (typeof err === 'string' && err.trim()) {
-        return err.trim();
+        const extra = typeof data.detail === 'string' && data.detail.trim() ? ` (${data.detail.trim().slice(0, 200)})` : '';
+        return `${err.trim()}${extra}`;
+    }
+    if (Array.isArray(err)) {
+        const formattedArr = formatApiErrorPayload(err, status);
+        if (formattedArr && formattedArr !== `HTTP ${status}`) return formattedArr;
     }
     if (err && typeof err === 'object' && !Array.isArray(err)) {
-        const message = typeof err.message === 'string' ? err.message.trim() : '';
+        const message = typeof err.message === 'string' && err.message.trim()
+            ? err.message.trim()
+            : (typeof err.msg === 'string' ? err.msg.trim() : '');
         const code = typeof err.code === 'string' || typeof err.code === 'number' ? String(err.code).trim() : '';
         const type = typeof err.type === 'string' ? err.type.trim() : '';
+        const statusStr = typeof err.status === 'string' ? err.status.trim() : '';
         const param = typeof err.param === 'string' && err.param.trim() ? `param=${err.param.trim()}` : '';
-        const details = stringifyExtra(err.details ?? err.detail ?? err.data);
+        const details = stringifyExtra(err.details ?? err.detail ?? err.data ?? err.error_description ?? err.reason);
 
-        const tags = [code, type !== code ? type : '', param].filter((t) => t && !message.includes(t));
+        const tags = [code, type !== code ? type : '', statusStr && statusStr !== code && statusStr !== type ? statusStr : '', param]
+            .filter((t) => t && !message.includes(t));
         const tagSuffix = tags.length > 0 ? ` [${tags.join(', ')}]` : '';
         const detailSuffix = details && !message.includes(details) ? ` (${details})` : '';
 
@@ -381,11 +518,22 @@ export function formatApiErrorPayload(data: any, status: number): string {
         return stringifyExtra(err) || `HTTP ${status}`;
     }
 
+    if (Array.isArray(data.errors) && data.errors.length > 0) {
+        const errItems = data.errors
+            .slice(0, 3)
+            .map((item: any) => typeof item === 'string' ? item.trim() : (typeof item?.message === 'string' ? item.message.trim() : ''))
+            .filter(Boolean);
+        if (errItems.length > 0) return errItems.join('; ');
+    }
+
+    const baseRespMsg = typeof data?.base_resp?.status_msg === 'string' ? data.base_resp.status_msg.trim() : '';
     const topMessage = typeof data.message === 'string' ? data.message.trim()
         : typeof data.msg === 'string' ? data.msg.trim()
-            : '';
+            : baseRespMsg;
     const topDetail = stringifyExtra(data.detail ?? data.details);
-    const topCode = typeof data.code === 'string' || typeof data.code === 'number' ? String(data.code).trim() : '';
+    const topCode = typeof data.code === 'string' || typeof data.code === 'number'
+        ? String(data.code).trim()
+        : (typeof data?.base_resp?.status_code === 'number' && data.base_resp.status_code !== 0 ? String(data.base_resp.status_code) : '');
     if (topMessage) {
         const codePart = topCode && !topMessage.includes(topCode) ? ` [${topCode}]` : '';
         const detailPart = topDetail && !topMessage.includes(topDetail) ? ` (${topDetail})` : '';
@@ -525,8 +673,9 @@ export async function safeFetchJson(
             // AbortError（含 timeout）：是否重试看上层策略，先按可重试处理（网络层面）
             const isAbort = e?.name === 'AbortError' || /aborted|timeout/i.test(e?.message || '');
 
-            // Network errors (fetch itself failed) are retryable
-            if ((e?.name === 'TypeError' || isAbort) && attempt < automaticRetryLimit) {
+            // Network errors (fetch itself failed) or retryable in-stream status codes on non-chat endpoints
+            const upstreamStreamStatus = e?.__sullyUpstreamStreamError ? Number(e?.httpStatus) : NaN;
+            if ((e?.name === 'TypeError' || isAbort || retryableStatuses.has(upstreamStreamStatus)) && attempt < automaticRetryLimit) {
                 const delay = Math.pow(2, attempt) * 1000;
                 log.warn(isAbort ? 'Timeout/Abort retry' : 'Network error retry', { attempt: attempt + 1, maxRetries: automaticRetryLimit, delay, message: e?.message });
                 await new Promise(r => setTimeout(r, delay));
@@ -542,13 +691,24 @@ export async function safeFetchJson(
             }
 
             if (isChatCompletionUrl(urlStr)) {
+                const failDurationMs = Date.now() - attemptStartedAt;
+                const failStatus = Number(e?.httpStatus) || (e?.__sullyUpstreamStreamError ? 502 : lastStatus);
                 appendDevDebugApiLog({
                     url: urlStr,
                     method: options.method,
-                    status: lastStatus,
+                    status: failStatus,
                     requestBody: options.body,
                     error: e,
-                    durationMs: Date.now() - attemptStartedAt,
+                    durationMs: failDurationMs,
+                });
+                recordApiCall({
+                    requestId,
+                    url: urlStr,
+                    body: attemptOptions.body,
+                    status: failStatus,
+                    ok: false,
+                    meta: logMeta,
+                    durationMs: failDurationMs,
                 });
             }
             throw e;
@@ -816,6 +976,9 @@ export function extractJson(raw: string, options: { allowTruncated?: boolean; si
         } catch {}
     }
 
-    if (!options.silent) console.error('[extractJson] All attempts failed. Raw:', raw.slice(0, 300));
+    // 不把模型回复原文打进面向所有用户外发的全局 console.error，避免数千字对话内容污染状态栏导出日志
+    if (!options.silent) {
+        log.warn('[extractJson] All attempts failed', { rawLength: raw.length });
+    }
     return null;
 }

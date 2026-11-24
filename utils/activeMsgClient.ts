@@ -360,7 +360,7 @@ export const fetchWorkerDiagnostics = async (): Promise<AmsgDiagnosticsProbe> =>
   try {
     config = await ensureWorkerReady();
   } catch (error: any) {
-    return { reachable: false, reason: error?.message || '还没填 Worker 地址。' };
+    return { reachable: false, reason: error?.message || '还没填 Worker 地址。', failureKind: readAmsgFailKind(error) };
   }
 
   try {
@@ -375,17 +375,22 @@ export const fetchWorkerDiagnostics = async (): Promise<AmsgDiagnosticsProbe> =>
     // 401/403 是真配错了（共享密钥两边对不上），不是「版本旧」——标成 unsupported
     // 会让人跑去点更新，而更新一遍照样进不来。
     if (status === 401 || status === 403) {
-      return { reachable: false, reason: `Worker 拒绝了这次请求（HTTP ${status}），多半是共享密钥两边对不上。` };
+      return {
+        reachable: false,
+        reason: `Worker 拒绝了这次请求（HTTP ${status}），多半是共享密钥两边对不上。`,
+        failureKind: '鉴权失败',
+      };
     }
     // 200 但形状对不上，跟 404 一样都是「这台 worker 上没有这个端点」。
     return {
       reachable: false,
       unsupported: true,
       reason: 'Worker 上跑的代码还没有体检端点。点一下上面的「更新 Worker」，之后再来看。',
+      failureKind: '端点不存在',
     };
   } catch (error: any) {
     // fetchWithAuthRaw 抛出来的已经是人话了（见 amsgDiagnostics 的 describeAmsgFetchFailure）。
-    return { reachable: false, reason: error?.message || '连不上 Worker。' };
+    return { reachable: false, reason: error?.message || '连不上 Worker。', failureKind: readAmsgFailKind(error) };
   }
 };
 

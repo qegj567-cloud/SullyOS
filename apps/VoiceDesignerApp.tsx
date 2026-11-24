@@ -4,6 +4,7 @@ import { useOS } from '../context/OSContext';
 import { resolveMiniMaxApiKey } from '../utils/minimaxApiKey';
 import { fetchMiniMaxVoices, MiniMaxVoiceItem } from '../utils/minimaxVoice';
 import { safeResponseJson } from '../utils/safeApi';
+import { formatUnknownError } from '../utils/errorSelfCheck';
 import { minimaxFetch } from '../utils/minimaxEndpoint';
 import { getCachedTts, saveCachedTts } from '../utils/ttsCache';
 import { trackEvent } from '../utils/analytics';
@@ -269,7 +270,7 @@ const VoiceDesignerApp: React.FC = () => {
         const data = await response.json();
         const statusCode = data?.base_resp?.status_code;
         if (!response.ok || (typeof statusCode === 'number' && statusCode !== 0)) {
-          throw new Error(data?.base_resp?.status_msg || `调用失败（HTTP ${response.status}）`);
+          throw new Error(formatUnknownError(data, '') || `调用失败（HTTP ${response.status}）`);
         }
 
         const audioRaw = data?.data?.audio;
@@ -331,7 +332,7 @@ const VoiceDesignerApp: React.FC = () => {
       });
       const data = await safeResponseJson(res);
       if (!res.ok || data?.error) {
-        throw new Error(data?.error || `固定声音失败（HTTP ${res.status}）`);
+        throw new Error(formatUnknownError(data, '') || `固定声音失败（HTTP ${res.status}）`);
       }
 
       // Replace timber_weights with the new fixed voice_id

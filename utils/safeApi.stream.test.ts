@@ -311,3 +311,39 @@ describe('SSE 思考通道的更多字段形状（Claude 官转/CC 渠道）', (
         expect(reasoningDeltas.join('')).toBe('想一下…');
     });
 });
+
+describe('SSE 200 OK 流内嵌错误帧与网关异常识别', () => {
+    it('200 OK 流内返回 data: {"error": ...} 时抛出明确上游错误，不伪装成空回复', async () => {
+        const events = [
+            ': OPENROUTER PROCESSING\n\n',
+            'data: {"error":{"message":"Provider returned error: insufficient_quota","code":429}}\n\n',
+            'data: [DONE]\n',
+        ];
+        vi.stubGlobal('fetch', vi.fn(async () => sseResponse(events)));
+        await expect(
+            safeFetchJson('https://api.test/v1/chat/completions', { method: 'POST', body: '{}' }, 0, 0),
+        ).rejects.toThrow(/insufficient_quota/);
+    });
+
+    it('200 OK 流中途吐一半字后返回 event: error 时同样按上游报错抛出，避免残缺半截回复静默入库', async () => {
+        const events = [
+            'data: {"choices":[{"delta":{"content":"说到一半"}}]}\n\n',
+            'event: error\ndata: {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}\n\n',
+        ];
+        vi.stubGlobal('fetch', vi.fn(async () => sseResponse(events)));
+        await expect(
+            safeFetchJson('https://api.test/v1/chat/completions', { method: 'POST', body: '{}' }, 0, 0, undefined, { onDelta: () => {} }),
+        ).rejects.toThrow(/Overloaded/);
+    });
+
+    it('网关在正常 200 SSE 分块上附带空字符串或空对象 error 占位字段时不误判为流报错', async () => {
+        const events = [
+            'data: {"id":"c1","choices":[{"delta":{"content":"正常"}}],"error":""}\n\n',
+            'data: {"id":"c1","choices":[{"delta":{"content":"回复"},"finish_reason":"stop"}],"error":{}}\n\n',
+            'data: [DONE]\n',
+        ];
+        vi.stubGlobal('fetch', vi.fn(async () => sseResponse(events)));
+        const data = await safeFetchJson('https://api.test/v1/chat/completions', { method: 'POST', body: '{}' }, 0, 0, undefined, { onDelta: () => {} });
+        expect(data.choices[0].message.content).toBe('正常回复');
+    });
+});

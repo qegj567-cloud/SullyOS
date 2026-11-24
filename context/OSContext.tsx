@@ -1,4 +1,4 @@
-import { requestErrorAdvice, textErrorAdvice, type ErrorAdvice } from '../utils/errorSelfCheck';
+import { formatUnknownError, requestErrorAdvice, textErrorAdvice, type ErrorAdvice } from '../utils/errorSelfCheck';
 import { migrateFreeWeatherPreference } from '../utils/weatherSources';
 import { mergePhoneGeneration, PHONE_GENERATION_COMMITTED, type PhoneGeneration } from '../utils/phoneGeneration';
 import { mergePersonaSimLogs, PERSONA_SIM_LOG_LANDED, type PersonaSimLogLandedDetail } from '../utils/personaSimLog';
@@ -67,7 +67,7 @@ import { VR_DEFAULT_INTERVAL_MIN } from '../utils/vrWorld/constants';
 import { WorldScheduler, toTickEntries } from '../utils/worldHome/scheduler';
 import { runWorldEpisode, rerollWorldCharBeat } from '../utils/worldHome/engine';
 import { migrateWorldDaySegs } from '../utils/worldHome/prompts';
-import { isChatCompletionUrl, safeFetchJson } from '../utils/safeApi';
+import { extractSseStreamError, isChatCompletionUrl, isSseResponseText, safeFetchJson } from '../utils/safeApi';
 import { captureApiRequestOnce, getApiCallAmbientContext, recordApiCall, setApiCallAmbientContext, updateApiRequestCaptureUsage } from '../utils/apiCallLog';
 import { isUserLocationLookupUrl } from '../utils/userLocationPrivacy';
 import { exportUserLocationSettings } from '../utils/userLocationBackup';
@@ -88,7 +88,7 @@ import {
   shouldProbeReachability,
   type ReceivedResponseHeadersInfo,
 } from '../utils/networkFailureDiagnosis';
-import { captureCallerHint, formatDiagnosticTimestamp, identifyNetworkRequestSource, readCompactBuildString, setDiagnosticAmsgWorkerUrl } from '../utils/networkRequestSource';
+import { captureCallerHint, extractCallerHint, formatDiagnosticTimestamp, identifyNetworkRequestSource, readCompactBuildString, redactRelayTokensInText, sanitizeUrlForLog, setDiagnosticAmsgWorkerUrl } from '../utils/networkRequestSource';
 import { collectStartupTraceReports } from '../utils/taskTraceReport';
 import { startStepTrace, type StepTraceWriter } from '../utils/taskTrace';
 import { INSTALLED_APPS, HIDDEN_APP_NAMES } from '../constants';
@@ -1210,7 +1210,18 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           const explicitMetaAtStart = (config as any)?.__sullyMeta;
           const visibilityAtStart = typeof document !== 'undefined' ? document.visibilityState : undefined;
           const callerAtStart = captureCallerHint();
-          const handlesFailure = Boolean((config as RequestInit & { __sullyHandlesFailure?: boolean })?.__sullyHandlesFailure);
+          const rawHandlesFailure = (config as RequestInit & {
+              __sullyHandlesFailure?: boolean | ((info: { status?: number }) => boolean);
+          })?.__sullyHandlesFailure;
+          const shouldSkipFailure = (st?: number): boolean => {
+              try {
+                  return typeof rawHandlesFailure === 'function'
+                      ? Boolean(rawHandlesFailure({ status: st }))
+                      : Boolean(rawHandlesFailure);
+              } catch {
+                  return false;
+              }
+          };
           const method = ((config as RequestInit | undefined)?.method
               || (typeof Request !== 'undefined' && resource instanceof Request ? resource.method : 'GET'))
               .toUpperCase();
@@ -1316,40 +1327,92 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   if (usageClone) {
                       usageClone.text().then((t) => {
                           const durationMs = Date.now() - fetchStartedAt;
-                          // 一定要等正文完整读完再记成功；只拿到 200 响应头、随后 SSE 断流
-                          // 正是这次剧情故障的形态，不能拿它反过来当成功对照。
-                          if (ok) recentSuccessfulFetches.set(requestComparisonKey, { timestamp: Date.now(), status });
+                          const inStreamErr = ok && isSseResponseText(t, response.headers.get('content-type'))
+                              ? extractSseStreamError(t)
+                              : null;
+                          const effectiveOk = ok && !inStreamErr;
+                          const effectiveStatus = inStreamErr?.status || (inStreamErr ? 502 : status);
+                          // 一定要等正文完整读完且无流内错误帧再记成功；200 响应头后发 error 帧或断流不能当成功对照。
+                          if (effectiveOk) recentSuccessfulFetches.set(requestComparisonKey, { timestamp: Date.now(), status });
                           let parsed: any = undefined;
                           try { parsed = JSON.parse(t); } catch { /* 流式/非 JSON：把原始文本交给 recordApiCall 的 SSE 兜底解析 */ }
-                          updateApiRequestCaptureUsage({ captureId: apiRequestCaptureId, ok, response: parsed, responseText: parsed === undefined ? t : undefined });
-                          recordApiCall({ requestId, url: urlStr, body, status, ok, response: parsed, responseText: parsed === undefined ? t : undefined, meta, durationMs });
-                      }).catch((streamErr) => {
-                          const durationMs = Date.now() - fetchStartedAt;
-                          updateApiRequestCaptureUsage({ captureId: apiRequestCaptureId, ok });
-                          recordApiCall({ requestId, url: urlStr, body, status, ok, meta, durationMs });
-                          // 原生流式请求（如私聊/见面 stream:true）在拿到 200 响应头后中途断流时，
-                          // patchedFetch 早已返回，不会进外层 catch；这里补记一条 stream-interrupted 日志（主动停止除外）。
-                          if (ok && !streamUpgraded && !handlesFailure && !isAnalyticsRequestUrl(urlStr)) {
-                              const visibilityAtEnd = typeof document !== 'undefined' ? document.visibilityState : undefined;
-                              const { log, kind } = buildFetchFailureSystemLog({
+                          updateApiRequestCaptureUsage({ captureId: apiRequestCaptureId, ok: effectiveOk, response: parsed, responseText: parsed === undefined ? t : undefined });
+                          recordApiCall({ requestId, url: urlStr, body, status: effectiveStatus, ok: effectiveOk, response: parsed, responseText: parsed === undefined ? t : undefined, meta, durationMs });
+                          if (inStreamErr && !shouldSkipFailure(effectiveStatus) && !isAnalyticsRequestUrl(urlStr)) {
+                              const identity = identifyFailure();
+                              const errJsonText = JSON.stringify({ error: inStreamErr.rawError ?? { message: inStreamErr.message } });
+                              const routeAdvice = requestErrorAdvice(routesAtStart, urlStr, response.url, effectiveStatus, errJsonText, identity.model, meta, effectiveHeaders);
+                              const httpLog = buildHttpErrorSystemLog({
                                   url: urlStr,
                                   method,
                                   headers: effectiveHeaders,
                                   body,
+                                  status: effectiveStatus,
+                                  statusText: 'SSE In-Stream Error',
+                                  responseText: errJsonText,
                                   durationMs,
-                                  error: streamErr,
-                                  startedAtPerf: fetchStartedAtPerf,
                                   explicitMeta,
                                   ambientMeta: ambientMetaAtStart,
-                                  visibilityAtStart,
-                                  visibilityAtEnd,
-                                  backgroundedDuringRequest: lastDocumentHiddenAt >= fetchStartedAt,
                                   caller: callerAtStart,
-                                  responseHeadersReceived: headersSnapshot,
-                                  recentSuccessfulSameRequest: recentSuccessfulFetches.get(requestComparisonKey),
+                                  identity,
+                                  advice: routeAdvice,
                               });
-                              if (kind !== 'aborted') {
-                                  setSystemLogs(prev => [log, ...prev.slice(0, 49)]);
+                              setSystemLogs(prev => [httpLog, ...prev.slice(0, 49)]);
+                          }
+                      }).catch((streamErr) => {
+                          const durationMs = Date.now() - fetchStartedAt;
+                          // 流读取抛错代表响应并未成功完成，调用记录必须记为 ok: false
+                          updateApiRequestCaptureUsage({ captureId: apiRequestCaptureId, ok: false });
+                          const streamFailStatus = (streamErr as any)?.__sullyUpstreamStreamError
+                              ? (Number((streamErr as any)?.httpStatus) || 502)
+                              : status;
+                          recordApiCall({ requestId, url: urlStr, body, status: streamFailStatus, ok: false, meta, durationMs });
+                          // 原生流式请求（如私聊/见面 stream:true）在拿到 200 响应头后中途报错：
+                          // 区分「上游显式发回流式业务错误（如 Anthropic overloaded_error）」与「网络连接半途断开」。
+                          if (ok && !streamUpgraded && !shouldSkipFailure((streamErr as any)?.__sullyUpstreamStreamError ? streamFailStatus : undefined) && !isAnalyticsRequestUrl(urlStr)) {
+                              if ((streamErr as any)?.__sullyUpstreamStreamError) {
+                                  const identity = identifyFailure();
+                                  const errText = formatUnknownError(streamErr, '流式上游返回错误');
+                                  const errStatus = Number((streamErr as any)?.httpStatus) || 502;
+                                  const routeAdvice = requestErrorAdvice(routesAtStart, urlStr, response.url, errStatus, errText, identity.model, meta, effectiveHeaders);
+                                  const httpLog = buildHttpErrorSystemLog({
+                                      url: urlStr,
+                                      method,
+                                      headers: effectiveHeaders,
+                                      body,
+                                      status: errStatus,
+                                      statusText: 'Upstream Stream Error',
+                                      responseText: JSON.stringify({ error: { message: errText } }),
+                                      durationMs,
+                                      explicitMeta,
+                                      ambientMeta: ambientMetaAtStart,
+                                      caller: callerAtStart,
+                                      identity,
+                                      advice: routeAdvice,
+                                  });
+                                  setSystemLogs(prev => [httpLog, ...prev.slice(0, 49)]);
+                              } else {
+                                  const visibilityAtEnd = typeof document !== 'undefined' ? document.visibilityState : undefined;
+                                  const { log, kind } = buildFetchFailureSystemLog({
+                                      url: urlStr,
+                                      method,
+                                      headers: effectiveHeaders,
+                                      body,
+                                      durationMs,
+                                      error: streamErr,
+                                      startedAtPerf: fetchStartedAtPerf,
+                                      explicitMeta,
+                                      ambientMeta: ambientMetaAtStart,
+                                      visibilityAtStart,
+                                      visibilityAtEnd,
+                                      backgroundedDuringRequest: lastDocumentHiddenAt >= fetchStartedAt,
+                                      caller: callerAtStart,
+                                      responseHeadersReceived: headersSnapshot,
+                                      recentSuccessfulSameRequest: recentSuccessfulFetches.get(requestComparisonKey),
+                                  });
+                                  if (kind !== 'aborted') {
+                                      setSystemLogs(prev => [log, ...prev.slice(0, 49)]);
+                                  }
                               }
                           }
                       });
@@ -1361,18 +1424,30 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   }
               }
 
-              if (!response.ok && !handlesFailure && !isAnalyticsRequestUrl(urlStr)) {
+              if (!response.ok && !shouldSkipFailure(response.status) && !isAnalyticsRequestUrl(urlStr)) {
                   const explicitMeta = (sendArgs[1] as any)?.__sullyMeta ?? explicitMetaAtStart;
                   const requestMeta = explicitMeta || ambientMetaAtStart;
                   const body = (sendArgs[1] as any)?.body;
                   const relayErrorCode = response.headers.get('x-amsg-relay-error') || undefined;
                   const identity = identifyFailure();
                   if (identity.category === 'external-media') return response;
-                  if (shouldLogHttpStatusError({ status: response.status, identity, relayErrorCode })
+                  if (shouldLogHttpStatusError({ status: response.status, identity, relayErrorCode, method })
                       || /(?:\/chat\/completions|\/models|\/messages|\/responses|\/embeddings|\/rerank)(?:[/?#]|$)/.test(urlStr)) {
+                      const respContentType = response.headers.get('content-type') || undefined;
+                      const respRequestId = response.headers.get('x-request-id')
+                          || response.headers.get('request-id')
+                          || response.headers.get('anthropic-request-id')
+                          || undefined;
+                      const respCfRay = response.headers.get('cf-ray') || undefined;
+                      const respRetryAfter = response.headers.get('retry-after') || undefined;
+                      const respStatusText = response.statusText || undefined;
                       try {
                           const clone = response.clone();
                           const text = await clone.text();
+                          // 旧版 Supabase memory_vectors 云表缺少扩展列时返回 400 42703 / PGRST204，由调用方自动降级兼容列，不误报红条
+                          if (identity.category === 'vector-db' && response.status === 400 && /"(?:42703|PGRST204)"/.test(text)) {
+                              return response;
+                          }
                           const routeAdvice = requestErrorAdvice(
                               routesAtStart,
                               urlStr,
@@ -1381,7 +1456,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                               text,
                               identity.model,
                               requestMeta,
-                              config?.headers,
+                              effectiveHeaders,
                           );
                           const httpLog = buildHttpErrorSystemLog({
                               url: urlStr,
@@ -1389,6 +1464,11 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                               headers: effectiveHeaders,
                               body,
                               status: response.status,
+                              statusText: respStatusText,
+                              contentType: respContentType,
+                              requestId: respRequestId,
+                              cfRay: respCfRay,
+                              retryAfter: respRetryAfter,
                               responseText: text,
                               relayErrorCode,
                               durationMs: Date.now() - fetchStartedAt,
@@ -1400,13 +1480,27 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                           });
                           setSystemLogs(prev => [httpLog, ...prev.slice(0, 49)]); // Keep last 50
                       } catch {
-                          const routeAdvice = requestErrorAdvice(routesAtStart, urlStr, response.url, response.status);
+                          const routeAdvice = requestErrorAdvice(
+                              routesAtStart,
+                              urlStr,
+                              response.url,
+                              response.status,
+                              '',
+                              identity.model,
+                              requestMeta,
+                              effectiveHeaders,
+                          );
                           const httpLog = buildHttpErrorSystemLog({
                               url: urlStr,
                               method,
                               headers: effectiveHeaders,
                               body,
                               status: response.status,
+                              statusText: respStatusText,
+                              contentType: respContentType,
+                              requestId: respRequestId,
+                              cfRay: respCfRay,
+                              retryAfter: respRetryAfter,
                               unreadableBody: true,
                               relayErrorCode,
                               durationMs: Date.now() - fetchStartedAt,
@@ -1433,7 +1527,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   updateApiRequestCaptureUsage({ captureId: apiRequestCaptureId, ok: false });
                   recordApiCall({ requestId: (config as any)?.__sullyApiCallId, url: urlStr, body, ok: false, meta: requestMeta, durationMs });
               }
-              if (!isAnalyticsRequestUrl(urlStr) && !handlesFailure) {
+              if (!isAnalyticsRequestUrl(urlStr) && !shouldSkipFailure(undefined)) {
                   const identity = identifyFailure();
                   if (identity.category === 'external-media') throw err;
                   // 把具体功能来源、配置归属、方法、耗时、前后台切换线索、Resource Timing 一并记齐，
@@ -1449,7 +1543,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   }
                   // 切后台中断或流式半途中断优先用具体的连接阶段提示，其余优先生效路由归属提示
                   const routeAdvice = (!backgrounded && !receivedResponseHeaders)
-                      ? requestErrorAdvice(routesAtStart, urlStr, '', 0, '', requestModel, requestMeta, config?.headers)
+                      ? requestErrorAdvice(routesAtStart, urlStr, '', 0, '', requestModel, requestMeta, effectiveHeaders)
                       : undefined;
                   const { log, kind } = buildFetchFailureSystemLog({
                       identity,
@@ -1510,28 +1604,112 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       }
 
       const originalConsoleError = console.error;
+      let inConsoleError = false;
       console.error = (...args) => {
-          const { message: msg, stacks } = describeConsoleErrorArgs(args);
-          // MediaPipe/TFLite 把这条成功初始化信息写到了 stderr，浏览器因而走
-          // console.error；改回 info，避免系统日志把“CPU 加速创建成功”报成红色错误。
-          if (isBenignApplicationConsoleMessage(msg)) {
-              console.info(...args);
+          if (inConsoleError) {
+              originalConsoleError(...args);
               return;
           }
-          originalConsoleError(...args);
-          // detail 只有真拿到堆栈才用堆栈，否则回退完整 msg（stacks 为空串时）。
-          if (msg.includes('Warning:')) return;
-          const caller = captureCallerHint();
+          inConsoleError = true;
+          try {
+              const { message: msg, stacks } = describeConsoleErrorArgs(args);
+              // MediaPipe/TFLite 把这条成功初始化信息写到了 stderr，浏览器因而走
+              // console.error；改回 info，避免系统日志把“CPU 加速创建成功”报成红色错误。
+              if (isBenignApplicationConsoleMessage(msg)) {
+                  console.info(...args);
+                  return;
+              }
+              originalConsoleError(...args);
+              // detail 只有真拿到堆栈才用堆栈，否则回退完整 msg（stacks 为空串时）。
+              if (msg.includes('Warning:')) return;
+              const caller = captureCallerHint();
+              const ambient = getApiCallAmbientContext();
+              const errLog = buildConsoleErrorSystemLog({
+                  report: args[0] instanceof ApplicationErrorReport ? args[0] : undefined,
+                  message: msg,
+                  stacks,
+                  caller,
+                  ambientMeta: ambient,
+              });
+              const dedupeCore = errLog.message.replace(/^App Crash:\s*/i, '').trim().slice(0, 60);
+              setSystemLogs(prev => {
+                  const top = prev[0];
+                  if (top && Date.now() - top.timestamp < 300 && dedupeCore.length >= 8 && top.message.includes(dedupeCore)) {
+                      return [errLog, ...prev.slice(1, 50)];
+                  }
+                  return [errLog, ...prev.slice(0, 49)];
+              });
+          } catch {
+              originalConsoleError(...args);
+          } finally {
+              inConsoleError = false;
+          }
+      };
+
+      // 捕获启动挂载完成后浏览器未经过 console.error 的运行时未捕获异常与未处理 Promise 拒绝
+      const onWindowError = (event: Event) => {
+          const target = event.target as HTMLElement | Window | null;
+          if (target && target !== window) {
+              // 仅捕获 <script> 加载失败；日常 <img>/<link> 外链资源失败沿用各自占位策略，不写系统报错
+              if ((target as HTMLElement).tagName !== 'SCRIPT') return;
+              const scriptSrc = (target as HTMLScriptElement).src || '';
+              if (!scriptSrc || isAnalyticsRequestUrl(scriptSrc)) return;
+              const ambient = getApiCallAmbientContext();
+              const safeScriptUrl = sanitizeUrlForLog(scriptSrc).split('?')[0];
+              const scriptLog = buildConsoleErrorSystemLog({
+                  message: `[ScriptLoad] 脚本资源加载失败: ${safeScriptUrl}`,
+                  ambientMeta: ambient,
+              });
+              setSystemLogs(prev => [scriptLog, ...prev.slice(0, 49)]);
+              return;
+          }
+          const errEvent = event as ErrorEvent;
+          const rawMsg = formatUnknownError(errEvent.error ?? errEvent.message, '');
+          if (!rawMsg || /ResizeObserver loop/i.test(rawMsg)) return;
+          const safeRawMsg = redactRelayTokensInText(rawMsg);
+          const safeFilename = errEvent.filename ? sanitizeUrlForLog(errEvent.filename) : '';
+          const stacks = typeof (errEvent.error as Error | undefined)?.stack === 'string'
+              ? (errEvent.error as Error).stack
+              : (safeFilename ? `${safeFilename}:${errEvent.lineno || 0}:${errEvent.colno || 0}` : undefined);
           const ambient = getApiCallAmbientContext();
-          const errLog = buildConsoleErrorSystemLog({
-              report: args[0] instanceof ApplicationErrorReport ? args[0] : undefined,
-              message: msg,
+          const winErrLog = buildConsoleErrorSystemLog({
+              message: `[UncaughtError] ${safeRawMsg}`,
               stacks,
-              caller,
+              caller: extractCallerHint(stacks, { skipTopFrames: 0 }),
               ambientMeta: ambient,
           });
-          setSystemLogs(prev => [errLog, ...prev.slice(0, 49)]);
+          setSystemLogs(prev => {
+              const needle = safeRawMsg.slice(0, 60);
+              if (prev[0] && Date.now() - prev[0].timestamp < 600 && needle && prev[0].message.includes(needle)) return prev;
+              return [winErrLog, ...prev.slice(0, 49)];
+          });
       };
+
+      const onUnhandledRejection = (event: PromiseRejectionEvent) => {
+          const reason = event.reason;
+          if (!reason) return;
+          const reasonName = typeof (reason as { name?: unknown })?.name === 'string' ? (reason as { name: string }).name : '';
+          if (reasonName === 'AbortError' || isHomeAssetDisposal(reason, undefined, '')) return;
+          const rawMsg = formatUnknownError(reason, '');
+          if (!rawMsg || /^aborted$/i.test(rawMsg)) return;
+          const safeRawMsg = redactRelayTokensInText(rawMsg);
+          const stacks = typeof (reason as Error | undefined)?.stack === 'string' ? (reason as Error).stack : undefined;
+          const ambient = getApiCallAmbientContext();
+          const rejLog = buildConsoleErrorSystemLog({
+              message: `[UnhandledRejection] ${safeRawMsg}`,
+              stacks,
+              caller: extractCallerHint(stacks, { skipTopFrames: 0 }),
+              ambientMeta: ambient,
+          });
+          setSystemLogs(prev => {
+              const needle = safeRawMsg.slice(0, 60);
+              if (prev[0] && Date.now() - prev[0].timestamp < 600 && needle && prev[0].message.includes(needle)) return prev;
+              return [rejLog, ...prev.slice(0, 49)];
+          });
+      };
+
+      window.addEventListener('error', onWindowError, true);
+      window.addEventListener('unhandledrejection', onUnhandledRejection);
   }, []);
 
   const clearLogs = () => setSystemLogs([]);
@@ -2709,6 +2887,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           setLastMsgTimestamp(Date.now());
       };
       window.addEventListener(PHONE_EVIDENCE_SYNCED, phoneEvidenceSyncHandler);
+      // 人格模拟的云端剧本在 React 外落了库：只把这条 simLog 并回内存（按 id 去重），其余字段保留内存值。
+      // 再存一次，以免落地读库与前台整份写回交错时，库里那条被旧内存盖掉。
       const personaSimLogLandedHandler = (event: Event) => {
           const { charId, log } = ((event as CustomEvent).detail || {}) as Partial<PersonaSimLogLandedDetail>;
           if (!charId || !log) return;
@@ -2982,14 +3162,16 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               result: '成功',
           });
       } catch (e: any) {
+          const errMsg = e == null ? 'IndexedDB transaction aborted' : formatUnknownError(e, '未知错误');
+          console.error('[CloudBackup] 上传备份失败:', e ?? errMsg);
           setSysOperation({ status: 'idle', message: '', progress: 0 });
-          addToast(`云端备份失败: ${e.message}`, 'error');
+          addToast(`云端备份失败: ${errMsg}`, 'error');
           trackEvent('上传备份到云端', {
               provider: cloudBackupConfig.provider === 'github' ? 'github' : 'webdav',
               mode,
               result: '失败',
           });
-          throw e;
+          throw e ?? new Error(errMsg);
       }
   };
 
@@ -3014,9 +3196,11 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               await backup.dispose();
           }
       } catch (e: any) {
+          const errMsg = e == null ? 'IndexedDB transaction aborted' : formatUnknownError(e, '未知错误');
+          console.error('[CloudBackup] 云端恢复失败:', e ?? errMsg);
           setSysOperation({ status: 'idle', message: '', progress: 0 });
-          addToast(`云端恢复失败: ${e.message}`, 'error');
-          throw e;
+          addToast(`云端恢复失败: ${errMsg}`, 'error');
+          throw e ?? new Error(errMsg);
       }
   });
 
@@ -3437,9 +3621,39 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   };
   const addToast = (message: string, type: Toast['type'] = 'info') => { const id = Date.now().toString(); setToasts(prev => [...prev, { id, message, type }]); setTimeout(() => { setToasts(prev => prev.filter(t => t.id !== id)); }, 3000); };
   const showError = (title: string, details: string, endpoint?: {baseUrl:string; model:string}) => {
-      const status = Number(details.match(/(?:API Error|HTTP)\s+(\d{3})/i)?.[1]);
-      const route = endpoint && requestErrorAdvice(errorRoutes.current, endpoint.baseUrl, '', status || 0, details, endpoint.model);
-      setErrorDialog({ title, details, advice: textErrorAdvice(title, details) ?? route });
+      const explicitStatus = Number(details.match(/(?:API Error|HTTP)\s+(\d{3})/i)?.[1]);
+      const inferredStatus = explicitStatus
+          || (/^API Error\b/i.test(details)
+              ? (/authentication_error|invalid[_ ]api[_ ]key|unauthorized/i.test(details) ? 401
+                  : /insufficient[_ ](?:quota|balance)|余额不足/i.test(details) ? 402
+                  : /rate[_ -]?limit|too many requests/i.test(details) ? 429
+                  : /overloaded/i.test(details) ? 529
+                  : 502)
+              : 0);
+      const route = endpoint && requestErrorAdvice(errorRoutes.current, endpoint.baseUrl, '', inferredStatus || 0, details, endpoint.model);
+      const resolvedAdvice = textErrorAdvice(title, details) ?? route;
+      setErrorDialog({ title, details, advice: resolvedAdvice });
+
+      // 弹窗关闭后用户在顶部「报错自检」和设置底部仍可回看与一键复制（例如 HTTP 200 返回 HTML/无效 JSON 等未走网络报错的故障）
+      const ambient = getApiCallAmbientContext();
+      const firstLine = redactRelayTokensInText(String(details || '').split(/\r?\n/)[0]?.trim() || title);
+      const dialogLog = buildConsoleErrorSystemLog({
+          message: `[${title}] ${firstLine}`,
+          stacks: details.includes('\n') ? details : undefined,
+          ambientMeta: ambient,
+          advice: resolvedAdvice,
+          silent: true,
+      });
+      const coreMsg = firstLine.replace(/^(?:API Error(?:\s+\d{3})?|HTTP\s+\d{3})\s*[:：·-]?\s*/i, '').trim();
+      setSystemLogs(prev => {
+          const top = prev[0];
+          if (top && Date.now() - top.timestamp < 1500) {
+              if (inferredStatus && top.context?.httpStatus === inferredStatus) return prev;
+              const needle = (coreMsg || firstLine).slice(0, 40);
+              if (needle && (top.message.includes(needle) || top.detail?.includes(needle))) return prev;
+          }
+          return [dialogLog, ...prev.slice(0, 49)];
+      });
 
       // showError 是分发型入口，title 由调用方传。这里写显式白名单：
       // 只有下面这两个写死的 title 会上报，其它（含以后新加的）一律不发，
@@ -4521,9 +4735,10 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           return content;
 
       } catch (e: any) {
-          console.error("Export Failed", e);
+          const errMsg = e == null ? 'IndexedDB transaction aborted' : formatUnknownError(e, '未知错误');
+          console.error("Export Failed", e ?? errMsg);
           setSysOperation({ status: 'idle', message: '', progress: 0 });
-          throw new Error("导出失败: " + e.message);
+          throw new Error("导出失败: " + errMsg, e != null ? { cause: e } : undefined);
       } finally {
           exportTrace?.clear();
       }
@@ -5125,9 +5340,11 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           setTimeout(() => window.location.reload(), 1500);
 
       } catch (e: any) {
-          console.error("Import Error:", e);
+          const msg = e instanceof SyntaxError
+              ? 'JSON 格式错误'
+              : (e == null ? 'IndexedDB transaction aborted' : formatUnknownError(e, '未知错误'));
+          console.error("Import Error:", e ?? msg);
           setSysOperation({ status: 'idle', message: '', progress: 0 });
-          const msg = e instanceof SyntaxError ? 'JSON 格式错误' : (e.message || '未知错误');
           importMarker.update('error', {
               sourceSize,
               current: lastCurrent,
@@ -5137,7 +5354,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               assetTotal: totalAssetFiles || undefined,
               error: msg,
           });
-          throw new Error(`恢复失败: ${msg}`);
+          throw new Error(`恢复失败: ${msg}`, e != null ? { cause: e } : undefined);
       } finally {
           await zip?.close().catch(() => {});
       }

@@ -434,12 +434,14 @@ SW 跑在自己的 context，没法直接访问 page 的 `localStorage` / `appen
 `utils/networkRequestSource.ts` 负责识别请求所属的具体业务子系统并对 URL 脱敏，`utils/networkFailureDiagnosis.ts` 负责把连接层与流式阶段的旁证补齐，`context/OSContext.tsx` 的全局拦截器统一组装为 `SystemLog`：
 
 - **业务模块来源（`source`、`context.category` 与自检提示）**：按协议头、接口路径和本机已配置的服务端点（仅比对域名/路径前缀，不读密钥）区分对话模型（OpenAI `/chat/completions`、`/responses`、Anthropic `/messages`、`/models`）、记忆宫殿（Embedding / Rerank / Supabase 向量库）、主动消息 2.0（直连 Worker 或经大陆中转 `amsg-relay`）、主代理 Worker 各子路由（网易云 `/netease/*`、微博 `/weibo`、WebDAV `/webdav`、GitHub `/github`、点单 MCP、Notion、飞书、小红书、Replicate、网页抓取等）、语音 TTS/STT（MiniMax / ElevenLabs / Fish Audio）、通用 MCP（直连或 `?target=` 代理）、彼方邮局与合写诗、装扮服务及本机静态资源。旁路服务附带 `影响范围` 提示，标明该报错是否与主对话或主动消息推送无关。
-- **归属隔离（`explicit` vs `ambient`）**：调用点通过 `__sullyMeta` 显式传入归属时记为 `调用归属（调用点显式标记）`；未传显式归属的裸 `fetch` 只记 `当时前台状态（未显式传归属，可能是后台自动任务）`，防止后台记忆或同步报错串标到当前打开的聊天角色。
+- **非 2xx 记录范围与静默入池边界（`shouldLogHttpStatusError` / `isSilentHttpStatusError`）**：上述各业务路由返回非预期 HTTP 错误时均写入 `systemLogs`，并保留响应头中的 `content-type`、`request-id`、`cf-ray`、`retry-after` 等排障线索；网关返回 HTML 错误页时自动剥离内联样式和脚本，仅提取页面标题与 Cloudflare Ray ID。主对话、语音合成、音乐代理、云备份、MCP、装扮及本机静态资源 5xx 等前台可感知失败点亮顶部状态栏提醒胶囊；主动消息后台同步/轮询、Supabase 后台同步与实时感知探针等被动请求以 `silent: true` 静默记入池中，不主动打扰状态栏，可在报错自检弹窗或「设置」底部的「本次运行错误记录」折叠区统一回看和复制。旧版主动消息 Worker 能力探测（`/capabilities`、`/self-update/check`、`/tick-report` 的 404）、WebDAV 空目录 404 及 MCP 预期的 404/405 协商状态不计入错误。
+- **SSE 流内嵌错误还原**：部分代理在返回 `200 OK` 与 `text/event-stream` 响应头后，在 SSE 数据帧中下发 `event: error` 或 `data: {"error": ...}`。流式解析与透明流式升级层将该帧识别为上游接口失败，还原为非 2xx 错误响应并附带具体错误原因，不计入成功调用缓存，也不归为网络连接中断。
+- **归属隔离（`explicit` vs `ambient`）**：调用点通过 `__sullyMeta` 显式传入归属时记为 `调用归属（调用点显式标记）`；未传显式归属的裸 `fetch` 只记 `当时前台状态（未显式传归属，可能是后台自动任务）`，防止后台记忆或同步报错串标到当前打开的聊天角色。打包产物的入口或框架分包文件名（如 `main-<hash>`、`vendor-react-<hash>`）不作为模块名展示，框架内部连续调用栈帧在展示与复制时自动折叠。
 - **前后台切换线索（`backgroundedDuringRequest`）**：拦截器记录请求在飞期间页面是否触发过 `visibilityState === 'hidden'`。移动端浏览器（尤其 iOS Safari / PWA）在切后台或锁屏时会挂起、切断进行中的连接，切回前台后才抛出 `Load failed`；日志据此优先提示保持前台重试。
-- **响应头到达后的流式中断（`stream-interrupted`）**：无论是透明流式升级拼包，还是私聊/见面的原生 `stream: true` 读取，只要已收到 HTTP 响应头后在正文读取途中报错，均归入 `stream-interrupted`，明确区分于连接建立前/CORS 阶段的 `blocked`，且不再额外发起 `no-cors` 根路径探测。
+- **响应头到达后的流式中断（`stream-interrupted`）**：无论是透明流式升级拼包，还是私聊/见面的原生 `stream: true` 读取，只要已收到 HTTP 响应头后在正文读取途中非预期断开，均归入 `stream-interrupted`，明确区分于连接建立前/CORS 阶段的 `blocked`，且不再额外发起 `no-cors` 根路径探测。
 - **URL 与文本凭据脱敏（`sanitizeUrlForLog` / `redactRelayTokensInText`）**：入库前将主动消息 2.0 大陆中转路径中的个人令牌（`/t/<令牌>/<worker域名>/...` → `/t/<redacted>/<worker域名>/...`）、路径首段含密钥的第三方推送域名（`api.day.app` / `api.chuckfang.com`）、敏感查询参数（`key`/`token`/`secret`/`appid`/`xsec_token`/`lat`/`lon` 等）、`user:pass@` 口令以及 `?url=` / `?target=` 内嵌地址中的敏感参数统一替换为 `<redacted>`，保留目标域名与接口路径；报错原文、HTTP 响应回显与 `console.error` 日志中夹带的敏感 URL 与内联凭据（`Bearer`、`MUSIC_U`、`SPT_`、`bark:/meow:/wxpusher:`）也会同步打码。
-- **`console.error` 的对象参数（`describeConsoleErrorArgs`）**：形如 `log.error('…', { messageId, error })` 的调用，只把直接挂在对象上的报错（`Error` 实例，或 DOMException 这类带 `name` + `message` 的对象）展开成 `类型: 原文` 并带上堆栈；对象的其余字段仍显示为 `[object Object]`。这份日志所有用户都能复制外发，整个对象序列化会把聊天内容、配置一并带出，因此只取报错本身。
-- **结构化上下文字段（`context` 与 `time`）**：每条日志带本地时区可读时间 `time`、构建版本 `context.build` 及结构化诊断字段，复制日志后无需再追问版本号。
+- **`console.error` 与未捕获异常转换（`describeConsoleErrorArgs` / `formatUnknownError`）**：除拦截 `console.error` 外，挂载后的全局 `error` 与 `unhandledrejection`、应用级错误弹窗也会同步记入错误池。React `ErrorBoundary` 传入的 `componentStack` 归入堆栈区；DOM `Event`、`MediaError`、Supabase 结构化错误及 `Error.cause` 展开为可读原因；形如 `log.error('…', { messageId, error })` 的包装对象只提取错误字段本身，其余业务字段保持 `[object Object]` 以避免带出聊天正文或配置内容。
+- **结构化上下文字段与导出格式（`buildSystemLogsExportPayload`）**：每条日志带本地时区可读时间 `time`、构建版本 `context.build` 及结构化诊断字段。报错自检弹窗的「复制全部」与设置底部的「复制记录」统一输出包含版本元信息与完整 `logs` 数组的结构化 JSON；当剪贴板权限受限时自动回退到手动复制文本框。
 
 两个关键探针：
 

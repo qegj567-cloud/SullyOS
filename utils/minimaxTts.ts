@@ -6,6 +6,8 @@ import { resolveMiniMaxApiKey } from './minimaxApiKey';
 import { minimaxFetch } from './minimaxEndpoint';
 import { hashTtsParams, getCachedTts, saveCachedTts } from './ttsCache';
 import { normalizeVoiceTags } from './sanitize';
+import { formatUnknownError } from './errorSelfCheck';
+import { summarizeHtmlErrorBody } from './networkFailureDiagnosis';
 
 const DEFAULT_MODEL = 'speech-2.8-hd';
 export type MiniMaxParamVersion = 'legacy' | 'natural-v2';
@@ -511,7 +513,13 @@ export async function synthesizeSpeechDetailed(
     body: JSON.stringify(payload),
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data?.error || `TTS 失败 (HTTP ${res.status})`);
+  if (!res.ok) {
+    const rawStr = typeof data === 'string' ? data : (typeof data?.error === 'string' ? data.error : '');
+    const errMsg = /^\s*<(?:!doctype|html|head|body)\b/i.test(rawStr)
+      ? summarizeHtmlErrorBody(rawStr).headline
+      : formatUnknownError(data, '');
+    throw new Error(errMsg || `TTS 失败 (HTTP ${res.status})`);
+  }
 
   // Check MiniMax business-level error (can return HTTP 200 with status_code != 0)
   const baseResp = data?.base_resp;

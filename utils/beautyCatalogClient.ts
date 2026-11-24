@@ -6,15 +6,20 @@ import {normalizeBeautyPackage} from './beautyShareClient';
 export const BEAUTY_CATALOG_URL=(import.meta.env.VITE_BEAUTY_CATALOG_URL||'https://beauty-library.friedsully.com').replace(/\/$/,'');
 let pending:{base:string;value:Promise<BeautyCatalog>}|undefined;
 async function readStatic(url:string,maxBytes:number,cache:RequestCache='default'){
-  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),30000);
+  const controller=new AbortController();
+  let timedOut=false;
+  const timer=setTimeout(()=>{timedOut=true;controller.abort();},30000);
   try{
     const response=await fetch(url,{signal:controller.signal,credentials:'omit',cache});
-    if(!response.ok)throw Error('装扮库暂时无法加载，请稍后重试');
+    if(!response.ok)throw Error(`装扮库暂时无法加载 (HTTP ${response.status})，请稍后重试`);
     const reader=response.body?.getReader();if(!reader)throw Error('装扮库内容为空');
     const chunks:Uint8Array[]=[];let size=0;
     for(;;){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>maxBytes){await reader.cancel();throw Error('装扮库文件超过大小限制');}chunks.push(value);}
     const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length;}
     return bytes;
+  }catch(err){
+    if(timedOut)throw Error('装扮库加载超时（30 秒），请检查网络后重试');
+    throw err;
   }finally{clearTimeout(timer);}
 }
 export function loadBeautyCatalog(base=BEAUTY_CATALOG_URL):Promise<BeautyCatalog>{

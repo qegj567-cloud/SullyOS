@@ -102,8 +102,8 @@ async function clearMirroredHighWatermarks(): Promise<void> {
 }
 
 /** 清空远程 Supabase 向量表（全表删除，跨所有角色） */
-async function clearRemoteVectors(config: RemoteVectorConfig): Promise<number> {
-    if (!config.enabled || !config.initialized) return 0;
+async function clearRemoteVectors(config: RemoteVectorConfig): Promise<{ deleted: number; error?: string }> {
+    if (!config.enabled || !config.initialized) return { deleted: 0 };
     try {
         const headers = {
             'apikey': config.supabaseAnonKey,
@@ -133,13 +133,15 @@ async function clearRemoteVectors(config: RemoteVectorConfig): Promise<number> {
             headers,
         });
         if (!delRes.ok) {
-            console.warn(`🗑️ [Wipe] 远程删除返回 ${delRes.status}: ${await delRes.text().catch(() => '')}`);
-            return 0;
+            const errMsg = `HTTP ${delRes.status}`;
+            console.error(`🗑️ [Wipe] 远程向量表清空失败 (${errMsg})`);
+            return { deleted: 0, error: errMsg };
         }
-        return total;
+        return { deleted: total };
     } catch (e: any) {
-        console.warn(`🗑️ [Wipe] 远程删除异常: ${e?.message || e}`);
-        return 0;
+        const errMsg = e?.message || String(e || '网络异常');
+        console.error('🗑️ [Wipe] 远程向量表清空异常:', e);
+        return { deleted: 0, error: errMsg };
     }
 }
 
@@ -149,6 +151,7 @@ export interface WipeResult {
     highWatermarks: number;
     remote: number;
     remoteAttempted: boolean;
+    remoteError?: string;
 }
 
 /**
@@ -173,11 +176,14 @@ export async function wipeAllMemoryPalace(options: {
 
     let remote = 0;
     let remoteAttempted = false;
+    let remoteError: string | undefined;
     if (options.remoteConfig && !options.skipRemote) {
         remoteAttempted = true;
-        remote = await clearRemoteVectors(options.remoteConfig);
+        const remoteRes = await clearRemoteVectors(options.remoteConfig);
+        remote = remoteRes.deleted;
+        remoteError = remoteRes.error;
     }
 
-    console.log(`🗑️ [Wipe] 完成：本地 ${localRowsTotal} 行、高水位 ${hwm} 条、远程 ${remoteAttempted ? remote : '跳过'}`);
-    return { local, localRowsTotal, highWatermarks: hwm, remote, remoteAttempted };
+    console.log(`🗑️ [Wipe] 完成：本地 ${localRowsTotal} 行、高水位 ${hwm} 条、远程 ${remoteAttempted ? (remoteError ? `失败(${remoteError})` : remote) : '跳过'}`);
+    return { local, localRowsTotal, highWatermarks: hwm, remote, remoteAttempted, ...(remoteError ? { remoteError } : {}) };
 }

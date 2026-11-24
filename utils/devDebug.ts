@@ -1,4 +1,5 @@
 import { redactRelayTokensInText, sanitizeUrlForLog } from './networkRequestSource';
+import { cleanErrorStack, formatUnknownError } from './errorSelfCheck';
 
 // ===== 捕获类别（分类日志的"单一真理源"）=====
 // 加新类只动这里：
@@ -504,8 +505,12 @@ function appendDevDebugHttpLog(category: DevDebugCaptureCategory, input: DevDebu
             response: input.response,
             error: input.error
                 ? {
-                    name: (input.error as any)?.name,
-                    message: (input.error as any)?.message || String(input.error),
+                    name: typeof (input.error as any)?.name === 'string' ? (input.error as any).name : undefined,
+                    message: formatUnknownError(input.error, '未知错误'),
+                    code: (input.error as any)?.code ?? (input.error as any)?.httpStatus,
+                    stack: typeof (input.error as any)?.stack === 'string'
+                        ? cleanErrorStack((input.error as any).stack)
+                        : undefined,
                 }
                 : undefined,
         },

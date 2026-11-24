@@ -13,6 +13,8 @@
  */
 
 import { getProxyWorkerUrl } from './proxyWorker';
+import { formatUnknownError } from './errorSelfCheck';
+import { summarizeHtmlErrorBody } from './networkFailureDiagnosis';
 import { generateVapidKeyPair, generateClientToken } from './vapidGen';
 import { ActiveMsgStore } from './activeMsgStore';
 import { guardAmsgRedeployment, readRedeployMarker, redeployMarkerBinding, REDEPLOY_STOP_WORKER, type RedeploySettings } from './amsgRedeployGuard';
@@ -323,14 +325,25 @@ export function scriptNameFromWorkerUrl(workerUrl: string): string | null {
  */
 export function explainCfError(status: number, body: unknown, request?: string): string {
   const payload = body as {
-    errors?: Array<{ code?: number; message?: string }>;
+    errors?: Array<{ code?: number; message?: string; error_chain?: Array<{ code?: number; message?: string }> }>;
+    messages?: Array<{ message?: string } | string>;
     error?: string;
+    rawText?: string;
   } | null;
   const errors = Array.isArray(payload?.errors) ? payload.errors : [];
   const code = errors[0]?.code;
+  const chainMessages = errors.flatMap((e) => [
+    e?.message,
+    ...(Array.isArray(e?.error_chain) ? e.error_chain.map((c) => c?.message) : []),
+  ]).filter(Boolean);
+  const infoMessages = Array.isArray(payload?.messages)
+    ? payload.messages.map((m) => (typeof m === 'string' ? m : m?.message)).filter(Boolean)
+    : [];
   const raw =
-    errors.map((e) => e?.message).filter(Boolean).join('；')
-    || (typeof payload?.error === 'string' ? payload.error : '');
+    chainMessages.join('；')
+    || (typeof payload?.error === 'string' ? payload.error : '')
+    || infoMessages.join('；')
+    || (typeof payload?.rawText === 'string' ? payload.rawText : '');
 
   const PERMISSION_HINT =
     'Token 权限不够。建 token 时这三项都要勾上：Workers Scripts 的 Read 和 Edit、'
@@ -410,14 +423,21 @@ async function cfApi<T = unknown>(
       ok: false,
       status: 0,
       body: null,
-      error: `连不上代理（${String((e as Error)?.message || e)}）。检查网络，或在设置里换一个网络代理 Worker。`,
+      error: `连不上代理（${formatUnknownError(e, '网络错误')}）。检查网络，或在设置里换一个网络代理 Worker。`,
     };
   }
   let body: unknown = null;
-  try {
-    body = await res.json();
-  } catch {
-    /* 非 JSON（代理层的纯文本错误）就留 null，下面按状态码处理 */
+  const rawText = await res.text().catch(() => '');
+  if (rawText.trim()) {
+    try {
+      body = JSON.parse(rawText);
+    } catch {
+      const trimmed = rawText.trim();
+      const textHint = /^(?:<!doctype\s+html|<html\b|<head\b|<body\b|<title\b|<!--)/i.test(trimmed)
+        ? summarizeHtmlErrorBody(trimmed).headline
+        : trimmed.replace(/\s+/g, ' ').slice(0, 200);
+      body = { rawText: textHint };
+    }
   }
   const success = res.ok && (body as { success?: boolean } | null)?.success !== false;
   return {

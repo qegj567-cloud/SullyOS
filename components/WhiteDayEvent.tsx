@@ -1174,7 +1174,7 @@ ${answerSummary}
                 const img = new Image();
                 img.crossOrigin = 'anonymous';
                 img.onload = () => resolve(img);
-                img.onerror = reject;
+                img.onerror = () => reject(new Error('明信片图层加载失败'));
                 img.src = resolved;
             });
         };

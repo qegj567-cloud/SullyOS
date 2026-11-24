@@ -19,7 +19,7 @@
  * 重发付费生成请求：中转可能已经把第一份交给上游，静默重发会造成重复扣费。
  */
 
-import { isSseResponseText, parseSseToCompletion } from './safeApi';
+import { extractSseStreamError, isSseResponseText, parseSseToCompletion } from './safeApi';
 import { readLlmResponseText, type LlmResponseInfo } from './llmEndpoint';
 
 const API_CONFIG_KEY = 'os_api_config';
@@ -59,8 +59,42 @@ export function upgradeChatBodyToStream(bodyStr: string): string | null {
  * 只在响应 ok 时调用；错误响应由调用方原样透传给业务层的错误处理。
  */
 export async function assembleUpgradedResponse(response: Response, info?: LlmResponseInfo): Promise<Response> {
-    const text = await readLlmResponseText(response, info);
+    let text: string;
+    try {
+        text = await readLlmResponseText(response, info);
+    } catch (err: any) {
+        if (err?.__sullyUpstreamStreamError) {
+            const syntheticStatus = Number(err.httpStatus) || 502;
+            const errMsg = typeof err.message === 'string' && err.message.trim()
+                ? err.message.replace(/^API Error(?:\s+\d{3})?\s*[:：]\s*/i, '').trim()
+                : 'Upstream stream error';
+            if (info) info.status = syntheticStatus;
+            return new Response(JSON.stringify({ error: { message: errMsg } }), {
+                status: syntheticStatus,
+                statusText: 'Upstream Stream Error',
+                headers: { 'Content-Type': 'application/json' },
+            });
+        }
+        throw err;
+    }
     if (isSseResponseText(text, response.headers.get('content-type'))) {
+        // 若上游在 HTTP 200 的 SSE 流里直接下发了 `{"error": ...}` 或 `event: error`，还原为非 2xx JSON 响应，
+        // 让拦截器的 HTTP 错误日志、API 调用记录（记失败）、同接口成功缓存以及业务调用方全部拿到真实错误原因。
+        const streamErr = extractSseStreamError(text);
+        if (streamErr) {
+            const syntheticStatus = streamErr.status || 502;
+            const errorBody = JSON.stringify({
+                error: streamErr.rawError && typeof streamErr.rawError === 'object'
+                    ? streamErr.rawError
+                    : { message: streamErr.message },
+            });
+            if (info) info.status = syntheticStatus;
+            return new Response(errorBody, {
+                status: syntheticStatus,
+                statusText: 'Upstream Stream Error',
+                headers: { 'Content-Type': 'application/json' },
+            });
+        }
         const assembled = parseSseToCompletion(text);
         if (assembled) {
             return new Response(JSON.stringify(assembled), {

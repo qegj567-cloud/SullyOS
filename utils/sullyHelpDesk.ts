@@ -9,6 +9,7 @@ import type { HelpDeskSettings } from './sullyHelpSettings';
 import discordRulesText from '../docs/sully-11-discord.md?raw';
 import { HelpImageError, helpVisionSettings, prepareHelpImages, type HelpAttachment } from './sullyHelpAttachments';
 import { isVisionInputUnsupportedError } from './userCameraSnapshot';
+import { formatUnknownError } from './errorSelfCheck';
 
 export type HelpDeskMessage = { role: 'user' | 'assistant'; content: string; attachment?: HelpAttachment };
 export type HelpDeskCategory = 'app' | 'system' | 'community';
@@ -216,7 +217,8 @@ export async function askSullyHelpDesk(api: APIConfig, knowledge: ReturnType<typ
             }, 0, 0, { appId: AppID.FAQ, appName: '使用帮助', charId: helpDeskCharacter.id, charName: helpDeskCharacter.name, purpose: '糯米机答疑' });
         } catch (error) {
             if (turns.directImages && (isVisionInputUnsupportedError(error) || /不支持.{0,8}(图片|图像|视觉)|无法(识别|读取)图片|invalid image|image.{0,16}(format|too large)/i.test(String(error)))) {
-                throw new HelpImageError(`当前对话 API 未能读取这张图。可以换支持图片的主模型，或到${helpVisionSettings}，保存后点闪电重试。也可以贴出报错文字。`);
+                const rawReason = formatUnknownError(error, '').slice(0, 140);
+                throw new HelpImageError(`当前对话 API 未能读取这张图${rawReason ? `（${rawReason}）` : ''}。可以换支持图片的主模型，或到${helpVisionSettings}，保存后点闪电重试。也可以贴出报错文字。`);
             }
             throw error;
         }

@@ -6,6 +6,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Microphone, SpeakerHigh, SpeakerSlash, PhoneDisconnect, Translate, Gear, Clock, CaretLeft, CaretRight, Phone, VideoCamera, VideoCameraSlash, Cube, FolderOpen, FileZip, Moon, Sun, Check, ArrowsClockwise } from '@phosphor-icons/react';
 import { useOS } from '../context/OSContext';
 import { extractContent, safeFetchJson } from '../utils/safeApi';
+import { formatUnknownError } from '../utils/errorSelfCheck';
 import { minimaxFetch } from '../utils/minimaxEndpoint';
 import { resolveMiniMaxApiKey } from '../utils/minimaxApiKey';
 import { getCachedTts, saveCachedTts } from '../utils/ttsCache';
@@ -1389,7 +1390,7 @@ const CallApp: React.FC = () => {
       const data = await response.json();
       const statusCode = data?.base_resp?.status_code;
       if (!response.ok || (typeof statusCode === 'number' && statusCode !== 0)) {
-        throw new Error(buildMiniMaxErrorMessage(data?.base_resp?.status_msg || `调用失败（HTTP ${response.status}）`, data?.trace_id));
+        throw new Error(buildMiniMaxErrorMessage(formatUnknownError(data, '') || `调用失败（HTTP ${response.status}）`, data?.trace_id));
       }
 
       const rawAudio = data?.data?.audio;

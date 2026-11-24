@@ -174,15 +174,28 @@ const parseXhrHeaders = (raw: string): Record<string, string> => {
     return headers;
 };
 
+const cleanGithubErrorBody = (raw: string): string => {
+    const trimmed = String(raw || '').trim();
+    if (!trimmed) return '';
+    if (/^(?:<!doctype\s+html|<html\b|<head\b|<body\b|<title\b|<!--)/i.test(trimmed)) {
+        const titleMatch = trimmed.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+        const title = titleMatch?.[1]?.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+        return title ? `HTML 错误页 (${title.slice(0, 80)})` : 'HTML 错误页';
+    }
+    try {
+        const parsed = JSON.parse(trimmed);
+        if (typeof parsed?.message === 'string' && parsed.message.trim()) return parsed.message.trim().slice(0, 180);
+        if (typeof parsed?.error === 'string' && parsed.error.trim()) return parsed.error.trim().slice(0, 180);
+    } catch { /* plain text */ }
+    return trimmed.replace(/\s+/g, ' ').trim().slice(0, 180);
+};
+
 const describeGithubHttpError = async (stage: string, response: GhResponse): Promise<Error> => {
     let detail = '';
     try {
         const raw = await response.text();
-        if (raw) {
-            try { detail = JSON.parse(raw)?.message || raw; } catch { detail = raw; }
-        }
+        if (raw) detail = cleanGithubErrorBody(raw);
     } catch { /* response body is only diagnostic */ }
-    detail = detail.replace(/\s+/g, ' ').trim().slice(0, 180);
 
     if (response.status === 401) return new Error(`${stage}失败：GitHub Token 无效或已过期（HTTP 401）。`);
     if (response.status === 403) {
@@ -486,11 +499,12 @@ const uploadOneAsset = async (
                 };
             }
             const text = await res.text();
+            const summary = cleanGithubErrorBody(text);
             return {
                 ok: false,
                 status: res.status,
                 headers: responseHeaders,
-                message: `上传失败 (${res.status}): ${text.slice(0, 120)}`,
+                message: `上传失败 (${res.status})${summary ? `: ${summary.slice(0, 120)}` : ''}`,
             };
         } catch (e: any) {
             const kind = e?.name === 'AbortError' ? 'timeout' : 'network';
@@ -529,11 +543,13 @@ const uploadOneAsset = async (
                     });
                 }
             } else {
+                const summary = cleanGithubErrorBody(xhr.responseText || '');
+                console.warn(`[GitHubBackup] 分片上传失败 (HTTP ${xhr.status}):`, summary || xhr.status);
                 resolve({
                     ok: false,
                     status: xhr.status,
                     headers,
-                    message: `上传失败 (${xhr.status}): ${(xhr.responseText || '').slice(0, 120)}`,
+                    message: `上传失败 (${xhr.status})${summary ? `: ${summary.slice(0, 120)}` : ''}`,
                 });
             }
         };

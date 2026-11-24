@@ -25,7 +25,7 @@ export const processImage = (file: File, options?: { maxWidth?: number, quality?
             const reader = new FileReader();
             reader.readAsDataURL(file);
             reader.onload = (e) => resolve(e.target?.result as string);
-            reader.onerror = (e) => reject(e);
+            reader.onerror = () => reject(new Error('文件读取失败'));
             return;
         }
 

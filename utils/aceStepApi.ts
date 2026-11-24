@@ -16,6 +16,8 @@ import { SongSheet, SongLine, APIConfig, CharacterProfile } from '../types';
 import { SONG_GENRES, SONG_MOODS } from './songPrompts';
 import { DB } from './db';
 import { getProxyWorkerUrl } from './proxyWorker';
+import { formatUnknownError } from './errorSelfCheck';
+import { summarizeHtmlErrorBody } from './networkFailureDiagnosis';
 
 // ── Endpoint config ──
 // Same Cloudflare Worker that hosts /netease, /xhs, /webdav etc. — address comes
@@ -456,6 +458,15 @@ const extractOutputUrl = (output: unknown): string | null => {
 const VERSION_CACHE_KEY = `ace-step:version:${MODEL_OWNER}/${MODEL_NAME}`;
 const VERSION_CACHE_TTL = 24 * 60 * 60 * 1000;
 
+const formatReplicateRawError = (raw: string): string => {
+  const trimmed = (raw || '').trim();
+  if (!trimmed) return '';
+  if (/^\s*<(?:!doctype|html|head|body)\b/i.test(trimmed)) {
+    return summarizeHtmlErrorBody(trimmed).headline.slice(0, 200);
+  }
+  return trimmed.slice(0, 200);
+};
+
 async function resolveModelVersion(authHeader: string, signal?: AbortSignal): Promise<string> {
   try {
     const raw = localStorage.getItem(VERSION_CACHE_KEY);
@@ -472,14 +483,16 @@ async function resolveModelVersion(authHeader: string, signal?: AbortSignal): Pr
     headers: { 'Authorization': authHeader },
     signal,
   });
+  const resText = await res.text();
   let data: any;
   try {
-    data = await res.json();
+    data = resText ? JSON.parse(resText) : {};
   } catch {
-    throw new Error(`获取模型信息失败 (HTTP ${res.status})`);
+    const summary = formatReplicateRawError(resText);
+    throw new Error(`获取模型信息失败 (HTTP ${res.status})${summary ? `: ${summary}` : ''}`);
   }
   if (!res.ok) {
-    const detail = data?.detail || data?.error || `HTTP ${res.status}`;
+    const detail = formatUnknownError(data, '') || `HTTP ${res.status}`;
     throw new Error(`无法访问 ${MODEL_OWNER}/${MODEL_NAME}: ${detail}`);
   }
   const version: string | undefined = data?.latest_version?.id;
@@ -556,15 +569,15 @@ export async function synthesizeSong(
     body: JSON.stringify(startBody),
     signal,
   });
+  const startText = await startRes.text();
   let startData: any;
   try {
-    startData = await startRes.json();
+    startData = startText ? JSON.parse(startText) : {};
   } catch {
-    const text = await startRes.text().catch(() => '');
-    throw new Error(`Replicate 起任务返回非 JSON (HTTP ${startRes.status}): ${text.slice(0, 200)}`);
+    throw new Error(`Replicate 起任务返回非 JSON (HTTP ${startRes.status}): ${formatReplicateRawError(startText)}`);
   }
   if (!startRes.ok) {
-    const detail = startData?.detail || startData?.error || JSON.stringify(startData).slice(0, 200);
+    const detail = formatUnknownError(startData, '') || JSON.stringify(startData).slice(0, 200);
     throw new Error(`Replicate 起任务失败 (HTTP ${startRes.status}): ${detail}`);
   }
   const predictionId: string | undefined = startData?.id;
@@ -574,6 +587,7 @@ export async function synthesizeSong(
   const deadline = Date.now() + POLL_TIMEOUT_MS;
   let interval = POLL_INTERVAL_MS;
   let outputUrl: string | null = null;
+  let consecutivePollHttpErrors = 0;
 
   while (true) {
     checkAbort(signal);
@@ -588,13 +602,28 @@ export async function synthesizeSong(
       headers: { 'Authorization': authHeader },
       signal,
     });
-    let pollData: any;
+    const pollText = await pollRes.text().catch(() => '');
+    checkAbort(signal);
+    let pollData: any = null;
     try {
-      pollData = await pollRes.json();
+      pollData = pollText ? JSON.parse(pollText) : null;
     } catch {
-      // Transient parse failures shouldn't kill the whole job
+      // Transient gateway non-JSON on 502/503/504 can retry a couple times; 4xx fails fast.
+    }
+    if (!pollRes.ok) {
+      const detail = (pollData ? formatUnknownError(pollData, '') : '') || formatReplicateRawError(pollText) || `HTTP ${pollRes.status}`;
+      if (pollRes.status >= 400 && pollRes.status < 500 && pollRes.status !== 429) {
+        throw new Error(`Replicate 查询状态失败 (HTTP ${pollRes.status}): ${detail}`);
+      }
+      consecutivePollHttpErrors += 1;
+      if (consecutivePollHttpErrors >= 3) {
+        throw new Error(`Replicate 查询状态连续失败 (HTTP ${pollRes.status}): ${detail}`);
+      }
       continue;
     }
+    consecutivePollHttpErrors = 0;
+    if (!pollData) continue;
+
     const status = String(pollData?.status || '');
     onStatus?.(status);
 
@@ -606,7 +635,8 @@ export async function synthesizeSong(
       break;
     }
     if (status === 'failed') {
-      throw new Error(`Replicate 任务失败: ${pollData?.error || 'unknown'}`);
+      const failReason = formatUnknownError(pollData?.error, '') || 'unknown';
+      throw new Error(`Replicate 任务失败: ${failReason}`);
     }
     if (status === 'canceled') {
       throw new Error('Replicate 任务被取消');
@@ -622,7 +652,15 @@ export async function synthesizeSong(
     signal,
   });
   if (!fileRes.ok) {
-    throw new Error(`下载音频失败 (HTTP ${fileRes.status})`);
+    const errText = await fileRes.text().catch(() => '');
+    checkAbort(signal);
+    let detail = '';
+    try {
+      detail = errText ? formatUnknownError(JSON.parse(errText), '') : '';
+    } catch {
+      detail = formatReplicateRawError(errText);
+    }
+    throw new Error(`下载音频失败 (HTTP ${fileRes.status})${detail ? `: ${detail}` : ''}`);
   }
   const mimeType = fileRes.headers.get('Content-Type') || guessMimeFromUrl(outputUrl);
   const blob = await fileRes.blob();

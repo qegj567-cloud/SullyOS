@@ -6,6 +6,8 @@
  * 挤在同一个 Worker 出口上。
  */
 
+import { formatUnknownError } from './errorSelfCheck';
+
 const FIRECRAWL_API_BASE = 'https://api.firecrawl.dev/v2';
 const FIRECRAWL_KEY_STORAGE = 'sully_firecrawl_api_key_v1';
 const FIRECRAWL_TIMEOUT_MS = 35_000;
@@ -58,7 +60,7 @@ export const setFirecrawlApiKey = (key: string): void => {
 };
 
 const errorFromResponse = (status: number, body: any): FirecrawlApiError => {
-  const upstream = String(body?.error || body?.message || '').trim();
+  const upstream = formatUnknownError(body, '').trim();
   if (status === 401 || status === 403) {
     return new FirecrawlApiError('Firecrawl API Key 无效或无权访问', { status, kind: 'invalid_key' });
   }

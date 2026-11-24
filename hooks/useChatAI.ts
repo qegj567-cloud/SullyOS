@@ -6,6 +6,7 @@ import { CharacterProfile, UserProfile, Message, Emoji, EmojiCategory, GroupProf
 import { DB } from '../utils/db';
 import { ChatPrompts } from '../utils/chatPrompts';
 import { safeFetchJson, safeResponseJson } from '../utils/safeApi';
+import { formatUnknownError } from '../utils/errorSelfCheck';
 import type { ApiCallMeta } from '../utils/apiCallLog';
 import { KeepAlive } from '../utils/keepAlive';
 import { ContextBuilder } from '../utils/context';
@@ -2428,8 +2429,8 @@ export const useChatAI = ({
             if (replyRun.signal.aborted) return;
             // 注意: 这个 catch 兜的是「拿到 API 响应之后」的整条后处理管线 (applyAssistantPostProcessing,
             // 13 步)。这里抛错多半不是网络问题, 而是解析/正则/落库异常。别再叫"连接中断"误导排查。
-            const errMsg = e?.message || String(e);
-            if (showError && /API Error \d{3}|Failed to fetch|API返回了|输出被截断|模型.*格式不正确/i.test(errMsg)) {
+            const errMsg = formatUnknownError(e, '未知处理异常');
+            if (showError && ((e as any)?.__sullyUpstreamStreamError || /API Error\b|Failed to fetch|Load failed|NetworkError|API返回了|API流式响应|输出被截断|模型.*格式不正确/i.test(errMsg))) {
                 showError('聊天回复失败', errMsg, effectiveApi);
             }
             // 瑞一杯模式下报错: 大概率是聊天模型/中转不支持 function calling(tools) → 带 tools 一发就 400。
@@ -2545,7 +2546,7 @@ export const useChatAI = ({
                             }
                         }
                     })
-                    .catch(e => { console.error('❌ [MemoryPalace] 后台处理异常:', e.message); addToast('记忆整理失败', 'error'); })
+                    .catch(e => { console.error('❌ [MemoryPalace] 后台处理异常:', formatUnknownError(e)); addToast('记忆整理失败', 'error'); })
                     .finally(() => {
                         // 如果状态文本包含"完成"，先让用户看到再清除
                         const current = memoryPalaceStatusRef.current;

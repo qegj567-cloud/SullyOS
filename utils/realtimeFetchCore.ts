@@ -33,6 +33,30 @@ export interface FeishuDiaryPreview {
     content: string;
 }
 
+// ==================== 通用纯文本/JSON 错误摘要（Worker 安全叶子） ====================
+
+const summarizeRealtimeHttpError = (rawText: string): string => {
+    const trimmed = (rawText || '').trim();
+    if (!trimmed) return '';
+    if (/^\s*<(?:!doctype|html|head|body)\b/i.test(trimmed)) {
+        const title = trimmed.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.replace(/\s+/g, ' ').trim() || '';
+        const h1 = trimmed.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1]?.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim() || '';
+        return [title, h1 && h1 !== title ? h1 : ''].filter(Boolean).join(' · ').slice(0, 140) || '网关返回 HTML 错误页';
+    }
+    try {
+        const parsed = JSON.parse(trimmed);
+        const rawErr = parsed?.error ?? parsed?.msg ?? parsed?.message;
+        if (typeof rawErr === 'string' && rawErr.trim()) return rawErr.trim().slice(0, 140);
+        if (rawErr && typeof rawErr === 'object') {
+            const inner = rawErr.message || rawErr.msg || rawErr.code || rawErr.type;
+            if (typeof inner === 'string' || typeof inner === 'number') return String(inner).slice(0, 140);
+        }
+        if (typeof parsed?.message === 'string' && parsed.message.trim()) return parsed.message.trim().slice(0, 140);
+        if (parsed?.code !== undefined) return `code=${parsed.code}`;
+    } catch { /* plain text */ }
+    return trimmed.slice(0, 140);
+};
+
 // ==================== 联网搜索（Brave，经代理 worker） ====================
 
 /**
@@ -69,15 +93,10 @@ export const performSearch = async (query: string, apiKey: string, signal?: Abor
 
         // 非 2xx：没搜成，reached 保持 false
         if (!response.ok) {
-            console.error('Search API error:', response.status, text);
-            // 尝试解析错误信息
-            try {
-                const errJson = JSON.parse(text);
-                return { success: false, results: [], message: `搜索失败: ${errJson.error || response.status}`, reached: false };
-            } catch {
-                signal?.throwIfAborted();
-                return { success: false, results: [], message: `搜索失败: ${response.status}`, reached: false };
-            }
+            const detail = summarizeRealtimeHttpError(text);
+            console.error('[Search] API error:', response.status, detail);
+            signal?.throwIfAborted();
+            return { success: false, results: [], message: `搜索失败: ${detail || `HTTP ${response.status}`}`, reached: false };
         }
 
         // 解析 JSON
@@ -156,8 +175,9 @@ export const notionGetDiaryByDate = async (
         const text = await response.text();
 
         if (!response.ok) {
-            console.error('Query diary by date failed:', response.status, text);
-            return { success: false, entries: [], message: `查询失败: ${response.status}` };
+            const detail = summarizeRealtimeHttpError(text);
+            console.error('[Notion] Query diary by date failed:', response.status, detail);
+            return { success: false, entries: [], message: `查询失败: ${detail || response.status}` };
         }
 
         const data = JSON.parse(text);
@@ -180,8 +200,9 @@ export const notionGetDiaryByDate = async (
         return { success: true, entries, message: `找到 ${entries.length} 篇日记` };
     } catch (e: any) {
         signal?.throwIfAborted();
-        console.error('Get diary by date failed:', e);
-        return { success: false, entries: [], message: `查询失败: ${e.message}` };
+        const reason = e instanceof Error ? e.message : String(e || '请求异常');
+        console.error('[Notion] Get diary by date failed:', reason);
+        return { success: false, entries: [], message: `查询失败: ${reason}` };
     }
 };
 
@@ -209,8 +230,9 @@ export const notionReadDiaryContent = async (
         const text = await response.text();
 
         if (!response.ok) {
-            console.error('Read diary content failed:', response.status, text);
-            return { success: false, content: '', message: `读取失败: ${response.status}` };
+            const detail = summarizeRealtimeHttpError(text);
+            console.error('[Notion] Read diary content failed:', response.status, detail);
+            return { success: false, content: '', message: `读取失败: ${detail || response.status}` };
         }
 
         const data = JSON.parse(text);
@@ -298,8 +320,9 @@ export const notionSearchUserNotes = async (
         return { success: true, entries, message: `找到 ${entries.length} 篇笔记` };
     } catch (e: any) {
         signal?.throwIfAborted();
-        console.error('Search user notes failed:', e);
-        return { success: false, entries: [], message: `搜索失败: ${e.message}` };
+        const reason = e instanceof Error ? e.message : String(e || '请求异常');
+        console.error('[Notion] Search user notes failed:', reason);
+        return { success: false, entries: [], message: `搜索失败: ${reason}` };
     }
 };
 
@@ -388,13 +411,9 @@ export const feishuGetToken = async (appId: string, appSecret: string, signal?: 
 
         const text = await response.text();
         if (!response.ok) {
-            try {
-                const errJson = JSON.parse(text);
-                return { success: false, token: '', message: `获取token失败: ${errJson.msg || errJson.error || response.status}` };
-            } catch {
-                signal?.throwIfAborted();
-                return { success: false, token: '', message: `获取token失败: ${response.status}` };
-            }
+            signal?.throwIfAborted();
+            const detail = summarizeRealtimeHttpError(text);
+            return { success: false, token: '', message: `获取token失败: ${detail || response.status}` };
         }
 
         const data = JSON.parse(text);

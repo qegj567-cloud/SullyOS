@@ -2429,7 +2429,7 @@ const LetterView: React.FC<{ text: string; onNext: () => void; onClose: () => vo
                 const s = document.createElement('script');
                 s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
                 s.onload = () => resolve((window as any).html2canvas);
-                s.onerror = reject;
+                s.onerror = () => reject(new Error('截图组件加载失败，请检查网络连接'));
                 document.head.appendChild(s);
             });
             const html2canvas = await loadH2C;
@@ -2554,7 +2554,7 @@ async function composePuzzlePhoto(charChibiUrl: string, userChibiUrl: string): P
         const img = new Image();
         img.crossOrigin = 'anonymous';
         img.onload = () => resolve(img);
-        img.onerror = reject;
+        img.onerror = () => reject(new Error('拼图素材加载失败'));
         img.src = src;
     });
     // 底图逐个镜像试，拉到就用；用户 chibi 是本机数据、无镜像可切，直接 load。

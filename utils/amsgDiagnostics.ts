@@ -19,6 +19,8 @@ import type {
 import { CLOUD_CLEANUP_STAGE } from './amsgTickReport';
 import { describeTaskFailureCause } from './amsg2Tasks';
 import { describeD1LimitCode } from './amsgD1Limits';
+import { formatUnknownError } from './errorSelfCheck';
+import { summarizeHtmlErrorBody } from './networkFailureDiagnosis';
 
 // ─── 失败归类（给使用统计分档用）───
 //
@@ -57,9 +59,18 @@ export const readWorkerHost = (workerUrl: string | null | undefined): string => 
   }
 };
 
-const looksLikeHtmlFallbackError = (message: string) => (
-  /HTML/i.test(message) ||
+const looksLikeGatewayHtmlError = (message: string): boolean => (
+  /\bHTTP\s+5\d\d\b/i.test(message)
+  || /\b50[0234]\b|\b52\d\b|\b530\b|\b1101\b/.test(message)
+  || /internal server error|bad gateway|service unavailable|gateway time-?out|worker threw exception|origin dns|cloudflare/i.test(message)
+);
+
+const looksLikeHtmlFallbackError = (message: string, name: string) => (
+  /API返回了HTML/i.test(message) ||
   message.includes(`Unexpected token '<'`) ||
+  /JSON Parse error: Unrecognized token '<'/i.test(message) ||
+  /JSON\.parse: unexpected character/i.test(message) ||
+  (name === 'SyntaxError' && /did not match the expected pattern/i.test(message)) ||
   /<!doctype/i.test(message) ||
   /<html/i.test(message)
 );
@@ -67,13 +78,16 @@ const looksLikeHtmlFallbackError = (message: string) => (
 /**
  * 浏览器把「连不上」报成什么，各家不一样：Chrome/Firefox 是 TypeError: Failed to fetch，
  * Safari 是 TypeError: Load failed，旧 Firefox 还有 NetworkError when attempting to fetch。
- * 三种都得认，漏一种就有一批人只能看到光秃秃的英文。
+ * 注意：不能把所有 `name === 'TypeError'` 一概当断网——请求头含非法字符（如粘贴进换行/中文引号）
+ * 抛的 `TypeError: Invalid value` 或客户端参数校验 `TypeError` 不是网络故障。
  */
 const looksLikeOfflineError = (message: string, name: string) => (
-  name === 'TypeError' ||
+  name === 'NetworkError' ||
   /failed to fetch/i.test(message) ||
   /load failed/i.test(message) ||
-  /networkerror/i.test(message)
+  /networkerror/i.test(message) ||
+  /network request failed/i.test(message) ||
+  (name === 'TypeError' && !/invalid value|header|iso-8859-1|argument|parameter|undefined|null/i.test(message) && /^fetch/i.test(message))
 );
 
 const looksLikeTimeoutError = (message: string, name: string) => (
@@ -106,12 +120,24 @@ export const describeAmsgFetchFailure = (
   phase: string,
   workerUrl?: string | null,
 ): AmsgFetchFailureDescription => {
-  const raw = error instanceof Error ? error.message : String(error || 'Unknown error');
-  const name = error instanceof Error ? error.name : '';
+  const raw = formatUnknownError(error, 'Unknown error');
+  const name = error instanceof Error
+    ? error.name
+    : (error && typeof error === 'object' && typeof (error as { name?: unknown }).name === 'string'
+      ? (error as { name: string }).name
+      : '');
   const host = readWorkerHost(workerUrl);
   const where = host ? `（${host}）` : '';
 
-  if (looksLikeHtmlFallbackError(raw)) {
+  if (looksLikeHtmlFallbackError(raw, name)) {
+    // 网关 502/504/524 或 Worker 1101 崩溃同样返回 HTML 错误页，不能误报成「填成了普通网页地址」
+    if (looksLikeGatewayHtmlError(raw)) {
+      const cleaned = /<!doctype|<html/i.test(raw) ? summarizeHtmlErrorBody(raw).headline : raw;
+      return {
+        kind: '其他',
+        message: `主动消息 2.0 的${phase}请求遇到服务端或网关故障${where}：${cleaned}`,
+      };
+    }
     return {
       kind: '打到网页了',
       message: `主动消息 2.0 的${phase}请求没有打到 Worker${where}，而是拿到了一个网页。请确认设置里填的是你部署好的 amsg Worker 地址，不是某个网页地址。`,
@@ -284,7 +310,14 @@ export interface AmsgDiagnosticRow {
 /** 拉体检的结果。连不上时带上已经翻成人话的原因，那本身就是第一行结论。 */
 export type AmsgDiagnosticsProbe =
   | { reachable: true; report: AmsgDebugReport }
-  | { reachable: false; reason: string; /** 旧 worker 没有这个端点，不是坏了 */ unsupported?: boolean };
+  | {
+      reachable: false;
+      reason: string;
+      /** 旧 worker 没有这个端点，不是坏了 */
+      unsupported?: boolean;
+      /** 不含个人 Worker 地址或凭据的固定失败分类，供诊断快照安全导出 */
+      failureKind?: AmsgFailKind;
+    };
 
 /** 拉定时任务细账（GET /tick-report）的结果。拿不到时带一句已经翻成人话的原因。 */
 export type AmsgTickReportResult =

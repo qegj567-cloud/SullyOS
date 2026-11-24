@@ -77,7 +77,8 @@ async function detectLayout(config: RemoteVectorConfig): Promise<Layout> {
     for (const layout of ['native', 'legacy'] as const) {
         const columns = layout === 'native' ? NODE_COLUMNS : LEGACY_NODE_COLUMNS;
         const res = await fetch(restUrl(config, `/memory_vectors?select=${columns},dimensions,model,vector&limit=0`), {
-            headers: headers(config), signal: AbortSignal.timeout(15000),
+            headers: headers(config),
+            signal: AbortSignal.timeout(15000),
         });
         if (res.ok) return layout;
         if (layout === 'legacy' || !await missingColumn(res)) throw new Error(await failureMessage(res));
@@ -268,7 +269,7 @@ export async function searchVectors(
     });
 
     if (!res.ok) {
-        throw new Error(`match_vectors HTTP ${res.status}`);
+        throw new Error(`match_vectors ${await failureMessage(res)}`);
     }
 
     const data = await res.json();

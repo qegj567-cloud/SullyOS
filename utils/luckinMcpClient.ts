@@ -18,6 +18,8 @@
  */
 
 import { getProxyWorkerUrl } from './proxyWorker';
+import { formatUnknownError } from './errorSelfCheck';
+import { summarizeHtmlErrorBody } from './networkFailureDiagnosis';
 
 // 走中心配置的主代理 worker（用户可在设置里换成自部署实例）
 const mcpProxyUrl = (): string => `${getProxyWorkerUrl()}/mcp/luckin`;
@@ -143,8 +145,27 @@ const parseResp = (text: string, contentType: string): McpJsonRpcResponse => {
     try { return JSON.parse(text); } catch {
         const m = text.match(/\{[\s\S]*\}/);
         if (m) { try { return JSON.parse(m[0]); } catch { /* fall through */ } }
-        throw new Error(`MCP: 无法解析响应: ${text.slice(0, 300)}`);
+        const summary = /^\s*<(?:!doctype|html|head|body)\b/i.test(text)
+            ? summarizeHtmlErrorBody(text).headline.slice(0, 300)
+            : text.slice(0, 300);
+        throw new Error(`MCP: 无法解析响应: ${summary}`);
     }
+};
+
+let lastToolsListError: string | null = null;
+
+const formatLuckinRpcErr = (err: any): string => {
+    if (typeof err === 'string') return err.trim() || '未知错误';
+    return formatUnknownError(err, '未知错误');
+};
+
+const summarizeLuckinHttpBody = (txt: string, maxLen: number): string => {
+    const trimmed = (txt || '').trim();
+    if (!trimmed) return '';
+    if (/^\s*<(?:!doctype|html|head|body)\b/i.test(trimmed)) {
+        return summarizeHtmlErrorBody(trimmed).headline.slice(0, maxLen);
+    }
+    return trimmed.slice(0, maxLen);
 };
 
 const post = async (
@@ -174,12 +195,12 @@ const post = async (
 
     if (resp.status === 401 || resp.status === 403) {
         const txt = await resp.text().catch(() => '');
-        throw new Error(`MCP 鉴权失败 (${resp.status}): Token 可能已过期或无效 (瑞幸 token 有效期约 1 个月)。${txt.slice(0, 120)}`);
+        throw new Error(`MCP 鉴权失败 (${resp.status}): Token 可能已过期或无效 (瑞幸 token 有效期约 1 个月)。${summarizeLuckinHttpBody(txt, 120)}`);
     }
     if (resp.status === 202) return { response: null };
     if (!resp.ok) {
         const txt = await resp.text().catch(() => '');
-        throw new Error(`MCP HTTP ${resp.status}: ${txt.slice(0, 200)}`);
+        throw new Error(`MCP HTTP ${resp.status}: ${summarizeLuckinHttpBody(txt, 200)}`);
     }
     if (!expectResponse) return { response: null };
 
@@ -190,13 +211,14 @@ const post = async (
 
 const doInitialize = async (signal?: AbortSignal): Promise<void> => {
     signal?.throwIfAborted();
+    lastToolsListError = null;
     const initReq = buildRequest('initialize', {
         protocolVersion: '2024-11-05',
         capabilities: {},
         clientInfo: { name: 'AetherOS-Aetheros', version: '1.0.0' },
     });
     const { response } = await post(initReq, undefined, signal);
-    if (response?.error) throw new Error(`Initialize 失败: ${response.error.message}`);
+    if (response?.error) throw new Error(`Initialize 失败: ${formatLuckinRpcErr(response.error)}`);
 
     // 通知 server 初始化完成 (协议要求)
     const notif = buildRequest('notifications/initialized', {}, true);
@@ -205,7 +227,9 @@ const doInitialize = async (signal?: AbortSignal): Promise<void> => {
     // 拉取工具清单
     try {
         const { response: toolsResp } = await post(buildRequest('tools/list'), undefined, signal);
-        if (toolsResp?.result?.tools && Array.isArray(toolsResp.result.tools)) {
+        if (toolsResp?.error) {
+            lastToolsListError = formatLuckinRpcErr(toolsResp.error);
+        } else if (toolsResp?.result?.tools && Array.isArray(toolsResp.result.tools)) {
             cachedTools = toolsResp.result.tools.map((t: any) => ({
                 name: t.name,
                 description: t.description || '',
@@ -215,6 +239,7 @@ const doInitialize = async (signal?: AbortSignal): Promise<void> => {
         }
     } catch (e) {
         signal?.throwIfAborted();
+        lastToolsListError = formatUnknownError(e, 'tools/list 失败');
         console.warn('[Luckin-MCP] tools/list 失败:', e);
     }
 
@@ -300,7 +325,7 @@ export const callLuckinTool = async (toolName: string, args: Record<string, any>
         const body = buildRequest('tools/call', { name: normalizedToolName, arguments: args });
         const { response } = await post(body, undefined, signal);
         if (!response) return { success: false, error: '空响应' };
-        if (response.error) return { success: false, error: `MCP 错误 [${response.error.code}]: ${response.error.message}` };
+        if (response.error) return { success: false, error: `MCP 错误: ${formatLuckinRpcErr(response.error)}` };
 
         const result = response.result;
         if (result?.content && Array.isArray(result.content)) {
@@ -485,11 +510,14 @@ export const testLuckinConnection = async (signal?: AbortSignal): Promise<{ ok: 
         cachedTools = [];
         initPromise = null;
         const tools = await listLuckinTools(false, signal);
+        if (!tools.length && lastToolsListError) {
+            return { ok: false, message: `握手成功，但拉取工具清单失败: ${lastToolsListError}` };
+        }
         if (!tools.length) return { ok: true, message: '已连接, 但工具清单为空 (可能服务侧未挂载工具)', tools };
         return { ok: true, message: `已连接, 拿到 ${tools.length} 个工具`, tools };
     } catch (e: any) {
         signal?.throwIfAborted();
-        return { ok: false, message: e?.message || String(e) };
+        return { ok: false, message: formatUnknownError(e, '连接失败') };
     }
 };
 

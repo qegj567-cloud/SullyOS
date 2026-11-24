@@ -519,12 +519,13 @@ const postCore = async (
 
         if (resp.status === 401 || resp.status === 403) {
             const txt = await readText().catch(() => '');
-            throw new Error(`MCP 鉴权失败 (${resp.status}): Token 可能无效或过期。${txt.slice(0, 120)}`);
+            const summary = summarizeMcpHttpBody(txt, 120);
+            throw new Error(`MCP 鉴权失败 (${resp.status}): Token 可能无效或过期。${summary}`);
         }
         if (resp.status === 202) return { response: null };
         if (!resp.ok) {
             const txt = await readText().catch(() => '');
-            throw new Error(`MCP HTTP ${resp.status}: ${txt.slice(0, 200)}`);
+            throw new Error(`MCP HTTP ${resp.status}: ${summarizeMcpHttpBody(txt, 200)}`);
         }
         if (!expectResponse) return { response: null };
 
@@ -548,7 +549,20 @@ const postCore = async (
     }
 };
 
-const formatMcpRpcError = (err: { code?: number; message?: string; data?: any }): string => {
+const summarizeMcpHttpBody = (txt: string, maxLen: number): string => {
+    const trimmed = (txt || '').trim();
+    if (!trimmed) return '';
+    if (/^\s*<(?:!doctype|html|head|body)\b/i.test(trimmed)) {
+        const title = trimmed.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.replace(/\s+/g, ' ').trim() || '';
+        const h1 = trimmed.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1]?.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim() || '';
+        const ray = trimmed.match(/Ray ID:\s*<strong[^>]*>([^<]+)<\/strong>/i)?.[1]?.trim() || '';
+        const parts = [title, h1 && h1 !== title ? h1 : '', ray ? `Ray ID: ${ray}` : ''].filter(Boolean);
+        return (parts.join(' · ') || '网关返回 HTML 错误页').slice(0, maxLen);
+    }
+    return trimmed.slice(0, maxLen);
+};
+const formatMcpRpcError = (err: any): string => {
+    if (typeof err === 'string') return err.trim() || '未知错误';
     const code = err?.code !== undefined ? `[${err.code}]: ` : '';
     const message = err?.message || '未知错误';
     let dataText = '';
@@ -559,6 +573,7 @@ const formatMcpRpcError = (err: { code?: number; message?: string; data?: any })
             try { dataText = JSON.stringify(err.data); } catch { dataText = String(err.data); }
         }
     }
+    if (dataText.length > 400) dataText = `${dataText.slice(0, 400)}…`;
     const suffix = dataText && !message.includes(dataText) ? `（${dataText}）` : '';
     return `${code}${message}${suffix}`;
 };
@@ -798,7 +813,10 @@ export const callMcpToolCore = async (
         if (result?.content && Array.isArray(result.content)) {
             const textParts = result.content.filter((c: any) => c?.type === 'text').map((c: any) => c.text || '');
             const fullText = textParts.join('\n').trim();
-            if (result.isError) return finish({ success: false, error: fullText || 'MCP 工具执行失败', rawText: fullText });
+            if (result.isError) {
+                const boundedErr = fullText.length > 20_000 ? `${fullText.slice(0, 20_000)}…(已截断)` : fullText;
+                return finish({ success: false, error: boundedErr || 'MCP 工具执行失败', rawText: boundedErr });
+            }
             try {
                 return finish({ success: true, data: JSON.parse(fullText), rawText: fullText });
             } catch {
@@ -808,7 +826,10 @@ export const callMcpToolCore = async (
         return finish({ success: true, data: result });
     } catch (e: any) {
         target.signal?.throwIfAborted();
-        return finish({ success: false, error: e?.message || String(e) });
+        const errMsg = e instanceof Error ? (e.message || e.name) : typeof e === 'string' ? e : (() => {
+            try { return JSON.stringify(e).slice(0, 300); } catch { return String(e); }
+        })();
+        return finish({ success: false, error: errMsg || 'MCP 调用失败' });
     }
 };
 

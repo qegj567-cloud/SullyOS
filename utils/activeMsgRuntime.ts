@@ -42,6 +42,7 @@ import { requestStartupUpdateCheck } from './amsgAutoUpdateTrigger';
 import { probeRescueOnForeground, probeRescueOnStartup } from './amsgRescueProbe';
 import { flushAmsgState } from './amsgStateSync';
 import { describeInstantChatFailure, pruneStaleTasks, type RemoteTaskLastError } from './amsg2Tasks';
+import { redactRelayTokensInText } from './networkRequestSource';
 // 线协议常量的唯一出处是 shared（amsg-sw 只是 re-export 同一份）。
 import { MULTIPART_FAILURE_REASON } from '@rei-standard/amsg-shared';
 import { appendInstantTraceEntry } from './instantTraceLog';
@@ -453,6 +454,12 @@ export const handleInstantErrorPushMessage = async (data: unknown): Promise<void
   const described = reason
     ? describeInstantChatFailure({ reason, ...(errorCode ? { errorCode } : {}) })
     : null;
+  activeMsgTrace('instant-chat-error-push', {
+    charId,
+    taskUuid,
+    ...(errorCode ? { errorCode } : {}),
+    ...(described ? { reason: redactRelayTokensInText(described).slice(0, 200) } : {}),
+  });
   await failInstantChatPending(charId, taskUuid, described ?? undefined);
 };
 
@@ -2733,6 +2740,13 @@ export const runInstantChatStatusCheck = async (): Promise<void> => {
         reason = describeInstantChatFailure(status.lastError) ?? undefined;
       }
       log.warn('即时对话云端任务已失败', { charId: pending.charId, uuid: pending.uuid, reason });
+      activeMsgTrace('instant-chat-poll-failed', {
+        charId: pending.charId,
+        taskUuid: pending.uuid,
+        ...(status.lastError?.errorCode ? { errorCode: status.lastError.errorCode } : {}),
+        ...(typeof status.lastError?.pushStatus === 'number' ? { pushStatus: status.lastError.pushStatus } : {}),
+        ...(reason ? { reason: redactRelayTokensInText(reason).slice(0, 200) } : {}),
+      });
       await failInstantChatPending(pending.charId, pending.uuid, reason ?? '生成失败（云端没记下原因）');
     } else {
       // 「取不回」的结论 = 行没了 **且账本读到了、里面确实没有这一轮**。账本这一步

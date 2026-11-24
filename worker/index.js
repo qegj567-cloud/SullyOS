@@ -1136,7 +1136,11 @@ async function fetchFromAnyUpstream(upstreamPath, timeoutMs = 8000) {
       }
 
       if (!res.ok) {
-        errors.push(`${host} HTTP ${res.status}`);
+        const upstreamMsg = parsed && typeof (parsed.message || parsed.msg) === 'string'
+          ? String(parsed.message || parsed.msg).trim().slice(0, 120)
+          : '';
+        const upstreamCode = parsed && parsed.code !== undefined ? ` code=${parsed.code}` : '';
+        errors.push(`${host} HTTP ${res.status}${upstreamCode}${upstreamMsg ? `: ${upstreamMsg}` : ''}`);
         continue;
       }
       return { text, status: res.status, upstream: host, error: null, riskControlled: false };

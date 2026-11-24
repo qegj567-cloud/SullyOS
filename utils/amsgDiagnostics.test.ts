@@ -119,6 +119,33 @@ describe('describeAmsgFetchFailure — 把 fetch 异常翻成人话', () => {
     expect(message).not.toContain('（）');
   });
 
+  it('502/Cloudflare 网关错误页不误判成「填成了网页地址」，非网络类 TypeError 保留原始原因', () => {
+    const cf502 = describeAmsgFetchFailure(
+      new Error('HTTP 502: <!DOCTYPE html><html><title>502 Bad Gateway</title></html>'),
+      '同步状态',
+      WORKER_URL,
+    );
+    expect(cf502.kind).toBe('其他');
+    expect(cf502.message).toContain('网关');
+    expect(cf502.message).not.toContain('网页地址');
+
+    const safariHtml = describeAmsgFetchFailure(
+      new SyntaxError("JSON Parse error: Unrecognized token '<'"),
+      '配置自检',
+      WORKER_URL,
+    );
+    expect(safariHtml.kind).toBe('打到网页了');
+
+    const badHeader = describeAmsgFetchFailure(
+      new TypeError("Failed to execute 'fetch' on 'Window': Invalid value"),
+      '连接测试',
+      WORKER_URL,
+    );
+    expect(badHeader.kind).toBe('其他');
+    expect(badHeader.message).toContain('Invalid value');
+    expect(badHeader.message).not.toContain('连不上');
+  });
+
   it('认不出来的异常保留原文，不吞成一句「网络错误」', () => {
     const { message, kind } = describeAmsgFetchFailure(new Error('AES-GCM decrypt failed'), '读取云端状态', WORKER_URL);
     expect(kind).toBe('其他');

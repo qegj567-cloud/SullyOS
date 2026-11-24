@@ -23,6 +23,7 @@ import {
     resetReachabilityProbeCooldown,
     shouldProbeReachability,
     summarizeFetchRequestBody,
+    summarizeHtmlErrorBody,
 } from './networkFailureDiagnosis';
 
 const failedToFetch = () => new TypeError('Failed to fetch');
@@ -513,5 +514,44 @@ describe('describeConsoleErrorArgs', () => {
 
     it('直接传 Error 与不含报错的对象保持原样', () => {
         expect(describeConsoleErrorArgs(['x', new Error('boom'), { a: 1 }]).message).toBe('x boom [object Object]');
+    });
+
+    it('React ErrorBoundary 的 componentStack 进入 stacks，不在 message 里留下 [object Object]', () => {
+        const err = new Error('Minified React error');
+        const info = { componentStack: '\n    at BrokenView\n    at AppErrorBoundary' };
+        const res = describeConsoleErrorArgs(['App Crash:', err, info]);
+        expect(res.message).toBe('App Crash: Minified React error');
+        expect(res.message).not.toContain('[object Object]');
+        expect(res.stacks).toContain('at BrokenView');
+    });
+
+    it('提取 DOM Event / MediaError / PostgrestError 与嵌套字符串报错，同时不泄漏包装对象的私有字段', () => {
+        expect(describeConsoleErrorArgs(['[Music] 音频播放失败', { code: 2, message: 'MEDIA_ERR_NETWORK' }]).message)
+            .toContain('音频网络读取失败');
+        expect(describeConsoleErrorArgs(['[Supabase]', { code: '42501', message: 'permission denied' }]).message)
+            .toBe('[Supabase] permission denied [42501]');
+        const wrappedStr = describeConsoleErrorArgs(['同步失败', { secretText: '私密对话', error: 'token expired' }]);
+        expect(wrappedStr.message).toBe('同步失败 token expired');
+        expect(wrappedStr.message).not.toContain('私密对话');
+
+        // Object.create(null) 不会抛 TypeError，且含 name+message 的普通业务实体不会被误当成 Error 展开外泄
+        const nullProto = Object.create(null);
+        nullProto.secret = '不能外泄';
+        expect(() => describeConsoleErrorArgs(['null-proto', nullProto])).not.toThrow();
+        expect(describeConsoleErrorArgs(['null-proto', nullProto]).message).toBe('null-proto [object Object]');
+
+        const businessWrapper = describeConsoleErrorArgs(['保存草稿失败', { draft: { name: 'Sully', message: '私密聊天正文' } }]);
+        expect(businessWrapper.message).toBe('保存草稿失败 [object Object]');
+        expect(businessWrapper.message).not.toContain('私密聊天正文');
+    });
+});
+
+describe('summarizeHtmlErrorBody', () => {
+    it('剥离内联 CSS/JS 噪声，保留网关标题与 Cloudflare Ray ID', () => {
+        const cfHtml = `<!DOCTYPE html><html><head><title>api.example.com | 502: Bad gateway</title><style>body{margin:0;background:#fff;font-family:sans-serif}</style></head><body><h1>Bad gateway</h1><span>Cloudflare Ray ID: <strong>8a1b2c3d4e5f6789</strong></span></body></html>`;
+        const summary = summarizeHtmlErrorBody(cfHtml);
+        expect(summary.headline).toContain('502: Bad gateway');
+        expect(summary.headline).toContain('Ray 8a1b2c3d4e5f6789');
+        expect(summary.detailSummary).not.toContain('font-family');
     });
 });

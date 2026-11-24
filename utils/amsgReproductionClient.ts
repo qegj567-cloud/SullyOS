@@ -43,7 +43,13 @@ export async function captureReproductionEnvironment() {
     cloudRegistration: b && remote.status === 'fulfilled' ? compareRemotePushSubscription(b.endpoint, r) : 'unavailable',
     worker: w ? { configOk: w.config.ok, missing: w.config.missing, schemaReady: w.storage.schemaReady,
       storageReachable: w.storage.reachable, subscriptionRegistered: w.storage.pushSubscriptionRegistered,
-      tick: w.tick, server: w.server, pushDelivery: w.storage.pushDelivery } : { unavailable: true },
+      tick: w.tick, server: w.server, pushDelivery: w.storage.pushDelivery }
+      : {
+          unavailable: true,
+          ...(worker.status === 'fulfilled' && !worker.value.reachable && worker.value.failureKind
+            ? { failureKind: worker.value.failureKind }
+            : {}),
+        },
   };
 }
 
@@ -101,6 +107,16 @@ export async function collectReproductionReport(runId: string) {
     format: 'sullyos-amsg2-reproduction-v1', exportedAt: new Date().toISOString(),
     run: { ...run, after }, summary: summarizeReproduction(events, run.scenario),
     collection: { cloud: cloud.status, local: local.status, environment: environment.status, task: task.status },
+    ...(cloud.status === 'rejected' || local.status === 'rejected' || environment.status === 'rejected' || task.status === 'rejected'
+      ? {
+        collectionErrors: {
+          ...(cloud.status === 'rejected' ? { cloud: safeDiagnosticError(cloud.reason) } : {}),
+          ...(local.status === 'rejected' ? { local: safeDiagnosticError(local.reason) } : {}),
+          ...(environment.status === 'rejected' ? { environment: safeDiagnosticError(environment.reason) } : {}),
+          ...(task.status === 'rejected' ? { task: safeDiagnosticError(task.reason) } : {}),
+        },
+      }
+      : {}),
     task: status ? { state: status.state, ...('lastError' in status && status.lastError ? { lastError: { at: status.lastError.at, occurrence: status.lastError.occurrence, ...safeDiagnosticError({ status: status.lastError.pushStatus, code: status.lastError.errorCode }) } } : {}), ...('retryCount' in status ? { retryCount: status.retryCount, nextSendAt: status.nextSendAt } : {}) } : { unavailable: true },
     scope: ['真实云端调度、所选 API 生成、正式分段、推送发送、SW 或 Android 原生接收和通知接口、本机收件与补收', '固定测试提示词；不复刻角色上下文、主动频率门禁、MCP、工具副作用、情绪和记忆', '通知接口成功不代表系统实际显示横幅；以用户观察为准', '时间戳来自不同设备时钟，跨端耗时仅供参考；云端记录保留7天，本机最多10轮'],
     events,

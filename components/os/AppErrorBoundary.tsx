@@ -1,6 +1,7 @@
 import React, { Component, ErrorInfo } from 'react';
-import { errorDetails } from '../../utils/errorSelfCheck';
+import { cleanErrorStack, errorDetails, formatUnknownError } from '../../utils/errorSelfCheck';
 import { isChunkLoadError, tryAutoReloadForChunkError } from '../../utils/chunkLoadRecovery';
+import { formatDiagnosticTimestamp, readCompactBuildString, redactRelayTokensInText } from '../../utils/networkRequestSource';
 import { trackEvent } from '../../utils/analytics';
 import { INSTALLED_APPS, HIDDEN_APP_NAMES } from '../../constants';
 import { AppID } from '../../types';
@@ -26,7 +27,8 @@ type AppErrorBoundaryProps = {
 
 type AppErrorBoundaryState = {
     hasError: boolean;
-    error: Error | null;
+    error: unknown;
+    componentStack: string;
     copyLabel: string;
     /** 懒加载 chunk 失败 (iOS Safari "Importing a module script failed." 等) — 走刷新恢复 UI */
     isChunkError: boolean;
@@ -44,6 +46,7 @@ class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorBoundary
         this.state = {
             hasError: false,
             error: null,
+            componentStack: '',
             copyLabel: ERROR_COPY_LABEL,
             isChunkError: false,
             autoReloading: false,
@@ -51,7 +54,7 @@ class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorBoundary
         };
     }
 
-    static getDerivedStateFromError(error: Error): Partial<AppErrorBoundaryState> {
+    static getDerivedStateFromError(error: unknown): Partial<AppErrorBoundaryState> {
         return { hasError: true, error, isChunkError: isChunkLoadError(error) };
     }
 
@@ -67,6 +70,10 @@ class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorBoundary
 
     componentDidCatch(error: Error, errorInfo: ErrorInfo) {
         console.error('App Crash:', error, errorInfo);
+        const componentStack = typeof errorInfo?.componentStack === 'string' ? errorInfo.componentStack.trim() : '';
+        if (componentStack) {
+            this.setState({ componentStack });
+        }
         // 使用统计: 只报「哪个 App 崩了 + 是哪一类崩」。报错文本留在 console, 不进上报。
         const appName = this.currentAppName();
         trackEvent('触发 App 崩溃兜底页', {
@@ -91,6 +98,7 @@ class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorBoundary
             this.setState({
                 hasError: false,
                 error: null,
+                componentStack: '',
                 copyLabel: ERROR_COPY_LABEL,
                 isChunkError: false,
                 autoReloading: false,
@@ -117,8 +125,23 @@ class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorBoundary
         }, 1800);
     };
 
+    private buildCopyReport = (): string => {
+        const appName = this.currentAppName();
+        const header = [
+            `应用: ${appName || '桌面/系统'}`,
+            `版本: ${readCompactBuildString()}`,
+            `时间: ${formatDiagnosticTimestamp(Date.now())}`,
+            `类型: ${this.state.isChunkError ? '资源加载失败' : '运行错误'}`,
+        ].join('\n');
+        const details = errorDetails(this.state.error);
+        const compStack = this.state.componentStack
+            ? `\n\nComponent Stack:\n${cleanErrorStack(redactRelayTokensInText(this.state.componentStack))}`
+            : '';
+        return `${header}\n\n${details}${compStack}`;
+    };
+
     private handleCopy = async () => {
-        const errText = errorDetails(this.state.error);
+        const errText = this.buildCopyReport();
 
         try {
             if (navigator.clipboard?.writeText) {
@@ -166,6 +189,7 @@ class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorBoundary
         this.setState({
             hasError: false,
             error: null,
+            componentStack: '',
             copyLabel: ERROR_COPY_LABEL,
             isChunkError: false,
             autoReloading: false,
@@ -184,6 +208,9 @@ class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorBoundary
             return this.props.children;
         }
 
+        const appName = this.currentAppName();
+        const safeErrorSummary = redactRelayTokensInText(formatUnknownError(this.state.error, 'Unknown Error'));
+
         if (this.state.isChunkError) {
             return (
                 <div className="relative isolate z-[120] w-full h-full flex flex-col items-center justify-center bg-slate-900/95 text-white p-6 text-center space-y-4 pointer-events-auto">
@@ -192,14 +219,17 @@ class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorBoundary
                         alt="error"
                         className="w-10 h-10"
                     />
-                    <h2 className="text-lg font-bold">{CHUNK_ERROR_TITLE}</h2>
+                    <h2 className="text-lg font-bold">{CHUNK_ERROR_TITLE}{appName ? `（${appName}）` : ''}</h2>
                     <p className="text-xs text-slate-300 max-w-xs leading-relaxed">
                         {this.state.offlineRecovery ? CHUNK_ERROR_OFFLINE_HINT : CHUNK_ERROR_HINT}
                         {!this.state.offlineRecovery && import.meta.env.MODE !== 'capacitor' && '刷新无效时，可点击「检查更新并修复」。'}
                     </p>
-                    <p className="text-xs text-slate-300 font-mono bg-black/30 p-3 rounded-2xl max-w-full overflow-auto max-h-40 select-text break-all whitespace-pre-wrap">
-                        {this.state.error?.message || 'Unknown Error'}
-                    </p>
+                    <details className="w-full max-w-xs text-left">
+                        <summary className="cursor-pointer text-center text-xs text-slate-400">查看具体异常摘要</summary>
+                        <p className="mt-2 text-xs text-slate-300 font-mono bg-black/30 p-3 rounded-2xl max-w-full overflow-auto max-h-40 select-text break-all whitespace-pre-wrap">
+                            {safeErrorSummary}
+                        </p>
+                    </details>
                     {this.state.autoReloading ? (
                         <p className="text-sm font-bold text-slate-200">{CHUNK_ERROR_RELOADING}</p>
                     ) : (
@@ -246,9 +276,9 @@ class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorBoundary
                     alt="error"
                     className="w-10 h-10"
                 />
-                <h2 className="text-lg font-bold">{ERROR_TITLE}</h2>
+                <h2 className="text-lg font-bold">{ERROR_TITLE}{appName ? `（${appName}）` : ''}</h2>
                 <p className="text-xs text-slate-300 font-mono bg-black/30 p-3 rounded-2xl max-w-full overflow-auto max-h-40 select-text break-all whitespace-pre-wrap">
-                    {this.state.error?.message || 'Unknown Error'}
+                    {safeErrorSummary}
                 </p>
                 <div className="flex flex-col gap-3 w-full max-w-xs">
                     <button

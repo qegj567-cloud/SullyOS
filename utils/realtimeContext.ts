@@ -19,6 +19,8 @@ import {
     type FeishuDiaryPreview,
 } from './realtimeFetchCore';
 import { formatFeishuWriteFailure } from './feishuDiagnostics';
+import { formatUnknownError } from './errorSelfCheck';
+import { summarizeHtmlErrorBody } from './networkFailureDiagnosis';
 import {
     fetchWeatherWithFallback,
     normalizeFreeWeatherSource,
@@ -523,12 +525,10 @@ export const NotionManager = {
             const text = await response.text();
 
             if (!response.ok) {
-                try {
-                    const errJson = JSON.parse(text);
-                    return { success: false, message: `连接失败: ${errJson.error || errJson.message || response.status}` };
-                } catch {
-                    return { success: false, message: `连接失败: ${response.status}` };
-                }
+                const detail = /^\s*<(?:!doctype|html|head|body)\b/i.test(text)
+                    ? summarizeHtmlErrorBody(text).headline
+                    : (() => { try { return formatUnknownError(JSON.parse(text), ''); } catch { return text.trim().slice(0, 120); } })();
+                return { success: false, message: `连接失败: ${detail || `HTTP ${response.status}`}` };
             }
 
             try {
@@ -593,12 +593,10 @@ export const NotionManager = {
             const text = await response.text();
 
             if (!response.ok) {
-                try {
-                    const errJson = JSON.parse(text);
-                    return { success: false, message: `写入失败: ${errJson.error || errJson.message || response.status}` };
-                } catch {
-                    return { success: false, message: `写入失败: ${response.status}` };
-                }
+                const detail = /^\s*<(?:!doctype|html|head|body)\b/i.test(text)
+                    ? summarizeHtmlErrorBody(text).headline
+                    : (() => { try { return formatUnknownError(JSON.parse(text), ''); } catch { return text.trim().slice(0, 120); } })();
+                return { success: false, message: `写入失败: ${detail || `HTTP ${response.status}`}` };
             }
 
             try {
@@ -613,7 +611,7 @@ export const NotionManager = {
                 return { success: false, message: '返回格式错误' };
             }
         } catch (e: any) {
-            return { success: false, message: `网络错误: ${e.message}` };
+            return { success: false, message: `网络错误: ${formatUnknownError(e, '请求异常')}` };
         }
     },
 
@@ -649,8 +647,11 @@ export const NotionManager = {
             const text = await response.text();
 
             if (!response.ok) {
-                console.error('Query diaries failed:', response.status, text);
-                return { success: false, entries: [], message: `查询失败: ${response.status}` };
+                const detail = /^\s*<(?:!doctype|html|head|body)\b/i.test(text)
+                    ? summarizeHtmlErrorBody(text).headline
+                    : (() => { try { return formatUnknownError(JSON.parse(text), ''); } catch { return text.trim().slice(0, 120); } })();
+                console.error('[Notion] Query diaries failed:', response.status, detail);
+                return { success: false, entries: [], message: `查询失败: ${detail || response.status}` };
             }
 
             const data = JSON.parse(text);
@@ -728,8 +729,11 @@ export const NotionManager = {
             const text = await response.text();
 
             if (!response.ok) {
-                console.error('Query user notes failed:', response.status, text);
-                return { success: false, entries: [], message: `查询失败: ${response.status}` };
+                const detail = /^\s*<(?:!doctype|html|head|body)\b/i.test(text)
+                    ? summarizeHtmlErrorBody(text).headline
+                    : (() => { try { return formatUnknownError(JSON.parse(text), ''); } catch { return text.trim().slice(0, 120); } })();
+                console.error('[Notion] Query user notes failed:', response.status, detail);
+                return { success: false, entries: [], message: `查询失败: ${detail || response.status}` };
             }
 
             const data = JSON.parse(text);
@@ -1381,12 +1385,10 @@ export const FeishuManager = {
 
             const text = await response.text();
             if (!response.ok) {
-                try {
-                    const errJson = JSON.parse(text);
-                    return { success: false, message: `连接失败: ${errJson.msg || errJson.error || response.status}` };
-                } catch {
-                    return { success: false, message: `连接失败: ${response.status}` };
-                }
+                const detail = /^\s*<(?:!doctype|html|head|body)\b/i.test(text)
+                    ? summarizeHtmlErrorBody(text).headline
+                    : (() => { try { return formatUnknownError(JSON.parse(text), ''); } catch { return text.trim().slice(0, 120); } })();
+                return { success: false, message: `连接失败: ${detail || response.status}` };
             }
 
             const data = JSON.parse(text);

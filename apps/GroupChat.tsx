@@ -1564,7 +1564,7 @@ ${memberTimeline || '(暂无互动记录)'}
             const rawContent = data.choices?.[0]?.message?.content ?? '';
             const actions = parseDirectorActions(rawContent, groupMembers);
             if (actions.length === 0 && String(rawContent).trim()) {
-                console.error('Director Parse Error', rawContent);
+                console.warn('[GroupChat] Director 输出格式无法解析', { length: String(rawContent).length });
                 addToast('AI 输出格式无法解析，请重试', 'error');
             }
 

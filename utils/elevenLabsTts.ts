@@ -13,6 +13,8 @@ import type { TtsResult } from './minimaxTts';
 import { normalizeVoiceTags } from './sanitize';
 import { getProxyWorkerUrl } from './proxyWorker';
 import { isStaticWebDeployment } from './staticWebDeployment';
+import { formatUnknownError } from './errorSelfCheck';
+import { summarizeHtmlErrorBody } from './networkFailureDiagnosis';
 import {
   normalizeElevenLabsModel,
   isElevenLabsV3Model,
@@ -244,14 +246,53 @@ const base64ToBlob = (base64: string, mime = 'audio/mpeg'): Blob => {
   return new Blob([bytes], { type: mime });
 };
 
+const extractElevenLabsErrorDetail = (raw: string): string => {
+  const trimmed = (raw || '').trim();
+  if (!trimmed) return '';
+  if (/^\s*<(?:!doctype|html|head|body)\b/i.test(trimmed)) {
+    return summarizeHtmlErrorBody(trimmed).headline;
+  }
+  try {
+    const parsed = JSON.parse(trimmed);
+    const extracted = formatUnknownError(parsed, '');
+    if (extracted) return extracted;
+  } catch { /* plain text */ }
+  return trimmed;
+};
+
+const decodeCapacitorErrorData = (data: unknown): string => {
+  if (!data) return '';
+  if (typeof data === 'object') return formatUnknownError(data, '');
+  const str = String(data).trim();
+  if (!str) return '';
+  if (!str.startsWith('{') && !str.startsWith('<') && /^[A-Za-z0-9+/=]+$/.test(str) && str.length % 4 === 0) {
+    try {
+      const decoded = new TextDecoder().decode(Uint8Array.from(atob(str), (c) => c.charCodeAt(0))).trim();
+      if (decoded.startsWith('{') || decoded.startsWith('<')) return decoded;
+    } catch { /* keep str */ }
+  }
+  return str;
+};
+
 export const friendlyElevenLabsError = (status: number, detail: string): string => {
-  const normalized = detail.toLowerCase();
-  if (status === 401 || normalized.includes('invalid api key')) return 'ElevenLabs API Key 无效或已过期';
-  if (status === 402 || normalized.includes('quota') || normalized.includes('credits')) return 'ElevenLabs 额度不足';
-  if (status === 403) return 'ElevenLabs 拒绝访问，请检查 Key 权限或 IP 限制';
+  const cleanDetail = extractElevenLabsErrorDetail(detail);
+  const normalized = `${detail || ''}\n${cleanDetail}`.toLowerCase();
+  // ElevenLabs 在额度耗尽或异常活动拦截时也会返回 HTTP 401（detail.status = quota_exceeded / detected_unusual_activity），先判具体业务原因再回退到 Key 无效。
+  if (status === 402 || normalized.includes('quota') || normalized.includes('credits')) {
+    return `ElevenLabs 额度不足${cleanDetail ? `（${cleanDetail.slice(0, 160)}）` : ''}`;
+  }
+  if (normalized.includes('unusual_activity') || normalized.includes('free tier')) {
+    return `ElevenLabs 触发风控或免费额度限制${cleanDetail ? `（${cleanDetail.slice(0, 160)}）` : ''}`;
+  }
+  if (status === 401 || normalized.includes('invalid api key') || normalized.includes('invalid_api_key')) {
+    return 'ElevenLabs API Key 无效或已过期';
+  }
+  if (status === 403) {
+    return `ElevenLabs 拒绝访问，请检查 Key 权限或 IP 限制${cleanDetail ? `（${cleanDetail.slice(0, 160)}）` : ''}`;
+  }
   if (status === 404) return 'ElevenLabs Voice ID 或模型不存在';
   if (status === 429) return 'ElevenLabs 请求过于频繁，请稍后再试';
-  return `ElevenLabs TTS 失败 (HTTP ${status})${detail ? `：${detail.slice(0, 240)}` : ''}`;
+  return `ElevenLabs TTS 失败 (HTTP ${status})${cleanDetail ? `：${cleanDetail.slice(0, 240)}` : ''}`;
 };
 
 const elevenLabsFetchAudio = async (
@@ -269,7 +310,7 @@ const elevenLabsFetchAudio = async (
       responseType: 'blob',
     });
     if (response.status < 200 || response.status >= 300) {
-      throw new Error(friendlyElevenLabsError(response.status, String(response.data || '')));
+      throw new Error(friendlyElevenLabsError(response.status, decodeCapacitorErrorData(response.data)));
     }
     const blob = base64ToBlob(String(response.data || ''));
     if (!blob.size) throw new Error('ElevenLabs 返回了空音频');

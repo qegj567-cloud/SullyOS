@@ -1727,9 +1727,9 @@ const Settings: React.FC = () => {
               trackEvent('测试 WebDAV 连接', {
                   result: '失败',
                   failure_kind:
-                      /认证失败/.test(m) ? 'auth_401'
-                      : /无法创建/.test(m) ? 'dir_missing_uncreatable'
-                      : /服务器返回/.test(m) ? 'http_status'
+                      /认证失败|权限不足/.test(m) ? 'auth_401'
+                      : /无法(?:自动)?创建/.test(m) ? 'dir_missing_uncreatable'
+                      : /服务器返回|网关异常|HTTP \d{3}/.test(m) ? 'http_status'
                       : 'network_error',
               });
           }

@@ -63,6 +63,12 @@ export interface SystemLogContext {
     /** 请求体中的模型标识（仅模型类请求） */
     model?: string;
     httpStatus?: number;
+    statusText?: string;
+    contentType?: string;
+    requestId?: string;
+    cfRay?: string;
+    retryAfter?: string;
+    cause?: string;
     durationMs?: number;
     /** 响应头到达耗时（仅已收到响应头后在流式读取阶段中断时存在） */
     headersMs?: number;
@@ -83,6 +89,8 @@ export interface SystemLogContext {
 
 export interface SystemLog {
     advice?: { title: string; action: string };
+    /** 仅静默收入日志池供回看与复制，不主动弹出状态栏顶部红色提醒胶囊 */
+    silent?: boolean;
     id: string;
     timestamp: number;
     /** 便于直接阅读的本地时间字符串（含时区偏移） */

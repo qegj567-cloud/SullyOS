@@ -16,6 +16,7 @@ import { DB } from '../utils/db';
 import { getProxyWorkerUrl, DEFAULT_PROXY_WORKER, PROXY_WORKER_CHANGED_EVENT, isLegacyProxyWorkerUrl } from '../utils/proxyWorker';
 import type { PostProcessMusicHooks } from '../utils/applyAssistantPostProcessing';
 import { resolveRefToDataUrl } from '../utils/blobRef';
+import { formatUnknownError } from '../utils/errorSelfCheck';
 
 /* ───────────── 类型 ───────────── */
 export type MusicQuality = 'standard' | 'higher' | 'exhigh' | 'lossless' | 'hires';
@@ -246,7 +247,7 @@ export const musicApi = {
     const j = await res.json().catch(() => ({}));
     if (!res.ok) {
       // 兼容尚未更新的自建代理 Worker：detail 标明风控时转成可读提示，其余未知上游失败附带具体原因。
-      const rawErr = j?.error || j?.message || `HTTP ${res.status}`;
+      const rawErr = formatUnknownError(j?.error ?? j?.message, '') || `HTTP ${res.status}`;
       const detail = typeof j?.detail === 'string' ? j.detail.trim() : '';
       if (/risk-control|code=-460|code=-7/i.test(detail)) {
         throw new Error('网易云接口触发风控，请稍后再试');
@@ -675,8 +676,16 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const onPause = () => setPlaying(false);
     const onTime = () => setProgress(a.currentTime);
     const onMeta = () => setDuration(a.duration || 0);
-    // 播放出错 → 清掉 playing 状态 + 清掉"一起听"伙伴（防止 UI 卡在残留状态）
-    const onErr = () => { setPlaying(false); setListeningTogetherWith([]); toast('播放失败', 'error'); };
+    // 播放出错 → 清掉 playing 状态 + 清掉"一起听"伙伴（防止 UI 卡在残留状态），并记录 MediaError 供报错自检诊断
+    const onErr = () => {
+      setPlaying(false);
+      setListeningTogetherWith([]);
+      // 主动清空或未加载曲目时不计为播放故障（浏览器对空 src 会派发 MEDIA_ERR_SRC_NOT_SUPPORTED）
+      if (!a.getAttribute('src')) return;
+      const mediaErrDesc = a.error ? formatUnknownError(a.error, '') : '';
+      console.error('[Music] 音频播放失败', a.error || 'unknown media error');
+      toast(mediaErrDesc ? `播放失败：${mediaErrDesc}` : '播放失败', 'error');
+    };
     const onEnd = () => { endedHandlerRef.current(); };
 
     a.addEventListener('play', onPlay);
@@ -693,7 +702,7 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       a.removeEventListener('loadedmetadata', onMeta);
       a.removeEventListener('error', onErr);
       a.removeEventListener('ended', onEnd);
-      try { a.pause(); a.src = ''; } catch {}
+      try { a.pause(); a.removeAttribute('src'); a.load(); } catch {}
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

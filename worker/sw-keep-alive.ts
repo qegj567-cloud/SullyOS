@@ -645,6 +645,10 @@ async function saveIncomingActiveMessage(payload: any) {
       // metadata 整份带给页面: 即时对话靠里面的 taskUuid/reason 当场收尾那一轮
       // （落系统消息、熄灯），见 activeMsgRuntime 的 active-msg-error 分支。
       console.error('[amsg] error push', payload?.code, payload?.message, payload?.metadata?.reason);
+      traceSw('error-push', payload, {
+        taskUuid: payload?.metadata?.taskUuid,
+        errorCode: payload?.metadata?.errorCode ?? payload?.code,
+      });
       await notifyClients({
         type: 'active-msg-error',
         code: payload?.code,

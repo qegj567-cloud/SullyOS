@@ -161,8 +161,14 @@ function anthropicUsage(usage = {}) {
   const input = usage.input_tokens || 0, read = usage.cache_read_input_tokens || 0, write = usage.cache_creation_input_tokens || 0;
   return { ...usage, prompt_tokens: input + read + write, completion_tokens: usage.output_tokens || 0, total_tokens: input + read + write + (usage.output_tokens || 0), prompt_tokens_details: { cached_tokens: read }, cache_creation_input_tokens: write };
 }
+var formatAnthropicErrorPayload = (err6, fallback) => {
+  const msg = typeof err6?.message === "string" ? err6.message.trim() : "";
+  const type = typeof err6?.type === "string" ? err6.type.trim() : "";
+  if (msg && type && !msg.includes(type)) return `${msg} [${type}]`;
+  return msg || type || fallback;
+};
 function fromAnthropicMessage(message) {
-  if (message.type === "error") throw Error(message.error?.message || "Anthropic \u8FD4\u56DE\u9519\u8BEF");
+  if (message.type === "error") throw Error(formatAnthropicErrorPayload(message.error, "Anthropic \u8FD4\u56DE\u9519\u8BEF"));
   if (message.type !== "message" || !Array.isArray(message.content)) throw Error("Anthropic \u8FD4\u56DE\u4E86\u65E0\u6548 Messages \u54CD\u5E94");
   const text2 = message.content.filter((b) => b.type === "text").map((b) => b.text).join("");
   const thinking = message.content.filter((b) => b.type === "thinking" || b.type === "redacted_thinking");
@@ -190,7 +196,12 @@ function convertAnthropicStream(response) {
     if (!eventData.length) return;
     const event = JSON.parse(eventData.join("\n"));
     eventData = [];
-    if (event.type === "error") throw Error(event.error?.message || "Anthropic \u6D41\u5F0F\u9519\u8BEF");
+    if (event.type === "error") {
+      throw Object.assign(
+        Error(`API Error: ${formatAnthropicErrorPayload(event.error, "Anthropic \u6D41\u5F0F\u9519\u8BEF")}`),
+        { __sullyUpstreamStreamError: true }
+      );
+    }
     let delta = {}, end = null;
     if (event.type === "message_start") {
       id = event.message.id;
@@ -328,7 +339,26 @@ async function fetchLlm(resource, init, transport = globalThis.fetch, browser = 
     if (!response.body) throw Error("Anthropic \u8FD4\u56DE\u4E86\u7A7A\u6D41");
     return convertAnthropicStream(response);
   }
-  const message = info ? JSON.parse(await readLlmResponseText(response, info)) : await response.json();
+  const rawText = await readLlmResponseText(response, info);
+  let message;
+  try {
+    message = JSON.parse(rawText);
+  } catch {
+    return new Response(rawText, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers
+    });
+  }
+  if (message?.type === "error" || message?.error && !message?.content) {
+    const syntheticStatus = 502;
+    if (info) info.status = syntheticStatus;
+    return new Response(rawText, {
+      status: syntheticStatus,
+      statusText: "Anthropic Upstream Error",
+      headers: { "content-type": "application/json" }
+    });
+  }
   return new Response(JSON.stringify(fromAnthropicMessage(message)), { status: response.status, statusText: response.statusText, headers: { "content-type": "application/json" } });
 }
 function installAnthropicFetch(browser = false) {
@@ -388,11 +418,43 @@ function diagnosticRunId(metadata) {
 }
 function safeDiagnosticError(error) {
   const e = error;
-  const names = ["Error", "TypeError", "AbortError", "TimeoutError", "NotAllowedError", "InvalidStateError", "QuotaExceededError", "VersionError", "DataError", "TransactionInactiveError"];
+  const names = [
+    "Error",
+    "TypeError",
+    "SyntaxError",
+    "AbortError",
+    "TimeoutError",
+    "SecurityError",
+    "NetworkError",
+    "UnknownError",
+    "NotAllowedError",
+    "InvalidStateError",
+    "QuotaExceededError",
+    "VersionError",
+    "DataError",
+    "TransactionInactiveError"
+  ];
+  const allowedCodes = [
+    "LLM_CALL_FAILED",
+    "PUSH_SEND_FAILED",
+    "PUSH_PAYLOAD_TOO_LARGE",
+    "PUSH_SUBSCRIPTION_MISSING",
+    "CREDENTIAL_NOT_FOUND",
+    "CREDENTIAL_MISSING",
+    "STORED_DATA_UNDECRYPTABLE",
+    "AGENTIC_LOOP_EXCEEDED",
+    "INVALID_PARAMETERS",
+    "TASK_NOT_FOUND",
+    "TASK_ALREADY_COMPLETED",
+    "FCM_SEND_FAILED",
+    "WXPUSHER_SEND_FAILED",
+    "BARK_SEND_FAILED",
+    "MEOW_SEND_FAILED"
+  ];
   const status = Number(e?.statusCode ?? e?.status ?? e?.llmStatus ?? e?.cause?.statusCode ?? e?.cause?.status);
   return {
     errorName: typeof e?.name === "string" && names.includes(e.name) ? e.name : "Error",
-    ...typeof e?.code === "string" && ["LLM_CALL_FAILED", "PUSH_PAYLOAD_TOO_LARGE", "PUSH_SUBSCRIPTION_MISSING", "CREDENTIAL_NOT_FOUND", "INVALID_PARAMETERS", "TASK_NOT_FOUND", "TASK_ALREADY_COMPLETED"].includes(e.code) ? { errorCode: e.code } : {},
+    ...typeof e?.code === "string" && allowedCodes.includes(e.code) ? { errorCode: e.code } : {},
     ...Number.isInteger(status) && status >= 100 && status <= 599 ? { httpStatus: status } : {}
   };
 }
@@ -13527,12 +13589,13 @@ var postCore = async (target, session, body, timeoutMs, expectResponse = true) =
     if (newSid) session.sessionId = newSid;
     if (resp.status === 401 || resp.status === 403) {
       const txt = await readText().catch(() => "");
-      throw new Error(`MCP \u9274\u6743\u5931\u8D25 (${resp.status}): Token \u53EF\u80FD\u65E0\u6548\u6216\u8FC7\u671F\u3002${txt.slice(0, 120)}`);
+      const summary = summarizeMcpHttpBody(txt, 120);
+      throw new Error(`MCP \u9274\u6743\u5931\u8D25 (${resp.status}): Token \u53EF\u80FD\u65E0\u6548\u6216\u8FC7\u671F\u3002${summary}`);
     }
     if (resp.status === 202) return { response: null };
     if (!resp.ok) {
       const txt = await readText().catch(() => "");
-      throw new Error(`MCP HTTP ${resp.status}: ${txt.slice(0, 200)}`);
+      throw new Error(`MCP HTTP ${resp.status}: ${summarizeMcpHttpBody(txt, 200)}`);
     }
     if (!expectResponse) return { response: null };
     const ct = resp.headers.get("content-type") || "";
@@ -13554,7 +13617,20 @@ var postCore = async (target, session, body, timeoutMs, expectResponse = true) =
     target.signal?.removeEventListener("abort", abort);
   }
 };
+var summarizeMcpHttpBody = (txt, maxLen) => {
+  const trimmed = (txt || "").trim();
+  if (!trimmed) return "";
+  if (/^\s*<(?:!doctype|html|head|body)\b/i.test(trimmed)) {
+    const title = trimmed.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.replace(/\s+/g, " ").trim() || "";
+    const h1 = trimmed.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1]?.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim() || "";
+    const ray = trimmed.match(/Ray ID:\s*<strong[^>]*>([^<]+)<\/strong>/i)?.[1]?.trim() || "";
+    const parts = [title, h1 && h1 !== title ? h1 : "", ray ? `Ray ID: ${ray}` : ""].filter(Boolean);
+    return (parts.join(" \xB7 ") || "\u7F51\u5173\u8FD4\u56DE HTML \u9519\u8BEF\u9875").slice(0, maxLen);
+  }
+  return trimmed.slice(0, maxLen);
+};
 var formatMcpRpcError = (err6) => {
+  if (typeof err6 === "string") return err6.trim() || "\u672A\u77E5\u9519\u8BEF";
   const code = err6?.code !== void 0 ? `[${err6.code}]: ` : "";
   const message = err6?.message || "\u672A\u77E5\u9519\u8BEF";
   let dataText = "";
@@ -13569,6 +13645,7 @@ var formatMcpRpcError = (err6) => {
       }
     }
   }
+  if (dataText.length > 400) dataText = `${dataText.slice(0, 400)}\u2026`;
   const suffix = dataText && !message.includes(dataText) ? `\uFF08${dataText}\uFF09` : "";
   return `${code}${message}${suffix}`;
 };
@@ -13737,7 +13814,10 @@ var callMcpToolCore = async (target, session, toolName, args = {}, opts = {}) =>
     if (result?.content && Array.isArray(result.content)) {
       const textParts = result.content.filter((c) => c?.type === "text").map((c) => c.text || "");
       const fullText = textParts.join("\n").trim();
-      if (result.isError) return finish({ success: false, error: fullText || "MCP \u5DE5\u5177\u6267\u884C\u5931\u8D25", rawText: fullText });
+      if (result.isError) {
+        const boundedErr = fullText.length > 2e4 ? `${fullText.slice(0, 2e4)}\u2026(\u5DF2\u622A\u65AD)` : fullText;
+        return finish({ success: false, error: boundedErr || "MCP \u5DE5\u5177\u6267\u884C\u5931\u8D25", rawText: boundedErr });
+      }
       try {
         return finish({ success: true, data: JSON.parse(fullText), rawText: fullText });
       } catch {
@@ -13747,7 +13827,14 @@ var callMcpToolCore = async (target, session, toolName, args = {}, opts = {}) =>
     return finish({ success: true, data: result });
   } catch (e) {
     target.signal?.throwIfAborted();
-    return finish({ success: false, error: e?.message || String(e) });
+    const errMsg = e instanceof Error ? e.message || e.name : typeof e === "string" ? e : (() => {
+      try {
+        return JSON.stringify(e).slice(0, 300);
+      } catch {
+        return String(e);
+      }
+    })();
+    return finish({ success: false, error: errMsg || "MCP \u8C03\u7528\u5931\u8D25" });
   }
 };
 var buildMcpDirectHeaders = (server, sessionId, protocolVersion = null) => {
@@ -17388,6 +17475,28 @@ async function handleCronTriggerWrite(env, request, enabled) {
 }
 
 // utils/realtimeFetchCore.ts
+var summarizeRealtimeHttpError = (rawText) => {
+  const trimmed = (rawText || "").trim();
+  if (!trimmed) return "";
+  if (/^\s*<(?:!doctype|html|head|body)\b/i.test(trimmed)) {
+    const title = trimmed.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.replace(/\s+/g, " ").trim() || "";
+    const h1 = trimmed.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1]?.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim() || "";
+    return [title, h1 && h1 !== title ? h1 : ""].filter(Boolean).join(" \xB7 ").slice(0, 140) || "\u7F51\u5173\u8FD4\u56DE HTML \u9519\u8BEF\u9875";
+  }
+  try {
+    const parsed = JSON.parse(trimmed);
+    const rawErr = parsed?.error ?? parsed?.msg ?? parsed?.message;
+    if (typeof rawErr === "string" && rawErr.trim()) return rawErr.trim().slice(0, 140);
+    if (rawErr && typeof rawErr === "object") {
+      const inner = rawErr.message || rawErr.msg || rawErr.code || rawErr.type;
+      if (typeof inner === "string" || typeof inner === "number") return String(inner).slice(0, 140);
+    }
+    if (typeof parsed?.message === "string" && parsed.message.trim()) return parsed.message.trim().slice(0, 140);
+    if (parsed?.code !== void 0) return `code=${parsed.code}`;
+  } catch {
+  }
+  return trimmed.slice(0, 140);
+};
 var performSearch = async (query, apiKey, signal) => {
   signal?.throwIfAborted();
   if (!query || !apiKey) {
@@ -17405,14 +17514,10 @@ var performSearch = async (query, apiKey, signal) => {
     });
     const text2 = await response.text();
     if (!response.ok) {
-      console.error("Search API error:", response.status, text2);
-      try {
-        const errJson = JSON.parse(text2);
-        return { success: false, results: [], message: `\u641C\u7D22\u5931\u8D25: ${errJson.error || response.status}`, reached: false };
-      } catch {
-        signal?.throwIfAborted();
-        return { success: false, results: [], message: `\u641C\u7D22\u5931\u8D25: ${response.status}`, reached: false };
-      }
+      const detail = summarizeRealtimeHttpError(text2);
+      console.error("[Search] API error:", response.status, detail);
+      signal?.throwIfAborted();
+      return { success: false, results: [], message: `\u641C\u7D22\u5931\u8D25: ${detail || `HTTP ${response.status}`}`, reached: false };
     }
     let data;
     try {
@@ -17467,8 +17572,9 @@ var notionGetDiaryByDate = async (apiKey, databaseId, characterName, date, signa
     });
     const text2 = await response.text();
     if (!response.ok) {
-      console.error("Query diary by date failed:", response.status, text2);
-      return { success: false, entries: [], message: `\u67E5\u8BE2\u5931\u8D25: ${response.status}` };
+      const detail = summarizeRealtimeHttpError(text2);
+      console.error("[Notion] Query diary by date failed:", response.status, detail);
+      return { success: false, entries: [], message: `\u67E5\u8BE2\u5931\u8D25: ${detail || response.status}` };
     }
     const data = JSON.parse(text2);
     if (!data.results || data.results.length === 0) {
@@ -17487,8 +17593,9 @@ var notionGetDiaryByDate = async (apiKey, databaseId, characterName, date, signa
     return { success: true, entries, message: `\u627E\u5230 ${entries.length} \u7BC7\u65E5\u8BB0` };
   } catch (e) {
     signal?.throwIfAborted();
-    console.error("Get diary by date failed:", e);
-    return { success: false, entries: [], message: `\u67E5\u8BE2\u5931\u8D25: ${e.message}` };
+    const reason = e instanceof Error ? e.message : String(e || "\u8BF7\u6C42\u5F02\u5E38");
+    console.error("[Notion] Get diary by date failed:", reason);
+    return { success: false, entries: [], message: `\u67E5\u8BE2\u5931\u8D25: ${reason}` };
   }
 };
 var notionReadDiaryContent = async (apiKey, pageId, signal) => {
@@ -17503,8 +17610,9 @@ var notionReadDiaryContent = async (apiKey, pageId, signal) => {
     });
     const text2 = await response.text();
     if (!response.ok) {
-      console.error("Read diary content failed:", response.status, text2);
-      return { success: false, content: "", message: `\u8BFB\u53D6\u5931\u8D25: ${response.status}` };
+      const detail = summarizeRealtimeHttpError(text2);
+      console.error("[Notion] Read diary content failed:", response.status, detail);
+      return { success: false, content: "", message: `\u8BFB\u53D6\u5931\u8D25: ${detail || response.status}` };
     }
     const data = JSON.parse(text2);
     if (!data.results || data.results.length === 0) {
@@ -17560,8 +17668,9 @@ var notionSearchUserNotes = async (apiKey, notesDatabaseId, keyword, limit = 5, 
     return { success: true, entries, message: `\u627E\u5230 ${entries.length} \u7BC7\u7B14\u8BB0` };
   } catch (e) {
     signal?.throwIfAborted();
-    console.error("Search user notes failed:", e);
-    return { success: false, entries: [], message: `\u641C\u7D22\u5931\u8D25: ${e.message}` };
+    const reason = e instanceof Error ? e.message : String(e || "\u8BF7\u6C42\u5F02\u5E38");
+    console.error("[Notion] Search user notes failed:", reason);
+    return { success: false, entries: [], message: `\u641C\u7D22\u5931\u8D25: ${reason}` };
   }
 };
 function notionBlocksToText(blocks) {
@@ -17632,13 +17741,9 @@ var feishuGetToken = async (appId, appSecret, signal) => {
     });
     const text2 = await response.text();
     if (!response.ok) {
-      try {
-        const errJson = JSON.parse(text2);
-        return { success: false, token: "", message: `\u83B7\u53D6token\u5931\u8D25: ${errJson.msg || errJson.error || response.status}` };
-      } catch {
-        signal?.throwIfAborted();
-        return { success: false, token: "", message: `\u83B7\u53D6token\u5931\u8D25: ${response.status}` };
-      }
+      signal?.throwIfAborted();
+      const detail = summarizeRealtimeHttpError(text2);
+      return { success: false, token: "", message: `\u83B7\u53D6token\u5931\u8D25: ${detail || response.status}` };
     }
     const data = JSON.parse(text2);
     if (data.code !== 0) {
@@ -17716,14 +17821,164 @@ var feishuGetDiaryByDate = async (appId, appSecret, baseId, tableId, characterNa
 var APP_VERSION = "v3.17 (Mainland Relay)";
 var APP_VERSION_TAG = APP_VERSION.split(" ")[0];
 
+// utils/errorSelfCheck.ts
+var MEDIA_ERROR_LABELS = {
+  1: "\u97F3\u9891\u52A0\u8F7D\u88AB\u4E2D\u6B62 (MEDIA_ERR_ABORTED)",
+  2: "\u97F3\u9891\u7F51\u7EDC\u8BFB\u53D6\u5931\u8D25 (MEDIA_ERR_NETWORK)",
+  3: "\u97F3\u9891\u89E3\u7801\u5931\u8D25 (MEDIA_ERR_DECODE)",
+  4: "\u97F3\u9891\u6E90\u4E0D\u53EF\u7528\u6216\u683C\u5F0F\u4E0D\u652F\u6301 (MEDIA_ERR_SRC_NOT_SUPPORTED)"
+};
+function sanitizeEventResourceUrl(raw) {
+  if (typeof raw !== "string" || !raw.trim()) return "";
+  const trimmed = raw.trim();
+  if (/^data:/i.test(trimmed)) {
+    const header = trimmed.slice(0, Math.min(trimmed.indexOf(",") >= 0 ? trimmed.indexOf(",") : 48, 48));
+    return `${header},<inline ${trimmed.length} chars>`;
+  }
+  if (/^blob:/i.test(trimmed)) return "blob:<local>";
+  return trimmed.split(/[?#]/)[0].slice(0, 160);
+}
+function formatErrorValueInternal(error, fallback, depth, seen) {
+  if (error == null || error === "") return fallback;
+  if (typeof error === "string") return error.trim() || fallback;
+  if (typeof error === "number" || typeof error === "boolean" || typeof error === "bigint") return String(error);
+  if (typeof error !== "object") return fallback;
+  if (seen.has(error)) return fallback;
+  seen.add(error);
+  const maybeMedia = error;
+  const isMediaErr = typeof MediaError !== "undefined" && error instanceof MediaError || maybeMedia?.constructor?.name === "MediaError" || typeof maybeMedia.code === "number" && maybeMedia.code >= 1 && maybeMedia.code <= 4 && typeof maybeMedia.message === "string" && /MEDIA_ERR|DEMUXER_ERROR|PIPELINE_ERROR|AUDIO_RENDERER|CHUNK_DEMUXER/i.test(maybeMedia.message);
+  if (isMediaErr && typeof maybeMedia.code === "number" && MEDIA_ERROR_LABELS[maybeMedia.code]) {
+    const label = MEDIA_ERROR_LABELS[maybeMedia.code];
+    const detail = typeof maybeMedia.message === "string" && maybeMedia.message.trim() ? `: ${maybeMedia.message.trim()}` : "";
+    return `${label}${detail}`;
+  }
+  if (typeof ErrorEvent !== "undefined" && error instanceof ErrorEvent) {
+    if (typeof error.message === "string" && error.message.trim()) return error.message.trim();
+    if (error.error != null && depth < 3) return formatErrorValueInternal(error.error, fallback, depth + 1, seen);
+    return "\u8FD0\u884C\u811A\u672C\u5F02\u5E38 (ErrorEvent)";
+  }
+  const maybeEvent = error;
+  const isDomEvent = typeof Event !== "undefined" && error instanceof Event || typeof maybeEvent.type === "string" && maybeEvent.target != null && typeof maybeEvent.target === "object" && maybeEvent.message == null && maybeEvent.error == null;
+  if (isDomEvent) {
+    let tag2 = "";
+    let resUrl = "";
+    try {
+      const target = maybeEvent.target;
+      tag2 = typeof target?.tagName === "string" && target.tagName ? target.tagName.toLowerCase() : "";
+      resUrl = sanitizeEventResourceUrl(target?.src || target?.href);
+    } catch {
+    }
+    const where = [tag2 ? `<${tag2}>` : "", resUrl].filter(Boolean).join(" ");
+    return `\u8D44\u6E90\u6216\u8BFB\u5199\u4E8B\u4EF6\u5931\u8D25 (${String(maybeEvent.type || "error")}${where ? ` \xB7 ${where}` : ""})`;
+  }
+  if (Array.isArray(error)) {
+    const parts = error.slice(0, 4).map((item) => {
+      if (item && typeof item === "object") {
+        const rec2 = item;
+        const msg = typeof rec2.msg === "string" ? rec2.msg.trim() : typeof rec2.message === "string" ? rec2.message.trim() : rec2.error != null && depth < 3 ? formatErrorValueInternal(rec2.error, "", depth + 1, seen) : "";
+        const loc = Array.isArray(rec2.loc) ? rec2.loc.filter((s) => typeof s === "string" || typeof s === "number").map(String).join(".") : "";
+        if (msg) return loc ? `${loc}: ${msg}` : msg;
+      }
+      return depth < 3 ? formatErrorValueInternal(item, "", depth + 1, seen) : "";
+    }).filter(Boolean);
+    return parts.join("; ") || fallback;
+  }
+  const rec = error;
+  let primary = "";
+  if (typeof rec.message === "string" && rec.message.trim()) {
+    primary = rec.message.trim();
+  } else if (rec.message && typeof rec.message === "object" && depth < 3) {
+    primary = formatErrorValueInternal(rec.message, "", depth + 1, seen);
+  }
+  if (!primary && typeof rec.msg === "string" && rec.msg.trim()) {
+    primary = rec.msg.trim();
+  }
+  if (!primary && rec.error != null && depth < 3) {
+    primary = formatErrorValueInternal(rec.error, "", depth + 1, seen);
+  }
+  if (!primary && rec.errors != null && depth < 3) {
+    primary = formatErrorValueInternal(rec.errors, "", depth + 1, seen);
+  }
+  const baseResp = rec.base_resp;
+  if (!primary && baseResp && typeof baseResp === "object") {
+    const bMsg = typeof baseResp.status_msg === "string" ? baseResp.status_msg.trim() : "";
+    const bCode = typeof baseResp.status_code === "number" || typeof baseResp.status_code === "string" ? String(baseResp.status_code) : "";
+    primary = bMsg ? bCode && !bMsg.includes(bCode) ? `${bMsg} [${bCode}]` : bMsg : bCode ? `status_code=${bCode}` : "";
+  }
+  if (!primary && rec.detail != null && depth < 3) {
+    primary = formatErrorValueInternal(rec.detail, "", depth + 1, seen);
+  }
+  if (!primary && rec.details != null && depth < 3) {
+    primary = formatErrorValueInternal(rec.details, "", depth + 1, seen);
+  }
+  if (!primary && typeof rec.reason === "string" && rec.reason.trim()) {
+    primary = rec.reason.trim();
+  }
+  const code = typeof rec.code === "string" || typeof rec.code === "number" ? String(rec.code).trim() : "";
+  const status = typeof rec.status === "number" || typeof rec.status === "string" ? String(rec.status).trim() : "";
+  const extraDetail = typeof rec.details === "string" && rec.details.trim() && rec.details.trim() !== primary ? rec.details.trim().slice(0, 160) : "";
+  const hint = typeof rec.hint === "string" && rec.hint.trim() ? `\u63D0\u793A: ${rec.hint.trim().slice(0, 120)}` : "";
+  const tags = [
+    code && !primary.includes(code) ? code : "",
+    !code && status && !primary.includes(status) ? `status=${status}` : ""
+  ].filter(Boolean);
+  let combined = primary;
+  if (tags.length) combined = combined ? `${combined} [${tags.join(", ")}]` : `[${tags.join(", ")}]`;
+  if (extraDetail && !combined.includes(extraDetail)) combined = combined ? `${combined} (${extraDetail})` : extraDetail;
+  if (hint && !combined.includes(hint)) combined = combined ? `${combined} \xB7 ${hint}` : hint;
+  if (!combined && !(error instanceof Error) && typeof rec.toString === "function" && rec.toString !== Object.prototype.toString) {
+    try {
+      const rendered = String(error).trim();
+      if (rendered && rendered !== "undefined" && rendered !== "null" && rendered !== "Error" && !/\[object\s+[^\]]+\]/.test(rendered)) {
+        combined = rendered;
+      }
+    } catch {
+    }
+  }
+  if (!combined && typeof rec.name === "string" && rec.name.trim() && rec.name.trim() !== "Error") {
+    combined = rec.name.trim();
+  }
+  if (rec.cause != null && depth < 2) {
+    const causeText = formatErrorValueInternal(rec.cause, "", depth + 1, seen);
+    if (causeText && !combined.includes(causeText)) {
+      combined = combined ? `${combined} (cause: ${causeText})` : causeText;
+    }
+  }
+  return combined || fallback;
+}
+function formatUnknownError(error, fallback = "\u672A\u77E5\u9519\u8BEF") {
+  try {
+    return formatErrorValueInternal(error, fallback, 0, /* @__PURE__ */ new Set());
+  } catch {
+    return fallback;
+  }
+}
+
 // utils/networkFailureDiagnosis.ts
 var readError = (error) => {
-  if (error instanceof Error) return { name: error.name || "Error", message: error.message || String(error) };
+  const extractCause = (val) => {
+    if (!val || typeof val !== "object") return void 0;
+    const c = val.cause;
+    if (c == null) return void 0;
+    const formatted = formatUnknownError(c, "");
+    return formatted || void 0;
+  };
+  if (error instanceof Error) {
+    const name = error.name || "Error";
+    const baseMsg = error.message?.trim() || "";
+    const cause = extractCause(error);
+    const message = baseMsg ? cause && !baseMsg.includes(cause) ? `${baseMsg} (cause: ${cause})` : baseMsg : cause ? `${name} (cause: ${cause})` : name;
+    return { name, message, ...cause ? { cause } : {} };
+  }
   if (error && typeof error === "object") {
     const anyErr = error;
+    const name = typeof anyErr.name === "string" && anyErr.name.trim() ? anyErr.name.trim() : "Error";
+    const formatted = formatUnknownError(error, "");
+    const cause = extractCause(error);
     return {
-      name: typeof anyErr.name === "string" ? anyErr.name : "Error",
-      message: typeof anyErr.message === "string" ? anyErr.message : String(error)
+      name,
+      message: formatted || name,
+      ...cause ? { cause } : {}
     };
   }
   return { name: "Error", message: String(error ?? "") };
@@ -17752,6 +18007,36 @@ var classifyFetchFailure = (ctx) => {
   if (online === false) return "offline";
   if (looksLikeNetworkError(message) || name === "TypeError") return "blocked";
   return "unknown";
+};
+var decodeBasicHtmlEntities = (value) => value.replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/&quot;/gi, '"').replace(/&#39;/gi, "'");
+var summarizeHtmlErrorBody = (html) => {
+  const bounded = typeof html === "string" ? html.slice(0, 65536) : "";
+  const titleMatch = bounded.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const h1Match = bounded.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+  const h2Match = bounded.match(/<h2[^>]*>([\s\S]*?)<\/h2>/i);
+  const rayMatch = bounded.match(/(?:Ray ID|ray-id)\s*[:：]?\s*(?:<[^>]+>\s*)*([0-9a-f]{12,24})\b/i);
+  const cleanTagText = (raw) => raw ? decodeBasicHtmlEntities(raw.replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim() : "";
+  const title = cleanTagText(titleMatch?.[1]);
+  const h1 = cleanTagText(h1Match?.[1]);
+  const h2 = cleanTagText(h2Match?.[1]);
+  const rayId = rayMatch?.[1] || "";
+  const bestLabel = title || h1 || h2;
+  const headline = bestLabel ? `HTML \u9519\u8BEF\u9875 (${bestLabel.slice(0, 80)}${rayId && !bestLabel.includes(rayId) ? ` \xB7 Ray ${rayId}` : ""})` : rayId ? `HTML \u9519\u8BEF\u9875 (Ray ${rayId})` : "HTML \u9519\u8BEF\u9875";
+  const summaryParts = [];
+  if (title) summaryParts.push(`title="${title.slice(0, 120)}"`);
+  if (h1 && h1 !== title) summaryParts.push(`h1="${h1.slice(0, 120)}"`);
+  if (h2 && h2 !== title && h2 !== h1) summaryParts.push(`h2="${h2.slice(0, 120)}"`);
+  if (rayId) summaryParts.push(`cf-ray=${rayId}`);
+  if (!summaryParts.length) {
+    const stripped = decodeBasicHtmlEntities(
+      bounded.replace(/<(style|script|svg)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, " ").replace(/<head\b[^>]*>[\s\S]*?<\/head\s*>/gi, " ").replace(/<!--[\s\S]*?-->/g, " ").replace(/<[^>]+>/g, " ")
+    ).replace(/\s+/g, " ").trim();
+    if (stripped) summaryParts.push(stripped.slice(0, 200));
+  }
+  return {
+    headline,
+    detailSummary: summaryParts.length ? `[HTML \u9519\u8BEF\u9875\u6458\u8981] ${summaryParts.join(" \xB7 ")}` : "[HTML \u9519\u8BEF\u9875\uFF0C\u65E0\u53EF\u8BFB\u6B63\u6587]"
+  };
 };
 
 // utils/xhsNoteLink.ts
@@ -17944,12 +18229,19 @@ var bridgePost = async (serverUrl, endpoint, body = {}, signal) => {
       return { success: false, error: "\u672A\u767B\u5F55\uFF0C\u8BF7\u5148\u767B\u5F55\u5C0F\u7EA2\u4E66" };
     }
     if (!resp.ok) {
-      const errData = await resp.json().catch(() => ({}));
-      return { success: false, error: errData.error || `HTTP ${resp.status}` };
+      const rawErr = await resp.text().catch(() => "");
+      let errMsg = "";
+      try {
+        const errData = rawErr ? JSON.parse(rawErr) : {};
+        errMsg = formatUnknownError(errData, "");
+      } catch {
+        errMsg = /^\s*<(?:!doctype|html|head|body)\b/i.test(rawErr) ? summarizeHtmlErrorBody(rawErr).headline : rawErr.trim().slice(0, 200);
+      }
+      return { success: false, error: errMsg || `HTTP ${resp.status}` };
     }
     let data = await resp.json();
     if (data.error) {
-      return { success: false, error: data.error };
+      return { success: false, error: formatUnknownError(data.error, "\u5C0F\u7EA2\u4E66\u63A5\u53E3\u62A5\u9519") };
     }
     const detectedPlatform = data?.platform || data?.data?.platform;
     if (detectedPlatform === "xhs" || detectedPlatform === "rednote") {
@@ -17961,7 +18253,7 @@ var bridgePost = async (serverUrl, endpoint, body = {}, signal) => {
     return { success: true, data };
   } catch (e) {
     signal?.throwIfAborted();
-    return { success: false, error: e.message };
+    return { success: false, error: formatUnknownError(e, "\u5C0F\u7EA2\u4E66\u8BF7\u6C42\u5931\u8D25") };
   }
 };
 var mcpRequestIdCounter = 0;
@@ -18036,6 +18328,14 @@ var mcpParseSseResponse = (text2) => {
   }
   return null;
 };
+var summarizeXhsMcpBody = (txt, maxLen) => {
+  const trimmed = (txt || "").trim();
+  if (!trimmed) return "";
+  if (/^\s*<(?:!doctype|html|head|body)\b/i.test(trimmed)) {
+    return summarizeHtmlErrorBody(trimmed).headline.slice(0, maxLen);
+  }
+  return trimmed.slice(0, maxLen);
+};
 var mcpParseResponse = (text2, contentType) => {
   if (contentType.includes("text/event-stream") || text2.trimStart().startsWith("event:") || text2.trimStart().startsWith("data:")) {
     const parsed = mcpParseSseResponse(text2);
@@ -18051,7 +18351,7 @@ var mcpParseResponse = (text2, contentType) => {
       } catch {
       }
     }
-    throw new Error(`MCP: \u65E0\u6CD5\u89E3\u6790\u54CD\u5E94: ${text2.slice(0, 300)}`);
+    throw new Error(`MCP: \u65E0\u6CD5\u89E3\u6790\u54CD\u5E94: ${summarizeXhsMcpBody(text2, 300)}`);
   }
 };
 var mcpPost = async (serverUrl, body, expectResponse = true, signal) => {
@@ -18066,7 +18366,7 @@ var mcpPost = async (serverUrl, body, expectResponse = true, signal) => {
   if (resp.status === 202) return { response: null, sessionId };
   if (!resp.ok) {
     const errText = await resp.text().catch(() => "");
-    throw new Error(`MCP HTTP ${resp.status}: ${errText.slice(0, 200)}`);
+    throw new Error(`MCP HTTP ${resp.status}: ${summarizeXhsMcpBody(errText, 200)}`);
   }
   if (!expectResponse) return { response: null, sessionId };
   const contentType = resp.headers.get("content-type") || "";
@@ -18082,7 +18382,7 @@ var mcpInitialize = async (serverUrl, signal) => {
   });
   const { response, sessionId } = await mcpPost(serverUrl, initReq, void 0, signal);
   if (sessionId) mcpSessionId = sessionId;
-  if (response?.error) throw new Error(`MCP Initialize failed: ${response.error.message}`);
+  if (response?.error) throw new Error(`MCP Initialize failed: ${formatUnknownError(response.error, "\u672A\u77E5\u9519\u8BEF")}`);
   if (!mcpSessionId) {
     console.warn(
       "[MCP] \u26A0\uFE0F \u65E0\u6CD5\u8BFB\u53D6 Mcp-Session-Id \u54CD\u5E94\u5934\uFF08CORS \u9650\u5236\uFF09\u3002\n\u8BF7\u4F7F\u7528 CORS \u4EE3\u7406: node scripts/mcp-proxy.mjs\n\u7136\u540E\u628A MCP URL \u6539\u4E3A http://localhost:18061/mcp"
@@ -18132,12 +18432,14 @@ var mcpCallTool = async (serverUrl, toolName, args = {}, signal) => {
     const resp = await fetch(serverUrl, { signal, method: "POST", headers, body: JSON.stringify(body) });
     if (!resp.ok) {
       const errText = await resp.text().catch(() => "");
-      return { success: false, error: `MCP HTTP ${resp.status}: ${errText.slice(0, 200)}` };
+      return { success: false, error: `MCP HTTP ${resp.status}: ${summarizeXhsMcpBody(errText, 200)}` };
     }
     const contentType = resp.headers.get("content-type") || "";
     const text2 = await resp.text();
     const parsed = mcpParseResponse(text2, contentType);
-    if (parsed.error) return { success: false, error: `MCP Error [${parsed.error.code}]: ${parsed.error.message}` };
+    if (parsed.error) {
+      return { success: false, error: `MCP Error: ${formatUnknownError(parsed.error, "\u672A\u77E5\u9519\u8BEF")}` };
+    }
     const result = parsed.result;
     if (result?.content) {
       const textParts = result.content.filter((c) => c.type === "text").map((c) => c.text);
@@ -19469,7 +19771,14 @@ var requestEmotionEval = async (api, promptContent, timeoutMs = EMOTION_EVAL_TIM
       } catch {
       }
       console.warn("[emotion-eval] \u526F API \u62D2\u4E86\u8FD9\u6B21\u8BC4\u4F30\uFF08\u4E3B\u6D41\u7A0B\u4E0D\u53D7\u5F71\u54CD\uFF09", res.status);
-      const snippet = maskAndSnip(body, api.apiKey);
+      const trimmedBody = body.trim();
+      let cleanedBody = body;
+      if (/^(?:<!doctype\s+html|<html\b|<head\b|<body\b|<title\b|<!--)/i.test(trimmedBody)) {
+        const titleMatch = trimmedBody.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+        const title = titleMatch?.[1]?.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+        cleanedBody = title ? `HTML \u9519\u8BEF\u9875 (${title.slice(0, 80)})` : "HTML \u9519\u8BEF\u9875";
+      }
+      const snippet = maskAndSnip(cleanedBody, api.apiKey);
       return { raw: null, error: `\u526F API HTTP ${res.status}${snippet ? `\uFF1A${snippet}` : ""}` };
     }
     const data = await res.json();
@@ -19728,10 +20037,21 @@ var sendFcmNotification = async (env, token, payload) => {
     }
   );
   if (!response.ok) {
-    const detail = await response.text().catch(() => "");
-    throw new Error(`FCM_SEND_FAILED (${response.status}): ${detail.slice(0, 500)}`);
+    const detail = summarizePushErrorText(await response.text().catch(() => ""));
+    throw createPushChannelError("FCM_SEND_FAILED", response.status, `FCM_SEND_FAILED (${response.status}): ${detail || `HTTP ${response.status}`}`);
   }
 };
+var summarizePushErrorText = (raw) => {
+  const trimmed = String(raw || "").trim();
+  if (!trimmed) return "";
+  if (/^(?:<!doctype\s+html|<html\b|<head\b|<body\b|<title\b|<!--)/i.test(trimmed)) {
+    const titleMatch = trimmed.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    const title = titleMatch?.[1]?.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    return title ? `HTML \u9519\u8BEF\u9875 (${title.slice(0, 80)})` : "HTML \u9519\u8BEF\u9875";
+  }
+  return trimmed.replace(/\s+/g, " ").slice(0, 300);
+};
+var createPushChannelError = (code, status, message) => Object.assign(new Error(message), { code, statusCode: status });
 var isSilentPushPayload = (payload) => {
   const show = payload.notification?.show;
   if (show === "never" || show === false) return true;
@@ -19826,8 +20146,8 @@ var sendThirdPartyNotification = async (parsed, subscription, rawPayload) => {
     const code = typeof json?.code === "number" ? json.code : void 0;
     const ok2 = response.ok && (code === void 0 || code === 1e3) && json?.success !== false;
     if (!ok2) {
-      const msg = String(json?.msg || text2 || `HTTP ${response.status}`).slice(0, 300);
-      throw new Error(`WXPUSHER_SEND_FAILED (${code ?? response.status}): ${msg}`);
+      const msg = summarizePushErrorText(String(json?.msg || text2 || `HTTP ${response.status}`));
+      throw createPushChannelError("WXPUSHER_SEND_FAILED", response.status, `WXPUSHER_SEND_FAILED (${code ?? response.status}): ${msg}`);
     }
     return { ok: true, provider: "wxpusher" };
   }
@@ -19835,15 +20155,15 @@ var sendThirdPartyNotification = async (parsed, subscription, rawPayload) => {
     const code = typeof json?.code === "number" ? json.code : void 0;
     const ok2 = response.ok && (code === void 0 || code === 200);
     if (!ok2) {
-      const msg = String(json?.message || text2 || `HTTP ${response.status}`).slice(0, 300);
-      throw new Error(`BARK_SEND_FAILED (${code ?? response.status}): ${msg}`);
+      const msg = summarizePushErrorText(String(json?.message || text2 || `HTTP ${response.status}`));
+      throw createPushChannelError("BARK_SEND_FAILED", response.status, `BARK_SEND_FAILED (${code ?? response.status}): ${msg}`);
     }
     return { ok: true, provider: "bark" };
   }
   const ok = response.ok && json?.status !== 500 && json?.status !== 400;
   if (!ok) {
-    const msg = String(json?.message || json?.msg || text2 || `HTTP ${response.status}`).slice(0, 300);
-    throw new Error(`MEOW_SEND_FAILED (${response.status}): ${msg}`);
+    const msg = summarizePushErrorText(String(json?.message || json?.msg || text2 || `HTTP ${response.status}`));
+    throw createPushChannelError("MEOW_SEND_FAILED", response.status, `MEOW_SEND_FAILED (${response.status}): ${msg}`);
   }
   return { ok: true, provider: "meow" };
 };
@@ -22841,10 +23161,20 @@ var src_default = {
           data: { sent: true }
         });
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const rawMessage = error instanceof Error ? error.message : String(error);
+        const htmlIdx = rawMessage.search(/<!doctype\s+html|<html\b/i);
+        let message = rawMessage;
+        if (htmlIdx >= 0) {
+          const head = rawMessage.slice(0, htmlIdx).replace(/[\s—:-]+$/, "").trim();
+          const htmlPart = rawMessage.slice(htmlIdx);
+          const titleMatch = htmlPart.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+          const title = titleMatch?.[1]?.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+          const summary = title ? `HTML \u9519\u8BEF\u9875 (${title.slice(0, 80)})` : "HTML \u9519\u8BEF\u9875";
+          message = [head, summary].filter(Boolean).join(" \u2014 ");
+        }
         return jsonWithCors(502, {
           success: false,
-          error: { code: "TEST_PUSH_FAILED", message }
+          error: { code: "TEST_PUSH_FAILED", message: message.slice(0, 280) }
         });
       }
     }

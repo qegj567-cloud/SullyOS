@@ -6,6 +6,7 @@ import { useOS } from '../../context/OSContext';
 import Modal from './Modal';
 import { resolveStatusBarMode } from '../../utils/iosStandalone';
 import { NETWORK_SELF_CHECK_STEPS, shouldShowNetworkSelfCheck } from '../../utils/networkFailureDiagnosis';
+import { readCompactBuildString, serializeSystemLogsExport } from '../../utils/networkRequestSource';
 
 // TypeScript definition for Web Battery API
 interface BatteryManager extends EventTarget {
@@ -26,17 +27,21 @@ const StatusBar: React.FC = () => {
   const [showLogModal, setShowLogModal] = useState(false);
   const [lastViewedId, setLastViewedId] = useState<string>();
   const [copyState, setCopyState] = useState<'idle' | 'pending' | 'copied' | 'manual'>('idle');
-  const latestId = systemLogs[0]?.id;
+  // silent 日志仅静默收入日志池供点开查看与复制，不主动闪顶部红条打扰当前操作
+  const latestAlertableId = systemLogs.find(log => !log.silent)?.id;
+  const exportJsonText = (showLogModal || copyState !== 'idle') && systemLogs.length
+    ? serializeSystemLogsExport(systemLogs)
+    : '[]';
   const copyAttempt = useRef(0);
   useEffect(() => {
-    if (showLogModal) setLastViewedId(latestId);
+    if (showLogModal) setLastViewedId(latestAlertableId);
     setCopyState('idle');
     return () => { copyAttempt.current++; };
-  }, [showLogModal, latestId]);
+  }, [showLogModal, latestAlertableId]);
 
   const copyAll = async () => {
     const attempt = ++copyAttempt.current;
-    const text = JSON.stringify(systemLogs, null, 2);
+    const text = systemLogs.length ? serializeSystemLogsExport(systemLogs) : '[]';
     setCopyState('pending');
     try {
       await navigator.clipboard.writeText(text);
@@ -95,7 +100,7 @@ const StatusBar: React.FC = () => {
     initBattery();
   }, []);
 
-  const hasError = !!latestId && latestId !== lastViewedId && !showLogModal;
+  const hasError = !!latestAlertableId && latestAlertableId !== lastViewedId && !showLogModal;
   const hasIndexedDbBackingStoreError = systemLogs.some(log => {
     const text = `${log.message} ${log.detail || ''}`.toLowerCase();
     return text.includes('backing store') || text.includes('indexeddb.open');
@@ -179,7 +184,7 @@ const StatusBar: React.FC = () => {
                   {copyState === 'copied' && '已复制全部日志，可以粘贴了。'}
                   {copyState === 'manual' && '自动复制失败，请选中下方文本手动复制。'}
                 </div>
-                {copyState === 'manual' && <textarea aria-label="手动复制全部日志" readOnly value={JSON.stringify(systemLogs, null, 2)} onFocus={event => event.target.select()} className="w-full rounded-lg border p-2 text-xs" />}
+                {copyState === 'manual' && <textarea aria-label="手动复制全部日志" readOnly value={exportJsonText} onFocus={event => event.target.select()} className="w-full rounded-lg border p-2 text-xs" />}
                 <div className="flex gap-2">
                   <button onClick={copyAll} disabled={!systemLogs.length || copyState === 'pending'} className="flex-1 py-3 bg-slate-100 font-bold rounded-xl text-slate-600">{copyState === 'pending' ? '复制中…' : copyState === 'copied' ? '✓ 已复制' : '复制全部'}</button>
                   <button onClick={clearLogs} disabled={!systemLogs.length} className="flex-1 py-3 bg-slate-100 font-bold rounded-xl text-slate-600">清空日志</button>
@@ -188,12 +193,17 @@ const StatusBar: React.FC = () => {
               </div>
           }
       >
+          <div className="mb-2 text-[10px] font-mono text-slate-400">版本：{readCompactBuildString()}</div>
           <div className="space-y-3">
-              {[...new Map(systemLogs.map(log => {
+              {[...[...systemLogs.filter(l => !l.silent), ...systemLogs.filter(l => l.silent)].reduce((acc, log) => {
                   const result = selfCheck(log);
-                  return [result.title + result.action, result] as const;
-              })).values()].map(result => <div key={result.title + result.action}>
-                  <strong className="text-sm">{result.title}</strong>
+                  const key = result.title + '\0' + result.action;
+                  const existing = acc.get(key);
+                  if (existing) existing.count += 1;
+                  else acc.set(key, { ...result, count: 1 });
+                  return acc;
+              }, new Map<string, { title: string; action: string; count: number }>()).values()].map(result => <div key={result.title + result.action}>
+                  <strong className="text-sm">{result.title}{result.count > 1 ? `（×${result.count}）` : ''}</strong>
                   <p className="mt-1 text-xs leading-relaxed text-slate-600">{result.action}</p>
               </div>)}
           </div>

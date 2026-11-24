@@ -4315,10 +4315,20 @@ export default {
           data: { sent: true },
         });
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const rawMessage = error instanceof Error ? error.message : String(error);
+        const htmlIdx = rawMessage.search(/<!doctype\s+html|<html\b/i);
+        let message = rawMessage;
+        if (htmlIdx >= 0) {
+          const head = rawMessage.slice(0, htmlIdx).replace(/[\s—:-]+$/, '').trim();
+          const htmlPart = rawMessage.slice(htmlIdx);
+          const titleMatch = htmlPart.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+          const title = titleMatch?.[1]?.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+          const summary = title ? `HTML 错误页 (${title.slice(0, 80)})` : 'HTML 错误页';
+          message = [head, summary].filter(Boolean).join(' — ');
+        }
         return jsonWithCors(502, {
           success: false,
-          error: { code: 'TEST_PUSH_FAILED', message },
+          error: { code: 'TEST_PUSH_FAILED', message: message.slice(0, 280) },
         });
       }
     }

@@ -6,6 +6,8 @@ import {enqueueFriendNotices, syncedPostEnabled} from './friendFeedActivity';
 import {isWeiboOriginalComment, type WeiboOriginalComment} from './friendFeedSourceComments';
 import {isFriendFeedSource, isWeiboImageUrl, type FriendFeedSource} from './friendFeedSource';
 import {friendAccounts, resolveFriendFeedSettings,type WeiboHomeMode} from './friendFeedSettings';
+import {formatUnknownError} from './errorSelfCheck';
+import {summarizeHtmlErrorBody} from './networkFailureDiagnosis';
 const KEY='sully:weibo-session:v2', LEGACY_KEY='sully:weibo-session:v1';
 const CONNECTION_LIFETIME=24*60*60*1000;
 export const WEIBO_CONNECTION_CHANGED='sully:weibo-connection-changed';
@@ -62,15 +64,27 @@ async function requestWeibo(proxy:string, payload:object, signal?:AbortSignal):P
     // Always the currently selected proxy, including development; never fall back to a public instance.
     const response=await fetch(proxy.replace(/\/+$/,'')+'/weibo',{method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify(payload),signal:controller.signal,credentials:'omit',cache:'no-store',redirect:'error',referrerPolicy:'no-referrer'});
+    const rawText=await response.text();
     if(!response.ok) {
         // Preserve the bridge's explicit reason: upstream rejection is not an expired local login.
-        let reason='';try{const data=await response.json();if(typeof data?.error==='string')reason=data.error.slice(0,200);}catch{}
+        let reason='';
+        try{
+            const data=rawText?JSON.parse(rawText):null;
+            reason=formatUnknownError(data?.error??data,'').slice(0,200);
+        }catch{}
+        if(!reason&&/^\s*<(?:!doctype|html|head|body)\b/i.test(rawText)){
+            reason=summarizeHtmlErrorBody(rawText).headline.slice(0,200);
+        }
         if(reason)throw Error(reason);
         if(response.status===401)throw Error('微博连接已失效，请重新扫码');
         if(response.status===503)throw Error('微博连接服务暂不可用；若代理尚未启用微博，请联系代理维护者完成配置');
         if(response.status===404||response.status===405)throw Error('当前代理可能尚未支持微博连接，请联系代理维护者检查接口版本');
         throw Error(`微博读取失败（${response.status}），旧内容已保留`);}
-    const result=await response.json();
+    let result:WeiboResponse;
+    try{result=JSON.parse(rawText);}catch{
+        const htmlSummary=/^\s*<(?:!doctype|html|head|body)\b/i.test(rawText)?summarizeHtmlErrorBody(rawText).headline:'';
+        throw Error(`微博代理返回了非 JSON 响应${htmlSummary?`（${htmlSummary}）`:''}，请检查代理地址`);
+    }
     if(result?.session?.version!==2)throw Error('微博连接格式不兼容，请更新当前代理后重新扫码');
     if(!validSession(result.session))throw Error('微博返回的会话信息不完整或与当前页面不符，请重新扫码');
     return result;

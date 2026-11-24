@@ -341,10 +341,36 @@ const PUSH_GONE_STATUSES = [410, 404];
  * 取**第一个**破折号：分隔符只有那一个，后面整段都是上游原话，而原话自己也可能带
  * 破折号（`Web Push delivery failed: 410 Gone — …` 就是），从最后一个切会把它再腰斩一次。
  */
+// 注意：本文件会被打进 Worker bundle，保持零浏览器/应用配置依赖的纯函数实现。
+const summarizeHtmlSnippet = (html: string): string => {
+  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const h1Match = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+  const rawLabel = (titleMatch?.[1] || h1Match?.[1] || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  return rawLabel ? `HTML 错误页 (${rawLabel.slice(0, 80)})` : 'HTML 错误页';
+};
+
 const pickErrorDetail = (reason: string): string => {
   const dashAt = reason.indexOf('—');
-  const detail = dashAt >= 0 ? reason.slice(dashAt + 1) : reason;
-  return detail.replace(/\s+/g, ' ').trim();
+  const prefix = dashAt >= 0 ? reason.slice(0, dashAt).trim() : '';
+  const after = dashAt >= 0 ? reason.slice(dashAt + 1).trim() : reason.trim();
+
+  // 上游返回 Cloudflare / Nginx HTML 错误页时，破折号后面全是 `<!DOCTYPE html> <!--[if lt IE 7]>...`，
+  // 直接切掉前半截会连唯一能定位问题的 HTTP 状态码一起丢掉，再把 HTML 样板塞进聊天气泡。
+  if (/^(?:<!doctype\s+html|<html\b|<head\b|<body\b|<title\b|<!--)/i.test(after)) {
+    const htmlHeadline = summarizeHtmlSnippet(after);
+    const statusMatch = prefix.match(/\b(?:AI API error|Web Push delivery failed):\s*([^\n.]+?)(?:\.\s*Request URL:|$)/i);
+    const statusLabel = statusMatch?.[1]?.trim();
+    return statusLabel ? `${statusLabel} · ${htmlHeadline}` : htmlHeadline;
+  }
+
+  const htmlStart = after.search(/<!doctype\s+html|<html\b/i);
+  if (htmlStart > 0) {
+    const headPart = after.slice(0, htmlStart).replace(/[\s—:-]+$/, '').trim();
+    const htmlHeadline = summarizeHtmlSnippet(after.slice(htmlStart));
+    return [headPart, htmlHeadline].filter(Boolean).join(' · ');
+  }
+
+  return after.replace(/\s+/g, ' ').trim();
 };
 
 /** 上游给了稳定 code 时对用户说的话；没有对应条目的码走通用文案。 */

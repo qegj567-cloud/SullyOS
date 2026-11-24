@@ -18,6 +18,8 @@ import { normalizeApiKey } from './minimaxApiKey';
 import { getMinimaxRegion, normalizeMinimaxRegion } from './minimaxEndpoint';
 import { getProxyWorkerUrl } from './proxyWorker';
 import { isStaticWebDeployment } from './staticWebDeployment';
+import { formatUnknownError } from './errorSelfCheck';
+import { summarizeHtmlErrorBody } from './networkFailureDiagnosis';
 
 export interface SttCallbacks {
   /** Fired repeatedly with the best-so-far transcript (interim + final, browser mode). */
@@ -314,16 +316,13 @@ const postSttMultipart = async (
 const extractApiErrorDetail = (rawText: string): string => {
   const trimmed = (rawText || '').trim();
   if (!trimmed) return '';
+  if (/^\s*<(?:!doctype|html|head|body)\b/i.test(trimmed)) {
+    return summarizeHtmlErrorBody(trimmed).headline.slice(0, 180);
+  }
   try {
     const parsed = JSON.parse(trimmed);
-    const msg =
-      parsed?.error?.message ||
-      parsed?.base_resp?.status_msg ||
-      parsed?.detail?.message ||
-      (typeof parsed?.detail === 'string' ? parsed.detail : '') ||
-      parsed?.message ||
-      parsed?.error;
-    if (typeof msg === 'string' && msg.trim()) return msg.trim();
+    const extracted = formatUnknownError(parsed, '');
+    if (extracted) return extracted.slice(0, 180);
   } catch {
     // plain text
   }
@@ -332,15 +331,18 @@ const extractApiErrorDetail = (rawText: string): string => {
 
 const formatSttHttpError = (providerLabel: string, status: number, rawText: string): string => {
   const detail = extractApiErrorDetail(rawText);
-  const lower = detail.toLowerCase();
-  if (status === 401 || lower.includes('invalid api key') || lower.includes('unauthorized') || lower.includes('authorized_error')) {
-    return `${providerLabel} API Key 无效或未开通语音识别权限，请前往「设置 → 语音与写歌」检查`;
-  }
+  const lower = `${rawText || ''}\n${detail}`.toLowerCase();
   if (status === 402 || lower.includes('insufficient_balance') || lower.includes('quota') || lower.includes('credits') || lower.includes('payment')) {
     return `${providerLabel} 账户余额或配额不足`;
   }
+  if (lower.includes('unusual_activity') || lower.includes('free tier')) {
+    return `${providerLabel} 触发风控或免费额度限制${detail ? `（${detail}）` : ''}`;
+  }
+  if (status === 401 || lower.includes('invalid api key') || lower.includes('invalid_api_key') || lower.includes('unauthorized') || lower.includes('authorized_error')) {
+    return `${providerLabel} API Key 无效或未开通语音识别权限，请前往「设置 → 语音与写歌」检查`;
+  }
   if (status === 403) {
-    return `${providerLabel} 拒绝访问，请检查 Key 权限`;
+    return `${providerLabel} 拒绝访问，请检查 Key 权限${detail ? `（${detail}）` : ''}`;
   }
   if (status === 429 || lower.includes('rate_limit') || lower.includes('too many requests')) {
     return `${providerLabel} 请求过于频繁，请稍后再试`;

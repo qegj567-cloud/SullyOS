@@ -7,6 +7,7 @@ import AndroidUpdateControl from './AndroidUpdateControl';
 import CanaryChannelControl from './CanaryChannelControl';
 import DatabaseDiagnosticDetails from '../DatabaseDiagnosticDetails';
 import StartupDiagnosticDetails from '../StartupDiagnosticDetails';
+import SystemErrorDiagnosticDetails from '../SystemErrorDiagnosticDetails';
 
 /**
  * Settings 底部的版本信息脚注。
@@ -118,6 +119,7 @@ const VersionInfo: React.FC = () => {
             <CanaryChannelControl unlocked={available} />
             <AndroidUpdateControl />
             <div className="mt-3 w-full max-w-md text-xs text-slate-500">
+                <SystemErrorDiagnosticDetails />
                 <DatabaseDiagnosticDetails />
                 <StartupDiagnosticDetails />
             </div>

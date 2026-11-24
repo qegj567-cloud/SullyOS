@@ -12,6 +12,8 @@
  *     return CORS headers).
  */
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
+import { formatUnknownError } from './errorSelfCheck';
+import { summarizeHtmlErrorBody } from './networkFailureDiagnosis';
 
 import { CloudBackupConfig, CloudBackupFile } from '../types';
 import { BackupSpaceError, DownloadedBackup, receiveBackupDownload } from './backupDownload';
@@ -165,15 +167,23 @@ export const testConnection = async (config: CloudBackupConfig): Promise<{ ok: b
         });
 
         if (res.status === 207 || res.status === 200) return { ok: true, message: '连接成功' };
-        if (res.status === 401) return { ok: false, message: '认证失败：请检查用户名和密码' };
+        if (res.status === 401) return { ok: false, message: '认证失败：请检查用户名和应用密码 (HTTP 401)' };
+        if (res.status === 403) return { ok: false, message: '权限不足：请检查应用密码读写权限或备份路径 (HTTP 403)' };
         if (res.status === 404) {
             const mkcolOk = await createDirectory(config);
             if (mkcolOk) return { ok: true, message: '连接成功（已自动创建备份目录）' };
-            return { ok: false, message: '备份目录不存在且无法创建' };
+            return { ok: false, message: '备份目录不存在且无法自动创建，请先在网盘内手动创建该文件夹' };
         }
-        return { ok: false, message: `服务器返回 ${res.status}` };
+        const rawErrText = (await res.text().catch(() => '')).trim();
+        const detail = /^(?:<!doctype\s+html|<html\b|<head\b|<body\b|<title\b|<!--)/i.test(rawErrText)
+            ? summarizeHtmlErrorBody(rawErrText).headline
+            : rawErrText.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+        if (res.status >= 500) {
+            return { ok: false, message: `网盘或代理网关异常 (HTTP ${res.status})${detail ? `：${detail}` : ''}` };
+        }
+        return { ok: false, message: `服务器返回 HTTP ${res.status}${detail ? `：${detail}` : ''}` };
     } catch (e: any) {
-        return { ok: false, message: `连接失败: ${e.message}` };
+        return { ok: false, message: `连接失败: ${formatUnknownError(e, '网络异常')}` };
     }
 };
 
@@ -349,9 +359,25 @@ const putBackup = async (
         };
         xhr.onload = () => {
             onProgress?.(100);
-            resolve(mapStatus(xhr.status));
+            const mapped = mapStatus(xhr.status);
+            if (!mapped.ok) {
+                const rawHint = (xhr.responseText || '').trim();
+                const bodyHint = /^(?:<!doctype\s+html|<html\b|<head\b|<body\b|<title\b|<!--)/i.test(rawHint)
+                    ? summarizeHtmlErrorBody(rawHint).headline
+                    : rawHint.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+                const fullMsg = bodyHint && xhr.status >= 400 && xhr.status !== 401 && xhr.status !== 413 && xhr.status !== 507
+                    ? `${mapped.message}：${bodyHint}`
+                    : mapped.message;
+                console.warn(`[WebDAV] 上传备份失败 (HTTP ${xhr.status}):`, bodyHint || mapped.message);
+                resolve({ ok: false, message: fullMsg });
+                return;
+            }
+            resolve(mapped);
         };
-        xhr.onerror = () => resolve({ ok: false, message: '上传失败: 网络错误' });
+        xhr.onerror = () => {
+            console.warn('[WebDAV] 上传备份请求遇到网络或跨域错误');
+            resolve({ ok: false, message: '上传失败: 网络连接中断或跨域被拦截' });
+        };
         xhr.onabort = () => resolve({ ok: false, message: '上传已取消' });
         xhr.ontimeout = () => resolve({ ok: false, message: '上传超时' });
 
@@ -363,7 +389,7 @@ const putBackup = async (
  * List backup files on WebDAV
  */
 export const listBackups = async (config: CloudBackupConfig): Promise<CloudBackupFile[]> =>
-    (await listBackupEntries(config)).map(e => e.file);
+    (await listBackupEntries(config, { throwOnError: true })).map(e => e.file);
 
 type ListedBackup = {
     file: CloudBackupFile;
@@ -373,17 +399,30 @@ type ListedBackup = {
     timestamp: number | null;
 };
 
-const listBackupEntries = async (config: CloudBackupConfig): Promise<ListedBackup[]> => {
+const listBackupEntries = async (
+    config: CloudBackupConfig,
+    opts?: { throwOnError?: boolean },
+): Promise<ListedBackup[]> => {
     try {
         const res = await webdavRequest(config, config.remotePath, 'PROPFIND', {
             depth: '1',
             contentType: 'application/xml; charset=utf-8',
             body: '<?xml version="1.0" encoding="utf-8"?><d:propfind xmlns:d="DAV:"><d:prop><d:getcontentlength/><d:getlastmodified/><d:displayname/><d:resourcetype/></d:prop></d:propfind>',
         });
-        if (res.status !== 207 && res.status !== 200) return [];
+        // 404 代表远端备份目录尚未创建，属于首次使用前的正常空列表
+        if (res.status === 404) return [];
+        if (res.status !== 207 && res.status !== 200) {
+            if (opts?.throwOnError) {
+                if (res.status === 401) throw new Error('WebDAV 认证失败（HTTP 401），请检查账号或应用专用密码');
+                if (res.status === 403) throw new Error('WebDAV 拒绝访问（HTTP 403），请检查目录权限或坚果云路径');
+                throw new Error(`拉取 WebDAV 备份列表失败（HTTP ${res.status}）`);
+            }
+            return [];
+        }
         const xml = await res.text();
         return parseWebDAVListing(xml, config);
-    } catch {
+    } catch (err) {
+        if (opts?.throwOnError) throw err instanceof Error ? err : new Error('连接 WebDAV 服务器失败，请检查地址与网络');
         return [];
     }
 };
@@ -483,7 +522,11 @@ const downloadWithTrace = async (
     // Small / unknown size, or chunked fallback — single GET
     trace.step('整包下载：等待服务器响应');
     const res = await webdavRequest(config, file.href, 'GET');
-    if (res.status !== 200 && res.status !== 206) return null;
+    if (res.status !== 200 && res.status !== 206) {
+        if (res.status === 401) throw new Error('WebDAV 下载认证失败（HTTP 401），请检查账号或密码');
+        if (res.status === 404) throw new Error('云端备份文件不存在或已被删除（HTTP 404）');
+        throw new Error(`WebDAV 下载失败（HTTP ${res.status}）`);
+    }
     const backup = await receiveBackupDownload(async sink => {
         // 原生壳拿到的是整包 base64，只能整块写入。
         if (!res.body) {

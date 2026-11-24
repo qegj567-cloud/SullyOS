@@ -7,11 +7,43 @@ function diagnosticRunId(metadata) {
 }
 function safeDiagnosticError(error) {
   const e = error;
-  const names = ["Error", "TypeError", "AbortError", "TimeoutError", "NotAllowedError", "InvalidStateError", "QuotaExceededError", "VersionError", "DataError", "TransactionInactiveError"];
+  const names = [
+    "Error",
+    "TypeError",
+    "SyntaxError",
+    "AbortError",
+    "TimeoutError",
+    "SecurityError",
+    "NetworkError",
+    "UnknownError",
+    "NotAllowedError",
+    "InvalidStateError",
+    "QuotaExceededError",
+    "VersionError",
+    "DataError",
+    "TransactionInactiveError"
+  ];
+  const allowedCodes = [
+    "LLM_CALL_FAILED",
+    "PUSH_SEND_FAILED",
+    "PUSH_PAYLOAD_TOO_LARGE",
+    "PUSH_SUBSCRIPTION_MISSING",
+    "CREDENTIAL_NOT_FOUND",
+    "CREDENTIAL_MISSING",
+    "STORED_DATA_UNDECRYPTABLE",
+    "AGENTIC_LOOP_EXCEEDED",
+    "INVALID_PARAMETERS",
+    "TASK_NOT_FOUND",
+    "TASK_ALREADY_COMPLETED",
+    "FCM_SEND_FAILED",
+    "WXPUSHER_SEND_FAILED",
+    "BARK_SEND_FAILED",
+    "MEOW_SEND_FAILED"
+  ];
   const status = Number(e?.statusCode ?? e?.status ?? e?.llmStatus ?? e?.cause?.statusCode ?? e?.cause?.status);
   return {
     errorName: typeof e?.name === "string" && names.includes(e.name) ? e.name : "Error",
-    ...typeof e?.code === "string" && ["LLM_CALL_FAILED", "PUSH_PAYLOAD_TOO_LARGE", "PUSH_SUBSCRIPTION_MISSING", "CREDENTIAL_NOT_FOUND", "INVALID_PARAMETERS", "TASK_NOT_FOUND", "TASK_ALREADY_COMPLETED"].includes(e.code) ? { errorCode: e.code } : {},
+    ...typeof e?.code === "string" && allowedCodes.includes(e.code) ? { errorCode: e.code } : {},
     ...Number.isInteger(status) && status >= 100 && status <= 599 ? { httpStatus: status } : {}
   };
 }
@@ -2672,6 +2704,10 @@ async function saveIncomingActiveMessage(payload) {
       return;
     case "error":
       console.error("[amsg] error push", payload?.code, payload?.message, payload?.metadata?.reason);
+      traceSw("error-push", payload, {
+        taskUuid: payload?.metadata?.taskUuid,
+        errorCode: payload?.metadata?.errorCode ?? payload?.code
+      });
       await notifyClients({
         type: "active-msg-error",
         code: payload?.code,

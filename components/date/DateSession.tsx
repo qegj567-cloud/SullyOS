@@ -349,8 +349,9 @@ const DateSession: React.FC<DateSessionProps> = ({
             };
         } catch (err: any) {
             if (err?.name === 'AbortError') return null;
-            console.warn('Date TTS failed:', err?.message);
-            if (apiConfig.ttsProvider === 'elevenlabs') addToast(err?.message || '语音生成失败', 'error');
+            const errMsg = typeof err?.message === 'string' && err.message.trim() ? err.message.trim() : '语音生成失败';
+            console.warn('Date TTS failed:', errMsg);
+            addToast(errMsg, 'error');
             return null;
         }
     };

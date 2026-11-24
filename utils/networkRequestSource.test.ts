@@ -4,6 +4,7 @@ import {
     extractCallerHint,
     identifyApplicationErrorSource,
     identifyNetworkRequestSource,
+    readConfiguredEndpointsSnapshot,
     redactRelayTokensInText,
     sanitizeUrlForLog,
     type ConfiguredEndpointSnapshot,
@@ -13,6 +14,7 @@ import {
     buildFetchFailureSystemLog,
     buildHttpErrorSystemLog,
     classifyFetchFailure,
+    isSilentHttpStatusError,
     shouldLogHttpStatusError,
     shouldProbeReachability,
     shouldShowNetworkSelfCheck,
@@ -541,5 +543,52 @@ describe('SystemLog 组装与关键排障守卫', () => {
             error: err,
             responseHeadersReceived: { status: 200, headersMs: 300 },
         })).toBe('aborted');
+    });
+
+    it('打包后的压缩 chunk 名不冒充业务模块，Safari 无首行超长报错在 detail 中完整保留', () => {
+        const minifiedCaller = 'main-7bd7a3cf.js:1:48291 <- Chat-9f12a0.js:1:920';
+        const longMsg = '请求处理失败：' + '关键诊断原因片段'.repeat(25);
+        const safariStack = '@https://friedsully.com/assets/build/main-7bd7a3cf.js:1:48291\n@https://friedsully.com/assets/build/vendor-react-112233.js:1:99';
+        const appLog = buildConsoleErrorSystemLog({
+            message: `${longMsg} [object Object]`,
+            stacks: safariStack,
+            caller: minifiedCaller,
+            ambientMeta: { appName: '音乐', charName: 'Sully' },
+        });
+        expect(appLog.source).toBe('应用报错（当前界面：音乐）');
+        expect(appLog.source).not.toContain('main-7bd7a3cf');
+        expect(appLog.source).not.toContain('object Object');
+        expect(appLog.detail).toContain(longMsg);
+
+        const wrappedStack = [
+            'Error',
+            '    at n (https://friedsully.com/assets/build/main-7bd7a3cf.js:1:10)',
+            '    at r (https://friedsully.com/assets/build/main-7bd7a3cf.js:1:20)',
+            '    at a (https://friedsully.com/assets/build/vendor-react-112233.js:1:30)',
+            '    at playSong (https://friedsully.com/assets/build/MusicApp-abc123.js:2:400)',
+        ].join('\n');
+        expect(extractCallerHint(wrappedStack, { skipTopFrames: 2 })).toBe('playSong (assets/build/MusicApp-abc123.js:2:400)');
+    });
+
+    it('读取真实 ApiPreset 嵌套 config.baseUrl 与 aetheros.mcp.servers，并按前后台区分 HTTP 静默入池', () => {
+        const store = new Map<string, string>([
+            ['os_api_presets', JSON.stringify([{ id: 'p1', name: '嵌套预设', config: { baseUrl: 'https://nested.preset.example/v1', model: 'm' } }])],
+            ['aetheros.mcp.servers', JSON.stringify([{ id: 's1', name: '搜索MCP', url: 'https://mcp.search.example/sse' }])],
+        ]);
+        const snap = readConfiguredEndpointsSnapshot({ getItem: (k: string) => store.get(k) ?? null });
+        expect(snap.apiPresets).toEqual([{ name: '嵌套预设', baseUrl: 'https://nested.preset.example/v1' }]);
+        expect(snap.mcpServers).toEqual([{ name: '搜索MCP', url: 'https://mcp.search.example/sse', proxyUrl: undefined }]);
+
+        const musicId = identifyNetworkRequestSource({ url: 'https://proxy.friedsully.com/netease/song/url', method: 'POST', endpoints: baseEndpoints });
+        expect(shouldLogHttpStatusError({ status: 502, identity: musicId, method: 'POST' })).toBe(true);
+        expect(isSilentHttpStatusError({ status: 502, identity: musicId, ambientMeta: { appName: '音乐' } })).toBe(false);
+        expect(isSilentHttpStatusError({ status: 502, identity: musicId, ambientMeta: { appName: '消息' } })).toBe(true);
+
+        const amsgSyncId = identifyNetworkRequestSource({ url: 'https://sullyos-amsg.louis810.workers.dev/state', method: 'POST', endpoints: baseEndpoints });
+        expect(shouldLogHttpStatusError({ status: 500, identity: amsgSyncId, method: 'POST' })).toBe(true);
+        expect(isSilentHttpStatusError({ status: 500, identity: amsgSyncId, ambientMeta: { appName: '消息' } })).toBe(true);
+
+        const amsgCapProbe = identifyNetworkRequestSource({ url: 'https://sullyos-amsg.louis810.workers.dev/capabilities', method: 'GET', endpoints: baseEndpoints });
+        expect(shouldLogHttpStatusError({ status: 404, identity: amsgCapProbe, method: 'GET' })).toBe(false);
     });
 });

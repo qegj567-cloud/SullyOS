@@ -1478,7 +1478,7 @@ const SongwritingApp: React.FC = () => {
                     const img = new Image();
                     img.crossOrigin = 'anonymous';
                     img.onload = () => resolve(img);
-                    img.onerror = reject;
+                    img.onerror = () => reject(new Error('封面头像图片加载失败'));
                     img.src = url;
                 });
             };

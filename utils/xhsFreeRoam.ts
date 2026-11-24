@@ -22,6 +22,8 @@ import {
     normalizeXhsLiteDetail,
 } from './xhsMcpClient';
 import { DB } from './db';
+import { safeResponseJson, extractContent, formatApiErrorPayload } from './safeApi';
+import { formatUnknownError } from './errorSelfCheck';
 import { injectMemoryPalace } from './memoryPalace/pipeline';
 import {
     collectOwnedPostsFromActivities,
@@ -91,9 +93,11 @@ const callLlm = async (
         __sullyMeta: { appId: 'xhs_free_roam', appName: '自由活动', charId: systemPrompt.char.id, charName: systemPrompt.char.name, purpose: '自由活动生成' },
     } as RequestInit);
 
-    if (!resp.ok) throw new Error(`LLM API ${resp.status}: ${await resp.text().catch(() => '')}`);
-    const data = await resp.json();
-    return data.choices?.[0]?.message?.content || '';
+    const data = await safeResponseJson(resp);
+    if (!resp.ok) {
+        throw new Error(`LLM API ${resp.status}: ${formatApiErrorPayload(data, resp.status)}`);
+    }
+    return extractContent(data) || '';
 };
 
 const parseJson = <T>(text: string): T | null => {
@@ -852,7 +856,7 @@ export const XhsFreeRoamEngine = {
 
         } catch (e: any) {
             session.endedAt = Date.now();
-            callbacks.onError(e.message);
+            callbacks.onError(formatUnknownError(e, '自由活动执行失败'));
             return session;
         }
     },

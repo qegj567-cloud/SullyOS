@@ -1,5 +1,6 @@
 import { INIT_SQL, getVectorSyncProgress, subscribeVectorSync, syncLocalToRemote, testConnection } from '../utils/memoryPalace/supabaseVector';
 import { ContextBuilder } from '../utils/context';
+import { formatUnknownError } from '../utils/errorSelfCheck';
 
 import MemoryMaintenancePanel from '../components/chat/MemoryMaintenancePanel';
 import ChatHistoryCleanupModal from '../components/chat/ChatHistoryCleanupModal';
@@ -2223,7 +2224,7 @@ export default function MemoryPalaceApp() {
                 try { setDigestReports(await DigestReportDB.getByCharId(char.id)); } catch { /* ignore */ }
             }
         } catch (err: any) {
-            setDigestResult(`[err]消化失败：${err.message}`);
+            setDigestResult(`[err]消化失败：${formatUnknownError(err, '未知错误')}`);
         } finally {
             setDigesting(false);
         }
@@ -2401,8 +2402,10 @@ export default function MemoryPalaceApp() {
                 if (count > 0) parts.push(`${STORE_LABELS[store] || store} ${count}`);
             }
             const breakdown = parts.length > 0 ? `（${parts.join('、')}）` : '';
-            const msg = `本地已清空${breakdown}；高水位 ${result.highWatermarks} 条`
-                + (result.remoteAttempted ? `；云端向量 ${result.remote} 行` : '；云端未清');
+            const remoteNote = !result.remoteAttempted
+                ? '；云端未清'
+                : (result.remoteError ? `；⚠️ 云端向量清空失败（${result.remoteError}）` : `；云端向量 ${result.remote} 行`);
+            const msg = `${result.remoteError ? '[err]' : ''}本地已清空${breakdown}；高水位 ${result.highWatermarks} 条${remoteNote}`;
             setWipeResult(msg);
             await loadStats();
         } catch (e: any) {

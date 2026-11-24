@@ -6,6 +6,8 @@
  */
 
 import { waitForPalaceRequest, readMaintenanceSettings } from './maintenanceMode';
+import { formatApiErrorPayload } from '../safeApi';
+import { summarizeHtmlErrorBody } from '../networkFailureDiagnosis';
 import type { EmbeddingConfig } from './types';
 
 // ─── 核心 API 调用 ────────────────────────────────────
@@ -85,7 +87,9 @@ export async function getEmbeddings(texts: string[], config: EmbeddingConfig): P
         ).catch(error => {
             let host = '';
             try { host = new URL(config.baseUrl).hostname; } catch { /* nonstandard endpoint */ }
-            console.error(/^(?:ai|api)\.siliconflow\.(?:cn|com)$/.test(host) ? '[记忆宫殿·硅基流动]' : '[Embedding]', error);
+            const isSilicon = /^(?:ai|api)\.siliconflow\.(?:cn|com)$/.test(host);
+            const tag = isSilicon ? '[记忆宫殿·硅基流动]' : `[Embedding] (${host || config.baseUrl} · model=${config.model})`;
+            console.error(tag, error);
             throw error;
         });
         // Promise.all 保序：windowResults[j] 对应 window[j]，按序展开
@@ -137,17 +141,39 @@ async function callEmbeddingAPI(
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${config.apiKey}`,
             },
-            body: JSON.stringify(body), __sullyHandlesFailure: true,
+            // 首轮可自动重试（网络/5xx/429）或批量 400 自动降级为单条的失败暂不弹系统红条；401/402/404 等终态错误及最终轮次放开全局网络/HTTP 诊断
+            body: JSON.stringify(body),
+            __sullyHandlesFailure: retryCount === 0
+                ? ({ status }: { status?: number }) => (
+                    status === undefined
+                    || status >= 500
+                    || (status === 429 && !readMaintenanceSettings().enabled)
+                    || (status === 400 && input.length > 1)
+                )
+                : false,
         } as RequestInit);
 
         if (!response.ok) {
-            const errorText = await response.text().catch(() => 'Unknown error');
+            const rawErrorText = await response.text().catch(() => 'Unknown error');
+            const trimmedErr = rawErrorText.trim();
+            let cleanErrorText = trimmedErr;
+            if (/^(?:<!doctype\s+html|<html\b|<head\b|<body\b|<title\b|<!--)/i.test(trimmedErr)) {
+                cleanErrorText = summarizeHtmlErrorBody(trimmedErr).headline;
+            } else if (trimmedErr.startsWith('{') || trimmedErr.startsWith('[')) {
+                try {
+                    cleanErrorText = formatApiErrorPayload(JSON.parse(trimmedErr), response.status);
+                } catch {
+                    cleanErrorText = trimmedErr.slice(0, 240);
+                }
+            } else {
+                cleanErrorText = trimmedErr.slice(0, 240);
+            }
             // 保留本次尝试的诊断，最终失败时才发出系统提醒。
             console.warn(
                 `❌ [Embedding] API ${response.status} (model=${config.model}, batch=${input.length} 条, 各条字符数=[${input.map(s => s.length).join(', ')}])`,
-                errorText,
+                cleanErrorText,
             );
-            const err = new Error(`Embedding API error ${response.status}: ${errorText}`) as Error & { status?: number };
+            const err = new Error(`Embedding API error ${response.status}: ${cleanErrorText}`) as Error & { status?: number };
             err.status = response.status;
             throw err;
         }

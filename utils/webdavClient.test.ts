@@ -572,4 +572,15 @@ describe('cleanupOldBackups', () => {
         expect(deleted).toBe(2);
         expect(deletedNames(calls)).toEqual(['Sully_Backup_full_1763200000002.zip', 'Sully_Backup_full_1763200000001.zip']);
     });
+
+    it('listBackups 对 404 返回空列表，但对 401 鉴权失败或 502 网关故障显式抛错而非伪装成暂无备份', async () => {
+        stubWorkerFetch([], () => ({ status: 404, body: 'Not Found' }));
+        await expect(listBackups(config)).resolves.toEqual([]);
+
+        stubWorkerFetch([], () => ({ status: 401, body: 'Unauthorized' }));
+        await expect(listBackups(config)).rejects.toThrow(/401|鉴权/);
+
+        stubWorkerFetch([], () => ({ status: 502, body: '<html><title>502 Bad Gateway</title></html>' }));
+        await expect(listBackups(config)).rejects.toThrow(/502/);
+    });
 });

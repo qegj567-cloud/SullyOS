@@ -573,7 +573,7 @@ function readFileAsDataUri(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as string);
-    reader.onerror = reject;
+    reader.onerror = () => reject(new Error('文件读取失败'));
     reader.readAsDataURL(file);
   });
 }
@@ -582,7 +582,7 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => resolve(img);
-    img.onerror = reject;
+    img.onerror = () => reject(new Error('图片加载失败'));
     img.src = src;
   });
 }

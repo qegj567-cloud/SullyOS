@@ -12,6 +12,8 @@
 import { SignalBooklet, SignalPoem } from '../../types';
 import { getPostOfficeBase, getDeviceId, maskPen } from './postOffice';
 import { recoverSignalOwnership } from './signalRecovery';
+import { formatUnknownError } from '../errorSelfCheck';
+import { summarizeHtmlErrorBody } from '../networkFailureDiagnosis';
 
 export interface SignalState {
     booklet: SignalBooklet;
@@ -112,10 +114,15 @@ async function call<T>(path: string, opts: RequestInit & { query?: Record<string
         headers: { ...(opts.body ? { 'Content-Type': 'application/json' } : {}), ...(opts.headers as Record<string, string> || {}) },
         body: opts.body,
     });
-    const data = await res.json().catch(() => ({}));
+    const rawText = await res.text().catch(() => '');
+    let data: any = {};
+    try { data = rawText ? JSON.parse(rawText) : {}; } catch { /* non-json */ }
     // 409 poem-open 是预期内的「该改去接龙」信号，连同 body 抛出让调用方识别
     if (!res.ok || (data && data.ok === false)) {
-        const err: any = new Error((data && data.error) || `HTTP ${res.status}`);
+        const msg = formatUnknownError(data?.error ?? data, '')
+            || (/^\s*<(?:!doctype|html|head|body)\b/i.test(rawText) ? summarizeHtmlErrorBody(rawText).headline : rawText.trim().slice(0, 160))
+            || `HTTP ${res.status}`;
+        const err: any = new Error(msg);
         err.status = res.status; err.body = data;
         throw err;
     }

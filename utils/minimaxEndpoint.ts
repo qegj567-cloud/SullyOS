@@ -15,8 +15,8 @@
 
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import type { MinimaxRegion } from '../types';
-import { safeResponseJson } from './safeApi';
 import { isStaticWebDeployment } from './staticWebDeployment';
+import { summarizeHtmlErrorBody } from './networkFailureDiagnosis';
 
 type MiniMaxResponseLike = {
   ok: boolean;
@@ -68,10 +68,23 @@ const getUpstreamUrl = (proxyPath: string, region: MinimaxRegion = currentRegion
   return `${getMinimaxBaseUrl(region)}${endpoint}`;
 };
 
+const parseMinimaxJsonOrError = (raw: string): any => {
+  const trimmed = (raw || '').trim();
+  if (!trimmed) return {};
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    const summary = /^\s*<(?:!doctype|html|head|body)\b/i.test(trimmed)
+      ? summarizeHtmlErrorBody(trimmed).headline
+      : trimmed.slice(0, 200);
+    return { error: summary };
+  }
+};
+
 const wrapWebResponse = (response: Response): MiniMaxResponseLike => ({
   ok: response.ok,
   status: response.status,
-  json: async () => safeResponseJson(response.clone()),
+  json: async () => parseMinimaxJsonOrError(await response.clone().text().catch(() => '')),
 });
 
 /**
@@ -198,6 +211,8 @@ export async function minimaxFetch(
   return {
     ok: response.status >= 200 && response.status < 300,
     status: response.status,
-    json: async () => response.data,
+    json: async () => typeof response.data === 'string'
+      ? parseMinimaxJsonOrError(response.data)
+      : response.data,
   };
 }

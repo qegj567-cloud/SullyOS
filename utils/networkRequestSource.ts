@@ -110,6 +110,10 @@ const URL_TRAILING_PUNCT_RE = /[.,;:!?)\]\}，。；：！？（）【】《》�
 const PUSH_SCHEME_SECRET_RE = /\b(bark|meow):(https?:\/\/[^\s"'<>`\\\u3000-\u303F\uFF00-\uFFEF]+)/gi;
 const WXPUSHER_SCHEME_SECRET_RE = /\bwxpusher:([^\s"'<>`\\\u3000-\u303F\uFF00-\uFFEF]+)/gi;
 const INLINE_BEARER_RE = /\b(Bearer\s+)([A-Za-z0-9._~+/=-]{12,})/gi;
+const INLINE_BASIC_RE = /\b(Basic\s+)([A-Za-z0-9+/=]{12,})/gi;
+const INLINE_API_KEY_RE = /\b(sk-)[A-Za-z0-9_-]{16,}\b/g;
+const INLINE_GH_PAT_RE = /\b(?:(?:ghp|gho|ghs|ghr)_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AIza[0-9A-Za-z_-]{30,})\b/g;
+const INLINE_DATA_URI_RE = /\b(data:[^,\s"'<>`]{1,80};base64,)[A-Za-z0-9+/=%]{16,}/gi;
 const INLINE_MUSIC_U_RE = /\b(MUSIC_U=)([^;\s"'<>`\\\u3000-\u303F\uFF00-\uFFEF]+)/gi;
 const INLINE_WXPUSHER_SPT_RE = /\bSPT_[A-Za-z0-9_-]{12,}\b/g;
 
@@ -127,12 +131,16 @@ export const redactRelayTokensInText = (text: string): string => {
             return `${scheme}:${sanitizeUrlForLog(core, 0, { redactFirstPathSegment: true })}${trailing}`;
         })
         .replace(WXPUSHER_SCHEME_SECRET_RE, 'wxpusher:<redacted>')
+        .replace(INLINE_DATA_URI_RE, '$1<redacted>')
         .replace(URL_IN_TEXT_RE, (matched) => {
             const trailing = matched.match(URL_TRAILING_PUNCT_RE)?.[0] || '';
             const core = trailing ? matched.slice(0, -trailing.length) : matched;
             return `${sanitizeUrlForLog(core)}${trailing}`;
         })
         .replace(INLINE_BEARER_RE, '$1<redacted>')
+        .replace(INLINE_BASIC_RE, '$1<redacted>')
+        .replace(INLINE_API_KEY_RE, '$1<redacted>')
+        .replace(INLINE_GH_PAT_RE, '<redacted>')
         .replace(INLINE_MUSIC_U_RE, '$1<redacted>')
         .replace(INLINE_WXPUSHER_SPT_RE, '<redacted>');
 };
@@ -207,6 +215,7 @@ export const sanitizeUrlForLog = (rawUrl: string, depth = 0, opts?: { redactFirs
         parsed = isRelative ? new URL(rawUrl, 'https://relative.invalid') : new URL(rawUrl);
     } catch {
         return rawUrl
+            .replace(/([a-zA-Z][a-zA-Z\d+.-]*:\/\/)([^/\s@]+@)/g, '$1<redacted>@')
             .replace(AMSG_RELAY_URL_IN_TEXT_RE, '$1<redacted>')
             .replace(FALLBACK_QUERY_SECRET_RE, '$1<redacted>');
     }
@@ -248,15 +257,36 @@ export const sanitizeUrlForLog = (rawUrl: string, depth = 0, opts?: { redactFirs
         }
     }
 
+    let hashChanged = false;
+    let hashPart = parsed.hash || '';
+    if (hashPart.length > 1 && hashPart.includes('=')) {
+        const rawHash = hashPart.slice(1);
+        const qIdx = rawHash.indexOf('?');
+        const hashPrefix = qIdx >= 0 ? rawHash.slice(0, qIdx + 1) : '';
+        const hashQuery = qIdx >= 0 ? rawHash.slice(qIdx + 1) : rawHash;
+        if (hashQuery.includes('=')) {
+            const hParams = new URLSearchParams(hashQuery);
+            const hPairs: string[] = [];
+            for (const [k, v] of hParams.entries()) {
+                if (SENSITIVE_QUERY_KEY_RE.test(k)) {
+                    hPairs.push(`${encodeURIComponent(k)}=%3Credacted%3E`);
+                    hashChanged = true;
+                } else {
+                    hPairs.push(`${encodeURIComponent(k)}=${encodeURIComponent(v)}`);
+                }
+            }
+            if (hashChanged) hashPart = `#${hashPrefix}${hPairs.join('&')}`;
+        }
+    }
+
     // 没有任何脱敏改动时原样返回，避免无谓改写查询参数编码格式
-    if (!hadAuth && pathname === parsed.pathname && !queryChanged) {
+    if (!hadAuth && pathname === parsed.pathname && !queryChanged && !hashChanged) {
         return rawUrl;
     }
 
     const searchPart = parsed.search
         ? (queryChanged ? `?${sanitizedPairs.join('&')}` : parsed.search)
         : '';
-    const hashPart = parsed.hash || '';
     if (isRelative) {
         return `${pathname}${searchPart}${hashPart}`;
     }
@@ -265,15 +295,18 @@ export const sanitizeUrlForLog = (rawUrl: string, depth = 0, opts?: { redactFirs
 };
 
 /** 从本地存储懒读各服务的地址前缀快照（只取 URL 和显示名，绝不触碰任何 key/token/cookie）。 */
-export const readConfiguredEndpointsSnapshot = (): ConfiguredEndpointSnapshot => {
+export const readConfiguredEndpointsSnapshot = (
+    storage?: Pick<Storage, 'getItem'> | null,
+): ConfiguredEndpointSnapshot => {
     const snap: ConfiguredEndpointSnapshot = {
         proxyWorkerUrl: getProxyWorkerUrl(),
         amsgWorkerUrl: runtimeAmsgWorkerUrl || undefined,
     };
-    if (typeof localStorage === 'undefined') return snap;
+    const store = storage ?? (typeof localStorage !== 'undefined' ? localStorage : null);
+    if (!store) return snap;
     const readJson = (key: string): any => {
         try {
-            const raw = localStorage.getItem(key);
+            const raw = store.getItem(key);
             return raw ? JSON.parse(raw) : null;
         } catch {
             return null;
@@ -288,8 +321,17 @@ export const readConfiguredEndpointsSnapshot = (): ConfiguredEndpointSnapshot =>
     const presets = readJson('os_api_presets');
     if (Array.isArray(presets)) {
         snap.apiPresets = presets
-            .filter((p: any) => typeof p?.baseUrl === 'string' && p.baseUrl.trim())
-            .map((p: any) => ({ name: typeof p.name === 'string' ? p.name.trim() : undefined, baseUrl: p.baseUrl.trim() }));
+            .map((p: any) => {
+                // 真实持久化结构为 { id, name, config: { baseUrl } }，同时兼容扁平测试桩 { name, baseUrl }
+                const rawUrl = typeof p?.config?.baseUrl === 'string'
+                    ? p.config.baseUrl
+                    : (typeof p?.baseUrl === 'string' ? p.baseUrl : '');
+                return {
+                    name: typeof p?.name === 'string' ? p.name.trim() : undefined,
+                    baseUrl: rawUrl.trim(),
+                };
+            })
+            .filter((p) => Boolean(p.baseUrl));
     }
 
     const checkPhoneCfg = readJson('check_phone_api');
@@ -326,11 +368,12 @@ export const readConfiguredEndpointsSnapshot = (): ConfiguredEndpointSnapshot =>
     }
 
     try {
-        const poBase = localStorage.getItem('vr_po_base');
+        const poBase = store.getItem('vr_po_base');
         if (poBase && poBase.trim()) snap.postOfficeBaseUrl = poBase.trim();
     } catch { /* ignore */ }
 
-    const mcpServers = readJson('sully_mcp_servers_v1');
+    // 与 utils/mcpClient.ts 的真实存储键对齐，旧实验键仅作后备兼容
+    const mcpServers = readJson('aetheros.mcp.servers') ?? readJson('sully_mcp_servers_v1');
     if (Array.isArray(mcpServers)) {
         snap.mcpServers = mcpServers
             .filter((s: any) => s && (typeof s.url === 'string' || typeof s.proxyUrl === 'string'))
@@ -1158,24 +1201,32 @@ export const identifyNetworkRequestSource = (input: IdentifyNetworkRequestInput)
     };
 };
 
-const SKIP_CALLER_FRAME_RE = /(?:patchedFetch|fetchLlm|safeFetchJson|captureCallerHint|extractCallerHint|identifyNetworkRequestSource|buildFetchFailureDetail|originalConsoleError|console\.error|node_modules)/i;
+const SKIP_CALLER_FRAME_RE = /(?:patchedFetch|fetchLlm|safeFetchJson|captureCallerHint|extractCallerHint|identifyNetworkRequestSource|buildFetchFailureDetail|originalConsoleError|console\.error|makeDebugLogger|devDebug\.ts|node_modules|\/assets\/build\/vendor(?:-[A-Za-z0-9_.-]+)?\.js)/i;
+const BUNDLED_ASSET_LOC_RE = /(?:^|\/)assets\/build\/|[A-Za-z0-9_-]+-[A-Za-z0-9_-]{6,}\.m?js(?::|$)/i;
+const MINIFIED_FN_NAME_RE = /^[A-Za-z_$][A-Za-z0-9_$]?$/;
 
 /**
  * 从 `Error.stack` 提取最靠近业务调用点的 1~2 帧，剥掉完整的站点域名，保留紧凑文件名与行号。
+ * 正式构建无 sourcemap 时函数名被混淆，不能单靠函数名跳过拦截器自身：支持 `skipTopFrames`
+ * 按帧位置跳过 `captureCallerHint` 及外层拦截包装函数，并隐去单/双字母混淆函数名。
  */
-export const extractCallerHint = (stack?: string | null): string | undefined => {
+export const extractCallerHint = (
+    stack?: string | null,
+    opts?: { skipTopFrames?: number },
+): string | undefined => {
     if (!stack || typeof stack !== 'string') return undefined;
     const lines = stack
         .split(/\r?\n/)
         .map(line => line.trim())
         .filter(Boolean);
 
+    const skipTop = Math.max(0, opts?.skipTopFrames ?? 0);
+    let seenStackFrames = 0;
     const picked: string[] = [];
     for (const rawLine of lines) {
-        if (/^(?:Error|TypeError|DOMException|AbortError|TimeoutError)\b/i.test(rawLine) && !rawLine.includes('@') && !rawLine.includes('at ')) {
+        if (/^(?:Error|TypeError|DOMException|AbortError|TimeoutError|SyntaxError|ReferenceError|RangeError)\b/i.test(rawLine) && !rawLine.includes('@') && !rawLine.includes('at ')) {
             continue;
         }
-        if (SKIP_CALLER_FRAME_RE.test(rawLine)) continue;
 
         // V8: "at fnName (https://host/path/file.ts:12:34)" 或 "at https://host/path/file.ts:12:34"
         // WebKit/Firefox: "fnName@https://host/path/file.ts:12:34"
@@ -1183,7 +1234,7 @@ export const extractCallerHint = (stack?: string | null): string | undefined => 
         let loc = rawLine;
         const v8Named = rawLine.match(/^at\s+([^\s(]+)\s+\((.+)\)$/);
         const v8Anon = !v8Named ? rawLine.match(/^at\s+(.+)$/) : null;
-        const webkit = !v8Named && !v8Anon ? rawLine.match(/^([^@]*)@(.+)$/) : null;
+        const webkit = !v8Named && !v8Anon ? rawLine.match(/^([^\s@]*)@(.+)$/) : null;
 
         if (v8Named) {
             fnName = v8Named[1];
@@ -1197,18 +1248,25 @@ export const extractCallerHint = (stack?: string | null): string | undefined => 
             continue;
         }
 
+        const frameIdx = seenStackFrames++;
+        if (frameIdx < skipTop) continue;
+        if (SKIP_CALLER_FRAME_RE.test(rawLine)) continue;
         if (/^native\b|^\[native code\]$/i.test(loc)) continue;
 
         // 剥掉协议域名与 Vite 时间戳参数，如 https://x.io/SullyOS/utils/foo.ts?t=123:45:6 -> utils/foo.ts:45:6
         const cleanedLoc = loc
-            .replace(/^https?:\/\/[^/]+\/(?:SullyOS\/)?/i, '')
+            .replace(/^https?:\/\/[^/]+\/(?:canary\/|SullyOS\/)?/i, '')
             .replace(/\?[^:)]+(?=:\d+)/g, '');
 
         if (!cleanedLoc || SKIP_CALLER_FRAME_RE.test(fnName) || SKIP_CALLER_FRAME_RE.test(cleanedLoc)) continue;
         const cleanFn = fnName.replace(/^(?:Object|Module|async)\./, '').trim();
-        const formatted = cleanFn && cleanFn !== '<anonymous>'
-            ? `${cleanFn} (${cleanedLoc})`
-            : cleanedLoc;
+        const isBundledLoc = BUNDLED_ASSET_LOC_RE.test(cleanedLoc);
+        const showFn = Boolean(
+            cleanFn
+            && cleanFn !== '<anonymous>'
+            && !(isBundledLoc && MINIFIED_FN_NAME_RE.test(cleanFn)),
+        );
+        const formatted = showFn ? `${cleanFn} (${cleanedLoc})` : cleanedLoc;
         if (!picked.includes(formatted)) picked.push(formatted);
         if (picked.length >= 2) break;
     }
@@ -1216,13 +1274,19 @@ export const extractCallerHint = (stack?: string | null): string | undefined => 
     return picked.length > 0 ? picked.join(' <- ') : undefined;
 };
 
-export const captureCallerHint = (): string | undefined => {
+/**
+ * 捕获当前调用栈入口。`skipWrapperFrames` 默认跳过外层 1 层拦截包装器（如 `patchedFetch` 或 `console.error`），
+ * 加上本函数自身共跳过栈顶 2 帧，确保 esbuild 混淆后也不会把拦截器自身当成业务调用方。
+ */
+export const captureCallerHint = (skipWrapperFrames = 1): string | undefined => {
     try {
-        return extractCallerHint(new Error().stack);
+        return extractCallerHint(new Error().stack, { skipTopFrames: 1 + Math.max(0, skipWrapperFrames) });
     } catch {
         return undefined;
     }
 };
+
+const ENTRY_OR_VENDOR_CHUNK_RE = /^(?:index|main|vendor(?:-[A-Za-z0-9_-]+)?|chunk(?:-[A-Za-z0-9_-]+)?)(?:-[A-Za-z0-9_]{6,})?$/i;
 
 /**
  * 提取 `console.error` 捕获的应用层报错来源（消息标签、调用文件名或当前界面）。
@@ -1232,9 +1296,10 @@ export const identifyApplicationErrorSource = (
     ambientMeta?: ApiCallMeta,
     caller?: string,
 ): string => {
-    // 优先提取消息里的 `[模块标签]`（如 `❌ [Embedding] ...`、`[MemoryPalace]`、`[extractJson]`）
-    const tagMatch = String(message || '').match(/\[([A-Za-z0-9_.:/\u4e00-\u9fa5 -]{2,32})\]/);
-    if (tagMatch?.[1]) {
+    // 优先提取消息开头的 `[模块标签]`（如 `❌ [Embedding] ...`、`[MemoryPalace]`、`[AMSG:ActiveMsgRuntime]`），
+    // 避开正文中间的 `[redacted]`、`[object Object]` 或状态码 `[401]`。
+    const tagMatch = String(message || '').match(/^\s*(?:[^\w\u4e00-\u9fa5[\]]+\s*)?\[([A-Za-z0-9_.:/\u4e00-\u9fa5 -]{2,32})\]/);
+    if (tagMatch?.[1] && !/^(?:object\s+\w+|\d+|redacted|err|ok)$/i.test(tagMatch[1].trim())) {
         const rawTag = tagMatch[1].trim();
         const friendlyMap: Record<string, string> = {
             Embedding: '记忆宫殿 · Embedding',
@@ -1243,14 +1308,27 @@ export const identifyApplicationErrorSource = (
             extractJson: '模型响应 JSON 解析',
             'chat-stop': '消息 · 回复收尾',
             ActiveMsg: '主动消息 2.0',
+            'AMSG:ActiveMsgRuntime': '主动消息 2.0 · 运行时',
             AmsgInstantChat: '主动消息 2.0 · 即时对话',
         };
         return `应用报错 · ${friendlyMap[rawTag] || rawTag}`;
     }
     if (caller) {
+        const isHashedBundle = BUNDLED_ASSET_LOC_RE.test(caller);
         const fileMatch = caller.match(/([A-Za-z0-9_-]+)\.(?:tsx?|jsx?|mjs|js):/);
-        if (fileMatch?.[1] && !/^index$/i.test(fileMatch[1])) {
-            return `应用报错 · ${fileMatch[1]}`;
+        const rawFile = fileMatch?.[1] || '';
+        // 正式版压缩产物如 main-C7x9Ab12.js / vendor-react-xxx.js 不具可读性，不得抢占当前所在 App 名称；
+        // 仅在开发态源码文件名，或缺少界面上下文且命中具名懒加载分包（剥除构建哈希后）时采用文件名。
+        if (rawFile && !ENTRY_OR_VENDOR_CHUNK_RE.test(rawFile)) {
+            if (!isHashedBundle) {
+                return `应用报错 · ${rawFile}`;
+            }
+            if (!ambientMeta?.appName) {
+                const stripped = rawFile.replace(/-[A-Za-z0-9_]{6,}$/, '');
+                if (stripped && !ENTRY_OR_VENDOR_CHUNK_RE.test(stripped)) {
+                    return `应用报错 · ${stripped}`;
+                }
+            }
         }
     }
     if (ambientMeta?.appName) {
@@ -1358,4 +1436,24 @@ export const buildSystemLogsExportPayload = (logs: SystemLog[]) => {
         count: logs.length,
         logs,
     };
+};
+
+export const serializeSystemLogsExport = (logs: SystemLog[]): string => {
+    try {
+        const seen = new WeakSet<object>();
+        return JSON.stringify(
+            buildSystemLogsExportPayload(logs),
+            (_k, v) => {
+                if (typeof v === 'bigint') return String(v);
+                if (v && typeof v === 'object') {
+                    if (seen.has(v)) return '[Circular]';
+                    seen.add(v);
+                }
+                return v;
+            },
+            2,
+        );
+    } catch {
+        return JSON.stringify({ count: logs.length, note: 'partial-fallback' });
+    }
 };

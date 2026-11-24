@@ -10,7 +10,8 @@
  * Skills Server: https://github.com/autoclaw-cc/xiaohongshu-skills
  */
 
-import { classifyFetchFailure, parseTargetUrl } from './networkFailureDiagnosis';
+import { classifyFetchFailure, parseTargetUrl, summarizeHtmlErrorBody } from './networkFailureDiagnosis';
+import { formatUnknownError } from './errorSelfCheck';
 import { buildXhsNoteLink } from './xhsNoteLink';
 
 export interface McpToolResult {
@@ -227,13 +228,22 @@ const bridgePost = async (
         }
 
         if (!resp.ok) {
-            const errData = await resp.json().catch(() => ({}));
-            return { success: false, error: errData.error || `HTTP ${resp.status}` };
+            const rawErr = await resp.text().catch(() => '');
+            let errMsg = '';
+            try {
+                const errData = rawErr ? JSON.parse(rawErr) : {};
+                errMsg = formatUnknownError(errData, '');
+            } catch {
+                errMsg = /^\s*<(?:!doctype|html|head|body)\b/i.test(rawErr)
+                    ? summarizeHtmlErrorBody(rawErr).headline
+                    : rawErr.trim().slice(0, 200);
+            }
+            return { success: false, error: errMsg || `HTTP ${resp.status}` };
         }
 
         let data = await resp.json();
         if (data.error) {
-            return { success: false, error: data.error };
+            return { success: false, error: formatUnknownError(data.error, '小红书接口报错') };
         }
         const detectedPlatform = data?.platform || data?.data?.platform;
         if (detectedPlatform === 'xhs' || detectedPlatform === 'rednote') {
@@ -245,7 +255,7 @@ const bridgePost = async (
         return { success: true, data };
     } catch (e: any) {
         signal?.throwIfAborted();
-        return { success: false, error: e.message };
+        return { success: false, error: formatUnknownError(e, '小红书请求失败') };
     }
 };
 
@@ -340,6 +350,15 @@ const mcpParseSseResponse = (text: string): McpJsonRpcResponse | null => {
     return null;
 };
 
+const summarizeXhsMcpBody = (txt: string, maxLen: number): string => {
+    const trimmed = (txt || '').trim();
+    if (!trimmed) return '';
+    if (/^\s*<(?:!doctype|html|head|body)\b/i.test(trimmed)) {
+        return summarizeHtmlErrorBody(trimmed).headline.slice(0, maxLen);
+    }
+    return trimmed.slice(0, maxLen);
+};
+
 const mcpParseResponse = (text: string, contentType: string): McpJsonRpcResponse => {
     if (contentType.includes('text/event-stream') || text.trimStart().startsWith('event:') || text.trimStart().startsWith('data:')) {
         const parsed = mcpParseSseResponse(text);
@@ -348,7 +367,7 @@ const mcpParseResponse = (text: string, contentType: string): McpJsonRpcResponse
     try { return JSON.parse(text); } catch {
         const match = text.match(/\{[\s\S]*\}/);
         if (match) { try { return JSON.parse(match[0]); } catch { /* fall through */ } }
-        throw new Error(`MCP: 无法解析响应: ${text.slice(0, 300)}`);
+        throw new Error(`MCP: 无法解析响应: ${summarizeXhsMcpBody(text, 300)}`);
     }
 };
 
@@ -371,7 +390,7 @@ const mcpPost = async (
     if (resp.status === 202) return { response: null, sessionId };
     if (!resp.ok) {
         const errText = await resp.text().catch(() => '');
-        throw new Error(`MCP HTTP ${resp.status}: ${errText.slice(0, 200)}`);
+        throw new Error(`MCP HTTP ${resp.status}: ${summarizeXhsMcpBody(errText, 200)}`);
     }
     if (!expectResponse) return { response: null, sessionId };
 
@@ -389,7 +408,7 @@ const mcpInitialize = async (serverUrl: string, signal?: AbortSignal): Promise<v
     });
     const { response, sessionId } = await mcpPost(serverUrl, initReq, undefined, signal);
     if (sessionId) mcpSessionId = sessionId;
-    if (response?.error) throw new Error(`MCP Initialize failed: ${response.error.message}`);
+    if (response?.error) throw new Error(`MCP Initialize failed: ${formatUnknownError(response.error, '未知错误')}`);
 
     if (!mcpSessionId) {
         console.warn(
@@ -457,14 +476,16 @@ const mcpCallTool = async (serverUrl: string, toolName: string, args: Record<str
         const resp = await fetch(serverUrl, { signal, method: 'POST', headers, body: JSON.stringify(body) });
         if (!resp.ok) {
             const errText = await resp.text().catch(() => '');
-            return { success: false, error: `MCP HTTP ${resp.status}: ${errText.slice(0, 200)}` };
+            return { success: false, error: `MCP HTTP ${resp.status}: ${summarizeXhsMcpBody(errText, 200)}` };
         }
 
         const contentType = resp.headers.get('content-type') || '';
         const text = await resp.text();
         const parsed = mcpParseResponse(text, contentType);
 
-        if (parsed.error) return { success: false, error: `MCP Error [${parsed.error.code}]: ${parsed.error.message}` };
+        if (parsed.error) {
+            return { success: false, error: `MCP Error: ${formatUnknownError(parsed.error, '未知错误')}` };
+        }
 
         const result = parsed.result;
         if (result?.content) {

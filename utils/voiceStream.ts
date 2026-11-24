@@ -1,3 +1,6 @@
+import { formatUnknownError } from './errorSelfCheck';
+import { summarizeHtmlErrorBody } from './networkFailureDiagnosis';
+
 /** Streaming audio primitives shared by chat, calls and reading. */
 export interface VoiceCue { text: string; start: number; end: number; voiceId?: string }
 export const VOICE_SAMPLE_RATE = 24000;
@@ -13,7 +16,13 @@ export async function readVoiceJsonStream(
   signal?: AbortSignal,
 ): Promise<void> {
   throwIfVoiceAborted(signal);
-  if (!response.ok) throw new Error(`ElevenLabs (${response.status}): ${(await response.text()).slice(0, 300)}`);
+  if (!response.ok) {
+    const raw = await response.text().catch(() => '');
+    const detail = /^\s*<(?:!doctype|html|head|body)\b/i.test(raw)
+      ? summarizeHtmlErrorBody(raw).headline
+      : (() => { try { return formatUnknownError(JSON.parse(raw), ''); } catch { return raw.trim(); } })();
+    throw new Error(`ElevenLabs (${response.status}): ${(detail || raw).slice(0, 300)}`);
+  }
   if (!response.body) throw new Error('当前环境没有返回音频流');
   if (response.headers.get('content-type')?.startsWith('audio/')) {
     await response.body.cancel().catch(() => {});

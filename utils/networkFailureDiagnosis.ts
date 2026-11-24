@@ -18,6 +18,7 @@
 
 import type { SystemLog, SystemLogContext } from '../types';
 import type { ApiCallMeta } from './apiCallLog';
+import { cleanErrorStack, formatUnknownError } from './errorSelfCheck';
 import {
     buildIdentityErrorAdvice,
     formatDiagnosticTimestamp,
@@ -127,13 +128,32 @@ export const summarizeFetchRequestBody = (body: unknown): FetchRequestSummary | 
     return summary;
 };
 
-const readError = (error: unknown): { name: string; message: string } => {
-    if (error instanceof Error) return { name: error.name || 'Error', message: error.message || String(error) };
+const readError = (error: unknown): { name: string; message: string; cause?: string } => {
+    const extractCause = (val: unknown): string | undefined => {
+        if (!val || typeof val !== 'object') return undefined;
+        const c = (val as { cause?: unknown }).cause;
+        if (c == null) return undefined;
+        const formatted = formatUnknownError(c, '');
+        return formatted || undefined;
+    };
+    if (error instanceof Error) {
+        const name = error.name || 'Error';
+        const baseMsg = error.message?.trim() || '';
+        const cause = extractCause(error);
+        const message = baseMsg
+            ? (cause && !baseMsg.includes(cause) ? `${baseMsg} (cause: ${cause})` : baseMsg)
+            : (cause ? `${name} (cause: ${cause})` : name);
+        return { name, message, ...(cause ? { cause } : {}) };
+    }
     if (error && typeof error === 'object') {
         const anyErr = error as { name?: unknown; message?: unknown };
+        const name = typeof anyErr.name === 'string' && anyErr.name.trim() ? anyErr.name.trim() : 'Error';
+        const formatted = formatUnknownError(error, '');
+        const cause = extractCause(error);
         return {
-            name: typeof anyErr.name === 'string' ? anyErr.name : 'Error',
-            message: typeof anyErr.message === 'string' ? anyErr.message : String(error),
+            name,
+            message: formatted || name,
+            ...(cause ? { cause } : {}),
         };
     }
     return { name: 'Error', message: String(error ?? '') };
@@ -370,7 +390,11 @@ export const buildFetchFailureDetail = (
     lines.push(`URL: ${safeUrl}`);
     const durationText = typeof ctx.durationMs === 'number' ? ` · 失败于 ${ctx.durationMs}ms` : '';
     lines.push(`请求: ${method}${durationText}`);
-    lines.push(`错误: ${name}: ${redactRelayTokensInText(message)}`);
+    const safeErrText = redactRelayTokensInText(message);
+    const errLine = !safeErrText || safeErrText === name
+        ? name
+        : (safeErrText.startsWith(`${name}:`) ? safeErrText : `${name}: ${safeErrText}`);
+    lines.push(`错误: ${errLine}`);
     if (ctx.responseHeadersReceived) {
         const hdr = ctx.responseHeadersReceived;
         const ctText = hdr.contentType ? ` (${hdr.contentType})` : '';
@@ -571,49 +595,181 @@ const RELAY_ERROR_DESCRIPTIONS: Record<string, string> = {
 };
 
 /**
- * 判断哪些非 2xx HTTP 响应应当主动写进 `systemLogs`（点亮顶部 SYSTEM ERROR）：
- * - 对话模型（OpenAI `/chat/completions`、Anthropic `/messages`、`/models`）、Embedding、Rerank：任何非 2xx 都是明确报错；
- * - 主动消息 2.0 大陆中转明确返回 `X-Amsg-Relay-Error` 或网关级错误（401/403/429/5xx）：用户很难从表象分辨是中转还是 Worker 拒了，直接记上；
- * - 其它接口（如 WebDAV PROPFIND 404 探目录、GitHub 404 探文件、MiniMax 本地代理 404 回退）属于正常控制流，不误报。
+ * 判断哪些非 2xx HTTP 响应应当写进 `systemLogs`：
+ * - 对话模型、Embedding、Rerank、Supabase 向量库：任何非 2xx 都是明确故障；
+ * - 主动消息 2.0（直连 Worker、经大陆中转、或 `/cf-api` 部署代理）：除旧版 Worker 探测可选能力路由返回 404 外，其余 4xx/5xx 一律入库；
+ * - 语音 TTS/STT、音乐、写歌 Replicate、装扮服务、MCP、云备份、微博、小红书、彼方、网页抓取：
+ *   排除正常控制流探测（WebDAV PROPFIND 404 探目录、GitHub 404 探 Release、同源 MiniMax 404 回退、MCP 405/GET 404 协议协商）后全部入库，
+ *   其中后台旁路接口由 `isSilentHttpStatusError` 标记为 `silent: true`（收入日志池供回看与复制，不主动闪顶部红条打扰聊天）。
  */
 export const shouldLogHttpStatusError = (input: {
     status: number;
     identity: NetworkRequestIdentity;
     relayErrorCode?: string;
+    method?: string;
 }): boolean => {
-    const { category, via } = input.identity;
-    if (category === 'llm' || category === 'embedding' || category === 'rerank') return true;
+    const { status, identity } = input;
+    const { category, via, operation } = identity;
+    const upperMethod = (input.method || '').toUpperCase();
+
+    if (category === 'external-media') return false;
+    if (category === 'llm' || category === 'embedding' || category === 'rerank' || category === 'vector-db') return true;
     if (input.relayErrorCode) return true;
-    if (via === 'amsg-relay' && (input.status === 401 || input.status === 403 || input.status === 429 || input.status >= 500)) {
+
+    if (category === 'amsg2') {
+        // 旧版 Worker 上探测可选能力路由（/capabilities、/self-update/check、/tick-report）返回 404 属于版本探测，不报红
+        if (status === 404 && operation && /\/(?:capabilities|self-update\/check|tick-report)\)/.test(operation)) {
+            return false;
+        }
+        return true;
+    }
+
+    if (category === 'backup') {
+        // WebDAV PROPFIND 404（目录尚未创建）与 GitHub 404（首次备份无 Release）属于正常探测
+        return status !== 404;
+    }
+
+    if (category === 'tts' || category === 'stt') {
+        // 本地开发代理未启动时的同源 404 回退不误报
+        if (via === 'same-origin' && status === 404) return false;
+        return true;
+    }
+
+    if (category === 'mcp') {
+        // Streamable HTTP 协议允许服务端对 GET SSE 流或 DELETE 会话返回 405 / 404
+        if (status === 405) return false;
+        if ((upperMethod === 'GET' || upperMethod === 'DELETE') && status === 404) return false;
+        return true;
+    }
+
+    if (
+        category === 'music'
+        || category === 'replicate'
+        || category === 'beauty'
+        || category === 'weibo'
+        || category === 'xhs'
+        || category === 'bifang'
+        || category === 'webpage'
+        || category === 'realtime'
+    ) {
+        return true;
+    }
+
+    if (category === 'local-asset' && status >= 500) {
+        return true;
+    }
+
+    return false;
+};
+
+/**
+ * 判断入库的非 2xx HTTP 日志是否只静默记录、不主动亮起状态栏顶部的红色「查看报错」胶囊：
+ * 后台天气/热榜/节假日、微博/小红书/彼方旁路同步，或不在音乐界面时的后台歌单缓存失败不打断当前对话，
+ * 但用户打开「报错自检」或设置底部的错误记录复制时仍完整可见。
+ */
+export const isSilentHttpStatusError = (input: {
+    status: number;
+    identity: NetworkRequestIdentity;
+    explicitMeta?: ApiCallMeta;
+    ambientMeta?: ApiCallMeta;
+}): boolean => {
+    const { category, operation } = input.identity;
+    if (category === 'realtime' || category === 'weibo' || category === 'xhs' || category === 'bifang' || category === 'webpage') {
+        return !input.explicitMeta?.appName;
+    }
+    if (category === 'amsg2') {
+        if (operation && /\/instant-chat\b/.test(operation)) return false;
+        if (input.explicitMeta?.appName || input.ambientMeta?.appName === '设置') return false;
+        return true;
+    }
+    if (category === 'vector-db' && !input.explicitMeta?.appName && input.ambientMeta?.appName && input.ambientMeta.appName !== '记忆宫殿') {
+        return true;
+    }
+    if (category === 'music' && input.ambientMeta?.appName && input.ambientMeta.appName !== '音乐') {
         return true;
     }
     return false;
 };
 
+const decodeBasicHtmlEntities = (value: string): string => value
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'");
+
+export const summarizeHtmlErrorBody = (html: string): { headline: string; detailSummary: string } => {
+    const bounded = typeof html === 'string' ? html.slice(0, 65536) : '';
+    const titleMatch = bounded.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    const h1Match = bounded.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+    const h2Match = bounded.match(/<h2[^>]*>([\s\S]*?)<\/h2>/i);
+    const rayMatch = bounded.match(/(?:Ray ID|ray-id)\s*[:：]?\s*(?:<[^>]+>\s*)*([0-9a-f]{12,24})\b/i);
+
+    const cleanTagText = (raw?: string) => raw
+        ? decodeBasicHtmlEntities(raw.replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim()
+        : '';
+
+    const title = cleanTagText(titleMatch?.[1]);
+    const h1 = cleanTagText(h1Match?.[1]);
+    const h2 = cleanTagText(h2Match?.[1]);
+    const rayId = rayMatch?.[1] || '';
+
+    const bestLabel = title || h1 || h2;
+    const headline = bestLabel
+        ? `HTML 错误页 (${bestLabel.slice(0, 80)}${rayId && !bestLabel.includes(rayId) ? ` · Ray ${rayId}` : ''})`
+        : (rayId ? `HTML 错误页 (Ray ${rayId})` : 'HTML 错误页');
+
+    const summaryParts: string[] = [];
+    if (title) summaryParts.push(`title="${title.slice(0, 120)}"`);
+    if (h1 && h1 !== title) summaryParts.push(`h1="${h1.slice(0, 120)}"`);
+    if (h2 && h2 !== title && h2 !== h1) summaryParts.push(`h2="${h2.slice(0, 120)}"`);
+    if (rayId) summaryParts.push(`cf-ray=${rayId}`);
+    if (!summaryParts.length) {
+        // 剥除 <style>/<script> 与 HTML 标签后保留可读纯文本摘要，避免倾倒成片样式表代码
+        const stripped = decodeBasicHtmlEntities(
+            bounded
+                .replace(/<(style|script|svg)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, ' ')
+                .replace(/<head\b[^>]*>[\s\S]*?<\/head\s*>/gi, ' ')
+                .replace(/<!--[\s\S]*?-->/g, ' ')
+                .replace(/<[^>]+>/g, ' '),
+        ).replace(/\s+/g, ' ').trim();
+        if (stripped) summaryParts.push(stripped.slice(0, 200));
+    }
+    return {
+        headline,
+        detailSummary: summaryParts.length ? `[HTML 错误页摘要] ${summaryParts.join(' · ')}` : '[HTML 错误页，无可读正文]',
+    };
+};
+
 const extractShortHttpErrorMessage = (responseText: string | undefined, status: number): string => {
     const trimmed = (responseText || '').trim();
     if (!trimmed) return `HTTP ${status}`;
-    if (trimmed.startsWith('<')) {
-        const titleMatch = trimmed.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-        const title = titleMatch?.[1]?.replace(/\s+/g, ' ').trim();
-        return title ? `HTML 错误页 (${title.slice(0, 80)})` : `HTML 错误页`;
+    if (/^(?:<!doctype\s+html|<html\b|<head\b|<body\b|<title\b|<!--)/i.test(trimmed)) {
+        return summarizeHtmlErrorBody(trimmed).headline;
     }
-    if (trimmed.startsWith('{')) {
+    if (trimmed.startsWith('<')) {
+        // XML 错误响应（如 WebDAV <d:error> / S3 / 网关 XML）：剥掉标签取可读信息
+        const titleMatch = trimmed.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+        if (titleMatch?.[1]) return summarizeHtmlErrorBody(trimmed).headline;
+        const xmlText = decodeBasicHtmlEntities(trimmed.replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim();
+        return xmlText ? xmlText.slice(0, 140) : `XML/HTML 错误响应 (HTTP ${status})`;
+    }
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
         try {
             const parsed = JSON.parse(trimmed);
-            const err = parsed?.error;
-            if (typeof err === 'string' && err.trim()) return err.trim().slice(0, 140);
-            if (err && typeof err === 'object') {
-                const msg = typeof err.message === 'string' ? err.message.trim() : '';
-                const code = err.code != null ? String(err.code).trim() : '';
-                const type = typeof err.type === 'string' ? err.type.trim() : '';
-                const tag = [code, type && type !== code ? type : ''].filter(Boolean).join('/');
-                if (msg) return `${msg}${tag ? ` [${tag}]` : ''}`.slice(0, 160);
-                if (tag) return tag;
+            const target = Array.isArray(parsed) ? parsed[0] : parsed;
+            const err = target?.error;
+            if (typeof err === 'string' && err.trim()) {
+                const extra = typeof target?.detail === 'string' && target.detail.trim() ? ` (${target.detail.trim()})` : '';
+                return `${err.trim()}${extra}`.slice(0, 160);
             }
-            const top = [parsed?.message, parsed?.msg, parsed?.detail]
-                .find(v => typeof v === 'string' && v.trim()) as string | undefined;
-            if (top) return top.trim().slice(0, 140);
+            if (err && typeof err === 'object') {
+                const formattedErr = formatUnknownError(err, '');
+                if (formattedErr) return formattedErr.slice(0, 160);
+            }
+            const formattedTop = formatUnknownError(target, '');
+            if (formattedTop) return formattedTop.slice(0, 160);
         } catch { /* 非标准 JSON 原样截断 */ }
     }
     return trimmed.replace(/\s+/g, ' ').slice(0, 140);
@@ -695,6 +851,7 @@ export const buildFetchFailureSystemLog = (input: BuildFetchFailureSystemLogInpu
         || input.visibilityAtStart === 'hidden'
         || input.visibilityAtEnd === 'hidden',
     );
+    const safeCaller = input.caller ? redactRelayTokensInText(input.caller) : undefined;
     const diagCtx: FetchFailureContext = {
         url: input.url,
         method,
@@ -711,7 +868,7 @@ export const buildFetchFailureSystemLog = (input: BuildFetchFailureSystemLogInpu
         visibilityAtStart: input.visibilityAtStart,
         visibilityAtEnd: input.visibilityAtEnd,
         backgroundedDuringRequest: wasBackgrounded,
-        caller: input.caller,
+        caller: safeCaller,
         responseHeadersReceived: input.responseHeadersReceived,
         recentSuccessfulSameRequest: input.recentSuccessfulSameRequest,
     };
@@ -747,7 +904,7 @@ export const buildFetchFailureSystemLog = (input: BuildFetchFailureSystemLogInpu
             ? { visibility: `${input.visibilityAtStart || 'unknown'} -> ${input.visibilityAtEnd || 'unknown'}` }
             : {}),
         backgroundedDuringRequest: wasBackgrounded,
-        ...(input.caller ? { caller: input.caller } : {}),
+        ...(safeCaller ? { caller: safeCaller } : {}),
     };
 
     const resolvedAdvice = input.advice ?? buildIdentityErrorAdvice({
@@ -755,12 +912,19 @@ export const buildFetchFailureSystemLog = (input: BuildFetchFailureSystemLogInpu
         failureKind: kind,
         backgroundedDuringRequest: wasBackgrounded,
     });
+    const silent = kind === 'aborted' || isSilentHttpStatusError({
+        status: 0,
+        identity,
+        explicitMeta: input.explicitMeta,
+        ambientMeta: input.ambientMeta,
+    });
 
     return {
         kind,
         identity,
         log: {
             ...(resolvedAdvice ? { advice: resolvedAdvice } : {}),
+            ...(silent ? { silent: true } : {}),
             id,
             timestamp: ts,
             time: formatDiagnosticTimestamp(ts),
@@ -781,6 +945,12 @@ export interface BuildHttpErrorSystemLogInput {
     headers?: HeadersInit;
     body?: unknown;
     status: number;
+    statusText?: string;
+    contentType?: string;
+    requestId?: string;
+    cfRay?: string;
+    retryAfter?: string;
+    silent?: boolean;
     responseText?: string;
     unreadableBody?: boolean;
     relayErrorCode?: string;
@@ -822,13 +992,23 @@ export const buildHttpErrorSystemLog = (input: BuildHttpErrorSystemLogInput): Sy
         : redactRelayTokensInText(relayNote || extractShortHttpErrorMessage(input.responseText, input.status));
     const modelPart = identity.model ? ` · ${identity.model}` : '';
     const durPart = typeof input.durationMs === 'number' ? ` · ${input.durationMs}ms` : '';
+    const statusLabel = input.statusText ? `HTTP ${input.status} ${input.statusText}` : `HTTP ${input.status}`;
 
     const detailLines: string[] = [];
     detailLines.push(`模块来源: ${identity.source}`);
     if (identity.operation && identity.operation !== identity.source) detailLines.push(`具体操作: ${identity.operation}`);
     if (identity.configSource) detailLines.push(`配置归属: ${identity.configSource}`);
     detailLines.push(`URL: ${safeUrl}`);
-    detailLines.push(`请求: ${method} → HTTP ${input.status}${durPart}`);
+    detailLines.push(`请求: ${method} → ${statusLabel}${durPart}`);
+    const headerNotes = [
+        input.contentType ? `content-type=${input.contentType}` : '',
+        input.requestId ? `request-id=${input.requestId}` : '',
+        input.cfRay ? `cf-ray=${input.cfRay}` : '',
+        input.retryAfter ? `retry-after=${input.retryAfter}` : '',
+    ].filter(Boolean);
+    if (headerNotes.length > 0) {
+        detailLines.push(`响应头线索: ${redactRelayTokensInText(headerNotes.join(' · '))}`);
+    }
     if (input.relayErrorCode) {
         detailLines.push(`中转错误码: ${input.relayErrorCode}（${relayNote}）`);
     }
@@ -846,10 +1026,16 @@ export const buildHttpErrorSystemLog = (input: BuildHttpErrorSystemLogInput): Sy
         ].filter(Boolean);
         detailLines.push(`当时前台状态: ${parts.join(' · ')}（未显式传归属，可能是后台自动任务）`);
     }
-    if (input.caller) detailLines.push(`调用入口: ${input.caller}`);
+    const safeCaller = input.caller ? redactRelayTokensInText(input.caller) : undefined;
+    if (safeCaller) detailLines.push(`调用入口: ${safeCaller}`);
 
     if (!input.unreadableBody && input.responseText !== undefined) {
-        detailLines.push(`Response: ${redactRelayTokensInText(input.responseText).slice(0, 600)}`);
+        const trimmedBody = input.responseText.trim();
+        if (/^(?:<!doctype\s+html|<html\b|<head\b|<body\b|<title\b|<!--)/i.test(trimmedBody)) {
+            detailLines.push(`Response: ${redactRelayTokensInText(summarizeHtmlErrorBody(trimmedBody).detailSummary)}`);
+        } else {
+            detailLines.push(`Response: ${redactRelayTokensInText(input.responseText).slice(0, 600)}`);
+        }
     }
 
     if (typeof input.body === 'string' && input.body.trim().startsWith('{')) {
@@ -857,9 +1043,15 @@ export const buildHttpErrorSystemLog = (input: BuildHttpErrorSystemLogInput): Sy
             const j = JSON.parse(input.body);
             if (Array.isArray(j.messages)) {
                 const toolNames = Array.isArray(j.tools) ? j.tools.map((t: any) => t?.function?.name || t?.name).filter(Boolean) : [];
-                const roles = j.messages.map((m: any) => m.role + (m.tool_calls ? '(tool_calls)' : '')).join(',');
+                const roles = j.messages.map((m: any) => (m?.role || 'unknown') + (m?.tool_calls ? '(tool_calls)' : '')).join(',');
+                const paramParts = [
+                    j.temperature !== undefined ? `temperature: ${j.temperature}` : '',
+                    j.top_p !== undefined ? `top_p: ${j.top_p}` : '',
+                    j.reasoning_effort !== undefined ? `reasoning_effort: ${j.reasoning_effort}` : '',
+                    `thinking: ${j.thinking ? 'on' : 'off'}`,
+                ].filter(Boolean).join(' | ');
                 detailLines.push(
-                    `--- Request ---\nmodel: ${j.model}\ntemperature: ${j.temperature} | top_p: ${j.top_p} | reasoning_effort: ${j.reasoning_effort} | thinking: ${j.thinking ? 'on' : 'off'}\ntools(${toolNames.length}): ${toolNames.join(', ')}\nmessages(${j.messages.length}) roles: ${roles}`,
+                    `--- Request ---\nmodel: ${j.model || 'unknown'}\n${paramParts}\ntools(${toolNames.length}): ${toolNames.join(', ')}\nmessages(${j.messages.length}) roles: ${roles}`,
                 );
             } else if (j.model || Array.isArray(j.input)) {
                 const batchLen = Array.isArray(j.input) ? j.input.length : (typeof j.input === 'string' ? 1 : undefined);
@@ -874,11 +1066,23 @@ export const buildHttpErrorSystemLog = (input: BuildHttpErrorSystemLogInput): Sy
         detailLines.push(`影响范围: ${identity.impactHint}`);
     }
 
+    const silent = input.silent ?? isSilentHttpStatusError({
+        status: input.status,
+        identity,
+        explicitMeta: input.explicitMeta,
+        ambientMeta: input.ambientMeta,
+    });
+
     const context: SystemLogContext = {
         build: readCompactBuildString(),
         category: identity.category,
         failureKind: 'http-status',
         httpStatus: input.status,
+        ...(input.statusText ? { statusText: input.statusText } : {}),
+        ...(input.contentType ? { contentType: input.contentType } : {}),
+        ...(input.requestId ? { requestId: input.requestId } : {}),
+        ...(input.cfRay ? { cfRay: input.cfRay } : {}),
+        ...(input.retryAfter ? { retryAfter: input.retryAfter } : {}),
         ...(identity.operation ? { operation: identity.operation } : {}),
         method,
         url: safeUrl,
@@ -889,7 +1093,7 @@ export const buildHttpErrorSystemLog = (input: BuildHttpErrorSystemLogInput): Sy
         ...(identity.model ? { model: identity.model } : {}),
         ...(typeof input.durationMs === 'number' ? { durationMs: input.durationMs } : {}),
         ...buildAttributionContext(input.explicitMeta, input.ambientMeta),
-        ...(input.caller ? { caller: input.caller } : {}),
+        ...(safeCaller ? { caller: safeCaller } : {}),
     };
 
     const resolvedAdvice = input.advice
@@ -899,6 +1103,7 @@ export const buildHttpErrorSystemLog = (input: BuildHttpErrorSystemLogInput): Sy
 
     return {
         ...(resolvedAdvice ? { advice: resolvedAdvice } : {}),
+        ...(silent ? { silent: true } : {}),
         id,
         timestamp: ts,
         time: formatDiagnosticTimestamp(ts),
@@ -920,11 +1125,61 @@ export class ApplicationErrorReport {
     toString() { return this.advice.title + '\n' + this.advice.action; }
 }
 
-type ErrorLike = { name: string; message: string; stack?: string };
-// DOMException / 跨 realm 的报错不一定过得了 instanceof Error，按形状认。
-const isErrorLike = (value: unknown): value is ErrorLike =>
-    value instanceof Error || (!!value && typeof value === 'object'
-        && typeof (value as ErrorLike).name === 'string' && typeof (value as ErrorLike).message === 'string');
+type ErrorLike = { name: string; message: string; stack?: string; cause?: unknown };
+// DOMException / 跨 realm 的报错不一定过得了 instanceof Error，按标签/堆栈/错误类名后缀收敛识别，排除带 name+message 的普通业务实体。
+const isErrorLike = (value: unknown): value is ErrorLike => {
+    if (value instanceof Error) return true;
+    if (!value || typeof value !== 'object') return false;
+    try {
+        const rec = value as ErrorLike;
+        if (typeof rec.name !== 'string' || typeof rec.message !== 'string') return false;
+        const tag = Object.prototype.toString.call(value);
+        return tag === '[object Error]'
+            || tag === '[object DOMException]'
+            || typeof rec.stack === 'string'
+            || /(?:Error|Exception|Fault|Abort)$/i.test(rec.name.trim());
+    } catch {
+        return false;
+    }
+};
+
+const isReactErrorInfo = (value: unknown): value is { componentStack: string } => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const rec = value as Record<string, unknown>;
+    if (typeof rec.componentStack !== 'string' || !rec.componentStack.trim()) return false;
+    const keys = Object.keys(rec);
+    return keys.every(k => k === 'componentStack' || k === 'digest');
+};
+
+const isDomOrMediaError = (value: unknown): boolean => (
+    (typeof Event !== 'undefined' && value instanceof Event)
+    || (typeof MediaError !== 'undefined' && value instanceof MediaError)
+    || (!!value && typeof value === 'object' && (value as { constructor?: { name?: string } }).constructor?.name === 'MediaError')
+);
+
+const WRAPPER_ERROR_KEYS = ['error', 'err', 'cause', 'stageErr', 'reputErr', 'postErr', 'handlerErr'] as const;
+
+const isStructuredErrorObject = (value: unknown): boolean => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const rec = value as Record<string, unknown>;
+    // 排除聊天消息结构（含 role + content），防止把业务消息对象误判成错误对象
+    if ('role' in rec && 'content' in rec) return false;
+    // 外层日志包装对象（如 `{ messageId, attempts, error }`）交给下方 wrapper 分支提取 `Type: message`
+    if (WRAPPER_ERROR_KEYS.some(k => rec[k] != null && typeof rec.message !== 'string')) return false;
+    const hasErrorMetaKey = 'code' in rec || 'status' in rec || 'statusCode' in rec || 'details' in rec || 'hint' in rec || 'errno' in rec;
+    if (typeof rec.message === 'string' && rec.message.trim() && hasErrorMetaKey) return true;
+    if (typeof rec.code === 'string' && /^[A-Z0-9_.:-]{3,64}$/i.test(rec.code) && Object.keys(rec).length <= 6) return true;
+    return false;
+};
+
+const collectErrorStacks = (err: ErrorLike, out: string[], depth = 0): void => {
+    if (err.stack) out.push(cleanErrorStack(err.stack));
+    if (depth < 2 && err.cause && isErrorLike(err.cause)) {
+        const causeStacks: string[] = [];
+        collectErrorStacks(err.cause, causeStacks, depth + 1);
+        if (causeStacks.length) out.push(`Caused by: ${causeStacks.join('\n')}`);
+    }
+};
 
 /**
  * console.error 的参数 → 日志正文与堆栈。
@@ -932,22 +1187,62 @@ const isErrorLike = (value: unknown): value is ErrorLike =>
  * 这份日志所有用户都能复制外发，整个序列化会把聊天内容、配置一起带出去。
  */
 export const describeConsoleErrorArgs = (args: unknown[]): { message: string; stacks: string } => {
-    const errors: ErrorLike[] = [];
-    const message = args.map((arg) => {
+    const stackChunks: string[] = [];
+    const messageParts: string[] = [];
+
+    for (const arg of args) {
         if (isErrorLike(arg)) {
-            errors.push(arg);
-            return arg.message;
+            collectErrorStacks(arg, stackChunks);
+            messageParts.push(formatUnknownError(arg, arg.name || 'Error'));
+            continue;
         }
-        if (arg && typeof arg === 'object') {
-            const nested = Object.values(arg).filter(isErrorLike);
-            if (nested.length) {
-                errors.push(...nested);
-                return nested.map(e => `${e.name}: ${e.message}`).join('; ');
+        if (isReactErrorInfo(arg)) {
+            stackChunks.push(`Component Stack:\n${cleanErrorStack(arg.componentStack.trim())}`);
+            continue;
+        }
+        if (isDomOrMediaError(arg) || isStructuredErrorObject(arg)) {
+            messageParts.push(formatUnknownError(arg, '未知异常'));
+            continue;
+        }
+        if (arg && typeof arg === 'object' && !Array.isArray(arg)) {
+            const rec = arg as Record<string, unknown>;
+            const explicitNested: string[] = [];
+            for (const key of WRAPPER_ERROR_KEYS) {
+                let candidate: unknown;
+                try { candidate = rec[key]; } catch { continue; }
+                if (candidate == null) continue;
+                if (isErrorLike(candidate)) {
+                    collectErrorStacks(candidate, stackChunks);
+                    explicitNested.push(`${candidate.name}: ${formatUnknownError(candidate, candidate.message)}`);
+                } else if (typeof candidate === 'string' && candidate.trim()) {
+                    explicitNested.push(candidate.trim());
+                } else if (isDomOrMediaError(candidate) || isStructuredErrorObject(candidate)) {
+                    explicitNested.push(formatUnknownError(candidate, ''));
+                } else if (typeof candidate === 'object') {
+                    const sub = candidate as { name?: unknown; message?: unknown };
+                    if (typeof sub.name === 'string' && typeof sub.message === 'string') {
+                        explicitNested.push(`${sub.name}: ${sub.message}`);
+                    }
+                }
+            }
+            if (explicitNested.filter(Boolean).length > 0) {
+                messageParts.push(explicitNested.filter(Boolean).join('; '));
+                continue;
             }
         }
-        return String(arg);
-    }).join(' ');
-    return { message, stacks: errors.map(e => e.stack || '').filter(Boolean).join('\n') };
+        let fallbackStr = '[object Object]';
+        try {
+            fallbackStr = String(arg);
+        } catch {
+            fallbackStr = arg && typeof arg === 'object' ? '[object Object]' : '[unprintable]';
+        }
+        messageParts.push(fallbackStr);
+    }
+
+    return {
+        message: messageParts.join(' '),
+        stacks: stackChunks.filter(Boolean).join('\n\n'),
+    };
 };
 
 export const buildConsoleErrorSystemLog = (input: {
@@ -959,10 +1254,12 @@ export const buildConsoleErrorSystemLog = (input: {
     ambientMeta?: ApiCallMeta;
     report?: ApplicationErrorReport;
     advice?: { title: string; action: string };
+    silent?: boolean;
 }): SystemLog => {
     const ts = input.timestamp ?? Date.now();
     const id = input.id || `log-${ts}-${Math.random().toString(36).slice(2, 8)}`;
-    const source = input.report?.source ?? identifyApplicationErrorSource(input.message, input.ambientMeta, input.caller);
+    const safeCaller = input.caller ? redactRelayTokensInText(input.caller) : undefined;
+    const source = input.report?.source ?? identifyApplicationErrorSource(input.message, input.ambientMeta, safeCaller);
     const detailParts: string[] = [];
     if (!input.report && input.ambientMeta && (input.ambientMeta.appName || input.ambientMeta.charName)) {
         const where = [
@@ -971,15 +1268,22 @@ export const buildConsoleErrorSystemLog = (input: {
         ].filter(Boolean).join(' · ');
         detailParts.push(`当时前台状态: ${where}`);
     }
-    if (input.caller) {
-        detailParts.push(`调用入口: ${input.caller}`);
+    if (safeCaller) {
+        detailParts.push(`调用入口: ${safeCaller}`);
     }
     const safeMessage = redactRelayTokensInText(input.message);
-    const safeStacks = input.stacks ? redactRelayTokensInText(input.stacks) : undefined;
-    detailParts.push(safeStacks || safeMessage);
+    const safeStacks = input.stacks ? cleanErrorStack(redactRelayTokensInText(input.stacks)) : undefined;
+    // Safari 的 Error.stack 不带错误消息首行；若直接用 safeStacks 替代 safeMessage，超过 160 字的原文会永久丢失
+    const boundedMsg = safeMessage.slice(0, 2400);
+    if (safeStacks) {
+        detailParts.push(safeStacks.includes(boundedMsg) ? safeStacks : `${boundedMsg}\n\n${safeStacks}`);
+    } else {
+        detailParts.push(boundedMsg);
+    }
 
     return {
         advice: input.report?.advice ?? input.advice,
+        ...(input.silent ? { silent: true } : {}),
         id,
         timestamp: ts,
         time: formatDiagnosticTimestamp(ts),
@@ -990,7 +1294,7 @@ export const buildConsoleErrorSystemLog = (input: {
             build: readCompactBuildString(),
             failureKind: 'console-error',
             ...(input.report?.context ?? buildAttributionContext(undefined, input.ambientMeta)),
-            ...(input.caller ? { caller: input.caller } : {}),
+            ...(safeCaller ? { caller: safeCaller } : {}),
         },
         detail: detailParts.join('\n'),
     };

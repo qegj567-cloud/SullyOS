@@ -137,11 +137,18 @@ export const requestEmotionEval = async (
       signal: controller.signal,
     });
     if (!res.ok) {
-      // 正文可能是 HTML 错误页，截一小段够定位即可。
+      // 正文可能是 HTML 错误页，提取标题摘要避免把原始标签弹进前台 Toast。
       let body = '';
       try { body = await res.text(); } catch { /* 读不出正文就只报状态码 */ }
       console.warn('[emotion-eval] 副 API 拒了这次评估（主流程不受影响）', res.status);
-      const snippet = maskAndSnip(body, api.apiKey);
+      const trimmedBody = body.trim();
+      let cleanedBody = body;
+      if (/^(?:<!doctype\s+html|<html\b|<head\b|<body\b|<title\b|<!--)/i.test(trimmedBody)) {
+        const titleMatch = trimmedBody.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+        const title = titleMatch?.[1]?.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+        cleanedBody = title ? `HTML 错误页 (${title.slice(0, 80)})` : 'HTML 错误页';
+      }
+      const snippet = maskAndSnip(cleanedBody, api.apiKey);
       return { raw: null, error: `副 API HTTP ${res.status}${snippet ? `：${snippet}` : ''}` };
     }
     const data = await res.json() as any;

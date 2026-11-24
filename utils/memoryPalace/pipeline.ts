@@ -2264,7 +2264,7 @@ export async function processNewMessages(
         return pipelineResult;
 
     } catch (err: any) {
-        console.error(`❌ [Pipeline] processNewMessages 失败 (charId=${charId}):`, err.message, err.stack?.split('\n')[1] || '');
+        console.error(`❌ [Pipeline] processNewMessages 失败 (charId=${charId}):`, err);
         return null;
     } finally {
         processingLocks.delete(charId);
@@ -2502,8 +2502,8 @@ export async function processMessageRange(
             batches: core.batches,
         };
     } catch (err: any) {
-        console.error(`❌ [Pipeline] processMessageRange 失败 (charId=${charId}):`, err.message, err.stack?.split('\n')[1] || '');
-        return { stored: 0, skipped: 0, processedMessages: 0, memories: [], batches: [], error: err.message || '未知错误' };
+        console.error(`❌ [Pipeline] processMessageRange 失败 (charId=${charId}):`, err);
+        return { stored: 0, skipped: 0, processedMessages: 0, memories: [], batches: [], error: err?.message || String(err || '未知错误') };
     } finally {
         processingLocks.delete(charId);
     }

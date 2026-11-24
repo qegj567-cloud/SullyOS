@@ -18,6 +18,8 @@ import { normalizeApiKey } from './minimaxApiKey';
 import { getProxyWorkerUrl } from './proxyWorker';
 import type { TtsResult } from './minimaxTts';
 import { isStaticWebDeployment } from './staticWebDeployment';
+import { formatUnknownError } from './errorSelfCheck';
+import { summarizeHtmlErrorBody } from './networkFailureDiagnosis';
 
 const FISH_PROXY_PATH = '/api/fishaudio/tts';
 const FISH_UPSTREAM = 'https://api.fish.audio/v1/tts';
@@ -292,6 +294,20 @@ const base64ToBlob = (b64: string, mime = 'audio/mpeg'): Blob => {
  * web：默认走 /api/fishaudio/tts 代理；静态预览（github.io / file:）直连上游兜底。
  * native：CapacitorHttp 直连上游，responseType='blob' 绕过浏览器 CORS。
  */
+const formatFishErrorBody = (raw: string): string => {
+  const trimmed = (raw || '').trim();
+  if (!trimmed) return '';
+  if (/^\s*<(?:!doctype|html|head|body)\b/i.test(trimmed)) {
+    return summarizeHtmlErrorBody(trimmed).headline.slice(0, 200);
+  }
+  try {
+    const parsed = JSON.parse(trimmed);
+    const extracted = formatUnknownError(parsed, '');
+    if (extracted) return extracted.slice(0, 200);
+  } catch { /* plain text */ }
+  return trimmed.slice(0, 200);
+};
+
 const fishFetchAudio = async (
   payload: any,
   apiKey: string,
@@ -312,7 +328,20 @@ const fishFetchAudio = async (
       responseType: 'blob',
     });
     if (response.status < 200 || response.status >= 300) {
-      throw new Error(`鱼声 TTS 失败 (HTTP ${response.status})`);
+      let detail = '';
+      if (response.data && typeof response.data === 'object') {
+        detail = formatUnknownError(response.data, '');
+      } else if (typeof response.data === 'string' && response.data.trim()) {
+        const str = response.data.trim();
+        if (!str.startsWith('{') && !str.startsWith('<') && /^[A-Za-z0-9+/=]+$/.test(str) && str.length % 4 === 0) {
+          try {
+            detail = formatFishErrorBody(new TextDecoder().decode(Uint8Array.from(atob(str), (c) => c.charCodeAt(0))));
+          } catch { detail = formatFishErrorBody(str); }
+        } else {
+          detail = formatFishErrorBody(str);
+        }
+      }
+      throw new Error(`鱼声 TTS 失败 (HTTP ${response.status})${detail ? `：${detail}` : ''}`);
     }
     // CapacitorHttp blob 响应：data 是 base64 字符串
     return base64ToBlob(String(response.data || ''));
@@ -337,7 +366,7 @@ const fishFetchAudio = async (
   });
   if (!res.ok) {
     let detail = '';
-    try { detail = (await res.text()).slice(0, 200); } catch { /* ignore */ }
+    try { detail = formatFishErrorBody(await res.text()); } catch { /* ignore */ }
     throw new Error(`鱼声 TTS 失败 (HTTP ${res.status})${detail ? `：${detail}` : ''}`);
   }
   const blob = await res.blob();

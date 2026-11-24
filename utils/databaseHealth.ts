@@ -5,10 +5,27 @@ export type DatabaseFailure = { name: string; message: string };
 const listeners = new Set<(failure: DatabaseFailure) => void>();
 
 export function databaseFailure(error: unknown): DatabaseFailure {
-  return {
-    name: error && typeof error === 'object' && 'name' in error ? String(error.name) : 'Error',
-    message: error && typeof error === 'object' && 'message' in error ? String(error.message) : String(error),
-  };
+  try {
+    if (error == null) return { name: 'AbortError', message: 'IndexedDB transaction aborted' };
+    if (typeof error === 'string') return { name: 'Error', message: error || '未知数据库错误' };
+    if (typeof error === 'object') {
+      const rec = error as { name?: unknown; message?: unknown; code?: unknown; type?: unknown };
+      const name = typeof rec.name === 'string' && rec.name.trim() ? rec.name.trim() : 'Error';
+      if (typeof rec.message === 'string' && rec.message.trim()) {
+        return { name, message: rec.message.trim() };
+      }
+      if (typeof Event !== 'undefined' && error instanceof Event) {
+        return { name: error.type || name, message: `浏览器存储事件异常 (${error.type || 'error'})` };
+      }
+      if (typeof rec.code === 'string' || typeof rec.code === 'number') {
+        return { name, message: `code=${String(rec.code)}` };
+      }
+      return { name, message: name !== 'Error' ? name : '未知数据库错误' };
+    }
+    return { name: 'Error', message: String(error) };
+  } catch {
+    return { name: 'Error', message: '未知数据库错误' };
+  }
 }
 
 export function reportDatabaseFailure(error: unknown) {

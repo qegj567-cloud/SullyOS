@@ -11,7 +11,11 @@ vi.mock('./activeMsgClient', () => ({
     getRemotePushSubscription: async () => null,
     getGlobalConfig: async () => ({ workerUrl: 'https://worker.example.test' }),
   },
-  fetchWorkerDiagnostics: async () => ({ reachable: false }),
+  fetchWorkerDiagnostics: async () => ({
+    reachable: false,
+    reason: '连不上 Worker（secret-private-worker.workers.dev）',
+    failureKind: '网络失败',
+  }),
   compareRemotePushSubscription: () => 'missing',
 }));
 vi.mock('./pushSubscribeShared', () => ({ readBrowserPushState: async () => ({ supported: false, permission: 'default', endpoint: null }) }));
@@ -46,6 +50,7 @@ describe('复现创建与报告的失败边界', () => {
     const report = await collectReproductionReport(runId);
     expect(report.collection.cloud).toBe('rejected');
     expect(report.events).toContainEqual(expect.objectContaining({ event: 'notification-resolved' }));
-    expect(JSON.stringify(report)).not.toMatch(/secret-key|private conversation/);
+    expect((report.run.after as any)?.worker).toEqual({ unavailable: true, failureKind: '网络失败' });
+    expect(JSON.stringify(report)).not.toMatch(/secret-key|private conversation|secret-private-worker/);
   });
 });
