@@ -14702,7 +14702,7 @@ function buildScheduledPush(message, build, extraMeta, bannerBody) {
 }
 
 // utils/amsgBundleVersion.ts
-var AMSG_BUNDLE_VERSION = "2026-11-24.4";
+var AMSG_BUNDLE_VERSION = "2026-11-24.5";
 
 // worker/amsg/src/reproduction.ts
 async function writeDiagnosticStage(writeState, runId, event, fields = {}) {
@@ -17240,6 +17240,7 @@ var buildTickReport = async (db, options) => {
 
 // worker/amsg/src/autoUpdate.ts
 var AUTO_UPDATE_CRON_INTERVAL_MS = 6 * 60 * 6e4;
+var AUTO_UPDATE_CANARY_CRON_INTERVAL_MS = 30 * 6e4;
 var AUTO_UPDATE_CLIENT_INTERVAL_MS = 30 * 6e4;
 async function runScheduledAfterUpdate(update, tick) {
   try {
@@ -17306,7 +17307,9 @@ var runAutoUpdate = async (env, db, options) => {
   if (!token) return { action: "unsupported" };
   const nowMs = options.nowMs ?? Date.now();
   const previous = await readSelfUpdateState(db);
-  const minInterval = options.source === "cron" ? AUTO_UPDATE_CRON_INTERVAL_MS : AUTO_UPDATE_CLIENT_INTERVAL_MS;
+  const channel = await readBundleChannel(db);
+  const cronInterval = channel === "canary" ? AUTO_UPDATE_CANARY_CRON_INTERVAL_MS : AUTO_UPDATE_CRON_INTERVAL_MS;
+  const minInterval = options.source === "cron" ? cronInterval : AUTO_UPDATE_CLIENT_INTERVAL_MS;
   if (previous && nowMs - Date.parse(previous.lastCheckAt) < minInterval) {
     return { action: "throttled", state: previous };
   }
@@ -17332,7 +17335,7 @@ var runAutoUpdate = async (env, db, options) => {
       message: "\u8BA4\u4E0D\u51FA\u8FD9\u4E2A Worker \u53EB\u4EC0\u4E48\u3002\u7ED9\u5B83\u52A0\u4E00\u6761 CF_SCRIPT_NAME \u53D8\u91CF\uFF0C\u503C\u586B Worker \u7684\u540D\u5B57\uFF0C\u81EA\u52A8\u66F4\u65B0\u624D\u77E5\u9053\u8BE5\u66F4\u65B0\u8C01\u3002"
     });
   }
-  const fetched = await fetchLatestBundle(env, await readBundleChannel(db));
+  const fetched = await fetchLatestBundle(env, channel);
   if (!fetched.ok) return settle({ ok: false, code: "BUNDLE_INVALID", message: fetched.message });
   const bindingsComplete = Boolean(env.INSTANT_TICK);
   if (previous?.bundleHash === fetched.bundle.hash && bindingsComplete) {

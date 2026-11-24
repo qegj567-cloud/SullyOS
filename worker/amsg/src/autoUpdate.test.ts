@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 import {
   AUTO_UPDATE_CLIENT_INTERVAL_MS,
   AUTO_UPDATE_CRON_INTERVAL_MS,
+  AUTO_UPDATE_CANARY_CRON_INTERVAL_MS,
   applySelfUpdateResult,
   ensureSchemaOnce,
   readBundleChannel,
@@ -223,6 +224,22 @@ describe.skipIf(!sqlite)('runAutoUpdate', () => {
     const run = await runAutoUpdate(FULL_ENV, db, { source: 'cron', scriptName: 'sullyos-amsg', nowMs: NOW + AUTO_UPDATE_CRON_INTERVAL_MS - 1 });
     expect(run.action).toBe('throttled');
     expect(calls).toHaveLength(0);
+  });
+
+  it('canary 通道的 cron 隔 30 分钟就查，正式版仍是 6 小时', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const db = createD1();
+    await recordManualSelfUpdate(db, { ok: true, code: 'UPDATED', message: '', bundleHash: 'abc', channel: 'canary' }, NOW);
+    expect(AUTO_UPDATE_CANARY_CRON_INTERVAL_MS).toBeLessThan(AUTO_UPDATE_CRON_INTERVAL_MS);
+
+    stubNetwork(bundleWith('b'));
+    const tooSoon = await runAutoUpdate(FULL_ENV, db, { source: 'cron', scriptName: 'sullyos-amsg', nowMs: NOW + AUTO_UPDATE_CANARY_CRON_INTERVAL_MS - 1 });
+    expect(tooSoon.action).toBe('throttled');
+
+    const calls = stubNetwork(bundleWith('b'));
+    const run = await runAutoUpdate(FULL_ENV, db, { source: 'cron', scriptName: 'sullyos-amsg', nowMs: NOW + AUTO_UPDATE_CANARY_CRON_INTERVAL_MS });
+    expect(run.action).toBe('updated');
+    expect(uploaded(calls)).toBe(1);
   });
 
   it('冷启动那条路的门槛比 cron 低：过了 30 分钟就肯查，两条路共用同一个时钟', async () => {

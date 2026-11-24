@@ -116,6 +116,8 @@ Worker 的诊断表 `worker_diagnostics` 里存一条 `bundle_channel`（`stable
 - `stable`：`https://raw.githubusercontent.com/Tosd0/sullyos-workers/main/amsg/worker.bundle.js`
 - `canary`：同一仓库的 `canary` 分支
 
+cron 检查的间隔也按这条定：正式版 6 小时，canary 30 分钟。canary 分支推得勤，志愿者不开 App 时也能在半小时内换上新代码；内容指纹没变就不上传，查得勤只是多拉几次包。间隔不能低于 5 分钟：GitHub raw 的 CDN 缓存 5 分钟，查得太密可能刚换上新包又取回旧包。
+
 配了 `AMSG_BUNDLE_URL` 的 Worker（自己维护成品包的人）照旧从那里拉，通道不起作用，请求切换通道会被拒绝（`CUSTOM_BUNDLE_URL`），以免以为加入了 canary 实际没换包。
 
 ### 通道只由 App 来改

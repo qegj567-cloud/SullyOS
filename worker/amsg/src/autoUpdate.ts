@@ -4,7 +4,7 @@
  * 「怎么换」全在 ./selfUpdate（取包、验包、补齐 binding、覆盖自己），这份文件只管三件事：
  *
  *   1. **什么时候查**——cron 每一跳都会路过这里，但真去 GitHub 拉包要隔够
- *      AUTO_UPDATE_CRON_INTERVAL_MS；App 冷启动顺手发来的 `POST /self-update/check`
+ *      AUTO_UPDATE_CRON_INTERVAL_MS（canary 通道用 AUTO_UPDATE_CANARY_CRON_INTERVAL_MS）；App 冷启动顺手发来的 `POST /self-update/check`
  *      门槛低一些（AUTO_UPDATE_CLIENT_INTERVAL_MS），因为前端刚更新往往意味着后端也该更新。
  *      两条路共用同一个「上次检查时刻」，谁先来谁算。
  *   2. **要不要换**——按成品包内容的指纹比：跟上次装上去的一样、而且运行时该有的绑定都在，
@@ -36,8 +36,13 @@ import {
 } from './selfUpdate';
 import { readDiagnosticValue, writeDiagnosticValue, type TickReportDb } from './tickReport';
 
-/** cron 路上两次真正去拉包之间至少隔这么久。发布不勤，再密只是白拉 400 KB。 */
+/** cron 路上两次真正去拉包之间至少隔这么久。发布不勤，再密只是白拉 1 MB。 */
 export const AUTO_UPDATE_CRON_INTERVAL_MS = 6 * 60 * 60_000;
+/**
+ * canary 通道的 cron 间隔。canary 分支推得勤，志愿者不开 App 时也该尽快换上新代码；
+ * 指纹没变就不上传，查得勤只多拉几次包。跟下面冷启动那档同长，同样别调到 5 分钟以下。
+ */
+export const AUTO_UPDATE_CANARY_CRON_INTERVAL_MS = 30 * 60_000;
 /**
  * App 冷启动发来的检查请求，离上一次检查至少隔这么久才真去拉。
  * 比 cron 那档松：前端更新了往往意味着后端也该更新，这时等六小时太久；
@@ -180,7 +185,9 @@ export const runAutoUpdate = async (
 
   const nowMs = options.nowMs ?? Date.now();
   const previous = await readSelfUpdateState(db);
-  const minInterval = options.source === 'cron' ? AUTO_UPDATE_CRON_INTERVAL_MS : AUTO_UPDATE_CLIENT_INTERVAL_MS;
+  const channel = await readBundleChannel(db);
+  const cronInterval = channel === 'canary' ? AUTO_UPDATE_CANARY_CRON_INTERVAL_MS : AUTO_UPDATE_CRON_INTERVAL_MS;
+  const minInterval = options.source === 'cron' ? cronInterval : AUTO_UPDATE_CLIENT_INTERVAL_MS;
   if (previous && nowMs - Date.parse(previous.lastCheckAt) < minInterval) {
     return { action: 'throttled', state: previous };
   }
@@ -213,7 +220,7 @@ export const runAutoUpdate = async (
   }
 
   // 按记着的那条线拉：加入 canary 之后，定时检查得继续跟 canary 走，不能每六小时被拉回正式版。
-  const fetched = await fetchLatestBundle(env, await readBundleChannel(db));
+  const fetched = await fetchLatestBundle(env, channel);
   if (!fetched.ok) return settle({ ok: false, code: 'BUNDLE_INVALID', message: fetched.message });
 
   // 跟上次装的是同一份、运行时该有的绑定也都在 → 不动。
