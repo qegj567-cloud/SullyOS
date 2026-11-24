@@ -72,6 +72,7 @@ import { PAGE_BYTE_BUDGET } from './backupPageReader';
 import { EXPORT_TRACE_KEY, type ExportTrace } from './backupExportTrace';
 import { TASK_TRACE_KINDS } from './taskTraceReport';
 import { canMigrateLocalKey } from './independentUserRemap';
+import { CLOUD_GEN_DONE_KEY, CLOUD_GEN_JOBS_KEY } from './cloudGen/types';
 
 const messages = (count: number, content = (i: number) => `第 ${i} 句`) =>
     Array.from({ length: count }, (_, i) => ({ id: i + 1, charId: 'c', role: 'user', type: 'text', timestamp: 1_700_000_000_000 + i, content: content(i) }));
@@ -325,6 +326,21 @@ it('keeps the trace out of every space-local and shared setting in the archive, 
     const text = await (await exportUserSpaces('full', 'all')).text();
     expect(text).not.toContain('_progress_v1');
     expect(canMigrateLocalKey(EXPORT_TRACE_KEY)).toBe(false);
+});
+
+it('keeps the cloud generation registry and done ledger out of the archive and out of migration', async () => {
+    saveUserSpaces([{ id: 'default', name: '小明' }, { id: 'u_second', name: '小明二号' }]);
+    writeSpaceLocal('u_second', { chat_bg: 'blue', [CLOUD_GEN_JOBS_KEY]: '[]' });
+    localStorage.setItem(CLOUD_GEN_JOBS_KEY, '[{"jobId":"j1"}]');
+    localStorage.setItem(CLOUD_GEN_DONE_KEY, '["j1"]');
+    const manifest = await manifestOf(await JSZip.loadAsync(await (await exportUserSpaces('full', 'all')).arrayBuffer()));
+    // 同一份本地设置里的普通键照常进包，说明下面的断言不是空转。
+    expect(Object.keys(manifest.spaces.find((space: any) => space.id === 'u_second').local)).toContain('chat_bg');
+    for (const key of [CLOUD_GEN_JOBS_KEY, CLOUD_GEN_DONE_KEY]) {
+        expect(Object.keys(manifest.settings)).not.toContain(key);
+        for (const space of manifest.spaces) expect(Object.keys(space.local)).not.toContain(key);
+        expect(canMigrateLocalKey(key)).toBe(false);
+    }
 });
 
 it.each([

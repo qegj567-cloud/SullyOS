@@ -189,9 +189,14 @@ const createWorld = async (startClock: string, native = false) => {
     VAPID_PRIVATE_KEY: vapid.privateKey,
     AMSG_SERVER_TOKEN: SERVER_TOKEN,
     DB: d1,
+    // 上游 schedule-message 落库后自己叫醒起跳器（stub.fetch，body 是任务 uuid）。这里只记下
+    // 叫醒了谁，alarm 由场景自己挑时机跑（见 startInstantReply）。
     INSTANT_TICK: {
       idFromName: (name: string) => name,
-      get: () => ({ kick: async (uuid: string) => { kicked.push(uuid); } }),
+      get: () => ({ fetch: async (_url: string, init: { body: string }) => {
+        kicked.push(String(init.body));
+        return new Response(null, { status: 204 });
+      } }),
     },
   };
   const waitUntil: Promise<unknown>[] = [];
@@ -497,7 +502,7 @@ const createWorld = async (startClock: string, native = false) => {
     ev('user', 'message', text);
     const taskPayload = {
       contactName: CHAR_NAME, avatarUrl: null,
-      messageType: 'auto', messageSubtype: 'instant-chat', immediate: true,
+      messageType: 'instant', messageSubtype: 'instant-chat',
       recurrenceType: 'none', tzId: 'Asia/Shanghai',
       messages: [{ role: 'user', content: '（占位）' }],
       apiUrl: native ? 'https://llm.test/v1/messages' : 'https://llm.test/v1/chat/completions', apiKey: 'sk-sim', primaryModel: 'sim-model',
@@ -517,6 +522,8 @@ const createWorld = async (startClock: string, native = false) => {
     }));
     const body: any = await res.json();
     if (res.status !== 202) throw new Error(`即时对话没受理：${res.status} ${JSON.stringify(body)}`);
+    // 受理即叫醒：起跳器拿到的就是这一轮的 uuid。
+    if (kicked[kicked.length - 1] !== body.uuid) throw new Error(`起跳器没被叫醒：${JSON.stringify(kicked)}`);
     return body.uuid as string;
   };
 
@@ -534,6 +541,7 @@ const createWorld = async (startClock: string, native = false) => {
         get: async () => uuid,
         put: async (k: string, v: unknown) => { storage.set(k, v); },
         delete: async (k: string) => { storage.delete(k); },
+        deleteAll: async () => { storage.clear(); },
         getAlarm: async () => null,
         setAlarm: async () => {},
       },

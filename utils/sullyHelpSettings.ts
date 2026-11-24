@@ -6,8 +6,11 @@ import { clampManualContextLimit, resolveContextRangeMode } from './chatContextR
 import { dialogueMaxTokens, resolveDialogueApi } from './characterApi';
 import { llmApiType } from './llmEndpoint';
 import { resolveMemoryPalaceWaterline } from './memoryPalace/waterline';
-import { ActiveMsgStore } from './activeMsgStore';
+import { ActiveMsgStore, isInstantChatSwitchedOn } from './activeMsgStore';
 import { isAmsg2GloballyEnabled } from './amsgGlobalGate';
+import { resolveCloudGenFeatureSwitches } from './cloudGen/settings';
+import { CLOUD_GEN_PURPOSES, CLOUD_GEN_PURPOSE_META } from './cloudGen/types';
+import { isCloudGenHintOff } from './cloudGen/hint';
 
 type SettingsSource = Pick<ReturnType<typeof useOS>, 'apiConfig' | 'memoryPalaceConfig' | 'realtimeConfig' | 'theme' | 'isDataLoaded'> & Partial<Pick<ReturnType<typeof useOS>, 'remoteVectorConfig' | 'userProfile'>>;
 type Endpoint = { baseUrl: string; apiKey: string; model: string };
@@ -47,7 +50,17 @@ export async function readHelpDeskSettings(os: SettingsSource, char?: CharacterP
         },
         实时感知: { 天气开关: !!realtimeConfig.weatherEnabled, 热点开关: !!realtimeConfig.newsEnabled },
         外观: { 深色模式: !!os.theme.darkMode },
-        主动消息全局: globalPush ? { 总开关: isAmsg2GloballyEnabled(globalPush), Worker地址已填: !!globalPush.workerUrl?.trim() } : '未能读取',
+        主动消息全局: globalPush ? {
+            总开关: isAmsg2GloballyEnabled(globalPush), Worker地址已填: !!globalPush.workerUrl?.trim(),
+            // 「功能总览 → 云端生成」里的开关；私聊那一行就是全局即时对话开关。
+            云端生成: {
+                私聊: isInstantChatSwitchedOn(globalPush),
+                ...Object.fromEntries(CLOUD_GEN_PURPOSES.map((purpose) => {
+                    const switches = resolveCloudGenFeatureSwitches(globalPush, purpose);
+                    return [CLOUD_GEN_PURPOSE_META[purpose].label, { 云端生成: switches.enabled, 完成时通知: switches.notify, 不再提醒: isCloudGenHintOff(purpose) }];
+                })),
+            },
+        } : '未能读取',
         指定角色设置: char ? {
             对话来源: char.dialogueApi ? '角色独立 API' : '跟随全局',
             对话配置: { ...endpointFields(chatApi), 接口: llmApiType(chatApi), 流式: !!chatApi.stream, 输出上限: dialogueMaxTokens(chatApi) },

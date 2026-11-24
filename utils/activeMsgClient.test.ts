@@ -377,8 +377,14 @@ describe('即时对话能力探测（instantTick）', () => {
   afterEach(() => { vi.unstubAllGlobals(); });
 
   it('起跳器接上了 → 支持', async () => {
-    configCheck({ instantChat: true, instantTick: true, workerVersion: '2026-08-09' });
+    configCheck({ instantChat: true, instantTick: true, instantBackground: true, workerVersion: '2026-08-09' });
     expect(await ActiveMsgClient.probeInstantChatSupport()).toBe(true);
+  });
+
+  // 回归守卫：老 bundle 的上游会在请求里当场跑完 instant 任务，起跳器接着也不能往那里发。
+  it('起跳器在、但这份代码还不在后台投递 instant 任务 → 不支持', async () => {
+    configCheck({ instantChat: true, instantTick: true, workerVersion: '2026-11-24' });
+    expect(await ActiveMsgClient.probeInstantChatSupport()).toBe(false);
   });
 
   it('代码新了但起跳器没接上（更新过一次的中间态）→ 不支持', async () => {
@@ -401,7 +407,7 @@ describe('即时对话能力探测（instantTick）', () => {
     expect(ActiveMsgStore.saveGlobalConfig).toHaveBeenCalledWith({ instantChatSupported: false });
 
     (ActiveMsgStore.saveGlobalConfig as any).mockClear();
-    configCheck({ instantChat: true, instantTick: true });
+    configCheck({ instantChat: true, instantTick: true, instantBackground: true });
     await ActiveMsgClient.probeInstantChatSupport();
     expect(ActiveMsgStore.saveGlobalConfig).toHaveBeenCalledWith({ instantChatSupported: true });
   });

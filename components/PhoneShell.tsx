@@ -131,6 +131,8 @@ import GlobalMiniPlayer from './os/GlobalMiniPlayer';
 import NavigationBall from './os/NavigationBall';
 import PersonaSimIndicator from './os/PersonaSimIndicator';
 import DreamSimIndicator from './os/DreamSimIndicator';
+import CloudGenIndicator from './os/CloudGenIndicator';
+import CloudGenSheet from './os/CloudGenSheet';
 import ErrorDialog from './os/ErrorDialog';
 import BootSequence from './os/BootSequence';
 import { setAppPayloadWarmer, shouldUseIdleAppPreload } from './os/appPreload';
@@ -1144,6 +1146,10 @@ const PhoneShell: React.FC = () => {
 
           {/* Overlays: 梦境生成全局指示条 */}
           <DreamSimIndicator />
+
+          {/* Overlays: 云端生成提示（三个功能共用，弹 3 秒收起；日程写好后的「进入」也在这里）与点开后的说明页 */}
+          <CloudGenIndicator />
+          <CloudGenSheet />
 
           {/* Overlays: Toasts (Top) */}
           <div className="absolute top-12 left-0 w-full flex flex-col items-center gap-2 pointer-events-none z-[60]">

@@ -238,7 +238,8 @@ export const plateCloudGate = async (args: {
     return 'local';
   }
 
-  // 「后台任务」开关关着（Worker 的 cron 被摘掉）时，后台任务只靠 cron 捞，交上去会一直躺着，
+  // 「后台任务」开关关着（Worker 的 cron 被摘掉）时也不交。起跳器能不靠 cron 让任务开跑，但第一次
+  // 没跑成之后的重试、同一角色上一份同类任务还在跑而被排在后面的，都只有 cron 去捞，交上去可能一直躺着，
   // 恢复时晚到一小时以上的还会作废。这也是路断了，排在在飞那道门前面。只认明确答复：
   // 问不到（网络、旧 Worker、没配 CF_API_TOKEN）不算关着，照常往下判。
   const cron = await ActiveMsgClient.getCronTriggerState({ timeoutMs: 3_000 });

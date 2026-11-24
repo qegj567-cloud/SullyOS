@@ -433,6 +433,11 @@ export interface ActiveMsg2GlobalConfig {
    */
   instantChatEnabled?: boolean;
   /**
+   * 云端生成（本机拼、云端代跑）按功能的两个开关。缺省时：「云端生成」都开；
+   * 「完成时通知」人格模拟和梦境开、日程关。取值统一走 utils/cloudGen/settings.ts。
+   */
+  cloudGen?: Partial<Record<import('./utils/amsgCloudGenJob').CloudGenPurpose, { enabled?: boolean; notify?: boolean }>>;
+  /**
    * 上一次**明确探到**的「那台 Worker 真的跑得动即时对话吗」
    * （见 ActiveMsgClient.probeInstantChatSupportDetailed）。
    *

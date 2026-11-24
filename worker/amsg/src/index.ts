@@ -34,7 +34,6 @@ import { pickStaleStoppedReplyKeys, reconcileStoppedReplies, stoppedReplyKey } f
  * 共用一个浏览器 push 订阅，worker 用别的密钥对签推送会 403。
  */
 
-import { DurableObject } from 'cloudflare:workers';
 import {
   createSingleUserCloudflareWorker,
   createWebCryptoWebPush,
@@ -46,6 +45,14 @@ import {
 } from '@rei-standard/amsg-server/cloudflare';
 import { readAssistantMessage, readAssistantThinking, splitInlineThinking } from '../../../utils/assistantThinking';
 import { settleReproduction, traceDiagnosticTransport, writeDiagnosticStage } from './reproduction';
+import { settleCloudGenFire } from './cloudGenFire';
+import {
+  CLOUD_GEN_KIND,
+  CLOUD_GEN_NAMESPACE,
+  CLOUD_GEN_PURPOSE_META_KEY,
+  CLOUD_GEN_TTL_DAYS,
+  cloudGenSerializeKey,
+} from '../../../utils/amsgCloudGenJob';
 import { DIAGNOSTIC_NAMESPACE, DIAGNOSTIC_RETENTION_DAYS, diagnosticRunId } from '../../../utils/amsgReproduction';
 import { AMSG_BUNDLE_VERSION } from '../../../utils/amsgBundleVersion';
 // 「上一次推送被判订阅失效」的形状，跟前端体检共用一个类型定义（那份是零依赖纯叶子；
@@ -228,7 +235,6 @@ import {
   INSTANT_TOTAL_TIMEOUT_MS,
   isInstantChatTask,
   NOTIFICATION_SILENT_WHEN_VISIBLE,
-  type InstantTickNamespace,
 } from './instantChat';
 import { buildScheduleChangeResult } from '../../../utils/amsgScheduleResult';
 import { TICK_STALL_MS } from '../../../utils/amsgTickReport';
@@ -259,10 +265,11 @@ interface Env extends NativeFcmEnv {
   /** 可选：成品包换个地方取（自己维护成品包的 fork、或拿测试 Worker 试新代码）。见 selfUpdate.resolveBundleUrl。 */
   AMSG_BUNDLE_URL?: string;
   /**
-   * 即时对话的起跳器（Durable Object）。类型上可选是因为老版本 Worker 上真的没有它，
-   * 那种情况由 /instant-chat 明确报「需要更新 Worker」，见 instantChat.kickInstantTick。
+   * instant 任务的起跳器（Durable Object namespace，类是上游的 InstantTick，见文件末尾
+   * InstantTickDO）。类型上可选是因为老版本 Worker 上真的没有它：上游 schedule-message
+   * 这时回 dispatch: 'not_configured'，/instant-chat 据此明确报「需要更新 Worker」。
    */
-  INSTANT_TICK?: InstantTickNamespace;
+  INSTANT_TICK?: unknown;
   /**
    * 救援口令。设了（且够长）就开启 /rescue：凭它把云端数据解密导出，给本地数据被清空、
    * 没有备份的人临时取数据用。开着期间会留痕、推送提醒、暂停 cron 投递。见 ./rescue。
@@ -1151,6 +1158,12 @@ export const amsgFireSettled = async (
     task?: { retry_count?: unknown } | null;
     /** 这一跳抛出的错误（status 'failed' 时才有）。 */
     error?: unknown;
+    /** skipped 时是谁判的（before-fire / skip-push）。 */
+    skipReason?: string | null;
+    /** 任务解密后的 metadata（上游透传）；fire 在 onBeforeFire 里就失败时也靠它认出任务。 */
+    metadata?: Record<string, unknown> | null;
+    /** 最后一轮 LLM 响应的 usage 原样（没跑到 LLM 为 null）。 */
+    usage?: unknown;
     /** 上游调度器的重试决定；非失败结局为 null，收尾只读取、不修改这个决定。 */
     willRetry?: boolean | null;
     /**
@@ -1170,6 +1183,8 @@ export const amsgFireSettled = async (
   },
 ): Promise<void> => {
   if (await settleReproduction(info)) return;
+  // 代跑任务：删输入、没送出成功结果的补一条失败结果（见 cloudGenFire.ts）。
+  if (await settleCloudGenFire(info)) return;
   const stash = getFireStash(info.scratch);
   if (!stash) return;   // onBeforeFire 没走到挂 stash 那步（比如取 fire_pack 就失败了）
 
@@ -3471,7 +3486,12 @@ export const buildWorkerConfig = (env: Env) => {
     // 命名空间下超过天数没更新的条目清掉。角色状态那个命名空间（amsg:char:<id>，
     // 装 fire_pack / tool_pack）不配 TTL——那些是要长期留着的，配了就等于定时把
     // 角色的云端状态抹掉。判据是行本来就有的 updated_at 列，不加列、不动表结构。
-    clientStateTtl: { [INSTANT_INPUT_NAMESPACE]: INSTANT_INPUT_TTL_DAYS, [AMSG_JOB_NAMESPACE]: AMSG_JOB_TTL_DAYS, [DIAGNOSTIC_NAMESPACE]: DIAGNOSTIC_RETENTION_DAYS },
+    clientStateTtl: {
+      [INSTANT_INPUT_NAMESPACE]: INSTANT_INPUT_TTL_DAYS,
+      [AMSG_JOB_NAMESPACE]: AMSG_JOB_TTL_DAYS,
+      [CLOUD_GEN_NAMESPACE]: CLOUD_GEN_TTL_DAYS,
+      [DIAGNOSTIC_NAMESPACE]: DIAGNOSTIC_RETENTION_DAYS,
+    },
     cloudData: { resolveOwner: resolveSullyCloudOwnership },
     // 满血 fire-time hooks（onBeforeFire 现场填槽 + onLLMOutput 分类 +
     // executeToolCalls 服务端工具循环）；总超时用库默认 240s，轮数由 onBeforeFire 按
@@ -3479,9 +3499,12 @@ export const buildWorkerConfig = (env: Env) => {
     hooks: amsgHooks,
     leaseHeartbeatMs: 1000,
     // 用户主动触发的即时对话：生成失败本轮就结束，由用户决定是否重发。
+    // 代跑同理：失败结果当场送回客户端，由用户或下次触发重来，不靠 cron 捞重试。
     // 策略由上游在 onBeforeFire 前解析，读取上下文失败也覆盖；整批入箱后仍可补推原文。
-    maxGenerationRetries: (task: { metadata?: Record<string, unknown> | null }) =>
-      isInstantChatTask(task.metadata) || readTaskKind(task.metadata) === 'diagnostic' ? 0 : undefined,
+    maxGenerationRetries: (task: { metadata?: Record<string, unknown> | null }) => {
+      const kind = readTaskKind(task.metadata);
+      return isInstantChatTask(task.metadata) || kind === 'diagnostic' || kind === CLOUD_GEN_KIND ? 0 : undefined;
+    },
     // 取消通过租约心跳通知执行中的 Worker；1 秒检测一次，TTL 仍由上游管理。
     // 收尾回执 + 过期跳过回执（config 级 hook）。
     // onFireSettled: 无论这次 fire 是发出去了、跳过了还是抛错了都会调一次，self_log
@@ -3512,6 +3535,8 @@ export const amsgSerializeKey = (task: { metadata?: Record<string, unknown> | nu
   const charId = typeof task.metadata?.charId === 'string' ? task.metadata.charId : null;
   if (!charId) return null;
   const kind = readTaskKind(task.metadata);
+  // 代跑再按用途分组：一次人格模拟不该挡住同一角色的日程。
+  if (kind === CLOUD_GEN_KIND) return cloudGenSerializeKey(charId, String(task.metadata?.[CLOUD_GEN_PURPOSE_META_KEY] ?? ''));
   return kind ? `${charId}#${kind}` : charId;
 };
 
@@ -3886,9 +3911,6 @@ const judgeTick = (storage: Awaited<ReturnType<typeof inspectStorage>>) => {
   return 'stalled';
 };
 
-/** DO 存「这个实例负责哪条任务」用的 storage 键。 */
-const INSTANT_TICK_UUID_KEY = 'taskUuid';
-
 const upstream = createSingleUserCloudflareWorker(buildWorkerConfig, {
   /**
    * cron 那条路上没有调用方能看到错误响应——上游把异常 catch 掉之后，整轮就这么无声
@@ -3901,6 +3923,8 @@ const upstream = createSingleUserCloudflareWorker(buildWorkerConfig, {
     const where = path ? `${stage} ${path}` : stage;
     console.error(`[amsg:upstream-error] ${where} → ${cause.name}: ${cause.message}`);
   },
+  // 沿用部署里已有的 binding 名（上游默认叫 AMSG_INSTANT_TICK），理由见下方 InstantTickDO。
+  instantTickBinding: 'INSTANT_TICK',
 });
 
 /**
@@ -3927,55 +3951,19 @@ const inspectSchema = async (env: Env): Promise<{ schema: SchemaProbe; error: Am
 };
 
 /**
- * 即时对话的起跳器：把「立刻跑这一条」搬进 Durable Object 的 alarm 里。
+ * `messageType: 'instant'` 任务（即时对话、后台任务）的起跳器，类本身是上游的 InstantTick。
  *
- * 为什么非得是 DO：客户端发完就走（切后台、锁屏、杀进程都行），所以这一跳不能挂在
- * 那个已经回了 202 的 HTTP 请求上——`ctx.waitUntil` 只给 30 秒，一轮带工具循环的生成
- * 必被砍在半路。Cloudflare 上能「不依赖客户端连接 + 长墙钟」的入口只有三个：
- * Cron Trigger、Queue consumer、DO alarm，都是 15 分钟。这里选 DO 是因为它不用预建
- * 任何资源（namespace 随 Worker 上传自动创建），一键部署那条路一个额外 API 调用都不用加。
+ * 上游 schedule-message 落库后自己叫醒它（env 里有 INSTANT_TICK 才叫），生成跑在它的
+ * alarm 里：独立 invocation、15 分钟墙钟，跟已经回了 202 的请求无关，`ctx.waitUntil`
+ * 那 30 秒限不到它。一条任务一个实例（实例名 = 任务 uuid），几条同时来互不排队；跟 cron
+ * 抢同一份租约，只发一次。cron 仍是定时任务的投递通道，也是起跳没成时的兜底。
  *
- * **一条任务一个实例**（实例名 = 任务 uuid），所以几条聊天同时在跑互不排队。
- * 每个实例只碰自己那一条（`upstream.runTask(uuid)`），不会去扫别人的任务。
- *
- * cron 仍然留着：它是所有定时任务的正常投递通道，同时也是这一跳万一没跑成时的兜底。
+ * 导出名必须一直是 InstantTickDO：用户的自动更新第一次跑的是旧代码，它带着已有的
+ * `INSTANT_TICK → InstantTickDO` 绑定上传新 bundle，这个类名一消失上传就失败，自动更新整体卡死。
+ * 上线那一刻还没跑完的旧实例把 uuid 存在 `taskUuid` 键下，上游读的是 `uuid`：那几条醒来
+ * 认不出任务，留给 cron 接手。
  */
-export class InstantTickDO extends DurableObject<Env> {
-  /**
-   * 叫醒：记下要跑哪条、设一个立刻到期的 alarm，然后马上返回——调用方还等着回 202。
-   *
-   * 已经挂着 alarm 就只覆盖 uuid 不重设时间：同一个实例只服务同一条任务，重复叫醒
-   * （客户端重发）应该合并成一次，而不是排成两次生成。
-   */
-  async kick(uuid: string): Promise<void> {
-    await this.ctx.storage.put(INSTANT_TICK_UUID_KEY, uuid);
-    if ((await this.ctx.storage.getAlarm()) !== null) return;
-    await this.ctx.storage.setAlarm(Date.now());
-  }
-
-  /** 独立 invocation，15 分钟墙钟。跑挂了不重设 alarm——下一分钟的 cron 会接着捡。 */
-  async alarm(): Promise<void> {
-    const uuid = await this.ctx.storage.get<string>(INSTANT_TICK_UUID_KEY);
-    if (!uuid) {
-      console.error('[amsg:instant-tick] alarm 醒了却不知道要跑哪条，跳过（等 cron 兜底）');
-      return;
-    }
-    const report = inspectWorkerEnv(this.env);
-    if (!report.ok) {
-      console.error(`[amsg:instant-tick] 整轮跳过：${report.message}`);
-      return;
-    }
-    // 跑完就把 uuid 清掉：这个实例的活儿到此为止，留着只会让下一次 kick 分不清新旧。
-    // 放在 runTask 之前清是不行的——中途被回收就查不出这条到底跑没跑。
-    const result = await upstream.runTask(uuid, this.env);
-    await this.ctx.storage.delete(INSTANT_TICK_UUID_KEY);
-    if (!result.ran) {
-      // 一次性任务发完即删，所以 not_found 多半是「cron 抢先跑掉了」，属正常。
-      // 其余几种（未到期、退避窗口里、配置不全）留一行，排障时能看出是哪种。
-      console.warn(`[amsg:instant-tick] ${uuid} 没跑：${result.reason}`);
-    }
-  }
-}
+export const InstantTickDO = upstream.InstantTick;
 
 /**
  * 版本号只有上游的 capabilities 才给，转手问它一次；问不到不算错，报 null。
@@ -4011,7 +3999,7 @@ const readServerVersion = async (request: Request, env: Env) => {
  */
 // fetch 收第三个参数 ctx 只为 /self-update/check 一条路：它回 202 之后在 waitUntil 里把检查跑完
 // （几秒的事，30 秒上限够用；被掐了下一轮 cron 会再来）。别的路由都不用 ctx——
-// /instant-chat 回完 202 之后的那一跳跑在 InstantTickDO 的 alarm 里，不占这个请求的
+// instant 任务回完 202 之后的那一跳跑在 InstantTickDO 的 alarm 里，不占这个请求的
 // 生命周期（waitUntil 只有 30 秒，见 InstantTickDO 的注释）。scheduled 只收 (event, env)。
 export default {
   async fetch(request: Request, env: Env, ctx?: { waitUntil(promise: Promise<unknown>): void }): Promise<Response> {
@@ -4058,6 +4046,13 @@ export default {
           // 正常，而门牌永远不更新。报的是**这份代码有没有**，不是版本号：自更新永远由
           // 旧代码执行，版本号对上了不代表新逻辑真的在跑。
           backgroundJobs: true,
+          // 这份代码的 `messageType: 'instant'` 落库即回 202、生成在起跳器里跑（上游 4.0.0-next.3 起）。
+          // 老 bundle 没有这个字段：它的上游在请求里当场把 instant 任务跑完，前端据此不往那里发
+          // instant 任务（即时对话、后台任务都是）。报的同样是这份代码有没有，不是版本号。
+          instantBackground: true,
+          // 这份代码认不认识代跑任务（amsgKind: 'cloud-gen'，见 cloudGenFire.ts）。前端据此决定
+          // 日程、人格模拟、梦境能不能交云端生成；报的是这份代码有没有，不是版本号。
+          cloudGen: true,
           thirdPartyPush: true,
           diagnosticReproduction: 1,
           workerVersion: AMSG_BUNDLE_VERSION,

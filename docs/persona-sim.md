@@ -12,6 +12,15 @@
 - 更新必须用 `updateCharacter` 函数式合并最新角色状态，保留并发写入的其他手机数据；进度按记录 ID 修改，同一段只保存一次，避免上下文更新引起重复写入。
 - 全局通知按 `charId` 匹配，切换机主时重新挂载播放页面，避免把另一角色的剧本或断点带过来。
 
+## 云端生成
+
+开着主动消息 2.0 且人格模拟的「云端生成」开着时，剧本交给自己的 Worker 代跑，用户可以关掉页面。机制见 [`plans/amsg2-expansion.md`](../plans/amsg2-expansion.md)「代跑任务的设计」。
+
+- 本机照原样拼好请求（同一份 messages、temperature 0.98、max_tokens 24000），交不出去才在本机直连。两条路的结果都过 `validatePersonaScriptResponse`：截断、被安全策略拦下、解析不了、结尾不是 `end` 都按失败处理，报同一句错。云端结果不合格时直接标失败、不落库，因为同一份内容重来几次结果都一样。
+- 云端结果多半在 React 之外落地（重开页面后补收）。落地函数先写库，再发 `PERSONA_SIM_LOG_LANDED`，OSContext 只把这条 simLog 按 id 并回内存再存一次。直接写库不并内存的话，下次任何 `updateCharacter` 都会用内存里的旧角色整份写回，把这条记录抹掉。记录 id 由 job 决定，同一份结果落两次也只留一条。
+- 全局指示条的云端部分从代跑登记表派生，每个角色一份，重开页面还在；本机生成和生活记录重播仍共用一格，重播盖不掉在飞的云端任务。Worker 确认收下后胶囊显示「云端生成 · 人格模拟」，点开是说明页；还在上传或选了「本功能不再提醒」时保持本机文案，点一下回到演出。就绪状态与本机相同，开始播放时从登记表收走。
+- 云端失败时胶囊收起，弹出与本机失败相同的提示。
+
 ## 完成效果与旧记录
 
 `completedAt` 只记第一次看完的绝对时间戳，属于用户体验记录。首次到结尾才按角色日程功能开关施加情绪效果；从头播放或续播已经看完过的剧本都不再施加。重播可以重新保存断点，但保留第一次完成标记。
@@ -23,5 +32,7 @@
 - `apps/CheckPhone.tsx`：后台生成、归档、生活记录回放入口。
 - `apps/PersonaSim.tsx`：播放、断点保存、首次完成效果和列表。
 - `utils/personaSimLog.ts`：归档对象、断点范围校验和旧记录兼容。
+- `utils/personaSimStore.ts` / `utils/cloudGen/landers/personaSim.ts`：进度与跳转、云端结果落地。
 - `utils/personaSimPlayback.test.ts` / `utils/personaSimGeneration.test.ts`：退出续播、背景生成、角色隔离和完成效果。
+- `utils/personaSimCloudGen.test.ts`：两条路共用校验、云端不合格不落库、只并 simLogs、重开页面后的指示条、上传中与不再提醒保持本机文案。
 - `utils/db.simlog.test.ts`：剧本与断点的备份往返。

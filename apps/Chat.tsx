@@ -29,7 +29,7 @@ import { processImageToBlob } from '../utils/file';
 import { safeResponseJson, extractContent } from '../utils/safeApi';
 import { buildChatFineTuneCss, mergeChatFineTune } from '../utils/chatFineTuneCss';
 import TokenImg from '../components/os/TokenImg';
-import { generateDailyScheduleForChar, isScheduleFeatureOn } from '../utils/scheduleGenerator';
+import { isScheduleFeatureOn, isScheduleGeneratingFor, requestDailySchedule, SCHEDULE_LANDED_EVENT, subscribeScheduleGenerating, type ScheduleLandedEventDetail } from '../utils/scheduleGenerator';
 import { getDailyScheduleForChar } from '../utils/dailySchedule';
 import { useLocalDateKey } from '../hooks/useLocalDateKey';
 import { resolveCharTimeZone } from '../utils/timezone';
@@ -258,7 +258,8 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
     const [isTheaterGenerating, setIsTheaterGenerating] = useState(false);
     const [theaterError, setTheaterError] = useState('');
     const pendingTheater = useRef<{ scheduleId: string; index: number } | null>(null);
-    const [isScheduleGenerating, setIsScheduleGenerating] = useState(false);
+    // 按角色判断（含云端在飞的那份）：聊天组件切角色时是复用的，共用一个标记会让下一个角色被跳过。
+    const isScheduleGenerating = useSyncExternalStore(subscribeScheduleGenerating, () => isScheduleGeneratingFor(activeCharacterId), () => false);
     const [allHistoryMessages, setAllHistoryMessages] = useState<Message[]>([]);
     const [transferAmt, setTransferAmt] = useState('');
     const [transferNote, setTransferNote] = useState('');
@@ -1232,8 +1233,17 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
             setScheduleData(detail.schedule);
             setScheduleChangeNotice(detail);
         };
+        // 云端生成的日程落地：只刷新，不弹「日程改动」提示。
+        const onScheduleLanded = (event: Event) => {
+            const detail = (event as CustomEvent<ScheduleLandedEventDetail>).detail;
+            if (detail?.charId === activeCharIdRef.current) setScheduleData(detail.schedule);
+        };
         window.addEventListener(SCHEDULE_CHANGE_EVENT, onScheduleChange);
-        return () => window.removeEventListener(SCHEDULE_CHANGE_EVENT, onScheduleChange);
+        window.addEventListener(SCHEDULE_LANDED_EVENT, onScheduleLanded);
+        return () => {
+            window.removeEventListener(SCHEDULE_CHANGE_EVENT, onScheduleChange);
+            window.removeEventListener(SCHEDULE_LANDED_EVENT, onScheduleLanded);
+        };
     }, []);
 
     useEffect(() => setScheduleChangeNotice(null), [activeCharacterId]);
@@ -2285,11 +2295,12 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
         addToast(exposed ? '已让 TA 发现你在看 👀' : '已悄悄记下 · TA 不知道你看了 🙈', 'info');
     };
 
+    // 闸门（这个角色正在本机或云端生成）、失败退避、交云端还是本机生成都在 requestDailySchedule 里。
+    // 交了云端时这里拿到 null，落地后由 SCHEDULE_LANDED_EVENT 刷新界面。
     const generateDailySchedule = async (targetChar: typeof char, forceRegenerate: boolean = false) => {
-        if (!targetChar || isScheduleGenerating) return;
-        setIsScheduleGenerating(true);
+        if (!targetChar) return;
         try {
-            const result = await generateDailyScheduleForChar(targetChar, userProfile, apiConfig, forceRegenerate);
+            const result = await requestDailySchedule(targetChar, userProfile, apiConfig, forceRegenerate);
             if (result) {
                 if (activeCharIdRef.current === targetChar.id) setScheduleData(result);
                 // 跨天后台重新生成也要刷云端：不刷的话角色到点照着昨天的作息表说话
@@ -2297,13 +2308,12 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
             }
         } catch (e) {
             console.error('[Schedule] Generation error:', e);
-        } finally {
-            setIsScheduleGenerating(false);
         }
     };
 
     const handleScheduleStyleChange = async (style: 'lifestyle' | 'mindful') => {
-        if (!char) return;
+        // 正在生成时不换：旧风格那份晚落地会盖掉新风格的
+        if (!char || isScheduleGenerating) return;
         if (scheduleData?.slots?.length && char.scheduleStyle !== style) {
             if (!(await requestConfirm({
                 title: '切换日程风格并重新生成？',
@@ -2319,15 +2329,8 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
         // Force regenerate with new style — use updated char object
         const updatedChar = { ...char, scheduleStyle: style, emotionConfig: nextEmotion };
         if (!isScheduleFeatureOn(updatedChar)) return;
-        setIsScheduleGenerating(true);
-        try {
-            const result = await generateDailyScheduleForChar(updatedChar, userProfile, apiConfig, true);
-            if (result) setScheduleData(result);
-        } catch (e) {
-            console.error('[Schedule] Regeneration after style change failed:', e);
-        } finally {
-            setIsScheduleGenerating(false);
-        }
+        // 与手动重新生成同一条路：同样过闸门、同样打脏云端状态
+        await generateDailySchedule(updatedChar, true);
     };
 
     // 日程 / 情绪 buff 总开关

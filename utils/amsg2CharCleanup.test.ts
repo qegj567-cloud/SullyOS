@@ -180,12 +180,15 @@ describe('purgeCharCloudState', () => {
       .resolves.toEqual({ status: 'cleared', keys: [] });
   });
 
-  it('默认走全量清单：四行凭据全删、在飞的门牌整理也撤', async () => {
+  it('默认走全量清单：每种用途的凭据全删（含云端生成那三行）、在飞的门牌整理也撤', async () => {
     inFlight.current = { jobId: 'job-1', at: Date.now(), snapshotAt: Date.now(), uuid: 'u-plate' };
     await purgeCharCloudState(charWith({ enabled: true }));
 
     expect(ActiveMsgClient.deleteLlmCredentials).toHaveBeenCalledWith({
-      credIds: ['char:char-1/chat', 'char:char-1/instant', 'char:char-1/emotion', 'char:char-1/memory'],
+      credIds: [
+        'char:char-1/chat', 'char:char-1/instant', 'char:char-1/emotion', 'char:char-1/memory',
+        'char:char-1/gen-schedule', 'char:char-1/gen-persona-sim', 'char:char-1/gen-dream',
+      ],
     });
     expect(ActiveMsgClient.cancelTask).toHaveBeenCalledWith('u-plate');
   });
@@ -237,5 +240,34 @@ describe('charMayHaveCloudState', () => {
     expect(charMayHaveCloudState(charWith({ enabled: false }))).toBe(true);
     expect(charMayHaveCloudState({ id: 'x', name: 'x' } as CharacterProfile)).toBe(true);
     expect(charMayHaveCloudState(undefined)).toBe(false);
+  });
+});
+
+// 云端生成的输入住在共用的 amsg:cloud-gen 下，角色命名空间那趟清不到它，装的却是整份上下文。
+describe('删角色时撤掉在飞的云端生成', () => {
+  const running = () => ({
+    jobId: 'gen-1', purpose: 'persona-sim' as const, charId: 'char-1', charName: '测试角色', uuid: 'u-gen',
+    submittedAt: Date.now(), snapshotAt: Date.now(), status: 'running' as const, notify: true, context: null,
+  });
+
+  it('全量清单：取消任务、撤输入、本机登记一并删掉', async () => {
+    const { putCloudGenJob, listCloudGenJobs } = await import('./cloudGen/registry');
+    localStorage.clear();
+    putCloudGenJob(running());
+    await purgeCharCloudState(charWith({ enabled: true }));
+
+    expect(ActiveMsgClient.cancelTask).toHaveBeenCalledWith('u-gen');
+    expect(ActiveMsgClient.clearClientStateValue).toHaveBeenCalledWith('amsg:cloud-gen', 'gen:gen-1');
+    expect(listCloudGenJobs()).toEqual([]);
+  });
+
+  it('只关掉定时主动消息时不碰', async () => {
+    const { putCloudGenJob, listCloudGenJobs } = await import('./cloudGen/registry');
+    localStorage.clear();
+    putCloudGenJob(running());
+    await purgeCharCloudState(charWith({ enabled: false }), disableScheduleCharPurge(false));
+
+    expect(ActiveMsgClient.cancelTask).not.toHaveBeenCalled();
+    expect(listCloudGenJobs()).toHaveLength(1);
   });
 });

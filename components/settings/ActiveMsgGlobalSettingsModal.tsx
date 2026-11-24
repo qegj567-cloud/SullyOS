@@ -5,6 +5,9 @@ import AmsgConnectionTransfer, { type AmsgDiscoveryRequest } from './AmsgConnect
 import PushSubscriptionPanel from './PushSubscriptionPanel';
 import PushModeSelector from './PushModeSelector';
 import AmsgOverview from './AmsgOverview';
+import AmsgCloudGenSettings, { mergeCloudGenSwitch } from './AmsgCloudGenSettings';
+import type { CloudGenPurpose } from '../../utils/cloudGen/types';
+import type { CloudGenFeatureSwitches } from '../../utils/cloudGen/settings';
 import AmsgConnectionGate from './AmsgConnectionGate';
 import AmsgVisitedPanel from './AmsgVisitedPanel';
 import type { AmsgConnection } from '../../utils/amsgConnectionCode';
@@ -183,12 +186,13 @@ const REQUIRED_WORKER_FEATURES = [
 //
 // 3.1.0 修复云端数据清单与清理在分块大值与海量收件箱下的内存/CPU 耗尽；投递或某项清理出错时，
 // 其余库存清理照跑；D1 存储满与每日额度用完的报错带机读代码，界面能说清楚原因。
-const REQUIRED_WORKER_VERSION = '3.1.0';
-// 3.2.0-next 给任务占位加了租约令牌，并收紧了入参校验。前端没有用到新能力，门槛保持 3.1.0；
-// Worker 自动更新会带上新版，不必让旧部署重新粘贴。
-// 3.2.0-next.2 把解不开的旧数据报成 STORED_DATA_UNDECRYPTABLE。前端对新旧两种报法都认得，
-// 门槛同样不动。
-const WORKER_VERSION_LAG_ACK = '3.2.0-next.2';
+// 3.2.0-next 给任务占位加了租约令牌，并收紧了入参校验；3.2.0-next.2 把解不开的旧数据报成
+// STORED_DATA_UNDECRYPTABLE。
+//
+// 4.0.0-next.3 起 `messageType: 'instant'` 落库即回 202，生成交给 Durable Object 起跳器在后台跑。
+// 即时对话和后台任务都以 instant 任务交上去；旧部署会在请求里当场跑完它，所以前端只往
+// 体检报了 instantBackground 的 Worker 发，旧部署上这两样退回本机，这里提示更新。
+const REQUIRED_WORKER_VERSION = '4.0.0-next.3';
 
 /** 手动配置的图文教程，只在用户展开「我要手动配置」后出现。 */
 const MANUAL_SETUP_TUTORIAL_URL = 'https://discord.com/channels/1487742660314923100/1533520151784460449';
@@ -266,7 +270,7 @@ const SecretReveal: React.FC<{ value: string; className?: string }> = ({ value, 
 };
 
 /** 引导的四步（介绍页是第 0 屏，不算在里面）。 */
-const GUIDE_STEPS = ['装后端', '开通知', '即时对话', '给角色开启'];
+const GUIDE_STEPS = ['装后端', '开通知', '云端生成', '给角色开启'];
 
 interface ActiveMsgGlobalSettingsModalProps {
   isOpen: boolean;
@@ -1343,7 +1347,17 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
     patchConfig({ instantChatEnabled: next });
     await ActiveMsgStore.saveGlobalConfig({ instantChatEnabled: next });
     if (next) showInstantChatSendHelp('cloud', true);
-    addToast(next ? '已开启全局即时对话，角色各自关闭的设置会保留。' : '已关闭全局即时对话，所有角色的聊天回到本机生成。', 'success');
+    addToast(next ? '私聊已开启云端生成，角色各自关闭的设置会保留。' : '私聊已关闭云端生成，所有角色的聊天回到本机生成。', 'success');
+  };
+
+  /**
+   * 日程 / 人格模拟 / 梦境的「云端生成」「完成时通知」。和私聊开关一样点完立刻落盘；
+   * saveGlobalConfig 只做浅合并，所以把整份 cloudGen 合好再写，别的功能的开关原样带上。
+   */
+  const handleCloudGenChange = async (purpose: CloudGenPurpose, patch: Partial<CloudGenFeatureSwitches>) => {
+    const next = mergeCloudGenSwitch(config?.cloudGen, purpose, patch);
+    patchConfig({ cloudGen: next });
+    await ActiveMsgStore.saveGlobalConfig({ cloudGen: next });
   };
 
   const handleGenerateServerToken = async () => {
@@ -1934,7 +1948,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
                 <p className="text-xs leading-relaxed text-emerald-700">
                   你这台 Worker 上跑的是
                   {workerVersion.deployed ? <code className="font-mono"> {workerVersion.deployed} </code> : '更早的版本'}
-                  ，更新后即时对话才走得上新的生成通道。
+                  ，更新后私聊的云端生成才走得上新的生成通道。
                 </p>
               ) : workerVersion?.state === 'ahead' ? (
                 <p className="text-xs leading-relaxed text-emerald-700">
@@ -2311,46 +2325,45 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
     </>
   );
 
-  /* 即时对话：聊天本身也交给云端跑。几道门缺一不可，缺哪道就把哪道写出来——
+  /* 云端生成：私聊（即时对话）以及日程、人格模拟、梦境交给云端跑。私聊几道门缺一不可，缺哪道就把哪道写出来——
      置灰而不说原因的话，用户只会反复点它。
      开着但有门没过时状态不能只写「已开启」——那几道门是真的会让这一轮走本地生成的，
      标成绿色的「已开启」就是在骗人：用户以为聊天在云端跑，实际一直在本地。 */
-  const instantStatusText = !instantChatOn ? '未开启' : instantChatBlockedReason ? '已开启 · 暂不生效' : '已开启';
+  const instantStatusText = !instantChatOn ? '私聊未开启' : instantChatBlockedReason ? '私聊已开启 · 暂不生效' : '私聊已开启';
   const instantStatusClass = !instantChatOn ? 'text-slate-400' : instantChatBlockedReason ? 'text-amber-600' : 'text-emerald-600';
   const instantBody = (
     <>
-      <p className="amsg-form-notice">这里设置即时对话总开关。后端连接成功后默认开启，明确关闭过的设置会保留。角色默认跟随，也可单独关闭，与角色的主动消息排程开关互不影响。</p>
-      {/* 「即时」容易被读成「秒回、不走模型」，所以第一句先把这个误会拆掉，再讲开和关差在哪。 */}
+      <p className="amsg-form-notice">这里按功能选择在云端生成还是本机生成。后端连接成功后默认云端生成，明确关闭过的设置会保留。私聊的角色默认跟随，也可单独关闭，与角色的主动消息排程开关互不影响。</p>
+      {/* 容易被读成「秒回、不走模型」，所以第一句先把这个误会拆掉，再讲两种差在哪。 */}
       <p className="text-xs leading-relaxed text-slate-500">
-        「即时」不是秒回。回复照样由你配的模型现写，要等多久、花多少 API 费用都和平时一样，变的只是<strong>在哪儿写</strong>。
+        云端生成不是秒回。内容照样由你配的模型现写，要等多久、花多少 API 费用都和平时一样，变的只是<strong>在哪儿写</strong>。
       </p>
       <div className="bg-white border border-slate-200 rounded-xl divide-y divide-slate-100 text-xs leading-relaxed text-slate-500">
         <div className="px-3 py-2.5">
-          <p className="font-bold text-slate-600">关着</p>
-          <p>回复在这台设备的页面里写。写完之前页面得一直开着，切到后台、锁屏，或者 App 被杀后台，这条回复就断了。</p>
+          <p className="font-bold text-slate-600">本机生成</p>
+          <p>在这台设备的页面里写。写完之前页面得一直开着，切到后台、锁屏，或者 App 被杀后台，这次生成就断了。</p>
         </div>
         <div className="px-3 py-2.5">
-          <p className="font-bold text-violet-600">开着</p>
-          <p>回复在你的云端后端里写，写好了用通知送回来。发完消息就算把 App 杀后台也没关系，回来时消息已经在那儿了。</p>
+          <p className="font-bold text-violet-600">云端生成</p>
+          <p>在你的云端后端里写，写好了送回这台设备。交出去之后就算把 App 杀后台也没关系，回来时内容已经在那儿了。</p>
         </div>
       </div>
       {instantChatBlockedReason ? (
         <p className="text-xs leading-relaxed text-amber-600">{instantChatBlockedReason}</p>
       ) : (
         <p className="text-[11px] leading-relaxed text-slate-400">
-          开着时没有逐字吐出，生成期间显示「正在输入…」；云端明确报错才会提示重发，只要还在生成或重试就一直等（LLM 慢不算失败）。
+          私聊开着时没有逐字吐出，生成期间显示「正在输入…」；云端明确报错才会提示重发，只要还在生成或重试就一直等（LLM 慢不算失败）。
         </p>
       )}
-      <button
-        type="button"
-        onClick={() => void handleToggleInstantChat()}
-        disabled={loading || (!globallyPaused && !instantChatOn && !!instantChatBlockedReason)}
-        className={`w-full py-3 font-bold rounded-2xl active:scale-95 transition-transform disabled:opacity-40 ${
-          instantChatOn ? 'bg-slate-200 text-slate-600' : 'bg-slate-900 text-white'
-        }`}
-      >
-        {instantChatOn ? '关闭全局即时对话' : '开启全局即时对话'}
-      </button>
+      <AmsgCloudGenSettings
+        prefix={tabPrefix}
+        instantOn={instantChatOn}
+        instantDisabled={loading || (!globallyPaused && !instantChatOn && !!instantChatBlockedReason)}
+        onToggleInstant={() => void handleToggleInstantChat()}
+        cloudGen={config.cloudGen}
+        disabled={loading}
+        onChangeCloudGen={(purpose, patch) => void handleCloudGenChange(purpose, patch)}
+      />
     </>
   );
 
@@ -2441,7 +2454,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
     <>
       {stepHeader(
         replacementNotice ? '等待旧任务结束' : reconfigure === 'review' ? '先确认后台连接' : '装一个你自己的后端',
-        replacementNotice ? '进度已保存，新后台暂不接收任务。' : reconfigure === 'review' ? '检查地址并重新验证，再依次确认通知、即时对话和角色设置。' : '页面关着的时候，得有个一直醒着的地方替角色写消息。它装在你自己的 Cloudflare 账号里，粘一枚 Token 就能自动装好。',
+        replacementNotice ? '进度已保存，新后台暂不接收任务。' : reconfigure === 'review' ? '检查地址并重新验证，再依次确认通知、云端生成和角色设置。' : '页面关着的时候，得有个一直醒着的地方替角色写消息。它装在你自己的 Cloudflare 账号里，粘一枚 Token 就能自动装好。',
       )}
       {isConnected && reconfigure !== 'review' && !replacementPlan ? (
         <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 space-y-1">
@@ -2484,9 +2497,9 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
     </>
   ) : guideStep === 3 ? (
     <>
-      {stepHeader('确认即时对话总开关', '角色默认跟随这里的设置，之后可以分别调整。')}
+      {stepHeader('确认云端生成开关', '私聊的角色默认跟随这里的设置，之后可以分别调整。')}
       <div className={mutedCardClass}>
-        {cardHeader('即时对话（防杀后台）', instantStatusText, instantStatusClass)}
+        {cardHeader('云端生成（防杀后台）', instantStatusText, instantStatusClass)}
         {instantBody}
       </div>
     </>
@@ -2504,7 +2517,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
         <li>找到<strong>「主动消息 2.0」</strong>，把<strong>「启用主动消息 2.0」</strong>的开关打开。</li>
       </ol>
       <p className="text-xs leading-relaxed text-slate-500">
-        {workspaceSection ? '完成后也可以在「功能总览」中进入各角色的配置页。' : '想让别的角色也来找你，就到那个角色的聊天里再开一次。'}即时对话可以在同一个面板里单独关闭，与主动消息排程互不影响。
+        {workspaceSection ? '完成后也可以在「功能总览」中进入各角色的配置页。' : '想让别的角色也来找你，就到那个角色的聊天里再开一次。'}私聊的云端生成可以在同一个面板里单独关闭，与主动消息排程互不影响。
       </p>
     </>
   );
@@ -2521,7 +2534,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
   const panelTabs = [
     { id: 'worker', label: '后端连接', attention: !isConnected || workerOutdated || workerVersion?.state === 'outdated' || cronPaused },
     { id: 'push', label: '通知设置', attention: Boolean(pushCheckError) || nativePermissionMissing || Boolean(pushStatus && !pushStatus.hasSubscription) },
-    { id: 'instant', label: '即时对话', attention: instantChatOn && Boolean(instantChatBlockedReason) },
+    { id: 'instant', label: '云端生成', attention: instantChatOn && Boolean(instantChatBlockedReason) },
     { id: 'diagnostics', label: '运行体检', attention: diagnosticLevel === 'bad' || diagnosticLevel === 'warn' },
     { id: 'privacy', label: '数据去向' },
     { id: 'advanced', label: '高级管理' },
@@ -2536,7 +2549,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
             </div>
             <p className="mt-1 text-xs leading-relaxed text-slate-500">
               {globallyEnabled
-                ? '暂停后会立即停止本机所有 Worker 请求、后台同步与即时对话，同时尽力暂停云端定时触发，连接与角色配置原样保留。'
+                ? '暂停后会立即停止本机所有 Worker 请求、后台同步与云端生成，同时尽力暂停云端定时触发，连接与角色配置原样保留。'
                 : '当前已暂停全部 Worker / 中转请求，聊天在本机直接生成。想恢复云端主动消息或修改远端配置时打开即可。'}
             </p>
           </div>
@@ -2573,7 +2586,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
         {panelTab === tab.id && <div className="space-y-3">
           {tab.id === 'worker' && <>{deployCard}<h3>后端 Worker</h3>{workerBody}</>}
           {tab.id === 'push' && <><h3>{pushTitle}</h3>{pushBody}</>}
-          {tab.id === 'instant' && <><div className="flex flex-wrap items-center justify-between gap-2"><h3>即时对话（防杀后台）</h3><span className={`text-xs ${instantStatusClass}`}>{instantStatusText}</span></div>{instantBody}</>}
+          {tab.id === 'instant' && <><div className="flex flex-wrap items-center justify-between gap-2"><h3>云端生成（防杀后台）</h3><span className={`text-xs ${instantStatusClass}`}>{instantStatusText}</span></div>{instantBody}</>}
           {tab.id === 'diagnostics' && (diagnosticsCard || <p className="text-xs text-slate-500 leading-relaxed">连接后端后，可以在这里检查运行状态。</p>)}
           {tab.id === 'privacy' && <><h3>数据存在哪儿</h3><div className="text-xs leading-relaxed text-slate-600 space-y-3">
             <p>开了 2.0 以后，主动消息内容、提示词、相关配置，都会进入你自己部署的 Worker 及其 D1 数据库。</p>
@@ -2646,6 +2659,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
       <AmsgVisitedPanel active={isOpen && workspaceSection === 'overview'}>
       <AmsgConnectionGate connected={isConnected} onConnect={() => onSelectWorkspace?.('config')}>
         <AmsgOverview connected={isConnected} active={isOpen && !covered && workspaceSection === 'overview'} enabled={globallyEnabled} cronEnabled={cronState ? cronState.kind === 'token-missing' || cronState.enabled : null} instantEnabled={instantChatOn} busy={loading || provisioning} instantBlockedReason={instantChatBlockedReason}
+          cloudGen={config.cloudGen} onChangeCloudGen={(purpose, patch) => void handleCloudGenChange(purpose, patch)}
           worker={capabilityWorker} push={capabilityPush} instantCapabilityBlocked={instantChatBlocker === 'Worker太旧' ? '后台版本还不支持，需要更新' : ''} onOpenPush={() => onSelectWorkspace?.('push')}
           characters={characters} characterGroups={characterGroups} onConfigureCharacter={isConnected ? onConfigureCharacter : undefined} onToggleEnabled={() => void handleToggleMasterSwitch()} onToggleInstant={() => void handleToggleInstantChat()}
           onToggleCron={() => {
@@ -2753,7 +2767,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
     <ConfirmDialog
       isOpen={pauseConfirmOpen}
       title="暂停后台任务"
-      message="暂停后，到点的主动消息、离开后消息和见面提醒都不发，即时对话照常。恢复后只补发晚到一小时以内的，更早的作废，每天或每周重复的跳到下一次。"
+      message="暂停后，到点的主动消息、离开后消息和见面提醒都不发，云端生成照常。恢复后只补发晚到一小时以内的，更早的作废，每天或每周重复的跳到下一次。"
       confirmText="暂停"
       variant="warning"
       onConfirm={() => void applyCronTrigger(false)}

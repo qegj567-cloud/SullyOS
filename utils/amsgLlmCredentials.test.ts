@@ -55,9 +55,11 @@ describe('credId 起名', () => {
     expect(charCredId('c1', 'memory')).toBe('char:c1/memory');
     expect(charCredIds('c1')).toEqual([
       'char:c1/chat', 'char:c1/instant', 'char:c1/emotion', 'char:c1/memory',
+      'char:c1/gen-schedule', 'char:c1/gen-persona-sim', 'char:c1/gen-dream',
     ]);
     expect(parseCharCredId('char:c1/emotion')).toEqual({ charId: 'c1', purpose: 'emotion' });
     expect(parseCharCredId('char:c1/memory')).toEqual({ charId: 'c1', purpose: 'memory' });
+    expect(parseCharCredId('char:c1/gen-persona-sim')).toEqual({ charId: 'c1', purpose: 'gen-persona-sim' });
   });
 
   // 回归守卫：删角色时按 charCredIds 清云端凭据行。用途表漏了一档，那一行就永远留在

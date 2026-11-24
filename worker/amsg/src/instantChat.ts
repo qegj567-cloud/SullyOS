@@ -185,64 +185,17 @@ export const applyInstantNotificationPolicy = (
 /**
  * 上游 worker 里这条路用得到的入口（注入进来只为单测能替身）。
  *
- * 只有 fetch：这条路做的是「转发两个加密信封」，跑任务是 DO 那边的事
- * （`upstream.runTask`，见 index.ts 的 InstantTickDO）。
+ * 只有 fetch：这条路做的是「转发几个加密信封」。叫醒起跳器是上游 schedule-message
+ * 自己的事，跑任务在起跳器的 alarm 里（见 index.ts 的 InstantTickDO）。
  */
 export interface InstantChatUpstream {
   fetch(request: Request, env: unknown): Promise<Response>;
 }
 
-/**
- * 起跳用的 Durable Object namespace binding（`INSTANT_TICK`）。
- *
- * 只声明这里真正会调的两个方法：包装层不需要完整的 DO 类型，单测也就能拿个字面量当替身。
- */
-export interface InstantTickNamespace {
-  idFromName(name: string): unknown;
-  get(id: unknown): { kick(uuid: string): Promise<unknown> };
-}
-
 interface InstantChatEnv {
   AMSG_SERVER_TOKEN?: string;
   AMSG_MASTER_KEY?: string;
-  /** 没有它就没法起跳；老版本 Worker 上是 undefined，见 kickInstantTick。 */
-  INSTANT_TICK?: InstantTickNamespace;
 }
-
-export type InstantTickKickResult =
-  | { ok: true }
-  | { ok: false; reason: 'missing-binding' }
-  | { ok: false; reason: 'kick-failed'; error: unknown };
-
-/**
- * 叫醒 DO，让它把刚落库的这条立刻捡走。
- *
- * 这一跳过去挂在 `ctx.waitUntil` 上，而那个只有 30 秒——响应发出（或客户端断开）
- * 之后就开始倒计时，一轮带工具循环的生成必被砍在半路，日志里只留一条
- * 「waitUntil() tasks did not complete」。DO 的 alarm 是独立 invocation，
- * 拿满 15 分钟墙钟，跟这个已经回了 202 的请求彻底脱钩，才对得上
- * INSTANT_TOTAL_TIMEOUT_MS 一直以来的设计意图。
- *
- * **一条任务一个 DO 实例**（实例名就是任务 uuid）：每个实例只跑自己那一条
- * （`upstream.runTask(uuid)`），所以几条聊天同时在跑也互不排队、更不会重复生成。
- * 这依赖上游 2.6.0-next.16 起的 runTask——在那之前只有「扫一遍所有到期任务」，
- * 多实例并发扫同一批会各生成一次，只能退回单实例串行。
- *
- * 两种失败分开报，因为要用户做的事完全不同：binding 压根不在 = Worker 是旧的，
- * 得去更新；叫醒失败 = 临时故障，任务已经在库里，下一分钟的 cron 会捡。
- */
-export const kickInstantTick = async (env: unknown, uuid: string): Promise<InstantTickKickResult> => {
-  const namespace = (env as InstantChatEnv | null | undefined)?.INSTANT_TICK;
-  if (!namespace || typeof namespace.get !== 'function' || typeof namespace.idFromName !== 'function') {
-    return { ok: false, reason: 'missing-binding' };
-  }
-  try {
-    await namespace.get(namespace.idFromName(uuid)).kick(uuid);
-    return { ok: true };
-  } catch (error) {
-    return { ok: false, reason: 'kick-failed', error };
-  }
-};
 
 /** 上游的 UUID v4 判定（照抄它的正则，前端拿同一个 X-User-Id 跑两边）。 */
 const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -367,15 +320,15 @@ const isEncryptedEnvelope = (value: unknown): boolean => {
 };
 
 /**
- * `POST /instant-chat` 的处理：鉴权 → 严格顺序转发 → 202 → 立刻起一跳。
+ * `POST /instant-chat` 的处理：鉴权 → 严格顺序转发 → 202（起跳由上游 schedule-message 完成）。
  *
  * 顺序不能换：云端状态先落地，任务才允许存在。反过来的话，状态那一步失败时 D1 里
  * 已经躺着一条注定拿旧上下文答话的任务，而且没人拦得住它。带了 credPayload 的话，
  * 凭据行同样要在建任务之前覆盖好。
  *
- * 任务体带 `immediate: true`（客户端 sendInstantChat 固定写）：上游落库即到期，
- * 202 之后的那一跳直接就能捡走；顶替上一条也在任务体里（`supersedesUuid`，
- * 上游在建新任务的同一事务里取消旧的），包装层不再有第二条取消请求。
+ * 任务体是 `messageType: 'instant'`（客户端 sendInstantChat 固定写）：上游落库即到期，
+ * 落库后自己叫醒起跳器，生成在起跳器的 alarm 里跑；顶替上一条也在任务体里
+ * （`supersedesUuid`，上游在建新任务的同一事务里取消旧的），包装层不再有第二条取消请求。
  */
 export const handleInstantChat = async (args: {
   request: Request;
@@ -583,8 +536,8 @@ export const handleInstantChat = async (args: {
   }
 
   // ③ 任务落库 = 受理（顶替上一条也在这一步里：任务体的 supersedesUuid 由上游在
-  //    同一事务里处理）。到这一步返回 202 之前，行已经在 D1 里了，
-  //    下面那一跳只是让它快点跑起来，跑不成还有每分钟的 cron。
+  //    同一事务里处理）。上游落库后顺手叫醒起跳器，结果写在 data.dispatch 里；
+  //    叫没叫醒，行都已经在 D1 里了，跑不成还有每分钟的 cron。
   const taskResponse = await upstream.fetch(
     new Request(internalUrl('/schedule-message'), {
       method: 'POST',
@@ -614,13 +567,12 @@ export const handleInstantChat = async (args: {
     });
   }
 
-  // ④ 叫醒 DO，让它立刻把这条捡走（immediate 任务落库即到期）。
-  //    生成跑在它的 alarm 里 —— 独立 invocation、15 分钟墙钟，见 kickInstantTick。
-  const kicked = await kickInstantTick(env, uuid);
-  if (!kicked.ok && kicked.reason === 'missing-binding') {
-    // 任务已经在库里了，所以这不是「没发出去」，而是「这台 Worker 跑不动它」：
-    // 每分钟的 cron 仍会把它捡走，但那条路上没有为即时对话放宽的超时，用户会等很久
-    // 甚至等不到。与其让他对着「正在输入」干等，不如现在就说清楚该去点哪里。
+  // ④ 起跳结果（上游的 dispatch）：kicked = 起跳器已经叫醒，生成在它的 alarm 里跑。
+  const dispatch = (taskBody as { data?: { dispatch?: unknown } } | null)?.data?.dispatch;
+  if (dispatch === 'not_configured') {
+    // 没有 INSTANT_TICK 绑定 = 这台 Worker 跑不动即时对话。任务已经在库里了，所以这不是
+    // 「没发出去」：每分钟的 cron 仍会把它捡走，但那条路上没有为即时对话放宽的超时，用户会
+    // 等很久甚至等不到。与其让他对着「正在输入」干等，不如现在就说清楚该去点哪里。
     console.error('[amsg:instant-chat] 没有 INSTANT_TICK 绑定：这台 Worker 是旧版本，需要更新');
     return json(503, {
       success: false,
@@ -632,10 +584,13 @@ export const handleInstantChat = async (args: {
       },
     });
   }
-  if (!kicked.ok) {
-    // 叫醒失败但绑定在 = 临时故障。任务已落库，下一分钟的 cron 会捡起来，
+  if (dispatch === 'kick_failed') {
+    // 绑定在、叫醒失败 = 临时故障。任务已落库，下一分钟的 cron 会捡起来，
     // 不该把已经受理的这一轮报成失败。
-    console.warn('[amsg:instant-chat] 叫醒 DO 失败（等 cron 兜底）', kicked.error);
+    console.warn('[amsg:instant-chat] 叫醒起跳器失败（等 cron 兜底）', uuid);
+  } else if (dispatch === undefined) {
+    // 任务体不是 instant（还没刷新的旧页面发的），上游不叫醒起跳器，这一轮要等 cron。
+    console.warn('[amsg:instant-chat] 任务不是 instant，没有起跳，等 cron 捡（页面多半还是旧版本）', uuid);
   }
 
   // credentialsSynced：告诉客户端「这一轮的凭据行已经照你给的覆盖过了」，它据此把本地

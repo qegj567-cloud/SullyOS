@@ -2,7 +2,7 @@
 //
 // 回归守卫（后台任务这条路怎么排上去）。两条都是本地端到端跑出来的坑：
 //
-//   1. 到期时间必须交给服务端盖（immediate: true），客户端绝不能自己算一个 firstSendTime。
+//   1. 以 instant 任务交上去（到期时间由服务端盖、落库就叫醒起跳器），客户端绝不能自己算一个 firstSendTime。
 //      算了的话，那个时刻在「上传输入 → 传凭据 → 加密 → 发请求」这一路上早就过去了，
 //      上游一律打回「时间必须在未来」——云端这条路每次都失败、每次都退回本地跑，
 //      而用户那边只看得到门牌照常更新，完全不知道它从来没在云端跑过。
@@ -91,11 +91,13 @@ const schedule = (extra: Record<string, unknown> = {}) => ActiveMsgClient.schedu
 const scheduledTask = () => capturedPayloads.filter((p) => p && 'messageType' in p).at(-1);
 
 describe('后台任务的到期时间', () => {
-  it('用 immediate: true，不自己算 firstSendTime', async () => {
+  // instant 落库就叫醒起跳器，不用等最长一分钟的 cron；上游拒收 instant 再带 immediate。
+  it('用 messageType: instant，不带 immediate，也不自己算 firstSendTime', async () => {
     await schedule();
 
     const task = scheduledTask();
-    expect(task.immediate).toBe(true);
+    expect(task.messageType).toBe('instant');
+    expect(task).not.toHaveProperty('immediate');
     expect(task, '客户端算出来的时刻发到服务端已是过去时，上游会打回「时间必须在未来」')
       .not.toHaveProperty('firstSendTime');
   });
@@ -124,7 +126,7 @@ describe('后台任务能力探测的缓存', () => {
   const fetchCalls = () => (globalThis.fetch as any).mock.calls.length;
 
   it('拿到明确答复才记缓存（支持 → 第二次不再发请求）', async () => {
-    configCheck({ success: true, data: { backgroundJobs: true } });
+    configCheck({ success: true, data: { backgroundJobs: true, instantBackground: true } });
 
     expect(await ActiveMsgClient.probeBackgroundJobSupport()).toBe(true);
     expect(await ActiveMsgClient.probeBackgroundJobSupport()).toBe(true);
@@ -149,7 +151,7 @@ describe('后台任务能力探测的缓存', () => {
     expect(fetchCalls(), '同一轮里连着提交几个 job 不该重复问').toBe(1);
 
     vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 6 * 60_000);
-    configCheck({ success: true, data: { backgroundJobs: true } });
+    configCheck({ success: true, data: { backgroundJobs: true, instantBackground: true } });
 
     expect(
       await ActiveMsgClient.probeBackgroundJobSupport(),
@@ -178,8 +180,10 @@ describe('后台任务能力探测的缓存', () => {
   // 就能在任务还在云端跑着的时候把这一轮踢回本地，同一份快照烧两次副 API，两份结果先后
   // 落地互相盖（见 plateCloudGate）。
   it.each([
-    ['问到了、认识后台任务', { success: true, data: { backgroundJobs: true } }, 200, 'supported'],
+    ['问到了、认识后台任务', { success: true, data: { backgroundJobs: true, instantBackground: true } }, 200, 'supported'],
     ['问到了、是老 bundle', { success: true, data: {} }, 200, 'unsupported'],
+    // 回归守卫：认识后台任务、却还会在请求里当场跑完 instant 任务的老 bundle，不能交。
+    ['认识后台任务、但 instant 还在请求里跑', { success: true, data: { backgroundJobs: true } }, 200, 'unsupported'],
     ['问不到（5xx）', { success: false }, 503, 'unknown'],
   ])('%s → %s', async (_name, body, status, expected) => {
     configCheck(body, status as number);
@@ -203,7 +207,7 @@ describe('后台任务能力探测的缓存', () => {
       if (isSelfUpdate) upgraded = true;
       const body = isSelfUpdate
         ? { success: true, data: { message: '已经更新到最新版本。' } }
-        : { success: true, data: upgraded ? { backgroundJobs: true } : {} };
+        : { success: true, data: upgraded ? { backgroundJobs: true, instantBackground: true } : {} };
       return {
         status: 200,
         text: async () => JSON.stringify(body),
@@ -233,5 +237,55 @@ describe('后台任务的采样参数', () => {
     const task = scheduledTask();
     expect(task).not.toHaveProperty('temperature');
     expect(task).not.toHaveProperty('maxTokens');
+  });
+});
+
+// 云端生成（代跑）走同一个入口，多带几样：思考参数、独立命名空间、客户端先定好的 uuid、
+// 用途标记，以及「每次都覆盖凭据行」——本机指纹底账记着传过，不代表云端那行还是这一份。
+describe('代跑任务的额外字段', () => {
+  const genRow = { credId: 'char:c-bg/gen-dream', value: { apiUrl: 'https://api.example/v1/chat/completions', apiKey: 'sk', primaryModel: 'm' } };
+  const scheduleGen = () => schedule({
+    kind: 'cloud-gen', credRow: genRow, namespace: 'amsg:cloud-gen', jobKey: 'gen:job-1',
+    uuid: '6f1c2e8a-3b4d-4c5e-9f60-718293a4b5c6', metadata: { amsgCloudGenPurpose: 'dream' },
+    extraBody: { reasoning_effort: 'high' }, forceCredUpload: true,
+  });
+
+  it('思考参数进 llmExtraBody，uuid 与用途标记写上任务，输入放进代跑自己的命名空间', async () => {
+    await scheduleGen();
+    const task = scheduledTask();
+    expect(task.llmExtraBody).toEqual({ reasoning_effort: 'high' });
+    expect(task.uuid).toBe('6f1c2e8a-3b4d-4c5e-9f60-718293a4b5c6');
+    expect(task.metadata).toMatchObject({ amsgKind: 'cloud-gen', amsgCloudGenPurpose: 'dream', amsgJobId: 'job-1' });
+    expect(task.credRefs).toEqual({ chat: genRow.credId });
+    const statePayload = capturedPayloads.find((p) => Array.isArray(p?.entries)) ?? null;
+    const putArgs = reiClient.putClientState.mock.calls.flat();
+    expect(JSON.stringify(putArgs) + JSON.stringify(statePayload)).toContain('amsg:cloud-gen');
+  });
+
+  it('凭据行每次都传，不看指纹底账', async () => {
+    await scheduleGen();
+    await scheduleGen();
+    expect(reiClient.putLlmCredentials).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('代跑能力探测', () => {
+  const configCheck = (data: unknown) => vi.stubGlobal('fetch', vi.fn(async () => ({
+    status: 200,
+    text: async () => JSON.stringify({ success: true, data }),
+    headers: new Headers({ 'content-type': 'application/json' }),
+  })));
+
+  it('报了 cloudGen 才算支持；跟后台任务共用一次探测', async () => {
+    configCheck({ backgroundJobs: true, instantBackground: true, cloudGen: true });
+    expect(await ActiveMsgClient.probeCloudGenSupportDetailed()).toBe('supported');
+    expect(await ActiveMsgClient.probeBackgroundJobSupportDetailed()).toBe('supported');
+    expect((globalThis.fetch as any).mock.calls.length).toBe(1);
+  });
+
+  it('认识后台任务、但还不认识代跑的老 bundle → 不支持（门牌整理照常）', async () => {
+    configCheck({ backgroundJobs: true, instantBackground: true });
+    expect(await ActiveMsgClient.probeCloudGenSupportDetailed()).toBe('unsupported');
+    expect(await ActiveMsgClient.probeBackgroundJobSupportDetailed()).toBe('supported');
   });
 });

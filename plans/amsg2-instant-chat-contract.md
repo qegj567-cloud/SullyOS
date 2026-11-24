@@ -14,15 +14,15 @@
   `package.json` 里锁定的 `@rei-standard/amsg-client` 与 `@rei-standard/amsg-server` 精确版本已包含这些能力，
   不需要本地补丁；不要手改安装目录，升级包时须重跑真实 SDK 集成测试。
 - 防双跑复用上游 `claimTask` 的 `lease_until` 条件更新；每分钟 cron 是兜底捡漏者。
-- 任务行型：`message_type = 'auto'` + `messageSubtype: 'instant-chat'`
+- 任务行型：`message_type = 'instant'` + `messageSubtype: 'instant-chat'`
   + `metadata: { amsgMode: 'instant', amsgInstantChat: true, charId }`。
-  用 'auto' 是为了确定走 hooks + LLM 的 fire 管线；push 载荷的 `messageType`
-  期望取自 `metadata.amsgMode`（见 V4），这样客户端收到的是
-  `messageType: 'instant'`。`messageSubtype` 上游只当自由文本标签原样透传，
+  instant 任务落库即回 202，生成在起跳器里跑，走的是跟定时任务同一条 fire 管线
+  （hooks + LLM、租约、重试、收件箱）；push 载荷的 `messageType` 取自
+  `metadata.amsgMode`（见 V4），客户端收到的是 `messageType: 'instant'`。`messageSubtype` 上游只当自由文本标签原样透传，
   客户端拿它做面板对账的过滤判据：即时对话的行不补进任务清单（连同
   `status = 'failed'` 的行一起排除），否则用户正等着的这一轮会显示成待触发的
   排程任务、还可能被「取消全部」顺手掐掉。
-- **durability 原则**：202 之前任务行必须已落 D1。受理后唤醒的 `InstantTickDO`
+- **durability 原则**：202 之前任务行必须已落 D1。上游落库后叫醒的起跳器（`InstantTickDO`）
   alarm 负责快，cron 负责稳。alarm 没跑成或中途被回收 → lease 过期 → cron 重跑，消息不丢。
   生成不挂在 `ctx.waitUntil` 上（它只有 30 秒，从响应发出或客户端断开时算起）。
 
@@ -48,9 +48,10 @@
   底账只代表这一个入口传过什么，云端那行可能已被别的入口（iOS 上 Safari 与主屏 App
   各存各的）或别的 Worker 改过。任务走内联凭据时不带。
 
-  taskPayload（信封内）固定带 `immediate: true`（amsg-server 2.6.0-next.15 起：
-  落库即到期，不带 `firstSendTime`）；顶替上一条时带 `supersedesUuid`（上游在
-  建新任务的同一事务里取消旧的，原子）。外壳不再有明文 supersedesUuid。
+  taskPayload（信封内）固定是 `messageType: 'instant'`，不带 `immediate`（上游拒收两者同时出现）
+  也不带 `firstSendTime`（amsg-server 4.0.0-next.3 起：落库即到期，回 202 并在 `data.dispatch`
+  里报起跳器叫没叫醒）；顶替上一条时带 `supersedesUuid`（上游在建新任务的同一事务里取消
+  旧的，原子）。外壳不再有明文 supersedesUuid。
 
 - 处理步骤（严格顺序，任一步失败即返回明确错误，不落新任务）：
   1. 包装层用租户密钥解开 state/task 信封，校验本角色 `fire_pack.chat`，将原来的压缩值
@@ -63,11 +64,13 @@
      `data.rejected` 或 `data.skippedEntries` 中，均不能继续建任务。其他共享状态仍按自身版本判定。
   3. 带了 credPayload 时，转发 `PUT /llm-credentials`，失败回
      `INSTANT_CHAT_CREDENTIALS_FAILED`。凭据仍在执行时按 credRefs 现取，不冻结在输入里。
-  4. 转发 `POST /schedule-message`，成功拿到 uuid 才返回
-     `202 {status:'accepted',uuid}`；顶替旧任务由上游事务完成。凭据成功覆盖时再带
+  4. 转发 `POST /schedule-message`。上游落库后叫醒起跳器（实例名即任务 uuid，一条任务
+     一个实例，alarm 里点名跑这一条），结果写在 `data.dispatch`；顶替旧任务由上游事务完成。
+     成功拿到 uuid 才返回 `202 {status:'accepted',uuid}`，凭据成功覆盖时再带
      `credentialsSynced:true`。之前落下但没有任务引用的输入由 TTL 清理。
-  5. 唤醒 `InstantTickDO`（实例名即任务 uuid，一条任务一个实例），alarm 用 `runTask(uuid)`
-     点名执行已落库的这一条；每分钟 cron 继续兜底。
+  5. 看 `dispatch`：`not_configured`（这台 Worker 没有 `INSTANT_TICK` 绑定）回
+     `503 INSTANT_CHAT_WORKER_OUTDATED`，带上已落库的 uuid；`kick_failed` 只记一行日志，
+     照回 202，由每分钟 cron 兜底。
 
   独立输入在这一轮结束（送达、跳过、取消，或失败且不再重试）后由 `onFireSettled` 立刻删除；
   命名空间上配的 7 天 TTL 只兜删除失败或这一轮一直没结束的情况。独立输入按角色归属参与云端清理。
@@ -77,9 +80,11 @@
 - `export default` 的 `fetch` 收第三个参数 `ctx`，只给 `/self-update/check` 在 `waitUntil`
   里跑几秒的检查用；`/instant-chat` 不用它，`scheduled` 只收 `(event, env)`。
 - 能力判断只在 `/config-check` 一处做（开发期规矩：门槛只留一处，不做逐调用 capability 预检）。
-  它回 `instantTick`（运行时有没有 `INSTANT_TICK` 起跳器绑定）和 `workerVersion`（这份 bundle
-  的版本，与前端 `utils/amsgBundleVersion.ts` 的 `AMSG_BUNDLE_VERSION` 比较）。连接时探一次存进
-  全局配置，发消息时读存量：`instantTick` 决定这台 Worker 跑不跑得动即时对话，bundle 版本决定
+  它回 `instantTick`（运行时有没有 `INSTANT_TICK` 起跳器绑定）、`instantBackground`（这份代码
+  把 instant 任务放到后台投递；没有它的旧 bundle 会在请求里当场跑完）和 `workerVersion`（这份
+  bundle 的版本，与前端 `utils/amsgBundleVersion.ts` 的 `AMSG_BUNDLE_VERSION` 比较）。连接时探一次
+  存进全局配置，发消息时读存量：`instantTick` 和 `instantBackground` 都在，这台 Worker 才跑得动
+  即时对话（后台任务同样要 `instantBackground`），bundle 版本决定
   要不要提示更新、以及需要新协议的轮次能不能上云。`instantChat: true` 只说明代码里有这条路由，
   不作门槛：自更新由旧代码执行，代码和版本号新了，绑定可能还没接上。
 

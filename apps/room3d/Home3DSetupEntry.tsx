@@ -3,7 +3,7 @@ import {useOS} from '../../context/OSContext';
 import Home3DEntry from './Home3DEntry';
 import HomeFigureStudio from '../../components/character/HomeFigureStudio';
 import {isHomeDefinition} from './homeDefinition';
-import {isScheduleFeatureOn, generateDailyScheduleForChar} from '../../utils/scheduleGenerator';
+import {isScheduleFeatureOn, generateDailyScheduleForChar, isScheduleGeneratingFor} from '../../utils/scheduleGenerator';
 import {getDailyScheduleForChar} from '../../utils/dailySchedule';
 import {hasHomeSchedulePositions} from '../../utils/homeSchedule';
 import {createStarterHome} from './starterHome.js';
@@ -47,6 +47,8 @@ export default function Home3DSetupEntry(props: React.ComponentProps<typeof Home
     }, [char?.id, char?.scheduleFeatureEnabled, char?.scheduleStyle, defined, roomKey, retry]);
     const regenerate = async () => {
         if (!char || busy) return;
+        // 聊天那边（含云端）正在生成这个角色的日程时不另起一份：晚到的那份会把这里刚生成的盖掉。
+        if (isScheduleGeneratingFor(char.id)) {setError('这个角色的日程正在生成，稍等片刻再试。'); return;}
         if (!apiConfig.apiKey || !apiConfig.baseUrl || !apiConfig.model) {setError('请先在设置中配置聊天 API，再补全日程。'); return;}
         setBusy(true); setError('');
         try {

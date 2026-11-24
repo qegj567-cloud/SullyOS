@@ -453,3 +453,8 @@
 .amsg-capability-chevron.amsg-icon { flex: none; width: 13px; height: 13px; color: #b3a8bd; }
 .amsg-capability-row > button[aria-expanded="true"] .amsg-capability-chevron { transform: rotate(90deg); }
 .amsg-capability-hint { margin: -2px 16px 10px; padding: 8px 10px; border-radius: 8px; background: #f6f2fa; color: #6f6479; font-size: 12px; line-height: 1.7; }
+/* 云端生成：按功能的开关列表。私聊一个开关；日程、人格模拟、梦境各带一行缩进的「完成时通知」。 */
+.amsg-overview-functions > .amsg-cloud-gen, .amsg-config-panel .amsg-cloud-gen { margin-top: 12px; }
+.amsg-cloud-gen-title { padding: 12px 16px 0; color: #39343e; font-size: 14px; font-weight: 600; line-height: 1.5; }
+.amsg-cloud-gen-feature { border-top: 1px solid #efedf2; }
+.amsg-cloud-gen-restore { display: block; min-height: 36px; margin: 0 16px 6px 32px; }

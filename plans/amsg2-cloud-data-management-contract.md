@@ -49,7 +49,7 @@ type CloudPage = {
 
 写状态、凭据、任务支持 owner/kind；任务派生的状态、结果和后续任务尽量继承归属。名称快照按现有加密规则处理，不因做管理而明文存私密身份信息。
 
-SullyOS 规则：`amsg:char:<id>`、`char:<id>/<purpose>`、任务 metadata.charId；`amsg:job` 是共享命名空间，归属必须细到每个 job 输入，不能整 namespace 随角色删除。后台任务的 jobId 可用于将旧输入与任务关联；关联不存在或不可解密则 unknown，不能猜。全局工具配置、推送订阅等不随角色删除。宿主特有规则用配置/回调提供，不硬编码进通用 SDK。
+SullyOS 规则：`amsg:char:<id>`、`char:<id>/<purpose>`、任务 metadata.charId；`amsg:job` 和代跑输入 `amsg:cloud-gen` 是共享命名空间，归属必须细到每个 job 输入，不能整 namespace 随角色删除。后台任务的 jobId 可用于将旧输入与任务关联；关联不存在或不可解密则 unknown，不能猜。全局工具配置、推送订阅等不随角色删除。宿主特有规则用配置/回调提供，不硬编码进通用 SDK。
 
 迁移按云端记录进行、可分批可重跑，不依赖浏览器角色表。迁移缺口/无法恢复名称须在 API 中如实表达。共享引用不应被错误归到单一角色。
 

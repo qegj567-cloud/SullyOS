@@ -45,13 +45,15 @@ export interface ApiCallMeta {
  *   - `cloud-proactive`：云端定时触发的主动消息 / 离开后消息 / 见面离开提醒（含模型判定不发的轮次）
  *   - `cloud-plate-consolidate`：门牌整理（记忆宫殿的后台活儿，用的是副 API）
  *   - `cloud-diagnostic`：主动消息 2.0 面板的云端诊断复现测试
+ *   - `cloud-generation`：云端生成（本机拼好请求、Worker 代跑），日程 / 人格模拟 / 梦境
  */
 export type ApiCallRoute =
     | 'cloud-instant-chat'
     | 'cloud-emotion-eval'
     | 'cloud-proactive'
     | 'cloud-plate-consolidate'
-    | 'cloud-diagnostic';
+    | 'cloud-diagnostic'
+    | 'cloud-generation';
 
 /** 落库的一条记录。 */
 export interface ApiCallLogEntry extends ApiCallMeta {

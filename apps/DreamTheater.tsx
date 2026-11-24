@@ -8,8 +8,9 @@ import { ContextBuilder } from '../utils/context';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { isScheduleFeatureOn } from '../utils/scheduleGenerator';
 import { isDevDebugAvailable } from '../utils/devDebug';
-import { useDreamSim, dreamSimStore } from '../utils/dreamSimStore';
-import { safeResponseJson } from '../utils/safeApi';
+import { useDreamSimFor, dreamSimStore } from '../utils/dreamSimStore';
+import { DREAM_REQUEST_PARAMS, dreamApiMeta, fetchDreamScript } from '../utils/dreamScript';
+import { trySubmitCloudGeneration } from '../utils/cloudGen/submit';
 import CdnImg from '../components/os/CdnImg';
 import { trackEvent } from '../utils/analytics';
 import { useConfirmDialog } from '../hooks/useConfirmDialog';
@@ -24,8 +25,6 @@ import {
 //  输入：ContextBuilder(false) + 记忆宫殿(若启用) + 最近上下文(默认500/按角色设置)
 //  输出：一场梦境演出 + 一个情绪 buff（参考查手机 PersonaSim 演出）
 // ============================================================
-
-export interface DreamApiConfig { apiKey: string; baseUrl: string; model: string; }
 
 const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
 // 确定性伪随机（按种子）——同一碎片每次渲染散布一致
@@ -136,14 +135,15 @@ const BoxCat: React.FC<{ archetype: DreamArchetype; size?: number; className?: s
 );
 
 // ============================================================
-//  GENERATION — 构建导演 prompt、调模型、解析
+//  GENERATION — 构建导演 prompt（调模型与解析在 utils/dreamScript.ts，本机与云端共用）
 // ============================================================
-export async function generateDreamScript(opts: {
-    char: CharacterProfile; userProfile: UserProfile; apiConfig: DreamApiConfig;
-    forcedArchetype?: DreamArchetype; // 仅本地测试：强制指定原型（管理员调试指令）
-}): Promise<DreamScript> {
+/** 拼好这次要发的 messages。本机直连和交云端代跑用的是同一份。 */
+export async function buildDreamMessages(opts: {
+    char: CharacterProfile; userProfile: UserProfile;
+    forcedArchetype?: DreamArchetype; // 应用端抽好的原型（或管理员调试指令指定的）
+}) {
 
-    const { char, userProfile, apiConfig, forcedArchetype } = opts;
+    const { char, userProfile, forcedArchetype } = opts;
     // 记忆宫殿：内部按 memoryPalaceEnabled 自行把关，关闭时是 no-op
     await injectMemoryPalace(char, undefined, undefined, userProfile.name);
     // 需求明确：contextbuilder(false) —— 不带当月详细记忆，只要角色底子
@@ -159,25 +159,7 @@ export async function generateDreamScript(opts: {
     }).join('\n');
 
     const prompt = buildDreamPrompt('', recent, char.name, userProfile.name, forcedArchetype);
-    const res = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-        // 梦境鼓励高幻觉 → 温度拉到安全上限。注意 temperature 封顶 1.0：Anthropic/Claude
-        // 中转的合法区间是 0~1，>1 会直接报错（OpenAI 虽允许到 2，但 1.0 已足够发散）。
-        // max_tokens 用 8192：梦是一堆短碎片，足够用；16000 在 claude-3.5 等输出上限 8192 的
-        // 模型上会 400。仍有「finish_reason==='length' → 截断」兜底。
-        body: JSON.stringify({ model: apiConfig.model, messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, [{ role: 'user', content: prompt }])), temperature: 1.0, max_tokens: 8192 }),
-        __sullyMeta: { appId: 'dreamtheater', appName: '潜意识剧场', charId: char.id, charName: char.name, purpose: '梦境剧本生成' },
-    } as RequestInit);
-    if (!res.ok) throw new Error('API');
-    const data = await safeResponseJson(res);
-    if (data.choices?.[0]?.finish_reason === 'length') throw new Error('梦境生成被截断');
-    const parsed = parseDream(data.choices[0].message.content);
-    if (!parsed || !parsed.archetype) throw new Error('parse');
-    // 深眠（隐藏）允许无碎片——沉默即演出；其它梦必须有碎片
-    if (parsed.archetype !== 'deepsleep' && !(parsed.fragments?.length)) throw new Error('梦境为空');
-    if (!parsed.fragments) parsed.fragments = [];
-    return parsed;
+    return ContextBuilder.buildCharacterRequest(characterContextInput, [{ role: 'user', content: prompt }]);
 }
 
 function buildDreamPrompt(context: string, recent: string, name: string, userName: string, forcedArchetype?: DreamArchetype): string {
@@ -262,31 +244,6 @@ sweet 甜梦(温暖/甜点/柔软的笑) · nightmare 噩梦(被追逐/怪物/�
 - {"kind":"image","caption":"一只倒着飞的鸟","tint":"#5a6a7a"}        // 纯文字成像的象征画面（caption 即诗，无图片占位）
 
 务必：18~40 个碎片、大量 silence 留白、kind 多样、意象并置而非叙述、敢于矛盾与不可能、**结尾戛然而止不收束不点题**。**保证 JSON 完整闭合**——篇幅吃紧就砍中段碎片，也要把括号全部闭合。直接输出 JSON 对象。`;
-}
-
-function parseDream(raw: string): DreamScript | null {
-    if (!raw) return null;
-    let s = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
-    const first = s.indexOf('{');
-    const last = s.lastIndexOf('}');
-    if (first === -1 || last === -1) return null;
-    s = s.slice(first, last + 1);
-    const repair = (str: string) => {
-        let inStr = false, esc = false, out = '';
-        for (let i = 0; i < str.length; i++) {
-            const ch = str[i];
-            if (esc) { out += ch; esc = false; continue; }
-            if (ch === '\\') { out += ch; esc = true; continue; }
-            if (ch === '"') { inStr = !inStr; out += ch; continue; }
-            if (inStr && ch === '\n') { out += '\\n'; continue; }
-            if (inStr && ch === '\r') { out += '\\r'; continue; }
-            if (inStr && ch === '\t') { out += '\\t'; continue; }
-            out += ch;
-        }
-        return out;
-    };
-    try { return JSON.parse(s); } catch { }
-    try { return JSON.parse(repair(s)); } catch (e) { console.warn('dream parse failed', e); return null; }
 }
 
 // ============================================================
@@ -604,7 +561,7 @@ const DreamTheater: React.FC<{ char: CharacterProfile; onExit: () => void }> = (
     const theme = THEMES[script?.archetype || 'starry'];
     const isDeepSleep = script?.archetype === 'deepsleep';
 
-    const dreamSim = useDreamSim();
+    const dreamSim = useDreamSimFor(char.id);
 
     // ----- generate（后台进行：生成期间用户可离开小屋，好了全局提示 + 深链回来）-----
     const start = useCallback(async (opts?: { override?: boolean }) => {
@@ -635,7 +592,20 @@ const DreamTheater: React.FC<{ char: CharacterProfile; onExit: () => void }> = (
         try {
             // 注意：不在 await 后直接 setState 播放，交给下方 consume effect 统一消费
             // （这样即使用户已离开、组件卸载，生成照常完成、全局指示条接管）
-            const s = await generateDreamScript({ char, userProfile, apiConfig, forcedArchetype: chosenArchetype });
+            const messages = await buildDreamMessages({ char, userProfile, forcedArchetype: chosenArchetype });
+            // 先试交给主动消息 2.0 后台在云端生成：交上了（或这个角色已有一份在云端跑）就由代跑登记表接管进度，
+            // 结果回来由 cloudGen/landers/dream 放进「还没看的梦」；没交上照原样在本机生成。
+            const outcome = await trySubmitCloudGeneration({
+                purpose: 'dream', char: { id: cid, name: cname }, messages, params: DREAM_REQUEST_PARAMS,
+                api: apiConfig, context: { archetype: chosenArchetype }, apiMeta: dreamApiMeta(char),
+                notifyCopy: { title: `${cname}的梦已成形`, body: '点开看看 ta 梦见了什么' },
+            }).catch((e): { route: 'local' } => {
+                // 云端那道门自己出错不能连累本机生成
+                console.warn('[cloud-gen] 梦境交云端出错，改在本机生成', e);
+                return { route: 'local' };
+            });
+            if (outcome.route !== 'local') { dreamSimStore.clear(cid); return; }
+            const s = await fetchDreamScript(apiConfig, char, messages);
             dreamSimStore.set({ status: 'ready', charId: cid, charName: cname, script: s });
             addToast('梦已成形', 'success');
         } catch (e) {
@@ -646,17 +616,20 @@ const DreamTheater: React.FC<{ char: CharacterProfile; onExit: () => void }> = (
     }, [apiConfig, char, userProfile, addToast, forcedArchetype]);
 
     // ----- consume：把全局生成结果落到本地播放（含深链回来后的首次消费）-----
+    // 本机的在内存里、云端的在「还没看的梦」里，按角色各一份，取走即清（只播一次）。
     useEffect(() => {
-        if (dreamSim.status === 'ready' && dreamSim.charId === char.id && dreamSim.script) {
+        const taken = dreamSimStore.consume(char.id);
+        if (taken?.status === 'ready') {
             savedRef.current = false; setBoxReveal(null);
-            setScript(dreamSim.script); setRevealed(1); setPhase('play');
-            dreamSimStore.reset();
-        } else if (dreamSim.status === 'error' && dreamSim.charId === char.id) {
-            setPhase('error'); dreamSimStore.reset();
-        } else if (dreamSim.status === 'loading' && dreamSim.charId === char.id) {
+            setScript(taken.script); setRevealed(1); setPhase('play');
+        } else if (taken?.status === 'error') {
+            setPhase('error');
+            // 本机失败在 start() 里已经提示过；云端失败到这时才看得到
+            if (taken.cloudJobId) addToast('梦没能成形，请重试', 'error');
+        } else if (dreamSim.status === 'loading') {
             setPhase(p => (p === 'idle' || p === 'error') ? 'loading' : p);
         }
-    }, [dreamSim, char.id]);
+    }, [dreamSim, char.id, addToast]);
 
     // ----- persist + buff on reaching the end -----
     const persist = useCallback((s: DreamScript) => {

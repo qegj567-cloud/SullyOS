@@ -11,8 +11,11 @@
  * 总开关关掉时例外，所有行一律标红——这是用户主动暂停，表要一眼说明「现在什么都不会发」。
  */
 
+import { CLOUD_GEN_PURPOSE_META, CLOUD_GEN_PURPOSES, type CloudGenPurpose } from './cloudGen/types';
+
 export type AmsgCapabilityState = 'ok' | 'bad' | 'off' | 'checking';
-export type AmsgCapabilityId = 'worker' | 'push' | 'schedule' | 'instant' | 'away' | 'date' | 'mcp';
+/** instant 是私聊的云端生成（全局即时对话开关），cloudGen 是日程、人格模拟、梦境的云端生成。 */
+export type AmsgCapabilityId = 'worker' | 'push' | 'schedule' | 'instant' | 'cloudGen' | 'away' | 'date' | 'mcp';
 
 /** 红叉的原因落在哪个开关或页面上，点这一行就去那儿。 */
 export type AmsgCapabilityCause = 'master' | 'worker' | 'push' | 'cron';
@@ -37,8 +40,14 @@ export interface AmsgCapabilityInput {
   /** 后台任务（Worker 的定时触发）被用户暂停。定时主动消息、离开后消息、见面离开提醒的云端任务都靠它到点投递。 */
   cronPaused: boolean;
   instantOn: boolean;
-  /** 即时对话开着但被挡住的原因（Worker 不支持等），没有为空 */
+  /** 私聊云端生成开着但被挡住的原因（Worker 不支持等），没有为空 */
   instantBlocked: string;
+  /** 「云端生成」开着的功能（日程 / 人格模拟 / 梦境） */
+  cloudGenOn: CloudGenPurpose[];
+  /** 开着的功能里有没有打开「完成时通知」的。只有这一项要靠推送。 */
+  cloudGenNotify: boolean;
+  /** 这台 Worker 认不认识代跑（ActiveMsgClient.probeCloudGenSupportDetailed）；unknown = 这一刻问不到 */
+  cloudGenSupport: 'checking' | 'supported' | 'unsupported' | 'unknown';
   scheduleChars: number;
   awayChars: number;
   dateChars: number;
@@ -50,19 +59,22 @@ const LABELS: Record<AmsgCapabilityId, string> = {
   worker: '后台连接',
   push: '这台设备的通知',
   schedule: '定时主动消息',
-  instant: '即时对话',
+  instant: '私聊云端生成',
+  cloudGen: '云端生成（日程 / 人格模拟 / 梦境）',
   away: '离开后消息',
   date: '见面离开提醒',
   mcp: '后台调用 MCP 工具',
 };
 
-const ORDER: AmsgCapabilityId[] = ['worker', 'push', 'schedule', 'instant', 'away', 'date', 'mcp'];
+const ORDER: AmsgCapabilityId[] = ['worker', 'push', 'schedule', 'instant', 'cloudGen', 'away', 'date', 'mcp'];
 
 export function buildAmsgCapabilityRows(input: AmsgCapabilityInput): AmsgCapabilityRow[] {
   const row = (id: AmsgCapabilityId, state: AmsgCapabilityState, note = '', cause?: AmsgCapabilityCause): AmsgCapabilityRow =>
     ({ id, label: LABELS[id], state, note, ...(cause ? { cause } : {}) });
-  // 即时对话暂停后聊天回到本机生成，不是聊不了，这一句要说清。
-  if (!input.enabled) return ORDER.map(id => row(id, 'bad', id === 'instant' ? '总开关已暂停 · 聊天在本机生成' : '总开关已暂停', 'master'));
+  // 暂停后私聊和日程这些回到本机生成，不是用不了，这一句要说清。
+  if (!input.enabled) {
+    return ORDER.map(id => row(id, 'bad', id === 'instant' ? '总开关已暂停 · 聊天在本机生成' : id === 'cloudGen' ? '总开关已暂停 · 在本机生成' : '总开关已暂停', 'master'));
+  }
 
   const workerRow = input.worker === 'checking' ? row('worker', 'checking', '正在检测')
     : input.worker === 'ok' ? row('worker', 'ok')
@@ -91,11 +103,31 @@ export function buildAmsgCapabilityRows(input: AmsgCapabilityInput): AmsgCapabil
   let instant = dependent('instant', input.instantOn ? 1 : 0, { offNote: '开关未打开', okNote: '', needsPush: true });
   if (instant.state === 'ok' && input.instantBlocked) instant = row('instant', 'bad', input.instantBlocked, 'worker');
 
+  /**
+   * 代跑由起跳器当场开跑，不靠定时触发，所以不看 cronPaused。生成本身不靠推送：
+   * 通知没开时结果照样回来（回到应用就能看到），只是「完成时通知」弹不出来，红字写的是这一句。
+   */
+  const cloudGenOn = CLOUD_GEN_PURPOSES.filter(purpose => input.cloudGenOn.includes(purpose));
+  let cloudGen = dependent('cloudGen', cloudGenOn.length, {
+    offNote: '都在本机生成',
+    okNote: cloudGenOn.length === CLOUD_GEN_PURPOSES.length ? '' : `已开：${cloudGenOn.map(purpose => CLOUD_GEN_PURPOSE_META[purpose].label).join(' / ')}`,
+    needsPush: input.cloudGenNotify,
+  });
+  // 后台本身没问题时再看它认不认识代跑：不认识的话什么都交不上去，比通知没开更要紧。
+  const workerFine = cloudGen.state === 'ok' || cloudGen.cause === 'push';
+  if (workerFine && input.cloudGenSupport !== 'supported') {
+    cloudGen = input.cloudGenSupport === 'checking' ? row('cloudGen', 'checking', '正在检测')
+      : row('cloudGen', 'bad', input.cloudGenSupport === 'unsupported' ? '后台版本还不支持，需要更新' : '暂时查不到后台是否支持', 'worker');
+  } else if (cloudGen.cause === 'push') {
+    cloudGen = { ...cloudGen, note: '通知没开，完成时不会弹通知' };
+  }
+
   return [
     workerRow,
     pushRow,
     dependent('schedule', input.scheduleChars, { ...scheduled, okNote: characters(input.scheduleChars) }),
     instant,
+    cloudGen,
     dependent('away', input.awayChars, { ...scheduled, okNote: characters(input.awayChars) }),
     dependent('date', input.dateChars, { ...scheduled, okNote: characters(input.dateChars) }),
     dependent('mcp', input.mcpServers, { offNote: '还没有可上云的服务器', okNote: `${input.mcpServers} 台服务器` }),

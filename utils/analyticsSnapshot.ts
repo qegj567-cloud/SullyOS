@@ -31,7 +31,7 @@ import { readFishingMarketState } from './vrWorld/fishingMarket';
  * 这条硬约束。想知道大家在用什么模型是真的，但收不了。
  */
 
-import type { APIConfig, CloudBackupConfig, CharacterProfile, UserProfile, OSTheme, RealtimeConfig } from '../types';
+import type { ActiveMsg2GlobalConfig, APIConfig, CloudBackupConfig, CharacterProfile, UserProfile, OSTheme, RealtimeConfig } from '../types';
 import { PRESET_THEMES } from '../components/chat/ChatConstants';
 import { anyCharToggle, bucketFewCount, presetOrCustom, tweakedOrDefault } from './analytics';
 import { readStorageOverview } from './storageStats';
@@ -44,6 +44,8 @@ import { getMcdToken, isMcdEnabled } from './mcdMcpClient';
 import { getPendingTasks, isAmsg2EnabledForChar } from './amsg2Tasks';
 import { ActiveMsgStore, isInstantChatSwitchedOn } from './activeMsgStore';
 import { isAmsg2GloballyEnabled } from './amsgGlobalGate';
+import { resolveCloudGenFeatureSwitches } from './cloudGen/settings';
+import { CLOUD_GEN_PURPOSES, type CloudGenPurpose } from './cloudGen/types';
 import { getVRApi } from './vrWorld/vrApi';
 import { isBuiltinSullyLive2D } from './builtinSullyLive2D';
 import { loadUserLocationConfig } from './userLocationPrivacy';
@@ -451,12 +453,30 @@ export interface FeatureSources {
     characters: CharacterProfile[];
     /**
      * 主动消息 2.0 的全局配置，存 IndexedDB，得由调用方 await 出来。
-     * 只看「地址填没填」「连接成功过没有」「即时对话开没开」三位，
+     * 只看「地址填没填」「连接成功过没有」「即时对话开没开」和各功能云端生成的两个开关，
      * Worker 地址和共享密钥本身不进上报。
      */
-    amsg2Global: { enabled?: boolean; workerUrl?: string; initializedAt?: number; instantChatEnabled?: boolean };
+    amsg2Global: { enabled?: boolean; workerUrl?: string; initializedAt?: number; instantChatEnabled?: boolean; cloudGen?: ActiveMsg2GlobalConfig['cloudGen'] };
     /** 协同 sidecar 只用 count() 取出的行数，不读取窗口标题、消息、文件名或 Blob。 */
     collaborationUsage: { sessions: number; messages: number; assets: number };
+}
+
+/** 快照里的功能简称：值要短（「上报值全是短枚举」那条守卫限 12 个字），所以人格模拟写成人格。 */
+const CLOUD_GEN_SNAPSHOT_NAMES: Record<CloudGenPurpose, string> = { schedule: '日程', 'persona-sim': '人格', dream: '梦境' };
+
+/**
+ * 日程 / 人格模拟 / 梦境的云端生成此刻实际开着没有、完成时通不通知，压成一格（这条快照的属性宽度有上限，
+ * 见测试里的「快照事件的属性宽度」）。没连上过 Worker、总开关暂停报 `关`，和「即时对话」那格同一个口径；
+ * 否则按固定顺序逐项写一个字：`开` 云端生成、完成时不通知，`通` 云端生成且完成时通知，`关` 本机生成，
+ * 如 `日程开 人格通 梦境关`。每一段都取自字面量，存档里是什么都不会原样进上报。
+ */
+export function cloudGenSnapshotValue(global: FeatureSources['amsg2Global']): string {
+    const live = isAmsg2GloballyEnabled(global) && Boolean(global.initializedAt && global.workerUrl?.trim());
+    if (!live) return '关';
+    return CLOUD_GEN_PURPOSES.map((purpose) => {
+        const switches = resolveCloudGenFeatureSwitches(global, purpose);
+        return `${CLOUD_GEN_SNAPSHOT_NAMES[purpose]}${!switches.enabled ? '关' : switches.notify ? '通' : '开'}`;
+    }).join(' ');
 }
 
 /**
@@ -563,7 +583,10 @@ export function collectFeatureFlags(src: FeatureSources): Record<string, string>
         '开了2.0的角色数': bucketFewCount(amsg2ActiveChars.length),
         // 聊天主路径搬没搬上云端。只有开/关：配置到哪一步由上面那格四态回答，
         // 这一格问的是「配好了的人里有多少真把聊天切过去了」。全局总开关暂停时实际不走云端，记为关。
+        // 设置页上这一格已叫「私聊」的云端生成；属性名不改，免得面板上的历史数据断开。
         即时对话: onOff(isAmsg2GloballyEnabled(src.amsg2Global) && isInstantChatSwitchedOn(src.amsg2Global)),
+        // 日程 / 人格模拟 / 梦境各自的「云端生成」+「完成时通知」（见 cloudGenSnapshotValue）。
+        云端生成: cloudGenSnapshotValue(src.amsg2Global),
         // 全局开着、却在某几个角色上单独关掉的有多少。角色级开关是「跟随全局」缺省，
         // 只有显式关才落 false——这一格数的就是这种显式关，回答「按角色区分有没有人用」。
         // 一个都没有的话这个开关可以从角色面板收掉。

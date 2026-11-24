@@ -11,8 +11,8 @@ export const workerBundleOptions = {
   bundle: true,
   minify: false,
   conditions: ['worker', 'browser', 'import', 'default'],
-  // cloudflare:* 是运行时自带的内置模块（amsg 用 cloudflare:workers 的 DurableObject
-  // 基类）。它们不在 node_modules 里，不标 external 的话 esbuild 会当成缺失依赖报错。
+  // cloudflare:* 是运行时自带的内置模块，不在 node_modules 里，不标 external 的话
+  // esbuild 会当成缺失依赖报错。
   external: ['cloudflare:*'],
 };
 

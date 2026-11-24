@@ -1,6 +1,7 @@
 import { requestErrorAdvice, textErrorAdvice, type ErrorAdvice } from '../utils/errorSelfCheck';
 import { migrateFreeWeatherPreference } from '../utils/weatherSources';
 import { mergePhoneGeneration, PHONE_GENERATION_COMMITTED, type PhoneGeneration } from '../utils/phoneGeneration';
+import { mergePersonaSimLogs, PERSONA_SIM_LOG_LANDED, type PersonaSimLogLandedDetail } from '../utils/personaSimLog';
 import { applyPhoneEvidenceChatLink, PHONE_EVIDENCE_SYNCED, type PhoneEvidenceChatLink } from '../utils/phoneEvidence';
 import { SESSION_SPACE_ID, DEFAULT_SPACE_ID, listUserSpaces, selectUserSpace } from '../utils/userSpaces';
 import { handleLocalBack } from '../utils/localBackHandlers';
@@ -2708,6 +2709,21 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           setLastMsgTimestamp(Date.now());
       };
       window.addEventListener(PHONE_EVIDENCE_SYNCED, phoneEvidenceSyncHandler);
+      const personaSimLogLandedHandler = (event: Event) => {
+          const { charId, log } = ((event as CustomEvent).detail || {}) as Partial<PersonaSimLogLandedDetail>;
+          if (!charId || !log) return;
+          setCharacters(previous => previous.map(character => {
+              if (character.id !== charId) return character;
+              const phoneState = mergePersonaSimLogs(character.phoneState, [log]);
+              if (phoneState === character.phoneState) return character;
+              const next = { ...character, phoneState };
+              DB.saveCharacter(next).then(() => {
+                  markAmsgStateDirty({ char: next, userProfile: userProfileRef.current, groups: groupsRef.current, realtimeConfig: realtimeConfigRef.current });
+              }).catch(error => console.warn('[PersonaSim] cloud log sync save failed', error));
+              return next;
+          }));
+      };
+      window.addEventListener(PERSONA_SIM_LOG_LANDED, personaSimLogLandedHandler);
       window.addEventListener('amsg2-tasks-adopted', tasksAdoptedHandler);
       window.addEventListener(SAR_MODULE_RUNTIME_CHANGED_EVENT, sarModuleRuntimeChangedHandler);
       const linkedArchiveDeletedHandler = (event: Event) => {
@@ -2727,6 +2743,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       return () => {
           window.removeEventListener(PHONE_GENERATION_COMMITTED, phoneGenerationHandler);
           window.removeEventListener(PHONE_EVIDENCE_SYNCED, phoneEvidenceSyncHandler);
+          window.removeEventListener(PERSONA_SIM_LOG_LANDED, personaSimLogLandedHandler);
           window.removeEventListener('amsg2-tasks-adopted', tasksAdoptedHandler);
           window.removeEventListener(SAR_MODULE_RUNTIME_CHANGED_EVENT, sarModuleRuntimeChangedHandler);
           window.removeEventListener(LINKED_ARCHIVE_DELETED, linkedArchiveDeletedHandler);

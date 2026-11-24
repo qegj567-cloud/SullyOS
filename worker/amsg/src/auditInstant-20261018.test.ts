@@ -42,7 +42,7 @@ it('real SDK and SQLite reproduce replacement corruption and silent tool-config 
   const env: any = {
     AMSG_MASTER_KEY: 'a'.repeat(64), AMSG_SERVER_TOKEN: 'audit-token',
     VAPID_EMAIL: 'mailto:audit@example.com', VAPID_PUBLIC_KEY: vapid.publicKey, VAPID_PRIVATE_KEY: vapid.privateKey,
-    DB: d1, INSTANT_TICK: { idFromName: (name: string) => name, get: () => ({ kick: vi.fn(async () => {}) }) },
+    DB: d1, INSTANT_TICK: { idFromName: (name: string) => name, get: () => ({ fetch: async () => new Response(null, { status: 204 }) }) },
   };
   const executionCtx = { waitUntil: (_promise: Promise<unknown>) => {} };
   vi.stubGlobal('fetch', async (input: any, init?: any) => {
@@ -73,7 +73,7 @@ it('real SDK and SQLite reproduce replacement corruption and silent tool-config 
       chat: { builtAt: stamp, messages: [{ role: 'user', content: text }] },
     };
     const task = {
-      contactName: '角色', messageType: 'auto', messageSubtype: 'instant-chat', immediate: true,
+      contactName: '角色', messageType: 'instant', messageSubtype: 'instant-chat',
       recurrenceType: 'none', tzId: 'Asia/Tokyo', messages: [{ role: 'user', content: 'placeholder' }],
       credRefs: { chat: credentials[0].credId },
       ...(supersedesUuid ? { supersedesUuid } : {}),

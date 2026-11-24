@@ -57,5 +57,8 @@ export async function submitScheduleHomeVisits(char:CharacterProfile,date:string
  const row=value[0],time=/^(?:[01]\d|2[0-3]):[0-5]\d$/;
  if(!row||typeof row.hostId!=='string'||typeof row.purpose!=='string'||!time.test(row.startTime)||!time.test(row.endTime))throw Error('日程串门时间格式不正确');
  const host=await DB.getCharacter(row.hostId);if(!host||!homeSocialPair(char,host).forward.known)throw Error('不能向未认识的角色自动申请串门');
- await requestHomeVisit({hostId:row.hostId,guestId:char.id,startsAt:wallClockToTimestamp(date+'T'+row.startTime,resolveCharTimeZone(char)),endsAt:wallClockToTimestamp(date+'T'+row.endTime,resolveCharTimeZone(char)),purpose:row.purpose,scheduleKey:char.id+'_'+date},Date.now(),schedule);
+ const startsAt=wallClockToTimestamp(date+'T'+row.startTime,resolveCharTimeZone(char)),now=Date.now();
+ // 生成或云端回传期间开始时间已经过了：只丢这一项申请，不让 requestHomeVisit 报错把整份日程一起丢掉。阈值与 requestHomeVisit 相同。
+ if(startsAt<now-60000){if(schedule)await DB.saveDailySchedule(schedule);return;}
+ await requestHomeVisit({hostId:row.hostId,guestId:char.id,startsAt,endsAt:wallClockToTimestamp(date+'T'+row.endTime,resolveCharTimeZone(char)),purpose:row.purpose,scheduleKey:char.id+'_'+date},now,schedule);
 }

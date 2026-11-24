@@ -58,7 +58,7 @@ const setup = async () => {
   const env: any = {
     AMSG_MASTER_KEY: 'c'.repeat(64), AMSG_SERVER_TOKEN: serverToken,
     VAPID_PUBLIC_KEY: vapid.publicKey, VAPID_PRIVATE_KEY: vapid.privateKey,
-    DB: d1, INSTANT_TICK: { idFromName: (name: string) => name, get: () => ({ kick: vi.fn(async () => {}) }) },
+    DB: d1, INSTANT_TICK: { idFromName: (name: string) => name, get: () => ({ fetch: async () => new Response(null, { status: 204 }) }) },
   };
   const executionCtx = { waitUntil: (_promise: Promise<unknown>) => {} };
   const externalRequests: Request[] = [];

@@ -187,10 +187,10 @@ describe('POST /instant-chat 的形状', () => {
     expect(headers.get('X-Encryption-Version')).toBeNull();
   });
 
-  it('任务行型是 auto + none，身份标着 instant', async () => {
+  it('任务行型是 instant + none，身份标着 instant', async () => {
     const { task } = await postOnce([{ role: 'user', content: '在吗' }]);
-    // 'instant' 在上游是「当场跑完」的行型，走不到 fire hooks，chat 段就白传了。
-    expect(task.messageType).toBe('auto');
+    // instant：上游落库即回 202、叫醒起跳器，生成在后台走 fire hooks 那条链。
+    expect(task.messageType).toBe('instant');
     expect(task.recurrenceType).toBe('none');
     // 标着 instant-chat 而不是 chat：面板对账靠这个标签把「用户正等着的这一轮」
     // 跟定时任务的行分开，不然它会被当成排程补进任务清单。
@@ -203,9 +203,10 @@ describe('POST /instant-chat 的形状', () => {
     expect(task.metadata.amsgExpirePolicy).toBeUndefined();
   });
 
-  it('immediate: true 且不带 firstSendTime（落库即到期，慢机吃提前量的 400 无从发生）', async () => {
+  // 回归守卫：上游拒收 instant 再带 immediate（400），firstSendTime 也不该带——慢机吃提前量的 400 无从发生。
+  it('不带 immediate，也不带 firstSendTime（instant 落库即到期）', async () => {
     const { task } = await postOnce([{ role: 'user', content: '在吗' }]);
-    expect(task.immediate).toBe(true);
+    expect(task).not.toHaveProperty('immediate');
     expect(task.firstSendTime).toBeUndefined();
   });
 

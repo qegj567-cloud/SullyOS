@@ -330,6 +330,38 @@ describe('Worker 入口的具名导出', () => {
       .map(([name, value]) => `${name}: ${typeof value}`);
     expect(offenders).toEqual([]);
   });
+
+  /**
+   * 回归守卫：起跳器的类必须一直按 wrangler.toml 里的 class_name（InstantTickDO）导出。
+   *
+   * 自动更新第一次跑的是旧代码，它带着已有的 `INSTANT_TICK → InstantTickDO` 绑定上传新
+   * bundle。这个导出名一改，上传就因为找不到类而失败，所有人的自动更新卡在原地。
+   * 类本身是上游的起跳器：叫醒走 fetch（body 是任务 uuid），记下 uuid、挂一个立刻到期的 alarm。
+   */
+  it('起跳器按 wrangler.toml 的 class_name 导出，叫醒走上游的 fetch', async () => {
+    const toml = await readFile(new URL('../wrangler.toml', import.meta.url), 'utf-8');
+    const className = /class_name\s*=\s*"([^"]+)"/.exec(toml)?.[1];
+    expect(className).toBe('InstantTickDO');
+    const Tick = (workerEntry as Record<string, any>)[className!];
+    expect(typeof Tick).toBe('function');
+
+    const stored = new Map<string, unknown>();
+    let alarmAt: number | null = null;
+    const state = { storage: {
+      get: async (key: string) => stored.get(key),
+      put: async (key: string, value: unknown) => { stored.set(key, value); },
+      delete: async (key: string) => stored.delete(key),
+      deleteAll: async () => { stored.clear(); },
+      getAlarm: async () => alarmAt,
+      setAlarm: async (at: number) => { alarmAt = at; },
+    } };
+    const response = await new Tick(state, {}).fetch(
+      new Request('https://amsg-instant-tick/kick', { method: 'POST', body: 'task-uuid-1' }),
+    );
+    expect(response.status).toBe(204);
+    expect(stored.get('uuid')).toBe('task-uuid-1');
+    expect(alarmAt).not.toBeNull();
+  });
 });
 
 describe('onBeforeFire 四道门', () => {
@@ -5336,7 +5368,7 @@ describe('即时对话的接线', () => {
   });
 
   it('/config-check 绑定在就是 true', async () => {
-    const withTick = { ...fullEnv, INSTANT_TICK: { idFromName: () => ({}), get: () => ({ kick: async () => {} }) } };
+    const withTick = { ...fullEnv, INSTANT_TICK: { idFromName: () => ({}), get: () => ({ fetch: async () => new Response(null, { status: 204 }) }) } };
     const body = await (await call('https://w.example/config-check', {}, withTick)).json();
     expect(body.data.instantTick).toBe(true);
   });

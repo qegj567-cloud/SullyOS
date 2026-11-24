@@ -8,8 +8,9 @@ import { ContextBuilder } from '../utils/context';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { isScheduleFeatureOn } from '../utils/scheduleGenerator';
 import { safeResponseJson } from '../utils/safeApi';
-import { parsePersonaScriptApiResponse } from '../utils/personaSimParser';
-import { buildMemoryText, canResumePersonaSim, getPersonaSimBeatIndex, hasCompletedPersonaSim } from '../utils/personaSimLog';
+import { buildMemoryText, canResumePersonaSim, getPersonaSimBeatIndex, hasCompletedPersonaSim, validatePersonaScriptResponse } from '../utils/personaSimLog';
+import { trySubmitCloudGeneration } from '../utils/cloudGen/submit';
+import type { PersonaSimCloudContext } from '../utils/cloudGen/landers/personaSim';
 import { trackEvent } from '../utils/analytics';
 import { useBlobRefUrl } from '../utils/blobRef';
 import {
@@ -23,11 +24,12 @@ import {
 //  TYPES (runtime script model) — Beat / SimScript 已移到 types.ts 共享，
 //  以便「生活记录」存完整脚本快照用于重播。
 // ============================================================
-export interface SimApiConfig { apiKey: string; baseUrl: string; model: string; }
+export interface SimApiConfig { apiKey: string; baseUrl: string; model: string; apiType?: 'openai' | 'anthropic'; }
 export type SimState =
     | { status: 'idle' }
     | { status: 'loading'; mode: 'daily' | 'event'; theme: string }
-    | { status: 'ready'; mode: 'daily' | 'event'; theme: string; script: SimScript; logId: string; startIndex?: number }
+    // 云端代跑落地后重开页面时内存里没有剧本，只带 logId，播放时从生活记录里取。
+    | { status: 'ready'; mode: 'daily' | 'event'; theme: string; script?: SimScript; logId: string; startIndex?: number }
     | { status: 'error'; mode: 'daily' | 'event'; theme: string };
 
 interface Props {
@@ -83,13 +85,46 @@ const Typewriter: React.FC<{ drafts: string[]; sent?: string | null; className?:
 // ============================================================
 //  BACKGROUND GENERATOR (runs at CheckPhone level so it survives navigation)
 // ============================================================
+/**
+ * 生成一份演出剧本。先照原样拼好请求，能交云端代跑就交（返回 null，结果之后由
+ * utils/cloudGen/landers/personaSim.ts 落地），否则在本机直连。两条路的请求和校验是同一份。
+ */
 export async function generatePersonaScript(opts: {
     char: CharacterProfile; userProfile: UserProfile; apiConfig: SimApiConfig;
     mode: 'daily' | 'event'; theme: string; userPresence?: 'default' | 'light' | 'none';
     tone?: 'mix' | 'depressive' | 'darkhumor' | 'cute';
-}): Promise<SimScript> {
+}): Promise<SimScript | null> {
+    const { char, apiConfig, mode, theme } = opts;
+    const snapshotAt = Date.now();
+    const messages = await buildPersonaScriptMessages(opts);
+    const params = { temperature: 0.98, max_tokens: 24000 };
+    const meta = { appId: 'personasim', appName: '人格模拟', charId: char.id, charName: char.name, purpose: '生成人格模拟剧本' };
 
-    const { char, userProfile, apiConfig, mode, theme, userPresence = 'default', tone = 'mix' } = opts;
+    const outcome = await trySubmitCloudGeneration({
+        purpose: 'persona-sim',
+        char: { id: char.id, name: char.name },
+        messages, params,
+        api: { baseUrl: apiConfig.baseUrl, apiKey: apiConfig.apiKey, model: apiConfig.model, apiType: apiConfig.apiType },
+        context: { mode, theme } satisfies PersonaSimCloudContext,
+        apiMeta: meta,
+        notifyCopy: { title: `${char.name}的演出已就绪`, body: `「${theme}」可以开演了` },
+        snapshotAt,
+    });
+    // busy：这个角色已有一份在云端跑，进度照那份显示，本机不再生成第二份。
+    if (outcome.route !== 'local') return null;
+
+    const res = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
+        body: JSON.stringify({ model: apiConfig.model, messages, ...params }),
+        __sullyMeta: meta,
+    } as RequestInit);
+    if (!res.ok) throw new Error('API');
+    return validatePersonaScriptResponse(await safeResponseJson(res));
+}
+
+async function buildPersonaScriptMessages(opts: Parameters<typeof generatePersonaScript>[0]) {
+    const { char, userProfile, mode, theme, userPresence = 'default', tone = 'mix' } = opts;
     await injectMemoryPalace(char, undefined, theme, userProfile.name);
     const characterContextInput = { char, user: userProfile, includeDetailedMemories: true, memoryPalaceContext: char.memoryPalaceInjection };
 
@@ -104,29 +139,7 @@ export async function generatePersonaScript(opts: {
     const firstTs = msgs.find(m => typeof m.timestamp === 'number')?.timestamp;
     const acquaintance = describeAcquaintance(firstTs, userProfile.name, char.name);
     const prompt = buildDirectorPrompt('', recent, mode, theme, char.name, acquaintance, userProfile.name, userPresence, tone);
-    const res = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-        body: JSON.stringify({ model: apiConfig.model, messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, [{ role: 'user', content: prompt }])), temperature: 0.98, max_tokens: 24000 }),
-        __sullyMeta: { appId: 'personasim', appName: '人格模拟', charId: char.id, charName: char.name, purpose: '生成人格模拟剧本' },
-    } as RequestInit);
-    if (!res.ok) throw new Error('API');
-    const data = await safeResponseJson(res);
-    // 截断直接报错，不兜底：模型输出被 token 上限截断时 finish_reason 为 'length'
-    if (data.choices?.[0]?.finish_reason === 'length') throw new Error('演出生成被截断');
-    const finishReason = data?.choices?.[0]?.finish_reason;
-    if (finishReason === 'content_filter' || finishReason === 'safety') {
-        throw new Error('演出生成被模型安全策略中止');
-    }
-    const { content, script: parsed } = parsePersonaScriptApiResponse(data);
-    if (!content) throw new Error('模型没有返回演出正文');
-    if (!parsed) {
-        console.warn('[persona] script parse failed', { finishReason, contentLength: content.length });
-        throw new Error(`演出格式无法解析（模型返回 ${content.length} 字）`);
-    }
-    // 不兜底：结尾必须是模型自己收束好的 end，否则视为不完整/被截断，报错让用户重试
-    if (parsed.beats[parsed.beats.length - 1].kind !== 'end') throw new Error('演出结尾不完整');
-    return parsed;
+    return ContextBuilder.buildCharacterRequest(characterContextInput, [{ role: 'user', content: prompt }]);
 }
 
 // ============================================================
@@ -187,8 +200,11 @@ const PersonaSim: React.FC<Props> = ({ targetChar, onExit, openLifeLog, sim, onS
     useEffect(() => {
         if (phase === 'idle' && sim.status === 'ready') {
             const log = targetChar.phoneState?.simLogs?.find(item => item.id === sim.logId);
-            setMode(sim.mode); setTheme(sim.theme); setScript(sim.script); setLogId(sim.logId);
-            const lastIndex = Math.max(0, sim.script.beats.length - 1);
+            const readyScript = sim.script ?? log?.script;
+            // 记录已被删掉：没东西可播，收走这条就绪提示。
+            if (!readyScript?.beats.length) { onConsumed(); return; }
+            setMode(sim.mode); setTheme(sim.theme); setScript(readyScript); setLogId(sim.logId);
+            const lastIndex = Math.max(0, readyScript.beats.length - 1);
             setIdx(Math.max(0, Math.min(lastIndex, Math.floor(sim.startIndex || 0))));
             completedRef.current = log ? hasCompletedPersonaSim(log) : false;
             savedRef.current = false;

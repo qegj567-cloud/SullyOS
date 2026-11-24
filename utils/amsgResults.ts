@@ -21,6 +21,7 @@ import { SCHEDULE_CHANGE_RESULT_KIND } from './amsgScheduleResult';
 import { FIRE_SKIP_RESULT_KIND } from './amsgFireSkipResult';
 import { INSTANT_API_CALLS_RESULT_KIND } from './amsgApiCallRecords';
 import { AMSG_RESCUE_RESULT_KIND } from './amsgRescueState';
+import { CLOUD_GEN_RESULT_KIND } from './amsgCloudGenJob';
 
 const HEADER = '[amsg2:result]';
 
@@ -122,6 +123,11 @@ const dispatchOne = async (payload: unknown, context?: AmsgResultContext): Promi
       case PLATE_CONSOLIDATE_RESULT_KIND: {
         const { applyPlateConsolidateResult } = await import('./memoryPalace/roomPlateCloud');
         return await applyPlateConsolidateResult(payload, context);
+      }
+      case CLOUD_GEN_RESULT_KIND: {
+        // 代跑（本机拼、云端代跑）的结果：各功能的落地函数自己锁自己的数据，底账挡重放。
+        const { applyCloudGenResult } = await import('./cloudGen/results');
+        return await applyCloudGenResult(payload, context);
       }
       case SCHEDULE_CHANGE_RESULT_KIND: {
         const { applyScheduleChangeResult } = await import('./amsgScheduleResultApply');

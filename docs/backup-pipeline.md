@@ -211,6 +211,7 @@ Blob 是否真的占内存，取决于浏览器引擎，而且两家的行为都
   - 这次改造新增的本机状态键 `sullyos_notice_restore_damaged_assets_v1`（恢复时跳过的坏图清单，重启后提示一次就清掉）属于设备状态。
   - 导出中断留痕 `sullyos_notice_export_progress_v1`（见第四期）属于设备状态：它描述的是这台设备上一次没走完的导出。
   - 主动消息 2.0 救援模式警告的本机副本 `amsg2_rescue_alert_v1`（Worker 报过的救援留痕和已确认记录，见 `utils/amsgRescueAlert.ts`）属于设备状态：恢复到新设备后，新设备会自己去问 Worker；跟着备份走反而会把旧设备的「已确认」带过去，让新设备少弹一次警告。
+  - 云端生成的在飞登记表 `amsg2_cloud_gen_jobs_v1` 和已落地底账 `amsg2_cloud_gen_done_v1`（见 `utils/cloudGen/registry.ts`）属于设备状态：它们描述的是这台设备交出去、还没收尾的任务，恢复到新设备上只会挡住新任务或让结果对不上号。现在由 `userSpaceBackup.ts` 的 `privateLocalExcluded` 排除，`userSpaceExportStreaming.test.ts` 钉住。
   - 测试枚举代码里出现过的 localStorage 键名（常量和前缀），断言每一个都能归到某一类。
 
 ### 临时文件

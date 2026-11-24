@@ -85,13 +85,14 @@ const insertTask = async (d1: ReturnType<typeof createD1>, row: {
   createdAt?: string;
   updatedAt?: string;
   lastError?: Record<string, unknown> | null;
+  metadata?: Record<string, unknown>;
 }) => {
   seq += 1;
   const uuid = `task-${seq}`;
   const payload = JSON.stringify({
     contactName: row.contactName ?? '小明',
     messageType: row.messageType ?? 'prompted',
-    metadata: { charId: row.charId ?? 'char-a' },
+    metadata: { charId: row.charId ?? 'char-a', ...row.metadata },
   });
   const encrypted = await encryptForStorage(payload, await deriveUserEncryptionKey(USER_ID, MASTER_KEY));
   d1.raw.prepare(
@@ -186,7 +187,7 @@ describe.skipIf(!sqlite)('定时任务细账（真 SQLite）', () => {
   });
 
   describe('readRecentFailures', () => {
-    it('只列最近 24 小时彻底没发出去的：一次性失败、循环跳过；即时对话和还在重试的不列', async () => {
+    it('只列最近 24 小时彻底没发出去的：一次性失败、循环跳过、后台任务；即时对话和还在重试的不列', async () => {
       const d1 = await createSchemaDb();
       const failed = await insertTask(d1, {
         status: 'failed', nextSendAt: iso(-90), updatedAt: iso(-60),
@@ -199,6 +200,13 @@ describe.skipIf(!sqlite)('定时任务细账（真 SQLite）', () => {
       await insertTask(d1, {
         messageType: 'instant', status: 'failed', nextSendAt: iso(-20), updatedAt: iso(-10),
         lastError: { at: iso(-10), occurrence: iso(-20), reason: '即时对话的错' },
+        metadata: { amsgInstantChat: true },
+      });
+      // 回归守卫：后台任务也是 instant 行，不能跟着即时对话一起被按类型筛掉。
+      const job = await insertTask(d1, {
+        messageType: 'instant', status: 'failed', nextSendAt: iso(-40), updatedAt: iso(-30),
+        lastError: { at: iso(-30), occurrence: iso(-40), reason: '门牌整理的错' },
+        metadata: { amsgKind: 'plate-consolidate' },
       });
       await insertTask(d1, {
         status: 'failed', nextSendAt: iso(-3000), updatedAt: iso(-10),
@@ -210,8 +218,9 @@ describe.skipIf(!sqlite)('定时任务细账（真 SQLite）', () => {
       });
 
       const failures = await readRecentFailures(d1 as unknown as TickReportDb, options);
-      expect(failures.map((f) => [f.uuid, f.outcome])).toEqual([[skipped, 'skipped'], [failed, 'failed']]);
-      expect(failures[1].error.reason).toBe('401 Invalid token');
+      expect(failures.map((f) => [f.uuid, f.outcome])).toEqual([[job, 'failed'], [skipped, 'skipped'], [failed, 'failed']]);
+      expect(failures[0].kind).toBe('plate-consolidate');
+      expect(failures[2].error.reason).toBe('401 Invalid token');
     });
   });
 

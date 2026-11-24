@@ -7,17 +7,17 @@ import Home3DSetupEntry from '../apps/room3d/Home3DSetupEntry';
 import type {CharacterProfile} from '../types';
 import catalog from '../public/room3d/catalog.json';
 import {validateHome} from '../apps/room3d/model.js';
-const mocks = vi.hoisted(() => ({generate: vi.fn(), load: vi.fn(), user: {name: '用户', chibiStudio: {home3D: {state: {selected: {}}, hair: {layers: {}, extras: []}}}}}));
+const mocks = vi.hoisted(() => ({generate: vi.fn(), load: vi.fn(), generating: vi.fn(() => false), user: {name: '用户', chibiStudio: {home3D: {state: {selected: {}}, hair: {layers: {}, extras: []}}}}}));
 vi.mock('../context/OSContext', () => ({useOS: () => ({userProfile: mocks.user, apiConfig: {apiKey: 'test', baseUrl: 'https://test.invalid', model: 'test'}})}));
 vi.mock('../components/character/HomeFigureStudio', () => ({default: () => null}));
 vi.mock('../apps/room3d/Home3DView', () => ({default: () => React.createElement('p', {'data-testid': 'scene'}, '家园')}));
 vi.mock('./dailySchedule', () => ({getDailyScheduleForChar: mocks.load}));
-vi.mock('./scheduleGenerator', () => ({isScheduleFeatureOn: (char: CharacterProfile) => !!char.scheduleFeatureEnabled, generateDailyScheduleForChar: mocks.generate}));
+vi.mock('./scheduleGenerator', () => ({isScheduleFeatureOn: (char: CharacterProfile) => !!char.scheduleFeatureEnabled, generateDailyScheduleForChar: mocks.generate, isScheduleGeneratingFor: mocks.generating}));
 vi.mock('./amsgStateSync', () => ({markAmsgStateDirty: vi.fn()}));
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 const host = document.createElement('div'); document.body.appendChild(host);
 let root: ReturnType<typeof createRoot>;
-afterEach(() => {act(() => root.unmount()); mocks.generate.mockReset(); mocks.load.mockReset();vi.unstubAllGlobals();});
+afterEach(() => {act(() => root.unmount()); mocks.generate.mockReset(); mocks.load.mockReset(); mocks.generating.mockReset().mockReturnValue(false);vi.unstubAllGlobals();});
 const character = {id: 'a', name: 'A', scheduleFeatureEnabled: true, homeDefinition: {kind: 'real', notes: ''},
     home3D: {version: 1, activeRoomId: 'r', rooms: [{id: 'r', name: '客厅', level: 0, items: []}]}, chibiStudio: {home3D: {state: {selected: {}}, hair: {layers: {}, extras: []}}}} as unknown as CharacterProfile;
 const render = async (char = character) => {root = createRoot(host); await act(async () => {root.render(React.createElement(Home3DSetupEntry, {character: char, onChange: vi.fn(), onDefinitionChange: vi.fn(), onBack: vi.fn()}));});};
@@ -64,6 +64,13 @@ describe('first home entry', () => {
         await act(async () => {host.querySelector<HTMLButtonElement>('.home-definition-submit')!.click();});
         expect(host.textContent).toContain('原日程已保留');
         expect(host.querySelector('[data-testid="scene"]')).toBeNull();
+    });
+    it('does not start a second generation while chat (or the cloud) is generating this character', async () => {
+        mocks.load.mockResolvedValue(null); mocks.generating.mockReturnValue(true);
+        await render();
+        await act(async () => {host.querySelector<HTMLButtonElement>('.home-definition-submit')!.click();});
+        expect(mocks.generate).not.toHaveBeenCalled();
+        expect(host.textContent).toContain('正在生成');
     });
     it('requires a dedicated confirmed home figure instead of silently adopting the old chibi', async () => {
         mocks.load.mockResolvedValue(null);

@@ -10,7 +10,7 @@ vi.mock('../context/OSContext', () => ({ useOS: () => ({
 }) }));
 vi.mock('./appShortcutLaunch', () => ({ useAppShortcut: (_app: unknown, handler: unknown) => { mocks.shortcut = handler; } }));
 vi.mock('../apps/PersonaSim', () => ({ default: () => null, generatePersonaScript: vi.fn() }));
-vi.mock('./personaSimStore', () => ({ usePersonaSim: () => ({ status: 'idle' }), personaSimStore: {} }));
+vi.mock('./personaSimStore', () => ({ usePersonaSim: () => ({ status: 'idle' }), usePersonaSimDeepLink: () => null, personaSimStore: {} }));
 vi.mock('./emotionApply', () => ({ getLastInnerState: () => '' }));
 vi.mock('./analytics', () => ({ trackEvent: vi.fn() }));
 vi.mock('./db', async importOriginal => {

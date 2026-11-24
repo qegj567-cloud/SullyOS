@@ -41,6 +41,8 @@ export interface CharCloudPurgePlan {
   credPurposes: readonly LlmCredentialPurpose[];
   /** 撤掉还在飞的记忆宫殿门牌整理（任务行 + 它那份一次性输入）。 */
   inFlightPlateJob: boolean;
+  /** 撤掉还在飞的云端生成（日程 / 人格模拟 / 梦境），本机登记表里的记录一并删掉。 */
+  inFlightCloudGen?: boolean;
 }
 
 /** 删角色用的全量清单：名下一切都清掉。 */
@@ -48,6 +50,7 @@ export const FULL_CHAR_PURGE: CharCloudPurgePlan = {
   clientState: true,
   credPurposes: ALL_CREDENTIAL_PURPOSES,
   inFlightPlateJob: true,
+  inFlightCloudGen: true,
 };
 
 /**
@@ -169,6 +172,14 @@ export const purgeCloudCharById = async (
   // 见 amsgTaskKinds），所以下面那趟清不到它。里面装的是这个角色的门牌全文、蒸馏材料
   // 和身份上下文——正是删除确认框承诺会清掉的那类东西，不能让它躺满 3 天等 TTL。
   if (plan.inFlightPlateJob) await purgeInFlightPlateJob(charId);
+  // 云端生成的输入同样不在角色命名空间里（在 amsg:cloud-gen 下），装的是整份上下文。
+  if (plan.inFlightCloudGen) {
+    try {
+      await (await import('./cloudGen/registry')).purgeCloudGenJobsForChar(charId);
+    } catch (error) {
+      console.warn('[Amsg2CharCleanup] 删角色时清在飞的云端生成失败（等 TTL 兜底）', error);
+    }
+  }
 
   if (!plan.clientState) return { status: 'cleared', keys: [] };
 

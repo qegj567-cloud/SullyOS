@@ -5,6 +5,7 @@ import { parseCharCredId } from '../../../utils/amsgLlmCredentials';
 import { AMSG_STATE_NAMESPACE_PREFIX, unpackStateValue } from '../../../utils/amsgFirePack';
 import { isSidechannelKey } from '../../../utils/amsgClientStateDelete';
 import { parsePlateJobInput } from '../../../utils/amsgPlateJob';
+import { CLOUD_GEN_NAMESPACE, parseCloudGenJobInput } from '../../../utils/amsgCloudGenJob';
 
 export interface SullyCloudResourceInput {
   type: string;
@@ -67,6 +68,12 @@ export async function resolveSullyCloudOwnership(input: SullyCloudResourceInput)
     if (input.namespace === 'amsg:job' && input.key?.startsWith('plate:') && typeof input.value === 'string') {
       try {
         const job = parsePlateJobInput(await unpackStateValue(input.value));
+        return job ? character(job.charId, 'job-input', job.charName) : null;
+      } catch { return null; }
+    }
+    if (input.namespace === CLOUD_GEN_NAMESPACE && typeof input.value === 'string') {
+      try {
+        const job = parseCloudGenJobInput(await unpackStateValue(input.value));
         return job ? character(job.charId, 'job-input', job.charName) : null;
       } catch { return null; }
     }

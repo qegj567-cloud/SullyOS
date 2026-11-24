@@ -22,6 +22,7 @@ import { isAnthropicEndpoint, normalizeLlmBaseUrl, type LlmApiType } from './llm
  */
 
 import type { APIConfig, ActiveMsg2CharacterConfig, CharacterProfile } from '../types';
+import type { CloudGenPurpose } from './amsgCloudGenJob';
 
 /** 凭据行的值：三个字段全必填，服务端只查非空、不做格式校验。 */
 export interface LlmCredentialValue {
@@ -70,10 +71,17 @@ export const normalizeChatApiUrl = (baseUrl: string, apiType?: LlmApiType): stri
  *   memory   记忆宫殿的后台活儿（门牌整理这类）。用的是记忆宫殿副 API
  *            （memoryPalaceConfig.lightLLM），跟上面三份都不是同一个——它现在是全局
  *            一份配置，但照旧按角色存一行：删角色时跟着一起清，将来真做成分角色也不用动。
+ *   gen-*    代跑（本机拼、云端代跑）各功能这一次实际使用的那套 API，每次交任务都覆盖：
+ *            gen-schedule（日程）、gen-persona-sim（人格模拟）、gen-dream（梦境）。各功能用的
+ *            API 不一样（人格模拟走查手机独立 API），不能借用 chat 那一行。
  */
-export type LlmCredentialPurpose = 'chat' | 'instant' | 'emotion' | 'memory';
+export type LlmCredentialPurpose =
+  | 'chat' | 'instant' | 'emotion' | 'memory'
+  | 'gen-schedule' | 'gen-persona-sim' | 'gen-dream';
 
-export const ALL_CREDENTIAL_PURPOSES: readonly LlmCredentialPurpose[] = ['chat', 'instant', 'emotion', 'memory'];
+export const ALL_CREDENTIAL_PURPOSES: readonly LlmCredentialPurpose[] = [
+  'chat', 'instant', 'emotion', 'memory', 'gen-schedule', 'gen-persona-sim', 'gen-dream',
+];
 
 /** 角色名下某个用途的 credId。上游只当它是不透明字符串（1–128 字符、不含控制字符）。 */
 export const charCredId = (charId: string, purpose: LlmCredentialPurpose): string =>
@@ -83,11 +91,13 @@ export const charCredId = (charId: string, purpose: LlmCredentialPurpose): strin
 export const charCredIds = (charId: string): string[] =>
   ALL_CREDENTIAL_PURPOSES.map((purpose) => charCredId(charId, purpose));
 
+const CHAR_CRED_ID_PATTERN = new RegExp(`^char:(.+)/(${ALL_CREDENTIAL_PURPOSES.join('|')})$`);
+
 /** 把 credId 拆回「哪个角色、什么用途」；不认识的形状返回 null。 */
 export const parseCharCredId = (
   credId: string,
 ): { charId: string; purpose: LlmCredentialPurpose } | null => {
-  const m = /^char:(.+)\/(chat|instant|emotion|memory)$/.exec(credId || '');
+  const m = CHAR_CRED_ID_PATTERN.exec(credId || '');
   return m ? { charId: m[1], purpose: m[2] as LlmCredentialPurpose } : null;
 };
 
@@ -169,6 +179,19 @@ export const buildCharMemoryCredRow = (
   if (!lightLLM?.baseUrl || !lightLLM.apiKey) return null;
   const value = toCredentialValue(lightLLM);
   return value ? { credId: charCredId(charId, 'memory'), value } : null;
+};
+
+/**
+ * 代跑那一行的值：调用方给的就是本地这次请求会用的那套 API（模型名原样，不加任何后缀）。
+ * 缺字段返回 null，调用方留在本机生成，不回落到别的 API 冒充。
+ */
+export const buildCharGenCredRow = (
+  charId: string,
+  purpose: CloudGenPurpose,
+  api: { baseUrl?: string; apiKey?: string; model?: string; apiType?: LlmApiType } | null | undefined,
+): LlmCredentialRow | null => {
+  const value = toCredentialValue(api);
+  return value ? { credId: charCredId(charId, `gen-${purpose}` as const), value } : null;
 };
 
 // ─── 「传过没有、变了没有」的指纹底账 ───

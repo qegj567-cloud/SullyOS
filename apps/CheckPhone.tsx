@@ -15,7 +15,7 @@ import {
     topicText, summarizeConversation, applyRealConversationToPhoneState,
 } from '../utils/relationshipChat';
 import PersonaSim, { LifeLog, generatePersonaScript } from './PersonaSim';
-import { usePersonaSim, personaSimStore } from '../utils/personaSimStore';
+import { usePersonaSim, usePersonaSimDeepLink, personaSimStore } from '../utils/personaSimStore';
 import { createPersonaSimLog, getPersonaSimBeatIndex } from '../utils/personaSimLog';
 import { getLastInnerState } from '../utils/emotionApply';
 import { trackEvent } from '../utils/analytics';
@@ -348,7 +348,8 @@ const CheckPhone: React.FC = () => {
     });
 
     // 人格模拟：演出脚本在全局 store 后台生成，生成期间用户可离开查手机/切到别的 OS App
-    const sim = usePersonaSim();
+    const sim = usePersonaSim(targetChar?.id ?? '');
+    const simDeepLink = usePersonaSimDeepLink();
     const [showInner, setShowInner] = useState(false);
 
     // 二次确认弹窗：所有删除/移除/清空都先走这里
@@ -2017,6 +2018,11 @@ ${olderText}
             const generated = await generatePersonaScript({
                 char: targetChar, userProfile, apiConfig: effectiveApiConfig as any, mode: m, theme: t, userPresence: presence, tone,
             });
+            if (!generated) {
+                // 交给云端了（或这个角色已有一份在云端跑）：进度改由代跑登记表驱动，让出本机这一格。
+                if (personaSimStore.get().charId === cid) personaSimStore.reset();
+                return;
+            }
             const log = createPersonaSimLog(generated, m, t);
             updateCharacter(cid, cur => ({
                 phoneState: {
@@ -2056,8 +2062,8 @@ ${olderText}
 
     // 全局指示条点击后请求深链：直接进入对应角色的演出
     useEffect(() => {
-        if (sim.deepLink && sim.charId) {
-            const c = characters.find(x => x.id === sim.charId);
+        if (simDeepLink) {
+            const c = characters.find(x => x.id === simDeepLink);
             if (c) {
                 setTargetChar(c);
                 setView('phone');
@@ -2065,7 +2071,7 @@ ${olderText}
             }
             personaSimStore.clearDeepLink();
         }
-    }, [sim.deepLink, sim.charId, characters]);
+    }, [simDeepLink, characters]);
 
     // ============================================================
     //  DERIVED STATS  (drive the "living" home screen)
@@ -3804,7 +3810,7 @@ ${olderText}
                     {activeAppId === 'ai_session' && renderAiSession()}
                     {activeAppId === 'persona' && targetChar && (
                         <PersonaSim key={targetChar.id} targetChar={targetChar} onExit={() => setActiveAppId('home')} openLifeLog={() => setActiveAppId('lifelog')}
-                            sim={sim.charId === targetChar.id ? sim : { status: 'idle' }} onStart={runSim} onConsumed={() => personaSimStore.reset()} />
+                            sim={sim} onStart={runSim} onConsumed={() => personaSimStore.consume(sim)} />
                     )}
                     {activeAppId === 'lifelog' && targetChar && (
                         <LifeLog targetChar={targetChar} onBack={() => setActiveAppId('home')}

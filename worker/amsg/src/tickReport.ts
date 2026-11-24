@@ -31,7 +31,7 @@ import {
   type AmsgTickReportTask,
   type TickTaskFacts,
 } from '../../../utils/amsgTickReport';
-import { readTaskKind } from '../../../utils/amsgTaskKinds';
+import { isInstantChatTask, readTaskKind } from '../../../utils/amsgTaskKinds';
 
 export type TickReportDb = {
   prepare(sql: string): {
@@ -117,6 +117,7 @@ interface TaskIdentity {
   contactName: string | null;
   kind: string | null;
   serializeKey: string | null;
+  instantChat: boolean;
 }
 
 /**
@@ -126,7 +127,7 @@ interface TaskIdentity {
 const createIdentityReader = (masterKey: string | undefined, serializeKeyOf: SerializeKeyOf) => {
   const userKeys = new Map<string, Promise<string>>();
   return async (row: TaskRow): Promise<TaskIdentity> => {
-    const unknown: TaskIdentity = { charId: null, contactName: null, kind: null, serializeKey: null };
+    const unknown: TaskIdentity = { charId: null, contactName: null, kind: null, serializeKey: null, instantChat: false };
     if (!masterKey || !row.user_id || !row.encrypted_payload) return unknown;
     try {
       let userKey = userKeys.get(row.user_id);
@@ -144,6 +145,7 @@ const createIdentityReader = (masterKey: string | undefined, serializeKeyOf: Ser
         contactName: typeof payload.contactName === 'string' && payload.contactName ? payload.contactName : null,
         kind: readTaskKind(metadata),
         serializeKey: serializeKeyOf({ metadata }),
+        instantChat: isInstantChatTask(metadata),
       };
     } catch {
       return unknown;
@@ -238,7 +240,10 @@ export const readOverdueTasks = async (
  * 最近 24 小时彻底没发出去的：一次性任务标成了失败，或者循环任务跳过了这一次
  * （行还是 pending，排期已经推到以后，失败记录留在行上）。
  *
- * 即时对话的不列：它失败时聊天界面自己会说，放在这里是重复的噪音。
+ * 即时对话的不列：它失败时聊天界面自己会说，放在这里是重复的噪音。即时对话和后台任务的
+ * message_type 都是 'instant'，只有解开内容才分得出来，所以 SQL 不按类型筛、多取几行，
+ * 解开后剔掉即时对话。
+ * shortcut: 24 小时里即时对话失败多到占满多取的那几行时，别的失败会被挤掉；真遇到再改成分开查。
  */
 export const readRecentFailures = async (
   db: TickReportDb,
@@ -252,12 +257,11 @@ export const readRecentFailures = async (
          FROM scheduled_messages
         WHERE last_error IS NOT NULL
           AND updated_at >= ?
-          AND message_type != 'instant'
           AND (status = 'failed' OR (status = 'pending' AND next_send_at > ?))
         ORDER BY updated_at DESC
         LIMIT ?`,
     )
-    .bind(new Date(sinceMs).toISOString(), new Date(nowMs).toISOString(), MAX_RECENT_FAILURES)
+    .bind(new Date(sinceMs).toISOString(), new Date(nowMs).toISOString(), MAX_RECENT_FAILURES * 3)
     .all<TaskRow>()).results || [];
 
   const readIdentity = createIdentityReader(options.masterKey, options.serializeKeyOf);
@@ -267,6 +271,7 @@ export const readRecentFailures = async (
     // updated_at 会被后来的开跑刷新，真正「什么时候失败的」看记录自己的时刻。
     if (!row.uuid || !error || atMs === null || atMs < sinceMs) return null;
     const identity = await readIdentity(row);
+    if (identity.instantChat) return null;
     return {
       uuid: row.uuid,
       charId: identity.charId,
@@ -277,7 +282,7 @@ export const readRecentFailures = async (
       error,
     };
   }));
-  return failures.filter((item): item is AmsgTickReportFailure => item !== null);
+  return failures.filter((item): item is AmsgTickReportFailure => item !== null).slice(0, MAX_RECENT_FAILURES);
 };
 
 // ─── 整轮报错 ───

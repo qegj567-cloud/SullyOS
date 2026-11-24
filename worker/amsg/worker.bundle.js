@@ -1368,8 +1368,18 @@ var buildFireTaskListBlock = (tasks, opts) => {
 };
 
 // utils/amsgLlmCredentials.ts
+var ALL_CREDENTIAL_PURPOSES = [
+  "chat",
+  "instant",
+  "emotion",
+  "memory",
+  "gen-schedule",
+  "gen-persona-sim",
+  "gen-dream"
+];
+var CHAR_CRED_ID_PATTERN = new RegExp(`^char:(.+)/(${ALL_CREDENTIAL_PURPOSES.join("|")})$`);
 var parseCharCredId = (credId) => {
-  const m = /^char:(.+)\/(chat|instant|emotion|memory)$/.exec(credId || "");
+  const m = CHAR_CRED_ID_PATTERN.exec(credId || "");
   return m ? { charId: m[1], purpose: m[2] } : null;
 };
 
@@ -1654,6 +1664,84 @@ function buildPlateConsolidateResult(args) {
   };
 }
 
+// utils/amsgCloudGenJob.ts
+var CLOUD_GEN_KIND = "cloud-gen";
+var CLOUD_GEN_RESULT_KIND = "cloud-gen";
+var CLOUD_GEN_NAMESPACE = "amsg:cloud-gen";
+var CLOUD_GEN_TTL_DAYS = 3;
+var cloudGenJobKey = (jobId) => `gen:${jobId}`;
+var CLOUD_GEN_PURPOSE_META_KEY = "amsgCloudGenPurpose";
+var CLOUD_GEN_TOTAL_TIMEOUT_MS = 6e5;
+var CLOUD_GEN_PURPOSES = ["schedule", "persona-sim", "dream"];
+var isCloudGenPurpose = (value) => typeof value === "string" && CLOUD_GEN_PURPOSES.includes(value);
+var cloudGenSerializeKey = (charId, purpose) => `${charId}#${CLOUD_GEN_KIND}#${purpose}`;
+var isRole = (value) => value === "system" || value === "user" || value === "assistant";
+function parseCloudGenJobInput(raw) {
+  let obj = raw;
+  if (typeof raw === "string") {
+    try {
+      obj = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return null;
+  const o = obj;
+  if (o.v !== 1 || typeof o.jobId !== "string" || !o.jobId) return null;
+  if (!isCloudGenPurpose(o.purpose) || typeof o.charId !== "string" || !o.charId) return null;
+  if (!Array.isArray(o.messages) || o.messages.length === 0) return null;
+  const messages = [];
+  for (const m of o.messages) {
+    const row = m;
+    if (!row || !isRole(row.role) || typeof row.content !== "string") return null;
+    messages.push({ role: row.role, content: row.content });
+  }
+  let notify = null;
+  if (o.notify !== null) {
+    const n = o.notify;
+    if (!n || typeof n.title !== "string" || typeof n.body !== "string") return null;
+    notify = { title: n.title, body: n.body };
+  }
+  return {
+    v: 1,
+    jobId: o.jobId,
+    purpose: o.purpose,
+    charId: o.charId,
+    messages,
+    notify,
+    ...typeof o.charName === "string" ? { charName: o.charName } : {}
+  };
+}
+var finiteCount = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : void 0;
+var normalizeCloudGenUsage = (value) => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return void 0;
+  const u = value;
+  const out = {};
+  for (const key of ["promptTokens", "completionTokens", "cacheReadTokens", "cacheWriteTokens"]) {
+    const n = finiteCount(u[key]);
+    if (n !== void 0) out[key] = n;
+  }
+  if (typeof u.backendModel === "string" && u.backendModel) out.backendModel = u.backendModel.slice(0, 200);
+  return Object.keys(out).length > 0 ? out : void 0;
+};
+var ERROR_MESSAGE_MAX_CHARS = 300;
+function buildCloudGenResult(args) {
+  const usage = normalizeCloudGenUsage(args.usage);
+  const base = {
+    resultKind: CLOUD_GEN_RESULT_KIND,
+    v: 1,
+    jobId: args.jobId,
+    purpose: args.purpose,
+    charId: args.charId,
+    ...usage ? { usage } : {}
+  };
+  return args.ok ? { ...base, ok: true, attachment: args.attachment } : {
+    ...base,
+    ok: false,
+    error: { code: args.error.code.slice(0, 64), message: args.error.message.slice(0, ERROR_MESSAGE_MAX_CHARS) }
+  };
+}
+
 // worker/amsg/src/cloudDataOwnership.ts
 var record = (value) => value && typeof value === "object" && !Array.isArray(value) ? value : {};
 var text = (value) => typeof value === "string" && value.trim() ? value : void 0;
@@ -1698,6 +1786,14 @@ async function resolveSullyCloudOwnership(input) {
     if (input.namespace === "amsg:job" && input.key?.startsWith("plate:") && typeof input.value === "string") {
       try {
         const job = parsePlateJobInput(await unpackStateValue(input.value));
+        return job ? character(job.charId, "job-input", job.charName) : null;
+      } catch {
+        return null;
+      }
+    }
+    if (input.namespace === CLOUD_GEN_NAMESPACE && typeof input.value === "string") {
+      try {
+        const job = parseCloudGenJobInput(await unpackStateValue(input.value));
         return job ? character(job.charId, "job-input", job.charName) : null;
       } catch {
         return null;
@@ -1778,10 +1874,7 @@ function pickStaleStoppedReplyKeys(rows, nowMs = Date.now(), protectKey) {
   return [...stale];
 }
 
-// worker/amsg/src/index.ts
-import { DurableObject } from "cloudflare:workers";
-
-// node_modules/.pnpm/@rei-standard+amsg-server@3.2.0-next.2_@neondatabase+serverless@1.1.0_pg@8.22.0/node_modules/@rei-standard/amsg-server/dist/chunk-R2CRPRKR.mjs
+// ../../../../../../../Users/tntobsidian/Documents/GitHub/SullyOS/node_modules/.pnpm/@rei-standard+amsg-server@4.0.0-next.3_@neondatabase+serverless@1.1.0_pg@8.22.0/node_modules/@rei-standard/amsg-server/dist/chunk-R2CRPRKR.mjs
 var CLEANUP_BATCH_LIMIT = 100;
 var UPDATABLE_COLUMNS = /* @__PURE__ */ new Set([
   "user_id",
@@ -1801,7 +1894,7 @@ var UPDATABLE_COLUMNS = /* @__PURE__ */ new Set([
 var TASK_DELIVERY_COLUMNS = "id, user_id, uuid, encrypted_payload, message_type, next_send_at, retry_after, status, retry_count";
 var TASK_DETAIL_COLUMNS = "id, user_id, uuid, encrypted_payload, message_type, next_send_at, status, retry_count, last_error, created_at, updated_at";
 
-// node_modules/.pnpm/@rei-standard+amsg-shared@0.5.0-next.0/node_modules/@rei-standard/amsg-shared/dist/index.mjs
+// ../../../../../../../Users/tntobsidian/Documents/GitHub/SullyOS/node_modules/.pnpm/@rei-standard+amsg-shared@0.5.0-next.0/node_modules/@rei-standard/amsg-shared/dist/index.mjs
 var TEXT_ENCODER = new TextEncoder();
 var TEXT_DECODER = new TextDecoder("utf-8", { fatal: false });
 function toUint8(buf) {
@@ -3039,7 +3132,7 @@ function stringifyDecisionForError(value) {
   }
 }
 
-// node_modules/.pnpm/@rei-standard+amsg-server@3.2.0-next.2_@neondatabase+serverless@1.1.0_pg@8.22.0/node_modules/@rei-standard/amsg-server/dist/chunk-WFKLHUUE.mjs
+// ../../../../../../../Users/tntobsidian/Documents/GitHub/SullyOS/node_modules/.pnpm/@rei-standard+amsg-server@4.0.0-next.3_@neondatabase+serverless@1.1.0_pg@8.22.0/node_modules/@rei-standard/amsg-server/dist/chunk-U4XSNTUW.mjs
 var DAY_MS2 = 24 * 60 * 60 * 1e3;
 var MAX_LISTED_SKIPPED_OCCURRENCES = 32;
 var MAX_ADJUST_STEPS = 32;
@@ -3666,7 +3759,7 @@ function validateScheduleMessagePayload(payload) {
   if (immediate && payload.messageType === "instant") {
     return { valid: false, errorCode: "INVALID_PARAMETERS", errorMessage: "messageType 'instant' \u672C\u5C31\u7ACB\u5373\u6295\u9012\uFF0C\u4E0D\u80FD\u518D\u5E26 immediate", details: { invalidFields: ["immediate"] } };
   }
-  if (immediate) {
+  if (immediate || payload.messageType === "instant") {
     if (payload.firstSendTime !== void 0 && payload.firstSendTime !== null && !isValidISO8601(payload.firstSendTime)) {
       return { valid: false, errorCode: "INVALID_TIMESTAMP", errorMessage: "\u65F6\u95F4\u683C\u5F0F\u65E0\u6548", details: { field: "firstSendTime" } };
     }
@@ -5321,7 +5414,7 @@ async function runFireChain({
     const afterMs = readDeferAfterMs(before.defer);
     if (ctx._deferSupported !== true) {
       throw new DeploymentConfigError(
-        "AGENTIC_DEFER_UNSUPPORTED: onBeforeFire \u8FD4\u56DE\u4E86 { defer }\uFF0C\u4F46\u8FD9\u6761\u6295\u9012\u8DEF\u5F84\u4E0D\u652F\u6301\u63A8\u8FDF\u2014\u2014\u53EA\u6709 runScheduledTick / runTask \u4E14\u9002\u914D\u5668\u5B9E\u73B0\u4E86 claimTask\uFF08\u4EFB\u52A1\u8868\u6709 retry_after \u5217\uFF09\u65F6\u53EF\u7528\uFF0C\u8BF7\u6C42\u5185\u5F53\u573A\u6295\u9012\u7684 instant \u4EFB\u52A1\u4E0D\u53EF\u7528",
+        "AGENTIC_DEFER_UNSUPPORTED: onBeforeFire \u8FD4\u56DE\u4E86 { defer }\uFF0C\u4F46\u8FD9\u6761\u6295\u9012\u8DEF\u5F84\u4E0D\u652F\u6301\u63A8\u8FDF\u2014\u2014\u53EA\u6709 runScheduledTick / runTask \u4E14\u9002\u914D\u5668\u5B9E\u73B0\u4E86 claimTask\uFF08\u4EFB\u52A1\u8868\u6709 retry_after \u5217\uFF09\u65F6\u53EF\u7528",
         { code: "AGENTIC_DEFER_UNSUPPORTED" }
       );
     }
@@ -6337,374 +6430,6 @@ async function processSingleMessage(task, ctx, providedMasterKey, predecrypted =
     };
   }
 }
-async function processMessagesByUuid(uuid, ctx, maxRetries = 2, userId, providedMasterKey) {
-  let retryCount = 0;
-  const masterKey = providedMasterKey || ctx.masterKey;
-  if (!masterKey) {
-    return {
-      success: false,
-      error: { code: "TENANT_MASTER_KEY_MISSING", message: "\u79DF\u6237\u4E3B\u5BC6\u94A5\u4E0D\u5B58\u5728\u6216\u914D\u7F6E\u5F02\u5E38" }
-    };
-  }
-  while (true) {
-    let task;
-    try {
-      task = userId ? await ctx.db.getTaskByUuid(uuid, userId) : await ctx.db.getTaskByUuidOnly(uuid);
-    } catch (error) {
-      if (retryCount < maxRetries) {
-        retryCount++;
-        await new Promise((resolve) => setTimeout(resolve, 1e3 * retryCount));
-        continue;
-      }
-      return {
-        success: false,
-        error: { code: "INTERNAL_ERROR", message: error.message, retriesAttempted: retryCount }
-      };
-    }
-    if (!task) {
-      return { success: false, error: { code: "TASK_NOT_FOUND", message: "\u4EFB\u52A1\u4E0D\u5B58\u5728\u6216\u5DF2\u5904\u7406" } };
-    }
-    let attemptDb = ctx.db;
-    if (ctx.db.cloudDataManagement) {
-      try {
-        const userKey = await deriveUserEncryptionKey(task.user_id, masterKey);
-        const payload = JSON.parse(await decryptFromStorage(task.encrypted_payload, userKey));
-        const guard = await captureCloudTaskGuard(ctx.db, task.user_id, payload, ctx.cloudData?.resolveOwner, task);
-        if (guard) attemptDb = createCloudGuardedAdapter(ctx.db, { masterKey, resolveOwner: ctx.cloudData?.resolveOwner, guard, userId: task.user_id });
-      } catch (error) {
-        return { success: false, error: { code: error.code || "PROCESSING_ERROR", message: error.message, retriesAttempted: retryCount } };
-      }
-    }
-    const result = await processSingleMessage({ ...task, retry_count: retryCount }, { ...ctx, db: attemptDb, maxDeliveryRetries: maxRetries }, masterKey, null);
-    if (!result.success) {
-      if (result.errorCode === "CLOUD_OWNER_RETIRED") {
-        return { success: false, error: { code: result.errorCode, message: result.error, retriesAttempted: retryCount } };
-      }
-      const permanent = isPermanentDeliveryFailure({
-        permanent: result.permanent,
-        errorCode: result.errorCode,
-        pushStatus: result.pushStatusCode
-      });
-      if (!permanent && result.willRetry !== false && retryCount < (result.retryLimit ?? maxRetries)) {
-        retryCount++;
-        await new Promise((resolve) => setTimeout(resolve, 1e3 * retryCount));
-        continue;
-      }
-      try {
-        await attemptDb.updateTaskById(task.id, {
-          status: "failed",
-          retry_count: retryCount,
-          // 记录的形状跟定时任务那条路一致（同一个 buildErrorExtra）：reason
-          // 是给用户看的人话，errorCode / pushStatus 是给下游判定用的——410 =
-          // 订阅已注销，客户端要据此引导用户重新登记，而不是回去正则匹配
-          // reason 里那句话。
-          last_error: JSON.stringify({
-            at: (/* @__PURE__ */ new Date()).toISOString(),
-            occurrence: task.next_send_at ?? null,
-            reason: sanitizeErrorSummary(result.error),
-            ...buildErrorExtra(result.errorCode, result.pushStatusCode) || {}
-          })
-        });
-      } catch (_updateError) {
-        if (_updateError?.code === "CLOUD_OWNER_RETIRED") {
-          return { success: false, error: { code: _updateError.code, message: _updateError.message, retriesAttempted: retryCount } };
-        }
-        try {
-          await attemptDb.updateTaskById(task.id, { status: "failed", retry_count: retryCount });
-        } catch (_retryError) {
-        }
-      }
-      return {
-        success: false,
-        error: {
-          code: "PROCESSING_ERROR",
-          message: result.error,
-          retriesAttempted: retryCount,
-          ...permanent ? { permanent: true } : {}
-        }
-      };
-    }
-    try {
-      await ctx.db.deleteTaskById(task.id);
-    } catch (error) {
-      try {
-        await attemptDb.updateTaskById(task.id, { status: "sent", retry_count: 0 });
-      } catch (_markSentError) {
-      }
-      return {
-        success: false,
-        error: {
-          code: "POST_SEND_CLEANUP_FAILED",
-          message: "\u6D88\u606F\u5DF2\u53D1\u9001\uFF0C\u4F46\u4EFB\u52A1\u6E05\u7406\u5931\u8D25",
-          details: { error: error.message }
-        }
-      };
-    }
-    return {
-      success: true,
-      messagesSent: result.messagesSent,
-      retriesUsed: retryCount,
-      ...result.reasoningError ? { reasoningError: result.reasoningError } : {}
-    };
-  }
-}
-function createScheduleMessageHandler(ctx) {
-  async function POST(headers, body) {
-    const tenantResult = await ctx.tenantManager.resolveTenant(headers);
-    if (!tenantResult.ok) {
-      return tenantResult.error;
-    }
-    const tenantCtx = tenantResult.context;
-    const db = tenantCtx.db;
-    const masterKey = tenantCtx.masterKey;
-    const isEncrypted = getHeader(headers, "x-payload-encrypted") === "true";
-    const encryptionVersion = getHeader(headers, "x-encryption-version");
-    if (!isEncrypted) {
-      return { status: 400, body: { success: false, error: { code: "ENCRYPTION_REQUIRED", message: "\u8BF7\u6C42\u4F53\u5FC5\u987B\u52A0\u5BC6" } } };
-    }
-    const gate = requireUserId(headers);
-    if (gate.error) return gate.error;
-    const { userId } = gate;
-    if (encryptionVersion !== "1") {
-      return { status: 400, body: { success: false, error: { code: "UNSUPPORTED_ENCRYPTION_VERSION", message: "\u52A0\u5BC6\u7248\u672C\u4E0D\u652F\u6301" } } };
-    }
-    const parsedBody = parseEncryptedBody(body);
-    if (!parsedBody.ok) {
-      return { status: 400, body: { success: false, error: parsedBody.error } };
-    }
-    const encryptedBody = parsedBody.data;
-    const userKey = await deriveUserEncryptionKey(userId, masterKey);
-    let payload;
-    try {
-      payload = await decryptPayload(encryptedBody, userKey);
-    } catch (error) {
-      if (error instanceof SyntaxError) {
-        return { status: 400, body: { success: false, error: { code: "INVALID_PAYLOAD_FORMAT", message: "\u89E3\u5BC6\u540E\u7684\u6570\u636E\u4E0D\u662F\u6709\u6548 JSON" } } };
-      }
-      return { status: 400, body: { success: false, error: { code: "DECRYPTION_FAILED", message: "\u8BF7\u6C42\u4F53\u89E3\u5BC6\u5931\u8D25" } } };
-    }
-    if (!isPlainObject(payload)) {
-      return { status: 400, body: { success: false, error: { code: "INVALID_PAYLOAD_FORMAT", message: "\u89E3\u5BC6\u540E\u7684\u6570\u636E\u5FC5\u987B\u662F JSON \u5BF9\u8C61" } } };
-    }
-    const validationResult = validateScheduleMessagePayload(payload);
-    if (!validationResult.valid) {
-      return { status: 400, body: { success: false, error: { code: validationResult.errorCode, message: validationResult.errorMessage, details: validationResult.details } } };
-    }
-    if (!supportsPushSubscriptionStore(db)) {
-      return { status: 501, body: { success: false, error: { code: "PUSH_SUBSCRIPTION_NOT_SUPPORTED", message: "\u5F53\u524D\u6570\u636E\u5E93\u9002\u914D\u5668\u4E0D\u652F\u6301\u7528\u6237\u7EA7\u63A8\u9001\u8BA2\u9605\u5B58\u50A8" } } };
-    }
-    let subscriptionRow;
-    try {
-      subscriptionRow = await db.getPushSubscription(userId);
-    } catch (_error) {
-      return {
-        status: 503,
-        body: {
-          success: false,
-          error: {
-            code: "PUSH_SUBSCRIPTION_LOOKUP_FAILED",
-            message: "\u63A8\u9001\u8BA2\u9605\u8BFB\u53D6\u5931\u8D25\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5"
-          }
-        }
-      };
-    }
-    if (!subscriptionRow || typeof subscriptionRow.subscription !== "string" || !subscriptionRow.subscription) {
-      return {
-        status: 409,
-        body: {
-          success: false,
-          error: {
-            code: "PUSH_SUBSCRIPTION_MISSING",
-            message: "\u8BE5\u7528\u6237\u8FD8\u6CA1\u6709\u767B\u8BB0\u63A8\u9001\u8BA2\u9605\uFF0C\u8BF7\u5148\u8C03\u7528 PUT /push-subscription"
-          }
-        }
-      };
-    }
-    if (payload.credRefs) {
-      if (!supportsLlmCredentialsStore(db)) {
-        return { status: 501, body: { success: false, error: { code: "LLM_CREDENTIALS_NOT_SUPPORTED", message: "\u5F53\u524D\u6570\u636E\u5E93\u9002\u914D\u5668\u4E0D\u652F\u6301\u7528\u6237\u7EA7 LLM \u51ED\u636E\u5B58\u50A8" } } };
-      }
-      let missingCredIds;
-      try {
-        missingCredIds = await findMissingCredIds({ db, userId, credRefs: payload.credRefs });
-      } catch (_error) {
-        return { status: 503, body: { success: false, error: { code: "LLM_CREDENTIALS_LOOKUP_FAILED", message: "\u51ED\u636E\u8BFB\u53D6\u5931\u8D25\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5" } } };
-      }
-      if (missingCredIds.length > 0) {
-        return {
-          status: 409,
-          body: {
-            success: false,
-            error: {
-              code: "CREDENTIAL_NOT_FOUND",
-              message: `credRefs \u5F15\u7528\u7684\u51ED\u636E\u4E0D\u5B58\u5728\uFF1A${missingCredIds.join(", ")}\uFF08\u5148 PUT /llm-credentials \u767B\u8BB0\uFF09`,
-              details: { missingCredIds }
-            }
-          }
-        };
-      }
-    }
-    const taskUuid = payload.uuid || randomUUID();
-    const effectiveSendTime = payload.immediate === true ? (/* @__PURE__ */ new Date()).toISOString() : payload.firstSendTime;
-    const fullTaskData = {
-      contactName: payload.contactName,
-      avatarUrl: payload.avatarUrl || null,
-      messageType: payload.messageType,
-      messageSubtype: payload.messageSubtype || "chat",
-      userMessage: payload.userMessage || null,
-      firstSendTime: effectiveSendTime,
-      recurrenceType: payload.recurrenceType || "none",
-      // daily / weekly 按这个时区的墙钟推进（同一钟点，日期 +1 天 / +7 天）。
-      // 不传 → null → 按 UTC 推进。
-      tzId: payload.tzId || null,
-      apiUrl: payload.apiUrl || null,
-      apiKey: payload.apiKey || null,
-      primaryModel: payload.primaryModel || null,
-      // 凭据引用（{ <purpose>: <cred_id> }）。带它的任务到点按引用现读
-      // llm_credentials，凭据本体不冻结在行里。
-      credRefs: payload.credRefs || null,
-      // Prompt is one-of: legacy completePrompt (string) OR messages (OpenAI-
-      // style array). Validation has already enforced exactly-one-of, so
-      // exactly one of these will be non-null when an AI config is provided.
-      completePrompt: payload.completePrompt || null,
-      messages: Array.isArray(payload.messages) ? payload.messages : null,
-      maxTokens: payload.maxTokens ?? null,
-      temperature: payload.temperature ?? null,
-      // 0.6.0+: optional caller-provided regex (string or string[]) used by
-      // the message processor to chunk LLM output into individual pushes.
-      // null → processor falls back to the default /([。！？!?]+)/ regex.
-      splitPattern: payload.splitPattern ?? null,
-      // 透传给 LLM 中转的非标准参数（thinking 之类），buildLlmRequestBody 会
-      // 把它展开进请求体（核心字段优先）。
-      llmExtraBody: payload.llmExtraBody ?? null,
-      owner: payload.owner,
-      kind: payload.kind,
-      ownerGeneration: payload.ownerGeneration,
-      // Input is persisted with the task in the same create/supersede transaction.
-      // Shared credentials remain references and continue to resolve at fire time.
-      taskInput: payload.taskInput ?? null,
-      metadata: payload.metadata || {}
-    };
-    const serializedTaskData = JSON.stringify(fullTaskData);
-    const sizeError = validateTaskPayloadSize(serializedTaskData);
-    if (sizeError) {
-      return { status: 400, body: { success: false, error: sizeError } };
-    }
-    const encryptedPayload = await encryptForStorage(serializedTaskData, userKey);
-    if (payload.messageType === "instant") {
-      if (!ctx.vapid.email || !ctx.vapid.publicKey || !ctx.vapid.privateKey) {
-        return {
-          status: 500,
-          body: {
-            success: false,
-            error: {
-              code: "VAPID_CONFIG_ERROR",
-              message: "VAPID \u914D\u7F6E\u7F3A\u5931\uFF0C\u65E0\u6CD5\u53D1\u9001\u5373\u65F6\u6D88\u606F",
-              details: {
-                missingKeys: [
-                  !ctx.vapid.email && "VAPID_EMAIL",
-                  !ctx.vapid.publicKey && "NEXT_PUBLIC_VAPID_PUBLIC_KEY",
-                  !ctx.vapid.privateKey && "VAPID_PRIVATE_KEY"
-                ].filter(Boolean)
-              }
-            }
-          }
-        };
-      }
-    }
-    const createParams = {
-      user_id: userId,
-      uuid: taskUuid,
-      encrypted_payload: encryptedPayload,
-      next_send_at: effectiveSendTime,
-      message_type: payload.messageType
-    };
-    const supersedesUuid = payload.supersedesUuid || null;
-    let superseded = false;
-    let dbResult;
-    try {
-      if (supersedesUuid && typeof db.createTaskSuperseding === "function") {
-        dbResult = await db.createTaskSuperseding(createParams, supersedesUuid);
-        superseded = !!(dbResult && dbResult.superseded);
-      } else {
-        dbResult = await db.createTask(createParams);
-        if (supersedesUuid && dbResult) {
-          superseded = await db.deleteTaskByUuid(supersedesUuid, userId);
-        }
-      }
-    } catch (error) {
-      if (isUniqueViolation(error)) {
-        return {
-          status: 409,
-          body: {
-            success: false,
-            error: {
-              code: "TASK_UUID_CONFLICT",
-              message: "\u4EFB\u52A1 UUID \u5DF2\u5B58\u5728\uFF0C\u8BF7\u4F7F\u7528\u65B0\u7684 uuid \u91CD\u65B0\u63D0\u4EA4"
-            }
-          }
-        };
-      }
-      throw error;
-    }
-    if (!dbResult) {
-      return { status: 500, body: { success: false, error: { code: "TASK_CREATE_FAILED", message: "\u521B\u5EFA\u4EFB\u52A1\u5931\u8D25" } } };
-    }
-    if (superseded) {
-      await discardUndeliveredPushesForTask({ db, userId, taskUuid: supersedesUuid });
-    }
-    if (payload.messageType === "instant") {
-      try {
-        const sendResult = await processMessagesByUuid(taskUuid, {
-          ...ctx,
-          db,
-          masterKey
-        }, 2, userId, masterKey);
-        if (!sendResult.success) {
-          return { status: 500, body: { success: false, error: { code: "MESSAGE_SEND_FAILED", message: "\u6D88\u606F\u53D1\u9001\u5931\u8D25", details: sendResult.error } } };
-        }
-        return {
-          status: 200,
-          body: {
-            success: true,
-            data: {
-              uuid: taskUuid,
-              contactName: payload.contactName,
-              messagesSent: sendResult.messagesSent,
-              sentAt: (/* @__PURE__ */ new Date()).toISOString(),
-              status: "sent",
-              retriesUsed: sendResult.retriesUsed || 0,
-              // 思考过程那条 push 没发出去的原因（有才带上）。正文照发，所以
-              // 这次调用仍是成功的；调用方拿它决定要不要提示 / 重发。
-              ...sendResult.reasoningError ? { reasoningError: sendResult.reasoningError } : {},
-              ...supersedesUuid ? { superseded } : {}
-            }
-          }
-        };
-      } catch (error) {
-        return { status: 500, body: { success: false, error: { code: "MESSAGE_SEND_FAILED", message: "\u6D88\u606F\u53D1\u9001\u5931\u8D25", details: { error: error.message } } } };
-      }
-    }
-    return {
-      status: 201,
-      body: {
-        success: true,
-        data: {
-          id: dbResult.id,
-          uuid: dbResult.uuid,
-          contactName: payload.contactName,
-          nextSendAt: dbResult.next_send_at,
-          status: dbResult.status,
-          createdAt: dbResult.created_at,
-          // supersede 的结果：true = 旧行确实被取消了；false = 旧行本就不存在
-          // （已发出 / 已删除），新任务照常建立。
-          ...supersedesUuid ? { superseded } : {}
-        }
-      }
-    };
-  }
-  return { POST };
-}
 var DEFAULT_CLAIM_LEASE_MS = 10 * 60 * 1e3;
 var CLAIM_LEASE_MARGIN_MS = 2 * 60 * 1e3;
 var DEFAULT_LEASE_HEARTBEAT_MS = 30 * 1e3;
@@ -7481,6 +7206,271 @@ async function deliverTasks(ctx, tasks) {
       failedTasks: results.failedTasks
     }
   };
+}
+async function dispatchInstantTask(dispatchInstant, task) {
+  if (typeof dispatchInstant !== "function") return "not_configured";
+  try {
+    await dispatchInstant(task);
+    return "kicked";
+  } catch (error) {
+    console.warn(`[amsg-server] instant \u4EFB\u52A1 ${task.uuid} \u53EB\u9192\u5931\u8D25\uFF0C\u7B49\u4E0B\u4E00\u8DF3 cron:`, error && error.message);
+    return "kick_failed";
+  }
+}
+function createScheduleMessageHandler(ctx) {
+  async function POST(headers, body) {
+    const tenantResult = await ctx.tenantManager.resolveTenant(headers);
+    if (!tenantResult.ok) {
+      return tenantResult.error;
+    }
+    const tenantCtx = tenantResult.context;
+    const db = tenantCtx.db;
+    const masterKey = tenantCtx.masterKey;
+    const isEncrypted = getHeader(headers, "x-payload-encrypted") === "true";
+    const encryptionVersion = getHeader(headers, "x-encryption-version");
+    if (!isEncrypted) {
+      return { status: 400, body: { success: false, error: { code: "ENCRYPTION_REQUIRED", message: "\u8BF7\u6C42\u4F53\u5FC5\u987B\u52A0\u5BC6" } } };
+    }
+    const gate = requireUserId(headers);
+    if (gate.error) return gate.error;
+    const { userId } = gate;
+    if (encryptionVersion !== "1") {
+      return { status: 400, body: { success: false, error: { code: "UNSUPPORTED_ENCRYPTION_VERSION", message: "\u52A0\u5BC6\u7248\u672C\u4E0D\u652F\u6301" } } };
+    }
+    const parsedBody = parseEncryptedBody(body);
+    if (!parsedBody.ok) {
+      return { status: 400, body: { success: false, error: parsedBody.error } };
+    }
+    const encryptedBody = parsedBody.data;
+    const userKey = await deriveUserEncryptionKey(userId, masterKey);
+    let payload;
+    try {
+      payload = await decryptPayload(encryptedBody, userKey);
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        return { status: 400, body: { success: false, error: { code: "INVALID_PAYLOAD_FORMAT", message: "\u89E3\u5BC6\u540E\u7684\u6570\u636E\u4E0D\u662F\u6709\u6548 JSON" } } };
+      }
+      return { status: 400, body: { success: false, error: { code: "DECRYPTION_FAILED", message: "\u8BF7\u6C42\u4F53\u89E3\u5BC6\u5931\u8D25" } } };
+    }
+    if (!isPlainObject(payload)) {
+      return { status: 400, body: { success: false, error: { code: "INVALID_PAYLOAD_FORMAT", message: "\u89E3\u5BC6\u540E\u7684\u6570\u636E\u5FC5\u987B\u662F JSON \u5BF9\u8C61" } } };
+    }
+    const validationResult = validateScheduleMessagePayload(payload);
+    if (!validationResult.valid) {
+      return { status: 400, body: { success: false, error: { code: validationResult.errorCode, message: validationResult.errorMessage, details: validationResult.details } } };
+    }
+    if (!supportsPushSubscriptionStore(db)) {
+      return { status: 501, body: { success: false, error: { code: "PUSH_SUBSCRIPTION_NOT_SUPPORTED", message: "\u5F53\u524D\u6570\u636E\u5E93\u9002\u914D\u5668\u4E0D\u652F\u6301\u7528\u6237\u7EA7\u63A8\u9001\u8BA2\u9605\u5B58\u50A8" } } };
+    }
+    let subscriptionRow;
+    try {
+      subscriptionRow = await db.getPushSubscription(userId);
+    } catch (_error) {
+      return {
+        status: 503,
+        body: {
+          success: false,
+          error: {
+            code: "PUSH_SUBSCRIPTION_LOOKUP_FAILED",
+            message: "\u63A8\u9001\u8BA2\u9605\u8BFB\u53D6\u5931\u8D25\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5"
+          }
+        }
+      };
+    }
+    if (!subscriptionRow || typeof subscriptionRow.subscription !== "string" || !subscriptionRow.subscription) {
+      return {
+        status: 409,
+        body: {
+          success: false,
+          error: {
+            code: "PUSH_SUBSCRIPTION_MISSING",
+            message: "\u8BE5\u7528\u6237\u8FD8\u6CA1\u6709\u767B\u8BB0\u63A8\u9001\u8BA2\u9605\uFF0C\u8BF7\u5148\u8C03\u7528 PUT /push-subscription"
+          }
+        }
+      };
+    }
+    if (payload.credRefs) {
+      if (!supportsLlmCredentialsStore(db)) {
+        return { status: 501, body: { success: false, error: { code: "LLM_CREDENTIALS_NOT_SUPPORTED", message: "\u5F53\u524D\u6570\u636E\u5E93\u9002\u914D\u5668\u4E0D\u652F\u6301\u7528\u6237\u7EA7 LLM \u51ED\u636E\u5B58\u50A8" } } };
+      }
+      let missingCredIds;
+      try {
+        missingCredIds = await findMissingCredIds({ db, userId, credRefs: payload.credRefs });
+      } catch (_error) {
+        return { status: 503, body: { success: false, error: { code: "LLM_CREDENTIALS_LOOKUP_FAILED", message: "\u51ED\u636E\u8BFB\u53D6\u5931\u8D25\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5" } } };
+      }
+      if (missingCredIds.length > 0) {
+        return {
+          status: 409,
+          body: {
+            success: false,
+            error: {
+              code: "CREDENTIAL_NOT_FOUND",
+              message: `credRefs \u5F15\u7528\u7684\u51ED\u636E\u4E0D\u5B58\u5728\uFF1A${missingCredIds.join(", ")}\uFF08\u5148 PUT /llm-credentials \u767B\u8BB0\uFF09`,
+              details: { missingCredIds }
+            }
+          }
+        };
+      }
+    }
+    const taskUuid = payload.uuid || randomUUID();
+    const isInstant = payload.messageType === "instant";
+    const effectiveSendTime = payload.immediate === true || isInstant ? (/* @__PURE__ */ new Date()).toISOString() : payload.firstSendTime;
+    const fullTaskData = {
+      contactName: payload.contactName,
+      avatarUrl: payload.avatarUrl || null,
+      messageType: payload.messageType,
+      messageSubtype: payload.messageSubtype || "chat",
+      userMessage: payload.userMessage || null,
+      firstSendTime: effectiveSendTime,
+      recurrenceType: payload.recurrenceType || "none",
+      // daily / weekly 按这个时区的墙钟推进（同一钟点，日期 +1 天 / +7 天）。
+      // 不传 → null → 按 UTC 推进。
+      tzId: payload.tzId || null,
+      apiUrl: payload.apiUrl || null,
+      apiKey: payload.apiKey || null,
+      primaryModel: payload.primaryModel || null,
+      // 凭据引用（{ <purpose>: <cred_id> }）。带它的任务到点按引用现读
+      // llm_credentials，凭据本体不冻结在行里。
+      credRefs: payload.credRefs || null,
+      // Prompt is one-of: legacy completePrompt (string) OR messages (OpenAI-
+      // style array). Validation has already enforced exactly-one-of, so
+      // exactly one of these will be non-null when an AI config is provided.
+      completePrompt: payload.completePrompt || null,
+      messages: Array.isArray(payload.messages) ? payload.messages : null,
+      maxTokens: payload.maxTokens ?? null,
+      temperature: payload.temperature ?? null,
+      // 0.6.0+: optional caller-provided regex (string or string[]) used by
+      // the message processor to chunk LLM output into individual pushes.
+      // null → processor falls back to the default /([。！？!?]+)/ regex.
+      splitPattern: payload.splitPattern ?? null,
+      // 透传给 LLM 中转的非标准参数（thinking 之类），buildLlmRequestBody 会
+      // 把它展开进请求体（核心字段优先）。
+      llmExtraBody: payload.llmExtraBody ?? null,
+      owner: payload.owner,
+      kind: payload.kind,
+      ownerGeneration: payload.ownerGeneration,
+      // Input is persisted with the task in the same create/supersede transaction.
+      // Shared credentials remain references and continue to resolve at fire time.
+      taskInput: payload.taskInput ?? null,
+      metadata: payload.metadata || {}
+    };
+    const serializedTaskData = JSON.stringify(fullTaskData);
+    const sizeError = validateTaskPayloadSize(serializedTaskData);
+    if (sizeError) {
+      return { status: 400, body: { success: false, error: sizeError } };
+    }
+    const encryptedPayload = await encryptForStorage(serializedTaskData, userKey);
+    if (isInstant) {
+      if (!ctx.webpush || !ctx.vapid.email || !ctx.vapid.publicKey || !ctx.vapid.privateKey) {
+        return {
+          status: 500,
+          body: {
+            success: false,
+            error: {
+              code: "VAPID_CONFIG_ERROR",
+              message: "VAPID \u914D\u7F6E\u7F3A\u5931\uFF0C\u65E0\u6CD5\u53D1\u9001\u5373\u65F6\u6D88\u606F",
+              details: {
+                missingKeys: [
+                  !ctx.webpush && "webpush",
+                  !ctx.vapid.email && "VAPID_EMAIL",
+                  !ctx.vapid.publicKey && "NEXT_PUBLIC_VAPID_PUBLIC_KEY",
+                  !ctx.vapid.privateKey && "VAPID_PRIVATE_KEY"
+                ].filter(Boolean)
+              }
+            }
+          }
+        };
+      }
+    }
+    const createParams = {
+      user_id: userId,
+      uuid: taskUuid,
+      encrypted_payload: encryptedPayload,
+      next_send_at: effectiveSendTime,
+      message_type: payload.messageType
+    };
+    const supersedesUuid = payload.supersedesUuid || null;
+    let superseded = false;
+    let dbResult;
+    try {
+      if (supersedesUuid && typeof db.createTaskSuperseding === "function") {
+        dbResult = await db.createTaskSuperseding(createParams, supersedesUuid);
+        superseded = !!(dbResult && dbResult.superseded);
+      } else {
+        dbResult = await db.createTask(createParams);
+        if (supersedesUuid && dbResult) {
+          superseded = await db.deleteTaskByUuid(supersedesUuid, userId);
+        }
+      }
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        return {
+          status: 409,
+          body: {
+            success: false,
+            error: {
+              code: "TASK_UUID_CONFLICT",
+              message: "\u4EFB\u52A1 UUID \u5DF2\u5B58\u5728\uFF0C\u8BF7\u4F7F\u7528\u65B0\u7684 uuid \u91CD\u65B0\u63D0\u4EA4"
+            }
+          }
+        };
+      }
+      throw error;
+    }
+    if (!dbResult) {
+      return { status: 500, body: { success: false, error: { code: "TASK_CREATE_FAILED", message: "\u521B\u5EFA\u4EFB\u52A1\u5931\u8D25" } } };
+    }
+    if (superseded) {
+      await discardUndeliveredPushesForTask({ db, userId, taskUuid: supersedesUuid });
+    }
+    if (isInstant) {
+      const dispatch = await dispatchInstantTask(ctx.dispatchInstant, {
+        uuid: taskUuid,
+        userId,
+        tenantId: tenantCtx.tenantId,
+        // 绑好这个租户的库和主密钥：多租户线上宿主自己拿不到这两样，没有它就
+        // 调不了 runTask。
+        run: () => runTask({ ...ctx, db, masterKey }, taskUuid)
+      });
+      return {
+        status: 202,
+        body: {
+          success: true,
+          data: {
+            id: dbResult.id,
+            uuid: dbResult.uuid,
+            contactName: payload.contactName,
+            nextSendAt: dbResult.next_send_at,
+            status: dbResult.status,
+            createdAt: dbResult.created_at,
+            // 'kicked'：起跳器已叫醒，马上开始生成；'not_configured' / 'kick_failed'：
+            // 等下一跳 cron（最多一分钟）。
+            dispatch,
+            ...supersedesUuid ? { superseded } : {}
+          }
+        }
+      };
+    }
+    return {
+      status: 201,
+      body: {
+        success: true,
+        data: {
+          id: dbResult.id,
+          uuid: dbResult.uuid,
+          contactName: payload.contactName,
+          nextSendAt: dbResult.next_send_at,
+          status: dbResult.status,
+          createdAt: dbResult.created_at,
+          // supersede 的结果：true = 旧行确实被取消了；false = 旧行本就不存在
+          // （已发出 / 已删除），新任务照常建立。
+          ...supersedesUuid ? { superseded } : {}
+        }
+      }
+    };
+  }
+  return { POST };
 }
 var REQUEST_FIELD_BY_COLUMN = { next_send_at: "nextSendAt" };
 function createUpdateMessageHandler(ctx) {
@@ -10404,7 +10394,7 @@ function createClientStateNamespacesHandler(ctx) {
   }
   return { GET };
 }
-var SERVER_VERSION = true ? "3.2.0-next.2" : "0.0.0-dev";
+var SERVER_VERSION = true ? "4.0.0-next.3" : "0.0.0-dev";
 var SERVER_FEATURES = Object.freeze([
   "client-state",
   "client-state-chunking",
@@ -10523,7 +10513,9 @@ var SERVER_FEATURES = Object.freeze([
   "client-state-key",
   "agentic-list-tasks",
   "agentic-tool-allowlist",
-  "attachments"
+  "attachments",
+  // messageType: 'instant' 落库即回 202（带 dispatch），投递在后台跑，客户端不用挂着连接。
+  "instant-background"
 ]);
 function createCapabilitiesHandler(ctx) {
   async function GET(url, headers) {
@@ -11819,9 +11811,11 @@ function createSingleUserServer(config) {
     // 这个 ctx 发，所以它要跟着 handlers 一起进来。
     multipart: config.multipart || null,
     tenantManager,
-    // Fire-time hooks (optional): the in-server instant path fires through
-    // processMessagesByUuid with this ctx, so instant-type tasks can take
-    // the agentic path too.
+    // instant 任务落库后叫醒起跳器的回调（见 handlers/schedule-message.js）。
+    // createSingleUserCloudflareWorker 默认接上 Durable Object 起跳器；不配 =
+    // instant 等下一跳 cron。
+    dispatchInstant: config.dispatchInstant || null,
+    // Fire-time hooks (optional; see lib/agentic-fire.js).
     hooks: config.hooks || null,
     maxToolIterations: config.maxToolIterations,
     totalTimeoutMs: config.totalTimeoutMs,
@@ -11904,6 +11898,57 @@ async function ensureSchema(db) {
   const after = await getSchemaVersion(db);
   return { ...after, migrated: true, schema };
 }
+var INSTANT_TICK_BINDING = "AMSG_INSTANT_TICK";
+var UUID_KEY = "uuid";
+var MAX_ALARM_RETRIES = 6;
+function isInstantTickNamespace(namespace) {
+  return !!namespace && typeof namespace.get === "function" && typeof namespace.idFromName === "function";
+}
+async function kickInstantTick(namespace, uuid) {
+  const stub = namespace.get(namespace.idFromName(uuid));
+  const res = await stub.fetch("https://amsg-instant-tick/kick", { method: "POST", body: uuid });
+  if (!res.ok) throw new Error(`instant \u8D77\u8DF3\u5668\u56DE\u4E86 HTTP ${res.status}`);
+}
+function createInstantTickClass(runTask2) {
+  return class AmsgInstantTick {
+    /**
+     * @param {{ storage: { get: function, put: function, delete: function, getAlarm: function, setAlarm: function } }} state
+     * @param {Object} env
+     */
+    constructor(state, env) {
+      this.state = state;
+      this.env = env;
+    }
+    /** 叫醒：记下要跑哪条，设一个立刻到期的 alarm，马上返回。 */
+    async fetch(request) {
+      const uuid = (await request.text()).trim();
+      if (!uuid) return new Response("missing task uuid", { status: 400 });
+      await this.state.storage.put(UUID_KEY, uuid);
+      if (await this.state.storage.getAlarm() === null) {
+        await this.state.storage.setAlarm(Date.now());
+      }
+      return new Response(null, { status: 204 });
+    }
+    /** @param {{ retryCount?: number }} [alarmInfo] - Cloudflare 传进来的重试信息 */
+    async alarm(alarmInfo) {
+      const uuid = await this.state.storage.get(UUID_KEY);
+      if (!uuid) return;
+      let result;
+      try {
+        result = await runTask2(uuid, this.env);
+      } catch (error) {
+        if (alarmInfo && alarmInfo.retryCount >= MAX_ALARM_RETRIES) {
+          await this.state.storage.deleteAll();
+        }
+        throw error;
+      }
+      await this.state.storage.deleteAll();
+      if (!result.ran && result.reason !== "not_found") {
+        console.warn(`[amsg single-user] instant \u4EFB\u52A1 ${uuid} \u6CA1\u6709\u8DD1\uFF1A${result.reason}`);
+      }
+    }
+  };
+}
 function headersToObject(h) {
   const out = {};
   for (const [k, v] of h) out[k] = v;
@@ -11977,6 +12022,13 @@ function pathOf(request) {
 }
 function createSingleUserCloudflareWorker(buildConfig, options = {}) {
   const onError = typeof options.onError === "function" ? options.onError : null;
+  const instantTickBinding = options.instantTickBinding || INSTANT_TICK_BINDING;
+  function resolveDispatchInstant(cfg, env) {
+    if (typeof cfg.dispatchInstant === "function") return cfg.dispatchInstant;
+    const namespace = env ? env[instantTickBinding] : null;
+    if (!isInstantTickNamespace(namespace)) return null;
+    return ({ uuid }) => kickInstantTick(namespace, uuid);
+  }
   async function resolveConfig(env) {
     const cfg = await buildConfig(env);
     if (!cfg.db) cfg.db = createD1Adapter(env.DB);
@@ -12070,7 +12122,7 @@ function createSingleUserCloudflareWorker(buildConfig, options = {}) {
       if (method === "OPTIONS") {
         return cors ? new Response(null, { status: 204, headers: cors }) : jsonResponse(404, { success: false, error: { code: "NOT_FOUND", message: "Unknown route" } });
       }
-      const server = createSingleUserServer(cfg);
+      const server = createSingleUserServer({ ...cfg, dispatchInstant: resolveDispatchInstant(cfg, env) });
       const url = request.url;
       const pathname = new URL(url).pathname.replace(/\/+$/, "") || "/";
       const headers = headersToObject(request.headers);
@@ -12196,7 +12248,28 @@ function createSingleUserCloudflareWorker(buildConfig, options = {}) {
     const cfg = await resolveConfig(env);
     return ensureSchema(cfg.db);
   }
-  return { fetch: fetch2, scheduled, runTask: runTask2, getSchemaVersion: getSchemaVersion2, ensureSchema: ensureSchema2 };
+  async function runInstantTask(uuid, env) {
+    let stage = "config";
+    try {
+      const cfg = await resolveConfig(env);
+      if (!pushConfigured(cfg)) {
+        const cause = summarizeErrorCause(
+          { name: "VapidNotConfigured", message: `VAPID / webpush \u672A\u914D\u7F6E\uFF0Cinstant \u4EFB\u52A1 ${uuid} \u6CA1\u6709\u8DD1` },
+          "config"
+        );
+        await reportError({ stage: "config", error: null, cause, path: null });
+        return { ran: false, reason: "not_configured" };
+      }
+      stage = "tick";
+      return await runTask(buildTickContext(cfg), uuid);
+    } catch (error) {
+      console.error(`[amsg single-user] instant \u4EFB\u52A1 ${uuid} \u51FA\u9519:`, error && error.message);
+      await reportError({ stage, error, cause: summarizeErrorCause(error, stage), path: null });
+      throw error;
+    }
+  }
+  const InstantTick = createInstantTickClass(runInstantTask);
+  return { fetch: fetch2, scheduled, runTask: runTask2, getSchemaVersion: getSchemaVersion2, ensureSchema: ensureSchema2, InstantTick };
 }
 
 // utils/assistantThinking.ts
@@ -12326,7 +12399,7 @@ function extractFriendFeedReplyTags(raw, namespace = "FRIEND_FEED_REPLY") {
   return { text: text2 + raw.slice(cursor), actions };
 }
 
-// node_modules/.pnpm/@rei-standard+amsg-instant@0.12.0-next.0/node_modules/@rei-standard/amsg-instant/dist/index.mjs
+// ../../../../../../../Users/tntobsidian/Documents/GitHub/SullyOS/node_modules/.pnpm/@rei-standard+amsg-instant@0.12.0-next.0/node_modules/@rei-standard/amsg-instant/dist/index.mjs
 var MAX_REQUEST_BODY_BYTES = 32 * 1024 * 1024;
 var WEB_PUSH_MAX_BODY_BYTES2 = 4096;
 var WEB_PUSH_ENCRYPTION_OVERHEAD_BYTES2 = 16 + 4 + 1 + 65 + 1 + 16;
@@ -14528,7 +14601,7 @@ function buildScheduledPush(message, build, extraMeta, bannerBody) {
 }
 
 // utils/amsgBundleVersion.ts
-var AMSG_BUNDLE_VERSION = "2026-11-24";
+var AMSG_BUNDLE_VERSION = "2026-11-24.3";
 
 // worker/amsg/src/reproduction.ts
 async function writeDiagnosticStage(writeState, runId, event, fields = {}) {
@@ -14639,6 +14712,128 @@ function traceDiagnosticTransport(transport, env) {
       throw error;
     }
   } };
+}
+
+// worker/amsg/src/cloudGenFire.ts
+var EMITTED_SCRATCH_KEY = "cloudGenEmitted";
+var discardJob = async (writeState, jobId) => {
+  if (!writeState) return;
+  try {
+    await writeState(CLOUD_GEN_NAMESPACE, [{ key: cloudGenJobKey(jobId), value: null }]);
+  } catch (error) {
+    console.warn("[amsg:cloud-gen] \u8F93\u5165\u884C\u6CA1\u5220\u6389\uFF08\u7B49 TTL \u515C\u5E95\uFF09", jobId, error);
+  }
+};
+var usageOf = (usage, response) => {
+  const call = makeModelCall({ index: 1, completedAt: Date.now(), causes: [], ok: true, usage: usage ?? void 0, response });
+  const out = {
+    ...call.promptTokens !== void 0 ? { promptTokens: call.promptTokens } : {},
+    ...call.completionTokens !== void 0 ? { completionTokens: call.completionTokens } : {},
+    ...call.cacheReadTokens !== void 0 ? { cacheReadTokens: call.cacheReadTokens } : {},
+    ...call.cacheWriteTokens !== void 0 ? { cacheWriteTokens: call.cacheWriteTokens } : {},
+    ...call.backendModel ? { backendModel: call.backendModel } : {}
+  };
+  return Object.keys(out).length > 0 ? out : void 0;
+};
+var cloudGenHandler = {
+  async beforeFire({ ctx, charId, taskMeta }) {
+    const jobId = taskMeta[AMSG_JOB_ID_KEY];
+    if (typeof jobId !== "string" || !jobId) throw new Error(`\u4EE3\u8DD1\u4EFB\u52A1\u7684 metadata \u91CC\u6CA1\u6709 ${AMSG_JOB_ID_KEY}`);
+    const rows = await ctx.readState(CLOUD_GEN_NAMESPACE);
+    const row = rows.find((r) => r.key === cloudGenJobKey(jobId));
+    if (!row?.value) return { skip: true, reason: `\u4EE3\u8DD1 job ${jobId} \u7684\u8F93\u5165\u5DF2\u4E0D\u5728\uFF08\u8FC7\u671F\u6216\u5DF2\u64A4\u9500\uFF09` };
+    const discardAndFail = async (message) => {
+      await discardJob(ctx.writeState, jobId);
+      throw new Error(message);
+    };
+    let json;
+    try {
+      json = await unpackStateValue(row.value);
+    } catch (error) {
+      return discardAndFail(`\u4EE3\u8DD1 job ${jobId} \u7684\u8F93\u5165\u89E3\u538B\u5931\u8D25\uFF08\u6570\u636E\u635F\u574F\uFF09\uFF1A${String(error)}`);
+    }
+    const job = parseCloudGenJobInput(json);
+    if (!job) return discardAndFail(`\u4EE3\u8DD1 job ${jobId} \u7684\u8F93\u5165\u89E3\u6790\u5931\u8D25\uFF08\u6570\u636E\u635F\u574F\uFF09`);
+    if (job.charId !== charId || job.jobId !== jobId || job.purpose !== taskMeta[CLOUD_GEN_PURPOSE_META_KEY]) {
+      return discardAndFail(`\u4EE3\u8DD1 job ${jobId} \u7684\u8F93\u5165\u4E0E\u4EFB\u52A1\u5BF9\u4E0D\u4E0A`);
+    }
+    return {
+      messages: job.messages,
+      totalTimeoutMs: CLOUD_GEN_TOTAL_TIMEOUT_MS,
+      state: { jobId, job }
+    };
+  },
+  async llmOutput({ ctx, state }) {
+    const { jobId, job } = state;
+    const choice = ctx.llmResponse?.choices?.[0];
+    const message = choice?.message;
+    const { content, reasoning } = message ? readAssistantMessage(message) : { content: ctx.llmOutputText || "", reasoning: "" };
+    const finishReason2 = typeof choice?.finish_reason === "string" ? choice.finish_reason : null;
+    if (typeof ctx.storeAttachment !== "function" || typeof ctx.emitResult !== "function") {
+      throw new Error("CLOUD_GEN_UNSUPPORTED: \u8FD9\u53F0 Worker \u6CA1\u6709\u9644\u4EF6\u6216\u7ED3\u679C\u7BB1\uFF0C\u8BF7\u66F4\u65B0 Worker");
+    }
+    const attachment = await ctx.storeAttachment(
+      JSON.stringify({ v: 1, content, reasoning, finishReason: finishReason2 }),
+      { owner: { type: "character", id: job.charId }, kind: CLOUD_GEN_KIND }
+    );
+    const usage = usageOf(ctx.usage, ctx.llmResponse);
+    await ctx.emitResult({
+      ...buildCloudGenResult({
+        ok: true,
+        jobId,
+        purpose: job.purpose,
+        charId: job.charId,
+        attachment,
+        ...usage ? { usage } : {}
+      }),
+      notification: job.notify ? { show: "always", title: job.notify.title, body: job.notify.body } : { show: false }
+    });
+    if (ctx.scratch) ctx.scratch[EMITTED_SCRATCH_KEY] = true;
+    return { decision: "skip-push", reason: "cloud-gen-result-emitted" };
+  }
+};
+var errorCodeOf = (info) => {
+  const code = info.error?.code;
+  if (typeof code === "string" && /^[A-Za-z0-9_.-]{1,64}$/.test(code)) return code;
+  if (info.status === "skipped") return "input-missing";
+  return "generation-failed";
+};
+var errorMessageOf = (info) => {
+  if (info.status === "skipped") return "\u4E91\u7AEF\u6CA1\u627E\u5230\u8FD9\u6B21\u7684\u8F93\u5165\uFF08\u5DF2\u8FC7\u671F\u6216\u5DF2\u64A4\u9500\uFF09";
+  const error = info.error;
+  if (error instanceof Error) return error.message;
+  return typeof error === "string" && error ? error : "\u4E91\u7AEF\u751F\u6210\u5931\u8D25";
+};
+async function settleCloudGenFire(info) {
+  const meta = info.metadata ?? {};
+  if (readTaskKind(meta) !== CLOUD_GEN_KIND) return false;
+  const jobId = typeof meta[AMSG_JOB_ID_KEY] === "string" ? meta[AMSG_JOB_ID_KEY] : "";
+  const charId = typeof meta.charId === "string" ? meta.charId : "";
+  const purpose = meta[CLOUD_GEN_PURPOSE_META_KEY];
+  if (jobId && info.willRetry !== true) await discardJob(info.writeState, jobId);
+  if (info.scratch?.[EMITTED_SCRATCH_KEY] === true) return true;
+  if (info.status !== "failed" && info.status !== "skipped") return true;
+  if (!jobId || !charId || !isCloudGenPurpose(purpose) || typeof info.emitResult !== "function") {
+    console.warn("[amsg:cloud-gen] \u5931\u8D25\u7ED3\u679C\u9001\u4E0D\u56DE\u53BB\uFF08\u4EFB\u52A1\u8EAB\u4EFD\u4E0D\u5168\u6216\u6CA1\u6709\u7ED3\u679C\u7BB1\uFF09", { jobId, status: info.status });
+    return true;
+  }
+  const usage = usageOf(info.usage, null);
+  try {
+    await info.emitResult({
+      ...buildCloudGenResult({
+        ok: false,
+        jobId,
+        purpose,
+        charId,
+        error: { code: errorCodeOf(info), message: errorMessageOf(info) },
+        ...usage ? { usage } : {}
+      }),
+      notification: { show: false }
+    });
+  } catch (error) {
+    console.warn("[amsg:cloud-gen] \u5931\u8D25\u7ED3\u679C\u6CA1\u9001\u8FDB\u7ED3\u679C\u7BB1\uFF08\u5BA2\u6237\u7AEF\u9760\u70B9\u540D\u515C\u5E95\uFF09", jobId, error);
+  }
+  return true;
 }
 
 // worker/amsg/src/skipDiagnostics.ts
@@ -14759,7 +14954,7 @@ var logSkipDiagnostic = (input) => {
 };
 
 // worker/amsg/src/plateFire.ts
-var discardJob = async (writeState, jobId) => {
+var discardJob2 = async (writeState, jobId) => {
   if (!writeState) return;
   try {
     await writeState(AMSG_JOB_NAMESPACE, [{ key: plateJobKey(jobId), value: null }]);
@@ -14779,7 +14974,7 @@ var plateConsolidateHandler = {
       return { skip: true, reason: `\u95E8\u724C\u6574\u7406 job ${jobId} \u7684\u8F93\u5165\u5DF2\u4E0D\u5728\uFF08\u8FC7\u671F\u6216\u5DF2\u64A4\u9500\uFF09` };
     }
     const discardAndFail = async (message) => {
-      await discardJob(ctx.writeState, jobId);
+      await discardJob2(ctx.writeState, jobId);
       throw new Error(message);
     };
     let json;
@@ -14794,7 +14989,7 @@ var plateConsolidateHandler = {
       return discardAndFail(`\u95E8\u724C\u6574\u7406 job ${jobId} \u7684 charId \u4E0E\u4EFB\u52A1\u5BF9\u4E0D\u4E0A`);
     }
     if (job.rooms.length === 0) {
-      await discardJob(ctx.writeState, jobId);
+      await discardJob2(ctx.writeState, jobId);
       return { skip: true, reason: `\u95E8\u724C\u6574\u7406 job ${jobId} \u6CA1\u6709\u8981\u6574\u7406\u7684\u623F\u95F4` };
     }
     return {
@@ -14818,12 +15013,12 @@ var plateConsolidateHandler = {
         llmResponse: ctx.llmResponse,
         llmOutputText: ctx.llmOutputText
       });
-      await discardJob(ctx.writeState, jobId);
+      await discardJob2(ctx.writeState, jobId);
       return { decision: "skip-push", reason: "plate-empty-generation" };
     }
     if (typeof ctx.emitResult !== "function") {
       console.warn("[amsg:plate] \u8FD9\u53F0 worker \u4E0D\u652F\u6301 emitResult\uFF0C\u6574\u7406\u7ED3\u679C\u9001\u4E0D\u56DE\u53BB", jobId);
-      await discardJob(ctx.writeState, jobId);
+      await discardJob2(ctx.writeState, jobId);
       return { decision: "skip-push", reason: "plate-emit-result-unsupported" };
     }
     const rawUsage = ctx.usage ?? ctx.llmResponse?.usage;
@@ -14849,7 +15044,7 @@ var plateConsolidateHandler = {
       });
     } catch (error) {
       console.warn("[amsg:plate] \u6574\u7406\u7ED3\u679C\u9001\u4E0D\u8FDB\u6536\u4EF6\u7BB1\uFF08\u591A\u534A\u662F\u6536\u4EF6\u7BB1\u8868\u6CA1\u5EFA\u5168\uFF0C\u53BB\u8BBE\u7F6E\u9875\u70B9\u4E00\u6B21\u300C\u91CD\u65B0\u8FDE\u63A5\u5E76\u9A8C\u8BC1\u300D\uFF09", jobId, error);
-      await discardJob(ctx.writeState, jobId);
+      await discardJob2(ctx.writeState, jobId);
       return { decision: "skip-push", reason: "plate-emit-result-failed" };
     }
     console.log("[amsg:plate] \u6574\u7406\u7ED3\u679C\u5DF2\u9001\u8FDB\u6536\u4EF6\u7BB1", {
@@ -14858,7 +15053,7 @@ var plateConsolidateHandler = {
       items: items.length,
       resultKind: PLATE_CONSOLIDATE_RESULT_KIND
     });
-    await discardJob(ctx.writeState, jobId);
+    await discardJob2(ctx.writeState, jobId);
     return { decision: "skip-push", reason: "plate-result-emitted" };
   }
 };
@@ -14866,7 +15061,11 @@ var plateConsolidateHandler = {
 // worker/amsg/src/fireKinds.ts
 var FIRE_KIND_HANDLERS = Object.assign(
   /* @__PURE__ */ Object.create(null),
-  { [PLATE_CONSOLIDATE_KIND]: plateConsolidateHandler, diagnostic: reproductionHandler }
+  {
+    [PLATE_CONSOLIDATE_KIND]: plateConsolidateHandler,
+    [CLOUD_GEN_KIND]: cloudGenHandler,
+    diagnostic: reproductionHandler
+  }
 );
 var KIND_FIRE_SCRATCH_KEY = "kindFire";
 var putKindFireStash = (scratch, kind, state) => {
@@ -16069,18 +16268,6 @@ var applyInstantNotificationPolicy = (payload, charId, isFirstSegment = false) =
     }
   };
 };
-var kickInstantTick = async (env, uuid) => {
-  const namespace = env?.INSTANT_TICK;
-  if (!namespace || typeof namespace.get !== "function" || typeof namespace.idFromName !== "function") {
-    return { ok: false, reason: "missing-binding" };
-  }
-  try {
-    await namespace.get(namespace.idFromName(uuid)).kick(uuid);
-    return { ok: true };
-  } catch (error) {
-    return { ok: false, reason: "kick-failed", error };
-  }
-};
 var UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 var constantTimeEqual2 = async (a, b) => {
   const raw = crypto.getRandomValues(new Uint8Array(32));
@@ -16315,8 +16502,8 @@ var handleInstantChat = async (args) => {
       step: "schedule-message"
     });
   }
-  const kicked = await kickInstantTick(env, uuid);
-  if (!kicked.ok && kicked.reason === "missing-binding") {
+  const dispatch = taskBody?.data?.dispatch;
+  if (dispatch === "not_configured") {
     console.error("[amsg:instant-chat] \u6CA1\u6709 INSTANT_TICK \u7ED1\u5B9A\uFF1A\u8FD9\u53F0 Worker \u662F\u65E7\u7248\u672C\uFF0C\u9700\u8981\u66F4\u65B0");
     return json(503, {
       success: false,
@@ -16328,8 +16515,10 @@ var handleInstantChat = async (args) => {
       }
     });
   }
-  if (!kicked.ok) {
-    console.warn("[amsg:instant-chat] \u53EB\u9192 DO \u5931\u8D25\uFF08\u7B49 cron \u515C\u5E95\uFF09", kicked.error);
+  if (dispatch === "kick_failed") {
+    console.warn("[amsg:instant-chat] \u53EB\u9192\u8D77\u8DF3\u5668\u5931\u8D25\uFF08\u7B49 cron \u515C\u5E95\uFF09", uuid);
+  } else if (dispatch === void 0) {
+    console.warn("[amsg:instant-chat] \u4EFB\u52A1\u4E0D\u662F instant\uFF0C\u6CA1\u6709\u8D77\u8DF3\uFF0C\u7B49 cron \u6361\uFF08\u9875\u9762\u591A\u534A\u8FD8\u662F\u65E7\u7248\u672C\uFF09", uuid);
   }
   return json(202, {
     status: "accepted",
@@ -16341,7 +16530,7 @@ var handleInstantChat = async (args) => {
 // utils/amsgSelfUpdateState.ts
 var parseAmsgBundleChannel = (raw) => raw === "stable" || raw === "canary" ? raw : null;
 var findCfTokenRejection = (text2) => /\d+: invalid (access|api) token/i.exec(text2)?.[0] ?? null;
-var cfTokenRejectedMessage = (detail, hasAccountId) => `Cloudflare \u4E0D\u8BA4\u8FD9\u679A CF_API_TOKEN\uFF08${detail}\uFF09\uFF0C\u591A\u534A\u5DF2\u7ECF\u8FC7\u671F\u6216\u88AB\u5220\u4E86\u3002\u53BB Cloudflare \u65B0\u5EFA\u4E00\u679A\uFF08\u53EA\u52FE Workers Scripts \u2192 Edit\uFF09\uFF0C\u66FF\u6362 Worker \u91CC\u7684 CF_API_TOKEN\u3002` + (hasAccountId ? "" : "\u5982\u679C\u5B83\u662F cfat_ \u5F00\u5934\u7684\u8D26\u53F7\u4EE4\u724C\uFF0C\u6362\u6210\u666E\u901A API Token\uFF0C\u6216\u8005\u7ED9 Worker \u52A0\u4E00\u6761 CF_ACCOUNT_ID\u3002");
+var cfTokenRejectedMessage = (detail, hasAccountId) => `Cloudflare \u4E0D\u8BA4\u8FD9\u679A CF_API_TOKEN\uFF08${detail}\uFF09\uFF0C\u591A\u534A\u5DF2\u7ECF\u8FC7\u671F\u6216\u88AB\u5220\u4E86\u3002\u53BB Cloudflare \u65B0\u5EFA\u4E00\u679A\uFF08\u53EA\u7ED9 Workers Scripts \u6743\u9650\uFF0CRead \u548C Edit \u90FD\u52FE\uFF09\uFF0C\u66FF\u6362 Worker \u91CC\u7684 CF_API_TOKEN\u3002` + (hasAccountId ? "" : "\u5982\u679C\u5B83\u662F cfat_ \u5F00\u5934\u7684\u8D26\u53F7\u4EE4\u724C\uFF0C\u6362\u6210\u666E\u901A API Token\uFF0C\u6216\u8005\u7ED9 Worker \u52A0\u4E00\u6761 CF_ACCOUNT_ID\u3002");
 var OUTCOMES = /* @__PURE__ */ new Set(["updated", "up_to_date", "failed"]);
 var SOURCES = /* @__PURE__ */ new Set(["cron", "client", "manual"]);
 var parseAmsgSelfUpdateState = (raw) => {
@@ -16513,18 +16702,18 @@ function rebuildBindings(existing, env) {
   if (missing.length) return { ok: false, missing };
   return { ok: true, bindings };
 }
-var INSTANT_TICK_BINDING = "INSTANT_TICK";
+var INSTANT_TICK_BINDING2 = "INSTANT_TICK";
 var INSTANT_TICK_CLASS = "InstantTickDO";
 var INSTANT_TICK_MIGRATION_TAG = "amsg-instant-tick-v1";
 function buildDurableObjectPlan(existing) {
   const already = existing.some(
-    (binding) => binding?.type === "durable_object_namespace" && binding?.name === INSTANT_TICK_BINDING
+    (binding) => binding?.type === "durable_object_namespace" && binding?.name === INSTANT_TICK_BINDING2
   );
   if (already) return { binding: null, migrations: null };
   return {
     binding: {
       type: "durable_object_namespace",
-      name: INSTANT_TICK_BINDING,
+      name: INSTANT_TICK_BINDING2,
       class_name: INSTANT_TICK_CLASS
     },
     migrations: { new_tag: INSTANT_TICK_MIGRATION_TAG, new_sqlite_classes: [INSTANT_TICK_CLASS] }
@@ -16727,7 +16916,7 @@ var isCurrentOccurrence = (error, nextSendAtMs) => {
 var createIdentityReader = (masterKey, serializeKeyOf) => {
   const userKeys = /* @__PURE__ */ new Map();
   return async (row) => {
-    const unknown = { charId: null, contactName: null, kind: null, serializeKey: null };
+    const unknown = { charId: null, contactName: null, kind: null, serializeKey: null, instantChat: false };
     if (!masterKey || !row.user_id || !row.encrypted_payload) return unknown;
     try {
       let userKey = userKeys.get(row.user_id);
@@ -16741,7 +16930,8 @@ var createIdentityReader = (masterKey, serializeKeyOf) => {
         charId: typeof metadata?.charId === "string" ? metadata.charId : null,
         contactName: typeof payload.contactName === "string" && payload.contactName ? payload.contactName : null,
         kind: readTaskKind(metadata),
-        serializeKey: serializeKeyOf({ metadata })
+        serializeKey: serializeKeyOf({ metadata }),
+        instantChat: isInstantChatTask(metadata)
       };
     } catch {
       return unknown;
@@ -16814,17 +17004,17 @@ var readRecentFailures = async (db, options) => {
          FROM scheduled_messages
         WHERE last_error IS NOT NULL
           AND updated_at >= ?
-          AND message_type != 'instant'
           AND (status = 'failed' OR (status = 'pending' AND next_send_at > ?))
         ORDER BY updated_at DESC
         LIMIT ?`
-  ).bind(new Date(sinceMs).toISOString(), new Date(nowMs).toISOString(), MAX_RECENT_FAILURES).all()).results || [];
+  ).bind(new Date(sinceMs).toISOString(), new Date(nowMs).toISOString(), MAX_RECENT_FAILURES * 3).all()).results || [];
   const readIdentity = createIdentityReader(options.masterKey, options.serializeKeyOf);
   const failures = await Promise.all(rows.map(async (row) => {
     const error = parseLastError(row.last_error);
     const atMs = parseMs(error?.at);
     if (!row.uuid || !error || atMs === null || atMs < sinceMs) return null;
     const identity = await readIdentity(row);
+    if (identity.instantChat) return null;
     return {
       uuid: row.uuid,
       charId: identity.charId,
@@ -16835,7 +17025,7 @@ var readRecentFailures = async (db, options) => {
       error
     };
   }));
-  return failures.filter((item) => item !== null);
+  return failures.filter((item) => item !== null).slice(0, MAX_RECENT_FAILURES);
 };
 var DIAGNOSTICS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS worker_diagnostics (
   key TEXT PRIMARY KEY,
@@ -20576,6 +20766,7 @@ var sendInstantErrorPush = async (args) => {
 };
 var amsgFireSettled = async (info) => {
   if (await settleReproduction(info)) return;
+  if (await settleCloudGenFire(info)) return;
   const stash = getFireStash(info.scratch);
   if (!stash) return;
   const cancelled = info.status === "cancelled";
@@ -22124,7 +22315,12 @@ var buildWorkerConfig = (env) => {
     // 命名空间下超过天数没更新的条目清掉。角色状态那个命名空间（amsg:char:<id>，
     // 装 fire_pack / tool_pack）不配 TTL——那些是要长期留着的，配了就等于定时把
     // 角色的云端状态抹掉。判据是行本来就有的 updated_at 列，不加列、不动表结构。
-    clientStateTtl: { [INSTANT_INPUT_NAMESPACE]: INSTANT_INPUT_TTL_DAYS, [AMSG_JOB_NAMESPACE]: AMSG_JOB_TTL_DAYS, [DIAGNOSTIC_NAMESPACE]: DIAGNOSTIC_RETENTION_DAYS },
+    clientStateTtl: {
+      [INSTANT_INPUT_NAMESPACE]: INSTANT_INPUT_TTL_DAYS,
+      [AMSG_JOB_NAMESPACE]: AMSG_JOB_TTL_DAYS,
+      [CLOUD_GEN_NAMESPACE]: CLOUD_GEN_TTL_DAYS,
+      [DIAGNOSTIC_NAMESPACE]: DIAGNOSTIC_RETENTION_DAYS
+    },
     cloudData: { resolveOwner: resolveSullyCloudOwnership },
     // 满血 fire-time hooks（onBeforeFire 现场填槽 + onLLMOutput 分类 +
     // executeToolCalls 服务端工具循环）；总超时用库默认 240s，轮数由 onBeforeFire 按
@@ -22132,8 +22328,12 @@ var buildWorkerConfig = (env) => {
     hooks: amsgHooks,
     leaseHeartbeatMs: 1e3,
     // 用户主动触发的即时对话：生成失败本轮就结束，由用户决定是否重发。
+    // 代跑同理：失败结果当场送回客户端，由用户或下次触发重来，不靠 cron 捞重试。
     // 策略由上游在 onBeforeFire 前解析，读取上下文失败也覆盖；整批入箱后仍可补推原文。
-    maxGenerationRetries: (task) => isInstantChatTask(task.metadata) || readTaskKind(task.metadata) === "diagnostic" ? 0 : void 0,
+    maxGenerationRetries: (task) => {
+      const kind = readTaskKind(task.metadata);
+      return isInstantChatTask(task.metadata) || kind === "diagnostic" || kind === CLOUD_GEN_KIND ? 0 : void 0;
+    },
     // 取消通过租约心跳通知执行中的 Worker；1 秒检测一次，TTL 仍由上游管理。
     // 收尾回执 + 过期跳过回执（config 级 hook）。
     // onFireSettled: 无论这次 fire 是发出去了、跳过了还是抛错了都会调一次，self_log
@@ -22158,6 +22358,7 @@ var amsgSerializeKey = (task) => {
   const charId = typeof task.metadata?.charId === "string" ? task.metadata.charId : null;
   if (!charId) return null;
   const kind = readTaskKind(task.metadata);
+  if (kind === CLOUD_GEN_KIND) return cloudGenSerializeKey(charId, String(task.metadata?.[CLOUD_GEN_PURPOSE_META_KEY] ?? ""));
   return kind ? `${charId}#${kind}` : charId;
 };
 var REQUIRED_ENV = [
@@ -22332,7 +22533,6 @@ var judgeTick = (storage) => {
   if (overdueMinutes === null || overdueMinutes * 6e4 < TICK_STALL_MS) return "healthy";
   return "stalled";
 };
-var INSTANT_TICK_UUID_KEY = "taskUuid";
 var upstream = createSingleUserCloudflareWorker(buildWorkerConfig, {
   /**
    * cron 那条路上没有调用方能看到错误响应——上游把异常 catch 掉之后，整轮就这么无声
@@ -22344,7 +22544,9 @@ var upstream = createSingleUserCloudflareWorker(buildWorkerConfig, {
   onError({ stage, cause, path }) {
     const where = path ? `${stage} ${path}` : stage;
     console.error(`[amsg:upstream-error] ${where} \u2192 ${cause.name}: ${cause.message}`);
-  }
+  },
+  // 沿用部署里已有的 binding 名（上游默认叫 AMSG_INSTANT_TICK），理由见下方 InstantTickDO。
+  instantTickBinding: "INSTANT_TICK"
 });
 var inspectSchema = async (env) => {
   try {
@@ -22355,37 +22557,7 @@ var inspectSchema = async (env) => {
     return { schema: null, error: kind };
   }
 };
-var InstantTickDO = class extends DurableObject {
-  /**
-   * 叫醒：记下要跑哪条、设一个立刻到期的 alarm，然后马上返回——调用方还等着回 202。
-   *
-   * 已经挂着 alarm 就只覆盖 uuid 不重设时间：同一个实例只服务同一条任务，重复叫醒
-   * （客户端重发）应该合并成一次，而不是排成两次生成。
-   */
-  async kick(uuid) {
-    await this.ctx.storage.put(INSTANT_TICK_UUID_KEY, uuid);
-    if (await this.ctx.storage.getAlarm() !== null) return;
-    await this.ctx.storage.setAlarm(Date.now());
-  }
-  /** 独立 invocation，15 分钟墙钟。跑挂了不重设 alarm——下一分钟的 cron 会接着捡。 */
-  async alarm() {
-    const uuid = await this.ctx.storage.get(INSTANT_TICK_UUID_KEY);
-    if (!uuid) {
-      console.error("[amsg:instant-tick] alarm \u9192\u4E86\u5374\u4E0D\u77E5\u9053\u8981\u8DD1\u54EA\u6761\uFF0C\u8DF3\u8FC7\uFF08\u7B49 cron \u515C\u5E95\uFF09");
-      return;
-    }
-    const report = inspectWorkerEnv(this.env);
-    if (!report.ok) {
-      console.error(`[amsg:instant-tick] \u6574\u8F6E\u8DF3\u8FC7\uFF1A${report.message}`);
-      return;
-    }
-    const result = await upstream.runTask(uuid, this.env);
-    await this.ctx.storage.delete(INSTANT_TICK_UUID_KEY);
-    if (!result.ran) {
-      console.warn(`[amsg:instant-tick] ${uuid} \u6CA1\u8DD1\uFF1A${result.reason}`);
-    }
-  }
-};
+var InstantTickDO = upstream.InstantTick;
 var readServerVersion = async (request, env) => {
   if (!inspectWorkerEnv(env).ok) return null;
   try {
@@ -22422,6 +22594,13 @@ var src_default = {
           // 正常，而门牌永远不更新。报的是**这份代码有没有**，不是版本号：自更新永远由
           // 旧代码执行，版本号对上了不代表新逻辑真的在跑。
           backgroundJobs: true,
+          // 这份代码的 `messageType: 'instant'` 落库即回 202、生成在起跳器里跑（上游 4.0.0-next.3 起）。
+          // 老 bundle 没有这个字段：它的上游在请求里当场把 instant 任务跑完，前端据此不往那里发
+          // instant 任务（即时对话、后台任务都是）。报的同样是这份代码有没有，不是版本号。
+          instantBackground: true,
+          // 这份代码认不认识代跑任务（amsgKind: 'cloud-gen'，见 cloudGenFire.ts）。前端据此决定
+          // 日程、人格模拟、梦境能不能交云端生成；报的是这份代码有没有，不是版本号。
+          cloudGen: true,
           thirdPartyPush: true,
           diagnosticReproduction: 1,
           workerVersion: AMSG_BUNDLE_VERSION,

@@ -16,7 +16,9 @@
 
 import { readTaskKind } from '../../../utils/amsgTaskKinds';
 import { PLATE_CONSOLIDATE_KIND } from '../../../utils/amsgPlateJob';
+import { CLOUD_GEN_KIND } from '../../../utils/amsgCloudGenJob';
 import { plateConsolidateHandler } from './plateFire';
+import { cloudGenHandler } from './cloudGenFire';
 import { reproductionHandler } from './reproduction';
 
 /** client_state 的写入口（value 传 null 即删除该 key）。 */
@@ -24,6 +26,12 @@ export type KindWriteState = (
   namespace: string,
   entries: Array<{ key: string; value: string | null; updatedAt?: number }>,
 ) => Promise<{ upserted: number; skipped: number; deleted: number }>;
+
+/** 本次触发的不可变附件（amsg:attachments），返回放进结果里的完整引用。 */
+export type KindStoreAttachment = (
+  value: string,
+  options?: { owner?: { type: string; id: string }; kind?: string },
+) => Promise<{ version: 1; namespace: string; key: string; taskUuid: string; occurrenceMs: number; expiresAt: number }>;
 
 /**
  * handler 用得上的那部分 fire ctx。
@@ -39,6 +47,7 @@ export interface KindFireCtx {
   };
   readState: (namespace: string) => Promise<Array<{ key: string; value: string }>>;
   writeState?: KindWriteState;
+  storeAttachment?: KindStoreAttachment;
   now: Date;
   scratch: Record<string, unknown>;
 }
@@ -52,6 +61,8 @@ export interface KindSessionCtx {
   llmResponse?: unknown;
   scratch?: Record<string, unknown>;
   writeState?: KindWriteState;
+  /** 存一份附件，结果里只带引用（大于推送上限的产物走这里）。老部署上不存在。 */
+  storeAttachment?: KindStoreAttachment;
   /**
    * 往客户端送一条**不是聊天内容**的结果（amsg-server 2.6.0-next.21+）。
    * 一条结果落进服务端收件箱（到达的保证）+ 视通知策略发一条 Web Push（及时性）。
@@ -109,7 +120,11 @@ export interface FireKindHandler {
  */
 export const FIRE_KIND_HANDLERS: Record<string, FireKindHandler> = Object.assign(
   Object.create(null) as Record<string, FireKindHandler>,
-  { [PLATE_CONSOLIDATE_KIND]: plateConsolidateHandler, diagnostic: reproductionHandler },
+  {
+    [PLATE_CONSOLIDATE_KIND]: plateConsolidateHandler,
+    [CLOUD_GEN_KIND]: cloudGenHandler,
+    diagnostic: reproductionHandler,
+  },
 );
 
 /** 挂在 scratch 上跨 hook 传递的键。 */

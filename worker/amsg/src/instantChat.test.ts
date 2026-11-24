@@ -32,7 +32,7 @@ const envelope = (tag: string, value?: unknown) => {
   const payload = value ?? (tag === 'state' ? { entries: [
     { namespace: 'amsg:char:c1', key: 'fire_pack', value: JSON.stringify(INPUT_PACK), updatedAt: INPUT_PACK.builtAt },
     { namespace: 'amsg:char:c1', key: 'limits', value: '{}', updatedAt: INPUT_PACK.builtAt },
-  ] } : tag === 'task' ? { metadata: { charId: 'c1', amsgInstantChat: true }, immediate: true } : { credentials: [] });
+  ] } : tag === 'task' ? { messageType: 'instant', metadata: { charId: 'c1', amsgInstantChat: true } } : { credentials: [] });
   const iv = createHash('sha256').update(tag).digest().subarray(0, 12);
   const cipher = createCipheriv('aes-256-gcm', Buffer.from(USER_KEY, 'hex'), iv);
   const encrypted = Buffer.concat([cipher.update(JSON.stringify(payload), 'utf8'), cipher.final()]);
@@ -79,7 +79,9 @@ const makeUpstream = (opts: {
         return reply(opts.clientState, { success: true, data: { upserted: 3, skipped: 0 } });
       }
       if (url.pathname.endsWith('/schedule-message')) {
-        return reply(opts.scheduleMessage, { success: true, data: { uuid: TASK_UUID, id: 42 } });
+        // 上游 instant 任务的受理形状：202 + dispatch（起跳器叫没叫醒）。
+        return json(opts.scheduleMessage?.status ?? 202,
+          opts.scheduleMessage?.body ?? { success: true, data: { uuid: TASK_UUID, id: 42, dispatch: 'kicked' } });
       }
       if (url.pathname.endsWith('/llm-credentials')) {
         return reply(opts.llmCredentials, { success: true, data: { upserted: 1 } });
@@ -88,29 +90,6 @@ const makeUpstream = (opts: {
     }),
   };
   return { upstream, calls, paths: () => calls.map((c) => `${c.method} ${c.path}`) };
-};
-
-/**
- * INSTANT_TICK 绑定的替身。记下叫醒了哪个实例、传了哪个 uuid。
- *
- * `kick` 只负责给 DO 记下 uuid、设 alarm，真正的生成在 alarm 里跑（另一次 invocation，
- * 走 upstream.runTask），所以这条路上根本碰不到 upstream 的执行入口——那是 DO 侧的事，
- * 见 index.ts 的 InstantTickDO。
- */
-const makeTick = (opts: { kick?: () => Promise<unknown> } = {}) => {
-  const kicks: Array<{ instance: string; uuid: string }> = [];
-  return {
-    kicks,
-    INSTANT_TICK: {
-      idFromName: (name: string) => ({ name }),
-      get: (id: { name: string }) => ({
-        kick: async (uuid: string) => {
-          kicks.push({ instance: id.name, uuid });
-          return opts.kick ? opts.kick() : undefined;
-        },
-      }),
-    },
-  };
 };
 
 const post = (
@@ -133,13 +112,10 @@ const run = (args: {
   request: Request;
   env?: Record<string, unknown>;
   upstream: ReturnType<typeof makeUpstream>['upstream'];
-  /** 不传就用一个正常工作的替身；要测「Worker 是旧的」显式传 null。 */
-  tick?: ReturnType<typeof makeTick> | null;
 }) => handleInstantChat({
   request: args.request,
   env: {
     AMSG_MASTER_KEY: MASTER_KEY,
-    ...(args.tick === null ? {} : { INSTANT_TICK: (args.tick ?? makeTick()).INSTANT_TICK }),
     ...(args.env ?? {}),
   } as any,
   upstream: args.upstream as any,
@@ -612,52 +588,47 @@ describe('POST /instant-chat — 只有两次内部转发', () => {
   });
 });
 
-describe('POST /instant-chat — 立即起跳', () => {
-  /**
-   * 实例名就是任务 uuid：一条任务一个 DO 实例，几条聊天同时在跑才不会互相排队。
-   * DO 的 alarm 是一实例一个，共用实例就意味着共用那一个 alarm、只能挨个来。
-   */
-  it('回完 202 之前叫醒 DO，实例名和 uuid 都是这条任务的', async () => {
-    const { upstream } = makeUpstream();
-    const tick = makeTick();
-    const response = await run({ request: post(validBody()), upstream, tick });
-
-    expect(response.status).toBe(202);
-    expect(tick.kicks).toEqual([{ instance: TASK_UUID, uuid: TASK_UUID }]);
+describe('POST /instant-chat — 起跳结果', () => {
+  /** schedule-message 的回执里带上游的起跳结果；其余字段跟默认替身一致。 */
+  const withDispatch = (dispatch: string) => makeUpstream({
+    scheduleMessage: { status: 202, body: { success: true, data: { uuid: TASK_UUID, id: 42, dispatch } } },
   });
 
   /**
-   * 回归守卫：这一跳绝不能再挂回 ctx.waitUntil。
+   * 回归守卫：这一跳绝不能再挂回 ctx.waitUntil，也不能在受理请求里跑生成。
    *
    * waitUntil 的墙钟上限是硬性的 30 秒（从响应发出或客户端断开起算），而一轮带工具
-   * 循环的生成动辄几十秒——挂上去就必被砍在半路，日志里只留一条
-   * 「waitUntil() tasks did not complete」，用户那边表现为「一直等不到回复」。
-   * 生成必须跑在 DO 的 alarm 里（独立 invocation，15 分钟），所以受理这一步只该叫醒
-   * DO：`InstantChatUpstream` 只声明了 fetch，压根没有能把生成拉进当前请求的入口。
+   * 循环的生成动辄几十秒——挂上去就必被砍在半路。生成跑在起跳器的 alarm 里（独立
+   * invocation，15 分钟），叫醒它是上游 schedule-message 落库后的事，所以受理这一步只有
+   * 转发：`InstantChatUpstream` 只声明了 fetch，压根没有能把生成拉进当前请求的入口。
    */
-  it('受理时只发两个转发请求，不碰任何执行入口', async () => {
-    const { upstream, paths } = makeUpstream();
+  it('kicked → 202，只发两个转发请求，不碰任何执行入口', async () => {
+    const { upstream, paths } = withDispatch('kicked');
     const response = await run({ request: post(validBody()), upstream });
     expect(response.status).toBe(202);
+    expect(await response.json()).toEqual({ status: 'accepted', uuid: TASK_UUID });
     expect(paths()).toEqual(['PUT /client-state', 'POST /schedule-message']);
   });
 
-  it('叫醒失败不影响已经回出去的 202（任务已落库，cron 每分钟还会来捡）', async () => {
-    const { upstream } = makeUpstream();
-    const tick = makeTick({ kick: () => Promise.reject(new Error('kick boom')) });
-    const response = await run({ request: post(validBody()), upstream, tick });
+  it('kick_failed 不影响 202（任务已落库，cron 每分钟还会来捡）', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { upstream } = withDispatch('kick_failed');
+    const response = await run({ request: post(validBody()), upstream });
     expect(response.status).toBe(202);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   /**
-   * 回归守卫：老版本 Worker（没有 INSTANT_TICK 绑定）必须明说「去更新」。
+   * 回归守卫：没接上起跳器（上游报 not_configured）必须明说「去更新」。
    *
    * 这里刻意不退回 cron 兜底然后照回 202：那条路上没有为即时对话放宽的超时，用户会
    * 对着「正在输入」等很久甚至等不到，而界面上没有任何线索告诉他该做什么。
    */
-  it('没有 INSTANT_TICK 绑定 → 503 且点名要更新 Worker', async () => {
-    const { upstream } = makeUpstream();
-    const response = await run({ request: post(validBody()), upstream, tick: null });
+  it('not_configured → 503 且点名要更新 Worker', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { upstream } = withDispatch('not_configured');
+    const response = await run({ request: post(validBody()), upstream });
 
     expect(response.status).toBe(503);
     const body = await response.json() as any;
@@ -665,6 +636,7 @@ describe('POST /instant-chat — 立即起跳', () => {
     expect(body.error.message).toContain('更新 Worker');
     // 任务本身是建成了的，uuid 要带回去，别让客户端以为整轮没发生过。
     expect(body.error.uuid).toBe(TASK_UUID);
+    error.mockRestore();
   });
 });
 

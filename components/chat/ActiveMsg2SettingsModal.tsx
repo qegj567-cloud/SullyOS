@@ -752,7 +752,7 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
           <div role="status" className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 space-y-2.5 text-xs leading-relaxed text-amber-800">
             <div className="font-bold text-amber-950">云端后台任务已被暂停</div>
             <p>
-              定时主动消息到点不会发，即时对话不受影响。恢复后只补发晚到一小时以内的，更早的作废，重复任务跳到下一次。可在此直接恢复，或前往「设置 → 主动消息 2.0 → 功能设置 → 后台地址与维护」恢复。
+              定时主动消息到点不会发，私聊云端生成不受影响。恢复后只补发晚到一小时以内的，更早的作废，重复任务跳到下一次。可在此直接恢复，或前往「设置 → 主动消息 2.0 → 功能设置 → 后台地址与维护」恢复。
             </p>
             <button
               type="button"
@@ -782,10 +782,10 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
         {/* 即时对话按角色单独关，和上面的排程开关互相独立（只排程不即时、只即时不排程
             都行），所以不裹在 enabled 里。全局那道门没开时这里只置灰说明，不代替它。 */}
         <div className="amsg-character-instant"><div className="amsg-overview-control">
-          <h4>即时对话</h4>
+          <h4>私聊云端生成</h4>
           <button
             role="switch"
-            aria-label="角色即时对话"
+            aria-label="角色私聊云端生成"
             aria-checked={globalInstantChatOn && instantChatOn}
             onClick={handleToggleInstantChat}
             disabled={!globalInstantChatOn || isSubmitting}
@@ -797,7 +797,7 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
         </section>
         <div className="amsg-overview-footnote">
           <p>仅调整 {char.name}，与系统设置中的角色开关同步。</p>
-          {!globalInstantChatOn && <p>即时对话需先开启系统总开关。</p>}
+          {!globalInstantChatOn && <p>私聊云端生成需先在系统设置的「云端生成」里开启。</p>}
           {!globalReady && <p>{pushSummary || '正在检查后台连接…'}</p>}
           {!enabled && isAmsg2EnabledForChar(char) && <p>关闭尚未保存，请点击下方「关闭 2.0」。</p>}
         </div>

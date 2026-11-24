@@ -5,12 +5,14 @@ import { useDreamSim, dreamSimStore } from '../../utils/dreamSimStore';
 import { MoonStars, CaretRight } from '@phosphor-icons/react';
 
 // 全局「梦境」生成指示条 —— 挂在 PhoneShell，随处可见，点击深链回到那场梦。
+// 在云端生成（Worker 已收下、没选「不再提醒」）时提示交给 CloudGenIndicator（弹 3 秒就收起），这里不挂。
 const DreamSimIndicator: React.FC = () => {
     const sim = useDreamSim();
     const { openApp } = useOS();
 
     if (sim.status !== 'loading' && sim.status !== 'ready') return null;
 
+    if (sim.status === 'loading' && sim.cloudSheet) return null;
     const onTap = () => {
         dreamSimStore.requestOpen();
         openApp(AppID.Room);

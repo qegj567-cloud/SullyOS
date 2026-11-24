@@ -15,6 +15,7 @@
    - `cloud-proactive`：云端定时主动消息，含面板排程、角色自排提醒、离开后消息、见面离开提醒、纯动作回执，以及模型已执行但判定不发送或因对话重叠避让而跳过的轮次（`utils/activeMsgRuntime.ts` + `utils/amsgFireSkipResultApply.ts`）
    - `cloud-plate-consolidate`：记忆宫殿云端后台门牌整理（`utils/memoryPalace/roomPlateCloud.ts` + `worker/amsg/src/plateFire.ts`）
    - `cloud-diagnostic`：主动消息诊断复现测试（`utils/activeMsgRuntime.ts` + `worker/amsg/src/reproduction.ts`）
+   - `cloud-generation`：云端生成（本机拼好请求、Worker 代跑），日程 / 人格模拟 / 梦境（`utils/cloudGen/submit.ts` + `utils/cloudGen/results.ts` + `worker/amsg/src/cloudGenFire.ts`）。用途和归属沿用入口本机请求的 `__sullyMeta`；没能开跑、撤回后在本机生成的那次标「已顶替」，本机那次另记一笔
 
 私聊表情通过独立识图 API 获取描述时记为「表情识图」，图库「一键起名」使用全局主 API，每次提交一组图片记一条「表情看图起名」调用。对话模型直接接收表情图片时仍是原来的聊天请求。
 
@@ -50,7 +51,7 @@
 
 | 模式 | 适用场景 | 写入函数 | 原因 |
 |------|----------|----------|------|
-| 两阶段（先挂起后结算） | 即时对话、云端情绪评估、云端门牌整理 | `recordCloudApiCall` → `settleCloudApiCall`；新版即时对话用 `settleInstantModelCalls` | 任务提交时先显示「☁️ 云端生成中」。即时对话回程时，第一笔替换挂起记录，续答请求各自成单；其余场景原地结清 |
+| 两阶段（先挂起后结算） | 即时对话、云端情绪评估、云端门牌整理、云端生成 | `recordCloudApiCall` → `settleCloudApiCall`；新版即时对话用 `settleInstantModelCalls` | 任务提交时先显示「☁️ 云端生成中」。即时对话回程时，第一笔替换挂起记录，续答请求各自成单；其余场景原地结清 |
 | 单阶段（回程一次落账） | 定时主动消息、模型执行后跳过的轮次、诊断复现测试 | `recordCompletedCloudApiCall` | 任务由云端 Cron 独立触发，触发时客户端可能离线；客户端上线收到推送或后台结果回执（`emitResult`）时直接写入已完成记录，使用 `taskUuid + occurrenceMs`（或 `diagRunId`）拼出确定性主键，避免离线补收与推送重放重复记账 |
 
 ### 即时对话按实际模型请求分别记账

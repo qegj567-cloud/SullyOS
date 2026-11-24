@@ -85,3 +85,15 @@ it('immutable instant inputs retain character ownership even after the task is d
     value: JSON.stringify({ v: 1, charId: 'input-owner', packedFirePack: '{"chat":{}}' }),
   })).toEqual({ owner: { type: 'character', id: 'input-owner' }, kind: 'instant-input' });
 });
+
+it('云端生成的输入按每份输入里的角色归属，坏掉的不猜', async () => {
+  const value = await packStateValue(JSON.stringify({
+    v: 1, jobId: 'g1', purpose: 'dream', charId: 'char-1', charName: '小明',
+    messages: [{ role: 'user', content: '做梦' }], notify: null,
+  }));
+  expect(await resolveSullyCloudOwnership({ type: 'state', namespace: 'amsg:cloud-gen', key: 'gen:g1', value }))
+    .toEqual({ owner: { type: 'character', id: 'char-1', label: '小明' }, kind: 'job-input' });
+  expect(await resolveSullyCloudOwnership({ type: 'state', namespace: 'amsg:cloud-gen', key: 'gen:g2', value: '{broken' })).toBeNull();
+  expect(await resolveSullyCloudOwnership({ type: 'credential', credId: 'char:char-1/gen-dream' }))
+    .toEqual({ owner: { type: 'character', id: 'char-1' }, kind: 'credential-gen-dream' });
+});

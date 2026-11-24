@@ -529,7 +529,7 @@ const ensureWorkerReady = async (options?: { allowWhenDisabled?: boolean }) => {
  * 「这台 worker 认不认识后台任务」的探测结果（见 probeBackgroundJobSupport）。
  * 只在内存里存，换 workerUrl 自然作废——用户中途换后端时不该拿旧结论当数。
  */
-let backgroundJobProbe: { workerUrl: string; supported: boolean; at: number } | null = null;
+let backgroundJobProbe: { workerUrl: string; supported: boolean; cloudGen: boolean; at: number } | null = null;
 
 /**
  * 存量答案是「不支持」时，最多隔这么久就再问一遍。
@@ -565,6 +565,9 @@ export const forgetBackgroundJobProbe = (): void => { backgroundJobProbe = null;
  * 退回本地就是拿同一份快照再烧一次 API、两份结果先后落地互相盖。
  */
 export type BackgroundJobProbeOutcome = 'supported' | 'unsupported' | 'unknown';
+
+/** `messageType: 'instant'` 落库后上游叫没叫醒起跳器（schedule-message 202 的 data.dispatch）。 */
+export type AmsgInstantDispatch = 'kicked' | 'not_configured' | 'kick_failed';
 
 const BACKGROUND_JOB_MAYBE_CREATED_PROP = '__amsgBackgroundJobMaybeCreated';
 
@@ -1702,8 +1705,12 @@ export const formatAmsgServerError = (responseOrError: unknown, fallbackMessage:
 /** POST /instant-chat 的失败原因（包装层的错误码 → 一句能照着做的话）。 */
 export const describeInstantChatFailure = (status: number, body: any): string => {
   const code = body?.error?.code;
-  const outerMessage = typeof body?.error?.message === 'string' ? body.error.message.trim() : '';
-  const outerDetails = formatAmsgErrorDetails(body?.error?.details, body?.error);
+  // 兼容 Deno 反代门面返回的字符串 `{ error: '...', detail: '...' }` 与标准对象 `{ error: { code, message } }`
+  const outerMessage = typeof body?.error === 'string'
+    ? body.error.trim()
+    : (typeof body?.error?.message === 'string' ? body.error.message.trim() : '');
+  const topLevelDetail = typeof body?.detail === 'string' ? body.detail.trim() : '';
+  const outerDetails = formatAmsgErrorDetails(body?.error?.details, typeof body?.error === 'object' ? body?.error : undefined) || topLevelDetail;
   const outerHead = outerDetails && !outerMessage.includes(outerDetails)
     ? (outerMessage ? `${outerMessage}（${outerDetails}）` : outerDetails)
     : outerMessage;
@@ -2369,9 +2376,9 @@ const decryptPayload = async (client: ReiClient, payload: { iv: string; authTag:
  * 而他的本地直连根本不通，只看得到一条读不懂的网络报错，开关还写着「已开启」。
  */
 export type InstantChatProbeOutcome =
-  /** 200 + instantTick:true —— 跑得动 */
+  /** 200 + instantTick:true + instantBackground:true —— 跑得动 */
   | 'supported'
-  /** 200 但没有 instantTick —— 明确跑不动（老 bundle，或代码新了绑定没接上） */
+  /** 200 但缺其中一样 —— 明确跑不动（老 bundle，或代码新了绑定没接上） */
   | 'unsupported'
   /** 压根没问到（网络异常、超时、401、5xx、网关页）—— 这不是答案，不能拿来判死刑 */
   | 'unknown';
@@ -3492,8 +3499,8 @@ export const ActiveMsgClient = {
     if (
       cached?.workerUrl === config.workerUrl
       // 「不支持」只当阶段性结论：worker 可能在这个会话里被别的路径换掉了
-      // （见 BACKGROUND_JOB_UNSUPPORTED_RECHECK_MS）。
-      && (cached.supported || Date.now() - cached.at < BACKGROUND_JOB_UNSUPPORTED_RECHECK_MS)
+      // （见 BACKGROUND_JOB_UNSUPPORTED_RECHECK_MS）。代跑能力同理。
+      && ((cached.supported && cached.cloudGen) || Date.now() - cached.at < BACKGROUND_JOB_UNSUPPORTED_RECHECK_MS)
     ) {
       return cached.supported ? 'supported' : 'unsupported';
     }
@@ -3505,8 +3512,9 @@ export const ActiveMsgClient = {
         console.warn(`${ACTIVE_MSG_RUNTIME_HEADER} 后台任务能力问不到（HTTP ${status}），不记缓存`);
         return 'unknown';
       }
-      const supported = body?.data?.backgroundJobs === true;
-      backgroundJobProbe = { workerUrl: config.workerUrl, supported, at: Date.now() };
+      // 后台任务以 instant 任务交上去，老 bundle 会在请求里当场跑完它，所以两样都要有。
+      const supported = body?.data?.backgroundJobs === true && body?.data?.instantBackground === true;
+      backgroundJobProbe = { workerUrl: config.workerUrl, supported, cloudGen: body?.data?.cloudGen === true, at: Date.now() };
       return supported ? 'supported' : 'unsupported';
     } catch (error) {
       console.warn(`${ACTIVE_MSG_RUNTIME_HEADER} 后台任务能力探测没发出去，不记缓存`, error);
@@ -3517,6 +3525,16 @@ export const ActiveMsgClient = {
   /** 只问「能不能交」的那一版：问不到当不能交。要区分「问不到」用上面那个。 */
   async probeBackgroundJobSupport(): Promise<boolean> {
     return (await this.probeBackgroundJobSupportDetailed()) === 'supported';
+  },
+
+  /**
+   * 这台 worker 认不认识代跑任务（`/config-check` 的 `cloudGen`，外加后台任务那两样）。
+   * 与后台任务共用同一次探测和缓存，三种结论的含义也相同。
+   */
+  async probeCloudGenSupportDetailed(): Promise<BackgroundJobProbeOutcome> {
+    const outcome = await this.probeBackgroundJobSupportDetailed();
+    if (outcome !== 'supported') return outcome;
+    return backgroundJobProbe?.cloudGen ? 'supported' : 'unsupported';
   },
 
   /**
@@ -3535,7 +3553,8 @@ export const ActiveMsgClient = {
    * 到点取不到输入的任务；这个方向的残留是无害的那一侧——没人引用的输入行会被
    * clientStateTtl 清掉。
    *
-   * @returns 远端任务 uuid
+   * @returns 远端任务 uuid，外加上游的起跳结果 dispatch（kicked = 已经开跑；not_configured /
+   *   kick_failed = 等下一跳 cron）
    */
   async scheduleBackgroundJob(params: {
     /** 业务种类，worker 按它分派 handler（见 utils/amsgTaskKinds.ts） */
@@ -3558,7 +3577,17 @@ export const ActiveMsgClient = {
      */
     temperature?: number;
     maxTokens?: number;
-  }): Promise<{ uuid: string }> {
+    /** 本地请求体里的其余字段（思考参数等），上游原样展开进请求体，核心字段优先。 */
+    extraBody?: Record<string, unknown>;
+    /** 输入放哪个命名空间；默认 `amsg:job`（代跑用自己的 `amsg:cloud-gen`）。 */
+    namespace?: string;
+    /** 客户端先定好的任务 uuid：答复丢在路上时还能凭它查状态、取消。 */
+    uuid?: string;
+    /** 额外写进任务 metadata 的字段（不许放凭据）。 */
+    metadata?: Record<string, unknown>;
+    /** 不看指纹底账、每次都覆盖云端那行凭据（用户这次实际用的那套 API）。 */
+    forceCredUpload?: boolean;
+  }): Promise<{ uuid: string; dispatch?: AmsgInstantDispatch }> {
     const assertWriteCurrent = captureCloudWriteCheck([params.charId]);
     const globalConfig = await ensureWorkerReady();
     const client = await initializeClient(globalConfig);
@@ -3570,36 +3599,37 @@ export const ActiveMsgClient = {
 
     const now = stampStateUpdatedAt();
     await putClientStateOrThrow(client, [{
-      namespace: AMSG_JOB_NAMESPACE,
+      namespace: params.namespace ?? AMSG_JOB_NAMESPACE,
       key: params.jobKey,
       owner: { type: 'character', id: params.charId, label: params.charName },
       value: await packStateValue(JSON.stringify(params.jobInput)),
       updatedAt: now,
     }], '上传后台任务输入');
 
-    await putLlmCredentialRows([params.credRow], { client });
+    await putLlmCredentialRows([params.credRow], { client, force: params.forceCredUpload });
 
     const payload: Record<string, any> = {
+      ...(params.uuid ? { uuid: params.uuid } : {}),
       contactName: params.charName,
-      messageType: 'auto',
+      // instant：落库即到期，到期时间由服务端自己盖，上游落库后马上叫醒起跳器开跑，不等
+      // cron。不带 firstSendTime——客户端算的时刻在上传输入、传凭据、加密、发请求这一路上
+      // 早就过去了。叫醒没成（dispatch 不是 kicked）时由下一跳 cron 捡，最多晚一分钟。
+      messageType: 'instant',
       // 任务清单跟远端对账时靠它把这些行挡在外面（见 amsg2Tasks 的 reconcileTasksWithRemote）。
       messageSubtype: AMSG_BACKGROUND_JOB_SUBTYPE,
-      // 立刻可跑：到期时间由服务端自己盖，下一跳 cron（最多一分钟）就会捞起来。
-      // 不能改成客户端算一个 firstSendTime——那个时刻在上传输入、传凭据、加密、
-      // 发请求这一路上早就过去了，服务端一律打回「时间必须在未来」，整条云端路
-      // 每次都退回本地跑。即时对话那条路同样只用 immediate。
-      immediate: true,
       recurrenceType: 'none',
       metadata: {
         charId: params.charId,
         charName: params.charName,
         source: 'active_msg_2',
+        ...params.metadata,
         [AMSG_TASK_KIND_KEY]: params.kind,
         [AMSG_JOB_ID_KEY]: params.jobId,
       },
       credRefs: { chat: params.credRow.credId },
       ...(typeof params.temperature === 'number' ? { temperature: params.temperature } : {}),
       ...(params.maxTokens && params.maxTokens > 0 ? { maxTokens: params.maxTokens } : {}),
+      ...(params.extraBody && Object.keys(params.extraBody).length > 0 ? { llmExtraBody: params.extraBody } : {}),
       // 服务端要求「completePrompt 或 messages」二选一。到点真正发给 LLM 的 messages 由
       // worker 的 kind handler 返回值覆盖，这条占位内容永远不参与生成。
       messages: [{ role: 'user', content: AMSG2_PLACEHOLDER_PROMPT }],
@@ -3642,7 +3672,7 @@ export const ActiveMsgClient = {
     if (!response?.success) {
       throw new Error(formatAmsgServerError(response, '后台任务创建失败。'));
     }
-    return response.data as { uuid: string };
+    return response.data as { uuid: string; dispatch?: AmsgInstantDispatch };
   },
 
   /**
@@ -3776,17 +3806,14 @@ export const ActiveMsgClient = {
       ...(params.uuid ? { uuid: params.uuid } : {}),
       contactName: char.name,
       ...(remoteAvatarUrl ? { avatarUrl: remoteAvatarUrl } : {}),
-      // 用 'auto' 而不是 'instant'：'instant' 在上游是「当场跑完」的行型，走不到 fire hooks，
-      // 到点拿的就不是这份 chat 段。客户端收到的 push.messageType 由 metadata.amsgMode 决定。
-      messageType: 'auto',
+      // instant：上游落库即到期、回 202 并叫醒起跳器，生成在后台跑，走的是跟定时任务同一条
+      // 投递链（fire hooks 全套），不用带 firstSendTime。客户端收到的 push.messageType
+      // 由 metadata.amsgMode 决定。
+      messageType: 'instant',
       // 上游只把它当自由文本标签原样带进推送，不据此分支；本地拿它把即时对话的行跟
       // 定时任务的行分开——不然一条失败的即时对话行会被面板对账当成排程任务补进清单。
       // 列表投影里只认这个标签，分类见 amsgTaskKinds 的 classifyTaskRow。
       messageSubtype: AMSG_INSTANT_CHAT_SUBTYPE,
-      // 落库即到期（不带 firstSendTime）：用户已经把话说完了，现在就该答。
-      // 排未来时刻的话，打包/上传的耗时都要预支提前量，慢网低端机会被
-      // 「时间必须在未来」打回，而同一轮走本地路径毫无问题。
-      immediate: true,
       // 顶替上一条还没被认领的任务（连发两条时合并成一起回）：上游在建新任务的
       // 同一事务里取消旧的，原子、无第二个请求。
       ...(params.supersedesUuid ? { supersedesUuid: params.supersedesUuid } : {}),
@@ -4035,7 +4062,8 @@ export const ActiveMsgClient = {
   /**
    * 这台 worker 现在**真的跑得动**即时对话吗（即时对话的唯一版本门槛）。
    *
-   * 认的是 `GET /config-check` 里的 `instantTick`——运行时到底有没有 INSTANT_TICK 绑定。
+   * 认的是 `GET /config-check` 里的 `instantTick`——运行时到底有没有 INSTANT_TICK 绑定，
+   * 外加 `instantBackground`（这份代码在后台投递 instant 任务，老 bundle 会在请求里当场跑完）。
    * 不认 `instantChat`（那只说明代码里有这条路由）也不认版本号，因为这三样会分家：
    * 自更新由用户那台 Worker 上的**旧代码**执行，旧代码不认识 Durable Object，所以更新完
    * 第一下常常是「代码新了、版本号也对上了、绑定却没接上」，这条路只能回 503。看版本号
@@ -4084,7 +4112,10 @@ export const ActiveMsgClient = {
         // 中间设备塞回来的网关页……说明的都是「这条线路/这份配置有问题」，而不是
         // 「那台 Worker 跑不动即时对话」，一律留在 unknown。
         if (status === 200 && body?.success === true) {
-          outcome = body?.data?.instantTick === true ? 'supported' : 'unsupported';
+          // instantBackground：这份代码在后台投递 instant 任务。老 bundle 没有它，会在请求里
+          // 当场跑完即时对话的任务，这条路就不能往那里发。
+          outcome = body?.data?.instantTick === true && body?.data?.instantBackground === true
+            ? 'supported' : 'unsupported';
           await rememberWorkerBundleVersion(body, config.workerUrl);
         }
       } finally {

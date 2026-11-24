@@ -11,6 +11,9 @@ import { ChatPrompts } from './chatPrompts';
 import { cleanApiMessages, flattenImageContentParts } from './promptMessageCleanup';
 import { getFlowNarrativeKey, isScheduleFeatureOn } from './scheduleFeature';
 import {buildHomeSchedulePrompt, hasHomeSchedulePositions, parseHomePosition} from './homeSchedule';
+import type { ApiCallMeta } from './apiCallLog';
+import type { LlmApiType } from './llmEndpoint';
+import { getCloudGenJob, subscribeCloudGenJobs } from './cloudGen/registry';
 
 export { getFlowNarrativeKey, isScheduleFeatureOn } from './scheduleFeature';
 
@@ -18,6 +21,7 @@ interface ApiConfig {
     baseUrl: string;
     apiKey: string;
     model: string;
+    apiType?: LlmApiType;
 }
 
 /**
@@ -224,32 +228,35 @@ ${chatHistoryBlock ? `**重要：上面给了你最近和「${user.name}」的�
 仅输出JSON，不要其他内容。`;
 }
 
-export async function generateDailyScheduleForChar(
-    char: CharacterProfile,
-    userProfile: UserProfile,
-    apiConfig: ApiConfig,
-    forceRegenerate: boolean = false
-): Promise<DailySchedule | null> {
+/** 云端日程落地后通知开着的聊天界面刷新。不复用 SCHEDULE_CHANGE_EVENT：那条会弹「日程改动」提示，是角色改自己日程时用的。 */
+export const SCHEDULE_LANDED_EVENT = 'daily-schedule-landed';
+export interface ScheduleLandedEventDetail { charId: string; schedule: DailySchedule }
 
-    // 总开关关闭时直接短路，避免副 API / 兜底调用
-    if (!isScheduleFeatureOn(char)) return null;
+/** 交云端时存进登记表、落地时要用的上下文。 */
+export interface ScheduleCloudContext {
+    /** 请求时角色当地的日历日。 */
+    date: string;
+    /** 手动重新生成 / 换风格：落地时覆盖这一天已有的日程。 */
+    force: boolean;
+    /** 这次 prompt 要求了 homePosition，落地时按那一刻的房间校验。 */
+    homePrompt: boolean;
+}
 
-    const baseNow = new Date();
+/** 拼好的一次日程请求。本机直连和交云端用的是同一份。 */
+interface DailyScheduleRequest {
+    date: string;
+    homePrompt: boolean;
+    messages: Array<{ role: string; content: unknown }>;
+    params: { temperature: number; max_tokens: number };
+    meta: ApiCallMeta;
+    snapshotAt: number;
+}
+
+async function buildDailyScheduleRequest(char: CharacterProfile, userProfile: UserProfile): Promise<DailyScheduleRequest> {
+    const snapshotAt = Date.now();
+    const baseNow = new Date(snapshotAt);
     const now = getScheduleWallClock(char, baseNow);
     const today = getScheduleDateKey(char, baseNow);
-
-    // Check if already exists
-    if (!forceRegenerate) {
-        const existing = await getDailyScheduleForChar(char, baseNow);
-        if (existing) return existing;
-    }
-
-    // Preserve cover image from previous schedules
-    let coverImage: string | undefined;
-    try {
-        const prev = await DB.getScheduleCoverImage(char.id);
-        if (prev) coverImage = prev;
-    } catch {}
 
     // ── 上下文范围对齐私聊 ──
     // adaptive/manual、记忆宫殿水位线、用户断点全部复用同一读取器。
@@ -272,95 +279,250 @@ export async function generateDailyScheduleForChar(
     // 含详细记忆，并让关键词世界书使用与私聊相同的消息窗口激活。
     const characterContextInput = { char, user: userProfile, includeDetailedMemories: true, timeOptions: { worldbookMessages: historyMessages } };
 
-
     const chatHistoryBlock = formatChatHistoryForSchedule(historyMessages, char, userProfile, emojis);
 
     const dayOfWeek = ['日', '一', '二', '三', '四', '五', '六'][now.getDay()];
 
     const style = char.scheduleStyle || 'lifestyle';
-    const {scheduleHomeVisitPrompt,submitScheduleHomeVisits}=await import('./homeVisits');
+    const {scheduleHomeVisitPrompt}=await import('./homeVisits');
     const homePrompt = buildHomeSchedulePrompt(char);
     const visitPrompt=await scheduleHomeVisitPrompt(char);
     const prompt = (style === 'mindful'
         ? buildMindfulPrompt('', char, userProfile, today, dayOfWeek, chatHistoryBlock)
         : buildLifestylePrompt('', char, userProfile, today, dayOfWeek, chatHistoryBlock)) + homePrompt + visitPrompt;
 
+    return {
+        date: today,
+        homePrompt: !!homePrompt,
+        messages: await ContextBuilder.buildCharacterRequest(characterContextInput, [{ role: 'user', content: prompt }]),
+        params: { temperature: 0.85, max_tokens: 8000 },
+        // API 调用记录标签（全局 fetch 拦截器读取）；不传会兜底成「用户当时打开的 App」，
+        // 后台任务被标成 Message/群聊 之类，用户看记录一头雾水。
+        meta: { appName: '日程系统', charId: char.id, charName: char.name, purpose: '生成当日日程' },
+        snapshotAt,
+    };
+}
+
+/**
+ * 把模型响应落成这一天的日程并写库，本机直连和云端代跑共用。
+ * `char` 取落地这一刻的角色：家园位置按它当时的房间校验，已删掉的房间不会被写进日程。
+ * 返回 null = 这份不能用，原日程保留；写库出错照常抛出，由调用方决定重试还是算失败。
+ */
+export async function landDailyScheduleResponse(
+    data: unknown,
+    char: CharacterProfile,
+    opts: { date: string; homePrompt: boolean; generatedAt: number },
+): Promise<DailySchedule | null> {
+    // 与主链路对齐：extractContent 会剥掉思维链模型(<think>...)并回落 reasoning_content，
+    // extractJson 负责去围栏 / 从 prose 里抽 {...} / 修截断 + 尾逗号等多重兜底。
+    // 之前这里手搓 JSON.parse，碰到推理模型的 <think> 前缀会在 "line 1 column 1" 直接炸。
+    const content = extractContent(data);
+    const parsed = extractJson(content);
+    if (!parsed) {
+        console.warn('[Schedule] 无法从模型输出解析出日程 JSON', { length: content.length });
+        return null;
+    }
+    const slots: ScheduleSlot[] = (parsed.slots || []).map((s: any) => {
+        const homePosition = parseHomePosition(s.homePosition, char);
+        return {
+        startTime: s.startTime || '00:00',
+        activity: s.activity || '',
+        description: s.description,
+        emoji: s.emoji,
+        location: homePosition?.kind === 'home' ? char.home3D?.rooms.find(room => room.id === homePosition.roomId)?.name : typeof s.location === 'string' ? s.location : homePosition?.kind === 'away' ? '外出' : undefined,
+        homePosition,
+        innerThought: s.innerThought,
+    };}).filter((s: ScheduleSlot) => s.activity);
+
+    if (slots.length === 0) return null;
+
+    // Sort by time
+    slots.sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+    // Extract flowNarrative
+    let flowNarrative: Record<string, string> | undefined;
+    if (parsed.flowNarrative && typeof parsed.flowNarrative === 'object') {
+        flowNarrative = {};
+        for (const key of ['morning', 'afternoon', 'evening']) {
+            if (typeof parsed.flowNarrative[key] === 'string' && parsed.flowNarrative[key].trim()) {
+                flowNarrative[key] = parsed.flowNarrative[key].trim();
+            }
+        }
+        if (Object.keys(flowNarrative).length === 0) flowNarrative = undefined;
+    }
+
+    // Preserve cover image from previous schedules
+    let coverImage: string | undefined;
+    try {
+        const prev = await DB.getScheduleCoverImage(char.id);
+        if (prev) coverImage = prev;
+    } catch {}
+
+    const schedule: DailySchedule = {
+        id: `${char.id}_${opts.date}`,
+        charId: char.id,
+        date: opts.date,
+        slots,
+        generatedAt: opts.generatedAt,
+        coverImage,
+        flowNarrative,
+    };
+
+    // Missing or stale room IDs must not overwrite a usable old schedule.
+    if (opts.homePrompt && !hasHomeSchedulePositions(schedule, char)) return null;
+    const {submitScheduleHomeVisits}=await import('./homeVisits');
+    await submitScheduleHomeVisits(char,schedule.date,parsed.homeVisits,schedule);
+    return schedule;
+}
+
+async function runDailyScheduleRequestLocally(
+    char: CharacterProfile,
+    apiConfig: ApiConfig,
+    request: DailyScheduleRequest,
+): Promise<DailySchedule | null> {
     try {
         const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-            body: JSON.stringify({
-                model: apiConfig.model,
-                messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, [{ role: 'user', content: prompt }])),
-                temperature: 0.85,
-                max_tokens: 8000
-            }),
-            // API 调用记录标签（全局 fetch 拦截器读取）；不传会兜底成「用户当时打开的 App」，
-            // 后台任务被标成 Message/群聊 之类，用户看记录一头雾水。
-            __sullyMeta: { appName: '日程系统', charId: char.id, charName: char.name, purpose: '生成当日日程' },
+            body: JSON.stringify({ model: apiConfig.model, messages: request.messages, ...request.params }),
+            __sullyMeta: request.meta,
         } as RequestInit);
 
         if (!response.ok) {
             console.error('[Schedule] API error:', response.status);
             return null;
         }
-
         const data = await safeResponseJson(response);
-        // 与主链路对齐：extractContent 会剥掉思维链模型(<think>...)并回落 reasoning_content，
-        // extractJson 负责去围栏 / 从 prose 里抽 {...} / 修截断 + 尾逗号等多重兜底。
-        // 之前这里手搓 JSON.parse，碰到推理模型的 <think> 前缀会在 "line 1 column 1" 直接炸。
-        const content = extractContent(data);
-        const parsed = extractJson(content);
-        if (!parsed) {
-            console.error('[Schedule] Generation failed: 无法从模型输出解析出JSON:', content.slice(0, 200));
-            return null;
-        }
-        const slots: ScheduleSlot[] = (parsed.slots || []).map((s: any) => {
-            const homePosition = parseHomePosition(s.homePosition, char);
-            return {
-            startTime: s.startTime || '00:00',
-            activity: s.activity || '',
-            description: s.description,
-            emoji: s.emoji,
-            location: homePosition?.kind === 'home' ? char.home3D?.rooms.find(room => room.id === homePosition.roomId)?.name : typeof s.location === 'string' ? s.location : homePosition?.kind === 'away' ? '外出' : undefined,
-            homePosition,
-            innerThought: s.innerThought,
-        };}).filter((s: ScheduleSlot) => s.activity);
-
-        if (slots.length === 0) return null;
-
-        // Sort by time
-        slots.sort((a, b) => a.startTime.localeCompare(b.startTime));
-
-        // Extract flowNarrative
-        let flowNarrative: Record<string, string> | undefined;
-        if (parsed.flowNarrative && typeof parsed.flowNarrative === 'object') {
-            flowNarrative = {};
-            for (const key of ['morning', 'afternoon', 'evening']) {
-                if (typeof parsed.flowNarrative[key] === 'string' && parsed.flowNarrative[key].trim()) {
-                    flowNarrative[key] = parsed.flowNarrative[key].trim();
-                }
-            }
-            if (Object.keys(flowNarrative).length === 0) flowNarrative = undefined;
-        }
-
-        const schedule: DailySchedule = {
-            id: `${char.id}_${today}`,
-            charId: char.id,
-            date: today,
-            slots,
-            generatedAt: Date.now(),
-            coverImage,
-            flowNarrative,
-        };
-
-        // Missing or stale room IDs must not overwrite a usable old schedule.
-        if (homePrompt && !hasHomeSchedulePositions(schedule, char)) return null;
-        await submitScheduleHomeVisits(char,schedule.date,parsed.homeVisits,schedule);
-        return schedule;
+        return await landDailyScheduleResponse(data, char, { date: request.date, homePrompt: request.homePrompt, generatedAt: Date.now() });
     } catch (e) {
         console.error('[Schedule] Generation failed:', e);
         return null;
+    }
+}
+
+/** 只在本机生成（家园设置页这类要当场拿到结果的入口用）。返回 null = 没生成成功，原日程保留。 */
+export async function generateDailyScheduleForChar(
+    char: CharacterProfile,
+    userProfile: UserProfile,
+    apiConfig: ApiConfig,
+    forceRegenerate: boolean = false
+): Promise<DailySchedule | null> {
+
+    // 总开关关闭时直接短路，避免副 API / 兜底调用
+    if (!isScheduleFeatureOn(char)) return null;
+
+    // Check if already exists
+    if (!forceRegenerate) {
+        const existing = await getDailyScheduleForChar(char);
+        if (existing) return existing;
+    }
+
+    let request: DailyScheduleRequest;
+    try {
+        request = await buildDailyScheduleRequest(char, userProfile);
+    } catch (e) {
+        console.error('[Schedule] Generation failed:', e);
+        return null;
+    }
+    return runDailyScheduleRequestLocally(char, apiConfig, request);
+}
+
+// ─── 聊天里的生成：按角色的闸门、失败退避、能交云端就交云端 ───
+
+/**
+ * 本机正在生成日程的角色。按角色分开记：聊天组件切角色时是复用的，一个共用标记会让第二个角色直接被跳过。
+ * 云端在飞的那份不在这里，看代跑登记表。
+ */
+const localGenerating = new Set<string>();
+const gateListeners = new Set<() => void>();
+const notifyGate = () => { for (const cb of gateListeners) cb(); };
+
+/** 自动生成失败后，这么久之内不再自动重试（手动重新生成不受限）。一直失败时每次进聊天都重跑会每次扣费。 */
+export const SCHEDULE_RETRY_BACKOFF_MS = 30 * 60_000;
+/**
+ * 角色 + 日历日 → 上次失败的时刻。只放内存：刷新页面后最多多试一次。
+ * 云端失败另有登记表里那条 failed 记录撑过刷新（见 isScheduleRetryBackedOff）。
+ */
+const scheduleFailures = new Map<string, number>();
+
+export const markScheduleGenerationFailed = (charId: string, date: string, at: number = Date.now()): void => {
+    scheduleFailures.set(`${charId}_${date}`, at);
+};
+
+export const isScheduleRetryBackedOff = (charId: string, date: string, now: number = Date.now()): boolean => {
+    const failedAt = scheduleFailures.get(`${charId}_${date}`);
+    if (failedAt !== undefined && now - failedAt < SCHEDULE_RETRY_BACKOFF_MS) return true;
+    const job = getCloudGenJob(charId, 'schedule');
+    return job?.status === 'failed'
+        && (job.context as Partial<ScheduleCloudContext> | null)?.date === date
+        && now - (job.settledAt ?? 0) < SCHEDULE_RETRY_BACKOFF_MS;
+};
+
+/** 这个角色的日程是不是正在生成（本机在跑，或云端有一份在飞）。 */
+export const isScheduleGeneratingFor = (charId: string | null | undefined): boolean =>
+    !!charId && (localGenerating.has(charId) || getCloudGenJob(charId, 'schedule')?.status === 'running');
+
+export const subscribeScheduleGenerating = (cb: () => void): (() => void) => {
+    gateListeners.add(cb);
+    const unsubscribeJobs = subscribeCloudGenJobs(cb);
+    return () => { gateListeners.delete(cb); unsubscribeJobs(); };
+};
+
+/**
+ * 聊天里的日程生成入口：进聊天自动生成（force=false）、手动重新生成和换风格（force=true）。
+ * 能交云端就交云端，交不了在本机生成。
+ *
+ * 返回此刻就能用的日程：已有的，或本机刚生成的。交了云端、这个角色正在生成、退避中、生成失败都返回 null；
+ * 云端那份落地后由 SCHEDULE_LANDED_EVENT 通知界面（见 utils/cloudGen/landers/schedule.ts）。
+ */
+export async function requestDailySchedule(
+    char: CharacterProfile,
+    userProfile: UserProfile,
+    apiConfig: ApiConfig,
+    force: boolean = false,
+): Promise<DailySchedule | null> {
+    if (!isScheduleFeatureOn(char)) return null;
+    let date = getScheduleDateKey(char);
+    if (!force) {
+        const existing = await getDailyScheduleForChar(char);
+        if (existing) return existing;
+        if (isScheduleRetryBackedOff(char.id, date)) return null;
+    }
+    // 判断和占位之间不能有 await，否则两次同时进来会都通过。
+    if (isScheduleGeneratingFor(char.id)) return null;
+    localGenerating.add(char.id);
+    notifyGate();
+    try {
+        const request = await buildDailyScheduleRequest(char, userProfile);
+        date = request.date;
+        const { trySubmitCloudGeneration } = await import('./cloudGen/submit');
+        const context: ScheduleCloudContext = { date: request.date, force, homePrompt: request.homePrompt };
+        const outcome = await trySubmitCloudGeneration({
+            purpose: 'schedule',
+            char: { id: char.id, name: char.name },
+            messages: request.messages,
+            params: request.params,
+            api: apiConfig,
+            context,
+            apiMeta: request.meta,
+            snapshotAt: request.snapshotAt,
+        }).catch(error => {
+            console.warn('[Schedule] 交云端出错，改在本机生成', error);
+            return null;
+        });
+        if (outcome?.route === 'cloud' || outcome?.route === 'busy') return null;
+        // 交云端中途出错时登记可能已经写下：那份按在飞算，本机不再生成第二份。
+        if (!outcome && getCloudGenJob(char.id, 'schedule')?.status === 'running') return null;
+        const schedule = await runDailyScheduleRequestLocally(char, apiConfig, request);
+        if (!schedule) markScheduleGenerationFailed(char.id, request.date);
+        return schedule;
+    } catch (e) {
+        console.error('[Schedule] Generation failed:', e);
+        markScheduleGenerationFailed(char.id, date);
+        return null;
+    } finally {
+        localGenerating.delete(char.id);
+        notifyGate();
     }
 }
 

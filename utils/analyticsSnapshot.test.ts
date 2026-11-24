@@ -126,7 +126,11 @@ function poisonedSources(overrides: Partial<FeatureSources> = {}): FeatureSource
         characters: [],
         // Worker 地址和共享密钥同样是用户填的，一起塞毒药。即时对话开关是布尔，
         // 放个 true 让「即时对话」那一格也走一遍扫毒。
-        amsg2Global: { workerUrl: POISON.url, initializedAt: 1_700_000_000_000, instantChatEnabled: true },
+        // 云端生成开关存档里塞个字符串，确认那几格只报写死的三个值。
+        amsg2Global: {
+            workerUrl: POISON.url, initializedAt: 1_700_000_000_000, instantChatEnabled: true,
+            cloudGen: { schedule: { enabled: true, notify: POISON.myName as unknown as boolean } },
+        },
         collaborationUsage: { sessions: 2, messages: 9, assets: 1 },
         ...overrides,
     };
@@ -253,6 +257,32 @@ describe('当前功能启用 · 三态不能塌成两态', () => {
         expect(triState(false, false)).toBe('没配');
         // 没配却报开着是自相矛盾的状态，也归到「没配」。
         expect(triState(false, true)).toBe('没配');
+    });
+
+    it('云端生成一格按固定顺序写三个功能，每项只有 开 / 通 / 关', () => {
+        const connected = { workerUrl: 'https://w.example', initializedAt: 1 };
+        // 什么都没点过：缺省云端生成都开，完成时通知日程关、另两个开。
+        expect(collectFeatureFlags(poisonedSources({ amsg2Global: connected })).云端生成)
+            .toBe('日程开 人格通 梦境通');
+        expect(collectFeatureFlags(poisonedSources({
+            amsg2Global: { ...connected, cloudGen: { schedule: { notify: true }, 'persona-sim': { enabled: false }, dream: { notify: false } } },
+        })).云端生成).toBe('日程通 人格关 梦境开');
+        // 没连上过、总开关暂停：实际不走云端，整格是关。
+        expect(collectFeatureFlags(poisonedSources({ amsg2Global: { workerUrl: 'https://w.example' } })).云端生成).toBe('关');
+        expect(collectFeatureFlags(poisonedSources({ amsg2Global: { ...connected, enabled: false } })).云端生成).toBe('关');
+    });
+
+    it('「即时对话」那格只看私聊，不随日程等功能的云端生成开关变', () => {
+        const flags = collectFeatureFlags(poisonedSources({
+            amsg2Global: {
+                workerUrl: 'https://w.example', initializedAt: 1, instantChatEnabled: true,
+                cloudGen: { schedule: { enabled: false }, 'persona-sim': { enabled: false }, dream: { enabled: false } },
+            },
+        }));
+        expect(flags.即时对话).toBe('开');
+        expect(collectFeatureFlags(poisonedSources({
+            amsg2Global: { workerUrl: 'https://w.example', initializedAt: 1, instantChatEnabled: false },
+        })).即时对话).toBe('关');
     });
 
     it('即时对话只报开/关，关着和没配都算关', () => {
@@ -637,7 +667,8 @@ describe('快照事件的属性宽度', () => {
     });
 
     it('当前功能启用', () => {
-        expect(Object.keys(collectFeatureFlags(poisonedSources())).length).toBeLessThanOrEqual(35);
+        // 36：云端生成（日程 / 人格模拟 / 梦境）三项开关压成一格「云端生成」后加进来的。
+        expect(Object.keys(collectFeatureFlags(poisonedSources())).length).toBeLessThanOrEqual(36);
     });
 });
 

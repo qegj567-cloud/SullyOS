@@ -59,7 +59,7 @@ let host: HTMLDivElement;
 let root: Root;
 const onClose = vi.fn();
 
-async function render(open = true, workspaceSection?: 'features') {
+async function render(open = true, workspaceSection?: 'features' | 'overview') {
   await act(async () => {
     root.render(React.createElement(ActiveMsgGlobalSettingsModal, {
       isOpen: open,
@@ -321,7 +321,7 @@ describe('主动消息 2.0 配置入口', () => {
       },
     });
     await render();
-    await click('即时对话');
+    await click('云端生成');
     expect(host.textContent).not.toContain('先开启通知与推送：');
     expect(host.textContent).not.toContain('有问题');
     expect(host.textContent).toContain('正在检查推送状态');
@@ -621,7 +621,7 @@ describe('主动消息 2.0 引导与面板', () => {
     expect(client.reconcilePushSubscription).not.toHaveBeenCalled();
   });
 
-  it('引导说清即时对话不是秒回，最后单独一步讲给角色开启，走完回到面板', async () => {
+  it('引导说清云端生成不是秒回，最后单独一步讲给角色开启，走完回到面板', async () => {
     client.getGlobalConfig.mockResolvedValue(connected);
     await render();
     await click('这个功能是做什么的？重看介绍');
@@ -629,7 +629,7 @@ describe('主动消息 2.0 引导与面板', () => {
     expect(host.textContent).toContain('后端已经连上了');
     await click('下一步');
     await click('下一步');
-    expect(host.textContent).toContain('「即时」不是秒回');
+    expect(host.textContent).toContain('云端生成不是秒回');
     expect(host.textContent).toContain('杀后台');
     await click('下一步');
     expect(host.textContent).toContain('第 4 步，共 4 步');
@@ -660,9 +660,55 @@ describe('主动消息 2.0 引导与面板', () => {
     // 暂停保留连接字段，切换分区不触发网络探测。
     expect(host.querySelector<HTMLInputElement>('input[placeholder="https://amsg.你的账号.workers.dev"]')?.value)
       .toBe('https://worker.invalid');
-    // 展开即时对话：暂停态只报总开关暂停，绝不误报「更新 Worker」或「Worker 过旧」。
-    await click('即时对话');
+    // 展开云端生成：暂停态只报总开关暂停，绝不误报「更新 Worker」或「Worker 过旧」。
+    await click('云端生成');
     expect(host.textContent).toContain('总开关已暂停，当前聊天在本机生成');
     expect(host.textContent).not.toContain('点上面的「更新 Worker」');
+  });
+
+  // 回归守卫：saveGlobalConfig 只做浅合并，改一个功能的开关时必须把整份 cloudGen 写回，
+  // 只写 { cloudGen: { dream } } 会把日程、人格模拟已经关掉的开关冲回默认值。
+  it('云端生成按功能的开关：改一项时整份 cloudGen 写回，别的功能原样保留', async () => {
+    client.getGlobalConfig.mockResolvedValue({ ...connected, cloudGen: { schedule: { enabled: false }, 'persona-sim': { notify: false } } });
+    await render();
+    await click('云端生成');
+    expect(button('私聊云端生成')?.getAttribute('aria-checked')).toBe('true');
+    expect(button('日程云端生成')?.getAttribute('aria-checked')).toBe('false');
+    // 功能关着时「完成时通知」置灰，原值保留。
+    expect((button('日程完成时通知') as HTMLButtonElement).disabled).toBe(true);
+    expect(button('梦境完成时通知')?.getAttribute('aria-checked')).toBe('true');
+    vi.mocked(ActiveMsgStore.saveGlobalConfig).mockClear();
+    await click('梦境完成时通知');
+    expect(ActiveMsgStore.saveGlobalConfig).toHaveBeenCalledWith({
+      cloudGen: { schedule: { enabled: false }, 'persona-sim': { notify: false }, dream: { notify: false } },
+    });
+    expect(button('梦境完成时通知')?.getAttribute('aria-checked')).toBe('false');
+    await click('日程云端生成');
+    expect(ActiveMsgStore.saveGlobalConfig).toHaveBeenLastCalledWith({
+      cloudGen: { schedule: { enabled: true }, 'persona-sim': { notify: false }, dream: { notify: false } },
+    });
+  });
+
+  it('选过「本功能不再提醒」的功能下面才有「恢复云端生成提醒」，点了只恢复那一项', async () => {
+    localStorage.setItem('amsg2_cloud_gen_hint_off_v1', JSON.stringify(['dream', 'schedule']));
+    client.getGlobalConfig.mockResolvedValue(connected);
+    await render();
+    await click('云端生成');
+    const restoreButtons = () => Array.from(host.querySelectorAll('button')).filter((item) => item.textContent === '恢复云端生成提醒');
+    expect(restoreButtons()).toHaveLength(2);
+    await act(async () => { restoreButtons()[1].click(); });
+    expect(JSON.parse(localStorage.getItem('amsg2_cloud_gen_hint_off_v1') || '[]')).toEqual(['schedule']);
+    expect(restoreButtons()).toHaveLength(1);
+    localStorage.clear();
+  });
+
+  it('功能总览的云端生成卡片：私聊开关就是即时对话开关，能力表多一行云端生成', async () => {
+    client.getGlobalConfig.mockResolvedValue({ ...connected, instantChatEnabled: false });
+    await render(true, 'overview');
+    expect(host.querySelector('[aria-label="即时对话总开关"]')).toBeNull();
+    expect(button('私聊云端生成')?.getAttribute('aria-checked')).toBe('false');
+    expect(button('人格模拟云端生成')?.getAttribute('aria-checked')).toBe('true');
+    expect(host.textContent).toContain('云端生成（日程 / 人格模拟 / 梦境）');
+    expect(host.textContent).not.toContain('即时对话总开关');
   });
 });

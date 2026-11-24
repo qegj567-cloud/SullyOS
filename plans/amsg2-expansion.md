@@ -64,10 +64,10 @@
 
 | 改动 | 说明 |
 |---|---|
-| 新增代跑任务种类 | 在 `worker/amsg/src/fireKinds.ts` 注册一个 handler：从 `amsg:job` 读出本机传上来的消息和参数，原样交给模型；结果小的直接随 `emitResult` 带回，大的存附件（`storeAttachment`）只带引用。附件能力现在在 fire ctx 上有，`KindFireCtx` 的类型里还没透出 |
+| 新增代跑任务种类 | `worker/amsg/src/fireKinds.ts` 里的 `cloud-gen`：从独立命名空间 `amsg:cloud-gen` 读出本机传上来的消息，原样交给模型；结果一律存附件（`storeAttachment`），`emitResult` 只带引用，不按大小分支 |
 | 推送开关 | 任务上带一个「完成时是否通知」的标记，handler 据此决定 `notification.show`。关掉的只进收件箱、不推送，符合总纲「不想弹的压根不推」 |
-| 立刻开跑 | 后台任务现在交上去之后要等下一跳 cron，最多多等 60 秒。用户在等的入口要立刻开跑，跟即时对话同一种方式。上游 `instant` 消息类型正在修，修好后代跑直接用它，不再单独接下游的起跳器（见下文「下游起跳器的拆除」）。用户可以在功能总览关掉「后台任务」（即 cron），这时只靠 cron 捞的任务会一直不跑，所以代跑不能把 cron 当唯一兜底，立刻开跑失败时要让客户端看得见 |
-| 排队分组 | 调度器的串行分组键是 `charId#kind`。所有代跑共用一个种类时，同一角色一次 24000 token 的人格模拟会堵住它的日程，分组键要带上用途。立刻开跑那条路上上游还按不按分组排队，待核实 |
+| 立刻开跑 | 代跑任务和即时对话一样建成 `messageType: 'instant'`，落库就回 202，起跳器马上开跑（见下文「立刻开跑：上游 instant」）。用户可以在功能总览关掉「后台任务」（即 cron），而起跳器叫不醒时任务只能等 cron，所以客户端看响应里的 `dispatch`：不是 `kicked` 就撤回任务、在本机生成（交任务时页面一定开着）。代跑种类不做生成重试，失败了交给用户或下次触发重来，也就不靠 cron 捞重试 |
+| 排队分组 | 调度器的串行分组键是 `charId#kind`，代跑要再带上用途。上游的分组串行跨调用也生效：同组已有一条在跑时，起跳器那一跳领不到租约，任务原样留着等下一跳 cron。所以同一角色同一用途同时只交一份（客户端在飞登记表把关），不同用途分开排，一次 24000 token 的人格模拟就堵不住日程 |
 | 消息内容类型 | `KindFirePlan` 的 `content` 现在只收纯文本，见面这类带图的入口要扩成数组 |
 | 不做的 | 不改 D1 表结构，不给 `message_type` 加枚举值，不加任务生命周期 hook |
 
@@ -80,10 +80,65 @@
 | 在飞登记表 | 本地持久化，关掉重开还在。每条记：用途、角色、交出时间、读快照的时间、落地需要的上下文 |
 | 结果分发 | `utils/amsgResults.ts` 加一个 `resultKind`，按用途派给各入口的落地函数。落地函数自己锁自己那份数据（全局分发队列 60 秒超时只放行不取消，不能当数据安全的依靠）；留一本已落地底账防重放，同一份结果会到达不止一次 |
 | 凭据 | 按这个入口实际使用的那套 API 整套上传（主 API、记忆副 API、见面独立 API、彼方独立线路等）。那套没配齐就不上云，不回落到别的 API 冒充 |
-| 参数 | 本机请求体里的温度、输出上限、思考参数，云端原样带上。即时对话已经通过 `llmExtraBody` 带思考参数，`scheduleBackgroundJob` 目前只带温度和输出上限，要补 |
+| 参数 | 本机请求体里的温度、输出上限、思考参数，云端原样带上（`scheduleBackgroundJob` 的 `extraBody` 进 `llmExtraBody`） |
 | 调用记录 | 照门牌整理那样，在「设置 → API 调用记录」里记一条云端调用，结果回来补上 usage |
 | 路由 | 2.0 总开关 + 这个功能的「云端生成」开关 + 体检接口报的 Worker 能力。想上云却转了本地的，按总纲「回退本地」那节登记、标明、留 trace |
 | 联动检查 | 每接一个入口按 `AGENTS.md`「每次改动的联动检查」过一遍，尤其是使用统计 |
+
+---
+
+## 代跑基建
+
+日程、人格模拟、梦境共用的那一套。接一个新入口只需要两处：在入口的发送口调 `trySubmitCloudGeneration`，再写一个落地函数。
+
+### 一次代跑怎么走
+
+1. 入口照原样拼好请求（`buildCharacterRequest` 的输出、温度、输出上限），调 `utils/cloudGen/submit.ts` 的 `trySubmitCloudGeneration`。
+2. 过门：这套 API 配齐 → 2.0 开着 → 这个功能的「云端生成」开着 → Worker 的 `/config-check` 报 `cloudGen` 和 `instantBackground` → 这个角色这个功能没有在飞的。Worker 问不到时先看在飞（同门牌整理）。
+3. 发请求之前先在在飞登记表记一条 running，并在 API 调用记录里挂一笔「云端生成中」。任务的 uuid 由客户端先定好，答复丢在路上时也查得到、取消得了。
+4. 交任务：输入进 `amsg:cloud-gen`，凭据进 `char:<id>/gen-<用途>` 那一行（每次覆盖，不看本机底账），任务建成 `messageType: 'instant'`。响应的 `dispatch` 不是 `kicked` 就取消任务、撤掉输入，返回 `local`。
+5. Worker（`worker/amsg/src/cloudGenFire.ts`）原样调模型，把正文、思考、结束原因存成附件，`emitResult` 送回引用和用量；完成通知开着时带客户端给的文案，关着就 `show: false`。fire 收尾时删输入；没送出成功结果的（模型报错、超时、输入不在了）补一条 `ok: false`。
+6. 结果经 `utils/amsgResults.ts` 到 `utils/cloudGen/results.ts`：查底账 → 读附件 → 拼回 `{ choices: [{ message: { content, reasoning_content }, finish_reason }], usage }` → 交给落地函数 → 登记表、底账、调用记录、埋点一起收尾。读附件或落地抛错就不销账，下次上线再来。
+
+### 文件
+
+| 文件 | 是什么 |
+|---|---|
+| `utils/amsgCloudGenJob.ts` | Worker 和浏览器共用的契约：种类、命名空间、分组键、输入和结果的形状。零浏览器依赖，进 Worker bundle |
+| `worker/amsg/src/cloudGenFire.ts` | Worker 侧 handler 和 fire 收尾 |
+| `utils/cloudGen/types.ts` | 公共类型、每个功能的名字和通知默认值、本机存储键 |
+| `utils/cloudGen/submit.ts` | 提交口 `trySubmitCloudGeneration`，返回 `cloud` / `local`（带原因）/ `busy` |
+| `utils/cloudGen/registry.ts` | 在飞登记表（`list` / `get` / `subscribe` / `dismiss`）、已落地底账、点名兜底、删角色清理 |
+| `utils/cloudGen/results.ts` | 结果落地 |
+| `utils/cloudGen/landers/` | 每个功能一个落地函数，按用途懒加载 |
+| `utils/cloudGen/settings.ts` | 每个功能的「云端生成」「完成时通知」两个开关，存在全局配置的 `cloudGen` 上 |
+| `utils/cloudGen/analytics.ts` | 埋点「云端生成」 |
+
+### 规则和理由
+
+| 规则 | 理由 |
+|---|---|
+| 同一角色同一功能同时只许一份在飞，第二次返回 `busy` | 上游分组串行跨调用也生效，第二份会被租约挡下、等 cron；两份结果先后落地也会互相盖 |
+| 分组键 `charId#cloud-gen#用途` | 不同功能分开排，一次 24000 token 的人格模拟挡不住日程 |
+| 代跑不做生成重试，失败当场送回 | 客户端有一条 running 在等，不靠 cron 捞重试；cron 可能被用户关着 |
+| `dispatch` 不是 `kicked` 就转本机 | 交任务时页面一定开着，本机生成是诚实的退路；留着它只能等 cron |
+| 结果一律走附件 | 人格模拟一份就超过推送 3993 字节的上限，一条路比按大小分两条好维护 |
+| 输入用独立命名空间 | beforeFire 每次都要整个命名空间读出来解密，代跑输入是整份上下文，跟门牌整理挤在一起会拖慢每一次门牌整理 |
+| 凭据行按用途分开、每次覆盖 | 各功能用的 API 不同（人格模拟用查手机独立 API），`chat` 那一行是带思考后缀的对话 API，不能借用；本机底账靠不住 |
+| 登记表在请求前写、确定失败才撤 | 请求到了答复丢了的那种，登记是唯一的痕迹；这时转本机就是同一件事做两遍 |
+| running 超过 20 分钟去问任务状态，行没了或失败就标 failed；记录最多留一天 | 结果丢了的那份不能一直挡着这个功能 |
+| 登记表和底账不进备份、不随迁入为新用户带走 | 描述的是这台设备上在飞的任务 |
+
+### 给落地函数的约定
+
+- 结果会到达不止一次，重放由底账挡住；全局分发队列超时只放行不取消，落地函数自己锁自己那份数据。
+- 结果晚到时现场可能变了，由落地函数判断还要不要：要的返回 `landed`，不要的返回 `discarded`（登记表里那条随之删掉）。结果到了但不合格（截断、格式不对）返回 `{ failed }`，跟云端报失败、附件取不回、超时点名走同一个失败收尾：登记表标 failed、调 `onFailed`、埋点记失败。日程的失败记录留到下次交任务顶掉或过期，自动生成的 30 分钟退避靠它撑过刷新。
+- 登记表里查不到的结果（别的设备交的、本机存储被清过）默认直接销账；落地函数声明 `acceptsOrphanResults` 才会收到，这时 `record` 为 null。
+- 结果落地前要确认角色还在。
+
+### 与本机请求一致
+
+消息和模型名原样。本机 fetch 出口做的两项改写（Claude 温度封顶到 1、弃用采样参数的模型摘掉温度）提交时照做一遍，图片令牌同样还原；Anthropic 原生协议由 Worker 的出口转换。仍然不同的两处（云端非流式、单次模型调用最长 5 分钟）登记在总纲的有意差异表里，其中 5 分钟那条是暂时登记，见「待定」。
 
 ---
 
@@ -92,7 +147,7 @@
 只在这次确实交给云端时提示；没开 2.0、或这次在本机生成的，保持原样。
 
 - **什么时候出现**：Worker 确认收到之后。拼请求、上传的那几秒里切走仍然会断，所以不能一点按钮就亮。
-- **顶部小条**：写「云端生成 · 功能名」，生成期间一直在，几个任务同时跑时合并显示。带上功能名，用户才知道是哪件事、关的是哪个功能；日程这种进聊天自动触发的尤其需要。样式沿用人格模拟的顶部胶囊（`components/os/PersonaSimIndicator.tsx`），挂在 `PhoneShell` 上，不放状态栏：约三成设备隐藏了状态栏，单独一个云朵图标没有说明也看不懂。
+- **顶部小条**：写「云端生成 · 功能名」，贴着安全区下方弹出，停 3 秒往上收起，上滑可提前收起；只收这一次，下一份任务照样弹。几个任务同时跑时合并显示。带上功能名，用户才知道是哪件事、关的是哪个功能；日程这种进聊天自动触发的尤其需要。样式沿用人格模拟的顶部胶囊（`components/os/PersonaSimIndicator.tsx`），挂在 `PhoneShell` 上，不放状态栏：约三成设备隐藏了状态栏，单独一个云朵图标没有说明也看不懂。
 - **点开是说明页**：
 
   > 这次请求交给了你的主动消息 2.0 后台，在云端生成。现在可以暂时退出应用，生成不会中断。生成完毕会弹出消息通知。
@@ -129,6 +184,7 @@
 
 - **日程**：结果回来时这个角色这一天已经有日程就丢弃，用户手动重新生成、换风格这类强制生成的除外。家园位置要对照当时的 `char.home3D.rooms`，串门申请走 `submitScheduleHomeVisits`，落地后照原样标记云端状态需要同步。现在的并发闸是 `Chat.tsx` 里一个所有角色共用的 React 标记，切角色时第二个角色直接跳过，改成在飞登记表之后按角色判断。
 - **人格模拟**：剧本必须以 `end` 收尾才算完整，解析规则不变，成功后写入 `phoneState.simLogs`。
+- **梦境**：梦要看完才写进 `dreamLogs`，所以云端结果先放进「还没看的梦」（`utils/cloudGen/pending.ts`，按角色各一份，刷新后还在），打开这个角色的梦境时取走、只播一次。没通过校验的按失败收尾，打开时走原来的报错界面。
 
 ### 第二批：用得多、用户在等
 
@@ -193,33 +249,18 @@
 
 ---
 
-## 下游起跳器的拆除
+## 立刻开跑：上游 instant
 
-即时对话现在建的是一条「马上到期」的普通任务（`messageType: 'auto'` + `immediate: true`），再叫醒 `InstantTickDO`，由它的 alarm 调上游 `runTask(uuid)` 单独跑这一条；每分钟的 cron 兜底。`metadata.amsgMode: 'instant'` 只是给推送分类的标签。上游自己的 `instant` 类型是「在建任务的那次请求里当场生成并投递」，生成期间请求必须连着，所以即时对话没有用它。
+即时对话和后台任务（门牌整理、代跑）都建成 `messageType: 'instant'` 的任务。上游 `POST /schedule-message` 落库就回 202，响应里的 `dispatch` 说明起跳器叫没叫醒：`kicked` 是已经开跑，`not_configured`（没有绑定）和 `kick_failed`（叫醒失败）都要等下一跳 cron。生成跑在上游自带的 Durable Object 起跳器的 alarm 里，一条任务一个实例，单次 15 分钟墙钟；它和 cron 走同一条投递链（占位、租约心跳、退避、`onBeforeFire` / `onLLMOutput`、收件箱），两边抢同一份租约，同一条只发一次。`supersedesUuid`、按任务关掉生成重试（`maxGenerationRetries` 按 metadata 判）都照常生效。
 
-上游 `instant` 类型修好后，代跑和即时对话都切到它，下游这套拆掉。上游的实现要满足：
-
-1. 生成不挂在建任务的那次请求上，客户端交完就能走。CF 上满足这一点的只有 DO alarm、Cron Trigger、Queue 三种入口。
-2. 单次至少能跑 600 秒（即时对话现在的总超时）。
-3. 照常走 `onBeforeFire` / `onLLMOutput`，按种类分派的注册表挂在这两个钩子上。
-4. 保留 `supersedesUuid`（连发两条合并成一次回），失败不自动重试。
-5. 同一条任务不会被 cron 和立刻执行各跑一遍。
-
-要拆的地方：
-
-| 位置 | 内容 |
+| 位置 | 做什么 |
 |---|---|
-| `worker/amsg/src/index.ts` | `InstantTickDO`，体检接口报的 `instantTick` |
-| `worker/amsg/src/instantChat.ts` | 叫醒 DO；没绑定时回 503 提示更新 |
-| `worker/amsg/wrangler.toml`、`utils/cfProvision.ts` | DO 绑定与迁移声明（后者是一键部署） |
-| `worker/amsg/src/autoUpdate.ts`、`selfUpdate.ts` | 绑定缺失时重新上传 |
-| `utils/activeMsgClient.ts`、`utils/amsgRedeployGuard.ts` | 前端靠这个绑定判断即时对话能不能跑 |
-| `docs/amsg2-overview.md`、`plans/amsg2-instant-chat*.md` | 文档 |
+| `worker/amsg/src/index.ts` | 工厂传 `instantTickBinding: 'INSTANT_TICK'`，把上游的 `InstantTick` 以 `InstantTickDO` 这个名字导出 |
+| `worker/amsg/src/instantChat.ts` | 不自己叫醒，读上游的 `dispatch`：`not_configured` 回 503 提示更新 Worker，`kick_failed` 照常 202、等 cron |
+| `worker/amsg/wrangler.toml`、`utils/cfProvision.ts`、`autoUpdate.ts`、`selfUpdate.ts` | 绑定名和类名不变，配置、迁移、「绑定缺失时重新上传」都照旧 |
+| `utils/activeMsgClient.ts`、`utils/amsgRedeployGuard.ts` | 照旧按体检接口的 `instantTick` 判断这台 Worker 能不能立刻开跑 |
 
-**拆的时候最容易翻车的一处**：自动更新第一次跑的是旧代码，旧代码上传新包时仍会带上 `INSTANT_TICK → InstantTickDO` 绑定。新包里没有这个类，上传就会失败，所有存量用户的自动更新都会卡住。两种拆法：
-
-- 分两版：第一版保留一个空的 `InstantTickDO`，同时让更新代码不再带这个绑定；所有人跑上新更新代码之后，第二版再带 `deleted_classes` 迁移删掉。
-- 上游的 `instant` 也用 DO 的话，下游把上游提供的类以 `InstantTickDO` 这个名字原样导出，绑定名不变，不需要任何迁移。
+**类名和绑定名为什么不能改**：自动更新第一次跑的是旧代码，旧代码上传新包时会带上 `INSTANT_TICK → InstantTickDO` 绑定。新包里没有这个类名，上传就会失败，所有存量用户的自动更新都会卡住。沿用原名之后不需要任何迁移。部署那一刻正在跑的旧实例存的键名和上游不同，那几条留给 cron 接手。
 
 ---
 
@@ -232,7 +273,7 @@
 | `kind → handler` 注册表 | `worker/amsg/src/fireKinds.ts`。分派点在聊天那四道门**之前**，所以后台任务不用传 fire_pack / tool_pack |
 | 后台任务的通用约定 | `utils/amsgTaskKinds.ts`：`metadata.amsgKind` 标种类、`amsg:job` 命名空间放一次性输入、`messageSubtype: 'job'` 让它们不出现在用户的任务清单里 |
 | 结果回程 | `ctx.emitResult` → 服务端收件箱 → 客户端上线补收 → `utils/amsgResults.ts` 按 `resultKind` 派活。门牌的结果带 `notification: { show: false }`，只落账本不发推送；定时主动消息到点没发时回的 `fire-skipped` 也走这条路 |
-| `clientStateTtl` | `amsg:job` 保留 3 天，独立即时输入 `amsg:instant-input` 保留 7 天，不可变附件 `amsg:attachments` 保留 30 天，诊断记录按自身期限清理。角色状态命名空间不配 TTL |
+| `clientStateTtl` | `amsg:job` 和代跑输入 `amsg:cloud-gen` 保留 3 天，独立即时输入 `amsg:instant-input` 保留 7 天，不可变附件 `amsg:attachments` 保留 30 天，诊断记录按自身期限清理。角色状态命名空间不配 TTL |
 | 门牌整理 | 提示词/解析/合并在零依赖叶子 `utils/memoryPalace/roomPlateCore.ts`，浏览器和 worker 共用；云端那条路在 `roomPlateCloud.ts`，worker 侧在 `worker/amsg/src/plateFire.ts` |
 | 凭据 | credRefs 有 `memory` 一档（记忆宫殿副 API）。没配副 API 就不上云，不回落到主 API |
 
@@ -246,7 +287,7 @@
 | 护住新条目（`mergeCloudPlateEntries`） | 合并语义是「没被重新输出的条目淘汰」，而快照之后新增的条目 LLM 压根没见过。照原样合并就是把它们静默抹掉。它们也有专门的位子：整理结果占满上限时，先裁结果再塞新条目（一半封顶），不能整批扔掉——来源节点已经打过 `digestedAt`，扔了就是永久丢 |
 | 护住本地编辑（`keepLocalEditsOverStaleRewrites`） | 门牌面板是人工纠错的口子。用户在等结果这几分钟里改对的那条，判据是「`updatedAt` 晚于**读快照那一刻**」——在飞记号里存的就是这个时刻，不是提交时刻。从建出来就没被改过的条目不算，否则保底并入的粗糙候选会挡住整理对它们的改写 |
 
-同一个角色**同时只许一份整理在飞**（`roomPlateCloud` 的在飞记号，localStorage，30 分钟超时放行）。两份先后落地就是拿两份旧快照互相盖，还白烧一次 API。这时候不退回本地跑——本地那一遍同样会跟在飞那份撞车，所以判定是三态：交得出去 / 退回本地 / 这轮跳过（只做送达保证）。`plateCloudGate` 里三道门的顺序有讲究：「这台 worker 认不认识后台任务」排在「有没有在飞的」前面（路断了就该退回本地干活），但探测**问不到**时反过来先看在飞——网络抖一下不等于路断，那时候退本地就是跟云端那份撞车。用户在功能总览关掉「后台任务」（cron）也算路断：后台任务只靠 cron 捞，交上去会一直躺着，恢复时晚到一小时以上的还会作废，所以闸门每轮现问 Worker 的定时触发状态（`GET /cron-trigger`），明确关着就退回本地，有在飞的也一样；问不到不算关着。
+同一个角色**同时只许一份整理在飞**（`roomPlateCloud` 的在飞记号，localStorage，30 分钟超时放行）。两份先后落地就是拿两份旧快照互相盖，还白烧一次 API。这时候不退回本地跑——本地那一遍同样会跟在飞那份撞车，所以判定是三态：交得出去 / 退回本地 / 这轮跳过（只做送达保证）。`plateCloudGate` 里三道门的顺序有讲究：「这台 worker 认不认识后台任务」排在「有没有在飞的」前面（路断了就该退回本地干活），但探测**问不到**时反过来先看在飞——网络抖一下不等于路断，那时候退本地就是跟云端那份撞车。用户在功能总览关掉「后台任务」（cron）也算路断：起跳器能让任务马上开跑，但失败后的重试、被同组任务挡下的那一跳都只靠 cron 捞，cron 关着就会一直躺着，恢复时晚到一小时以上的还会作废，所以闸门每轮现问 Worker 的定时触发状态（`GET /cron-trigger`），明确关着就退回本地，有在飞的也一样；问不到不算关着。
 
 **快照时间随结果一起回来**：在飞记号只管 30 分钟，结果却允许晚到一周——下一轮整理开始时 `plateCloudGate` 会清掉过期的旧记号，之后的提交换成新 job，而旧结果仍可能落地。所以客户端把 `snapshotAt`（读取快照的绝对时间戳）放进 job，Worker 解析后原样带回结果。落地时同 job 的本地记号还在就用记号上的时间，否则用结果带回的时间；两处都没有时间时按「谁都可能被改过」保守保护，不拿另一 job 的时间或结果生成时间代替。
 
@@ -269,17 +310,14 @@
 
 | 问题 | 位置 |
 |---|---|
-| 日程生成失败没有退避，一直不成功就每次进聊天都重跑、每次扣费 | `apps/Chat.tsx:1243` |
-| 切换日程风格后重新生成的那条路没有标记云端状态需要同步，影响未核实 | `apps/Chat.tsx:2324` |
 | 都市人生遇到网络错误会手动重试 2 次，绕过了「聊天请求不自动重试」 | `apps/LifeSimApp.tsx:84` |
 | 自习室结课辅导日记是裸 `.then()`，失败静默丢掉 | `apps/StudyApp.tsx:932` |
 | API 连通性测试只测浏览器直连。开了 2.0 之后真实请求从 Worker 发出，测过了不代表能用，测挂了也不代表不能用。改成按当前路由测对应路径，或两条都测、分别显示 | `apps/Settings.tsx:2739` |
 
 ## 待定
 
+- 代跑单次模型调用最长 5 分钟：上限写死在上游 `agentic-fire.js`（`Math.min(300_000, …)`），即时对话同样受它约束。人格模拟一次 24000 token，慢模型或带思考的模型可能撞线。待上游核实能不能放宽（按次由 `onBeforeFire` 返回，还是整体调高），定下来后改总纲那条暂时登记。
 - 私聊即时对话第一次交给云端时，要不要也显示一次顶部小条。现在私聊只靠「发送中」消失来暗示可以离开。
-- 上游 `instant` 类型修好后的具体形态，决定下游起跳器怎么拆。
-- 立刻开跑那条路上，上游还按不按 `serializeBy` 分组排队。
 
 ---
 
@@ -328,7 +366,7 @@
 - 加自己的 D1 表 / 列 / 索引——`initSchema` 不碰宿主的表，`getSchemaVersion` 只查缺不查多
 - 存任意业务数据——`readState` / `writeState`（per-user、自动加密、自动分块）
 - 推自定义（非聊天）消息——`pushPayloads` 里的字段原样透传，`messageSubtype` 是自由字符串
-- 定义自己的任务种类——`messageType:'auto'` + `metadata.amsgKind`，在 `onBeforeFire` 分派。调度器（cron 每分钟 + 租约 + 心跳 + 分组串行 + 重试退避 + `tzId` 感知的 daily/weekly）照常工作，它不关心任务在语义上是不是聊天
+- 定义自己的任务种类——`metadata.amsgKind`，在 `onBeforeFire` 分派。要马上跑的建成 `messageType:'instant'`（落库回 202，起跳器开跑），到点跑的用 `'auto'`。调度器（cron 每分钟 + 租约 + 心跳 + 分组串行 + 重试退避 + `tzId` 感知的 daily/weekly）照常工作，它不关心任务在语义上是不是聊天
 - 单独跑某一条任务——`upstream.runTask(uuid)`，到期且不在退避窗口里就交给和 cron 同一个 `deliverTasks`，任务种类分派照常生效
 - 单次 fire 超 240s——`onBeforeFire` 返回 `{totalTimeoutMs}` 按次放宽
 
