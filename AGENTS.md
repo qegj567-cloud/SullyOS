@@ -57,7 +57,7 @@
 | **3D 小屋 · 家具素材与交互** | [`docs/room3d-furniture-assets.md`](./docs/room3d-furniture-assets.md)、[`docs/room3d-seating-assets.md`](./docs/room3d-seating-assets.md)、[`docs/room3d.md`](./docs/room3d.md) | 导入 GLB / 其他家具、改配色/优化/坐位/浇水前必读；清理图片贴图，自行上色，统一项目木色，拆分桌上摆件并验收 chibi 空间 |
 | **角色自定义时区** | [`docs/character-timezone.md`](./docs/character-timezone.md) | **写任何跟时间有关的代码前先扫一眼**：prompt 里的「现在是」、角色作息/夜间判断、日期 key、界面上的钟。分清「角色那边几点」和「用户自己的时间」，别自己手搓时差；关闭聊天时间感知默认停用主动消息 2.0（需显式确认才放行）。文末列了还没接时区的几处（主动消息 + 几块界面上的钟），**正式发版前记得过一遍** |
 | **通用 MCP 工具服务器** | [`docs/mcp-client.md`](./docs/mcp-client.md)（开发者）、[`docs/mcp-user-guide.md`](./docs/mcp-user-guide.md)（用户教程，设置「?」弹窗跳转的就是它，改接入行为要同步） | 改用户自配 MCP 接入（设置板块、握手/session、工具循环、`?target=` 代理约定、worker/mcp-proxy）或排查「工具连不上/角色不调工具」前必读；主动消息 2.0 的后台 MCP 路径（配置上云 / fire 时注入 / worker 直连执行）也在这份 |
-| **主动消息 2.0（amsg2）** | [`docs/amsg2-overview.md`](./docs/amsg2-overview.md) | 改即时对话、定时主动消息、后台任务、频率上限、离开后消息、见面离开提醒、凭据上云、云端数据、救援、中转或设置页前必读；先读总纲里的目标与红线，再从文末导航进子文档。云端与本地生成只允许登记过的差异，其余一律按 bug 处理 |
+| **主动消息 2.0（amsg2）** | [`docs/amsg2-overview.md`](./docs/amsg2-overview.md) | 改即时对话、定时主动消息、云端生成与后台整理、频率上限、离开后消息、见面离开提醒、凭据上云、云端数据、救援、中转或设置页前必读；先读总纲里的目标与红线，再从文末导航进子文档。云端与本地生成只允许登记过的差异，其余一律按 bug 处理 |
 | **使用统计** | [`docs/analytics.md`](./docs/analytics.md) | **加任何埋点前必读**。收什么/不收什么的边界、事件名与属性的规矩（属性只能是固定枚举）、构建时门禁与开关、完整事件清单。想加「某功能有多少人开了」看「加新埋点的规矩」第 5 条，别在配置页现场发 |
 | **不可逆操作与二次确认** | [`docs/destructive-confirmations.md`](./docs/destructive-confirmations.md) | 改删除、清空、重置、覆盖或 AI 重生成按钮前必读；禁用原生 `confirm()`，统一用 `useConfirmDialog` / `<BeautyConfirmDialog>` / 行内两步，含高价值渔获阈值、单击归档例外与确认后再埋点规矩 |
 | **二改 / 加 App / 数据流 / 后端 Worker** | [`README.md`](./README.md) 「给想二改的人」一节 | 新增 App、build badge、sfworker 代理替换、开源协议 |

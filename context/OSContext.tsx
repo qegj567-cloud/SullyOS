@@ -76,6 +76,7 @@ import { rewriteStaleWorkerUrl } from '../utils/proxyWorker';
 import {
   ApplicationErrorReport,
   buildConsoleErrorSystemLog,
+  describeConsoleErrorArgs,
   buildFetchFailureSystemLog,
   buildHttpErrorSystemLog,
   classifyFetchFailure,
@@ -1509,7 +1510,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
       const originalConsoleError = console.error;
       console.error = (...args) => {
-          const msg = args.map(a => (a instanceof Error ? a.message : String(a))).join(' ');
+          const { message: msg, stacks } = describeConsoleErrorArgs(args);
           // MediaPipe/TFLite 把这条成功初始化信息写到了 stderr，浏览器因而走
           // console.error；改回 info，避免系统日志把“CPU 加速创建成功”报成红色错误。
           if (isBenignApplicationConsoleMessage(msg)) {
@@ -1517,16 +1518,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               return;
           }
           originalConsoleError(...args);
-          // detail 只有真拿到堆栈才用堆栈，否则回退完整 msg。
-          // 旧写法 `args.map(a => a instanceof Error ? a.stack : '').join('\n')`
-          // 对「多个非 Error 参数」会产出 "\n"（truthy），把回退短路掉——
-          // 日志面板里只剩被 100 字截断的 message（排查 Embedding 400 这类
-          // 长响应时，关键的服务商完整响应体全丢，detail 只有一个换行符）。
-          const stacks = args
-              .filter((a): a is Error => a instanceof Error)
-              .map(a => a.stack || '')
-              .filter(Boolean)
-              .join('\n');
+          // detail 只有真拿到堆栈才用堆栈，否则回退完整 msg（stacks 为空串时）。
           if (msg.includes('Warning:')) return;
           const caller = captureCallerHint();
           const ambient = getApiCallAmbientContext();

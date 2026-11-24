@@ -201,7 +201,7 @@ export const buildPlateCredRow = (charId: string, lightLLM: PlateLightLLM | null
 export type PlateCloudGate = 'submit' | 'local' | 'skip';
 
 /**
- * 这一轮该不该交云端：副 API 配齐 + 这台 worker 认识后台任务 + 没有另一份还在飞。
+ * 这一轮该不该交云端：副 API 配齐 + 这台 worker 认识后台任务 + 后台任务（cron）没暂停 + 没有另一份还在飞。
  *
  * 三道门的顺序是这个函数最容易改错的地方，两头都有坑：
  *
@@ -235,6 +235,15 @@ export const plateCloudGate = async (args: {
   const support = await ActiveMsgClient.probeBackgroundJobSupportDetailed();
   if (support === 'unsupported') {
     console.log(`${HEADER} 这台 Worker 的代码还不认识后台任务，这轮在本地整理`);
+    return 'local';
+  }
+
+  // 「后台任务」开关关着（Worker 的 cron 被摘掉）时，后台任务只靠 cron 捞，交上去会一直躺着，
+  // 恢复时晚到一小时以上的还会作废。这也是路断了，排在在飞那道门前面。只认明确答复：
+  // 问不到（网络、旧 Worker、没配 CF_API_TOKEN）不算关着，照常往下判。
+  const cron = await ActiveMsgClient.getCronTriggerState({ timeoutMs: 3_000 });
+  if (cron?.supported === true && cron.enabled === false) {
+    console.log(`${HEADER} 后台任务（定时触发）暂停着，交上去也不会跑，这轮在本地整理`);
     return 'local';
   }
 

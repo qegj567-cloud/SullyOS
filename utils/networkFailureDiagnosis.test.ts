@@ -14,6 +14,7 @@ import {
     NETWORK_SELF_CHECK_STEPS,
     buildFetchFailureDetail,
     classifyFetchFailure,
+    describeConsoleErrorArgs,
     describeReachabilityProbe,
     parseTargetUrl,
     probeOriginReachability,
@@ -489,5 +490,28 @@ describe('parseTargetUrl / 自查清单', () => {
     it('自查清单第一步就是「换节点 / 关梯子直连」', () => {
         expect(NETWORK_SELF_CHECK_STEPS.length).toBeGreaterThanOrEqual(4);
         expect(NETWORK_SELF_CHECK_STEPS[0]).toContain('梯子');
+    });
+});
+
+describe('describeConsoleErrorArgs', () => {
+    it('对象参数里的报错展开成类型 + 原文，其余字段不外露', () => {
+        const error = new TypeError('Failed to fetch dynamically imported module');
+        const { message, stacks } = describeConsoleErrorArgs([
+            '[ActiveMsg] 处理 inbox message 反复抛错，这条跳过',
+            { messageId: 'msg-聊天原文', attempts: 3, error },
+        ]);
+        expect(message).toBe('[ActiveMsg] 处理 inbox message 反复抛错，这条跳过 TypeError: Failed to fetch dynamically imported module');
+        expect(message).not.toContain('msg-聊天原文');
+        expect(stacks).toBe(error.stack);
+    });
+
+    it('按形状认 DOMException 这类不一定是 Error 实例的报错', () => {
+        const domLike = { name: 'QuotaExceededError', message: 'The quota has been exceeded.' };
+        expect(describeConsoleErrorArgs(['写入失败', { error: domLike }]).message)
+            .toBe('写入失败 QuotaExceededError: The quota has been exceeded.');
+    });
+
+    it('直接传 Error 与不含报错的对象保持原样', () => {
+        expect(describeConsoleErrorArgs(['x', new Error('boom'), { a: 1 }]).message).toBe('x boom [object Object]');
     });
 });

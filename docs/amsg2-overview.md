@@ -131,7 +131,7 @@
 | 从零部署 | [`amsg2-setup-walkthrough.md`](./amsg2-setup-walkthrough.md) | 写给用户的部署手册；改部署流程或界面路径时同步 |
 | 设置页的引导与面板 | [`amsg2-settings-guide.md`](./amsg2-settings-guide.md) | 改全局设置的排版、总开关、新增板块或引导文案前 |
 | 即时对话 | [`../plans/amsg2-instant-chat.md`](../plans/amsg2-instant-chat.md)（设计与取舍）、[`../plans/amsg2-instant-chat-contract.md`](../plans/amsg2-instant-chat-contract.md)（端点、信封、fire_pack 契约） | 改 `POST /instant-chat`、`utils/amsgInstantChat.ts`、上行压缩、收件箱补收、「正在输入」超时前 |
-| 后台任务 | [`../plans/amsg2-expansion.md`](../plans/amsg2-expansion.md) | 改「页面关着也能跑完」的后台活儿前，以及判断某个调用点该不该搬上云时 |
+| 云端生成与后台整理 | [`../plans/amsg2-expansion.md`](../plans/amsg2-expansion.md) | 把某个调用点搬上云、改「云端生成」小条与按功能开关、改「页面关着也能跑完」的后台活儿，或拆即时对话的起跳器前 |
 | 频率与额度 | [`amsg2-pacing-limits.md`](./amsg2-pacing-limits.md) | 改角色能排什么、各项上限、给角色看的「用户给你定的规矩」前 |
 | 离开后消息 | [`away-message.md`](./away-message.md) | 改「用户多久没说话角色就来找」前 |
 | 见面挂起与离开提醒 | [`date-leave-reminder.md`](./date-leave-reminder.md) | 改见面挂起恢复、离开提醒或它的云端任务前 |
