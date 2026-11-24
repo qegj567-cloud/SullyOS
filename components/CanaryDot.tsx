@@ -8,7 +8,8 @@ import { CanaryArrival } from './CanaryBird';
  * 刚加入后的第一次启动，先放一遍小金丝雀飞进来落地、缩成黄点的动画。
  */
 // 模块加载时判断一次：StrictMode 下 useState 初始化会跑两遍，放里面第二遍会读到「已欢迎」。
-const WELCOME_ON_BOOT = RELEASE_CHANNEL === 'canary' && takeCanaryWelcome();
+// 更新日志也看它：这次落地动画放了，日志就不叠上去。
+export const WELCOME_ON_BOOT = RELEASE_CHANNEL === 'canary' && takeCanaryWelcome();
 
 const CanaryDot: React.FC = () => {
     const [hidden, setHidden] = useState(readCanaryDotHidden);

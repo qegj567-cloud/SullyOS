@@ -1,0 +1,19 @@
+/* canary 更新日志：沿用更新卡片的金黄主题（docs/canary-channel.md「金黄主题」） */
+.canary-changelog { box-sizing: border-box; width: min(360px, calc(100vw - 32px)); max-height: calc(var(--visual-viewport-height, 100dvh) - var(--safe-top, 0px) - var(--safe-bottom, 0px) - 64px); padding: 20px 20px 18px; border: 1px solid #F5E2A0; border-radius: 22px; background: linear-gradient(180deg, #FFFDF5 0%, #FFFFFF 70%); color: #5C3D0B; box-shadow: 0 16px 56px rgba(161, 98, 7, .22); font: 13px/1.6 system-ui, sans-serif; overflow: visible; }
+.canary-changelog[open] { display: flex; flex-direction: column; animation: canary-changelog-in .22s ease-out; }
+.canary-changelog::backdrop { background: rgba(66, 32, 6, .28); backdrop-filter: blur(3px); }
+/* 小金丝雀站在卡片上沿，和更新卡片同一个位置 */
+.canary-changelog-bird { position: absolute; top: -27px; right: 26px; }
+.canary-changelog-eyebrow { margin: 0; color: #CA8A04; font-size: 11px; font-weight: 600; letter-spacing: 1.6px; text-transform: uppercase; }
+.canary-changelog h2 { margin: 2px 0 10px; font-size: 17px; line-height: 1.4; }
+.canary-changelog-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin: 0 -4px; padding: 0 4px; }
+.canary-changelog section + section { margin-top: 12px; padding-top: 12px; border-top: 1px dashed #F5E2A0; }
+.canary-changelog h3 { margin: 0 0 4px; color: #A16207; font-size: 12px; font-weight: 600; }
+.canary-changelog ul { margin: 0; padding-left: 18px; list-style: disc; }
+.canary-changelog li { color: #6B4A16; }
+.canary-changelog li::marker { color: #EAB308; }
+.canary-changelog li + li { margin-top: 4px; }
+.canary-changelog button { flex-shrink: 0; align-self: stretch; margin-top: 16px; padding: 10px 14px; border: 0; border-radius: 12px; background: #FACC15; color: #422006; font: inherit; font-weight: 600; cursor: pointer; }
+.canary-changelog button:focus-visible { outline: 2px solid #CA8A04; outline-offset: 3px; }
+@keyframes canary-changelog-in { from { opacity: 0; transform: translateY(8px); } }
+@media (prefers-reduced-motion: reduce) { .canary-changelog[open] { animation: none; } }
