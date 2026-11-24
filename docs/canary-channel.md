@@ -11,7 +11,7 @@
 | Worker 成品包 | 部署仓库 `main` 分支 | 部署仓库 `canary` 分支 |
 | 谁在用 | 所有人 | 解锁调试面板后手动加入的人 |
 
-发版流程：dev 上某一版可以给志愿者试了，就把 `canary` 分支快进到那个提交（或开 PR dev→canary）。快进之前先在 `utils/canaryChangelog.ts` 里补当天的更新日志（见下文「更新日志」）。push 之后，CI 先把 Worker 包同步到部署仓库的 `canary` 分支，再部署 canary 前端。确认没问题后照常走 dev→master。合进 dev 不会自动发到 canary，不快进 `canary` 分支，线上 canary 就一直是上一次发布的构建。
+发版流程：dev 上某一版可以给志愿者试了，就把 `canary` 分支快进到那个提交（或开 PR dev→canary）。快进之前先在 `utils/canaryChangelog.ts` 里补当天的更新日志（见下文「更新日志」），并确认这批新功能的效果埋点已经按 [`analytics.md`](./analytics.md)「canary 功能的效果埋点」补齐。push 之后，CI 先把 Worker 包同步到部署仓库的 `canary` 分支，再部署 canary 前端。确认没问题后照常走 dev→master。合进 dev 不会自动发到 canary，不快进 `canary` 分支，线上 canary 就一直是上一次发布的构建。
 
 ```bash
 git fetch origin && git push origin origin/dev:refs/heads/canary
@@ -166,6 +166,6 @@ canary 用独立的静态站 Worker，不和正式站一起部署：canary 部�
 
 ## 联动
 
-- **使用统计**：canary 构建的统计标签是 `v3.x-canary`（`utils/analytics.ts` 的 `analyticsTag`），所有事件、快照和性能数据都能按通道切开，不额外占快照属性；事件「加入 canary」「退出 canary」「canary 自动退回」。见 [`analytics.md`](./analytics.md)。
+- **使用统计**：canary 构建的统计标签是 `v3.x-canary`（`utils/analytics.ts` 的 `analyticsTag`），所有事件、快照和性能数据都能按通道切开，不额外占快照属性；事件「加入 canary」「退出 canary」「canary 自动退回」。进 canary 的新功能要配哪些效果埋点、canary 的数据怎么看，见 [`analytics.md`](./analytics.md)「canary 功能的效果埋点」。
 - **备份**：通道选择和启动计数是这台设备的设置，不进备份；Worker 的通道在云端诊断表里，也不进备份。
 - **Sully-11 手册**：「设置」一区有加入、退出、打不开时怎么办的说明。
