@@ -628,6 +628,9 @@ const REPLY_IN_FLIGHT_DEFER_MS = 45_000;
 const AWAY_DUE_TOLERANCE_MS = 60_000;
 /** 上游 defer 的上限是 24 小时。 */
 const AWAY_MAX_DEFER_MS = 24 * 60 * 60_000;
+// 离开后消息和见面离开提醒的推迟都带 reschedule：发送时刻跟着人什么时候走开而定，推迟就是改期。
+// 不带的话上游把推迟当成晚到，唤醒时刻离原定时刻超过 60 分钟（STALE_AFTER_MS）就按过期作废，
+// 一场见面开一个多小时，走开后就收不到提醒。
 // 见面离开提醒的等待时长最短 1 分钟，人还在见面里时剩余时间可能只有十几秒，容差要比上面小得多。
 const DATE_LEAVE_DUE_TOLERANCE_MS = 5_000;
 
@@ -2273,7 +2276,7 @@ export const amsgHooks = {
     }
 
     // 见面离开提醒：按「见面中」租约最后一次续上的时刻算该什么时候发。人还在见面里（或刚走开）
-    // 就推迟到「最后一次见到人 + 等待时长」，不消费任务、不占重试、不留痕。租约行被私聊那边
+    // 就改期到「最后一次见到人 + 等待时长」，不消费任务、不占重试、不留痕。租约行被私聊那边
     // 盖成了聊天场景，说明走开之后已经在私聊里开过口，这次离开就结束了：按取消处理，不留回执
     // （客户端开口时会先取消它，这里兜住取消没发出去的情况）。
     if (!instant && dateLeave && presence?.charId === charId) {
@@ -2285,12 +2288,12 @@ export const amsgHooks = {
       const waitMs = Number.isFinite(dueAt) ? dueAt - ctx.now.getTime() : 0;
       if (waitMs > DATE_LEAVE_DUE_TOLERANCE_MS) {
         console.log('[amsg:defer]', { taskId: ctx.task.id, reason: 'date-leave-not-due', dueAt });
-        return { defer: { afterMs: Math.min(waitMs, AWAY_MAX_DEFER_MS) } } as const;
+        return { defer: { afterMs: Math.min(waitMs, AWAY_MAX_DEFER_MS), reschedule: true } } as const;
       }
     }
 
     // 离开后消息按「最近一次在场互动 + 等待时长」触发。客户端只在排期差得多时才去改期，
-    // 差的那点在这里补：等待时长内有过聊天、见面或通话（含此刻正在见面），就推迟到该来的时候，
+    // 差的那点在这里补：等待时长内有过聊天、见面或通话（含此刻正在见面），就改期到该来的时候，
     // 不消费任务、不占重试。
     if (!instant && away) {
       const delayMs = Number(taskMeta[AMSG_AWAY_DELAY_META]) * 60_000;
@@ -2298,7 +2301,7 @@ export const amsgHooks = {
       const waitMs = dueAt == null ? 0 : dueAt - ctx.now.getTime();
       if (waitMs > AWAY_DUE_TOLERANCE_MS) {
         console.log('[amsg:defer]', { taskId: ctx.task.id, reason: 'away-not-due', dueAt });
-        return { defer: { afterMs: Math.min(waitMs, AWAY_MAX_DEFER_MS) } } as const;
+        return { defer: { afterMs: Math.min(waitMs, AWAY_MAX_DEFER_MS), reschedule: true } } as const;
       }
     }
 

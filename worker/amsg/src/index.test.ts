@@ -778,7 +778,7 @@ describe('离开后消息（到点）', () => {
   it('对方在等待时长内说过话 → 推迟到「最后开口 + 90 分钟」，不消费、不留痕', async () => {
     const lastUser = NOW.getTime() - 30 * 60_000;
     const { ctx, writeState } = makeCtx({ metadata: awayMeta, charRows: rows(lastUser) });
-    await expect(amsgHooks.onBeforeFire(ctx)).resolves.toEqual({ defer: { afterMs: 60 * 60_000 } });
+    await expect(amsgHooks.onBeforeFire(ctx)).resolves.toEqual({ defer: { afterMs: 60 * 60_000, reschedule: true } });
     expect(writeState).not.toHaveBeenCalled();
   });
 
@@ -823,7 +823,7 @@ describe('离开后消息（到点）', () => {
         limitsRow({ minSendGapMinutes: 0 }),
       ],
     });
-    await expect(amsgHooks.onBeforeFire(ctx)).resolves.toEqual({ defer: { afterMs: 70 * 60_000 } });
+    await expect(amsgHooks.onBeforeFire(ctx)).resolves.toEqual({ defer: { afterMs: 70 * 60_000, reschedule: true } });
   });
 
   it('人正停在见面界面里（presence.scene === date）撞上到点 → 推迟到离开后，不当面弹消息', async () => {
@@ -835,7 +835,7 @@ describe('离开后消息（到点）', () => {
         { key: AMSG_CHAT_PRESENCE_KEY, value: presenceValue(activeAt, { lastUserMessageAt: null, scene: 'date' }) },
       ]),
     });
-    await expect(amsgHooks.onBeforeFire(ctx)).resolves.toEqual({ defer: { afterMs: 90 * 60_000 - 5_000 } });
+    await expect(amsgHooks.onBeforeFire(ctx)).resolves.toEqual({ defer: { afterMs: 90 * 60_000 - 5_000, reschedule: true } });
   });
 });
 
@@ -1156,13 +1156,13 @@ describe('频率与额度（到点兜底闸）', () => {
 
   it('见面离开提醒：人还在见面里 → 推迟到「最后一次见到人 + 5 分钟」，不留痕', async () => {
     const { ctx, writeState } = makeCtx({ metadata: dateLeaveMeta, charRows: rows({ presence: dateLease(NOW.getTime() - 10_000) }) });
-    await expect(amsgHooks.onBeforeFire(ctx)).resolves.toEqual({ defer: { afterMs: 5 * 60_000 - 10_000 } });
+    await expect(amsgHooks.onBeforeFire(ctx)).resolves.toEqual({ defer: { afterMs: 5 * 60_000 - 10_000, reschedule: true } });
     expect(writeState).not.toHaveBeenCalled();
   });
 
   it('见面离开提醒：走开 2 分钟（租约已过期）→ 再推 3 分钟；走开满 5 分钟 → 照发', async () => {
     const early = makeCtx({ metadata: dateLeaveMeta, charRows: rows({ presence: dateLease(NOW.getTime() - 2 * 60_000) }) });
-    await expect(amsgHooks.onBeforeFire(early.ctx)).resolves.toEqual({ defer: { afterMs: 3 * 60_000 } });
+    await expect(amsgHooks.onBeforeFire(early.ctx)).resolves.toEqual({ defer: { afterMs: 3 * 60_000, reschedule: true } });
 
     const due = makeCtx({ metadata: dateLeaveMeta, charRows: rows({ presence: dateLease(NOW.getTime() - 5 * 60_000) }) });
     fired(await amsgHooks.onBeforeFire(due.ctx));

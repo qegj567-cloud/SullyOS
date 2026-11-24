@@ -398,6 +398,7 @@ const createWorld = async (startClock: string, native = false) => {
 
   const scheduleTask = async (opts: {
     clock: string; policy?: 'expire' | 'force'; recurrence?: 'none' | 'daily'; selfScheduled?: boolean;
+    meta?: Record<string, unknown>;
   }) => {
     const clientTaskId = nodeCrypto.randomUUID();
     const firstSendTime = new Date(at(opts.clock)).toISOString();
@@ -420,6 +421,7 @@ const createWorld = async (startClock: string, native = false) => {
         amsgClientTaskId: clientTaskId, amsgExpirePolicy: policy,
         amsgTaskInstruction: TASK_HINT,
         ...(opts.selfScheduled ? { amsgSelfScheduled: true } : {}),
+        ...opts.meta,
       },
     } as any));
     const uuid: string = res?.data?.uuid ?? res?.uuid;
@@ -568,10 +570,10 @@ const createWorld = async (startClock: string, native = false) => {
   const local = {
     startedAt: 0,
     lastUserAt: 0,
-    beat: async () => {
+    beat: async (scene?: 'date') => {
       await settle(client.putClientState([{
         namespace: amsgStateNamespace(CHAR_ID), key: AMSG_CHAT_PRESENCE_KEY, updatedAt: nextStamp(),
-        value: JSON.stringify({ v: 1, charId: CHAR_ID, activeAt: Date.now(), lastUserMessageAt: local.lastUserAt }),
+        value: JSON.stringify({ v: 1, charId: CHAR_ID, activeAt: Date.now(), lastUserMessageAt: local.lastUserAt, ...(scene ? { scene } : {}) }),
       }] as any));
       ev('page', 'beat', '续在场记录');
     },
@@ -1051,5 +1053,48 @@ describe.skipIf(!sqlite)('到点时用户正在聊天（全链路模拟）', () 
     expect(w.ticks.map((t) => t.outcome)).toEqual(['stale']);
     expect(s.cost.scheduledLlmCalls).toBe(0);
     expect(s.receipt).toContain('服务中断');
+  }, TIMEOUT);
+  it('E1 见面开了一个多小时才走开：离开提醒一直推迟着，走开后照常发', async () => {
+    const w = await createWorld('07:59:00');
+    await w.uploadPack('进入见面时传一次快照');
+    // 08:00 进入见面对话，离开提醒等 5 分钟：任务排在 08:05，人一直在见面里就一路往后推。
+    const task = await w.scheduleTask({
+      clock: '08:05:00', policy: 'force',
+      meta: { amsgDateLeave: true, amsgDateLeaveDelayMinutes: 5 },
+    });
+    w.watch.auto = false;
+    const clocks = Array.from({ length: 15 }, (_, i) => {
+      const m = 5 + i * 5;
+      return `${String(8 + Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}:10`;
+    });
+    // 08:05 到 09:15 每次到点人都还在见面里（租约刚续上）。
+    for (const clock of clocks) {
+      await w.leap(clock);
+      await w.local.beat('date');
+      await w.cron(task);
+      expect(w.logs.at(-1)?.data?.reason, `${clock} 这一跳推迟的原因`).toBe('date-leave-not-due');
+      expect(w.taskRow(task)?.status, `${clock} 这一跳之后`).toBe('pending');
+    }
+    // 09:15 之后走开，租约不再续；09:20 到点该发了。
+    scheduledSays(w, '你去哪啦？');
+    await w.leap('09:20:30');
+    const tick = await w.cron(task);
+    expect(tick.outcome).toBe('sent');
+  }, TIMEOUT);
+  it('E2 离开后消息到点时人正停在见面画面里：推迟到该来的时候，不按过期作废', async () => {
+    const w = await createWorld('06:30:00');
+    // 06:35 是最后一次在场互动，离开后消息等 90 分钟，排在 08:05。
+    w.chat.push({ role: 'user', text: '我先看会儿', at: at('06:35:00') });
+    await w.uploadPack('最后一轮互动后传快照');
+    const task = await w.scheduleTask({
+      clock: '08:05:00', policy: 'force',
+      meta: { amsgAwayMessage: true, amsgAwayDelayMinutes: 90 },
+    });
+    w.watch.auto = false;
+    await w.leap('08:05:10');
+    await w.local.beat('date');
+    await w.cron(task);
+    expect(w.logs.some((l) => l.tag === '[amsg:defer]' && l.data?.reason === 'away-not-due')).toBe(true);
+    expect(w.taskRow(task)?.status).toBe('pending');
   }, TIMEOUT);
 });
