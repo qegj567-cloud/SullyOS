@@ -192,7 +192,9 @@ const REQUIRED_WORKER_FEATURES = [
 // 4.0.0-next.3 起 `messageType: 'instant'` 落库即回 202，生成交给 Durable Object 起跳器在后台跑。
 // 即时对话和后台任务都以 instant 任务交上去；旧部署会在请求里当场跑完它，所以前端只往
 // 体检报了 instantBackground 的 Worker 发，旧部署上这两样退回本机，这里提示更新。
-const REQUIRED_WORKER_VERSION = '4.0.0-next.3';
+// 4.0.0-next.5 起推迟可以带 reschedule，离开后消息和见面离开提醒推迟时改期。旧部署上推迟超过
+// 60 分钟会被当成过期作废，见面开一个多小时走开就收不到提醒。
+const REQUIRED_WORKER_VERSION = '4.0.0-next.5';
 
 /** 手动配置的图文教程，只在用户展开「我要手动配置」后出现。 */
 const MANUAL_SETUP_TUTORIAL_URL = 'https://discord.com/channels/1487742660314923100/1533520151784460449';

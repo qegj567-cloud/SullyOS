@@ -1874,7 +1874,7 @@ function pickStaleStoppedReplyKeys(rows, nowMs = Date.now(), protectKey) {
   return [...stale];
 }
 
-// ../../../../../../../Users/tntobsidian/Documents/GitHub/SullyOS/node_modules/.pnpm/@rei-standard+amsg-server@4.0.0-next.3_@neondatabase+serverless@1.1.0_pg@8.22.0/node_modules/@rei-standard/amsg-server/dist/chunk-R2CRPRKR.mjs
+// node_modules/.pnpm/@rei-standard+amsg-server@4.0.0-next.5_@neondatabase+serverless@1.1.0_pg@8.22.0/node_modules/@rei-standard/amsg-server/dist/chunk-R2CRPRKR.mjs
 var CLEANUP_BATCH_LIMIT = 100;
 var UPDATABLE_COLUMNS = /* @__PURE__ */ new Set([
   "user_id",
@@ -1894,7 +1894,7 @@ var UPDATABLE_COLUMNS = /* @__PURE__ */ new Set([
 var TASK_DELIVERY_COLUMNS = "id, user_id, uuid, encrypted_payload, message_type, next_send_at, retry_after, status, retry_count";
 var TASK_DETAIL_COLUMNS = "id, user_id, uuid, encrypted_payload, message_type, next_send_at, status, retry_count, last_error, created_at, updated_at";
 
-// ../../../../../../../Users/tntobsidian/Documents/GitHub/SullyOS/node_modules/.pnpm/@rei-standard+amsg-shared@0.5.0-next.0/node_modules/@rei-standard/amsg-shared/dist/index.mjs
+// node_modules/.pnpm/@rei-standard+amsg-shared@0.5.0-next.0/node_modules/@rei-standard/amsg-shared/dist/index.mjs
 var TEXT_ENCODER = new TextEncoder();
 var TEXT_DECODER = new TextDecoder("utf-8", { fatal: false });
 function toUint8(buf) {
@@ -3132,7 +3132,7 @@ function stringifyDecisionForError(value) {
   }
 }
 
-// ../../../../../../../Users/tntobsidian/Documents/GitHub/SullyOS/node_modules/.pnpm/@rei-standard+amsg-server@4.0.0-next.3_@neondatabase+serverless@1.1.0_pg@8.22.0/node_modules/@rei-standard/amsg-server/dist/chunk-U4XSNTUW.mjs
+// node_modules/.pnpm/@rei-standard+amsg-server@4.0.0-next.5_@neondatabase+serverless@1.1.0_pg@8.22.0/node_modules/@rei-standard/amsg-server/dist/chunk-NRKDZY72.mjs
 var DAY_MS2 = 24 * 60 * 60 * 1e3;
 var MAX_LISTED_SKIPPED_OCCURRENCES = 32;
 var MAX_ADJUST_STEPS = 32;
@@ -5425,6 +5425,8 @@ async function runFireChain({
         deferred: true,
         // 用真实时钟：这个时刻要落进 retry_after，跟数据库捞取条件里的「现在」比。
         retryAfter: new Date(Date.now() + afterMs).toISOString(),
+        // 宿主要把这次触发整个改到唤醒时刻（一次性任务才生效，见 run-tick 的 handleDeferred）。
+        reschedule: before.defer.reschedule === true,
         messagesSent: 0,
         status: "deferred",
         iterations: 0
@@ -6530,7 +6532,7 @@ async function cleanupExpiredClientState(ctx) {
     console.warn("[amsg-server] cleanupClientState \u5931\u8D25\uFF08\u5DF2\u5FFD\u7565\uFF09:", error && error.message);
   }
 }
-async function runTask(ctx, uuid) {
+async function runTask(ctx, uuid, options = {}) {
   if (typeof uuid !== "string" || !uuid.trim()) {
     throw new TypeError("runTask(ctx, uuid) requires a non-empty uuid string");
   }
@@ -6553,9 +6555,10 @@ async function runTask(ctx, uuid) {
   if (Number.isFinite(retryAfterMs) && retryAfterMs > Date.now()) {
     return { ran: false, reason: "retry_pending", retryAfter: task.retry_after };
   }
-  return { ran: true, summary: await deliverTasks(ctx, [task]) };
+  const leaseToken = typeof options?.leaseToken === "string" && options.leaseToken ? options.leaseToken : null;
+  return { ran: true, summary: await deliverTasks(ctx, [task], leaseToken) };
 }
-async function deliverTasks(ctx, tasks) {
+async function deliverTasks(ctx, tasks, fixedLeaseToken = null) {
   const db = ctx.db;
   const masterKey = ctx.masterKey;
   const claimLeaseMs = resolveClaimLeaseMs(ctx);
@@ -6901,7 +6904,7 @@ async function deliverTasks(ctx, tasks) {
     const decryptedPayload = decrypted.ok ? decrypted.payload : null;
     const userKey = decrypted.ok ? decrypted.userKey : null;
     const serializeGroup = serializeKey ? await deriveSerializeGroup(userKey, serializeKey) : null;
-    const leaseToken = supportsClaim ? globalThis.crypto.randomUUID() : null;
+    const leaseToken = supportsClaim ? fixedLeaseToken || globalThis.crypto.randomUUID() : null;
     let claimed;
     try {
       if (decrypted.ok) {
@@ -7022,17 +7025,15 @@ async function deliverTasks(ctx, tasks) {
       await settleAsStale();
       return;
     }
-    const handleDeferred = async (retryAfter2) => {
+    const handleDeferred = async (retryAfter2, reschedule) => {
       const wakeMs = Date.parse(retryAfter2);
-      if (Number.isFinite(occurrenceMs) && wakeMs - occurrenceMs > staleAfterMs) {
+      const moveOccurrence = reschedule === true && !isRecurringType(recurrenceType);
+      if (!moveOccurrence && Number.isFinite(occurrenceMs) && wakeMs - occurrenceMs > staleAfterMs) {
         await settleAsStale();
         return;
       }
       try {
-        const updated = await updateTaskWithLastError(task.id, {
-          retry_after: retryAfter2,
-          lease_until: null
-        });
+        const updated = await updateTaskWithLastError(task.id, moveOccurrence ? { next_send_at: retryAfter2, retry_after: null, lease_until: null } : { retry_after: retryAfter2, lease_until: null });
         if (rowVanished(updated)) {
           await recordLostLease(task, "cancelled_mid_delivery");
           return;
@@ -7082,7 +7083,7 @@ async function deliverTasks(ctx, tasks) {
         await recordLostLease(task, "cancelled_mid_delivery");
         return;
       }
-      await handleDeferred(sendResult.retryAfter);
+      await handleDeferred(sendResult.retryAfter, sendResult.reschedule);
       return;
     }
     if (!sendResult.success) {
@@ -9303,9 +9304,11 @@ var D1Adapter = class {
     }
     sets.push("updated_at = ?");
     values.push(now);
+    const ownLease = options?.leaseToken ? " OR lease_token = ?" : "";
     let where = `id = ? AND status = 'pending' AND next_send_at = ?
-          AND (lease_until IS NULL OR lease_until <= ?)`;
+          AND (lease_until IS NULL OR lease_until <= ?${ownLease})`;
     values.push(taskId, expected, now);
+    if (ownLease) values.push(options.leaseToken);
     if (grouped) {
       where += `
           AND NOT EXISTS (
@@ -10394,7 +10397,7 @@ function createClientStateNamespacesHandler(ctx) {
   }
   return { GET };
 }
-var SERVER_VERSION = true ? "4.0.0-next.3" : "0.0.0-dev";
+var SERVER_VERSION = true ? "4.0.0-next.5" : "0.0.0-dev";
 var SERVER_FEATURES = Object.freeze([
   "client-state",
   "client-state-chunking",
@@ -10509,6 +10512,8 @@ var SERVER_FEATURES = Object.freeze([
   // onBeforeFire 认 { defer: { afterMs } }：这次不生成，过一会儿再来问（不占重试
   // 次数）；onFireSettled 的 status 多一种 'deferred'，带 retryAfter。
   "before-fire-defer",
+  // { defer: { afterMs, reschedule: true } }：一次性任务推迟时把名义时刻一起挪到唤醒时刻。
+  "before-fire-defer-reschedule",
   "task-input",
   "client-state-key",
   "agentic-list-tasks",
@@ -11900,6 +11905,7 @@ async function ensureSchema(db) {
 }
 var INSTANT_TICK_BINDING = "AMSG_INSTANT_TICK";
 var UUID_KEY = "uuid";
+var LEASE_TOKEN_KEY = "leaseToken";
 var MAX_ALARM_RETRIES = 6;
 function isInstantTickNamespace(namespace) {
   return !!namespace && typeof namespace.get === "function" && typeof namespace.idFromName === "function";
@@ -11933,9 +11939,14 @@ function createInstantTickClass(runTask2) {
     async alarm(alarmInfo) {
       const uuid = await this.state.storage.get(UUID_KEY);
       if (!uuid) return;
+      let leaseToken = await this.state.storage.get(LEASE_TOKEN_KEY);
+      if (!leaseToken) {
+        leaseToken = globalThis.crypto.randomUUID();
+        await this.state.storage.put(LEASE_TOKEN_KEY, leaseToken);
+      }
       let result;
       try {
-        result = await runTask2(uuid, this.env);
+        result = await runTask2(uuid, this.env, { leaseToken });
       } catch (error) {
         if (alarmInfo && alarmInfo.retryCount >= MAX_ALARM_RETRIES) {
           await this.state.storage.deleteAll();
@@ -11945,6 +11956,9 @@ function createInstantTickClass(runTask2) {
       await this.state.storage.deleteAll();
       if (!result.ran && result.reason !== "not_found") {
         console.warn(`[amsg single-user] instant \u4EFB\u52A1 ${uuid} \u6CA1\u6709\u8DD1\uFF1A${result.reason}`);
+      }
+      if (result.ran && result.summary?.details?.claimSkippedTasks > 0) {
+        console.warn(`[amsg single-user] instant \u4EFB\u52A1 ${uuid} \u6CA1\u9886\u5230\u79DF\u7EA6\uFF0C\u7559\u7ED9 cron`);
       }
     }
   };
@@ -12248,7 +12262,7 @@ function createSingleUserCloudflareWorker(buildConfig, options = {}) {
     const cfg = await resolveConfig(env);
     return ensureSchema(cfg.db);
   }
-  async function runInstantTask(uuid, env) {
+  async function runInstantTask(uuid, env, options2) {
     let stage = "config";
     try {
       const cfg = await resolveConfig(env);
@@ -12261,7 +12275,7 @@ function createSingleUserCloudflareWorker(buildConfig, options = {}) {
         return { ran: false, reason: "not_configured" };
       }
       stage = "tick";
-      return await runTask(buildTickContext(cfg), uuid);
+      return await runTask(buildTickContext(cfg), uuid, options2);
     } catch (error) {
       console.error(`[amsg single-user] instant \u4EFB\u52A1 ${uuid} \u51FA\u9519:`, error && error.message);
       await reportError({ stage, error, cause: summarizeErrorCause(error, stage), path: null });
@@ -12399,7 +12413,7 @@ function extractFriendFeedReplyTags(raw, namespace = "FRIEND_FEED_REPLY") {
   return { text: text2 + raw.slice(cursor), actions };
 }
 
-// ../../../../../../../Users/tntobsidian/Documents/GitHub/SullyOS/node_modules/.pnpm/@rei-standard+amsg-instant@0.12.0-next.0/node_modules/@rei-standard/amsg-instant/dist/index.mjs
+// node_modules/.pnpm/@rei-standard+amsg-instant@0.12.0-next.0/node_modules/@rei-standard/amsg-instant/dist/index.mjs
 var MAX_REQUEST_BODY_BYTES = 32 * 1024 * 1024;
 var WEB_PUSH_MAX_BODY_BYTES2 = 4096;
 var WEB_PUSH_ENCRYPTION_OVERHEAD_BYTES2 = 16 + 4 + 1 + 65 + 1 + 16;
@@ -14601,7 +14615,7 @@ function buildScheduledPush(message, build, extraMeta, bannerBody) {
 }
 
 // utils/amsgBundleVersion.ts
-var AMSG_BUNDLE_VERSION = "2026-11-24.3";
+var AMSG_BUNDLE_VERSION = "2026-11-24.4";
 
 // worker/amsg/src/reproduction.ts
 async function writeDiagnosticStage(writeState, runId, event, fields = {}) {
@@ -21451,7 +21465,7 @@ var amsgHooks = {
       const waitMs = Number.isFinite(dueAt) ? dueAt - ctx.now.getTime() : 0;
       if (waitMs > DATE_LEAVE_DUE_TOLERANCE_MS) {
         console.log("[amsg:defer]", { taskId: ctx.task.id, reason: "date-leave-not-due", dueAt });
-        return { defer: { afterMs: Math.min(waitMs, AWAY_MAX_DEFER_MS) } };
+        return { defer: { afterMs: Math.min(waitMs, AWAY_MAX_DEFER_MS), reschedule: true } };
       }
     }
     if (!instant && away) {
@@ -21460,7 +21474,7 @@ var amsgHooks = {
       const waitMs = dueAt == null ? 0 : dueAt - ctx.now.getTime();
       if (waitMs > AWAY_DUE_TOLERANCE_MS) {
         console.log("[amsg:defer]", { taskId: ctx.task.id, reason: "away-not-due", dueAt });
-        return { defer: { afterMs: Math.min(waitMs, AWAY_MAX_DEFER_MS) } };
+        return { defer: { afterMs: Math.min(waitMs, AWAY_MAX_DEFER_MS), reschedule: true } };
       }
     }
     if (!instant && typeof taskMeta.amsgTaskInstruction !== "string") {
