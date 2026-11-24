@@ -89,7 +89,7 @@ describe('本轮校准', () => {
         const originals = await loadRevisionTurn(char.id);
         expect(originals).toHaveLength(2);
         await acceptRevision({originals, mode:'reroll', bubbles:[{type:'text',content:'新版'}]});
-        expect((await loadRevisionTurn(char.id))[0].metadata.calibratedDeliveryIds).toEqual(receipts);
+        expect(await DB.findPersistedActiveMessageIds(char.id, receipts)).toEqual(new Set(receipts));
     });
     it('clears pure prompt leakage and still acknowledges a replayed cloud chunk', async () => {
         const messageId = 'msg_task_2@103_hook_0';

@@ -16,7 +16,7 @@ import { toMountedWorldbook } from './worldbook';
 import { persistCharacterWithHomeMessages } from './homeMessageBridge';
 import { buildPhoneEvidenceChatCard, phoneEvidenceDeliveryId, applyPhoneEvidenceChatLink, PHONE_EVIDENCE_SYNCED } from './phoneEvidence';
 import { mergePhoneGeneration, PHONE_GENERATION_COMMITTED, type PhoneGeneration } from './phoneGeneration';
-import { deliveryReceipts, emptyDeliveryKey } from './chatDeliveryReceipts';
+import { calibratedDeliveryKey } from './chatDeliveryReceipts';
 import {deleteSecretNotesForIds, announceSecretNotesChanged} from './secretNote';
 import { ensureStoryTimelineRepair, invalidateStoryTimelineRepair } from './storyTheaterTimeline';
 
@@ -777,19 +777,18 @@ export const DB = {
     const db = await openDB();
     return new Promise((resolve, reject) => {
       const transaction = db.transaction([STORE_MESSAGES, STORE_ASSETS], 'readonly');
-      const empty = transaction.objectStore(STORE_ASSETS).get(emptyDeliveryKey(charId));
-      empty.onsuccess = () => {
-        for (const id of empty.result?.data ?? []) if (remaining.delete(id)) found.add(id);
-      };
+      for (const id of remaining) {
+        const receipt = transaction.objectStore(STORE_ASSETS).getKey(calibratedDeliveryKey(charId, id));
+        receipt.onsuccess = () => { if (receipt.result !== undefined) { remaining.delete(id); found.add(id); } };
+      }
       const request = transaction.objectStore(STORE_MESSAGES).index('charId')
         .openCursor(IDBKeyRange.only(charId), 'prev');
       request.onsuccess = () => {
         const cursor = request.result;
         if (!cursor) return;
         const message = cursor.value as Message;
-        if (!message.groupId) for (const id of deliveryReceipts(message.metadata)) {
-          if (remaining.delete(id)) found.add(id);
-        }
+        const id = message.metadata?.activeMsg2?.messageId;
+        if (!message.groupId && remaining.delete(id)) found.add(id);
         if (remaining.size > 0) cursor.continue();
       };
       request.onerror = () => reject(request.error);

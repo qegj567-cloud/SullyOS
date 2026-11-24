@@ -1,4 +1,4 @@
-import { deliveryReceipts, emptyDeliveryKey } from './chatDeliveryReceipts';
+import { calibratedDeliveryKey } from './chatDeliveryReceipts';
 import type { Message } from '../types';
 import { openDB } from './db';
 import { isVisibleChatMessage } from './chatMessageVisibility';
@@ -93,7 +93,8 @@ function commitTurn(db: IDBDatabase, preview: TurnPreview): Promise<number[]> {
             }
             checkWaterline(assets, charId, current[0].id, archived => {
                 if (archived) { abort('本轮已在预览期间归档，请重新核对。'); return; }
-                const receipts = [...new Set(current.flatMap(row => deliveryReceipts(row.metadata)))];
+                const receipts = new Set(current.map(row => row.metadata?.activeMsg2?.messageId)
+                    .filter((id): id is string => typeof id === 'string' && !!id));
                 const last = current[current.length - 1];
                 const profile = tx.objectStore('characters').get(charId);
                 profile.onsuccess = () => {
@@ -106,11 +107,7 @@ function commitTurn(db: IDBDatabase, preview: TurnPreview): Promise<number[]> {
                         abort('本轮包含上下文断点，请先在聊天设置里调整断点。');
                     }
                 };
-                if (!bubbles.length && receipts.length) {
-                    const key = emptyDeliveryKey(charId);
-                    const saved = assets.get(key);
-                    saved.onsuccess = () => assets.put({ id: key, data: [...new Set([...(saved.result?.data ?? []), ...receipts])] });
-                }
+                for (const id of receipts) assets.put({ id: calibratedDeliveryKey(charId, id), data: true });
                 for (const [index, row] of current.entries()) {
                     const bubble = bubbles[index];
                     if (!bubble || row.content !== bubble.content || row.type !== bubble.type || preview.mode === 'reroll') {
@@ -128,7 +125,6 @@ function commitTurn(db: IDBDatabase, preview: TurnPreview): Promise<number[]> {
                     if (last.metadata?.chatTurnId) meta.chatTurnId = last.metadata.chatTurnId;
                     if (last.metadata?.source) meta.source = last.metadata.source;
                     if (last.metadata?.activeMsg2) meta.activeMsg2 = slot?.metadata?.activeMsg2 ?? last.metadata.activeMsg2;
-                    if (index === 0 && receipts.length) meta.calibratedDeliveryIds = receipts;
                     const value = { charId, role: 'assistant', type: bubble.type, content: bubble.content,
                         timestamp: slot?.timestamp ?? last.timestamp, metadata: meta, replyTo: bubble.replyTo };
                     if (slot && preview.mode === 'format') store.put({ ...value, id: slot.id });

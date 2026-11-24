@@ -1,4 +1,4 @@
-import { deliveryReceipts, emptyDeliveryKey } from './chatDeliveryReceipts';
+import { calibratedDeliveryKey } from './chatDeliveryReceipts';
 import { diagnosticRunId } from './amsgReproduction';
 import { subscribePageForeground } from './pageForeground';
 import { listUserSpaces } from './userSpaces';
@@ -529,7 +529,7 @@ export const findInboxArtifacts = <T extends { role: string; metadata?: any }>(
   messages: T[],
   messageId: string,
 ): T[] => messages.filter((m) =>
-  m.role === 'assistant' && deliveryReceipts(m.metadata).includes(messageId));
+  m.role === 'assistant' && m.metadata?.activeMsg2?.messageId === messageId);
 
 /**
  * 清场时可以删的消息类型——只有「渲染型气泡」：正文、表情包、HTML 卡片。
@@ -1611,20 +1611,19 @@ const flushInboxToChatImpl = async (trigger: FlushTrigger, charId?: string): Pro
   // 不重放 directives。只对首次处理（processAttempts=0）做——重试那几条的半成品
   // 气泡刚被 prepareInboxRetry 清场，近史里查到的正是「该重跑」的证据，不能误杀。
   const persistedIdsByChar = new Map<string, Set<string>>();
-  const calibratedIdsByChar = new Map<string, Set<string>>();
   const isAlreadyPersisted = async (charId: string, messageId: string, retry = false): Promise<boolean> => {
     if (!messageId) return false;
+    // An accepted calibration is final, even after the chat window or archive waterline has moved.
+    if (await DB.getAssetRaw(calibratedDeliveryKey(charId, messageId))) return true;
+    if (retry) return false;
     let ids = persistedIdsByChar.get(charId);
     if (!ids) {
       const recent = await DB.getRecentMessagesByCharId(charId, 200);
-      ids = new Set(recent.flatMap(row => deliveryReceipts(row.metadata)));
+      ids = new Set(recent.map(row => row.metadata?.activeMsg2?.messageId)
+        .filter((id): id is string => typeof id === 'string' && !!id));
       persistedIdsByChar.set(charId, ids);
-      const emptyReceipts = await DB.getAssetRaw(emptyDeliveryKey(charId));
-      const calibrated = new Set<string>(recent.flatMap(row => row.metadata?.calibratedDeliveryIds || []));
-      if (Array.isArray(emptyReceipts)) for (const id of emptyReceipts) { calibrated.add(id); ids.add(id); }
-      calibratedIdsByChar.set(charId, calibrated);
     }
-    return retry ? !!calibratedIdsByChar.get(charId)?.has(messageId) : ids.has(messageId);
+    return ids.has(messageId);
   };
   try {
   // consumeInboxMessages 是 "先 ack 后处理" 语义 —— inbox 已经原子地清空。
