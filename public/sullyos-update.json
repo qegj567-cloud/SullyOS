@@ -1,15 +1,14 @@
 {
   "schemaVersion": 1,
-  "versionCode": 30522,
-  "versionName": "3.5.22",
-  "apkUrl": "https://github.com/qegj567-cloud/SullyOS/releases/download/android-v3.5.22/SullyOS-Android-v3.5.22.apk",
-  "sha256": "e4b940d900b2b945c1a5c81376411be24bcecb598d0ee3997df76e925f672cf6",
-  "sizeBytes": 103758457,
-  "publishedAt": "2026-11-19T12:45:57Z",
+  "versionCode": 30523,
+  "versionName": "3.5.23",
+  "apkUrl": "https://github.com/qegj567-cloud/SullyOS/releases/download/android-v3.5.23/SullyOS-Android-v3.5.23.apk",
+  "sha256": "c6a7bc7004303b8f83cd0c50b070b44d2c215045e0b46b46c6944f25307b21e5",
+  "sizeBytes": 103908784,
+  "publishedAt": "2026-11-24T04:54:08Z",
   "releaseNotes": [
-    "同步 master 8d8af4b2，包含主动消息记忆召回、工具续写去重、压缩修复和云端数据救援",
-    "同步 Sully-11 帮助、聊天资料与装扮试用、银晕白框、时间位置、导出和报错脱敏改进",
-    "保留既有通知渠道、图标切换、PDF、相机、前台定位、Umami 和应用内更新；固定签名可覆盖升级保留数据",
-    "主动消息 2.0 用户请在应用设置单独更新后台；APK 不会自动部署 Worker 或开启救援模式"
+    "同步正式版 master b5bece1f：主动消息 2.0 对齐云端与本机提示词，新增能力表，后台任务可单独暂停",
+    "改进设置页、备份导出和分页恢复；安卓继续使用正式通道",
+    "沿用原签名，可覆盖升级；使用主动消息 2.0 的用户请在设置中单独更新后台至 2026-11-24"
   ]
 }
