@@ -438,6 +438,7 @@ SW 跑在自己的 context，没法直接访问 page 的 `localStorage` / `appen
 - **前后台切换线索（`backgroundedDuringRequest`）**：拦截器记录请求在飞期间页面是否触发过 `visibilityState === 'hidden'`。移动端浏览器（尤其 iOS Safari / PWA）在切后台或锁屏时会挂起、切断进行中的连接，切回前台后才抛出 `Load failed`；日志据此优先提示保持前台重试。
 - **响应头到达后的流式中断（`stream-interrupted`）**：无论是透明流式升级拼包，还是私聊/见面的原生 `stream: true` 读取，只要已收到 HTTP 响应头后在正文读取途中报错，均归入 `stream-interrupted`，明确区分于连接建立前/CORS 阶段的 `blocked`，且不再额外发起 `no-cors` 根路径探测。
 - **URL 与文本凭据脱敏（`sanitizeUrlForLog` / `redactRelayTokensInText`）**：入库前将主动消息 2.0 大陆中转路径中的个人令牌（`/t/<令牌>/<worker域名>/...` → `/t/<redacted>/<worker域名>/...`）、路径首段含密钥的第三方推送域名（`api.day.app` / `api.chuckfang.com`）、敏感查询参数（`key`/`token`/`secret`/`appid`/`xsec_token`/`lat`/`lon` 等）、`user:pass@` 口令以及 `?url=` / `?target=` 内嵌地址中的敏感参数统一替换为 `<redacted>`，保留目标域名与接口路径；报错原文、HTTP 响应回显与 `console.error` 日志中夹带的敏感 URL 与内联凭据（`Bearer`、`MUSIC_U`、`SPT_`、`bark:/meow:/wxpusher:`）也会同步打码。
+- **`console.error` 的对象参数（`describeConsoleErrorArgs`）**：形如 `log.error('…', { messageId, error })` 的调用，只把直接挂在对象上的报错（`Error` 实例，或 DOMException 这类带 `name` + `message` 的对象）展开成 `类型: 原文` 并带上堆栈；对象的其余字段仍显示为 `[object Object]`。这份日志所有用户都能复制外发，整个对象序列化会把聊天内容、配置一并带出，因此只取报错本身。
 - **结构化上下文字段（`context` 与 `time`）**：每条日志带本地时区可读时间 `time`、构建版本 `context.build` 及结构化诊断字段，复制日志后无需再追问版本号。
 
 两个关键探针：

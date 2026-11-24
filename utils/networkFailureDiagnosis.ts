@@ -920,6 +920,36 @@ export class ApplicationErrorReport {
     toString() { return this.advice.title + '\n' + this.advice.action; }
 }
 
+type ErrorLike = { name: string; message: string; stack?: string };
+// DOMException / 跨 realm 的报错不一定过得了 instanceof Error，按形状认。
+const isErrorLike = (value: unknown): value is ErrorLike =>
+    value instanceof Error || (!!value && typeof value === 'object'
+        && typeof (value as ErrorLike).name === 'string' && typeof (value as ErrorLike).message === 'string');
+
+/**
+ * console.error 的参数 → 日志正文与堆栈。
+ * 对象参数（如 `log.error('…', { messageId, error })`）只取出直接挂在上面的报错，其余字段不展开：
+ * 这份日志所有用户都能复制外发，整个序列化会把聊天内容、配置一起带出去。
+ */
+export const describeConsoleErrorArgs = (args: unknown[]): { message: string; stacks: string } => {
+    const errors: ErrorLike[] = [];
+    const message = args.map((arg) => {
+        if (isErrorLike(arg)) {
+            errors.push(arg);
+            return arg.message;
+        }
+        if (arg && typeof arg === 'object') {
+            const nested = Object.values(arg).filter(isErrorLike);
+            if (nested.length) {
+                errors.push(...nested);
+                return nested.map(e => `${e.name}: ${e.message}`).join('; ');
+            }
+        }
+        return String(arg);
+    }).join(' ');
+    return { message, stacks: errors.map(e => e.stack || '').filter(Boolean).join('\n') };
+};
+
 export const buildConsoleErrorSystemLog = (input: {
     id?: string;
     timestamp?: number;
