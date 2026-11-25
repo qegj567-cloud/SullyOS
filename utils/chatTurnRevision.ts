@@ -11,6 +11,7 @@ export interface TurnPreview {
     originals: Message[];
     bubbles: DraftBubble[];
     mode: RevisionMode;
+    targetIds?: number[];
     recalledIds?: string[];
 }
 const editable = (m: Message) => isVisibleChatMessage(m) && m.role === 'assistant'
@@ -95,6 +96,7 @@ function commitTurn(db: IDBDatabase, preview: TurnPreview): Promise<number[]> {
                 if (archived) { abort('本轮已在预览期间归档，请重新核对。'); return; }
                 const receipts = new Set(current.map(row => row.metadata?.activeMsg2?.messageId)
                     .filter((id): id is string => typeof id === 'string' && !!id));
+                const wholeReroll = preview.mode === 'reroll' && preview.targetIds === undefined;
                 const last = current[current.length - 1];
                 const profile = tx.objectStore('characters').get(charId);
                 profile.onsuccess = () => {
@@ -103,12 +105,13 @@ function commitTurn(db: IDBDatabase, preview: TurnPreview): Promise<number[]> {
                         abort('本轮已归档，请在记忆修补中核对。');
                         return;
                     }
-                    if (current.some((row, i) => row.id === cutoff && (preview.mode === 'reroll' || i > 0 || !bubbles.length))) {
+                    if (current.some((row, i) => row.id === cutoff && (wholeReroll || (preview.targetIds === undefined && (i > 0 || !bubbles.length))))) {
                         abort('本轮包含上下文断点，请先在聊天设置里调整断点。');
                     }
                 };
                 for (const id of receipts) assets.put({ id: calibratedDeliveryKey(charId, id), data: true });
                 for (const [index, row] of current.entries()) {
+                    if (preview.targetIds && !preview.targetIds.includes(row.id)) continue;
                     const bubble = bubbles[index];
                     if (!bubble || row.content !== bubble.content || row.type !== bubble.type || preview.mode === 'reroll') {
                         changed.push(row.id);
@@ -116,10 +119,11 @@ function commitTurn(db: IDBDatabase, preview: TurnPreview): Promise<number[]> {
                         deleteLinkedSecretNotes(store, row);
                     }
                     // Pending work (e.g. a secret note) addresses the old reply by message ID.
-                    if (!bubble || preview.mode === 'reroll') store.delete(row.id);
+                    if (!bubble || wholeReroll) store.delete(row.id);
                 }
                 for (const [index, bubble] of bubbles.entries()) {
                     const slot = current[index];
+                    if (preview.targetIds && (!slot || !preview.targetIds.includes(slot.id))) continue;
                     const meta = { ...bubble.metadata };
                     if (!slot || changed.includes(slot.id)) delete meta.secretNoteIds;
                     if (last.metadata?.chatTurnId) meta.chatTurnId = last.metadata.chatTurnId;
@@ -127,7 +131,7 @@ function commitTurn(db: IDBDatabase, preview: TurnPreview): Promise<number[]> {
                     if (last.metadata?.activeMsg2) meta.activeMsg2 = slot?.metadata?.activeMsg2 ?? last.metadata.activeMsg2;
                     const value = { charId, role: 'assistant', type: bubble.type, content: bubble.content,
                         timestamp: slot?.timestamp ?? last.timestamp, metadata: meta, replyTo: bubble.replyTo };
-                    if (slot && preview.mode === 'format') store.put({ ...value, id: slot.id });
+                    if (slot && !wholeReroll) store.put({ ...value, id: slot.id });
                     else store.add(value);
                 }
             });

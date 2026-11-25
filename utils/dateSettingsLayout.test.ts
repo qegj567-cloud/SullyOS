@@ -57,3 +57,26 @@ it('scrolls the preview with the editor, collapses it, and keeps focused input a
         expect(scroll.scrollTop).toBe(208);
     } finally { act(() => root.unmount()); host.remove(); vi.unstubAllGlobals(); vi.restoreAllMocks(); }
 });
+
+it('展开和收起场景信息只切换观测内容，点击正文仍可输入', async () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const root = createRoot(host);
+    try {
+        const char = { id: 'observe', name: '角色', dateAppearance: { preset: 'paper' }, dateObserve: { enabled: true } };
+        await act(async () => root.render(React.createElement(DateSession, { char, userProfile: {name: '用户'}, messages: [],
+            peekStatus: '⟦OBSERVE⟧\n地点｜窗边\n状态｜安静\n⟦/OBSERVE⟧\n窗外下着雨。',
+            onSendMessage: async () => '', onReroll: async () => '', onExit: vi.fn(), onSettings: vi.fn(),
+        } as any)));
+        const summary = host.querySelector('summary')!;
+        expect(summary.textContent).toBe('场景信息');
+        for (const open of [true, false]) {
+            await act(async () => summary.click());
+            expect(summary.closest('details')!.open).toBe(open);
+            expect(host.querySelector('textarea')).toBeNull();
+        }
+        await act(async () => host.querySelector<HTMLElement>('.meeting-prose')!.click());
+        expect(document.activeElement).toBe(host.querySelector('textarea'));
+        expect(host.querySelector('textarea')).toBeTruthy();
+    } finally { act(() => root.unmount()); host.remove(); }
+});

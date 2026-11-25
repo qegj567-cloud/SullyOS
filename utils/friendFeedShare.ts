@@ -1,3 +1,4 @@
+import { resolveCharTimeZone } from './timezone';
 import {DB} from './db';
 import {readFriendFeed} from './friendFeed';
 import {syncedPostEnabled} from './friendFeedActivity';
@@ -70,7 +71,7 @@ export async function shareFriendPost(postId:string,charId:string,deliveryId:str
     const projected=projectFriendPost(latest,charId,current);
     const share:FriendFeedShareSnapshot={version:1,postId,authorId:projected.authorId,authorName:current.authorName,text:current.text,
         identity:friendKnownIdentity(latest,charId,current,characters),accountBio:projected.accountBio,
-        ...(current.source?{source:structuredClone(current.source)}:{}),synced:current.synced,sharedAt:Date.now(),
+        ...(current.source?{source:structuredClone(current.source)}:{}),synced:current.synced,sharedAt:Date.now(),postCreatedAt:current.createdAt,timeZone:resolveCharTimeZone(characters.find(c=>c.id===charId)),
         ...(current.images ? {images:structuredClone(current.images)} : {}),
         ...(current.imageCards?.length?{imageCards:structuredClone(current.imageCards)}:{}),
         comments:structuredClone(projected.comments),commentIdentities:Object.fromEntries(current.comments.map(c=>[c.id,friendKnownIdentity(latest,charId,c,characters)]).filter((pair):pair is [string,string]=>typeof pair[1]==='string')),

@@ -1,3 +1,4 @@
+import { buildChatRerollPrompt } from '../utils/chatRerollPrompt';
 import { clearLocationPin } from '../utils/userLocation';
 import {avatarFrameLayer} from '../utils/avatarFrameTarget';
 import ChatRuntimeStyle from '../components/chat/ChatRuntimeStyle';
@@ -383,7 +384,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
             }
         }
         if (assistantIndex < 0) {
-            return { sinceTs: Date.now(), userMessage: '', assistantReply: '' };
+            return { sinceTs: Date.now(), userMessage: '', assistantReply: '', rows: [] };
         }
         let userIndex = -1;
         for (let i = assistantIndex - 1; i >= 0; i--) {
@@ -392,16 +393,16 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
                 break;
             }
         }
-        const assistantReply = messages
+        const rows = messages
             .slice(userIndex + 1)
-            .filter(message => message.role === 'assistant')
-            .map(message => message.content)
+            .filter(message => message.role === 'assistant');
+        const assistantReply = rows.map(message => message.content)
             .join('\n');
         return {
             // receipt 在用户消息落库之后、助手回复落库之前产生；留 1 秒时钟误差容差。
             sinceTs: userIndex >= 0 ? Math.max(0, messages[userIndex].timestamp - 1000) : messages[assistantIndex].timestamp - 60_000,
             userMessage: userIndex >= 0 ? messages[userIndex].content : '',
-            assistantReply,
+            assistantReply, rows,
         };
     }, [messages]);
     const charDateKey = useLocalDateKey(resolveCharTimeZone(char));
@@ -1813,7 +1814,57 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
         trackEvent('打开对话校准');
     };
 
-    const handleReroll = () => { if (canReroll) openCalibration('reroll'); };
+    const handleReroll = async () => {
+        if (!canReroll || instantChatPending || isSummarizing) return;
+        if (isTyping || messages.length === 0) return;
+
+        const lastMsg = messages[messages.length - 1];
+        if (lastMsg.role !== 'assistant') return;
+
+        const toDeleteIds: number[] = [];
+        let index = messages.length - 1;
+        while (index >= 0 && messages[index].role === 'assistant') {
+            toDeleteIds.push(messages[index].id);
+            index--;
+        }
+
+        if (toDeleteIds.length === 0) return;
+
+        let skipNext = false;
+        if (!inputPreferences.skipRerollConfirm && !(await requestConfirm({
+            title: '重新生成上一轮回复？',
+            message: <span>当前最后一轮角色回复（及已合成的语音）将被删除并重新生成。
+                    <label className="mt-4 flex items-center gap-2">
+                        <input type="checkbox" onChange={event => { skipNext = event.target.checked; }} />不再提示
+                    </label>
+                </span>,
+            confirmText: '重新生成',
+            variant: 'warning',
+        }))) return;
+        if (activeCharIdRef.current !== char.id || isTypingRef.current || getInstantChatPending(char.id)) return;
+        if (skipNext) {
+            const prefs = { ...loadChatInputPreferences(), skipRerollConfirm: true };
+            saveChatInputPreferences(prefs);
+            setInputPreferences(prefs);
+        }
+
+        autoReply.cancel();
+        await DB.deleteMessages(toDeleteIds);
+        discardVoiceForMessages(toDeleteIds);
+        // 重 roll 也删了消息：正常路径下这轮生成结束会再打脏一次，这里先打是兜住
+        // 「触发失败没走到生成收尾」的路径，云端 fire_pack 不能停在删除前。
+        markAmsgStateDirty({ char, userProfile, groups, realtimeConfig });
+        const newHistory = messages.slice(0, index + 1);
+        setMessages(newHistory);
+        addToast('回溯对话中...', 'info');
+        trackEvent('重新生成回复');
+
+        // 重 roll：不注入上一轮残留的情绪 buff 与意识流（innerState），两边独立重新生成。
+        triggerAI(newHistory, undefined, {
+            skipEmotionInjection: true,
+            rerollPrompt: buildChatRerollPrompt(messages.slice(index + 1)),
+        });
+    };
 
     const applyCalibration = async (preview: TurnPreview) => {
         if (activeCharIdRef.current !== char.id || isTypingRef.current || getInstantChatPending(char.id) || isSummarizing) {
@@ -4771,13 +4822,13 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
                 <MemoryRepairPortal key={char.id}
                     initialTab={calibrationTab}
                     canRevise={canReroll && !instantChatPending && !isSummarizing}
-                    onPreview={(mode, guidance, signal) => previewTurnRevision({
+                    onPreview={(mode, guidance, signal, targetIds) => previewTurnRevision({
                         char, apiConfig, userProfile, groups, emojis: aiVisibleEmojis, categories: visibleCategories,
                         realtimeConfig, musicSnapshot: loadMusicPlaybackSnapshot() ?? undefined, homePhoneContext: homePhone?.getContext?.(),
                         translationConfig: { enabled: translationEnabled, sourceLang: translateSourceLang, targetLang: translateTargetLang },
                         htmlMode: { enabled: !!char.htmlModeEnabled, customPrompt: char.htmlModeCustomPrompt },
                         thinkingChain: getThinkingChainSettings(char, userProfile), visionApiConfig: apiConfig.visionApi,
-                    }, mode, guidance, signal)}
+                    }, mode, guidance, signal, targetIds)}
                     onAccept={applyCalibration}
                     inline={!!homePhone}
                     char={char}
@@ -4787,7 +4838,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
                     remoteVectorConfig={remoteVectorConfig}
                     sinceTs={memoryRepairRound.sinceTs}
                     userMessage={memoryRepairRound.userMessage}
-                    assistantReply={memoryRepairRound.assistantReply}
+                    assistantReply={memoryRepairRound.assistantReply} roundRows={memoryRepairRound.rows}
                     onClose={() => {
                         setMemoryRepairOpen(false);
                         setShowPanel('none');

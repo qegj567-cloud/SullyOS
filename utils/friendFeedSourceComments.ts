@@ -35,5 +35,5 @@ export function isFriendSourceReply(value: unknown): value is FriendSourceReply 
 export function recentSourceComments(post: FriendPost) {
     if (post.source?.platform !== 'weibo') return [];
     return [...(post.weiboComments?.rows || [])].sort((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id))
-        .slice(0, FRIEND_SOURCE_COMMENT_LIMIT).map(c => ({id: c.id, authorName: c.authorName, text: c.text.slice(0, FRIEND_FEED_EXCERPT_LIMIT), ...(c.parentId ? {parentId: c.parentId} : {})}));
+        .slice(0, FRIEND_SOURCE_COMMENT_LIMIT).map(c => ({id: c.id, createdAt: c.createdAt, authorName: c.authorName, text: c.text.slice(0, FRIEND_FEED_EXCERPT_LIMIT), ...(c.parentId ? {parentId: c.parentId} : {})}));
 }

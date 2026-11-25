@@ -1435,5 +1435,5 @@ const DateSession: React.FC<DateSessionProps> = ({
 export default DateSession;
 
 function ReadingObservation({reading,...props}: React.ComponentProps<typeof ObserveHUD> & {reading:boolean}) {
-    return reading ? <details className="mb-4 text-xs" style={{ color: 'var(--meeting-muted, #64748b)' }}><summary className="cursor-pointer py-2">场景信息</summary><ObserveHUD {...props}/></details> : <ObserveHUD {...props}/>;
+    return reading ? <details onClick={event => event.stopPropagation()} className="mb-4 text-xs" style={{ color: 'var(--meeting-muted, #64748b)' }}><summary className="cursor-pointer py-2">场景信息</summary><ObserveHUD {...props}/></details> : <ObserveHUD {...props}/>;
 }

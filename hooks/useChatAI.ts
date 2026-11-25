@@ -595,7 +595,7 @@ export const useChatAI = ({
     const triggerAI = async (
         currentMsgs: Message[],
         overrideApiConfig?: { baseUrl: string; apiKey: string; model: string },
-        opts?: { skipEmotionInjection?: boolean },
+        opts?: { skipEmotionInjection?: boolean; rerollPrompt?: string },
     ) => {
         if (isTyping || !char) return;
         const effectiveApi = resolveDialogueApi(apiConfig, char, overrideApiConfig);
@@ -937,6 +937,7 @@ export const useChatAI = ({
                     // 生成前收进来的主动消息落在用户刚发的那句之后：该回的是用户那句。
                     unansweredUserTurn: hasUnansweredUserTurn(currentMsgs, contextMsgs),
                 });
+            if (opts?.rerollPrompt) fullMessages.push({ role: 'user', content: opts.rerollPrompt });
             const promptBuildSkipped = payload.flags.promptBuildSkipped;
             if (!promptBuildSkipped) {
                 try {

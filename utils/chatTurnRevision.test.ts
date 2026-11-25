@@ -66,11 +66,40 @@ describe('本轮校准', () => {
         const request = String(calls[calls.length-1][1].body);
         expect(request).toContain('PRIVATE_HISTORY');
         expect(request).toContain('解释告别的原因');
-        expect(request).not.toContain('DISCARDED_ORIGINAL');
+        const messages = JSON.parse(request).messages;
+        expect(JSON.stringify(messages.slice(0, -1))).not.toContain('DISCARDED_ORIGINAL');
+        expect(messages.at(-1).content).toContain('DISCARDED_ORIGINAL');
+        expect(messages.at(-1).content).toContain('用户对新版的期望');
         expect((await loadRevisionTurn(char.id)).map(m => m.content)).toEqual(['DISCARDED_ORIGINAL']);
         await acceptRevision(preview);
         expect(await DB.getMessageById(oldId)).toBeNull();
         expect((await loadCharacterContextMessages(char)).map(m => m.content)).toEqual(['PRIVATE_HISTORY', '候选第一句', '候选第二句']);
+    });
+
+    it('单句重写只更新选中的气泡，保留相邻气泡和语音', async () => {
+        const first = await save('assistant', '第一句');
+        const target = await save('assistant', '第二句');
+        await DB.saveAssetRaw('voice_msg_' + first, { originalText: '第一句' });
+        model('换一句');
+        const preview = await previewTurnRevision(settings, 'reroll', '', new AbortController().signal, [target]);
+        expect(await acceptRevision(preview)).toEqual([target]);
+        expect((await loadRevisionTurn(char.id)).map(row => [row.id, row.content])).toEqual([[first, '第一句'], [target, '换一句']]);
+        expect(await DB.getAssetRaw('voice_msg_' + first)).toBeTruthy();
+    });
+
+    it('多选按原顺序替换，跳过中间未选的消息', async () => {
+        const first = await save('assistant', '一');
+        const middle = await save('assistant', '二');
+        const last = await save('assistant', '三');
+        model('第一句新版\n第三句新版');
+        const preview = await previewTurnRevision(settings, 'reroll', '', new AbortController().signal, [last, first]);
+        const prompt = JSON.parse(String(vi.mocked(safeFetchJson).mock.calls.at(-1)![1].body)).messages.at(-1).content;
+        expect(prompt).toContain('只替换第 1、3 个气泡');
+        expect(prompt).toContain('自行判断');
+        expect(await acceptRevision(preview)).toEqual([first, last]);
+        expect((await loadRevisionTurn(char.id)).map(row => [row.id, row.content])).toEqual([
+            [first, '第一句新版'], [middle, '二'], [last, '第三句新版'],
+        ]);
     });
 
     it.each(['new message', 'edit', 'archive'] as const)('refuses stale preview after %s', async change => {
