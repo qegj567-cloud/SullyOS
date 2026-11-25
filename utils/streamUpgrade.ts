@@ -21,18 +21,44 @@
 
 import { extractSseStreamError, isSseResponseText, parseSseToCompletion } from './safeApi';
 import { readLlmResponseText, type LlmResponseInfo } from './llmEndpoint';
+import { readStoredMainApi, readStoredPresets, resolveGlobalMainApi } from './apiSlots';
 
 const API_CONFIG_KEY = 'os_api_config';
 
-/** 主 API 设置里的流式开关（设置 → API → 流式）。读取失败一律视为关。 */
+/** 主 API 设置里的流式开关（设置 → API → 流式；若主 API 绑定了预设则按预设实时值）。读取失败一律视为关。 */
 export function isGlobalStreamEnabled(): boolean {
     try {
-        if (typeof localStorage === 'undefined') return false;
-        const raw = localStorage.getItem(API_CONFIG_KEY);
-        if (!raw) return false;
-        return JSON.parse(raw)?.stream === true;
+        const main = readStoredMainApi();
+        if (!main) return false;
+        const resolved = resolveGlobalMainApi(main, readStoredPresets());
+        return resolved.stream === true;
     } catch {
         return false;
+    }
+}
+
+/**
+ * 判断某次 /chat/completions 请求是否应执行透明流式升级：
+ * 1. 调用方在 __sullyMeta.slotStream 显式给出了该槽位自己的流式开关时，优先服从该槽位；
+ * 2. 未显式指定时，仅当全局主 API 开启了 stream 且请求地址与主 API baseUrl 同源时才升级，
+ *    避免主 API 的流式开关跨服务商误伤另一家渠道的副 API 或识图请求。
+ */
+export function shouldUpgradeChatRequestToStream(
+    requestUrl: string,
+    explicitSlotStream?: boolean,
+): boolean {
+    if (typeof explicitSlotStream === 'boolean') return explicitSlotStream;
+    try {
+        const main = readStoredMainApi();
+        if (!main) return false;
+        const resolved = resolveGlobalMainApi(main, readStoredPresets());
+        if (resolved.stream !== true) return false;
+        if (!resolved.baseUrl || !requestUrl) return true;
+        const reqOrigin = new URL(requestUrl).origin;
+        const mainOrigin = new URL(resolved.baseUrl).origin;
+        return reqOrigin === mainOrigin;
+    } catch {
+        return isGlobalStreamEnabled();
     }
 }
 

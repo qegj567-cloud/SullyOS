@@ -366,7 +366,7 @@ ${material.recentEpisodes.length > 0 ? `
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${llmConfig.apiKey}`,
+                    'Authorization': `Bearer ${llmConfig.apiKey || 'sk-none'}`,
                 },
                 body: JSON.stringify({
                     model: llmConfig.model,
@@ -1039,7 +1039,7 @@ ${memoryContext}
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${llmConfig.apiKey}`,
+                    'Authorization': `Bearer ${llmConfig.apiKey || 'sk-none'}`,
                 },
                 body: JSON.stringify({
                     model: llmConfig.model,

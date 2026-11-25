@@ -9,7 +9,8 @@ import {homePhoneAppearance,HOME_PHONE_BUBBLES} from './room3d/homePhoneAppearan
 import { publishReplyDisplay, stopReplyRuns } from '../utils/chatReplyCancellation';
 import { stopInstantChat } from '../utils/amsgInstantChat';
 import {resolvePsycheAppearance} from '../utils/psycheAppearance';
-import { translateThinkingMessage } from '../utils/thinkingTranslation';
+import { readThinkingTranslation, translateThinkingMessage } from '../utils/thinkingTranslation';
+import { isRunnableLlmApi, resolveAuxiliaryApi } from '../utils/apiSlots';
 import { resolveDialogueApi } from '../utils/characterApi';
 import { computeTimeSegmentStarts, startsNewMessageGroup, startsNewTimeSegment } from '../utils/chatMessageGrouping';
 import StickerLibrary from '../components/chat/StickerLibrary';
@@ -2631,11 +2632,17 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
     const handleForceVectorize = async () => {
         if (!char || !char.memoryPalaceEnabled || isVectorizing) return;
         const mpEmb = memoryPalaceConfig?.embedding;
-        const mpLLM = memoryPalaceConfig?.lightLLM;
-        if (!mpEmb?.baseUrl || !mpEmb?.apiKey || !mpLLM?.baseUrl) {
-            addToast('请先在记忆宫殿设置中配置 API', 'error');
+        const effectiveLlm = resolveAuxiliaryApi(memoryPalaceConfig?.lightLLM, apiConfig, apiPresets);
+        if (!mpEmb?.baseUrl || !mpEmb?.apiKey || !isRunnableLlmApi(effectiveLlm)) {
+            addToast('请先在记忆宫殿设置中配置向量 API，并配置对话 API 或记忆副 API', 'error');
             return;
         }
+        const mpLLM = {
+            baseUrl: effectiveLlm.baseUrl,
+            apiKey: effectiveLlm.apiKey || '',
+            model: effectiveLlm.model,
+            ...(effectiveLlm.apiType ? { apiType: effectiveLlm.apiType } : {}),
+        };
 
         const retainedCount = retainRecentForVectorize ? 10 : 0;
         const charIdAtStart = char.id;
@@ -3444,10 +3451,16 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
 
         if (char.memoryPalaceEnabled) {
             const embedding = memoryPalaceConfig.embedding;
-            const lightLLM = memoryPalaceConfig.lightLLM;
-            if (!embedding?.baseUrl || !embedding?.apiKey || !embedding?.model || !lightLLM?.baseUrl || !lightLLM?.model) {
-                throw new Error('角色已开启记忆宫殿，但宫殿的向量 API 或副 LLM 还没有配置完整');
+            const effectiveLlm = resolveAuxiliaryApi(memoryPalaceConfig.lightLLM, apiConfig, apiPresets);
+            if (!embedding?.baseUrl || !embedding?.apiKey || !embedding?.model || !isRunnableLlmApi(effectiveLlm)) {
+                throw new Error('角色已开启记忆宫殿，但宫殿的向量 API 或对话/副 LLM API 还没有配置完整');
             }
+            const lightLLM = {
+                baseUrl: effectiveLlm.baseUrl,
+                apiKey: effectiveLlm.apiKey || '',
+                model: effectiveLlm.model,
+                ...(effectiveLlm.apiType ? { apiType: effectiveLlm.apiType } : {}),
+            };
             const { importExternalMemoryText, mergePalaceFragmentsIntoMemories } = await import('../utils/memoryPalace/pipeline');
             const imported = await importExternalMemoryText(
                 summary,
@@ -3489,7 +3502,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
                 : [...(current.memories || []), archiveFragment],
         }));
         return `已把这次协作的一条总结存入 ${char.name} 的神经链接`;
-    }, [char, memoryPalaceConfig.embedding, memoryPalaceConfig.lightLLM, updateCharacter, userProfile.name]);
+    }, [apiConfig, apiPresets, char, memoryPalaceConfig.embedding, memoryPalaceConfig.lightLLM, updateCharacter, userProfile.name]);
 
     const handleCollaborationInstall = useCallback(async (
         artifact: CollaborationInstallableArtifact,
@@ -3653,17 +3666,24 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
     }, [displayMessages]);
 
     const handleTranslateThinking = useCallback(async (message: Message) => {
-        if (!apiConfig.thinkingTranslationApi && !message.metadata?.thinkingChainTranslation) {
-            setShowThinkingChainModal(true);
-            throw new Error('请先配置翻译 API，然后再长按翻译。');
-        }
-        const translation = await translateThinkingMessage(message, apiConfig.thinkingTranslationApi, char?.name);
         const source = String(message.metadata?.thinkingChain || '').trim();
+        const fallbackDialogueApi = resolveDialogueApi(apiConfig, char, undefined, apiPresets);
+        const effectiveTranslationApi = resolveAuxiliaryApi(apiConfig.thinkingTranslationApi, fallbackDialogueApi, apiPresets);
+        if (!readThinkingTranslation(source, message.metadata?.thinkingChainTranslation) && !isRunnableLlmApi(effectiveTranslationApi)) {
+            setShowThinkingChainModal(true);
+            throw new Error('请先在设置中配置对话 API，或在心象设置配置翻译 API。');
+        }
+        const translation = await translateThinkingMessage(
+            message,
+            apiConfig.thinkingTranslationApi,
+            char?.name,
+            fallbackDialogueApi,
+        );
         setMessages(previous => previous.map(row => row.id === message.id && row.charId === message.charId
             && String(row.metadata?.thinkingChain || '').trim() === source
             ? { ...row, metadata: { ...row.metadata, thinkingChainTranslation: translation } } : row));
         return translation;
-    }, [apiConfig.thinkingTranslationApi, char?.name]);
+    }, [apiConfig, apiPresets, char]);
 
     // Stable options preserve MessageItem memoization while typing or streaming.
     const thinkingChainOptions = useMemo(() => ({
@@ -4539,8 +4559,8 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
                 apiPresets={apiPresets}
                 onAddApiPreset={addApiPreset}
                 onSaveEmotion={(config) => {
-                    // API 同步到所有角色，enabled 仅写到当前角色
-                    syncEmotionApiToAllCharacters(config.api);
+                    // EmotionSettingsPanel 已通过 updateApiConfig({ emotionApi }) 写入全局并同步全角色快照；
+                    // 此处仅维护当前角色的 enabled 状态与旧字段内联镜像，避免抹去全局 emotionApi 的 presetId。
                     updateCharacter(char.id, {
                         emotionConfig: {
                             enabled: config.enabled,
@@ -4735,7 +4755,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
                     translationApi={apiConfig.thinkingTranslationApi}
                     dialogueApi={resolveDialogueApi(apiConfig, char)}
                     apiPresets={apiPresets}
-                    onChangeTranslationApi={thinkingTranslationApi => updateApiConfig({ thinkingTranslationApi })}
+                    onChangeTranslationApi={next => updateApiConfig({ thinkingTranslationApi: next ?? undefined })}
                     onAddApiPreset={(name, config) => addApiPreset(name, config, '心象翻译')}
                     character={char}
                     sharedPrompt={userProfile.thinkingChainPrompt}

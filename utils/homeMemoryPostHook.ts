@@ -1,11 +1,12 @@
 import type {CharacterProfile, APIConfig} from '../types';
 import {DB} from './db';
+import {resolveEffectiveSlot, resolveGlobalMainApi} from './apiSlots';
 import {homeRecords} from './homeRecords';
 import {homeSegmentMessages as homeTurnMessages} from './homeContextSegments';
 import {processNewMessagesWithAutoArchive} from './memoryPalace/autoArchive';
 import {incrementDigestRound,runCognitiveDigestion} from './memoryPalace/digestion';
 import type {EmbeddingConfig} from './memoryPalace/types';
-import type {LightLLMConfig} from './memoryPalace/pipeline';
+import {hasRunnableMemoryPalaceLlm, type LightLLMConfig} from './memoryPalace/pipeline';
 import type {HomeRecord} from '../apps/room3d/types';
 import {homeSharedRecipients,isSharedHomeRecord} from './homeSharedEvents';
 
@@ -34,8 +35,11 @@ function processHomeRecordMemory(charId:string,previous:HomeRecord[],records:Hom
  while(seen.size>2000)seen.delete(seen.values().next().value!);
  const task=(chains.get(charId)||Promise.resolve()).catch(()=>{}).then(async()=>{
   const live=await DB.getCharacter(charId),emb=config.embedding;
-  const llm=config.lightLLM?.baseUrl?config.lightLLM:api;
-  if(!live?.memoryPalaceEnabled||!emb?.baseUrl||!emb.apiKey||!llm.baseUrl)return;
+  const rawLight=config.lightLLM;
+  const llm=rawLight?.presetId?.trim()
+   ?(resolveEffectiveSlot(rawLight)??resolveGlobalMainApi(api))
+   :(rawLight?.baseUrl?.trim()?rawLight:resolveGlobalMainApi(api));
+  if(!live?.memoryPalaceEnabled||!emb?.baseUrl||!emb.apiKey||!hasRunnableMemoryPalaceLlm(llm))return;
   // The shared pipeline reads the full persisted timeline and the character's own waterline.
   await processNewMessagesWithAutoArchive([],live.id,live.name,emb,llm,userName,false);
   for(const _reply of freshReplies){

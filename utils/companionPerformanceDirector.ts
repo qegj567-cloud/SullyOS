@@ -10,6 +10,7 @@ import {
   type AvatarPerformanceSentence,
 } from './avatarPerformanceRehearsal';
 import type { AvatarPerformanceCue } from './avatarPerformance';
+import { readStoredMainApi, resolveAuxiliaryApi } from './apiSlots';
 import { extractContent, safeFetchJson } from './safeApi';
 
 export type CompanionPerformanceSentence = AvatarPerformanceSentence;
@@ -50,9 +51,8 @@ export const requestCompanionPerformanceCues = async ({
   translation = '',
   modelActions = [],
 }: CompanionPerformanceDirectorInput): Promise<AvatarPerformanceCue[]> => {
-  const directorApi = character.emotionConfig?.api?.baseUrl
-    ? character.emotionConfig.api
-    : apiConfig;
+  const emotionSlot = apiConfig.emotionApi ?? readStoredMainApi()?.emotionApi ?? character.emotionConfig?.api;
+  const directorApi = resolveAuxiliaryApi(emotionSlot, apiConfig);
   const baseUrl = directorApi.baseUrl?.replace(/\/+$/, '');
   if (!baseUrl) throw new Error('请先配置聊天 API URL');
   const reply = translation.trim()

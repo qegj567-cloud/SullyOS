@@ -139,7 +139,7 @@ ${buildGroupRulesBlock(groupName, memberNames, userLabel)}
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${llmConfig.apiKey}`,
+                    'Authorization': `Bearer ${llmConfig.apiKey || 'sk-none'}`,
                 },
                 body: JSON.stringify({
                     model: llmConfig.model,

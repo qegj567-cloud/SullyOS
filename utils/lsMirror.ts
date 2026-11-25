@@ -33,6 +33,7 @@ export const MIRRORED_KEYS: readonly string[] = [
     'os_theme',                          // 外观主题（丢了 = 回初始主题）
     'os_api_config',                     // 全局 API（丢了 = 一切生成静默失效）
     'os_available_models',               // 已拉取的模型列表
+    'sullyos_endpoint_models_v1',        // 按端点分桶的模型列表缓存
     'os_api_presets',
     'os_realtime_config',
     'os_memory_palace_config',

@@ -14,8 +14,10 @@ import type { CharacterProfile } from '../../types';
 import { DB } from '../db';
 import {
     getMemoryPalaceHighWaterMark,
+    hasRunnableMemoryPalaceLlm,
     mergePalaceFragmentsIntoMemories,
     processNewMessages,
+    resolveMemoryPalaceLlm,
 } from './pipeline';
 import { incrementDigestRound, runCognitiveDigestion } from './digestion';
 
@@ -35,11 +37,8 @@ export async function runCallMemoryPalacePostFlow(input: CallPalacePostFlowInput
     if (!liveBefore?.memoryPalaceEnabled) return;
 
     const mpEmb = input.memoryPalaceConfig?.embedding;
-    const mpLLMConfigured = input.memoryPalaceConfig?.lightLLM;
-    const mpLLM = mpLLMConfigured?.baseUrl
-        ? mpLLMConfigured
-        : { baseUrl: input.apiConfig.baseUrl, apiKey: input.apiConfig.apiKey, model: input.apiConfig.model };
-    if (!mpEmb?.baseUrl || !mpEmb?.apiKey || !mpLLM.baseUrl) return;
+    const mpLLM = resolveMemoryPalaceLlm(input.memoryPalaceConfig?.lightLLM, input.apiConfig);
+    if (!mpEmb?.baseUrl || !mpEmb?.apiKey || !hasRunnableMemoryPalaceLlm(mpLLM)) return;
 
     const recentMsgs = await DB.getRecentMessagesByCharId(input.char.id, 50);
     const pipelineResult = await processNewMessages(

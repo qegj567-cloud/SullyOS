@@ -4,6 +4,7 @@ import type {StoryTheaterEntry,StoryTheaterMask} from '../../../types';
 import {useOS} from '../../../context/OSContext';
 import {resolveStoryTheaterMask} from '../../../utils/storyTheater';
 import {convertStoryArchiveToMemory,storyMemoryDate} from '../../../utils/storyTheaterMemoryConversion';
+import {resolveMemoryPalaceLlm} from '../../../utils/memoryPalace/pipeline';
 import {shareOrDownloadFile} from '../../../utils/shareExport';
 import {StoryAppearanceButton} from './StoryTheaterTheme';
 import {regenerateStoryArchiveSummary} from '../../../utils/storyTheaterArchive';
@@ -49,7 +50,7 @@ export default function StoryArchivePanel({entry,masks,onBack,onUpdated}:{entry:
   running.current=true;setBusy(true);setError('');
   let completed=0;
   try{
-   const llm=memoryPalaceConfig.lightLLM?.baseUrl?memoryPalaceConfig.lightLLM:apiConfig;
+   const llm=resolveMemoryPalaceLlm(memoryPalaceConfig?.lightLLM,apiConfig);
    const identity=resolveStoryTheaterMask(entry.mask,userProfile,characters,masks);
    for(const box of chosen){
     const result=await convertStoryArchiveToMemory({entryId:entry.id,archiveId:box.id,charId:char.id,date:dates[box.id],userName:userProfile.name||'用户',identityName:identity.name,llm,embedding:memoryPalaceConfig.embedding,remote:remoteVectorConfig,onProgress:text=>setStatus(`${completed+1}/${chosen.length} · ${text}`)});

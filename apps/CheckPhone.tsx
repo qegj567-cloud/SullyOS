@@ -2,7 +2,7 @@ import { loadCharacterContextMessages } from '../utils/chatContextRange';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { CharacterProfile, PhoneEvidence, PhoneCustomApp, PhoneContact, PhoneSimLog, ConvTopic, AiSession, AiServiceKind, TavernCard, APIConfig } from '../types';
+import { CharacterProfile, PhoneEvidence, PhoneCustomApp, PhoneContact, PhoneSimLog, ConvTopic, AiSession, AiServiceKind, TavernCard, APIConfig, DialogueApiConfig } from '../types';
 import { ContextBuilder } from '../utils/context';
 import Modal from '../components/os/Modal';
 import TokenImg from '../components/os/TokenImg';
@@ -22,7 +22,9 @@ import { trackEvent } from '../utils/analytics';
 import { normalizePhoneEvidence, phoneFieldToText } from '../utils/phoneEvidence';
 import { normalizePhoneAiSession } from '../utils/phoneTranscript';
 import { CharacterGroupFilterBar, filterCharactersByGroup, GROUP_FILTER_ALL } from '../components/character/CharacterGroupFilter';
-import { getCheckPhoneApi, resolveCheckPhoneApi, setCheckPhoneApi } from '../utils/checkPhoneApi';
+import { getCheckPhoneApi, getRawCheckPhoneApiSlot, resolveCheckPhoneApi, setCheckPhoneApi } from '../utils/checkPhoneApi';
+import ApiSlotEditor from '../components/settings/ApiSlotEditor';
+import { useLocalBackHandler } from '../hooks/useLocalBackHandler';
 import {
     User, Phone, ChatCircleDots, ChatCircle, ShoppingBag, Hamburger, Compass, GearSix,
     Plus, SignOut, CaretLeft, CaretRight, Cloud, ImagesSquare, LockSimple, Package,
@@ -270,11 +272,18 @@ const CheckPhone: React.FC = () => {
     const [selectPage, setSelectPage] = useState(0); // Target Device 选人界面的翻页（每页 6 人）
     const [selectGroupId, setSelectGroupId] = useState(GROUP_FILTER_ALL); // 选人界面的分组筛选
     const [showApiSettings, setShowApiSettings] = useState(false);
-    const [phoneApiConfig, setPhoneApiConfigState] = useState<APIConfig | null>(() => getCheckPhoneApi());
-    const [testingPhoneApi, setTestingPhoneApi] = useState(false);
-    const [phoneApiTestResult, setPhoneApiTestResult] = useState<string | null>(null);
+    const [rawPhoneSlot, setRawPhoneSlot] = useState<DialogueApiConfig | null>(() => getRawCheckPhoneApiSlot());
+    const [phoneApiConfig, setPhoneApiOverride] = useState<APIConfig | null>(() => getCheckPhoneApi());
     const effectiveApiConfig = resolveCheckPhoneApi(phoneApiConfig, apiConfig);
     const phoneApiFollowsDefault = !phoneApiConfig?.baseUrl;
+
+    useLocalBackHandler(() => {
+        if (showApiSettings) {
+            setShowApiSettings(false);
+            return true;
+        }
+        return false;
+    }, 80, showApiSettings);
 
     // Detail State
     const [selectedChatRecord, setSelectedChatRecord] = useState<PhoneEvidence | null>(null);
@@ -428,9 +437,16 @@ const CheckPhone: React.FC = () => {
     }, [characters]);
 
     useEffect(() => {
-        const sync = () => setPhoneApiConfigState(getCheckPhoneApi());
+        const sync = () => {
+            setRawPhoneSlot(getRawCheckPhoneApiSlot());
+            setPhoneApiOverride(getCheckPhoneApi());
+        };
         window.addEventListener('check-phone-api-changed', sync);
-        return () => window.removeEventListener('check-phone-api-changed', sync);
+        window.addEventListener('sully:api-preset-updated', sync);
+        return () => {
+            window.removeEventListener('check-phone-api-changed', sync);
+            window.removeEventListener('sully:api-preset-updated', sync);
+        };
     }, []);
 
     // Reset page scroll on navigation to prevent mobile layout shift
@@ -477,61 +493,6 @@ const CheckPhone: React.FC = () => {
         if (!target) { setView('select'); return; }
         handleSelectChar(target); setActiveAppId(intent.entryId || 'home');
     });
-
-    const apiHost = (url?: string) => {
-        try { return url ? new URL(url).host : '未配置'; }
-        catch { return url || '未配置'; }
-    };
-    const isSamePhoneApi = (config: APIConfig) => Boolean(phoneApiConfig)
-        && phoneApiConfig!.baseUrl === config.baseUrl
-        && phoneApiConfig!.model === config.model
-        && phoneApiConfig!.apiKey === config.apiKey;
-
-    const choosePhoneApi = (config: APIConfig | null) => {
-        setCheckPhoneApi(config);
-        setPhoneApiConfigState(config?.baseUrl ? config : null);
-        setPhoneApiTestResult(null);
-        addToast(config ? '查手机已切换到独立 API' : '查手机已改为跟随聊天默认', 'success');
-        trackEvent('切换查手机独立 API', { mode: config ? 'independent' : 'default' });
-    };
-
-    const testPhoneApi = async () => {
-        const config = effectiveApiConfig;
-        if (!config?.baseUrl || !config?.model) {
-            setPhoneApiTestResult('当前没有可用的 API');
-            return;
-        }
-        setTestingPhoneApi(true);
-        setPhoneApiTestResult(null);
-        try {
-            const response = await fetch(`${config.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${config.apiKey || 'sk-none'}`,
-                },
-                body: JSON.stringify({
-                    model: config.model,
-                    messages: [{ role: 'user', content: 'Hi' }],
-                    max_tokens: 5,
-                    stream: false,
-                }),
-                __sullyMeta: { appId: 'checkphone', appName: '查手机', purpose: '测试连接' },
-            } as RequestInit);
-            if (!response.ok) {
-                const detail = await response.text().catch(() => '');
-                setPhoneApiTestResult(`HTTP ${response.status}${detail ? `：${detail.slice(0, 80)}` : ''}`);
-                return;
-            }
-            const data = await safeResponseJson(response);
-            const reply = extractContent(data) || '';
-            setPhoneApiTestResult(`连接成功${reply ? ` · ${reply.slice(0, 24)}` : ''}`);
-        } catch (error: any) {
-            setPhoneApiTestResult(`连接失败：${error?.message || '网络错误'}`);
-        } finally {
-            setTestingPhoneApi(false);
-        }
-    };
 
     const handleExitPhone = () => {
         setView('select');
@@ -3679,7 +3640,7 @@ ${olderText}
                         <CaretLeft size={18} weight="bold" />
                     </button>
                     <span className="font-semibold tracking-[0.25em] uppercase text-[13px] text-white/80">Target Device</span>
-                    <button onClick={() => { setPhoneApiTestResult(null); setShowApiSettings(true); }} aria-label="查手机 API 设置"
+                    <button onClick={() => setShowApiSettings(true)} aria-label="查手机 API 设置"
                         className="relative w-9 h-9 rounded-full flex items-center justify-center text-white/75 bg-white/[0.05] border border-white/[0.08] active:scale-90 transition">
                         <GearSix size={17} weight={phoneApiFollowsDefault ? 'regular' : 'fill'} />
                         {!phoneApiFollowsDefault && <span className="absolute right-1.5 bottom-1.5 h-1.5 w-1.5 rounded-full bg-violet-400 shadow-[0_0_6px_#a78bfa]" />}
@@ -3733,57 +3694,18 @@ ${olderText}
                     );
                 })()}
                 <Modal isOpen={showApiSettings} title="查手机 · API 设置" onClose={() => setShowApiSettings(false)}>
-                    <div className="space-y-3">
-                        <p className="text-[11px] leading-relaxed text-slate-500">
-                            查手机里的内容生成、人际关系对话、智能体和人格模拟都会走这里。单独选择后不影响聊天；不设置则跟随聊天默认。
-                        </p>
-                        <div className="rounded-2xl bg-slate-50 border border-slate-200 p-3.5">
-                            <div className="text-[10px] tracking-[0.18em] text-slate-400 mb-1">当前生效</div>
-                            <div className="text-[13px] font-bold text-slate-800 break-all">{effectiveApiConfig?.model || '未配置'}</div>
-                            <div className="text-[10.5px] text-slate-400 mt-0.5 break-all">
-                                {apiHost(effectiveApiConfig?.baseUrl)} · {phoneApiFollowsDefault ? '跟随聊天默认' : '查手机独立'}
-                            </div>
-                            <button onClick={testPhoneApi} disabled={testingPhoneApi}
-                                className="mt-2.5 px-3 py-1.5 rounded-full bg-violet-100 text-violet-700 text-[11px] font-bold disabled:opacity-50">
-                                {testingPhoneApi ? '测试中…' : '测试连接'}
-                            </button>
-                            {phoneApiTestResult && (
-                                <div className={`mt-2 rounded-xl px-2.5 py-2 text-[10.5px] leading-relaxed ${phoneApiTestResult.startsWith('连接成功') ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
-                                    {phoneApiTestResult}
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="text-[10px] tracking-[0.18em] text-slate-400 px-1">选择 API</div>
-                        <button onClick={() => choosePhoneApi(null)}
-                            className={`w-full rounded-2xl border p-3 text-left transition ${phoneApiFollowsDefault ? 'border-violet-300 bg-violet-50' : 'border-slate-200 bg-white'}`}>
-                            <div className="flex items-center gap-2">
-                                <div className="min-w-0 flex-1">
-                                    <div className="text-[12px] font-bold text-slate-800">跟随聊天默认</div>
-                                    <div className="text-[10px] text-slate-400 truncate">{apiConfig?.model || '未配置'} · {apiHost(apiConfig?.baseUrl)}</div>
-                                </div>
-                                {phoneApiFollowsDefault && <span className="text-[10px] font-bold text-violet-600">✓ 使用中</span>}
-                            </div>
-                        </button>
-
-                        {apiPresets.length === 0 ? (
-                            <p className="px-1 text-[10.5px] leading-relaxed text-slate-400">“设置”里还没有保存的 API 预设。先保存预设，这里就能单独选择。</p>
-                        ) : apiPresets.map(preset => {
-                            const active = isSamePhoneApi(preset.config);
-                            return (
-                                <button key={preset.id} onClick={() => choosePhoneApi(preset.config)}
-                                    className={`w-full rounded-2xl border p-3 text-left transition ${active ? 'border-violet-300 bg-violet-50' : 'border-slate-200 bg-white'}`}>
-                                    <div className="flex items-center gap-2">
-                                        <div className="min-w-0 flex-1">
-                                            <div className="text-[12px] font-bold text-slate-800 truncate">{preset.name}</div>
-                                            <div className="text-[10px] text-slate-400 truncate">{preset.config.model || '未配置'} · {apiHost(preset.config.baseUrl)}</div>
-                                        </div>
-                                        {active && <span className="text-[10px] font-bold text-violet-600">✓ 使用中</span>}
-                                    </div>
-                                </button>
-                            );
-                        })}
-                    </div>
+                    <ApiSlotEditor
+                        slotName="查手机"
+                        value={rawPhoneSlot}
+                        onCommit={(next) => {
+                            setCheckPhoneApi(next ?? null);
+                            setRawPhoneSlot(next ?? null);
+                            setPhoneApiOverride(getCheckPhoneApi());
+                        }}
+                        followButtonLabel="跟随聊天默认"
+                        helperText="查手机与人格模拟共用此设置；未单独设置时跟随角色或全局聊天默认 API。"
+                        meta={{ appId: 'check_phone', appName: '查手机' }}
+                    />
                 </Modal>
             </div>
         );

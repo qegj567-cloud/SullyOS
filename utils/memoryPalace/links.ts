@@ -82,7 +82,7 @@ strength 范围 0.3-0.8。没有关联返回 []。只输出 JSON。`;
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${llmConfig.apiKey}`,
+                    'Authorization': `Bearer ${llmConfig.apiKey || 'sk-none'}`,
                 },
                 body: JSON.stringify({
                     model: llmConfig.model,

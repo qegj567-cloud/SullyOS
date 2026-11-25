@@ -5,12 +5,13 @@ import { loadCharacterContextMessages } from '../utils/chatContextRange';
  * 核心体验：看角色操控都市居民，制造都市Drama，离线回来发现整栋楼翻天覆地
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useOS } from '../context/OSContext';
 import {
     LifeSimState, SimAction, SimActionType, SimEventType,
-    CharacterProfile, SimNPC,
+    CharacterProfile, SimNPC, APIConfig, DialogueApiConfig,
 } from '../types';
+import { resolveAuxiliaryApi } from '../utils/apiSlots';
 import {
     createNewLifeSimState, createNPC, applyAddNPC,
     applyTriggerEvent, settlePendingEffects, advanceTurn, checkGameOver,
@@ -87,7 +88,7 @@ async function callCharAI(
                 `${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`,
                 {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey || 'sk-none'}` },
                     body: JSON.stringify({
                         model: apiConfig.model,
                         messages: characterContext
@@ -122,6 +123,8 @@ const LifeSimApp: React.FC = () => {
     const { apiConfig, apiPresets, characters, userProfile, closeApp } = useOS();
 
     const [gameState, setGameState] = useState<LifeSimState | null>(null);
+    const gameStateRef = useRef<LifeSimState | null>(null);
+    gameStateRef.current = gameState;
     const [isLoading, setIsLoading] = useState(true);
     const [showReplay, setShowReplay] = useState(false);
     const [replayIndex, setReplayIndex] = useState(0);
@@ -170,8 +173,20 @@ const LifeSimApp: React.FC = () => {
         init();
     }, []);
 
+    useEffect(() => {
+        const onPresetUpdated = () => {
+            void DB.getLifeSimState().then((fresh) => {
+                if (!fresh) return;
+                setGameState((prev) => (prev ? { ...prev, independentApiConfig: fresh.independentApiConfig } : prev));
+            });
+        };
+        window.addEventListener('sully:api-preset-updated', onPresetUpdated);
+        return () => window.removeEventListener('sully:api-preset-updated', onPresetUpdated);
+    }, []);
+
     const saveState = useCallback(async (s: LifeSimState) => {
         s.lastActiveTimestamp = Date.now();
+        gameStateRef.current = s;
         setGameState(s);
         await DB.saveLifeSimState(s);
     }, []);
@@ -188,16 +203,10 @@ const LifeSimApp: React.FC = () => {
         return characters.filter(char => !!char.id && allowedIds.has(char.id));
     }, [characters, resolveParticipantCharIds]);
 
-    const resolveLifeSimApiConfig = useCallback((state: LifeSimState | null | undefined) => {
-        if (!state?.useIndependentApiConfig) return apiConfig;
-        const override = state.independentApiConfig || {};
-        return {
-            ...apiConfig,
-            baseUrl: override.baseUrl?.trim() || apiConfig.baseUrl,
-            apiKey: override.apiKey?.trim() || apiConfig.apiKey,
-            model: override.model?.trim() || apiConfig.model,
-        };
-    }, [apiConfig]);
+    const resolveLifeSimApiConfig = useCallback((state: LifeSimState | null | undefined): APIConfig => {
+        const slot = state?.useIndependentApiConfig ? (state.independentApiConfig as DialogueApiConfig | undefined) : undefined;
+        return resolveAuxiliaryApi(slot, apiConfig, apiPresets);
+    }, [apiConfig, apiPresets]);
 
     const buildMainPlotAction = useCallback(async (state: LifeSimState) => {
         if (!userProfile) return null;
@@ -208,7 +217,7 @@ const LifeSimApp: React.FC = () => {
 
         try {
             let decision = fallback;
-            const canUseApi = !!(resolvedApiConfig?.baseUrl && resolvedApiConfig?.apiKey && resolvedApiConfig?.model);
+            const canUseApi = !!(resolvedApiConfig?.baseUrl && resolvedApiConfig?.model);
 
             if (canUseApi) {
                 const raw = await callCharAI({ baseUrl: resolvedApiConfig.baseUrl, apiKey: resolvedApiConfig.apiKey, model: resolvedApiConfig.model },
@@ -427,7 +436,7 @@ const LifeSimApp: React.FC = () => {
         let s = deepClone(initialState);
         const replayActions: SimAction[] = [...seededReplayActions];
         const resolvedApiConfig = resolveLifeSimApiConfig(initialState);
-        const canUseApi = !!(resolvedApiConfig?.baseUrl && resolvedApiConfig?.apiKey && resolvedApiConfig?.model);
+        const canUseApi = !!(resolvedApiConfig?.baseUrl && resolvedApiConfig?.model);
 
         for (const charId of s.charQueue) {
             const char = characters.find(c => c.id === charId);
@@ -707,21 +716,15 @@ const LifeSimApp: React.FC = () => {
         await saveState({ ...gameState, participantCharIds: [] });
     }, [gameState, saveState]);
 
-    const handleSaveLifeSimApiSettings = useCallback(async (payload: {
-        enabled: boolean;
-        config: { baseUrl: string; apiKey: string; model: string };
-    }) => {
-        if (!gameState) return;
+    const handleSaveLifeSimApiSettings = useCallback(async (next: DialogueApiConfig | undefined) => {
+        const base = gameStateRef.current;
+        if (!base) return;
         await saveState({
-            ...gameState,
-            useIndependentApiConfig: payload.enabled,
-            independentApiConfig: {
-                baseUrl: payload.config.baseUrl,
-                apiKey: payload.config.apiKey,
-                model: payload.config.model,
-            },
+            ...base,
+            useIndependentApiConfig: Boolean(next),
+            independentApiConfig: next ? { ...next } : undefined,
         });
-    }, [gameState, saveState]);
+    }, [saveState]);
 
     const handleSaveNpcEdits = useCallback(async (updates: Partial<SimNPC>) => {
         if (!gameState || !editingNpc) return;
@@ -778,7 +781,7 @@ const LifeSimApp: React.FC = () => {
 
         try {
             let summary = fallbackSummary;
-            const canUseApi = !!(userProfile && resolvedApiConfig?.baseUrl && resolvedApiConfig?.apiKey && resolvedApiConfig?.model);
+            const canUseApi = !!(userProfile && resolvedApiConfig?.baseUrl && resolvedApiConfig?.model);
 
             if (canUseApi && userProfile) {
                 const raw = await callCharAI({ baseUrl: resolvedApiConfig.baseUrl, apiKey: resolvedApiConfig.apiKey, model: resolvedApiConfig.model },

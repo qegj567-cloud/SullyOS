@@ -12,6 +12,10 @@ import { askLinkedArchiveDeletion, deleteNodeAndLinkedArchive } from '../utils/m
 import { markAmsgStateDirty } from '../utils/amsgStateSync';
 import { loadRangeMessagePage, formatRangeTimestamp } from '../utils/memoryPalace/rangeMessagePage';
 import { MainApiMemoryChoice, SkipVectorMemoryChoice } from '../components/MemoryGuideActions';
+import ApiSlotEditor from '../components/settings/ApiSlotEditor';
+import { normalizeApiBaseUrl, normalizeApiCredential, normalizeApiModel } from '../utils/apiConfigNormalize';
+import { isBlankApiSlot } from '../utils/apiSlots';
+import { hasRunnableMemoryPalaceLlm, resolveMemoryPalaceLlm } from '../utils/memoryPalace/pipeline';
 import { useFirstUseGuideStep, GUIDE_SULLY_ID } from '../utils/firstUseGuide';
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import { useOS } from '../context/OSContext';
@@ -894,9 +898,9 @@ export default function MemoryPalaceApp() {
 
     const handleBootstrapPlates = async () => {
         if (!char || bootstrapping) return;
-        const lightApi = memoryPalaceConfig.lightLLM;
-        if (!lightApi?.baseUrl) {
-            setBootstrapStatus('[err]请先在设置中配置副 API');
+        const lightApi = resolveMemoryPalaceLlm(memoryPalaceConfig.lightLLM, apiConfig);
+        if (!hasRunnableMemoryPalaceLlm(lightApi)) {
+            setBootstrapStatus('[err]请先在设置中配置主 API 或在记忆宫殿设置中配置副 API');
             return;
         }
         setBootstrapping(true);
@@ -1005,22 +1009,16 @@ export default function MemoryPalaceApp() {
         resetSelectionState(false);
     }, [char?.id, resetSelectionState]);
 
-    // Embedding 配置本地状态（从全局配置初始化）
+    // Embedding 配置本地状态（从全局配置初始化，仅监听自身字段并在非编辑态同步）
     const [embUrl, setEmbUrl] = useState(memoryPalaceConfig.embedding.baseUrl || 'https://api.siliconflow.cn/v1');
     const [embKey, setEmbKey] = useState(memoryPalaceConfig.embedding.apiKey || '');
     const [embModel, setEmbModel] = useState(memoryPalaceConfig.embedding.model || 'BAAI/bge-m3');
     const [embDimensions, setEmbDimensions] = useState(memoryPalaceConfig.embedding.dimensions || 1024);
-    const [configSaved, setConfigSaved] = useState(false);
+    const [embAutoSaveHint, setEmbAutoSaveHint] = useState('');
     const [testingEmb, setTestingEmb] = useState(false);
     const [testResult, setTestResult] = useState<string | null>(null);
-
-    // 副 API 配置（全局配置）
-    const [lightUrl, setLightUrl] = useState(memoryPalaceConfig.lightLLM.baseUrl || '');
-    const [lightKey, setLightKey] = useState(memoryPalaceConfig.lightLLM.apiKey || '');
-    const [lightModel, setLightModel] = useState(memoryPalaceConfig.lightLLM.model || '');
-    const [lightSaved, setLightSaved] = useState(false);
-    const [testingLight, setTestingLight] = useState(false);
-    const [lightTestResult, setLightTestResult] = useState<string | null>(null);
+    const embDirtyRef = useRef(false);
+    const embSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // Rerank 配置（全局；cross-encoder 二次排序，独立于主召回的可选增强通道）
     const [rrEnabled, setRrEnabled] = useState(!!memoryPalaceConfig.rerank?.enabled);
@@ -1028,51 +1026,81 @@ export default function MemoryPalaceApp() {
     const [rrKey, setRrKey] = useState(memoryPalaceConfig.rerank?.apiKey || '');
     const [rrModel, setRrModel] = useState(memoryPalaceConfig.rerank?.model || 'BAAI/bge-reranker-v2-m3');
     const [rrTopN, setRrTopN] = useState(memoryPalaceConfig.rerank?.topN || 5);
-    const [rrSaved, setRrSaved] = useState(false);
+    const [rrAutoSaveHint, setRrAutoSaveHint] = useState('');
     const [rrTesting, setRrTesting] = useState(false);
     const [rrTestResult, setRrTestResult] = useState<string | null>(null);
+    const rrDirtyRef = useRef(false);
+    const rrSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // 远程向量存储配置
     const [rvUrl, setRvUrl] = useState(remoteVectorConfig.supabaseUrl);
     const [rvKey, setRvKey] = useState(remoteVectorConfig.supabaseAnonKey);
+    const [rvAutoSaveHint, setRvAutoSaveHint] = useState('');
     const [rvTestResult, setRvTestResult] = useState('');
     const [rvTesting, setRvTesting] = useState(false);
+    const rvDirtyRef = useRef(false);
+    const rvSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const rvSync = React.useSyncExternalStore(subscribeVectorSync, () => getVectorSyncProgress(remoteVectorConfig));
     const rvSyncing = !!rvSync?.running;
     const rvTestAttempt = useRef(0);
-    const rvCredentialsSaved = rvUrl === remoteVectorConfig.supabaseUrl && rvKey === remoteVectorConfig.supabaseAnonKey;
+    const rvCredentialsSaved = normalizeApiBaseUrl(rvUrl) === normalizeApiBaseUrl(remoteVectorConfig.supabaseUrl)
+        && normalizeApiCredential(rvKey) === normalizeApiCredential(remoteVectorConfig.supabaseAnonKey);
     const [showInitSQL, setShowInitSQL] = useState(false);
 
-    // 全局配置变更时同步到本地状态
+    // 拆分跨卡片同步：各自只监听对应子字段，且处于编辑态时绝不覆盖正在输入的草稿
     useEffect(() => {
+        if (embDirtyRef.current) return;
         setEmbUrl(memoryPalaceConfig.embedding.baseUrl || 'https://api.siliconflow.cn/v1');
         setEmbKey(memoryPalaceConfig.embedding.apiKey || '');
         setEmbModel(memoryPalaceConfig.embedding.model || 'BAAI/bge-m3');
         setEmbDimensions(memoryPalaceConfig.embedding.dimensions || 1024);
-        setLightUrl(memoryPalaceConfig.lightLLM.baseUrl || '');
-        setLightKey(memoryPalaceConfig.lightLLM.apiKey || '');
-        setLightModel(memoryPalaceConfig.lightLLM.model || '');
+    }, [
+        memoryPalaceConfig.embedding.baseUrl,
+        memoryPalaceConfig.embedding.apiKey,
+        memoryPalaceConfig.embedding.model,
+        memoryPalaceConfig.embedding.dimensions,
+    ]);
+
+    useEffect(() => {
+        if (rrDirtyRef.current) return;
         setRrEnabled(!!memoryPalaceConfig.rerank?.enabled);
         setRrUrl(memoryPalaceConfig.rerank?.baseUrl || '');
         setRrKey(memoryPalaceConfig.rerank?.apiKey || '');
         setRrModel(memoryPalaceConfig.rerank?.model || 'BAAI/bge-reranker-v2-m3');
         setRrTopN(memoryPalaceConfig.rerank?.topN || 5);
-    }, [memoryPalaceConfig]);
+    }, [
+        memoryPalaceConfig.rerank?.enabled,
+        memoryPalaceConfig.rerank?.baseUrl,
+        memoryPalaceConfig.rerank?.apiKey,
+        memoryPalaceConfig.rerank?.model,
+        memoryPalaceConfig.rerank?.topN,
+    ]);
 
-    // 远程向量配置变更时同步到本地状态
     useEffect(() => {
+        if (rvDirtyRef.current) return;
         setRvUrl(remoteVectorConfig.supabaseUrl);
         setRvKey(remoteVectorConfig.supabaseAnonKey);
     }, [remoteVectorConfig.supabaseUrl, remoteVectorConfig.supabaseAnonKey]);
+
+    useEffect(() => () => {
+        if (embSaveTimerRef.current) clearTimeout(embSaveTimerRef.current);
+        if (rrSaveTimerRef.current) clearTimeout(rrSaveTimerRef.current);
+        if (rvSaveTimerRef.current) clearTimeout(rvSaveTimerRef.current);
+    }, []);
 
     // 人格风格 + 反刍倾向 检测
     const [detectingPersonality, setDetectingPersonality] = useState(false);
     const [pendingPersonality, setPendingPersonality] = useState<{ style: string; ruminationTendency: number; reasoning: string } | null>(null);
     // pendingPersonality 绑定到产生它的角色 id，防止切角色后把旧结果应用到新角色
     const [pendingPersonalityCharId, setPendingPersonalityCharId] = useState<string | null>(null);
-    // 抽出原始字段作为 useEffect 依赖，避免 memoryPalaceConfig 对象新引用触发重跑
-    const lightLLMBaseUrl = memoryPalaceConfig.lightLLM?.baseUrl || '';
-    const lightLLMApiKey = memoryPalaceConfig.lightLLM?.apiKey || '';
+    // 统一解析宫殿副 API（留空时自动回退主 API，绑定预设时实时取最新快照）
+    const resolvedPalaceLlm = useMemo(
+        () => resolveMemoryPalaceLlm(memoryPalaceConfig?.lightLLM, apiConfig),
+        [memoryPalaceConfig?.lightLLM, apiConfig, apiPresets],
+    );
+    const resolvedPalaceLlmUrl = resolvedPalaceLlm.baseUrl?.trim() || '';
+    const resolvedPalaceLlmKey = resolvedPalaceLlm.apiKey || '';
+    const resolvedPalaceLlmModel = resolvedPalaceLlm.model?.trim() || '';
 
     // 切换角色时清掉上一个角色遗留的待确认结果
     useEffect(() => {
@@ -1090,7 +1118,7 @@ export default function MemoryPalaceApp() {
         // 已经尝试过或已确认过，不再重复检测（避免 LLM 偶发重置人格）
         const skipKey = `mp_personality_tried_${char.id}`;
         if (localStorage.getItem(skipKey)) return;
-        if (!lightLLMBaseUrl || !lightLLMApiKey) return;
+        if (!resolvedPalaceLlmUrl || !resolvedPalaceLlmModel) return;
 
         // 切换角色时，丢弃旧角色尚未返回的检测结果，避免把 A 的人格应用到 B
         let cancelled = false;
@@ -1098,7 +1126,11 @@ export default function MemoryPalaceApp() {
 
         setDetectingPersonality(true);
         const persona = [char.systemPrompt || '', char.worldview || ''].filter(Boolean).join('\n');
-        detectPersonalityStyle(detectingCharId, char.name, persona, memoryPalaceConfig.lightLLM)
+        detectPersonalityStyle(detectingCharId, char.name, persona, {
+            baseUrl: resolvedPalaceLlmUrl,
+            apiKey: resolvedPalaceLlmKey,
+            model: resolvedPalaceLlmModel,
+        })
             .then(result => {
                 if (cancelled) return;
                 setPendingPersonality(result);
@@ -1115,21 +1147,16 @@ export default function MemoryPalaceApp() {
             });
 
         return () => { cancelled = true; };
-        // 依赖用原始字符串字段，避免 memoryPalaceConfig 对象每次新引用都重跑
-    }, [char?.id, (char as any)?.personalityStyle, view, lightLLMBaseUrl, lightLLMApiKey]);
+        // 依赖用原始字符串字段，避免配置对象每次新引用都重跑
+    }, [char?.id, (char as any)?.personalityStyle, view, resolvedPalaceLlmUrl, resolvedPalaceLlmKey, resolvedPalaceLlmModel]);
 
     // 手动触发 AI 评估（认知参数设置区的按钮）。和自动检测共用 detecting/pending
-    // 两个状态，所以结果同样走"分析中 → 确认"两屏流程。副 API 没配时退回主
-    // apiConfig —— 跟 useChatAI 里 mpLLM 的 fallback 策略一致。
+    // 两个状态，所以结果同样走"分析中 → 确认"两屏流程。副 API 没配时退回主 API。
     const manualDetectPersonality = () => {
         if (!char || detectingPersonality) return;
-        const llm = (lightLLMBaseUrl && lightLLMApiKey)
-            ? memoryPalaceConfig.lightLLM
-            : (apiConfig?.baseUrl && apiConfig?.apiKey
-                ? { baseUrl: apiConfig.baseUrl, apiKey: apiConfig.apiKey, model: apiConfig.model }
-                : null);
-        if (!llm) {
-            addToast('请先配置副 API（记忆宫殿全局设置）或主 API', 'error');
+        const llm = resolveMemoryPalaceLlm(memoryPalaceConfig.lightLLM, apiConfig);
+        if (!hasRunnableMemoryPalaceLlm(llm)) {
+            addToast('请先在设置中配置主 API 或在记忆宫殿设置中配置副 API', 'error');
             return;
         }
         const detectingCharId = char.id;
@@ -1150,7 +1177,6 @@ export default function MemoryPalaceApp() {
 
     // 判断是否已配置（使用全局配置）
     const hasEmbeddingConfig = !!(memoryPalaceConfig.embedding.baseUrl && memoryPalaceConfig.embedding.apiKey);
-    const hasLightApi = !!(memoryPalaceConfig.lightLLM.baseUrl && memoryPalaceConfig.lightLLM.apiKey);
 
     // 加载数据
     const loadStats = useCallback(async () => {
@@ -1373,10 +1399,10 @@ export default function MemoryPalaceApp() {
      */
     const handleRegenerateBoxSummary = async (box: EventBox) => {
         if (!char || regeneratingBoxId) return;
-        const lightApi = memoryPalaceConfig.lightLLM;
+        const lightApi = resolveMemoryPalaceLlm(memoryPalaceConfig.lightLLM, apiConfig);
         const embedding = memoryPalaceConfig.embedding;
-        if (!lightApi?.baseUrl || !lightApi.apiKey || !lightApi.model) {
-            addToast('请先在记忆宫殿设置中完整配置副 API', 'error');
+        if (!hasRunnableMemoryPalaceLlm(lightApi)) {
+            addToast('请先在设置中配置主 API 或在记忆宫殿设置中配置副 API', 'error');
             return;
         }
         if (!embedding?.baseUrl || !embedding.apiKey || !embedding.model) {
@@ -1689,42 +1715,122 @@ export default function MemoryPalaceApp() {
         }
     };
 
-    const handleSaveEmbeddingConfig = () => {
-        updateMemoryPalaceConfig({
-            embedding: {
-                baseUrl: embUrl.trim(),
-                apiKey: embKey.trim(),
-                model: embModel.trim() || 'BAAI/bge-m3',
-                dimensions: embDimensions || 1024,
-            },
-        });
-        // 同步到当前角色的 embeddingConfig（兼容已有的 injectMemoryPalace 调用）
-        if (char) {
-            updateCharacter(char.id, {
-                embeddingConfig: {
-                    baseUrl: embUrl.trim(),
-                    apiKey: embKey.trim(),
-                    model: embModel.trim() || 'BAAI/bge-m3',
-                    dimensions: embDimensions || 1024,
-                },
-            } as any);
+    const flushEmbeddingDraft = (draft: { url: string; key: string; model: string; dimensions: number }) => {
+        const baseUrl = normalizeApiBaseUrl(draft.url);
+        const apiKey = normalizeApiCredential(draft.key);
+        const model = normalizeApiModel(draft.model) || 'BAAI/bge-m3';
+        const dimensions = draft.dimensions || 1024;
+        if (!baseUrl) {
+            setEmbAutoSaveHint('还缺：BASE URL（填好后自动保存）');
+            return;
         }
-        setConfigSaved(true);
-        setTimeout(() => setConfigSaved(false), 2000);
+        if (!apiKey) {
+            setEmbAutoSaveHint('还缺：API KEY（填好后自动保存）');
+            return;
+        }
+        embDirtyRef.current = false;
+        const prev = memoryPalaceConfig.embedding;
+        if (
+            normalizeApiBaseUrl(prev.baseUrl) === baseUrl
+            && normalizeApiCredential(prev.apiKey) === apiKey
+            && (normalizeApiModel(prev.model) || 'BAAI/bge-m3') === model
+            && (prev.dimensions || 1024) === dimensions
+        ) {
+            setEmbAutoSaveHint('');
+            return;
+        }
+        // 只写全局 embedding 配置，停止往单个角色 char.embeddingConfig 双写
+        updateMemoryPalaceConfig({
+            embedding: { baseUrl, apiKey, model, dimensions },
+        });
+        setEmbAutoSaveHint('已自动保存');
     };
 
-    const handleSaveRerankConfig = () => {
-        updateMemoryPalaceConfig({
-            rerank: {
-                enabled: rrEnabled,
-                baseUrl: rrUrl.trim(),
-                apiKey: rrKey.trim(),
-                model: rrModel.trim() || 'BAAI/bge-reranker-v2-m3',
-                topN: Math.max(1, Math.min(20, rrTopN || 5)),
-            },
-        });
-        setRrSaved(true);
-        setTimeout(() => setRrSaved(false), 2000);
+    const scheduleEmbeddingSave = (
+        draft: { url: string; key: string; model: string; dimensions: number },
+        immediate = false,
+    ) => {
+        embDirtyRef.current = true;
+        if (embSaveTimerRef.current) {
+            clearTimeout(embSaveTimerRef.current);
+            embSaveTimerRef.current = null;
+        }
+        if (immediate) {
+            flushEmbeddingDraft(draft);
+            return;
+        }
+        embSaveTimerRef.current = setTimeout(() => {
+            embSaveTimerRef.current = null;
+            flushEmbeddingDraft(draft);
+        }, 600);
+    };
+
+    const flushRerankDraft = (
+        draft: { enabled: boolean; url: string; key: string; model: string; topN: number },
+        options: { allowIncompleteWhenToggle?: boolean } = {},
+    ) => {
+        const baseUrl = normalizeApiBaseUrl(draft.url);
+        const apiKey = normalizeApiCredential(draft.key);
+        const model = normalizeApiModel(draft.model) || 'BAAI/bge-reranker-v2-m3';
+        const topN = Math.max(1, Math.min(20, draft.topN || 5));
+        const prev = memoryPalaceConfig.rerank;
+
+        if ((!baseUrl || !apiKey) && !options.allowIncompleteWhenToggle && draft.enabled) {
+            setRrAutoSaveHint(!baseUrl ? '还缺：BASE URL（填好后自动保存）' : '还缺：API KEY（填好后自动保存）');
+            return;
+        }
+
+        const nextRerank = (baseUrl && apiKey) || (!baseUrl && !apiKey)
+            ? { enabled: draft.enabled, baseUrl, apiKey, model, topN }
+            : {
+                enabled: draft.enabled,
+                baseUrl: baseUrl || prev?.baseUrl || '',
+                apiKey: apiKey || prev?.apiKey || '',
+                model,
+                topN,
+            };
+
+        if ((baseUrl && apiKey) || (!baseUrl && !apiKey)) {
+            rrDirtyRef.current = false;
+        }
+
+        if (
+            Boolean(prev?.enabled) === nextRerank.enabled
+            && normalizeApiBaseUrl(prev?.baseUrl) === nextRerank.baseUrl
+            && normalizeApiCredential(prev?.apiKey) === nextRerank.apiKey
+            && (normalizeApiModel(prev?.model) || 'BAAI/bge-reranker-v2-m3') === nextRerank.model
+            && (prev?.topN || 5) === nextRerank.topN
+        ) {
+            if (baseUrl && apiKey) setRrAutoSaveHint('');
+            return;
+        }
+
+        updateMemoryPalaceConfig({ rerank: nextRerank });
+        setRrAutoSaveHint(
+            nextRerank.enabled && (!nextRerank.baseUrl || !nextRerank.apiKey)
+                ? '已开启开关，请继续填写地址与 API Key'
+                : '已自动保存',
+        );
+    };
+
+    const scheduleRerankSave = (
+        draft: { enabled: boolean; url: string; key: string; model: string; topN: number },
+        immediate = false,
+        allowIncompleteWhenToggle = false,
+    ) => {
+        rrDirtyRef.current = true;
+        if (rrSaveTimerRef.current) {
+            clearTimeout(rrSaveTimerRef.current);
+            rrSaveTimerRef.current = null;
+        }
+        if (immediate) {
+            flushRerankDraft(draft, { allowIncompleteWhenToggle });
+            return;
+        }
+        rrSaveTimerRef.current = setTimeout(() => {
+            rrSaveTimerRef.current = null;
+            flushRerankDraft(draft);
+        }, 600);
     };
 
     const updateAccommodation = (key: keyof CharacterAccommodationPolicy, value: number) => {
@@ -1736,18 +1842,6 @@ export default function MemoryPalaceApp() {
                 [key]: value,
             },
         });
-    };
-
-    const handleSaveLightApi = () => {
-        const api = {
-            baseUrl: lightUrl.trim(),
-            apiKey: lightKey.trim(),
-            model: lightModel.trim(),
-        };
-        // 只写全局 lightLLM；与情绪 API（emotionConfig.api）完全独立，互不影响。
-        updateMemoryPalaceConfig({ lightLLM: api });
-        setLightSaved(true);
-        setTimeout(() => setLightSaved(false), 2000);
     };
 
     const handleSwitchChar = (id: string) => {
@@ -1824,9 +1918,13 @@ export default function MemoryPalaceApp() {
             return;
         }
         const mpEmb = memoryPalaceConfig?.embedding;
-        const mpLLM = memoryPalaceConfig?.lightLLM;
-        if (!mpEmb?.baseUrl || !mpEmb?.apiKey || !mpLLM?.baseUrl || !mpLLM?.apiKey) {
-            addToast('请先在记忆宫殿设置中配置 Embedding + 副 API', 'error');
+        const mpLLM = resolveMemoryPalaceLlm(memoryPalaceConfig?.lightLLM, apiConfig);
+        if (!mpEmb?.baseUrl || !mpEmb?.apiKey) {
+            addToast('请先在记忆宫殿设置中配置 Embedding API', 'error');
+            return;
+        }
+        if (!hasRunnableMemoryPalaceLlm(mpLLM)) {
+            addToast('请先在设置中配置主 API 或在记忆宫殿设置中配置副 API', 'error');
             return;
         }
 
@@ -1977,29 +2075,99 @@ export default function MemoryPalaceApp() {
         }
     };
 
-    // 远程向量：测试连接
+    const flushRemoteVectorDraft = (draft: { url: string; key: string }) => {
+        const cleanUrl = normalizeApiBaseUrl(draft.url);
+        const cleanKey = normalizeApiCredential(draft.key);
+        if (!cleanUrl && !cleanKey) {
+            rvDirtyRef.current = false;
+            if (remoteVectorConfig.enabled || remoteVectorConfig.supabaseUrl || remoteVectorConfig.supabaseAnonKey) {
+                updateRemoteVectorConfig({ enabled: false, supabaseUrl: '', supabaseAnonKey: '', initialized: false });
+                setRvAutoSaveHint('已清空并关闭远程存储');
+            } else {
+                setRvAutoSaveHint('');
+            }
+            return;
+        }
+        if (!cleanUrl) {
+            setRvAutoSaveHint('还缺：PROJECT URL（填好后自动保存）');
+            return;
+        }
+        if (!cleanKey) {
+            setRvAutoSaveHint('还缺：ANON / PUBLIC KEY（填好后自动保存）');
+            return;
+        }
+        rvDirtyRef.current = false;
+        const sameCreds =
+            cleanUrl === normalizeApiBaseUrl(remoteVectorConfig.supabaseUrl)
+            && cleanKey === normalizeApiCredential(remoteVectorConfig.supabaseAnonKey);
+        if (sameCreds && remoteVectorConfig.enabled) {
+            setRvAutoSaveHint('');
+            return;
+        }
+        const initialized = sameCreds ? remoteVectorConfig.initialized : false;
+        updateRemoteVectorConfig({
+            enabled: true,
+            supabaseUrl: cleanUrl,
+            supabaseAnonKey: cleanKey,
+            initialized,
+        });
+        setRvAutoSaveHint(initialized ? '已自动保存' : '已自动保存（点下方测试连接验证后生效）');
+    };
+
+    const scheduleRemoteVectorSave = (draft: { url: string; key: string }, immediate = false) => {
+        rvDirtyRef.current = true;
+        if (rvSaveTimerRef.current) {
+            clearTimeout(rvSaveTimerRef.current);
+            rvSaveTimerRef.current = null;
+        }
+        if (immediate) {
+            flushRemoteVectorDraft(draft);
+            return;
+        }
+        rvSaveTimerRef.current = setTimeout(() => {
+            rvSaveTimerRef.current = null;
+            flushRemoteVectorDraft(draft);
+        }, 600);
+    };
+
+    // 远程向量：测试连接（测试前剥离空白与零宽字符，验证通过后自动落盘启用）
     const handleTestRemoteVector = async () => {
+        const cleanUrl = normalizeApiBaseUrl(rvUrl);
+        const cleanKey = normalizeApiCredential(rvKey);
+        if (!cleanUrl || !cleanKey) return;
+        if (rvSaveTimerRef.current) {
+            clearTimeout(rvSaveTimerRef.current);
+            rvSaveTimerRef.current = null;
+        }
+        rvDirtyRef.current = false;
+        setRvUrl(cleanUrl);
+        setRvKey(cleanKey);
         const attempt = ++rvTestAttempt.current;
         setRvTesting(true);
         setRvTestResult('');
         try {
-            const result = await testConnection({ enabled: true, supabaseUrl: rvUrl, supabaseAnonKey: rvKey, initialized: false });
+            const result = await testConnection({ enabled: true, supabaseUrl: cleanUrl, supabaseAnonKey: cleanKey, initialized: false });
             if (attempt !== rvTestAttempt.current) return;
-            if (result.ok && result.tableExists) setRvTestResult('[ok]' + result.message);
-            else setRvTestResult('[err]' + result.message);
+            if (result.ok && result.tableExists) {
+                setRvTestResult('[ok]' + result.message);
+                updateRemoteVectorConfig({ enabled: true, supabaseUrl: cleanUrl, supabaseAnonKey: cleanKey, initialized: true });
+                setRvAutoSaveHint('已验证并自动启用远程向量存储');
+            } else {
+                setRvTestResult('[err]' + result.message);
+                updateRemoteVectorConfig({ enabled: true, supabaseUrl: cleanUrl, supabaseAnonKey: cleanKey, initialized: false });
+            }
         } catch (e: any) { if (attempt === rvTestAttempt.current) setRvTestResult('[err]' + e.message); }
         if (attempt === rvTestAttempt.current) setRvTesting(false);
     };
 
-    // 远程向量：保存配置
-    const handleSaveRemoteVector = () => {
-        const initialized = rvTestResult.startsWith('[ok]') || (!rvTestResult && rvCredentialsSaved && remoteVectorConfig.initialized);
-        updateRemoteVectorConfig({ enabled: true, supabaseUrl: rvUrl, supabaseAnonKey: rvKey, initialized });
-        addToast('远程向量存储配置已保存', 'success');
-    };
-
     // 远程向量：关闭
     const handleDisableRemoteVector = () => {
+        if (rvSaveTimerRef.current) {
+            clearTimeout(rvSaveTimerRef.current);
+            rvSaveTimerRef.current = null;
+        }
+        rvDirtyRef.current = false;
+        setRvAutoSaveHint('');
         updateRemoteVectorConfig({ enabled: false, initialized: false });
         addToast('远程向量存储已关闭', 'info');
     };
@@ -2073,13 +2241,13 @@ export default function MemoryPalaceApp() {
             return;
         }
         const emb = memoryPalaceConfig.embedding;
-        const llm = memoryPalaceConfig.lightLLM;
+        const llm = resolveMemoryPalaceLlm(memoryPalaceConfig.lightLLM, apiConfig);
         if (!emb?.baseUrl || !emb?.apiKey) {
             addToast('请先配置 Embedding API', 'error');
             return;
         }
-        if (!llm?.baseUrl || !llm?.apiKey) {
-            addToast('请先配置副 API（用于 LLM 记忆提取）', 'error');
+        if (!hasRunnableMemoryPalaceLlm(llm)) {
+            addToast('请先在设置中配置主 API 或在记忆宫殿设置中配置副 API', 'error');
             return;
         }
 
@@ -2137,9 +2305,9 @@ export default function MemoryPalaceApp() {
             return;
         }
 
-        const lightApi = memoryPalaceConfig.lightLLM;
-        if (!lightApi?.baseUrl) {
-            setMigrationResult('[err]需要配置副 API（轻量副模型），用于 LLM 记忆提取');
+        const lightApi = resolveMemoryPalaceLlm(memoryPalaceConfig.lightLLM, apiConfig);
+        if (!hasRunnableMemoryPalaceLlm(lightApi)) {
+            setMigrationResult('[err]请先在设置中配置主 API 或在记忆宫殿设置中配置副 API');
             return;
         }
 
@@ -2177,9 +2345,9 @@ export default function MemoryPalaceApp() {
     const handleDigest = async () => {
         if (!char || digesting) return;
         trackEvent('手动触发认知消化');
-        const lightApi = memoryPalaceConfig.lightLLM;
-        if (!lightApi?.baseUrl) {
-            setDigestResult('[err]请先在设置中配置副 API');
+        const lightApi = resolveMemoryPalaceLlm(memoryPalaceConfig.lightLLM, apiConfig);
+        if (!hasRunnableMemoryPalaceLlm(lightApi)) {
+            setDigestResult('[err]请先在设置中配置主 API 或在记忆宫殿设置中配置副 API');
             return;
         }
 
@@ -2511,13 +2679,13 @@ export default function MemoryPalaceApp() {
             return;
         }
         const emb = memoryPalaceConfig.embedding;
-        const llm = memoryPalaceConfig.lightLLM;
+        const llm = resolveMemoryPalaceLlm(memoryPalaceConfig.lightLLM, apiConfig);
         if (!emb?.baseUrl || !emb?.apiKey || !emb?.model) {
             setExternalImportResult('[err]请先在记忆宫殿设置中配置 Embedding API');
             return;
         }
-        if (!llm?.baseUrl || !llm?.apiKey || !llm?.model) {
-            setExternalImportResult('[err]请先在记忆宫殿设置中配置副 API');
+        if (!hasRunnableMemoryPalaceLlm(llm)) {
+            setExternalImportResult('[err]请先在设置中配置主 API 或在记忆宫殿设置中配置副 API');
             return;
         }
 
@@ -3460,159 +3628,34 @@ export default function MemoryPalaceApp() {
 
                 {/* 副 API 配置 */}
                 <div style={{ background: '#f0fdf4', borderRadius: 16, padding: 16, border: '1px solid #bbf7d0', marginBottom: 16 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: '#166534', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#166534', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
                         <Icon name="robot" size={14} />
                         <span>副 API（后台处理用）</span>
                     </div>
-                    <div style={{ fontSize: 10, color: '#6b7280', marginBottom: 10, lineHeight: 1.6 }}>
-                        用于<b>记忆提取、关联分析、认知消化</b>等后台任务。此配置全局生效，所有角色共用。
-                        <span style={{ color: '#9ca3af' }}>仅作用于记忆宫殿相关流程，不影响主聊天，也不影响情绪感知。</span>
-                    </div>
                     <MainApiMemoryChoice />
-                    {!guideSetup && <div style={{
-                        fontSize: 10, color: '#9a3412', background: '#fff7ed',
-                        border: '1px solid #fed7aa', borderRadius: 8, padding: '6px 8px',
-                        marginBottom: 12, lineHeight: 1.6,
-                    }}>
-                        下方<b>不填</b>（URL 留空）时，记忆宫殿会<b>自动回退用主 API</b> 跑后台处理。
-                        想让后台任务走更便宜的账户 / 不想占主 API 额度，就在这里填一个便宜模型。
-                        看不懂怎么选？直接挑一个<b>每百万 token 几毛钱</b>的模型即可，后台任务不需要推理能力。
-                    </div>}
-
-                    {/* API 预设快速填充 */}
-                    {apiPresets.length > 0 && (
-                        <div style={{ marginBottom: 10 }}>
-                            <label className={labelClass}>从预设导入</label>
-                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                                {apiPresets.map(p => (
-                                    <button key={p.id} onClick={() => {
-                                        setLightUrl(p.config.baseUrl);
-                                        setLightKey(p.config.apiKey);
-                                        setLightModel(p.config.model);
-                                    }} style={{
-                                        padding: '4px 10px', borderRadius: 8, fontSize: 11, fontWeight: 600,
-                                        border: '1px solid #bbf7d0', background: 'white', color: '#166534',
-                                        cursor: 'pointer',
-                                    }}>
-                                        {p.name}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                        <div>
-                            <label className={labelClass}>BASE URL</label>
-                            <input type="text" value={lightUrl} onChange={e => setLightUrl(e.target.value)}
-                                placeholder="https://..." className={inputClass} />
-                        </div>
-                        <div>
-                            <label className={labelClass}>API KEY</label>
-                            <input type="password" value={lightKey} onChange={e => setLightKey(e.target.value)}
-                                placeholder="sk-..." className={inputClass} />
-                        </div>
-                        <div>
-                            <label className={labelClass}>MODEL</label>
-                            <input type="text" value={lightModel} onChange={e => setLightModel(e.target.value)}
-                                placeholder="一个便宜的对话模型名" className={inputClass} />
-                            <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 4, paddingLeft: 4 }}>
-                                填任意一家便宜的<b>对话模型</b>即可（按主 API 一样的填法），自己挑就好。
-                                注意：这里要的是跑后台文字任务的<b>对话</b>模型，<b>不是</b> embedding 向量模型——别填到下面 Embedding 区才该用的那类。
-                            </div>
-                        </div>
-                    </div>
-
-                    <button onClick={handleSaveLightApi}
-                        disabled={!lightUrl.trim() || !lightKey.trim() || !lightModel.trim()}
-                        style={{
-                            width: '100%', marginTop: 12, padding: '10px 0', borderRadius: 12,
-                            border: 'none', fontWeight: 700, fontSize: 13, color: 'white',
-                            background: (!lightUrl.trim() || !lightKey.trim() || !lightModel.trim()) ? '#cbd5e1' : '#16a34a',
-                            cursor: (!lightUrl.trim() || !lightKey.trim() || !lightModel.trim()) ? 'not-allowed' : 'pointer',
-                        }}
-                    >
-                        {lightSaved ? '✓ 已保存' : '保存副 API 配置'}
-                    </button>
-
-                    {/* 测试副 API 连接 */}
-                    <button
-                        onClick={async () => {
-                            if (!lightUrl.trim() || !lightKey.trim() || !lightModel.trim()) return;
-                            setTestingLight(true);
-                            setLightTestResult(null);
-                            try {
-                                const res = await fetch(`${lightUrl.trim().replace(/\/+$/, '')}/chat/completions`, {
-                                    method: 'POST',
-                                    headers: {
-                                        'Content-Type': 'application/json',
-                                        'Authorization': `Bearer ${lightKey.trim()}`,
-                                    },
-                                    body: JSON.stringify({
-                                        model: lightModel.trim(),
-                                        messages: [{ role: 'user', content: 'Hi' }],
-                                        max_tokens: 5,
-                                    }),
-                                    __sullyMeta: { appId: 'memorypalace', appName: '记忆宫殿', purpose: '测试连接' },
-                                } as RequestInit);
-                                if (res.ok) {
-                                    const data = await res.json();
-                                    const reply = (data.choices?.[0]?.message?.content || '').toString();
-                                    setLightTestResult(`[ok]连接成功 — 模型回复: "${reply.slice(0, 30)}"`);
-                                } else {
-                                    const text = await res.text().catch(() => '');
-                                    setLightTestResult(`[err]HTTP ${res.status}: ${text.slice(0, 120)}`);
-                                }
-                            } catch (err: any) {
-                                setLightTestResult(`[err]连接失败: ${err?.message || String(err)}`);
-                            } finally {
-                                setTestingLight(false);
-                            }
-                        }}
-                        disabled={testingLight || !lightUrl.trim() || !lightKey.trim() || !lightModel.trim()}
-                        style={{
-                            width: '100%', marginTop: 8, padding: '10px 0', borderRadius: 12,
-                            border: '1px solid #16a34a44', fontWeight: 600, fontSize: 13,
-                            color: '#16a34a', background: 'white',
-                            cursor: (testingLight || !lightUrl.trim() || !lightKey.trim() || !lightModel.trim()) ? 'not-allowed' : 'pointer',
-                            opacity: (!lightUrl.trim() || !lightKey.trim() || !lightModel.trim()) ? 0.5 : 1,
-                        }}
-                    >
-                        {testingLight ? '测试中...' : (
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                                <Icon name="beaker" size={13} />
-                                <span>测试 API 连接</span>
-                            </span>
-                        )}
-                    </button>
-
-                    {lightTestResult && (
-                        <div style={{
-                            marginTop: 8, fontSize: 12, padding: '8px 12px', borderRadius: 8,
-                            background: lightTestResult.startsWith('[ok]') ? '#f0fdf4' : '#fef2f2',
-                            color: lightTestResult.startsWith('[ok]') ? '#16a34a' : '#dc2626',
-                        }}>
-                            <StatusMessage msg={lightTestResult} />
-                        </div>
-                    )}
-
-                    {!guideSetup && !hasLightApi && (
-                        <div style={{ marginTop: 8, fontSize: 11, color: '#a16207', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}>
-                            <Icon name="warning" size={12} />
-                            <span>副 API 未配置 — 后台处理会<b>回退使用主 API</b>（功能可用，但会占主 API 额度）</span>
-                        </div>
-                    )}
+                    <ApiSlotEditor
+                        slotName="记忆副API"
+                        value={isBlankApiSlot(memoryPalaceConfig.lightLLM) ? undefined : memoryPalaceConfig.lightLLM}
+                        onCommit={(next) => updateMemoryPalaceConfig({ lightLLM: next ?? { baseUrl: '', apiKey: '', model: '' } })}
+                        followButtonLabel="清空并回退主 API"
+                        globalScopeNotice="全局共用 · 所有角色的记忆整理共用此配置"
+                        helperText="留空时自动回退使用全局主对话 API（会消耗主 API 额度）；想节省主 API 额度可绑定或填写便宜的对话模型。"
+                        meta={{ appId: 'memory_palace', appName: '记忆宫殿' }}
+                    />
                 </div>
 
                 {/* Embedding API */}
                 <div data-guide="embedding" style={{ background: '#f8f7ff', borderRadius: 16, padding: 16, border: '1px solid #e9e5ff' }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: '#7c3aed', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <Icon name="link" size={14} />
-                        <span>Embedding API（OpenAI 兼容格式）</span>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#7c3aed', marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                            <Icon name="link" size={14} />
+                            <span>Embedding API（OpenAI 兼容格式）</span>
+                        </span>
+                        <span style={{ fontSize: 10, fontWeight: 600, color: '#8b5cf6' }}>自动保存</span>
                     </div>
                     <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 16, lineHeight: 1.6 }}>
                         新手可使用硅基流动（SiliconFlow），请先在网页版完成实名认证才能使用。
-                        下方选择向量模型并填入 API Key 后保存。熟悉 Embedding 的用户也可配置其他兼容向量模型；不要填聊天模型。
+                        下方选择向量模型并填入 API Key 后自动保存生效。熟悉 Embedding 的用户也可配置其他兼容向量模型；不要填聊天模型。
                         <br/>
                         <span style={{ color: '#a16207', fontWeight: 600 }}>
                             注意：Embedding 用的是 <code>/embeddings</code> 端点，和主 API 不通用，因此
@@ -3626,7 +3669,16 @@ export default function MemoryPalaceApp() {
                             <input
                                 type="text"
                                 value={embUrl}
-                                onChange={e => setEmbUrl(e.target.value)}
+                                onChange={e => {
+                                    const nextUrl = e.target.value;
+                                    setEmbUrl(nextUrl);
+                                    scheduleEmbeddingSave({ url: nextUrl, key: embKey, model: embModel, dimensions: embDimensions });
+                                }}
+                                onBlur={() => {
+                                    const cleanUrl = normalizeApiBaseUrl(embUrl);
+                                    if (cleanUrl !== embUrl) setEmbUrl(cleanUrl);
+                                    scheduleEmbeddingSave({ url: cleanUrl, key: embKey, model: embModel, dimensions: embDimensions }, true);
+                                }}
                                 placeholder="https://api.siliconflow.cn/v1"
                                 className={inputClass}
                             />
@@ -3638,12 +3690,21 @@ export default function MemoryPalaceApp() {
                                 <input
                                     type="password"
                                     value={embKey}
-                                    onChange={e => setEmbKey(e.target.value)}
+                                    onChange={e => {
+                                        const nextKey = e.target.value;
+                                        setEmbKey(nextKey);
+                                        scheduleEmbeddingSave({ url: embUrl, key: nextKey, model: embModel, dimensions: embDimensions });
+                                    }}
+                                    onBlur={() => {
+                                        const cleanKey = normalizeApiCredential(embKey);
+                                        if (cleanKey !== embKey) setEmbKey(cleanKey);
+                                        scheduleEmbeddingSave({ url: embUrl, key: cleanKey, model: embModel, dimensions: embDimensions }, true);
+                                    }}
                                     placeholder="sk-..."
                                     className={inputClass}
                                     style={{ flex: 1 }}
                                 />
-                                <button onClick={() => window.open('https://cloud.siliconflow.cn/account/ak', '_blank')} style={{
+                                <button type="button" onClick={() => window.open('https://cloud.siliconflow.cn/account/ak', '_blank')} style={{
                                     padding: '8px 12px', borderRadius: 10, fontSize: 11, fontWeight: 600,
                                     border: '1px solid #e9e5ff', background: 'white', color: '#7c3aed',
                                     cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
@@ -3680,10 +3741,12 @@ export default function MemoryPalaceApp() {
                                 ].map(opt => {
                                     const isActive = embModel === opt.model && embDimensions === opt.dim;
                                     return (
-                                        <button key={opt.model} onClick={() => {
+                                        <button type="button" key={opt.model} onClick={() => {
+                                            const nextUrl = normalizeApiBaseUrl(embUrl) || 'https://api.siliconflow.cn/v1';
                                             setEmbModel(opt.model);
                                             setEmbDimensions(opt.dim);
-                                            if (!embUrl.trim()) setEmbUrl('https://api.siliconflow.cn/v1');
+                                            if (!normalizeApiBaseUrl(embUrl)) setEmbUrl(nextUrl);
+                                            scheduleEmbeddingSave({ url: nextUrl, key: embKey, model: opt.model, dimensions: opt.dim }, true);
                                         }} style={{
                                             display: 'flex', alignItems: 'center', gap: 8,
                                             padding: '10px 14px', borderRadius: 12, fontSize: 12,
@@ -3708,7 +3771,16 @@ export default function MemoryPalaceApp() {
                             <input
                                 type="text"
                                 value={embModel}
-                                onChange={e => setEmbModel(e.target.value)}
+                                onChange={e => {
+                                    const nextModel = e.target.value;
+                                    setEmbModel(nextModel);
+                                    scheduleEmbeddingSave({ url: embUrl, key: embKey, model: nextModel, dimensions: embDimensions });
+                                }}
+                                onBlur={() => {
+                                    const cleanModel = normalizeApiModel(embModel) || 'BAAI/bge-m3';
+                                    if (cleanModel !== embModel) setEmbModel(cleanModel);
+                                    scheduleEmbeddingSave({ url: embUrl, key: embKey, model: cleanModel, dimensions: embDimensions }, true);
+                                }}
                                 placeholder="BAAI/bge-m3"
                                 className={inputClass}
                             />
@@ -3719,7 +3791,14 @@ export default function MemoryPalaceApp() {
                             <input
                                 type="number"
                                 value={embDimensions}
-                                onChange={e => setEmbDimensions(parseInt(e.target.value) || 1024)}
+                                onChange={e => {
+                                    const nextDim = parseInt(e.target.value, 10) || 1024;
+                                    setEmbDimensions(nextDim);
+                                    scheduleEmbeddingSave({ url: embUrl, key: embKey, model: embModel, dimensions: nextDim });
+                                }}
+                                onBlur={() => {
+                                    scheduleEmbeddingSave({ url: embUrl, key: embKey, model: embModel, dimensions: embDimensions }, true);
+                                }}
                                 placeholder="1024"
                                 className={inputClass}
                             />
@@ -3729,38 +3808,27 @@ export default function MemoryPalaceApp() {
                         </div>
                     </div>
 
-                    <button
-                        onClick={handleSaveEmbeddingConfig}
-                        disabled={!embUrl.trim() || !embKey.trim()}
-                        style={{
-                            width: '100%',
-                            marginTop: 16,
-                            padding: '12px 0',
-                            borderRadius: 16,
-                            border: 'none',
-                            fontWeight: 700,
-                            fontSize: 14,
-                            color: 'white',
-                            background: (!embUrl.trim() || !embKey.trim()) ? '#cbd5e1' : '#7c3aed',
-                            cursor: (!embUrl.trim() || !embKey.trim()) ? 'not-allowed' : 'pointer',
-                            transition: 'all 0.15s',
-                        }}
-                    >
-                        {configSaved ? '✓ 已保存' : '保存配置'}
-                    </button>
+                    {embAutoSaveHint && (
+                        <div style={{ marginTop: 10, fontSize: 11, color: '#6b7280', paddingLeft: 4 }}>
+                            {embAutoSaveHint}
+                        </div>
+                    )}
 
                     {/* 测试 Embedding 连接 */}
                     <button
+                        type="button"
                         onClick={async () => {
-                            if (!embUrl.trim() || !embKey.trim()) return;
+                            const cleanUrl = normalizeApiBaseUrl(embUrl);
+                            const cleanKey = normalizeApiCredential(embKey);
+                            if (!cleanUrl || !cleanKey) return;
                             setTestingEmb(true);
                             setTestResult(null);
                             try {
                                 const { getEmbedding } = await import('../utils/memoryPalace/embedding');
                                 const config = {
-                                    baseUrl: embUrl.trim(),
-                                    apiKey: embKey.trim(),
-                                    model: embModel.trim() || 'BAAI/bge-m3',
+                                    baseUrl: cleanUrl,
+                                    apiKey: cleanKey,
+                                    model: normalizeApiModel(embModel) || 'BAAI/bge-m3',
                                     dimensions: embDimensions || 1024,
                                 };
                                 const vec = await getEmbedding('测试文本', config);
@@ -3771,10 +3839,10 @@ export default function MemoryPalaceApp() {
                                 setTestingEmb(false);
                             }
                         }}
-                        disabled={testingEmb || !embUrl.trim() || !embKey.trim()}
+                        disabled={testingEmb || !normalizeApiBaseUrl(embUrl) || !normalizeApiCredential(embKey)}
                         style={{
                             width: '100%',
-                            marginTop: 8,
+                            marginTop: 12,
                             padding: '10px 0',
                             borderRadius: 12,
                             border: '1px solid #7c3aed44',
@@ -3783,6 +3851,7 @@ export default function MemoryPalaceApp() {
                             color: '#7c3aed',
                             background: 'white',
                             cursor: testingEmb ? 'not-allowed' : 'pointer',
+                            opacity: (!normalizeApiBaseUrl(embUrl) || !normalizeApiCredential(embKey)) ? 0.5 : 1,
                         }}
                     >
                         {testingEmb ? '测试中...' : (
@@ -3813,13 +3882,13 @@ export default function MemoryPalaceApp() {
                             <Icon name="target" size={14} />
                             <span>Rerank 模型（可选 / 二次排序增强）</span>
                         </span>
-                        {rrEnabled && (
+                        {memoryPalaceConfig.rerank?.enabled && (
                             <span style={{
                                 fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 4,
-                                color: (rrUrl && rrKey) ? '#15803d' : '#92400e',
-                                background: (rrUrl && rrKey) ? '#dcfce7' : '#fef3c7',
+                                color: (memoryPalaceConfig.rerank.baseUrl && memoryPalaceConfig.rerank.apiKey) ? '#15803d' : '#92400e',
+                                background: (memoryPalaceConfig.rerank.baseUrl && memoryPalaceConfig.rerank.apiKey) ? '#dcfce7' : '#fef3c7',
                             }}>
-                                {(rrUrl && rrKey) ? '已启用' : '待配置'}
+                                {(memoryPalaceConfig.rerank.baseUrl && memoryPalaceConfig.rerank.apiKey) ? '已启用' : '待配置'}
                             </span>
                         )}
                     </summary>
@@ -3830,7 +3899,7 @@ export default function MemoryPalaceApp() {
                         fontSize: 11, color: '#1e3a8a', lineHeight: 1.7,
                     }}>
                         <div style={{ fontWeight: 700, marginBottom: 4 }}>rerank 是干啥的？</div>
-                        开了之后能让跟你这句话最相关的记忆更准地被翻出来；可选增强，不开也不影响。
+                        开了之后能让跟你这句话最相关的记忆更准地被翻出来；可选增强，不开也不影响（修改后自动保存）。
                     </div>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 12 }}>
@@ -3839,7 +3908,15 @@ export default function MemoryPalaceApp() {
                             <input
                                 type="checkbox"
                                 checked={rrEnabled}
-                                onChange={e => setRrEnabled(e.target.checked)}
+                                onChange={e => {
+                                    const nextEnabled = e.target.checked;
+                                    setRrEnabled(nextEnabled);
+                                    scheduleRerankSave(
+                                        { enabled: nextEnabled, url: rrUrl, key: rrKey, model: rrModel, topN: rrTopN },
+                                        true,
+                                        true,
+                                    );
+                                }}
                                 style={{ accentColor: '#0369a1' }}
                             />
                             <span style={{ fontSize: 12, fontWeight: 600, color: '#0369a1' }}>
@@ -3849,17 +3926,24 @@ export default function MemoryPalaceApp() {
 
                         {/* 一键同步 embedding 服务商 */}
                         <button
+                            type="button"
                             onClick={() => {
-                                setRrUrl(embUrl.trim());
-                                setRrKey(embKey.trim());
+                                const syncedUrl = normalizeApiBaseUrl(embUrl || memoryPalaceConfig.embedding.baseUrl);
+                                const syncedKey = normalizeApiCredential(embKey || memoryPalaceConfig.embedding.apiKey);
+                                setRrUrl(syncedUrl);
+                                setRrKey(syncedKey);
+                                scheduleRerankSave(
+                                    { enabled: rrEnabled, url: syncedUrl, key: syncedKey, model: rrModel, topN: rrTopN },
+                                    true,
+                                );
                             }}
-                            disabled={!embUrl.trim() || !embKey.trim()}
+                            disabled={!normalizeApiBaseUrl(embUrl || memoryPalaceConfig.embedding.baseUrl) || !normalizeApiCredential(embKey || memoryPalaceConfig.embedding.apiKey)}
                             style={{
                                 padding: '8px 12px', borderRadius: 10, fontSize: 11, fontWeight: 600,
                                 border: '1px solid #bae6fd',
-                                background: (!embUrl.trim() || !embKey.trim()) ? '#f1f5f9' : 'white',
-                                color: (!embUrl.trim() || !embKey.trim()) ? '#94a3b8' : '#0369a1',
-                                cursor: (!embUrl.trim() || !embKey.trim()) ? 'not-allowed' : 'pointer',
+                                background: (!normalizeApiBaseUrl(embUrl || memoryPalaceConfig.embedding.baseUrl) || !normalizeApiCredential(embKey || memoryPalaceConfig.embedding.apiKey)) ? '#f1f5f9' : 'white',
+                                color: (!normalizeApiBaseUrl(embUrl || memoryPalaceConfig.embedding.baseUrl) || !normalizeApiCredential(embKey || memoryPalaceConfig.embedding.apiKey)) ? '#94a3b8' : '#0369a1',
+                                cursor: (!normalizeApiBaseUrl(embUrl || memoryPalaceConfig.embedding.baseUrl) || !normalizeApiCredential(embKey || memoryPalaceConfig.embedding.apiKey)) ? 'not-allowed' : 'pointer',
                                 textAlign: 'left',
                             }}
                             title="把上面 Embedding 的 baseUrl 和 API Key 直接复制到 rerank（同一服务商通常可以复用）"
@@ -3875,7 +3959,16 @@ export default function MemoryPalaceApp() {
                             <input
                                 type="text"
                                 value={rrUrl}
-                                onChange={e => setRrUrl(e.target.value)}
+                                onChange={e => {
+                                    const nextUrl = e.target.value;
+                                    setRrUrl(nextUrl);
+                                    scheduleRerankSave({ enabled: rrEnabled, url: nextUrl, key: rrKey, model: rrModel, topN: rrTopN });
+                                }}
+                                onBlur={() => {
+                                    const cleanUrl = normalizeApiBaseUrl(rrUrl);
+                                    if (cleanUrl !== rrUrl) setRrUrl(cleanUrl);
+                                    scheduleRerankSave({ enabled: rrEnabled, url: cleanUrl, key: rrKey, model: rrModel, topN: rrTopN }, true);
+                                }}
                                 placeholder="https://api.siliconflow.cn/v1"
                                 className={inputClass}
                             />
@@ -3886,7 +3979,16 @@ export default function MemoryPalaceApp() {
                             <input
                                 type="password"
                                 value={rrKey}
-                                onChange={e => setRrKey(e.target.value)}
+                                onChange={e => {
+                                    const nextKey = e.target.value;
+                                    setRrKey(nextKey);
+                                    scheduleRerankSave({ enabled: rrEnabled, url: rrUrl, key: nextKey, model: rrModel, topN: rrTopN });
+                                }}
+                                onBlur={() => {
+                                    const cleanKey = normalizeApiCredential(rrKey);
+                                    if (cleanKey !== rrKey) setRrKey(cleanKey);
+                                    scheduleRerankSave({ enabled: rrEnabled, url: rrUrl, key: cleanKey, model: rrModel, topN: rrTopN }, true);
+                                }}
                                 placeholder="sk-..."
                                 className={inputClass}
                             />
@@ -3902,7 +4004,13 @@ export default function MemoryPalaceApp() {
                                 ].map(opt => {
                                     const isActive = rrModel === opt.model;
                                     return (
-                                        <button key={opt.model} onClick={() => setRrModel(opt.model)} style={{
+                                        <button type="button" key={opt.model} onClick={() => {
+                                            setRrModel(opt.model);
+                                            scheduleRerankSave(
+                                                { enabled: rrEnabled, url: rrUrl, key: rrKey, model: opt.model, topN: rrTopN },
+                                                true,
+                                            );
+                                        }} style={{
                                             display: 'flex', alignItems: 'center', gap: 8,
                                             padding: '10px 14px', borderRadius: 12, fontSize: 12,
                                             border: isActive ? `2px solid ${opt.color}` : '1px solid #e5e7eb',
@@ -3924,7 +4032,16 @@ export default function MemoryPalaceApp() {
                             <input
                                 type="text"
                                 value={rrModel}
-                                onChange={e => setRrModel(e.target.value)}
+                                onChange={e => {
+                                    const nextModel = e.target.value;
+                                    setRrModel(nextModel);
+                                    scheduleRerankSave({ enabled: rrEnabled, url: rrUrl, key: rrKey, model: nextModel, topN: rrTopN });
+                                }}
+                                onBlur={() => {
+                                    const cleanModel = normalizeApiModel(rrModel) || 'BAAI/bge-reranker-v2-m3';
+                                    if (cleanModel !== rrModel) setRrModel(cleanModel);
+                                    scheduleRerankSave({ enabled: rrEnabled, url: rrUrl, key: rrKey, model: cleanModel, topN: rrTopN }, true);
+                                }}
                                 placeholder="BAAI/bge-reranker-v2-m3"
                                 className={inputClass}
                             />
@@ -3935,7 +4052,14 @@ export default function MemoryPalaceApp() {
                             <input
                                 type="number"
                                 value={rrTopN}
-                                onChange={e => setRrTopN(parseInt(e.target.value) || 5)}
+                                onChange={e => {
+                                    const nextTopN = parseInt(e.target.value, 10) || 5;
+                                    setRrTopN(nextTopN);
+                                    scheduleRerankSave({ enabled: rrEnabled, url: rrUrl, key: rrKey, model: rrModel, topN: nextTopN });
+                                }}
+                                onBlur={() => {
+                                    scheduleRerankSave({ enabled: rrEnabled, url: rrUrl, key: rrKey, model: rrModel, topN: rrTopN }, true);
+                                }}
                                 min={1}
                                 max={20}
                                 className={inputClass}
@@ -3946,27 +4070,25 @@ export default function MemoryPalaceApp() {
                         </div>
                     </div>
 
-                    <button
-                        onClick={handleSaveRerankConfig}
-                        style={{
-                            width: '100%', marginTop: 16, padding: '12px 0',
-                            borderRadius: 16, border: 'none', fontWeight: 700, fontSize: 14,
-                            color: 'white', background: '#0369a1', cursor: 'pointer',
-                        }}
-                    >
-                        {rrSaved ? '✓ 已保存' : '保存 Rerank 配置'}
-                    </button>
+                    {rrAutoSaveHint && (
+                        <div style={{ marginTop: 10, fontSize: 11, color: '#0369a1', paddingLeft: 4 }}>
+                            {rrAutoSaveHint}
+                        </div>
+                    )}
 
                     {/* 测试 rerank 连接 */}
                     <button
+                        type="button"
                         onClick={async () => {
-                            if (!rrUrl.trim() || !rrKey.trim()) return;
+                            const cleanUrl = normalizeApiBaseUrl(rrUrl);
+                            const cleanKey = normalizeApiCredential(rrKey);
+                            if (!cleanUrl || !cleanKey) return;
                             setRrTesting(true);
                             setRrTestResult(null);
                             try {
                                 const { rerankDocuments } = await import('../utils/memoryPalace/rerank');
                                 const results = await rerankDocuments(
-                                    { baseUrl: rrUrl.trim(), apiKey: rrKey.trim(), model: rrModel.trim() || 'BAAI/bge-reranker-v2-m3' },
+                                    { baseUrl: cleanUrl, apiKey: cleanKey, model: normalizeApiModel(rrModel) || 'BAAI/bge-reranker-v2-m3' },
                                     '测试问题：外公身体怎么样',
                                     ['外公前几天去医院做了心脏检查，结果正常', '今天下雨了，路上有点堵', '她最喜欢吃妈妈做的红烧肉'],
                                     3,
@@ -3982,13 +4104,14 @@ export default function MemoryPalaceApp() {
                                 setRrTesting(false);
                             }
                         }}
-                        disabled={rrTesting || !rrUrl.trim() || !rrKey.trim()}
+                        disabled={rrTesting || !normalizeApiBaseUrl(rrUrl) || !normalizeApiCredential(rrKey)}
                         style={{
-                            width: '100%', marginTop: 8, padding: '10px 0',
+                            width: '100%', marginTop: 12, padding: '10px 0',
                             borderRadius: 12, border: '1px solid #0369a144',
                             fontWeight: 600, fontSize: 13, color: '#0369a1',
                             background: 'white',
                             cursor: rrTesting ? 'not-allowed' : 'pointer',
+                            opacity: (!normalizeApiBaseUrl(rrUrl) || !normalizeApiCredential(rrKey)) ? 0.5 : 1,
                         }}
                     >
                         {rrTesting ? '测试中...' : (
@@ -4107,25 +4230,65 @@ export default function MemoryPalaceApp() {
                     {/* Project URL & anon key */}
                     <div style={{ marginTop: 12 }}>
                         <label className={labelClass}>PROJECT URL</label>
-                        <input type="url" value={rvUrl} onChange={e => { ++rvTestAttempt.current; setRvTesting(false); setRvTestResult(''); setRvUrl(e.target.value); }}
-                            placeholder="https://xxxxx.supabase.co" className={inputClass} />
+                        <input
+                            type="url"
+                            value={rvUrl}
+                            onChange={e => {
+                                const nextUrl = e.target.value;
+                                ++rvTestAttempt.current;
+                                setRvTesting(false);
+                                setRvTestResult('');
+                                setRvUrl(nextUrl);
+                                scheduleRemoteVectorSave({ url: nextUrl, key: rvKey });
+                            }}
+                            onBlur={() => {
+                                const cleanUrl = normalizeApiBaseUrl(rvUrl);
+                                if (cleanUrl !== rvUrl) setRvUrl(cleanUrl);
+                                scheduleRemoteVectorSave({ url: cleanUrl, key: rvKey }, true);
+                            }}
+                            placeholder="https://xxxxx.supabase.co"
+                            className={inputClass}
+                        />
                         <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2, paddingLeft: 4 }}>Settings → API → Project URL</div>
                     </div>
                     <div style={{ marginTop: 10 }}>
                         <label className={labelClass}>ANON / PUBLIC KEY</label>
-                        <input type="password" value={rvKey} onChange={e => { ++rvTestAttempt.current; setRvTesting(false); setRvTestResult(''); setRvKey(e.target.value); }}
-                            placeholder="eyJhbGciOiJIUzI1NiIs..." className={inputClass} />
+                        <input
+                            type="password"
+                            value={rvKey}
+                            onChange={e => {
+                                const nextKey = e.target.value;
+                                ++rvTestAttempt.current;
+                                setRvTesting(false);
+                                setRvTestResult('');
+                                setRvKey(nextKey);
+                                scheduleRemoteVectorSave({ url: rvUrl, key: nextKey });
+                            }}
+                            onBlur={() => {
+                                const cleanKey = normalizeApiCredential(rvKey);
+                                if (cleanKey !== rvKey) setRvKey(cleanKey);
+                                scheduleRemoteVectorSave({ url: rvUrl, key: cleanKey }, true);
+                            }}
+                            placeholder="eyJhbGciOiJIUzI1NiIs..."
+                            className={inputClass}
+                        />
                         <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2, paddingLeft: 4 }}>Settings → API → anon public key</div>
                     </div>
 
-                    {/* 测试 + 保存 */}
-                    <button onClick={handleTestRemoteVector} disabled={rvSyncing || rvTesting || !rvUrl || !rvKey}
+                    {rvAutoSaveHint && (
+                        <div style={{ marginTop: 10, fontSize: 11, color: '#7c3aed', paddingLeft: 4 }}>
+                            {rvAutoSaveHint}
+                        </div>
+                    )}
+
+                    {/* 测试连接（自动落盘验证结果） */}
+                    <button type="button" onClick={handleTestRemoteVector} disabled={rvSyncing || rvTesting || !normalizeApiBaseUrl(rvUrl) || !normalizeApiCredential(rvKey)}
                         style={{
                             width: '100%', marginTop: 12, padding: '10px 0', borderRadius: 12,
                             border: '1px solid #e5e7eb', fontWeight: 600, fontSize: 12,
                             color: '#475569', background: 'white',
-                            cursor: (rvTesting || !rvUrl || !rvKey) ? 'not-allowed' : 'pointer',
-                            opacity: (rvTesting || !rvUrl || !rvKey) ? 0.5 : 1,
+                            cursor: (rvTesting || !normalizeApiBaseUrl(rvUrl) || !normalizeApiCredential(rvKey)) ? 'not-allowed' : 'pointer',
+                            opacity: (rvTesting || !normalizeApiBaseUrl(rvUrl) || !normalizeApiCredential(rvKey)) ? 0.5 : 1,
                         }}
                     >
                         {rvTesting ? '测试中...' : (
@@ -4143,16 +4306,6 @@ export default function MemoryPalaceApp() {
                             <StatusMessage msg={rvTestResult} />
                         </div>
                     )}
-                    <button onClick={handleSaveRemoteVector} disabled={rvSyncing || rvTesting || !rvUrl || !rvKey}
-                        style={{
-                            width: '100%', marginTop: 8, padding: '10px 0', borderRadius: 12,
-                            border: 'none', fontWeight: 700, fontSize: 13, color: 'white',
-                            background: (!rvUrl || !rvKey) ? '#cbd5e1' : '#7c3aed',
-                            cursor: (!rvUrl || !rvKey) ? 'not-allowed' : 'pointer',
-                        }}
-                    >
-                        保存配置
-                    </button>
 
                     {/* 已启用后的操作 */}
                     {rvCredentialsSaved && remoteVectorConfig.enabled && remoteVectorConfig.initialized && (
@@ -5160,7 +5313,7 @@ export default function MemoryPalaceApp() {
                 </>)}
 
                 {/* 危险区：一键清空 */}
-                {!guideSetup && <MemoryMaintenancePanel key={char?.id || 'global'} config={memoryPalaceConfig} update={updateMemoryPalaceConfig} char={isGlobal ? null : char} userName={userProfile.name} />}
+                {!guideSetup && <MemoryMaintenancePanel key={char?.id || 'global'} config={memoryPalaceConfig} update={updateMemoryPalaceConfig} char={isGlobal ? null : char} userName={userProfile.name} apiConfig={apiConfig} />}
                 {isGlobal && !guideSetup && (
                 <div style={{ marginTop: 16, background: '#fef2f2', borderRadius: 16, padding: 16, border: '2px solid #fca5a5' }}>
                     <div style={{ fontSize: 12, fontWeight: 800, color: '#991b1b', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>

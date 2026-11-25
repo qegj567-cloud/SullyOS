@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import type { CharacterProfile } from '../../types';
+import type { APIConfig, CharacterProfile } from '../../types';
 import type { MemoryPalaceGlobalConfig } from '../../context/OSContext';
 import { processNewMessagesWithAutoArchive } from '../../utils/memoryPalace/autoArchive';
 import { EventBoxDB } from '../../utils/memoryPalace/db';
+import { hasRunnableMemoryPalaceLlm, resolveMemoryPalaceLlm } from '../../utils/memoryPalace/pipeline';
 import { EVENT_BOX_COMPRESSION_THRESHOLD } from '../../utils/memoryPalace/types';
 import { maybeCompressEventBoxes } from '../../utils/memoryPalace/eventBoxCompression';
 import { consolidateAllPlates } from '../../utils/memoryPalace/roomPlates';
@@ -12,9 +13,9 @@ const labels = ['提取记忆', '压缩事件盒', '整理门牌', '本轮完成
 function readStep(id: string): number {
     try { return Math.max(0, Math.min(3, Number(localStorage.getItem('mp_manualStep_' + id)) || 0)); } catch { return 0; }
 }
-export default function MemoryMaintenancePanel({ config, update, char, userName }: {
+export default function MemoryMaintenancePanel({ config, update, char, userName, apiConfig }: {
     config: MemoryPalaceGlobalConfig; update: (patch: Partial<MemoryPalaceGlobalConfig>) => void;
-    char?: CharacterProfile | null; userName: string;
+    char?: CharacterProfile | null; userName: string; apiConfig?: Partial<APIConfig> | null;
 }) {
     const [open, setOpen] = useState(false);
     const [step, setStep] = useState(() => readStep(char?.id || ''));
@@ -24,9 +25,11 @@ export default function MemoryMaintenancePanel({ config, update, char, userName 
     const run = async () => {
         if (!char || running.has(char.id) || !config.manualMaintenance) return;
         if (!char.memoryPalaceEnabled) { setMessage('请先为该角色开启记忆宫殿。'); return; }
-        const llm = { ...config.lightLLM, deferPlateMaintenance: true };
+        const resolvedLlm = resolveMemoryPalaceLlm(config.lightLLM, apiConfig);
+        const llm = { ...resolvedLlm, deferPlateMaintenance: true };
         const emb = config.embedding;
-        if (!llm.baseUrl || !llm.apiKey || !llm.model || !emb.baseUrl || !emb.apiKey) { setMessage('请先在全局配置中填好副 API 和 Embedding API。'); return; }
+        if (!hasRunnableMemoryPalaceLlm(resolvedLlm)) { setMessage('请先在设置中配置主 API 或在记忆宫殿设置中配置副 API。'); return; }
+        if (!emb?.baseUrl || !emb?.apiKey) { setMessage('请先在全局配置中填好 Embedding API。'); return; }
         running.add(char.id); setBusy(true); setMessage('正在处理，请保持页面打开；请求间隔内会等待…');
         try {
             if (step === 0) {

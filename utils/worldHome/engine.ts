@@ -17,9 +17,10 @@ import { loadCharacterContextMessages } from '../chatContextRange';
  */
 
 import type {
-    CharacterProfile, UserProfile, GroupProfile, RealtimeConfig, APIConfig,
+    CharacterProfile, UserProfile, GroupProfile, RealtimeConfig, APIConfig, DialogueApiConfig,
     WorldProfile, WorldEpisode, WorldCharBeat, WorldCardMeta,
 } from '../../types';
+import { resolveAuxiliaryApi, resolveEffectiveSlot } from '../apiSlots';
 import { DB } from '../db';
 import { recoverWorldProgress } from './episodeOrder';
 import { buildChatRequestPayload } from '../chatRequestPayload';
@@ -36,7 +37,7 @@ import { shouldCloseChapter, summarizeChapter, SIM_CHAPTER_CLOCKS } from './chap
 
 interface MemoryConfigLike {
     embedding?: { baseUrl?: string; apiKey?: string; model?: string; dimensions?: number };
-    lightLLM?: { baseUrl?: string; apiKey?: string; model?: string };
+    lightLLM?: Partial<DialogueApiConfig> | null;
 }
 
 export interface WorldEpisodeDeps {
@@ -59,12 +60,12 @@ export interface WorldEpisodeResult {
 const genId = (p: string) => `${p}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 const running = new Set<string>();
 
-/** 读家园全局 API（设置弹窗写入 localStorage 的 'world_home_api'；不设返回 null）。 */
-function readWorldHomeApiOverride(): { baseUrl: string; apiKey: string; model: string } | null {
+/** 读家园全局 API（设置弹窗写入 localStorage 的 'world_home_api'；实时解析预设完整参数，不设返回 null）。 */
+function readWorldHomeApiOverride(): DialogueApiConfig | null {
     try {
         const s = typeof localStorage !== 'undefined' ? localStorage.getItem('world_home_api') : null;
-        const c = s ? JSON.parse(s) : null;
-        return c?.baseUrl ? c : null;
+        const c = s ? (JSON.parse(s) as Partial<DialogueApiConfig>) : null;
+        return resolveEffectiveSlot(c);
     } catch { return null; }
 }
 
@@ -331,7 +332,7 @@ export async function runWorldEpisode(deps: WorldEpisodeDeps): Promise<WorldEpis
 
         // API 优先级：世界私有覆盖（旧数据）> 家园全局设置（localStorage）> 全局聊天默认
         const worldHomeApi = readWorldHomeApiOverride();
-        const api = world.api?.baseUrl ? world.api : (worldHomeApi || apiConfig);
+        const api = resolveAuxiliaryApi(world.api?.baseUrl ? world.api : worldHomeApi, apiConfig);
         if (!api.baseUrl) return { ok: false, reason: 'no-api' };
         const baseUrl = api.baseUrl.replace(/\/+$/, '');
 
@@ -571,8 +572,7 @@ export async function runWorldEpisode(deps: WorldEpisodeDeps): Promise<WorldEpis
             // 记忆管线（fire-and-forget，逐角色）
             try {
                 const mpEmb = memoryPalaceConfig?.embedding;
-                const mpLLMConfigured = memoryPalaceConfig?.lightLLM;
-                const mpLLM = (mpLLMConfigured?.baseUrl) ? mpLLMConfigured : { baseUrl: apiConfig.baseUrl, apiKey: apiConfig.apiKey, model: apiConfig.model };
+                const mpLLM = resolveAuxiliaryApi(memoryPalaceConfig?.lightLLM, apiConfig);
                 if (mpEmb?.baseUrl && mpEmb?.apiKey && mpLLM.baseUrl) {
                     for (const beat of beats) {
                         const char = members.find(m => m.id === beat.charId);
@@ -616,7 +616,7 @@ export async function rerollWorldCharBeat(
         if (!char) return { ok: false, reason: 'no-char' };
         const memberNames = members.map(m => m.name);
         const worldHomeApi = readWorldHomeApiOverride();
-        const api = world.api?.baseUrl ? world.api : (worldHomeApi || apiConfig);
+        const api = resolveAuxiliaryApi(world.api?.baseUrl ? world.api : worldHomeApi, apiConfig);
         if (!api.baseUrl) return { ok: false, reason: 'no-api' };
         const baseUrl = api.baseUrl.replace(/\/+$/, '');
 

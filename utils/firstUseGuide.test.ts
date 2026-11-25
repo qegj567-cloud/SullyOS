@@ -121,7 +121,7 @@ describe('first-use memory guide', () => {
         mocked.os.memoryPalaceConfig.embedding = { ...mocked.os.apiConfig, model: 'embedding' };
         await render(); await click('下一步'); expect(readGuideStep()).toBe(1);
         await click('我想暂时只用主 API');
-        expect(mocked.os.memoryPalaceConfig.lightLLM).toEqual(mocked.os.apiConfig);
+        expect(mocked.os.memoryPalaceConfig.lightLLM).toEqual({ baseUrl: '', apiKey: '', model: '' });
         await render(); await click('下一步');
         await click('下一步'); expect(readGuideStep()).toBe(2);
         mocked.os.characters[0].memoryPalaceEnabled = true;

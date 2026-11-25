@@ -11,7 +11,10 @@ import AmsgTabBar from '../components/settings/AmsgTabBar';
 import '../components/settings/amsgSettings.css';
 import { requestSettingsFocus, useSettingsFocus } from '../utils/settingsNavigation';
 import ApiPresetGroups from '../components/settings/ApiPresetGroups';
+import ApiSlotEditor from '../components/settings/ApiSlotEditor';
 import DialogueApiFields from '../components/settings/DialogueApiFields';
+import { pickDialogueApi } from '../utils/characterApi';
+import { isVisionApiReady } from '../utils/visionApi';
 import { llmApiType, normalizeLlmBaseUrl, type LlmApiType } from '../utils/llmEndpoint';
 import { fetchLlm } from '../utils/anthropicApi';
 import ModelPicker from '../components/settings/ModelPicker';
@@ -734,6 +737,14 @@ const Settings: React.FC = () => {
   const [cbPassword, setCbPassword] = useState(cloudBackupConfig.password);
   const [cbPath, setCbPath] = useState(cloudBackupConfig.remotePath || '/SullyBackup/');
 
+  useEffect(() => {
+      if (!showCloudModal) return;
+      setCbUrl(cloudBackupConfig.webdavUrl);
+      setCbUsername(cloudBackupConfig.username);
+      setCbPassword(cloudBackupConfig.password);
+      setCbPath(cloudBackupConfig.remotePath || '/SullyBackup/');
+  }, [showCloudModal, cloudBackupConfig.webdavUrl, cloudBackupConfig.username, cloudBackupConfig.password, cloudBackupConfig.remotePath]);
+
   // GitHub local state
   const [ghToken, setGhToken] = useState(cloudBackupConfig.githubToken || '');
   const [ghRepo, setGhRepo] = useState(cloudBackupConfig.githubRepo || 'sully-backup');
@@ -747,7 +758,7 @@ const Settings: React.FC = () => {
   const [ghRelayAsk, setGhRelayAsk] = useState(false);
   const [ghTestResult, setGhTestResult] = useState<string>('');
 
-  // 主代理 Worker 地址（联网搜索 / 备份代理 / Notion / 飞书 / MCD·瑞幸 MCP / 网页抓取 / 出图都走它）。
+  // 主代理 Worker 地址（联网搜索 / 备份代理 / Notion / 飞书 / MCD·瑞幸 MCP / 网页抓取 / 小红书 Lite / 音乐都走它）。
   // 入口刻意低调：默认折叠，普通用户不需要碰，开箱即用。
   const [focusProxyConfigOnMount] = useState(() => consumeProxyWorkerSettingsFocus());
   const [proxyWorkerInput, setProxyWorkerInput] = useState(getProxyWorkerUrl());
@@ -800,10 +811,45 @@ const Settings: React.FC = () => {
   });
   const primaryAwarenessPage = rtUserLocationPage === 'location' || rtUserLocationPage in awarenessSections;
   const awarenessGroup = awarenessGroups.find(group => group.pages.some(id => id === rtUserLocationPage)) ?? awarenessGroups[0];
+  const resetRealtimeDraftFromSaved = () => {
+      setRtWeatherEnabled(realtimeConfig.weatherEnabled);
+      setRtUserLocation(() => { try { return loadUserLocationConfig(); } catch { return { enabled: false, regions: [] }; } });
+      setRtUserHolidays({ ...(realtimeConfig.userHolidays || { enabled: false, countryCode: '' }) });
+      setRtWeatherKey(realtimeConfig.weatherApiKey);
+      setRtWeatherFreeSource(normalizeFreeWeatherSource(realtimeConfig.weatherFreeSource));
+      setRtWeatherCities(cleanCharacterWeatherCities(realtimeConfig.weatherCities));
+      setRtWeatherCity(realtimeConfig.weatherCity);
+      setRtNewsEnabled(realtimeConfig.newsEnabled);
+      setRtNewsApiKey(realtimeConfig.newsApiKey || '');
+      setRtNewsPlatforms(realtimeConfig.newsPlatforms || ['weibo', 'zhihu', 'baidu', 'bilibili', 'douyin']);
+      setRtNotionEnabled(realtimeConfig.notionEnabled);
+      setRtNotionKey(realtimeConfig.notionApiKey);
+      setRtNotionDbId(realtimeConfig.notionDatabaseId);
+      setRtNotionNotesDbId(realtimeConfig.notionNotesDatabaseId || '');
+      setRtFeishuEnabled(realtimeConfig.feishuEnabled);
+      setRtFeishuAppId(realtimeConfig.feishuAppId);
+      setRtFeishuAppSecret(realtimeConfig.feishuAppSecret);
+      setRtFeishuBaseId(realtimeConfig.feishuBaseId);
+      setRtFeishuTableId(realtimeConfig.feishuTableId);
+      setRtXhsEnabled(realtimeConfig.xhsEnabled);
+      const storedUrl = realtimeConfig.xhsMcpConfig?.serverUrl || '';
+      const storedMode = resolveXhsDeploymentMode(realtimeConfig.xhsMcpConfig, `${getProxyWorkerUrl()}/api`);
+      const isLoc = storedMode === 'local';
+      setRtXhsMcpEnabled(realtimeConfig.xhsMcpConfig?.enabled || false);
+      setRtXhsMode(isLoc ? 'local' : 'lite');
+      setRtXhsLocalUrl(isLoc ? storedUrl : 'http://localhost:18060/mcp');
+      setRtXhsNickname(realtimeConfig.xhsMcpConfig?.loggedInNickname || '');
+      setRtXhsUserId(realtimeConfig.xhsMcpConfig?.loggedInUserId || '');
+      setRtXhsCookie(realtimeConfig.xhsMcpConfig?.cookie || '');
+      setRtXhsPlatform(realtimeConfig.xhsMcpConfig?.platform);
+  };
   const closeRealtimePage = () => {
       if (rtUserLocationBusy) return;
       if (!primaryAwarenessPage) setRtUserLocationPage(getUserLocationParentPage(rtUserLocationPage));
-      else setShowRealtimeModal(false);
+      else {
+          resetRealtimeDraftFromSaved();
+          setShowRealtimeModal(false);
+      }
   };
   const [rtUserHolidays, setRtUserHolidays] = useState<UserHolidayConfig>(() => ({ ...(realtimeConfig.userHolidays || { enabled: false, countryCode: '' }), ...(holidaySettingsFocus ? { enabled: true } : {}) }));
   const [rtWeatherKey, setRtWeatherKey] = useState(realtimeConfig.weatherApiKey);
@@ -1288,15 +1334,18 @@ const Settings: React.FC = () => {
     const enabled = !localVisionEnabled;
     setLocalVisionEnabled(enabled);
     if (!enabled) {
-      // 关闭立即落盘；保留已保存的凭据，未保存的输入仍留在表单里。
       updateApiConfig({ visionApi: {
         baseUrl: '', apiKey: '', model: '', ...apiConfig.visionApi, enabled: false,
       } });
       setVisionStatusMsg('已关闭，沿用原有识图方式');
-    } else if (normalizeApiBaseUrl(localVisionUrl) && normalizeApiCredential(localVisionKey) && normalizeApiModel(localVisionModel)) {
-      handleSaveVisionApi(true);
+      setTimeout(() => setVisionStatusMsg(''), 2200);
+    } else if (apiConfig.visionApi?.baseUrl && apiConfig.visionApi?.model) {
+      updateApiConfig({ visionApi: { ...apiConfig.visionApi, enabled: true } });
+      setVisionStatusMsg('识图 API 已接入');
+      setTimeout(() => setVisionStatusMsg(''), 2200);
     } else {
-      setVisionStatusMsg('请填写 URL、Key 和 Model，保存后接入');
+      setVisionStatusMsg('请选择预设或填写完整的识图 API，自动保存后接入');
+      setTimeout(() => setVisionStatusMsg(''), 2600);
     }
   };
 
@@ -1404,8 +1453,6 @@ const Settings: React.FC = () => {
 
   const draftSttLookupConfig: Partial<APIConfig> = {
       ...apiConfig,
-      baseUrl: localUrl,
-      apiKey: localKey,
       minimaxApiKey: localMiniMaxKey,
       fishAudioApiKey: localFishKey,
       elevenLabsApiKey: localElevenLabsKey,
@@ -1413,11 +1460,48 @@ const Settings: React.FC = () => {
       sttProvider: localSttProvider,
   };
 
-  const handleSaveOtherApis = () => {
-    updateApiConfig(buildOtherApiConfig());
-    setOtherStatusMsg('已保存');
-    setTimeout(() => setOtherStatusMsg(''), 2000);
+  const voiceAutoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const voiceDirtyRef = useRef(false);
+  const latestOtherBuilderRef = useRef(buildOtherApiConfig);
+  latestOtherBuilderRef.current = buildOtherApiConfig;
+
+  const commitOtherApisNow = (overrides: Partial<APIConfig> = {}) => {
+    if (voiceAutoSaveTimerRef.current) {
+      clearTimeout(voiceAutoSaveTimerRef.current);
+      voiceAutoSaveTimerRef.current = null;
+    }
+    voiceDirtyRef.current = false;
+    updateApiConfig(buildOtherApiConfig(overrides));
+    setOtherStatusMsg('已自动保存');
+    setTimeout(() => setOtherStatusMsg(''), 1800);
   };
+
+  const scheduleOtherApisAutoSave = (overrides: Partial<APIConfig> = {}) => {
+    voiceDirtyRef.current = true;
+    if (voiceAutoSaveTimerRef.current) clearTimeout(voiceAutoSaveTimerRef.current);
+    voiceAutoSaveTimerRef.current = setTimeout(() => {
+      voiceAutoSaveTimerRef.current = null;
+      voiceDirtyRef.current = false;
+      updateApiConfig(latestOtherBuilderRef.current(overrides));
+      setOtherStatusMsg('已自动保存');
+      setTimeout(() => setOtherStatusMsg(''), 1800);
+    }, 600);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (voiceAutoSaveTimerRef.current) {
+        clearTimeout(voiceAutoSaveTimerRef.current);
+        voiceAutoSaveTimerRef.current = null;
+      }
+      if (voiceDirtyRef.current) {
+        voiceDirtyRef.current = false;
+        updateApiConfig(latestOtherBuilderRef.current());
+      }
+    };
+  }, []);
+
+  const handleSaveOtherApis = () => commitOtherApisNow();
 
   // 选「谁来做语音生成」立即落库——不需要再点下面的保存。
   // 连同当前「语音与写歌」草稿一起提交（与保存按钮同一份 payload）：一是即时生效，
@@ -2144,17 +2228,19 @@ const Settings: React.FC = () => {
       }
   };
 
-  // 麦当劳 MCP: 改 token / 启用态都即时落 localStorage; "测试连接"调 initialize+tools/list
+  // 麦当劳 MCP: 改 token / 启用态即时落 localStorage 并同步主动消息 2.0 云端工具配置
   const handleMcdTokenChange = (v: string) => {
       setMcdTokenState(v);
       saveMcdToken(v);
       resetMcdSession();
       setMcdTestStatus('');
+      scheduleMcpToolConfigSync(realtimeConfig);
   };
   const handleMcdEnabledChange = (v: boolean) => {
       setMcdEnabledState(v);
       saveMcdEnabled(v);
       if (!v) resetMcdSession();
+      syncAmsgToolConfig(realtimeConfig);
   };
   const testMcdApi = async () => {
       if (!mcdToken.trim()) { setMcdTestStatus('请先填写 MCP Token'); return; }
@@ -2184,11 +2270,13 @@ const Settings: React.FC = () => {
       saveLuckinToken(v);
       resetLuckinSession();
       setLuckinTestStatus('');
+      scheduleMcpToolConfigSync(realtimeConfig);
   };
   const handleLuckinEnabledChange = (v: boolean) => {
       setLuckinEnabledState(v);
       saveLuckinEnabled(v);
       if (!v) resetLuckinSession();
+      syncAmsgToolConfig(realtimeConfig);
   };
   const testLuckinApi = async () => {
       if (!luckinToken.trim()) { setLuckinTestStatus('请先填写 MCP Token'); return; }
@@ -2662,262 +2750,110 @@ const Settings: React.FC = () => {
                     </svg>
                 </div>
             }
-            actions={apiTab === 'chat' &&
-                <button onClick={() => { setNewPresetName(''); setShowPresetModal(true); }} className="text-[10px] bg-slate-100 text-slate-600 px-3 py-1.5 rounded-full font-bold shadow-sm active:scale-95 transition-transform">
-                    新建预设
-                </button>
-            }
             onFocusRequest={() => setApiTab('chat')}
         >
             <SettingsTabs prefix="settings-api" label="API 类型" selected={apiTab} onSelect={setApiTab}
-                tabs={[{ id: 'chat', label: '对话' }, { id: 'vision', label: apiConfig.visionApi?.enabled ? '识图 · 已接入' : '识图 · 未接入' }]}>
-            {apiTab === 'chat' ? <>
-            {/* Presets List */}
-            {apiPresets.length > 0 && (
-                <div className="mb-4">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block pl-1">我的预设 (Presets)</label>
-                    <ApiPresetGroups presets={apiPresets}>{preset => (
-                            <div key={preset.id} className={`flex items-center rounded-lg pl-3 pr-1 py-1 shadow-sm border transition-colors ${
-                                activePresetId === preset.id
-                                    ? 'bg-primary/5 border-primary/30'
-                                    : 'bg-white border-slate-200'
-                            }`}>
-                                <PresetNameButton onHold={() => openEditPreset(preset)} onClick={() => applyPreset(preset)}
-                                    title={`切换到 ${preset.name}`}
-                                    className={`select-none text-xs font-medium cursor-pointer mr-1.5 transition-colors ${
-                                        activePresetId === preset.id ? 'text-primary' : 'text-slate-600 hover:text-primary'
-                                    }`}>
-                                    {preset.name}
-                                    {activePresetId === preset.id && <span className="ml-1 text-[9px] font-bold">· 使用中</span>}
-                                </PresetNameButton>
-                                <button
-                                    type="button"
-                                    aria-label={`编辑预设 ${preset.name}`}
-                                    title="编辑这条预设"
-                                    onClick={(event) => { event.stopPropagation(); openEditPreset(preset); }}
-                                    className="p-1 rounded-full text-slate-300 hover:bg-primary/10 hover:text-primary transition-colors">
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3"><path d="M13.586 3.586a2 2 0 1 1 2.828 2.828l-.793.793-2.828-2.828.793-.793ZM11.379 5.793 3 14.172V17h2.828l8.38-8.379-2.83-2.828Z" /></svg>
-                                </button>
-                            </div>
-                        )}</ApiPresetGroups>
-                    <p className="text-[10px] text-slate-500 mt-1.5 pl-1">点名称切换预设。长按名称或点铅笔，可编辑、复制或删除。</p>
-                </div>
-            )}
-
-            <div className="space-y-4">
-                <DialogueApiFields
-                    value={{ baseUrl: localUrl, apiKey: localKey, model: localModel, stream: localStream, temperature: localTemperature, maxTokens: localMaxTokens, apiType: localApiType }}
-                    onChange={patch => {
-                        if (patch.apiType !== undefined) setLocalApiType(patch.apiType);
-                        if (patch.baseUrl !== undefined) setLocalUrl(patch.baseUrl);
-                        if (patch.apiKey !== undefined) setLocalKey(patch.apiKey);
-                        if (patch.stream !== undefined) setLocalStream(patch.stream);
-                        if (patch.temperature !== undefined) setLocalTemperature(patch.temperature);
-                        if ('maxTokens' in patch) setLocalMaxTokens(patch.maxTokens ?? 8000);
-                    }}
-                    fetchModels={fetchModels} isLoadingModels={isLoadingModels} openModelPicker={openModelPicker}
+                tabs={[{ id: 'chat', label: '对话' }, { id: 'vision', label: isVisionApiReady(apiConfig.visionApi) ? '识图 · 已接入' : '识图 · 未接入' }]}>
+            {apiTab === 'chat' ? (
+              <div className="space-y-4">
+                <ApiSlotEditor
+                  slotName="主对话"
+                  allowFollow={false}
+                  showCreatePresetHeaderButton
+                  source="设置页"
+                  value={pickDialogueApi(apiConfig)}
+                  onCommit={(next) => {
+                    if (!next) return;
+                    commitApiConfig({
+                      ...next,
+                      presetId: next.presetId,
+                      presetFp: next.presetFp,
+                    });
+                  }}
+                  helperText="点选预设立即按引用切换；编辑预设会自动同步至所有引用它的角色、副 API 与独立应用。"
+                  meta={{ appId: 'settings', appName: '设置' }}
                 />
-                <p className="text-xs text-slate-500 leading-relaxed break-words">
-                    当前使用独立模型的角色为：{characters.filter(c => c.dialogueApi).map(c => c.name).join('、') || '暂无'}
+                <p className="text-xs text-slate-500 leading-relaxed break-words pl-1">
+                  当前使用独立模型的角色为：{characters.filter(c => c.dialogueApi).map(c => c.name).join('、') || '暂无'}
                 </p>
-
-                <button onClick={() => handleSaveApi()} className="w-full py-3 rounded-2xl font-bold text-white shadow-lg shadow-primary/20 bg-primary active:scale-95 transition-all mt-2">
-                    {statusMsg || '保存配置'}
-                </button>
-                {apiPresets.length > 0 && (
-                    <p className="text-[9px] text-slate-300 px-1 leading-relaxed">
-                        这里改的是当前生效的配置。它原本来自某条预设的话，保存后会问你要不要一起存回那条预设。
-                    </p>
-                )}
-
-                <button
-                    onClick={async () => {
-                        if (!localUrl.trim() || !localKey.trim() || !localModel.trim()) return;
-                        setTestingApi(true);
-                        setTestApiResult(null);
-                        try {
-                            const res = await fetchLlm(`${normalizeLlmBaseUrl(localUrl, localApiType)}/chat/completions`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localKey.trim()}` },
-                                body: JSON.stringify({
-                                    model: localModel.trim(),
-                                    messages: [{ role: 'user', content: 'Hi' }],
-                                    max_tokens: 5,
-                                    stream: localStream,
-                                }),
-                                __sullyMeta: { appId: 'settings', appName: '设置', purpose: '测试连接' },
-                            } as RequestInit);
-                            if (res.ok) {
-                                // 走 safeResponseJson —— 它能透明把 SSE 流响应拼成普通 chat/completion 结构
-                                const data = await safeResponseJson(res);
-                                const reply = extractContent(data);
-                                setTestApiResult(`✅ 连接成功 — 模型回复: "${reply.slice(0, 30)}"`);
-                            } else {
-                                const text = await res.text().catch(() => '');
-                                setTestApiResult(`❌ HTTP ${res.status}: ${text.slice(0, 100)}`);
-                            }
-                        } catch (err: any) {
-                            setTestApiResult(`❌ 连接失败: ${err.message}`);
-                        } finally {
-                            setTestingApi(false);
-                        }
-                    }}
-                    disabled={testingApi || !localUrl.trim() || !localKey.trim() || !localModel.trim()}
-                    className={`w-full py-2.5 rounded-2xl font-bold text-sm border mt-2 active:scale-95 transition-all ${
-                        testingApi || !localUrl.trim() || !localKey.trim() || !localModel.trim()
-                            ? 'border-slate-200 text-slate-400 bg-slate-50'
-                            : 'border-primary/30 text-primary bg-primary/5 hover:bg-primary/10'
-                    }`}
-                >
-                    {testingApi ? '测试中...' : '🧪 测试连接'}
-                </button>
-
-                {testApiResult && (
-                    <div className={`mt-2 text-xs px-3 py-2 rounded-xl ${
-                        testApiResult.startsWith('✅') ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'
-                    }`}>
-                        {testApiResult}
-                    </div>
-                )}
-            </div>
-            </> : <>
-            {/* 独立识图 API：给不支持 image_url 的主模型补视觉能力；可手动从通用模型预设载入。 */}
-            <div className="space-y-4">
+              </div>
+            ) : (
+              <div className="space-y-4">
                 <div className="rounded-2xl border border-violet-100 bg-violet-50/60 p-3.5">
-                    <div className="flex items-center justify-between gap-3">
-                        <div>
-                            <div className="text-xs font-bold text-slate-600">接入独立识图 API</div>
-                            <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
-                                适合 DeepSeek 等不能直接看图的主模型。
-                            </p>
-                        </div>
-                        <button
-                            type="button"
-                            role="switch"
-                            aria-checked={localVisionEnabled}
-                            onClick={handleToggleVisionApi}
-                            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${localVisionEnabled ? 'bg-violet-500' : 'bg-slate-200'}`}
-                        >
-                            <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${localVisionEnabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
-                        </button>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-xs font-bold text-slate-600">接入独立识图 API</div>
+                      <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
+                        适合 DeepSeek 等不能直接看图的主模型。
+                      </p>
                     </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={localVisionEnabled}
+                      onClick={handleToggleVisionApi}
+                      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${localVisionEnabled ? 'bg-violet-500' : 'bg-slate-200'}`}
+                    >
+                      <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${localVisionEnabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                    </button>
+                  </div>
                 </div>
 
                 <p className="text-[10px] text-slate-400 leading-relaxed px-1">
-                    开启后，每张聊天图片只会先交给这里的视觉模型识别一次，并把结果写成
-                    <span className="font-semibold text-violet-600"> [图片：模型看到的内容] </span>
-                    再发给主 API；之后聊天和重 roll 都直接复用，不会重复识图扣费。关闭时完全沿用原来的图片发送逻辑。
+                  开启后，每张聊天图片只会先交给这里的视觉模型识别一次，并把结果写成
+                  <span className="font-semibold text-violet-600"> [图片：模型看到的内容] </span>
+                  再发给主 API；之后聊天和重 roll 都直接复用，不会重复识图扣费。关闭时完全沿用原来的图片发送逻辑。
                 </p>
 
-                <div className="rounded-2xl border border-violet-100 bg-white/70 p-3">
-                    <div className="flex items-center justify-between gap-2 mb-2">
-                        <label className="text-[10px] font-bold text-violet-500 uppercase tracking-widest">从模型预设载入</label>
-                        <span className="text-[9px] text-slate-300">不会切换主 API</span>
-                    </div>
-                    {apiPresets.length > 0 ? (
-                        <div className="flex gap-2 flex-wrap">
-                            {apiPresets.map(preset => (
-                                <button
-                                    key={preset.id}
-                                    type="button"
-                                    onClick={() => loadVisionApiPreset(preset)}
-                                    className={`max-w-full px-3 py-1.5 rounded-lg border text-[11px] font-medium truncate transition-colors ${
-                                        selectedVisionPresetId === preset.id
-                                            ? 'bg-violet-100 border-violet-200 text-violet-700'
-                                            : 'bg-white border-slate-200 text-slate-500 hover:border-violet-200'
-                                    }`}
-                                    title={`${preset.name} · ${preset.config.model || '未配置模型'}`}
-                                >
-                                    {preset.name}
-                                </button>
-                            ))}
-                        </div>
-                    ) : (
-                        <p className="text-[10px] text-slate-400 leading-relaxed">还没有模型预设；可先在「对话」页签保存预设，或直接手动填写。</p>
-                    )}
-                </div>
-
-                <div className={`space-y-3 transition-opacity ${localVisionEnabled ? 'opacity-100' : 'opacity-50'}`}>
-                    <div>
-                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">URL</label>
-                        <input
-                            type="text"
-                            value={localVisionUrl}
-                            onChange={event => { setLocalVisionUrl(event.target.value); setSelectedVisionPresetId(null); setVisionTestResult(null); }}
-                            disabled={!localVisionEnabled}
-                            placeholder="https://.../v1"
-                            className="w-full bg-white/60 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all disabled:cursor-not-allowed"
-                        />
-                    </div>
-                    <div>
-                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">Key</label>
-                        <input
-                            type="password"
-                            value={localVisionKey}
-                            onChange={event => { setLocalVisionKey(event.target.value); setSelectedVisionPresetId(null); setVisionTestResult(null); }}
-                            disabled={!localVisionEnabled}
-                            placeholder="sk-..."
-                            className="w-full bg-white/60 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all disabled:cursor-not-allowed"
-                        />
-                    </div>
-                    <div>
-                        <div className="flex justify-between items-center mb-1.5 pl-1">
-                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Model</label>
-                            <button
-                                type="button"
-                                onClick={fetchVisionModels}
-                                disabled={!localVisionEnabled || isLoadingVisionModels}
-                                className="text-[10px] text-violet-600 font-bold disabled:text-slate-300"
-                            >
-                                {isLoadingVisionModels ? 'Fetching...' : '刷新模型列表'}
-                            </button>
-                        </div>
-                        <button
-                            type="button"
-                            onClick={() => setShowVisionModelModal(true)}
-                            disabled={!localVisionEnabled}
-                            title={localVisionModel || '选择或手动输入模型'}
-                            className="w-full bg-white/60 border border-slate-200/60 rounded-xl px-4 py-3 text-sm text-slate-700 flex justify-between items-center gap-2 active:bg-white transition-all shadow-sm disabled:cursor-not-allowed"
-                        >
-                            <span className="font-mono overflow-hidden whitespace-nowrap min-w-0 flex-1 text-left text-ellipsis">
-                                {localVisionModel || '选择或手动输入模型...'}
-                            </span>
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-slate-400 shrink-0"><path fillRule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" /></svg>
-                        </button>
-                    </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                    <button
-                        type="button"
-                        onClick={handleTestVisionApi}
-                        disabled={testingVisionApi || !localVisionEnabled || !localVisionUrl.trim() || !localVisionKey.trim() || !localVisionModel.trim()}
-                        className="py-3 rounded-2xl font-bold text-violet-600 border border-violet-200 bg-violet-50 active:scale-95 transition-all disabled:opacity-40"
-                    >
-                        {testingVisionApi ? '识图测试中…' : '🧪 测试识图'}
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => handleSaveVisionApi()}
-                        disabled={isLoadingVisionModels || testingVisionApi}
-                        className="py-3 rounded-2xl font-bold text-white shadow-lg shadow-violet-500/20 bg-violet-500 active:scale-95 transition-all disabled:opacity-50"
-                    >
-                        保存识图 API
-                    </button>
+                <div className={localVisionEnabled ? 'opacity-100' : 'opacity-60'}>
+                  <ApiSlotEditor
+                    slotName="独立识图"
+                    allowFollow={false}
+                    source="设置页"
+                    value={apiConfig.visionApi ? pickDialogueApi(apiConfig.visionApi) : { baseUrl: '', apiKey: '', model: '' }}
+                    onCommit={(next) => {
+                      if (!next) return;
+                      setLocalVisionEnabled(true);
+                      updateApiConfig({
+                        visionApi: {
+                          enabled: true,
+                          apiType: next.apiType,
+                          baseUrl: next.baseUrl,
+                          apiKey: next.apiKey,
+                          model: next.model,
+                          stream: next.stream,
+                          presetId: next.presetId,
+                          presetFp: next.presetFp,
+                        },
+                      });
+                      setVisionStatusMsg('识图 API 已自动保存并接入');
+                      setTimeout(() => setVisionStatusMsg(''), 2200);
+                    }}
+                    customTestRunner={async (slot) => {
+                      const description = await describeImageWithVisionApi(
+                        VISION_API_TEST_IMAGE_DATA_URL,
+                        {
+                          enabled: true,
+                          apiType: slot.apiType,
+                          baseUrl: slot.baseUrl,
+                          apiKey: slot.apiKey,
+                          model: slot.model,
+                          stream: slot.stream,
+                        },
+                        { appId: 'settings', appName: '设置', purpose: '测试连接' },
+                      );
+                      trackEvent('测试识图 API', { result: '成功' });
+                      return `识图成功 — ${description.slice(0, 80)}`;
+                    }}
+                    helperText="测试连接会发送一张内置小图，验证模型确实具备看图能力。"
+                    meta={{ appId: 'settings', appName: '设置' }}
+                  />
                 </div>
                 {visionStatusMsg && (
-                    <div className="text-[11px] text-center text-violet-600 bg-violet-50 px-3 py-2 rounded-xl">{visionStatusMsg}</div>
+                  <div className="text-[11px] text-center text-violet-600 bg-violet-50 px-3 py-2 rounded-xl">{visionStatusMsg}</div>
                 )}
-                <p className="text-[9px] text-slate-300 px-1">测试会发送一张内置紫色圆点图，确认该模型真的能看图，并消耗一次极小请求。</p>
-                {visionTestResult && (
-                    <div className={`text-xs px-3 py-2 rounded-xl leading-relaxed ${
-                        visionTestResult.startsWith('✅') ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'
-                    }`}>
-                        {visionTestResult}
-                    </div>
-                )}
-            </div>
-            </>}
+              </div>
+            )}
             </SettingsTabs>
             {/* API 调用记录入口 — 点开看最近 5 天各 App / 角色 / 用途的调用明细 */}
             <button type="button" onClick={() => setShowApiCallLog(true)} className="mt-4 w-full flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-left active:scale-[0.99] transition-transform">
@@ -2959,14 +2895,14 @@ const Settings: React.FC = () => {
                     <div className="flex bg-white/50 border border-slate-200/60 rounded-xl p-1 gap-1">
                         <button
                             type="button"
-                            onClick={() => setLocalMiniMaxRegion('domestic')}
+                            onClick={() => { setLocalMiniMaxRegion('domestic'); commitOtherApisNow({ minimaxRegion: 'domestic' }); }}
                             className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all ${localMiniMaxRegion === 'domestic' ? 'bg-primary text-white shadow-sm' : 'text-slate-600 active:bg-white/60'}`}
                         >
                             国服
                         </button>
                         <button
                             type="button"
-                            onClick={() => setLocalMiniMaxRegion('overseas')}
+                            onClick={() => { setLocalMiniMaxRegion('overseas'); commitOtherApisNow({ minimaxRegion: 'overseas' }); }}
                             className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all ${localMiniMaxRegion === 'overseas' ? 'bg-primary text-white shadow-sm' : 'text-slate-600 active:bg-white/60'}`}
                         >
                             海外
@@ -2981,20 +2917,20 @@ const Settings: React.FC = () => {
 
                 <div className="group">
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">MiniMax Key (可选)</label>
-                    <input type="password" name="minimax-api-secret" autoComplete="new-password" spellCheck={false} value={localMiniMaxKey} onChange={(e) => setLocalMiniMaxKey(e.target.value)} placeholder="MiniMax API Secret（留空则复用 Key）" className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all" />
-                    <p className="text-[11px] text-slate-400 mt-1 pl-1">电话 / 音色查询优先使用这个 Key，空着时回退通用 Key。</p>
+                    <input type="password" name="minimax-api-secret" autoComplete="new-password" spellCheck={false} value={localMiniMaxKey} onChange={(e) => { setLocalMiniMaxKey(e.target.value); scheduleOtherApisAutoSave({ minimaxApiKey: e.target.value }); }} onBlur={() => commitOtherApisNow()} placeholder="MiniMax API Secret（留空且主 API 为 MiniMax 官方时自动复用）" className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all" />
+                    <p className="text-[11px] text-slate-400 mt-1 pl-1">电话 / 音色查询优先使用这个 Key，留空时仅在主对话地址也是 MiniMax 官方域名时复用主 Key。</p>
                 </div>
 
                 <div className="group">
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">MiniMax Group ID (可选)</label>
-                    <input type="text" value={localMiniMaxGroupId} onChange={(e) => setLocalMiniMaxGroupId(e.target.value)} placeholder="group_id（部分账号/模型需要）" className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all" />
+                    <input type="text" value={localMiniMaxGroupId} onChange={(e) => { setLocalMiniMaxGroupId(e.target.value); scheduleOtherApisAutoSave({ minimaxGroupId: e.target.value }); }} onBlur={() => commitOtherApisNow()} placeholder="group_id（部分账号/模型需要）" className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all" />
                     <p className="text-[11px] text-slate-400 mt-1 pl-1">如控制台给了 group_id，请填这里；会透传到 TTS 请求体和代理日志。</p>
                 </div>
 
                 {/* 鱼声 Fish Audio —— 与 MiniMax 对等的另一套语音系统，中性样式、不做视觉偏向 */}
                 <div className="group">
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">鱼声 Fish Audio Key</label>
-                    <input type="password" name="fish-api-key" autoComplete="new-password" spellCheck={false} value={localFishKey} onChange={(e) => setLocalFishKey(e.target.value)} placeholder="Fish Audio API Key（fish.audio 控制台签发）" className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all" />
+                    <input type="password" name="fish-api-key" autoComplete="new-password" spellCheck={false} value={localFishKey} onChange={(e) => { setLocalFishKey(e.target.value); scheduleOtherApisAutoSave({ fishAudioApiKey: e.target.value }); }} onBlur={() => commitOtherApisNow()} placeholder="Fish Audio API Key（fish.audio 控制台签发）" className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all" />
                     <p className="text-[11px] text-slate-400 mt-1 pl-1">在 <a href="https://fish.audio/zh-CN/developers/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-semibold">fish.audio 开发者页</a> 拿 Key（<span className="text-amber-600 font-medium">需梯子</span>）。角色音色在「角色 → 语音」里填 reference_id。静态网页环境会在合成时通过网络 Worker 转发 Key 与待合成文字，项目不主动留存。</p>
 
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-3 mb-1.5 block pl-1">鱼声模型</label>
@@ -3024,7 +2960,8 @@ const Settings: React.FC = () => {
                         autoComplete="new-password"
                         spellCheck={false}
                         value={localElevenLabsKey}
-                        onChange={(e) => setLocalElevenLabsKey(e.target.value)}
+                        onChange={(e) => { setLocalElevenLabsKey(e.target.value); scheduleOtherApisAutoSave({ elevenLabsApiKey: e.target.value }); }}
+                        onBlur={() => commitOtherApisNow()}
                         placeholder="ElevenLabs API Key"
                         className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all"
                     />
@@ -3067,7 +3004,9 @@ const Settings: React.FC = () => {
                                         max="1"
                                         step="0.05"
                                         value={value}
-                                        onChange={(e) => setter(Number(e.target.value))}
+                                        onChange={(e) => { setter(Number(e.target.value)); scheduleOtherApisAutoSave(); }}
+                                        onMouseUp={() => commitOtherApisNow()}
+                                        onTouchEnd={() => commitOtherApisNow()}
                                         className="w-full accent-primary"
                                     />
                                 </label>
@@ -3077,7 +3016,7 @@ const Settings: React.FC = () => {
                                 <input
                                     type="checkbox"
                                     checked={localElevenLabsUseSpeakerBoost}
-                                    onChange={(e) => setLocalElevenLabsUseSpeakerBoost(e.target.checked)}
+                                    onChange={(e) => { setLocalElevenLabsUseSpeakerBoost(e.target.checked); commitOtherApisNow({ elevenLabsUseSpeakerBoost: e.target.checked }); }}
                                     className="w-4 h-4 accent-primary"
                                 />
                             </label>}
@@ -3205,7 +3144,8 @@ const Settings: React.FC = () => {
                                         <p className="text-[10px] text-slate-400 mb-1.5 pl-0.5">{hint}</p>
                                         <textarea
                                             value={value}
-                                            onChange={(e) => setValue(e.target.value)}
+                                            onChange={(e) => { setValue(e.target.value); scheduleOtherApisAutoSave(); }}
+                                            onBlur={() => commitOtherApisNow()}
                                             placeholder="留空 → 使用内置默认。点下方「载入默认模板」可把内置文案填进来再改。"
                                             rows={6}
                                             spellCheck={false}
@@ -3216,14 +3156,38 @@ const Settings: React.FC = () => {
                                             <span className="flex gap-3">
                                                 <button
                                                     type="button"
-                                                    onClick={() => setValue(def)}
+                                                    onClick={() => {
+                                                        setValue(def);
+                                                        const patchKey = key === 'minimax' ? 'minimax' : key === 'fishaudio' ? 'fishaudio' : key === 'elevenlabs' ? 'elevenlabs' : 'dateVoice';
+                                                        commitOtherApisNow({
+                                                            voicePrompts: {
+                                                                minimax: localVoicePromptMinimax.trim() || undefined,
+                                                                fishaudio: localVoicePromptFish.trim() || undefined,
+                                                                elevenlabs: localVoicePromptElevenLabs.trim() || undefined,
+                                                                dateVoice: localVoicePromptDate.trim() || undefined,
+                                                                [patchKey]: def,
+                                                            },
+                                                        });
+                                                    }}
                                                     className="text-[11px] font-semibold text-slate-500 hover:text-primary active:scale-95 transition-all"
                                                 >
                                                     载入默认模板
                                                 </button>
                                                 <button
                                                     type="button"
-                                                    onClick={() => setValue('')}
+                                                    onClick={() => {
+                                                        setValue('');
+                                                        const patchKey = key === 'minimax' ? 'minimax' : key === 'fishaudio' ? 'fishaudio' : key === 'elevenlabs' ? 'elevenlabs' : 'dateVoice';
+                                                        commitOtherApisNow({
+                                                            voicePrompts: {
+                                                                minimax: localVoicePromptMinimax.trim() || undefined,
+                                                                fishaudio: localVoicePromptFish.trim() || undefined,
+                                                                elevenlabs: localVoicePromptElevenLabs.trim() || undefined,
+                                                                dateVoice: localVoicePromptDate.trim() || undefined,
+                                                                [patchKey]: undefined,
+                                                            },
+                                                        });
+                                                    }}
                                                     disabled={usingDefault}
                                                     className="text-[11px] font-semibold text-rose-500 hover:text-rose-600 active:scale-95 transition-all disabled:opacity-30 disabled:pointer-events-none"
                                                 >
@@ -3253,7 +3217,7 @@ const Settings: React.FC = () => {
                             </svg>
                         </button>
                     </div>
-                    <input type="password" name="ace-step-api-token" autoComplete="new-password" spellCheck={false} value={localAceStepKey} onChange={(e) => setLocalAceStepKey(e.target.value)} placeholder="r8_xxx（写歌 App 调 ACE-Step 出整首歌用）" className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all" />
+                    <input type="password" name="ace-step-api-token" autoComplete="new-password" spellCheck={false} value={localAceStepKey} onChange={(e) => { setLocalAceStepKey(e.target.value); scheduleOtherApisAutoSave({ aceStepApiKey: e.target.value }); }} onBlur={() => commitOtherApisNow()} placeholder="r8_xxx（写歌 App 调 ACE-Step 出整首歌用）" className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all" />
                     <p className="text-[11px] text-slate-400 mt-1 pl-1">填了之后，写歌 App 的歌词页可以一键调用 ACE-Step 生成真人声整首歌（约 ¥0.1/首）。生成时 Token、歌词与风格参数会通过网络 Worker 转发给 Replicate，项目不主动留存。</p>
 
                     {showAceStepGuide && (
@@ -3317,9 +3281,10 @@ const Settings: React.FC = () => {
             </div>
             </SettingsTabs>
 
-            <button onClick={handleSaveOtherApis} className="w-full py-3 rounded-2xl font-bold text-white shadow-lg shadow-amber-500/20 bg-amber-500 active:scale-95 transition-all mt-6">
-                {otherStatusMsg || '保存语音与写歌'}
-            </button>
+            <div className="mt-4 text-[11px] text-slate-400 pl-1 flex items-center justify-between">
+                <span>语音与写歌各项修改自动保存生效</span>
+                {otherStatusMsg && <span className="text-emerald-600 font-semibold">{otherStatusMsg}</span>}
+            </div>
         </SettingsSection>
 
         {/* 扩展连接：实时感知（天气、热点等真实世界信息）和 MCP（外部工具服务器）都是把外部信息接进对话，合在一张卡片里用页签切换 */}
@@ -3341,24 +3306,24 @@ const Settings: React.FC = () => {
             </p>
 
             <div className="grid grid-cols-5 gap-2 text-center">
-                <div className={`py-3 rounded-xl text-xs font-bold ${rtWeatherEnabled ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-50 text-slate-400'}`}>
-                    <div className="text-lg mb-1">{rtWeatherEnabled ? <img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/2600.png" className="w-5 h-5 inline" alt="" /> : <img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f32b.png" className="w-5 h-5 inline" alt="" />}</div>
+                <div className={`py-3 rounded-xl text-xs font-bold ${realtimeConfig.weatherEnabled ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-50 text-slate-400'}`}>
+                    <div className="text-lg mb-1">{realtimeConfig.weatherEnabled ? <img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/2600.png" className="w-5 h-5 inline" alt="" /> : <img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f32b.png" className="w-5 h-5 inline" alt="" />}</div>
                     天气
                 </div>
-                <div className={`py-3 rounded-xl text-xs font-bold ${rtNewsEnabled ? 'bg-blue-50 text-blue-600' : 'bg-slate-50 text-slate-400'}`}>
-                    <div className="text-lg mb-1">{rtNewsEnabled ? <img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4f0.png" className="w-5 h-5 inline" alt="" /> : <img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4c4.png" className="w-5 h-5 inline" alt="" />}</div>
+                <div className={`py-3 rounded-xl text-xs font-bold ${realtimeConfig.newsEnabled ? 'bg-blue-50 text-blue-600' : 'bg-slate-50 text-slate-400'}`}>
+                    <div className="text-lg mb-1">{realtimeConfig.newsEnabled ? <img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4f0.png" className="w-5 h-5 inline" alt="" /> : <img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4c4.png" className="w-5 h-5 inline" alt="" />}</div>
                     新闻
                 </div>
-                <div className={`py-3 rounded-xl text-xs font-bold ${rtNotionEnabled ? 'bg-orange-50 text-orange-600' : 'bg-slate-50 text-slate-400'}`}>
-                    <div className="text-lg mb-1">{rtNotionEnabled ? <img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4dd.png" className="w-5 h-5 inline" alt="" /> : <img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4cb.png" className="w-5 h-5 inline" alt="" />}</div>
+                <div className={`py-3 rounded-xl text-xs font-bold ${realtimeConfig.notionEnabled ? 'bg-orange-50 text-orange-600' : 'bg-slate-50 text-slate-400'}`}>
+                    <div className="text-lg mb-1">{realtimeConfig.notionEnabled ? <img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4dd.png" className="w-5 h-5 inline" alt="" /> : <img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4cb.png" className="w-5 h-5 inline" alt="" />}</div>
                     Notion
                 </div>
-                <div className={`py-3 rounded-xl text-xs font-bold ${rtFeishuEnabled ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-50 text-slate-400'}`}>
-                    <div className="text-lg mb-1">{rtFeishuEnabled ? <img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4d2.png" className="w-5 h-5 inline" alt="" /> : <img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4cb.png" className="w-5 h-5 inline" alt="" />}</div>
+                <div className={`py-3 rounded-xl text-xs font-bold ${realtimeConfig.feishuEnabled ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-50 text-slate-400'}`}>
+                    <div className="text-lg mb-1">{realtimeConfig.feishuEnabled ? <img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4d2.png" className="w-5 h-5 inline" alt="" /> : <img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4cb.png" className="w-5 h-5 inline" alt="" />}</div>
                     飞书
                 </div>
-                <div className={`py-3 rounded-xl text-xs font-bold ${rtXhsEnabled ? 'bg-red-50 text-red-600' : 'bg-slate-50 text-slate-400'}`}>
-                    <div className="text-lg mb-1">{rtXhsEnabled ? <img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4d5.png" className="w-5 h-5 inline" alt="" /> : <img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4cb.png" className="w-5 h-5 inline" alt="" />}</div>
+                <div className={`py-3 rounded-xl text-xs font-bold ${realtimeConfig.xhsEnabled ? 'bg-red-50 text-red-600' : 'bg-slate-50 text-slate-400'}`}>
+                    <div className="text-lg mb-1">{realtimeConfig.xhsEnabled ? <img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4d5.png" className="w-5 h-5 inline" alt="" /> : <img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4cb.png" className="w-5 h-5 inline" alt="" />}</div>
                     小红书
                 </div>
             </div>
@@ -3452,7 +3417,7 @@ const Settings: React.FC = () => {
 
                 <p className="text-[10px] text-slate-400 px-1 mt-2 leading-relaxed">
                     只填到域名（如 <b>{DEFAULT_PROXY_WORKER}</b>），不要带 /search、/webdav、/api 等路径。
-                    联网搜索 / 备份代理 / Notion / 飞书 / 点单 / 网页抓取 / 出图 / 小红书 Lite / 音乐 都会切到这里填的 Worker。
+                    联网搜索 / 备份代理 / Notion / 飞书 / 点单 / 网页抓取 / 小红书 Lite / 音乐 都会切到这里填的 Worker。
                     （音乐播放器里还留了一个独立地址框，单独填了就以那个为准。）
                 </p>
             </section>
@@ -3785,231 +3750,8 @@ const Settings: React.FC = () => {
           </div>
       </Modal>
 
-      {/* 模型选择 Modal */}
-      <Modal isOpen={showModelModal} title="选择模型" onClose={cancelModelPicker}>
-        <ModelPicker availableModels={availableModels} localModel={localModel} setLocalModel={setLocalModel} confirmModelPicker={confirmModelPicker} />
-      </Modal>
-
-      {/* 识图 API 使用独立模型列表，避免覆盖主 API 的模型选择。 */}
-      <Modal isOpen={showVisionModelModal} title="选择识图模型" onClose={() => setShowVisionModelModal(false)}>
-        {(() => {
-            const { filtered, commonPrefix } = visionModelPickerView;
-            return (
-                <div className="space-y-3 p-1">
-                    <div className="flex gap-2">
-                        <input
-                            type="text"
-                            value={localVisionModel}
-                            onChange={(event) => {
-                                setLocalVisionModel(event.target.value);
-                                setSelectedVisionPresetId(null);
-                                setVisionTestResult(null);
-                            }}
-                            placeholder="手动输入视觉模型名称..."
-                            className="flex-1 min-w-0 bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-violet-500 focus:bg-white transition-all"
-                        />
-                        <button
-                            onClick={() => setShowVisionModelModal(false)}
-                            className="px-4 py-2.5 bg-violet-500 text-white text-sm font-bold rounded-xl active:scale-95 transition-all"
-                        >
-                            确定
-                        </button>
-                    </div>
-                    {availableVisionModels.length > 0 && (
-                        <div className="relative">
-                            <input
-                                type="text"
-                                value={visionModelFilter}
-                                onChange={(event) => setVisionModelFilter(event.target.value)}
-                                placeholder={`🔍 搜索 ${availableVisionModels.length} 个识图模型...`}
-                                className="w-full bg-slate-50 border border-slate-200/60 rounded-xl px-4 py-2 text-xs focus:outline-violet-500 focus:bg-white transition-all"
-                            />
-                            {visionModelFilter && (
-                                <button
-                                    onClick={() => setVisionModelFilter('')}
-                                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 text-xs px-2"
-                                >×</button>
-                            )}
-                        </div>
-                    )}
-                    {commonPrefix && (
-                        <div className="text-[10px] text-slate-400 px-1 flex items-center gap-1 flex-wrap">
-                            <span>共同前缀:</span>
-                            <code className="font-mono bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded break-all">{commonPrefix}</code>
-                            <span className="text-slate-300">(下方已弱化显示)</span>
-                        </div>
-                    )}
-                    <div className="max-h-[40vh] overflow-y-auto no-scrollbar space-y-2">
-                        {filtered.length > 0 ? filtered.map(model => {
-                            const suffix = commonPrefix && model.startsWith(commonPrefix) ? model.slice(commonPrefix.length) : model;
-                            const selected = model === localVisionModel;
-                            return (
-                                <button
-                                    key={model}
-                                    onClick={() => {
-                                        setLocalVisionModel(model);
-                                        setSelectedVisionPresetId(null);
-                                        setVisionTestResult(null);
-                                        setShowVisionModelModal(false);
-                                    }}
-                                    title={model}
-                                    className={`w-full text-left px-4 py-3 rounded-xl text-sm font-mono flex justify-between items-start gap-2 ${selected ? 'bg-violet-100 text-violet-700 font-bold ring-1 ring-violet-200' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}
-                                >
-                                    <span className="break-all min-w-0 flex-1 leading-relaxed">
-                                        {commonPrefix && suffix !== model && (
-                                            <span className={selected ? 'text-violet-400 font-normal' : 'text-slate-400 font-normal'}>{commonPrefix}</span>
-                                        )}
-                                        <span>{suffix}</span>
-                                    </span>
-                                    {selected && <div className="w-2 h-2 rounded-full bg-violet-500 mt-1.5 shrink-0" />}
-                                </button>
-                            );
-                        }) : (
-                            <div className="text-center text-slate-400 py-8 text-xs">
-                                {availableVisionModels.length === 0
-                                    ? '列表为空，可手动输入或点击“刷新模型列表”拉取'
-                                    : `没有匹配 "${visionModelFilter}" 的模型`}
-                            </div>
-                        )}
-                    </div>
-                </div>
-            );
-        })()}
-      </Modal>
-
       {/* API 调用记录页面 */}
       <ApiCallLogModal isOpen={showApiCallLog} onClose={() => setShowApiCallLog(false)} />
-
-      {/* Preset Name Modal */}
-      <Modal isOpen={showPresetModal} title="新建预设" onClose={() => setShowPresetModal(false)} footer={<button onClick={handleSavePreset} className="w-full py-3 bg-primary text-white font-bold rounded-2xl">新建</button>}>
-          <div className="space-y-2">
-              <label className="text-[10px] font-bold text-slate-400 uppercase">预设名称 (例如: DeepSeek)</label>
-              <input value={newPresetName} onChange={e => setNewPresetName(e.target.value)} className="w-full bg-slate-100 rounded-xl px-4 py-3 text-sm focus:outline-primary" autoFocus placeholder="Name..." />
-              <label className="text-[10px] font-bold text-slate-400 block">API 预设分组（选填）</label>
-              <input aria-label="API 预设分组" value={newPresetGroup} onChange={e => setNewPresetGroup(e.target.value)} list="newPresetGroup-options" placeholder="例如：日常聊天 / 写作" className="w-full bg-slate-100 rounded-xl px-4 py-2.5 text-sm focus:outline-primary" />
-              <datalist id="newPresetGroup-options">{[...new Set(apiPresets.map(p => p.group).filter(Boolean))].map(group => <option key={group} value={group} />)}</datalist>
-              <p className="text-[10px] text-slate-400 leading-relaxed pt-1">会保存上面表单里的 URL / Key / Model，以及高级设置中的流式与温度。</p>
-          </div>
-      </Modal>
-
-      {/* 编辑预设：只改这条预设本身；正在用它的话，当前配置一并跟着走 */}
-      <Modal
-          isOpen={!!editingPresetId}
-          title={copyingPreset ? '编辑预设副本' : '编辑预设'}
-          onClose={() => setEditingPresetId(null)}
-          footer={<>
-              <button type="button" onClick={() => setEditingPresetId(null)} className="px-5 py-3 bg-slate-100 text-slate-600 rounded-2xl">取消</button>
-              <button type="button" onClick={handleUpdatePreset} className="flex-1 py-3 bg-primary text-white font-bold rounded-2xl">{copyingPreset ? '保存副本' : '保存'}</button>
-          </>}
-      >
-          <div className="space-y-3">
-              {!copyingPreset && <div className="flex items-center justify-between">
-                  <button type="button" onClick={copyEditedPreset} className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700">复制预设</button>
-                  <button type="button" onClick={deleteEditedPreset} className="rounded-xl px-3 py-2 text-sm text-red-600">删除预设</button>
-              </div>}
-              <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">名称</label>
-                  <input value={editPresetName} onChange={e => setEditPresetName(e.target.value)} placeholder="预设名称" className="w-full bg-slate-100 rounded-xl px-4 py-2.5 text-sm focus:outline-primary" />
-                  <label className="text-[10px] font-bold text-slate-400 block">API 预设分组（选填）</label>
-              <input aria-label="API 预设分组" value={editPresetGroup} onChange={e => setEditPresetGroup(e.target.value)} list="editPresetGroup-options" placeholder="例如：日常聊天 / 写作" className="w-full bg-slate-100 rounded-xl px-4 py-2.5 text-sm focus:outline-primary" />
-              <datalist id="editPresetGroup-options">{[...new Set(apiPresets.map(p => p.group).filter(Boolean))].map(group => <option key={group} value={group} />)}</datalist>
-              </div>
-              <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">URL</label>
-                  <select aria-label="预设接口类型" value={editPresetApiType} onChange={e => setEditPresetApiType(e.target.value as LlmApiType)} className="w-full bg-slate-100 rounded-xl px-4 py-2.5 text-sm"><option value="openai">OpenAI 兼容</option><option value="anthropic">Anthropic 原生 Messages</option></select>
-                  <input value={editPresetUrl} onChange={e => setEditPresetUrl(e.target.value)} placeholder="https://..." className="w-full bg-slate-100 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-primary" />
-              </div>
-              <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Key</label>
-                  <input type="password" value={editPresetKey} onChange={e => setEditPresetKey(e.target.value)} placeholder="sk-..." className="w-full bg-slate-100 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-primary" />
-              </div>
-              <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Model</label>
-                  <input value={editPresetModel} onChange={e => setEditPresetModel(e.target.value)} placeholder="模型名称" className="w-full bg-slate-100 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-primary" />
-              </div>
-              <div className="rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-3 space-y-3">
-                  <div className="flex items-center justify-between gap-3">
-                      <div>
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">流式输出 (Stream)</p>
-                          <p className="text-[9px] text-slate-300 mt-0.5">随这条预设独立保存</p>
-                      </div>
-                      <button
-                          type="button"
-                          aria-label="预设流式输出"
-                          aria-pressed={editPresetStream}
-                          onClick={() => setEditPresetStream(value => !value)}
-                          className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${editPresetStream ? 'bg-primary' : 'bg-slate-200'}`}
-                      >
-                          <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${editPresetStream ? 'translate-x-4' : 'translate-x-0.5'}`} />
-                      </button>
-                  </div>
-                  <div>
-                      <div className="flex items-center justify-between">
-                          <label htmlFor="edit-preset-temperature" className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">温度 (Temperature)</label>
-                          <span className="text-[10px] font-mono text-slate-400">{editPresetTemperature.toFixed(2)}</span>
-                      </div>
-                      <input
-                          id="edit-preset-temperature"
-                          type="range"
-                          min="0"
-                          max="2"
-                          step="0.05"
-                          value={editPresetTemperature}
-                          onChange={event => setEditPresetTemperature(parseFloat(event.target.value))}
-                          className="w-full accent-primary mt-1"
-                      />
-                  </div>
-                  <label className="block text-[10px] text-slate-400">私聊最大生成 Token
-                      <input type="number" min={1} step={1} value={editPresetMaxTokens} aria-label="预设最大生成 Token"
-                          onChange={event => { const n = Number(event.target.value); if (Number.isSafeInteger(n) && n > 0) setEditPresetMaxTokens(n); }}
-                          className="mt-1 w-full bg-white rounded-xl px-3 py-2 text-sm" />
-                  </label>
-              </div>
-              <button
-                  type="button"
-                  onClick={() => {
-                      setEditPresetUrl(localUrl);
-                      setEditPresetApiType(localApiType);
-                      setEditPresetKey(localKey);
-                      setEditPresetModel(localModel);
-                      setEditPresetStream(localStream);
-                      setEditPresetTemperature(localTemperature);
-                      setEditPresetMaxTokens(localMaxTokens);
-                      addToast('已填入当前配置', 'info');
-                  }}
-                  className="w-full py-2 bg-slate-100 text-slate-500 text-xs font-bold rounded-xl active:scale-95 transition-transform"
-              >
-                  用当前完整配置填入
-              </button>
-              <p className="text-[10px] text-slate-400 leading-relaxed">
-                  {copyingPreset ? '保存后可在「我的预设」中点名称切换到副本。' : editingPresetId && activePresetId === editingPresetId
-                      ? '这条正在使用中，保存后当前配置会一起换成新的值。'
-                      : '只改这条预设，当前生效的配置不受影响。'}
-              </p>
-          </div>
-      </Modal>
-
-      {/* 保存后问要不要存回预设 */}
-      <Modal
-          isOpen={!!presetWriteback}
-          title="存回预设？"
-          onClose={() => setPresetWriteback(null)}
-          footer={
-              <>
-                  <button onClick={() => setPresetWriteback(null)} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl active:scale-95 transition-transform">不保存</button>
-                  <button onClick={confirmPresetWriteback} className="flex-1 py-3 bg-primary text-white font-bold rounded-2xl active:scale-95 transition-transform">保存</button>
-              </>
-          }
-      >
-          <div className="space-y-2 text-sm text-slate-600 leading-relaxed">
-              <p>
-                  当前配置已经和预设「{apiPresets.find(item => item.id === presetWriteback?.presetId)?.name ?? ''}」不一样了。
-              </p>
-              <p className="text-xs text-slate-400">
-                  若不保存，当前配置为临时配置，切换预设后消失。若保存，则用当前配置覆盖这条预设原来的内容。
-              </p>
-          </div>
-      </Modal>
 
       {/* 强制导出 Modal */}
       <Modal isOpen={showExportModal} title="备份下载" onClose={() => { revokeDownloadUrl(); setShowExportModal(false); }} footer={

@@ -44,7 +44,9 @@ import { PostOffice, MAX_LETTER_CHARS, exportIdentity, importIdentity, getAdminT
 import { SIGNAL_OWNERSHIP_RECOVERED } from '../utils/vrWorld/signalRecovery';
 import { Signal, getMyAuthorship, setSignalWhisper, hasSignalNoticeAck, ackSignalNotice, type SignalState } from '../utils/vrWorld/signal';
 import type { SignalPoem, SignalBooklet } from '../types';
-import { getVRApi, setVRApi, getVRApiLog, clearVRApiLog, type VRApiCall } from '../utils/vrWorld/vrApi';
+import { getRawVRApiSlot, getVRApi, setVRApi, getVRApiLog, clearVRApiLog, type VRApiCall } from '../utils/vrWorld/vrApi';
+import { resolveEffectiveSlot } from '../utils/apiSlots';
+import ApiSlotEditor from '../components/settings/ApiSlotEditor';
 import { safeResponseJson } from '../utils/safeApi';
 import {
     patchSARClubState,
@@ -106,7 +108,7 @@ const stripSelfName = (text: string | undefined, name: string | undefined): stri
     }
     return text;
 };
-import type { CharacterProfile, UserProfile, VRWorldNovel, VRWorldNovelSummary, VRNovelAnnotation, VRCardMeta, VRRoomId, VRMusicRoomState, CharPlaylistSong, VRGuestbookState, VRGuestbookMessage, VRLetter, ApiPreset, APIConfig } from '../types';
+import type { CharacterProfile, UserProfile, VRWorldNovel, VRWorldNovelSummary, VRNovelAnnotation, VRCardMeta, VRRoomId, VRMusicRoomState, CharPlaylistSong, VRGuestbookState, VRGuestbookMessage, VRLetter, ApiPreset, APIConfig, DialogueApiConfig } from '../types';
 
 // ============ chibi 形象解析（vrState.chibi → 立绘 → 头像） ============
 import { getChibi } from '../utils/vrWorld/chibi';
@@ -4029,49 +4031,33 @@ const SettingsView: React.FC<{
 };
 
 // ============ 彼方 · API 设置 + 调用记录 ============
-const VRApiSettings: React.FC<{ apiPresets: ApiPreset[]; chatApi: APIConfig; addToast?: (m: string, t?: any) => void; characters: CharacterProfile[] }> = ({ apiPresets, chatApi, addToast, characters }) => {
-    const [vrApi, setVr] = useState<APIConfig | null>(null);
+const VRApiSettings: React.FC<{
+    apiPresets: ApiPreset[];
+    chatApi: APIConfig;
+    addToast?: (m: string, t?: any) => void;
+    characters: CharacterProfile[];
+    onChange?: (cfg: APIConfig | null) => void;
+}> = ({ chatApi, addToast, characters, onChange }) => {
+    const [rawSlot, setRawSlot] = useState<DialogueApiConfig | null>(null);
     const [log, setLog] = useState<VRApiCall[]>([]);
-    const [testing, setTesting] = useState(false);
-    const [testResult, setTestResult] = useState<string | null>(null);
-    const [presetsOpen, setPresetsOpen] = useState(false);   // 折叠「保存的预设」长列表
     const [snapshot, setSnapshot] = useState<string | null>(null);   // 排障快照正文
     const [collecting, setCollecting] = useState(false);
     const [confirmClearLog, setConfirmClearLog] = useState(false);
 
     useEffect(() => {
-        void getVRApi().then(setVr);
-        void getVRApiLog().then(setLog);
-        const h = () => { void getVRApiLog().then(setLog); };
-        window.addEventListener('vr-api-log', h);
-        return () => window.removeEventListener('vr-api-log', h);
+        const syncSlot = () => { void getRawVRApiSlot().then(setRawSlot); };
+        const syncLog = () => { void getVRApiLog().then(setLog); };
+        syncSlot();
+        syncLog();
+        window.addEventListener('vr-api-log', syncLog);
+        window.addEventListener('vr-api-changed', syncSlot);
+        window.addEventListener('sully:api-preset-updated', syncSlot);
+        return () => {
+            window.removeEventListener('vr-api-log', syncLog);
+            window.removeEventListener('vr-api-changed', syncSlot);
+            window.removeEventListener('sully:api-preset-updated', syncSlot);
+        };
     }, []);
-
-    const follow = !vrApi?.baseUrl;
-    const effective = follow ? chatApi : vrApi!;
-    const sameAs = (c: APIConfig) => !follow && vrApi!.baseUrl === c.baseUrl && vrApi!.model === c.model && vrApi!.apiKey === c.apiKey;
-    const host = (u?: string) => { try { return u ? new URL(u).host : '—'; } catch { return u || '—'; } };
-
-    const choose = (cfg: APIConfig | null) => {
-        void setVRApi(cfg); setVr(cfg); setTestResult(null);
-        addToast?.(cfg ? '已切换彼方 API' : '彼方改为角色回复跟随角色 API，未设置则跟随全局', 'success');
-    };
-
-    const test = async () => {
-        const cfg = effective;
-        if (!cfg?.baseUrl) { setTestResult('当前没有可用的 API'); return; }
-        setTesting(true); setTestResult(null);
-        try {
-            const res = await fetch(`${cfg.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${cfg.apiKey || 'sk-none'}` },
-                body: JSON.stringify({ model: cfg.model, messages: [{ role: 'user', content: 'Hi' }], max_tokens: 5, stream: false }),
-                __sullyMeta: { appId: 'vrworld', appName: '彼方', purpose: '测试连接' },
-            } as RequestInit);
-            if (res.ok) { const d = await safeResponseJson(res); const r = d.choices?.[0]?.message?.content || ''; setTestResult(`连接成功 — 模型回复:"${r.slice(0, 24)}"`); }
-            else { const t = await res.text().catch(() => ''); setTestResult(`HTTP ${res.status}: ${t.slice(0, 80)}`); }
-        } catch (e: any) { setTestResult(`连接失败: ${e.message}`); } finally { setTesting(false); }
-    };
 
     // 手机上没有控制台，「界面全关了记录还在涨」这类问题光靠截图说不清。
     // 一次把该看的都收齐，复制走即可；收的全是状态，不含名字、聊天和 key。
@@ -4100,66 +4086,19 @@ const VRApiSettings: React.FC<{ apiPresets: ApiPreset[]; chatApi: APIConfig; add
 
     return (
         <div className="space-y-3">
-            <p className="text-[11px] text-indigo-300/60 leading-relaxed">
-                彼方里的角色会自主、按间隔登入触发模型调用，比较费 API。你可以在这里给彼方<b className="text-indigo-200">单独指定一份 API</b>（和「设置」里保存的预设共用同一批），不设则角色回复跟随角色 API，未设置则跟随全局。
-            </p>
-
-            {/* 当前生效 */}
-            <div className="rounded-2xl p-3.5" style={{ background: 'rgba(255,255,255,0.045)', border: '1px solid rgba(255,255,255,0.08)' }}>
-                <div className="text-[10px] tracking-[0.2em] text-indigo-200/60 mb-1.5" style={{ fontFamily: `'Noto Serif SC',serif` }}>当前生效</div>
-                <div className="text-[12.5px] text-white/90 font-semibold">{follow ? '按角色使用模型' : effective?.model || '未配置'}</div>
-                <div className="text-[10px] text-white/40 mt-0.5">{follow ? `全局备用：${chatApi.model || '未配置'} · ${host(chatApi.baseUrl)}` : `${host(effective?.baseUrl)} · 彼方独立`}</div>
-                <button onClick={test} disabled={testing} className="mt-2.5 text-[11px] px-3 py-1.5 rounded-full font-semibold disabled:opacity-50"
-                    style={{ background: 'rgba(120,180,255,.16)', color: '#bcd4ff', border: '1px solid rgba(140,180,255,.3)' }}>
-                    {testing ? '测试中…' : follow ? '测试全局备用 API' : '测试连接'}
-                </button>
-                {testResult && <div className={`mt-2 text-[10.5px] px-2.5 py-1.5 rounded-lg leading-snug ${testResult.startsWith('连接成功') ? 'text-emerald-300' : 'text-rose-300'}`} style={{ background: 'rgba(0,0,0,.25)' }}>{testResult}</div>}
-            </div>
-
-            {/* 选择 API */}
-            <div>
-                <div className="text-[10px] tracking-[0.2em] text-indigo-200/55 mb-1.5 px-0.5" style={{ fontFamily: `'Noto Serif SC',serif` }}>选择彼方 API</div>
-                <button onClick={() => choose(null)}
-                    className="w-full flex items-center gap-2 rounded-xl p-3 mb-1.5 text-left active:scale-[0.99] transition-transform"
-                    style={{ background: follow ? 'rgba(120,180,255,.12)' : 'rgba(255,255,255,.04)', border: `1px solid ${follow ? 'rgba(140,180,255,.4)' : 'rgba(255,255,255,.07)'}` }}>
-                    <div className="flex-1 min-w-0">
-                        <div className="text-[12px] text-white/90 font-semibold">跟随角色设置</div>
-                        <div className="text-[10px] text-white/40 truncate">{chatApi?.model || '未配置'} · {host(chatApi?.baseUrl)}</div>
-                    </div>
-                    {follow && <span className="text-[10px] text-sky-300 font-bold shrink-0">✓ 使用中</span>}
-                </button>
-                {apiPresets.length === 0 ? (
-                    <p className="text-[10.5px] text-white/35 px-1 py-1.5">「设置」里还没有保存的 API 预设。去设置里保存几个模型，这里就能选。</p>
-                ) : (() => {
-                    const activePreset = apiPresets.find(p => sameAs(p.config));
-                    const shown = presetsOpen ? apiPresets : (activePreset ? [activePreset] : []);
-                    return (
-                        <>
-                            <button onClick={() => setPresetsOpen(o => !o)}
-                                className="w-full flex items-center gap-2 rounded-lg px-2.5 py-1.5 mb-1.5 text-left active:bg-white/5"
-                                style={{ border: '1px solid rgba(255,255,255,.07)' }}>
-                                <span className="text-[10.5px] text-white/55">保存的预设</span>
-                                <span className="text-[9.5px] text-white/35 rounded-full px-1.5 leading-tight" style={{ background: 'rgba(255,255,255,.08)' }}>{apiPresets.length}</span>
-                                {!presetsOpen && activePreset && <span className="text-[9.5px] text-sky-300/70 truncate">当前 · {activePreset.name}</span>}
-                                <span className="ml-auto text-[10px] text-white/40">{presetsOpen ? '收起' : '展开'}</span>
-                            </button>
-                            {shown.map(p => {
-                                const on = sameAs(p.config);
-                                return (
-                                    <button key={p.id} onClick={() => choose(p.config)}
-                                        className="w-full flex items-center gap-2 rounded-xl p-3 mb-1.5 text-left active:scale-[0.99] transition-transform"
-                                        style={{ background: on ? 'rgba(120,180,255,.12)' : 'rgba(255,255,255,.04)', border: `1px solid ${on ? 'rgba(140,180,255,.4)' : 'rgba(255,255,255,.07)'}` }}>
-                                        <div className="flex-1 min-w-0">
-                                            <div className="text-[12px] text-white/90 font-semibold truncate">{p.name}</div>
-                                            <div className="text-[10px] text-white/40 truncate">{p.config.model} · {host(p.config.baseUrl)}</div>
-                                        </div>
-                                        {on && <span className="text-[10px] text-sky-300 font-bold shrink-0">✓ 使用中</span>}
-                                    </button>
-                                );
-                            })}
-                        </>
-                    );
-                })()}
+            <div className="rounded-2xl bg-white/95 p-4 text-slate-800 shadow-lg">
+                <ApiSlotEditor
+                    slotName="彼方"
+                    value={rawSlot}
+                    onCommit={async (next) => {
+                        setRawSlot(next ?? null);
+                        await setVRApi((next as APIConfig) ?? null);
+                        onChange?.(next ? (resolveEffectiveSlot(next) as APIConfig) : null);
+                    }}
+                    followButtonLabel="跟随角色与全局设置"
+                    helperText="彼方角色活动较频繁，可单独绑定便宜预设或填写独立接口；未配置时角色活动跟随『角色独立 API → 全局主 API』，系统任务使用全局主 API。"
+                    meta={{ appId: 'vr_world', appName: '彼方' }}
+                />
             </div>
 
             {/* 调用记录 */}

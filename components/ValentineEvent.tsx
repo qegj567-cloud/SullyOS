@@ -19,6 +19,8 @@ import { safeResponseJson } from '../utils/safeApi';
 import { AppID, CharacterProfile, SpecialMomentRecord } from '../types';
 import { shareOrDownloadBlob } from '../utils/shareExport';
 import TokenImg from './os/TokenImg';
+import ApiSlotEditor from './settings/ApiSlotEditor';
+import { pickDialogueApi } from '../utils/characterApi';
 import { isImageValue } from '../utils/blobRef';
 import { WhiteDaySession, isWhiteDayEventAvailable, WHITEDAY_RECORD_KEY } from './WhiteDayEvent';
 import { Like520Session, isLike520EventAvailable, isLike520Past, LIKE520_RECORD_KEY } from './Like520Event';
@@ -237,51 +239,10 @@ export const ValentinePopup: React.FC<ValentinePopupProps> = ({ onView, onDismis
 };
 
 // ============================================================
-// API 配置内联组件 (复刻 Settings 中的 API 配置部分)
+// API 配置内联组件
 // ============================================================
 const InlineApiSetup: React.FC<{ onDone: () => void; onBack: () => void }> = ({ onDone, onBack }) => {
-    const { apiConfig, updateApiConfig, addToast, availableModels, setAvailableModels } = useOS();
-
-    const [localUrl, setLocalUrl] = useState(apiConfig.baseUrl);
-    const [localKey, setLocalKey] = useState(apiConfig.apiKey);
-    const [localModel, setLocalModel] = useState(apiConfig.model);
-    const [isLoadingModels, setIsLoadingModels] = useState(false);
-    const [statusMsg, setStatusMsg] = useState('');
-    const [showModelList, setShowModelList] = useState(false);
-
-    const handleSave = () => {
-        updateApiConfig({ baseUrl: localUrl, apiKey: localKey, model: localModel });
-        setStatusMsg('配置已保存');
-        addToast('API 配置已保存', 'success');
-        setTimeout(() => setStatusMsg(''), 2000);
-    };
-
-    const fetchModels = async () => {
-        if (!localUrl) { setStatusMsg('请先填写 URL'); return; }
-        setIsLoadingModels(true);
-        setStatusMsg('正在连接...');
-        try {
-            const baseUrl = localUrl.replace(/\/+$/, '');
-            const response = await fetch(`${baseUrl}/models`, {
-                method: 'GET',
-                headers: { 'Authorization': `Bearer ${localKey}`, 'Content-Type': 'application/json' }
-            });
-            if (!response.ok) throw new Error(`Status ${response.status}`);
-            const data = await safeResponseJson(response);
-            const list = data.data || data.models || [];
-            if (Array.isArray(list)) {
-                const models = list.map((m: any) => m.id || m);
-                setAvailableModels(models);
-                if (models.length > 0 && !models.includes(localModel)) setLocalModel(models[0]);
-                setStatusMsg(`获取到 ${models.length} 个模型`);
-                setShowModelList(true);
-            } else { setStatusMsg('格式不兼容'); }
-        } catch (error: any) {
-            setStatusMsg('连接失败');
-        } finally {
-            setIsLoadingModels(false);
-        }
-    };
+    const { apiConfig, updateApiConfig } = useOS();
 
     return (
         <div className="fixed inset-0 z-[9998] flex items-center justify-center p-5 animate-fade-in">
@@ -293,36 +254,19 @@ const InlineApiSetup: React.FC<{ onDone: () => void; onBack: () => void }> = ({ 
                     <p className="text-[11px] text-slate-400 mt-1">配置完成后即可查看情人节特别推送</p>
                 </div>
 
-                <div className="px-6 py-4 space-y-4 overflow-y-auto no-scrollbar flex-1">
-                    <div>
-                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">URL</label>
-                        <input type="text" value={localUrl} onChange={(e) => setLocalUrl(e.target.value)} placeholder="https://..." className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all" />
+                <div className="px-6 py-4 overflow-y-auto no-scrollbar flex-1">
+                    <div className="bg-white rounded-2xl p-4 text-slate-800 shadow-sm">
+                        <ApiSlotEditor
+                            slotName="节日活动"
+                            allowFollow={false}
+                            value={pickDialogueApi(apiConfig)}
+                            onCommit={(next) => {
+                                if (next) updateApiConfig(next);
+                            }}
+                            helperText="此处直接修改全局主对话 API，自动保存生效。"
+                            meta={{ appId: 'event', appName: '节日活动' }}
+                        />
                     </div>
-                    <div>
-                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">Key</label>
-                        <input type="password" value={localKey} onChange={(e) => setLocalKey(e.target.value)} placeholder="sk-..." className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all" />
-                    </div>
-                    <div>
-                        <div className="flex justify-between items-center mb-1.5 pl-1">
-                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Model</label>
-                            <button onClick={fetchModels} disabled={isLoadingModels} className="text-[10px] text-primary font-bold">{isLoadingModels ? 'Fetching...' : '刷新模型列表'}</button>
-                        </div>
-                        <input type="text" value={localModel} onChange={(e) => setLocalModel(e.target.value)} placeholder="gpt-4o-mini" className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all" />
-
-                        {showModelList && availableModels.length > 0 && (
-                            <div className="mt-2 max-h-32 overflow-y-auto no-scrollbar bg-slate-50 rounded-xl border border-slate-200/60 p-1">
-                                {availableModels.map(m => (
-                                    <button key={m} onClick={() => { setLocalModel(m); setShowModelList(false); }} className={`w-full text-left px-3 py-2 rounded-lg text-xs font-mono ${m === localModel ? 'bg-primary/10 text-primary font-bold' : 'text-slate-600 hover:bg-slate-100'}`}>
-                                        {m}
-                                    </button>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-
-                    <button onClick={handleSave} className="w-full py-3 rounded-2xl font-bold text-white shadow-lg shadow-primary/20 bg-primary active:scale-95 transition-all">
-                        {statusMsg || '保存配置'}
-                    </button>
                 </div>
 
                 <div className="px-6 pb-6 pt-2 flex gap-3 shrink-0">

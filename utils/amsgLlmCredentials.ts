@@ -1,4 +1,5 @@
 import { resolveDialogueApi } from './characterApi';
+import { resolveEffectiveSlot, resolveGlobalMainApi } from './apiSlots';
 import { resolveScheduledLlmParams } from './dialogueLlmParams';
 import { isAnthropicEndpoint, normalizeLlmBaseUrl, type LlmApiType } from './llmEndpoint';
 /**
@@ -152,32 +153,35 @@ export const buildCharInstantCredRow = (
 };
 
 /**
- * 情绪评估那一行的值：角色单独配了情绪 API 就用它，否则回落到全局聊天 API
- * ——回落口径与本地评估那条路（useChatAI 的 emotionApi）一致。
+ * 情绪评估那一行的值：优先解析全局 / 角色传入的情绪副 API（含 presetId 引用），
+ * 未单独配置时回落到全局主对话 API。
  */
 export const buildCharEmotionCredRow = (
   charId: string,
-  emotionApi: { baseUrl?: string; apiKey?: string; model?: string } | null | undefined,
-  apiConfig: Pick<APIConfig, 'baseUrl' | 'apiKey' | 'model'>,
+  emotionApi: { baseUrl?: string; apiKey?: string; model?: string; apiType?: LlmApiType; presetId?: string; presetFp?: string } | null | undefined,
+  apiConfig: Pick<APIConfig, 'baseUrl' | 'apiKey' | 'model' | 'apiType' | 'presetId' | 'presetFp'>,
 ): LlmCredentialRow | null => {
-  const source = emotionApi?.baseUrl ? emotionApi : apiConfig;
+  const resolvedEmotion = resolveEffectiveSlot(emotionApi);
+  const resolvedMain = resolveGlobalMainApi(apiConfig as APIConfig);
+  const source = resolvedEmotion ?? resolvedMain;
   const value = toCredentialValue(source);
   return value ? { credId: charCredId(charId, 'emotion'), value } : null;
 };
 
 /**
- * 记忆宫殿后台活儿那一行的值：记忆宫殿副 API（memoryPalaceConfig.lightLLM）。
- *
- * **不回落到全局聊天 API**——本地那条路也不回落（记忆宫殿 App 的手动按钮在副 API 没配时
- * 直接报错），拿主 API 悄悄跑一遍后台整理会把用户的主 API 额度花在他没同意的地方。
- * 没配就返回 null，调用方据此不走云端、留在本地按原来的规矩处理。
+ * 记忆宫殿后台活儿那一行的值：优先解析记忆宫殿副 API（memoryPalaceConfig.lightLLM，含 presetId 引用）；
+ * 若副 API 留空且调用方提供了有效主 API（fallbackApi），回退使用主 API，与本地全链路回退口径保持一致。
  */
 export const buildCharMemoryCredRow = (
   charId: string,
-  lightLLM: { baseUrl?: string; apiKey?: string; model?: string } | null | undefined,
+  lightLLM: { baseUrl?: string; apiKey?: string; model?: string; apiType?: LlmApiType; presetId?: string; presetFp?: string } | null | undefined,
+  fallbackApi?: Pick<APIConfig, 'baseUrl' | 'apiKey' | 'model' | 'apiType' | 'presetId' | 'presetFp'> | null,
 ): LlmCredentialRow | null => {
-  if (!lightLLM?.baseUrl || !lightLLM.apiKey) return null;
-  const value = toCredentialValue(lightLLM);
+  const resolvedLight = resolveEffectiveSlot(lightLLM);
+  const resolvedFallback = fallbackApi ? resolveGlobalMainApi(fallbackApi as APIConfig) : null;
+  const source = resolvedLight ?? resolvedFallback;
+  if (!source?.baseUrl || !source.apiKey) return null;
+  const value = toCredentialValue(source);
   return value ? { credId: charCredId(charId, 'memory'), value } : null;
 };
 

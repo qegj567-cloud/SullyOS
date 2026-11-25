@@ -88,15 +88,15 @@ async function send() {
     return JSON.parse(vi.mocked(safeFetchJson).mock.calls.at(-1)![1]!.body as string);
 }
 
-it('中度窗口打开对应模式，修改模型后保存、发送及重新打开都保持 Gemini', async () => {
+it('中度窗口打开对应模式，修改模型后自动保存、发送及重新打开都保持 Gemini', async () => {
     await chooseFocused();
     await click('[aria-label="协同设置"]');
-    const model = host.querySelector<HTMLSelectElement>('[aria-label="中度协同模型"]');
-    expect(model).not.toBeNull();
-    await act(async () => {
-        model!.value = 'gemini-model'; model!.dispatchEvent(new Event('change', { bubbles: true }));
-    });
-    await button('保存');
+    await button('复制主 API 参数微调');
+    await click('button[title="claude-model"]');
+    const geminiOption = [...document.querySelectorAll<HTMLButtonElement>('button')].find(item => item.getAttribute('title') === 'gemini-model');
+    expect(geminiOption).toBeDefined();
+    await act(async () => { geminiOption!.click(); await settle(); });
+    await click('[aria-label="返回"]');
     const saved = await CollaborationStore.loadSettings();
     expect(saved.focused).toMatchObject({ model: 'gemini-model', source: 'custom' });
     expect(saved.immersive.model).toBe('claude-model');
@@ -104,7 +104,7 @@ it('中度窗口打开对应模式，修改模型后保存、发送及重新打�
     await render();
     expect((await send()).model).toBe('gemini-model');
     await click('[aria-label="协同设置"]');
-    expect(host.querySelector<HTMLSelectElement>('[aria-label="中度协同模型"]')?.value).toBe('gemini-model');
+    expect(host.querySelector('button[title="gemini-model"]')).not.toBeNull();
 });
 
 it('中度窗口下一轮按新模式发送心象提示词', async () => {

@@ -9,7 +9,7 @@ import { CharacterProfile, Message, AppID, DateState } from '../types';
 import { DatePrompts, ApiMessage } from '../utils/datePrompts';
 import { stripDateVoiceTranslations } from '../utils/dateVoiceText';
 import { processNewMessagesWithAutoArchive } from '../utils/memoryPalace/autoArchive';
-import type { PipelineResult } from '../utils/memoryPalace/pipeline';
+import { hasRunnableMemoryPalaceLlm, resolveMemoryPalaceLlm, type PipelineResult } from '../utils/memoryPalace/pipeline';
 import { incrementDigestRound, runCognitiveDigestion } from '../utils/memoryPalace';
 import { getRoomLabel } from '../utils/memoryPalace/types';
 import { safeResponseJson, extractContent, formatApiErrorPayload } from '../utils/safeApi';
@@ -444,11 +444,8 @@ const DateApp: React.FC = () => {
         const liveBefore = charactersRef.current.find(c => c.id === charForHook.id) || null;
         if (!liveBefore?.memoryPalaceEnabled) return;
         const mpEmb = memoryPalaceConfig?.embedding;
-        const mpLLMConfigured = memoryPalaceConfig?.lightLLM;
-        const mpLLM = (mpLLMConfigured?.baseUrl)
-            ? mpLLMConfigured
-            : { baseUrl: apiConfig.baseUrl, apiKey: apiConfig.apiKey, model: apiConfig.model };
-        if (!mpEmb?.baseUrl || !mpEmb?.apiKey || !mpLLM.baseUrl) return;
+        const mpLLM = resolveMemoryPalaceLlm(memoryPalaceConfig?.lightLLM, apiConfig);
+        if (!mpEmb?.baseUrl || !mpEmb?.apiKey || !hasRunnableMemoryPalaceLlm(mpLLM)) return;
 
         const recentMsgs = await DB.getRecentMessagesByCharId(charForHook.id, 50);
         try {

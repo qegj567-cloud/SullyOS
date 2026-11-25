@@ -6,7 +6,9 @@
  * 指定一份 API（与聊天 App 共用同一批已保存的预设 os_api_presets，但选择独立）。
  * 不设则由调用用途决定：角色回复跟随角色默认再回退全局，系统任务继续使用全局。同时记录每次调用，方便对账。
  */
-import type { APIConfig } from '../../types';
+import type { APIConfig, DialogueApiConfig } from '../../types';
+import { isBlankApiSlot, resolveEffectiveSlot } from '../apiSlots';
+import { pickDialogueApi } from '../characterApi';
 import { DB } from '../db';
 
 export interface VRApiCall {
@@ -54,14 +56,24 @@ async function migrateOnce(): Promise<void> {
     } catch { /* ignore */ }
 }
 
-/** 彼方独立 API；null = 由调用方按角色回复 / 系统任务规则选择。 */
-export async function getVRApi(): Promise<APIConfig | null> {
+/** 读取 IndexedDB 中保存的彼方原始 API 槽位（保留 presetId / presetFp，供设置面板展示绑定态）。 */
+export async function getRawVRApiSlot(): Promise<DialogueApiConfig | null> {
     await migrateOnce();
-    return (await DB.getVRApiConfig()) as APIConfig | null;
+    const raw = (await DB.getVRApiConfig()) as DialogueApiConfig | null;
+    if (!raw || isBlankApiSlot(raw)) return null;
+    return pickDialogueApi(raw);
 }
 
-export async function setVRApi(cfg: APIConfig | null): Promise<void> {
-    await DB.saveVRApiConfig(cfg ?? null);
+/** 彼方独立 API（实时解析所绑预设最新值）；null = 由调用方按角色回复 / 系统任务规则选择。 */
+export async function getVRApi(): Promise<APIConfig | null> {
+    const raw = await getRawVRApiSlot();
+    const resolved = resolveEffectiveSlot(raw);
+    return resolved ? (resolved as APIConfig) : null;
+}
+
+export async function setVRApi(cfg: APIConfig | DialogueApiConfig | null): Promise<void> {
+    const normalized = cfg && !isBlankApiSlot(cfg) ? pickDialogueApi(cfg) : null;
+    await DB.saveVRApiConfig(normalized);
     try { window.dispatchEvent(new CustomEvent('vr-api-changed')); } catch { /* ignore */ }
 }
 

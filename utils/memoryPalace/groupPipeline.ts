@@ -18,6 +18,7 @@
 import type { Message, CharacterProfile, GroupProfile } from '../../types';
 import type { EmbeddingConfig, MemoryNode, RemoteVectorConfig, MemoryVector } from './types';
 import type { LightLLMConfig } from './pipeline';
+import { readStoredMainApi, resolveAuxiliaryApi } from '../apiSlots';
 import { DB } from '../db';
 import { MemoryNodeDB, MemoryVectorDB, ensureFloat32 } from './db';
 import { getEmbeddings, cosineSimilarity } from './embedding';
@@ -49,22 +50,24 @@ export function getGroupMemoryPalaceHighWaterMark(groupId: string): number {
     return getLastProcessedGroupId(groupId);
 }
 
-/** 全局记忆宫殿配置（自己读 localStorage，不调 pipeline.ts 的私有 getter） */
+/** 全局记忆宫殿配置：lightLLM 为空时自动回退到全局主对话 API（含预设引用实时解析） */
 function readGlobalMemoryPalaceConfig(): {
     embedding?: EmbeddingConfig;
     lightLLM?: LightLLMConfig;
 } {
+    let cfg: any = null;
     try {
         const raw = localStorage.getItem('os_memory_palace_config');
-        if (!raw) return {};
-        const cfg = JSON.parse(raw);
-        return {
-            embedding: cfg?.embedding?.baseUrl && cfg?.embedding?.apiKey ? cfg.embedding as EmbeddingConfig : undefined,
-            lightLLM: cfg?.lightLLM?.baseUrl && cfg?.lightLLM?.apiKey ? cfg.lightLLM as LightLLMConfig : undefined,
-        };
+        if (raw) cfg = JSON.parse(raw);
     } catch {
-        return {};
+        cfg = null;
     }
+    const mainApi = readStoredMainApi() ?? { baseUrl: '', apiKey: '', model: '' };
+    const resolvedLlm = resolveAuxiliaryApi(cfg?.lightLLM, mainApi);
+    return {
+        embedding: cfg?.embedding?.baseUrl && cfg?.embedding?.apiKey ? cfg.embedding as EmbeddingConfig : undefined,
+        lightLLM: resolvedLlm.baseUrl?.trim() && resolvedLlm.model?.trim() ? resolvedLlm as LightLLMConfig : undefined,
+    };
 }
 
 function readRemoteVectorConfig(): RemoteVectorConfig | undefined {
@@ -77,15 +80,18 @@ function readRemoteVectorConfig(): RemoteVectorConfig | undefined {
 }
 
 /**
- * 用成员的 embedding 配置（如果该成员有覆盖），否则用全局配置。
+ * 优先使用全局记忆宫殿 embedding 配置；仅当全局未配置时才兜底读旧版角色级别配置（与私聊 pipeline.ts 一致）。
  * 任何 member 没配 → 返回 null，调用方跳过该成员。
  */
-function getEmbeddingConfigForMember(member: CharacterProfile, fallbackGlobal?: EmbeddingConfig): EmbeddingConfig | null {
+function getEmbeddingConfigForMember(member: CharacterProfile, globalEmb?: EmbeddingConfig): EmbeddingConfig | null {
+    if (globalEmb?.baseUrl && globalEmb?.apiKey) {
+        return globalEmb;
+    }
     const charEmb = (member as any).embeddingConfig;
     if (charEmb?.baseUrl && charEmb?.apiKey) {
         return charEmb as EmbeddingConfig;
     }
-    return fallbackGlobal || null;
+    return null;
 }
 
 function generateGroupMemoryId(): string {

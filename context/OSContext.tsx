@@ -72,7 +72,7 @@ import { captureApiRequestOnce, getApiCallAmbientContext, recordApiCall, setApiC
 import { beginLocalGen, endLocalGen } from '../utils/localGenInterruption';
 import { isUserLocationLookupUrl } from '../utils/userLocationPrivacy';
 import { exportUserLocationSettings } from '../utils/userLocationBackup';
-import { isGlobalStreamEnabled, upgradeChatBodyToStream, assembleUpgradedResponse } from '../utils/streamUpgrade';
+import { isGlobalStreamEnabled, shouldUpgradeChatRequestToStream, upgradeChatBodyToStream, assembleUpgradedResponse } from '../utils/streamUpgrade';
 import type { LlmRequestInit } from '../utils/llmEndpoint';
 import { rewriteStaleWorkerUrl } from '../utils/proxyWorker';
 import {
@@ -96,7 +96,9 @@ import { INSTALLED_APPS, HIDDEN_APP_NAMES } from '../constants';
 import { isAnalyticsRequestUrl, trackEvent, shouldReportSnapshot, trackDataScaleOnce, trackCurrentAppearanceOnce, trackCurrentCharSettingsOnce, trackCurrentFeaturesOnce, trackCurrentSARFeaturesOnce } from '../utils/analytics';
 import { loadChatInputPreferences, saveChatInputPreferences } from '../utils/chatInputPreferences';
 import { collectAppearance, collectCharSettings, collectDataScale, collectFeatureFlagsAsync, collectSARFeatureFlags } from '../utils/analyticsSnapshot';
-import { normalizeApiConfig, normalizeApiPreset } from '../utils/apiConfigNormalize';
+import { normalizeApiBaseUrl, normalizeApiConfig, normalizeApiCredential, normalizeApiModel, normalizeApiPreset, normalizeDialogueSlot } from '../utils/apiConfigNormalize';
+import { autoBindUniquePreset, bumpApiConfigVersion, slotFromPreset } from '../utils/apiSlots';
+import { autoBindLegacyStorageSlotsOnce, isSlotActivelyBoundToPreset, pickMigratedGlobalEmotionApi, refreshPresetSnapshotsEverywhere } from '../utils/apiSlotSync';
 import { fetchLlm } from '../utils/anthropicApi';
 import { getCheckPhoneApi, setCheckPhoneApi } from '../utils/checkPhoneApi';
 import { markBackupDone } from '../utils/backupReminder';
@@ -128,7 +130,7 @@ import { exportSubtitleSettings } from '../utils/chatTranslationStyle';
 import { charMayHaveCloudState, purgeCharCloudState, purgeCloudCharById } from '../utils/amsg2CharCleanup';
 import { parseCharCredId } from '../utils/amsgLlmCredentials';
 import { SAR_MODULE_RUNTIME_CHANGED_EVENT, type SarModuleRuntimeChangedDetail } from '../utils/sarModuleRuntimeEvents';
-import { markAmsgStateDirty, markAmsgStateDirtyForAll, resumePendingAmsgStateSync, syncAmsgLlmCredentials, syncAmsgToolConfig, syncAmsgToolConfigAndPrompts, wipeAmsgCloudDataForReset } from '../utils/amsgStateSync';
+import { markAmsgStateDirty, markAmsgStateDirtyForAll, resumePendingAmsgStateSync, scheduleAmsgLlmCredentialSync, syncAmsgLlmCredentials, syncAmsgToolConfig, syncAmsgToolConfigAndPrompts, wipeAmsgCloudDataForReset } from '../utils/amsgStateSync';
 import { setCharNameRegistry } from '../utils/charNameRegistry';
 import { setMinimaxRegion } from '../utils/minimaxEndpoint';
 import { setElevenLabsModel, setTtsProvider, setVoicePromptOverrides } from '../utils/ttsProvider';
@@ -285,11 +287,7 @@ export interface MemoryPalaceGlobalConfig {
     model: string;
     dimensions: number;
   };
-  lightLLM: {
-    baseUrl: string;
-    apiKey: string;
-    model: string;
-  };
+  lightLLM: import('../types').DialogueApiConfig;
   // Rerank 模型配置（可选增强，接 cross-encoder rerank API）
   // 遵循 Cohere/Jina/SiliconFlow 通用协议：POST {baseUrl}/rerank
   // { model, query, documents, top_n } → { results: [{index, relevance_score}] }
@@ -311,15 +309,32 @@ const defaultMemoryPalaceConfig: MemoryPalaceGlobalConfig = {
   featureFlags: { recallRouter: false, interactionAdaptation: false, deepEngagement: false, epistemicState: false },
 };
 
-const normalizeMemoryPalaceConfig = (value?: Partial<MemoryPalaceGlobalConfig> | null): MemoryPalaceGlobalConfig => ({
-  relativeTimeAnnotations: value?.relativeTimeAnnotations === true,
-  manualMaintenance: value?.manualMaintenance === true,
-  maintenanceIntervalSeconds: Math.max(1, Math.min(3600, Number(value?.maintenanceIntervalSeconds) || 60)),
-  embedding: { ...defaultMemoryPalaceConfig.embedding, ...(value?.embedding || {}) },
-  lightLLM: { ...defaultMemoryPalaceConfig.lightLLM, ...(value?.lightLLM || {}) },
-  rerank: { ...defaultMemoryPalaceConfig.rerank, ...(value?.rerank || {}) },
-  featureFlags: { ...defaultMemoryPalaceConfig.featureFlags, ...(value?.featureFlags || {}) },
-});
+const normalizeMemoryPalaceConfig = (value?: Partial<MemoryPalaceGlobalConfig> | null): MemoryPalaceGlobalConfig => {
+  const rawEmb = { ...defaultMemoryPalaceConfig.embedding, ...(value?.embedding || {}) };
+  const rawRerank = { ...defaultMemoryPalaceConfig.rerank, ...(value?.rerank || {}) };
+  const rawLight = value?.lightLLM
+    ? normalizeDialogueSlot({ ...defaultMemoryPalaceConfig.lightLLM, ...value.lightLLM })
+    : { ...defaultMemoryPalaceConfig.lightLLM };
+  return {
+    relativeTimeAnnotations: value?.relativeTimeAnnotations === true,
+    manualMaintenance: value?.manualMaintenance === true,
+    maintenanceIntervalSeconds: Math.max(1, Math.min(3600, Number(value?.maintenanceIntervalSeconds) || 60)),
+    embedding: {
+      ...rawEmb,
+      baseUrl: normalizeApiBaseUrl(rawEmb.baseUrl),
+      apiKey: normalizeApiCredential(rawEmb.apiKey),
+      model: normalizeApiModel(rawEmb.model),
+    },
+    lightLLM: rawLight,
+    rerank: {
+      ...rawRerank,
+      baseUrl: normalizeApiBaseUrl(rawRerank.baseUrl),
+      apiKey: normalizeApiCredential(rawRerank.apiKey),
+      model: normalizeApiModel(rawRerank.model),
+    },
+    featureFlags: { ...defaultMemoryPalaceConfig.featureFlags, ...(value?.featureFlags || {}) },
+  };
+};
 
 /** 云端未确认时保留本地；已受理但未完成的操作由云端继续。 */
 export type DeleteCharacterResult = { status: 'deleted'; cloudPending?: boolean; cloudUnconfirmed?: boolean } | { status: 'cloud-cleanup-failed' };
@@ -413,10 +428,11 @@ interface OSContextType {
 
   availableModels: string[];
   setAvailableModels: (models: string[]) => void;
+  saveModels?: (models: string[]) => void;
   
   // API Presets
   apiPresets: ApiPreset[];
-  addApiPreset: (name: string, config: APIConfig, group?: string) => void;
+  addApiPreset: (name: string, config: APIConfig, group?: string) => ApiPreset;
   updateApiPreset: (id: string, name: string, config: APIConfig, group?: string) => void;
   removeApiPreset: (id: string) => void;
 
@@ -1250,7 +1266,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                       // （查手机/记忆宫殿/日程/剧场/群聊…40+ 处）升级为流式**传输**，防网关
                       // 空闲超时把长生成掐成半截；响应会在下面攒齐拼回标准 JSON，调用方无感。
                       // 已自带 stream:true 的请求（聊天主路径/见面/情绪评估）不碰。
-                      if (isGlobalStreamEnabled()) {
+                      if (shouldUpgradeChatRequestToStream(urlStr, (explicitMetaAtStart as any)?.slotStream)) {
                           const upgraded = upgradeChatBodyToStream(body);
                           if (upgraded) {
                               body = upgraded;
@@ -1768,19 +1784,32 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
              } catch(e) { console.error('Theme load error', e); }
         }
         
+        let loadedPresetsForInit: ApiPreset[] = [];
+        if (savedPresets) {
+            loadedPresetsForInit = (JSON.parse(savedPresets) as ApiPreset[]).map(normalizeApiPreset);
+            setApiPresets(loadedPresetsForInit);
+            localStorage.setItem('os_api_presets', JSON.stringify(loadedPresetsForInit));
+        }
         if (savedApi) {
-            const normalizedApi = normalizeApiConfig({ ...defaultApiConfig, ...JSON.parse(savedApi) });
+            let normalizedApi = normalizeApiConfig({ ...defaultApiConfig, ...JSON.parse(savedApi) });
+            if (loadedPresetsForInit.length > 0) {
+                const boundMain = autoBindUniquePreset(normalizedApi, loadedPresetsForInit);
+                if (boundMain?.boundPresetId) normalizedApi = normalizeApiConfig(boundMain.slot);
+                if (normalizedApi.visionApi && !normalizedApi.visionApi.presetId) {
+                    const boundVis = autoBindUniquePreset(normalizedApi.visionApi, loadedPresetsForInit, { credentialsOnly: true });
+                    if (boundVis?.boundPresetId) normalizedApi = normalizeApiConfig({ ...normalizedApi, visionApi: boundVis.slot });
+                }
+                if (normalizedApi.thinkingTranslationApi && !normalizedApi.thinkingTranslationApi.presetId) {
+                    const boundTrans = autoBindUniquePreset(normalizedApi.thinkingTranslationApi, loadedPresetsForInit);
+                    if (boundTrans?.boundPresetId) normalizedApi = normalizeApiConfig({ ...normalizedApi, thinkingTranslationApi: boundTrans.slot });
+                }
+            }
             setApiConfig(normalizedApi);
             localStorage.setItem('os_api_config', JSON.stringify(normalizedApi));
         }
         if (savedModels) {
             try { setAvailableModels(normalizeModelIds(JSON.parse(savedModels))); }
             catch (error) { console.warn('Model list load error', error); }
-        }
-        if (savedPresets) {
-            const normalizedPresets = (JSON.parse(savedPresets) as ApiPreset[]).map(normalizeApiPreset);
-            setApiPresets(normalizedPresets);
-            localStorage.setItem('os_api_presets', JSON.stringify(normalizedPresets));
         }
 
         // 加载实时配置
@@ -1810,7 +1839,15 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         const savedMemoryPalaceConfig = localStorage.getItem('os_memory_palace_config');
         if (savedMemoryPalaceConfig) {
             try {
-                setMemoryPalaceConfig(normalizeMemoryPalaceConfig(JSON.parse(savedMemoryPalaceConfig)));
+                let mpCfg = normalizeMemoryPalaceConfig(JSON.parse(savedMemoryPalaceConfig));
+                if (loadedPresetsForInit.length > 0 && !mpCfg.lightLLM.presetId) {
+                    const boundLight = autoBindUniquePreset(mpCfg.lightLLM, loadedPresetsForInit, { credentialsOnly: true });
+                    if (boundLight?.boundPresetId) {
+                        mpCfg = { ...mpCfg, lightLLM: boundLight.slot };
+                        localStorage.setItem('os_memory_palace_config', JSON.stringify(mpCfg));
+                    }
+                }
+                setMemoryPalaceConfig(mpCfg);
             } catch (e) {
                 console.error('Failed to load memory palace config', e);
             }
@@ -2114,7 +2151,26 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         }
 
         if (finalChars.length > 0) {
+          // 存量升级：若全局尚未存 emotionApi，从存量角色中收敛出现频次最高的非空情绪副 API（保留角色旧字段兼容正式版）
+          try {
+            const currentRawApi = localStorage.getItem('os_api_config');
+            const parsedRawApi: APIConfig = currentRawApi ? JSON.parse(currentRawApi) : defaultApiConfig;
+            if (!parsedRawApi.emotionApi) {
+              const migratedEmotion = pickMigratedGlobalEmotionApi(finalChars, loadedPresetsForInit);
+              if (migratedEmotion) {
+                const upgradedApi = normalizeApiConfig({ ...defaultApiConfig, ...parsedRawApi, emotionApi: migratedEmotion });
+                setApiConfig(upgradedApi);
+                localStorage.setItem('os_api_config', JSON.stringify(upgradedApi));
+              }
+            }
+          } catch { /* ignore */ }
+
           setCharacters(finalChars);
+          if (loadedPresetsForInit.length > 0) {
+            void autoBindLegacyStorageSlotsOnce(loadedPresetsForInit).then(({ updatedCharacters }) => {
+              if (updatedCharacters) setCharacters(updatedCharacters);
+            }).catch(() => {});
+          }
           const lastActiveId = localStorage.getItem('os_last_active_char_id');
           if (lastActiveId && finalChars.find(c => c.id === lastActiveId)) {
             setActiveCharacterId(lastActiveId);
@@ -2578,6 +2634,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   }, [characters]);
   const apiConfigRef = useRef(apiConfig);
   apiConfigRef.current = apiConfig;
+  const apiPresetsRef = useRef(apiPresets);
+  apiPresetsRef.current = apiPresets;
 
   // Keep the MiniMax endpoint module in sync with the user's region choice
   // so every minimaxFetch() call reads the latest preference.
@@ -3115,7 +3173,27 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         addToast('主题没能保存到本地（存储空间可能已满），重启后可能会还原', 'error');
     }
   };
-  const updateApiConfig = (updates: Partial<APIConfig>) => { const newConfig = normalizeApiConfig({ ...apiConfig, ...updates }); setApiConfig(newConfig); localStorage.setItem('os_api_config', JSON.stringify(newConfig)); };
+  const updateApiConfig = (updates: Partial<APIConfig>) => {
+    const prev = apiConfigRef.current;
+    const merged: APIConfig = { ...prev, ...updates };
+    // 若调用方更新了主连接字段但没有显式传 presetId，清除旧 presetId（脱离预设转为单独填写）
+    const touchedMainConn = 'baseUrl' in updates || 'apiKey' in updates || 'model' in updates || 'apiType' in updates;
+    if (touchedMainConn && !('presetId' in updates)) {
+      delete merged.presetId;
+      delete merged.presetFp;
+    }
+    const newConfig = normalizeApiConfig(merged);
+    apiConfigRef.current = newConfig;
+    setApiConfig(newConfig);
+    localStorage.setItem('os_api_config', JSON.stringify(newConfig));
+    bumpApiConfigVersion();
+    if ('emotionApi' in updates) {
+      syncEmotionApiToAllCharacters(newConfig.emotionApi);
+    }
+    if (touchedMainConn || 'presetId' in updates || 'emotionApi' in updates || 'stream' in updates || 'temperature' in updates || 'maxTokens' in updates) {
+      scheduleAmsgLlmCredentialSync(newConfig);
+    }
+  };
   const updateRealtimeConfig = (updates: Partial<RealtimeConfig>) => { const newConfig = { ...realtimeConfig, ...updates }; setRealtimeConfig(newConfig); localStorage.setItem('os_realtime_config', JSON.stringify(newConfig)); };
 
   // Cloud Backup functions
@@ -3216,19 +3294,28 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   };
 
   const updateMemoryPalaceConfig = (updates: Partial<MemoryPalaceGlobalConfig>) => {
+    const prev = memoryPalaceConfigRef.current;
+    const nextLight = 'lightLLM' in updates
+      ? (updates.lightLLM ? normalizeDialogueSlot(updates.lightLLM) : { ...defaultMemoryPalaceConfig.lightLLM })
+      : prev.lightLLM;
     const newConfig = normalizeMemoryPalaceConfig({
-      ...memoryPalaceConfig,
+      ...prev,
       ...updates,
-      embedding: { ...memoryPalaceConfig.embedding, ...(updates.embedding || {}) },
-      lightLLM: { ...memoryPalaceConfig.lightLLM, ...(updates.lightLLM || {}) },
-      rerank: { ...memoryPalaceConfig.rerank, ...(updates.rerank || {}) },
-      featureFlags: { ...memoryPalaceConfig.featureFlags, ...(updates.featureFlags || {}) },
+      embedding: { ...prev.embedding, ...(updates.embedding || {}) },
+      lightLLM: nextLight,
+      rerank: { ...prev.rerank, ...(updates.rerank || {}) },
+      featureFlags: { ...prev.featureFlags, ...(updates.featureFlags || {}) },
     });
+    memoryPalaceConfigRef.current = newConfig;
     setMemoryPalaceConfig(newConfig);
     localStorage.setItem('os_memory_palace_config', JSON.stringify(newConfig));
+    bumpApiConfigVersion();
+    if ('lightLLM' in updates && JSON.stringify(prev.lightLLM) !== JSON.stringify(newConfig.lightLLM)) {
+      scheduleAmsgLlmCredentialSync();
+    }
     // 主动消息模板也包含智能语境；切换后刷新已有任务，不能等下次聊天才生效。
     const smartFlags = ['recallRouter', 'interactionAdaptation', 'deepEngagement'] as const;
-    if (smartFlags.some(key => !!memoryPalaceConfig.featureFlags?.[key] !== !!newConfig.featureFlags?.[key])) {
+    if (smartFlags.some(key => !!prev.featureFlags?.[key] !== !!newConfig.featureFlags?.[key])) {
       markAmsgStateDirtyForAll({ characters, userProfile, groups, realtimeConfig });
     }
   };
@@ -3261,10 +3348,91 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       setAvailableModels(safeModels);
       localStorage.setItem('os_available_models', JSON.stringify(safeModels));
   };
-  const addApiPreset = (name: string, config: APIConfig, group?: string) => { setApiPresets(prev => { const next = [...prev, normalizeApiPreset({ id: crypto.randomUUID(), name, config, group: group?.trim() })]; localStorage.setItem('os_api_presets', JSON.stringify(next)); return next; }); };
-  const updateApiPreset = (id: string, name: string, config: APIConfig, group?: string) => { setApiPresets(prev => { const next = prev.map(p => p.id === id ? normalizeApiPreset({ ...p, name, config, group: group === undefined ? p.group : group.trim() }) : p); localStorage.setItem('os_api_presets', JSON.stringify(next)); return next; }); };
-  const removeApiPreset = (id: string) => { setApiPresets(prev => { const next = prev.filter(p => p.id !== id); localStorage.setItem('os_api_presets', JSON.stringify(next)); return next; }); };
-  const savePresets = (presets: ApiPreset[]) => { const normalized = presets.map(normalizeApiPreset); setApiPresets(normalized); localStorage.setItem('os_api_presets', JSON.stringify(normalized)); };
+  const addApiPreset = (name: string, config: APIConfig, group?: string): ApiPreset => {
+    const created = normalizeApiPreset({ id: crypto.randomUUID(), name, config, group: group?.trim() });
+    const nextPresets = [...apiPresetsRef.current, created];
+    apiPresetsRef.current = nextPresets;
+    localStorage.setItem('os_api_presets', JSON.stringify(nextPresets));
+    setApiPresets(nextPresets);
+    bumpApiConfigVersion();
+    return created;
+  };
+  const updateApiPreset = (id: string, name: string, config: APIConfig, group?: string) => {
+    const existing = apiPresetsRef.current.find(p => p.id === id);
+    if (!existing) return;
+    const targetPreset = normalizeApiPreset({
+      ...existing,
+      name,
+      config,
+      group: group === undefined ? existing.group : group.trim(),
+    });
+    const nextPresets = apiPresetsRef.current.map(p => (p.id === id ? targetPreset : p));
+    apiPresetsRef.current = nextPresets;
+    localStorage.setItem('os_api_presets', JSON.stringify(nextPresets));
+    setApiPresets(nextPresets);
+
+    const freshSlot = slotFromPreset(targetPreset);
+
+    // 同步刷新全局 apiConfig（主对话、识图、情绪、心象翻译）中引用了该预设的内联快照
+    const prevApi = apiConfigRef.current;
+    let apiChanged = false;
+    let nextApi: APIConfig = { ...prevApi };
+    if (isSlotActivelyBoundToPreset(prevApi, id)) {
+      nextApi = { ...nextApi, ...freshSlot };
+      apiChanged = true;
+    }
+    if (prevApi.visionApi && isSlotActivelyBoundToPreset(prevApi.visionApi, id)) {
+      nextApi = { ...nextApi, visionApi: { ...prevApi.visionApi, ...freshSlot, enabled: prevApi.visionApi.enabled } };
+      apiChanged = true;
+    }
+    if (prevApi.emotionApi && isSlotActivelyBoundToPreset(prevApi.emotionApi, id)) {
+      nextApi = { ...nextApi, emotionApi: freshSlot };
+      syncEmotionApiToAllCharacters(freshSlot);
+      apiChanged = true;
+    }
+    if (prevApi.thinkingTranslationApi && isSlotActivelyBoundToPreset(prevApi.thinkingTranslationApi, id)) {
+      nextApi = { ...nextApi, thinkingTranslationApi: freshSlot };
+      apiChanged = true;
+    }
+    if (apiChanged) {
+      const normalizedApi = normalizeApiConfig(nextApi);
+      apiConfigRef.current = normalizedApi;
+      localStorage.setItem('os_api_config', JSON.stringify(normalizedApi));
+      setApiConfig(normalizedApi);
+    }
+
+    // 同步刷新记忆宫殿副 API 中引用了该预设的内联快照
+    const prevMp = memoryPalaceConfigRef.current;
+    if (isSlotActivelyBoundToPreset(prevMp.lightLLM, id)) {
+      const nextMp = normalizeMemoryPalaceConfig({ ...prevMp, lightLLM: freshSlot });
+      memoryPalaceConfigRef.current = nextMp;
+      localStorage.setItem('os_memory_palace_config', JSON.stringify(nextMp));
+      setMemoryPalaceConfig(nextMp);
+    }
+
+    bumpApiConfigVersion();
+    void refreshPresetSnapshotsEverywhere(targetPreset).then(({ updatedCurrentCharacters }) => {
+      if (updatedCurrentCharacters) setCharacters(updatedCurrentCharacters);
+      scheduleAmsgLlmCredentialSync();
+    }).catch(() => {
+      scheduleAmsgLlmCredentialSync();
+    });
+  };
+  const removeApiPreset = (id: string) => {
+    const nextPresets = apiPresetsRef.current.filter(p => p.id !== id);
+    apiPresetsRef.current = nextPresets;
+    localStorage.setItem('os_api_presets', JSON.stringify(nextPresets));
+    setApiPresets(nextPresets);
+    bumpApiConfigVersion();
+    scheduleAmsgLlmCredentialSync();
+  };
+  const savePresets = (presets: ApiPreset[]) => {
+    const normalized = presets.map(normalizeApiPreset);
+    apiPresetsRef.current = normalized;
+    setApiPresets(normalized);
+    localStorage.setItem('os_api_presets', JSON.stringify(normalized));
+    bumpApiConfigVersion();
+  };
   const addCharacter = async () => {
     const name = 'New Character';
     // 默认开启 emotionConfig.enabled，让"开日程 = 开情绪"这条隐含约定对新角色也成立。
@@ -5504,6 +5672,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     updateUserProfile,
     availableModels,
     setAvailableModels,
+    saveModels,
     apiPresets,
     addApiPreset,
     updateApiPreset,
