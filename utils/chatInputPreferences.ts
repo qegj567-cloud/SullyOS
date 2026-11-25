@@ -4,6 +4,7 @@ export interface ChatInputPreferences {
     enterToSend: boolean;
     autoReply: boolean;
     emojiSuggestions: boolean;
+    skipRerollConfirm?: boolean;
     linkCards?: boolean;
     xhsCards?: boolean;
     linkCardNoticeSeen?: boolean;
@@ -27,6 +28,7 @@ export const DEFAULT_CHAT_INPUT_PREFERENCES: ChatInputPreferences = {
 export const normalizeChatInputPreferences = (value: unknown): ChatInputPreferences => {
     const saved = value && typeof value === 'object' ? value as Partial<ChatInputPreferences> : {};
     return {
+        ...(saved.skipRerollConfirm === true ? { skipRerollConfirm: true } : {}),
         sendButtonGenerates: saved.sendButtonGenerates === true,
         enterToSend: saved.enterToSend !== false,
         autoReply: saved.autoReply === true,
