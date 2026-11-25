@@ -375,6 +375,7 @@ function splitLastTurnQueries(messages: Message[]): {
  * @param queryOverride App 自定义上下文（场景、题目等），会与最近一轮对话拼接后一起检索
  */
 export interface RecallRetrievalOptions {
+    onRecallReceipt?: (ids: string[]) => void;
     explicitEntityAnalysis?: ExplicitEntityAnalysis;
     /** 预留 Resolver 补救 query：只增加检索支路，不替换原始 user spikes。 */
     recallPlan?: RecallPlan;
@@ -1110,7 +1111,7 @@ export async function retrieveMemories(
         const anticipations = await tRetrieve('AnticipationDB.getByCharId', 'IDB', AnticipationDB.getByCharId(charId));
 
         // 10. 格式化
-        const formatted = await tRetrieve('expandAndFormat', 'IDB', expandAndFormat(results, charId, anticipations, userName, formatterCap, { omitDates: recallOptions?.omitDates }));
+        const formatted = await tRetrieve('expandAndFormat', 'IDB', expandAndFormat(results, charId, anticipations, userName, formatterCap, { omitDates: recallOptions?.omitDates, onRecallReceipt: recallOptions?.onRecallReceipt }));
 
         // ── 汇总打印 ──
         const perfTotal = Math.round(performance.now() - perfRetrieveT0);
@@ -1178,7 +1179,7 @@ export async function injectMemoryPalace(
     recentMessages?: Message[],
     queryHint?: string,
     userName?: string,
-    traceContext?: { entryPoint?: RecallEntryPoint; formatterMaxOutputItems?: number; omitDates?: boolean },
+    traceContext?: { onRecallReceipt?: (ids: string[]) => void; entryPoint?: RecallEntryPoint; formatterMaxOutputItems?: number; omitDates?: boolean },
 ): Promise<RecallTrace> {
     const hadPreviousMemory = Boolean(char.memoryPalaceInjection);
     const hadPreviousRoomPlates = Boolean(char.roomPlatesInjection);
@@ -1414,7 +1415,7 @@ export async function injectMemoryPalace(
             getRemoteVectorConfig(),
             char.name,
             telemetry => { retrievalTelemetry = telemetry; },
-            { explicitEntityAnalysis, formatterMaxOutputItems: traceContext?.formatterMaxOutputItems, omitDates: traceContext?.omitDates },
+            { explicitEntityAnalysis, onRecallReceipt: traceContext?.onRecallReceipt, formatterMaxOutputItems: traceContext?.formatterMaxOutputItems, omitDates: traceContext?.omitDates },
         );
         if (context || !legacyCompatibilityMode) {
             char.memoryPalaceInjection = context || '';
@@ -1686,6 +1687,13 @@ export async function getMemoryPalaceOneShotPendingCount(
 
 /** 并发锁：防止多次 AI 回复同时触发 processNewMessages 产生竞态 */
 const processingLocks = new Set<string>();
+
+/** A turn replacement and an archive must not operate on different versions of the same reply. */
+export function lockMemoryForTurnRevision(charId: string): (() => void) | null {
+    if (processingLocks.has(charId)) return null;
+    processingLocks.add(charId);
+    return () => { processingLocks.delete(charId); };
+}
 
 /**
  * 缓冲区机制处理聊天消息：

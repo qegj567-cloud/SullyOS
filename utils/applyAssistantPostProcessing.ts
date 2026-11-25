@@ -174,7 +174,7 @@ export const splitSARChatSurfaceBubbles = (raw: string): string[] => {
  * 才把前缀当作“当前角色可见分类名”解析，并且仅在候选唯一时接受。
  * 这样不会误伤本来就含冒号的表情名，也不会在同名分类/同名表情间猜 URL。
  */
-const resolveEmojiForSend = (
+export const resolveEmojiForSend = (
     rawName: string,
     emojis: Emoji[],
     categories: EmojiCategory[] = [],

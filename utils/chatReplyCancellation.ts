@@ -54,6 +54,7 @@ export class ReplyRun {
     private resolveSecretSources!: (ids: number[]) => void;
     readonly secretSourceIds = new Promise<number[]>(resolve => {this.resolveSecretSources = resolve;});
     markCompleted(): void {this.completed = true;}
+    private readonly localTurnId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
     constructor(readonly charId: string, readonly uuid?: string) {}
 
     check = (): void => {
@@ -90,7 +91,9 @@ export class ReplyRun {
 
     saveMessage: typeof DB.saveMessage = async (message) => {
         this.check();
-        const id = await DB.saveMessage(message);
+        const id = await DB.saveMessage(this.uuid || message.metadata?.activeMsg2 ? message : {
+            ...message, metadata: { ...message.metadata, chatTurnId: this.localTurnId },
+        });
         this.savedIds.add(id);
         // A transaction can complete after stop was clicked. Never leave its unseen row behind.
         if (this.signal.aborted && !this.stoppedDisplay?.ids.has(id)) await DB.deleteMessages([id]);

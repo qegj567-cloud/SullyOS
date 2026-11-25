@@ -50,6 +50,8 @@ export interface UserListeningContext {
 
 export interface BuildChatPayloadInput {
     signal?: AbortSignal;
+    /** A preview holds the receipt until its reply is accepted. */
+    onRecallReceipt?: (ids: string[]) => void;
     /** Local phase timings only; no request content or telemetry. */
     onPreparationStage?: (event:ChatPreparationEvent)=>void;
     /** Replace ChatApp output/tool rules, retaining the same context pipeline and ordering. */
@@ -334,7 +336,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         recentMsgsHint,
         input.recallQueryHint,
         userProfile?.name,
-        { entryPoint: input.recallEntryPoint ?? 'chat_payload' },
+        { entryPoint: input.recallEntryPoint ?? 'chat_payload', onRecallReceipt: input.onRecallReceipt },
     ));
 
     input.signal?.throwIfAborted();
