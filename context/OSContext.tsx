@@ -1969,6 +1969,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         setTheme(loadedTheme);
         // Apply font
         applyCustomFont(loadedTheme.customFont);
+        // initData 后续还要用同一份预设做情绪副 API 迁移和旧槽位自动绑定，局部变量出了本函数就访问不到，只能显式返回
         return loadedPresetsForInit;
     };
 
