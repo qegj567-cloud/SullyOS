@@ -1,3 +1,4 @@
+import { calibratedDeliveryPrefix } from './chatDeliveryReceipts';
 import { hashBlob, dataUrlToBlob, blobToDataUrl } from '@rei-standard/blob-store';
 import { DB, openSpaceDB } from './db';
 import { openBackupArchiveWriter, type BackupArchiveFile, type BackupArchiveWriter } from './backupArchiveWriter';
@@ -42,7 +43,7 @@ interface SpaceArchive {
     missingAssets?: BackupMissingAsset[];
 }
 const mediaStores = new Set(['characters', 'user_profile', 'themes', 'emojis', 'emoji_categories', 'journal_stickers', 'gallery', 'cc_custom_parts', 'pixel_home_assets', 'pixel_home_layouts', 'messages', 'assets', 'collab_assets', 'daily_schedule', 'bank_data']);
-const mediaAsset = (id: string) => id === 'friend_feed_v1' || !isActivityTextAsset(id);
+const mediaAsset = (id: string) => !id.startsWith(calibratedDeliveryPrefix) && (id === 'friend_feed_v1' || !isActivityTextAsset(id));
 // 导入中标记（(im|ex)port.*progress）、各项长任务的中断留痕（taskTrace.ts 的 isTaskTraceKey）、
 // 云端生成的在飞登记（cloudGen/types.ts 的 isCloudGenStorageKey）和本机生成的在飞标记（localGenInterruption.ts）都是本机进度，不进备份。
 // 恢复时跳过的坏图清单描述的是这台设备上一次恢复，重启提示一次就清掉，也不进备份。

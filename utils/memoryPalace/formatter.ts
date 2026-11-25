@@ -57,7 +57,7 @@ export async function expandAndFormat(
     userName?: string,
     /** 注入上限。rerank 启用时传 15 + topN，让 rerank 额外召回的不被切。 */
     maxOutputItems: number = DEFAULT_MAX_OUTPUT_ITEMS,
-    options?: { omitDates?: boolean },
+    options?: { omitDates?: boolean; onRecallReceipt?: (ids: string[]) => void },
 ): Promise<string> {
     const MAX_OUTPUT_ITEMS = maxOutputItems;
     const omitDates = options?.omitDates === true;
@@ -133,7 +133,8 @@ export async function expandAndFormat(
         const injectedIds: string[] = [];
         for (const it of finalItems) injectedIds.push(...it.sourceIds);
         for (const id of pinnedIds) injectedIds.push(id);
-        recordRecallReceipt(charId, injectedIds);
+        if (options?.onRecallReceipt) options.onRecallReceipt(injectedIds);
+        else recordRecallReceipt(charId, injectedIds);
     } catch (e) {
         // 回执只是 extraction 阶段的辅助，写失败不影响本次召回输出
         console.warn('🏰 [MemoryPalace] recordRecallReceipt failed:', e);

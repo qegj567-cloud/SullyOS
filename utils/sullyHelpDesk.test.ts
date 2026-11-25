@@ -147,6 +147,9 @@ it.each([
     ['囤图可以传本地文件还是要发图片链接', '小红书图库', 'HTTP(S) 图片链接'],
     ['领来的美化分享码怎么只给一个角色用', '外观', '核对应用角色'],
     ['朋友给了我一个美化码，在哪里输', '外观', '导入装扮 → 用码领取'],
+    ['记忆链接去哪了，重roll 后想保留原版', 'Message', '采用新版'],
+    ['主动消息提示词露出，翻译标签格式错乱怎么办', '掉格式', '检查并修复本轮'],
+    ['iPhone 怎么从场景布置的浅色阅读模式返回', '见面', '状态栏下方的左上角箭头'],
     ['我想要气泡下面的外挂字幕，在哪里调字的颜色', '掉格式', '字幕设置与预览'],
     ['怎么让这一个角色知道伦敦的天气', '实时感知', '按角色设置城市'],
     ['不想让他知道我家在哪，怎么把家隐藏起来', '实时感知', '把当前位置设为隐藏地点'],
@@ -205,7 +208,7 @@ it('gives the selected memory system current storage, reading and recall rules e
     expect(text).toContain('额外名额默认 5，可设 1–20');
     expect(text).toContain('活跃片段达到 ' + EVENT_BOX_COMPRESSION_THRESHOLD + ' 条');
     expect(text).toContain('累计事件片段达到 ' + EVENT_BOX_SEAL_THRESHOLD + ' 条');
-    expect(text).toContain('私聊「＋ → 记忆链接」');
+    expect(text).toContain('私聊「＋ → 对话校准」');
     expect(text).not.toMatch(/finalScore|hybridSearch|pipeline\.ts/);
 });
 

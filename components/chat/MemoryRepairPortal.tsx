@@ -1,3 +1,6 @@
+import TurnRevisionPanel, { type TurnRevisionControls } from './TurnRevisionPanel';
+import { useLocalBackHandler } from '../../hooks/useLocalBackHandler';
+export type CalibrationTab = 'memory' | 'format' | 'reroll';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -31,7 +34,8 @@ type EditorTarget =
     | { type: 'box'; id: string }
     | null;
 
-interface MemoryRepairPortalProps {
+interface MemoryRepairPortalProps extends TurnRevisionControls {
+    initialTab: CalibrationTab;
     inline?: boolean;
     char: CharacterProfile;
     user: UserProfile;
@@ -76,7 +80,7 @@ function boxDateLabel(nodes: RepairNode[]): string {
 }
 
 const MemoryRepairPortal: React.FC<MemoryRepairPortalProps> = ({
-    inline=false,
+    inline=false, initialTab, canRevise, onPreview, onAccept,
     char,
     user,
     apiConfig,
@@ -87,6 +91,8 @@ const MemoryRepairPortal: React.FC<MemoryRepairPortalProps> = ({
     assistantReply,
     onClose,
 }) => {
+    const [tab, setTab] = useState(initialTab);
+    const [saving, setSaving] = useState(false);
     const roomChibi = useBlobRefUrl(char.sprites?.chibi);
     const guideCopy = useMemo(
         () => getMemoryGuideCopy(char, user.name || '你'),
@@ -169,6 +175,14 @@ const MemoryRepairPortal: React.FC<MemoryRepairPortalProps> = ({
         + (snapshot?.boxes.reduce((sum, group) => sum + group.nodes.length, 0) || 0);
     const recalledCount = snapshot?.receipt?.ids.length || 0;
     const searchActive = searchQuery.trim().length > 0;
+
+    useLocalBackHandler(() => {
+        if (saving) return true;
+        if (editorTarget) setEditorTarget(null);
+        else if (settingsOpen) setSettingsOpen(false);
+        else onClose();
+        return true;
+    }, 40);
 
     const toggleSkipAnimation = () => {
         const next = !skipAnimation;
@@ -285,7 +299,7 @@ const MemoryRepairPortal: React.FC<MemoryRepairPortalProps> = ({
                     mask-image: linear-gradient(to bottom, black, transparent 75%);
                 }
                 .memory-repair-scroll { position: relative; height: 100%; overflow-y: auto; overscroll-behavior: contain; }
-                .memory-repair-shell { width: min(760px, 100%); min-height: 100%; margin: 0 auto; padding: 76px 22px 140px; }
+                .memory-repair-shell { width: min(760px, 100%); min-height: 100%; margin: 0 auto; padding: calc(76px + var(--safe-top, 0px)) 22px 140px; }
                 .memory-guide-orbit {
                     width: 156px; height: 156px; margin: 8px auto 22px; position: relative;
                     display: grid; place-items: center;
@@ -458,11 +472,11 @@ const MemoryRepairPortal: React.FC<MemoryRepairPortalProps> = ({
             `}</style>
 
             <div className="memory-top">
-                <button className="memory-icon-btn" onClick={onClose} aria-label="离开记忆链接">
+                <button className="memory-icon-btn" onClick={onClose} disabled={saving} aria-label="离开对话校准">
                     <X size={19} />
                 </button>
                 <div className="flex items-center gap-2">
-                    <span className="text-[11px] tracking-[.18em] text-white/45">记忆链接</span>
+                    <span className="text-[11px] tracking-[.18em] text-white/45">对话校准</span>
                     <button className="memory-icon-btn" onClick={() => setSettingsOpen(value => !value)} aria-label="显影设置">
                         <EyeSlash size={18} />
                     </button>
@@ -487,6 +501,14 @@ const MemoryRepairPortal: React.FC<MemoryRepairPortalProps> = ({
 
             <div className="memory-repair-scroll">
                 <main className="memory-repair-shell">
+                    <nav aria-label="对话校准工具" className="flex gap-1 p-1 rounded-2xl bg-white/10">
+                        {([['memory', '记忆修补'], ['format', '修复格式'], ['reroll', '重新生成']] as const).map(([value, label]) =>
+                            <button key={value} aria-pressed={tab === value} disabled={saving}
+                                className={`flex-1 rounded-xl min-h-11 text-sm ${tab === value ? 'bg-violet-100 text-slate-900 font-bold' : 'text-white/75'}`}
+                                onClick={() => { setTab(value); setSettingsOpen(false); }}>{label}</button>)}
+                    </nav>
+                    {tab !== 'memory' ? <TurnRevisionPanel key={tab} mode={tab} canRevise={canRevise}
+                        onPreview={onPreview} onAccept={onAccept} onDone={onClose} setSaving={setSaving} /> : <>
                     <div className="memory-guide-orbit" aria-label={roomChibi ? `${char.name}的小屋 Chibi` : '一枚未知光点'}>
                         {roomChibi
                             ? <img className="memory-guide-image" src={roomChibi} alt="" />
@@ -610,11 +632,11 @@ const MemoryRepairPortal: React.FC<MemoryRepairPortalProps> = ({
                                 刚才的问题可能来自模型理解或普通聊天上下文。
                             </div>
                         )}
-                    </section>
+                    </section></>}
                 </main>
             </div>
 
-            <div className="memory-actions">
+            {tab === 'memory' && <div className="memory-actions">
                 <button
                     className="memory-action-quiet flex items-center justify-center gap-2"
                     onClick={() => setEditorTarget({ type: 'box', id: '__dialogue__' })}
@@ -626,7 +648,7 @@ const MemoryRepairPortal: React.FC<MemoryRepairPortalProps> = ({
                 <button className="memory-action-primary" onClick={finish}>
                     完成修补
                 </button>
-            </div>
+            </div>}
 
             {editorTarget && (
                 <div className="memory-drawer" onMouseDown={event => {

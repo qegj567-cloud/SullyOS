@@ -58,7 +58,7 @@ export function getLatestRecallReceipt(
     for (let i = list.length - 1; i >= 0; i--) {
         const receipt = list[i];
         if (receipt.ts >= sinceTs) {
-            return { ts: receipt.ts, ids: [...receipt.ids] };
+            return receipt.ids.length ? { ts: receipt.ts, ids: [...receipt.ids] } : null;
         }
     }
     return null;
@@ -77,8 +77,9 @@ function writeAll(charId: string, receipts: RecallReceipt[]): void {
  * 记录一次召回回执。
  * 空数组直接跳过，避免回执表里塞满"召回到 0 条"的噪声。
  */
-export function recordRecallReceipt(charId: string, ids: string[]): void {
-    if (!charId || ids.length === 0) return;
+export function recordRecallReceipt(charId: string, ids: string[], options?: { replaceEmpty?: boolean }): void {
+    // An accepted reroll with no recall supersedes the original turn's receipt.
+    if (!charId || (!ids.length && !options?.replaceEmpty)) return;
     const list = readAll(charId);
     list.push({ ts: Date.now(), ids: [...new Set(ids)] });
     // 环形截断，保留最近 RECEIPT_MAX 条

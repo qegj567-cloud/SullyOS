@@ -158,6 +158,7 @@ export const computeContextRangeSnapshot = (
 export const loadCharacterContextRange = async (
     char: CharacterProfile,
     onTiming?: (stage: string, ms: number) => void,
+    beforeId?: number,
 ): Promise<ContextRangeSnapshot> => {
     let started = performance.now();
     await DB.ensureHomeContextMessages(char.id);
@@ -174,10 +175,11 @@ export const loadCharacterContextRange = async (
             char.id,
             clampManualContextLimit(char.contextLimit),
             true,
+            beforeId,
         );
     onTiming?.('读取范围内原文', Math.round(performance.now()-started));
     started = performance.now();
-    const snapshot = computeContextRangeSnapshot(sourceMessages, char, hwm);
+    const snapshot = computeContextRangeSnapshot(beforeId === undefined ? sourceMessages : sourceMessages.filter(m => m.id < beforeId), char, hwm);
     onTiming?.('计算上下文边界', Math.round(performance.now()-started));
     return snapshot;
 };
