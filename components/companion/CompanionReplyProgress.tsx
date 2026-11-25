@@ -10,7 +10,7 @@ function phaseStatus(turn: CompanionDebugTurn, phase: CompanionPhase) {
   if (delivery?.end !== undefined) return delivery.mode === 'text' ? '已展示（文字模式）' : '已播放';
   const request = stages[`${phase}_request`];
   if (request?.status === 'error') return '生成失败';
-  if (turn.status === 'error') return request?.status === 'error' ? '生成失败' : '本轮出错，已停止';
+  if (turn.status === 'error') return '本轮出错，已停止';
   if (turn.status === 'cancelled') return request ? '已打断' : '已取消，未开始生成';
   if (stages[`${phase}_audio`]?.status === 'running') return '正在播放';
   if (stages[`${phase}_tts`]?.status === 'running') return '正在准备语音';
@@ -29,7 +29,7 @@ function phaseStatus(turn: CompanionDebugTurn, phase: CompanionPhase) {
   return '等待开始';
 }
 
-/** Always visible and follows the active turn, independently of the expanded debug history. */
+/** The tools panel follows the current turn even when inspecting an older trace. */
 export function CompanionReplyProgress({ store }: { store: CompanionDebugStore }) {
   const turn = useSyncExternalStore(store.subscribe, store.getSnapshot).at(-1);
   if (!turn) return null;

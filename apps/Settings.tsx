@@ -43,6 +43,7 @@ import { consumeProxyWorkerSettingsFocus, getProxyWorkerUrl, setProxyWorkerUrl, 
 import { VOICE_ACTING_GUIDE } from '../utils/minimaxTts';
 import { FISH_VOICE_ACTING_GUIDE } from '../utils/fishAudioTts';
 import { DoubaoSpeechSettings, useDoubaoSpeechDraft } from '../components/settings/DoubaoSpeechSettings';
+import { CompanionVideoSettings } from '../components/companion/CompanionVideoSettings';
 import { FishVoiceTest } from '../components/companion/FishVoiceTest';
 import {
     DEFAULT_ELEVENLABS_MODEL,
@@ -158,18 +159,24 @@ const SettingsSection: React.FC<{
     const [open, setOpen] = useState(() => title === 'API 配置' && guideStep === 0);
     const sectionRef = useRef<HTMLElement>(null);
     const [focusRequest, setFocusRequest] = useState(0);
-    useSettingsFocus(title === 'API 配置' ? 'api' : title === '识图 API' ? 'vision' : title === '其他 API' ? 'voice' : title === '备份与恢复 (ZIP)' ? 'backup' : undefined, () => {
+    useSettingsFocus(title === 'API 配置' ? 'api' : title === '识图 API' ? 'vision' : title === '备份与恢复 (ZIP)' ? 'backup' : undefined, () => {
         setOpen(true); setFocusRequest(value => value + 1);
     });
-    const focusStt = useRef(false);
-    useSettingsFocus(title === '其他 API' ? 'stt' : undefined, () => {
-        focusStt.current = true; setOpen(true); setFocusRequest(value => value + 1);
-    });
+    const detailSelector = useRef('');
+    const focusDetail = (selector: string) => {
+        detailSelector.current = selector;
+        setOpen(true); setFocusRequest(value => value + 1);
+    };
+    useSettingsFocus(title === '其他 API' ? 'voice' : undefined, () => focusDetail('[data-role-voice]'));
+    useSettingsFocus(title === '其他 API' ? 'stt' : undefined, () => focusDetail('[data-doubao-stt]'));
+    useSettingsFocus(title === '其他 API' ? 'video' : undefined, () => focusDetail('[data-companion-video]'));
     useEffect(() => {
         if (!focusRequest) return;
-        if (focusStt.current) {
-            focusStt.current = false;
-            sectionRef.current?.querySelector('[data-doubao-stt]')?.scrollIntoView({ block: 'start' });
+        if (detailSelector.current) {
+            const detail = sectionRef.current?.querySelector<HTMLElement>(detailSelector.current);
+            detailSelector.current = '';
+            if (detail instanceof HTMLDetailsElement) detail.open = true;
+            detail?.scrollIntoView({ block: 'start' });
             return;
         }
         const restore = sectionRef.current?.querySelector<HTMLButtonElement>('[data-amsg-backup-restore]');
@@ -2828,8 +2835,12 @@ const Settings: React.FC = () => {
                 语音 / 写歌等非 LLM 类 API。这些设置 <span className="font-semibold text-slate-500">不会随预设切换</span>，通常只配置一次。
             </p>
 
+            <details data-companion-video className="mb-5 rounded-xl border border-slate-200 p-3">
+                <summary className="cursor-pointer text-sm font-semibold text-slate-700">视频理解</summary>
+                <CompanionVideoSettings api={apiConfig} saveVideoApi={config => updateApiConfig({ companionVideoApi: config })}/>
+            </details>
             <div className="space-y-4">
-                <p className="text-[11px] text-slate-400 -mt-1 pl-1 leading-relaxed">
+                <p data-role-voice className="text-[11px] text-slate-400 -mt-1 pl-1 leading-relaxed">
                     🎙️ 语音生成支持 <span className="font-semibold text-slate-500">MiniMax</span>、<span className="font-semibold text-slate-500">鱼声 Fish</span> 和 <span className="font-semibold text-slate-500">ElevenLabs</span>。三家的配置都会保留，最后在底部选择当前引擎。
                 </p>
 

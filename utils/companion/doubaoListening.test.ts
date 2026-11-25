@@ -125,9 +125,9 @@ it('does not leave the mic on indefinitely when browser audio resume never resol
 it('stops capture on authentication errors and network stalls, without retrying or falling back', async () => {
   const cb = callbacks(); startDoubaoListening(config, cb); await flush();
   Socket.instances[0].receive('{"type":"error","code":"http-401"}'); await flush();
-  expect(cb.error).toHaveBeenCalledWith(expect.stringContaining('http-401')); expect(track.stop).toHaveBeenCalledOnce();
+  expect(cb.error).toHaveBeenCalledWith(expect.stringContaining('http-401'), 'stt'); expect(track.stop).toHaveBeenCalledOnce();
   const other = callbacks(); startDoubaoListening(config, other); await flush();
   vi.advanceTimersByTime(20_000);
-  expect(other.error).toHaveBeenCalledWith(expect.stringContaining('超时')); expect(Socket.instances).toHaveLength(2);
+  expect(other.error).toHaveBeenCalledWith(expect.stringContaining('超时'), 'stt'); expect(Socket.instances).toHaveLength(2);
   expect(vi.getTimerCount()).toBe(0);
 });

@@ -137,7 +137,7 @@ it('a speech failure keeps the pending continuation alive, shows its text, and r
     change: next => { lines = next; }, error });
   const done = session.send('A'); await tick();
   expect(signal?.aborted).toBe(false);
-  expect(error.mock.calls[0][0].message).toContain('a · 接话语音失败：鱼声 HTTP 404');
+  expect(error.mock.calls[0][0].message).toContain('接话语音失败：鱼声 HTTP 404');
   expect(lines.at(-1)).toMatchObject({ text: 'a', heard: 'a', voiceFailed: true });
   continuation.resolve('a′'); await done;
   expect(error).toHaveBeenCalledOnce();
@@ -154,15 +154,64 @@ it('does not cancel audible a when full preparation fails, and labels the failed
   const done = session.send('A'); await tick();
   expect(signal.aborted).toBe(false); expect(error).not.toHaveBeenCalled();
   audio.resolve(); await done;
-  expect(error.mock.calls[0][0].message).toContain('a′ · 完整回复失败：组装失败');
+  expect(error.mock.calls[0][0].message).toContain('回复失败：组装失败');
   expect(full).not.toHaveBeenCalled();
 });
 
 it('can finish full context after quick generation fails, without inventing an assistant answer', async () => {
-  const error = vi.fn(), play = vi.fn(async () => {}), prepared = vi.fn(async (_history, a) => a);
+  const error = vi.fn(), play = vi.fn(async (_text: string) => {}), prepared = vi.fn(async (_history, a) => a);
   const session = new CompanionSession({ quick: async () => { throw new Error('HTTP 400'); }, prepare: prepared,
     full: async a => { expect(a).toBe(''); return '完整答复'; }, play, change: () => {}, error });
   await session.send('A');
   expect(play).toHaveBeenCalledOnce(); expect(play.mock.calls[0][0]).toBe('完整答复');
-  expect(error.mock.calls[0][0].message).toContain('a · 接话生成失败：HTTP 400');
+  expect(error.mock.calls[0][0].message).toContain('接话生成失败：HTTP 400');
+});
+
+it('keeps performance cues on the displayed line and only carries spoken words into speech and continuation', async () => {
+  const play = vi.fn(async (_text: string) => {});
+  const full = vi.fn(async (spoken: string) => '[[AVATAR: emotion=happy]] 收到' + spoken);
+  let displayed: CompanionLine[] = [];
+  const session = new CompanionSession({ quick: async () => '[[AVATAR: emotion=sad]] 等等',
+    prepare: async (_history, quick) => quick, full, play, change: lines => { displayed = lines; }, error: e => { throw e; } });
+  await session.send('这件呢');
+  expect(full).toHaveBeenCalledWith('等等', expect.any(AbortSignal), true, undefined);
+  expect(play.mock.calls.map(args => args[0])).toEqual(['等等', '收到等等']);
+  expect(displayed[1]).toMatchObject({ text: '等等', performance: { emotion: 'sad' } });
+  expect(displayed[2]).toMatchObject({ heard: '收到等等', performance: { emotion: 'happy' } });
+});
+
+it('keeps translated audio on the history line, uses the original for a′ and locks the language for the turn', async () => {
+  const recording = new Blob(['original'], { type: 'audio/wav' });
+  let lang = 'en';
+  let history: CompanionLine[] = [];
+  const preparedHistories: CompanionLine[][] = [];
+  const spoken: (string | undefined)[][] = [];
+  const full = vi.fn(async (a: string, _signal: AbortSignal, _enabled?: boolean, language?: string) => {
+    expect(language).toBe('en');
+    expect(a).toBe('看这里。');
+    return '这件好看。<语音>It suits you.</语音>';
+  });
+  const first = new CompanionSession({
+    language: () => lang,
+    quick: async () => { lang = 'ja'; return '看这里。<语音 emotion="happy">Look here.</语音>'; },
+    prepare: async (_, quick) => quick, full,
+    play: async (text, _, heard, started, voice) => {
+      spoken.push([text, voice.language, voice.emotion]);
+      started('audio'); voice.record(recording); heard(text);
+    },
+    change: next => { history = next; }, error: e => { throw e; },
+  });
+  await first.send('看哪件？');
+  expect(spoken).toEqual([['Look here.', 'en', 'happy'], ['It suits you.', 'en', undefined]]);
+  expect(history[2]).toMatchObject({ text: '这件好看。', heard: '这件好看。', translation: 'It suits you.', audio: [recording] });
+  const resumed = new CompanionSession({
+    quick: async () => '', prepare: async (lines) => { preparedHistories.push(lines); return ''; },
+    full: async () => '换一件。', play: async () => {}, change: next => { history = next; }, error: e => { throw e; },
+  }, history);
+  await resumed.send('还有吗？', false);
+  expect(history.map(line => line.id)).toEqual([1, 2, 3, 4, 5]);
+  expect(history[2].audio?.[0]).toBe(recording);
+  expect(preparedHistories[0][2]).toMatchObject({ text: '这件好看。' });
+  expect(preparedHistories[0][2]).not.toHaveProperty('audio');
+  expect(preparedHistories[0][2]).not.toHaveProperty('translation');
 });

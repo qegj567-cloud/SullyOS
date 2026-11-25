@@ -7,8 +7,9 @@ import { listCompanionModelOutfits, selectCompanionModelOutfit } from '../../uti
 import { CallAvatarOptions } from '../call/CallSetupGuide';
 import { useCallAvatarSetup } from '../call/useCallAvatarSetup';
 import Live2DActionSettings from '../call/Live2DActionSettings';
+import type { RolePlacementControl } from '../call/RolePlacement';
 
-export default function CompanionAvatarSettings({ char, close }: { char: CharacterProfile; close(): void }) {
+export default function CompanionAvatarSettings({ char, close, placement }: { char: CharacterProfile; close(): void; placement?: RolePlacementControl }) {
   const { openApp, updateCharacter, addToast } = useOS();
   const [editor, setEditor] = useState<'import' | 'advanced'>();
   const setup = useCallAvatarSetup(char, () => {}, format => { if (format === 'live2d') setEditor('import'); });
@@ -54,7 +55,7 @@ export default function CompanionAvatarSettings({ char, close }: { char: Charact
       </label>}
     </div>
     {setup.avatarImportOverlay}{setup.vroidBetaOverlay}
-    {editor && model?.format === 'live2d' && <Live2DActionSettings key={model.assetId} config={model} characterName={char.name}
+    {editor && model?.format === 'live2d' && <Live2DActionSettings key={model.assetId} config={model} rolePlacement={placement} characterName={char.name}
       accentColor={accentColor} setupMode={editor} onClose={() => setEditor(undefined)} onSave={videoAvatar => {
         updateCharacter(char.id, { videoAvatar }); setEditor(undefined); addToast('已保存角色动作与衣橱', 'success');
       }}/>}

@@ -1,3 +1,6 @@
+import { VOICE_LANGUAGE_OPTIONS } from './voiceLanguage';
+import { normalizePlacement } from './callRolePlacement';
+import { resolveTtsProvider } from './ttsProvider';
 import { getSttProviderLabel, resolveSttProvider } from './speechToText';
 import type { useOS } from '../context/OSContext';
 import type { CharacterProfile } from '../types';
@@ -39,6 +42,7 @@ export async function readHelpDeskSettings(os: SettingsSource, char?: CharacterP
     }
     return {
         主对话: { ...endpointFields(apiConfig), 接口: llmApiType(apiConfig), 流式: !!apiConfig.stream, 输出上限: dialogueMaxTokens(apiConfig) },
+        角色语音引擎: { fishaudio: '鱼声 Fish Audio', minimax: 'MiniMax', elevenlabs: 'ElevenLabs' }[resolveTtsProvider(apiConfig)],
         电话听写: getSttProviderLabel(resolveSttProvider(apiConfig)),
         同行: {
             短接话: apiConfig.companionQuickReply === true,
@@ -67,6 +71,8 @@ export async function readHelpDeskSettings(os: SettingsSource, char?: CharacterP
             原文范围: mode === 'adaptive' ? '自适应' : '手动', 手动条数: mode === 'manual' ? clampManualContextLimit(char.contextLimit) : undefined,
             整理节奏: resolveMemoryPalaceWaterline(char.memoryPalaceWaterline), 小眼睛开启月份数: char.activeMemoryMonths?.length ?? 0,
             允许按月查阅: char.monthlyRecallEnabled !== false, 挂载世界书数: char.mountedWorldbooks?.length ?? 0,
+            通话翻译: char.callVoiceLang ? VOICE_LANGUAGE_OPTIONS.find(item => item.value === char.callVoiceLang)?.label || '自定义' : '关闭',
+            角色构图: { 同行: normalizePlacement(char.companionAvatar?.callPlacements?.companion), 视频通话: normalizePlacement(char.companionAvatar?.callPlacements?.video) },
             私聊表情看图: !!char.stickerVision, 心象显示: !!char.showThinkingChain, 双语: translated ?? '未能读取', HTML卡片: !!char.htmlModeEnabled,
             心象提示词范围: thinking?.scope === 'character' ? '仅当前角色' : '所有角色（共用）',
             心象提示词模式: thinking?.mode === 'replace' ? '替换默认提示词' : '追加',

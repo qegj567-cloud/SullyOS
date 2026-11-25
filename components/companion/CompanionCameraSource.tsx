@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 /** Device identities stay in this page, never in settings, prompts or telemetry. */
-export function CompanionCameraSource({ selected, active, activeLabel, change }: {
+export function CompanionCameraSource({ selected, active, activeLabel, change, selectRef }: {
   selected: string; active: boolean; activeLabel: string; change: (id: string) => void;
+  selectRef?: React.Ref<HTMLSelectElement>;
 }) {
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [problem, setProblem] = useState('');
@@ -34,7 +35,7 @@ export function CompanionCameraSource({ selected, active, activeLabel, change }:
 
   return <div className="companion-camera-source">
     <div>
-      <label>摄像头来源<select aria-label="摄像头来源" value={selected} onChange={event => change(event.target.value)}>
+      <label>摄像头来源<select ref={selectRef} aria-label="摄像头来源" value={selected} onChange={event => change(event.target.value)}>
         <option value="">自动选择（手机优先后摄）</option>
         {selected && !devices.some(device => device.deviceId === selected) && <option value={selected}>所选设备暂不可见，请刷新设备</option>}
         {devices.map((device, index) => <option key={device.deviceId} value={device.deviceId}>{device.label || `摄像头 ${index + 1}（名称待授权）`}</option>)}

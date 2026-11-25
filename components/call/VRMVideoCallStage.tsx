@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { RolePlacementLayer, type RolePlacementControl } from './RolePlacement';
+import { DEFAULT_PLACEMENT, unplacePoint } from '../../utils/callRolePlacement';
 import { ArrowClockwise, ArrowsOutCardinal, CaretDown, FileZip, FolderOpen, ImageSquare, Play, SlidersHorizontal, UploadSimple, WarningCircle } from '@phosphor-icons/react';
 import type { AvatarTouchRegion, CharacterProfile } from '../../types';
 import { getAvatarModelBlob } from '../../utils/avatarModelStore';
@@ -66,6 +68,7 @@ interface VRMVideoCallStageProps {
   baseFraming?: AvatarStageFraming;
   /** 布置模式：companionMode 下重新启用拖拽/捏合/滚轮调构图（默认 = !companionMode）。 */
   framingEditable?: boolean;
+  rolePlacement?: RolePlacementControl;
   /** Optional companion-only mask. Insets are percentages of the full stage. */
   stageCrop?: AvatarStageCrop;
   /** Shows the exact crop window while the desktop composition editor is open. */
@@ -122,6 +125,7 @@ const VRMVideoCallStage: React.FC<VRMVideoCallStageProps> = ({
   companionMode = false,
   baseFraming,
   framingEditable,
+  rolePlacement,
   stageCrop = DEFAULT_STAGE_CROP,
   showCropGuide = false,
   touchRegions,
@@ -129,7 +133,6 @@ const VRMVideoCallStage: React.FC<VRMVideoCallStageProps> = ({
   onTouchRegionsChange,
   maxFps,
 }) => {
-  const canAdjustFraming = !touchRegionEditingZone && (framingEditable ?? !companionMode);
   // 动作/表情快捷按钮默认收起——一排药丸浮在模型上视觉太吵，想用再展开。
   const [actionChipsOpen, setActionChipsOpen] = useState(() => {
     try { return localStorage.getItem('sully-call-action-chips-v1') === 'open'; } catch { return false; }
@@ -148,6 +151,11 @@ const VRMVideoCallStage: React.FC<VRMVideoCallStageProps> = ({
   const [stageToolsOpen, setStageToolsOpen] = useState(false);
   const [manualAction, setManualAction] = useState<Live2DActionTrigger | null>(null);
   const [touchRequest, setTouchRequest] = useState<AvatarTouchRequest | null>(null);
+  const screenTouch = useRef<{ nonce: number; normalizedX: number; normalizedY: number }>();
+  const publishModelTouch = (hit: AvatarTouchHit) => {
+    const point = screenTouch.current;
+    onAvatarTouch?.(point?.nonce === hit.nonce ? { ...hit, ...point } : hit);
+  };
 
   // ── 舞台构图：拖拽移动、双指捏合/滚轮缩放，手势结束时统一提交持久化 ──
   const [framing, setFraming] = useState<AvatarStageFraming>(baseFraming || model?.framing || DEFAULT_STAGE_FRAMING);
@@ -185,6 +193,8 @@ const VRMVideoCallStage: React.FC<VRMVideoCallStageProps> = ({
 
   // ── 脸部锚定校准模式：拖/缩到理想特写后保存；校准中的构图不写回 base ──
   const [calibratingFace, setCalibratingFace] = useState(false);
+  const [calibrationAngle, setCalibrationAngle] = useState(0);
+  const canAdjustFraming = !touchRegionEditingZone && (rolePlacement ? calibratingFace : (framingEditable ?? !companionMode));
   const calibratingFaceRef = useRef(false);
   const preCalibrationFramingRef = useRef<AvatarStageFraming>(DEFAULT_STAGE_FRAMING);
 
@@ -211,6 +221,7 @@ const VRMVideoCallStage: React.FC<VRMVideoCallStageProps> = ({
     setFraming(next);
   };
   const beginFaceCalibration = () => {
+    setCalibrationAngle(rolePlacement?.value.angle ?? 0);
     preCalibrationFramingRef.current = framingRef.current;
     calibratingFaceRef.current = true;
     setCalibratingFace(true);
@@ -224,6 +235,9 @@ const VRMVideoCallStage: React.FC<VRMVideoCallStageProps> = ({
   const endFaceCalibration = (save: boolean, clear = false) => {
     if (clear) onFaceAnchorChange?.(null);
     else if (save) onFaceAnchorChange?.(framingRef.current);
+    if (save && rolePlacement && calibrationAngle !== rolePlacement.value.angle) {
+      rolePlacement.save({ ...rolePlacement.value, angle: calibrationAngle });
+    }
     calibratingFaceRef.current = false;
     setCalibratingFace(false);
     setFramingLocal(preCalibrationFramingRef.current);
@@ -257,7 +271,8 @@ const VRMVideoCallStage: React.FC<VRMVideoCallStageProps> = ({
       gesture.pinchDist = Math.hypot(a.x - b.x, a.y - b.y);
       gesture.pointers.forEach(pointer => { pointer.maxDistance = Number.POSITIVE_INFINITY; });
     }
-    event.currentTarget.setPointerCapture?.(event.pointerId);
+    // Keep mobile pointer capture on the touched canvas inside the placement layer.
+    if (!rolePlacement || event.pointerType !== 'touch') event.currentTarget.setPointerCapture?.(event.pointerId);
   };
   const handleStagePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
     const gesture = gestureRef.current;
@@ -273,6 +288,7 @@ const VRMVideoCallStage: React.FC<VRMVideoCallStageProps> = ({
     });
     const rect = stageBoxRef.current?.getBoundingClientRect();
     if (!rect || !rect.width || !rect.height) return;
+    if (rolePlacement && event.pointerType === 'touch') return;
     if (gesture.pointers.size === 1 && canAdjustFraming) {
       const dx = event.clientX - previous.x;
       const dy = event.clientY - previous.y;
@@ -306,12 +322,16 @@ const VRMVideoCallStage: React.FC<VRMVideoCallStageProps> = ({
     ) {
       const rect = stageBoxRef.current?.getBoundingClientRect();
       if (!rect?.width || !rect.height) return;
-      const x = event.clientX - rect.left;
-      const y = event.clientY - rect.top;
+      const screenX = event.clientX - rect.left, screenY = event.clientY - rect.top;
+      const { x, y } = rolePlacement
+        ? unplacePoint(screenX, screenY, rect.width, rect.height, rolePlacement.value)
+        : { x: screenX, y: screenY };
       const durationMs = Math.max(0, window.performance.now() - pointer.startedAt);
       if (x < 0 || y < 0 || x > rect.width || y > rect.height) return;
+      const nonce = Date.now() + Math.random();
+      screenTouch.current = rolePlacement ? { nonce, normalizedX: screenX / rect.width, normalizedY: screenY / rect.height } : undefined;
       setTouchRequest({
-        nonce: Date.now() + Math.random(),
+        nonce,
         x,
         y,
         normalizedX: x / rect.width,
@@ -396,6 +416,26 @@ const VRMVideoCallStage: React.FC<VRMVideoCallStageProps> = ({
   const staticAvatarActive = staticAvatarSource === 'upload' || staticAvatarSource === 'date';
   const hasRenderableModel = Boolean(model && !modelError && (model.format === 'live2d' || modelUrl));
   const hasRenderableAvatar = staticAvatarActive || hasRenderableModel;
+  const placementControl: RolePlacementControl | undefined = rolePlacement && calibratingFace ? {
+    value: { ...DEFAULT_PLACEMENT, angle: calibrationAngle },
+    save: next => {
+      applyFraming(current => ({ scale: current.scale * next.scale, offsetX: current.offsetX + next.x / 100, offsetY: current.offsetY + next.y / 100 }));
+      setCalibrationAngle(next.angle);
+    },
+  } : rolePlacement;
+  const placeCharacter = (content: React.ReactNode) => placementControl
+    ? <RolePlacementLayer control={placementControl}>{content}</RolePlacementLayer>
+    : content;
+
+  const fallbackPortrait = fallbackAvatar ? (
+    <div className={`relative overflow-hidden rounded-full border border-white/15 ${companionMode ? 'h-36 w-36' : 'h-20 w-20'}`} style={{ animation: 'vrm-stage-drift 5.5s ease-in-out infinite', boxShadow: `0 0 55px ${accentColor}4d` }}>
+      {/* 兜底头像来自 char.avatar：上传的头像存的是 blobref 令牌，裸 <img> 会裂图，
+          交给 TokenImg 统一解析（旧的 data: / http 外链原样透传） */}
+      <TokenImg value={fallbackAvatar} alt={characterName} className="h-full w-full object-cover" />
+    </div>
+  ) : (
+    <div className="flex h-28 w-28 items-center justify-center rounded-full border border-white/15 text-5xl font-light" style={{ background: `${accentColor}22`, color: accentColor }}>{characterName[0] || '角'}</div>
+  );
 
   return (
     <div
@@ -450,7 +490,7 @@ const VRMVideoCallStage: React.FC<VRMVideoCallStageProps> = ({
           onPointerCancel={staticAvatarActive ? undefined : handleStagePointerEnd}
           onWheel={staticAvatarActive ? undefined : handleStageWheel}
         >
-          {staticAvatarActive ? (
+          {placeCharacter(staticAvatarActive ? (
             <StaticCompanionPortrait
               value={staticPortraitValue}
               characterName={characterName}
@@ -477,7 +517,7 @@ const VRMVideoCallStage: React.FC<VRMVideoCallStageProps> = ({
               preserveActiveWardrobe
               touchRequest={touchRequest}
               touchImpulseNonce={touchImpulseNonce}
-              onAvatarTouch={onAvatarTouch}
+              onAvatarTouch={onAvatarTouch ? publishModelTouch : undefined}
               touchRegions={touchRegions}
               touchRegionEditingZone={touchRegionEditingZone}
               onTouchRegionsChange={onTouchRegionsChange}
@@ -502,7 +542,7 @@ const VRMVideoCallStage: React.FC<VRMVideoCallStageProps> = ({
               performance={performance}
               touchImpulseNonce={touchImpulseNonce}
               touchRequest={touchRequest}
-              onAvatarTouch={onAvatarTouch}
+              onAvatarTouch={onAvatarTouch ? publishModelTouch : undefined}
               maxFps={maxFps}
               onLoadingChange={setModelLoading}
               onError={message => {
@@ -512,19 +552,13 @@ const VRMVideoCallStage: React.FC<VRMVideoCallStageProps> = ({
               onExpressionsDiscovered={onExpressionsDiscovered}
               onReady={onModelReady}
             />
-          )}
+          ))}
         </div>
       ) : (
-        <div className="absolute inset-0 flex flex-col items-center justify-center px-8 text-center">
-          {fallbackAvatar ? (
-            <div className={`relative overflow-hidden rounded-full border border-white/15 ${companionMode ? 'h-36 w-36' : 'h-20 w-20'}`} style={{ animation: 'vrm-stage-drift 5.5s ease-in-out infinite', boxShadow: `0 0 55px ${accentColor}4d` }}>
-              {/* 兜底头像来自 char.avatar：上传的头像存的是 blobref 令牌，裸 <img> 会裂图，
-                  交给 TokenImg 统一解析（旧的 data: / http 外链原样透传） */}
-              <TokenImg value={fallbackAvatar} alt={characterName} className="h-full w-full object-cover" />
-            </div>
-          ) : (
-            <div className="flex h-28 w-28 items-center justify-center rounded-full border border-white/15 text-5xl font-light" style={{ background: `${accentColor}22`, color: accentColor }}>{characterName[0] || '角'}</div>
-          )}
+        <>
+        {rolePlacement && placeCharacter(<div className="flex h-full items-center justify-center">{fallbackPortrait}</div>)}
+        <div className={`absolute inset-0 flex flex-col items-center px-8 text-center ${rolePlacement ? 'pointer-events-none justify-end pb-14 [&_button]:pointer-events-auto' : 'justify-center'}`}>
+          {!rolePlacement && fallbackPortrait}
           {(modelMissing || modelError || onChooseModel) && <div className={`${companionMode ? 'mt-5' : 'mt-3'} text-sm font-medium text-white/85`}>
             {modelMissing ? '模型文件已丢失，需要重新导入' : modelError ? '模型暂时加载失败' : companionMode ? '给 ta 换上陪伴形象' : '给这个角色装上视频模型'}
           </div>}
@@ -554,6 +588,7 @@ const VRMVideoCallStage: React.FC<VRMVideoCallStageProps> = ({
             </button>
           )}
         </div>
+        </>
       )}
 
       {showCropGuide && hasRenderableModel && (
@@ -593,7 +628,7 @@ const VRMVideoCallStage: React.FC<VRMVideoCallStageProps> = ({
       {!companionMode && hasRenderableModel && !modelLoading && calibratingFace && (
         <div className="absolute inset-x-3 top-12 z-40 rounded-2xl border border-amber-200/25 bg-black/55 px-3 py-2 backdrop-blur-md">
           <div className="text-[10px] leading-relaxed text-amber-100/90">
-            锚定脸部：拖动 / 缩放，把<b>脸</b>摆到画面中心的理想特写位置，之后 AI 拉近镜头都会精确落到这里。
+            {rolePlacement ? '用双指移动或缩放，把' : '拖动或缩放，把'}<b>脸</b>摆到画面中心，再保存锚点。
           </div>
           <div className="mt-1.5 flex items-center gap-1.5">
             <button onClick={() => endFaceCalibration(true)} className="rounded-full bg-amber-300/25 border border-amber-200/40 px-3 py-1 text-[10px] font-medium text-amber-50 active:scale-95">
@@ -629,7 +664,7 @@ const VRMVideoCallStage: React.FC<VRMVideoCallStageProps> = ({
                   <div className="text-[10px] font-medium text-white/75">舞台工具</div>
                   <div className="mt-0.5 max-w-[10rem] truncate text-[8px] text-white/28">{model?.fileName}</div>
                 </div>
-                <span className="text-[8px] text-white/25">直接拖动角色可调构图</span>
+                <span className="text-[9px] text-white/65">{rolePlacement ? '双指调整角色构图' : '拖动调整构图'}</span>
               </div>
 
               <div className="divide-y divide-white/[0.06]">

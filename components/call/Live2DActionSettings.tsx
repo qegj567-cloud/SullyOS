@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { RolePlacementLayer, type RolePlacementControl } from './RolePlacement';
 import { Check, FadersHorizontal, HandTap, PencilSimple, Play, Plus, Prohibit, Robot, Trash, TShirt, X } from '@phosphor-icons/react';
 import { inferLive2DActionTags, type Live2DAction, type Live2DActionPermission, type Live2DAvatarConfig } from '../../utils/live2dModelStore';
 import {
@@ -11,6 +12,7 @@ import { BUILTIN_SULLY_DEFAULT_FRAMING, isBuiltinSullyLive2D } from '../../utils
 
 interface Live2DActionSettingsProps {
   config: Live2DAvatarConfig;
+  rolePlacement?: RolePlacementControl;
   characterName: string;
   accentColor: string;
   setupMode?: 'import' | 'advanced';
@@ -30,6 +32,7 @@ const permissionOptions: Array<{
 
 const Live2DActionSettings: React.FC<Live2DActionSettingsProps> = ({
   config,
+  rolePlacement,
   characterName,
   accentColor,
   setupMode = 'advanced',
@@ -239,6 +242,21 @@ const Live2DActionSettings: React.FC<Live2DActionSettingsProps> = ({
     wardrobe: actions.filter(action => action.wardrobe).length,
   }), [actions]);
 
+  const preview = <Live2DAvatarCanvas
+    key={`${config.assetId}-${previewRetryKey}`}
+    config={previewConfig}
+    framing={framing}
+    motionState="idle"
+    manualAction={previewAction}
+    onLoadingChange={(nextLoading, stage) => {
+      setLoading(nextLoading);
+      if (stage) setLoadingStage(stage);
+    }}
+    onError={setPreviewError}
+    onParametersDiscovered={setModelParameters}
+    parameterPreview={customDraft && showTargetPreview ? customDraft.params : null}
+  />;
+
   return (
     <div className="sully-stage-dark [color-scheme:dark] absolute inset-0 z-[90] flex flex-col bg-[#08070d]/95 text-white backdrop-blur-xl">
       <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-5 pb-3" style={{ paddingTop: 'max(1.25rem, var(--safe-top))' }}>
@@ -261,20 +279,7 @@ const Live2DActionSettings: React.FC<Live2DActionSettingsProps> = ({
       <div className="min-h-0 flex-1 px-4 pb-3 pt-3">
         <div className="relative h-full min-h-[260px] overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-b from-[#171322] to-[#090810]">
           <div className="absolute inset-0 opacity-60" style={{ background: `radial-gradient(circle at 50% 55%, ${accentColor}38, transparent 64%)` }} />
-          <Live2DAvatarCanvas
-            key={`${config.assetId}-${previewRetryKey}`}
-            config={previewConfig}
-            framing={framing}
-            motionState="idle"
-            manualAction={previewAction}
-            onLoadingChange={(nextLoading, stage) => {
-              setLoading(nextLoading);
-              if (stage) setLoadingStage(stage);
-            }}
-            onError={setPreviewError}
-            onParametersDiscovered={setModelParameters}
-            parameterPreview={customDraft && showTargetPreview ? customDraft.params : null}
-          />
+          {rolePlacement ? <RolePlacementLayer control={rolePlacement}>{preview}</RolePlacementLayer> : preview}
           <div className="absolute left-3 top-3 rounded-full border border-white/10 bg-black/35 px-2.5 py-1 text-[9px] text-white/55 backdrop-blur-md">
             {loading
               ? loadingStage

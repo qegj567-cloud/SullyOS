@@ -215,11 +215,11 @@ describe('CallApp runtime references', () => {
     const stageSource = readFileSync(path.resolve(__dirname, '../components/call/VRMVideoCallStage.tsx'), 'utf8');
 
     expect(source).toContain("const CALL_SETUP_GUIDE_KEY = 'sully-call-setup-guide-v2'");
-    expect(source).toContain("openCallSetupGuide(hasSelectedVideoVisual ? 'camera' : 'model')");
+    expect(source).toContain("openCallSetupGuide(roleCamera.view !== 'avatar' ? 'camera' : 'model')");
     expect(source).toContain('beginSelectedCall(setupCameraMode)');
     expect(source).toContain('onChooseFakeImage={() => chooseFakeUserCameraImage(false)}');
     expect(source).toContain('useCallAvatarSetup(selectedChar');
-    expect(source).toContain("selectedVisualSource !== 'model'");
+    expect(source).toContain("roleCamera.view !== 'model'");
     expect(source).toContain('staticPortraitValue={staticVideoPortrait}');
     expect(guideSource).toContain('data-testid="call-setup-guide"');
     expect(guideSource).toContain("['upload', '静态图片']");

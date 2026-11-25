@@ -1,0 +1,9 @@
+.companion-video-settings { font-size: 13px; line-height: 1.65; color: #293f35; }
+.companion-video-settings :is(label,small,p) { display: block; margin: 8px 0; }
+.companion-video-settings small { color: #55695c; }
+.companion-video-settings :is(select,input:not([type=checkbox])) { display: block; width: 100%; padding: 8px 10px; color: #24392b; background: white; border: 1px solid #becbbf; border-radius: 7px; }
+.companion-video-settings .companion-setup-actions,.companion-video-settings .companion-setup-links { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.companion-video-settings a { display: inline-flex; align-items: center; gap: 3px; color: #286d55; text-decoration: underline; }
+.companion-video-settings button { color: #286d55; border: 1px solid #b4c5b8; padding: 8px; border-radius: 7px; }
+.companion-video-settings button:disabled { opacity: .5; }
+.companion-video-settings input[type=checkbox] { margin-right: 6px; }

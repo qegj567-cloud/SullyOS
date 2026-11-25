@@ -4,7 +4,7 @@ export const VOICE_FAVORITES_INDEX_ASSET_ID = 'voice_favorites_index_v1';
 export const VOICE_FAVORITE_AUDIO_PREFIX = 'voice_favorite_audio_';
 export const VOICE_FAVORITES_CHANGED_EVENT = 'sully:voice-favorites-changed';
 
-export type VoiceFavoriteSource = 'chat' | 'call' | 'date';
+export type VoiceFavoriteSource = 'chat' | 'call' | 'date' | 'companion';
 
 export interface VoiceFavorite {
     id: string;
@@ -46,7 +46,7 @@ const withWriteLock = async <T>(work: () => Promise<T>): Promise<T> => {
 };
 
 const isSource = (value: unknown): value is VoiceFavoriteSource => (
-    value === 'chat' || value === 'call' || value === 'date'
+    value === 'chat' || value === 'call' || value === 'companion' || value === 'date'
 );
 
 const normalizeTimestamp = (value: unknown, fallback: number): number => (
@@ -175,5 +175,6 @@ export const removeVoiceFavoriteById = async (favoriteId: string): Promise<boole
 export const voiceFavoriteSourceLabel = (source: VoiceFavoriteSource): string => ({
     chat: '聊天',
     call: '通话',
+    companion: '同行',
     date: '见面',
 }[source]);

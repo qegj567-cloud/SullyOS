@@ -46,7 +46,11 @@ export function startDoubaoListening(config: CompanionSttConfig, callbacks: List
     if (socket && socket.readyState < 2) socket.close(1000, 'stopped');
     void context.close().catch(() => {});
   };
-  const fail = (message: string) => { if (!stopped) { stop(); callbacks.error(message); } };
+  const fail = (message: string, setting?: 'stt') => {
+    if (stopped) return;
+    stop();
+    if (setting) callbacks.error(message, setting); else callbacks.error(message);
+  };
   // Attach rejection handling immediately, even while microphone permission is still pending.
   const resume = context.resume().catch(() => fail('音频设备未能启动，请重新开启连续听'));
   callbacks.state?.('正在申请麦克风');
@@ -63,7 +67,7 @@ export function startDoubaoListening(config: CompanionSttConfig, callbacks: List
       clearTimeout(timer);
       callbacks.state?.('正在连接豆包识别');
       socket = new WebSocket(doubaoRelayUrl()); socket.binaryType = 'arraybuffer';
-      timer = setTimeout(() => fail('豆包识别连接超时，请检查网络和语音服务配置'), 20_000);
+      timer = setTimeout(() => fail('豆包识别连接超时，请检查网络和语音服务配置。', 'stt'), 20_000);
       socket.onopen = () => { if (!stopped) socket!.send(JSON.stringify({ type: 'start', apiKey: config.apiKey, resourceId: config.resourceId })); };
       let incoming = Promise.resolve();
       socket.onmessage = event => {
@@ -73,6 +77,9 @@ export function startDoubaoListening(config: CompanionSttConfig, callbacks: List
             const message = JSON.parse(event.data);
             if (message.type === 'error') {
               const code = typeof message.code === 'string' && /^(http-\d{3}|[a-z]+(?:-[a-z]+){0,2})$/.test(message.code) ? message.code : 'relay';
+              if (code === 'http-401' || code === 'http-403') {
+                fail(`豆包识别连接失败（${code}），请核对语音 Key 和服务开通状态。`, 'stt'); return;
+              }
               fail(code === 'session-limit' ? '本次连续听已满 30 分钟，请重新开启' : `豆包识别连接失败（${code}），请检查语音 Key、开通状态及应用代理版本`); return;
             }
             if (message.type !== 'ready' || ready) return;

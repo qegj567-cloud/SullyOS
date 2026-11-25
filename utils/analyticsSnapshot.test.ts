@@ -494,6 +494,15 @@ describe('当前角色设置 · 桌面陪伴与通话形象', () => {
 
     const plainChar = (id: string) => ({ id, name: POISON.myName } as unknown as CharacterProfile);
 
+    it('通话构图只报是否改过，不发送角度、坐标或角色信息', () => {
+        const char = plainChar('a');
+        expect(collectAppearance({} as OSTheme, char).通话角色构图).toBe('默认');
+        char.companionAvatar = { version: 1, source: 'date', callPlacements: { companion: { scale: 1, x: 43.789, y: 0, angle: 22.456 } } };
+        const snapshot = collectAppearance({} as OSTheme, char);
+        expect(snapshot.通话角色构图).toBe('调过');
+        expect(JSON.stringify(snapshot)).not.toMatch(/43\.789|22\.456/);
+    });
+
     it('内置 Sully 不算「自己导入」——它是开箱就绑着的，数进去人人至少 1', () => {
         const flags = collectCharSettings([builtinSullyChar(), plainChar('b')], 'sully');
         expect(flags.自己导入形象的角色数).toBe('0');

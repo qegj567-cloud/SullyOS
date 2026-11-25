@@ -15,6 +15,7 @@ import { IMPORT_IN_PROGRESS_KEY, useOS } from '../context/OSContext';
 import StatusBar from './os/StatusBar';
 import { SARModuleMonitor } from './sar/SARModuleMonitor';
 import Launcher from '../apps/Launcher';
+import { CompanionSessionSlot } from './companion/CompanionSessionSlot';
 import CompanionLockChrome from './os/CompanionLockChrome';
 import { loadCompanionFrameStyle } from './os/companionFrameStyles';
 import { createPreloadableLazy, type PreloadableLazy } from './os/preloadableLazy';
@@ -1021,7 +1022,7 @@ const PhoneShell: React.FC = () => {
       case AppID.Songwriting: return <SongwritingApp />;
       case AppID.Music: return <MusicApp />;
       case AppID.Call: return <CallApp />;
-      case AppID.Companion: return <CompanionApp />;
+      case AppID.Companion: return null; // Mounted by CompanionSessionSlot below.
       case AppID.VoiceDesigner: return <VoiceDesignerApp />;
       case AppID.Guidebook: return <GuidebookApp />;
       case AppID.LifeSim: return <LifeSimApp />;
@@ -1114,6 +1115,14 @@ const PhoneShell: React.FC = () => {
                 </AppEnterStage>
               </Suspense>
             </AppErrorBoundary>
+            <CompanionSessionSlot foreground={activeApp === AppID.Companion} resume={() => openApp(AppID.Companion)}
+              otherCallBars={Number(Boolean(suspendedCall && activeApp !== AppID.Call)) + Number(Boolean(suspendedDate && activeApp !== AppID.Date))}>
+              {retain => <AppErrorBoundary resetKey={AppID.Companion} onCloseApp={() => { retain(false); closeApp(); }}>
+                <Suspense fallback={<AppLoadingFallback onReturn={closeApp} animationEnabled={theme.appLoadingAnimationEnabled !== false}/>}>
+                  <CompanionApp foreground={activeApp === AppID.Companion} onRetentionChange={retain}/>
+                </Suspense>
+              </AppErrorBoundary>}
+            </CompanionSessionSlot>
           </div>
 
           {/* Overlays: Status Bar (Top) —— 常驻渲染：时钟/电量条由开关+平台默认决定显隐（StatusBar 内部 isStatusBarHidden），

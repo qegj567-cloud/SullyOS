@@ -2,7 +2,6 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { DB } from '../db';
 import { buildChatRequestPayload } from '../chatRequestPayload';
 import { loadCharacterContextRange } from '../chatContextRange';
-import { buildCharacterResponsePrinciples } from '../characterResponsePrinciples';
 import { ContextBuilder } from '../context';
 import { RealtimeContextManager, NotionManager, FeishuManager } from '../realtimeContext';
 import * as palace from '../memoryPalace/pipeline';
@@ -59,7 +58,7 @@ it.each(['manual', 'adaptive'] as const)('matches ChatApp shared prompt bytes an
   vi.spyOn(music, 'loadMusicPlaybackSnapshot').mockReturnValue(musicSnapshot);
   const debug = new CompanionDebugStore(), signal = new AbortController().signal;
   const current: CompanionLine = { id: 1, text: '本轮问题标记', heard: '本轮问题标记', role: 'user', at: now, status: 'done' };
-  const requests = createCompanionRequests({ char, user, realtimeConfig, debug, style: '仅短回复语气', scene: () => '现场标记',
+  const requests = createCompanionRequests({ char, user, realtimeConfig, debug, style: '仅短回复语气', observation: () => ({ text: '现场标记', from: now - 8000, to: now }),
     api: { baseUrl: 'https://example.invalid/v1', apiKey: 'test', model: 'same-model', stream: false } as any });
   debug.start(signal, current.text);
   const companion = await requests.prepare([current], Promise.resolve('本轮短回复标记'), signal);
@@ -73,12 +72,11 @@ it.each(['manual', 'adaptive'] as const)('matches ChatApp shared prompt bytes an
   // Synthetic pending IDs may differ from saved IDs; every actual recall field is equal.
   const recallRows = (rows: any[]) => rows.map(({ id: _id, ...row }) => row);
   expect(recallRows(recall.mock.calls[0][1]!)).toEqual(recallRows(recall.mock.calls[1][1]!));
-  expect(companion.cleanedApiMessages.slice(0, -2)).toEqual(chat.cleanedApiMessages);
+  expect(companion.cleanedApiMessages).toEqual([...chat.cleanedApiMessages, { role: 'assistant', content: '本轮短回复标记' }]);
   expect(companion.fullMessages[0].content.split('你正在「同行」中')[0])
     .toBe(chat.fullMessages[0].content.split('### 聊天 App 行为规范')[0]);
   const companionTail = String(companion.fullMessages.at(-1)!.content);
-  const coreTail = companionTail.slice(0, companionTail.indexOf('\n你正在「同行」中')) + buildCharacterResponsePrinciples(char.name, user.name);
-  expect(coreTail).toBe(String(chat.fullMessages.at(-1)!.content).replace(`\n${ContextBuilder.buildMusicActionGuide(true)}\n`, ''));
+  expect(companionTail).toBe(String(chat.fullMessages.at(-1)!.content).replace(`\n${ContextBuilder.buildMusicActionGuide(true)}\n`, ''));
   for (const marker of ['基础人设标记', '世界观标记', '家园定义标记', '常驻世界书标记', '天气热搜标记',
     'Notion日记标记', 'Notion笔记标记', '飞书日记标记', '群聊背景标记', '日程标记', '生活档案标记',
     '协同文件柜标记', '本轮记忆召回标记', '本轮房间门牌标记', '共听歌曲标记', '共听歌词标记']) {
@@ -89,7 +87,7 @@ it.each(['manual', 'adaptive'] as const)('matches ChatApp shared prompt bytes an
   await requests.full(companion, signal);
   const sent = JSON.parse(String(send.mock.calls[0][1].body));
   expect(sent.messages.slice(0, -1)).toEqual(companion.fullMessages);
-  expect(sent.messages.at(-1)).toMatchObject({ role: 'user' });
+  expect(sent.messages.at(-1)).toEqual({ role: 'user', content: expect.stringContaining('[同行现场观测，非用户发言]\n约 0 秒前结束的 8 秒视频：现场标记') });
   expect(sent.stream).toBe(false);
   expect(JSON.stringify(sent).match(/本轮短回复标记/g)).toHaveLength(1);
   expect(JSON.stringify(sent).match(/本轮问题标记/g)).toHaveLength(1);

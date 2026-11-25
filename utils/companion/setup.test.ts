@@ -3,6 +3,7 @@ import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { expect, it, vi } from 'vitest';
 import { DoubaoSpeechSettings, useDoubaoSpeechDraft } from '../../components/settings/DoubaoSpeechSettings';
+import { CompanionVideoSettings } from '../../components/companion/CompanionVideoSettings';
 import { CompanionSetupGuide } from '../../components/companion/CompanionSetupGuide';
 import { companionDialogueReady, openCompanionSetupTarget } from './setup';
 import { characterLaunch } from '../characterLaunch';
@@ -26,7 +27,7 @@ it('only uses the saved domestic MiniMax key after an explicit sample test at th
   document.body.append(host);
   const save = vi.fn();
   const api = { minimaxApiKey: 'saved-minimax-key', companionVideoApi: { provider: 'minimax', baseUrl: 'https://api.minimax.cn/v1', model: 'MiniMax-M3.1-Flash', apiKey: '' } } as any;
-  const render = (region: string) => act(async () => root.render(React.createElement(CompanionSetupGuide, { api: { ...api, minimaxRegion: region }, canListen: false, close: vi.fn(), navigate: vi.fn(), saveVideoApi: save })));
+  const render = (region: string) => act(async () => root.render(React.createElement(CompanionVideoSettings, { api: { ...api, minimaxRegion: region }, saveVideoApi: save })));
   const button = () => [...host.querySelectorAll('button')].find(el => el.textContent === '用已存 MiniMax Key 测样片');
   try {
     await render('overseas'); expect(button()).toBeUndefined();
@@ -54,7 +55,7 @@ it('shows the GLM direct route and only checks the unsaved draft after a click',
   const host = document.createElement('div'), root = createRoot(host); document.body.append(host);
   const saveVideoApi = vi.fn();
   try {
-    await act(async () => root.render(React.createElement(CompanionSetupGuide, { api: {} as any, canListen: false, navigate: vi.fn(), close: vi.fn(), saveVideoApi })));
+    await act(async () => root.render(React.createElement(CompanionVideoSettings, { api: {} as any, saveVideoApi })));
     await act(async () => {
       const select = host.querySelector<HTMLSelectElement>('[aria-label="视频服务商"]')!;
       select.value = 'zhipu'; select.dispatchEvent(new Event('change', { bubbles: true }));
@@ -73,7 +74,7 @@ it('selects the paid plan credentials separately without calling or saving an AP
   const host = document.createElement('div'), root = createRoot(host); document.body.append(host);
   const saveVideoApi = vi.fn();
   try {
-    await act(async () => root.render(React.createElement(CompanionSetupGuide, { api: { companionVideoApi: { provider: 'doubao', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', model: 'regular', apiKey: 'standard-secret' } } as any, canListen: false, navigate: vi.fn(), close: vi.fn(), saveVideoApi })));
+    await act(async () => root.render(React.createElement(CompanionVideoSettings, { api: { companionVideoApi: { provider: 'doubao', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', model: 'regular', apiKey: 'standard-secret' } } as any, saveVideoApi })));
     await act(async () => {
       const select = host.querySelector<HTMLSelectElement>('[aria-label="豆包接入方式"]')!;
       select.value = 'plan'; select.dispatchEvent(new Event('change', { bubbles: true }));
@@ -85,30 +86,25 @@ it('selects the paid plan credentials separately without calling or saving an AP
     expect(testCompanionVideo).toHaveBeenLastCalledWith(expect.objectContaining({ apiKey: '', model: 'doubao-seed-2.1-pro' }), expect.any(AbortSignal), expect.any(Function));
   } finally { act(() => root.unmount()); host.remove(); vi.clearAllMocks(); }
 });
-it('tests the video draft and shared speech settings without saving them and cancels a running test before starting another', async () => {
+it('routes to shared video settings and cancels a running dialogue test before testing speech', async () => {
   const host = document.createElement('div'), root = createRoot(host); document.body.append(host);
   const saveVideoApi = vi.fn(), navigate = vi.fn(), beforeTest = vi.fn();
   const api = { baseUrl: 'https://chat.test', model: 'chat', apiKey: 'chat-key', companionStt: { provider: 'doubao', apiKey: 'old-key', resourceId: 'volc.seedasr.sauc.duration' } } as any;
   const click = async (text: string) => act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === text)!.click());
-  const fill = async (label: string, value: string) => act(async () => {
-    const input = host.querySelector<HTMLInputElement>(`[aria-label="${label}"]`)!;
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-  });
   try {
-    await act(async () => root.render(React.createElement(CompanionSetupGuide, { api, canListen: true, navigate, close: vi.fn(), saveVideoApi, beforeTest })));
+    await act(async () => root.render(React.createElement(CompanionSetupGuide, { api, canListen: true, navigate, close: vi.fn(), beforeTest })));
     expect(testCompanionDialogue).not.toHaveBeenCalled(); expect(testCompanionStt).not.toHaveBeenCalled();
-    await fill('视频 API Key', 'draft-video-key'); await click('测试视频 API');
-    expect(testCompanionVideo).toHaveBeenLastCalledWith(expect.objectContaining({ apiKey: 'draft-video-key', provider: 'minimax' }), expect.any(AbortSignal), expect.any(Function));
+    expect(host.querySelector('[aria-label="视频 API Key"]')).toBeNull();
+    await click('去设置视频理解'); expect(navigate).toHaveBeenCalledWith('video');
     expect(host.querySelector('[aria-label="豆包语音 API Key"]')).toBeNull();
     await click('去设置语音识别'); expect(navigate).toHaveBeenCalledWith('stt');
     await click('测试语音识别');
     expect(testCompanionStt).toHaveBeenLastCalledWith(expect.objectContaining({ apiKey: 'old-key', provider: 'doubao' }), expect.any(AbortSignal), expect.any(Function));
-    expect(saveVideoApi).not.toHaveBeenCalled(); expect(beforeTest).toHaveBeenCalledTimes(2);
+    expect(saveVideoApi).not.toHaveBeenCalled(); expect(beforeTest).toHaveBeenCalledTimes(1);
     let firstSignal!: AbortSignal;
     vi.mocked(testCompanionDialogue).mockImplementationOnce((_api, _char, signal) => { firstSignal = signal; return new Promise(() => {}); });
     await click('测试对话 API'); expect(firstSignal.aborted).toBe(false);
-    await click('测试视频 API'); expect(firstSignal.aborted).toBe(true); expect(host.textContent).toContain('已取消');
+    await click('测试语音识别'); expect(firstSignal.aborted).toBe(true); expect(host.textContent).toContain('已取消');
     expect(host.textContent).not.toContain('draft-speech-key'); expect(api.companionStt.apiKey).toBe('old-key');
   } finally { act(() => root.unmount()); host.remove(); vi.clearAllMocks(); }
 });
@@ -200,15 +196,16 @@ it('saves a separate video endpoint and does not reuse a stored key after its UR
   const api = { baseUrl: 'https://chat.test', model: 'chat', apiKey: 'chat-secret', companionVideoApi: { baseUrl: 'https://old-video.test/v1', model: 'video', apiKey: 'old-video-secret' } } as any;
   const snapshot = JSON.stringify(api);
   try {
-    await act(async () => root.render(React.createElement(CompanionSetupGuide, { api, canListen: false, navigate: vi.fn(), close: vi.fn(), saveVideoApi, changeImageMode })));
-    const key = host.querySelector<HTMLInputElement>('[aria-label="视频 API Key"]')!;
-    expect(key.value).toBe(''); expect(key.type).toBe('password');
-    expect(host.textContent).not.toContain('old-video-secret');
-    // Stored-key removal is the first checkbox; the image opt-in is separate and starts off.
+    await act(async () => root.render(React.createElement(CompanionSetupGuide, { api, canListen: false, navigate: vi.fn(), close: vi.fn(), changeImageMode })));
     const direct = [...host.querySelectorAll<HTMLInputElement>('input[type=checkbox]')].find(input => input.parentElement!.textContent!.includes('主对话模型支持图片'))!;
     expect(direct.checked).toBe(false);
     await act(async () => direct.click());
     expect(changeImageMode).toHaveBeenCalledWith('direct'); expect(saveVideoApi).not.toHaveBeenCalled();
+    await act(async () => root.render(React.createElement(CompanionVideoSettings, { api, saveVideoApi })));
+    const key = host.querySelector<HTMLInputElement>('[aria-label="视频 API Key"]')!;
+    expect(key.value).toBe(''); expect(key.type).toBe('password');
+    expect(host.textContent).not.toContain('old-video-secret');
+
     await act(async () => {
       const url = host.querySelector<HTMLInputElement>('[aria-label="视频 API Base URL"]')!;
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(url, 'https://new-video.test/v1');
@@ -235,7 +232,7 @@ it('switches provider drafts without carrying keys and configures Zhipu direct t
   });
   const submit = async () => act(async () => { host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); });
   try {
-    await act(async () => root.render(React.createElement(CompanionSetupGuide, { api, canListen: false, navigate: vi.fn(), close: vi.fn(), saveVideoApi })));
+    await act(async () => root.render(React.createElement(CompanionVideoSettings, { api, saveVideoApi })));
     await fill('视频 API Key', 'draft-secret');
     await select('minimax');
     expect(saveVideoApi).not.toHaveBeenCalled();

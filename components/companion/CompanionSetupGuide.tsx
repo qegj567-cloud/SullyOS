@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowUpRight } from '@phosphor-icons/react';
-import type { APIConfig, CharacterProfile, CompanionVideoApiConfig, CompanionSttConfig, TtsProvider } from '../../types';
+import type { APIConfig, CharacterProfile, CompanionSttConfig, TtsProvider } from '../../types';
 import { resolveDialogueApi } from '../../utils/characterApi';
 import { isVisionApiReady } from '../../utils/visionApi';
 import { canSynthesizeSpeech, characterHasVoice } from '../../utils/ttsRouter';
@@ -8,75 +8,10 @@ import { resolveTtsProvider } from '../../utils/ttsProvider';
 import { useLocalBackHandler } from '../../hooks/useLocalBackHandler';
 import { COMPANION_SETUP_LINKS as links, COMPANION_VOICE_GUIDES, companionDialogueReady, type CompanionSetupTarget } from '../../utils/companion/setup';
 import { companionVideoReady, type CompanionImageMode } from '../../utils/companion/vision';
-import { normalizeApiBaseUrl, normalizeApiCredential, normalizeApiModel } from '../../utils/apiConfigNormalize';
-import { COMPANION_VIDEO_PROVIDERS, COMPANION_ARK_PLAN, DEFAULT_COMPANION_VIDEO, domesticMiniMaxVideoKey, isCompanionArkPlan, isOfficialCompanionMiniMax, resolveCompanionVideoApi, selectedCompanionVideoConfig, type CompanionVideoProvider } from '../../utils/companion/videoProviders';
+import { domesticMiniMaxVideoKey, resolveCompanionVideoApi } from '../../utils/companion/videoProviders';
 import { CompanionApiTest, type BeginCompanionTest } from './CompanionApiTest';
-import { testCompanionDialogue, testCompanionImage, testCompanionStt, testCompanionVideo, testCompanionVoice, testMiniMaxReferenceVideo } from '../../utils/companion/apiTests';
+import { testCompanionDialogue, testCompanionImage, testCompanionStt, testCompanionVoice } from '../../utils/companion/apiTests';
 import { FishVoiceTest } from './FishVoiceTest';
-import { companionVideoRouteLabel, testCompanionVideoDirect } from '../../utils/companion/videoConnection';
-
-function VideoApiFields({ config, domesticMiniMaxKey, save, begin }: { config?: CompanionVideoApiConfig; domesticMiniMaxKey: string; save?: (config: CompanionVideoApiConfig) => void; begin: BeginCompanionTest }) {
-  const initial = config ?? DEFAULT_COMPANION_VIDEO;
-  const [provider, setProvider] = useState<CompanionVideoProvider>(initial.provider ?? 'custom');
-  const [baseUrl, setBaseUrl] = useState(initial.baseUrl);
-  const [model, setModel] = useState(initial.model);
-  const [key, setKey] = useState('');
-  const [clearKey, setClearKey] = useState(false);
-  const [message, setMessage] = useState('');
-  const guide = COMPANION_VIDEO_PROVIDERS[provider];
-  const arkPlan = provider === 'doubao' && isCompanionArkPlan(baseUrl);
-  const sameEndpoint = normalizeApiBaseUrl(baseUrl) === config?.baseUrl && provider === (config?.provider ?? 'custom');
-  const draft: CompanionVideoApiConfig = { provider, baseUrl: normalizeApiBaseUrl(baseUrl), model: normalizeApiModel(model),
-    apiKey: normalizeApiCredential(key) || (!clearKey && sameEndpoint ? config?.apiKey ?? '' : '') };
-  const officialMiniMax = isOfficialCompanionMiniMax(draft);
-  const testConfig = resolveCompanionVideoApi(draft, domesticMiniMaxKey);
-  const useSharedKey = officialMiniMax && !draft.apiKey && !!domesticMiniMaxKey;
-  const savedMiniMaxTest = officialMiniMax && domesticMiniMaxKey ? { ...draft, apiKey: domesticMiniMaxKey } : undefined;
-  return <form className="companion-video-fields" onSubmit={event => {
-    event.preventDefault();
-    if (!save) return;
-    const url = normalizeApiBaseUrl(baseUrl);
-    try {
-      const parsed = new URL(url);
-      if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error('请填写有效的 HTTP(S) Base URL');
-      if (!draft.model) throw new Error('请填写支持视频输入的模型 ID');
-      save(draft);
-      setKey(''); setClearKey(false); setMessage('已保存。返回同行开启镜头后，才会录制并发送视频。');
-    } catch (error) { setMessage(error instanceof Error ? error.message : '保存失败'); }
-  }}>
-    <label className="companion-setup-provider">视频服务商<select aria-label="视频服务商" value={provider} onChange={event => {
-      const next = event.target.value as CompanionVideoProvider;
-      setProvider(next); setBaseUrl(COMPANION_VIDEO_PROVIDERS[next].baseUrl); setModel(COMPANION_VIDEO_PROVIDERS[next].model);
-      setKey(''); setClearKey(true); setMessage('已切换草稿，保存后用于镜头。');
-    }}>{Object.entries(COMPANION_VIDEO_PROVIDERS).map(([id, item]) => <option key={id} value={id}>{item.name}</option>)}</select></label>
-    {provider === 'doubao' && <label>豆包接入方式<select aria-label="豆包接入方式" value={arkPlan ? 'plan' : 'standard'} onChange={event => {
-      const next = event.target.value === 'plan' ? COMPANION_ARK_PLAN : COMPANION_VIDEO_PROVIDERS.doubao;
-      setBaseUrl(next.baseUrl); setModel(next.model); setKey(''); setClearKey(true);
-      setMessage('已切换地址和模型，请填写所选服务的 Key；测试通过后再保存。');
-    }}><option value="standard">普通模型 API · 单独计费</option><option value="plan">已购 Agent Plan 套餐</option></select></label>}
-    <p>{arkPlan ? '使用已购套餐的专属 Key、专属地址和模型名；在套餐控制台「使用配置」获取。完整视频输入已用 Small 套餐实测通过，无需购买视频生成模型。套餐适用范围与额度以官方规则为准。' : guide.note}</p>
-    {provider === 'doubao' && !arkPlan && <small>这里是普通 API，Agent Plan 会员不抵扣这个入口的费用。已买套餐请选择上方「已购 Agent Plan 套餐」。</small>}
-    {arkPlan && <small>视频及套餐 Key 经转发连接火山官方套餐接口：本地预览经本机，线上沿用设置中的应用主代理。转发不保存录像或 Key、不创建文件 ID，也不自动切到普通计费接口；火山的数据处理以其服务条款为准。</small>}
-    <div className="companion-setup-links"><ExternalLink href={arkPlan ? COMPANION_ARK_PLAN.keys : guide.signup}>{arkPlan ? '打开已购套餐' : `注册 / 登录${guide.name}`}</ExternalLink><ExternalLink href={arkPlan ? COMPANION_ARK_PLAN.keys : guide.keys}>{arkPlan ? '获取套餐专属 Key' : '获取视频模型 Key'}</ExternalLink><ExternalLink href={guide.docs}>视频输入文档</ExternalLink></div>
-    <label>视频 API Base URL<input aria-label="视频 API Base URL" type="url" required value={baseUrl} onChange={event => setBaseUrl(event.target.value)} placeholder="填写平台的 OpenAI 兼容地址"/></label>
-    <label>视频模型 ID<input aria-label="视频模型 ID" required value={model} onChange={event => setModel(event.target.value)} placeholder="账号已开通的视频理解模型"/></label>
-    <label>视频 API Key<input aria-label="视频 API Key" type="password" autoComplete="off" value={key} onChange={event => setKey(event.target.value)} placeholder={useSharedKey ? '已沿用「其他 API」的国内 MiniMax Key' : config?.apiKey && sameEndpoint && !clearKey ? '已保存，留空保留原 Key' : '填写此地址的 Key'}/></label>
-    {config?.apiKey && sameEndpoint && <label className="companion-image-choice"><input type="checkbox" checked={clearKey} onChange={event => setClearKey(event.target.checked)}/>保存时移除视频专用 Key</label>}
-    <small>{officialMiniMax ? (useSharedKey ? '开镜头和测试都使用「其他 API」里已保存的国内 MiniMax Key。在那里换 Key 后，镜头会跟随更新。' : '可填写视频专用 Key，或在「其他 API」保存国内 MiniMax Key 后沿用。') : '仅使用为当前视频地址填写的凭据。无 Key 的自定义代理可留空。'}</small>
-    <p role="note"><strong>视频发送路径：</strong>{companionVideoRouteLabel(draft)}</p>
-    <small>{arkPlan ? '套餐接口目前不放行浏览器携带鉴权头直连，因此实际视频仍需上方转发。下面的直连检查不会改变这条路径。普通 API 是另一套凭据与计费，请勿混用。' : '请求直接发到你填写的地址；该地址若本身是第三方中转，视频也会经过对方。跨域失败不会自动改走应用 Worker。'}</small>
-    <div className="companion-setup-actions"><button type="submit" disabled={!save}>保存视频 API</button></div>
-    <CompanionApiTest label="检查浏览器直连" successLabel="检查完成" description="向所填地址发送空请求，检查此浏览器能否读取响应。" config={testConfig ?? draft}
-      disabled={!save || !draft.baseUrl} begin={begin} run={signal => testCompanionVideoDirect(testConfig ?? draft, signal)}/>
-    <CompanionApiTest label="测试视频 API" successLabel="已收到回复" description="测试当前填写内容，不自动保存。发送 2 秒图形样片（红色圆形 → 蓝色方形），不开摄像头。" config={testConfig ?? draft}
-      disabled={!save || !testConfig || !draft.baseUrl || !draft.model} begin={begin} run={(signal, progress) => testCompanionVideo(testConfig ?? draft, signal, progress)}/>
-    {save && savedMiniMaxTest && <CompanionApiTest label="用已存 MiniMax Key 测样片" successLabel="已收到回复"
-      description="用「其他 API」已保存的国内 MiniMax Key，向 api.minimax.cn 发送 8 秒标准样片。前 4 秒是左侧红圆，后 4 秒是右侧蓝方块。"
-      config={savedMiniMaxTest} disabled={!draft.model} begin={begin} run={(signal, progress) => testMiniMaxReferenceVideo(savedMiniMaxTest, signal, progress)}/>}
-    {!save && <small>模拟页不保存真实 API，请在主应用的同行中配置。</small>}
-    {message && <p role="status">{message}</p>}
-  </form>;
-}
 
 function ExternalLink({ href, children }: { href: string; children: React.ReactNode }) {
   return <a href={href} target="_blank" rel="noopener noreferrer">{children}<ArrowUpRight size={13} aria-hidden="true"/></a>;
@@ -92,10 +27,9 @@ function CopyValue({ label, value }: { label: string; value: string }) {
   </div>;
 }
 
-export function CompanionSetupGuide({ char, api, canListen, close, navigate, saveVideoApi, imageMode = 'none', changeImageMode, beforeTest }: {
+export function CompanionSetupGuide({ char, api, canListen, close, navigate, backLabel = '返回同行', imageMode = 'none', changeImageMode, beforeTest }: {
   char?: CharacterProfile; api: APIConfig; canListen: boolean; close(): void; navigate(target: CompanionSetupTarget): void;
-  saveVideoApi?: (config: CompanionVideoApiConfig) => void;
-  beforeTest?: () => void;
+  backLabel?: string; beforeTest?: () => void;
   imageMode?: CompanionImageMode; changeImageMode?: (mode: CompanionImageMode) => void;
 }) {
   const dialog = useRef<HTMLDivElement>(null);
@@ -131,7 +65,7 @@ export function CompanionSetupGuide({ char, api, canListen, close, navigate, sav
         else if (!event.shiftKey && (document.activeElement === last || document.activeElement === dialog.current)) { event.preventDefault(); first?.focus(); }
       }
     }}>
-    <header><button type="button" className="companion-icon" aria-label="返回同行" onClick={close}><ArrowLeft size={22}/></button><div><h2>接入同行</h2><p>注册、拿 Key，再回到这里配置。</p></div></header>
+    <header><button type="button" className="companion-icon" aria-label={backLabel} onClick={close}><ArrowLeft size={22}/></button><div><h2>接入同行</h2><p>注册、拿 Key，再回到这里配置。</p></div></header>
     <div className="companion-setup-content">
       <p className="companion-setup-intro">先配对话就能文字试聊；听角色说话再配音色，开镜头需独立的视频理解 API。补充截图另行选择。</p>
       <p className="companion-setup-note">“已填写”不代表可用，请点击各项测试查看真实返回与耗时。测试会暂停当前同行，并产生少量服务商用量；只在点击后发送。修改配置会清除旧测试结果。站内跳转会结束当前同行，注册链接在新标签页打开。</p>
@@ -154,18 +88,7 @@ export function CompanionSetupGuide({ char, api, canListen, close, navigate, sav
       <section aria-label="视频理解接入"><div className="companion-setup-heading"><h3><span>02</span> 理解一段视频</h3><small>{videoReady ? '已填写' : '待配置'} · 开镜头时需要</small></div>
         <p>摄像头录制约 8 秒的完整无声视频，由独立视频模型理解动作、镜头变化和先后关系，再把文字摘要交给对话模型。下一段录制与分析并行；慢请求只保留最新待分析片段。</p>
         <p>完整视频从本机内存随 API 请求发送，具体路径见下方；豆包套餐需要转发，普通 API 直接请求所填地址。只在开启镜头或主动测试样片后发送，按平台用量计费。同行不另存录像、不创建公开视频链接，无需上传存储服务；服务商的数据保留规则以其条款为准。</p>
-        {storedVideo?.preferSharedMiniMax && saveVideoApi && <div className="companion-setup-actions">
-          <button type="button" onClick={() => {
-            const { preferSharedMiniMax, ...previous } = storedVideo;
-            saveVideoApi(previous);
-          }}>恢复之前的视频配置</button>
-        </div>}
-        <VideoApiFields key={storedVideo?.preferSharedMiniMax ? 'shared' : 'saved'} config={selectedCompanionVideoConfig(storedVideo)} domesticMiniMaxKey={domesticKey}
-          save={saveVideoApi && (draft => {
-            const keepPrevious = storedVideo?.preferSharedMiniMax && isOfficialCompanionMiniMax(draft) &&
-              !draft.apiKey && draft.model === DEFAULT_COMPANION_VIDEO.model;
-            saveVideoApi(keepPrevious ? storedVideo : draft);
-          })} begin={begin}/>
+        <div className="companion-setup-actions"><button type="button" onClick={() => navigate('video')}>去设置视频理解</button></div>
         <details open><summary>给主模型的补充截图 · 可选</summary>
           <p>视频理解完成后，才从同一段视频中提取 1–3 张相关截图。默认只发送摘要文字；对话模型是否支持图片由你确认，不根据模型名称猜测。</p>
           <label className="companion-image-choice"><input type="checkbox" checked={imageMode === 'direct'} disabled={!changeImageMode} onChange={event => changeImageMode?.(event.target.checked ? 'direct' : 'none')}/>主对话模型支持图片，向长回复附带截图</label>
@@ -190,10 +113,10 @@ export function CompanionSetupGuide({ char, api, canListen, close, navigate, sav
           {provider === 'minimax' && <ExternalLink href="https://platform.minimax.io/">MiniMax 海外平台</ExternalLink>}</div>
         <p>角色需要填写：{guide.voiceField}。平台网页会员与 API 可用额度以平台说明为准；注册完成后先试听，再回同行测试。</p>
         <div className="companion-setup-actions"><button type="button" onClick={() => navigate('voice')}>配置语音 Key / 引擎</button><button type="button" disabled={!char} onClick={() => navigate('character')}>配置当前角色音色</button></div>
-        {currentVoice !== 'fishaudio' && <CompanionApiTest label="测试并试听角色音色" description={`使用当前实际引擎 ${COMPANION_VOICE_GUIDES[currentVoice].name} 和角色音色合成固定短句；切换上方平台指引不会更换测试引擎。`} config={{ api, voiceProfile: char?.voiceProfile, charId: char?.id }}
+        {currentVoice !== 'fishaudio' && <CompanionApiTest label={'试听 ' + COMPANION_VOICE_GUIDES[currentVoice].name + ' 角色音色'} description={`使用当前实际引擎 ${COMPANION_VOICE_GUIDES[currentVoice].name} 和角色音色合成固定短句；切换上方平台指引不会更换测试引擎。`} config={{ api, voiceProfile: char?.voiceProfile, charId: char?.id }}
           disabled={!voiceReady} begin={begin} run={(signal, progress) => testCompanionVoice(api, char!, signal, progress)}/>
         }
-        <FishVoiceTest api={api} characters={char ? [char] : []} begin={begin}/>
+        {(currentVoice === 'fishaudio' || provider === 'fishaudio') && <FishVoiceTest api={api} characters={char ? [char] : []} begin={begin}/>}
       </section>
 
       <section aria-label="语音输入接入"><div className="companion-setup-heading"><h3><span>04</span> 听你说话</h3><small>{api.companionStt?.provider === 'doubao' ? api.companionStt.apiKey ? '豆包 Key 已填写' : '豆包待配置' : canListen ? '浏览器支持识别' : '此浏览器不支持'}</small></div>
@@ -203,7 +126,7 @@ export function CompanionSetupGuide({ char, api, canListen, close, navigate, sav
           disabled={speech.provider === 'doubao' ? !speech.apiKey : !canListen} begin={begin} run={(signal, progress) => testCompanionStt(speech, signal, progress)}/>
       </section>
       <p className="companion-setup-note">长回复继续沿用当前角色的上下文条数、自动记忆与记忆宫殿配置，无需为同行重复创建一套记忆 API。</p>
-      <button type="button" className="companion-setup-primary" onClick={close}>返回同行，开始测试</button>
+      <button type="button" className="companion-setup-primary" onClick={close}>{backLabel}</button>
     </div>
   </div>;
 }

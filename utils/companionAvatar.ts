@@ -85,11 +85,12 @@ export const resolveCompanionPortrait = (
   character: CharacterProfile,
   emotion: AvatarEmotion = 'neutral',
   faces: AvatarFace[] = [],
+  source = character.companionAvatar?.source,
 ): string | undefined => {
   const config = character.companionAvatar;
-  if (config?.source === 'upload') return config.imageRef || character.avatar;
-  if (config?.source !== 'date') return undefined;
-  const sprites = getCompanionDateSprites(character, config.skinSetId);
+  if (source === 'upload') return config?.imageRef || character.avatar;
+  if (source !== 'date') return undefined;
+  const sprites = getCompanionDateSprites(character, config?.skinSetId);
   const emotionKey = companionExpressionKey(emotion, faces);
   return pickSprite(sprites, [emotionKey, 'normal', 'default', ...COMPANION_DATE_EMOTION_KEYS]) || character.avatar;
 };

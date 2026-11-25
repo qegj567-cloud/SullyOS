@@ -1,3 +1,4 @@
+import { hasCustomPlacement } from './callRolePlacement';
 import { getThinkingChainSettings } from './thinkingChainPrompt';
 import { loadChatInputPreferences } from './chatInputPreferences';
 import { readSARClubState, sarRoomView } from './vrWorld/sarClub';
@@ -133,6 +134,8 @@ export function collectAppearance(
         发送键样式: theme.chatSendButtonStyle ?? 'circle',
         卡片对齐: theme.chatModuleAlign ?? 'center',
         // ── 头像与表情 ──
+        通话角色构图: hasCustomPlacement(activeChar?.companionAvatar?.callPlacements?.video)
+            || hasCustomPlacement(activeChar?.companionAvatar?.callPlacements?.companion) ? '调过' : '默认',
         头像形状: theme.chatAvatarShape ?? 'circle',
         头像尺寸: theme.chatAvatarSize ?? 'medium',
         头像显示: theme.chatAvatarVisibility ?? 'both',

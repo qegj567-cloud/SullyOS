@@ -10,7 +10,7 @@ export interface ListeningDiagnostics {
   muted: boolean;
 }
 export interface ListeningCallbacks {
-  speech(): void; partial(text: string): void; final(text: string): void; error(message: string): void;
+  speech(): void; partial(text: string): void; final(text: string): void; error(message: string, setting?: 'stt'): void;
   speechEnded?(): void;
   state?(message: string): void;
   diagnostics?(data: ListeningDiagnostics): void;

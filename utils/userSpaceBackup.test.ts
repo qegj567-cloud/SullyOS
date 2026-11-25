@@ -20,6 +20,18 @@ beforeEach(async () => {
     }
 });
 
+it.each(['full', 'media_only', 'text_only'] as const)('round-trips independent character camera compositions through a %s backup', async mode => {
+    const db = await openSpaceDB('default');
+    const callPlacements = { video: { x: 18, y: 9, scale: 2, angle: -90 }, companion: { x: -2, y: 5, scale: 0.75, angle: 19 } };
+    const char = { id: 'framed', name: '演示', memories: [], companionAvatar: { version: 1, source: 'date', callPlacements } };
+    await commitSpaceRows(db, { characters: [char] });
+    const zip = await JSZip.loadAsync(await (await exportUserSpaces(mode, 'current')).arrayBuffer());
+    await commitSpaceRows(db, { characters: [{ ...char, companionAvatar: undefined }] });
+    await importUserSpaces(zip);
+    const restored = (await readSpaceStore(db, 'characters')).find(c => c.id === char.id);
+    expect(restored.companionAvatar?.callPlacements).toEqual(callPlacements);
+});
+
 describe('saved location settings in space backups', () => {
     const config = { enabled: true, provider: 'geoapify' as const, geoapifyKey: 'fixture-key', characterIds: ['fixture-role'],
         regions: [{ id: 'home', name: '家', latitude: 31, longitude: 121, radiusKm: 2 }] };

@@ -1,0 +1,11 @@
+.call-placement-host { position: absolute; inset: 0; container-type: size; touch-action: none; }
+.call-placement-content { position: absolute; inset: 0; transform-origin: center; }
+.call-placement-settings { min-width: 0; font-size: 14px; }
+.call-placement-settings summary { display: list-item; padding: 12px 0; min-height: 44px; cursor: pointer; font-weight: 600; }
+.call-placement-settings p { margin: 0 0 8px; font-size: 12px; }
+.call-placement-settings label { min-height: 44px; display: grid; align-items: center; grid-template-columns: 4.5em minmax(0,1fr) 4em; gap: 8px; }
+.call-placement-settings input[type=range] { width: 100%; min-width: 0; height: 44px; padding: 0; accent-color: currentColor; }
+.call-placement-settings output { text-align: right; font-variant-numeric: tabular-nums; }
+.call-placement-buttons { display: flex; justify-content: space-between; gap: 12px; }
+.call-placement-buttons button { min-height: 44px; padding: 0 10px; color: inherit; text-decoration: underline; text-underline-offset: 3px; }
+.call-placement-buttons button:disabled { opacity: .45; }

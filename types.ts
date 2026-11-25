@@ -783,12 +783,21 @@ export interface SkinSet {
   sprites: Record<string, string>; // emotion -> image URL or base64
 }
 
+export interface CallRolePlacement {
+  /** Translation in percent of the camera stage, scale multiplier, clockwise degrees. */
+  x: number;
+  y: number;
+  scale: number;
+  angle: number;
+}
+
 export interface CompanionAvatarConfig {
   version: 1;
   /** Shared desktop/video visual source: model uses VRM/Live2D; upload/date use a flat portrait. */
   source: 'model' | 'upload' | 'date';
   /** Desktop composition is independent for uploaded images and date portraits. */
   portraitConfigs?: Partial<Record<'upload' | 'date', SpriteConfig>>;
+  callPlacements?: Partial<Record<'companion' | 'video', CallRolePlacement>>;
   /** Original PNG / GIF stored in blob_assets. Kept while switching sources. */
   imageRef?: string;
   fileName?: string;

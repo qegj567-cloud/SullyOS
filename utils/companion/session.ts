@@ -1,3 +1,5 @@
+import { extractVoiceTag } from '../callVoiceTranslation';
+import { extractAvatarPerformance, type AvatarPerformanceDirection } from '../avatarPerformance';
 import type { CompanionDebugStore } from './debug';
 
 /** Owns one foreground conversation. No CallApp state, persistence or timers. */
@@ -9,14 +11,19 @@ export interface CompanionLine {
   at: number;
   phase?: 'quick' | 'full';
   voiceFailed?: boolean;
+  performance?: AvatarPerformanceDirection;
+  translation?: string;
+  language?: string;
+  audio?: Blob[];
   status: 'ready' | 'speaking' | 'done' | 'interrupted';
 }
 
 export interface CompanionPorts<P> {
-  quick(history: CompanionLine[], signal: AbortSignal): Promise<string>;
+  language?(): string;
+  quick(history: CompanionLine[], signal: AbortSignal, language?: string): Promise<string>;
   prepare(history: CompanionLine[], quick: Promise<string>, signal: AbortSignal, quickEnabled?: boolean): Promise<P>;
-  full(payload: P, signal: AbortSignal, quickEnabled?: boolean): Promise<string>;
-  play(text: string, signal: AbortSignal, heard: (text: string) => void, started: (mode: 'audio' | 'text') => void): Promise<void>;
+  full(payload: P, signal: AbortSignal, quickEnabled?: boolean, language?: string): Promise<string>;
+  play(text: string, signal: AbortSignal, heard: (text: string) => void, started: (mode: 'audio' | 'text') => void, voice: { language?: string; emotion?: string; record(blob: Blob): void }): Promise<void>;
   debug?: CompanionDebugStore;
   change(lines: CompanionLine[], state: string): void;
   pendingInput?(text: string): void;
@@ -30,7 +37,10 @@ export class CompanionSession<P> {
   private pending: string[] = [];
   private pendingQuickEnabled = true;
   private recognizing = false;
-  constructor(private ports: CompanionPorts<P>) {}
+  constructor(private ports: CompanionPorts<P>, history: readonly CompanionLine[] = []) {
+    this.lines = history.map(line => ({ ...line }));
+    this.serial = history.reduce((last, line) => Math.max(last, line.id), 0);
+  }
 
   private publish(state: string) { this.ports.change(this.lines.map(line => ({ ...line })), state); }
 
@@ -102,28 +112,31 @@ export class CompanionSession<P> {
     const controller = new AbortController();
     this.controller = controller;
     const { signal } = controller;
+    const language = this.ports.language?.();
     const trace = this.ports.debug?.start(signal, text.trim(), quickEnabled);
     this.lines.push({ id: ++this.serial, role: 'user', text: text.trim(), heard: text.trim(), at: Date.now(), status: 'done' });
     // Unheard drafts never become history in a new turn.
-    const history = this.lines.filter(line => line.heard.trim()).map(line => ({ ...line, text: line.heard }));
+    const history = this.lines.filter(line => line.heard.trim()).map(({ audio, performance, translation, ...line }) => ({ ...line, text: line.heard }));
     this.publish(quickEnabled ? '正在接话' : '正在准备完整回复');
     let playing: Promise<void> | undefined;
     let quickFinished = false, fullReady = false, hadFailure = false;
     try {
-      const quick = quickEnabled ? this.ports.quick(history, signal).catch(error => {
+      const quick = quickEnabled ? this.ports.quick(history, signal, language).catch(error => {
         signal.throwIfAborted();
         hadFailure = true;
-        this.ports.error(new Error(`a · 接话生成失败：${error instanceof Error ? error.message : '请求失败'}；继续准备 a′。`));
+        this.ports.error(new Error(`接话生成失败：${error instanceof Error ? error.message : '请求失败'}，会继续准备完整回复。`));
         // No invented assistant message; recall still completes for this input.
         return '';
       }) : Promise.resolve('');
       // A rejected preparation may finish before quick speech: attach its handler now.
-      const prepared = this.ports.prepare(history, quick, signal, quickEnabled);
+      const spokenQuick = quick.then(raw => { const { display, voiceText } = extractVoiceTag(extractAvatarPerformance(raw).text); return display || voiceText; });
+      void spokenQuick.catch(() => {});
+      const prepared = this.ports.prepare(history, spokenQuick, signal, quickEnabled);
       void prepared.catch(() => {});
       if (quickEnabled) {
         const a = await quick;
         signal.throwIfAborted();
-        playing = this.deliver(a, 'quick', signal).then(failed => {
+        playing = this.deliver(a, 'quick', signal, language).then(failed => {
           hadFailure ||= failed;
           quickFinished = true;
           if (!fullReady) trace?.begin('wait_full');
@@ -134,7 +147,7 @@ export class CompanionSession<P> {
       const continuation = prepared.then(payload => {
         signal.throwIfAborted();
         this.publish(quickEnabled ? '接话中 · 正在继续想' : '正在生成完整回复');
-        return this.ports.full(payload, signal, quickEnabled);
+        return this.ports.full(payload, signal, quickEnabled, language);
       }).then(result => {
         signal.throwIfAborted(); fullReady = true; trace?.end('wait_full');
         if (quickEnabled && !quickFinished) trace?.begin('wait_audio');
@@ -149,7 +162,7 @@ export class CompanionSession<P> {
       const full = await continuation;
       signal.throwIfAborted();
       trace?.end('wait_full'); trace?.end('wait_audio');
-      hadFailure = (await this.deliver(full, 'full', signal)) || hadFailure;
+      hadFailure = (await this.deliver(full, 'full', signal, language)) || hadFailure;
       signal.throwIfAborted();
       this.publish('在你身边');
       trace?.finish(hadFailure ? 'error' : 'done');
@@ -157,7 +170,7 @@ export class CompanionSession<P> {
       if (!signal.aborted) {
         trace?.finish('error');
         this.abortReply('本轮续答失败');
-        this.ports.error(new Error(`a′ · 完整回复失败：${error instanceof Error ? error.message : '请求失败'}`));
+        this.ports.error(new Error(`回复失败：${error instanceof Error ? error.message : '请求失败'}`));
       }
     } finally {
       if (this.controller === controller) {
@@ -167,19 +180,26 @@ export class CompanionSession<P> {
     }
   }
 
-  private async deliver(text: string, phase: 'quick' | 'full', signal: AbortSignal) {
+  private async deliver(raw: string, phase: 'quick' | 'full', signal: AbortSignal, language?: string) {
+    const { text: clean, direction } = extractAvatarPerformance(raw);
+    const { display, voiceText, emotion } = extractVoiceTag(clean);
+    const text = display || voiceText;
+    const translation = language && voiceText ? voiceText : undefined;
     if (!text.trim()) return false;
     signal.throwIfAborted();
-    const line: CompanionLine = { id: ++this.serial, role: 'assistant', text, heard: '', at: Date.now(), phase, status: 'speaking' };
+    const line: CompanionLine = { id: ++this.serial, role: 'assistant', text, heard: '', at: Date.now(), phase, performance: direction, translation, language, status: 'speaking' };
     this.lines.push(line);
     this.publish(phase === 'quick' ? '正在接话' : '正在和你说');
     const trace = this.ports.debug?.get(signal);
     trace?.begin(`${phase}_tts`);
     try {
-      await this.ports.play(text, signal, heard => {
+      await this.ports.play(translation || text, signal, heard => {
         line.heard = heard;
         if (!signal.aborted) this.publish(phase === 'quick' ? '接话中 · 同时准备后续' : '正在和你说');
-      }, mode => trace?.deliveryStart(phase, mode));
+      }, mode => trace?.deliveryStart(phase, mode), {
+        language: translation ? language : undefined, emotion,
+        record: blob => { if (blob.size) line.audio = [...(line.audio || []), blob]; },
+      });
     } catch (error) {
       signal.throwIfAborted();
       // The full text is already visible in the caption/history. Record it as
@@ -187,7 +207,7 @@ export class CompanionSession<P> {
       line.voiceFailed = true; line.heard = text; line.status = 'done';
       trace?.deliveryFailed(phase);
       this.publish('语音失败，正文已展示');
-      this.ports.error(new Error(`${phase === 'quick' ? 'a · 接话' : 'a′ · 完整回复'}语音失败：${error instanceof Error ? error.message : '播放失败'}。正文已保留${phase === 'quick' ? '，a′ 继续生成' : ''}。`));
+      this.ports.error(new Error(`${phase === 'quick' ? '接话' : '回复'}语音失败：${error instanceof Error ? error.message : '播放失败'}。正文已保留${phase === 'quick' ? '，会继续准备完整回复' : ''}。`));
       return true;
     }
     signal.throwIfAborted();

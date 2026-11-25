@@ -12,7 +12,7 @@ vi.mock('../voiceStream', () => ({ splitSpeechText: (text: string) => [text], Pc
 } }));
 vi.mock('../elevenLabsStream', () => ({ streamElevenLabsSpeech: vi.fn() }));
 vi.mock('../ttsProvider', () => ({ resolveTtsProvider: vi.fn(() => 'elevenlabs') }));
-vi.mock('../ttsRouter', () => ({ synthesizeSpeech: async () => 'blob:voice', stripTtsMarkupForDisplay: (text: string) => text }));
+vi.mock('../ttsRouter', () => ({ assertTtsLanguageSupported: () => {}, synthesizeSpeechDetailed: async () => ({ url: 'blob:voice', blob: new Blob(['audio'], { type: 'audio/mpeg' }) }), stripTtsMarkupForDisplay: (text: string) => text }));
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.clearAllMocks(); pcm.currentTime = 0; });
 
 it('marks PCM as audible only after playback clock advances, not when network audio arrives', async () => {
@@ -46,6 +46,6 @@ it('marks MP3 audible on playing, not synthesis or play() resolving', async () =
   const done = new CompanionVoice().play('a', {} as any, {} as any, new AbortController().signal, () => {}, started);
   await Promise.resolve(); await Promise.resolve();
   expect(started).not.toHaveBeenCalled();
-  audio.onplaying(); audio.onplaying(); expect(started).toHaveBeenCalledOnce();
+  audio.onplaying(); audio.onplaying?.(); expect(started).toHaveBeenCalledOnce();
   audio.onended(); await done; expect(audio.onplaying).toBeNull();
 });

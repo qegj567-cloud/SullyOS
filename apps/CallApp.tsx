@@ -1,3 +1,8 @@
+import { RoleCameraSelect, useRoleCamera } from '../components/call/RoleCameraSelect';
+import { RolePlacementLayer, RolePlacementSettings } from '../components/call/RolePlacement';
+import { normalizePlacement, patchCallPlacement } from '../utils/callRolePlacement';
+import type { CallRolePlacement } from '../types';
+import { roleCameraReplyFormat, roleChibi } from '../utils/roleCamera';
 import { resolveCharacterUser } from '../utils/userPersona';
 import { resolveDialogueApi } from '../utils/characterApi';
 import { loadCharacterContextMessages } from '../utils/chatContextRange';
@@ -9,13 +14,14 @@ import { extractContent, safeFetchJson } from '../utils/safeApi';
 import { minimaxFetch } from '../utils/minimaxEndpoint';
 import { resolveMiniMaxApiKey } from '../utils/minimaxApiKey';
 import { getCachedTts, saveCachedTts } from '../utils/ttsCache';
-import { buildMiniMaxTtsCacheKey, buildMiniMaxTtsPayload, cleanTextForTts, convertHexAudioToBlob, fetchRemoteAudioBlob, getMiniMaxParamVersion, prepareMiniMaxSpeechText, VALID_EMOTIONS, stripEmotionTags, VOICE_ACTING_GUIDE } from '../utils/minimaxTts';
-import { normalizeVoiceTags } from '../utils/sanitize';
+import { buildMiniMaxTtsCacheKey, buildMiniMaxTtsPayload, cleanTextForTts, convertHexAudioToBlob, fetchRemoteAudioBlob, getMiniMaxParamVersion, prepareMiniMaxSpeechText, stripEmotionTags, VOICE_ACTING_GUIDE } from '../utils/minimaxTts';
+import { callVoiceTranslationPrompt, extractVoiceTag } from '../utils/callVoiceTranslation';
+import { VIDEO_CONVERSATION_GUIDE } from '../utils/videoConversationPrompt';
 import { FISH_VOICE_ACTING_GUIDE, stripFishMarkupForDisplay } from '../utils/fishAudioTts';
 import { resolveTtsProvider, getElevenLabsModel, getTtsProvider, getVoicePromptOverride } from '../utils/ttsProvider';
 import { getElevenLabsVoiceActingGuide, stripElevenLabsMarkupForDisplay } from '../utils/elevenLabsTts';
 import { canSynthesizeSpeech, stripTtsMarkupForDisplay, synthesizeSpeechDetailed as synthesizeSpeechRoutedDetailed } from '../utils/ttsRouter';
-import { CANTONESE_VOICE_SUPPORT_NOTE, VOICE_LANGUAGE_OPTIONS, voiceLanguageAnalyticsValue, voiceLanguagePromptLabel } from '../utils/voiceLanguage';
+import { CANTONESE_VOICE_SUPPORT_NOTE, VOICE_LANGUAGE_OPTIONS, voiceLanguageAnalyticsValue } from '../utils/voiceLanguage';
 import {
   startStt,
   isSttSupported,
@@ -127,6 +133,7 @@ import {
 import VoiceFavoriteActionSheet from '../components/voice/VoiceFavoriteActionSheet';
 import StreamingVoiceBar from '../components/voice/StreamingVoiceBar';
 import { useStreamingVoice } from '../hooks/useStreamingVoice';
+import { useLocalBackHandler } from '../hooks/useLocalBackHandler';
 import { IncrementalCallSpeech } from '../utils/incrementalCallSpeech';
 import { streamElevenLabsSpeech, type StreamedVoice } from '../utils/elevenLabsStream';
 import { getVoiceFavorite, removeVoiceFavorite, saveVoiceFavorite } from '../utils/voiceFavorites';
@@ -301,19 +308,6 @@ const CALL_SPARKLES = [
   { top: '48%', left: '54%', s: 2 }, { top: '12%', left: '58%', s: 2 },
   { top: '78%', left: '64%', s: 3 }, { top: '64%', left: '38%', s: 2 },
 ];
-/** 从 AI 回复中提取 <语音 emotion="…">…</语音> 标签内容 + emotion（兼容繁体 語音、无属性）
- *  先跑 normalizeVoiceTags 自愈（未闭合/孤儿闭合/全角符号/属性写歪）——通话是 LLM 原文直达，
- *  没有落库 sanitize 兜底，掉格式的标签会直接被念出来。 */
-const extractVoiceTag = (text: string): { display: string; speech: string; voiceText: string; emotion?: string } => {
-  text = normalizeVoiceTags(text);
-  const match = text.match(/<[语語]音(?:[^>]*?emotion\s*=\s*["']?([a-zA-Z]+)["']?)?[^>]*>([\s\S]*?)<\/\s*[语語]音\s*>/);
-  if (!match) return { display: text, speech: '', voiceText: '', emotion: undefined };
-  const rawEmotion = (match[1] || '').trim().toLowerCase();
-  const emotion = VALID_EMOTIONS.has(rawEmotion) ? rawEmotion : undefined;
-  const voiceText = match[2].trim();
-  const display = text.replace(/<[语語]音[^>]*>[\s\S]*?<\/\s*[语語]音\s*>/g, '').trim();
-  return { display, speech: voiceText, voiceText, emotion };
-};
 const splitTextForTts = (rawText: string, maxChunkLen = 120): string[] => {
   const normalized = rawText.replace(/\s+/g, ' ').trim();
   if (!normalized) return [];
@@ -407,7 +401,7 @@ const renderAssistantLine = (text: string, accent = '#8b5cf6') => {
   });
 };
 // 语音/视频通话共用同一个 prompt 构建器：注入的上下文（核心设定、记忆、时间、
-// 历史）完全一致，mode 只切换开头的场景描写——视频里对方能看见你。
+// 历史）走相同路径，视频与电话分别使用符合当前媒介的交谈指引。
 const buildCallPrompt = (
   userName: string,
   charName?: string,
@@ -424,19 +418,18 @@ const buildCallPrompt = (
     `【当前时间】${time.dateStr} ${time.dayOfWeek} ${time.timeOfDay} ${time.timeStr}`,
     specialDates.length ? `【今日特殊】${specialDates.join('、')}` : '',
   ].filter(Boolean).join('\n');
-  const sceneOpening = mode === 'video'
+  const conversation = mode === 'video'
     ? `你是${resolvedCharName}，视频通话的另一头是${userName}。
-这不是文字，这是一通真正的视频通话。你能听到对方的呼吸、语气、停顿，也能被对方看见——你的表情和小动作都在屏幕上。
+由对方的话和本轮实际提供的画面决定聊什么。单张快照只能说明那一瞬间；只有表情线索或文字时，就顺着对方说的话聊。对方提到声音可以接着聊，别凭图片猜背景音、停留时长或镜头外发生的事。只有对方确实在外面时才聊街景。
 
-### 你正举着手机，镜头对着自己`
+${VIDEO_CONVERSATION_GUIDE}`
     : `你是${resolvedCharName}，电话那头是${userName}。
 这不是文字，这是一通真正的电话。你能听到对方的呼吸、语气、停顿。你也有自己的呼吸。
 
-### 你正拿着手机贴在耳边`;
-  const callPrompt = `${sceneOpening}
+### 你正拿着手机贴在耳边
 
 你这会儿在做什么？在哪儿？身边什么声音？
-接${mode === 'video' ? '视频' : '电话'}的时候自然地带出来就好——不用刻意交代，但也别假装你只是一个回答问题的接口。
+接电话的时候自然地带出来就好——不用刻意交代，但也别假装你只是一个回答问题的接口。
 你可能正趴在床上、正在走路、正在吃东西、正盯着窗外发呆。这些都会影响你说话的样子。
 
 ### 电话里的人不会像写作文一样说话
@@ -476,7 +469,9 @@ const buildCallPrompt = (
 一般来说 2-4 句就够了，但要有内容——不是”嗯在好”这种空气。
 有时候一句话就够了，前提是那句话足够有分量。
 聊得来的时候可以说多一点，没必要每次都控制字数。
-关键是：**让对方觉得你真的在听、真的在聊，而不是在执行对话任务。**
+关键是：**让对方觉得你真的在听、真的在聊，而不是在执行对话任务。**`;
+
+  const callPrompt = `${conversation}
 
 ### 让声音有情绪（重要——直接写进文本，不要靠旁白）
 
@@ -492,27 +487,7 @@ ${currentVoiceActingGuide()}
 ### 底线
 
 只输出你在电话里会**说出口**的话。不要输出 [通话]、[聊天]、[约会] 这类系统标记，不要输出时间戳。`;
-  const langLabel = voiceLang ? voiceLanguagePromptLabel(voiceLang) : '';
-  const voiceLangPrompt = voiceLang ? `### 语音语种翻译
-
-用户开启了语音语种功能，选择的语种是：${langLabel}（${voiceLang}）。
-
-你的回复格式必须是：
-1. 先用中文自然地写出你要说的话（给对方看的文字，中文舞台指示写在这里没关系）
-2. 然后换行，在 <语音> 标签里写出这句话的${langLabel}翻译——这才是真正会被读出来的部分。可选地用 emotion 属性标整句情绪：\`<语音 emotion="happy">…</语音>\`（情绪只能取 happy/sad/angry/fearful/disgusted/surprised/calm/fluent）
-
-示例：
-啊，我知道了
-<语音 emotion="happy">Okay, I get it now!</语音>
-
-你说真的？那也太离谱了吧。
-<语音 emotion="surprised">Wait... are you serious? That's insane.</语音>
-
-要求：
-- <语音> 里的翻译要自然口语化，不要机翻味，要符合你的角色性格
-- <语音> 里只写会被朗读的文字；演出标记继续遵守上方「当前引擎规则」，不要混用其它引擎语法，也不要写中文舞台旁白
-- 每条消息只有一个 <语音> 标签，emotion 属性可选；情绪不强就别加
-- 中文部分和 <语音> 部分表达的意思要一致` : '';
+  const voiceLangPrompt = callVoiceTranslationPrompt(voiceLang);
   return [coreContext, timeContext, callPrompt, voiceLangPrompt].filter(Boolean).join('\n\n');
 };
 const CallApp: React.FC = () => {
@@ -879,13 +854,25 @@ const CallApp: React.FC = () => {
   const vrmExpressionsRef = useRef<string[]>([]);
   const selectedChar = useMemo(() => characters.find(c => c.id === selectedCharId) || null, [characters, selectedCharId]);
   const userProfile = useMemo(() => selectedChar ? resolveCharacterUser(baseUserProfile, selectedChar) : baseUserProfile, [baseUserProfile, selectedChar]);
+  const roleCamera = useRoleCamera(selectedChar);
+  const placement = {
+    value: normalizePlacement(selectedChar?.companionAvatar?.callPlacements?.video),
+    save: (value: CallRolePlacement) => {
+      if (selectedChar) updateCharacter(selectedChar.id, previous => patchCallPlacement(previous, 'video', value));
+    },
+  };
+  const [placementOpen, setPlacementOpen] = useState(false);
+  const placementButton = useRef<HTMLButtonElement>(null);
+  const closePlacement = () => { setPlacementOpen(false); placementButton.current?.focus(); };
+  useLocalBackHandler(() => { closePlacement(); return true; }, 25, placementOpen && viewMode === 'in-call');
+  useEffect(() => { setPlacementOpen(false); }, [viewMode, selectedCharId]);
   const selectedVisualSource = companionAvatarSource(selectedChar);
   const selectedDateOutfits = useMemo(() => listCompanionDateOutfits(selectedChar), [selectedChar]);
   const selectedDateOutfitId = normalizeCompanionSkinSetId(selectedChar?.companionAvatar?.skinSetId);
   const selectedDateOutfit = selectedDateOutfits.find(outfit => outfit.id === selectedDateOutfitId) || selectedDateOutfits[0];
-  const staticVideoAvatarActive = selectedVisualSource === 'upload' || selectedVisualSource === 'date';
-  const staticVideoPortrait = selectedChar && staticVideoAvatarActive
-    ? resolveCompanionPortrait(selectedChar, avatarPerformance.emotion, avatarPerformance.faces || [])
+  const staticVideoSource = roleCamera.view === 'upload' || roleCamera.view === 'date' ? roleCamera.view : undefined;
+  const staticVideoPortrait = selectedChar && staticVideoSource
+    ? resolveCompanionPortrait(selectedChar, avatarPerformance.emotion, avatarPerformance.faces || [], staticVideoSource)
     : undefined;
   const staticVideoExpressionKey = companionExpressionKey(avatarPerformance.emotion, avatarPerformance.faces || []);
   const hasSelectedVideoVisual = selectedVisualSource === 'model'
@@ -1499,7 +1486,7 @@ const CallApp: React.FC = () => {
       let guideCompleted = false;
       try { guideCompleted = localStorage.getItem(CALL_SETUP_GUIDE_KEY) === 'complete'; } catch { /* private WebView */ }
       if (!guideCompleted) {
-        openCallSetupGuide(hasSelectedVideoVisual ? 'camera' : 'model');
+        openCallSetupGuide(roleCamera.view !== 'avatar' ? 'camera' : 'model');
         return;
       }
     }
@@ -1581,7 +1568,7 @@ const CallApp: React.FC = () => {
     kind?: 'motion' | 'expression' | 'params';
     tags?: string[];
   }> => (
-    selectedVisualSource !== 'model'
+    roleCamera.view !== 'model'
       ? []
       : selectedChar?.videoAvatar?.format === 'live2d'
       ? selectedChar.videoAvatar.actions
@@ -1685,9 +1672,9 @@ const CallApp: React.FC = () => {
   // 返回前已经完成，因此首次导演请求也不需要再串行多等一整轮。
   useEffect(() => {
     if (viewMode !== 'in-call' || callMode !== 'video') return;
-    if (!selectedChar || selectedChar.videoCallPerformanceQuality !== 'high') return;
+    if (!selectedChar || roleCamera.view !== 'model' || selectedChar.videoCallPerformanceQuality !== 'high') return;
     void ensureVideoPerformancePersona(selectedChar);
-  }, [viewMode, callMode, selectedChar?.id, selectedChar?.videoCallPerformanceQuality]);
+  }, [viewMode, callMode, selectedChar?.id, selectedChar?.videoCallPerformanceQuality, roleCamera.view]);
 
   const requestHighQualityPerformance = async (
     replyText: string,
@@ -1783,7 +1770,7 @@ ${sentencePlan}`;
       // 模型专属动作白名单：Live2D 用用户授权的 actions；VRM 用加载时枚举出的
       // 自定义表情（星星眼/黑脸这类，预设之外的全部可用）。
       const allowedModelActions = getAllowedModelActions();
-      const highQualityPerformance = callMode === 'video'
+      const highQualityPerformance = callMode === 'video' && roleCamera.view === 'model'
         && selectedChar?.videoCallPerformanceQuality === 'high';
       const userCameraEmotionContext = includeUserCameraContext
         && callMode === 'video'
@@ -1808,7 +1795,8 @@ ${sentencePlan}`;
         ?? buildCallPrompt(userName, undefined, undefined, voiceLang || undefined, callMode);
       const baseSystemPrompt = [
         baseCallPrompt,
-        callMode === 'video' && !highQualityPerformance ? buildAvatarPerformancePrompt(allowedModelActions) : '',
+        callMode === 'video' && !highQualityPerformance
+          ? (roleCamera.view === 'model' ? buildAvatarPerformancePrompt(allowedModelActions) : roleCameraReplyFormat(roleCamera.view, selectedChar)) : '',
         userCameraEmotionContext,
         thinkingPrompt,
       ].filter(Boolean).join('\n\n');
@@ -1850,7 +1838,7 @@ ${sentencePlan}`;
             const partial = parseCallAssistantMessage({ content: fullText }, false);
             const direction = partial.performanceCues?.at(-1)?.direction || partial.performance;
             const signature = direction ? JSON.stringify(direction) : '';
-            if (callMode === 'video' && direction && signature !== lastLiveDirection) {
+            if (callMode === 'video' && (roleCamera.view === 'model' || roleCamera.view === 'date') && direction && signature !== lastLiveDirection) {
               lastLiveDirection = signature;
               applyPerformanceDirection(direction);
             }
@@ -2234,7 +2222,7 @@ ${sentencePlan}`;
         setCallState('connecting');
         const greetingReply = prepareCallAssistantReply(
           await requestAssistantReply('（电话刚接通。你先开口——像平时接到这个人电话一样自然地说第一句话。不要解释规则，就是最自然的那个“喂”“诶”或者符合你性格的开场。）'),
-          callMode === 'video' && selectedChar?.videoCallPerformanceQuality !== 'high',
+          callMode === 'video' && roleCamera.view === 'model' && selectedChar?.videoCallPerformanceQuality !== 'high',
         );
         const greetingText = greetingReply.text;
         setAvatarEmotion(greetingReply.performance.emotion);
@@ -2516,7 +2504,7 @@ ${sentencePlan}`;
       setCallState('thinking');
       const reply = prepareCallAssistantReply(
         await requestAssistantReply(input, userDbId, pendingTouchesForTurn, true, userCameraSnapshotForTurn),
-        callMode === 'video' && selectedChar?.videoCallPerformanceQuality !== 'high',
+        callMode === 'video' && roleCamera.view === 'model' && selectedChar?.videoCallPerformanceQuality !== 'high',
       );
       if (pendingTouchesForTurn.length) {
         const remainingTouches = consumePendingAvatarTouches(
@@ -2672,7 +2660,7 @@ ${sentencePlan}`;
       trackEvent('重掷角色的通话台词');
       const rerollReply = prepareCallAssistantReply(
         await requestAssistantReply(prevUser.text, bubble.dbId),
-        callMode === 'video' && selectedChar?.videoCallPerformanceQuality !== 'high',
+        callMode === 'video' && roleCamera.view === 'model' && selectedChar?.videoCallPerformanceQuality !== 'high',
       );
       const rerolled = rerollReply.text;
       setAvatarEmotion(rerollReply.performance.emotion);
@@ -2746,7 +2734,7 @@ ${sentencePlan}`;
         await requestAssistantReply(
           '（电话里安静了好一会儿，对方一直没说话。你不是客服，不用干等——像真实通话里那样自然地开口：可以随口说说你这边正在做的事、把刚才的话题往下接一点，或者问问ta是不是在忙。一两句就好，别重复上一句。）',
         ),
-        callMode === 'video' && selectedChar?.videoCallPerformanceQuality !== 'high',
+        callMode === 'video' && roleCamera.view === 'model' && selectedChar?.videoCallPerformanceQuality !== 'high',
       );
       const nudgeTs = Date.now();
       const nudgeBubble: CallBubble = {
@@ -3075,6 +3063,11 @@ ${sentencePlan}`;
                   </span>
                   <span className="text-xs text-white/30">{hasSelectedVideoVisual ? '设置' : '引导'}</span>
                 </button>
+                <div className="flex items-center justify-between gap-2 px-2 text-xs text-white/80 [color-scheme:dark]">
+                  <button type="button" aria-pressed={roleCamera.enabled} onClick={roleCamera.toggle}>角色镜头 · {roleCamera.enabled ? '已开启' : '已关闭'}</button>
+                  <RoleCameraSelect char={selectedChar} camera={roleCamera}/>
+                </div>
+                <RolePlacementSettings key={selectedChar?.id} control={placement}/>
                 <details className="group rounded-2xl border border-white/10 bg-black/15 p-2" data-testid="video-call-advanced-settings">
                   <summary className="flex cursor-pointer list-none items-center justify-between rounded-xl px-2 py-1.5 text-[10px] text-white/42">
                     <span>模型画质、导入与动作排练</span>
@@ -3215,6 +3208,7 @@ ${sentencePlan}`;
         {showLive2DSettings && selectedChar?.videoAvatar?.format === 'live2d' && (
           <div className="sully-stage-dark" style={{ display: 'contents' }}>
             <Live2DActionSettings
+              rolePlacement={placement}
               config={selectedChar.videoAvatar}
               characterName={selectedChar.name}
               accentColor={accentColor}
@@ -3501,14 +3495,21 @@ ${sentencePlan}`;
           <span className="pointer-events-none absolute bottom-3 left-3 z-20 text-[8px]" style={{ color: accentColor }} aria-hidden>✦</span>
           <span className="pointer-events-none absolute bottom-3 right-3 z-20 text-[7px] text-white/55" aria-hidden>✦</span>
           {/* The action editor owns its own WebGL preview; suspend this one. */}
-          <VRMVideoCallStage
+          {roleCamera.view === 'off' || roleCamera.view === 'chibi' ? (
+            <div className="relative flex h-full min-h-28 items-center justify-center overflow-hidden rounded-3xl bg-[#201e26] text-sm text-white/60">
+              {roleCamera.view === 'chibi' ? <RolePlacementLayer key={selectedChar?.id} control={placement}>
+                <TokenImg value={roleChibi(selectedChar)!} alt="角色 Chibi" className="h-full max-h-full w-full object-contain" />
+              </RolePlacementLayer> : '角色镜头已关闭'}
+            </div>
+          ) : <VRMVideoCallStage
             characterName={selectedChar?.name || '未选择'}
             fallbackAvatar={selectedChar?.avatar}
-            model={!showLive2DSettings && selectedVisualSource === 'model' ? selectedChar?.videoAvatar : undefined}
-            staticAvatarSource={staticVideoAvatarActive ? selectedVisualSource : undefined}
+            model={!showLive2DSettings && roleCamera.view === 'model' ? selectedChar?.videoAvatar : undefined}
+            staticAvatarSource={staticVideoSource}
             staticPortraitValue={staticVideoPortrait}
             staticExpressionKey={staticVideoExpressionKey}
             staticSpriteConfig={selectedChar?.spriteConfig}
+            rolePlacement={placement}
             motionState={displayCallState}
             emotion={avatarEmotion}
             audioFeed={getAudioFeed()}
@@ -3525,7 +3526,19 @@ ${sentencePlan}`;
             onExpressionsDiscovered={names => { vrmExpressionsRef.current = names; }}
             onAvatarTouch={handleAvatarTouch}
             maxFps={30}
-          />
+          />}
+          <div className="absolute left-4 bottom-4 z-30 flex items-center gap-1 rounded-xl bg-black/75 p-1 text-xs text-white [color-scheme:dark]">
+            <button type="button" onClick={roleCamera.toggle} aria-label={roleCamera.enabled ? '关闭角色镜头' : '开启角色镜头'} aria-pressed={roleCamera.enabled} className="p-2">
+              {roleCamera.enabled ? <VideoCamera size={18}/> : <VideoCameraSlash size={18}/>}
+            </button>
+            <RoleCameraSelect char={selectedChar} camera={roleCamera}/>
+            <button type="button" ref={placementButton} aria-expanded={placementOpen} className="min-h-11 px-2" onClick={() => setPlacementOpen(open => !open)}>构图</button>
+          </div>
+          {placementOpen && <div role="region" aria-label="角色构图" onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); closePlacement(); } }}
+            className="absolute inset-x-3 bottom-16 z-40 max-h-[80%] overflow-auto rounded-xl bg-[#17191b] px-4 py-2 text-white shadow-xl">
+            <RolePlacementSettings key={selectedChar?.id} control={placement} expanded/>
+            <button type="button" className="min-h-11 px-2" onClick={closePlacement}>返回通话</button>
+          </div>}
           <AvatarTouchFeedback
             characterName={selectedChar?.name || '对方'}
             accentColor={accentColor}
@@ -3985,6 +3998,7 @@ ${sentencePlan}`;
       {showLive2DSettings && selectedChar?.videoAvatar?.format === 'live2d' && (
         <div className="sully-stage-dark" style={{ display: 'contents' }}>
           <Live2DActionSettings
+            rolePlacement={placement}
             config={selectedChar.videoAvatar}
             characterName={selectedChar.name}
             accentColor={accentColor}

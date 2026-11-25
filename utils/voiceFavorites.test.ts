@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { DB } from './db';
+import { externalizeVoiceMessageBlobs, restoreVoiceMessageBlobs } from './voiceMessageBackup';
 import {
     VOICE_FAVORITES_INDEX_ASSET_ID,
     getVoiceFavoriteBlob,
@@ -39,6 +40,22 @@ describe('voice favorites repository', () => {
         expect(items.map(item => item.source)).toEqual(['date', 'chat']);
         expect(items[0]).not.toHaveProperty('blob');
         expect((await getVoiceFavoriteBlob(items[0].id))?.type).toBe('audio/ogg');
+    });
+
+    it('restores a bilingual companion favorite and its original audio from a serialized backup', async () => {
+        const saved = await saveVoiceFavorite({ ...base, source: 'companion', sourceKey: 'c:100:2', language: 'en',
+            translation: 'Hello!', blob: new Blob(['original take'], { type: 'audio/wav' }) });
+        const rows = await Promise.all([VOICE_FAVORITES_INDEX_ASSET_ID, voiceFavoriteAudioAssetId(saved.id)]
+            .map(async id => ({ id, data: await DB.getAssetRaw(id) })));
+        const files = new Map<string, Uint8Array>();
+        expect(await externalizeVoiceMessageBlobs(rows, (path, bytes) => { files.set(path, bytes); })).toBe(1);
+        const imported = JSON.parse(JSON.stringify(rows));
+        await removeVoiceFavorite('companion', 'c:100:2');
+        expect(await listVoiceFavorites()).toEqual([]);
+        expect(await restoreVoiceMessageBlobs(imported, async path => files.get(path) || null)).toBe(1);
+        for (const row of imported) await DB.saveAssetRaw(row.id, row.data);
+        expect(await listVoiceFavorites()).toEqual([expect.objectContaining({ source: 'companion', language: 'en', translation: 'Hello!' })]);
+        expect(await (await getVoiceFavoriteBlob(saved.id))!.text()).toBe('original take');
     });
 
     it('upserts one source item and removes its separate audio asset', async () => {

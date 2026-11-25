@@ -1,3 +1,4 @@
+import { roleCameraReplyFormat, type RoleCameraView } from '../roleCamera';
 import { afterEach, expect, it, vi } from 'vitest';
 import { DB } from '../db';
 import * as palace from '../memoryPalace/pipeline';
@@ -15,7 +16,7 @@ const char = (id: string): any => ({ id, name: 'C', systemPrompt: '完整人设�
   contextRangeMode: 'manual', memoryPalaceEnabled: true, memoryPalaceInjection: '过期召回',
   dialogueApi: { baseUrl: 'https://character.example/v1', apiKey: 'character-key', model: 'same-model' },
   mountedWorldbooks: [{ id: 'quick-key', title: '关键设定', content: '世界书深度标记', constant: false, key: ['短答关键词'], position: 4, depth: 1, role: 0 }] });
-const context = (character: any): any => ({ char: character, user: { name: 'U' }, api: { baseUrl: 'https://global.example', apiKey: 'global-key', model: 'wrong-model' }, style: '轻量语气', scene: () => '一件蓝外套' });
+const context = (character: any): any => ({ char: character, user: { name: 'U' }, api: { baseUrl: 'https://global.example', apiKey: 'global-key', model: 'wrong-model' }, style: '轻量语气', observation: () => undefined });
 
 it.each(['none', 'direct', 'helper'] as const)('only attaches matching clip stills to the full request with explicit direct opt-in: %s', async imageMode => {
   vi.spyOn(palace, 'injectMemoryPalace').mockResolvedValue({} as any);
@@ -36,7 +37,7 @@ it.each(['none', 'direct', 'helper'] as const)('only attaches matching clip stil
   const messages = JSON.parse(second).messages;
   // Gemini drops system messages from contents: it must still end in a user task.
   expect(messages.filter((message: any) => message.role !== 'system').at(-1)).toMatchObject({ role: 'user' });
-  expect(messages.at(-1).content).toContain('非用户新增发言');
+  expect(JSON.stringify(messages.at(-1).content)).toContain('非用户新增发言');
   expect(JSON.parse(first).messages.at(-1)).toEqual({ role: 'user', content: 'A' });
 });
 
@@ -57,6 +58,38 @@ it('sends one direct full-context answer without waiting for a or adding an assi
   expect(JSON.stringify(body.messages)).toContain('完整人设标记');
   expect(JSON.stringify(body.messages)).toContain('本轮召回');
   expect(debug.getSnapshot()[0].stages.wait_a).toBeUndefined();
+});
+
+it.each([true, false])('samples the newest available clip at dispatch, including after context preparation (a enabled: %s)', async quickEnabled => {
+  vi.spyOn(palace, 'injectMemoryPalace').mockResolvedValue({} as any);
+  const calls = vi.spyOn(api, 'safeFetchJson').mockResolvedValue({ choices: [{ message: { content: '我们接着看' } }] });
+  const clip = (text: string) => ({ text, from: Date.now() - 8000, to: Date.now(), frames: [{ image: 'data:image/jpeg;base64,' + text, at: Date.now() }] });
+  let latest = clip('RED_BAG');
+  const observation = vi.fn(() => latest);
+  const requests = createCompanionRequests({ ...context(char('sample-at-send')), imageMode: 'direct', observation });
+  const signal = new AbortController().signal;
+  const a = quickEnabled ? requests.quick([line('看这边')], signal) : Promise.resolve('');
+  const payload = await requests.prepare([line('看这边')], a, signal, quickEnabled);
+  expect(observation).toHaveBeenCalledTimes(Number(quickEnabled));
+  if (quickEnabled) {
+    expect(calls.mock.calls[0][1].body).toContain('RED_BAG');
+    expect(calls.mock.calls[0][1].body).not.toContain('image_url');
+    expect(calls.mock.calls[0][1].body).not.toContain('100～180');
+  }
+  latest = clip('BLUE_SHOES');
+  const pending = requests.full(payload, signal, quickEnabled);
+  latest = clip('GREEN_SCARF');
+  await pending;
+  const body = calls.mock.calls.at(-1)![1].body as string;
+  expect(body.match(/100～180/g)).toHaveLength(1);
+  expect(body.match(/视频通话与真实同行准则/g)).toHaveLength(1);
+  expect(body).toContain('秒视频：BLUE_SHOES');
+  expect(body).toContain('data:image/jpeg;base64,BLUE_SHOES');
+  expect(body).not.toMatch(/RED_BAG|GREEN_SCARF/);
+  expect(observation).toHaveBeenCalledTimes(Number(quickEnabled) + 1);
+  expect(calls).toHaveBeenCalledTimes(Number(quickEnabled) + 1);
+  await requests.quick([line('再看看')], signal);
+  expect(calls.mock.calls.at(-1)![1].body).toContain('GREEN_SCARF');
 });
 
 it('does not invent an assistant prefill when quick generation has failed', async () => {
@@ -204,4 +237,32 @@ it('records an actual 524 without retrying generation or claiming the connection
   expect(debug.getSnapshot()[0].requests.full?.firstDelta).toBeUndefined();
   expect(debug.getSnapshot()[0].stages.full_request?.status).toBe('error');
   expect(transport).toHaveBeenCalledOnce();
+});
+
+it('uses the active role camera format for each outgoing request when switching modes mid-turn', async () => {
+  const character = char('camera-format');
+  character.sprites = { normal: 'normal', happy: 'happy', chibi: 'chibi' };
+  let view: RoleCameraView = 'date';
+  const calls = vi.spyOn(api, 'safeFetchJson').mockResolvedValue({ choices: [{ message: { content: '嗯' } }] });
+  vi.spyOn(palace, 'injectMemoryPalace').mockResolvedValue({} as any);
+  const requests = createCompanionRequests({ ...context(character), replyFormat: () => roleCameraReplyFormat(view, character) });
+  const signal = new AbortController().signal;
+  const quick = requests.quick([line('试试')], signal, 'en');
+  const payload = await requests.prepare([line('试试')], quick, signal);
+  view = 'chibi';
+  await requests.full(payload, signal, true, 'en');
+  const [first, second] = calls.mock.calls.map(call => JSON.parse(call[1].body as string).messages);
+  expect(first[0].content).toContain('English');
+  expect(first[0].content).toContain('<语音>');
+  expect(second.at(-1).content).toContain('语音语种翻译');
+  expect(first[0].content).toContain('emotion=happy');
+  expect(first[0].content).not.toContain('emotion=angry');
+  expect(second.at(-1).content).toContain('固定 Chibi');
+  expect(second.at(-1).content).not.toContain('[[AVATAR');
+  expect(roleCameraReplyFormat('off', character)).not.toContain('[[AVATAR');
+  character.videoAvatar = { format: 'live2d', actions: [
+    { id: 'wave', permission: 'ai' }, { id: 'outfit', permission: 'ai', wardrobe: true }, { id: 'manual', permission: 'manual' },
+  ] };
+  const dynamic = roleCameraReplyFormat('model', character);
+  expect(dynamic).toContain('wave'); expect(dynamic).not.toMatch(/outfit|manual/);
 });

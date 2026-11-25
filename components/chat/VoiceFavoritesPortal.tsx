@@ -49,6 +49,7 @@ const voiceFilters: Array<{ value: VoiceSourceFilter; label: string }> = [
     { value: 'all', label: '全部' },
     { value: 'chat', label: '聊天' },
     { value: 'call', label: '通话' },
+    { value: 'companion', label: '同行' },
     { value: 'date', label: '见面' },
 ];
 

@@ -6,6 +6,7 @@ import {
   type AvatarTouchHit,
 } from '../../utils/avatarTouch';
 import { useBlobRefUrl } from '../../utils/blobRef';
+import { RolePlacementTouchLock } from '../call/RolePlacement';
 
 interface StaticCompanionPortraitProps {
   value?: string;
@@ -29,6 +30,7 @@ const StaticCompanionPortrait: React.FC<StaticCompanionPortraitProps> = ({
   testId = 'companion-static-portrait-stage',
 }) => {
   const imageUrl = useBlobRefUrl(value);
+  const callTouchLock = React.useContext(RolePlacementTouchLock);
   const pointerRef = useRef<{
     id: number;
     x: number;
@@ -81,13 +83,17 @@ const StaticCompanionPortrait: React.FC<StaticCompanionPortraitProps> = ({
         onPointerUp={event => {
           const pointer = pointerRef.current;
           pointerRef.current = null;
-          if (!onAvatarTouch || !pointer || pointer.id !== event.pointerId) return;
+          if (!onAvatarTouch || !pointer || pointer.id !== event.pointerId || (event.pointerType === 'touch' && callTouchLock?.current)) return;
           const durationMs = Date.now() - pointer.startedAt;
           if (!isAvatarTouchGesture(pointer.maxDistance, durationMs, true)) return;
           const rect = event.currentTarget.getBoundingClientRect();
-          const stageRect = event.currentTarget.parentElement?.getBoundingClientRect() || rect;
-          const portraitX = Math.max(0, Math.min(1, (event.clientX - rect.left) / Math.max(1, rect.width)));
-          const portraitY = Math.max(0, Math.min(1, (event.clientY - rect.top) / Math.max(1, rect.height)));
+          const stageRect = (callTouchLock ? event.currentTarget.closest('.call-placement-host') : event.currentTarget.parentElement)?.getBoundingClientRect() || rect;
+          const portraitX = Math.max(0, Math.min(1, callTouchLock
+            ? event.nativeEvent.offsetX / Math.max(1, event.currentTarget.clientWidth)
+            : (event.clientX - rect.left) / Math.max(1, rect.width)));
+          const portraitY = Math.max(0, Math.min(1, callTouchLock
+            ? event.nativeEvent.offsetY / Math.max(1, event.currentTarget.clientHeight)
+            : (event.clientY - rect.top) / Math.max(1, rect.height)));
           const normalizedX = Math.max(0, Math.min(1, (event.clientX - stageRect.left) / Math.max(1, stageRect.width)));
           const normalizedY = Math.max(0, Math.min(1, (event.clientY - stageRect.top) / Math.max(1, stageRect.height)));
           const target = resolveAvatarTouchTarget([], portraitY, portraitX);

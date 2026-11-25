@@ -1,7 +1,8 @@
 import type { APIConfig, CharacterProfile } from '../../types';
-import { PcmVoicePlayer, type VoiceCue, splitSpeechText } from '../voiceStream';
+import { PcmVoicePlayer, pcmToWav, type VoiceCue, splitSpeechText } from '../voiceStream';
 import { streamElevenLabsSpeech } from '../elevenLabsStream';
-import { synthesizeSpeech, stripTtsMarkupForDisplay } from '../ttsRouter';
+import { synthesizeSpeechDetailed, assertTtsLanguageSupported, stripTtsMarkupForDisplay } from '../ttsRouter';
+import { fetchBlobForShare } from '../shareExport';
 import { resolveTtsProvider } from '../ttsProvider';
 
 /** One player owned by 同行. The signal stops both current audio and future utterances. */
@@ -14,14 +15,17 @@ export class CompanionVoice {
   }
   close() { void this.context?.close().catch(() => {}); this.context = undefined; }
 
-  async play(text: string, char: CharacterProfile, api: APIConfig, signal: AbortSignal, heard: (text: string) => void, onAudible?: () => void, options?: { skipCache?: boolean }) {
+  async play(text: string, char: CharacterProfile, api: APIConfig, signal: AbortSignal, heard: (text: string) => void, onAudible?: () => void, options?: { skipCache?: boolean; language?: string; emotion?: string; record?(blob: Blob): void }) {
     signal.throwIfAborted();
     let started = false;
     const audible = () => { if (!started && !signal.aborted) { started = true; onAudible?.(); } };
+    const languageBoost = options?.language;
+    assertTtsLanguageSupported(char, api, languageBoost);
     if (resolveTtsProvider(api) === 'elevenlabs') {
       this.prime();
       if (!this.context) throw new Error('当前浏览器不支持音频播放');
       const player = new PcmVoicePlayer(this.context);
+      const received: Uint8Array[] = [];
       let cues: VoiceCue[] = [];
       let previous = '';
       const report = () => {
@@ -29,16 +33,28 @@ export class CompanionVoice {
         const next = stripTtsMarkupForDisplay(cues.filter(cue => cue.end <= player.currentTime).map(cue => cue.text).join(''), api);
         if (next !== previous) { previous = next; heard(next); }
       };
-      const abort = () => { report(); player.stop(); };
+      const abort = () => {
+        report();
+        if (started && received.length) {
+          let remaining = Math.floor(player.currentTime * player.sampleRate) * 2;
+          const audibleBytes = received.map(part => {
+            const prefix = part.subarray(0, Math.max(0, remaining)); remaining -= prefix.length; return prefix;
+          }).filter(part => part.length);
+          if (audibleBytes.length) options?.record?.(pcmToWav(audibleBytes));
+        }
+        player.stop();
+      };
       signal.addEventListener('abort', abort, { once: true });
       const timer = setInterval(report, 80);
       try {
         await player.resume();
         signal.throwIfAborted();
-        await streamElevenLabsSpeech(text, char, api, { signal, onAudio: pcm => player.push(pcm), onCues: next => { cues = next; } });
+        const result = await streamElevenLabsSpeech(text, char, api, { signal, languageBoost, emotion: options?.emotion,
+          onAudio: pcm => { if (options?.record) received.push(pcm); player.push(pcm); }, onCues: next => { cues = next; } });
         await player.finish();
         signal.throwIfAborted();
         report();
+        options?.record?.(result.blob);
         heard(text);
       } finally {
         clearInterval(timer); signal.removeEventListener('abort', abort); player.stop();
@@ -50,10 +66,14 @@ export class CompanionVoice {
     let completed = '';
     for (const chunk of splitSpeechText(text, 160)) {
       signal.throwIfAborted();
-      const url = await synthesizeSpeech(chunk, char, api, { ...options, signal });
+      const { url, blob } = await synthesizeSpeechDetailed(chunk, char, api, { languageBoost, emotion: options?.emotion, skipCache: options?.skipCache, signal });
+      let localUrl: string | undefined;
       try {
         signal.throwIfAborted(); // Some providers cannot abort an already submitted synthesis.
-        const audio = new Audio(url);
+        const saved = blob || (options?.record ? await fetchBlobForShare(url, 'audio/mpeg', { signal }).catch(() => null) : null);
+        signal.throwIfAborted();
+        if (!blob && saved) localUrl = URL.createObjectURL(saved);
+        const audio = new Audio(localUrl || url);
         await new Promise<void>((resolve, reject) => {
           const finish = (error?: unknown) => {
             signal.removeEventListener('abort', abort);
@@ -62,12 +82,16 @@ export class CompanionVoice {
           };
           const abort = () => finish(signal.reason ?? new DOMException('已停止', 'AbortError'));
           audio.onended = () => finish();
-          audio.onplaying = audible;
+          audio.onplaying = () => {
+            audible();
+            if (saved) options?.record?.(saved);
+            audio.onplaying = null;
+          };
           audio.onerror = () => finish(new Error('语音播放失败，请检查音频权限或改用文字模式'));
           signal.addEventListener('abort', abort, { once: true });
           void audio.play().catch(finish);
         });
-      } finally { if (url.startsWith('blob:')) URL.revokeObjectURL(url); }
+      } finally { if (localUrl) URL.revokeObjectURL(localUrl); if (url.startsWith('blob:')) URL.revokeObjectURL(url); }
       signal.throwIfAborted();
       completed += chunk;
       heard(completed);
