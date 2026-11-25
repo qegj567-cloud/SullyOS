@@ -4,6 +4,7 @@ import { getThinkingChainSettings } from './thinkingChainPrompt';
 import { loadChatInputPreferences } from './chatInputPreferences';
 import { clampManualContextLimit, resolveContextRangeMode } from './chatContextRange';
 import { dialogueMaxTokens, resolveDialogueApi } from './characterApi';
+import { isBlankApiSlot, resolveAuxiliaryApi, resolveGlobalMainApi } from './apiSlots';
 import { llmApiType } from './llmEndpoint';
 import { resolveMemoryPalaceWaterline } from './memoryPalace/waterline';
 import { ActiveMsgStore, isInstantChatSwitchedOn } from './activeMsgStore';
@@ -37,12 +38,14 @@ export async function readHelpDeskSettings(os: SettingsSource, char?: CharacterP
         try { translated = JSON.parse(localStorage.getItem('chat_translate_enabled_' + char.id) ?? 'false') === true; }
         catch { /* 不可读时保持未知 */ }
     }
+    const effectiveMain = resolveGlobalMainApi(apiConfig);
+    const effectiveMemoryLight = resolveAuxiliaryApi(memoryPalaceConfig.lightLLM, effectiveMain);
     return {
-        主对话: { ...endpointFields(apiConfig), 接口: llmApiType(apiConfig), 流式: !!apiConfig.stream, 输出上限: dialogueMaxTokens(apiConfig) },
+        主对话: { ...endpointFields(effectiveMain), 接口: llmApiType(effectiveMain), 流式: !!effectiveMain.stream, 输出上限: dialogueMaxTokens(effectiveMain) },
         私聊与群聊输入: { 自动回复: input.autoReply, 发送键代替生成: input.sendButtonGenerates, 回车发送: input.enterToSend, 表情联想: input.emojiSuggestions },
         共用心象提示词模式: os.userProfile?.thinkingChainPrompt?.mode === 'replace' ? '替换默认提示词' : '追加',
         全局记忆服务: {
-            副API: endpointFields(memoryPalaceConfig.lightLLM), Embedding: endpointFields(memoryPalaceConfig.embedding),
+            副API: { ...endpointFields(effectiveMemoryLight), 来源: isBlankApiSlot(memoryPalaceConfig.lightLLM) ? '回退主对话' : '独立配置' }, Embedding: endpointFields(memoryPalaceConfig.embedding),
             重排开关: !!memoryPalaceConfig.rerank?.enabled,
             重排额外名额: memoryPalaceConfig.rerank?.enabled ? Math.max(1, Math.min(20, memoryPalaceConfig.rerank.topN ?? 5)) : undefined,
             远程向量: os.remoteVectorConfig?.enabled ? (os.remoteVectorConfig.initialized ? '已配置' : '待验证') : '关闭',

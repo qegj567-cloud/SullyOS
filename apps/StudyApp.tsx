@@ -2,9 +2,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { StudyCourse, StudyChapter, CharacterProfile, Message, UserProfile, APIConfig, StudyTutorPreset, QuizQuestion, QuizSession, QuizQuestionNote } from '../types';
+import { StudyCourse, StudyChapter, CharacterProfile, Message, UserProfile, APIConfig, DialogueApiConfig, StudyTutorPreset, QuizQuestion, QuizSession, QuizQuestionNote } from '../types';
 import { ContextBuilder } from '../utils/context';
 import Modal from '../components/os/Modal';
+import ApiSlotEditor from '../components/settings/ApiSlotEditor';
+import { isBlankApiSlot, resolveAuxiliaryApi } from '../utils/apiSlots';
+import { pickDialogueApi } from '../utils/characterApi';
+import { useLocalBackHandler } from '../hooks/useLocalBackHandler';
 import { safeResponseJson, extractJson } from '../utils/safeApi';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { Notepad, Check, X, CheckCircle, XCircle, Hand } from '@phosphor-icons/react';
@@ -305,8 +309,20 @@ const BlackboardRenderer: React.FC<{ text: string, isTyping?: boolean, katexRend
     );
 };
 
+const readStoredStudyApiSlot = (): DialogueApiConfig | undefined => {
+    try {
+        const raw = localStorage.getItem('study_api_config');
+        if (!raw) return undefined;
+        const parsed = JSON.parse(raw) as Partial<DialogueApiConfig> | null;
+        if (!parsed || isBlankApiSlot(parsed)) return undefined;
+        return pickDialogueApi(parsed as DialogueApiConfig);
+    } catch {
+        return undefined;
+    }
+};
+
 const StudyApp: React.FC = () => {
-    const { closeApp, characters, activeCharacterId, apiConfig, addToast, userProfile, updateCharacter, characterGroups } = useOS();
+    const { closeApp, characters, activeCharacterId, apiConfig, apiPresets, addToast, userProfile, updateCharacter, characterGroups } = useOS();
     const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
     const [mode, setMode] = useState<'bookshelf' | 'classroom' | 'quiz' | 'quiz_review' | 'practice_book'>('bookshelf');
     const [courses, setCourses] = useState<StudyCourse[]>([]);
@@ -336,12 +352,17 @@ const StudyApp: React.FC = () => {
     const [tempPdfData, setTempPdfData] = useState<{name: string, text: string} | null>(null);
     const [katexRenderer, setKatexRenderer] = useState<KatexLike | null>(null);
 
-    // Study-specific API config (overrides main apiConfig when set)
-    const [studyApi, setStudyApi] = useState<Partial<APIConfig>>({});
+    // Study-specific API config (overrides main apiConfig as a whole slot when set)
+    const [studyApi, setStudyApi] = useState<DialogueApiConfig | undefined>(readStoredStudyApiSlot);
     const [showStudySettings, setShowStudySettings] = useState(false);
-    const [localStudyUrl, setLocalStudyUrl] = useState('');
-    const [localStudyKey, setLocalStudyKey] = useState('');
-    const [localStudyModel, setLocalStudyModel] = useState('');
+
+    useLocalBackHandler(() => {
+        if (showStudySettings) {
+            setShowStudySettings(false);
+            return true;
+        }
+        return false;
+    }, 80, showStudySettings);
 
     // Tutor prompt presets
     const [tutorPresets, setTutorPresets] = useState<StudyTutorPreset[]>([]);
@@ -349,12 +370,8 @@ const StudyApp: React.FC = () => {
     const [presetName, setPresetName] = useState('');
     const [presetPrompt, setPresetPrompt] = useState('');
 
-    // Effective API config: study-specific overrides fall back to main config
-    const effectiveApi: APIConfig = {
-        baseUrl: studyApi.baseUrl || apiConfig.baseUrl,
-        apiKey: studyApi.apiKey || apiConfig.apiKey,
-        model: studyApi.model || apiConfig.model,
-    };
+    // Effective API config: whole-slot resolution (never mix credentials across endpoints)
+    const effectiveApi: APIConfig = resolveAuxiliaryApi(studyApi, apiConfig, apiPresets);
 
     // Delete Confirmation State
     const [deleteTarget, setDeleteTarget] = useState<StudyCourse | null>(null);
@@ -396,17 +413,13 @@ const StudyApp: React.FC = () => {
         });
         // Load study-specific settings from localStorage
         try {
-            const savedStudyApi = localStorage.getItem('study_api_config');
-            if (savedStudyApi) {
-                const parsed = JSON.parse(savedStudyApi);
-                setStudyApi(parsed);
-                setLocalStudyUrl(parsed.baseUrl || '');
-                setLocalStudyKey(parsed.apiKey || '');
-                setLocalStudyModel(parsed.model || '');
-            }
+            setStudyApi(readStoredStudyApiSlot());
             const savedPresets = localStorage.getItem('study_tutor_presets');
             if (savedPresets) setTutorPresets(JSON.parse(savedPresets));
         } catch (e) { console.error('Failed to load study settings', e); }
+        const onPresetUpdated = () => setStudyApi(readStoredStudyApiSlot());
+        window.addEventListener('sully:api-preset-updated', onPresetUpdated);
+        return () => window.removeEventListener('sully:api-preset-updated', onPresetUpdated);
     }, []);
 
     // Refresh courses when returning to bookshelf
@@ -450,33 +463,6 @@ const StudyApp: React.FC = () => {
     const loadCourses = async () => {
         const list = await DB.getAllCourses();
         setCourses(list.sort((a,b) => b.createdAt - a.createdAt));
-    };
-
-    const saveStudyApi = () => {
-        const cfg: Partial<APIConfig> = {};
-        if (localStudyUrl.trim()) cfg.baseUrl = localStudyUrl.trim();
-        if (localStudyKey.trim()) cfg.apiKey = localStudyKey.trim();
-        if (localStudyModel.trim()) cfg.model = localStudyModel.trim();
-        setStudyApi(cfg);
-        localStorage.setItem('study_api_config', JSON.stringify(cfg));
-        trackEvent('保存自习室独立 API 线路');
-        addToast('自习室 API 已保存', 'success');
-    };
-
-    const clearStudyApi = async () => {
-        const confirmed = await requestConfirm({
-            title: '清除自习室专用 API？',
-            message: '清除后将恢复使用全局 API 设置。',
-            confirmText: '清除',
-            variant: 'warning',
-        });
-        if (!confirmed) return;
-        setStudyApi({});
-        setLocalStudyUrl('');
-        setLocalStudyKey('');
-        setLocalStudyModel('');
-        localStorage.removeItem('study_api_config');
-        addToast('已恢复使用全局 API', 'info');
     };
 
     const savePresets = (list: StudyTutorPreset[]) => {
@@ -574,7 +560,7 @@ const StudyApp: React.FC = () => {
     };
 
     const generateCurriculum = async (title: string, text: string, preference: string): Promise<StudyCourse> => {
-        if (!effectiveApi.apiKey) throw new Error('API Key missing');
+        if (!effectiveApi.baseUrl || !effectiveApi.model) throw new Error('请先配置 API 地址和模型');
 
         // Truncate text for outline generation if too long
         const contextText = text.substring(0, 30000); 
@@ -599,7 +585,7 @@ For each chapter, provide a title, a brief summary of what it covers, and a diff
 `;
         const response = await fetch(`${effectiveApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApi.apiKey}` },
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApi.apiKey || 'sk-none'}` },
             body: JSON.stringify({
                 model: effectiveApi.model,
                 messages: [{ role: "user", content: prompt }],
@@ -669,7 +655,7 @@ For each chapter, provide a title, a brief summary of what it covers, and a diff
 
     const handleTeach = async (course: StudyCourse, chapterIdx: number, forceRegenerate: boolean = false) => {
 
-        if (!selectedChar || !effectiveApi.apiKey) return;
+        if (!selectedChar || !effectiveApi.baseUrl || !effectiveApi.model) return;
         
         const chapter = course.chapters[chapterIdx];
         
@@ -718,7 +704,7 @@ Explain this chapter's key concepts to the user based strictly on the Source Mat
 `;
             return await fetch(`${effectiveApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApi.apiKey}` },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApi.apiKey || 'sk-none'}` },
                 body: JSON.stringify({
                     model: effectiveApi.model,
                     messages: isFallback ? [{ role: "user", content: prompt }]
@@ -829,7 +815,7 @@ You are now acting as a private tutor for ${userProfile.name}.
 
     const handleAskQuestion = async () => {
 
-        if (!userQuestion.trim() || !activeCourse || !selectedChar) return;
+        if (!userQuestion.trim() || !activeCourse || !selectedChar || !effectiveApi.baseUrl || !effectiveApi.model) return;
         
         const question = userQuestion;
         setUserQuestion('');
@@ -866,7 +852,7 @@ Answer the question based on the source material. Be helpful and encouraging (in
 `;
              const response = await fetch(`${effectiveApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApi.apiKey}` },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApi.apiKey || 'sk-none'}` },
                 body: JSON.stringify({
                     model: effectiveApi.model,
                     messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, [{ role: 'system', content: studyInstructions }, { role: "user", content: prompt }])),
@@ -929,22 +915,24 @@ Format: "今天给[User]讲了[Topic]..." or "Today I taught [User] about..."
 Note: Use "我" (I) to refer to yourself.
 `;
 
-        fetch(`${effectiveApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApi.apiKey}` },
-            body: JSON.stringify({ model: effectiveApi.model, messages: [{ role: "user", content: summaryPrompt }] }),
-            __sullyMeta: {
-                appId: 'study',
-                appName: '自习室',
-                charId: selectedChar.id,
-                charName: selectedChar.name,
-                purpose: '结课辅导日记',
-            },
-        } as RequestInit).then(res => safeResponseJson(res)).then(data => {
-            const mem = data.choices[0].message.content;
-            const newMem = { id: `mem-${Date.now()}`, date: new Date().toLocaleDateString(), summary: `[教学] ${mem}`, mood: 'proud' };
-            updateCharacter(selectedChar.id, { memories: [...(selectedChar.memories || []), newMem] });
-        });
+        if (effectiveApi.baseUrl && effectiveApi.model) {
+            fetch(`${effectiveApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApi.apiKey || 'sk-none'}` },
+                body: JSON.stringify({ model: effectiveApi.model, messages: [{ role: "user", content: summaryPrompt }] }),
+                __sullyMeta: {
+                    appId: 'study',
+                    appName: '自习室',
+                    charId: selectedChar.id,
+                    charName: selectedChar.name,
+                    purpose: '结课辅导日记',
+                },
+            } as RequestInit).then(res => safeResponseJson(res)).then(data => {
+                const mem = data.choices[0].message.content;
+                const newMem = { id: `mem-${Date.now()}`, date: new Date().toLocaleDateString(), summary: `[教学] ${mem}`, mood: 'proud' };
+                updateCharacter(selectedChar.id, { memories: [...(selectedChar.memories || []), newMem] });
+            }).catch(() => {});
+        }
 
         // 3. Trigger next logic
         if (nextIdx >= updatedChapters.length) {
@@ -992,7 +980,7 @@ Note: Use "我" (I) to refer to yourself.
     };
 
     const generateQuiz = async () => {
-        if (!activeCourse || !selectedChar || !effectiveApi.apiKey) return;
+        if (!activeCourse || !selectedChar || !effectiveApi.baseUrl || !effectiveApi.model) return;
         trackEvent('开始刷题', { types: [...quizTypes].sort().join('+') });
         setQuizShowSetup(false);
         setMode('quiz');
@@ -1059,7 +1047,7 @@ ${chunkText.substring(0, 10000)}
         try {
             const response = await fetch(`${effectiveApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApi.apiKey}` },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApi.apiKey || 'sk-none'}` },
                 body: JSON.stringify({
                     model: effectiveApi.model,
                     messages: [{ role: "user", content: prompt }],
@@ -1125,7 +1113,7 @@ ${chunkText.substring(0, 10000)}
 
     const submitQuiz = async () => {
 
-        if (!quizSession || !selectedChar || !effectiveApi.apiKey) return;
+        if (!quizSession || !selectedChar || !effectiveApi.baseUrl || !effectiveApi.model) return;
         trackEvent('交卷让老师批改');
         setQuizLoading('正在批改试卷...');
 
@@ -1186,7 +1174,7 @@ ${resultsText}
         try {
             const response = await fetch(`${effectiveApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApi.apiKey}` },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApi.apiKey || 'sk-none'}` },
                 body: JSON.stringify({
                     model: effectiveApi.model,
                     messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, [{ role: "user", content: reviewPrompt }])),
@@ -1267,7 +1255,7 @@ ${resultsText}
     // Follow-up Q&A on a specific question
     const handleFollowUp = async (questionId: string) => {
 
-        if (!followUpInput.trim() || !selectedChar || !effectiveApi.apiKey || !quizSession) return;
+        if (!followUpInput.trim() || !selectedChar || !effectiveApi.baseUrl || !effectiveApi.model || !quizSession) return;
         const question = quizSession.questions.find(q => q.id === questionId);
         if (!question) return;
 
@@ -1298,7 +1286,7 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
         try {
             const response = await fetch(`${effectiveApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApi.apiKey}` },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApi.apiKey || 'sk-none'}` },
                 body: JSON.stringify({
                     model: effectiveApi.model,
                     messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, [{ role: "user", content: prompt }])),
@@ -1790,21 +1778,19 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                     <div className="space-y-6">
                         {/* Dedicated API Config */}
                         <div>
-                            <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">专用 API（留空则使用全局设置）</h4>
-                            <div className="space-y-2">
-                                <input value={localStudyUrl} onChange={e => setLocalStudyUrl(e.target.value)} placeholder="API Base URL" className="w-full bg-slate-100 rounded-xl p-3 text-sm focus:outline-emerald-500" />
-                                <input value={localStudyKey} onChange={e => setLocalStudyKey(e.target.value)} placeholder="API Key" type="password" className="w-full bg-slate-100 rounded-xl p-3 text-sm focus:outline-emerald-500" />
-                                <input value={localStudyModel} onChange={e => setLocalStudyModel(e.target.value)} placeholder="模型名称 (e.g. gpt-4o)" className="w-full bg-slate-100 rounded-xl p-3 text-sm focus:outline-emerald-500" />
-                                <div className="flex gap-2">
-                                    <button onClick={saveStudyApi} className="flex-1 py-2.5 bg-emerald-500 text-white font-bold rounded-xl text-xs">保存</button>
-                                    <button onClick={clearStudyApi} className="py-2.5 px-4 bg-slate-200 text-slate-500 font-bold rounded-xl text-xs">清除</button>
-                                </div>
-                                {(studyApi.baseUrl || studyApi.model) && (
-                                    <div className="text-[10px] text-emerald-600 bg-emerald-50 rounded-lg p-2">
-                                        当前使用专用 API: {studyApi.model || effectiveApi.model}
-                                    </div>
-                                )}
-                            </div>
+                            <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">专用 API</h4>
+                            <ApiSlotEditor
+                                slotName="自习室"
+                                value={studyApi}
+                                onCommit={(next) => {
+                                    setStudyApi(next);
+                                    if (next) localStorage.setItem('study_api_config', JSON.stringify(next));
+                                    else localStorage.removeItem('study_api_config');
+                                }}
+                                followButtonLabel="恢复跟随主 API"
+                                helperText="未单独配置时跟随全局主对话 API。"
+                                meta={{ appId: 'study', appName: '自习室' }}
+                            />
                         </div>
 
                         {/* Tutor Prompt Presets */}

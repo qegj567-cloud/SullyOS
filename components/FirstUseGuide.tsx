@@ -3,7 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useOS } from '../context/OSContext';
 import { AppID } from '../types';
-import { GUIDE_SULLY_ID, hasGuideApi, setGuideStep, setVectorGuideSkipped, useFirstUseGuideStep, useVectorGuideSkipped } from '../utils/firstUseGuide';
+import { GUIDE_SULLY_ID, hasGuideApi, hasGuideSecondaryApi, setGuideStep, setVectorGuideSkipped, useFirstUseGuideStep, useGuideUseMainApi, useVectorGuideSkipped } from '../utils/firstUseGuide';
 
 const titles = ['为了您的使用体验，请先配置 API 和向量记忆！', '配置向量记忆', '开启 Sully 的全自动记忆', '从神经链接进入聊天', '认识生成按钮', '试着从桌面回到聊天', '记忆会自动整理'];
 const descriptions = [
@@ -19,7 +19,9 @@ const descriptions = [
 export default function FirstUseGuide() {
     const step = useFirstUseGuideStep();
     const skippedVector = useVectorGuideSkipped();
+    const useMainApi = useGuideUseMainApi();
     const { apiConfig, memoryPalaceConfig, characters, activeApp, activeCharacterId, openApp, setActiveCharacterId } = useOS();
+    const secondaryReady = hasGuideSecondaryApi(memoryPalaceConfig.lightLLM, apiConfig, useMainApi);
     const [collapsed, setCollapsed] = useState(false);
     const [targetReady, setTargetReady] = useState(false);
     const [targetHint, setTargetHint] = useState<{ text: string; left: number; top: number; below: boolean } | null>(null);
@@ -78,8 +80,8 @@ export default function FirstUseGuide() {
             let selector = '';
             if (step === 0) { selector = '[data-guide="api"] [data-api-field="base-url"]'; hint = '从这里填写主 API 地址'; }
             if (step === 1) {
-                selector = hasGuideApi(memoryPalaceConfig.lightLLM) ? '[data-guide="embedding"]' : '[data-guide="use-main-api"]';
-                hint = hasGuideApi(memoryPalaceConfig.lightLLM) ? '配置向量记忆，或选择跳过' : '可点这里，暂时沿用主 API';
+                selector = secondaryReady ? '[data-guide="embedding"]' : '[data-guide="use-main-api"]';
+                hint = secondaryReady ? '配置向量记忆，或选择跳过' : '可点这里，暂时沿用主 API';
             }
             if (step === 2) { selector = '[data-guide="sully-memory"]'; hint = '开启这两个记忆开关'; }
             if (step === 3) {
@@ -120,9 +122,9 @@ export default function FirstUseGuide() {
             window.removeEventListener('resize', placeHint);
             document.removeEventListener('scroll', placeHint, true);
         };
-    }, [step, activeApp, memoryPalaceConfig.lightLLM, sully?.memoryPalaceEnabled, sully?.autoArchiveEnabled, collapsed]);
+    }, [step, activeApp, secondaryReady, sully?.memoryPalaceEnabled, sully?.autoArchiveEnabled, collapsed]);
     if (step === null) return null;
-    const ready = step === 0 ? hasGuideApi(apiConfig) : step === 1 ? hasGuideApi(memoryPalaceConfig.embedding) && hasGuideApi(memoryPalaceConfig.lightLLM) : step === 2 ? !!(sully?.memoryPalaceEnabled && sully.autoArchiveEnabled) : step === 4 ? activeApp === AppID.Chat && targetReady : step !== 3 && step !== 5;
+    const ready = step === 0 ? hasGuideApi(apiConfig) : step === 1 ? hasGuideApi(memoryPalaceConfig.embedding) && secondaryReady : step === 2 ? !!(sully?.memoryPalaceEnabled && sully.autoArchiveEnabled) : step === 4 ? activeApp === AppID.Chat && targetReady : step !== 3 && step !== 5;
     return <aside aria-label="首次使用引导" className="relative z-[70] shrink-0 bg-white border-b border-violet-200 px-4 py-3 text-slate-700" style={{ maxHeight: '40%', overflowY: 'auto', paddingTop: 'max(12px, var(--safe-top, 0px))' }}>
         <style>{`
             .first-use-highlight { outline: 4px solid #7c3aed !important; outline-offset: 3px; border-radius: 16px; box-shadow: 0 0 0 9px #ede9fe, 0 0 26px 8px #8b5cf670; animation: first-use-beacon 1.8s ease-in-out infinite !important; }

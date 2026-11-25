@@ -328,23 +328,41 @@ export type SttProvider = 'minimax' | 'fishaudio' | 'elevenlabs' | 'browser';
 export interface VisionApiConfig {
   /** 开启后，聊天图片先由独立视觉模型转成文字，再交给主对话模型。 */
   enabled: boolean;
+  apiType?: 'openai' | 'anthropic';
   baseUrl: string;
   apiKey: string;
   model: string;
+  stream?: boolean;
+  temperature?: number;
+  maxTokens?: number;
+  /** 绑定的预设 ID；保留内联字段作为最新快照，兼容正式版与离线恢复。 */
+  presetId?: string;
+  /** 绑定或刷新快照时的连接指纹；内联字段被外部直接修改后自动脱离预设。 */
+  presetFp?: string;
 }
 
 /** A complete dialogue endpoint, separate from TTS/vision configuration. */
-export type DialogueApiConfig = Pick<APIConfig, 'baseUrl' | 'apiKey' | 'model' | 'stream' | 'temperature' | 'maxTokens' | 'apiType'>;
+export type DialogueApiConfig = Pick<APIConfig, 'baseUrl' | 'apiKey' | 'model' | 'stream' | 'temperature' | 'maxTokens' | 'apiType'> & {
+  /** 绑定的预设 ID；存在且指纹匹配时实时解析该预设的最新配置。 */
+  presetId?: string;
+  /** 绑定或刷新快照时的连接指纹；外部直接改内联值后自动视为单独填写。 */
+  presetFp?: string;
+};
 
 export interface APIConfig {
   apiType?: 'openai' | 'anthropic';
+  /** 主对话绑定的预设 ID；内联字段同步保留最新生效值供全仓读取与正式版兼容。 */
+  presetId?: string;
+  presetFp?: string;
   /** 私聊单次生成上限；未设置沿用 8000，不改变历史范围。 */
   maxTokens?: number;
   baseUrl: string;
   apiKey: string;
   // 可选识图中转：给不支持 image_url 的主模型补视觉能力。
   visionApi?: VisionApiConfig;
-  /** 心象手动翻译专用；全局共用，未配置时不自动调用对话 API。 */
+  /** 情绪 / 意识流评估副 API；全局共用，未配置时回退主对话 API。 */
+  emotionApi?: DialogueApiConfig;
+  /** 心象手动翻译专用；全局共用，未配置时回退主对话 API。 */
   thinkingTranslationApi?: DialogueApiConfig;
   minimaxApiKey?: string;
   minimaxGroupId?: string;
@@ -711,11 +729,7 @@ export interface MemoryPalaceBackupConfig {
     model: string;
     dimensions: number;
   };
-  lightLLM: {
-    baseUrl: string;
-    apiKey: string;
-    model: string;
-  };
+  lightLLM: DialogueApiConfig;
   rerank: {
     enabled: boolean;
     baseUrl: string;

@@ -298,7 +298,7 @@ export async function diagnoseRecallIssue(params: {
     assistantReply?: string;
 }): Promise<MemoryRepairDiagnosis> {
     const { apiConfig, snapshot } = params;
-    if (!apiConfig.baseUrl || !apiConfig.apiKey || !apiConfig.model) {
+    if (!apiConfig.baseUrl?.trim() || !apiConfig.model?.trim()) {
         throw new Error('请先配置可用的主 API');
     }
     const candidates = snapshotCandidates(snapshot);
@@ -354,7 +354,7 @@ ${candidateText}`;
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                Authorization: `Bearer ${apiConfig.apiKey}`,
+                Authorization: `Bearer ${apiConfig.apiKey || 'sk-none'}`,
             },
             body: JSON.stringify({
                 model: apiConfig.model,

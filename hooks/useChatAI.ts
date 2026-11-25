@@ -1,8 +1,9 @@
 import { resolveDialogueApi } from '../utils/characterApi';
+import { resolveAuxiliaryApi } from '../utils/apiSlots';
 import { createReplyRun, withReplyCancellation } from '../utils/chatReplyCancellation';
 
 import { useState, useRef, useEffect, useSyncExternalStore, MutableRefObject } from 'react';
-import { CharacterProfile, UserProfile, Message, Emoji, EmojiCategory, GroupProfile, RealtimeConfig, CharacterBuff, Amsg2ExpiredNoticeRecord } from '../types';
+import { CharacterProfile, UserProfile, Message, Emoji, EmojiCategory, GroupProfile, RealtimeConfig, CharacterBuff, Amsg2ExpiredNoticeRecord, DialogueApiConfig } from '../types';
 import { DB } from '../utils/db';
 import { ChatPrompts } from '../utils/chatPrompts';
 import { safeFetchJson, safeResponseJson } from '../utils/safeApi';
@@ -439,7 +440,7 @@ interface UseChatAIProps {
     onStreamPreviewHandover?: (charId: string, messageIds: number[]) => void;
     realtimeConfig: RealtimeConfig; // 实时配置（amsg2 工具排程要用，两个调用点都必传）
     translationConfig?: { enabled: boolean; sourceLang: string; targetLang: string };
-    memoryPalaceConfig?: { embedding: { baseUrl: string; apiKey: string; model: string; dimensions: number }; lightLLM: { baseUrl: string; apiKey: string; model: string } };
+    memoryPalaceConfig?: { embedding: { baseUrl: string; apiKey: string; model: string; dimensions: number }; lightLLM: DialogueApiConfig };
     /** 从 OSContext 传入，用于 palace 自动归档写 char.memories + hideBeforeMessageId */
     updateCharacter: (id: string, partial: Partial<CharacterProfile> | ((prev: CharacterProfile) => Partial<CharacterProfile>)) => void;
     updateUserProfile: (updates: Partial<UserProfile> | ((prev: UserProfile) => Partial<UserProfile>)) => void;
@@ -974,12 +975,18 @@ export const useChatAI = ({
             //    走哪条跟着 instantChatRoute（构建 payload 前冻结的同一回合终值）走，这里绝不自己
             //    再判一次，否则可能「按上云把评估打包走了，实际却走本地」，情绪底色悄悄停更。
             const emotionEvalEnabled = !!(!promptBuildSkipped && !isEmotionEvalSkipped() && isScheduleFeatureOn(char) && char.emotionConfig?.enabled);
-            // 评估跟随全局流式开关（专用情绪 API 自带 stream 字段时以它为准）
-            const evalStream: boolean = !!(apiConfig.stream ?? false);
-            const emotionApi = emotionEvalEnabled
-                ? ((char.emotionConfig!.api?.baseUrl)
-                    ? { ...char.emotionConfig!.api!, stream: (char.emotionConfig!.api as any).stream ?? evalStream }
-                    : { baseUrl: apiConfig.baseUrl, apiKey: apiConfig.apiKey, model: apiConfig.model, stream: evalStream })
+            // 统一从全局 emotionApi → 角色旧镜像 → 主对话 API 解析（支持预设 ID 实时联动与 Anthropic 原生接口）
+            const resolvedEmotionSlot = emotionEvalEnabled
+                ? resolveAuxiliaryApi(apiConfig.emotionApi ?? char.emotionConfig?.api, apiConfig)
+                : null;
+            const emotionApi = resolvedEmotionSlot?.baseUrl
+                ? {
+                    baseUrl: resolvedEmotionSlot.baseUrl,
+                    apiKey: resolvedEmotionSlot.apiKey || '',
+                    model: resolvedEmotionSlot.model,
+                    apiType: resolvedEmotionSlot.apiType,
+                    stream: !!(resolvedEmotionSlot.stream ?? apiConfig.stream ?? false),
+                }
                 : null;
             // 本地路径的情绪评估：主 fetch 发出后立即发射（见下方调用点）。
             // 历史备注：曾为串行中转做过 1.5s 错峰（评估抢跑会把主回复压后一个评估时长），
@@ -2491,10 +2498,13 @@ export const useChatAI = ({
             // 使用全局配置（memoryPalaceConfig）。lightLLM 未配置时回退主 apiConfig；
             // embedding 因端点类型特殊（/embeddings），不做回退，必须显式配置。
             const mpEmb = memoryPalaceConfig?.embedding;
-            const mpLLMConfigured = memoryPalaceConfig?.lightLLM;
-            const mpLLM = (mpLLMConfigured?.baseUrl)
-                ? mpLLMConfigured
-                : { baseUrl: apiConfig.baseUrl, apiKey: apiConfig.apiKey, model: apiConfig.model };
+            const resolvedMpLLM = resolveAuxiliaryApi(memoryPalaceConfig?.lightLLM, apiConfig);
+            const mpLLM = {
+                baseUrl: resolvedMpLLM.baseUrl,
+                apiKey: resolvedMpLLM.apiKey || '',
+                model: resolvedMpLLM.model,
+                ...(resolvedMpLLM.apiType ? { apiType: resolvedMpLLM.apiType } : {}),
+            };
             // 读 ref 拿到最新的 char 状态；同 id 才信任，否则保守跳过（用户已经切角色了）
             const liveChar = !replyRun.signal.aborted && charRef.current?.id === char.id ? charRef.current : null;
             if (liveChar?.memoryPalaceEnabled && mpEmb?.baseUrl && mpEmb?.apiKey && mpLLM.baseUrl) {

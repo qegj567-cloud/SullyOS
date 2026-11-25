@@ -509,7 +509,7 @@ export async function runLightRecallRouter(
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${config.apiKey}`,
+                    'Authorization': `Bearer ${config.apiKey || 'sk-none'}`,
                 },
                 body: JSON.stringify({
                     model: config.model,

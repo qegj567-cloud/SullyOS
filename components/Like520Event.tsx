@@ -19,6 +19,8 @@ import { safeResponseJson } from '../utils/safeApi';
 import { assetMirrors, attachAudioMirrorFallback } from '../utils/assetUrl';
 import { shareOrDownloadBlob } from '../utils/shareExport';
 import TokenImg from './os/TokenImg';
+import ApiSlotEditor from './settings/ApiSlotEditor';
+import { pickDialogueApi } from '../utils/characterApi';
 import { dataUrlToBlob, isImageValue, putImageBlob } from '../utils/blobRef';
 import { useConfirmDialog } from '../hooks/useConfirmDialog';
 import {
@@ -3606,102 +3608,7 @@ export const Like520Session: React.FC<SessionProps> = ({ charId, onClose }) => {
 
 // 520 弹窗内嵌的 API 配置面板 —— 配完直接传送进活动，不再绕去设置 App
 const Like520InlineApiSetup: React.FC<{ onDone: () => void; onBack: () => void }> = ({ onDone, onBack }) => {
-    const { apiConfig, updateApiConfig, addToast, availableModels, setAvailableModels, apiPresets } = useOS();
-
-    const [localUrl, setLocalUrl] = useState(apiConfig.baseUrl);
-    const [localKey, setLocalKey] = useState(apiConfig.apiKey);
-    const [localModel, setLocalModel] = useState(apiConfig.model);
-    const [localStream, setLocalStream] = useState(apiConfig.stream === true);
-    const [isLoadingModels, setIsLoadingModels] = useState(false);
-    const [statusMsg, setStatusMsg] = useState('');
-    const [showModelList, setShowModelList] = useState(false);
-    const [testing, setTesting] = useState(false);
-    const [testResult, setTestResult] = useState<string | null>(null);
-
-    const loadPreset = (preset: typeof apiPresets[0]) => {
-        setLocalUrl(preset.config.baseUrl);
-        setLocalKey(preset.config.apiKey);
-        setLocalModel(preset.config.model);
-        setLocalStream(preset.config.stream === true);
-        setTestResult(null);
-        addToast(`已加载预设: ${preset.name}`, 'info');
-    };
-
-    const handleSave = () => {
-        updateApiConfig({ baseUrl: localUrl, apiKey: localKey, model: localModel, stream: localStream });
-        setStatusMsg('配置已保存');
-        addToast('API 配置已保存', 'success');
-        setTimeout(() => setStatusMsg(''), 2000);
-    };
-
-    const fetchModels = async () => {
-        if (!localUrl) { setStatusMsg('请先填写 URL'); return; }
-        setIsLoadingModels(true);
-        setStatusMsg('正在连接...');
-        try {
-            const baseUrl = localUrl.replace(/\/+$/, '');
-            const response = await fetch(`${baseUrl}/models`, {
-                method: 'GET',
-                headers: { 'Authorization': `Bearer ${localKey}`, 'Content-Type': 'application/json' }
-            });
-            if (!response.ok) throw new Error(`Status ${response.status}`);
-            const data = await safeResponseJson(response);
-            const list = data.data || data.models || [];
-            if (Array.isArray(list)) {
-                const models = list.map((m: any) => m.id || m);
-                setAvailableModels(models);
-                if (models.length > 0 && !models.includes(localModel)) setLocalModel(models[0]);
-                setStatusMsg(`获取到 ${models.length} 个模型`);
-                setShowModelList(true);
-            } else { setStatusMsg('格式不兼容'); }
-        } catch {
-            setStatusMsg('连接失败');
-        } finally {
-            setIsLoadingModels(false);
-        }
-    };
-
-    const handleTest = async () => {
-        if (!localUrl.trim() || !localKey.trim() || !localModel.trim()) return;
-        setTesting(true);
-        setTestResult(null);
-        try {
-            const res = await fetch(`${localUrl.trim().replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localKey.trim()}` },
-                body: JSON.stringify({
-                    model: localModel.trim(),
-                    messages: [{ role: 'user', content: 'Hi' }],
-                    max_tokens: 5,
-                    stream: localStream,
-                }),
-                __sullyMeta: {
-                    appId: 'special-moments',
-                    appName: '520特别活动',
-                    purpose: '测试连接',
-                },
-            } as RequestInit);
-            if (res.ok) {
-                const data = await safeResponseJson(res);
-                const reply = data.choices?.[0]?.message?.content || '';
-                setTestResult(`✅ 连接成功 — 模型回复: "${reply.slice(0, 30)}"`);
-            } else {
-                const text = await res.text().catch(() => '');
-                setTestResult(`❌ HTTP ${res.status}: ${text.slice(0, 100)}`);
-            }
-        } catch (err: any) {
-            setTestResult(`❌ 连接失败: ${err.message}`);
-        } finally {
-            setTesting(false);
-        }
-    };
-
-    const handleContinue = () => {
-        updateApiConfig({ baseUrl: localUrl, apiKey: localKey, model: localModel, stream: localStream });
-        onDone();
-    };
-
-    const testDisabled = testing || !localUrl.trim() || !localKey.trim() || !localModel.trim();
+    const { apiConfig, updateApiConfig } = useOS();
 
     return (
         <div className="fixed inset-0 z-[9998] flex items-center justify-center p-5 animate-fade-in">
@@ -3713,80 +3620,26 @@ const Like520InlineApiSetup: React.FC<{ onDone: () => void; onBack: () => void }
                     <p className="text-[11px] text-slate-400 mt-1">配置完成后即可前往今天的特别活动</p>
                 </div>
 
-                <div className="px-6 py-4 space-y-4 overflow-y-auto no-scrollbar flex-1">
-                    {apiPresets.length > 0 && (
-                        <div>
-                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">我的预设</label>
-                            <div className="flex gap-2 flex-wrap">
-                                {apiPresets.map(preset => (
-                                    <button
-                                        key={preset.id}
-                                        onClick={() => loadPreset(preset)}
-                                        className="text-xs font-medium text-slate-600 bg-white border border-slate-200 rounded-lg px-3 py-1.5 shadow-sm hover:text-pink-500 hover:border-pink-200 active:scale-95 transition-all"
-                                    >
-                                        {preset.name}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    <div>
-                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">URL</label>
-                        <input type="text" value={localUrl} onChange={(e) => setLocalUrl(e.target.value)} placeholder="https://..." className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all" />
+                <div className="px-6 py-4 overflow-y-auto no-scrollbar flex-1">
+                    <div className="bg-white rounded-2xl p-4 text-slate-800 shadow-sm">
+                        <ApiSlotEditor
+                            slotName="节日活动"
+                            allowFollow={false}
+                            value={pickDialogueApi(apiConfig)}
+                            onCommit={(next) => {
+                                if (next) updateApiConfig(next);
+                            }}
+                            helperText="此处直接修改全局主对话 API，自动保存生效。"
+                            meta={{ appId: 'event', appName: '节日活动' }}
+                        />
                     </div>
-                    <div>
-                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">Key</label>
-                        <input type="password" value={localKey} onChange={(e) => setLocalKey(e.target.value)} placeholder="sk-..." className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all" />
-                    </div>
-                    <div>
-                        <div className="flex justify-between items-center mb-1.5 pl-1">
-                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Model</label>
-                            <button onClick={fetchModels} disabled={isLoadingModels} className="text-[10px] text-pink-500 font-bold">{isLoadingModels ? 'Fetching...' : '刷新模型列表'}</button>
-                        </div>
-                        <input type="text" value={localModel} onChange={(e) => setLocalModel(e.target.value)} placeholder="gpt-4o-mini" className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all" />
-
-                        {showModelList && availableModels.length > 0 && (
-                            <div className="mt-2 max-h-32 overflow-y-auto no-scrollbar bg-slate-50 rounded-xl border border-slate-200/60 p-1">
-                                {availableModels.map(m => (
-                                    <button key={m} onClick={() => { setLocalModel(m); setShowModelList(false); }} className={`w-full text-left px-3 py-2 rounded-lg text-xs font-mono ${m === localModel ? 'bg-pink-500/10 text-pink-500 font-bold' : 'text-slate-600 hover:bg-slate-100'}`}>
-                                        {m}
-                                    </button>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-
-                    <button onClick={handleSave} className="w-full py-3 rounded-2xl font-bold text-white shadow-lg shadow-pink-200 bg-gradient-to-r from-[#FFB6C8] to-[#F18AAA] active:scale-95 transition-all">
-                        {statusMsg || '保存配置'}
-                    </button>
-
-                    <button
-                        onClick={handleTest}
-                        disabled={testDisabled}
-                        className={`w-full py-2.5 rounded-2xl font-bold text-sm border active:scale-95 transition-all ${
-                            testDisabled
-                                ? 'border-slate-200 text-slate-400 bg-slate-50'
-                                : 'border-pink-300 text-pink-500 bg-pink-50 hover:bg-pink-100'
-                        }`}
-                    >
-                        {testing ? '测试中...' : '🧪 测试连接'}
-                    </button>
-
-                    {testResult && (
-                        <div className={`text-xs px-3 py-2 rounded-xl ${
-                            testResult.startsWith('✅') ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'
-                        }`}>
-                            {testResult}
-                        </div>
-                    )}
                 </div>
 
                 <div className="px-6 pb-6 pt-2 flex gap-3 shrink-0">
                     <button onClick={onBack} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl active:scale-95 transition-transform text-sm">
                         返回
                     </button>
-                    <button onClick={handleContinue} className="flex-1 py-3 bg-gradient-to-r from-pink-500 to-rose-500 text-white font-bold rounded-2xl shadow-lg shadow-pink-200 active:scale-95 transition-transform text-sm">
+                    <button onClick={onDone} className="flex-1 py-3 bg-gradient-to-r from-pink-500 to-rose-500 text-white font-bold rounded-2xl shadow-lg shadow-pink-200 active:scale-95 transition-transform text-sm">
                         前往活动 ♥
                     </button>
                 </div>

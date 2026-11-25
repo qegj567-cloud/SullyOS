@@ -1,25 +1,41 @@
 import React from 'react';
 import { useOS } from '../context/OSContext';
-import { hasGuideApi, setGuideStep, setVectorGuideSkipped, useFirstUseGuideStep } from '../utils/firstUseGuide';
+import {
+    hasGuideApi,
+    hasGuideSecondaryApi,
+    setGuideStep,
+    setGuideUseMainApi,
+    setVectorGuideSkipped,
+    useFirstUseGuideStep,
+    useGuideUseMainApi,
+} from '../utils/firstUseGuide';
 
 export function MainApiMemoryChoice() {
     const step = useFirstUseGuideStep();
-    const { apiConfig, updateMemoryPalaceConfig } = useOS();
+    const useMainApi = useGuideUseMainApi();
+    const { apiConfig, memoryPalaceConfig, updateMemoryPalaceConfig } = useOS();
     if (step !== 1) return null;
+    const followingMain = useMainApi && !hasGuideApi(memoryPalaceConfig.lightLLM) && hasGuideApi(apiConfig);
     return <div className="mb-3 rounded-xl bg-white/80 p-3 text-xs leading-relaxed text-emerald-800">
-        <button data-guide="use-main-api" type="button" disabled={!hasGuideApi(apiConfig)} className="font-bold underline disabled:opacity-40" onClick={() => updateMemoryPalaceConfig({
-            lightLLM: { baseUrl: apiConfig.baseUrl, apiKey: apiConfig.apiKey, model: apiConfig.model },
-        })}>我想暂时只用主 API</button>
-        <p className="mt-1">将刚才保存的主 API 配置复制给副 API，用它整理记忆。无需另买服务；后续整理会消耗主 API 额度，也可以随时换成便宜的聊天模型。</p>
+        <button data-guide="use-main-api" type="button" disabled={!hasGuideApi(apiConfig)} className="font-bold underline disabled:opacity-40" onClick={() => {
+            updateMemoryPalaceConfig({
+                lightLLM: { baseUrl: '', apiKey: '', model: '' },
+            });
+            setGuideUseMainApi(true);
+        }}>我想暂时只用主 API</button>
+        {followingMain && <span className="ml-2 text-[11px] font-semibold text-emerald-700">已确认跟随主 API</span>}
+        <p className="mt-1">保持副 API 留空，自动跟随设置中的主 API 整理记忆（后续主 API 换 Key 或换模型也会自动同步，消耗主 API 额度；之后也可随时换成便宜模型）。</p>
     </div>;
 }
 
 export function SkipVectorMemoryChoice() {
     const step = useFirstUseGuideStep();
-    const { memoryPalaceConfig } = useOS();
+    const useMainApi = useGuideUseMainApi();
+    const { apiConfig, memoryPalaceConfig } = useOS();
     if (step !== 1) return null;
+    const canSkip = hasGuideSecondaryApi(memoryPalaceConfig.lightLLM, apiConfig, useMainApi);
     return <div className="mt-3 border-t border-violet-200 pt-3 text-xs leading-relaxed text-slate-600">
-        <button type="button" disabled={!hasGuideApi(memoryPalaceConfig.lightLLM)} className="font-bold text-violet-700 underline disabled:opacity-40" onClick={() => {
+        <button type="button" disabled={!canSkip} className="font-bold text-violet-700 underline disabled:opacity-40" onClick={() => {
             setVectorGuideSkipped(true);
             setGuideStep(3);
         }}>暂时跳过向量记忆</button>

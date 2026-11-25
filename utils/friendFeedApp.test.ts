@@ -31,6 +31,7 @@ const m = vi.hoisted(() => ({close: vi.fn(), open:vi.fn(), chars: [
     {id: 'feed-ui-c', name: '小绿', avatar: '', description: '', systemPrompt: '', memories: []},
 ]}));
 vi.mock('../context/OSContext', () => ({useOS: () => ({characters: m.chars, userProfile: {name: '小雨'}, closeApp: m.close, openApp:m.open,
+    addToast: vi.fn(), addApiPreset: vi.fn(), updateApiPreset: vi.fn(), removeApiPreset: vi.fn(), saveModels: vi.fn(), availableModels: [],
     apiPresets:[{id:'bibi-test',name:'哔哔测试预设',config:{baseUrl:'https://bibi.invalid/v1',apiKey:'test-only',model:'test-bibi'}}]})}));
 vi.mock('../utils/homeAnalytics', () => ({trackHomeFeature: vi.fn()}));
 vi.mock('./friendFeedReplies', () => ({runImmediateFriendReplies: vi.fn()}));
@@ -143,7 +144,7 @@ it('separates preference pages and returns through sources and connection withou
     expect(host.textContent).toContain('连接微博');expect(host.textContent).toContain('同步最新动态');expect(host.textContent).toContain('主页绑定');
     await click(host,'返回上一级');
     expect(host.querySelector('[aria-label="设置目录"]')).not.toBeNull();expect(scroll.scrollTop).toBe(143);
-    await click(host,'重新查看入门引导');await click(host,'选择 API');await click(host,'取消');
+    await click(host,'重新查看入门引导');await click(host,'选择 API');await click(host,'返回上一级');
     expect(host.querySelector('[aria-label="哔哔入门引导"]')).not.toBeNull();
     await act(async()=>{expect(handleLocalBack()).toBe(true);});
     expect(host.querySelector('[aria-label="设置目录"]')).not.toBeNull();
@@ -492,13 +493,15 @@ it('shows setup once without calling a model, persists dismissal and reopens it 
     expect((host.querySelector('.ff-setup > button') as HTMLButtonElement).disabled).toBe(true);
     }finally{clock.mockRestore();}
 });
-it('keeps API setup inside Bibi, cancels drafts and targets the relevant preference section',async()=>{
+it('keeps API setup inside Bibi, discards incomplete custom drafts on back and targets the relevant preference section',async()=>{
     const host=await render(React.createElement(FriendFeedApp));
     await click(host,'选择 API');
     expect(host.querySelector('[aria-label="哔哔 API 配置"]')).not.toBeNull();
-    const toggle=host.querySelector('input[type=checkbox]') as HTMLInputElement;
-    await act(async()=>{toggle.click();});
-    await click(host,'取消');
+    await click(host,'单独填写配置');
+    await vi.waitFor(()=>expect(host.querySelector('[data-api-field="base-url"] input')).not.toBeNull());
+    const urlInput=host.querySelector('[data-api-field="base-url"] input') as HTMLInputElement;
+    await act(async()=>{Object.getOwnPropertyDescriptor(Object.getPrototypeOf(urlInput),'value')!.set!.call(urlInput,'https://half.invalid/v1');urlInput.dispatchEvent(new Event('input',{bubbles:true}));});
+    await click(host,'返回上一级');
     expect(await readFriendFeedApi()).toBeNull();
     expect(host.querySelector('[aria-label="哔哔入门引导"]')).not.toBeNull();
     await click(host,'调整朋友');
@@ -507,15 +510,15 @@ it('keeps API setup inside Bibi, cancels drafts and targets the relevant prefere
     expect(document.activeElement).toBe(host.querySelector('[data-setup-section="interaction"]'));
     expect(runImmediateFriendReplies).not.toHaveBeenCalled();expect(refreshFriendFeed).not.toHaveBeenCalled();
 });
-it('saves an independent preset only on explicit save and retains it when appearance settings change',async()=>{
+it('auto-saves an independent preset immediately and retains it when appearance settings change',async()=>{
     const host=await render(React.createElement(FriendFeedApp));
     await click(host,'选择 API');
-    await act(async()=>{(host.querySelector('input[type=checkbox]') as HTMLInputElement).click();});
-    await click(host,'哔哔测试预设');expect(await readFriendFeedApi()).toBeNull();
-    await click(host,'保存 API 设置');expect(await readFriendFeedApi()).toMatchObject({model:'test-bibi',apiKey:'test-only'});
+    await click(host,'哔哔测试预设');
+    expect(await readFriendFeedApi()).toMatchObject({model:'test-bibi',apiKey:'test-only',presetId:'bibi-test'});
+    await click(host,'返回上一级');
     expect(host.textContent).toContain('已使用哔哔独立 API');
     await click(host,'哔哔设置');await click(host,'外观与阅读');await click(host,'保存设置');
-    expect(await readFriendFeedApi()).toMatchObject({model:'test-bibi'});
+    expect(await readFriendFeedApi()).toMatchObject({model:'test-bibi',presetId:'bibi-test'});
     expect(JSON.stringify(await readFriendFeed())).not.toContain('test-only');
 });
 it('selects, removes and publishes local photos without text, then finds the post in the media tab',async()=>{

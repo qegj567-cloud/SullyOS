@@ -11,11 +11,36 @@
 | Worker 成品包 | 部署仓库 `main` 分支 | 部署仓库 `canary` 分支 |
 | 谁在用 | 所有人 | 解锁调试面板后手动加入的人 |
 
-发版流程：dev 上某一版可以给志愿者试了，就把 `canary` 分支快进到那个提交（或开 PR dev→canary）。快进之前先在 `utils/canaryChangelog.ts` 里补当天的更新日志（见下文「更新日志」）。push 之后，CI 先把 Worker 包同步到部署仓库的 `canary` 分支，再部署 canary 前端。确认没问题后照常走 dev→master。合进 dev 不会自动发到 canary，不快进 `canary` 分支，线上 canary 就一直是上一次发布的构建。
+发版流程：dev 上某一版可以给志愿者试了，就把 dev 合并进 `canary` 分支。合并之前先在 `utils/canaryChangelog.ts` 里补当天的更新日志（见下文「更新日志」），并确认这批新功能的效果埋点已经按 [`analytics.md`](./analytics.md)「canary 功能的效果埋点」补齐。push 之后，CI 先把 Worker 包同步到部署仓库的 `canary` 分支，再部署 canary 前端。确认没问题后照常走 dev→master。合进 dev 不会自动发到 canary，不往 `canary` 分支推，线上 canary 就一直是上一次发布的构建。
+
+`canary` 上可能有从 master 同步过来的合并提交（见下一节），不一定还是 dev 的祖先，所以用合并；canary 本来就落后于 dev 时，这一步自动变成快进。在临时 worktree 里做，不切主工作区的分支：
 
 ```bash
-git fetch origin && git push origin origin/dev:refs/heads/canary
+git fetch origin
+git worktree add --detach ../sullyos-canary origin/canary
+git -C ../sullyos-canary merge --no-edit origin/dev
+git -C ../sullyos-canary push origin HEAD:canary
+git worktree remove ../sullyos-canary
 ```
+
+### master 改动同步到 canary
+
+有的改动不需要先在 canary 试，直接合进 master（外部 PR、热修）。`canary` 分支不会自动带上它们，canary 用户会一直缺这些修复，直到下次从 dev 发版。所以每次有改动绕过 canary 进了 master，合并后就同步一遍，只带 master 的内容，不顺带 dev 上还没准备好的改动。
+
+canary 上有 master 没有的提交，快进不成立，只能合并。冲突先在 dev 上解（dev 合 master 时会撞上同样的冲突，反正要解），再照同一种解法解 canary 那边。
+
+1. `git fetch origin`。本地 dev 有没推的提交，先 `git rebase origin/dev`。
+2. dev 合 master：`git -c rerere.enabled=true merge origin/master`。冲突两边的改动都保留，跑相关测试，提交后推 dev（dev 的 push 不触发任何部署）。
+3. canary 合 master，同样在临时 worktree 里做：
+
+   ```bash
+   git worktree add --detach ../sullyos-canary origin/canary
+   git -C ../sullyos-canary -c rerere.enabled=true merge --no-edit origin/master
+   ```
+
+   rerere 会把第 2 步记下的解法自动套上，冲突块和 dev 那边一模一样时不用再解，但仍要 `git add`。剩下的冲突照 dev 的解法手动解：只合进 master 那一半，不把 dev 独有的改动带进来（canary 比 dev 旧，同一处在两边可能不一样）。解完 `git add`、`git commit --no-edit`。
+4. `git -C ../sullyos-canary push origin HEAD:canary`，再 `git worktree remove ../sullyos-canary`。push 会触发 `deploy-canary.yml`（先同步 Worker 包，再部署前端），用 `gh run watch` 盯到成功。
+5. 核对 `git rev-list --count origin/canary..origin/master` 为 0。不用补 canary 更新日志，这些改动正式版已经有了。
 
 canary 每次发布都会给正打开着的页面弹「新版本已准备好」。网页更新只在版本号（`APP_VERSION` 的前半截）变了时才弹提示，同一版本号内的构建要等下次打开或刷新才悄悄换上；canary 构建的更新版本号拼上了构建号（`releaseUpdateVersion`，SW 清单与页面用同一个式子），每个构建都算新版本。统计标签不受影响，仍是 `v3.x-canary`。
 
@@ -100,7 +125,7 @@ iOS 主屏幕 PWA 没有地址栏，canary 如果白屏，用户连设置都进�
 
 canary 更新得勤、每次改动小，不做正式版那种整页更新说明，只在更新后第一次打开时弹一个小卡片，按天列出没看过的条目。
 
-- **内容手写**，在 `utils/canaryChangelog.ts` 的 `CANARY_CHANGELOG` 里。每次快进 `canary` 分支之前，在最上面补当天的条目，同一天发几次就往当天追加。写给志愿者看：这次能试什么、修了什么，一条一句，不写提交信息原文。忘了写就不弹，不影响发布。
+- **内容手写**，在 `utils/canaryChangelog.ts` 的 `CANARY_CHANGELOG` 里。每次把 dev 发到 `canary` 之前，在最上面补当天的条目，同一天发几次就往当天追加。写给志愿者看：这次能试什么、修了什么，一条一句，不写提交信息原文。忘了写就不弹，不影响发布。
 - **按条目认已读**。每条以「日期 + 原文」为准，关掉卡片时把日志里现有的条目全部记进 localStorage 的 `sullyos_canary_changelog_seen`（设备状态，不进备份）。改了某条的措辞会被当成新条目再弹一次；删掉的旧条目从记录里一起消失，记录不会越攒越大。
 - **刚加入那次不弹**，把现有条目直接记成看过：那次启动有小金丝雀落地动画，而且加入不是一次更新，之前的条目对新人没意义。
 - **排在启动提醒最后**：正式版的更新公告、活动弹窗、「该备份啦」都处理完才轮到它，桌面上的邀请卡片给它让路。正式版公告里点了「立刻体验」跳走、剩下几条没看完时，这次启动不弹，下次再弹。
@@ -166,6 +191,6 @@ canary 用独立的静态站 Worker，不和正式站一起部署：canary 部�
 
 ## 联动
 
-- **使用统计**：canary 构建的统计标签是 `v3.x-canary`（`utils/analytics.ts` 的 `analyticsTag`），所有事件、快照和性能数据都能按通道切开，不额外占快照属性；事件「加入 canary」「退出 canary」「canary 自动退回」。见 [`analytics.md`](./analytics.md)。
+- **使用统计**：canary 构建的统计标签是 `v3.x-canary`（`utils/analytics.ts` 的 `analyticsTag`），所有事件、快照和性能数据都能按通道切开，不额外占快照属性；事件「加入 canary」「退出 canary」「canary 自动退回」。进 canary 的新功能要配哪些效果埋点、canary 的数据怎么看，见 [`analytics.md`](./analytics.md)「canary 功能的效果埋点」。
 - **备份**：通道选择和启动计数是这台设备的设置，不进备份；Worker 的通道在云端诊断表里，也不进备份。
 - **Sully-11 手册**：「设置」一区有加入、退出、打不开时怎么办的说明。

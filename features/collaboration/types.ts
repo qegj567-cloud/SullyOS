@@ -109,9 +109,13 @@ export interface CollaborationCategory {
 }
 
 export interface CollaborationApiProfile {
+  apiType?: 'openai' | 'anthropic';
   baseUrl: string;
   apiKey: string;
   model: string;
+  maxTokens?: number;
+  presetId?: string;
+  presetFp?: string;
   stream: boolean;
   temperature: number;
   /**

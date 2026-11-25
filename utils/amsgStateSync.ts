@@ -38,11 +38,13 @@ import { AmsgChatPresence, CHAT_PRESENCE_HEARTBEAT_MS } from './amsgChatPresence
 import {
   buildCharChatCredRow,
   buildCharEmotionCredRow,
+  buildCharMemoryCredRow,
   knownCredIds,
   parseCharCredId,
   pickChangedCredRows,
   type LlmCredentialRow,
 } from './amsgLlmCredentials';
+import { readStoredMainApi, readStoredMemoryLightLlm, resolveGlobalMainApi } from './apiSlots';
 import { trackEvent } from './analytics';
 import { AMSG_OWNER_CONFLICT_EVENT } from './amsgOwnerReconcile';
 import { DB } from './db';
@@ -150,8 +152,16 @@ const bindLifecycleListener = () => {
   if (lifecycleBound || typeof document === 'undefined') return;
   lifecycleBound = true;
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden' && dirty.size > 0) {
-      void flushAmsgState('hidden');
+    if (document.visibilityState === 'hidden') {
+      if (dirty.size > 0) {
+        void flushAmsgState('hidden');
+      }
+      if (credScheduleTimer != null) {
+        clearTimeout(credScheduleTimer);
+        credScheduleTimer = null;
+        const latest = pendingScheduledCredApiConfig ?? readStoredMainApi();
+        if (latest) syncAmsgLlmCredentials(latest);
+      }
     }
   });
 };
@@ -585,6 +595,8 @@ let pendingCredForce = false;
 let credSyncing = false;
 let credRetryCount = 0;
 let credRetryTimer: ReturnType<typeof setTimeout> | null = null;
+let credScheduleTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingScheduledCredApiConfig: APIConfig | undefined;
 
 const writeCredSyncMark = (pending: boolean) => {
   // 存储满 / 隐私模式写不进去就算了：底账只是给「重试没等到就被杀」兜底的。
@@ -597,15 +609,18 @@ const writeCredSyncMark = (pending: boolean) => {
 /**
  * 按底账里记着的 credId，用当前配置重算出这几行现在该是什么值。
  * 角色已删 / 凭据配不齐的那些直接跳过——没得算，也不该拿一份残缺的去覆盖云端。
+ * 包含 chat、emotion 与 memory（当记忆宫殿副 API 留空回退主 API 时，换主 Key 也必须重刷 memory 行）。
  */
 export const buildCredentialRowsToResync = async (
   apiConfig: APIConfig,
   characters?: CharacterProfile[],
 ): Promise<LlmCredentialRow[]> => {
+  const resolvedMain = resolveGlobalMainApi(apiConfig);
+  const lightLLM = readStoredMemoryLightLlm();
   const wanted = knownCredIds()
     .map(parseCharCredId)
-    .filter((parsed): parsed is { charId: string; purpose: 'chat' | 'emotion' } =>
-      !!parsed && (parsed.purpose === 'chat' || parsed.purpose === 'emotion'));
+    .filter((parsed): parsed is { charId: string; purpose: 'chat' | 'emotion' | 'memory' } =>
+      !!parsed && (parsed.purpose === 'chat' || parsed.purpose === 'emotion' || parsed.purpose === 'memory'));
   const all = characters ?? await allSpaceCharacters();
   // 备份恢复 / 换设备时可能没有本地凭据底账，仍需覆盖云端旧副 API。
   for (const char of all) {
@@ -619,8 +634,10 @@ export const buildCredentialRowsToResync = async (
     const char = byId.get(charId);
     if (!char) continue;
     const row = purpose === 'chat'
-      ? buildCharChatCredRow(char, char.activeMsg2Config, apiConfig)
-      : buildCharEmotionCredRow(charId, char.emotionConfig?.api, apiConfig);
+      ? buildCharChatCredRow(char, char.activeMsg2Config, resolvedMain)
+      : purpose === 'emotion'
+      ? buildCharEmotionCredRow(charId, resolvedMain.emotionApi ?? char.emotionConfig?.api, resolvedMain)
+      : buildCharMemoryCredRow(charId, lightLLM, resolvedMain);
     if (row) rows.push(row);
   }
   return rows;
@@ -744,6 +761,11 @@ export const syncAmsgLlmCredentials = (
   apiConfig: APIConfig,
   options: { onlyIfChanged?: boolean } = {},
 ): void => {
+  if (credScheduleTimer != null) {
+    clearTimeout(credScheduleTimer);
+    credScheduleTimer = null;
+  }
+  pendingScheduledCredApiConfig = undefined;
   pendingCredApiConfig = apiConfig;
   // 排队中已有一次强制同步时，后到的自动补传不能把它降级。
   pendingCredForce = pendingCredForce || !options.onlyIfChanged;
@@ -752,6 +774,26 @@ export const syncAmsgLlmCredentials = (
   if (credRetryTimer != null) { clearTimeout(credRetryTimer); credRetryTimer = null; }
   writeCredSyncMark(true);
   void runLlmCredentialSync('change');
+};
+
+/**
+ * 所见即所得自动保存与预设批量更新专用的防抖凭据同步入口：
+ * 立即写入 localStorage 欠账标记（杀进程不丢），将 1.5s 内的连续变更合并为一次上传。
+ */
+export const scheduleAmsgLlmCredentialSync = (
+  apiConfig?: APIConfig,
+  delayMs = FLUSH_DEBOUNCE_MS,
+): void => {
+  bindLifecycleListener();
+  pendingScheduledCredApiConfig = apiConfig ?? readStoredMainApi() ?? pendingScheduledCredApiConfig;
+  writeCredSyncMark(true);
+  if (credScheduleTimer != null) clearTimeout(credScheduleTimer);
+  credScheduleTimer = setTimeout(() => {
+    credScheduleTimer = null;
+    const latest = readStoredMainApi() ?? pendingScheduledCredApiConfig;
+    pendingScheduledCredApiConfig = undefined;
+    if (latest) syncAmsgLlmCredentials({ ...latest });
+  }, delayMs);
 };
 
 // ─── 清空 Worker 地址前的收尾 ───
@@ -986,6 +1028,8 @@ export const pauseAmsgStateSync = (): void => {
   if (retryTimer != null) { clearTimeout(retryTimer); retryTimer = null; }
   if (toolConfigRetryTimer != null) { clearTimeout(toolConfigRetryTimer); toolConfigRetryTimer = null; }
   if (credRetryTimer != null) { clearTimeout(credRetryTimer); credRetryTimer = null; }
+  if (credScheduleTimer != null) { clearTimeout(credScheduleTimer); credScheduleTimer = null; }
+  pendingScheduledCredApiConfig = undefined;
 
   dirty.clear();
   reflushRequested = false;

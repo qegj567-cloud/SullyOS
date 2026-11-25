@@ -143,7 +143,7 @@ date 字段填记忆对应的大概日期。`;
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${llmConfig.apiKey}`,
+                    'Authorization': `Bearer ${llmConfig.apiKey || 'sk-none'}`,
                 },
                 body: JSON.stringify({
                     model: llmConfig.model,

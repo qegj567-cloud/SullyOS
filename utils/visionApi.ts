@@ -2,7 +2,7 @@ import type { ApiPreset, Message, VisionApiConfig } from '../types';
 import { DB } from './db';
 import { getApiCallAmbientContext, type ApiCallMeta } from './apiCallLog';
 import { extractContent, safeFetchJson } from './safeApi';
-import { normalizeApiBaseUrl, normalizeApiCredential, normalizeApiModel } from './apiConfigNormalize';
+import { resolveEffectiveSlot, slotFromPreset } from './apiSlots';
 import { isBlobRef } from './blobRef';
 
 export const VISION_DESCRIPTION_METADATA_KEY = 'visionDescription';
@@ -27,19 +27,48 @@ const canDescribeImage = (value: unknown): value is string =>
 
 const inFlightDescriptions = new Map<string, Promise<string>>();
 
-/** 把一份通用模型预设填入独立识图配置，不改变主 API 当前选择。 */
-export const visionApiConfigFromPreset = (preset: ApiPreset, enabled = true): VisionApiConfig => ({
-  enabled,
-  baseUrl: normalizeApiBaseUrl(preset.config.baseUrl),
-  apiKey: normalizeApiCredential(preset.config.apiKey),
-  model: normalizeApiModel(preset.config.model),
-});
+/** 把一份通用模型预设绑定到独立识图配置（保留 presetId 引用，随预设更新自动联动，不携带与识图无关的采样温度）。 */
+export const visionApiConfigFromPreset = (preset: ApiPreset, enabled = true): VisionApiConfig => {
+  const slot = slotFromPreset(preset);
+  return {
+    enabled,
+    ...(slot.apiType ? { apiType: slot.apiType } : {}),
+    baseUrl: slot.baseUrl,
+    apiKey: slot.apiKey,
+    model: slot.model,
+    presetId: slot.presetId,
+    presetFp: slot.presetFp,
+  };
+};
+
+const isLocalVisionEndpoint = (url: string): boolean => {
+  try {
+    const h = new URL(url).hostname.toLowerCase();
+    return (
+      h === 'localhost' ||
+      h === '127.0.0.1' ||
+      h === '[::1]' ||
+      h === '0.0.0.0' ||
+      h.endsWith('.local') ||
+      /^192\.168\./.test(h) ||
+      /^10\./.test(h) ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(h)
+    );
+  } catch {
+    return false;
+  }
+};
+
+export const resolveVisionApiEndpoint = (config?: VisionApiConfig | null) => {
+  if (!config || config.enabled !== true) return null;
+  const resolved = resolveEffectiveSlot(config);
+  if (!resolved || !resolved.baseUrl.trim() || !resolved.model.trim()) return null;
+  if (!resolved.apiKey.trim() && !isLocalVisionEndpoint(resolved.baseUrl)) return null;
+  return resolved;
+};
 
 export const isVisionApiReady = (config?: VisionApiConfig | null): config is VisionApiConfig =>
-  config?.enabled === true
-  && !!config.baseUrl?.trim()
-  && !!config.apiKey?.trim()
-  && !!config.model?.trim();
+  Boolean(resolveVisionApiEndpoint(config));
 
 export const readVisionDescription = (message: Message): string => {
   const value = message.metadata?.[VISION_DESCRIPTION_METADATA_KEY];
@@ -59,8 +88,9 @@ export async function describeImageWithVisionApi(
   config: VisionApiConfig,
   meta?: ApiCallMeta,
 ): Promise<string> {
-  if (!isVisionApiReady(config)) {
-    throw new Error('识图 API 已开启，但 URL、Key 或 Model 尚未填写完整');
+  const endpoint = resolveVisionApiEndpoint(config);
+  if (!endpoint) {
+    throw new Error('识图 API 已开启，但 API 地址或模型尚未填写完整');
   }
   if (!canDescribeImage(imageUrl)) {
     throw new Error('图片数据不可用，无法调用识图 API');
@@ -79,15 +109,15 @@ export async function describeImageWithVisionApi(
     };
 
   const request = (async () => {
-    const baseUrl = config.baseUrl.trim().replace(/\/+$/, '');
+    const baseUrl = endpoint.baseUrl.trim().replace(/\/+$/, '');
     const data = await safeFetchJson(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.apiKey.trim()}`,
+        'Authorization': `Bearer ${endpoint.apiKey.trim() || 'sk-none'}`,
       },
       body: JSON.stringify({
-        model: config.model.trim(),
+        model: endpoint.model.trim(),
         messages: [{
           role: 'user',
           content: [
@@ -97,9 +127,10 @@ export async function describeImageWithVisionApi(
         }],
         temperature: 0,
         max_tokens: 1200,
-        stream: false,
+        stream: endpoint.stream ?? false,
       }),
-    }, 1, 60_000, callMeta);
+      __sullyMeta: { ...callMeta, slotStream: endpoint.stream ?? false },
+    } as RequestInit, 1, 60_000, callMeta);
 
     const description = cleanDescription(extractContent(data));
     if (!description) throw new Error('识图 API 没有返回图片描述');

@@ -1,3 +1,4 @@
+import { resolveAuxiliaryApi } from '../apiSlots';
 import { resolveDialogueApi } from '../characterApi';
 import { acquireCharacterModule, consumeCharacterModule, characterModuleAllowance, characterModuleCount } from './sarCharacterCommerce';
 import { rollSARActivity, sarActivityPool } from './activityChoices';
@@ -22,7 +23,7 @@ import { loadCharacterContextMessages } from '../chatContextRange';
  */
 
 import {
-    CharacterProfile, UserProfile, GroupProfile, RealtimeConfig, APIConfig,
+    CharacterProfile, UserProfile, GroupProfile, RealtimeConfig, APIConfig, DialogueApiConfig,
     VRWorldNovel, VRCardMeta, VRRoomId, VRMusicRoomState, CharPlaylistSong, CharMusicReview,
     VRGuestbookState, VRGuestbookMessage, VRLetter, VRScript, SignalPoem,
 } from '../../types';
@@ -73,7 +74,7 @@ import { prepareGardenVisit,parseGardenVisit,applyGardenVisit,gardenVisitAvailab
 /** 记忆管线所需配置的最小形状（避免从 OSContext 反向 import 造成循环依赖）。 */
 interface MemoryConfigLike {
     embedding?: { baseUrl?: string; apiKey?: string; model?: string; dimensions?: number };
-    lightLLM?: { baseUrl?: string; apiKey?: string; model?: string };
+    lightLLM?: Partial<DialogueApiConfig> | null;
 }
 
 export interface VRSessionDeps {
@@ -1026,8 +1027,7 @@ async function runVRSessionUnlocked(deps: VRSessionDeps): Promise<VRSessionResul
         // 记忆管线（fire-and-forget）
         try {
             const mpEmb = memoryPalaceConfig?.embedding;
-            const mpLLMConfigured = memoryPalaceConfig?.lightLLM;
-            const mpLLM = (mpLLMConfigured?.baseUrl) ? mpLLMConfigured : { baseUrl: apiConfig.baseUrl, apiKey: apiConfig.apiKey, model: apiConfig.model };
+            const mpLLM = resolveAuxiliaryApi(memoryPalaceConfig?.lightLLM, apiConfig);
             if (char.memoryPalaceEnabled && mpEmb?.baseUrl && mpEmb?.apiKey && mpLLM.baseUrl) {
                 const recentMsgs = await DB.getRecentMessagesByCharId(char.id, 50);
                 void processNewMessagesWithAutoArchive(recentMsgs, char.id, char.name, mpEmb as any, mpLLM as any, userProfile?.name || '', false).catch(() => {});

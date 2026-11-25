@@ -53,7 +53,9 @@ import {
 } from '../../../utils/storyTheater';
 import {
     getMemoryPalaceHighWaterMark,
+    hasRunnableMemoryPalaceLlm,
     processMessageRange,
+    resolveMemoryPalaceLlm,
     retrieveMemories,
 } from '../../../utils/memoryPalace/pipeline';
 import { processNewMessagesWithAutoArchive } from '../../../utils/memoryPalace/autoArchive';
@@ -570,8 +572,8 @@ const StoryTheaterSession: React.FC<Props> = ({ entry, preset, masks, onBack, on
     const applyActorMemoryPipeline = useCallback(async () => {
         if (!entry.writesToCharacterMemory) return;
         const embedding = memoryPalaceConfig.embedding;
-        const light = memoryPalaceConfig.lightLLM?.baseUrl ? memoryPalaceConfig.lightLLM : { baseUrl: apiConfig.baseUrl, apiKey: apiConfig.apiKey, model: apiConfig.model };
-        if (!embedding?.baseUrl || !embedding?.apiKey || !light.baseUrl) return;
+        const light = resolveMemoryPalaceLlm(memoryPalaceConfig?.lightLLM, apiConfig);
+        if (!embedding?.baseUrl || !embedding?.apiKey || !hasRunnableMemoryPalaceLlm(light)) return;
         for (const actor of memoryActors) {
             if (!actor.memoryPalaceEnabled) continue;
             try {
@@ -607,8 +609,8 @@ const StoryTheaterSession: React.FC<Props> = ({ entry, preset, masks, onBack, on
                 summary = await generateStoryArchiveSummary(entry.title, batch, apiConfig, theaterCharMeta);
             } else {
                 const embedding = memoryPalaceConfig.embedding;
-                const light = memoryPalaceConfig.lightLLM?.baseUrl ? memoryPalaceConfig.lightLLM : { baseUrl: apiConfig.baseUrl, apiKey: apiConfig.apiKey, model: apiConfig.model };
-                if (!embedding?.baseUrl || !embedding?.apiKey || !light.baseUrl) {
+                const light = resolveMemoryPalaceLlm(memoryPalaceConfig?.lightLLM, apiConfig);
+                if (!embedding?.baseUrl || !embedding?.apiKey || !hasRunnableMemoryPalaceLlm(light)) {
                     addToast('独立向量归档需要先完成向量记忆配置', 'error');
                     return null;
                 }

@@ -51,13 +51,11 @@ describe('打脏入口接线（保存后调 markAmsgStateDirty）', () => {
 describe('LLM 凭据行的重传接线', () => {
   it('设置页换聊天 API：通过同步队列更新凭据与存量任务', () => {
     const src = read('../apps/Settings.tsx');
-    // 保存按钮和点预设切换汇到 commitApiConfig 这一个出口，凭据接线挂在它身上。
+    // 主对话 ApiSlotEditor 的自动提交统一汇到 commitApiConfig 这一个出口，凭据接线挂在它身上。
     const fn = sliceBetween(src, 'const commitApiConfig', 'const applyPreset');
     expect(fn).toContain('syncAmsgLlmCredentials(');
     expect(read('./amsgStateSync.ts')).toContain('ActiveMsgClient.refreshApiCredentialsForPendingTasks(');
-    // 两个入口都得走这个出口：绕过去就是「聊天换了 API、后台任务还拿旧 Key」
-    expect(sliceBetween(src, 'const handleSaveApi', 'const handleSaveVisionApi')).toContain('commitApiConfig(');
-    expect(sliceBetween(src, 'const applyPreset', 'const openEditPreset')).toContain('commitApiConfig(');
+    expect(sliceBetween(src, 'slotName="主对话"', 'slotName="独立识图"')).toContain('commitApiConfig(');
   });
 
   it('角色 2.0 面板保存：也同步一次主 API', () => {

@@ -11,7 +11,7 @@ import TokenImg from '../components/os/TokenImg';
 import { isImageValue } from '../utils/blobRef';
 import { safeResponseJson, extractJson } from '../utils/safeApi';
 import { normalizeMessageContent } from '../utils/messageFormat';
-import { injectMemoryPalace, ingestDiaryToPalace, type DiaryIngestResult } from '../utils/memoryPalace/pipeline';
+import { injectMemoryPalace, ingestDiaryToPalace, resolveMemoryPalaceLlm, type DiaryIngestResult } from '../utils/memoryPalace/pipeline';
 import { getRoomLabel } from '../utils/memoryPalace/types';
 import { Sparkle, Archive } from '@phosphor-icons/react';
 import { CharacterGroupFilterBar, filterCharactersByGroup, GROUP_FILTER_ALL } from '../components/character/CharacterGroupFilter';
@@ -670,7 +670,7 @@ ${charPart}
                         diary.date,
                         diary.userPage.text,
                         diary.charPage?.text || '',
-                        memoryPalaceConfig?.lightLLM as any,
+                        resolveMemoryPalaceLlm(memoryPalaceConfig?.lightLLM, apiConfig),
                         userProfile.name,
                     );
                 } catch (e: any) {

@@ -5,6 +5,7 @@ import { canAnalyzeVoiceSource, isVoiceAudioPriming, primeVoiceAudio, voicePlayb
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Microphone, SpeakerHigh, SpeakerSlash, PhoneDisconnect, Translate, Gear, Clock, CaretLeft, CaretRight, Phone, VideoCamera, VideoCameraSlash, Cube, FolderOpen, FileZip, Moon, Sun, Check, ArrowsClockwise } from '@phosphor-icons/react';
 import { useOS } from '../context/OSContext';
+import { resolveAuxiliaryApi } from '../utils/apiSlots';
 import { extractContent, safeFetchJson } from '../utils/safeApi';
 import { formatUnknownError } from '../utils/errorSelfCheck';
 import { minimaxFetch } from '../utils/minimaxEndpoint';
@@ -525,7 +526,7 @@ ${currentVoiceActingGuide()}
   return [coreContext, timeContext, callPrompt, voiceLangPrompt].filter(Boolean).join('\n\n');
 };
 const CallApp: React.FC = () => {
-  const { closeApp, openApp, characters, activeCharacterId, addToast, apiConfig, updateApiConfig, userProfile: baseUserProfile, customThemes, suspendCall, suspendedCall, clearSuspendedCall, updateCharacter, characterGroups, groups, realtimeConfig, memoryPalaceConfig } = useOS();
+  const { closeApp, openApp, characters, activeCharacterId, addToast, apiConfig, apiPresets, updateApiConfig, userProfile: baseUserProfile, customThemes, suspendCall, suspendedCall, clearSuspendedCall, updateCharacter, characterGroups, groups, realtimeConfig, memoryPalaceConfig } = useOS();
   const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
 
   const [viewMode, setViewMode] = useState<ViewMode>('role-select');
@@ -1877,12 +1878,8 @@ const CallApp: React.FC = () => {
   );
 
   const resolvePerformanceDirectorApi = (character: CharacterProfile) => {
-    // 与情绪 Buff 完全复用同一套 API 选择规则：角色单独配了就用副 API，
-    // 没有单独配置则回退主 API。
-    const configuredEmotionApi = character.emotionConfig?.api;
-    return configuredEmotionApi?.baseUrl
-      ? configuredEmotionApi
-      : { baseUrl: apiConfig.baseUrl, apiKey: apiConfig.apiKey, model: apiConfig.model };
+    // 与情绪 Buff 复用同一套全局副 API 选择与回退规则（支持预设 ID 实时联动与 Anthropic 原生接口）。
+    return resolveAuxiliaryApi(apiConfig.emotionApi ?? character.emotionConfig?.api, apiConfig, apiPresets);
   };
 
   const buildLocalPerformancePersona = (character: CharacterProfile): string => {

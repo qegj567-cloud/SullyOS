@@ -34,7 +34,11 @@ import { WORLD_API_KEY, WORLD_CUSTOM_STYLE_KEY } from '../utils/worldHome/localB
 import { CharacterGroupFilterBar, filterCharactersByGroup, GROUP_FILTER_ALL } from '../components/character/CharacterGroupFilter';
 import { trackEvent } from '../utils/analytics';
 import { useConfirmDialog } from '../hooks/useConfirmDialog';
-import type { WorldProfile, WorldEpisode, WorldHomeMode, WorldTimeMode, WorldHouse, WorldThread, WorldChatMessage, WorldNarrativeStyle, CharacterProfile, WorldCharBeat, APIConfig, ApiPreset } from '../types';
+import { useLocalBackHandler } from '../hooks/useLocalBackHandler';
+import ApiSlotEditor from '../components/settings/ApiSlotEditor';
+import { isBlankApiSlot, resolveAuxiliaryApi } from '../utils/apiSlots';
+import { pickDialogueApi } from '../utils/characterApi';
+import type { WorldProfile, WorldEpisode, WorldHomeMode, WorldTimeMode, WorldHouse, WorldThread, WorldChatMessage, WorldNarrativeStyle, CharacterProfile, WorldCharBeat, APIConfig, ApiPreset, DialogueApiConfig } from '../types';
 
 /**
  * 家园里「生成内容」的可编辑/删除目标（手机里的动态/备忘/聊天）。
@@ -57,55 +61,51 @@ const persistSavedStyles = (list: string[]) => {
     try { localStorage.setItem(CUSTOM_STYLE_KEY, JSON.stringify(list.slice(0, 12))); } catch { /* ignore */ }
 };
 
-/** 家园全局 API（所有世界共用一份；不设=跟随全局聊天默认）。存 localStorage。 */
-const loadWorldApi = (): { baseUrl: string; apiKey: string; model: string } | null => {
-    try { const s = localStorage.getItem(WORLD_API_KEY); const c = s ? JSON.parse(s) : null; return c?.baseUrl ? c : null; } catch { return null; }
+/** 家园全局 API（所有世界共用一份；不设=跟随全局聊天默认）。存 localStorage，保留完整槽位与 presetId。 */
+const loadWorldApi = (): DialogueApiConfig | null => {
+    try {
+        const s = localStorage.getItem(WORLD_API_KEY);
+        const c = s ? (JSON.parse(s) as Partial<DialogueApiConfig>) : null;
+        return c && !isBlankApiSlot(c) ? pickDialogueApi(c as DialogueApiConfig) : null;
+    } catch { return null; }
 };
-const persistWorldApi = (cfg: { baseUrl: string; apiKey: string; model: string } | null) => {
-    try { if (cfg?.baseUrl) localStorage.setItem(WORLD_API_KEY, JSON.stringify(cfg)); else localStorage.removeItem(WORLD_API_KEY); } catch { /* ignore */ }
+const persistWorldApi = (cfg: DialogueApiConfig | null) => {
+    try {
+        if (cfg && !isBlankApiSlot(cfg)) localStorage.setItem(WORLD_API_KEY, JSON.stringify(pickDialogueApi(cfg)));
+        else localStorage.removeItem(WORLD_API_KEY);
+    } catch { /* ignore */ }
 };
 
-/** 家园全局 API 设置弹窗（学彼方：跟随全局默认 / 选「设置」里保存的预设；所有世界共用）。 */
+/** 家园全局 API 设置弹窗（所有世界共用）。 */
 const WorldApiSettings: React.FC<{
     apiConfig: APIConfig;
     apiPresets: ApiPreset[];
-    current: { baseUrl: string; apiKey: string; model: string } | null;
-    onChoose: (cfg: { baseUrl: string; apiKey: string; model: string } | null) => void;
+    current: DialogueApiConfig | null;
+    onChoose: (cfg: DialogueApiConfig | null) => void;
     onClose: () => void;
-}> = ({ apiConfig, apiPresets, current, onChoose, onClose }) => {
-    const host = (u?: string) => { try { return u ? new URL(u).host : '—'; } catch { return u || '—'; } };
-    const follow = !current?.baseUrl;
-    const sameAs = (c: APIConfig) => !follow && current!.baseUrl === c.baseUrl && current!.model === c.model && current!.apiKey === c.apiKey;
+}> = ({ current, onChoose, onClose }) => {
+    useLocalBackHandler(() => {
+        onClose();
+        return true;
+    }, 80);
+
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={onClose}>
-            <div className="w-full max-w-md bg-[#f7f3ea] rounded-3xl p-4 max-h-[80%] overflow-y-auto no-scrollbar shadow-2xl" onClick={e => e.stopPropagation()}>
-                <div className="flex items-center justify-between mb-1">
+            <div className="w-full max-w-md bg-[#f7f3ea] rounded-3xl p-4 max-h-[82%] overflow-y-auto no-scrollbar shadow-2xl" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between mb-3">
                     <h3 className="text-[15px] font-black text-stone-800 font-serif">家园 · API</h3>
                     <button onClick={onClose} className="p-1.5 rounded-full hover:bg-black/5"><X size={16} weight="bold" className="text-stone-500" /></button>
                 </div>
-                <p className="text-[11px] text-stone-400 leading-relaxed mb-3">家园演绎比较费 API，可在这里单独指定一份（<b className="text-stone-500">所有世界共用</b>）；不设则跟随全局聊天默认。</p>
-                <button onClick={() => onChoose(null)} className={`w-full flex items-center gap-2 rounded-xl p-3 mb-1.5 text-left border transition-all ${follow ? 'bg-stone-900 border-stone-900 text-white shadow' : 'bg-white border-stone-200 text-stone-700'}`}>
-                    <div className="flex-1 min-w-0">
-                        <div className="text-[12.5px] font-bold">跟随全局默认</div>
-                        <div className={`text-[10px] truncate ${follow ? 'text-white/60' : 'text-stone-400'}`}>{apiConfig?.model || '未配置'} · {host(apiConfig?.baseUrl)}</div>
-                    </div>
-                    {follow && <span className="text-[10px] font-bold shrink-0">✓ 使用中</span>}
-                </button>
-                {apiPresets.length === 0 ? (
-                    <p className="text-[10.5px] text-stone-400 px-1 py-1.5">「设置」里还没有保存的 API 预设——去设置里存几个模型，这里就能直接选。</p>
-                ) : apiPresets.map(p => {
-                    const on = sameAs(p.config);
-                    return (
-                        <button key={p.id} onClick={() => onChoose({ baseUrl: p.config.baseUrl, apiKey: p.config.apiKey, model: p.config.model })}
-                            className={`w-full flex items-center gap-2 rounded-xl p-3 mb-1.5 text-left border transition-all ${on ? 'bg-stone-900 border-stone-900 text-white shadow' : 'bg-white border-stone-200 text-stone-700'}`}>
-                            <div className="flex-1 min-w-0">
-                                <div className="text-[12.5px] font-bold truncate">{p.name}</div>
-                                <div className={`text-[10px] truncate ${on ? 'text-white/60' : 'text-stone-400'}`}>{p.config.model} · {host(p.config.baseUrl)}</div>
-                            </div>
-                            {on && <span className="text-[10px] font-bold shrink-0">✓ 使用中</span>}
-                        </button>
-                    );
-                })}
+                <div className="bg-white rounded-2xl p-4 shadow-sm border border-stone-200/80">
+                    <ApiSlotEditor
+                        slotName="家园"
+                        value={current}
+                        onCommit={(next) => onChoose(next ?? null)}
+                        followButtonLabel="跟随全局默认"
+                        helperText="家园演绎调用较多，可在此为所有世界指定独立预设或自定义接口；未设置则跟随全局主对话 API。"
+                        meta={{ appId: 'world_home', appName: '家园' }}
+                    />
+                </div>
             </div>
         </div>
     );
@@ -1924,9 +1924,14 @@ const WorldHomeApp: React.FC<{ embedded?: boolean; launchWorldId?: string; onLau
     const [activeId, setActiveId] = useState<string | null>(null);
     const [draft, setDraft] = useState<WorldProfile | null>(null);
     // 家园全局 API（所有世界共用一份；不设=跟随全局聊天默认）
-    const [worldApi, setWorldApi] = useState<{ baseUrl: string; apiKey: string; model: string } | null>(loadWorldApi);
+    const [worldApi, setWorldApi] = useState<DialogueApiConfig | null>(loadWorldApi);
     const [showApiSettings, setShowApiSettings] = useState(false);
-    const resolvedApi = useMemo(() => (worldApi?.baseUrl ? { ...apiConfig, ...worldApi } : apiConfig), [worldApi, apiConfig]);
+    useEffect(() => {
+        const sync = () => setWorldApi(loadWorldApi());
+        window.addEventListener('sully:api-preset-updated', sync);
+        return () => window.removeEventListener('sully:api-preset-updated', sync);
+    }, []);
+    const resolvedApi = useMemo(() => resolveAuxiliaryApi(worldApi, apiConfig, apiPresets), [worldApi, apiConfig, apiPresets]);
 
     const reload = useCallback(async () => {
         const all = await DB.getWorlds();

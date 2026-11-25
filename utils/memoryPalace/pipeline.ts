@@ -23,8 +23,10 @@ import { loadCharacterContextMessages } from '../chatContextRange';
  *   帮主模型理解当下话语的承接方式，不额外调用 LLM，也不改变旧召回排序
  */
 
-import type { CharacterAccommodationPolicy, MemoryPalaceWaterlineConfig, Message } from '../../types';
+import type { APIConfig, CharacterAccommodationPolicy, DialogueApiConfig, MemoryPalaceWaterlineConfig, Message } from '../../types';
 import type { EmbeddingConfig, EventBox, MemoryNode, PersonalityStyle, RemoteVectorConfig, ScoredMemory } from './types';
+import { readStoredMainApi, resolveAuxiliaryApi } from '../apiSlots';
+import type { LlmApiType } from '../llmEndpoint';
 import {
     countOneShotPendingMessages,
     countUnprocessedBufferMessages,
@@ -140,6 +142,31 @@ export interface LightLLMConfig {
     baseUrl: string;
     apiKey: string;
     model: string;
+    apiType?: LlmApiType;
+    presetId?: string;
+    presetFp?: string;
+}
+
+/**
+ * 解析记忆宫殿后台任务实际使用的 LLM 配置：
+ * - 当 lightLLM 已单独配置或绑定预设时，整套采用其生效值（绑定预设时实时取预设最新值）；
+ * - 当 lightLLM 留空未配置时，整套回退至解析后的全局主对话 API。
+ */
+export function resolveMemoryPalaceLlm(
+    lightLLM: Partial<DialogueApiConfig> | null | undefined,
+    globalApi?: Partial<APIConfig> | null,
+): APIConfig {
+    const fallbackMain = (globalApi ?? readStoredMainApi() ?? { baseUrl: '', apiKey: '', model: '' }) as APIConfig;
+    return resolveAuxiliaryApi(lightLLM, fallbackMain);
+}
+
+/**
+ * 运行时判断记忆宫殿 LLM 是否具备最小可运行字段（地址与模型均非空，兼容免密本地模型与测试桩）。
+ */
+export function hasRunnableMemoryPalaceLlm(
+    cfg: Partial<Pick<DialogueApiConfig, 'baseUrl' | 'model'>> | null | undefined,
+): cfg is LightLLMConfig {
+    return Boolean(cfg?.baseUrl?.trim() && cfg?.model?.trim());
 }
 
 // ─── 日期区间记忆加载 ────────────────────────────────
@@ -1521,7 +1548,7 @@ export async function ingestDiaryToPalace(
     userName: string,
 ): Promise<DiaryIngestResult> {
     if (!char.memoryPalaceEnabled) return { status: 'palace_disabled' };
-    if (!lightLLMConfig?.baseUrl || !lightLLMConfig?.apiKey) {
+    if (!hasRunnableMemoryPalaceLlm(lightLLMConfig)) {
         console.warn(`🏰 [DiaryIngest] 跳过：lightLLM 未配置`);
         return { status: 'lightllm_missing' };
     }
