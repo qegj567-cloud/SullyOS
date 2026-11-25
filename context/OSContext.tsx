@@ -1969,6 +1969,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         setTheme(loadedTheme);
         // Apply font
         applyCustomFont(loadedTheme.customFont);
+        return loadedPresetsForInit;
     };
 
     const initData = async () => {
@@ -2020,7 +2021,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                 : `上次有 ${fresh.length} 项任务没有完成，诊断信息已分别记入系统调试终端，可以复制发给开发者`, 'info'), 2500);
         }
 
-        await loadSettings();
+        const loadedPresetsForInit = await loadSettings();
 
         // 旧剧情副本曾把设定日期写成现实收发时间。先校正，再让历史/记忆/云端读取。
         const storyTimelineRepair = await DB.ensureStoryTheaterTimestamps().catch(error => {
