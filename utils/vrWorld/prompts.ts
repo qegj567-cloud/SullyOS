@@ -1,3 +1,4 @@
+import { socialReadingClock } from '../timezone';
 /**
  * 「彼方」prompt 构造与输出解析。
  *
@@ -456,6 +457,7 @@ export function buildGuestbookRoomTurn(
     occupantNames: string[],
     selfName: string,
     hotTopics?: string[],
+    timeZone?: string,
 ): string {
     const lines: string[] = [];
     const others = occupantNames.filter(n => n !== selfName);
@@ -466,10 +468,11 @@ export function buildGuestbookRoomTurn(
 
     const recent = messages.slice(-50);
     if (recent.length > 0) {
-        lines.push(`留言墙最近的内容（自上而下由旧到新）：`);
+        const published = socialReadingClock(timeZone);
+        lines.push(`阅读时间：${published(Date.now())}。留言按发表时间由旧到新；旧留言里的“现在”指留言当时。`);
         for (const msg of recent) {
             const ref = msg.replyToId ? `（回 #${msg.replyToId.slice(-4)}）` : '';
-            lines.push(`${gbLabel(msg)} ${msg.kind === 'collection-unlock' ? '【程序播报，非角色发言】' : ''}${msg.authorName}${ref}：${msg.content}`);
+            lines.push(`${gbLabel(msg)} [${published(msg.createdAt)}] ${msg.kind === 'collection-unlock' ? '【程序播报，非角色发言】' : ''}${msg.authorName}${ref}：${msg.content}`);
         }
     } else {
         lines.push(`留言墙还空着，没人开过头。`);

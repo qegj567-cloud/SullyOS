@@ -1,3 +1,4 @@
+import { resolveCharTimeZone } from '../timezone';
 import { resolveDialogueApi } from '../characterApi';
 import { acquireCharacterModule, consumeCharacterModule, characterModuleAllowance, characterModuleCount } from './sarCharacterCommerce';
 import { rollSARActivity, sarActivityPool } from './activityChoices';
@@ -429,7 +430,7 @@ async function runVRSessionUnlocked(deps: VRSessionDeps): Promise<VRSessionResul
             } catch { /* 热点拉不到就不聊 */ }
             occupantsOf('guestbook').forEach(n => recallNames.add(n));
             (guestbook?.messages || []).slice(-50).forEach(m => { if (m.authorId !== char.id && !m.kind) recallNames.add(m.authorName); });
-            roomTurn = buildGuestbookRoomTurn(guestbook?.messages || [], occupantsOf('guestbook'), char.name, hotTopics);
+            roomTurn = buildGuestbookRoomTurn(guestbook?.messages || [], occupantsOf('guestbook'), char.name, hotTopics, resolveCharTimeZone(char));
         } else if (room.id === 'postoffice') {
             // 取一封"还没回过"的来信给角色看（有就可能回信，没有就写新信）
             const letters = await DB.getVRLetters();
