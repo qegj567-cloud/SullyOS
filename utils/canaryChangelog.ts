@@ -15,6 +15,12 @@ export interface CanaryChangelogDay {
 
 export const CANARY_CHANGELOG: CanaryChangelogDay[] = [
   {
+    date: '2026-11-27',
+    items: [
+      '修复：有时角色不理你刚发的话、接着上一个话题往下说。遇到过这个问题的话欢迎多聊几轮看看还会不会出现。',
+    ],
+  },
+  {
     date: '2026-11-26',
     items: [
       '聊天回复提示词调整：保留防敷衍与理解情绪的底线，把语气、句长和表达方式交还角色设定。欢迎用同一场景对比不同角色的回应。',

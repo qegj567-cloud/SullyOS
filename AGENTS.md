@@ -35,6 +35,7 @@
 | **角色默认对话 API** | [`docs/character-api.md`](./docs/character-api.md) | 改角色独立 API、API 预设分组或对话模型路由前必读；App 优先，单角色回复才使用角色默认，凭据整套选择 |
 | **全站 API 槽位、预设引用与自动保存** | [`docs/api-slots.md`](./docs/api-slots.md) | 改任何 API 配置面板、预设增删改、副 API 回退或流式升级前必读；统一复用 `ApiSlotEditor`，预设按 `presetId` 引用联动并保留内联快照兼容双通道，自动保存仅在完整合法或全空时提交 |
 | **Anthropic 原生接口 / Prompt Caching** | [`docs/anthropic-messages.md`](./docs/anthropic-messages.md) | 改 Messages 转换、SSE、缓存或 amsg 原生模型调用前必读；原生端点随整套凭据保存，不新增代理，旧 Worker 先更新并验证能力 |
+| **私聊可见范围 / 模型上下文顺序** | [`docs/chat-message-visibility.md`](./docs/chat-message-visibility.md) | 改私聊取数、来源过滤、上下文排序或「接着说」续写前必读；界面按 id、模型按时间戳，时间戳偏晚的旧记录要挪回原轮次，家园记录除外 |
 | **心象 / 思考摘要与正文分离** | [`docs/thinking-response.md`](./docs/thinking-response.md) | 改 thinking 解析、心象显示或排查思考漏进气泡前必读；只按明确字段和标签分流，不凭语言猜测，空正文不得用思考补齐 |
 | **聊天译文样式 / 外挂字幕** | [`docs/chat-translation.md`](./docs/chat-translation.md) | 改双语展示或字幕定位前必读；默认保留气泡内译文，外挂字幕独立浮层贴原文末行，样式按角色保存 |
 | **ElevenLabs 角色语音** | [`docs/elevenlabs-tts.md`](./docs/elevenlabs-tts.md) | 改 v4 / Turbo 语音、Audio Tags、模型参数或字幕前必读；v4 保留开放式标签，只发送稳定度与相似度，不自动降级 |
