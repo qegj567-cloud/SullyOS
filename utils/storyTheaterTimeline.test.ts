@@ -215,3 +215,47 @@ describe('线上回复不被剧情抢走', () => {
         expect(withChatContinuation(payload.fullMessages, '用户')).toEqual(payload.fullMessages);
     });
 });
+
+describe('时间戳偏晚的旧记录不抢走用户刚发的话', () => {
+    const make = (id: number, role: Message['role'], timestamp: number, metadata: Message['metadata'] = {}): Message => ({
+        id, charId: 'skew', role, type: 'text', content: `第${id}条`, timestamp, metadata,
+    });
+
+    it('id 更早、时间戳偏晚的见面记录挪回原来的轮次，请求以用户输入收尾', async () => {
+        // 界面顺序（id）：用户 1 → 见面记录 2（写入时时钟偏快）→ 回复 3 → 用户 4、5。
+        const history = [
+            make(1, 'user', realTime),
+            make(2, 'assistant', futureTime, { source: 'date' }),
+            make(3, 'assistant', realTime + 2),
+            make(4, 'user', realTime + 3),
+            make(5, 'user', realTime + 4),
+        ];
+        const sorted = [...history].sort((a, b) => a.timestamp - b.timestamp);
+        expect(sorted.at(-1)?.id).toBe(2);
+        expect(protectPendingChatTurn(sorted).map(message => message.id)).toEqual([1, 2, 3, 4, 5]);
+        const payload = await buildChatRequestPayload({ char: char('skew'), userProfile: { name: '用户' } as any,
+            groups: [], emojis: [], categories: [], historyMsgs: history, contextLimit: 20, recallEntryPoint: 'chat_app' });
+        expect(payload.cleanedApiMessages.at(-1)).toMatchObject({ role: 'user', content: expect.stringContaining('第5条') });
+        expect(withChatContinuation(payload.fullMessages, '用户')).toEqual(payload.fullMessages);
+    });
+
+    it('夹在两句待回复输入之间的错位记录回到两句之间', () => {
+        const sorted = [make(1, 'user', 1), make(2, 'assistant', 2), make(3, 'user', 3), make(5, 'user', 5),
+            make(4, 'system', futureTime)];
+        expect(protectPendingChatTurn(sorted).map(message => message.id)).toEqual([1, 2, 3, 4, 5]);
+    });
+
+    it('家园记录按真实事件时间保留在输入之后', () => {
+        const sorted = [make(1, 'user', 1), make(3, 'assistant', 3), make(4, 'user', 4),
+            make(2, 'assistant', 5, { source: 'home' })];
+        expect(protectPendingChatTurn(sorted)).toBe(sorted);
+    });
+
+    it('错位记录后又收到定时主动消息时，仍提示先回应用户', () => {
+        const pending = make(4, 'user', realTime + 3);
+        const history = [make(1, 'user', realTime), make(3, 'assistant', realTime + 2), pending,
+            make(5, 'assistant', realTime + 5, { activeMsg2: { taskId: 'scheduled' } }),
+            make(2, 'assistant', futureTime, { source: 'call' })];
+        expect(hasUnansweredUserTurn([pending], history)).toBe(true);
+    });
+});

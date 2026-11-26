@@ -18,8 +18,9 @@ export function hasUnansweredUserTurn(messagesAtSend: Speaker[], historyForReque
     if (lastSpeakerRole(messagesAtSend) !== 'user') return false;
     const pendingUser = [...messagesAtSend].reverse().find(message => message.role === 'user');
     const speakers = historyForRequest.filter(message => isSpeaker(message)
-        // 旧剧情的虚拟时间可能排在输入后；它早已落库，不是对当前输入的回复。
-        && !(message.metadata?.source === 'story_theater_memory' && message.id != null
+        // 时间戳偏晚的旧记录可能排在输入后；它早已落库，不是对当前输入的回复。
+        // 家园记录除外，口径同 protectPendingChatTurn。
+        && !(message.metadata?.source !== 'home' && message.id != null
             && pendingUser?.id != null && message.id < pendingUser.id));
     const lastUserAt = speakers.map(message => message.role).lastIndexOf('user');
     const tail = speakers.slice(lastUserAt + 1);

@@ -112,24 +112,36 @@ export const ensureStoryTimelineRepair = (db: IDBDatabase): Promise<StoryTimelin
     return repair;
 };
 
-/** 仅兜底旧剧情副本：按持久化 ID 确认它早于待回复输入，再挪回该轮输入之前。 */
+/**
+ * 上下文按时间戳排序，界面按 id 排序。id 早于待回复输入、却排到它后面的记录，时间戳一定
+ * 晚于写入时刻（旧剧情副本的虚拟时间、写入时设备时钟偏快、导入数据等），按 id 挪回原来那一轮，
+ * 保证用户刚发的话在请求末尾；否则末尾成了角色发言，会被当成「接着说」续写上一个话题。
+ * 家园记录例外：同一条记录会原地追加之后发生的事件，时间戳是真实事件时间，按 id 挪会把新事件
+ * 塞回记录创建时的位置。
+ */
 export const protectPendingChatTurn = (messages: Message[]): Message[] => {
     const online = messages.filter(message => (message.role === 'user' || message.role === 'assistant') && isVisibleChatMessage(message)
         && !(message.role === 'assistant' && message.metadata?.activeMsg2?.taskId != null));
     const latest = online.reduce<Message | undefined>((last, message) => !last || message.id > last.id ? message : last, undefined);
     if (latest?.role !== 'user') return messages;
     const lastReplyId = online.reduce((id, message) => message.role === 'assistant' && message.id < latest.id ? Math.max(id, message.id) : id, 0);
-    const pendingIndex = messages.findIndex(message => message.role === 'user' && isVisibleChatMessage(message)
-        && message.id > lastReplyId && message.id <= latest.id);
+    const isPendingInput = (message: Message) => message.role === 'user' && isVisibleChatMessage(message)
+        && message.id > lastReplyId && message.id <= latest.id;
+    const pendingIndex = messages.findIndex(isPendingInput);
     if (pendingIndex < 0) return messages;
-    const displaced = messages.slice(pendingIndex).filter(message => message.metadata?.source === 'story_theater_memory' && message.id < latest.id);
+    let newestPendingSeen = 0;
+    const displaced = messages.slice(pendingIndex).filter(message => {
+        if (isPendingInput(message)) { newestPendingSeen = Math.max(newestPendingSeen, message.id); return false; }
+        if (message.metadata?.source === 'story_theater_memory') return message.id < latest.id;
+        return message.metadata?.source !== 'home' && message.id < newestPendingSeen;
+    });
     if (!displaced.length) return messages;
     const moved = new Set(displaced);
     const ordered = messages.filter(message => !moved.has(message));
     // 放回原来的轮次，而不是一律贴在最新输入前，避免已回复过的剧情重复触发切换。
-    for (const story of [...displaced].sort((left, right) => left.id - right.id)) {
-        const nextIndex = ordered.findIndex(message => message.id > story.id);
-        ordered.splice(nextIndex < 0 ? ordered.length : nextIndex, 0, story);
+    for (const row of [...displaced].sort((left, right) => left.id - right.id)) {
+        const nextIndex = ordered.findIndex(message => message.id > row.id);
+        ordered.splice(nextIndex < 0 ? ordered.length : nextIndex, 0, row);
     }
     return ordered;
 };
