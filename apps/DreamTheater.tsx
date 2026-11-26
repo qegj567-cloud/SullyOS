@@ -547,6 +547,8 @@ const DreamTheater: React.FC<{ char: CharacterProfile; onExit: () => void }> = (
     const [collection, setCollection] = useState<DreamCollection>(() => loadCollection());
     const [boxReveal, setBoxReveal] = useState<{ archetype: DreamArchetype; isNew: boolean; count: number } | null>(null);
     const savedRef = useRef(false);
+    /** 正在播的那场云端梦（jobId）。本机生成的为 null。 */
+    const playingCloudJobRef = useRef<string | null>(null);
     const scrollRef = useRef<HTMLDivElement | null>(null);
     // 长按检测（梦的残页删除）：计时 + 已触发标记（防止松手时又触发 replay）
     const lpTimerRef = useRef<number | null>(null);
@@ -616,10 +618,14 @@ const DreamTheater: React.FC<{ char: CharacterProfile; onExit: () => void }> = (
     }, [apiConfig, char, userProfile, addToast, forcedArchetype]);
 
     // ----- consume：把全局生成结果落到本地播放（含深链回来后的首次消费）-----
-    // 本机的在内存里、云端的在「还没看的梦」里，按角色各一份，取走即清（只播一次）。
+    // 本机的在内存里，取走即清；云端的在「还没看的梦」里，只是借出来播，看完或确认放弃才收走
+    // （见 persist 与 handlePlayExit），中途刷新、被杀下次从头再播。
     useEffect(() => {
         const taken = dreamSimStore.consume(char.id);
         if (taken?.status === 'ready') {
+            // 正在播的这份：存储里还在，登记表一有变化就会再读到它，别把播放打回第一片
+            if (taken.cloudJobId && taken.cloudJobId === playingCloudJobRef.current) return;
+            playingCloudJobRef.current = taken.cloudJobId ?? null;
             savedRef.current = false; setBoxReveal(null);
             setScript(taken.script); setRevealed(1); setPhase('play');
         } else if (taken?.status === 'error') {
@@ -630,6 +636,14 @@ const DreamTheater: React.FC<{ char: CharacterProfile; onExit: () => void }> = (
             setPhase(p => (p === 'idle' || p === 'error') ? 'loading' : p);
         }
     }, [dreamSim, char.id, addToast]);
+    useEffect(() => () => dreamSimStore.release(char.id), [char.id]);
+
+    /** 借出来播的那场云端梦收走：看完已写进梦境记录，或用户确认放弃。 */
+    const settleCloudDream = useCallback(() => {
+        const jobId = playingCloudJobRef.current;
+        if (!jobId) return;
+        dreamSimStore.settle(char.id, jobId);
+    }, [char.id]);
 
     // ----- persist + buff on reaching the end -----
     const persist = useCallback((s: DreamScript) => {
@@ -680,7 +694,8 @@ const DreamTheater: React.FC<{ char: CharacterProfile; onExit: () => void }> = (
                 dispatchBuffs ? { detail: { charId: char.id, buffs: dispatchBuffs, buffInjection: '' } }
                               : { detail: { charId: char.id } }));
         }
-    }, [char, updateCharacter, theme.accent]);
+        settleCloudDream();
+    }, [char, updateCharacter, theme.accent, settleCloudDream]);
 
     // ----- 收束：落库 + buff + 开盲盒 → end（双触发安全：savedRef 守卫，不重复抽/不覆盖揭晓） -----
     const finishDream = useCallback(() => {
@@ -727,7 +742,9 @@ const DreamTheater: React.FC<{ char: CharacterProfile; onExit: () => void }> = (
             confirmText: '确认离开',
             variant: 'warning',
         });
-        if (ok) onExit();
+        if (!ok) return;
+        settleCloudDream();
+        onExit();
     };
 
     // ----- 删除一页「梦的残页」（长按触发，走自定义确认弹窗，不用原生 confirm）-----

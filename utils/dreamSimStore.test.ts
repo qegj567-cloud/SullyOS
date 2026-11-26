@@ -64,6 +64,8 @@ beforeEach(() => {
   dreamSimStore.clear('c1');
   dreamSimStore.clear('c2');
   dreamSimStore.clearDeepLink();
+  dreamSimStore.release('c1');
+  dreamSimStore.release('c2');
   h.readAttachment.mockReset();
   h.getCharacter.mockReset().mockImplementation(async (id: string) => ({ id, name: id === 'c1' ? '小明' : '小红' }));
 });
@@ -111,7 +113,7 @@ describe('本机与云端共用同一份校验', () => {
 });
 
 describe('云端结果落进还没看的梦', () => {
-  it('刷新之后还在，指示条显示「好了」，只能取走一次，取走后登记表那条一起收走', async () => {
+  it('刷新之后还在，指示条显示「好了」；打开只是借出，看完 settle 才收走', async () => {
     putCloudGenJob(record({ acceptedAt: Date.now() }));
     h.readAttachment.mockResolvedValue(output(JSON.stringify(SCRIPT)));
     expect(await applyCloudGenResult(okResult())).toBe(true);
@@ -123,10 +125,49 @@ describe('云端结果落进还没看的梦', () => {
     expect(fresh.getFor('c1')).toMatchObject({ status: 'ready', script: SCRIPT });
 
     expect(fresh.consume('c1')).toMatchObject({ status: 'ready', script: SCRIPT, cloudJobId: 'job-1' });
+    expect(fresh.get().status).toBe('idle'); // 正在看，指示条不再挂「梦已成形」
+    fresh.settle('c1', 'job-1');
     expect(fresh.consume('c1')).toBeNull();
     expect(readCloudGenPending('dream', 'c1')).toBeNull();
     expect(getCloudGenJobById('job-1')).toBeNull();
     expect(fresh.get().status).toBe('idle');
+  });
+
+  it('剧场开着时落地、没看完就刷新：梦还在，指示条重新露出来（回归守卫）', async () => {
+    putCloudGenJob(record({ acceptedAt: Date.now() }));
+    // 剧场挂着等结果：照 DreamTheater 那样订阅、每次变化都取一次
+    const off = dreamSimStore.subscribe(() => { dreamSimStore.consume('c1'); });
+    h.readAttachment.mockResolvedValue(output(JSON.stringify(SCRIPT)));
+    expect(await applyCloudGenResult(okResult())).toBe(true);
+    expect(dreamSimStore.consume('c1')).toMatchObject({ status: 'ready', cloudJobId: 'job-1' });
+    off();
+
+    vi.resetModules();
+    const { dreamSimStore: fresh } = await import('./dreamSimStore');
+    expect(readCloudGenPending<any>('dream', 'c1')?.jobId).toBe('job-1');
+    expect(fresh.get()).toMatchObject({ status: 'ready', charId: 'c1' });
+  });
+
+  it('剧场关了没看完：release 之后指示条重新露出来', () => {
+    putCloudGenJob(record({ status: 'landed', settledAt: Date.now() }));
+    writeCloudGenPending('dream', 'c1', { jobId: 'job-1', charName: '小明', script: SCRIPT });
+    dreamSimStore.consume('c1');
+    expect(dreamSimStore.get().status).toBe('idle');
+    dreamSimStore.release('c1');
+    expect(dreamSimStore.get()).toMatchObject({ status: 'ready', charId: 'c1' });
+  });
+
+  it('settle 只收走自己那份：同一角色后来落地的不动', () => {
+    writeCloudGenPending('dream', 'c1', { jobId: 'job-2', charName: '小明', script: SCRIPT });
+    dreamSimStore.settle('c1', 'job-1');
+    expect(readCloudGenPending<any>('dream', 'c1')?.jobId).toBe('job-2');
+  });
+
+  it('DreamTheater 看完写库、确认放弃时才收走，打开时不收', () => {
+    const source = readFileSync(fileURLToPath(new URL('../apps/DreamTheater.tsx', import.meta.url)), 'utf8');
+    expect(source).toMatch(/return \{ dreamLogs \};\s*\}\);[\s\S]*?settleCloudDream\(\);\s*\}, \[char, updateCharacter/);
+    expect(source).toMatch(/if \(!ok\) return;\s*settleCloudDream\(\);\s*onExit\(\);/);
+    expect(source).toContain('dreamSimStore.release(char.id)');
   });
 
   it('登记表那条过了保留期，还没看的梦照样能取走', () => {
