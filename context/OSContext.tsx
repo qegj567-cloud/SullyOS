@@ -95,6 +95,7 @@ import { isAnalyticsRequestUrl, trackEvent, shouldReportSnapshot, trackDataScale
 import { loadChatInputPreferences, saveChatInputPreferences } from '../utils/chatInputPreferences';
 import { collectAppearance, collectCharSettings, collectDataScale, collectFeatureFlagsAsync, collectSARFeatureFlags } from '../utils/analyticsSnapshot';
 import { normalizeApiConfig, normalizeApiPreset } from '../utils/apiConfigNormalize';
+import { createSiteModelTransport } from '../utils/siteModelTransport';
 import { fetchLlm } from '../utils/anthropicApi';
 import { getCheckPhoneApi, setCheckPhoneApi } from '../utils/checkPhoneApi';
 import { markBackupDone } from '../utils/backupReminder';
@@ -1180,6 +1181,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
       // 1. Monkey Patch Fetch
       const originalFetch = window.fetch;
+      const modelTransport = createSiteModelTransport(originalFetch, window.location.origin);
       // “同一 API 在别的模式刚成功”是排查 CORS 包装错误最有价值的对照证据。
       // 只记 method + URL + 状态与时间，不保存请求正文。
       const recentSuccessfulFetches = new Map<string, { timestamp: number; status: number }>();
@@ -1276,7 +1278,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           });
 
           try {
-              let response = await fetchLlm(sendArgs[0], sendArgs[1], originalFetch, true);
+              let response = await fetchLlm(sendArgs[0], sendArgs[1], modelTransport, true);
               receivedResponseHeaders = {
                   status: response.status,
                   headersMs: Date.now() - fetchStartedAt,

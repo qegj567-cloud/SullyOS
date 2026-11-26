@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import type { DialogueApiConfig } from '../../types';
+import { siteOrigin } from '../../utils/siteModelTransport';
 import { llmApiType } from '../../utils/llmEndpoint';
 
 export default function DialogueApiFields({ value, onChange, fetchModels, isLoadingModels, openModelPicker }: {
@@ -28,6 +29,9 @@ export default function DialogueApiFields({ value, onChange, fetchModels, isLoad
                     <input type="password" value={localKey} onChange={(e) => setLocalKey(e.target.value)} placeholder="sk-..." className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all" />
                 </div>
 
+                {typeof location !== 'undefined' && location.origin === siteOrigin && llmApiType(value) === 'openai' && (
+                    <p className="text-xs text-slate-500">优先从设备直连。连接受限时，主站会代发模型请求，密钥和聊天内容仅随请求传递。</p>
+                )}
                 {/* 高级（流式 / 温度）— 默认折叠，灰色低调，明确写"不建议修改" */}
                 <div className="pt-1">
                     <button
