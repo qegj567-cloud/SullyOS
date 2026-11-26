@@ -47,9 +47,10 @@ isDevDebugAvailable()  // utils/devDebug.ts
 |------|------|
 | `utils/devDebug.ts` | 核心：类型、存储读写、事件、分类捕获、便捷 getter。**所有逻辑都在这** |
 | `components/DevDebugPanel.tsx` | 悬浮按钮 + 面板 UI（拖拽、开关行、复制 / 下载日志、重置） |
+| `components/FakeLlmDebugSection.tsx`、`utils/fakeLlmSwitch.ts` | 「假模型」区：一键把全局 API 换成假模型、再换回来（见下文「假模型」） |
 | `components/settings/VersionInfo.tsx` | 设置页底部版本脚注（APP_VERSION + build hash + UTC+8 构建时间 + sw 版本）；连点 5 下手动解锁面板 |
 | `utils/swVersion.ts` | `querySwVersion()`：向 SW 查版本号（BuildBadge / VersionInfo 共用） |
-| `App.tsx` | 挂载 `<DevDebugPanel />`（无脑挂，组件内部自己判断要不要渲染） |
+| `App.tsx` | 在 `OSProvider` 里挂 `<DevDebugPanel />`（无脑挂，组件内部自己判断要不要渲染）。挂在 Provider 里是为了假模型区能用 `updateApiConfig`；那一层带 transform，所以面板用 portal 渲染到 `body` |
 | `vite.config.ts` | 注入 `__BUILD_BRANCH__` / `__BUILD_COMMIT__` / `__BUILD_TIME__` / `__BUILD_BADGE_VISIBLE__` |
 | `vite-env.d.ts` | 上面四个常量的 TS 声明 |
 
@@ -119,7 +120,7 @@ sullyos.devDebug.flags.v1.<branch>      ← 开关状态（含 captureLogs 数�
 sullyos.devDebug.log.v1.<branch>        ← 分类捕获日志（各类混存，每条带 category 字段）
 ```
 
-> 浮球位置 / 展开与否**不落 localStorage**（纯内存，刷新即回默认）；可用性（解锁 / 强制关闭）也是会话级内存标志。只有上面这两个 key 真正持久化。
+> 浮球位置 / 展开与否**不落 localStorage**（纯内存，刷新即回默认）；可用性（解锁 / 强制关闭）也是会话级内存标志。除了上面这两个 key，只有假模型区的 `sullyos_dev_fake_llm_v1` 会持久化，它故意不按分支隔离（理由见下文「假模型」）。
 
 `<branch>` 由 `__BUILD_BRANCH__` 归一化而来（非字母数字 `._-` 的字符替换成 `_`）。
 
@@ -138,6 +139,17 @@ sullyos.devDebug.log.v1.<branch>        ← 分类捕获日志（各类混存，
 | 捕获类 `amsg` | 捕获 | 抓主动消息 2.0 的收发链路：收件箱冲刷、推送落库、即时对话回合的 trace（`[ActiveMsg]` / `[amsg]` 两个 tag） | 同上，取消勾选不清日志 |
 | 捕获类 `lifecycle` | 捕获 | 抓页面前后台/焦点/网络状态变化：`visibilitychange`、`focus`/`blur`、`pagehide`/`pageshow`（含 bfcache `persisted` 标记）、`online`/`offline`、`freeze`/`resume`（Chromium 系）。跟 api 类对时间线用——API 报错前后紧挨着 `visibilitychange → hidden`，基本就是切后台/锁屏把 fetch 冻死的 | 同上，取消勾选不清日志 |
 | `exposeLogDetail`<br>（记录完整内容） | 抓取 | 关（默认）：`messages` 聊天历史数组整组换成一句 `…共 N 项（已折叠）`；开：整段存 | 影响**抓取 / 存储**；要完整须复现前打开，已抓的折叠版不可还原 |
+
+### 假模型
+
+面板里的「假模型」区用来把全局主对话 API 一键换成 `worker/fake-llm` 假模型，测完一键换回。场景清单、各链路读哪个 API 槽位、怎么起假模型，见 [`fake-llm.md`](./fake-llm.md)。
+
+- 填地址 → 「拉场景」（请求 `<地址>/models`）→ 选场景 →「换成 fake/…」；测完点「换回 <原来的域名>」。
+- 换过去和换回来都走设置页保存 API 的同一出口：`updateApiConfig` 写本机，再 `syncAmsgLlmCredentials` 强制覆盖云端凭据，云端的 Worker 跟着换。不要在这里直接写 `os_api_config`，那样云端拿到的还是真 API（`utils/fakeLlmSwitch.test.ts` 有一条检查）。
+- 换之前把整套连接字段（地址、Key、模型、接口类型、流式、温度、输出上限、预设引用）备份到 `sullyos_dev_fake_llm_v1`。已经在假模型上换场景时不覆盖备份；换回来写完才删。这个键全局共用、不按分支隔离：全局 API 不分分支，备份分了分支的话，构建一换分支就找不回原来的 Key。它不进备份导出。
+- 「换回」之前绝不能丢真 Key：`utils/fakeLlmSwitch.test.ts` 钉住「换过去再换回来，配置和原来一模一样」「连换几个场景备份不变」「备份写不进去就不换」。
+- 设了独立 API 的角色不走全局 API，面板会列出这些角色。
+- 不埋点：这是开发调试功能。
 
 ### 一次性工具：OPFS 探针
 

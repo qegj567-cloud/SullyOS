@@ -50,6 +50,8 @@ const App: React.FC = () => {
             {/* 挂在 Provider 里面才能直接读 characters（省掉轮询 IndexedDB），
                 面板自身用 portal 渲染到 body，绕开上面那层 transform 对 fixed 定位的影响。 */}
             <Amsg2DebugPanel />
+            {/* 挂在 Provider 里是为了假模型区能走 updateApiConfig；面板自己 portal 到 body。 */}
+            <DevDebugPanel />
             <WebUpdateNotice />
             <AmsgOwnerConflictNotice />
             <UserSpaceNotice />
@@ -59,7 +61,6 @@ const App: React.FC = () => {
       </div>
       <BuildBadge />
       <CanaryDot />
-      <DevDebugPanel />
       <VRBroadcast />
       <WorldBroadcast />
       <ChatBroadcast />
