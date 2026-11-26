@@ -50,6 +50,7 @@ import { readShareText } from '../utils/pngShare';
 import { confirmExportSafety } from '../utils/exportGuard';
 import { trackEvent } from '../utils/analytics';
 import { sortCharacterGroups, GROUP_FILTER_UNGROUPED } from '../components/character/CharacterGroupFilter';
+import { sanitizeWorldbookScenes } from '../utils/worldbookScenes';
 import {
     EXTERNAL_MEMORY_MAX_CHARS,
     extractExternalMemoryText,
@@ -661,7 +662,7 @@ const Character: React.FC<{ profileCharacterId?: string }> = ({ profileCharacter
           const data = await safeFetchJson(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-              body: JSON.stringify({ model: apiConfig.model, messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, [{ role: 'user', content: prompt }])), temperature: 0.5, max_tokens: 8000, stream: false }),
+              body: JSON.stringify({ model: apiConfig.model, messages: (await ContextBuilder.buildCharacterRequest({ ...characterContextInput, scene: 'memory.summary' }, [{ role: 'user', content: prompt }])), temperature: 0.5, max_tokens: 8000, stream: false }),
           }, 0, 0, { appId: 'character', appName: '神经链接', charId: targetId, charName: formData.name, purpose: '单日记忆强制归档' });
           let summary = extractContent(data).replace(/^["']|["']$/g, '');
           if (!summary) throw new Error('空响应');
@@ -848,7 +849,7 @@ const Character: React.FC<{ profileCharacterId?: string }> = ({ profileCharacter
                         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
                         body: JSON.stringify({
                             model: apiConfig.model,
-                            messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, [{ role: "user", content: prompt }])),
+                            messages: (await ContextBuilder.buildCharacterRequest({ ...characterContextInput, scene: 'memory.summary' }, [{ role: "user", content: prompt }])),
                             max_tokens: 8000,
                             temperature: 0.5
                         })
@@ -1035,7 +1036,7 @@ ${isInitialGeneration ? `
               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
               body: JSON.stringify({
                   model: apiConfig.model,
-                  messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, [{ role: "user", content: prompt }])),
+                  messages: (await ContextBuilder.buildCharacterRequest({ ...characterContextInput, scene: 'memory.impression' }, [{ role: "user", content: prompt }])),
                   max_tokens: 8000,
                   temperature: 0.5,
                   // 与「设置 → API → 流式输出」保持一致，不在印象功能里强制覆盖用户选择。
@@ -1160,7 +1161,7 @@ ${isInitialGeneration ? `
           // Sync mounted worldbooks into the global worldbook app so they
           // appear under their original category (or the character's name
           // as a sensible fallback when the card has no category set).
-          const incomingMounted = (data.mountedWorldbooks || []).map(wb => ({ ...wb }));
+          const incomingMounted = (data.mountedWorldbooks || []).map(wb => ({ ...wb, scenes: sanitizeWorldbookScenes(wb.scenes) }));
           const fallbackCategory = `${data.name || '导入角色'} 的世界书`;
           let importedWbCount = 0;
           for (const wb of incomingMounted) {

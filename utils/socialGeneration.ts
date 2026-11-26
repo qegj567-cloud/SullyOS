@@ -23,7 +23,7 @@ export async function buildSparkGenerationContext(participants: CharacterProfile
         const core = (await ContextBuilder.buildCoreContext(recallChar, user, false, undefined, {
             skipUserProfile: true,
             headerOverride: `[角色资料，仅属于 charId=${JSON.stringify(char.id)}]`,
-        }, { worldbookMessages: recent }));
+        }, { worldbookScene: 'apps.spark', worldbookMessages: recent }));
         return `<<< 角色档案 charId=${JSON.stringify(char.id)} >>>
 角色名: ${char.name}
 可用账号: ${JSON.stringify(getSparkHandles(char, handles).map(h => ({ authorName: h.handle, note: h.note })))}

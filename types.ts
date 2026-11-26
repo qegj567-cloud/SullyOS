@@ -1243,6 +1243,12 @@ export interface WorldbookEntryConfig {
     caseSensitive?: boolean | null;
     matchWholeWords?: boolean | null;
     sourceUid?: number;
+    /**
+     * 生效场景（令牌见 utils/worldbookScenes.ts）。undefined / null = 所有场景（默认，旧数据和导入条目都是这样）；
+     * 分类 id（如 'apps'）= 整个分类，含以后新增的子场景；子场景 id（如 'apps.trpg'）= 只那一个；
+     * [] = 哪里都不生效。认不出的令牌忽略。
+     */
+    scenes?: string[] | null;
 }
 
 export interface MountedWorldbook extends WorldbookEntryConfig {

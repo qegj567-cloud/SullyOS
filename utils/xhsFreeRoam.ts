@@ -83,7 +83,7 @@ const callLlm = async (
         },
         body: JSON.stringify({
             model: apiConfig.model,
-            messages: (await ContextBuilder.buildCharacterRequest(systemPrompt, [
+            messages: (await ContextBuilder.buildCharacterRequest({ ...systemPrompt, scene: 'apps.freeRoam' }, [
                 { role: 'user', content: userMessage },
             ])),
             temperature: 0.85,

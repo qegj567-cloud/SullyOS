@@ -1926,7 +1926,7 @@ const CallApp: React.FC = () => {
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${directorApi.apiKey || 'sk-none'}` },
           body: JSON.stringify({
             model: directorApi.model,
-            messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, [{ role: 'user', content: prompt }])),
+            messages: (await ContextBuilder.buildCharacterRequest({ ...characterContextInput, scene: 'offline.call' }, [{ role: 'user', content: prompt }])),
             temperature: 0.25,
             max_tokens: AVATAR_PERFORMANCE_PERSONA_MAX_TOKENS,
             stream: false,
@@ -2075,6 +2075,7 @@ ${sentencePlan}`;
       }
       const snapshotHistory = prepareUserCameraSnapshot(messages, userCameraSnapshot);
       const characterContext = selectedChar ? (await ContextBuilder.buildCharacterContext({
+        scene: 'offline.call',
         char: selectedChar, user: userProfile, history: snapshotHistory.messages,
         // 通话隔着手机，跟私聊一样带「对方那边几点」。
         timeOptions: { conversational: true, includeUserLocation: true, includeUserClock: true },

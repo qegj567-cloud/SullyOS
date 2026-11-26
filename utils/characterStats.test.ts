@@ -15,7 +15,7 @@ describe('read-only character statistics', () => {
         expect(readableContextMemories(char).daily).toHaveLength(0);
         char.activeMemoryMonths = ['2026-09'];
         expect(readableContextMemories(char).daily[0].entries).toHaveLength(1);
-        expect((await ContextBuilder.buildCharacterContext({ char, user })).coreContext).toContain('日度');
+        expect((await ContextBuilder.buildCharacterContext({ scene: 'chat.private', char, user })).coreContext).toContain('日度');
         expect(readableContextMemories(char, false).daily).toHaveLength(0);
     });
     it('previews keywords and probability without consuming randomness', () => {
@@ -27,8 +27,8 @@ describe('read-only character statistics', () => {
         ] });
         const random = vi.spyOn(Math, 'random');
         try {
-            expect(ContextBuilder.inspectWorldbooks(char, user, []).map(b => b.status)).toEqual(['readable', 'waiting', 'probability', 'disabled']);
-            const matched = ContextBuilder.inspectWorldbooks(char, user, [{ content: '海边' }]);
+            expect(ContextBuilder.inspectWorldbooks(char, user, [], 'chat.private').map(b => b.status)).toEqual(['readable', 'waiting', 'probability', 'disabled']);
+            const matched = ContextBuilder.inspectWorldbooks(char, user, [{ content: '海边' }], 'chat.private');
             expect(matched[1].status).toBe('readable');
             expect(matched[0].content).toBe('角色');
             expect(random).not.toHaveBeenCalled();

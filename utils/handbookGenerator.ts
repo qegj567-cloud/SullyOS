@@ -719,7 +719,7 @@ text 里允许少量 markdown 语法,渲染时会变成对应的视觉效果:
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
             body: JSON.stringify({
                 model: apiConfig.model,
-                messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, [{ role: 'user', content: prompt }])),
+                messages: (await ContextBuilder.buildCharacterRequest({ ...characterContextInput, scene: 'apps.handbook' }, [{ role: 'user', content: prompt }])),
                 temperature: 0.85,
                 max_tokens: 12000,
             }),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseStandardWorldbook, serializeSullyWorldbook } from './worldbook';
+import { parseStandardWorldbook, serializeSullyWorldbook, upsertMountedWorldbooks } from './worldbook';
 import {
   COLLABORATION_MAKER_MAP,
   buildInstallablePreviewDocument,
@@ -102,6 +102,44 @@ title: 夜航日记
       },
     })).toEqual([]);
     expect(validateInstallableArtifact({ kind: 'worldbook', title: '空书', payload: { category: '空书', entries: {} } })).toContain('世界书里没有条目。');
+  });
+
+  it('keeps valid entry scenes through validate, preview, install, mount and export; anything else means all scenes', () => {
+    const reply = [
+      '跑团用的设定好了。',
+      '```sully-artifact',
+      'kind: worldbook',
+      'title: 雾港跑团',
+      '---',
+      JSON.stringify({
+        category: '雾港跑团',
+        format: 'sullyos-worldbook',
+        version: 1,
+        worldbook: { entries: {
+          '0': { comment: '骰子规则', content: '检定用 d20。', constant: true, key: [], scenes: ['apps.trpg'] },
+          '1': { comment: '雾港', content: '港口终年起雾。', constant: true, key: [], scenes: ['apps', 'future.scene'] },
+          '2': { comment: '封存', content: '暂不使用。', constant: true, key: [], scenes: [] },
+          '3': { comment: '通用', content: '不限场景。', constant: true, key: [] },
+          '4': { comment: '写错了', content: '场景不是数组。', constant: true, key: [], scenes: 'apps.trpg' },
+        } },
+      }),
+      '```',
+    ].join('\n');
+    const { artifacts: [artifact] } = parseInstallableArtifactBlocks(reply);
+    expect(validateInstallableArtifact(artifact)).toEqual([]);
+    expect(buildInstallablePreviewDocument(artifact)).toContain('5 个条目');
+    const books = installableToWorldbooks(artifact);
+    expect(books.map(book => book.scenes)).toEqual([['apps.trpg'], ['apps', 'future.scene'], [], undefined, undefined]);
+    // 安装时挂给角色走的挂载缓存也要带着场景，生成时读的是它。
+    expect(upsertMountedWorldbooks([], books).map(book => book.scenes)).toEqual(books.map(book => book.scenes));
+    const restored = parseStandardWorldbook(serializeSullyWorldbook(books), '复原');
+    expect(restored.map(book => book.scenes)).toEqual(books.map(book => book.scenes));
+
+    // 酒馆格式（顶层 entries）不带场景字段，装上就是所有场景。
+    const tavern = installableToWorldbooks({
+      kind: 'worldbook', title: '旧作', payload: { category: '旧作', entries: { '0': { comment: 'a', content: 'b', scenes: ['apps.trpg'] } } },
+    });
+    expect(tavern[0].scenes).toBeUndefined();
   });
 
   it('upgrades an older single-entry worldbook artifact into a one-entry group', () => {

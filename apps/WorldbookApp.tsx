@@ -15,6 +15,8 @@ import { confirmExportSafety } from '../utils/exportGuard';
 import { shareOrDownloadFile } from '../utils/shareExport';
 import { readShareFile } from '../utils/pngShare';
 import { trackEvent } from '../utils/analytics';
+import { summarizeWorldbookScenes, type WorldbookScenes } from '../utils/worldbookScenes';
+import WorldbookSceneEditor from '../components/worldbook/WorldbookSceneEditor';
 
 const WorldbookApp: React.FC = () => {
     const { closeApp, worldbooks, addWorldbook, updateWorldbook, updateWorldbooks, deleteWorldbook, deleteWorldbooks, addToast } = useOS();
@@ -35,7 +37,10 @@ const WorldbookApp: React.FC = () => {
     const [selectedBookIds, setSelectedBookIds] = useState<Set<string>>(new Set());
     const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
 
-    const [groupEditor, setGroupEditor] = useState<{ category: string; name: string; mode: 'keep' | 'constant' | 'keyword' } | null>(null);
+    const [groupEditor, setGroupEditor] = useState<{
+        category: string; name: string; mode: 'keep' | 'constant' | 'keyword';
+        scenesMode: 'keep' | 'set'; scenes: WorldbookScenes;
+    } | null>(null);
     const [savingGroup, setSavingGroup] = useState(false);
     const [deletingBooks, setDeletingBooks] = useState(false);
     const PAGE_SIZE = 12;
@@ -62,6 +67,7 @@ const WorldbookApp: React.FC = () => {
     const [tempProbability, setTempProbability] = useState(100);
     const [tempCaseSensitive, setTempCaseSensitive] = useState(false);
     const [tempWholeWords, setTempWholeWords] = useState(false);
+    const [tempScenes, setTempScenes] = useState<WorldbookScenes>(undefined);
 
     // Grouping Logic
     const groupedBooks = useMemo(() => {
@@ -111,6 +117,7 @@ const WorldbookApp: React.FC = () => {
         setTempProbability(100);
         setTempCaseSensitive(false);
         setTempWholeWords(false);
+        setTempScenes(undefined);
         setShowCategoryPicker(false);
         setIsEditing(true);
         trackEvent('打开世界书编辑页', { mode: 'create' });
@@ -135,6 +142,7 @@ const WorldbookApp: React.FC = () => {
         setTempProbability(book.probability ?? 100);
         setTempCaseSensitive(book.caseSensitive === true);
         setTempWholeWords(book.matchWholeWords === true);
+        setTempScenes(book.scenes);
         setShowCategoryPicker(false);
         setIsEditing(true);
         trackEvent('打开世界书编辑页', { mode: 'edit' });
@@ -169,6 +177,7 @@ const WorldbookApp: React.FC = () => {
             probability: Math.max(0, Math.min(100, tempProbability || 0)),
             caseSensitive: tempCaseSensitive,
             matchWholeWords: tempWholeWords,
+            scenes: tempScenes,
         };
 
         if (editingBook) {
@@ -313,6 +322,7 @@ const WorldbookApp: React.FC = () => {
             await updateWorldbooks(books.map(book => book.id), {
                 category: name,
                 ...(groupEditor.mode === 'keep' ? {} : { constant: groupEditor.mode === 'constant' }),
+                ...(groupEditor.scenesMode === 'keep' ? {} : { scenes: groupEditor.scenes }),
             });
             setExpandedCategory(name);
             setGroupEditor(null);
@@ -424,6 +434,10 @@ const WorldbookApp: React.FC = () => {
                                 >
                                     <span className={`block w-5 h-5 rounded-full bg-white shadow-sm ring-1 ring-black/5 transition-transform duration-200 ${tempEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
                                 </button>
+                            </div>
+
+                            <div className="border-t border-slate-100 pt-4">
+                                <WorldbookSceneEditor value={tempScenes} onChange={setTempScenes} />
                             </div>
 
                             <div className="border-t border-slate-100 pt-4">
@@ -729,7 +743,7 @@ const WorldbookApp: React.FC = () => {
                         </div>
 
                         {!isSelecting && <div className="flex justify-end gap-3 px-2 pb-1">
-                            <button type="button" className="text-[11px] text-indigo-500 py-1" onClick={() => setGroupEditor({ category, name: category, mode: 'keep' })}>编辑整组</button>
+                            <button type="button" className="text-[11px] text-indigo-500 py-1" onClick={() => setGroupEditor({ category, name: category, mode: 'keep', scenesMode: 'keep', scenes: undefined })}>编辑整组</button>
                             <button type="button" className="text-[11px] text-slate-400 py-1" onClick={() => { setSelectedBookIds(new Set(books.map(book => book.id))); setShowBulkDeleteConfirm(true); }}>删除整组</button>
                         </div>}
 
@@ -762,6 +776,13 @@ const WorldbookApp: React.FC = () => {
                                                 <span className="text-[9px] px-2 py-0.5 rounded-full bg-white/70 text-slate-400">
                                                     {WORLDBOOK_POSITION_LABELS[book.position ?? 1]}
                                                 </span>
+                                                {(() => {
+                                                    const sceneKind = summarizeWorldbookScenes(book.scenes).kind;
+                                                    if (sceneKind === 'all') return null;
+                                                    return sceneKind === 'none'
+                                                        ? <span className="text-[9px] px-2 py-0.5 rounded-full font-bold bg-amber-50 text-amber-600">未启用场景</span>
+                                                        : <span className="text-[9px] px-2 py-0.5 rounded-full bg-white/70 text-slate-400">限定场景</span>;
+                                                })()}
                                             </div>
                                         </div>
                                         
@@ -861,6 +882,12 @@ const WorldbookApp: React.FC = () => {
                     <label className="block">整组触发方式<select aria-label="整组触发方式" value={groupEditor.mode} onChange={event => setGroupEditor({ ...groupEditor, mode: event.target.value as 'keep' | 'constant' | 'keyword' })} className="mt-2 w-full rounded-xl border border-slate-200 p-3">
                         <option value="keep">保持各条目原设置</option><option value="constant">全部常驻</option><option value="keyword">全部关键词触发</option>
                     </select></label>
+                    <label className="block">整组启用场景<select aria-label="整组启用场景" value={groupEditor.scenesMode} onChange={event => setGroupEditor({ ...groupEditor, scenesMode: event.target.value as 'keep' | 'set' })} className="mt-2 w-full rounded-xl border border-slate-200 p-3">
+                        <option value="keep">保持各条原设置</option><option value="set">统一设为…</option>
+                    </select></label>
+                    {groupEditor.scenesMode === 'set' && (
+                        <WorldbookSceneEditor label="统一设为" value={groupEditor.scenes} onChange={scenes => setGroupEditor({ ...groupEditor, scenes })} />
+                    )}
                     <p className="text-xs leading-relaxed text-slate-400">修改本组全部 {groupedBooks[groupEditor.category]?.length || 0} 条，并同步到已经挂载它们的角色。保留原有条目、关键词和挂载关系；不会给其他角色新增挂载。停用的条目仍保持停用。</p>
                 </div>}
             </Modal>

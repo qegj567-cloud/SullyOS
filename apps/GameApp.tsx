@@ -294,7 +294,7 @@ const GameApp: React.FC = () => {
     // --- Helper: Robust API Call ---
     const fetchGameAPI = async (prompt: string, maxTokens: number = 8000, members: CharacterProfile[] = [], purpose: string = '跑团回合推进') => {
         const history = [{ role: 'user', content: '请按上述要求继续本轮游戏。' }];
-        const messages = members.length ? ContextBuilder.buildGroupWorldbookRequest({ members, user: userProfile, history, scanMessages: [{ role: 'user', content: prompt }],
+        const messages = members.length ? ContextBuilder.buildGroupWorldbookRequest({ scene: 'apps.trpg', members, user: userProfile, history, scanMessages: [{ role: 'user', content: prompt }],
             render: (slots, turns) => [{ role: 'system', content: slots.before + prompt + slots.after }, ...turns],
         }) : [{ role: 'user', content: prompt }];
         const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
@@ -354,7 +354,7 @@ const GameApp: React.FC = () => {
 
         // [优化] 多人同场时，把"用户档案 / 共有世界观 / 被多名角色挂载的世界书"提取到顶部
         // 只铺一次，避免每个角色块里重复贴同一份世界书（去重，省 token 也防串台）。
-        const sharedScene = ContextBuilder.buildGroupSharedScene(players.map(p => ({ ...p, mountedWorldbooks: [] })), userProfile);
+        const sharedScene = ContextBuilder.buildGroupSharedScene(players.map(p => ({ ...p, mountedWorldbooks: [] })), userProfile, [], 'apps.trpg');
         if (sharedScene.text) {
             fullContext += `${sharedScene.text}\n`;
         }
@@ -367,7 +367,7 @@ const GameApp: React.FC = () => {
                 skipUserProfile: true,
                 skipWorldview: sharedScene.worldviewIsShared,
                 skipWorldbookIds: sharedScene.sharedWorldbookIds,
-            }));
+            }, { worldbookScene: 'apps.trpg' }));
             fullContext += `\n<<< 角色档案: ${p.name} (ID: ${p.id}) >>>\n本档案中的记忆仅属于 ${p.name}，不得挪用为其他角色的经历。\n${core}\n<<< ${p.name} 的角色档案结束 >>>\n`;
 
             // 2. Neural Link: Private Chat Sync

@@ -466,6 +466,23 @@ describe('当前角色设置 · 不泄漏角色内容', () => {
         expect(flags.离开后消息).toBe('有人开');
     });
 
+    it('世界书限定场景只报有没有，不带条目标题、正文或场景令牌', () => {
+        const book = (scenes?: string[] | null) => ({
+            id: POISON.dbId, title: POISON.myName, content: POISON.token, category: POISON.city, scenes,
+        });
+        // 没设（undefined / null）= 所有场景，不算限定。
+        expect(collectCharSettings([poisonedChar({ mountedWorldbooks: [book(), book(null)] })], 'c1').世界书限定场景).toBe('都没开');
+        // [] 是「哪里都不生效」，也算限定；认不出的令牌原样不出去。
+        for (const scenes of [[], ['apps.trpg'], [POISON.key]]) {
+            const flags = collectCharSettings(
+                [poisonedChar(), poisonedChar({ mountedWorldbooks: [book(), book(scenes)] })],
+                'c1',
+            );
+            expect(flags.世界书限定场景).toBe('有人开');
+            expectNoLeak(flags);
+        }
+    });
+
     it('默认开的开关问「有没有人特意关掉」——否则答案永远是「有」', () => {
         const allDefault = collectCharSettings([poisonedChar(), poisonedChar()], 'c1');
         expect(allDefault.时间感知).toBe('都开着');
@@ -659,7 +676,8 @@ describe('快照事件的属性宽度', () => {
     it('当前角色设置', () => {
         const fields = collectCharSettings([{...plainChar('a'),stickerVision:true}], 'a');
         expect(fields.表情看图).toBe('有人开');
-        expect(Object.keys(fields).length).toBeLessThanOrEqual(39);
+        // 40：「世界书限定场景」加进来的。
+        expect(Object.keys(fields).length).toBeLessThanOrEqual(40);
     });
 
     it('SAR 发布功能保持小快照', () => {

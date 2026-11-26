@@ -247,7 +247,7 @@ const NovelWriter: React.FC<NovelWriterProps> = ({
             const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-                body: JSON.stringify({ model: apiConfig.model, messages: (await ContextBuilder.buildCharacterRequest({ char: recallChar, user: userProfile }, [{ role: "user", content: prompt }])), temperature, max_tokens: 8000 }),
+                body: JSON.stringify({ model: apiConfig.model, messages: (await ContextBuilder.buildCharacterRequest({ scene: 'apps.novel', char: recallChar, user: userProfile }, [{ role: "user", content: prompt }])), temperature, max_tokens: 8000 }),
                 __sullyMeta: {
                     appId: 'novel',
                     appName: '一起写小说',

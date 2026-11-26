@@ -241,7 +241,7 @@ export async function buildMemoryRepairCoreContext(char: CharacterProfile,
         buffInjection: undefined,
         activeBuffs: [],
     };
-    return (await ContextBuilder.buildCoreContext(memoryIsolatedChar, user, false));
+    return (await ContextBuilder.buildCoreContext(memoryIsolatedChar, user, false, undefined, undefined, { worldbookScene: 'memory.palace' }));
 }
 
 function snapshotCandidates(snapshot: RecallRepairSnapshot): Array<{

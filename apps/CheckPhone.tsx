@@ -841,7 +841,7 @@ ${realCharRule}
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApiConfig.apiKey}` },
                 body: JSON.stringify({
                     model: effectiveApiConfig.model,
-                    messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, [{ role: "user", content: fullPrompt }])),
+                    messages: (await ContextBuilder.buildCharacterRequest({ ...characterContextInput, scene: 'apps.checkPhone' }, [{ role: "user", content: fullPrompt }])),
                     temperature: 0.8
                 }),
                 __sullyMeta: {
@@ -958,6 +958,7 @@ ${realCharRule}
     const callLLM = async (prompt: string, temperature = 0.85, withCharacter = true, purpose = '查手机AI生成'): Promise<string> => {
         const recent = withCharacter && targetChar ? await loadCharacterContextMessages(targetChar) : [];
         const messages = withCharacter && targetChar ? (await ContextBuilder.buildCharacterRequest({
+            scene: 'apps.checkPhone',
             char: targetChar, user: userProfile, timeOptions: { lastInteractionTs: recent[recent.length - 1]?.timestamp },
         }, [{ role: 'user', content: prompt }])) : [{ role: 'user', content: prompt }];
         const response = await fetch(`${effectiveApiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {

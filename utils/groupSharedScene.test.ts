@@ -19,7 +19,7 @@ describe('群聊共有世界书', () => {
             member('a', '阿澈', [sharedBook]),
             member('b', '小白', [sharedBook]),
             member('c', '路人甲', []),
-        ], user);
+        ], user, [], 'group.groupChat');
         expect(scene.sharedWorldbookIds.has('shared')).toBe(true);
         expect(scene.text).toContain('阿澈、小白和小明从小一起长大。');
         expect(scene.text).not.toContain('{{char}}');

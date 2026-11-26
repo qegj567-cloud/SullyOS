@@ -557,6 +557,7 @@ const GroupChat: React.FC = () => {
     // 世界书只由公共管线解析一次，群历史保留独立消息边界；附图仍由原有流程处理。
     const buildGroupRequestMessages = (members: CharacterProfile[], prompt: string, history: GroupHistoryBlock) =>
         ContextBuilder.buildGroupWorldbookRequest<{ role: string; content: any }>({
+            scene: 'group.groupChat',
             members, user: userProfile, history: history.messages || [],
             render: (slots, messages) => [
                 { role: 'system', content: slots.before + prompt + slots.after },
@@ -1271,7 +1272,7 @@ const GroupChat: React.FC = () => {
         const weekNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
         const currentTimeStr = `${nowDate.getFullYear()}年${nowDate.getMonth() + 1}月${nowDate.getDate()}日 ${weekNames[nowDate.getDay()]} ${virtualTime.hours.toString().padStart(2, '0')}:${virtualTime.minutes.toString().padStart(2, '0')}`;
         const liveMsgs = currentMsgs.filter(m => m.id > (activeGroup?.archivedThroughMessageId || 0));
-        const sharedScene = ContextBuilder.buildGroupSharedScene(groupMembers.map(member => ({ ...member, mountedWorldbooks: [] })), userProfile, liveMsgs);
+        const sharedScene = ContextBuilder.buildGroupSharedScene(groupMembers.map(member => ({ ...member, mountedWorldbooks: [] })), userProfile, liveMsgs, 'group.groupChat');
 
         const header = `【系统：群聊模拟器配置】
 当前群名: "${activeGroup?.name}"
@@ -1301,7 +1302,7 @@ ${sharedScene.text}${activeGroup ? buildGroupTopicContext(activeGroup) : ''}`;
             headerOverride: `[Group Member Profile: ${member.name}]`,
         // conversational：群聊同样是用户正在说话的场合（见 buildTimeAwarenessBlock）；
         // 隔着手机聊，也带「对方那边几点」。
-        }, { worldbookMessages: liveGroupMsgs, conversational: true, includeUserClock: true }));
+        }, { worldbookScene: 'group.groupChat', worldbookMessages: liveGroupMsgs, conversational: true, includeUserClock: true }));
         // Get private gap string
         const privateGapInfo = await getPrivateTimeGap(member.id);
 

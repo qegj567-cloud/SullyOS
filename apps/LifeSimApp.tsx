@@ -78,7 +78,7 @@ const AI_MAX_RETRIES = 2;
 async function callCharAI(
     apiConfig: { baseUrl: string; apiKey: string; model: string },
     systemPrompt: string,
-    characterContext?: CharacterContextInput,
+    characterContext?: Omit<CharacterContextInput, 'scene'>,
 ): Promise<string> {
     let lastError: Error | null = null;
 
@@ -92,7 +92,7 @@ async function callCharAI(
                     body: JSON.stringify({
                         model: apiConfig.model,
                         messages: characterContext
-                            ? (await ContextBuilder.buildCharacterRequest(characterContext, [{ role: 'user', content: systemPrompt }]))
+                            ? (await ContextBuilder.buildCharacterRequest({ ...characterContext, scene: 'apps.lifeSim' }, [{ role: 'user', content: systemPrompt }]))
                             : [{ role: 'user', content: systemPrompt }],
                         temperature: 0.85, max_tokens: 8192, stream: false,
                         response_format: { type: 'json_object' },

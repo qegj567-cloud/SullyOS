@@ -233,7 +233,7 @@ it('immediate public replies share ChatApp recall, live context, personal histor
     vi.spyOn(RealtimeContextManager, 'buildFullContext').mockResolvedValue('实时世界标记');
     const realtime: any = {weatherEnabled: true};
     const range = await loadCharacterContextRange(current);
-    const chat = await buildChatRequestPayload({char: current, userProfile: user, groups: [], emojis: [], categories: [],
+    const chat = await buildChatRequestPayload({ scene: 'chat.private',char: current, userProfile: user, groups: [], emojis: [], categories: [],
         historyMsgs: range.messages, contextLimit: range.messages.length, contextHighWaterMark: range.hwm,
         recallEntryPoint: 'chat_app', realtimeConfig: realtime});
     const task = (await prepareFriendFeedEmotionTask(a.id, () => 0))!;

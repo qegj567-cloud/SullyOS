@@ -182,6 +182,11 @@ export interface PromptBuildOptions {
     includeUserClock?: boolean;
     /** 已完成清洗的实际消息，由公共上下文管线统一处理世界书。 */
     history?: import('./context').ContextMessage[];
+    /**
+     * 世界书生效场景。除 forFirePack 外每个调用方都必须传（contextPipeline.test.ts 静态检查）；
+     * 主动消息模板不传，它在打包时自己按主动消息场景预筛世界书。
+     */
+    scene?: import('./worldbookScenes').WorldbookSceneId;
     forFirePack?: boolean;
     /** Device-only foreground lookup; cloud templates never carry a location snapshot. */
     includeUserLocation?: boolean;
@@ -376,7 +381,7 @@ export const ChatPrompts = {
             await RealtimeContextManager.getUserHoliday(config, userProfile.name);
         }
         const context = await ContextBuilder.buildCharacterContext({
-            char, user: userProfile, history: promptOptions?.history,
+            char, user: userProfile, history: promptOptions?.history, scene: promptOptions?.scene,
             timeOptions: { worldbookMessages: currentMsgs, userHolidays: config.userHolidays, skipUserHoliday: forFirePack || timelyByWorker },
             layout: { deferVolatile: true },
         });

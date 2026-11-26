@@ -24,6 +24,7 @@ const userProfile = { name: '小明' } as any;
 const realtimeConfig = { weatherEnabled: true, newsEnabled: true } as any;
 
 const baseInput = (): BuildChatPayloadInput => ({
+    scene: 'chat.private',
     char: { id: 'char-timely', name: '阿一' } as any,
     userProfile,
     groups: [],

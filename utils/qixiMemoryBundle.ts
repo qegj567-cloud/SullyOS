@@ -715,7 +715,7 @@ export async function prepareQixiMemoryBundle(
                     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiConfig.apiKey}` },
                     body: JSON.stringify({
                         model: apiConfig.model,
-                        messages: (await ContextBuilder.buildCharacterRequest({ char: memoryChar, user }, [
+                        messages: (await ContextBuilder.buildCharacterRequest({ scene: 'apps.qixi', char: memoryChar, user }, [
                             { role: 'user', content: userContent },
                         ])),
                         temperature: 0.68,

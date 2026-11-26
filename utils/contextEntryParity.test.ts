@@ -52,6 +52,7 @@ describe('以 ChatApp 实际发送链路为基准核对上下文', () => {
         const expected = Array.from({ length: 242 - scenario.from }, (_, index) => index + scenario.from);
         const recall = vi.spyOn(palace, 'injectMemoryPalace');
         const chat = await buildChatRequestPayload({
+            scene: 'chat.private',
             char, userProfile, groups: [], emojis: [], categories: [],
             historyMsgs: chatRange.messages, recentMsgsHint: allRows,
             contextLimit: Math.max(1, chatRange.messages.length),
@@ -86,6 +87,7 @@ describe('以 ChatApp 实际发送链路为基准核对上下文', () => {
         const rows = await loadCharacterContextMessages(char);
         const recall = vi.spyOn(palace, 'injectMemoryPalace');
         const chat = await buildChatRequestPayload({
+            scene: 'chat.private',
             char, userProfile, groups: [], emojis: [], categories: [], historyMsgs: rows,
             recentMsgsHint: await DB.getMessagesByCharId(char.id, true), contextLimit: 1,
             realtimeConfig: { weatherEnabled: false, newsEnabled: false } as any,
@@ -95,6 +97,7 @@ describe('以 ChatApp 实际发送链路为基准核对上下文', () => {
         expect(JSON.stringify(chat.fullMessages)).not.toContain('被隐藏消息触发的世界书正文');
         expect(markerNumbers((await DatePrompts.buildPeekPayload({ char, userProfile, allMsgs: rows, emojis: [] })).messages)).toEqual([]);
         const manual = await buildChatRequestPayload({
+            scene: 'chat.private',
             char: { ...char, contextRangeMode: 'manual', contextLimit: 10 },
             userProfile, groups: [], emojis: [], categories: [],
             historyMsgs: await DB.getMessagesByCharId(char.id, true), contextLimit: 10,

@@ -488,7 +488,7 @@ export const requestAvatarTouchReply = async (options: {
     },
     body: JSON.stringify({
       model: apiConfig.model,
-      messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, [
+      messages: (await ContextBuilder.buildCharacterRequest({ ...characterContextInput, scene: 'offline.companion' }, [
         { role: 'system', content: systemPrompt },
         ...apiMessages,
         { role: 'user', content: eventText },
@@ -887,7 +887,7 @@ export const requestAvatarTouchReactionPack = async (options: {
     },
     body: JSON.stringify({
       model: apiConfig.model,
-      messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, [
+      messages: (await ContextBuilder.buildCharacterRequest({ ...characterContextInput, scene: 'offline.companion' }, [
         { role: 'system', content: systemPrompt },
         ...apiMessages,
         { role: 'user', content: eventText },

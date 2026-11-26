@@ -159,7 +159,7 @@ export async function buildDreamMessages(opts: {
     }).join('\n');
 
     const prompt = buildDreamPrompt('', recent, char.name, userProfile.name, forcedArchetype);
-    return ContextBuilder.buildCharacterRequest(characterContextInput, [{ role: 'user', content: prompt }]);
+    return ContextBuilder.buildCharacterRequest({ ...characterContextInput, scene: 'apps.dream' }, [{ role: 'user', content: prompt }]);
 }
 
 function buildDreamPrompt(context: string, recent: string, name: string, userName: string, forcedArchetype?: DreamArchetype): string {

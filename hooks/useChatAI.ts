@@ -93,6 +93,7 @@ import {prepareHomeSecretTask,failHomeSecretTask} from '../utils/homeSecrets';
 import {prepareFriendFeedEmotionTask, releaseFriendFeedEmotionTask, acknowledgeFriendFeedNotices,stageFriendFeedCloudTask} from '../utils/friendFeedEmotion';
 import {prepareFriendFeedMainTask,friendFeedUserDisclosure} from '../utils/friendFeedMain';
 import type {SecretNoteOriginPromise} from '../utils/secretNote';
+import type { WorldbookSceneId } from '../utils/worldbookScenes';
 import {
     computeContextRangeSnapshot,
     getMemoryPalaceHighWaterMarkForContext,
@@ -425,6 +426,8 @@ export async function evaluateEmotionBackground(
 }
 
 interface UseChatAIProps {
+    /** 世界书生效场景：私聊（含家园手机里打开的私聊）传 chat.private，QQ 桥传 chat.qqBridge。 */
+    worldbookScene: WorldbookSceneId;
     homePhoneContext?: () => string;
     char: CharacterProfile | undefined;
     userProfile: UserProfile;
@@ -472,6 +475,7 @@ export const useChatAI = ({
     luckinMiniAppRef,
     luckinChatRef,
     homePhoneContext,
+    worldbookScene,
 }: UseChatAIProps) => {
     
     // 音乐上下文 — 用于聊天时注入"user 正在听什么 + 当前歌词窗口"
@@ -909,6 +913,7 @@ export const useChatAI = ({
             if (!instantChatRoute) sendProgress.local(!!instantChatVeto || !['disabled', 'char-disabled'].includes(instantChatReadiness.reason ?? ''));
 
             const payload = await replyStep(async () => stageT('payload', buildChatRequestPayload({
+                scene: worldbookScene,
                 char: charForGen, userProfile, groups, emojis, categories,
                 homePhoneContext:homePhoneContext?.(),
                 historyMsgs: contextMsgs,

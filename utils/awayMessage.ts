@@ -380,11 +380,14 @@ export const runLocalProactiveTurn = async (char: CharacterProfile, turn: LocalP
     loadCharacterContextRange(char), DB.getEmojis(), DB.getEmojiCategories(),
   ]);
   const { emojis, categories } = ChatPrompts.filterVisibleEmojis(allEmojis, allCategories, char.id);
-  const built = await buildFirePack(char, userProfile, groups, realtimeConfig, { all: allEmojis, categories: allCategories });
-  // 新版 Worker 的模板里概率世界书条目带着占位标记、等到点再抽；本地这一刻就是「到点」，
-  // 用 Worker 同一个函数当场抽一次。整轮（含二轮请求）共用这一次的结果。
+  // 本地这一刻就知道是哪一类：世界书生效场景在打包时直接按这一类挑（与 worker 到点按类型
+  // 去掉标记块的结果逐字一致，见 worldbook 的 renderWorldbookRolls）。
+  const proactiveKind = dateLeave ? 'dateLeave' : 'away';
+  const built = await buildFirePack(char, userProfile, groups, realtimeConfig, { all: allEmojis, categories: allCategories }, { proactiveKind });
+  // 万一模板里带着推迟标记（概率条目等到点再抽），本地这一刻就是「到点」，
+  // 用 Worker 同一个函数当场判一次。整轮（含二轮请求）共用这一次的结果。
   const pack = Array.isArray(built.worldbookRolls)
-    ? { ...built, template: renderWorldbookRolls(built.template, built.worldbookRolls) }
+    ? { ...built, template: renderWorldbookRolls(built.template, built.worldbookRolls, undefined, proactiveKind) }
     : built;
   const timely = await loadLocalTimelyBlocks(char, realtimeConfig, pack, renderAt);
   const toMessages = (instruction: string) => [{

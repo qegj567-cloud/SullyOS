@@ -31,6 +31,7 @@ it.each([
   localStorage.setItem(`chat_translate_source_lang_${char.id}`, '日语');
   localStorage.setItem(`chat_translate_lang_${char.id}`, '中文');
   const chat = await buildChatRequestPayload({
+    scene: 'chat.private',
     char, userProfile, groups: [], emojis: [], categories: [], historyMsgs: [], contextLimit: 20,
     timelyByWorker: true,
     translationConfig: { enabled: true, sourceLang: '日语', targetLang: '中文' },
@@ -59,7 +60,7 @@ it('uses this space’s shared prompt unless the character has its own rules', a
   expect(getThinkingChainSettings(char, {})).toMatchObject({ scope: 'space', mode: 'append', customPrompt: '' });
   for (const follower of [char, { ...legacy, thinkingChainPromptScope: 'space' }]) {
     const thinkingChain = getThinkingChainSettings(follower, user);
-    const input = { char: follower, userProfile: { ...user, bio: '', avatar: '' }, groups: [], emojis: [], categories: [], historyMsgs: [], contextLimit: 20 };
+    const input = { scene: 'chat.private' as const, char: follower, userProfile: { ...user, bio: '', avatar: '' }, groups: [], emojis: [], categories: [], historyMsgs: [], contextLimit: 20 };
     const chat = await buildChatRequestPayload({ ...input, thinkingChain });
     const scheduled = await buildFirePack(follower, input.userProfile, [], undefined);
     for (const text of [JSON.stringify(chat.fullMessages), scheduled.template]) {
@@ -145,6 +146,7 @@ it('scheduled prompts reload saved room plates and replace stale injection witho
     entries: [{ id: 'audit-plate-entry', text: 'AUDIT_SAVED_PLATE 用户不喝咖啡', firstLearnedAt: now, updatedAt: now, sourceCount: 1 }],
   });
   const chat = await buildChatRequestPayload({
+    scene: 'chat.private',
     char, userProfile, groups: [], emojis: [], categories: [], historyMsgs: [], contextLimit: 20, timelyByWorker: true,
   });
   expect(JSON.stringify(chat.fullMessages)).toContain('AUDIT_SAVED_PLATE');

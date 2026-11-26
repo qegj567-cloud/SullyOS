@@ -42,7 +42,7 @@
 | **网易云音乐代理与播放直链** | [`docs/netease-music-proxy.md`](./docs/netease-music-proxy.md) | 改音乐 App 播放直链、`worker/index.js` `/netease/*`、风控降级或缓存规则前必读；320k 内直走 `weapi`、高解析度失败降级，边缘缓存按凭据摘要分桶且不缓存试听或空直链 |
 | **角色统计 / 上下文字数与 Token 估算** | [`docs/character-statistics.md`](./docs/character-statistics.md) | 改神经链接角色统计前必读；可读范围不等于实际请求，概率预览不得抽签，宫殿缓存单列 |
 | **API 调用记录 / 用途与云端记账** | [`docs/api-call-log.md`](./docs/api-call-log.md) | 新增 `/chat/completions` 调用点、改 `ApiCallMeta` 归属或云端模型用量回传前必读；显式 `meta` 不混入前台环境角色，推送不回传凭据 |
-| **世界书管线、分组与角色绑定** | [`docs/worldbook-management.md`](./docs/worldbook-management.md) | 新增 App／角色生成请求或改世界书前必读；新入口使用 ContextBuilder.buildCharacterRequest，世界书自动随角色装载；绑定按 ID，库与角色缓存同事务更新 |
+| **世界书管线、分组与角色绑定** | [`docs/worldbook-management.md`](./docs/worldbook-management.md) | 新增 App／角色生成请求或改世界书前必读；新入口使用 ContextBuilder.buildCharacterRequest，世界书自动随角色装载；每个入口声明启用场景，新 App 先登记子场景；绑定按 ID，库与角色缓存同事务更新 |
 | **协同工作私聊衔接与转发** | [`docs/collaboration-chat-bridge.md`](./docs/collaboration-chat-bridge.md) | 改协同读取 ChatApp 范围或转发消息前必读；每轮读 DB，空范围不回退，多选只发当前窗口 |
 | **canary 版本通道** | [`docs/canary-channel.md`](./docs/canary-channel.md) | 改 canary 加入退出、`/canary/` 跳转脚本、通道配对、`deploy-canary.yml` 或 Worker 的 `bundle_channel` 前必读；dev 合并进 canary 分支发布，master 直接合入的改动要同步过去，同网址子路径共用数据，加入先换 Worker 再换前端，冷启动按通道对齐且跳转未生效时不动 Worker，连续两次启动失败自动退回 |
 | **假模型（端到端调试 / 回归）** | [`docs/fake-llm.md`](./docs/fake-llm.md) | 用不花钱、可重复的假回复测私聊、即时对话、定时主动消息和云端代跑前看；场景按模型名 `fake/<场景>` 选，辅助请求自动给空操作回复；先查「每条链路读哪个 API 槽位」，调试面板一键换过去要能一键换回 |

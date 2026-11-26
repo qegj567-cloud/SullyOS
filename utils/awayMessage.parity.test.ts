@@ -197,3 +197,76 @@ it('资料里有 bio 时，用户所在地节日插在 bio 后面（与云端同
   });
   expect(localRequest().messages[0].content).toContain('- 设定/备注: 爱猫\n\n- 小明那边今天是元旦\n\n### 下一节');
 });
+
+// 回归守卫：世界书条目限定了生效场景时，云端一份包到点按主动消息类型取舍，
+// 与本地已知类型当场挑条目的结果逐字一致。
+describe('世界书生效场景', () => {
+  const sceneChar = { ...char, mountedWorldbooks: [
+    { id: 'wb-all', title: 'ALL', content: 'ALL_SCENES_TEXT', constant: true, key: [], position: 1, category: '地点', order: 1 },
+    { id: 'wb-away', title: 'AW', content: 'AWAY_ONLY_TEXT', constant: true, key: [], position: 1, category: '人物', order: 2, scenes: ['proactive.away'] },
+    { id: 'wb-all2', title: 'ALL2', content: 'ALL_SCENES_TEXT_2', constant: true, key: [], position: 1, category: '地点', order: 3 },
+    { id: 'wb-chat', title: 'CH', content: 'CHAT_ONLY_TEXT', constant: true, key: [], position: 1, scenes: ['chat.private'] },
+  ] } as any;
+  const cloudPack = () => activeMsgClient.buildFirePack(sceneChar, user, [], {} as any, { all: [], categories: [] }, { forCloud: true });
+  const awayMeta = { amsgAwayMessage: true, amsgAwayDelayMinutes: DELAY, amsgTaskInstruction: buildAwayTaskInstruction(DELAY) };
+  const dateLeaveMeta = { amsgDateLeave: true, amsgDateLeaveDelayMinutes: 5, amsgTaskInstruction: buildDateLeaveInstruction() };
+
+  beforeEach(() => {
+    // 能出到点标记的 Worker（见 activeMsgClient 的 workerSupportsTemplateMarkers）。
+    globalConfig.value = { workerBundleVersion: '2026-11-24', workerUrl: 'https://w.invalid', anthropicMessagesWorkerUrl: 'https://w.invalid' };
+    vi.mocked(ChatPrompts.buildSystemPrompt).mockRestore();
+  });
+
+  it('离开后消息：本地带上只限离开后的条目，与云端到点逐字一致', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(ANCHOR + DELAY * MIN + 10 * MIN);
+    await runLocalAwayMessages({
+      getCharacters: () => [sceneChar], getApiConfig: () => api, getUserProfile: () => user,
+      getGroups: () => [], getRealtimeConfig: () => ({} as any), isBusyWith: () => false,
+    });
+    const local = localRequest().messages[0].content as string;
+    expect(local).toContain('AWAY_ONLY_TEXT');
+    expect(local).not.toContain('CHAT_ONLY_TEXT');
+    expect(local).not.toContain('AMSG_WB');
+    const cloud = await cloudPrompt(await cloudPack(), ANCHOR + DELAY * MIN, awayMeta);
+    expect(cloud).toBe(local);
+  });
+
+  it('见面离开提醒：本地与云端都去掉只限离开后的条目，前后同名分类标题合并', async () => {
+    const now = ANCHOR + 10 * MIN;
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    await runLocalProactiveTurn(sceneChar, {
+      apiConfig: api, userProfile: user, groups: [], realtimeConfig: {} as any,
+      hint: buildDateLeaveInstruction(), purpose: '见面离开提醒', meta: { dateLeaveReminder: true },
+      place: text => [{ text, at: now }], stillWanted: async () => true,
+    });
+    const local = localRequest().messages[0].content as string;
+    expect(local).toContain('ALL_SCENES_TEXT_2');
+    expect(local).not.toContain('AWAY_ONLY_TEXT');
+    expect(local.match(/#### \[地点\]/g)).toHaveLength(1);
+    const cloud = await cloudPrompt(await cloudPack(), now, dateLeaveMeta);
+    expect(cloud).toBe(local);
+  });
+
+  it('定时主动消息：云端到点去掉只限离开后的条目，不留标记', async () => {
+    const now = ANCHOR + 10 * MIN;
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    const pack = await cloudPack();
+    expect(pack.worldbookRolls).toEqual([{ id: 'wb-away', probability: 100, proactiveKinds: ['away'] }]);
+    expect(pack.template).toContain('AWAY_ONLY_TEXT');
+    const cloud = await cloudPrompt(pack, now, { amsgTaskInstruction: '随便聊聊' });
+    expect(cloud).toContain('ALL_SCENES_TEXT');
+    expect(cloud).not.toContain('AWAY_ONLY_TEXT');
+    expect(cloud).not.toContain('CHAT_ONLY_TEXT');
+    expect(cloud).not.toContain('AMSG_WB');
+  });
+
+  it('旧 Worker 出不了标记：部分类型生效的条目整条带上，四类都不生效的仍去掉', async () => {
+    globalConfig.value = {};
+    vi.spyOn(Date, 'now').mockReturnValue(ANCHOR + 10 * MIN);
+    const pack = await cloudPack();
+    expect(pack.worldbookRolls).toBeUndefined();
+    expect(pack.template).toContain('AWAY_ONLY_TEXT');
+    expect(pack.template).not.toContain('CHAT_ONLY_TEXT');
+    expect(pack.template).not.toContain('AMSG_WB');
+  });
+});

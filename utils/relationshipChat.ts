@@ -226,7 +226,7 @@ export function flipTranscript(detail: string): string {
 async function chatCompletion(api: MiniApiConfig,
     userContent: string,
     temperature = 0.85,
-    characterContext?: CharacterContextInput,
+    characterContext?: Omit<CharacterContextInput, 'scene'>,
     history: ContextMessage[] = [],
     meta?: ApiCallMeta,
 ): Promise<string> {
@@ -235,7 +235,7 @@ async function chatCompletion(api: MiniApiConfig,
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${api.apiKey}` },
         body: JSON.stringify({
             model: api.model,
-            messages: characterContext ? (await ContextBuilder.buildCharacterRequest(characterContext, [
+            messages: characterContext ? (await ContextBuilder.buildCharacterRequest({ ...characterContext, scene: 'group.charPrivate' }, [
                 { role: 'system', content: userContent }, ...history,
                 { role: 'user', content: '请按上述要求继续。' },
             ])) : [{ role: 'user', content: userContent }],
@@ -277,7 +277,7 @@ async function recentContextText(
 async function buildSpeakerContext(speaker: CharacterProfile,
     user: UserProfile,
     otherName: string,
-): Promise<CharacterContextInput> {
+): Promise<Omit<CharacterContextInput, 'scene'>> {
     try {
         if (speaker.memoryPalaceEnabled) {
             const recent = await loadCharacterContextMessages(speaker);

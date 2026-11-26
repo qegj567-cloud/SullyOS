@@ -13,7 +13,7 @@ export async function rewriteCabinetNote(actor: CharacterProfile, user: UserProf
     if (!api.baseUrl || !api.model) throw new Error('请先配置彼方或角色的对话 API。');
     const char = { ...actor };
     await injectMemoryPalace(char, [], note.story, user.name);
-    const messages = await ContextBuilder.buildCharacterRequest({ char, user, instructions: '重写这次芯片体验的私人随笔。用角色本人的第一人称写 250–600 字，只输出随笔正文。保持本次对象、芯片及已经发生的剧情。' },
+    const messages = await ContextBuilder.buildCharacterRequest({ scene: 'apps.vrChipNote', char, user, instructions: '重写这次芯片体验的私人随笔。用角色本人的第一人称写 250–600 字，只输出随笔正文。保持本次对象、芯片及已经发生的剧情。' },
         [{ role: 'user', content: JSON.stringify({ 对象: note.targetName, 芯片: [note.variantTitle, note.storyTitle], 剧情: note.story, 高光: note.highlight, 上一稿: note.notes }) }]);
     const data = await safeFetchJson(normalizeLlmBaseUrl(api.baseUrl, api.apiType) + '/chat/completions', {
         method: 'POST', signal,

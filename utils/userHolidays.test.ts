@@ -85,7 +85,7 @@ describe('用户所在地节假日', () => {
         localStorage.setItem('os_realtime_config', JSON.stringify({ userHolidays: china }));
         const char = { id: 'test', name: 'Sully', timeAwarenessEnabled: true } as any;
         const user = { name: '小桃', bio: '测试用户简介' } as any;
-        const prompt = (await ContextBuilder.buildCharacterContext({ char, user })).coreContext;
+        const prompt = (await ContextBuilder.buildCharacterContext({ scene: 'chat.private', char, user })).coreContext;
         const expected = getCachedUserHolidayReminder('小桃');
         expect(expected).toContain('小桃所在地');
         expect(prompt.indexOf(expected)).toBeGreaterThan(prompt.indexOf('### 互动对象 (User)'));
@@ -94,11 +94,11 @@ describe('用户所在地节假日', () => {
         expect(JSON.stringify((await DatePrompts.buildPeekPayload(dateInput)).messages)).toContain(expected);
         expect(JSON.stringify((await DatePrompts.buildSessionPayload({ ...dateInput, userText: '在吗', variant: 'send' })).messages)).toContain(expected);
         expect(JSON.stringify((await DatePrompts.buildPeekPayload({ ...dateInput, char: { ...char, dateTimeAwarenessEnabled: false } })).messages)).not.toContain(expected);
-        expect((await ContextBuilder.buildCharacterContext({ char, user, timeOptions: { skipTimeAwareness: true } })).coreContext).not.toContain('公共假期');
+        expect((await ContextBuilder.buildCharacterContext({ scene: 'chat.private', char, user, timeOptions: { skipTimeAwareness: true } })).coreContext).not.toContain('公共假期');
         localStorage.setItem('os_realtime_config', JSON.stringify({ userHolidays: { ...china, enabled: false, introChoice: 'declined' } }));
         expect(hasChosenHolidayIntro()).toBe(true);
         expect(getCachedUserHolidayReminder('小桃')).toBe('');
-        expect((await ContextBuilder.buildCharacterContext({ char, user })).coreContext).not.toContain('公共假期');
+        expect((await ContextBuilder.buildCharacterContext({ scene: 'chat.private', char, user })).coreContext).not.toContain('公共假期');
     });
     it('云端补入用户区，不把假期放在天气新闻块；空提醒不会添加任何文字', () => {
         const prompt = '角色\n### 互动对象 (User)\n- 名字: 小桃\n记忆';

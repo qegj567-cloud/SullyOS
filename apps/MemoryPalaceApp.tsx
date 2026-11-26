@@ -2316,7 +2316,7 @@ export default function MemoryPalaceApp() {
 
         try {
 
-            const charContext = (await ContextBuilder.buildCoreContext(char, userProfile, false));
+            const charContext = (await ContextBuilder.buildCoreContext(char, userProfile, false, undefined, undefined, { worldbookScene: 'memory.palace' }));
             // selectedMonths 现在存的是分块 key（如 "2026-03 上旬"）
             const monthsToProcess = selectedMonths.size > 0 ? Array.from(selectedMonths) : undefined;
             const result = await migrateOldMemories(

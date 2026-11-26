@@ -517,7 +517,7 @@ const SongwritingApp: React.FC = () => {
             const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-                body: JSON.stringify({ model: apiConfig.model, messages: (await ContextBuilder.buildCharacterRequest({ char: collaborator, user: userProfile }, apiMessages)), temperature: 0.8, max_tokens: 2000 }),
+                body: JSON.stringify({ model: apiConfig.model, messages: (await ContextBuilder.buildCharacterRequest({ scene: 'apps.songwriting', char: collaborator, user: userProfile }, apiMessages)), temperature: 0.8, max_tokens: 2000 }),
                 __sullyMeta: {
                     appId: 'songwriting',
                     appName: '写歌',
@@ -899,7 +899,7 @@ const SongwritingApp: React.FC = () => {
                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
                     body: JSON.stringify({
                         model: apiConfig.model,
-                        messages: (await ContextBuilder.buildCharacterRequest({ char: collaborator, user: userProfile }, [
+                        messages: (await ContextBuilder.buildCharacterRequest({ scene: 'apps.songwriting', char: collaborator, user: userProfile }, [
                             { role: 'system', content: systemPrompt },
                             { role: 'user', content: userPrompt + retryInstruction },
                         ])),
@@ -974,7 +974,7 @@ const SongwritingApp: React.FC = () => {
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
                 body: JSON.stringify({
                     model: apiConfig.model,
-                    messages: (await ContextBuilder.buildCharacterRequest({ char: collaborator, user: userProfile }, [
+                    messages: (await ContextBuilder.buildCharacterRequest({ scene: 'apps.songwriting', char: collaborator, user: userProfile }, [
                         { role: 'system', content: systemPrompt },
                         { role: 'user', content: prompt },
                     ])),

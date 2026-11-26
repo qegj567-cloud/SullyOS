@@ -617,7 +617,7 @@ export async function prepareQixiReunion(
                 headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiConfig.apiKey}` },
                 body: JSON.stringify({
                     model: apiConfig.model,
-                    messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, [
+                    messages: (await ContextBuilder.buildCharacterRequest({ ...characterContextInput, scene: 'apps.qixi' }, [
                         { role: 'user', content: buildQixiFinalePrompt(char, user, memoryBundle, journey, portraitPlan) },
                     ])),
                     temperature: 0.72,

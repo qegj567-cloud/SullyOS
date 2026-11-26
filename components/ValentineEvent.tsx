@@ -518,7 +518,7 @@ export const ValentineSession: React.FC<ValentineSessionProps> = ({ charId, onCl
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
                 body: JSON.stringify({
                     model: apiConfig.model,
-                    messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, [
+                    messages: (await ContextBuilder.buildCharacterRequest({ ...characterContextInput, scene: 'apps.valentine' }, [
                         { role: 'user', content: `[最近记录 (Previous Context)]:\n${recentMsgs}\n\n---\n\n${valentinePrompt}` }
                     ])),
                     temperature: 0.88

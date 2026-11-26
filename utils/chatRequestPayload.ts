@@ -38,6 +38,7 @@ import { isChatConversationEntry } from './memoryPalace/trace';
 import { loadCollaborationFileCabinetBlock } from '../features/collaboration/chatLibrary';
 import { buildSARUserSurfaceRequest, selectSARUserSurfaceTargets } from './vrWorld/sarUserSurface';
 import { getSARModuleRuntimePlan } from './vrWorld/sarModuleRuntime';
+import type { WorldbookSceneId } from './worldbookScenes';
 
 export { cleanApiMessages, flattenImageContentParts } from './promptMessageCleanup';
 
@@ -50,6 +51,8 @@ export interface UserListeningContext {
 
 export interface BuildChatPayloadInput {
     signal?: AbortSignal;
+    /** 世界书生效场景，必填：私聊、QQ 桥、家园手机等调用方各自声明。 */
+    scene: WorldbookSceneId;
     /** A preview holds the receipt until its reply is accepted. */
     onRecallReceipt?: (ids: string[]) => void;
     /** Local phase timings only; no request content or telemetry. */
@@ -389,6 +392,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         recentTrackSwitch,
         {
             history: cleanedApiMessages,
+            scene: input.scene,
             timelyByWorker: input.timelyByWorker === true,
             includeUserLocation: isChatConversationEntry(input.recallEntryPoint),
             // 「对方那边几点」只给隔着手机的私聊；家园手机是同一个家里拿手机聊，跟家园、彼方一样不带。

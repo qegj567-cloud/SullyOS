@@ -143,6 +143,7 @@ export const buildCollaborationContextSnapshot = async ({
   };
   return [
     await ContextBuilder.buildCoreContext(staticChar, user, true, undefined, undefined, {
+      worldbookScene: 'chat.collaboration',
       conversational: true,
       skipTimeAwareness: false,
     }),
@@ -196,6 +197,7 @@ export const buildLiveCollaborationChatContext = async ({
     roomPlatesInjection: '',
   };
   const payload = await buildChatRequestPayload({
+    scene: 'chat.collaboration',
     char: staticChar,
     userProfile: user,
     groups,

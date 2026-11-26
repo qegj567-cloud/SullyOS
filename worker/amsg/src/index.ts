@@ -2809,12 +2809,15 @@ export const amsgHooks = {
         tzId: pack.tzId,
       })
       : taskMeta.amsgTaskInstruction as string;
-    // 世界书概率条目每次到点现抽（与本地每轮都抽一致）；旧包没有 worldbookRolls 时模板原样。
+    // 世界书概率条目每次到点现抽（与本地每轮都抽一致）；只在部分主动消息类型生效的条目，
+    // 不是这一类就整块去掉（不耗随机数）。旧包没有 worldbookRolls 时模板原样。
     // 已经随之前某次 fire 发出去的回执整块去掉（客户端还没上线重新打包时也不再提）。
     const noticeTemplate = renderSentNotices(pack.template, stash.sentNoticeIds ?? []);
     const rolledPack = {
       ...pack,
-      template: Array.isArray(pack.worldbookRolls) ? renderWorldbookRolls(noticeTemplate, pack.worldbookRolls) : noticeTemplate,
+      template: Array.isArray(pack.worldbookRolls)
+        ? renderWorldbookRolls(noticeTemplate, pack.worldbookRolls, undefined, proactiveKindOf(stash))
+        : noticeTemplate,
     };
     const prompt = insertUserHolidayInProfile(renderFirePack(rolledPack, ctx.now.getTime(), taskInstruction, {
       maxUnansweredSends,

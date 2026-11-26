@@ -302,7 +302,7 @@ export const requestCompanionStartupDraft = async (options: {
     },
     body: JSON.stringify({
       model: apiConfig.model,
-      messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, [
+      messages: (await ContextBuilder.buildCharacterRequest({ ...characterContextInput, scene: 'offline.companion' }, [
         { role: 'system', content: buildCompanionStartupPrompt('', character.name, user.name || '用户', modelActions, hint) },
         ...apiMessages,
         { role: 'user', content: eventText },

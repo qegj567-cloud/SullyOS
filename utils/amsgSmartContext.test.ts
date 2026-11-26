@@ -46,7 +46,7 @@ async function fixture(palace = true, texts = ['你还记得雾岚吗？', '我�
     });
     const historyMsgs = await loadCharacterContextMessages(char);
     const input: BuildChatPayloadInput = {
-        char, userProfile: user, groups: [], emojis: [], categories: [], historyMsgs,
+        scene: 'chat.private', char, userProfile: user, groups: [], emojis: [], categories: [], historyMsgs,
         contextLimit: 200, recallEntryPoint: 'chat_app', realtimeConfig: realtime,
     };
     return { char, input };

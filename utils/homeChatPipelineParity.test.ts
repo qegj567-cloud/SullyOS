@@ -44,7 +44,7 @@ it('compares actual ChatApp and home payloads: all shared blocks and chronologic
  const realtimeConfig:any={weatherEnabled:true,newsEnabled:true,notionEnabled:true,notionApiKey:'test',notionDatabaseId:'d',notionNotesDatabaseId:'n',feishuEnabled:true,feishuAppId:'a',feishuAppSecret:'b',feishuBaseId:'c',feishuTableId:'d'};
  const musicSnapshot:any={current:{id:1,name:'共听歌曲标记',artists:'歌手'},playing:true,lyric:[{time:0,text:'共听歌词标记'}],activeLyricIdx:0,listeningTogetherWith:[id],cfg:{}};
  const range=await loadCharacterContextRange(char);
- const chat=await buildChatRequestPayload({char,userProfile:user,groups,emojis:[],categories:[],historyMsgs:range.messages,
+ const chat=await buildChatRequestPayload({ scene: 'chat.private',char,userProfile:user,groups,emojis:[],categories:[],historyMsgs:range.messages,
   recentMsgsHint:range.messages.filter(m=>m.metadata?.source!=='home'),contextLimit:range.messages.length,contextHighWaterMark:range.hwm,
   recallEntryPoint:'chat_app',realtimeConfig,musicSnapshot});
  const home=await buildHomeConversationPayload({char,user,api:{} as any,scene,records,signal:new AbortController().signal,context:{groups,emojis:[],categories:[],realtimeConfig,musicSnapshot}});
@@ -131,7 +131,7 @@ it.each([-1,0])('retains ChatApp music context when the active lyric index is %s
  const musicSnapshot:any={current:{id:1,name:'前奏中的歌曲',artists:'歌手'},playing:true,lyric:[{time:10,text:'第一句歌词'}],activeLyricIdx,listeningTogetherWith:[id],cfg:{}};
  const range=await loadCharacterContextRange(char);
  // Reference the existing ChatApp behavior, including the intro before the first lyric.
- const chat=await buildChatRequestPayload({char,userProfile:user,groups:[],emojis:[],categories:[],historyMsgs:range.messages,contextLimit:range.messages.length,recallEntryPoint:'chat_app',
+ const chat=await buildChatRequestPayload({ scene: 'chat.private',char,userProfile:user,groups:[],emojis:[],categories:[],historyMsgs:range.messages,contextLimit:range.messages.length,recallEntryPoint:'chat_app',
   userListeningContext:{songName:musicSnapshot.current.name,artists:'歌手',lyricWindow:activeLyricIdx<0?[]:['第一句歌词'],activeIdx:activeLyricIdx},isListeningTogether:true,musicCfg:musicSnapshot.cfg});
  const home=await buildHomeConversationPayload({char,user,api:{} as any,scene,records,signal:new AbortController().signal,context:{musicSnapshot}});
  expect(home.at(-1)!.content.replace(buildHomeScenePrompt(user,scene),'')).toBe(chat.fullMessages.at(-1)!.content.replace(`\n${ContextBuilder.buildMusicActionGuide(true)}\n`,''));

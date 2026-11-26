@@ -69,7 +69,7 @@ function renderDraft(raw: string, settings: Settings, users: Message[]): DraftBu
 }
 
 export async function previewTurnRevision(settings: Settings, mode: RevisionMode, guidance: string, signal: AbortSignal): Promise<TurnPreview> {
-    const { char, apiConfig } = settings;
+    const { char, apiConfig, scene } = settings;
     const originals = await loadRevisionTurn(char.id);
     if ((char.hideBeforeMessageId ?? 0) > originals[0].id) throw new Error('本轮已归档，请在记忆修补中核对。');
     const api = resolveDialogueApi(apiConfig, char);
@@ -92,7 +92,7 @@ ${prompt}
         if ((char.contextUserStartMessageId ?? 0) >= originals[0].id) throw new Error('当前上下文断点位于本轮回复内，断点前的对话无法用于重写。');
         const range = await loadCharacterContextRange(char, undefined, originals[0].id);
         history = range.messages;
-        const payload = await buildChatRequestPayload({ ...settings, signal, char: { ...char, buffInjection: '', activeBuffs: [] },
+        const payload = await buildChatRequestPayload({ ...settings, scene, signal, char: { ...char, buffInjection: '', activeBuffs: [] },
             innerState: '', historyMsgs: history, contextLimit: Math.max(1, history.length), contextHighWaterMark: range.hwm,
             recallEntryPoint: 'chat_app', onRecallReceipt: ids => { recalledIds = ids; } });
         messages = [...payload.fullMessages, { role: 'user', content:

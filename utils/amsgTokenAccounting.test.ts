@@ -15,6 +15,7 @@ const api = { apiUrl: 'https://mock.invalid/v1/chat/completions', apiKey: 'mock'
 // No live API: inspect the actual SDK request body and return controlled provider usage.
 const prepare = async () => {
     const input = {
+        scene: 'chat.private' as const,
         char: { id: 'token-audit', name: '阿一', systemPrompt: setting, timeAwarenessEnabled: false, memoryPalaceEnabled: false } as any,
         userProfile: { name: '小明' } as any,
         groups: [], emojis: [], categories: [], contextLimit: 20,

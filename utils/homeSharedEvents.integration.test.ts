@@ -71,6 +71,7 @@ it('projects the complete A/B/C event stream to each participant through the exi
   expect(formatMessageForPrompt(rows[0],char.name,'用户')).toMatch(/^\[A\]:/);
   expect(formatMessageForPrompt(rows[1],char.name,'用户')).toMatch(/^\[家园记录\]:/);
   const payload=await buildChatRequestPayload({
+   scene: 'offline.home3d',
    char,userProfile:{name:'用户'} as any,groups:[],emojis:[],categories:[],
    historyMsgs:rows,contextLimit:rows.length,contextHighWaterMark:0,recallEntryPoint:'home_3d',
    realtimeConfig:{weatherEnabled:false,newsEnabled:false} as any,
@@ -172,6 +173,7 @@ it('reuses group worldbook ID deduplication without dropping attribution or merg
  const book=(id:string):MountedWorldbook=>({id,title:'同名',content:'相同正文',constant:true,position:4});
  a.mountedWorldbooks=[book('shared'),book('a-only')];b.mountedWorldbooks=[book('shared')];c.mountedWorldbooks=[book('c-only')];
  const result=ContextBuilder.buildGroupWorldbookRequest({
+  scene: 'offline.home3d',
   members:[a,b,c],user:{name:'用户'} as any,history:[{role:'user',content:'A说草，B摸了A，C浇水'}],
   render:({before,after},history)=>[{role:'system',content:before+after},...history],
  });
