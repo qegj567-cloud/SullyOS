@@ -37,6 +37,7 @@ import {
   settleLateCloudEmotionEvalLog,
 } from './amsgInstantChat';
 import { recordCompletedCloudApiCall } from './apiCallLog';
+import { CLOUD_GEN_STALE_MS, listCloudGenJobs, sweepStaleCloudGenJobs } from './cloudGen/registry';
 import { resolveDialogueApi } from './characterApi';
 import { dispatchAmsgResult } from './amsgResults';
 import { requestStartupUpdateCheck } from './amsgAutoUpdateTrigger';
@@ -1568,6 +1569,7 @@ export type FlushTrigger =
   | '原生推送'       // 原生壳收到推送后触发
   | '本地巡查'        // 前台每几秒数一眼本地收件箱，自己发现躺着的消息
   | '第三方补收'      // 第三方推送叫不醒页面，前台时定期去云端账本拉
+  | '云端生成补收'    // 有云端生成在等结果，前台时定期去云端账本拉
   | '生成前收件';     // 只处理本轮角色的本地收件箱，不拉云端账本
 
 // ─── 生成前收件与冲刷之间的共享状态（见 prepareInboxBeforeChat）───
@@ -2332,6 +2334,7 @@ const scheduleLocalInboxWatch = (): void => {
     localInboxWatchTimer = null;
     void sweepLocalInbox()
       .then(() => sweepThirdPartyOutbox())
+      .then(() => sweepCloudGenOutbox())
       .finally(() => scheduleLocalInboxWatch());
   }, LOCAL_INBOX_WATCH_INTERVAL_MS);
 };
@@ -2494,6 +2497,35 @@ export const sweepThirdPartyOutbox = async (now = Date.now()): Promise<boolean> 
     return true;
   } catch (e) {
     log.warn('第三方推送模式的前台补收没跑成（下一跳还会再来）', { error: e });
+    return false;
+  }
+};
+
+// ─── 云端生成在等结果时的前台补收 ───
+//
+// 云端生成（日程、人格模拟、梦境）的结果靠推送回来。推送丢了而页面一直开在前台时，上线补收
+// 不会再跑（它只在冷启动和回到前台时跑），结果就一直躺在账本上，等到 20 分钟超时点名才被
+// 判成失败。所以有云端生成在等、页面可见时，每 60 秒自己去账本拉一次；跟其它几类共用节流
+// 时钟，刚拉过就不拉。刚交出的那一分钟不拉，那时结果还没跑完。
+// 超过 20 分钟的顺手点一次名，不用等下次打开应用或下次交任务才去问。
+// 挂在本地巡查那条 3 秒链上，不另起定时器；后台时不拉，推送模式不限。
+export const CLOUD_GEN_FOREGROUND_DRAIN_INTERVAL_MS = 60_000;
+
+/** 有云端生成在等结果时，到点拉一次云端账本。返回这一跳有没有真去拉（只为单测断言）。 */
+export const sweepCloudGenOutbox = async (now = Date.now()): Promise<boolean> => {
+  try {
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return false;
+    if (lastOutboxDrainAt > 0 && now - lastOutboxDrainAt < CLOUD_GEN_FOREGROUND_DRAIN_INTERVAL_MS) return false;
+    const waiting = listCloudGenJobs().filter((r) => r.status === 'running'
+      && now - r.submittedAt >= CLOUD_GEN_FOREGROUND_DRAIN_INTERVAL_MS);
+    if (waiting.length === 0) return false;
+    if (!isAmsg2WorkerActive(await ActiveMsgStore.getGlobalConfig())) return false;
+    await drainOutboxAndFlush('云端生成补收');
+    // 先拉账本再点名：结果就在账本上的话，先落地，免得被判成「结果没送回来」。
+    if (waiting.some((r) => now - r.submittedAt > CLOUD_GEN_STALE_MS)) await sweepStaleCloudGenJobs(now);
+    return true;
+  } catch (e) {
+    log.warn('云端生成的前台补收没跑成（下一跳还会再来）', { error: e });
     return false;
   }
 };

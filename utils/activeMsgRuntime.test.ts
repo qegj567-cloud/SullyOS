@@ -31,6 +31,8 @@ import {
   startLateEmotionPoll,
   sweepLocalInbox,
   sweepThirdPartyOutbox,
+  sweepCloudGenOutbox,
+  CLOUD_GEN_FOREGROUND_DRAIN_INTERVAL_MS,
   THIRD_PARTY_FOREGROUND_DEBOUNCE_MS,
   THIRD_PARTY_DUE_DRAIN_INTERVAL_MS,
   THIRD_PARTY_DUE_LEAD_MS,
@@ -59,6 +61,8 @@ import { amsgStateNamespace } from './amsgFirePack';
 import { CHAT_GEN_EVENTS } from './chatGenEvents';
 import { DB } from './db';
 import type { ActiveMsg2TaskRecord } from '../types';
+import { CLOUD_GEN_JOBS_KEY, CLOUD_GEN_STALE_MS, putCloudGenJob } from './cloudGen/registry';
+import type { CloudGenJobRecord } from './cloudGen/types';
 import { readAllInstantTraces } from './instantTraceLog';
 import {
   createSARModuleEventMeta,
@@ -3026,6 +3030,67 @@ describe('上线补收不看有没有在等回复（走真库）', () => {
     await expect(catchUpMissedPushes('foreground')).resolves.toBe('drained');
     expect(list).toHaveBeenCalledTimes(2);
   }, 20000);
+
+  // 云端生成的结果靠推送回来；推送丢了、页面又一直开着时，只能靠这一跳自己去账本拉。
+  describe('云端生成在等结果时的前台补收', () => {
+    const cloudGenJob = (submittedAt: number): CloudGenJobRecord => ({
+      jobId: `job-${submittedAt}`,
+      purpose: 'dream',
+      charId: 'char-cloud-gen-poll',
+      charName: '小明',
+      uuid: `uuid-${submittedAt}`,
+      submittedAt,
+      snapshotAt: submittedAt,
+      status: 'running',
+      notify: true,
+      context: null,
+    });
+
+    afterEach(() => { localStorage.removeItem(CLOUD_GEN_JOBS_KEY); });
+
+    it('网页推送模式下也拉，60 秒拉一次', async () => {
+      const list = vi.spyOn(ActiveMsgClient, 'listOutboxEntries').mockResolvedValue([]);
+      const t0 = Date.now();
+      putCloudGenJob(cloudGenJob(t0 - CLOUD_GEN_FOREGROUND_DRAIN_INTERVAL_MS - 1000));
+
+      await expect(sweepCloudGenOutbox(t0)).resolves.toBe(true);
+      await expect(sweepCloudGenOutbox(t0 + 3_000)).resolves.toBe(false);
+      await expect(sweepCloudGenOutbox(t0 + CLOUD_GEN_FOREGROUND_DRAIN_INTERVAL_MS + 100)).resolves.toBe(true);
+      expect(list).toHaveBeenCalledTimes(2);
+    }, 20000);
+
+    it('没有在等的、刚交出不到一分钟的、已经落地的，都不拉', async () => {
+      const list = vi.spyOn(ActiveMsgClient, 'listOutboxEntries').mockResolvedValue([]);
+      const t0 = Date.now();
+
+      await expect(sweepCloudGenOutbox(t0)).resolves.toBe(false);
+      putCloudGenJob(cloudGenJob(t0 - 10_000));
+      await expect(sweepCloudGenOutbox(t0)).resolves.toBe(false);
+      putCloudGenJob({ ...cloudGenJob(t0 - 5 * 60_000), status: 'landed', settledAt: t0 });
+      await expect(sweepCloudGenOutbox(t0)).resolves.toBe(false);
+      expect(list).not.toHaveBeenCalled();
+    }, 20000);
+
+    it('没配 Worker 不拉', async () => {
+      await ActiveMsgStore.saveGlobalConfig({ workerUrl: '' });
+      const list = vi.spyOn(ActiveMsgClient, 'listOutboxEntries').mockResolvedValue([]);
+      putCloudGenJob(cloudGenJob(Date.now() - 5 * 60_000));
+
+      await expect(sweepCloudGenOutbox()).resolves.toBe(false);
+      expect(list).not.toHaveBeenCalled();
+    }, 20000);
+
+    it('超过 20 分钟的，拉完账本再点名', async () => {
+      const calls: string[] = [];
+      vi.spyOn(ActiveMsgClient, 'listOutboxEntries').mockImplementation(async () => { calls.push('outbox'); return []; });
+      vi.spyOn(ActiveMsgClient, 'getRemoteTaskStatus').mockImplementation(async () => { calls.push('status'); return { state: 'pending' } as any; });
+      const t0 = Date.now();
+      putCloudGenJob(cloudGenJob(t0 - CLOUD_GEN_STALE_MS - 60_000));
+
+      await expect(sweepCloudGenOutbox(t0)).resolves.toBe(true);
+      expect(calls).toEqual(['outbox', 'status']);
+    }, 20000);
+  });
 });
 
 // 手动补收那个按钮报的「补回 N 条消息，去聊天里看看」必须是真话。
