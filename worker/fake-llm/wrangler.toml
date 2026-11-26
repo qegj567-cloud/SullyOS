@@ -1,0 +1,17 @@
+name = "sullyos-fake-llm"
+# wrangler 自带 esbuild，直接吃 TS 源码，不需要先打包。
+main = "src/index.ts"
+compatibility_date = "2026-01-01"
+
+# 部署时保留面板上手填的环境变量（FAKE_LLM_LOG_TOKEN 存成 Text 时也不会被下一次部署清掉）。
+keep_vars = true
+
+[observability]
+enabled = true
+
+[observability.logs]
+enabled = true
+
+# 可选：开启「最近收到的请求」端点 GET /_fake/requests。不设就整个关掉。
+#   wrangler secret put FAKE_LLM_LOG_TOKEN --config ./wrangler.toml
+# 本地 wrangler dev 时写在同目录的 .dev.vars 里：FAKE_LLM_LOG_TOKEN=随便一串
