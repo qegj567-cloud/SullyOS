@@ -70,7 +70,7 @@ Pages 上传与部署共用带 `github.run_id`、`github.run_attempt` 的产物�
 
 本地正式构建首屏静态 JS 约从 5.55 MB 降至 3.78 MB（未压缩代码），启动清单从 35 项 / 12.8 MiB 降至 18 项 / 4.5 MiB。这是构建产物比较，不是 iOS 真机耗时比较，也不代表已经定位所有组件加载故障。数据库和 SW 仍并行启动，桌面不等待离线资源准备。
 
-Cloudflare 部署使用 assets-first，正常文件直接由静态资源服务返回，只有缺失路径进入 `worker/static-site-not-found.ts`，返回 `404 + Cache-Control: no-store`。不能开启全局 SPA HTML 回退：曾实测缺失 JS 返回首页 HTML、200 和一年 immutable；仅关闭回退仍会被目录规则加上一年缓存，所以缺失文件需要独立兜底。OS 导航保留同一页面地址，通知使用首页查询参数；首页、恢复页和独立衣橱均是实际存在的文件。CI 限制不能添加 `run_worker_first` 或静态资源 binding，避免正常启动请求绕到脚本。新配置上线后仍需实测生产响应；它不会主动移除用户 HTTP 缓存中已有的错误响应。本地 Wrangler 实测正常入口及脚本返回 200，缺失脚本返回 404 / no-store；隔离 Edge 在屏蔽外部 CDN 时可启动，缓存准备后可断网重开。85 项相关测试通过，拆分后的 3D、PDF、PSD、UI、聊天和设置模块均可执行。这些验证不覆盖真实 iOS WebKit 故障。
+Cloudflare 部署使用 assets-first，正常文件直接由静态资源服务返回，主站的 POST /api/model-request 由脚本处理，其他缺失路径进入 `worker/static-site-not-found.ts`，返回 `404 + Cache-Control: no-store`。不能开启全局 SPA HTML 回退：曾实测缺失 JS 返回首页 HTML、200 和一年 immutable；仅关闭回退仍会被目录规则加上一年缓存，所以缺失文件需要独立兜底。OS 导航保留同一页面地址，通知使用首页查询参数；首页、恢复页和独立衣橱均是实际存在的文件。CI 限制不能添加 `run_worker_first` 或静态资源 binding，避免正常启动请求绕到脚本。新配置上线后仍需实测生产响应；它不会主动移除用户 HTTP 缓存中已有的错误响应。本地 Wrangler 实测正常入口及脚本返回 200，缺失脚本返回 404 / no-store；隔离 Edge 在屏蔽外部 CDN 时可启动，缓存准备后可断网重开。85 项相关测试通过，拆分后的 3D、PDF、PSD、UI、聊天和设置模块均可执行。这些验证不覆盖真实 iOS WebKit 故障。
 
 ### 构建
 
