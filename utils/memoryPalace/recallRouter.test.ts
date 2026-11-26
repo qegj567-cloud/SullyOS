@@ -196,7 +196,7 @@ describe('Local Context Analyzer', () => {
         const hint = renderLocalContextGuidance(analysis);
 
         expect(hint).toContain('结果落地或进展更新');
-        expect(hint).toContain('本轮已经召回的记忆');
+        expect(hint).toContain('已召回记忆');
         expect(hint).not.toContain('雾港观测员');
         expect(hint).toContain('不要擅自补成唯一答案');
     });

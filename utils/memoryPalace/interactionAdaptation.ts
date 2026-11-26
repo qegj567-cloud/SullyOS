@@ -234,11 +234,12 @@ export function analyzeUserInteraction(
 
 export function renderInteractionAdaptationGuidance(
     analysis: UserInteractionAnalysis | undefined,
+    charName = '你',
 ): string {
     if (!analysis?.analyzable) return '';
     if (!Object.values(analysis.policy).some(value => value > 0.001)) return '';
 
-    const lines: string[] = [];
+    const signals: Array<{ text: string; strength: number }> = [];
     const { impulse, trend, shifts, policy } = analysis;
     const impulseLengthDelta = impulse.length - trend.length;
     const impulseEnergyDelta = impulse.energy - trend.energy;
@@ -252,27 +253,24 @@ export function renderInteractionAdaptationGuidance(
 
     if (Math.abs(shifts.length) >= 0.045 || noticeableLengthImpulse) {
         const direction = noticeableLengthImpulse ? impulseLengthDelta : shifts.length;
-        lines.push(direction < 0
-            ? '回应可以比你平时稍短一些，少铺垫，保留自然停顿。'
-            : '对方此刻愿意展开；如果你确实有内容，可以比平时多说一点，但不要为了匹配长度硬凑。');
+        signals.push({
+            text: `回复长度：${direction < 0 ? '明显变短' : '明显展开变长'}`,
+            strength: noticeableLengthImpulse ? Math.abs(impulseLengthDelta) * policy.length / 0.08 : Math.abs(shifts.length) / 0.045,
+        });
     }
     if (Math.abs(shifts.rhythm) >= 0.045 || noticeableRhythmImpulse) {
         const direction = noticeableRhythmImpulse ? impulseRhythmDelta : shifts.rhythm;
-        lines.push(direction > 0
-            ? '跟上现在较快的来回节奏，反应可以更直接。'
-            : '现在的交流节奏偏慢，允许回应从容一些，不必催着推进。');
+        signals.push({
+            text: `来回节奏：${direction > 0 ? '偏快' : '偏慢'}`,
+            strength: noticeableRhythmImpulse ? Math.abs(impulseRhythmDelta) * policy.rhythm / 0.07 : Math.abs(shifts.rhythm) / 0.045,
+        });
     }
     if (Math.abs(shifts.energy) >= 0.04 || noticeableEnergyImpulse) {
         const direction = noticeableEnergyImpulse ? impulseEnergyDelta : shifts.energy;
-        lines.push(direction > 0
-            ? '可以接住对方此刻更高的兴致或情绪能量，但强度仍以你的性格为上限。'
-            : '对方此刻能量偏低，适当收住声量，不必强行热场。');
-    }
-    if (policy.punctuation >= 0.2 && shifts.punctuation > 0.06) {
-        lines.push('标点力度可以轻微跟上，但不要机械复制。');
-    }
-    if (policy.emoji >= 0.2 && shifts.emoji > 0.06) {
-        lines.push('若你本来就会使用 emoji，可以略微增加；没有这个习惯就不要突然使用。');
+        signals.push({
+            text: `情绪能量：${direction > 0 ? '明显升高' : '明显偏低'}`,
+            strength: noticeableEnergyImpulse ? Math.abs(impulseEnergyDelta) * policy.energy / 0.07 : Math.abs(shifts.energy) / 0.04,
+        });
     }
 
     const hasImpulse = analysis.hasTrend && (
@@ -280,18 +278,18 @@ export function renderInteractionAdaptationGuidance(
         || Math.abs(impulseEnergyDelta) >= 0.25
         || Math.abs(impulseRhythmDelta) >= 0.25
     );
-    // 只有产生了实际行为建议才注入。单纯检测到波动不应占用 prompt，
-    // 更不能绕过角色把某个维度设为 0 的明确选择。
-    if (lines.length === 0) return '';
+    // 保留原检测阈值和角色维度开关；最多呈现两个最显著信号，不再指导标点/emoji。
+    // 没有可报告信号时仍不注入，避免仅凭稳定状态占用上下文。
+    if (signals.length === 0) return '';
 
     const intro = hasImpulse
-        ? '对方这一轮的步伐和最近几轮有明显变化；只在当前回应里轻微跟上即可。'
-        : '跟随对方这一阵的交流步伐即可，不需要刻意表演。';
+        ? '对方这一轮的步伐和最近几轮有明显变化（以下为客观观察）：'
+        : '对方这一阵的交流步伐平稳。';
     return [
-        '### 此刻的交流节奏',
+        '### 【此刻的交流节奏】',
         intro,
-        ...lines,
-        '这只是相处节奏的轻微调整。你的立场、关系距离、语言气质和判断方式仍然属于你自己；不要复刻对方措辞，也不要把这次适应学回角色基线。',
+        ...signals.sort((a, b) => b.strength - a.strength).slice(0, 2).map(signal => `- ${signal.text}`),
+        `提示：察觉到这些变化即可，是否顺着对方调整语速和长度、怎么接住这个能量，完全按 ${charName} 自己的性格来，不要机械复制对方措辞。`,
         '',
     ].join('\n');
 }

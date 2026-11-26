@@ -50,9 +50,11 @@ describe('M2 ChatApp interaction adaptation', () => {
 
         const guidance = renderInteractionAdaptationGuidance(analysis);
         expect(guidance).toContain('这一轮的步伐');
-        expect(guidance).toContain('稍短');
-        expect(guidance).toContain('更高的兴致');
-        expect(guidance).toContain('语言气质');
+        expect(guidance).toContain('回复长度：明显变短');
+        expect(guidance).toContain('情绪能量：明显升高');
+        expect(guidance).toContain('自己的性格');
+        expect(guidance.split('\n').filter(line => line.startsWith('- '))).toHaveLength(2);
+        expect(guidance).not.toMatch(/稍短|少铺垫|收住声量|标点力度|略微增加/);
         expect(guidance).not.toContain('啊啊啊我过啦');
     });
 
@@ -115,13 +117,35 @@ describe('M2 ChatApp interaction adaptation', () => {
         });
     });
 
+    it('reports at most two signals without mutating analysis or reviving a disabled dimension', () => {
+        const analysis = analyzeUserInteraction([
+            message('user', '此前我在慢慢讲述一些背景，内容比较长，也并不着急。'),
+            message('assistant', '嗯。'),
+            message('user', '啊啊啊！！！🎉🎉'),
+        ], { ...fullPolicy, length: 0 });
+        const before = JSON.stringify(analysis);
+        const guidance = renderInteractionAdaptationGuidance(analysis, '阿一');
+        expect(guidance).not.toContain('回复长度：');
+        expect(guidance).toContain('情绪能量：明显升高');
+        expect(guidance).toContain('完全按 阿一 自己的性格');
+        expect(guidance.split('\n').filter(line => line.startsWith('- ')).length).toBeLessThanOrEqual(2);
+        expect(JSON.stringify(analysis)).toBe(before);
+    });
+
+    it('does not inject punctuation or emoji instructions when only those dimensions are enabled', () => {
+        const analysis = analyzeUserInteraction([message('user', '啊啊啊！！！🎉🎉')], {
+            length: 0, rhythm: 0, energy: 0, punctuation: 1, emoji: 1,
+        });
+        expect(renderInteractionAdaptationGuidance(analysis)).toBe('');
+    });
+
     it('does not mistake ordinary punctuation-free text for a strong low-energy signal', () => {
         const analysis = analyzeUserInteraction([
             message('user', '我知道了'),
         ]);
 
         expect(Math.abs(analysis.shifts.energy)).toBeLessThan(0.04);
-        expect(renderInteractionAdaptationGuidance(analysis)).not.toContain('能量偏低');
+        expect(renderInteractionAdaptationGuidance(analysis)).not.toContain('情绪能量：明显偏低');
     });
 
     it('records M2 for ChatApp even when memory palace recall itself is disabled', async () => {

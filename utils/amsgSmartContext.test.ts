@@ -61,13 +61,44 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe('主动消息智能语境与普通消息、即时对话的一致性', () => {
+    it('上一轮泛化安慰的 P3 在本地、即时对话和主动消息中一致，复用不推进状态', async () => {
+        const { char, input } = await fixture(false, ['单位那件事还没讲完。']);
+        await buildChatRequestPayload(input);
+        await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'text', content: '抱抱，别难过。', timestamp: Date.now() } as Message);
+        await DB.saveMessage({ charId: char.id, role: 'user', type: 'text', content: '主要是主任把安排换了。', timestamp: Date.now() } as Message);
+        const historyMsgs = await loadCharacterContextMessages(char);
+        const local = await buildChatRequestPayload({ ...input, historyMsgs });
+        const instant = await buildChatRequestPayload({ ...input, historyMsgs, timelyByWorker: true });
+        const hint = renderSmartContextGuidance(local.recallTrace, false, char.name);
+        expect(hint).toContain('不要再重复“抱抱”“别难过”');
+        expect(hint).toContain('对方正在继续同一件事');
+        expect(instant.fullMessages.some(message => String(message.content).includes(hint))).toBe(true);
+        const stateKey = `${CONVERSATION_ENGAGEMENT_STORAGE_PREFIX}${char.id}`;
+        const state = localStorage.getItem(stateKey);
+        const fresh = await buildFirePack(char, user, [], realtime, emojis);
+        const reused = await buildFirePack(char, user, [], realtime, emojis, { palaceRecall: local.palaceRecall });
+        expect(fresh.template).toContain(hint);
+        expect(reused.template).toBe(fresh.template);
+        expect(localStorage.getItem(stateKey)).toBe(state);
+    });
+
+    it('开启开关但话题 idle 时，本地和主动消息都不注入谈话参与底座与结尾', async () => {
+        const { char, input } = await fixture(false, ['下午好呀。']);
+        const chat = await buildChatRequestPayload(input);
+        const pack = await buildFirePack(char, user, [], realtime, emojis);
+        for (const text of [chat.systemPrompt, pack.template]) {
+            expect(text).not.toContain('【谈话参与底线】');
+            expect(text).not.toContain('以上仅供你把握当前聊到了哪一步');
+        }
+    });
+
     it('相同上下文的两条打包路径包含相同增强记忆和提示词，复用时不重复向量请求', async () => {
         const { char, input } = await fixture();
         const chat = await buildChatRequestPayload(input);
-        const chatGuidance = renderSmartContextGuidance(chat.recallTrace);
+        const chatGuidance = renderSmartContextGuidance(chat.recallTrace, false, char.name);
         expect(chat.palaceRecall?.memoryPalaceInjection).toContain('EXACT_ENTITY_MEMORY');
-        expect(chatGuidance).toContain('### 谈话参与原则');
-        expect(chatGuidance).toContain('### 此刻的交流节奏');
+        expect(chatGuidance).toContain('【谈话参与底线】');
+        expect(chatGuidance).toContain('【此刻的交流节奏】');
         expect(chat.fullMessages.some(m => String(m.content).includes(chatGuidance))).toBe(true);
 
         const fresh = await buildFirePack(char, user, [], realtime, emojis);
@@ -96,7 +127,7 @@ describe('主动消息智能语境与普通消息、即时对话的一致性', (
         expect(changed.template).toBe(fresh.template);
         expect(fresh.template).toContain('EXACT_ENTITY_MEMORY');
         expect(fresh.template).toContain('ASSISTANT_ALREADY_REPLIED');
-        expect(fresh.template).toContain('### 此刻的交流节奏');
+        expect(fresh.template).toContain('【此刻的交流节奏】');
         expect(localStorage.getItem(stateKey)).toBe(state);
     });
 
@@ -105,8 +136,8 @@ describe('主动消息智能语境与普通消息、即时对话的一致性', (
         const first = await buildFirePack(char, user, [], realtime, emojis);
         const second = await buildFirePack(char, user, [], realtime, emojis);
         expect(second.template).toBe(first.template);
-        expect(first.template).toContain('### 此刻这句话怎么接');
-        expect(first.template).toContain('### 谈话参与原则');
+        expect(first.template).toContain('【语境承接】');
+        expect(first.template).toContain('【谈话参与底线】');
         expect(getEmbeddings).not.toHaveBeenCalled();
         expect(localStorage.getItem(`${CONVERSATION_ENGAGEMENT_STORAGE_PREFIX}${char.id}`)).toBeNull();
     });
@@ -145,7 +176,7 @@ describe('主动消息智能语境与普通消息、即时对话的一致性', (
         expect(reused.template).toBe(fresh.template);
         expect(reused.template).not.toContain('EXACT_ENTITY_MEMORY');
         expect(reused.template).not.toContain('【智能语境');
-        expect(reused.template).not.toContain('### 谈话参与原则');
+        expect(reused.template).not.toContain('【谈话参与底线】');
     });
 
     it('关闭时生成的召回不能绕过后来开启的智能语境', async () => {
@@ -155,7 +186,7 @@ describe('主动消息智能语境与普通消息、即时对话的一致性', (
         configure(true);
         const pack = await buildFirePack(char, user, [], realtime, emojis, { palaceRecall: chat.palaceRecall });
         expect(pack.template).toContain('EXACT_ENTITY_MEMORY');
-        expect(pack.template).toContain('### 谈话参与原则');
+        expect(pack.template).toContain('【谈话参与底线】');
     });
 
     it('缩小可见范围后不复用范围外召回，也不回读已隐藏用户发言做分析', async () => {
@@ -166,7 +197,7 @@ describe('主动消息智能语境与普通消息、即时对话的一致性', (
         const pack = await buildFirePack(narrowed, user, [], realtime, emojis, { palaceRecall: chat.palaceRecall });
         expect(pack.template).not.toContain('EXACT_ENTITY_MEMORY');
         expect(pack.template).not.toContain('你还记得雾岚');
-        expect(pack.template).not.toContain('### 此刻的交流节奏');
+        expect(pack.template).not.toContain('【此刻的交流节奏】');
         expect(pack.template).toContain('晚安。');
     });
 

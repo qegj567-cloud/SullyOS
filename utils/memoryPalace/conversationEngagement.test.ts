@@ -9,6 +9,7 @@ import {
     CONVERSATION_ENGAGEMENT_STORAGE_PREFIX,
     loadConversationEngagementState,
     renderConversationEngagementGuidance,
+    type ConversationEngagementAnalysis,
 } from './conversationEngagement';
 import { injectMemoryPalace } from './pipeline';
 
@@ -49,17 +50,15 @@ describe('M3 v2 Conversation Engagement', () => {
         expect(result.analysis.reasons).toContain('personal_load');
 
         const guidance = renderConversationEngagementGuidance(result.analysis);
-        expect(guidance).toContain('### 谈话参与原则');
-        expect(guidance).toContain('对方出现负面情绪，不代表当前谈话的目标是消除这种情绪');
-        expect(guidance).toContain('情绪是谈话的一部分，不应覆盖谈话本身');
-        expect(guidance).toContain('不要根据关键词、记忆或既有印象补全事件并提前站队');
+        expect(guidance).toContain('【谈话参与底线】');
+        expect(guidance).toContain('目前没有结束信号');
+        expect(guidance).toContain('既关注对方此刻的感受，也关注事情本身发生了什么');
+        expect(guidance).not.toContain('提前站队');
         expect(guidance).not.toContain('User');
-        expect(guidance).toContain('先听见，再了解，再形成看法');
-        expect(guidance).toContain('### 当前谈话参与策略');
-        expect(guidance).toContain('持续关注对方正在经历什么');
-        expect(guidance).toContain('不要用“别想了”“回来就好”“一切都会过去”');
-        expect(guidance).toContain('不必固定变成“发生什么了”“然后呢”');
-        expect(guidance).toContain('你不只需要留意');
+        expect(guidance).toContain('完全由 你 自己的性格决定');
+        expect(guidance).toContain('对方正在开启一件还没讲完的事');
+        expect(guidance).toContain('不要用“别想了”“都会过去的”');
+        expect(guidance).not.toMatch(/最多问一个|不需要用明确问句|不要为了安慰而自动站队/);
         expect(guidance).not.toContain('角色');
         expect(guidance).not.toContain('我很累');
     });
@@ -94,6 +93,7 @@ describe('M3 v2 Conversation Engagement', () => {
         expect(result.analysis.engagementState).toBe('idle');
         expect(result.analysis.shouldGuide).toBe(false);
         expect(result.analysis.stance.confidence).toBe(0);
+        expect(renderConversationEngagementGuidance(result.analysis)).toBe('');
     });
 
     it('distinguishes a tired status update with an explicit closure from an opening', () => {
@@ -105,8 +105,7 @@ describe('M3 v2 Conversation Engagement', () => {
         expect(result.analysis.shouldGuide).toBe(false);
         expect(result.state.activeSubject).toBeUndefined();
         const guidance = renderConversationEngagementGuidance(result.analysis);
-        expect(guidance).toContain('### 谈话参与原则');
-        expect(guidance).not.toContain('### 当前谈话参与策略');
+        expect(guidance).toBe('');
     });
 
     it('keeps the same subject through elaboration and a low-information continuation', () => {
@@ -155,7 +154,7 @@ describe('M3 v2 Conversation Engagement', () => {
         expect(resolving.analysis.engagementState).toBe('resolving');
         expect(['reflect', 'evaluate']).toContain(resolving.analysis.responsePlan.primary);
         expect(resolving.analysis.responsePlan.explicitQuestionBudget).toBe(0);
-        expect(renderConversationEngagementGuidance(resolving.analysis)).toContain('先保留你正在形成的印象');
+        expect(renderConversationEngagementGuidance(resolving.analysis)).toContain('这件事已展开到可以表态的阶段');
     });
 
     it('closes the old subject and opens a new one when the user shifts topics', () => {
@@ -171,6 +170,10 @@ describe('M3 v2 Conversation Engagement', () => {
         expect(shifted.analysis.responsePlan).toMatchObject({ primary: 'close', secondary: 'shift' });
         expect(shifted.state.activeSubject?.id).not.toBe(workId);
         expect(shifted.analysis.subject.changed).toBe(true);
+        const guidance = renderConversationEngagementGuidance(shifted.analysis, '阿一');
+        expect(guidance).toContain('对方切换了新主题');
+        expect(guidance).not.toContain('对方正在开启一件还没讲完的事');
+        expect(guidance).toContain('完全由 阿一 自己的性格决定');
     });
 
     it('enters a new topic directly when there is no old subject to close', () => {
@@ -250,6 +253,104 @@ describe('M3 v2 Conversation Engagement', () => {
 
         expect(trace.deepEngagement?.engine).toBe('legacy_depth');
         expect(trace.deepEngagement?.status).toBe('observed');
+    });
+
+    it.each([
+        ['P1 overrides P2 and P3', 'opening', true, 'playful', true, 0, '目前没有结束信号'],
+        ['P2 overrides P3', 'engaged', false, 'playful', true, 0, '你可以保持轻松或锐评'],
+        ['P3 needs previous comfort', 'engaged', false, 'exploratory', true, 0, '不要再重复“抱抱”“别难过”'],
+        ['neutral opening has no guard', 'opening', false, 'exploratory', false, 0, ''],
+        ['closure signal suppresses P1', 'engaged', true, 'exploratory', false, 1, ''],
+        ['judgment does not get P1 or P3', 'resolving', true, 'analytical', true, 0, ''],
+        ['closing does not get P1 or P3', 'closing', true, 'reactive', true, 1, ''],
+    ] as const)('%s: at most one guard and one anchor', (_label, phase, negative, mode, comfort, closure, expected) => {
+        push('user', '之前那件事有后续。');
+        const base = advanceConversationEngagement('char-engagement', history).analysis;
+        const analysis: ConversationEngagementAnalysis = {
+            ...base, engagementState: phase, interactionMode: mode,
+            signals: { ...base.signals, negativeEmotion: negative, previousGenericComfort: comfort, closure },
+        };
+        const guidance = renderConversationEngagementGuidance(analysis, '阿一');
+        const guards = ['目前没有结束信号', '你可以保持轻松或锐评', '不要再重复“抱抱”“别难过”'];
+        expect(guards.filter(guard => guidance.includes(guard))).toEqual(expected ? [expected] : []);
+        // header + base + exactly one anchor + optional guard + footer.
+        expect(guidance.trim().split('\n')).toHaveLength(expected ? 5 : 4);
+        expect(guidance).toContain('完全由 阿一 自己的性格决定');
+        expect(guidance).not.toContain('之前那件事有后续');
+    });
+
+    it.each([
+        ['抱抱，别难过了。', true],
+        ['我会一直在。', true],
+        ['不要再说抱抱了。', false],
+        ['他只会说“抱抱”。', false],
+        ['“抱抱”是刚才引用的原话。', false],
+        ['主任在什么场合改的安排？', false],
+    ])('detects actual previous comfort, not quoted mentions: %s', (reply, expected) => {
+        push('user', '单位那件事还没讲完。');
+        const opened = advanceConversationEngagement('char-engagement', history);
+        push('assistant', reply);
+        push('user', '主要是主任把安排换了。');
+        const result = advanceConversationEngagement('char-engagement', history, opened.state);
+        expect(result.analysis.signals.previousGenericComfort).toBe(expected);
+        expect(renderConversationEngagementGuidance(result.analysis).includes('不要再重复“抱抱”“别难过”')).toBe(expected);
+        expect(JSON.stringify(result.analysis)).not.toContain(reply);
+    });
+
+    it('scans all bubbles in the last assistant turn, but never crosses a user or image turn', () => {
+        push('user', '有件事还没讲完。');
+        push('assistant', '抱抱。');
+        push('assistant', '我听着。');
+        push('user', '主要是主任把安排换了。');
+        expect(advanceConversationEngagement('char-engagement', history).analysis.signals.previousGenericComfort).toBe(true);
+        push('assistant', '换成什么安排？');
+        push('user', '然后换成了另一个方案。');
+        expect(advanceConversationEngagement('char-engagement', history).analysis.signals.previousGenericComfort).toBe(false);
+
+        history.length = 0;
+        push('assistant', '抱抱。');
+        push('user', 'blobref:image').type = 'image';
+        push('assistant', 'blobref:emoji').type = 'emoji';
+        push('user', '主要是主任把安排换了。');
+        expect(advanceConversationEngagement('char-engagement', history).analysis.signals.previousGenericComfort).toBe(false);
+    });
+
+    it('refreshes guard signals for edited assistant text and old cached analyses without advancing state', () => {
+        push('user', '有件事还没讲完。');
+        const reply = push('assistant', '抱抱。');
+        push('user', '主要是主任把安排换了。');
+        const first = advanceConversationEngagement('char-engagement', history);
+        expect(first.analysis.signals.previousGenericComfort).toBe(true);
+        reply.content = '我听着。';
+        delete first.state.lastAnalysis!.signals.previousGenericComfort;
+        delete first.state.lastAnalysis!.signals.negativeEmotion;
+        const rebuilt = advanceConversationEngagement('char-engagement', history, first.state);
+        expect(rebuilt.analysis.signals.previousGenericComfort).toBe(false);
+        expect(rebuilt.state).toBe(first.state);
+        expect(rebuilt.state.activeSubject?.knownFacts).toEqual(first.state.activeSubject?.knownFacts);
+    });
+
+    it('uses the topic switch anchor rather than opening or closing, with no unfinished-negative guard', () => {
+        push('user', '今天单位那件事很烦。');
+        const opened = advanceConversationEngagement('char-engagement', history);
+        push('assistant', '抱抱。');
+        push('user', '不想聊这个了，给你看我刚画的东西。');
+        const result = advanceConversationEngagement('char-engagement', history, opened.state);
+        const guidance = renderConversationEngagementGuidance(result.analysis);
+        expect(guidance).toContain('对方切换了新主题');
+        expect(guidance).not.toMatch(/对方正在开启|对方正在收束|目前没有结束信号|不要再重复/);
+    });
+
+    it('allows a playful opening, but closing wins over a laughing surface', () => {
+        push('user', '刚发现一件特别好玩的事哈哈。');
+        const opened = advanceConversationEngagement('char-engagement', history);
+        expect(renderConversationEngagementGuidance(opened.analysis)).toContain('你可以保持轻松或锐评');
+        push('assistant', '抱抱。');
+        push('user', '哈哈，先不聊了。');
+        const closed = advanceConversationEngagement('char-engagement', history, opened.state);
+        const guidance = renderConversationEngagementGuidance(closed.analysis);
+        expect(guidance).toContain('对方正在收束这件事');
+        expect(guidance).not.toMatch(/目前没有结束信号|你可以保持轻松或锐评|不要再重复/);
     });
 
     it('clears corrupt v2 state after a one-turn automatic legacy fallback', async () => {

@@ -1334,7 +1334,7 @@ export const buildFirePack = async (
     // 输出跟没这个槽位一模一样；有内容时那段自带前导空行，见 renderSelfLogBlock。
     `${recentTranscript || '（暂时没有最近聊天记录）'}${AMSG_SLOT_SELF_LOG}`,
     '',
-    renderSmartContextGuidance(recallTrace, true),
+    renderSmartContextGuidance(recallTrace, true, char.name),
     // 「此刻在做什么」紧跟当前时间：日程时段本来就要对着钟读，挨在一起才对得上。
     // 没日程的角色 worker 填空串，这一行连带消失（那段自带前导空行，见 renderFireSceneBlock）。
     // 时区那两行也挨着钟：静态说明打包时就烤好，「对方那边现在几点」由 worker 到点现算——

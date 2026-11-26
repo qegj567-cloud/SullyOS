@@ -169,6 +169,9 @@ export interface ConversationEngagementAnalysis {
         analysisReadiness: number;
         closure: number;
         shift: number;
+        /** 仅用于当轮条件提醒；旧临时状态可能没有这两个字段。 */
+        negativeEmotion?: boolean;
+        previousGenericComfort?: boolean;
     };
     reasons: ConversationEngagementReason[];
 }
@@ -217,6 +220,40 @@ const DIRECT_QUESTION_RE = /(?:[?？]\s*$|^(?:什么|怎么|为什么|为何|哪
 const DIRECT_REQUEST_RE = /^(?:请|麻烦|帮我|能否|可以帮我|给我|替我|告诉我|解释|写一?|生成|做一?|查一下|搜索|翻译)/u;
 const SOCIAL_ONLY_RE = /^(?:你?好|早上好|早安|中午好|下午好|晚上好|晚安|在吗|收到|知道了|好的?|好吧|行吧?|谢谢|谢啦|拜拜|回头见)[呀啊哦啦吧。.!！?？～~]*$/u;
 const SELF_ANCHOR_RE = /(?:我|自己|咱们|我们)/u;
+
+// 表面情绪信号，不分析角色人格，也不把“想要抱抱”一律视为负面情绪。
+const NEGATIVE_EMOTION_RE = /(?:难过|伤心|委屈|生气|愤怒|烦死|烦透|气死|郁闷|沮丧|焦虑|担心|恐惧|好怕|很怕|有点怕|不开心|不高兴)/u;
+// 只匹配独立的泛化安慰短句，避免“不要再说抱抱”“他只会说抱抱”等提及触发。
+const GENERIC_COMFORT_CLAUSE_RE = /^(?:(?:来|先|给你|给你一个|过来)\s*)?(?:抱抱(?:你)?|别难过(?:了)?|不要难过(?:了)?|别伤心(?:了)?|不要伤心(?:了)?|没关系(?:的)?|我(?:会)?一直(?:都)?在|我在(?:呢)?|都会过去的|一切都会过去的)[呀啊哦啦呢吧~～\s]*$/u;
+
+type EngagementGuardSignals = {
+    negativeEmotion: boolean;
+    previousGenericComfort: boolean;
+};
+
+function detectEngagementGuardSignals(messages: Message[], charName?: string, userName?: string): EngagementGuardSignals {
+    // 先按原消息切轮，避免图片/表情被清洗掉后跨过一个用户轮去读更早的安慰。
+    const { current, context } = splitCurrentUserBurst(messages);
+    const currentText = sanitizeQuerySourceMessages(current, charName, userName)
+        .map(message => message.content).join('\n');
+    let previousGenericComfort = false;
+    for (let index = context.length - 1; index >= 0; index -= 1) {
+        const message = context[index];
+        if (message.role === 'system') continue;
+        if (message.role !== 'assistant') break;
+        if (message.type !== 'text' && message.type !== 'voice') continue;
+        const text = sanitizeQuerySourceMessages([message], charName, userName)
+            .map(item => item.content).join('\n');
+        if (text.split(/[。！？!?；;，,\n]+/u).some(clause => GENERIC_COMFORT_CLAUSE_RE.test(clause.trim()))) {
+            previousGenericComfort = true;
+            break;
+        }
+    }
+    return {
+        negativeEmotion: EMOTIONAL_PRESSURE_RE.test(currentText) || NEGATIVE_EMOTION_RE.test(currentText),
+        previousGenericComfort,
+    };
+}
 
 const clamp01 = (value: number): number => Math.max(0, Math.min(1, value));
 
@@ -566,6 +603,7 @@ function advanceStance(
 
 function makeAnalysis(input: {
     detection: DetectedConversationAct;
+    guardSignals: EngagementGuardSignals;
     previousEngagementState: EngagementState;
     engagementState: EngagementState;
     interactionMode: ConversationInteractionMode;
@@ -610,6 +648,7 @@ function makeAnalysis(input: {
             analysisReadiness: detection.analysisReadiness,
             closure: detection.closure,
             shift: detection.shift,
+            ...input.guardSignals,
         },
         reasons: [...detection.reasons],
     };
@@ -622,6 +661,7 @@ export function advanceConversationEngagement(
     charName?: string,
     userName?: string,
 ): ConversationEngagementAdvanceResult {
+    const guardSignals = detectEngagementGuardSignals(messages, charName, userName);
     const safeMessages = sanitizeQuerySourceMessages(messages, charName, userName);
     const { current } = splitCurrentUserBurst(safeMessages);
     const lastMessageId = current.at(-1)?.id;
@@ -640,7 +680,11 @@ export function advanceConversationEngagement(
     if (lastMessageId != null
         && previous.lastProcessedMessageId === lastMessageId
         && previous.lastAnalysis) {
-        return { analysis: previous.lastAnalysis, state: previous };
+        // 同一轮重建时重读这两个信号：兼容旧缓存，也让上一轮回复的编辑即时生效。
+        return {
+            analysis: { ...previous.lastAnalysis, signals: { ...previous.lastAnalysis.signals, ...guardSignals } },
+            state: previous,
+        };
     }
 
     const now = Date.now();
@@ -657,6 +701,7 @@ export function advanceConversationEngagement(
         const responsePlan: ResponsePlan = { primary: 'acknowledge', explicitQuestionBudget: 0 };
         const analysis = makeAnalysis({
             detection,
+            guardSignals,
             previousEngagementState,
             engagementState: previousEngagementState,
             interactionMode: effectivePrevious.interactionMode,
@@ -756,6 +801,7 @@ export function advanceConversationEngagement(
         || (detection.primary === 'close' && Boolean(effectivePrevious.activeSubject));
     const analysis = makeAnalysis({
         detection,
+        guardSignals,
         previousEngagementState,
         engagementState,
         interactionMode,
@@ -843,90 +889,48 @@ export function shouldUseLegacyDeepEngagement(): boolean {
     }
 }
 
-const ENGAGEMENT_LABELS: Record<EngagementState, string> = {
-    idle: '现在没有需要继续追踪的主题。',
-    opening: '对方正在开启一件还没有讲完的事情。',
-    engaged: '对方正在继续同一件事情；把新的补充接回已经出现的前文。',
-    resolving: '这件事已经展开到可以逐步形成判断的阶段。',
-    closing: '对方正在收束或结束这件事情。',
-};
+const BASE_ENGAGEMENT_RULE = `### 【谈话参与底线】
+既关注对方此刻的感受，也关注事情本身发生了什么；不要把聊天变成连续审讯或心理咨询。`;
 
-const RESPONSE_GUIDANCE: Record<ResponseAct, string> = {
-    acknowledge: '本轮优先接住刚刚出现的信息，让回应落在事情本身，而不是只对情绪给出一句泛化安慰。',
-    invite: '随后可以自然地给对方留下继续说的空间。这个入口可以只是一个有所察觉的陈述，不必固定变成“发生什么了”“然后呢”之类的问题。',
-    follow: '把这轮补充接到前文同一件事上，让对方感觉你知道事情讲到了哪里，不要重新开场。',
-    clarify: '只留意一个真正关键的未知点。如果确实需要确认，最多问一个容易回答的问题。',
-    reflect: '留意新信息与前文之间的联系、变化或反常之处，并自然地说出你察觉到了什么。',
-    evaluate: '回应事情本身，并给出属于你的判断。信息不足时保持暂定，不要为了安慰而自动站队。',
-    close: '顺着对方的收束停下来，不强迫对方继续，也不要在最后突然补上一串追问。',
-    shift: '接住新的主题并切换注意力，不要把旧主题的沉重语气机械地带到新话题。',
-};
+const ENGAGEMENT_ANCHORS = {
+    opening: '对方正在开启一件还没讲完的事。先接住刚刚出现的信息，落在事情本身，自然留出对方继续说的空间，不必固定用“发生什么了”“然后呢”这类机械问句。',
+    engaged: '对方正在继续同一件事。把这轮补充接回前文，别像重新开场；留意新信息与前文之间的联系、变化或反常之处，自然说出你的察觉。',
+    resolving: '这件事已展开到可以表态的阶段。联系前文已经出现的事实，直接回应事情本身并给出属于你的看法，而不只是泛泛安慰情绪。',
+    closing: '对方正在收束这件事。顺着对方的节奏停下来，不强迫继续，也不要在结尾突然补上一串追问。',
+    shift: '对方切换了新主题。自然接住新话题，不要把旧话题的沉重语气机械地带过来。',
+} as const;
+
+const ENGAGEMENT_GUARDS = {
+    unfinishedNegative: '目前没有结束信号，不要用“别想了”“都会过去的”这类话提前盖住这件事，也不要替对方概括还没说清的部分。',
+    playful: '你可以保持轻松或锐评，但别让玩笑使你丢掉正在发生的事，仍然要接住它的新进展。',
+    repeatedComfort: '本轮优先回应具体事实本身，不要再重复“抱抱”“别难过”这类泛化安抚。',
+} as const;
 
 export function renderConversationEngagementGuidance(
     analysis: ConversationEngagementAnalysis | undefined,
+    charName = '你',
 ): string {
-    const lines: string[] = [
-        '### 谈话参与原则',
-        '对方出现负面情绪，不代表当前谈话的目标是消除这种情绪。不要因为对方生气、难过、烦躁或抱怨，就自动进入安慰、保护或劝离模式，也不要用“别想了、别管了”提前结束对方正在谈论的事。',
+    if (!analysis?.analyzable || !analysis.shouldGuide || analysis.engagementState === 'idle') return '';
+
+    // TOPIC_SWITCH 必须先于内部已经切入的新话题 opening。
+    const phase = analysis.conversationAct === 'shift' ? 'shift' : analysis.engagementState;
+    const anchor = ENGAGEMENT_ANCHORS[phase];
+    const continuing = phase === 'opening' || phase === 'engaged';
+    let guard = '';
+    if (continuing && analysis.signals.negativeEmotion && analysis.signals.closure === 0) {
+        guard = ENGAGEMENT_GUARDS.unfinishedNegative;
+    } else if (phase !== 'closing'
+        && (analysis.interactionMode === 'playful' || analysis.reasons.includes('playful_surface'))) {
+        guard = ENGAGEMENT_GUARDS.playful;
+    } else if (continuing && analysis.signals.previousGenericComfort) {
+        guard = ENGAGEMENT_GUARDS.repeatedComfort;
+    }
+
+    return [
+        BASE_ENGAGEMENT_RULE,
+        anchor,
+        ...(guard ? [guard] : []),
+        `（以上仅供你把握当前聊到了哪一步，严禁提及这些状态或策略；具体是护短、追问、调侃还是沉稳分析，完全由 ${charName} 自己的性格决定。）`,
         '',
-        '先理解对方此刻想做什么：倾诉情绪、讲述事件、讨论问题、寻求判断，或只是开启一个尚未展开的话题。**情绪是谈话的一部分，不应覆盖谈话本身。**',
-        '',
-        '对于尚未讲完的事情，跟随信息继续展开；不要根据关键词、记忆或既有印象补全事件并提前站队。过去的信息用于理解当前内容，而不是替代尚未出现的信息。',
-        '',
-        '保持自己的兴趣、判断和性格。先听见，再了解，再形成看法；信息充分时可以自然表达立场。保持好奇但不要连续盘问，也不要把深入参与变成心理咨询。',
-        '',
-    ];
-
-    if (!analysis?.analyzable || !analysis.shouldGuide) {
-        return lines.join('\n');
-    }
-
-    lines.push(
-        '### 当前谈话参与策略',
-        ENGAGEMENT_LABELS[analysis.engagementState],
-    );
-
-    if (analysis.subject.active && analysis.engagementState !== 'closing') {
-        lines.push('把接下来的补充当作同一件正在展开的事。你不只需要留意对方现在感觉如何，也要持续关注对方正在经历什么、事情本身发生了什么。');
-    }
-    if (analysis.engagementState === 'opening') {
-        lines.push('目前没有明显的结束信号。不要用“别想了”“回来就好”“一切都会过去”之类的安慰提前盖住这件事，也不要替对方概括还没有说清的部分。');
-    }
-    if (analysis.subject.unresolvedHookKinds.length > 0 && analysis.engagementState !== 'closing') {
-        lines.push('有些地方你暂时还不知道答案，记住这些空缺即可，不必立刻逐个问出来。');
-    }
-
-    if (analysis.interactionMode === 'supportive') {
-        lines.push('先回应对方刚刚透露出来的东西，并保留对事情本身的兴趣。关心不只是表达保护、拥抱或安慰，也包括真的想知道发生了什么。');
-    } else if (analysis.interactionMode === 'playful') {
-        lines.push('你可以保持轻松或锐评，但不要让玩笑使你丢掉正在发生的事；仍然要接住它的新进展。');
-    } else if (analysis.interactionMode === 'exploratory') {
-        lines.push('保留真实的好奇，顺着已经知道的内容继续，不要急着替这件事定性。');
-    } else if (analysis.interactionMode === 'analytical') {
-        lines.push('对方已经邀请你形成判断。联系前文已经出现的事实，认真讨论事情本身，而不只是处理对方的情绪。');
-    }
-
-    lines.push(RESPONSE_GUIDANCE[analysis.responsePlan.primary]);
-    if (analysis.responsePlan.secondary) {
-        lines.push(RESPONSE_GUIDANCE[analysis.responsePlan.secondary]);
-    }
-    if (analysis.responsePlan.explicitQuestionBudget === 0) {
-        lines.push('这一轮不需要用明确问句推进。可以通过承接、联系或判断，自然地让谈话继续。');
-    } else {
-        lines.push('如果确实需要提问，最多问一个容易回答的问题。不要连续追问，也不要把好奇变成审讯。');
-    }
-
-    if (analysis.responsePlan.primary === 'evaluate' || analysis.responsePlan.secondary === 'evaluate') {
-        lines.push(analysis.stance.confidence >= 0.65
-            ? '已经有多条信息可以支撑较明确的倾向，但你的判断仍应只基于对方实际说过的事实。'
-            : '信息还不完整时，不要急着替事情定性。先保留你正在形成的印象；随着新信息出现，你可以逐渐表现出疑惑、察觉矛盾、形成倾向，最后再明确表达判断。');
-    } else if (analysis.stance.confidence < 0.45 && analysis.engagementState !== 'closing') {
-        lines.push('现在的信息还不足以形成完整判断。先听，先连接已经出现的信息；随着对方继续补充，再逐渐形成你的看法。');
-    }
-
-    lines.push(
-        '不要提及这些状态、分类或策略。',
-        '',
-    );
-    return lines.join('\n');
+    ].join('\n');
 }
