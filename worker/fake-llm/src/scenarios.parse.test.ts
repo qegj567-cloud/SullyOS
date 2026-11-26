@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { planResponse, SIDE_EFFECT_TAGS, DATA_TAGS, type ReplyPlan } from './scenarios';
 // 下面全是 App 的真实解析代码：标签语法一改，这里跟着挂，假模型的输出就不会变成过期数据。
@@ -11,6 +12,16 @@ import { ChatParser } from '../../../utils/chatParser';
 import { DB } from '../../../utils/db';
 import { readAssistantMessage, splitInlineThinking } from '../../../utils/assistantThinking';
 import { extractContent } from '../../../utils/safeApi';
+
+
+/** 两种排程标签的教学句（渲染后的样子），合集场景只认它们。 */
+const TAUGHT = '请单独起一行输出: `[schedule_message | YYYY-MM-DD HH:MM:SS | fixed | 消息内容]`；需要时单独输出一行 schedule_active_message({"send_at":"…"})';
+
+it('排程教学句还在提示词源码里：改了措辞这里先挂，合集就不会悄悄少带排程标签', () => {
+    const src = (path: string) => readFileSync(new URL(`../../../${path}`, import.meta.url), 'utf8');
+    expect(src('utils/chatPrompts.ts')).toContain('单独起一行输出: \\`[schedule_message');
+    expect(src('utils/amsgFireSchedule.ts')).toContain('单独输出一行 ${AMSG_FIRE_SCHEDULE_TOOL}(');
+});
 
 const userTurn = (text: string) => ({ model: 'fake/basic', messages: [{ role: 'system', content: '你是小明的朋友。' }, { role: 'user', content: text }] });
 const contentOf = (model: string, text = '今天好累') => {
@@ -38,7 +49,7 @@ describe('副作用场景喂给云端分类器（worker/amsg/src/classifier.ts�
     });
 
     it('side-effects 合集一次带出全部指令', () => {
-        const { plan } = planResponse({ model: 'fake/side-effects', messages: [{ role: 'system', content: '可以用 [schedule_message | 时间 | fixed | 内容] 排消息' }, { role: 'user', content: '在吗' }] });
+        const { plan } = planResponse({ model: 'fake/side-effects', messages: [{ role: 'system', content: TAUGHT }, { role: 'user', content: '在吗' }] });
         const result = classifyLLMOutput((plan as ReplyPlan).content);
         expect(result.kind).toBe('finish');
         if (result.kind !== 'finish') return;
@@ -46,12 +57,18 @@ describe('副作用场景喂给云端分类器（worker/amsg/src/classifier.ts�
     });
 
     it('每个副作用标签都在合集里（提示词教过时），每个都有单独场景', () => {
-        const taught = '[schedule_message | …] 以及 schedule_active_message({...})';
-        const { plan } = planResponse({ model: 'fake/side-effects', messages: [{ role: 'system', content: taught }, { role: 'user', content: '在吗' }] }, 0);
+        const { plan } = planResponse({ model: 'fake/side-effects', messages: [{ role: 'system', content: TAUGHT }, { role: 'user', content: '在吗' }] }, 0);
         for (const name of Object.keys(SIDE_EFFECT_TAGS)) {
             const single = (planResponse({ model: `fake/tag-${name}`, messages: [{ role: 'user', content: '在吗' }] }, 0).plan as ReplyPlan).content;
             expect((plan as ReplyPlan).content).toContain(single.split('\n').pop());
         }
+    });
+
+    it('历史里漏过的排程语法不算教过：只认教学句，不认标签名', () => {
+        const history = '到时候我再来找你。\nschedule_active_message({"send_at":"2026-11-28 09:00"})\n[schedule_message | 2026-11-28 08:00:00 | fixed | 早安]';
+        const { plan } = planResponse({ model: 'fake/side-effects', messages: [{ role: 'assistant', content: history }, { role: 'user', content: '在吗' }] }, 0);
+        expect((plan as ReplyPlan).content).not.toContain('schedule_active_message');
+        expect((plan as ReplyPlan).content).not.toContain('[schedule_message');
     });
 
     it('提示词没教的排程标签不进合集：没开 2.0 时正文排程会原样露成气泡', () => {

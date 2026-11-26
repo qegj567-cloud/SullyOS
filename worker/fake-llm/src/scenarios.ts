@@ -147,6 +147,7 @@ function friendFeedTag(ctx: Ctx): string {
 
 /**
  * taughtBy：提示词里出现这串才说明这一轮教了这个标签，合集场景才带上它。真模型不会写没教过的标签；
+ * 判据取教学句里独有的那截，不取标签名本身：聊天历史里漏过一次的标签也会让标签名出现在请求里。
  * 带上的话，没开 2.0 时正文排程会原样露成一条气泡，合集看起来像坏了。单个 tag- 场景不看这个。
  */
 export const SIDE_EFFECT_TAGS: Record<string, { describe: string; line: (ctx: Ctx) => string; taughtBy?: string }> = {
@@ -156,10 +157,10 @@ export const SIDE_EFFECT_TAGS: Record<string, { describe: string; line: (ctx: Ct
     transfer: { describe: '角色给用户转账', line: () => '这个给你，拿去买奶茶。\n[[ACTION:TRANSFER|to=user|amount=52.00]]' },
     // utils/chatParser.ts ADD_EVENT
     'add-event': { describe: '记一个纪念日', line: ctx => `这天我记下来了。\n[[ACTION:ADD_EVENT | 假模型纪念日 | ${futureWallClock(ctx.now, false).slice(0, 10)}]]` },
-    // utils/chatParser.ts schedule_message：| 两边各一个空格，时间必须在未来
-    'schedule-message': { describe: '本地定时消息 [schedule_message]', taughtBy: '[schedule_message', line: ctx => `明早叫你起床。\n[schedule_message | ${futureWallClock(ctx.now, true)} | fixed | 早安，这是假模型排的消息]` },
-    // utils/amsgFireSchedule.ts extractFireScheduleTextCalls：2.0 的正文排程，单独一行
-    'amsg-schedule': { describe: '2.0 正文排程 schedule_active_message(...)', taughtBy: 'schedule_active_message', line: ctx => `到时候我再来找你。\nschedule_active_message(${JSON.stringify({ send_at: futureWallClock(ctx.now, false), prompt_hint: '假模型排的回访' })})` },
+    // utils/chatParser.ts schedule_message：| 两边各一个空格，时间必须在未来；taughtBy 取 utils/chatPrompts.ts 的教学句
+    'schedule-message': { describe: '本地定时消息 [schedule_message]', taughtBy: '单独起一行输出: `[schedule_message', line: ctx => `明早叫你起床。\n[schedule_message | ${futureWallClock(ctx.now, true)} | fixed | 早安，这是假模型排的消息]` },
+    // utils/amsgFireSchedule.ts extractFireScheduleTextCalls：2.0 的正文排程，单独一行；taughtBy 取同文件正文模式的教学句
+    'amsg-schedule': { describe: '2.0 正文排程 schedule_active_message(...)', taughtBy: '单独输出一行 schedule_active_message(', line: ctx => `到时候我再来找你。\nschedule_active_message(${JSON.stringify({ send_at: futureWallClock(ctx.now, false), prompt_hint: '假模型排的回访' })})` },
     // utils/scheduleChangeParse.ts；要今天日程里真有这个时段才会落地
     'change-schedule': { describe: '改今天的日程', line: () => '那我晚上改去超市。\n[[ACTION:CHANGE_SCHEDULE | 18:30 | 去超市]]' },
     // utils/chatParser.ts MUSIC_ACTION：前端要「正在一起听」才会出卡片，否则静默剥掉
