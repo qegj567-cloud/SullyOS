@@ -29,6 +29,7 @@ import {
     type WorldbookScanMessage,
 } from './worldbook';
 import { buildSARModulePrompt } from './vrWorld/sarModuleRuntime';
+import { filterWorldbooksForScene, isWorldbookSceneAllowed, type WorldbookSceneId } from './worldbookScenes';
 
 /**
  * Memory Central
@@ -85,14 +86,15 @@ export const ContextBuilder = {
         return (char.buffInjection ? char.buffInjection + '\n\n' : '')
             + (inner.trim() ? '### 当前内心想法\n' + inner.trim() + '\n（这是你的内心状态，不是台词，不必说出口；让它自然影响你的回应。）\n\n' : '');
     },
-    /** Read-only eligibility preview: never samples probability or performs recall. */
-    inspectWorldbooks: (char: CharacterProfile, user: UserProfile, history: WorldbookScanMessage[]) =>
+    /** Read-only eligibility preview: never samples probability or performs recall. 不属于该场景的条目也列出，标成 otherScene、不计入。 */
+    inspectWorldbooks: (char: CharacterProfile, user: UserProfile, history: WorldbookScanMessage[], scene: WorldbookSceneId) =>
         (char.mountedWorldbooks || []).map(book => {
             const content = expandWorldbookMacros(book.content || '', char.name, user.name);
             const n = Number(book.probability);
             const probability = book.useProbability ? (Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 100) : 100;
             const matches = isWorldbookEntryActive({ ...book, useProbability: false }, history);
-            const status = book.disable ? 'disabled' : !content.trim() ? 'empty' : probability === 0 ? 'zero'
+            const status = book.disable ? 'disabled' : !isWorldbookSceneAllowed(book, scene) ? 'otherScene'
+                : !content.trim() ? 'empty' : probability === 0 ? 'zero'
                 : !matches ? 'waiting' : probability < 100 ? 'probability' : 'readable';
             return { book, content, probability, status };
         }).sort((a, b) => (Number.isFinite(a.book.order) ? Number(a.book.order) : 100) - (Number.isFinite(b.book.order) ? Number(b.book.order) : 100)),
@@ -197,6 +199,8 @@ export const ContextBuilder = {
     buildCoreContext: async (...args: CoreContextArgs): Promise<string> => (await buildCharacterContext({
         char: args[0], user: args[1], includeDetailedMemories: args[2],
         memoryPalaceContext: args[3], groupOptions: args[4], timeOptions: args[5], layout: args[6],
+        // 位置参数入口的场景写在 timeOptions.worldbookScene；漏写由 contextPipeline.test.ts 的静态检查拦下。
+        scene: args[5]?.worldbookScene,
     })).coreContext,
 
     /** 一次完成世界书触发、核心上下文和消息深度摆放；history 不传时完整放入核心文本。 */
@@ -323,6 +327,7 @@ export const ContextBuilder = {
         members: CharacterProfile[],
         user: UserProfile,
         worldbookMessages: WorldbookScanMessage[] = [],
+        scene: WorldbookSceneId,
     ): {
         text: string;
         sharedWorldbookIds: Set<string>;
@@ -374,7 +379,7 @@ export const ContextBuilder = {
         }
 
         // 共有条目只写一次，{{char}} 换成挂了这条的几位成员（「阿澈、小白」）
-        const resolvedSharedBooks = resolveWorldbookEntries(sharedBooks, worldbookMessages, '', user.name)
+        const resolvedSharedBooks = resolveWorldbookEntries(filterWorldbooksForScene(sharedBooks, scene), worldbookMessages, '', user.name)
             .map(entry => ({
                 ...entry,
                 content: expandWorldbookMacros(entry.content, wbMounts.get(entry.book.id)?.memberNames.join('、') || '', ''),
@@ -596,6 +601,8 @@ const renderCoreContext = async (
             includeUserLocation?: boolean;
             /** Recent messages used to activate keyword-based worldbook entries. */
             worldbookMessages?: WorldbookScanMessage[];
+            /** 本次生成的场景；只有 buildCoreContext 这种位置参数入口读它（转成 CharacterContextInput.scene），其余入口传了也不认。 */
+            worldbookScene?: WorldbookSceneId;
         },
         layout?: {
             /**
@@ -793,13 +800,20 @@ export interface CharacterContextInput {
     groupOptions?: CoreContextArgs[4];
     timeOptions?: CoreContextArgs[5];
     layout?: CoreContextArgs[6];
+    /**
+     * 本次生成的场景：只装配允许在这个场景生效的世界书（在关键词 / 概率之前筛）。
+     * 必填，调用方必须声明自己是哪个场景；undefined = 不筛，只留给自己预筛过世界书的主动消息模板
+     * （forFirePack）和 buildCoreContext 的位置参数转发。
+     */
+    scene: WorldbookSceneId | undefined;
 }
 
 async function resolveCharacterContext(input: CharacterContextInput) {
     const { char, history, groupOptions, timeOptions } = input;
     const user = resolveCharacterUser(input.user, char);
     const entries = resolveWorldbookEntries(
-        (char.mountedWorldbooks || []).filter(book => !groupOptions?.skipWorldbookIds?.has(book.id)),
+        filterWorldbooksForScene(char.mountedWorldbooks || [], input.scene)
+            .filter(book => !groupOptions?.skipWorldbookIds?.has(book.id)),
         history ?? timeOptions?.worldbookMessages ?? [], char.name, user.name,
     );
     const sections = splitWorldbookSections(entries);
@@ -840,8 +854,9 @@ function buildWorldbookRequest<T extends ContextMessage>(input: {
     userName: string;
     history: T[];
     render: (slots: { before: string; after: string }, history: T[]) => T[];
+    scene: WorldbookSceneId;
 }): Array<T | { role: 'system' | 'user' | 'assistant'; content: string }> {
-    const entries = resolveWorldbookEntries(input.books, input.history, input.charName, input.userName);
+    const entries = resolveWorldbookEntries(filterWorldbooksForScene(input.books, input.scene), input.history, input.charName, input.userName);
     return renderWorldbookRequest(entries, input.history, input.render);
 }
 
@@ -890,10 +905,11 @@ function buildGroupWorldbookRequest<T extends ContextMessage>(input: {
     /** 生成器将场景资料放在 system 时，可显式提供其原始材料用于关键词扫描。 */
     scanMessages?: WorldbookScanMessage[];
     render: (slots: { before: string; after: string }, history: T[]) => T[];
+    scene: WorldbookSceneId;
 }) {
     const books = new Map<string, { book: MountedWorldbook; owners: CharacterProfile[] }>();
     for (const member of input.members) {
-        for (const book of member.mountedWorldbooks || []) {
+        for (const book of filterWorldbooksForScene(member.mountedWorldbooks || [], input.scene)) {
             const existing = books.get(book.id);
             if (existing) {
                 if (!existing.owners.some(owner => owner.id === member.id)) existing.owners.push(member);

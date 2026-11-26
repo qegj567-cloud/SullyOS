@@ -37,6 +37,7 @@ describe.each([
         const history = makeHistory();
         const original = structuredClone(history);
         const payload = await buildChatRequestPayload({
+            scene: 'chat.private',
             char: makeChar(chatTimeOn, dateTimeOn), userProfile: user,
             groups: [], emojis: [], categories: [], historyMsgs: history, contextLimit: 20,
         });

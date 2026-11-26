@@ -139,7 +139,7 @@ async function buildPersonaScriptMessages(opts: Parameters<typeof generatePerson
     const firstTs = msgs.find(m => typeof m.timestamp === 'number')?.timestamp;
     const acquaintance = describeAcquaintance(firstTs, userProfile.name, char.name);
     const prompt = buildDirectorPrompt('', recent, mode, theme, char.name, acquaintance, userProfile.name, userPresence, tone);
-    return ContextBuilder.buildCharacterRequest(characterContextInput, [{ role: 'user', content: prompt }]);
+    return ContextBuilder.buildCharacterRequest({ ...characterContextInput, scene: 'apps.personaSim' }, [{ role: 'user', content: prompt }]);
 }
 
 // ============================================================

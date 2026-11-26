@@ -495,6 +495,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
     // --- Initialize Hook ---
     const { isTyping, streamingBubbles, streamingThinking, streamingHandoverIds, inboxStatus, recallStatus, searchStatus, diaryStatus, emotionStatus, memoryPalaceStatus, memoryPalaceResult, setMemoryPalaceResult, lastDigestResult, setLastDigestResult, lastTokenUsage, tokenBreakdown, setLastTokenUsage, triggerAI } = useChatAI({
         char,
+        worldbookScene: 'chat.private',
         homePhoneContext:homePhone?.getContext,
         userProfile,
         apiConfig,
@@ -4795,7 +4796,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
                     initialTab={calibrationTab}
                     canRevise={canReroll && !instantChatPending && !isSummarizing}
                     onPreview={(mode, guidance, signal) => previewTurnRevision({
-                        char, apiConfig, userProfile, groups, emojis: aiVisibleEmojis, categories: visibleCategories,
+                        char, apiConfig, scene: 'chat.private', userProfile, groups, emojis: aiVisibleEmojis, categories: visibleCategories,
                         realtimeConfig, musicSnapshot: loadMusicPlaybackSnapshot() ?? undefined, homePhoneContext: homePhone?.getContext?.(),
                         translationConfig: { enabled: translationEnabled, sourceLang: translateSourceLang, targetLang: translateTargetLang },
                         htmlMode: { enabled: !!char.htmlModeEnabled, customPrompt: char.htmlModeCustomPrompt },

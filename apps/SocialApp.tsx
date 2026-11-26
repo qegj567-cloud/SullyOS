@@ -450,7 +450,7 @@ const SocialApp: React.FC = () => {
 
     const buildGenerationMessages = (members: CharacterProfile[], context: string, prompt: string) => {
         const history = [{ role: 'user', content: prompt }];
-        return ContextBuilder.buildGroupWorldbookRequest({ members, user: userProfile, history,
+        return ContextBuilder.buildGroupWorldbookRequest({ scene: 'apps.spark', members, user: userProfile, history,
             render: (slots, turns) => [{ role: 'system', content: slots.before + context + slots.after }, ...turns],
         });
     };

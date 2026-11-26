@@ -96,6 +96,7 @@ async function perRoleNotes(script: VRScript, cast: VRCastAssign[], charAssigns:
                 ? `彼方剧院和这些人同台演戏：${mates.join('、')}。\n${mates.join(' ')} ${mates.join(' ')}\n我对${mates.join('、')}的印象、我和 ta 们的关系与过往。`
                 : `彼方剧院排戏《${script.title}》。`;
             const payload = await buildChatRequestPayload({
+                scene: 'apps.vrTheater',
                 char, userProfile: ctx.userProfile, groups: ctx.groups, emojis: ctx.emojis, categories: ctx.categories,
                 historyMsgs, contextLimit, recallQueryHint,
             });

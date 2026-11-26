@@ -95,7 +95,7 @@ export async function fetchSlotMemories(
  * 潜行的记忆直接按房间查库放进 prompt，不走通用召回；
  * 这里把角色对象上可能残留的召回结果清掉，免得别处的旧召回混进来。
  */
-function withoutPalaceRecall(charContext: CharacterContextInput): CharacterContextInput {
+function withoutPalaceRecall(charContext: Omit<CharacterContextInput, 'scene'>): Omit<CharacterContextInput, 'scene'> {
   return { ...charContext, char: { ...charContext.char, memoryPalaceInjection: '', roomPlatesInjection: '' } };
 }
 
@@ -303,7 +303,7 @@ function salvageDialoguesFromText(raw: string): Array<{ speaker: 'character' | '
 export async function callDiveLLM(
   req: DiveLLMRequest,
   apiConfig: APIConfig,
-  charContext: CharacterContextInput,
+  charContext: Omit<CharacterContextInput, 'scene'>,
 ): Promise<DiveLLMResponse> {
   const prompt = buildDivePrompt(req, '');
 
@@ -317,7 +317,7 @@ export async function callDiveLLM(
       },
       body: JSON.stringify({
         model: apiConfig.model,
-        messages: (await ContextBuilder.buildCharacterRequest(withoutPalaceRecall(charContext), [{ role: 'user', content: prompt }])),
+        messages: (await ContextBuilder.buildCharacterRequest({ ...withoutPalaceRecall(charContext), scene: 'apps.memoryDive' }, [{ role: 'user', content: prompt }])),
         temperature: 0.8,
         // 中文散文 + JSON 包装极吃 token，给足余量，避免在字符串中间被截断
         max_tokens: 8000,
@@ -848,7 +848,7 @@ function salvageTruncatedRoomScript(raw: string): any | null {
 export async function planRoomVisit(
   params: PlanRoomParams,
   apiConfig: APIConfig,
-  charContext: CharacterContextInput,
+  charContext: Omit<CharacterContextInput, 'scene'>,
   remoteConfig?: RemoteVectorConfig,
   ): Promise<{ script: RoomScript; memoryTexts: string[] }> {
   const memories = await fetchRoomMemories(params.charId, params.room, 8, remoteConfig);
@@ -865,7 +865,7 @@ export async function planRoomVisit(
       },
       body: JSON.stringify({
         model: apiConfig.model,
-        messages: (await ContextBuilder.buildCharacterRequest(withoutPalaceRecall(charContext), [{ role: 'user', content: prompt }])),
+        messages: (await ContextBuilder.buildCharacterRequest({ ...withoutPalaceRecall(charContext), scene: 'apps.memoryDive' }, [{ role: 'user', content: prompt }])),
         temperature: 0.85,
         // 3 beats × 3 choices × (line+reaction+narrator) + intro/close 容易超，
         // 给足余量避免被 max_tokens 截断

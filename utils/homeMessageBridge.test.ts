@@ -17,7 +17,7 @@ it('home dialogue and actual actions reach the real private-chat payload alongsi
  await DB.saveMessage({charId:char.id,role:'assistant',type:'text',content:'见面一起吃饭',metadata:{source:'date'}});
  await DB.saveMessage({charId:char.id,role:'user',type:'text',content:'刚才我们做了什么？'});
  const rows=await loadCharacterContextMessages(char);
- const result=await buildChatRequestPayload({char,userProfile:user,groups:[],emojis:[],categories:[],historyMsgs:rows,contextLimit:50,realtimeConfig:{weatherEnabled:false,newsEnabled:false} as any});
+ const result=await buildChatRequestPayload({ scene: 'chat.private',char,userProfile:user,groups:[],emojis:[],categories:[],historyMsgs:rows,contextLimit:50,realtimeConfig:{weatherEnabled:false,newsEnabled:false} as any});
  const sent=JSON.stringify(result.fullMessages);
  expect(sent.match(/家园约好看海/g)).toHaveLength(1);
  expect(sent).toContain('[家园]');expect(sent).toContain('Sully对用户开始拥抱');expect(sent).toContain('[约会]');
@@ -46,7 +46,7 @@ it('shared context breakpoints exclude home rows without a core-context bypass',
  const char=character([record('m','范围外家园文字')]);await DB.saveCharacter(char);
  const id=await DB.saveMessage({charId:char.id,role:'user',type:'text',content:'新问题'});char.contextUserStartMessageId=id;
  const rows=await loadCharacterContextMessages(char);expect(rows).toHaveLength(1);
- const result=await buildChatRequestPayload({char,userProfile:user,groups:[],emojis:[],categories:[],historyMsgs:rows,contextLimit:50,realtimeConfig:{weatherEnabled:false,newsEnabled:false} as any});
+ const result=await buildChatRequestPayload({ scene: 'chat.private',char,userProfile:user,groups:[],emojis:[],categories:[],historyMsgs:rows,contextLimit:50,realtimeConfig:{weatherEnabled:false,newsEnabled:false} as any});
  expect(JSON.stringify(result.fullMessages)).not.toContain('范围外家园文字');
 });
 it('aborting message projection also rolls back the room journal',async()=>{

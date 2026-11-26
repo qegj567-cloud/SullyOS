@@ -2,7 +2,7 @@
  * 梦境的代跑落地。
  *
  * 梦要等用户看完才写进 dreamLogs（DreamTheater 的 persist），所以落地只把剧本放进「还没看的梦」
- * （cloudGen/pending，按角色各一份，刷新后还在），DreamTheater 打开这个角色时取走播放。
+ * （cloudGen/pending，按角色各一份，刷新后还在），DreamTheater 打开这个角色时借出来播放，看完或确认放弃才收走（见 dreamSimStore.settle）。
  * 校验和本机生成是同一个 validateDreamResponse；没通过的按失败收尾（登记表标 failed），
  * 打开时走原来的「梦没能成形」报错界面。界面靠落地后登记表那次变化刷新，这里不用另行通知。
  */

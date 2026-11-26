@@ -71,6 +71,8 @@ export async function readHelpDeskSettings(os: SettingsSource, char?: CharacterP
             原文范围: mode === 'adaptive' ? '自适应' : '手动', 手动条数: mode === 'manual' ? clampManualContextLimit(char.contextLimit) : undefined,
             整理节奏: resolveMemoryPalaceWaterline(char.memoryPalaceWaterline), 小眼睛开启月份数: char.activeMemoryMonths?.length ?? 0,
             允许按月查阅: char.monthlyRecallEnabled !== false, 挂载世界书数: char.mountedWorldbooks?.length ?? 0,
+            // 条目只在设定的场景里生效；「某个 App 里世界书没起作用」先看这里。
+            限定了启用场景的世界书数: char.mountedWorldbooks?.filter(book => book.scenes != null).length ?? 0,
             私聊表情看图: !!char.stickerVision, 心象显示: !!char.showThinkingChain, 双语: translated ?? '未能读取', HTML卡片: !!char.htmlModeEnabled,
             心象提示词范围: thinking?.scope === 'character' ? '仅当前角色' : '所有角色（共用）',
             心象提示词模式: thinking?.mode === 'replace' ? '替换默认提示词' : '追加',

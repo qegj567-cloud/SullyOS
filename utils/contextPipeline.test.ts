@@ -96,3 +96,74 @@ it('直接拼角色上下文的入口必须自备召回，不能读共享角色�
     }
     expect(violations).toEqual([]);
 });
+
+// 世界书按「生效场景」筛选，每个装配入口都必须声明自己是哪个场景。
+// 对象参数入口靠类型必填兜住，这里再补上类型管不到的：buildCoreContext / buildSystemPrompt 的
+// 位置参数选项、写死的场景字符串是否登记过。值是变量时交给类型检查（WorldbookSceneId）。
+const sceneArgs: Record<string, { index: number; key?: string }> = {
+    buildCharacterRequest: { index: 0, key: 'scene' },
+    buildCharacterContext: { index: 0, key: 'scene' },
+    buildWorldbookRequest: { index: 0, key: 'scene' },
+    buildGroupWorldbookRequest: { index: 0, key: 'scene' },
+    buildChatRequestPayload: { index: 0, key: 'scene' },
+    buildCoreContext: { index: 5, key: 'worldbookScene' },
+    buildSystemPrompt: { index: 11, key: 'scene' },
+    buildSystemPromptParts: { index: 12, key: 'scene' },
+    inspectWorldbooks: { index: 3 },
+    buildGroupSharedScene: { index: 3 },
+};
+// 原样转发选项的那一层：场景由它的调用方声明。
+const sceneForwarders: Record<string, string[]> = {
+    'utils/chatPrompts.ts': ['buildSystemPromptParts'],
+};
+
+it('世界书装配入口都声明了已登记的生效场景（主动消息模板 forFirePack 除外）', async () => {
+    const { WORLDBOOK_SCENE_CATEGORIES } = await import('./worldbookScenes');
+    const registered = new Set<string>(WORLDBOOK_SCENE_CATEGORIES.flatMap(category => category.subs.map(sub => sub.id)));
+    const root = process.cwd();
+    const violations: string[] = [];
+    const calleeName = /\b(buildCharacterRequest|buildCharacterContext|buildWorldbookRequest|buildGroupWorldbookRequest|buildChatRequestPayload|buildCoreContext|buildSystemPromptParts|buildSystemPrompt|inspectWorldbooks|buildGroupSharedScene)\b/;
+    for (const path of ['apps', 'components', 'utils', 'features', 'hooks', 'context'].flatMap(dir => sourceFiles(join(root, dir)))) {
+        const name = relative(root, path).replace(/\\/g, '/');
+        const source = readFileSync(path, 'utf8');
+        if (!calleeName.test(source)) continue;
+        const file = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true);
+        const report = (node: ts.Node, why: string) =>
+            violations.push(`${name}:${file.getLineAndCharacterOfPosition(node.getStart()).line + 1} ${why}`);
+        const checkValue = (node: ts.Node, value: ts.Expression) => {
+            if (ts.isStringLiteralLike(value)) {
+                if (!registered.has(value.text)) report(node, `未登记的场景 ${value.text}`);
+            } else if (value.kind === ts.SyntaxKind.UndefinedKeyword || value.getText(file) === 'undefined') {
+                report(node, '场景写成了 undefined');
+            }
+        };
+        const visit = (node: ts.Node) => {
+            if (ts.isCallExpression(node)) {
+                const callee = ts.isPropertyAccessExpression(node.expression) ? node.expression.name.text
+                    : ts.isIdentifier(node.expression) ? node.expression.text : '';
+                const rule = Object.prototype.hasOwnProperty.call(sceneArgs, callee) ? sceneArgs[callee] : undefined;
+                if (rule && !sceneForwarders[name]?.includes(callee)) {
+                    const arg = node.arguments[rule.index];
+                    if (!rule.key) {
+                        if (!arg) report(node, `${callee} 没传场景`);
+                        else checkValue(node, arg);
+                    } else if (!arg || !ts.isObjectLiteralExpression(arg)) {
+                        report(node, `${callee} 的选项不是对象字面量，看不出场景`);
+                    } else {
+                        const prop = (key: string) => arg.properties.find(p => p.name && p.name.getText(file) === key);
+                        const scene = prop(rule.key);
+                        const firePack = prop('forFirePack');
+                        const isFirePack = callee.startsWith('buildSystemPrompt') && firePack
+                            && ts.isPropertyAssignment(firePack) && firePack.initializer.kind === ts.SyntaxKind.TrueKeyword;
+                        if (!scene) {
+                            if (!isFirePack) report(node, `${callee} 没传 ${rule.key}`);
+                        } else if (ts.isPropertyAssignment(scene)) checkValue(node, scene.initializer);
+                    }
+                }
+            }
+            ts.forEachChild(node, visit);
+        };
+        visit(file);
+    }
+    expect(violations).toEqual([]);
+});

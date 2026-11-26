@@ -19,7 +19,7 @@ function buildFriendNpcPayload(char: CharacterProfile, user: UserProfile, rules:
     if (round === 'stranger') return {fullMessages: [{role: 'system', content: NPC_ONLY_HEADER + '\n\n' + rules}, ...history]};
     const host = [`### 宿主角色：${char.name}\n路人可能是 TA 公开生活里的熟人或世界书 NPC。下面的设定只用于把握 TA 的公开身份与生活圈，设定里的私密内容路人不知道。`,
         char.systemPrompt?.trim(), char.worldview?.trim() && `### 世界观与设定\n${char.worldview.trim()}`].filter(Boolean).join('\n\n');
-    return {fullMessages: ContextBuilder.buildWorldbookRequest({books: char.mountedWorldbooks || [], charName: char.name, userName: user.name, history,
+    return {fullMessages: ContextBuilder.buildWorldbookRequest({ scene: 'apps.friendFeed',books: char.mountedWorldbooks || [], charName: char.name, userName: user.name, history,
         render: (slots, messages) => [{role: 'system', content: [NPC_ONLY_HEADER, slots.before, host, slots.after, rules].filter(Boolean).join('\n\n')}, ...messages]})};
 }
 
@@ -31,6 +31,7 @@ export async function buildFriendFeedReplyPayload(char: CharacterProfile, user: 
     const range = await loadCharacterContextRange(char);
     const [groups, emojis, categories] = await Promise.all([DB.getGroups(), DB.getEmojis(), DB.getEmojiCategories()]);
     return buildChatRequestPayload({
+        scene: 'apps.friendFeed',
         char, userProfile: user, groups, emojis, categories,
         // Dedicated Bibi requests already include the live discussion. Archived comment receipts
         // can quote deleted text or repeat the same exchange from several participants.

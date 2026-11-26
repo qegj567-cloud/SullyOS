@@ -75,6 +75,7 @@ import { canMigrateLocalKey } from './independentUserRemap';
 import { CLOUD_GEN_DONE_KEY, CLOUD_GEN_JOBS_KEY } from './cloudGen/types';
 import { RESTORE_DAMAGED_ASSETS_KEY } from './backupImportPolicy';
 import { AMSG_RESCUE_ALERT_LS_KEY } from './amsgRescueAlert';
+import { FAKE_LLM_STORAGE_KEY } from './fakeLlmSwitch';
 
 const messages = (count: number, content = (i: number) => `第 ${i} 句`) =>
     Array.from({ length: count }, (_, i) => ({ id: i + 1, charId: 'c', role: 'user', type: 'text', timestamp: 1_700_000_000_000 + i, content: content(i) }));
@@ -345,11 +346,11 @@ it('keeps the cloud generation registry and done ledger out of the archive and o
     }
 });
 
-it('keeps device-state shared keys (last restore\'s damaged pictures, rescue alert) out of the shared settings', async () => {
+it('keeps device-state shared keys (last restore\'s damaged pictures, rescue alert, fake-LLM API backup) out of the shared settings', async () => {
     saveUserSpaces([{ id: 'default', name: '小明' }, { id: 'u_second', name: '小明二号' }]);
     // 坏图清单描述的是这台设备上一次恢复；救援警告带着这台设备的「已确认」，新设备会自己去问 Worker。
     // 同样是共用键的普通设置照常进包，证明共享设置确实收集过。
-    const deviceKeys = [RESTORE_DAMAGED_ASSETS_KEY, AMSG_RESCUE_ALERT_LS_KEY];
+    const deviceKeys = [RESTORE_DAMAGED_ASSETS_KEY, AMSG_RESCUE_ALERT_LS_KEY, FAKE_LLM_STORAGE_KEY];
     for (const key of deviceKeys) localStorage.setItem(key, '{"version":1}');
     localStorage.setItem('os_api_config', '{"model":"m"}');
     const manifest = await manifestOf(await JSZip.loadAsync(await (await exportUserSpaces('full', 'all')).arrayBuffer()));

@@ -17,7 +17,7 @@ beforeEach(() => {
 });
 
 it.each([false, true])('local/instant-worker chat carries only the private label in live context (worker=%s)', async timelyByWorker => {
-    const payload = await buildChatRequestPayload({ char, userProfile: user, groups: [], emojis: [], categories: [],
+    const payload = await buildChatRequestPayload({ scene: 'chat.private', char, userProfile: user, groups: [], emojis: [], categories: [],
         recallEntryPoint: 'chat_app', timelyByWorker, contextLimit: 10,
         historyMsgs: [{ id: 1, charId: char.id, role: 'user', type: 'text', content: '在吗', timestamp: 1 }],
     });
@@ -35,7 +35,7 @@ it.each([false, true])('local/instant-worker payload proceeds without location a
     vi.useFakeTimers();
     vi.mocked(getCurrentPositionSmart).mockReturnValueOnce(new Promise(() => {}));
     try {
-        const request = buildChatRequestPayload({ char, userProfile: user, groups: [], emojis: [], categories: [],
+        const request = buildChatRequestPayload({ scene: 'chat.private', char, userProfile: user, groups: [], emojis: [], categories: [],
             recallEntryPoint: 'chat_app', timelyByWorker, contextLimit: 10,
             historyMsgs: [{ id: 1, charId: char.id, role: 'user', type: 'text', content: '在吗', timestamp: 1 }],
         });
@@ -49,17 +49,17 @@ it.each([false, true])('local/instant-worker payload proceeds without location a
 });
 
 it('explicit realtime call/date context can know the private range; fictional and non-conversation builds do not locate', async () => {
-    const normal = await ContextBuilder.buildCharacterRequest({ char, user, timeOptions: { conversational: true, includeUserLocation: true } }, [{ role: 'user', content: '你好' }]);
+    const normal = await ContextBuilder.buildCharacterRequest({ scene: 'chat.private', char, user, timeOptions: { conversational: true, includeUserLocation: true } }, [{ role: 'user', content: '你好' }]);
     expect(JSON.stringify(normal)).toContain('在家附近');
     vi.mocked(getCurrentPositionSmart).mockClear();
-    const fictional = await ContextBuilder.buildCharacterRequest({ char, user, timeOptions: { skipTimeAwareness: true, includeUserLocation: true } }, [{ role: 'user', content: '故事继续' }]);
+    const fictional = await ContextBuilder.buildCharacterRequest({ scene: 'chat.private', char, user, timeOptions: { skipTimeAwareness: true, includeUserLocation: true } }, [{ role: 'user', content: '故事继续' }]);
     expect(JSON.stringify(fictional)).not.toContain('小雨当前的位置');
-    await ContextBuilder.buildCharacterRequest({ char, user }, [{ role: 'user', content: '整理日记' }]);
+    await ContextBuilder.buildCharacterRequest({ scene: 'chat.private', char, user }, [{ role: 'user', content: '整理日记' }]);
     expect(getCurrentPositionSmart).not.toHaveBeenCalled();
 });
 
 it('scheduled fire-pack templates say unknown without capturing device data, even after a foreground lookup', async () => {
-    const foreground = await buildChatRequestPayload({ char, userProfile: user, groups: [], emojis: [], categories: [],
+    const foreground = await buildChatRequestPayload({ scene: 'chat.private', char, userProfile: user, groups: [], emojis: [], categories: [],
         recallEntryPoint: 'chat_app', contextLimit: 10, historyMsgs: [],
     });
     expect(JSON.stringify(foreground.fullMessages)).toContain('在家附近');
@@ -99,9 +99,9 @@ it('local live location sits immediately after weather and before news, exactly 
 
 it.each([false,true])('blocks non-selected characters before device access in local/instant chat (%s)',async timelyByWorker=>{
     saveUserLocationConfig({...config,characterIds:['someone-else']});
-    const payload=await buildChatRequestPayload({char,userProfile:user,groups:[],emojis:[],categories:[],recallEntryPoint:'chat_app',timelyByWorker,contextLimit:10,historyMsgs:[]});
+    const payload=await buildChatRequestPayload({ scene: 'chat.private',char,userProfile:user,groups:[],emojis:[],categories:[],recallEntryPoint:'chat_app',timelyByWorker,contextLimit:10,historyMsgs:[]});
     expect(JSON.stringify(payload.fullMessages)).not.toContain('小雨当前的位置');
-    const context=await ContextBuilder.buildCharacterRequest({char,user,timeOptions:{conversational:true,includeUserLocation:true}},[{role:'user',content:'在吗'}]);
+    const context=await ContextBuilder.buildCharacterRequest({ scene: 'chat.private',char,user,timeOptions:{conversational:true,includeUserLocation:true}},[{role:'user',content:'在吗'}]);
     expect(JSON.stringify(context)).not.toContain('小雨当前的位置');
     expect(getCurrentPositionSmart).not.toHaveBeenCalled();
 });
@@ -109,7 +109,7 @@ it('uses the selected city in local chat without changing the global default',as
     const weather=vi.spyOn(RealtimeContextManager,'fetchWeather').mockResolvedValue(null);
     try {
         const realtimeConfig={...defaultRealtimeConfig,weatherEnabled:true,weatherCity:'北京',weatherCities:{[char.id]:'London'}};
-        await buildChatRequestPayload({char,userProfile:user,groups:[],emojis:[],categories:[],realtimeConfig,recallEntryPoint:'chat_app',contextLimit:10,historyMsgs:[]});
+        await buildChatRequestPayload({ scene: 'chat.private',char,userProfile:user,groups:[],emojis:[],categories:[],realtimeConfig,recallEntryPoint:'chat_app',contextLimit:10,historyMsgs:[]});
         expect(weather).toHaveBeenCalledWith(expect.objectContaining({weatherCity:'London'}));expect(realtimeConfig.weatherCity).toBe('北京');
     } finally {weather.mockRestore();}
 });

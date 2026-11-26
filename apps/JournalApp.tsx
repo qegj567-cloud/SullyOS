@@ -521,7 +521,7 @@ Structure:
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
                 body: JSON.stringify({
                     model: apiConfig.model,
-                    messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, [
+                    messages: (await ContextBuilder.buildCharacterRequest({ ...characterContextInput, scene: 'apps.journal' }, [
                         { role: 'system', content: systemPrompt },
                         { role: 'user', content: `Users Diary:\n${currentEntry.userPage.text}` }
                     ])),
@@ -640,7 +640,7 @@ ${charPart}
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
                 body: JSON.stringify({
                     model: apiConfig.model,
-                    messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, [{ role: 'user', content: prompt }])),
+                    messages: (await ContextBuilder.buildCharacterRequest({ ...characterContextInput, scene: 'memory.summary' }, [{ role: 'user', content: prompt }])),
                     temperature: 0.4,
                     max_tokens: 1200,
                 }),

@@ -589,6 +589,7 @@ async function runVRSessionUnlocked(deps: VRSessionDeps): Promise<VRSessionResul
             : undefined;
 
         const payload = await buildChatRequestPayload({
+            scene: 'apps.vrFreeRoam',
             char, userProfile, groups, emojis, categories,
             historyMsgs, contextLimit, realtimeConfig, recallQueryHint,
             recallEntryPoint: 'vr_world',

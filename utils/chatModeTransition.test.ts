@@ -70,6 +70,7 @@ describe('buildChatRequestPayload 模式切换接线', () => {
             message(4, 'user'),
         ];
         const payload = await buildChatRequestPayload({
+            scene: 'chat.private',
             char: {
                 id: 'char-return',
                 name: '阿一',

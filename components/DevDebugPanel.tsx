@@ -1,4 +1,6 @@
 import HomeCompanionDebug from './HomeCompanionDebug';
+import FakeLlmDebugSection from './FakeLlmDebugSection';
+import { createPortal } from 'react-dom';
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowsClockwise, Broom, Check, ClipboardText, DownloadSimple, HardDrives, Power, Trash, Wrench, X } from '@phosphor-icons/react';
 import {
@@ -461,7 +463,9 @@ const DevDebugPanel: React.FC = () => {
     // 面板最大高度按「实际可视高度」算（visualViewport，避开手机动态工具栏），跟定位口径一致，超出部分中间滚动。
     const panelMaxHeight = viewport.height - FLOATING_SAFE_MARGIN * 2;
 
-    return (
+    // 面板挂在 OSProvider 里（假模型区要用 updateApiConfig），那一层带 transform，
+    // fixed 定位和层级都会被它框住，所以渲染到 body。
+    return createPortal(
         <div
             className="fixed select-none"
             style={{
@@ -568,6 +572,8 @@ const DevDebugPanel: React.FC = () => {
                             checked={flags.amsg2Panel}
                             onChange={(checked) => updateFlag('amsg2Panel', checked)}
                         />
+                        <div className="h-px bg-white/10" />
+                        <FakeLlmDebugSection />
                         <div className="h-px bg-white/10" />
 
                         {/* 记录日志：总开关；打开后才露出 类型 / 记录完整 / 复制 / 下载 一整套 —— 关掉时整段收起。
@@ -774,7 +780,8 @@ const DevDebugPanel: React.FC = () => {
                     </div>
                 </section>
             )}
-        </div>
+        </div>,
+        document.body,
     );
 };
 

@@ -93,6 +93,7 @@ import {prepareHomeSecretTask,failHomeSecretTask} from '../utils/homeSecrets';
 import {prepareFriendFeedEmotionTask, releaseFriendFeedEmotionTask, acknowledgeFriendFeedNotices,stageFriendFeedCloudTask} from '../utils/friendFeedEmotion';
 import {prepareFriendFeedMainTask,friendFeedUserDisclosure} from '../utils/friendFeedMain';
 import type {SecretNoteOriginPromise} from '../utils/secretNote';
+import type { WorldbookSceneId } from '../utils/worldbookScenes';
 import {
     computeContextRangeSnapshot,
     getMemoryPalaceHighWaterMarkForContext,
@@ -171,9 +172,11 @@ export const maskAmsg2ScheduleSyntaxForPreview = (text: string): string => {
 };
 
 /**
- * 最终正文里还剩的工具调用。正文模式下走到这里的都是最后一轮（或补救那一轮）写出来的；其余模式下
- * 工具阶段收过尾（toolPhaseClosed）时，最后一轮回复里写的 MCP 正文调用同样不再执行。两种都从显示
- * 文本里剥掉，报出个数由调用方留 trace，让这件事查得到。没收过尾的原生 / 未开 2.0 不看。
+ * 最终正文里还剩的工具调用，不执行，从显示文本里剥掉，报出个数由调用方留 trace，让这件事查得到。
+ * 排程语法任何模式都剥：正文模式下走到这里的是最后一轮（或补救那一轮）写的；原生 / 未开 2.0 时
+ * 是模型照着聊天历史里的旧调用写的，没教过也不执行，跟云端同一口径。
+ * MCP 正文调用只在正文模式、或工具阶段收过尾（toolPhaseClosed）时剥；没收过尾的原生 / 未开 2.0
+ * 由 MCP 正文兜底照常处理。
  */
 export const resolveFinalScheduleText = (
     raw: string,
@@ -181,9 +184,10 @@ export const resolveFinalScheduleText = (
     mcpResolve: Map<string, any> | null,
     toolPhaseClosed = false,
 ): { content: string; unexecuted: number; unexecutedMcp: number } => {
-    if (mode !== 'text' && !toolPhaseClosed) return { content: raw, unexecuted: 0, unexecutedMcp: 0 };
-    const schedule = mode === 'text' ? takeAmsg2TextScheduleCalls(raw) : { calls: [], rest: raw };
-    const mcpCalls = mcpResolve?.size ? extractTextFakedMcpCalls(schedule.rest, mcpResolve as any) : [];
+    const schedule = takeAmsg2TextScheduleCalls(raw);
+    const mcpCalls = (mode === 'text' || toolPhaseClosed) && mcpResolve?.size
+        ? extractTextFakedMcpCalls(schedule.rest, mcpResolve as any)
+        : [];
     return {
         content: mcpCalls.length ? stripTextFakedMcpCalls(schedule.rest, mcpCalls) : schedule.rest,
         unexecuted: schedule.calls.length,
@@ -425,6 +429,8 @@ export async function evaluateEmotionBackground(
 }
 
 interface UseChatAIProps {
+    /** 世界书生效场景：私聊（含家园手机里打开的私聊）传 chat.private，QQ 桥传 chat.qqBridge。 */
+    worldbookScene: WorldbookSceneId;
     homePhoneContext?: () => string;
     char: CharacterProfile | undefined;
     userProfile: UserProfile;
@@ -472,6 +478,7 @@ export const useChatAI = ({
     luckinMiniAppRef,
     luckinChatRef,
     homePhoneContext,
+    worldbookScene,
 }: UseChatAIProps) => {
     
     // 音乐上下文 — 用于聊天时注入"user 正在听什么 + 当前歌词窗口"
@@ -909,6 +916,7 @@ export const useChatAI = ({
             if (!instantChatRoute) sendProgress.local(!!instantChatVeto || !['disabled', 'char-disabled'].includes(instantChatReadiness.reason ?? ''));
 
             const payload = await replyStep(async () => stageT('payload', buildChatRequestPayload({
+                scene: worldbookScene,
                 char: charForGen, userProfile, groups, emojis, categories,
                 homePhoneContext:homePhoneContext?.(),
                 historyMsgs: contextMsgs,
@@ -1386,10 +1394,8 @@ export const useChatAI = ({
                 onDelta: (_delta: string, fullText: string) => {
                     if (replyRun.signal.aborted) return;
                     if (streamPreviewEligible) {
-                        // 正文模式下角色会把排程写成一行调用，预览里不能先闪给用户看。
-                        const bubbles = computeStreamPreviewBubbles(
-                            amsg2ToolMode === 'text' ? maskAmsg2ScheduleSyntaxForPreview(fullText) : fullText,
-                        );
+                        // 角色会把排程写成一行调用（没教过的模式下也可能照着历史写），预览里不能先闪给用户看。
+                        const bubbles = computeStreamPreviewBubbles(maskAmsg2ScheduleSyntaxForPreview(fullText));
                         latestStreamPreviewBubbles = bubbles;
                         if (bubbles.length > 0) streamPreviewShown = true;
                         setStreamingBubbles(prev =>
@@ -2311,7 +2317,7 @@ export const useChatAI = ({
             const finalSchedule = resolveFinalScheduleText(finalRoundContentRaw, amsg2ToolMode, mcpToolResolve, toolPhaseClosed);
             const finalRoundContent = finalSchedule.content;
             if (finalSchedule.unexecuted > 0 || finalSchedule.unexecutedMcp > 0) {
-                console.warn(`[amsg2] 最后一轮写出了 ${finalSchedule.unexecuted} 个排程、${finalSchedule.unexecutedMcp} 个 MCP 调用，工具阶段已收尾，不执行、从显示文本剥掉`);
+                console.warn(`[amsg2] 最终正文里写出了 ${finalSchedule.unexecuted} 个排程、${finalSchedule.unexecutedMcp} 个 MCP 调用，不执行、从显示文本剥掉`);
                 appendInstantTraceEntry({
                     ts: new Date().toISOString(),
                     event: 'amsg2-text-schedule-unexecuted',
@@ -2320,10 +2326,9 @@ export const useChatAI = ({
                     mcpCount: finalSchedule.unexecutedMcp,
                 });
             }
-            if (amsg2ToolMode === 'text') {
-                const cleanedLeadIns = amsg2LeadIns.map(stripAmsg2ScheduleSyntax).filter(leadIn => leadIn.trim());
-                amsg2LeadIns.splice(0, amsg2LeadIns.length, ...cleanedLeadIns);
-            }
+            // 工具轮开场白里的排程语法：正文模式下已代为执行，其余模式没教过、不执行，都剥掉。
+            const cleanedLeadIns = amsg2LeadIns.map(stripAmsg2ScheduleSyntax).filter(leadIn => leadIn.trim());
+            amsg2LeadIns.splice(0, amsg2LeadIns.length, ...cleanedLeadIns);
             const sarReply = amsg2LeadIns.length && sarModulePlan.requiresEnvelope
                 ? parseSARModuleReplyRounds([...amsg2LeadIns, extractToolRoundLeadIn(finalRoundContent)], sarModulePlan)
                 : parseSARModuleReply(

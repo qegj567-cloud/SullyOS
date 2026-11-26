@@ -96,7 +96,7 @@ import { INSTALLED_APPS, HIDDEN_APP_NAMES } from '../constants';
 import { isAnalyticsRequestUrl, trackEvent, shouldReportSnapshot, trackDataScaleOnce, trackCurrentAppearanceOnce, trackCurrentCharSettingsOnce, trackCurrentFeaturesOnce, trackCurrentSARFeaturesOnce } from '../utils/analytics';
 import { loadChatInputPreferences, saveChatInputPreferences } from '../utils/chatInputPreferences';
 import { collectAppearance, collectCharSettings, collectDataScale, collectFeatureFlagsAsync, collectSARFeatureFlags } from '../utils/analyticsSnapshot';
-import { normalizeApiBaseUrl, normalizeApiConfig, normalizeApiCredential, normalizeApiModel, normalizeApiPreset, normalizeDialogueSlot } from '../utils/apiConfigNormalize';
+import { mergeApiConfigUpdate, normalizeApiBaseUrl, normalizeApiConfig, normalizeApiCredential, normalizeApiModel, normalizeApiPreset, normalizeDialogueSlot } from '../utils/apiConfigNormalize';
 import { autoBindUniquePreset, bumpApiConfigVersion, slotFromPreset } from '../utils/apiSlots';
 import { autoBindLegacyStorageSlotsOnce, isSlotActivelyBoundToPreset, pickMigratedGlobalEmotionApi, refreshPresetSnapshotsEverywhere } from '../utils/apiSlotSync';
 import { fetchLlm } from '../utils/anthropicApi';
@@ -3176,15 +3176,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     }
   };
   const updateApiConfig = (updates: Partial<APIConfig>) => {
-    const prev = apiConfigRef.current;
-    const merged: APIConfig = { ...prev, ...updates };
-    // 若调用方更新了主连接字段但没有显式传 presetId，清除旧 presetId（脱离预设转为单独填写）
     const touchedMainConn = 'baseUrl' in updates || 'apiKey' in updates || 'model' in updates || 'apiType' in updates;
-    if (touchedMainConn && !('presetId' in updates)) {
-      delete merged.presetId;
-      delete merged.presetFp;
-    }
-    const newConfig = normalizeApiConfig(merged);
+    const newConfig = mergeApiConfigUpdate(apiConfigRef.current, updates);
     apiConfigRef.current = newConfig;
     setApiConfig(newConfig);
     localStorage.setItem('os_api_config', JSON.stringify(newConfig));

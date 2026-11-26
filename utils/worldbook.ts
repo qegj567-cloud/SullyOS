@@ -5,6 +5,8 @@ import type {
     WorldbookPosition,
     WorldbookSelectiveLogic,
 } from '../types';
+import type { AmsgProactiveKind } from './amsgFireSkipResult';
+import { isWorldbookSceneAllowed, sanitizeWorldbookScenes, type WorldbookSceneId } from './worldbookScenes';
 
 export type WorldbookLike = Worldbook | MountedWorldbook;
 
@@ -91,6 +93,7 @@ export const toMountedWorldbook = (book: Worldbook): MountedWorldbook => ({
     caseSensitive: book.caseSensitive,
     matchWholeWords: book.matchWholeWords,
     sourceUid: book.sourceUid,
+    scenes: book.scenes ? [...book.scenes] : book.scenes,
 });
 
 /**
@@ -203,9 +206,14 @@ export const rollWorldbookProbability = (probability: number, random: () => numb
 // 渲染，外面包上占位标记，概率随 fire_pack 带上（worldbookRolls），worker 到点逐条现抽，
 // 没抽中的连同标记一起去掉。整段 / 同一分类都只剩没抽中的条目时，标题行跟着消失，
 // 与本地那一轮没有这些条目时的渲染逐字一致。
+// 只在部分主动消息类型里生效的条目（世界书 scenes）走同一套标记：打包时按「生效」渲染，
+// 到点不是它的类型就整块去掉，标题合并规则同上。
 
-/** 被推迟抽签的条目副本（按对象身份认，不往条目上加字段）。 */
-const deferredRollBooks = new WeakSet<object>();
+/**
+ * 被推迟到点再判的条目副本（按对象身份认，不往条目上加字段）→ 它生效的主动消息类型；
+ * undefined 表示四类都生效、只是概率要到点抽。
+ */
+const deferredRollBooks = new WeakMap<object, AmsgProactiveKind[] | undefined>();
 
 const ROLL_CLOSE = '{{/AMSG_WB_IF}}';
 // 含推迟条目的段里，段标题和分类标题各打一个记号：中间的条目没抽中时，前后两个同名分类
@@ -216,26 +224,69 @@ const ROLL_HEADER_RE = /\{\{AMSG_WB_SEC\}\}|\{\{AMSG_WB_CAT\}\}(#### \[[^\n]*\]\
 const rollOpen = (ids: string[]) => `{{AMSG_WB_IF:${ids.map(encodeURIComponent).join(',')}}}`;
 const ROLL_BLOCK_RE = /\{\{AMSG_WB_IF:([^}]*)\}\}((?:(?!\{\{AMSG_WB_IF:)[\s\S])*?)\{\{\/AMSG_WB_IF\}\}/;
 
-/** fire_pack 里随包带上的一条概率条目。 */
+/** fire_pack 里随包带上的一条到点再判的条目。 */
 export interface WorldbookRoll {
     id: string;
+    /** 0–100；只因生效场景推迟的条目是 100。 */
     probability: number;
+    /**
+     * 这条只在哪几类主动消息里生效；不带 = 四类都生效。
+     * 认不得这个字段的旧 Worker 会当成四类都生效（宁可多带不漏），所以不另设版本门槛，
+     * 能出标记（WORLDBOOK_ROLLS_MIN_BUNDLE）就能带它。
+     */
+    proactiveKinds?: AmsgProactiveKind[];
 }
 
-/** 打包用：返回一份条目副本，概率在 0–100 之间（不含两端）的条目这一次不抽签、渲染时包上标记。 */
+// ─── 主动消息四类 ↔ 世界书生效场景 ───
+// fire_pack 一个角色只有一份，四类主动消息共用；哪一类到点 worker 才知道（proactiveKindOf）。
+
+/** 主动消息类型对应的世界书场景（唯一出处，worker 也用）。 */
+export const AMSG_PROACTIVE_KIND_SCENES = {
+    scheduled: 'proactive.scheduled',
+    self: 'proactive.self',
+    away: 'proactive.away',
+    dateLeave: 'proactive.dateLeave',
+} as const satisfies Record<AmsgProactiveKind, WorldbookSceneId>;
+
+const PROACTIVE_KINDS = Object.keys(AMSG_PROACTIVE_KIND_SCENES) as AmsgProactiveKind[];
+
+/** 这条世界书在哪几类主动消息里生效。 */
+export const worldbookProactiveKinds = (book: Pick<WorldbookLike, 'scenes'>): AmsgProactiveKind[] =>
+    PROACTIVE_KINDS.filter(kind => isWorldbookSceneAllowed(book, AMSG_PROACTIVE_KIND_SCENES[kind]));
+
+/** 打包用：kind 给定只留这一类生效的条目，否则去掉四类都不生效的条目。 */
+export const filterWorldbooksForProactive = <T extends WorldbookLike>(books: T[] = [], kind?: AmsgProactiveKind): T[] =>
+    books.filter(book => (kind
+        ? isWorldbookSceneAllowed(book, AMSG_PROACTIVE_KIND_SCENES[kind])
+        : worldbookProactiveKinds(book).length > 0));
+
+/**
+ * 打包用：返回一份条目副本，下面两种条目这一次不判、渲染时包上标记，到点由 worker 判：
+ * 概率在 0–100 之间（不含两端）的，和只在部分主动消息类型里生效的。
+ */
 export const deferWorldbookRolls = <T extends WorldbookLike>(books: T[] = []): T[] => books.map(book => {
-    if (!book.useProbability) return book;
+    const kinds = worldbookProactiveKinds(book);
+    const sceneLimited = kinds.length < PROACTIVE_KINDS.length;
     const probability = clamp(book.probability, 0, 100, 100);
-    if (probability <= 0 || probability >= 100) return book;
+    // 概率 0 的条目本地抽签照常排除，不必为了场景推迟、把正文白带上云。
+    const neverRolls = book.useProbability && probability <= 0;
+    if (neverRolls || (!sceneLimited && !(book.useProbability && probability < 100))) return book;
     const copy = { ...book };
-    deferredRollBooks.add(copy);
+    deferredRollBooks.set(copy, sceneLimited ? kinds : undefined);
     return copy;
 });
 
-/** deferWorldbookRolls 推迟过的条目及其概率，原样放进 fire_pack。 */
+/** deferWorldbookRolls 推迟过的条目，原样放进 fire_pack。 */
 export const collectDeferredWorldbookRolls = (books: WorldbookLike[] = []): WorldbookRoll[] => books
     .filter(book => deferredRollBooks.has(book))
-    .map(book => ({ id: String(book.id), probability: clamp(book.probability, 0, 100, 100) }));
+    .map(book => {
+        const kinds = deferredRollBooks.get(book);
+        return {
+            id: String(book.id),
+            probability: book.useProbability ? clamp(book.probability, 0, 100, 100) : 100,
+            ...(kinds ? { proactiveKinds: kinds } : {}),
+        };
+    });
 
 /** 这段文本里有没有这条推迟条目的标记（打包时只把真渲染进去的那几条带上云）。 */
 export const hasWorldbookRollMarker = (text: string, id: string): boolean => {
@@ -243,7 +294,7 @@ export const hasWorldbookRollMarker = (text: string, id: string): boolean => {
     return [...text.matchAll(/\{\{AMSG_WB_IF:([^}]*)\}\}/g)].some(m => m[1].split(',').includes(encoded));
 };
 
-/** 去掉全部推迟标记、推迟的条目一律按抽中保留（救援导回本地时用：内容宁留勿丢）。 */
+/** 去掉全部推迟标记、推迟的条目一律保留（救援导回本地时用：内容宁留勿丢）。 */
 export const keepAllWorldbookRolls = (text: string): string => renderWorldbookRolls(
     text,
     [...text.matchAll(/\{\{AMSG_WB_IF:([^}]*)\}\}/g)]
@@ -251,13 +302,21 @@ export const keepAllWorldbookRolls = (text: string): string => renderWorldbookRo
         .map(id => ({ id, probability: 100 })),
 );
 
-/** 到点渲染：每条概率条目现抽一次，抽中的去掉标记保留原文，没抽中的整块去掉。 */
+/**
+ * 到点渲染：kind 是这次到点的主动消息类型，不在条目 proactiveKinds 里的直接去掉（不耗随机数）；
+ * 其余每条现抽一次，抽中的去掉标记保留原文，没抽中的整块去掉。kind 不传时不按类型筛。
+ */
 export const renderWorldbookRolls = (
     template: string,
     rolls: WorldbookRoll[],
     random: () => number = Math.random,
+    kind?: AmsgProactiveKind,
 ): string => {
-    const hit = new Map(rolls.map(roll => [roll.id, rollWorldbookProbability(roll.probability, random)]));
+    const hit = new Map(rolls.map(roll => [
+        roll.id,
+        (!kind || !Array.isArray(roll.proactiveKinds) || roll.proactiveKinds.includes(kind))
+            && rollWorldbookProbability(roll.probability, random),
+    ]));
     let out = template;
     // 由内向外：标题那一层包着里面的条目块。
     for (let m = ROLL_BLOCK_RE.exec(out); m; m = ROLL_BLOCK_RE.exec(out)) {
@@ -423,6 +482,8 @@ export const serializeSullyWorldbook = (books: WorldbookLike[]): string => {
             scanDepth: book.scanDepth ?? null,
             caseSensitive: book.caseSensitive ?? null,
             matchWholeWords: book.matchWholeWords ?? null,
+            // 糯米机自己的字段；限定了场景才写，酒馆读到会忽略。
+            ...(book.scenes ? { scenes: [...book.scenes] } : {}),
             displayIndex: index,
         };
     });
@@ -471,6 +532,8 @@ export const parseStandardWorldbook = (
             matchWholeWords: value.matchWholeWords == null ? null : value.matchWholeWords === true,
             // Imported editor comments and native entry titles have different prompt semantics.
             sourceUid: native && !Number.isFinite(value.uid) ? undefined : uid,
+            // 只认糯米机导出的场景限定；酒馆文件和缺字段的一律按「所有场景」。
+            scenes: native ? sanitizeWorldbookScenes(value.scenes) : undefined,
         }];
     });
 

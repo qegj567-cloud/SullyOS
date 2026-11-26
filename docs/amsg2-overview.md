@@ -148,4 +148,5 @@
 | canary 版本通道 | [`canary-channel.md`](./canary-channel.md) | 改 Worker 的 `bundle_channel`、`/self-update` 的通道参数、冷启动通道对齐或 `deploy-canary.yml` 前 |
 | 后台 MCP | [`mcp-client.md`](./mcp-client.md) 的主动消息 2.0 一节 | 改后台工具的配置上云、执行时注入、Worker 直连执行前 |
 | Service Worker 的推送存储 | [`amsg-sw-idb-resilience-spec.md`](./amsg-sw-idb-resilience-spec.md) | 改推送接收端的 IndexedDB 连接和送达确认前 |
+| 假模型 | [`fake-llm.md`](./fake-llm.md) | 本地或真机把即时对话、定时消息、云端代跑整条链路跑一遍，或给新功能加回归场景前；先看各链路读哪个 API 槽位 |
 | 时区 | [`character-timezone.md`](./character-timezone.md) | 主动消息里还有几处没接角色时区，正式发版前过一遍 |

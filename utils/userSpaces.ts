@@ -57,6 +57,8 @@ const sharedKeys = new Set([
     'amsg2_pending_llm_creds', 'amsg2_llm_cred_fingerprints', 'amsg2_pending_tool_config', 'amsg2_pending_tool_config_version', 'amsg2_state_clock_watermark',
     // 救援模式警告跟着全局那一份 2.0 后台走，切用户空间不能让它消失。
     'amsg2_rescue_alert_v1',
+    // 调试面板换假模型前的 API 备份：os_api_config 是全局的，备份也得全局，换了用户空间照样能换回来。
+    'sullyos_dev_fake_llm_v1',
     'os_api_config', 'os_api_presets', 'os_available_models', 'os_vision_available_models', 'sullyos_endpoint_models_v1', 'sullyos_api_preset_autobind_v1', 'os_analytics', 'os_memory_palace_config',
     'os_user_location_privacy_v1', 'os_remote_vector_config', 'os_cloud_backup_config', 'os_backup_preferences_v1', 'os_realtime_config',
     'sully_proxy_worker_url', 'sully_proxy_worker_url_v1', 'push_vapid_v1', 'study_api_config', 'check_phone_api',

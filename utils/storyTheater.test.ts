@@ -432,7 +432,7 @@ describe('剧情沙盒辅助逻辑', () => {
     it('用当前轮输入立即触发关键词世界书，并保持最多二十条扫描窗口', () => {
         const history = Array.from({ length: 25 }, (_, index) => ({ role: index % 2 ? 'assistant' : 'user', content: `旧消息 ${index}` }));
         const scanMessages = buildStoryWorldbookScanMessages(history, '我现在肘击他');
-        const payload = ContextBuilder.buildWorldbookRequest({ books: [{
+        const payload = ContextBuilder.buildWorldbookRequest({ scene: 'apps.storyTheater', books: [{
             id: 'elbow',
             title: '肘击规则',
             content: '触发成功',

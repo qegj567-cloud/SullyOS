@@ -175,6 +175,7 @@ describe('跨场景角色原则', () => {
         const allMsgs = [makeMsg({ content: '今天不想出门，就坐会儿吧。' })];
         const shared = buildCharacterResponsePrinciples(char.name, user.name);
         const chat = await buildChatRequestPayload({
+            scene: 'offline.date',
             char, userProfile: user, groups: [], emojis: [], categories: [],
             historyMsgs: allMsgs, contextLimit: 20,
         });

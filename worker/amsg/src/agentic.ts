@@ -406,10 +406,20 @@ export function processLLMRound(
   const hasNativeSchedule = nativeScheduleCalls.some(
     (tc) => tc?.function?.name === AMSG_FIRE_SCHEDULE_TOOL,
   );
-  const scheduleTextCalls = schedule ? extractFireScheduleTextCalls(roundText) : [];
+  // 这一轮没装排程（角色关着自主排程）也照剥：模型照着聊天历史里的旧调用写出来的，
+  // 不执行、不进正文，留一行日志。
+  const scheduleTextCalls = extractFireScheduleTextCalls(roundText);
+  if (!schedule && scheduleTextCalls.length > 0) {
+    console.warn('[amsg:agentic]', {
+      type: 'schedule_text_without_tool',
+      taskId: build.taskId,
+      iteration,
+      count: scheduleTextCalls.length,
+    });
+  }
   const scheduleCalls: ToolCall[] = [
     ...nativeScheduleCalls,
-    ...(hasNativeSchedule ? [] : scheduleTextCalls).map((c) => ({
+    ...(hasNativeSchedule || !schedule ? [] : scheduleTextCalls).map((c) => ({
       id: `sched_${state.mcpCallSeq++}`,
       type: 'function' as const,
       function: { name: AMSG_FIRE_SCHEDULE_TOOL, arguments: JSON.stringify(c.args) },

@@ -181,7 +181,7 @@ const ScheduleApp: React.FC = () => {
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
                 body: JSON.stringify({
                     model: apiConfig.model,
-                    messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, messages)),
+                    messages: (await ContextBuilder.buildCharacterRequest({ ...characterContextInput, scene: 'apps.timeContract' }, messages)),
                     temperature: 0.9, 
                     max_tokens: 8000 
                 }),
@@ -274,7 +274,7 @@ const ScheduleApp: React.FC = () => {
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
                 body: JSON.stringify({
                     model: apiConfig.model,
-                    messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, messages)),
+                    messages: (await ContextBuilder.buildCharacterRequest({ ...characterContextInput, scene: 'apps.timeContract' }, messages)),
                     temperature: 0.8,
                     max_tokens: 8000
                 }),

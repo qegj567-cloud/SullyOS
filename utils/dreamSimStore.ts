@@ -17,7 +17,7 @@ export type DreamGenState =
     | { status: 'ready'; charId: string; charName: string; script: DreamScript }
     | { status: 'error'; charId: string; charName: string };
 
-/** cloudJobId：这份来自哪次代跑，看过之后连登记表那条一起收走。 */
+/** cloudJobId：这份来自哪次代跑，看完（或确认放弃）之后连登记表那条一起收走。 */
 export type DreamSimEntry = Exclude<DreamGenState, { status: 'idle' }> & { cloudJobId?: string };
 
 export type GlobalDreamState = (DreamGenState | DreamSimEntry) & {
@@ -51,6 +51,8 @@ const fromCloud = (): Map<string, DreamSimEntry> => {
 };
 
 const local = new Map<string, DreamSimEntry>();
+// 剧场正在播的云端梦（按角色）。只在内存里：刷新或被杀之后没了，指示条重新露出那场还没看完的梦。
+const watching = new Set<string>();
 let deepLinkCharId: string | null = null;
 let snapshot: { byChar: Map<string, DreamSimEntry>; featured: GlobalDreamState } | null = null;
 const listeners = new Set<() => void>();
@@ -63,8 +65,10 @@ const compute = () => {
     // 要深链的那份已经没了：作废，免得这个角色下次再有梦时小屋自己跳进去
     if (!linked) deepLinkCharId = null;
     // 指示条只露一个：好了的优先，其次在做的
+    // 正在看的那场不再挂「梦已成形」
+    const ready = all.find(e => e.status === 'ready' && !(e.cloudJobId && watching.has(e.charId)));
     const featured: GlobalDreamState = linked ? { ...linked, deepLink: true }
-        : all.find(e => e.status === 'ready') ?? all.find(e => e.status === 'loading') ?? IDLE;
+        : ready ?? all.find(e => e.status === 'loading') ?? IDLE;
     return { byChar, featured };
 };
 const snap = () => (snapshot ??= compute());
@@ -81,24 +85,32 @@ export const dreamSimStore = {
     set: (entry: DreamSimEntry) => { local.set(entry.charId, entry); invalidate(); },
     clear: (charId: string) => { if (local.delete(charId)) invalidate(); },
     /**
-     * DreamTheater 打开这个角色时取走一场好了的（或失败了的）梦：本机的、云端还没看的都算，
-     * 取走即清掉，和原来内存里那份一样只播一次。还在做的不动，返回 null。
-     * 云端的直接读 pending：登记表那条过了保留期，还没看的梦照样在。
+     * DreamTheater 打开这个角色时取一场好了的（或失败了的）梦。还在做的不动，返回 null。
+     * 本机的和失败的取走即清（本机那份本来就只在内存里，失败的没有内容可看）。
+     * 云端还没看的梦只是借出去：存储里那份留着，看完或确认放弃时调 settle 才收走。打开到看完
+     * 之间刷新、被杀，下次打开从头再播。云端的直接读 pending：登记表那条过了保留期照样在。
      */
     consume: (charId: string): DreamSimEntry | null => {
         const mine = local.get(charId);
         if (mine && mine.status !== 'loading') { local.delete(charId); invalidate(); return mine; }
         const pending = readCloudGenPending<DreamCloudPending>('dream', charId);
         if (pending) {
-            clearCloudGenPending('dream', charId);
-            dismissCloudGenJob(pending.jobId);
-            invalidate();
+            if (!watching.has(charId)) { watching.add(charId); invalidate(); }
             return pendingEntry(charId, pending);
         }
         const cloud = fromCloud().get(charId);
         if (cloud?.status === 'error' && cloud.cloudJobId) { dismissCloudGenJob(cloud.cloudJobId); return cloud; }
         return null;
     },
+    /** 云端那场看完了（已写进梦境记录）或用户确认放弃：收走还没看的梦和登记表那条。只认这一份。 */
+    settle: (charId: string, jobId: string) => {
+        watching.delete(charId);
+        if (readCloudGenPending<DreamCloudPending>('dream', charId)?.jobId === jobId) clearCloudGenPending('dream', charId);
+        dismissCloudGenJob(jobId);
+        invalidate();
+    },
+    /** 剧场关了：没看完的那场留着，指示条重新露出来。 */
+    release: (charId: string) => { if (watching.delete(charId)) invalidate(); },
     requestOpen: (charId?: string) => {
         const target = charId ?? (snap().featured.status === 'idle' ? null : (snap().featured as DreamSimEntry).charId);
         if (target) { deepLinkCharId = target; invalidate(); }

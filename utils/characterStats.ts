@@ -42,7 +42,7 @@ export function buildCharacterStats(char: CharacterProfile, user: UserProfile, r
         ...memories.monthly.map(m => ({ title: `${m.date} · 月度总结`, content: m.summary })),
         ...memories.daily.flatMap(group => group.entries.map(m => ({ title: `${m.date} · 日度记忆`, content: m.summary }))),
     ];
-    const books = ContextBuilder.inspectWorldbooks(char, user, history);
+    const books = ContextBuilder.inspectWorldbooks(char, user, history, 'chat.private');
     const memoryCharacters = memoryRows.reduce((sum, m) => sum + countContextCharacters(m.content), 0);
     const worldbookCharacters = books.filter(b => b.status === 'readable').reduce((sum, b) => sum + countContextCharacters(b.content), 0);
     const historyCharacters = [...sources.values()].reduce((sum, s) => sum + s.characters, 0);

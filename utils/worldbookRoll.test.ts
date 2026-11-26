@@ -81,3 +81,57 @@ describe('不同分类交错、中间那条没抽中', () => {
     expect((wb as any).renderWorldbookRolls(template, rolls, () => 0.1)).toBe(sectionOf([a, { ...b, useProbability: false }, c]));
   });
 });
+
+// 回归守卫：只在部分主动消息类型生效的条目（scenes），云端一份包到点按类型去掉，
+// 结果与本地已知类型直接挑条目渲染逐字一致。
+describe('按主动消息类型生效的条目', () => {
+  const a = book({ id: 'a', title: 'A', content: '甲', useProbability: false, category: '地点', order: 1 });
+  const b = book({ id: 'b', title: 'B', content: '乙', useProbability: false, category: '人物', order: 2, scenes: ['proactive.away'] });
+  const c = book({ id: 'c', title: 'C', content: '丙', useProbability: false, category: '地点', order: 3 });
+  const pack = (books: any[]) => {
+    const deferred = (wb as any).deferWorldbookRolls(books);
+    return { template: sectionOf(deferred), rolls: (wb as any).collectDeferredWorldbookRolls(deferred) };
+  };
+  const localOf = (books: any[], kind: string) => sectionOf((wb as any).filterWorldbooksForProactive(books, kind));
+
+  it('打包带上生效类型，概率按 100；四类全开的条目不推迟', () => {
+    expect(pack([a, b, c]).rolls).toEqual([{ id: 'b', probability: 100, proactiveKinds: ['away'] }]);
+  });
+
+  it('中间那条被类型去掉时，前后同名分类标题合并，与本地逐字一致', () => {
+    const { template, rolls } = pack([a, b, c]);
+    for (const kind of ['away', 'dateLeave', 'scheduled', 'self']) {
+      expect((wb as any).renderWorldbookRolls(template, rolls, undefined, kind)).toBe(localOf([a, b, c], kind));
+    }
+    expect((wb as any).renderWorldbookRolls(template, rolls, undefined, 'dateLeave')).toBe(sectionOf([a, c]));
+  });
+
+  it('不是这一类的条目不耗随机数；是这一类的照常按概率抽', () => {
+    const p = book({ id: 'p', scenes: ['proactive.away'] });
+    const { template, rolls } = pack([p]);
+    expect(rolls).toEqual([{ id: 'p', probability: 35, proactiveKinds: ['away'] }]);
+    const random = vi.fn(() => 0.1);
+    expect((wb as any).renderWorldbookRolls(template, rolls, random, 'scheduled')).toBe('');
+    expect(random).not.toHaveBeenCalled();
+    expect((wb as any).renderWorldbookRolls(template, rolls, () => 0.1, 'away')).toContain('下雨天会犯困');
+    expect((wb as any).renderWorldbookRolls(template, rolls, () => 0.9, 'away')).toBe('');
+  });
+
+  it('不传类型（旧 Worker / 救援导回）时按四类都生效处理', () => {
+    const { template, rolls } = pack([a, b, c]);
+    expect((wb as any).renderWorldbookRolls(template, rolls)).toBe(sectionOf([a, b, c]));
+  });
+
+  it('概率 0 的限定类型条目不推迟，打包时照常排除、不把正文带上云', () => {
+    const zero = book({ id: 'z', probability: 0, scenes: ['proactive.away'] });
+    const { template, rolls } = pack([a, zero]);
+    expect(rolls).toEqual([]);
+    expect(template).not.toContain('下雨天会犯困');
+  });
+
+  it('四类主动消息都不生效的条目打包前就去掉', () => {
+    const off = book({ id: 'off', scenes: ['chat.private'] });
+    expect((wb as any).filterWorldbooksForProactive([a, off, b])).toEqual([a, b]);
+    expect((wb as any).filterWorldbooksForProactive([a, off, b], 'scheduled')).toEqual([a]);
+  });
+});

@@ -708,7 +708,7 @@ Explain this chapter's key concepts to the user based strictly on the Source Mat
                 body: JSON.stringify({
                     model: effectiveApi.model,
                     messages: isFallback ? [{ role: "user", content: prompt }]
-                        : (await ContextBuilder.buildCharacterRequest({ char: selectedChar, user: userProfile }, [{ role: "user", content: prompt }])),
+                        : (await ContextBuilder.buildCharacterRequest({ scene: 'apps.study', char: selectedChar, user: userProfile }, [{ role: "user", content: prompt }])),
                     temperature: 0.7,
                     max_tokens: 8000, 
                     safetySettings: [
@@ -855,7 +855,7 @@ Answer the question based on the source material. Be helpful and encouraging (in
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApi.apiKey || 'sk-none'}` },
                 body: JSON.stringify({
                     model: effectiveApi.model,
-                    messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, [{ role: 'system', content: studyInstructions }, { role: "user", content: prompt }])),
+                    messages: (await ContextBuilder.buildCharacterRequest({ ...characterContextInput, scene: 'apps.study' }, [{ role: 'system', content: studyInstructions }, { role: "user", content: prompt }])),
                     temperature: 0.7,
                     max_tokens: 8000
                 }),
@@ -1177,7 +1177,7 @@ ${resultsText}
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApi.apiKey || 'sk-none'}` },
                 body: JSON.stringify({
                     model: effectiveApi.model,
-                    messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, [{ role: "user", content: reviewPrompt }])),
+                    messages: (await ContextBuilder.buildCharacterRequest({ ...characterContextInput, scene: 'apps.study' }, [{ role: "user", content: reviewPrompt }])),
                     temperature: 0.8,
                     max_tokens: 8000
                 }),
@@ -1289,7 +1289,7 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApi.apiKey || 'sk-none'}` },
                 body: JSON.stringify({
                     model: effectiveApi.model,
-                    messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, [{ role: "user", content: prompt }])),
+                    messages: (await ContextBuilder.buildCharacterRequest({ ...characterContextInput, scene: 'apps.study' }, [{ role: "user", content: prompt }])),
                     temperature: 0.7,
                     max_tokens: 4000
                 }),

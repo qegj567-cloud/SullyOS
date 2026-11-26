@@ -28,7 +28,7 @@ it('persists the user example as six segments with independent speaker roles',as
  expect(rows.map(row=>row.metadata.homeRecordIds)).toEqual([['事1','事2','事3'],['用户发言'],['角色回复'],['事4','事5'],['角色主动开口'],['用户接话']]);
  expect(rows.map(row=>row.role)).toEqual(['user','user','assistant','user','assistant','user']);
  const home=await buildHomeConversationPayload(args(char));
- const chat=await buildChatRequestPayload({char,userProfile:user,groups:[],emojis:[],categories:[],historyMsgs:rows,contextLimit:rows.length,contextHighWaterMark:0,recallEntryPoint:'chat_app'});
+ const chat=await buildChatRequestPayload({ scene: 'chat.private',char,userProfile:user,groups:[],emojis:[],categories:[],historyMsgs:rows,contextLimit:rows.length,contextHighWaterMark:0,recallEntryPoint:'chat_app'});
  expect(home.slice(1,-1)).toEqual(chat.cleanedApiMessages);
 });
 it('a private-chat message seals the action span, and delayed replies retain their actual time',async()=>{
@@ -111,7 +111,7 @@ it('recall consumes the same expanded speakers and chronological events as outgo
  await DB.saveCharacter(char);
  const recall=vi.spyOn(palace,'injectMemoryPalace').mockResolvedValue({stages:[]} as any);
  const rows=(await range(char)).messages;
- const chat=await buildChatRequestPayload({char,userProfile:user,groups:[],emojis:[],categories:[],historyMsgs:rows,contextLimit:rows.length,recallEntryPoint:'chat_app'});
+ const chat=await buildChatRequestPayload({ scene: 'chat.private',char,userProfile:user,groups:[],emojis:[],categories:[],historyMsgs:rows,contextLimit:rows.length,recallEntryPoint:'chat_app'});
  const home=await buildHomeConversationPayload(args(char));
  for(const call of recall.mock.calls){
   expect(call[1]!.map(m=>m.timestamp)).toEqual([1,2,3,4]);
@@ -134,7 +134,7 @@ it('flushes already-arrived inbox messages before reading shared history',async(
  const messages=await buildHomeConversationPayload(args(char));
  expect(inbox).toHaveBeenCalledWith(char.id);expect(JSON.stringify(messages)).toContain('刚收到的主动消息');
  const rows=(await range(char)).messages;
- const chat=await buildChatRequestPayload({char,userProfile:user,groups:[],emojis:[],categories:[],historyMsgs:rows,contextLimit:rows.length,recallEntryPoint:'chat_app'});
+ const chat=await buildChatRequestPayload({ scene: 'chat.private',char,userProfile:user,groups:[],emojis:[],categories:[],historyMsgs:rows,contextLimit:rows.length,recallEntryPoint:'chat_app'});
  const finalChat=withChatContinuation(chat.fullMessages,user.name,{unansweredUserTurn:hasUnansweredUserTurn([{role:'user'}],rows)});
  expect(messages.at(-1)).toEqual(finalChat.at(-1));expect(messages.at(-1)?.content).toContain('刚才说的话还没有人回');
 });

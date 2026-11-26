@@ -123,7 +123,7 @@ const TODAY_ONLY_RULE = `
 
 // ─── LLM call ────────────────────────────────────────────
 async function callLLM(
-    apiConfig: ApiConfig, prompt: string, temperature: number, maxTokens: number = 4000, characterContext?: CharacterContextInput,
+    apiConfig: ApiConfig, prompt: string, temperature: number, maxTokens: number = 4000, characterContext?: Omit<CharacterContextInput, 'scene'>,
 ): Promise<string | null> {
     try {
         const t0 = Date.now();
@@ -132,7 +132,7 @@ async function callLLM(
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
             body: JSON.stringify({
                 model: apiConfig.model,
-                messages: characterContext ? (await ContextBuilder.buildCharacterRequest(characterContext, [{ role: 'user', content: prompt }])) : [{ role: 'user', content: prompt }],
+                messages: characterContext ? (await ContextBuilder.buildCharacterRequest({ ...characterContext, scene: 'apps.handbook' }, [{ role: 'user', content: prompt }])) : [{ role: 'user', content: prompt }],
                 temperature,
                 max_tokens: maxTokens,
             }),

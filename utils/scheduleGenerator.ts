@@ -294,7 +294,7 @@ async function buildDailyScheduleRequest(char: CharacterProfile, userProfile: Us
     return {
         date: today,
         homePrompt: !!homePrompt,
-        messages: await ContextBuilder.buildCharacterRequest(characterContextInput, [{ role: 'user', content: prompt }]),
+        messages: await ContextBuilder.buildCharacterRequest({ ...characterContextInput, scene: 'apps.schedule' }, [{ role: 'user', content: prompt }]),
         params: { temperature: 0.85, max_tokens: 8000 },
         // API 调用记录标签（全局 fetch 拦截器读取）；不传会兜底成「用户当时打开的 App」，
         // 后台任务被标成 Message/群聊 之类，用户看记录一头雾水。

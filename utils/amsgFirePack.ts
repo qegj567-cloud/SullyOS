@@ -636,8 +636,9 @@ export interface AmsgFirePack {
    */
   noticeIds?: string[];
   /**
-   * 模板里按概率触发、打包时没抽签的世界书条目（{{AMSG_WB_IF:…}} 标记包着）及其概率。
-   * worker 到点用 worldbook.renderWorldbookRolls 现抽，与本地每轮都抽一致。
+   * 模板里打包时没判的世界书条目（{{AMSG_WB_IF:…}} 标记包着）：按概率触发的带概率，
+   * 只在部分主动消息类型生效的带 proactiveKinds。worker 到点用 worldbook.renderWorldbookRolls
+   * 按这次的类型筛、再现抽，与本地每轮都抽一致。
    * 可选字段，旧包缺省时模板里也没有标记，行为不变。
    */
   worldbookRolls?: WorldbookRoll[];

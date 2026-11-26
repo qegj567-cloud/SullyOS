@@ -207,6 +207,7 @@ export const generateWriterPersonaDeep = async (
             body: JSON.stringify({
                 model: apiConfig.model,
                 messages: await ContextBuilder.buildCharacterRequest({
+                    scene: 'memory.style',
                     char: recallChar, user: userProfile,
                     timeOptions: { skipTimeAwareness: true },
                     instructions: `${writerIdentityBoundary(char, userProfile)}\n\n${analysisPrompt}`,

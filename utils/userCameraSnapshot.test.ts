@@ -42,6 +42,7 @@ describe('user camera snapshot', () => {
       const original = [{ role: 'assistant', content: '旧回复' }, { role: 'user', content: '看看这张照片' }];
       const snapshot = prepareUserCameraSnapshot(original, 'data:image/jpeg;base64,AAAA');
       const context = (await ContextBuilder.buildCharacterContext({
+        scene: 'offline.call',
         char: {
           id: 'c', name: 'C', systemPrompt: '角色设定',
           mountedWorldbooks: [{ id: 'wb', title: '规则', content: '深度世界书', constant: true,

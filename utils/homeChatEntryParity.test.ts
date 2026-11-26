@@ -39,7 +39,7 @@ it.each(['manual', 'adaptive'] as const)('actual ChatApp and home network reques
  const realtimeConfig: any = { weatherEnabled: false, newsEnabled: false };
  let chat!: ReturnType<typeof useChatAI>;
  function Probe() {
-  chat = useChatAI({ char, apiConfig: api, userProfile: user, groups: [], emojis: [], categories: [], realtimeConfig,
+  chat = useChatAI({ worldbookScene: 'chat.private', char, apiConfig: api, userProfile: user, groups: [], emojis: [], categories: [], realtimeConfig,
    addToast: vi.fn(), setMessages: vi.fn(), updateCharacter: vi.fn(), updateUserProfile: vi.fn() });
   return null;
  }

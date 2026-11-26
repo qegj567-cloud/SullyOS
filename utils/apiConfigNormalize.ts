@@ -97,6 +97,20 @@ export function normalizeApiConfig(config: APIConfig): APIConfig {
   return next;
 }
 
+/**
+ * 主对话配置的一次保存：合并、脱离预设、规范化。OSContext.updateApiConfig 与它的测试共用这一份。
+ * 改了连接字段却没显式传 presetId，就是转成单独填写，旧的预设引用要一起去掉。
+ */
+export function mergeApiConfigUpdate(prev: APIConfig, updates: Partial<APIConfig>): APIConfig {
+  const merged: APIConfig = { ...prev, ...updates };
+  const touchedMainConn = 'baseUrl' in updates || 'apiKey' in updates || 'model' in updates || 'apiType' in updates;
+  if (touchedMainConn && !('presetId' in updates)) {
+    delete merged.presetId;
+    delete merged.presetFp;
+  }
+  return normalizeApiConfig(merged);
+}
+
 export function normalizeApiPreset(preset: ApiPreset): ApiPreset {
   const normalizedConfig = normalizeApiConfig(preset.config);
   // 预设本身是引用源头，不嵌套指向其他预设，也不携带识图/副 API 等全局附带块。

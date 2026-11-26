@@ -15,6 +15,7 @@ const container = document.createElement('div');
 let root = createRoot(container);
 function Probe({ charId = 'reply-test' }: { charId?: string }) {
     current = useChatAI({
+        worldbookScene: 'chat.private',
         char: { id: charId, name: '甲' } as any, userProfile: { name: '用户' } as any,
         apiConfig: { baseUrl: 'https://example.test/v1' }, groups: [], emojis: [], categories: [],
         realtimeConfig: {} as any, addToast: vi.fn(), setMessages: vi.fn(), updateCharacter: vi.fn(), updateUserProfile: vi.fn(),

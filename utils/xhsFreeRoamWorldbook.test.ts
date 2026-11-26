@@ -14,7 +14,7 @@ it('自由活动保留可读的过往活动，同时在请求层按角色和深�
     expect(input.instructions).toContain('上次发的帖子');
     expect(input.instructions).not.toContain('[object Object]');
     expect(input.instructions).not.toContain('活动世界书');
-    const messages = (await ContextBuilder.buildCharacterRequest(input, [{ role: 'user', content: '今天想做什么？' }]));
+    const messages = (await ContextBuilder.buildCharacterRequest({ ...input, scene: 'apps.freeRoam' }, [{ role: 'user', content: '今天想做什么？' }]));
     expect(messages[messages.length - 1]).toEqual({ role: 'assistant', content: '活动世界书' });
     expect(JSON.stringify(messages).split('活动世界书')).toHaveLength(2);
 });

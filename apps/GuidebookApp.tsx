@@ -723,7 +723,7 @@ const GuidebookApp: React.FC = () => {
             const prompt = buildOpeningPrompt(char, userProfile, initialAffinity, scenarioHint, 'manual', recentMsgs, char.guidebookInsights);
             const raw = await callAPI(
                 apiConfig,
-                (await ContextBuilder.buildCharacterRequest({ char, user: userProfile }, [{ role: 'user', content: prompt }])),
+                (await ContextBuilder.buildCharacterRequest({ scene: 'apps.guidebook', char, user: userProfile }, [{ role: 'user', content: prompt }])),
                 { charId: char.id, charName: char.name, purpose: '攻略本开篇' },
             );
             let data = extractJson(raw);
@@ -802,7 +802,7 @@ const GuidebookApp: React.FC = () => {
             );
             const raw = await callAPI(
                 apiConfig,
-                (await ContextBuilder.buildCharacterRequest({ char: selectedChar, user: userProfile }, [{ role: 'user', content: prompt }])),
+                (await ContextBuilder.buildCharacterRequest({ scene: 'apps.guidebook', char: selectedChar, user: userProfile }, [{ role: 'user', content: prompt }])),
                 { charId: selectedChar.id, charName: selectedChar.name, purpose: '攻略本灵感建议' },
             );
             const data = extractJson(raw);
@@ -904,7 +904,7 @@ const GuidebookApp: React.FC = () => {
             );
             const raw = await callAPI(
                 apiConfig,
-                (await ContextBuilder.buildCharacterRequest({ char: selectedChar, user: userProfile }, [{ role: 'user', content: prompt }])),
+                (await ContextBuilder.buildCharacterRequest({ scene: 'apps.guidebook', char: selectedChar, user: userProfile }, [{ role: 'user', content: prompt }])),
                 { charId: selectedChar.id, charName: selectedChar.name, purpose: '攻略本剧情推进' },
             );
             const data = extractJson(raw);
@@ -1005,7 +1005,7 @@ const GuidebookApp: React.FC = () => {
             );
             const raw = await callAPI(
                 apiConfig,
-                (await ContextBuilder.buildCharacterRequest({ char: selectedChar, user: userProfile }, [{ role: 'user', content: prompt }])),
+                (await ContextBuilder.buildCharacterRequest({ scene: 'apps.guidebook', char: selectedChar, user: userProfile }, [{ role: 'user', content: prompt }])),
                 { charId: selectedChar.id, charName: selectedChar.name, purpose: '攻略本结局结算' },
             );
             const data = extractJson(raw);

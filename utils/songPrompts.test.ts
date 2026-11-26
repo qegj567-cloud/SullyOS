@@ -100,7 +100,7 @@ describe('song lyric prompt context', () => {
         const char = { id: 'char-1', name: 'C', systemPrompt: 'CHARACTER CONTEXT WITH RELATIONSHIP' } as any;
         const user = { name: 'U' } as any;
         const systemPrompt = SongPrompts.buildCompletionSystemPrompt(char, user);
-        const messages = (await ContextBuilder.buildCharacterRequest({ char, user }, [
+        const messages = (await ContextBuilder.buildCharacterRequest({ scene: 'apps.songwriting', char, user }, [
             { role: 'system', content: systemPrompt }, { role: 'user', content: '歌曲已完成' },
         ]));
         expect(JSON.stringify(messages)).toContain('CHARACTER CONTEXT WITH RELATIONSHIP');

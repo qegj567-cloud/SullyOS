@@ -695,7 +695,7 @@ export const WhiteDaySession: React.FC<WhiteDaySessionProps> = ({ charId, onClos
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
                 body: JSON.stringify({
                     model: apiConfig.model,
-                    messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, [
+                    messages: (await ContextBuilder.buildCharacterRequest({ ...characterContextInput, scene: 'apps.whiteDay' }, [
                         { role: 'user', content: `[最近记录]:\n${recentMsgs}\n\n---\n\n${prompt}` },
                     ])),
                     temperature: 0.85,
@@ -831,7 +831,7 @@ ${answerSummary}
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
                 body: JSON.stringify({
                     model: apiConfig.model,
-                    messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, [
+                    messages: (await ContextBuilder.buildCharacterRequest({ ...characterContextInput, scene: 'apps.whiteDay' }, [
                         { role: 'user', content: prompt },
                     ])),
                     temperature: 0.82,
@@ -932,7 +932,7 @@ ${answerSummary}
                 headers,
                 body: JSON.stringify({
                     model: apiConfig.model,
-                    messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, [
+                    messages: (await ContextBuilder.buildCharacterRequest({ ...characterContextInput, scene: 'apps.whiteDay' }, [
                         {
                             role: 'user',
                             content: [
@@ -954,7 +954,7 @@ ${answerSummary}
                     headers,
                     body: JSON.stringify({
                         model: apiConfig.model,
-                        messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, [
+                        messages: (await ContextBuilder.buildCharacterRequest({ ...characterContextInput, scene: 'apps.whiteDay' }, [
                             { role: 'user', content: fallbackPrompt },
                         ])),
                         temperature: 0.88,

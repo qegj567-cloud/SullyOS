@@ -233,6 +233,8 @@ export function collectCharSettings(
         观测协议: anyOn(x => x.dateObserve?.enabled),
         彼方自主登入: anyOn(x => x.vrState?.enabled),
         离开后消息: anyOn(x => x.awayMessage?.enabled),
+        // 有没有角色挂着限定了启用场景的世界书（[] 也算限定）。看挂载缓存：没挂的条目不影响任何生成。
+        世界书限定场景: anyOn(x => x.mountedWorldbooks?.some(book => book.scenes != null)),
         // ── 开关：默认开的，问有没有人特意关掉 ──
         时间感知: anyOn(x => x.timeAwarenessEnabled, true),
         见面时间感知: anyOn(x => x.dateTimeAwarenessEnabled, true),

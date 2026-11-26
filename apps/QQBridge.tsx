@@ -87,6 +87,7 @@ const QQBridge: React.FC = () => {
   }, []);
 
   const chatAI = useChatAI({
+    worldbookScene: 'chat.qqBridge',
     char: char || undefined,
     userProfile,
     apiConfig,

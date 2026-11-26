@@ -187,7 +187,7 @@ async function consolidatePlates(
         const chars = await DB.getAllCharacters();
         const profile = chars.find(c => c.id === charId);
         const up = await DB.getUserProfile();
-        if (profile && up) identityContext = (await ContextBuilder.buildCoreContext(profile, up, false));
+        if (profile && up) identityContext = (await ContextBuilder.buildCoreContext(profile, up, false, undefined, undefined, { worldbookScene: 'memory.palace' }));
     } catch { /* 拿不到就裸跑，prompt 里仍有名字与身份确认段 */ }
 
     if (preferCloud && !readMaintenanceSettings().enabled) {

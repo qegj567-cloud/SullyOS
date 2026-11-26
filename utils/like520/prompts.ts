@@ -980,7 +980,7 @@ interface CallOptions<T> {
     label: string;
     purpose?: string;
     apiConfig: ApiConfig;
-    characterContext: CharacterContextInput;
+    characterContext: Omit<CharacterContextInput, 'scene'>;
     userPrompt: string;
     temperature: number;
     validate: (parsed: any) => parsed is T;
@@ -1010,7 +1010,7 @@ async function callLike520LLM<T>(opts: CallOptions<T>): Promise<T> {
                 },
                 body: JSON.stringify({
                     model: opts.apiConfig.model,
-                    messages: (await ContextBuilder.buildCharacterRequest(opts.characterContext, [
+                    messages: (await ContextBuilder.buildCharacterRequest({ ...opts.characterContext, scene: 'apps.like520' }, [
                         { role: 'user', content: userPrompt },
                     ])),
                     temperature: opts.temperature,

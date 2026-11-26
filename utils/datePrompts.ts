@@ -699,6 +699,7 @@ export const DatePrompts = {
         // conversational 不给：peek 是「用户还没走过去」的第三人称镜头，时间块末尾那句
         // 语境框定说的是「对方还在跟你说话」，跟这里的框定正好相反（见下面的 peekInstructions）。
         const context = (await ContextBuilder.buildCharacterContext({
+            scene: 'offline.date',
             char, user: userProfile,
             history: apiMessages.map(message => ({ ...message, content: typeof message.content === 'string'
                 ? message.content : message.content.filter((part: any) => part?.type === 'text').map((part: any) => part.text).join(' ') })),
@@ -781,6 +782,7 @@ ${buildDateVoiceTranslationGuide(char)}`;
         // 向量召回挂到 char.memoryPalaceInjection，buildCoreContext 会读取
         await injectMemoryPalace(char, allMsgs, undefined, userProfile?.name, { omitDates: !dateTimeOn });
         const context = (await ContextBuilder.buildCharacterContext({
+            scene: 'offline.date',
             char, user: userProfile, history: conversation,
             timeOptions: { skipTimeAwareness: !dateTimeOn, conversational: true, includeUserLocation: true },
         }));

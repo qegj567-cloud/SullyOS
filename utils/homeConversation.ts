@@ -37,7 +37,7 @@ export function buildHomeScenePrompt(user:UserProfile,scene:HomeScene){
  +'\n回复包含说话和实际行为。结合'+name+'的话与当前状态选择合适动作；对方明确要求且你答应执行的动作，必须填写对应 actionIds 编号序列；例如答应躺下，应选上床休息的编号，不能只在 text 里说躺下却返回空数组。不用文字描写代替执行，不向对方复述后台动作表。已有活动应继续时可不切换，普通说话自带轻量聊天手势。简短自然，不替'+name+'说话，用户动作只限完成所选互动的必要前置姿势，不编造已完成的动作。只有在场时可选本轮编号，客户端校验后执行；不可创造家具、传送或修改布局。本轮仅执行 actions 中的家园动作；主动消息排程只作背景，此入口不新建、取消或续期排程。无合适动作则只说话。可连续选择多个动作，按顺序执行；起身、坐下、躺下等自身姿势前置由执行器自动补齐，不必因为自己当前坐着就放弃动作。双人互动需要对方起身或坐下时，也由执行器自动完成前置姿势，再开始互动。返回 JSON：{"text":"说的话","actionIds":[1,2]}；actionIds 为本轮整数编号数组，最多8项，不行动时为[]。';
 }
 export async function buildHomeConversationPrompt(char:CharacterProfile,user:UserProfile,scene:HomeScene,history:Message[]=[],regenerating=false){
- const parts=await ChatPrompts.buildSystemPromptParts(char,user,[],[],[],history,undefined,regenerating?'':undefined,null,false,undefined,undefined,{appRules:''});
+ const parts=await ChatPrompts.buildSystemPromptParts(char,user,[],[],[],history,undefined,regenerating?'':undefined,null,false,undefined,undefined,{ scene: 'offline.home3d',appRules:''});
  return parts.stable+parts.volatileState+buildHomeScenePrompt(user,scene)+parts.recencyTail;
 }
 export type HomeConversationContext = Pick<BuildChatPayloadInput,'realtimeConfig'|'musicSnapshot'> & Partial<Pick<BuildChatPayloadInput,'groups'|'emojis'|'categories'>>;
@@ -105,6 +105,7 @@ async function buildHomeConversationRequest({char,user,api,scene,records,signal,
   ?'\n多人同场：'+JSON.stringify(scene.participants)+'\n你本轮只扮演 '+char.name+'，不能替其他角色或用户说话、行动。其他人的发言是共享现场事实，不是你的私聊。可以接前一位的话，不必重复回答用户；不猜别人的内心或私密经历。你的单向关系（不代表对方态度）：'+JSON.stringify(homeSocialRelationPrompt(char,scene.participants))+'。不想说话可以输出 {"silent":true,"text":"","actionIds":[]}。'
   :'';
  const payload=await stage('组装聊天上下文',()=>buildChatRequestPayload({
+  scene: 'offline.home3d',
   char:requestChar,userProfile:user,groups,emojis,categories,signal,
   historyMsgs:rows,contextLimit:Math.max(1,rows.length),contextHighWaterMark:range.hwm,
   recallEntryPoint:'home_3d',realtimeConfig:context?.realtimeConfig,musicSnapshot:context?.musicSnapshot,

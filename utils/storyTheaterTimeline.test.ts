@@ -153,7 +153,7 @@ describe('线上回复不被剧情抢走', () => {
             { id: 3, charId: 'answered', role: 'assistant', type: 'text', content: '上一轮线上回复', timestamp: realTime + 1 },
             { id: 4, charId: 'answered', role: 'user', type: 'text', content: '这一轮线上输入', timestamp: realTime + 2 },
         ] as Message[];
-        const payload = await buildChatRequestPayload({ char: char('answered'), userProfile: { name: '用户' } as any,
+        const payload = await buildChatRequestPayload({ scene: 'chat.private', char: char('answered'), userProfile: { name: '用户' } as any,
             groups: [], emojis: [], categories: [], historyMsgs: history, contextLimit: 20, recallEntryPoint: 'chat_app' });
         expect(payload.cleanedApiMessages[0].content).toContain('旧剧情');
         expect(payload.systemPrompt).not.toContain('现在已经回到 ChatApp 的文字聊天界面');
@@ -171,7 +171,7 @@ describe('线上回复不被剧情抢走', () => {
         const withProactive = [make(2, 'user'), scheduled, make(1, 'assistant', 'story_theater_memory')];
         expect(protectPendingChatTurn(withProactive).map(message => message.id)).toEqual([1, 2, 4]);
         expect(hasUnansweredUserTurn([withProactive[0]], withProactive)).toBe(true);
-        const payload = await buildChatRequestPayload({ char: char('order'), userProfile: { name: '用户' } as any,
+        const payload = await buildChatRequestPayload({ scene: 'chat.private', char: char('order'), userProfile: { name: '用户' } as any,
             groups: [], emojis: [], categories: [], historyMsgs: withProactive, contextLimit: 20, recallEntryPoint: 'chat_app' });
         expect(payload.systemPrompt).toContain('现在已经回到 ChatApp 的文字聊天界面');
         expect(withChatContinuation(payload.fullMessages, '用户', {
@@ -187,7 +187,7 @@ describe('线上回复不被剧情抢走', () => {
         for (let roll = 0; roll < 3; roll++) {
             const range = await loadCharacterContextRange(char('chat-story'));
             expect(range.messages.at(-1)?.id).toBe(userId);
-            const payload = await buildChatRequestPayload({ char: char('chat-story'), userProfile: { name: '用户' } as any,
+            const payload = await buildChatRequestPayload({ scene: 'chat.private', char: char('chat-story'), userProfile: { name: '用户' } as any,
                 groups: [], emojis: [], categories: [], historyMsgs: range.messages, contextLimit: range.messages.length,
                 recallEntryPoint: 'chat_app' });
             expect(payload.cleanedApiMessages.at(-1)).toMatchObject({ role: 'user', content: expect.stringContaining('今天线上新消息') });
@@ -204,7 +204,7 @@ describe('线上回复不被剧情抢走', () => {
                 metadata: { source: 'story_theater_memory', theaterTitle: '日常', theaterCentralId: 999 } },
             { id: 2, charId: 'orphan', role: 'user', type: 'text', content: '今天线上新消息', timestamp: realTime + 86400000 },
         ] as Message[];
-        const payload = await buildChatRequestPayload({ char: char('orphan'), userProfile: { name: '用户' } as any,
+        const payload = await buildChatRequestPayload({ scene: 'chat.private', char: char('orphan'), userProfile: { name: '用户' } as any,
             groups: [], emojis: [], categories: [], historyMsgs: history, contextLimit: 20,
             recallEntryPoint: 'chat_app', timelyByWorker });
         expect(payload.cleanedApiMessages.at(-1)).toMatchObject({ role: 'user', content: expect.stringContaining('今天线上新消息') });
@@ -233,7 +233,7 @@ describe('时间戳偏晚的旧记录不抢走用户刚发的话', () => {
         const sorted = [...history].sort((a, b) => a.timestamp - b.timestamp);
         expect(sorted.at(-1)?.id).toBe(2);
         expect(protectPendingChatTurn(sorted).map(message => message.id)).toEqual([1, 2, 3, 4, 5]);
-        const payload = await buildChatRequestPayload({ char: char('skew'), userProfile: { name: '用户' } as any,
+        const payload = await buildChatRequestPayload({ scene: 'chat.private', char: char('skew'), userProfile: { name: '用户' } as any,
             groups: [], emojis: [], categories: [], historyMsgs: history, contextLimit: 20, recallEntryPoint: 'chat_app' });
         expect(payload.cleanedApiMessages.at(-1)).toMatchObject({ role: 'user', content: expect.stringContaining('第5条') });
         expect(withChatContinuation(payload.fullMessages, '用户')).toEqual(payload.fullMessages);

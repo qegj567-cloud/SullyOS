@@ -48,7 +48,8 @@ const mediaAsset = (id: string) => !id.startsWith(calibratedDeliveryPrefix) && (
 // 云端生成的在飞登记（cloudGen/types.ts 的 isCloudGenStorageKey）和本机生成的在飞标记（localGenInterruption.ts）都是本机进度，不进备份。
 // 恢复时跳过的坏图清单描述的是这台设备上一次恢复，重启提示一次就清掉，也不进备份。
 // 救援警告带着这台设备的「已确认」记录，带到新设备会让那边少弹一次警告；新设备会自己去问 Worker。
-export const privateLocalExcluded = (key: string) => isTaskTraceKey(key) || isCloudGenStorageKey(key) || key === LOCAL_GEN_INFLIGHT_KEY || key === RESTORE_DAMAGED_ASSETS_KEY || key === AMSG_RESCUE_ALERT_LS_KEY || /location|geolocation|latitude|longitude|privacy|user_spaces_catalog|(?:im|ex)port.*progress/i.test(key);
+// 调试面板换假模型前的 API 备份（utils/fakeLlmSwitch.ts）带着真 Key，只对这台设备上那次切换有意义。
+export const privateLocalExcluded = (key: string) => isTaskTraceKey(key) || isCloudGenStorageKey(key) || key === LOCAL_GEN_INFLIGHT_KEY || key === RESTORE_DAMAGED_ASSETS_KEY || key === AMSG_RESCUE_ALERT_LS_KEY || key === 'sullyos_dev_fake_llm_v1' || /location|geolocation|latitude|longitude|privacy|user_spaces_catalog|(?:im|ex)port.*progress/i.test(key);
 export function spaceMediaRow(store: string, row: any) {
     if (store === 'assets' && row.id === HELP_HISTORY_KEY) return { id: row.id, data: helpMediaHistory(row.data) };
     if (store === 'characters') {

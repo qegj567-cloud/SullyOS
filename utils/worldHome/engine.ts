@@ -394,6 +394,7 @@ export async function runWorldEpisode(deps: WorldEpisodeDeps): Promise<WorldEpis
                 // 家园内角色的当前时间与日程日期都必须对齐同一把世界钟。
                 const worldChar = alignCharToWorldClock(world, char);
                 const payload = await buildChatRequestPayload({
+                    scene: 'apps.worldHome',
                     char: worldChar, userProfile, groups, emojis: [], categories: [],
                     historyMsgs, contextLimit, realtimeConfig, recallQueryHint,
                     recallEntryPoint: 'world_home',
@@ -658,6 +659,7 @@ export async function rerollWorldCharBeat(
         const contextLimit = Math.max(1, historyMsgs.length);
         const worldChar = alignCharToWorldClock(world, char);
         const payload = await buildChatRequestPayload({
+            scene: 'apps.worldHome',
             char: worldChar, userProfile, groups, emojis: [], categories: [],
             historyMsgs, contextLimit, realtimeConfig, recallQueryHint,
             recallEntryPoint: 'world_home',

@@ -24,6 +24,6 @@ it('completed care enters the same stored home turn and actual private-chat payl
  life.interact(p.id,'play');for(let i=0;i<6;i++)life.step(1);expect(home.records).toHaveLength(2);
  const char={id:'pet-bridge-test',name:'Sully',home3D:home,contextRangePolicyVersion:1,contextRangeMode:'manual',contextLimit:50} as CharacterProfile;
  await DB.saveCharacter(char);await DB.saveCharacter(char);const rows=await loadCharacterContextMessages(char);expect(rows).toHaveLength(1);
- const payload=await buildChatRequestPayload({char,userProfile:user,groups:[],emojis:[],categories:[],historyMsgs:rows,contextLimit:50,realtimeConfig:{weatherEnabled:false,newsEnabled:false} as any});
+ const payload=await buildChatRequestPayload({ scene: 'chat.private',char,userProfile:user,groups:[],emojis:[],categories:[],historyMsgs:rows,contextLimit:50,realtimeConfig:{weatherEnabled:false,newsEnabled:false} as any});
  expect(JSON.stringify(payload)).toContain('年糕');expect(rows[0].content).toContain('吃了小雨给的零食');expect(rows[0].content).toContain('和小雨玩了一会儿');
 });

@@ -14578,10 +14578,18 @@ function processLLMRound(state, llmOutputText, build, mcp, schedule, iteration, 
   const hasNativeSchedule = nativeScheduleCalls.some(
     (tc) => tc?.function?.name === AMSG_FIRE_SCHEDULE_TOOL
   );
-  const scheduleTextCalls = schedule ? extractFireScheduleTextCalls(roundText) : [];
+  const scheduleTextCalls = extractFireScheduleTextCalls(roundText);
+  if (!schedule && scheduleTextCalls.length > 0) {
+    console.warn("[amsg:agentic]", {
+      type: "schedule_text_without_tool",
+      taskId: build.taskId,
+      iteration,
+      count: scheduleTextCalls.length
+    });
+  }
   const scheduleCalls = [
     ...nativeScheduleCalls,
-    ...(hasNativeSchedule ? [] : scheduleTextCalls).map((c) => ({
+    ...(hasNativeSchedule || !schedule ? [] : scheduleTextCalls).map((c) => ({
       id: `sched_${state.mcpCallSeq++}`,
       type: "function",
       function: { name: AMSG_FIRE_SCHEDULE_TOOL, arguments: JSON.stringify(c.args) }
@@ -14702,7 +14710,7 @@ function buildScheduledPush(message, build, extraMeta, bannerBody) {
 }
 
 // utils/amsgBundleVersion.ts
-var AMSG_BUNDLE_VERSION = "2026-11-24.5";
+var AMSG_BUNDLE_VERSION = "2026-11-27.2";
 
 // worker/amsg/src/reproduction.ts
 async function writeDiagnosticStage(writeState, runId, event, fields = {}) {
@@ -16295,6 +16303,95 @@ var buildAwayFireInstruction = (input) => [
   "\u4E0D\u8981\u50CF\u7CFB\u7EDF\u63D0\u9192\uFF0C\u4E5F\u4E0D\u8981\u63D0\u300C\u591A\u5C11\u5206\u949F\u300D\u8FD9\u79CD\u8BA1\u65F6\u3002"
 ].join("\n");
 
+// utils/worldbookScenes.ts
+var WORLDBOOK_SCENE_CATEGORIES = [
+  {
+    id: "chat",
+    label: "\u7EBF\u4E0A\u79C1\u804A",
+    subs: [
+      { id: "chat.private", label: "\u79C1\u804A" },
+      { id: "chat.collaboration", label: "\u534F\u540C\u5DE5\u4F5C" },
+      { id: "chat.qqBridge", label: "QQ \u6865", hidden: true }
+    ]
+  },
+  {
+    id: "proactive",
+    label: "\u89D2\u8272\u4E3B\u52A8\u627E\u4F60",
+    subs: [
+      { id: "proactive.scheduled", label: "\u5B9A\u65F6\u4E3B\u52A8\u6D88\u606F" },
+      { id: "proactive.self", label: "\u89D2\u8272\u81EA\u5DF1\u7EA6\u7684\u4E0B\u4E00\u6761" },
+      { id: "proactive.away", label: "\u79BB\u5F00\u540E\u6D88\u606F" },
+      { id: "proactive.dateLeave", label: "\u89C1\u9762\u79BB\u5F00\u63D0\u9192" }
+    ]
+  },
+  {
+    id: "group",
+    label: "\u591A\u4EBA",
+    subs: [
+      { id: "group.groupChat", label: "\u7FA4\u804A" },
+      { id: "group.charPrivate", label: "\u89D2\u8272\u95F4\u79C1\u804A" }
+    ]
+  },
+  {
+    id: "offline",
+    label: "\u7EBF\u4E0B\u5728\u573A",
+    subs: [
+      { id: "offline.date", label: "\u89C1\u9762" },
+      { id: "offline.call", label: "\u901A\u8BDD" },
+      { id: "offline.home3d", label: "3D \u5C0F\u5C4B" },
+      { id: "offline.companion", label: "\u684C\u9762\u966A\u4F34" },
+      { id: "offline.room", label: "\u5C0F\u5C0F\u7A9D" }
+    ]
+  },
+  {
+    id: "apps",
+    label: "\u5176\u4ED6 App \u73A9\u6CD5",
+    subs: [
+      { id: "apps.storyTheater", label: "\u89C1\u9762\xB7\u5267\u60C5", appManaged: true },
+      { id: "apps.trpg", label: "\u8DD1\u56E2" },
+      { id: "apps.spark", label: "Spark" },
+      { id: "apps.friendFeed", label: "\u54D4\u54D4" },
+      { id: "apps.checkPhone", label: "\u67E5\u624B\u673A" },
+      { id: "apps.personaSim", label: "\u4EBA\u683C\u6A21\u62DF" },
+      { id: "apps.dream", label: "\u68A6\u5883" },
+      { id: "apps.schedule", label: "\u65E5\u7A0B" },
+      { id: "apps.scheduleTheater", label: "\u65E5\u7A0B\u5C0F\u5267\u573A" },
+      { id: "apps.timeContract", label: "\u65F6\u5149\u5951\u7EA6" },
+      { id: "apps.journal", label: "\u4EA4\u6362\u65E5\u8BB0" },
+      { id: "apps.study", label: "\u81EA\u4E60\u5BA4" },
+      { id: "apps.songwriting", label: "\u5199\u6B4C" },
+      { id: "apps.guidebook", label: "\u653B\u7565\u672C" },
+      { id: "apps.novel", label: "\u7B14\u53CB\u4F1A" },
+      { id: "apps.lifeSim", label: "\u90FD\u5E02\u4EBA\u751F" },
+      { id: "apps.freeRoam", label: "\u81EA\u7531\u6D3B\u52A8" },
+      { id: "apps.vrFreeRoam", label: "\u5F7C\u65B9\xB7\u81EA\u7531\u6D3B\u52A8" },
+      { id: "apps.vrTheater", label: "\u5F7C\u65B9\xB7\u5267\u9662" },
+      { id: "apps.vrChipNote", label: "\u5F7C\u65B9\xB7\u82AF\u7247\u968F\u7B14" },
+      { id: "apps.worldHome", label: "\u5BB6\u56ED" },
+      { id: "apps.memoryDive", label: "\u8BB0\u5FC6\u6F5C\u884C" },
+      { id: "apps.like520", label: "\u7279\u522B\u65F6\u5149\xB7520" },
+      { id: "apps.qixi", label: "\u7279\u522B\u65F6\u5149\xB7\u4E03\u5915" },
+      { id: "apps.valentine", label: "\u7279\u522B\u65F6\u5149\xB7\u60C5\u4EBA\u8282" },
+      { id: "apps.whiteDay", label: "\u7279\u522B\u65F6\u5149\xB7\u767D\u8272\u60C5\u4EBA\u8282" },
+      { id: "apps.bank", label: "\u5B58\u94B1\u7F50", hidden: true },
+      { id: "apps.handbook", label: "\u624B\u8D26", hidden: true }
+    ]
+  },
+  {
+    id: "memory",
+    label: "\u8BB0\u5FC6\u4E0E\u6574\u7406",
+    subs: [
+      { id: "memory.summary", label: "\u8BB0\u5FC6\u603B\u7ED3\u4E0E\u5F52\u6863" },
+      { id: "memory.impression", label: "\u7528\u6237\u5370\u8C61" },
+      { id: "memory.style", label: "\u5199\u4F5C\u98CE\u683C\u5206\u6790" },
+      { id: "memory.palace", label: "\u8BB0\u5FC6\u5BAB\u6BBF\u6574\u7406" }
+    ]
+  }
+];
+var CATEGORIES = WORLDBOOK_SCENE_CATEGORIES;
+var CATEGORY_BY_ID = new Map(CATEGORIES.map((category) => [category.id, category]));
+var SUB_BY_ID = new Map(CATEGORIES.flatMap((category) => category.subs.map((sub) => [sub.id, { sub, category }])));
+
 // utils/worldbook.ts
 var rollWorldbookProbability = (probability, random = Math.random) => {
   if (probability <= 0) return false;
@@ -16303,8 +16400,18 @@ var rollWorldbookProbability = (probability, random = Math.random) => {
 };
 var ROLL_HEADER_RE = /\{\{AMSG_WB_SEC\}\}|\{\{AMSG_WB_CAT\}\}(#### \[[^\n]*\]\n)/g;
 var ROLL_BLOCK_RE = /\{\{AMSG_WB_IF:([^}]*)\}\}((?:(?!\{\{AMSG_WB_IF:)[\s\S])*?)\{\{\/AMSG_WB_IF\}\}/;
-var renderWorldbookRolls = (template, rolls, random = Math.random) => {
-  const hit = new Map(rolls.map((roll) => [roll.id, rollWorldbookProbability(roll.probability, random)]));
+var AMSG_PROACTIVE_KIND_SCENES = {
+  scheduled: "proactive.scheduled",
+  self: "proactive.self",
+  away: "proactive.away",
+  dateLeave: "proactive.dateLeave"
+};
+var PROACTIVE_KINDS = Object.keys(AMSG_PROACTIVE_KIND_SCENES);
+var renderWorldbookRolls = (template, rolls, random = Math.random, kind) => {
+  const hit = new Map(rolls.map((roll) => [
+    roll.id,
+    (!kind || !Array.isArray(roll.proactiveKinds) || roll.proactiveKinds.includes(kind)) && rollWorldbookProbability(roll.probability, random)
+  ]));
   let out = template;
   for (let m = ROLL_BLOCK_RE.exec(out); m; m = ROLL_BLOCK_RE.exec(out)) {
     const keep = m[1].split(",").some((id) => hit.get(decodeURIComponent(id)) === true);
@@ -22153,7 +22260,7 @@ ${buildReplyScopeRule(instant ? "user" : "scheduled")}
     const noticeTemplate = renderSentNotices(pack.template, stash.sentNoticeIds ?? []);
     const rolledPack = {
       ...pack,
-      template: Array.isArray(pack.worldbookRolls) ? renderWorldbookRolls(noticeTemplate, pack.worldbookRolls) : noticeTemplate
+      template: Array.isArray(pack.worldbookRolls) ? renderWorldbookRolls(noticeTemplate, pack.worldbookRolls, void 0, proactiveKindOf(stash)) : noticeTemplate
     };
     const prompt = insertUserHolidayInProfile(renderFirePack(rolledPack, ctx.now.getTime(), taskInstruction, {
       maxUnansweredSends,

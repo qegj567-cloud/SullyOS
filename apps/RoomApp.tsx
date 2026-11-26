@@ -656,7 +656,7 @@ const RoomApp: React.FC = () => {
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
                 body: JSON.stringify({ 
                     model: apiConfig.model, 
-                    messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, [{ role: "user", content: fallbackPrompt }])),
+                    messages: (await ContextBuilder.buildCharacterRequest({ ...characterContextInput, scene: 'offline.room' }, [{ role: "user", content: fallbackPrompt }])),
                     temperature: 0.5,
                     max_tokens: 8000 // Keep it tiny
                 }),
@@ -828,7 +828,7 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
                 body: JSON.stringify({ 
                     model: apiConfig.model,
-                    messages: (await ContextBuilder.buildCharacterRequest(characterContextInput, [{ role: "user", content: prompt }])),
+                    messages: (await ContextBuilder.buildCharacterRequest({ ...characterContextInput, scene: 'offline.room' }, [{ role: "user", content: prompt }])),
                     temperature: 0.5, // Lower temp for stability
                     max_tokens: 8000,
                     // Safety Settings injection for Gemini-based proxies

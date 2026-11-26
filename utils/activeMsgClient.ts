@@ -6,7 +6,8 @@ import { isMonthlyRecallEnabled } from './monthlyRecall';
 import { isAnthropicEndpoint } from './llmEndpoint';
 import { registerScheduledToolEnv, resolveScheduledLlmParams } from './dialogueLlmParams';
 import { resolveCharacterUser } from './userPersona';
-import { collectDeferredWorldbookRolls, deferWorldbookRolls, hasWorldbookRollMarker } from './worldbook';
+import type { AmsgProactiveKind } from './amsgFireSkipResult';
+import { collectDeferredWorldbookRolls, deferWorldbookRolls, filterWorldbooksForProactive, hasWorldbookRollMarker } from './worldbook';
 import { ackStoppedReplyReceipts, stoppedReplyStateEntries } from './amsgStoppedReplyClient';
 import { loadCharacterContextMessages } from './chatContextRange';
 import { expandHomeContextHistory } from './homeContextSegments';
@@ -1145,6 +1146,11 @@ export const buildFirePack = async (
      * （runLocalProactiveTurn）直接拿模板渲染，没有 worker 替它处理标记。缺省按本地处理。
      */
     forCloud?: boolean;
+    /**
+     * 本地当场生成（runLocalProactiveTurn）时这一次的主动消息类型：世界书只留这一类生效的条目，
+     * 与 worker 到点按类型去掉标记块的结果逐字一致。云端包不传（类型到点才知道）。
+     */
+    proactiveKind?: AmsgProactiveKind;
   },
 ): Promise<AmsgFirePack> => {
   const templateStub = opts?.templateStub === true;
@@ -1153,10 +1159,13 @@ export const buildFirePack = async (
   // 概率条目这一次不抽签、到点由 worker 现抽（与本地每轮都抽一致，见 worldbook 的 deferWorldbookRolls）。
   // 旧 Worker 不认那套标记，会把它原样漏进提示词，所以只在 bundle 版本放行时才推迟。
   const markersOk = opts?.forCloud === true && !templateStub && await workerSupportsTemplateMarkers();
-  const deferRolls = markersOk;
+  // 世界书生效场景：四类主动消息都不生效的条目一律不进包；只在部分类型生效的，能出标记时
+  // 跟概率条目一起推迟到点判（worldbookRolls 带 proactiveKinds），旧 Worker 出不了标记就整条带上
+  // （宁可多带不漏）。本地已知类型时直接按那一类挑。
+  const sceneBooks = char.mountedWorldbooks && filterWorldbooksForProactive(char.mountedWorldbooks, opts?.proactiveKind);
   char = {
     ...char, memoryPalaceInjection: '', roomPlatesInjection: '',
-    ...(deferRolls ? { mountedWorldbooks: deferWorldbookRolls(char.mountedWorldbooks) } : {}),
+    mountedWorldbooks: sceneBooks && markersOk ? deferWorldbookRolls(sceneBooks) : sceneBooks,
   };
   const [{ lastUserMessageAt, lastAwayAnchorAt, awayAnchor }, recentMessages, library, schedule, expiredNotices] = await Promise.all([
     buildTimeGapHint(char.id),

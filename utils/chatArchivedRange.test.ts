@@ -16,6 +16,7 @@ vi.mock('./chatRequestPayload', () => ({ buildChatRequestPayload: vi.fn(async ()
 let current: ReturnType<typeof useChatAI>;
 function Probe({ char }: { char: CharacterProfile }) {
     current = useChatAI({
+        worldbookScene: 'chat.private',
         char, userProfile: { name: '用户' } as any,
         apiConfig: { baseUrl: 'https://example.test/v1' }, groups: [], emojis: [], categories: [],
         realtimeConfig: {} as any, addToast: vi.fn(), setMessages: vi.fn(), updateCharacter: vi.fn(), updateUserProfile: vi.fn(),

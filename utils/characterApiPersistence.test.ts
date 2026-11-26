@@ -67,7 +67,7 @@ it.each(['full', 'text_only'] as const)('%s ZIP restores role credentials and pr
 
     let current!: ReturnType<typeof useChatAI>;
     function Probe({ value }: { value: any }) {
-        current = useChatAI({ char: value, apiConfig: globalApi, userProfile: { name: '用户' } as any,
+        current = useChatAI({ worldbookScene: 'chat.private', char: value, apiConfig: globalApi, userProfile: { name: '用户' } as any,
             groups: [], emojis: [], categories: [], realtimeConfig: {} as any,
             addToast: vi.fn(), setMessages: vi.fn(), updateCharacter: vi.fn(), updateUserProfile: vi.fn() });
         return null;
