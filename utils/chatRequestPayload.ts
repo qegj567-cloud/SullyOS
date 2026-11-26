@@ -462,7 +462,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
     // 私聊与 3D 家园共用本地语境分析：它告诉主模型“这句话此刻在做什么”，
     // 不指定具体记忆答案、不改变角色人格，也不进入其他 App 的专属写作提示。
     if (isChatConversationEntry(input.recallEntryPoint)) {
-        volatileTail += renderSmartContextGuidance(recallTrace);
+        volatileTail += renderSmartContextGuidance(recallTrace, false, char.name);
         if (char.chatCollaborationEnabled) {
             volatileTail += await prepare('collaboration',()=>loadCollaborationFileCabinetBlock(
                 char.id,

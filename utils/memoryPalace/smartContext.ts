@@ -61,15 +61,15 @@ export function canReusePalaceRecall(
 }
 
 /** 普通消息、即时对话和主动消息使用同一套智能语境提示词。 */
-export function renderSmartContextGuidance(trace: RecallTrace | undefined, proactive = false): string {
+export function renderSmartContextGuidance(trace: RecallTrace | undefined, proactive = false, charName = '你'): string {
     if (!trace) return '';
     let text = renderLocalContextGuidance(trace.contextAnalyzer);
-    text += renderInteractionAdaptationGuidance(trace.interactionAdaptation?.analysis);
+    text += renderInteractionAdaptationGuidance(trace.interactionAdaptation?.analysis, charName);
     const engagement = trace.deepEngagement;
     if (engagement?.engine === 'legacy_depth') {
         text += renderDeepEngagementGuidance(engagement.analysis as DeepEngagementAnalysis | undefined);
     } else if (engagement?.engine === 'conversation_v2') {
-        text += renderConversationEngagementGuidance(engagement.analysis as ConversationEngagementAnalysis | undefined);
+        text += renderConversationEngagementGuidance(engagement.analysis as ConversationEngagementAnalysis | undefined, charName);
     }
     if (!text || !proactive) return text;
     return [

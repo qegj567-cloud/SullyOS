@@ -129,13 +129,53 @@ afterEach(() => {
 });
 
 describe('timelyByWorker —— 时效段交给 worker，前端这份不重复烤', () => {
+    it.each([
+        [false, '我胃突然有点痛，好怕是胃癌'],
+        [true, '我胃突然有点痛，好怕是胃癌'],
+        [false, '今天被同事阴阳了，烦死了'],
+        [true, '今天被同事阴阳了，烦死了'],
+    ])('敏感场景保留不同角色卡、共用防踩雷底线（worker=%s，%s）', async (timelyByWorker, content) => {
+        localStorage.setItem('os_memory_palace_config', JSON.stringify({
+            featureFlags: { recallRouter: true, interactionAdaptation: true, deepEngagement: true },
+        }));
+        try {
+            const personas = [
+                { id: 'chat-persona-warm', name: '小澈', systemPrompt: '热情黏人，护短，表达直球。说话样本：我听着呢，你接着说！' },
+                { id: 'chat-persona-calm', name: '沈衡', systemPrompt: '克制沉稳，有自己的判断。说话样本：嗯，慢慢说。我在听。' },
+            ];
+            for (const persona of personas) {
+                const input = baseInput();
+                const payload = await buildChatRequestPayload({
+                    ...input, timelyByWorker, recallEntryPoint: 'chat_app',
+                    char: { ...input.char, ...persona, memoryPalaceEnabled: false },
+                    historyMsgs: [{ ...input.historyMsgs[0], charId: persona.id, content }],
+                });
+                const prompt = joinMessages(payload.fullMessages);
+                expect(prompt).toContain(persona.systemPrompt);
+                expect(prompt).not.toContain(personas.find(other => other.id !== persona.id)!.systemPrompt);
+                expect(prompt).toContain(`语气、语速、温度和句长 100% 归 ${persona.name} 自己`);
+                expect(prompt).toContain(`完全由 ${persona.name} 自己的性格决定`);
+                expect(prompt).toContain('立刻放下你的解释、接着了解，绝不嘴硬加码');
+                expect(prompt).toContain('不要把 ta 的需要换成你猜出来的需要');
+                expect(prompt).not.toMatch(/最多问一个容易回答的问题|不要为了安慰而自动站队/);
+                expect(payload.cleanedApiMessages.some(m => String(m.content).includes(content))).toBe(true);
+            }
+        } finally {
+            localStorage.removeItem('os_memory_palace_config');
+        }
+    });
+
     it('ChatApp 格式以简短 TOP 1 规则置于行为规范最前', async () => {
         const payload = await buildChatRequestPayload({ ...baseInput() });
         const systemPrompt = String(payload.fullMessages[0]?.content || '');
-        const topRule = '**TOP 1｜ChatApp 格式（本节最高优先级）**';
+        const topRule = '【TOP 1｜手机聊天模式（最高优先级）】';
         expect(systemPrompt).toContain(topRule);
-        expect(systemPrompt.indexOf(topRule)).toBeLessThan(systemPrompt.indexOf('1. **沉浸感**'));
-        expect(systemPrompt).toContain('你是发消息的真实存在，以自然短句、短气泡为主；一个气泡一行，气泡间直接另起一行（实际换行，不要输出“\\n”字样）。');
+        expect(systemPrompt.indexOf(topRule)).toBeLessThan(systemPrompt.indexOf('1. 格式与功能'));
+        expect(systemPrompt).toContain('气泡间直接实际换行（不要输出 "\\n" 字样）');
+        expect(systemPrompt).toContain('长短完全遵循你自己的说话习惯');
+        expect(systemPrompt).toContain('语气、语速、温度和句长 100% 归 阿一 自己');
+        expect(systemPrompt).not.toContain('任性');
+        expect(systemPrompt).not.toContain('相对更浓烈的表达');
         expect(systemPrompt).toContain('每行渲染为一个气泡；空格和标点不会拆泡');
     });
 
@@ -211,8 +251,8 @@ describe('timelyByWorker —— 时效段交给 worker，前端这份不重复�
             recallEntryPoint: 'world_home',
         });
 
-        expect(joinMessages(chatApp.fullMessages)).toContain('### 此刻的交流节奏');
-        expect(joinMessages(anotherApp.fullMessages)).not.toContain('### 此刻的交流节奏');
+        expect(joinMessages(chatApp.fullMessages)).toContain('【此刻的交流节奏】');
+        expect(joinMessages(anotherApp.fullMessages)).not.toContain('【此刻的交流节奏】');
         localStorage.removeItem('os_memory_palace_config');
     });
 
@@ -238,16 +278,13 @@ describe('timelyByWorker —— 时效段交给 worker，前端这份不重复�
         const chatApp = await buildChatRequestPayload({ ...depthInput, recallEntryPoint: 'chat_app' });
         const anotherApp = await buildChatRequestPayload({ ...depthInput, recallEntryPoint: 'world_home' });
 
-        expect(joinMessages(chatApp.fullMessages)).toContain('### 当前谈话参与策略');
-        expect(joinMessages(chatApp.fullMessages)).toContain('### 谈话参与原则');
-        expect(joinMessages(chatApp.fullMessages)).toContain('对方出现负面情绪，不代表当前谈话的目标是消除这种情绪');
-        expect(joinMessages(chatApp.fullMessages)).toContain('情绪是谈话的一部分，不应覆盖谈话本身');
-        expect(joinMessages(anotherApp.fullMessages)).not.toContain('### 当前谈话参与策略');
-        expect(joinMessages(anotherApp.fullMessages)).not.toContain('### 谈话参与原则');
+        expect(joinMessages(chatApp.fullMessages)).toContain('【谈话参与底线】');
+        expect(joinMessages(chatApp.fullMessages)).toContain('既关注对方此刻的感受，也关注事情本身发生了什么');
+        expect(joinMessages(anotherApp.fullMessages)).not.toContain('【谈话参与底线】');
         localStorage.removeItem('os_memory_palace_config');
     });
 
-    it('M3 v2 的核心原则不依赖当轮是否命中 opening', async () => {
+    it('M3 v2 空闲普通问答不注入整个谈话参与模块', async () => {
         localStorage.setItem('os_memory_palace_config', JSON.stringify({
             featureFlags: { deepEngagement: true },
         }));
@@ -266,10 +303,8 @@ describe('timelyByWorker —— 时效段交给 worker，前端这份不重复�
         });
         const joined = joinMessages(payload.fullMessages);
 
-        expect(joined).toContain('### 谈话参与原则');
-        expect(joined).toContain('对方出现负面情绪，不代表当前谈话的目标是消除这种情绪');
-        expect(joined).toContain('先听见，再了解，再形成看法');
-        expect(joined).not.toContain('### 当前谈话参与策略');
+        expect(joined).not.toContain('【谈话参与底线】');
+        expect(joined).not.toContain('以上仅供你把握当前聊到了哪一步');
         localStorage.removeItem('os_memory_palace_config');
     });
 
@@ -282,7 +317,7 @@ describe('timelyByWorker —— 时效段交给 worker，前端这份不重复�
             recallEntryPoint: 'chat_app',
         });
 
-        expect(joinMessages(payload.fullMessages)).not.toContain('### 谈话参与原则');
+        expect(joinMessages(payload.fullMessages)).not.toContain('【谈话参与底线】');
         localStorage.removeItem('os_memory_palace_config');
     });
 
@@ -305,9 +340,8 @@ describe('timelyByWorker —— 时效段交给 worker，前端这份不重复�
         });
         const joined = joinMessages(payload.fullMessages);
 
-        expect(joined).toContain('### 当前谈话参与策略');
-        expect(joined).toContain('对方正在开启一件还没有讲完的事情');
-        expect(joined).toContain('不要用“别想了”“回来就好”“一切都会过去”');
+        expect(joined).toContain('对方正在开启一件还没讲完的事');
+        expect(joined).toContain('不要用“别想了”“都会过去的”');
         expect(joined).not.toContain('### 此刻的交流深度');
     });
 
