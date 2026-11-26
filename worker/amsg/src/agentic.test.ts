@@ -850,6 +850,31 @@ describe('classifyNativeToolCalls — 认领与丢弃', () => {
   });
 });
 
+describe('processLLMRound — 没装排程时正文里的排程语法', () => {
+  it('只剥不执行：不进推送、不入列（回归守卫）', () => {
+    const state = createFireSessionState();
+    const d = processLLMRound(
+      state,
+      `那我晚点再来找你。\n${AMSG_FIRE_SCHEDULE_TOOL}({"delay_minutes": 30, "intent": "问问"})`,
+      build);
+    expect(d.decision).toBe('finish');
+    if (d.decision !== 'finish') return;
+    const text = d.pushPayloads.map((p) => p.message).join('');
+    expect(text).toContain('那我晚点再来找你。');
+    expect(text).not.toContain(`${AMSG_FIRE_SCHEDULE_TOOL}(`);
+  });
+
+  it('写在行内代码里的照原文保留', () => {
+    const d = processLLMRound(
+      createFireSessionState(),
+      `排程是这么写的：\`${AMSG_FIRE_SCHEDULE_TOOL}({"delay_minutes": 30})\``,
+      build);
+    expect(d.decision).toBe('finish');
+    if (d.decision !== 'finish') return;
+    expect(d.pushPayloads.map((p) => p.message).join('')).toContain(`${AMSG_FIRE_SCHEDULE_TOOL}(`);
+  });
+});
+
 describe('processLLMRound — 排程池混入 cancel / renew', () => {
   it('本轮只 native 取消了一条 → 正文里的排程语法照常认（不同意图不算跑两遍）', () => {
     const state = createFireSessionState();

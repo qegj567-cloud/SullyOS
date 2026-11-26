@@ -14578,10 +14578,18 @@ function processLLMRound(state, llmOutputText, build, mcp, schedule, iteration, 
   const hasNativeSchedule = nativeScheduleCalls.some(
     (tc) => tc?.function?.name === AMSG_FIRE_SCHEDULE_TOOL
   );
-  const scheduleTextCalls = schedule ? extractFireScheduleTextCalls(roundText) : [];
+  const scheduleTextCalls = extractFireScheduleTextCalls(roundText);
+  if (!schedule && scheduleTextCalls.length > 0) {
+    console.warn("[amsg:agentic]", {
+      type: "schedule_text_without_tool",
+      taskId: build.taskId,
+      iteration,
+      count: scheduleTextCalls.length
+    });
+  }
   const scheduleCalls = [
     ...nativeScheduleCalls,
-    ...(hasNativeSchedule ? [] : scheduleTextCalls).map((c) => ({
+    ...(hasNativeSchedule || !schedule ? [] : scheduleTextCalls).map((c) => ({
       id: `sched_${state.mcpCallSeq++}`,
       type: "function",
       function: { name: AMSG_FIRE_SCHEDULE_TOOL, arguments: JSON.stringify(c.args) }
@@ -14702,7 +14710,7 @@ function buildScheduledPush(message, build, extraMeta, bannerBody) {
 }
 
 // utils/amsgBundleVersion.ts
-var AMSG_BUNDLE_VERSION = "2026-11-27";
+var AMSG_BUNDLE_VERSION = "2026-11-27.2";
 
 // worker/amsg/src/reproduction.ts
 async function writeDiagnosticStage(writeState, runId, event, fields = {}) {

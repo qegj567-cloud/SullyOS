@@ -120,11 +120,14 @@ describe('最终正文里剩下的工具调用', () => {
       .toEqual({ content: '晚安', unexecuted: 0, unexecutedMcp: 0 });
   });
 
-  it('原生 / 未开 2.0：不看也不动', () => {
+  it('原生 / 未开 2.0：排程语法没教过也剥掉、报数，不执行（与云端同一口径，回归守卫）', () => {
     expect(resolveFinalScheduleText(`晚安\n${CALL}`, 'native', mcpResolve))
-      .toEqual({ content: `晚安\n${CALL}`, unexecuted: 0, unexecutedMcp: 0 });
+      .toEqual({ content: '晚安', unexecuted: 1, unexecutedMcp: 0 });
     expect(resolveFinalScheduleText(`晚安\n${CALL}`, 'off', null))
-      .toEqual({ content: `晚安\n${CALL}`, unexecuted: 0, unexecutedMcp: 0 });
+      .toEqual({ content: '晚安', unexecuted: 1, unexecutedMcp: 0 });
+    // 行内代码里的是在讲语法，照原文保留。
+    expect(resolveFinalScheduleText(`写法是 \`${CALL}\``, 'off', null))
+      .toEqual({ content: `写法是 \`${CALL}\``, unexecuted: 0, unexecutedMcp: 0 });
   });
 });
 
@@ -249,9 +252,10 @@ describe('useChatAI 的接线', () => {
     expect(src).toMatch(/scheduleTextStall\.record\(/);
   });
 
-  it('流式预览在正文模式下扣住排程语法；工具轮开场白里已执行的调用剥掉', () => {
-    expect(src).toMatch(/amsg2ToolMode === 'text'\s*\?\s*maskAmsg2ScheduleSyntaxForPreview\(fullText\)/);
+  it('流式预览任何模式都扣住排程语法；工具轮开场白里的调用剥掉', () => {
+    expect(src).toMatch(/computeStreamPreviewBubbles\(maskAmsg2ScheduleSyntaxForPreview\(fullText\)\)/);
     expect(src).toMatch(/amsg2LeadIns\.map\(stripAmsg2ScheduleSyntax\)/);
+    expect(src).not.toMatch(/if \(amsg2ToolMode === 'text'\) \{\s*const cleanedLeadIns/);
   });
 
   it('点单类原生工具轮里写的排程也代为执行（三个原生循环都接上）', () => {
