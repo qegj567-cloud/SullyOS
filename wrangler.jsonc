@@ -4,14 +4,7 @@
   "compatibility_date": "2026-08-13",
   "workers_dev": true,
   "preview_urls": true,
-  "durable_objects": {
-    "bindings": [{ "name": "MODEL_BUDGET", "class_name": "ModelRelayBudget" }]
-  },
   "migrations": [{ "tag": "model-budget-v1", "new_sqlite_classes": ["ModelRelayBudget"] }],
-  "ratelimits": [{
-    "name": "MODEL_RATE", "namespace_id": "12001",
-    "simple": { "limit": 120, "period": 60 }
-  }],
   "assets": {
     "directory": "./dist",
     "not_found_handling": "none"
