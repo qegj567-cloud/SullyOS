@@ -6,6 +6,8 @@ export interface LlmResponseInfo {
     bodyRead?: boolean;
 }
 export interface LlmRequestInit extends RequestInit {
+    /** Unsaved base explicitly being tested in the main model settings. */
+    __sullySettingsModelBase?: string;
     __sullyResponseInfo?: LlmResponseInfo;
 }
 

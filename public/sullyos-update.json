@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "versionCode": 30523,
-  "versionName": "3.5.23",
-  "apkUrl": "https://github.com/qegj567-cloud/SullyOS/releases/download/android-v3.5.23/SullyOS-Android-v3.5.23.apk",
-  "sha256": "c6a7bc7004303b8f83cd0c50b070b44d2c215045e0b46b46c6944f25307b21e5",
-  "sizeBytes": 103908784,
-  "publishedAt": "2026-11-24T04:54:08Z",
+  "versionCode": 30524,
+  "versionName": "3.5.24",
+  "apkUrl": "https://github.com/qegj567-cloud/SullyOS/releases/download/android-v3.5.24/SullyOS-Android-v3.5.24.apk",
+  "sha256": "710383724ebe2ca507b3ac5d4c29ddf7956335cd12888a224058a937522c6bf3",
+  "sizeBytes": 103921851,
+  "publishedAt": "2026-11-26T06:34:52Z",
   "releaseNotes": [
-    "同步正式版 master b5bece1f：主动消息 2.0 对齐云端与本机提示词，新增能力表，后台任务可单独暂停",
-    "改进设置页、备份导出和分页恢复；安卓继续使用正式通道",
-    "沿用原签名，可覆盖升级；使用主动消息 2.0 的用户请在设置中单独更新后台至 2026-11-24"
+    "安卓主 API 支持 OpenAI 兼容 HTTPS 地址的模型列表与非流式聊天原生直连，不限域名",
+    "需要直连时关闭主 API 的流式开关并保存；网页版、流式及主动消息 2.0 云端调用保持原方式",
+    "沿用原包名与正式签名，可覆盖升级保留数据"
   ]
 }

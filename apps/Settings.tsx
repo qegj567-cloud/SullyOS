@@ -1460,6 +1460,7 @@ const Settings: React.FC = () => {
     setStatusMsg('正在连接...');
     try {
         const response = await fetchLlm(`${baseUrl}/models`, {
+            __sullySettingsModelBase: baseUrl,
             method: 'GET',
             headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }
         });
@@ -2737,6 +2738,7 @@ const Settings: React.FC = () => {
                         setTestApiResult(null);
                         try {
                             const res = await fetchLlm(`${normalizeLlmBaseUrl(localUrl, localApiType)}/chat/completions`, {
+                                __sullySettingsModelBase: normalizeLlmBaseUrl(localUrl, localApiType),
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localKey.trim()}` },
                                 body: JSON.stringify({
