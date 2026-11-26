@@ -96,6 +96,7 @@ import { loadChatInputPreferences, saveChatInputPreferences } from '../utils/cha
 import { collectAppearance, collectCharSettings, collectDataScale, collectFeatureFlagsAsync, collectSARFeatureFlags } from '../utils/analyticsSnapshot';
 import { normalizeApiConfig, normalizeApiPreset } from '../utils/apiConfigNormalize';
 import { fetchLlm } from '../utils/anthropicApi';
+import { androidModelHttp, useAndroidModelHttp } from '../utils/androidModelHttp';
 import { getCheckPhoneApi, setCheckPhoneApi } from '../utils/checkPhoneApi';
 import { markBackupDone } from '../utils/backupReminder';
 import { collectSARLocalBackup, restoreSARLocalBackup } from '../utils/vrWorld/sarBackup';
@@ -1276,7 +1277,9 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           });
 
           try {
-              let response = await fetchLlm(sendArgs[0], sendArgs[1], originalFetch, true);
+              const modelTransport = useAndroidModelHttp(sendArgs[0], sendArgs[1], routesAtStart.apiConfig.baseUrl)
+                  ? androidModelHttp : originalFetch;
+              let response = await fetchLlm(sendArgs[0], sendArgs[1], modelTransport, true);
               receivedResponseHeaders = {
                   status: response.status,
                   headersMs: Date.now() - fetchStartedAt,
