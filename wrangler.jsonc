@@ -4,7 +4,10 @@
   "compatibility_date": "2026-08-13",
   "workers_dev": true,
   "preview_urls": true,
-  "migrations": [{ "tag": "model-budget-v1", "new_sqlite_classes": ["ModelRelayBudget"] }],
+  "migrations": [
+    { "tag": "model-budget-v1", "new_sqlite_classes": ["ModelRelayBudget"] },
+    { "tag": "remove-model-budget-v2", "deleted_classes": ["ModelRelayBudget"] }
+  ],
   "assets": {
     "directory": "./dist",
     "not_found_handling": "none"
