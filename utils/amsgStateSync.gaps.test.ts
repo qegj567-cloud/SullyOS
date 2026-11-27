@@ -43,7 +43,7 @@ describe('utils 层直写 DB 后的内存回灌（事件名契约）', () => {
     const handler = sliceBetween(src, 'const tasksAdoptedHandler', 'const musicProfileSyncHandler');
     expect(handler).toContain('detail || {}).charId');
     // 顺序钉住：任务清单只落在 DB，必须重读 DB 再合并，不能拿内存里那份旧的。
-    expect(handler).toMatch(/DB\.getAllCharacters\(\)[\s\S]*?activeMsg2Config: fresh\.activeMsg2Config/);
+    expect(handler).toMatch(/DB\.getCharacter\(charId\)[\s\S]*?activeMsg2Config: fresh\.activeMsg2Config/);
     // 只搬 activeMsg2Config 一个字段：整对象覆盖会把内存里更新的字段顶回去。
     expect(handler).not.toMatch(/setCharacters\([\s\S]*?\?\s*fresh\s*:/);
     // 合并进内存 + 打脏是一套动作，缺哪一半都算断供。
