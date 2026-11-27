@@ -1,4 +1,4 @@
-import TurnRevisionPanel, { type TurnRevisionControls } from './TurnRevisionPanel';
+import TurnRevisionPanel, { Bubble, type TurnRevisionControls } from './TurnRevisionPanel';
 import { useLocalBackHandler } from '../../hooks/useLocalBackHandler';
 export type CalibrationTab = 'memory' | 'format' | 'reroll';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -80,7 +80,7 @@ function boxDateLabel(nodes: RepairNode[]): string {
 }
 
 const MemoryRepairPortal: React.FC<MemoryRepairPortalProps> = ({
-    inline=false, initialTab, canRevise, onPreview, onAccept,
+    inline=false, initialTab, roundRows = [], canRevise, onPreview, onAccept,
     char,
     user,
     apiConfig,
@@ -507,7 +507,7 @@ const MemoryRepairPortal: React.FC<MemoryRepairPortalProps> = ({
                                 className={`flex-1 rounded-xl min-h-11 text-sm ${tab === value ? 'bg-violet-100 text-slate-900 font-bold' : 'text-white/75'}`}
                                 onClick={() => { setTab(value); setSettingsOpen(false); }}>{label}</button>)}
                     </nav>
-                    {tab !== 'memory' ? <TurnRevisionPanel key={tab} mode={tab} canRevise={canRevise}
+                    {tab !== 'memory' ? <TurnRevisionPanel key={tab} mode={tab} roundRows={roundRows} canRevise={canRevise}
                         onPreview={onPreview} onAccept={onAccept} onDone={onClose} setSaving={setSaving} /> : <>
                     <div className="memory-guide-orbit" aria-label={roomChibi ? `${char.name}的小屋 Chibi` : '一枚未知光点'}>
                         {roomChibi
@@ -517,6 +517,10 @@ const MemoryRepairPortal: React.FC<MemoryRepairPortalProps> = ({
                     <div className="memory-guide-name">？？？</div>
                     <p className="memory-guide-line">{guideCopy.greeting}</p>
 
+                    {roundRows.length > 0 && <details className="mt-4 rounded-xl border border-white/15 p-3 text-sm text-white/90">
+                        <summary>本轮回复</summary>
+                        <ul className="mt-2 space-y-2">{roundRows.map(row => <Bubble key={row.id} row={row}/>)}</ul>
+                    </details>}
                     <section className="memory-trail">
                         <div className="memory-trail-title">
                             {loading ? '正在辨认刚才的脚印……' : snapshot?.receipt ? guideCopy.trail : guideCopy.empty}
@@ -686,7 +690,7 @@ const MemoryRepairPortal: React.FC<MemoryRepairPortalProps> = ({
                                         <summary className="cursor-pointer select-none">查看刚才这一轮对话</summary>
                                         <div className="mt-3 pl-3 border-l border-white/10 space-y-2 leading-6">
                                             {userMessage && <p><b className="text-white/65">你：</b>{userMessage}</p>}
-                                            {assistantReply && <p><b className="text-white/65">{char.name}：</b>{assistantReply}</p>}
+                                            {roundRows.length > 0 && <div><b className="text-white/65">{char.name}：</b><ul className="space-y-2 text-white/90">{roundRows.map(row => <Bubble key={row.id} row={row}/>)}</ul></div>}
                                         </div>
                                     </details>
                                 )}

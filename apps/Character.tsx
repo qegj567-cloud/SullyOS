@@ -1146,11 +1146,12 @@ ${isInitialGeneration ? `
       if (!file) return;
 
       try {
-          const json = await readShareText(file, 'character');
-          const data: CharacterExportData = JSON.parse(json);
-
-          if (data.type !== 'sully_character_card') {
-              throw new Error('无效的角色卡文件');
+          let data: CharacterExportData;
+          try {
+              data = JSON.parse(await readShareText(file, 'character'));
+              if (data?.type !== 'sully_character_card') throw new Error();
+          } catch {
+              throw new Error('糯米机仅支持导入糯米机专用格式角色卡，无法导入酒馆角色卡。');
           }
 
           // 导入侧同样剥离凭据 / 美化 / 语言 / 运行时状态：即便对方给的是旧版

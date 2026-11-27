@@ -125,3 +125,13 @@ export const interactionGapNote = (lastTs?: number, nowTs: number = Date.now()):
     const feel = days >= 1 ? '已经有一阵子没联系了' : '不久前刚联系过';
     return `⌛ 距离你和对方上次联系，已经过去 ${span}（${feel}）——请把这种体感自然带入当下的状态与心情。\n`;
 };
+
+// 同一份社交材料的阅读时间与发表时间都按阅读者时区显示。
+export function socialReadingClock(timeZone?: string) {
+    const options: Intl.DateTimeFormatOptions = { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' };
+    let formatter: Intl.DateTimeFormat;
+    try { formatter = new Intl.DateTimeFormat('zh-CN', { ...options, timeZone }); }
+    catch { formatter = new Intl.DateTimeFormat('zh-CN', options); }
+    return (timestamp?: number) => timestamp && Number.isFinite(new Date(timestamp).getTime())
+        ? formatter.format(timestamp) : '时间未知';
+}

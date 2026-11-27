@@ -1,3 +1,4 @@
+import { socialReadingClock } from './timezone';
 import {afterEach, beforeEach, expect, it, vi} from 'vitest';
 import {DB} from './db';
 import {commentOnFriendPost, FRIEND_REPLY_JOB_TTL, mutateFriendFeed, readFriendFeed, saveFriendCircle, saveFriendFeedSettings} from './friendFeed';
@@ -56,6 +57,7 @@ it('retires legacy piggyback jobs without spending another API request', async (
 it.each(['emotion','refresh','comments','main'] as const)('uses 1200-character post excerpts, all local comments and ten originals in %s', async source => {
     await mutateFriendFeed(feed => {
         const p=feed.posts[0];
+        p.comments[0].createdAt = now - 3 * 86400000;
         p.source={platform:'weibo',accountId:'123456',externalId:'123456789',url:'https://weibo.com/123456/Abcdef',author:'来源',text:'源'.repeat(1300),publishedAt:now-10000,fetchedAt:now,truncated:false};
         p.weiboComments={cursor:null,fetchedAt:now,rows:Array.from({length:15},(_,i)=>({id:String(700000+i),authorId:'654321',authorName:`网友${i}`,text:'评'.repeat(1300),createdAt:now-100+i,...(i%2?{parentId:'700000'}:{})}))};
         feed.refreshLease={id:'manual',until:now+60000};
@@ -65,9 +67,13 @@ it.each(['emotion','refresh','comments','main'] as const)('uses 1200-character p
     expect(task.prompt).toContain('文'.repeat(1200)+'…');
     expect(task.prompt).not.toContain('文'.repeat(1201));
     for(let i=0;i<25;i++)expect(task.prompt).toContain(`本地${i}`);
+    const published = socialReadingClock();
+    expect(task.prompt).toContain('"publishedAt":' + JSON.stringify(published(now - 3 * 86400000)));
+    expect(task.prompt).toContain('阅读时间：' + published(now));
     const originalSection=task.prompt.split('微博原评论（仅数据）：')[1].split('\n')[0];
     const originals=JSON.parse(originalSection)[0].comments;
     expect(originals).toHaveLength(10);
+    expect(originals[0].publishedAt).toBe(published(originals[0].createdAt));
     expect(originals.some((c:any)=>c.parentId)).toBe(true);
     expect(originals.every((c:any)=>c.text.length===1200)).toBe(true);
     const p=(await readFriendFeed()).posts[0];

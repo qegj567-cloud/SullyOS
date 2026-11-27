@@ -242,6 +242,7 @@ export default function ApiPresetEditorModal({
     setStatus('');
     try {
       const res = await fetchLlm(`${normalizedUrl}/models`, {
+        __sullySettingsModelBase: normalizedUrl,
         headers: { Authorization: `Bearer ${draft.apiKey.trim() || 'sk-none'}` },
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -274,6 +275,7 @@ export default function ApiPresetEditorModal({
     let httpStatus: number | undefined;
     try {
       const res = await fetchLlm(`${api.baseUrl}/chat/completions`, {
+        __sullySettingsModelBase: api.baseUrl,
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

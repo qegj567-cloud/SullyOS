@@ -1544,6 +1544,7 @@ const Settings: React.FC = () => {
     setStatusMsg('正在连接...');
     try {
         const response = await fetchLlm(`${baseUrl}/models`, {
+            __sullySettingsModelBase: baseUrl,
             method: 'GET',
             headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }
         });
