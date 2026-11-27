@@ -1,3 +1,5 @@
+import ChatRecordManager from '../components/chat/ChatRecordManager';
+import { putImageBlobDeduped } from '../utils/blobRef';
 import { useChatNotificationSound } from '../hooks/useChatNotificationSound';
 import ChatRuntimeStyle from '../components/chat/ChatRuntimeStyle';
 import { resolveDialogueApi } from '../utils/characterApi';
@@ -1064,10 +1066,10 @@ const GroupChat: React.FC = () => {
         }
     };
 
-    const handleImageFile = async (file: File) => {
+    const handleImageFile = async (file: File, original = false) => {
         const finishImage = autoReply.beginSend(activeGroup?.id || null);
         try {
-            const base64 = await processImage(file, { maxWidth: 600, quality: 0.7, forceJpeg: true });
+            const base64 = original ? (await putImageBlobDeduped(file)).token : await processImage(file, { maxWidth: 600, quality: 0.7, forceJpeg: true });
             // 群聊图消息存令牌，二进制单独躺在 blob_assets 里（省掉 base64 那 ~33% 的膨胀）。
             // 同一张图之前存过就复用它的令牌；转不动时原样还回这条 data URL，图不会丢。
             await handleSendMessage(await migrateDataUrlToRef(base64), 'image');
@@ -1237,8 +1239,10 @@ const GroupChat: React.FC = () => {
 
     // ChatInputArea 的面板动作：群聊只处理表情发送/分类切换，
     // 表情包管理（导入/改名/删除/建分类）引导去私聊做——那套 Modal 全在 ChatModals 里
+    const [recordManagerOpen, setRecordManagerOpen] = useState(false);
     const handlePanelAction = (type: string, payload?: any) => {
         switch (type) {
+            case 'export-chat': setShowPanel('none'); setRecordManagerOpen(true); break;
             case 'send-emoji':
                 handleSendMessage(payload.url, 'emoji', {stickerName:payload.name});
                 break;
@@ -2663,6 +2667,7 @@ ${memberTimeline || '(暂无互动记录)'}
                 </div>
             </Modal>
 
+            {recordManagerOpen && activeGroup && <ChatRecordManager owner={{ id: activeGroup.id, group: true }} name={activeGroup.name} onClose={() => setRecordManagerOpen(false)} onImported={() => { void refreshMessages(activeGroup.id); }} />}
             {confirmDialog}
         </div>
     );

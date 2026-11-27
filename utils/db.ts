@@ -2217,13 +2217,23 @@ export const DB = {
   saveTask: async (task: Task): Promise<void> => {
       const db = await openDB();
       const transaction = db.transaction(STORE_TASKS, 'readwrite');
-      transaction.objectStore(STORE_TASKS).put(task);
+      await new Promise<void>((resolve, reject) => {
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error || new Error('日程保存失败'));
+          transaction.onabort = () => reject(transaction.error || new Error('日程保存已中断'));
+          transaction.objectStore(STORE_TASKS).put(task);
+      });
   },
 
   deleteTask: async (id: string): Promise<void> => {
       const db = await openDB();
       const transaction = db.transaction(STORE_TASKS, 'readwrite');
-      transaction.objectStore(STORE_TASKS).delete(id);
+      await new Promise<void>((resolve, reject) => {
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error || new Error('日程保存失败'));
+          transaction.onabort = () => reject(transaction.error || new Error('日程保存已中断'));
+          transaction.objectStore(STORE_TASKS).delete(id);
+      });
   },
 
   getAllAnniversaries: async (): Promise<Anniversary[]> => {
@@ -2242,13 +2252,23 @@ export const DB = {
   saveAnniversary: async (anniversary: Anniversary): Promise<void> => {
       const db = await openDB();
       const transaction = db.transaction(STORE_ANNIVERSARIES, 'readwrite');
-      transaction.objectStore(STORE_ANNIVERSARIES).put(anniversary);
+      await new Promise<void>((resolve, reject) => {
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error || new Error('日程保存失败'));
+          transaction.onabort = () => reject(transaction.error || new Error('日程保存已中断'));
+          transaction.objectStore(STORE_ANNIVERSARIES).put(anniversary);
+      });
   },
 
   deleteAnniversary: async (id: string): Promise<void> => {
       const db = await openDB();
       const transaction = db.transaction(STORE_ANNIVERSARIES, 'readwrite');
-      transaction.objectStore(STORE_ANNIVERSARIES).delete(id);
+      await new Promise<void>((resolve, reject) => {
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error || new Error('日程保存失败'));
+          transaction.onabort = () => reject(transaction.error || new Error('日程保存已中断'));
+          transaction.objectStore(STORE_ANNIVERSARIES).delete(id);
+      });
   },
 
   getRoomTodo: async (charId: string, date: string): Promise<RoomTodo | null> => {

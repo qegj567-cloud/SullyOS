@@ -469,3 +469,52 @@ it('inherits voice bytes by reference without losing the original voice', async 
     expect(inherited.blobRef).toBe(original.blobRef);
     expect(await (await DB.getBlobAsset(inherited.blobRef.slice(8)))!.text()).toBe('voice-bytes');
 });
+
+
+it('restores inherited chat, memory and voice configuration from an actual full export', async () => {
+    localStorage.setItem('chat_original_photo_notice_dismissed', '1');
+    const source = await openSpaceDB('u_backup');
+    await commitSpaceRows(source, { characters: [{ id: 'transfer-role', name: 'Transfer', memories: [{ palaceMemoryId: 'transfer-memory', summary: 'remember' }], voiceId: 'voice-setting' }], messages: [{ id: 3, charId: 'transfer-role', role: 'user', type: 'text', content: 'history', timestamp: 123 }], memory_nodes: [{ id: 'transfer-memory', charId: 'transfer-role', content: 'remember' }] });
+    const [copy] = await inheritSpaceCharacters('u_backup', ['transfer-role'], { chat: true, memory: true });
+    const zip = await JSZip.loadAsync(await (await exportUserSpaces('full', 'current')).arrayBuffer());
+    const db = await openSpaceDB('default');
+    await commitSpaceRows(db, { characters: [], messages: [], memory_nodes: [] }, true);
+    await importUserSpaces(zip);
+    expect(localStorage.getItem('chat_original_photo_notice_dismissed')).toBe('1');
+    expect((await readSpaceStore(db, 'characters')).find(c => c.id === copy.id).voiceId).toBe('voice-setting');
+    expect((await readSpaceStore(db, 'messages')).find(m => m.charId === copy.id).content).toBe('history');
+    expect((await readSpaceStore(db, 'memory_nodes')).find(m => m.charId === copy.id).content).toBe('remember');
+});
+
+it.each(['full', 'text_only'] as const)('restores calendar dates, completed tasks and shared appearance from %s export', async mode => {
+    const db = await openSpaceDB('default');
+    const task = { id: 'calendar-task', title: '生活待办', deadline: '2026-11-27', isCompleted: true, supervisorId: '', tone: 'gentle', createdAt: 1 };
+    const anniversary = { id: 'calendar-anniversary', title: '纪念日', date: '2026-11-27', charId: '' };
+    await commitSpaceRows(db, { tasks: [task], anniversaries: [anniversary] });
+    localStorage.setItem('os_theme', JSON.stringify({ scheduleAppTheme: 'soft' }));
+    const zip = await JSZip.loadAsync(await (await exportUserSpaces(mode, 'current')).arrayBuffer());
+    await commitSpaceRows(db, { tasks: [], anniversaries: [] }, true);
+    localStorage.setItem('os_theme', JSON.stringify({ scheduleAppTheme: 'cyber' }));
+    await importUserSpaces(zip);
+    expect(await readSpaceStore(db, 'tasks')).toEqual([task]);
+    expect(await readSpaceStore(db, 'anniversaries')).toEqual([anniversary]);
+    expect(JSON.parse(localStorage.getItem('os_theme')!).scheduleAppTheme).toBe('soft');
+});
+
+it('restores manually edited emotion input and preserves a later explicit deletion in backup', async () => {
+    const { editCharacterEmotion } = await import('./emotionEditing');
+    const buff = { id: 'manual-emotion', name: 'old', label: '旧情绪', intensity: 1 as const };
+    await DB.saveCharacter({ id: 'emotion-backup', name: '情绪备份', activeBuffs: [buff], buffInjection: '旧情绪' } as any);
+    await editCharacterEmotion('emotion-backup', buff, { label: '期待', description: '约好见面', intensity: 2 });
+    for (const remove of [false, true]) {
+        if (remove) await editCharacterEmotion('emotion-backup', (await DB.getCharacter('emotion-backup'))!.activeBuffs![0], null);
+        const expected = await DB.getCharacter('emotion-backup');
+        const zip = await JSZip.loadAsync(await (await exportUserSpaces('text_only', 'current')).arrayBuffer());
+        await commitSpaceRows(await openSpaceDB('default'), { characters: [] }, true);
+        await importUserSpaces(zip);
+        const restored = (await DB.getCharacter('emotion-backup'))!;
+        expect(restored.activeBuffs).toEqual(expected!.activeBuffs);
+        expect(restored.buffInjection).toBe(expected!.buffInjection);
+        if (remove) expect(restored.buffInjection).toBe('');
+    }
+});

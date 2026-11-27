@@ -1,3 +1,4 @@
+import { resolveTimeContractTheme } from './timeContract';
 import type { useOS } from '../context/OSContext';
 import type { CharacterProfile } from '../types';
 import { getThinkingChainSettings } from './thinkingChainPrompt';
@@ -46,7 +47,7 @@ export async function readHelpDeskSettings(os: SettingsSource, char?: CharacterP
             手动分步维护: memoryPalaceConfig.manualMaintenance === true,
         },
         实时感知: { 天气开关: !!realtimeConfig.weatherEnabled, 热点开关: !!realtimeConfig.newsEnabled },
-        外观: { 深色模式: !!os.theme.darkMode },
+        外观: { 深色模式: !!os.theme.darkMode, 时光契约与桌面日历: resolveTimeContractTheme(os.theme.scheduleAppTheme) },
         主动消息全局: globalPush ? { 总开关: isAmsg2GloballyEnabled(globalPush), Worker地址已填: !!globalPush.workerUrl?.trim() } : '未能读取',
         指定角色设置: char ? {
             对话来源: char.dialogueApi ? '角色独立 API' : '跟随全局',

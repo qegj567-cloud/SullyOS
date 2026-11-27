@@ -141,3 +141,7 @@ HTML 卡片仍在独立 iframe 沙盒中；白框控制其外壳和排版，不�
 - `.sully-chat-root` 仅包裹聊天舞台本身（顶栏、消息流、底部输入区／加号与表情面板，以及舞台内直出的转账详情弹层 `.sully-chat-transfer-overlay` / `.sully-chat-transfer-dialog`、日程变更卡 `.sully-schedule-change`）。设置弹窗（如心象设置）、装扮工坊与自由搭配面板、小程序（瑞幸／麦当劳）、全屏语音／图片预览、消息内展开的全屏转发／520 信纸弹层及全局确认弹窗均挂载或 Portal 到 `.sully-chat-root` 之外，独立聊天页外层带 `text-slate-900`（家园小手机 `homePhone` 模式除外，保留小手机自身配色与 `.home-phone .fixed` 高度约束），使深色白框的文字配色仅作用于聊天舞台，不向通用弹窗或表单继承。
 - Tailwind Preflight 为 `input`、`textarea`、`select` 设置 `color: inherit`：浅色背景上的输入框与下拉框需要显式声明文字色与占位符色（如 `text-slate-800 placeholder:text-slate-400`；聊天默认浅色输入栏将 `text-slate-800` 放在 `.sully-chat-inputbar` 外壳上，兼顾防顶层白字继承与白框对输入栏的继承覆盖），深色底上的原生 `<select>` 与 `<input type="date">`／`<input type="time">` 声明 `[color-scheme:dark]` 并用 `[&_option]` 覆盖含 `<optgroup>` 在内的选项配色，避免 Windows / Chromium 原生弹出列表出现白底浅字。
 - 内置白框的通用面板／卡片覆盖使用零权重的 `:not(:where(...))` 排除语义功能元素，避免抬高选择器权重压过后续状态规则：颜色色板点（`.sully-chat-swatch-dot`）、未读或状态角标点（`.sully-chat-badge-dot`）、分页指示点（`.sully-chat-page-dot`）、可扫描二维码白底区（`.sully-chat-qr-surface`）、进度条填充（`.sully-chat-meter-fill`），以及自带独立视觉设计的七夕活动卡（`[data-card-variant="qixi_event_card"]`）与 520 典藏卡（`[data-card-variant="like520_card"]`）。回归守卫见 `utils/__tests__/themeContrastInheritance.test.ts`。
+
+角色名片心声保持原 `.chat-profile-thought` / `.chat-profile-caption` 选择器，长按展开编辑区采用显式浅底深字；不改变制作器示例格式，装扮预览不允许写心声。删除用顶层确认框，空值阻止回退日程心声。
+
+角色名片 `.chat-profile-emotions` 内的单条情绪支持长按、右键或聚焦条目后回车编辑。编辑区 `.chat-profile-emotion-editor` 为显式浅底深字，预览不挂载写入操作。保留原列表/详情选择器；编辑仅修改名称、说明与强度，删除需确认。

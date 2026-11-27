@@ -1,10 +1,12 @@
+import ProfileEmotionList from './ProfileEmotionList';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 import { trackEvent } from '../../utils/analytics';
 import React, { lazy, Suspense, useEffect, useId, useRef, useState } from 'react';
 import { CaretRight, LinkSimple, SlidersHorizontal, X } from '@phosphor-icons/react';
 import type { CharacterProfile, DailySchedule } from '../../types';
 import { characterRemark } from '../../utils/characterRemark';
 import { isImageValue } from '../../utils/blobRef';
-import { getLastInnerState } from '../../utils/emotionState';
+import { getLastInnerState, hasSavedInnerState, saveInnerState } from '../../utils/emotionState';
 import { isScheduleFeatureOn } from '../../utils/scheduleFeature';
 import { getCurrentScheduleSlotIndex } from '../../utils/scheduleTime';
 import { resolveCharTimeZone, tzShortLabel } from '../../utils/timezone';
@@ -26,7 +28,17 @@ function ProfileBackHandler({back}: {back: () => void}) {
 }
 
 function ProfileEmotion({ character, fallback, preview }: { character: CharacterProfile; fallback?: string; preview?: boolean }) {
-    const [thought, setThought] = useState(() => preview ? '' : getLastInnerState(character.id));
+    const [thought, setThought] = useState<string | null>(() => preview || !hasSavedInnerState(character.id) ? null : getLastInnerState(character.id));
+    const [editing, setEditing] = useState(false), [draft, setDraft] = useState(''), [error, setError] = useState('');
+    const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
+    const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const pressStart = useRef({ x: 0, y: 0 });
+    const clearPress = () => { if (timer.current) clearTimeout(timer.current); timer.current = null; };
+    useEffect(() => clearPress, []);
+    const currentThought = thought ?? fallback ?? '';
+    const edit = () => { if (preview) return; setDraft(currentThought); setError(''); setEditing(true); };
+    const save = (value: string) => { try { saveInnerState(character.id, value); setThought(value.trim()); setEditing(false); trackEvent(value.trim() ? '编辑角色心声' : '删除角色心声'); } catch { setError('保存失败，请检查本机存储后重试'); } };
+    useLocalBackHandler(() => { setEditing(false); return true; }, 70, editing);
     useEffect(() => {
         const receive = (event: Event) => {
             const detail = (event as CustomEvent).detail;
@@ -36,18 +48,18 @@ function ProfileEmotion({ character, fallback, preview }: { character: Character
         return () => window.removeEventListener('emotion-innerstate-updated', receive);
     }, [character.id]);
     return <>
-        {(thought || fallback) && <section className="chat-profile-thought" aria-label="心声">
+        {confirmDialog}
+        {(currentThought || thought !== null) && <section className="chat-profile-thought" aria-label="心声" onContextMenu={e => { if (!preview && !editing) { e.preventDefault(); edit(); } }}
+            onPointerDown={e => { if (!preview && !editing && e.button === 0) { clearPress(); pressStart.current = { x: e.clientX, y: e.clientY }; timer.current = setTimeout(edit, 550); } }}
+            onPointerUp={clearPress} onPointerCancel={clearPress} onPointerMove={e => { if (Math.hypot(e.clientX - pressStart.current.x, e.clientY - pressStart.current.y) > 8) clearPress(); }} onPointerLeave={clearPress}>
             <span className="chat-profile-caption">心声</span>
-            <p>{thought || fallback}</p>
+            {editing ? <div className="space-y-3 text-slate-800 bg-white rounded-xl p-3 [color-scheme:light]">
+                <textarea aria-label="编辑心声" className="w-full min-h-32 border rounded-lg p-2 text-base" value={draft} onChange={e => setDraft(e.target.value)} />
+                {error && <p role="alert">{error}</p>}
+                <div className="flex gap-4"><button type="button" onClick={async () => { if (draft.trim() || await requestConfirm({ title: '清空心声', message: '保存空白内容后，下次请求的当前心声为空。', confirmText: '清空', variant: 'danger' })) save(draft); }}>保存</button><button type="button" onClick={() => setEditing(false)}>取消</button><button type="button" onClick={async () => { if (await requestConfirm({ title: '删除心声', message: '删除后，下次请求的当前心声为空，不会回退到旧心声。', confirmText: '删除', variant: 'danger' })) save(''); }}>删除</button></div>
+            </div> : <p tabIndex={preview ? undefined : 0} onKeyDown={e => { if (e.key === 'Enter') edit(); }}>{currentThought || '暂无心声'}{!preview && <small className="block opacity-60 text-xs mt-2">长按编辑或删除</small>}</p>}
         </section>}
-        {!!character.activeBuffs?.length && <ul className="chat-profile-emotions" aria-label="当前情绪">
-            {character.activeBuffs.map(buff => {
-                const label = <><i className="chat-profile-seal" aria-hidden="true">{buff.emoji || '✦'}</i>{buff.label || buff.name}</>;
-                return <li key={buff.id}>{buff.description
-                    ? <details><summary>{label}<CaretRight size={13} aria-hidden="true" /></summary><p>{buff.description}</p></details>
-                    : <h3>{label}</h3>}</li>;
-            })}
-        </ul>}
+        <ProfileEmotionList character={character} preview={preview} />
     </>;
 }
 
