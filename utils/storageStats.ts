@@ -11,6 +11,9 @@
  *   · 图片和 VRM / Live2D 模型都塞在同一张 blob_assets 表里，key 是随机 id 分不出类型，
  *     只能看 Blob 的 MIME：image/* 算图片、audio/* 算语音，剩下的（zip / octet-stream）
  *     当模型。猜错的代价只是某一行数字偏了，不影响总量。
+ *
+ * 每一行归到哪个 App 由本文件的三张登记表决定（表名 / assets 的 key 前缀 / 库名），
+ * 规矩和取舍见 docs/storage-usage.md。
  */
 
 import { openDB } from './db';
@@ -92,41 +95,73 @@ export async function requestPersistentStorage(): Promise<boolean> {
 
 // ─── 分类 ──────────────────────────────────────────────────────
 
-export type StorageCategoryKey = 'media' | 'chat' | 'characters' | 'memory' | 'activeMsg' | 'other';
-
-export const STORAGE_CATEGORY_LABELS: Record<StorageCategoryKey, string> = {
-    media: '图片与媒体',
+/**
+ * 用户看到的每一行。有 App 的用 App 自己的名字（与 constants.tsx 里的图标名一致），
+ * 跨 App 共用的池子和缓存单列一行。
+ */
+export const STORAGE_CATEGORY_LABELS = {
+    media: '图片与媒体文件',
+    models: '角色模型',
     chat: '聊天记录',
-    characters: '角色与模型',
+    emoji: '表情包',
+    characters: '神经链接（角色资料）',
     memory: '记忆宫殿',
+    worldbook: '世界书',
+    gallery: '相册',
+    journal: '交换日记',
+    handbook: '手账',
+    schedule: '时光契约',
+    study: '自习室',
+    game: 'TRPG',
+    novel: '笔友会',
+    songwriting: '写歌',
+    vrWorld: '彼方',
+    worldHome: '家园',
+    date: '见面',
+    room: '小小窝',
+    roomPacks: '小屋资源包',
+    bank: '存钱罐与生活记录',
+    social: 'Spark',
+    friendFeed: '哔哔',
+    xhs: '小红书',
+    guidebook: '攻略本',
+    lifeSim: '都市人生',
+    hotNews: '热点',
+    user: '档案',
+    help: '使用帮助',
+    favorites: '收藏',
+    ttsCache: '角色语音缓存',
+    appearance: '外观与系统素材',
+    apiLog: 'API 调用记录',
+    collaboration: '协同工作',
     activeMsg: '主动消息',
-    other: '其他 App 数据',
-};
+    other: '其他数据',
+} as const;
 
-/** 显示顺序：大头在前，「其他」永远垫底。 */
-export const STORAGE_CATEGORY_ORDER: StorageCategoryKey[] = ['media', 'chat', 'characters', 'memory', 'activeMsg', 'other'];
+export type StorageCategoryKey = keyof typeof STORAGE_CATEGORY_LABELS;
+
+const CATEGORY_KEYS = Object.keys(STORAGE_CATEGORY_LABELS) as StorageCategoryKey[];
 
 /**
- * 表名 → 类别。没列进来的表一律落到 other，所以以后新加表不会从统计里消失，
- * 只是暂时归在「其他 App 数据」里 —— 总量永远是对的。
+ * 主库的表名 → 类别。每张表都要登记：没登记的表仍会落到 other（总量不漏），
+ * 但 storageStats.test.ts 有一条守卫会挂，提醒加表的人来补一行。
  */
 const STORE_CATEGORY: Record<string, StorageCategoryKey> = {
+    // 图片池：二进制部分在 summarizeUsage 里按 MIME 再拆成 media / models
+    blob_assets: 'media',
     // 聊天
     messages: 'chat',
     groups: 'chat',
     scheduled_messages: 'chat',
+    emojis: 'emoji',
+    emoji_categories: 'emoji',
     // 角色
     characters: 'characters',
     character_groups: 'characters',
-    worldbooks: 'characters',
     cc_custom_parts: 'characters',
-    // 图片 / 外观
-    assets: 'media',
-    emojis: 'media',
-    emoji_categories: 'media',
-    gallery: 'media',
-    themes: 'media',
-    journal_stickers: 'media',
+    daily_schedule: 'characters',
+    worldbooks: 'worldbook',
+    user_profile: 'user',
     // 记忆宫殿
     memory_nodes: 'memory',
     memory_vectors: 'memory',
@@ -137,6 +172,55 @@ const STORE_CATEGORY: Record<string, StorageCategoryKey> = {
     event_boxes: 'memory',
     room_plates: 'memory',
     digest_reports: 'memory',
+    // 外观与系统。assets 是按 key 存杂项的表，实际按 key 前缀分流（见 ASSET_KEY_CATEGORY），
+    // 这里登记的是前缀没认出来时的去处
+    assets: 'appearance',
+    themes: 'appearance',
+    api_call_log: 'apiLog',
+    // 各 App
+    gallery: 'gallery',
+    diaries: 'journal',
+    journal_stickers: 'journal',
+    handbook: 'handbook',
+    trackers: 'handbook',
+    tracker_entries: 'handbook',
+    tasks: 'schedule',
+    anniversaries: 'schedule',
+    courses: 'study',
+    quizzes: 'study',
+    games: 'game',
+    novels: 'novel',
+    songs: 'songwriting',
+    social_posts: 'social',
+    xhs_stock: 'xhs',
+    xhs_activities: 'xhs',
+    xhs_owned_posts: 'xhs',
+    guidebook: 'guidebook',
+    life_sim: 'lifeSim',
+    hotnews_snapshots: 'hotNews',
+    bank_transactions: 'bank',
+    bank_data: 'bank',
+    life_records: 'bank',
+    med_plans: 'bank',
+    life_record_settings: 'bank',
+    room_todos: 'room',
+    room_notes: 'room',
+    pixel_home_assets: 'room',
+    pixel_home_layouts: 'room',
+    story_theaters: 'date',
+    story_theater_presets: 'date',
+    story_theater_masks: 'date',
+    worlds: 'worldHome',
+    world_episodes: 'worldHome',
+    vr_novels: 'vrWorld',
+    vr_annotations: 'vrWorld',
+    vr_music: 'vrWorld',
+    vr_guestbook: 'vrWorld',
+    vr_scripts: 'vrWorld',
+    vr_plays: 'vrWorld',
+    vr_presets: 'vrWorld',
+    vr_letters: 'vrWorld',
+    vr_settings: 'vrWorld',
 };
 
 /** 图片和模型混住的那张表，二进制部分要按 MIME 二次分流。 */
@@ -145,6 +229,44 @@ const MIXED_BLOB_STORE = 'blob_assets';
 export function categoryOfStore(storeName: string): StorageCategoryKey {
     return STORE_CATEGORY[storeName] ?? 'other';
 }
+
+/**
+ * assets 表的 key 前缀 → 类别。这张表里住着好几个 App 的东西（聊天语音、语音缓存、
+ * 生成的歌、哔哔的整份数据……），只按表名算会全部记成外观素材。
+ * 只列占地方的和能说清归属的；没列的 key 算「外观与系统素材」，所以这张表不用列全。
+ */
+const ASSET_KEY_CATEGORY: [prefix: string, category: StorageCategoryKey][] = [
+    ['voice_msg_', 'chat'],
+    ['tts_', 'ttsCache'],
+    ['acestep_', 'songwriting'],
+    ['mmmusic_', 'songwriting'],
+    ['companion-', 'characters'],       // 陪伴模式的启动 / 触摸语音，key 里带角色 id
+    ['voice_favorite', 'favorites'],
+    ['content_favorite', 'favorites'],
+    ['friend_feed', 'friendFeed'],
+    ['sully-11-history', 'help'],
+    ['mp_hwm_', 'memory'],
+    ['spark_', 'social'],
+    ['bank_', 'bank'],
+    ['pixel_', 'room'],
+    ['room_custom_assets', 'room'],
+    ['home_visits', 'room'],
+    ['home_secrets', 'room'],
+];
+
+export function categoryOfAssetKey(key: unknown): StorageCategoryKey {
+    if (typeof key === 'string') {
+        for (const [prefix, category] of ASSET_KEY_CATEGORY) {
+            if (key.startsWith(prefix)) return category;
+        }
+    }
+    return 'appearance';
+}
+
+/** 一张表里住着几个类别时，按 key 把记录分到各自的类别。 */
+const STORE_KEY_SPLITTER: Record<string, (key: unknown) => StorageCategoryKey> = {
+    assets: categoryOfAssetKey,
+};
 
 // ─── 单条记录的字节测量 ─────────────────────────────────────────
 
@@ -223,11 +345,18 @@ export function measureValue(value: unknown): ValueMeasurement {
 export const SAMPLE_LIMIT = 300;
 /** 二进制表（只读 blob.size，很便宜）的全量上限，超了同样退回采样。 */
 export const BLOB_FULL_SCAN_LIMIT = 20000;
+/**
+ * 走全量上限的表。assets 也在里面：它的大头是语音 Blob，量起来同样便宜；而且里面有
+ * 「整份数据就一条」的大记录（哔哔、设置镜像），跳着采样要么漏掉、要么被放大十几倍。
+ */
+const FULL_SCAN_STORES = new Set([MIXED_BLOB_STORE, 'assets']);
 
 export interface StoreUsage {
     store: string;
+    /** 按 key 分流出来的类别。没有就按表名判。 */
+    category?: StorageCategoryKey;
     bytes: number;
-    /** 记录条数（精确，来自 count()）。 */
+    /** 记录条数。整张表一行时来自 count()，按 key 分流的行是采到的条数按比例放大。 */
     count: number;
     /** true = 数字是采样放大出来的，界面上要标「约」。 */
     estimated: boolean;
@@ -246,47 +375,57 @@ const countStore = (db: IDBDatabase, storeName: string): Promise<number> =>
  *
  * 采样是「均匀跳着取」而不是「取前 N 条」—— 后者在 messages 上会全采到最早那批短消息，
  * 把带图的长消息整个漏掉，估出来的数能差一个量级。
+ *
+ * 一般一张表回一行；传了 categoryOfKey 就按 key 分到各类别，每个类别一行。空表回空数组。
  */
-export async function measureStoreUsage(db: IDBDatabase, storeName: string): Promise<StoreUsage> {
-    const empty: StoreUsage = { store: storeName, bytes: 0, count: 0, estimated: false, binaryBytes: {} };
+export async function measureStoreUsage(
+    db: IDBDatabase,
+    storeName: string,
+    categoryOfKey?: (key: unknown) => StorageCategoryKey,
+): Promise<StoreUsage[]> {
     const count = await countStore(db, storeName);
-    if (count === 0) return empty;
+    if (count === 0) return [];
 
-    const fullScanLimit = storeName === MIXED_BLOB_STORE ? BLOB_FULL_SCAN_LIMIT : SAMPLE_LIMIT;
+    const fullScanLimit = FULL_SCAN_STORES.has(storeName) ? BLOB_FULL_SCAN_LIMIT : SAMPLE_LIMIT;
     // 步长用 ceil 而不是 floor：floor 会让 step * limit < count，采满上限时游标才走到
     // 表的中段，尾巴整段没被采到 —— 而聊天记录恰恰是越靠后的越大，一漏就低估三成。
     const step = count <= fullScanLimit ? 1 : Math.max(1, Math.ceil(count / fullScanLimit));
 
-    return new Promise<StoreUsage>((resolve, reject) => {
-        const binaryBytes: Partial<Record<BinaryKind, number>> = {};
-        let sampledBytes = 0;
+    return new Promise<StoreUsage[]>((resolve, reject) => {
+        const parts = new Map<StorageCategoryKey | undefined, { bytes: number; sampled: number; binaryBytes: Partial<Record<BinaryKind, number>> }>();
         let sampled = 0;
 
         const req = db.transaction(storeName, 'readonly').objectStore(storeName).openCursor();
         const finish = () => {
-            if (sampled === 0) { resolve({ ...empty, count }); return; }
             const scale = step === 1 ? 1 : count / sampled;
             const scaled = (n: number) => Math.round(n * scale);
-            const scaledBinary: Partial<Record<BinaryKind, number>> = {};
-            for (const [kind, bytes] of Object.entries(binaryBytes)) {
-                scaledBinary[kind as BinaryKind] = scaled(bytes ?? 0);
-            }
-            resolve({
-                store: storeName,
-                bytes: scaled(sampledBytes),
-                count,
-                estimated: step !== 1,
-                binaryBytes: scaledBinary,
-            });
+            resolve(Array.from(parts, ([category, part]) => {
+                const scaledBinary: Partial<Record<BinaryKind, number>> = {};
+                for (const [kind, bytes] of Object.entries(part.binaryBytes)) {
+                    scaledBinary[kind as BinaryKind] = scaled(bytes ?? 0);
+                }
+                return {
+                    store: storeName,
+                    ...(category ? { category } : {}),
+                    bytes: scaled(part.bytes),
+                    count: categoryOfKey ? scaled(part.sampled) : count,
+                    estimated: step !== 1,
+                    binaryBytes: scaledBinary,
+                };
+            }));
         };
 
         req.onsuccess = () => {
             const cursor = req.result;
             if (!cursor) { finish(); return; }
+            const category = categoryOfKey?.(cursor.key);
+            let part = parts.get(category);
+            if (!part) { part = { bytes: 0, sampled: 0, binaryBytes: {} }; parts.set(category, part); }
             const m = measureValue(cursor.value);
-            sampledBytes += m.bytes;
+            part.bytes += m.bytes;
+            part.sampled++;
             for (const [kind, bytes] of Object.entries(m.binaryBytes)) {
-                binaryBytes[kind as BinaryKind] = (binaryBytes[kind as BinaryKind] ?? 0) + (bytes ?? 0);
+                part.binaryBytes[kind as BinaryKind] = (part.binaryBytes[kind as BinaryKind] ?? 0) + (bytes ?? 0);
             }
             sampled++;
             if (sampled >= fullScanLimit) { finish(); return; }
@@ -320,7 +459,7 @@ export async function collectDatabaseUsage(
     const failed: string[] = [];
     for (let i = 0; i < names.length; i++) {
         try {
-            stores.push(await measureStoreUsage(db, names[i]));
+            stores.push(...await measureStoreUsage(db, names[i], STORE_KEY_SPLITTER[names[i]]));
         } catch {
             failed.push(names[i]);
         }
@@ -361,13 +500,14 @@ export interface DatabaseUsageInput {
 /**
  * 把逐表字节数并成用户看的那几行。
  *
- * blob_assets 在这里拆开：图片 / 语音 / 视频算「图片与媒体」，剩下的二进制当模型算
- * 「角色与模型」，那张表自己的文本开销（id 之类）跟着图片走。
+ * blob_assets 在这里拆开：图片 / 语音 / 视频算「图片与媒体文件」，剩下的二进制算
+ * 「角色模型」，那张表自己的文本开销（id 之类）跟着图片走。
  */
 export function summarizeUsage(inputs: DatabaseUsageInput[]): StorageBreakdown {
-    const bytes: Record<StorageCategoryKey, number> = { media: 0, chat: 0, characters: 0, memory: 0, activeMsg: 0, other: 0 };
-    const binary: Record<StorageCategoryKey, number> = { media: 0, chat: 0, characters: 0, memory: 0, activeMsg: 0, other: 0 };
-    const estimated: Record<StorageCategoryKey, boolean> = { media: false, chat: false, characters: false, memory: false, activeMsg: false, other: false };
+    const filled = <T,>(value: T) => Object.fromEntries(CATEGORY_KEYS.map(k => [k, value])) as Record<StorageCategoryKey, T>;
+    const bytes = filled(0);
+    const binary = filled(0);
+    const estimated = filled(false);
     const failedStores: string[] = [];
     const sumBinary = (b: Partial<Record<BinaryKind, number>>) =>
         Object.values(b).reduce((a: number, v) => a + (v ?? 0), 0);
@@ -381,9 +521,9 @@ export function summarizeUsage(inputs: DatabaseUsageInput[]): StorageBreakdown {
                 const modelBytes = bin.binary ?? 0;
                 const mediaBytes = store.bytes - modelBytes;
                 if (modelBytes > 0) {
-                    bytes.characters += modelBytes;
-                    binary.characters += modelBytes;
-                    estimated.characters ||= store.estimated;
+                    bytes.models += modelBytes;
+                    binary.models += modelBytes;
+                    estimated.models ||= store.estimated;
                 }
                 if (mediaBytes > 0) {
                     bytes.media += mediaBytes;
@@ -393,14 +533,14 @@ export function summarizeUsage(inputs: DatabaseUsageInput[]): StorageBreakdown {
                 }
                 continue;
             }
-            const key = forceCategory ?? categoryOfStore(store.store);
+            const key = forceCategory ?? store.category ?? categoryOfStore(store.store);
             bytes[key] += store.bytes;
             binary[key] += Math.min(store.bytes, sumBinary(store.binaryBytes));
             estimated[key] ||= store.estimated;
         }
     }
 
-    const categories = STORAGE_CATEGORY_ORDER
+    const categories = CATEGORY_KEYS
         .map(key => ({
             key, label: STORAGE_CATEGORY_LABELS[key],
             bytes: bytes[key], binaryBytes: binary[key], estimated: estimated[key],
@@ -470,15 +610,23 @@ export function formatBytes(bytes: number | null | undefined): string {
 
 // ─── 编排：把本站所有 IndexedDB 库跑一遍 ────────────────────────
 
-/** 整库归类的库名。没列的库按表名逐表判，最终多半落到「其他 App 数据」。 */
-const DATABASE_CATEGORY: Record<string, StorageCategoryKey> = {
-    ActiveMsg: 'activeMsg',
-};
+/**
+ * 库名 → 整库归哪类；回 undefined 表示按表名逐张判。
+ *
+ * 只有各用户空间的主库（AetherOS_Data / AetherOS_Data__<空间>）按表名细分。别的库表名是
+ * 各自起的（协同工作库里也有 messages / assets），按表名判会记到聊天和外观头上。
+ */
+export function categoryOfDatabase(name: string): StorageCategoryKey | undefined {
+    if (/^AetherOS_Data(__|$)/.test(name)) return undefined;
+    if (/^SullyOS_Collaboration(__|$)/.test(name)) return 'collaboration';
+    if (name === 'sully-home-resource-packs') return 'roomPacks';
+    // 主动消息的收件箱、Service Worker 的日志和去重库
+    if (/^(ActiveMsg|AmsgReproduction$|rei[-_])/.test(name)) return 'activeMsg';
+    return 'other';
+}
 
 /** 浏览器不给枚举库列表时的兜底名单（主库单独走 openDB，不在这里）。 */
 const FALLBACK_DATABASE_NAMES = ['ActiveMsg'];
-
-const MAIN_DATABASE_NAME = 'AetherOS_Data';
 
 async function listDatabaseNames(): Promise<string[]> {
     if (typeof indexedDB === 'undefined') return [];
@@ -561,7 +709,7 @@ export async function computeStorageBreakdown(
     for (const name of await listDatabaseNames()) {
         if (opened.some(entry => entry.db.name === name)) continue;
         const db = await openExistingDatabase(name);
-        if (db) opened.push({ db, category: DATABASE_CATEGORY[name], shouldClose: true });
+        if (db) opened.push({ db, category: categoryOfDatabase(name), shouldClose: true });
     }
 
     const total = opened.reduce((n, e) => n + e.db.objectStoreNames.length, 0);
