@@ -15,6 +15,12 @@ export interface CanaryChangelogDay {
 
 export const CANARY_CHANGELOG: CanaryChangelogDay[] = [
   {
+    date: '2026-11-28',
+    items: [
+      '开启「减弱模糊」后，桌面角色消息栏与默认透明日程卡改为与图标框一致的浅白半透底，浅色文字自动附带细阴影保证亮色壁纸下的清晰度。',
+    ],
+  },
+  {
     date: '2026-11-27',
     items: [
       '修复：有时角色不理你刚发的话、接着上一个话题往下说。遇到过这个问题的话欢迎多聊几轮看看还会不会出现。',

@@ -250,11 +250,29 @@ describe('blurPolicy 引擎与无障碍透明度策略识别', () => {
         });
     });
 
-    it('resolveReducedGlassCardStyle 按前景色明暗选择深浅半透底色以确保文字对比度', () => {
-        const forLightText = resolveReducedGlassCardStyle('#ffffff');
-        const forDarkText = resolveReducedGlassCardStyle('#1e293b');
-        expect(forLightText.background).toContain('rgba(24, 28, 40');
-        expect(forDarkText.background).toContain('rgba(255, 255, 255');
+    it('resolveReducedGlassCardStyle 统一使用图标框同系浅白半透底，仅对高亮度浅色字补轻量文字阴影', () => {
+        const forPureWhite = resolveReducedGlassCardStyle('#ffffff');
+        const forLavenderWhite = resolveReducedGlassCardStyle('#f6efff');
+        const forMidPurple = resolveReducedGlassCardStyle('#7c729c');
+        const forPaperBrown = resolveReducedGlassCardStyle('#4b4136');
+        const forDarkSlate = resolveReducedGlassCardStyle('#1e293b');
+        const forRgbLight = resolveReducedGlassCardStyle('rgb(255, 255, 255)');
+        const forRgbDark = resolveReducedGlassCardStyle('rgb(75, 65, 54)');
+
+        // 怀旧版白字、中灰紫美化字与深棕默认字均保持与桌面图标框一致的浅白半透底，不再跳变深灰块
+        for (const style of [forPureWhite, forLavenderWhite, forMidPurple, forPaperBrown, forDarkSlate]) {
+            expect(style.background).toBe('rgba(255, 255, 255, 0.42)');
+            expect(style.border).toBe('1px solid rgba(255, 255, 255, 0.38)');
+        }
+
+        // 接近白色的浅色字补 text-shadow 兜底亮壁纸可读性；中灰紫与深色字不挂阴影光晕
+        expect(forPureWhite.textShadow).not.toBe('none');
+        expect(forLavenderWhite.textShadow).not.toBe('none');
+        expect(forRgbLight.textShadow).not.toBe('none');
+        expect(forMidPurple.textShadow).toBe('none');
+        expect(forPaperBrown.textShadow).toBe('none');
+        expect(forDarkSlate.textShadow).toBe('none');
+        expect(forRgbDark.textShadow).toBe('none');
     });
 });
 
