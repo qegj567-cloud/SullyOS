@@ -1,6 +1,8 @@
 import { canPlayLive2DAction, installLive2DIdlePolicy, live2DPermissionSignature, live2DProceduralRestrictions } from '../../utils/live2dActionPolicy';
 import { revealLive2DAfterPaint } from '../../utils/live2DReveal';
 import React, { useEffect, useRef, useState } from 'react';
+import { ModelPlacement } from './RolePlacement';
+import type { CallRolePlacement } from '../../types';
 import { Application, Assets, Cache, extensions } from 'pixi.js';
 import { AvatarAutonomy, getViewerEyeContactCompensation } from '../../utils/avatarAutonomy';
 import { DEFAULT_AVATAR_PERFORMANCE, type AvatarPerformanceDirection, type AvatarStageFraming } from '../../utils/avatarPerformance';
@@ -333,6 +335,7 @@ const Live2DAvatarCanvas: React.FC<Live2DAvatarCanvasProps> = ({
   onParametersDiscovered,
 }) => {
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const placement = React.useContext(ModelPlacement);
   const modelRef = useRef<(Live2DModelLike & any) | null>(null);
   const motionStateRef = useRef(motionState);
   const audioFeedRef = useRef(audioFeed);
@@ -396,11 +399,15 @@ const Live2DAvatarCanvas: React.FC<Live2DAvatarCanvasProps> = ({
     return active;
   };
 
+  const plannedHead = useRef<{ direction?: AvatarPerformanceDirection; config: Live2DAvatarConfig; result: DirectedHeadControl }>();
   const getRuntimeDirectedHeadControl = (
     direction: AvatarPerformanceDirection | undefined,
     now: number,
   ): DirectedHeadControl => {
-    const planned = getDirectedHeadControl(direction, configRef.current);
+    if (!plannedHead.current || plannedHead.current.direction !== direction || plannedHead.current.config !== configRef.current) {
+      plannedHead.current = { direction, config: configRef.current, result: getDirectedHeadControl(direction, configRef.current) };
+    }
+    const planned = plannedHead.current.result;
     const motionOwnsHead = isDirectedHeadMotionActive(now);
     const paramsOwnHead = paramOverlaysRef.current.some(overlay => (
       now - overlay.startedAt < 4_100
@@ -845,6 +852,12 @@ const Live2DAvatarCanvas: React.FC<Live2DAvatarCanvasProps> = ({
         // on phones; 32 MB keeps a 2x safety margin over the SDK minimum.
         configureCubismSDK({ memorySizeMB: getLive2DCubismMemorySizeMB(mobileRuntime) });
 
+        const pixelRatio = (width: number, height: number) => {
+          const ratio = Math.min(window.devicePixelRatio || 1, 2);
+          if (!placement) return ratio;
+          const pixelBudget = mobileRuntime ? 1_600_000 : 2_500_000;
+          return Math.min(ratio, Math.sqrt(pixelBudget / Math.max(1, width * height)));
+        };
         app = new Application();
         await app.init({
           resizeTo: host,
@@ -854,7 +867,7 @@ const Live2DAvatarCanvas: React.FC<Live2DAvatarCanvasProps> = ({
           // reducing atlas resolution.
           antialias: !mobileRuntime,
           autoDensity: true,
-          resolution: Math.min(window.devicePixelRatio || 1, 2),
+          resolution: pixelRatio(host.clientWidth, host.clientHeight),
           preference: 'webgl',
           // Pointer tracking is handled on the DOM host below. Keeping Pixi's
           // hit-testing enabled makes it walk Live2D's custom render node as if
@@ -951,9 +964,14 @@ const Live2DAvatarCanvas: React.FC<Live2DAvatarCanvasProps> = ({
         const base = { scale: 1, x: 0, y: 0 };
         const fitModel = () => {
           if (!app) return;
-          base.scale = Math.min((app.screen.width * 0.96) / naturalWidth, (app.screen.height * 1.06) / naturalHeight);
+          const width = host.clientWidth, height = host.clientHeight;
+          const resolution = pixelRatio(width, height);
+          if (width && height && (width !== app.screen.width || height !== app.screen.height || app.renderer.resolution !== resolution)) {
+            app.renderer.resize(width, height, resolution);
+          }
+          base.scale = Math.min((app.screen.width * 0.96) / naturalWidth, (app.screen.height * (placement ? 0.96 : 1.06)) / naturalHeight);
           base.x = app.screen.width * 0.5;
-          base.y = app.screen.height * 0.53;
+          base.y = app.screen.height * (placement ? 0.5 : 0.53);
         };
         fitModel();
         resizeObserver = new ResizeObserver(fitModel);
@@ -1127,7 +1145,7 @@ const Live2DAvatarCanvas: React.FC<Live2DAvatarCanvasProps> = ({
             }
             delete wardrobeBases[id];
           });
-          if (host.dataset.live2dWardrobe !== configRef.current.activeWardrobeActionId) {
+          if (host.dataset.live2dWardrobe !== (configRef.current.activeWardrobeActionId || '')) {
             host.dataset.live2dWardrobe = configRef.current.activeWardrobeActionId || '';
           }
         };
@@ -1174,7 +1192,8 @@ const Live2DAvatarCanvas: React.FC<Live2DAvatarCanvasProps> = ({
           const gazeEyeX = authoredDirection.gaze === 'left' ? -0.78 * authoredIntensity
             : authoredDirection.gaze === 'right' ? 0.78 * authoredIntensity : 0;
           const gazeEyeY = authoredDirection.gaze === 'down' ? -0.62 * authoredIntensity : 0;
-          host.dataset.live2dDirectedHead = directedHead.enabled ? 'true' : 'false';
+          const directed = String(directedHead.enabled);
+          if (host.dataset.live2dDirectedHead !== directed) host.dataset.live2dDirectedHead = directed;
           const direction = headLocked || suppressesAmbientAutonomy ? {
             ...authoredDirection,
             precision: {
@@ -1382,8 +1401,9 @@ const Live2DAvatarCanvas: React.FC<Live2DAvatarCanvasProps> = ({
           const locked = headMotionLockedRef.current || ambientAutonomyDisabledRef.current;
           const authoredDirection = performanceRef.current || DEFAULT_AVATAR_PERFORMANCE;
           const directedHead = getRuntimeDirectedHeadControl(authoredDirection, window.performance.now());
-          host.dataset.live2dHeadLocked = headMotionLockedRef.current ? 'true' : 'false';
-          host.dataset.live2dAmbientHeadSuppressed = locked ? 'true' : 'false';
+          const headLock = String(headMotionLockedRef.current), ambientLock = String(locked);
+          if (host.dataset.live2dHeadLocked !== headLock) host.dataset.live2dHeadLocked = headLock;
+          if (host.dataset.live2dAmbientHeadSuppressed !== ambientLock) host.dataset.live2dAmbientHeadSuppressed = ambientLock;
 
           let targetEyeX = lastAutonomyEyes.eyeX;
           let targetEyeY = lastAutonomyEyes.eyeY;
@@ -1513,7 +1533,22 @@ const Live2DAvatarCanvas: React.FC<Live2DAvatarCanvasProps> = ({
           model.rotation = headMotionLockedRef.current || ambientAutonomyDisabledRef.current ? 0 : frame.rotation;
         };
         // First placement must snap to saved framing, never lerp down from Pixi scale=1.
-        app.ticker.add(() => updateStage(!revealed));
+        let lastPose: CallRolePlacement | undefined;
+        let lastCorner = false, lastWidth = 0, lastHeight = 0;
+        app.ticker.add(() => {
+          if (placement && app) {
+            const { pose, corner } = placement.current;
+            const { width, height } = app.screen;
+            if (pose !== lastPose || corner !== lastCorner || width !== lastWidth || height !== lastHeight) {
+              app.stage.pivot.set(width / 2, height / 2);
+              app.stage.position.set(width * ((corner ? .7 : .5) + pose.x / 100), height * ((corner ? .65 : .5) + pose.y / 100));
+              app.stage.scale.set(pose.scale * (corner ? .65 : 1));
+              app.stage.angle = pose.angle;
+              lastPose = pose; lastCorner = corner; lastWidth = width; lastHeight = height;
+            }
+          }
+          updateStage(!revealed);
+        });
         updateStage(true);
 
         const initialPerformance = performanceRef.current;

@@ -31,7 +31,7 @@ const props: any = { characters: [{ id: 'c', name: '同行伙伴', systemPrompt:
 beforeEach(() => { localStorage.setItem('sully_companion_intro_v1', 'seen'); host = document.createElement('div'); document.body.append(host); root = createRoot(host); });
 afterEach(() => { act(() => root.unmount()); host.remove(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 const click = async (label: string) => act(async () => {
-  const button = [...host.querySelectorAll('button')].find(b => b.getAttribute('aria-label') === label || b.textContent?.trim() === label);
+  const button = [...host.querySelectorAll<HTMLElement>('button, input[type=checkbox]')].find(b => b.getAttribute('aria-label') === label || b.textContent?.trim() === label);
   expect(button).toBeTruthy(); button!.click();
 });
 const chooseCamera = async (id: string) => {
@@ -79,7 +79,7 @@ it('recovers from a busy automatic camera by explicitly selecting the virtual so
   expect(getUserMedia).toHaveBeenCalledOnce();
   await click('开启镜头');
   expect(getUserMedia.mock.calls[1][0]).toEqual({ audio: false, video: {
-    deviceId: { exact: 'vts' }, width: { ideal: 640 }, frameRate: { ideal: 12 },
+    deviceId: { exact: 'vts' }, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 },
   } });
   expect(host.querySelector('video')!.srcObject).toBe(stream);
   await click('同行设置'); await click('镜头与形象'); expect(host.textContent).toContain('当前输入：VTubeStudioCam');
@@ -507,12 +507,23 @@ it('counts only fixed role-camera actions and keeps both lenses independent whil
   await click('关闭角色镜头'); await click('同行设置'); await click('镜头与形象');
   const select = host.querySelector<HTMLSelectElement>('[aria-label="角色镜头形象"]')!;
   await act(async () => { select.value = 'chibi'; select.dispatchEvent(new Event('change', { bubbles: true })); });
+  const layout = [...host.querySelectorAll('select')].find(item => [...item.options].some(option => option.value === 'columns'))!;
+  await act(async () => { layout.value = 'columns'; layout.dispatchEvent(new Event('change', { bubbles: true })); });
+  await click('沉浸式表演');
   await click('回到通话');
+  const idle = host.querySelector<HTMLSelectElement>('.companion-actions select[aria-label="自动续聊"]')!;
+  expect(idle.value).toBe('0');
+  for (const value of ['30', '60', '0']) {
+    await act(async () => { idle.value = value; idle.dispatchEvent(new Event('change', { bubbles: true })); });
+  }
   expect(host.querySelector('[aria-label="开启角色镜头"]')).toBeTruthy();
   await click('开启角色镜头');
   expect(host.querySelector('[aria-label="开启镜头"]')).toBeTruthy();
   expect(vi.mocked(trackEvent).mock.calls).toEqual([
-    ['开关角色镜头', { 状态: '关' }], ['切换角色镜头形象', { 形象: 'Chibi' }], ['开关角色镜头', { 状态: '开' }],
+    ['开关角色镜头', { 状态: '关' }], ['切换角色镜头形象', { 形象: 'Chibi' }], ['切换同行画面布局', { 布局: '左右分屏' }],
+    ['开关同行沉浸式表演', { 状态: '开' }], ['开关同行主动开口', { 状态: '开' }],
+    ['设置同行续聊间隔', { 间隔: '30 秒' }], ['设置同行续聊间隔', { 间隔: '1 分钟' }],
+    ['开关同行主动开口', { 状态: '关' }], ['开关角色镜头', { 状态: '开' }],
   ]);
 });
 
@@ -561,7 +572,8 @@ it('keeps the tools overview short and returns from each task to its own entry',
   await act(async () => root.render(React.createElement(CompanionSurface, props)));
   await click('同行设置');
   const overview = () => host.querySelector<HTMLElement>('[role=dialog][aria-label="通话工具"]')!;
-  expect(overview().querySelectorAll('select')).toHaveLength(1);
+  expect([...overview().querySelectorAll('select')].map(select => select.getAttribute('aria-label')))
+    .toEqual(['通话翻译']);
   expect(overview().querySelector('.companion-debug, .companion-camera-source, .companion-services')).toBeNull();
   expect(enumerateDevices).not.toHaveBeenCalled();
   for (const name of ['镜头与形象', '连接与服务', '回复与调试']) {

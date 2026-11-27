@@ -103,7 +103,7 @@ describe('CallApp runtime references', () => {
     expect(source).toContain('data-testid={callMode === \'video\' ? \'video-call-compact-controls\' : undefined}');
     expect(source).toContain("videoCallLayout === 'stage' ? 'flex-1 min-h-0' : 'shrink-0'");
     expect(source).toContain('[data-call-video-layout="stage"] .sully-video-stage-shell { max-height: none; }');
-    expect(source).toContain('body.ios-keyboard-open [data-call-video-layout="stage"] .sully-video-stage-shell { max-height: 0; }');
+    expect(source).not.toContain('body.ios-keyboard-open [data-call-video-layout="stage"]');
     expect(source).toContain("? 'min-h-0'");
     expect(source).not.toContain('min-h-[260px]');
     expect(source).toContain('relative z-10 flex h-full min-h-0 flex-col overflow-hidden');

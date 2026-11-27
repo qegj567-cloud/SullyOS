@@ -21,7 +21,7 @@
 }
 .companion-scene { position: absolute; inset: 0; margin: auto; overflow: hidden; isolation: isolate; }
 /* Keep the avatar inside the actual picture, including when a landscape camera feeds a tall phone. */
-.companion-stage[data-camera=on] .companion-scene {
+.companion-stage[data-camera=on][data-layout=overlay] .companion-scene {
   width: min(100%, calc(100cqh * var(--camera-aspect)));
   height: min(100%, calc(100cqw / var(--camera-aspect)));
 }
@@ -29,9 +29,20 @@
 .companion-call-background { object-fit: cover; }
 .companion-scene > video:not(.is-on) { visibility: hidden; }
 .companion-foreground { position: absolute; inset: 0; }
-.companion-stage[data-camera=on] .companion-foreground { inset: auto 2% 0 auto; width: 56%; height: 84%; }
-.companion-stage[data-camera=on] .companion-foreground[data-view=chibi] { width: 42%; height: 47%; }
-.companion-stage[data-camera=on] .companion-foreground[data-view=avatar] { inset: auto 5% 5% auto; width: min(26%, 100px); aspect-ratio: 1; height: auto; }
+.companion-role-pane { position: absolute; inset: 0; overflow: hidden; }
+.companion-stage[data-layout=overlay][data-camera=on] .companion-foreground:not([data-scene-model]) { inset: auto 2% 0 auto; width: 56%; height: 84%; }
+.companion-stage[data-layout=overlay][data-camera=on] .companion-foreground[data-view=chibi] { width: 42%; height: 47%; }
+.companion-stage[data-layout=overlay][data-camera=on] .companion-foreground[data-view=avatar] { inset: auto 5% 5% auto; width: min(26%, 100px); aspect-ratio: 1; height: auto; }
+.companion-stage[data-layout=rows] .companion-role-pane { inset: 0 0 50%; }
+.companion-stage[data-layout=rows] video { top: 50%; height: 50%; }
+.companion-stage[data-layout=columns] .companion-role-pane { right: 50%; }
+.companion-stage[data-layout=columns] video { left: 50%; width: 50%; }
+.companion-stage[data-layout=pip][data-camera-main=false] video,
+.companion-stage[data-layout=pip][data-camera-main=true] .companion-role-pane {
+  inset: auto 10px 10px auto; width: 33%; height: 33%; z-index: 1;
+  background: #242926; box-shadow: 0 0 0 1px #ffffff52; border-radius: 10px;
+}
+.companion-lenses, .companion-retry { z-index: 3; }
 .companion-stage[data-vision=analyzing]::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 2px #7be2ae; pointer-events: none; z-index: 2; }
 .companion-lenses { position: absolute; top: 8px; right: 8px; display: flex; align-items: center; border-radius: 24px; background: #111814d9; color: #fff; }
 .companion-lenses button { min-height: 44px; display: inline-flex; align-items: center; gap: 5px; padding: 0 12px; border-radius: inherit; color: inherit; background: transparent; border: 0; }
@@ -42,7 +53,7 @@
 .companion-lens-off { flex-direction: column; gap: 8px; font-size: 12px; color: #c2c9c4; }
 .companion-call-avatar :is(img,span) { width: min(32%, 110px); aspect-ratio: 1; object-fit: cover; border-radius: 50%; }
 .companion-call-avatar span { display: grid; place-items: center; background: #4a584f; font-size: 32px; }
-.companion-stage[data-camera=on] .companion-call-avatar :is(img,span) { width: 100%; }
+.companion-stage[data-camera=on][data-layout=overlay] .companion-call-avatar :is(img,span) { width: 100%; }
 .companion-chibi { width: 100%; height: 100%; object-fit: contain; }
 .companion-stage[data-camera=on] .companion-chibi { object-position: center bottom; }
 .companion-retry { position: absolute; right: 8px; bottom: 8px; color: #ffe8c6; background: #342b21; border: 0; border-radius: 7px; padding: 8px; font-size: 12px; }
@@ -53,10 +64,17 @@
 .companion-controls form { padding: 0 3px 0 14px; display: flex; align-items: center; border: 1px solid #555d56; border-radius: 24px; }
 .companion-controls form input { min-width: 0; flex: 1; color: #fff; background: transparent; border: 0; }
 .companion-controls form input::placeholder { color: #bac3bc; }
+.companion-app[data-composing] [data-call-composer] { position: relative; z-index: 4; background: #222724; }
 .companion-controls form button { width: 40px; height: 40px; border: 0; background: transparent; color: #b7efcb; display: grid; place-items: center; }
 .companion-actions { display: flex; justify-content: space-evenly; gap: 5px; margin-top: 6px; }
 .companion-actions button { min-width: 44px; min-height: 46px; display: grid; justify-items: center; align-content: center; gap: 3px; background: transparent; border: 0; color: #e2e5e2; }
 .companion-actions button[aria-pressed=true] { color: #a7dfbe; }
+.companion-idle-control { position: relative; display: grid; color: #e2e5e2; }
+.companion-idle-control[data-on=true] { color: #a7dfbe; }
+.companion-idle-control > svg { position: absolute; top: calc(50% - 18px); left: 50%; transform: translateX(-50%); pointer-events: none; }
+.companion-idle-control select { appearance: none; min-height: 46px; min-width: 52px; padding: 25px 3px 2px; border: 0; border-radius: 7px; background: transparent; color: inherit; color-scheme: dark; text-align: center; font-size: 10px; cursor: pointer; }
+.companion-idle-control option { color: #f6f6f4; background: #232824; }
+.companion-idle-control:has(select:disabled) { opacity: .5; }
 .companion-add-partner { min-height: 44px; padding: 6px 16px; border: 1px solid #708478; border-radius: 12px; color: white; background: #39483f; }
 .companion-actions .companion-hangup { color: #ffaca4; }
 .companion-actions span { font-size: 10px; }

@@ -458,8 +458,8 @@ describe('CompanionHome touch request boundaries', () => {
     expect(live2dSource).toContain("direction.gesture === 'tilt'");
     expect(live2dSource).toContain("internal.on('beforeModelUpdate', applyFinalHeadLock)");
     expect(live2dSource).toContain("internal.off('beforeModelUpdate', applyFinalHeadLock)");
-    expect(live2dSource).toContain("host.dataset.live2dHeadLocked = headMotionLockedRef.current ? 'true' : 'false'");
-    expect(live2dSource).toContain("host.dataset.live2dAmbientHeadSuppressed = locked ? 'true' : 'false'");
+    expect(live2dSource).toContain('if (host.dataset.live2dHeadLocked !== headLock) host.dataset.live2dHeadLocked = headLock');
+    expect(live2dSource).toContain('if (host.dataset.live2dAmbientHeadSuppressed !== ambientLock) host.dataset.live2dAmbientHeadSuppressed = ambientLock');
     expect(live2dSource).toContain('model.rotation = headMotionLockedRef.current || ambientAutonomyDisabledRef.current ? 0 : frame.rotation');
     expect(live2dSource).not.toContain('if (headMotionLockedRef.current) {\n      stopPerformanceMotions();');
     expect(live2dSource).toContain('stopPerformanceMotions();');

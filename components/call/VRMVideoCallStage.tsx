@@ -64,6 +64,7 @@ interface VRMVideoCallStageProps {
   externalManualAction?: Live2DActionTrigger | null;
   /** Minimal chrome for the always-on launcher companion. */
   companionMode?: boolean;
+  immersiveCompanion?: boolean;
   /** 基准构图覆盖：陪伴桌面传 companionFraming，优先于 model.framing 作为静息构图。 */
   baseFraming?: AvatarStageFraming;
   /** 布置模式：companionMode 下重新启用拖拽/捏合/滚轮调构图（默认 = !companionMode）。 */
@@ -123,6 +124,7 @@ const VRMVideoCallStage: React.FC<VRMVideoCallStageProps> = ({
   touchImpulseNonce,
   externalManualAction,
   companionMode = false,
+  immersiveCompanion = false,
   baseFraming,
   framingEditable,
   rolePlacement,
@@ -508,7 +510,7 @@ const VRMVideoCallStage: React.FC<VRMVideoCallStageProps> = ({
               motionState={motionState}
               audioFeed={audioFeed}
               headMotionLocked={headMotionLocked}
-              ambientAutonomyDisabled={companionMode}
+              ambientAutonomyDisabled={companionMode && !immersiveCompanion}
               framing={framing}
               faceFraming={calibratingFace ? undefined : model.faceFraming}
               performance={performance}
@@ -536,7 +538,7 @@ const VRMVideoCallStage: React.FC<VRMVideoCallStageProps> = ({
               emotion={emotion}
               audioFeed={audioFeed}
               headMotionLocked={headMotionLocked}
-              ambientAutonomyDisabled={companionMode}
+              ambientAutonomyDisabled={companionMode && !immersiveCompanion}
               framing={framing}
               faceFraming={calibratingFace ? undefined : model?.faceFraming}
               performance={performance}

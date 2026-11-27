@@ -61,17 +61,15 @@ it.each(['manual', 'adaptive'] as const)('matches ChatApp shared prompt bytes an
   const requests = createCompanionRequests({ char, user, realtimeConfig, debug, style: '仅短回复语气', observation: () => ({ text: '现场标记', from: now - 8000, to: now }),
     api: { baseUrl: 'https://example.invalid/v1', apiKey: 'test', model: 'same-model', stream: false } as any });
   debug.start(signal, current.text);
+  await requests.saveLine(current);
   const companion = await requests.prepare([current], Promise.resolve('本轮短回复标记'), signal);
   expect(recall).toHaveBeenCalledOnce();
-  await DB.saveMessage({ charId: id, role: 'user', type: 'text', timestamp: now, content: current.text });
   const range = await loadCharacterContextRange(char);
   const chat = await buildChatRequestPayload({ char, userProfile: user, groups, emojis: [], categories: [],
     historyMsgs: range.messages, recentMsgsHint: range.messages.filter(message => !message.metadata?.source),
     contextLimit: range.messages.length, contextHighWaterMark: range.hwm, recallEntryPoint: 'chat_app', realtimeConfig, musicSnapshot });
 
-  // Synthetic pending IDs may differ from saved IDs; every actual recall field is equal.
-  const recallRows = (rows: any[]) => rows.map(({ id: _id, ...row }) => row);
-  expect(recallRows(recall.mock.calls[0][1]!)).toEqual(recallRows(recall.mock.calls[1][1]!));
+  expect(recall.mock.calls[0][1]).toEqual(recall.mock.calls[1][1]);
   expect(companion.cleanedApiMessages).toEqual([...chat.cleanedApiMessages, { role: 'assistant', content: '本轮短回复标记' }]);
   expect(companion.fullMessages[0].content.split('你正在「同行」中')[0])
     .toBe(chat.fullMessages[0].content.split('### 聊天 App 行为规范')[0]);

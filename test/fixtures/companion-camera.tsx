@@ -89,5 +89,6 @@ createRoot(document.getElementById('root')!).render(<>
     user={{ name: '小雨' } as any} api={{ baseUrl: 'https://unused.invalid', model: 'fixture', apiKey: 'fixture',
       companionVideoApi: { baseUrl: 'https://unused.invalid', model: 'fixture', apiKey: '' } } as any}
     close={() => { document.title = '同行已关闭'; }} videoObserver={observer}
-    requestFactory={() => ({ quick: async () => '先把镜头对准袖口，我在听你说。', prepare: async (_, a) => a as any, full: async () => '这是固定示例回复。' })}/>
+    requestFactory={context => ({ quick: async () => '先把镜头对准袖口，我在听你说。', prepare: async (_, a) => a as any,
+      full: async () => (context.replyFormat?.().includes('[[AVATAR') ? '[[AVATAR: emotion=happy; model_action=expression-4]]\n' : '') + '这是固定示例回复。' })}/>
 </>);

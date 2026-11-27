@@ -2,7 +2,7 @@
 export function companionCameraConstraints(deviceId: string): MediaStreamConstraints {
   return { audio: false, video: {
     ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: 'environment' } }),
-    width: { ideal: 640 }, frameRate: { ideal: 12 },
+    width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 },
   } };
 }
 

@@ -1,8 +1,8 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ArrowUp, CaretRight, Camera, CameraSlash, Microphone, MicrophoneSlash, PhoneDisconnect, SpeakerHigh, SpeakerSlash, Stop, Wrench, ClockCounterClockwise, Waveform, Translate, VideoCamera, PlugsConnected, SlidersHorizontal } from '@phosphor-icons/react';
+import { ArrowLeft, ArrowUp, CaretRight, Camera, CameraSlash, Microphone, MicrophoneSlash, PhoneDisconnect, SpeakerHigh, SpeakerSlash, Stop, Timer, Wrench, ClockCounterClockwise, Waveform, Translate, VideoCamera, PlugsConnected, SlidersHorizontal } from '@phosphor-icons/react';
 import { useOS } from '../context/OSContext';
 import type { APIConfig, CharacterProfile, RealtimeConfig, UserProfile } from '../types';
-import { CompanionSession, type CompanionLine, type CompanionPorts } from '../utils/companion/session';
+import { CompanionSession, type CompanionLine, type CompanionPorts, type IdleConversationSeconds } from '../utils/companion/session';
 import { createCompanionRequests } from '../utils/companion/requests';
 import { CompanionVoice } from '../utils/companion/voice';
 import { canListenContinuously, startCompanionListening, type ListeningCallbacks, type ListeningDiagnostics } from '../utils/companion/listening';
@@ -21,7 +21,7 @@ import { CompanionCameraSource } from '../components/companion/CompanionCameraSo
 import { CompanionCharacterView } from '../components/companion/CompanionCharacterView';
 import { CompanionDebugPanel } from '../components/companion/CompanionDebugPanel';
 import { RoleCameraSelect, useRoleCamera } from '../components/call/RoleCameraSelect';
-import { roleCameraReplyFormat } from '../utils/roleCamera';
+import { companionPerformanceFormat } from '../utils/roleCamera';
 import { useBlobRefUrl } from '../utils/blobRef';
 import { RolePlacementLayer, RolePlacementSettings } from '../components/call/RolePlacement';
 import { normalizePlacement, patchCallPlacement } from '../utils/callRolePlacement';
@@ -36,13 +36,19 @@ import { CompanionVideoStatus } from '../components/companion/CompanionVideoStat
 import { CompanionSetupGuide } from '../components/companion/CompanionSetupGuide';
 import { companionDialogueReady, openCompanionSetupTarget, type CompanionSetupTarget } from '../utils/companion/setup';
 import './companion.css';
+import { useCallComposerViewport } from '../components/call/useCallComposerViewport';
+import { markAmsgStateDirty } from '../utils/amsgStateSync';
+import { runCallMemoryPalacePostFlow } from '../utils/memoryPalace/callPostFlow';
 
 const AvatarSettings = React.lazy(() => import('../components/companion/CompanionAvatarSettings'));
+const layouts = { overlay: '同屏叠放', rows: '上下分屏', columns: '左右分屏', pip: '大小窗' } as const;
 
-type RequestFactory = typeof createCompanionRequests;
+type Requests = ReturnType<typeof createCompanionRequests>;
+type RequestFactory = (context: Parameters<typeof createCompanionRequests>[0]) => Omit<Requests, 'saveLine'> & Partial<Pick<Requests, 'saveLine'>>;
 export interface CompanionSurfaceProps {
   characters: CharacterProfile[]; user: UserProfile; api: APIConfig; realtimeConfig?: RealtimeConfig;
   savePlacement?(id: string, value: CallRolePlacement): void;
+  onArchived?(charId: string, role: CompanionLine['role'], phase?: CompanionLine['phase']): void;
   close(): void;
   foreground?: boolean;
   onRetentionChange?(retain: boolean): void;
@@ -59,8 +65,10 @@ export interface CompanionSurfaceProps {
   videoObserver?: typeof observeCompanionVideo;
 }
 
-export function CompanionSurface({ characters, user, api, realtimeConfig, close, foreground = true, onRetentionChange, navigateSetup, saveQuickReply, saveBargeIn, saveLanguage, savePlacement, editAvatar, playSample, initialView = 'call', introKey = 'sully_companion_intro_v1', requestFactory = createCompanionRequests, videoObserver = observeCompanionVideo }: CompanionSurfaceProps) {
+export function CompanionSurface({ characters, user, api, realtimeConfig, close, foreground = true, onRetentionChange, navigateSetup, saveQuickReply, saveBargeIn, saveLanguage, savePlacement, onArchived, editAvatar, playSample, initialView = 'call', introKey = 'sully_companion_intro_v1', requestFactory = createCompanionRequests, videoObserver = observeCompanionVideo }: CompanionSurfaceProps) {
   const [charId, setCharId] = useState(characters[0]?.id || '');
+  const callViewport = useCallComposerViewport(foreground);
+  const archivedRef = useRef(onArchived); archivedRef.current = onArchived;
   const char = characters.find(item => item.id === charId);
   const roleCamera = useRoleCamera(char);
   const [previewPlacements, setPreviewPlacements] = useState<Record<string, CallRolePlacement>>({});
@@ -72,7 +80,8 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
     },
   };
   const currentFormat = useRef('');
-  currentFormat.current = roleCameraReplyFormat(roleCamera.view, char);
+  const [immersive, setImmersive] = useState(false);
+  currentFormat.current = useMemo(() => companionPerformanceFormat(roleCamera.view, char, immersive), [roleCamera.view, char, immersive]);
   const [demoLanguage, setDemoLanguage] = useState('');
   const language = saveLanguage ? char?.callVoiceLang || '' : demoLanguage;
   const languageRef = useRef(language); languageRef.current = language;
@@ -126,6 +135,10 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
   const [micStatus, setMicStatus] = useState('');
   const [micDiagnostics, setMicDiagnostics] = useState<ListeningDiagnostics>();
   const [camera, setCamera] = useState(false);
+  const [layout, setLayout] = useState<keyof typeof layouts>('overlay');
+  const [cameraMain, setCameraMain] = useState(false);
+  const [idleSeconds, setIdleSeconds] = useState<IdleConversationSeconds>(0);
+  const dualView = camera && roleCamera.view !== 'off';
   const [cameraAspect, setCameraAspect] = useState(0);
   const idleBackground = useBlobRefUrl(!camera && roleCamera.enabled ? char?.videoCallBackground : undefined);
   const [localQuickReply, setLocalQuickReply] = useState(api.companionQuickReply === true);
@@ -188,12 +201,18 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
     setAnalysisPaused(false); setAnalysisProblem(''); setAnalysisClip(undefined);
   };
   const stopAll = () => { session.current?.interrupt('停止看听、配置或测试'); stopMic(); stopCamera(); };
-  const endOuting = () => { changeRetention(false); setKeepAwake(false); stopAll(); };
+  const endOuting = () => { changeRetention(false); setKeepAwake(false); setIdleSeconds(0); stopAll(); };
+  const leaveOuting = async () => {
+    endOuting();
+    try { await session.current?.flushHistory(); close(); }
+    catch { setError('同行对话尚未保存。请检查本机存储，再点一次结束同行重试。'); }
+  };
 
   useEffect(() => charId ? holdCompanionPresence(charId) : undefined, [charId]);
 
   useEffect(() => {
     session.current?.interrupt('切换角色'); session.current = undefined;
+    setIdleSeconds(0);
     debug.clear();
     stopMic(); stopCamera(); setLines([]); setImageMode('none'); setDemoLanguage(char?.callVoiceLang || ''); setStatus('在你身边');
     // This editable seed is intentionally short and visibly labelled as an excerpt.
@@ -220,7 +239,8 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
   const ensureSession = () => {
     if (!char) throw new Error('请先在神经链接中添加角色');
     if (!session.current) {
-      const requests = requestFactory({ char, user, api, style, realtimeConfig, debug, replyFormat: () => currentFormat.current, observation: () => observationRef.current, imageMode });
+      const requests = requestFactory({ char, user, api, style, realtimeConfig, debug, replyFormat: () => currentFormat.current, observation: () => observationRef.current, imageMode,
+        onArchived: (role, phase) => archivedRef.current?.(char.id, role, phase) });
       session.current = new CompanionSession({ ...requests, debug, language: () => languageRef.current,
         play: async (text, signal, heard, started, speech) => {
           if (!voiceOn.current || !canVoice) { signal.throwIfAborted(); started('text'); heard(text); return; }
@@ -231,6 +251,7 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
         pendingInput: text => { if (mounted.current) setPendingInput(text); },
         error: err => {
           if (!mounted.current) return;
+          setIdleSeconds(0);
           const message = err instanceof Error ? err.message : '本轮没有完成，请重试';
           setError(companionDialogueReady(api, char) ? message : { message, setting: 'dialogue' });
         },
@@ -342,13 +363,23 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
   const publicStatus = busyTalking ? '正在说话' : /接话|准备|继续想|生成/.test(status) ? '正在想'
     : listening ? '正在聆听' : status === '已停下，听你说' ? '已停下' : status;
   const overlay = introOpen || !!settings || historyOpen || setupOpen || avatarSettings;
+  const sessionFactory = useRef(ensureSession);
+  sessionFactory.current = ensureSession;
+  useEffect(() => {
+    if (!idleSeconds || !charId || overlay || !foreground || input.trim()) return;
+    const current = sessionFactory.current();
+    const sync = () => current.setIdleConversation(document.hidden ? 0 : idleSeconds);
+    sync();
+    document.addEventListener('visibilitychange', sync);
+    return () => { current.setIdleConversation(0); document.removeEventListener('visibilitychange', sync); };
+  }, [idleSeconds, charId, overlay, foreground, input]);
   const cameraAction = cameraPending ? '取消开启' : camera ? '关闭镜头' : '开启镜头';
   const retryVideo = () => { setAnalysisProblem(''); setAnalysisPaused(false); };
 
-  return <section className="companion-app" aria-label="同行">
+  return <section className="companion-app" aria-label="同行" ref={callViewport}>
     <div className="companion-main" aria-hidden={overlay || undefined} ref={node => { if (node) node.inert = overlay; }}>
       <header className="companion-header">
-        <button type="button" aria-label="返回桌面" onClick={() => { if (!away.current) endOuting(); close(); }}><ArrowLeft size={22}/></button>
+        <button type="button" aria-label="返回桌面" onClick={() => { if (away.current) close(); else void leaveOuting(); }}><ArrowLeft size={22}/></button>
         <div className="companion-title"><select aria-label="同行角色" value={charId} onChange={event => setCharId(event.target.value)}>
           {!characters.length && <option value="">请先添加角色</option>}
           {characters.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
@@ -356,17 +387,18 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
         <div className="companion-head-tools"><button type="button" className="companion-log-entry" aria-label="历史记录" onClick={() => { setHistoryOpen(true); trackEvent('打开通话记录'); }}><ClockCounterClockwise size={17}/><span>历史</span></button>
         <button type="button" ref={wrench} aria-label="同行设置" title="通话工具" onClick={() => setSettings('home')}><Wrench size={21}/></button></div>
       </header>
-      <div className="companion-stage" data-camera={camera ? 'on' : 'off'} data-vision={analysisPaused ? 'paused' : observing ? 'analyzing' : 'idle'}>
+      <div className="companion-stage" data-layout={dualView ? layout : 'overlay'} data-camera-main={cameraMain} data-camera={camera ? 'on' : 'off'} data-vision={analysisPaused ? 'paused' : observing ? 'analyzing' : 'idle'}>
         <div className="companion-scene" style={camera && cameraAspect ? { '--camera-aspect': cameraAspect } as React.CSSProperties : undefined}>
           {idleBackground && !camera && roleCamera.enabled && <img className="companion-call-background" src={idleBackground} alt=""/>}
           <video ref={videoRef} muted playsInline aria-label="摄像头实时画面" className={camera || cameraPending ? 'is-on' : ''}/>
-          {foreground && char && roleCamera.view !== 'off' && !avatarSettings && <RolePlacementLayer key={char.id} control={placement}
+          <div className="companion-role-pane">{foreground && char && roleCamera.view !== 'off' && !avatarSettings && <RolePlacementLayer key={char.id} control={placement}
+            sceneModel={roleCamera.view === 'model' && char.videoAvatar?.format === 'live2d'} corner={dualView && layout === 'overlay'}
             className="companion-foreground" view={roleCamera.view} label="角色画面">
-              <CompanionCharacterView key={char.id} char={char} view={roleCamera.view}
+              <CompanionCharacterView key={char.id} char={char} view={roleCamera.view} immersive={immersive}
                 direction={latest?.role === 'assistant' && latest.status !== 'interrupted' ? latest.performance : undefined}
                 spokenText={latest?.role === 'assistant' && latest.status !== 'interrupted' ? latest.text : undefined}
                 motion={busyTalking ? 'speaking' : listening ? 'listening' : 'idle'}/>
-          </RolePlacementLayer>}
+          </RolePlacementLayer>}</div>
         </div>
         {!char ? <div className="companion-lens-off"><button className="companion-add-partner" onClick={() => openService('character')}>添加同行角色</button></div>
           : !camera && roleCamera.view === 'off' && <div className="companion-lens-off"><CameraSlash size={28}/><span>{cameraPending ? '正在开启镜头' : '双方镜头已关闭'}</span></div>}
@@ -393,13 +425,24 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
         </div>}
         {partial && <div className="companion-partial">{partial}</div>}
         {pendingInput && <div className="companion-pending" role="status" aria-label="下一轮待发送"><strong>下一轮待发送</strong> {pendingInput}</div>}
-        <form onSubmit={event => { event.preventDefault(); send(input); }}><input aria-label="对同行伙伴说" placeholder="说点什么…" value={input} onChange={event => setInput(event.target.value)}/>
+        <form data-call-composer onSubmit={event => { event.preventDefault(); send(input); }}><input aria-label="对同行伙伴说" placeholder="说点什么…" value={input} onChange={event => setInput(event.target.value)}/>
           <button type="submit" aria-label="发送" disabled={!input.trim() || !char}><ArrowUp size={19}/></button></form>
         <div className="companion-actions">
           <button aria-pressed={listening} onClick={toggleMic} disabled={!char || !canListen}>{listening ? <Microphone size={21}/> : <MicrophoneSlash size={21}/>}<span>{listening ? '暂停聆听' : '连续听'}</span></button>
           <button aria-pressed={voiceEnabled && canVoice} onClick={() => { voiceOn.current = !voiceEnabled; setVoiceEnabled(!voiceEnabled); voice.current.prime(); void session.current?.skipReply(); }} disabled={!canVoice}>{voiceEnabled && canVoice ? <SpeakerHigh size={21}/> : <SpeakerSlash size={21}/>}<span>{canVoice ? voiceEnabled ? '角色语音' : '文字模式' : '未配音色'}</span></button>
+          <div className="companion-idle-control" data-on={idleSeconds > 0}>
+            <Timer size={21} aria-hidden="true"/>
+            <select aria-label="自动续聊" title="完整回复结束后，等待多久再继续聊" value={idleSeconds} disabled={!char} onChange={event => {
+              const next = Number(event.target.value);
+              if (next !== 0 && next !== 30 && next !== 60) return;
+              if (!next) session.current?.stopIdleConversation(); else voice.current.prime();
+              setIdleSeconds(next);
+              if (!!next !== !!idleSeconds) trackEvent('开关同行主动开口', { 状态: next ? '开' : '关' });
+              if (next) trackEvent('设置同行续聊间隔', { 间隔: next === 30 ? '30 秒' : '1 分钟' });
+            }}><option value={0}>续聊关闭</option><option value={30}>续聊 30 秒</option><option value={60}>续聊 1 分钟</option></select>
+          </div>
           <button onClick={() => void session.current?.skipReply()}><Stop size={21}/><span>打断</span></button>
-          <button className="companion-hangup" onClick={() => { endOuting(); close(); }}><PhoneDisconnect size={21} weight="fill"/><span>结束同行</span></button>
+          <button className="companion-hangup" onClick={() => void leaveOuting()}><PhoneDisconnect size={21} weight="fill"/><span>结束同行</span></button>
         </div>
       </footer>
     </div>
@@ -458,7 +501,24 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
         </label>
       </div></section>}
       {settings === 'camera' && <>
+        <section><h3>双镜头布局</h3>
+          <label className="companion-option">画面布局<select value={layout} onChange={event => {
+            const next = event.target.value as keyof typeof layouts;
+            if (!Object.hasOwn(layouts, next)) return;
+            setLayout(next); trackEvent('切换同行画面布局', { 布局: layouts[next] });
+          }}>
+            {Object.entries(layouts).map(([value, name]) => <option value={value} key={value}>{name}</option>)}
+          </select></label>
+          {layout === 'pip' && <label className="companion-option">主画面<select value={cameraMain ? 'camera' : 'role'} onChange={event => setCameraMain(event.target.value === 'camera')}>
+            <option value="role">角色</option><option value="camera">我的镜头</option>
+          </select></label>}
+        </section>
         <section><h3>角色画面</h3><label className="companion-option">角色镜头形象<RoleCameraSelect char={char} camera={roleCamera}/></label>
+          <label className="companion-tool-row"><span className="companion-tool-copy"><strong>沉浸式表演</strong><small id="companion-acting-hint">动态模型随台词做动作，见面立绘切换已配置的表情，Chibi 保持原样。生成可能稍慢，取决于对话模型。</small></span>
+            <input type="checkbox" className="companion-switch" aria-label="沉浸式表演" aria-describedby="companion-acting-hint" checked={immersive} onChange={event => {
+              const on = event.target.checked; setImmersive(on); trackEvent('开关同行沉浸式表演', { 状态: on ? '开' : '关' });
+            }}/>
+          </label>
           {char && <RolePlacementSettings key={char.id} control={placement}/>}
           {editAvatar && <button className="companion-link" disabled={!char} onClick={() => { stopAll(); setAvatarSettings(true); }}>管理角色形象</button>}
         </section>
@@ -500,9 +560,19 @@ export function CompanionSurface({ characters, user, api, realtimeConfig, close,
 }
 
 export default function CompanionApp(props: Pick<CompanionSurfaceProps, 'foreground' | 'onRetentionChange'>) {
-  const { characters, userProfile, apiConfig, updateApiConfig, updateCharacter, realtimeConfig, closeApp, openApp } = useOS();
+  const { characters, groups, userProfile, apiConfig, updateApiConfig, updateCharacter, memoryPalaceConfig, realtimeConfig, closeApp, openApp } = useOS();
+  const charactersRef = useRef(characters); charactersRef.current = characters;
   return <CompanionSurface {...props} editAvatar characters={characters} user={userProfile} api={apiConfig} realtimeConfig={realtimeConfig} close={closeApp}
     navigateSetup={(target, charId) => openCompanionSetupTarget(target, charId, openApp)}
+    onArchived={(id, role, phase) => {
+      const char = charactersRef.current.find(item => item.id === id);
+      if (!char) return;
+      markAmsgStateDirty({ char, userProfile, groups, realtimeConfig });
+      if (role === 'assistant' && phase === 'full' && char.memoryPalaceEnabled) {
+        void runCallMemoryPalacePostFlow({ char, getLiveChar: () => charactersRef.current.find(item => item.id === id),
+          memoryPalaceConfig, apiConfig, userName: userProfile.name, updateCharacter }).catch(error => console.error('同行记忆整理失败', error));
+      }
+    }}
     saveLanguage={(charId, value) => updateCharacter(charId, { callVoiceLang: value })}
     savePlacement={(id, value) => updateCharacter(id, previous => patchCallPlacement(previous, 'companion', value))}
     saveQuickReply={enabled => updateApiConfig({ companionQuickReply: enabled })}

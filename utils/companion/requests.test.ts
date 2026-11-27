@@ -1,4 +1,4 @@
-import { roleCameraReplyFormat, type RoleCameraView } from '../roleCamera';
+import { companionPerformanceFormat, roleCameraReplyFormat, type RoleCameraView } from '../roleCamera';
 import { afterEach, expect, it, vi } from 'vitest';
 import { DB } from '../db';
 import * as palace from '../memoryPalace/pipeline';
@@ -6,7 +6,8 @@ import * as api from '../safeApi';
 import { createCompanionRequests } from './requests';
 import { isChatConversationEntry } from '../memoryPalace/trace';
 import { ContextBuilder } from '../context';
-import type { CompanionLine } from './session';
+import { CompanionSession, type CompanionLine } from './session';
+import { loadCharacterContextMessages, loadCharacterContextRange } from '../chatContextRange';
 import { CompanionDebugStore } from './debug';
 
 vi.mock('../activeMsgRuntime', () => ({ prepareInboxBeforeChat: vi.fn(async () => {}) }));
@@ -169,7 +170,9 @@ it.each(['manual', 'adaptive'])('respects %s range and passes exactly the select
   for (let i = 0; i < 230; i++) saved.push(await DB.saveMessage({ charId: character.id, role: 'user', type: 'text', content: `历史编号${i}结束`, timestamp: Date.now() - 100000 + i }));
   localStorage.setItem('mp_lastMsgId_' + character.id, String(saved[5]));
   const recall = vi.spyOn(palace, 'injectMemoryPalace').mockResolvedValue({} as any);
-  const payload = await createCompanionRequests(context(character)).prepare([line('当前A')], Promise.resolve('短答'), new AbortController().signal);
+  const requests = createCompanionRequests(context(character));
+  await requests.saveLine(line('当前A'));
+  const payload = await requests.prepare([line('当前A')], Promise.resolve('短答'), new AbortController().signal);
   const text = JSON.stringify(payload.fullMessages);
   expect(text).not.toContain('历史编号5结束');
   expect(text).toContain('历史编号229结束');
@@ -177,6 +180,30 @@ it.each(['manual', 'adaptive'])('respects %s range and passes exactly the select
   expect(recall.mock.calls[0][1]!.length).toBe(mode === 'adaptive' ? 225 : 10);
   expect(recall.mock.calls[0][1]!.at(-1)?.content).toBe('当前A');
   expect(text.match(/当前A/g)).toHaveLength(1);
+});
+
+it('round-trips walking turns through chat, date and backup using the same real message IDs', async () => {
+  const character = { ...char('companion-shared-transcript'), memoryPalaceEnabled: false };
+  await DB.saveCharacter(character);
+  await DB.saveMessage({ charId: character.id, role: 'assistant', type: 'text', content: '见面时约了来逛花市', metadata: { source: 'date' } });
+  const calls = vi.spyOn(api, 'safeFetchJson')
+    .mockResolvedValueOnce({ choices: [{ message: { content: '我看见了。' } }] })
+    .mockResolvedValueOnce({ choices: [{ message: { content: '那盆白花要带回去吗？' } }] });
+  const requests = createCompanionRequests(context(character));
+  const session = new CompanionSession({ ...requests, play: async (text, _signal, heard) => heard(text), change() {}, error: err => { throw err; } });
+  await session.send('你看这盆花。', true); await session.flushHistory();
+  const prompt = JSON.parse(String(calls.mock.calls[1][1].body)).messages;
+  for (const phrase of ['你看这盆花。', '我看见了。', '见面时约了来逛花市']) expect(JSON.stringify(prompt).split(phrase)).toHaveLength(2);
+  const messages = (await loadCharacterContextRange(character)).messages;
+  expect(messages.map(row => row.content)).toEqual(['见面时约了来逛花市', '你看这盆花。', '我看见了。', '那盆白花要带回去吗？']);
+  expect(await loadCharacterContextMessages(character)).toEqual(messages);
+  expect(new Set(messages.map(row => row.id)).size).toBe(4);
+  const backup = await DB.exportFullData();
+  const exported = backup.messages!.filter(row => row.charId === character.id);
+  expect(exported.map(row => row.id)).toEqual(messages.map(row => row.id));
+  for (const row of exported) await DB.deleteMessage(row.id);
+  await DB.importFullData({ messages: exported } as any);
+  expect((await loadCharacterContextMessages(character)).map(row => [row.id, row.content])).toEqual(messages.map(row => [row.id, row.content]));
 });
 
 it.each([true, false])('preserves the selected API transport setting for both requests: %s', async stream => {
@@ -265,4 +292,10 @@ it('uses the active role camera format for each outgoing request when switching 
   ] };
   const dynamic = roleCameraReplyFormat('model', character);
   expect(dynamic).toContain('wave'); expect(dynamic).not.toMatch(/outfit|manual/);
+  character.videoAvatar.actions[0].name = '挥手';
+  expect(companionPerformanceFormat('model', character, true)).toContain('wave: 挥手');
+  expect(companionPerformanceFormat('model', character, true)).not.toMatch(/outfit|manual/);
+  expect(companionPerformanceFormat('model', character, false)).not.toContain('AVATAR');
+  expect(companionPerformanceFormat('date', character, true)).toContain('emotion=happy');
+  expect(companionPerformanceFormat('chibi', character, true)).not.toContain('AVATAR');
 });

@@ -5,6 +5,37 @@ import { CompanionDebugStore } from './debug';
 const deferred = <T>() => { let resolve!: (value: T) => void; let reject!: (error: unknown) => void; const promise = new Promise<T>((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
 const tick = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
 
+it.each([30, 60] as const)('continues after %i seconds of silence following each delivered full reply', async seconds => {
+  vi.useFakeTimers();
+  try {
+    const firstAudio = deferred<void>(), nextAudio = deferred<void>(), quick = vi.fn();
+    const prepare = vi.fn(async (rows: CompanionLine[]) => rows.map(row => row.text));
+    const full = vi.fn(async () => '看看那边。');
+    const play = vi.fn(async () => {}).mockImplementationOnce(() => firstAudio.promise).mockImplementationOnce(() => nextAudio.promise);
+    const session = new CompanionSession({ quick, prepare, full, play, change() {}, error: vi.fn() });
+    session.setIdleConversation(seconds);
+    await vi.advanceTimersByTimeAsync(180_000); expect(full).not.toHaveBeenCalled();
+    const first = session.send('出发吧', false);
+    await vi.advanceTimersByTimeAsync(180_000); expect(full).toHaveBeenCalledTimes(1);
+    firstAudio.resolve(); await first;
+    await vi.advanceTimersByTimeAsync(seconds * 1000 - 1);
+    session.speechEnded(); // A silent STT packet must not postpone the deadline.
+    expect(full).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(full).toHaveBeenLastCalledWith(['出发吧', '看看那边。'], expect.any(AbortSignal), false, undefined, true);
+    session.speechStarted(false);
+    await session.send('我想去那家店', false, 'queue');
+    nextAudio.resolve(); await vi.advanceTimersByTimeAsync(180_000);
+    expect(full).toHaveBeenCalledTimes(2);
+    await session.speechEnded();
+    expect(prepare.mock.calls[2][0].map(line => line.role)).toEqual(['user', 'assistant', 'assistant', 'user']);
+    await vi.advanceTimersByTimeAsync(seconds * 1000 * 2);
+    expect(full).toHaveBeenCalledTimes(5);
+    expect(quick).not.toHaveBeenCalled();
+    session.interrupt(); await vi.advanceTimersByTimeAsync(60_000); expect(full).toHaveBeenCalledTimes(5);
+  } finally { vi.useRealTimers(); }
+});
+
 it('combines confirmed inputs only after both replies have played and the user finishes speaking', async () => {
   const quickAudio = deferred<void>(), fullAudio = deferred<void>(), fullResult = deferred<string>();
   const prepare = vi.fn(async (history: CompanionLine[]) => history.at(-1)!.text);
@@ -69,6 +100,7 @@ it('recalls beside a, generates a′ during 40s audio, and never overlaps the tw
     full: async a => { order.push('generate:' + a); return 'a′'; }, play, change: () => {}, error: error => { throw error; },
   });
   const done = session.send('A');
+  await tick();
   expect(order).toEqual(['quick', 'recall']);
   recall.resolve('memory'); await tick();
   expect(order).not.toContain('generate:a');
@@ -104,8 +136,10 @@ it('barge-in keeps only heard text and rejects late a′, including transports i
   const late = deferred<string>();
   let lines: CompanionLine[] = [];
   const histories: CompanionLine[][] = [];
+  const stored: string[] = [];
   let turn = 0;
   const session = new CompanionSession({
+    saveLine: async line => stored.push(line.heard),
     quick: async history => { histories.push(history); return ++turn === 1 ? '已听见。没有听见。' : 'b'; },
     prepare: async (_, a) => a,
     full: a => a.startsWith('已听见') ? late.promise : Promise.resolve('b′'),
@@ -123,6 +157,8 @@ it('barge-in keeps only heard text and rejects late a′, including transports i
   expect(histories[1].map(line => line.text)).toEqual(['A', '已听见。', 'B：我是说另一件']);
   expect(lines.map(line => line.text)).not.toContain('过期的 a′');
   expect(lines.at(-1)?.heard).toBe('b′');
+  await session.flushHistory();
+  expect(stored).toEqual(['A', '已听见。', 'B：我是说另一件', 'b', 'b′']);
 });
 
 it('a speech failure keeps the pending continuation alive, shows its text, and reports the real cause', async () => {
@@ -174,7 +210,7 @@ it('keeps performance cues on the displayed line and only carries spoken words i
   const session = new CompanionSession({ quick: async () => '[[AVATAR: emotion=sad]] 等等',
     prepare: async (_history, quick) => quick, full, play, change: lines => { displayed = lines; }, error: e => { throw e; } });
   await session.send('这件呢');
-  expect(full).toHaveBeenCalledWith('等等', expect.any(AbortSignal), true, undefined);
+  expect(full).toHaveBeenCalledWith('等等', expect.any(AbortSignal), true, undefined, false);
   expect(play.mock.calls.map(args => args[0])).toEqual(['等等', '收到等等']);
   expect(displayed[1]).toMatchObject({ text: '等等', performance: { emotion: 'sad' } });
   expect(displayed[2]).toMatchObject({ heard: '收到等等', performance: { emotion: 'happy' } });

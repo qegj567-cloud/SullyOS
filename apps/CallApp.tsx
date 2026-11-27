@@ -1,8 +1,9 @@
 import { RoleCameraSelect, useRoleCamera } from '../components/call/RoleCameraSelect';
 import { RolePlacementLayer, RolePlacementSettings } from '../components/call/RolePlacement';
 import { normalizePlacement, patchCallPlacement } from '../utils/callRolePlacement';
+import { useCallComposerViewport } from '../components/call/useCallComposerViewport';
 import type { CallRolePlacement } from '../types';
-import { roleCameraReplyFormat, roleChibi } from '../utils/roleCamera';
+import { allowedLive2DCallActions, roleCameraReplyFormat, roleChibi } from '../utils/roleCamera';
 import { resolveCharacterUser } from '../utils/userPersona';
 import { resolveDialogueApi } from '../utils/characterApi';
 import { loadCharacterContextMessages } from '../utils/chatContextRange';
@@ -514,6 +515,7 @@ const CallApp: React.FC = () => {
     catch { return 'voice'; }
   });
   const [callPreferences, setCallPreferences] = useState<CallPreferences>(loadCallPreferences);
+  const callViewport = useCallComposerViewport(callMode === 'video' && viewMode === 'in-call');
   const [showCallPreferences, setShowCallPreferences] = useState(false);
   useEffect(() => saveCallPreferences(callPreferences), [callPreferences]);
   // 电话 App 独立的浅色主题偏好（覆盖选人页/通话中/视频/记录页）
@@ -1571,14 +1573,7 @@ const CallApp: React.FC = () => {
     roleCamera.view !== 'model'
       ? []
       : selectedChar?.videoAvatar?.format === 'live2d'
-      ? selectedChar.videoAvatar.actions
-          .filter(action => action.permission === 'ai' && !action.wardrobe)
-          .sort((a, b) => {
-            const score = (action: typeof a) => (action.tags.length ? 100 : 0)
-              + (action.kind === 'motion' ? 20 : action.kind === 'params' ? 15 : 10)
-              + (action.source === 'vtube' ? 2 : 0);
-            return score(b) - score(a);
-          })
+      ? allowedLive2DCallActions(selectedChar.videoAvatar)
           .map(action => ({ id: action.id, name: action.name, kind: action.kind, tags: action.tags }))
       : selectedChar?.videoAvatar?.format === 'vrm'
         ? vrmExpressionsRef.current.map(name => ({ id: name, name: `自定义表情·${name}`, kind: 'expression' as const }))
@@ -3386,14 +3381,15 @@ ${sentencePlan}`;
   const videoStageSize = videoCallLayout === 'stage'
     ? 'min-h-0'
     : videoCallLayout === 'mini'
-      ? 'h-[clamp(140px,26dvh,230px)] min-h-0'
-      : 'h-[clamp(170px,34dvh,300px)] min-h-0';
+      ? 'h-[clamp(140px,26cqh,230px)] min-h-0'
+      : 'h-[clamp(170px,34cqh,300px)] min-h-0';
   const callControlSize = callMode === 'video' ? 'h-10 w-10' : 'h-14 w-14';
   return (
     <div
       className={`h-full w-full relative text-white flex flex-col overflow-hidden ${lightTheme ? 'sully-call-light bg-[#eef0f7]' : 'bg-[#0a0613]'}`}
       data-avatar-touch-pending={pendingAvatarTouchCount}
       data-call-video-layout={callMode === 'video' ? videoCallLayout : undefined}
+      ref={callViewport}
     >
       {lightTheme && <style>{CALL_LIGHT_THEME_CSS}</style>}
       <style>{`
@@ -3402,7 +3398,10 @@ ${sentencePlan}`;
         @keyframes sully-camera-emotion-readout { 0% { opacity:0; transform:translate(-50%,6px) } 18%,72% { opacity:.78; transform:translate(-50%,0) } 100% { opacity:0; transform:translate(-50%,-3px) } }
         .sully-video-stage-shell { animation: sully-call-stage-in 420ms cubic-bezier(.2,.8,.2,1) both; transition: height 320ms cubic-bezier(.2,.8,.2,1), min-height 320ms cubic-bezier(.2,.8,.2,1); }
         [data-call-video-layout="stage"] .sully-video-stage-shell { max-height: none; }
-        body.ios-keyboard-open [data-call-video-layout="stage"] .sully-video-stage-shell { max-height: 0; }
+        [data-call-video-layout] [data-call-composer] { position: absolute; bottom: calc(3.25rem + env(safe-area-inset-bottom)); left: 0; right: 0; z-index: 12; }
+        [data-call-video-layout] { container-type: size; }
+        [data-call-video-layout] [data-testid="video-call-compact-controls"] { margin-top: 3.25rem; }
+        [data-call-video-layout][data-composing] [data-call-composer] > :first-child { background: #24252b; color: white; }
         @media (prefers-reduced-motion: reduce) { .sully-video-stage-shell, .sully-call-video-subtitle, .sully-camera-emotion-readout { animation-duration:.01ms!important; transition-duration:.01ms!important; } }
       `}</style>
       {avatarImportOverlay}
@@ -3486,10 +3485,9 @@ ${sentencePlan}`;
           )}
         </div>
       </div>
-      {/* portrait + aura —— 键盘弹起时（body.ios-keyboard-open）整块收起，把可视区让给消息+输入框，
-          避免大头像把输入框顶出键盘上方的可视区（见 index.html 的 .sully-call-hero 规则）。 */}
+      {/* 视频取景保持尺寸。语音通话头像仍沿用 .sully-call-hero 的键盘收起规则。 */}
       {callMode === 'video' ? (
-        <div className={`sully-call-hero sully-stage-dark sully-video-stage-shell relative px-2 pb-2 pt-2 ${videoCallLayout === 'stage' ? 'flex-1 min-h-0' : 'shrink-0'} ${videoStageSize}`}>
+        <div className={`sully-stage-dark sully-video-stage-shell relative px-2 pb-2 pt-2 ${videoCallLayout === 'stage' ? 'flex-1 min-h-0' : 'shrink-0'} ${videoStageSize}`}>
           <span className="pointer-events-none absolute left-3 top-3 z-20 h-8 w-8 rounded-tl-[1.8rem] border-l border-t" style={{ borderColor: `${accentColor}aa` }} aria-hidden />
           {userCameraMode === 'off' && <span className="pointer-events-none absolute right-3 top-3 z-20 h-8 w-8 rounded-tr-[1.8rem] border-r border-t" style={{ borderColor: `${accentColor}aa` }} aria-hidden />}
           <span className="pointer-events-none absolute bottom-3 left-3 z-20 text-[8px]" style={{ color: accentColor }} aria-hidden>✦</span>
@@ -3779,7 +3777,7 @@ ${sentencePlan}`;
       )}
       <StreamingVoiceBar state={streamingVoice.state} onStop={pauseAudio} />
       {showInputPanel && (
-        <div className={`shrink-0 ${callMode === 'video' ? 'px-3 pb-1.5' : 'px-4 pb-2'}`}>
+        <div data-call-composer className={`shrink-0 ${callMode === 'video' ? 'px-3 pb-1.5' : 'px-4 pb-2'}`}>
           <div className={`${callMode === 'video' ? 'rounded-[1.15rem] p-1.5' : 'rounded-2xl p-2'} border border-white/12 bg-black/30 backdrop-blur-md flex gap-2 items-center`} style={{ boxShadow: `inset 0 0 20px ${accentColor}1f` }}>
             <button
               onClick={toggleStt}

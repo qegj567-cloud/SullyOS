@@ -20,6 +20,12 @@ function commit(control: RolePlacementControl, draft: CallRolePlacement) {
 
 // Portrait taps finish on pointerup, before the corresponding touchend.
 export const RolePlacementTouchLock = React.createContext<React.RefObject<boolean> | null>(null);
+// WebGL places the model before rasterization, so dragging can reveal pixels
+// that were outside the previous frame. CSS layers use the same gesture pivot.
+export const ModelPlacement = React.createContext<React.MutableRefObject<{ pose: CallRolePlacement; corner: boolean }> | null>(null);
+function cssPose(value: CallRolePlacement) {
+  return `translate(${value.x}cqw, ${value.y}cqh) rotate(${value.angle}deg) scale(${value.scale})`;
+}
 
 type Pair = {
   ids: number[];
@@ -31,16 +37,23 @@ type Pair = {
 };
 
 /** The touch surface stays fixed while only its character layer moves. */
-export function RolePlacementLayer({ control, children, className = '', view, label }: {
+export function RolePlacementLayer({ control, children, className = '', view, label, sceneModel = false, corner = false }: {
   control: RolePlacementControl; children: React.ReactNode; className?: string; view?: string; label?: string;
+  sceneModel?: boolean; corner?: boolean;
 }) {
   const layer = useRef<HTMLDivElement>(null);
   const pair = useRef<Pair>();
   const latest = useRef<CallRolePlacement>();
   const multiTouch = useRef(false);
-  const [draft, setDraft] = useState<CallRolePlacement>();
-  const value = draft ?? control.value;
-  const cancel = () => { pair.current = undefined; latest.current = undefined; setDraft(undefined); };
+  const value = latest.current ?? control.value;
+  const modelPlacement = useRef({ pose: value, corner });
+  modelPlacement.current.pose = value;
+  modelPlacement.current.corner = corner;
+  const paint = (pose: CallRolePlacement) => {
+    modelPlacement.current.pose = pose;
+    if (!sceneModel && layer.current) layer.current.style.transform = cssPose(pose);
+  };
+  const cancel = () => { pair.current = undefined; latest.current = undefined; paint(control.value); };
   const sceneTouches = (event: React.TouchEvent<HTMLDivElement>) => Array.from(event.touches).filter(touch =>
     touch.target instanceof Element && event.currentTarget.contains(touch.target) && !touch.target.closest('button,input,select,summary,a'));
   const begin = (event: React.TouchEvent<HTMLDivElement>) => {
@@ -54,8 +67,8 @@ export function RolePlacementLayer({ control, children, className = '', view, la
     const item = layer.current;
     pair.current = {
       ids: touches.map(t => t.identifier), points: touches.map(t => ({ x: t.clientX, y: t.clientY })),
-      pivot: { x: rect.left + item.offsetLeft + item.offsetWidth / 2 + value.x * rect.width / 100,
-        y: rect.top + item.offsetTop + item.offsetHeight / 2 + value.y * rect.height / 100 },
+      pivot: { x: rect.left + item.offsetLeft + item.offsetWidth * (sceneModel && corner ? .7 : .5) + value.x * rect.width / 100,
+        y: rect.top + item.offsetTop + item.offsetHeight * (sceneModel && corner ? .65 : .5) + value.y * rect.height / 100 },
       initial: value, width: rect.width, height: rect.height,
     };
   };
@@ -75,18 +88,19 @@ export function RolePlacementLayer({ control, children, className = '', view, la
       x: start.initial.x + (result.x - start.pivot.x) * 100 / start.width,
       y: start.initial.y + (result.y - start.pivot.y) * 100 / start.height });
     latest.current = next;
-    setDraft(next);
+    paint(next);
   };
   const end = (event: React.TouchEvent<HTMLDivElement>) => {
     const start = pair.current;
     if (!start || !Array.from(event.changedTouches).some(t => start.ids.includes(t.identifier))) return;
     if (latest.current) commit(control, latest.current);
-    cancel();
+    pair.current = undefined;
+    latest.current = undefined;
   };
   return <div className="call-placement-host" onTouchStartCapture={begin} onTouchMoveCapture={move} onTouchEndCapture={end} onTouchCancelCapture={cancel}>
     <div className={'call-placement-content ' + className} data-view={view} aria-label={label} ref={layer}
-      style={{ transform: `translate(${value.x}cqw, ${value.y}cqh) rotate(${value.angle}deg) scale(${value.scale})` }}>
-      <RolePlacementTouchLock.Provider value={multiTouch}>{children}</RolePlacementTouchLock.Provider>
+      data-scene-model={sceneModel || undefined} style={{ transform: sceneModel ? undefined : cssPose(value) }}>
+      <RolePlacementTouchLock.Provider value={multiTouch}><ModelPlacement.Provider value={sceneModel ? modelPlacement : null}>{children}</ModelPlacement.Provider></RolePlacementTouchLock.Provider>
     </div>
   </div>;
 }

@@ -50,7 +50,7 @@ const StaticCompanionPortrait: React.FC<StaticCompanionPortraitProps> = ({
   );
 
   return (
-    <div className="pointer-events-none absolute inset-0 flex items-end justify-center overflow-hidden px-[4%] pb-[2%]" data-testid={testId}>
+    <div className={`pointer-events-none absolute inset-0 flex items-end justify-center ${callTouchLock ? '' : 'overflow-hidden'} px-[4%] pb-[2%]`} data-testid={testId}>
       <img
         src={imageUrl}
         alt={`${characterName}的${surfaceLabel}`}
