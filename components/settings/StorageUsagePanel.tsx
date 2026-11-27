@@ -17,7 +17,7 @@ import {
     type StorageBreakdown,
     type BreakdownProgress,
 } from '../../utils/storageStats';
-import { optimizeResourceStorage, type OptimizeProgress, type OptimizeResult } from '../../utils/storageOptimize';
+import { optimizeResourceStorage, orphanGcOutcomeLabel, type OptimizeProgress, type OptimizeResult } from '../../utils/storageOptimize';
 import { trackEvent } from '../../utils/analytics';
 
 /**
@@ -55,16 +55,19 @@ function scheduleMergeReload(): void {
 type PersistAttempt = 'none' | 'granted' | 'denied';
 
 /**
- * 把优化结果讲成人话。两笔账分开说：转格式是当场就省下的，合并重复要等下一次
- * 孤儿清理才真的把空间还回来（合并只改引用、不删图，见 utils/blobDedupe.ts）。
+ * 把优化结果讲成人话。三笔账分开说：清掉没人用的图片和转格式是当场就省下的，合并重复
+ * 多出来的那几份要等下一次点优化才清（合并只改引用、不删图，见 utils/storageOptimize.ts 文件头）。
  */
 function describeOptimizeResult(r: OptimizeResult): string {
     const parts: string[] = [];
+    if (r.orphansDeleted > 0) {
+        parts.push(`清理了 ${r.orphansDeleted} 张没有任何地方在用的图片${r.orphanBytesFreed > 0 ? `，释放约 ${formatBytes(r.orphanBytesFreed)}` : ''}`);
+    }
     if (r.converted > 0) {
         parts.push(`已将 ${r.converted} 张旧格式图片转为省空间格式，释放约 ${formatBytes(Math.max(0, r.bytesBefore - r.bytesAfter))}`);
     }
     if (r.mergedDuplicates > 0) {
-        parts.push(`把 ${r.mergedDuplicates} 份重复的图片并成了一份，约 ${formatBytes(r.reclaimableBytes)} 会在下次清理时释放`);
+        parts.push(`把 ${r.mergedDuplicates} 份重复的图片并成了一份，多出来的约 ${formatBytes(r.reclaimableBytes)} 留到下次优化时清理`);
     }
     if (r.vectorsCompacted > 0) {
         parts.push(`已将 ${r.vectorsCompacted} 条记忆索引压成紧凑格式`);
@@ -73,7 +76,14 @@ function describeOptimizeResult(r: OptimizeResult): string {
         parts.push(`已整理 ${r.linksCompacted} 条记忆连接的小数精度，连接全部保留`);
     }
     const reloadNote = r.mergedDuplicates > 0 ? '页面即将刷新，让界面和备份都用上合并后的图片。' : '';
-    const vectorNote = (r.vectorError ? `记忆数据压缩这一步没做完：${r.vectorError}。再点一次可以接着处理。` : '')
+    // 清理没执行、或者一张没删却有一批判断不了的，都得说出来：这两种和「本来就没垃圾」长得一样。
+    const orphanNote = r.orphanGcSkipped
+        ? `清理没人用的图片这一步没有执行：${r.orphanGcSkipped}。`
+        : r.orphansDeleted === 0 && r.orphansUndecided > 0
+            ? `有 ${r.orphansUndecided} 张图片判断不了还有没有地方在用，先都留着了。`
+            : '';
+    const vectorNote = orphanNote
+        + (r.vectorError ? `记忆数据压缩这一步没做完：${r.vectorError}。再点一次可以接着处理。` : '')
         + (r.linkError ? `记忆连接这一步没做完：${r.linkError}。再点一次可以继续。` : '');
     if (parts.length === 0) {
         if (r.failed > 0) return `有 ${r.failed} 张图片转换失败（已保留原样），其余没有需要优化的。${vectorNote}`;
@@ -154,6 +164,7 @@ const StorageUsagePanel: React.FC = () => {
             // 排在面板存活判断之前：引用已经在库里合并了，内存里的旧令牌就得靠刷新换掉，
             // 这件事跟面板还在不在没关系。
             if (result.mergedDuplicates > 0) scheduleMergeReload();
+            trackEvent('一键优化资源存储', { 孤儿清理: orphanGcOutcomeLabel(result) });
             if (!aliveRef.current) return;
             setOptimizeResult(result);
             // 用量和细分都变了：总量刷新，细分缓存作废（下次展开重算）
@@ -276,14 +287,17 @@ const StorageUsagePanel: React.FC = () => {
                 <p className={`mt-1.5 text-[10px] leading-relaxed ${optimizeError ? 'text-rose-500' : 'text-slate-400'}`}>
                     {optimizing
                         ? (optimizeProgress
-                            ? `正在处理：${optimizeProgress.label}（${optimizeProgress.done}/${optimizeProgress.total}）…`
+                            ? `正在处理：${optimizeProgress.label}${optimizeProgress.total > 0 ? `（${optimizeProgress.done}/${optimizeProgress.total}）` : ''}…`
                             : '正在扫描…')
                         : optimizeError
                             ? optimizeError
                             : optimizeResult
                                 ? describeOptimizeResult(optimizeResult)
-                                : '把旧版格式的图片和记忆数据转成更省空间的格式，并合并重复存了多份的同一张图片（不影响画质与聊天记录）。做过一次就干净；导入过旧备份后可以再点。'}
+                                : '把旧版格式的图片和记忆数据转成更省空间的格式，合并重复存了多份的同一张图片，并清理没有任何地方在用的图片（不影响画质与聊天记录；存进来不满三天的图片不会清）。清理只在没开着别的标签页或窗口时进行；合并出来的多余图片要再点一次才会清理。导入过旧备份后也可以再点。'}
                 </p>
+                {/* 这个按钮不加二次确认：被清理的图片按定义没有任何地方引用，用户在界面上看不到，
+                    弹窗里给不出能让人判断的信息；防误删靠的是清理那一轮的安全阀
+                    （见 utils/blobGc.ts），说明文字写明会清理、结果如实报告清了多少。 */}
                 {/* 合并动的是库里的引用，内存里的 theme / customIcons 还捏着合并前的令牌。
                     不刷新的话：界面照常显示，但导出的备份里 metadata 写的仍是旧令牌，
                     同一张图又变成两份进包——看起来就像「优化根本没生效」。所以优化一跑完就

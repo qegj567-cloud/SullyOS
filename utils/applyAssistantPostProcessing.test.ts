@@ -900,3 +900,38 @@ describe('停止上屏', () => {
         expect((await DB.getRecentMessagesByCharId(charId, 20)).map(m => m.content)).toEqual(['第一句']);
     });
 });
+
+describe('落库后刷新界面', () => {
+    it('调用方给了读法时每条气泡照它读，不再整读 200 条', async () => {
+        const charId = `postprocess-refresh-${Date.now()}`;
+        const ctx = makeCtx(charId, []);
+        ctx.instantRender = true;
+        const loadRefreshMessages = vi.fn(async () => DB.getRecentMessagesByCharId(charId, 5));
+        ctx.hooks.loadRefreshMessages = loadRefreshMessages;
+        const fullReads: number[] = [];
+        const original = DB.getRecentMessagesByCharId;
+        const spy = vi.spyOn(DB, 'getRecentMessagesByCharId').mockImplementation((id, limit, ...rest) => {
+            fullReads.push(limit);
+            return original(id, limit, ...rest);
+        });
+        try {
+            await applyAssistantPostProcessing('第一句\n第二句\n第三句', ctx);
+        } finally { spy.mockRestore(); }
+        expect(loadRefreshMessages.mock.calls.length).toBeGreaterThanOrEqual(3);
+        expect(fullReads).not.toContain(200);
+        // 交给界面的列表里有刚落库的气泡。
+        const lastShown = vi.mocked(ctx.hooks.setMessages).mock.calls.at(-1)![0];
+        expect(lastShown.map(m => m.content)).toEqual(['第一句', '第二句', '第三句']);
+    });
+
+    it('没给读法时照旧整读', async () => {
+        const charId = `postprocess-refresh-default-${Date.now()}`;
+        const ctx = makeCtx(charId, []);
+        ctx.instantRender = true;
+        const spy = vi.spyOn(DB, 'getRecentMessagesByCharId');
+        try {
+            await applyAssistantPostProcessing('只有一句', ctx);
+            expect(spy.mock.calls.some(call => call[1] === 200)).toBe(true);
+        } finally { spy.mockRestore(); }
+    });
+});

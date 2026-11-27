@@ -49,7 +49,9 @@ const mediaAsset = (id: string) => !id.startsWith(calibratedDeliveryPrefix) && (
 // 恢复时跳过的坏图清单描述的是这台设备上一次恢复，重启提示一次就清掉，也不进备份。
 // 救援警告带着这台设备的「已确认」记录，带到新设备会让那边少弹一次警告；新设备会自己去问 Worker。
 // 调试面板换假模型前的 API 备份（utils/fakeLlmSwitch.ts）带着真 Key，只对这台设备上那次切换有意义。
-export const privateLocalExcluded = (key: string) => isTaskTraceKey(key) || isCloudGenStorageKey(key) || key === LOCAL_GEN_INFLIGHT_KEY || key === RESTORE_DAMAGED_ASSETS_KEY || key === AMSG_RESCUE_ALERT_LS_KEY || key === 'sullyos_dev_fake_llm_v1' || /location|geolocation|latitude|longitude|privacy|user_spaces_catalog|(?:im|ex)port.*progress/i.test(key);
+// 「减弱模糊」开关（utils/blurPolicy.ts）是针对这台设备性能做的选择，换一台设备不该被带过去。
+// 记忆向量「已扫过」记录（utils/memoryPalace/db.ts）描述的是这台设备上的库，恢复到别处要重新扫。
+export const privateLocalExcluded = (key: string) => isTaskTraceKey(key) || isCloudGenStorageKey(key) || key === LOCAL_GEN_INFLIGHT_KEY || key === RESTORE_DAMAGED_ASSETS_KEY || key === AMSG_RESCUE_ALERT_LS_KEY || key === 'sullyos_dev_fake_llm_v1' || key === 'sullyos_reduced_blur_v1' || key === 'mp_vector_compact_scan_v1' || /location|geolocation|latitude|longitude|privacy|user_spaces_catalog|(?:im|ex)port.*progress/i.test(key);
 export function spaceMediaRow(store: string, row: any) {
     if (store === 'assets' && row.id === HELP_HISTORY_KEY) return { id: row.id, data: helpMediaHistory(row.data) };
     if (store === 'characters') {

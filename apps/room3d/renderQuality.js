@@ -7,6 +7,12 @@ export function roomPixelRatio(quality,deviceRatio,coarse=false){
  return Math.min(dpr,quality==='balanced'?1:.75);
 }
 
+// 待机小人要不要让渲染循环续帧。均衡/清晰档待机也在呼吸，在场就一直画；
+// 省电档（motion 关）和「减少动态效果」待机不呼吸，只在还有没演完的动作时续帧，演完照常停绘。
+export function idleResidentsKeepDrawing(present,busy,motion,reducedMotion){
+ return !!present&&(!!busy||!!motion&&!reducedMotion);
+}
+
 // Keep the same daylight composition on phones; spend on one cached window
 // shadow instead of a second full-scene outline pass or multiple shadow maps.
 export function roomLightBudget(quality,coarse=false,overview=false){

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { DB, openDB } from './db';
-import { runBlobGc, REF_SOURCE_STORES } from './blobGc';
+import { collectReferencedIds } from './spaceAssets';
+import { runBlobGc, runBlobGcWithLockHeld, REF_SOURCE_STORES } from './blobGc';
 import { putImageBlob, getBlobForRef, dataUrlToBlob } from './blobRef';
 
 // fake-indexeddb 已由 test-setup.ts 注入。这组用例钉住孤儿 GC 的四条生死线：
@@ -36,7 +37,14 @@ async function seedStore(name: string, records: any[]): Promise<void> {
     });
 }
 
+/** 让回收以为只有这一个页面开着（每个真实页面都拿着一把会话锁，测试进程里没有）。 */
+const pretendPages = (...clientIds: string[]) => vi.spyOn(navigator.locks, 'query').mockResolvedValue({
+    held: clientIds.map(clientId => ({ name: 'sully-user-space-session:default', mode: 'shared' as const, clientId })),
+    pending: [],
+});
+
 beforeEach(async () => {
+    pretendPages('this-page');
     // 每条用例都从干净的世界出发：blob 库、本组会写的引用面表、localStorage 全清，
     // 避免上一条用例的令牌 / 引用串味（GC 是全库扫描，残留会直接改变 deleted/kept 计数）
     for (const s of ['blob_assets', 'characters', 'songs', 'daily_schedule']) {
@@ -180,6 +188,180 @@ describe('引用面清单拼写守卫', () => {
         for (const name of REF_SOURCE_STORES) {
             expect(existing).toContain(name);
         }
+    });
+});
+
+describe('整批复查：一轮回收只把全部用户空间复查一遍', () => {
+    // allSpaceReferenceSources 每完整走一趟开头都会问一次浏览器「现在有哪些库」，数它就是数趟数。
+    const countPasses = () => vi.spyOn(indexedDB, 'databases');
+
+    it('五张孤儿也只扫两趟（标记一趟 + 复查一趟），不是每张一趟', async () => {
+        for (let i = 0; i < 5; i++) await DB.putBlobAsset(`img_orphan_${i}`, new Blob([`x${i}`]));
+        const passes = countPasses();
+        try {
+            const result = await runBlobGc({ minAgeMs: 0 });
+            expect(result).toMatchObject({ deleted: 5, kept: 0, aborted: false });
+            expect(passes).toHaveBeenCalledTimes(2);
+        } finally {
+            passes.mockRestore();
+        }
+        expect(await DB.listBlobAssetIds()).toEqual([]);
+    });
+
+    it('复查比标记更严：id 不带 blobref: 前缀裸出现、夹在更长的字符串里，也算有人引用', async () => {
+        await DB.putBlobAsset('img_bare_id', tinyBlob());
+        await DB.putBlobAsset('img_orphan_dead', tinyBlob());
+        await seedStore('characters', [{ id: 'c1', name: '裸出现', note: 'xximg_bare_idyy' }]);
+
+        const result = await runBlobGc({ minAgeMs: 0 });
+
+        expect(result).toMatchObject({ deleted: 1, kept: 1, aborted: false });
+        expect(await DB.getBlobAsset('img_bare_id')).not.toBeNull();
+        expect(await DB.getBlobAsset('img_orphan_dead')).toBeNull();
+    });
+
+    it('复查那一趟读到一半出错：整批一张不删', async () => {
+        await DB.putBlobAsset('img_orphan_a', tinyBlob());
+        await DB.putBlobAsset('img_orphan_b', tinyBlob());
+        const real = indexedDB.databases.bind(indexedDB);
+        let pass = 0;
+        const spy = vi.spyOn(indexedDB, 'databases').mockImplementation(async () => {
+            if (++pass === 2) throw new Error('复查读不出来');
+            return real();
+        });
+        try {
+            await expect(runBlobGc({ minAgeMs: 0 })).rejects.toThrow('复查读不出来');
+        } finally {
+            spy.mockRestore();
+        }
+        expect(await DB.getBlobAsset('img_orphan_a')).not.toBeNull();
+        expect(await DB.getBlobAsset('img_orphan_b')).not.toBeNull();
+    });
+
+    it('两个编号指着同一份文件：只删没人用的编号，文件留着；都没人用了才连文件一起删', async () => {
+        const same = () => new Blob(['同一份内容'], { type: 'image/png' });
+        await DB.putBlobAsset('img_alias_used', same());
+        await DB.putBlobAsset('img_alias_orphan', same());
+        await seedStore('characters', [{ id: 'c1', name: '角色', avatar: 'blobref:img_alias_used' }]);
+
+        expect(await runBlobGc({ minAgeMs: 0 })).toMatchObject({ deleted: 1 });
+        expect(await DB.getBlobAsset('img_alias_orphan')).toBeNull();
+        expect(await (await DB.getBlobAsset('img_alias_used'))!.text()).toBe('同一份内容');
+
+        await clearStore('characters');
+        expect(await runBlobGc({ minAgeMs: 0 })).toMatchObject({ deleted: 1 });
+        const db = await openDB();
+        const left = await new Promise<number>((resolve, reject) => {
+            const req = db.transaction('blob_assets').objectStore('blob_assets').count();
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+        expect(left).toBe(0);
+    });
+
+    it('批量入口照搬单张入口的守卫：pool_ 开头的共享文件不是删除句柄', async () => {
+        await DB.putBlobAsset('img_alias_used', tinyBlob());
+        const db = await openDB();
+        const keys = await new Promise<IDBValidKey[]>((resolve, reject) => {
+            const req = db.transaction('blob_assets').objectStore('blob_assets').getAllKeys();
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+        const pool = keys.filter((k): k is string => typeof k === 'string' && k.startsWith('pool_'));
+        expect(pool.length).toBe(1);
+        expect(await DB.deleteUnreferencedBlobAssets(pool)).toEqual([]);
+        expect(await DB.getBlobAsset('img_alias_used')).not.toBeNull();
+    });
+});
+
+describe('批量引用判定与逐个 includes 等价', () => {
+    const naive = (text: string, ids: string[]) => ids.filter(id => text.includes(id));
+    const fast = (text: string, ids: string[]) => {
+        const found = new Set<string>();
+        collectReferencedIds(text, new Set(ids), found);
+        return ids.filter(id => found.has(id));
+    };
+
+    it('点名的几种情况', () => {
+        const ids = ['img_a1', 'b_lz4_x', 'b_lz4_x9', 'img_never', 'companion-voice:y', 'plain'];
+        for (const text of [
+            '{"avatar":"blobref:img_a1"}',                 // 正常令牌
+            'img_a1',                                      // 裸 id，整段文本就是它
+            'zzimg_a1zz',                                  // 夹在更长的字符串里
+            '{"a":"blobref:b_lz4_x9"}',                    // 短 id 是长 id 的前缀：两个都算
+            '{"css":"url(\\\"blobref:b_lz4_x\\\")"}', // 嵌套 JSON 转义
+            'b_lz4_x_tail img_a1',                         // 一段文本两个 id、一段字符里带多个下划线
+            'x'.repeat(5000) + 'AAAA/BBBB+CCCC' + 'img_a1', // 前面一大段没有下划线的文本
+            'companion-voice:y 与 plain',                   // 不带下划线 / 带别的字符的 id 走全文比对
+            '_', '__img_a1__', '', 'img_', 'b_lz4_',
+        ]) expect(fast(text, ids), text.slice(-40)).toEqual(naive(text, ids));
+    });
+
+    it('随机文本：结果逐个相同', () => {
+        // 固定种子的小随机数，失败时能复现
+        let seed = 20261127;
+        const rand = (n: number) => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed % n; };
+        const alphabet = ['a', 'b', 'g', 'i', 'm', '1', '_', '_', ':', '"', ' ', '-', '/'];
+        const word = (max: number, chars = alphabet) => Array.from({ length: rand(max + 1) }, () => chars[rand(chars.length)]).join('');
+        const idChars = ['a', 'b', 'g', 'i', 'm', '1', '_'];
+        for (let round = 0; round < 3000; round++) {
+            const ids = [...new Set([
+                ...Array.from({ length: 4 }, () => (rand(2) ? 'img_' : 'b_') + word(3, idChars)),
+                word(3, idChars), word(3),
+            ])];
+            const text = word(40);
+            expect(fast(text, ids), JSON.stringify({ text, ids })).toEqual(naive(text, ids));
+        }
+    });
+
+    it('跨多段文本共用「见过的字符段」：结果仍与逐段 includes 的并集相同', () => {
+        const ids = ['img_a', 'img_ab', 'b_c'];
+        const texts = ['x img_zz y', 'x img_zz y img_ab', 'b_c', 'x img_zz y'];
+        const pending = new Set(ids), found = new Set<string>(), seen = new Set<string>();
+        for (const text of texts) collectReferencedIds(text, pending, found, seen);
+        expect([...found].sort()).toEqual(ids.filter(id => texts.some(t => t.includes(id))).sort());
+    });
+});
+
+describe('只有这一个页面开着才回收', () => {
+    it('还有别的标签页拿着会话锁：整轮不做，说清原因', async () => {
+        await DB.putBlobAsset('img_orphan_dead', tinyBlob());
+        pretendPages('this-page', 'another-tab');
+        await expect(runBlobGc({ minAgeMs: 0 })).rejects.toThrow(/别的标签页/);
+        expect(await DB.getBlobAsset('img_orphan_dead')).not.toBeNull();
+    });
+
+    it('别的页面还在排队等会话锁，也算开着', async () => {
+        await DB.putBlobAsset('img_orphan_dead', tinyBlob());
+        vi.spyOn(navigator.locks, 'query').mockResolvedValue({
+            held: [{ name: 'sully-user-space-session:default', mode: 'shared', clientId: 'this-page' }],
+            pending: [{ name: 'sully-user-space-session:u_other', mode: 'shared', clientId: 'another-tab' }],
+        });
+        await expect(runBlobGc({ minAgeMs: 0 })).rejects.toThrow(/别的标签页/);
+        expect(await DB.getBlobAsset('img_orphan_dead')).not.toBeNull();
+    });
+
+    it('确认不了（浏览器不给查，或者连自己都没数到）：同样不做', async () => {
+        await DB.putBlobAsset('img_orphan_dead', tinyBlob());
+        pretendPages();
+        await expect(runBlobGc({ minAgeMs: 0 })).rejects.toThrow(/没法确认/);
+        vi.spyOn(navigator.locks, 'query').mockRestore();
+        Object.defineProperty(navigator.locks, 'query', { value: undefined, configurable: true });
+        try {
+            await expect(runBlobGc({ minAgeMs: 0 })).rejects.toThrow(/没法确认/);
+        } finally {
+            delete (navigator.locks as any).query;
+        }
+        expect(typeof navigator.locks.query).toBe('function');
+        expect(await DB.getBlobAsset('img_orphan_dead')).not.toBeNull();
+    });
+});
+
+describe('给优化资源存储用的入口', () => {
+    it('没拿维护锁时直接拒绝', async () => {
+        await DB.putBlobAsset('img_orphan_dead', tinyBlob());
+        await expect(runBlobGcWithLockHeld()).rejects.toThrow(/维护锁/);
+        expect(await DB.getBlobAsset('img_orphan_dead')).not.toBeNull();
     });
 });
 

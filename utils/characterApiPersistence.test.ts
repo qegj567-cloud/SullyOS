@@ -12,7 +12,7 @@ import { normalizeApiPreset } from './apiConfigNormalize';
 import { useChatAI } from '../hooks/useChatAI';
 import { safeFetchJson } from './safeApi';
 
-vi.mock('../context/MusicContext', () => ({ useMusic: () => ({}), loadMusicHooks: () => null }));
+vi.mock('../context/MusicContext', () => ({ loadMusicPlaybackSnapshot: () => null, loadMusicHooks: () => null }));
 vi.mock('./keepAlive', () => ({ KeepAlive: { start: vi.fn(), stop: vi.fn() } }));
 vi.mock('./safeApi', async importOriginal => ({ ...await importOriginal<typeof import('./safeApi')>(), safeFetchJson: vi.fn() }));
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;

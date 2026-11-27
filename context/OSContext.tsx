@@ -56,7 +56,7 @@ import type { BackupZipReader } from '../utils/backupZipReader';
 import { externalizeVoiceMessageBlob, restoreVoiceMessageBlobs, shouldIncludeVoiceRelatedAssetInBackup } from '../utils/voiceMessageBackup';
 import { ensureCompanionVoiceAssetIdsForBackup, isCompanionVoiceAssetId } from '../utils/companionVoiceAssets';
 import { collectCharacterCompanionVoiceAssetIds } from '../utils/companionPresets';
-import { encodeVectorsForBackupChunked } from '../utils/memoryPalace/db';
+import { encodeVectorsForBackupChunked, invalidateVectorCompactScan } from '../utils/memoryPalace/db';
 import { createBackupArchive } from '../utils/backupArchive';
 import { streamBackupArrayStore } from '../utils/backupStoreStreaming';
 import { VRScheduler, type VRSessionOutcome } from '../utils/vrWorld/scheduler';
@@ -932,7 +932,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               await new Promise(r => setTimeout(r, 2000)); // 让首屏渲染先呼吸一下
               if (cancelled) return;
               const { MemoryVectorDB } = await import('../utils/memoryPalace/db');
-              const migrated = await MemoryVectorDB.scanAndMigrateLegacy((m, s) => {
+              // 这个空间近期完整扫过就跳过；恢复备份会让记录作废，届时重新扫。
+              const migrated = await MemoryVectorDB.scanAndMigrateLegacyIfNeeded((m, s) => {
                   if (cancelled || m === 0) return;
                   if (s % 1000 === 0 && s > 0) {
                       setSysOperation({
@@ -1873,7 +1874,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         }
 
         try {
-            const assets = await DB.getAllAssets();
+            // 只读下面用得到的键（清单在 DB.getStartupAssets 里）：这段要读新的键时先去那边登记，否则读不到。
+            const assets = await DB.getStartupAssets();
             const assetMap: Record<string, string> = {};
             if (Array.isArray(assets)) {
                 assets.forEach(a => assetMap[a.id] = a.data);
@@ -2301,16 +2303,25 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const suspendedCallRef = useRef(suspendedCall);
   suspendedCallRef.current = suspendedCall;
 
+  // 定时器只跟「有没有角色」走，角色列表每轮从 ref 现取：角色任何字段更新都重建定时器的话，
+  // 每次更新都会立刻把所有角色查一遍。
+  const hasCharacters = characters.length > 0;
   useEffect(() => {
-      if (!isDataLoaded || characters.length === 0) return;
+      if (!isDataLoaded || !hasCharacters) return;
       let cancelled = false;
       const checkAllSchedules = async () => {
           if (cancelled) return;
+          // 每轮先用一次查询找出有到期消息的角色，绝大多数轮次到这里就结束；
+          // 有到期消息的角色再走下面逐个取消息的流程。
+          let dueCharIds: Set<string>;
+          try { dueCharIds = await DB.getCharIdsWithDueScheduledMessages(); } catch { return; }
+          if (cancelled || dueCharIds.size === 0) return;
           let hasNewMessage = false;
           const unreadUpdates: Record<string, number> = {};
 
-          for (const char of characters) {
+          for (const char of charactersRef.current) {
               try {
+                  if (!dueCharIds.has(char.id)) continue;
                   // 用户正在 DateApp 里和这个角色见面 —— 角色之前排好的定时消息
                   // ([schedule_message] 指令) 这轮先压着不投递（不删不读），
                   // 等用户离开见面界面后，下一轮 5s 检查会自然送达。
@@ -2378,7 +2389,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       schedulerRef.current = setInterval(checkAllSchedules, 5000);
       checkAllSchedules();
       return () => { cancelled = true; if (schedulerRef.current) clearInterval(schedulerRef.current); };
-  }, [isDataLoaded, characters]);
+  }, [isDataLoaded, hasCharacters]);
 
   const clearUnread = useCallback((charId: string) => {
       setUnreadMessages(prev => {
@@ -2489,8 +2500,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               return;
           }
           // 无 buffs 的纯刷新信号 (runPushTailPipeline 等): 从 DB 兜底重读该角色 buff.
-          DB.getAllCharacters().then(all => {
-              const updated = all.find(c => c.id === charId);
+          DB.getCharacter(charId).then(updated => {
               if (!updated) return;
               syncBuffIntoMemory(updated.activeBuffs, updated.buffInjection);
           }).catch(() => {});
@@ -2823,8 +2833,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       const tasksAdoptedHandler = (e: Event) => {
           const charId = ((e as CustomEvent).detail || {}).charId as string | undefined;
           if (!charId) return;
-          void DB.getAllCharacters().then(all => {
-              const fresh = all.find(c => c.id === charId);
+          void DB.getCharacter(charId).then(fresh => {
               if (!fresh) return;
               setCharacters(prev => prev.map(c => {
                   if (c.id !== charId) return c;
@@ -2902,8 +2911,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           if (detail.target === 'character') {
               const charId = detail.charId;
               if (!charId) return;
-              void DB.getAllCharacters().then(all => {
-                  const fresh = all.find(c => c.id === charId);
+              void DB.getCharacter(charId).then(fresh => {
                   if (!fresh) return;
                   const freshModule = fresh.vrState?.sarModule;
                   setCharacters(prev => prev.map(c => {
@@ -4991,6 +4999,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       const userSpaceWriteHooks = {
           onBeforeWrite: () => {
               importMarker.beginWrite();
+              // 备份可能带进旧格式的记忆向量，重启后要重新扫一遍。
+              invalidateVectorCompactScan();
               showImportProgress('database', '正在写入用户空间...', 50, { current: '写入用户空间' });
           },
           onRolledBack: () => importMarker.clear(),
@@ -5143,6 +5153,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           }
           // 只读校验到此全部通过，下面第一次写库（先图片库、后各表），从这里起中断才需要提示重新导入。
           importMarker.beginWrite();
+          // 备份可能带进旧格式的记忆向量，重启后要重新扫一遍。
+          invalidateVectorCompactScan();
           if (zip && blobEntries.length > 0) {
               await restoreBlobsFromZip(
                   zip as unknown as ZipFileReader,

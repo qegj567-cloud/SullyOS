@@ -4,6 +4,8 @@ import {
     measureStoreUsage,
     summarizeUsage,
     categoryOfStore,
+    categoryOfAssetKey,
+    categoryOfDatabase,
     readStorageOverview,
     requestPersistentStorage,
     formatBytes,
@@ -91,7 +93,7 @@ describe('measureStoreUsage', () => {
         const items = Array.from({ length: 50 }, (_, i) => ({ id: i, text: 'hello world' }));
         await putAll(db, 'messages', items);
 
-        const usage = await measureStoreUsage(db, 'messages');
+        const [usage] = await measureStoreUsage(db, 'messages');
         const truth = items.reduce((n, it) => n + measureValue(it).bytes, 0);
         expect(usage.count).toBe(50);
         expect(usage.estimated).toBe(false);
@@ -101,8 +103,27 @@ describe('measureStoreUsage', () => {
 
     it('空表回 0', async () => {
         const db = await openTestDb(['messages']);
-        const usage = await measureStoreUsage(db, 'messages');
-        expect(usage).toMatchObject({ bytes: 0, count: 0, estimated: false });
+        expect(await measureStoreUsage(db, 'messages')).toEqual([]);
+        db.close();
+    });
+
+    it('一张表里住着几个类别时按 key 分开记，合计不变', async () => {
+        const db = await openTestDb(['assets']);
+        const items = [
+            { id: 'wallpaper', data: 'w'.repeat(100) },
+            { id: 'tts_abc', blob: new Blob([new Uint8Array(400)], { type: 'audio/mpeg' }) },
+            { id: 'tts_def', blob: new Blob([new Uint8Array(600)], { type: 'audio/mpeg' }) },
+            { id: 'voice_msg_42', blob: new Blob([new Uint8Array(300)], { type: 'audio/webm' }) },
+        ];
+        await putAll(db, 'assets', items);
+
+        const parts = await measureStoreUsage(db, 'assets', categoryOfAssetKey);
+        const bytesOf = (key: string) => parts.find(p => p.category === key)?.bytes ?? 0;
+        expect(parts.map(p => p.category).sort()).toEqual(['appearance', 'chat', 'ttsCache']);
+        expect(bytesOf('ttsCache')).toBeGreaterThanOrEqual(1000);
+        expect(bytesOf('chat')).toBeGreaterThanOrEqual(300);
+        expect(parts.reduce((n, p) => n + p.bytes, 0)).toBe(items.reduce((n, it) => n + measureValue(it).bytes, 0));
+        expect(parts.reduce((n, p) => n + p.count, 0)).toBe(4);
         db.close();
     });
 
@@ -116,7 +137,7 @@ describe('measureStoreUsage', () => {
         }));
         await putAll(db, 'messages', items);
 
-        const usage = await measureStoreUsage(db, 'messages');
+        const [usage] = await measureStoreUsage(db, 'messages');
         const truth = items.reduce((n, it) => n + measureValue(it).bytes, 0);
 
         expect(usage.count).toBe(2000);
@@ -128,7 +149,7 @@ describe('measureStoreUsage', () => {
 });
 
 describe('summarizeUsage', () => {
-    it('blob_assets 按 MIME 拆开：图片算媒体、模型算角色', () => {
+    it('blob_assets 按 MIME 拆开：图片算媒体、模型单列', () => {
         const bd = summarizeUsage([{
             usage: usageOf([{
                 store: 'blob_assets',
@@ -138,7 +159,7 @@ describe('summarizeUsage', () => {
                 binaryBytes: { image: 600, binary: 300 },
             }]),
         }]);
-        expect(bd.categories.find(c => c.key === 'characters')?.bytes).toBe(300);
+        expect(bd.categories.find(c => c.key === 'models')?.bytes).toBe(300);
         expect(bd.categories.find(c => c.key === 'media')?.bytes).toBe(700);
         expect(bd.totalBytes).toBe(1000);
     });
@@ -153,6 +174,16 @@ describe('summarizeUsage', () => {
         expect(bd.categories.find(c => c.key === 'chat')?.bytes).toBe(500);
         expect(bd.categories.find(c => c.key === 'other')?.bytes).toBe(300);
         expect(bd.totalBytes).toBe(800);
+    });
+
+    it('按 key 分流出来的类别优先于表名', () => {
+        const bd = summarizeUsage([{
+            usage: usageOf([
+                { store: 'assets', category: 'ttsCache', bytes: 700, count: 2, estimated: false, binaryBytes: { audio: 650 } },
+                { store: 'assets', category: 'appearance', bytes: 100, count: 1, estimated: false, binaryBytes: {} },
+            ]),
+        }]);
+        expect(bd.categories.map(c => [c.key, c.bytes])).toEqual([['ttsCache', 700], ['appearance', 100]]);
     });
 
     it('整库归类的库（主动消息）不按表名拆', () => {
@@ -201,9 +232,47 @@ describe('categoryOfStore', () => {
     it('认识的表归位，不认识的进「其他」', () => {
         expect(categoryOfStore('messages')).toBe('chat');
         expect(categoryOfStore('memory_vectors')).toBe('memory');
-        expect(categoryOfStore('gallery')).toBe('media');
+        expect(categoryOfStore('gallery')).toBe('gallery');
         expect(categoryOfStore('characters')).toBe('characters');
-        expect(categoryOfStore('bank_transactions')).toBe('other');
+        expect(categoryOfStore('bank_transactions')).toBe('bank');
+        expect(categoryOfStore('brand_new_2027_feature')).toBe('other');
+    });
+
+    it('主库里每张表都登记了类别', async () => {
+        // 没登记的表会悄悄掉进「其他数据」，用户看到的就是一行说不清是什么的大数字。
+        // 加新表时在 storageStats.ts 的 STORE_CATEGORY 里补一行，这条才会过。
+        const { openDB } = await import('./db');
+        const db = await openDB();
+        const unregistered = Array.from(db.objectStoreNames).filter(name => categoryOfStore(name) === 'other');
+        expect(unregistered).toEqual([]);
+    });
+});
+
+describe('categoryOfAssetKey', () => {
+    it('认识的前缀归到各自的 App，其余算外观与系统素材', () => {
+        expect(categoryOfAssetKey('tts_1a2b')).toBe('ttsCache');
+        expect(categoryOfAssetKey('voice_msg_123')).toBe('chat');
+        expect(categoryOfAssetKey('voice_favorite_audio_x')).toBe('favorites');
+        expect(categoryOfAssetKey('friend_feed_v1')).toBe('friendFeed');
+        expect(categoryOfAssetKey('mp_hwm_v1_c1')).toBe('memory');
+        expect(categoryOfAssetKey('wallpaper')).toBe('appearance');
+        expect(categoryOfAssetKey(42)).toBe('appearance');
+    });
+});
+
+describe('categoryOfDatabase', () => {
+    it('只有各用户空间的主库按表名细分', async () => {
+        const { spaceDatabaseName } = await import('./userSpaces');
+        const { RESOURCE_PACK_DB } = await import('../apps/room3d/resourcePacks');
+        expect(categoryOfDatabase('AetherOS_Data')).toBeUndefined();
+        expect(categoryOfDatabase(spaceDatabaseName('AetherOS_Data', 'u_abc'))).toBeUndefined();
+        // 协同工作库里也有 messages / assets 两张表，按表名判会记到聊天和外观头上
+        expect(categoryOfDatabase(spaceDatabaseName('SullyOS_Collaboration', 'u_abc'))).toBe('collaboration');
+        expect(categoryOfDatabase('SullyOS_Collaboration')).toBe('collaboration');
+        expect(categoryOfDatabase(RESOURCE_PACK_DB)).toBe('roomPacks');
+        expect(categoryOfDatabase('ActiveMsg')).toBe('activeMsg');
+        expect(categoryOfDatabase('ActiveMsgSwTrace')).toBe('activeMsg');
+        expect(categoryOfDatabase('some_unknown_db')).toBe('other');
     });
 });
 

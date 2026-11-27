@@ -1,5 +1,15 @@
-// 「优化资源存储」：转换旧图片和向量，合并重复引用，并整理连接精度。
+// 「优化资源存储」：回收孤儿图片，转换旧图片和向量，合并重复引用，并整理连接精度。
 //
+//   〇、回收孤儿图片：没有任何地方引用、且存进来超过 72 小时的图片二进制，交给
+//       utils/blobGc.ts 那一轮带安全阀的 GC 删掉。这是全站唯一会不可逆删除图片二进制的步骤。
+//       · 排在最前：这一轮「合并重复图片」新产生的孤儿此时还不存在，天然留到下次。
+//         合并只改库里的引用，页面内存还拿着合并前的令牌，刷新之前只要有一处把内存里的
+//         旧数据整份写回库，旧令牌就会重新出现——旧二进制还在就没事，被回收了就是破图。
+//         同一个页面里合并过之后（刷新之前）再点，这一步整个跳过，见 mergeRewriteStarted。
+//       · 不在共享池独占锁里跑：回收末尾的整批复查删除要申请同一把锁，套着跑会死等。
+//       · 只在这一个页面开着的时候做：别的标签页内存里可能还拿着旧令牌，或者正在恢复备份
+//         （图片先写进来、记录后写）。这道闸在 utils/blobGc.ts，调试面板入口同样受它管。
+//       · 失败、被安全阀中止都只影响这一步：原因记进结果，后面几步照常跑。
 //   一、把已接入令牌链路的面里仍以 base64（data:image）落库的存量图片，批量转成
 //       blobref 令牌 + Blob 二进制（省掉 base64 的 ~33% 膨胀）。
 //   二、把「同一张图在库里存了好几份 Blob」收敛成一份。
@@ -13,7 +23,7 @@
 // 第二笔债的由来：同一张图有好几条互不相识的迁移入口，各转各的，于是令牌不同、内容
 // 逐字节相同。SDK 的 scanContent 按内容哈希找出这些重复组，utils/blobDedupe.ts 把重复
 // 令牌在全部引用面上改写成组内保留的那个。合并只改引用、不删 Blob——失去引用的那几份
-// 变成孤儿，交给孤儿 GC 收（删除不可逆，走那条带安全阀的老路更稳）。
+// 变成孤儿，留给下一次点优化时的第〇步收（删除不可逆，走那条带安全阀的老路更稳）。
 //
 // 前两笔债咬合在一起：扫库结果会先给 blobRef 的内容记忆预热，所以第一步转换时遇到「库里
 // 已经有一份同样内容」的图，直接复用那个令牌，不会又存出一份新的重复来。
@@ -92,17 +102,19 @@
 //
 // 与孤儿 GC 共用 maintenanceLock 互斥：迁移是「引用搬家」，不能撞上进行中的 mark。
 
-import { DB } from './db';
+import { DB, openSpaceDB } from './db';
 import {
     isBlobRef, dataUrlToBlob, putImageBlob, putImageBlobDeduped, getBlobForRef, migrateAppearancePresetBlobRefs,
     primeContentMemo, CHAT_THEME_IMAGE_KEYS,
 } from './blobRef';
 import { blobStore } from './blobStore';
+import { runBlobGcWithLockHeld } from './blobGc';
 import { collectUnmergeableRefs, buildMergePlan, rewriteBlobRefs } from './blobDedupe';
 import { creatorPartToBlobRefs } from './creatorPartsBlob';
 import { tryAcquireMaintenanceLock, releaseMaintenanceLock, currentMaintenanceHolder } from './maintenanceLock';
 import { withSharedAssetLock } from './sharedAssetLock';
 import { startStepTrace } from './taskTrace';
+import { DEFAULT_SPACE_ID } from './userSpaces';
 import type { AppearancePreset, ChatTheme, CharacterProfile, CustomCreatorPart, Emoji, GalleryImage, Message, SongSheet } from '../types';
 
 /** 本工具会写的表。守卫测试断言它 ⊆ blobGc 的 REF_SOURCE_STORES（转出的 Blob 必须在 GC 视野内）。 */
@@ -179,6 +191,83 @@ export interface OptimizeResult {
     /** Rounded weights only; no edges are removed and no disk saving is inferred. */
     linksCompacted: number;
     linkError: string | null;
+    /** 这一轮真的删掉的孤儿图片张数（按删前删后的库存对比数出来的，不是 SDK 报的尝试数） */
+    orphansDeleted: number;
+    /** 回收腾出的字节数。删掉的编号若和还在用的图共用同一份文件，这里是 0 */
+    orphanBytesFreed: number;
+    /** 判断不了还有没有人在用、因此保留的张数。回收一张没删而这个数不小，说明某处混进了残缺的令牌文本 */
+    orphansUndecided: number;
+    /** 回收这一步没有执行的原因（给用户看的话）；null = 执行了 */
+    orphanGcSkipped: string | null;
+}
+
+type OrphanGcOutcome = Pick<OptimizeResult, 'orphansDeleted' | 'orphanBytesFreed' | 'orphansUndecided' | 'orphanGcSkipped'>;
+
+const ORPHAN_GC_LABEL = '清理没人用的图片';
+
+/** 孤儿图片清理的结局，统计上报用。取值全是写死的；张数、字节数和没执行的原因原文都不上报。 */
+export function orphanGcOutcomeLabel(r: OrphanGcOutcome): '清理了' | '没有可清理的' | '没执行' {
+    if (r.orphanGcSkipped) return '没执行';
+    return r.orphansDeleted > 0 ? '清理了' : '没有可清理的';
+}
+
+// 这个页面里开始过「合并重复图片」的改写没有。从开始改写起到页面刷新（模块状态归零）为止
+// 不再回收孤儿：页面内存还拿着合并前的令牌，回收掉旧二进制后被写回库就是破图。
+// 在改写开始前就置位，而不是成功后——改到一半抛错同样已经动了库里的引用。
+let mergeRewriteStarted = false;
+
+/** 测试里模拟页面刷新。 */
+export function resetMergeGuardForTest(): void {
+    mergeRewriteStarted = false;
+}
+
+/** 图片库此刻的库存：令牌 id 清单 + 整张表里二进制的总字节（只读 blob.size，不读内容）。 */
+async function blobPoolSnapshot(): Promise<{ ids: string[]; bytes: number }> {
+    const ids = await DB.listBlobAssetIds();
+    const db = await openSpaceDB(DEFAULT_SPACE_ID);
+    const bytes = await new Promise<number>((resolve, reject) => {
+        let total = 0;
+        const req = db.transaction('blob_assets', 'readonly').objectStore('blob_assets').openCursor();
+        req.onsuccess = () => {
+            const cursor = req.result;
+            if (!cursor) { resolve(total); return; }
+            const size = cursor.value?.blob?.size;
+            if (typeof size === 'number') total += size;
+            cursor.continue();
+        };
+        req.onerror = () => reject(req.error);
+    });
+    return { ids, bytes };
+}
+
+/**
+ * 回收孤儿图片。调用方须持有 maintenanceLock，且不能持有共享池的独占锁（见文件头第〇步）。
+ * 任何失败都收成 orphanGcSkipped 返回，不往外抛：这一步出事不该连累后面的转换和合并。
+ */
+async function collectOrphanImages(onChecking: (count: number) => void): Promise<OrphanGcOutcome> {
+    const outcome: OrphanGcOutcome = { orphansDeleted: 0, orphanBytesFreed: 0, orphansUndecided: 0, orphanGcSkipped: null };
+    if (mergeRewriteStarted) {
+        outcome.orphanGcSkipped = '刚合并过重复图片，等页面刷新后再点一次才会清理';
+        return outcome;
+    }
+    try {
+        const before = await blobPoolSnapshot();
+        if (before.ids.length === 0) return outcome;
+        const gc = await runBlobGcWithLockHeld(onChecking);
+        if (gc.aborted) {
+            outcome.orphanGcSkipped = '检查图片还有没有地方在用时出了错，为安全起见一张都没删';
+            return outcome;
+        }
+        const after = await blobPoolSnapshot();
+        const remaining = new Set(after.ids);
+        // 张数按库存对比数，不依赖回收那边怎么计数：这是报给用户的数，以库里实际少了几张为准。
+        outcome.orphansDeleted = before.ids.filter(id => !remaining.has(id)).length;
+        outcome.orphanBytesFreed = Math.max(0, before.bytes - after.bytes);
+        outcome.orphansUndecided = gc.keptBoundary;
+    } catch (e) {
+        outcome.orphanGcSkipped = e instanceof Error ? e.message : String(e);
+    }
+    return outcome;
 }
 
 export async function optimizeResourceStorage(
@@ -194,8 +283,9 @@ export async function optimizeResourceStorage(
         trace.step(p.label, p.done, p.total, '项');
         reportProgress?.(p);
     };
-    const run = async (): Promise<OptimizeResult> => {
+    const run = async (orphans: OrphanGcOutcome): Promise<OptimizeResult> => {
         const result: OptimizeResult = {
+            ...orphans,
             converted: 0, uniqueBlobs: 0, bytesBefore: 0, bytesAfter: 0, failed: 0,
             failureReasons: {},
             mergedDuplicates: 0, reclaimableBytes: 0, skippedGroups: 0, scanUnavailable: false,
@@ -743,6 +833,7 @@ export async function optimizeResourceStorage(
             const plan = buildMergePlan(scan.duplicateGroups, unmergeable);
             result.skippedGroups = plan.skippedGroups;
             if (plan.mapping.size > 0) {
+                mergeRewriteStarted = true;
                 const rewrite = await rewriteBlobRefs(plan.mapping, {
                     onProgress: scanned => onProgress?.({ label: '合并重复图片', done: scanned, total: scanned }),
                 });
@@ -778,9 +869,12 @@ export async function optimizeResourceStorage(
         return result;
     };
     try {
+        // 孤儿回收排在合并之前、共享池独占锁之外，两条都不能挪，理由见文件头第〇步。
+        onProgress({ label: ORPHAN_GC_LABEL, done: 0, total: 0 });
+        const orphans = await collectOrphanImages(count => onProgress({ label: ORPHAN_GC_LABEL, done: 0, total: count }));
         // 扫描得到的保留图可能暂时无人引用。直到迁移/合并引用全部落盘前，
         // 不能让换图清理或另一页面的 GC 把它删掉；共享池锁跨标签页协调。
-        return await withSharedAssetLock('exclusive', run);
+        return await withSharedAssetLock('exclusive', () => run(orphans));
     } finally {
         trace.clear();
         releaseMaintenanceLock();

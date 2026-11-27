@@ -9,13 +9,20 @@ import ChatHeaderShell from '../components/chat/ChatHeaderShell';
 import { AppID, type ChatTheme, type Message } from '../types';
 import {
     REDUCED_BLUR_ATTR,
+    REDUCED_BLUR_PREF_KEY,
     canHideShellBackdropWhenSettled,
+    getReducedBlurPreference,
     installReducedBlurPolicy,
     isGeckoEngine,
+    reducedBlurSetting,
     resolveReducedGlassCardStyle,
+    setReducedBlurPreference,
     shouldUseReducedBlur,
     updateVirtualTimeIfChanged,
+    useReducedBlur,
 } from './blurPolicy';
+import { isSharedSpaceKey } from './userSpaces';
+import { privateLocalExcluded } from './userSpaceBackup';
 
 const readSource = (rel: string) => readFileSync(path.resolve(__dirname, rel), 'utf8');
 
@@ -102,6 +109,145 @@ describe('blurPolicy 引擎与无障碍透明度策略识别', () => {
 
         dispose();
         expect(listeners.size).toBe(0);
+    });
+
+    describe('「减弱模糊」手动开关', () => {
+        const CHROME_UA =
+            'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Mobile Safari/537.36';
+        const FIREFOX_UA = 'Mozilla/5.0 (Android 12; Mobile; rv:159.0) Gecko/159.0 Firefox/159.0';
+
+        /** 可以手动切换系统「减弱透明度」的假窗口。 */
+        const mockWindow = (ua: string) => {
+            const state = { matches: false };
+            const listeners = new Set<() => void>();
+            const win = {
+                navigator: { userAgent: ua },
+                matchMedia: () => ({
+                    get matches() {
+                        return state.matches;
+                    },
+                    addEventListener: (_type: string, cb: () => void) => listeners.add(cb),
+                    removeEventListener: (_type: string, cb: () => void) => listeners.delete(cb),
+                }),
+            } as unknown as Window;
+            const setSystemReduced = (value: boolean) => {
+                state.matches = value;
+                listeners.forEach((cb) => cb());
+            };
+            return { win, setSystemReduced };
+        };
+        const marked = () => document.documentElement.hasAttribute(REDUCED_BLUR_ATTR);
+
+        beforeEach(() => {
+            localStorage.clear();
+            document.documentElement.removeAttribute(REDUCED_BLUR_ATTR);
+        });
+        afterEach(() => {
+            localStorage.clear();
+            document.documentElement.removeAttribute(REDUCED_BLUR_ATTR);
+        });
+
+        it('默认关；打开后在任意引擎上生效，只认写死的开值', () => {
+            expect(getReducedBlurPreference()).toBe(false);
+            expect(shouldUseReducedBlur({ ua: CHROME_UA, userEnabled: true })).toBe(true);
+            expect(shouldUseReducedBlur({ ua: CHROME_UA, userEnabled: false })).toBe(false);
+
+            localStorage.setItem(REDUCED_BLUR_PREF_KEY, 'true');
+            expect(getReducedBlurPreference()).toBe(false);
+            setReducedBlurPreference(true);
+            expect(localStorage.getItem(REDUCED_BLUR_PREF_KEY)).toBe('1');
+            expect(getReducedBlurPreference()).toBe(true);
+            setReducedBlurPreference(false);
+            expect(localStorage.getItem(REDUCED_BLUR_PREF_KEY)).toBeNull();
+        });
+
+        it('开关关着时 Firefox 与系统「减弱透明度」照旧自动生效，开关不能把模糊开回来', () => {
+            expect(shouldUseReducedBlur({ ua: FIREFOX_UA, userEnabled: false })).toBe(true);
+            expect(
+                shouldUseReducedBlur({ ua: CHROME_UA, prefersReducedTransparency: true, userEnabled: false }),
+            ).toBe(true);
+
+            const { win } = mockWindow(FIREFOX_UA);
+            const dispose = installReducedBlurPolicy(document, win);
+            expect(marked()).toBe(true);
+            setReducedBlurPreference(true);
+            setReducedBlurPreference(false);
+            expect(marked()).toBe(true);
+            dispose();
+        });
+
+        it('切换开关立即同步根节点标记；系统偏好来回变化不会冲掉打开的开关', () => {
+            const { win, setSystemReduced } = mockWindow(CHROME_UA);
+            const dispose = installReducedBlurPolicy(document, win);
+            expect(marked()).toBe(false);
+
+            setReducedBlurPreference(true);
+            expect(marked()).toBe(true);
+
+            setSystemReduced(true);
+            expect(marked()).toBe(true);
+            setSystemReduced(false);
+            expect(marked()).toBe(true);
+
+            setReducedBlurPreference(false);
+            expect(marked()).toBe(false);
+
+            dispose();
+            setReducedBlurPreference(true);
+            expect(marked()).toBe(false);
+        });
+
+        it('冷启动时已打开的开关在安装策略时就生效', () => {
+            localStorage.setItem(REDUCED_BLUR_PREF_KEY, '1');
+            const dispose = installReducedBlurPolicy(document, mockWindow(CHROME_UA).win);
+            expect(marked()).toBe(true);
+            dispose();
+        });
+
+        it('useReducedBlur 的组件跟着开关即时变化，不需要重新挂载', async () => {
+            (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+            const dispose = installReducedBlurPolicy(document, mockWindow(CHROME_UA).win);
+            const Probe = () => React.createElement('i', { 'data-reduced': String(useReducedBlur()) });
+            const host = document.createElement('div');
+            document.body.append(host);
+            const root = createRoot(host);
+            const read = () => host.querySelector('i')?.getAttribute('data-reduced');
+
+            await act(async () => root.render(React.createElement(Probe)));
+            expect(read()).toBe('false');
+            await act(async () => setReducedBlurPreference(true));
+            expect(read()).toBe('true');
+            await act(async () => setReducedBlurPreference(false));
+            expect(read()).toBe('false');
+
+            await act(async () => root.unmount());
+            host.remove();
+            dispose();
+        });
+
+        it('三态摘要：手动开 / 自动生效 / 关', () => {
+            expect(reducedBlurSetting()).toBe('关');
+            document.documentElement.setAttribute(REDUCED_BLUR_ATTR, '');
+            expect(reducedBlurSetting()).toBe('自动');
+            setReducedBlurPreference(true);
+            expect(reducedBlurSetting()).toBe('开');
+        });
+
+        it('index.html 的内联脚本在首屏前按同一个键打上标记，这个键各用户空间共用', () => {
+            expect(isSharedSpaceKey(REDUCED_BLUR_PREF_KEY)).toBe(true);
+            // 设备级选择：各空间共用，但不跟着备份去别的设备。
+            expect(privateLocalExcluded(REDUCED_BLUR_PREF_KEY)).toBe(true);
+            const inline = readSource('../index.html').match(
+                /<script>\s*(\(function \(\) \{(?:(?!<\/script>)[\s\S])*?data-reduced-blur(?:(?!<\/script>)[\s\S])*?)<\/script>/,
+            )?.[1];
+            expect(inline).toContain(`'${REDUCED_BLUR_PREF_KEY}'`);
+
+            new Function(inline!)();
+            expect(marked()).toBe(false);
+            localStorage.setItem(REDUCED_BLUR_PREF_KEY, '1');
+            new Function(inline!)();
+            expect(marked()).toBe(true);
+        });
     });
 
     it('resolveReducedGlassCardStyle 按前景色明暗选择深浅半透底色以确保文字对比度', () => {

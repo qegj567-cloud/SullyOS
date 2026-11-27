@@ -13,7 +13,7 @@ import { KeepAlive } from '../utils/keepAlive';
 import { ContextBuilder } from '../utils/context';
 import { ChatParser } from '../utils/chatParser';
 // 思考链 / HTML / MCD / memoryPalace 注入已下沉到 chatRequestPayload；这里不再直接调用
-import { useMusic, loadMusicHooks } from '../context/MusicContext';
+import { loadMusicPlaybackSnapshot, loadMusicHooks } from '../context/MusicContext';
 import { processNewMessagesWithAutoArchive } from '../utils/memoryPalace/autoArchive';
 import { incrementDigestRound, runCognitiveDigestion, detectPersonalityStyle } from '../utils/memoryPalace';
 // evolveFlowNarrative 保留为低频深刷新备用，日常意识流由副 API 的情绪评估同轮产出（innerState 字段）
@@ -44,6 +44,7 @@ import {
     extractStreamingEmbeddedThinking,
     findNewStreamPreviewHandoverIds,
 } from '../utils/streamPreview';
+import { CHAT_REFRESH_FULL_LIMIT, STREAM_PREVIEW_INTERVAL_MS, createCoalescedRunner } from '../utils/chatPerfHelpers';
 import { ActiveMsgStore } from '../utils/activeMsgStore';
 import { markAmsgStateDirty, startAmsgChatPresence, stopAmsgChatPresence } from '../utils/amsgStateSync';
 import { getLastRealUserMessageAt } from '../utils/amsg2ExpireGuard';
@@ -442,6 +443,8 @@ interface UseChatAIProps {
     /** 长报错走弹窗 (toast 一行装不下), 手机用户能看清并复制反馈 */
     showError?: (title: string, details: string, endpoint?: {baseUrl:string; model:string}) => void;
     setMessages: (msgs: Message[]) => void; // Callback to update UI messages
+    /** 生成途中刷新界面读哪一截消息；不给就读最近 200 条。 */
+    loadRefreshMessages?: (charId: string) => Promise<Message[]>;
     /** 正式消息接替流式预览前同步登记 id，避免真实气泡重新播放入场动画。 */
     onStreamPreviewHandover?: (charId: string, messageIds: number[]) => void;
     realtimeConfig: RealtimeConfig; // 实时配置（amsg2 工具排程要用，两个调用点都必传）
@@ -468,6 +471,7 @@ export const useChatAI = ({
     addToast,
     showError,
     setMessages,
+    loadRefreshMessages,
     onStreamPreviewHandover,
     realtimeConfig,  // 新增
     translationConfig,
@@ -480,9 +484,6 @@ export const useChatAI = ({
     homePhoneContext,
     worldbookScene,
 }: UseChatAIProps) => {
-    
-    // 音乐上下文 — 用于聊天时注入"user 正在听什么 + 当前歌词窗口"
-    const music = useMusic();
 
     const [localTyping, setLocalTyping] = useState(false);
     const characterTyping = useSyncExternalStore(subscribeChatReplies, () => isChatReplyActive(char?.id), () => false);
@@ -512,6 +513,10 @@ export const useChatAI = ({
     // LLM 提取（+ 50 轮认知消化）。用 ref 在 finally 里读最新状态。
     const charRef = useRef(char);
     charRef.current = char;
+
+    // 流式预览的合并更新器。生成闭包在聊天页卸载后还会跑完，卸载时只撤掉它的定时器。
+    const streamPreviewPumpRef = useRef<ReturnType<typeof createCoalescedRunner> | null>(null);
+    useEffect(() => () => streamPreviewPumpRef.current?.stop(), []);
 
     // beforeunload 保护：记忆宫殿后台处理中时，阻止用户意外关闭页面
     useEffect(() => {
@@ -609,6 +614,13 @@ export const useChatAI = ({
         if (isTyping || !char) return;
         const effectiveApi = resolveDialogueApi(apiConfig, char, overrideApiConfig);
         if (!effectiveApi.baseUrl) { alert("请先在设置中配置 API URL"); return; }
+        // 发送这一刻的播放状态，用于注入「user 正在听什么 + 当前歌词窗口」。读模块级快照而不订阅
+        // 音乐上下文：订阅的话放歌时整个聊天页会跟着播放进度重渲染。
+        const musicSnapshot = loadMusicPlaybackSnapshot();
+        // 落一条气泡只为刷新界面时读哪一截：界面给了读法就照界面画得出来的范围读。
+        const readRefreshTail = () => loadRefreshMessages
+            ? loadRefreshMessages(char.id)
+            : DB.getRecentMessagesByCharId(char.id, CHAT_REFRESH_FULL_LIMIT);
 
         // 重 roll（回溯重生）时不带入上一轮的情绪余波：清掉 buff 注入（buffInjection/activeBuffs）和
         // 意识流（innerState/evolvedNarrative），让主回复与情绪评估两边都从干净状态独立重新生成——
@@ -637,6 +649,7 @@ export const useChatAI = ({
         replyRun.signal.addEventListener('abort', cancelSendProgress, { once: true });
         amsg2Session.signal = replyRun.signal;
         const replyStep = <T>(operation: () => Promise<T>) => withReplyCancellation(replyRun, operation);
+        let streamPreviewPump: ReturnType<typeof createCoalescedRunner> | undefined;
         setLocalTyping(true);
         setStreamingBubbles([]);
         setStreamingThinking('');
@@ -896,7 +909,7 @@ export const useChatAI = ({
                     const reason = '即时对话暂时出了点问题：本地配置这一刻读不出来（可能是存储正忙）。这条没有发出去，稍等几秒重新发一次就好。';
                     console.warn('[AmsgInstantChat] 全局配置读不出来，开没开都不知道：这一轮明确报错等重发，不悄悄退回本地生成');
                     await replyStep(async () => replyRun.saveMessage({ charId: char.id, role: 'system', type: 'text', content: `[${reason}]` }));
-                    setMessages(await replyStep(async () => DB.getRecentMessagesByCharId(char.id, 200)));
+                    setMessages(await replyStep(readRefreshTail));
                     if (showError) showError('即时对话发送失败', reason);
                     else addToast(reason, 'error');
                     return;
@@ -925,7 +938,7 @@ export const useChatAI = ({
                 contextHighWaterMark: contextRange?.hwm,
                 realtimeConfig,
                 innerState: skipEmotionInjection ? '' : undefined,
-                musicSnapshot: music,
+                musicSnapshot,
                 translationConfig,
                 htmlMode: { enabled: !!(char as any).htmlModeEnabled, customPrompt: (char as any).htmlModeCustomPrompt },
                 thinkingChain: getThinkingChainSettings(char, userProfile),
@@ -1355,7 +1368,7 @@ export const useChatAI = ({
                     // **绝不静默退回本地生成** —— 静默分流那种查无可查的坑踩过一次就够了。
                     const reason = instantChatResult.error || '未知错误';
                     await replyStep(async () => replyRun.saveMessage({ charId: char.id, role: 'system', type: 'text', content: `[${reason}]` }));
-                    setMessages(await replyStep(async () => DB.getRecentMessagesByCharId(char.id, 200)));
+                    setMessages(await replyStep(readRefreshTail));
                     if (showError) showError('即时对话发送失败', reason);
                     else addToast(reason, 'error');
                     // 没发出去 → 云端不会跑评估，那个正常的熄灭信号永不到达。当场自己熄，
@@ -1370,7 +1383,7 @@ export const useChatAI = ({
             // 跨行 <翻译> 标签里。这两类连正文/思考钩子都不挂，完整走原有整包路径。
             // 语音、日记、HTML 等由内容标签动态识别，computeStreamPreviewBubbles 会扣住控制块，
             // 只允许标签外确实属于普通文字的部分预览。
-            // 每次 onDelta 基于累计全文全量重算（safeFetchJson 重试会重开流，天然重置）；
+            // 每次更新基于累计全文全量重算（safeFetchJson 重试会重开流，天然重置）；
             // 正文尾句和思考内容只在累计文本确实变化时触发重渲染。
             // SAR 的正文包在结构化容器里，流式阶段不能把 TRUE/SURFACE 控制标签闪给用户。
             const streamUiEligible = !!userStream && !toolModeActive && !bilingualActive && !sarModulePlan.requiresEnvelope;
@@ -1391,28 +1404,37 @@ export const useChatAI = ({
                 if (combined) streamThinkingShown = true;
                 setStreamingThinking(prev => prev === combined ? prev : combined);
             };
+            // 网络包来得比界面需要的密：回调只记下最新全文，按固定节奏合并成一次重算和一次更新。
+            // 落库前会同步补算最后一次（见后处理管线入口），尾巴不依赖定时器。
+            let pendingStreamText: string | null = null;
+            const previewPump = createCoalescedRunner(() => {
+                if (replyRun.signal.aborted) return;
+                const fullText = pendingStreamText;
+                pendingStreamText = null;
+                if (fullText !== null && streamPreviewEligible) {
+                    // 角色会把排程写成一行调用（没教过的模式下也可能照着历史写），预览里不能先闪给用户看。
+                    const bubbles = computeStreamPreviewBubbles(maskAmsg2ScheduleSyntaxForPreview(fullText));
+                    latestStreamPreviewBubbles = bubbles;
+                    if (bubbles.length > 0) streamPreviewShown = true;
+                    setStreamingBubbles(prev =>
+                        (prev.length === bubbles.length && prev.every((b, i) => b === bubbles[i])) ? prev : bubbles
+                    );
+                }
+                if (!streamThinkingEligible) return;
+                if (fullText !== null) latestEmbeddedThinking = extractStreamingEmbeddedThinking(fullText);
+                publishStreamingThinking();
+            }, STREAM_PREVIEW_INTERVAL_MS);
+            streamPreviewPump = previewPump;
+            streamPreviewPumpRef.current = previewPump;
             const streamHooks = (streamPreviewEligible || streamThinkingEligible) ? {
                 onDelta: (_delta: string, fullText: string) => {
-                    if (replyRun.signal.aborted) return;
-                    if (streamPreviewEligible) {
-                        // 角色会把排程写成一行调用（没教过的模式下也可能照着历史写），预览里不能先闪给用户看。
-                        const bubbles = computeStreamPreviewBubbles(maskAmsg2ScheduleSyntaxForPreview(fullText));
-                        latestStreamPreviewBubbles = bubbles;
-                        if (bubbles.length > 0) streamPreviewShown = true;
-                        setStreamingBubbles(prev =>
-                            (prev.length === bubbles.length && prev.every((b, i) => b === bubbles[i])) ? prev : bubbles
-                        );
-                    }
-                    if (streamThinkingEligible) {
-                        latestEmbeddedThinking = extractStreamingEmbeddedThinking(fullText);
-                        publishStreamingThinking();
-                    }
+                    pendingStreamText = fullText;
+                    previewPump.schedule();
                 },
                 onReasoningDelta: (_delta: string, fullReasoning: string) => {
-                    if (replyRun.signal.aborted) return;
                     if (!streamThinkingEligible) return;
                     latestNativeReasoning = fullReasoning;
-                    publishStreamingThinking();
+                    previewPump.schedule();
                 },
             } : undefined;
 
@@ -1513,7 +1535,7 @@ export const useChatAI = ({
                         content: cleanChunk,
                         metadata: { mcpLeadIn: true },
                     } as any));
-                    setMessages(await replyStep(async () => DB.getRecentMessagesByCharId(char.id, 200)));
+                    setMessages(await replyStep(readRefreshTail));
                 }
             };
 
@@ -1663,7 +1685,7 @@ export const useChatAI = ({
                                         fromMcdMiniApp: true,
                                     },
                                 } as any));
-                                setMessages(await replyStep(async () => DB.getRecentMessagesByCharId(char.id, 200)));
+                                setMessages(await replyStep(readRefreshTail));
                             } catch (e) {
                                 replyRun.check();
                                 console.warn('🍔 [MCD-MiniApp] 保存 proposal 失败:', e);
@@ -1785,7 +1807,7 @@ export const useChatAI = ({
                                         fromLuckinMiniApp: true,
                                     },
                                 } as any));
-                                setMessages(await replyStep(async () => DB.getRecentMessagesByCharId(char.id, 200)));
+                                setMessages(await replyStep(readRefreshTail));
                             } catch (e) {
                                 replyRun.check();
                                 console.warn('☕ [Luckin-MiniApp] 保存 proposal 失败:', e);
@@ -1962,7 +1984,7 @@ export const useChatAI = ({
                                     luckinLoc: (loc && loc.longitude != null) ? { longitude: loc.longitude, latitude: loc.latitude } : undefined,
                                 },
                             } as any));
-                            setMessages(await replyStep(async () => DB.getRecentMessagesByCharId(char.id, 200)));
+                            setMessages(await replyStep(readRefreshTail));
                         } catch (e) { replyRun.check(); console.warn('☕ [Luckin-Chat] 存卡片失败:', e); }
 
 
@@ -2283,11 +2305,19 @@ export const useChatAI = ({
             // worker 识别好的 directives 重放。
             // 后处理会逐条写库/刷新，第一条落库并不代表其余气泡已准备好。
             // 整轮结束前保持预览，登记对应正式消息供 UI 暂时隐藏；全部落库后再一起交接。
+            // 下面的交接和免打字延迟都按最新全文判断，先把还没算进预览的那一段补上。
+            previewPump.flush();
             const previewHandoverIds = new Set<number>();
             const previewBaselineMaxId = contextMsgs.reduce(
                 (maxId, message) => Math.max(maxId, message.id),
                 Number.NEGATIVE_INFINITY,
             );
+            // 交接要按顺序对上本轮落库的每一条：读回来的那一截够不到本轮开头时整读。
+            const readRefreshTailForHandover = async () => {
+                const tail = await readRefreshTail();
+                if (!loadRefreshMessages || (tail.length > 0 && tail[0].id <= previewBaselineMaxId)) return tail;
+                return DB.getRecentMessagesByCharId(char.id, CHAT_REFRESH_FULL_LIMIT);
+            };
             const setMessagesWithPreviewHandover = (msgs: Message[]) => {
                 const newlyHandedOverIds = findNewStreamPreviewHandoverIds(
                     msgs,
@@ -2386,6 +2416,7 @@ export const useChatAI = ({
                 },
                 hooks: {
                     setMessages: setMessagesWithPreviewHandover,
+                    loadRefreshMessages: readRefreshTailForHandover,
                     addToast,
                     setRecallStatus,
                     setSearchStatus,
@@ -2456,13 +2487,13 @@ export const useChatAI = ({
             } else {
                 await DB.saveMessage({ charId: char.id, role: 'system', type: 'text', content: `[回复处理失败: ${errMsg}]` });
             }
-            setMessages(await DB.getRecentMessagesByCharId(char.id, 200));
+            setMessages(await readRefreshTail());
         } finally {
             replyRun.signal.removeEventListener('abort', cancelSendProgress);
             sendProgress.finish(replyRun.signal.aborted);
             try {
                 await replyRun.settle();
-                if (replyRun.signal.aborted) setMessages(await DB.getRecentMessagesByCharId(char.id, 200));
+                if (replyRun.signal.aborted) setMessages(await readRefreshTail());
             } catch (error) {
                 console.error('[chat-stop] 回复收尾失败', error);
             } finally { releaseReply(); }
@@ -2474,6 +2505,8 @@ export const useChatAI = ({
             // 全局横幅熄灭（成功/失败/即时对话均经过这里；OSContext 同时借它兜底刷新，
             // 覆盖 catch 里落库的错误系统消息）。
             announceChatGen(CHAT_GEN_EVENTS.replyEnd, { charId: char.id, charName: char.name });
+            // 先撤定时器再清预览，晚到的那一次更新不会把预览重新点亮。
+            streamPreviewPump?.stop();
             setStreamingBubbles([]);  // 错误/中断路径兜底清预览
             setStreamingThinking('');
             setStreamingHandoverIds([]);

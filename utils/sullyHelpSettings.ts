@@ -13,6 +13,7 @@ import { isAmsg2GloballyEnabled } from './amsgGlobalGate';
 import { resolveCloudGenFeatureSwitches } from './cloudGen/settings';
 import { CLOUD_GEN_PURPOSES, CLOUD_GEN_PURPOSE_META } from './cloudGen/types';
 import { isCloudGenHintOff } from './cloudGen/hint';
+import { reducedBlurSetting } from './blurPolicy';
 
 type SettingsSource = Pick<ReturnType<typeof useOS>, 'apiConfig' | 'memoryPalaceConfig' | 'realtimeConfig' | 'theme' | 'isDataLoaded'> & Partial<Pick<ReturnType<typeof useOS>, 'remoteVectorConfig' | 'userProfile'>>;
 type Endpoint = { baseUrl: string; apiKey: string; model: string };
@@ -53,7 +54,8 @@ export async function readHelpDeskSettings(os: SettingsSource, char?: CharacterP
             手动分步维护: memoryPalaceConfig.manualMaintenance === true,
         },
         实时感知: { 天气开关: !!realtimeConfig.weatherEnabled, 热点开关: !!realtimeConfig.newsEnabled },
-        外观: { 深色模式: !!os.theme.darkMode, 时光契约与桌面日历: resolveTimeContractTheme(os.theme.scheduleAppTheme) },
+        // 减弱模糊：「自动」= 开关没开，但浏览器（Firefox）或系统「减弱透明度」已经关掉了毛玻璃。
+        外观: { 深色模式: !!os.theme.darkMode, 减弱模糊: reducedBlurSetting(), 时光契约与桌面日历: resolveTimeContractTheme(os.theme.scheduleAppTheme) },
         主动消息全局: globalPush ? {
             总开关: isAmsg2GloballyEnabled(globalPush), Worker地址已填: !!globalPush.workerUrl?.trim(),
             // 「功能总览 → 云端生成」里的开关；私聊那一行就是全局即时对话开关。

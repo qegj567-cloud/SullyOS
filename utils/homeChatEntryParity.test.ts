@@ -9,7 +9,7 @@ import { generateHomeReply, buildHomeScenePrompt } from './homeConversation';
 import { ContextBuilder } from './context';
 
 const shared = vi.hoisted(() => ({ music: {} as any }));
-vi.mock('../context/MusicContext', () => ({ useMusic: () => shared.music, loadMusicHooks: () => null }));
+vi.mock('../context/MusicContext', () => ({ loadMusicPlaybackSnapshot: () => shared.music, loadMusicHooks: () => null }));
 vi.mock('./keepAlive', () => ({ KeepAlive: { start: vi.fn(), stop: vi.fn() } }));
 vi.mock('./activeMsgRuntime', () => ({ prepareInboxBeforeChat: vi.fn(async () => 'completed') }));
 vi.mock('./safeApi', async original => ({ ...await original<typeof import('./safeApi')>(), safeFetchJson: vi.fn() }));

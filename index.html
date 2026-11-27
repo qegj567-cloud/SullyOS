@@ -348,7 +348,10 @@
         var ua = navigator.userAgent || '';
         var gecko = /\bGecko\/\d/i.test(ua) && !/\blike Gecko\b/i.test(ua);
         var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-transparency: reduce)').matches;
-        if (gecko || reduced) document.documentElement.setAttribute('data-reduced-blur', '');
+        // 「减弱模糊」开关（键名与 utils/blurPolicy.ts 的 REDUCED_BLUR_PREF_KEY 相同）：在首屏之前读，冷启动不先画一帧毛玻璃。
+        var user = false;
+        try { user = localStorage.getItem('sullyos_reduced_blur_v1') === '1'; } catch (e) {}
+        if (user || gecko || reduced) document.documentElement.setAttribute('data-reduced-blur', '');
       })();
     </script>
   <script type="importmap">

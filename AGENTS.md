@@ -27,11 +27,12 @@
 |------|------|-----------|
 | **用户空间 / 角色继承 / 共享素材** | [`docs/user-spaces.md`](./docs/user-spaces.md) | 改用户切换、角色专属用户资料、跨空间继承、备份范围或素材删除前必读；会话固定所属空间、配置独立文件共用、继承不带经历；定位设置随个人备份，实时坐标不备份 |
 | **备份与恢复 · 内存有界链路** | [`docs/backup-pipeline.md`](./docs/backup-pipeline.md) | 改备份导出/恢复、云端上传下载、备份格式，或往数据库加新表、新增 localStorage 键前必读；整份备份只以磁盘文件存在，内存只放一片（按字节封页），读包按需随机读，恢复逐页写库，上传一律分片加完成清单并以远端实际大小为准；新表默认进备份、新设置键默认不进，两张分类表都有覆盖测试；新加会跑很久的任务照「中断留痕」接 `utils/taskTrace.ts` |
+| **本机存储用量 · 分类登记** | [`docs/storage-usage.md`](./docs/storage-usage.md) | 往数据库加新表、往 `assets` 表存大块数据、新开独立的库，或改设置里的存储用量面板与清理入口前必读；明细一个 App 一行，主库每张表都要登记类别（有覆盖测试），图片池不带归属只有总数，已删除角色留下的数据由用户亲手清理 |
 | **悬浮球、全局返回与聊天输入栏收起** | [`docs/navigation.md`](./docs/navigation.md) | 改快捷导航开关、拖动安全区、浏览器／Android 返回、美化子页退出、聊天工具栏外部收起或选图挂载前必读 |
 | **iOS 27 主屏幕顶部白雾 / 状态栏底色** | [`docs/ios-status-bar-edge.md`](./docs/ios-status-bar-edge.md) | 改顶部取色、viewport 或 iOS 门禁前必读；manifest standalone 使用 contain，零安全区不回退 44px，异步高度收缩要重建基线；纯色接合不等于壁纸贯穿 |
 | **3D 小屋 · 布局与功能分区** | [`docs/room3d-layout.md`](./docs/room3d-layout.md) | 设计或重排任何房间/样板房、自动摆家具前必读；先划功能区，再按家具组合摆放，保留连续动线，不能逐件随机找空位；本轮统一黑 × 绿 × 白 |
 | **美化分享码与人工审核** | [`docs/beauty-share.md`](./docs/beauty-share.md) | 改美化投稿、作者身份、分享码领取或 `worker/beauty-share` 前必读；未审文件保持私有，更新通过后才替换已发布指针，仅作者明确授权且已审作品进入公开静态装扮库，未授权旧作不公开 |
-| **ChatApp 装扮、白框与深浅色对比度边界** | [`docs/chat-decoration.md`](./docs/chat-decoration.md) | 改 `.sully-chat-root` 挂载范围、消息时间位置/选择器、白框选择器、心象/装扮弹窗或深浅色表单控件前必读；弹窗与迷你应用挂载在 `.sully-chat-root` 外并带显式深字/浅底边界，深底 `<select>`／日期时间控件配 `[color-scheme:dark]` 与 `[&_option]`，白框用 `:not(:where(...))` 排除色板点/二维码白底/进度条/`qixi_event_card`/`like520_card` |
+| **ChatApp 装扮、白框与深浅色对比度边界** | [`docs/chat-decoration.md`](./docs/chat-decoration.md) | 改 `.sully-chat-root` 挂载范围、消息时间位置/选择器、白框选择器、心象/装扮弹窗、深浅色表单控件或毛玻璃与减弱模糊前必读；弹窗与迷你应用挂载在 `.sully-chat-root` 外并带显式深字/浅底边界，深底 `<select>`／日期时间控件配 `[color-scheme:dark]` 与 `[&_option]`，白框用 `:not(:where(...))` 排除色板点/二维码白底/进度条/`qixi_event_card`/`like520_card`；「减弱模糊」开关只负责关掉毛玻璃、默认关，属于设备状态不随备份走 |
 | **角色默认对话 API** | [`docs/character-api.md`](./docs/character-api.md) | 改角色独立 API、API 预设分组或对话模型路由前必读；App 优先，单角色回复才使用角色默认，凭据整套选择 |
 | **全站 API 槽位、预设引用与自动保存** | [`docs/api-slots.md`](./docs/api-slots.md) | 改任何 API 配置面板、预设增删改、副 API 回退或流式升级前必读；统一复用 `ApiSlotEditor`，预设按 `presetId` 引用联动并保留内联快照兼容双通道，自动保存仅在完整合法或全空时提交 |
 | **Anthropic 原生接口 / Prompt Caching** | [`docs/anthropic-messages.md`](./docs/anthropic-messages.md) | 改 Messages 转换、SSE、缓存或 amsg 原生模型调用前必读；原生端点随整套凭据保存，不新增代理，旧 Worker 先更新并验证能力 |
@@ -66,6 +67,7 @@
 | **使用统计** | [`docs/analytics.md`](./docs/analytics.md) | **加任何埋点前必读**。收什么/不收什么的边界、事件名与属性的规矩（属性只能是固定枚举）、构建时门禁与开关、完整事件清单。想加「某功能有多少人开了」看「加新埋点的规矩」第 5 条，别在配置页现场发 |
 | **时光契约 / 安卓系统闹钟** | [`docs/android-system-alarm.md`](./docs/android-system-alarm.md) | 改系统时钟联动或 Capacitor 打包前必读；年月日不能转成每周重复，只报告交接结果，插件须重新编译 APK；文首给打包电脑的接入步骤 |
 | **不可逆操作与二次确认** | [`docs/destructive-confirmations.md`](./docs/destructive-confirmations.md) | 改删除、清空、重置、覆盖或 AI 重生成按钮前必读；禁用原生 `confirm()`，统一用 `useConfirmDialog` / `<BeautyConfirmDialog>` / 行内两步，含高价值渔获阈值、单击归档例外与确认后再埋点规矩 |
+| **性能约定 · 热路径只读用得到的数据** | [`docs/performance.md`](./docs/performance.md) | 改启动装载、定时轮询、聊天回复期间的界面刷新与流式预览、语音回填、群聊背景或记忆整理的取数前必读；少读必须与读全量结果相同，做不到的保留全量；启动要读新的资源键先登记，新增语音写入路径要让回填记账失效 |
 | **二改 / 加 App / 数据流 / 后端 Worker** | [`README.md`](./README.md) 「给想二改的人」一节 | 新增 App、build badge、sfworker 代理替换、开源协议 |
 
 > README 的「给想二改的人」区域信息量很大（数据流、ContextBuilder、sfworker 清单），动后端 / 加功能前先扫一遍。

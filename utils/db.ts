@@ -1637,6 +1637,35 @@ export const DB = {
     });
   },
 
+  /**
+   * 启动时装载桌面外观用到的那几类资源：壁纸、锁屏壁纸、自定义字体、图标、小组件、外观预设、桌面装饰。
+   * assets 表里还存着语音、语音合成缓存、歌曲缓存等大块数据，开机用不到，所以按键名和键前缀取，不整表读。
+   * 返回顺序与整表读取一致（按键排序）。启动逻辑要读新的键时，在下面两份清单里登记。
+   */
+  getStartupAssets: async (): Promise<{id: string, data: string}[]> => {
+    const exactKeys = ['wallpaper', 'lock_wallpaper', 'launcherWidgetImage', 'custom_font_data'];
+    const prefixes = ['icon_', 'widget_', 'appearance_preset_', 'deco_'];
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_ASSETS, 'readonly');
+      const store = transaction.objectStore(STORE_ASSETS);
+      const rows: {id: string, data: string}[] = [];
+      for (const key of exactKeys) {
+        const request = store.get(key);
+        request.onsuccess = () => { if (request.result) rows.push(request.result); };
+      }
+      for (const prefix of prefixes) {
+        // 上界取「前缀末位字符加一」，正好圈住所有以该前缀开头的键，一个不多一个不少。
+        const upper = prefix.slice(0, -1) + String.fromCharCode(prefix.charCodeAt(prefix.length - 1) + 1);
+        const request = store.getAll(IDBKeyRange.bound(prefix, upper, false, true));
+        request.onsuccess = () => { for (const row of request.result) rows.push(row); };
+      }
+      transaction.oncomplete = () => resolve(rows.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)));
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error || new Error('读取启动资源失败'));
+    });
+  },
+
   getAsset: async (id: string): Promise<string | null> => {
       const db = await openDB();
       return new Promise((resolve, reject) => {
@@ -1740,6 +1769,43 @@ export const DB = {
       await (await import('./sharedBlobPool')).removeSharedBlob(id);
     });
   },
+
+  // 上面那个入口的批量版，给孤儿回收用（utils/blobGc.ts）：一批候选只把全部用户空间复查一遍。
+  // 守卫与单张入口逐条相同（pool_ 不删；多用户且无法跨页面协调时不删；仍被引用的不删）。
+  // 「复查 + 删除」必须待在同一把独占锁里：挡的是别的页面在两者之间写入引用。
+  // 复查中途出错直接上抛，此时一张都还没删。返回真正删掉的 id。
+  deleteUnreferencedBlobAssets: async (ids: readonly string[]): Promise<string[]> =>
+    withSharedAssetLock('exclusive', async () => {
+      const candidates = [...new Set(ids)].filter(id => !id.startsWith('pool_'));
+      if (!candidates.length || !canCoordinateAssetDeletion() && listUserSpaces().length > 1) return [];
+      const referenced = await (await import('./spaceAssets')).findReferencedSharedAssets(candidates);
+      const doomed = candidates.filter(id => !referenced.has(id));
+      if (!doomed.length) return [];
+      const db = await openSpaceDB(DEFAULT_SPACE_ID);
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(STORE_BLOB_ASSETS, 'readwrite'), table = tx.objectStore(STORE_BLOB_ASSETS);
+        // 与 sharedBlobPool.removeSharedBlob 同义，只是整批共用一趟游标：先删各自的行，
+        // 行若是别名，它指向的共享文件只有在剩下的行里再没有别名指着时才删。
+        const orphaned = new Set<string>();
+        let left = doomed.length;
+        for (const id of doomed) {
+          const req = table.get(id);
+          req.onsuccess = () => {
+            if (req.result?.sharedBlobId) orphaned.add(req.result.sharedBlobId);
+            table.delete(id);
+            if (--left || !orphaned.size) return;
+            const cursor = table.openCursor();
+            cursor.onsuccess = () => {
+              const row = cursor.result;
+              if (row) { orphaned.delete(row.value?.sharedBlobId); row.continue(); }
+              else for (const canonical of orphaned) table.delete(canonical);
+            };
+          };
+        }
+        tx.oncomplete = () => resolve(); tx.onerror = tx.onabort = () => reject(tx.error || new Error('deleteUnreferencedBlobAssets aborted'));
+      });
+      return doomed;
+    }),
 
   // 只列 blobRef 命名空间的 id（img_ 存量 / b_ SDK 新生成）。blob_assets 是混用表，
   // GC 的世界观必须限制在自己的前缀内；今后往这张表加新 id 族时不得使用这两个前缀。
@@ -2123,6 +2189,19 @@ export const DB = {
               const now = Date.now();
               const due = all.filter(m => m.dueAt <= now);
               resolve(due);
+          };
+          request.onerror = () => reject(request.error);
+      });
+  },
+
+  /** 一次查询找出此刻有到期定时消息的角色。轮询先看这个集合，只对其中的角色再逐个取消息。 */
+  getCharIdsWithDueScheduledMessages: async (): Promise<Set<string>> => {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          const request = db.transaction(STORE_SCHEDULED, 'readonly').objectStore(STORE_SCHEDULED).getAll();
+          request.onsuccess = () => {
+              const now = Date.now();
+              resolve(new Set((request.result as ScheduledMessage[]).filter(m => m.dueAt <= now).map(m => m.charId)));
           };
           request.onerror = () => reject(request.error);
       });

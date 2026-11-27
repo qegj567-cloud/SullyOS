@@ -496,6 +496,8 @@ export interface PostProcessMusicHooks {
 
 export interface PostProcessHooks {
     setMessages: (msgs: Message[]) => void;
+    /** 落库后刷新界面读哪一截消息；不给就读最近 200 条。 */
+    loadRefreshMessages?: () => Promise<Message[]>;
     addToast: (msg: string, type: 'info' | 'success' | 'error') => void;
     setRecallStatus?: (s: string) => void;
     setSearchStatus?: (s: string) => void;
@@ -708,6 +710,8 @@ export async function applyAssistantPostProcessing(
         updateTokenUsage = () => {},
         musicHooks,
     } = hooks;
+    // 每落一条气泡都要刷新界面：调用方给了读法就只读界面画得出来的那一截。
+    const readRefreshTail = () => hooks.loadRefreshMessages?.() ?? DB.getRecentMessagesByCharId(char.id, 200);
     const {
         xsecTokenCache: xsecTokenCacheRef,
         commentUserIdCache: commentUserIdCacheRef,
@@ -902,7 +906,7 @@ export async function applyAssistantPostProcessing(
                 console.warn('[emoji] 表情库里没有这个名字，落降级文本气泡', { name, charId: char.id });
                 await replyStep(async () => persistMessage({ charId: char.id, role: 'assistant', type: 'text', content: `[表情：${name}]`, metadata: takeMeta(mcdInheritMeta) } as any));
             }
-            setMessages(await replyStep(async () => DB.getRecentMessagesByCharId(char.id, 200)));
+            setMessages(await replyStep(readRefreshTail));
         };
 
         // 把 [[QUOTE: ...]] / [回复 "..."] 的引用文本解析成"被回复的那条用户消息"。
@@ -967,7 +971,7 @@ export async function applyAssistantPostProcessing(
                         const replyData = globalMsgIndex === 0 ? aiReplyTarget : undefined;
                         await replyStep(async () => typingPause(Math.min(Math.max(chunk.length * 50, 500), 2000)));
                         await replyStep(async () => persistMessage({ charId: char.id, role: 'assistant', type: 'text', content: chunk, replyTo: replyData, metadata: takeMeta(mcdInheritMeta, chunk) } as any));
-                        setMessages(await replyStep(async () => DB.getRecentMessagesByCharId(char.id, 200)));
+                        setMessages(await replyStep(readRefreshTail));
                         globalMsgIndex++;
                     }
                 }
@@ -993,7 +997,7 @@ export async function applyAssistantPostProcessing(
                     const replyData = globalMsgIndex === 0 ? aiReplyTarget : undefined;
                     await replyStep(async () => typingPause(Math.min(Math.max(biContent.length * 30, 400), 2000)));
                     await replyStep(async () => persistMessage({ charId: char.id, role: 'assistant', type: 'text', content: biContent, replyTo: replyData, metadata: takeMeta(mcdInheritMeta, biContent) } as any));
-                    setMessages(await replyStep(async () => DB.getRecentMessagesByCharId(char.id, 200)));
+                    setMessages(await replyStep(readRefreshTail));
                     globalMsgIndex++;
                 }
                 for (const name of inlineEmojis) await replyStep(async () => sendEmojiBubble(name));
@@ -1042,7 +1046,7 @@ export async function applyAssistantPostProcessing(
                             const cleanChunk = ChatParser.sanitize(chunk);
                             if (cleanChunk) {
                                 await replyStep(async () => persistMessage({ charId: char.id, role: 'assistant', type: 'text', content: cleanChunk, replyTo: replyData, metadata: takeMeta(mcdInheritMeta, cleanChunk) } as any));
-                                setMessages(await replyStep(async () => DB.getRecentMessagesByCharId(char.id, 200)));
+                                setMessages(await replyStep(readRefreshTail));
                                 globalMsgIndex++;
                                 chunkSaved = true;
                             }
@@ -1514,7 +1518,7 @@ export async function applyAssistantPostProcessing(
                     // 跟正文气泡带同一个标记 (mcdInheritMeta): 主动消息重试时靠它认出"这张卡上一趟已经发过了"
                     metadata: { xhsNote: note, ...(mcdInheritMeta || {}) }
                 }));
-                setMessages(await replyStep(async () => DB.getRecentMessagesByCharId(char.id, 200)));
+                setMessages(await replyStep(readRefreshTail));
             } else {
                 // 笔记缓冲为空 / 越界 → 卡片发不出来. 云端回复靠 saveXhsSessionNotes 持久化恢复,
                 // 走到这里说明恢复也没命中 (TTL 过期 / 跨 session), 留日志便于排查, 不再静默吞掉.
@@ -1564,7 +1568,7 @@ export async function applyAssistantPostProcessing(
             if (parsedKey) sharedXhsCardKeys.add(parsedKey);
         }
         if (roundMimickedShares.length > 0) {
-            setMessages(await replyStep(async () => DB.getRecentMessagesByCharId(char.id, 200)));
+            setMessages(await replyStep(readRefreshTail));
         }
         // [[XHS_POST: 标题 | 内容 | #标签1 #标签2]]
         const xhsPostMatch = aiContent.match(/\[\[XHS_POST:\s*(.+?)\]\]/s);
@@ -1793,7 +1797,7 @@ export async function applyAssistantPostProcessing(
                             ...(mcdInheritMeta || {}),
                         }),
                     } as any));
-                    setMessages(await replyStep(async () => DB.getRecentMessagesByCharId(char.id, 200)));
+                    setMessages(await replyStep(readRefreshTail));
                     await replyStep(async () => new Promise(r => setTimeout(r, 300)));
                 } catch (e) {
                     ctx.replyRun?.check();
@@ -1824,7 +1828,7 @@ export async function applyAssistantPostProcessing(
             : toolRounds > 0 && !spokeAny)) {
             await replyStep(async () => renderAndPersist('嗯...', pendingThinkingChain));
         } else {
-            setMessages(await replyStep(async () => DB.getRecentMessagesByCharId(char.id, 200)));
+            setMessages(await replyStep(readRefreshTail));
         }
     };
 

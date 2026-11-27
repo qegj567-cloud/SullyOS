@@ -5,6 +5,7 @@
  */
 
 import { openDB } from '../db';
+import { createSpaceStorage, listUserSpaces, rawSpaceStorage } from '../userSpaces';
 import type {
     MemoryNode, MemoryVector, MemoryLink, MemoryBatch,
     TopicBox, Anticipation, MemoryRoom, BoxStatus, AnticipationStatus,
@@ -372,6 +373,35 @@ function isLegacyVec(vec: unknown): boolean {
     return Array.isArray(vec);
 }
 
+/**
+ * 「这个用户空间的向量表已经完整扫过一遍」的本机记录，值是扫完的时间戳。
+ * localStorage 按用户空间隔离，每个空间各有一份；它描述的是这台设备的状态，不进备份。
+ */
+export const VECTOR_COMPACT_SCAN_KEY = 'mp_vector_compact_scan_v1';
+// 记录只在 7 天内有效：万一有哪条写入旧格式的路径没让记录作废，最迟一周后也会重扫一次。
+const VECTOR_COMPACT_SCAN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+let vectorCompactScanEpoch = 0;
+
+function isVectorCompactScanFresh(): boolean {
+    try {
+        const at = Number(localStorage.getItem(VECTOR_COMPACT_SCAN_KEY));
+        const age = Date.now() - at;
+        return at > 0 && age >= 0 && age < VECTOR_COMPACT_SCAN_TTL_MS;
+    } catch { return false; }
+}
+
+/**
+ * 恢复或导入开始写库前调用：备份可能带进旧格式向量，所有空间的记录一并作废，下次启动重新扫。
+ * 正在跑的那一轮扫描也不再留记录——它扫过的位置之后还可能被写入。
+ */
+export function invalidateVectorCompactScan(): void {
+    vectorCompactScanEpoch++;
+    if (!rawSpaceStorage) return;
+    try {
+        for (const { id } of listUserSpaces()) createSpaceStorage(rawSpaceStorage, id).removeItem(VECTOR_COMPACT_SCAN_KEY);
+    } catch { /* 目录读不出来时，记录靠 7 天时效自行失效 */ }
+}
+
 // ─── MemoryVector CRUD ────────────────────────────────
 
 /** Snapshot keys only. Read each upload page with its matching nodes in a single transaction. */
@@ -597,6 +627,23 @@ export const MemoryVectorDB = {
 
             // 让其他 IDB tx 有机会插队
             if (!done) await new Promise(r => setTimeout(r, 50));
+        }
+        return migrated;
+    },
+
+    /**
+     * 开机用的扫描入口：这个空间近期完整扫过就直接跳过，否则照常整表扫。
+     * 手动「优化资源存储」直接调 scanAndMigrateLegacy，不看这条记录。
+     */
+    scanAndMigrateLegacyIfNeeded: async (
+        onProgress?: (migrated: number, scanned: number) => void,
+    ): Promise<number> => {
+        if (isVectorCompactScanFresh()) return 0;
+        const epoch = vectorCompactScanEpoch;
+        const migrated = await MemoryVectorDB.scanAndMigrateLegacy(onProgress);
+        // 走到这里说明整表扫完且没有报错；中途失败会直接抛出去，不留记录。
+        if (epoch === vectorCompactScanEpoch) {
+            try { localStorage.setItem(VECTOR_COMPACT_SCAN_KEY, String(Date.now())); } catch { /* 记不下来就下次再扫 */ }
         }
         return migrated;
     },

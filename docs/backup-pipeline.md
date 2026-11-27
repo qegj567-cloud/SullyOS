@@ -214,6 +214,8 @@ Blob 是否真的占内存，取决于浏览器引擎，而且两家的行为都
   - 云端生成的在飞登记表 `amsg2_cloud_gen_jobs_v1` 和已落地底账 `amsg2_cloud_gen_done_v1`（见 `utils/cloudGen/registry.ts`）属于设备状态：它们描述的是这台设备交出去、还没收尾的任务，恢复到新设备上只会挡住新任务或让结果对不上号。现在由 `userSpaceBackup.ts` 的 `privateLocalExcluded` 排除，`userSpaceExportStreaming.test.ts` 钉住。
   - 本机生成的在飞标记 `sullyos_notice_local_gen_inflight_v1`（页面进后台时还没回来的本机模型请求的用途，下次启动补报使用统计后清掉，见 `utils/localGenInterruption.ts`）属于设备状态：它只对这台设备上一次页面生命有意义。`sullyos_notice_` 前缀让它成为各用户空间共用的键，重开后进哪个空间都读得到、不随迁入独立用户带走；多用户导出由 `privateLocalExcluded` 排除，单用户导出本来就只带白名单。`localGenInterruption.test.ts` 钉住这三点。
   - 调试面板换假模型前的 API 备份 `sullyos_dev_fake_llm_v1`（见 [`fake-llm.md`](./fake-llm.md)）属于设备状态：里面是真 Key，只对这台设备上那次切换有意义。
+  - 「减弱模糊」开关 `sullyos_reduced_blur_v1`（见 `utils/blurPolicy.ts`）属于设备状态：它是针对这台设备性能做的选择，各用户空间共用，但恢复到另一台设备时不带过去。`blurPolicy.test.ts` 钉住这两点。
+  - 记忆向量开机扫描的完成记录 `mp_vector_compact_scan_v1`（见 `utils/memoryPalace/db.ts`）属于设备状态：它只说明这台设备上这个用户空间的向量表近期完整扫过一遍。恢复或导入开始写库时所有空间的记录一并作废，7 天后也会自动过期。`vectorCompactScan.test.ts` 钉住。
   - 测试枚举代码里出现过的 localStorage 键名（常量和前缀），断言每一个都能归到某一类。
 
 ### 临时文件

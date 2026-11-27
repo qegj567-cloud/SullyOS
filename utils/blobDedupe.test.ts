@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { DB, openDB } from './db';
 import { rewriteBlobRefs, rewriteRefsInText, rewriteRefsDeep, collectUnmergeableRefs, buildMergePlan } from './blobDedupe';
 import { REF_SOURCE_STORES, runBlobGc } from './blobGc';
@@ -217,6 +217,8 @@ describe('与孤儿 GC 的配合', () => {
 
         await rewriteBlobRefs(new Map([[dup, keep]]));
         // minAgeMs: 0 关掉新鲜豁免——刚 put 的 Blob 否则会被豁免窗口保住
+        // 孤儿回收只在确认只有这一个页面开着时才做；测试进程里没有页面会话锁，这里补上这个前提
+        vi.spyOn(navigator.locks, 'query').mockResolvedValue({ held: [{ name: 'sully-user-space-session:default', mode: 'shared', clientId: 'this-page' }], pending: [] });
         const gc = await runBlobGc({ minAgeMs: 0 });
 
         expect(gc.aborted).toBe(false);
