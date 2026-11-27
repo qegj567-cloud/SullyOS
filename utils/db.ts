@@ -1741,6 +1741,43 @@ export const DB = {
     });
   },
 
+  // 上面那个入口的批量版，给孤儿回收用（utils/blobGc.ts）：一批候选只把全部用户空间复查一遍。
+  // 守卫与单张入口逐条相同（pool_ 不删；多用户且无法跨页面协调时不删；仍被引用的不删）。
+  // 「复查 + 删除」必须待在同一把独占锁里：挡的是别的页面在两者之间写入引用。
+  // 复查中途出错直接上抛，此时一张都还没删。返回真正删掉的 id。
+  deleteUnreferencedBlobAssets: async (ids: readonly string[]): Promise<string[]> =>
+    withSharedAssetLock('exclusive', async () => {
+      const candidates = [...new Set(ids)].filter(id => !id.startsWith('pool_'));
+      if (!candidates.length || !canCoordinateAssetDeletion() && listUserSpaces().length > 1) return [];
+      const referenced = await (await import('./spaceAssets')).findReferencedSharedAssets(candidates);
+      const doomed = candidates.filter(id => !referenced.has(id));
+      if (!doomed.length) return [];
+      const db = await openSpaceDB(DEFAULT_SPACE_ID);
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(STORE_BLOB_ASSETS, 'readwrite'), table = tx.objectStore(STORE_BLOB_ASSETS);
+        // 与 sharedBlobPool.removeSharedBlob 同义，只是整批共用一趟游标：先删各自的行，
+        // 行若是别名，它指向的共享文件只有在剩下的行里再没有别名指着时才删。
+        const orphaned = new Set<string>();
+        let left = doomed.length;
+        for (const id of doomed) {
+          const req = table.get(id);
+          req.onsuccess = () => {
+            if (req.result?.sharedBlobId) orphaned.add(req.result.sharedBlobId);
+            table.delete(id);
+            if (--left || !orphaned.size) return;
+            const cursor = table.openCursor();
+            cursor.onsuccess = () => {
+              const row = cursor.result;
+              if (row) { orphaned.delete(row.value?.sharedBlobId); row.continue(); }
+              else for (const canonical of orphaned) table.delete(canonical);
+            };
+          };
+        }
+        tx.oncomplete = () => resolve(); tx.onerror = tx.onabort = () => reject(tx.error || new Error('deleteUnreferencedBlobAssets aborted'));
+      });
+      return doomed;
+    }),
+
   // 只列 blobRef 命名空间的 id（img_ 存量 / b_ SDK 新生成）。blob_assets 是混用表，
   // GC 的世界观必须限制在自己的前缀内；今后往这张表加新 id 族时不得使用这两个前缀。
   listBlobAssetIds: async (): Promise<string[]> => {

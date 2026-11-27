@@ -1,12 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { DB, openDB } from './db';
-import { optimizeResourceStorage, OPTIMIZE_TARGET_STORES } from './storageOptimize';
+import { DB, openDB, openSpaceDB } from './db';
+import { optimizeResourceStorage, OPTIMIZE_TARGET_STORES, orphanGcOutcomeLabel, resetMergeGuardForTest } from './storageOptimize';
 import { REF_SOURCE_STORES, runBlobGc } from './blobGc';
 import { isBlobRef, getBlobForRef, dataUrlToBlob, putImageBlob, clearContentMemo } from './blobRef';
 import { blobStore } from './blobStore';
 import { consumeTaskTrace, STEP_TRACE_KINDS } from './taskTrace';
-import { tryAcquireMaintenanceLock, releaseMaintenanceLock } from './maintenanceLock';
+import { tryAcquireMaintenanceLock, releaseMaintenanceLock, currentMaintenanceHolder } from './maintenanceLock';
+import { saveUserSpaces } from './userSpaces';
+import { openCollaborationSpace } from '../features/collaboration/store';
 import { ChatPrompts } from './chatPrompts';
 import { buildGroupHistoryBlock } from './groupChat/prompts';
 
@@ -30,7 +32,14 @@ async function clearStore(name: string): Promise<void> {
     });
 }
 
+/** 让孤儿回收以为只有这一个页面开着（每个真实页面都拿着一把会话锁，测试进程里没有）。 */
+const pretendPages = (...clientIds: string[]) => vi.spyOn(navigator.locks, 'query').mockResolvedValue({
+    held: clientIds.map(clientId => ({ name: 'sully-user-space-session:default', mode: 'shared' as const, clientId })),
+    pending: [],
+});
+
 beforeEach(async () => {
+    pretendPages('this-page');
     // 清库范围跟着覆盖面走：收了新表这里自动跟上，不用手工维护第二份清单
     for (const s of [...new Set([...OPTIMIZE_TARGET_STORES, 'story_theater_masks', 'blob_assets', 'memory_vectors'])]) {
         await clearStore(s);
@@ -38,6 +47,8 @@ beforeEach(async () => {
     localStorage.clear();
     // 内容记忆是模块级的，不清会让上一条用例存的令牌被这条复用，断言全乱
     clearContentMemo();
+    // 「这个页面合并过」的标记也是模块级的：不清的话前面用例一合并，后面的孤儿回收全被跳过
+    resetMergeGuardForTest();
 });
 
 /** 直接往某张表里塞几行（绕开 DB 的各种便捷写入口，形状随便造）。 */
@@ -96,8 +107,10 @@ describe('一键优化的中断留痕', () => {
 
 describe('优化资源存储（一次性批量迁移）', () => {
     it('合并提交前并发清理保留图，不会把正常引用改成缺图', async () => {
-        const keeperId = 'img_100000_1_merge_race';
-        const duplicateId = 'img_200000_1_merge_race';
+        // 保留图此刻没人引用。用带新鲜时间戳的 id：优化开头那轮孤儿回收有 72 小时豁免，
+        // 不会先把它收走，这条用例要钉的是「合并提交前」那个窗口。
+        const keeperId = `b_${(Date.now() - 60_000).toString(36)}_merge_race_keeper`;
+        const duplicateId = `b_${Date.now().toString(36)}_merge_race_dup`;
         const keeper = `blobref:${keeperId}`;
         await DB.putBlobAsset(keeperId, dataUrlToBlob(TINY_PNG));
         await DB.putBlobAsset(duplicateId, dataUrlToBlob(TINY_PNG));
@@ -1087,6 +1100,182 @@ describe('换图即删的字段：令牌独占，衣柜不裂', () => {
         expect(block).toContain('convertExclusive');
         // 换成 convert( 就是把令牌交给内容去重，别处一裸删这边的图跟着没
         expect(block).not.toMatch(/\bconvert\(/);
+    });
+});
+
+// 孤儿图片回收挂在一键优化上之后，这是普通用户能点到的唯一一个不可逆删图入口。
+// 这组用例钉三件事：还有人引用的不删、这一轮合并掉的不在这一轮删、回收出事不连累别的步骤。
+// 用 img_ 前缀的 id 造「老图」：id 里没有时间戳，回收按「早就存进来了」处理，走的是默认的 72 小时豁免。
+describe('孤儿图片回收（一键优化的第一步）', () => {
+    const put = (id: string, dataUrl = TINY_PNG) => DB.putBlobAsset(id, dataUrlToBlob(dataUrl));
+    const alive = async (id: string) => (await DB.getBlobAsset(id)) !== null;
+
+    it('没人引用的老图被清掉并如实报数；各个引用面上还在用的一张都不少', async () => {
+        const referenced = ['img_ref_listed', 'img_ref_unlisted', 'img_ref_collab', 'img_ref_other_space', 'img_ref_local', 'img_ref_other_local'];
+        for (const id of referenced) await put(id);
+        await put('img_orphan_old', TINY_JPEG);
+
+        // 清单里的表、清单外的表、协同工作库、另一个用户空间的库、localStorage、另一个空间的 localStorage
+        await seedStore('characters', [{ id: 'c1', name: '角色', avatar: 'blobref:img_ref_listed' }]);
+        await seedStore('worldbooks', [{ id: 'wb_gc', title: '清单外', content: '封面 blobref:img_ref_unlisted' }]);
+        const collab = await openCollaborationSpace();
+        const other = await openSpaceDB('u_gc_other');
+        const putRow = (db: IDBDatabase, store: string, row: unknown) => new Promise<void>((resolve, reject) => {
+            const tx = db.transaction(store, 'readwrite');
+            tx.objectStore(store).put(row);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+        });
+        await putRow(collab, 'messages', { id: 'm_gc', sessionId: 's', role: 'user', content: 'blobref:img_ref_collab' });
+        await putRow(other, 'characters', { id: 'c_other', name: '别的用户的角色', avatar: 'blobref:img_ref_other_space' });
+        saveUserSpaces([{ id: 'default', name: '默认用户' }, { id: 'u_gc_other', name: '小明' }]);
+        localStorage.setItem('acnh_wallpaper_backup', 'blobref:img_ref_local');
+        localStorage.setItem('sully_space:u_gc_other:acnh_wallpaper_backup', 'blobref:img_ref_other_local');
+
+        try {
+            const r = await optimizeResourceStorage();
+
+            expect(r.orphanGcSkipped).toBeNull();
+            expect(r.orphansDeleted).toBe(1);
+            expect(r.orphanBytesFreed).toBeGreaterThan(0);
+            expect(await alive('img_orphan_old')).toBe(false);
+            for (const id of referenced) expect(await alive(id), id).toBe(true);
+            expect(orphanGcOutcomeLabel(r)).toBe('清理了');
+        } finally {
+            await clearStore('worldbooks');
+            for (const [db, store] of [[collab, 'messages'], [other, 'characters']] as const) {
+                await new Promise<void>((resolve, reject) => {
+                    const tx = db.transaction(store, 'readwrite');
+                    tx.objectStore(store).clear();
+                    tx.oncomplete = () => resolve();
+                    tx.onerror = () => reject(tx.error);
+                });
+            }
+        }
+    });
+
+    it('刚存进来、还没人引用的新图不清（72 小时豁免在这条路上原样生效）', async () => {
+        const fresh = await putImageBlob(dataUrlToBlob(TINY_PNG));
+        const r = await optimizeResourceStorage();
+        expect(r.orphansDeleted).toBe(0);
+        expect(await getBlobForRef(fresh)).not.toBeNull();
+        expect(orphanGcOutcomeLabel(r)).toBe('没有可清理的');
+    });
+
+    it('这一轮合并掉的那份不在这一轮删；同一页面再点也不删；刷新后再点才清', async () => {
+        await put('img_100_dup_a');
+        await put('img_200_dup_b');
+        await DB.saveAsset('wallpaper', 'blobref:img_100_dup_a');
+        await DB.saveAsset('lock_wallpaper', 'blobref:img_200_dup_b');
+
+        const first = await optimizeResourceStorage();
+        expect(first.mergedDuplicates).toBe(1);
+        expect(await DB.getAsset('lock_wallpaper')).toBe('blobref:img_100_dup_a');
+        expect(first.orphansDeleted).toBe(0);
+        // 页面内存里还拿着这个旧令牌，被写回库时必须还读得出图
+        expect(await alive('img_200_dup_b')).toBe(true);
+
+        // 没等到刷新又点了一次
+        const second = await optimizeResourceStorage();
+        expect(second.orphanGcSkipped).toMatch(/刷新/);
+        expect(orphanGcOutcomeLabel(second)).toBe('没执行');
+        expect(await alive('img_200_dup_b')).toBe(true);
+
+        resetMergeGuardForTest(); // 页面刷新了
+        const third = await optimizeResourceStorage();
+        expect(third.orphanGcSkipped).toBeNull();
+        expect(third.orphansDeleted).toBe(1);
+        expect(await alive('img_200_dup_b')).toBe(false);
+        expect(await alive('img_100_dup_a')).toBe(true);
+    });
+
+    it('合并改到一半就失败：同一页面里之后也不回收', async () => {
+        await put('img_100_dup_a');
+        await put('img_200_dup_b');
+        await put('img_orphan_old', TINY_JPEG);
+        await DB.saveAsset('wallpaper', 'blobref:img_100_dup_a');
+        await DB.saveAsset('lock_wallpaper', 'blobref:img_200_dup_b');
+        // 先让开头那轮回收和各面转换过去，只让合并写回失败
+        const write = DB.putStoreRows.bind(DB);
+        const spy = vi.spyOn(DB, 'putStoreRows').mockImplementation(async (store, rows) => {
+            if (store === 'assets') throw new Error('写不进去');
+            return write(store, rows);
+        });
+        await expect(optimizeResourceStorage()).rejects.toThrow('写不进去');
+        spy.mockRestore();
+        expect(await alive('img_orphan_old')).toBe(false); // 开头那轮照常清了
+        await put('img_orphan_after_failure', TINY_JPEG);
+
+        const next = await optimizeResourceStorage();
+        expect(next.orphanGcSkipped).toMatch(/刷新/);
+        expect(await alive('img_orphan_after_failure')).toBe(true);
+    });
+
+    it('回收抛错：这一步报没执行，转换结果照常返回，图一张不少', async () => {
+        await put('img_orphan_old', TINY_JPEG);
+        await DB.saveAsset('wallpaper', TINY_PNG);
+        const spy = vi.spyOn(DB, 'deleteUnreferencedBlobAssets').mockRejectedValue(new Error('回收炸了'));
+        try {
+            const r = await optimizeResourceStorage();
+            expect(r.orphanGcSkipped).toContain('回收炸了');
+            expect(r.orphansDeleted).toBe(0);
+            expect(r.converted).toBe(1);
+            expect(isBlobRef(await DB.getAsset('wallpaper'))).toBe(true);
+            expect(await alive('img_orphan_old')).toBe(true);
+            expect(orphanGcOutcomeLabel(r)).toBe('没执行');
+        } finally {
+            spy.mockRestore();
+        }
+        expect(currentMaintenanceHolder()).toBeNull();
+    });
+
+    it('还开着别的标签页：回收这一步不做并说明原因，其余优化照常', async () => {
+        await put('img_orphan_old', TINY_JPEG);
+        await DB.saveAsset('wallpaper', TINY_PNG);
+        pretendPages('this-page', 'another-tab');
+        const r = await optimizeResourceStorage();
+        expect(r.orphanGcSkipped).toMatch(/别的标签页/);
+        expect(orphanGcOutcomeLabel(r)).toBe('没执行');
+        expect(r.converted).toBe(1);
+        expect(await alive('img_orphan_old')).toBe(true);
+    });
+
+    it('确认不了有没有别的标签页：同样不做', async () => {
+        await put('img_orphan_old', TINY_JPEG);
+        await DB.saveAsset('wallpaper', TINY_PNG);
+        pretendPages();
+        const r = await optimizeResourceStorage();
+        expect(r.orphanGcSkipped).toMatch(/没法确认/);
+        expect(r.converted).toBe(1);
+        expect(await alive('img_orphan_old')).toBe(true);
+    });
+
+    it('候选张数会报给进度', async () => {
+        await put('img_orphan_old', TINY_JPEG);
+        await put('img_orphan_old_2', TINY_GIF);
+        const totals: number[] = [];
+        await optimizeResourceStorage(p => { if (p.label === '清理没人用的图片') totals.push(p.total); });
+        expect(totals).toEqual([0, 2]);
+    });
+
+    it('引用面读不出来触发安全阀：一张不删、报没执行，转换照跑', async () => {
+        await put('img_orphan_old', TINY_JPEG);
+        await DB.saveAsset('wallpaper', TINY_PNG);
+        // 只让回收那一轮的枚举坏掉（它在最前面），后面各面的分页读照常
+        const read = DB.getStoreRowsPage.bind(DB);
+        let broken = true;
+        const spy = vi.spyOn(DB, 'getStoreRowsPage').mockImplementation(async (...args) => {
+            if (broken) { broken = false; throw new Error('枚举炸了'); }
+            return read(...args);
+        });
+        try {
+            const r = await optimizeResourceStorage();
+            expect(r.orphanGcSkipped).toMatch(/一张都没删/);
+            expect(r.converted).toBe(1);
+            expect(await alive('img_orphan_old')).toBe(true);
+        } finally {
+            spy.mockRestore();
+        }
     });
 });
 

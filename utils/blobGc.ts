@@ -1,7 +1,23 @@
 // 孤儿 Blob GC 入口。删除令牌（blobref:）是保守的——同一令牌可能被多处引用，消费方
-// 从不主动删，残留的孤儿 Blob 统一由这里的 GC 收口（首版只挂调试面板手动触发）。
+// 从不主动删，残留的孤儿 Blob 统一由这里的 GC 收口。两个入口：设置里的「优化资源存储」
+// 每次都会顺带跑一轮（utils/storageOptimize.ts），调试面板可以单独跑一轮。
 // GC 逻辑在 @rei-standard/blob-store（mark & sweep + 多道安全阀，宁可留孤儿绝不删活图），
 // 本文件只负责宿主义务里最要命的那条：把「全部可能含令牌的持久化面」枚举给它。
+//
+// ─── 实际喂给 SDK 的引用面有两层 ───
+// 图片二进制放在默认库的 blob_assets 里，所有用户空间共用同一份，所以只扫当前空间不够：
+//   1. 下面这份清单：当前用户空间主库的 18 张表 + 当前空间看得到的 localStorage；
+//   2. utils/spaceAssets.ts 的 allSpaceReferenceSources：每个用户空间的主库和协同工作库的
+//      全部表（不按清单挑）+ 未经空间过滤的 localStorage 全量。
+// SDK 筛出来的只是候选：真正删之前，DB.deleteUnreferencedBlobAssets 在共享池独占锁里拿第二层
+// 把整批候选再查一遍（一轮只查这一遍，不是每张查一遍），查到有人引用的不删。
+//
+// ─── 只在这一个页面开着的时候回收 ───
+// 别的标签页 / 窗口有两种情况会让「库里没人引用」不等于「真没人用」：它的内存里还拿着
+// 合并重复图片之前的旧令牌，之后整份写回库；或者它正在恢复备份，图片已经写进来、引用它的
+// 记录还没写。两种都没法从库里看出来，所以只要还有别的页面开着就整轮不做，见 otherPagesOpen。
+// 主库和协同工作库之外的数据库（主动消息收件箱、排障记录、3D 资源包、Service Worker 自己的库）
+// 以及 Cache Storage、OPFS 都不存令牌，不在扫描范围内；要往这些地方写令牌，先把它接进枚举。
 //
 // ─── 引用面清单（本文件的生死线）───
 // 漏掉一个面，那个面独占引用的图就会被当孤儿删掉（不可逆）。
@@ -54,9 +70,11 @@
 // 各面都是 JSON / 裸字符串，令牌逐字可见，不需要解压解密。若未来某个面压缩 / 加密后才
 // 落盘，必须先还原成明文再吐——那种情况枚举不报错、安全阀也不触发，等于这个面没扫。
 
+import { createBlobStore } from '@rei-standard/blob-store';
 import { DB } from './db';
 import { blobStore } from './blobStore';
 import { tryAcquireMaintenanceLock, releaseMaintenanceLock, currentMaintenanceHolder } from './maintenanceLock';
+import { userSpaceSessionLock } from './userSpaces';
 
 // 引用面里的 17 张表。名字与 db.ts 的 STORE_* 常量值一一对应
 // （STORE_CHARACTERS / STORE_MESSAGES / STORE_CC_PARTS / STORE_SONGS / STORE_GALLERY /
@@ -126,7 +144,7 @@ async function* iterateRefSources(): AsyncGenerator<string> {
  * 跑一轮孤儿 Blob GC，返回 SDK 的 { deleted, kept, keptBoundary, aborted }。
  * minAgeMs 默认 72h（SDK 侧新鲜豁免，挡「已 put、引用未落盘」的竞态），0 只应出现在测试。
  * keptBoundary 接近库存量 = 某个引用面混进了杂散的令牌前缀文本，GC 整轮空转——
- * 展示侧（调试面板）必须把它露出来，deleted:0 和「真没垃圾」同形，它是唯一报警信号。
+ * 展示侧（调试面板、优化结果）必须把它露出来，deleted:0 和「真没垃圾」同形，它是唯一报警信号。
  *
  * 与「优化资源存储」共用 maintenanceLock：迁移是引用搬家（data: → 令牌），
  * mark 不是一致性快照，撞上会误删活图。锁被占时直接抛（拿不到锁 ≠ 没垃圾）。
@@ -136,8 +154,65 @@ export async function runBlobGc(opts?: { minAgeMs?: number }) {
         throw new Error(`另一项存储维护（${currentMaintenanceHolder()}）正在进行，请稍后再试。`);
     }
     try {
-        return await blobStore.gc({ refSources: (async function* () { yield* iterateRefSources(); yield* (await import('./spaceAssets')).allSpaceReferenceSources(); })(), ...opts });
+        return await sweep(opts);
     } finally {
         releaseMaintenanceLock();
     }
+}
+
+// 每个页面启动时都以 shared 模式拿着这把锁，直到页面销毁才由浏览器释放
+// （utils/userSpaces.ts 的 installSpaceStorage，index.tsx 的第一个依赖）。数持有者就是数页面。
+const SESSION_LOCK_PREFIX = userSpaceSessionLock('');
+
+/**
+ * 还有别的页面开着吗？有、或者确认不了，返回给用户看的原因；只有自己时返回 null。
+ * 确认不了也算不行：没有 Web Locks 的浏览器、自己都没数到（会话锁没装上），删除不可逆，宁可不做。
+ * 排队中的也算数：有页面正在删用户空间（独占）时，新开的页面会排在后面。
+ */
+async function otherPagesOpen(): Promise<string | null> {
+    const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined;
+    if (typeof locks?.query !== 'function') return '这个浏览器没法确认有没有别的标签页开着，为了不误删图片，这一步不做';
+    const { held = [], pending = [] } = await locks.query();
+    const sessions = [...held, ...pending].filter(lock => lock.name?.startsWith(SESSION_LOCK_PREFIX));
+    const pages = new Set(sessions.map(lock => lock.clientId));
+    if (pages.size > 1) return '还开着别的标签页或窗口，关掉它们后再点一次才会清理';
+    // 拿不到页面标识就没法把两个页面分开数，同样算确认不了
+    if (pages.size === 0 || sessions.some(lock => !lock.clientId)) return '没法确认有没有别的标签页开着，为了不误删图片，这一步不做';
+    return null;
+}
+
+/**
+ * 一轮回收：SDK 负责标记和筛选（安全阀、72h 豁免都在它那边），但它的 delete 在这里只是
+ * 把候选记下来；筛完之后整批交给 DB.deleteUnreferencedBlobAssets 复查一遍再删。
+ * 逐张走 DB.deleteBlobAsset 的话每张都要把所有用户空间扫一遍，几百张孤儿就是几百遍全库扫描。
+ */
+async function sweep(opts?: { minAgeMs?: number }, onCandidates?: (count: number) => void) {
+    const blocked = await otherPagesOpen();
+    if (blocked) throw new Error(blocked);
+    const candidates: string[] = [];
+    const marker = createBlobStore({
+        prefix: blobStore.prefix,
+        adapter: {
+            get: id => DB.getBlobAsset(id),
+            put: async () => { throw new Error('回收用的适配器不写入'); },
+            delete: async id => { candidates.push(id); },
+            keys: () => DB.listBlobAssetIds(),
+        },
+    });
+    const result = await marker.gc({ refSources: (async function* () { yield* iterateRefSources(); yield* (await import('./spaceAssets')).allSpaceReferenceSources(); })(), ...opts });
+    if (result.aborted || candidates.length === 0) return result;
+    onCandidates?.(candidates.length);
+    const deleted = (await DB.deleteUnreferencedBlobAssets(candidates)).length;
+    return { ...result, deleted, kept: result.kept + candidates.length - deleted };
+}
+
+/**
+ * 给已经拿着 maintenanceLock 的调用方（优化资源存储）用的同一轮 GC：锁不可重入，
+ * 走 runBlobGc 会被自己挡在外面。不收 minAgeMs——这条路是普通用户按钮，72h 豁免不许调。
+ * onCandidates 在复查开始前报一次候选张数，给进度文案用。
+ * 调用时不能拿着 sharedAssetLock 的独占锁：批量复查删除要申请同一把，会死等。
+ */
+export async function runBlobGcWithLockHeld(onCandidates?: (count: number) => void) {
+    if (currentMaintenanceHolder() === null) throw new Error('runBlobGcWithLockHeld 要求调用方已持有维护锁');
+    return sweep(undefined, onCandidates);
 }

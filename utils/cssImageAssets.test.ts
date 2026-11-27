@@ -86,6 +86,8 @@ it('backs up CSS references and protects images still used by a character after 
     expect(await portableCssImages(local)).toBe(css);
     await DB.saveCharacter({id:'css-gc-character',name:'测试',chromeCustomCss:local} as any);
     await deleteLibraryDecoration(id);
+    // 孤儿回收只在确认只有这一个页面开着时才做；测试进程里没有页面会话锁，这里补上这个前提
+    vi.spyOn(navigator.locks, 'query').mockResolvedValue({ held: [{ name: 'sully-user-space-session:default', mode: 'shared', clientId: 'this-page' }], pending: [] });
     expect((await runBlobGc({minAgeMs:0})).aborted).toBe(false);
     expect(await getBlobForRef(token)).not.toBeNull();
 });
