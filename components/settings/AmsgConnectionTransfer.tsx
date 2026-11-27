@@ -51,7 +51,11 @@ export default function AmsgConnectionTransfer({ config, onApply, receive = fals
   const find = useCallback(async (lookupToken: string, lookupScriptName: string) => {
     setBusy(true); setDiscoveryError(''); setFound(null); setWarnings([]);
     try {
-      const result = await discoverAmsgBackends(lookupToken, lookupScriptName.trim());
+      const result = await discoverAmsgBackends(
+        lookupToken,
+        lookupScriptName.trim(),
+        ...(config.useRelay ? [{ useRelay: config.useRelay, relayToken: config.relayToken }] : []),
+      );
       setFound(result.backends); setWarnings(result.warnings); setToken(lookupToken);
       setSelectedAccount(result.backends.length === 1 ? result.backends[0].account.id : '');
       setRecovering(false); setPendingRedeploy(null); setFocusTarget(result.backends.length ? 'results' : 'discovery');

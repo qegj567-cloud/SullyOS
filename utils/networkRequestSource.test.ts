@@ -275,6 +275,40 @@ describe('identifyNetworkRequestSource（多来源精确识别）', () => {
         });
         expect(directSync.source).toBe('主动消息 2.0 · 云端状态同步');
         expect(directSync.via).toBe('direct');
+
+        const relayedDeployBundle = identifyNetworkRequestSource({
+            url: `https://amsg-relay.friedsully.com/t/${token}/_deploy/worker.bundle.js`,
+            method: 'GET',
+            endpoints: baseEndpoints,
+        });
+        expect(relayedDeployBundle.source).toBe('主动消息 2.0 · 部署代码包拉取（经大陆中转）');
+        expect(relayedDeployBundle.via).toBe('amsg-relay');
+        expect(relayedDeployBundle.upstreamTarget).toBe('raw.githubusercontent.com');
+
+        const relayedCfApi = identifyNetworkRequestSource({
+            url: `https://amsg-relay.friedsully.com/t/${token}/_cf-api?path=%2Fuser%2Ftokens%2Fverify`,
+            method: 'POST',
+            endpoints: baseEndpoints,
+        });
+        expect(relayedCfApi.source).toBe('主动消息 2.0 · Cloudflare 部署代理（经大陆中转）');
+        expect(relayedCfApi.via).toBe('amsg-relay');
+        expect(relayedCfApi.upstreamTarget).toBe('api.cloudflare.com');
+
+        const proxyDeployBundle = identifyNetworkRequestSource({
+            url: 'https://proxy.friedsully.com/amsg-bundle?file=worker.bundle.js',
+            method: 'GET',
+            endpoints: baseEndpoints,
+        });
+        expect(proxyDeployBundle.source).toBe('主动消息 2.0 · 部署代码包代理');
+        expect(proxyDeployBundle.via).toBe('proxy-worker');
+
+        const githubDeployBundle = identifyNetworkRequestSource({
+            url: 'https://raw.githubusercontent.com/Tosd0/sullyos-workers/main/amsg/worker.bundle.js',
+            method: 'GET',
+            endpoints: baseEndpoints,
+        });
+        expect(githubDeployBundle.source).toBe('主动消息 2.0 · 部署代码包（GitHub 直连）');
+        expect(githubDeployBundle.category).toBe('amsg2');
     });
 
     it('识别主代理 Worker 下的网易云、微博、WebDAV、点单 MCP、热榜搜索等各条支线', () => {
