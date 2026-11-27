@@ -46,8 +46,9 @@ export function readStorePage(db: IDBDatabase, table: string, after?: IDBValidKe
             page.lastKey = cursor.primaryKey;
             cursor.continue();
         };
+        request.onerror = () => reject(request.error ?? tx.error ?? new Error(`读取 ${table} 失败`));
         tx.oncomplete = () => resolve(page);
-        tx.onerror = tx.onabort = () => reject(tx.error ?? request.error ?? new Error(`读取 ${table} 失败`));
+        tx.onerror = tx.onabort = () => reject(request.error ?? tx.error ?? new Error(`读取 ${table} 失败`));
     });
 }
 

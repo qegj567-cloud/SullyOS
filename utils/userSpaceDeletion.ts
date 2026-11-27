@@ -6,6 +6,7 @@ import { withSharedAssetLock, canCoordinateAssetDeletion } from './sharedAssetLo
 import { retireCloudCharacter } from './amsgCloudRetirement';
 import { ActiveMsgStore } from './activeMsgStore';
 import { clearEmojiOriginals } from './emojiOriginals';
+import { deleteSpaceSafetySnapshots } from './characterSafetySnapshots';
 
 type Deletion = {
     characters: Array<{ id: string; name: string }>;
@@ -94,6 +95,7 @@ export async function deleteUserSpace(id: string, progress: (message: string) =>
         if (id === 'default') tables.assets = [{ id: 'user_spaces_catalog_v1', data: JSON.stringify(remaining) }];
         await commitSpaceRows(db, tables, true);
         await clearEmojiOriginals(id);
+        await deleteSpaceSafetySnapshots(id);
         clearUserSpaceLocal(id);
         // Mirror first: a failed write leaves the catalog and journal available for retry.
         if (id !== 'default') await commitSpaceRows(await openSpaceDB('default'), { assets: [{ id: 'user_spaces_catalog_v1', data: JSON.stringify(remaining) }] });
