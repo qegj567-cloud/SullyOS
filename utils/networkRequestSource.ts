@@ -557,6 +557,28 @@ export const identifyNetworkRequestSource = (input: IdentifyNetworkRequestInput)
                 impactHint: '仅影响设置页显示近 30 天中转流量统计，不影响消息收发。',
             };
         }
+        if (tail === '_cf-api' || tail.startsWith('_cf-api/')) {
+            return {
+                source: '主动消息 2.0 · Cloudflare 部署代理（经大陆中转）',
+                category: 'amsg2',
+                via: 'amsg-relay',
+                upstreamTarget: 'api.cloudflare.com',
+                operation: '一键部署/更新 Worker (/_cf-api)',
+                configSource: '主动消息 2.0 → 大陆连接优化',
+                impactHint: '仅影响在设置页一键部署或更新 Cloudflare Worker，不影响已部署 Worker 的日常运行。',
+            };
+        }
+        if (tail === '_deploy' || tail.startsWith('_deploy/')) {
+            return {
+                source: '主动消息 2.0 · 部署代码包拉取（经大陆中转）',
+                category: 'amsg2',
+                via: 'amsg-relay',
+                upstreamTarget: 'raw.githubusercontent.com',
+                operation: `拉取部署文件 (/${tail})`,
+                configSource: '主动消息 2.0 → 大陆连接优化',
+                impactHint: '仅影响一键部署拉取 Worker 代码，不影响已部署 Worker 的日常运行。',
+            };
+        }
         const slashIdx = tail.indexOf('/');
         const workerHost = slashIdx >= 0 ? tail.slice(0, slashIdx) : tail;
         const workerPath = slashIdx >= 0 ? tail.slice(slashIdx) : '/';
@@ -774,6 +796,18 @@ export const identifyNetworkRequestSource = (input: IdentifyNetworkRequestInput)
             operation: '一键部署/更新 Worker (/cf-api)',
             configSource: describeProxyWorkerConfig(parsed.origin, endpoints),
             impactHint: '仅影响在设置页一键部署或更新 Cloudflare Worker，不影响已部署 Worker 的日常运行。',
+        };
+    }
+
+    if (pathname === '/amsg-bundle') {
+        return {
+            source: '主动消息 2.0 · 部署代码包代理',
+            category: 'amsg2',
+            via: 'proxy-worker',
+            upstreamTarget: 'raw.githubusercontent.com',
+            operation: '拉取部署代码包 (/amsg-bundle)',
+            configSource: describeProxyWorkerConfig(parsed.origin, endpoints),
+            impactHint: '仅影响一键部署拉取 Worker 代码，不影响已部署 Worker 的日常运行。',
         };
     }
 
@@ -1009,6 +1043,17 @@ export const identifyNetworkRequestSource = (input: IdentifyNetworkRequestInput)
             category: 'external-media',
             via: 'direct',
             operation: `${method} ${parsed.host}${pathname}`,
+        };
+    }
+
+    if (hostLower === 'raw.githubusercontent.com' && pathname.toLowerCase().includes('/sullyos-workers/')) {
+        return {
+            source: '主动消息 2.0 · 部署代码包（GitHub 直连）',
+            category: 'amsg2',
+            via: 'direct',
+            operation: `${method} ${parsed.host}${pathname}`,
+            configSource: '主动消息 2.0 → 一键部署',
+            impactHint: '仅影响一键部署直连 GitHub 拉取代码包，不影响云备份或已部署 Worker 的日常运行。',
         };
     }
 
