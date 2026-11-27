@@ -946,6 +946,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
           AMSG_SERVER_TOKEN: config?.serverToken || undefined,
         },
         resetExistingDatabase,
+        ...(config?.useRelay ? { relay: { useRelay: config.useRelay, relayToken: config.relayToken } } : {}),
         onProgress: (p: ProvisionProgress) => setProvisionStep(p.message),
       });
 
@@ -1254,6 +1255,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
         workerUrl: config.workerUrl,
         scriptName: attachScriptName.trim() || undefined,
         accountId,
+        ...(config.useRelay ? { relay: { useRelay: config.useRelay, relayToken: config.relayToken } } : {}),
       });
 
       if (!result.ok) {

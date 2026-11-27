@@ -41,3 +41,7 @@
 - [OpenRouter reasoning](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens)：结构化摘要与流式增量。
 
 回归覆盖普通 JSON、带回调和不带回调的 SSE、镜像去重、空白增量、结构化 thought 块、闭合后仍有未闭合块、关闭显示、普通英文保留、云端推送及空正文。均为协议样本和模拟请求，未使用用户渠道 Key 实测。
+
+## 对话校准重新生成
+
+校准候选的思考字段按当前心象开关决定是否保存；关闭（含旧角色缺省）时即使模型返回 reasoning_content 也只保留正文。采用新版时在同一写入事务内再次读取角色开关，防止预览后关闭心象仍写入候选心象。开关本身不被校准修改，格式校对保留原记录已有心象，不追溯删除旧卡片。回归：`utils/chatTurnRevision.test.ts`。

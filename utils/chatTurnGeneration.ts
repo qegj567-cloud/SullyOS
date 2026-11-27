@@ -138,7 +138,7 @@ ${prompt}
             });
         }
         const thinking = readAssistantThinking(response.choices?.[0]?.message);
-        if (thinking && bubbles.length) bubbles[0].metadata = { ...bubbles[0].metadata, thinkingChain: thinking };
+        if ((settings.thinkingChain?.enabled ?? !!char.showThinkingChain) && thinking && bubbles.length) bubbles[0].metadata = { ...bubbles[0].metadata, thinkingChain: thinking };
     }
     if (!bubbles.length && mode === 'reroll') throw new Error('候选版本没有可显示的回复，已保留原版。');
     if (targetIds) {

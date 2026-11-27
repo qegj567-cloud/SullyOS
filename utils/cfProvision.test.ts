@@ -20,8 +20,11 @@ import {
     uploadWorkerScript,
     ensureSubdomain,
     guardReusedDatabase,
+    checkRelayAvailable,
+    fetchBundle,
     type AmsgSecrets,
 } from './cfProvision';
+import { checkRelayDeployment } from './amsgRelay';
 
 const FULL_SECRETS: AmsgSecrets = {
     AMSG_MASTER_KEY: 'a'.repeat(64),
@@ -553,5 +556,115 @@ describe('deriveWorkerUrl / validateSubdomain', () => {
         expect(validateSubdomain('ab')).not.toBeNull();
         expect(validateSubdomain('has_underscore')).not.toBeNull();
         expect(validateSubdomain('')).not.toBeNull();
+    });
+});
+
+describe('大陆连接优化接入与多级回退', () => {
+    const RELAY_TOKEN = 'abcdefghijklmnopqrstuvwxyz0123456789_-ABCDE';
+    const VALID_BUNDLE = 'src_default as default;' + 'x'.repeat(110 * 1024);
+
+    afterEach(async () => {
+        vi.unstubAllGlobals();
+        vi.restoreAllMocks();
+        await checkRelayDeployment();
+    });
+
+    it('开了大陆中转时，/cf-api 与拉取部署包都优先走 amsg-relay', async () => {
+        vi.stubGlobal('location', new URL('https://friedsully.com/'));
+        await checkRelayDeployment();
+
+        const urls: string[] = [];
+        vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+            urls.push(String(url));
+            if (url.includes('/_cf-api?')) {
+                return Response.json({ success: true, result: { status: 'active' }, messages: [] });
+            }
+            if (url.endsWith('/_cf-api')) {
+                return Response.json({ ok: true, relay: 'cf-api' });
+            }
+            if (url.endsWith('/_deploy/worker.bundle.js')) {
+                return new Response(VALID_BUNDLE);
+            }
+            if (url.endsWith('/_deploy/wrangler.toml')) {
+                return new Response('compatibility_date = "2026-02-02"\ncrons = ["* * * * *"]\n[[d1_databases]]\nbinding = "DB"\n');
+            }
+            throw new Error(`Unexpected fallback URL: ${url}`);
+        }));
+
+        const relay = { useRelay: true, relayToken: RELAY_TOKEN };
+        expect(await checkRelayAvailable(relay)).toBe(true);
+        expect(await verifyToken('cfut_valid', relay)).toEqual({ ok: true });
+        const bundle = await fetchBundle(relay);
+        expect(bundle.ok).toBe(true);
+        if (bundle.ok) expect(bundle.config.compatibilityDate).toBe('2026-02-02');
+        expect(urls.every((u) => u.startsWith(`https://amsg-relay.friedsully.com/t/${RELAY_TOKEN}/`))).toBe(true);
+    });
+
+    it('amsg-relay 返回 X-Amsg-Relay-Error（如令牌失效或旧服务 404）时回退主代理，不误判成 CF Token 权限错', async () => {
+        vi.stubGlobal('location', new URL('https://friedsully.com/'));
+        await checkRelayDeployment();
+
+        const seen: Array<{ url: string; handlesFailure?: boolean }> = [];
+        vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit & { __sullyHandlesFailure?: boolean }) => {
+            seen.push({ url: String(url), handlesFailure: init?.__sullyHandlesFailure });
+            if (String(url).includes('amsg-relay.friedsully.com')) {
+                return new Response(JSON.stringify({ error: 'invalid_token', message: 'expired' }), {
+                    status: 401,
+                    headers: { 'Content-Type': 'application/json', 'X-Amsg-Relay-Error': 'invalid_token' },
+                });
+            }
+            return Response.json({ success: true, result: { status: 'active' }, messages: [] });
+        }));
+
+        const result = await verifyToken('cfut_valid', { useRelay: true, relayToken: RELAY_TOKEN });
+        expect(result).toEqual({ ok: true });
+        expect(seen).toHaveLength(2);
+        expect(seen[0].handlesFailure).toBe(true);
+        expect(seen[1].url).toContain('proxy.friedsully.com/cf-api');
+    });
+
+    it('Cloudflare 自身经 amsg-relay 返回 403 时当场返回，不重复打主代理', async () => {
+        vi.stubGlobal('location', new URL('https://friedsully.com/'));
+        await checkRelayDeployment();
+
+        const urls: string[] = [];
+        vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+            urls.push(String(url));
+            return new Response(JSON.stringify({ success: false, errors: [{ code: 9109, message: 'Unauthorized' }] }), {
+                status: 403,
+                headers: { 'Content-Type': 'application/json' },
+            });
+        }));
+
+        const res = await verifyToken('cfut_missing_perm', { useRelay: true, relayToken: RELAY_TOKEN });
+        expect(res.ok).toBe(false);
+        expect(urls).toHaveLength(1);
+    });
+
+    it('中转、主代理与 GitHub 直连全部失败时，回退当前站点的同源静态包兜底', async () => {
+        vi.stubGlobal('location', new URL('https://friedsully.com/'));
+        await checkRelayDeployment();
+
+        const seen: Array<{ url: string; handlesFailure?: boolean }> = [];
+        vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit & { __sullyHandlesFailure?: boolean }) => {
+            seen.push({ url: String(url), handlesFailure: init?.__sullyHandlesFailure });
+            if (String(url) === 'https://friedsully.com/amsg-worker.bundle.js') {
+                return new Response(VALID_BUNDLE);
+            }
+            throw new TypeError('Failed to fetch');
+        }));
+
+        const bundle = await fetchBundle({ useRelay: true, relayToken: RELAY_TOKEN });
+        expect(bundle.ok).toBe(true);
+        // 4 棒 worker.bundle.js（中转 → 主代理 → GitHub → 同源成功）+ 3 棒 wrangler.toml（全挂走兜底）
+        const bundleAttempts = seen.slice(0, 4);
+        expect(bundleAttempts.map((s) => s.url)).toEqual([
+            `https://amsg-relay.friedsully.com/t/${RELAY_TOKEN}/_deploy/worker.bundle.js`,
+            'https://proxy.friedsully.com/amsg-bundle?file=worker.bundle.js',
+            'https://raw.githubusercontent.com/Tosd0/sullyos-workers/main/amsg/worker.bundle.js',
+            'https://friedsully.com/amsg-worker.bundle.js',
+        ]);
+        // 前三棒失败都带静默标记，不点亮顶部系统报错胶囊
+        expect(bundleAttempts.slice(0, 3).every((s) => s.handlesFailure === true)).toBe(true);
     });
 });

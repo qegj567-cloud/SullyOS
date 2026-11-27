@@ -1,23 +1,25 @@
+import SystemAlarmDialog, { type AlarmTarget } from '../components/schedule/SystemAlarmDialog';
+import { isAndroidAlarm } from '../utils/nativeAlarm';
 
 
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
 import { Task, Anniversary, CharacterProfile } from '../types';
 import Modal from '../components/os/Modal';
 import { ContextBuilder } from '../utils/context';
-import { safeResponseJson } from '../utils/safeApi';
+import { safeResponseJson, extractContent } from '../utils/safeApi';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { CharacterGroupFilterBar, filterCharactersByGroup, GROUP_FILTER_ALL } from '../components/character/CharacterGroupFilter';
 import { getCalendarDayDifference, getLocalDateKey } from '../utils/localDate';
 import { useLocalDateKey } from '../hooks/useLocalDateKey';
 import { trackEvent } from '../utils/analytics';
+import { splitInlineThinking } from '../utils/assistantThinking';
+import { resolveTimeContractTheme, notifyTimeContractChanged } from '../utils/timeContract';
 import TokenImg from '../components/os/TokenImg';
 import { useConfirmDialog } from '../hooks/useConfirmDialog';
 
-const TWEMOJI_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72';
-const twemojiUrl = (codepoint: string) => `${TWEMOJI_BASE}/${codepoint}.png`;
 
 type ThemeMode = 'cyber' | 'soft' | 'minimal';
 
@@ -79,7 +81,7 @@ const THEMES: Record<ThemeMode, any> = {
 };
 
 const ScheduleApp: React.FC = () => {
-    const { closeApp, characters, activeCharacterId, apiConfig, addToast, userProfile, characterGroups } = useOS();
+    const { closeApp, openApp, theme: osTheme, characters, activeCharacterId, apiConfig, addToast, userProfile, characterGroups } = useOS();
     const { requestConfirm, confirmDialog } = useConfirmDialog();
     const localDateKey = useLocalDateKey();
     const [tasks, setTasks] = useState<Task[]>([]);
@@ -90,9 +92,15 @@ const ScheduleApp: React.FC = () => {
     // Processing State for feedback
     const [processingTaskIds, setProcessingTaskIds] = useState<Set<string>>(new Set());
 
+    const deletedAnniversaries = useRef(new Set<string>());
+
     // Theme State
-    const [currentThemeMode, setCurrentThemeMode] = useState<ThemeMode>('cyber');
+    const selectedTheme = resolveTimeContractTheme(osTheme.scheduleAppTheme);
+    const currentThemeMode: ThemeMode = selectedTheme === 'system' ? (osTheme.darkMode ? 'cyber' : 'minimal') : selectedTheme;
     const theme = THEMES[currentThemeMode];
+
+    const [alarmTarget, setAlarmTarget] = useState<AlarmTarget | null>(null);
+    const androidAlarm = isAndroidAlarm();
 
     // Add Modal States
     const [showTaskModal, setShowTaskModal] = useState(false);
@@ -100,6 +108,7 @@ const ScheduleApp: React.FC = () => {
 
     // Forms
     const [newTaskTitle, setNewTaskTitle] = useState('');
+    const [newTaskDate, setNewTaskDate] = useState('');
     const [newTaskSupervisor, setNewTaskSupervisor] = useState<string>(activeCharacterId || '');
     const [supervisorGroupId, setSupervisorGroupId] = useState<string>(GROUP_FILTER_ALL); // 选监督人的分组筛选
 
@@ -108,23 +117,7 @@ const ScheduleApp: React.FC = () => {
     const [newAnniChar, setNewAnniChar] = useState<string>(activeCharacterId || '');
     const [anniCharGroupId, setAnniCharGroupId] = useState<string>(GROUP_FILTER_ALL); // 纪念日关联对象的分组筛选
 
-    useEffect(() => {
-        loadData();
-        // Load theme from local storage if needed, defaulting to cyber
-        const saved = localStorage.getItem('schedule_app_theme');
-        if (saved && THEMES[saved as ThemeMode]) {
-            setCurrentThemeMode(saved as ThemeMode);
-        }
-    }, []);
-
-    const toggleTheme = () => {
-        const modes: ThemeMode[] = ['cyber', 'soft', 'minimal'];
-        const nextIndex = (modes.indexOf(currentThemeMode) + 1) % modes.length;
-        const nextMode = modes[nextIndex];
-        setCurrentThemeMode(nextMode);
-        localStorage.setItem('schedule_app_theme', nextMode);
-        trackEvent('切换日程界面主题', { theme: nextMode });
-    };
+    useEffect(() => { void loadData().catch(() => addToast('时光契约读取失败，请重新打开', 'error')); }, []);
 
     const loadData = async () => {
         const [t, a] = await Promise.all([DB.getAllTasks(), DB.getAllAnniversaries()]);
@@ -136,7 +129,8 @@ const ScheduleApp: React.FC = () => {
 
     const generateTaskReward = async (task: Task) => {
 
-        const supervisor = characters.find(c => c.id === task.supervisorId);
+        const sourceSupervisor = characters.find(c => c.id === task.supervisorId);
+        const supervisor = sourceSupervisor ? structuredClone(sourceSupervisor) : undefined;
         if (!supervisor || !apiConfig.apiKey) {
             addToast('任务已完成', 'success');
             return;
@@ -202,7 +196,7 @@ const ScheduleApp: React.FC = () => {
             const data = await safeResponseJson(response);
             
             // Extract content, handling potential reasoning_content or empty standard content
-            let text = data.choices?.[0]?.message?.content?.trim();
+            let text = extractContent(data);
             if (!text && data.choices?.[0]?.message?.reasoning_content) {
                 // If standard content is empty but model "thought" about it, try to use thought or fallback
                 console.warn("AI returned empty content but has reasoning.");
@@ -231,7 +225,8 @@ const ScheduleApp: React.FC = () => {
 
     const generateAnniversaryThought = async (anni: Anniversary) => {
 
-        const char = characters.find(c => c.id === anni.charId);
+        const sourceCharacter = characters.find(c => c.id === anni.charId);
+        const char = sourceCharacter ? structuredClone(sourceCharacter) : undefined;
         if (!char || !apiConfig.apiKey) return;
 
         // Check cache (24h)
@@ -248,7 +243,7 @@ const ScheduleApp: React.FC = () => {
         const dayText = daysDiff > 0 ? `还有 ${daysDiff} 天` : (daysDiff === 0 ? '就是今天!' : `已经过去 ${Math.abs(daysDiff)} 天了`);
 
         // RESTORED: Full context
-        await injectMemoryPalace(char, undefined, anni.title);
+
         const characterContextInput = { char, user: userProfile };
 
 
@@ -269,6 +264,7 @@ const ScheduleApp: React.FC = () => {
         ];
 
         try {
+            await injectMemoryPalace(char, undefined, anni.title);
             const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
@@ -293,11 +289,12 @@ const ScheduleApp: React.FC = () => {
             }
 
             const data = await safeResponseJson(response);
-            const text = data.choices?.[0]?.message?.content?.trim().replace(/^["']|["']$/g, '');
+            const text = extractContent(data).replace(/^["']|["']$/g, '');
             
-            if (text) {
+            if (text && !deletedAnniversaries.current.has(anni.id)) {
                 const updatedAnni = { ...anni, aiThought: text, lastThoughtGeneratedAt: Date.now() };
                 await DB.saveAnniversary(updatedAnni);
+        notifyTimeContractChanged();
                 setAnniversaries(prev => prev.map(a => a.id === anni.id ? updatedAnni : a));
             } else {
                 console.warn("AI returned empty thought", data);
@@ -309,26 +306,44 @@ const ScheduleApp: React.FC = () => {
     };
 
     // --- Actions ---
+    const pendingWrites = useRef(new Set<string>());
+    const persist = async (kind: 'task' | 'anniversary', action: 'create' | 'update' | 'delete', id: string, write: () => Promise<unknown>) => {
+        const key = action === 'create' ? kind + ':create' : kind + ':' + id;
+        if (pendingWrites.current.has(key)) return false;
+        pendingWrites.current.add(key);
+        try {
+            await write();
+            notifyTimeContractChanged();
+            trackEvent('保存时光契约条目', { kind, action, outcome: 'success' });
+            return true;
+        } catch {
+            trackEvent('保存时光契约条目', { kind, action, outcome: 'failed' });
+            addToast('保存失败，请重试；原记录仍保留', 'error');
+            return false;
+        } finally { pendingWrites.current.delete(key); }
+    };
 
     const handleAddTask = async () => {
         if (!newTaskTitle.trim()) return;
         const task: Task = {
             id: `task-${Date.now()}`,
-            title: newTaskTitle,
-            supervisorId: newTaskSupervisor || characters[0]?.id,
+            title: newTaskTitle.trim(),
+            supervisorId: newTaskSupervisor || characters[0]?.id || '',
+            deadline: newTaskDate || undefined,
             tone: 'gentle', // Deprecated but kept for type compatibility
             isCompleted: false,
             createdAt: Date.now()
         };
-        await DB.saveTask(task);
+        if (!await persist('task', 'create', task.id, () => DB.saveTask(task))) return;
         setTasks(prev => [task, ...prev]);
         setShowTaskModal(false);
         setNewTaskTitle('');
+        setNewTaskDate('');
     };
 
     const handleToggleTask = async (task: Task) => {
         const updated = { ...task, isCompleted: !task.isCompleted, completedAt: !task.isCompleted ? Date.now() : undefined };
-        await DB.saveTask(updated);
+        if (!await persist('task', 'update', task.id, () => DB.saveTask(updated))) return;
         setTasks(prev => prev.map(t => t.id === task.id ? updated : t));
         
         if (updated.isCompleted) {
@@ -356,7 +371,7 @@ const ScheduleApp: React.FC = () => {
             variant: 'danger',
         });
         if (!confirmed) return;
-        await DB.deleteTask(id);
+        if (!await persist('task', 'delete', id, () => DB.deleteTask(id))) return;
         setTasks(prev => prev.filter(t => t.id !== id));
     };
 
@@ -364,11 +379,11 @@ const ScheduleApp: React.FC = () => {
         if (!newAnniTitle.trim() || !newAnniDate) return;
         const anni: Anniversary = {
             id: `anni-${Date.now()}`,
-            title: newAnniTitle,
+            title: newAnniTitle.trim(),
             date: newAnniDate,
-            charId: newAnniChar || characters[0]?.id
+            charId: newAnniChar || characters[0]?.id || ''
         };
-        await DB.saveAnniversary(anni);
+        if (!await persist('anniversary', 'create', anni.id, () => DB.saveAnniversary(anni))) return;
         setAnniversaries(prev => [...prev, anni].sort((a, b) => a.date.localeCompare(b.date)));
         setShowAnniModal(false);
         setNewAnniTitle('');
@@ -386,7 +401,8 @@ const ScheduleApp: React.FC = () => {
             variant: 'danger',
         });
         if (!confirmed) return;
-        await DB.deleteAnniversary(id);
+        deletedAnniversaries.current.add(id);
+        if (!await persist('anniversary', 'delete', id, () => DB.deleteAnniversary(id))) { deletedAnniversaries.current.delete(id); return; }
         setAnniversaries(prev => prev.filter(a => a.id !== id));
     };
 
@@ -432,25 +448,20 @@ const ScheduleApp: React.FC = () => {
 
              {/* Header */}
              <div className={`border-b ${theme.border} backdrop-blur-sm sticky top-0 z-20 shrink-0 relative transition-colors duration-300`} style={{ paddingTop: 'var(--safe-top)' }}>
-                <div className="pt-12 pb-4 px-6 flex items-center justify-between h-24 box-border">
+                <div className="pt-8 pb-3 px-4 flex items-center justify-between gap-2 min-h-20 box-border">
                 <button onClick={closeApp} className={`p-2 -ml-2 rounded-full active:scale-90 transition-transform ${currentThemeMode === 'minimal' ? 'bg-[#eef2f6] shadow-[4px_4px_8px_#d1d9e6,-4px_-4px_8px_#ffffff]' : 'hover:bg-black/5'}`}>
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className={`w-6 h-6 ${theme.accent}`}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
                 </button>
 
                 {/* Tabs */}
                 <div className={`flex gap-1 p-1 rounded-lg ${currentThemeMode === 'cyber' ? 'bg-black/40 border border-cyan-900/50' : (currentThemeMode === 'minimal' ? 'bg-[#eef2f6] shadow-[inset_2px_2px_5px_#d1d9e6,inset_-2px_-2px_5px_#ffffff]' : 'bg-white/50')}`}>
-                    <button onClick={() => { setActiveTab('quest'); trackEvent('切换日程标签页', { tab: 'quest' }); }} className={`px-4 py-1.5 rounded text-xs font-bold transition-all ${activeTab === 'quest' ? `${theme.accent} ${currentThemeMode === 'cyber' ? 'bg-cyan-900/50 shadow-sm' : (currentThemeMode === 'minimal' ? 'shadow-[2px_2px_5px_#d1d9e6,-2px_-2px_5px_#ffffff] bg-[#eef2f6]' : 'bg-white shadow-sm')}` : `${theme.textSub}`}`}>{theme.label}</button>
-                    <button onClick={() => { setActiveTab('server_events'); trackEvent('切换日程标签页', { tab: 'server_events' }); }} className={`px-4 py-1.5 rounded text-xs font-bold transition-all ${activeTab === 'server_events' ? `${theme.accent} ${currentThemeMode === 'cyber' ? 'bg-cyan-900/50 shadow-sm' : (currentThemeMode === 'minimal' ? 'shadow-[2px_2px_5px_#d1d9e6,-2px_-2px_5px_#ffffff] bg-[#eef2f6]' : 'bg-white shadow-sm')}` : `${theme.textSub}`}`}>{theme.eventLabel}</button>
+                    <button onClick={() => { setActiveTab('quest'); trackEvent('切换日程标签页', { tab: 'quest' }); }} className={`px-3 py-2.5 whitespace-nowrap rounded text-xs font-bold transition-all ${activeTab === 'quest' ? `${theme.accent} ${currentThemeMode === 'cyber' ? 'bg-cyan-900/50 shadow-sm' : (currentThemeMode === 'minimal' ? 'shadow-[2px_2px_5px_#d1d9e6,-2px_-2px_5px_#ffffff] bg-[#eef2f6]' : 'bg-white shadow-sm')}` : `${theme.textSub}`}`}>待办事项</button>
+                    <button onClick={() => { setActiveTab('server_events'); trackEvent('切换日程标签页', { tab: 'server_events' }); }} className={`px-3 py-2.5 whitespace-nowrap rounded text-xs font-bold transition-all ${activeTab === 'server_events' ? `${theme.accent} ${currentThemeMode === 'cyber' ? 'bg-cyan-900/50 shadow-sm' : (currentThemeMode === 'minimal' ? 'shadow-[2px_2px_5px_#d1d9e6,-2px_-2px_5px_#ffffff] bg-[#eef2f6]' : 'bg-white shadow-sm')}` : `${theme.textSub}`}`}>纪念日</button>
                 </div>
 
                 {/* Right Actions */}
                 <div className="flex gap-2">
-                    {/* Theme Switcher */}
-                    <button onClick={toggleTheme} className={`p-2 rounded-full active:scale-90 transition-transform ${currentThemeMode === 'minimal' ? 'shadow-[4px_4px_8px_#d1d9e6,-4px_-4px_8px_#ffffff]' : 'bg-white/10 hover:bg-white/20'}`}>
-                        {currentThemeMode === 'cyber' && <img src={twemojiUrl('1f47e')} alt="alien" className="w-5 h-5" />}
-                        {currentThemeMode === 'soft' && <img src={twemojiUrl('1f338')} alt="blossom" className="w-5 h-5" />}
-                        {currentThemeMode === 'minimal' && <img src={twemojiUrl('26aa')} alt="circle" className="w-5 h-5" />}
-                    </button>
+                    <button onClick={() => openApp(ShortcutAppID.Appearance)} className="min-h-10 px-1 text-xs shrink-0" aria-label="外观设置">外观</button>
 
                     {/* Add Button */}
                     <button onClick={() => { activeTab === 'quest' ? setShowTaskModal(true) : setShowAnniModal(true); trackEvent('打开新建条目弹窗', { kind: activeTab }); }} className={`p-2 rounded-full active:scale-90 transition-transform ${theme.accent} ${currentThemeMode === 'minimal' ? 'shadow-[4px_4px_8px_#d1d9e6,-4px_-4px_8px_#ffffff]' : 'hover:bg-white/10'}`}>
@@ -463,10 +474,10 @@ const ScheduleApp: React.FC = () => {
                 {currentThemeMode === 'cyber' && <div className="absolute bottom-0 left-0 h-[1px] w-full bg-gradient-to-r from-transparent via-cyan-500/50 to-transparent"></div>}
             </div>
 
-            <div className="flex-1 overflow-y-auto no-scrollbar p-6 space-y-8 z-10">
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-5 space-y-6 z-10">
                 
                 {/* Hero Anniversary Card */}
-                {upcomingAnni && (
+                {activeTab === 'server_events' && upcomingAnni && (
                     <div className={`w-full rounded-2xl p-5 relative overflow-hidden group transition-all duration-300 ${currentThemeMode === 'minimal' ? 'bg-[#eef2f6] shadow-[inset_5px_5px_10px_#d1d9e6,inset_-5px_-5px_10px_#ffffff]' : (currentThemeMode === 'soft' ? 'bg-gradient-to-r from-pink-300 to-purple-300 text-white shadow-lg shadow-pink-200' : 'bg-gradient-to-r from-slate-900 to-slate-800 border border-purple-500/30')}`}>
                         <div className="relative z-10">
                             <div className="flex justify-between items-start mb-2">
@@ -479,7 +490,7 @@ const ScheduleApp: React.FC = () => {
                             <div className={`flex items-start gap-3 p-3 rounded-xl ${currentThemeMode === 'minimal' ? 'bg-[#eef2f6] shadow-[5px_5px_10px_#d1d9e6,-5px_-5px_10px_#ffffff]' : 'bg-white/20 backdrop-blur-md'}`}>
                                 <TokenImg value={characters.find(c => c.id === upcomingAnni.charId)?.avatar} className="w-8 h-8 rounded-full object-cover" />
                                 <div className={`text-xs font-medium leading-relaxed italic ${currentThemeMode === 'minimal' ? 'text-slate-500' : 'text-white/90'}`}>
-                                    "{upcomingAnni.aiThought || "加载中..."}"
+                                    "{splitInlineThinking(upcomingAnni.aiThought || "").content.trim() || "还没有纪念日感想"}"
                                 </div>
                             </div>
                         </div>
@@ -504,20 +515,22 @@ const ScheduleApp: React.FC = () => {
                             const isProcessing = processingTaskIds.has(task.id);
                             
                             return (
-                                <div key={task.id} className={`${theme.card} p-4 flex items-center gap-4 group relative overflow-hidden transition-all duration-300`}>
+                                <div key={task.id} className={`${theme.card} p-4 grid grid-cols-[2.5rem_minmax(0,1fr)] items-center gap-3 group relative overflow-hidden transition-all duration-300`}>
                                     {/* Supervisor Icon */}
-                                    <div className="w-12 h-12 rounded-full overflow-hidden shrink-0 relative border border-white/10">
+                                    <div className="w-10 h-10 rounded-full overflow-hidden shrink-0 relative border border-white/10">
                                         {supervisor ? <TokenImg value={supervisor.avatar} className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity" /> : <span className="text-xs">?</span>}
                                         <div className={`absolute -bottom-0 -right-0 w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold ${currentThemeMode === 'soft' ? 'bg-white text-pink-500' : 'bg-black text-cyan-500'}`}>!</div>
                                     </div>
                                     
-                                    <div className="flex-1">
-                                        <div className={`${theme.text} font-bold text-sm tracking-wide`}>{task.title}</div>
+                                    <div className="flex-1 min-w-0">
+                                        <div className={`${theme.text} font-bold text-sm tracking-wide break-words`}>{task.title}</div>
                                         <div className={`text-[10px] ${theme.textSub} mt-1 font-mono uppercase`}>
-                                            监督人: {supervisor?.name || 'Unknown'}
+                                            监督人: {supervisor?.name || '未选择'}
+                                            {task.deadline && <span className="block mt-1">日期：{task.deadline.slice(0, 10)}</span>}
                                         </div>
                                     </div>
 
+                                    <div className="col-span-2 flex items-center justify-end gap-2">
                                     {/* Action Button Area */}
                                     {isProcessing ? (
                                         <div className="flex items-center gap-2 px-2 py-2">
@@ -533,19 +546,21 @@ const ScheduleApp: React.FC = () => {
                                         </button>
                                     )}
                                     
-                                    <button onClick={() => handleDeleteTask(task.id)} className="absolute top-2 right-2 text-slate-400 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity p-1">×</button>
+                                    {androidAlarm && <button aria-label={`为待办 ${task.title} 设置系统闹钟`} onClick={() => setAlarmTarget({ title: task.title, date: task.deadline, kind: 'task' })} className="min-h-10 px-2 text-xs shrink-0">闹钟</button>}
+                                    <button onClick={() => handleDeleteTask(task.id)} aria-label={`删除待办 ${task.title}`} className="shrink-0 min-h-10 px-2 text-xs opacity-75 hover:text-red-500">删除</button>
+                                    </div>
                                 </div>
                             );
                         })}
 
                         {tasks.filter(t => t.isCompleted).length > 0 && (
-                            <div className="pt-8 opacity-50">
+                            <div className="pt-6">
                                 <h3 className={`text-xs font-bold uppercase tracking-[0.2em] px-1 mb-4 ${theme.textSub}`}>已完成</h3>
                                 {tasks.filter(t => t.isCompleted).map(task => (
                                     <div key={task.id} className={`flex items-center gap-3 py-2 px-2 border-b ${currentThemeMode === 'cyber' ? 'border-slate-800/50' : 'border-slate-100'}`}>
                                         <div className={`${theme.iconDone} text-xs font-mono`}>[DONE]</div>
-                                        <span className={`text-sm line-through ${theme.textSub}`}>{task.title}</span>
-                                        <button onClick={() => handleDeleteTask(task.id)} className="ml-auto text-slate-400 hover:text-red-500 text-xs">DEL</button>
+                                        <span className={`text-sm flex-1 min-w-0 break-words line-through ${theme.text}`}>{task.title}</span>
+                                        <button onClick={() => handleDeleteTask(task.id)} aria-label={`删除已完成待办 ${task.title}`} className="shrink-0 min-h-10 px-2 opacity-75 hover:text-red-500 text-xs">删除</button>
                                     </div>
                                 ))}
                             </div>
@@ -554,39 +569,28 @@ const ScheduleApp: React.FC = () => {
                 )}
 
                 {activeTab === 'server_events' && (
-                    <div className={`relative pl-6 space-y-8 before:absolute before:left-2 before:top-2 before:bottom-0 before:w-[1px] ${theme.decoLine}`}>
+                    <div className={`relative pl-4 space-y-6 border-l ${theme.border}`}>
                         {/* Anniversaries List */}
                         <div>
-                             <h3 className={`text-xs font-bold uppercase tracking-widest mb-6 -ml-6 pl-6 ${theme.textSub}`}>时间线事件</h3>
+                             <h3 className={`text-xs font-bold uppercase tracking-widest mb-6 -ml-6 pl-6 ${theme.textSub}`}>纪念日</h3>
                              <div className="space-y-4">
+                                 {!anniversaries.length && <p className="text-sm opacity-70 py-5">还没有纪念日，点右上角添加。</p>}
                                  {anniversaries.map(a => (
                                      <div key={a.id} className="relative group">
                                          <div className={`absolute -left-[20px] top-4 w-2 h-2 rounded-full z-10 ${currentThemeMode === 'cyber' ? 'bg-black border border-purple-500' : 'bg-pink-400'}`}></div>
                                          <div className={`${theme.card} p-4 flex justify-between items-center transition-colors`}>
-                                             <div>
+                                             <div className="min-w-0 flex-1 break-words">
                                                  <div className={`text-sm font-bold ${theme.text}`}>{a.title}</div>
                                                  <div className={`text-[10px] ${theme.textSub} font-mono mt-1`}>{a.date} · {characters.find(c => c.id === a.charId)?.name}</div>
                                              </div>
-                                             <button onClick={() => handleDeleteAnni(a.id)} className="text-slate-400 hover:text-red-400 p-2 opacity-0 group-hover:opacity-100 transition-opacity">×</button>
+                                             {androidAlarm && <button aria-label={`为纪念日 ${a.title} 设置系统闹钟`} onClick={() => setAlarmTarget({ title: a.title, date: a.date, kind: 'anniversary' })} className="min-h-10 px-2 text-xs shrink-0">闹钟</button>}
+                                             <button onClick={() => handleDeleteAnni(a.id)} aria-label={`删除纪念日 ${a.title}`} className="shrink-0 min-h-10 px-2 text-xs opacity-75 hover:text-red-500">删除</button>
                                          </div>
                                      </div>
                                  ))}
                              </div>
                         </div>
 
-                        {/* Completed Tasks History Log */}
-                         <div>
-                             <h3 className={`text-xs font-bold uppercase tracking-widest mb-6 -ml-6 pl-6 pt-4 ${theme.textSub}`}>完成履历</h3>
-                             <div className="space-y-4">
-                                 {tasks.filter(t => t.isCompleted).sort((a,b) => (b.completedAt || 0) - (a.completedAt || 0)).map(t => (
-                                     <div key={t.id} className="relative">
-                                         <div className={`absolute -left-[20px] top-2 w-2 h-2 rounded-full z-10 ${currentThemeMode === 'cyber' ? 'bg-black border border-green-600' : 'bg-slate-300'}`}></div>
-                                         <div className={`text-xs ${theme.textSub} font-mono`}>[{new Date(t.completedAt || 0).toLocaleDateString()}] 任务完成</div>
-                                         <div className={`text-sm ${theme.text} font-bold mt-1 pl-1 border-l-2 ${theme.decoLine}`}>{t.title}</div>
-                                     </div>
-                                 ))}
-                             </div>
-                         </div>
                     </div>
                 )}
 
@@ -596,6 +600,7 @@ const ScheduleApp: React.FC = () => {
             <Modal isOpen={showTaskModal} title={currentThemeMode === 'cyber' ? "INITIALIZE QUEST" : "新建任务"} onClose={() => setShowTaskModal(false)} footer={<button onClick={handleAddTask} className={`w-full py-3 font-bold transition-all ${theme.buttonPrimary}`}>确认添加</button>}>
                 <div className={`space-y-6 ${currentThemeMode === 'minimal' ? 'p-2' : ''}`}>
                     <input autoFocus value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} placeholder="任务目标 (例如: 背单词)" className={`w-full px-4 py-3 text-sm focus:outline-none ${theme.input}`} />
+                    <label className="block text-xs text-slate-600">日期（可选，设置后会显示在桌面日历）<input aria-label="待办日期" type="date" value={newTaskDate} onChange={e => setNewTaskDate(e.target.value)} className={`w-full mt-2 px-4 py-3 text-sm min-w-0 focus:outline-none ${theme.input}`} /></label>
                     
                     <div>
                         <label className="text-[10px] font-bold text-slate-400 uppercase mb-2 block tracking-widest">选择监督人</label>
@@ -636,6 +641,7 @@ const ScheduleApp: React.FC = () => {
                     </div>
                 </div>
             </Modal>
+            <SystemAlarmDialog target={alarmTarget} onClose={() => setAlarmTarget(null)} onOpened={() => addToast('已交给系统时钟，请核对闹钟是否保存', 'info')} />
             {confirmDialog}
         </div>
     );

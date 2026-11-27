@@ -163,3 +163,38 @@ describe('/cf-api 日志', () => {
         expect(logged).not.toContain('per_page');
     });
 });
+
+describe('/amsg-bundle 官方部署包代拉', () => {
+    it('默认拉 main 分支的 worker.bundle.js，也支持 canary 的 wrangler.toml', async () => {
+        const calls = stubUpstream(200, 'export default {}');
+
+        const res1 = await worker.fetch(new Request('https://proxy.test/amsg-bundle'), {}, { waitUntil: () => {} });
+        expect(res1.status).toBe(200);
+        expect(res1.headers.get('Content-Type')).toContain('application/javascript');
+        expect(calls[0].url).toBe('https://raw.githubusercontent.com/Tosd0/sullyos-workers/main/amsg/worker.bundle.js');
+
+        const res2 = await worker.fetch(
+            new Request('https://proxy.test/amsg-bundle?file=wrangler.toml&channel=canary'),
+            {},
+            { waitUntil: () => {} }
+        );
+        expect(res2.status).toBe(200);
+        expect(res2.headers.get('Content-Type')).toContain('text/plain');
+        expect(calls[1].url).toBe('https://raw.githubusercontent.com/Tosd0/sullyos-workers/canary/amsg/wrangler.toml');
+    });
+
+    it('白名单外的文件名、通道名和非 GET 请求一律拒绝，不发上游请求', async () => {
+        const calls = stubUpstream();
+
+        const badFile = await worker.fetch(new Request('https://proxy.test/amsg-bundle?file=../../secret'), {}, { waitUntil: () => {} });
+        expect(badFile.status).toBe(400);
+
+        const badChannel = await worker.fetch(new Request('https://proxy.test/amsg-bundle?channel=evil'), {}, { waitUntil: () => {} });
+        expect(badChannel.status).toBe(400);
+
+        const badMethod = await worker.fetch(new Request('https://proxy.test/amsg-bundle', { method: 'POST' }), {}, { waitUntil: () => {} });
+        expect(badMethod.status).toBe(405);
+
+        expect(calls).toHaveLength(0);
+    });
+});

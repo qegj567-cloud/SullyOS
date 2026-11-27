@@ -2955,6 +2955,46 @@ export default {
       }
     }
 
+    // ========== 主动消息 2.0 部署代码包代拉 (/amsg-bundle) ==========
+    // 大陆网络直连 raw.githubusercontent.com 常被 DNS 污染掐断；未领大陆中转令牌的新人一键部署时，
+    // 既然前几步已经连得上这里的 /cf-api，顺手用同一个代理拉官方部署包就能全程走完。
+    // 只读、写死仓库和两个文件名，不接受调用方传入任意 URL。
+    if (url.pathname === '/amsg-bundle') {
+      if (request.method !== 'GET') {
+        return jsonResponse({ error: 'Method not allowed' }, { status: 405, origin });
+      }
+      const AMSG_BUNDLE_FILES = {
+        'worker.bundle.js': 'application/javascript; charset=utf-8',
+        'wrangler.toml': 'text/plain; charset=utf-8',
+      };
+      const AMSG_BUNDLE_BRANCHES = {
+        stable: 'main',
+        canary: 'canary',
+      };
+      const file = url.searchParams.get('file') || 'worker.bundle.js';
+      if (!Object.prototype.hasOwnProperty.call(AMSG_BUNDLE_FILES, file)) {
+        return jsonResponse({ error: 'Invalid file parameter' }, { status: 400, origin });
+      }
+      const channel = url.searchParams.get('channel') || 'stable';
+      if (!Object.prototype.hasOwnProperty.call(AMSG_BUNDLE_BRANCHES, channel)) {
+        return jsonResponse({ error: 'Invalid channel parameter' }, { status: 400, origin });
+      }
+      const bundleTargetUrl = `https://raw.githubusercontent.com/Tosd0/sullyos-workers/${AMSG_BUNDLE_BRANCHES[channel]}/amsg/${file}`;
+      try {
+        const upstream = await fetch(bundleTargetUrl, {
+          method: 'GET',
+          cf: { cacheTtl: 120, cacheEverything: true },
+        });
+        const respHeaders = new Headers(corsHeaders(origin));
+        respHeaders.set('Content-Type', AMSG_BUNDLE_FILES[file]);
+        return new Response(upstream.body, { status: upstream.status, headers: respHeaders });
+      } catch (e) {
+        return jsonResponse({
+          error: `Bundle proxy error: ${String((e && e.message) || e)}`,
+        }, { status: 502, origin });
+      }
+    }
+
     // ========== 短链展开 (/expand-url) ==========
     // 逐跳展开；拿到小红书笔记 URL 即返回，避免再访问正文被重定向到验证码页。
     // 前端展开后才能提取，再走小红书 Lite 抓详情。见 utils/webpageExtractor.ts expandShortUrl。

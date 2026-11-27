@@ -1,3 +1,4 @@
+import PhotoSendDialog from './PhotoSendDialog';
 import EmojiExportDialog from './EmojiExportDialog';
 import EmojiHealthDialog from './EmojiHealthDialog';
 import EmojiImage from './EmojiImage';
@@ -65,7 +66,7 @@ interface ChatInputAreaProps {
     /** 提供时整体替换内置 actions 双页网格——群聊传自己的功能格。不传 = 原行为 */
     actionsContent?: React.ReactNode;
     onPanelAction: (type: string, payload?: any) => void;
-    onImageSelect: (file: File) => void;
+    onImageSelect: (file: File, original?: boolean) => void;
     isSummarizing: boolean;
     // Categories Support
     categories?: EmojiCategory[];
@@ -222,11 +223,12 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
         }
     };
 
+    const [pendingPhoto, setPendingPhoto] = useState<File | null>(null);
     const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>, type: 'chat' | 'bg') => {
         const file = e.target.files?.[0];
         if (e.target) e.target.value = '';
         if (file) {
-            onImageSelect(file);
+            setPendingPhoto(file);
         }
     };
 
@@ -683,7 +685,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
         </button>,
         <button key="export-chat" onClick={() => onPanelAction('export-chat')} className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${acnh ? 'text-[#725d42]' : isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}>
           <span className={`w-14 h-14 rounded-2xl grid place-items-center shadow-sm border ${acnh ? 'bg-white/70 border-[#e6dab4]' : isDiscordStyle ? 'bg-slate-800 border-slate-600' : 'bg-slate-50 border-slate-200'}`}><BookOpenText className="w-6 h-6" weight="bold" /></span>
-          <span className="text-xs font-bold">导出记录</span>
+          <span className="text-xs font-bold">聊天记录管理</span>
         </button>
     ].filter(tile=>!compactHome||['transfer','poke','image','reroll','memory-link','favorites'].includes(String(tile.key)));
     const actionPageCount = Math.max(1, Math.ceil(actionTiles.length / ACTION_PAGE_SIZE));
@@ -699,6 +701,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
             onClose={() => setScanItems(null)} onRefreshed={refreshThumbnails} />}
         {/* 选图 input 常驻在输入栏外：面板收起时不会随条件分支卸载而丢失点击或回传事件，也不改变 .sully-chat-inputbar 子节点序号。 */}
         <input type="file" ref={chatImageInputRef} className="hidden" accept="image/*" onChange={(e) => handleImageChange(e, 'chat')} />
+        {pendingPhoto && <PhotoSendDialog file={pendingPhoto} onClose={() => setPendingPhoto(null)} onSend={original => { const file = pendingPhoto; setPendingPhoto(null); onImageSelect(file, original); }} />}
         {cameraOpen && <ChatCamera character={characters.find(c => c.id === activeCharacterId)} onClose={() => setCameraOpen(false)} onCapture={onImageSelect} onGallery={() => { chatImageInputRef.current?.click(); setCameraOpen(false); }} />}
         {/* 辅助提示保持在输入栏外，避免改变社区 CSS 的 > div:first-child / nth-child 目标。 */}
             {suggestedEmojis.length > 0 && (

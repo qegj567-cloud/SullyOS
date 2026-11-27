@@ -1,3 +1,4 @@
+import { prepareInheritedHistory } from './characterTransferHistory';
 import { DB, openSpaceDB } from './db';
 import type { CharacterProfile } from '../types';
 import { createLocalId } from './localId';
@@ -27,7 +28,7 @@ export async function assertUniqueSpaceCharacters(incoming: Map<string, Array<{ 
         }
     }
 }
-export function commitSpaceRows(db: IDBDatabase, tables: Record<string, any[]>, replace = false): Promise<void> {
+export function commitSpaceRows(db: IDBDatabase, tables: Record<string, any[]>, replace = false, insertOnly: string[] = []): Promise<void> {
     if (!Object.keys(tables).length) return Promise.resolve();
     return new Promise((resolve, reject) => {
         const tx = db.transaction(Object.keys(tables), 'readwrite');
@@ -36,7 +37,7 @@ export function commitSpaceRows(db: IDBDatabase, tables: Record<string, any[]>, 
         for (const [name, rows] of Object.entries(tables)) {
             const store = tx.objectStore(name);
             if (replace) store.clear();
-            for (const row of rows) store.put(row);
+            for (const row of rows) insertOnly.includes(name) ? store.add(row) : store.put(row);
         }
         } catch (error) { tx.abort(); reject(error); }
     });
@@ -183,10 +184,10 @@ async function normalizeSourceRow(db: IDBDatabase, table: string, before: any, a
         tx.onerror = tx.onabort = () => reject(tx.error || new Error('来源配置已变化，请重新继承'));
     });
 }
-export async function inheritSpaceCharacters(sourceId: string, ids: string[]): Promise<CharacterProfile[]> {
-    return withSharedAssetLock('exclusive', () => inheritSpaceCharactersUnderLease(sourceId, ids));
+export async function inheritSpaceCharacters(sourceId: string, ids: string[], options: { chat?: boolean; memory?: boolean } = {}): Promise<CharacterProfile[]> {
+    return withSharedAssetLock('exclusive', () => inheritSpaceCharactersUnderLease(sourceId, ids, options));
 }
-async function inheritSpaceCharactersUnderLease(sourceId: string, ids: string[]): Promise<CharacterProfile[]> {
+async function inheritSpaceCharactersUnderLease(sourceId: string, ids: string[], options: { chat?: boolean; memory?: boolean }): Promise<CharacterProfile[]> {
     assertUserSpaceAvailable(sourceId);
     if (sourceId === SESSION_SPACE_ID) throw new Error('请选择另一个用户空间');
     const source = await openSpaceDB(sourceId), target = await openSpaceDB(SESSION_SPACE_ID);
@@ -288,7 +289,9 @@ async function inheritSpaceCharactersUnderLease(sourceId: string, ids: string[])
             tx.oncomplete = () => resolve(); tx.onerror = tx.onabort = () => reject(tx.error || new Error('来源角色已修改，请重新继承'));
         });
     }
+    const history = await prepareInheritedHistory(source, target, originals, chars, options);
     await commitSpaceRows(target, {
+        ...history,
         characters: chars, worldbooks: copiedBooks,
         character_groups: groups.map(g => ({ ...g, id: groupIds.get(g.id) })),
         vr_novels: novels.map(n => ({ ...n, id: novelIds.get(n.id), categoryId: categoryIds.get(n.categoryId) })),
@@ -299,6 +302,6 @@ async function inheritSpaceCharactersUnderLease(sourceId: string, ids: string[])
         assets: inheritedAssets,
         cc_custom_parts: await externalizeImages(remap(parts)), themes: await externalizeImages(remap(themes)),
         pixel_home_assets: await externalizeImages(remap(pixelAssets)), pixel_home_layouts: await externalizeImages(remap(layouts)),
-    });
+    }, false, ['messages']);
     return chars;
 }

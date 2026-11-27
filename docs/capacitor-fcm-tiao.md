@@ -54,3 +54,7 @@ Worker。普通生产构建不会包含这个地址。
 应用统一显示为 `SullyOS·糯米机`。根目录 `capacitor.config.json` 的 `appName` 是原生打包名称；同步脚本会调用 `scripts/sync-native-app-name.mjs`，将外部 CHICK2 包装工程的 Capacitor `appName`、Android `app_name` 与 `title_activity_main` 一起更新。包名、appId 和 URL scheme 保持不变。此操作随下次 APK 构建生效，不会靠网页更新改写已安装 APK 的系统标签。
 
 网页标题与 Apple 主屏名称在 `index.html`；两套静态 PWA manifest 的 name / short_name 与 `metadata.json` 一致。自定义图标生成的动态 manifest 从 metadata 读取名称，避免旧清单缓存带回旧名字。start_url、scope 与 manifest 地址保持不变。
+
+## 时光契约系统闹钟（给打包电脑）
+
+拉到本次代码后需要重新编译 APK。现有同步脚本已接入原生闹钟插件；自定义打包流程必须先运行 `node scripts/sync-native-system-alarm.mjs <安卓壳目录>`，只更新网页不能启用。完整接入、接口限制和真机验收见 [Android 系统闹钟](android-system-alarm.md)。

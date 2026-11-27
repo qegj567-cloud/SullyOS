@@ -32,7 +32,7 @@
 ## 客户端怎么接
 
 - 存盘的 `workerUrl` 始终是 Worker 本身的地址。它是客户端缓存、云端数据归属、Anthropic 能力探测等处的身份标识，换成中转地址会被当成换了一台后端。
-- 只在发请求那一步换地址：`utils/amsgRelay.ts` 的 `resolveWorkerFetchBase`。用到它的只有三处：`ReiClient` 的 `baseUrl`、`fetchWithAuthRaw`、一键部署后等 Worker 生效的那次探测。Service Worker 不直接请求 Worker，推送里带的是数据的键而不是 URL，所以不需要另接。
+- 只在发请求那一步换地址：`utils/amsgRelay.ts` 的 `resolveWorkerFetchBase`（用于 `ReiClient` 的 `baseUrl`、`fetchWithAuthRaw`、一键部署后等 Worker 生效的探测）以及一键部署专用的 `relayCfApiUrl` / `relayDeployAssetUrl`。开启大陆连接优化后，一键部署、重新部署、查找已有后台和补装更新钥匙也会优先经中转调用 Cloudflare 接口并拉取部署代码包；中转不可用或令牌失效时自动回退主代理 `/cf-api`、`/amsg-bundle` 与站点同源静态包。Service Worker 不直接请求 Worker，推送里带的是数据的键而不是 URL，所以不需要另接。
 - 开关打开、令牌格式对、地址也能走中转，三样都满足才走中转，否则直连，界面上有提示。能走中转的地址：https、域名（不是 IP）、不带端口和路径，`workers.dev` 和自定义域名都行。
 - 令牌放在路径里而不是请求头里：自定义请求头会让浏览器先发预检请求，预检不带这个头，Worker 也不认识它。
 - 客户端缓存的键里带着实际请求地址，切换开关或换令牌后会换一条新 client。
@@ -68,8 +68,8 @@
 
 中转如果对任意目标、任意路径放行，就会变成一个公共跳板。令牌把使用者限定在群成员之内，下面几道限制再把能做的事限定在 2.0 的接口上：
 
-1. **只连得到 Cloudflare**：不按域名查 IP，固定连几个 Cloudflare 的公共 IP，握手时报目标域名。CF 托管的域名都能转；不在 CF 上的站点在握手阶段就失败。只认 `workers.dev` 挡不住什么：谁都能免费开一个。
-2. **路径白名单**：只放行 2.0 的接口（`relay.py` 里的 `PATH_ALLOWLIST`）。
+1. **用户 Worker 只连得到 Cloudflare**：通用 `/t/<令牌>/<worker 域名>/...` 路径不按域名查 IP，固定连几个 Cloudflare 的公共 IP，握手时报目标域名。CF 托管的域名都能转；不在 CF 上的站点在握手阶段就失败。只认 `workers.dev` 挡不住什么：谁都能免费开一个。
+2. **路径白名单与固定部署入口**：通用转发只放行 2.0 的接口（`relay.py` 里的 `PATH_ALLOWLIST`）。一键部署专用的 `/t/<令牌>/_cf-api` 与 `/t/<令牌>/_deploy/<文件名>` 在服务端写死目标地址（`api.cloudflare.com/client/v4` 账号级前缀与官方部署仓库的 `worker.bundle.js` / `wrangler.toml`），调用方不能传入任意域名；这两条专用入口走正常 DNS 连接池（GitHub Raw 托管在 Fastly，不在 Cloudflare IP 上），其中部署代码包在内存缓存 2 分钟，避免重复拉取。
 3. 带 `Upgrade` 头的请求一律拒绝（翻墙 Worker 最常见的走法），方法只放行 GET / POST / PUT / DELETE / OPTIONS。
 4. **按账号限流**：每个账号一个令牌桶（容量 120 次，每秒回填 2 次），每天上下行合计 1 GB。数值是先放宽的初值，有了真实用量再收紧。
 
@@ -114,5 +114,5 @@
 
 ## 不在范围内
 
-- 一键部署、更新 Worker 时调用 Cloudflare API 的那个代理，不经过这个中转。
-- 中转本身连不上时，报错里写的仍是 Worker 的域名，排查时先想到中转这一层。
+- Worker 装上 `CF_API_TOKEN` 之后的自更新由该 Worker 在 Cloudflare 侧直接拉包覆盖自己，不经过浏览器和中转。
+- 日常连接 Worker 时如果中转本身连不上，报错里写的仍是 Worker 的域名，排查时先想到中转这一层；一键部署阶段若中转不可用会自动回退主代理与本站内置副本。

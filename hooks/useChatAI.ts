@@ -554,7 +554,7 @@ export const useChatAI = ({
         const innerStateHandler = (e: Event) => {
             const detail = (e as CustomEvent).detail;
             if (detail?.charId !== charIdAtMount) return;
-            if (typeof detail?.innerState === 'string' && detail.innerState.trim()) {
+            if (typeof detail?.innerState === 'string') {
                 setEvolvedNarrative(detail.innerState.trim());
             }
         };

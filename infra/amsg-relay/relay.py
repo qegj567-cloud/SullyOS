@@ -49,6 +49,25 @@ ALLOWED_ORIGINS = {"https://qegj567-cloud.github.io", "https://sully-os-nu.verce
 # 所以中转只到得了 Cloudflare，不会变成通往任意网站的开放代理。
 CF_IPS = ["104.16.0.1", "104.17.0.1", "104.18.0.1", "104.19.0.1", "104.20.0.1", "104.21.0.1"]
 
+# 一键部署专用上游：目标地址和路径范围全部写死在服务端，调用方不能指定任意主机。
+CF_API_BASE = "https://api.cloudflare.com/client/v4"
+CF_ALLOWED_PREFIXES = ("/accounts", "/memberships", "/user/tokens/verify")
+CF_ALLOWED_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}
+DEPLOY_RAW_BASE = "https://raw.githubusercontent.com/Tosd0/sullyos-workers"
+DEPLOY_BRANCHES = {"stable": "main", "canary": "canary"}
+DEPLOY_FILES = {
+    "worker.bundle.js": ("application/javascript; charset=utf-8", 100 * 1024, 8 * 1024 * 1024),
+    "wrangler.toml": ("text/plain; charset=utf-8", 1, 64 * 1024),
+}
+DEPLOY_CACHE_TTL = 120.0
+CORS_HEADERS = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Authorization, Content-Type, X-CF-Method, X-Client-Token, X-User-Id",
+    "Access-Control-Expose-Headers": "X-Amsg-Relay-Error, Retry-After, Content-Type",
+    "Access-Control-Max-Age": "86400",
+}
+
 DISCORD_DNS_TTL = 6 * 3600
 TOKEN_IDLE_DAYS = 30
 USAGE_KEEP_DAYS = 90
@@ -138,7 +157,8 @@ class PinnedCloudflareResolver(AbstractResolver):
 class Relay:
     def __init__(self, db_path: str, *, guild_id: str, verified_role_ids: str, admin_role_id: str,
                  bot_token: str = "",
-                 upstream_scheme: str = "https", upstream_resolver: AbstractResolver | None = None):
+                 upstream_scheme: str = "https", upstream_resolver: AbstractResolver | None = None,
+                 cf_api_base: str = CF_API_BASE, deploy_raw_base: str = DEPLOY_RAW_BASE):
         self.guild_id = guild_id
         # 逗号分隔，有其中任意一个身份组就能领令牌
         self.verified_role_ids = {r.strip() for r in verified_role_ids.split(",") if r.strip()}
@@ -146,6 +166,9 @@ class Relay:
         self.bot_token = bot_token
         self.upstream_scheme = upstream_scheme
         self._upstream_resolver = upstream_resolver
+        self.cf_api_base = cf_api_base.rstrip("/")
+        self.deploy_raw_base = deploy_raw_base.rstrip("/")
+        self.deploy_cache: dict[tuple[str, str], tuple[float, bytes]] = {}
         self.buckets: dict[str, tuple[float, float]] = {}
         self.checking: set[str] = set()
         self.db = sqlite3.connect(db_path, isolation_level=None)
@@ -161,6 +184,7 @@ class Relay:
         """)
         self.upstream: aiohttp.ClientSession | None = None
         self.discord: aiohttp.ClientSession | None = None
+        self.direct: aiohttp.ClientSession | None = None
 
     async def start(self):
         connector = aiohttp.TCPConnector(resolver=self._upstream_resolver or PinnedCloudflareResolver(CF_IPS),
@@ -174,9 +198,14 @@ class Relay:
         self.discord = aiohttp.ClientSession(
             connector=aiohttp.TCPConnector(ttl_dns_cache=DISCORD_DNS_TTL),
             headers={"User-Agent": USER_AGENT}, timeout=aiohttp.ClientTimeout(total=20))
+        # 一键部署专用连接池：走正常 DNS 连写死的 api.cloudflare.com 和 raw.githubusercontent.com
+        self.direct = aiohttp.ClientSession(
+            connector=aiohttp.TCPConnector(ttl_dns_cache=300, limit=50),
+            auto_decompress=True, trust_env=False,
+            timeout=aiohttp.ClientTimeout(total=60, connect=10))
 
     async def close(self):
-        for s in (self.upstream, self.discord):
+        for s in (self.upstream, self.discord, self.direct):
             if s:
                 await s.close()
         self.db.close()
@@ -291,8 +320,111 @@ class Relay:
     @staticmethod
     def relay_error(status: int, code: str, message: str, **headers) -> web.Response:
         return web.json_response({"error": code, "message": message}, status=status, headers={
-            "X-Amsg-Relay-Error": code, "Access-Control-Allow-Origin": "*",
-            "Access-Control-Expose-Headers": "X-Amsg-Relay-Error, Retry-After", **headers})
+            **CORS_HEADERS, "X-Amsg-Relay-Error": code, **headers})
+
+    def check_token_and_quota(self, token: str) -> tuple[str | None, web.Response | None]:
+        auth = self.authenticate(token)
+        if not auth:
+            return None, self.relay_error(401, "invalid_token", "令牌无效或已过期，请在 Discord 群里重新发 /中转令牌")
+        user_id, checked_day = auth
+        if checked_day != today().isoformat():
+            asyncio.create_task(self.recheck_member(user_id))
+        wait = self.take_rate(user_id)
+        if wait:
+            return None, self.relay_error(429, "rate_limited", "请求太频繁，稍后再试", **{"Retry-After": str(int(wait) + 1)})
+        used = self.usage_since(user_id, 1)
+        if used["up"] + used["down"] >= DAILY_BYTES_CAP:
+            return None, self.relay_error(429, "quota_exceeded", "今天的中转流量用完了，明天恢复；急用可以先关掉中转直连")
+        return user_id, None
+
+    async def handle_deploy_asset(self, req: web.Request, token: str, filename: str) -> web.Response:
+        if filename not in DEPLOY_FILES or req.method not in ("GET", "OPTIONS"):
+            return self.relay_error(404, "not_relayable", "不是中转支持的地址")
+        if req.method == "OPTIONS":
+            return web.Response(status=204, headers=CORS_HEADERS)
+        branch = DEPLOY_BRANCHES.get(req.rel_url.query.get("channel", "stable"))
+        if not branch:
+            return web.json_response({"error": "Invalid channel parameter"}, status=400, headers=CORS_HEADERS)
+        user_id, err = self.check_token_and_quota(token)
+        if err:
+            return err
+        content_type, min_bytes, max_bytes = DEPLOY_FILES[filename]
+        cache_key = (filename, branch)
+        now = time.monotonic()
+        cached = self.deploy_cache.get(cache_key)
+        if cached and now - cached[0] < DEPLOY_CACHE_TTL:
+            data = cached[1]
+        else:
+            try:
+                async with self.direct.get(f"{self.deploy_raw_base}/{branch}/amsg/{filename}", allow_redirects=True) as r:
+                    data = await r.read()
+                    status = r.status
+            except (aiohttp.ClientError, asyncio.TimeoutError):
+                self.record_usage(user_id, 0, 0)
+                return self.relay_error(502, "upstream_unreachable", "中转拉取部署代码失败")
+            if status != 200 or not (min_bytes <= len(data) <= max_bytes):
+                self.record_usage(user_id, 0, len(data))
+                return self.relay_error(502, "upstream_unreachable", f"中转拉取部署代码失败（HTTP {status}）")
+            self.deploy_cache[cache_key] = (now, data)
+        self.record_usage(user_id, 0, len(data))
+        return web.Response(body=data, status=200, headers={**CORS_HEADERS, "Content-Type": content_type})
+
+    async def handle_cf_api(self, req: web.Request, token: str) -> web.Response:
+        if req.method == "OPTIONS":
+            return web.Response(status=204, headers=CORS_HEADERS)
+        if req.method not in ("GET", "POST"):
+            return web.json_response({"error": "Method not allowed"}, status=405, headers=CORS_HEADERS)
+        user_id, err = self.check_token_and_quota(token)
+        if err:
+            return err
+        if req.method == "GET":
+            payload = json.dumps({
+                "ok": True,
+                "relay": "cf-api",
+                "upstream": "api.cloudflare.com",
+                "allowed": list(CF_ALLOWED_PREFIXES),
+            }).encode()
+            self.record_usage(user_id, 0, len(payload))
+            return web.Response(body=payload, status=200, headers={
+                **CORS_HEADERS, "Content-Type": "application/json; charset=utf-8"})
+        api_path = req.rel_url.query.get("path", "")
+        if not api_path.startswith("/") or "://" in api_path or ".." in api_path:
+            return web.json_response({"error": "Invalid path parameter"}, status=400, headers=CORS_HEADERS)
+        if not any(api_path == p or api_path.startswith(p + "/") or api_path.startswith(p + "?")
+                   for p in CF_ALLOWED_PREFIXES):
+            return web.json_response({
+                "error": "This proxy only relays account-scoped Cloudflare API paths",
+                "allowed": list(CF_ALLOWED_PREFIXES),
+            }, status=403, headers=CORS_HEADERS)
+        cf_method = (req.headers.get("X-CF-Method") or "GET").upper()
+        if cf_method not in CF_ALLOWED_METHODS:
+            return web.json_response({"error": "CF method not allowed"}, status=400, headers=CORS_HEADERS)
+        base_url = URL(self.cf_api_base)
+        target_str = self.cf_api_base + api_path
+        try:
+            parsed_cf = URL(target_str, encoded=target_str.isascii())
+        except ValueError:
+            return web.json_response({"error": "Invalid path parameter"}, status=400, headers=CORS_HEADERS)
+        if parsed_cf.host != base_url.host or not parsed_cf.raw_path.startswith(base_url.raw_path + "/"):
+            return web.json_response({"error": "Refusing to relay off api.cloudflare.com"}, status=400, headers=CORS_HEADERS)
+        cf_auth = req.headers.get("Authorization")
+        if not cf_auth:
+            return web.json_response({"error": "Missing Authorization header"}, status=401, headers=CORS_HEADERS)
+        cf_headers = {"Authorization": cf_auth}
+        if req.headers.get("Content-Type"):
+            cf_headers["Content-Type"] = req.headers["Content-Type"]
+        cf_body = await req.read() if cf_method not in ("GET", "DELETE") else b""
+        try:
+            async with self.direct.request(cf_method, parsed_cf, headers=cf_headers,
+                                           data=cf_body or None, allow_redirects=False) as upstream:
+                resp_body = await upstream.read()
+                status = upstream.status
+                resp_ct = upstream.headers.get("Content-Type") or "application/json; charset=utf-8"
+        except (aiohttp.ClientError, asyncio.TimeoutError):
+            self.record_usage(user_id, len(cf_body), 0)
+            return self.relay_error(502, "upstream_unreachable", "中转连不上 Cloudflare 接口")
+        self.record_usage(user_id, len(cf_body), len(resp_body))
+        return web.Response(body=resp_body, status=status, headers={**CORS_HEADERS, "Content-Type": resp_ct})
 
     async def handle(self, req: web.Request) -> web.StreamResponse:
         m = TOKEN_PATH.match(req.rel_url.raw_path)
@@ -302,32 +434,33 @@ class Relay:
         if req.headers.get("Origin") not in ALLOWED_ORIGINS:
             return self.relay_error(403, "unofficial_client",
                                     "为防止二改中修改过的主动消息逻辑产生未经认证的流量，非官方版本不能使用官方中转")
+        if "Upgrade" in req.headers:
+            return self.relay_error(404, "not_relayable", "中转只转发主动消息 2.0 的接口")
 
-        if rest == "_usage" and req.method == "GET":
+        if rest == "_usage":
+            if req.method == "OPTIONS":
+                return web.Response(status=204, headers=CORS_HEADERS)
+            if req.method != "GET":
+                return self.relay_error(404, "not_relayable", "不是中转支持的地址")
             auth = self.authenticate(token)
             if not auth:
                 return self.relay_error(401, "invalid_token", "令牌无效或已过期，请在 Discord 群里重新发 /中转令牌")
-            return web.json_response(self.usage_summary(auth[0]), headers={"Access-Control-Allow-Origin": "*"})
+            return web.json_response(self.usage_summary(auth[0]), headers=CORS_HEADERS)
+
+        if rest.startswith("_deploy/"):
+            return await self.handle_deploy_asset(req, token, rest[len("_deploy/"):])
+
+        if rest == "_cf-api":
+            return await self.handle_cf_api(req, token)
 
         host, _, tail = rest.partition("/")
         path = "/" + tail
-        if (req.method not in ALLOWED_METHODS or "Upgrade" in req.headers
-                or not HOST_RE.match(host) or not PATH_ALLOWLIST.match(path)):
+        if req.method not in ALLOWED_METHODS or not HOST_RE.match(host) or not PATH_ALLOWLIST.match(path):
             return self.relay_error(404, "not_relayable", "中转只转发主动消息 2.0 的接口")
 
-        auth = self.authenticate(token)
-        if not auth:
-            return self.relay_error(401, "invalid_token", "令牌无效或已过期，请在 Discord 群里重新发 /中转令牌")
-        user_id, checked_day = auth
-        if checked_day != today().isoformat():
-            asyncio.create_task(self.recheck_member(user_id))
-
-        wait = self.take_rate(user_id)
-        if wait:
-            return self.relay_error(429, "rate_limited", "请求太频繁，稍后再试", **{"Retry-After": str(int(wait) + 1)})
-        used = self.usage_since(user_id, 1)
-        if used["up"] + used["down"] >= DAILY_BYTES_CAP:
-            return self.relay_error(429, "quota_exceeded", "今天的中转流量用完了，明天恢复；急用可以先关掉中转直连")
+        user_id, err = self.check_token_and_quota(token)
+        if err:
+            return err
 
         body = await req.read()
         headers = [(k, v) for k, v in req.headers.items() if k.lower() not in DROP_REQUEST_HEADERS]

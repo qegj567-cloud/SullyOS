@@ -12,7 +12,7 @@ $sourceDist = Join-Path $sourceRoot 'dist'
 $targetDist = Join-Path $wrapperRoot 'dist'
 
 if (-not (Test-Path -LiteralPath (Join-Path $sourceRoot 'node_modules\vite\bin\vite.js'))) {
-  throw 'Source dependencies are missing. Run npm/pnpm install in the SullyOS source first.'
+  throw 'Source dependencies are missing. Run pnpm install in the SullyOS source first.'
 }
 
 Write-Host '[1/4] Building the private Capacitor web bundle...'
@@ -47,9 +47,11 @@ if ($nativeBridgeCount -ne 1) {
 Write-Host '[3/4] Syncing Capacitor Android plugins and assets...'
 & node (Join-Path $PSScriptRoot 'sync-native-app-name.mjs') $wrapperRoot
 if ($LASTEXITCODE -ne 0) { throw "App display name sync failed with exit code $LASTEXITCODE" }
+& node (Join-Path $PSScriptRoot 'sync-native-system-alarm.mjs') $wrapperRoot
+if ($LASTEXITCODE -ne 0) { throw "System alarm native sync failed with exit code $LASTEXITCODE" }
 Push-Location $wrapperRoot
 try {
-  & npx.cmd cap sync android
+  & pnpm.cmd exec cap sync android
   if ($LASTEXITCODE -ne 0) { throw "Capacitor sync failed with exit code $LASTEXITCODE" }
 } finally {
   Pop-Location
