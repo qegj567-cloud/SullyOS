@@ -15,7 +15,7 @@ vi.mock('./deploymentSource', async (importOriginal) => ({
 }));
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { AMSG_RELAY_BASE, canRelayWorkerUrl, checkRelayDeployment, relayUsageUrl, resolveWorkerFetchBase } from './amsgRelay';
+import { AMSG_RELAY_BASE, canRelayWorkerUrl, checkRelayDeployment, isRelayActive, relayCfApiUrl, relayDeployAssetUrl, relayUsageUrl, resolveWorkerFetchBase } from './amsgRelay';
 import { OFFICIAL_HOSTS } from './deploymentSource';
 
 beforeAll(async () => { await checkRelayDeployment(); });
@@ -79,8 +79,14 @@ describe('resolveWorkerFetchBase', () => {
     }
   });
 
-  it('用量地址挂在令牌下面', () => {
+  it('用量地址与一键部署专用地址都挂在令牌下面', () => {
     expect(relayUsageUrl(token)).toBe(`${AMSG_RELAY_BASE}/${token}/_usage`);
+    expect(relayCfApiUrl(token)).toBe(`${AMSG_RELAY_BASE}/${token}/_cf-api`);
+    expect(relayCfApiUrl(token, '/accounts?per_page=50')).toBe(`${AMSG_RELAY_BASE}/${token}/_cf-api?path=%2Faccounts%3Fper_page%3D50`);
+    expect(relayDeployAssetUrl(token, 'worker.bundle.js')).toBe(`${AMSG_RELAY_BASE}/${token}/_deploy/worker.bundle.js`);
+    expect(relayDeployAssetUrl(token, 'wrangler.toml', 'canary')).toBe(`${AMSG_RELAY_BASE}/${token}/_deploy/wrangler.toml?channel=canary`);
+    expect(isRelayActive(true, token)).toBe(true);
+    expect(isRelayActive(false, token)).toBe(false);
   });
 });
 
@@ -115,6 +121,8 @@ describe('infra/amsg-relay/relay.py 中转白名单', () => {
       '/xconfig-check',
       '/config-check/extra',
       '/_usage',
+      '/_cf-api',
+      '/_deploy/worker.bundle.js',
     ]) {
       expect(path).not.toMatch(relayRegex);
     }

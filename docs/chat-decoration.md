@@ -142,6 +142,10 @@ HTML 卡片仍在独立 iframe 沙盒中；白框控制其外壳和排版，不�
 - Tailwind Preflight 为 `input`、`textarea`、`select` 设置 `color: inherit`：浅色背景上的输入框与下拉框需要显式声明文字色与占位符色（如 `text-slate-800 placeholder:text-slate-400`；聊天默认浅色输入栏将 `text-slate-800` 放在 `.sully-chat-inputbar` 外壳上，兼顾防顶层白字继承与白框对输入栏的继承覆盖），深色底上的原生 `<select>` 与 `<input type="date">`／`<input type="time">` 声明 `[color-scheme:dark]` 并用 `[&_option]` 覆盖含 `<optgroup>` 在内的选项配色，避免 Windows / Chromium 原生弹出列表出现白底浅字。
 - 内置白框的通用面板／卡片覆盖使用零权重的 `:not(:where(...))` 排除语义功能元素，避免抬高选择器权重压过后续状态规则：颜色色板点（`.sully-chat-swatch-dot`）、未读或状态角标点（`.sully-chat-badge-dot`）、分页指示点（`.sully-chat-page-dot`）、可扫描二维码白底区（`.sully-chat-qr-surface`）、进度条填充（`.sully-chat-meter-fill`），以及自带独立视觉设计的七夕活动卡（`[data-card-variant="qixi_event_card"]`）与 520 典藏卡（`[data-card-variant="like520_card"]`）。回归守卫见 `utils/__tests__/themeContrastInheritance.test.ts`。
 
+角色名片心声保持原 `.chat-profile-thought` / `.chat-profile-caption` 选择器，长按展开编辑区采用显式浅底深字；不改变制作器示例格式，装扮预览不允许写心声。删除用顶层确认框，空值阻止回退日程心声。
+
+角色名片 `.chat-profile-emotions` 内的单条情绪支持长按、右键或聚焦条目后回车编辑。编辑区 `.chat-profile-emotion-editor` 为显式浅底深字，预览不挂载写入操作。保留原列表/详情选择器；编辑仅修改名称、说明与强度，删除需确认。
+
 ### 减弱模糊（`data-reduced-blur`）
 
 根节点带 `data-reduced-blur` 时，全站不做实时毛玻璃：`index.html` 的全局样式去掉 `backdrop-filter` 和聊天、桌面滚动区里的投影滤镜；聊天顶栏、输入栏、群聊顶栏、桌面卡片、日程小组件和外壳通过 `useReducedBlur()`（`utils/blurPolicy.ts`）换成更不透明的底色，保证去掉模糊后文字仍然可读。聊天页顶栏和输入栏各有一层全宽毛玻璃压在滚动列表上，中端机滚动掉帧主要来自这里。

@@ -7,7 +7,7 @@ import TokenImg from '../components/os/TokenImg';
 import { useBlobRefUrl } from '../utils/blobRef';
 import { DB } from '../utils/db';
 import { isChatPreviewMessage, chatPreviewText } from '../utils/chatMessageVisibility';
-import { CharacterProfile, Anniversary, AppID, DailySchedule } from '../types';
+import { CharacterProfile, Anniversary, AppID, DailySchedule, Task } from '../types';
 import { ScheduleHomeWidget, ScheduleFullscreenViewer } from '../components/schedule/ScheduleHomeWidget';
 import NowPlayingSquareWidget from '../components/os/NowPlayingSquareWidget';
 import MobileGameHome from '../components/os/MobileGameHome';
@@ -15,6 +15,8 @@ import TamagotchiHome from '../components/os/TamagotchiHome';
 import { getDailyScheduleForChar } from '../utils/dailySchedule';
 import { useLocalDateKey } from '../hooks/useLocalDateKey';
 import { resolveCharTimeZone } from '../utils/timezone';
+import TimeContractCalendar from '../components/schedule/TimeContractCalendar';
+import { resolveTimeContractTheme } from '../utils/timeContract';
 import { trackEvent } from '../utils/analytics';
 import { resolveReducedGlassCardStyle, useReducedBlur } from '../utils/blurPolicy';
 
@@ -357,125 +359,6 @@ const CALENDAR_WEEKDAYS = [
 ] as const;
 
 // 4. Widget Page Component (Calendar + Events)
-const WidgetsPage = React.memo(({ contentColor, openApp, anniversaries, characters, acnh = false, paper = false }: any) => {
-    // 动森：奶油卡片样式（替代暗色玻璃）
-    const acCard = acnh ? { background: 'rgb(247,243,223)', border: '2px solid #e8e2d6', boxShadow: '0 6px 18px rgba(61,52,40,0.12)' } : undefined;
-    const acDot = acnh ? '#6fba2c' : undefined;
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth();
-    const monthName = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'][currentMonth];
-    
-    const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
-    const getFirstDayOfMonth = (year: number, month: number) => new Date(year, month, 1).getDay();
-    
-    const totalDays = getDaysInMonth(currentYear, currentMonth);
-    const startOffset = getFirstDayOfMonth(currentYear, currentMonth);
-    
-    const calendarDays = Array.from({ length: totalDays }, (_, i) => i + 1);
-    const paddingDays = Array.from({ length: startOffset }, () => null);
-
-    // --- Upcoming events: only today + future, soonest first (non-mutating), paginated ---
-    const todayStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    const upcomingEvents = useMemo(
-        () => [...(anniversaries as any[])]
-            .filter((a: any) => a.date >= todayStr)
-            .sort((a: any, b: any) => a.date.localeCompare(b.date)),
-        [anniversaries, todayStr]
-    );
-    const EVENTS_PER_PAGE = 4;
-    const eventPageCount = Math.max(1, Math.ceil(upcomingEvents.length / EVENTS_PER_PAGE));
-    const [eventPage, setEventPage] = useState(0);
-    // Clamp the page if the list shrinks (e.g. an event passes / is removed)
-    useEffect(() => {
-        if (eventPage > eventPageCount - 1) setEventPage(eventPageCount - 1);
-    }, [eventPageCount, eventPage]);
-    const pagedEvents = upcomingEvents.slice(eventPage * EVENTS_PER_PAGE, eventPage * EVENTS_PER_PAGE + EVENTS_PER_PAGE);
-
-    return (
-        <div className="launcher-page w-full flex-shrink-0 snap-center snap-always flex flex-col px-6 pt-24 pb-8 space-y-6 h-full overflow-y-auto no-scrollbar">
-              <div className={`rounded-3xl p-6 ${acnh ? 'shadow-sm' : paper ? '' : 'bg-white/25 border border-white/25 shadow-xl'}`} style={paper ? { background: 'rgba(224,221,215,0.36)', border: '1px solid rgba(91,72,51,0.07)', boxShadow: '0 5px 16px rgba(91,72,51,0.05)' } : acCard}>
-                  <div className="flex justify-between items-center mb-4" style={{ color: contentColor }}>
-                      <h3 className="text-xl font-bold tracking-widest">{monthName} {currentYear}</h3>
-                      <div onClick={() => openApp('schedule')} className={`p-2 rounded-full cursor-pointer transition-colors ${acnh ? 'bg-[#82D5BB]/30 hover:bg-[#82D5BB]/50' : paper ? 'bg-[#788369]/10 hover:bg-[#788369]/20' : 'bg-white/20 hover:bg-white/40'}`}>
-                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
-                      </div>
-                  </div>
-                  
-                  <div className="grid grid-cols-7 gap-y-3 gap-x-1 text-center mb-2">
-                      {CALENDAR_WEEKDAYS.map(day => <div key={day.key} className="text-[10px] font-bold opacity-40" style={{ color: contentColor }}>{day.label}</div>)}
-                  </div>
-                  
-                  <div className="grid grid-cols-7 gap-y-2 gap-x-1 text-center">
-                      {paddingDays.map((_, i) => <div key={`pad-${i}`} />)}
-                      {calendarDays.map(day => {
-                          const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                          const isToday = day === now.getDate();
-                          const hasEvent = anniversaries.some((a: any) => a.date === dateStr);
-                          
-                          return (
-                              <div key={day} className="flex flex-col items-center justify-center h-8 relative">
-                                  <div
-                                    className={`w-8 h-8 flex items-center justify-center rounded-full text-sm font-medium ${isToday ? (acnh ? 'text-white font-bold' : paper ? 'text-white font-bold' : 'bg-white text-black font-bold shadow-lg') : 'opacity-80'}`}
-                                    style={isToday ? (acnh ? { background: '#19c8b9' } : paper ? { background: '#788369', boxShadow: '0 4px 10px rgba(91,72,51,0.14)' } : {}) : { color: contentColor }}
-                                  >
-                                      {day}
-                                  </div>
-                                  {hasEvent && <div className="w-1.5 h-1.5 rounded-full absolute bottom-0 shadow-sm border border-black/10" style={{ background: acDot || (paper ? '#a66f52' : '#c084fc') }}></div>}
-                              </div>
-                          );
-                      })}
-                  </div>
-              </div>
-
-              <div className={`rounded-3xl p-5 flex flex-col flex-1 min-h-[200px] ${acnh ? 'shadow-sm' : paper ? '' : 'bg-white/25 border border-white/25 shadow-xl'}`} style={paper ? { background: 'rgba(224,221,215,0.36)', border: '1px solid rgba(91,72,51,0.07)', boxShadow: '0 5px 16px rgba(91,72,51,0.05)' } : acCard}>
-                  <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-xs font-bold opacity-60 uppercase tracking-widest flex items-center gap-2" style={{ color: contentColor }}>
-                          <span className="w-2 h-2 rounded-full" style={{ background: acDot || (paper ? '#a66f52' : '#c084fc') }}></span> Upcoming Events
-                      </h3>
-                      {eventPageCount > 1 && (
-                          <div className="flex items-center gap-2 shrink-0" style={{ color: contentColor }}>
-                              <button
-                                  onClick={(e) => { e.stopPropagation(); setEventPage(p => Math.max(0, p - 1)); }}
-                                  disabled={eventPage === 0}
-                                  className={`w-6 h-6 rounded-full flex items-center justify-center disabled:opacity-25 transition-colors active:scale-90 ${paper ? 'bg-[#788369]/10 hover:bg-[#788369]/20' : 'bg-white/15 hover:bg-white/30'}`}
-                                  aria-label="Previous events"
-                              >
-                                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-3 h-3"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
-                              </button>
-                              <span className="text-[10px] font-mono opacity-60 tabular-nums">{eventPage + 1}/{eventPageCount}</span>
-                              <button
-                                  onClick={(e) => { e.stopPropagation(); setEventPage(p => Math.min(eventPageCount - 1, p + 1)); }}
-                                  disabled={eventPage >= eventPageCount - 1}
-                                  className={`w-6 h-6 rounded-full flex items-center justify-center disabled:opacity-25 transition-colors active:scale-90 ${paper ? 'bg-[#788369]/10 hover:bg-[#788369]/20' : 'bg-white/15 hover:bg-white/30'}`}
-                                  aria-label="Next events"
-                              >
-                                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-3 h-3"><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
-                              </button>
-                          </div>
-                      )}
-                  </div>
-                  <div className="space-y-3">
-                      {upcomingEvents.length > 0 ? pagedEvents.map((anni: any) => (
-                          <div key={anni.id} className={`flex items-center gap-3 p-3 rounded-xl ${acnh ? 'bg-[#efe7d4] border border-[#e0d6c0]' : paper ? 'bg-[#f3ecdf]/70 border border-[#5b4833]/10' : 'bg-white/5 border border-white/10'}`}>
-                              <div className={`w-10 h-10 shrink-0 rounded-lg flex flex-col items-center justify-center ${acnh ? 'bg-[#82D5BB] text-white border border-[#6cc0a6]' : paper ? 'bg-[#a66f52]/12 text-[#8c5d46] border border-[#a66f52]/15' : 'bg-purple-500/20 text-purple-200 border border-purple-500/30'}`}>
-                                  <span className="text-[9px] opacity-70">{anni.date.split('-')[1]}</span>
-                                  <span className="text-sm font-bold leading-none">{anni.date.split('-')[2]}</span>
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                  <div className="text-sm font-bold truncate" style={{ color: contentColor }}>{anni.title}</div>
-                                  <div className="text-[10px] opacity-50 truncate" style={{ color: contentColor }}>{characters.find((c: any) => c.id === anni.charId)?.name || 'Unknown'}</div>
-                              </div>
-                          </div>
-                      )) : (
-                          <div className="text-center opacity-30 text-xs py-8" style={{ color: contentColor }}>No upcoming events</div>
-                      )}
-                  </div>
-              </div>
-        </div>
-    );
-});
-
 // --- Persist scroll page across remounts (e.g. returning from apps) ---
 let _lastPageIndex = 0;
 
@@ -488,6 +371,7 @@ const Launcher: React.FC<{ staticPreview?: boolean }> = ({ staticPreview = false
   const [widgetChar, setWidgetChar] = useState<CharacterProfile | null>(staticPreview ? characters[0] || null : null);
   const [lastMessage, setLastMessage] = useState<string>(staticPreview ? '今天也有想和你分享的小事。' : '');
   const [anniversaries, setAnniversaries] = useState<Anniversary[]>([]);
+  const [calendarTasks, setCalendarTasks] = useState<Task[]>([]);
   const [scheduleData, setScheduleData] = useState<DailySchedule | null>(null);
   const [scheduleCharId, setScheduleCharId] = useState<string | null>(null);
   const [scheduleViewerOpen, setScheduleViewerOpen] = useState(false);
@@ -618,7 +502,7 @@ const Launcher: React.FC<{ staticPreview?: boolean }> = ({ staticPreview = false
           if (!characters || characters.length === 0) {
               setWidgetChar(null);
               setLastMessage('No Character Connected');
-              setAnniversaries([]);
+
               return;
           }
 
@@ -626,10 +510,7 @@ const Launcher: React.FC<{ staticPreview?: boolean }> = ({ staticPreview = false
           setWidgetChar(targetChar);
 
           try {
-              const [recent, annis] = await Promise.all([
-                  DB.getRecentMessagesWithCount(targetChar.id, 1, isChatPreviewMessage),
-                  DB.getAllAnniversaries()
-              ]);
+              const recent = await DB.getRecentMessagesWithCount(targetChar.id, 1, isChatPreviewMessage);
               if (cancelled) return;
               const last = recent.messages[0];
               if (last) {
@@ -637,7 +518,7 @@ const Launcher: React.FC<{ staticPreview?: boolean }> = ({ staticPreview = false
               } else {
                   setLastMessage(targetChar.description || "System Ready.");
               }
-              setAnniversaries(annis);
+
           } catch (e) {
               console.error(e);
           }
@@ -648,6 +529,21 @@ const Launcher: React.FC<{ staticPreview?: boolean }> = ({ staticPreview = false
       }
       return () => { cancelled = true; };
   }, [activeCharacterId, lastMsgTimestamp, isDataLoaded, characters]); // Trigger on characters change
+
+  useEffect(() => {
+      if (!isDataLoaded || staticPreview) return;
+      let cancelled = false;
+      const refresh = async () => {
+          try {
+              const [events, tasks] = await Promise.all([DB.getAllAnniversaries(), DB.getAllTasks()]);
+              if (!cancelled) { setAnniversaries(events); setCalendarTasks(tasks); }
+          } catch (error) { console.warn('Time contract calendar could not load', error); }
+      };
+      void refresh();
+      window.addEventListener('time-contract-changed', refresh);
+      window.addEventListener('focus', refresh);
+      return () => { cancelled = true; window.removeEventListener('time-contract-changed', refresh); window.removeEventListener('focus', refresh); };
+  }, [isDataLoaded, staticPreview]);
 
   // Schedule widget data loading (shown below SpecialMoments icon)
   const scheduleChar = useMemo(() => {
@@ -1052,7 +948,7 @@ const Launcher: React.FC<{ staticPreview?: boolean }> = ({ staticPreview = false
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseLeave}
         onClickCapture={handleClickCapture}
-        className="launcher-pages flex-1 flex overflow-x-auto snap-x snap-mandatory no-scrollbar cursor-grab active:cursor-grabbing"
+        className="launcher-pages flex-1 min-h-0 flex overflow-x-auto snap-x snap-mandatory no-scrollbar cursor-grab active:cursor-grabbing"
         style={{
             scrollBehavior: 'smooth',
             overscrollBehaviorX: 'contain',
@@ -1201,10 +1097,12 @@ const Launcher: React.FC<{ staticPreview?: boolean }> = ({ staticPreview = false
           ))}
 
           {/* Final Page: Widgets */}
-          <WidgetsPage
+          <TimeContractCalendar
             contentColor={contentColor}
             openApp={openApp}
             anniversaries={anniversaries}
+            tasks={calendarTasks}
+            mode={resolveTimeContractTheme(theme.scheduleAppTheme)}
             characters={characters}
             acnh={acnh}
             paper={paper}

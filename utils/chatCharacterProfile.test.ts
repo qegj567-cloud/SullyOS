@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import ChatCharacterProfile from '../components/chat/ChatCharacterProfile';
 import type { CharacterProfile, DailySchedule } from '../types';
-import { lastInnerStateKey } from './emotionState';
+import { lastInnerStateKey, saveInnerState } from './emotionState';
 
 vi.mock('../apps/Character', () => ({
     default: ({ profileCharacterId }: { profileCharacterId: string }) =>
@@ -132,4 +132,53 @@ it('plays started slots, reopens cached performances and locks future slots in c
         expect(onPlay.mock.calls).toEqual([[0], [1]]);
         expect(host.querySelector('[role="status"]')?.textContent).toBe('还没到这个时间哦');
     } finally { vi.useRealTimers(); }
+});
+
+it('keeps explicitly deleted thoughts empty instead of reviving the schedule fallback', () => {
+    render();
+    act(() => saveInnerState(character.id, 'edited thought'));
+    expect(host.querySelector('.chat-profile-thought')?.textContent).toContain('edited thought');
+    act(() => saveInnerState(character.id, ''));
+    expect(host.querySelector('.chat-profile-thought')?.textContent).not.toContain('今天想读一本新书。');
+    expect(host.querySelector('.chat-profile-thought')?.textContent).toContain('暂无心声');
+});
+
+it('long-press menu deletion clears the next model context after confirmation', async () => {
+    localStorage.setItem(lastInnerStateKey(character.id), 'old private thought');
+    render();
+    act(() => host.querySelector('.chat-profile-thought')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })));
+    expect(host.querySelector('textarea[aria-label="编辑心声"]')).not.toBeNull();
+    const buttons = () => Array.from(document.querySelectorAll('button')).filter(b => b.textContent === '删除');
+    await act(async () => buttons()[0].click());
+    expect(localStorage.getItem(lastInnerStateKey(character.id))).toBe('old private thought');
+    await act(async () => buttons().at(-1)!.click());
+    expect(localStorage.getItem(lastInnerStateKey(character.id))).toBe('');
+    const { ContextBuilder } = await import('./context');
+    expect(ContextBuilder.buildEmotionContext(character, { surface: 'chat' })).not.toContain('old private thought');
+    expect(ContextBuilder.buildEmotionContext(character, { surface: 'chat' })).not.toContain('当前内心想法');
+});
+
+it('long-press emotion editing persists the description, and confirmed deletion removes model input', async () => {
+    const { DB } = await import('./db');
+    const { ContextBuilder } = await import('./context');
+    await DB.saveCharacter({ ...character, buffInjection: '以前的安心' });
+    render();
+    act(() => host.querySelector('.chat-profile-emotions li')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })));
+    const input = host.querySelector<HTMLInputElement>('input[aria-label="情绪名称"]')!;
+    expect(input).not.toBeNull();
+    act(() => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, '期待');
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    const editor = () => host.querySelector('[aria-label="编辑情绪"]')!;
+    await act(async () => { const saved = new Promise(resolve => window.addEventListener('emotion-updated', resolve, { once: true })); (Array.from(editor().querySelectorAll('button')).find(b => b.textContent === '保存') as HTMLButtonElement).click(); await saved; });
+    expect((await DB.getCharacter(character.id))?.activeBuffs?.[0].label).toBe('期待');
+    expect(host.querySelector('.chat-profile-emotions')?.textContent).toContain('期待');
+    act(() => host.querySelector('.chat-profile-emotions li')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })));
+    await act(async () => (Array.from(editor().querySelectorAll('button')).find(b => b.textContent === '删除') as HTMLButtonElement).click());
+    expect((await DB.getCharacter(character.id))?.activeBuffs).toHaveLength(1);
+    await act(async () => { const saved = new Promise(resolve => window.addEventListener('emotion-updated', resolve, { once: true })); (Array.from(document.querySelectorAll('button')).filter(b => b.textContent === '删除').at(-1) as HTMLButtonElement).click(); await saved; });
+    const current = (await DB.getCharacter(character.id))!;
+    expect(current.activeBuffs).toEqual([]); expect(current.buffInjection).toBe('');
+    expect(ContextBuilder.buildEmotionContext(current, { surface: 'chat' })).not.toContain('期待');
 });

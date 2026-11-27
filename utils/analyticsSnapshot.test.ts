@@ -681,7 +681,7 @@ describe('快照事件的属性宽度', () => {
     const plainChar = (id: string) => ({ id, name: '小明' } as unknown as CharacterProfile);
 
     it('当前外观', () => {
-        expect(Object.keys(collectAppearance({} as OSTheme, undefined)).length).toBeLessThanOrEqual(39);
+        expect(Object.keys(collectAppearance({} as OSTheme, undefined)).length).toBeLessThanOrEqual(40);
     });
 
     it('当前角色设置', () => {
@@ -696,8 +696,8 @@ describe('快照事件的属性宽度', () => {
     });
 
     it('当前功能启用', () => {
-        // 36：云端生成（日程 / 人格模拟 / 梦境）三项开关压成一格「云端生成」后加进来的。
-        expect(Object.keys(collectFeatureFlags(poisonedSources())).length).toBeLessThanOrEqual(36);
+        // 37：「云端生成」+「原图提醒关闭」合入后的字段上限。
+        expect(Object.keys(collectFeatureFlags(poisonedSources())).length).toBeLessThanOrEqual(37);
     });
 });
 
@@ -711,4 +711,18 @@ it('3D 家园快照只输出档位与内置配色，不泄漏用户内容',()=>{
  const chars=collectCharSettings([{id:POISON.dbId,name:POISON.myName,home3D:{rooms:[{name:POISON.city}],records:[{text:POISON.token}],autonomy:false,directSpeech:true},chibiStudio:{home3D:{state:{selected:{eyes:POISON.key}}}}} as unknown as CharacterProfile],POISON.dbId);
  expect(chars['3D家园角色数']).toBe('1');
  for(const secret of Object.values(POISON))expect(JSON.stringify([appearance,chars])).not.toContain(secret);
+});
+
+it('original-photo notice preference reports only a fixed enum', () => {
+    localStorage.setItem('chat_original_photo_notice_dismissed', 'private-input');
+    expect(collectFeatureFlags(poisonedSources()).原图提醒关闭).toBe('否');
+    localStorage.setItem('chat_original_photo_notice_dismissed', '1');
+    expect(collectFeatureFlags(poisonedSources()).原图提醒关闭).toBe('是');
+    localStorage.removeItem('chat_original_photo_notice_dismissed');
+});
+
+it('时光契约主题快照仅接受固定枚举，不上传非法主题值', () => {
+    localStorage.setItem('schedule_app_theme', POISON.myName);
+    expect(collectAppearance({ scheduleAppTheme: POISON.url } as unknown as OSTheme, undefined).时光契约主题).toBe('system');
+    expect(collectAppearance({ scheduleAppTheme: 'soft' } as OSTheme, undefined).时光契约主题).toBe('soft');
 });

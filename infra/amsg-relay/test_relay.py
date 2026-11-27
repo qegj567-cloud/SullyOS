@@ -47,6 +47,20 @@ class RelayTest(unittest.IsolatedAsyncioTestCase):
                 await resp.write(b"data: second\n\n")
                 await resp.write_eof()
                 return resp
+            if req.path.startswith("/raw/"):
+                body = await req.read()
+                self.seen.append({"path": req.raw_path, "method": req.method, "body": body, "headers": dict(req.headers)})
+                if req.path.endswith("/worker.bundle.js"):
+                    return web.Response(body=b"src_default as default;" + b"x" * (110 * 1024),
+                                        headers={"Content-Type": "text/plain"})
+                if req.path.endswith("/wrangler.toml"):
+                    return web.Response(body=b'name = "sullyos-amsg"\ncompatibility_date = "2026-01-01"\n',
+                                        headers={"Content-Type": "text/plain"})
+                return web.Response(status=404)
+            if req.path.startswith("/client/v4/"):
+                body = await req.read()
+                self.seen.append({"path": req.raw_path, "method": req.method, "body": body, "headers": dict(req.headers)})
+                return web.json_response({"success": True, "result": {"path": req.raw_path}})
             body = await req.read()
             self.seen.append({"path": req.raw_path, "host": req.headers.get("Host"), "body": body,
                               "headers": dict(req.headers)})
@@ -63,7 +77,9 @@ class RelayTest(unittest.IsolatedAsyncioTestCase):
 
         self.tmp = tempfile.TemporaryDirectory()
         self.relay = R.Relay(os.path.join(self.tmp.name, "r.db"), guild_id=GUILD, verified_role_ids=f"{ROLE}, {ROLE2}", admin_role_id=ADMIN_ROLE,
-                             upstream_scheme="http", upstream_resolver=LocalResolver(up_port))
+                             upstream_scheme="http", upstream_resolver=LocalResolver(up_port),
+                             cf_api_base=f"http://127.0.0.1:{up_port}/client/v4",
+                             deploy_raw_base=f"http://127.0.0.1:{up_port}/raw")
         await self.relay.start()
         self.runner = self.relay.make_runner()
         await self.runner.setup()
@@ -309,6 +325,58 @@ class RelayTest(unittest.IsolatedAsyncioTestCase):
         with mock.patch.object(self.relay.discord, "get", return_value=Resp()):
             await self.relay.recheck_member("1")
         self.assertIsNotNone(self.relay.db.execute("SELECT 1 FROM tokens WHERE user_id='1'").fetchone())
+
+    async def test_deploy_assets_cached_and_strictly_scoped(self):
+        token = self.issue()
+        # CORS 预检放行，不烧上游请求
+        async with self.http.options(f"{self.base}/t/{token}/_deploy/worker.bundle.js") as r:
+            self.assertEqual(r.status, 204)
+            self.assertIn("X-CF-Method", r.headers["Access-Control-Allow-Headers"])
+        # 连拉两次同分支 worker.bundle.js：上游只打一次（命中内存缓存），流量照记两次
+        for _ in range(2):
+            async with self.http.get(f"{self.base}/t/{token}/_deploy/worker.bundle.js") as r:
+                self.assertEqual(r.status, 200)
+                self.assertIn("src_default as default", await r.text())
+        self.assertEqual([c["path"] for c in self.seen], ["/raw/main/amsg/worker.bundle.js"])
+        async with self.http.get(f"{self.base}/t/{token}/_deploy/wrangler.toml?channel=canary") as r:
+            self.assertEqual(r.status, 200)
+            self.assertIn("sullyos-amsg", await r.text())
+        self.assertEqual(self.seen[-1]["path"], "/raw/canary/amsg/wrangler.toml")
+        # 其它文件名或非法 channel 一律拒绝
+        async with self.http.get(f"{self.base}/t/{token}/_deploy/../../etc/passwd") as r:
+            self.assertEqual(r.status, 404)
+        async with self.http.get(f"{self.base}/t/{token}/_deploy/worker.bundle.js?channel=../evil") as r:
+            self.assertEqual(r.status, 400)
+
+    async def test_cf_api_relay_enforces_account_scope_and_forwards_multipart(self):
+        token = self.issue()
+        async with self.http.options(f"{self.base}/t/{token}/_cf-api") as r:
+            self.assertEqual(r.status, 204)
+        async with self.http.get(f"{self.base}/t/{token}/_cf-api") as r:
+            self.assertEqual(r.status, 200)
+            self.assertEqual((await r.json())["relay"], "cf-api")
+        # /zones/* 和路径穿越一律拒掉，不碰上游
+        self.seen.clear()
+        for bad in ("/zones/abc/dns_records", "/accounts/../zones/abc", "accounts", "https://evil.test/x"):
+            async with self.http.post(f"{self.base}/t/{token}/_cf-api", params={"path": bad},
+                                      headers={"Authorization": "Bearer cf-tok"}) as r:
+                self.assertIn(r.status, (400, 403), bad)
+        self.assertEqual(self.seen, [])
+        # 正常账号级 PUT 原样带 Authorization 与 multipart Content-Type
+        ct = "multipart/form-data; boundary=----SullyBoundary"
+        async with self.http.post(
+            f"{self.base}/t/{token}/_cf-api",
+            params={"path": "/accounts/acc1/workers/scripts/sullyos-amsg"},
+            headers={"Authorization": "Bearer cf-tok", "X-CF-Method": "PUT", "Content-Type": ct},
+            data=b"bundle-payload",
+        ) as r:
+            self.assertEqual(r.status, 200)
+        got = self.seen[-1]
+        self.assertEqual(got["method"], "PUT")
+        self.assertEqual(got["path"], "/client/v4/accounts/acc1/workers/scripts/sullyos-amsg")
+        self.assertEqual(got["headers"]["Authorization"], "Bearer cf-tok")
+        self.assertEqual(got["headers"]["Content-Type"], ct)
+        self.assertEqual(got["body"], b"bundle-payload")
 
 
 if __name__ == "__main__":

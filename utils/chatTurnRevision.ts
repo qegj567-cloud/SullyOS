@@ -107,33 +107,39 @@ function commitTurn(db: IDBDatabase, preview: TurnPreview): Promise<number[]> {
                     }
                     if (current.some((row, i) => row.id === cutoff && (wholeReroll || (preview.targetIds === undefined && (i > 0 || !bubbles.length))))) {
                         abort('本轮包含上下文断点，请先在聊天设置里调整断点。');
+                        return;
+                    }
+                    for (const id of receipts) assets.put({ id: calibratedDeliveryKey(charId, id), data: true });
+                    for (const [index, row] of current.entries()) {
+                        if (preview.targetIds && !preview.targetIds.includes(row.id)) continue;
+                        const bubble = bubbles[index];
+                        if (!bubble || row.content !== bubble.content || row.type !== bubble.type || preview.mode === 'reroll') {
+                            changed.push(row.id);
+                            assets.delete(`voice_msg_${row.id}`);
+                            deleteLinkedSecretNotes(store, row);
+                        }
+                        // Pending work (e.g. a secret note) addresses the old reply by message ID.
+                        if (!bubble || wholeReroll) store.delete(row.id);
+                    }
+                    for (const [index, bubble] of bubbles.entries()) {
+                        const slot = current[index];
+                        if (preview.targetIds && (!slot || !preview.targetIds.includes(slot.id))) continue;
+                        const meta = { ...bubble.metadata };
+                        // Read the current switch in the same transaction: it may have changed since preview.
+                        if (preview.mode === 'reroll' && !profile.result?.showThinkingChain) {
+                            delete meta.thinkingChain;
+                            delete meta.thinkingChainTranslation;
+                        }
+                        if (!slot || changed.includes(slot.id)) delete meta.secretNoteIds;
+                        if (last.metadata?.chatTurnId) meta.chatTurnId = last.metadata.chatTurnId;
+                        if (last.metadata?.source) meta.source = last.metadata.source;
+                        if (last.metadata?.activeMsg2) meta.activeMsg2 = slot?.metadata?.activeMsg2 ?? last.metadata.activeMsg2;
+                        const value = { charId, role: 'assistant', type: bubble.type, content: bubble.content,
+                            timestamp: slot?.timestamp ?? last.timestamp, metadata: meta, replyTo: bubble.replyTo };
+                        if (slot && !wholeReroll) store.put({ ...value, id: slot.id });
+                        else store.add(value);
                     }
                 };
-                for (const id of receipts) assets.put({ id: calibratedDeliveryKey(charId, id), data: true });
-                for (const [index, row] of current.entries()) {
-                    if (preview.targetIds && !preview.targetIds.includes(row.id)) continue;
-                    const bubble = bubbles[index];
-                    if (!bubble || row.content !== bubble.content || row.type !== bubble.type || preview.mode === 'reroll') {
-                        changed.push(row.id);
-                        assets.delete(`voice_msg_${row.id}`);
-                        deleteLinkedSecretNotes(store, row);
-                    }
-                    // Pending work (e.g. a secret note) addresses the old reply by message ID.
-                    if (!bubble || wholeReroll) store.delete(row.id);
-                }
-                for (const [index, bubble] of bubbles.entries()) {
-                    const slot = current[index];
-                    if (preview.targetIds && (!slot || !preview.targetIds.includes(slot.id))) continue;
-                    const meta = { ...bubble.metadata };
-                    if (!slot || changed.includes(slot.id)) delete meta.secretNoteIds;
-                    if (last.metadata?.chatTurnId) meta.chatTurnId = last.metadata.chatTurnId;
-                    if (last.metadata?.source) meta.source = last.metadata.source;
-                    if (last.metadata?.activeMsg2) meta.activeMsg2 = slot?.metadata?.activeMsg2 ?? last.metadata.activeMsg2;
-                    const value = { charId, role: 'assistant', type: bubble.type, content: bubble.content,
-                        timestamp: slot?.timestamp ?? last.timestamp, metadata: meta, replyTo: bubble.replyTo };
-                    if (slot && !wholeReroll) store.put({ ...value, id: slot.id });
-                    else store.add(value);
-                }
             });
         });
         tx.oncomplete = () => { announceSecretNotesChanged(charId); resolve(changed); };

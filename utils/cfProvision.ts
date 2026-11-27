@@ -5,14 +5,17 @@
  * 拉最新 bundle → 上传 Worker（密钥和 D1 绑定一次带齐）→ 加 cron → 开 workers.dev。
  * 密钥（Master Key / VAPID / Server Token）在浏览器本地生成，用户全程不用复制粘贴。
  *
- * 为什么要绕一层代理：api.cloudflare.com 一个 CORS 头都不返回，浏览器直接调不通，
- * 所有请求都得过中心 worker 的 /cf-api（见 worker/index.js）。
+ * 为什么要绕一层代理：api.cloudflare.com 一个 CORS 头都不返回，浏览器直接调不通。
+ * 用户开了「大陆连接优化」（amsg-relay）时优先经官方中转转发 CF 接口与拉取部署代码包，
+ * 没开或中转不可用时回退中心 worker 的 /cf-api 与 /amsg-bundle，代码包最后还会用直连
+ * GitHub 与同源静态包兜底（见 worker/index.js 与 infra/amsg-relay/relay.py）。
  *
  * 跟「更新后端」的分工：那条路是 worker 拿自己 env 里的 token 覆盖自己
  * （worker/amsg/src/selfUpdate.ts），能保住密钥；这里是从零装，密钥是新生成的。
  */
 
 import { getProxyWorkerUrl } from './proxyWorker';
+import { getRelayDeploymentSource, isRelayActive, relayCfApiUrl, relayDeployAssetUrl } from './amsgRelay';
 import { formatUnknownError } from './errorSelfCheck';
 import { summarizeHtmlErrorBody } from './networkFailureDiagnosis';
 import { generateVapidKeyPair, generateClientToken } from './vapidGen';
@@ -84,6 +87,11 @@ export interface AmsgSecrets {
   AMSG_SERVER_TOKEN: string;
 }
 
+export interface ProvisionRelayOptions {
+  useRelay?: boolean;
+  relayToken?: string;
+}
+
 export interface ProvisionInput {
   token: string;
   /** 多账号时由界面选定；只有一个能用就自动选。 */
@@ -105,6 +113,8 @@ export interface ProvisionInput {
   resetExistingDatabase?: boolean;
   /** Explicitly confirmed replacement. The plan stays in memory for retries. */
   replacement?: AmsgReplacementPlan;
+  /** 大陆连接优化配置；未显式传入时自动读取本机已存设置。 */
+  relay?: ProvisionRelayOptions;
   onProgress?: (p: ProvisionProgress) => void;
 }
 
@@ -388,7 +398,7 @@ export function validateSubdomain(name: string): string | null {
 }
 
 // ---------------------------------------------------------------------------
-// 网络层：所有 CF 请求都过中心 worker 的 /cf-api
+// 网络层：开了大陆中转时优先走 amsg-relay，失败或未开启时回退中心 worker 的 /cf-api
 // ---------------------------------------------------------------------------
 
 interface CfResponse<T = unknown> {
@@ -399,13 +409,48 @@ interface CfResponse<T = unknown> {
   error?: string;
 }
 
-const relayUrl = (apiPath: string): string =>
-  `${getProxyWorkerUrl()}/cf-api?path=${encodeURIComponent(apiPath)}`;
+type SullyFetchInit = RequestInit & { __sullyHandlesFailure?: boolean };
+
+async function resolveProvisionRelay(explicit?: ProvisionRelayOptions): Promise<ProvisionRelayOptions | undefined> {
+  await getRelayDeploymentSource();
+  if (explicit) return explicit;
+  if (typeof indexedDB === 'undefined') return undefined;
+  try {
+    const stored = await ActiveMsgStore.getGlobalConfig();
+    return stored?.useRelay ? { useRelay: stored.useRelay, relayToken: stored.relayToken } : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+const proxyCfApiUrl = (apiPath?: string): string =>
+  `${getProxyWorkerUrl()}/cf-api${apiPath ? `?path=${encodeURIComponent(apiPath)}` : ''}`;
+
+const cfApiCandidates = (
+  apiPath: string | undefined,
+  relay?: ProvisionRelayOptions,
+): Array<{ url: string; viaRelay: boolean }> => {
+  const list: Array<{ url: string; viaRelay: boolean }> = [];
+  if (isRelayActive(relay?.useRelay, relay?.relayToken)) {
+    list.push({ url: relayCfApiUrl(relay!.relayToken!, apiPath), viaRelay: true });
+  }
+  list.push({ url: proxyCfApiUrl(apiPath), viaRelay: false });
+  return list;
+};
+
+const describeRelayErrorHeader = (code: string | null): string => {
+  if (code === 'invalid_token') return '大陆连接优化的中转令牌无效或已过期';
+  if (code === 'quota_exceeded') return '今天的大陆中转流量额度已用完';
+  if (code === 'rate_limited') return '大陆中转请求过于频繁';
+  if (code === 'unofficial_client') return '当前版本不能使用官方大陆中转';
+  return '大陆中转暂不可用';
+};
 
 async function cfApi<T = unknown>(
   token: string,
   apiPath: string,
   init: { method?: string; body?: FormData | string; contentType?: string } = {},
+  relay?: ProvisionRelayOptions,
 ): Promise<CfResponse<T>> {
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
@@ -415,15 +460,47 @@ async function cfApi<T = unknown>(
   if (init.contentType && !(init.body instanceof FormData)) {
     headers['Content-Type'] = init.contentType;
   }
-  let res: Response;
-  try {
-    res = await fetch(relayUrl(apiPath), { method: 'POST', headers, body: init.body });
-  } catch (e) {
+  const candidates = cfApiCandidates(apiPath, relay);
+  let res: Response | null = null;
+  let relayFallbackNote = '';
+  for (let i = 0; i < candidates.length; i++) {
+    const candidate = candidates[i];
+    const hasFallback = i < candidates.length - 1;
+    try {
+      const attempt = await fetch(candidate.url, {
+        method: 'POST',
+        headers,
+        body: init.body,
+        ...(hasFallback ? { __sullyHandlesFailure: true } : {}),
+      } as SullyFetchInit);
+      // amsg-relay 自己的错误（令牌失效、未升级路由 404、额度满、上游连不上）一律带 X-Amsg-Relay-Error，
+      // 不能当成 Cloudflare 返回的 401/403 误判成 CF Token 缺权限，直接回退中心代理再试一次。
+      const relayErr = candidate.viaRelay ? attempt.headers.get('X-Amsg-Relay-Error') : null;
+      if (hasFallback && (relayErr || (candidate.viaRelay && attempt.status >= 500))) {
+        relayFallbackNote = describeRelayErrorHeader(relayErr);
+        continue;
+      }
+      res = attempt;
+      break;
+    } catch (e) {
+      if (hasFallback) {
+        relayFallbackNote = '大陆中转未连通';
+        continue;
+      }
+      return {
+        ok: false,
+        status: 0,
+        body: null,
+        error: `${relayFallbackNote ? `${relayFallbackNote}，回退网络代理也失败：` : ''}连不上代理（${formatUnknownError(e, '网络错误')}）。检查网络，或在设置里换一个网络代理 Worker。`,
+      };
+    }
+  }
+  if (!res) {
     return {
       ok: false,
       status: 0,
       body: null,
-      error: `连不上代理（${formatUnknownError(e, '网络错误')}）。检查网络，或在设置里换一个网络代理 Worker。`,
+      error: '连不上代理。检查网络，或在设置里换一个网络代理 Worker。',
     };
   }
   let body: unknown = null;
@@ -462,6 +539,7 @@ async function putScript(
   scriptName: string,
   metadata: Record<string, unknown>,
   code: string,
+  relay?: ProvisionRelayOptions,
 ): Promise<CfResponse> {
   const form = new FormData();
   form.set('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
@@ -469,7 +547,7 @@ async function putScript(
   return cfApi(token, `/accounts/${accountId}/workers/scripts/${encodeURIComponent(scriptName)}`, {
     method: 'PUT',
     body: form,
-  });
+  }, relay);
 }
 
 /**
@@ -487,26 +565,36 @@ export async function uploadWorkerScript(
   scriptName: string,
   metadata: Record<string, unknown>,
   code: string,
+  relay?: ProvisionRelayOptions,
 ): Promise<CfResponse & { reusedExistingWorker?: boolean }> {
-  const first = await putScript(token, accountId, scriptName, metadata, code);
+  const first = await putScript(token, accountId, scriptName, metadata, code, relay);
   if (first.ok || firstCfErrorCode(first.body) !== MIGRATION_TAG_CONFLICT) return first;
 
   const withoutMigrations = { ...metadata };
   delete withoutMigrations.migrations;
-  const second = await putScript(token, accountId, scriptName, withoutMigrations, code);
+  const second = await putScript(token, accountId, scriptName, withoutMigrations, code, relay);
   return second.ok ? { ...second, reusedExistingWorker: true } : second;
 }
 
-/** 当前生效的网络代理 Worker 支不支持一键部署（老版本没有 /cf-api 这条路由）。 */
-export async function checkRelayAvailable(): Promise<boolean> {
-  try {
-    const res = await fetch(`${getProxyWorkerUrl()}/cf-api`, { method: 'GET' });
-    if (!res.ok) return false;
-    const body = (await res.json()) as { relay?: string };
-    return body?.relay === 'cf-api';
-  } catch {
-    return false;
+/** 当前生效的中转或网络代理 Worker 支不支持一键部署（老版本没有 /cf-api 这条路由）。 */
+export async function checkRelayAvailable(relay?: ProvisionRelayOptions): Promise<boolean> {
+  await getRelayDeploymentSource();
+  const candidates = cfApiCandidates(undefined, relay);
+  for (let i = 0; i < candidates.length; i++) {
+    const hasFallback = i < candidates.length - 1;
+    try {
+      const res = await fetch(candidates[i].url, {
+        method: 'GET',
+        ...(hasFallback ? { __sullyHandlesFailure: true } : {}),
+      } as SullyFetchInit);
+      if (!res.ok || res.headers.get('X-Amsg-Relay-Error')) continue;
+      const body = (await res.json()) as { relay?: string };
+      if (body?.relay === 'cf-api') return true;
+    } catch {
+      /* 试下一条通道 */
+    }
   }
+  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -545,6 +633,7 @@ interface CfVerifyResult {
  */
 export async function verifyToken(
   token: string,
+  relay?: ProvisionRelayOptions,
 ): Promise<{ ok: true } | { ok: false; code: ProvisionFailureCode; message: string }> {
   if (isAccountScopedToken(token)) {
     return {
@@ -557,7 +646,7 @@ export async function verifyToken(
     };
   }
 
-  const res = await cfApi<CfVerifyResult>(token, '/user/tokens/verify');
+  const res = await cfApi<CfVerifyResult>(token, '/user/tokens/verify', {}, relay);
   if (!res.ok) {
     return { ok: false, code: 'TOKEN_INVALID', message: res.error || 'Token 验证不通过。' };
   }
@@ -585,13 +674,13 @@ export async function verifyToken(
  * GET /accounts 是用户级端点，返回这人名下所有账号，跟 token 授权了哪个无关，
  * 所以不能直接拿第一个用。挨个问「这个账号下能不能列 Worker」，能列的才算数。
  */
-async function findUsableAccounts(token: string): Promise<CfResponse<CfAccount[]>> {
-  const listed = await cfApi<CfListEnvelope<CfAccount>>(token, '/accounts?per_page=50');
+async function findUsableAccounts(token: string, relay?: ProvisionRelayOptions): Promise<CfResponse<CfAccount[]>> {
+  const listed = await cfApi<CfListEnvelope<CfAccount>>(token, '/accounts?per_page=50', {}, relay);
   if (!listed.ok) return { ...listed, body: null } as CfResponse<CfAccount[]>;
   const all = listed.body?.result ?? [];
   const usable: CfAccount[] = [];
   for (const acc of all) {
-    const probe = await cfApi(token, `/accounts/${acc.id}/workers/scripts`);
+    const probe = await cfApi(token, `/accounts/${acc.id}/workers/scripts`, {}, relay);
     if (probe.ok) usable.push({ id: acc.id, name: acc.name });
   }
   return { ok: true, status: 200, body: usable };
@@ -605,21 +694,26 @@ export interface ExistingAmsgBackend {
 }
 
 /** Management-token discovery is read-only. CF does not return stored secret values. */
-export async function discoverAmsgBackends(tokenInput: string, scriptName = AMSG_SCRIPT_NAME): Promise<{
+export async function discoverAmsgBackends(
+  tokenInput: string,
+  scriptName = AMSG_SCRIPT_NAME,
+  relayInput?: ProvisionRelayOptions,
+): Promise<{
   backends: ExistingAmsgBackend[]; warnings: string[];
 }> {
   const token = tokenInput.trim();
   if (!token) throw new Error('先粘贴 Cloudflare API Token。');
   if (!/^[a-zA-Z0-9_-]{1,63}$/.test(scriptName)) throw new Error('Worker 名称格式不正确。');
-  const verified = await verifyToken(token);
+  const relay = await resolveProvisionRelay(relayInput);
+  const verified = await verifyToken(token, relay);
   if (!verified.ok) throw new Error(verified.message);
-  const accounts = await findUsableAccounts(token);
+  const accounts = await findUsableAccounts(token, relay);
   if (!accounts.ok || !accounts.body?.length) throw new Error(accounts.error || '这枚 Token 没有可读取的账号，请确认账号范围和 Workers Scripts 权限。');
   const backends: ExistingAmsgBackend[] = [];
   const warnings: string[] = [];
   for (const account of accounts.body) {
     const base = `/accounts/${account.id}/workers`;
-    const settings = await cfApi<CfItemEnvelope<RedeploySettings>>(token, `${base}/scripts/${encodeURIComponent(scriptName)}/settings`);
+    const settings = await cfApi<CfItemEnvelope<RedeploySettings>>(token, `${base}/scripts/${encodeURIComponent(scriptName)}/settings`, {}, relay);
     if (!settings.ok) {
       if (settings.status !== 404) warnings.push(`${account.name}：暂时无法检查 ${scriptName}，请确认权限或稍后重试。`);
       continue;
@@ -629,9 +723,9 @@ export async function discoverAmsgBackends(tokenInput: string, scriptName = AMSG
       continue;
     }
     const [domains, subdomain, enabled] = await Promise.all([
-      cfApi<CfListEnvelope<{ hostname: string; service: string; environment?: string }>>(token, `${base}/domains?service=${encodeURIComponent(scriptName)}`),
-      cfApi<CfItemEnvelope<{ subdomain?: string }>>(token, `${base}/subdomain`),
-      cfApi<CfItemEnvelope<{ enabled?: boolean }>>(token, `${base}/scripts/${encodeURIComponent(scriptName)}/subdomain`),
+      cfApi<CfListEnvelope<{ hostname: string; service: string; environment?: string }>>(token, `${base}/domains?service=${encodeURIComponent(scriptName)}`, {}, relay),
+      cfApi<CfItemEnvelope<{ subdomain?: string }>>(token, `${base}/subdomain`, {}, relay),
+      cfApi<CfItemEnvelope<{ enabled?: boolean }>>(token, `${base}/scripts/${encodeURIComponent(scriptName)}/subdomain`, {}, relay),
     ]);
     const urls = (domains.body?.result ?? []).filter(domain => domain.service === scriptName && (!domain.environment || domain.environment === 'production')).map(domain => `https://${domain.hostname}`);
     if (enabled.body?.result?.enabled && subdomain.body?.result?.subdomain) urls.push(deriveWorkerUrl(scriptName, subdomain.body.result.subdomain));
@@ -645,10 +739,13 @@ async function ensureDatabase(
   token: string,
   accountId: string,
   databaseName: string,
+  relay?: ProvisionRelayOptions,
 ): Promise<{ ok: true; id: string; reused: boolean } | { ok: false; error: string }> {
   const existing = await cfApi<CfListEnvelope<{ uuid?: string; name?: string }>>(
     token,
     `/accounts/${accountId}/d1/database?name=${encodeURIComponent(databaseName)}`,
+    {},
+    relay,
   );
   if (existing.ok) {
     const hit = (existing.body?.result ?? []).find((db) => db.name === databaseName && db.uuid);
@@ -658,6 +755,7 @@ async function ensureDatabase(
     token,
     `/accounts/${accountId}/d1/database`,
     { method: 'POST', body: JSON.stringify({ name: databaseName }), contentType: 'application/json' },
+    relay,
   );
   const uuid = created.body?.result?.uuid;
   if (!created.ok || !uuid) {
@@ -681,11 +779,13 @@ async function queryD1<Row>(
   accountId: string,
   databaseId: string,
   sql: string,
+  relay?: ProvisionRelayOptions,
 ): Promise<{ ok: true; rows: Row[] } | { ok: false; error: string }> {
   const res = await cfApi<CfItemEnvelope<Array<{ results?: Row[] }>>>(
     token,
     `/accounts/${accountId}/d1/database/${databaseId}/query`,
     { method: 'POST', body: JSON.stringify({ sql }), contentType: 'application/json' },
+    relay,
   );
   if (!res.ok) return { ok: false, error: res.error || '查询数据库失败。' };
   return { ok: true, rows: res.body?.result?.[0]?.results ?? [] };
@@ -706,15 +806,17 @@ export async function guardReusedDatabase(input: {
   databaseName: string;
   hasExistingMasterKey: boolean;
   reset?: boolean;
+  relay?: ProvisionRelayOptions;
 }): Promise<{ ok: true; cleared: boolean } | ProvisionFailure> {
   if (input.hasExistingMasterKey) return { ok: true, cleared: false };
-  const { token, accountId, databaseId, databaseName } = input;
+  const { token, accountId, databaseId, databaseName, relay } = input;
 
   const listed = await queryD1<{ name?: string }>(
     token,
     accountId,
     databaseId,
     "SELECT name FROM sqlite_master WHERE type = 'table'",
+    relay,
   );
   if (!listed.ok) {
     return {
@@ -735,6 +837,7 @@ export async function guardReusedDatabase(input: {
     accountId,
     databaseId,
     `SELECT ${encryptedTables.map((name) => `EXISTS(SELECT 1 FROM "${name}")`).join(' OR ')} AS has_data`,
+    relay,
   );
   if (!probe.ok) {
     return {
@@ -759,7 +862,7 @@ export async function guardReusedDatabase(input: {
 
   // 一张一条请求：表不多，逐条删出错时也知道是哪张。
   for (const name of userTables) {
-    const deleted = await queryD1(token, accountId, databaseId, `DELETE FROM "${name}"`);
+    const deleted = await queryD1(token, accountId, databaseId, `DELETE FROM "${name}"`, relay);
     if (!deleted.ok) {
       return {
         ok: false,
@@ -779,10 +882,13 @@ export async function ensureSubdomain(
   token: string,
   accountId: string,
   desired?: string,
+  relay?: ProvisionRelayOptions,
 ): Promise<{ ok: true; subdomain: string } | { ok: false; code: ProvisionFailureCode; error: string }> {
   const current = await cfApi<CfItemEnvelope<{ subdomain?: string }>>(
     token,
     `/accounts/${accountId}/workers/subdomain`,
+    {},
+    relay,
   );
   // 401/403 是「没让我读」，不是「这个账号没有子域名」。不单独拎出来的话，下面会把它
   // 当成新账号，请用户起一个名字——而读都读不动，注册那一步同样过不去，用户于是对着
@@ -812,7 +918,7 @@ export async function ensureSubdomain(
     method: 'PUT',
     body: JSON.stringify({ subdomain: desired.trim().toLowerCase() }),
     contentType: 'application/json',
-  });
+  }, relay);
   if (!registered.ok) {
     return {
       ok: false,
@@ -823,30 +929,101 @@ export async function ensureSubdomain(
   return { ok: true, subdomain: desired.trim().toLowerCase() };
 }
 
-async function fetchBundle(): Promise<{ ok: true; code: string; config: WorkerDeployConfig } | { ok: false; error: string }> {
-  let code: string;
+const resolveLocalBundleUrl = (): string | null => {
   try {
-    const res = await fetch(BUNDLE_URL, { cache: 'no-store' });
-    if (!res.ok) return { ok: false, error: `拉取 Worker 代码失败（HTTP ${res.status}）。` };
-    code = await res.text();
-  } catch (e) {
-    return { ok: false, error: `拉取 Worker 代码失败：${String((e as Error)?.message || e)}` };
+    const href = globalThis.location?.href;
+    if (!href || !/^https?:/i.test(href)) return null;
+    return new URL('amsg-worker.bundle.js', href).toString();
+  } catch {
+    return null;
   }
+};
+
+const validateBundleCode = (code: string): string | null => {
   const bytes = new TextEncoder().encode(code).length;
   if (bytes < MIN_BUNDLE_BYTES || bytes > MAX_BUNDLE_BYTES) {
-    return { ok: false, error: `拉到的 Worker 代码大小不对（${bytes} 字节），没敢往上传。` };
+    return `拉到的 Worker 代码大小不对（${bytes} 字节），没敢往上传。`;
   }
   if (!code.includes('src_default as default')) {
-    return { ok: false, error: '拉到的文件不像是打包好的 Worker，没敢往上传。' };
+    return '拉到的文件不像是打包好的 Worker，没敢往上传。';
+  }
+  return null;
+};
+
+/**
+ * 拉取要部署的 Worker 代码包与配置。
+ *
+ * 顺序：大陆中转（若已开启）→ 主代理 /amsg-bundle → GitHub Raw 直连 → 当前站点同源静态包。
+ * 前几棒失败时静默切换下一棒（标 __sullyHandlesFailure 避免点亮顶部系统报错胶囊），
+ * 只有全部通道都拿不到合法代码时才报错。
+ */
+export async function fetchBundle(
+  relay?: ProvisionRelayOptions,
+): Promise<{ ok: true; code: string; config: WorkerDeployConfig } | { ok: false; error: string }> {
+  await getRelayDeploymentSource();
+  const relayOn = isRelayActive(relay?.useRelay, relay?.relayToken);
+  const proxyBase = getProxyWorkerUrl();
+  const bundleSources: Array<{ label: string; url: string }> = [
+    ...(relayOn ? [{ label: '大陆中转', url: relayDeployAssetUrl(relay!.relayToken!, 'worker.bundle.js') }] : []),
+    { label: '网络代理', url: `${proxyBase}/amsg-bundle?file=worker.bundle.js` },
+    { label: 'GitHub 直连', url: BUNDLE_URL },
+  ];
+  const localUrl = resolveLocalBundleUrl();
+  if (localUrl) bundleSources.push({ label: '本站内置副本', url: localUrl });
+
+  let code: string | null = null;
+  let lastValidationError = '';
+  let lastNetworkError = '';
+  for (let i = 0; i < bundleSources.length; i++) {
+    const src = bundleSources[i];
+    const hasFallback = i < bundleSources.length - 1;
+    try {
+      const res = await fetch(src.url, {
+        cache: 'no-store',
+        ...(hasFallback ? { __sullyHandlesFailure: true } : {}),
+      } as SullyFetchInit);
+      if (!res.ok || res.headers.get('X-Amsg-Relay-Error')) {
+        lastNetworkError = `${src.label} HTTP ${res.status}`;
+        continue;
+      }
+      const text = await res.text();
+      const invalidReason = validateBundleCode(text);
+      if (invalidReason) {
+        lastValidationError = invalidReason;
+        continue;
+      }
+      code = text;
+      break;
+    } catch (e) {
+      lastNetworkError = `${src.label}：${String((e as Error)?.message || e)}`;
+    }
+  }
+  if (!code) {
+    if (lastValidationError && !lastNetworkError) return { ok: false, error: lastValidationError };
+    const tried = bundleSources.map((s) => s.label).join(' → ');
+    return {
+      ok: false,
+      error: lastValidationError || `拉取 Worker 代码失败（已尝试 ${tried}；${lastNetworkError || '网络错误'}）。`,
+    };
   }
 
-  // 配置跟着 bundle 一起从线上拿，拿不到就用兜底，不因为这个中断部署。
+  // 配置跟着 bundle 按同样优先级拿，拿不到就用兜底，不因为这个中断部署。
   let config = FALLBACK_CONFIG;
-  try {
-    const res = await fetch(WRANGLER_URL, { cache: 'no-store' });
-    if (res.ok) config = parseWranglerConfig(await res.text());
-  } catch {
-    /* 用兜底 */
+  const wranglerUrls = [
+    ...(relayOn ? [relayDeployAssetUrl(relay!.relayToken!, 'wrangler.toml')] : []),
+    `${proxyBase}/amsg-bundle?file=wrangler.toml`,
+    WRANGLER_URL,
+  ];
+  for (const url of wranglerUrls) {
+    try {
+      const res = await fetch(url, { cache: 'no-store', __sullyHandlesFailure: true } as SullyFetchInit);
+      if (res.ok && !res.headers.get('X-Amsg-Relay-Error')) {
+        config = parseWranglerConfig(await res.text());
+        break;
+      }
+    } catch {
+      /* 试下一条或用兜底 */
+    }
   }
   return { ok: true, code, config };
 }
@@ -921,6 +1098,7 @@ export async function attachUpdateCapability(input: {
   /** 地址是自定义域名 / 代理时认不出来，由界面问出来再传进来。 */
   scriptName?: string;
   accountId?: string;
+  relay?: ProvisionRelayOptions;
   onProgress?: (p: ProvisionProgress) => void;
 }): Promise<
   | { ok: true; accountId: string; scriptName: string }
@@ -928,9 +1106,10 @@ export async function attachUpdateCapability(input: {
 > {
   const token = input.token.trim();
   const report = (step: ProvisionStepId, message: string) => input.onProgress?.({ step, message });
+  const relay = await resolveProvisionRelay(input.relay);
 
   report('relay', '检查中转是否可用…');
-  if (!(await checkRelayAvailable())) {
+  if (!(await checkRelayAvailable(relay))) {
     return {
       ok: false,
       code: 'RELAY_UNSUPPORTED',
@@ -939,7 +1118,7 @@ export async function attachUpdateCapability(input: {
   }
 
   report('token', '验证 Token…');
-  const verified = await verifyToken(token);
+  const verified = await verifyToken(token, relay);
   if (!verified.ok) return { ok: false, code: verified.code, message: verified.message };
 
   const scriptName = input.scriptName?.trim() || scriptNameFromWorkerUrl(input.workerUrl);
@@ -959,7 +1138,7 @@ export async function attachUpdateCapability(input: {
 
   let accountId = input.accountId?.trim() || '';
   if (accountId) {
-    const found = await cfApi(token, `${scriptPath(accountId)}/settings`);
+    const found = await cfApi(token, `${scriptPath(accountId)}/settings`, {}, relay);
     if (!found.ok) {
       return {
         ok: false,
@@ -968,7 +1147,7 @@ export async function attachUpdateCapability(input: {
       };
     }
   } else {
-    const accounts = await findUsableAccounts(token);
+    const accounts = await findUsableAccounts(token, relay);
     if (!accounts.ok) {
       return { ok: false, code: 'CF_ERROR', message: accounts.error || '读取账号列表失败。' };
     }
@@ -976,7 +1155,7 @@ export async function attachUpdateCapability(input: {
     // 那就得让用户自己指认，别替他猜一个写进去。
     const owners: CfAccount[] = [];
     for (const account of accounts.body ?? []) {
-      const found = await cfApi(token, `${scriptPath(account.id)}/settings`);
+      const found = await cfApi(token, `${scriptPath(account.id)}/settings`, {}, relay);
       if (found.ok) owners.push(account);
     }
     if (owners.length === 0) {
@@ -1007,7 +1186,7 @@ export async function attachUpdateCapability(input: {
       method: 'PUT',
       body: JSON.stringify({ name, text, type: 'secret_text' }),
       contentType: 'application/json',
-    });
+    }, relay);
     if (!written.ok) {
       return { ok: false, code: 'CF_ERROR', message: `写入 ${name} 失败（${written.error}）。` };
     }
@@ -1039,9 +1218,10 @@ async function provisionAmsgBackendUnlocked(input: ProvisionInput): Promise<Prov
   if (replacement && (input.accountId !== replacement.accountId || scriptName !== replacement.scriptName || input.resetExistingDatabase)) {
     return { ok: false, code: 'CF_ERROR', message: '重新部署的目标与确认时不一致，请重新选择后台。' };
   }
+  const relay = await resolveProvisionRelay(input.relay);
 
   report('relay', '检查中转是否可用…');
-  if (!(await checkRelayAvailable())) {
+  if (!(await checkRelayAvailable(relay))) {
     return {
       ok: false,
       code: 'RELAY_UNSUPPORTED',
@@ -1052,7 +1232,7 @@ async function provisionAmsgBackendUnlocked(input: ProvisionInput): Promise<Prov
   }
 
   report('token', '验证 Token…');
-  const verified = await verifyToken(token);
+  const verified = await verifyToken(token, relay);
   if (!verified.ok) {
     return { ok: false, code: verified.code, message: verified.message };
   }
@@ -1060,7 +1240,7 @@ async function provisionAmsgBackendUnlocked(input: ProvisionInput): Promise<Prov
   report('account', '查找可用的 Cloudflare 账号…');
   let accountId = input.accountId?.trim() || '';
   if (!accountId) {
-    const accounts = await findUsableAccounts(token);
+    const accounts = await findUsableAccounts(token, relay);
     if (!accounts.ok) {
       return { ok: false, code: 'CF_ERROR', message: accounts.error || '读取账号列表失败。' };
     }
@@ -1086,7 +1266,7 @@ async function provisionAmsgBackendUnlocked(input: ProvisionInput): Promise<Prov
   }
 
   // A new device must not overwrite an existing installation before it has recovered its identity.
-  const existingScript = await cfApi<CfListEnvelope<{ id: string }>>(token, `/accounts/${accountId}/workers/scripts`);
+  const existingScript = await cfApi<CfListEnvelope<{ id: string }>>(token, `/accounts/${accountId}/workers/scripts`, {}, relay);
   if (!existingScript.ok || !Array.isArray(existingScript.body?.result)) return { ok: false, code: 'CF_ERROR', message: '无法确认账号里是否已有后台，请稍后重试。尚未创建或更改任何资源。' };
   const scriptExists = existingScript.body.result.some(script => script.id === scriptName);
   if (scriptExists && !replacement) {
@@ -1097,15 +1277,15 @@ async function provisionAmsgBackendUnlocked(input: ProvisionInput): Promise<Prov
   let replacementSubdomain: Awaited<ReturnType<typeof ensureSubdomain>> | undefined;
   if (replacement) {
     if (!scriptExists) return { ok: false, code: 'SCRIPT_NOT_FOUND', message: '刚才选中的后台已不存在，请重新查找。尚未修改任何资源。' };
-    const current = await cfApi<CfItemEnvelope<RedeploySettings>>(token, `/accounts/${accountId}/workers/scripts/${encodeURIComponent(scriptName)}/settings`);
+    const current = await cfApi<CfItemEnvelope<RedeploySettings>>(token, `/accounts/${accountId}/workers/scripts/${encodeURIComponent(scriptName)}/settings`, {}, relay);
     if (!current.ok || !current.body?.result?.bindings?.some(binding => binding.name === 'AMSG_MASTER_KEY')) {
       return { ok: false, code: 'CF_ERROR', message: '无法确认所选 Worker 仍是主动消息后台，尚未覆盖它。请重新查找。' };
     }
     // Validate code and address before creating anything. Replacement always uses
     // a new database, so shared old databases are never cleared or rebound by name.
-    replacementBundle = await fetchBundle();
+    replacementBundle = await fetchBundle(relay);
     if (!replacementBundle.ok) return { ok: false, code: 'BUNDLE_INVALID', message: replacementBundle.error };
-    replacementSubdomain = await ensureSubdomain(token, accountId, input.desiredSubdomain);
+    replacementSubdomain = await ensureSubdomain(token, accountId, input.desiredSubdomain, relay);
     if (!replacementSubdomain.ok) return { ok: false, code: replacementSubdomain.code, message: replacementSubdomain.error };
     const marker = readRedeployMarker(current.body.result!);
     if (marker?.phase === 'active' && marker.operationId === replacement.operationId && marker.credentialId !== replacement.credentialId) {
@@ -1131,7 +1311,7 @@ async function provisionAmsgBackendUnlocked(input: ProvisionInput): Promise<Prov
       report('database', '为重新部署创建独立数据库…');
       const created = await cfApi<CfItemEnvelope<{ uuid?: string }>>(token, `/accounts/${accountId}/d1/database`, {
         method: 'POST', body: JSON.stringify({ name: replacement.databaseName }), contentType: 'application/json',
-      });
+      }, relay);
       if (!created.ok || !created.body?.result?.uuid) return { ok: false, code: 'CF_ERROR', message: created.error || '新数据库创建失败，原后台尚未替换。' };
       replacement.databaseId = created.body.result.uuid;
     }
@@ -1141,13 +1321,13 @@ async function provisionAmsgBackendUnlocked(input: ProvisionInput): Promise<Prov
       report('stop', '暂停旧后台并检查正在执行的任务…');
       const stopped = await guardAmsgRedeployment({
         plan: replacement, settings: current.body.result!,
-        api: (path, init) => cfApi(token, path, init),
+        api: (path, init) => cfApi(token, path, init, relay),
         stop: () => uploadWorkerScript(token, accountId, scriptName, {
           main_module: MAIN_MODULE, compatibility_date: replacementBundle!.ok ? replacementBundle!.config.compatibilityDate : FALLBACK_CONFIG.compatibilityDate,
           bindings: [...buildBindings(replacementBundle!.ok ? replacementBundle!.config.d1Binding : 'DB', replacement.databaseId!, replacement.secrets), redeployMarkerBinding(replacement, 'draining')],
           migrations: INSTANT_TICK_MIGRATIONS,
           code_update_strategy: { mode: 'immediate' },
-        }, REDEPLOY_STOP_WORKER),
+        }, REDEPLOY_STOP_WORKER, relay),
       });
       if (!stopped.ready) return { ok: false, code: 'REPLACEMENT_DRAINING', retryAfterSeconds: stopped.remainingSeconds,
         message: `旧后台已暂停。为等旧任务结束，还需约 ${Math.ceil(stopped.remainingSeconds / 60)} 分钟；新后台尚未启动。可以关闭页面，稍后用同一个 Token 查找后台并继续。已交给推送服务的通知仍可能晚到。` };
@@ -1158,7 +1338,7 @@ async function provisionAmsgBackendUnlocked(input: ProvisionInput): Promise<Prov
   }
 
   report('database', '准备数据库…');
-  const db = replacement ? { ok: true as const, id: replacement.databaseId!, reused: false } : await ensureDatabase(token, accountId, databaseName);
+  const db = replacement ? { ok: true as const, id: replacement.databaseId!, reused: false } : await ensureDatabase(token, accountId, databaseName, relay);
   if (!db.ok) return { ok: false, code: 'CF_ERROR', message: db.error };
   if (db.reused) {
     const guarded = await guardReusedDatabase({
@@ -1168,6 +1348,7 @@ async function provisionAmsgBackendUnlocked(input: ProvisionInput): Promise<Prov
       databaseName,
       hasExistingMasterKey: Boolean(input.secrets?.AMSG_MASTER_KEY),
       reset: input.resetExistingDatabase,
+      relay,
     });
     if (!guarded.ok) return guarded;
     warnings.push(guarded.cleared
@@ -1176,11 +1357,11 @@ async function provisionAmsgBackendUnlocked(input: ProvisionInput): Promise<Prov
   }
 
   report('subdomain', '确认 workers.dev 地址…');
-  const sub = replacementSubdomain || await ensureSubdomain(token, accountId, input.desiredSubdomain);
+  const sub = replacementSubdomain || await ensureSubdomain(token, accountId, input.desiredSubdomain, relay);
   if (!sub.ok) return { ok: false, code: sub.code, message: sub.error };
 
   report('bundle', '下载最新的后端代码…');
-  const bundle = replacementBundle || await fetchBundle();
+  const bundle = replacementBundle || await fetchBundle(relay);
   if (!bundle.ok) return { ok: false, code: 'BUNDLE_INVALID', message: bundle.error };
 
   report('upload', '上传 Worker…');
@@ -1207,7 +1388,7 @@ async function provisionAmsgBackendUnlocked(input: ProvisionInput): Promise<Prov
   };
   if (replacement) metadata.bindings.push(redeployMarkerBinding(replacement, 'active'));
   if (replacement) {
-    const latest = await cfApi<CfItemEnvelope<RedeploySettings>>(token, `/accounts/${accountId}/workers/scripts/${encodeURIComponent(scriptName)}/settings`);
+    const latest = await cfApi<CfItemEnvelope<RedeploySettings>>(token, `/accounts/${accountId}/workers/scripts/${encodeURIComponent(scriptName)}/settings`, {}, relay);
     const marker = latest.body?.result && readRedeployMarker(latest.body.result);
     if (!latest.ok || marker?.operationId !== replacement.operationId || marker.databaseId !== replacement.databaseId
       || (marker.phase === 'active' && marker.credentialId !== replacement.credentialId)
@@ -1215,7 +1396,7 @@ async function provisionAmsgBackendUnlocked(input: ProvisionInput): Promise<Prov
       return { ok: false, code: 'CF_ERROR', message: '后台在检查后又被其他操作修改，本次没有继续启用。请重新查找后继续。' };
     }
   }
-  const uploaded = await uploadWorkerScript(token, accountId, scriptName, metadata, bundle.code);
+  const uploaded = await uploadWorkerScript(token, accountId, scriptName, metadata, bundle.code, relay);
   if (!uploaded.ok) {
     return { ok: false, code: 'UPLOAD_FAILED', message: uploaded.error || '上传 Worker 失败。' };
   }
@@ -1232,6 +1413,7 @@ async function provisionAmsgBackendUnlocked(input: ProvisionInput): Promise<Prov
       body: JSON.stringify(bundle.config.crons.map((cron) => ({ cron }))),
       contentType: 'application/json',
     },
+    relay,
   );
   if (!schedules.ok) {
     // 这条不能降级成警告：cron 是主动消息唯一的投递触发方式，没有它整个功能不动。
@@ -1251,6 +1433,7 @@ async function provisionAmsgBackendUnlocked(input: ProvisionInput): Promise<Prov
       body: JSON.stringify({ enabled: true, previews_enabled: false }),
       contentType: 'application/json',
     },
+    relay,
   );
   if (!exposed.ok) {
     return { ok: false, code: 'CF_ERROR', message: `开启 workers.dev 地址失败（${exposed.error}）。` };

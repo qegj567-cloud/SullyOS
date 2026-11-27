@@ -48,17 +48,30 @@ export const canRelayWorkerUrl = (workerUrl: string): boolean => {
   }
 };
 
+/** 当前环境与配置是否满足走官方中转（官方渠道 + 开关打开 + 令牌格式合法）。调用前确保 getRelayDeploymentSource() 已完成。 */
+export const isRelayActive = (useRelay?: boolean, relayToken?: string): boolean =>
+  Boolean(useRelay && officialDeployment && isRelayTokenWellFormed(relayToken));
+
 /**
  * 实际发请求用的地址（不带结尾斜杠）。官方渠道、开了中转、令牌格式对、地址也走得了中转时才换成中转地址，
  * 否则就是 Worker 地址本身。
  */
 export const resolveWorkerFetchBase = (workerUrl: string, useRelay?: boolean, relayToken?: string): string => {
   const direct = workerUrl.trim().replace(/\/+$/, '');
-  if (!useRelay || !officialDeployment || !isRelayTokenWellFormed(relayToken) || !canRelayWorkerUrl(direct)) return direct;
+  if (!isRelayActive(useRelay, relayToken) || !canRelayWorkerUrl(direct)) return direct;
   return `${AMSG_RELAY_BASE}/${relayToken!.trim()}/${new URL(direct).hostname}`;
 };
 
 export const relayUsageUrl = (relayToken: string): string => `${AMSG_RELAY_BASE}/${relayToken.trim()}/_usage`;
+
+export const relayCfApiUrl = (relayToken: string, apiPath?: string): string =>
+  `${AMSG_RELAY_BASE}/${relayToken.trim()}/_cf-api${apiPath ? `?path=${encodeURIComponent(apiPath)}` : ''}`;
+
+export const relayDeployAssetUrl = (
+  relayToken: string,
+  file: 'worker.bundle.js' | 'wrangler.toml',
+  channel?: 'stable' | 'canary',
+): string => `${AMSG_RELAY_BASE}/${relayToken.trim()}/_deploy/${file}${channel && channel !== 'stable' ? `?channel=${channel}` : ''}`;
 
 /** 单位是字节。 */
 export interface RelayUsageWindow { up: number; down: number; requests: number }

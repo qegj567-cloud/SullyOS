@@ -5,7 +5,7 @@ export const PROFILE_SCOPE = /^\.chat-profile-[\w-]+\b/;
 export const PROFILE_SELECTORS = [
     '.chat-profile-dialog', '.chat-profile-sheet', '.chat-profile-sky', '.chat-profile-tabs button[aria-selected="true"]',
     '.chat-profile-tabs button[data-tab="设定"]', '.chat-profile-scroll', '.chat-profile-current', '.chat-profile-portrait', '.chat-profile-identity h2', '.chat-profile-remark',
-    '.chat-profile-thought', '.chat-profile-emotions', '.chat-profile-page-heading', '.chat-profile-editor',
+    '.chat-profile-thought', '.chat-profile-emotions', '.chat-profile-emotion-editor', '.chat-profile-page-heading', '.chat-profile-editor',
     '.chat-profile-memory', '.chat-profile-schedule', '.chat-profile-schedule li[aria-current="time"]', '.chat-profile-close',
 ];
 export function validateProfileAppearance(value: unknown): ChatProfileAppearance {

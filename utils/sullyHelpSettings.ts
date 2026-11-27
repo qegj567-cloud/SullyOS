@@ -1,3 +1,4 @@
+import { resolveTimeContractTheme } from './timeContract';
 import type { useOS } from '../context/OSContext';
 import type { CharacterProfile } from '../types';
 import { getThinkingChainSettings } from './thinkingChainPrompt';
@@ -54,7 +55,7 @@ export async function readHelpDeskSettings(os: SettingsSource, char?: CharacterP
         },
         实时感知: { 天气开关: !!realtimeConfig.weatherEnabled, 热点开关: !!realtimeConfig.newsEnabled },
         // 减弱模糊：「自动」= 开关没开，但浏览器（Firefox）或系统「减弱透明度」已经关掉了毛玻璃。
-        外观: { 深色模式: !!os.theme.darkMode, 减弱模糊: reducedBlurSetting() },
+        外观: { 深色模式: !!os.theme.darkMode, 减弱模糊: reducedBlurSetting(), 时光契约与桌面日历: resolveTimeContractTheme(os.theme.scheduleAppTheme) },
         主动消息全局: globalPush ? {
             总开关: isAmsg2GloballyEnabled(globalPush), Worker地址已填: !!globalPush.workerUrl?.trim(),
             // 「功能总览 → 云端生成」里的开关；私聊那一行就是全局即时对话开关。

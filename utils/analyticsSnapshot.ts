@@ -1,3 +1,4 @@
+import { resolveTimeContractTheme } from './timeContract';
 import { getThinkingChainSettings } from './thinkingChainPrompt';
 import { loadChatInputPreferences } from './chatInputPreferences';
 import { readSARClubState, sarRoomView } from './vrWorld/sarClub';
@@ -108,6 +109,7 @@ export function collectAppearance(
 ): Record<string, string> {
     const timePosition = (activeChar?.chatFineTune?.enabled !== false && activeChar?.chatAppearance?.chatTimestampPosition) || theme.chatTimestampPosition;
     return {
+        时光契约主题: resolveTimeContractTheme(theme.scheduleAppTheme),
         // ── 桌面 ──
         桌面皮肤: presetOrCustom(theme.skin ?? 'default', ['default','animalcrossing','mobilegame','tamagotchi','companion','homely']),
         居家配色: theme.skin === 'homely' ? presetOrCustom(theme.homelyPalette ?? 'apricot', ['apricot','blue','rose','lilac','oat']) : '未使用',
@@ -507,6 +509,7 @@ export function collectFeatureFlags(src: FeatureSources): Record<string, string>
     ].filter(value => value === true).length;
 
     return {
+        原图提醒关闭: isLocalFlagOn('chat_original_photo_notice_dismissed', '1') ? '是' : '否',
         // ── 外部服务接入 ──
         // 天气和热点走免鉴权的公共源，没有「配了」这一态，只有开没开。
         天气: rt.weatherEnabled ? '开' : '关',
