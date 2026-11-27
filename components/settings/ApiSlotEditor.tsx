@@ -399,6 +399,7 @@ export default function ApiSlotEditor({
     setStatus('');
     try {
       const res = await fetchLlm(`${normalizedUrl}/models`, {
+        __sullySettingsModelBase: normalizedUrl,
         headers: { Authorization: `Bearer ${customDraft.apiKey.trim() || 'sk-none'}` },
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -448,6 +449,7 @@ export default function ApiSlotEditor({
         return;
       }
       const res = await fetchLlm(`${target.baseUrl}/chat/completions`, {
+        __sullySettingsModelBase: target.baseUrl,
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

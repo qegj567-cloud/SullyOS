@@ -1,3 +1,4 @@
+import { buildGuestbookRoomTurn } from './prompts';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { chunkNovelText, chunkNovelTextAsync, getReadingWindow, buildNovel } from './novel';
 import { parseVROutput, parseMusicOutput, parseGuestbookOutput, parseGymOutput, parsePostOfficeOutput, parsePostOfficeReadOutput, parseSignalOutput } from './prompts';
@@ -507,4 +508,14 @@ describe('信号坠落处 · rollPoemLines', () => {
             expect(Number.isInteger(n)).toBe(true);
         }
     });
+});
+
+it('留言墙按阅读者时区展示留言原日期与回复目标', () => {
+    const turn = buildGuestbookRoomTurn([{
+        id:'msg-1234', authorId:'a', authorName:'甲', content:'今晚别熬夜', createdAt:Date.UTC(2026, 10, 20, 16, 30),
+    }, {
+        id:'msg-5678', authorId:'b', authorName:'乙', content:'后来睡好了吗', replyToId:'msg-1234', createdAt:Date.UTC(2026, 10, 23, 16, 30),
+    }], [], '丙', [], 'Asia/Shanghai');
+    expect(turn).toContain('#1234 [2026/11/21 00:30] 甲：今晚别熬夜');
+    expect(turn).toContain('#5678 [2026/11/24 00:30] 乙（回 #1234）');
 });
