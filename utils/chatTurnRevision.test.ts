@@ -137,3 +137,65 @@ describe('本轮校准', () => {
         expect((await DB.getMessageById(id))?.content).toBe('原版');
     });
 });
+
+
+describe('校准不得开启日程或情绪', () => {
+    const switches = (c: any) => ({ scheduleFeatureEnabled: c.scheduleFeatureEnabled, scheduleStyle: c.scheduleStyle, emotionConfig: c.emotionConfig });
+    it.each([
+        { scheduleFeatureEnabled: false, emotionConfig: { enabled: false } },
+        { scheduleFeatureEnabled: false, scheduleStyle: '生活系', emotionConfig: { enabled: true } },
+        { scheduleFeatureEnabled: true, scheduleStyle: '生活系', emotionConfig: { enabled: false } },
+        { scheduleFeatureEnabled: false },
+    ])('预览和采用保留原开关 %j', async configuration => {
+        const original = { ...char, ...configuration };
+        const before = structuredClone(original);
+        await DB.saveCharacter(original);
+        await save('assistant', '原回复');
+        model('候选回复');
+        const preview = await previewTurnRevision({ ...settings, char: original }, 'reroll', '', new AbortController().signal);
+        expect(original).toEqual(before);
+        expect(switches((await DB.getAllCharacters()).find(c => c.id === char.id))).toEqual(switches(before));
+        await acceptRevision(preview);
+        expect(switches((await DB.getAllCharacters()).find(c => c.id === char.id))).toEqual(switches(before));
+    });
+    it('采用旧预览不能覆盖预览期间关闭的开关', async () => {
+        const enabled = { ...char, scheduleFeatureEnabled: true, emotionConfig: { enabled: true } };
+        await DB.saveCharacter(enabled);
+        await save('assistant', '原回复');
+        model('候选回复');
+        const preview = await previewTurnRevision({ ...settings, char: enabled }, 'reroll', '', new AbortController().signal);
+        const disabled = { ...enabled, scheduleFeatureEnabled: false, emotionConfig: { enabled: false } };
+        await DB.saveCharacter(disabled);
+        await acceptRevision(preview);
+        expect(switches((await DB.getAllCharacters()).find(c => c.id === char.id))).toEqual(switches(disabled));
+    });
+});
+
+
+describe('校准重写遵守心象开关', () => {
+    const reasoningResponse = () => vi.mocked(safeFetchJson).mockResolvedValue({ choices: [{ message: { content: '新版正文', reasoning_content: '不应泄漏的思考' }, finish_reason: 'stop' }] });
+    it.each([false, undefined, true])('生成与落库遵守心象设置 %s', async enabled => {
+        const role = { ...char, showThinkingChain: enabled };
+        await DB.saveCharacter(role);
+        await save('assistant', '原正文');
+        reasoningResponse();
+        const preview = await previewTurnRevision({ ...settings, char: role, thinkingChain: { enabled: !!enabled } }, 'reroll', '', new AbortController().signal);
+        expect(preview.bubbles[0].metadata?.thinkingChain).toBe(enabled ? '不应泄漏的思考' : undefined);
+        await acceptRevision(preview);
+        const rows = await loadRevisionTurn(char.id);
+        expect(rows[0].content).toBe('新版正文');
+        expect(rows[0].metadata?.thinkingChain).toBe(enabled ? '不应泄漏的思考' : undefined);
+        expect((await DB.getAllCharacters()).find(c => c.id === char.id)?.showThinkingChain).toBe(enabled);
+    });
+    it('预览后关闭心象，采用时不再存入候选心象', async () => {
+        const role = { ...char, showThinkingChain: true };
+        await DB.saveCharacter(role);
+        await save('assistant', '原正文');
+        reasoningResponse();
+        const preview = await previewTurnRevision({ ...settings, char: role, thinkingChain: { enabled: true } }, 'reroll', '', new AbortController().signal);
+        expect(preview.bubbles[0].metadata?.thinkingChain).toBeTruthy();
+        await DB.saveCharacter({ ...role, showThinkingChain: false });
+        await acceptRevision(preview);
+        expect((await loadRevisionTurn(char.id))[0].metadata?.thinkingChain).toBeUndefined();
+    });
+});

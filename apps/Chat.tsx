@@ -1,3 +1,4 @@
+import ChatRecordManager from '../components/chat/ChatRecordManager';
 import { buildChatRerollPrompt } from '../utils/chatRerollPrompt';
 import { clearLocationPin } from '../utils/userLocation';
 import {avatarFrameLayer} from '../utils/avatarFrameTarget';
@@ -1894,10 +1895,10 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
         } finally { release(); }
     };
 
-    const handleImageSelect = async (file: File) => {
+    const handleImageSelect = async (file: File, original = false) => {
         const finishImage = autoReply.beginSend(char?.id || null);
         try {
-            const blob = await processImageToBlob(file, { maxWidth: 600, quality: 0.6, forceJpeg: true });
+            const blob = original ? file : await processImageToBlob(file, { maxWidth: 600, quality: 0.6, forceJpeg: true });
             const { token } = await putImageBlobDeduped(blob);
             if (!inputPreferences.autoReply) setShowPanel('none');
             await handleSendText(token, 'image');
@@ -1909,24 +1910,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
         }
     };
 
-    const exportingChatRef = useRef(false);
-    const handleExportChat = async () => {
-        if (!char || exportingChatRef.current) return;
-        exportingChatRef.current = true;
-        const target = char;
-        setShowPanel('none');
-        try {
-            const [{ formatChatTextExport }, { shareOrDownloadFile }] = await Promise.all([
-                import('../utils/chatTextExport'), import('../utils/shareExport'),
-            ]);
-            const content = formatChatTextExport(await DB.getMessagesByCharId(target.id, true));
-            if (!content.slice(1).trim()) { addToast('暂无可导出的聊天记录', 'info'); return; }
-            await shareOrDownloadFile({ content, fileName: `${target.name.replace(/[\\/:*?"<>|]/g, '_')}_聊天原文.txt`, mimeType: 'text/plain;charset=utf-8', shareTitle: `${target.name}的聊天原文` });
-            addToast('聊天原文已导出（含每条消息的原始时间）', 'success');
-        } catch { addToast('聊天记录导出失败，请重试', 'error'); }
-        finally { exportingChatRef.current = false; }
-    };
-
+    const [recordManagerOpen, setRecordManagerOpen] = useState(false);
     const handlePanelAction = (type: string, payload?: any) => {
         // 只统计「打开某个面板 / 开关某个能力」这几个固定入口，名单写死在这里；
         // 选表情、选分类之类的动作不上报。
@@ -1941,7 +1925,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
             trackEvent('打开聊天功能面板项', { action: type });
         }
         switch (type) {
-            case 'export-chat': void handleExportChat(); break;
+            case 'export-chat': setShowPanel('none'); setRecordManagerOpen(true); break;
             case 'collaboration': setShowPanel('none'); setCollaborationOpen(true); break;
             case 'memory-link': openCalibration(); break;
             case 'favorites': setShowPanel('none'); setFavoritesOpen(true); break;
@@ -4459,6 +4443,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
                 message="检测到分享链接，要关闭自动转卡片吗？关闭后，本条及之后的链接会按原文发送，方便角色用你配置的 MCP 读取。保留卡片也会带上原链接。两类解析可在加号 → 设置中分别调整。"
                 confirmText="关闭，发送原文" cancelText="保留卡片"
                 onConfirm={() => answerLinkCard(false)} onCancel={() => answerLinkCard(true)} />
+            {recordManagerOpen && char && <ChatRecordManager owner={{ id: char.id }} name={char.name} onClose={() => setRecordManagerOpen(false)} onImported={() => { void reloadMessages(visibleCountRef.current); }} />}
             {confirmDialog}
             <ChatModals
                 compactHome={!!homePhone}

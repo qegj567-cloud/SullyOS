@@ -1,3 +1,4 @@
+import { resolveTimeContractTheme, TIME_CONTRACT_THEMES } from '../utils/timeContract';
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useOS, DEFAULT_WALLPAPER, DEFAULT_PAPER_APPEARANCE, NOSTALGIA_APPEARANCE } from '../context/OSContext';
@@ -915,6 +916,17 @@ const Appearance: React.FC = () => {
       <div className={activeTab === 'sharing' ? 'flex-1 overflow-y-auto min-h-0 no-scrollbar' : 'flex-1 overflow-y-auto p-5 space-y-6 no-scrollbar'}>
         {activeTab === 'theme' ? (
             <>
+                <section className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
+                    <h2 className="text-sm font-bold text-slate-700 mb-1">时光契约与桌面日历</h2>
+                    <p className="text-xs text-slate-500 mb-4">统一应用到纪念日、待办事项和桌面日历。</p>
+                    <div className="grid grid-cols-2 gap-2">
+                        {TIME_CONTRACT_THEMES.map(mode => <button key={mode} aria-pressed={resolveTimeContractTheme(theme.scheduleAppTheme) === mode}
+                            onClick={() => { updateTheme({ scheduleAppTheme: mode }); trackEvent('切换日程界面主题', { theme: mode }); }}
+                            className={`rounded-xl border px-3 py-3 text-xs ${resolveTimeContractTheme(theme.scheduleAppTheme) === mode ? 'border-primary bg-primary/10 text-primary font-bold' : 'border-slate-200 text-slate-600'}`}>
+                            {{ system: '跟随系统', cyber: '赛博深色', soft: '柔和粉色', minimal: '简约浅色' }[mode]}
+                        </button>)}
+                    </div>
+                </section>
                 <section className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
                     <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-1">动画与过场</h2>
                     <p className="text-[10px] text-slate-400 mb-2">三项都默认开启，可以分别关闭；关闭加载动画后，超过 15 秒的卡死恢复提示仍会保留。</p>

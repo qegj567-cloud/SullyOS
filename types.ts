@@ -151,6 +151,8 @@ export interface JournalAppearance {
 }
 
 export interface OSTheme {
+  /** 时光契约 App 与桌面月历共用；缺省兼容旧 schedule_app_theme。 */
+  scheduleAppTheme?: 'system' | 'cyber' | 'soft' | 'minimal';
   storyAppearance?: import('./utils/meetingAppearance').MeetingAppearance;
   hue: number;
   saturation: number;
