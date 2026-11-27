@@ -269,6 +269,7 @@ describe('categoryOfDatabase', () => {
         // 协同工作库里也有 messages / assets 两张表，按表名判会记到聊天和外观头上
         expect(categoryOfDatabase(spaceDatabaseName('SullyOS_Collaboration', 'u_abc'))).toBe('collaboration');
         expect(categoryOfDatabase('SullyOS_Collaboration')).toBe('collaboration');
+        expect(categoryOfDatabase('SullyOS_CharacterSafety')).toBe('characters');
         expect(categoryOfDatabase(RESOURCE_PACK_DB)).toBe('roomPacks');
         expect(categoryOfDatabase('ActiveMsg')).toBe('activeMsg');
         expect(categoryOfDatabase('ActiveMsgSwTrace')).toBe('activeMsg');

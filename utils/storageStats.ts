@@ -619,6 +619,7 @@ export function formatBytes(bytes: number | null | undefined): string {
 export function categoryOfDatabase(name: string): StorageCategoryKey | undefined {
     if (/^AetherOS_Data(__|$)/.test(name)) return undefined;
     if (/^SullyOS_Collaboration(__|$)/.test(name)) return 'collaboration';
+    if (name === 'SullyOS_CharacterSafety') return 'characters';
     if (name === 'sully-home-resource-packs') return 'roomPacks';
     // 主动消息的收件箱、Service Worker 的日志和去重库
     if (/^(ActiveMsg|AmsgReproduction$|rei[-_])/.test(name)) return 'activeMsg';
