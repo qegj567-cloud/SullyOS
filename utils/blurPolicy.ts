@@ -152,35 +152,58 @@ export const useReducedBlur = (): boolean => {
     return reduced;
 };
 
-const parseHexLuminance = (color: string): number | null => {
-    const hex = color.trim().match(/^#([\da-f]{3}|[\da-f]{6})$/i)?.[1];
-    if (!hex) return null;
-    const full = hex.length === 3
-        ? hex.split('').map((c) => c + c).join('')
-        : hex;
-    const r = parseInt(full.slice(0, 2), 16) / 255;
-    const g = parseInt(full.slice(2, 4), 16) / 255;
-    const b = parseInt(full.slice(4, 6), 16) / 255;
-    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+const srgbChannelToLinear = (byte: number): number => {
+    const c = Math.min(255, Math.max(0, byte)) / 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+};
+
+const parseColorLuminance = (color: string): number | null => {
+    const trimmed = color.trim();
+    const hex = trimmed.match(/^#([\da-f]{3,4}|[\da-f]{6}|[\da-f]{8})$/i)?.[1];
+    if (hex) {
+        const rgbHex = hex.length <= 4
+            ? hex.slice(0, 3).split('').map((c) => c + c).join('')
+            : hex.slice(0, 6);
+        const r = parseInt(rgbHex.slice(0, 2), 16);
+        const g = parseInt(rgbHex.slice(2, 4), 16);
+        const b = parseInt(rgbHex.slice(4, 6), 16);
+        return (
+            0.2126 * srgbChannelToLinear(r) +
+            0.7152 * srgbChannelToLinear(g) +
+            0.0722 * srgbChannelToLinear(b)
+        );
+    }
+    const rgbMatch = trimmed.match(
+        /^rgba?\(\s*(\d{1,3})\s*[, ]\s*(\d{1,3})\s*[, ]\s*(\d{1,3})(?:\s*[,/]\s*[\d.]+%?)?\s*\)$/i,
+    );
+    if (rgbMatch) {
+        const [, r, g, b] = rgbMatch;
+        return (
+            0.2126 * srgbChannelToLinear(Number(r)) +
+            0.7152 * srgbChannelToLinear(Number(g)) +
+            0.0722 * srgbChannelToLinear(Number(b))
+        );
+    }
+    return null;
 };
 
 /**
- * 无实时毛玻璃时的桌面卡片底色：根据桌面前景色明暗选择深色烟熏半透或浅色磨砂半透，保证文字可读。
+ * 无实时毛玻璃时的桌面玻璃卡片样式：
+ * 底色与桌面图标框（bg-white/40）保持同一浅白半透体系，避免不同预设下只有顶部卡片单独变深灰；
+ * `data-reduced-blur` 同时关闭了桌面 `drop-shadow` 滤镜，按 sRGB 相对亮度识别浅色字（>= 0.5）后
+ * 补一层轻量 `text-shadow`，在不引入逐帧模糊开销的前提下兜住亮色壁纸上的白字可读性。
  */
 export const resolveReducedGlassCardStyle = (contentColor = '#ffffff') => {
-    const luminance = parseHexLuminance(contentColor);
-    const isDarkText = luminance !== null && luminance < 0.45;
-    return isDarkText
-        ? {
-              background: 'rgba(255, 255, 255, 0.78)',
-              border: '1px solid rgba(255, 255, 255, 0.62)',
-              boxShadow: '0 8px 24px rgba(15, 23, 42, 0.10)',
-          }
-        : {
-              background: 'rgba(24, 28, 40, 0.56)',
-              border: '1px solid rgba(255, 255, 255, 0.22)',
-              boxShadow: '0 8px 28px rgba(0, 0, 0, 0.22)',
-          };
+    const luminance = parseColorLuminance(contentColor);
+    const isLightText = luminance === null || luminance >= 0.5;
+    return {
+        background: 'rgba(255, 255, 255, 0.42)',
+        border: '1px solid rgba(255, 255, 255, 0.38)',
+        boxShadow: '0 6px 20px rgba(15, 23, 42, 0.12)',
+        textShadow: isLightText
+            ? '0 1px 2px rgba(15, 23, 42, 0.36), 0 0 8px rgba(15, 23, 42, 0.16)'
+            : 'none',
+    };
 };
 
 /**

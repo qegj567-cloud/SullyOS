@@ -160,6 +160,6 @@ HTML 卡片仍在独立 iframe 沙盒中；白框控制其外壳和排版，不�
 
 开关存在 localStorage 的 `sullyos_reduced_blur_v1`（值 `'1'` 是开，没有这个键是关），不放进 `OSTheme`：它是针对这台设备性能做的选择，不跟着外观预设和装扮分享走。它是各用户空间共用的键（登记在 `utils/userSpaces.ts`），因为 `index.html` 的内联脚本要在 React 启动之前按原键名读它并打上标记，冷启动不会先画一帧毛玻璃再变。运行时由 `installReducedBlurPolicy` 同步标记，切换开关立即生效；系统偏好变化时会把开关一起算进去。
 
-写新界面时：用了 `backdrop-blur` 且去掉模糊后底色偏透的，用 `useReducedBlur()` 换一档更不透明的底色。白框作者写的 `backdrop-filter` 在减弱模糊下同样会被全局规则去掉（带 `!important` 且选择器权重更高的规则除外），底色本身要够不透明，可读性不能只靠模糊。
+写新界面时：用了 `backdrop-blur` 且去掉模糊后底色偏透的，用 `useReducedBlur()` 换一档更不透明的底色。桌面非纸感模式下的玻璃卡片（角色消息栏与默认透明日程小组件）通过 `resolveReducedGlassCardStyle` 与桌面图标框、Dock 保持同一浅白半透容器底色（`rgba(255, 255, 255, 0.42)`），使各主题预设下桌面容器色调统一；由于减弱模糊会一并关掉桌面滚动区里的 `drop-shadow` 滤镜，卡片按 sRGB 相对亮度识别浅色前景字（`>= 0.5`）并补充轻量 `text-shadow` 保证亮色壁纸上的白字清晰度，中深色与彩色文字则保持无阴影干净显示。白框作者写的 `backdrop-filter` 在减弱模糊下同样会被全局规则去掉（带 `!important` 且选择器权重更高的规则除外），底色本身要够不透明，可读性不能只靠模糊。
 
 启用率在使用统计的 `当前外观` 快照里（`减弱模糊`：开 / 自动 / 关，见 [`analytics.md`](./analytics.md#当前在用哪套外观)）。回归测试在 `utils/blurPolicy.test.ts`，其中一条会直接执行 `index.html` 里那段内联脚本。
