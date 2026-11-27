@@ -2098,6 +2098,26 @@ async function applyMemorySideEffects(
         }
 }
 
+/**
+ * 日常整理用的语义消息尾段（按 id 升序）：水位线及之后的全部，不足「热区 + 1」条时
+ * 再往前补到够数或读到头。缓冲区只取水位线之后、热区之前的消息，热区起点是倒数第
+ * hotZoneSize 条，两者都落在这一段里，所以结论与读全量相同。
+ */
+async function loadSemanticMessageTail(charId: string, lastProcessedId: number, hotZoneSize: number): Promise<Message[]> {
+    const { messages } = await DB.getMessagesFromId(charId, lastProcessedId);
+    const tail = messages.filter(m => isMessageSemanticallyRelevant(m));
+    const pageSize = hotZoneSize + 1;
+    let beforeId = lastProcessedId;
+    while (tail.length <= hotZoneSize) {
+        const page = await DB.getRecentMessagesByCharId(charId, pageSize, true, beforeId);
+        if (page.length === 0) break;
+        tail.unshift(...page.filter(m => isMessageSemanticallyRelevant(m)));
+        if (page.length < pageSize) break;
+        beforeId = page[0].id;
+    }
+    return tail;
+}
+
 export interface ProcessNewMessagesOptions {
     /** Explicit user step may run while automatic maintenance is paused. */
     manualMaintenanceStep?: boolean;
@@ -2136,20 +2156,27 @@ export async function processNewMessages(
         // 1. 加载全部消息（含已处理的），计算热区和缓冲区
         //    过滤：保留任何有语义的消息类型（文字、带转写的语音、卡片、系统事件等），
         //    只排除纯视觉资源和无转写的纯音频，避免 URL / base64 污染 LLM。
-        const allMessages = await DB.getMessagesByCharId(charId, true, options.drainBuffer === true);
+        const drainBuffer = options.drainBuffer === true;
+        // 一键存入的边界按全部原文算，force 一并沿用全量读取；日常路径每次回复后都会来，
+        // 只需要水位线之后的那一段，在下面另读。
+        const readAll = force || drainBuffer;
+        const allMessages = readAll ? await DB.getMessagesByCharId(charId, true, drainBuffer) : [];
         const privateMessages = allMessages
             .filter(message => !message.groupId)
             .sort((a, b) => a.id - b.id);
-        const textMessages = privateMessages
-            .filter(m => isMessageSemanticallyRelevant(m))
-            .sort((a, b) => a.id - b.id);
 
-        const totalCount = textMessages.length;
         const lastProcessedId = await getReliableMemoryPalaceHighWaterMark(charId);
-        const drainBuffer = options.drainBuffer === true;
         const waterline = await loadCharacterWaterline(charId, options.waterline);
         const hotZoneSize = waterline.hotZoneSize;
         const bufferThreshold = waterline.bufferThreshold;
+        const textMessages = readAll
+            ? privateMessages
+                .filter(m => isMessageSemanticallyRelevant(m))
+                .sort((a, b) => a.id - b.id)
+            : await loadSemanticMessageTail(charId, lastProcessedId, hotZoneSize);
+
+        // 日常路径下是读到的尾段条数：读到头时等于全部条数，否则至少比热区多 1。
+        const totalCount = textMessages.length;
         const retainedCount = Math.max(0, Math.floor(options.retainRecentMessages || 0));
         const targetHighWaterMark = drainBuffer
             ? getOneShotTargetHighWaterMark(privateMessages, retainedCount)

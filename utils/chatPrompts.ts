@@ -467,13 +467,22 @@ export const ChatPrompts = {
                 const memberGroups = groups.filter(g => g.members.includes(char.id));
                 if (memberGroups.length === 0) return '';
                 const perGroup = await Promise.all(
-                    memberGroups.map(g => DB.getGroupMessages(g.id).then(msgs => ({
-                        groupName: g.name,
-                        cap: g.privateContextCap ?? 80,
-                        // 已经进入公共话题盒的旧原文不再重复塞进私聊背景；成盒时送达的
-                        // group_topic_card 会沿私聊自身的历史/归档链继续被角色感知。
-                        msgs: msgs.filter(m => m.id > (g.archivedThroughMessageId || 0)),
-                    })))
+                    memberGroups.map(async g => {
+                        const cap = g.privateContextCap ?? 80;
+                        // 只读每个群最后 cap 条：群消息按 id 排列，归档线也是 id 门槛，
+                        // 尾部 cap 条里过线的那些就是「过线消息的最后 cap 条」。
+                        // cap 不是正整数时 slice(-cap) 另有含义，照旧读整群。
+                        const msgs = Number.isInteger(cap) && cap > 0
+                            ? (await DB.getRecentGroupMessagesWithCount(g.id, cap)).messages
+                            : await DB.getGroupMessages(g.id);
+                        return {
+                            groupName: g.name,
+                            cap,
+                            // 已经进入公共话题盒的旧原文不再重复塞进私聊背景；成盒时送达的
+                            // group_topic_card 会沿私聊自身的历史/归档链继续被角色感知。
+                            msgs: msgs.filter(m => m.id > (g.archivedThroughMessageId || 0)),
+                        };
+                    })
                 );
                 const allGroupMsgs: (Message & { groupName: string })[] = [];
                 for (const { groupName, cap, msgs } of perGroup) {

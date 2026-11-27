@@ -6,7 +6,7 @@ import { useChatAI } from '../hooks/useChatAI';
 import { KeepAlive } from './keepAlive';
 import { getChatSendProgress } from './chatSendProgress';
 
-vi.mock('../context/MusicContext', () => ({ useMusic: () => ({}), loadMusicHooks: () => null }));
+vi.mock('../context/MusicContext', () => ({ loadMusicPlaybackSnapshot: () => null, loadMusicHooks: () => null }));
 vi.mock('./keepAlive', () => ({ KeepAlive: { start: vi.fn(), stop: vi.fn() } }));
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 

@@ -89,6 +89,7 @@ import { cancelCloudAwayTasks } from '../utils/awayMessage';
 import ThinkingChainSettingsModal from '../components/chat/ThinkingChainSettingsModal';
 import ScheduleChangeNotice from '../components/chat/ScheduleChangeNotice';
 import { useChatAI } from '../hooks/useChatAI';
+import { pickVoiceHydrationTargets, readChatRefreshTail } from '../utils/chatPerfHelpers';
 import { useChatAutoReply } from '../hooks/useChatAutoReply';
 import { cleanTextForTts, parseVoiceOutput } from '../utils/minimaxTts';
 import { collectVoiceBatchSubtitle, isPoisonedVoiceSubtitle } from '../utils/voiceSubtitle';
@@ -482,6 +483,13 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
         setMessages(msgs);
     }, []);
 
+    // 生成途中每落一条气泡都要刷新界面：只读画得出来的那一截，不每次整读 200 条。
+    const loadRefreshMessages = useCallback((charId: string) => readChatRefreshTail(
+        limit => DB.getRecentMessagesByCharId(charId, limit),
+        visibleCountRef.current,
+        message => isVisibleChatMessage(message, !!charRef.current?.hideSystemLogs),
+    ), []);
+
     // 即时对话的「正在输入…」：受理 / 收到回复 / 超时判失败都会广播一次，界面跟着它亮灭。
     // 进这个角色时先读一次落盘记录——上一轮的回复可能是在应用关着的时候还没回来。
     // 这个 CustomEvent 只在本标签页内派发；别的标签页销账走下面那个 storage 监听
@@ -506,6 +514,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
         addToast,
         showError,
         setMessages: setMessagesFromGen,
+        loadRefreshMessages,
         onStreamPreviewHandover: registerStreamPreviewHandover,
         realtimeConfig,
         translationConfig: translationEnabled
@@ -564,6 +573,9 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
     // 消息会被反复重试、每次再弹一个「语音生成失败」。只挡自动那条路：用户自己点「转换语音」
     // 照样能重试（换了网络/补了 key 之后就该能成）。换角色时清空。
     const voiceFailedRef = useRef<Set<number>>(new Set());
+    // 语音回填查过、库里确实没有语音的消息 id：停留期间不再重查，否则每来一条新气泡都把整页再查一遍。
+    // 这条消息之后写入语音时要从这里拿掉；换角色时清空。
+    const voiceCheckedEmptyRef = useRef<Set<number>>(new Set());
     // Track blob: URLs we created so we can revoke them on character switch / unmount.
     const voiceBlobUrlsRef = useRef<Set<string>>(new Set());
     // We warn the user at most once (per character) that the active TTS provider isn't configured —
@@ -813,6 +825,8 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
             const storedLang = voiceLang || undefined;
             // Persist so the voice bar survives leaving and re-entering the chat.
             const current = await persistVoice(msg, blobUrl, blob, originalText, storedSpokenText, storedLang, recording);
+            // 库里有了：下面没走到直接上屏（已切走）时，回来还得靠回填查出来。
+            voiceCheckedEmptyRef.current.delete(msg.id);
             if (!current || !voiceMountedRef.current || activeCharIdRef.current !== msg.charId) {
                 if (blobUrl.startsWith('blob:')) URL.revokeObjectURL(blobUrl);
                 return null;
@@ -1004,7 +1018,8 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
     useEffect(() => {
         if (!messages.length) return;
         const map = voiceDataMap;
-        const toFetch = messages.filter(m => m.id && m.type === 'text' && m.role !== 'user' && !map[m.id]);
+        const checkedEmpty = voiceCheckedEmptyRef.current;
+        const toFetch = pickVoiceHydrationTargets(messages, id => !!map[id], checkedEmpty);
         if (!toFetch.length) return;
         let cancelled = false;
         (async () => {
@@ -1016,9 +1031,12 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
             );
             if (!cancelled) setChatFavoriteKeys(favoriteKeys);
             for (const m of toFetch) {
+                // 消息列表又变了：剩下的交给新一轮，这一轮查到还没上屏的也由新一轮重查。
+                if (cancelled) return;
                 try {
                     const stored = await DB.getAssetRaw(voiceAssetKey(m.id)) as StoredVoice | null;
-                    if (!stored) continue;
+                    if (cancelled) return;
+                    if (!stored) { checkedEmpty.add(m.id); continue; }
                     let url: string | null = null;
                     if (stored.blob instanceof Blob) {
                         url = URL.createObjectURL(stored.blob);
@@ -1026,7 +1044,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
                     } else if (stored.remoteUrl) {
                         url = stored.remoteUrl;
                     }
-                    if (!url) continue;
+                    if (!url) { checkedEmpty.add(m.id); continue; }
                     let originalText = stored.originalText || '';
                     // 存量毒数据自愈: 07-02~07-04 的版本曾把同回合的闲聊短句当翻译存进来
                     // (收字幕没做对齐校验)。认出来就清掉并回写, 别让错翻译一直挂在面板上。
@@ -1168,6 +1186,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
             // Reset voice map — stale blob: URLs from the previous char are revoked
             // by the cleanup effect and must not be reused against new messages.
             setVoiceDataMap({});
+            voiceCheckedEmptyRef.current.clear();
             setPlayingMsgId(null);
             if (chatAudioRef.current) { try { stopVoiceAudio(chatAudioRef.current); } catch { /* ignore */ } }
 

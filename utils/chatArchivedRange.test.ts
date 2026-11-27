@@ -8,7 +8,7 @@ import { DB } from './db';
 import { setReliableMemoryPalaceHighWaterMark } from './memoryPalace/highWaterMark';
 import { buildChatRequestPayload } from './chatRequestPayload';
 
-vi.mock('../context/MusicContext', () => ({ useMusic: () => ({}), loadMusicHooks: () => null }));
+vi.mock('../context/MusicContext', () => ({ loadMusicPlaybackSnapshot: () => null, loadMusicHooks: () => null }));
 vi.mock('./keepAlive', () => ({ KeepAlive: { start: vi.fn(), stop: vi.fn() } }));
 vi.mock('./chatRequestPayload', () => ({ buildChatRequestPayload: vi.fn(async () => { throw new Error('不应构建已归档原文'); }) }));
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
