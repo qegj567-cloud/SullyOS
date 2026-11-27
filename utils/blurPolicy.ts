@@ -11,11 +11,42 @@ const REDUCED_TRANSPARENCY_QUERY = '(prefers-reduced-transparency: reduce)';
 export const isGeckoEngine = (ua: string): boolean =>
     /\bGecko\/\d/i.test(ua) && !/\blike Gecko\b/i.test(ua);
 
+/**
+ * 「外观 → 动画与过场 → 减弱模糊」的本机开关：值为 '1' 是开，没有这个键是关（默认）。
+ * index.html 的内联脚本在首屏画出来之前按同一个键名直接读 localStorage，
+ * 所以它在 userSpaces.ts 里登记为各用户空间共用的键；改键名要三处一起改。
+ */
+export const REDUCED_BLUR_PREF_KEY = 'sullyos_reduced_blur_v1';
+
+// installReducedBlurPolicy 在入口最先登记，根节点标记因此先于各组件更新。
+const prefListeners = new Set<() => void>();
+
+export const getReducedBlurPreference = (): boolean => {
+    try {
+        return localStorage.getItem(REDUCED_BLUR_PREF_KEY) === '1';
+    } catch {
+        return false;
+    }
+};
+
+export const setReducedBlurPreference = (enabled: boolean): void => {
+    try {
+        if (enabled) localStorage.setItem(REDUCED_BLUR_PREF_KEY, '1');
+        else localStorage.removeItem(REDUCED_BLUR_PREF_KEY);
+    } catch {
+        // 存储不可写时读回来仍是关，界面保持原样。
+    }
+    prefListeners.forEach((notify) => notify());
+};
+
 export const shouldUseReducedBlur = (options?: {
     ua?: string;
     prefersReducedTransparency?: boolean;
+    userEnabled?: boolean;
 }): boolean => {
-    if (options?.prefersReducedTransparency) return true;
+    // 三个来源只做「或」：手动开关只能把模糊关掉。它关着（默认）时，Gecko 与系统「减弱透明度」照旧自动生效；
+    // 这两种情况下实时模糊要么掉帧、要么违背系统无障碍设置，所以不提供把模糊强行开回来的选项。
+    if (options?.userEnabled || options?.prefersReducedTransparency) return true;
     const ua = options?.ua ?? (typeof navigator !== 'undefined' ? navigator.userAgent : '');
     return isGeckoEngine(ua);
 };
@@ -29,12 +60,18 @@ export const isReducedBlurActive = (doc?: Document): boolean => {
         typeof window !== 'undefined' &&
         typeof window.matchMedia === 'function' &&
         window.matchMedia(REDUCED_TRANSPARENCY_QUERY).matches;
-    return shouldUseReducedBlur({ prefersReducedTransparency });
+    return shouldUseReducedBlur({ prefersReducedTransparency, userEnabled: getReducedBlurPreference() });
 };
 
 /**
+ * 给使用统计和答疑摘要用的三态：`自动` = 没手动打开，但浏览器或系统设置已经让减弱样式生效。
+ */
+export const reducedBlurSetting = (): '开' | '自动' | '关' =>
+    getReducedBlurPreference() ? '开' : isReducedBlurActive() ? '自动' : '关';
+
+/**
  * 在根节点同步 `data-reduced-blur` 标记，供全局样式与组件按需收敛实时模糊与阴影滤镜。
- * 同时监听系统「减弱透明度」无障碍偏好的动态切换。
+ * 同时监听系统「减弱透明度」无障碍偏好的动态切换，以及「减弱模糊」开关的切换。
  */
 export const installReducedBlurPolicy = (
     doc: Document | undefined = typeof document !== 'undefined' ? document : undefined,
@@ -47,25 +84,37 @@ export const installReducedBlurPolicy = (
         : null;
 
     const sync = () => {
+        // 每次同步都把开关算进去：系统偏好切回「不减弱」时，手动打开的开关仍然生效。
         const active = shouldUseReducedBlur({
             ua: win.navigator?.userAgent ?? '',
             prefersReducedTransparency: Boolean(mql?.matches),
+            userEnabled: getReducedBlurPreference(),
         });
         doc.documentElement.toggleAttribute(REDUCED_BLUR_ATTR, active);
     };
 
     sync();
+    prefListeners.add(sync);
+    const offPref = () => {
+        prefListeners.delete(sync);
+    };
 
-    if (!mql) return () => {};
+    if (!mql) return offPref;
     if (typeof mql.addEventListener === 'function') {
         mql.addEventListener('change', sync);
-        return () => mql.removeEventListener('change', sync);
+        return () => {
+            offPref();
+            mql.removeEventListener('change', sync);
+        };
     }
     if (typeof mql.addListener === 'function') {
         mql.addListener(sync);
-        return () => mql.removeListener(sync);
+        return () => {
+            offPref();
+            mql.removeListener(sync);
+        };
     }
-    return () => {};
+    return offPref;
 };
 
 export const useReducedBlur = (): boolean => {
@@ -78,15 +127,26 @@ export const useReducedBlur = (): boolean => {
             : null;
         const update = () => setReduced(isReducedBlurActive());
         update();
-        if (!mql) return;
+        prefListeners.add(update);
+        const offPref = () => {
+            prefListeners.delete(update);
+        };
+        if (!mql) return offPref;
         if (typeof mql.addEventListener === 'function') {
             mql.addEventListener('change', update);
-            return () => mql.removeEventListener('change', update);
+            return () => {
+                offPref();
+                mql.removeEventListener('change', update);
+            };
         }
         if (typeof mql.addListener === 'function') {
             mql.addListener(update);
-            return () => mql.removeListener(update);
+            return () => {
+                offPref();
+                mql.removeListener(update);
+            };
         }
+        return offPref;
     }, []);
 
     return reduced;

@@ -26,6 +26,7 @@ import { readShareFile } from '../utils/pngShare';
 import BeautyShareChannel from '../components/appearance/BeautyShareChannel';
 import { hasBeautyReceiveRequest,hasBeautyLibraryRequest } from '../utils/beautyNavigation';
 import { useConfirmDialog } from '../hooks/useConfirmDialog';
+import { getReducedBlurPreference, setReducedBlurPreference, useReducedBlur } from '../utils/blurPolicy';
 
 const CustomIconImage: React.FC<{ value: string; alt: string; preserveOutline?: boolean }> = ({ value, alt, preserveOutline = false }) => {
     const url = useBlobRefUrl(value);
@@ -492,6 +493,9 @@ const Appearance: React.FC = () => {
   const { theme, updateTheme, closeApp, openApp, setCustomIcon, customIcons, addToast, appearancePresets, saveAppearancePreset, applyAppearancePreset, deleteAppearancePreset, renameAppearancePreset, exportAppearancePreset, importAppearancePreset, characters, activeCharacterId, updateCharacter } = useOS();
   const { requestConfirm, confirmDialog } = useConfirmDialog();
   const [activeTab, setActiveTab] = useState<'theme' | 'icons' | 'presets' | 'sharing'>(() => (hasBeautyReceiveRequest()||hasBeautyLibraryRequest()) ? 'sharing' : 'theme');
+  const [reducedBlurOn, setReducedBlurOn] = useState(getReducedBlurPreference);
+  // 开关关着、减弱样式却已生效 = 浏览器或系统设置自动关掉了模糊，这时开关不改变画面。
+  const reducedBlurAuto = useReducedBlur() && !reducedBlurOn;
   useAppShortcut(ShortcutAppID.Appearance, intent => setActiveTab((intent.entryId || 'theme') as typeof activeTab));
   const [shareBusy, setShareBusy] = useState(false);
   const wallpaperInputRef = useRef<HTMLInputElement>(null);
@@ -917,7 +921,7 @@ const Appearance: React.FC = () => {
             <>
                 <section className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
                     <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-1">动画与过场</h2>
-                    <p className="text-[10px] text-slate-400 mb-2">三项都默认开启，可以分别关闭；关闭加载动画后，超过 15 秒的卡死恢复提示仍会保留。</p>
+                    <p className="text-[10px] text-slate-400 mb-2">三项动画都默认开启，可以分别关闭；关闭加载动画后，超过 15 秒的卡死恢复提示仍会保留。</p>
                     <div className="divide-y divide-slate-100">
                         {([
                             {
@@ -959,6 +963,30 @@ const Appearance: React.FC = () => {
                                 </div>
                             );
                         })}
+                        {/* 存在本机而不是 theme 里：这是针对这台设备性能的选择，不随外观预设和备份带到别的设备。启用率进冷启动快照，这里不现场上报。 */}
+                        <div className="flex items-center gap-3 py-3">
+                            <div className="min-w-0 flex-1">
+                                <div className="text-xs font-bold text-slate-700">减弱模糊</div>
+                                <div className="mt-0.5 text-[10px] leading-relaxed text-slate-400">
+                                    {reducedBlurAuto
+                                        ? '浏览器或系统设置已经自动关掉了毛玻璃效果，这个开关开不开都一样。'
+                                        : '关掉毛玻璃效果，换成纯色底。滚动更顺，也更省电。默认关闭。'}
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                role="switch"
+                                aria-checked={reducedBlurOn}
+                                aria-label="减弱模糊"
+                                onClick={() => {
+                                    setReducedBlurPreference(!reducedBlurOn);
+                                    setReducedBlurOn(getReducedBlurPreference());
+                                }}
+                                className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${reducedBlurOn ? 'bg-primary' : 'bg-slate-300'}`}
+                            >
+                                <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${reducedBlurOn ? 'translate-x-5' : 'translate-x-0'}`} style={{ left: 2 }} />
+                            </button>
+                        </div>
                     </div>
                 </section>
 

@@ -25,6 +25,7 @@ import { createBuiltinSullyLive2DConfig } from './builtinSullyLive2D';
 import { createFishingMarketState, FISHING_MARKET_STORAGE_KEY } from './vrWorld/fishingMarket';
 import { freshFamiliarity } from './vrWorld/sarFamiliarity/storageTypes';
 import { USER_LOCATION_STORAGE_KEY } from './userLocationPrivacy';
+import { REDUCED_BLUR_PREF_KEY } from './blurPolicy';
 
 /**
  * 毒药串：每一条都放进某个用户可填字段里。它们只要出现在上报里就是泄漏。
@@ -423,6 +424,16 @@ describe('当前外观 · 不泄漏用户自己捏的东西', () => {
         expect(flags.提示音).toBe('custom');
         // 开放数值只报调没调过，不报 18
         expect(flags.气泡字号).toBe('调过');
+    });
+
+    it('减弱模糊只报固定取值，键里存了别的内容也不原样带出去', () => {
+        expect(collectAppearance({} as OSTheme, undefined).减弱模糊).toBe('关');
+        localStorage.setItem(REDUCED_BLUR_PREF_KEY, '1');
+        expect(collectAppearance({} as OSTheme, undefined).减弱模糊).toBe('开');
+        localStorage.setItem(REDUCED_BLUR_PREF_KEY, POISON.key);
+        const flags = collectAppearance({} as OSTheme, undefined);
+        expect(flags.减弱模糊).toBe('关');
+        expectNoLeak(flags);
     });
 
     it('没设过的项报默认值，不缺席也不报 undefined', () => {

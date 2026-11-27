@@ -49,6 +49,7 @@ import { CLOUD_GEN_PURPOSES, type CloudGenPurpose } from './cloudGen/types';
 import { getVRApi } from './vrWorld/vrApi';
 import { isBuiltinSullyLive2D } from './builtinSullyLive2D';
 import { loadUserLocationConfig } from './userLocationPrivacy';
+import { reducedBlurSetting } from './blurPolicy';
 
 /** 布尔开关转「开 / 关」，带默认值。 */
 const onOff = (v: boolean | undefined, dflt = false) => ((v ?? dflt) ? '开' : '关');
@@ -117,6 +118,9 @@ export function collectAppearance(
         保留图标原轮廓: onOff(theme.preserveCustomIconOutlines),
         播放卡片浅色: onOff(theme.nowPlayingWidgetLight, true),
         动森聊天同步: onOff(theme.acnhChatSync, true),
+        // 本机开关，不在 theme 里。「自动」单占一格：那批人（Firefox / 系统「减弱透明度」）本来就没有模糊，
+        // 开关对他们不起作用，混进「关」会把启用率的分母撑大。
+        减弱模糊: reducedBlurSetting(),
         // 自定义字体是用户上传的文件或自填 URL，只报用没用，绝不报是什么
         自定义字体: theme.customFont ? '用了' : '没用',
         // ── 聊天外观 ──

@@ -59,6 +59,8 @@ const sharedKeys = new Set([
     'amsg2_rescue_alert_v1',
     // 调试面板换假模型前的 API 备份：os_api_config 是全局的，备份也得全局，换了用户空间照样能换回来。
     'sullyos_dev_fake_llm_v1',
+    // 「减弱模糊」是针对这台设备性能的选择，各空间共用；index.html 的内联脚本在首屏前按原键名直接读它。
+    'sullyos_reduced_blur_v1',
     'os_api_config', 'os_api_presets', 'os_available_models', 'os_vision_available_models', 'sullyos_endpoint_models_v1', 'sullyos_api_preset_autobind_v1', 'os_analytics', 'os_memory_palace_config',
     'os_user_location_privacy_v1', 'os_remote_vector_config', 'os_cloud_backup_config', 'os_backup_preferences_v1', 'os_realtime_config',
     'sully_proxy_worker_url', 'sully_proxy_worker_url_v1', 'push_vapid_v1', 'study_api_config', 'check_phone_api',
