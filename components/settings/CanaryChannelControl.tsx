@@ -6,6 +6,7 @@ import { trackEvent } from '../../utils/analytics';
 import { CANARY_NAMES, CanaryBird } from '../CanaryBird';
 import {
   RELEASE_CHANNEL,
+  BUNDLED_ANDROID_CHANNELS,
   describeCanaryJoinBlocker,
   readCanaryDotHidden,
   writeCanaryDotHidden,
@@ -94,7 +95,7 @@ const CanaryChannelControl: React.FC<{ unlocked: boolean }> = ({ unlocked }) => 
     const leave = async () => {
         const confirmed = await requestConfirm({
             title: '回到正式版',
-            message: '会切回正式版并刷新页面。开着主动消息 2.0 的话，Worker 也会一起换回正式版。',
+            message: '切回正式版只会更换程序，不会撤销金丝雀对聊天、设置或数据库的改动。开着主动消息 2.0 的话，Worker 也会尝试换回正式版。',
             confirmText: '回到正式版',
             variant: 'info',
         });
@@ -113,10 +114,11 @@ const CanaryChannelControl: React.FC<{ unlocked: boolean }> = ({ unlocked }) => 
             const blocker = describeCanaryJoinBlocker(await loadCanaryJoinContext());
             if (blocker) { setNote(blocker); return; }
             const confirmed = await requestConfirm({
-                title: '加入 canary',
-                message: 'canary 类似测试版。通常情况下加入不会导致数据损坏，但仍然推荐勤备份。此版本能给我们对新功能的开发带来更宝贵的真实测试反馈。开着主动消息 2.0 的话，Worker 会先换成 canary 版本。',
-                confirmText: '加入',
-                variant: 'warning',
+                title: '加入金丝雀前，请先备份',
+                message: <><strong>这不是沙盒。两个版本直接读写同一份聊天记录和设置。</strong><p>测试版可能修改、损坏或删除真实数据。切回正式版只会换回程序，不会撤销数据改动，也不会自动恢复备份。</p><p>请先导出完整备份并确认文件已保存。没有备份，请选「暂不加入」。启用主动消息 2.0 时，你的 Worker 也会切换通道。</p></>,
+                cancelText: '暂不加入',
+                confirmText: '已备份，接受风险',
+                variant: 'danger',
                 confirmDelaySeconds: 3,
             });
             if (!confirmed) return;
@@ -132,7 +134,7 @@ const CanaryChannelControl: React.FC<{ unlocked: boolean }> = ({ unlocked }) => 
         }
     };
 
-    if (!inCanary && (!unlocked || Capacitor.isNativePlatform())) return null;
+    if (!inCanary && (!unlocked || (Capacitor.isNativePlatform() && !BUNDLED_ANDROID_CHANNELS))) return null;
 
     const tab = (channel: 'stable' | 'canary', label: React.ReactNode) => {
         const active = (channel === 'canary') === inCanary;

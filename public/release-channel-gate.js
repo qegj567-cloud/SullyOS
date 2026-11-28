@@ -43,7 +43,8 @@
       return;
     }
     localStorage.setItem(ATTEMPTS, String(attempts + 1));
-    go(PREFIX + url.pathname);
+    // Capacitor serves the stable SPA for bare directory paths.
+    go(host === 'localhost' ? '/canary/index.html' : PREFIX + url.pathname);
   } catch (_) {
     // localStorage 不可用就留在当前版本。
   }

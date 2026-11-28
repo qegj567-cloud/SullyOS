@@ -6,6 +6,7 @@
  */
 
 export type ReleaseChannel = 'stable' | 'canary';
+export const BUNDLED_ANDROID_CHANNELS = typeof __BUNDLED_ANDROID_CHANNELS__ !== 'undefined' && __BUNDLED_ANDROID_CHANNELS__;
 
 /** 这一份前端是哪个通道，构建时由 RELEASE_CHANNEL 决定。测试环境没有注入，按正式版算。 */
 export const RELEASE_CHANNEL: ReleaseChannel =
@@ -124,8 +125,9 @@ export interface CanaryJoinContext {
 
 /** 为什么不能加入；能加入返回 null。文案直接显示在按钮下面。 */
 export const describeCanaryJoinBlocker = (context: CanaryJoinContext): string | null => {
-  if (context.native) return 'canary 只提供网页版。';
-  if (context.hostname !== CANARY_HOST) return `canary 只在 ${CANARY_HOST} 上提供，这里的数据去不了那边。`;
+  if (context.native) {
+    if (!BUNDLED_ANDROID_CHANNELS || context.hostname !== 'localhost') return 'canary 只提供网页版。';
+  } else if (context.hostname !== CANARY_HOST) return `canary 只在 ${CANARY_HOST} 上提供，这里的数据去不了那边。`;
   if (context.amsg) {
     if (!context.amsg.selfUpdateSupported) return '主动消息 2.0 的 Worker 没有开启自动更新，换不成 canary 版本。';
     if (!context.amsg.workerChannel) return '主动消息 2.0 的 Worker 版本太旧，先更新 Worker。';
