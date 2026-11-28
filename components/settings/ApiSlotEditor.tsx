@@ -6,7 +6,6 @@ import { normalizeApiBaseUrl } from '../../utils/apiConfigNormalize';
 import {
   classifyApiTestError,
   trackApiConnectionTest,
-  trackApiPresetAction,
   trackApiSlotCommit,
   type ApiSlotAnalyticsName,
   type ApiSlotDiscardReason,
@@ -301,25 +300,6 @@ export default function ApiSlotEditor({
     trackApiSlotCommit({ slot: slotName, mode: '恢复跟随', result: '已生效' });
   };
 
-  const handleDetachFromPreset = () => {
-    if (!value) return;
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
-    }
-    dirtyCustomRef.current = false;
-    requestVersionRef.current += 1;
-    const detached = detachSlotFromPreset(value, apiPresets);
-    setCustomDraft(detached);
-    setModels(resolveModelsForSlot(detached));
-    setManualCustomOpen(true);
-    setStatus(''); setTestTone(null);
-    setAutoSaveHint('已复制为独立配置，后续修改仅作用于此处');
-    lastCommittedSerializedRef.current = serializeComparableSlot(detached);
-    void onCommit(detached);
-    trackApiPresetAction({ source, action: '转为单独填写' });
-  };
-
   const handleOpenManualCustomFromFollow = (prefillFromMain = false) => {
     requestVersionRef.current += 1;
     setStatus(''); setTestTone(null);
@@ -571,71 +551,11 @@ export default function ApiSlotEditor({
         </div>
       )}
 
-      {/* 状态 2：已绑定某条预设（展示预设引用卡片 + 显式动作） */}
-      {binding.status === 'bound' && !manualCustomOpen && (
-        <div
-          className="rounded-2xl bg-slate-50/90 border border-slate-200/90 p-4 space-y-3"
-          data-testid="bound-preset-card"
-        >
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-xs font-bold text-slate-800">{binding.preset.name}</span>
-                {binding.preset.group && (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-200/70 text-slate-600">
-                    {binding.preset.group}
-                  </span>
-                )}
-              </div>
-              <p className="text-[11px] text-slate-500 font-mono mt-1 break-all">
-                {llmApiType(binding.preset.config) === 'anthropic' ? 'Anthropic 原生 · ' : 'OpenAI 兼容 · '}
-                {describeDialogueApi(binding.preset.config, [])}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => setPresetModal({ open: true, mode: 'edit', preset: binding.preset })}
-              className="px-3 py-2 rounded-xl bg-primary/10 text-primary text-xs font-bold active:scale-95 transition-transform"
-            >
-              编辑此预设
-            </button>
-            <button
-              type="button"
-              onClick={handleDetachFromPreset}
-              className="px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 text-xs font-bold active:scale-95 transition-transform"
-            >
-              复制为独立配置
-            </button>
-            {allowFollow && (
-              <button
-                type="button"
-                onClick={handleSwitchToFollow}
-                className="px-3 py-2 rounded-xl bg-slate-200/70 text-slate-600 text-xs font-medium active:scale-95 transition-transform"
-              >
-                {followButtonLabel}
-              </button>
-            )}
-          </div>
-
-          <button
-            type="button"
-            onClick={handleTestConnection}
-            disabled={testing}
-            className="w-full py-2.5 rounded-xl border border-primary/30 bg-white text-primary text-xs font-bold disabled:opacity-40"
-          >
-            {testing ? '测试中…' : '测试连接'}
-          </button>
-
-          {status && (
-            <p role="status" data-api-test-tone={testTone || undefined} className="api-connection-status">
-              {status}
-            </p>
-          )}
-        </div>
-      )}
+      {/* 选中预设后直接显示紧凑可编辑字段，复用相同的预设保存路径。 */}
+      {binding.status === 'bound' && !manualCustomOpen && <>
+        {allowFollow && <button type="button" onClick={handleSwitchToFollow} className="text-xs text-slate-500 py-2">{followButtonLabel}</button>}
+        <ApiPresetEditorModal key={binding.preset.id} inline isOpen mode="edit" preset={binding.preset} source={source} customTestRunner={customTestRunner} testSlotName={slotName} testMeta={meta} onClose={() => {}} />
+      </>}
 
       {/* 状态 2b：原绑定预设已被删除的提示条 */}
       {binding.status === 'deleted_preset' && (

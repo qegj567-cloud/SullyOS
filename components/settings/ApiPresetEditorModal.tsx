@@ -9,6 +9,7 @@ import {
   classifyApiTestError,
   trackApiConnectionTest,
   trackApiPresetAction,
+  type ApiSlotAnalyticsName,
 } from '../../utils/apiSlotAnalytics';
 import {
   readCachedModelsForEndpoint,
@@ -27,6 +28,10 @@ import ApiPresetPicker from './ApiPresetPicker';
 
 export interface ApiPresetEditorModalProps {
   isOpen: boolean;
+  inline?: boolean;
+  customTestRunner?: (api: DialogueApiConfig) => Promise<string>;
+  testSlotName?: ApiSlotAnalyticsName;
+  testMeta?: { appId?: string; appName?: string; charId?: string; charName?: string };
   mode: 'create' | 'edit';
   preset?: ApiPreset | null;
   initialConfig?: DialogueApiConfig | null;
@@ -39,9 +44,16 @@ export interface ApiPresetEditorModalProps {
 }
 
 const AUTO_SAVE_DELAY_MS = 600;
+function EditorFrame({ inline, children, ...props }: React.ComponentProps<typeof Modal> & { inline: boolean }) {
+  return inline ? <div data-testid="inline-preset-fields">{children}</div> : <Modal {...props}>{children}</Modal>;
+}
 
 export default function ApiPresetEditorModal({
   isOpen,
+  inline = false,
+  customTestRunner,
+  testSlotName = '主对话',
+  testMeta,
   mode,
   preset,
   initialConfig,
@@ -71,6 +83,7 @@ export default function ApiPresetEditorModal({
   const [loadingModels, setLoadingModels] = useState(false);
   const [testing, setTesting] = useState(false);
   const [status, setStatus] = useState('');
+  const [testTone, setTestTone] = useState<'success' | 'error' | null>(null);
   const [hint, setHint] = useState('');
   const [usage, setUsage] = useState<PresetUsageSummary | null>(null);
   const [copying, setCopying] = useState(false);
@@ -101,7 +114,7 @@ export default function ApiPresetEditorModal({
     dirtyRef.current = false;
     setSeedPresetId(null);
     setCopying(false);
-    setStatus('');
+    setStatus(''); setTestTone(null);
     setHint('');
     if (mode === 'edit' && preset) {
       const picked = pickDialogueApi(preset.config);
@@ -116,7 +129,7 @@ export default function ApiPresetEditorModal({
         group: (preset.group || '').trim(),
         config: picked,
       });
-      void collectPresetUsageSummary(preset.id, {
+      if (!inline) void collectPresetUsageSummary(preset.id, {
         apiConfig,
         memoryLightLlm: memoryPalaceConfig?.lightLLM,
         characters,
@@ -133,6 +146,17 @@ export default function ApiPresetEditorModal({
       setUsage(null);
     }
   }, [isOpen, mode, preset?.id]);
+
+  useEffect(() => {
+    if (!inline || !isOpen || !preset || dirtyRef.current) return;
+    const next = pickDialogueApi(preset.config);
+    delete next.presetId; delete next.presetFp;
+    const json = JSON.stringify({ name: preset.name.trim(), group: (preset.group || '').trim(), config: next });
+    if (json === lastCommittedJsonRef.current) return;
+    setDraft(next); setName(preset.name); setGroup(preset.group || '');
+    setModels(readCachedModelsForEndpoint(next));
+    lastCommittedJsonRef.current = json;
+  }, [inline, isOpen, preset]);
 
   const flushEditCommit = (
     override?: { name?: string; group?: string; draft?: DialogueApiConfig },
@@ -193,16 +217,23 @@ export default function ApiPresetEditorModal({
     onClose();
   };
 
+  useEffect(() => () => {
+    if (!inline) return;
+    requestVersionRef.current += 1;
+    if (saveTimerRef.current) { clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
+    if (dirtyRef.current) flushEditCommit(undefined, true);
+  }, [inline, preset?.id]);
+
   useLocalBackHandler(() => {
     handleClose();
     return true;
-  }, 88, isOpen);
+  }, 88, isOpen && !inline);
 
   const updateDraft = (patch: Partial<DialogueApiConfig>, immediate = false) => {
     requestVersionRef.current += 1;
     setLoadingModels(false);
     setTesting(false);
-    setStatus('');
+    setStatus(''); setTestTone(null);
     setDraft((prev) => {
       const merged: DialogueApiConfig = { ...prev, ...patch };
       if (patch.apiType !== undefined && merged.baseUrl.trim()) {
@@ -238,7 +269,7 @@ export default function ApiPresetEditorModal({
     }
     const version = ++requestVersionRef.current;
     setLoadingModels(true);
-    setStatus('');
+    setStatus(''); setTestTone(null);
     try {
       const res = await fetchLlm(`${normalizedUrl}/models`, {
         __sullySettingsModelBase: normalizedUrl,
@@ -268,9 +299,16 @@ export default function ApiPresetEditorModal({
     const api = check.normalized;
     const version = ++requestVersionRef.current;
     setTesting(true);
-    setStatus('');
+    setStatus(''); setTestTone(null);
     let httpStatus: number | undefined;
     try {
+      if (customTestRunner) {
+        const message = await customTestRunner(api);
+        if (version !== requestVersionRef.current) return;
+        setStatus(message || '连接成功'); setTestTone('success');
+        trackApiConnectionTest({ slot: testSlotName, ok: true });
+        return;
+      }
       const res = await fetchLlm(`${api.baseUrl}/chat/completions`, {
         __sullySettingsModelBase: api.baseUrl,
         method: 'POST',
@@ -284,24 +322,24 @@ export default function ApiPresetEditorModal({
           max_tokens: 5,
           stream: api.stream ?? false,
         }),
-        __sullyMeta: { appId: 'settings', appName: '设置', purpose: '测试预设连接', slotStream: api.stream },
+        __sullyMeta: { appId: 'settings', appName: '设置', ...testMeta, purpose: '测试预设连接', slotStream: api.stream },
       } as RequestInit);
       httpStatus = res.status;
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const content = extractContent(await safeResponseJson(res));
       if (version !== requestVersionRef.current) return;
       const ok = Boolean(content);
-      setStatus(ok ? '连接成功' : '接口已响应，但回复内容为空');
+      setStatus(ok ? '连接成功' : '接口已响应，但回复内容为空'); setTestTone(ok ? 'success' : 'error');
       trackApiConnectionTest({
-        slot: '主对话',
+        slot: testSlotName,
         ok,
         failureCategory: ok ? undefined : classifyApiTestError(httpStatus, false, true),
       });
     } catch (err) {
       if (version !== requestVersionRef.current) return;
-      setStatus(`连接失败：${err instanceof Error ? err.message : '请检查配置'}`);
+      setStatus(`连接失败：${err instanceof Error ? err.message : '请检查配置'}`); setTestTone('error');
       trackApiConnectionTest({
-        slot: '主对话',
+        slot: testSlotName,
         ok: false,
         failureCategory: classifyApiTestError(httpStatus),
       });
@@ -385,7 +423,7 @@ export default function ApiPresetEditorModal({
 
   return (
     <>
-      <Modal
+      <EditorFrame inline={inline}
         isOpen={isOpen}
         title={copying ? '复制 API 预设' : mode === 'edit' ? '编辑 API 预设' : '新建 API 预设'}
         onClose={handleClose}
@@ -420,7 +458,7 @@ export default function ApiPresetEditorModal({
       >
         <ApiSaveFeedback revision={saveRevision} />
         <div className="space-y-4 text-slate-800" data-api-preset-editor>
-          {mode === 'edit' && !copying && preset && (
+          {!inline && mode === 'edit' && !copying && preset && (
             <div className="rounded-2xl bg-amber-50 border border-amber-200/80 px-3.5 py-2.5 text-[11px] text-amber-900 leading-relaxed space-y-1.5">
               <div className="flex items-center justify-between gap-2">
                 <span className="font-bold">修改会同时更新所有使用此预设的位置</span>
@@ -462,7 +500,7 @@ export default function ApiPresetEditorModal({
                 const next = pickDialogueApi(sourcePreset.config);
                 delete next.presetId; delete next.presetFp;
                 requestVersionRef.current += 1;
-                setLoadingModels(false); setTesting(false); setStatus('');
+                setLoadingModels(false); setTesting(false); setStatus(''); setTestTone(null);
                 setDraft(next); setModels(readCachedModelsForEndpoint(next));
                 setName(current => current.trim() || createUniqueCopyName(sourcePreset.name));
                 setGroup(sourcePreset.group || ''); setSeedPresetId(sourcePreset.id);
@@ -472,6 +510,7 @@ export default function ApiPresetEditorModal({
             </ApiPresetPicker>
           </div>}
 
+          {!inline && <>
           <div className="grid grid-cols-1 gap-3">
             <label className="block text-xs text-slate-500">
               预设名称
@@ -515,6 +554,7 @@ export default function ApiPresetEditorModal({
             </label>
           </div>
 
+          </>}
           <DialogueApiFields
             value={draft}
             modelPlaceholder="模型名称"
@@ -545,12 +585,12 @@ export default function ApiPresetEditorModal({
             </p>
           )}
           {status && (
-            <p role="status" className="text-xs text-slate-600 break-words">
+            <p role="status" data-api-test-tone={testTone || undefined} className="api-connection-status">
               {status}
             </p>
           )}
         </div>
-      </Modal>
+      </EditorFrame>
 
 
 

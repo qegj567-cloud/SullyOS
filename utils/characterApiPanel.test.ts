@@ -53,6 +53,7 @@ beforeEach(async () => {
   document.body.append(host);
   root = createRoot(host);
   onChange.mockClear();
+  os.updateApiPreset.mockClear();
   os.addToast.mockClear();
   await render();
 });
@@ -88,7 +89,7 @@ describe('CharacterApiPanel 所见即所得自动保存与预设 ID 引用', () 
     expect(onChange).toHaveBeenLastCalledWith(undefined);
   });
 
-  it('从已绑定预设点「复制为独立配置」脱离引用，切换 Anthropic 原生并测连及自动落盘', async () => {
+  it('已绑定预设直接显示字段，切换 Anthropic 原生原地同步预设并测试连接', async () => {
     const network = vi.fn(
       async () =>
         new Response(
@@ -111,15 +112,14 @@ describe('CharacterApiPanel 所见即所得自动保存与预设 ID 引用', () 
     onChange.mockClear();
     await render(boundChar);
 
-    await click('复制为独立配置');
-    expect(onChange).toHaveBeenCalledTimes(1);
-    expect(onChange.mock.calls[0][0].presetId).toBeUndefined();
+    expect(host.textContent).not.toContain('复制为独立配置');
+    expect(host.querySelector('[data-api-field="base-url"] input')).not.toBeNull();
 
     await act(async () => (host.querySelector('button[aria-label="接口类型"]') as HTMLButtonElement).click());
     await act(async () => (Array.from(host.querySelectorAll('[role="option"]')).find(option => option.textContent?.includes('Anthropic')) as HTMLElement).click());
-    expect(onChange).toHaveBeenLastCalledWith(
-      expect.objectContaining({ baseUrl: 'https://a.test/v1/messages', apiType: 'anthropic' }),
-    );
+    expect(os.updateApiPreset).toHaveBeenLastCalledWith('a', '日常预设',
+      expect.objectContaining({ baseUrl: 'https://a.test/v1/messages', apiType: 'anthropic' }), '日常');
+    expect(onChange).not.toHaveBeenCalled();
 
     await click('测试连接');
     expect(host.textContent).toContain('连接成功');
@@ -171,7 +171,8 @@ describe('CharacterApiPanel 所见即所得自动保存与预设 ID 引用', () 
     slotName: '主对话', allowFollow: false, value: slotFromPreset(os.apiPresets[0]), onCommit: onChange,
   })));
   expect(host.querySelector('.api-preset-trigger')?.textContent).toContain('日常预设');
-  expect(host.querySelector('[data-testid="bound-preset-card"]')).not.toBeNull();
+  expect(host.querySelector('[data-testid="bound-preset-card"]')).toBeNull();
+  expect(host.querySelector('[data-testid="inline-preset-fields"]')).not.toBeNull();
   expect(onChange).not.toHaveBeenCalled();
 });
 
