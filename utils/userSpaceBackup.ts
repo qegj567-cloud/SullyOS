@@ -203,7 +203,18 @@ async function writeUserSpaces(zip: BackupArchiveWriter, mode: Mode, scope: 'cur
             if (/^\s*[\[{]/.test(value)) { try { return JSON.stringify(await pack(JSON.parse(value), key, location)); } catch (error) { if (!(error instanceof SyntaxError)) throw error; } }
 
             if (mode !== 'text_only' && /^data:[^,]*;base64,/.test(value)) {
-                const blob = dataUrlToBlob(value);
+                let blob: Blob | null = null;
+                try { blob = dataUrlToBlob(value); }
+                catch (error) {
+                    if (!(error instanceof Error) || !['InvalidCharacterError', 'SyntaxError'].includes(error.name)) throw error;
+                }
+                if (!blob) {
+                    if (!/^data:image\//i.test(value)) throw new Error('内嵌素材格式损坏，无法导出');
+                    const id = 'damaged-inline-' + await hashBlob(new Blob([value]));
+                    recordMissingBackupAsset(missingAssets, id, location);
+                    missingAssets.get(id)!.reason = 'damaged';
+                    return '';
+                }
                 return { __spaceDataURL: await addBytes(blob), type: blob.type, header: value.slice(0, value.indexOf(',') + 1) };
             }
             if (mode !== 'text_only') {
