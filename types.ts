@@ -820,6 +820,20 @@ export interface DateStyleConfig {
   digDeeper?: boolean;
   /** 自定义补充文风要求，原样追加进风格块 */
   extra?: string;
+  /** 互动基调独立于文风；缺省沿用人物自身。 */
+  tone?: 'character' | 'daily_warm' | 'push_pull' | 'direct_affection';
+  /** 用户为本场指定的情境，不代表已经发生的共同经历。 */
+  sceneSeed?: string;
+}
+
+/** 一键体验只覆盖写法与情境，不覆盖人称、语音、观测或时间偏好。 */
+export type DateExperienceConfig = Pick<DateStyleConfig, 'style' | 'tone' | 'digDeeper' | 'sceneSeed' | 'extra'>;
+export interface DateExperiencePreset {
+  id: string;
+  name: string;
+  /** 保留旧补充预设格式；没有 experience 时仅应用 content。 */
+  content: string;
+  experience?: DateExperienceConfig;
 }
 
 export interface RoomItem {
@@ -2343,6 +2357,8 @@ export interface SuspendedDate {
     suspendedAt: number;
     /** 切走时还没回来的那次回复；恢复后据此显示「正在输入」，落定后刷新记录。 */
     pendingTurn?: Promise<unknown>;
+    experience?: DateExperienceConfig;
+    openingMode?: 'approach' | 'invite';
 }
 
 // ─── 见面 · 剧情剧场 ────────────────────────────────────────────────
@@ -3111,9 +3127,11 @@ export interface CharacterProfile {
   dateSkinSets?: SkinSet[];     // Multiple skin sets for portrait mode
   activeSkinSetId?: string;     // Currently active skin set ID
   dateStyleConfig?: DateStyleConfig; // 见面模式文风（写作风格 / 叙事人称 / 自定义补充）
-  dateExtraPresets?: Array<{ id: string; name: string; content: string }>; // 当前角色的见面自定义补充预设
+  dateExtraPresets?: DateExperiencePreset[]; // 私有体验预设；兼容旧的纯补充文本
   /** 观测协议 OBSERVE：开启后每条回复注入「时间/地点/状态/细节」结构化观测，渲染成全息 HUD（样式/字段可自定义） */
   dateObserve?: DateObserveConfig;
+  /** 陪伴回复附带可编辑行动建议；默认关闭，不随文风预设切换。 */
+  dateActionChoicesEnabled?: boolean;
 
   savedDateState?: DateState;
   specialMomentRecords?: Record<string, SpecialMomentRecord>;

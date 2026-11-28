@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { expect, it } from 'vitest';
 import DateExtraPresets from '../components/date/DateExtraPresets';
 import { stripSensitiveCardFields } from './characterCard';
+import type { DateExperienceConfig, DateExperiencePreset } from '../types';
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 it('applies, duplicates, updates and deletes presets without clearing the current supplement', async () => {
@@ -22,10 +23,10 @@ it('applies, duplicates, updates and deletes presets without clearing the curren
         const button = [...host.querySelectorAll('button')].find(el => el.textContent === label);
         expect(button).toBeTruthy(); button!.click();
     });
-    const choose = async (id: string) => act(async () => {
-        const select = host.querySelector('select')!;
-        select.value = id; select.dispatchEvent(new Event('change', { bubbles: true }));
-    });
+    const choose = async (id: string) => {
+        await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="自定义补充预设"]')!.click());
+        await act(async () => [...host.querySelectorAll<HTMLButtonElement>('[data-preset-id]')].find(button => button.dataset.presetId === id)!.click());
+    };
     try {
         await act(async () => root.render(React.createElement(Harness)));
         await choose('a'); expect(draft).toBe('生活细节');
@@ -47,6 +48,50 @@ it('applies, duplicates, updates and deletes presets without clearing the curren
         expect(saved).toEqual([{id: 'a', name: '日常', content: '生活细节'}]);
         expect(draft).toBe('新的生活细节');
         expect(stripSensitiveCardFields({ name: '角色', dateExtraPresets: saved })).toEqual({ name: '角色' });
+    } finally { act(() => root.unmount()); host.remove(); }
+});
+
+it('saves a complete experience with an empty supplement and keeps legacy application narrow', async () => {
+    let saved: DateExperiencePreset[] = [{ id: 'legacy', name: '日常', content: '旧补充' }];
+    let active: DateExperienceConfig = { style: 'plain', tone: 'daily_warm', digDeeper: false, sceneSeed: '书房', extra: '' };
+    let edit!: (next: DateExperienceConfig) => void;
+    function Harness() {
+        const [presets, setPresets] = useState(saved);
+        const [experience, setExperience] = useState(active);
+        saved = presets; active = experience; edit = setExperience;
+        return React.createElement(DateExtraPresets, { presets, value: experience.extra || '', experience,
+            onApply: (content, full) => setExperience(full || { ...experience, extra: content }), onChange: setPresets });
+    }
+    const host = document.createElement('div'); document.body.append(host);
+    const root = createRoot(host);
+    const click = async (label: string) => act(async () => {
+        const button = [...host.querySelectorAll('button')].find(el => el.textContent === label);
+        expect(button).toBeTruthy(); expect(button!.disabled).toBe(false); button!.click();
+    });
+    const choose = async (id: string) => {
+        await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="自定义补充预设"]')!.click());
+        await act(async () => [...host.querySelectorAll<HTMLButtonElement>('[data-preset-id]')].find(button => button.dataset.presetId === id)!.click());
+    };
+    try {
+        await act(async () => root.render(React.createElement(Harness)));
+        await choose('legacy');
+        expect(active).toMatchObject({ style: 'plain', sceneSeed: '书房', extra: '旧补充' });
+        await act(async () => edit({ ...active, extra: '' }));
+        await click('存为新预设');
+        expect(saved[1].experience).toEqual(active);
+        expect(saved[0]).not.toHaveProperty('experience');
+        const completeId = saved[1].id;
+        await act(async () => edit({ ...active, sceneSeed: '厨房', tone: 'direct_affection' }));
+        await click('更新所选预设');
+        expect(saved[1].experience?.sceneSeed).toBe('书房');
+        await click('确认覆盖所选预设');
+        expect(saved[1].experience?.sceneSeed).toBe('厨房');
+        await choose('legacy');
+        await choose(completeId);
+        expect(active).toMatchObject({ tone: 'direct_affection', sceneSeed: '厨房', extra: '' });
+        await click('删除预设'); await click('确认删除预设（保留当前补充）');
+        expect(saved).toHaveLength(1);
+        expect(active.sceneSeed).toBe('厨房');
     } finally { act(() => root.unmount()); host.remove(); }
 });
 

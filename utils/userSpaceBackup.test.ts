@@ -11,6 +11,7 @@ import type { BackupMissingAsset } from './backupMissingAssets';
 import { USER_LOCATION_STORAGE_KEY } from './userLocationPrivacy';
 import { exportUserLocationSettings } from './userLocationBackup';
 import { HELP_HISTORY_KEY } from './sullyHelpBackup';
+import { DATE_STYLE_PRESETS } from './dateStylePresets';
 
 beforeEach(async () => {
     localStorage.clear();
@@ -19,6 +20,66 @@ beforeEach(async () => {
         const db = await openSpaceDB(id);
         await commitSpaceRows(db, Object.fromEntries(Array.from(db.objectStoreNames).filter(n => n !== 'blob_assets').map(n => [n, []])), true);
     }
+});
+
+describe('companion experience backup round trips', () => {
+    it('合并后的立绘管理仍沿用原数据：整合导出恢复背景、默认立绘、皮肤、自定义情绪和共享图片', async () => {
+        const ref = await putSharedImage(new Blob(['date-artwork-roundtrip'], { type: 'image/png' }));
+        const original = { id: 'date-artwork', name: '立绘备份', memories: [], dateBackground: ref,
+            sprites: { normal: ref, chibi: ref }, customDateSprites: ['excited'], activeSkinSetId: 'winter',
+            dateSkinSets: [{ id: 'winter', name: '冬装', sprites: { excited: ref, happy: 'https://example.com/happy.png' } }] };
+        for (const scope of ['current', 'all'] as const) {
+            await commitSpaceRows(await openSpaceDB('default'), { characters: [original] }, true);
+            const archive = await exportUserSpaces('full', scope);
+            await commitSpaceRows(await openSpaceDB('default'), { characters: [] }, true);
+            const zip = await openBackupZip(archive);
+            try { await importUserSpaces(zip); } finally { await zip.close(); }
+            expect(await DB.getCharacter(original.id)).toMatchObject(original);
+            expect(await (await DB.getBlobAsset(ref.slice(8)))!.text()).toBe('date-artwork-roundtrip');
+        }
+    });
+    const role = {
+        id: 'date-backup', name: '陪伴备份', memories: [],
+        dateActionChoicesEnabled: true,
+        dateStyleConfig: { style: 'lyrical', tone: 'push_pull', pov: 'first-you', sceneSeed: '私人场景', extra: '私人补充', digDeeper: false },
+        dateExtraPresets: [
+            { id: 'legacy', name: '旧预设', content: '旧补充' },
+            { id: 'full', name: '完整预设', content: '新补充', experience: { style: 'plain', tone: 'daily_warm', sceneSeed: '', extra: '新补充', digDeeper: false } },
+            ...DATE_STYLE_PRESETS.map(style => ({ id: `style-${style.id}`, name: style.label, content: '', experience: { style: style.id } })),
+        ],
+    };
+    it.each(['full', 'text_only'] as const)('%s 实际导出再恢复个人和全部用户，完整保留新旧预设', async mode => {
+        for (const scope of ['current', 'all'] as const) {
+            const row = { id: 123, charId: role.id, role: 'assistant', type: 'text', content: '角色正文', timestamp: 1, metadata: { source: 'date', dateActionChoices: [{ kind: 'daily', text: '尚未选择的建议' }] } };
+            await commitSpaceRows(await openSpaceDB('default'), { characters: [role], messages: [row] }, true);
+            const archive = await exportUserSpaces(mode, scope);
+            await commitSpaceRows(await openSpaceDB('default'), { characters: [{ ...role, dateStyleConfig: {}, dateExtraPresets: [] }] }, true);
+            const zip = await openBackupZip(archive);
+            try { await importUserSpaces(zip); } finally { await zip.close(); }
+            const restored = (await readSpaceStore(await openSpaceDB('default'), 'characters'))[0];
+            expect(restored.dateStyleConfig).toEqual(role.dateStyleConfig);
+            expect(restored.dateExtraPresets).toEqual(role.dateExtraPresets);
+            expect(restored.dateActionChoicesEnabled).toBe(true);
+            const restoredRow = (await readSpaceStore(await openSpaceDB('default'), 'messages'))[0];
+            expect(restoredRow.content).toBe('角色正文');
+            expect(restoredRow.metadata.dateActionChoices).toEqual(row.metadata.dateActionChoices);
+        }
+    });
+    it('迁入独立用户保留体验，媒体补图不覆盖目标用户的文字配置', async () => {
+        await commitSpaceRows(await openSpaceDB('default'), { characters: [role] }, true);
+        const text = await JSZip.loadAsync(await (await exportUserSpaces('text_only', 'current')).arrayBuffer());
+        const media = await JSZip.loadAsync(await (await exportUserSpaces('media_only', 'current')).arrayBuffer());
+        const imported = await importUserSpaces(text, false, { asNewUsers: true });
+        expect(imported).toHaveLength(1);
+        const copy = (await readSpaceStore(await openSpaceDB(imported[0].id), 'characters'))[0];
+        expect(copy.dateExtraPresets).toEqual(role.dateExtraPresets);
+        expect(copy.dateStyleConfig).toEqual(role.dateStyleConfig);
+        expect(copy.dateActionChoicesEnabled).toBe(true);
+        const changed = { ...role, dateStyleConfig: { ...role.dateStyleConfig, sceneSeed: '目标用户的新场景' } };
+        await commitSpaceRows(await openSpaceDB('default'), { characters: [changed] }, true);
+        await importUserSpaces(media);
+        expect((await readSpaceStore(await openSpaceDB('default'), 'characters'))[0].dateStyleConfig.sceneSeed).toBe('目标用户的新场景');
+    });
 });
 
 describe('saved location settings in space backups', () => {

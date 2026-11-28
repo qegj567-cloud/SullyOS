@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import * as memoryPipeline from './memoryPalace/pipeline';
 import { DatePrompts, DATE_STYLE_PRESETS, extractObservation, stripObservation, hasObservation, resolveObserveFields, OBSERVE_OPEN, OBSERVE_CLOSE } from './datePrompts';
 import type { CharacterProfile, UserProfile, Message, MountedWorldbook } from '../types';
 import { buildCharacterResponsePrinciples } from './characterResponsePrinciples';
@@ -97,11 +98,15 @@ describe('DatePrompts.buildSessionPayload', () => {
         expect(sysOf(messages)).toContain('<date-voice lang="en">');
     });
 
-    it('按 dateStyleConfig.style 切换风格块', async () => {
+    it.each(['send', 'reroll'] as const)('%s 只注入所选的完整文风，不混入其余九套', async variant => {
         for (const preset of DATE_STYLE_PRESETS) {
             const char = makeChar({ dateStyleConfig: { style: preset.id } });
-            const { messages } = await DatePrompts.buildSessionPayload(baseInput(char));
-            expect(sysOf(messages)).toContain(`风格：${preset.label}`);
+            const { messages } = await DatePrompts.buildSessionPayload({ ...baseInput(char), variant });
+            const system = sysOf(messages);
+            expect(system).toContain(preset.block);
+            for (const other of DATE_STYLE_PRESETS.filter(p => p.id !== preset.id)) {
+                expect(system).not.toContain(other.title);
+            }
         }
     });
 
@@ -136,8 +141,9 @@ describe('DatePrompts.buildSessionPayload', () => {
         const off = await DatePrompts.buildSessionPayload(baseInput(makeChar({ dateStyleConfig: { digDeeper: false } })));
         expect(sysOf(off.messages)).not.toContain('深挖，别填充');
         expect(lastUserOf(off.messages).content).not.toContain('本轮线索');
-        // ContextBuilder 的全 App 通用精简版（表达底线）不受 digDeeper 开关影响，常驻
-        expect(sysOf(off.messages)).toContain('表达底线');
+        // 见面专用回应原则仍在，但不重复注入公共深挖段。
+        expect(sysOf(off.messages)).not.toContain('表达底线');
+        expect(off.messages.at(-1)?.content).toContain('短答可以简短');
     });
 
     it('本轮 user 带 System Note，末尾 system 收束角色原则；reroll 的 note 不同', async () => {
@@ -170,7 +176,7 @@ describe('DatePrompts.buildSessionPayload', () => {
 });
 
 describe('跨场景角色原则', () => {
-    it('ChatApp 与见面发送、重生成、开场共用完整的表达原则，且只注入一次', async () => {
+    it('私聊保留共享表达原则，见面三条路径只注入一次专属原则', async () => {
         const char = makeChar();
         const allMsgs = [makeMsg({ content: '今天不想出门，就坐会儿吧。' })];
         const shared = buildCharacterResponsePrinciples(char.name, user.name);
@@ -186,10 +192,12 @@ describe('跨场景角色原则', () => {
             char, userProfile: user, allMsgs, emojis: [], userText: allMsgs[0].content, variant: 'reroll',
         });
         const peek = (await DatePrompts.buildPeekPayload({ char, userProfile: user, allMsgs, emojis: [] }));
-        for (const messages of [chat.fullMessages, send.messages, reroll.messages, peek.messages]) {
+        expect(chat.fullMessages.map(m => m.content).join('\n').split(shared)).toHaveLength(2);
+        for (const messages of [send.messages, reroll.messages, peek.messages]) {
             const text = messages.map(m => m.content).join('\n');
-            expect(text.split(shared)).toHaveLength(2);
-            expect(messages.slice(-1)[0].content).toContain(shared);
+            expect(text).not.toContain(shared);
+            expect(text.split('### 面对面的角色与回应')).toHaveLength(2);
+            expect(messages.slice(-1)[0].content).toContain('不把它当事实');
         }
         expect(lastUserOf(send.messages).content).toContain(allMsgs[0].content);
         expect(lastUserOf(reroll.messages).content).toContain('不必加强情绪或推进关系');
@@ -207,10 +215,10 @@ describe('跨场景角色原则', () => {
         expect(sysOf(messages)).toContain('不为了凑标签种类制造情绪');
         const tail = messages.slice(-1)[0].content;
         expect(tail).toContain('文风只决定怎样描写');
-        expect(tail).toContain('不必变成统一的温柔口吻');
-        expect(tail).toContain('不替对方写下接受、回应或关系升级');
-        expect(tail).toContain('推测保留不确定');
-        expect(tail).toContain('已有亲密和热烈也可以自然延续');
+        expect(tail).toContain('不要把自己磨成统一的温柔客服');
+        expect(tail).toContain('不代写接受或关系升级');
+        expect(tail).toContain('不确定判断');
+        expect(tail).toContain('已有且愿意的亲近也可以自然延续');
     });
 });
 
@@ -628,7 +636,7 @@ describe('DatePrompts.buildPeekPayload', async () => {
     it('关闭线下时间感知时，感知与会话都不泄漏今日日程、神经链接记忆日期或记忆宫殿现实日期标注', async () => {
         const char = makeChar({
             dateTimeAwarenessEnabled: false,
-            scheduleConfig: { enabled: true, style: 'conscious' },
+            scheduleFeatureEnabled: true, scheduleStyle: 'mindful',
             refinedMemories: { '2026-10': '一起在旧书店躲雨' },
             activeMemoryMonths: ['2026-10'],
             memories: [{ id: 'm1', date: '2026-10-14', summary: '借走了一本诗集', mood: 'warm' }],
@@ -646,6 +654,13 @@ describe('DatePrompts.buildPeekPayload', async () => {
                 '- [2026年11月1日（前天）] 约好下次去海边（对应日期：2026年11月1日）',
             ].join('\n'),
         });
+        // 请求自备召回：提供本轮结果来验证日期清理，不依赖档案上的旧注入。
+        const recall = vi.spyOn(memoryPipeline, 'injectMemoryPalace').mockImplementation(async request => {
+            request.memoryPalaceInjection = char.memoryPalaceInjection;
+            const { createRecallTrace } = await import('./memoryPalace/trace');
+            return createRecallTrace({ charId: char.id, recentMessageCount: 1, hasQueryHint: false, clearedPreviousMemory: true, clearedPreviousRoomPlates: true });
+        });
+        try {
         const peek = await DatePrompts.buildPeekPayload({
             char, userProfile: user, allMsgs: [makeMsg({ content: '推开书店的门。' })], emojis: [],
         });
@@ -670,5 +685,7 @@ describe('DatePrompts.buildPeekPayload', async () => {
         expect(sysOf(session.messages)).toContain('借走了一本诗集');
         expect(lastUserOf(peek.messages).content).not.toContain('如果刚聊完');
         expect(lastUserOf(peek.messages).content).toContain('根据最近记录中的剧情进展');
+        expect(recall).toHaveBeenCalledTimes(2);
+        } finally { recall.mockRestore(); }
     });
 });

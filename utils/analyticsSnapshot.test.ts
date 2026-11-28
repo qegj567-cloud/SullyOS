@@ -11,6 +11,18 @@
  * 不用改测试也会被抓到——逐字段断言做不到这一点。
  */
 import { describe, it, expect, beforeEach } from 'vitest';
+it('陪伴快照只报固定选项，场景正文与私人预设名称不会外发', () => {
+    const char = { id: 'c', dateActionChoicesEnabled: true, dateStyleConfig: { style: 'PRIVATE_STYLE', tone: 'PRIVATE_TONE', pov: 'PRIVATE_POV', sceneSeed: 'PRIVATE_SCENE', extra: 'PRIVATE_EXTRA' },
+        dateExtraPresets: [{ id: 'PRIVATE_ID', name: 'PRIVATE_NAME', content: 'PRIVATE_TEXT', experience: { extra: 'PRIVATE_PACKAGE' } }],
+        dateObserve: { enabled: true, style: 'PRIVATE_HUD', fields: { time: { label: 'PRIVATE_LABEL', hint: 'PRIVATE_HINT' } } },
+        dateLeaveReminder: { enabled: true, delayMinutes: 17 }, dateSkinSets: [{ id: 'PRIVATE_SKIN', name: 'PRIVATE_NAME', sprites: { normal: 'PRIVATE_URL' } }] } as unknown as CharacterProfile;
+    const snapshot = collectCharSettings([char], 'c');
+    expect(snapshot).toMatchObject({ 见面写作风格: 'custom', 见面叙事人称: 'custom', 见面互动基调: 'custom', 见面体验配置: '预设、场景与行动选择' });
+    expect(JSON.stringify(snapshot)).not.toContain('PRIVATE');
+    expect(snapshot).toMatchObject({ 观测协议: '有人开', 观测HUD样式: 'custom', 见面离开提醒: '有人开' });
+    expect(collectCharSettings([{ ...char, dateLeaveReminder: { enabled: 'PRIVATE_FLAG' } } as unknown as CharacterProfile], 'c').见面离开提醒).toBe('都没开');
+    expect(collectCharSettings([{ ...char, dateActionChoicesEnabled: 'PRIVATE_FLAG' } as unknown as CharacterProfile], 'c').见面体验配置).toBe('预设与场景');
+});
 import type { APIConfig, CharacterProfile, CloudBackupConfig, OSTheme, RealtimeConfig } from '../types';
 import {
     amsg2Stage,
@@ -22,6 +34,7 @@ import {
     type FeatureSources,
 } from './analyticsSnapshot';
 import { createBuiltinSullyLive2DConfig } from './builtinSullyLive2D';
+import { DATE_STYLE_PRESETS } from './dateStylePresets';
 import { createFishingMarketState, FISHING_MARKET_STORAGE_KEY } from './vrWorld/fishingMarket';
 import { freshFamiliarity } from './vrWorld/sarFamiliarity/storageTypes';
 import { USER_LOCATION_STORAGE_KEY } from './userLocationPrivacy';
@@ -40,6 +53,13 @@ const POISON = {
     dbId: 'db-0123456789abcdef',
     css: '.bubble{content:"我写的CSS"}',
 };
+
+it.each(DATE_STYLE_PRESETS)('见面文风 $id 进入原有快照白名单，不上报正文', preset => {
+    const snapshot = collectCharSettings([{ id: 'date-style', dateStyleConfig: { style: preset.id, extra: POISON.token } } as CharacterProfile], 'date-style');
+    expect(snapshot.见面写作风格).toBe(preset.id);
+    expect(JSON.stringify(snapshot)).not.toContain(POISON.token);
+    expect(JSON.stringify(snapshot)).not.toContain(preset.block);
+});
 
 it('聊天备注快照仅报开关，不含备注或非法开关内容', () => {
     for (const value of [true, false, undefined, POISON.key]) {
@@ -687,8 +707,8 @@ describe('快照事件的属性宽度', () => {
     it('当前角色设置', () => {
         const fields = collectCharSettings([{...plainChar('a'),stickerVision:true}], 'a');
         expect(fields.表情看图).toBe('有人开');
-        // 40：「世界书限定场景」加进来的。
-        expect(Object.keys(fields).length).toBeLessThanOrEqual(40);
+        // 43：保留世界书场景统计，补充见面基调、体验配置与离开提醒。
+        expect(Object.keys(fields).length).toBeLessThanOrEqual(43);
     });
 
     it('SAR 发布功能保持小快照', () => {

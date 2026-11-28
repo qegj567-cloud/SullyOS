@@ -14,6 +14,10 @@ import { resolveCloudGenFeatureSwitches } from './cloudGen/settings';
 import { CLOUD_GEN_PURPOSES, CLOUD_GEN_PURPOSE_META } from './cloudGen/types';
 import { isCloudGenHintOff } from './cloudGen/hint';
 import { reducedBlurSetting } from './blurPolicy';
+import { resolveDateLeaveDelayMinutes } from './dateLeaveReminder';
+
+const dateOption = (value: string | undefined, allowed: readonly string[], fallback: string) =>
+    value ? (allowed.includes(value) ? value : '未识别，按默认处理') : fallback;
 
 type SettingsSource = Pick<ReturnType<typeof useOS>, 'apiConfig' | 'memoryPalaceConfig' | 'realtimeConfig' | 'theme' | 'isDataLoaded'> & Partial<Pick<ReturnType<typeof useOS>, 'remoteVectorConfig' | 'userProfile'>>;
 type Endpoint = { baseUrl: string; apiKey: string; model: string };
@@ -81,6 +85,32 @@ export async function readHelpDeskSettings(os: SettingsSource, char?: CharacterP
             心象提示词范围: thinking?.scope === 'character' ? '仅当前角色' : '所有角色（共用）',
             心象提示词模式: thinking?.mode === 'replace' ? '替换默认提示词' : '追加',
             时间感知: char.timeAwarenessEnabled !== false, 主动消息角色开关: char.activeMsg2Config?.enabled === true,
+            陪伴默认体验: {
+                行动选择: char.dateActionChoicesEnabled === true,
+                文风: dateOption(char.dateStyleConfig?.style, ['cinematic', 'plain', 'lyrical', 'playful', 'intense', 'syrup', 'dark_comedy', 'suspense', 'drama', 'slice_of_life'], 'cinematic'),
+                基调: dateOption(char.dateStyleConfig?.tone, ['character', 'daily_warm', 'push_pull', 'direct_affection'], 'character'),
+                人称: dateOption(char.dateStyleConfig?.pov, ['third-name', 'third-you', 'first-you'], '随角色'), 深挖: char.dateStyleConfig?.digDeeper !== false,
+                场景已设: !!char.dateStyleConfig?.sceneSeed?.trim(), 补充已设: !!char.dateStyleConfig?.extra?.trim(),
+                完整体验预设数: char.dateExtraPresets?.filter(p => p.experience).length || 0,
+                旧补充预设数: char.dateExtraPresets?.filter(p => !p.experience).length || 0,
+                作用范围: '角色默认；入口可为本场临时覆盖，不包含本场临时内容',
+            },
+            见面设置: {
+                观测协议: {
+                    开启: char.dateObserve?.enabled === true,
+                    样式: dateOption(char.dateObserve?.style, ['hologram', 'ink', 'neon', 'crystal', 'terminal'], 'hologram'),
+                    启用的基础维度数: (['time', 'place', 'state', 'detail'] as const).filter(key => char.dateObserve?.fields?.[key]?.enabled !== false).length,
+                    启用的自定义维度数: char.dateObserve?.custom?.filter(field => field.enabled !== false && field.label?.trim()).length || 0,
+                },
+                离开提醒: { 开启: char.dateLeaveReminder?.enabled === true, 等待分钟: resolveDateLeaveDelayMinutes(char) },
+                背景已设: !!char.dateBackground,
+                套装数: (char.dateSkinSets?.length || 0) + 1,
+                当前套装: char.dateSkinSets?.some(skin => skin.id === char.activeSkinSetId) ? '自定义套装' : '默认立绘',
+                自定义情绪数: char.customDateSprites?.length || 0,
+                阅读样式: dateOption(char.dateAppearance?.preset, ['none', 'novel', 'paper', 'night'], 'none'),
+                浅色阅读: char.dateLightReading === true, 阅读头像: char.dateReadingShowAvatars === true,
+                语音播放: char.dateVoiceEnabled === true, 见面时间感知: char.dateTimeAwarenessEnabled !== false,
+            },
         } : '本轮只提供所有角色共用的设置。需要查看某个角色的设置时，点「询问配置」里的「指定角色」，再选择角色。',
     };
 }
