@@ -323,3 +323,26 @@ it('reports missing post text separately from the actual character limit on refr
     await refreshFriendFeed(user,api,undefined,undefined,()=>0);
     expect((await readFriendFeed()).posts[0].text).toBe('换一种写法也能发布');
 });
+
+it.each([
+    ['self', 2], ['self', 5], ['stranger', 2], ['stranger', 5],
+] as const)('refresh examples match the actual %s round quota of %i rather than teaching a one-person response', async (kind, count) => {
+    await publicSettings({contentWeights:kind==='self'?{self:100,related:1,stranger:0}:{self:0,related:0,stranger:100}});
+    response({kind:'none',npcActions:[]});
+    const rolls=[0,0,count===5?.99:0];
+    await refreshFriendFeed(user,api,undefined,undefined,()=>rolls.shift()??0);
+    const body=JSON.parse(vi.mocked(safeFetchJson).mock.calls[0][1]!.body as string);
+    const prompt=body.messages.map((m:any)=>typeof m.content==='string'?m.content:JSON.stringify(m.content)).join('\n');
+    const example=JSON.parse(prompt.split('本次刷新请按这个可直接解析的结构填写，不要输出上面的选项说明文字：')[1].split('。有路人新帖时')[0]).friendFeedAction;
+    expect(example.kind).toBe(kind==='self'?'post':'none');
+    expect(example.npcActions).toHaveLength(count-(kind==='self'?1:0));
+    expect(example.npcActions.every((p:any)=>p.kind==='post')).toBe(true);
+    expect(new Set(example.npcActions.map((p:any)=>p.name)).size).toBe(example.npcActions.length);
+    expect(prompt).toContain('不再从 2～5 中重新选人数');
+    if(kind==='stranger'){
+        expect(prompt).toContain('不借用世界书已有 NPC 的名字、身份或关系');
+        expect(prompt).not.toContain('可优先让原 NPC 接话');
+    }
+    expect(safeFetchJson).toHaveBeenCalledTimes(1);
+    expect((await readFriendFeed()).posts).toHaveLength(0);
+});
