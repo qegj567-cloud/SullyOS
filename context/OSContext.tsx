@@ -4141,6 +4141,10 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               const collaborationAssets = collaborationBackup.assets || [];
               for (let index = 0; index < collaborationAssets.length; index++) {
                   const asset = collaborationAssets[index];
+                  if (!(asset.blob instanceof Blob)) {
+                      missingAssets.push({ id: 'collaboration:' + asset.id, locations: ['协同工作附件'] });
+                      continue;
+                  }
                   const safeId = asset.id.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120) || `asset-${index}`;
                   const path = `collaboration/assets/${String(index).padStart(5, '0')}-${safeId}.bin`;
                   zip.fileBlob(path, asset.blob, { compression: 'STORE' });
@@ -4462,7 +4466,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               );
               if (missing.length > 0) {
                   console.warn(`备份时 ${missing.length} 个图片令牌已无对应数据，已跳过:`, missing);
-                  missingAssets = missing.map(token => ({ id: token.slice('blobref:'.length), locations: [] }));
+                  missingAssets.push(...missing.map(token => ({ id: token.slice('blobref:'.length), locations: [] })));
               }
           }
           writeMissingBackupAssets(zip as unknown as ZipFileWriter, missingAssets);

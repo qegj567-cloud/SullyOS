@@ -518,3 +518,33 @@ it('restores manually edited emotion input and preserves a later explicit deleti
         if (remove) expect(restored.buffInjection).toBe('');
     }
 });
+
+it('keeps text-only decoration backups readable and allows new imports after restore', async () => {
+    const { DECORATION_STORE, readLibraryDecorations, saveLibraryDecoration } = await import('./decorationLibrary');
+    const old = { format: 'sullyos-chat-decoration', version: 1, name: '旧装扮', _libraryId: 'old-outfit', parts: {
+        background: {image: 'data:image/png;base64,YQ==', style: 'plain'}, sound: {src:'data:audio/wav;base64,YQ==',volume:0.5}, css: '.sully-chat-root{color:red}'
+    }};
+    await DB.saveAsset(DECORATION_STORE, JSON.stringify([old]));
+    const zip = await openBackupZip(await exportUserSpaces('text_only','current'));
+    await DB.saveAsset(DECORATION_STORE, '[]');
+    await importUserSpaces(zip);
+    const list = await readLibraryDecorations();
+    expect(list[0]).toMatchObject({_libraryId:'old-outfit',parts:{background:{image:null},sound:null,css:old.parts.css}});
+    await saveLibraryDecoration({format:'sullyos-chat-decoration',version:1,name:'新装扮',parts:{css:'.sully-chat-root{color:blue}'}},{kind:'imported'});
+    expect((await readLibraryDecorations()).map(p=>p.name)).toEqual(['新装扮','旧装扮']);
+    await zip.close();
+});
+
+it('exports and restores around malformed inline images, reports damage and preserves the source', async () => {
+    const bad = 'data:image/png;base64,%%%';
+    await DB.saveAsset('appearance_preset_broken', JSON.stringify({name:'旧外观',image:bad,text:'保留文字'}));
+    let missing: BackupMissingAsset[] = [];
+    const blob = await exportUserSpaces('full','current',undefined,false,items=>{missing=items;});
+    expect(missing).toEqual([expect.objectContaining({reason:'damaged'})]);
+    expect(JSON.stringify(missing)).not.toContain(bad);
+    expect(JSON.parse((await DB.getAsset('appearance_preset_broken'))!).image).toBe(bad);
+    const zip = await openBackupZip(blob);
+    await importUserSpaces(zip);
+    expect(JSON.parse((await DB.getAsset('appearance_preset_broken'))!)).toMatchObject({text:'保留文字',image:''});
+    await zip.close();
+});

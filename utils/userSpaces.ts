@@ -54,6 +54,8 @@ export function selectUserSpace(id: string) {
 
 // System connection/preferences remain shared. Everything else is private by default.
 const sharedKeys = new Set([
+    // The boot gate reads these before the per-user storage facade is installed.
+    'sullyos_release_channel', 'sullyos_canary_boot_attempts', 'sullyos_canary_fallback_notice', 'sullyos_channel_arrival',
     'amsg2_pending_llm_creds', 'amsg2_llm_cred_fingerprints', 'amsg2_pending_tool_config', 'amsg2_pending_tool_config_version', 'amsg2_state_clock_watermark',
     // 救援模式警告跟着全局那一份 2.0 后台走，切用户空间不能让它消失。
     'amsg2_rescue_alert_v1',
