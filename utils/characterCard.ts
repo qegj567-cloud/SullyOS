@@ -88,6 +88,14 @@ export function stripSensitiveCardFields<T extends Record<string, any>>(data: T)
   for (const key of CARD_STRIPPED_FIELDS) {
     delete clone[key];
   }
+  // 发卡人本机的世界书外层分组与临时整书静音不随角色卡带出，免得暴露私人分组名或让收卡人导入后整本书默认失效；词条自身的 disable 保留。
+  if (Array.isArray(clone.mountedWorldbooks)) {
+    clone.mountedWorldbooks = clone.mountedWorldbooks.map((wb: Record<string, any>) => {
+      if (!wb || typeof wb !== 'object') return wb;
+      const { group: _group, bookDisabled: _bookDisabled, ...rest } = wb;
+      return rest;
+    });
+  }
   return clone as T;
 }
 

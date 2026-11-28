@@ -99,3 +99,20 @@ it('角色分享卡不携带聊天备注与 RECALL 提示开关，备注内容�
   const out = stripSensitiveCardFields(card);
   expect(out).toEqual({ name: '小明', description: '一段很长的角色介绍' });
 });
+
+it('角色分享卡剥离挂载世界书上的个人分组名与整书静音状态，保留单条停用与世界书名称', () => {
+  const card = {
+    name: '小夏',
+    mountedWorldbooks: [
+      { id: 'w1', title: '背景', content: '正文', category: '世界观A', group: '私人分组', bookDisabled: true, disable: false },
+      { id: 'w2', title: '分割线', content: '---', category: '世界观A', group: '私人分组', bookDisabled: true, disable: true },
+    ],
+  };
+  const before = structuredClone(card);
+  const out = stripSensitiveCardFields(card);
+  expect(card).toEqual(before);
+  expect(out.mountedWorldbooks).toEqual([
+    { id: 'w1', title: '背景', content: '正文', category: '世界观A', disable: false },
+    { id: 'w2', title: '分割线', content: '---', category: '世界观A', disable: true },
+  ]);
+});

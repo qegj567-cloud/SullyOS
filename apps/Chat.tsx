@@ -158,7 +158,7 @@ import {
     installableToWorldbooks,
     validateInstallableArtifact,
 } from '../features/collaboration/makers';
-import { upsertMountedWorldbooks } from '../utils/worldbook';
+import { resolveWorldbookCategoryMeta, upsertMountedWorldbooks } from '../utils/worldbook';
 
 const CollaborationWindow = React.lazy(() => import('../features/collaboration/CollaborationWindow'));
 
@@ -174,7 +174,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
     const { appearancePresets = [] } = useOS();
     const osAppearanceFonts = useMemo(() => appearancePresets.flatMap(preset => preset.theme.customFont?.startsWith('data:')
         ? [{ name: preset.name, source: preset.theme.customFont }] : []), [appearancePresets]);
-    const { activeApp, characters, activeCharacterId: osActiveCharacterId, setActiveCharacterId, addCharacter, updateCharacter, updateUserProfile, apiConfig, updateApiConfig, apiPresets, availableModels, addApiPreset, closeApp, openApp, customThemes, addCustomTheme, removeCustomTheme, addWorldbook, updateTheme, saveAppearancePreset, addToast, showError, userProfile, lastMsgTimestamp, groups, characterGroups, clearUnread, unreadMessages, realtimeConfig, memoryPalaceConfig, updateMemoryPalaceConfig, remoteVectorConfig, syncEmotionApiToAllCharacters, theme: baseOsTheme, openDateWithChar } = useOS();
+    const { activeApp, characters, activeCharacterId: osActiveCharacterId, setActiveCharacterId, addCharacter, updateCharacter, updateUserProfile, apiConfig, updateApiConfig, apiPresets, availableModels, addApiPreset, closeApp, openApp, customThemes, addCustomTheme, removeCustomTheme, worldbooks, addWorldbook, updateTheme, saveAppearancePreset, addToast, showError, userProfile, lastMsgTimestamp, groups, characterGroups, clearUnread, unreadMessages, realtimeConfig, memoryPalaceConfig, updateMemoryPalaceConfig, remoteVectorConfig, syncEmotionApiToAllCharacters, theme: baseOsTheme, openDateWithChar } = useOS();
     const wardrobeCharacter = characters.find(c=>c.id===osActiveCharacterId) || characters[0];
     const [trial,setTrial] = useState<(ChatDecorationTrial & {ownerId:string}) | null>(null);
     const liveTrial = !homePhone && activeApp===AppID.Chat && trial?.ownerId===wardrobeCharacter?.id && characters.some(c=>c.id===trial?.characterId) ? trial : null;
@@ -3621,7 +3621,10 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
             return `角色「${String(artifact.payload.name || artifact.title)}」已创建`;
         }
 
-        const books = installableToWorldbooks(artifact);
+        const books = installableToWorldbooks(artifact).map((book, _idx, all) => ({
+            ...book,
+            ...(all[0]?.category ? resolveWorldbookCategoryMeta(worldbooks, all[0].category) : {}),
+        }));
         for (const book of books) await addWorldbook(book);
         if (targetCharacterId) {
             await updateCharacter(targetCharacterId, current => ({
@@ -3632,7 +3635,7 @@ const Chat: React.FC<{homePhone?:HomePhoneChatProps}> = ({homePhone}) => {
         return target
             ? `世界书「${String(artifact.payload.category || artifact.title)}」的 ${books.length} 条内容已保存并挂载给 ${target.name}`
             : `世界书已保存到世界书库，共 ${books.length} 条`;
-    }, [addCharacter, addCustomTheme, addWorldbook, characters, osTheme, saveAppearancePreset, updateCharacter, updateTheme]);
+    }, [addCharacter, addCustomTheme, addWorldbook, characters, osTheme, saveAppearancePreset, updateCharacter, updateTheme, worldbooks]);
 
     // hideBeforeMessageId 不在视觉层过滤：用户依旧能往上翻到旧消息，只是 LLM 拉不到。
     // 真正想从聊天记录里抹掉，应该走"删除"。

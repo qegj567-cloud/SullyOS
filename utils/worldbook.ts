@@ -58,6 +58,139 @@ export const WORLDBOOK_ROLE_LABELS: Record<WorldbookDepthRole, string> = {
     2: 'Assistant',
 };
 
+export const WORLDBOOK_DEFAULT_CATEGORY = '未分类设定 (General)';
+export const WORLDBOOK_UNGROUPED_KEY = '__ungrouped__';
+
+export interface WorldbookPackage<T extends WorldbookLike = Worldbook> {
+    category: string;
+    group?: string;
+    bookDisabled: boolean;
+    books: T[];
+    enabledEntryCount: number;
+}
+
+export interface WorldbookGroupSection<T extends WorldbookLike = Worldbook> {
+    key: string;
+    name: string;
+    isUngrouped: boolean;
+    packages: WorldbookPackage<T>[];
+    enabledPackageCount: number;
+    anyEnabled: boolean;
+    allEnabled: boolean;
+}
+
+export const normalizeWorldbookGroup = (value: unknown): string | undefined => (
+    typeof value === 'string' && value.trim() ? value.trim() : undefined
+);
+
+export const buildWorldbookCatalog = <T extends WorldbookLike>(worldbooks: T[] = []): {
+    packages: WorldbookPackage<T>[];
+    groups: WorldbookGroupSection<T>[];
+    groupNames: string[];
+    hasNamedGroups: boolean;
+} => {
+    const byCategory = new Map<string, T[]>();
+    for (const wb of worldbooks) {
+        const cat = wb.category || WORLDBOOK_DEFAULT_CATEGORY;
+        const list = byCategory.get(cat);
+        if (list) list.push(wb);
+        else byCategory.set(cat, [wb]);
+    }
+
+    const packages: WorldbookPackage<T>[] = [...byCategory.entries()].map(([category, books]) => {
+        const group = books.map(book => normalizeWorldbookGroup(book.group)).find(Boolean);
+        const bookDisabled = books.length > 0 && books.every(book => book.bookDisabled === true);
+        const enabledEntryCount = books.filter(book => !book.disable).length;
+        return { category, group, bookDisabled, books, enabledEntryCount };
+    });
+
+    const namedMap = new Map<string, WorldbookPackage<T>[]>();
+    const ungrouped: WorldbookPackage<T>[] = [];
+    for (const pkg of packages) {
+        if (pkg.group) {
+            const list = namedMap.get(pkg.group);
+            if (list) list.push(pkg);
+            else namedMap.set(pkg.group, [pkg]);
+        } else {
+            ungrouped.push(pkg);
+        }
+    }
+
+    const toSection = (key: string, name: string, isUngrouped: boolean, list: WorldbookPackage<T>[]): WorldbookGroupSection<T> => {
+        const enabledPackageCount = list.filter(pkg => !pkg.bookDisabled).length;
+        return {
+            key,
+            name,
+            isUngrouped,
+            packages: list,
+            enabledPackageCount,
+            anyEnabled: enabledPackageCount > 0,
+            allEnabled: list.length > 0 && enabledPackageCount === list.length,
+        };
+    };
+
+    const groupNames = [...namedMap.keys()];
+    const hasNamedGroups = groupNames.length > 0;
+    const groups: WorldbookGroupSection<T>[] = [];
+    for (const [name, list] of namedMap.entries()) {
+        groups.push(toSection(`group:${name}`, name, false, list));
+    }
+    if (ungrouped.length > 0) {
+        groups.push(toSection(WORLDBOOK_UNGROUPED_KEY, '未分组', true, ungrouped));
+    }
+
+    return { packages, groups, groupNames, hasNamedGroups };
+};
+
+/** 往已有世界书里新增或导入词条时，沿用那本书当前的外层分组与整书停用状态。 */
+export const resolveWorldbookCategoryMeta = (
+    worldbooks: WorldbookLike[],
+    category: string,
+): { group?: string; bookDisabled?: boolean } => {
+    const target = category.trim() || WORLDBOOK_DEFAULT_CATEGORY;
+    const matches = worldbooks.filter(book => (book.category || WORLDBOOK_DEFAULT_CATEGORY) === target);
+    if (matches.length === 0) return {};
+    const group = matches.map(book => normalizeWorldbookGroup(book.group)).find(Boolean);
+    const bookDisabled = matches.every(book => book.bookDisabled === true);
+    return {
+        ...(group ? { group } : {}),
+        ...(bookDisabled ? { bookDisabled: true } : {}),
+    };
+};
+
+/** 计算新建、编辑或解散外层分组时需要写回的条目 ID 批次；解散只清空 group，不删除条目。 */
+export const computeWorldbookGroupMembershipChanges = <T extends WorldbookLike & { id: string }>(
+    packages: WorldbookPackage<T>[],
+    nextGroupName: string,
+    selectedCategories: Iterable<string>,
+    previousGroupName?: string,
+): Array<{ ids: string[]; group: string | undefined }> => {
+    const nextGroup = normalizeWorldbookGroup(nextGroupName);
+    const prevGroup = normalizeWorldbookGroup(previousGroupName);
+    if (!nextGroup) {
+        if (!prevGroup) return [];
+        const ids = packages
+            .filter(pkg => pkg.group === prevGroup)
+            .flatMap(pkg => pkg.books.map(book => book.id));
+        return ids.length > 0 ? [{ ids, group: undefined }] : [];
+    }
+
+    const selected = new Set(selectedCategories);
+    const assignIds = packages
+        .filter(pkg => selected.has(pkg.category))
+        .flatMap(pkg => pkg.books.filter(book => normalizeWorldbookGroup(book.group) !== nextGroup).map(book => book.id));
+    const clearIds = prevGroup
+        ? packages
+            .filter(pkg => pkg.group === prevGroup && !selected.has(pkg.category))
+            .flatMap(pkg => pkg.books.map(book => book.id))
+        : [];
+
+    const out: Array<{ ids: string[]; group: string | undefined }> = [];
+    if (assignIds.length > 0) out.push({ ids: assignIds, group: nextGroup });
+    if (clearIds.length > 0) out.push({ ids: clearIds, group: undefined });
+    return out;
+};
+
 const clamp = (value: unknown, min: number, max: number, fallback: number): number => {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : fallback;
@@ -85,6 +218,8 @@ export const toMountedWorldbook = (book: Worldbook): MountedWorldbook => ({
     order: book.order,
     position: book.position,
     disable: book.disable,
+    group: normalizeWorldbookGroup(book.group),
+    bookDisabled: book.bookDisabled === true ? true : book.bookDisabled === false ? false : undefined,
     probability: book.probability,
     useProbability: book.useProbability,
     depth: book.depth,
@@ -168,7 +303,8 @@ export const isWorldbookEntryActive = (
     book: WorldbookLike,
     messages: WorldbookScanMessage[] = [],
 ): boolean => {
-    if (book.disable) return false;
+    // 整本书停用（bookDisabled）与词条自身停用（disable）分开存：重开整本书时保留作者原本停用的分割线或互斥分支。
+    if (book.disable || book.bookDisabled) return false;
 
     const primary = book.key || [];
     const isConstant = book.constant ?? primary.length === 0;

@@ -1237,6 +1237,10 @@ export interface WorldbookEntryConfig {
     order?: number;
     position?: WorldbookPosition;
     disable?: boolean;
+    /** 外层分组名称：把多本世界书（category）归入同一个大组做显示与全开/全关。 */
+    group?: string;
+    /** 整本世界书总开关（true 为整本暂停生效）；与单条词条的 disable 分开保存，避免重开整本书时误打开作者停用的分割线或互斥分支。 */
+    bookDisabled?: boolean;
     probability?: number;
     useProbability?: boolean;
     depth?: number;

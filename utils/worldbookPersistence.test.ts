@@ -43,4 +43,38 @@ describe('世界书库与角色缓存事务', () => {
     expect((await DB.getAllWorldbooks()).find(w=>w.id===a.id)?.category).toBe(a.category);
     expect((await DB.getCharacter('abort-char'))?.mountedWorldbooks).toEqual([toMountedWorldbook(a)]);
   });
+  it('整组全关与重开同步到角色挂载缓存，且保留单条词条原有的停用状态', async () => {
+    const aActive = { ...book('grp-a1', '书A'), constant: true, disable: false, group: '第一组' };
+    const aDivider = { ...book('grp-a2', '书A'), constant: true, disable: true, group: '第一组' };
+    const bActive = { ...book('grp-b1', '书B'), constant: true, disable: false, group: '第一组' };
+    for (const item of [aActive, aDivider, bActive]) await DB.saveWorldbook(item);
+    await DB.saveCharacter(char('grp-char', [aActive, aDivider, bActive]));
+
+    // 整组全关（书A + 书B）
+    await DB.mutateWorldbooks([aActive.id, aDivider.id, bActive.id], { bookDisabled: true });
+    let mounted = (await DB.getCharacter('grp-char'))!.mountedWorldbooks!;
+    expect(mounted.every(w => !isWorldbookEntryActive(w, []))).toBe(true);
+    expect(mounted.find(w => w.id === aDivider.id)?.disable).toBe(true);
+    expect(mounted.find(w => w.id === aActive.id)?.disable).toBe(false);
+
+    // 整组重开后，aActive 与 bActive 恢复生效，aDivider 仍保持单条停用
+    await DB.mutateWorldbooks([aActive.id, aDivider.id, bActive.id], { bookDisabled: false });
+    mounted = (await DB.getCharacter('grp-char'))!.mountedWorldbooks!;
+    expect(mounted.map(w => isWorldbookEntryActive(w, []))).toEqual([true, false, true]);
+  });
+  it('备份 exportFullData → importFullData 完整恢复世界书外层分组与整书开关状态', async () => {
+    const wb = { ...book('backup-wb-1', '奇幻设定'), constant: true, group: '跑团大组', bookDisabled: true };
+    await DB.saveWorldbook(wb);
+    await DB.saveCharacter(char('backup-wb-char', [wb]));
+
+    const onDisk = JSON.parse(JSON.stringify(await DB.exportFullData()));
+    await DB.deleteWorldbook(wb.id);
+    await DB.saveCharacter(char('backup-wb-char', []));
+    await DB.importFullData(onDisk as any, {});
+
+    const restoredBook = (await DB.getAllWorldbooks()).find(item => item.id === wb.id);
+    const restoredChar = await DB.getCharacter('backup-wb-char');
+    expect(restoredBook).toMatchObject({ category: '奇幻设定', group: '跑团大组', bookDisabled: true });
+    expect(restoredChar?.mountedWorldbooks?.[0]).toMatchObject({ category: '奇幻设定', group: '跑团大组', bookDisabled: true });
+  });
 });
