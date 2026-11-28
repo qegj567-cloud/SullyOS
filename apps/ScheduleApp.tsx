@@ -92,6 +92,9 @@ const ScheduleApp: React.FC = () => {
     // Processing State for feedback
     const [processingTaskIds, setProcessingTaskIds] = useState<Set<string>>(new Set());
 
+    const [generatingComment, setGeneratingComment] = useState<string | null>(null);
+    const commentBusy = useRef(false);
+    const [commentError, setCommentError] = useState<{ id: string; message: string } | null>(null);
     const deletedAnniversaries = useRef(new Set<string>());
 
     // Theme State
@@ -225,20 +228,19 @@ const ScheduleApp: React.FC = () => {
 
     const generateAnniversaryThought = async (anni: Anniversary) => {
 
+        if (commentBusy.current) return;
         const sourceCharacter = characters.find(c => c.id === anni.charId);
-        const char = sourceCharacter ? structuredClone(sourceCharacter) : undefined;
-        if (!char || !apiConfig.apiKey) return;
-
-        // Check cache (24h)
-        if (anni.aiThought && anni.lastThoughtGeneratedAt && (Date.now() - anni.lastThoughtGeneratedAt < 24 * 60 * 60 * 1000)) {
-            return;
+        if (!sourceCharacter) { addToast('请先为这条纪念日关联角色', 'error'); return; }
+        if (!apiConfig.apiKey) { addToast('请先配置对话 API，再生成留言', 'error'); return; }
+        commentBusy.current = true;
+        if (anni.aiThought?.trim() && !await requestConfirm({ title: '重新生成留言？', message: '会调用 AI 消耗额度，并在成功后替换现有留言。失败保留原留言。', confirmText: '重新生成', variant: 'danger' })) {
+            commentBusy.current = false; return;
         }
-
-        // FEEDBACK: Show loading state if explicit call
-        if (Date.now() - (anni.lastThoughtGeneratedAt || 0) > 10000) {
-             addToast(`${char.name} 正在查阅日历...`, 'info');
-        }
-
+        if (deletedAnniversaries.current.has(anni.id)) { commentBusy.current = false; return; }
+        setGeneratingComment(anni.id);
+        setCommentError(null);
+        trackEvent('手动生成纪念日留言');
+        const char = structuredClone(sourceCharacter);
         const daysDiff = getCalendarDayDifference(getLocalDateKey(), anni.date) ?? 0;
         const dayText = daysDiff > 0 ? `还有 ${daysDiff} 天` : (daysDiff === 0 ? '就是今天!' : `已经过去 ${Math.abs(daysDiff)} 天了`);
 
@@ -291,17 +293,23 @@ const ScheduleApp: React.FC = () => {
             const data = await safeResponseJson(response);
             const text = extractContent(data).replace(/^["']|["']$/g, '');
             
-            if (text && !deletedAnniversaries.current.has(anni.id)) {
+            if (!text) throw new Error('AI 未返回留言正文，请重试');
+            if (!deletedAnniversaries.current.has(anni.id)) {
                 const updatedAnni = { ...anni, aiThought: text, lastThoughtGeneratedAt: Date.now() };
                 await DB.saveAnniversary(updatedAnni);
-        notifyTimeContractChanged();
+                notifyTimeContractChanged();
                 setAnniversaries(prev => prev.map(a => a.id === anni.id ? updatedAnni : a));
-            } else {
-                console.warn("AI returned empty thought", data);
+                trackEvent('生成纪念日留言完成');
+                addToast('角色留言已保存', 'success');
             }
-        } catch (e: any) { 
-            console.error("Anniversary Thought Error:", e);
-            // No toast for background update failure to avoid annoyance
+        } catch (e: any) {
+            const message = e instanceof Error ? e.message : '留言生成失败，请重试';
+            setCommentError({ id: anni.id, message });
+            addToast(message, 'error');
+            trackEvent('生成纪念日留言失败');
+        } finally {
+            commentBusy.current = false;
+            setGeneratingComment(null);
         }
     };
 
@@ -389,7 +397,7 @@ const ScheduleApp: React.FC = () => {
         setNewAnniTitle('');
         setNewAnniDate('');
         
-        // Remove immediate trigger to avoid double calls (useEffect will handle if it's upcoming)
+        // Adding a date never generates a paid AI comment.
     };
 
     const handleDeleteAnni = async (id: string) => {
@@ -415,13 +423,6 @@ const ScheduleApp: React.FC = () => {
     const upcomingAnni = useMemo(() => {
         return anniversaries.filter(a => getDaysUntil(a.date) >= 0).sort((a, b) => a.date.localeCompare(b.date))[0];
     }, [anniversaries, localDateKey]);
-
-    // Trigger thoughts for upcoming anniversary on load
-    useEffect(() => {
-        if (upcomingAnni) {
-            generateAnniversaryThought(upcomingAnni);
-        }
-    }, [upcomingAnni]);
 
     return (
         <div className={`h-full w-full flex flex-col ${theme.font} ${theme.bg} ${theme.text} relative overflow-hidden transition-colors duration-500`}>
@@ -474,6 +475,10 @@ const ScheduleApp: React.FC = () => {
                 {currentThemeMode === 'cyber' && <div className="absolute bottom-0 left-0 h-[1px] w-full bg-gradient-to-r from-transparent via-cyan-500/50 to-transparent"></div>}
             </div>
 
+            {(generatingComment || processingTaskIds.size > 0) && <div role="status" aria-live="polite" className="relative z-20 shrink-0 mx-4 mt-3 rounded-xl border border-cyan-700 bg-slate-900 text-white px-4 py-3 flex items-center gap-3">
+                <span aria-hidden className="h-4 w-4 shrink-0 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                <span className="text-sm">{generatingComment ? '正在调用 AI 生成纪念日留言…' : '正在调用 AI 生成完成评价…'}<small className="block mt-1 text-xs text-slate-300">正在使用 API 额度，请勿重复提交</small></span>
+            </div>}
             <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-5 space-y-6 z-10">
                 
                 {/* Hero Anniversary Card */}
@@ -578,13 +583,20 @@ const ScheduleApp: React.FC = () => {
                                  {anniversaries.map(a => (
                                      <div key={a.id} className="relative group">
                                          <div className={`absolute -left-[20px] top-4 w-2 h-2 rounded-full z-10 ${currentThemeMode === 'cyber' ? 'bg-black border border-purple-500' : 'bg-pink-400'}`}></div>
-                                         <div className={`${theme.card} p-4 flex justify-between items-center transition-colors`}>
-                                             <div className="min-w-0 flex-1 break-words">
+                                         <div className={`${theme.card} p-4 flex flex-wrap gap-2 justify-between items-center transition-colors`}>
+                                             <div className="min-w-0 basis-full break-words">
                                                  <div className={`text-sm font-bold ${theme.text}`}>{a.title}</div>
                                                  <div className={`text-[10px] ${theme.textSub} font-mono mt-1`}>{a.date} · {characters.find(c => c.id === a.charId)?.name}</div>
                                              </div>
+                                             <button aria-label={`${a.aiThought?.trim() ? '重新生成' : '生成'}留言：${a.title}`} disabled={generatingComment !== null} onClick={() => void generateAnniversaryThought(a)} className="min-h-10 px-2 text-xs shrink-0 disabled:opacity-50">
+                                                 {generatingComment === a.id ? '生成中…' : a.aiThought?.trim() ? '重新生成留言 · AI' : '生成留言 · AI'}
+                                             </button>
                                              {androidAlarm && <button aria-label={`为纪念日 ${a.title} 设置系统闹钟`} onClick={() => setAlarmTarget({ title: a.title, date: a.date, kind: 'anniversary' })} className="min-h-10 px-2 text-xs shrink-0">闹钟</button>}
                                              <button onClick={() => handleDeleteAnni(a.id)} aria-label={`删除纪念日 ${a.title}`} className="shrink-0 min-h-10 px-2 text-xs opacity-75 hover:text-red-500">删除</button>
+                                             <div className="basis-full min-w-0 text-xs leading-relaxed">
+                                                 {a.aiThought?.trim() ? <p className="whitespace-pre-wrap break-words">{splitInlineThinking(a.aiThought).content.trim()}</p> : <p className="opacity-70">点「生成留言」才会调用 AI，消耗 API 额度。</p>}
+                                                 {commentError?.id === a.id && <p role="alert" className="mt-2 text-red-500">{commentError.message}</p>}
+                                             </div>
                                          </div>
                                      </div>
                                  ))}
