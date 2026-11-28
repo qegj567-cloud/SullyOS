@@ -9,7 +9,8 @@ export default function DialogueApiFields({
   onChange,
   fetchModels,
   isLoadingModels,
-  openModelPicker,
+  models = [],
+  onSelectModel,
   onUrlBlur,
   onFieldBlur,
   modelPlaceholder = '输入或选择模型…',
@@ -18,7 +19,8 @@ export default function DialogueApiFields({
   onChange: (patch: Partial<DialogueApiConfig>) => void;
   fetchModels: () => void;
   isLoadingModels: boolean;
-  openModelPicker: () => void;
+  models?: string[];
+  onSelectModel?: (model: string) => void;
   onUrlBlur?: () => void;
   onFieldBlur?: () => void;
   modelPlaceholder?: string;
@@ -30,6 +32,7 @@ export default function DialogueApiFields({
     stream: localStream = false,
     temperature: localTemperature = 0.85,
   } = value;
+  const [manualModel, setManualModel] = useState(false);
   const [showApiAdvanced, setShowApiAdvanced] = useState(false);
   const setLocalUrl = (baseUrl: string) => onChange({ baseUrl });
   const setLocalKey = (apiKey: string) => onChange({ apiKey });
@@ -158,6 +161,7 @@ export default function DialogueApiFields({
                 step="0.05"
                 value={localTemperature}
                 onChange={(e) => setLocalTemperature(parseFloat(e.target.value))}
+                onBlur={() => onFieldBlur?.()}
                 onMouseUp={() => onFieldBlur?.()}
                 onTouchEnd={() => onFieldBlur?.()}
                 className="w-full accent-slate-500 mt-1"
@@ -182,37 +186,21 @@ export default function DialogueApiFields({
         </div>
 
         <div className="flex items-center gap-2">
-          <input
-            type="text"
-            value={localModel}
-            onChange={(e) => setLocalModel(e.target.value)}
-            onBlur={() => onFieldBlur?.()}
-            autoCapitalize="none"
-            spellCheck={false}
-            placeholder={modelPlaceholder}
-            className="min-w-0 flex-1 bg-white/80 text-slate-800 border border-slate-200/80 rounded-xl px-3 py-2 text-sm font-mono placeholder:text-slate-400 focus:bg-white transition-all shadow-sm"
-          />
-          <button
-            type="button"
-            onClick={openModelPicker}
-            title={localModel || '选择模型…'}
-            aria-label="从模型列表选择"
-            className="shrink-0 bg-white/80 border border-slate-200/80 rounded-xl px-3 py-2.5 text-xs font-medium text-slate-600 flex items-center gap-1 active:bg-white transition-all shadow-sm"
-          >
-            <span>选择</span>
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-              className="w-4 h-4 text-slate-400 flex-shrink-0"
-            >
-              <path
-                fillRule="evenodd"
-                d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z"
-                clipRule="evenodd"
-              />
-            </svg>
-          </button>
+          {models.length > 0 && !manualModel ? (
+            <select aria-label="模型" value={localModel}
+              onChange={event => (onSelectModel ?? setLocalModel)(event.target.value)}
+              className="min-w-0 w-full bg-white text-slate-800 border border-slate-200/80 rounded-2xl px-3 py-2.5 text-sm font-mono [color-scheme:light]">
+              {!models.includes(localModel) && <option value={localModel}>{localModel || '选择模型'}</option>}
+              {models.map(model => <option key={model} value={model}>{model}</option>)}
+            </select>
+          ) : (
+            <input aria-label="模型" type="text" value={localModel} onChange={event => setLocalModel(event.target.value)}
+              onBlur={() => onFieldBlur?.()} placeholder={modelPlaceholder} autoCapitalize="none" spellCheck={false}
+              className="min-w-0 w-full bg-white text-slate-800 border border-slate-200/80 rounded-2xl px-3 py-2.5 text-sm font-mono" />
+          )}
+          {models.length > 0 && <button type="button" onClick={() => setManualModel(value => !value)} className="shrink-0 min-h-11 px-2 text-xs text-slate-500">
+            {manualModel ? '从列表选择' : '手动输入'}
+          </button>}
         </div>
       </div>
     </div>

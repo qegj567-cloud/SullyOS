@@ -2,6 +2,8 @@
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import ApiSlotEditor from '../components/settings/ApiSlotEditor';
+import { slotFromPreset } from './apiSlots';
 import CharacterApiPanel from '../components/character/CharacterApiPanel';
 import { handleLocalBack } from '../utils/localBackHandlers';
 import type { CharacterProfile, DialogueApiConfig } from '../types';
@@ -51,6 +53,7 @@ beforeEach(async () => {
   document.body.append(host);
   root = createRoot(host);
   onChange.mockClear();
+  os.updateApiPreset.mockClear();
   os.addToast.mockClear();
   await render();
 });
@@ -86,7 +89,7 @@ describe('CharacterApiPanel 所见即所得自动保存与预设 ID 引用', () 
     expect(onChange).toHaveBeenLastCalledWith(undefined);
   });
 
-  it('从已绑定预设点「复制为独立配置」脱离引用，切换 Anthropic 原生并测连及自动落盘', async () => {
+  it('已绑定预设直接显示字段，切换 Anthropic 原生原地同步预设并测试连接', async () => {
     const network = vi.fn(
       async () =>
         new Response(
@@ -109,15 +112,14 @@ describe('CharacterApiPanel 所见即所得自动保存与预设 ID 引用', () 
     onChange.mockClear();
     await render(boundChar);
 
-    await click('复制为独立配置');
-    expect(onChange).toHaveBeenCalledTimes(1);
-    expect(onChange.mock.calls[0][0].presetId).toBeUndefined();
+    expect(host.textContent).not.toContain('复制为独立配置');
+    expect(host.querySelector('[data-api-field="base-url"] input')).not.toBeNull();
 
     await act(async () => (host.querySelector('button[aria-label="接口类型"]') as HTMLButtonElement).click());
     await act(async () => (Array.from(host.querySelectorAll('[role="option"]')).find(option => option.textContent?.includes('Anthropic')) as HTMLElement).click());
-    expect(onChange).toHaveBeenLastCalledWith(
-      expect.objectContaining({ baseUrl: 'https://a.test/v1/messages', apiType: 'anthropic' }),
-    );
+    expect(os.updateApiPreset).toHaveBeenLastCalledWith('a', '日常预设',
+      expect.objectContaining({ baseUrl: 'https://a.test/v1/messages', apiType: 'anthropic' }), '日常');
+    expect(onChange).not.toHaveBeenCalled();
 
     await click('测试连接');
     expect(host.textContent).toContain('连接成功');
@@ -162,4 +164,40 @@ describe('CharacterApiPanel 所见即所得自动保存与预设 ID 引用', () 
     expect(host.textContent).not.toContain('stale-model');
     expect(os.availableModels).toEqual(['global-model', 'another-model']);
   });
+});
+
+ it('已绑定主 API 在重新挂载后直接展示所选预设，不误显示独立表单', async () => {
+  await act(async () => root.render(React.createElement(ApiSlotEditor, {
+    slotName: '主对话', allowFollow: false, value: slotFromPreset(os.apiPresets[0]), onCommit: onChange,
+  })));
+  expect(host.querySelector('.api-preset-trigger')?.textContent).toContain('日常预设');
+  expect(host.querySelector('[data-testid="bound-preset-card"]')).toBeNull();
+  expect(host.querySelector('[data-testid="inline-preset-fields"]')).not.toBeNull();
+  expect(onChange).not.toHaveBeenCalled();
+});
+
+it('主对话没有预设时仅显示新建入口，点击直达创建表单', async () => {
+ const saved = os.apiPresets; os.apiPresets = [];
+ try {
+  await act(async () => root.render(React.createElement(ApiSlotEditor, { slotName: '主对话', allowFollow: false, showCreatePresetHeaderButton: true, value: undefined, onCommit: onChange })));
+  expect(host.textContent).toContain('您还没有 API 预设，请先');
+  expect(host.querySelector('[data-api-field="base-url"]')).toBeNull();
+  await act(async () => (host.querySelector('[data-guide="api-create-preset"]') as HTMLButtonElement).click());
+  expect(host.querySelector('[data-api-preset-editor] [data-api-field="base-url"]')).not.toBeNull();
+  expect(onChange).not.toHaveBeenCalled();
+ } finally { os.apiPresets = saved; }
+});
+
+it('独立配置输入停顿不保存，失焦才提交一次', async () => {
+ vi.useFakeTimers();
+ try {
+  await act(async () => root.render(React.createElement(ApiSlotEditor, { slotName: '角色独立', value: os.apiConfig, onCommit: onChange })));
+  const input = host.querySelector('input[type="password"]') as HTMLInputElement;
+  await act(async () => { input.focus(); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'changed-key'); input.dispatchEvent(new Event('input',{bubbles:true})); });
+  await act(async () => vi.advanceTimersByTime(5000));
+  expect(onChange).not.toHaveBeenCalled();
+  await act(async () => input.blur());
+  expect(onChange).toHaveBeenCalledTimes(1);
+  expect(onChange).toHaveBeenCalledWith(expect.objectContaining({apiKey:'changed-key'}));
+ } finally { vi.useRealTimers(); }
 });

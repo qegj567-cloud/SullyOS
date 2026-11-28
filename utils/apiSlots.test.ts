@@ -265,4 +265,11 @@ describe('apiSlots 预设引用、快照指纹与自动保存校验', () => {
     expect(spy).toHaveBeenCalledWith('测试API连接', { 槽位: '记忆副API', 结果: '失败', 原因: '其他' });
     spy.mockRestore();
   });
+  it('测试推送复用固定槽位统计枚举，不携带临时配置内容', () => {
+    const spy = vi.spyOn(analyticsMod, 'trackEvent').mockImplementation(() => {});
+    trackApiSlotCommit({ slot: '测试推送', mode: '绑定预设', result: '已生效' });
+    expect(spy).toHaveBeenCalledWith('提交API槽位', { 槽位: '测试推送', 方式: '绑定预设', 结果: '已生效' });
+    spy.mockRestore();
+  });
+
 });

@@ -58,7 +58,7 @@ export default function CharacterApiPanel({
           onCommit={(next) => onChange(next)}
           followButtonLabel="跟随设置中的 API"
           followSummary={describeDialogueApi(apiConfig, apiPresets)}
-          helperText="选择预设后，修改该预设会同时更新这里；只想修改当前角色，可复制为独立配置。"
+          helperText="选择预设立即生效；下方直接修改会同步所有使用该预设的位置。只给当前角色换 API，可选择另一预设。"
           meta={{
             appId: 'character',
             appName: '神经链接',

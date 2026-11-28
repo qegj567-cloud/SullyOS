@@ -184,3 +184,16 @@ describe('first-use memory guide', () => {
         generate.remove();
     });
 });
+
+it('首次 API 引导从新建入口转到创建窗口地址栏', async () => {
+ setGuideStep(0); await render(); await render();
+ const create = document.createElement('button'); create.dataset.guide = 'api-create-preset';
+ await act(async () => { host.append(create); });
+ expect(create.classList.contains('first-use-highlight')).toBe(true);
+ const editor = document.createElement('div'); editor.setAttribute('data-api-preset-editor', '');
+ const address = document.createElement('label'); address.dataset.apiField = 'base-url'; editor.append(address);
+ await act(async () => { host.append(editor); });
+ expect(address.classList.contains('first-use-highlight')).toBe(true);
+ expect(create.classList.contains('first-use-highlight')).toBe(false);
+ expect(mocked.os.apiConfig).toEqual({});
+});

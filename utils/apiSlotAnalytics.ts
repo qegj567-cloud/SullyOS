@@ -23,6 +23,7 @@ export const API_SLOT_NAMES = [
   '模拟人生',
   '协同工作',
   '节日活动',
+  '测试推送',
 ] as const;
 
 export type ApiSlotAnalyticsName = (typeof API_SLOT_NAMES)[number];

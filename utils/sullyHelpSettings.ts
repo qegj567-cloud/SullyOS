@@ -5,7 +5,7 @@ import { getThinkingChainSettings } from './thinkingChainPrompt';
 import { loadChatInputPreferences } from './chatInputPreferences';
 import { clampManualContextLimit, resolveContextRangeMode } from './chatContextRange';
 import { dialogueMaxTokens, resolveDialogueApi } from './characterApi';
-import { isBlankApiSlot, resolveAuxiliaryApi, resolveGlobalMainApi } from './apiSlots';
+import { isBlankApiSlot, readStoredPresets, inspectSlotPresetBinding, resolveAuxiliaryApi, resolveGlobalMainApi } from './apiSlots';
 import { llmApiType } from './llmEndpoint';
 import { resolveMemoryPalaceWaterline } from './memoryPalace/waterline';
 import { ActiveMsgStore, isInstantChatSwitchedOn } from './activeMsgStore';
@@ -47,6 +47,7 @@ export async function readHelpDeskSettings(os: SettingsSource, char?: CharacterP
     const effectiveMain = resolveGlobalMainApi(apiConfig);
     const effectiveMemoryLight = resolveAuxiliaryApi(memoryPalaceConfig.lightLLM, effectiveMain);
     return {
+        API预设: { 数量: readStoredPresets().length, 主对话使用预设: inspectSlotPresetBinding(apiConfig).status === 'bound', 首次配置入口: '设置 → API → 新建预设 → 创建并选用' },
         主对话: { ...endpointFields(effectiveMain), 接口: llmApiType(effectiveMain), 流式: !!effectiveMain.stream, 输出上限: dialogueMaxTokens(effectiveMain) },
         私聊与群聊输入: { 自动回复: input.autoReply, 发送键代替生成: input.sendButtonGenerates, 回车发送: input.enterToSend, 表情联想: input.emojiSuggestions },
         共用心象提示词模式: os.userProfile?.thinkingChainPrompt?.mode === 'replace' ? '替换默认提示词' : '追加',

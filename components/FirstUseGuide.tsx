@@ -7,7 +7,7 @@ import { GUIDE_SULLY_ID, hasGuideApi, hasGuideSecondaryApi, setGuideStep, setVec
 
 const titles = ['为了您的使用体验，请先配置 API 和向量记忆！', '配置向量记忆', '开启 Sully 的全自动记忆', '从神经链接进入聊天', '认识生成按钮', '试着从桌面回到聊天', '记忆会自动整理'];
 const descriptions = [
-    '先填写聊天服务商提供的地址、API Key 和聊天模型，并保存 API 配置。保存后点击下一步。',
+    '先点「新建预设」，填写预设名称、服务商地址和 API Key，刷新模型列表后下拉选择聊天模型（也可手动输入），再点「创建并选用」。已有预设可直接点选，生效后点下一步。',
     '向量模型负责按含义找回记忆，与聊天模型不同。不熟悉的话，按下方硅基流动预设选择模型、填写 Key 并保存；熟悉 Embedding 的用户也可以填写其他兼容的向量模型。',
     '在 Sully 卡片上先开启「记忆宫殿」，再开启「全自动记忆」。之后达到整理条件时会自动归档和召回，无需每次手动操作。自动整理会使用 API，并按服务商规则计费。',
     '点击 Sully，再点击角色详情右上角的「发消息」，就能进入 Sully 的聊天界面。神经链接也是日后查看和修改角色记忆的入口。',
@@ -78,7 +78,15 @@ export default function FirstUseGuide() {
         };
         const highlight = () => {
             let selector = '';
-            if (step === 0) { selector = '[data-guide="api"] [data-api-field="base-url"]'; hint = '从这里填写主 API 地址'; }
+            if (step === 0) {
+                if (document.querySelector('[data-api-preset-editor]')) {
+                    selector = '[data-api-preset-editor] [data-api-field="base-url"]'; hint = '在新预设里填写服务商地址';
+                } else if (document.querySelector('[data-guide="api-create-preset"]')) {
+                    selector = '[data-guide="api-create-preset"]'; hint = '点击新建预设，开始配置';
+                } else if (document.querySelector('[data-guide="api"] .api-preset-trigger')) {
+                    selector = '[data-guide="api"] .api-preset-trigger'; hint = '选择预设，立即使用';
+                } else { selector = '[data-guide="api"] [data-api-field="base-url"]'; hint = '从这里填写主 API 地址'; }
+            }
             if (step === 1) {
                 selector = secondaryReady ? '[data-guide="embedding"]' : '[data-guide="use-main-api"]';
                 hint = secondaryReady ? '配置向量记忆，或选择跳过' : '可点这里，暂时沿用主 API';

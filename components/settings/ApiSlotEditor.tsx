@@ -1,13 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { ApiPreset, DialogueApiConfig } from '../../types';
 import { useOS } from '../../context/OSContext';
-import { useLocalBackHandler } from '../../hooks/useLocalBackHandler';
 import { fetchLlm } from '../../utils/anthropicApi';
 import { normalizeApiBaseUrl } from '../../utils/apiConfigNormalize';
 import {
   classifyApiTestError,
   trackApiConnectionTest,
-  trackApiPresetAction,
   trackApiSlotCommit,
   type ApiSlotAnalyticsName,
   type ApiSlotDiscardReason,
@@ -25,12 +23,11 @@ import { describeDialogueApi, pickDialogueApi } from '../../utils/characterApi';
 import { llmApiType, normalizeLlmBaseUrl } from '../../utils/llmEndpoint';
 import { extractModelIds } from '../../utils/modelList';
 import { extractContent, safeResponseJson } from '../../utils/safeApi';
-import Modal from '../os/Modal';
 import ApiPresetEditorModal from './ApiPresetEditorModal';
 import ApiPresetPicker from './ApiPresetPicker';
 import PresetNameButton from './PresetNameButton';
 import DialogueApiFields from './DialogueApiFields';
-import ModelPicker from './ModelPicker';
+import ApiSaveFeedback from './ApiSaveFeedback';
 
 export interface ApiSlotEditorProps {
   /** 用于统计枚举与诊断标识的固定槽位名。 */
@@ -59,7 +56,6 @@ export interface ApiSlotEditorProps {
   showCreatePresetHeaderButton?: boolean;
 }
 
-const AUTO_SAVE_DELAY_MS = 600;
 
 const mapDiscardReason = (reason: 'missing_url' | 'invalid_url' | 'missing_model'): ApiSlotDiscardReason =>
   reason === 'missing_url' ? '缺地址' : reason === 'invalid_url' ? '地址不合法' : '缺模型';
@@ -103,7 +99,7 @@ export default function ApiSlotEditor({
   const binding = inspectSlotPresetBinding(value, apiPresets);
 
   // 当 allowFollow=true 且 value 为空时，默认展示跟随态；用户点「单独填写」后展开空白/预填表单。
-  const [manualCustomOpen, setManualCustomOpen] = useState<boolean>(() => !allowFollow);
+  const [manualCustomOpen, setManualCustomOpen] = useState<boolean>(() => !allowFollow && binding.status !== 'bound');
   const [customDraft, setCustomDraft] = useState<DialogueApiConfig>(() => {
     if (value && binding.status !== 'bound') return pickDialogueApi(value);
     if (!allowFollow && value) return pickDialogueApi(value);
@@ -120,8 +116,7 @@ export default function ApiSlotEditor({
   const [models, setModels] = useState<string[]>(() =>
     resolveModelsForSlot(value ?? (!allowFollow ? apiConfig : null)),
   );
-  const [showPicker, setShowPicker] = useState(false);
-  const [pickerModel, setPickerModel] = useState('');
+  const [saveRevision, setSaveRevision] = useState(0);
   const [loadingModels, setLoadingModels] = useState(false);
   const [testing, setTesting] = useState(false);
   const [status, setStatus] = useState('');
@@ -136,7 +131,6 @@ export default function ApiSlotEditor({
   }>({ open: false, mode: 'create' });
 
   const requestVersionRef = useRef(0);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dirtyCustomRef = useRef(false);
   const lastCommittedSerializedRef = useRef(serializeComparableSlot(value));
   const prevExternalSerializedRef = useRef(lastCommittedSerializedRef.current);
@@ -234,10 +228,6 @@ export default function ApiSlotEditor({
   useEffect(() => {
     const onPageHide = () => {
       if (!dirtyCustomRef.current) return;
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = null;
-      }
       flushCustomDraft(latestPropsRef.current.customDraft, { onUnmount: true });
     };
     if (typeof window !== 'undefined') {
@@ -247,38 +237,14 @@ export default function ApiSlotEditor({
       if (typeof window !== 'undefined') {
         window.removeEventListener('pagehide', onPageHide);
       }
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = null;
-      }
       if (dirtyCustomRef.current) {
         flushCustomDraft(latestPropsRef.current.customDraft, { onUnmount: true });
       }
     };
   }, []);
 
-  useLocalBackHandler(() => {
-    if (showPicker) {
-      setShowPicker(false);
-      return true;
-    }
-    return false;
-  }, 85, showPicker);
-
-  const scheduleCustomCommit = (nextDraft: DialogueApiConfig) => {
-    dirtyCustomRef.current = true;
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => {
-      saveTimerRef.current = null;
-      flushCustomDraft(nextDraft);
-    }, AUTO_SAVE_DELAY_MS);
-  };
 
   const handleSelectPreset = (preset: ApiPreset) => {
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
-    }
     dirtyCustomRef.current = false;
     requestVersionRef.current += 1;
     setLoadingModels(false);
@@ -288,16 +254,12 @@ export default function ApiSlotEditor({
     setManualCustomOpen(false);
     const nextSlot = slotFromPreset(preset);
     lastCommittedSerializedRef.current = serializeComparableSlot(nextSlot);
-    void onCommit(nextSlot);
+    void Promise.resolve(onCommit(nextSlot)).then(() => setSaveRevision(value => value + 1)).catch(() => addToast('修改未成功，请重试', 'error'));
     trackApiSlotCommit({ slot: slotName, mode: '绑定预设', result: '已生效' });
   };
 
   const handleSwitchToFollow = () => {
     if (!allowFollow) return;
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
-    }
     dirtyCustomRef.current = false;
     requestVersionRef.current += 1;
     setLoadingModels(false);
@@ -309,25 +271,6 @@ export default function ApiSlotEditor({
     lastCommittedSerializedRef.current = '';
     void onCommit(undefined);
     trackApiSlotCommit({ slot: slotName, mode: '恢复跟随', result: '已生效' });
-  };
-
-  const handleDetachFromPreset = () => {
-    if (!value) return;
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
-    }
-    dirtyCustomRef.current = false;
-    requestVersionRef.current += 1;
-    const detached = detachSlotFromPreset(value, apiPresets);
-    setCustomDraft(detached);
-    setModels(resolveModelsForSlot(detached));
-    setManualCustomOpen(true);
-    setStatus(''); setTestTone(null);
-    setAutoSaveHint('已复制为独立配置，后续修改仅作用于此处');
-    lastCommittedSerializedRef.current = serializeComparableSlot(detached);
-    void onCommit(detached);
-    trackApiPresetAction({ source, action: '转为单独填写' });
   };
 
   const handleOpenManualCustomFromFollow = (prefillFromMain = false) => {
@@ -351,40 +294,25 @@ export default function ApiSlotEditor({
 
   const updateCustomFields = (patch: Partial<DialogueApiConfig>, immediate = false) => {
     requestVersionRef.current += 1;
-    setLoadingModels(false);
-    setTesting(false);
-    setStatus(''); setTestTone(null);
-    setCustomDraft((prev) => {
-      const next: DialogueApiConfig = { ...prev, ...patch };
-      delete next.presetId;
-      delete next.presetFp;
-      if (patch.apiType !== undefined && next.baseUrl.trim()) {
-        next.baseUrl = normalizeLlmBaseUrl(normalizeApiBaseUrl(next.baseUrl), patch.apiType);
-      }
-      if (patch.baseUrl !== undefined || patch.apiType !== undefined || patch.apiKey !== undefined) {
-        setModels(readCachedModelsForEndpoint(next));
-      }
-      if (immediate) {
-        if (saveTimerRef.current) {
-          clearTimeout(saveTimerRef.current);
-          saveTimerRef.current = null;
-        }
-        flushCustomDraft(next);
-      } else {
-        scheduleCustomCommit(next);
-      }
-      return next;
-    });
+    setLoadingModels(false); setTesting(false); setStatus(''); setTestTone(null);
+    const next: DialogueApiConfig = { ...latestPropsRef.current.customDraft, ...patch };
+    delete next.presetId; delete next.presetFp;
+    if (patch.apiType !== undefined && next.baseUrl.trim()) {
+      next.baseUrl = normalizeLlmBaseUrl(normalizeApiBaseUrl(next.baseUrl), patch.apiType);
+      setModels(readCachedModelsForEndpoint(next));
+    }
+    latestPropsRef.current = { ...latestPropsRef.current, customDraft: next };
+    setCustomDraft(next);
+    if (immediate) flushCustomDraft(next);
+    else dirtyCustomRef.current = true;
   };
 
   const handleUrlBlur = () => {
-    setCustomDraft((prev) => {
-      const normalizedUrl = normalizeLlmBaseUrl(normalizeApiBaseUrl(prev.baseUrl), llmApiType(prev));
-      if (normalizedUrl === prev.baseUrl) return prev;
-      const next = { ...prev, baseUrl: normalizedUrl };
-      setModels(readCachedModelsForEndpoint(next));
-      return next;
-    });
+    const prev = latestPropsRef.current.customDraft;
+    const next = { ...prev, baseUrl: normalizeLlmBaseUrl(normalizeApiBaseUrl(prev.baseUrl), llmApiType(prev)) };
+    latestPropsRef.current = { ...latestPropsRef.current, customDraft: next };
+    if (next.baseUrl !== prev.baseUrl) setCustomDraft(next);
+    setModels(readCachedModelsForEndpoint(next));
   };
 
   const fetchModelsForCustom = async () => {
@@ -411,9 +339,6 @@ export default function ApiSlotEditor({
       }
       setModels(saved);
       setStatus(saved.length ? `获取到 ${saved.length} 个模型` : '模型列表为空，可手动输入');
-      const chosenModel = customDraft.model || saved[0] || '';
-      setPickerModel(chosenModel);
-      setShowPicker(true);
     } catch (err) {
       if (version === requestVersionRef.current) {
         setStatus(`获取失败：${err instanceof Error ? err.message : '请检查配置'}`);
@@ -495,8 +420,8 @@ export default function ApiSlotEditor({
   };
 
   const activePresetId = binding.status === 'bound' && !manualCustomOpen ? binding.preset.id : null;
+  const needsFirstPreset = slotName === '主对话' && apiPresets.length === 0;
   const showCustomForm = manualCustomOpen || binding.status === 'custom' || binding.status === 'deleted_preset' || !allowFollow;
-  const canSaveCustomAsPreset = validateApiSlotDraft(customDraft).kind === 'valid';
 
   return (
     <div className="api-connection-compact text-slate-800" data-api-slot={slotName}>
@@ -517,7 +442,7 @@ export default function ApiSlotEditor({
             <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">
               API 预设
             </h4>
-            {showCreatePresetHeaderButton && (
+            {showCreatePresetHeaderButton && !needsFirstPreset && (
               <button
                 type="button"
                 onClick={() =>
@@ -547,7 +472,11 @@ export default function ApiSlotEditor({
               )}</ApiPresetPicker>
             </div>
           ) : (
-            <p className="text-[11px] text-slate-400 pl-1">暂无已保存的预设，可在填写连接后点「存为新预设」。</p>
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+              您还没有 API 预设，请先
+              <button type="button" data-guide="api-create-preset" onClick={() => setPresetModal({ open: true, mode: 'create', seedConfig: value ?? undefined })}
+                className="inline-flex min-h-11 items-center px-1 font-bold text-primary underline underline-offset-4">新建预设</button>
+            </div>
           )}
         </div>
       )}
@@ -580,71 +509,11 @@ export default function ApiSlotEditor({
         </div>
       )}
 
-      {/* 状态 2：已绑定某条预设（展示预设引用卡片 + 显式动作） */}
-      {binding.status === 'bound' && !manualCustomOpen && (
-        <div
-          className="rounded-2xl bg-slate-50/90 border border-slate-200/90 p-4 space-y-3"
-          data-testid="bound-preset-card"
-        >
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-xs font-bold text-slate-800">{binding.preset.name}</span>
-                {binding.preset.group && (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-200/70 text-slate-600">
-                    {binding.preset.group}
-                  </span>
-                )}
-              </div>
-              <p className="text-[11px] text-slate-500 font-mono mt-1 break-all">
-                {llmApiType(binding.preset.config) === 'anthropic' ? 'Anthropic 原生 · ' : 'OpenAI 兼容 · '}
-                {describeDialogueApi(binding.preset.config, [])}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => setPresetModal({ open: true, mode: 'edit', preset: binding.preset })}
-              className="px-3 py-2 rounded-xl bg-primary/10 text-primary text-xs font-bold active:scale-95 transition-transform"
-            >
-              编辑此预设
-            </button>
-            <button
-              type="button"
-              onClick={handleDetachFromPreset}
-              className="px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 text-xs font-bold active:scale-95 transition-transform"
-            >
-              复制为独立配置
-            </button>
-            {allowFollow && (
-              <button
-                type="button"
-                onClick={handleSwitchToFollow}
-                className="px-3 py-2 rounded-xl bg-slate-200/70 text-slate-600 text-xs font-medium active:scale-95 transition-transform"
-              >
-                {followButtonLabel}
-              </button>
-            )}
-          </div>
-
-          <button
-            type="button"
-            onClick={handleTestConnection}
-            disabled={testing}
-            className="w-full py-2.5 rounded-xl border border-primary/30 bg-white text-primary text-xs font-bold disabled:opacity-40"
-          >
-            {testing ? '测试中…' : '测试连接'}
-          </button>
-
-          {status && (
-            <p role="status" data-api-test-tone={testTone || undefined} className="api-connection-status">
-              {status}
-            </p>
-          )}
-        </div>
-      )}
+      {/* 选中预设后直接显示紧凑可编辑字段，复用相同的预设保存路径。 */}
+      {binding.status === 'bound' && !manualCustomOpen && <>
+        {allowFollow && <button type="button" onClick={handleSwitchToFollow} className="text-xs text-slate-500 py-2">{followButtonLabel}</button>}
+        <ApiPresetEditorModal key={binding.preset.id} inline isOpen mode="edit" preset={binding.preset} source={source} customTestRunner={customTestRunner} testSlotName={slotName} testMeta={meta} onClose={() => {}} />
+      </>}
 
       {/* 状态 2b：原绑定预设已被删除的提示条 */}
       {binding.status === 'deleted_preset' && (
@@ -654,27 +523,13 @@ export default function ApiSlotEditor({
       )}
 
       {/* 状态 3：单独填写表单 */}
-      {showCustomForm && !(binding.status === 'bound' && !manualCustomOpen) && (
+      {!needsFirstPreset && showCustomForm && !(binding.status === 'bound' && !manualCustomOpen) && (
         <div className="space-y-3 pt-1">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <span className="text-[11px] font-bold text-slate-500 pl-1">
               {allowFollow ? '单独填写（仅当前位置生效 · 自动保存）' : '单独填写连接（自动保存）'}
             </span>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                disabled={!canSaveCustomAsPreset}
-                onClick={() =>
-                  setPresetModal({
-                    open: true,
-                    mode: 'create',
-                    seedConfig: customDraft,
-                  })
-                }
-                className="text-[11px] font-bold text-primary px-2.5 py-1 rounded-lg bg-primary/10 disabled:opacity-40 active:scale-95 transition-transform"
-              >
-                存为新预设
-              </button>
               {allowFollow && (
                 <button
                   type="button"
@@ -695,18 +550,12 @@ export default function ApiSlotEditor({
             }}
             onUrlBlur={handleUrlBlur}
             onFieldBlur={() => {
-              if (saveTimerRef.current) {
-                clearTimeout(saveTimerRef.current);
-                saveTimerRef.current = null;
-              }
               flushCustomDraft(latestPropsRef.current.customDraft);
             }}
             fetchModels={fetchModelsForCustom}
             isLoadingModels={loadingModels}
-            openModelPicker={() => {
-              setPickerModel(customDraft.model);
-              setShowPicker(true);
-            }}
+            models={models}
+            onSelectModel={model => updateCustomFields({ model }, true)}
           />
 
           <button
@@ -731,18 +580,9 @@ export default function ApiSlotEditor({
         </div>
       )}
 
-      <Modal isOpen={showPicker} title="选择模型" onClose={() => setShowPicker(false)}>
-        <ModelPicker
-          availableModels={models}
-          localModel={pickerModel}
-          setLocalModel={setPickerModel}
-          confirmModelPicker={(model) => {
-            setShowPicker(false);
-            updateCustomFields({ model }, true);
-          }}
-        />
-      </Modal>
 
+
+      <ApiSaveFeedback revision={saveRevision} />
       <ApiPresetEditorModal
         isOpen={presetModal.open}
         mode={presetModal.mode}
