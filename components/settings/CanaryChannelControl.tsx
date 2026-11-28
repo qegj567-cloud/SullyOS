@@ -95,7 +95,7 @@ const CanaryChannelControl: React.FC<{ unlocked: boolean }> = ({ unlocked }) => 
     const leave = async () => {
         const confirmed = await requestConfirm({
             title: '回到正式版',
-            message: '切回正式版只会更换程序，不会撤销金丝雀对聊天、设置或数据库的改动。开着主动消息 2.0 的话，Worker 也会尝试换回正式版。',
+            message: '切回后，聊天和设置会接着现在的进度，不会回到加入金丝雀之前。如果开着主动消息 2.0，也会尝试把 Worker 切回正式版。',
             confirmText: '回到正式版',
             variant: 'info',
         });
@@ -111,15 +111,19 @@ const CanaryChannelControl: React.FC<{ unlocked: boolean }> = ({ unlocked }) => 
         setBusy(true);
         setNote(null);
         try {
-            const blocker = describeCanaryJoinBlocker(await loadCanaryJoinContext());
+            const context = await loadCanaryJoinContext();
+            const blocker = describeCanaryJoinBlocker(context);
             if (blocker) { setNote(blocker); return; }
             const confirmed = await requestConfirm({
-                title: '加入金丝雀前，请先备份',
-                message: <><strong>这不是沙盒。两个版本直接读写同一份聊天记录和设置。</strong><p>测试版可能修改、损坏或删除真实数据。切回正式版只会换回程序，不会撤销数据改动，也不会自动恢复备份。</p><p>请先导出完整备份并确认文件已保存。没有备份，请选「暂不加入」。启用主动消息 2.0 时，你的 Worker 也会切换通道。</p></>,
-                cancelText: '暂不加入',
-                confirmText: '已备份，接受风险',
-                variant: 'danger',
-                confirmDelaySeconds: 3,
+                title: '想先试试金丝雀的新功能吗？',
+                message: <>
+                    <p>两个版本共用同一份聊天和设置，不用重新导入。以后切回正式版，也会从那时的进度接着用。</p>
+                    {context.amsg && <p>你已启用主动消息 2.0，对应的 Worker 也会一起切换。</p>}
+                    <p>顺便提醒：无论用哪个版本，日常操作都可能遇到意外，重要的聊天记得定期备份。</p>
+                </>,
+                cancelText: '先不切换',
+                confirmText: '切换到金丝雀',
+                variant: 'info',
             });
             if (!confirmed) return;
             setGlowing(true);
