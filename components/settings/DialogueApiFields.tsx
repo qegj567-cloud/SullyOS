@@ -161,6 +161,7 @@ export default function DialogueApiFields({
                 step="0.05"
                 value={localTemperature}
                 onChange={(e) => setLocalTemperature(parseFloat(e.target.value))}
+                onBlur={() => onFieldBlur?.()}
                 onMouseUp={() => onFieldBlur?.()}
                 onTouchEnd={() => onFieldBlur?.()}
                 className="w-full accent-slate-500 mt-1"

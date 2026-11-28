@@ -43,7 +43,6 @@ export interface ApiPresetEditorModalProps {
   onCreatedPreset?: (preset: ApiPreset) => void;
 }
 
-const AUTO_SAVE_DELAY_MS = 600;
 function EditorFrame({ inline, children, ...props }: React.ComponentProps<typeof Modal> & { inline: boolean }) {
   return inline ? <div data-testid="inline-preset-fields">{children}</div> : <Modal {...props}>{children}</Modal>;
 }
@@ -89,7 +88,6 @@ export default function ApiPresetEditorModal({
   const [copying, setCopying] = useState(false);
 
   const requestVersionRef = useRef(0);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastCommittedJsonRef = useRef('');
   const dirtyRef = useRef(false);
   const latestStateRef = useRef({ name, group, draft, mode, preset, copying });
@@ -103,10 +101,6 @@ export default function ApiPresetEditorModal({
   useEffect(() => {
     setSaveRevision(0);
     if (!isOpen) {
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = null;
-      }
       setCopying(false);
       return;
     }
@@ -192,21 +186,13 @@ export default function ApiPresetEditorModal({
     return 'saved';
   };
 
-  const scheduleEditCommit = (nextState?: { name?: string; group?: string; draft?: DialogueApiConfig }) => {
+  const markEditDirty = (nextState?: { name?: string; group?: string; draft?: DialogueApiConfig }) => {
     if (mode !== 'edit' || latestStateRef.current.copying || !preset) return;
+    latestStateRef.current = { ...latestStateRef.current, ...nextState };
     dirtyRef.current = true;
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => {
-      saveTimerRef.current = null;
-      flushEditCommit(nextState);
-    }, AUTO_SAVE_DELAY_MS);
   };
 
   const handleClose = () => {
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
-    }
     if (mode === 'edit' && !latestStateRef.current.copying && dirtyRef.current) {
       const outcome = flushEditCommit(undefined, true);
       if (outcome === 'incomplete') {
@@ -220,7 +206,6 @@ export default function ApiPresetEditorModal({
   useEffect(() => () => {
     if (!inline) return;
     requestVersionRef.current += 1;
-    if (saveTimerRef.current) { clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
     if (dirtyRef.current) flushEditCommit(undefined, true);
   }, [inline, preset?.id]);
 
@@ -231,33 +216,26 @@ export default function ApiPresetEditorModal({
 
   const updateDraft = (patch: Partial<DialogueApiConfig>, immediate = false) => {
     requestVersionRef.current += 1;
-    setLoadingModels(false);
-    setTesting(false);
-    setStatus(''); setTestTone(null);
-    setDraft((prev) => {
-      const merged: DialogueApiConfig = { ...prev, ...patch };
-      if (patch.apiType !== undefined && merged.baseUrl.trim()) {
-        merged.baseUrl = normalizeLlmBaseUrl(normalizeApiBaseUrl(merged.baseUrl), patch.apiType);
-      }
-      if (patch.baseUrl !== undefined || patch.apiType !== undefined) {
-        setModels(readCachedModelsForEndpoint(merged));
-      }
-      if (mode === 'edit' && !latestStateRef.current.copying) {
-        if (immediate) flushEditCommit({ draft: merged });
-        else scheduleEditCommit({ draft: merged });
-      }
-      return merged;
-    });
+    setLoadingModels(false); setTesting(false); setStatus(''); setTestTone(null);
+    const merged: DialogueApiConfig = { ...latestStateRef.current.draft, ...patch };
+    if (patch.apiType !== undefined && merged.baseUrl.trim()) {
+      merged.baseUrl = normalizeLlmBaseUrl(normalizeApiBaseUrl(merged.baseUrl), patch.apiType);
+      setModels(readCachedModelsForEndpoint(merged));
+    }
+    latestStateRef.current = { ...latestStateRef.current, draft: merged };
+    setDraft(merged);
+    if (mode === 'edit' && !latestStateRef.current.copying) {
+      if (immediate) flushEditCommit({ draft: merged });
+      else markEditDirty({ draft: merged });
+    }
   };
 
   const handleUrlBlur = () => {
-    setDraft((prev) => {
-      const normalizedUrl = normalizeLlmBaseUrl(normalizeApiBaseUrl(prev.baseUrl), llmApiType(prev));
-      if (normalizedUrl === prev.baseUrl) return prev;
-      const next = { ...prev, baseUrl: normalizedUrl };
-      setModels(readCachedModelsForEndpoint(next));
-      return next;
-    });
+    const prev = latestStateRef.current.draft;
+    const next = { ...prev, baseUrl: normalizeLlmBaseUrl(normalizeApiBaseUrl(prev.baseUrl), llmApiType(prev)) };
+    latestStateRef.current = { ...latestStateRef.current, draft: next };
+    if (next.baseUrl !== prev.baseUrl) setDraft(next);
+    setModels(readCachedModelsForEndpoint(next));
   };
 
   const fetchModels = async () => {
@@ -358,10 +336,6 @@ export default function ApiPresetEditorModal({
   };
 
   const startCopyMode = () => {
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
-    }
     if (dirtyRef.current) {
       flushEditCommit(undefined, true);
       dirtyRef.current = false;
@@ -408,10 +382,6 @@ export default function ApiPresetEditorModal({
       variant: 'danger',
     });
     if (!confirmed) return;
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
-    }
     dirtyRef.current = false;
     removeApiPreset?.(preset.id);
     trackApiPresetAction({ source, action: '删除' });
@@ -521,7 +491,7 @@ export default function ApiPresetEditorModal({
                 onChange={(e) => {
                   const next = e.target.value;
                   setName(next);
-                  scheduleEditCommit({ name: next });
+                  markEditDirty({ name: next });
                 }}
                 onBlur={() => flushEditCommit()}
                 placeholder="预设名称"
@@ -538,7 +508,7 @@ export default function ApiPresetEditorModal({
                 onChange={(e) => {
                   const next = e.target.value;
                   setGroup(next);
-                  scheduleEditCommit({ group: next });
+                  markEditDirty({ group: next });
                 }}
                 onBlur={() => flushEditCommit()}
                 placeholder="例如：主力对话 / 轻量后台"

@@ -56,7 +56,6 @@ export interface ApiSlotEditorProps {
   showCreatePresetHeaderButton?: boolean;
 }
 
-const AUTO_SAVE_DELAY_MS = 600;
 
 const mapDiscardReason = (reason: 'missing_url' | 'invalid_url' | 'missing_model'): ApiSlotDiscardReason =>
   reason === 'missing_url' ? '缺地址' : reason === 'invalid_url' ? '地址不合法' : '缺模型';
@@ -132,7 +131,6 @@ export default function ApiSlotEditor({
   }>({ open: false, mode: 'create' });
 
   const requestVersionRef = useRef(0);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dirtyCustomRef = useRef(false);
   const lastCommittedSerializedRef = useRef(serializeComparableSlot(value));
   const prevExternalSerializedRef = useRef(lastCommittedSerializedRef.current);
@@ -230,10 +228,6 @@ export default function ApiSlotEditor({
   useEffect(() => {
     const onPageHide = () => {
       if (!dirtyCustomRef.current) return;
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = null;
-      }
       flushCustomDraft(latestPropsRef.current.customDraft, { onUnmount: true });
     };
     if (typeof window !== 'undefined') {
@@ -243,10 +237,6 @@ export default function ApiSlotEditor({
       if (typeof window !== 'undefined') {
         window.removeEventListener('pagehide', onPageHide);
       }
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = null;
-      }
       if (dirtyCustomRef.current) {
         flushCustomDraft(latestPropsRef.current.customDraft, { onUnmount: true });
       }
@@ -254,20 +244,7 @@ export default function ApiSlotEditor({
   }, []);
 
 
-  const scheduleCustomCommit = (nextDraft: DialogueApiConfig) => {
-    dirtyCustomRef.current = true;
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => {
-      saveTimerRef.current = null;
-      flushCustomDraft(nextDraft);
-    }, AUTO_SAVE_DELAY_MS);
-  };
-
   const handleSelectPreset = (preset: ApiPreset) => {
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
-    }
     dirtyCustomRef.current = false;
     requestVersionRef.current += 1;
     setLoadingModels(false);
@@ -283,10 +260,6 @@ export default function ApiSlotEditor({
 
   const handleSwitchToFollow = () => {
     if (!allowFollow) return;
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
-    }
     dirtyCustomRef.current = false;
     requestVersionRef.current += 1;
     setLoadingModels(false);
@@ -321,40 +294,25 @@ export default function ApiSlotEditor({
 
   const updateCustomFields = (patch: Partial<DialogueApiConfig>, immediate = false) => {
     requestVersionRef.current += 1;
-    setLoadingModels(false);
-    setTesting(false);
-    setStatus(''); setTestTone(null);
-    setCustomDraft((prev) => {
-      const next: DialogueApiConfig = { ...prev, ...patch };
-      delete next.presetId;
-      delete next.presetFp;
-      if (patch.apiType !== undefined && next.baseUrl.trim()) {
-        next.baseUrl = normalizeLlmBaseUrl(normalizeApiBaseUrl(next.baseUrl), patch.apiType);
-      }
-      if (patch.baseUrl !== undefined || patch.apiType !== undefined || patch.apiKey !== undefined) {
-        setModels(readCachedModelsForEndpoint(next));
-      }
-      if (immediate) {
-        if (saveTimerRef.current) {
-          clearTimeout(saveTimerRef.current);
-          saveTimerRef.current = null;
-        }
-        flushCustomDraft(next);
-      } else {
-        scheduleCustomCommit(next);
-      }
-      return next;
-    });
+    setLoadingModels(false); setTesting(false); setStatus(''); setTestTone(null);
+    const next: DialogueApiConfig = { ...latestPropsRef.current.customDraft, ...patch };
+    delete next.presetId; delete next.presetFp;
+    if (patch.apiType !== undefined && next.baseUrl.trim()) {
+      next.baseUrl = normalizeLlmBaseUrl(normalizeApiBaseUrl(next.baseUrl), patch.apiType);
+      setModels(readCachedModelsForEndpoint(next));
+    }
+    latestPropsRef.current = { ...latestPropsRef.current, customDraft: next };
+    setCustomDraft(next);
+    if (immediate) flushCustomDraft(next);
+    else dirtyCustomRef.current = true;
   };
 
   const handleUrlBlur = () => {
-    setCustomDraft((prev) => {
-      const normalizedUrl = normalizeLlmBaseUrl(normalizeApiBaseUrl(prev.baseUrl), llmApiType(prev));
-      if (normalizedUrl === prev.baseUrl) return prev;
-      const next = { ...prev, baseUrl: normalizedUrl };
-      setModels(readCachedModelsForEndpoint(next));
-      return next;
-    });
+    const prev = latestPropsRef.current.customDraft;
+    const next = { ...prev, baseUrl: normalizeLlmBaseUrl(normalizeApiBaseUrl(prev.baseUrl), llmApiType(prev)) };
+    latestPropsRef.current = { ...latestPropsRef.current, customDraft: next };
+    if (next.baseUrl !== prev.baseUrl) setCustomDraft(next);
+    setModels(readCachedModelsForEndpoint(next));
   };
 
   const fetchModelsForCustom = async () => {
@@ -592,10 +550,6 @@ export default function ApiSlotEditor({
             }}
             onUrlBlur={handleUrlBlur}
             onFieldBlur={() => {
-              if (saveTimerRef.current) {
-                clearTimeout(saveTimerRef.current);
-                saveTimerRef.current = null;
-              }
               flushCustomDraft(latestPropsRef.current.customDraft);
             }}
             fetchModels={fetchModelsForCustom}

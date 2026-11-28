@@ -30,7 +30,7 @@ it('模型原地下拉选择后立即保存，成功反馈短暂显示',async()=
 it('无效草稿不保存，也不显示修改成功',async()=>{
  const input=host.querySelector('input[aria-label="预设名称"]') as HTMLInputElement;
  await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'');input.dispatchEvent(new Event('input',{bubbles:true}));});
- await act(async()=>vi.advanceTimersByTime(650));
+ await act(async()=>{input.dispatchEvent(new FocusEvent('focusout',{bubbles:true}));vi.advanceTimersByTime(650);});
  expect(os.updateApiPreset).not.toHaveBeenCalled();expect(host.textContent).not.toContain('修改成功！');
 });
 
@@ -65,4 +65,37 @@ it('切换离开内联表单时提交合法草稿，清除延时任务', async (
  expect(os.updateApiPreset).toHaveBeenCalledWith('demo','示例',expect.objectContaining({baseUrl:'https://changed.test/v1'}),'');
  await act(async () => vi.advanceTimersByTime(650));
  expect(os.updateApiPreset).toHaveBeenCalledTimes(1);
+});
+
+it.each([
+ ['名称', 'input[aria-label="预设名称"]', '新名称'],
+ ['分组', 'input[aria-label="预设分组"]', '新分组'],
+ ['地址', '[data-api-field="base-url"] input', 'https://updated.test/v1/'],
+ ['密钥', 'input[type="password"]', 'changed-demo-key'],
+])('%s 输入和长停顿不保存，失焦仅保存一次', async (_, selector, value) => {
+ const input = host.querySelector(selector) as HTMLInputElement;
+ await act(async () => {
+  input.focus();
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+ });
+ await act(async () => vi.advanceTimersByTime(5000));
+ expect(os.updateApiPreset).not.toHaveBeenCalled();
+ expect(host.textContent).not.toContain('修改成功！');
+ expect(document.activeElement).toBe(input);
+ await act(async () => input.blur());
+ expect(os.updateApiPreset).toHaveBeenCalledTimes(1);
+ expect(host.textContent).toContain('修改成功！');
+ await act(async () => { input.focus(); input.blur(); vi.advanceTimersByTime(5000); });
+ expect(os.updateApiPreset).toHaveBeenCalledTimes(1);
+});
+it('手动模型输入只在失焦后提交', async () => {
+ await act(async () => Array.from(host.querySelectorAll('button')).find(button => button.textContent?.trim() === '手动输入')!.click());
+ const input = host.querySelector('input[aria-label="模型"]') as HTMLInputElement;
+ await act(async () => { input.focus(); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'typed-model'); input.dispatchEvent(new Event('input',{bubbles:true})); });
+ await act(async () => vi.advanceTimersByTime(5000));
+ expect(os.updateApiPreset).not.toHaveBeenCalled();
+ await act(async () => input.blur());
+ expect(os.updateApiPreset).toHaveBeenCalledTimes(1);
+ expect(os.updateApiPreset).toHaveBeenCalledWith('demo','示例',expect.objectContaining({model:'typed-model'}),'');
 });

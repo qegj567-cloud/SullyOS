@@ -187,3 +187,17 @@ it('主对话没有预设时仅显示新建入口，点击直达创建表单', a
   expect(onChange).not.toHaveBeenCalled();
  } finally { os.apiPresets = saved; }
 });
+
+it('独立配置输入停顿不保存，失焦才提交一次', async () => {
+ vi.useFakeTimers();
+ try {
+  await act(async () => root.render(React.createElement(ApiSlotEditor, { slotName: '角色独立', value: os.apiConfig, onCommit: onChange })));
+  const input = host.querySelector('input[type="password"]') as HTMLInputElement;
+  await act(async () => { input.focus(); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'changed-key'); input.dispatchEvent(new Event('input',{bubbles:true})); });
+  await act(async () => vi.advanceTimersByTime(5000));
+  expect(onChange).not.toHaveBeenCalled();
+  await act(async () => input.blur());
+  expect(onChange).toHaveBeenCalledTimes(1);
+  expect(onChange).toHaveBeenCalledWith(expect.objectContaining({apiKey:'changed-key'}));
+ } finally { vi.useRealTimers(); }
+});
