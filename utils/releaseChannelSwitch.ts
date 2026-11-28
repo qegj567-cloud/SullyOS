@@ -64,10 +64,26 @@ export const joinCanary = async (beforeRedirect?: () => void | Promise<void>): P
 };
 
 /** 退出 canary。Worker 降级失败也照样退出：页面马上就跳走了，失败由正式版下次冷启动再对齐。 */
-export const leaveCanary = async (): Promise<void> => {
-  if (await isAmsgInUse()) {
-    const result = await ActiveMsgClient.selfUpdateWorker('stable').catch(() => null);
-    if (!result?.ok) console.warn('[canary] Worker 这次没能换回正式版，正式版冷启动时会再试', result?.message);
+export type LeaveStage = 'checking' | 'worker' | 'opening';
+export const leaveCanary = async (onStage: (stage: LeaveStage) => void, skipWait: AbortSignal): Promise<void> => {
+  onStage('checking');
+  // Skip only the wait, not the remote operation: the Worker may already be updating.
+  // A late result must never trigger a second navigation.
+  let skip!: () => void;
+  const skipped = new Promise<void>(resolve => { skip = resolve; });
+  skipWait.addEventListener('abort', skip, { once: true });
+  if (skipWait.aborted) skip();
+  try {
+    const sync = async () => {
+      if (skipWait.aborted || !await isAmsgInUse() || skipWait.aborted) return;
+      onStage('worker');
+      const result = await ActiveMsgClient.selfUpdateWorker('stable').catch(() => null);
+      if (!result?.ok) console.warn('[canary] Worker 这次没能换回正式版，正式版冷启动时会再试', result?.message);
+    };
+    await Promise.race([sync(), skipped]);
+  } finally {
+    skipWait.removeEventListener('abort', skip);
   }
+  onStage('opening');
   goTo('stable');
 };
