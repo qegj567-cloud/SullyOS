@@ -361,3 +361,14 @@ describe('calibrateBreakdown（按浏览器实报折算）', () => {
         expect(calibrateBreakdown(onlyBinary, 300).calibrated).toBe(false);
     });
 });
+
+
+it('角色安全快照库计入角色资料，不落进其他应用', async () => {
+    const {writeCharacterSafetySnapshotNow, resetAllCharacterSafetySnapshots} = await import('./characterSafetySnapshots');
+    const {computeStorageBreakdown} = await import('./storageStats');
+    await writeCharacterSafetySnapshotNow('default', {id:'stats-safety',name:'快照',avatar:'',description:'',systemPrompt:'测试'.repeat(100),memories:[]});
+    try {
+        const result = await computeStorageBreakdown();
+        expect(result.categories.find(c => c.key === 'characters')?.bytes).toBeGreaterThan(0);
+    } finally { await resetAllCharacterSafetySnapshots(); }
+});
