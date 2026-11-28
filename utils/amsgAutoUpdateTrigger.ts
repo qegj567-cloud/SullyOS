@@ -117,8 +117,9 @@ export const requestStartupUpdateCheck = async (
   // 拉向正要离开的这一边，交给到达那一边去对齐。
   if (!isChannelChoiceSettled()) return 'skipped';
   // 刚切过通道：两个前端的 SW 各有一份推送订阅，把这一边的登记上去，主动消息才推得到这里。
-  if (consumeChannelArrival()) void reregisterPushAfterChannelSwitch();
-  if (!shouldRequestStartupUpdateCheck(readStartupUpdateCheckMarker(), buildLabel, nowMs)) return 'throttled';
+  const justSwitched = consumeChannelArrival();
+  if (justSwitched) void reregisterPushAfterChannelSwitch();
+  if (!justSwitched && !shouldRequestStartupUpdateCheck(readStartupUpdateCheckMarker(), buildLabel, nowMs)) return 'throttled';
   writeStartupUpdateCheckMarker({ buildLabel, atMs: nowMs });
 
   const probe = await ActiveMsgClient.probeWorkerVersion();
