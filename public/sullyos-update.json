@@ -1,14 +1,13 @@
 {
   "schemaVersion": 1,
-  "versionCode": 30527,
-  "versionName": "3.5.27",
-  "apkUrl": "https://github.com/qegj567-cloud/SullyOS/releases/download/android-v3.5.27/SullyOS-Android-v3.5.27.apk",
-  "sha256": "04eb8eb3660a0d8ca1048068101e8206b5a32ed47d22e2f0e382b4420077aae5",
-  "sizeBytes": 202298674,
-  "publishedAt": "2026-11-28T07:16:39Z",
+  "versionCode": 30528,
+  "versionName": "3.5.28",
+  "apkUrl": "https://github.com/qegj567-cloud/SullyOS/releases/download/android-v3.5.28/SullyOS-Android-v3.5.28.apk",
+  "sha256": "1f51b906b43824094ea7134d6dc91b8fea6d95e55fbf6ade612865cdd052a411",
+  "sizeBytes": 202298992,
+  "publishedAt": "2026-11-28T08:10:17Z",
   "releaseNotes": [
-    "同步正式版和金丝雀。切回正式版时会显示进度；等待超过 8 秒，可以点「先回正式版」。",
-    "修复在非默认用户空间切回正式版后又跳回金丝雀的问题。",
-    "沿用原签名，可直接覆盖升级，无需卸载。"
+    "金丝雀优化手机端 API 预设选择和编辑：首次设置会引导创建预设，选中后可直接编辑，离开输入框时保存。",
+    "正式版同步最新 master；本次没有额外的正式版功能改动。可在 App 内直接覆盖升级，无需卸载。"
   ]
 }
