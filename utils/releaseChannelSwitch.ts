@@ -10,6 +10,7 @@ import { ActiveMsgStore } from './activeMsgStore';
 import { isAmsg2WorkerActive } from './amsgGlobalGate';
 import {
   channelHomeUrl,
+  BUNDLED_ANDROID_CHANNELS,
   describeCanaryJoinBlocker,
   writeChosenChannel,
   type CanaryJoinContext,
@@ -41,7 +42,7 @@ export type ChannelSwitchResult = { ok: true } | { ok: false; message: string };
 
 const goTo = (channel: ReleaseChannel): void => {
   writeChosenChannel(channel);
-  globalThis.location.replace(channelHomeUrl(channel));
+  globalThis.location.replace(BUNDLED_ANDROID_CHANNELS ? '/' : channelHomeUrl(channel));
 };
 
 /**

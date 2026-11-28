@@ -94,7 +94,7 @@ export default defineConfig({
   },
   plugins: [
     homeResourcePacksPlugin(),
-    startupRecoveryPlugin(appBuildId, releaseChannel, CANARY_HOST),
+    startupRecoveryPlugin(appBuildId, releaseChannel, process.env.SULLY_ANDROID_DUAL_CHANNEL === '1' ? 'localhost' : CANARY_HOST),
     pageBuildMetadataPlugin({ buildId: appBuildId, branch: gitInfo.branch, commit: gitInfo.commit, time: buildTime }),
     react(),
     staticCachePlugin({ buildId: appBuildId, appVersion: releaseUpdateVersion(APP_VERSION_TAG, releaseChannel, appBuildId) }),
@@ -110,6 +110,7 @@ export default defineConfig({
     // Keep feature gating compile-time; only descriptive release metadata moves to HTML.
     __BUILD_BADGE_VISIBLE__: JSON.stringify(showBuildBadge),
     __RELEASE_CHANNEL__: JSON.stringify(releaseChannel),
+    __BUNDLED_ANDROID_CHANNELS__: JSON.stringify(process.env.SULLY_ANDROID_DUAL_CHANNEL === '1'),
   },
   // GitHub Pages 发布时使用相对路径，避免仓库子路径导致资源 404
   base: releaseChannel === 'canary' ? CANARY_BASE : process.env.GITHUB_PAGES ? './' : '/',
