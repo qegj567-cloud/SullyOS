@@ -174,3 +174,15 @@ describe('CharacterApiPanel 所见即所得自动保存与预设 ID 引用', () 
   expect(host.querySelector('[data-testid="bound-preset-card"]')).not.toBeNull();
   expect(onChange).not.toHaveBeenCalled();
 });
+
+it('主对话没有预设时仅显示新建入口，点击直达创建表单', async () => {
+ const saved = os.apiPresets; os.apiPresets = [];
+ try {
+  await act(async () => root.render(React.createElement(ApiSlotEditor, { slotName: '主对话', allowFollow: false, showCreatePresetHeaderButton: true, value: undefined, onCommit: onChange })));
+  expect(host.textContent).toContain('您还没有 API 预设，请先');
+  expect(host.querySelector('[data-api-field="base-url"]')).toBeNull();
+  await act(async () => (host.querySelector('[data-guide="api-create-preset"]') as HTMLButtonElement).click());
+  expect(host.querySelector('[data-api-preset-editor] [data-api-field="base-url"]')).not.toBeNull();
+  expect(onChange).not.toHaveBeenCalled();
+ } finally { os.apiPresets = saved; }
+});

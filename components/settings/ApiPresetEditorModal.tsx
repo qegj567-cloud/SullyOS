@@ -419,7 +419,7 @@ export default function ApiPresetEditorModal({
         }
       >
         <ApiSaveFeedback revision={saveRevision} />
-        <div className="space-y-4 text-slate-800">
+        <div className="space-y-4 text-slate-800" data-api-preset-editor>
           {mode === 'edit' && !copying && preset && (
             <div className="rounded-2xl bg-amber-50 border border-amber-200/80 px-3.5 py-2.5 text-[11px] text-amber-900 leading-relaxed space-y-1.5">
               <div className="flex items-center justify-between gap-2">

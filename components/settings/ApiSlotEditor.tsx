@@ -482,6 +482,7 @@ export default function ApiSlotEditor({
   };
 
   const activePresetId = binding.status === 'bound' && !manualCustomOpen ? binding.preset.id : null;
+  const needsFirstPreset = slotName === '主对话' && apiPresets.length === 0;
   const showCustomForm = manualCustomOpen || binding.status === 'custom' || binding.status === 'deleted_preset' || !allowFollow;
 
   return (
@@ -503,7 +504,7 @@ export default function ApiSlotEditor({
             <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">
               API 预设
             </h4>
-            {showCreatePresetHeaderButton && (
+            {showCreatePresetHeaderButton && !needsFirstPreset && (
               <button
                 type="button"
                 onClick={() =>
@@ -533,7 +534,11 @@ export default function ApiSlotEditor({
               )}</ApiPresetPicker>
             </div>
           ) : (
-            <p className="text-[11px] text-slate-400 pl-1">暂无已保存的预设，可通过「新建预设」添加。</p>
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+              您还没有 API 预设，请先
+              <button type="button" data-guide="api-create-preset" onClick={() => setPresetModal({ open: true, mode: 'create', seedConfig: value ?? undefined })}
+                className="inline-flex min-h-11 items-center px-1 font-bold text-primary underline underline-offset-4">新建预设</button>
+            </div>
           )}
         </div>
       )}
@@ -640,7 +645,7 @@ export default function ApiSlotEditor({
       )}
 
       {/* 状态 3：单独填写表单 */}
-      {showCustomForm && !(binding.status === 'bound' && !manualCustomOpen) && (
+      {!needsFirstPreset && showCustomForm && !(binding.status === 'bound' && !manualCustomOpen) && (
         <div className="space-y-3 pt-1">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <span className="text-[11px] font-bold text-slate-500 pl-1">
