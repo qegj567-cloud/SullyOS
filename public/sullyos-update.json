@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "versionCode": 30524,
-  "versionName": "3.5.24",
-  "apkUrl": "https://github.com/qegj567-cloud/SullyOS/releases/download/android-v3.5.24/SullyOS-Android-v3.5.24.apk",
-  "sha256": "710383724ebe2ca507b3ac5d4c29ddf7956335cd12888a224058a937522c6bf3",
-  "sizeBytes": 103921851,
-  "publishedAt": "2026-11-26T06:34:52Z",
+  "versionCode": 30525,
+  "versionName": "3.5.25",
+  "apkUrl": "https://github.com/qegj567-cloud/SullyOS/releases/download/android-v3.5.25/SullyOS-Android-v3.5.25.apk",
+  "sha256": "f9018f67e4710264d063d5b7e5e278574bb9fd24ea30d002b581e9bb6a7ba4a5",
+  "sizeBytes": 202059752,
+  "publishedAt": "2026-11-28T02:12:49Z",
   "releaseNotes": [
-    "安卓主 API 支持 OpenAI 兼容 HTTPS 地址的模型列表与非流式聊天原生直连，不限域名",
-    "需要直连时关闭主 API 的流式开关并保存；网页版、流式及主动消息 2.0 云端调用保持原方式",
-    "沿用原包名与正式签名，可覆盖升级保留数据"
+    "默认使用正式版；在设置底部连点版本号 5 次，可切换到同一 APK 内置的金丝雀。",
+    "重要：两通道共用本机聊天与设置。金丝雀可能修改或损坏数据，切回不等于还原。请先导出完整备份。",
+    "沿用原包名和正式签名，可直接覆盖升级，无需卸载。"
   ]
 }
