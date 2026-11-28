@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "versionCode": 30526,
-  "versionName": "3.5.26",
-  "apkUrl": "https://github.com/qegj567-cloud/SullyOS/releases/download/android-v3.5.26/SullyOS-Android-v3.5.26.apk",
-  "sha256": "f022aef322ea3945b110ee787f97ad24fca7c5e1e788e183d0a1cc7f0c1db232",
-  "sizeBytes": 202059855,
-  "publishedAt": "2026-11-28T02:36:12Z",
+  "versionCode": 30527,
+  "versionName": "3.5.27",
+  "apkUrl": "https://github.com/qegj567-cloud/SullyOS/releases/download/android-v3.5.27/SullyOS-Android-v3.5.27.apk",
+  "sha256": "04eb8eb3660a0d8ca1048068101e8206b5a32ed47d22e2f0e382b4420077aae5",
+  "sizeBytes": 202298674,
+  "publishedAt": "2026-11-28T07:16:39Z",
   "releaseNotes": [
-    "切换金丝雀时换上了新的欢迎提示，保留确认，不再倒计时。入口仍在设置底部，连点版本号 5 次即可看到。",
-    "两个版本共用聊天和设置，来回切换都接着当时的进度。无论用哪个版本，重要的聊天记得定期备份。",
-    "可在 App 内直接覆盖升级，无需卸载。"
+    "同步正式版和金丝雀。切回正式版时会显示进度；等待超过 8 秒，可以点「先回正式版」。",
+    "修复在非默认用户空间切回正式版后又跳回金丝雀的问题。",
+    "沿用原签名，可直接覆盖升级，无需卸载。"
   ]
 }
