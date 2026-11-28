@@ -24,10 +24,11 @@ describe('read-only character statistics', () => {
             { id: 'b', title: '关键词', content: '命中', constant: false, key: ['海边'] },
             { id: 'c', title: '概率', content: '抽签', constant: true, useProbability: true, probability: 30 },
             { id: 'd', title: '停用', content: '关闭', disable: true },
+            { id: 'e', title: '整本停用', content: '暂停整本', constant: true, bookDisabled: true },
         ] });
         const random = vi.spyOn(Math, 'random');
         try {
-            expect(ContextBuilder.inspectWorldbooks(char, user, [], 'chat.private').map(b => b.status)).toEqual(['readable', 'waiting', 'probability', 'disabled']);
+            expect(ContextBuilder.inspectWorldbooks(char, user, [], 'chat.private').map(b => b.status)).toEqual(['readable', 'waiting', 'probability', 'disabled', 'bookDisabled']);
             const matched = ContextBuilder.inspectWorldbooks(char, user, [{ content: '海边' }], 'chat.private');
             expect(matched[1].status).toBe('readable');
             expect(matched[0].content).toBe('角色');

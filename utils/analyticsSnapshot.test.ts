@@ -479,7 +479,7 @@ describe('当前角色设置 · 不泄漏角色内容', () => {
 
     it('世界书限定场景只报有没有，不带条目标题、正文或场景令牌', () => {
         const book = (scenes?: string[] | null) => ({
-            id: POISON.dbId, title: POISON.myName, content: POISON.token, category: POISON.city, scenes,
+            id: POISON.dbId, title: POISON.myName, content: POISON.token, category: POISON.city, group: POISON.myName, bookDisabled: true, scenes,
         });
         // 没设（undefined / null）= 所有场景，不算限定。
         expect(collectCharSettings([poisonedChar({ mountedWorldbooks: [book(), book(null)] })], 'c1').世界书限定场景).toBe('都没开');

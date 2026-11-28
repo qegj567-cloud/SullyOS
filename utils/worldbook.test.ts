@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { MountedWorldbook, Worldbook } from '../types';
 import {
+    buildWorldbookCatalog,
+    computeWorldbookGroupMembershipChanges,
     injectWorldbookDepthEntries,
     isWorldbookEntryActive,
     parseStandardWorldbook,
+    resolveWorldbookCategoryMeta,
     resolveWorldbookEntries,
     serializeSullyWorldbook,
     splitWorldbookSections,
@@ -212,5 +215,83 @@ describe('mounted worldbook synchronization', () => {
         expect(retried.map(entry => entry.id)).toEqual(['existing', 'generated-1', 'generated-2']);
         expect(retried.filter(entry => entry.category === '学院')).toHaveLength(2);
         expect(resolveWorldbookEntries(retried, [{ content: '我们去钟楼看看' }]).map(entry => entry.book.id)).toEqual(['generated-1', 'generated-2', 'existing']);
+    });
+
+    it('treats bookDisabled separately from entry disable and strips personal group/bookDisabled on single-book JSON export', () => {
+        const activeEntry = book({ id: 'a-1', category: '世界书A', group: '现代组', constant: true, disable: false });
+        const dividerEntry = book({ id: 'a-2', category: '世界书A', group: '现代组', constant: true, disable: true });
+
+        // 整本书停用时，原本启用的词条也不生效；重新开启整本书后，作者原本停用的分割线依然保持停用
+        expect(isWorldbookEntryActive({ ...activeEntry, bookDisabled: true }, [])).toBe(false);
+        expect(isWorldbookEntryActive({ ...activeEntry, bookDisabled: false }, [])).toBe(true);
+        expect(isWorldbookEntryActive({ ...dividerEntry, bookDisabled: false }, [])).toBe(false);
+
+        const mounted = toMountedWorldbook({
+            ...activeEntry,
+            category: '世界书A',
+            group: '  现代组  ',
+            bookDisabled: true,
+            createdAt: 1,
+            updatedAt: 2,
+        });
+        expect(mounted.group).toBe('现代组');
+        expect(mounted.bookDisabled).toBe(true);
+
+        const exported = JSON.parse(serializeSullyWorldbook([mounted, { ...dividerEntry, bookDisabled: true }]));
+        expect(exported).not.toHaveProperty('group');
+        expect(exported.worldbook).not.toHaveProperty('group');
+        expect(exported.worldbook.entries['0']).not.toHaveProperty('group');
+        expect(exported.worldbook.entries['0']).not.toHaveProperty('bookDisabled');
+        expect(exported.worldbook.entries['0'].disable).toBe(false);
+        expect(exported.worldbook.entries['1'].disable).toBe(true);
+    });
+
+    it('groups whole worldbooks into outer groups, computes group/book switch state, and inherits meta for existing worldbooks', () => {
+        const now = 100;
+        const makeWb = (id: string, category: string, extra: Partial<Worldbook> = {}): Worldbook => ({
+            id,
+            title: id,
+            content: '设定',
+            category,
+            createdAt: now,
+            updatedAt: now,
+            ...extra,
+        });
+        const flatCatalog = buildWorldbookCatalog([makeWb('1', 'A'), makeWb('2', 'B')]);
+        expect(flatCatalog.hasNamedGroups).toBe(false);
+        expect(flatCatalog.packages.map(pkg => pkg.category)).toEqual(['A', 'B']);
+
+        const books = [
+            makeWb('a1', '世界书A', { group: 'AB组', bookDisabled: false }),
+            makeWb('a2', '世界书A', { group: 'AB组', bookDisabled: false, disable: true }),
+            makeWb('b1', '世界书B', { group: 'AB组', bookDisabled: true }),
+            makeWb('c1', '世界书C', { group: 'C组', bookDisabled: true }),
+            makeWb('d1', '世界书D'),
+        ];
+        const catalog = buildWorldbookCatalog(books);
+        expect(catalog.hasNamedGroups).toBe(true);
+        expect(catalog.groupNames).toEqual(['AB组', 'C组']);
+        expect(catalog.groups.map(g => ({ name: g.name, isUngrouped: g.isUngrouped, anyEnabled: g.anyEnabled, allEnabled: g.allEnabled, cats: g.packages.map(p => p.category) }))).toEqual([
+            { name: 'AB组', isUngrouped: false, anyEnabled: true, allEnabled: false, cats: ['世界书A', '世界书B'] },
+            { name: 'C组', isUngrouped: false, anyEnabled: false, allEnabled: false, cats: ['世界书C'] },
+            { name: '未分组', isUngrouped: true, anyEnabled: true, allEnabled: true, cats: ['世界书D'] },
+        ]);
+        expect(catalog.packages.find(p => p.category === '世界书A')?.enabledEntryCount).toBe(1);
+
+        // 往已存在的停用世界书里新加词条时继承所属分组与整书停用状态
+        expect(resolveWorldbookCategoryMeta(books, '世界书B')).toEqual({ group: 'AB组', bookDisabled: true });
+        expect(resolveWorldbookCategoryMeta(books, '新世界书')).toEqual({});
+
+        // 编辑 AB组：移出 B、移入 D，并改名为「新AB组」
+        const changes = computeWorldbookGroupMembershipChanges(catalog.packages, '新AB组', ['世界书A', '世界书D'], 'AB组');
+        expect(changes).toEqual([
+            { ids: ['a1', 'a2', 'd1'], group: '新AB组' },
+            { ids: ['b1'], group: undefined },
+        ]);
+
+        // 解散 AB组：只退回未分组，不删条目
+        expect(computeWorldbookGroupMembershipChanges(catalog.packages, '', [], 'AB组')).toEqual([
+            { ids: ['a1', 'a2', 'b1'], group: undefined },
+        ]);
     });
 });

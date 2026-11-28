@@ -93,7 +93,7 @@ export const ContextBuilder = {
             const n = Number(book.probability);
             const probability = book.useProbability ? (Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 100) : 100;
             const matches = isWorldbookEntryActive({ ...book, useProbability: false }, history);
-            const status = book.disable ? 'disabled' : !isWorldbookSceneAllowed(book, scene) ? 'otherScene'
+            const status = book.bookDisabled ? 'bookDisabled' : book.disable ? 'disabled' : !isWorldbookSceneAllowed(book, scene) ? 'otherScene'
                 : !content.trim() ? 'empty' : probability === 0 ? 'zero'
                 : !matches ? 'waiting' : probability < 100 ? 'probability' : 'readable';
             return { book, content, probability, status };
