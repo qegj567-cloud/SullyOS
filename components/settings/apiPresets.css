@@ -1,0 +1,63 @@
+.api-preset-library {
+  --preset-ink: #334155;
+  --preset-muted: #64748b;
+  --preset-line: #e2e8f0;
+  --preset-accent: hsl(var(--primary-hue, 258) var(--primary-sat, 90%) 32%);
+  --preset-wash: hsl(var(--primary-hue, 258) var(--primary-sat, 90%) 96%);
+  margin-bottom: 12px;
+  color: var(--preset-ink);
+}
+.api-preset-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.api-preset-heading h3 { font-size: 14px; font-weight: 600; line-height: 1.5; }
+.api-preset-heading > span, .api-preset-help { font-size: 12px; line-height: 1.6; color: var(--preset-muted); }
+.api-preset-help { margin: 4px 0 12px; }
+.api-preset-filter, .api-preset-search { display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--preset-muted); }
+.api-preset-filter select, .api-preset-search input { flex: 1; min-width: 0; min-height: 36px; border: 1px solid var(--preset-line); border-radius: 8px; padding: 6px 10px; background: #fff; color: var(--preset-ink); font-size: 13px; color-scheme: light; }
+.api-preset-search { margin-top: 8px; }
+.api-preset-scroll { max-height: 240px; overflow-y: auto; overscroll-behavior-y: contain; margin-top: 12px; padding: 3px; scrollbar-width: thin; }
+.api-preset-grid { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; }
+.api-preset-empty { padding: 12px 0; font-size: 13px; color: var(--preset-muted); }
+.api-preset-option {
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  min-width: 36px; max-width: 100%; min-height: 32px; padding: 5px 9px;
+  border: 1px solid var(--preset-line); border-radius: 8px;
+  background: #fff; color: var(--preset-ink); text-align: left; cursor: pointer;
+  user-select: none; -webkit-touch-callout: none; touch-action: manipulation;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+.api-preset-name { font-size: 13px; font-weight: 500; line-height: 1.5; overflow-wrap: anywhere; }
+.api-preset-option[aria-pressed='true'] { background: var(--preset-wash); border-color: var(--preset-accent); color: var(--preset-accent); }
+.api-preset-selected { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; line-height: 1.5; white-space: nowrap; }
+.api-preset-selected svg { width: 14px; height: 14px; }
+.api-preset-option:active { background: var(--preset-wash); border-color: var(--preset-accent); }
+.api-preset-option:focus-visible, .api-preset-scroll:focus-visible, .api-preset-filter select:focus-visible, .api-preset-search input:focus-visible { outline: 2px solid var(--preset-accent); outline-offset: 3px; }
+@media (hover: hover) { .api-preset-option:hover { background: var(--preset-wash); border-color: var(--preset-muted); } }
+@media (prefers-reduced-motion: reduce) { .api-preset-option { transition: none; } }
+.api-preset-trigger { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px; padding: 10px 12px; border: 1px solid var(--preset-line); border-radius: 10px; background: #fff; cursor: pointer; text-align: left; }
+.api-preset-trigger-label { flex: none; font-size: 12px; color: var(--preset-muted); }
+.api-preset-trigger-value { flex: 1; min-width: 0; font-size: 13px; overflow-wrap: anywhere; }
+.api-preset-trigger svg { flex: none; width: 16px; height: 16px; }
+.api-preset-dialog { position: fixed; inset: 0; margin: 0; padding: 0; width: 100%; max-width: none; height: var(--visual-viewport-height, 100dvh); max-height: 100dvh; border: 0; background: transparent; overflow: hidden; }
+.api-preset-dialog[open] { display: flex; align-items: flex-end; justify-content: center; }
+.api-preset-dialog::backdrop { background: #0f172a66; }
+.api-preset-sheet { display: flex; flex-direction: column; min-height: 0; width: 100%; max-width: 448px; height: 78%; max-height: calc(100% - var(--safe-top, 0px) - 16px); padding: 12px 20px max(16px, var(--safe-bottom, 0px)); border-radius: 24px 24px 0 0; background: #fff; box-shadow: 0 -8px 40px #0f172a18; animation: api-preset-enter 180ms ease-out; }
+.api-preset-sheet header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex: none; }
+.api-preset-sheet h3 { font-size: 16px; font-weight: 600; }
+.api-preset-sheet h3 span { margin-left: 6px; color: var(--preset-muted); font-size: 12px; font-weight: 400; }
+.api-preset-sheet header button { min-height: 44px; min-width: 44px; color: var(--preset-muted); font-size: 13px; cursor: pointer; }
+.api-preset-tools { display: flex; gap: 8px; flex: none; margin-bottom: 12px; }
+.api-preset-tools .api-preset-search { flex: 1; min-width: 0; margin: 0; }
+.api-preset-tools .api-preset-filter { width: 116px; flex: none; }
+.api-preset-tools input, .api-preset-tools select { width: 100%; min-height: 40px; }
+.api-preset-results { min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 3px; }
+.api-preset-row + .api-preset-row { border-top: 1px solid var(--preset-line); }
+.api-preset-row .api-preset-option { display: flex; justify-content: space-between; width: 100%; min-height: 44px; padding: 10px 8px; border: 0; border-radius: 6px; }
+.api-preset-trigger:focus-visible, .api-preset-sheet header button:focus-visible { outline: 2px solid var(--preset-accent); outline-offset: 2px; }
+@keyframes api-preset-enter { from { transform: translateY(24px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .api-preset-sheet { animation: none; } }
+/* Keep a quiet, narrow scroll affordance instead of the platform's wide track. */
+.api-preset-results, .api-call-log-inline { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+.api-preset-results::-webkit-scrollbar, .api-call-log-inline::-webkit-scrollbar { width: 4px; height: 4px; }
+.api-preset-results::-webkit-scrollbar-track, .api-call-log-inline::-webkit-scrollbar-track { background: transparent; }
+.api-preset-results::-webkit-scrollbar-thumb, .api-call-log-inline::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 99px; }
+.api-preset-results::-webkit-scrollbar-button { display: none; }

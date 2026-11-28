@@ -1,0 +1,17 @@
+.api-log-page { height: 560px; overflow-y: auto; overscroll-behavior: contain; padding: 3px; scrollbar-width: none; -ms-overflow-style: none; }
+.api-log-page::-webkit-scrollbar { display: none; width: 0; height: 0; }
+.api-log-page > div + div { margin-top: 8px; }
+.api-log-pagination { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; font-size: 12px; color: #64748b; }
+.api-log-pagination button, .api-log-detail-button { min-height: 40px; padding: 8px; border-radius: 8px; color: #475569; cursor: pointer; }
+.api-log-pagination button { border: 1px solid #e2e8f0; background: #fff; }
+.api-log-pagination button:disabled { opacity: .4; cursor: default; }
+.api-log-detail-button { margin-top: 4px; font-size: 12px; text-decoration: underline; text-underline-offset: 3px; }
+.api-log-page:focus-visible, .api-log-pagination button:focus-visible, .api-log-detail-button:focus-visible { outline: 2px solid #64748b; outline-offset: 2px; }
+.api-log-breakdown-dialog { position: fixed; inset: 0; margin: 0; padding: 20px; width: 100%; max-width: none; height: var(--visual-viewport-height, 100dvh); max-height: 100dvh; border: 0; background: transparent; }
+.api-log-breakdown-dialog[open] { display: flex; align-items: center; justify-content: center; }
+.api-log-breakdown-dialog::backdrop { background: #0f172a66; }
+.api-log-breakdown-panel { display: flex; flex-direction: column; width: 100%; max-width: 480px; max-height: calc(100% - var(--safe-top, 0px) - var(--safe-bottom, 0px)); min-height: 0; background: #fff; color: #334155; border-radius: 20px; box-shadow: 0 16px 48px #0f172a26; }
+.api-log-breakdown-panel header { display: flex; align-items: center; justify-content: space-between; padding: 10px 20px; border-bottom: 1px solid #e2e8f0; }
+.api-log-breakdown-panel h3 { font-size: 16px; font-weight: 600; }
+.api-log-breakdown-panel header button { min-height: 44px; padding: 8px; font-size: 13px; cursor: pointer; }
+.api-log-breakdown-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 16px 20px; scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }

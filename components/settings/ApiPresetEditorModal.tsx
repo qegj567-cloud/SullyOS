@@ -425,7 +425,7 @@ export default function ApiPresetEditorModal({
           {mode === 'edit' && !copying && preset && (
             <div className="rounded-2xl bg-amber-50 border border-amber-200/80 px-3.5 py-2.5 text-[11px] text-amber-900 leading-relaxed space-y-1.5">
               <div className="flex items-center justify-between gap-2">
-                <span className="font-bold">修改将同步至所有引用位置</span>
+                <span className="font-bold">修改会同时更新所有使用此预设的位置</span>
                 <div className="flex items-center gap-2 shrink-0">
                   <button
                     type="button"

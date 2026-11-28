@@ -666,7 +666,6 @@ const Settings: React.FC = () => {
   /** 云端没清干净时停在这里：本地还一个字节都没动，等用户决定重试还是照样重置。 */
   const [resetCloudFailure, setResetCloudFailure] = useState<{ workerUrl: string; detail: string } | null>(null);
   const [showPresetModal, setShowPresetModal] = useState(false);
-  const [showApiCallLog, setShowApiCallLog] = useState(false);
   const [holidaySettingsFocus] = useState(hasHolidaySettingsRequest);
   useEffect(() => { if (holidaySettingsFocus) consumeHolidaySettings(); }, [holidaySettingsFocus]);
   const [showRealtimeModal, setShowRealtimeModal] = useState(holidaySettingsFocus);
@@ -1010,7 +1009,7 @@ const Settings: React.FC = () => {
   const [exportUserScope, setExportUserScope] = useState<'current' | 'all'>('current');
   // 卡片内页签：备份默认打开已在用的那一侧
   const [backupTab, setBackupTab] = useState<'local' | 'cloud'>(() => cloudBackupConfig.enabled ? 'cloud' : 'local');
-  const [apiTab, setApiTab] = useState<'chat' | 'vision'>('chat');
+  const [apiTab, setApiTab] = useState<'chat' | 'vision' | 'logs'>('chat');
   const [voiceTab, setVoiceTab] = useState<'voice' | 'song'>('voice');
   const [extensionTab, setExtensionTab] = useState<'realtime' | 'mcp'>('realtime');
   /**
@@ -2754,9 +2753,9 @@ const Settings: React.FC = () => {
             onFocusRequest={() => setApiTab('chat')}
         >
             <SettingsTabs prefix="settings-api" label="API 类型" selected={apiTab} onSelect={setApiTab}
-                tabs={[{ id: 'chat', label: '对话' }, { id: 'vision', label: isVisionApiReady(apiConfig.visionApi) ? '识图 · 已接入' : '识图 · 未接入' }]}>
+                tabs={[{ id: 'chat', label: '对话' }, { id: 'vision', label: isVisionApiReady(apiConfig.visionApi) ? '识图 · 已接入' : '识图 · 未接入' }, { id: 'logs', label: 'API 调用记录' }]}>
             {apiTab === 'chat' ? (
-              <div className="space-y-4">
+              <div className="api-connection-compact">
                 <ApiSlotEditor
                   slotName="主对话"
                   allowFollow={false}
@@ -2771,15 +2770,15 @@ const Settings: React.FC = () => {
                       presetFp: next.presetFp,
                     });
                   }}
-                  helperText="点选预设立即按引用切换；编辑预设会自动同步至所有引用它的角色、副 API 与独立应用。"
+                  helperText="选择预设立即生效；修改预设会同时更新所有使用它的位置。"
                   meta={{ appId: 'settings', appName: '设置' }}
                 />
                 <p className="text-xs text-slate-500 leading-relaxed break-words pl-1">
                   当前使用独立模型的角色为：{characters.filter(c => c.dialogueApi).map(c => c.name).join('、') || '暂无'}
                 </p>
               </div>
-            ) : (
-              <div className="space-y-4">
+            ) : apiTab === 'logs' ? <ApiCallLogModal embedded isOpen onClose={() => setApiTab('chat')} /> : (
+              <div className="api-connection-compact">
                 <div className="rounded-2xl border border-violet-100 bg-violet-50/60 p-3.5">
                   <div className="flex items-center justify-between gap-3">
                     <div>
@@ -2856,16 +2855,6 @@ const Settings: React.FC = () => {
               </div>
             )}
             </SettingsTabs>
-            {/* API 调用记录入口 — 点开看最近 5 天各 App / 角色 / 用途的调用明细 */}
-            <button type="button" onClick={() => setShowApiCallLog(true)} className="mt-4 w-full flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-left active:scale-[0.99] transition-transform">
-                <div className="flex-1 min-w-0">
-                    <div className="text-xs font-bold text-slate-600">API 调用记录</div>
-                    <p className="text-[10px] text-slate-400 mt-0.5">最近 5 天：时间 · 哪个 API · 哪个 App · 哪个角色 · 用途</p>
-                </div>
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-slate-300 shrink-0">
-                    <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 0 1 .02-1.06L11.168 10 7.23 6.29a.75.75 0 1 1 1.04-1.08l4.5 4.25a.75.75 0 0 1 0 1.08l-4.5 4.25a.75.75 0 0 1-1.06-.02Z" clipRule="evenodd" />
-                </svg>
-            </button>
         </SettingsSection>
 
         {/* 语音与写歌 — 非 LLM 类 API，不会跟随预设切换 */}
@@ -3752,7 +3741,6 @@ const Settings: React.FC = () => {
       </Modal>
 
       {/* API 调用记录页面 */}
-      <ApiCallLogModal isOpen={showApiCallLog} onClose={() => setShowApiCallLog(false)} />
 
       {/* 强制导出 Modal */}
       <Modal isOpen={showExportModal} title="备份下载" onClose={() => { revokeDownloadUrl(); setShowExportModal(false); }} footer={
