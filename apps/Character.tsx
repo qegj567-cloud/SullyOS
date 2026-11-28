@@ -43,7 +43,7 @@ import {
     disableCharacterAmsg2Schedule,
     shouldPromptDisableAmsg2OnTimeAwarenessOff,
 } from '../utils/amsg2TimeAwarenessGate';
-import { toMountedWorldbook } from '../utils/worldbook';
+import { buildWorldbookCatalog, toMountedWorldbook, WORLDBOOK_DEFAULT_CATEGORY, type WorldbookPackage } from '../utils/worldbook';
 import { stripSensitiveCardFields } from '../utils/characterCard';
 import { shareOrDownloadFile } from '../utils/shareExport';
 import { readShareText } from '../utils/pngShare';
@@ -435,10 +435,10 @@ const Character: React.FC<{ profileCharacterId?: string }> = ({ profileCharacter
       trackEvent('给角色挂载世界书');
   };
 
-  // New: Mount entire category
+  // Mount entire worldbook (category)
   const mountCategory = (category: string) => {
       if (!formData) return;
-      const booksToMount = worldbooks.filter(b => (b.category || '未分类设定 (General)') === category);
+      const booksToMount = worldbooks.filter(b => (b.category || WORLDBOOK_DEFAULT_CATEGORY) === category);
       if (booksToMount.length === 0) return;
 
       const currentBooks = formData.mountedWorldbooks || [];
@@ -454,9 +454,35 @@ const Character: React.FC<{ profileCharacterId?: string }> = ({ profileCharacter
 
       if (addedCount > 0) {
           handleChange('mountedWorldbooks', [...currentBooks, ...newEntries]);
-          addToast(`已批量挂载 ${addedCount} 本世界书`, 'success');
+          addToast(`已挂载「${category}」共 ${addedCount} 条词条`, 'success');
       } else {
-          addToast('该组世界书已全部挂载', 'info');
+          addToast('该本世界书已全部挂载', 'info');
+      }
+      setShowWorldbookModal(false);
+  };
+
+  // Mount all worldbooks in an outer group
+  const mountOuterGroup = (groupName: string) => {
+      if (!formData) return;
+      const booksToMount = worldbooks.filter(b => (b.group || '').trim() === groupName);
+      if (booksToMount.length === 0) return;
+
+      const currentBooks = formData.mountedWorldbooks || [];
+      const newEntries = [];
+      let addedCount = 0;
+
+      for (const book of booksToMount) {
+          if (!currentBooks.some(b => b.id === book.id)) {
+              newEntries.push(toMountedWorldbook(book));
+              addedCount++;
+          }
+      }
+
+      if (addedCount > 0) {
+          handleChange('mountedWorldbooks', [...currentBooks, ...newEntries]);
+          addToast(`已整组挂载「${groupName}」共 ${addedCount} 条词条`, 'success');
+      } else {
+          addToast('该分组内的世界书已全部挂载', 'info');
       }
       setShowWorldbookModal(false);
   };
@@ -467,26 +493,18 @@ const Character: React.FC<{ profileCharacterId?: string }> = ({ profileCharacter
       handleChange('mountedWorldbooks', currentBooks.filter(b => b.id !== bookId));
   };
 
-  // 挂载弹窗的分组数据。必须 useMemo：之前这段 reduce 内联在 JSX 里，
-  // 弹窗没打开时整个编辑表单每敲一个字都会重新分组一遍全部世界书。
-  const wbModalGroups = useMemo(() => {
-      const groups: Record<string, typeof worldbooks> = {};
-      worldbooks.forEach(wb => {
-          const cat = wb.category || '未分类设定 (General)';
-          if (!groups[cat]) groups[cat] = [];
-          groups[cat].push(wb);
-      });
-      return Object.entries(groups);
-  }, [worldbooks]);
+  // 挂载弹窗的分组与世界书目录。必须 useMemo：弹窗没打开时编辑表单每敲一个字不会重复重算。
+  const wbModalCatalog = useMemo(() => buildWorldbookCatalog(worldbooks), [worldbooks]);
 
-  // 搜索态：按标题/分组名过滤，最多展示前 60 条避免长列表卡顿。
+  // 搜索态：按标题 / 世界书名 / 外层分组名过滤，最多展示前 60 条避免长列表卡顿。
   const WB_SEARCH_LIMIT = 60;
   const wbModalSearchResults = useMemo(() => {
       const query = wbModalSearch.trim().toLowerCase();
       if (!query) return null;
       const matched = worldbooks.filter(wb =>
           wb.title.toLowerCase().includes(query) ||
-          (wb.category || '未分类设定 (General)').toLowerCase().includes(query)
+          (wb.category || WORLDBOOK_DEFAULT_CATEGORY).toLowerCase().includes(query) ||
+          (wb.group || '').toLowerCase().includes(query)
       );
       return { books: matched.slice(0, WB_SEARCH_LIMIT), total: matched.length };
   }, [worldbooks, wbModalSearch]);
@@ -1790,13 +1808,14 @@ ${isInitialGeneration ? `
                                 </div>
                                 <div className="space-y-2">
                                    {formData.mountedWorldbooks && formData.mountedWorldbooks.length > 0 ? (
-                                       [...formData.mountedWorldbooks.reduce((groups, book) => {
-                                           const category = book.category || '未分类设定 (General)';
-                                           groups.set(category, [...(groups.get(category) || []), book]);
-                                           return groups;
-                                       }, new Map<string, NonNullable<CharacterProfile['mountedWorldbooks']>>())].map(([category, books]) => (
-                                           <details key={category} className="rounded-2xl border border-indigo-50 bg-white overflow-hidden" data-mounted-worldbook-group={category}>
-                                               <summary className="cursor-pointer px-4 py-3 text-xs font-bold text-slate-700 break-words">{category} <span className="font-normal text-slate-400">· {books.length} 条</span></summary>
+                                       buildWorldbookCatalog(formData.mountedWorldbooks).packages.map(({ category, group, bookDisabled, books }) => (
+                                           <details key={category} className={`rounded-2xl border overflow-hidden ${bookDisabled ? 'border-slate-200 bg-slate-50/70' : 'border-indigo-50 bg-white'}`} data-mounted-worldbook-group={category}>
+                                               <summary className="cursor-pointer px-4 py-3 text-xs font-bold text-slate-700 break-words flex items-center gap-1.5 flex-wrap">
+                                                   <span className={bookDisabled ? 'text-slate-400' : 'text-slate-700'}>{category}</span>
+                                                   {group && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-500">{group}</span>}
+                                                   {bookDisabled && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-50 text-amber-600">世界书已停用</span>}
+                                                   <span className="font-normal text-slate-400">· {books.length} 条</span>
+                                               </summary>
                                                <div className="px-4 pb-3">
                                                    <div className="mb-2 flex justify-end"><button type="button" onClick={() => {
                                                        const ids = new Set(books.map(book => book.id));
@@ -1807,7 +1826,10 @@ ${isInitialGeneration ? `
                                                            const open = event.currentTarget.open;
                                                            setExpandedMountedBookIds(prev => { const next = new Set(prev); if (open) next.add(wb.id); else next.delete(wb.id); return next; });
                                                        }}>
-                                                           <summary className="cursor-pointer text-xs text-slate-600 break-words">{wb.title}</summary>
+                                                           <summary className={`cursor-pointer text-xs break-words ${wb.disable || bookDisabled ? 'text-slate-400' : 'text-slate-600'}`}>
+                                                               {wb.title}
+                                                               {wb.disable && <span className="ml-1.5 text-[10px] text-slate-400">（词条已停用）</span>}
+                                                           </summary>
                                                            {expandedMountedBookIds.has(wb.id) && <p className="mt-2 whitespace-pre-wrap break-words text-[11px] leading-relaxed text-slate-500">{wb.content}</p>}
                                                        </details>
                                                        <button type="button" aria-label={'取消挂载 ' + wb.title} onClick={() => unmountWorldbook(wb.id)} className="shrink-0 px-2 text-slate-400">×</button>
@@ -2039,7 +2061,7 @@ ${isInitialGeneration ? `
                         <input
                             value={wbModalSearch}
                             onChange={e => setWbModalSearch(e.target.value)}
-                            placeholder="搜索世界书标题或分组..."
+                            placeholder="搜索词条标题、世界书名或分组..."
                             className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 outline-none focus:bg-white focus:border-indigo-300 transition-all"
                         />
                         {wbModalSearchResults ? (
@@ -2061,7 +2083,9 @@ ${isInitialGeneration ? `
                                                     <span className="font-bold text-slate-700 text-sm truncate">{wb.title}</span>
                                                     {isMounted && <span className="text-[10px] text-slate-400 shrink-0">已挂载</span>}
                                                 </div>
-                                                <div className="text-[10px] text-slate-400 truncate mt-0.5">{wb.category || '未分类设定 (General)'}</div>
+                                                <div className="text-[10px] text-slate-400 truncate mt-0.5">
+                                                    {wb.group ? `${wb.group} · ` : ''}{wb.category || WORLDBOOK_DEFAULT_CATEGORY}{wb.bookDisabled ? '（已停用）' : ''}
+                                                </div>
                                             </button>
                                         );
                                     })
@@ -2072,9 +2096,9 @@ ${isInitialGeneration ? `
                                     </div>
                                 )}
                             </div>
-                        ) : (
-                            // 默认态：分组手风琴，只渲染展开分组的条目
-                            wbModalGroups.map(([category, books]) => {
+                        ) : (() => {
+                            const renderMountPkg = (pkg: WorldbookPackage) => {
+                                const { category, books, bookDisabled } = pkg;
                                 const isExpanded = wbModalExpandedCategory === category;
                                 return (
                                     <div key={category} className="rounded-xl border border-slate-100 bg-slate-50/50 overflow-hidden">
@@ -2085,13 +2109,14 @@ ${isInitialGeneration ? `
                                             <span className={`transition-transform duration-200 text-slate-400 ${isExpanded ? 'rotate-90' : ''}`}>
                                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5"><path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" /></svg>
                                             </span>
-                                            <h4 className="flex-1 min-w-0 text-xs font-bold text-slate-500 truncate">{category}</h4>
+                                            <h4 className={`flex-1 min-w-0 text-xs font-bold truncate ${bookDisabled ? 'text-slate-400' : 'text-slate-600'}`}>{category}</h4>
+                                            {bookDisabled && <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 font-semibold shrink-0">已停用</span>}
                                             <span className="text-[10px] text-slate-400 shrink-0">{books.length}</span>
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); mountCategory(category); }}
                                                 className="text-[10px] bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded font-bold hover:bg-indigo-100 shrink-0"
                                             >
-                                                挂载整组
+                                                挂载整本
                                             </button>
                                         </div>
                                         {isExpanded && (
@@ -2116,8 +2141,34 @@ ${isInitialGeneration ? `
                                         )}
                                     </div>
                                 );
-                            })
-                        )}
+                            };
+
+                            if (!wbModalCatalog.hasNamedGroups) {
+                                return wbModalCatalog.packages.map(renderMountPkg);
+                            }
+
+                            return wbModalCatalog.groups.map(section => (
+                                <div key={section.key} className="rounded-2xl border border-indigo-100/80 bg-white p-2.5 space-y-2">
+                                    <div className="flex items-center justify-between gap-2 px-1">
+                                        <span className="text-xs font-bold text-indigo-600 truncate">
+                                            {section.name} <span className="font-normal text-slate-400">· {section.packages.length} 本</span>
+                                        </span>
+                                        {!section.isUngrouped && (
+                                            <button
+                                                type="button"
+                                                onClick={() => mountOuterGroup(section.name)}
+                                                className="text-[10px] bg-indigo-500 text-white px-2.5 py-0.5 rounded-full font-bold hover:bg-indigo-600 shrink-0"
+                                            >
+                                                挂载全组
+                                            </button>
+                                        )}
+                                    </div>
+                                    <div className="space-y-2">
+                                        {section.packages.map(renderMountPkg)}
+                                    </div>
+                                </div>
+                            ));
+                        })()}
                     </>
                 )}
             </div>

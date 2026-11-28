@@ -27,7 +27,13 @@ it('opens settings from an active date without measuring the entrance animation 
         expect((scroll.parentElement as HTMLElement).style.maxHeight).toBe('800px');
         expect(scroll.textContent).toContain('当前美化');
         expect(host.querySelector('button[aria-label="返回"]')?.closest('header')?.style.paddingTop).toBe('var(--chrome-top)');
-        await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent?.includes('保存当前布置'))!.click());
+        expect(host.querySelector('button[aria-label="保存当前布置"]')).toBeNull();
+        const scene = host.querySelector('[aria-label="陪伴场景描述"]')!;
+        expect(scene.closest('details')!.open).toBe(true);
+        for (const label of ['陪伴互动基调', '本次写作风格', '叙事人称']) {
+            expect(host.querySelector(`[aria-label="${label}"]`)!.closest('details')).toBe(scene.closest('details'));
+        }
+        await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="返回"]')!.click());
         expect(host.querySelector('[data-testid="date-settings-scroll"]')).toBeNull();
     } finally { act(() => root.unmount()); host.remove(); vi.unstubAllGlobals(); vi.restoreAllMocks(); }
 });
@@ -42,9 +48,9 @@ it('scrolls the preview with the editor, collapses it, and keeps focused input a
         const scroll = host.querySelector('[data-testid="date-settings-scroll"]') as HTMLElement;
         const toggle = [...host.querySelectorAll('button')].find(el => el.textContent === '收起场景预览')!;
         expect(scroll.contains(toggle)).toBe(true);
-        expect(scroll.textContent).toContain('预览 (Preview)');
+        expect([...scroll.querySelectorAll('div')].some(el => el.textContent === '预览')).toBe(true);
         await act(async () => toggle.click());
-        expect(scroll.textContent).not.toContain('预览 (Preview)');
+        expect([...scroll.querySelectorAll('div')].some(el => el.textContent === '预览')).toBe(false);
         expect(toggle.textContent).toBe('展开场景预览');
         const textarea = host.querySelector('textarea[aria-label="自定义补充"]') as HTMLTextAreaElement;
         vi.spyOn(scroll, 'getBoundingClientRect').mockReturnValue({ top: 64, bottom: 380, height: 316 } as DOMRect);

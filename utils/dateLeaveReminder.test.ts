@@ -69,7 +69,7 @@ it('已经备好的：回到对话时原地改期，不重复新建；远端没�
   expect(ActiveMsgClient.scheduleCharacterTask).toHaveBeenCalledOnce();
 });
 
-it('主动结束：取消刚建好、角色记录里还没有的那条', async () => {
+it('私聊开口或关闭设置：取消刚建好、角色记录里还没有的那条', async () => {
   vi.mocked(isAwayCloudRoute).mockResolvedValue(true);
   void armDateLeaveReminder(deps());
   await disarmDateLeaveReminder({ char, updateCharacter });

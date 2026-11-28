@@ -7,6 +7,15 @@ import { applyFriendFeedMedia, collectFriendFeedMedia, isActivityTextAsset } fro
 import { HELP_HISTORY_KEY, helpTextHistory, restoreHelpMedia } from './sullyHelpBackup';
 import { compactMemoryLink } from './memoryPalace/linkPrecision';
 import { reportDatabaseFailure } from './databaseHealth';
+import { trackEvent } from './analytics';
+import {
+    deleteCharacterSafetySnapshots,
+    deleteSpaceSafetySnapshots,
+    isUnreadableRecordError,
+    recoverCharacterFromSafetySnapshot,
+    scheduleCharacterSafetySnapshot,
+    seedMissingCharacterSafetySnapshots,
+} from './characterSafetySnapshots';
 import { associateDatabaseOpen, beginDatabaseOpen, recordDatabaseOpen } from './databaseOpenDiagnostics';
 import {migrateLegacyWhiteboxPresets} from './legacyWhiteboxPresets';
 import {restoreDecorationMedia} from './decorationMediaBackup';
@@ -618,12 +627,94 @@ const normalizeWorldRelationships = (world: WorldProfile): WorldProfile => {
     return { ...world, relationships: out };
 };
 
+const seededSafetySpaces = new Set<string>();
+function queueIdleSafetySeed(db: IDBDatabase, spaceId: string, characters: readonly CharacterProfile[]) {
+    if (!characters.length || seededSafetySpaces.has(spaceId)) return;
+    seededSafetySpaces.add(spaceId);
+    // 空闲回调可能晚于删除或覆盖导入，重新读取当前行；旧连接关闭后不重开已删除的库。
+    const run = () => {
+        void (async () => {
+            try {
+                const current = await new Promise<CharacterProfile[]>((resolve, reject) => {
+                    const req = db.transaction(STORE_CHARACTERS, 'readonly').objectStore(STORE_CHARACTERS).getAll();
+                    req.onsuccess = () => resolve(req.result || []);
+                    req.onerror = () => reject(req.error);
+                });
+                await seedMissingCharacterSafetySnapshots(spaceId, current);
+            } catch { /* 故障或已关闭的库不补基线 */ }
+        })();
+    };
+    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+        window.requestIdleCallback(run, { timeout: 5000 });
+    } else {
+        setTimeout(run, 1500);
+    }
+}
+
+function writeHealedCharacterRow(db: IDBDatabase, character: CharacterProfile): Promise<void> {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_CHARACTERS, 'readwrite');
+        tx.objectStore(STORE_CHARACTERS).put(character);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(tx.error || new Error('角色档案自愈写回失败'));
+    });
+}
+
+function readSingleCharacterIsolated(db: IDBDatabase, key: IDBValidKey): Promise<{ ok: true; value: CharacterProfile | undefined } | { ok: false; error: unknown }> {
+    return new Promise(resolve => {
+        try {
+            const tx = db.transaction(STORE_CHARACTERS, 'readonly');
+            const req = tx.objectStore(STORE_CHARACTERS).get(key);
+            req.onsuccess = () => resolve({ ok: true, value: req.result });
+            req.onerror = event => {
+                event.preventDefault();
+                resolve({ ok: false, error: req.error });
+            };
+            tx.onabort = () => resolve({ ok: false, error: tx.error || req.error });
+        } catch (error) {
+            resolve({ ok: false, error });
+        }
+    });
+}
+
+async function healAllCharactersOnReadFailure(db: IDBDatabase, spaceId: string, originalError: unknown): Promise<CharacterProfile[]> {
+    const keys = await new Promise<IDBValidKey[]>((resolve, reject) => {
+        const req = db.transaction(STORE_CHARACTERS, 'readonly').objectStore(STORE_CHARACTERS).getAllKeys();
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error || originalError);
+    });
+    const characters: CharacterProfile[] = [];
+    let healedCount = 0;
+    for (const rawKey of keys) {
+        const single = await readSingleCharacterIsolated(db, rawKey);
+        if (single.ok) {
+            if (single.value) characters.push(withoutRuntimeRecall(single.value));
+            continue;
+        }
+        if (!isUnreadableRecordError(single.error)) throw single.error || originalError;
+        const recovered = await recoverCharacterFromSafetySnapshot(spaceId, String(rawKey));
+        if (!recovered) {
+            trackEvent('自动恢复损坏角色档案', { 结果: '无快照' });
+            throw single.error || originalError;
+        }
+        const cleaned = withoutRuntimeRecall(recovered);
+        await writeHealedCharacterRow(db, cleaned);
+        characters.push(cleaned);
+        healedCount++;
+    }
+    if (healedCount > 0) trackEvent('自动恢复损坏角色档案', { 结果: '成功' });
+    return characters;
+}
+
 export const DB = {
   deleteDB: async (spaceId = SESSION_SPACE_ID): Promise<void> => {
       // 删库前先关掉单例连接, 否则这条还开着的连接会 block 掉 deleteDatabase。
       await spaceOpeners.get(spaceId)?.close();
       spaceOpeners.delete(spaceId);
+      seededSafetySpaces.delete(spaceId);
       await clearEmojiOriginals(spaceId);
+      await deleteSpaceSafetySnapshots(spaceId);
       return new Promise((resolve, reject) => {
           const req = indexedDB.deleteDatabase(spaceDatabaseName('AetherOS_Data', spaceId));
           req.onsuccess = () => resolve();
@@ -634,40 +725,71 @@ export const DB = {
 
   getCharacter: async (id: string): Promise<CharacterProfile | undefined> => {
     const db = await openDB();
-    return new Promise((resolve, reject) => {
-      const request = db.transaction(STORE_CHARACTERS, 'readonly').objectStore(STORE_CHARACTERS).get(id);
-      request.onsuccess = () => resolve(withoutRuntimeRecall(request.result));
-      request.onerror = () => reject(request.error);
-    });
+    try {
+      return await new Promise<CharacterProfile | undefined>((resolve, reject) => {
+        const request = db.transaction(STORE_CHARACTERS, 'readonly').objectStore(STORE_CHARACTERS).get(id);
+        request.onsuccess = () => resolve(withoutRuntimeRecall(request.result));
+        request.onerror = () => reject(request.error);
+      });
+    } catch (error) {
+      if (!isUnreadableRecordError(error)) throw error;
+      const recovered = await recoverCharacterFromSafetySnapshot(SESSION_SPACE_ID, id);
+      if (!recovered) {
+        trackEvent('自动恢复损坏角色档案', { 结果: '无快照' });
+        throw error;
+      }
+      const cleaned = withoutRuntimeRecall(recovered);
+      await writeHealedCharacterRow(db, cleaned);
+      trackEvent('自动恢复损坏角色档案', { 结果: '成功' });
+      return cleaned;
+    }
   },
 
   getAllCharacters: async (): Promise<CharacterProfile[]> => {
     const db = await openDB();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction(STORE_CHARACTERS, 'readonly');
-      const store = transaction.objectStore(STORE_CHARACTERS);
-      const request = store.getAll();
-      request.onsuccess = () => resolve((request.result || []).map(withoutRuntimeRecall));
-      request.onerror = () => reject(request.error);
-    });
+    try {
+      const characters = await new Promise<CharacterProfile[]>((resolve, reject) => {
+        const transaction = db.transaction(STORE_CHARACTERS, 'readonly');
+        const store = transaction.objectStore(STORE_CHARACTERS);
+        const request = store.getAll();
+        request.onsuccess = () => resolve((request.result || []).map(withoutRuntimeRecall));
+        request.onerror = () => reject(request.error);
+      });
+      queueIdleSafetySeed(db, SESSION_SPACE_ID, characters);
+      return characters;
+    } catch (error) {
+      if (!isUnreadableRecordError(error)) throw error;
+      const healed = await healAllCharactersOnReadFailure(db, SESSION_SPACE_ID, error);
+      queueIdleSafetySeed(db, SESSION_SPACE_ID, healed);
+      return healed;
+    }
   },
 
   saveCharacter: async (character: CharacterProfile): Promise<void> => {
     const db = await openDB();
-    return persistCharacterWithHomeMessages(db, withoutRuntimeRecall(character), clearStaleMemoryMirror);
+    const cleaned = withoutRuntimeRecall(character);
+    await persistCharacterWithHomeMessages(db, cleaned, clearStaleMemoryMirror);
+    scheduleCharacterSafetySnapshot(SESSION_SPACE_ID, cleaned);
   },
 
   /** An asynchronous evaluation updates only emotion fields, never its stale home/history snapshot. */
   saveCharacterEmotion: async (charId: string, activeBuffs: CharacterProfile['activeBuffs'], buffInjection: string): Promise<void> => {
     const db = await openDB();
-    return new Promise((resolve, reject) => {
+    let updated: CharacterProfile | undefined;
+    await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORE_CHARACTERS, 'readwrite');
       const store = tx.objectStore(STORE_CHARACTERS), get = store.get(charId);
-      get.onsuccess = () => {if (get.result) store.put({...get.result, activeBuffs, buffInjection});};
+      get.onsuccess = () => {
+        if (get.result) {
+          updated = { ...get.result, activeBuffs, buffInjection };
+          store.put(updated);
+        }
+      };
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
       tx.onabort = () => reject(tx.error || new Error('情绪保存失败'));
     });
+    if (updated) scheduleCharacterSafetySnapshot(SESSION_SPACE_ID, withoutRuntimeRecall(updated));
   },
 
   ensureStoryTheaterTimestamps: async () => ensureStoryTimelineRepair(await openDB()),
@@ -684,8 +806,14 @@ export const DB = {
 
   deleteCharacter: async (id: string): Promise<void> => {
     const db = await openDB();
-    const transaction = db.transaction(STORE_CHARACTERS, 'readwrite');
-    transaction.objectStore(STORE_CHARACTERS).delete(id);
+    await new Promise<void>((resolve, reject) => {
+      const transaction = db.transaction(STORE_CHARACTERS, 'readwrite');
+      transaction.objectStore(STORE_CHARACTERS).delete(id);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error || new Error('角色删除失败'));
+    });
+    await deleteCharacterSafetySnapshots(SESSION_SPACE_ID, id);
   },
 
   // ---- 角色分组（神经链接"文件夹"，与群聊 groups 无关）----
@@ -2824,7 +2952,10 @@ export const DB = {
                   }
               };
           };
-          tx.oncomplete = () => resolve({ books, characters: changedCharacters });
+          tx.oncomplete = () => {
+              for (const char of changedCharacters) scheduleCharacterSafetySnapshot(SESSION_SPACE_ID, withoutRuntimeRecall(char));
+              resolve({ books, characters: changedCharacters });
+          };
           tx.onerror = () => reject(tx.error || new Error('世界书保存失败'));
           tx.onabort = () => reject(tx.error || new Error('世界书保存已撤销'));
       });
@@ -4316,6 +4447,8 @@ export const DB = {
                   });
               }
               await clearAndAdd(STORE_CHARACTERS, data.characters, '角色资料', true);
+              await deleteSpaceSafetySnapshots(SESSION_SPACE_ID);
+              for (const char of data.characters) scheduleCharacterSafetySnapshot(SESSION_SPACE_ID, withoutRuntimeRecall(char));
           } else if (data.mediaAssets && hasStore(STORE_CHARACTERS)) {
               await beforeWrite(data.mediaAssets, '角色媒体', true);
               const mediaAssets = data.mediaAssets;
@@ -4326,6 +4459,7 @@ export const DB = {
                       return media ? applyMediaToChar(c, media) : c;
                   });
                   await putItems(STORE_CHARACTERS, updatedChars, '角色资料', false);
+                  for (const char of updatedChars) scheduleCharacterSafetySnapshot(SESSION_SPACE_ID, withoutRuntimeRecall(char));
               }
           }
           data.characters = undefined as any;

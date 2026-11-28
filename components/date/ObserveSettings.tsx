@@ -4,6 +4,7 @@ import { CharacterProfile, DateObservation, DateObserveConfig, DateObserveStyleI
 import { OBSERVE_DIMENSIONS } from '../../utils/datePrompts';
 import ObserveHUD, { OBSERVE_STYLES } from './ObserveHUD';
 import { useConfirmDialog } from '../../hooks/useConfirmDialog';
+import { DateFeatureHeader, DateSettingSwitch } from './DateSettingsControls';
 
 /**
  * 见面设置里的「观测协议 OBSERVE」配置块（默认折叠）：
@@ -121,22 +122,9 @@ const ObserveSettings: React.FC<ObserveSettingsProps> = ({ char }) => {
     };
 
     return (
-        <section className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-            <div className="flex items-center justify-between gap-2 px-4 py-3.5">
-                <button onClick={() => setOpen(o => !o)} className="flex items-center gap-1.5 min-w-0 text-left active:opacity-70">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={`w-3.5 h-3.5 text-slate-300 transition-transform shrink-0 ${open ? 'rotate-180' : ''}`}><path fillRule="evenodd" d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.168l3.71-3.938a.75.75 0 1 1 1.08 1.04l-4.25 4.5a.75.75 0 0 1-1.08 0l-4.25-4.5a.75.75 0 0 1 .02-1.06Z" clipRule="evenodd" /></svg>
-                    <div className="min-w-0">
-                        <h3 className="text-xs font-bold text-slate-400 uppercase">观测协议 · OBSERVE</h3>
-                        <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed truncate">每条回复附上 {char.name} 此刻的状态，渲染成可独立查看的观测面板。{enabled ? '已开启。' : '已关闭。'}</p>
-                    </div>
-                </button>
-                <button
-                    onClick={() => patchObserve({ enabled: !enabled })}
-                    className={`w-12 h-7 rounded-full transition-colors relative shrink-0 ${enabled ? 'bg-primary' : 'bg-slate-200'}`}
-                >
-                    <div className={`absolute top-0.5 w-6 h-6 bg-white rounded-full shadow-md transition-transform ${enabled ? 'translate-x-5' : 'translate-x-0.5'}`}></div>
-                </button>
-            </div>
+        <section className="date-feature">
+            <DateFeatureHeader title="观测协议" description={`每条回复附上 ${char.name} 此刻的状态，可独立查看。`}
+                open={open} onExpand={() => setOpen(o => !o)} checked={enabled} onChange={enabled => patchObserve({ enabled })} switchLabel="切换观测协议" />
 
             {open && (
                 !enabled ? (
@@ -187,12 +175,7 @@ const ObserveSettings: React.FC<ObserveSettingsProps> = ({ char }) => {
                                     <div key={dim.key} className={`rounded-xl border p-2.5 transition-opacity ${on ? 'border-slate-200 bg-slate-50/60' : 'border-slate-100 bg-slate-50/30 opacity-60'}`}>
                                         <div className="flex items-center justify-between mb-2">
                                             <span className="text-[11px] font-bold text-slate-600 flex items-center gap-1.5"><span className="text-slate-400">{dim.glyph}</span>{dim.label}</span>
-                                            <button
-                                                onClick={() => patchField(dim.key, { enabled: !on })}
-                                                className={`w-9 h-5 rounded-full transition-colors relative shrink-0 ${on ? 'bg-primary' : 'bg-slate-300'}`}
-                                            >
-                                                <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${on ? 'translate-x-4' : 'translate-x-0.5'}`}></div>
-                                            </button>
+                                            <DateSettingSwitch small label={`观测${dim.label}`} checked={on} onChange={enabled => patchField(dim.key, { enabled })} />
                                         </div>
                                         {on && (
                                             <div className="space-y-1.5">
@@ -246,12 +229,7 @@ const ObserveSettings: React.FC<ObserveSettingsProps> = ({ char }) => {
                                                     placeholder="维度名（如 穿着 / 天气）"
                                                     className="flex-1 min-w-0 text-[12px] font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 focus:border-primary focus:outline-none bg-white text-slate-800 placeholder:text-slate-400"
                                                 />
-                                                <button
-                                                    onClick={() => toggleCustom(c.id, !on)}
-                                                    className={`w-9 h-5 rounded-full transition-colors relative shrink-0 ${on ? 'bg-primary' : 'bg-slate-300'}`}
-                                                >
-                                                    <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${on ? 'translate-x-4' : 'translate-x-0.5'}`}></div>
-                                                </button>
+                                                <DateSettingSwitch small label={`观测${c.label || '自定义维度'}`} checked={on} onChange={enabled => toggleCustom(c.id, enabled)} />
                                                 <button onClick={() => void delCustom(c.id)} title="删除" className="text-slate-300 hover:text-red-400 transition-colors shrink-0 p-0.5">
                                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
                                                 </button>

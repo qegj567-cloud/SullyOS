@@ -26,7 +26,7 @@
 | 主题 | 文档 | 什么时候看 |
 |------|------|-----------|
 | **用户空间 / 角色继承 / 共享素材** | [`docs/user-spaces.md`](./docs/user-spaces.md) | 改用户切换、角色专属用户资料、跨空间继承、备份范围或素材删除前必读；会话固定所属空间、配置独立文件共用、继承不带经历；定位设置随个人备份，实时坐标不备份 |
-| **备份与恢复 · 内存有界链路** | [`docs/backup-pipeline.md`](./docs/backup-pipeline.md) | 改备份导出/恢复、云端上传下载、备份格式，或往数据库加新表、新增 localStorage 键前必读；整份备份只以磁盘文件存在，内存只放一片（按字节封页），读包按需随机读，恢复逐页写库，上传一律分片加完成清单并以远端实际大小为准；新表默认进备份、新设置键默认不进，两张分类表都有覆盖测试；新加会跑很久的任务照「中断留痕」接 `utils/taskTrace.ts` |
+| **备份与恢复 · 内存有界链路** | [`docs/backup-pipeline.md`](./docs/backup-pipeline.md) | 改备份导出/恢复、云端上传下载、备份格式、角色安全快照或故障页抢救导出，或往数据库加新表、新增 localStorage 键前必读；整份备份只以磁盘文件存在，内存只放一片（按字节封页），读包按需随机读，恢复逐页写库，上传一律分片加完成清单并以远端实际大小为准；新表默认进备份、新设置键默认不进，两张分类表都有覆盖测试；新加会跑很久的任务照「中断留痕」接 `utils/taskTrace.ts` |
 | **本机存储用量 · 分类登记** | [`docs/storage-usage.md`](./docs/storage-usage.md) | 往数据库加新表、往 `assets` 表存大块数据、新开独立的库，或改设置里的存储用量面板与清理入口前必读；明细一个 App 一行，主库每张表都要登记类别（有覆盖测试），图片池不带归属只有总数，已删除角色留下的数据由用户亲手清理 |
 | **悬浮球、全局返回与聊天输入栏收起** | [`docs/navigation.md`](./docs/navigation.md) | 改快捷导航开关、拖动安全区、浏览器／Android 返回、美化子页退出、聊天工具栏外部收起或选图挂载前必读 |
 | **iOS 27 主屏幕顶部白雾 / 状态栏底色** | [`docs/ios-status-bar-edge.md`](./docs/ios-status-bar-edge.md) | 改顶部取色、viewport 或 iOS 门禁前必读；manifest standalone 使用 contain，零安全区不回退 44px，异步高度收缩要重建基线；纯色接合不等于壁纸贯穿 |
@@ -44,7 +44,7 @@
 | **网易云音乐代理与播放直链** | [`docs/netease-music-proxy.md`](./docs/netease-music-proxy.md) | 改音乐 App 播放直链、`worker/index.js` `/netease/*`、风控降级或缓存规则前必读；320k 内直走 `weapi`、高解析度失败降级，边缘缓存按凭据摘要分桶且不缓存试听或空直链 |
 | **角色统计 / 上下文字数与 Token 估算** | [`docs/character-statistics.md`](./docs/character-statistics.md) | 改神经链接角色统计前必读；可读范围不等于实际请求，概率预览不得抽签，宫殿缓存单列 |
 | **API 调用记录 / 用途与云端记账** | [`docs/api-call-log.md`](./docs/api-call-log.md) | 新增 `/chat/completions` 调用点、改 `ApiCallMeta` 归属或云端模型用量回传前必读；显式 `meta` 不混入前台环境角色，推送不回传凭据 |
-| **世界书管线、分组与角色绑定** | [`docs/worldbook-management.md`](./docs/worldbook-management.md) | 新增 App／角色生成请求或改世界书前必读；新入口使用 ContextBuilder.buildCharacterRequest，世界书自动随角色装载；每个入口声明启用场景，新 App 先登记子场景；绑定按 ID，库与角色缓存同事务更新 |
+| **世界书管线、分组与角色绑定** | [`docs/worldbook-management.md`](./docs/worldbook-management.md) | 新增 App／角色生成请求或改世界书前必读；新入口使用 ContextBuilder.buildCharacterRequest，世界书自动随角色装载；每个入口声明启用场景，新 App 先登记子场景；绑定按 ID，整书开关与单条停用独立保存，库与角色缓存同事务更新 |
 | **协同工作私聊衔接与转发** | [`docs/collaboration-chat-bridge.md`](./docs/collaboration-chat-bridge.md) | 改协同读取 ChatApp 范围或转发消息前必读；每轮读 DB，空范围不回退，多选只发当前窗口 |
 | **canary 版本通道** | [`docs/canary-channel.md`](./docs/canary-channel.md) | 改 canary 加入退出、`/canary/` 跳转脚本、通道配对、`deploy-canary.yml` 或 Worker 的 `bundle_channel` 前必读；dev 合并进 canary 分支发布，master 直接合入的改动要同步过去，同网址子路径共用数据，加入先换 Worker 再换前端，冷启动按通道对齐且跳转未生效时不动 Worker，连续两次启动失败自动退回 |
 | **假模型（端到端调试 / 回归）** | [`docs/fake-llm.md`](./docs/fake-llm.md) | 用不花钱、可重复的假回复测私聊、即时对话、定时主动消息和云端代跑前看；场景按模型名 `fake/<场景>` 选，辅助请求自动给空操作回复；先查「每条链路读哪个 API 槽位」，调试面板一键换过去要能一键换回 |

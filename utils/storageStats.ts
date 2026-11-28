@@ -619,6 +619,7 @@ export function formatBytes(bytes: number | null | undefined): string {
 export function categoryOfDatabase(name: string): StorageCategoryKey | undefined {
     if (/^AetherOS_Data(__|$)/.test(name)) return undefined;
     if (/^SullyOS_Collaboration(__|$)/.test(name)) return 'collaboration';
+    if (name === 'SullyOS_CharacterSafety') return 'characters';
     if (name === 'sully-home-resource-packs') return 'roomPacks';
     // 主动消息的收件箱、Service Worker 的日志和去重库
     if (/^(ActiveMsg|AmsgReproduction$|rei[-_])/.test(name)) return 'activeMsg';
@@ -626,7 +627,7 @@ export function categoryOfDatabase(name: string): StorageCategoryKey | undefined
 }
 
 /** 浏览器不给枚举库列表时的兜底名单（主库单独走 openDB，不在这里）。 */
-const FALLBACK_DATABASE_NAMES = ['ActiveMsg'];
+const FALLBACK_DATABASE_NAMES = ['ActiveMsg', 'SullyOS_CharacterSafety'];
 
 async function listDatabaseNames(): Promise<string[]> {
     if (typeof indexedDB === 'undefined') return [];

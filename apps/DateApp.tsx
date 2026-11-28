@@ -1,3 +1,4 @@
+import { hasSeenDateEntryGuide, markDateEntryGuideSeen } from '../utils/dateEntryGuide';
 import { resolveDialogueApi } from '../utils/characterApi';
 import { useDateMessageHistory } from '../utils/useDateMessageHistory';
 import { loadCharacterContextMessages } from '../utils/chatContextRange';
@@ -5,8 +6,8 @@ import { loadCharacterContextMessages } from '../utils/chatContextRange';
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { CharacterProfile, Message, AppID, DateState } from '../types';
-import { DatePrompts, ApiMessage } from '../utils/datePrompts';
+import { CharacterProfile, Message, AppID, DateState, DateExperienceConfig } from '../types';
+import { DatePrompts, ApiMessage, extractObservation, hasObservation } from '../utils/datePrompts';
 import { stripDateVoiceTranslations } from '../utils/dateVoiceText';
 import { processNewMessagesWithAutoArchive } from '../utils/memoryPalace/autoArchive';
 import { hasRunnableMemoryPalaceLlm, resolveMemoryPalaceLlm, type PipelineResult } from '../utils/memoryPalace/pipeline';
@@ -19,17 +20,22 @@ import TokenImg from '../components/os/TokenImg';
 import { useConfirmDialog } from '../hooks/useConfirmDialog';
 import DateSession from '../components/date/DateSession';
 import DateSettings from '../components/date/DateSettings';
+import DateEntryScreen from '../components/date/DateEntryScreen';
+import ObserveHUD from '../components/date/ObserveHUD';
+import { snapshotDateExperience, withDateExperience } from '../utils/dateExperience';
 import { clearDateResumeAttempt } from '../utils/dateSessionRecovery';
 import { BookOpen, Sparkle, CaretLeft, GearSix } from '@phosphor-icons/react';
 import { CharacterGroupFilterBar, filterCharactersByGroup, GROUP_FILTER_ALL } from '../components/character/CharacterGroupFilter';
 import { trimHistoryThrough } from '../utils/dateSessionHistory';
 import { trackEvent } from '../utils/analytics';
+import { trackDateGeneration } from '../utils/dateAnalytics';
+import { extractDateActionChoices, type DateActionChoice } from '../utils/dateActionChoices';
 import { markAmsgStateDirty, startAmsgChatPresence, stopAmsgChatPresence } from '../utils/amsgStateSync';
 import { hasActiveAiTask } from '../utils/amsg2Tasks';
 import { collectInPersonNotices } from '../utils/amsg2TaskContext';
 import { ActiveMsgStore } from '../utils/activeMsgStore';
 import { AMSG_GLOBAL_CONFIG_EVENT, isAmsg2GloballyEnabled } from '../utils/amsgGlobalGate';
-import { armDateLeaveReminder, disarmDateLeaveReminder, startLocalDateLeaveTimer } from '../utils/dateLeaveReminder';
+import { armDateLeaveReminder, startLocalDateLeaveTimer } from '../utils/dateLeaveReminder';
 import { syncCloudAwayTaskFromRecent } from '../utils/awayMessage';
 import StoryTheater from '../components/date/story/StoryTheater';
 import { dateLaunch } from '../utils/dateLaunch';
@@ -123,6 +129,7 @@ const DateApp: React.FC = () => {
 
     const [peekStatus, setPeekStatus] = useState<string>(resumed?.peekStatus ?? '');
     const [peekLoading, setPeekLoading] = useState(false);
+    const [peekChoices, setPeekChoices] = useState<DateActionChoice[]>([]);
     
     // History State
     const [historyMessages, setHistoryMessages] = useState<Message[]>([]);
@@ -143,14 +150,12 @@ const DateApp: React.FC = () => {
     const [historyEditContent, setHistoryEditContent] = useState('');
     
     const encounterIdRef = useRef(resumed?.encounterId ?? '');
-    const [openingMode, setOpeningMode] = useState<'approach' | 'invite'>('approach');
-    const [showEntryNotice, setShowEntryNotice] = useState(() => {
-        try { return localStorage.getItem('sully-date-entry-guide-v1') !== 'seen'; }
-        catch { return true; }
-    });
+    const [openingMode, setOpeningMode] = useState<'approach' | 'invite'>(resumed?.openingMode || 'approach');
+    const [experience, setExperience] = useState<DateExperienceConfig | undefined>(resumed?.experience);
+    const [showEntryNotice, setShowEntryNotice] = useState(() => !hasSeenDateEntryGuide());
     const dismissEntryNotice = () => {
         setShowEntryNotice(false);
-        try { localStorage.setItem('sully-date-entry-guide-v1', 'seen'); } catch { /* 当前打开期间仍不重复提示 */ }
+        markDateEntryGuideSeen();
     };
     const peekRequestRef = useRef(0);
     const enteringSessionRef = useRef(false);
@@ -255,7 +260,7 @@ const DateApp: React.FC = () => {
         const suspendedAt = Date.now();
         suspendDate({
             charId: char.id, charName: char.name, encounterId: encounterIdRef.current,
-            peekStatus, cameFromChat, state: snapshotRef.current, suspendedAt,
+            peekStatus, cameFromChat, state: snapshotRef.current, suspendedAt, experience, openingMode,
             pendingTurn: pendingTurnRef.current,
         });
         void startLocalDateLeaveTimer(leaveDeps(char), suspendedAt);
@@ -299,7 +304,8 @@ const DateApp: React.FC = () => {
     const formatTime = () => `${virtualTime.hours.toString().padStart(2, '0')}:${virtualTime.minutes.toString().padStart(2, '0')}`;
 
     // peek / send / reroll 共用的 LLM 调用（提示词构建统一在 utils/datePrompts.ts）
-    const callLLM = async (messages: ApiMessage[], temperature: number, speaker = char, purpose = '见面对话'): Promise<string> => {
+    const callLLM = async (messages: ApiMessage[], temperature: number, speaker = char, purpose = '见面对话'): Promise<ReturnType<typeof extractDateActionChoices>> => {
+        try {
         const dialogueApi = resolveDialogueApi(apiConfig, speaker);
         const response = await fetch(`${dialogueApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
             method: 'POST',
@@ -324,11 +330,21 @@ const DateApp: React.FC = () => {
         // 会拿到空串且不报错：感知页黑屏卡死（无按钮可退），会话里则落库空消息。
         const content = extractContent(data);
         if (!content) throw new Error('模型返回了空回复，请重试或检查渠道/模型设置');
-        return content;
+        const result = extractDateActionChoices(content);
+        if (!result.body) throw new Error('模型未返回角色正文，请重试');
+        if (speaker?.dateActionChoicesEnabled === true) trackEvent('见面行动建议结果', { 结果: result.choices.length === 4 ? '完整' : result.choices.length ? '部分' : '缺失' });
+        else result.choices = [];
+        trackDateGeneration(purpose, true);
+        return result;
+        } catch (error) {
+            trackDateGeneration(purpose, false);
+            throw error;
+        }
     };
 
     // 每次进入独立记次；模型上下文仍由共享管线决定。
     const handleCharClick = (c: CharacterProfile) => {
+        setExperience(snapshotDateExperience(c.dateStyleConfig));
         clearDateResumeAttempt();
         setActiveCharacterId(c.id);
         encounterIdRef.current = crypto.randomUUID();
@@ -374,7 +390,7 @@ const DateApp: React.FC = () => {
                         role: 'assistant',
                         type: 'text',
                         content: peekStatus,
-                        metadata: { source: 'date', isOpening: true, dateEncounterId: enteringEncounterId, dateOpeningMode: openingMode }
+                        metadata: { source: 'date', isOpening: true, dateEncounterId: enteringEncounterId, dateOpeningMode: openingMode, dateActionChoices: peekChoices }
                     });
                     markDateTurnDirty(char);
                     if (encounterIdRef.current !== enteringEncounterId) return;
@@ -404,6 +420,7 @@ const DateApp: React.FC = () => {
         setActiveCharacterId(c.id);
         setMode('peek');
         setPeekLoading(true);
+        setPeekChoices([]);
         setPeekStatus('');
         setHasSavedOpening(false);
         trackEvent('进入见面感知页');
@@ -419,15 +436,15 @@ const DateApp: React.FC = () => {
             });
             const emojis = await DB.getEmojis();
             const { messages } = (await DatePrompts.buildPeekPayload({
-                char: c,
+                char: withDateExperience(c, experience),
                 userProfile,
                 allMsgs: preparedMsgs,
                 emojis,
                 useVisionDescriptions: apiConfig.visionApi?.enabled === true,
                 openingMode: selectedOpening,
             }));
-            const content = await callLLM(messages, resolveDialogueApi(apiConfig, c).temperature ?? 0.85, c, '见面开场');
-            if (requestId === peekRequestRef.current) setPeekStatus(content);
+            const { body: content, choices } = await callLLM(messages, resolveDialogueApi(apiConfig, c).temperature ?? 0.85, c, '见面开场');
+            if (requestId === peekRequestRef.current) { setPeekStatus(content); setPeekChoices(choices); }
 
         } catch (e: any) {
             if (requestId === peekRequestRef.current) addToast(`开场生成失败：${formatUnknownError(e, '请求异常')}`, 'error');
@@ -540,7 +557,7 @@ const DateApp: React.FC = () => {
         // 读不到台账不挡见面：这几条本来就是可提可不提的。
         const inPerson = await collectInPersonNotices(char.id, userProfile?.name).catch(() => null);
         const { messages } = await DatePrompts.buildSessionPayload({
-            char,
+            char: withDateExperience(char, experience),
             userProfile,
             allMsgs: preparedAllMsgs,
             emojis,
@@ -549,7 +566,7 @@ const DateApp: React.FC = () => {
             useVisionDescriptions: apiConfig.visionApi?.enabled === true,
             inPersonNotes: inPerson?.text,
         });
-        const rawContent = await callLLM(messages, resolveDialogueApi(apiConfig, char).temperature ?? 0.85, char, '见面对话');
+        const { body: rawContent, choices } = await callLLM(messages, resolveDialogueApi(apiConfig, char).temperature ?? 0.85, char, '见面对话');
         const parsed = parseSARModuleReply(rawContent, sarModulePlan);
         const sarModuleEvents = createSARModuleEventMeta(sarModulePlan);
         const userSurface = sarModulePlan.user?.phase === 'active' && parsed.userSurface
@@ -567,7 +584,7 @@ const DateApp: React.FC = () => {
             : undefined;
 
         // 3. Save AI Response
-        await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'text', content: parsed.canonical, metadata: { source: 'date', dateEncounterId: currentEncounterId, ...(assistantSurface ? { sarModuleSurface: assistantSurface } : {}) } });
+        await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'text', content: parsed.canonical, metadata: { source: 'date', dateEncounterId: currentEncounterId, dateActionChoices: choices, ...(assistantSurface ? { sarModuleSurface: assistantSurface } : {}) } });
         // 交给过角色就销账（没带出来也算，忘了是正常的）；失败下一轮再带一次。
         if (inPerson?.ids.length) void ActiveMsgStore.markExpiredNoticesNotified(char.id, inPerson.ids).catch(() => {});
         if (sarModulePlan.character) {
@@ -617,17 +634,17 @@ const DateApp: React.FC = () => {
         // 「新见面只有立绘模式是新剧情，阅读模式全是旧剧情」。
         if (lastMsg.metadata?.isOpening === true) {
             const { messages } = (await DatePrompts.buildPeekPayload({
-                char,
+                char: withDateExperience(char, experience),
                 userProfile,
                 allMsgs: preparedValidMsgs,
                 openingMode: lastMsg.metadata?.dateOpeningMode === 'invite' ? 'invite' : 'approach',
                 emojis,
                 useVisionDescriptions: apiConfig.visionApi?.enabled === true,
             }));
-            const content = await callLLM(messages, Math.max(resolveDialogueApi(apiConfig, char).temperature ?? 0.85, 0.9), char, '重随见面开场');
+            const { body: content, choices } = await callLLM(messages, Math.max(resolveDialogueApi(apiConfig, char).temperature ?? 0.85, 0.9), char, '重随见面开场');
             // 生成成功后才动库：先删旧开场、再带 isOpening 落新开场，请求失败时原剧情不丢
             await DB.deleteMessage(lastMsg.id);
-            await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'text', content, metadata: { ...lastMsg.metadata, source: 'date', isOpening: true } });
+            await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'text', content, metadata: { ...lastMsg.metadata, source: 'date', isOpening: true, dateActionChoices: choices } });
             markDateTurnDirty(char);
             trackEvent('重掷见面回复', { 目标: '开场白' });
             // 阅读模式空会话时顶部渲染的开场 & 退出快照里的 peekStatus 同步成新开场
@@ -648,16 +665,16 @@ const DateApp: React.FC = () => {
         // validMsgs（全来源）的尾巴不是这条 date user，直接传进去会把那条聊天消息当成
         // 「待重发的最后一条」砍掉，同时 date user 又被追加一次（丢一条、重一条）。
         const { messages } = await DatePrompts.buildSessionPayload({
-            char,
+            char: withDateExperience(char, experience),
             userProfile,
             allMsgs: trimHistoryThrough(preparedValidMsgs, lastUserMsg.id),
             emojis,
-            userText: lastUserMsg.content,
+            userText: lastUserMsg.metadata?.meetingContinue ? buildInPersonContinueInstruction(userProfile?.name, char.name) : lastUserMsg.content,
             variant: 'reroll',
             useVisionDescriptions: apiConfig.visionApi?.enabled === true,
         });
         // Reroll 略调高温度求多样性，但绝不低于用户配置的基线。
-        const rawContent = await callLLM(messages, Math.max(resolveDialogueApi(apiConfig, char).temperature ?? 0.85, 0.9), char, '重随见面回复');
+        const { body: rawContent, choices } = await callLLM(messages, Math.max(resolveDialogueApi(apiConfig, char).temperature ?? 0.85, 0.9), char, '重随见面回复');
         const sarPlan = getSARModuleRuntimePlan(char, userProfile);
         const parsed = parseSARModuleReply(rawContent, sarPlan);
         const sarModuleEvents = createSARModuleEventMeta(sarPlan);
@@ -677,7 +694,7 @@ const DateApp: React.FC = () => {
 
         // 生成成功后才删旧回复：以前先删后调 API，请求一失败上一条剧情就永久消失
         await DB.deleteMessage(lastMsg.id);
-        await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'text', content: parsed.canonical, metadata: { source: 'date', dateEncounterId: currentEncounterId, ...(assistantSurface ? { sarModuleSurface: assistantSurface } : {}) } });
+        await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'text', content: parsed.canonical, metadata: { source: 'date', dateEncounterId: currentEncounterId, dateActionChoices: choices, ...(assistantSurface ? { sarModuleSurface: assistantSurface } : {}) } });
         markDateTurnDirty(char);
         trackEvent('重掷见面回复', { 目标: '回复' });
 
@@ -773,7 +790,8 @@ const DateApp: React.FC = () => {
 
     const onExitSession = () => {
         explicitExitRef.current = true;
-        if (char) void disarmDateLeaveReminder({ char, updateCharacter });
+        // 菜单离开 / 返回同样算走开；云端已备好，本地从此刻开始等。
+        if (char) void startLocalDateLeaveTimer(leaveDeps(char));
         clearDateResumeAttempt();
         encounterIdRef.current = '';
         // 来自聊天：退出见面回聊天
@@ -824,6 +842,7 @@ const DateApp: React.FC = () => {
         else {
             // Opening a shortcut must not discard savedDateState or generate an opening.
             clearDateResumeAttempt(); encounterIdRef.current = crypto.randomUUID();
+            setExperience(snapshotDateExperience(target.dateStyleConfig));
             setDateMessages([]); setPeekStatus(''); setHasSavedOpening(false); setMode('entry');
         }
     });
@@ -1165,29 +1184,21 @@ const DateApp: React.FC = () => {
 
     if (mode === 'entry' && char) {
         return (
-            <div className="h-full w-full bg-black text-white flex flex-col px-8 pb-12 pt-16">
-                <button onClick={handleBack} className="self-start p-3 text-neutral-400" aria-label="返回"><CaretLeft size={22} /></button>
-                <div className="flex-1 flex flex-col justify-center max-w-sm w-full mx-auto gap-4">
-                    <TokenImg value={char.avatar} className="w-20 h-20 rounded-full object-cover mb-3" alt={char.name} />
-                    <h2 className="text-3xl font-light mb-2">{char.name}</h2>
-                    <p className="text-sm text-neutral-400 mb-6">这次，怎样见面？</p>
-                    <button onClick={() => startPeek(char, 'approach')} className="text-left rounded-2xl border border-neutral-700 px-6 py-5 hover:bg-neutral-900">
-                        <span className="block text-lg">靠近他</span><span className="block text-xs text-neutral-400 mt-2">看看他此刻在做什么，再走过去</span>
-                    </button>
-                    <button onClick={() => startPeek(char, 'invite')} className="text-left rounded-2xl border border-neutral-700 px-6 py-5 hover:bg-neutral-900">
-                        <span className="block text-lg">让他靠近</span><span className="block text-xs text-neutral-400 mt-2">由他自然地来到你面前</span>
-                    </button>
-                    <button onClick={() => { setPeekStatus(''); setMode('session'); }} className="text-left rounded-2xl border border-neutral-700 px-6 py-5 hover:bg-neutral-900">
-                        <span className="block text-lg">直接见面</span><span className="block text-xs text-neutral-400 mt-2">不生成开场白，直接开始互动</span>
-                    </button>
-                </div>
+            <div className="h-full w-full relative">
+                <DateEntryScreen key={char.id} char={char} experience={experience || snapshotDateExperience(char.dateStyleConfig)}
+                    onExperienceChange={setExperience} onReset={() => setExperience(snapshotDateExperience(char.dateStyleConfig))}
+                    onSaveDefault={() => updateCharacter(char.id, previous => ({ dateStyleConfig: { ...previous.dateStyleConfig, ...snapshotDateExperience(experience || char.dateStyleConfig) } }))}
+                    onBack={showEntryNotice ? dismissEntryNotice : handleBack} onConfirm={choice => {
+                        if (choice !== 'direct') return startPeek(char, choice);
+                        setPeekStatus(''); setMode('session'); trackEvent('走过去开始见面会话', { 开场: '直接见面' });
+                    }} />
                 <Modal isOpen={showEntryNotice} title="选择这次见面的开场方式" onClose={dismissEntryNotice}
                     footer={<button onClick={dismissEntryNotice} className="w-full py-3 rounded-2xl bg-slate-800 text-white font-bold">知道了</button>}>
                     <div className="space-y-4 text-sm leading-6 text-slate-600">
-                        <p><strong className="block text-slate-800">靠近他 · 你主动走过去</strong>先生成一段开场，看看他此刻在做什么，再由你走过去与他互动。</p>
-                        <p><strong className="block text-slate-800">让他靠近 · 他主动来见你</strong>由角色结合上下文，以合理的方式来到你面前并开场，接下来由你回应。</p>
-                        <p><strong className="block text-slate-800">直接见面 · 不生成开场白</strong>直接进入对话，你可以输入内容，也可以点“继续”让他先回应。</p>
-                        <p className="text-xs text-slate-400">三种方式都会参考已有上下文，只是开场方式不同，不会清空之前的互动。</p>
+                        <p><strong className="block text-slate-800">靠近 TA · 你主动走过去</strong>先生成一段开场，看看 TA 此刻在做什么，再由你走过去与 TA 互动。</p>
+                        <p><strong className="block text-slate-800">让 TA 靠近 · TA 主动来见你</strong>由角色结合上下文，以合理的方式来到你面前并开场，接下来由你回应。</p>
+                        <p><strong className="block text-slate-800">直接见面 · 不生成开场白</strong>直接进入对话，你可以输入内容，也可以点“继续”让 TA 先回应。</p>
+                        <p className="text-xs text-slate-400">先点选票券，再点“确认进入”。三种方式都会参考已有上下文，只是开场方式不同，不会清空之前的互动。</p>
                     </div>
                 </Modal>
             </div>
@@ -1195,6 +1206,8 @@ const DateApp: React.FC = () => {
     }
 
     if (mode === 'peek') {
+        const opening = extractObservation(peekStatus, { lenient: char.dateObserve?.enabled === true, custom: char.dateObserve?.custom });
+        const openingBody = stripDateVoiceTranslations(opening.rest);
         return (
             <div className="h-full w-full bg-black relative flex flex-col font-sans overflow-hidden">
                 <button onClick={handleBack} className="absolute top-12 left-5 z-20 p-3 text-neutral-400" aria-label="返回"><CaretLeft size={22} /></button>
@@ -1207,11 +1220,11 @@ const DateApp: React.FC = () => {
                 )}
                 {!peekLoading && peekStatus && (
                     <div className="flex-1 min-h-0 flex flex-col px-8 pb-10 z-10 animate-fade-in">
-                        <div className="flex-1 overflow-y-auto no-scrollbar mb-8 mask-image-gradient pt-8"><div className="min-h-full flex flex-col justify-center"><p className="text-neutral-300 text-[15px] leading-8 tracking-wide text-justify font-light select-none whitespace-pre-wrap">{peekStatus}</p></div></div>
+                        <div className="flex-1 overflow-y-auto no-scrollbar mb-8 mask-image-gradient pt-8"><div className="min-h-full flex flex-col justify-center">{char.dateObserve?.enabled && hasObservation(opening.observation) && <div className="mb-6"><ObserveHUD observation={opening.observation} variant="card" charName={char.name} config={char.dateObserve} /></div>}<p className="text-neutral-300 text-[15px] leading-8 tracking-wide text-justify font-light whitespace-pre-wrap">{openingBody}</p></div></div>
                         <div className="shrink-0 flex flex-col items-center gap-6">
                              <div className="w-full flex gap-3">
                                  {/* 修改这里：调用 handleEnterSession 确保开场白被保存 */}
-                                 <button onClick={handleEnterSession} className="flex-1 h-14 bg-white text-black rounded-full font-bold tracking-[0.1em] text-sm shadow-[0_0_20px_rgba(255,255,255,0.1)] active:scale-95 transition-transform hover:bg-neutral-200">{openingMode === 'invite' ? '见到他' : '走过去'}</button>
+                                  <button onClick={handleEnterSession} className="flex-1 h-14 bg-white text-black rounded-full font-bold tracking-[0.1em] text-sm shadow-[0_0_20px_rgba(255,255,255,0.1)] active:scale-95 transition-transform hover:bg-neutral-200">{openingMode === 'invite' ? '见到 TA' : '走过去'}</button>
                                  <button onClick={() => { trackEvent('重新感知一次角色状态'); startPeek(char); }} className="w-14 h-14 bg-neutral-800 text-white rounded-full flex items-center justify-center border border-neutral-700 shadow-lg active:scale-90 transition-transform"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" /></svg></button>
                              </div>
                              <div className="flex flex-col items-center gap-3 text-[10px] text-neutral-600 font-medium tracking-wider"><button onClick={() => { setPreviousMode('peek'); setMode('settings'); trackEvent('打开见面设置面板', { from: 'peek' }); }} className="hover:text-neutral-400 transition-colors">布置场景 / 设定立绘</button><button onClick={handleBack} className="hover:text-neutral-400 transition-colors">悄悄离开</button></div>
@@ -1232,13 +1245,17 @@ const DateApp: React.FC = () => {
     }
 
     if (mode === 'settings') {
-        return <DateSettings char={char} onBack={() => setMode(previousMode)} />;
+        return <DateSettings char={char} onBack={() => setMode(previousMode)}
+            experience={previousMode === 'peek' ? experience : undefined}
+            onExperienceChange={previousMode === 'peek' ? setExperience : undefined} />;
     }
 
     if (mode === 'session') {
         return (
             <>
                 <DateSession
+                    experience={experience}
+                    onExperienceChange={setExperience}
                     char={char}
                     userProfile={userProfile}
                     messages={dateMessages}
