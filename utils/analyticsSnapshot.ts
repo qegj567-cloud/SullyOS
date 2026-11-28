@@ -237,6 +237,7 @@ export function collectCharSettings(
         隐藏系统日志: anyOn(x => x.hideSystemLogs),
         见面轻阅读: anyOn(x => x.dateLightReading),
         观测协议: anyOn(x => x.dateObserve?.enabled),
+        见面离开提醒: anyOn(x => x.dateLeaveReminder?.enabled === true),
         彼方自主登入: anyOn(x => x.vrState?.enabled),
         离开后消息: anyOn(x => x.awayMessage?.enabled),
         // 有没有角色挂着限定了启用场景的世界书（[] 也算限定）。看挂载缓存：没挂的条目不影响任何生成。
@@ -253,9 +254,17 @@ export function collectCharSettings(
         日程风格: c.scheduleStyle ?? 'lifestyle',
         认知风格: c.personalityStyle ?? '没设',
         原文读取策略: c.contextRangeMode ?? 'manual',
-        见面写作风格: c.dateStyleConfig?.style ?? 'cinematic',
-        见面叙事人称: c.dateStyleConfig?.pov ?? '没设',
-        观测HUD样式: c.dateObserve?.style ?? 'hologram',
+        见面写作风格: presetOrCustom(c.dateStyleConfig?.style, ['cinematic', 'plain', 'lyrical', 'playful', 'intense', 'syrup', 'dark_comedy', 'suspense', 'drama', 'slice_of_life'], 'cinematic'),
+        见面叙事人称: presetOrCustom(c.dateStyleConfig?.pov, ['third-name', 'third-you', 'first-you'], '没设'),
+        见面互动基调: presetOrCustom(c.dateStyleConfig?.tone, ['character', 'daily_warm', 'push_pull', 'direct_affection'], 'character'),
+        见面体验配置: characters.some(x => x.dateActionChoicesEnabled === true)
+            ? (characters.some(x => x.dateExtraPresets?.some(p => p.experience))
+                ? (characters.some(x => !!x.dateStyleConfig?.sceneSeed?.trim()) ? '预设、场景与行动选择' : '预设与行动选择')
+                : (characters.some(x => !!x.dateStyleConfig?.sceneSeed?.trim()) ? '场景与行动选择' : '仅行动选择'))
+            : characters.some(x => x.dateExtraPresets?.some(p => p.experience))
+            ? (characters.some(x => !!x.dateStyleConfig?.sceneSeed?.trim()) ? '预设与场景' : '仅预设')
+            : (characters.some(x => !!x.dateStyleConfig?.sceneSeed?.trim()) ? '仅场景' : '未使用'),
+        观测HUD样式: presetOrCustom(c.dateObserve?.style, ['hologram', 'ink', 'neon', 'crystal', 'terminal'], 'hologram'),
         // 定时消息是多任务清单（一个角色可以同时挂多个不同模式的任务），没有角色级的
         // 单一模式/频率可报；这里报任务规模，模式/频率构成在「排程定时消息」事件里按次记录。
         //

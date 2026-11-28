@@ -145,7 +145,7 @@ export const startLocalDateLeaveTimer = (deps: DateLeaveDeps, leftAt = Date.now(
 };
 
 /**
- * 这次见面不需要提醒了：主动结束见面、在私聊里对这个角色开口、关掉这项设置。
+ * 这次见面不需要提醒了：在私聊里对这个角色开口、关掉或修改这项设置。
  * 没有待发的提醒时不发任何请求。
  */
 export const disarmDateLeaveReminder = (deps: Pick<DateLeaveDeps, 'char' | 'updateCharacter'>): Promise<void> => {

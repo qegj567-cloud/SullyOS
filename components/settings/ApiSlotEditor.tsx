@@ -27,7 +27,8 @@ import { extractModelIds } from '../../utils/modelList';
 import { extractContent, safeResponseJson } from '../../utils/safeApi';
 import Modal from '../os/Modal';
 import ApiPresetEditorModal from './ApiPresetEditorModal';
-import ApiPresetGroups from './ApiPresetGroups';
+import ApiPresetPicker from './ApiPresetPicker';
+import PresetNameButton from './PresetNameButton';
 import DialogueApiFields from './DialogueApiFields';
 import ModelPicker from './ModelPicker';
 
@@ -124,6 +125,7 @@ export default function ApiSlotEditor({
   const [loadingModels, setLoadingModels] = useState(false);
   const [testing, setTesting] = useState(false);
   const [status, setStatus] = useState('');
+  const [testTone, setTestTone] = useState<'success' | 'error' | null>(null);
   const [autoSaveHint, setAutoSaveHint] = useState('');
 
   const [presetModal, setPresetModal] = useState<{
@@ -135,8 +137,6 @@ export default function ApiSlotEditor({
 
   const requestVersionRef = useRef(0);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const longPressFiredIdRef = useRef<string | null>(null);
   const dirtyCustomRef = useRef(false);
   const lastCommittedSerializedRef = useRef(serializeComparableSlot(value));
   const prevExternalSerializedRef = useRef(lastCommittedSerializedRef.current);
@@ -283,7 +283,7 @@ export default function ApiSlotEditor({
     requestVersionRef.current += 1;
     setLoadingModels(false);
     setTesting(false);
-    setStatus('');
+    setStatus(''); setTestTone(null);
     setAutoSaveHint('');
     setManualCustomOpen(false);
     const nextSlot = slotFromPreset(preset);
@@ -302,7 +302,7 @@ export default function ApiSlotEditor({
     requestVersionRef.current += 1;
     setLoadingModels(false);
     setTesting(false);
-    setStatus('');
+    setStatus(''); setTestTone(null);
     setAutoSaveHint('');
     setManualCustomOpen(false);
     setCustomDraft({ baseUrl: '', apiKey: '', model: '' });
@@ -323,8 +323,8 @@ export default function ApiSlotEditor({
     setCustomDraft(detached);
     setModels(resolveModelsForSlot(detached));
     setManualCustomOpen(true);
-    setStatus('');
-    setAutoSaveHint('已转为单独填写，后续修改仅作用于此处');
+    setStatus(''); setTestTone(null);
+    setAutoSaveHint('已复制为独立配置，后续修改仅作用于此处');
     lastCommittedSerializedRef.current = serializeComparableSlot(detached);
     void onCommit(detached);
     trackApiPresetAction({ source, action: '转为单独填写' });
@@ -332,7 +332,7 @@ export default function ApiSlotEditor({
 
   const handleOpenManualCustomFromFollow = (prefillFromMain = false) => {
     requestVersionRef.current += 1;
-    setStatus('');
+    setStatus(''); setTestTone(null);
     setAutoSaveHint('');
     if (prefillFromMain && apiConfig.baseUrl && apiConfig.model) {
       const seed = detachSlotFromPreset(pickDialogueApi(apiConfig), apiPresets);
@@ -353,7 +353,7 @@ export default function ApiSlotEditor({
     requestVersionRef.current += 1;
     setLoadingModels(false);
     setTesting(false);
-    setStatus('');
+    setStatus(''); setTestTone(null);
     setCustomDraft((prev) => {
       const next: DialogueApiConfig = { ...prev, ...patch };
       delete next.presetId;
@@ -396,7 +396,7 @@ export default function ApiSlotEditor({
     }
     const version = ++requestVersionRef.current;
     setLoadingModels(true);
-    setStatus('');
+    setStatus(''); setTestTone(null);
     try {
       const res = await fetchLlm(`${normalizedUrl}/models`, {
         __sullySettingsModelBase: normalizedUrl,
@@ -438,13 +438,13 @@ export default function ApiSlotEditor({
     if (!target) return;
     const version = ++requestVersionRef.current;
     setTesting(true);
-    setStatus('');
+    setStatus(''); setTestTone(null);
     let httpStatus: number | undefined;
     try {
       if (customTestRunner) {
         const message = await customTestRunner(target);
         if (version !== requestVersionRef.current) return;
-        setStatus(message || '连接成功');
+        setStatus(message || '连接成功'); setTestTone('success');
         trackApiConnectionTest({ slot: slotName, ok: true });
         return;
       }
@@ -475,7 +475,7 @@ export default function ApiSlotEditor({
       const content = extractContent(await safeResponseJson(res));
       if (version !== requestVersionRef.current) return;
       const ok = Boolean(content);
-      setStatus(ok ? '连接成功' : '接口已响应，但回复为空');
+      setStatus(ok ? '连接成功' : '接口已响应，但回复为空'); setTestTone(ok ? 'success' : 'error');
       trackApiConnectionTest({
         slot: slotName,
         ok,
@@ -483,7 +483,7 @@ export default function ApiSlotEditor({
       });
     } catch (err) {
       if (version !== requestVersionRef.current) return;
-      setStatus(`连接失败：${err instanceof Error ? err.message : '请检查配置'}`);
+      setStatus(`连接失败：${err instanceof Error ? err.message : '请检查配置'}`); setTestTone('error');
       trackApiConnectionTest({
         slot: slotName,
         ok: false,
@@ -499,7 +499,7 @@ export default function ApiSlotEditor({
   const canSaveCustomAsPreset = validateApiSlotDraft(customDraft).kind === 'valid';
 
   return (
-    <div className="space-y-4 text-slate-800" data-api-slot={slotName}>
+    <div className="api-connection-compact text-slate-800" data-api-slot={slotName}>
       {globalScopeNotice && (
         <div className="rounded-xl bg-sky-50 border border-sky-200/80 px-3 py-2 text-[11px] font-medium text-sky-800 leading-relaxed">
           {globalScopeNotice}
@@ -515,7 +515,7 @@ export default function ApiSlotEditor({
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-2">
             <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">
-              API 预设（点选立即引用）
+              API 预设
             </h4>
             {showCreatePresetHeaderButton && (
               <button
@@ -535,65 +535,17 @@ export default function ApiSlotEditor({
           </div>
 
           {apiPresets.length > 0 ? (
-            <ApiPresetGroups presets={apiPresets}>
-              {(preset) => {
-                const isSelected = activePresetId === preset.id;
-                const clearLongPress = () => {
-                  if (longPressTimerRef.current) {
-                    clearTimeout(longPressTimerRef.current);
-                    longPressTimerRef.current = null;
-                  }
-                };
-                return (
-                  <div key={preset.id} className="inline-flex items-center gap-0.5">
-                    <button
-                      type="button"
-                      title={`切换到 ${preset.name}`}
-                      onPointerDown={(e) => {
-                        if (e.button !== 0) return;
-                        clearLongPress();
-                        longPressFiredIdRef.current = null;
-                        longPressTimerRef.current = setTimeout(() => {
-                          longPressTimerRef.current = null;
-                          longPressFiredIdRef.current = preset.id;
-                          setPresetModal({ open: true, mode: 'edit', preset });
-                        }, 500);
-                      }}
-                      onPointerUp={clearLongPress}
-                      onPointerCancel={clearLongPress}
-                      onPointerLeave={clearLongPress}
-                      onClick={() => {
-                        if (longPressFiredIdRef.current === preset.id) {
-                          longPressFiredIdRef.current = null;
-                          return;
-                        }
-                        handleSelectPreset(preset);
-                      }}
-                      className={`rounded-xl px-3 py-1.5 text-xs font-medium border transition-all active:scale-95 ${
-                        isSelected
-                          ? 'bg-primary text-white border-primary shadow-sm font-bold'
-                          : 'bg-white border-slate-200 text-slate-700 hover:border-primary/40'
-                      }`}
-                    >
-                      {preset.name}
-                      {isSelected ? ' · 使用中' : ''}
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={`编辑预设 ${preset.name}`}
-                      title={`编辑预设 ${preset.name}`}
-                      onClick={() => setPresetModal({ open: true, mode: 'edit', preset })}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                        <path d="m5.433 13.917 1.262-3.155A4 4 0 0 1 7.58 9.42l6.92-6.918a2.121 2.121 0 0 1 3 3l-6.92 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 0 1-.65-.65Z" />
-                        <path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25H10A.75.75 0 0 0 10 3H4.75A2.75 2.75 0 0 0 2 5.75v9.5A2.75 2.75 0 0 0 4.75 18h9.5A2.75 2.75 0 0 0 17 15.25V10a.75.75 0 0 0-1.5 0v5.25c0 .69-.56 1.25-1.25 1.25h-9.5c-.69 0-1.25-.56-1.25-1.25v-9.5Z" />
-                      </svg>
-                    </button>
-                  </div>
-                );
-              }}
-            </ApiPresetGroups>
+            <div className="api-preset-library">
+              <ApiPresetPicker presets={apiPresets} activePresetId={activePresetId}>{(preset, close) => (
+                <PresetNameButton key={preset.id} className="api-preset-option" aria-pressed={activePresetId === preset.id}
+                  aria-describedby="api-preset-help" aria-keyshortcuts="F2" title={`${preset.name}：点选立即引用，长按进行编辑`}
+                  onHold={() => { close(); setPresetModal({ open: true, mode: 'edit', preset }); }}
+                  onClick={() => { handleSelectPreset(preset); close(); }}>
+                  <span className="api-preset-name">{preset.name}</span>
+                  {activePresetId === preset.id && <span className="api-preset-selected">✓<span className="sr-only">使用中</span></span>}
+                </PresetNameButton>
+              )}</ApiPresetPicker>
+            </div>
           ) : (
             <p className="text-[11px] text-slate-400 pl-1">暂无已保存的预设，可在填写连接后点「存为新预设」。</p>
           )}
@@ -643,9 +595,6 @@ export default function ApiSlotEditor({
                     {binding.preset.group}
                   </span>
                 )}
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-medium">
-                  引用同步中
-                </span>
               </div>
               <p className="text-[11px] text-slate-500 font-mono mt-1 break-all">
                 {llmApiType(binding.preset.config) === 'anthropic' ? 'Anthropic 原生 · ' : 'OpenAI 兼容 · '}
@@ -667,7 +616,7 @@ export default function ApiSlotEditor({
               onClick={handleDetachFromPreset}
               className="px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 text-xs font-bold active:scale-95 transition-transform"
             >
-              改为单独填写
+              复制为独立配置
             </button>
             {allowFollow && (
               <button
@@ -690,7 +639,7 @@ export default function ApiSlotEditor({
           </button>
 
           {status && (
-            <p role="status" className="text-xs text-slate-600 break-words">
+            <p role="status" data-api-test-tone={testTone || undefined} className="api-connection-status">
               {status}
             </p>
           )}
@@ -775,7 +724,7 @@ export default function ApiSlotEditor({
             </p>
           )}
           {status && (
-            <p role="status" className="text-xs text-slate-600 break-words pl-1">
+            <p role="status" data-api-test-tone={testTone || undefined} className="api-connection-status">
               {status}
             </p>
           )}

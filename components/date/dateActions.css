@@ -1,0 +1,58 @@
+.date-actions { position: absolute; inset: 0; z-index: 110; display: grid; place-items: center; padding: 16px 5%; background: rgb(0 0 0 / .24); }
+.date-actions__panel.date-dialogue-surface { display: flex; flex-direction: column; width: 100%; max-height: min(80%, 36rem); overflow: hidden; padding: 8px 22px 14px; background: rgb(12 12 12 / .96); backdrop-filter: none; -webkit-backdrop-filter: none; animation: date-actions-arrive .18s ease-out; }
+.date-actions__heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 15px; letter-spacing: .04em; }
+.date-actions__heading { flex-shrink: 0; }
+.date-actions__heading button { flex-shrink: 0; min-height: 44px; padding: 4px 0 4px 10px; font-size: 12px; color: rgb(255 255 255 / .6); background: none; border: 0; cursor: pointer; }
+.date-actions__list { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.date-actions__list > button { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 60px; padding: 12px 4px; border: 0; border-top: 1px solid rgb(255 255 255 / .1); background: none; color: inherit; text-align: left; font-family: inherit; font-size: 14px; line-height: 1.65; font-weight: 300; overflow-wrap: anywhere; cursor: pointer; touch-action: manipulation; transition: background-color .15s; }
+.date-actions__copy { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 5px; }
+.date-actions__arrow { flex-shrink: 0; width: 16px; height: 16px; opacity: .45; }
+.date-actions__list > button:hover, .date-actions__list > button:focus-visible, .date-actions__list > button:active { background: rgb(255 255 255 / .06); }
+.date-actions__kind { font-size: 12px; letter-spacing: .08em; font-weight: 400; color: rgb(255 255 255 / .55); }
+.date-actions__panel button:focus-visible { outline: 1px solid currentColor; outline-offset: -2px; }
+.date-actions__panel > p { flex-shrink: 0; margin: 8px 0 0; padding-top: 12px; border-top: 1px solid rgb(255 255 255 / .1); font-size: 12px; text-align: center; color: rgb(255 255 255 / .55); }
+.date-actions--light .date-actions__panel { background: var(--meeting-paper, #faf8f5); color: var(--meeting-ink, #292524); border-color: #d6d3d1; }
+.date-actions--light .date-actions__list > button, .date-actions--light .date-actions__panel > p { border-color: #d6d3d1; }
+.date-actions--light .date-actions__list > button:hover, .date-actions--light .date-actions__list > button:focus-visible { background: #78716c10; }
+.date-actions--light .date-actions__kind, .date-actions--light .date-actions__heading button, .date-actions--light .date-actions__panel > p { color: #78716c; }
+@keyframes date-actions-arrive { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .date-actions__panel.date-dialogue-surface { animation: none; } .date-actions__list > button { transition: none; } }
+
+.date-dialogue-surface { width: 90%; max-width: 32rem; color: rgb(255 255 255 / .9); background: rgb(0 0 0 / .72); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgb(255 255 255 / .1); border-radius: 16px; box-shadow: 0 12px 32px -12px rgb(0 0 0 / .25); }
+.date-composer { min-width: 0; margin-bottom: max(32px, var(--safe-bottom, 0px)); padding: 0 24px 12px; pointer-events: auto; }
+.date-composer__tools { display: flex; align-items: center; min-height: 38px; border-bottom: 1px solid rgb(255 255 255 / .1); margin-bottom: 6px; }
+.date-composer__tools button { display: inline-flex; gap: 6px; align-items: center; min-height: 38px; padding: 0 2px; border: 0; background: none; color: rgb(255 255 255 / .6); font-size: 11px; letter-spacing: .06em; cursor: pointer; }
+.date-composer__tools svg { width: 15px; height: 15px; }
+.date-composer__tools .date-composer__close { margin-left: auto; justify-content: center; width: 38px; margin-right: -10px; }
+.date-composer__row { display: flex; align-items: flex-end; gap: 12px; min-width: 0; }
+.date-composer__input { display: block; flex: 1; min-width: 0; height: 56px; padding: 8px 0 4px; border: 0; outline: none; background: none; color: inherit; font-family: inherit; font-size: 16px; line-height: 1.625; letter-spacing: .025em; font-weight: 300; resize: none; overflow-y: auto; overscroll-behavior: contain; }
+.date-composer__input::placeholder { color: rgb(255 255 255 / .4); }
+.date-composer__input, .date-actions__list { scrollbar-width: none; }
+.date-composer__input::-webkit-scrollbar, .date-actions__list::-webkit-scrollbar { display: none; width: 0; height: 0; }
+.date-composer__actions { display: flex; flex-shrink: 0; align-items: center; gap: 4px; }
+.date-composer__expand { display: grid; place-items: center; width: 28px; height: 42px; border: 0; padding: 0; color: inherit; opacity: .6; background: none; cursor: pointer; touch-action: manipulation; }
+.date-composer__expand svg { width: 15px; height: 15px; }
+.date-composer__expand:hover, .date-composer__expand:focus-visible { opacity: 1; }
+.date-composer--expanded { display: flex; flex-direction: column; height: min(62%, 32rem); max-height: calc(100% - 32px); margin-bottom: 0; background: rgb(12 12 12 / .96); backdrop-filter: none; -webkit-backdrop-filter: none; }
+.date-composer--expanded .date-composer__tools { flex-shrink: 0; }
+.date-composer--expanded .date-composer__row { flex: 1; min-height: 0; flex-direction: column; align-items: stretch; gap: 8px; }
+.date-composer--expanded .date-composer__input { width: 100%; height: auto; min-height: 0; }
+.date-composer--expanded .date-composer__actions { align-self: flex-end; }
+.date-composer__send { flex-shrink: 0; min-width: 54px; height: 42px; margin-bottom: 2px; padding: 0 12px; border: 1px solid rgb(255 255 255 / .2); border-radius: 8px; color: rgb(255 255 255 / .9); background: rgb(255 255 255 / .1); font-size: 12px; letter-spacing: .08em; cursor: pointer; transition: background .15s, opacity .15s; }
+.date-composer__send:hover:not(:disabled) { background: rgb(255 255 255 / .2); }
+.date-composer__send:disabled { opacity: .4; cursor: default; }
+.date-composer:focus-within { border-color: rgb(255 255 255 / .3); }
+.date-composer button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.date-composer--light { background: var(--meeting-paper, #faf8f5); color: var(--meeting-ink, #292524); border-color: #d6d3d1; box-shadow: 0 8px 28px #0001; }
+.date-composer--light .date-composer__tools { border-color: #d6d3d1; }
+.date-composer--light .date-composer__tools button { color: #78716c; }
+.date-composer--light .date-composer__input::placeholder { color: #a8a29e; }
+.date-composer--light .date-composer__send { color: #44403c; background: #e7e5e480; border-color: #d6d3d1; }
+.date-composer--light:focus-within { border-color: #a8a29e; }
+@media (prefers-reduced-motion: reduce) { .date-composer__send { transition: none; } }
+
+.date-input-hint { position: absolute; right: calc(100% + 12px); top: 50%; transform: translateY(-50%); padding: 9px 12px; white-space: nowrap; color: #f5f5f5; background: #111d24eb; border: 1px solid #ffffff38; border-radius: 8px; font-size: 12px; line-height: 1.5; pointer-events: none; }
+.date-input-hint::after { content: ''; position: absolute; right: -4px; top: calc(50% - 4px); width: 7px; height: 7px; background: #111d24; border-top: 1px solid #ffffff38; border-right: 1px solid #ffffff38; transform: rotate(45deg); }
+.date-input-discovery { animation: date-input-discover 1.8s ease-in-out 4; }
+@keyframes date-input-discover { 0%, 100% { box-shadow: 0 0 0 0 #ffffff00; } 50% { box-shadow: 0 0 0 5px #ffffff24, 0 0 15px #ffffff35; } }
+@media (prefers-reduced-motion: reduce) { .date-input-discovery { animation: none; } }

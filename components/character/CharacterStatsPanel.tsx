@@ -8,7 +8,7 @@ import { WORLDBOOK_POSITION_LABELS, WORLDBOOK_ROLE_LABELS } from '../../utils/wo
 
 const EMPTY_EMOJIS: Emoji[] = [];
 const number = (n: number) => n.toLocaleString('zh-CN');
-const statuses: Record<string, string> = { readable: '当前可读', waiting: '等待关键词', probability: '概率待定', disabled: '已停用', empty: '空正文', zero: '概率为 0', otherScene: '未在私聊启用' };
+const statuses: Record<string, string> = { readable: '当前可读', waiting: '等待关键词', probability: '概率待定', disabled: '已停用', bookDisabled: '世界书已停用', empty: '空正文', zero: '概率为 0', otherScene: '未在私聊启用' };
 
 function TextRows({ rows }: { rows: { title: string; content: string; note?: string }[] }) {
     const [limit, setLimit] = useState(20);

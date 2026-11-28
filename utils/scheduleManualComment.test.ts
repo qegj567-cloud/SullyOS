@@ -1,0 +1,23 @@
+// @vitest-environment jsdom
+import React, { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { beforeEach, afterEach, expect, it, vi } from 'vitest';
+const m=vi.hoisted(()=>({save:vi.fn(),confirm:vi.fn(),track:vi.fn(),toast:vi.fn(),events:[] as any[],os:{} as any}));
+vi.mock('../context/OSContext',()=>({useOS:()=>m.os}));
+vi.mock('./db',()=>({DB:{getAllTasks:async()=>[],getAllAnniversaries:async()=>m.events,saveAnniversary:m.save}}));
+vi.mock('./context',()=>({ContextBuilder:{buildCharacterRequest:async(_:unknown,messages:unknown)=>messages}}));
+vi.mock('./memoryPalace/pipeline',()=>({injectMemoryPalace:async()=>{}}));
+vi.mock('./analytics',()=>({trackEvent:m.track}));
+vi.mock('../hooks/useConfirmDialog',()=>({useConfirmDialog:()=>({requestConfirm:m.confirm,confirmDialog:null})}));
+vi.mock('../components/schedule/SystemAlarmDialog',()=>({default:()=>null}));
+vi.mock('../components/os/TokenImg',()=>({default:()=>null}));
+import ScheduleApp from '../apps/ScheduleApp';
+let host:HTMLDivElement,root:Root,fetcher:ReturnType<typeof vi.fn>;
+const click=async(label:string)=>{await act(async()=>{const button=Array.from(host.querySelectorAll('button')).find(b=>b.getAttribute('aria-label')===label||b.textContent===label);if(!button)throw Error('Missing button '+label);button.click();});};
+const mount=async()=>{await act(async()=>root.render(React.createElement(ScheduleApp)));};
+beforeEach(()=>{vi.clearAllMocks();vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);fetcher=vi.fn();vi.stubGlobal('fetch',fetcher);m.confirm.mockResolvedValue(true);m.save.mockResolvedValue(undefined);m.events=[{id:'event',title:'纪念日测试',date:'2099-11-27',charId:'role'}];m.os={characters:[{id:'role',name:'小梨'}],apiConfig:{apiKey:'test-key',baseUrl:'https://example.invalid',model:'test'},userProfile:{name:'用户'},theme:{},characterGroups:[],addToast:m.toast};host=document.createElement('div');document.body.append(host);root=createRoot(host);});
+afterEach(()=>{act(()=>root.unmount());host.remove();vi.unstubAllGlobals();});
+it('opening either tab and reopening the app never calls AI, even without cached text',async()=>{await mount();await click('纪念日');await click('待办事项');expect(fetcher).not.toHaveBeenCalled();expect(m.track).not.toHaveBeenCalledWith('手动生成纪念日留言');act(()=>root.unmount());root=createRoot(host);await mount();expect(fetcher).not.toHaveBeenCalled();});
+it('manual click shows persistent loading, blocks duplicates, and saves only the selected comment',async()=>{let finish:(value:Response)=>void;fetcher.mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));await mount();await click('纪念日');await click('生成留言：纪念日测试');expect(host.querySelector('[role=status]')?.textContent).toContain('正在调用 AI');expect(host.querySelector<HTMLButtonElement>('[aria-label="生成留言：纪念日测试"]')?.disabled).toBe(true);await click('生成留言：纪念日测试');expect(fetcher).toHaveBeenCalledTimes(1);expect(fetcher.mock.calls[0][1].__sullyMeta.purpose).toBe('纪念日感想生成');await act(async()=>finish!(new Response(JSON.stringify({choices:[{message:{content:'<thinking>private</thinking>新的留言'}}]}))));expect(m.save).toHaveBeenCalledWith(expect.objectContaining({id:'event',aiThought:'新的留言'}));expect(host.querySelector('[role=status]')).toBeNull();expect(m.track).toHaveBeenCalledWith('生成纪念日留言完成');for(const call of m.track.mock.calls.filter(call=>call[0].includes('纪念日留言')))expect(call).toHaveLength(1);});
+it('regeneration cancellation is free and failed regeneration preserves the old text with retry available',async()=>{m.events[0].aiThought='原有留言';m.events[0].lastThoughtGeneratedAt=Date.now();await mount();await click('纪念日');m.confirm.mockResolvedValueOnce(false);await click('重新生成留言：纪念日测试');expect(fetcher).not.toHaveBeenCalled();fetcher.mockRejectedValueOnce(new Error('网络暂时不可用'));await click('重新生成留言：纪念日测试');expect(fetcher).toHaveBeenCalledTimes(1);expect(m.save).not.toHaveBeenCalled();expect(host.textContent).toContain('原有留言');expect(host.querySelector('[role=alert]')?.textContent).toContain('网络暂时不可用');expect(host.querySelector('[role=status]')).toBeNull();expect(host.querySelector<HTMLButtonElement>('[aria-label="重新生成留言：纪念日测试"]')?.disabled).toBe(false);expect(m.track).toHaveBeenCalledWith('生成纪念日留言失败');});
+it('missing role or API reports a reason without making a request',async()=>{m.os.characters=[];await mount();await click('纪念日');await click('生成留言：纪念日测试');expect(m.toast).toHaveBeenCalledWith(expect.stringContaining('关联角色'),'error');expect(fetcher).not.toHaveBeenCalled();});

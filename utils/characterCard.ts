@@ -53,7 +53,9 @@ export const CARD_STRIPPED_FIELDS = [
   'chatVoiceEnabled',
   'chatVoiceAutoPlay',
   'dateVoiceEnabled',
+  'dateActionChoicesEnabled', // 本地交互偏好，随个人备份保存
   'dateExtraPresets',        // 用户私有补充预设随系统备份保存，不随角色卡分享
+  'dateStyleConfig',         // 陪伴默认体验含用户场景与私人补充，保留在个人备份
   'memoryPalaceWaterline', // 发卡人的使用节奏；接收方按自己的聊天习惯选择
   'hideMonthlyRecallPrompt', // ChatApp 的旧版记忆调阅提示偏好由接收方自己决定
   'monthlyRecallEnabled', // 自主月度查阅与 API 消耗偏好由接收方决定
@@ -87,6 +89,14 @@ export function stripSensitiveCardFields<T extends Record<string, any>>(data: T)
   const clone: Record<string, any> = { ...data };
   for (const key of CARD_STRIPPED_FIELDS) {
     delete clone[key];
+  }
+  // 发卡人本机的世界书外层分组与临时整书静音不随角色卡带出，免得暴露私人分组名或让收卡人导入后整本书默认失效；词条自身的 disable 保留。
+  if (Array.isArray(clone.mountedWorldbooks)) {
+    clone.mountedWorldbooks = clone.mountedWorldbooks.map((wb: Record<string, any>) => {
+      if (!wb || typeof wb !== 'object') return wb;
+      const { group: _group, bookDisabled: _bookDisabled, ...rest } = wb;
+      return rest;
+    });
   }
   return clone as T;
 }

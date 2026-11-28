@@ -9,6 +9,9 @@ import { withSharedAssetLock } from './sharedAssetLock';
 import { VR_LIBRARY_RECORD } from './vrWorld/library';
 import { listUserSpaces, saveUserSpaces, selectUserSpace, SESSION_SPACE_ID, rawSpaceStorage, assertUserSpaceAvailable, type UserSpace } from './userSpaces';
 import { beginUserSpaceTransition, cancelUserSpaceTransition } from './userSpaceTransition';
+import { deleteSpaceSafetySnapshots, resetAllCharacterSafetySnapshots, scheduleCharacterSafetySnapshot } from './characterSafetySnapshots';
+
+const spaceIdFromDbName = (name: string) => name.startsWith('AetherOS_Data__') ? name.slice('AetherOS_Data__'.length) : name === 'AetherOS_Data' ? 'default' : '';
 
 export function readSpaceStore<T = any>(db: IDBDatabase, store: string): Promise<T[]> {
     if (!db.objectStoreNames.contains(store)) return Promise.resolve([]);
@@ -30,7 +33,7 @@ export async function assertUniqueSpaceCharacters(incoming: Map<string, Array<{ 
 }
 export function commitSpaceRows(db: IDBDatabase, tables: Record<string, any[]>, replace = false, insertOnly: string[] = []): Promise<void> {
     if (!Object.keys(tables).length) return Promise.resolve();
-    return new Promise((resolve, reject) => {
+    return new Promise<void>((resolve, reject) => {
         const tx = db.transaction(Object.keys(tables), 'readwrite');
         tx.oncomplete = () => resolve(); tx.onerror = tx.onabort = () => reject(tx.error || new Error('用户空间保存失败'));
         try {
@@ -40,6 +43,13 @@ export function commitSpaceRows(db: IDBDatabase, tables: Record<string, any[]>, 
             for (const row of rows) insertOnly.includes(name) ? store.add(row) : store.put(row);
         }
         } catch (error) { tx.abort(); reject(error); }
+    }).then(async () => {
+        const spaceId = spaceIdFromDbName(db.name);
+        if (!spaceId || !Object.prototype.hasOwnProperty.call(tables, 'characters')) return;
+        if (replace) await deleteSpaceSafetySnapshots(spaceId);
+        for (const row of tables.characters || []) {
+            if (row?.id && typeof row.name === 'string') scheduleCharacterSafetySnapshot(spaceId, row);
+        }
     });
 }
 /**
@@ -47,12 +57,15 @@ export function commitSpaceRows(db: IDBDatabase, tables: Record<string, any[]>, 
  * 和清空放在同一个事务里补回去：之后逐页写入时中途失败，这些行也还在。
  */
 export function clearSpaceTable(db: IDBDatabase, table: string, keepIds: string[] = []): Promise<void> {
-    return new Promise((resolve, reject) => {
+    return new Promise<void>((resolve, reject) => {
         const tx = db.transaction(table, 'readwrite'), store = tx.objectStore(table);
         // 请求按发出顺序执行：先读出要留的行，清空完成后再写回。
         const kept = keepIds.map(id => store.get(id));
         store.clear().onsuccess = () => { for (const req of kept) if (req.result !== undefined) store.put(req.result); };
         tx.oncomplete = () => resolve(); tx.onerror = tx.onabort = () => reject(tx.error || new Error('用户空间保存失败'));
+    }).then(async () => {
+        const spaceId = spaceIdFromDbName(db.name);
+        if (spaceId && table === 'characters') await deleteSpaceSafetySnapshots(spaceId);
     });
 }
 const waitUntilVisible = (doc: Document) => new Promise<void>(resolve => {
@@ -116,6 +129,7 @@ export async function resetAllUserSpaces() {
         await deleteCollaborationSpace(space.id);
         await DB.deleteDB(space.id);
     }
+    await resetAllCharacterSafetySnapshots();
     rawSpaceStorage?.clear();
 }
 export async function switchUserSpace(id: string) {

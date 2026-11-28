@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Capacitor } from '@capacitor/core';
 import { useConfirmDialog } from '../../hooks/useConfirmDialog';
@@ -11,7 +11,7 @@ import {
   readCanaryDotHidden,
   writeCanaryDotHidden,
 } from '../../utils/releaseChannel';
-import { joinCanary, leaveCanary, loadCanaryJoinContext } from '../../utils/releaseChannelSwitch';
+import { joinCanary, leaveCanary, loadCanaryJoinContext, type LeaveStage } from '../../utils/releaseChannelSwitch';
 
 /** canary 经典黄。 */
 const CANARY_YELLOW = '#FACC15';
@@ -87,7 +87,15 @@ const CanaryChannelControl: React.FC<{ unlocked: boolean }> = ({ unlocked }) => 
     const { requestConfirm, confirmDialog } = useConfirmDialog();
     const [busy, setBusy] = useState(false);
     const [glowing, setGlowing] = useState(false);
-    const [leaving, setLeaving] = useState(false);
+    const [leaveStage, setLeaveStage] = useState<LeaveStage | null>(null);
+    const [slow, setSlow] = useState(false);
+    const skipWait = useRef<AbortController | null>(null);
+    const waiting = leaveStage === 'checking' || leaveStage === 'worker';
+    useEffect(() => {
+        if (!waiting) { setSlow(false); return; }
+        const timer = window.setTimeout(() => setSlow(true), 8000);
+        return () => window.clearTimeout(timer);
+    }, [waiting]);
     const [note, setNote] = useState<string | null>(null);
     const [dotHidden, setDotHidden] = useState(readCanaryDotHidden);
     const inCanary = RELEASE_CHANNEL === 'canary';
@@ -99,12 +107,22 @@ const CanaryChannelControl: React.FC<{ unlocked: boolean }> = ({ unlocked }) => 
             confirmText: '回到正式版',
             variant: 'info',
         });
-        if (!confirmed) return;
+        if (!confirmed || skipWait.current) return;
+        const controller = new AbortController();
+        skipWait.current = controller;
         setBusy(true);
-        setLeaving(true);
-        trackEvent('退出 canary');
-        await wait(LEAVE_MS);
-        await leaveCanary();
+        setNote(null);
+        setLeaveStage('checking');
+        try {
+            trackEvent('退出 canary');
+            await wait(LEAVE_MS);
+            await leaveCanary(setLeaveStage, controller.signal);
+        } catch {
+            setLeaveStage(null);
+            setBusy(false);
+            skipWait.current = null;
+            setNote('没能打开正式版，请再点一次「正式版」。');
+        }
     };
 
     const join = async () => {
@@ -158,7 +176,7 @@ const CanaryChannelControl: React.FC<{ unlocked: boolean }> = ({ unlocked }) => 
 
     return (
         <div className="flex flex-col items-center gap-2 pt-1">
-            <div role="tablist" aria-label="版本通道" className="relative grid grid-cols-2 w-60 h-10 p-1 rounded-full bg-slate-200/70 text-sm font-medium">
+            <div role="tablist" aria-label="版本通道" aria-busy={busy} className="relative grid grid-cols-2 w-60 h-10 p-1 rounded-full bg-slate-200/70 text-sm font-medium">
                 <span
                     aria-hidden
                     className="absolute top-1 bottom-1 left-1 rounded-full shadow-sm transition-all duration-300"
@@ -168,7 +186,10 @@ const CanaryChannelControl: React.FC<{ unlocked: boolean }> = ({ unlocked }) => 
                         background: inCanary ? CANARY_YELLOW : '#fff',
                     }}
                 />
-                {tab('stable', '正式版')}
+                {tab('stable', leaveStage ? <>
+                    <span aria-hidden="true" className="inline-block h-4 w-4 shrink-0 rounded-full border-2 border-current border-r-transparent motion-safe:animate-spin" />
+                    切换中…
+                </> : '正式版')}
                 {tab('canary', <>
                     <CanaryBird size={18} mode={busy ? 'fly' : inCanary ? 'idle' : 'still'} />
                     {busy && !inCanary ? '切换中…' : 'canary'}
@@ -188,9 +209,17 @@ const CanaryChannelControl: React.FC<{ unlocked: boolean }> = ({ unlocked }) => 
                     右下角显示 canary 黄点
                 </label>
             )}
-            {note && <span className="max-w-xs text-center text-[11px] text-amber-600">{note}</span>}
+            <div role="status" aria-live="polite" aria-atomic="true" className="max-w-xs text-center text-sm text-slate-700 dark:text-slate-200">
+                {leaveStage && <>
+                    {leaveStage === 'worker' ? '正在等主动消息 2.0 的 Worker 切回正式版…'
+                        : leaveStage === 'opening' ? '正在打开正式版…' : '正在准备切回正式版…'}
+                    {waiting && slow && <p>你可以继续等，也可以先回正式版，稍后再检查后台。</p>}
+                </>}
+                {note}
+            </div>
+            {waiting && slow && <button type="button" className="min-h-12 rounded-lg px-4 text-sm font-medium underline" onClick={() => skipWait.current?.abort()}>先回正式版</button>}
             {glowing && <CanaryJoinGlow />}
-            {leaving && <CanaryLeaveFlight />}
+            {leaveStage && <CanaryLeaveFlight />}
             {confirmDialog}
         </div>
     );

@@ -26,7 +26,7 @@ try{
  await editA();await page.getByRole('checkbox',{name:/启用关键词触发/}).uncheck();await button('保存').click();
  await page.reload();await page.getByRole('heading',{name:'原分组',exact:true}).click();await editA();await page.getByRole('checkbox',{name:/启用关键词触发/}).check();
  assert.equal(await page.getByPlaceholder('多个关键词用逗号或换行分隔').inputValue(),'月亮');assert.equal(await page.getByPlaceholder('用于进一步限制触发条件').inputValue(),'海边');await button('保存').click();
- await button('编辑整组').click();await page.getByLabel('分组名称',{exact:true}).fill('常驻版本');await page.getByLabel('整组触发方式').selectOption('constant');await button('保存整组').click();
+ await button('编辑整本').click();await page.getByLabel('世界书名称',{exact:true}).fill('常驻版本');await page.getByLabel('整本触发方式').selectOption('constant');await button('保存整本').click();
  await page.getByRole('heading',{name:'常驻版本',exact:true}).waitFor();
  let chars=await page.evaluate(async()=>[await window.qaBooks.DB.getCharacter('qa-book-char'),await window.qaBooks.DB.getCharacter('qa-partial')]);
  assert.equal(chars[0].mountedWorldbooks.length,2);assert.equal(chars[1].mountedWorldbooks.length,1);assert(chars.flatMap(c=>c.mountedWorldbooks).every(b=>b.category==='常驻版本'&&b.constant&&b.key.length));
@@ -35,8 +35,8 @@ try{
  await group.getByRole('button',{name:'整组取消挂载'}).click();await page.waitForFunction(async()=>!(await window.qaBooks.DB.getCharacter('qa-book-char')).mountedWorldbooks.length);
  assert.equal((await page.evaluate(()=>window.qaBooks.DB.getAllWorldbooks())).length,2);
  assert.equal((await page.evaluate(()=>window.qaBooks.DB.getCharacter('qa-partial'))).mountedWorldbooks.length,1);
- await button('books').click();await button('删除整组').click();await button('取消').click();assert.equal((await page.evaluate(()=>window.qaBooks.DB.getAllWorldbooks())).length,2);
- await button('删除整组').click();await button('删除 2 条').click();await page.waitForFunction(async()=>!(await window.qaBooks.DB.getAllWorldbooks()).length);
+ await button('books').click();await button('删除整本').click();await button('取消').click();assert.equal((await page.evaluate(()=>window.qaBooks.DB.getAllWorldbooks())).length,2);
+ await button('删除整本').click();await button('删除 2 条').click();await page.waitForFunction(async()=>!(await window.qaBooks.DB.getAllWorldbooks()).length);
  assert.equal((await page.evaluate(()=>window.qaBooks.DB.getCharacter('qa-partial'))).mountedWorldbooks.length,0);
  await button('cowork').click();await page.getByRole('button',{name:/沉浸式协同/}).click();
  const draft=page.locator('.collab-composer-field textarea');await draft.fill('按ChatApp里的要求做');await button('发送').click();await page.locator('.collab-message-bubble-assistant').getByText('已按私聊要求修改。',{exact:true}).waitFor();

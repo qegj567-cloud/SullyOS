@@ -88,3 +88,9 @@ it('imports a batch atomically and preserves each original attribution',async()=
  vi.mocked(DB.saveAssetBatch).mockRejectedValueOnce(Error('full'));await expect(saveLibraryDecorationBatch(items)).rejects.toThrow('full');expect(await readLibraryDecorations()).toEqual([]);
  const saved=await saveLibraryDecorationBatch(items);expect(saved).toHaveLength(2);expect(await readDecorationOrigin(saved[1]._libraryId)).toMatchObject({credit:'作者',allowRemix:false});
 });
+
+it('still rejects invalid resource protocols instead of treating them as absent backup media', async () => {
+ const {validateDecoration}=await import('./chatDecoration');
+ expect(()=>validateDecoration({...preset,parts:{background:{image:'javascript:alert(1)',style:'plain'}}})).toThrow('资源不是');
+ expect(()=>validateDecoration({...preset,parts:{sound:{src:'blobref:missing'}}})).toThrow('资源不是');
+});

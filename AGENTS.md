@@ -26,13 +26,14 @@
 | 主题 | 文档 | 什么时候看 |
 |------|------|-----------|
 | **用户空间 / 角色继承 / 共享素材** | [`docs/user-spaces.md`](./docs/user-spaces.md) | 改用户切换、角色专属用户资料、跨空间继承、备份范围或素材删除前必读；会话固定所属空间、配置独立文件共用、继承不带经历；定位设置随个人备份，实时坐标不备份 |
-| **备份与恢复 · 内存有界链路** | [`docs/backup-pipeline.md`](./docs/backup-pipeline.md) | 改备份导出/恢复、云端上传下载、备份格式，或往数据库加新表、新增 localStorage 键前必读；整份备份只以磁盘文件存在，内存只放一片（按字节封页），读包按需随机读，恢复逐页写库，上传一律分片加完成清单并以远端实际大小为准；新表默认进备份、新设置键默认不进，两张分类表都有覆盖测试；新加会跑很久的任务照「中断留痕」接 `utils/taskTrace.ts` |
+| **备份与恢复 · 内存有界链路** | [`docs/backup-pipeline.md`](./docs/backup-pipeline.md) | 改备份导出/恢复、云端上传下载、备份格式、角色安全快照或故障页抢救导出，或往数据库加新表、新增 localStorage 键前必读；整份备份只以磁盘文件存在，内存只放一片（按字节封页），读包按需随机读，恢复逐页写库，上传一律分片加完成清单并以远端实际大小为准；新表默认进备份、新设置键默认不进，两张分类表都有覆盖测试；新加会跑很久的任务照「中断留痕」接 `utils/taskTrace.ts` |
 | **本机存储用量 · 分类登记** | [`docs/storage-usage.md`](./docs/storage-usage.md) | 往数据库加新表、往 `assets` 表存大块数据、新开独立的库，或改设置里的存储用量面板与清理入口前必读；明细一个 App 一行，主库每张表都要登记类别（有覆盖测试），图片池不带归属只有总数，已删除角色留下的数据由用户亲手清理 |
 | **悬浮球、全局返回与聊天输入栏收起** | [`docs/navigation.md`](./docs/navigation.md) | 改快捷导航开关、拖动安全区、浏览器／Android 返回、美化子页退出、聊天工具栏外部收起或选图挂载前必读 |
 | **iOS 27 主屏幕顶部白雾 / 状态栏底色** | [`docs/ios-status-bar-edge.md`](./docs/ios-status-bar-edge.md) | 改顶部取色、viewport 或 iOS 门禁前必读；manifest standalone 使用 contain，零安全区不回退 44px，异步高度收缩要重建基线；纯色接合不等于壁纸贯穿 |
 | **3D 小屋 · 布局与功能分区** | [`docs/room3d-layout.md`](./docs/room3d-layout.md) | 设计或重排任何房间/样板房、自动摆家具前必读；先划功能区，再按家具组合摆放，保留连续动线，不能逐件随机找空位；本轮统一黑 × 绿 × 白 |
 | **美化分享码与人工审核** | [`docs/beauty-share.md`](./docs/beauty-share.md) | 改美化投稿、作者身份、分享码领取或 `worker/beauty-share` 前必读；未审文件保持私有，更新通过后才替换已发布指针，仅作者明确授权且已审作品进入公开静态装扮库，未授权旧作不公开 |
 | **ChatApp 装扮、白框与深浅色对比度边界** | [`docs/chat-decoration.md`](./docs/chat-decoration.md) | 改 `.sully-chat-root` 挂载范围、消息时间位置/选择器、白框选择器、心象/装扮弹窗、深浅色表单控件或毛玻璃与减弱模糊前必读；弹窗与迷你应用挂载在 `.sully-chat-root` 外并带显式深字/浅底边界，深底 `<select>`／日期时间控件配 `[color-scheme:dark]` 与 `[&_option]`，白框用 `:not(:where(...))` 排除色板点/二维码白底/进度条/`qixi_event_card`/`like520_card`；「减弱模糊」开关只负责关掉毛玻璃、默认关，属于设备状态不随备份走 |
+| **API 配置交互设计** | [`docs/api-settings-design.md`](./docs/api-settings-design.md) | 修改预设、对话／识图表单或调用记录前必读；预设默认跟随更新，不新增引用同步概念 |
 | **角色默认对话 API** | [`docs/character-api.md`](./docs/character-api.md) | 改角色独立 API、API 预设分组或对话模型路由前必读；App 优先，单角色回复才使用角色默认，凭据整套选择 |
 | **全站 API 槽位、预设引用与自动保存** | [`docs/api-slots.md`](./docs/api-slots.md) | 改任何 API 配置面板、预设增删改、副 API 回退或流式升级前必读；统一复用 `ApiSlotEditor`，预设按 `presetId` 引用联动并保留内联快照兼容双通道，自动保存仅在完整合法或全空时提交 |
 | **Anthropic 原生接口 / Prompt Caching** | [`docs/anthropic-messages.md`](./docs/anthropic-messages.md) | 改 Messages 转换、SSE、缓存或 amsg 原生模型调用前必读；原生端点随整套凭据保存，不新增代理，旧 Worker 先更新并验证能力 |
@@ -43,7 +44,7 @@
 | **网易云音乐代理与播放直链** | [`docs/netease-music-proxy.md`](./docs/netease-music-proxy.md) | 改音乐 App 播放直链、`worker/index.js` `/netease/*`、风控降级或缓存规则前必读；320k 内直走 `weapi`、高解析度失败降级，边缘缓存按凭据摘要分桶且不缓存试听或空直链 |
 | **角色统计 / 上下文字数与 Token 估算** | [`docs/character-statistics.md`](./docs/character-statistics.md) | 改神经链接角色统计前必读；可读范围不等于实际请求，概率预览不得抽签，宫殿缓存单列 |
 | **API 调用记录 / 用途与云端记账** | [`docs/api-call-log.md`](./docs/api-call-log.md) | 新增 `/chat/completions` 调用点、改 `ApiCallMeta` 归属或云端模型用量回传前必读；显式 `meta` 不混入前台环境角色，推送不回传凭据 |
-| **世界书管线、分组与角色绑定** | [`docs/worldbook-management.md`](./docs/worldbook-management.md) | 新增 App／角色生成请求或改世界书前必读；新入口使用 ContextBuilder.buildCharacterRequest，世界书自动随角色装载；每个入口声明启用场景，新 App 先登记子场景；绑定按 ID，库与角色缓存同事务更新 |
+| **世界书管线、分组与角色绑定** | [`docs/worldbook-management.md`](./docs/worldbook-management.md) | 新增 App／角色生成请求或改世界书前必读；新入口使用 ContextBuilder.buildCharacterRequest，世界书自动随角色装载；每个入口声明启用场景，新 App 先登记子场景；绑定按 ID，整书开关与单条停用独立保存，库与角色缓存同事务更新 |
 | **协同工作私聊衔接与转发** | [`docs/collaboration-chat-bridge.md`](./docs/collaboration-chat-bridge.md) | 改协同读取 ChatApp 范围或转发消息前必读；每轮读 DB，空范围不回退，多选只发当前窗口 |
 | **canary 版本通道** | [`docs/canary-channel.md`](./docs/canary-channel.md) | 改 canary 加入退出、`/canary/` 跳转脚本、通道配对、`deploy-canary.yml` 或 Worker 的 `bundle_channel` 前必读；dev 合并进 canary 分支发布，master 直接合入的改动要同步过去，同网址子路径共用数据，加入先换 Worker 再换前端，冷启动按通道对齐且跳转未生效时不动 Worker，连续两次启动失败自动退回 |
 | **假模型（端到端调试 / 回归）** | [`docs/fake-llm.md`](./docs/fake-llm.md) | 用不花钱、可重复的假回复测私聊、即时对话、定时主动消息和云端代跑前看；场景按模型名 `fake/<场景>` 选，辅助请求自动给空操作回复；先查「每条链路读哪个 API 槽位」，调试面板一键换过去要能一键换回 |
