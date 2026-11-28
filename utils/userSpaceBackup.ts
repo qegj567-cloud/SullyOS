@@ -1,8 +1,9 @@
+import { isUnreadableRecordError } from './characterSafetySnapshots';
 import { calibratedDeliveryPrefix } from './chatDeliveryReceipts';
 import { hashBlob, dataUrlToBlob, blobToDataUrl } from '@rei-standard/blob-store';
 import { DB, openSpaceDB } from './db';
 import { openBackupArchiveWriter, type BackupArchiveFile, type BackupArchiveWriter } from './backupArchiveWriter';
-import { forEachStorePage } from './backupPageReader';
+import { forEachStorePage, type StorePage } from './backupPageReader';
 import { createExportTrace, type ExportTraceWriter } from './backupExportTrace';
 import { isTaskTraceKey } from './taskTrace';
 import { isCloudGenStorageKey } from './cloudGen/types';
@@ -76,8 +77,34 @@ export function spaceMediaRow(store: string, row: any) {
  * 每页按字节封页读出、打包、写进归档后才读下一页，内存里只有一页记录。
  * 交回的 Blob 是临时文件的一个切片，留到下一次多空间导出开始时才删（`<a download>` 没有完成信号），页面关闭后由启动清理收掉。
  */
+export interface RescueExportHooks {
+    discoverSpaces: () => Promise<UserSpace[]>;
+    readBlob: (id: string) => Promise<Blob | null>;
+    openMainDB: (space: UserSpace) => Promise<IDBDatabase | null>;
+    openCollabDB: (space: UserSpace) => Promise<IDBDatabase | null>;
+    forEachPage: (
+        space: UserSpace,
+        store: string,
+        database: IDBDatabase,
+        tableName: string,
+        visit: (rows: any[], index: number, page: StorePage) => Promise<void> | void,
+        options?: { preScan?: boolean; guard?: { total: number; label: string } },
+    ) => Promise<void>;
+    onUnreadableRow: (space: UserSpace, store: string, row: any, error: unknown) => void;
+    onUnreadableBlob: (id: string, location: string | undefined, error: unknown) => void;
+    onAuxiliaryError: (section: string, error: unknown) => void;
+    extraFiles: () => Array<[name: string, text: string]>;
+}
+
 export async function exportUserSpaces(mode: Mode, scope: 'current' | 'all', onProgress?: (text: string) => void, includeBackendConnection = false, onMissingAssets?: (items: BackupMissingAsset[]) => void): Promise<Blob> {
     return withSharedAssetLock('shared', () => exportUserSpacesUnderLease(mode, scope, onProgress, includeBackendConnection, onMissingAssets));
+}
+
+/** 故障页紧急抢救导出：复用标准多空间归档格式与临时文件流，遇到单条损坏记录或缺失外部文件时逐条跳过。 */
+export async function exportUserSpacesForRescue(rescue: RescueExportHooks, onProgress?: (text: string) => void, onMissingAssets?: (items: BackupMissingAsset[]) => void): Promise<Blob> {
+    const run = () => exportUserSpacesUnderLease('full', 'all', onProgress, false, onMissingAssets, rescue);
+    // 保留素材共享锁；导出失败直接报告，不能绕过锁重复整个任务。
+    return withSharedAssetLock('shared', run);
 }
 /** 上一次多空间导出的归档；下一次导出开始时释放。 */
 let previousExport: BackupArchiveFile | undefined;
@@ -114,7 +141,7 @@ const countRows = (db: IDBDatabase, table: string) => new Promise<number>((resol
     const request = db.transaction(table).objectStore(table).count();
     request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
 });
-async function exportUserSpacesUnderLease(mode: Mode, scope: 'current' | 'all', onProgress: ((text: string) => void) | undefined, includeBackendConnection: boolean, onMissingAssets?: (items: BackupMissingAsset[]) => void): Promise<Blob> {
+async function exportUserSpacesUnderLease(mode: Mode, scope: 'current' | 'all', onProgress: ((text: string) => void) | undefined, includeBackendConnection: boolean, onMissingAssets?: (items: BackupMissingAsset[]) => void, rescue?: RescueExportHooks): Promise<Blob> {
     const stale = previousExport;
     previousExport = undefined;
     await stale?.dispose();
@@ -125,7 +152,7 @@ async function exportUserSpacesUnderLease(mode: Mode, scope: 'current' | 'all', 
     // 只有闪退、被系统杀掉这类走不到 finally 的情况会把留痕留下来。
     const trace = createExportTrace({ mode, scope, onDisk: zip.onDisk, startedAt: started });
     try {
-        const file = await writeUserSpaces(zip, mode, scope, onProgress, includeBackendConnection, trace, () => written);
+        const file = await writeUserSpaces(zip, mode, scope, onProgress, includeBackendConnection, trace, () => written, rescue);
         previousExport = file.archive;
         lastExport = { onDisk: zip.onDisk, size: file.archive.size, ms: Date.now() - started, entries, finishedAt: new Date().toISOString(), tables: file.tables };
         onMissingAssets?.(file.missing);
@@ -138,7 +165,7 @@ async function exportUserSpacesUnderLease(mode: Mode, scope: 'current' | 'all', 
         trace.clear();
     }
 }
-async function writeUserSpaces(zip: BackupArchiveWriter, mode: Mode, scope: 'current' | 'all', onProgress: ((text: string) => void) | undefined, includeBackendConnection: boolean, trace: ExportTraceWriter, writtenBytes: () => number) {
+async function writeUserSpaces(zip: BackupArchiveWriter, mode: Mode, scope: 'current' | 'all', onProgress: ((text: string) => void) | undefined, includeBackendConnection: boolean, trace: ExportTraceWriter, writtenBytes: () => number, rescue?: RescueExportHooks) {
     const files = new Set<string>(), refs = new Set<string>();
     const tableStats: ExportTableStats[] = [];
     const manifest: SpaceArchive = { format: 'sully-user-spaces', version: 1, mode, spaces: [], settings: {}, blobs: [] };
@@ -152,10 +179,17 @@ async function writeUserSpaces(zip: BackupArchiveWriter, mode: Mode, scope: 'cur
     const addAsset = async (id: string, location?: string, blob?: Blob | null) => {
         if (missingAssets.has(id)) { recordMissingBackupAsset(missingAssets, id, location); return; }
         if (seenIds.has(id)) return;
-        const data = blob ?? await DB.getBlobAsset(id);
-        if (!data) { recordMissingBackupAsset(missingAssets, id, location); return; }
-        seenIds.add(id);
-        manifest.blobs.push({ id, path: await addBytes(data), type: data.type, size: data.size });
+        try {
+            const data = blob ?? await (rescue ? rescue.readBlob(id) : DB.getBlobAsset(id));
+            if (!data) { recordMissingBackupAsset(missingAssets, id, location); return; }
+            const path = await addBytes(data);
+            seenIds.add(id);
+            manifest.blobs.push({ id, path, type: data.type, size: data.size });
+        } catch (error) {
+            if (!rescue || !isUnreadableRecordError(error)) throw error;
+            rescue.onUnreadableBlob(id, location, error);
+            recordMissingBackupAsset(missingAssets, id, location);
+        }
     };
     const pack = async (value: any, key = '', location = ''): Promise<any> => {
         if (value instanceof Date) return { __spaceDate: value.toISOString() };
@@ -175,7 +209,10 @@ async function writeUserSpaces(zip: BackupArchiveWriter, mode: Mode, scope: 'cur
             if (mode !== 'text_only') {
                 const tokens = new Set<string>(); collectBlobRefs(value, tokens);
                 for (const token of tokens) await addAsset(token.slice('blobref:'.length), location);
-                if (key === 'assetId') { const data = await DB.getBlobAsset(value); if (data) await addAsset(value, location, data); }
+                if (key === 'assetId') {
+                    const data = rescue ? await rescue.readBlob(value).catch(err => { rescue.onUnreadableBlob(value, location, err); return null; }) : await DB.getBlobAsset(value);
+                    if (data) await addAsset(value, location, data);
+                }
             }
             return value;
         }
@@ -188,36 +225,52 @@ async function writeUserSpaces(zip: BackupArchiveWriter, mode: Mode, scope: 'cur
         }
         return value;
     };
-    for (const space of listUserSpaces().filter(s => scope === 'all' || s.id === SESSION_SPACE_ID)) {
-        const db = await openSpaceDB(space.id);
+    const targetSpaces = rescue
+        ? await rescue.discoverSpaces()
+        : listUserSpaces().filter(s => scope === 'all' || s.id === SESSION_SPACE_ID);
+    for (const space of targetSpaces) {
+        const db = rescue ? await rescue.openMainDB(space) : await openSpaceDB(space.id);
+        if (!db) continue;
+        const runPages = (store: string, database: IDBDatabase, tableName: string, visit: (rows: any[], index: number, page: StorePage) => Promise<void> | void, options?: { preScan?: boolean; guard?: { total: number; label: string } }) =>
+            rescue ? rescue.forEachPage(space, store, database, tableName, visit, options) : forEachStorePage(database, tableName, visit, options?.guard);
         // 表情和角色先各扫一遍，只留后面要用的几个字段，不整表留在内存里。
         const stickerRows: Array<Pick<Emoji, 'url' | 'backupSourceUrl'>> = [];
-        if (db.objectStoreNames.contains('emojis')) await forEachStorePage(db, 'emojis', rows => {
-            for (const row of rows) if (row.url?.startsWith('blobref:')) stickerRows.push({ url: row.url, backupSourceUrl: row.backupSourceUrl });
-        });
+        if (db.objectStoreNames.contains('emojis')) await runPages('emojis', db, 'emojis', rows => {
+            for (const row of rows) if (row?.url?.startsWith('blobref:')) stickerRows.push({ url: row.url, backupSourceUrl: row.backupSourceUrl });
+        }, { preScan: true });
         const stickerLinks = legacyStickerLinks(stickerRows as Emoji[]);
         const voiceIds = new Set<string>(), characterNames = new Map<string, string>();
-        await forEachStorePage(db, 'characters', rows => {
+        if (db.objectStoreNames.contains('characters')) await runPages('characters', db, 'characters', rows => {
             for (const id of collectCharacterCompanionVoiceAssetIds(rows)) voiceIds.add(id);
-            for (const character of rows) characterNames.set(character.id, character.name);
-        });
-        const local = Object.fromEntries(Object.entries(readSpaceLocal(space.id)).filter(([k]) => !privateLocalExcluded(k) && (mode !== 'media_only' || /^(os_theme|tama_style|companion_frame|companion_layout|mg_style)/.test(k))));
-        const entry = { ...space, local: await pack(local, '', backupAssetSource(space.name, 'local')), stores: {} as Record<string, string[]> };
-        const collaboration = await openCollaborationSpace(space.id);
-        for (const [prefix, database] of [['', db], ['collab_', collaboration]] as const) for (const tableName of Array.from(database.objectStoreNames)) {
+            for (const character of rows) if (character?.id) characterNames.set(character.id, character.name);
+        }, { preScan: true });
+        const rawLocal = Object.fromEntries(Object.entries(readSpaceLocal(space.id)).filter(([k]) => !privateLocalExcluded(k) && (mode !== 'media_only' || /^(os_theme|tama_style|companion_frame|companion_layout|mg_style)/.test(k))));
+        let packedLocal: Record<string, any> = rawLocal;
+        try {
+            packedLocal = await pack(rawLocal, '', backupAssetSource(space.name, 'local'));
+        } catch (error) {
+            if (!rescue) throw error;
+            rescue.onAuxiliaryError(`用户「${space.name}」本地设置`, error);
+        }
+        const entry = { ...space, local: packedLocal, stores: {} as Record<string, string[]> };
+        const collaboration = rescue ? await rescue.openCollabDB(space) : await openCollaborationSpace(space.id);
+        const dbSources: Array<readonly [string, IDBDatabase]> = collaboration ? [['', db], ['collab_', collaboration]] : [['', db]];
+        for (const [prefix, database] of dbSources) for (const tableName of Array.from(database.objectStoreNames)) {
             const store = prefix + tableName;
             if (store === 'blob_assets' || store === 'api_call_log' || (mode === 'media_only' && !mediaStores.has(store))) continue;
             const paths: string[] = entry.stores[store] = [];
             // 按字节封页，总页数事先不知道，进度用已读 / 总条数表达。
-            const total = await countRows(database, tableName), started = performance.now();
+            const total = rescue ? await countRows(database, tableName).catch(() => 0) : await countRows(database, tableName);
+            const started = performance.now();
             let read = 0, maxRowBytes = 0;
             trace.table(space.name, store, total);
-            await forEachStorePage(database, tableName, async (page, index, info) => {
+            await runPages(store, database, tableName, async (page, index, info) => {
                 read += page.length;
                 maxRowBytes = Math.max(maxRowBytes, info.maxRowBytes);
                 trace.pageRead(info);
-                onProgress?.(`正在读取 ${space.name} · ${store}（${read} / ${total} 条）`);
-                const rows = page.filter(r => !(store === 'assets' && (r.id === 'ls_mirror_v1' || r.id === 'user_spaces_catalog_v1')))
+                onProgress?.(`正在读取 ${space.name} · ${store}（${read}${total ? ` / ${total}` : ''} 条）`);
+                const rows = page.filter(r => r && typeof r === 'object')
+                    .filter(r => !(store === 'assets' && (r.id === 'ls_mirror_v1' || r.id === 'user_spaces_catalog_v1')))
                     .filter(r => store !== 'assets' || shouldIncludeVoiceRelatedAssetInBackup(r, mode !== 'text_only') && (!isCompanionVoiceAssetId(r.id) || voiceIds.has(r.id)))
                     .filter(r => mode !== 'media_only' || store !== 'assets' || mediaAsset(r.id))
                     .filter(r => mode !== 'media_only' || store !== 'bank_data' || r.id === 'dollhouse_state')
@@ -225,21 +278,29 @@ async function writeUserSpaces(zip: BackupArchiveWriter, mode: Mode, scope: 'cur
                     .filter(r => mode !== 'media_only' || store !== 'messages' || r.type === 'image' || r.type === 'emoji' || r.metadata?.cameraSnapshotRef || r.metadata?.cameraSnapshotExpired);
                 const processed = [];
                 for (const stored of rows) {
-                    // 与单用户导出、恢复写库同一口径：关联强度只留 5 位小数。
-                    const row = store === 'memory_links' ? compactMemoryLink(stored) : stored;
-                    const value = mode === 'media_only' ? spaceMediaRow(store, row)
-                        : mode === 'text_only' && store === 'assets' && row.id === HELP_HISTORY_KEY ? { id: row.id, data: helpTextHistory(row.data) } : row;
-                    processed.push(await pack(portableEmojiRow(store, value, stickerLinks), '', backupAssetSource(space.name, store, row, characterNames)));
+                    try {
+                        // 与单用户导出、恢复写库同一口径：关联强度只留 5 位小数。
+                        const row = store === 'memory_links' ? compactMemoryLink(stored) : stored;
+                        const value = mode === 'media_only' ? spaceMediaRow(store, row)
+                            : mode === 'text_only' && store === 'assets' && row.id === HELP_HISTORY_KEY ? { id: row.id, data: helpTextHistory(row.data) } : row;
+                        processed.push(await pack(portableEmojiRow(store, value, stickerLinks), '', backupAssetSource(space.name, store, row, characterNames)));
+                    } catch (error) {
+                        if (!rescue || !isUnreadableRecordError(error)) throw error;
+                        rescue.onUnreadableRow(space, store, stored, error);
+                    }
                 }
                 const text = JSON.stringify(processed); collectBlobRefs(text, refs);
                 const path = `spaces/${space.id}/${store}.${index}.json`;
                 await zip.add(path, text); paths.push(path);
                 trace.written(writtenBytes()); trace.pageWritten();
-            }, { total, label: `${space.name} · ${store}` });
+            }, { guard: rescue ? undefined : { total, label: `${space.name} · ${store}` } });
             const ms = performance.now() - started;
             if (ms > SLOW_TABLE_MS) tableStats.push({ space: space.name, store, pages: paths.length, rows: read, ms: Math.round(ms), maxRowBytes });
         }
         collectBlobRefs(JSON.stringify(entry.local), refs); manifest.spaces.push(entry);
+    }
+    if (rescue && !manifest.spaces.length) {
+        throw new Error('未能打开任何本地用户数据库，底层存储目录本身可能已不可访问');
     }
     if (mode !== 'media_only' && rawSpaceStorage) {
         for (let i = 0; i < rawSpaceStorage.length; i++) {
@@ -250,19 +311,34 @@ async function writeUserSpaces(zip: BackupArchiveWriter, mode: Mode, scope: 'cur
     onProgress?.('正在打包共享素材');
     trace.written(writtenBytes()); trace.assets();
     if (mode !== 'text_only') for (const ref of refs) await addAsset(ref.slice('blobref:'.length));
-    if (mode !== 'media_only') manifest.backend = await exportAmsg2GlobalConfig({ includeBackendConnection });
+    if (mode !== 'media_only') {
+        try {
+            manifest.backend = await exportAmsg2GlobalConfig({ includeBackendConnection });
+        } catch (error) {
+            if (!rescue) throw error;
+            rescue.onAuxiliaryError('主动消息本地配置', error);
+        }
+    }
     if (mode !== 'media_only' && rawSpaceStorage) {
         for (const space of manifest.spaces) {
-            const config = exportUserLocationSettings(createSpaceStorage(rawSpaceStorage, space.id));
-            if (!config) continue;
-            const { characterIds, ...settings } = config;
-            manifest.userLocation ??= { settings, audiences: {} };
-            manifest.userLocation.audiences[space.id] = characterIds ?? null;
+            try {
+                const config = exportUserLocationSettings(createSpaceStorage(rawSpaceStorage, space.id));
+                if (!config) continue;
+                const { characterIds, ...settings } = config;
+                manifest.userLocation ??= { settings, audiences: {} };
+                manifest.userLocation.audiences[space.id] = characterIds ?? null;
+            } catch (error) {
+                if (!rescue) throw error;
+                rescue.onAuxiliaryError(`用户「${space.name}」定位配置`, error);
+            }
         }
     }
     const missing = [...missingAssets.values()];
     if (missing.length) manifest.missingAssets = missing;
     for (const [name, text] of missingBackupAssetFiles(missing)) await zip.add(name, text);
+    if (rescue) {
+        for (const [name, text] of rescue.extraFiles()) await zip.add(name, text);
+    }
     await zip.add('user-spaces.json', JSON.stringify(manifest));
     return { archive: await zip.close(), missing, tables: tableStats };
 }
