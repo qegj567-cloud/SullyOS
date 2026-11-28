@@ -627,7 +627,7 @@ export function categoryOfDatabase(name: string): StorageCategoryKey | undefined
 }
 
 /** 浏览器不给枚举库列表时的兜底名单（主库单独走 openDB，不在这里）。 */
-const FALLBACK_DATABASE_NAMES = ['ActiveMsg'];
+const FALLBACK_DATABASE_NAMES = ['ActiveMsg', 'SullyOS_CharacterSafety'];
 
 async function listDatabaseNames(): Promise<string[]> {
     if (typeof indexedDB === 'undefined') return [];

@@ -1,18 +1,11 @@
 import type { CharacterProfile } from '../types';
 
 /**
- * 角色档案多槽错峰安全快照（独立 IndexedDB 库 `SullyOS_CharacterSafety`）。
- *
- * 背景与取舍（详见 docs/backup-pipeline.md「角色档案防断电多槽快照」）：
- * - Chromium 对单条超过约 64KB 的 IndexedDB 记录不再内联进 LevelDB，而是拆成独立的外部磁盘文件，
- *   主库只留文件指针。CharacterProfile 聚合了人设、装扮、记忆、小屋与查手机记录，很容易跨过 64KB 且在对话/互动中频繁整卡重写。
- * - 设备电量耗尽硬断电或异常清理时，正在改写的外部文件可能未刷入闪存或被系统清理，只剩悬空指针，
- *   再次读取抛 `NotReadableError: Data lost due to missing file`，导致整表 `getAll()` 失败锁死在故障页。
- * - 同一次事务里双写无法防断电（两个新外部文件可能同时未落盘）；单双槽在连续高频聊天时也可能都处在系统页缓存写回窗口（约 30s）内。
- * - 因此这里采用 3 个环形槽位（0 / 1 / 2），每满 1 分钟才切换到下一个槽位：
- *   首次写入落 0 号槽并立刻把活动槽切到 1 号槽；后续每分钟轮换一格。任意时刻即使当前槽正在写盘断电、上一槽刚提交不久，
- *   再早一格的槽位也已在闪存上静置超过 60 秒且期间零改动。
- * - 独立成库而不升 `AetherOS_Data` 的 `DB_VERSION`：已经出现单条损坏的老包用户覆盖安装后，打开主库做抢救导出时不会触发主库 schema 升级事务。
+ * 角色档案三槽安全快照，独立存于 SullyOS_CharacterSafety。
+ * 大记录底层文件缺失时，尝试读取保存时间最近的完好副本。
+ * 每分钟轮换写入槽位，优先使用 strict durability，降低连续写入同时受损的风险。
+ * 这不是外部备份，不能保证断电、磁盘故障或清除数据后的恢复。
+ * 不升级主库 schema，便于旧版本故障用户覆盖安装后抢救。
  */
 
 export const CHARACTER_SAFETY_DB_NAME = 'SullyOS_CharacterSafety';
@@ -53,7 +46,7 @@ export function isUnreadableRecordError(error: unknown): boolean {
   const rec = error as { name?: unknown; message?: unknown };
   if (rec.name === 'NotReadableError') return true;
   const msg = typeof rec.message === 'string' ? rec.message : '';
-  return /missing file|Affected record should be considered irrecoverable|Failed to read large IndexedDB value/i.test(msg);
+  return rec.name !== 'UnknownError' && /missing file|Affected record should be considered irrecoverable/i.test(msg);
 }
 
 let safetyDbPromise: Promise<IDBDatabase> | null = null;

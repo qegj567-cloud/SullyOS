@@ -3,6 +3,7 @@ import type { CharacterProfile } from '../types';
 import { DB, openSpaceDB } from './db';
 import {
   CHARACTER_SAFETY_DB_NAME,
+  isUnreadableRecordError,
   SAFETY_ROTATION_WINDOW_MS,
   deleteCharacterSafetySnapshots,
   recoverCharacterFromSafetySnapshot,
@@ -196,6 +197,7 @@ describe('数据库故障页紧急抢救导出（exportDamagedDatabaseRescue）'
         { id: 3, charId: 'char_lost', role: 'assistant', content: '我一直在呀，这条聊天记录还在主库里！', timestamp: 2005 },
         { id: 4, charId: 'char_lost', role: 'user', type: 'image', content: `blobref:${badImageId}`, timestamp: 2010 },
       ],
+      memory_nodes: [{id:'rescue_memory',charId:'char_lost',content:'仍可读取的记忆',createdAt:2000}],
       social_posts: [
         { id: 'post_1', authorId: 'char_lost', authorName: '阿澈', authorAvatar: '', content: '今天天气真好', timestamp: 1500, likes: 1, isLiked: false, comments: [] },
       ],
@@ -250,6 +252,7 @@ describe('数据库故障页紧急抢救导出（exportDamagedDatabaseRescue）'
     expect(restoredChars.find(c => c.id === 'char_lost')?.name).toBe('阿澈');
     expect(restoredChars.find(c => c.id === 'char_ok')?.systemPrompt).toBe('完好无损的人设');
 
+    expect((await readSpaceStore<any>(restoredDb, 'memory_nodes'))[0]).toMatchObject({charId:'char_lost',content:'仍可读取的记忆'});
     const restoredMsgs = await readSpaceStore<any>(restoredDb, 'messages');
     const lostCharMsgs = restoredMsgs.filter(m => m.charId === 'char_lost');
     expect(lostCharMsgs.map(m => m.content)).toEqual([
@@ -267,8 +270,96 @@ describe('数据库故障页紧急抢救导出（exportDamagedDatabaseRescue）'
     const migratedAche = migratedChars.find(c => c.name === '阿澈')!;
     expect(migratedAche).toBeDefined();
     expect(migratedAche.id).not.toBe('char_lost');
+    expect((await readSpaceStore<any>(migratedDb, 'memory_nodes'))[0]).toMatchObject({charId:migratedAche.id,content:'仍可读取的记忆'});
     const migratedMsgs = await readSpaceStore<any>(migratedDb, 'messages');
     expect(migratedMsgs.filter(m => m.charId === migratedAche.id)).toHaveLength(3);
     await zip.close();
   });
+});
+
+
+describe('抢救移植的只读与错误边界', () => {
+  beforeEach(async () => { localStorage.clear(); await resetAllUserSpaces(); });
+  afterEach(async () => { vi.restoreAllMocks(); await resetAllCharacterSafetySnapshots(); });
+
+  it('瞬时 UnknownError 不得被当作不可恢复文件丢失而回写旧快照', () => {
+    expect(isUnreadableRecordError(new DOMException('Failed to read large IndexedDB value', 'UnknownError'))).toBe(false);
+    expect(isUnreadableRecordError(missingFileError())).toBe(true);
+  });
+
+  it('预扫描恢复的快照也计入正式报告，抢救不回写主库', async () => {
+    const db = await openSpaceDB('default');
+    await commitSpaceRows(db, { characters: [makeChar('c_report', '原始卡', '当前版本')] }, true);
+    await resetAllCharacterSafetySnapshots();
+    await writeCharacterSafetySnapshotNow('default', makeChar('c_report', '安全副本', '历史快照'));
+    const restoreFault = simulateMissingExternalFiles([{ dbName: db.name, storeName: 'characters', brokenKey: 'c_report' }]);
+    let result!: Awaited<ReturnType<typeof exportDamagedDatabaseRescue>>;
+    try { result = await exportDamagedDatabaseRescue(); } finally { restoreFault(); }
+    expect(result.healedCharacters).toEqual([expect.objectContaining({ charId: 'c_report', name: '安全副本' })]);
+    const zip = await openBackupZip(result.blob);
+    expect(JSON.parse(await zip.file('diagnostics/rescue-report.json')!.async('string')).healedCharacters).toHaveLength(1);
+    expect((await readSpaceStore<CharacterProfile>(db, 'characters'))[0].systemPrompt).toBe('当前版本');
+  });
+
+  it('扫描旧版空间不升级 schema，并保留可恢复的旧版聊天', async () => {
+    await openSpaceDB('default');
+    const name = 'AetherOS_Data__u_rescue_legacy';
+    const legacy = await new Promise<IDBDatabase>((resolve, reject) => {
+      const req = indexedDB.open(name, 1);
+      req.onupgradeneeded = () => { req.result.createObjectStore('characters', {keyPath:'id'}); req.result.createObjectStore('messages', {keyPath:'id'}); };
+      req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error);
+    });
+    try {
+      await commitSpaceRows(legacy, { characters: [makeChar('legacy_c', '旧版本角色')], messages: [{id: 1, charId: 'legacy_c', content: '仍然可读', timestamp: 1, role: 'user'}] });
+      const openSpy = vi.spyOn(indexedDB, 'open');
+      const result = await exportDamagedDatabaseRescue();
+      expect(openSpy.mock.calls.filter(call => call[0] === name).every(call => call[1] === undefined)).toBe(true);
+      expect(legacy.version).toBe(1);
+      expect(Array.from(legacy.objectStoreNames)).toEqual(['characters','messages']);
+      const zip = await openBackupZip(result.blob);
+      const manifest = JSON.parse(await zip.file('user-spaces.json')!.async('string'));
+      const space = manifest.spaces.find((item: any) => item.id === 'u_rescue_legacy');
+      expect(JSON.parse(await zip.file(space.stores.messages[0])!.async('string'))[0].content).toBe('仍然可读');
+    } finally {
+      legacy.close();
+      await new Promise<void>((resolve, reject) => { const req = indexedDB.deleteDatabase(name); req.onsuccess = () => resolve(); req.onerror = () => reject(req.error); });
+    }
+  });
+});
+
+
+it('抢救写入归档失败只执行一次，不把磁盘写满伪装成缺失素材', async () => {
+  await resetAllUserSpaces();
+  const db = await openSpaceDB('default');
+  await commitSpaceRows(db, {characters: [makeChar('quota-c', '写满测试')]}, true);
+  const module = await import('./backupArchiveWriter');
+  const original = module.openBackupArchiveWriter;
+  const spy = vi.spyOn(module, 'openBackupArchiveWriter').mockImplementation(async options => {
+    const writer = await original(options);
+    return {...writer, add: async (name, data, options) => {
+      if (name.startsWith('shared/')) throw new DOMException('disk full', 'QuotaExceededError');
+      return writer.add(name, data, options);
+    }};
+  });
+  try {
+    await DB.putBlobAsset('quota_image', new Blob(['test-image'], {type:'image/png'}));
+    await commitSpaceRows(db, {characters: [{...makeChar('quota-c','写满测试'),avatar:'blobref:quota_image'}]});
+    await expect(exportDamagedDatabaseRescue()).rejects.toMatchObject({name:'QuotaExceededError'});
+    expect(spy).toHaveBeenCalledOnce();
+  } finally { spy.mockRestore(); await resetAllCharacterSafetySnapshots(); }
+});
+
+it('空闲补基线在删除角色之后执行，不复活已删除角色的安全副本', async () => {
+  await resetAllUserSpaces();
+  await DB.saveCharacter(makeChar('idle-delete', '待删除'));
+  let idle: (() => void) | undefined;
+  vi.stubGlobal('window', {requestIdleCallback: (callback: () => void) => { idle = callback; return 1; }});
+  try {
+    await DB.getAllCharacters();
+    expect(idle).toBeDefined();
+    await DB.deleteCharacter('idle-delete');
+    idle!();
+    await new Promise(resolve => setTimeout(resolve, 30));
+    expect(await recoverCharacterFromSafetySnapshot('default', 'idle-delete')).toBeNull();
+  } finally { vi.unstubAllGlobals(); await resetAllCharacterSafetySnapshots(); }
 });

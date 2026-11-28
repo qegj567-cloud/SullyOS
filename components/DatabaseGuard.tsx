@@ -41,6 +41,7 @@ export default function DatabaseGuard({ children, readiness }: { children: React
     if (rescuing) return;
     setRescuing(true);
     setRescueError('');
+    setRescueResult(null);
     setSaveStatus('');
     setRescueProgress('正在扫描本地数据库…');
     try {
@@ -96,7 +97,7 @@ export default function DatabaseGuard({ children, readiness }: { children: React
       <h1 id="database-guard-title">暂时无法读取本地数据</h1>
       <p role="alert">读取失败不代表数据已被清空。主界面已暂停加载，请先保留当前浏览器和原访问网址。</p>
       {duplicateIndex && <p>浏览器报告数据库内部索引冲突。目前无法确认存档是否完整；清理网站数据无法保留原存档。</p>}
-      {missingFile && <p>检测到个别本地数据文件缺失（常见于手机没电硬关机或外部清理误删大文件）。绝大多数聊天记录与设定通常仍完好，可先在下方生成抢救备份把可读数据完整捞出。</p>}
+      {missingFile && <p>浏览器报告本地数据文件缺失，目前无法确认受损范围。可先在下方生成抢救备份，保存仍能读取的数据；已经丢失的文件无法保证恢复。</p>}
       <ul>
         <li>不要卸载应用、清除网站数据或用空备份覆盖已有备份。</li>
         <li>可关闭同站点的其他标签页与桌面入口，再重试；持续失败请先导出抢救备份并反馈诊断。</li>

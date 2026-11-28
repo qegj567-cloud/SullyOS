@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "versionCode": 30524,
-  "versionName": "3.5.24",
-  "apkUrl": "https://github.com/qegj567-cloud/SullyOS/releases/download/android-v3.5.24/SullyOS-Android-v3.5.24.apk",
-  "sha256": "710383724ebe2ca507b3ac5d4c29ddf7956335cd12888a224058a937522c6bf3",
-  "sizeBytes": 103921851,
-  "publishedAt": "2026-11-26T06:34:52Z",
+  "versionCode": 30526,
+  "versionName": "3.5.26",
+  "apkUrl": "https://github.com/qegj567-cloud/SullyOS/releases/download/android-v3.5.26/SullyOS-Android-v3.5.26.apk",
+  "sha256": "f022aef322ea3945b110ee787f97ad24fca7c5e1e788e183d0a1cc7f0c1db232",
+  "sizeBytes": 202059855,
+  "publishedAt": "2026-11-28T02:36:12Z",
   "releaseNotes": [
-    "安卓主 API 支持 OpenAI 兼容 HTTPS 地址的模型列表与非流式聊天原生直连，不限域名",
-    "需要直连时关闭主 API 的流式开关并保存；网页版、流式及主动消息 2.0 云端调用保持原方式",
-    "沿用原包名与正式签名，可覆盖升级保留数据"
+    "切换金丝雀时换上了新的欢迎提示，保留确认，不再倒计时。入口仍在设置底部，连点版本号 5 次即可看到。",
+    "两个版本共用聊天和设置，来回切换都接着当时的进度。无论用哪个版本，重要的聊天记得定期备份。",
+    "可在 App 内直接覆盖升级，无需卸载。"
   ]
 }

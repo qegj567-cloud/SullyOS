@@ -1,3 +1,4 @@
+import { isUnreadableRecordError } from './characterSafetySnapshots';
 import { calibratedDeliveryPrefix } from './chatDeliveryReceipts';
 import { hashBlob, dataUrlToBlob, blobToDataUrl } from '@rei-standard/blob-store';
 import { DB, openSpaceDB } from './db';
@@ -78,6 +79,7 @@ export function spaceMediaRow(store: string, row: any) {
  */
 export interface RescueExportHooks {
     discoverSpaces: () => Promise<UserSpace[]>;
+    readBlob: (id: string) => Promise<Blob | null>;
     openMainDB: (space: UserSpace) => Promise<IDBDatabase | null>;
     openCollabDB: (space: UserSpace) => Promise<IDBDatabase | null>;
     forEachPage: (
@@ -101,13 +103,8 @@ export async function exportUserSpaces(mode: Mode, scope: 'current' | 'all', onP
 /** 故障页紧急抢救导出：复用标准多空间归档格式与临时文件流，遇到单条损坏记录或缺失外部文件时逐条跳过。 */
 export async function exportUserSpacesForRescue(rescue: RescueExportHooks, onProgress?: (text: string) => void, onMissingAssets?: (items: BackupMissingAsset[]) => void): Promise<Blob> {
     const run = () => exportUserSpacesUnderLease('full', 'all', onProgress, false, onMissingAssets, rescue);
-    // 故障页抢救不强求跨标签页素材锁（异常状态下不让死锁挡住导出），拿得到共享锁就走锁，失败直接执行。
-    try {
-        return await withSharedAssetLock('shared', run);
-    } catch (error) {
-        if (rescue) return run();
-        throw error;
-    }
+    // 保留素材共享锁；导出失败直接报告，不能绕过锁重复整个任务。
+    return withSharedAssetLock('shared', run);
 }
 /** 上一次多空间导出的归档；下一次导出开始时释放。 */
 let previousExport: BackupArchiveFile | undefined;
@@ -183,13 +180,13 @@ async function writeUserSpaces(zip: BackupArchiveWriter, mode: Mode, scope: 'cur
         if (missingAssets.has(id)) { recordMissingBackupAsset(missingAssets, id, location); return; }
         if (seenIds.has(id)) return;
         try {
-            const data = blob ?? await DB.getBlobAsset(id);
+            const data = blob ?? await (rescue ? rescue.readBlob(id) : DB.getBlobAsset(id));
             if (!data) { recordMissingBackupAsset(missingAssets, id, location); return; }
             const path = await addBytes(data);
             seenIds.add(id);
             manifest.blobs.push({ id, path, type: data.type, size: data.size });
         } catch (error) {
-            if (!rescue) throw error;
+            if (!rescue || !isUnreadableRecordError(error)) throw error;
             rescue.onUnreadableBlob(id, location, error);
             recordMissingBackupAsset(missingAssets, id, location);
         }
@@ -213,7 +210,7 @@ async function writeUserSpaces(zip: BackupArchiveWriter, mode: Mode, scope: 'cur
                 const tokens = new Set<string>(); collectBlobRefs(value, tokens);
                 for (const token of tokens) await addAsset(token.slice('blobref:'.length), location);
                 if (key === 'assetId') {
-                    const data = rescue ? await DB.getBlobAsset(value).catch(err => { rescue.onUnreadableBlob(value, location, err); return null; }) : await DB.getBlobAsset(value);
+                    const data = rescue ? await rescue.readBlob(value).catch(err => { rescue.onUnreadableBlob(value, location, err); return null; }) : await DB.getBlobAsset(value);
                     if (data) await addAsset(value, location, data);
                 }
             }
@@ -288,7 +285,7 @@ async function writeUserSpaces(zip: BackupArchiveWriter, mode: Mode, scope: 'cur
                             : mode === 'text_only' && store === 'assets' && row.id === HELP_HISTORY_KEY ? { id: row.id, data: helpTextHistory(row.data) } : row;
                         processed.push(await pack(portableEmojiRow(store, value, stickerLinks), '', backupAssetSource(space.name, store, row, characterNames)));
                     } catch (error) {
-                        if (!rescue) throw error;
+                        if (!rescue || !isUnreadableRecordError(error)) throw error;
                         rescue.onUnreadableRow(space, store, stored, error);
                     }
                 }

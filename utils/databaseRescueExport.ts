@@ -1,6 +1,4 @@
 import type { CharacterProfile } from '../types';
-import { openSpaceDB } from './db';
-import { openCollaborationSpace } from '../features/collaboration/store';
 import { PAGE_BYTE_BUDGET, PAGE_ROW_LIMIT, approxRecordBytes, readStorePage, type StorePage } from './backupPageReader';
 import { exportUserSpacesForRescue, type RescueExportHooks } from './userSpaceBackup';
 import type { BackupMissingAsset } from './backupMissingAssets';
@@ -219,7 +217,7 @@ async function discoverAllSpaces(): Promise<UserSpace[]> {
   if (!byId.has('default')) byId.set('default', { id: 'default', name: '默认用户' });
 
   // 若 localStorage 目录也丢了，尝试从默认库的镜像行与浏览器库名列表补齐所有空间。
-  const defaultDb = await openSpaceDB('default').catch(() => openExistingDatabaseRaw('AetherOS_Data'));
+  const defaultDb = await openExistingDatabaseRaw('AetherOS_Data');
   if (defaultDb && defaultDb.objectStoreNames.contains('assets')) {
     const catalogRow = await readSingleRecordIsolated(defaultDb, 'assets', 'user_spaces_catalog_v1');
     if (catalogRow.ok && typeof catalogRow.value?.data === 'string') {
@@ -235,6 +233,8 @@ async function discoverAllSpaces(): Promise<UserSpace[]> {
       } catch { /* ignore malformed mirror */ }
     }
   }
+
+  defaultDb?.close();
 
   const anyIdb = typeof indexedDB !== 'undefined' ? (indexedDB as IDBFactory & { databases?: () => Promise<Array<{ name?: string }>> }) : undefined;
   if (typeof anyIdb?.databases === 'function') {
@@ -319,25 +319,35 @@ export async function exportDamagedDatabaseRescue(
   let missingAssets: BackupMissingAsset[] = [];
   // 同一空间在预扫描与正式写页都会过一遍 characters，缓存快照恢复与占位结果避免重复处理。
   const healedCache = new Map<string, CharacterProfile>();
+  const reportedHealed = new Set<string>();
+  const openedDatabases: IDBDatabase[] = [];
+  const openRaw = async (name: string) => {
+    const db = await openExistingDatabaseRaw(name);
+    if (db) openedDatabases.push(db);
+    return db;
+  };
 
+  let blobDbPromise: Promise<IDBDatabase | null> | undefined;
   const hooks: RescueExportHooks = {
+    readBlob: async id => {
+      const db = await (blobDbPromise ??= openRaw('AetherOS_Data'));
+      if (!db?.objectStoreNames.contains('blob_assets')) return null;
+      const result = await readSingleRecordIsolated(db, 'blob_assets', id);
+      if (!result.ok) throw result.error;
+      const row = result.value;
+      if (!row?.sharedBlobId) return row?.blob || null;
+      const shared = await readSingleRecordIsolated(db, 'blob_assets', row.sharedBlobId);
+      if (!shared.ok) throw shared.error;
+      const blob = shared.value?.blob as Blob | undefined;
+      return blob && typeof row.type === 'string' && blob.type !== row.type ? blob.slice(0, blob.size, row.type) : blob || null;
+    },
     discoverSpaces: discoverAllSpaces,
     openMainDB: async space => {
-      try {
-        return await openSpaceDB(space.id);
-      } catch {
-        const raw = await openExistingDatabaseRaw(spaceDatabaseName('AetherOS_Data', space.id));
-        if (!raw) failedSections.push(`用户「${space.name}」主数据库无法打开`);
-        return raw;
-      }
+      const raw = await openRaw(spaceDatabaseName('AetherOS_Data', space.id));
+      if (!raw) failedSections.push('用户「' + space.name + '」主数据库无法打开');
+      return raw;
     },
-    openCollabDB: async space => {
-      try {
-        return await openCollaborationSpace(space.id);
-      } catch {
-        return openExistingDatabaseRaw(spaceDatabaseName('SullyOS_Collaboration', space.id));
-      }
-    },
+    openCollabDB: space => openRaw(spaceDatabaseName('SullyOS_Collaboration', space.id)),
     forEachPage: async (space, store, database, tableName, visit, options) => {
       const preScan = options?.preScan === true;
       let after: IDBValidKey | undefined;
@@ -421,15 +431,7 @@ export async function exportDamagedDatabaseRescue(
                 healedCache.set(cacheKey, recovered);
                 row = recovered;
                 readable = true;
-                if (!preScan) {
-                  healedCharacters.push({
-                    spaceId: space.id,
-                    spaceName: space.name,
-                    charId: recovered.id,
-                    name: recovered.name || recovered.id,
-                    mode: 'safety_snapshot',
-                  });
-                }
+
               } else {
                 brokenCharIds.add(String(key));
                 if (!preScan) {
@@ -454,6 +456,10 @@ export async function exportDamagedDatabaseRescue(
           }
 
           if (!readable) continue;
+          if (!preScan && store === 'characters' && healedCache.has(cacheKey) && !reportedHealed.has(cacheKey)) {
+            reportedHealed.add(cacheKey);
+            healedCharacters.push({ spaceId: space.id, spaceName: space.name, charId: row.id, name: row.name || row.id, mode: 'safety_snapshot' });
+          }
           const size = approxRecordBytes(row);
           if (currentRows.length > 0 && (currentRows.length >= PAGE_ROW_LIMIT || currentBytes + size > PAGE_BYTE_BUDGET)) {
             await flushAccumulated(false);
@@ -533,9 +539,13 @@ export async function exportDamagedDatabaseRescue(
   };
 
   const runTask = () => exportUserSpacesForRescue(hooks, onProgress, items => { missingAssets = items; });
-  const blob = await import('./backupTempFile')
-    .then(mod => mod.withScreenWakeLock(runTask))
-    .catch(() => runTask());
+  let blob: Blob;
+  try {
+    const { withScreenWakeLock } = await import('./backupTempFile');
+    blob = await withScreenWakeLock(runTask);
+  } finally {
+    for (const db of openedDatabases) db.close();
+  }
 
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const fileName = `Sully_Rescue_Backup_${stamp}.zip`;
@@ -546,7 +556,7 @@ export async function exportDamagedDatabaseRescue(
     placeholderCharacters.length,
     skippedRecords.length,
     blobs.length,
-  );
+  ) + (failedSections.length ? '另有 ' + failedSections.length + ' 个区域无法完整导出，请查看包内抢救报告。' : '');
 
   return {
     blob,

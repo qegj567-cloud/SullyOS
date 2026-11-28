@@ -124,7 +124,7 @@ it('explains missing-file NotReadableError and runs two-step rescue export + chu
   });
 
   await mount(React.createElement('p', null, '桌面'));
-  expect(host.textContent).toContain('检测到个别本地数据文件缺失');
+  expect(host.textContent).toContain('浏览器报告本地数据文件缺失');
 
   const generateBtn = Array.from(host.querySelectorAll('button')).find(b => b.textContent?.includes('生成抢救备份包'))!;
   expect(generateBtn).toBeTruthy();
@@ -153,6 +153,18 @@ it('explains missing-file NotReadableError and runs two-step rescue export + chu
   await act(async () => { saveBtn.click(); });
   expect(host.textContent).toContain('已拉起系统分享');
   expect(mocks.track).toHaveBeenCalledWith('保存数据库抢救备份', { 结果: '已分享' });
+  mocks.shareBlob.mockResolvedValueOnce('downloaded');
+  await act(async () => { saveBtn.click(); });
+  expect(mocks.track).toHaveBeenCalledWith('保存数据库抢救备份', { 结果: '已下载' });
+  mocks.shareBlob.mockRejectedValueOnce(new Error('secret-char-id'));
+  await act(async () => { saveBtn.click(); });
+  expect(mocks.track).toHaveBeenCalledWith('保存数据库抢救备份', { 结果: '失败' });
+  mocks.rescueExport.mockRejectedValueOnce(new Error('secret-char-id'));
+  const regenerate = Array.from(host.querySelectorAll('button')).find(b => b.textContent === '重新生成')!;
+  await act(async () => { regenerate.click(); });
+  expect(mocks.track).toHaveBeenCalledWith('导出数据库抢救备份', { 结果: '失败' });
+  expect(host.textContent).not.toContain('保存抢救备份 (.zip)');
+  expect(host.textContent).toContain('生成抢救备份包');
   expect(JSON.stringify(mocks.track.mock.calls)).not.toContain('secret-char-id');
   expect(JSON.stringify(mocks.track.mock.calls)).not.toContain('秘密名字');
 });

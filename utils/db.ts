@@ -628,10 +628,22 @@ const normalizeWorldRelationships = (world: WorldProfile): WorldProfile => {
 };
 
 const seededSafetySpaces = new Set<string>();
-function queueIdleSafetySeed(spaceId: string, characters: readonly CharacterProfile[]) {
+function queueIdleSafetySeed(db: IDBDatabase, spaceId: string, characters: readonly CharacterProfile[]) {
     if (!characters.length || seededSafetySpaces.has(spaceId)) return;
     seededSafetySpaces.add(spaceId);
-    const run = () => { void seedMissingCharacterSafetySnapshots(spaceId, characters); };
+    // 空闲回调可能晚于删除或覆盖导入，重新读取当前行；旧连接关闭后不重开已删除的库。
+    const run = () => {
+        void (async () => {
+            try {
+                const current = await new Promise<CharacterProfile[]>((resolve, reject) => {
+                    const req = db.transaction(STORE_CHARACTERS, 'readonly').objectStore(STORE_CHARACTERS).getAll();
+                    req.onsuccess = () => resolve(req.result || []);
+                    req.onerror = () => reject(req.error);
+                });
+                await seedMissingCharacterSafetySnapshots(spaceId, current);
+            } catch { /* 故障或已关闭的库不补基线 */ }
+        })();
+    };
     if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
         window.requestIdleCallback(run, { timeout: 5000 });
     } else {
@@ -743,12 +755,12 @@ export const DB = {
         request.onsuccess = () => resolve((request.result || []).map(withoutRuntimeRecall));
         request.onerror = () => reject(request.error);
       });
-      queueIdleSafetySeed(SESSION_SPACE_ID, characters);
+      queueIdleSafetySeed(db, SESSION_SPACE_ID, characters);
       return characters;
     } catch (error) {
       if (!isUnreadableRecordError(error)) throw error;
       const healed = await healAllCharactersOnReadFailure(db, SESSION_SPACE_ID, error);
-      queueIdleSafetySeed(SESSION_SPACE_ID, healed);
+      queueIdleSafetySeed(db, SESSION_SPACE_ID, healed);
       return healed;
     }
   },
@@ -801,7 +813,7 @@ export const DB = {
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error || new Error('角色删除失败'));
     });
-    void deleteCharacterSafetySnapshots(SESSION_SPACE_ID, id);
+    await deleteCharacterSafetySnapshots(SESSION_SPACE_ID, id);
   },
 
   // ---- 角色分组（神经链接"文件夹"，与群聊 groups 无关）----
