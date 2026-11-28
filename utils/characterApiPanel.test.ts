@@ -22,6 +22,8 @@ const os = vi.hoisted(() => ({
 }));
 vi.mock('../context/OSContext', () => ({ useOS: () => os }));
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+HTMLDialogElement.prototype.close = function () { this.open = false; };
 
 let root: Root;
 let host: HTMLDivElement;
@@ -34,7 +36,11 @@ const render = async (character = char) =>
   });
 
 const click = async (text: string) => {
-  const button = [...host.querySelectorAll('button')].find((b) => b.textContent?.trim() === text);
+  let button = [...host.querySelectorAll('button')].find((b) => b.textContent?.trim() === text);
+  if (!button && os.apiPresets.some(preset => preset.name === text)) {
+    await act(async () => (host.querySelector('.api-preset-trigger') as HTMLButtonElement).click());
+    button = [...host.querySelectorAll('button')].find(b => b.textContent?.trim() === text);
+  }
   expect(button, `button "${text}" should exist`).toBeTruthy();
   await act(async () => button!.click());
 };
@@ -59,7 +65,10 @@ describe('CharacterApiPanel 所见即所得自动保存与预设 ID 引用', () 
   it('点选分组预设立即按 presetId 引用保存，并支持一键恢复跟随设置', async () => {
     expect(host.textContent).toContain('目前跟随设置中的 API：global.test · global-model');
     await click('为角色使用独立 API');
-    expect([...host.querySelectorAll('summary')].map((x) => x.textContent)).toEqual(['日常 · 1', '写作 · 1']);
+    await act(async () => (host.querySelector('.api-preset-trigger') as HTMLButtonElement).click());
+    await act(async () => (host.querySelector('button[aria-label="分组"]') as HTMLButtonElement).click());
+    expect([...host.querySelectorAll('[role="option"]')].map(x => x.textContent)).toEqual(['全部分组', '日常', '写作']);
+    await act(async () => (host.querySelector('[role="option"]') as HTMLElement).click());
 
     await click('写作预设');
     expect(onChange).toHaveBeenCalledTimes(1);
@@ -77,7 +86,7 @@ describe('CharacterApiPanel 所见即所得自动保存与预设 ID 引用', () 
     expect(onChange).toHaveBeenLastCalledWith(undefined);
   });
 
-  it('从已绑定预设点「改为单独填写」脱离引用，切换 Anthropic 原生并测连及自动落盘', async () => {
+  it('从已绑定预设点「复制为独立配置」脱离引用，切换 Anthropic 原生并测连及自动落盘', async () => {
     const network = vi.fn(
       async () =>
         new Response(
@@ -100,15 +109,12 @@ describe('CharacterApiPanel 所见即所得自动保存与预设 ID 引用', () 
     onChange.mockClear();
     await render(boundChar);
 
-    await click('改为单独填写');
+    await click('复制为独立配置');
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange.mock.calls[0][0].presetId).toBeUndefined();
 
-    const select = host.querySelector('select[aria-label="接口类型"]') as HTMLSelectElement;
-    await act(async () => {
-      select.value = 'anthropic';
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-    });
+    await act(async () => (host.querySelector('button[aria-label="接口类型"]') as HTMLButtonElement).click());
+    await act(async () => (Array.from(host.querySelectorAll('[role="option"]')).find(option => option.textContent?.includes('Anthropic')) as HTMLElement).click());
     expect(onChange).toHaveBeenLastCalledWith(
       expect.objectContaining({ baseUrl: 'https://a.test/v1/messages', apiType: 'anthropic' }),
     );

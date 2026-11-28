@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import SettingsSelect from './SettingsSelect';
+import './dialogueApiFields.css';
 import type { DialogueApiConfig } from '../../types';
 import { llmApiType } from '../../utils/llmEndpoint';
 
@@ -36,32 +38,21 @@ export default function DialogueApiFields({
   const currentApiType = llmApiType(value);
 
   return (
-    <div className="space-y-4 text-slate-800">
-      <label className="block text-xs text-slate-500">
-        接口类型
-        <select
-          aria-label="接口类型"
-          value={currentApiType}
-          onChange={(e) => {
-            const nextType = e.target.value as 'openai' | 'anthropic';
-            const patch: Partial<DialogueApiConfig> = { apiType: nextType };
-            if (nextType === 'anthropic' && typeof value.temperature === 'number' && value.temperature > 1) {
-              patch.temperature = 1;
-            }
-            onChange(patch);
-          }}
-          className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-2.5 bg-white/80 text-slate-800"
-        >
-          <option value="openai">OpenAI 兼容</option>
-          <option value="anthropic">Anthropic 原生 Messages</option>
-        </select>
-      </label>
+    <div className="dialogue-api-fields text-slate-800">
+      <div className="api-field-row"><span>接口类型</span>
+        <SettingsSelect label="接口类型" value={currentApiType} onChange={next => {
+          const nextType = next as 'openai' | 'anthropic';
+          const patch: Partial<DialogueApiConfig> = { apiType: nextType };
+          if (nextType === 'anthropic' && typeof value.temperature === 'number' && value.temperature > 1) patch.temperature = 1;
+          onChange(patch);
+        }} options={[{ value: 'openai', label: 'OpenAI 兼容', description: '适用于支持 OpenAI 格式的接口' }, { value: 'anthropic', label: 'Anthropic 原生 Messages', description: '适用于原生 Messages 接口' }]} />
+      </div>
       {currentApiType === 'anthropic' && (
         <p className="text-[10px] text-slate-400 leading-relaxed">
           直连服务商，启用 5 分钟 Prompt Caching；首次写入缓存也会计费，能否命中取决于模型、长度与前缀是否相同。支持填写根地址、/v1 或完整 /v1/messages。主动消息 2.0 在 Worker 自动更新完成后可用，无需手动重连。
         </p>
       )}
-      <div className="group" data-api-field="base-url">
+      <div className="api-field-row" data-api-field="base-url">
         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">URL</label>
         <input
           type="text"
@@ -74,11 +65,11 @@ export default function DialogueApiFields({
           autoCapitalize="none"
           spellCheck={false}
           placeholder="https://..."
-          className="w-full bg-white/80 text-slate-800 border border-slate-200/80 rounded-xl px-4 py-2.5 text-sm font-mono placeholder:text-slate-400 focus:bg-white transition-all"
+          className="w-full bg-white/80 text-slate-800 border border-slate-200/80 rounded-xl px-3 py-2 text-sm font-mono placeholder:text-slate-400 focus:bg-white transition-all"
         />
       </div>
 
-      <div className="group">
+      <div className="api-field-row">
         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">Key</label>
         <input
           type="password"
@@ -87,7 +78,7 @@ export default function DialogueApiFields({
           onBlur={() => onFieldBlur?.()}
           autoComplete="off"
           placeholder="sk-...（本地免密模型可留空）"
-          className="w-full bg-white/80 text-slate-800 border border-slate-200/80 rounded-xl px-4 py-2.5 text-sm font-mono placeholder:text-slate-400 focus:bg-white transition-all"
+          className="w-full bg-white/80 text-slate-800 border border-slate-200/80 rounded-xl px-3 py-2 text-sm font-mono placeholder:text-slate-400 focus:bg-white transition-all"
         />
       </div>
 
@@ -199,7 +190,7 @@ export default function DialogueApiFields({
             autoCapitalize="none"
             spellCheck={false}
             placeholder={modelPlaceholder}
-            className="min-w-0 flex-1 bg-white/80 text-slate-800 border border-slate-200/80 rounded-xl px-4 py-2.5 text-sm font-mono placeholder:text-slate-400 focus:bg-white transition-all shadow-sm"
+            className="min-w-0 flex-1 bg-white/80 text-slate-800 border border-slate-200/80 rounded-xl px-3 py-2 text-sm font-mono placeholder:text-slate-400 focus:bg-white transition-all shadow-sm"
           />
           <button
             type="button"

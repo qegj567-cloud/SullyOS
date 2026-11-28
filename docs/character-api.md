@@ -8,7 +8,7 @@
 
 神经链接 → 设定 → 角色语音音色下方的「独立 API」（私聊角色名片的「设定」页共用同一块面板）。未设置时显示当前全局地址的主机名和模型；设置后显示角色自己的预设名或域名与模型，并可一键恢复跟随设置。
 
-角色弹窗与全站各处 API 入口统一复用 `ApiSlotEditor`、`ApiPresetEditorModal`、`DialogueApiFields`、`ModelPicker` 和 `ApiPresetGroups`（详见 [全站 API 槽位与预设引用](./api-slots.md)）。API 预设库共用：点选预设会按内部 `presetId` 建立引用并立即自动保存，在任意位置点「编辑此预设」修改后，所有引用同一预设的角色、主对话、副 API 和独立应用都会同步更新；点「改为单独填写」则脱离预设，仅对当前角色自动保存生效。删除预设后，原引用处保留删除前的连接快照继续工作。设置的 API 区显示所有使用独立配置的角色。
+角色弹窗与全站各处 API 入口统一复用 `ApiSlotEditor`、`ApiPresetEditorModal`、`DialogueApiFields`、`ModelPicker` 和 `ApiPresetGroups`（详见 [全站 API 槽位与预设引用](./api-slots.md)）。API 预设库共用：点选预设会按内部 `presetId` 建立引用并立即自动保存，在任意位置点「编辑此预设」修改后，所有引用同一预设的角色、主对话、副 API 和独立应用都会同步更新；点「复制为独立配置」则脱离预设，仅对当前角色自动保存生效。删除预设后，原引用处保留删除前的连接快照继续工作。设置的 API 区显示所有使用独立配置的角色。
 
 ## 选择规则与当前接入范围
 
@@ -49,3 +49,5 @@ URL / Key / Model 整套选择，禁止逐字段从不同配置补齐。空 Key 
 `pnpm vitest run utils/characterApi.test.ts utils/characterApiPanel.test.ts utils/amsgLlmCredentials.test.ts utils/amsgStateSync.test.ts utils/apiPresetSwitch.test.ts utils/apiPresetSwitch.wiring.test.ts utils/characterCard.test.ts`
 
 本地可视验收页：`/test/fixtures/character-api.html`。点击「加载演示配置」只写入该预览站点的虚构配置，不调用真实模型。可验证预设分组、保存 / 取消、跟随全局、跨页名单和窄屏布局。
+
+API 界面遵守 [API 配置交互设计约定](./api-settings-design.md)：当前预设入口打开可搜索、分组筛选的底部面板，长按编辑，滑动取消本次点选与长按。对话和识图共用紧凑字段与自定义接口菜单。调用记录在识图右侧页签，每页 5 条、固定列表高度、隐藏滚动条但保留滚动；输入构成单独弹窗。预设绑定、自动保存、备份和云端同步沿用原路径。

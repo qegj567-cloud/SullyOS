@@ -1,0 +1,21 @@
+.settings-select { width: 100%; min-width: 0; --select-accent: hsl(var(--primary-hue, 258) var(--primary-sat, 90%) 32%); --select-wash: hsl(var(--primary-hue, 258) var(--primary-sat, 90%) 96%); }
+.settings-select-trigger { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 42px; padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; color: #334155; font-size: 13px; text-align: left; cursor: pointer; transition: border-color 140ms, background-color 140ms; }
+.settings-select-trigger > span { min-width: 0; overflow-wrap: anywhere; }
+.settings-select-trigger svg { width: 16px; height: 16px; flex: none; color: #64748b; transition: transform 140ms; }
+.settings-select-trigger[aria-expanded='true'] { border-color: var(--select-accent); background: var(--select-wash); }
+.settings-select-trigger[aria-expanded='true'] svg { transform: rotate(180deg); }
+.settings-select-trigger:focus-visible, .settings-select-menu:focus-visible { outline: 2px solid var(--select-accent); outline-offset: 2px; }
+.settings-select-menu { position: fixed; z-index: 150; padding: 6px; overflow-y: auto; overscroll-behavior: contain; border: 1px solid #e2e8f0; border-radius: 14px; background: #fff; color: #334155; box-shadow: 0 12px 36px #0f172a24, 0 2px 6px #0f172a0a; }
+.settings-select-option { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; padding: 10px; border-radius: 8px; cursor: pointer; }
+.settings-select-option > span { min-width: 0; overflow-wrap: anywhere; }
+.settings-select-option[data-focused='true'] { background: #f1f5f9; }
+.settings-select-option[aria-selected='true'] { color: var(--select-accent); background: var(--select-wash); }
+.settings-select-name { display: block; font-size: 13px; font-weight: 500; line-height: 1.5; }
+.settings-select-description { display: block; margin-top: 2px; font-size: 12px; line-height: 1.5; color: #64748b; }
+.settings-select-option svg { width: 16px; height: 16px; flex: none; }
+@media (prefers-reduced-motion: reduce) { .settings-select-trigger, .settings-select-trigger svg { transition: none; } }
+.settings-select-menu { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; touch-action: pan-y; }
+.settings-select-menu::-webkit-scrollbar { width: 4px; }
+.settings-select-menu::-webkit-scrollbar-track { background: transparent; }
+.settings-select-menu::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 99px; }
+.settings-select-menu::-webkit-scrollbar-button { display: none; }

@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>角色独立 API 验收</title><script src="/vendor/tailwind-3.4.17.js"></script>
-<script>tailwind.config={theme:{extend:{colors:{primary:'#8b5cf6'}}}};</script>
+<title>API 配置与预设验收</title><script src="/vendor/tailwind-3.4.17.js"></script>
+<script>tailwind.config={theme:{extend:{colors:{primary:location.search.includes('canary')?'#bf800e':'#8b5cf6'}}}};</script>
 <style>body{margin:0;background:#f8fafc;font-family:system-ui,sans-serif}#root{height:100dvh;--safe-top:0px;--safe-bottom:0px;--primary-hue:258;--primary-sat:90%;--primary-lightness:66%}.no-scrollbar::-webkit-scrollbar{display:none}</style>
-</head><body><div id="root"></div><script type="module" src="/test/fixtures/character-api.tsx"></script></body></html>
+</head><body><div id="root"></div><script type="module" src="/test/fixtures/character-api.tsx"></script><script>if(location.search.includes('canary'))document.getElementById('root').style.setProperty('--primary-hue','40');</script></body></html>

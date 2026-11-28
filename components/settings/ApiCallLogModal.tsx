@@ -1,5 +1,7 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import Modal from '../os/Modal';
+import { useLocalBackHandler } from '../../hooks/useLocalBackHandler';
+import './apiCallLog.css';
 import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 import { DB } from '../../utils/db';
 import {
@@ -25,6 +27,7 @@ import { shareOrDownloadFile } from '../../utils/shareExport';
 
 interface ApiCallLogModalProps {
     isOpen: boolean;
+    embedded?: boolean;
     onClose: () => void;
 }
 
@@ -45,12 +48,20 @@ function formatTime(ts: number): { day: string; time: string } {
     return { day, time };
 }
 
-const ApiCallLogModal: React.FC<ApiCallLogModalProps> = ({ isOpen, onClose }) => {
+function LogFrame({ embedded, children, footer, ...props }: React.ComponentProps<typeof Modal> & { embedded?: boolean }) {
+    return embedded ? <div className="api-call-log-inline">{children}<div className="mt-4">{footer}</div></div> : <Modal {...props} footer={footer}>{children}</Modal>;
+}
+
+const ApiCallLogModal: React.FC<ApiCallLogModalProps> = ({ isOpen, onClose, embedded = false }) => {
     const { requestConfirm, confirmDialog } = useConfirmDialog({ portal: true });
     const [entries, setEntries] = useState<ApiCallLogEntry[]>([]);
     const [loading, setLoading] = useState(false);
     const [showHelp, setShowHelp] = useState(false);
-    const [expandedId, setExpandedId] = useState<string | null>(null);
+    const [detailEntry, setDetailEntry] = useState<ApiCallLogEntry | null>(null);
+    const [page, setPage] = useState(0);
+    const pageCount = Math.max(1, Math.ceil(entries.length / 5));
+    const currentPage = Math.min(page, pageCount - 1);
+    const pageEntries = entries.slice(currentPage * 5, currentPage * 5 + 5);
     const [capture, setCapture] = useState<ApiRequestCapture | null>(null);
     const [captureArmed, setCaptureArmedState] = useState(() => isApiRequestCaptureArmed());
 
@@ -105,6 +116,7 @@ const ApiCallLogModal: React.FC<ApiCallLogModalProps> = ({ isOpen, onClose }) =>
         if (!ok) return;
         await DB.clearApiCallLog();
         setEntries([]);
+        setPage(0); setDetailEntry(null);
         trackEvent('清空 API 调用记录');
     }, [requestConfirm]);
 
@@ -127,18 +139,19 @@ const ApiCallLogModal: React.FC<ApiCallLogModalProps> = ({ isOpen, onClose }) =>
 
     return (
         <>
-        <Modal
+        <LogFrame
+            embedded={embedded}
             isOpen={isOpen}
             title="API 调用记录"
             onClose={onClose}
             footer={
                 <div className="flex gap-2 w-full">
-                    <button
+                    {!embedded && <button
                         onClick={onClose}
                         className="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-2xl active:scale-95 transition-transform"
                     >
                         关闭
-                    </button>
+                    </button>}
                     <button
                         onClick={handleClear}
                         disabled={entries.length === 0}
@@ -246,18 +259,17 @@ const ApiCallLogModal: React.FC<ApiCallLogModalProps> = ({ isOpen, onClose }) =>
                     <span className="text-[11px]">和角色聊几句、让它刷下小红书，这里就会有数据了。</span>
                 </div>
             ) : (
-                <div className="space-y-2">
-                    {entries.map((e) => {
+                <>
+                <div className="api-log-page" key={currentPage} role="region" aria-label="本页调用记录" tabIndex={0}>
+                    {pageEntries.map((e) => {
                         const { day, time } = formatTime(e.timestamp);
                         const hasBreakdown = !!e.promptBreakdown?.length;
-                        const expanded = expandedId === e.id;
                         return (
                             <div
                                 key={e.id}
-                                onClick={hasBreakdown ? () => { if (!expanded) trackEvent('展开单条输入构成'); setExpandedId(expanded ? null : e.id); } : undefined}
                                 className={`rounded-2xl border p-3 ${
                                     e.ok ? 'bg-white/70 border-slate-200/60' : 'bg-rose-50/60 border-rose-200/60'
-                                } ${hasBreakdown ? 'cursor-pointer active:scale-[0.99] transition-transform' : ''}`}
+                                }`}
                             >
                                 <div className="flex items-center justify-between gap-2 mb-1.5">
                                     <div className="flex items-center gap-1.5 min-w-0">
@@ -298,13 +310,13 @@ const ApiCallLogModal: React.FC<ApiCallLogModalProps> = ({ isOpen, onClose }) =>
                                     {/* 后端自报身份（response.model）：字符串不同就展示；琥珀判定见
                                         isSameCoreModel——渠道标签/前缀（[渠道]、(按次)、gcli-、models/）算同名
                                         （灰色），尾巴长出变体（X-c / X-lite）才是真被换了后端（琥珀）。 */}
-                                    {e.backendModel && e.backendModel !== e.model && (() => {
-                                        const swapped = !isSameCoreModel(e.model, e.backendModel);
+                                    {(() => {
+                                        const swapped = !!e.backendModel && !isSameCoreModel(e.model, e.backendModel);
                                         return (
                                             <div className="col-span-2 flex items-baseline gap-1.5 min-w-0">
-                                                <span className={`text-[10px] shrink-0 ${swapped ? 'text-amber-500' : 'text-slate-400'}`}>实际后端</span>
+                                                <span className={`text-[10px] shrink-0 ${swapped ? 'text-amber-500' : 'text-slate-400'}`}>后端自报</span>
                                                 <span className={`break-all font-mono ${swapped ? 'font-semibold text-amber-600' : 'text-slate-500'}`}>
-                                                    {e.backendModel}{swapped ? ' ⚠️' : ''}
+                                                    {e.backendModel || '未返回'}{swapped ? ' ⚠️' : ''}
                                                 </span>
                                             </div>
                                         );
@@ -330,33 +342,49 @@ const ApiCallLogModal: React.FC<ApiCallLogModalProps> = ({ isOpen, onClose }) =>
                                 {e.cloudCallIndex != null && <p className="mt-1 text-[10px] text-slate-400">本轮第 {e.cloudCallIndex} 次模型调用 · 用量仅计本次请求</p>}
                                 {e.cloudCallIndex != null && e.totalTokens == null && e.promptTokens == null && e.completionTokens == null && <p className="mt-1 text-[10px] text-slate-400">未收到本次请求的 Token 用量</p>}
                                 {e.cloudUsageAggregated && <p className="mt-1 text-[10px] leading-relaxed text-amber-600">旧版 Worker 未提供逐次用量，暂按整轮显示。更新 Worker 后，新对话会逐次显示。</p>}
-                                {hasBreakdown && (
-                                    <div className="mt-1.5 text-[10px] text-slate-300 select-none">
-                                        {expanded ? '▲ 收起输入构成' : '▼ 点击查看输入构成（哪块占了多少）'}
-                                    </div>
-                                )}
-                                {expanded && e.promptBreakdown && (
-                                    <>
-                                        {/* 只有聊天那条路会被云端二次加料（当前时间、天气热搜这些当下才知道的东西）。
-                                            后台活儿（门牌整理）交上去的就是最终提示词，别让用户以为还有看不见的部分 */}
-                                        {e.route === 'cloud-instant-chat' && (
-                                            <p className="mt-2 text-[10px] text-slate-400 leading-relaxed">
-                                                这里统计的是本地拼好、交给云端的那份。云端真正发出前还会补上当前时间、天气热搜这些当下才知道的内容，所以实际输入会比下面略大一点。
-                                            </p>
-                                        )}
-                                        <PromptBreakdownView blocks={e.promptBreakdown} promptTokens={e.promptTokens} />
-                                    </>
-                                )}
+                                {hasBreakdown && <button type="button" className="api-log-detail-button"
+                                    onClick={() => { trackEvent('展开单条输入构成'); setDetailEntry(e); }}>查看输入构成</button>}
                             </div>
                         );
                     })}
                 </div>
+                <nav className="api-log-pagination" aria-label="调用记录分页">
+                    <button type="button" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>上一页</button>
+                    <span role="status" aria-atomic="true">{currentPage + 1} / {pageCount} 页 · 共 {entries.length} 条</span>
+                    <button type="button" disabled={currentPage + 1 >= pageCount} onClick={() => setPage(currentPage + 1)}>下一页</button>
+                </nav>
+                </>
             )}
-        </Modal>
+        </LogFrame>
+        {detailEntry && <InputBreakdownDialog entry={detailEntry} onClose={() => setDetailEntry(null)} />}
         {confirmDialog}
         </>
     );
 };
+
+function InputBreakdownDialog({ entry, onClose }: { entry: ApiCallLogEntry; onClose: () => void }) {
+    const ref = useRef<HTMLDialogElement>(null);
+    useLocalBackHandler(() => { onClose(); return true; }, 60);
+    useEffect(() => {
+        const previous = document.activeElement as HTMLElement | null;
+        const dialog = ref.current!;
+        dialog.showModal(); dialog.focus();
+        return () => { dialog.close(); previous?.focus({ preventScroll: true }); };
+    }, []);
+    return <dialog ref={ref} tabIndex={-1} autoFocus className="api-log-breakdown-dialog" aria-labelledby="api-log-breakdown-title"
+        onCancel={event => { event.preventDefault(); onClose(); }}
+        onClick={event => { if (event.target === event.currentTarget) onClose(); }}>
+        <section className="api-log-breakdown-panel">
+            <header><h3 id="api-log-breakdown-title">输入构成</h3><button type="button" onClick={onClose}>关闭</button></header>
+            <div className="api-log-breakdown-body">
+                <p className="text-xs text-slate-500 break-words">{entry.presetName} · {entry.purpose || '模型调用'}</p>
+                <p className="text-xs text-slate-500 mt-2 break-all">请求模型：{entry.model}<br />后端自报：{entry.backendModel || '未返回'}</p>
+                {entry.route === 'cloud-instant-chat' && <p className="text-xs text-slate-500 mt-3 leading-relaxed">这里统计的是本地交给云端的内容；云端发送前可能补充当前时间、天气等信息，实际输入可能更多。</p>}
+                <PromptBreakdownView blocks={entry.promptBreakdown || []} promptTokens={entry.promptTokens} />
+            </div>
+        </section>
+    </dialog>;
+}
 
 const CAPTURE_KIND_LABEL: Record<ApiRequestCaptureSectionKind, string> = {
     request: '参数',

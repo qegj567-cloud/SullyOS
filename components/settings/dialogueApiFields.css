@@ -1,0 +1,12 @@
+.dialogue-api-fields { display: grid; gap: 10px; }
+.dialogue-api-fields > * { margin-top: 0 !important; }
+.dialogue-api-fields > .api-field-row { display: grid; grid-template-columns: 54px minmax(0, 1fr); align-items: center; gap: 8px; }
+.dialogue-api-fields > .api-field-row > label, .dialogue-api-fields > .api-field-row > span { margin: 0; padding: 0; font-size: 12px; color: #64748b; letter-spacing: 0; text-transform: none; font-weight: 400; }
+.dialogue-api-fields > .api-field-row input, .dialogue-api-fields > .api-field-row select { min-height: 40px; padding: 8px 12px; font-size: 13px; }
+.dialogue-api-fields .settings-select-trigger { min-height: 40px; padding: 8px 12px; }
+.api-connection-compact { display: grid; gap: 10px; }
+.api-connection-compact > * { margin-top: 0 !important; }
+
+.api-connection-status { font-size: 12px; line-height: 1.6; color: #475569; overflow-wrap: anywhere; padding: 8px 12px; border-radius: 10px; }
+.api-connection-status[data-api-test-tone="success"] { background: #ecfdf5; color: #047857; }
+.api-connection-status[data-api-test-tone="error"] { background: #fef2f2; color: #dc2626; }

@@ -49,3 +49,5 @@ iOS 私聊和群聊输入时，系统键盘上沿下方的网页底色取自输�
 主屏幕模式的根页面使用 `--app-visible-height` 裁住安全区溢出；body 的 `--app-height` 仍保留 home 安全区绘制空间，外层不允许回弹。`--app-visible-height` 来自已有的高度脏值保护，不能直接用动画期异常的 visualViewport 高度裁页面。见 `docs/ios-status-bar-edge.md`。
 
 回归：`utils/chatInputInteraction.test.ts`、`utils/useChatViewportAnchor.test.ts`、`utils/iosStandalone.keyboard.test.ts`。模拟视口和 DOM 交互不等同于 iPhone 主屏幕模式实机验收。
+
+API 预设底部选择器与输入构成弹窗以层级 60 接入返回，自定义分组／接口菜单以 70 接入。搜索聚焦时返回先退出输入，再关闭；关闭恢复入口焦点。长按移位超过 8px 或滚动、取消、离开按钮时取消本次长按与点选。
