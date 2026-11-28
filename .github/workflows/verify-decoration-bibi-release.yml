@@ -1,0 +1,44 @@
+name: Verify decoration and Bibi release
+on:
+  push:
+    branches: [codex/verify-decoration-bibi-release]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: master
+            ref: 5b534e314ad78ee4ea9c70cfe06268ac18414dbe
+            channel: stable
+          - name: dev
+            ref: 8cf22082def6024be9fcdcf35e9e9ed5f74fb017
+            channel: stable
+          - name: canary
+            ref: 19d6a4ce0897c2d816242b5c2ae05f5cd1ff8b11
+            channel: canary
+    name: Verify ${{ matrix.name }}
+    env:
+      RELEASE_CHANNEL: ${{ matrix.channel }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.ref }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Regression tests
+        run: pnpm vitest run utils/userSpaceBackup.test.ts utils/legacyCollaborationExport.test.ts utils/backupExportWiring.test.ts utils/decorationLibrary.test.ts utils/chatDecoration.test.ts utils/friendFeedPublic.test.ts utils/friendFeedEmotion.test.ts utils/analytics.test.ts utils/backupRoundtrip.test.ts utils/userSpaceRestorePaging.test.ts utils/releaseChannel.test.ts utils/canaryExitProgress.test.ts utils/characterSafetyAndRescue.test.ts utils/storageStats.test.ts --maxWorkers=2 --minWorkers=1 --testTimeout=30000
+      - name: Build frontend and Workers
+        run: pnpm run build
+      - name: Verify retained assets
+        run: node --test scripts/prepare-retained-build-assets.test.mjs
