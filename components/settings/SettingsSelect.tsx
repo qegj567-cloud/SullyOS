@@ -17,7 +17,7 @@ export default function SettingsSelect({ label, value, options, onChange }: {
   const [index, setIndex] = useState(0);
   const [position, setPosition] = useState<React.CSSProperties>({});
   const close = (restore = true) => { setOpen(false); if (restore) trigger.current?.focus({ preventScroll: true }); };
-  useLocalBackHandler(() => { close(); return true; }, 70, open);
+  useLocalBackHandler(() => { close(); return true; }, 110, open);
   const show = () => {
     const rect = trigger.current!.getBoundingClientRect();
     const viewport = window.visualViewport;

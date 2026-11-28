@@ -5,7 +5,8 @@ import { ActiveMsgClient } from '../utils/activeMsgClient';
 import { collectReproductionReport, startReproduction } from '../utils/amsgReproductionClient';
 import { listDiagnosticRuns, updateDiagnosticRun, type DiagnosticRun } from '../utils/amsgReproductionStore';
 import { shareOrDownloadBlob } from '../utils/shareExport';
-import ApiPresetGroups from './settings/ApiPresetGroups';
+import ApiSlotEditor from './settings/ApiSlotEditor';
+import { resolveEffectiveSlot } from '../utils/apiSlots';
 
 const field = 'w-full min-w-0 bg-white border border-slate-200/60 rounded-xl px-3 py-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/30';
 const button = 'px-3 py-2.5 rounded-xl text-xs font-bold active:scale-95 transition-transform disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40';
@@ -24,11 +25,10 @@ const cancellable = (run: DiagnosticRun) => run.status === 'preparing' || run.st
   || (run.status === 'scheduled' && Date.now() < run.dueAt + CANCEL_WINDOW_MS);
 
 export default function AmsgReproductionPanel({ apiConfig, apiPresets }: { apiConfig: APIConfig; apiPresets: ApiPreset[] }) {
-  // 跟随模式每次读取最新设置；只有用户主动修改时才冻结本次配置。
+  // 默认跟随全局；临时选择也保留预设绑定，开始测试时解析最新配置。
   const [apiOverride, setApiOverride] = useState<DialogueApiConfig | null>(null);
-  const [apiLabel, setApiLabel] = useState('');
   const [editingApi, setEditingApi] = useState(false);
-  const api = apiOverride ?? pickDialogueApi(apiConfig);
+  const api = resolveEffectiveSlot(apiOverride ?? pickDialogueApi(apiConfig), apiPresets) ?? pickDialogueApi(apiConfig);
   const [scenario, setScenario] = useState<NonNullable<DiagnosticRun['scenario']>>('background');
   const [delay, setDelay] = useState(60);
   const [runs, setRuns] = useState<DiagnosticRun[]>([]);
@@ -72,25 +72,24 @@ export default function AmsgReproductionPanel({ apiConfig, apiPresets }: { apiCo
       <div className="rounded-3xl bg-slate-50 p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-xs font-bold text-slate-700">{apiOverride ? `这次用 ${apiLabel}` : '用设置里的 API'}</p>
+            <p className="text-xs font-bold text-slate-700">{apiOverride ? '本次测试使用单独选择的 API' : '用设置里的 API'}</p>
             <p className="mt-0.5 text-xs text-slate-400 break-all">{describeDialogueApi(api)}</p>
           </div>
           <button type="button" aria-expanded={editingApi} onClick={() => setEditingApi(value => !value)} className="shrink-0 text-xs font-bold text-primary py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded-lg">
             {editingApi ? '收起配置' : '更换 API'}
           </button>
         </div>
-        {apiOverride && <button type="button" onClick={() => { setApiOverride(null); setApiLabel(''); }} className="mt-2 text-xs text-primary font-medium">恢复使用当前配置</button>}
+        {apiOverride && <button type="button" onClick={() => { setApiOverride(null); }} className="mt-2 text-xs text-primary font-medium">恢复使用当前配置</button>}
         {editingApi && <div className="mt-3 space-y-3 border-t border-slate-200/60 pt-3">
-          {apiPresets.length > 0 && <ApiPresetGroups presets={apiPresets}>{preset => <button type="button" key={preset.id} className="px-3 py-2 rounded-xl bg-white border border-slate-200/60 text-xs text-slate-600 active:bg-primary/10" onClick={() => {
-            setApiOverride(pickDialogueApi(preset.config)); setApiLabel(preset.name);
-          }}>{preset.name}</button>}</ApiPresetGroups>}
-          {(['baseUrl', 'apiKey', 'model'] as const).map(key => <label className="block space-y-1.5" key={key}>
-            <span className="text-xs text-slate-500">{key === 'baseUrl' ? 'API 地址' : key === 'apiKey' ? 'API Key' : '模型'}</span>
-            <input aria-label={key === 'baseUrl' ? 'API 地址' : key === 'apiKey' ? 'API Key' : '模型'} type={key === 'apiKey' ? 'password' : 'text'} autoComplete="off" className={field} value={api[key]} onChange={event => {
-              setApiOverride({ ...api, [key]: event.target.value }); setApiLabel('自定义配置');
-            }} />
-          </label>)}
-          <p className="text-[11px] text-slate-400">只用于这次测试，不会改动设置或预设。</p>
+          <ApiSlotEditor
+            slotName="测试推送"
+            value={apiOverride}
+            onCommit={next => setApiOverride(next ?? null)}
+            followButtonLabel="恢复使用当前配置"
+            followSummary={`跟随全局 API：${describeDialogueApi(resolveEffectiveSlot(pickDialogueApi(apiConfig), apiPresets))}`}
+            helperText="默认跟随全局 API。在这里切换只用于本次测试；编辑预设会同时更新所有使用它的位置。"
+            meta={{ appId: 'settings', appName: '测试推送' }}
+          />
         </div>}
       </div>
 

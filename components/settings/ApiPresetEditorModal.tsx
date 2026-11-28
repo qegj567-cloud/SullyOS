@@ -22,7 +22,8 @@ import { extractModelIds } from '../../utils/modelList';
 import { extractContent, safeResponseJson } from '../../utils/safeApi';
 import Modal from '../os/Modal';
 import DialogueApiFields from './DialogueApiFields';
-import ModelPicker from './ModelPicker';
+import ApiSaveFeedback from './ApiSaveFeedback';
+import ApiPresetPicker from './ApiPresetPicker';
 
 export interface ApiPresetEditorModalProps {
   isOpen: boolean;
@@ -65,8 +66,8 @@ export default function ApiPresetEditorModal({
   const [group, setGroup] = useState('');
   const [draft, setDraft] = useState<DialogueApiConfig>({ baseUrl: '', apiKey: '', model: '' });
   const [models, setModels] = useState<string[]>([]);
-  const [showPicker, setShowPicker] = useState(false);
-  const [pickerModel, setPickerModel] = useState('');
+  const [saveRevision, setSaveRevision] = useState(0);
+  const [seedPresetId, setSeedPresetId] = useState<string | null>(null);
   const [loadingModels, setLoadingModels] = useState(false);
   const [testing, setTesting] = useState(false);
   const [status, setStatus] = useState('');
@@ -87,17 +88,18 @@ export default function ApiPresetEditorModal({
   );
 
   useEffect(() => {
+    setSaveRevision(0);
     if (!isOpen) {
       if (saveTimerRef.current) {
         clearTimeout(saveTimerRef.current);
         saveTimerRef.current = null;
       }
-      setShowPicker(false);
       setCopying(false);
       return;
     }
     requestVersionRef.current += 1;
     dirtyRef.current = false;
+    setSeedPresetId(null);
     setCopying(false);
     setStatus('');
     setHint('');
@@ -159,8 +161,9 @@ export default function ApiPresetEditorModal({
     }
     lastCommittedJsonRef.current = nextJson;
     dirtyRef.current = false;
-    setHint('已自动保存并同步');
+    setHint('');
     updateApiPreset(preset.id, nextName, check.normalized as APIConfig, nextGroup);
+    setSaveRevision(value => value + 1);
     trackApiPresetAction({ source, action: '修改同步' });
     return 'saved';
   };
@@ -191,10 +194,6 @@ export default function ApiPresetEditorModal({
   };
 
   useLocalBackHandler(() => {
-    if (showPicker) {
-      setShowPicker(false);
-      return true;
-    }
     handleClose();
     return true;
   }, 88, isOpen);
@@ -251,8 +250,6 @@ export default function ApiPresetEditorModal({
       const saved = writeCachedModelsForEndpoint({ baseUrl: normalizedUrl, apiType }, list);
       setModels(saved);
       setStatus(saved.length ? `获取到 ${saved.length} 个模型` : '模型列表为空，可手动输入');
-      setPickerModel(draft.model || saved[0] || '');
-      setShowPicker(true);
     } catch (err) {
       if (version === requestVersionRef.current) {
         setStatus(`获取失败：${err instanceof Error ? err.message : '请检查地址或密钥'}`);
@@ -389,7 +386,7 @@ export default function ApiPresetEditorModal({
   return (
     <>
       <Modal
-        isOpen={isOpen && !showPicker}
+        isOpen={isOpen}
         title={copying ? '复制 API 预设' : mode === 'edit' ? '编辑 API 预设' : '新建 API 预设'}
         onClose={handleClose}
         footer={
@@ -421,6 +418,7 @@ export default function ApiPresetEditorModal({
           )
         }
       >
+        <ApiSaveFeedback revision={saveRevision} />
         <div className="space-y-4 text-slate-800">
           {mode === 'edit' && !copying && preset && (
             <div className="rounded-2xl bg-amber-50 border border-amber-200/80 px-3.5 py-2.5 text-[11px] text-amber-900 leading-relaxed space-y-1.5">
@@ -456,6 +454,23 @@ export default function ApiPresetEditorModal({
               )}
             </div>
           )}
+
+          {mode === 'create' && apiPresets.length > 0 && <div className="api-preset-library">
+            <ApiPresetPicker presets={apiPresets} activePresetId={seedPresetId} label="沿用已有预设" emptyLabel="选择已有预设"
+              helpText="选中后填入当前表单，修改不会影响原预设。">
+              {(sourcePreset, close) => <button type="button" className="api-preset-option" onClick={() => {
+                const next = pickDialogueApi(sourcePreset.config);
+                delete next.presetId; delete next.presetFp;
+                requestVersionRef.current += 1;
+                setLoadingModels(false); setTesting(false); setStatus('');
+                setDraft(next); setModels(readCachedModelsForEndpoint(next));
+                setName(current => current.trim() || createUniqueCopyName(sourcePreset.name));
+                setGroup(sourcePreset.group || ''); setSeedPresetId(sourcePreset.id);
+                setHint('已填入所选预设的配置，确认名称后创建即可。');
+                close();
+              }}><span className="api-preset-name">{sourcePreset.name}</span></button>}
+            </ApiPresetPicker>
+          </div>}
 
           <div className="grid grid-cols-1 gap-3">
             <label className="block text-xs text-slate-500">
@@ -511,10 +526,8 @@ export default function ApiPresetEditorModal({
             onFieldBlur={() => flushEditCommit()}
             fetchModels={fetchModels}
             isLoadingModels={loadingModels}
-            openModelPicker={() => {
-              setPickerModel(draft.model);
-              setShowPicker(true);
-            }}
+            models={models}
+            onSelectModel={model => updateDraft({ model }, true)}
           />
 
           <button
@@ -539,17 +552,7 @@ export default function ApiPresetEditorModal({
         </div>
       </Modal>
 
-      <Modal isOpen={isOpen && showPicker} title="选择模型" onClose={() => setShowPicker(false)}>
-        <ModelPicker
-          availableModels={models}
-          localModel={pickerModel}
-          setLocalModel={setPickerModel}
-          confirmModelPicker={(model) => {
-            setShowPicker(false);
-            updateDraft({ model }, true);
-          }}
-        />
-      </Modal>
+
 
       {confirmDialog}
     </>

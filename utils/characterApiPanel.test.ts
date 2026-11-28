@@ -2,6 +2,8 @@
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import ApiSlotEditor from '../components/settings/ApiSlotEditor';
+import { slotFromPreset } from './apiSlots';
 import CharacterApiPanel from '../components/character/CharacterApiPanel';
 import { handleLocalBack } from '../utils/localBackHandlers';
 import type { CharacterProfile, DialogueApiConfig } from '../types';
@@ -162,4 +164,13 @@ describe('CharacterApiPanel 所见即所得自动保存与预设 ID 引用', () 
     expect(host.textContent).not.toContain('stale-model');
     expect(os.availableModels).toEqual(['global-model', 'another-model']);
   });
+});
+
+ it('已绑定主 API 在重新挂载后直接展示所选预设，不误显示独立表单', async () => {
+  await act(async () => root.render(React.createElement(ApiSlotEditor, {
+    slotName: '主对话', allowFollow: false, value: slotFromPreset(os.apiPresets[0]), onCommit: onChange,
+  })));
+  expect(host.querySelector('.api-preset-trigger')?.textContent).toContain('日常预设');
+  expect(host.querySelector('[data-testid="bound-preset-card"]')).not.toBeNull();
+  expect(onChange).not.toHaveBeenCalled();
 });

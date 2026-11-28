@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { ApiPreset, DialogueApiConfig } from '../../types';
 import { useOS } from '../../context/OSContext';
-import { useLocalBackHandler } from '../../hooks/useLocalBackHandler';
 import { fetchLlm } from '../../utils/anthropicApi';
 import { normalizeApiBaseUrl } from '../../utils/apiConfigNormalize';
 import {
@@ -25,12 +24,11 @@ import { describeDialogueApi, pickDialogueApi } from '../../utils/characterApi';
 import { llmApiType, normalizeLlmBaseUrl } from '../../utils/llmEndpoint';
 import { extractModelIds } from '../../utils/modelList';
 import { extractContent, safeResponseJson } from '../../utils/safeApi';
-import Modal from '../os/Modal';
 import ApiPresetEditorModal from './ApiPresetEditorModal';
 import ApiPresetPicker from './ApiPresetPicker';
 import PresetNameButton from './PresetNameButton';
 import DialogueApiFields from './DialogueApiFields';
-import ModelPicker from './ModelPicker';
+import ApiSaveFeedback from './ApiSaveFeedback';
 
 export interface ApiSlotEditorProps {
   /** 用于统计枚举与诊断标识的固定槽位名。 */
@@ -103,7 +101,7 @@ export default function ApiSlotEditor({
   const binding = inspectSlotPresetBinding(value, apiPresets);
 
   // 当 allowFollow=true 且 value 为空时，默认展示跟随态；用户点「单独填写」后展开空白/预填表单。
-  const [manualCustomOpen, setManualCustomOpen] = useState<boolean>(() => !allowFollow);
+  const [manualCustomOpen, setManualCustomOpen] = useState<boolean>(() => !allowFollow && binding.status !== 'bound');
   const [customDraft, setCustomDraft] = useState<DialogueApiConfig>(() => {
     if (value && binding.status !== 'bound') return pickDialogueApi(value);
     if (!allowFollow && value) return pickDialogueApi(value);
@@ -120,8 +118,7 @@ export default function ApiSlotEditor({
   const [models, setModels] = useState<string[]>(() =>
     resolveModelsForSlot(value ?? (!allowFollow ? apiConfig : null)),
   );
-  const [showPicker, setShowPicker] = useState(false);
-  const [pickerModel, setPickerModel] = useState('');
+  const [saveRevision, setSaveRevision] = useState(0);
   const [loadingModels, setLoadingModels] = useState(false);
   const [testing, setTesting] = useState(false);
   const [status, setStatus] = useState('');
@@ -257,13 +254,6 @@ export default function ApiSlotEditor({
     };
   }, []);
 
-  useLocalBackHandler(() => {
-    if (showPicker) {
-      setShowPicker(false);
-      return true;
-    }
-    return false;
-  }, 85, showPicker);
 
   const scheduleCustomCommit = (nextDraft: DialogueApiConfig) => {
     dirtyCustomRef.current = true;
@@ -288,7 +278,7 @@ export default function ApiSlotEditor({
     setManualCustomOpen(false);
     const nextSlot = slotFromPreset(preset);
     lastCommittedSerializedRef.current = serializeComparableSlot(nextSlot);
-    void onCommit(nextSlot);
+    void Promise.resolve(onCommit(nextSlot)).then(() => setSaveRevision(value => value + 1)).catch(() => addToast('修改未成功，请重试', 'error'));
     trackApiSlotCommit({ slot: slotName, mode: '绑定预设', result: '已生效' });
   };
 
@@ -411,9 +401,6 @@ export default function ApiSlotEditor({
       }
       setModels(saved);
       setStatus(saved.length ? `获取到 ${saved.length} 个模型` : '模型列表为空，可手动输入');
-      const chosenModel = customDraft.model || saved[0] || '';
-      setPickerModel(chosenModel);
-      setShowPicker(true);
     } catch (err) {
       if (version === requestVersionRef.current) {
         setStatus(`获取失败：${err instanceof Error ? err.message : '请检查配置'}`);
@@ -496,7 +483,6 @@ export default function ApiSlotEditor({
 
   const activePresetId = binding.status === 'bound' && !manualCustomOpen ? binding.preset.id : null;
   const showCustomForm = manualCustomOpen || binding.status === 'custom' || binding.status === 'deleted_preset' || !allowFollow;
-  const canSaveCustomAsPreset = validateApiSlotDraft(customDraft).kind === 'valid';
 
   return (
     <div className="api-connection-compact text-slate-800" data-api-slot={slotName}>
@@ -547,7 +533,7 @@ export default function ApiSlotEditor({
               )}</ApiPresetPicker>
             </div>
           ) : (
-            <p className="text-[11px] text-slate-400 pl-1">暂无已保存的预设，可在填写连接后点「存为新预设」。</p>
+            <p className="text-[11px] text-slate-400 pl-1">暂无已保存的预设，可通过「新建预设」添加。</p>
           )}
         </div>
       )}
@@ -661,20 +647,6 @@ export default function ApiSlotEditor({
               {allowFollow ? '单独填写（仅当前位置生效 · 自动保存）' : '单独填写连接（自动保存）'}
             </span>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                disabled={!canSaveCustomAsPreset}
-                onClick={() =>
-                  setPresetModal({
-                    open: true,
-                    mode: 'create',
-                    seedConfig: customDraft,
-                  })
-                }
-                className="text-[11px] font-bold text-primary px-2.5 py-1 rounded-lg bg-primary/10 disabled:opacity-40 active:scale-95 transition-transform"
-              >
-                存为新预设
-              </button>
               {allowFollow && (
                 <button
                   type="button"
@@ -703,10 +675,8 @@ export default function ApiSlotEditor({
             }}
             fetchModels={fetchModelsForCustom}
             isLoadingModels={loadingModels}
-            openModelPicker={() => {
-              setPickerModel(customDraft.model);
-              setShowPicker(true);
-            }}
+            models={models}
+            onSelectModel={model => updateCustomFields({ model }, true)}
           />
 
           <button
@@ -731,18 +701,9 @@ export default function ApiSlotEditor({
         </div>
       )}
 
-      <Modal isOpen={showPicker} title="选择模型" onClose={() => setShowPicker(false)}>
-        <ModelPicker
-          availableModels={models}
-          localModel={pickerModel}
-          setLocalModel={setPickerModel}
-          confirmModelPicker={(model) => {
-            setShowPicker(false);
-            updateCustomFields({ model }, true);
-          }}
-        />
-      </Modal>
 
+
+      <ApiSaveFeedback revision={saveRevision} />
       <ApiPresetEditorModal
         isOpen={presetModal.open}
         mode={presetModal.mode}
